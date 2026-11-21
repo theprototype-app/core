@@ -6,6 +6,20 @@
      rendering, so maintainer notes stay out of the user-facing window. No emoji from
      1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
 
+## 1.71.0 — Convert to code
+
+- **Convert to code**: right-click a **Math**, **Compare**, **Gate**, **Select**, **Map Range**, **Random** or **HUD Text** node and pick **Convert to code**: it becomes a Script node that does exactly the same thing, with every wire kept, so you can change how it works. **Convert back** returns the built-in node while the code is unchanged. One undo step, and everyone in the session sees it. On a phone or in VR the node sheet shows the code read-only. <!-- 2.0-n3c -->
+- **Custom nodes keep their definitions**: a scene with custom nodes saved and opened again (or restored after a reload) brings their sockets and code back; they used to come back empty and do nothing. <!-- 2.0-n3c -->
+- **Animation Finished, Animation Marker, On Animation State and On Grab fire again**: they had read 0 since 1.23, so a marker wired to Play Animation never fired. <!-- 2.0-n3c -->
+- **Games built from nodes work more often**: a behaviour input fed by a held key fires once per press (a P toggle no longer pauses and resumes in one press); a pickup taken with a node-only Collect counts for the person who took it, not the host; an **On Enter** / **On Exit** in the scene graph with no sensor of its own fires for the sensors in the scene. **Collect pickup** has **Hide when collected** (on for new pickups): a taken pickup disappears for everyone until it comes back. <!-- 2.0-n3b -->
+- **Cinematic view: text and labels**: 3D text, names over people and other labels now show in the Cinematic view instead of being left out. <!-- 100-cover-labels C2-1 -->
+- **Cinematic view: a clear note when the graphics card drops out**: if the browser drops the graphics device while the Cinematic view starts, the view switches back with its own note instead of "Something went wrong", and **Preview** stays on screen, greyed out, saying why, until you reload. <!-- 2.0-int G30 -->
+- **The editor starts lighter**: the AI assistant's tools load when you send your first prompt, and Convert to code when you first use it, so the editor downloads about 145 KB less before it starts. <!-- 2.0-int -->
+- **For AI agents**: agent contract 1.11.0 (additive). `update_flow_nodes` takes `convert: [{id, to: "code" | "back"}]`. Every node setting can be set (**Reset each round** on Latch and Once, **Who** on On Enter / On Exit, **To** on Proximity and others were silently dropped). `validate_scene` names wiring mistakes with a one-line fix (a value such as a Gate wired into an event input, a Latch or Counter that fires on every change); `describe_node_types {recipe}` has six worked builds; a behaviour input handler hears who fired it (`on.x({by})`). <!-- 2.0-n3b 2.0-n3c -->
+- **Scene files**: format minor 3 (saved custom node definitions, a per-node version, the Convert marker). Older versions still open them. <!-- 2.0-n3c -->
+- **For module and script authors**: the module SDK reports `SDK_API_VERSION` 3 and scripts `api.version` 2 (`api.self`, `api.stamp`). See OPEN-CORE.md. <!-- 2.0-n3c -->
+- **For developers**: `npm run eval:results` in tools/agent plays what an AI agent built through the Claude connector across 15 game tasks (one and two players) and scores whether it works: 10 / 15 on 1.68, 13.4 / 15 with this release's fixes. <!-- 2.0-n3a 2.0-n3b -->
+
 ## 1.70.0 — SvelteKit 3
 
 - **Under the hood**: moved to SvelteKit 3 and TypeScript 6. Nothing changes for you; the app starts the same. <!-- sk3-int -->

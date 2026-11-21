@@ -36,6 +36,8 @@ cinematicPrefs.subscribe((p) => {
  *  quality  what runs (the asked step, capped for the window's size, lowered by the dynamic drop)
  *  dropped  how many steps the dynamic drop took (the chip says so)
  *  notShown the chip line for what this scene draws as plain stand-ins ('' = nothing)
+ *  disabled G30: the reason this session turned the view off after a failure ('' = none); the switch
+ *           stays on screen, disabled, and says it
  */
 export const cinematicState = writable({
 	mode: /** @type {'off'|'entering'|'on'|'leaving'} */ ('off'),
@@ -44,7 +46,8 @@ export const cinematicState = writable({
 	quality: /** @type {import('./cinematicOffer.js').Quality} */ ('standard'),
 	dropped: 0,
 	notShown: '',
-	error: ''
+	error: '',
+	disabled: ''
 });
 
 /** the reason this session turned the view off after a failure ('' = none) */
@@ -58,5 +61,5 @@ export const cinematicDisabled = { reason: '' };
 export function disableCinematic(reason) {
 	cinematicDisabled.reason = reason;
 	cinematicPrefs.update((p) => ({ ...p, on: false }));
-	cinematicState.update((s) => ({ ...s, offered: false, why: reason }));
+	cinematicState.update((s) => ({ ...s, offered: false, why: reason, disabled: reason }));
 }

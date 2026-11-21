@@ -398,6 +398,24 @@ export const TASKS = [
 			const t1 = await turning(1500);
 			const g1 = await P.game(A);
 			C.note('after P: fan ' + t1.toFixed(1) + '° in 1.5 s, game ' + g1?.state);
+			// 2.0-int: where a press stops (the behaviour input pass, the behaviour runtime, its state)
+			C.note('trace ' + (await A.evaluate(() => {
+				try {
+					const t = window.__tp.test.v1;
+					const d = t.behaviours?.behavioursDebug?.();
+					const live = (d?.loaded ?? []).map((/** @type {string} */ id) => {
+						try {
+							const l = d.live(id);
+							return { id, state: l?.state ?? null, keys: l ? Object.keys(l).slice(0, 12) : null };
+						} catch (e) {
+							return { id, err: String(e) };
+						}
+					});
+					return JSON.stringify({ input: t.flowRuntime?.behaviourInputStats, status: d?.status, stats: d?.stats, authority: d?.authority, me: d?.me, live }).slice(0, 1800);
+				} catch (e) {
+					return 'trace failed: ' + e;
+				}
+			})));
 			if (t1 > 2) return v(0, 'P did not pause: the fan kept turning');
 			await P.press(A, 'p');
 			await P.sleep(A, 600);

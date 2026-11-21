@@ -20,7 +20,9 @@
 
 	const on = $derived($cinematicState.mode === 'on');
 	const busy = $derived($cinematicState.mode === 'entering' || $cinematicState.mode === 'leaving');
-	const visible = $derived(!!$cinematicState.offered && $isLocked !== true && !$isVRMode && !$embedMode);
+	// G30: a failure (a lost device, a compile error) keeps the switch on screen, disabled, with its reason
+	const off = $derived(!!$cinematicState.disabled && $cinematicState.mode === 'off');
+	const visible = $derived((!!$cinematicState.offered || off) && $isLocked !== true && !$isVRMode && !$embedMode);
 	const highAllowed = $derived(pixels <= HIGH_MAX_PIXELS);
 	const options = $derived(
 		QUALITY_STEPS.map((q) => ({
@@ -32,7 +34,9 @@
 	);
 	const dropText = $derived(on && $cinematicState.dropped > 0 ? 'Lowered to ' + QUALITY[$cinematicState.quality].label + ' to keep it smooth' : '');
 	const title = $derived(
-		$cinematicState.mode === 'entering'
+		off
+			? 'Cinematic view is off for this session: ' + $cinematicState.disabled
+			: $cinematicState.mode === 'entering'
 			? 'Starting the Cinematic view…'
 			: on
 				? 'Cinematic view is on: back to the standard view (Shift+Z)'
@@ -57,6 +61,26 @@
 	$effect(() => {
 		if (on || menuOpen) hint = false;
 	});
+
+	// G30: the reason shows when the view falls back, and again on a press of the disabled switch
+	let whyShown = $state(false);
+	/** @type {ReturnType<typeof setTimeout> | undefined} */
+	let whyTimer;
+	function showWhy() {
+		whyShown = true;
+		clearTimeout(whyTimer);
+		whyTimer = setTimeout(() => (whyShown = false), 10000);
+	}
+	$effect(() => {
+		if (off) showWhy();
+		else whyShown = false;
+		return () => clearTimeout(whyTimer);
+	});
+
+	function press() {
+		if (off) showWhy();
+		else void toggleCinematic();
+	}
 
 	function measure() {
 		const v = document.getElementById('viewport');
@@ -97,10 +121,13 @@
 				class="cine-toggle"
 				aria-pressed={on}
 				aria-busy={busy}
+				aria-disabled={off}
+				aria-describedby={off ? 'cinematic-why' : undefined}
+				data-why={off ? $cinematicState.disabled : undefined}
 				disabled={busy}
 				{title}
 				aria-label={on ? 'Cinematic view on' : 'Cinematic view off'}
-				onclick={() => toggleCinematic()}
+				onclick={press}
 			>
 				<Icon name={busy ? 'loader-circle' : 'sparkles'} size={16} aria-hidden="true" />
 				<span>Preview</span>
@@ -132,6 +159,9 @@
 		{/if}
 		{#if hint}
 			<p id="cinematic-hint" class="cine-first tp-ui hud-glass" role="status">New: Preview shows bounced light and reflections, on this computer only (Shift+Z)</p>
+		{/if}
+		{#if off}
+			<p id="cinematic-why" class="cine-first tp-ui hud-glass" role="status" hidden={!whyShown}>Cinematic view is off for this session: {$cinematicState.disabled} Reload the page to try again.</p>
 		{/if}
 		{#if on && $cinematicState.notShown}
 			<div id="cinematic-not-shown" class="cine-chip"><Badge tone="warn" text={$cinematicState.notShown} /></div>
@@ -185,7 +215,7 @@
 		background: var(--accent);
 		color: var(--on-accent);
 	}
-	.cine-toggle:hover:not(:disabled),
+	.cine-toggle:hover:not(:disabled):not([aria-disabled='true']),
 	.cine-more:hover {
 		background: var(--surface-hover);
 	}
@@ -193,8 +223,12 @@
 		background: var(--accent);
 		filter: brightness(1.08);
 	}
-	.cine-toggle:disabled {
+	.cine-toggle:disabled,
+	.cine-toggle[aria-disabled='true'] {
 		opacity: 0.7;
+	}
+	.cine-toggle[aria-disabled='true'] {
+		cursor: not-allowed;
 	}
 	.cine-more {
 		display: inline-flex;

@@ -139,6 +139,39 @@ const labelInk = (page) =>
 		return n / (on.length / 4);
 	});
 
+/**
+ * G30: the fallback after a dropped instance / lost device, as the user sees it: the view's own note (never
+ * "Something went wrong"), the switch still on screen, disabled, with the reason, no unhandled rejection,
+ * and the WebGL view drawing again.
+ * @param {any} P a peer from setupPage @param {string} label
+ */
+async function assertFallback(P, label) {
+	const page = P.page;
+	// the press starts the view first (mode 'entering'): wait for the failure itself, then for the teardown
+	await h.eventually(() => state(page), (v) => !!v?.disabled, label + ': the start failed and said so', 90000);
+	await waitMode(page, 'off', label + ': the view fell back');
+	const s = await state(page);
+	h.check(s.offered === false && /lost/.test(s.disabled ?? ''), `${label}: off for the session with its reason (${JSON.stringify({ why: s.why, disabled: s.disabled, error: s.error })})`);
+	const t = await toasts(page);
+	h.check(t.some((m) => /Cinematic view is off: the graphics device was lost/.test(m)), `   the view's own note says so (${JSON.stringify(t).slice(0, 240)})`);
+	h.check(!t.some((m) => /Something went wrong/i.test(m)), '   and no "Something went wrong" toast');
+	await page.waitForSelector('#cinematic-toggle', { timeout: 10000 }).catch(() => null);
+	const sw = await page.evaluate(() => {
+		const b = document.getElementById('cinematic-toggle');
+		const w = document.getElementById('cinematic-why');
+		return b ? { disabled: b.getAttribute('aria-disabled'), why: b.getAttribute('data-why'), title: b.getAttribute('title'), note: w && !w.hidden ? w.textContent : null } : null;
+	});
+	h.check(!!sw && sw.disabled === 'true' && /lost/.test(sw.why ?? '') && /lost/.test(sw.title ?? '') && /lost/.test(sw.note ?? ''), `   the switch stays, disabled, and shows the reason (${JSON.stringify(sw)})`);
+	await page.click('#cinematic-toggle', { force: true }); // aria-disabled: Playwright would wait for "enabled"
+	await page.waitForTimeout(400);
+	h.check((await mode(page)) === 'off', '   pressing it does not start the view again');
+	const rejections = h.pageErrors(P).filter((e) => /Instance|popErrorScope|WebGPU|GPU/i.test(JSON.stringify(e)));
+	h.check(rejections.length === 0, `   0 unhandled rejections from the dropped instance (${JSON.stringify(rejections).slice(0, 300)})`);
+	const gl = await page.evaluate(() => { let r; window.__tp.test.v1.globalRenderer.subscribe((x) => (r = x))(); return { lost: r.getContext().isContextLost(), opacity: r.domElement.style.opacity, gpuCanvas: !!document.getElementById('cinematic-canvas') }; });
+	const luma = await glLuma(page);
+	h.check(!gl.lost && gl.opacity === '' && !gl.gpuCanvas && luma > 1, `   the WebGL view draws again (${JSON.stringify(gl)}, luma ${luma})`);
+}
+
 h.run(async () => {
 	const browser = await h.launch({ args: ARGS });
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1440, height: 900 } }, storage: STORAGE });
@@ -177,6 +210,15 @@ h.run(async () => {
 
 	// ---- 2. the pill turns it on; the WebGPU canvas draws a real frame ----------------------------------------
 	await page.click('#cinematic-toggle');
+	// G30: a browser that drops the WebGPU instance while the view starts (a loaded software-GL worker) takes
+	// the fallback path for real: assert it, run the forced-drop check, and skip the sections that need the view
+	const came = await poll(() => state(page), (v) => v.mode === 'on' || (v.mode === 'off' && !!v.disabled), 90000);
+	if (came?.mode === 'off' && /lost/.test(came.disabled)) {
+		h.check(true, `SKIPPED 2-8: this browser dropped the WebGPU instance while the view started (${came.disabled}); the fallback is checked instead`);
+		await assertFallback(A, '2. a real drop');
+		await forcedDrop(browser, A);
+		return h.finish(browser);
+	}
 	await waitMode(page, 'on', 'the view came on after the press');
 	h.check((await page.getAttribute('#cinematic-toggle', 'aria-pressed')) === 'true', '2. the pill reads pressed');
 	h.check((await page.locator('#cinematic-hint').count()) === 0, '   the first-use hint goes away once the view is on');
@@ -396,7 +438,8 @@ h.run(async () => {
 	const gl7 = await page.evaluate(() => { let r; window.__tp.test.v1.globalRenderer.subscribe((x) => (r = x))(); return !r.getContext().isContextLost(); });
 	h.check(gl7 && !f?.error, '   the WebGL view draws again');
 	await page.waitForTimeout(500);
-	h.check((await page.$('#cinematic-switch')) === null, '   the pill is gone');
+	const sw7 = await page.evaluate(() => { const b = document.getElementById('cinematic-toggle'); return b ? { disabled: b.getAttribute('aria-disabled'), why: b.getAttribute('data-why') } : null; });
+	h.check(!!sw7 && sw7.disabled === 'true' && /compile/.test(sw7.why ?? ''), `   the pill stays, disabled, with the reason (G30; ${JSON.stringify(sw7)})`);
 
 	// ---- 8. fallback: a lost device, on a fresh page ------------------------------------------------------------
 	const C = await h.setupPageQuiet(browser, 'C', [A], { context: { viewport: { width: 1440, height: 900 } }, storage: STORAGE });
@@ -413,6 +456,33 @@ h.run(async () => {
 		await h.closePeer(C);
 	}
 
+	await forcedDrop(browser, A);
+
 	h.check(h.pageErrors(A).length === 0, `no page errors on A (${JSON.stringify(h.pageErrors(A)).slice(0, 300)})`);
 	await h.finish(browser);
 });
+
+/**
+ * ---- 9. G30: the WebGPU instance dropped WHILE the view starts (the seam makes popErrorScope and
+ * onSubmittedWorkDone reject as Chromium's do, so three's own uncaught calls run), on a fresh page ----------
+ * @param {any} browser @param {any} A
+ */
+async function forcedDrop(browser, A) {
+	const D = await h.setupPageQuiet(browser, 'D', [A], { context: { viewport: { width: 1440, height: 900 } }, storage: STORAGE });
+	try {
+		const offeredD = await D.page.evaluate(() => window.__tp.test.v1.cinematicState.probeCinematic());
+		if (!offeredD) {
+			h.check(true, `SKIPPED 9: not offered on the fresh page (${(await state(D.page)).why})`);
+			return;
+		}
+		await D.page.waitForSelector('#cinematic-toggle', { timeout: 30000 });
+		await D.page.evaluate(() => window.__tp.test.v1.addObjects.spawnAtPoint('/create Box 1 1 1', [0, 0.5, 0]));
+		await D.page.evaluate(async () => (await window.__tp.test.v1.cinematicState.cinematicView()).dropInstanceOnNextStartForTest());
+		await D.page.click('#cinematic-toggle');
+		await assertFallback(D, '9. instance dropped mid-start (forced)');
+		const dbg = await debug(D.page);
+		h.check((dbg.errors ?? []).some((/** @type {any} */ e) => /Instance/.test(String(e.rejected ?? e.msg ?? ''))), `   the rejections were caught and logged (${(dbg.errors ?? []).length} entries)`);
+	} finally {
+		await h.closePeer(D);
+	}
+}

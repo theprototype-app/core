@@ -12,6 +12,8 @@
 	import { peers, showToast } from '../../stores/appStore';
 	import { objectsGroup } from '../../stores/sceneStore';
 	import { applySelectionSet } from '$lib/objectActions';
+	import { letGoOf } from '$lib/lockControl';
+	import { heldByMe } from '$lib/lockHeld';
 	import { isViewer } from '$lib/objectPermissions';
 	import { rolesInfo } from '$lib/cloudHooks';
 
@@ -38,6 +40,10 @@
 
 	/** @param {any} e */
 	function undo(e) {
+		// 80a: what we hold of the step goes first (the agent's undo is an edit of it, which a lock we
+		// hold would refuse); the unlock leaves on the same ordered link ahead of the request
+		const p = /** @type {any} */ (get(peers));
+		if (e.uuids?.length && e.peer !== String(p?.peer?.id || 'me').toLowerCase()) letGoOf(e.uuids.filter((u) => heldByMe(u)));
 		if (!requestAgentUndo(e)) showToast('The AI agent has left — nobody holds that step any more.');
 	}
 

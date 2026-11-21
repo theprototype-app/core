@@ -22,7 +22,8 @@ import { setObjectColor, switchMaterialType, setMaterialParam } from '$lib/mater
 import { checkMaterialParam, toHexColor, isMapSlotKey } from '$lib/materialParamRules.js';
 import { lightStateOf, recordLightChange, sendLight } from '$lib/multiEdit';
 import { aimLight, setShadowMapSize } from '$lib/lightParams';
-import { itemByHash, itemBlob } from '$lib/explorer';
+import { itemByHash, itemBlob, explorerItems } from '$lib/explorer';
+import { placeDecalForAgent } from '../decalEdit.js'; // 102 M3
 import { animatedBaseOf, writingBasePose } from '$lib/flowRuntime';
 import { reportedPose } from './poseReport.js';
 import { meshGenReady, meshTakesImage, activeMeshConfig } from './meshProviders.js';
@@ -599,6 +600,43 @@ function duplicateFrom(args) {
 	return { from: uuid, created, uuids: created.filter((c) => c.uuid).map((c) => c.uuid) };
 }
 
+/**
+ * 102 M3: create_objects {kind: 'decal'} — through decalEdit (one undo step, replicated).
+ * @param {any} spec @returns {any}
+ */
+function createDecalOne(spec) {
+	const on = typeof spec.on === 'string' ? spec.on : typeof spec.target === 'string' ? spec.target : '';
+	if (!on) return { error: 'kind decal needs on: the uuid of the object to put it on' };
+	let image = typeof spec.image === 'string' ? spec.image.trim() : '';
+	if (image && !/^[0-9a-f]{16,128}$/i.test(image)) {
+		const items = /** @type {any[]} */ (get(explorerItems) ?? []);
+		const want = image.toLowerCase();
+		const hit = items.find((it) => String(it?.name ?? '').toLowerCase() === want) ?? items.find((it) => String(it?.name ?? '').toLowerCase().replace(/\.[a-z0-9]+$/, '') === want);
+		if (!hit?.hash) return { error: 'image: no library image named "' + spec.image + '" (pass a hash, or upload one with import_file)' };
+		image = hit.hash;
+	}
+	const raw = spec.size;
+	const wh = Array.isArray(raw) ? [Number(raw[0]), Number(raw[1] ?? raw[0])] : Number.isFinite(Number(raw)) && raw !== undefined ? [Number(raw), Number(raw)] : [0.5, 0.5];
+	const depth = Number.isFinite(Number(spec.depth)) && spec.depth !== undefined ? Number(spec.depth) : 0.25;
+	const point = Array.isArray(spec.point) && spec.point.length >= 3 ? spec.point.slice(0, 3).map(Number) : undefined;
+	const normal = Array.isArray(spec.normal) && spec.normal.length >= 3 ? spec.normal.slice(0, 3).map(Number) : undefined;
+	const item = image ? /** @type {any} */ (itemByHash(image)) : null;
+	const out = placeDecalForAgent(on, {
+		point,
+		normal,
+		image,
+		imageName: item?.name ?? '',
+		size: [wh[0], wh[1], depth],
+		...(spec.opacity !== undefined ? { opacity: Number(spec.opacity) } : {}),
+		...(typeof spec.tint === 'string' ? { tint: spec.tint } : typeof spec.color === 'string' ? { tint: spec.color } : {}),
+		...(spec.roughness !== undefined ? { roughness: Number(spec.roughness) } : {}),
+		...(typeof spec.name === 'string' ? { name: spec.name } : {})
+	});
+	if (!out.object) return { error: out.error ?? 'the decal could not be placed' };
+	if (image) void import('../shaderTextures.js').then((m) => m.shareShaderTexture(image));
+	return { uuid: out.object.uuid, name: out.object.name, kind: 'decal', on };
+}
+
 /** @param {any} spec @returns {any} one created object's result */
 function createOne(spec, extraTypes = /** @type {string[]} */ ([])) {
 	// 85b S6: "hip", "0.5 reach" … are metres from here on
@@ -607,6 +645,8 @@ function createOne(spec, extraTypes = /** @type {string[]} */ ([])) {
 	// mcp-diorama2: a parent that is not there is an error, never a silent part at the scene root
 	const parentCheck = parentTarget(spec.parentUuid);
 	if (parentCheck && 'error' in parentCheck) return { error: parentCheck.error };
+	// 102 M3: a decal is placed ON an object (a child of it), not at a free position
+	if (spec.kind === 'decal') return createDecalOne(spec);
 	const uuid = genUuid();
 	let created = null;
 	if (spec.kind === 'light') {
@@ -1420,7 +1460,7 @@ export const AI_TOOLS = [
 		function: {
 			name: 'create_objects',
 			description:
-				'Create one or more primitives, lights or empty groups in a single call. Ground is the y=0 plane; place objects so they rest ON it (a box of height h sits at y=h/2). Returns the new uuids. To copy an existing object instead (a row of fence posts, a ring of chairs), pass from: its uuid, count, offset [x,y,z] between one copy and the next, and optionally randomRot / randomScale with a seed: deep copies (children, materials, flows), one undo step, uuids in order, in the source\'s own group. lookAt turns an object so its local +Z axis (its front) faces a point or another object, +Y kept up.',
+				'Create one or more primitives, lights, empty groups or decals in a single call. A decal (kind decal) is an image projected onto the surface of the object `on`: give point + normal (world) or just normal (aimed at that object\'s middle from that side; default from above). Ground is the y=0 plane; place objects so they rest ON it (a box of height h sits at y=h/2). Returns the new uuids. To copy an existing object instead (a row of fence posts, a ring of chairs), pass from: its uuid, count, offset [x,y,z] between one copy and the next, and optionally randomRot / randomScale with a seed: deep copies (children, materials, flows), one undo step, uuids in order, in the source\'s own group. lookAt turns an object so its local +Z axis (its front) faces a point or another object, +Y kept up.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1436,7 +1476,15 @@ export const AI_TOOLS = [
 						items: {
 							type: 'object',
 							properties: {
-								kind: { type: 'string', enum: ['primitive', 'light', 'group'] },
+								kind: { type: 'string', enum: ['primitive', 'light', 'group', 'decal'] },
+								on: { type: 'string', description: 'kind=decal: uuid of the object to put it on (not a skinned character or scattered copies)' },
+								point: { type: 'array', items: { type: 'number' }, description: 'kind=decal: world [x,y,z] on that object\'s surface' },
+								normal: { type: 'array', items: { type: 'number' }, description: 'kind=decal: the surface direction [x,y,z] there (with no point: the side it is aimed from)' },
+								image: { type: 'string', description: 'kind=decal: a library image hash or file name (omit = a placeholder frame until one is set)' },
+								size: { description: 'kind=decal: metres, a number (square) or [width, height]' },
+								depth: { type: 'number', description: 'kind=decal: how far into and out of the surface it reaches (default 0.25 m)' },
+								opacity: { type: 'number', description: 'kind=decal: 0-1' },
+								tint: { type: 'string', description: 'kind=decal: #rrggbb multiplying the image' },
 								primitive: {
 									type: 'string',
 									enum: PRIMITIVE_TYPES,

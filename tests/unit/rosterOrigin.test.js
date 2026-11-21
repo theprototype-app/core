@@ -4,13 +4,15 @@ import { get } from 'svelte/store';
 import { userdata } from '../../src/stores/appStore.js';
 import { noteRosterRows, confirmRosterRows, rollBackRosterRows, rosterOriginOf, shareableRosterRows } from '../../src/lib/rosterOrigin.js';
 
+/** @type {any} */
+const roster = userdata;
 const ids = () => /** @type {any[]} */ (get(userdata)).map((u) => u[0]);
 
 describe('roster origin', () => {
-	beforeEach(() => userdata.set([['me', 'Me', ''], ['x', '', '']]));
+	beforeEach(() => roster.set([['me', 'Me', ''], ['x', '', '']]));
 	it('rolls back with the request', () => {
 		const before = new Set(ids());
-		userdata.update((u) => [...u, ['a', 'A', ''], ['b', 'B', '']]);
+		roster.update((/** @type {any[]} */ u) => [...u, ['a', 'A', ''], ['b', 'B', '']]);
 		noteRosterRows('x', [['x', 'X', ''], ['a', 'A', ''], ['b', 'B', '']], before, true);
 		expect(rosterOriginOf('a')).toBe('x');
 		expect(rosterOriginOf('x')).toBe(null);
@@ -20,7 +22,7 @@ describe('roster origin', () => {
 	});
 	it('an approval keeps them', () => {
 		const before = new Set(ids());
-		userdata.update((u) => [...u, ['a', 'A', '']]);
+		roster.update((/** @type {any[]} */ u) => [...u, ['a', 'A', '']]);
 		noteRosterRows('x', [['a', 'A', '']], before, true);
 		confirmRosterRows('x');
 		expect(rollBackRosterRows('x')).toEqual([]);
@@ -28,7 +30,7 @@ describe('roster origin', () => {
 	});
 	it('keeps rows another source confirms', () => {
 		const before = new Set(ids());
-		userdata.update((u) => [...u, ['a', 'A', '']]);
+		roster.update((/** @type {any[]} */ u) => [...u, ['a', 'A', '']]);
 		noteRosterRows('x', [['me', 'Me', ''], ['a', 'A', '']], before, true);
 		expect(rosterOriginOf('me')).toBe(null);
 		noteRosterRows('host', [['a', 'A', '']], new Set(ids()), false);

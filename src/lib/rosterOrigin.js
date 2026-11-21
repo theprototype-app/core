@@ -38,7 +38,7 @@ export function rollBackRosterRows(from, keep = {}) {
 		if (id === keep.self || keep.linked?.(id)) continue;
 		gone.push(id);
 	}
-	if (gone.length) userdata.set(/** @type {any[]} */ (get(userdata)).filter((u) => !gone.includes(u[0])));
+	if (gone.length) userdata.set(/** @type {any} */ (/** @type {any[]} */ (get(userdata)).filter((u) => !gone.includes(u[0]))));
 	return gone;
 }
 

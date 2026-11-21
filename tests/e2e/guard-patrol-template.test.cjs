@@ -196,9 +196,20 @@ h.run(async () => {
 		const a = shown(first);
 		await page.waitForTimeout(4000);
 		const b = shown(await frame.evaluate(() => window.__navigation?.debug?.() ?? null));
-		const host = guard(await dbg(page));
 		h.check(!!a && !!b && Math.hypot(a[0] - b[0], a[2] - b[2]) > 1, '5.3 in the bot\'s view the guard moves (' + JSON.stringify([a, b]) + ')');
-		h.check(!!b && !!host && Math.hypot(b[0] - host.feet[0], b[2] - host.feet[2]) < 3, '5.4 where the host\'s crowd puts it (bot ' + JSON.stringify(b) + ', host ' + JSON.stringify(host?.feet) + ')');
+		// the bot draws what the host's crowd sends: sample both together until they agree (a loaded worker starves
+		// the bot frame's rAF, so one pair of samples can be seconds apart; a bot running its own crowd never converges)
+		const t0 = Date.now();
+		let pair = null;
+		while (Date.now() - t0 < 20000) {
+			const bb = shown(await frame.evaluate(() => window.__navigation?.debug?.() ?? null));
+			const hh = guard(await dbg(page));
+			pair = { bot: bb, host: hh?.feet ?? null, ms: Date.now() - t0 };
+			if (bb && hh && Math.hypot(bb[0] - hh.feet[0], bb[2] - hh.feet[2]) < 3) break;
+			pair.off = true;
+			await page.waitForTimeout(500);
+		}
+		h.check(!!pair && !pair.off, '5.4 where the host\'s crowd puts it (' + JSON.stringify(pair) + ')');
 	}
 	await page.evaluate(() => window.__tp.test.v1.testPlayersUi.stopTestPlayers());
 	const gone = await until(() => page.evaluate(() => window.__tp.test.v1.testPlayers.testPlayersDebug()), (d) => d === null, 30000);

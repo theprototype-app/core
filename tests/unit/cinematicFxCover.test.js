@@ -150,18 +150,18 @@ describe('createFxCover', () => {
 		expect([s.particles, s.bursts, s.bubbles]).toEqual([2, 1, 1]);
 		for (const o of [p, strip, b, bb]) {
 			expect(o.material.visible).toBe(false);
-			const twin = o.children.find((c) => c.name === 'cinematic-fx');
+			const twin = /** @type {any} */ (o.children.find((/** @type {any} */ c) => c.name === 'cinematic-fx'));
 			expect(twin?.material?.isNodeMaterial).toBe(true);
 			expect(fx.covered(o, o.material)).toBe(true);
 		}
 		// a point twin draws one quad per live point (the runtime's draw range)
-		const pt = p.children[0];
+		const pt = /** @type {any} */ (p.children[0]);
 		expect(pt.geometry.instanceCount).toBe(5);
 		b.geometry.setDrawRange(0, 12);
 		fx.scan();
-		expect(b.children[0].geometry.instanceCount).toBe(12);
+		expect(/** @type {any} */ (b.children[0]).geometry.instanceCount).toBe(12);
 		// the strip twin draws the source's own geometry
-		expect(strip.children[0].geometry).toBe(strip.geometry);
+		expect(/** @type {any} */ (strip.children[0]).geometry).toBe(strip.geometry);
 		// a runtime write to its buffers reaches the twin's instanced copy
 		const before = b.children[0].material;
 		b.geometry.getAttribute('position').needsUpdate = true;

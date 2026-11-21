@@ -9,7 +9,7 @@
 //   3. a save carries the AUTHORED pose (parked) and the list; a GLTF export bakes the IK pose only
 //      when "Bake constraints" is asked for;
 //   4. two-peer + reload: B reloads, rejoins and solves the same pose again;
-//   5. a file saved by this lane opens in the newest release (production, 1.70.0) unchanged, and a
+//   5. a file saved by this lane opens in the newest release (production) unchanged, and a
 //      scene saved by that release opens here unchanged (PROD_URL, default theprototype.pages.dev).
 const h = require('./helpers.cjs');
 
@@ -46,6 +46,17 @@ async function install(page) {
 	});
 }
 
+/** freshReload with a slow-boot grace: its own wait is 30 s, and a remote slot or a loaded Deck boots the dev app slower */
+async function reload(peer) {
+	try {
+		await h.freshReload(peer);
+	} catch (e) {
+		if (!/Timeout/.test(String(e?.message ?? e))) throw e;
+		console.log('  (slow boot: waiting up to 150 s more for the debug hook)');
+		await peer.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, null, { timeout: 150000 });
+	}
+}
+
 const dist = (a, b) => (a && b ? Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) : Infinity);
 const world = (peer, name) => peer.page.evaluate((n) => window.__ik.world(n), name);
 
@@ -80,7 +91,7 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B');
 	// collapse the dev-server dual module instance before connecting (physics-kinematic's note)
 	for (const peer of [A, B]) {
-		await h.freshReload(peer);
+		await reload(peer);
 		await h.answerRestore(peer).catch(() => {});
 		await install(peer.page);
 	}
@@ -219,7 +230,7 @@ h.run(async () => {
 	h.check(bakedR.turn > 0.05, `GLTF with Bake constraints carries the IK pose (turn ${bakedR.turn.toFixed(4)})`);
 
 	// --- 4. two-peer + reload --------------------------------------------------------------------
-	await h.freshReload(B);
+	await reload(B);
 	await h.eventually(
 		() => B.page.evaluate(() => new Promise((r) => window.__tp.test.v1.peers.subscribe((p) => r(p?.openedPeers?.size ?? 0))())),
 		(n) => n >= 1,

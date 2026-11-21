@@ -129,9 +129,17 @@
 		if (!r) return '';
 		if (!r.ok) return r.reason === 'off' ? 'Weight 0' : r.reason === 'no target' ? 'Pick a target' : r.reason === 'chain too short' ? 'Not enough parents above this node' : (r.reason ?? '');
 		if (r.miss !== undefined && r.miss > 0.005) return 'Out of reach by ' + r.miss.toFixed(2) + ' m';
-		return 'On target';
+		return c.kind === 'limit' ? 'Active' : 'On target';
 	}
 </script>
+
+<!-- a checkbox with its words beside it (Checkbox's own label is the accessible name only) -->
+{#snippet check(/** @type {string} */ text, /** @type {boolean} */ on, /** @type {(v: boolean) => void} */ set, disabled = false, /** @type {string} */ name = text)}
+	<label class="flex items-center gap-1.5" class:opacity-60={disabled}>
+		<Checkbox label={name} checked={on} {disabled} onchange={set} />
+		<span>{text}</span>
+	</label>
+{/snippet}
 
 <Section variant="panel" label="Constraints" aliases={['IK', 'Inverse kinematics', 'Look at', 'Constraint', 'Parent']}>
 	<div id="constraints-section" class="flex flex-col gap-2 text-xs">
@@ -185,18 +193,20 @@
 						<div class="flex flex-wrap items-center gap-2" title="Which parts of the target's transform to copy">
 							<span class="w-20 shrink-0 text-text-muted">Copy</span>
 							{#each ['X', 'Y', 'Z'] as ax, k (ax)}
-								<Checkbox label={'Pos ' + ax} checked={c.position[k]} onchange={(v) => updateConstraint(object.uuid, c.id, { position: c.position.map((/** @type {boolean} */ p, /** @type {number} */ j) => (j === k ? v : p)) })} />
+								{@render check('Pos ' + ax, c.position[k], (v) => updateConstraint(object.uuid, c.id, { position: c.position.map((/** @type {boolean} */ p, /** @type {number} */ j) => (j === k ? v : p)) }), false, 'Position ' + ax)}
 							{/each}
-							<Checkbox label="Rotation" checked={c.rotation} onchange={(v) => updateConstraint(object.uuid, c.id, { rotation: v })} />
-							<Checkbox label="Scale" checked={c.scale} onchange={(v) => updateConstraint(object.uuid, c.id, { scale: v })} />
+							{@render check('Rotation', c.rotation, (v) => updateConstraint(object.uuid, c.id, { rotation: v }))}
+							{@render check('Scale', c.scale, (v) => updateConstraint(object.uuid, c.id, { scale: v }))}
 						</div>
-						<Checkbox label="Keep offset (Parent: follow from where it is now)" checked={!!c.offset} disabled={!c.target} onchange={(v) => setParentOffset(object.uuid, c.id, v)} />
+						<span title="Parent: follow from where it is now">{@render check('Keep offset', !!c.offset, (v) => setParentOffset(object.uuid, c.id, v), !c.target)}</span>
 					{:else if c.kind === 'limit'}
 						{#each ['X', 'Y', 'Z'] as ax, k (ax)}
-							<div class="flex items-center gap-2" title={'Clamp the local rotation about ' + ax + ' (degrees)'}>
-								<Checkbox label={ax} checked={c.axes[k]} onchange={(v) => updateConstraint(object.uuid, c.id, { axes: c.axes.map((/** @type {boolean} */ a, /** @type {number} */ j) => (j === k ? v : a)) })} />
-								<SliderRow label="Min" value={c.min[k]} min={-180} max={180} step={1} decimals={0} onchange={(v) => updateConstraint(object.uuid, c.id, { min: c.min.map((/** @type {number} */ m, /** @type {number} */ j) => (j === k ? v : m)) })} />
-								<SliderRow label="Max" value={c.max[k]} min={-180} max={180} step={1} decimals={0} onchange={(v) => updateConstraint(object.uuid, c.id, { max: c.max.map((/** @type {number} */ m, /** @type {number} */ j) => (j === k ? v : m)) })} />
+							<div class="flex flex-col gap-1" title={'Clamp the local rotation about ' + ax + ' (degrees)'}>
+								{@render check('Limit ' + ax, c.axes[k], (v) => updateConstraint(object.uuid, c.id, { axes: c.axes.map((/** @type {boolean} */ a, /** @type {number} */ j) => (j === k ? v : a)) }))}
+								{#if c.axes[k]}
+									<SliderRow label={ax + ' min'} value={c.min[k]} min={-180} max={180} step={1} decimals={0} onchange={(v) => updateConstraint(object.uuid, c.id, { min: c.min.map((/** @type {number} */ m, /** @type {number} */ j) => (j === k ? v : m)) })} />
+									<SliderRow label={ax + ' max'} value={c.max[k]} min={-180} max={180} step={1} decimals={0} onchange={(v) => updateConstraint(object.uuid, c.id, { max: c.max.map((/** @type {number} */ m, /** @type {number} */ j) => (j === k ? v : m)) })} />
+								{/if}
 							</div>
 						{/each}
 					{:else if c.kind === 'ik2'}
@@ -206,7 +216,7 @@
 							<ThemedSelect class="min-w-0 flex-1" items={[{ value: '', name: 'Bend as it bends now' }, ...targets.slice(1)]} value={c.pole?.uuid ?? ''} clip={false} title="Where the elbow or knee points" id={'constraint-pole-' + c.id} onchange={(v) => updateConstraint(object.uuid, c.id, { pole: v ? { uuid: v } : null })} />
 							<UiButton variant="icon" size="sm" icon="crosshair" disabled={!pObj} title="Select the pole (move it with the gizmo)" aria-label="Select pole" onclick={() => pObj && selectObject(pObj.uuid)} />
 						</div>
-						<Checkbox label="Tip turns with the target" checked={c.tipRotation} onchange={(v) => updateConstraint(object.uuid, c.id, { tipRotation: v })} />
+						{@render check('Tip turns with the target', c.tipRotation, (v) => updateConstraint(object.uuid, c.id, { tipRotation: v }))}
 					{:else if c.kind === 'ikchain'}
 						<SliderRow label="Joints" value={c.count} min={2} max={16} step={1} decimals={0} onchange={(v) => updateConstraint(object.uuid, c.id, { count: v })} />
 						<SliderRow label="Iterations" value={c.iterations} min={1} max={32} step={1} decimals={0} onchange={(v) => updateConstraint(object.uuid, c.id, { iterations: v })} />

@@ -11,7 +11,6 @@
 // `filter`, On Impact's `filter`) is not this — that is how a filter is meant to be wired.
 //
 // Pure: nodes + edges in, findings out. No store, no DOM.
-import { isManySelector, pickOf, matchOf } from './selectorPick.js'; // 102b-flows (a pure leaf)
 
 /** Triggers that find their object through `reachesObjectSelector` (flowRuntime's fire* paths). */
 export const SELECTOR_TRIGGERS = new Set([
@@ -82,7 +81,9 @@ export function lintFlowGraph(nodes, edges, opts = {}) {
 		if (edge?.data?.proxy) continue; // a group card's drawn stand-in, not a real wire
 		const source = byId.get(edge.source);
 		const target = byId.get(edge.target);
-		if (opts.resolve && target?.type === 'objectselector' && isManySelector(target.data) && !emptySeen.has(target.id)) {
+		// 102b-flows: a tag / group / name selector (selectorPick.pickOf's test, inline: this module stays import-free)
+		const pick = target?.type === 'objectselector' ? target.data?.pick : null;
+		if (opts.resolve && (pick === 'tag' || pick === 'group' || pick === 'name') && !emptySeen.has(target.id)) {
 			emptySeen.add(target.id);
 			if (!opts.resolve(target.data).length)
 				out.push({
@@ -90,7 +91,7 @@ export function lintFlowGraph(nodes, edges, opts = {}) {
 					edgeId: String(edge.id),
 					source: edge.source,
 					target: edge.target,
-					message: `The Object Selector (by ${pickOf(target.data)}${pickOf(target.data) === 'group' ? '' : ' "' + matchOf(target.data) + '"'}) matches no objects, so ${nameOf(source)} acts on nothing.`
+					message: `The Object Selector (by ${pick}${pick === 'group' ? '' : ' "' + String(target.data?.match ?? '').trim() + '"'}) matches no objects, so ${nameOf(source)} acts on nothing.`
 				});
 		}
 		if (!isReversedTriggerEdge(edge, source, target)) continue;

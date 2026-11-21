@@ -23,10 +23,10 @@
 	// with a tag, every object in a group, or every object whose name matches. Effects wired in act
 	// on all of them; triggers wired in fire for any of them (Fired Object says which).
 	const PICKS = [
-		{ value: 'object', label: 'One object', title: 'One object' },
-		{ value: 'tag', label: 'By tag', title: 'Every object with a tag (Inspector > Tags)' },
-		{ value: 'group', label: 'By group', title: 'Every object in a group' },
-		{ value: 'name', label: 'By name', title: 'Every object whose name matches: Star*, coin (contains)' }
+		{ value: 'object', label: 'One object' },
+		{ value: 'tag', label: 'By tag' },
+		{ value: 'group', label: 'By group' },
+		{ value: 'name', label: 'By name' }
 	];
 	let pick: string;
 	$: pick = pickOf(data);
@@ -44,7 +44,6 @@
 		<select
 			class="nodrag nopan"
 			aria-label="What this selector picks"
-			title={PICKS.find((p) => p.value === pick)?.title}
 			data-selector-pick
 			value={pick}
 			on:change={(e) => setPick(e.currentTarget.value)}
@@ -68,7 +67,7 @@
 		{:else}
 			<!-- 102b-flows: the set fields + live count are a lazy chunk (a One object card never loads it) -->
 			{#await import('./SelectorSetFields.svelte') then m}
-				<m.default {id} {data} {pick} {match} title={PICKS.find((p) => p.value === pick)?.title} />
+				<m.default {id} {data} {pick} {match} />
 			{/await}
 		{/if}
 	</div>

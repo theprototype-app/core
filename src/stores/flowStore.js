@@ -3,6 +3,9 @@ import { safeStorage } from '../lib/safeStorage';
 import { loadFlowViews } from '../lib/flowView';
 import { objectsGroup } from './sceneStore';
 import { cleanFlowNode, cleanFlowEdge } from '../lib/flowClean.js';
+// 102b-flows: the selector's boot half rides in THIS module's chunk (it is ~0.8 KB; as a chunk of its own
+// its name joined every lazy import's preload list, ~20 B in each of a hundred boot chunks)
+export { resolveTargets } from '../lib/selectorPick.js';
 
 // Shared node graph state, replicated between peers.
 //

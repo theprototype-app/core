@@ -3,8 +3,67 @@
 // runtime, no DOM — the runtime, the node card, flow lint, the agent tools and the unit tests all
 // ask these functions the same question.
 
-import { MAX_SET, normalizeTag, pickOf, matchOf } from './selectorPick.js';
-export * from './selectorPick.js';
+// The four helpers below are COPIES of selectorPick.js' (kept equal by tests/unit/selectorCore.test.js):
+// importing them would make this lazy chunk an importer of the boot half, and a boot module with a
+// lazy importer of its own becomes a chunk of its own — its name then rides every lazy import's
+// preload list (~20 B in each of a hundred boot chunks, measured).
+
+/** a selector's set is cut at this size (a runaway pattern on a 5,000-object scene) */
+export const MAX_SET = 1000;
+
+/** the selector's pick, normalised ('object' for anything unknown or absent) @param {any} data */
+export function pickOf(data) {
+	const p = data?.pick;
+	return p === 'tag' || p === 'group' || p === 'name' ? p : 'object';
+}
+
+/** is this selector's data a MANY-target one (tag / group / name)? @param {any} data */
+export function isManySelector(data) {
+	return pickOf(data) !== 'object';
+}
+
+/** the selector's match text, trimmed ('' = not set yet) @param {any} data */
+export function matchOf(data) {
+	const m = data?.match;
+	return typeof m === 'string' ? m.trim().slice(0, 120) : '';
+}
+
+/** a key two selectors with the same question share @param {any} data */
+export function selectorKey(data) {
+	return pickOf(data) + '\u0000' + matchOf(data).toLowerCase();
+}
+
+/** at most this many tags on one object, each at most MAX_TAG_LEN characters */
+export const MAX_TAGS = 16;
+export const MAX_TAG_LEN = 32;
+
+/** One tag, cleaned: trimmed, inner whitespace collapsed, cut to MAX_TAG_LEN. '' = no tag. @param {any} raw */
+export function normalizeTag(raw) {
+	if (typeof raw !== 'string' && typeof raw !== 'number') return '';
+	return String(raw).replace(/\s+/g, ' ').trim().slice(0, MAX_TAG_LEN);
+}
+
+/**
+ * An object's tag list, cleaned: each tag normalised, duplicates dropped (case-insensitive, the
+ * first spelling wins), at most MAX_TAGS. null when nothing is left — the caller then DELETES the
+ * field, so an object that never had tags serialises exactly as before.
+ * @param {any} list @returns {string[] | null}
+ */
+export function normalizeTags(list) {
+	if (!Array.isArray(list)) return null;
+	/** @type {string[]} */
+	const out = [];
+	const seen = new Set();
+	for (const raw of list) {
+		const tag = normalizeTag(raw);
+		const key = tag.toLowerCase();
+		if (!tag || seen.has(key)) continue;
+		seen.add(key);
+		out.push(tag);
+		if (out.length >= MAX_TAGS) break;
+	}
+	return out.length ? out : null;
+}
 
 /** the tags an object carries (never throws) @param {any} object @returns {string[]} */
 export function tagsOf(object) {

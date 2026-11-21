@@ -13,42 +13,6 @@
 
 import { writable } from 'svelte/store';
 
-/** the ways a selector can pick; the first is the default and is never written */
-export const SELECTOR_PICKS = /** @type {const} */ (['object', 'tag', 'group', 'name']);
-/** at most this many tags on one object, each at most MAX_TAG_LEN characters */
-export const MAX_TAGS = 16;
-export const MAX_TAG_LEN = 32;
-/** a selector's set is cut at this size (a runaway pattern on a 5,000-object scene) */
-export const MAX_SET = 1000;
-
-/** One tag, cleaned: trimmed, inner whitespace collapsed, cut to MAX_TAG_LEN. '' = no tag. @param {any} raw */
-export function normalizeTag(raw) {
-	if (typeof raw !== 'string' && typeof raw !== 'number') return '';
-	return String(raw).replace(/\s+/g, ' ').trim().slice(0, MAX_TAG_LEN);
-}
-
-/**
- * An object's tag list, cleaned: each tag normalised, duplicates dropped (case-insensitive, the
- * first spelling wins), at most MAX_TAGS. null when nothing is left — the caller then DELETES the
- * field, so an object that never had tags serialises exactly as before.
- * @param {any} list @returns {string[] | null}
- */
-export function normalizeTags(list) {
-	if (!Array.isArray(list)) return null;
-	/** @type {string[]} */
-	const out = [];
-	const seen = new Set();
-	for (const raw of list) {
-		const tag = normalizeTag(raw);
-		const key = tag.toLowerCase();
-		if (!tag || seen.has(key)) continue;
-		seen.add(key);
-		out.push(tag);
-		if (out.length >= MAX_TAGS) break;
-	}
-	return out.length ? out : null;
-}
-
 /** the selector's pick, normalised ('object' for anything unknown or absent) @param {any} data */
 export function pickOf(data) {
 	const p = data?.pick;

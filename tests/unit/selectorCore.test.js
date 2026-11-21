@@ -131,3 +131,19 @@ describe('shipped selector shape is unchanged', () => {
 		expect(pick.resolveTargets({ type: 'objectselector' }, null)).toEqual([]);
 	});
 });
+
+// 102b-flows boot trim: selectorCore carries its own copies of the boot half's four helpers (so the
+// lazy chunk never imports the boot one); the two copies must answer alike.
+describe('selectorCore and selectorPick agree', () => {
+	it('pickOf / isManySelector / matchOf / selectorKey', async () => {
+		const pick = await import('../../src/lib/selectorPick.js');
+		const core = await import('../../src/lib/selectorCore.js');
+		const cases = [undefined, null, {}, { pick: 'tag', match: ' Red ' }, { pick: 'group', match: 'g' }, { pick: 'name', match: 'Star*' }, { pick: 'bogus' }, { pick: 'object', selected: 'u' }, { pick: 'tag', match: 5 }];
+		for (const d of cases) {
+			expect(core.pickOf(d)).toBe(pick.pickOf(d));
+			expect(core.isManySelector(d)).toBe(pick.isManySelector(d));
+			expect(core.matchOf(d)).toBe(pick.matchOf(d));
+			expect(core.selectorKey(d)).toBe(pick.selectorKey(d));
+		}
+	});
+});

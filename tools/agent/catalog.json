@@ -3,7 +3,7 @@
 	"format": 2,
 	"generator": {
 		"source": "tpAgent.tools() via core scripts/agent-tool-catalog.cjs, mapped by tools/agent/src/catalog.js",
-		"hostTools": 83,
+		"hostTools": 84,
 		"dropped": []
 	},
 	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
@@ -3905,6 +3905,86 @@
 			}
 		},
 		{
+			"name": "set_npc",
+			"title": "Make an object an enemy",
+			"description": "Make an object an ENEMY (an NPC): it walks the navmesh (baked from the scene, round walls), patrols a Path, sees the player in a cone (sight angle + range, blocked by walls), hears noises (hearing radius; louder noises reach further), chases, attacks in attack range (an \"attack\" event every attack.every s), gives up after giveUp s without the player and walks back to its path or home spot. A target it cannot reach stops it at the closest point with an \"unreachable\" event. path = a Path object uuid, \"new\" (a loop path around it) or \"none\" (guard the spot). Fields you leave out keep their value (the defaults on a new enemy). remove: true makes it an ordinary object again. Same as the object menu's \"Make this an enemy\" sheet. One undo step (two with path \"new\": the path, then the enemy).\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"object": {
+						"type": "string",
+						"description": "the uuid of the object that becomes the enemy"
+					},
+					"path": {
+						"type": "string",
+						"description": "a Path object uuid, \"new\" or \"none\""
+					},
+					"sight": {
+						"type": "object",
+						"properties": {
+							"angle": {
+								"type": "number",
+								"description": "degrees, 10..360 (default 100)"
+							},
+							"range": {
+								"type": "number",
+								"description": "m (default 12)"
+							}
+						}
+					},
+					"hearing": {
+						"type": "number",
+						"description": "m, how far a normal noise is heard (default 6)"
+					},
+					"chase": {
+						"type": "number",
+						"description": "m, it gives up when the player gets further than this (default 25)"
+					},
+					"attack": {
+						"type": "object",
+						"properties": {
+							"range": {
+								"type": "number",
+								"description": "m (default 1.6)"
+							},
+							"every": {
+								"type": "number",
+								"description": "s between attacks (default 1)"
+							}
+						}
+					},
+					"speed": {
+						"type": "number",
+						"description": "walking speed on patrol, m/s (default 1.6)"
+					},
+					"run": {
+						"type": "number",
+						"description": "chase speed, m/s (default 3.6)"
+					},
+					"giveUp": {
+						"type": "number",
+						"description": "s without seeing or hearing the player before it returns (default 4)"
+					},
+					"alert": {
+						"type": "number",
+						"description": "s it looks toward a noise before searching (default 1.5)"
+					},
+					"remove": {
+						"type": "boolean"
+					}
+				},
+				"required": [
+					"object"
+				]
+			},
+			"annotations": {
+				"title": "Make an object an enemy",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
 			"name": "search_assets",
 			"title": "Find assets",
 			"description": "Find assets to build with, by words and kind: models and prefabs to place, sounds, images, CC0 materials and HDRIs. Searches the shared library, the packs (models, and the sounds of the sound packs: pack:<name>/<file>), your prefabs and Poly Haven. Each result has an id, name, kind, source, licence, size when known, and how to use it. Read-only.",
@@ -6177,7 +6257,8 @@
 				"levels": "set_levels",
 				"portal": "set_portal",
 				"checkpoint": "set_checkpoint",
-				"loading": "set_loading"
+				"loading": "set_loading",
+				"npc": "set_npc"
 			}
 		},
 		"tools": [
@@ -10386,8 +10467,8 @@
 			},
 			{
 				"name": "game_setup",
-				"title": "Game setup: spawn, play camera, levels, portals, checkpoints, loading",
-				"description": "How the game starts: spawn = where Play starts and which way the player faces; play_camera = first person walking or flying (speed, jump, eye height) and openingView = where the editor camera starts when the scene opens; levels = the game's one Levels table (order, scene or spawn point, goals) and what carries from level to level (score, inventory, health, named variables); portal = a doorway to a level, scene or spot (one player at a time, with a fade / iris / card); checkpoint = a pad that saves the player's progress; loading = the loading screen a level change shows.\nCall it as {\"action\": \"spawn\", \"spawn\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
+				"title": "Game setup: spawn, play camera, levels, portals, checkpoints, loading, enemies",
+				"description": "How the game starts: spawn = where Play starts and which way the player faces; play_camera = first person walking or flying (speed, jump, eye height) and openingView = where the editor camera starts when the scene opens; levels = the game's one Levels table (order, scene or spawn point, goals) and what carries from level to level (score, inventory, health, named variables); portal = a doorway to a level, scene or spot (one player at a time, with a fade / iris / card); checkpoint = a pad that saves the player's progress; loading = the loading screen a level change shows; npc = make an object an enemy that patrols a Path, sees and hears the player, chases, attacks, gives up and returns (the object menu's \"Make this an enemy\" sheet).\nCall it as {\"action\": \"spawn\", \"spawn\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -10399,7 +10480,8 @@
 								"levels",
 								"portal",
 								"checkpoint",
-								"loading"
+								"loading",
+								"npc"
 							],
 							"description": "What to do. Put its fields in the object named after the action."
 						},
@@ -10817,6 +10899,76 @@
 								}
 							},
 							"description": "The loading screen every level change shows (only when the load takes a moment; at least 0.4 s once shown): preset fade | bar | logo | image | item, background, image, logo, bar {style, color}, tips (lines that rotate), title; clear: true = the default bar. Fields you leave out stay. Needs a Levels table (game_setup {action: 'levels'}). No field reads it. One undo step."
+						},
+						"npc": {
+							"type": "object",
+							"properties": {
+								"object": {
+									"type": "string",
+									"description": "the uuid of the object that becomes the enemy"
+								},
+								"path": {
+									"type": "string",
+									"description": "a Path object uuid, \"new\" or \"none\""
+								},
+								"sight": {
+									"type": "object",
+									"properties": {
+										"angle": {
+											"type": "number",
+											"description": "degrees, 10..360 (default 100)"
+										},
+										"range": {
+											"type": "number",
+											"description": "m (default 12)"
+										}
+									}
+								},
+								"hearing": {
+									"type": "number",
+									"description": "m, how far a normal noise is heard (default 6)"
+								},
+								"chase": {
+									"type": "number",
+									"description": "m, it gives up when the player gets further than this (default 25)"
+								},
+								"attack": {
+									"type": "object",
+									"properties": {
+										"range": {
+											"type": "number",
+											"description": "m (default 1.6)"
+										},
+										"every": {
+											"type": "number",
+											"description": "s between attacks (default 1)"
+										}
+									}
+								},
+								"speed": {
+									"type": "number",
+									"description": "walking speed on patrol, m/s (default 1.6)"
+								},
+								"run": {
+									"type": "number",
+									"description": "chase speed, m/s (default 3.6)"
+								},
+								"giveUp": {
+									"type": "number",
+									"description": "s without seeing or hearing the player before it returns (default 4)"
+								},
+								"alert": {
+									"type": "number",
+									"description": "s it looks toward a noise before searching (default 1.5)"
+								},
+								"remove": {
+									"type": "boolean"
+								}
+							},
+							"required": [
+								"object"
+							],
+							"description": "Make an object an ENEMY (an NPC): it walks the navmesh (baked from the scene, round walls), patrols a Path, sees the player in a cone (sight angle + range, blocked by walls), hears noises (hearing radius; louder noises reach further), chases, attacks in attack range (an \"attack\" event every attack.every s), gives up after giveUp s without the player and walks back to its path or home spot. A target it cannot reach stops it at the closest point with an \"unreachable\" event. path = a Path object uuid, \"new\" (a loop path around it) or \"none\" (guard the spot). Fields you leave out keep their value (the defaults on a new enemy). remove: true makes it an ordinary object again. Same as the object menu's \"Make this an enemy\" sheet. One undo step (two with path \"new\": the path, then the enemy)."
 						}
 					},
 					"required": [
@@ -10824,7 +10976,7 @@
 					]
 				},
 				"annotations": {
-					"title": "Game setup: spawn, play camera, levels, portals, checkpoints, loading",
+					"title": "Game setup: spawn, play camera, levels, portals, checkpoints, loading, enemies",
 					"readOnlyHint": false,
 					"destructiveHint": true,
 					"openWorldHint": false

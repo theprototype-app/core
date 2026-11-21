@@ -969,7 +969,8 @@ export function endStroke() {
 	present(s);
 	const ok = s.dabs > 0 ? commit(s) : (cancelOpened(s), false);
 	release(s);
-	lastStroke = { id: s.id, sp: s.sp, ch: s.ch, dabs: s.dabs, committed: ok, r: s.r };
+	// the stroke as a peer received it (spec + every rounded point), so a suite can REPLAY it and compare pixels
+	lastStroke = { id: s.id, uuid: s.uuid, slot: s.slot, sp: s.sp, ch: s.ch, c: s.c, r: s.r, b: s.b, pm: s.pm, n: s.n, dabs: s.dabs, committed: ok, points: s.points.length <= 2048 ? s.points.map((/** @type {number[]} */ p) => [...p]) : null };
 	return ok;
 }
 
@@ -1402,21 +1403,39 @@ export function channelBackdrop(mesh, slot, ch) {
 /** @type {any} */
 let lastStroke = null;
 
-/** A hash of a slot's current map pixels (the channel's paint canvas when it is installed, else its image), so a
- * suite can say "both peers show the same pixels". @param {string} uuid @param {number} slot @param {string} ch */
+/** A hash of the pixels a slot's channel READS, so a suite can say "both peers (or a reload, or a re-import) show the
+ * same thing": all four bytes for colour and emission, only green for roughness and only blue for metalness (a glTF
+ * round trip merges the two into one image), rows in three's flipY = true order whatever the texture says (the
+ * glTF loader turns flipY off and the exporter flips the image to match). @param {string} uuid @param {number} slot
+ * @param {string} ch */
 export function mapHash(uuid, slot = 0, ch = 'color') {
 	const object = objectOf(uuid);
 	const material = materialAt(object, slot);
-	const key = channelOf(ch).map;
-	const image = drawable(material?.[key]?.image);
+	const key = channelOf(ch);
+	const texture = material?.[key.map];
+	const image = drawable(texture?.image);
 	if (!image) return null;
+	const w = image.width;
+	const h = image.height;
 	const canvas = document.createElement('canvas');
-	canvas.width = image.width;
-	canvas.height = image.height;
+	canvas.width = w;
+	canvas.height = h;
 	const ctx = canvas.getContext('2d', { willReadFrequently: true });
 	if (!ctx) return null;
 	ctx.drawImage(image, 0, 0);
-	return hashBytes(ctx.getImageData(0, 0, canvas.width, canvas.height).data);
+	const px = ctx.getImageData(0, 0, w, h).data;
+	const flip = texture.flipY === false;
+	const at = key.key === 'roughness' ? 1 : key.key === 'metalness' ? 2 : -1;
+	const out = new Uint8Array(at < 0 ? px.length : w * h);
+	for (let y = 0; y < h; y++) {
+		const sy = flip ? h - 1 - y : y;
+		for (let x = 0; x < w; x++) {
+			const i = (sy * w + x) * 4;
+			if (at < 0) out.set(px.subarray(i, i + 4), (y * w + x) * 4);
+			else out[y * w + x] = px[i + at];
+		}
+	}
+	return { hash: hashBytes(out), w, h };
 }
 
 export function meshPaintDebug() {

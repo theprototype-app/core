@@ -19,6 +19,9 @@ import { globalScene, objectsGroup, TControls, lockedObjects, selectedObject, se
 // 27-A: a transform off the wire is sanitised before it reaches the scene graph
 import { sanitizeTransform } from './wireValidate';
 import { noteWireError } from './wireErrors';
+import { stampedRows, sortLockTable, claimStamp, holderOf } from './lockTrust'; // 80a K3
+import { myClaim } from './lockHeld';
+import { sessionNow } from './sessionClock';
 
 //Access scene Store
 let scene = $state();
@@ -407,14 +410,27 @@ export function moveCamera(data) {
  * @param {string} uuid - primary locked object (legacy field, always present).
  * @param {string} peerId - the peer holding the lock.
  * @param {string[]=} uuids - full selection set when the peer multi-selects.
+ * @param {any=} ats - 80a K3: when the peer took each of `uuids` (session clock), parallel to it.
  */
-export function lockGeometry(uuid, peerId, uuids) {
-    const wanted = (uuids && uuids.length ? uuids : [uuid]).filter((/** @type {any} */ entry) =>
-        sceneObjects.getObjectByProperty('uuid', entry)
-    );
+export function lockGeometry(uuid, peerId, uuids, ats) {
+    const list = uuids && uuids.length ? uuids : [uuid];
+    // 80a K3: each row keeps the moment the peer took the object (`ats`, parallel to `uuids`);
+    // claimStamp keeps a stamp we stored before and will not let a new claim on a held object
+    // be dated back past the race window
+    const others = locked.filter((/** @type {any} */ l) => l[0] != peerId);
+    /** @type {Map<string, any>} */
+    const prev = new Map(locked.filter((/** @type {any} */ l) => l[0] == peerId).map((/** @type {any} */ l) => [l[1], l[2]]));
+    const now = sessionNow();
+    const wanted = stampedRows(peerId, list, uuids && uuids.length ? ats : undefined)
+        .filter((/** @type {any} */ row) => typeof row[1] === 'string' && sceneObjects.getObjectByProperty('uuid', row[1]))
+        .map((/** @type {any} */ row) => {
+            const at = claimStamp({ claimed: row[2], prev: prev.get(row[1]), contested: !!holderOf(others, row[1], myClaim(row[1])), now });
+            return at === undefined ? [row[0], row[1]] : [row[0], row[1], at];
+        });
     if (!wanted.length) return;
-    // one lock SET per peer: drop the peer's previous locks, add the new ones
-    locked = locked.filter((/** @type {any} */ lockedUuid) => lockedUuid[0] != peerId);
-    wanted.forEach((/** @type {any} */ entry) => locked.push([peerId, entry]));
+    // one lock SET per peer: drop the peer's previous locks, add the new ones. Rows of two peers
+    // claiming one object are BOTH kept, in holder order (sortLockTable): the earlier stamp holds it,
+    // and when it lets go the other claim takes over with no new message.
+    locked = sortLockTable([...others, ...wanted]);
     lockedObjects.set(locked);
 }

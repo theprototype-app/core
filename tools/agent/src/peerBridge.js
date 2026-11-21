@@ -6,6 +6,9 @@ import { fetchTurn, iceServersFrom } from './turn.js';
 
 installPolyfills();
 
+/** 80a R4: how long an inbound link may wait for the roster */
+const INBOUND_WAIT_MS = 5000;
+
 // peerjs 1.5's socket does not always attach an 'error' handler to the raw ws in
 // time, so a transient signaling error (e.g. the public cloud's 429 rate limit)
 // surfaces as an UNCAUGHT 'error' event that would crash the process. Swallow only
@@ -63,6 +66,7 @@ export class PeerBridge extends EventEmitter {
 		/** 'none' (no endpoint) | 'ok' | why it is missing @type {string} */
 		this.turnState = this.turnApi ? 'pending' : 'none';
 		this.approvalTimeout = opts.approvalTimeout || 120000;
+		this.inboundWaitMs = opts.inboundWaitMs || INBOUND_WAIT_MS;
 		this.verbose = !!opts.verbose;
 
 		this.state = 'idle';
@@ -297,8 +301,31 @@ export class PeerBridge extends EventEmitter {
 	/** @param {any} conn */
 	_onInbound(conn) {
 		this.log('inbound conn from ' + conn.peer);
+		// 80a R4: roster changes are tied to the connection that made them (a link not in the roster yet waits a moment for it)
+		if (!this.whitelist.has(conn.peer)) {
+			const since = Date.now();
+			const wait = () => {
+				if (this.state === 'closed') return;
+				if (this.whitelist.has(conn.peer)) return this._acceptInbound(conn);
+				if (Date.now() - since >= this.inboundWaitMs) {
+					this.log('closing inbound conn (not in the roster): ' + conn.peer);
+					try {
+						conn.close();
+					} catch {}
+					return;
+				}
+				setTimeout(wait, Math.min(250, this.inboundWaitMs / 4));
+			};
+			conn.on('error', () => {});
+			wait();
+			return;
+		}
+		this._acceptInbound(conn);
+	}
+
+	/** @param {any} conn */
+	_acceptInbound(conn) {
 		this.inbound.add(conn);
-		this.whitelist.add(conn.peer);
 		conn.on('data', (d) => this._onData(conn.peer, d));
 		conn.on('close', () => this.inbound.delete(conn));
 		conn.on('error', () => {});
@@ -322,13 +349,17 @@ export class PeerBridge extends EventEmitter {
 		if (!msg || typeof msg !== 'object') return;
 		this.registry.observe(msg, from);
 		this.emit('message', { from, msg });
+		// 80a R4: roster changes are tied to the connection that made them
+		const trusted = from === this.hostId;
 		if (msg.type === 'hosts' && Array.isArray(msg.hosts)) {
 			for (const id of msg.hosts) {
+				if (typeof id !== 'string' || !id || id === this.agentId) continue;
+				if (!trusted && !this.whitelist.has(id)) continue;
 				this.whitelist.add(id);
 				this._openOutgoing(id); // mirror the browser mesh gossip
 			}
-		} else if (msg.type === 'userdata' && Array.isArray(msg.userdata)) {
-			for (const row of msg.userdata) if (row && row[0]) this.whitelist.add(row[0]);
+		} else if (msg.type === 'userdata' && Array.isArray(msg.userdata) && trusted) {
+			for (const row of msg.userdata) if (row && typeof row[0] === 'string' && row[0]) this.whitelist.add(row[0]);
 		}
 	}
 

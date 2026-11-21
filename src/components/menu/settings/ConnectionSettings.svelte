@@ -10,6 +10,7 @@
 	};
 	for (const [row, words] of Object.entries(ROW_WORDS)) registerSettingsKeywords(row, words);
 	registerSettingsKeywords('turn urls', ['relay', 'nat', 'firewall', 'network']);
+	registerSettingsKeywords('locks', ['lock', 'held', 'editing', 'select', 'together', 'room']);
 	registerSettingsKeywords('stun urls', ['nat', 'network']);
 </script>
 
@@ -28,7 +29,11 @@
 	import Button from '../../ui/Button.svelte';
 	import { NAV_CONTEXT } from '$lib/settingsNav';
 	import { peers, showToast } from '../../../stores/appStore.js';
-	import { softPeerCap, HARD_PEER_CAP, SOFT_PEER_CAP_DEFAULT } from '$lib/connectionState';
+	import { softPeerCap, HARD_PEER_CAP, SOFT_PEER_CAP_DEFAULT, sessionHost } from '$lib/connectionState';
+	// 80a K15: the room's lock mode, the host's to set (an admin's too under a roles plugin)
+	import { lockMode, setLockMode, maySetLockMode } from '$lib/lockMode';
+	import { rolesInfo } from '$lib/cloudHooks';
+	import { nameOf } from '$lib/lockHeld';
 	import { agentsAsGuests } from '$lib/inviteStore'; // 55 A4
 	import { showAgentMarkers } from '$lib/agentLog'; // 55 A7
 	import { peerServerConfig, HAS_SELF_HOSTED, SELF_HOSTED_HOST, peerServerStatus } from '$lib/peerServer';
@@ -60,6 +65,15 @@
 	/** @param {Event} e */
 	const value = (e) => /** @type {HTMLInputElement} */ (e.currentTarget).value;
 
+	const LOCK_MODE_OPTIONS = [
+		{ value: 'select', label: 'While selected', title: 'Lock while selected (default)' },
+		{ value: 'edit', label: 'Only while editing', title: 'Lock only while editing: free 3 seconds after the last change' }
+	];
+	const canSetLocks = $derived.by(() => {
+		void $sessionHost;
+		void $rolesInfo;
+		return maySetLockMode();
+	});
 	const MODES = [
 		{ value: 'default', label: 'Default', title: HAS_SELF_HOSTED ? 'Self-hosted, with the public cloud as fallback' : 'The public PeerJS cloud' },
 		{ value: 'public', label: 'Public', title: 'The public PeerJS cloud' },
@@ -110,6 +124,28 @@
 			</SettingRow>
 		</Section>
 	{:else}
+		<!-- 80a K15: how this room locks objects; the host decides, everyone follows (late joiners too) -->
+		<Section variant="card" label="Editing together" badge="This room">
+			<SettingRow
+				id="row-lock-mode"
+				label="Locks"
+				description={canSetLocks
+					? 'While selected: an object is yours from the moment you select it. Only while editing: it is yours while you change it, and free again 3 seconds after your last change.'
+					: 'The host sets this' + ($sessionHost ? ' (' + nameOf($sessionHost) + ')' : '') + '. While selected: an object is held from selection. Only while editing: held while changing it, free 3 seconds after the last change.'}
+				wide
+			>
+				<Segmented
+					id="lock-mode"
+					label="Locks"
+					options={LOCK_MODE_OPTIONS}
+					value={$lockMode.mode}
+					disabled={!canSetLocks}
+					onchange={(v) => {
+						if (!setLockMode(v === 'edit' ? 'edit' : 'select')) showToast('Only the host can change how this room locks objects');
+					}}
+				/>
+			</SettingRow>
+		</Section>
 		<Section variant="card" label="Session" badge="This device">
 			<SettingRow id="row-session-size" label="Session size" description={'How many people you expect. Past this an approval warns; the hard limit is ' + HARD_PEER_CAP + '.'}>
 				<input

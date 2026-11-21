@@ -1,9 +1,9 @@
 import Peer from 'peerjs';
 import { peerSerializers, setFrameRefusalHandler } from './peerCodec.js';
 import { backoffDelay } from '$lib/netBackoff';
-import { sceneCommand, lockRestore, checkLocks, createObject, sendObjects, deleteObject, colorObject, createLoader, userData, handleDisconnected, specator, cameraSettings, objectParameters, applyClearScene, ROSTER_GRACE_MS } from './commandsHandler.svelte';
+import { sceneCommand, lockRestore, checkLocks, createObject, sendObjects, healObjectTo, deleteObject, colorObject, createLoader, userData, handleDisconnected, specator, cameraSettings, objectParameters, applyClearScene, ROSTER_GRACE_MS } from './commandsHandler.svelte';
 import { gateCreationBroadcast } from './objectPermissions';
-import { createGeometry, createLight, createGroup, changeName, moveGeometry, lockGeometry, moveCamera } from '$lib/geometries.svelte';
+import { createGeometry, createLight, createGroup, changeName, moveGeometry, moveCamera } from '$lib/geometries.svelte';
 import { sendNodes, applyNodesSnapshot, applyNodeSync, noteNodesSnapshot, noteNodeSyncHandshake, forgetNodeSyncPeer, createFlowNode, moveFlowNode, updateFlowNodeData, deleteFlowNodes, createFlowEdge, deleteFlowEdges, applyFlowCursor } from '$lib/nodesHandler';
 import { preloadSandboxFor } from '$lib/sandbox/preload.js';
 import { applyGraphCreate, applyGraphDelete } from '$lib/flowGraphs';
@@ -37,13 +37,14 @@ import { applyAgentChatMessage, sendAgentChatBacklogTo, agentChatPeerGone } from
 import { captureInviteHash, verifyInviteDial, joinerInviteMeta, dialingWithInvite, myKind, noteDialKind, noteJoinedVia, agentsAsGuests, isAgentSession, isAgentPeer } from '$lib/inviteStore';
 import { applyKick, isBlocked, isHeldOut, resetModeration, blockReplay } from '$lib/peerModeration'; // 55 A9
 import { notePeerFacts, notePeerActivity, dropPeerFacts, myDevice } from '$lib/peerFacts'; // 55 A9
-import { sessionHost, markPeerJoined, resetSession, signalingRetry, noteSignalingRetry, clearSignalingRetry, noteApprovalStarted, clearApprovalStarted, approvalStartedAt, APPROVAL_WINDOW_MS, MAX_PENDING_APPROVALS, HARD_PEER_CAP, roomIsFull } from '$lib/connectionState';
+import { sessionHost, pendingConnectDecision, markPeerJoined, resetSession, signalingRetry, noteSignalingRetry, clearSignalingRetry, noteApprovalStarted, clearApprovalStarted, approvalStartedAt, APPROVAL_WINDOW_MS, MAX_PENDING_APPROVALS, HARD_PEER_CAP, roomIsFull } from '$lib/connectionState';
 import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo, rolesPending, isFloorMessage, holdUntilRoles } from '$lib/cloudHooks';
 // 27-A (audit H1): shape validation + per-peer failure counters. Both are LEAVES, so the
 // dispatcher can reject a malformed message before any applier sees it.
 import { validateWireMessage } from '$lib/wireValidate';
 import { isPlainMessage } from '$lib/wireShape';
 import { acceptedRosterRows, acceptedMeshIds, acceptsGoneReport, asSendersOwn, acceptedChatLines } from '$lib/rosterTrust';
+import { noteRosterRows, confirmRosterRows, shareableRosterRows } from '$lib/rosterOrigin'; // 80a R1
 import { holdForWireBatch, withWireBatch } from '$lib/wireBatch';
 // 60 Q2: the fast movement channel (an unordered, unreliable second channel for pose streams)
 import { tapAgentEdit } from '$lib/agentPresence';
@@ -64,7 +65,7 @@ import { applyAssetFile, applyAssetThumb, applyAssetStart, applyAssetChunk, appl
 import { applyRemoteCameraPreview, clearPeerPreview, sendCameraPreviewState } from '$lib/cameraPreview';
 // 21-F3: play-mode PRESENCE, the campreview shape — a tiny per-peer message, a reply
 // riding the getmodulestate request, and a drop on disconnect (golden rule 3).
-import { applyRemotePlayMode, dropPeerPlayMode, sendPlayModeState } from '$lib/gamePresence';
+import { applyRemotePlayMode, dropPeerPlayMode, sendPlayModeState, peerPlayModes } from '$lib/gamePresence';
 // P2: watch adopts the watched peer's LOOK STATE — the campreview shape, one row per peer
 import { applyRemoteLookState, dropPeerLook, sendLookState } from '$lib/lookPresence';
 import { applyRemoteFilmPose, dropPeerFilm } from '$lib/film/filmPresence'; // 68 V7
@@ -78,9 +79,12 @@ import { applyRemoteManifest, sendProjectManifest } from '$lib/projectManifest';
 import { applyRemotePeerVars, dropPeerVars, sendPeerVarsState } from '$lib/peerVars';
 import { applyModuleMessage, moduleVersions, checkModuleVersions, checkPeerAppVersion, sendModuleStates, applyModuleStates } from '$lib/moduleSDK';
 import { APP_VERSION, COMMIT_SHA } from '$lib/version.js';
-import { applyLockRequest, applyUnlock, applyLockDenied } from '$lib/lockControl';
+import { applyLockRequest, applyUnlock, applyLockDenied, applyRemoteLock, applyLockReject, yieldLostLocks, gateLockedEdit, dropPeerLockState, releaseOnHeal, startLockLifecycle, releaseEditLock } from '$lib/lockControl';
+import { applyLockMode, lockModeMessage, registerLockModeHooks, claimForEdit } from '$lib/lockMode'; // 80a K15
+import { myLockRows, touchMyLock } from '$lib/lockHeld'; // 80a K3 / K6
+import { gatedUuid } from '$lib/lockTrust';
 import { applyDrawLive, applyDrawEnd } from '$lib/drawMode';
-import { applySimulate, applySimVote, applySimHandoff, physicsExternalMove, applyThrow, applyHit, simulating, simPaused } from '$lib/physics';
+import { applySimulate, applySimVote, applySimHandoff, physicsExternalMove, applyThrow, applyHit, simulating, simPaused, remoteSimulating } from '$lib/physics';
 import { noteRemoteMove } from '$lib/moveSmoothing';
 import { noteRemoteHit, endKnockPrediction } from '$lib/knock';
 import { applyJointCreate, applyJointDelete, applyJointsSnapshot, sendJoints } from '$lib/joints';
@@ -377,6 +381,8 @@ function agentMadeObject(uuid) {
 export class PeerConnection {
 	constructor(id, updateIdFn) {
 		this.updateIdFn = updateIdFn;
+		startLockLifecycle(); // 80a K6: idle expiry of what we hold (idempotent)
+		registerLockModeHooks({ send: (data) => this.send(data) }); // 80a K15
 		// fix-agenttest 6: a reload while joined comes back on the SAME id and dials the host
 		// (rejoin.js); the host re-admits an id that left by unloading (unloadedPeers)
 		const rejoin = takeRejoin();
@@ -389,6 +395,8 @@ export class PeerConnection {
 		this.goneReportAgain = false;
 		/** @type {Set<string>} peers that approved a request of ours: they speak for a session we asked into */
 		this.approvedBy = new Set();
+		/** @type {Map<string, string>} 80a R1 */
+		this.joinedVia = new Map();
 		this.myId = rejoin?.id ?? id;
 		this.reconnectAttempts = 0;
 		this.hasOpened = false;   // the signaling link has opened at least once
@@ -1001,8 +1009,9 @@ export class PeerConnection {
 					// host (first approval wins; null while hosting ourselves).
 					if (!get(sessionHost)) sessionHost.set(conn.peer);
 					this.approvedBy.add(conn.peer);
+					confirmRosterRows(conn.peer); // 80a R1
 					// Our own guests ask that peer too, and it decides: it approved us, not them.
-					if ([...this.openedPeers].some((/** @type {string} */ id) => id !== conn.peer)) this.broadcast({ type: 'hosts', hosts: [conn.peer], joined: true });
+					this.announceJoinedHost(conn.peer);
 					settleRejoin('joined'); // fix-agenttest 6: no-op unless this was the reload's dial
 
 					// Show approved toast message
@@ -1338,6 +1347,22 @@ export class PeerConnection {
 				// their flows). Its live edits still broadcast as they happen; requests are just unanswered —
 				// the Stay shape, which every requester already handles (a later joiner gets the host's reply).
 				if (data && AGENT_UNANSWERED.has(data.type) && myKind() === 'agent') return;
+				// 80a K3: THE LOCK GATE. An edit of an object somebody else holds is not applied here;
+				// when we hold it the sender is told and gets the object back as it is (lockControl).
+				// A running world moves things, so `move` passes while a simulation runs or the sender plays.
+				if (data && gatedUuid(data) && !gateLockedEdit(conn.peer, data, {
+					runtime: get(simulating) || !!get(remoteSimulating) || !!(/** @type {any} */ (get(peerPlayModes)))[conn.peer],
+					replay: () => {
+						if (conn.open === false) return;
+						try {
+							dispatch(data);
+						} catch (error) {
+							noteWireError(conn.peer, data.type, error);
+						}
+					},
+					heal: (peerId, uuid, flow) => this.healLockedEdit(peerId, uuid, flow, conn),
+					conn
+				})) return;
 				// 55 A9: who did what, for the peer menu's "Show their recent changes" (LOCAL,
 				// past every gate — only what was actually applied here is recorded)
 				notePeerActivity(conn.peer, data);
@@ -1371,7 +1396,7 @@ export class PeerConnection {
 				} else if(data.type == 'hosts') {
 					console.log('Connecting to received hosts');
 					// our host joined that peer: it speaks for the session we are now part of
-					if (data.joined === true && this.rosterTrustFor(conn.peer).speaksForSession) data.hosts.forEach((/** @type {any} */ id) => { if (typeof id === 'string' && id !== this.peer.id) this.approvedBy.add(id); });
+					if (data.joined === true && this.rosterTrustFor(conn.peer).speaksForSession) data.hosts.forEach((/** @type {any} */ id) => { if (typeof id === 'string' && id !== this.peer.id) (this.approvedBy.add(id), this.joinedVia.set(id, conn.peer)); });
 					acceptedMeshIds(data.hosts, this.rosterTrustFor(conn.peer)).forEach( id =>
 					{
 						if (id === this.peer.id) return;
@@ -1682,16 +1707,28 @@ export class PeerConnection {
 				} else if(data.type == 'lockdenied') {
 					applyLockDenied(data, conn.peer);
 				} else if(data.type == 'lock') {
-					lockGeometry(data.uuid, conn.peer, data.uuids);
+					// 80a K3: stamped rows; a claim of ours this peer took first is let go
+					applyRemoteLock(data, conn.peer);
+				} else if(data.type == 'lockreject') {
+					// 80a K3: the holder refused an edit of ours (only the holder may say so)
+					applyLockReject(data, conn.peer);
+				} else if(data.type == 'lockmode') {
+					// 80a K15: the room's lock mode, from the host (or an admin) only
+					applyLockMode(data, conn.peer);
 				} else if(data.type == 'locked') {
 					// the host forwards the room's table; anyone else speaks for its own rows,
 					// and only if it may take locks at all (`locked` is on the canApply floor)
 					lockRestore(data.lockeditems, conn.peer, get(sessionHost) === conn.peer, canApply(conn.peer, 'lock'));
+					yieldLostLocks(conn.peer);
 				} else if(data.type == 'userdata') {
 					// F-5: the roster applier UNIONS, so a third peer still linked to someone this host
 					// removed would put them straight back in Users — a removed peer stays out of ours
 					const rows = acceptedRosterRows(data.userdata, this.rosterTrustFor(conn.peer));
-					userData(this.removedPeers.size ? rows.filter((/** @type {any} */ e) => !this.removedPeers.has(e?.[0])) : rows);
+					const before = new Set(/** @type {any[]} */ (get(userdata)).map((u) => u[0]));
+					const taken = this.removedPeers.size ? rows.filter((/** @type {any} */ e) => !this.removedPeers.has(e?.[0])) : rows;
+					userData(taken);
+					// 80a R1: roster changes are tied to the connection that made them
+					noteRosterRows(conn.peer, taken, before, this.askingOnly(conn.peer));
 					// a mesh dial that beat this roster left a card; the roster answers it
 					if (this.rosterTrustFor(conn.peer).speaksForSession) {
 						const named = /** @type {any[]} */ (get(userdata));
@@ -2205,6 +2242,9 @@ export class PeerConnection {
 	/** @param {any} conn @param {string} peerId @param {boolean} getobjects @param {string} id
 	 * @param {{heal?: boolean}} [opts] heal: this conn REPLACES one that dropped (the reconnect window) */
 	sendHandshake(conn, peerId, getobjects, id, opts = {}) {
+		// 80a K6: a healed link lets go of what was held across the drop, on both sides, before this
+		// handshake's `locked` is built (QUESTIONS-80a-locks Q1/Q2; fix4-net's heal paths all land here)
+		if (opts.heal) releaseOnHeal(peerId);
 		noteNodeSyncHandshake(peerId) // 54i row g: the nodesync join window runs from the link, not a later first nodesync
 		// 25-F: an approval dial-back SAYS it is one, ahead of everything else (the roadmap's
 		// "first message"). The metadata already carried it; this is the same answer for a
@@ -2223,8 +2263,8 @@ export class PeerConnection {
 		// dialled a departed peer (peer-unavailable)
 		let hosts = meshHosts(id, peerId, this.connections, this.reconnecting);
 		console.log("sending to " + peerId + "  remote " + hosts)
-		let locks = [...locked];
-		if(typeof selected.uuid != 'undefined' && selected.uuid) locks.push([id, selected.uuid]);
+		// 80a K3 (L5): every object we hold, each with its stamp, not just the primary selection
+		let locks = [...locked, ...myLockRows()];
 		// A1: WHERE WE ARE, ahead of everything else — the reasoning lives on
 		// `sendMyScene`, which A2 shares with the arrival re-sync for the same reason.
 		this.sendMyScene(conn);
@@ -2240,8 +2280,13 @@ export class PeerConnection {
 		// `hostsPrivate` is read once here and reused by the content hold further down.
 		const hostsPrivate = amPrivate();
 		if (!hostsPrivate) conn.send({type: 'locked', lockeditems: locks})
+		// 80a K15: the host tells a joiner the room's lock mode (nothing while it was never changed)
+		const lockModeMsg = get(sessionHost) === null ? lockModeMessage() : null;
+		if (lockModeMsg) conn.send(lockModeMsg)
 		conn.send({type: 'hosts', hosts: hosts})
-		conn.send({type: 'userdata', userdata: users.filter((/** @type {any} */ u) => !isHeldOut(u[0]))})
+		conn.send({type: 'userdata', userdata: shareableRosterRows(users.filter((/** @type {any} */ u) => !isHeldOut(u[0])), get(waitingForApproval))})
+		// 80a R1
+		this.announceJoinedHost(get(sessionHost), conn);
 		// 55 A8: the newest agent log lines, so a late joiner's AI window shows what was built
 		sendAgentLogTo(conn);
 		sendAgentChatBacklogTo(conn); // 56 C1: the agent chats so far
@@ -2723,6 +2768,7 @@ export class PeerConnection {
 		// ignore a close from a stale conn we've already replaced or removed
 		if (this.connections[peerId] !== conn) return;
 		console.log('connection to ' + peerId + ' closed');
+		this.dropKnocksVia(peerId); // 80a R1
 		delete this.connections[peerId];
 		peers.update((value) => value);
 		// 101 F1: a link closed by a protocol refusal is over — no reconnect window, no redial
@@ -2907,7 +2953,7 @@ export class PeerConnection {
 			delete this.connections[peerId];
 			try { conn?.close(); } catch (e) { /* never opened */ }
 		}
-		this.broadcast({ type: 'userdata', userdata: get(userdata) });
+		this.broadcast({ type: 'userdata', userdata: shareableRosterRows(get(userdata), get(waitingForApproval)) });
 		showToast(shortPeer(peerId) + ' was removed. They cannot rejoin while this tab stays open.');
 	}
 
@@ -3275,6 +3321,17 @@ export class PeerConnection {
 		// viewer perms: a viewer's object CREATIONS never leave this machine — mark
 		// them local-only + warn, and skip the broadcast (peers drop them anyway).
 		if (gateCreationBroadcast(data)) return;
+		// 80a R1: roster changes are tied to the connection that made them
+		if (data?.type === 'userdata' && Array.isArray(data.userdata)) data = { ...data, userdata: shareableRosterRows(data.userdata, get(waitingForApproval)) };
+		// 80a K6: an edit we send of an object we hold is activity (the idle expiry counts from it)
+		for (const item of data?.type === 'batch' && Array.isArray(data.items) ? data.items : [data]) {
+			const u = item && gatedUuid(item);
+			if (!u) continue;
+			// 80a K15 "Lock only while editing": the first edit takes the object, its lock going out first
+			const claim = claimForEdit(u, releaseEditLock);
+			if (claim) this.broadcast(claim);
+			touchMyLock(u);
+		}
 		// 78-int PL13: a live scene-singleton edit says it is one (`by`, additive; older peers ignore it)
 		const by = noteLocalSceneEdit(data);
 		if (by) data.by = by;
@@ -3302,6 +3359,77 @@ export class PeerConnection {
 				this.sweepRosterLater();
 			}
 		}, ROSTER_GRACE_MS + 1000);
+	}
+
+	/**
+	 * 80a K3: the answer to an edit we refused (we hold the object): the object as it is here, sent
+	 * to the peer that edited it, as an arrival heal (`override`), which replaces its copy in place.
+	 * A flow edit is answered with the flow documents. Nothing when the object is gone here.
+	 * @param {string} peerId @param {string} uuid @param {boolean} flow @param {any} [via] the connection the edit came on
+	 */
+	healLockedEdit(peerId, uuid, flow, via) {
+		const conn = via?.open ? via : this.connections[peerId];
+		if (!conn?.open) return;
+		if (flow) {
+			sendNodes(peerId);
+			return;
+		}
+		healObjectTo(conn, uuid);
+	}
+
+	/**
+	 * 80a R1: is a request of ours to `from` still open?
+	 * @param {string} from
+	 */
+	askingOnly(from) {
+		if (get(sessionHost) === from || this.approvedBy.has(from)) return false;
+		return get(waitingForApproval).some((/** @type {any} */ w) => w[0] === from && w[1] === 'pending');
+	}
+
+	/**
+	 * 80a R1: the session we joined, to our guests (or one link).
+	 * @param {string | null} hostId @param {any} [conn]
+	 */
+	announceJoinedHost(hostId, conn) {
+		if (!hostId) return;
+		const go = () => {
+			if (get(sessionHost) !== hostId && !this.approvedBy.has(hostId)) return;
+			if (!this.connections[hostId]?.open) return;
+			const msg = { type: 'hosts', hosts: [hostId], joined: true };
+			if (conn) {
+				if (conn.peer !== hostId && conn.open) conn.send(msg);
+			} else if ([...this.openedPeers].some((/** @type {string} */ id) => id !== hostId)) this.broadcast(msg);
+		};
+		if (!get(pendingConnectDecision)) return go();
+		/** @type {(() => void) | null} */ let stop = null;
+		stop = pendingConnectDecision.subscribe((pending) => {
+			if (pending) return;
+			queueMicrotask(() => {
+				stop?.();
+				go();
+			});
+		});
+	}
+
+	/**
+	 * 80a R1: roster changes are tied to the connection that made them.
+	 * @param {string} peerId
+	 */
+	dropKnocksVia(peerId) {
+		for (const [hostId, via] of [...this.joinedVia]) {
+			if (via !== peerId) continue;
+			this.joinedVia.delete(hostId);
+			if (get(sessionHost) === hostId || this.connections[hostId]?.open) continue;
+			this.approvedBy.delete(hostId);
+			if (get(waitingForApproval).some((/** @type {any} */ w) => w[0] === hostId)) cancelOutboundRequest(hostId);
+			else {
+				const knock = this.connections[hostId];
+				if (knock && !knock.open) {
+					delete this.connections[hostId];
+					try { knock.close(); } catch { /* never opened */ }
+				}
+			}
+		}
 	}
 
 	/**

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
+import { lockMessage } from './lockHeld';
 import {
 	globalScene,
 	globalCamera,
@@ -507,7 +508,7 @@ export function enterEditMode(uuid) {
 	// peers must not edit/select it meanwhile
 	/** @type {any} */
 	const peer = get(peers);
-	if (peer) peer.send({ type: 'lock', uuid: uuid, peerId: peer.peer.id });
+	if (peer) peer.send(lockMessage([uuid], peer.peer.id)); // 80a K3: stamped
 
 	editingObject.set(uuid);
 	noteEditEnter('vertex', uuid); // 15-F: opens (or continues) the undo barrier

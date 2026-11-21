@@ -34,6 +34,7 @@ import { currentLevel } from './levels';
 import { myPlayMode, peerPlayModes } from './gamePresence';
 import { onPlayOrigin, playUrl } from './playOrigin.js';
 import { safeStorage } from './safeStorage';
+import { setLockMode, lockMode } from './lockMode'; // 80a K15
 // v3.1 (roadmap 29 G-3): the hosted-AI preset seam. Both provider modules are LEAVES
 // (svelte/store + safeStorage), so a static edge from here closes nothing.
 import { meshJobStatus, onExportBuilt, onTemplateOpen, onFunnelEvent, setSceneHeart, problemReporter, setWhatsNewCloud, setConnectBadge, setPeerMenuItems, setConnectorProvider, connectorSignInSlot } from './cloudHooks';
@@ -396,6 +397,13 @@ export function makeCloudApi() {
 		/** publish the live roles so core can render per-peer role controls + gate
 		 *  viewer actions (2026-07-25). Pass null to clear. */
 		setRolesInfo: (/** @type {any} */ info) => rolesInfo.set(info || null),
+
+		// --- 80a K15: the room's lock mode, for the room settings (additive; typeof-probe it) ---
+		/** 'select' (lock while selected, default) | 'edit' (lock only while editing); false = not
+		 *  ours to set (host or admin only). Everyone follows the host's value. */
+		setLockMode: (/** @type {any} */ mode) => setLockMode(mode),
+		/** the current mode, and a subscription to it: {mode, at} */
+		lockMode: { get: () => get(lockMode).mode, subscribe: (/** @type {any} */ fn) => lockMode.subscribe(fn) },
 
 		// --- 21-G5 (F7): cross-scene presence, v2.4 --------------------------------
 		/** publish who is in the project's OTHER rooms/scenes (the rolesInfo bridge

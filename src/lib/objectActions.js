@@ -38,6 +38,8 @@ import {
 	toggleExpand
 } from '../stores/appStore';
 import { canEditObject, warnViewerReadOnly } from './objectPermissions';
+import { lockMessage, dropMyLocks, heldByOther, lockedView as lockedViewStore } from './lockHeld'; // 80a K3 / K4
+import { lockOnEdit, editLocksToDrop } from './lockMode'; // 80a K15
 import { stripEditOverlays, isEditOverlay } from './editOverlays';
 // B7: the transient marker (a LEAF — two stores only, so no cycle back through history)
 import { markTransient } from './transientObjects';
@@ -194,18 +196,15 @@ export function lastSelectionMemory() {
  * @param {string[]} uuids @param {boolean=} openProperties */
 export function applySelectionSet(uuids, openProperties = false) {
 	lockedViewUuid = null; // 36 B1: a real selection ends any locked VIEW
+	lockedViewStore.set(null); // 80a K4
 	const group = get(objectsGroup);
 	/** @type {any} */
 	const controls = get(TControls);
 	/** @type {any} */
 	const peer = get(peers);
-	const locked = get(lockedObjects);
-	// sets never contain peer-locked objects
-	const clean = uuids.filter(
-		(uuid) =>
-			group?.getObjectByProperty('uuid', uuid) &&
-			!locked.find((lockedUuid) => lockedUuid[1] === uuid)
-	);
+	// sets never contain objects another peer holds (80a K3: the HOLDER, so a losing claim of
+	// someone else's does not knock an object we won out of our own set)
+	const clean = uuids.filter((uuid) => group?.getObjectByProperty('uuid', uuid) && !heldByOther(uuid));
 	applyMemberTints(group, clean);
 	if (clean.length) clearModuleSelection(); // 30 P3: an object selection replaces the proxy
 	const previous = get(selectedObjects);
@@ -252,7 +251,18 @@ export function applySelectionSet(uuids, openProperties = false) {
 		}
 	}
 	// one lock message covers the whole set (receivers replace this peer's set)
-	if (peer) peer.send({ type: 'lock', uuid: clean[clean.length - 1], uuids: clean, peerId: peer.peer.id });
+	// 80a K3: each uuid carries the moment we took it (`ats`), which is what settles two peers selecting at once
+	if (peer) {
+		if (lockOnEdit()) {
+			// 80a K15 "Lock only while editing": selecting takes nothing; edit locks on objects no
+			// longer selected are let go
+			const drop = editLocksToDrop(clean);
+			if (drop.length) {
+				dropMyLocks(drop);
+				for (const uuid of drop) peer.send({ type: 'unlock', peerId: peer.peer.id, uuid });
+			}
+		} else peer.send(lockMessage(clean, peer.peer.id));
+	}
 	// 15-O: explicit request (double-click / context menu / object list), a
 	// PINNED panel (follows every selection), or a panel already showing the
 	// selection. A plain viewport click alone no longer forces it open.
@@ -339,8 +349,7 @@ export function selectObject(uuid, openProperties = false, additive = false) {
 
 	/** @type {any} */
 	const controls = get(TControls);
-	const locked = get(lockedObjects);
-	const isLockedByPeer = !!locked.find((lockedUuid) => lockedUuid[1] === uuid);
+	const isLockedByPeer = heldByOther(uuid);
 
 	if (additive) {
 		if (isLockedByPeer) return; // locked objects can't join a set
@@ -355,6 +364,7 @@ export function selectObject(uuid, openProperties = false, additive = false) {
 	if (isLockedByPeer) {
 		// keep the original locked-view behavior: show it, no gizmo, no lock
 		lockedViewUuid = uuid; // 36 B1: Ctrl+D may duplicate what is being VIEWED, and only that
+		lockedViewStore.set(uuid); // 80a K4: the flow editor opens this object's flow view-only
 		releaseMultiPivot();
 		applyMemberTints(group, []);
 		broadcastSelectionRelease(get(selectedObjects)); // 16-P6: let go of what we held
@@ -379,12 +389,15 @@ export function selectObject(uuid, openProperties = false, additive = false) {
 export function broadcastSelectionRelease(uuids) {
 	/** @type {any} */
 	const peer = get(peers);
-	if (!peer?.peer?.id || !uuids?.length) return;
+	if (!uuids?.length) return;
+	dropMyLocks(uuids);
+	if (!peer?.peer?.id) return;
 	for (const uuid of uuids) peer.send({ type: 'unlock', peerId: peer.peer.id, uuid });
 }
 
 export function deselectObject() {
 	lockedViewUuid = null; // 36 B1: a deselect ends a locked view too
+	lockedViewStore.set(null); // 80a K4
 	/** @type {any} */
 	const controls = get(TControls);
 	releaseMultiPivot();

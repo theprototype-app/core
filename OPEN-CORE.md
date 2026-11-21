@@ -62,6 +62,8 @@ export function register(api) {
   // Roles / presence bridges (core renders, the plugin decides)
   api.setRolesInfo(info)           // { myId, myRole, amAdmin, order, roleOf, setRole } | null
   api.setScenePresence(data)       // who is in the project's OTHER rooms | null — v2.4
+  api.setLockMode(mode)            // 'select' | 'edit': the room's lock mode (host / admin only; false = refused) — 80a
+  api.lockMode.get() / .subscribe  // the current {mode, at}; everyone follows the host's value
   api.setAccountIdentity(id)       // {username, avatar, email} | null — the collaborative identity
   api.currentScene() / api.playModes() / api.peerRoster() / api.sessionHost()
   api.connectToPeer(peerId)        // dial through the normal request flow
@@ -408,8 +410,11 @@ and is **1**; a peer that sends no `proto` speaks 1 (every build up to 1.65).
 - **Bump `proto` only** when a message changes meaning in a way an older build would apply wrongly.
   Additive fields and new message types do not bump it (an older build counts and drops a type it
   does not know); they become a **`caps` flag** instead — today `wb` (batch envelopes), `fc` (fast
-  movement channel), `dev` (a device row in `modules`). Extensions (80a's held-set handshake) add a
-  flag here and read it from `peerCaps`; absent = the peer does not have it.
+  movement channel), `dev` (a device row in `modules`), `lk` (80a: object locks are stamped and gated —
+  `lock` carries `ats` parallel to `uuids` (when each object was taken, session clock), the handshake's
+  `locked` carries every held object, an edit of an object someone else holds is not applied and the
+  holder answers `lockreject {uuid}` plus the object as it is; `lockmode {mode, at}` from the host says
+  whether selecting locks). Read a flag from `peerCaps`; absent = the peer does not have it.
 - **Inbound limits (F4):** each peer has a per-second budget of messages and bytes and an `object`
   size cap ([src/lib/wireBudget.js](src/lib/wireBudget.js) `LIMITS`, set at >= 4x the measured
   peaks); a message over budget is dropped and counted (`budget:*` in Diagnostics), the person is

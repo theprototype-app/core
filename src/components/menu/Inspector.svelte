@@ -234,7 +234,11 @@
 		globalCamera,
 		orbitControls,
 		viewMode,
-		showGrid, pokeScene } from '../../stores/sceneStore';
+		showGrid, pokeScene, lockedObjects } from '../../stores/sceneStore';
+	// 80a K1: an object another peer holds shows read-only, with who and Request control
+	import { myLocks, holderNow } from '$lib/lockHeld';
+	import { heldReadOnly } from '$lib/ui/heldReadOnly';
+	import HeldBanner from './HeldBanner.svelte';
 	// 16-P3: grid + snapping prefs (LOCAL, like the clip planes)
 	import { gridSettings, setGrid, resetGrid, effectiveCell } from '$lib/gridSettings';
 	import { snapEnabled, snapSettings, surfaceSnap, snapTargets } from '$lib/snapping';
@@ -431,6 +435,18 @@
 		const kept = /** @type {any} */ ($selectedObject);
 		if (pane === 'scene' || $inspectorClose || $inspectorKind !== 'selection' || ($selectedObjects ?? []).length || !kept?.uuid || !group) return;
 		if (group.getObjectByProperty('uuid', kept.uuid) !== kept) closeSelectionInspector();
+	});
+
+	// 80a K1 (fixes L1): the object on screen is held by ANOTHER peer -> read-only + banner. Live: it
+	// follows the lock table, so the kept object (uir-polish E3) turns read-only the moment a peer takes it.
+	const heldBy = $derived.by(() => {
+		$lockedObjects;
+		$myLocks;
+		const me = /** @type {any} */ ($peers)?.peer?.id;
+		const uuid = /** @type {any} */ ($selectedObject)?.uuid;
+		if (pane === 'scene' || !uuid) return null;
+		const h = holderNow(uuid);
+		return h && h !== me ? h : null;
 	});
 
 	// C1 (roadmap #13): scene-mode physics-objects list. Recomputes on scene/graph
@@ -3339,7 +3355,10 @@
 			{popped}
 		/>
 
-		<div class="flex flex-col gap-3">
+		{#if heldBy}
+			<HeldBanner uuid={$selectedObject.uuid} holder={heldBy} />
+		{/if}
+		<div class="flex flex-col gap-3" class:ins-held={!!heldBy} use:heldReadOnly={!!heldBy}>
 			{#if multiCount}
 				<!-- 17-D1 follow-up: the panel edits the whole SET, so say so — and drop
 				     the single-object identity fields entirely rather than let the
@@ -5323,6 +5342,14 @@
 		border: 1px solid var(--accent);
 		border-radius: var(--radius-input);
 		background: var(--accent-soft);
+	}
+	/* 80a K1: held by another peer: the controls read as disabled; values stay live and readable */
+	.ins-shell :global(.ins-held) {
+		margin-top: 8px;
+	}
+	.ins-shell :global([data-held-ro] [aria-disabled='true']:not(.sec-panel-head)) {
+		opacity: 0.55;
+		cursor: not-allowed;
 	}
 	.ins-shell :global(.ins-accent-text) {
 		color: var(--accent-soft-text);

@@ -58,7 +58,7 @@ class MockPeer extends EventEmitter {
 }
 
 const run = async () => {
-	const bridge = new PeerBridge({ agentId: 'agent1', name: 'agent', hostId: 'host1', approvalTimeout: 5000 });
+	const bridge = new PeerBridge({ agentId: 'agent1', name: 'agent', hostId: 'host1', approvalTimeout: 5000, inboundWaitMs: 400 });
 	bridge._Peer = MockPeer; // inject the mock
 
 	let connected = false;
@@ -116,6 +116,33 @@ const run = async () => {
 	// a further broadcast goes straight out
 	bridge.broadcast(createMsg('box2', 'Sphere'));
 	check('subsequent broadcast sends immediately', reConn.sent.some((m) => m.type === 'create' && m.uuid === 'box2'));
+
+	// 80a R4
+	const stranger = new MockConn('stranger1');
+	let strangerClosed = false;
+	stranger.on('close', () => (strangerClosed = true));
+	bridge.peer.emit('connection', stranger);
+	stranger._open();
+	stranger.emit('data', { type: 'hosts', hosts: ['evil1'] });
+	await new Promise((r) => setTimeout(r, bridge.inboundWaitMs + 150));
+	check('an inbound link not in the roster is closed', strangerClosed && !bridge.whitelist.has('stranger1'));
+	check('and its messages are not read', !bridge.whitelist.has('evil1') && !bridge.peer.outConns.some((c) => c.peer === 'evil1'));
+	// a link that opens just before the roster names it
+	const guest = new MockConn('guest1');
+	let guestClosed = false;
+	guest.on('close', () => (guestClosed = true));
+	bridge.peer.emit('connection', guest);
+	guest._open();
+	await tick();
+	inbound.emit('data', { type: 'userdata', userdata: [['host1', 'Host', ''], ['guest1', 'Guest', '']] });
+	await new Promise((r) => setTimeout(r, bridge.inboundWaitMs + 150));
+	check('a link the roster names in time is taken', !guestClosed && bridge.inbound.has(guest));
+	// rows from a guest
+	guest.emit('data', { type: 'userdata', userdata: [['ghost1', 'X', '']] });
+	guest.emit('data', { type: 'hosts', hosts: ['ghost2'] });
+	await tick();
+	check("a guest's roster names nobody new", !bridge.whitelist.has('ghost1') && !bridge.whitelist.has('ghost2'));
+	check("and its mesh list dials nobody new", !bridge.peer.outConns.some((c) => c.peer === 'ghost2'));
 
 	bridge.shutdown();
 	check('shutdown -> closed', bridge.state === 'closed');

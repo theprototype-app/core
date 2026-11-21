@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { acceptedRosterRows, acceptedMeshIds, acceptsGoneReport, asSendersOwn, acceptedChatLines, SELF_SPOKEN } from '../../src/lib/rosterTrust.js';
+import { acceptedRosterRows, acceptedMeshIds, acceptsGoneReport, asSendersOwn, acceptedChatLines, SELF_SPOKEN, repliesToSender } from '../../src/lib/rosterTrust.js';
 
 const known = (/** @type {string} */ id) => id === 'held';
 const guest = { from: 'g', speaksForSession: false, known };
@@ -85,6 +85,19 @@ describe('asSendersOwn', () => {
 		expect(asSendersOwn(odd, 'g')).toBe(odd);
 		expect(asSendersOwn(null, 'g')).toBe(null);
 	});
+
+	// 80a K12: messages are attributed to the connection that sent them, requests included
+	it('answers a request to the connection that asked, whatever its `sender` says', () => {
+		const asks = ['getobjects', 'getnodes', 'getjoints', 'getanim', 'getshadergraphs', 'gethuds', 'getseqs', 'gettpchats', 'getgame', 'getproject', 'getroomanchor', 'getnodedefs', 'getmodulestate', 'getunderlays', 'getchat', 'clockping', 'clockpong'];
+		for (const type of asks) {
+			expect(repliesToSender(type)).toBe(true);
+			expect(asSendersOwn({ type, sender: 'k', t0: 1 }, 'g')).toEqual({ type, sender: 'g', t0: 1 });
+			expect(asSendersOwn({ type }, 'g').sender).toBe('g');
+			const own = { type, sender: 'g' };
+			expect(asSendersOwn(own, 'g')).toBe(own);
+		}
+		for (const type of ['object', 'get', 'getX', 'lock', 'sent']) expect(repliesToSender(type)).toBe(false);
+	});
 });
 
 describe('acceptedChatLines', () => {
@@ -101,5 +114,18 @@ describe('acceptedChatLines', () => {
 	});
 	it('drops a malformed history', () => {
 		expect(acceptedChatLines('x', host)).toEqual([]);
+	});
+});
+
+describe('80a R3: first arrived', () => {
+	it('the person whose link opened first, whatever their id', async () => {
+		const { firstArrived } = await import('../../src/lib/rosterTrust.js');
+		expect(firstArrived(['zz', '00aa', 'mm'], { zz: 100, '00aa': 300, mm: 200 })).toBe('zz');
+	});
+	it('ties and unknown times fall back to the id, unknown last', async () => {
+		const { firstArrived } = await import('../../src/lib/rosterTrust.js');
+		expect(firstArrived(['b', 'a'], { a: 5, b: 5 })).toBe('a');
+		expect(firstArrived(['a', 'b'], { b: 9 })).toBe('b');
+		expect(firstArrived([], {})).toBe('');
 	});
 });

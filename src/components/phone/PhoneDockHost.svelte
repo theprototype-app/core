@@ -34,6 +34,7 @@
 	import { selectedObjects } from '../../stores/sceneStore';
 	import { inspectorKind } from '../../stores/appStore';
 	import { moduleSelection } from '$lib/moduleContent';
+	import { lockedView } from '$lib/lockHeld'; // 80a K1: viewing an object someone else holds
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
 	onMount(() => {
@@ -75,7 +76,7 @@
 	// Properties with nothing selected has nothing to show (the Inspector would show the last
 	// object, which the selection no longer holds): the frame says so instead
 	const nothingSelected = $derived(
-		$phoneDockShown === 'properties' && $inspectorKind !== 'file' && !($selectedObjects ?? []).length && !$moduleSelection
+		$phoneDockShown === 'properties' && $inspectorKind !== 'file' && !($selectedObjects ?? []).length && !$lockedView && !$moduleSelection
 	);
 
 	// ---- the reused elements -------------------------------------------------------------

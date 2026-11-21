@@ -134,6 +134,17 @@ h.run(async () => {
 			o?.position.set(9, 9, 9);
 		})();
 	}, X);
+	// every toast F shows from here on (one may come and go while the fences run)
+	await F.page.evaluate(() => {
+		const w = /** @type {any} */ (window);
+		w.__toastLog = [];
+		w.__tp.test.v1.toastStore.subscribe((t) => {
+			for (const x of t) {
+				const text = typeof x === 'string' ? x : x?.text;
+				if (text && !w.__toastLog.includes(text)) w.__toastLog.push(text);
+			}
+		});
+	});
 	await sendRaw(F, H.id, [forgedMove, forgedName]);
 	await sendRaw(F, E.id, [forgedMove, forgedName]);
 	await fence(H, 'H (edit)');
@@ -144,7 +155,7 @@ h.run(async () => {
 		const name = await H.page.evaluate((u) => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g.getObjectByProperty('uuid', u)?.name))()), X);
 		h.check(name !== 'stolen', 'nor a rename');
 	}
-	await h.eventually(() => toasts(F.page), (t) => t.some((x) => x.includes('is editing')), 'the sender hears from the holder that the change was not kept');
+	await h.eventually(() => F.page.evaluate(() => /** @type {any} */ (window).__toastLog), (t) => t.some((/** @type {string} */ x) => x.includes('is editing')), 'the sender hears from the holder that the change was not kept');
 	if (!(await toasts(F.page)).some((x) => x.includes('is editing'))) for (const p of [H, E, F]) console.log('[diag reject]', JSON.stringify(await dump(p, made)));
 	await h.eventually(() => posOf(F.page, X), (p) => JSON.stringify(p) === JSON.stringify(xBefore), "and the sender's copy is put back as the holder has it");
 	// positive control: the holder's own edit applies everywhere

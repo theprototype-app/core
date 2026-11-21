@@ -54,8 +54,10 @@ h.run(async () => {
 
 	// an approval keeps them
 	const H = await h.setupPageQuiet(browser, 'H', [J, K, X]);
-	await h.connect(J, H);
-	await h.eventually(() => inRoster(J, H.id), (v) => v, 'J joins H');
+	// J already hosts K, so its dial box is gone: ask the way the test asked X
+	await inPage(J, `await s.peerApproval.requestConnect(arg);`, H.id);
+	await h.approveButton(H.page).click({ timeout: 30000 });
+	await h.eventually(() => inRoster(J, H.id), (v) => v, 'J joins H', 30000);
 	h.check((await inPage(J, `return s.rosterOrigin.rosterOriginOf(arg);`, H.id)) === null, 'nothing from an approved host is tied');
 	await J.page.waitForTimeout(1500);
 	h.check(await inRoster(J, H.id), 'and the rows stay');

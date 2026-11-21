@@ -389,6 +389,20 @@ export const shortcuts = [
 		}
 	},
 	{
+		// 102 M1: Simplify (also Mesh ▸ Simplify… in the object menu). DYNAMIC: the simplifier,
+		// its worker and the model-replace path stay out of the boot chunk
+		id: 'objects.simplify',
+		keys: 'Ctrl+Alt+D',
+		group: 'Objects',
+		scope: 'viewport',
+		label: 'Simplify mesh… (fewer triangles, one undo step)',
+		when: () => !get(editingObject) && !get(faceEditObject) && get(selectedObjects).length === 1,
+		action: () => {
+			const uuid = get(selectedObjects)[0];
+			if (uuid) void import('./meshSimplifyAction').then((m) => m.openSimplify(uuid));
+		}
+	},
+	{
 		// 30 P1: Edit / Interact. Free outside a mesh session (I is MESH_EDIT_KEYS' inset
 		// there, which is why the registry already stands down for it); `when` also stands
 		// it down while sculpt, spline or draw own the letter keys (their probes), so a

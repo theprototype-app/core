@@ -17,14 +17,17 @@
 // function of luck is not something a person can be asked to wait for.
 
 /**
+ * @typedef {{name: string, array: any, itemSize: number, normalized?: boolean}} Extra
+ *   102 M1: a CARRIED per-vertex channel (skin weights, a second uv set): not weighed, its
+ *   typed-array constructor kept, gathered by the same vertex map as position
  * @typedef {{key: string, positions: Float32Array, normals?: Float32Array | null,
  *   uvs?: Float32Array | null, colors?: Float32Array | null, colorSize?: number,
  *   index?: Uint32Array | null, groups?: {start: number, count: number, materialIndex?: number}[],
- *   target: number, errorCap?: number}} MeshIn
+ *   target: number, errorCap?: number, extras?: Extra[]}} MeshIn
  * @typedef {{key: string, positions: Float32Array, normals: Float32Array | null,
  *   uvs: Float32Array | null, colors: Float32Array | null, colorSize: number, index: Uint32Array,
  *   groups: {start: number, count: number, materialIndex?: number}[], triangles: number,
- *   before: number, error: number, recomputeNormals: boolean, skipped?: string}} MeshOut
+ *   before: number, error: number, recomputeNormals: boolean, skipped?: string, extras?: Extra[]}} MeshOut
  */
 
 /**

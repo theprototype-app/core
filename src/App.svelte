@@ -91,6 +91,7 @@
   // 36-export: the Publish / Export modal (core owns the shell + Export tab; a cloud plugin mounts
   // Publish into it) and the exported game's boot (inert on every normal page load)
   import { publishExportOpen } from '$lib/export/exportStores.js'
+  import { simplifyDialog } from '$lib/simplifyDialog.js'
   // 47-cc0: the free CC0 asset browser (lazy, like the export modal)
   import { assetBrowserOpen } from '$lib/cc0/assetBrowserState.js'
   import { recordingOpen, recordingState } from '$lib/recording/recordingStores.js'
@@ -544,6 +545,10 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <ModulesManager />
 <!-- 36-export: loaded and mounted only while open (the Profiler idiom) — a closed modal costs
      the boot nothing and the editor runs exactly as before until somebody asks to export -->
+<!-- 102 M1: Simplify — the lazy-modal idiom: mounted (and its simplifier loaded) only while open -->
+{#if $simplifyDialog}
+{#await import('./components/menu/SimplifyDialog.svelte') then m}<m.default />{/await}
+{/if}
 {#if $publishExportOpen}
 {#await import('./components/menu/PublishExportModal.svelte') then m}<m.default />{/await}
 {/if}

@@ -3,7 +3,7 @@
 	"format": 2,
 	"generator": {
 		"source": "tpAgent.tools() via core scripts/agent-tool-catalog.cjs, mapped by tools/agent/src/catalog.js",
-		"hostTools": 83,
+		"hostTools": 84,
 		"dropped": []
 	},
 	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
@@ -2032,6 +2032,41 @@
 				"title": "Add a path to walk along",
 				"readOnlyHint": false,
 				"destructiveHint": false,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "simplify_mesh",
+			"title": "Simplify a mesh",
+			"description": "Reduce the triangle count of a mesh or an imported model, keeping its look: UVs, normals, vertex colours, skin weights and material slots survive. Give percent (1-100, how much to KEEP) or triangles (a target count). A still-parametric primitive (box, sphere … whose Geometry settings drive it) is refused unless bake: true (its Geometry settings then lock). Instanced scatter, VRM avatars and meshes with morph targets are refused. One undo step; everyone in the session sees it. Returns the triangle counts before and after.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"uuid": {
+						"type": "string",
+						"description": "the object to simplify"
+					},
+					"percent": {
+						"type": "number",
+						"description": "how much to keep, 1-100 (25 = a quarter of the triangles)"
+					},
+					"triangles": {
+						"type": "number",
+						"description": "or: the triangle count to aim for"
+					},
+					"bake": {
+						"type": "boolean",
+						"description": "a parametric primitive: bake it to a mesh first (default false = refuse)"
+					}
+				},
+				"required": [
+					"uuid"
+				]
+			},
+			"annotations": {
+				"title": "Simplify a mesh",
+				"readOnlyHint": false,
+				"destructiveHint": true,
 				"openWorldHint": false
 			}
 		},
@@ -6121,7 +6156,8 @@
 				"update": "update_mesh",
 				"duplicate": "duplicate",
 				"pivot": "set_pivot",
-				"pivot_group": "create_pivot"
+				"pivot_group": "create_pivot",
+				"simplify": "simplify_mesh"
 			},
 			"set_look": {
 				"material": "set_material",
@@ -7760,7 +7796,7 @@
 			{
 				"name": "edit_shape",
 				"title": "Reshape or model objects",
-				"description": "Change the shape of objects that exist: params = new size / segments / type in place (on a 3D text: its words, font, size, depth, bevel, align, wrap width, anchor, colours), mesh = model faces and vertices (extrude, inset, bevel, subdivide, weld, smooth, dissolve, make a face), update = new vertices / faces for a mesh made from data (replace it, or patch a range), duplicate = copies of an object in a row, or its mirror image (a left arm → the right one), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together.\nCall it as {\"action\": \"params\", \"params\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
+				"description": "Change the shape of objects that exist: params = new size / segments / type in place (on a 3D text: its words, font, size, depth, bevel, align, wrap width, anchor, colours), mesh = model faces and vertices (extrude, inset, bevel, subdivide, weld, smooth, dissolve, make a face), update = new vertices / faces for a mesh made from data (replace it, or patch a range), duplicate = copies of an object in a row, or its mirror image (a left arm → the right one), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together, simplify = fewer triangles on a mesh or model (a percentage or a count; UVs, colours, skin weights and material slots kept; one undo step).\nCall it as {\"action\": \"params\", \"params\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -7772,7 +7808,8 @@
 								"update",
 								"duplicate",
 								"pivot",
-								"pivot_group"
+								"pivot_group",
+								"simplify"
 							],
 							"description": "What to do. Put its fields in the object named after the action."
 						},
@@ -8278,6 +8315,31 @@
 								"objects"
 							],
 							"description": "Make a group at a point and put objects in it, so turning the group swings them about that point: arm parts about a shoulder, several parts of a lamp about one joint. The objects stay where they are. Give the point as at (world) or local (in the group the objects are already in — the numbers list_scene shows inside it). For one object, edit_shape {action: 'pivot'} needs no extra group. Returns groupUuid."
+						},
+						"simplify": {
+							"type": "object",
+							"properties": {
+								"uuid": {
+									"type": "string",
+									"description": "the object to simplify"
+								},
+								"percent": {
+									"type": "number",
+									"description": "how much to keep, 1-100 (25 = a quarter of the triangles)"
+								},
+								"triangles": {
+									"type": "number",
+									"description": "or: the triangle count to aim for"
+								},
+								"bake": {
+									"type": "boolean",
+									"description": "a parametric primitive: bake it to a mesh first (default false = refuse)"
+								}
+							},
+							"required": [
+								"uuid"
+							],
+							"description": "Reduce the triangle count of a mesh or an imported model, keeping its look: UVs, normals, vertex colours, skin weights and material slots survive. Give percent (1-100, how much to KEEP) or triangles (a target count). A still-parametric primitive (box, sphere … whose Geometry settings drive it) is refused unless bake: true (its Geometry settings then lock). Instanced scatter, VRM avatars and meshes with morph targets are refused. One undo step; everyone in the session sees it. Returns the triangle counts before and after."
 						}
 					},
 					"required": [

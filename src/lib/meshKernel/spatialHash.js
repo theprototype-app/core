@@ -12,6 +12,8 @@
 const P1 = 73856093;
 const P2 = 19349663;
 const P3 = 83492791;
+/** windows up to this many cells dedupe buckets without allocating */
+const SCRATCH = 64;
 
 export class SpatialHash {
 	/**
@@ -24,6 +26,8 @@ export class SpatialHash {
 		if (!(cell > 0)) throw new Error('spatial hash: cellSize must be > 0');
 		const count = options.count ?? Math.floor(positions.length / 3);
 		this.positions = positions;
+		/** points indexed (included or not) */
+		this.size = count;
 		this.cellSize = cell;
 		this.inv = 1 / cell;
 		let size = 1;
@@ -48,6 +52,7 @@ export class SpatialHash {
 		this.starts = starts;
 		this.items = items;
 		this.count = items.length;
+		this._scratch = new Int32Array(SCRATCH);
 	}
 
 	/** @param {number} ix @param {number} iy @param {number} iz */
@@ -70,9 +75,13 @@ export class SpatialHash {
 		const y1 = Math.floor((y + radius) * this.inv);
 		const z0 = Math.floor((z - radius) * this.inv);
 		const z1 = Math.floor((z + radius) * this.inv);
-		// one bucket can be reached from two cells of the window: visit each bucket once
+		// one bucket can be reached from two cells of the window: visit each bucket once (a small
+		// window dedupes in a scratch array, a big one in a Set)
+		const cells = (x1 - x0 + 1) * (y1 - y0 + 1) * (z1 - z0 + 1);
 		/** @type {Set<number>|null} */
-		const seen = (x1 - x0 + 1) * (y1 - y0 + 1) * (z1 - z0 + 1) > 1 ? new Set() : null;
+		const seen = cells > SCRATCH ? new Set() : null;
+		const scratch = this._scratch;
+		let used = 0;
 		for (let ix = x0; ix <= x1; ix++)
 			for (let iy = y0; iy <= y1; iy++)
 				for (let iz = z0; iz <= z1; iz++) {
@@ -80,6 +89,15 @@ export class SpatialHash {
 					if (seen) {
 						if (seen.has(b)) continue;
 						seen.add(b);
+					} else if (cells > 1) {
+						let dup = false;
+						for (let k = 0; k < used; k++)
+							if (scratch[k] === b) {
+								dup = true;
+								break;
+							}
+						if (dup) continue;
+						scratch[used++] = b;
 					}
 					for (let k = this.starts[b]; k < this.starts[b + 1]; k++) {
 						const i = this.items[k];
@@ -109,7 +127,7 @@ export class SpatialHash {
 	 * @param {number} eps @returns {Int32Array}
 	 */
 	clusters(eps) {
-		const n = this.positions.length / 3;
+		const n = this.size;
 		const parent = new Int32Array(n).fill(-1);
 		for (let k = 0; k < this.items.length; k++) parent[this.items[k]] = this.items[k];
 		/** @param {number} a */

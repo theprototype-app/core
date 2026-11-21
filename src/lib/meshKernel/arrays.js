@@ -9,6 +9,7 @@
 // scene tests hold every mesh to.
 
 import { MeshKernel, NONE } from './kernel.js';
+import { SpatialHash } from './spatialHash.js';
 
 /**
  * @typedef {{ array: ArrayLike<number>, itemSize: number }} PlainAttribute
@@ -331,6 +332,7 @@ export function fromArrays(src, options = {}) {
 		for (let t = 0; t < triCount; t++) addTriangle(t);
 	}
 	mesh.nextOrder = Math.max(mesh.nextOrder, triCount);
+	mesh.trim(); // the import sized every table for the worst case (a soup: one vertex per corner)
 	report.faces = mesh.numFaces - mesh.numDegenerate;
 	report.degenerate = mesh.numDegenerate;
 	report.vertices = mesh.numVerts;
@@ -338,54 +340,12 @@ export function fromArrays(src, options = {}) {
 }
 
 /**
- * Epsilon weld over source vertices: a uniform grid with neighbour-cell checks, union-find to
- * the lowest index (positions move to that representative).
+ * Epsilon weld over source vertices through the spatial hash (neighbour cells included, so a pair
+ * across a cell wall merges); union-find to the LOWEST index, whose position wins.
  * @param {ArrayLike<number>} p @param {number} n @param {number} eps @returns {Int32Array}
  */
 function epsilonWeld(p, n, eps) {
-	const inv = 1 / (eps * 2);
-	/** @type {Map<string, number[]>} */
-	const cells = new Map();
-	const parent = new Int32Array(n);
-	for (let i = 0; i < n; i++) parent[i] = i;
-	/** @param {number} a */
-	const find = (a) => {
-		while (parent[a] !== a) {
-			parent[a] = parent[parent[a]];
-			a = parent[a];
-		}
-		return a;
-	};
-	const e2 = eps * eps;
-	for (let i = 0; i < n; i++) {
-		const x = p[i * 3];
-		const y = p[i * 3 + 1];
-		const z = p[i * 3 + 2];
-		const cx = Math.floor(x * inv);
-		const cy = Math.floor(y * inv);
-		const cz = Math.floor(z * inv);
-		for (let dx = -1; dx <= 1; dx++)
-			for (let dy = -1; dy <= 1; dy++)
-				for (let dz = -1; dz <= 1; dz++) {
-					const list = cells.get(`${cx + dx},${cy + dy},${cz + dz}`);
-					if (!list) continue;
-					for (const j of list) {
-						const ex = p[j * 3] - x;
-						const ey = p[j * 3 + 1] - y;
-						const ez = p[j * 3 + 2] - z;
-						if (ex * ex + ey * ey + ez * ez > e2) continue;
-						const a = find(i);
-						const b = find(j);
-						if (a !== b) parent[Math.max(a, b)] = Math.min(a, b);
-					}
-				}
-		const key = `${cx},${cy},${cz}`;
-		let list = cells.get(key);
-		if (!list) cells.set(key, (list = []));
-		list.push(i);
-	}
-	for (let i = 0; i < n; i++) parent[i] = find(i);
-	return parent;
+	return new SpatialHash(p, { cellSize: eps * 2, count: n }).clusters(eps);
 }
 
 /**

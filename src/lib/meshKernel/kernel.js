@@ -1530,6 +1530,14 @@ export class MeshKernel {
 		return out;
 	}
 
+	/** Shrink every table to the slots in use (an import over-allocates; the next add grows again). */
+	trim() {
+		const packed = this.toTransfer();
+		for (const key of FIELDS) /** @type {any} */ (this)[key] = packed[key];
+		for (const [name, attr] of Object.entries(packed.attrs)) this.attrs[name].data = /** @type {any} */ (attr).data;
+		return this;
+	}
+
 	/** the buffers of a `toTransfer()` result, for postMessage's transfer list @param {any} packed @returns {ArrayBuffer[]} */
 	static transferList(packed) {
 		/** @type {ArrayBuffer[]} */

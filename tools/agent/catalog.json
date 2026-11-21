@@ -2243,7 +2243,7 @@
 		{
 			"name": "create_shader",
 			"title": "Give objects a shader",
-			"description": "Give objects a node shader, written as text like flow graphs: one line per node (id = type {param: value}), one per edge (source[.output] -> target.input), ending at a \"surface\" node. Example: c = color {value: \"#ff8800\"}\\nout = surface\\nc -> out.emissive. Call describe_shader_nodes for the types. Each object gets its own copy. Compiler errors come back in the result and nothing is written. Returns the graph key and its uniforms: a float one (u_<nodeId>_<param>) can be driven by a flow \"setuniform\" node on that object. scene: true makes the default for every object, which asks the host first.\nTake a screenshot after each change to check your work.",
+			"description": "Give objects a node shader, written as text like flow graphs: one line per node (id = type {param: value}), one per edge (source[.output] -> target.input), ending at a \"surface\" node. Example: c = color {value: \"#ff8800\"}\\nout = surface\\nc -> out.emissive. Call describe_shader_nodes for the types. Each object gets its own copy. Compiler errors come back in the result and nothing is written. Returns the graph key and its uniforms (u_<nodeId>_<param>): a flow \"setuniform\" node on that object drives a float, colour or vector one. scene: true makes the default for every object, which asks the host first.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -4897,7 +4897,7 @@
 		{
 			"name": "validate_scene",
 			"title": "Check the game for problems",
-			"description": "Check the scene for what would not work when someone presses Play: actions nothing fires, an Object Selector wired the wrong way round, a scene-graph On Click that reaches no object, Game Start wired as an event, HUD nodes pointing at elements that do not exist, walk mode with no spawn, a scene with no light, behaviour code problems. Each issue says what to fix. Run it after building a game, then playtest.",
+			"description": "Check the scene for what would not work when someone presses Play: actions nothing fires, effects that act on no object, an Object Selector wired the wrong way round, a scene-graph On Click that reaches no object, Game Start wired as an event, HUD nodes pointing at elements that do not exist, walk mode with no spawn, a scene with no light, behaviour code problems. Each issue says what to fix. Run it after building a game, then playtest.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {}
@@ -8642,7 +8642,7 @@
 									"description": "with confirmId: seconds to wait for the answer (up to 60)"
 								}
 							},
-							"description": "Give objects a node shader, written as text like flow graphs: one line per node (id = type {param: value}), one per edge (source[.output] -> target.input), ending at a \"surface\" node. Example: c = color {value: \"#ff8800\"}\\nout = surface\\nc -> out.emissive. Call set_look {action: 'shader_nodes'} for the types. Each object gets its own copy. Compiler errors come back in the result and nothing is written. Returns the graph key and its uniforms: a float one (u_<nodeId>_<param>) can be driven by a flow \"setuniform\" node on that object. scene: true makes the default for every object, which asks the host first."
+							"description": "Give objects a node shader, written as text like flow graphs: one line per node (id = type {param: value}), one per edge (source[.output] -> target.input), ending at a \"surface\" node. Example: c = color {value: \"#ff8800\"}\\nout = surface\\nc -> out.emissive. Call set_look {action: 'shader_nodes'} for the types. Each object gets its own copy. Compiler errors come back in the result and nothing is written. Returns the graph key and its uniforms (u_<nodeId>_<param>): a flow \"setuniform\" node on that object drives a float, colour or vector one. scene: true makes the default for every object, which asks the host first."
 						},
 						"edit_shader": {
 							"type": "object",
@@ -9322,7 +9322,7 @@
 						"validate": {
 							"type": "object",
 							"properties": {},
-							"description": "Check the scene for what would not work when someone presses Play: actions nothing fires, an Object Selector wired the wrong way round, a scene-graph On Click that reaches no object, Game Start wired as an event, HUD nodes pointing at elements that do not exist, walk mode with no spawn, a scene with no light, behaviour code problems. Each issue says what to fix. Run it after building a game, then playtest."
+							"description": "Check the scene for what would not work when someone presses Play: actions nothing fires, effects that act on no object, an Object Selector wired the wrong way round, a scene-graph On Click that reaches no object, Game Start wired as an event, HUD nodes pointing at elements that do not exist, walk mode with no spawn, a scene with no light, behaviour code problems. Each issue says what to fix. Run it after building a game, then playtest."
 						},
 						"logs": {
 							"type": "object",

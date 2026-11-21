@@ -628,6 +628,8 @@
 		"lock-held-ui": 240,
 		"lock-release": 240,
 		"lock-mode": 240,
+		"roster-origin": 240,
+		"lock-phone": 200,
 		"lock-settings": 398,
 		"lock-settings-b": 894,
 		"lock-shortcuts": 86,

@@ -156,6 +156,7 @@ export const DEBUG_HOOKS = [
 	['lockHeld', () => import('./lockHeld')],
 	['lockIdle', () => import('./lockIdle')],
 	['lockMode', () => import('./lockMode')],
+	['rosterOrigin', () => import('./rosterOrigin')],
 	['prefabs', () => import('./prefabs')],
 	['prefabLinks', () => import('./prefabLinks')],
 	['prefabSync', () => import('./prefabSync')],

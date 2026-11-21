@@ -52,6 +52,7 @@ import { hasImpactEmitter, applyBurst } from './particleRuntime';
 import { sessionNow } from './sessionClock';
 import { nameOf } from './lockControl';
 import { sceneJoints, onJointRemoved } from './joints';
+import { BODY_TUNING_KEYS, bodyTuningOf } from './physicsTuning'; // 102b
 // 36-sim I1: buoyancy + drag + flow in water volumes (W1). Both leaves import nothing
 // from the app, so these edges close no cycle.
 import { bodySamples, applyBuoyancy, buoyancyOut, normalizeFloats } from './sim/buoyancy.js';
@@ -282,6 +283,15 @@ export function simulationGaps() {
  * flow nodes (mass/bounciness/friction -> objectselector) OVERRIDE it, so
  * existing graphs behave byte-identically. @param {any} group
  */
+/** 102b: push the resolved tuning onto a live dynamic body. @param {any} body @param {any} p @param {any} defaults */
+function applyBodyTuning(body, p, defaults) {
+	const t = bodyTuningOf(p, defaults);
+	body.setLinearDamping(t.linear);
+	body.setAngularDamping(t.angular);
+	// wake it: a scale change on a resting body must show (sleep is off for dynamics, but be explicit)
+	if (body.gravityScale?.() !== t.gravityScale) body.setGravityScale(t.gravityScale, true);
+}
+
 function collectParams(group) {
 	/** @type {Record<string, any>} */
 	const map = {};
@@ -302,6 +312,8 @@ function collectParams(group) {
 		if (p.sensor) map[object.uuid].sensor = true; // CL-A A3: trigger volume
 		if (p.freeze) map[object.uuid].freeze = p.freeze; // CL-A A5: axis locks
 		if (typeof p.ccd === 'boolean') map[object.uuid].ccd = p.ccd; // 49 P1: absent = the scene's
+		// 102b: per-body gravity scale + damping; absent = gravity 1 and the scene's damping
+		for (const key of BODY_TUNING_KEYS) if (Number.isFinite(p[key])) map[object.uuid][key] = p[key];
 	});
 	// H1: physics nodes live in ANY graph (scene or per-object documents)
 	// 36 U11: a muted physics node does nothing (runtimeGraph drops it and its wires)
@@ -650,6 +662,8 @@ export function physicsShapeChanged(uuid) {
 			entry.ccd = p.ccd;
 			entry.body.enableCcd(p.ccd ?? !!get(scenePhysicsDefaults).ccd);
 		}
+		// 102b: gravity scale + damping need no rebuild either — the live body takes them
+		if (entry.mode === 'dynamic') applyBodyTuning(entry.body, p, get(scenePhysicsDefaults));
 		if (entry.shapeKey === shapeKeyOf(p, entry.object)) return false;
 		rebuildColliders(entry, p);
 		return true;
@@ -700,7 +714,8 @@ export function listPhysicsObjects() {
  *   friction?: number, collider?: string, sensor?: boolean|null,
  *   freeze?: any, material?: string, group?: string|null,
  *   collidesWith?: string[]|null, colliderVerts?: number[],
- *   colliderPieces?: number[][], ccd?: boolean|null}} patch — 36 X5: collision group + filter; 36 X3: a
+ *   colliderPieces?: number[][], ccd?: boolean|null, gravityScale?: number|null,
+ *   linearDamping?: number|null, angularDamping?: number|null}} patch — 36 X5: collision group + filter; 36 X3: a
  *   decomposed custom collider — 21-C4: sensor/freeze/material were
  *   missing from this type while the Inspector had been writing all three since
  *   CL-A (its collider row, its Sensor checkbox and its material presets), so any
@@ -716,6 +731,8 @@ export function setPhysicsFor(uuid, patch) {
 	const next = { mode: 'auto', ...(object.userData.physics ?? {}), ...patch };
 	// 49 P1: "Scene default" is the ABSENCE of the key, so a scene that never picked saves as before
 	if (next.ccd == null) delete next.ccd;
+	// 102b: the same rule for gravity scale and damping — null = back to the scene's value
+	for (const key of BODY_TUNING_KEYS) if (next[key] == null) delete next[key];
 	object.userData.physics = next;
 	recordEntry({ kind: 'props', uuid, before: { physics: before }, after: { physics: next } });
 	/** @type {any} */
@@ -999,10 +1016,12 @@ function createBodyFor(object, p, opts) {
 	// B4: scene damping defaults — the knob that turns a jittery tower stable
 	// and stops crates sliding forever. Dynamics only: a kinematic body's motion
 	// is prescribed and a fixed one has none.
+	// 102b: an object's own damping / gravity scale wins over the scene's (absent = as before).
 	if (dynamic) {
-		const defaults = get(scenePhysicsDefaults);
-		bodyDesc.setLinearDamping(defaults.damping.linear ?? 0);
-		bodyDesc.setAngularDamping(defaults.damping.angular ?? 0);
+		const tuning = bodyTuningOf(p, get(scenePhysicsDefaults));
+		bodyDesc.setLinearDamping(tuning.linear);
+		bodyDesc.setAngularDamping(tuning.angular);
+		if (tuning.gravityScale !== 1) bodyDesc.setGravityScale(tuning.gravityScale);
 	}
 	const body = world.createRigidBody(bodyDesc);
 	// B4: no CCD by default, and a 20 m/s throw moves 0.33 m per step — thin
@@ -1240,10 +1259,11 @@ async function startSimulation(opts = {}) {
 				defaultsSubPrimed = true;
 				return; // the bodies were just built with these values
 			}
+			// 102b: a body with its own damping keeps it; the rest follow the scene
+			const own = collectParams(get(objectsGroup));
 			bodies.forEach((entry) => {
 				if (entry.mode !== 'dynamic') return;
-				entry.body.setLinearDamping(defaults.damping.linear ?? 0);
-				entry.body.setAngularDamping(defaults.damping.angular ?? 0);
+				applyBodyTuning(entry.body, own[entry.object.uuid], defaults);
 				entry.body.enableCcd(entry.ccd ?? !!defaults.ccd); // 49 P1: an own pick stays
 			});
 			// a material change is collider state, so it rides the shapeKey drift
@@ -2846,6 +2866,7 @@ export function physicsDebug() {
 		mass: entry.body?.mass?.() ?? null,
 		linearDamping: entry.body?.linearDamping?.() ?? null,
 		angularDamping: entry.body?.angularDamping?.() ?? null,
+		gravityScale: entry.body?.gravityScale?.() ?? null, // 102b
 		hold: entry.hold,
 		bodyType: entry.body?.bodyType?.(),
 		sleeping: entry.body?.isSleeping?.() ?? null,

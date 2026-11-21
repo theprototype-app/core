@@ -25,6 +25,7 @@ import {
 	simulationGaps
 } from '$lib/physics';
 import { createJoint } from '$lib/joints';
+import { bodyTuningPatch } from '$lib/physicsTuning.js'; // 102b
 import { scriptNodeWarnings } from './scriptNotes.js';
 import { isGroupId, normalizeCollidesWith } from '$lib/collisionGroups'; // 36 X5
 import { parseGraphText } from '$lib/graphText';
@@ -705,8 +706,9 @@ export function setPhysicsTool(args) {
 		if (typeof u.sensor === 'boolean') patch.sensor = u.sensor; // CL-A A3 trigger volume
 		if (isGroupId(u.group)) patch.group = u.group === 'default' ? null : u.group; // 36 X5
 		if (Array.isArray(u.collidesWith)) patch.collidesWith = normalizeCollidesWith(u.collidesWith);
+		Object.assign(patch, bodyTuningPatch(u)); // 102b: gravityScale / linearDamping / angularDamping, clamped
 		if (!Object.keys(patch).length)
-			return { uuid, error: 'no physics keys — pass mode/mass/restitution/friction/collider' };
+			return { uuid, error: 'no physics keys — pass mode/mass/restitution/friction/collider/gravityScale/linearDamping/angularDamping' };
 		setPhysicsFor(uuid, patch);
 		// mcp-fix: only a top-level object gets a body, so say it now and not at the start
 		const held = objectOf(uuid);

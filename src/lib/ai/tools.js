@@ -1821,6 +1821,18 @@ const PHYSICS_AI_TOOLS = [
 									type: 'array',
 									items: { type: 'string', enum: ['default', 'a', 'b', 'c', 'd', 'water', 'player'] },
 									description: 'groups this object collides with (omit = all); leave out player for a ghost wall the player walks through'
+								},
+								gravityScale: {
+									type: 'number',
+									description: 'dynamic bodies: how strongly gravity pulls this one, -5..5 (1 normal, 0 floats in place, below 0 rises — a balloon, a jump pad feel)'
+								},
+								linearDamping: {
+									type: 'number',
+									description: 'dynamic bodies: air drag on movement 0..5 (a feather, a parachute); omit = the scene\'s value'
+								},
+								angularDamping: {
+									type: 'number',
+									description: 'dynamic bodies: drag on spinning 0..5; omit = the scene\'s value'
 								}
 							},
 							required: ['uuid']

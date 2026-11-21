@@ -15,6 +15,8 @@ import { myLocks, heldByOther, lockMessage, dropMyLocks } from './lockHeld';
 /** @typedef {'select' | 'edit'} LockMode */
 export const LOCK_MODES = /** @type {const} */ (['select', 'edit']);
 export const LOCK_EDIT_RELEASE_MS = 3000;
+/** how far ahead of our clock a `lockmode` stamp may be */
+export const LOCK_MODE_SKEW_MS = 5 * 60 * 1000;
 
 /** @type {import('svelte/store').Writable<{mode: LockMode, at: number}>} */
 export const lockMode = writable({ mode: /** @type {LockMode} */ ('select'), at: 0 });
@@ -78,7 +80,9 @@ export function setLockMode(mode) {
 /** A `lockmode` from `from` @param {any} data @param {string} from */
 export function applyLockMode(data, from) {
 	if (!isLockMode(data?.mode) || !speaksForLockMode(from)) return;
-	const at = Number(data.at);
+	// a stamp far ahead of our clock is read as "a few minutes from now" (peers' clocks differ by less),
+	// so a later change can still follow it
+	const at = Math.min(Number(data.at), Date.now() + LOCK_MODE_SKEW_MS);
 	if (!Number.isFinite(at) || at <= get(lockMode).at) return;
 	adopt(data.mode, at);
 }

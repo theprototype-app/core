@@ -93,7 +93,8 @@ function walk(value, chain, isDraft) {
 			continue;
 		}
 		if (typeof v === 'string') {
-			if (chain && isDraft(v)) return DROP;
+			// a message's `type` names a kind of message, never an object
+			if (chain && key !== 'type' && isDraft(v)) return DROP;
 			continue;
 		}
 		if (v && typeof v === 'object') {

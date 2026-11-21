@@ -324,6 +324,18 @@ export function draftUuids() {
 	return draftSet;
 }
 
+/**
+ * An object that arrived from a peer is never a draft here: a draft is something made or kept on THIS device
+ * (markLocalOnly, adoptLoadedDrafts), and a peer never sends one. So the flag is cleared on everything that
+ * came over the wire, before it joins the scene.
+ * @param {any} object
+ */
+export function clearInboundDraftFlags(object) {
+	object?.traverse?.((/** @type {any} */ o) => {
+		if (o?.userData && '__localOnly' in o.userData) delete o.userData.__localOnly;
+	});
+}
+
 /** is this uuid a draft (or inside one)? @param {any} uuid */
 export function isDraftUuid(uuid) {
 	return typeof uuid === 'string' && draftUuids().has(uuid);

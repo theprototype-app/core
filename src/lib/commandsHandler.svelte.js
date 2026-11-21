@@ -15,8 +15,9 @@ import { dropPeerQuality } from '$lib/networkQuality'
 import { dropPeerClock } from '$lib/musicClock'
 import { applyRemoteDevice } from '$lib/audioDevices'
 import { sessionHost, dropPeerJoined, noteSnapshotAnswered } from '$lib/connectionState'
-import { acceptedLockRows, mergeLockRows, sortLockTable } from '$lib/lockTrust'
-import { lockMessage } from '$lib/lockHeld'
+import { acceptedLockRows, mergeLockRows, sortLockTable, stampRestoredRows } from '$lib/lockTrust'
+import { lockMessage, myClaim } from '$lib/lockHeld'
+import { sessionNow } from '$lib/sessionClock'
 import { environment, editEnvSky } from '$lib/environment'
 import { hasAnimatedImport, sendAnimatedImport, setAnimationState, setClipRefs, setAnimGraph, attachToSocket, dropAllAnimatedImports, setVrmExpression } from '$lib/animatedImports'
 import { dropAllAnimations } from '$lib/animationPreview'
@@ -32,7 +33,7 @@ import { normalizePortal, normalizeCheckpoint } from '$lib/gameLevels/objects.js
 import { applyTextPathTo, bumpTextTurn } from '$lib/textPathObject.js'; // 64 D2
 import { runSceneClearHandlers } from '$lib/moduleSDK'
 import { annotations } from '$lib/annotationsHandler'
-import { isViewer, warnViewerReadOnly } from '$lib/objectPermissions'
+import { isViewer, warnViewerReadOnly, clearInboundDraftFlags } from '$lib/objectPermissions'
 import { isHeldOut } from '$lib/peerModeration' // 55 A9
 import { get, writable } from 'svelte/store'
 import { addMessage, loading, loadingcount, showToast, fixLight, specatorMode } from '../stores/appStore';
@@ -337,8 +338,10 @@ export function applyClearScene(peerId) {
 export function lockRestore(lockeditems, from, fromHost, mayLock) {
     // 27-A: same trust, same fix — a non-array here threw inside the handshake.
     if (!Array.isArray(lockeditems)) return;
-    const rows = acceptedLockRows(lockeditems, { from, selfId: peer?.peer?.id, fromHost, mayLock });
-    if (!rows.length) return;
+    const accepted = acceptedLockRows(lockeditems, { from, selfId: peer?.peer?.id, fromHost, mayLock });
+    if (!accepted.length) return;
+    // 80a K3: the same stamp rule as a `lock` set (geometries.lockGeometry)
+    const rows = stampRestoredRows(accepted, locked, myClaim, sessionNow());
     locked = sortLockTable(mergeLockRows(locked, rows));
     lockedObjects.set(locked);
 }
@@ -1040,6 +1043,7 @@ async function applyCreateObject(object, uuid, override, groupuuid, pos, rot, sc
     // an incoming object can only carry a STALE edit wireframe (a peer on an
     // older build, or a scene saved with a session open) — never a live one
     stripEditOverlays(mesh);
+    clearInboundDraftFlags(mesh);
     let existing = override ? sceneObjects.getObjectByProperty('uuid', mesh.uuid) : null;
     if (existing) {
         // replace IN PLACE, under the same parent. The gizmo has to let go first or it
@@ -1073,6 +1077,7 @@ async function applyCreateObject(object, uuid, override, groupuuid, pos, rot, sc
         result.scene.uuid = uuid
         result.scene.children.forEach((object, index) => {
           let mesh = object.clone()
+          clearInboundDraftFlags(mesh);
           mesh.uuid = uuid[index]
           object.uuid = uuid[index]
           const existing = sceneObjects.getObjectByProperty('uuid', mesh.uuid)

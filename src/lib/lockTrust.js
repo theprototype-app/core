@@ -234,3 +234,21 @@ export function claimStamp({ claimed, prev, contested, now }) {
 	if (!isStamp(claimed)) return undefined;
 	return contested ? Math.max(claimed, now - LOCK_RACE_MS) : claimed;
 }
+
+/**
+ * Rows of a `locked` table, stamped like a `lock` set (geometries.lockGeometry): a row the table already has keeps
+ * its stamp, and a claim on an object someone else holds (or we do: `mineOf`) is not dated back past LOCK_RACE_MS.
+ * @param {any[][]} rows accepted rows (acceptedLockRows) @param {any[] | null | undefined} table the current table
+ * @param {(uuid: string) => any} mineOf our own claim of an object (lockHeld.myClaim) @param {number} now session clock
+ * @returns {any[][]}
+ */
+export function stampRestoredRows(rows, table, mineOf, now) {
+	const base = Array.isArray(table) ? table.filter(isRow) : [];
+	return rows.map((row) => {
+		if (row.length < 3) return row;
+		const prev = base.find((l) => l[0] === row[0] && l[1] === row[1]);
+		const others = base.filter((l) => l[0] !== row[0]);
+		const at = claimStamp({ claimed: row[2], prev: prev?.[2], contested: !!holderOf(others, row[1], mineOf(row[1])), now });
+		return at === undefined ? [row[0], row[1]] : [row[0], row[1], at];
+	});
+}

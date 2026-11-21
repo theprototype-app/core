@@ -95,6 +95,18 @@ async function focusNodes(page) {
 }
 const convertHook = (page, id, back = false) =>
 	page.evaluate(([id, back]) => window.__tp.test.v1.convertToCode.convertNode(id, { back, newId: () => id + '-code' }), [id, back]);
+/**
+ * 2.0-int: Convert to code is a lazy chunk now (off the editor boot), so the FIRST convert on a page waits for it:
+ * after a press, wait until the graph's node types change (up to 20 s), not a fixed 500 ms.
+ * @param {any} page @param {string} before the types signature read before the press
+ */
+async function afterConvert(page, before) {
+	for (let i = 0; i < 40; i++) {
+		await page.waitForTimeout(500);
+		if ((await typesSig(page)) !== before) return;
+	}
+}
+const typesSig = async (page) => JSON.stringify((await graph(page)).nodes.map((n) => n.id + ':' + n.type).sort());
 async function convertMenu(page, id, label) {
 	const item = page.locator('[role="menu"] [role="menuitem"]').filter({ hasText: label }).first();
 	for (let attempt = 0; attempt < 3; attempt++) {
@@ -103,8 +115,9 @@ async function convertMenu(page, id, label) {
 		// the card's title strip: below a toolbar row, never on an input
 		await page.mouse.click(box.x + box.width / 2, box.y + Math.min(10, box.height / 4), { button: 'right' });
 		if (await item.waitFor({ state: 'visible', timeout: 3000 }).then(() => true, () => false)) {
+			const before = await typesSig(page);
 			await item.click();
-			await page.waitForTimeout(500);
+			await afterConvert(page, before);
 			return;
 		}
 		await page.keyboard.press('Escape');
@@ -117,8 +130,9 @@ async function convertSheet(page, id) {
 	await selectNode(page, id);
 	if (!(await page.locator('#flow-props').isVisible().catch(() => false))) await page.locator('#flow-props-toggle, [aria-label="Show node properties"]').first().click().catch(() => {});
 	await page.locator('#flow-tab-info').click();
+	const before = await typesSig(page);
 	await page.locator('#flow-node-convert').click();
-	await page.waitForTimeout(500);
+	await afterConvert(page, before);
 }
 /** every reading the suite compares, in one call */
 const readings = async (page) => {
@@ -233,8 +247,9 @@ h.run(async () => {
 			await p.waitForTimeout(300);
 			await p.locator('#flow-tab-info').click();
 			h.check((await p.locator('#flow-node-convert').getAttribute('data-conversion')) === 'back', `${t.type}: the sheet offers Convert back`);
+			const before = await typesSig(p);
 			await p.locator('#flow-node-convert').click();
-			await p.waitForTimeout(500);
+			await afterConvert(p, before);
 		} else h.check((await convertHook(p, target, true))?.ok === true, `${t.type}: convert back answers ok`);
 		const g = await graph(p);
 		const orig = DOC.scene.nodes.find((n) => n.id === t.id);

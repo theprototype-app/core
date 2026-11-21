@@ -183,8 +183,13 @@ h.run(async () => {
 	h.check(!/\p{Extended_Pictographic}/u.test(sheet.label + sheet.code), 'no emoji in the sheet');
 	await q.screenshot({ path: OUT + 'minor3-02-phone-sheet.png' });
 	await q.locator('#flow-node-convert').tap();
-	await q.waitForTimeout(600);
-	h.check((await graph(q)).find((n) => n.id === 'm')?.type === 'math', 'tapping it on the phone converts back');
+	// 2.0-int: Convert to code is a lazy chunk now (off the editor boot), so the first convert on a page waits for it
+	let back = null;
+	for (let i = 0; i < 40 && back !== 'math'; i++) {
+		await q.waitForTimeout(500);
+		back = (await graph(q)).find((n) => n.id === 'm')?.type ?? null;
+	}
+	h.check(back === 'math', `tapping it on the phone converts back (${back})`);
 	await h.closePeer(P);
 
 	// --- 5. an older build opens the newer file --------------------------------------------------

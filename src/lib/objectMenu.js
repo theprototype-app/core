@@ -840,7 +840,7 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 			children: SAVE_AS_FORMATS.map((format) => ({
 				label: format.label,
 				tooltip: format.tooltip,
-				icon: format.kind === 'download' ? 'arrow-down-to-line' : 'package',
+				icon: format.kind === 'download' ? 'arrow-down-to-line' : format.kind === 'export3d' ? (format.ext === 'usdz' ? 'smartphone' : 'box') : 'package',
 				action: () =>
 					void saveSelectionAs(format.id, targets, multi ? undefined : object?.name || object?.type || undefined)
 			}))

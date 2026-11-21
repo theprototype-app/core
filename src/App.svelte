@@ -92,6 +92,7 @@
   // Publish into it) and the exported game's boot (inert on every normal page load)
   import { publishExportOpen } from '$lib/export/exportStores.js'
   import { simplifyDialog } from '$lib/simplifyDialog.js'
+  import { export3dDialog } from '$lib/export3d/export3dDialog.js'
   // 47-cc0: the free CC0 asset browser (lazy, like the export modal)
   import { assetBrowserOpen } from '$lib/cc0/assetBrowserState.js'
   import { recordingOpen, recordingState } from '$lib/recording/recordingStores.js'
@@ -548,6 +549,10 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <!-- 102 M1: Simplify — the lazy-modal idiom: mounted (and its simplifier loaded) only while open -->
 {#if $simplifyDialog}
 {#await import('./components/menu/SimplifyDialog.svelte') then m}<m.default />{/await}
+{/if}
+<!-- 102 M2: Export for 3D print / AR — same idiom (writers, zip and USDZExporter load with it) -->
+{#if $export3dDialog}
+{#await import('./components/menu/Export3dDialog.svelte') then m}<m.default />{/await}
 {/if}
 {#if $publishExportOpen}
 {#await import('./components/menu/PublishExportModal.svelte') then m}<m.default />{/await}

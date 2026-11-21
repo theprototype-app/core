@@ -459,6 +459,21 @@ export function makeCloudApi() {
 		 *   camera: {position: number[], target: number[]} | null, duration: number | null, files: any[],
 		 *   signature?: string}}>} (`signature` = CL-5's content identity, only with `signature: true`)
 		 */
+		/**
+		 * 102 M2 (additive, typeof-probed — no CLOUD_HOOKS_VERSION bump): the open scene as a
+		 * USDZ for AR Quick Look, so a publish can store it beside the .tpscene and the scene's
+		 * page can offer "View in your room" (`<a rel="ar" href="….usdz">` — iOS / iPadOS only,
+		 * the page decides where it shows). Every visible mesh, world-posed, floor-anchored,
+		 * textures capped at 2048 px. Null for a scene with no meshes. Lazy: the exporter loads
+		 * on the first call.
+		 * @returns {Promise<{blob: Blob, bytes: number} | null>}
+		 */
+		buildArModel: async () => {
+			const m = await import('./export3d/export3dAction.js');
+			if (!m.collectParts(null).length) return null;
+			const bytes = await m.usdzBytes(null);
+			return { blob: new Blob([/** @type {any} */ (bytes)], { type: 'model/vnd.usdz+zip' }), bytes: bytes.byteLength };
+		},
 		buildSceneBundle: async ({ assets = true, flow = true, name = '', signature = false, chats = 'published' } = {}) => {
 			const { buildSessionPayload, exportSessionZip, sessionFileList } = await import('./sessions');
 			// 36-community (C4): a published file carries the scene's permanent game id

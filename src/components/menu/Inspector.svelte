@@ -36,6 +36,7 @@
 	 * @param {any} o @param {any} _tick */
 	const scatterHostOk = (o, _tick) => isMeshHost(o);
 	import MeasureSection from './inspector/MeasureSection.svelte'; // 48 B2
+	import TagsSection from './inspector/TagsSection.svelte'; // 102b-flows
 	import ModelSourceSection from './inspector/ModelSourceSection.svelte'; // 59 T1/T2/T7a
 	import { isReplaceableModel } from '$lib/modelTarget';
 	import HdriSection from './scene/HdriSection.svelte'; // 37-hdri
@@ -3995,6 +3996,11 @@
 			{#if $selectedObject?.userData?.measure?.points && !multiCount}
 				<!-- 48 B2: a measurement item's numbers + Edit points -->
 				<MeasureSection object={$selectedObject} />
+			{/if}
+
+			{#if insTargets.length}
+				<!-- 102b-flows: the tags an Object Selector set to By tag finds (union over a multi-select) -->
+				<TagsSection objects={insTargets} />
 			{/if}
 
 			{#if isGroup}

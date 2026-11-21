@@ -457,6 +457,9 @@ export const VALIDATORS = {
 	// 36-water: `water` / `bubbles` are a plain object or null (the appliers spread nothing
 	// else onto userData)
 	objectParameters: (d) => {
+		// 102b-flows: an object's tags — a short list of short strings, or null (cleaned again on apply)
+		if (d.parameter === 'tags')
+			return isUuid(d.uuid) && (d.tags === null || (isArray(d.tags) && d.tags.length <= 64 && d.tags.every((/** @type {any} */ t) => typeof t === 'string' && t.length <= 200)));
 		if (d.parameter === 'lod') return isUuid(d.uuid) && (d.lod === null || (!!d.lod && typeof d.lod === 'object' && isArray(d.lod.levels)));
 		// 47 T1/T2: splat bytes are raw (ArrayBuffer / typed view) of exactly res² × 4, or null
 		if (d.parameter === 'terrainSplat') {

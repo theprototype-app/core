@@ -52,13 +52,17 @@ function isDraftNode(o) {
 	return typeof o.uuid === 'string' && o.userData !== null && typeof o.userData === 'object' && o.userData.__localOnly === true;
 }
 
+/** messages whose `uuids` are matched to nodes by position */
+const POSITIONAL = new Set(['object', 'duplicate']);
+
 /**
  * @param {any} value
  * @param {boolean} chain true while no list has been passed on the way down from the message
  * @param {(u: string) => boolean} isDraft
+ * @param {boolean} flags rule 5 on: an object flagged local-only counts as a draft (the sending side)
  * @returns {any} the value (same identity when untouched), or DROP
  */
-function walk(value, chain, isDraft) {
+function walk(value, chain, isDraft, flags) {
 	if (value === null || typeof value !== 'object' || isBinary(value)) return value;
 	if (Array.isArray(value)) {
 		/** @type {any[] | null} */
@@ -71,7 +75,7 @@ function walk(value, chain, isDraft) {
 			else if (el && typeof el === 'object' && !isBinary(el)) {
 				if (!Array.isArray(el) && namesDraftDirectly(el, isDraft)) remove = true;
 				else {
-					next = walk(el, false, isDraft);
+					next = walk(el, false, isDraft, flags);
 					if (next === DROP) remove = true; // a local-only object somewhere inside this entry (rule 5)
 				}
 			}
@@ -82,12 +86,12 @@ function walk(value, chain, isDraft) {
 		}
 		return out ?? value;
 	}
-	if (isDraftNode(value)) return DROP;
+	if (flags && isDraftNode(value)) return DROP;
 	/** @type {any} */
 	let out = null;
 	for (const key of Object.keys(value)) {
 		const v = value[key];
-		if (isDraft(key)) {
+		if (key !== 'type' && isDraft(key)) {
 			if (!out) out = { ...value };
 			delete out[key];
 			continue;
@@ -98,7 +102,7 @@ function walk(value, chain, isDraft) {
 			continue;
 		}
 		if (v && typeof v === 'object') {
-			const next = walk(v, chain && !Array.isArray(v), isDraft);
+			const next = walk(v, chain && !Array.isArray(v), isDraft, flags);
 			if (next === DROP) return DROP;
 			if (next !== v) {
 				if (!out) out = { ...value };
@@ -113,16 +117,18 @@ function walk(value, chain, isDraft) {
  * What of `payload` may leave this machine, given which uuids are drafts.
  * @param {any} payload an outgoing message
  * @param {(uuid: string) => boolean} isDraft
+ * @param {{flags?: boolean}} [opts] flags: false = a local-only flag inside the message does not make it a draft (the
+ *   receiving side: a peer's flag means nothing here, and is cleared where the object lands)
  * @returns {any} the message (same object when nothing names a draft), a trimmed copy, or null = do not send
  */
-export function scrubDrafts(payload, isDraft) {
+export function scrubDrafts(payload, isDraft, { flags = true } = {}) {
 	if (!payload || typeof payload !== 'object' || isBinary(payload)) return payload;
 	if (payload.type === 'batch' && Array.isArray(payload.items)) {
 		/** @type {any[] | null} */
 		let items = null;
 		for (let i = 0; i < payload.items.length; i++) {
 			const item = payload.items[i];
-			const next = scrubDrafts(item, isDraft);
+			const next = scrubDrafts(item, isDraft, { flags });
 			if (next !== item) {
 				const kept = items ?? (items = payload.items.slice(0, i));
 				if (next !== null) kept.push(next);
@@ -132,12 +138,20 @@ export function scrubDrafts(payload, isDraft) {
 		return items.length ? { ...payload, items } : null;
 	}
 	let msg = payload;
-	// a mixed selection's lock: keep the shared half, aimed at the last shared one
-	if (typeof msg.uuid === 'string' && isDraft(msg.uuid) && Array.isArray(msg.uuids)) {
-		const shared = msg.uuids.filter((/** @type {any} */ u) => typeof u === 'string' && !isDraft(u));
-		if (shared.length) msg = { ...msg, uuid: shared[shared.length - 1], uuids: shared };
+	if (Array.isArray(msg.uuids)) {
+		const keep = msg.uuids.map((/** @type {any} */ u) => !(typeof u === 'string' && isDraft(u)));
+		if (keep.includes(false)) {
+			// these lists are read by position (the n-th uuid is the n-th node): a gap would shift every one after it
+			if (POSITIONAL.has(msg.type)) return null;
+			// a mixed selection's lock: keep the shared half (with its stamps), aimed at the last shared one
+			const uuids = msg.uuids.filter((/** @type {any} */ _, /** @type {number} */ i) => keep[i]);
+			msg = { ...msg, uuids };
+			if (Array.isArray(payload.ats) && payload.ats.length === payload.uuids.length)
+				msg.ats = payload.ats.filter((/** @type {any} */ _, /** @type {number} */ i) => keep[i]);
+			if (typeof msg.uuid === 'string' && isDraft(msg.uuid) && uuids.length) msg.uuid = uuids[uuids.length - 1];
+		}
 	}
-	const out = walk(msg, true, isDraft);
+	const out = walk(msg, true, isDraft, flags);
 	return out === DROP ? null : out;
 }
 

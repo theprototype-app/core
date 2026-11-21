@@ -304,11 +304,11 @@ function draftsChanged() {
 	draftsStale = true;
 }
 
-// a draft's id is an object id (a three.js uuid, or a file's own id): short words such as a message type or
-// `scene` are never read as one
+// every draft id counts, whatever its shape (a file's own id included); the gate never reads a message's `type`
+// as one (draftGateCore), and a peer cannot make an object a draft here (gateDraftsInbound, clearInboundDraftFlags)
 /** @param {unknown} id */
 export function isDraftId(id) {
-	return typeof id === 'string' && id.length >= 8;
+	return typeof id === 'string' && id.length > 0;
 }
 
 /** the uuids of every draft and everything inside one (rebuilt when stale) @returns {Set<string>} */
@@ -355,7 +355,7 @@ export function gateDraftsInbound(payload) {
 	if (!payload || typeof payload !== 'object') return payload;
 	const set = draftUuids();
 	if (!set.size) return payload;
-	const out = scrubDrafts(payload, (u) => set.has(u));
+	const out = scrubDrafts(payload, (u) => set.has(u), { flags: false });
 	if (out !== payload) {
 		const key = 'in:' + String(payload.type ?? '?') + (out === null ? ':dropped' : ':trimmed');
 		draftGateStats[key] = (draftGateStats[key] ?? 0) + 1;

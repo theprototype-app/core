@@ -38,10 +38,29 @@ describe('drafts gate: a message type is never a draft', () => {
 });
 
 describe('drafts gate: only object ids count as drafts', () => {
-	it('a message word or a short graph id is never a draft id', () => {
-		for (const id of ['type', 'move', 'scene', 'G1', '', null]) expect(isDraftId(id)).toBe(false);
-		expect(isDraftId('3f2b8c1e-9a4d-4e6f-8b2a-1c3d5e7f9a0b')).toBe(true);
-		expect(isDraftId('crate-0001')).toBe(true); // a file's own id
+	it('every object id counts as a draft id, short ones too', () => {
+		for (const id of ['', null, 7]) expect(isDraftId(id)).toBe(false);
+		for (const id of ['door', '3f2b8c1e-9a4d-4e6f-8b2a-1c3d5e7f9a0b', 'crate-0001']) expect(isDraftId(id)).toBe(true);
+	});
+	it('a draft named like the type key does not strip it', () => {
+		const msg = { type: 'move', uuid: 'shared-1', pos: [0, 0, 0] };
+		expect(scrubDrafts(msg, (u) => u === 'type')).toBe(msg);
+	});
+	it('a mixed lock keeps each stamp with its own object', () => {
+		const out = scrubDrafts({ type: 'lock', uuid: 'b', uuids: ['a', 'd', 'b'], ats: [1, 2, 3] }, (u) => u === 'd');
+		expect(out.uuids).toEqual(['a', 'b']);
+		expect(out.ats).toEqual([1, 3]);
+		expect(out.uuid).toBe('b');
+	});
+	it('a list read by position is never trimmed', () => {
+		const isDraft = (u) => u === 'd';
+		expect(scrubDrafts({ type: 'object', uuids: ['a', 'd', 'b'], element: {} }, isDraft)).toBe(null);
+		expect(scrubDrafts({ type: 'duplicate', sourceUuid: 's', uuids: ['a', 'd'] }, isDraft)).toBe(null);
+	});
+	it("a peer's local-only flag means nothing on receive", () => {
+		const msg = { type: 'object', element: { object: { uuid: 'x', userData: { __localOnly: true } } } };
+		expect(scrubDrafts(msg, () => false, { flags: false })).toBe(msg);
+		expect(scrubDrafts(msg, () => false)).toBe(null);
 	});
 	it('nothing a peer sends touches one of our drafts', () => {
 		const group = new THREE.Group();

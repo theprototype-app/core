@@ -37,13 +37,14 @@ import { applyAgentChatMessage, sendAgentChatBacklogTo, agentChatPeerGone } from
 import { captureInviteHash, verifyInviteDial, joinerInviteMeta, dialingWithInvite, myKind, noteDialKind, noteJoinedVia, agentsAsGuests, isAgentSession, isAgentPeer } from '$lib/inviteStore';
 import { applyKick, isBlocked, isHeldOut, resetModeration, blockReplay } from '$lib/peerModeration'; // 55 A9
 import { notePeerFacts, notePeerActivity, dropPeerFacts, myDevice } from '$lib/peerFacts'; // 55 A9
-import { sessionHost, markPeerJoined, resetSession, signalingRetry, noteSignalingRetry, clearSignalingRetry, noteApprovalStarted, clearApprovalStarted, approvalStartedAt, APPROVAL_WINDOW_MS, MAX_PENDING_APPROVALS, HARD_PEER_CAP, roomIsFull } from '$lib/connectionState';
+import { sessionHost, pendingConnectDecision, markPeerJoined, resetSession, signalingRetry, noteSignalingRetry, clearSignalingRetry, noteApprovalStarted, clearApprovalStarted, approvalStartedAt, APPROVAL_WINDOW_MS, MAX_PENDING_APPROVALS, HARD_PEER_CAP, roomIsFull } from '$lib/connectionState';
 import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo, rolesPending, isFloorMessage, holdUntilRoles } from '$lib/cloudHooks';
 // 27-A (audit H1): shape validation + per-peer failure counters. Both are LEAVES, so the
 // dispatcher can reject a malformed message before any applier sees it.
 import { validateWireMessage } from '$lib/wireValidate';
 import { isPlainMessage } from '$lib/wireShape';
 import { acceptedRosterRows, acceptedMeshIds, acceptsGoneReport, asSendersOwn, acceptedChatLines } from '$lib/rosterTrust';
+import { noteRosterRows, confirmRosterRows, shareableRosterRows } from '$lib/rosterOrigin'; // 80a R1
 import { holdForWireBatch, withWireBatch } from '$lib/wireBatch';
 // 60 Q2: the fast movement channel (an unordered, unreliable second channel for pose streams)
 import { tapAgentEdit } from '$lib/agentPresence';
@@ -394,6 +395,8 @@ export class PeerConnection {
 		this.goneReportAgain = false;
 		/** @type {Set<string>} peers that approved a request of ours: they speak for a session we asked into */
 		this.approvedBy = new Set();
+		/** @type {Map<string, string>} 80a R1 */
+		this.joinedVia = new Map();
 		this.myId = rejoin?.id ?? id;
 		this.reconnectAttempts = 0;
 		this.hasOpened = false;   // the signaling link has opened at least once
@@ -1000,8 +1003,9 @@ export class PeerConnection {
 					// host (first approval wins; null while hosting ourselves).
 					if (!get(sessionHost)) sessionHost.set(conn.peer);
 					this.approvedBy.add(conn.peer);
+					confirmRosterRows(conn.peer); // 80a R1
 					// Our own guests ask that peer too, and it decides: it approved us, not them.
-					if ([...this.openedPeers].some((/** @type {string} */ id) => id !== conn.peer)) this.broadcast({ type: 'hosts', hosts: [conn.peer], joined: true });
+					this.announceJoinedHost(conn.peer);
 					settleRejoin('joined'); // fix-agenttest 6: no-op unless this was the reload's dial
 
 					// Show approved toast message
@@ -1385,7 +1389,7 @@ export class PeerConnection {
 				} else if(data.type == 'hosts') {
 					console.log('Connecting to received hosts');
 					// our host joined that peer: it speaks for the session we are now part of
-					if (data.joined === true && this.rosterTrustFor(conn.peer).speaksForSession) data.hosts.forEach((/** @type {any} */ id) => { if (typeof id === 'string' && id !== this.peer.id) this.approvedBy.add(id); });
+					if (data.joined === true && this.rosterTrustFor(conn.peer).speaksForSession) data.hosts.forEach((/** @type {any} */ id) => { if (typeof id === 'string' && id !== this.peer.id) (this.approvedBy.add(id), this.joinedVia.set(id, conn.peer)); });
 					acceptedMeshIds(data.hosts, this.rosterTrustFor(conn.peer)).forEach( id =>
 					{
 						if (id === this.peer.id) return;
@@ -1713,7 +1717,11 @@ export class PeerConnection {
 					// F-5: the roster applier UNIONS, so a third peer still linked to someone this host
 					// removed would put them straight back in Users — a removed peer stays out of ours
 					const rows = acceptedRosterRows(data.userdata, this.rosterTrustFor(conn.peer));
-					userData(this.removedPeers.size ? rows.filter((/** @type {any} */ e) => !this.removedPeers.has(e?.[0])) : rows);
+					const before = new Set(/** @type {any[]} */ (get(userdata)).map((u) => u[0]));
+					const taken = this.removedPeers.size ? rows.filter((/** @type {any} */ e) => !this.removedPeers.has(e?.[0])) : rows;
+					userData(taken);
+					// 80a R1: roster changes are tied to the connection that made them
+					noteRosterRows(conn.peer, taken, before, this.askingOnly(conn.peer));
 					// a mesh dial that beat this roster left a card; the roster answers it
 					if (this.rosterTrustFor(conn.peer).speaksForSession) {
 						const named = /** @type {any[]} */ (get(userdata));
@@ -2269,7 +2277,9 @@ export class PeerConnection {
 		const lockModeMsg = get(sessionHost) === null ? lockModeMessage() : null;
 		if (lockModeMsg) conn.send(lockModeMsg)
 		conn.send({type: 'hosts', hosts: hosts})
-		conn.send({type: 'userdata', userdata: users.filter((/** @type {any} */ u) => !isHeldOut(u[0]))})
+		conn.send({type: 'userdata', userdata: shareableRosterRows(users.filter((/** @type {any} */ u) => !isHeldOut(u[0])), get(waitingForApproval))})
+		// 80a R1
+		this.announceJoinedHost(get(sessionHost), conn);
 		// 55 A8: the newest agent log lines, so a late joiner's AI window shows what was built
 		sendAgentLogTo(conn);
 		sendAgentChatBacklogTo(conn); // 56 C1: the agent chats so far
@@ -2751,6 +2761,7 @@ export class PeerConnection {
 		// ignore a close from a stale conn we've already replaced or removed
 		if (this.connections[peerId] !== conn) return;
 		console.log('connection to ' + peerId + ' closed');
+		this.dropKnocksVia(peerId); // 80a R1
 		delete this.connections[peerId];
 		peers.update((value) => value);
 		// 101 F1: a link closed by a protocol refusal is over — no reconnect window, no redial
@@ -3257,6 +3268,8 @@ export class PeerConnection {
 		// viewer perms: a viewer's object CREATIONS never leave this machine — mark
 		// them local-only + warn, and skip the broadcast (peers drop them anyway).
 		if (gateCreationBroadcast(data)) return;
+		// 80a R1: roster changes are tied to the connection that made them
+		if (data?.type === 'userdata' && Array.isArray(data.userdata)) data = { ...data, userdata: shareableRosterRows(data.userdata, get(waitingForApproval)) };
 		// 80a K6: an edit we send of an object we hold is activity (the idle expiry counts from it)
 		for (const item of data?.type === 'batch' && Array.isArray(data.items) ? data.items : [data]) {
 			const u = item && gatedUuid(item);
@@ -3309,6 +3322,61 @@ export class PeerConnection {
 			return;
 		}
 		healObjectTo(conn, uuid);
+	}
+
+	/**
+	 * 80a R1: is a request of ours to `from` still open?
+	 * @param {string} from
+	 */
+	askingOnly(from) {
+		if (get(sessionHost) === from || this.approvedBy.has(from)) return false;
+		return get(waitingForApproval).some((/** @type {any} */ w) => w[0] === from && w[1] === 'pending');
+	}
+
+	/**
+	 * 80a R1: the session we joined, to our guests (or one link).
+	 * @param {string | null} hostId @param {any} [conn]
+	 */
+	announceJoinedHost(hostId, conn) {
+		if (!hostId) return;
+		const go = () => {
+			if (get(sessionHost) !== hostId && !this.approvedBy.has(hostId)) return;
+			if (!this.connections[hostId]?.open) return;
+			const msg = { type: 'hosts', hosts: [hostId], joined: true };
+			if (conn) {
+				if (conn.peer !== hostId && conn.open) conn.send(msg);
+			} else if ([...this.openedPeers].some((/** @type {string} */ id) => id !== hostId)) this.broadcast(msg);
+		};
+		if (!get(pendingConnectDecision)) return go();
+		/** @type {(() => void) | null} */ let stop = null;
+		stop = pendingConnectDecision.subscribe((pending) => {
+			if (pending) return;
+			queueMicrotask(() => {
+				stop?.();
+				go();
+			});
+		});
+	}
+
+	/**
+	 * 80a R1: roster changes are tied to the connection that made them.
+	 * @param {string} peerId
+	 */
+	dropKnocksVia(peerId) {
+		for (const [hostId, via] of [...this.joinedVia]) {
+			if (via !== peerId) continue;
+			this.joinedVia.delete(hostId);
+			if (get(sessionHost) === hostId || this.connections[hostId]?.open) continue;
+			this.approvedBy.delete(hostId);
+			if (get(waitingForApproval).some((/** @type {any} */ w) => w[0] === hostId)) cancelOutboundRequest(hostId);
+			else {
+				const knock = this.connections[hostId];
+				if (knock && !knock.open) {
+					delete this.connections[hostId];
+					try { knock.close(); } catch { /* never opened */ }
+				}
+			}
+		}
 	}
 
 	/**

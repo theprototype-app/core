@@ -100,3 +100,12 @@ export function acceptedChatLines(lines, { from, speaksForSession }) {
 	if (!Array.isArray(lines)) return [];
 	return speaksForSession ? lines : lines.filter((m) => m && m.sender === from);
 }
+
+/**
+ * 80a R3: with no roles, the person whose link to us opened first (ties: the lower id).
+ * @param {string[]} people @param {Record<string, number>} joinedAt
+ */
+export function firstArrived(people, joinedAt) {
+	const at = (/** @type {string} */ id) => (Number.isFinite(joinedAt?.[id]) ? joinedAt[id] : Infinity);
+	return [...people].sort((a, b) => at(a) - at(b) || (a < b ? -1 : a > b ? 1 : 0))[0] ?? '';
+}

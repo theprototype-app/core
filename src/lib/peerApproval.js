@@ -1,3 +1,4 @@
+import { rollBackRosterRows } from './rosterOrigin'; // 80a R1
 import { get } from 'svelte/store';
 import { peers, userdata, pendingApprovals, waitingForApproval, showToast, cloudIdentity } from '../stores/appStore';
 import {
@@ -346,6 +347,8 @@ export function cancelOutboundRequest(peerId) {
 	if (peer && conn) delete peer.connections[peerId]; // BEFORE close: stale-guard no-ops the event
 	try { conn?.close?.(); } catch { /* already gone */ }
 	userdata.set(get(userdata).filter((/** @type {any} */ u) => u[0] !== peerId));
+	// 80a R1: roster changes are tied to the connection that made them
+	rollBackRosterRows(peerId, { self: peer?.peer?.id ?? null, linked: (id) => !!peer?.connections?.[id]?.open });
 	if (get(sessionHost) === peerId) sessionHost.set(null);
 	peer?.approvedBy?.delete(peerId);
 	if (peer) peers.update((v) => v);

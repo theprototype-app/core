@@ -116,3 +116,16 @@ describe('acceptedChatLines', () => {
 		expect(acceptedChatLines('x', host)).toEqual([]);
 	});
 });
+
+describe('80a R3: first arrived', () => {
+	it('the person whose link opened first, whatever their id', async () => {
+		const { firstArrived } = await import('../../src/lib/rosterTrust.js');
+		expect(firstArrived(['zz', '00aa', 'mm'], { zz: 100, '00aa': 300, mm: 200 })).toBe('zz');
+	});
+	it('ties and unknown times fall back to the id, unknown last', async () => {
+		const { firstArrived } = await import('../../src/lib/rosterTrust.js');
+		expect(firstArrived(['b', 'a'], { a: 5, b: 5 })).toBe('a');
+		expect(firstArrived(['a', 'b'], { b: 9 })).toBe('b');
+		expect(firstArrived([], {})).toBe('');
+	});
+});

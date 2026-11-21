@@ -6,7 +6,7 @@ import { effectiveTouchLayout, defaultTouchLayout, resolveTouchControls } from '
 import { get } from 'svelte/store';
 
 const spec = resolveTouchControls({ declared: [{ owner: '', actions: [], preset: 'shooter', at: 0 }] });
-const item = (x, y, size = 80) => ({ x, y, size, opacity: 0.7 });
+const item = (/** @type {number} */ x, /** @type {number} */ y, size = 80) => ({ x, y, size, opacity: 0.7 });
 
 describe('scene touch layout (play.touch)', () => {
 	it('is absent by default, so a scene without one saves byte-identical', () => {

@@ -524,6 +524,8 @@ export const DEBUG_HOOKS = [
 	['scenePrivacy', () => import('./scenePrivacy')],
 	['touchControls', () => import('./touchControls')],
 	['touchActions', () => import('./touchActions')],
+	['wakeLock', () => import('./wakeLock.js')], // 102b-play
+	['infoPoints', () => import('./infoPoints.js')], // 102b-play
 	['touchSpec', () => import('./touchSpec')],
 	['playMode', () => import('./playMode')],
 	// phone-polish: Android Back closes the top surface

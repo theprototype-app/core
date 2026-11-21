@@ -3,14 +3,14 @@
 	// what a visitor of the published scene can open: a button in the player's chrome lists them,
 	// their pins stay clickable in the viewport, and a card shows the title, the text, one picture
 	// and — when the author saved a framing — "Show the view". Every other note is left out of the
-	// play app (the pin filter below). Works with no live session: the notes ride the scene file.
+	// play app (PlayApp sets the pin filter). Works with no live session: the notes ride the scene file.
 	//
 	// Keyboard: the button is in the tab order; the list and the card are dialogs that take focus,
 	// Escape closes them and hands focus back. Screen readers get a named button with the count,
 	// a labelled list and a labelled card.
-	import { onMount, tick } from 'svelte';
+	import { tick } from 'svelte';
 	import Icon from '../ui/Icon.svelte';
-	import { annotations, activeAnnotation, notePinFilter, focusAnnotation } from '$lib/annotationsHandler';
+	import { annotations, activeAnnotation, focusAnnotation } from '$lib/annotationsHandler';
 	import { visitorNotes, infoTitle } from '$lib/infoPoints.js';
 	import { isLocked } from '../../stores/sceneStore';
 
@@ -29,10 +29,6 @@
 	/** @type {HTMLElement | null} */
 	let list = $state(null);
 
-	onMount(() => {
-		notePinFilter.set((/** @type {any} */ n) => n?.visitors === true);
-		return () => notePinFilter.set(null);
-	});
 
 	// focus follows what opened: the card when a note opens, the list when it opens
 	$effect(() => {

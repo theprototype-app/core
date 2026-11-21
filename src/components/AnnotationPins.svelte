@@ -102,7 +102,7 @@
 	const numberBase = new THREE.MeshBasicMaterial({ depthTest: false, transparent: true })
 
 	// 102b-play: the play app pins only the notes shown to visitors (notePinFilter); the editor pins all
-	const pinned = $derived($notePinFilter ? $annotations.filter($notePinFilter) : $annotations)
+	$: pinned = $notePinFilter ? $annotations.filter($notePinFilter) : $annotations
 
 	const fillOf = (a: any) => a.color || DEFAULT_NOTE_COLOR
 

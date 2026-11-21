@@ -23,7 +23,9 @@
 	import HeartButton from '../ui/HeartButton.svelte';
 	// 95 SM2/SM3: Share a moment — shown only while the buffer records, i.e. the author allowed it
 	import MomentButton from '../moment/MomentButton.svelte';
-	import InfoPoints from './InfoPoints.svelte'; // 102b-play: notes the author shows to visitors
+	// 102b-play: info points — the card is a LAZY chunk, fetched only when the scene has a visitor note
+	import { annotations } from '$lib/annotationsHandler';
+	const hasInfoPoints = $derived($annotations.some((n) => n?.visitors === true));
 	// 53 (A6): captions / colour filter / text size / controls, set before pressing Play
 	import { openAccessCard } from '$lib/gameShell';
 
@@ -61,7 +63,7 @@
 {#if $embedMode && !$isVRMode}
 	<div id="embed-chrome" class="embed-chrome" data-play-chrome>
 		<MomentButton id="embed-moment" variant="embed" />
-		<InfoPoints />
+		{#if hasInfoPoints}{#await import('./InfoPoints.svelte') then m}<m.default />{/await}{/if}
 		{#if canFullscreen}
 			<button
 				id="embed-fullscreen"

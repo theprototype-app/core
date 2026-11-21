@@ -62,7 +62,7 @@
 		return effectiveTouchLayout(spec, saved, w, h, author);
 	}
 	/** the working copy, item key -> item */
-	let items = $state(structuredClone(layoutFor(scope, window.innerWidth, window.innerHeight).items));
+	let items = $state(structuredClone(layoutFor(untrack(() => scope), window.innerWidth, window.innerHeight).items));
 	let selected = $state(/** @type {string | null} */ (spec.actions[0] ? 'btn:' + spec.actions[0].id : 'stick'));
 	let dirty = $state(false);
 

@@ -34,7 +34,6 @@
 	} from '$lib/annotationsHandler';
 	import { globalCamera, globalRenderer, orbitControls } from '../../stores/sceneStore';
 	import { notesDrawerOpen, showToast } from '../../stores/appStore.js';
-	import { pictureFromFile } from '$lib/infoPoints.js';
 
 	// H5 (notes v2): ONE note card with a VIEW face and an EDIT face, anchored
 	// NEAR its pin by a continuous screen projection — the card rides the camera
@@ -79,6 +78,7 @@
 		input.value = '';
 		if (!file) return;
 		pictureBusy = true;
+		const { pictureFromFile } = await import('$lib/infoPicture.js'); // lazy: only when a picture is added
 		const url = await pictureFromFile(file);
 		pictureBusy = false;
 		if (url) picture = url;

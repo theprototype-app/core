@@ -9,6 +9,28 @@ import { HAPTIC_PATTERN_NAMES } from '../../hapticPatterns';
 import { MUSIC_PRESET_IDS } from '../../gameMusicPresets';
 import { V_MARK } from '../catalogShared.js';
 import * as shared from '../evalShared.js';
+import { GAME_VALUE_FORMATS, formatGameValue, asNumber } from '../../gameValueFormat.js';
+
+/** 102b-hud: the Game Value node's sources (the select's order) */
+export const GAME_VALUE_READS = [
+	'score',
+	'myScore',
+	'best',
+	'clock',
+	'timeLeft',
+	'countdown',
+	'round',
+	'level',
+	'levelName',
+	'stars',
+	'totalStars',
+	'lives',
+	'variable',
+	'playerVariable',
+	'stored',
+	'published',
+	'wired'
+];
 
 /** @type {import('../registry.js').NodeFamily} */
 export default {
@@ -243,6 +265,42 @@ export default {
 					return typeof held === 'string' ? held : JSON.stringify(held);
 				}
 				return held === undefined ? rt.num(d.fallback ?? 0) : rt.num(held);
+			}
+		},
+		// 102b-hud (row 4): GAME VALUE — one node that reads any game value and writes it as words,
+		// so a HUD needs no `info` node of its own: the score, the round clock, the best, the level,
+		// its stars, lives, a variable, a stored value, or what a module PUBLISHED (api.values).
+		// Every read is a LOCAL read of state that is already replicated or already per-peer by
+		// design (the getvariable / storedvalue rule), so nothing about it goes on the wire.
+		// The default output is the TEXT (HUD Text shows it as it is); `value` is the raw number
+		// (HUD Bar), `max` the max it was formatted against.
+		{
+			type: 'gamevalue',
+			label: 'Game Value',
+			defaults: { read: 'score', name: '', format: 'number', decimals: 0, max: 0, prefix: '', suffix: '', empty: '' },
+			inputs: ['value', 'max'],
+			inputLabels: { value: 'value - shown when read is "wired"', max: 'max - for fraction, percent, stars' },
+			params: [
+				{ key: 'read', kind: 'select', options: GAME_VALUE_READS },
+				{ key: 'name', kind: 'text', placeholder: 'variable, key, level or value name', maxLength: 64 },
+				{ key: 'format', kind: 'select', options: GAME_VALUE_FORMATS },
+				{ key: 'decimals', kind: 'range', min: 0, max: 4, step: 1 },
+				{ key: 'max', kind: 'number', min: 0, max: 100000, step: 1 },
+				{ key: 'prefix', kind: 'text', placeholder: 'Coins ', maxLength: 40 },
+				{ key: 'suffix', kind: 'text', placeholder: ' pts', maxLength: 40 },
+				{ key: 'empty', kind: 'text', label: 'when empty', placeholder: 'not cleared yet', maxLength: 60 }
+			],
+			note: 'Reads a game value and writes it as text for HUD Text; the value output feeds HUD Bar.',
+			sockets: { out: 'any', in: { value: 'any', max: 'number' }, outHandles: { value: 'number', max: 'number' } },
+			card: 'AnimationNode',
+			eval(node, { d, input }, rt) {
+				const read = readGameValue(String(d.read ?? 'score'), String(d.name ?? '').trim(), input, rt);
+				const wiredMax = input('max', undefined);
+				const max = wiredMax !== undefined && wiredMax !== null && wiredMax !== '' ? rt.num(wiredMax) : read.max ?? rt.num(d.max ?? 0);
+				const text = formatGameValue(read.value, { format: d.format, decimals: d.decimals, max, prefix: d.prefix, suffix: d.suffix, empty: d.empty });
+				const n = asNumber(read.value);
+				// a HUD Text treats '' as "nothing wired"; a space keeps an empty line empty (the info nodes' rule)
+				return { __default: text === '' ? ' ' : text, __handles: { value: n ?? 0, max } };
 			}
 		},
 		// 30b (core-games): GAME FEEL — the flow half of 30b-vr-play's module kit, so a
@@ -516,3 +574,70 @@ export default {
 		// the module's own count node replaces it (install it from Modules ▸ Browse).
 	]
 };
+
+
+
+/**
+ * One Game Value read: `{value, max}` (max null = the node's own setting).
+ * @param {string} read @param {string} name @param {(h: string, f: any) => any} input @param {any} rt
+ * @returns {{ value: any, max: number | null }}
+ */
+function readGameValue(read, name, input, rt) {
+	const kit = (/** @type {string} */ type, /** @type {any} */ data = {}) => {
+		try {
+			return rt.kitValue(type, data);
+		} catch {
+			return undefined; // a kit piece the game never set up reads as nothing
+		}
+	};
+	switch (read) {
+		case 'myScore':
+			return { value: kit('kit-score-mine') ?? 0, max: null };
+		case 'best':
+			return { value: kit('kit-score-best') ?? 0, max: null };
+		case 'clock': {
+			// the kit round's play time when the game runs one, else the game shell's round clock
+			const k = rt.num(kit('kit-round-elapsed') ?? 0);
+			return { value: k > 0 ? k : rt.gameElapsed(), max: null };
+		}
+		case 'timeLeft':
+			return { value: rt.num(kit('kit-round-remaining') ?? 0), max: null };
+		case 'countdown':
+			return { value: rt.num(kit('kit-round-countdown') ?? 0), max: null };
+		case 'round': {
+			const k = rt.num(kit('kit-round-number') ?? 0);
+			return { value: k > 0 ? k : rt.viewGame().round, max: null };
+		}
+		case 'level':
+			return { value: rt.num(kit('kit-levels-index') ?? 0), max: null };
+		case 'levelName':
+			return { value: String(kit('kit-levels-currentLabel') ?? ''), max: null };
+		case 'stars': {
+			// a named level's best stars, else the current level's
+			const level = name || String(kit('kit-levels-current') ?? '');
+			return { value: level ? rt.num(kit('kit-levels-starsOf', { level }) ?? 0) : 0, max: 3 };
+		}
+		case 'totalStars':
+			return { value: rt.num(kit('kit-levels-totalStars') ?? 0), max: null };
+		case 'lives':
+			return { value: rt.num(rt.myPeerVar(name || 'lives', 0)), max: null };
+		case 'variable':
+			return { value: rt.viewGameVar(name || 'score', 0), max: null };
+		case 'playerVariable':
+			return { value: rt.myPeerVar(name || 'score', 0), max: null };
+		case 'stored': {
+			const held = name ? rt.readStored(rt.storedKey(name), undefined) : undefined;
+			return { value: held === undefined ? 0 : held, max: null };
+		}
+		case 'published':
+			return { value: rt.gameValueOf(name, 0), max: rt.gameValueMax(name) };
+		case 'wired':
+			return { value: input('value', 0), max: null };
+		default: {
+			// 'score': the kit's shared score when the game keeps one, else the `score` variable
+			const k = kit('kit-score-total');
+			return { value: k !== undefined && rt.num(k) !== 0 ? k : rt.viewGameVar('score', 0), max: null };
+		}
+	}
+}
+

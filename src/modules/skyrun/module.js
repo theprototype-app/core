@@ -410,8 +410,32 @@ export default {
 		/** @type {null | (() => void)} */ let helpOff = null;
 		/** 36 U8: the touch buttons (a stick and Jump) @type {null | (() => void)} */ let touchOff = null;
 
+		// 102b-hud (row 4): the RAW values, published for the core Game Value node (the scene formats
+		// them: clock, "Coins 3 / 10", "Best —"). The skyruninfo node stays registered for scenes saved
+		// before the official scene moved to Game Value.
+		let publishedAt = -1;
+		/** @param {number} time */
+		const publish = (time) => {
+			const v = api.values;
+			// ~10 Hz (the HUD redraws at that rate) and only in a Sky Run scene
+			if (!v?.set || (time - publishedAt < 0.1 && time >= publishedAt) || !active()) return;
+			publishedAt = time;
+			const id = stageNo();
+			v.set('title', 'Stage ' + id + ' · ' + stageName(id));
+			v.set('time', run.finished || Number(kit.round.elapsed?.() ?? 0));
+			v.set('coins', run.coins, { max: run.coinsTotal || allNamed('Sky S' + id + ' coin').length });
+			v.set('flag', run.flag || 0);
+			v.set('best', run.best > 0 ? run.best : 0);
+			v.set('result', run.result || 'Round over');
+			v.set('resultLine', run.resultLine || String(kit.round.outcome?.() ?? ''));
+			const c = Number(kit.round.countdown?.() ?? 0);
+			v.set('countdown', phase() === 'intro' && c > 0 ? String(c) : '');
+			for (const level of ['1', '2', '3']) v.set('stageBest' + level, bestOf(level));
+		};
+
 		let wasActive = false;
 		api.registerFrameTask((/** @type {number} */ time) => {
+			publish(time);
 			const on = active();
 			if (on !== wasActive) {
 				wasActive = on;

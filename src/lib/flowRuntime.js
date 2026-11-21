@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 // `{v}` labels for the HUD — 'Gems: {v}' needs no string node and no string socket type
 import { hudFormat } from './hudFormat.js';
+import { gameValueOf, gameValueMax } from './gameValues.js'; // 102b-hud: the Game Value node's published source
 import { sessionNow, onSessionClockJump } from './sessionClock'; // 25-E: the synced clock is the SESSION's
 import { elapsedNow } from './scriptElapsed.js';
 import { setScriptElapsed } from './sandbox/scripts.js';
@@ -5801,6 +5802,10 @@ const RT = {
 	freshStamp,
 	gameElapsed,
 	gameFeelActive,
+	gameValueMax, // 102b-hud
+	gameValueOf, // 102b-hud
+	/** 102b-hud: a kit value node's reading, for Game Value @param {string} type @param {any} data */
+	kitValue: (type, data) => kit.evalNodeValue(type, data),
 	gameSettingValue,
 	get,
 	handleStamp,

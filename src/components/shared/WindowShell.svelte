@@ -7,7 +7,7 @@
 	import PaneHandle from '../ui/PaneHandle.svelte'
 	import ContextMenu from '../ContextMenu.svelte'
 	import Icon from '../ui/Icon.svelte'
-	import { paneLocks } from '$lib/ui/paneLocks.js'
+	import { paneLocks, togglePaneLock } from '$lib/ui/paneLocks.js'
 	import { edgeFade } from '$lib/ui/edgeFade.js'
 
 	// 197: reusable window CHROME. A MAIN area flanked by a collapsible PRIMARY
@@ -294,6 +294,9 @@
 		tooltip: `Move ${primaryLabel} to the ${side === 'left' ? 'right' : 'left'} and the other pane to the ${side}`,
 		action: switchSide
 	})
+	// 80a-fix4-ui O2: the panes' elements — an open pane's handle is not drawn, and its menu moves to the pane's top band
+	let primaryEl = $state<HTMLElement | null>(null)
+	let secondaryEl = $state<HTMLElement | null>(null)
 	let headMenu = $state<{ x: number; y: number } | null>(null)
 	function onHeadMenu(e: MouseEvent) {
 		e.preventDefault()
@@ -331,7 +334,7 @@
 	{/if}
 	<!-- PRIMARY panel; its resize grip rides its inner border (no chrome column: showhide-v8) -->
 	{#if narrow ? pane === 'primary' : primaryOpen && !hidePrimary}
-		<div class="ws-panel relative flex h-full shrink-0 flex-col" style={narrow ? 'order: 1' : `order: ${primaryPanelOrder}; width: ${primaryWidth * k}px`}>
+		<div class="ws-panel relative flex h-full shrink-0 flex-col" bind:this={primaryEl} data-ws-primary-pane style={narrow ? 'order: 1' : `order: ${primaryPanelOrder}; width: ${primaryWidth * k}px`}>
 			<div class="min-h-0 flex-1 overflow-y-auto" use:minimalScroll>{@render primary?.()}</div>
 			{#if !locked && !narrow}
 				<div
@@ -361,6 +364,7 @@
 	{#if narrow ? !!narrowMode : secondaryOpen}
 		<div
 			class="ws-panel ws-panel-secondary relative flex h-full shrink-0 flex-col"
+			bind:this={secondaryEl}
 			style={narrow ? 'order: 1' : `order: ${secondaryPanelOrder}; width: ${secondaryEff * k}px`}
 		>
 			{#if !narrow}
@@ -401,9 +405,10 @@
 		</div>
 	{/if}
 
-	<!-- showhide-v8: ONE arrow handle per side, hanging over the content's edge (no margin). The primary's on the
-	     window edge while it is hidden, on the panel's inner edge while it shows; the secondary's carries its
-	     active mode's role icon (the hybrid) -->
+	<!-- showhide-v8: ONE arrow handle per side, hanging over the content's edge (no margin), on the window edge while
+	     its pane is hidden; the secondary's carries its active mode's role icon (the hybrid). 80a-fix4-ui O2: not
+	     drawn while the pane shows (the secondary's header has Close; both panes' top bands carry the handle's menu,
+	     Switch sidebar side included) -->
 	{#if !hidePrimary && !narrow}
 		<PaneHandle
 			edge={side}
@@ -411,6 +416,7 @@
 			label={primaryLabel}
 			windowKey={key}
 			extraItems={secondaryModes.length ? [switchItem] : []}
+			pane={primaryEl}
 			onclick={togglePrimary}
 			data-ws-primary-toggle
 			style="top: {handleTop}px; {side === 'left' ? 'left' : 'right'}: {handleAt(side, primaryOpen, primaryWidth)}px"
@@ -424,6 +430,7 @@
 			role={iconOf(activeMode)}
 			windowKey={key}
 			extraItems={hidePrimary ? [] : [switchItem]}
+			pane={secondaryEl}
 			onclick={toggleSecondary}
 			data-ws-secondary-toggle
 			style="top: {handleTop}px; {secondarySide === 'left' ? 'left' : 'right'}: {handleAt(secondarySide, secondaryOpen, secondaryEff)}px"
@@ -434,7 +441,12 @@
 	<ContextMenu
 		x={headMenu.x}
 		y={headMenu.y}
-		items={[...(hidePrimary ? [] : [switchItem]), { label: 'Hide this pane', icon: secondarySide === 'left' ? 'panel-left-close' : 'panel-right-close', disabled: locked, action: hideSecondary }]}
+		items={[
+			...(hidePrimary ? [] : [switchItem]),
+			{ label: 'Hide this pane', icon: secondarySide === 'left' ? 'panel-left-close' : 'panel-right-close', disabled: locked, action: hideSecondary },
+			// O2: the handle is not drawn while the pane shows, so its Lock lives here too
+			{ label: 'Lock sidebars', icon: 'lock', checked: locked, action: () => togglePaneLock(key) }
+		]}
 		sizeKey="wspanehead"
 		onclose={() => (headMenu = null)}
 	/>

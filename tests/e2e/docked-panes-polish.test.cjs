@@ -82,7 +82,7 @@ h.run(async () => {
 	await page.locator('#explorer-list .tp-pane-handle.ph-right').first().click();
 	await page.waitForTimeout(500);
 	h.check((await page.locator('#explorer-list [data-ws-switch-side]').count()) === 0, 'B6 the Explorer pane header has no "Switch sidebar side" button');
-	await page.locator('#explorer-list .tp-pane-handle.ph-right').first().click({ button: 'right' });
+	await h.paneHandleClick(page, '#explorer-list .tp-pane-handle.ph-right', { button: 'right' });
 	const inMenu = await page.getByRole('menuitem', { name: 'Switch sidebar side', exact: true }).count();
 	h.check(inMenu === 1, `B6 the pane handle's context menu offers "Switch sidebar side" (${inMenu})`);
 	await page.keyboard.press('Escape');
@@ -92,12 +92,12 @@ h.run(async () => {
 	await page.keyboard.press('Escape');
 	await page.waitForTimeout(300);
 	const before = await read(page, () => localStorage.getItem('ws:explorer:side') || 'left');
-	await page.locator('#explorer-list .tp-pane-handle.ph-right').first().click({ button: 'right' });
+	await h.paneHandleClick(page, '#explorer-list .tp-pane-handle.ph-right', { button: 'right' });
 	await page.getByRole('menuitem', { name: 'Switch sidebar side', exact: true }).click();
 	await page.waitForTimeout(500);
 	const after = await read(page, () => localStorage.getItem('ws:explorer:side') || 'left');
 	h.check(before !== after, `B6 the menu item switches the sides (${before} -> ${after})`);
-	await page.locator('#explorer-list .tp-pane-handle').first().click({ button: 'right' });
+	await h.paneHandleClick(page, '#explorer-list .tp-pane-handle', { button: 'right' });
 	await page.getByRole('menuitem', { name: 'Switch sidebar side', exact: true }).click();
 	await page.waitForTimeout(500);
 
@@ -117,7 +117,8 @@ h.run(async () => {
 	await page.waitForTimeout(400);
 	h.check((await rightOpen()) === true, 'B5 mouse over it: Ctrl+Alt+B shows its right pane');
 	// focus inside the Explorer, mouse over the viewport
-	await page.locator('#explorer-list .tp-pane-handle.ph-left').first().focus();
+	// (80a-fix4-ui O2: an open pane's handle is hidden and takes no focus — focus a control inside the Explorer)
+	await page.locator('#explorer-list button:visible').first().focus();
 	await page.mouse.move(960, 200);
 	await page.keyboard.press('Control+b');
 	await page.waitForTimeout(400);

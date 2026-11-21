@@ -50,6 +50,12 @@ h.run(async () => {
 
 	// ---- 1. no plugin: the card says the report stays here; Save keeps it ---------------
 	await open();
+	// 80a-fix4-ui D1 (83-batch3 rap-check.png): the card looked see-through — its background was var(--surface), a
+	// token only the exotic themes define, so the default theme drew none (uir-polish made it --surface-1). The card
+	// is a solid surface: its computed background is fully opaque
+	const bg = await page.evaluate(() => getComputedStyle(/** @type {Element} */ (document.getElementById('problem-report'))).backgroundColor);
+	const alpha = /rgba?\(([^)]+)\)/.exec(bg)?.[1].split(',').map((x) => x.trim())[3];
+	h.check(!!bg && bg !== 'transparent' && (alpha === undefined || Number(alpha) === 1), `D1 the Report a bug card has a solid background (${bg})`);
 	const shot = await page.evaluate(() => {
 		const img = document.querySelector('#problem-shot');
 		return img ? img.naturalWidth : 0;

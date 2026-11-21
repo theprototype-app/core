@@ -82,8 +82,13 @@ h.run(async () => {
 		await mockReports(A.ctx);
 		let fetches = 0;
 		page.on('request', (/** @type {any} */ r) => r.url().includes(chunkName) && fetches++);
-		let navigations = 0;
-		page.on('framenavigated', (/** @type {any} */ f) => f === page.mainFrame() && navigations++);
+		/** @type {string[]} */
+		const navigated = [];
+		page.on('framenavigated', (/** @type {any} */ f) => f === page.mainFrame() && navigated.push(f.url()));
+		// 80a-fix4-ui: framenavigated also fires for same-document URL changes (the hash), so a reload is judged by a
+		// mark on the window — a reload is a new window
+		await page.evaluate(() => { /** @type {any} */ (window).__staleChunkMark = true; });
+		const sameWindow = () => page.evaluate(() => /** @type {any} */ (window).__staleChunkMark === true).catch(() => false);
 		await openProfiler(page);
 		const toast = page.locator(toastSel).first();
 		await toast.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
@@ -101,7 +106,7 @@ h.run(async () => {
 		const d2 = await dbg(page);
 		const toasts = await page.locator('.tp-toast', { hasText: 'A new version is ready' }).count();
 		h.check(d2.notices === 1 && toasts <= 1, `A5 a second failure adds no second toast (${toasts} toasts, ${JSON.stringify(d2)})`);
-		h.check(navigations === 0, `A6 the page never reloaded by itself (${navigations} navigations)`);
+		h.check(await sameWindow(), `A6 the page never reloaded by itself (same window; URL changes meanwhile: ${JSON.stringify(navigated)})`);
 		const chunkReports = reports.filter((r) => /dynamically imported module/i.test(r?.msg ?? ''));
 		h.check(chunkReports.length <= 1, `A7 at most one error report for it (${JSON.stringify(reports.map((r) => r?.kind + ': ' + r?.msg))})`);
 		// put the chunk back (the "new version" is there now) and press the toast's Reload
@@ -116,9 +121,9 @@ h.run(async () => {
 			await page.keyboard.press('Enter');
 			await page.locator('.notif-act', { hasText: 'Reload' }).first().click({ timeout: 8000 }).catch(() => {});
 		}
-		await page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, null, { timeout: 60000 });
+		await page.waitForFunction(() => !(/** @type {any} */ (window).__staleChunkMark) && window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, null, { timeout: 60000 }).catch(() => {});
 		await h.answerRestore(A).catch(() => {});
-		h.check(navigations >= 1, 'A8 Reload reloads the page');
+		h.check(!(await sameWindow()), 'A8 Reload reloads the page (a new window)');
 		await openProfiler(page);
 		await page.waitForSelector('#profiler-import', { timeout: 20000 }).catch(() => {});
 		h.check(await page.locator('#profiler-import').isVisible().catch(() => false), 'A9 after the reload the Profiler opens');

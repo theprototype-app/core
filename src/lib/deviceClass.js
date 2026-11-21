@@ -14,7 +14,15 @@ import { phoneShell } from './ui/phoneShell.js';
 // screen is wider than many tablets in CSS px). What does: the browser says "mobile" for a phone, folded or not, and
 // not for a tablet — `navigator.userAgentData.mobile` where it exists (Chromium), else the UA's "Mobi" token (Android
 // phones carry it, Android tablets do not). An iPad is a tablet whichever UA it sends (iPadOS sends the Mac one with
-// touch points). A LEAF (svelte/store + safeStorage + the phone shell switch).
+// touch points).
+//
+// 80a-fix4-ui O1 (owner 2026-11-20, N6 unfolded): Chrome for Android sends the DESKTOP-site UA to a tab opened on a
+// large screen (or with "Desktop site" ticked), and that UA says neither "mobile" nor "Android": the same phone came
+// out a phone in one tab (panels button, no handles) and a tablet in the next (handles, no button). So the SCREEN
+// decides too: a foldable's inner screen is near-SQUARE (N6 692 x 763, HONOR 719 x 781 CSS px, long / short ~1.1)
+// while a tablet is 4:3 or wider (iPad mini 1.52, Android tablets 1.6), so a touch screen whose short side is under
+// 900 px and whose long side is under 1.25 x it is an unfolded phone whatever the UA. A LEAF (svelte/store +
+// safeStorage + the phone shell switch).
 
 /** @typedef {'desktop'|'phone'|'tablet'} DeviceClass */
 
@@ -42,19 +50,28 @@ export function browserSaysMobile() {
 	return /Mobi|iPhone|iPod/.test(ua);
 }
 
+/** the inner screen of an unfolded foldable: near-square and phone-sized (the UA cannot be trusted there, see above)
+ *  @param {{width: number, height: number}|undefined} [scr] the screen (default: this one) */
+export function foldableInnerScreen(scr = typeof screen === 'undefined' ? undefined : screen) {
+	if (!scr) return false;
+	const long = Math.max(scr.width, scr.height);
+	const short = Math.min(scr.width, scr.height);
+	return short > 0 && short < 900 && long / short < 1.25;
+}
+
 /** @param {any} v @returns {DeviceClass|null} */
 const asClass = (v) => (v === 'desktop' || v === 'phone' || v === 'tablet' ? v : null);
 
 /**
- * desktop = a mouse; phone = a touch screen that says it is mobile (the unfolded foldable — the folded one is the
- * phone shell); tablet = any other touch screen.
+ * desktop = a mouse; phone = a touch screen that says it is mobile, or a foldable's near-square inner screen (the
+ * unfolded foldable — the folded one is the phone shell); tablet = any other touch screen.
  * @type {import('svelte/store').Readable<DeviceClass>}
  */
 export const deviceClass = derived(coarsePointer, ($coarse) => {
 	const forced = typeof localStorage !== 'undefined' ? asClass(safeStorage.getItem(OVERRIDE_KEY)) : null;
 	if (forced) return forced;
 	if (!$coarse) return 'desktop';
-	return browserSaysMobile() ? 'phone' : 'tablet';
+	return browserSaysMobile() || foldableInnerScreen() ? 'phone' : 'tablet';
 });
 
 /** the unfolded phone: a phone whose screen is wide enough for sidebars (the folded one is the phone shell) */

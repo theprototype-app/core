@@ -202,6 +202,16 @@ h.run(async () => {
 				console.log(`menu: chrome ${menu.chrome}, hud ${menu.hud}, shift ${menu.shift}`);
 				check(menu.chrome > 0, `${tag} menu: the play chrome is on screen (${menu.chrome})`);
 				check(menu.pairs.length === 0, `${tag} menu: no chrome box covers another or a HUD box (${menu.pairs.join('; ') || 'none'})`);
+				// 80a-fix4-ui G15 (device-lab-2 F9: Sky Run's "Pick a stage" row ran off a 390 px screen): every menu button
+				// is on screen whole (the centred menu shrinks to fit, fix-play-link)
+				const btns = await page.evaluate(() =>
+					[...document.querySelectorAll('#hud-layer button')]
+						.map((b) => ({ t: (b.textContent ?? '').trim().slice(0, 24), r: b.getBoundingClientRect() }))
+						.filter((b) => b.r.width > 0)
+						.map((b) => ({ t: b.t, in: b.r.left >= 0 && b.r.right <= innerWidth && b.r.top >= 0 && b.r.bottom <= innerHeight, w: Math.round(b.r.width), h: Math.round(b.r.height) }))
+				);
+				console.log(`menu buttons: ${JSON.stringify(btns)}`);
+				check(btns.length > 0 && btns.every((b) => b.in), `${tag} menu: every button is on screen whole (${btns.filter((b) => !b.in).map((b) => b.t).join(', ') || btns.length + ' in'})`);
 				// start the first round: the first button of the visible HUD (a stage / Play button)
 				const pressed = await page.evaluate(() => {
 					const b = [...document.querySelectorAll('#hud-layer button')].find((x) => x.getBoundingClientRect().width > 0);

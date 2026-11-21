@@ -112,14 +112,18 @@ h.run(async () => {
 	// pending dial is DIAL_GRACE_MS (10 s) old — reading the last dial 300 ms later read the RESTORE (with the
 	// metadata) on a fast box and the new dial on a slow one (red 2 of 3 on 1.65-1.70). The rule is the forget,
 	// so read it at once, then wait for the redial itself.
-	const before = (await dials(J)).filter((d) => d.id === 'bbbb1').length;
+	// the forget is stamped with the dial count AT THAT MOMENT: a restore retry already on its 4 s timer may
+	// dial in between (it read the map before the forget), so only a dial made after the forget counts
+	await inPage(J, `window.__forgotAt = -1; const m = pc.dialCloud; const del = m.delete.bind(m);
+		m.delete = (k) => { if (k === 'bbbb1' && window.__forgotAt < 0) window.__forgotAt = window.__dials.length; return del(k); };`);
 	await inPage(J, 's.waitingForApproval.set([]); s.userdata.set([]);');
 	await dialVia(J, 'bbbb1');
 	h.check(!(await inPage(J, 'return !!pc.dialCloud?.has("bbbb1")')), 'a later plain dial forgets the remembered cloud data at once');
 	let forgot = null;
 	for (const until = Date.now() + 15000; Date.now() < until && !forgot; await J.page.waitForTimeout(250)) {
-		const list = (await dials(J)).filter((d) => d.id === 'bbbb1');
-		if (list.length > before) forgot = list.pop();
+		const at = await inPage(J, 'return window.__forgotAt');
+		const list = at < 0 ? [] : (await dials(J)).slice(at).filter((d) => d.id === 'bbbb1');
+		if (list.length) forgot = list[0];
 	}
 	h.check(forgot && !('cloud' in (forgot.opts?.metadata ?? {})), `a later plain dial to the same peer carries no cloud data (${JSON.stringify(forgot?.opts)})`);
 	// bounded: over 1 KB is dropped, not truncated; unserialisable is dropped

@@ -112,19 +112,16 @@ h.run(async () => {
 	// then B accepts: the load applies and replicates
 	await A.page.evaluate((id) => window.__tp.test.v1.sessions.requestLoadSession(id), target.id);
 	await B.page.waitForTimeout(800);
-	// the press is stamped by a document capture listener (the toast may re-render its button under us)
-	await B.page.evaluate(() =>
-		document.addEventListener(
-			'pointerdown',
-			(e) => {
-				const b = /** @type {any} */ (e.target)?.closest?.('button');
-				// @ts-ignore
-				if (b && /Accept/.test(b.textContent) && !window.__b1.accept) window.__b1.accept = performance.now();
-			},
-			true
-		)
-	);
-	await B.page.locator('.tp-toast', { hasText: /wants to load session/ }).getByRole('button', { name: 'Accept', exact: true }).click();
+	// the press is stamped IN THE PAGE in the same task that presses it (a document capture listener never
+	// saw Playwright's pointerdown/click reach the toast button: the app's own capture handlers get it first)
+	await B.page.locator('.tp-toast', { hasText: /wants to load session/ }).getByRole('button', { name: 'Accept', exact: true }).waitFor({ timeout: 15000 });
+	await B.page.evaluate(() => {
+		const toast = [...document.querySelectorAll('.tp-toast')].find((t) => /wants to load session/.test(t.textContent ?? ''));
+		const btn = /** @type {HTMLButtonElement | undefined} */ ([...(toast?.querySelectorAll('button') ?? [])].find((x) => (x.textContent ?? '').trim() === 'Accept'));
+		// @ts-ignore
+		window.__b1.accept = performance.now();
+		btn?.click();
+	});
 	let replaced = false;
 	await h.eventually(
 		() => Promise.all([objectNames(A.page), objectNames(B.page)]),
@@ -142,7 +139,8 @@ h.run(async () => {
 	);
 	// @ts-ignore
 	const b1 = await B.page.evaluate(() => window.__b1);
-	const ms = (/** @type {number} */ t) => (t ? Math.round(t - b1.accept) : -1);
+	const ms = (/** @type {number} */ t) => (t && b1.accept ? Math.round(t - b1.accept) : -1);
+	h.check(b1.accept > 0, 'premise: B pressed Accept (stamped in the page)');
 	console.log(`  B1: Accept -> backup saved ${ms(b1.backup)} ms, -> objects building ${ms(b1.objects)} ms (${SEED} seeded sessions of 1.5 MB)`);
 	h.check(b1.backup > 0 && b1.objects > 0 && b1.objects - b1.accept < 2000, `B1: Accept -> the load builds objects in < 2 s with ${SEED} big saved sessions (${ms(b1.objects)} ms)`);
 	// test-health-1: red since the toast check stopped masking it (e3edaee5) and not explained from the

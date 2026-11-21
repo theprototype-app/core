@@ -10,7 +10,8 @@ const require = createRequire(import.meta.url);
 const { addImportRetry, HELPER_ID, ANCHOR } = require('../../scripts/import-retry.cjs');
 
 const toasts = [];
-vi.mock('../../src/stores/appStore.js', () => ({ showToast: (...a) => toasts.push(a) }));
+const dismissed = [];
+vi.mock('../../src/stores/appStore.js', () => ({ showToast: (...a) => toasts.push(a), dismissToastById: (id) => dismissed.push(id) }));
 const chunk = await import('../../src/lib/chunkReload.js');
 
 const FAIL = () => new TypeError('Failed to fetch dynamically imported module: https://theprototype.app/_app/immutable/chunks/cm70kyiT.js');
@@ -73,6 +74,15 @@ describe('retryImport', () => {
 		expect(message).toMatch(/^A new version is ready – Reload/);
 		expect(actions.map((a) => a.label)).toEqual(['Reload']);
 		expect(opts).toEqual({ keep: true });
+		// 80a-fix4-ui aa: one deploy, ONE reload prompt — the notice takes the update card's place, and a later
+		// update check sees the prompt is up
+		expect(dismissed).toEqual([chunk.UPDATE_TOAST_ID]);
+		expect(chunk.reloadPromptShown()).toBe(true);
+	});
+
+	it('the update check stands down once the notice is up (source)', () => {
+		const src = readFileSync(new URL('../../src/lib/updateCheck.js', import.meta.url), 'utf8');
+		expect(src).toMatch(/if \(reloadPromptShown\(\)\) return;\s*showToastById\(UPDATE_TOAST_ID/);
 	});
 });
 

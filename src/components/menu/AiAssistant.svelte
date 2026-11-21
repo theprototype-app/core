@@ -7,7 +7,7 @@
 	import Icon from '../ui/Icon.svelte';
 	import Button from '../ui/Button.svelte';
 	import { aiEnabled, aiProviders, aiActiveProvider } from '$lib/ai/providers';
-	import { runPrompt } from '$lib/ai/assistant';
+	import { runPrompt } from '$lib/ai/aiState.js';
 
 	let pillPrompt = $state('');
 	let pillInput: any = $state(null);

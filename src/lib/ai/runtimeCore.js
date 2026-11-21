@@ -30,7 +30,7 @@ const r1 = (n) => Math.round(n * 10) / 10;
  *   edges: {id?: string, source: string, target: string, sourceHandle?: string | null, targetHandle?: string | null}[],
  *   triggers?: Record<string, {lastT: number, count?: number}>,
  *   now?: number,
- *   objects?: Record<string, {name: string, type?: string, light?: boolean, visible?: boolean}>,
+ *   objects?: Record<string, {name: string, type?: string, light?: boolean, visible?: boolean, sensor?: boolean}>,
  *   hudElements?: string[],
  *   hudScreens?: string[],
  *   play?: {interaction?: string, grounded?: boolean, spawn?: any, simOnPlay?: boolean},
@@ -39,7 +39,9 @@ const r1 = (n) => Math.round(n * 10) / 10;
  *   behaviours?: {name: string, issues: {line?: number, message: string}[]}[],
  *   isSource: (type: string) => boolean,
  *   isAction: (type: string) => boolean,
- *   inputsOf: (type: string) => {name: string, type: string}[]
+ *   inputsOf: (type: string) => {name: string, type: string}[],
+ *   edgeTypeProblem?: (source: any, target: any, sourceHandle?: string, targetHandle?: string) => ({refuse?: string, warn?: string} | null),
+ *   edgeHandleProblems?: (source: any, target: any, sourceHandle?: string, targetHandle?: string) => string[]
  * }} World
  */
 
@@ -211,6 +213,8 @@ export function validateScene(w) {
 		}
 	}
 
+	wiringIssues(w, ix, add);
+
 	// walk mode with no way to stand anywhere (78 F11, H3)
 	if (w.play?.grounded && !w.play?.spawn && !w.nodes.some((n) => n.type === 'charcontroller'))
 		add({
@@ -243,6 +247,99 @@ export function validateScene(w) {
 		issues,
 		checked: { nodes: w.nodes.length, edges: w.edges.length, behaviours: (w.behaviours ?? []).length }
 	};
+}
+
+/** the stateful nodes whose `toggle` flips per press @type {Set<string>} */
+const TOGGLES = new Set(['latch', 'moveto', 'rotateto', 'scaleto', 'lightswitch']);
+
+/**
+ * 2.0-n3b step 2: the WIRING mistakes the N3a agents made, each with the fix in one sentence — a value wired into an
+ * event input, an edge into a handle that does not exist, an action used as an event, On Enter / On Exit listening
+ * to something that is not a sensor, a pickup nothing hides, a toggle each person flips for themselves.
+ * @param {World} w @param {ReturnType<typeof index>} ix @param {(issue: any) => void} add
+ */
+export function wiringIssues(w, ix, add) {
+	const objects = w.objects ?? {};
+	for (const e of w.edges) {
+		const from = ix.byId.get(e.source);
+		const to = ix.byId.get(e.target);
+		if (!from || !to) continue;
+		const sh = e.sourceHandle ?? undefined;
+		const th = e.targetHandle ?? undefined;
+		const bad = w.edgeHandleProblems?.(from, to, sh, th) ?? [];
+		if (bad.length)
+			add({ code: 'missing-handle', level: 'error', node: to.id, message: nodeName(from) + ' → ' + nodeName(to) + ': ' + bad[0] + '. The wire does nothing.', fix: 'Remove it and wire the named socket (describe_node_types lists them).' });
+		const typed = w.edgeTypeProblem?.(from, to, sh, th);
+		if (typed?.refuse)
+			add({ code: 'value-into-event', level: 'error', node: to.id, message: typed.refuse.split(': ')[0] + ', so it never fires.', fix: typed.refuse.split(': ').slice(1).join(': ') });
+		else if (typed?.warn)
+			add({ code: 'fires-on-every-change', level: 'warning', node: to.id, message: typed.warn.split('. ')[0] + '.', fix: typed.warn.split('. ').slice(1).join('. ') });
+		// an ACTION's output used as an event (gamestart has its own, older rule)
+		if (from.type !== 'gamestart' && w.isAction(from.type) && !w.isSource(from.type) && to.type !== 'objectselector') {
+			const input = w.inputsOf(to.type).find((i) => i.name === (th ?? 'trigger'));
+			if (input?.type === 'event')
+				add({
+					code: 'action-as-event',
+					level: 'error',
+					node: from.id,
+					message: nodeName(from) + ' is an action: nothing comes out of it, so ' + nodeName(to) + ' never fires.',
+					fix: 'Wire the event that runs ' + nodeName(from) + ' (its On Click / On Enter / key) into ' + nodeName(to) + ' as well; a behaviour can this.emit() both.'
+				});
+		}
+	}
+	for (const n of w.nodes) {
+		const name = nodeName(n);
+		if (n.type === 'onenter' || n.type === 'onexit') {
+			const { targets, owner } = sourceTargets(ix, n);
+			const filtered = ix.into(n.id).some((e) => e.targetHandle === 'filter');
+			const sensors = targets.filter((t) => objects[t]?.sensor);
+			// physics reports a pair when ONE side is a sensor, but the player only ever as (sensor, 'player'):
+			// a non-sensor never fires for the player, and fires for objects only when a sensor touches it
+			const playerOnly = n.data?.who === 'player';
+			const level = playerOnly ? 'error' : 'warning';
+			const how = playerOnly ? 'so the player walking in never fires it' : 'so the player walking in never fires it (only a sensor touching it does)';
+			if (owner && objects[owner] && !objects[owner].sensor && !targets.length)
+				add({ code: 'not-a-sensor', level, node: n.id, object: owner, message: name + ' is in ' + objName(w, owner) + '\'s graph, but ' + objName(w, owner) + ' is not a sensor, ' + how + '.', fix: 'Make it a sensor: set_physics {uuid, sensor: true} (it stops blocking and starts reporting).' });
+			else if (!owner && targets.length && !sensors.length)
+				add({
+					code: 'sensor-is-target',
+					level,
+					node: n.id,
+					object: targets[0],
+					message: 'In the scene graph, the object ' + name + ' reaches through an Object Selector is the sensor it listens to, and ' + objName(w, targets[0]) + ' is not a sensor, ' + how + '.',
+					fix: 'Put ' + name + ' in the sensor\'s own graph (graph: the sensor uuid) and drive ' + objName(w, targets[0]) + ' by its target, or wire an Object Selector of the sensor into ' + name + '.filter.'
+				});
+			else if (!owner && !targets.length && !filtered)
+				add({ code: 'sensor-any', level: 'warning', node: n.id, message: name + ' is in the scene graph with no sensor named, so it fires for EVERY sensor in the scene.', fix: 'Wire an Object Selector naming the sensor into its filter, or put it in the sensor\'s own graph.' });
+		}
+		// a Collect with nothing hiding the pickup (N3a pickup-own): the kit takes it, the object stays
+		// (a Collect with "Hide when collected" — every one made since 2.0-n3b — hides it itself)
+		if (n.type === 'kit-pickups-collect' && n.data?.hide !== true) {
+			const graph = n.__graph ?? 'scene';
+			const hidden = w.nodes.some((m) => m.type === 'kit-pickups-available' && (m.__graph ?? 'scene') === graph && ix.out(m.id).length);
+			if (!hidden)
+				add({
+					code: 'pickup-stays',
+					level: 'warning',
+					node: n.id,
+					message: name + ' takes the pickup, but nothing hides it, so it stays in view after it is taken.',
+					fix: 'Turn on its "Hide when collected" (update_flow_nodes {hide: true}), or in the same graph: a = kit-pickups-available; v = visibility; a -> v.on.'
+				});
+		}
+		// a toggle each person flips for themselves (a Per-player event: its pulse stays with the presser)
+		for (const e of ix.into(n.id)) {
+			if (e.targetHandle !== 'toggle' || !TOGGLES.has(n.type)) continue;
+			const src = ix.byId.get(e.source);
+			if (src?.data?.perPlayer)
+				add({
+					code: 'toggle-per-person',
+					level: 'warning',
+					node: n.id,
+					message: name + '.toggle is fed by ' + nodeName(src) + ' that only fires for the person who pressed it, so each person flips their own copy and nobody else sees it.',
+					fix: 'For something everyone shares, turn Per-player off on ' + nodeName(src) + ' (update_flow_nodes {perPlayer: false}); keep it only for something private.'
+				});
+		}
+	}
 }
 
 /**

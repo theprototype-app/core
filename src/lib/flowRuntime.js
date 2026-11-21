@@ -18,7 +18,7 @@ import { moduleEffects, moduleFrameTasks } from './moduleSDK';
 import { moduleValueNodes, moduleNodeInputs, evalModuleValueNode } from './moduleNodeIO';
 import { runScript, runScriptValue, runPlayerScript, reportScriptProblems, clearScriptError } from './scriptRuntime';
 import { builtinCodeActive, mergePlayerResult } from './builtinCode.js'; // 36-fb-code (F5): a leaf
-import { scriptInputs, scriptOutputs, isScriptValue, coerceInput } from './scriptIO'; // 34 D3: a leaf
+import { scriptInputs, scriptOutputs, isScriptValue, coerceInput, SCRIPT_API_VERSION } from './scriptIO'; // 34 D3: a leaf
 import { findNodeDef } from './customNodes';
 import { updateSounds } from './soundRuntime';
 import { colliderSpecOf } from './colliderSpec'; // B6: pure THREE leaf
@@ -1059,6 +1059,50 @@ function contactPasses(data, other) {
 	return other === filter || (!!other && spawnedFromOf(other) === filter);
 }
 
+/** @param {string} uuid */
+function isSensorObject(uuid) {
+	return !!sceneObjects?.getObjectByProperty('uuid', uuid)?.userData?.physics?.sensor;
+}
+
+/**
+ * 2.0-n3b: does an On Enter / On Exit with NO sensor of its own hear this contact? Only a scene-graph node
+ * whose output reaches no Object Selector at all (one that could never fire before, so no working graph
+ * changes), and only once per pair: physics reports a body pair in BOTH directions, so the direction whose
+ * first party is the sensor counts (both sensors: the lower uuid). The player arrives as (sensor, 'player').
+ * @param {any} node @param {string} uuid @param {string} other
+ */
+function sensorUnscoped(node, uuid, other) {
+	if (node.__graph && node.__graph !== SCENE_GRAPH) return false;
+	if (reachesAnyObjectSelector(node.id)) return false;
+	if (!isSensorObject(uuid)) return false;
+	return other === 'player' || !isSensorObject(other) || uuid < other;
+}
+
+/** @param {string} startId */
+function reachesAnyObjectSelector(startId) {
+	const seen = new Set([startId]);
+	const stack = [startId];
+	while (stack.length) {
+		const cur = stack.pop();
+		for (const edge of edges) {
+			if (edge.source !== cur || seen.has(edge.target)) continue;
+			if (nodeById(nodes, edge.target)?.type === 'objectselector') return true;
+			seen.add(edge.target);
+			stack.push(edge.target);
+		}
+	}
+	return false;
+}
+
+/** 2.0-n3b: contactPasses for a node with no sensor of its own — the filter may name EITHER party (the sensor
+ * that was entered, or what entered it) @param {any} data @param {string} uuid @param {string} other */
+function contactPassesEither(data, uuid, other) {
+	const filter = data?.filter;
+	if (typeof filter === 'string' && filter !== '' && filter !== '-None-' && (filter === uuid || spawnedFromOf(uuid) === filter))
+		return contactPasses({ ...data, filter: '' }, other);
+	return contactPasses(data, other);
+}
+
 /** 36 X6: pulse a contact node and carry the other body with the stamp.
  * @param {any} node @param {string} other */
 function fireContact(node, other) {
@@ -1170,6 +1214,27 @@ function updateTouchPickupNodes(time, ctx) {
 		held.off();
 		touchRegistrations.delete(nodeId);
 	}
+}
+
+/**
+ * 2.0-n3b (G27): the Visibility effects "Hide when collected" adds — one per Collect node with `hide: true`
+ * and a pickup (wired, else the graph's owner), `on` = the kit's "is it there to take". Synthetic nodes:
+ * no edges lead into them, so applyAnimation reads `data` as it stands.
+ * @param {number} time @param {any} ctx @returns {{uuid: string, anim: any}[]}
+ */
+function pickupHideEffects(time, ctx) {
+	const available = kit.impls.pickups?.available;
+	if (!available) return [];
+	const out = [];
+	for (const node of nodes) {
+		if (node.type !== 'kit-pickups-collect' || node.data?.hide !== true) continue;
+		const d = resolveInputs(node, nodes, edges, time, ctx);
+		const wired = typeof d.pickup === 'string' && d.pickup && d.pickup !== '-None-' ? d.pickup : null;
+		const uuid = wired ?? (node.__graph && node.__graph !== SCENE_GRAPH ? node.__graph : null);
+		if (!uuid) continue;
+		out.push({ uuid, anim: { id: node.id + '#hide', type: 'visibility', data: { on: !!available(uuid) } } });
+	}
+	return out;
 }
 
 /**
@@ -1801,7 +1866,48 @@ export function gamePausedNow() {
 /** 36 (U10): `<node>|<input>` -> the stamp a behaviour input last acted on @type {Map<string, number>} */
 const behaviourActed = new Map();
 /** 36 (U10): what the input pass did (the debug hook / suites) */
-export const behaviourInputStats = { offered: 0, stale: 0, refused: 0, last: /** @type {any} */ (null) };
+export const behaviourInputStats = { offered: 0, stale: 0, refused: 0, held: 0, last: /** @type {any} */ (null) };
+
+/**
+ * 2.0-n3b: is `stamp` on a behaviour input the held-key re-stamp of the press already delivered at
+ * `prev`? Only for an input fed by Key Press / Gamepad Button nodes (not 'up' — it never re-stamps),
+ * when the new stamp lands inside the source's pulse window. Every peer sees the same stamps, so the
+ * verdict is the same everywhere. A second press inside one pulse (0.3 s) reads as the same press.
+ * PURE: `sources` = the nodes wired into that input.
+ * @param {any[]} sources @param {number} prev @param {number} stamp
+ */
+export function heldRestamp(sources, prev, stamp) {
+	if (!sources.length) return false;
+	let pulse = Infinity;
+	for (const src of sources) {
+		if (!src || (src.type !== 'keypress' && src.type !== 'gamepadbutton')) return false;
+		if ((src.data?.edge ?? 'down') === 'up') return false;
+		pulse = Math.min(pulse, Number(src.data?.pulse ?? 0.3) || 0.3);
+	}
+	const dt = stamp - prev;
+	return dt > 0 && dt < pulse;
+}
+
+/** 2.0-int: Key Press / Gamepad Button node id -> the stamp of its newest HELD re-stamp (local or
+ * received with `held: 1`) @type {Map<string, number>} */
+const heldStamps = new Map();
+
+/**
+ * 2.0-int: is `stamp` a held-key re-stamp made by one of `sources` (a Key Press / Gamepad Button
+ * node)? Marked at the source, so true only for a re-stamp, never for a press.
+ * @param {any[]} sources @param {number} stamp
+ */
+export function isHeldStamp(sources, stamp) {
+	for (const src of sources) if (src && heldStamps.get(src.id) === stamp) return true;
+	return false;
+}
+
+/** the nodes wired into one input of `node` @param {any} node @param {string} handle */
+function sourcesInto(node, handle) {
+	return edgesInto(edges, node.id)
+		.filter((/** @type {any} */ e) => e.targetHandle === handle)
+		.map((/** @type {any} */ e) => nodes.find((/** @type {any} */ n) => n.id === e.source));
+}
 
 /**
  * 36 (U10): a trigger wired into a behaviour node's INPUT socket runs that input's handler — on a
@@ -1824,15 +1930,32 @@ function updateBehaviourInputs(time, ctx) {
 			const key = node.id + '|' + handle;
 			live.add(key);
 			const stamp = handleStamp(node, handle, ctx);
-			if (stamp === null || behaviourActed.get(key) === stamp) continue;
+			const prev = behaviourActed.get(key);
+			if (stamp === null || prev === stamp) continue;
 			behaviourActed.set(key, stamp);
+			// 2.0-n3b: a HELD key re-stamps its Key Press node ~3/s (that is how it reads 1 while held),
+			// and each re-stamp is a new stamp — so `keypress P -> behaviour.pressed` ran on.pressed twice
+			// for a press longer than ~0.2 s and a toggle (pause, resume) cancelled itself. A stamp that
+			// lands while the previous one from the same key is still alive is the SAME press.
+			// 2.0-int: the dt rule alone fails on slow frames — the re-stamp runs per FRAME once
+			// 0.66 of the pulse has passed, so under ~10 fps (headless, a loaded phone or Quest) two
+			// re-stamps land more than a pulse apart and the toggle ran twice. A re-stamp is MARKED
+			// at its source (heldStamps, and `held: 1` on the wire), so it is never a new press,
+			// whatever the gap; the dt rule stays as the fallback for stamps from older peers.
+			const sources = sourcesInto(node, handle);
+			if (isHeldStamp(sources, stamp) || (prev !== undefined && heldRestamp(sources, prev, stamp))) {
+				behaviourInputStats.held = (behaviourInputStats.held ?? 0) + 1;
+				continue;
+			}
 			if (staleTrigger(node, stamp)) {
 				behaviourInputStats.stale++;
 				behaviourInputStats.last = { key, stamp, seenAt: actionSeenAt.get(node.id), history: triggerHistoryAt, verdict: 'stale' };
 				continue;
 			}
 			behaviourInputStats.offered++;
-			const ok = behavioursRef.behaviourInput?.(node.id, handle, stamp);
+			// 2.0-n3b step 1: the handler hears WHO fired it ({by}: a peer id, '' when unknown) — per-person
+			// results (a coin for the toucher, a score for the scorer) without guessing
+			const ok = behavioursRef.behaviourInput?.(node.id, handle, stamp, { by: stampOrigin(node.id, stamp, ctx, handle) });
 			if (!ok) behaviourInputStats.refused++;
 			behaviourInputStats.last = { key, stamp, seenAt: actionSeenAt.get(node.id), verdict: ok ? 'offered' : 'no such input' };
 		}
@@ -1896,6 +2019,22 @@ function shareGameVarOp(req) {
 		}
 	}
 	applyGameVarOp(req);
+}
+
+/** 2.0-n3b: nodeId -> the peer that made its newest stamp @type {Map<string, {t: number, peer: string}>} */
+const triggerOrigins = new Map();
+
+/** 2.0-n3b: the peer behind the stamp a node acts on ('' = not known: a derived pulse, or history)
+ * @param {string} nodeId @param {number} stamp @param {any} ctx @param {string} [handle] the input (default: the trigger) */
+function stampOrigin(nodeId, stamp, ctx, handle = 'trigger') {
+	for (const edge of edgesInto(edges, nodeId)) {
+		if (handle === 'trigger' ? edge.targetHandle && edge.targetHandle !== 'trigger' : (edge.targetHandle ?? null) !== handle) continue;
+		if (stampOfSource(edge, ctx, new Set()) !== stamp) continue;
+		const key = nodeById(nodes, edge.source)?.type === 'behaviour' && edge.sourceHandle ? edge.source + '#' + edge.sourceHandle : edge.source;
+		const o = triggerOrigins.get(key);
+		if (o && o.t === stamp && o.peer) return o.peer;
+	}
+	return '';
 }
 
 /** @param {number} time @param {any} ctx */
@@ -1962,7 +2101,8 @@ function updateGameNodes(time, ctx) {
 			// 34 R2: a kit action. EVERY peer that sees the stamp asks the kit with an id derived
 			// from it (node + stamp), so the authority applies one press once however many peers
 			// saw it — and a perPlayer pulse, seen only by its player, still reaches it
-			runKitNodeAction(type, data, node.id, stamp, node.__graph && node.__graph !== SCENE_GRAPH ? node.__graph : null);
+			// 2.0-n3b: + the peer whose event it was, so "collect" credits the toucher, not the authority
+			runKitNodeAction(type, data, node.id, stamp, node.__graph && node.__graph !== SCENE_GRAPH ? node.__graph : null, stampOrigin(node.id, stamp, ctx));
 		} else if (GAME_FEEL_ACTIONS.includes(type)) {
 			// 30b (core-games): a banner, a sound, a burst or a buzz — LOCAL on every peer from
 			// the replicated stamp, inside the actionSeenAt family above like storevalue (a
@@ -2961,10 +3101,21 @@ function objectView(object) {
 /**
  * The api object a script gets. Built per call (cheap: four closures) so a value script
  * and an effect script of the same node cannot share a refusal by accident.
- * @param {string} nodeId @param {string} code @param {'effect' | 'value'} kind
+ * 2.0-n3c: `self()` (this node's id) and `stamp(input)` (the newest trigger stamp, in synced seconds, on
+ * one of this node's inputs; null = never) are reads of REPLICATED state, so a value script may use
+ * them: a converted Random seeds itself from both, exactly as the built-in does.
+ * @param {string} nodeId @param {string} code @param {'effect' | 'value'} kind @param {any} [ctx] the tick's ctx (stamp reads its log)
  */
-export function scriptApi(nodeId, code, kind) {
+export function scriptApi(nodeId, code, kind, ctx = null) {
 	return Object.freeze({
+		version: SCRIPT_API_VERSION, // 2.0-n3c: probe `(api.version ?? 1) >= 2` for self / stamp
+		self() {
+			return Object.freeze({ id: nodeId });
+		},
+		stamp(/** @type {any} */ input) {
+			const node = nodeById(nodes, nodeId);
+			return node ? handleStamp(node, String(input ?? ''), ctx) : null;
+		},
 		object(/** @type {any} */ ref) {
 			if (!sceneObjects || ref === undefined || ref === null) return null;
 			const key = typeof ref === 'object' ? ref.uuid : String(ref);
@@ -3238,10 +3389,17 @@ function logicNow() {
  * @param {string} nodeId @param {number} t @param {boolean} replicate
  * @param {string|null} [sourceHandle]
  * @param {any} [at] 31: where it happened ([x, y, z], objects-group frame), for a received clap
+ * @param {any} [other] 36 X6: a contact's other body @param {boolean} [received] @param {string|null} [from] the sender
+ * @param {boolean} [held] 2.0-int: a held-key re-stamp (never a new press for a behaviour input)
  */
-export function applyNodeTrigger(nodeId, t, replicate = true, sourceHandle = null, at = null, other = undefined, received = false) {
+export function applyNodeTrigger(nodeId, t, replicate = true, sourceHandle = null, at = null, other = undefined, received = false, from = null, held = false) {
+	// 2.0-int: a held-key re-stamp is marked so a behaviour input never reads it as a new press
+	if (held && typeof nodeId === 'string') heldStamps.set(nodeId, t);
 	// 36 X6: a contact's other body, received with the stamp (see contactOthers)
 	if (typeof other === 'string') contactOthers.set(nodeId, other);
+	// 2.0-n3b: WHO made this stamp — this peer for a local fire, the sender for a received one — so a
+	// kit action it drives acts for that person (a coin walked into by B is B's coin)
+	triggerOrigins.set(nodeId, { t, peer: received ? String(from ?? '') : String(/** @type {any} */ (get(peers))?.peer?.id ?? '') });
 	// 36 (U10): `<node>#<output>` is a named output's own log entry; the PUSH consumers (a Counter,
 	// a Latch, a Once wired to that output) are found through the node's edges from that handle
 	const hash = typeof nodeId === 'string' ? nodeId.indexOf('#') : -1;
@@ -3259,7 +3417,7 @@ export function applyNodeTrigger(nodeId, t, replicate = true, sourceHandle = nul
 	if (replicate) {
 		/** @type {any} */
 		const peer = get(peers);
-		if (peer) peer.send({ type: 'nodetrigger', id: nodeId, t });
+		if (peer) peer.send(held ? { type: 'nodetrigger', id: nodeId, t, held: 1 } : { type: 'nodetrigger', id: nodeId, t });
 	}
 }
 
@@ -4129,12 +4287,17 @@ function fireSensorEdge(type, uuid, otherUuid) {
 	const ctx = runtimeCtx();
 	nodes.forEach((node) => {
 		if (node.type !== type) return;
-		if (!(reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)) return;
+		const scoped = reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid;
+		// 2.0-n3b (N3a health-respawn): a SCENE-graph On Enter whose output reaches no Object Selector has no
+		// sensor of its own and could never fire. It listens to every sensor now; a wired filter narrows it to
+		// the contacts that object is part of (`Spikes -> On Enter.filter` = "something entered Spikes").
+		const free = !scoped && sensorUnscoped(node, uuid, otherUuid ?? '');
+		if (!scoped && !free) return;
 		// 36 X6: the filter input gates on the other body; the other rides the stamp
 		const data = resolveInputs(node, nodes, edges, syncedNow(), ctx);
 		const other = otherUuid ?? '';
 		const who = other === 'player' ? 'the player' : (objectNameOf(other) ?? 'an object');
-		if (!contactPasses(data, other)) {
+		if (!(free ? contactPassesEither(data, uuid, other) : contactPasses(data, other))) {
 			// 78 F26: say which rule refused it
 			noteCheck(node.id, { who, reason: data?.who === 'player' && other !== 'player' ? 'not-player' : data?.who === 'objects' && other === 'player' ? 'not-objects' : 'filter' });
 			return;
@@ -4245,7 +4408,7 @@ function applyAnimation(object, base, anim, time, ctx) {
 			const inputs = {};
 			for (const socket of declared)
 				inputs[socket.name] = scriptInputValue(socket, data[socket.name] ?? socket.value, ctx);
-			runScript(anim.id, data.code ?? '', object, base, data, time, inputs, scriptApi(anim.id, data.code ?? '', 'effect'));
+			runScript(anim.id, data.code ?? '', object, base, data, time, inputs, scriptApi(anim.id, data.code ?? '', 'effect', ctx));
 		}
 		return;
 	}
@@ -5123,6 +5286,13 @@ function runTick(now) {
 			if (!active.has(uuid)) active.set(uuid, []);
 			active.get(uuid).push(source);
 		});
+		// 2.0-n3b (G27): a Collect with "Hide when collected" hides its pickup while it is taken — a Visibility
+		// effect fed by "Pickup available?", so the restore loop hands the object back outside play and when
+		// the node goes. Only an explicit `hide: true` (a saved node without the key keeps showing).
+		if (playActive) for (const hide of pickupHideEffects(time, ctx)) {
+			if (!active.has(hide.uuid)) active.set(hide.uuid, []);
+			active.get(hide.uuid).push(hide.anim);
+		}
 		// H1: object-graph effects with no explicit selector target their owner
 		nodes.forEach((node) => {
 			if (!isEffectNode(node)) return;
@@ -5467,7 +5637,7 @@ function runTick(now) {
 				if ((node.data?.edge ?? 'down') === 'up') return;
 				const pulse = node.data?.pulse ?? 0.3;
 				const last = trigs[node.id]?.lastT ?? -Infinity;
-				if (liveTime - last > pulse * 0.66) applyNodeTrigger(node.id, syncedNow(), replicatesPulse(node));
+				if (liveTime - last > pulse * 0.66) applyNodeTrigger(node.id, syncedNow(), replicatesPulse(node), null, null, undefined, false, null, true);
 			});
 		}
 		if (paused) toView();

@@ -27,7 +27,8 @@
 /** @typedef {'number'|'boolean'|'string'|'vector3'|'object'|'entity'|'color'} KitArgType */
 /**
  * @typedef {{key: string, type: KitArgType, label?: string, default?: any, min?: number,
- *   max?: number, step?: number, options?: string[]}} KitArg
+ *   max?: number, step?: number, options?: string[], legacy?: any}} KitArg
+ * `legacy` (2.0-n3b): what an ABSENT key means on a saved node, when that differs from `default` (what a new node gets)
  * @typedef {{name: string, kind: 'action'|'value'|'event', label: string, doc?: string,
  *   args?: KitArg[], vtype?: string, authority?: boolean, node?: boolean, local?: boolean, owned?: boolean,
  *   nodeArgs?: KitArg[]}} KitCall
@@ -182,7 +183,8 @@ export function kitApi(spec, impl, ctx) {
 /** a node param for one arg (null when the arg is wire-only: objects, entities, vectors)
  * @param {KitArg} arg */
 function paramOf(arg) {
-	const label = arg.label ? { label: arg.label } : {};
+	// 2.0-n3b: `legacy` rides the param so the card and describe_node_types read an absent key as it runs
+	const label = { ...(arg.label ? { label: arg.label } : {}), ...('legacy' in arg ? { legacy: arg.legacy } : {}) };
 	if (arg.options?.length) return { key: arg.key, kind: 'select', options: [...arg.options], ...label };
 	if (arg.type === 'number')
 		return { key: arg.key, kind: 'range', min: arg.min ?? 0, max: arg.max ?? 100, step: arg.step ?? 1, ...label };

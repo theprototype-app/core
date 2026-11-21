@@ -1880,7 +1880,7 @@ export class PeerConnection {
 				} else if(data.type == 'edgedelete') {
 					deleteFlowEdges(data.ids, data.graphId);
 				} else if(data.type == 'nodetrigger') {
-						applyNodeTrigger(data.id, data.t, false, null, data.at ?? null, data.other, true); // 134: shared-timestamp pulse (31: + where, for a clap; 36 X6: + the contact's other body)
+						applyNodeTrigger(data.id, data.t, false, null, data.at ?? null, data.other, true, conn.peer, data.held === 1); // 2.0-int: + a held re-stamp. 2.0-n3b: + who sent it. 134: shared-timestamp pulse (31: + where, for a clap; 36 X6: + the contact's other body)
 					} else if(data.type == 'gettriggers') {
 						// DEVX #18: the trigger LOG for a late joiner. Deliberately NOT behind
 						// share-or-stash like getobjects/getnodes: there is nothing here for a

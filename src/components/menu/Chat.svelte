@@ -31,7 +31,7 @@
 		openChatInAssistant
 	} from '$lib/agentChat';
 	import { samePeer } from '$lib/agentChatCore';
-	import { aiBusy } from '$lib/ai/assistant';
+	import { aiBusy } from '$lib/ai/aiState.js';
 	import { aiProviders, aiActiveProvider } from '$lib/ai/providers';
 	import {
 		startChatSaves,

@@ -429,8 +429,9 @@ export function startBehaviours() {
 }
 
 /** 36 (U10): a flow trigger reached a behaviour node's input `name` (flowRuntime, every peer) */
-export function behaviourInput(/** @type {string} */ nodeId, /** @type {string} */ name, /** @type {number | undefined} */ stamp = undefined) {
-	return runtime.input(nodeId, name, {}, stamp);
+export function behaviourInput(/** @type {string} */ nodeId, /** @type {string} */ name, /** @type {number | undefined} */ stamp = undefined, /** @type {{by?: string}} */ payload = {}) {
+	// 2.0-n3b: `payload.by` = the peer whose event fired the input
+	return runtime.input(nodeId, name, { by: String(payload?.by ?? '') }, stamp);
 }
 
 /** 36 (U10): a behaviour node's live state (its value outputs), by reference @param {string} nodeId */

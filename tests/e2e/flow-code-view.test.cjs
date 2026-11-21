@@ -2,7 +2,7 @@
 //
 //   1. registry parity: the palette the app built IS the definitions (143 core types, in family order),
 //      and every core type renders its own card (never the "module that isn't installed" card)
-//   2. flag OFF (the default): no Code tab, and the agent's answers carry no `code` (contract 1.9 shape)
+//   2. the flag is ON by default (1.71); switched OFF: no Code tab, and the agent's answers carry no `code`
 //   3. flag ON: the Code tab opens on each bundled template's scene graph — one line per node, the same
 //      text the generator prints; the agent's list_scene {flow} and describe_node_types carry `code`
 //   4. jump both ways: a node's line selects (and frames) the node; selecting a card marks its line
@@ -80,10 +80,12 @@ h.run(async () => {
 
 	// ---- 2. flag off -------------------------------------------------------------------------------------------
 	if (want(2)) {
-		console.log('\n=== 2. flag off (the default) ===');
-		h.check((await v1(A.page, () => window.__tp.test.v1.codeView.codeViewOn())) === false, 'codeView ships off');
+		console.log('\n=== 2. on by default; switched off ===');
+		h.check((await v1(A.page, () => window.__tp.test.v1.codeView.codeViewOn())) === true, 'codeView ships on (1.71)');
+		await v1(A.page, () => window.__tp.test.v1.codeView.codeViewFlag.set(false));
+		h.check((await v1(A.page, () => localStorage.getItem('flag:codeView'))) === '0', 'switching it off is remembered (flag:codeView = 0)');
 		await openEditor(A.page);
-		h.check((await A.page.locator('#flow-tab-code').count()) === 0, 'no Code tab without the flag');
+		h.check((await A.page.locator('#flow-tab-code').count()) === 0, 'no Code tab with the flag off');
 		await loadTemplate(A.page, 'starter-recipes');
 		const r = await v1(A.page, async () => {
 			const t = window.__tp.test.v1.aiTools;
@@ -213,6 +215,28 @@ h.run(async () => {
 		const codeA = await allCode(A.page);
 		h.check(Object.keys(codeA).length > 1, `premise: the host holds several graphs (${Object.keys(codeA).length})`);
 		await h.eventually(() => allCode(B.page), (c) => JSON.stringify(c) === JSON.stringify(codeA), "the late joiner's code is the host's for every graph, line for line", 30000);
+		{
+			// a red here says WHICH graph and line differ (the check above prints only B's side)
+			const codeB = await allCode(B.page);
+			for (const id of new Set([...Object.keys(codeA), ...Object.keys(codeB)])) {
+				if (codeA[id] === codeB[id]) continue;
+				const a = String(codeA[id] ?? '<none>').split('\n'), b = String(codeB[id] ?? '<none>').split('\n');
+				const i = a.findIndex((l, k) => l !== b[k]);
+				console.log(`  differs: ${id} line ${i + 1}\n    A: ${a[i] ?? '<end>'}\n    B: ${b[i] ?? '<end>'}`);
+				const probe = (page) => page.evaluate((u) => {
+					let g; window.__stores.objectsGroup.subscribe((v) => (g = v))();
+					const o = g?.getObjectByProperty?.('uuid', u);
+					return o ? `${o.type} name=${JSON.stringify(o.name)} parent=${o.parent?.type}` : 'NOT IN objectsGroup';
+				}, id);
+				console.log(`    object on A: ${await probe(A.page)}\n    object on B: ${await probe(B.page)}`);
+			}
+			const names = (page) => page.evaluate(() => {
+				let g; window.__stores.objectsGroup.subscribe((v) => (g = v))();
+				const out = []; g?.traverse?.((o) => { if (o !== g && o.isMesh) out.push(o.name || o.type); });
+				return out.sort().join(', ');
+			});
+			if (JSON.stringify(codeA) !== JSON.stringify(codeB)) console.log(`    meshes on A: ${await names(A.page)}\n    meshes on B: ${await names(B.page)}`);
+		}
 		await openEditor(B.page);
 		await B.page.locator('#flow-tab-code').click();
 		await B.page.waitForSelector('#flow-code', { timeout: 10000 });

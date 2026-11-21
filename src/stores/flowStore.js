@@ -216,7 +216,7 @@ export function graphTotals() {
  * the way in (the same on every peer that loads the file; a joiner receives the filled copy).
  * @param {any} node
  */
-function withDataType(node) {
+export function withDataType(node) {
 	if (!node || !node.type || !node.data || node.data.type !== undefined) return node;
 	return { ...node, data: { ...node.data, type: node.type } };
 }

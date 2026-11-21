@@ -750,3 +750,95 @@ export function materialSetVerdict(payload) {
 		if (payload[key] !== undefined && payload[key] !== null && !(Array.isArray(payload[key]) && payload[key].length <= MAX_LIST)) return false;
 	return payload.materials.every((/** @type {any} */ m) => !!m && typeof m === 'object' && !Array.isArray(m));
 }
+
+// ---- SCENE FIELDS (2.0-n3c, formatMinor 3): what a flow graph and the scene file may now carry ------
+//
+// Three additive fields. An older build ignores all three (a graph node keeps unknown keys, a payload's
+// unknown top-level key is never read), so a newer file still opens there: proven on v1.67.1 by the
+// `node-file-minor3` suite (§5, N3C_OLD_URL). Each is checked where it comes IN (a file, a peer): flowClean.cleanFlowNode
+// for the two node fields, customNodes.customNodeDefsRestore for `nodeDefs`. A value that breaks its
+// rule is dropped, never the node or the scene.
+
+/** the rows, for the docs and the review (one per new field) */
+export const SCENE_FIELD_RULES = Object.freeze({
+	nodeDefs: 'payload: an array (<= MAX_NODE_DEFS) of custom node definitions {id, name, params[], code}; a broken entry is dropped',
+	'node.v': 'graph node: an integer 1..1e6, the version of its type\'s definition it was saved with; absent = 1',
+	'node.data.convertedFrom': 'Script node: {type, v, data, code, wired?, target?} written by Convert to code; a broken one is dropped (the node stays a Script)'
+});
+
+export const MAX_NODE_DEFS = 200;
+export const MAX_NODE_DEF_PARAMS = 32;
+export const MAX_NODE_DEF_CODE = 64 * 1024;
+const DEF_ID = /^[\w-]{1,64}$/;
+const PARAM_KEY = /^[A-Za-z_$][\w$]{0,39}$/;
+
+/** @param {any} v */
+export function nodeVersionOk(v) {
+	return Number.isInteger(v) && v >= 1 && v <= 1e6;
+}
+
+/** @param {any} v plain JSON under the userData caps */
+function plainJson(v) {
+	try {
+		const text = JSON.stringify(v);
+		return typeof text === 'string' && text.length <= MAX_USERDATA_KEY_CHARS && !/"(__proto__|constructor|prototype)"\s*:/.test(text);
+	} catch {
+		return false;
+	}
+}
+
+/** a Convert to code marker @param {any} cf */
+export function convertedFromOk(cf) {
+	if (!cf || typeof cf !== 'object' || Array.isArray(cf)) return false;
+	if (typeof cf.type !== 'string' || !/^[a-z0-9]{1,40}$/.test(cf.type)) return false;
+	if (cf.v !== undefined && !nodeVersionOk(cf.v)) return false;
+	if (typeof cf.code !== 'string' || cf.code.length > MAX_NODE_DEF_CODE) return false;
+	if (!cf.data || typeof cf.data !== 'object' || Array.isArray(cf.data) || !plainJson(cf.data)) return false;
+	if (cf.wired !== undefined && !(Array.isArray(cf.wired) && cf.wired.length <= 16 && cf.wired.every((/** @type {any} */ h) => typeof h === 'string' && h.length <= 40))) return false;
+	if (cf.target !== undefined && !(typeof cf.target === 'string' && cf.target.length > 0 && cf.target.length <= 128)) return false;
+	return true;
+}
+
+/** one custom node param, or null @param {any} p */
+function nodeDefParam(p) {
+	if (!p || typeof p !== 'object' || typeof p.key !== 'string' || !PARAM_KEY.test(p.key)) return null;
+	if (p.kind === 'select') {
+		const options = Array.isArray(p.options) ? p.options.filter((/** @type {any} */ o) => typeof o === 'string').map((/** @type {string} */ o) => o.slice(0, 80)).slice(0, 64) : [];
+		return { key: p.key, kind: 'select', options };
+	}
+	if (p.kind === 'range') {
+		const n = (/** @type {any} */ v, /** @type {number} */ d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+		return { key: p.key, kind: 'range', min: n(p.min, 0), max: n(p.max, 10), step: n(p.step, 0.1) };
+	}
+	return null;
+}
+
+/**
+ * Check a saved / received list of custom node definitions: keep each whole entry (unknown params and
+ * oversized code are dropped with a row), drop the rest. A second entry with an id seen before is dropped.
+ * @param {any} list @returns {{ defs: {id: string, name: string, params: any[], code: string}[], dropped: Dropped[] }}
+ */
+export function normalizeNodeDefs(list) {
+	/** @type {Dropped[]} */
+	const dropped = [];
+	/** @type {{id: string, name: string, params: any[], code: string}[]} */
+	const defs = [];
+	if (!Array.isArray(list)) return { defs, dropped: list === undefined || list === null ? [] : [{ path: 'nodeDefs', reason: 'not a list' }] };
+	const seen = new Set();
+	list.forEach((def, i) => {
+		const at = 'nodeDefs[' + i + ']';
+		if (defs.length >= MAX_NODE_DEFS) return void dropped.push({ path: at, reason: 'over the ' + MAX_NODE_DEFS + ' definition cap' });
+		if (!def || typeof def !== 'object' || typeof def.id !== 'string' || !DEF_ID.test(def.id)) return void dropped.push({ path: at, reason: 'no valid id' });
+		if (seen.has(def.id)) return void dropped.push({ path: at, reason: 'id ' + def.id + ' twice' });
+		if (typeof def.code !== 'string' || def.code.length > MAX_NODE_DEF_CODE) return void dropped.push({ path: at, reason: 'code missing or over ' + MAX_NODE_DEF_CODE + ' characters' });
+		seen.add(def.id);
+		const params = [];
+		for (const [j, p] of (Array.isArray(def.params) ? def.params : []).entries()) {
+			const ok = j < MAX_NODE_DEF_PARAMS ? nodeDefParam(p) : null;
+			if (ok) params.push(ok);
+			else dropped.push({ path: at + '.params[' + j + ']', reason: 'not a range / select param' });
+		}
+		defs.push({ id: def.id, name: typeof def.name === 'string' && def.name.trim() ? def.name.slice(0, MAX_NAME) : 'Custom node', params, code: def.code });
+	});
+	return { defs, dropped };
+}

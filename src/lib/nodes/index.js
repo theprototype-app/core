@@ -80,3 +80,21 @@ export function coreSocketTables() {
 export function coreRegistryErrors() {
 	return registryErrors(NODE_FAMILIES);
 }
+
+/**
+ * 2.0-n3c (formatMinor 3): stamp each saved node that has no `v` yet with its definition's version, when
+ * that is above 1 (absent = 1, so today every node saves unchanged). A node that already carries `v` keeps
+ * it: it says what the node was MADE with. Mutates and returns the serialized copies.
+ * @template {Record<string, {nodes?: any[]}>} G
+ * @param {G} graphs @param {(type: string) => number} [versionOf]
+ * @returns {G}
+ */
+export function stampNodeVersions(graphs, versionOf = (type) => /** @type {any} */ (nodeDef(type))?.v ?? 1) {
+	for (const g of Object.values(graphs ?? {}))
+		for (const n of g?.nodes ?? []) {
+			if (!n || n.v !== undefined) continue;
+			const v = versionOf(n.type);
+			if (Number.isInteger(v) && v > 1) n.v = v;
+		}
+	return graphs;
+}

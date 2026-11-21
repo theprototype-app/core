@@ -261,5 +261,16 @@ h.run(async () => {
 	const after = (await surface(A.page, decal))?.record;
 	h.check(JSON.stringify(after) === JSON.stringify(before), `§8 the record is identical (${JSON.stringify(after)})`);
 	h.check(h.pageErrors(A).length === 0, `no page errors on A after the reload (${h.pageErrors(A).join(' | ')})`);
+	// the scene as a .tpscene, for decal-compat (a file saved by this build opens in the newest release)
+	const b64 = await A.page.evaluate(async () => {
+		const s = await window.__tp.test.v1.sessions;
+		const blob = await s.exportSessionZip(s.buildSessionPayload('Decal wall'), { assets: true, packs: false, flow: true });
+		const u = new Uint8Array(await new Response(blob).arrayBuffer());
+		let bin = '';
+		for (let i = 0; i < u.length; i += 0x8000) bin += String.fromCharCode(...u.subarray(i, i + 0x8000));
+		return btoa(bin);
+	});
+	require('fs').writeFileSync(`${OUT}/decal-wall.tpscene`, Buffer.from(b64, 'base64'));
+	h.check(b64.length > 100, `§8 the scene exported as a .tpscene (${Math.round((b64.length * 3) / 4)} bytes)`);
 	await h.finish(browser);
 });

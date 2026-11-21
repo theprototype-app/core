@@ -30,6 +30,9 @@ function holdsDecal(root) {
 	return found;
 }
 
+/** has anything loaded the decal runtime in this tab (the zero-change proof: a scene without decals never does) */
+export const decalRuntimeLoaded = () => forced || !!tick;
+
 /** load the runtime now (a stamp message, a placement) @returns {Promise<any>} */
 export function loadDecalRuntime() {
 	forced = true;

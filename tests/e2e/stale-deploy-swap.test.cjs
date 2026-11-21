@@ -8,8 +8,10 @@
 //   scripts/serve-build.cjs, and swaps it from A to B while a tab of A is open — the atomic switch a deploy is.
 //
 //   1  the tab of A boots and works; nothing of B was ever fetched
-//   2  swap. The tab opens the Profiler (a lazy chunk A never loaded): the old name 404s, ONE retry, then ONE sticky
-//      "A new version is ready – Reload" — no crash (no uncaught error), no automatic reload, the editor still works
+//   2  swap. The tab opens the Profiler (a lazy chunk A never loaded): the old names 404 (its CSS and its JS — a real
+//      deploy loses both, and vite's CSS preload fails BEFORE the JS import reaches the one retry, so retries may be
+//      0), then ONE sticky "A new version is ready – Reload" — no crash (nothing uncaught but the chunk's own failure,
+//      errorReportCore's CHUNK_LOAD_RE), no reload (the window this test marked is still the same one), editor works
 //   3  the tab comes back to the foreground (the update check polls version.json): still ONE reload prompt in all
 //   4  Reload: the page is deployment B (its renamed chunks), boots, and the Profiler opens
 //
@@ -118,8 +120,11 @@ h.run(async () => {
 		/** @type {{url: string, status: number}[]} */
 		const missing = [];
 		page.on('response', (/** @type {any} */ r) => r.status() === 404 && missing.push({ url: r.url(), status: r.status() }));
-		let navigations = 0;
-		page.on('framenavigated', (/** @type {any} */ f) => f === page.mainFrame() && navigations++);
+		/** @type {string[]} */
+		const navigated = [];
+		page.on('framenavigated', (/** @type {any} */ f) => f === page.mainFrame() && navigated.push(f.url()));
+		// a reload is a NEW window; framenavigated also fires for same-document URL changes (the hash), so mark the window
+		const sameWindow = () => page.evaluate(() => /** @type {any} */ (window).__deploySwapMark === true).catch(() => false);
 		const reloadPrompts = () =>
 			page.evaluate(() => [...document.querySelectorAll('.tp-toast')].filter((t) => /new version/i.test(t.textContent || '')).length);
 		const openProfiler = async () => {
@@ -146,18 +151,20 @@ h.run(async () => {
 		h.check((await objects()) === before + 1, '1 the tab works before the deploy (a box is created)');
 
 		// ---- 2. the deploy lands; a lazy chunk A never loaded is asked for
+		await page.evaluate(() => { /** @type {any} */ (window).__deploySwapMark = true; });
 		goLive(B_DIR);
-		const firstNav = navigations;
+		const firstNav = navigated.length;
 		await openProfiler();
 		await page.locator('text=A new version is ready').first().waitFor({ state: 'visible', timeout: 20000 }).catch(() => {});
 		const dbg = await page.evaluate(() => ({ .../** @type {any} */ (window).__tp.test.v1.chunkReload?.chunkReloadDebug }));
 		const lost = missing.filter((m) => /\/_app\/immutable\//.test(m.url));
 		console.log(`  after the swap: 404s ${JSON.stringify(lost.map((m) => m.url.split('/').pop()))}, chunkReload ${JSON.stringify(dbg)}`);
 		h.check(lost.length >= 1, `2 premise: the old tab's lazy chunk is gone after the deploy (${lost.length} immutable 404s)`);
-		h.check(dbg.retries >= 1 && dbg.notices === 1, `2 one retry, then ONE notice (${JSON.stringify(dbg)})`);
+		h.check(lost.some((m) => /\.js$/.test(m.url)), '2 premise: the lazy chunk\'s JS is gone too, not only its CSS');
+		h.check(dbg.notices === 1, `2 ONE notice (${JSON.stringify(dbg)}; retries counts JS imports that reached the retry)`);
 		h.check(await page.locator('text=A new version is ready').first().isVisible().catch(() => false), '2 "A new version is ready – Reload" shows');
-		h.check(navigations === firstNav, `2 the page did not reload by itself (${navigations - firstNav} navigations)`);
-		const crashes = uncaught.filter((m) => !/dynamically imported module|Importing a module script failed|error loading dynamically/i.test(m));
+		h.check(await sameWindow(), `2 the page did not reload by itself (same window; URL changes meanwhile: ${JSON.stringify(navigated.slice(firstNav))})`);
+		const crashes = uncaught.filter((m) => !/dynamically imported module|Importing a module script failed|error loading dynamically|unable to preload/i.test(m));
 		h.check(crashes.length === 0, `2 no crash: no uncaught error besides the chunk's own (${JSON.stringify(uncaught).slice(0, 300)})`);
 		const n2 = await objects();
 		await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create sphere'));
@@ -177,7 +184,16 @@ h.run(async () => {
 		const reload = page.locator('.tp-toast', { hasText: /new version/i }).getByRole('button', { name: 'Reload' }).first();
 		if (await reload.isVisible().catch(() => false)) await reload.click({ timeout: 5000 }).catch(() => {});
 		else await page.reload();
-		await page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, null, { timeout: 90000 });
+		const afterReload = missing.length;
+		const errsBefore = uncaught.length;
+		const booted = await page
+			.waitForFunction(() => !(/** @type {any} */ (window).__deploySwapMark) && window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, null, { timeout: 90000 })
+			.then(() => true, () => false);
+		if (!booted) {
+			console.log(`  B did not boot: url ${page.url()}, 404s ${JSON.stringify(missing.slice(afterReload).map((m) => m.url.split('/').slice(-2).join('/')).slice(0, 12))}, errors ${JSON.stringify(uncaught.slice(errsBefore)).slice(0, 600)}`);
+			await page.screenshot({ path: path.join(WORK, '..', 'deploy-swap-b.png') }).catch(() => {});
+		}
+		h.check(booted, '4 Reload boots deployment B (a NEW window, the app up)');
 		await h.answerRestore(A).catch(() => {});
 		const scripts = await page.evaluate(() => performance.getEntriesByType('resource').map((e) => e.name).filter((n) => /\/_app\/immutable\//.test(n)));
 		h.check(scripts.length > 0 && scripts.every((n) => /-b2\./.test(n)), `4 after Reload the tab runs deployment B (${scripts.length} chunks, all renamed)`);

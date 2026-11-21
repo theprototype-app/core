@@ -116,8 +116,7 @@
 	import KitButton from '../ui/Button.svelte'; // 37: the Switcher ⓘ rows on the redesign kit
 	import { moduleNodeGroups, moduleNodeComponents } from '$lib/moduleSDK';
 	import { peers, username, modulesOpen, flowFocus, showToast } from '../../stores/appStore';
-	import { convertNode, conversionOf } from '$lib/convertToCode';
-	import { conversionState } from '$lib/nodes/convertCode.js';
+	import { conversionState } from '$lib/nodes/convertState.js'; // 2.0-int: the applier (convertToCode) loads on the first Convert
 	import { safeStorage } from '$lib/safeStorage';
 	// 48 D1: the node graph debugger — LOCAL breakpoints (a red dot on the card) + the panel
 	import { debugBreakpoints, toggleBreakpoint, setDebugOpen } from '$lib/flowDebug.js';
@@ -1979,7 +1978,8 @@
 	};
 
 	/** 2.0-n3c: Convert to code / Convert back, one undo step; the converted node is selected after */
-	function runConvert(id: string, back: boolean) {
+	async function runConvert(id: string, back: boolean) {
+		const { convertNode } = await import('$lib/convertToCode');
 		const result = convertNode(id, { back, graphId: activeId });
 		if (!result.ok) showToast(result.error);
 		else void tick().then(() => selectOnly([result.focus]));
@@ -1995,7 +1995,7 @@
 		const items: any[] = [];
 		if (one && (nodeHasCode(one, findNodeSpec(String(one.type))) || nodeUxHasCode(one))) items.push({ label: 'Open code', icon: 'file-text', action: () => openCode(one) });
 		// 2.0-n3c: a pure value node becomes a Script node holding its own reference JS; back while unchanged
-		const conv = one ? conversionOf(one, activeId) : null;
+		const conv = one ? conversionState(one, $flowGraphs[activeId]) : null;
 		if (conv === 'convert') items.push({ label: 'Convert to code', icon: 'file-code', tooltip: 'Turn this node into a Script node that does the same thing, so you can edit how it works', action: () => runConvert(one.id, false) });
 		else if (conv === 'back') items.push({ label: 'Convert back', icon: 'undo-2', tooltip: 'Return the built-in node (its code is unchanged)', action: () => runConvert(one.id, true) });
 		else if (conv === 'changed') items.push({ label: 'Convert back', icon: 'undo-2', disabled: true, tooltip: 'The code was edited since Convert to code, so the built-in cannot do what it does now', action: () => {} });

@@ -4,7 +4,6 @@
 // Nodes.svelte component key) and `eval` (evalNodeBody's case; runtime helpers come in as `rt`).
 // A LEAF: nothing here imports the runtime. Adding a node = one entry in this file.
 
-import { REFERENCE_JS } from '../reference.js';
 
 /** @type {import('../registry.js').NodeFamily} */
 export default {
@@ -90,7 +89,6 @@ export default {
 			sockets: { out: 'number', in: { seed: 'number', reroll: 'event' } },
 			card: 'RandomNode',
 			// 2.0-n3c: the built-in's value as code (Convert to code; parity-tested)
-			referenceJs: REFERENCE_JS.random,
 			eval(node, { d, time, input, ctx }, rt) {
 				const lo = rt.num(d.min ?? 0);
 				const hi = rt.num(d.max ?? 1);

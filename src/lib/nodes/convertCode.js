@@ -14,11 +14,12 @@
 // nodecreate / edgecreate messages as ONE undo step, and an older peer applies it unchanged. Script
 // value nodes already exist, so no new message and no new sync class.
 
-import { REFERENCE_JS, REFERENCE_TYPES, referenceShape } from './reference.js';
+import { REFERENCE_JS } from './reference.js';
+import { REFERENCE_TYPES, referenceShape } from './referenceShape.js';
 import { printLiteral } from './flowCode.js';
+import { CONVERTIBLE, isUnchangedConversion, conversionState } from './convertState.js';
 
-/** the node types Convert to code accepts */
-export const CONVERTIBLE = new Set(REFERENCE_TYPES);
+export { CONVERTIBLE, isUnchangedConversion, conversionState } from './convertState.js';
 
 /** the name a converted node shows on its card @type {Record<string, string>} */
 const TITLES = {
@@ -102,37 +103,6 @@ function takesGroupSocket(nodes, id) {
 }
 
 /**
- * Is `node` a converted Script node whose code and sockets are still what Convert wrote?
- * @param {any} node
- */
-export function isUnchangedConversion(node) {
-	const from = node?.data?.convertedFrom;
-	if (node?.type !== 'script' || !from || typeof from !== 'object') return false;
-	if (typeof from.code !== 'string' || node.data.code !== from.code) return false;
-	const shape = referenceShape(from.type, from.data, new Set(from.wired ?? []));
-	if (!shape) return false;
-	return (
-		JSON.stringify(node.data.inputs ?? null) === JSON.stringify(shape.inputs) &&
-		JSON.stringify(node.data.outputs ?? null) === JSON.stringify(shape.outputs)
-	);
-}
-
-/** What the node menu offers for `node`: 'convert', 'back', 'changed' (converted, edited) or null.
- * A HUD Text answers 'back' when a format script made from it still stands in front of it.
- * @param {any} node @param {{nodes: any[]}} [graph] */
-export function conversionState(node, graph) {
-	if (!node) return null;
-	if (node.type === 'hudtext') {
-		const script = graph?.nodes?.find((n) => n.type === 'script' && n.data?.convertedFrom?.target === node.id);
-		if (script) return isUnchangedConversion(script) ? 'back' : 'changed';
-		return 'convert';
-	}
-	if (CONVERTIBLE.has(node.type)) return 'convert';
-	if (node.type === 'script' && node.data?.convertedFrom) return isUnchangedConversion(node) ? 'back' : 'changed';
-	return null;
-}
-
-/**
  * Plan "Convert to code" for node `id` in `graph`.
  * @param {{nodes: any[], edges: any[]}} graph @param {string} id
  * @param {{ newId?: () => string, v?: (type: string) => number }} [opts] newId mints the HUD Text's script id;
@@ -148,7 +118,7 @@ export function planConvert(graph, id, opts = {}) {
 	const into = graph.edges.filter((e) => e.target === id);
 	const out = graph.edges.filter((e) => e.source === id);
 	const wired = new Set(into.map((e) => e.targetHandle).filter(Boolean));
-	const shape = /** @type {import('./reference.js').RefShape} */ (referenceShape(node.type, node.data, wired));
+	const shape = /** @type {import('./referenceShape.js').RefShape} */ (referenceShape(node.type, node.data, wired));
 	const code = convertedCode(node.type, shape.params);
 	const convertedFrom = { type: node.type, v, data: structuredClone(node.data ?? {}), code, ...(wired.size ? { wired: [...wired].sort() } : {}) };
 	const keep = /** @type {Record<string, any>} */ ({});
@@ -231,7 +201,7 @@ export function planConvertBack(graph, id) {
 			add: { nodes: [], edges: into.map((e) => moved(plainEdge(e), { target: hud.id })) }
 		};
 	}
-	const shape = /** @type {import('./reference.js').RefShape} */ (referenceShape(from.type, from.data, new Set(from.wired ?? [])));
+	const shape = /** @type {import('./referenceShape.js').RefShape} */ (referenceShape(from.type, from.data, new Set(from.wired ?? [])));
 	const handle = shape.outputs[0].name;
 	const builtIn = {
 		id: node.id,

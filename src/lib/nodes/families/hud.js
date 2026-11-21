@@ -5,7 +5,6 @@
 // A LEAF: nothing here imports the runtime. Adding a node = one entry in this file.
 import * as shared from '../evalShared.js';
 
-import { REFERENCE_JS } from '../reference.js';
 
 /** @type {import('../registry.js').NodeFamily} */
 export default {
@@ -44,7 +43,6 @@ export default {
 			sockets: { out: 'effect', in: { value: 'number', format: 'any' } },
 			card: 'HudNode',
 			// 2.0-n3c: the built-in's value as code (Convert to code; parity-tested)
-			referenceJs: REFERENCE_JS.hudtext,
 		},
 		{
 			type: 'hudbar',

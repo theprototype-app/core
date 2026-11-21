@@ -11,7 +11,6 @@ import {
 	setNodeData
 } from '$lib/nodesHandler';
 import { createObjectGraph, recordFlowNodesEntry } from '$lib/flowGraphs';
-import { convertNode } from '$lib/convertToCode'; // 2.0-n3c
 import { nodeCatalog, findNodeSpec } from '$lib/nodeCatalog';
 import {
 	setPhysicsFor,
@@ -593,6 +592,14 @@ function textToSpecs(text) {
  * @returns {any}
  */
 export function updateFlowNodesTool(args) {
+	// 2.0-int: Convert loads its applier on first use (convertToCode + the reference bodies stay off the editor boot)
+	if (Array.isArray(args?.convert) && args.convert.length)
+		return import('$lib/convertToCode').then((m) => updateFlowNodes(args, m.convertNode));
+	return updateFlowNodes(args, null);
+}
+
+/** @param {any} args @param {null | ((id: string, opts: any) => any)} convertNode @returns {any} */
+function updateFlowNodes(args, convertNode) {
 	const graphId = resolveGraph(args?.graph);
 	if (graphId === null)
 		return { error: 'unknown graph "' + args?.graph + '" — pass "scene" or an existing object uuid' };
@@ -691,6 +698,7 @@ export function updateFlowNodesTool(args) {
 			errors.push('convert takes [{ id, to: "code" | "back" }]');
 			continue;
 		}
+		if (!convertNode) continue; // unreachable: a convert list always takes the lazy path
 		const result = convertNode(c.id, { back: to === 'back', graphId });
 		if (!result.ok) errors.push(c.id + ': ' + result.error);
 		else converted.push({ id: c.id, to, node: result.focus });

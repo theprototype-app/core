@@ -110,8 +110,13 @@ function gridPairs(type, data) {
 }
 
 describe('2.0-n3c parity: reference JS == built-in', () => {
-	test('every convertible type has a referenceJs half, and it is the reference module', () => {
-		for (const type of REFERENCE_TYPES) expect(/** @type {any} */ (nodeDef(type)).referenceJs).toBe(REFERENCE_JS[type]);
+	// 2.0-int (boot size): the bodies live in reference.js only (lazy, with Convert); a definition no longer carries them
+	test('every convertible type has a reference body and a definition, and nothing else does', () => {
+		expect(Object.keys(REFERENCE_JS).sort()).toEqual([...REFERENCE_TYPES].sort());
+		for (const type of REFERENCE_TYPES) {
+			expect(typeof REFERENCE_JS[type]).toBe('string');
+			expect(nodeDef(type)).toBeTruthy();
+		}
 	});
 
 	test('the converted code passes the script lint (the pure-function contract: inputs, time, api reads)', () => {

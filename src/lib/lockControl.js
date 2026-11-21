@@ -302,7 +302,9 @@ const rejectToastAt = new Map();
  */
 export function applyLockReject(data, from) {
 	if (!from || typeof data?.uuid !== 'string') return;
-	if (holderOf(get(lockedObjects), data.uuid) !== from) return;
+	// counting OUR claim too: in a crossed race both sides reject the other's first edit, and only
+	// the one whose claim really wins may make us let go
+	if (holderOf(get(lockedObjects), data.uuid, myClaim(data.uuid)) !== from) return;
 	if (myClaim(data.uuid)) dropMyLocks([data.uuid]);
 	const current = get(selectedObjects);
 	if (current.includes(data.uuid)) applySelectionSet(current.filter((u) => u !== data.uuid));

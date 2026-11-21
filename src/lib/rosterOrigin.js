@@ -54,5 +54,5 @@ export function rosterOriginOf(id) {
 export function shareableRosterRows(rows, waiting) {
 	if (!Array.isArray(rows) || !waiting?.length) return rows;
 	const asking = new Set(waiting.filter((w) => w?.[1] === 'pending').map((w) => w[0]));
-	return asking.size ? rows.filter((r) => !asking.has(r?.[0])) : rows;
+	return asking.size ? rows.filter((r) => !asking.has(r?.[0]) && !asking.has(origin.get(r?.[0]) ?? '')) : rows;
 }

@@ -2902,7 +2902,7 @@ export class PeerConnection {
 			delete this.connections[peerId];
 			try { conn?.close(); } catch (e) { /* never opened */ }
 		}
-		this.broadcast({ type: 'userdata', userdata: get(userdata) });
+		this.broadcast({ type: 'userdata', userdata: shareableRosterRows(get(userdata), get(waitingForApproval)) });
 		showToast(shortPeer(peerId) + ' was removed. They cannot rejoin while this tab stays open.');
 	}
 

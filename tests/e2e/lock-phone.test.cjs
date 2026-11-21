@@ -16,8 +16,9 @@ const sideways = (page) => page.evaluate(() => document.documentElement.scrollWi
 h.run(async () => {
 	const browser = await h.launch();
 	const H = await h.setupPage(browser, 'H');
-	const P = await h.setupPageQuiet(browser, 'P', [H], { context: PHONE });
-	await h.connect(P, H);
+	const P = await h.setupPage(browser, 'P', { context: PHONE });
+	// the desktop dials the phone (the phone pill keeps its dial field behind a tap)
+	await h.connect(H, P);
 	const X = await H.page.evaluate(async () => {
 		const s = window.__tp.test.v1;
 		s.commandsHandler.sceneCommand('/create box');

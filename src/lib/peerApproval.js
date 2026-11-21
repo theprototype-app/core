@@ -247,7 +247,8 @@ function dial(peerId, cloudMeta) {
 	if (!users.some((/** @type {any} */ u) => u[0] === peerId)) {
 		users.push([peerId, '', '']);
 		userdata.set(/** @type {any} */ (users));
-		peer.send({ type: 'userdata', userdata: get(userdata) });
+		// 80a R1: roster changes are tied to the connection that made them
+		peer.send({ type: 'userdata', userdata: get(userdata).filter((/** @type {any} */ u) => u[0] !== peerId) });
 		peer.connectToPeer(peerId, true);
 		const waiting = /** @type {any[]} */ (get(waitingForApproval));
 		if (!waiting.some((/** @type {any} */ w) => w[0] === peerId)) waiting.push([peerId, 'pending']);

@@ -42,5 +42,10 @@ describe('roster origin', () => {
 		expect(shareableRosterRows(rows, [['x', 'pending']])).toEqual([['me'], ['y']]);
 		expect(shareableRosterRows(rows, [])).toBe(rows);
 		expect(shareableRosterRows(rows, [['x', 'approved']])).toEqual(rows);
+		// rows a still-open request brought in stay ours too
+		roster.set([['me', 'Me', '']]);
+		noteRosterRows('x', [['z', 'Z', '']], new Set(['me']), true);
+		expect(shareableRosterRows([['me'], ['z'], ['y']], [['x', 'pending']])).toEqual([['me'], ['y']]);
+		rollBackRosterRows('x');
 	});
 });

@@ -30,6 +30,8 @@ const pressToast = (page, label) =>
 		return true;
 	}, label);
 
+const shownName = (page, id) => page.evaluate((i) => window.__tp.test.v1.lockHeld.nameOf(i), id);
+
 h.run(async () => {
 	const browser = await h.launch();
 	const H = await h.setupPage(browser, 'H', { context: { viewport: { width: 1440, height: 900 } } });
@@ -69,8 +71,9 @@ h.run(async () => {
 	await E.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), X);
 	await h.eventually(() => holderOn(H.page, X), (v) => v === E.id, 'H sees E holding the box');
 	await h.eventually(() => chip(E.page, X), (c) => c.chip === 'me' && c.text === 'Held by me', 'E\'s row says "Held by me"');
-	await h.eventually(() => chip(H.page, X), (c) => c.chip === 'other' && c.text === 'Held by E', 'H\'s row says "Held by E"');
-	h.check((await chip(H.page, X)).label.includes('held by E'), 'and a screen reader hears it');
+	const eName = await shownName(H.page, E.id);
+	await h.eventually(() => chip(H.page, X), (c) => c.chip === 'other' && c.text === 'Held by ' + eName, `H's row says "Held by ${eName}"`);
+	h.check((await chip(H.page, X)).label.includes('held by ' + eName), 'and a screen reader hears it');
 
 	// --- 2. Release from the row menu ------------------------------------------------------------
 	const released = await E.page.evaluate((u) => {
@@ -138,7 +141,8 @@ h.run(async () => {
 	await h.eventually(() => holderOn(H.page, X), (v) => !v, 'after the heal, X is free on H');
 	await h.eventually(() => holderOn(E.page, Y), (v) => !v, 'and Y is free on E');
 	h.check(!(await read(E.page, 'selectedObjects')).includes(X) && !(await read(H.page, 'selectedObjects')).includes(Y), 'both let go of their selection');
-	await h.eventually(() => toasts(E.page), (t) => t.some((x) => x.startsWith('Connection to H came back')), 'and say why');
+	const hName = await shownName(E.page, H.id);
+	await h.eventually(() => toasts(E.page), (t) => t.some((x) => x.startsWith('Connection to ' + hName + ' came back')), 'and say why');
 	// it is a release, not a ban: selecting again takes it
 	await E.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), X);
 	await h.eventually(() => holderOn(H.page, X), (v) => v === E.id, 'selecting again takes it back');

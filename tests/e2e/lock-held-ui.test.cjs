@@ -29,6 +29,8 @@ const flowNodeCount = (page, graphId) =>
 	page.evaluate((g) => { let v; window.__tp.test.v1.flowGraphs.subscribe((x) => (v = x))(); return v?.[g]?.nodes?.length ?? 0; }, graphId);
 const editorOpen = (page) => page.evaluate(() => !!document.querySelector('.svelteFlow .svelte-flow__pane'));
 
+const shownName = (page, id) => page.evaluate((i) => window.__tp.test.v1.lockHeld.nameOf(i), id);
+
 h.run(async () => {
 	const browser = await h.launch();
 	const H = await h.setupPage(browser, 'H', { context: { viewport: { width: W, height: HGT } } });
@@ -76,9 +78,10 @@ h.run(async () => {
 				emoji: /\p{Extended_Pictographic}/u.test(el?.textContent ?? '')
 			};
 		});
-		h.check(b.text === 'E is editing this', `the banner names the holder ("${b.text}")`);
+		const eName = await shownName(H.page, E.id);
+		h.check(!!eName && b.text === eName + ' is editing this', `the banner names the holder ("${b.text}")`);
 		h.check(b.by === E.id, 'and carries their id');
-		h.check(b.sr === 'Crate, being edited by E', `a screen reader hears "${b.sr}"`);
+		h.check(b.sr === 'Crate, being edited by ' + eName, `a screen reader hears "${b.sr}"`);
 		h.check(b.request, 'with a Request control');
 		h.check(!b.emoji, 'and no emoji');
 	}
@@ -122,7 +125,8 @@ h.run(async () => {
 	await H.page.evaluate(() => window.__tp.test.v1.nodeEditorActions.runNodeAction?.('duplicate'));
 	await H.page.waitForTimeout(500);
 	h.check((await flowNodeCount(H.page, X)) === 1, 'no node was added to the held flow');
-	await h.eventually(() => toasts(H.page), (t) => t.some((x) => x.includes('E is editing this flow')), 'and H is told why');
+	const eShown = await shownName(H.page, E.id);
+	await h.eventually(() => toasts(H.page), (t) => t.some((x) => x.includes(eShown + ' is editing this flow')), 'and H is told why');
 	// a code save of that flow is refused too
 	const saved = await H.page.evaluate(async (u) => {
 		const cw = window.__tp.test.v1.codeWorkspace;

@@ -4,12 +4,12 @@
 	"pages": {
 		"play": {
 			"html": "play.html",
-			"maxJsGzBytes": 2163727,
+			"maxJsGzBytes": 2166784,
 			"maxFirstFrameMs": 20000
 		},
 		"editor": {
 			"html": "index.html",
-			"maxJsGzBytes": 3544646,
+			"maxJsGzBytes": 3398758,
 			"maxFirstFrameMs": 32000
 		}
 	},
@@ -42,6 +42,13 @@
 			"play": "v1.69.0 2108.0 KB -> 2111.0 KB (+3.0) -> line 2113.0 KB = v1.69.0 + 5 KB",
 			"editor": "v1.69.0 3456.6 KB -> 3459.5 KB (+2.9) -> line 3461.6 KB = v1.69.0 + 5 KB",
 			"note": "the orchestrator's line for the SvelteKit 3 release: the 1.69.0 measurement (same machine, same run) + 5 KB. Kit 3's client runtime is bigger (navigation 14.6 + client 8.7 + client.svelte 1.9 KB vs kit 2's index-client 24.9 KB); the AI chat client left both boots to pay for it (sk3-int Q1). On kit 3 the 100 C1 three.core group must be output.codeSplitting (kit 3 sets that option itself and an advancedChunks group is dropped: three split again, +2 KB per page)"
+		},
+		{
+			"date": "2026-11-21",
+			"lane": "2.0-int (code view, Convert to code, agents wire games, Cinematic labels)",
+			"play": "v1.70.0 2111.0 KB -> 2114.3 KB (+3.3: formatMinor 3 rules in sceneSchema, the n3b runtime fixes in flowRuntime, behaviour lint hints in analyze) -> line 2116.0 KB = v1.70.0 + 5 KB",
+			"editor": "v1.70.0 3459.5 KB -> 3314.1 KB (-145.4) -> line 3319.1 KB = measured + 5 KB (LOWERED from 3461.6)",
+			"note": "the agent tool set (ai/tools, lookTools, flowTools, pathTools, ~150 KB gz) rode the editor boot only because the chat window, the quick-prompt pill and Welcome imported their stores from ai/assistant.js; the stores and runPrompt/stopAi are now the ai/aiState.js leaf and the assistant loads on the first prompt. Convert to code's applier, planner and reference bodies load on the first Convert (nodes/convertState.js + nodes/referenceShape.js stay for the node menu). The editor line comes down with it so the win cannot slip back"
 		}
 	],
 	"throttle": {

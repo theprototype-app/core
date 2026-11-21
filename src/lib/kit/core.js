@@ -262,6 +262,8 @@ export function createKit(host, pieces) {
 
 	/** the request id a NODE action carries while it runs (see runNodeAction) @type {string | null} */
 	let nodeRid = null;
+	/** 2.0-n3b: the peer a NODE action acts for (whose event fired it) @type {string | null} */
+	let nodeFrom = null;
 
 	/** @param {string} piece @param {string} op @param {any[]} args */
 	const request = (piece, op, args) => {
@@ -273,9 +275,11 @@ export function createKit(host, pieces) {
 			stats.duplicate++;
 			return { ok: true, duplicate: true };
 		}
-		if (host.isAuthority()) return apply(piece, op, args, host.me(), fixed);
+		// 2.0-n3b: a node action asks FOR the peer whose event fired it (every peer derives the same id)
+		const as = (fixed && nodeFrom) || host.me();
+		if (host.isAuthority()) return apply(piece, op, args, as, fixed);
 		const rid = fixed ?? makeRid(host.me());
-		const req = { type: KIT_REQ, rid, piece, op, args: clone(args) ?? [], from: host.me() ?? '' };
+		const req = { type: KIT_REQ, rid, piece, op, args: clone(args) ?? [], from: as ?? '' };
 		pending.set(rid, { req, sentAt: now() });
 		host.send(req);
 		return { ok: true, pending: true, rid };
@@ -443,16 +447,19 @@ export function createKit(host, pieces) {
 		 * resolved data. `opts.rid` = an id every peer derives the same way from the trigger
 		 * (`node:<id>:<stamp>`), which is what makes a replicated press — seen by every peer —
 		 * one change. Returns what the call returned (null for a non-action type).
-		 * @param {string} type @param {Record<string, any>} data @param {{rid?: string}} [opts] */
+		 * 2.0-n3b: `opts.from` = the peer whose event fired it (a coin B walked into is B's coin).
+		 * @param {string} type @param {Record<string, any>} data @param {{rid?: string, from?: string}} [opts] */
 		runNodeAction(type, data, opts = {}) {
 			const parsed = parseKitNodeType(type);
 			const call = parsed && defs[parsed.piece]?.spec.calls.find((/** @type {any} */ c) => c.name === parsed.call);
 			if (!parsed || !call || call.kind !== 'action') return null;
 			nodeRid = opts.rid ? String(opts.rid).slice(0, 128) : null;
+			nodeFrom = opts.from ? String(opts.from).slice(0, 64) : null;
 			try {
 				return impls[parsed.piece][call.name](...argsFromData(call, data));
 			} finally {
 				nodeRid = null;
+				nodeFrom = null;
 			}
 		},
 		/** a value node's reading @param {string} type @param {Record<string, any>} data */

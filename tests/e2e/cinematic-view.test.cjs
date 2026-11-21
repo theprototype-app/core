@@ -81,6 +81,125 @@ const camState = (page) =>
 	});
 const waitMode = (page, want, label, ms = 90000) => h.eventually(() => mode(page), (m) => m === want, label, ms);
 
+/** poll without recording a check: the value once `pred` holds, else null @param {() => Promise<any>} fn @param {(v: any) => boolean} pred @param {number} ms */
+async function poll(fn, pred, ms) {
+	const end = Date.now() + ms;
+	while (Date.now() < end) {
+		const v = await fn();
+		if (pred(v)) return v;
+		await new Promise((r) => setTimeout(r, 250));
+	}
+	return null;
+}
+
+/** C2-1: every troika text in the scene and its canvas-texture cover (null when the view is off) @param {any} page */
+const labelState = (page) =>
+	page.evaluate(async () => {
+		const t = window.__tp.test.v1;
+		const live = (await t.cinematicState.cinematicView()).cinematicLiveForTest();
+		let sc;
+		t.globalScene.subscribe((x) => (sc = x))();
+		/** @type {any[]} */
+		const texts = [];
+		let quads = 0;
+		sc.traverse((/** @type {any} */ o) => {
+			if (o.name === 'cinematic-text-quad') quads++;
+			if (typeof o.sync !== 'function' || !('textRenderInfo' in o)) return; // a troika text
+			const m = o.material;
+			texts.push({ text: String(o.text ?? ''), name: o.name, troikaDraws: Array.isArray(m) ? m.some((x) => x?.isTroikaTextMaterial) : !!m?.isTroikaTextMaterial, cover: live?.labels?.recordOf(o) ?? null });
+		});
+		return { stats: live?.labels?.stats() ?? null, texts, quads };
+	});
+/** the share of the view's pixels the text quads change (a frame with them minus a frame without) @param {any} page */
+const labelInk = (page) =>
+	page.evaluate(async () => {
+		const v = await window.__tp.test.v1.cinematicState.cinematicView();
+		const labels = v.cinematicLiveForTest()?.labels;
+		if (!labels) return -1;
+		const frames = (/** @type {number} */ n) => new Promise((r) => { const step = () => (n-- <= 0 ? r(undefined) : requestAnimationFrame(step)); step(); });
+		const grab = async () => {
+			const img = new Image();
+			img.src = /** @type {string} */ (await v.grabCinematic());
+			await img.decode();
+			const c = document.createElement('canvas');
+			c.width = 320;
+			c.height = 180;
+			const x = /** @type {CanvasRenderingContext2D} */ (c.getContext('2d'));
+			x.drawImage(img, 0, 0, 320, 180);
+			return x.getImageData(0, 0, 320, 180).data;
+		};
+		labels.hideForTest(true);
+		await frames(30);
+		const off = await grab();
+		labels.hideForTest(false);
+		await frames(30);
+		const on = await grab();
+		let n = 0;
+		for (let i = 0; i < on.length; i += 4) if (Math.abs(on[i] - off[i]) + Math.abs(on[i + 1] - off[i + 1]) + Math.abs(on[i + 2] - off[i + 2]) > 30) n++;
+		return n / (on.length / 4);
+	});
+
+/**
+ * G30: record every toast and every showing of the switch's reason note from now on. The note stays 10 s
+ * and a toast a few seconds, and a loaded slot can take longer than that between the failure and the
+ * check (r4: s9 read both after they had gone), so the check reads what the USER WAS SHOWN, not only
+ * what is still on screen. Call before the press. @param {any} page
+ */
+async function watchFallback(page) {
+	await page.evaluate(() => {
+		const seen = { toasts: /** @type {string[]} */ ([]), notes: /** @type {string[]} */ ([]) };
+		/** @type {any} */ (window).__g30seen = seen;
+		window.__tp.test.v1.toastStore.subscribe((/** @type {any} */ list) => {
+			for (const x of list ?? []) {
+				const m = typeof x === 'string' ? x : String(x?.text ?? '');
+				if (m && !seen.toasts.includes(m)) seen.toasts.push(m);
+			}
+		});
+		setInterval(() => {
+			const w = document.getElementById('cinematic-why');
+			if (w && !w.hidden && w.textContent && !seen.notes.includes(w.textContent)) seen.notes.push(w.textContent);
+		}, 100);
+	});
+}
+
+/** what watchFallback recorded @param {any} page @returns {Promise<{toasts: string[], notes: string[]}>} */
+const seenFallback = (page) => page.evaluate(() => /** @type {any} */ (window).__g30seen ?? { toasts: [], notes: [] });
+
+/**
+ * G30: the fallback after a dropped instance / lost device, as the user sees it: the view's own note (never
+ * "Something went wrong"), the switch still on screen, disabled, with the reason, no unhandled rejection,
+ * and the WebGL view drawing again.
+ * @param {any} P a peer from setupPage @param {string} label
+ */
+async function assertFallback(P, label) {
+	const page = P.page;
+	// the press starts the view first (mode 'entering'): wait for the failure itself, then for the teardown
+	await h.eventually(() => state(page), (v) => !!v?.disabled, label + ': the start failed and said so', 90000);
+	await waitMode(page, 'off', label + ': the view fell back');
+	const s = await state(page);
+	h.check(s.offered === false && /lost/.test(s.disabled ?? ''), `${label}: off for the session with its reason (${JSON.stringify({ why: s.why, disabled: s.disabled, error: s.error })})`);
+	const seen = await seenFallback(page);
+	const t = [...new Set([...(await toasts(page)), ...seen.toasts])];
+	h.check(t.some((m) => /Cinematic view is off: the graphics device was lost/.test(m)), `   the view's own note says so (${JSON.stringify(t).slice(0, 240)})`);
+	h.check(!t.some((m) => /Something went wrong/i.test(m)), '   and no "Something went wrong" toast');
+	await page.waitForSelector('#cinematic-toggle', { timeout: 10000 }).catch(() => null);
+	const sw = await page.evaluate(() => {
+		const b = document.getElementById('cinematic-toggle');
+		const w = document.getElementById('cinematic-why');
+		return b ? { disabled: b.getAttribute('aria-disabled'), why: b.getAttribute('data-why'), title: b.getAttribute('title'), note: w && !w.hidden ? w.textContent : null } : null;
+	});
+	const note = sw?.note ?? seen.notes.find((n) => /lost/.test(n)) ?? null;
+	h.check(!!sw && sw.disabled === 'true' && /lost/.test(sw.why ?? '') && /lost/.test(sw.title ?? '') && /lost/.test(note ?? ''), `   the switch stays, disabled, and shows the reason (${JSON.stringify({ ...sw, note })})`);
+	await page.click('#cinematic-toggle', { force: true }); // aria-disabled: Playwright would wait for "enabled"
+	await page.waitForTimeout(400);
+	h.check((await mode(page)) === 'off', '   pressing it does not start the view again');
+	const rejections = h.pageErrors(P).filter((e) => /Instance|popErrorScope|WebGPU|GPU/i.test(JSON.stringify(e)));
+	h.check(rejections.length === 0, `   0 unhandled rejections from the dropped instance (${JSON.stringify(rejections).slice(0, 300)})`);
+	const gl = await page.evaluate(() => { let r; window.__tp.test.v1.globalRenderer.subscribe((x) => (r = x))(); return { lost: r.getContext().isContextLost(), opacity: r.domElement.style.opacity, gpuCanvas: !!document.getElementById('cinematic-canvas') }; });
+	const luma = await glLuma(page);
+	h.check(!gl.lost && gl.opacity === '' && !gl.gpuCanvas && luma > 1, `   the WebGL view draws again (${JSON.stringify(gl)}, luma ${luma})`);
+}
+
 h.run(async () => {
 	const browser = await h.launch({ args: ARGS });
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1440, height: 900 } }, storage: STORAGE });
@@ -118,7 +237,17 @@ h.run(async () => {
 	h.check(ids.every(Boolean), `three objects to draw (${ids.length})`);
 
 	// ---- 2. the pill turns it on; the WebGPU canvas draws a real frame ----------------------------------------
+	await watchFallback(page);
 	await page.click('#cinematic-toggle');
+	// G30: a browser that drops the WebGPU instance while the view starts (a loaded software-GL worker) takes
+	// the fallback path for real: assert it, run the forced-drop check, and skip the sections that need the view
+	const came = await poll(() => state(page), (v) => v.mode === 'on' || (v.mode === 'off' && !!v.disabled), 90000);
+	if (came?.mode === 'off' && /lost/.test(came.disabled)) {
+		h.check(true, `SKIPPED 2-8: this browser dropped the WebGPU instance while the view started (${came.disabled}); the fallback is checked instead`);
+		await assertFallback(A, '2. a real drop');
+		await forcedDrop(browser, A);
+		return h.finish(browser);
+	}
 	await waitMode(page, 'on', 'the view came on after the press');
 	h.check((await page.getAttribute('#cinematic-toggle', 'aria-pressed')) === 'true', '2. the pill reads pressed');
 	h.check((await page.locator('#cinematic-hint').count()) === 0, '   the first-use hint goes away once the view is on');
@@ -129,6 +258,52 @@ h.run(async () => {
 	h.check(d1.errors.length === 0, `   no errors while entering (${JSON.stringify(d1.errors).slice(0, 300)})`);
 	const prefs = await page.evaluate(() => JSON.parse(localStorage.getItem('cinematicView') || '{}'));
 	h.check(prefs.on === true, `   the choice is kept on this device (${JSON.stringify(prefs)})`);
+
+	// ---- 2b. C2-1: labels and flat text draw as canvas-texture quads ---------------------------------------------
+	const sign = await page.evaluate(() => {
+		const s = window.__tp.test.v1;
+		const o = s.addObjects.spawnAtPoint('/create Text', [0, 2.2, 0.8]);
+		if (o) s.textPathEdit.setTextPathFor(o.uuid, { text: 'Cinematic sign', size: 0.6 });
+		return o?.uuid ?? null;
+	});
+	const pinned = await page.evaluate((id) => {
+		const s = window.__tp.test.v1;
+		s.annotationsHandler.addAnnotation(id);
+		let cur;
+		s.annotationsHandler.activeAnnotation.subscribe((v) => (cur = v))();
+		if (!cur?.draft) return false;
+		s.annotationsHandler.setAnnotation({ ...cur.draft, name: 'A note in the view', text: 'pin' });
+		return true;
+	}, ids[1]);
+	h.check(!!sign && pinned, `2b. a flat text sign and a note pin join the scene with the view on (sign ${sign}, pin ${pinned})`);
+	const covered = (/** @type {any} */ st, /** @type {RegExp} */ re) => st.texts.filter((x) => re.test(x.text)).some((x) => x.cover?.visible && x.cover.w > 0 && !x.troikaDraws);
+	await h.eventually(() => labelState(page), (st) => covered(st, /^Cinematic sign$/), 'the sign gets its quads', 30000);
+	const ls1 = await labelState(page);
+	h.check(covered(ls1, /^Cinematic sign$/), `   the sign draws as a quad, troika's own draw off (${JSON.stringify(ls1.texts.filter((x) => /Cinematic/.test(x.text)))})`);
+	// a desktop note pin is a DOM marker over the canvas (its troika number exists only in VR): it shows over the view as is
+	const markers = () => page.evaluate(() => { let m; window.__tp.test.v1.annotationsHandler.noteMarkers.subscribe((x) => (m = x))(); return (m ?? []).length; });
+	const marker = (await poll(markers, (n) => n >= 1, 10000)) ?? 0;
+	h.check(marker >= 1, `   the note pin shows as its DOM marker over the view (${marker})`);
+	h.check(ls1.texts.every((x) => !x.troikaDraws), `   no troika text draws itself while the view is on (${ls1.texts.filter((x) => x.troikaDraws).map((x) => x.text).join(', ') || 'none'})`);
+	const ink = await labelInk(page);
+	h.check(ink > 0.002, `   the quads put pixels on the view (${(ink * 100).toFixed(2)} % of the frame changes with them)`);
+	const chip = (await state(page)).notShown;
+	h.check(!/text/i.test(chip ?? ''), `   the "Not shown" chip does not name text (${JSON.stringify(chip)})`);
+	// live: a longer text, a wider canvas
+	const signW = ls1.texts.find((x) => x.text === 'Cinematic sign')?.cover?.w ?? 0;
+	await page.evaluate((u) => window.__tp.test.v1.textPathEdit.setTextPathFor(u, { text: 'Cinematic sign, and some more words' }), sign);
+	await h.eventually(() => labelState(page), (st) => (st.texts.find((x) => /some more words/.test(x.text))?.cover?.w ?? 0) > signW * 1.5, 'the sign quad follows the new text', 30000);
+	const ls2 = await labelState(page);
+	h.check((ls2.texts.find((x) => /some more words/.test(x.text))?.cover?.w ?? 0) > signW * 1.5, `   it updates live: the sign's canvas grew with its text (${signW} -> ${ls2.texts.find((x) => /some more words/.test(x.text))?.cover?.w} px)`);
+	// a ping's name lives 4 s: its quad comes and goes with it
+	const q0 = ls2.stats?.quads ?? 0;
+	await page.evaluate(() => window.__tp.test.v1.ping.previewPing([1.6, 0, 0]));
+	const lp = await poll(() => labelState(page), (st) => (st.stats?.quads ?? 0) > q0, 3500);
+	h.check(!!lp && (lp.stats?.quads ?? 0) > q0, `   a ping's name gets a quad while it shows (${q0} -> ${lp?.stats?.quads})`);
+	const lg = await poll(() => labelState(page), (st) => (st.stats?.quads ?? 0) === q0, 15000);
+	h.check(!!lg && lg.quads === q0 && (lg.stats?.released ?? 0) >= 1, `   and is freed when the ping ends (${JSON.stringify(lg?.stats)})`);
+	const d2b = await debug(page);
+	h.check(d2b.errors.length === 0, `   no view errors with the labels (${JSON.stringify(d2b.errors).slice(0, 300)})`);
 
 	// ---- 3. editing keeps working while the view draws ----------------------------------------------------------
 	await page.evaluate((id) => window.__tp.test.v1.objectActions.selectObject(id), ids[0]);
@@ -174,6 +349,11 @@ h.run(async () => {
 	try {
 		// B joins A: an empty joiner adopts the host's world (A joining B would put A's unnamed work behind the connect decision)
 		await h.connect(B, A);
+		// C2-1: a second peer's name label (when the editor shows one for them) is covered like every troika text
+		const bName = await B.page.evaluate(() => { let u; window.__tp.test.v1.username?.subscribe?.((x) => (u = x))(); return u ?? null; });
+		const lb = await poll(() => labelState(page), (st) => st.texts.some((x) => x.text && x.text === bName), 8000);
+		if (!lb) h.check(true, `3b. SKIPPED peer-name label: no 3D name label for B in this layout (${bName})`);
+		else h.check(lb.texts.filter((x) => x.text === bName).every((x) => x.cover?.visible && !x.troikaDraws), `3b. B's name label draws as a quad (${JSON.stringify(lb.texts.filter((x) => x.text === bName))})`);
 		const nA = await objectCount(page);
 		await B.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create sphere'));
 		await h.eventually(() => objectCount(page), (n) => n === nA + 1, "the peer's sphere reached A", 30000);
@@ -236,6 +416,8 @@ h.run(async () => {
 	await waitMode(page, 'off', 'Shift+Z turned the view off');
 	const gl = await page.evaluate(() => { let r; window.__tp.test.v1.globalRenderer.subscribe((x) => (r = x))(); const c = r.getContext(); return { lost: c.isContextLost(), opacity: r.domElement.style.opacity }; });
 	h.check(!gl.lost && gl.opacity === '', `5. Shift+Z: off, the WebGL context is back and visible (${JSON.stringify(gl)})`);
+	const lOff = await labelState(page);
+	h.check(lOff.quads === 0 && lOff.stats === null && lOff.texts.length > 0 && lOff.texts.every((x) => x.troikaDraws), `   C2-1: the text quads are gone and troika draws every text itself again (${lOff.quads} quads, ${lOff.texts.filter((x) => !x.troikaDraws).length} of ${lOff.texts.length} texts still covered)`);
 	await page.keyboard.press('Shift+Z');
 	await waitMode(page, 'on', 'Shift+Z turned it on again');
 	if ((await mode(page)) !== 'on') {
@@ -285,7 +467,8 @@ h.run(async () => {
 	const gl7 = await page.evaluate(() => { let r; window.__tp.test.v1.globalRenderer.subscribe((x) => (r = x))(); return !r.getContext().isContextLost(); });
 	h.check(gl7 && !f?.error, '   the WebGL view draws again');
 	await page.waitForTimeout(500);
-	h.check((await page.$('#cinematic-switch')) === null, '   the pill is gone');
+	const sw7 = await page.evaluate(() => { const b = document.getElementById('cinematic-toggle'); return b ? { disabled: b.getAttribute('aria-disabled'), why: b.getAttribute('data-why') } : null; });
+	h.check(!!sw7 && sw7.disabled === 'true' && /compile/.test(sw7.why ?? ''), `   the pill stays, disabled, with the reason (G30; ${JSON.stringify(sw7)})`);
 
 	// ---- 8. fallback: a lost device, on a fresh page ------------------------------------------------------------
 	const C = await h.setupPageQuiet(browser, 'C', [A], { context: { viewport: { width: 1440, height: 900 } }, storage: STORAGE });
@@ -302,6 +485,34 @@ h.run(async () => {
 		await h.closePeer(C);
 	}
 
+	await forcedDrop(browser, A);
+
 	h.check(h.pageErrors(A).length === 0, `no page errors on A (${JSON.stringify(h.pageErrors(A)).slice(0, 300)})`);
 	await h.finish(browser);
 });
+
+/**
+ * ---- 9. G30: the WebGPU instance dropped WHILE the view starts (the seam makes popErrorScope and
+ * onSubmittedWorkDone reject as Chromium's do, so three's own uncaught calls run), on a fresh page ----------
+ * @param {any} browser @param {any} A
+ */
+async function forcedDrop(browser, A) {
+	const D = await h.setupPageQuiet(browser, 'D', [A], { context: { viewport: { width: 1440, height: 900 } }, storage: STORAGE });
+	try {
+		const offeredD = await D.page.evaluate(() => window.__tp.test.v1.cinematicState.probeCinematic());
+		if (!offeredD) {
+			h.check(true, `SKIPPED 9: not offered on the fresh page (${(await state(D.page)).why})`);
+			return;
+		}
+		await D.page.waitForSelector('#cinematic-toggle', { timeout: 30000 });
+		await D.page.evaluate(() => window.__tp.test.v1.addObjects.spawnAtPoint('/create Box 1 1 1', [0, 0.5, 0]));
+		await D.page.evaluate(async () => (await window.__tp.test.v1.cinematicState.cinematicView()).dropInstanceOnNextStartForTest());
+		await watchFallback(D.page);
+		await D.page.click('#cinematic-toggle');
+		await assertFallback(D, '9. instance dropped mid-start (forced)');
+		const dbg = await debug(D.page);
+		h.check((dbg.errors ?? []).some((/** @type {any} */ e) => /Instance/.test(String(e.rejected ?? e.msg ?? ''))), `   the rejections were caught and logged (${(dbg.errors ?? []).length} entries)`);
+	} finally {
+		await h.closePeer(D);
+	}
+}

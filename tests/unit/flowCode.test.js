@@ -123,14 +123,14 @@ describe('2.0 N2: graph -> code -> graph for the five N0 built-ins', () => {
 });
 
 describe('2.0 N2: the codeView flag', () => {
-	test('ships off; on is per browser (flag:codeView)', async () => {
+	test('ships on (1.71); off is per browser (flag:codeView = 0)', async () => {
 		const { safeStorage } = await import('../../src/lib/safeStorage');
 		safeStorage.removeItem('flag:codeView');
 		const { codeViewFlag, codeViewOn, CODE_VIEW_KEY } = await import('../../src/lib/nodes/codeViewFlag.js');
-		expect(codeViewOn()).toBe(false);
-		codeViewFlag.set(true);
-		expect(safeStorage.getItem(CODE_VIEW_KEY)).toBe('1');
+		expect(codeViewOn()).toBe(true);
 		codeViewFlag.set(false);
+		expect(safeStorage.getItem(CODE_VIEW_KEY)).toBe('0');
+		codeViewFlag.set(true);
 		expect(safeStorage.getItem(CODE_VIEW_KEY)).toBeNull();
 	});
 });

@@ -6,7 +6,7 @@
 //        (render/view.js: lost on purpose, Scene.svelte does not report it) → a fresh canvas over the
 //        WebGL one (a canvas keeps one context type for life; pointer input still lands on the WebGL
 //        canvas underneath, so picking, gizmos and orbit are untouched) → WebGPURenderer → stand-ins for
-//        the GLSL materials it cannot run → the lighting pipeline → compiled off the frame (the seam's
+//        the GLSL materials it cannot run → troika text as canvas-texture quads (labelQuads) → the lighting pipeline → compiled off the frame (the seam's
 //        compileAsync, which closes the scene bracket three's WebGPU compile leaves open: L1a) → threlte's
 //        render task hands its frame to `draw` (render/view.js). Everything else keeps ticking: flows,
 //        physics, gizmos, undo, peers, autosave, the recorder's stages.
@@ -26,15 +26,16 @@ import { captureEnvironment, useCopies, restoreEnvironment } from './envHandover
 import { buildPipeline } from './pipeline.js';
 import { classifyMaterial, notShownText, effectiveQuality, createDropWatch, quantile } from './cinematicCore.js';
 // the STORE leaf, never ./cinematicState.js (that one reaches the app's stores: this chunk's preload list)
-import { cinematicState, cinematicPrefs, disableCinematic } from './cinematicStore.js';
+import { cinematicState, cinematicPrefs, disableCinematic, cinematicDisabled } from './cinematicStore.js';
 import { deformersOf } from '../vertexDeform.js';
+import { createLabelQuads } from './labelQuads.js';
 
 /** @typedef {{ gl: any, scene: any, camera: () => any, toast: (msg: string) => void }} ViewCtx */
 /** @type {ViewCtx | null} what the app handed over (cinematicState.js) */
 let app = null;
 
 /** the stand-in colours by kind (a plain material in roughly the thing's colour) */
-const STAND_IN_COLOR = { water: 0x2f6f8f, fluid: 0x3a7fa8, particles: 0xd8dde6, text: 0xe8e8e8, custom: 0x8a8f98 };
+const STAND_IN_COLOR = { water: 0x2f6f8f, fluid: 0x3a7fa8, particles: 0xd8dde6, custom: 0x8a8f98 };
 
 /** @type {any} */
 let live = null;
@@ -185,9 +186,63 @@ function fatalGpuError(msg) {
 	return /compile|E_FAIL|createRenderPipeline|RenderPipeline|ShaderModule|WGSL|Invalid (Shader|RenderPipeline)/i.test(msg);
 }
 
+/** a WebGPU error that means the instance or the device went away under the view @param {string} msg */
+function lostGpuError(msg) {
+	return /Instance dropped|external Instance reference|instance (was |is )?(lost|dropped|destroyed)|device (was |is )?(lost|destroyed)/i.test(msg);
+}
+
+const LOST = 'the graphics device was lost.';
+const NO_COMPILE = 'its lighting does not compile on this graphics path.';
+
+/** the reason fail() shows for a thrown / rejected `e` @param {any} e @param {string} otherwise */
+function reasonOf(e, otherwise) {
+	return lostGpuError(String(e?.message ?? e)) ? LOST : otherwise;
+}
+
+/**
+ * fix-batch-4 G30: three r186 pops its WebGPU error scopes with no catch (WebGPUPipelineUtils: a bare
+ * `.then`, and an async Promise executor), so once the browser drops the instance every pipeline it makes
+ * rejects UNHANDLED ("Instance dropped in popErrorScope", ~60 per start) and the page said "Something went
+ * wrong" instead of the view's own note. The device's promise-returning calls are guarded here: a rejection
+ * is logged and turns the view off with its reason, once; three reads a null scope (nothing to report).
+ * @param {any} device @param {any} g the live view this device belongs to
+ */
+function guardDevice(device, g) {
+	if (!device || device.__tpGuarded) return;
+	device.__tpGuarded = true;
+	/** @param {any} e */
+	const rejected = (e) => {
+		const msg = String(e?.message ?? e).slice(0, 300);
+		if (log.errors.length < 200) log.errors.push({ at: Math.round(now()), rejected: msg });
+		if (live === g && !g.failing) void fail(reasonOf(e, NO_COMPILE));
+	};
+	const pop = typeof device.popErrorScope === 'function' ? device.popErrorScope.bind(device) : null;
+	if (pop)
+		device.popErrorScope = () =>
+			pop().catch((/** @type {any} */ e) => {
+				rejected(e);
+				return null;
+			});
+	const q = device.queue;
+	const done = typeof q?.onSubmittedWorkDone === 'function' ? q.onSubmittedWorkDone.bind(q) : null;
+	if (done) q.onSubmittedWorkDone = () => done().catch((/** @type {any} */ e) => rejected(e));
+}
+
+/** e2e (G30): the next start's device behaves like one whose instance the browser dropped mid-start */
+let dropOnNextStart = false;
+
+/** @param {any} device */
+function dropInstance(device) {
+	const drop = (/** @type {string} */ m) => () => Promise.reject(Object.assign(new Error(m), { name: 'OperationError' }));
+	device.popErrorScope = drop('Instance dropped in popErrorScope');
+	if (device.queue) device.queue.onSubmittedWorkDone = drop('A valid external Instance reference no longer exists.');
+}
+
 /** @param {string} reason a short plain sentence */
 async function fail(reason) {
 	if (live?.failing) return;
+	// G30: already off for a failure (a late rejection after the teardown, a second catch): said once
+	if (!live && cinematicDisabled.reason) return;
 	if (live) live.failing = true;
 	log.errors.push({ at: Math.round(now()), fatal: reason });
 	disableCinematic(reason);
@@ -209,6 +264,18 @@ export function enterCinematic(ctx) {
 }
 
 async function enter() {
+	try {
+		return await enterSteps();
+	} catch (e) {
+		// G30: anything the start throws (a dropped instance mid-start, most of all) is the fallback, never an
+		// unhandled rejection under the switch's press
+		log.errors.push({ at: Math.round(now()), msg: String(/** @type {any} */ (e)?.message ?? e).slice(0, 300), stack: String(/** @type {any} */ (e)?.stack ?? '').split('\n').slice(1, 7).join(' | ').slice(0, 900) });
+		await fail(reasonOf(e, NO_COMPILE));
+		return null;
+	}
+}
+
+async function enterSteps() {
 	const gl = app?.gl;
 	const scene = app?.scene;
 	const cam = app?.camera();
@@ -244,23 +311,28 @@ async function enter() {
 	const gpuEra = gpuGenerationStarting();
 	/** @type {any} */
 	const r = new W.WebGPURenderer({ canvas, antialias: false, alpha: false, powerPreference: 'high-performance' });
-	live = { W, T, r, gpuEra, gl, scene, canvas, glCanvas, env, built: null, swap: null, ro: null, errors: [], frames: 0, last: 0, drop: createDropWatch(), drops: 0, rebuilding: false, failing: false, camera: cam, t };
+	live = { W, T, r, gpuEra, gl, scene, canvas, glCanvas, env, built: null, swap: null, labels: null, ro: null, errors: [], frames: 0, last: 0, drop: createDropWatch(), drops: 0, rebuilding: false, failing: false, camera: cam, t };
 	r.onDeviceLost = (/** @type {any} */ info) => {
 		log.errors.push({ at: Math.round(now()), lost: String(info?.message ?? info?.reason ?? '') });
-		void fail('the graphics device was lost.');
+		void fail(LOST);
 	};
 	try {
 		await r.init();
 	} catch (e) {
-		await fail('WebGPU did not start on this graphics card.');
+		await fail(reasonOf(e, 'WebGPU did not start on this graphics card.'));
 		return null;
 	}
 	t.init = now();
 	if (!live) return null;
+	if (dropOnNextStart) {
+		dropOnNextStart = false;
+		if (r.backend?.device) dropInstance(r.backend.device);
+	}
+	guardDevice(r.backend?.device, live);
 	r.backend?.device?.addEventListener?.('uncapturederror', (/** @type {any} */ ev) => {
 		const msg = String(ev?.error?.message ?? ev).slice(0, 600);
 		if (log.errors.length < 200) log.errors.push({ at: Math.round(now()), msg });
-		if (fatalGpuError(msg)) void fail('its lighting does not compile on this graphics path.');
+		if (fatalGpuError(msg)) void fail(NO_COMPILE);
 	});
 	syncRenderer();
 	const rect = glCanvas.getBoundingClientRect();
@@ -280,6 +352,11 @@ async function enter() {
 	r.shadowMap.type = THREE.PCFShadowMap;
 	useCopies(scene, env);
 	padNewSkeletons();
+	// C2-1: troika text draws as canvas-texture quads (troika's own SDF shader cannot run here); first, so
+	// the stand-in scan already sees troika's draw switched off
+	live.labels = createLabelQuads(W);
+	live.labels.scan(scene);
+	live.labels.tick();
 	live.swap = createSwapper(W, scene);
 	live.swap.scan();
 	patchState({ notShown: notShownText(live.swap.kinds) });
@@ -288,10 +365,10 @@ async function enter() {
 		await compileAsync(r, scene, cam);
 	} catch (e) {
 		log.errors.push({ at: Math.round(now()), msg: String(/** @type {any} */ (e)?.message ?? e).slice(0, 300), stack: String(/** @type {any} */ (e)?.stack ?? '').split('\n').slice(1, 7).join(' | ').slice(0, 900) });
-		await fail('its lighting does not compile on this graphics path.');
+		await fail(reasonOf(e, NO_COMPILE));
 		return null;
 	}
-	if (!live) return null;
+	if (!live || live.failing) return null;
 	t.compiled = now();
 	// 4. threlte's render task hands its frames to this renderer
 	const first = new Promise((resolve) => (live.onFirst = resolve));
@@ -299,6 +376,7 @@ async function enter() {
 	await Promise.race([first, new Promise((resolve) => setTimeout(resolve, 15000))]);
 	if (!live || live.failing) return null;
 	await r.backend?.device?.queue?.onSubmittedWorkDone?.();
+	if (!live || live.failing) return null; // G30: the device went away while the first frame was in flight
 	t.firstFrame = now();
 	patchState({ mode: 'on', quality: live.built.quality });
 	const rec = {
@@ -337,7 +415,7 @@ async function rebuild() {
 		live.drop.reset();
 		patchState({ quality: q, dropped: live.drops });
 	} catch (e) {
-		void fail('its lighting does not compile on this graphics path.');
+		void fail(NO_COMPILE);
 	} finally {
 		if (live) live.rebuilding = false;
 	}
@@ -364,6 +442,11 @@ function draw(_delta) {
 	syncRenderer();
 	const a = now();
 	try {
+		g.labels?.tick();
+	} catch (e) {
+		if (log.errors.length < 200) log.errors.push({ at: Math.round(a), labels: String(/** @type {any} */ (e)?.message ?? e).slice(0, 300) });
+	}
+	try {
 		g.built.render();
 	} catch (e) {
 		if (log.errors.length < 200) log.errors.push({ at: Math.round(a), render: String(/** @type {any} */ (e)?.message ?? e).slice(0, 300) });
@@ -387,6 +470,7 @@ function draw(_delta) {
 function rescan(g) {
 	const before = notShownText(g.swap.kinds);
 	g.swap.scan();
+	g.labels?.scan(g.scene);
 	const after = notShownText(g.swap.kinds);
 	if (after !== before) patchState({ notShown: after });
 }
@@ -413,6 +497,7 @@ async function teardown(reason) {
 	g.ro?.disconnect();
 	g.built?.dispose();
 	g.swap?.undo();
+	g.labels?.undo();
 	try {
 		g.r.dispose();
 	} catch (e) {
@@ -543,6 +628,7 @@ export function cinematicDebug(reset = false) {
 		switches: log.switches.slice(-40),
 		errors: log.errors.slice(-60),
 		memory: live ? { ...live.r.info.memory } : null,
+		labels: live?.labels ? live.labels.stats() : null,
 		generations: generationStats(),
 		adapter: live?.r?.backend?.adapter?.info ? { vendor: live.r.backend.adapter.info.vendor, architecture: live.r.backend.adapter.info.architecture, description: live.r.backend.adapter.info.description } : null,
 		state: get(cinematicState)
@@ -570,10 +656,16 @@ export async function loseDeviceForTest() {
 	return { state: get(cinematicState) };
 }
 
+/** e2e (G30): the next start's WebGPU instance is dropped mid-start (popErrorScope and onSubmittedWorkDone
+ * reject the way Chromium's do), so the suite drives the real fallback path through three's own calls */
+export function dropInstanceOnNextStartForTest() {
+	dropOnNextStart = true;
+}
+
 /** e2e: a compile failure, simulated (what D3D11 / FXC reports) */
 export async function failCompileForTest() {
 	if (!live) return { error: 'not on' };
-	await fail('its lighting does not compile on this graphics path.');
+	await fail(NO_COMPILE);
 	return { state: get(cinematicState) };
 }
 

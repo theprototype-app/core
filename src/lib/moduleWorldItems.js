@@ -19,6 +19,10 @@ import { writable } from 'svelte/store';
  *   apply?: (uuid: string, spec: any) => any}} ObjectAction
  */
 
+/** the navigation module's "Make this an enemy…" action (core's object-menu door names it before the
+ * module loads; npcEntry.js, the lazy door itself, re-exports it) */
+export const ENEMY_ACTION_KEY = 'navigation:enemy';
+
 /** @type {import('svelte/store').Writable<ViewToggle[]>} */
 export const moduleViewToggles = writable([]);
 /** @type {import('svelte/store').Writable<ObjectAction[]>} */

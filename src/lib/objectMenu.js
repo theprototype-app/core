@@ -32,8 +32,7 @@ import { hasOriginal } from './decimate';
 import { linkOf } from './prefabSync';
 import { prefabById } from './prefabs';
 import { isReplaceableModel } from './modelTarget'; // 59 T1/T2
-import { moduleObjectActions } from './moduleWorldItems.js'; // 61-nav
-import { ENEMY_ACTION_KEY, openMakeEnemy } from './npcEntry.js'; // 61-nav G10
+import { moduleObjectActions, ENEMY_ACTION_KEY } from './moduleWorldItems.js'; // 61-nav (G10: npcEntry.js loads on the press)
 
 /** @param {any} object */
 function hasMesh(object) {
@@ -150,7 +149,7 @@ function objectActionRows(uuid) {
 			label: enemy?.label || 'Make this an enemy…',
 			icon: enemy?.icon || 'swords',
 			tooltip: enemy?.tooltip || 'It patrols a Path, sees and hears the player, chases, attacks and gives up — set it up in one sheet',
-			action: () => void openMakeEnemy(uuid)
+			action: () => void import('./npcEntry.js').then((m) => m.openMakeEnemy(uuid))
 		},
 		...list
 			.filter((a) => a !== enemy)

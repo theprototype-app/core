@@ -117,7 +117,7 @@
 			</button>
 			<Button variant="danger" size="sm" id="test-players-stop" icon="square" disabled={stopping} onclick={stop}>Stop test</Button>
 		</header>
-		<div class="tpst-bots">
+		<div class="tpst-bots tp-noscrollbar">
 			{#each $testRun.bots as bot (bot.n)}
 				<article class="tpst-bot" class:driving={driving === bot.n} data-bot={bot.n} data-role={bot.role} data-status={bot.status}>
 					<div class="tpst-view">

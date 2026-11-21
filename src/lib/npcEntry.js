@@ -9,11 +9,11 @@
 // Only scenes that use NPCs pay for the navigation download.
 
 import { get } from 'svelte/store';
-import { moduleObjectActions, objectActionByKey } from './moduleWorldItems.js';
+import { moduleObjectActions, objectActionByKey, ENEMY_ACTION_KEY } from './moduleWorldItems.js';
 import { showToast } from '../stores/appStore';
 
 export const NAV_MODULE_ID = 'navigation';
-export const ENEMY_ACTION_KEY = NAV_MODULE_ID + ':enemy';
+export { ENEMY_ACTION_KEY };
 
 /** the module's registered action, or null */
 export function enemyAction() {

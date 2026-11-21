@@ -172,14 +172,12 @@ export function createJoint(rawKind, aUuid, bUuid, axis, motor, opts) {
 	return joint;
 }
 
-/** 102b: the def a gesture started from, per joint id (one undo entry per drag). @type {Map<string, JointDef>} */
-const gestureBefore = new Map();
-
 /**
  * 102b: edit an existing joint (slider limits, spring rest / stiffness / damping, rope length,
  * hinge or slider axis, contacts). Replicates as `jointcreate` with the same id — every applier
  * upserts by id, so this needs no new message and older builds already follow it — and records a
- * 'jointedit' undo entry unless a gesture is open (then endJointGesture records ONE).
+ * 'jointedit' undo entry (a scrub or a typing session in a DragRow folds its entries into one
+ * step through historyGesture, so a slider drag is one undo).
  * A running simulation rebuilds the live joint (physics.js compares the def).
  * @param {string} id @param {any} patch @returns {JointDef | null} the new def, or null
  */
@@ -189,25 +187,11 @@ export function updateJoint(id, patch) {
 	const next = jointEditPatch(def, patch);
 	if (!next) return null;
 	upsertLocal(next);
-	if (!gestureBefore.has(id)) recordEntry({ kind: 'jointedit', id, before: { joint: def }, after: { joint: next } });
+	recordEntry({ kind: 'jointedit', id, before: { joint: def }, after: { joint: next } });
 	/** @type {any} */
 	const peer = get(peers);
 	if (peer) peer.send({ type: 'jointcreate', joint: next });
 	return next;
-}
-
-/** 102b: a scrub starts — later updateJoint calls collapse into one undo entry. @param {string} id */
-export function beginJointGesture(id) {
-	const def = get(sceneJoints).find((j) => j.id === id);
-	if (def && !gestureBefore.has(id)) gestureBefore.set(id, def);
-}
-
-/** 102b: the scrub ends — ONE 'jointedit' entry from where it started to where it is. @param {string} id */
-export function endJointGesture(id) {
-	const before = gestureBefore.get(id);
-	gestureBefore.delete(id);
-	const after = get(sceneJoints).find((j) => j.id === id);
-	if (before && after && before !== after) recordEntry({ kind: 'jointedit', id, before: { joint: before }, after: { joint: after } });
 }
 
 /** Delete one joint (replicated + undoable). @param {string} id */

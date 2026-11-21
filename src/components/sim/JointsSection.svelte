@@ -12,7 +12,7 @@
 	import UiButton from '../ui/Button.svelte';
 	import InsToggle from '../menu/inspector/InsToggle.svelte';
 	import { objectsGroup } from '../../stores/sceneStore';
-	import { sceneJoints, createJoint, deleteJoint, updateJoint, beginJointGesture, endJointGesture } from '$lib/joints';
+	import { sceneJoints, createJoint, deleteJoint, updateJoint } from '$lib/joints';
 	import { JOINT_LABELS, jointKindOf, JOINT_RANGE } from '$lib/physicsTuning.js';
 
 	/** @type {{targets: string[]}} */
@@ -72,9 +72,6 @@
 		if (targets.length !== 2) return;
 		createJoint(kind, targets[0], targets[1], 'y');
 	}
-	/** a PropRow that edits one number on a joint, one undo entry per scrub */
-	/** @param {any} def */
-	const scrub = (def) => ({ onscrubstart: () => beginJointGesture(def.id), onscrubend: () => endJointGesture(def.id) });
 </script>
 
 <div id="physics-joints" class="mt-2 flex flex-col gap-1" data-count={joints.length}>
@@ -131,7 +128,6 @@
 							step={kind === 'prismatic' ? 0.05 : 1}
 							decimals={kind === 'prismatic' ? 2 : 0}
 							value={kind === 'prismatic' ? def.limits[end] : deg(def.limits[end])}
-							{...scrub(def)}
 							onchange={(/** @type {number} */ v) => setLimit(def, /** @type {0|1} */ (end), kind === 'prismatic' ? v : rad(v))}
 						/>
 					{/each}
@@ -139,18 +135,18 @@
 			{/if}
 			{#if kind === 'spring'}
 				<PropRow slider class="physics-joint-rest" label="Rest length" ariaLabel="Rest length, metres" title="The distance the spring pulls the two points back to, in metres"
-					min={JOINT_RANGE.rest[0]} max={10} step={0.05} decimals={2} value={def.rest ?? 1} {...scrub(def)}
+					min={JOINT_RANGE.rest[0]} max={10} step={0.05} decimals={2} value={def.rest ?? 1}
 					onchange={(/** @type {number} */ v) => updateJoint(def.id, { rest: v })} />
 				<PropRow slider class="physics-joint-stiffness" label="Stiffness" ariaLabel="Spring stiffness" title="How hard the spring pulls: 10 is soft, 500 is stiff"
-					min={0} max={1000} step={1} decimals={0} value={def.stiffness ?? 50} {...scrub(def)}
+					min={0} max={1000} step={1} decimals={0} value={def.stiffness ?? 50}
 					onchange={(/** @type {number} */ v) => updateJoint(def.id, { stiffness: v })} />
 				<PropRow slider class="physics-joint-damping" label="Damping" ariaLabel="Spring damping" title="How fast the bounce dies away: 0 bounces for ever"
-					min={0} max={50} step={0.1} decimals={1} value={def.damping ?? 2} {...scrub(def)}
+					min={0} max={50} step={0.1} decimals={1} value={def.damping ?? 2}
 					onchange={(/** @type {number} */ v) => updateJoint(def.id, { damping: v })} />
 			{/if}
 			{#if kind === 'rope'}
 				<PropRow slider class="physics-joint-length" label="Length" ariaLabel="Rope length, metres" title="The furthest apart the two points can get, in metres; closer is free"
-					min={JOINT_RANGE.length[0]} max={20} step={0.05} decimals={2} value={def.length ?? 1} {...scrub(def)}
+					min={JOINT_RANGE.length[0]} max={20} step={0.05} decimals={2} value={def.length ?? 1}
 					onchange={(/** @type {number} */ v) => updateJoint(def.id, { length: v })} />
 			{/if}
 			{#if kind !== 'fixed'}

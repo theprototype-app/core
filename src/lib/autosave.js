@@ -32,6 +32,7 @@ import { transport, transportSnapshot, transportRestore } from './musicClock';
 import { patch, patchSnapshot, patchRestore } from './audioPatch';
 import { hudDocs, hudDocsSnapshot, hudDocsRestore } from './hudDocs';
 import { sequences, sequencesSnapshot, sequencesRestore } from './sequences'; // 48 S2
+import { sceneJoints, jointsSnapshot, jointsRestore } from './joints'; // 102b: joints survive a reload
 import { chats, chatRefs, chatsSnapshot, chatRefsSnapshot, chatsRestore } from './chat/tpchatStore.js'; // 56 C10
 import { gameState, gameStateSnapshot, gameStateRestore } from './gameState';
 import { peers, showToast, showInfoToast, dismissToastById } from '../stores/appStore';
@@ -392,6 +393,13 @@ async function writeSnapshot() {
 		// 48 S2: the Timeline's sequences — scene data with nowhere in a GLTF to live; the
 		// object uuids their tracks name survive through the __uuid stamp above
 		sequences: sequencesSnapshot(),
+		// 102b: the JOINTS too. They were never here, so a reload brought every object back and
+		// silently dropped every weld, hinge and rope between them (sessions/.tpscene always had
+		// them). Keyed by the object uuids the __uuid stamp restores; only joints whose both ends
+		// still exist are written (a joint to a deleted object would never build anyway).
+		joints: jointsSnapshot().filter(
+			(/** @type {any} */ j) => !!group?.getObjectByProperty?.('uuid', j.a) && !!group?.getObjectByProperty?.('uuid', j.b)
+		),
 		// 56 C10/C8: the scene's AI chats and the pictures kept from them (null when none)
 		chats: chatsSnapshot('all'),
 		chatRefs: chatRefsSnapshot(),
@@ -812,6 +820,13 @@ async function applyRestore(snapshot, offer = null) {
 		// same reasoning: replicate, so a restore into a live room brings the HUD too
 		hudDocsRestore(snapshot.hud, true, true);
 		sequencesRestore(snapshot.sequences ?? null, true, true); // 48 S2
+		// 102b: joints come back and replicate like every block above (an older snapshot has no
+		// key: leave the list alone). The sessions.js restore shape: local set, then one jointcreate each.
+		if (Array.isArray(snapshot.joints)) {
+			jointsRestore(snapshot.joints);
+			const jointPeer = /** @type {any} */ (get(peers));
+			if (jointPeer) for (const joint of snapshot.joints) jointPeer.send({ type: 'jointcreate', joint });
+		}
 		chatsRestore(snapshot.chats ?? null, snapshot.chatRefs ?? null, true, true); // 56 C10
 		gameStateRestore(snapshot.game, true);
 		// #20 P5: windows, selection and edit mode — the EXPLICIT-restore path. A plain
@@ -925,6 +940,7 @@ export function startAutosave() {
 	chatRefs.subscribe(() => markDirty());
 	// and once more: a game's state changes touch no object either
 	gameState.subscribe(() => markDirty());
+	sceneJoints.subscribe(() => markDirty()); // 102b: adding or tuning a joint touches no object
 	setInterval(() => {
 		// M5: the safety-net interval has to respect the adaptive cadence as well, or a
 		// scene that backed off to 5 minutes still pays for a full export every 3

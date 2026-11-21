@@ -12,8 +12,8 @@ const NODES = [
 	{ id: 'txt', type: 'hudtext', position: { x: 300, y: 40 }, data: { type: 'hudtext', element: 'score' } },
 	{ id: 'tmr', type: 'hudtimer', position: { x: 560, y: 40 }, data: { type: 'hudtimer', element: 'clock' } },
 	{ id: 'set', type: 'hudset', position: { x: 820, y: 40 }, data: { type: 'hudset', element: 'speed' } },
-	{ id: 'bhv', type: 'behaviour', position: { x: 40, y: 420 }, data: { type: 'behaviour', name: 'Waves', code: '' } },
-	{ id: 'cc', type: 'charcontroller', position: { x: 380, y: 420 }, data: { type: 'charcontroller' } }
+	{ id: 'bhv', type: 'behaviour', position: { x: 40, y: 420 }, data: { type: 'behaviour', label: 'Behaviour', name: 'Waves', code: '' } },
+	{ id: 'cc', type: 'charcontroller', position: { x: 380, y: 420 }, data: { type: 'charcontroller', label: 'Character Controller' } }
 ];
 
 h.run(async () => {

@@ -193,7 +193,9 @@ export function sceneSignature(payload) {
 		// is a change worth a save, and they take stripStamps like every block above
 		// (the branch's own merge note asked for exactly this)
 		transport: stripStamps(payload.transport ?? null),
-		patch: stripStamps(payload.patch ?? null)
+		patch: stripStamps(payload.patch ?? null),
+		// 2.0-n3c: a custom node definition is scene data worth a save — keyed in only when present
+		...(payload.nodeDefs ? { nodeDefs: payload.nodeDefs } : {})
 	};
 	return JSON.stringify(pick);
 }

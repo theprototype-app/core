@@ -7,8 +7,10 @@ import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { objectsGroup, globalCamera, globalScene, orbitControls, pokeScene, beginSceneBatch, endSceneBatch } from '../stores/sceneStore';
 import { adoptLoadedDrafts } from './objectPermissions'; // 80a migration
-import { flowGraphs, restoreGraphs, SCENE_GRAPH } from '../stores/flowStore';
+import { flowGraphs, restoreGraphs, SCENE_GRAPH, customNodeDefs } from '../stores/flowStore';
 import { serializeGraphs } from './flowGraphs';
+import { customNodeDefsSnapshot, customNodeDefsRestore } from './customNodes'; // 2.0-n3c
+import { stampNodeVersions } from './nodes/index.js'; // 2.0-n3c
 import { flowViewsSnapshot } from './flowView';
 import { serializeNode, serializeEdge } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
@@ -320,9 +322,9 @@ async function writeSnapshot() {
 	// are pruned from the OUTPUT only. Legacy nodes/edges fields keep carrying the
 	// scene graph so an old build can still restore this snapshot.
 	const group = get(objectsGroup);
-	const graphs = serializeGraphs(serializeNode, serializeEdge, {
+	const graphs = stampNodeVersions(serializeGraphs(serializeNode, serializeEdge, {
 		pruneMissing: (uuid) => !group?.getObjectByProperty?.('uuid', uuid)
-	});
+	}));
 	const nodes = graphs[SCENE_GRAPH]?.nodes ?? [];
 	const edges = graphs[SCENE_GRAPH]?.edges ?? [];
 	const scene = await exportScene();
@@ -360,6 +362,8 @@ async function writeSnapshot() {
 		nodes,
 		edges,
 		graphs,
+		// 2.0-n3c: the custom node definitions the graphs run (the .tpscene's `nodeDefs`); null when none is used
+		nodeDefs: customNodeDefsSnapshot(graphs),
 		// 36 F10: where each graph was left in the node editor (null when never moved)
 		flowViews: flowViewsSnapshot((id) => id === SCENE_GRAPH || !!group?.getObjectByProperty?.('uuid', id)),
 		annotations: annotationsProvider ? annotationsProvider() : [],
@@ -795,6 +799,8 @@ async function applyRestore(snapshot, offer = null) {
 		await animatedImportsRestore(snapshot.animated ?? [], true, () => isLive(job));
 		if (!isLive(job)) return null; // superseded while the rigs parsed
 		animationsRestore(snapshot.animations ?? {});
+		// 2.0-n3c: definitions before their instances (merged by id; absent in an older snapshot)
+		customNodeDefsRestore(snapshot.nodeDefs, true);
 		if (snapshot.graphs && typeof snapshot.graphs === 'object') {
 			restoreGraphs(snapshot.graphs, { views: snapshot.flowViews }); // H1 format: every graph document
 		} else if (snapshot.nodes?.length || snapshot.edges?.length) {
@@ -901,6 +907,7 @@ export function startAutosave() {
 	started = true;
 	objectsGroup.subscribe(() => markDirty());
 	flowGraphs.subscribe(() => markDirty()); // H1: any graph document change
+	customNodeDefs.subscribe(() => markDirty()); // 2.0-n3c: a definition is saved now
 	// authored animation is its own uuid-keyed store, so building a movement
 	// without touching an object afterwards left nothing to trigger a save (the
 	// H12 annotations bug). This module already imports animationPreview for the

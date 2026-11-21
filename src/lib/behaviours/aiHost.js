@@ -24,7 +24,8 @@ export function behaviourReference() {
 	return [
 		'BEHAVIOURS (create_behaviour / edit_behaviour): game logic as ONE JavaScript module, run on ONE peer (the session authority); `state` replicates to everyone.',
 		'export default behaviour({ name, params: {k: literal | {value, min, max, step, unit}}, state: {plain JSON}, inputs: [names], outputs: [names], on: {event(payload) {...}}, ...methods });',
-		'inputs: a trigger wired into input "x" runs on.x. outputs: a state field = a value output, any other name = an event fired by this.emit("name").',
+		'inputs: a trigger wired into input "x" runs on.x({by}) (by = the peer id of whoever fired it). outputs: a state field = a value output, any other name = an event fired by this.emit("name").',
+		'State is SHARED; per person = keyed by `by` (state.coins[by]). A shared toggle two people press at once must not cancel: ignore a press within 0.3 s of the last (this.now()).',
 		'A behaviour does NOT move, rotate, recolour or hide objects (no such this.*): it drives effect nodes (spin, visibility, setcolor…) via its outputs. NO per-frame hook (no onTick/update): repeat with this.after(seconds, "method").',
 		'this: params, state, kit (also bare `kit`), after(seconds, "method", ...args) (survives the host leaving; counts PLAY time — it holds while the game is paused), cancel(key), rand(), randInt(a,b), pick(list), now(), find(glob) / findAll(glob) -> {uuid, name, pos, tags}, object, log() — always as this.find(…) etc. (only `kit` and the helpers are bare). Helpers: dist(a,b), clamp, lerp.',
 		'events: load (runs on EVERY peer when the behaviour loads — local, state read-only: register things there), start (once, on the authority); grabRequest({piece, distance, hand, refuse}) (runs on the grabbing peer, read-only: call refuse(reason)); any kit event as "piece.event" or ' +
@@ -58,7 +59,7 @@ export const BEHAVIOUR_EXAMPLE = `export default behaviour({
 /** the create_behaviour tool's description: what it is, the reference, the example */
 export function behaviourToolDescription() {
 	return [
-		'Create a code behaviour: game logic (rules, waves, scoring, timers, win/lose) as ONE JavaScript module, run on the session authority and replicated. Prefer it over large node graphs for game rules. Linted before it is applied; problems come back with line numbers. The result names the node id and its sockets — wire them with create_flow_nodes (an On Click / On Enter into an input; an output into HUD Text, Visibility, Announce…).',
+		'Create a code behaviour: game logic (rules, waves, scoring, timers, win/lose) as ONE JavaScript module, run on the session authority and replicated. Prefer it over large node graphs for game rules. Linted before it is applied; problems come back with line numbers. The result names the node id and its sockets — wire them with create_flow_nodes (an On Click / On Enter into an input; an output into HUD Text, Visibility, Announce…). Its state reaches a late joiner; a press says who made it (on.x({by})). Worked builds: describe_node_types {recipe: ""}.',
 		behaviourReference(),
 		'EXAMPLE (passes the lint; wire a trigger into input gemTouched, output left into a HUD Text, timeUp into a Visibility or Announce):',
 		BEHAVIOUR_EXAMPLE

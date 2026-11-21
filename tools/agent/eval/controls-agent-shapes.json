@@ -1,0 +1,342 @@
+{
+	"_about": "2.0-n3b: the graphs the N3a BASELINE agents actually built (calls logs of baseline-v1.68.0), replayed with no model. Each scored 0 on v1.68.0 because of an app bug; after the step-0 fixes each must score 1 (`npm run eval:shapes`). A red here on a later build = one of those bugs is back.",
+	"star-once": [
+		{
+			"tool": "create_objects",
+			"args": {
+				"objects": [
+					{
+						"kind": "primitive",
+						"primitive": "Octahedron",
+						"params": [0.42],
+						"name": "Lit 1",
+						"position": [-4, 1.5, -3],
+						"color": "#ffd93a"
+					},
+					{
+						"kind": "primitive",
+						"primitive": "Octahedron",
+						"params": [0.42],
+						"name": "Lit 2",
+						"position": [-2, 1.5, -3],
+						"color": "#ffd93a"
+					},
+					{
+						"kind": "primitive",
+						"primitive": "Octahedron",
+						"params": [0.42],
+						"name": "Lit 3",
+						"position": [0, 1.5, -3],
+						"color": "#ffd93a"
+					},
+					{
+						"kind": "primitive",
+						"primitive": "Octahedron",
+						"params": [0.42],
+						"name": "Lit 4",
+						"position": [2, 1.5, -3],
+						"color": "#ffd93a"
+					},
+					{
+						"kind": "primitive",
+						"primitive": "Octahedron",
+						"params": [0.42],
+						"name": "Lit 5",
+						"position": [4, 1.5, -3],
+						"color": "#ffd93a"
+					}
+				]
+			}
+		},
+		{
+			"tool": "update_objects",
+			"args": {
+				"updates": [
+					{
+						"uuid": "$Lit 1",
+						"materialParams": {
+							"emissive": "#ffcc00",
+							"emissiveIntensity": 2
+						}
+					},
+					{
+						"uuid": "$Lit 2",
+						"materialParams": {
+							"emissive": "#ffcc00",
+							"emissiveIntensity": 2
+						}
+					},
+					{
+						"uuid": "$Lit 3",
+						"materialParams": {
+							"emissive": "#ffcc00",
+							"emissiveIntensity": 2
+						}
+					},
+					{
+						"uuid": "$Lit 4",
+						"materialParams": {
+							"emissive": "#ffcc00",
+							"emissiveIntensity": 2
+						}
+					},
+					{
+						"uuid": "$Lit 5",
+						"materialParams": {
+							"emissive": "#ffcc00",
+							"emissiveIntensity": 2
+						}
+					}
+				]
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "$Star 1",
+				"text": "c = onclick\nl = latch {initial: false, perRound: true}\nv = visibility {target: \"$Lit 1\"}\nc -> l.set\nl -> v.on"
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "$Star 2",
+				"text": "c = onclick\nl = latch {initial: false, perRound: true}\nv = visibility {target: \"$Lit 2\"}\nc -> l.set\nl -> v.on"
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "$Star 3",
+				"text": "c = onclick\nl = latch {initial: false, perRound: true}\nv = visibility {target: \"$Lit 3\"}\nc -> l.set\nl -> v.on"
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "$Star 4",
+				"text": "c = onclick\nl = latch {initial: false, perRound: true}\nv = visibility {target: \"$Lit 4\"}\nc -> l.set\nl -> v.on"
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "$Star 5",
+				"text": "c = onclick\nl = latch {initial: false, perRound: true}\nv = visibility {target: \"$Lit 5\"}\nc -> l.set\nl -> v.on"
+			}
+		},
+		{
+			"tool": "run",
+			"args": {
+				"action": "validate"
+			}
+		}
+	],
+	"health-respawn": [
+		{
+			"tool": "hud",
+			"args": {
+				"action": "create",
+				"create": {
+					"screens": [
+						{
+							"name": "Health",
+							"showWhile": "playing",
+							"elements": [
+								{
+									"kind": "bar",
+									"anchor": "top-left",
+									"x": 20,
+									"y": 20,
+									"w": 240,
+									"h": 20,
+									"min": 0,
+									"max": 100,
+									"value": 100
+								}
+							]
+						}
+					]
+				}
+			}
+		},
+		{
+			"tool": "set_physics",
+			"args": {
+				"updates": [
+					{
+						"uuid": "$Spikes",
+						"sensor": true
+					}
+				]
+			}
+		},
+		{
+			"tool": "create_behaviour",
+			"args": {
+				"name": "PlayerHealth",
+				"source": "export default behaviour({\n  name: 'PlayerHealth',\n  params: { max: 100, dps: 20 },\n  state: { hp: 100, on: false },\n  inputs: ['enter', 'exit'],\n  outputs: ['hp', 'died'],\n  on: {\n    enter() { if (!this.state.on) { this.state.on = true; this.after(0.25, 'tick'); } },\n    exit() { this.state.on = false; }\n  },\n  tick() {\n    if (!this.state.on) return;\n    this.state.hp = Math.max(0, this.state.hp - this.params.dps * 0.25);\n    if (this.state.hp <= 0) {\n      this.state.hp = this.params.max;\n      this.state.on = false;\n      this.emit('died');\n      return;\n    }\n    this.after(0.25, 'tick');\n  }\n});"
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "scene",
+				"text": "sel = objectselector {selected: \"$Spikes\"}\nen = onenter {who: \"player\"}\nex = onexit {who: \"player\"}\nbar = hudbar {element: \"$@0.elements.0.id\", min: 0, max: 100}\nrs = kit-levels-respawn\nsel -> en.filter\nsel -> ex.filter\nen -> $@2.created.0.id.enter\nex -> $@2.created.0.id.exit\n$@2.created.0.id.hp -> bar.value\n$@2.created.0.id.died -> rs.trigger"
+			}
+		},
+		{
+			"tool": "run",
+			"args": {
+				"action": "validate"
+			}
+		}
+	],
+	"late-joiner": [
+		{
+			"tool": "create_behaviour",
+			"args": {
+				"name": "LanternState",
+				"source": "export default behaviour({\n  name: 'LanternState',\n  state: { lit1: false, lit2: false, lit3: false },\n  inputs: ['click1', 'click2', 'click3'],\n  outputs: ['lit1', 'lit2', 'lit3'],\n  on: {\n    click1() { this.state.lit1 = true; },\n    click2() { this.state.lit2 = true; },\n    click3() { this.state.lit3 = true; }\n  }\n});"
+			}
+		},
+		{
+			"tool": "create_objects",
+			"args": {
+				"objects": [
+					{
+						"kind": "primitive",
+						"primitive": "Sphere",
+						"name": "Glow 1",
+						"params": [0.33],
+						"position": [-3, 1.5, -3],
+						"color": "#ffcc44",
+						"castShadow": false
+					},
+					{
+						"kind": "primitive",
+						"primitive": "Sphere",
+						"name": "Glow 2",
+						"params": [0.33],
+						"position": [0, 1.5, -3],
+						"color": "#ffcc44",
+						"castShadow": false
+					},
+					{
+						"kind": "primitive",
+						"primitive": "Sphere",
+						"name": "Glow 3",
+						"params": [0.33],
+						"position": [3, 1.5, -3],
+						"color": "#ffcc44",
+						"castShadow": false
+					}
+				]
+			}
+		},
+		{
+			"tool": "update_objects",
+			"args": {
+				"updates": [
+					{
+						"uuid": "$Glow 1",
+						"materialParams": {
+							"emissive": "#ffaa00",
+							"emissiveIntensity": 2
+						}
+					},
+					{
+						"uuid": "$Glow 2",
+						"materialParams": {
+							"emissive": "#ffaa00",
+							"emissiveIntensity": 2
+						}
+					},
+					{
+						"uuid": "$Glow 3",
+						"materialParams": {
+							"emissive": "#ffaa00",
+							"emissiveIntensity": 2
+						}
+					}
+				]
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "scene",
+				"text": "v1 = visibility {target: \"$Glow 1\", on: false}\nv2 = visibility {target: \"$Glow 2\", on: false}\nv3 = visibility {target: \"$Glow 3\", on: false}\n$@0.created.0.id.lit1 -> v1.on\n$@0.created.0.id.lit2 -> v2.on\n$@0.created.0.id.lit3 -> v3.on"
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "scene",
+				"text": "k1 = onclick\nk2 = onclick\nk3 = onclick\np1 = objectselector {selected: \"$Lantern 1\"}\np2 = objectselector {selected: \"$Lantern 2\"}\np3 = objectselector {selected: \"$Lantern 3\"}\nk1 -> p1\nk2 -> p2\nk3 -> p3\nk1 -> $@0.created.0.id.click1\nk2 -> $@0.created.0.id.click2\nk3 -> $@0.created.0.id.click3"
+			}
+		},
+		{
+			"tool": "run",
+			"args": {
+				"action": "validate"
+			}
+		}
+	],
+	"pickup-own": [
+		{
+			"tool": "hud",
+			"args": {
+				"action": "create",
+				"create": {
+					"screens": [
+						{
+							"name": "Coins",
+							"showWhile": "playing",
+							"elements": [
+								{
+									"kind": "text",
+									"text": "Coins: 0",
+									"anchor": "top-left",
+									"x": 20,
+									"y": 20
+								}
+							]
+						}
+					]
+				}
+			}
+		},
+		{
+			"tool": "set_physics",
+			"args": {
+				"updates": [
+					{
+						"uuid": "$Coin",
+						"sensor": true
+					}
+				]
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "$Coin",
+				"text": "e = onenter {who: \"player\"}\nc = kit-pickups-collect {touch: false}\ne -> c.trigger"
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "scene",
+				"text": "m = kit-score-mine\nh = hudtext {element: \"$@0.elements.0.id\", format: \"Coins: {v}\"}\nm -> h.value"
+			}
+		},
+		{
+			"tool": "run",
+			"args": {
+				"action": "validate"
+			}
+		}
+	]
+}

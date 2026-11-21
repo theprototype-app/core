@@ -4980,7 +4980,7 @@
 		{
 			"name": "create_flow_nodes",
 			"title": "Add behaviour (flow) nodes",
-			"description": "Add behavior (flow) nodes to a node graph — this is how objects get MOTION and interactivity: spin, bounce, patrol a path, pulse, blink, react to clicks. graph is \"scene\" or an object uuid (ONE graph per call). KEY RULE: a behavior node placed in an OBJECT's graph with no edges automatically drives that object — most behaviors are one node, zero edges, so usually OMIT edges. A script node runs every frame FROM THE BASE POSE, so object.rotation.y += 0.02 lands at base + 0.02 and stays: write object.rotation.y = base.rot[1] + elapsed * speed (base has pos, rot, scale as arrays; elapsed = seconds since Play started, time = the shared clock, seconds of the day, a large number). Particle gravity is the acceleration along world Y: negative falls, positive rises. Describe nodes EITHER as text (graph lines, see the system prompt) OR as nodes/edges arrays. A call with some bad nodes still creates the good ones and returns partial:true + errors[] — resend only what errors[] names.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.",
+			"description": "Add behavior (flow) nodes to a node graph — this is how objects get MOTION and interactivity: spin, bounce, patrol a path, pulse, blink, react to clicks. graph is \"scene\" or an object uuid (ONE graph per call). KEY RULE: a behavior node placed in an OBJECT's graph with no edges automatically drives that object — most behaviors are one node, zero edges, so usually OMIT edges. A script node runs every frame FROM THE BASE POSE, so object.rotation.y += 0.02 lands at base + 0.02 and stays: write object.rotation.y = base.rot[1] + elapsed * speed (base has pos, rot, scale as arrays; elapsed = seconds since Play started, time = the shared clock, seconds of the day, a large number). Particle gravity is the acceleration along world Y: negative falls, positive rises. Describe nodes EITHER as text (graph lines, see the system prompt) OR as nodes/edges arrays. A call with some bad nodes still creates the good ones and returns partial:true + errors[] — resend only what errors[] names. GAME RULES (state, scoring, rounds, toggles two people press) belong in a behaviour (create_behaviour); nodes WIRE them (an event into its inputs, its outputs into Visibility / HUD / Set Game State). An action needs an EVENT: a value (latch, gate, compare) wired into a trigger is refused. Worked builds: describe_node_types {recipe: \"\"}.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -5088,6 +5088,29 @@
 							"type": "string"
 						},
 						"description": "node ids to delete"
+					},
+					"convert": {
+						"type": "array",
+						"description": "turn pure value nodes (math, compare, gate, select, maprange, random, hudtext) into a Script node holding the same logic as editable JS (\"code\"), same id and wires; \"back\" returns the built-in while that code is unchanged",
+						"items": {
+							"type": "object",
+							"properties": {
+								"id": {
+									"type": "string"
+								},
+								"to": {
+									"type": "string",
+									"enum": [
+										"code",
+										"back"
+									]
+								}
+							},
+							"required": [
+								"id",
+								"to"
+							]
+						}
 					}
 				},
 				"required": [
@@ -5104,7 +5127,7 @@
 		{
 			"name": "describe_node_types",
 			"title": "Look up flow node types",
-			"description": "Look up flow node types before wiring them: per type its inputs (toHandle names + socket types), its output type and named outputs (fromHandle), its params with types and defaults, and one line on what it does. No arguments = every type name by group; group = that group with one-line docs; types = full details (up to 12). Changes nothing.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.",
+			"description": "Look up flow node types before wiring them: per type its inputs (toHandle names + socket types), its output type and named outputs (fromHandle), its params with types and defaults, and one line on what it does. No arguments = every type name by group (+ the recipe names); group = that group with one-line docs; types = full details (up to 12); recipe = a worked build (pause on a key, a shared toggle, a pickup, once per round, zone damage + respawn, state a late joiner sees). Changes nothing.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -5118,6 +5141,10 @@
 					"group": {
 						"type": "string",
 						"description": "a palette group, e.g. \"Logic\" or \"Triggers\""
+					},
+					"recipe": {
+						"type": "string",
+						"description": "a recipe name (\"pause-key\", \"shared-toggle\", \"pickup\", \"once-per-round\", \"zone-damage\", \"remembered-state\"), or \"\" for the list"
 					}
 				}
 			},
@@ -5130,7 +5157,7 @@
 		{
 			"name": "create_behaviour",
 			"title": "Add a code behaviour",
-			"description": "Create a code behaviour: game logic (rules, waves, scoring, timers, win/lose) as ONE JavaScript module, run on the session authority and replicated. Prefer it over large node graphs for game rules. Linted before it is applied; problems come back with line numbers. The result names the node id and its sockets — wire them with create_flow_nodes (an On Click / On Enter into an input; an output into HUD Text, Visibility, Announce…).\nBEHAVIOURS (create_behaviour / edit_behaviour): game logic as ONE JavaScript module, run on ONE peer (the session authority); `state` replicates to everyone.\nexport default behaviour({ name, params: {k: literal | {value, min, max, step, unit}}, state: {plain JSON}, inputs: [names], outputs: [names], on: {event(payload) {...}}, ...methods });\ninputs: a trigger wired into input \"x\" runs on.x. outputs: a state field = a value output, any other name = an event fired by this.emit(\"name\").\nA behaviour does NOT move, rotate, recolour or hide objects (no such this.*): it drives effect nodes (spin, visibility, setcolor…) via its outputs. NO per-frame hook (no onTick/update): repeat with this.after(seconds, \"method\").\nthis: params, state, kit (also bare `kit`), after(seconds, \"method\", ...args) (survives the host leaving; counts PLAY time — it holds while the game is paused), cancel(key), rand(), randInt(a,b), pick(list), now(), find(glob) / findAll(glob) -> {uuid, name, pos, tags}, object, log() — always as this.find(…) etc. (only `kit` and the helpers are bare). Helpers: dist(a,b), clamp, lerp.\nevents: load (runs on EVERY peer when the behaviour loads — local, state read-only: register things there), start (once, on the authority); grabRequest({piece, distance, hand, refuse}) (runs on the grabbing peer, read-only: call refuse(reason)); any kit event as \"piece.event\" or roundStart, go, won, lost, paused, resumed, menu, levelSelected, scored, collected, allCollected, spawned, despawned, emptied, damaged, healed, died, revived, stuck, grabRefused. Entity payloads have entity.is(glob), entity.hasTag(t).\nkit calls: kit.round.start/win(reason)/lose(reason), kit.score.add(n), kit.spawner.spawn({kind, template: uuid, at, count, hp, mover: {speed}}), kit.health.damage(id, n), kit.mover.chase(kind, \"nearestPlayer\"), kit.rules.set({reach, jump}), kit.pickups.register({id, score, respawn, radius}) — register pickups in on.load (every peer must know them, or touching one does nothing), never in start.\nA handler that throws is rolled back (state, after() timers, emits; kit calls already sent stay) and its error names the handler. A refused kit call answers {refused: true, reason}.\nForbidden (the load is refused): Math.random, Date / Date.now, performance.now, localStorage, document/window/globalThis, fetch, eval, setTimeout/setInterval, import. Unknown this.* members, unknown events and hook-named methods nothing calls are refused too.\nEXAMPLE (passes the lint; wire a trigger into input gemTouched, output left into a HUD Text, timeUp into a Visibility or Announce):\nexport default behaviour({\n  name: 'Countdown',\n  params: { seconds: 30 },\n  state: { left: 30, found: 0 },\n  inputs: ['gemTouched'],\n  outputs: ['left', 'found', 'timeUp'],\n  on: {\n    start() { this.state.left = this.params.seconds; this.after(1, 'tick'); },\n    gemTouched() { this.state.found += 1; }\n  },\n  tick() {\n    this.state.left -= 1;\n    if (this.state.left > 0) this.after(1, 'tick');\n    else this.emit('timeUp');\n  }\n});\nTake a screenshot after each change to check your work.",
+			"description": "Create a code behaviour: game logic (rules, waves, scoring, timers, win/lose) as ONE JavaScript module, run on the session authority and replicated. Prefer it over large node graphs for game rules. Linted before it is applied; problems come back with line numbers. The result names the node id and its sockets — wire them with create_flow_nodes (an On Click / On Enter into an input; an output into HUD Text, Visibility, Announce…). Its state reaches a late joiner; a press says who made it (on.x({by})). Worked builds: describe_node_types {recipe: \"\"}.\nBEHAVIOURS (create_behaviour / edit_behaviour): game logic as ONE JavaScript module, run on ONE peer (the session authority); `state` replicates to everyone.\nexport default behaviour({ name, params: {k: literal | {value, min, max, step, unit}}, state: {plain JSON}, inputs: [names], outputs: [names], on: {event(payload) {...}}, ...methods });\ninputs: a trigger wired into input \"x\" runs on.x({by}) (by = the peer id of whoever fired it). outputs: a state field = a value output, any other name = an event fired by this.emit(\"name\").\nState is SHARED; per person = keyed by `by` (state.coins[by]). A shared toggle two people press at once must not cancel: ignore a press within 0.3 s of the last (this.now()).\nA behaviour does NOT move, rotate, recolour or hide objects (no such this.*): it drives effect nodes (spin, visibility, setcolor…) via its outputs. NO per-frame hook (no onTick/update): repeat with this.after(seconds, \"method\").\nthis: params, state, kit (also bare `kit`), after(seconds, \"method\", ...args) (survives the host leaving; counts PLAY time — it holds while the game is paused), cancel(key), rand(), randInt(a,b), pick(list), now(), find(glob) / findAll(glob) -> {uuid, name, pos, tags}, object, log() — always as this.find(…) etc. (only `kit` and the helpers are bare). Helpers: dist(a,b), clamp, lerp.\nevents: load (runs on EVERY peer when the behaviour loads — local, state read-only: register things there), start (once, on the authority); grabRequest({piece, distance, hand, refuse}) (runs on the grabbing peer, read-only: call refuse(reason)); any kit event as \"piece.event\" or roundStart, go, won, lost, paused, resumed, menu, levelSelected, scored, collected, allCollected, spawned, despawned, emptied, damaged, healed, died, revived, stuck, grabRefused. Entity payloads have entity.is(glob), entity.hasTag(t).\nkit calls: kit.round.start/win(reason)/lose(reason), kit.score.add(n), kit.spawner.spawn({kind, template: uuid, at, count, hp, mover: {speed}}), kit.health.damage(id, n), kit.mover.chase(kind, \"nearestPlayer\"), kit.rules.set({reach, jump}), kit.pickups.register({id, score, respawn, radius}) — register pickups in on.load (every peer must know them, or touching one does nothing), never in start.\nA handler that throws is rolled back (state, after() timers, emits; kit calls already sent stay) and its error names the handler. A refused kit call answers {refused: true, reason}.\nForbidden (the load is refused): Math.random, Date / Date.now, performance.now, localStorage, document/window/globalThis, fetch, eval, setTimeout/setInterval, import. Unknown this.* members, unknown events and hook-named methods nothing calls are refused too.\nEXAMPLE (passes the lint; wire a trigger into input gemTouched, output left into a HUD Text, timeUp into a Visibility or Announce):\nexport default behaviour({\n  name: 'Countdown',\n  params: { seconds: 30 },\n  state: { left: 30, found: 0 },\n  inputs: ['gemTouched'],\n  outputs: ['left', 'found', 'timeUp'],\n  on: {\n    start() { this.state.left = this.params.seconds; this.after(1, 'tick'); },\n    gemTouched() { this.state.found += 1; }\n  },\n  tick() {\n    this.state.left -= 1;\n    if (this.state.left > 0) this.after(1, 'tick');\n    else this.emit('timeUp');\n  }\n});\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -10955,7 +10982,7 @@
 			{
 				"name": "create_flow_nodes",
 				"title": "Add behaviour (flow) nodes",
-				"description": "Add behavior (flow) nodes to a node graph — this is how objects get MOTION and interactivity: spin, bounce, patrol a path, pulse, blink, react to clicks. graph is \"scene\" or an object uuid (ONE graph per call). KEY RULE: a behavior node placed in an OBJECT's graph with no edges automatically drives that object — most behaviors are one node, zero edges, so usually OMIT edges. A script node runs every frame FROM THE BASE POSE, so object.rotation.y += 0.02 lands at base + 0.02 and stays: write object.rotation.y = base.rot[1] + elapsed * speed (base has pos, rot, scale as arrays; elapsed = seconds since Play started, time = the shared clock, seconds of the day, a large number). Particle gravity is the acceleration along world Y: negative falls, positive rises. Describe nodes EITHER as text (graph lines, see the system prompt) OR as nodes/edges arrays. A call with some bad nodes still creates the good ones and returns partial:true + errors[] — resend only what errors[] names.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.",
+				"description": "Add behavior (flow) nodes to a node graph — this is how objects get MOTION and interactivity: spin, bounce, patrol a path, pulse, blink, react to clicks. graph is \"scene\" or an object uuid (ONE graph per call). KEY RULE: a behavior node placed in an OBJECT's graph with no edges automatically drives that object — most behaviors are one node, zero edges, so usually OMIT edges. A script node runs every frame FROM THE BASE POSE, so object.rotation.y += 0.02 lands at base + 0.02 and stays: write object.rotation.y = base.rot[1] + elapsed * speed (base has pos, rot, scale as arrays; elapsed = seconds since Play started, time = the shared clock, seconds of the day, a large number). Particle gravity is the acceleration along world Y: negative falls, positive rises. Describe nodes EITHER as text (graph lines, see the system prompt) OR as nodes/edges arrays. A call with some bad nodes still creates the good ones and returns partial:true + errors[] — resend only what errors[] names. GAME RULES (state, scoring, rounds, toggles two people press) belong in a behaviour (create_behaviour); nodes WIRE them (an event into its inputs, its outputs into Visibility / HUD / Set Game State). An action needs an EVENT: a value (latch, gate, compare) wired into a trigger is refused. Worked builds: describe_node_types {recipe: \"\"}.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -11063,6 +11090,29 @@
 								"type": "string"
 							},
 							"description": "node ids to delete"
+						},
+						"convert": {
+							"type": "array",
+							"description": "turn pure value nodes (math, compare, gate, select, maprange, random, hudtext) into a Script node holding the same logic as editable JS (\"code\"), same id and wires; \"back\" returns the built-in while that code is unchanged",
+							"items": {
+								"type": "object",
+								"properties": {
+									"id": {
+										"type": "string"
+									},
+									"to": {
+										"type": "string",
+										"enum": [
+											"code",
+											"back"
+										]
+									}
+								},
+								"required": [
+									"id",
+									"to"
+								]
+							}
 						}
 					},
 					"required": [
@@ -11079,7 +11129,7 @@
 			{
 				"name": "describe_node_types",
 				"title": "Look up flow node types",
-				"description": "Look up flow node types before wiring them: per type its inputs (toHandle names + socket types), its output type and named outputs (fromHandle), its params with types and defaults, and one line on what it does. No arguments = every type name by group; group = that group with one-line docs; types = full details (up to 12). Changes nothing.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.",
+				"description": "Look up flow node types before wiring them: per type its inputs (toHandle names + socket types), its output type and named outputs (fromHandle), its params with types and defaults, and one line on what it does. No arguments = every type name by group (+ the recipe names); group = that group with one-line docs; types = full details (up to 12); recipe = a worked build (pause on a key, a shared toggle, a pickup, once per round, zone damage + respawn, state a late joiner sees). Changes nothing.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -11093,6 +11143,10 @@
 						"group": {
 							"type": "string",
 							"description": "a palette group, e.g. \"Logic\" or \"Triggers\""
+						},
+						"recipe": {
+							"type": "string",
+							"description": "a recipe name (\"pause-key\", \"shared-toggle\", \"pickup\", \"once-per-round\", \"zone-damage\", \"remembered-state\"), or \"\" for the list"
 						}
 					}
 				},
@@ -11105,7 +11159,7 @@
 			{
 				"name": "create_behaviour",
 				"title": "Add a code behaviour",
-				"description": "Create a code behaviour: game logic (rules, waves, scoring, timers, win/lose) as ONE JavaScript module, run on the session authority and replicated. Prefer it over large node graphs for game rules. Linted before it is applied; problems come back with line numbers. The result names the node id and its sockets — wire them with create_flow_nodes (an On Click / On Enter into an input; an output into HUD Text, Visibility, Announce…).\nBEHAVIOURS (create_behaviour / edit_behaviour): game logic as ONE JavaScript module, run on ONE peer (the session authority); `state` replicates to everyone.\nexport default behaviour({ name, params: {k: literal | {value, min, max, step, unit}}, state: {plain JSON}, inputs: [names], outputs: [names], on: {event(payload) {...}}, ...methods });\ninputs: a trigger wired into input \"x\" runs on.x. outputs: a state field = a value output, any other name = an event fired by this.emit(\"name\").\nA behaviour does NOT move, rotate, recolour or hide objects (no such this.*): it drives effect nodes (spin, visibility, setcolor…) via its outputs. NO per-frame hook (no onTick/update): repeat with this.after(seconds, \"method\").\nthis: params, state, kit (also bare `kit`), after(seconds, \"method\", ...args) (survives the host leaving; counts PLAY time — it holds while the game is paused), cancel(key), rand(), randInt(a,b), pick(list), now(), find(glob) / findAll(glob) -> {uuid, name, pos, tags}, object, log() — always as this.find(…) etc. (only `kit` and the helpers are bare). Helpers: dist(a,b), clamp, lerp.\nevents: load (runs on EVERY peer when the behaviour loads — local, state read-only: register things there), start (once, on the authority); grabRequest({piece, distance, hand, refuse}) (runs on the grabbing peer, read-only: call refuse(reason)); any kit event as \"piece.event\" or roundStart, go, won, lost, paused, resumed, menu, levelSelected, scored, collected, allCollected, spawned, despawned, emptied, damaged, healed, died, revived, stuck, grabRefused. Entity payloads have entity.is(glob), entity.hasTag(t).\nkit calls: kit.round.start/win(reason)/lose(reason), kit.score.add(n), kit.spawner.spawn({kind, template: uuid, at, count, hp, mover: {speed}}), kit.health.damage(id, n), kit.mover.chase(kind, \"nearestPlayer\"), kit.rules.set({reach, jump}), kit.pickups.register({id, score, respawn, radius}) — register pickups in on.load (every peer must know them, or touching one does nothing), never in start.\nA handler that throws is rolled back (state, after() timers, emits; kit calls already sent stay) and its error names the handler. A refused kit call answers {refused: true, reason}.\nForbidden (the load is refused): Math.random, Date / Date.now, performance.now, localStorage, document/window/globalThis, fetch, eval, setTimeout/setInterval, import. Unknown this.* members, unknown events and hook-named methods nothing calls are refused too.\nEXAMPLE (passes the lint; wire a trigger into input gemTouched, output left into a HUD Text, timeUp into a Visibility or Announce):\nexport default behaviour({\n  name: 'Countdown',\n  params: { seconds: 30 },\n  state: { left: 30, found: 0 },\n  inputs: ['gemTouched'],\n  outputs: ['left', 'found', 'timeUp'],\n  on: {\n    start() { this.state.left = this.params.seconds; this.after(1, 'tick'); },\n    gemTouched() { this.state.found += 1; }\n  },\n  tick() {\n    this.state.left -= 1;\n    if (this.state.left > 0) this.after(1, 'tick');\n    else this.emit('timeUp');\n  }\n});\nTake a screenshot after each change to check your work.",
+				"description": "Create a code behaviour: game logic (rules, waves, scoring, timers, win/lose) as ONE JavaScript module, run on the session authority and replicated. Prefer it over large node graphs for game rules. Linted before it is applied; problems come back with line numbers. The result names the node id and its sockets — wire them with create_flow_nodes (an On Click / On Enter into an input; an output into HUD Text, Visibility, Announce…). Its state reaches a late joiner; a press says who made it (on.x({by})). Worked builds: describe_node_types {recipe: \"\"}.\nBEHAVIOURS (create_behaviour / edit_behaviour): game logic as ONE JavaScript module, run on ONE peer (the session authority); `state` replicates to everyone.\nexport default behaviour({ name, params: {k: literal | {value, min, max, step, unit}}, state: {plain JSON}, inputs: [names], outputs: [names], on: {event(payload) {...}}, ...methods });\ninputs: a trigger wired into input \"x\" runs on.x({by}) (by = the peer id of whoever fired it). outputs: a state field = a value output, any other name = an event fired by this.emit(\"name\").\nState is SHARED; per person = keyed by `by` (state.coins[by]). A shared toggle two people press at once must not cancel: ignore a press within 0.3 s of the last (this.now()).\nA behaviour does NOT move, rotate, recolour or hide objects (no such this.*): it drives effect nodes (spin, visibility, setcolor…) via its outputs. NO per-frame hook (no onTick/update): repeat with this.after(seconds, \"method\").\nthis: params, state, kit (also bare `kit`), after(seconds, \"method\", ...args) (survives the host leaving; counts PLAY time — it holds while the game is paused), cancel(key), rand(), randInt(a,b), pick(list), now(), find(glob) / findAll(glob) -> {uuid, name, pos, tags}, object, log() — always as this.find(…) etc. (only `kit` and the helpers are bare). Helpers: dist(a,b), clamp, lerp.\nevents: load (runs on EVERY peer when the behaviour loads — local, state read-only: register things there), start (once, on the authority); grabRequest({piece, distance, hand, refuse}) (runs on the grabbing peer, read-only: call refuse(reason)); any kit event as \"piece.event\" or roundStart, go, won, lost, paused, resumed, menu, levelSelected, scored, collected, allCollected, spawned, despawned, emptied, damaged, healed, died, revived, stuck, grabRefused. Entity payloads have entity.is(glob), entity.hasTag(t).\nkit calls: kit.round.start/win(reason)/lose(reason), kit.score.add(n), kit.spawner.spawn({kind, template: uuid, at, count, hp, mover: {speed}}), kit.health.damage(id, n), kit.mover.chase(kind, \"nearestPlayer\"), kit.rules.set({reach, jump}), kit.pickups.register({id, score, respawn, radius}) — register pickups in on.load (every peer must know them, or touching one does nothing), never in start.\nA handler that throws is rolled back (state, after() timers, emits; kit calls already sent stay) and its error names the handler. A refused kit call answers {refused: true, reason}.\nForbidden (the load is refused): Math.random, Date / Date.now, performance.now, localStorage, document/window/globalThis, fetch, eval, setTimeout/setInterval, import. Unknown this.* members, unknown events and hook-named methods nothing calls are refused too.\nEXAMPLE (passes the lint; wire a trigger into input gemTouched, output left into a HUD Text, timeUp into a Visibility or Announce):\nexport default behaviour({\n  name: 'Countdown',\n  params: { seconds: 30 },\n  state: { left: 30, found: 0 },\n  inputs: ['gemTouched'],\n  outputs: ['left', 'found', 'timeUp'],\n  on: {\n    start() { this.state.left = this.params.seconds; this.after(1, 'tick'); },\n    gemTouched() { this.state.found += 1; }\n  },\n  tick() {\n    this.state.left -= 1;\n    if (this.state.left > 0) this.after(1, 'tick');\n    else this.emit('timeUp');\n  }\n});\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {

@@ -35,7 +35,7 @@
 	import AiWelcome from './AiWelcome.svelte'; // 86-fix N1
 	import { aiEnabled, aiProviders, aiActiveProvider, setAiActiveProvider, aiReady } from '$lib/ai/providers';
 	import { visionSupport } from '$lib/ai/visionLimits.js'; // 73 AI8 + AI11
-	import { aiMessages, aiBusy, aiStatus, runPrompt, stopAi } from '$lib/ai/assistant';
+	import { aiMessages, aiBusy, aiStatus, runPrompt, stopAi } from '$lib/ai/aiState.js';
 	import { sttConfig, sttReady } from '$lib/ai/stt';
 	import { explainMissing, openToolRow } from '$lib/tools/toolLinks.js'; // 59 T5
 	import { derived } from 'svelte/store';

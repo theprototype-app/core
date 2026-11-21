@@ -448,7 +448,7 @@ export default {
 			// 17-E: a pulse when a clip ends
 			card: 'OnClickNode',
 			// 17-E: fired locally when a clip reaches its end
-			eval: shared.evalHudTimer
+			eval: shared.evalPulseWindow
 		},
 		{
 			// 17-E F5: pulses as the playhead CROSSES a named point in the clip, so
@@ -464,7 +464,7 @@ export default {
 			// 17-E F5: a pulse at a named point in a clip
 			card: 'OnClickNode',
 			// 17-E F5: fired locally when the playhead crosses one
-			eval: shared.evalHudTimer
+			eval: shared.evalPulseWindow
 		},
 		{
 			// 17-E F3: the READABLE half of Animation Finished — a value node, so
@@ -625,7 +625,7 @@ export default {
 			// 57 M11 (the onrest precedent: a trigger with params)
 			card: 'AnimationNode',
 			// 57 M11: fired locally when a state machine enters a state
-			eval: shared.evalHudTimer
+			eval: shared.evalPulseWindow
 		},
 		{
 			// 48 S2: plays a Timeline SEQUENCE (camera shots, clips, audio, events) on the

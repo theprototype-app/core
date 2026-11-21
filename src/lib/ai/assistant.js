@@ -1,4 +1,4 @@
-import { writable, get } from 'svelte/store';
+import { get } from 'svelte/store';
 import { showToast } from '../../stores/appStore.js';
 import { activeAiConfig } from './providers.js';
 import { explainMissing } from '../tools/toolLinks.js';
@@ -13,16 +13,11 @@ import { beginHistoryBatch, endHistoryBatch } from '$lib/history';
 // survives closing/reopening the window. Runs each prompt inside a single history
 // batch, so one prompt = one undo step even on error/abort.
 
-/**
- * @typedef {{role: 'user'|'assistant'|'tool-status'|'error'|'summary', content: string, streaming?: boolean, images?: {url: string, name: string}[]}} UiMessage
- */
+/** @typedef {import('./aiState.js').UiMessage} UiMessage */
 
-/** @type {import('svelte/store').Writable<UiMessage[]>} */
-export const aiMessages = writable([]);
-export const aiBusy = writable(false);
-/** Transient status while a run is in flight (reasoning models emit thinking tokens
- * for a long time before any content — without this the window looks frozen). */
-export const aiStatus = writable('');
+// 2.0-int: the stores live in the aiState leaf (the chat UI reads them on boot; this module loads on the first prompt)
+import { aiMessages, aiBusy, aiStatus } from './aiState.js';
+export { aiMessages, aiBusy, aiStatus };
 
 /** @type {AbortController|null} */
 let controller = null;

@@ -20,7 +20,7 @@
 	import { chooseOnboarding } from '$lib/onboarding/firstWin.js';
 	import { autoPlay, embedMode } from '$lib/playMode';
 	import { aiEnabled, aiProviders, aiActiveProvider } from '$lib/ai/providers';
-	import { aiBusy, runPrompt } from '$lib/ai/assistant';
+	import { aiBusy, runPrompt } from '$lib/ai/aiState.js';
 
 	loadGithubStars(); // cached 12h, no-ops after the first call
 	/** compact star count (1234 -> 1.2k) */

@@ -29,11 +29,11 @@ import { scriptNodeWarnings } from './scriptNotes.js';
 import { isGroupId, normalizeCollidesWith } from '$lib/collisionGroups'; // 36 X5
 import { parseGraphText } from '$lib/graphText';
 import { scriptInputs, scriptOutputs } from '$lib/scriptIO';
-import { edgeHandleProblems, knownInputs, knownMapOutputs } from './edgeHandles.js';
+import { edgeHandleProblems, edgeTypeProblem, knownInputs, knownMapOutputs } from './edgeHandles.js';
 import { lockSkip } from './lockNote.js';
 import { activeAiConfig } from './providers.js';
 import { matchNodeType } from './nodeTypeMatch.js';
-import { describeNodeTypes, paramsOf } from './nodeTypesCore.js';
+import { describeNodeTypes, paramsOf, paramValue } from './nodeTypesCore.js';
 import { nodeDoc } from '$lib/nodeDocs';
 import { inputType, outputType, outputHandleType } from '$lib/flowSockets';
 import { codeViewOn } from '$lib/nodes/codeViewFlag.js'; // 2.0 N2
@@ -348,7 +348,10 @@ function buildNodeData(type, spec, raw, errors) {
 			else data.target = t;
 			continue;
 		}
-		if (key in (spec?.defaults ?? {})) data[key] = value;
+		// 2.0-n3b: every editor param, not only the ones with a default (perRound, who, to)
+		const v = paramValue(spec, key, value);
+		if (v?.ok) data[key] = v.value;
+		else if (v) errors.push(type + ' ' + v.error + ' — kept the default');
 		// unknown keys are dropped silently — defaults render fine without them
 	}
 	// mcp-fix: an assistant that asks for world space means world axes (a person's own nodes default to "with the object")
@@ -452,6 +455,7 @@ export function createFlowNodesTool(args, opts) {
 	}
 
 	/** @type {any[]} */ const createdEdges = [];
+	/** @type {string[]} 2.0-n3b: edges that work, but not the way they read */ const edgeNotes = [];
 	const edgeSpecs = [...(Array.isArray(args?.edges) ? args.edges : []), ...textEdges];
 	if (edgeSpecs.length) {
 		const graphNodes = graphOf(graphId)?.nodes ?? [];
@@ -481,6 +485,18 @@ export function createFlowNodesTool(args, opts) {
 				errors.push('edge "' + e?.from + '" -> "' + e?.to + '": ' + bad.join('; '));
 				continue;
 			}
+			// 2.0-n3b: a value into an event input (the editor refuses that drag; a pure value never fires it)
+			const typed = edgeTypeProblem(
+				graphNodes.find((/** @type {any} */ n) => n.id === source),
+				graphNodes.find((/** @type {any} */ n) => n.id === target),
+				sourceHandle,
+				targetHandle
+			);
+			if (typed?.refuse) {
+				errors.push('edge "' + e?.from + '" -> "' + e?.to + '": ' + typed.refuse);
+				continue;
+			}
+			if (typed?.warn) edgeNotes.push(typed.warn);
 			// id format MUST match the editor's (peer dedupe diverges otherwise)
 			const edge = {
 				id:
@@ -513,6 +529,7 @@ export function createFlowNodesTool(args, opts) {
 		.flatMap((/** @type {any} */ n) =>
 			scriptNodeWarnings(n.data, { unwired: graphId === SCENE_GRAPH && !graphOf(graphId)?.edges.some((/** @type {any} */ e) => e.source === n.id) })
 		);
+	scriptNotes.push(...edgeNotes); // 2.0-n3b: a latch / counter into an event input fires on every change
 	return {
 		graph: graphId,
 		created,
@@ -570,11 +587,19 @@ function textToSpecs(text) {
 }
 
 /**
- * update_flow_nodes: tune node data and/or remove nodes in ONE graph.
- * @param {any} args {graph, updates?: [{id, data}], remove?: [ids]}
+ * update_flow_nodes: tune node data, remove nodes and/or convert pure nodes to code (2.0-n3c) in ONE graph.
+ * @param {any} args {graph, updates?: [{id, data}], remove?: [ids], convert?: [{id, to: 'code'|'back'}]}
  * @returns {any}
  */
 export function updateFlowNodesTool(args) {
+	// 2.0-int: Convert loads its applier on first use (convertToCode + the reference bodies stay off the editor boot)
+	if (Array.isArray(args?.convert) && args.convert.length)
+		return import('$lib/convertToCode').then((m) => updateFlowNodes(args, m.convertNode));
+	return updateFlowNodes(args, null);
+}
+
+/** @param {any} args @param {null | ((id: string, opts: any) => any)} convertNode @returns {any} */
+function updateFlowNodes(args, convertNode) {
 	const graphId = resolveGraph(args?.graph);
 	if (graphId === null)
 		return { error: 'unknown graph "' + args?.graph + '" — pass "scene" or an existing object uuid' };
@@ -620,10 +645,16 @@ export function updateFlowNodesTool(args) {
 				patch.target = t;
 				continue;
 			}
-			const known = key === 'label' || key in (spec?.defaults ?? {}) || key in node.data;
+			// 2.0-n3b: every editor param of the type is settable (perRound, who, to had no default)
+			const v = key === 'label' ? null : paramValue(spec, key, value);
+			if (v && !v.ok) {
+				errors.push(node.type + ' ' + v.error);
+				continue;
+			}
+			const known = key === 'label' || !!v || key in node.data;
 			if (!known) continue;
 			before[key] = node.data[key];
-			patch[key] = value;
+			patch[key] = v ? v.value : value;
 		}
 		if (!Object.keys(patch).length) {
 			errors.push('no valid data keys for node "' + u?.id + '"');
@@ -658,12 +689,28 @@ export function updateFlowNodesTool(args) {
 		recordFlowNodesEntry({ op: 'delete', graphId, nodes, edges });
 	}
 
-	if (!updated.length && !removeIds.length)
-		return { error: errors[0] ?? 'nothing to do — pass updates and/or remove', errors };
+	// 2.0-n3c: convert: [{id, to: 'code' | 'back'}] — the node menu's Convert to code / Convert back
+	/** @type {{id: string, to: string, node: string}[]} */
+	const converted = [];
+	for (const c of Array.isArray(args?.convert) ? args.convert : []) {
+		const to = c?.to === 'back' ? 'back' : c?.to === 'code' ? 'code' : null;
+		if (!to || typeof c?.id !== 'string') {
+			errors.push('convert takes [{ id, to: "code" | "back" }]');
+			continue;
+		}
+		if (!convertNode) continue; // unreachable: a convert list always takes the lazy path
+		const result = convertNode(c.id, { back: to === 'back', graphId });
+		if (!result.ok) errors.push(c.id + ': ' + result.error);
+		else converted.push({ id: c.id, to, node: result.focus });
+	}
+
+	if (!updated.length && !removeIds.length && !converted.length)
+		return { error: errors[0] ?? 'nothing to do — pass updates, remove and/or convert', errors };
 	return {
 		graph: graphId,
 		updated,
 		removed: removeIds.length,
+		...(converted.length ? { converted } : {}),
 		...(scriptNotes.length ? { warning: scriptNotes.join(' ') } : {}),
 		...(errors.length ? { errors } : {})
 	};

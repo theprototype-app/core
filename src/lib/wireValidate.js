@@ -269,7 +269,9 @@ export const VALIDATORS = {
 		typeof d.id === 'string' &&
 		(d.at === undefined || d.at === null || isVec3(d.at)) &&
 		// 36 X6: a contact's OTHER body (a uuid, '' = the ground); older peers ignore it
-		(d.other === undefined || d.other === null || d.other === '' || isUuid(d.other)),
+		(d.other === undefined || d.other === null || d.other === '' || isUuid(d.other)) &&
+		// 2.0-int: a held-key re-stamp is marked; older peers ignore the field
+		(d.held === undefined || d.held === 1),
 	nodedefs: (d) => isArray(d.defs),
 	verts: (d) => isUuid(d.uuid) && isArray(d.indices),
 	meshgeo: (d) => isUuid(d.uuid) && (Array.isArray(d.positions) || d.positions instanceof ArrayBuffer || ArrayBuffer.isView(d.positions)),

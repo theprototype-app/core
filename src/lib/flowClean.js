@@ -4,6 +4,8 @@
 // node or edge comes in; an edge marker's colour must be a plain colour. A LEAF: the stores and
 // the appliers both use it.
 import { isSafeCssValue } from './loadGuardCore.js';
+// 2.0-n3c: the two node fields formatMinor 3 adds (the 101 F2 schema's scene rows)
+import { nodeVersionOk, convertedFromOk } from './sceneSchema.js';
 
 /** Fields the editor renders as raw CSS. */
 const STYLE_KEYS = ['style', 'labelStyle', 'labelBgStyle', 'labelBgPadding', 'labelBgBorderRadius'];
@@ -28,8 +30,16 @@ const okSize = (v) => v === undefined || v === null || (typeof v === 'number' &&
 export function cleanFlowNode(node) {
 	if (!node || typeof node !== 'object') return node;
 	const badClass = node.class !== undefined && !/^[\w\s[\]:/.-]*$/.test(String(node.class));
-	if (!STYLE_KEYS.some((key) => key in node) && !badClass && SIZE_KEYS.every((key) => okSize(node[key]))) return node;
+	// 2.0-n3c: `v` (its definition's version) and a Script node's `convertedFrom` marker
+	const badV = node.v !== undefined && !nodeVersionOk(node.v);
+	const badMark = node.data?.convertedFrom !== undefined && !convertedFromOk(node.data.convertedFrom);
+	if (!STYLE_KEYS.some((key) => key in node) && !badClass && !badV && !badMark && SIZE_KEYS.every((key) => okSize(node[key]))) return node;
 	const out = { ...node };
+	if (badV) delete out.v;
+	if (badMark) {
+		out.data = { ...out.data };
+		delete out.data.convertedFrom;
+	}
 	for (const key of STYLE_KEYS) delete out[key];
 	for (const key of SIZE_KEYS) if (!okSize(out[key])) delete out[key];
 	if (badClass) delete out.class;

@@ -1,6 +1,7 @@
 import { get } from 'svelte/store';
 import { customNodeDefs, flowGraphs, updateGraph } from '../stores/flowStore';
 import { peers } from '../stores/appStore';
+import { normalizeNodeDefs } from './sceneSchema.js';
 
 // User-designed node definitions ({id, name, params[], code}) — replicated
 // with the annotations pattern: CRUD broadcasts + full sync in the handshake.
@@ -110,4 +111,43 @@ export function sendNodeDefs(peerId, attempt = 0) {
 		return;
 	}
 	conn.send({ type: 'nodedefs', defs: defs });
+}
+
+// --- 2.0-n3c (formatMinor 3): the definitions travel IN the scene file ---
+// customNodeDefs was a session store with no save path, so a scene with a custom node, reloaded
+// alone, had instances and no definition (an "Unknown node" card that runs nothing). A save now
+// carries every definition the session holds (omitted when there are none: byte-identical), and a
+// load MERGES them by id (the handshake snapshot's rule: a definition somebody in the room made is
+// never dropped by opening a scene) and replicates them on the ordinary `nodedefs` snapshot.
+
+/**
+ * The definitions to save: the ones some node in `graphs` RUNS (by `data.defId`), or null when none is.
+ * Only used ones, because the store also holds every installed module's seeded definitions
+ * (`mod-<id>-<key>`, sdk/nodes.js): saving the whole store wrote a module's nodes into every scene and
+ * made a scene with no custom node differ from a 1.68 save. Without `graphs`: every definition.
+ * @param {Record<string, {nodes?: any[]}>} [graphs] @returns {any[] | null}
+ */
+export function customNodeDefsSnapshot(graphs) {
+	let defs = get(customNodeDefs);
+	if (graphs) {
+		const used = new Set();
+		for (const g of Object.values(graphs)) for (const n of g?.nodes ?? []) if (typeof n?.data?.defId === 'string') used.add(n.data.defId);
+		defs = defs.filter((d) => used.has(d.id));
+	}
+	return defs.length ? structuredClone(defs) : null;
+}
+
+/**
+ * Restore a file's definitions (checked by the 101 F2 scene rows first). Returns what was dropped.
+ * @param {any} list @param {boolean} [replicate] @returns {{path: string, reason: string}[]}
+ */
+export function customNodeDefsRestore(list, replicate = false) {
+	const { defs, dropped } = normalizeNodeDefs(list);
+	if (dropped.length) console.warn('[nodeDefs] dropped while loading:', dropped);
+	if (!defs.length) return dropped;
+	applyNodeDefsSnapshot(defs);
+	/** @type {any} */
+	const peer = get(peers);
+	if (replicate && peer) peer.send({ type: 'nodedefs', defs });
+	return dropped;
 }

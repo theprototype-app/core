@@ -52,12 +52,12 @@
  * (a stamp-edge source) — declared, so the check can tell it from a forgotten eval.
  * `tick` / `trigger` / `wire` / `referenceJs` are the optional slots N3 fills (the effect APPLY
  * path still lives in flowRuntime; `wire` validates a node's data on `nodecreate` when present).
- * @typedef {NodeSpec & { sockets: NodeSockets, card: string, eval?: NodeEval | null, tick?: any, trigger?: any, wire?: (data: any) => boolean, referenceJs?: string }} NodeDef
+ * @typedef {NodeSpec & { sockets: NodeSockets, card: string, eval?: NodeEval | null, tick?: any, trigger?: any, wire?: (data: any) => boolean, referenceJs?: string, v?: number }} NodeDef
  * @typedef {{ group: string, nodes: NodeDef[] }} NodeFamily
  */
 
 /** the keys of a definition that are NOT its palette spec */
-export const HALVES = ['sockets', 'card', 'eval', 'tick', 'trigger', 'wire', 'referenceJs'];
+export const HALVES = ['sockets', 'card', 'eval', 'tick', 'trigger', 'wire', 'referenceJs', 'v'];
 
 /** the socket types a definition may name */
 export const SOCKET_TYPES = [
@@ -209,6 +209,10 @@ export function registryErrors(families) {
 				errors.push(`${where}: wire is not a function`);
 			if (def.referenceJs != null && typeof def.referenceJs !== 'string')
 				errors.push(`${where}: referenceJs is not a string`);
+			// 2.0-n3c: `v` = the definition's version (absent = 1); bump it when a saved node of this type
+			// must be told apart from one made before (a changed default, a changed meaning)
+			if (def.v !== undefined && !(Number.isInteger(def.v) && def.v >= 1))
+				errors.push(`${where}: v must be an integer >= 1`);
 		}
 	}
 	return errors;

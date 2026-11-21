@@ -383,10 +383,17 @@ drawer mounts, roles bridge) · **3 (roadmap #28-A: the publish · play · remix
 A coupled change therefore deploys the engine first and the plugin after.
 
 **The module api has its own number** (101 F6): `api.version` on the module api (`src/lib/sdk/core.js`
-`SDK_API_VERSION`, now **2**) is NOT the plugin `api.version` above. Version 2 also notes that the raw
+`SDK_API_VERSION`, now **3**) is NOT the plugin `api.version` above. Version 2 also notes that the raw
 renderer handle a module (or a plugin's `captureThumbnail` path) can reach today stays for now and will
 leave the contract once roadmap 100 swaps renderers: modules use the look / post SDK calls. Every
 renderer the app makes is created in `src/lib/render/` (a CI check keeps it that way).
+
+**Version 3** (2.0-n3c, additive): the SCRIPT api that Script nodes and a module's behaviours run with
+(`api` inside the code) has a number of its own, `api.version` = `SCRIPT_API_VERSION` in
+`src/lib/scriptIO.js`, now **2**: 1 (absent) = `object`, `raycast`, `keys`, `spawn`; 2 adds `self()` (this
+node's id) and `stamp(input)` (the newest trigger stamp on one of this node's inputs, in synced seconds,
+`null` = never), both reads of replicated state so a value script stays deterministic. Inside a script,
+probe `(api.version ?? 1) >= 2`; a module probes its own `api.version >= 3` before writing such code.
 
 ### The session protocol (`proto` + `caps`, roadmap 101 F1)
 

@@ -259,6 +259,7 @@ export function splatDebug() {
 	const scene = /** @type {any} */ (get(globalScene));
 	return {
 		sparkLoaded: !!spark,
+		runtimeLoaded: true,
 		rendererInScene: !!sparkRenderer && sparkRenderer.parent === scene,
 		awaiting: [...awaiting],
 		entries: [...entries.values()].map((e) => ({

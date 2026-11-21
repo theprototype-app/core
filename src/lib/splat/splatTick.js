@@ -18,6 +18,8 @@ let carriers = [];
 let tick = null;
 let loading = false;
 let ever = false;
+/** the runtime module once it has loaded (debug / e2e read it through here, so a hook never loads Spark) @type {any} */
+let runtimeMod = null;
 
 objectsGroup.subscribe(() => {
 	wanted = true;
@@ -68,10 +70,20 @@ export function tickSplatsLazy(root, now) {
 	loading = true;
 	import('./splatRuntime.js')
 		.then((m) => {
+			runtimeMod = m;
 			tick = m.tickSplats;
 		})
 		.catch((err) => console.log('splat runtime failed to load', err))
 		.finally(() => (loading = false));
+}
+
+/** debug / e2e: the runtime's view, or "not loaded" — never loads it */
+export function splatDebug() {
+	return runtimeMod ? runtimeMod.splatDebug() : { sparkLoaded: false, runtimeLoaded: false, rendererInScene: false, awaiting: [], entries: [] };
+}
+/** debug / e2e: the runtime's test seam once loaded, else null */
+export function splatRuntimeForTest() {
+	return runtimeMod?.splatRuntimeForTest ?? null;
 }
 
 /** set while splat objects exist */

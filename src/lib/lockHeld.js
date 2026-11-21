@@ -10,7 +10,7 @@ import { writable, get } from 'svelte/store';
 import { lockedObjects } from '../stores/sceneStore';
 import { peers, userdata } from '../stores/appStore';
 import { sessionNow } from './sessionClock';
-import { holderOf } from './lockTrust';
+import { holderOf, LOCK_ROWS_PER_PEER } from './lockTrust';
 
 /** @type {import('svelte/store').Writable<Map<string, number>>} uuid -> when we took it */
 export const myLocks = writable(new Map());
@@ -68,7 +68,8 @@ export function dropMyLocks(uuids) {
  * @param {string[]} uuids @param {string} [peerId]
  */
 export function lockMessage(uuids, peerId = selfId() ?? '') {
-	const clean = uuids.filter((u) => typeof u === 'string' && u);
+	// a selection bigger than one lock set holds its last LOCK_ROWS_PER_PEER objects (receivers refuse a bigger set)
+	const clean = uuids.filter((u) => typeof u === 'string' && u).slice(-LOCK_ROWS_PER_PEER);
 	const ats = claimLocks(clean);
 	return { type: 'lock', uuid: clean[clean.length - 1], uuids: [...get(myLocks).keys()], ats, peerId };
 }

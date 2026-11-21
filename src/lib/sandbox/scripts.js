@@ -17,6 +17,8 @@ import { GUEST_MATH } from './guestMath.js';
 
 /** userData keys a script may not write (prototype keys; everything else is the scene author's) */
 const BLOCKED_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+// whether an object is a draft (stays on this device) is the user's choice, never a script's
+const LOCAL_KEYS = new Set(['__localOnly']);
 /** a userData value larger than this (JSON chars) is not handed to the guest */
 const USERDATA_VALUE_CAP = 20000;
 const ORDERS = new Set(['XYZ', 'YXZ', 'ZXY', 'ZYX', 'YZX', 'XZY']);
@@ -190,10 +192,10 @@ export function applyObjectPatch(object, p) {
 	if (Array.isArray(p.s)) setComponents(object.scale, p.s, ['x', 'y', 'z']);
 	if (typeof p.v === 'boolean') object.visible = p.v;
 	if (p.ud && typeof p.ud === 'object' && object.userData) {
-		for (const key of Object.keys(p.ud)) if (!BLOCKED_KEYS.has(key)) object.userData[key] = p.ud[key];
+		for (const key of Object.keys(p.ud)) if (!BLOCKED_KEYS.has(key) && !LOCAL_KEYS.has(key)) object.userData[key] = p.ud[key];
 	}
 	if (Array.isArray(p.udDel) && object.userData) {
-		for (const key of p.udDel) if (typeof key === 'string' && !BLOCKED_KEYS.has(key)) delete object.userData[key];
+		for (const key of p.udDel) if (typeof key === 'string' && !BLOCKED_KEYS.has(key) && !LOCAL_KEYS.has(key)) delete object.userData[key];
 	}
 	const m = p.m;
 	const material = object.material;

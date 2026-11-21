@@ -37,7 +37,7 @@ import {
 	showToast,
 	toggleExpand
 } from '../stores/appStore';
-import { canEditObject, warnViewerReadOnly } from './objectPermissions';
+import { canEditObject, warnViewerReadOnly, draftUuids, clearInboundDraftFlags } from './objectPermissions';
 import { lockMessage, dropMyLocks, heldByOther, lockedView as lockedViewStore } from './lockHeld'; // 80a K3 / K4
 import { lockOnEdit, editLocksToDrop } from './lockMode'; // 80a K15
 import { stripEditOverlays, isEditOverlay } from './editOverlays';
@@ -819,8 +819,11 @@ export function applyRemoteDuplicate(sourceUuid, uuids, name, pos, transient = f
 	const group = get(objectsGroup);
 	const source = group?.getObjectByProperty('uuid', sourceUuid);
 	if (!source) return;
+	// a draft is only on this device: a peer has no copy of it to duplicate
+	if (draftUuids().has(sourceUuid)) return;
 	const clone = source.clone(true);
 	stripEditOverlays(clone); // see duplicateObject: the index walk below counts nodes
+	clearInboundDraftFlags(clone);
 	detachMaterials(clone);
 	collectTree(clone).forEach((node, index) => {
 		if (uuids[index]) node.uuid = uuids[index];

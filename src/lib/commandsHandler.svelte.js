@@ -341,8 +341,8 @@ export function lockRestore(lockeditems, from, fromHost, mayLock) {
     const accepted = acceptedLockRows(lockeditems, { from, selfId: peer?.peer?.id, fromHost, mayLock });
     if (!accepted.length) return;
     // 80a K3: the same stamp rule as a `lock` set (geometries.lockGeometry)
-    const rows = stampRestoredRows(accepted, locked, myClaim, sessionNow());
-    locked = sortLockTable(mergeLockRows(locked, rows));
+    const rows = stampRestoredRows(accepted, locked, myClaim, sessionNow(), { from, fromHost });
+    locked = sortLockTable(mergeLockRows(locked, rows, { replace: !!fromHost }));
     lockedObjects.set(locked);
 }
 

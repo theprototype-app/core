@@ -239,6 +239,7 @@ export function dropPeerLockState(peerId) {
 	for (const key of rejectAt.keys()) if (key.startsWith(peerId + '\n')) rejectAt.delete(key);
 	for (const [key, t] of healTimers) if (key.startsWith(peerId + '\n')) (clearTimeout(t), healTimers.delete(key));
 	for (const key of healAt.keys()) if (key.startsWith(peerId + '\n')) healAt.delete(key);
+	healBudget.delete(peerId);
 }
 
 /** @type {Map<string, number>} from + uuid -> when we last told that peer no */
@@ -256,6 +257,10 @@ const healReleaseAt = new Map();
 export const LOCK_HEAL_GAP_MS = 1000;
 /** @type {Map<string, number>} heal key -> when it last went */
 const healAt = new Map();
+/** object heals per peer in one LOCK_HEAL_GAP_MS (each one sends a whole object); more wait for the next window */
+export const LOCK_HEAL_PEER_MAX = 16;
+/** @type {Map<string, {start: number, n: number}>} peer -> object heals in the current window */
+const healBudget = new Map();
 
 /**
  * THE RECEIVING-SIDE GATE (80a K3). An edit of an object somebody else holds is not applied. When
@@ -296,6 +301,13 @@ export function gateLockedEdit(from, data, { runtime, replay, heal, conn: via })
 				setTimeout(() => {
 					const wait = LOCK_HEAL_GAP_MS - (Date.now() - (healAt.get(hkey) ?? -Infinity));
 					if (wait > 0) return void schedule(wait);
+					if (!flow) {
+						const t = Date.now();
+						const b = healBudget.get(from);
+						if (!b || t - b.start >= LOCK_HEAL_GAP_MS) healBudget.set(from, { start: t, n: 1 });
+						else if (b.n >= LOCK_HEAL_PEER_MAX) return void schedule(LOCK_HEAL_GAP_MS - (t - b.start));
+						else b.n++;
+					}
 					healTimers.delete(hkey);
 					healAt.set(hkey, Date.now());
 					heal(from, uuid, flow);

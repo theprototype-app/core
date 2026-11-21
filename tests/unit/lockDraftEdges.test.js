@@ -7,8 +7,8 @@ vi.mock('../../src/lib/geometries.svelte', () => ({ lockGeometry: () => {} }));
 vi.mock('../../src/lib/objectActions', () => ({ selectObject: () => {}, applySelectionSet: () => {}, deselectObject: () => {} }));
 import { get } from 'svelte/store';
 import { scrubDrafts } from '../../src/lib/draftGateCore.js';
-import { clearInboundDraftFlags } from '../../src/lib/objectPermissions.js';
-import { stampRestoredRows, holderOf, sortLockTable, LOCK_RACE_MS } from '../../src/lib/lockTrust.js';
+import { clearInboundDraftFlags, isDraftId } from '../../src/lib/objectPermissions.js';
+import { stampRestoredRows, holderOf, sortLockTable, mergeLockRows, acceptedLockRows, LOCK_RACE_MS, LOCK_ROWS_PER_PEER } from '../../src/lib/lockTrust.js';
 import { lockMode, applyLockMode, resetLockMode, LOCK_MODE_SKEW_MS } from '../../src/lib/lockMode.js';
 import { sessionHost } from '../../src/lib/connectionState.js';
 import { VALIDATORS, LOCK_SET_MAX, LOCK_TABLE_MAX_ROWS } from '../../src/lib/wireValidate.js';
@@ -36,6 +36,25 @@ describe('drafts gate: a message type is never a draft', () => {
 	});
 });
 
+describe('drafts gate: only object ids count as drafts', () => {
+	it('a message word, a peer id or a graph id is never a draft id', () => {
+		for (const id of ['type', 'move', 'scene', 'peer-abc123', 'G1', '']) expect(isDraftId(id)).toBe(false);
+		expect(isDraftId('3f2b8c1e-9a4d-4e6f-8b2a-1c3d5e7f9a0b')).toBe(true);
+		expect(isDraftId('3f2b8c1e-9a4d-4e6f-8b2a-1c3d5e7f9a0b-glass')).toBe(true);
+	});
+	it('a script cannot set or clear the draft flag', async () => {
+		const { applyObjectPatch } = await import('../../src/lib/sandbox/scripts.js');
+		const a = new THREE.Object3D();
+		applyObjectPatch(a, { ud: { __localOnly: true, score: 1 } });
+		expect('__localOnly' in a.userData).toBe(false);
+		expect(a.userData.score).toBe(1);
+		const b = new THREE.Object3D();
+		b.userData.__localOnly = true;
+		applyObjectPatch(b, { udDel: ['__localOnly'] });
+		expect(b.userData.__localOnly).toBe(true);
+	});
+});
+
 describe('lock table: restored rows are stamped like a lock set', () => {
 	const now = 100000;
 	it('a claim on an object someone holds is not dated back past the race window', () => {
@@ -54,6 +73,18 @@ describe('lock table: restored rows are stamped like a lock set', () => {
 	});
 	it('a row the table already has keeps the stored stamp', () => {
 		expect(stampRestoredRows([['bob', 'Z', 1]], [['bob', 'Z', now - 500]], () => null, now)[0][2]).toBe(now - 500);
+	});
+	it("the host's table settles a claim a peer dated back before it arrived", () => {
+		// a joiner: mallory's own row came first, on an empty table, so it kept its stamp
+		let table = stampRestoredRows([['mallory', 'X', -1e300]], [], () => null, now);
+		const hostRows = [['bob', 'X', now - 60000], ['mallory', 'X', now - 1000]];
+		const rows = stampRestoredRows(hostRows, table, () => null, now, { from: 'host', fromHost: true });
+		table = sortLockTable(mergeLockRows(table, rows, { replace: true }));
+		expect(holderOf(table, 'X')).toBe('bob');
+	});
+	it('a peer names no more of its own locks than one lock set holds', () => {
+		const many = Array.from({ length: LOCK_ROWS_PER_PEER + 50 }, (_, i) => ['mallory', 'u' + i]);
+		expect(acceptedLockRows(many, { from: 'mallory', selfId: 'me', fromHost: false, mayLock: true }).length).toBe(LOCK_ROWS_PER_PEER);
 	});
 	it('rows without a stamp pass through', () => {
 		expect(stampRestoredRows([['bob', 'Z']], [], () => null, now)[0]).toEqual(['bob', 'Z']);
@@ -121,6 +152,32 @@ describe('heal answers are paced', () => {
 		expect(heal.mock.calls.length).toBeGreaterThan(0);
 		expect(heal.mock.calls.length).toBeLessThanOrEqual(8);
 		lc.dropPeerLockState('mallory');
+	});
+	it('object heals to one peer are capped per second, and every one still goes', async () => {
+		const lc = await import('../../src/lib/lockControl.js');
+		const { lockedObjects } = await import('../../src/stores/sceneStore.js');
+		const { peers } = await import('../../src/stores/appStore.js');
+		const { myLocks } = await import('../../src/lib/lockHeld.js');
+		peers.set({ peer: { id: 'me' }, connections: {} });
+		lockedObjects.set([]);
+		const ids = Array.from({ length: 40 }, (_, i) => 'o' + i);
+		myLocks.set(new Map(ids.map((u) => [u, 1])));
+		const heal = vi.fn();
+		const conn = { open: true, send: () => {} };
+		for (const u of ids) lc.gateLockedEdit('mallory', { type: 'move', uuid: u, pos: [0, 0, 0] }, { runtime: false, replay: () => {}, heal, conn });
+		vi.advanceTimersByTime(lc.LOCK_HEAL_GAP_MS - 1);
+		expect(heal.mock.calls.length).toBeLessThanOrEqual(lc.LOCK_HEAL_PEER_MAX);
+		vi.advanceTimersByTime(lc.LOCK_HEAL_GAP_MS * 4);
+		expect(new Set(heal.mock.calls.map((c) => c[1])).size).toBe(40);
+		lc.dropPeerLockState('mallory');
+	});
+	it('a lock message carries at most one lock set', async () => {
+		const { lockMessage, myLocks } = await import('../../src/lib/lockHeld.js');
+		const ids = Array.from({ length: LOCK_ROWS_PER_PEER + 10 }, (_, i) => 'u' + i);
+		const msg = lockMessage(ids, 'me');
+		expect(msg.uuids.length).toBe(LOCK_ROWS_PER_PEER);
+		expect(VALIDATORS.lock(msg)).toBe(true);
+		myLocks.set(new Map());
 	});
 	it('a link that heals again at once does not make us let go twice', async () => {
 		const lc = await import('../../src/lib/lockControl.js');

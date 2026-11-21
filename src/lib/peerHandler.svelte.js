@@ -1806,7 +1806,7 @@ export class PeerConnection {
 						arriving: !!data.arriving
 					});
 				} else if(data.type == 'objectfile') {
-					applyObjectFile(data);
+					applyObjectFile(data, { inbound: true });
 				} else if(data.type == 'behavior') {
 					// 33 P2: a functional pack item was triggered (a door, a lid, a lever).
 					// Latest-wins on the sessionNow stamp; every peer derives the pose itself.
@@ -2252,11 +2252,12 @@ export class PeerConnection {
 	// Send the initial handshake (locks, known hosts, whitelist, object/node sync requests).
 	// Must only be called once the connection is open — messages sent earlier are dropped by peerjs.
 	/** @param {any} conn @param {string} peerId @param {boolean} getobjects @param {string} id
-	 * @param {{heal?: boolean}} [opts] heal: this conn REPLACES one that dropped (the reconnect window) */
+	 * @param {{heal?: boolean, keepLocks?: boolean}} [opts] heal: this conn REPLACES one that dropped (the reconnect window);
+	 * keepLocks: the drop was the peer's report (relink), not one we saw, so what we hold stays held */
 	sendHandshake(conn, peerId, getobjects, id, opts = {}) {
 		// 80a K6: a healed link lets go of what was held across the drop, on both sides, before this
 		// handshake's `locked` is built (QUESTIONS-80a-locks Q1/Q2; fix4-net's heal paths all land here)
-		if (opts.heal) releaseOnHeal(peerId);
+		if (opts.heal && !opts.keepLocks) releaseOnHeal(peerId);
 		noteNodeSyncHandshake(peerId) // 54i row g: the nodesync join window runs from the link, not a later first nodesync
 		// 25-F: an approval dial-back SAYS it is one, ahead of everything else (the roadmap's
 		// "first message"). The metadata already carried it; this is the same answer for a
@@ -3011,8 +3012,9 @@ export class PeerConnection {
 		try { stale.close(); } catch (e) { /* already dead */ }
 		this.openedPeers.add(peerId);
 		peers.update((value) => value);
-		// what we sent while the link was dead never arrived, and what they answered went to it
-		this.sendHandshake(conn, peerId, true, this.peer.id, { heal: true });
+		// what we sent while the link was dead never arrived, and what they answered went to it. Our locks stay:
+		// the drop is theirs to tell, and only a drop we saw ourselves lets go of what we hold (releaseOnHeal)
+		this.sendHandshake(conn, peerId, true, this.peer.id, { heal: true, keepLocks: true });
 	}
 
 	/** One reconnect-window dial: the lower id only, and never over a dial already in flight.

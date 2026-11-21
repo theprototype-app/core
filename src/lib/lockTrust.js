@@ -23,6 +23,9 @@ const isStamp = (v) => typeof v === 'number' && Number.isFinite(v);
  * @param {{from: string, selfId?: string | null, fromHost: boolean, mayLock: boolean}} ctx
  * @returns {([string, string] | [string, string, number])[]}
  */
+/** the most rows a peer's own `locked` may name (the `lock` set cap, wireValidate LOCK_SET_MAX) */
+export const LOCK_ROWS_PER_PEER = 4096;
+
 export function acceptedLockRows(rows, { from, selfId, fromHost, mayLock }) {
 	if (!Array.isArray(rows) || !mayLock || !isId(from)) return [];
 	/** @type {([string, string] | [string, string, number])[]} */
@@ -32,6 +35,8 @@ export function acceptedLockRows(rows, { from, selfId, fromHost, mayLock }) {
 		if (!Array.isArray(row) || !isId(row[0]) || !isId(row[1])) continue;
 		if (row[0] === selfId) continue;
 		if (!fromHost && row[0] !== from) continue;
+		// a peer speaks for its own locks only, and no more of them than one lock set holds
+		if (!fromHost && out.length >= LOCK_ROWS_PER_PEER) break;
 		const key = row[0] + '\n' + row[1];
 		if (seen.has(key)) continue;
 		seen.add(key);
@@ -41,11 +46,17 @@ export function acceptedLockRows(rows, { from, selfId, fromHost, mayLock }) {
 }
 
 /**
- * `table` plus the `rows` it does not already have (a re-sent table must not stack).
- * @param {any[] | null | undefined} table @param {any[][]} rows @returns {any[]}
+ * `table` plus the `rows` it does not already have (a re-sent table must not stack); with `replace`
+ * the incoming rows take the place of stored ones for the same holder and object.
+ * @param {any[] | null | undefined} table @param {any[][]} rows @param {{replace?: boolean}} [opts] @returns {any[]}
  */
-export function mergeLockRows(table, rows) {
+export function mergeLockRows(table, rows, { replace = false } = {}) {
 	const base = Array.isArray(table) ? table : [];
+	if (replace) {
+		// the incoming rows win over the stored ones for the same holder and object
+		const incoming = new Set(rows.map((r) => r[0] + '\n' + r[1]));
+		return base.filter((l) => !(Array.isArray(l) && incoming.has(l[0] + '\n' + l[1]))).concat(rows);
+	}
 	const have = new Set(base.filter(Array.isArray).map((l) => l[0] + '\n' + l[1]));
 	return base.concat(rows.filter((r) => !have.has(r[0] + '\n' + r[1])));
 }
@@ -240,14 +251,26 @@ export function claimStamp({ claimed, prev, contested, now }) {
  * its stamp, and a claim on an object someone else holds (or we do: `mineOf`) is not dated back past LOCK_RACE_MS.
  * @param {any[][]} rows accepted rows (acceptedLockRows) @param {any[] | null | undefined} table the current table
  * @param {(uuid: string) => any} mineOf our own claim of an object (lockHeld.myClaim) @param {number} now session clock
+ * @param {{from?: string | null, fromHost?: boolean}} [opts] from = the sender; fromHost = it is the session host
  * @returns {any[][]}
  */
-export function stampRestoredRows(rows, table, mineOf, now) {
+export function stampRestoredRows(rows, table, mineOf, now, { from = null, fromHost = false } = {}) {
 	const base = Array.isArray(table) ? table.filter(isRow) : [];
+	/** @type {Map<string, any[][]>} */
+	const byUuid = new Map();
+	for (const l of base) {
+		const list = byUuid.get(l[1]);
+		if (list) list.push(l);
+		else byUuid.set(l[1], [l]);
+	}
 	return rows.map((row) => {
 		if (row.length < 3) return row;
-		const prev = base.find((l) => l[0] === row[0] && l[1] === row[1]);
-		const others = base.filter((l) => l[0] !== row[0]);
+		// the host's table is the session's record of who took what first: its rows about other people
+		// keep their stamps (a late joiner learns the real order even if a peer's own claim came first)
+		if (fromHost && row[0] !== from) return row;
+		const same = byUuid.get(row[1]) ?? [];
+		const prev = same.find((l) => l[0] === row[0]);
+		const others = same.filter((l) => l[0] !== row[0]);
 		const at = claimStamp({ claimed: row[2], prev: prev?.[2], contested: !!holderOf(others, row[1], mineOf(row[1])), now });
 		return at === undefined ? [row[0], row[1]] : [row[0], row[1], at];
 	});

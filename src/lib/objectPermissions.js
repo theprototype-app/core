@@ -304,6 +304,14 @@ function draftsChanged() {
 	draftsStale = true;
 }
 
+// a draft's id is a three.js uuid (or one with a part suffix, `<uuid>-glass`): the gate only ever matches
+// those, so no message word, peer id or graph id can be read as a draft
+const DRAFT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+/** @param {unknown} id */
+export function isDraftId(id) {
+	return typeof id === 'string' && DRAFT_ID.test(id);
+}
+
 /** the uuids of every draft and everything inside one (rebuilt when stale) @returns {Set<string>} */
 export function draftUuids() {
 	if (!draftWatch) {
@@ -315,8 +323,8 @@ export function draftUuids() {
 	if (draftsStale || now - draftsBuiltAt > 1000) {
 		/** @type {Set<string>} */
 		const next = new Set();
-		for (const root of localOnlyRoots()) root.traverse?.((/** @type {any} */ o) => next.add(o.uuid));
-		for (const set of liftedDrafts) for (const u of set) next.add(u);
+		for (const root of localOnlyRoots()) root.traverse?.((/** @type {any} */ o) => { if (isDraftId(o.uuid)) next.add(o.uuid); });
+		for (const set of liftedDrafts) for (const u of set) if (isDraftId(u)) next.add(u);
 		draftSet = next;
 		draftsStale = false;
 		draftsBuiltAt = now;

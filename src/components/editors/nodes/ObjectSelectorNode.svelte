@@ -2,9 +2,9 @@
 	import { Handle, Position, type NodeProps } from '@xyflow/svelte';
 	import Socket from './Socket.svelte';
 	import NodeWrapper from './NodeWrapper.svelte';
-	import { objectsGroup, sceneRevision } from '../../../stores/sceneStore';
+	import { objectsGroup } from '../../../stores/sceneStore';
 	import { setNodeData } from '$lib/nodesHandler';
-	import { pickOf, matchOf, resolveSelector, sceneTags, describeSet } from '$lib/selectorCore.js';
+	import { pickOf, matchOf } from '$lib/selectorPick.js';
 
 	type $$Props = NodeProps;
 	export let id: string;
@@ -32,30 +32,11 @@
 	$: pick = pickOf(data);
 	let match: string;
 	$: match = matchOf(data);
-	/** the groups a "By group" selector can name: any object with children (nested ones too) */
-	let groups: { id: string; name: string }[] = [];
-	$: groups = pick === 'group' ? groupsOf(sceneObjects, $sceneRevision) : [];
-	let tags: { tag: string; count: number }[] = [];
-	$: tags = pick === 'tag' ? (void $sceneRevision, sceneTags(sceneObjects)) : [];
-	/** the resolved set, re-read on every scene change */
-	let set: string[] = [];
-	$: set = pick !== 'object' ? (void $sceneRevision, resolveSelector(data, sceneObjects)) : [];
-	const nameOf = (uuid: string) => sceneObjects?.getObjectByProperty?.('uuid', uuid)?.name || null;
-
-	function groupsOf(root: any, _rev: number) {
-		const out: { id: string; name: string }[] = [];
-		root?.traverse?.((o: any) => {
-			if (o === root || !o.children?.length || o.isMesh || o.userData?.helper) return;
-			if (o.type === 'Group' || o.type === 'Object3D') out.push({ id: o.uuid, name: o.name || 'Group' });
-		});
-		return out;
-	}
 	function setPick(next: string) {
 		// back to one object: the fields go, so the node is exactly a plain selector again
 		if (next === 'object') setNodeData(id, { pick: undefined, match: undefined });
 		else setNodeData(id, { pick: next, match: next === pick ? match : '' });
 	}
-	const placeholder: Record<string, string> = { tag: 'tag', name: 'Star* or coin' };
 </script>
 
 <NodeWrapper type={data.type} label={data.label}>
@@ -84,44 +65,11 @@
 					<option value={option.id}>{option.name}</option>
 				{/each}
 			</select>
-		{:else if pick === 'group'}
-			<select
-				class="nodrag nopan"
-				aria-label="Group"
-				data-selector-match
-				value={match}
-				on:change={(e) => setNodeData(id, { match: e.currentTarget.value })}
-			>
-				<option value="">-None-</option>
-				{#each groups as g (g.id)}
-					<option value={g.id}>{g.name}</option>
-				{/each}
-			</select>
 		{:else}
-			<input
-				class="nodrag nopan ui-input px-1 py-0.5 text-xs"
-				aria-label={pick === 'tag' ? 'Tag' : 'Name pattern'}
-				title={PICKS.find((p) => p.value === pick)?.title}
-				data-selector-match
-				list={pick === 'tag' ? 'selector-tags-' + id : undefined}
-				placeholder={placeholder[pick]}
-				maxlength="120"
-				value={match}
-				on:change={(e) => setNodeData(id, { match: e.currentTarget.value.trim() })}
-				on:keydown={(e) => {
-					if (e.key === 'Enter') e.currentTarget.blur();
-				}}
-			/>
-			{#if pick === 'tag'}
-				<datalist id={'selector-tags-' + id}>
-					{#each tags as t (t.tag)}<option value={t.tag}>{t.count} object{t.count === 1 ? '' : 's'}</option>{/each}
-				</datalist>
-			{/if}
-		{/if}
-		{#if pick !== 'object'}
-			<span class="selector-count text-[length:var(--fs-badge)] text-text-muted" data-selector-count={set.length} title={describeSet(set, nameOf, 8)}>
-				{set.length === 0 ? 'matches no objects' : `${set.length} object${set.length === 1 ? '' : 's'}`}
-			</span>
+			<!-- 102b-flows: the set fields + live count are a lazy chunk (a One object card never loads it) -->
+			{#await import('./SelectorSetFields.svelte') then m}
+				<m.default {id} {data} {pick} {match} title={PICKS.find((p) => p.value === pick)?.title} />
+			{/await}
 		{/if}
 	</div>
 	<Socket kind="target" nodeType={data.type} position={Position.Left} />

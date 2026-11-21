@@ -100,7 +100,7 @@
 	import Breadcrumbs from '../ui/Breadcrumbs.svelte'; // 41 G15
 	import { readPanelOpen, writePanelOpen, handheld } from '$lib/ui/handheldPanels.js'; // 41 G18 (+ 2.0-n3c: the read-only code sheet)
 	import { objectsGroup, selectedObject, selectedObjects, isVRMode, sceneRevision } from '../../stores/sceneStore';
-	import { resolveSelector } from '$lib/selectorCore.js'; // 102b-flows
+	import { resolveTargets, selectorCoreVersion } from '$lib/selectorPick.js'; // 102b-flows
 	import { serializeNode, serializeEdge, deleteFlowNodes, deleteFlowEdges, setNodeData } from '$lib/nodesHandler';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import { defDefaults } from '$lib/customNodes';
@@ -1794,9 +1794,11 @@
 		const drawn = (nodes as any[]).filter((n) => !n.hidden);
 		const ids = new Set(drawn.map((n) => n.id));
 		void $sceneRevision; // 102b-flows: a tag / group / name set follows the scene
+		void $selectorCoreVersion; // …and is only known once the resolver chunk is in
 		const root = $objectsGroup;
 		return lintFlowGraph(drawn, (edges as any[]).filter((e) => !e.hidden && ids.has(e.source) && ids.has(e.target)), {
-			resolve: (data) => resolveSelector(data, root)
+			// null = still loading: not flagged yet
+			resolve: (data) => resolveTargets(data, root) ?? ['?']
 		});
 	});
 	/** where a flagged wire's chip sits: halfway between the source's right edge and the target's left */

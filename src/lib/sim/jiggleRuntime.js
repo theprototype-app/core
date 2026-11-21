@@ -4,7 +4,7 @@ import { addDeformer, removeDeformer, hasDeformer } from '../vertexDeform.js';
 import { allNodes, allEdges, SCENE_GRAPH, flowGraphs } from '../../stores/flowStore';
 import { get } from 'svelte/store';
 import { objectsGroup } from '../../stores/sceneStore';
-import { resolveSelector } from '../selectorCore.js'; // 102b-flows: a selector may name a set
+import { resolveTargets } from '../selectorPick.js'; // 102b-flows: a selector may name a set
 import {
 	normalizeJiggle,
 	jiggleState,
@@ -78,7 +78,7 @@ export function jiggleTargets() {
 			const sel = byId.get(e.target);
 			if (sel?.type !== 'objectselector') continue;
 			wired = true;
-			for (const uuid of resolveSelector(sel.data, get(objectsGroup))) out.push({ uuid, nodeId: node.id, params });
+			for (const uuid of (resolveTargets(sel.data, get(objectsGroup)) ?? [])) out.push({ uuid, nodeId: node.id, params });
 		}
 		const graph = node.__graph;
 		if (!wired && graph && graph !== SCENE_GRAPH) out.push({ uuid: graph, nodeId: node.id, params });

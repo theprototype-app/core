@@ -13,7 +13,7 @@ import { objectsGroup, pokeScene } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { registerHistoryKind, registerHistoryMerge, recordEntry, sameJson, beginHistoryBatch, endHistoryBatch } from './history';
 import { withWireBatch } from './wireBatch';
-import { normalizeTags, normalizeTag, tagsOf } from './selectorCore.js';
+import { normalizeTags, normalizeTag, tagsOf } from './selectorPick.js';
 
 /** @param {string} uuid */
 function objectOf(uuid) {

@@ -5,7 +5,7 @@ import { registerMetricSource } from './sceneBudget';
 import { writable, get } from 'svelte/store';
 import { flowGraphs, allNodes, allEdges, SCENE_GRAPH, runtimeGraph } from '../stores/flowStore';
 import { objectsGroup, lockedObjects, selectedObject, selectedObjects, pokeScene, editorMode, isLocked, sceneRevision } from '../stores/sceneStore';
-import { resolveSelector } from './selectorCore.js'; // 102b-flows: a selector may name a set
+import { resolveTargets } from './selectorPick.js'; // 102b-flows: a selector may name a set
 import { peers, showToast, openSceneSection } from '../stores/appStore';
 import { recordTransformSet, recordEntry } from './history';
 import {
@@ -362,7 +362,7 @@ function collectParams(group) {
 		const target = byId.get(edge.target);
 		if (target?.type !== 'objectselector') return;
 		// 102b-flows: every member of a tag / group / name set (a plain selector: its one object)
-		for (const uuid of resolveSelector(target.data, get(objectsGroup))) applyPhysicsNode(source, uuid);
+		for (const uuid of (resolveTargets(target.data, get(objectsGroup)) ?? [])) applyPhysicsNode(source, uuid);
 	});
 	// H1: a physics node inside an OBJECT graph with no explicit selector wiring
 	// applies to the graph's owner object (matches the runtime's implicit rule)

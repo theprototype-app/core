@@ -48,7 +48,7 @@ import { registerMetricSource, ingestVerdict, profileFor } from './sceneBudget';
 import { globalRenderer } from '../stores/sceneStore.js';
 // 33 (L4): the scene going away is when its modules may be left behind (a leaf)
 import { noteSceneLeaving } from './sceneScope';
-import { normalizeTags } from './selectorCore.js'; // 102b-flows: object tags
+import { normalizeTags } from './selectorPick.js'; // 102b-flows: object tags
 
 //Access scene Store
 let scene = $state();
@@ -741,6 +741,14 @@ export async function objectParameters(data, from = 'peer') {
             const clean = normalizeTags(data.tags);
             if (clean) mesh.userData.tags = clean;
             else delete mesh.userData.tags;
+            pokeScene();
+        }
+    } else if (data.parameter == 'flowFrom') {
+        // 102b-flows: which object's flow this one received a copy of (the "update all" family). null = none.
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            if (typeof data.flowFrom === 'string' && data.flowFrom) mesh.userData.flowFrom = data.flowFrom;
+            else delete mesh.userData.flowFrom;
             pokeScene();
         }
     } else if (data.parameter == 'pick') {

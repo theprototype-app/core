@@ -11,7 +11,7 @@
 // reaches an object only DOWNSTREAM (On Click → … → Object Selector) or as the owner of its own object graph:
 // the selector wired INTO the On Click is the wrong way round and never fires (R8).
 
-import { isManySelector, describeSelector } from '../selectorCore.js'; // 102b-flows: a pure leaf, like this file
+import { isManySelector, describeSelector } from '../selectorPick.js'; // 102b-flows: a pure leaf, like this file
 
 /** a node's display name: its label, else its type @param {any} n */
 export const nodeName = (n) => String(n?.data?.label && n.data.label !== n.type ? n.data.label : n?.type ?? 'node');

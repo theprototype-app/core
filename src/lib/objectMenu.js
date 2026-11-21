@@ -1,6 +1,6 @@
 import { get } from 'svelte/store';
 import { objectsGroup, lockedObjects } from '../stores/sceneStore';
-import { mutedFlowObjects } from '../stores/flowStore';
+import { mutedFlowObjects, graphOf } from '../stores/flowStore';
 import { renamingObject } from '../stores/appStore';
 import {
 	focusObject,
@@ -793,6 +793,30 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 							)
 					}
 				]),
+		// 102b-flows row 2: one flow for many objects — paste the clicked object's flow onto the rest of the
+		// selection (plain copies), or push an edited one back out to every object that got a copy
+		...(multi && flowNodeCount(uuid)
+			? [
+					{
+						label: 'Give this flow to the selection (' + (targets.length - 1) + ')',
+						icon: 'copy',
+						disabled: locked,
+						tooltip: locked ? lockedTooltip : 'Copy this object\u2019s flow onto the other selected objects; references to this object point at each copy (one undo)',
+						action: () => import('./flowGive.js').then((m) => m.giveFlow(uuid, targets))
+					}
+				]
+			: []),
+		...(!multi && flowFamilySize(object, uuid) > 1
+			? [
+					{
+						label: 'Update all copies from this one (' + (flowFamilySize(object, uuid) - 1) + ')',
+						icon: 'refresh-cw',
+						disabled: locked,
+						tooltip: locked ? lockedTooltip : 'Copy this flow onto every object that shares it (they were given it with Give this flow to the selection); one undo',
+						action: () => import('./flowGive.js').then((m) => m.updateFlowFamily(uuid))
+					}
+				]
+			: []),
 		// 51 E1: this object's look becomes what the Scatter brush paints (a pristine kit piece as its pack item);
 		// one level down (51-int: the top level holds at 16 rows, the context-menu-redesign lock)
 		...(multi || object?.userData?.terrain || !hasMesh(object)
@@ -915,4 +939,21 @@ export function findMenuItem(items, label) {
 		}
 	}
 	return undefined;
+}
+
+/** 102b-flows: how many nodes an object's own flow has (0 = none) @param {string} uuid */
+function flowNodeCount(uuid) {
+	return graphOf(uuid)?.nodes?.length ?? 0;
+}
+
+/** 102b-flows: the size of the flow family `object` belongs to (itself + every object given its flow) @param {any} object @param {string} uuid */
+function flowFamilySize(object, uuid) {
+	const group = /** @type {any} */ (get(objectsGroup));
+	const from = object?.userData?.flowFrom;
+	const root = typeof from === 'string' && from && group?.getObjectByProperty?.('uuid', from) ? from : uuid;
+	let n = 0;
+	group?.traverse?.((/** @type {any} */ o) => {
+		if (o !== group && (o.uuid === root || o.userData?.flowFrom === root)) n++;
+	});
+	return n;
 }

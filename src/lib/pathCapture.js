@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { objectsGroup, selectedObjects, isLocked } from '../stores/sceneStore';
-import { resolveSelector } from './selectorCore.js'; // 102b-flows: a selector may name a set
+import { resolveTargets } from './selectorPick.js'; // 102b-flows: a selector may name a set
 import { findNodeAnyGraph, flowGraphs, activeGraphId, SCENE_GRAPH } from '../stores/flowStore';
 import { setNodeData } from './nodesHandler';
 import { showToast } from '../stores/appStore';
@@ -97,7 +97,7 @@ export function patrolTargets(node, graphId) {
 		const target = graph.nodes.find((/** @type {any} */ n) => n.id === edge.target);
 		if (target?.type !== 'objectselector') continue;
 		wired = true;
-		for (const uuid of resolveSelector(target.data, get(objectsGroup))) out.add(uuid);
+		for (const uuid of (resolveTargets(target.data, get(objectsGroup)) ?? [])) out.add(uuid);
 	}
 	if (!wired && graphId !== SCENE_GRAPH) out.add(graphId);
 	return out;

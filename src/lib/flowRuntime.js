@@ -136,7 +136,7 @@ import { runParkHooks } from './parkHooks.js'; // 68: extra parks (prop tracks),
 import { INPUT_LETTERS, socketCount, opFolds, foldMath, foldGate, switcherItems, switcherHandle, switcherIndexOf, switcherRadioIndex } from './variadicNodes.js';
 import { blendSpeedWeights, smoothWeights, clipForSlot } from './tpanim/blendSpeed.js'; // 57 M3 (a leaf)
 import { newTracker, trackPose } from './avatars/locomotion.js'; // 57 M3: a stream-safe speed (a leaf)
-import { isManySelector, resolveSelector, selectorKey, describeSet } from './selectorCore.js'; // 102b-flows (a leaf)
+import { isManySelector, resolveTargets, selectorKey, selectorCoreNow, loadSelectorCore } from './selectorPick.js'; // 102b-flows (a leaf; the resolver is lazy)
 
 // H3: inputRuntime is reached via a PRIMED dynamic import (the moduleSDK
 // pattern) — a static edge would close the TDZ cycle history -> flowRuntime ->
@@ -529,13 +529,14 @@ let dormant = new Set();
 /** what the runtime evaluates: every graph but the dormant ones, minus muted/editor-only nodes */
 function rebuildRuntimeGraph() {
 	dormant = orphanGraphIds();
-	if (!dormant.size) {
-		({ nodes, edges } = runtimeGraph(allNodes(), allEdges()));
-		return;
+	if (!dormant.size) ({ nodes, edges } = runtimeGraph(allNodes(), allEdges()));
+	else {
+		const live = allNodes().filter((n) => !dormant.has(n.__graph));
+		const ids = new Set(live.map((n) => n.id));
+		({ nodes, edges } = runtimeGraph(live, allEdges().filter((e) => ids.has(e.source) && ids.has(e.target))));
 	}
-	const live = allNodes().filter((n) => !dormant.has(n.__graph));
-	const ids = new Set(live.map((n) => n.id));
-	({ nodes, edges } = runtimeGraph(live, allEdges().filter((e) => ids.has(e.source) && ids.has(e.target))));
+	// 102b-flows: a graph with a tag / group / name selector fetches the resolver chunk now, not on first use
+	if (!selectorCoreNow() && nodes.some((n) => n.type === 'objectselector' && isManySelector(n.data))) void loadSelectorCore();
 }
 
 /** the debug hook / e2e: what the runtime evaluates right now, and which object graphs sleep */
@@ -2752,7 +2753,9 @@ function manyTargetsOf(selector) {
 	const at = performance.now();
 	let hit = selectorMemo.get(key);
 	if (!hit || hit.epoch !== selectorEpoch || at - hit.at > 250) {
-		const list = resolveSelector(selector.data, sceneObjects);
+		// null = the resolver chunk is still loading: an empty set for now, and not memoised
+		const list = resolveTargets(selector.data, sceneObjects);
+		if (!list) return { list: /** @type {string[]} */ ([]), set: new Set() };
 		if (selectorMemo.size > 256) selectorMemo.clear();
 		hit = { epoch: selectorEpoch, at, list, set: new Set(list) };
 		selectorMemo.set(key, hit);
@@ -5247,14 +5250,17 @@ function debugTickBegin(liveTime) {
 /** 102b-flows: the debugger's line for a set — null for every node that touches no many-target selector @param {any} node */
 function debugSetText(node) {
 	const name = (/** @type {string} */ u) => objectNameOf(u);
-	if (node.type === 'objectselector') return isManySelector(node.data) ? 'Resolves to ' + describeSet([...selectorTargets(node)], name, 6) : null;
+	const core = selectorCoreNow();
+	/** @param {string[]} list */
+	const say = (list) => (core ? core.describeSet(list, name, 6) : list.length + ' objects');
+	if (node.type === 'objectselector') return isManySelector(node.data) ? 'Resolves to ' + say([...selectorTargets(node)]) : null;
 	const sels = manySelectorsReached(node.id);
 	if (!sels.length) return null;
 	/** @type {Set<string>} */
 	const all = new Set();
 	for (const id of sels) for (const u of selectorTargets(nodeById(nodes, id))) all.add(u);
 	const fired = firedObjects.get(node.id);
-	return 'Acts on ' + describeSet([...all], name, 6) + (fired ? ' · fired last for ' + (objectNameOf(fired) ?? 'an object') : '');
+	return 'Acts on ' + say([...all]) + (fired ? ' · fired last for ' + (objectNameOf(fired) ?? 'an object') : '');
 }
 
 /** a node's name as the panel shows it @param {any} node */

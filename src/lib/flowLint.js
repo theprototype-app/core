@@ -11,7 +11,7 @@
 // `filter`, On Impact's `filter`) is not this — that is how a filter is meant to be wired.
 //
 // Pure: nodes + edges in, findings out. No store, no DOM.
-import { isManySelector, describeSelector } from './selectorCore.js'; // 102b-flows (a pure leaf)
+import { isManySelector, describeSelector } from './selectorPick.js'; // 102b-flows (a pure leaf)
 
 /** Triggers that find their object through `reachesObjectSelector` (flowRuntime's fire* paths). */
 export const SELECTOR_TRIGGERS = new Set([

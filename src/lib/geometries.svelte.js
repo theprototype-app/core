@@ -20,7 +20,7 @@ import { globalScene, objectsGroup, TControls, lockedObjects, selectedObject, se
 import { sanitizeTransform } from './wireValidate';
 import { noteWireError } from './wireErrors';
 import { stampedRows, sortLockTable, claimStamp, holderOf } from './lockTrust'; // 80a K3
-import { myClaim } from './lockHeld';
+import { myClaim, raceFloor } from './lockHeld';
 import { sessionNow } from './sessionClock';
 
 //Access scene Store
@@ -437,7 +437,7 @@ export function lockGeometry(uuid, peerId, uuids, ats) {
     const wanted = stampedRows(peerId, list, uuids && uuids.length ? ats : undefined)
         .filter((/** @type {any} */ row) => typeof row[1] === 'string' && inScene.has(row[1]) && !seen.has(row[1]) && !!seen.add(row[1]))
         .map((/** @type {any} */ row) => {
-            const at = claimStamp({ claimed: row[2], prev: prev.get(row[1]), contested: !!holderOf(othersOf.get(row[1]) ?? [], row[1], myClaim(row[1])), now });
+            const at = claimStamp({ claimed: row[2], prev: prev.get(row[1]), contested: !!holderOf(othersOf.get(row[1]) ?? [], row[1], myClaim(row[1])), now, floor: raceFloor(peerId, now) });
             return at === undefined ? [row[0], row[1]] : [row[0], row[1], at];
         });
     if (!wanted.length) return;

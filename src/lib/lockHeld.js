@@ -10,7 +10,7 @@ import { writable, get } from 'svelte/store';
 import { lockedObjects } from '../stores/sceneStore';
 import { peers, userdata } from '../stores/appStore';
 import { sessionNow } from './sessionClock';
-import { holderOf, LOCK_ROWS_PER_PEER } from './lockTrust';
+import { holderOf, LOCK_ROWS_PER_PEER, LOCK_RACE_MS } from './lockTrust';
 
 /** @type {import('svelte/store').Writable<Map<string, number>>} uuid -> when we took it */
 export const myLocks = writable(new Map());
@@ -156,4 +156,60 @@ export function touchMyLock(uuid) {
 /** How long since we last edited each object we hold @param {number} [now] @returns {[string, number][]} */
 export function myLockIdle(now = Date.now()) {
 	return [...get(myLocks).keys()].map((u) => [u, now - (lastTouch.get(u) ?? now)]);
+}
+
+// ---------------------------------------------------------------------------------------------
+// 80a K6: a link that drops and comes back keeps every lock on both sides, and each side re-sends
+// its set in the heal handshake. Claims either side made while the link was down arrive late, so for
+// a short while after the heal a claim from that peer may be dated back to the last message we heard
+// from it (not just LOCK_RACE_MS): a link delivers in order, so anything it sent before that message
+// has arrived, and both sides then compare the real stamps of what was lost and agree on one holder.
+
+/** how far back a claim from a link that just came back may be dated at most (the reconnect window) */
+export const LOCK_HEAL_BACKDATE_MS = 16000;
+/** that allowance lasts this long after the heal (the heal handshake's lock set lands well inside it) */
+export const LOCK_HEAL_FLOOR_MS = 10000;
+/** @type {Map<string, number>} peer -> session-clock moment of the last message from it */
+const heardAt = new Map();
+/** @type {Map<string, {heard: number | null, until: number}>} peer -> the heal allowance */
+const healFloor = new Map();
+
+/** @param {Map<string, any>} map */
+const trim = (map) => {
+	if (map.size > 256) map.delete(/** @type {string} */ (map.keys().next().value));
+};
+
+/** A message from `peerId` arrived @param {string} peerId @param {number} [now] */
+export function noteHeard(peerId, now = sessionNow()) {
+	heardAt.set(peerId, now);
+	trim(heardAt);
+}
+
+/** The link to `peerId` came back (a heal handshake) @param {string} peerId @param {number} [now] */
+export function noteLinkHealed(peerId, now = sessionNow()) {
+	const cur = healFloor.get(peerId);
+	// a second heal path for the same drop keeps the first one's moment (the handshake has been heard since)
+	if (cur && now <= cur.until) {
+		cur.until = now + LOCK_HEAL_FLOOR_MS;
+		return;
+	}
+	healFloor.delete(peerId);
+	healFloor.set(peerId, { heard: heardAt.get(peerId) ?? null, until: now + LOCK_HEAL_FLOOR_MS });
+	trim(healFloor);
+}
+
+/** The peer is gone for good @param {string} peerId */
+export function forgetLink(peerId) {
+	heardAt.delete(peerId);
+	healFloor.delete(peerId);
+}
+
+/**
+ * How far back a contested claim from `peerId` may be dated (lockTrust.claimStamp's floor).
+ * @param {string} peerId @param {number} now session clock
+ */
+export function raceFloor(peerId, now) {
+	const s = healFloor.get(peerId);
+	if (!s || now > s.until) return now - LOCK_RACE_MS;
+	return Math.max(s.heard ?? -Infinity, now - LOCK_HEAL_BACKDATE_MS) - LOCK_RACE_MS;
 }

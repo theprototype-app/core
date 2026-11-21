@@ -79,9 +79,9 @@ import { applyRemoteManifest, sendProjectManifest } from '$lib/projectManifest';
 import { applyRemotePeerVars, dropPeerVars, sendPeerVarsState } from '$lib/peerVars';
 import { applyModuleMessage, moduleVersions, checkModuleVersions, checkPeerAppVersion, sendModuleStates, applyModuleStates } from '$lib/moduleSDK';
 import { APP_VERSION, COMMIT_SHA } from '$lib/version.js';
-import { applyLockRequest, applyUnlock, applyLockDenied, applyRemoteLock, applyLockReject, yieldLostLocks, gateLockedEdit, dropPeerLockState, releaseOnHeal, startLockLifecycle, releaseEditLock } from '$lib/lockControl';
+import { applyLockRequest, applyUnlock, applyLockDenied, applyRemoteLock, applyLockReject, yieldLostLocks, gateLockedEdit, dropPeerLockState, healLinkLocks, startLockLifecycle, releaseEditLock } from '$lib/lockControl';
 import { applyLockMode, lockModeMessage, registerLockModeHooks, claimForEdit } from '$lib/lockMode'; // 80a K15
-import { myLockRows, touchMyLock } from '$lib/lockHeld'; // 80a K3 / K6
+import { myLockRows, touchMyLock, noteHeard } from '$lib/lockHeld'; // 80a K3 / K6
 import { gatedUuid } from '$lib/lockTrust';
 import { applyDrawLive, applyDrawEnd } from '$lib/drawMode';
 import { applySimulate, applySimVote, applySimHandoff, physicsExternalMove, applyThrow, applyHit, simulating, simPaused, remoteSimulating } from '$lib/physics';
@@ -1308,6 +1308,8 @@ export class PeerConnection {
 			// The dispatch chain itself, called from the guarded handler below. Naming it is
 			// what lets a try/catch wrap 440 lines without re-indenting any of them.
 			const dispatch = (/** @type {any} */ data) => {
+				// 80a K6: when we last heard this peer (a heal dates its lost claims no further back; lockHeld.raceFloor)
+				if (data?.type !== 'relink') noteHeard(conn.peer);
 				// A build with roles, before its plugin has spoken: nobody can say yet what this peer may
 				// do. The message waits (in order) and comes back through this whole chain, gate included.
 				if (data && rolesPending() && !isFloorMessage(data.type)) {
@@ -2256,12 +2258,11 @@ export class PeerConnection {
 	// Send the initial handshake (locks, known hosts, whitelist, object/node sync requests).
 	// Must only be called once the connection is open — messages sent earlier are dropped by peerjs.
 	/** @param {any} conn @param {string} peerId @param {boolean} getobjects @param {string} id
-	 * @param {{heal?: boolean, keepLocks?: boolean}} [opts] heal: this conn REPLACES one that dropped (the reconnect window);
-	 * keepLocks: the drop was the peer's report (relink), not one we saw, so what we hold stays held */
+	 * @param {{heal?: boolean}} [opts] heal: this conn REPLACES one that dropped (the reconnect window) */
 	sendHandshake(conn, peerId, getobjects, id, opts = {}) {
-		// 80a K6: a healed link lets go of what was held across the drop, on both sides, before this
-		// handshake's `locked` is built (QUESTIONS-80a-locks Q1/Q2; fix4-net's heal paths all land here)
-		if (opts.heal && !opts.keepLocks) releaseOnHeal(peerId);
+		// 80a K6: a healed link keeps what both sides hold; this handshake's `locked` re-sends ours, and claims
+		// made while it was down are compared by their real stamps for a short while (lockControl.healLinkLocks)
+		if (opts.heal) healLinkLocks(peerId);
 		noteNodeSyncHandshake(peerId) // 54i row g: the nodesync join window runs from the link, not a later first nodesync
 		// 25-F: an approval dial-back SAYS it is one, ahead of everything else (the roadmap's
 		// "first message"). The metadata already carried it; this is the same answer for a
@@ -3016,9 +3017,9 @@ export class PeerConnection {
 		try { stale.close(); } catch (e) { /* already dead */ }
 		this.openedPeers.add(peerId);
 		peers.update((value) => value);
-		// what we sent while the link was dead never arrived, and what they answered went to it. Our locks stay:
-		// the drop is theirs to tell, and only a drop we saw ourselves lets go of what we hold (releaseOnHeal)
-		this.sendHandshake(conn, peerId, true, this.peer.id, { heal: true, keepLocks: true });
+		// what we sent while the link was dead never arrived, and what they answered went to it (our locks stay
+		// held and go out again, as on every heal)
+		this.sendHandshake(conn, peerId, true, this.peer.id, { heal: true });
 	}
 
 	/** One reconnect-window dial: the lower id only, and never over a dial already in flight.
@@ -3071,6 +3072,7 @@ export class PeerConnection {
 		}
 		this.openedPeers.delete(peerId);
 		this.dropFastPeer(peerId); // 60 Q2
+		dropPeerLockState(peerId); // 80a K6: its parked edits and heal pacing
 		handleDisconnected(peerId);
 		clearPeerPreview(peerId); // 16-P5
 		perfLivePeerGone(peerId); // 34 PF

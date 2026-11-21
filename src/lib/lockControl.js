@@ -5,7 +5,7 @@ import { selectObject, applySelectionSet, deselectObject } from './objectActions
 import { registerLockModeHooks, clearEditTimers, resetLockMode, lockOnEdit, lockMode } from './lockMode';
 import { sessionHost } from './connectionState';
 import { createRequestLimiter, holdsLock, isHeld, holderOf, gatedUuid, lockGateVerdict } from './lockTrust';
-import { myLocks, myClaim, dropMyLocks, heldByMe, holderNow, nameOf, lockedView } from './lockHeld';
+import { myLocks, myClaim, dropMyLocks, heldByMe, holderNow, nameOf, lockedView, noteLinkHealed, forgetLink } from './lockHeld';
 import { lockGeometry } from './geometries.svelte';
 
 // Lock visibility + polite takeover: request control of a locked object, the
@@ -246,6 +246,7 @@ export function flushParked() {
 
 /** a peer left: its parked edits go with it @param {string} peerId */
 export function dropPeerLockState(peerId) {
+	forgetLink(peerId);
 	for (const [key, entry] of parked) if (key.startsWith(peerId + '\n')) (clearTimeout(entry.timer), parked.delete(key));
 	for (const key of rejectAt.keys()) if (key.startsWith(peerId + '\n')) rejectAt.delete(key);
 	for (const [key, t] of healTimers) if (key.startsWith(peerId + '\n')) (clearTimeout(t), healTimers.delete(key));
@@ -260,10 +261,6 @@ const healTimers = new Map();
 /** one `lockreject` per peer and object in this window; the heal goes this long after the last refused edit */
 export const LOCK_REJECT_GAP_MS = 500;
 export const LOCK_HEAL_MS = 300;
-/** a healed link lets go of held objects at most once per peer in this window */
-export const LOCK_HEAL_RELEASE_GAP_MS = 30000;
-/** @type {Map<string, number>} peer -> last heal let-go */
-const healReleaseAt = new Map();
 /** at most one heal per peer (and object) in this window */
 export const LOCK_HEAL_GAP_MS = 1000;
 /** @type {Map<string, number>} heal key -> when it last went */
@@ -367,7 +364,7 @@ export function applyLockReject(data, from) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// 80a K6: letting go on purpose (Release, idle expiry, a healed connection).
+// 80a K6: letting go on purpose (Release, idle expiry), and a connection that comes back.
 
 /**
  * Let go of `uuids`: out of the selection (which re-sends our lock set) and an `unlock` for any we
@@ -388,30 +385,15 @@ export function letGoOf(uuids) {
 
 /**
  * A dropped connection to `peerId` came back (fix4-net's heal paths all end in sendHandshake with
- * `heal`). Neither side knows which of us was offline, and a claim kept across the drop keeps its
- * old stamp, which would win the tie-break against someone who took the object meanwhile. So both
- * sides forget the healed peer's rows and let go of what they hold, BEFORE the heal handshake goes
- * out (it then carries an empty held set). QUESTIONS-80a-locks Q2.
+ * `heal`). Both sides keep what they hold: the heal handshake re-sends each side's set (`locked`
+ * carries myLockRows), which replaces the other side's stored set (commandsHandler.lockRestore)
+ * and keeps the stamps already stored for what it held before the drop. A claim either side made
+ * while the link was down may, for a short while, be dated back to the last message heard over it (lockHeld.raceFloor), so
+ * both sides compare the same stamps and agree on one holder; the loser yields (yieldLostLocks).
  * @param {string} peerId
  */
-export function releaseOnHeal(peerId) {
-	const now = Date.now();
-	const last = healReleaseAt.get(peerId) ?? -Infinity;
-	healReleaseAt.set(peerId, now);
-	if (healReleaseAt.size > 256) healReleaseAt.delete(/** @type {string} */ (healReleaseAt.keys().next().value));
-	// one let-go per peer in LOCK_HEAL_RELEASE_GAP_MS: a link that heals again at once keeps what was taken since
-	if (now - last < LOCK_HEAL_RELEASE_GAP_MS) return;
-	lockedObjects.update((locks) => {
-		const next = locks.filter((l) => l[0] !== peerId);
-		return next.length === locks.length ? locks : next;
-	});
-	dropPeerLockState(peerId);
-	const mine = [...get(myLocks).keys()];
-	if (!mine.length) return;
-	letGoOf(mine);
-	showToast(
-		'Connection to ' + nameOf(peerId) + ' came back: you let go of ' + (mine.length === 1 ? '"' + objectName(mine[0]) + '"' : mine.length + ' objects') + ', select again to keep editing'
-	);
+export function healLinkLocks(peerId) {
+	noteLinkHealed(peerId);
 }
 
 /**

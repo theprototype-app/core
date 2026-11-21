@@ -232,18 +232,27 @@ export function lockGateVerdict({ data, from, table, mine, runtime }) {
 /** how far back a new claim on a HELD object may be dated: one-way latency plus clock error */
 export const LOCK_RACE_MS = 2000;
 
+/** a stamp is kept within this much of now: no claim is dated in the future, none further back than a day's half */
+export const LOCK_STAMP_AHEAD_MS = 5 * 60 * 1000;
+export const LOCK_STAMP_BACK_MS = 12 * 60 * 60 * 1000;
+
+/** @param {number} at @param {number} now */
+const inClock = (at, now) => Math.min(Math.max(at, now - LOCK_STAMP_BACK_MS), now + LOCK_STAMP_AHEAD_MS);
+
 /**
  * The stamp we store for one row of a peer's `lock` set. An object the peer already held keeps the
  * stamp we stored then (a re-sent set cannot re-date it). A claim on an object somebody else holds
- * is a race only if it was made about when it arrived: it may not be dated earlier than
- * `LOCK_RACE_MS` before now, so a claim dated back cannot take an object held for longer.
- * @param {{claimed: any, prev: number | undefined, contested: boolean, now: number}} ctx
+ * is a race only if it was made about when it arrived: it may not be dated earlier than `floor`
+ * (`LOCK_RACE_MS` before now; a link that just came back may date back to when it dropped,
+ * lockHeld.raceFloor), so a claim dated back cannot take an object held for longer.
+ * @param {{claimed: any, prev: number | undefined, contested: boolean, now: number, floor?: number}} ctx
  * @returns {number | undefined}
  */
-export function claimStamp({ claimed, prev, contested, now }) {
+export function claimStamp({ claimed, prev, contested, now, floor = now - LOCK_RACE_MS }) {
 	if (isStamp(prev)) return prev;
 	if (!isStamp(claimed)) return undefined;
-	return contested ? Math.max(claimed, now - LOCK_RACE_MS) : claimed;
+	const at = inClock(claimed, now);
+	return contested ? Math.max(at, Math.min(floor, now)) : at;
 }
 
 /**
@@ -251,10 +260,11 @@ export function claimStamp({ claimed, prev, contested, now }) {
  * its stamp, and a claim on an object someone else holds (or we do: `mineOf`) is not dated back past LOCK_RACE_MS.
  * @param {any[][]} rows accepted rows (acceptedLockRows) @param {any[] | null | undefined} table the current table
  * @param {(uuid: string) => any} mineOf our own claim of an object (lockHeld.myClaim) @param {number} now session clock
- * @param {{from?: string | null, fromHost?: boolean}} [opts] from = the sender; fromHost = it is the session host
+ * @param {{from?: string | null, fromHost?: boolean, floor?: number}} [opts] from = the sender; fromHost = it is the session host;
+ *   floor = how far back a contested claim may be dated (claimStamp)
  * @returns {any[][]}
  */
-export function stampRestoredRows(rows, table, mineOf, now, { from = null, fromHost = false } = {}) {
+export function stampRestoredRows(rows, table, mineOf, now, { from = null, fromHost = false, floor = now - LOCK_RACE_MS } = {}) {
 	const base = Array.isArray(table) ? table.filter(isRow) : [];
 	/** @type {Map<string, any[][]>} */
 	const byUuid = new Map();
@@ -267,11 +277,11 @@ export function stampRestoredRows(rows, table, mineOf, now, { from = null, fromH
 		if (row.length < 3) return row;
 		// the host's table is the session's record of who took what first: its rows about other people
 		// keep their stamps (a late joiner learns the real order even if a peer's own claim came first)
-		if (fromHost && row[0] !== from) return row;
+		if (fromHost && row[0] !== from) return [row[0], row[1], inClock(row[2], now)];
 		const same = byUuid.get(row[1]) ?? [];
 		const prev = same.find((l) => l[0] === row[0]);
 		const others = same.filter((l) => l[0] !== row[0]);
-		const at = claimStamp({ claimed: row[2], prev: prev?.[2], contested: !!holderOf(others, row[1], mineOf(row[1])), now });
+		const at = claimStamp({ claimed: row[2], prev: prev?.[2], contested: !!holderOf(others, row[1], mineOf(row[1])), now, floor });
 		return at === undefined ? [row[0], row[1]] : [row[0], row[1], at];
 	});
 }

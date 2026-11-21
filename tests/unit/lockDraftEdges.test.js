@@ -274,18 +274,49 @@ describe('heal answers are paced', () => {
 		expect(VALIDATORS.lock(msg)).toBe(true);
 		myLocks.set(new Map());
 	});
-	it('a link that heals again at once does not make us let go twice', async () => {
+	it('a link that comes back keeps what we hold', async () => {
 		const lc = await import('../../src/lib/lockControl.js');
 		const { myLocks } = await import('../../src/lib/lockHeld.js');
 		const { peers } = await import('../../src/stores/appStore.js');
 		peers.set({ peer: { id: 'me' }, connections: {}, send: () => {} });
-		myLocks.set(new Map());
-		lc.releaseOnHeal('p1'); // first heal: nothing held, still counts
 		myLocks.set(new Map([['A', 1]]));
-		lc.releaseOnHeal('p1');
+		lc.healLinkLocks('p1');
+		lc.healLinkLocks('p1');
 		expect(get(myLocks).has('A')).toBe(true);
-		vi.advanceTimersByTime(lc.LOCK_HEAL_RELEASE_GAP_MS + 1);
-		lc.releaseOnHeal('p1');
-		expect(get(myLocks).has('A')).toBe(false);
+		myLocks.set(new Map());
+	});
+	it('claims made while a link was down are compared by their real stamps, the same on both sides', async () => {
+		const { noteHeard, noteLinkHealed, raceFloor, forgetLink, LOCK_HEAL_FLOOR_MS, LOCK_HEAL_BACKDATE_MS } = await import('../../src/lib/lockHeld.js');
+		const down = 1_000_000;
+		const healed = down + 6000;
+		// the last messages each side heard came just before the drop; during the drop H took Z at down+1000, E at down+3000
+		for (const p of ['H', 'E']) (noteHeard(p, down), noteLinkHealed(p, healed));
+		// the heal handshake is heard, and a second heal path for the same drop keeps the first moment
+		for (const p of ['H', 'E']) (noteHeard(p, healed + 10), noteLinkHealed(p, healed + 20));
+		const at = healed + 50;
+		// on E: H's row arrives against E's own claim; on H: E's row arrives against H's own claim
+		const onE = stampRestoredRows([['H', 'Z', down + 1000]], [], (u) => (u === 'Z' ? { self: 'E', at: down + 3000 } : null), at, { floor: raceFloor('H', at) });
+		const onH = stampRestoredRows([['E', 'Z', down + 3000]], [], (u) => (u === 'Z' ? { self: 'H', at: down + 1000 } : null), at, { floor: raceFloor('E', at) });
+		expect(holderOf(onE, 'Z', { self: 'E', at: down + 3000 })).toBe('H');
+		expect(holderOf(onH, 'Z', { self: 'H', at: down + 1000 })).toBe('H');
+		// a claim dated before the drop still cannot take an object held since then
+		expect(stampRestoredRows([['H', 'Y', 5]], [['E', 'Y', down - 60000]], () => null, at, { floor: raceFloor('H', at) })[0][2]).toBe(down - LOCK_RACE_MS);
+		// a peer we never heard dates back no further than the reconnect window
+		noteLinkHealed('R', healed);
+		expect(raceFloor('R', at)).toBe(at - LOCK_HEAL_BACKDATE_MS - LOCK_RACE_MS);
+		// and the allowance ends: later claims are races again
+		expect(raceFloor('H', healed + 20 + LOCK_HEAL_FLOOR_MS + 1)).toBe(healed + 20 + LOCK_HEAL_FLOOR_MS + 1 - LOCK_RACE_MS);
+		for (const p of ['H', 'E', 'R']) forgetLink(p);
+		expect(raceFloor('H', at)).toBe(at - LOCK_RACE_MS);
+	});
+	it('a stamp from far ahead or far back is held to the clock', async () => {
+		const { claimStamp, LOCK_STAMP_AHEAD_MS, LOCK_STAMP_BACK_MS } = await import('../../src/lib/lockTrust.js');
+		const now = 50_000_000;
+		expect(claimStamp({ claimed: now + 1e12, prev: undefined, contested: false, now })).toBe(now + LOCK_STAMP_AHEAD_MS);
+		expect(claimStamp({ claimed: -1e300, prev: undefined, contested: false, now })).toBe(now - LOCK_STAMP_BACK_MS);
+		expect(claimStamp({ claimed: now - 1000, prev: undefined, contested: false, now })).toBe(now - 1000);
+		// the host's rows about other people are held to it too
+		const rows = stampRestoredRows([['bob', 'X', now + 1e12], ['eve', 'X', -1e300]], [], () => null, now, { from: 'host', fromHost: true });
+		expect(rows.map((r) => r[2])).toEqual([now + LOCK_STAMP_AHEAD_MS, now - LOCK_STAMP_BACK_MS]);
 	});
 });

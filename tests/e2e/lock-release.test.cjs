@@ -6,8 +6,9 @@
 // 3. Idle expiry (windows shortened through the debug hook: ask at 3 s, let go at 6 s): E is asked
 //    "Still editing ...?"; Keep holding restarts the count; an edit restarts it too; no answer = let go.
 // 4. Alone, nothing expires (a held object blocks nobody).
-// 5. A healed link (the heal handshake fix4-net's paths end in) lets go of what was held across it,
-//    on both sides, and the handshake carries an empty held set.
+// 5. A healed link (the heal handshake fix4-net's paths end in) keeps what both sides hold: X stays E's
+//    and Y stays H's on both pages, both selections stay, nobody is told to select again; a re-lock of
+//    E's object with an old stamp after the heal loses.
 const h = require('./helpers.cjs');
 
 const read = (page, name) => page.evaluate((n) => { let v; window.__tp.test.v1[n].subscribe((x) => (v = x))(); return Array.isArray(v) ? v.map((x) => (Array.isArray(x) ? [...x] : x)) : v; }, name);
@@ -113,7 +114,7 @@ h.run(async () => {
 	await h.eventually(() => toasts(E.page), (t) => t.some((x) => x.startsWith('You let go of "Crate"')), 'and E is told why');
 	await E.page.evaluate(() => window.__tp.test.v1.lockIdle.setLockIdleWindows({}));
 
-	// --- 5. a healed link lets go on both sides ---------------------------------------------------
+	// --- 5. a healed link keeps what both sides hold -----------------------------------------------
 	const Y = await H.page.evaluate(async () => {
 		const s = window.__tp.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
@@ -127,6 +128,10 @@ h.run(async () => {
 	await H.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), Y);
 	await h.eventually(() => holderOn(H.page, X), (v) => v === E.id, 'premise: E holds X');
 	await h.eventually(() => holderOn(E.page, Y), (v) => v === H.id, 'premise: H holds Y');
+	// a claim lost with a link is dated back at most LOCK_RACE_MS before the last message heard over it,
+	// so E's claim on X is older than that (the old-stamp re-lock below then has nothing to win against)
+	await E.page.waitForTimeout(3000);
+	const toastsBefore = new Set([...(await toasts(E.page)), ...(await toasts(H.page))]);
 	// the heal handshake, as reconnectDial / the inbound adoption / adoptRelink send it
 	await E.page.evaluate((hid) => {
 		/** @type {any} */ let p;
@@ -138,14 +143,22 @@ h.run(async () => {
 		window.__tp.test.v1.peers.subscribe((v) => (p = v))();
 		p.sendHandshake(p.connections[eid], eid, true, p.peer.id, { heal: true });
 	}, E.id);
-	await h.eventually(() => holderOn(H.page, X), (v) => !v, 'after the heal, X is free on H');
-	await h.eventually(() => holderOn(E.page, Y), (v) => !v, 'and Y is free on E');
-	h.check(!(await read(E.page, 'selectedObjects')).includes(X) && !(await read(H.page, 'selectedObjects')).includes(Y), 'both let go of their selection');
-	const hName = await shownName(E.page, H.id);
-	await h.eventually(() => toasts(E.page), (t) => t.some((x) => x.startsWith('Connection to ' + hName + ' came back')), 'and say why');
-	// it is a release, not a ban: selecting again takes it
-	await E.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), X);
-	await h.eventually(() => holderOn(H.page, X), (v) => v === E.id, 'selecting again takes it back');
+	// both handshakes have landed once each side has re-sent its set (give them the round trip)
+	await H.page.waitForTimeout(2500);
+	h.check((await holderOn(H.page, X)) === E.id && (await holderOn(E.page, X)) === E.id, 'after the heal, X is still E\'s on both pages');
+	h.check((await holderOn(E.page, Y)) === H.id && (await holderOn(H.page, Y)) === H.id, 'and Y is still H\'s on both pages');
+	h.check((await read(E.page, 'selectedObjects')).includes(X) && (await read(H.page, 'selectedObjects')).includes(Y), 'both keep their selection');
+	const fresh = [...(await toasts(E.page)), ...(await toasts(H.page))].filter((x) => !toastsBefore.has(x));
+	h.check(!fresh.some((x) => /came back|select again|let go/.test(x)), 'nobody is told they let go: ' + JSON.stringify(fresh));
+	// a re-lock with an old stamp loses: H claims X as if it had taken it at the start of the clock
+	await H.page.evaluate(({ x, eid }) => {
+		/** @type {any} */ let p;
+		window.__tp.test.v1.peers.subscribe((v) => (p = v))();
+		p.connections[eid].send({ type: 'lock', uuid: x, uuids: [x], ats: [1], peerId: p.peer.id });
+	}, { x: X, eid: E.id });
+	await E.page.waitForTimeout(1500);
+	h.check((await holderOn(E.page, X)) === E.id, 'an old-stamped claim after the heal does not take X from E');
+	h.check((await read(E.page, 'selectedObjects')).includes(X), 'and E keeps editing it');
 
 	await h.finish(browser);
 });

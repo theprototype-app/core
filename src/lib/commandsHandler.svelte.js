@@ -16,7 +16,7 @@ import { dropPeerClock } from '$lib/musicClock'
 import { applyRemoteDevice } from '$lib/audioDevices'
 import { sessionHost, dropPeerJoined, noteSnapshotAnswered } from '$lib/connectionState'
 import { acceptedLockRows, mergeLockRows, sortLockTable, stampRestoredRows } from '$lib/lockTrust'
-import { lockMessage, myClaim } from '$lib/lockHeld'
+import { lockMessage, myClaim, raceFloor } from '$lib/lockHeld'
 import { sessionNow } from '$lib/sessionClock'
 import { environment, editEnvSky } from '$lib/environment'
 import { hasAnimatedImport, sendAnimatedImport, setAnimationState, setClipRefs, setAnimGraph, attachToSocket, dropAllAnimatedImports, setVrmExpression } from '$lib/animatedImports'
@@ -339,10 +339,14 @@ export function lockRestore(lockeditems, from, fromHost, mayLock) {
     // 27-A: same trust, same fix — a non-array here threw inside the handshake.
     if (!Array.isArray(lockeditems)) return;
     const accepted = acceptedLockRows(lockeditems, { from, selfId: peer?.peer?.id, fromHost, mayLock });
-    if (!accepted.length) return;
     // 80a K3: the same stamp rule as a `lock` set (geometries.lockGeometry)
-    const rows = stampRestoredRows(accepted, locked, myClaim, sessionNow(), { from, fromHost });
-    locked = sortLockTable(mergeLockRows(locked, rows, { replace: !!fromHost }));
+    const now = sessionNow();
+    const rows = stampRestoredRows(accepted, locked, myClaim, now, { from, fromHost, floor: raceFloor(from, now) });
+    // 80a K6: the sender's own rows are its whole held set (sendHandshake sends myLockRows), like a `lock`
+    // set: what it let go of while a link was down goes, what it still holds keeps the stamp stored before
+    const rest = locked.filter((/** @type {any} */ l) => l[0] !== from);
+    if (!rows.length && rest.length === locked.length) return;
+    locked = sortLockTable(mergeLockRows(rest, rows, { replace: !!fromHost }));
     lockedObjects.set(locked);
 }
 

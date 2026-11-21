@@ -11,7 +11,7 @@
 // `filter`, On Impact's `filter`) is not this — that is how a filter is meant to be wired.
 //
 // Pure: nodes + edges in, findings out. No store, no DOM.
-import { isManySelector, describeSelector } from './selectorPick.js'; // 102b-flows (a pure leaf)
+import { isManySelector, pickOf, matchOf } from './selectorPick.js'; // 102b-flows (a pure leaf)
 
 /** Triggers that find their object through `reachesObjectSelector` (flowRuntime's fire* paths). */
 export const SELECTOR_TRIGGERS = new Set([
@@ -90,7 +90,7 @@ export function lintFlowGraph(nodes, edges, opts = {}) {
 					edgeId: String(edge.id),
 					source: edge.source,
 					target: edge.target,
-					message: `The Object Selector picks objects ${describeSelector(target.data, () => null)} and matches none, so ${nameOf(source)} acts on nothing.`
+					message: `The Object Selector (by ${pickOf(target.data)}${pickOf(target.data) === 'group' ? '' : ' "' + matchOf(target.data) + '"'}) matches no objects, so ${nameOf(source)} acts on nothing.`
 				});
 		}
 		if (!isReversedTriggerEdge(edge, source, target)) continue;

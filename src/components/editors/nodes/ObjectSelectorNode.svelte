@@ -23,10 +23,10 @@
 	// with a tag, every object in a group, or every object whose name matches. Effects wired in act
 	// on all of them; triggers wired in fire for any of them (Fired Object says which).
 	const PICKS = [
-		{ value: 'object', label: 'One object', title: 'Drive one object' },
-		{ value: 'tag', label: 'By tag', title: 'Drive every object with a tag (Inspector > Tags)' },
-		{ value: 'group', label: 'By group', title: 'Drive every object inside a group' },
-		{ value: 'name', label: 'By name', title: 'Drive every object whose name matches: Star* , *coin* , enemy ? (no * = contains)' }
+		{ value: 'object', label: 'One object', title: 'One object' },
+		{ value: 'tag', label: 'By tag', title: 'Every object with a tag (Inspector > Tags)' },
+		{ value: 'group', label: 'By group', title: 'Every object in a group' },
+		{ value: 'name', label: 'By name', title: 'Every object whose name matches: Star*, coin (contains)' }
 	];
 	let pick: string;
 	$: pick = pickOf(data);
@@ -50,7 +50,7 @@
 			on:change={(e) => setPick(e.currentTarget.value)}
 		>
 			{#each PICKS as p (p.value)}
-				<option value={p.value} title={p.title}>{p.label}</option>
+				<option value={p.value}>{p.label}</option>
 			{/each}
 		</select>
 		{#if pick === 'object'}

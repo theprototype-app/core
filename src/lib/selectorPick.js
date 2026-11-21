@@ -49,12 +49,6 @@ export function normalizeTags(list) {
 	return out.length ? out : null;
 }
 
-/** the tags an object carries (never throws) @param {any} object @returns {string[]} */
-export function tagsOf(object) {
-	const tags = object?.userData?.tags;
-	return Array.isArray(tags) ? tags.filter((t) => typeof t === 'string') : [];
-}
-
 /** the selector's pick, normalised ('object' for anything unknown or absent) @param {any} data */
 export function pickOf(data) {
 	const p = data?.pick;
@@ -75,19 +69,6 @@ export function matchOf(data) {
 /** a key two selectors with the same question share (the runtime's per-tick memo) @param {any} data */
 export function selectorKey(data) {
 	return pickOf(data) + '\u0000' + matchOf(data).toLowerCase();
-}
-
-/**
- * The words a card, the debugger and the agent tools use for a selector's question.
- * @param {any} data @param {(uuid: string) => string | null} [nameOf] a group uuid -> its name
- */
-export function describeSelector(data, nameOf) {
-	const pick = pickOf(data);
-	const match = matchOf(data);
-	if (pick === 'tag') return match ? `tagged "${match}"` : 'a tag (none chosen)';
-	if (pick === 'name') return match ? `named like "${match}"` : 'a name pattern (none typed)';
-	if (pick === 'group') return match ? `in group ${nameOf?.(match) ?? 'that is gone'}` : 'a group (none chosen)';
-	return 'one object';
 }
 
 /** bumped when the lazy resolver arrives (a card / the lint re-read their sets) */

@@ -12,10 +12,10 @@ export default {
 			type: 'objectselector', label: 'Object Selector', defaults: { selected: '-None-' },
 			// 102b-flows: what it picks — absent (`legacy`) = the one `selected` object, every saved selector
 			params: [
-				{ key: 'pick', kind: 'select', options: ['object', 'tag', 'group', 'name'], legacy: 'object', doc: 'object = the one `selected`; tag / group / name = every matching object' },
-				{ key: 'match', kind: 'text', placeholder: 'the tag, group uuid or name pattern (Star*, *coin*)', maxLength: 120, doc: 'pick tag: a tag; group: a group uuid; name: a glob (* any, ? one; no * = contains)' }
+				{ key: 'pick', kind: 'select', options: ['object', 'tag', 'group', 'name'], legacy: 'object' },
+				{ key: 'match', kind: 'text', maxLength: 120, doc: 'tag: a tag; group: a group uuid; name: a glob (Star*, ? = one character, no * = contains)' }
 			],
-			note: 'Pick by tag, group or name to drive many objects with one flow. Effects act on every match; a trigger fires for any of them (Fired Object says which).',
+			note: 'Pick by tag, group or name: effects act on every match, a trigger fires for any (Fired Object says which).',
 			sockets: { out: 'object', in: { _default: 'effect' } },
 			card: 'ObjectSelectorNode',
 			eval(node, { d }, rt) {
@@ -34,8 +34,7 @@ export default {
 			label: 'Fired Object',
 			defaults: {},
 			inputs: ['trigger'],
-			inputLabels: { trigger: 'trigger - wire On Click, On Enter, On Hit...' },
-			note: 'The object the wired trigger fired for last. Use it with an Object Selector that picks by tag, group or name.',
+			note: 'The object the wired trigger fired for last.',
 			sockets: { out: 'object', in: { trigger: 'event' } },
 			card: 'AnimationNode',
 			eval(node, { allEdges }, rt) {

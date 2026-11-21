@@ -801,7 +801,7 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 						label: 'Give this flow to the selection (' + (targets.length - 1) + ')',
 						icon: 'copy',
 						disabled: locked,
-						tooltip: locked ? lockedTooltip : 'Copy this object\u2019s flow onto the other selected objects; references to this object point at each copy (one undo)',
+						tooltip: locked ? lockedTooltip : 'Copy this flow onto the other selected objects (one undo)',
 						action: () => import('./flowGive.js').then((m) => m.giveFlow(uuid, targets))
 					}
 				]
@@ -812,7 +812,7 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 						label: 'Update all copies from this one (' + (flowFamilySize(object, uuid) - 1) + ')',
 						icon: 'refresh-cw',
 						disabled: locked,
-						tooltip: locked ? lockedTooltip : 'Copy this flow onto every object that shares it (they were given it with Give this flow to the selection); one undo',
+						tooltip: locked ? lockedTooltip : 'Copy this flow onto every object that was given it (one undo)',
 						action: () => import('./flowGive.js').then((m) => m.updateFlowFamily(uuid))
 					}
 				]

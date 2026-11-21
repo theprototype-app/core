@@ -3,8 +3,28 @@
 // runtime, no DOM — the runtime, the node card, flow lint, the agent tools and the unit tests all
 // ask these functions the same question.
 
-import { MAX_SET, normalizeTag, tagsOf, pickOf, matchOf } from './selectorPick.js';
+import { MAX_SET, normalizeTag, pickOf, matchOf } from './selectorPick.js';
 export * from './selectorPick.js';
+
+/** the tags an object carries (never throws) @param {any} object @returns {string[]} */
+export function tagsOf(object) {
+	const tags = object?.userData?.tags;
+	return Array.isArray(tags) ? tags.filter((t) => typeof t === 'string') : [];
+}
+
+/**
+ * The words a card, the debugger and the agent tools use for a selector's question.
+ * @param {any} data @param {(uuid: string) => string | null} [nameOf] a group uuid -> its name
+ */
+export function describeSelector(data, nameOf) {
+	const pick = pickOf(data);
+	const match = matchOf(data);
+	if (pick === 'tag') return match ? `tagged "${match}"` : 'a tag (none chosen)';
+	if (pick === 'name') return match ? `named like "${match}"` : 'a name pattern (none typed)';
+	if (pick === 'group') return match ? `in group ${nameOf?.(match) ?? 'that is gone'}` : 'a group (none chosen)';
+	return 'one object';
+}
+
 
 /** does `object` carry `tag` (case-insensitive)? @param {any} object @param {string} tag */
 export function hasTag(object, tag) {

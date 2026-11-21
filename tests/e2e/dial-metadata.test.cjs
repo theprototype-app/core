@@ -107,10 +107,20 @@ h.run(async () => {
 	const restored = await lastDial(J, 'bbbb1');
 	h.check((await dials(J)).filter((d) => d.id === 'bbbb1').length === 2, 'premise: the restore re-dialled');
 	h.check(JSON.stringify(restored?.opts?.metadata?.cloud) === JSON.stringify(META), 'the restore re-dial carries the same metadata');
-	// a plain dial to the same peer forgets it
+	// a plain dial to the same peer forgets it. fix-batch-4 G23: the restore's dial to bbbb1 is still pending
+	// (the stub never opens), so connectToPeer hands the new dial to restoreWhenStale, which redials once that
+	// pending dial is DIAL_GRACE_MS (10 s) old — reading the last dial 300 ms later read the RESTORE (with the
+	// metadata) on a fast box and the new dial on a slow one (red 2 of 3 on 1.65-1.70). The rule is the forget,
+	// so read it at once, then wait for the redial itself.
+	const before = (await dials(J)).filter((d) => d.id === 'bbbb1').length;
 	await inPage(J, 's.waitingForApproval.set([]); s.userdata.set([]);');
 	await dialVia(J, 'bbbb1');
-	const forgot = await lastDial(J, 'bbbb1');
+	h.check(!(await inPage(J, 'return !!pc.dialCloud?.has("bbbb1")')), 'a later plain dial forgets the remembered cloud data at once');
+	let forgot = null;
+	for (const until = Date.now() + 15000; Date.now() < until && !forgot; await J.page.waitForTimeout(250)) {
+		const list = (await dials(J)).filter((d) => d.id === 'bbbb1');
+		if (list.length > before) forgot = list.pop();
+	}
 	h.check(forgot && !('cloud' in (forgot.opts?.metadata ?? {})), `a later plain dial to the same peer carries no cloud data (${JSON.stringify(forgot?.opts)})`);
 	// bounded: over 1 KB is dropped, not truncated; unserialisable is dropped
 	await inPage(J, 's.peerApproval.requestConnect("cccc1", { pad: "x".repeat(1100) })');

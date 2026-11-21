@@ -63,6 +63,8 @@ const moveTo = (page, uuid, pos) =>
 			let peer;
 			window.__tp.test.v1.peers.subscribe((v) => (peer = v))();
 			peer?.send({ type: 'move', uuid: u, pos: o.position.toArray(), rot: o.rotation.toArray(), scale: o.scale.toArray() });
+			// the renderer draws on demand: a gizmo drag (or the move applier on B) pokes it, a bare position write does not
+			window.__tp.test.v1.pokeScene();
 		},
 		[uuid, pos]
 	);
@@ -122,7 +124,7 @@ h.run(async () => {
 	await moveTo(A.page, decal, [-0.1, 0.5, 0.8]); // wall-local: up 0.5, along 0.8 (still on the face)
 	await h.eventually(() => surface(A.page, decal), (s) => !!s && near(s.centre, [2.899, 1.5, 0.8], 0.02), '§2 A rebuilt the decal where its box moved', 15000);
 	await h.eventually(() => surface(B.page, decal), (s) => !!s && near(s.centre, [2.899, 1.5, 0.8], 0.02), '§2 ...and B', 15000);
-	h.check((await dbg(A.page)).builds > builds0, '§2 the move was a rebuild');
+	await h.eventually(() => dbg(A.page), (d) => d.builds > builds0, '§2 the move was a rebuild', 10000);
 	const builds1 = (await dbg(A.page)).builds;
 	await moveTo(A.page, wall, [3, 1, -2]);
 	await h.eventually(() => surface(A.page, decal), (s) => !!s && near(s.centre, [2.899, 1.5, -1.2], 0.02), '§2 the wall moved 2 m: the decal went with it', 15000);

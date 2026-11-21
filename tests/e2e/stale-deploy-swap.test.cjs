@@ -17,6 +17,7 @@
 //
 // Run (after `npm run build`; the suite starts its own server on APP_URL's port):
 //   e2e-slot --local -- bash -c 'APP_URL=https://localhost:5831/ node tests/e2e/stale-deploy-swap.test.cjs'
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
@@ -65,8 +66,11 @@ function makeDeploymentB() {
 		fs.mkdirSync(path.dirname(dest), { recursive: true });
 		if (TEXT.test(f) && re) {
 			let body = fs.readFileSync(src, 'utf8');
-			const next = body.replace(re, (m) => /** @type {string} */ (rename.get(m)));
+			let next = body.replace(re, (m) => /** @type {string} */ (rename.get(m)));
 			if (next !== body) rewritten++;
+			// a real deploy hashes its own inline boot script into the page's CSP; renaming the chunks it names changes
+			// the script, so carry the hash along or the browser refuses B's boot (o22: CSP 'sha256-...' mismatch)
+			if (/\.html?$/i.test(f) && next !== body) next = rehashInlineScripts(body, next);
 			body = next;
 			if (f === 'version.json') {
 				const v = JSON.parse(body);
@@ -77,6 +81,22 @@ function makeDeploymentB() {
 		} else fs.linkSync(src, dest);
 	}
 	return { renamed: rename.size, rewritten };
+}
+
+/** the CSP hash of every inline <script> body @param {string} html @returns {string[]} */
+function inlineScriptHashes(html) {
+	return [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => crypto.createHash('sha256').update(m[1], 'utf8').digest('base64'));
+}
+
+/** swap each inline script's old CSP hash for the new one (pairs by position) @param {string} before @param {string} after */
+function rehashInlineScripts(before, after) {
+	const was = inlineScriptHashes(before);
+	const now = inlineScriptHashes(after);
+	let out = after;
+	was.forEach((h, i) => {
+		if (now[i] && now[i] !== h) out = out.split(`'sha256-${h}'`).join(`'sha256-${now[i]}'`);
+	});
+	return out;
 }
 
 /** point `live` at a deployment, atomically (a rename over the old link) @param {string} target */
@@ -95,6 +115,9 @@ h.run(async () => {
 	fs.mkdirSync(WORK, { recursive: true });
 	const made = makeDeploymentB();
 	h.check(made.renamed > 50 && made.rewritten > 10, `premise: deployment B renames every immutable file (${made.renamed}) and rewrites the files naming them (${made.rewritten})`);
+	const bHtml = fs.readFileSync(path.join(B_DIR, 'index.html'), 'utf8');
+	const bHashes = inlineScriptHashes(bHtml);
+	h.check(bHashes.length > 0 && bHashes.every((x) => bHtml.includes(`'sha256-${x}'`)), `premise: B's CSP names B's own inline boot script (${bHashes.length} hashed)`);
 	const versionA = JSON.parse(fs.readFileSync(path.join(BUILD, 'version.json'), 'utf8')).version;
 	goLive(BUILD);
 
@@ -186,11 +209,15 @@ h.run(async () => {
 		else await page.reload();
 		const afterReload = missing.length;
 		const errsBefore = uncaught.length;
+		const consoleBefore = (page.__console || []).length;
 		const booted = await page
 			.waitForFunction(() => !(/** @type {any} */ (window).__deploySwapMark) && window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, null, { timeout: 90000 })
 			.then(() => true, () => false);
 		if (!booted) {
 			console.log(`  B did not boot: url ${page.url()}, 404s ${JSON.stringify(missing.slice(afterReload).map((m) => m.url.split('/').slice(-2).join('/')).slice(0, 12))}, errors ${JSON.stringify(uncaught.slice(errsBefore)).slice(0, 600)}`);
+			const facade = await page.evaluate(() => ({ tp: !!window.__tp, test: !!window.__tp?.test, v1: !!window.__tp?.test?.v1, stores: !!(/** @type {any} */ (window).__stores) })).catch((e) => String(e));
+			const said = (page.__console || []).slice(consoleBefore).filter((/** @type {any} */ m) => m.type === 'error' || m.type === 'warning').map((/** @type {any} */ m) => m.text.slice(0, 300));
+			console.log(`  B facade ${JSON.stringify(facade)}; console errors/warnings after Reload (${said.length}): ${JSON.stringify(said.slice(0, 15))}`);
 			await page.screenshot({ path: path.join(WORK, '..', 'deploy-swap-b.png') }).catch(() => {});
 		}
 		h.check(booted, '4 Reload boots deployment B (a NEW window, the app up)');

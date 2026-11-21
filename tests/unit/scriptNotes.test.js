@@ -31,3 +31,18 @@ describe('mcp-fix: a Script node says what cannot work', () => {
 		expect(scriptNodeWarnings({ code: 'object.rotation = 1', outputs: [{ name: 'x' }] }, { unwired: true })).toEqual([]);
 	});
 });
+
+// 2.0-n3b step 1: "+= in value scripts" — a value script keeps nothing between frames
+describe('2.0-n3b value scripts: a running total never builds up', () => {
+	const value = (/** @type {string} */ code) => scriptNodeWarnings({ code, outputs: [{ name: 'n', type: 'number' }] }, { unwired: false });
+	it('names a += onto an input or a total with no loop, and says what counts instead', () => {
+		expect(value('inputs.n += 1; return { n: inputs.n };')[0]).toMatch(/^inputs\.n \+= 1 will not build up: .*Counter node/);
+		expect(value('let n = 0;\nn += inputs.add;\nreturn { n };')[0]).toMatch(/^n \+= inputs\.add will not build up/);
+		expect(value('let total = 0; total++; return { n: total };')[0]).toMatch(/^total\+\+ will not build up/);
+	});
+	it('a sum over a loop and a plain expression are quiet', () => {
+		expect(value('let s = 0; for (const v of inputs.list) s += v; return { n: s };')).toEqual([]);
+		expect(value('return { n: inputs.a + inputs.b * 2 };')).toEqual([]);
+		expect(value('return { n: inputs.a >= 2 ? 1 : 0 };')).toEqual([]);
+	});
+});

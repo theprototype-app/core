@@ -133,6 +133,23 @@ export function socketShape(type) {
 }
 
 /**
+ * The type one source handle of a placed node carries (data-declared types first). 2.0-n3b: shared by the
+ * editor's drag check and the agent tools' edge check, so the two read one rule.
+ * @param {any} source @param {string|null|undefined} sourceHandle @returns {string}
+ */
+export function sourceSocketType(source, sourceHandle) {
+	return source.type === 'flowinput'
+		? source.data?.vtype ?? 'number'
+		: // 34 D3: a script output's type is DATA (its declaration), like flowinput's vtype
+			scriptSocketType(source.type, source.data, sourceHandle, 'output') ??
+				// 37 (R6): the Switcher's `value` output carries its vtype
+				dataSocketType(source, sourceHandle, 'output') ??
+				// 36 (U10): a behaviour's outputs are declared in its code
+				behaviourSocketType(source, sourceHandle, 'output') ??
+				outputHandleType(source.type, sourceHandle);
+}
+
+/**
  * Validate a proposed connection against the two nodes' socket types.
  * @param {any} connection xyflow {source, target, sourceHandle, targetHandle}
  * @param {any[]} nodes the current flow nodes
@@ -145,16 +162,7 @@ export function isValidFlowConnection(connection, nodes) {
 	if (!source || !target) return false;
 	// H5: the object-flow interface types come from node DATA / the referenced
 	// graph's declarations, not the static type table
-	const from =
-		source.type === 'flowinput'
-			? source.data?.vtype ?? 'number'
-			: // 34 D3: a script output's type is DATA (its declaration), like flowinput's vtype
-				scriptSocketType(source.type, source.data, connection.sourceHandle, 'output') ??
-				// 37 (R6): the Switcher's `value` output carries its vtype
-				dataSocketType(source, connection.sourceHandle, 'output') ??
-				// 36 (U10): a behaviour's outputs are declared in its code
-				behaviourSocketType(source, connection.sourceHandle, 'output') ??
-				outputHandleType(source.type, connection.sourceHandle);
+	const from = sourceSocketType(source, connection.sourceHandle);
 	if (source.type === 'objectflow') {
 		// embedded outputs carry whatever the flow's outputs compute — untyped v1,
 		// anything except the effect channel may consume them

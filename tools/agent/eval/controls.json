@@ -1,0 +1,338 @@
+{
+	"_about": "Hand-built reference solutions (no model): each must score 1. `npm run eval:smoke` runs them; a red here is a broken CHECK or a broken app primitive, never an agent.",
+	"door-near": [
+		{
+			"tool": "create_objects",
+			"args": {
+				"objects": [
+					{
+						"kind": "primitive",
+						"primitive": "Box",
+						"name": "Door Sensor",
+						"params": [4, 2.5, 4],
+						"position": [0, 1.25, -2.5],
+						"color": "#44aaff",
+						"opacity": 0.1
+					}
+				]
+			}
+		},
+		{
+			"tool": "set_physics",
+			"args": {
+				"updates": [
+					{
+						"uuid": "$Door Sensor",
+						"sensor": true
+					}
+				]
+			}
+		},
+		{
+			"tool": "update_objects",
+			"args": {
+				"updates": [
+					{
+						"uuid": "$Door Sensor",
+						"visible": false
+					}
+				]
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "$Door Sensor",
+				"text": "en = onenter {who: \"player\"}\nex = onexit {who: \"player\"}\nd = delay {seconds: 3}\nr = rotateto {axis: \"y\", angle: 100, pivot: \"left\", duration: 0.8, target: \"$Door\"}\nen -> r.trigger\nen -> d.cancel\nex -> d.trigger\nd -> r.back"
+			}
+		}
+	],
+	"star-once": [
+		{
+			"tool": "create_objects",
+			"args": {
+				"objects": [
+					{
+						"kind": "primitive",
+						"primitive": "Sphere",
+						"name": "Glow 1",
+						"params": [0.5],
+						"position": [-4, 1.5, -3],
+						"color": "#ffd400"
+					},
+					{
+						"kind": "primitive",
+						"primitive": "Sphere",
+						"name": "Glow 2",
+						"params": [0.5],
+						"position": [-2, 1.5, -3],
+						"color": "#ffd400"
+					},
+					{
+						"kind": "primitive",
+						"primitive": "Sphere",
+						"name": "Glow 3",
+						"params": [0.5],
+						"position": [0, 1.5, -3],
+						"color": "#ffd400"
+					},
+					{
+						"kind": "primitive",
+						"primitive": "Sphere",
+						"name": "Glow 4",
+						"params": [0.5],
+						"position": [2, 1.5, -3],
+						"color": "#ffd400"
+					},
+					{
+						"kind": "primitive",
+						"primitive": "Sphere",
+						"name": "Glow 5",
+						"params": [0.5],
+						"position": [4, 1.5, -3],
+						"color": "#ffd400"
+					}
+				]
+			}
+		},
+		{
+			"tool": "set_look",
+			"args": {
+				"action": "material",
+				"material": {
+					"objects": ["$Glow 1", "$Glow 2", "$Glow 3", "$Glow 4", "$Glow 5"],
+					"emissive": "#ffd400",
+					"emissiveIntensity": 2
+				}
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "$Star 1",
+				"text": "c = onclick\nl = latch\nr = kit-round-started\nv = visibility {target: \"$Glow 1\"}\nc -> l.set\nr -> l.reset\nl -> v.on"
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "$Star 2",
+				"text": "c = onclick\nl = latch\nr = kit-round-started\nv = visibility {target: \"$Glow 2\"}\nc -> l.set\nr -> l.reset\nl -> v.on"
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "$Star 3",
+				"text": "c = onclick\nl = latch\nr = kit-round-started\nv = visibility {target: \"$Glow 3\"}\nc -> l.set\nr -> l.reset\nl -> v.on"
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "$Star 4",
+				"text": "c = onclick\nl = latch\nr = kit-round-started\nv = visibility {target: \"$Glow 4\"}\nc -> l.set\nr -> l.reset\nl -> v.on"
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "$Star 5",
+				"text": "c = onclick\nl = latch\nr = kit-round-started\nv = visibility {target: \"$Glow 5\"}\nc -> l.set\nr -> l.reset\nl -> v.on"
+			}
+		},
+		{
+			"tool": "run",
+			"args": {
+				"action": "validate"
+			}
+		}
+	],
+	"hit-sound": [
+		{
+			"tool": "effects",
+			"args": {
+				"action": "sound",
+				"sound": {
+					"asset": "pack:audio-essentials/assets/ui-confirm.ogg",
+					"object": "$Bell",
+					"on": "click",
+					"name": "Ding"
+				}
+			}
+		},
+		{
+			"tool": "list_scene",
+			"args": {
+				"flow": "$Bell"
+			}
+		},
+		{
+			"tool": "update_flow_nodes",
+			"args": {
+				"graph": "$Bell",
+				"remove": ["$@1:onclick"]
+			}
+		},
+		{
+			"tool": "create_behaviour",
+			"args": {
+				"name": "Limit",
+				"target": "$Bell",
+				"source": "export default behaviour({\n  name: 'Limit',\n  state: { last: -100 },\n  inputs: ['hit'],\n  outputs: ['ding'],\n  on: {\n    hit() {\n      const t = this.now();\n      if (t - this.state.last >= 0.5) { this.state.last = t; this.emit('ding'); }\n    }\n  }\n});"
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "$Bell",
+				"text": "c = onclick\nc -> $@3.created.0.id.hit\n$@3.created.0.id.ding -> $@0.updated.0.node.trigger"
+			}
+		},
+		{
+			"tool": "run",
+			"args": {
+				"action": "validate"
+			}
+		}
+	],
+	"health-respawn": [
+		{
+			"tool": "hud",
+			"args": {
+				"action": "create",
+				"create": {
+					"screens": [
+						{
+							"name": "Health",
+							"showWhile": "playing",
+							"elements": [
+								{
+									"kind": "bar",
+									"anchor": "top-left",
+									"x": 20,
+									"y": 20,
+									"w": 240,
+									"h": 20,
+									"min": 0,
+									"max": 100,
+									"value": 100
+								}
+							]
+						}
+					]
+				}
+			}
+		},
+		{
+			"tool": "set_physics",
+			"args": {
+				"updates": [
+					{
+						"uuid": "$Spikes",
+						"sensor": true
+					}
+				]
+			}
+		},
+		{
+			"tool": "create_behaviour",
+			"args": {
+				"name": "Spike",
+				"target": "$Spikes",
+				"source": "export default behaviour({\n  name: 'Spike',\n  state: { hp: 100, on: false, ticking: false },\n  inputs: ['enter', 'exit'],\n  outputs: ['hp', 'died'],\n  on: {\n    enter() { this.state.on = true; if (!this.state.ticking) { this.state.ticking = true; this.after(0.25, 'tick'); } },\n    exit() { this.state.on = false; }\n  },\n  tick() {\n    if (!this.state.on) { this.state.ticking = false; return; }\n    this.state.hp = Math.max(0, this.state.hp - 10);\n    if (this.state.hp <= 0) { this.state.hp = 100; this.state.on = false; this.state.ticking = false; this.emit('died'); return; }\n    this.after(0.25, 'tick');\n  }\n});"
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "$Spikes",
+				"text": "en = onenter {who: \"player\"}\nex = onexit {who: \"player\"}\nbar = hudbar {element: \"$@0.elements.0.id\", min: 0, max: 100}\nrs = kit-levels-respawn\nen -> $@2.created.0.id.enter\nex -> $@2.created.0.id.exit\n$@2.created.0.id.hp -> bar.value\n$@2.created.0.id.died -> rs.trigger"
+			}
+		},
+		{
+			"tool": "run",
+			"args": {
+				"action": "validate"
+			}
+		}
+	],
+	"pickup-own": [
+		{
+			"tool": "hud",
+			"args": {
+				"action": "create",
+				"create": {
+					"screens": [
+						{
+							"name": "Coins",
+							"showWhile": "playing",
+							"elements": [
+								{
+									"kind": "text",
+									"text": "Coins: 0",
+									"anchor": "top-left",
+									"x": 20,
+									"y": 20
+								}
+							]
+						}
+					]
+				}
+			}
+		},
+		{
+			"tool": "set_physics",
+			"args": {
+				"updates": [
+					{
+						"uuid": "$Coin",
+						"sensor": true
+					}
+				]
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "$Coin",
+				"text": "e = onenter {who: \"player\"}\nc = kit-pickups-collect {touch: false}\na = kit-pickups-available\nv = visibility\ne -> c.trigger\na -> v.on"
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "scene",
+				"text": "m = kit-score-mine\nh = hudtext {element: \"$@0.elements.0.id\", format: \"Coins: {v}\"}\nm -> h.value"
+			}
+		},
+		{
+			"tool": "run",
+			"args": {
+				"action": "validate"
+			}
+		}
+	],
+	"pause-p": [
+		{
+			"tool": "create_behaviour",
+			"args": {
+				"name": "PauseKey",
+				"source": "export default behaviour({\n  name: 'PauseKey',\n  state: { paused: false },\n  inputs: ['key'],\n  outputs: ['pause', 'resume'],\n  on: {\n    key() {\n      this.state.paused = !this.state.paused;\n      this.emit(this.state.paused ? 'pause' : 'resume');\n    }\n  }\n});"
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "scene",
+				"text": "k = keypress {code: \"KeyP\"}\np = setgamestate {state: \"paused\"}\nr = setgamestate {state: \"playing\"}\nk -> $@0.created.0.id.key\n$@0.created.0.id.pause -> p.trigger\n$@0.created.0.id.resume -> r.trigger"
+			}
+		},
+		{
+			"tool": "run",
+			"args": {
+				"action": "validate"
+			}
+		}
+	]
+}

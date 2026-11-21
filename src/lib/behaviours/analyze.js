@@ -55,6 +55,42 @@ const CONTEXT_CALLS = new Set(CONTEXT_MEMBERS.filter((m) => !['kit', 'params', '
 const FRAME_HOOK = /^(on)?(tick|update|frame|step|loop|everyframe)$/i;
 const NO_FRAME_HOOK = 'behaviours have no per-frame hook; repeat with this.after(seconds, "method") from that method';
 
+/** 2.0-n3b: guessed spellings that are not typos @type {Record<string, string>} */
+const ALIASES = { random: 'rand', time: 'now', wait: 'after', delay: 'after', setTimeout: 'after', schedule: 'after', print: 'log', debug: 'log', fire: 'emit', trigger: 'emit', send: 'emit', findObject: 'find', findObjects: 'findAll', get: 'find' };
+
+/**
+ * 2.0-n3b: the closest valid name to `name` (an alias, a case-only difference, else an edit distance of at most
+ * a third of its length, max 2, a swapped pair counting once; else a shared prefix of 4+), or '' when nothing is
+ * close. @param {string} name @param {string[]} valid
+ */
+export function nearestName(name, valid) {
+	const alias = ALIASES[name];
+	if (alias && valid.includes(alias)) return alias;
+	const lower = name.toLowerCase();
+	const exact = valid.find((v) => v.toLowerCase() === lower);
+	if (exact) return exact;
+	/** @param {string} a @param {string} b */
+	const dist = (a, b) => {
+		const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+		for (let j = 1; j <= b.length; j++) d[0][j] = j;
+		for (let i = 1; i <= a.length; i++)
+			for (let j = 1; j <= b.length; j++) {
+				d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+				if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+			}
+		return d[a.length][b.length];
+	};
+	let best = '';
+	let bestD = Infinity;
+	for (const v of valid) {
+		const dv = dist(lower, v.toLowerCase());
+		if (dv < bestD) [best, bestD] = [v, dv];
+	}
+	if (bestD <= Math.min(2, Math.max(1, Math.floor(name.length / 3)))) return best;
+	const prefix = valid.find((v) => Math.min(v.length, lower.length) >= 4 && (lower.startsWith(v.toLowerCase()) || v.toLowerCase().startsWith(lower)));
+	return prefix ?? '';
+}
+
 /** does the source reach method `k` (this.k, or its name as a string — after(…, 'k')) @param {string} source @param {string} k */
 const referenced = (source, k) => new RegExp('this\\.' + k + '\\b|[\'"`]' + k + '[\'"`]').test(String(source));
 
@@ -442,6 +478,20 @@ export function analyze(source, specs = []) {
 			}
 		}
 	}
+	// 2.0-n3b step 1: kit.pickups.register only in on.load — every peer must know the pickups (it runs on
+	// every peer at load); in start / a handler / a method it registers on the authority alone, so touching
+	// a pickup does nothing for anyone else
+	for (const fn of [...handlers, ...methods]) {
+		if (fn.name === 'load' && handlers.includes(fn)) continue;
+		for (const k of fn.kit ?? [])
+			if (k.piece === 'pickups' && k.call === 'register')
+				lintOut.push({
+					message: 'kit.pickups.register in ' + (handlers.includes(fn) ? 'on.' : '') + fn.name + ': register pickups in on.load (it runs on every peer), never in start, a handler or a method, or touching one does nothing',
+					line: k.line || fn.line,
+					col: 1,
+					level: 'warning'
+				});
+	}
 	// 55 (41's voice session): `this.setTransform(…)` passed the lint and did nothing — `this` has the context
 	// members and the definition's own methods, nothing else (a behaviour cannot move/recolour/hide objects
 	// itself: it drives effect nodes through value outputs or this.emit)
@@ -451,9 +501,11 @@ export function analyze(source, specs = []) {
 			if (n.type !== 'MemberExpression' || n.object?.type !== 'ThisExpression' || n.computed || n.property?.type !== 'Identifier') return;
 			const member = n.property.name;
 			if (CONTEXT_MEMBERS.includes(member) || ownMethods.has(member)) return;
+			// 2.0-n3b step 1: the nearest valid name first (a typo, or a guessed spelling: this.random -> rand)
+			const near = nearestName(member, [...CONTEXT_MEMBERS, ...ownMethods]);
 			lintOut.push({
 				message:
-					'this.' + member + ' does not exist — `this` has ' + CONTEXT_MEMBERS.join(', ') + (ownMethods.size ? ' and your methods (' + [...ownMethods].join(', ') + ')' : '') +
+					'this.' + member + ' does not exist' + (near ? ' — did you mean this.' + near + '?' : '') + ' `this` has ' + CONTEXT_MEMBERS.join(', ') + (ownMethods.size ? ' and your methods (' + [...ownMethods].join(', ') + ')' : '') +
 					'. A behaviour does not move, rotate, recolour or hide objects itself: give it an output (a state value or this.emit) and wire it into effect nodes',
 				line: n.loc?.start.line ?? 0,
 				col: (n.loc?.start.column ?? 0) + 1,

@@ -55,7 +55,7 @@ const objectOf = (uuid) => /** @type {any} */ (get(objectsGroup))?.getObjectByPr
 /** @type {Promise<{isSource: (t: string) => boolean, isAction: (t: string) => boolean, inputsOf: (t: string) => {name: string, type: string}[]}> | null} */
 let typeInfoP = null;
 function typeInfo() {
-	typeInfoP ??= Promise.all([import('$lib/flowSockets'), import('$lib/kit/nodes.js').catch(() => null)]).then(([s, kit]) => {
+	typeInfoP ??= Promise.all([import('$lib/flowSockets'), import('$lib/kit/nodes.js').catch(() => null), import('./edgeHandles.js')]).then(([s, kit, eh]) => {
 		/** @param {string} t */
 		const inputsOf = (t) => s.inputHandles(t).map((name) => ({ name, type: s.inputType(t, name) }));
 		/** @param {string} t */
@@ -63,19 +63,26 @@ function typeInfo() {
 		const kitActions = kit?.KIT_ACTION_TYPES ?? new Set();
 		/** @param {string} t */
 		const isAction = (t) => TRIGGERED_ACTIONS.has(t) || kitActions.has(t);
-		return { isSource, isAction, inputsOf };
+		// 2.0-n3b step 2: the same edge checks create_flow_nodes runs, over the graph as it stands
+		return { isSource, isAction, inputsOf, edgeTypeProblem: eh.edgeTypeProblem, edgeHandleProblems: eh.edgeHandleProblems };
 	});
 	return typeInfoP;
 }
 
 /** every object of the scene, by uuid (names, lights) */
 function sceneObjects() {
-	/** @type {Record<string, {name: string, type: string, light?: boolean, visible?: boolean}>} */
+	/** @type {Record<string, {name: string, type: string, light?: boolean, visible?: boolean, sensor?: boolean}>} */
 	const out = {};
 	const group = /** @type {any} */ (get(objectsGroup));
 	group?.traverse?.((/** @type {any} */ o) => {
 		if (o === group) return;
-		out[o.uuid] = { name: String(o.name ?? ''), type: String(o.type ?? ''), ...(o.isLight ? { light: true } : {}), ...(o.visible === false ? { visible: false } : {}) };
+		out[o.uuid] = {
+			name: String(o.name ?? ''),
+			type: String(o.type ?? ''),
+			...(o.isLight ? { light: true } : {}),
+			...(o.visible === false ? { visible: false } : {}),
+			...(o.userData?.physics?.sensor ? { sensor: true } : {}) // 2.0-n3b: On Enter / On Exit listen to sensors
+		};
 	});
 	return out;
 }

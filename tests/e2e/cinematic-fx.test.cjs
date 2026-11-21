@@ -233,6 +233,10 @@ h.run(async () => {
 				};
 				const g = mask(S['gl:all'], S['gl:-' + piece]);
 				const v = mask(S['view:all'], S['view:-' + piece]);
+				for (let j = 0; j < W * H; j++) {
+					if (window.__fxNoiseGl?.[j]) g[j] = 0;
+					if (window.__fxNoise?.[j]) v[j] = 0;
+				}
 				// debug picture: gl footprint red, view footprint green, the noise floor blue
 				const mc = document.createElement('canvas');
 				mc.width = W;
@@ -271,6 +275,8 @@ h.run(async () => {
 
 	// ---- 2. the standard view, every piece and every piece-hidden ---------------------------------------------------
 	const sheet = { gl: await grab('gl:all', false) };
+	await page.waitForTimeout(700);
+	await grab('gl:again', false);
 	for (const p of PIECES) {
 		await show(p, false);
 		await page.waitForTimeout(120); // the water tick hides the bubble mesh on its next frame
@@ -291,15 +297,27 @@ h.run(async () => {
 	sheet.view = await grab('view:all', true);
 	// the noise floor: two shots of the same held moment (anything that changes here is not a piece's footprint)
 	await grab('view:again', true);
+	// the noise floor in each view: what changes between two shots of the same held moment (the jiggle spring keeps
+	// swinging in the wind, a horizon line aliases). Those pixels, grown by 1 px, belong to no piece's footprint.
 	const floor = await page.evaluate(({ W, H }) => {
-		const a = window.__fxShots['view:all'], b = window.__fxShots['view:again'];
-		const m = new Uint8Array(W * H);
-		let n = 0;
-		for (let i = 0, j = 0; i < a.length; i += 4, j++) if (Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]) > 36) { m[j] = 1; n++; }
-		window.__fxNoise = m;
-		return n;
+		const noise = (a, b) => {
+			const m = new Uint8Array(W * H);
+			let n = 0;
+			for (let i = 0, j = 0; i < a.length; i += 4, j++)
+				if (Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]) > 36) {
+					n++;
+					const x = j % W, y = (j / W) | 0;
+					for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (x + dx >= 0 && y + dy >= 0 && x + dx < W && y + dy < H) m[(y + dy) * W + x + dx] = 1;
+				}
+			return { m, n };
+		};
+		const g = noise(window.__fxShots['gl:all'], window.__fxShots['gl:again']);
+		const v = noise(window.__fxShots['view:all'], window.__fxShots['view:again']);
+		window.__fxNoiseGl = g.m;
+		window.__fxNoise = v.m;
+		return { gl: g.n, view: v.n };
 	}, { W, H });
-	h.check(true, `   view noise floor: ${floor} px change between two shots of the same held moment`);
+	h.check(true, `   noise floor: ${floor.gl} px (standard) / ${floor.view} px (Cinematic) change between two shots of the same held moment`);
 	for (const p of PIECES) {
 		await show(p, false);
 		await page.waitForTimeout(120);

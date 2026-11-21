@@ -420,7 +420,16 @@ export function createFxCover(o) {
 		/** @type {any} */
 		let p = T.positionLocal;
 		for (let i = specs.length - 1; i >= 0; i--) p = DEFORM[specs[i].kind](bridgeAll(specs[i].uniforms), p);
-		return p;
+		const deformed = p;
+		// The velocity target compares this position with `positionPrevious`, which is the UNDEFORMED geometry (moved
+		// by last frame's instance / batch matrix): without this every deformed vertex reported its displacement as
+		// motion, TRAA reprojected its history from the wrong place and the mesh's edges shimmered. The displacement
+		// is added to the previous position too (Line2NodeMaterial assigns it the same way), so only real motion counts.
+		return T.Fn(() => {
+			const d = deformed.toVar();
+			T.positionPrevious.assign(T.positionPrevious.add(d.sub(T.positionLocal)));
+			return d;
+		})();
 	}
 
 	// ---- the per-frame pass ------------------------------------------------------------------------------------

@@ -57,6 +57,7 @@ export const NODE_DOCS = {
 	pointgrab: "While 'enabled' reads off, players cannot pick objects up by pointing at them (the VR grip ray, the desktop carry); a hand touching an object still moves it.",
 	onclap: "Fires a pulse when a VR player brings both hands together and holds them - with where they met (point) and whether it was you (byMe); wire 'enabled' to a setting to switch it.",
 	gamevalue: "Reads one game value (score, round clock, best, level, stars, lives, a variable, a stored or a published value) and writes it as text - a number, a clock (1:04.2), 3 / 10, a percent or stars - for HUD Text; its value output feeds HUD Bar.",
+	hudvisible: "Shows, hides or toggles ONE HUD element on a trigger, or follows a wired visible value (above 0 = shown) - per player, like a screen.",
 	gametime: "Seconds since the game (or the round) started, the same on every peer - a clock that pauses with the game.",
 	peervariable: "A value kept PER PLAYER (score, lives, team) - each peer reads its own row, or a named player's.",
 	charcontroller: "Sets how the player moves in Play - fly or walk, speed, jump and eye height, gravity - driving the player's own view rather than an object (the newest one in the scene wins).",

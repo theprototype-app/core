@@ -201,26 +201,34 @@ export default {
 			defaults: { name: 'score', value: 0, op: 'set', scope: 'shared' },
 			// fix-batch-1 (docs-1 Q1): sockets for what the runtime reads (the setgamestate note)
 			inputs: ['trigger', 'value'],
-			inputLabels: { value: 'value — wire a number (else the value below)' },
+			inputLabels: { value: 'value — wire a number or, for op text, words (else the value below)' },
+			// 102b-hud (row 14): `toggle` flips a flag (0 / 1), `text` holds words (shared scope only)
 			params: [
 				{ key: 'name', kind: 'text', placeholder: 'score', maxLength: 40 },
-				{ key: 'op', kind: 'select', options: ['set', 'add', 'subtract'] },
+				{ key: 'op', kind: 'select', options: ['set', 'add', 'subtract', 'toggle', 'text'] },
+				{ key: 'text', kind: 'text', placeholder: 'words for op text', maxLength: 200 },
 				{ key: 'scope', kind: 'select', options: ['shared', 'player'] }
 			],
-			sockets: { out: 'effect', in: { trigger: 'event', value: 'number' } },
+			sockets: { out: 'effect', in: { trigger: 'event', value: 'any' } },
 			card: 'AnimationNode'
 		},
 		{
 			type: 'getvariable',
 			label: 'Get Variable',
 			defaults: { name: 'score', fallback: 0 },
-			params: [{ key: 'name', kind: 'text', placeholder: 'score', maxLength: 40 }],
+			// 102b-hud: `output: text` reads a variable that holds words (Set Variable op text); absent = number, as before
+			params: [
+				{ key: 'name', kind: 'text', placeholder: 'score', maxLength: 40 },
+				{ key: 'output', kind: 'select', options: ['number', 'text'] }
+			],
 			sockets: { out: 'number' },
 			card: 'AnimationNode',
 			eval(node, { d }, rt) {
 				// LOCAL read of REPLICATED state, so every peer computes the same number and
 				// nothing about the read goes on the wire (48 D1: through the paused view's sandbox)
-				return rt.num(rt.viewGameVar(String(d.name ?? ''), d.fallback ?? 0));
+				const held = rt.viewGameVar(String(d.name ?? ''), d.fallback ?? 0);
+				if (d.output === 'text') return held === undefined || held === null ? '' : String(held);
+				return rt.num(held);
 			}
 		},
 		// 30 P4 (roadmap 30 fork 7): what a game remembers ON THIS DEVICE — a best score,

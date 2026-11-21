@@ -354,8 +354,9 @@ export const VALIDATORS = {
 		typeof d.name === 'string' &&
 		d.name.length > 0 &&
 		d.name.length <= 200 &&
-		(d.op === 'set' || d.op === 'add' || d.op === 'subtract') &&
-		Number.isFinite(d.value),
+		(d.op === 'set' || d.op === 'add' || d.op === 'subtract' || d.op === 'toggle' || d.op === 'text') &&
+		// 102b-hud: a `text` op carries words (a variable that holds a name, a code), capped
+		(d.op === 'text' ? typeof d.value === 'string' && d.value.length <= 200 : Number.isFinite(d.value)),
 	kitreq: (d) =>
 		typeof d.rid === 'string' &&
 		d.rid.length > 0 &&

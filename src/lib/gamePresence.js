@@ -32,7 +32,7 @@ import { sessionHost } from './connectionState';
 import { gameState, resetGame } from './gameState';
 // 30 P2: both leaves (hudDocs: svelte/store + gameState + hudKinds + safeStorage; playMode:
 // sceneStore + appStore), so Test play lives here beside the reset permission it obeys
-import { hudIsGame, hudScreenOverride } from './hudDocs';
+import { hudIsGame, hudScreenOverride, hudElementShown } from './hudDocs';
 import { requestPlay } from './playMode';
 
 /** The two modes. A third would be a protocol change, so the reader treats anything it
@@ -385,6 +385,7 @@ export function testPlay() {
 	const verdict = pristine ? { ok: true } : requestResetGame();
 	if (!verdict.ok) showToast((verdict.reason ?? 'The game cannot be reset.') + ' Joining the game as it is.');
 	hudScreenOverride.set({});
+	hudElementShown.clear();
 	requestPlay();
 	return verdict;
 }
@@ -403,7 +404,10 @@ export function startGamePresence() {
 			// into the editor, or the next Play lands on a stale pause screen over a round
 			// that has since returned to its menu. Games only: a plain HUD's overrides are
 			// authored behaviour and keep their old lifetime.
-			if (v !== true && wasPlaying && get(hudIsGame)) hudScreenOverride.set({});
+			if (v !== true && wasPlaying && get(hudIsGame)) {
+				hudScreenOverride.set({});
+				hudElementShown.clear();
+			}
 			wasPlaying = v === true;
 			pokeWatch();
 		})

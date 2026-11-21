@@ -75,6 +75,9 @@ export const activeHudDoc = writable(null);
  * never replicated. `null`/absent means "the document's own `active`".
  * @type {import('svelte/store').Writable<Record<string, string|null>>} */
 export const hudScreenOverride = writable({});
+/** 102b-hud (DEVX #26): element id -> shown (false = hidden) on THIS peer, written by the Show / Hide
+ * Element node; per peer like a screen override, and cleared with them @type {Map<string, boolean>} */
+export const hudElementShown = new Map();
 
 /**
  * 30 P1: IS THIS SCENE A GAME? The rule, and why it is this one: a scene is a game when ANY
@@ -760,6 +763,7 @@ export function hudDocsRestore(map, replace = false, replicate = false) {
 	if (replace) {
 		hudDocs.set({});
 		hudScreenOverride.set({});
+		hudElementShown.clear();
 		hudSelection.set({});
 		// 21-D4: input values are PLAY-TIME state, not scene data - a loaded scene starts
 		// from its authored defaults rather than inheriting the last game's settings, which
@@ -784,6 +788,7 @@ export function hudDocsRestore(map, replace = false, replicate = false) {
 export function clearHudDocs() {
 	hudDocs.set({});
 	hudScreenOverride.set({});
+	hudElementShown.clear();
 	hudSelection.set({});
 	activeHudDoc.set(null);
 	clearHudRuntimeRows();

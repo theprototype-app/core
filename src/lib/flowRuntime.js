@@ -36,6 +36,7 @@ import {
 	showHudScreen,
 	visibleScreen,
 	hudScreenOverride,
+	hudElementShown, // 102b-hud
 	hudDocOf,
 	hudDocKeyFor,
 	resolveScreen,
@@ -1499,6 +1500,25 @@ function updateHudRuntime(time, ctx, now) {
 	}
 	for (const id of [...hudScreenActed.keys()])
 		if (!nodes.some((/** @type {any} */ n) => n.id === id)) hudScreenActed.delete(id);
+	// 102b-hud (row 14, DEVX #26): show / hide ONE element. A trigger acts on its stamp edge (the
+	// hudscreen rule above, per peer like a screen); a wired `visible` input follows the value.
+	for (const node of hudNodes) {
+		if (node.type !== 'hudvisible') continue;
+		const element = String(node.data?.element ?? '').trim();
+		if (!element) continue;
+		if (edgesInto(edges, node.id).some((/** @type {any} */ e) => e.targetHandle === 'visible')) {
+			const data = resolveInputs(node, nodes, edges, time, ctx);
+			hudElementShown.set(element, num(data.visible) > 0);
+			continue;
+		}
+		const stamp = triggerStampFor(node.id, ctx);
+		if (stamp === null || hudScreenActed.get(node.id) === stamp) continue;
+		hudScreenActed.set(node.id, stamp);
+		if (historicTrigger(stamp)) continue;
+		const action = String(node.data?.action ?? 'hide');
+		const shown = hudElementShown.get(element) ?? true;
+		hudElementShown.set(element, action === 'show' ? true : action === 'toggle' ? !shown : false);
+	}
 
 	if (now - lastHudAt < 100) return; // ~10Hz
 	lastHudAt = now;
@@ -1549,6 +1569,8 @@ function updateHudRuntime(time, ctx, now) {
 	}
 	// and the pulse stamps, merged onto whatever else the element says
 	for (const [element, stamp] of hudPulses) next[element] = { ...(next[element] ?? {}), pulse: stamp };
+	// 102b-hud: a hidden element (Show / Hide Element), merged the same way
+	for (const [element, shown] of hudElementShown) if (!shown) next[element] = { ...(next[element] ?? {}), hidden: true };
 	for (const element of [...hudOptionLists.keys()])
 		if (!hudNodes.some((/** @type {any} */ n) => n.type === 'hudset' && String(n.data?.element ?? '') === element))
 			hudOptionLists.delete(element);
@@ -1557,6 +1579,10 @@ function updateHudRuntime(time, ctx, now) {
 	lastHudJson = json;
 	hudRuntime.set(next);
 }
+
+/** 102b-hud: a HUD Button node id -> the element its last press came from (its `value` handle)
+ * @type {Map<string, string>} */
+const hudButtonPressed = new Map();
 
 /** fix-batch-1: node id -> the clock time an autostart HUD Timer was first seen @type {Map<string, number>} */
 const hudTimerSeen = new Map();
@@ -1777,6 +1803,23 @@ function findHudElement(id) {
 			if (hit) return hit;
 		}
 	return null;
+}
+
+/** 102b-hud: the screen an element sits on, or null @param {string} id */
+function screenOfHudElement(id) {
+	const all = get(hudDocs);
+	for (const doc of Object.values(all ?? {}))
+		for (const screen of doc?.screens ?? []) if (screen.elements.some((/** @type {any} */ el) => el.id === id)) return screen;
+	return null;
+}
+
+/** 102b-hud: what a HUD Button node's `value` handle reads — its element's value, or (any button
+ * on a screen) the last pressed button's @param {any} node */
+function hudButtonValue(node) {
+	const named = String(node?.data?.element ?? '').trim();
+	const id = named || hudButtonPressed.get(node?.id) || '';
+	const v = id ? findHudElement(id)?.value : undefined;
+	return v === undefined || v === null ? '' : v;
 }
 
 /** @param {number} time @param {any} ctx */
@@ -2015,8 +2058,10 @@ function updateGameNodes(time, ctx) {
 		} else {
 			const name = String(data.name ?? '');
 			if (!name) continue;
-			const v = num(data.value ?? 0);
 			const op = data.op ?? 'set';
+			// 102b-hud: `text` keeps the wired (or typed) words; every other op is a number
+			const wiredValue = op === 'text' && edgesInto(edges, node.id).some((/** @type {any} */ e) => e.targetHandle === 'value');
+			const v = op === 'text' ? String((wiredValue ? data.value : data.text) ?? '').slice(0, 200) : num(data.value ?? 0);
 			// 21-G4: SCOPE. Absent (and anything unrecognised) is 'shared' — the game
 			// singleton this node has always written, byte-identical. 'player' writes MY
 			// OWN peervars row and nobody else's, which is the whole ownership rule.
@@ -2029,10 +2074,11 @@ function updateGameNodes(time, ctx) {
 			// the scope decides WHOSE row.
 			if (data.scope === 'player') {
 				const held = num(myPeerVar(name, 0));
-				setPeerVar(name, op === 'add' ? held + v : op === 'subtract' ? held - v : v);
+				// a player row holds numbers only: text is refused there (the card says so)
+				if (op !== 'text') setPeerVar(name, op === 'toggle' ? (held ? 0 : 1) : op === 'add' ? held + num(v) : op === 'subtract' ? held - num(v) : num(v));
 			} else {
 				const current = num(viewGameVar(name, 0));
-				const value = op === 'add' ? current + v : op === 'subtract' ? current - v : v;
+				const value = op === 'text' ? v : op === 'toggle' ? (current ? 0 : 1) : op === 'add' ? current + num(v) : op === 'subtract' ? current - num(v) : v;
 				// 48 D1: the paused view's copy first (the watch list reads it), the shared one unless sandboxed
 				if (sharedOverlay) sharedOverlay.game = { ...sharedOverlay.game, vars: { ...sharedOverlay.game.vars, [name]: value } };
 				// fix-agenttest 10: the AUTHORITY writes, once per event (gameState.applyGameVarOp)
@@ -3248,6 +3294,8 @@ export function applyNodeTrigger(nodeId, t, replicate = true, sourceHandle = nul
 	const hash = typeof nodeId === 'string' ? nodeId.indexOf('#') : -1;
 	const walkId = hash > 0 ? nodeId.slice(0, hash) : nodeId;
 	const walkHandle = hash > 0 ? nodeId.slice(hash + 1) : sourceHandle;
+	// 102b-hud: a screen-mode HUD Button's press names its element
+	if (typeof walkHandle === 'string' && walkHandle.startsWith('press:')) hudButtonPressed.set(walkId, walkHandle.slice(6));
 	// 31: a trigger may carry WHERE it happened (the clap's meeting point). Kept beside the
 	// log rather than in it, so the log's shape, its merge and its late-joiner reply are
 	// untouched — history fires nothing, so a joiner needs no point. A local fire records
@@ -4109,10 +4157,26 @@ export function fireHudButton(elementId) {
 	// 21-E7.6: the press POKES the element as well as pulsing its nodes, so a damage flash
 	// (or any future kind that reacts to an edge) works off a button with nothing wired.
 	pulseHudElement(elementId, syncedNow());
+	const el = findHudElement(elementId);
+	// 102b-hud (row 14): the button's own click sound, for the one who pressed it (LOCAL: the
+	// press replicates, the feedback is the presser's). `none` / absent = silent, as before.
+	const sound = String(el?.sound ?? 'none');
+	if (sound !== 'none' && el?.enabled !== false && isGameSound(sound)) playGameSound(sound);
+	/** the screen the element sits on, for a node in "any button on this screen" mode */
+	const screen = elementId ? screenOfHudElement(elementId) : null;
 	nodes.forEach((node) => {
 		if (node.type !== 'hudbutton') return;
-		if (String(node.data?.element ?? '') !== String(elementId)) return;
-		applyNodeTrigger(node.id, syncedNow(), replicatesPulse(node));
+		const named = String(node.data?.element ?? '').trim();
+		const onScreen = String(node.data?.screen ?? '').trim();
+		const matches = named
+			? named === String(elementId)
+			: !!onScreen && !!screen && (screen.id === onScreen || screen.name === onScreen) && el?.kind === 'button';
+		if (!matches) return;
+		const t = syncedNow();
+		// 102b-hud: WHICH button rides a named log entry (`<node>#press:<element>`), so the press
+		// replicates on the existing nodetrigger path and every peer's `value` handle agrees
+		if (!named) applyNodeTrigger(node.id + '#press:' + elementId, t, replicatesPulse(node));
+		applyNodeTrigger(node.id, t, replicatesPulse(node));
 		fired++;
 	});
 	return fired;
@@ -5803,6 +5867,7 @@ const RT = {
 	gameElapsed,
 	gameFeelActive,
 	gameValueMax, // 102b-hud
+	hudButtonValue, // 102b-hud
 	gameValueOf, // 102b-hud
 	/** 102b-hud: a kit value node's reading, for Game Value @param {string} type @param {any} data */
 	kitValue: (type, data) => kit.evalNodeValue(type, data),

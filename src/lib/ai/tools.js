@@ -1684,7 +1684,7 @@ function flowToolSchemas(physics) {
 			function: {
 				name: 'create_flow_nodes',
 				description:
-					'Add behavior (flow) nodes to a node graph — this is how objects get MOTION and interactivity: spin, bounce, patrol a path, pulse, blink, react to clicks. graph is "scene" or an object uuid (ONE graph per call). KEY RULE: a behavior node placed in an OBJECT\'s graph with no edges automatically drives that object — most behaviors are one node, zero edges, so usually OMIT edges. A script node runs every frame FROM THE BASE POSE, so object.rotation.y += 0.02 lands at base + 0.02 and stays: write object.rotation.y = base.rot[1] + elapsed * speed (base has pos, rot, scale as arrays; elapsed = seconds since Play started, time = the shared clock, seconds of the day, a large number). Particle gravity is the acceleration along world Y: negative falls, positive rises. Describe nodes EITHER as text (graph lines, see the system prompt) OR as nodes/edges arrays. A call with some bad nodes still creates the good ones and returns partial:true + errors[] — resend only what errors[] names.',
+					'Add behavior (flow) nodes to a node graph — this is how objects get MOTION and interactivity: spin, bounce, patrol a path, pulse, blink, react to clicks. graph is "scene" or an object uuid (ONE graph per call). KEY RULE: a behavior node placed in an OBJECT\'s graph with no edges automatically drives that object — most behaviors are one node, zero edges, so usually OMIT edges. A script node runs every frame FROM THE BASE POSE, so object.rotation.y += 0.02 lands at base + 0.02 and stays: write object.rotation.y = base.rot[1] + elapsed * speed (base has pos, rot, scale as arrays; elapsed = seconds since Play started, time = the shared clock, seconds of the day, a large number). Particle gravity is the acceleration along world Y: negative falls, positive rises. Describe nodes EITHER as text (graph lines, see the system prompt) OR as nodes/edges arrays. A call with some bad nodes still creates the good ones and returns partial:true + errors[] — resend only what errors[] names. GAME RULES (state, scoring, rounds, toggles two people press) belong in a behaviour (create_behaviour); nodes WIRE them (an event into its inputs, its outputs into Visibility / HUD / Set Game State). An action needs an EVENT: a value (latch, gate, compare) wired into a trigger is refused. Worked builds: describe_node_types {recipe: ""}.',
 				parameters: {
 					type: 'object',
 					properties: {
@@ -1768,12 +1768,13 @@ function flowToolSchemas(physics) {
 			function: {
 				name: 'describe_node_types',
 				description:
-					'Look up flow node types before wiring them: per type its inputs (toHandle names + socket types), its output type and named outputs (fromHandle), its params with types and defaults, and one line on what it does. No arguments = every type name by group; group = that group with one-line docs; types = full details (up to 12). Changes nothing.',
+					'Look up flow node types before wiring them: per type its inputs (toHandle names + socket types), its output type and named outputs (fromHandle), its params with types and defaults, and one line on what it does. No arguments = every type name by group (+ the recipe names); group = that group with one-line docs; types = full details (up to 12); recipe = a worked build (pause on a key, a shared toggle, a pickup, once per round, zone damage + respawn, state a late joiner sees). Changes nothing.',
 				parameters: {
 					type: 'object',
 					properties: {
 						types: { type: 'array', items: { type: 'string' }, description: 'node types to describe, e.g. ["latch","spin","onclick"]' },
-						group: { type: 'string', description: 'a palette group, e.g. "Logic" or "Triggers"' }
+						group: { type: 'string', description: 'a palette group, e.g. "Logic" or "Triggers"' },
+						recipe: { type: 'string', description: 'a recipe name ("pause-key", "shared-toggle", "pickup", "once-per-round", "zone-damage", "remembered-state"), or "" for the list' }
 					}
 				}
 			}

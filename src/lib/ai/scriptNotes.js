@@ -34,12 +34,33 @@ function accumulating(code) {
 }
 
 /**
+ * 2.0-n3b: the first compound write in a VALUE script that means to keep a running total: onto an input
+ * (`inputs.n += 1`), or onto any name when the code has no loop to sum over (`let n = 0; n += inputs.add`).
+ * `+=` inside a loop is ordinary arithmetic and stays quiet. @param {string} code @returns {string | null}
+ */
+function valueAccumulating(code) {
+	const onInput = /\binputs\.\w+\s*(?:[-+*/]=[^=;\n]*|\+\+|--)|(?:\+\+|--)\s*inputs\.\w+/.exec(code);
+	if (onInput) return onInput[0].trim();
+	if (/\b(for|while)\b|\.(forEach|reduce|map)\s*\(/.test(code)) return null;
+	const any = /\b[A-Za-z_$][\w$.]*\s*[-+*/]=[^=;\n]*|\b[A-Za-z_$][\w$.]*\s*(?:\+\+|--)|(?:\+\+|--)\s*[A-Za-z_$][\w$.]*/.exec(code);
+	return any ? any[0].trim() : null;
+}
+
+/**
  * @param {{code?: any, inputs?: any, outputs?: any}} data the node's data
  * @param {{unwired: boolean}} where `unwired` = in the scene graph with nothing telling it which object to drive
  * @returns {string[]} warnings, empty when the node should work
  */
 export function scriptNodeWarnings(data, where) {
-	if (Array.isArray(data?.outputs) && data.outputs.length) return []; // a value node: it has no object at all
+	if (Array.isArray(data?.outputs) && data.outputs.length) {
+		// a value node: it has no object at all — but 2.0-n3b: it is a pure function of (inputs, time), run fresh every
+		// frame, so a `+=` that means to COUNT never builds up either (the recorded agent mistake)
+		const code = typeof data?.code === 'string' ? data.code : '';
+		const stuck = valueAccumulating(code);
+		return stuck
+			? [stuck + ' will not build up: a value script runs fresh every frame from (inputs, time) and keeps nothing between frames. To count, wire the events into a Counter node, or keep the number in a behaviour (this.state.n += 1)']
+			: [];
+	}
 	const out = [];
 	const code = typeof data?.code === 'string' ? data.code : '';
 	if (where.unwired && /\bobject\b/.test(code))

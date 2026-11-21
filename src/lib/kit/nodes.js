@@ -44,9 +44,11 @@ export function installKitNodes() {
  * A kit action node saw a fresh trigger stamp (flowRuntime, every peer).
  * @param {string} type @param {Record<string, any>} data the resolved inputs
  * @param {string} nodeId @param {number} stamp @param {string | null} [owner] the graph's owner object
+ * @param {string} [from] the peer whose event it was
  */
-export function runKitNodeAction(type, data, nodeId, stamp, owner = null) {
-	return kit.runNodeAction(type, withOwner(type, data, owner), { rid: 'node:' + nodeId + ':' + stamp });
+export function runKitNodeAction(type, data, nodeId, stamp, owner = null, from = '') {
+	// 2.0-n3b: `from` = the peer whose event made the stamp ('' = unknown, the old rule: whoever asks)
+	return kit.runNodeAction(type, withOwner(type, data, owner), { rid: 'node:' + nodeId + ':' + stamp, ...(from ? { from } : {}) });
 }
 
 /** an UNWIRED object input means the graph's owner (the #13-H implicit-owner rule): a Collect

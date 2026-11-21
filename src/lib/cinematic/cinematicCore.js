@@ -5,7 +5,8 @@
 //   qualityChoices    which of them this window may pick (High hides above 1440p-equivalent pixel counts)
 //   createDropWatch   the dynamic step down: frame p95 over budget for 2 s → one step lower, once per step
 //   standInKind       what a material the WebGPU renderer cannot draw is, in the words the chip uses
-//   notShownText      the one chip line: "Not shown in Cinematic view: Water, Text"
+//   notShownText      the one chip line: "Not shown in Cinematic view: Water, Particles"
+//   (troika text is not a stand-in since C2-1: it draws as canvas-texture quads, labelQuads.js)
 
 /** @typedef {import('./cinematicOffer.js').Quality} Quality */
 import { asQuality, DEFAULT_QUALITY } from './cinematicOffer.js';
@@ -113,7 +114,6 @@ export const STAND_IN_LABELS = Object.freeze({
 	water: 'Water',
 	fluid: 'Fluid tanks',
 	particles: 'Particles',
-	text: '3D text',
 	shader: 'Shader graph and code materials',
 	terrain: 'Terrain paint layers',
 	deform: 'Jiggle and sway',
@@ -138,7 +138,7 @@ export function classifyMaterial(o, m, hints = {}) {
 	if (!m || m.isNodeMaterial) return { swap: false, kind: null };
 	const shader = !!(m.isShaderMaterial || m.isRawShaderMaterial);
 	const patched = typeof m.onBeforeCompile === 'function' && Object.prototype.hasOwnProperty.call(m, 'onBeforeCompile');
-	if (!shader && !patched && !o?.isTroikaText) return { swap: false, kind: null };
+	if (!shader && !patched) return { swap: false, kind: null };
 	return { swap: shader, kind: standInKind(o, m, shader, hints) };
 }
 
@@ -149,7 +149,6 @@ export function classifyMaterial(o, m, hints = {}) {
  * @returns {StandInKind | null}
  */
 export function standInKind(o, m, shader = true, hints = {}) {
-	if (o?.isTroikaText) return 'text';
 	if (hints.deformed?.(o)) return 'deform';
 	if (m?.userData?.shaderUniforms || m?.userData?.shaderTextureRefs || m?.userData?.shaderCode) return 'shader';
 	for (let p = o, depth = 0; p && depth < 12; p = p.parent, depth++) {
@@ -158,7 +157,6 @@ export function standInKind(o, m, shader = true, hints = {}) {
 		if (ud.water || /^water-/.test(name)) return 'water';
 		if (ud.fluid || name === 'Fluid (visual)') return 'fluid';
 		if (ud.particles || /^particles-/.test(name)) return 'particles';
-		if (p.isTroikaText) return 'text';
 		if (ud.terrainSplat || ud.terrainLayers) return 'terrain';
 		if (ud.jiggle) return 'deform';
 	}

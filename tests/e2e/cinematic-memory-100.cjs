@@ -18,7 +18,9 @@
 //       env GPU_MEM=deck SCENE=tavern-interior node tests/e2e/cinematic-memory-100.cjs
 //
 // env: SCENE (tavern-interior), TRIPS (25), SLOPE_KB (0 = report only), DWELL_MS (1500), GATE_PCT (5), OUT (test-results/100-view/memory),
-//      WARM (4 warm-up trips), NOPRUNE=1 (the control: listeners left where three put them), SNAP=1 (heap snapshots A/B for heapdiff)
+//      WARM (4 warm-up trips), NOPRUNE=1 (the control: listeners left where three put them), SNAP=1 (heap snapshots A/B for heapdiff),
+//      LABELS (1: a flat text sign and a note pin join the scene, so the C2-1 text quads are made and freed on every trip;
+//      each trip records how many quads the view drew, `labels` in the row; 0 = the scene as loaded)
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
@@ -31,6 +33,7 @@ const WARM = Number(process.env.WARM || 4);
 const SLOPE_KB = Number(process.env.SLOPE_KB || 0); // 0 = report only (judged by cinematic-memory-ab.cjs)
 const GATE_TRIPS = 10;
 const DWELL = Number(process.env.DWELL_MS || 1500);
+const LABELS = process.env.LABELS !== '0';
 const GATE = Number(process.env.GATE_PCT || 5);
 const GPU_MEM = process.env.GPU_MEM || (CDP ? 'pc' : 'deck');
 const DEVICE = process.env.DEVICE || GPU_MEM;
@@ -117,13 +120,16 @@ const view = (page, on) =>
 		return { ok: !!r, mode: (() => { let s; m.cinematicState.subscribe((v) => (s = v))(); return s.mode; })() };
 	}, on);
 
+/** @returns {Promise<number | null>} the text quads the view drew on this trip (C2-1; null on a build without them) */
 async function trip(page) {
 	const a = await view(page, true);
 	if (!a.ok || a.mode !== 'on') throw new Error('the view did not come on: ' + JSON.stringify(a));
 	await page.waitForTimeout(DWELL);
+	const labels = await page.evaluate(async () => (await window.__stores.cinematicState.cinematicView()).cinematicDebug?.()?.labels?.quads ?? null).catch(() => null);
 	const b = await view(page, false);
 	if (b.mode !== 'off') throw new Error('the view did not go off: ' + JSON.stringify(b));
 	await page.waitForTimeout(DWELL);
+	return labels;
 }
 
 (async () => {
@@ -163,11 +169,35 @@ async function trip(page) {
 		}, SCENE);
 		log('load', SCENE, ok);
 		await page.waitForTimeout(12000);
+		if (LABELS) {
+			// C2-1: troika text in the scene (a flat sign + a note pin's number), so every trip makes and frees quads
+			const made = await page.evaluate(async () => {
+				const st = window.__stores;
+				let g;
+				st.objectsGroup.subscribe((v) => (g = v))();
+				const before = new Set(g.children.map((o) => o.uuid));
+				st.commandsHandler.sceneCommand('/create Text');
+				await new Promise((r) => setTimeout(r, 500));
+				const text = g.children.find((o) => !before.has(o.uuid) && o.userData?.textPath);
+				if (text) st.textPathEdit.setTextPathFor(text.uuid, { text: 'Cinematic sign', size: 0.5 });
+				const host = g.children.find((o) => o.isMesh) ?? g.children[0];
+				if (host) {
+					st.annotationsHandler.addAnnotation(host.uuid);
+					let cur;
+					st.annotationsHandler.activeAnnotation.subscribe((v) => (cur = v))();
+					if (cur?.draft) st.annotationsHandler.setAnnotation({ ...cur.draft, name: 'Memory note', text: 'pin' });
+				}
+				return { text: !!text, pin: !!host };
+			});
+			result.labelsAdded = made;
+			log('labels added', JSON.stringify(made));
+			await page.waitForTimeout(3000);
+		}
 		const cdp = await context.newCDPSession(page);
 		await cdp.send('HeapProfiler.enable');
 		const pid = await gpuPid(browser);
 		result.gpuPid = pid;
-		for (let i = 0; i < WARM; i++) await trip(page);
+		for (let i = 0; i < WARM; i++) result.warmLabels = await trip(page);
 		await page.waitForTimeout(3000);
 		const h0 = await heap(cdp);
 		const g0 = await gpuBytes(pid);
@@ -176,10 +206,10 @@ async function trip(page) {
 		log('before: heap MB', (h0 / 1e6).toFixed(1), 'gpu MB', g0 == null ? 'n/a' : (g0 / 1e6).toFixed(1));
 		for (let i = 0; i < TRIPS; i++) {
 			const t0 = Date.now();
-			await trip(page);
-			const row = { i, ms: Date.now() - t0, heap: await heap(cdp), gpu: await gpuBytes(pid) };
+			const labels = await trip(page);
+			const row = { i, ms: Date.now() - t0, heap: await heap(cdp), gpu: await gpuBytes(pid), labels };
 			result.trip.push(row);
-			log('trip', i + 1, 'heap MB', (row.heap / 1e6).toFixed(1), 'gpu MB', row.gpu == null ? 'n/a' : (row.gpu / 1e6).toFixed(1));
+			log('trip', i + 1, 'heap MB', (row.heap / 1e6).toFixed(1), 'gpu MB', row.gpu == null ? 'n/a' : (row.gpu / 1e6).toFixed(1), 'text quads', labels ?? 'n/a');
 			save();
 		}
 		await page.waitForTimeout(3000);

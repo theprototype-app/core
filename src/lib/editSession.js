@@ -1,4 +1,7 @@
 import { beginHistorySession, endHistorySession } from './history';
+import { session } from './editSessionState';
+
+export { session };
 
 // 15-F: ONE mesh-edit session = ONE undo entry after Done (history.js keeps
 // the live barrier; this module decides when a session starts and ends).

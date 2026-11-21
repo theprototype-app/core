@@ -91,8 +91,8 @@
   // 36-export: the Publish / Export modal (core owns the shell + Export tab; a cloud plugin mounts
   // Publish into it) and the exported game's boot (inert on every normal page load)
   import { publishExportOpen } from '$lib/export/exportStores.js'
-  import { simplifyDialog } from '$lib/simplifyDialog.js'
-  import { export3dDialog } from '$lib/export3d/export3dDialog.js'
+  import { simplifyDialog } from '$lib/makerDialogs.js'
+  import { export3dDialog } from '$lib/makerDialogs.js'
   // 47-cc0: the free CC0 asset browser (lazy, like the export modal)
   import { assetBrowserOpen } from '$lib/cc0/assetBrowserState.js'
   import { recordingOpen, recordingState } from '$lib/recording/recordingStores.js'

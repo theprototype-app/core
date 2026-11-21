@@ -156,7 +156,7 @@ export async function saveSelectionAs(formatId, uuids, name) {
 	}
 	if (format.kind === 'download') return downloadSelectionAs(format, list, name);
 	if (format.kind === 'export3d') {
-		const { openExport3d } = await import('./export3d/export3dDialog');
+		const { openExport3d } = await import('./makerDialogs');
 		openExport3d(/** @type {any} */ (format.ext), list, name);
 		return true;
 	}

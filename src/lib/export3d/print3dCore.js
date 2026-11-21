@@ -10,7 +10,8 @@
 //    multi-colour printer (or a slicer's per-object filament) gets the scene's colours.
 //  · MANIFOLD: welded edges (a quantized grid, 1e-5 m) used other than twice. A warning, never a
 //    block: slicers repair small holes, and a person may be printing a flat sign on purpose.
-import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
+// fflate is imported DYNAMICALLY (the app's convention: a static zip import here put ~3 KB of
+// deflate into the boot chunk the editor and play page share).
 
 /**
  * @typedef {{name: string, positions: Float32Array, index: Uint32Array | null, color?: number[] | null}} PrintPart
@@ -76,7 +77,7 @@ export function writeStl(parts, opts = {}) {
 	const total = parts.reduce((n, p) => n + partTriangles(p), 0);
 	const buffer = new ArrayBuffer(84 + total * 50);
 	const view = new DataView(buffer);
-	const header = strToU8((opts.header ?? 'theprototype.app STL, millimetres').slice(0, 80));
+	const header = new TextEncoder().encode((opts.header ?? 'theprototype.app STL, millimetres').slice(0, 80));
 	new Uint8Array(buffer, 0, header.length).set(header);
 	view.setUint32(80, total, true);
 	const bed = bedTransform(parts, scale);
@@ -186,8 +187,10 @@ const CONTENT_TYPES =
 const RELS =
 	'<?xml version="1.0" encoding="UTF-8"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel" /></Relationships>';
 
-/** A 3MF package of the parts. PURE. @param {PrintPart[]} parts @param {{scale?: number}} [opts] @returns {Uint8Array} */
-export function write3mf(parts, opts = {}) {
+/** A 3MF package of the parts. PURE (fflate loads on the first call).
+ * @param {PrintPart[]} parts @param {{scale?: number}} [opts] @returns {Promise<Uint8Array>} */
+export async function write3mf(parts, opts = {}) {
+	const { zipSync, strToU8 } = await import('fflate');
 	return zipSync(
 		{
 			'[Content_Types].xml': strToU8(CONTENT_TYPES),
@@ -200,7 +203,8 @@ export function write3mf(parts, opts = {}) {
 
 /** Read a 3MF back: unit, objects with their triangle counts and colours. For the suites.
  * @param {Uint8Array} bytes */
-export function read3mf(bytes) {
+export async function read3mf(bytes) {
+	const { unzipSync, strFromU8 } = await import('fflate');
 	const files = unzipSync(bytes);
 	const model = files['3D/3dmodel.model'];
 	if (!model || !files['[Content_Types].xml'] || !files['_rels/.rels']) throw new Error('not a 3MF package');

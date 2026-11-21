@@ -414,7 +414,7 @@ export const shortcuts = [
 		action: () => {
 			const uuids = get(selectedObjects);
 			const name = uuids.length === 1 ? get(selectedObject)?.name : undefined;
-			void import('./export3d/export3dDialog').then((m) => m.openExport3d('stl', uuids, name));
+			void import('./makerDialogs').then((m) => m.openExport3d('stl', uuids, name));
 		}
 	},
 	{

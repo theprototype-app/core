@@ -14,7 +14,7 @@ import { hasAnimatedImport, animatedImportPayload, animatedImportKind, animation
 import { registerParkHook } from './parkHooks';
 import { undoEntry } from './history';
 import { showChoiceEx } from './confirmDialog';
-import { simplifyDialog } from './simplifyDialog';
+import { simplifyDialog } from './makerDialogs';
 import { geometryParamsOf } from './geometryEdit';
 
 // 102 M1 — SIMPLIFY, the scene half. The arithmetic is `meshSimplify` (pure) on the import

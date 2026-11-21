@@ -8,7 +8,7 @@
 	// Keys: Enter exports / downloads, Esc closes, 1 / 2 / 3 pick STL / 3MF / USDZ.
 	import ModalDialog from '../ui/ModalDialog.svelte';
 	import UiButton from '../ui/Button.svelte';
-	import { export3dDialog } from '$lib/export3d/export3dDialog';
+	import { export3dDialog } from '$lib/makerDialogs';
 
 	/** @type {any} */
 	let action = $state(null);
@@ -77,7 +77,7 @@
 				close();
 				return;
 			}
-			if (action.exportPrint(format, parts, { scale, name })) close();
+			if (await action.exportPrint(format, parts, { scale, name })) close();
 		} catch (e) {
 			error = 'Export failed: ' + String(/** @type {any} */ (e)?.message ?? e);
 		} finally {

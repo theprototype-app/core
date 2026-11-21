@@ -20,6 +20,7 @@
 		"levels-export": "needs the built app (scripts/serve-build.cjs): the exporter reads build/export-manifest.json, so it only SKIPs on a dev server"
 	},
 	"optional": {
+		"simplify-export": "joined from 102-simplify-export (roadmap 102 M1/M2 Simplify + Export for 3D print / AR, 2026-11-21): not yet measured on a GitHub runner, so it reports and does not gate",
 		"path-object": "joined from 78-path (roadmap 78 F4 the Path object, 2026-11-09): not yet measured on a GitHub runner, so it reports and does not gate",
 		"play-link-devices": "joined from fix-play-link (device-lab play-link fixes, 2026-11-05; IWER Quest + folded/unfolded phone): not yet measured on a GitHub runner, so it reports and does not gate",
 		"play-entry": "joined from 94-play (roadmap 94 slim play runtime, 2026-11-03): not yet measured on a GitHub runner, so it reports and does not gate",
@@ -331,6 +332,7 @@
 		"no-webgl": 120,
 		"stale-chunk": 150,
 		"model-replace": 540,
+		"simplify-export": 400,
 		"sky-cdn": 180,
 		"sky-quality": 240,
 		"xr-look": 150,

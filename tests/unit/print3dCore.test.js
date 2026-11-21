@@ -35,10 +35,10 @@ describe('binary STL', () => {
 });
 
 describe('3MF', () => {
-	it('is a millimetre package with one object per part and its colour', () => {
+	it('is a millimetre package with one object per part and its colour', async () => {
 		const red = partOf(new THREE.BoxGeometry(1, 1, 1), [0, 0, 0], [1, 0, 0]);
 		const blue = partOf(new THREE.BoxGeometry(1, 1, 1), [3, 0, 0], [0, 0, 1]);
-		const read = read3mf(write3mf([red, blue]));
+		const read = await read3mf(await write3mf([red, blue]));
 		expect(read.unit).toBe('millimeter');
 		expect(read.objects.length).toBe(2);
 		expect(read.triangles).toBe(24);

@@ -23,7 +23,7 @@
  * @typedef {{key: string, positions: Float32Array, normals?: Float32Array | null,
  *   uvs?: Float32Array | null, colors?: Float32Array | null, colorSize?: number,
  *   index?: Uint32Array | null, groups?: {start: number, count: number, materialIndex?: number}[],
- *   target: number, errorCap?: number, extras?: Extra[]}} MeshIn
+ *   target: number, errorCap?: number, extras?: Extra[], lockBorder?: boolean}} MeshIn
  * @typedef {{key: string, positions: Float32Array, normals: Float32Array | null,
  *   uvs: Float32Array | null, colors: Float32Array | null, colorSize: number, index: Uint32Array,
  *   groups: {start: number, count: number, materialIndex?: number}[], triangles: number,
@@ -178,7 +178,9 @@ export function simplifyMesh(simplifier, mesh) {
 		const end = Math.min(index.length, start + Math.min(group.count, index.length - start));
 		const slice = index.subarray(start, end - ((end - start) % 3));
 		const targetCount = Math.max(3, Math.floor((slice.length / 3) * ratio) * 3);
-		const flags = multi ? ['LockBorder'] : [];
+		// 102 M1: Simplify asks for locked borders always (`lockBorder`): an index-space border is also
+		// a uv SEAM or a pole fan, and letting it slide on one side opens a crack the other side cannot close
+		const flags = multi || mesh.lockBorder ? ['LockBorder'] : [];
 		/** @type {[Uint32Array, number]} */
 		const [out, err] = attrs
 			? simplifier.simplifyWithAttributes(slice, positions, 3, attrs, stride, weights, null, Math.min(targetCount, slice.length), errorCap, flags)

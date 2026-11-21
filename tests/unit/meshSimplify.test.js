@@ -10,6 +10,7 @@ import {
 	MIN_TRIANGLES
 } from '../../src/lib/meshSimplify.js';
 import { simplifyMesh } from '../../src/lib/decimateCore.js';
+import { openEdges } from '../../src/lib/export3d/print3dCore.js';
 
 // 102 M1: the pure Simplify core, against the REAL simplifier. What must hold: the attribute
 // set survives (incl. skin weights and a second uv set), a carried channel stays attached to the
@@ -111,6 +112,15 @@ describe('simplifyGeometryData', () => {
 		const result = simplifyGeometryData(MeshoptSimplifier, dataOf(g), { percent: 50 });
 		expect(result.dropped).toEqual(['tangent']);
 		expect(result.data.attributes.tangent).toBeUndefined();
+	});
+
+	it('a closed uv sphere stays watertight (its seam and poles do not crack)', () => {
+		const g = new THREE.SphereGeometry(1, 251, 100);
+		const data = dataOf(g);
+		const result = simplifyGeometryData(MeshoptSimplifier, data, { percent: 25 });
+		expect(openEdges([{ name: 'before', positions: /** @type {any} */ (data.attributes.position.array), index: data.index }])).toBe(0);
+		expect(openEdges([{ name: 'after', positions: /** @type {any} */ (result.data.attributes.position.array), index: result.data.index }])).toBe(0);
+		expect(result.triangles).toBeGreaterThan(Math.round(trianglesIn(data) * 0.25 * 0.9));
 	});
 
 	it('welds a triangle soup first (an STL) and still reaches the target', () => {

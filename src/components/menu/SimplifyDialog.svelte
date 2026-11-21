@@ -6,7 +6,7 @@
 	// Keys: arrows on the slider, type a count, Enter applies, P previews, Esc cancels.
 	import ModalDialog from '../ui/ModalDialog.svelte';
 	import UiButton from '../ui/Button.svelte';
-	import { simplifyDialog } from '$lib/simplifyDialog';
+	import { simplifyDialog } from '$lib/makerDialogs';
 
 	/** @type {any} */
 	let action = $state(null);

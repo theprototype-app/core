@@ -68,6 +68,9 @@ export function simplifyJob(data, target, opts = {}) {
 		groups: (data.groups ?? []).map((g) => ({ start: g.start, count: g.count, ...(g.materialIndex !== undefined ? { materialIndex: g.materialIndex } : {}) })),
 		target,
 		errorCap: opts.errorCap ?? 1,
+		// a seam / pole / real hole must not slide: two sides simplified apart crack open (measured: a
+		// uv sphere at 25 % left 67 open edges along its seam without it)
+		lockBorder: true,
 		extras: []
 	};
 	/** @type {string[]} */

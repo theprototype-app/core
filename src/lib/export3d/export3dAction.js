@@ -118,15 +118,15 @@ export function fileStem(name) {
 
 /**
  * Write and download. @param {'stl'|'3mf'} format @param {PrintPart[]} parts
- * @param {{scale?: number, name?: string}} [opts] @returns {{bytes: Uint8Array, filename: string} | null}
+ * @param {{scale?: number, name?: string}} [opts] @returns {Promise<{bytes: Uint8Array, filename: string} | null>}
  */
-export function exportPrint(format, parts, opts = {}) {
+export async function exportPrint(format, parts, opts = {}) {
 	if (!parts.length) {
 		showToast('Nothing to export: no meshes in ' + (opts.name ? '"' + opts.name + '"' : 'the scene') + '.');
 		return null;
 	}
 	const scale = opts.scale ?? 1;
-	const bytes = format === 'stl' ? new Uint8Array(writeStl(parts, { scale })) : write3mf(parts, { scale });
+	const bytes = format === 'stl' ? new Uint8Array(writeStl(parts, { scale })) : await write3mf(parts, { scale });
 	const filename = fileStem(opts.name ?? 'scene') + '.' + format;
 	saveBytes(/** @type {any} */ (bytes), filename, format === 'stl' ? 'model/stl' : 'model/3mf');
 	return { bytes, filename };

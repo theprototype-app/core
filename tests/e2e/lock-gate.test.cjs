@@ -52,6 +52,25 @@ const sendRaw = (from, toId, msg) =>
 		[toId, Array.isArray(msg) ? msg : [msg]]
 	);
 
+// what F is missing, and why (a one-off red in a pc-slot run: F had the first boxes only)
+const dump = (p, all) =>
+	p.page.evaluate((all) => {
+		const s = window.__tp.test.v1;
+		let g, pcd, t, pc;
+		s.objectsGroup.subscribe((x) => (g = x))();
+		s.toastStore.subscribe((x) => (t = x))();
+		s.peers.subscribe((x) => (pc = x))();
+		try { s.connectionState?.pendingConnectDecision?.subscribe((x) => (pcd = x))(); } catch {}
+		return {
+			have: all.filter((u) => !!g?.getObjectByProperty('uuid', u)).length,
+			children: g?.children.length,
+			pending: pcd ?? null,
+			open: Object.entries(pc?.connections ?? {}).filter(([, c]) => c?.open).map(([id]) => id.slice(0, 5)),
+			toasts: (t ?? []).map((x) => (typeof x === 'string' ? x : x.text)).slice(-6),
+			wire: (() => { try { return JSON.stringify(s.wireErrors?.wireErrors?.() ?? null).slice(0, 600); } catch (e) { return String(e); } })()
+		};
+	}, all);
+
 h.run(async () => {
 	const browser = await h.launch();
 	const H = await h.setupPage(browser, 'H');
@@ -82,6 +101,9 @@ h.run(async () => {
 	const F = await h.setupPageQuiet(browser, 'F', [H, E]);
 	await h.connect(F, H);
 	await h.eventually(() => holdsUuid(F.page, made[made.length - 1]), (v) => v, 'F has the boxes', 30000);
+	if (!(await holdsUuid(F.page, made[made.length - 1]))) {
+		for (const p of [H, E, F]) console.log('[diag F boxes]', JSON.stringify(await dump(p, made)));
+	}
 	await h.eventually(() => locks(F.page), (l) => has(l, E.id, X) && has(l, E.id, Y), 'a late joiner sees EVERY object E holds, not just the primary');
 	await h.eventually(
 		() =>
@@ -123,6 +145,7 @@ h.run(async () => {
 		h.check(name !== 'stolen', 'nor a rename');
 	}
 	await h.eventually(() => toasts(F.page), (t) => t.some((x) => x.includes('is editing')), 'the sender hears from the holder that the change was not kept');
+	if (!(await toasts(F.page)).some((x) => x.includes('is editing'))) for (const p of [H, E, F]) console.log('[diag reject]', JSON.stringify(await dump(p, made)));
 	await h.eventually(() => posOf(F.page, X), (p) => JSON.stringify(p) === JSON.stringify(xBefore), "and the sender's copy is put back as the holder has it");
 	// positive control: the holder's own edit applies everywhere
 	await E.page.evaluate((u) => {

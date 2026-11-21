@@ -1,3 +1,7 @@
+<script lang="ts" module>
+	let phSeq = 0;
+</script>
+
 <script lang="ts">
 	// showhide-v8 (owner 2026-11-09, "one arrow pattern in tabbed windows" + "Handle icons" (b)) — THE ONE SIDE-PANE
 	// HANDLE every window with side panes uses (Node editor, Shader, Animation, UV, HUD, Explorer, Profiler, Code):
@@ -94,6 +98,16 @@
 	// O2: the open pane's header / tab strip (its top band) carries this menu while the handle is not drawn. A row
 	// with a menu of its own (it calls preventDefault) keeps it; a text field keeps the browser's
 	const BAND = 44;
+	// the handle and its pane carry one key, so a test (or a tool) can find the band that stands in for a hidden handle
+	const phKey = `ph${++phSeq}`;
+	$effect(() => {
+		const el = pane;
+		if (!el) return;
+		el.dataset.phPane = phKey;
+		return () => {
+			if (el.dataset.phPane === phKey) delete el.dataset.phPane;
+		};
+	});
 	$effect(() => {
 		const el = pane;
 		if (!el || !open) return;
@@ -145,6 +159,7 @@
 	title={locked ? `The sidebars are locked — right-click to unlock` : `${open ? 'Hide' : 'Show'} ${label} — right-click for more`}
 	style={shift && !open ? `${style}; translate: ${shift}px 0` : style}
 	data-ph-shift={shift && !open ? shift : undefined}
+	data-ph-key={pane ? phKey : undefined}
 	bind:this={btn}
 	onclick={press}
 	oncontextmenu={onMenu}

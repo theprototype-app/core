@@ -8,6 +8,7 @@
 
 ## 1.71.0 — Convert to code
 
+- **Code view, on for everyone**: the Nodes editor's **Code** tab shows the current graph as code, read-only: one line per node, its changed settings and what is wired into it. Press a line to select that node; **Copy** takes the whole text. On a phone it opens as a sheet; in VR the Logic panel has a **Code** button. AI agents get the same text as `code` in `list_scene {flow}`. To hide it: `localStorage['flag:codeView'] = '0'`. <!-- 2.0-n012 2.0-int -->
 - **Convert to code**: right-click a **Math**, **Compare**, **Gate**, **Select**, **Map Range**, **Random** or **HUD Text** node and pick **Convert to code**: it becomes a Script node that does exactly the same thing, with every wire kept, so you can change how it works. **Convert back** returns the built-in node while the code is unchanged. One undo step, and everyone in the session sees it. On a phone or in VR the node sheet shows the code read-only. <!-- 2.0-n3c -->
 - **Custom nodes keep their definitions**: a scene with custom nodes saved and opened again (or restored after a reload) brings their sockets and code back; they used to come back empty and do nothing. <!-- 2.0-n3c -->
 - **Animation Finished, Animation Marker, On Animation State and On Grab fire again**: they had read 0 since 1.23, so a marker wired to Play Animation never fired. <!-- 2.0-n3c -->

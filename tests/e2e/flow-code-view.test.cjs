@@ -2,7 +2,7 @@
 //
 //   1. registry parity: the palette the app built IS the definitions (143 core types, in family order),
 //      and every core type renders its own card (never the "module that isn't installed" card)
-//   2. flag OFF (the default): no Code tab, and the agent's answers carry no `code` (contract 1.9 shape)
+//   2. the flag is ON by default (1.71); switched OFF: no Code tab, and the agent's answers carry no `code`
 //   3. flag ON: the Code tab opens on each bundled template's scene graph — one line per node, the same
 //      text the generator prints; the agent's list_scene {flow} and describe_node_types carry `code`
 //   4. jump both ways: a node's line selects (and frames) the node; selecting a card marks its line
@@ -80,10 +80,12 @@ h.run(async () => {
 
 	// ---- 2. flag off -------------------------------------------------------------------------------------------
 	if (want(2)) {
-		console.log('\n=== 2. flag off (the default) ===');
-		h.check((await v1(A.page, () => window.__tp.test.v1.codeView.codeViewOn())) === false, 'codeView ships off');
+		console.log('\n=== 2. on by default; switched off ===');
+		h.check((await v1(A.page, () => window.__tp.test.v1.codeView.codeViewOn())) === true, 'codeView ships on (1.71)');
+		await v1(A.page, () => window.__tp.test.v1.codeView.codeViewFlag.set(false));
+		h.check((await v1(A.page, () => localStorage.getItem('flag:codeView'))) === '0', 'switching it off is remembered (flag:codeView = 0)');
 		await openEditor(A.page);
-		h.check((await A.page.locator('#flow-tab-code').count()) === 0, 'no Code tab without the flag');
+		h.check((await A.page.locator('#flow-tab-code').count()) === 0, 'no Code tab with the flag off');
 		await loadTemplate(A.page, 'starter-recipes');
 		const r = await v1(A.page, async () => {
 			const t = window.__tp.test.v1.aiTools;

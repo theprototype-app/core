@@ -21,6 +21,8 @@ const TEMPLATE_FILES = [
 	'two-levels',
 	// 78 F27: the starter recipes at work (door, walk-up door, bell, guard)
 	'starter-recipes',
+	// 61-int G9: the starter for enemies (a guard on a Path that spots and chases; needs the navigation module)
+	'guard-patrol',
 	'lighthouse-island',
 	// 23-D3's Jam Room, a game since 30 visuals-core
 	'jam-room',

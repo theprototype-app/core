@@ -1,5 +1,5 @@
 import { writable, get } from 'svelte/store';
-import { safeStorage } from './safeStorage';
+import { safeStorage, storageIsolated } from './safeStorage';
 import { exportMode } from './export/exportBoot.js';
 
 /**
@@ -124,7 +124,8 @@ let capabilityProvider = null;
 
 /** Does this build or device load a cloud plugin? (startCloudPlugin reads the same two) */
 export function cloudPluginExpected() {
-	if (exportMode) return false;
+	// 61 G3: a "Test with players" bot never loads the hosted tier (it would sign in as the host's account)
+	if (exportMode || storageIsolated) return false;
 	return !!(import.meta.env?.VITE_CLOUD_PLUGIN || safeStorage.getItem('cloudPluginUrl'));
 }
 
@@ -224,6 +225,13 @@ export function setCapabilityProvider(fn) {
 	capabilityProvider = typeof fn === 'function' ? fn : null;
 }
 
+/** 61 G3: the test-players role gate, checked AFTER the plugin's (it can only refuse more) @type {((peerId: string, msgType: string) => boolean) | null} */
+let testGate = null;
+/** 61 G3: install (or clear) the gate "Test with players" uses for its bots' roles. @param {((peerId: string, msgType: string) => boolean) | null} fn */
+export function setTestPlayersGate(fn) {
+	testGate = typeof fn === 'function' ? fn : null;
+}
+
 /**
  * The ONE receive-side choke point (peerHandler `conn.on('data')`): may a message
  * of `msgType` from `peerId` be applied locally? Default — no provider and no plugin
@@ -234,6 +242,13 @@ export function setCapabilityProvider(fn) {
  */
 export function canApply(peerId, msgType) {
 	if (ALWAYS_ALLOWED.has(msgType)) return true;
+	if (testGate) {
+		try {
+			if (testGate(peerId, msgType) === false) return false;
+		} catch {
+			/* a broken test gate refuses nothing */
+		}
+	}
 	if (!capabilityProvider) return !rolesPending();
 	try {
 		return capabilityProvider(peerId, msgType) !== false;

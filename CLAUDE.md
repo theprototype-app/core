@@ -2831,6 +2831,20 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   chatTokens.js); WindowShell mode tabs take a Lucide NAME (lowercase-dash = an icon, anything else = a text glyph);
   `changelog.js stripEmoji` keeps the emoji-led older CHANGELOG entries out of What's new. Suites: unit `triggerWhy78`,
   `checkEmoji`; e2e `trigger-why-78`, `starter-recipes-78`.
+- **ROADMAP 61 G1/G5-G8/G10 (61-nav) — ENEMIES THAT WALK.** The navmesh, the crowd and the guard brain are the
+  modules repo's `navigation` module (recast-navigation-js WASM in a lazy blob worker; only a scene with nav nodes
+  downloads it). Core holds only the seams, one SDK slice `sdk/gameWorld.js`: `api.colliderGeometry({maxTriangles,
+  signatureOnly, exclude})` (static colliders + terrain as WORLD triangles from `colliderSpec`, moving solids as
+  `moving` boxes, a signature for a debounced rebake), `api.paths.of/list/create` (78's `pathOf` + `createPath`:
+  Patrol reads the Path object ONLY, so editing the path changes the patrol), `api.players()` (camera + every open
+  peer's avatar), `api.isAuthority()` (`kitIsAuthority` in kit/runtime.js), `api.isExport()`,
+  `api.registerViewToggle` (View-menu rows, LOCAL state the module keeps) and `api.registerObjectAction` (object-menu
+  rows + a UI-less `apply`); `sdk/flow.js` gained `removeNodes(ids, graphId)` and `addNodes` creating a missing object
+  graph. `moduleWorldItems.js` is the leaf store both menus read. `npcEntry.js`: "Make this an enemy…" (object menu,
+  Physics & effects) is listed with the module ABSENT and offers the gallery install, then opens the module's sheet.
+  `ai/npcTools.js` = `game_setup {npc}` -> `set_npc` -> the module's `applyEnemy` (the sheet's own recipe, so the
+  agent and the person build the same guard). The module picks its stepper itself (lowest-id peer in Play via
+  heartbeats) and every peer eases between ~10 Hz snapshots inside the NPC's effect, so the authored pose stays home.
 - **ROADMAP 95 SHARE A MOMENT (SM1-SM3).** `src/lib/moment/`: `momentCore.js` (PURE: the ring with a fake clock,
   `momentBlocker` = the ONE eligibility rule in order player→setting→browser→memory→slow→vr→idle, `clampTrim` 3-10 s,
   `resampleFrames` = output frame i shows the LATEST capture at or before start + i/fps, so the file is exactly

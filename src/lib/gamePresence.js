@@ -25,7 +25,7 @@
 // history's import subtree, and nothing here registers a history kind.
 
 import { writable, get } from 'svelte/store';
-import { peers, showToast } from '../stores/appStore';
+import { peers, showToast, peerPlayModes } from '../stores/appStore';
 import { isLocked } from '../stores/sceneStore';
 import { rolesInfo } from './cloudHooks';
 import { sessionHost } from './connectionState';
@@ -39,10 +39,8 @@ import { requestPlay } from './playMode';
  * does not recognise as `editor` (the normalize-at-the-boundary rule). */
 export const PLAY_MODES = ['editor', 'playing'];
 
-/** REMOTE peers only, `peerId -> 'editor' | 'playing'`. An absent peer is an editor —
- * that is the whole compatibility story, so nothing writes 'editor' defensively.
- * @type {import('svelte/store').Writable<Record<string, string>>} */
-export const peerPlayModes = writable({});
+// REMOTE peers only, `peerId -> 'editor' | 'playing'` — kept in stores/appStore so the module SDK reads it
+export { peerPlayModes };
 
 /** How long every peer must have been out of play before the game gives up on itself.
  * Ten seconds is the user's number: long enough that a reload, an Esc to check

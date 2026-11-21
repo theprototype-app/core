@@ -149,6 +149,8 @@ import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, show
 import { GIVE_UP_ATTEMPTS } from '$lib/connectionStatus';
 import { get } from 'svelte/store';
 import { exportMode } from './export/exportBoot.js';
+import { botFrame } from './testPlayers/botFrame.js'; // 61 G3
+import * as testSeams from './testPlayers/seams.js'; // 61 G3: peerWrap / botAdmit (the runner sets them)
 
 /** 55: the full-state requests an AGENT page leaves unanswered — every one whose reply is scene content
  * (see the dispatch gate). Not getasset/getproject/getchat/getmodulestate/getnodedefs: bytes, the manifest,
@@ -552,7 +554,13 @@ export class PeerConnection {
 			// net-drop-1: the id stays readable through a signaling drop (peerDrop.keepPeerId)
 			// every link reads and writes through this app's own data-channel codec (peerCodec), whatever codec a
 			// dial asks for; the server options are unchanged
-			this.peer = exportMode ? /** @type {Peer} */ (offlinePeer(this.myId)) : keepPeerId(new Peer(this.myId, { ...(options ?? {}), serializers: peerSerializers() }), this.myId);
+			// 61 G3: a bot frame holds the local test link's Peer (offline until localLink.js has loaded)
+			this.peer = exportMode
+				? /** @type {Peer} */ (offlinePeer(this.myId))
+				: botFrame
+					? /** @type {Peer} */ (this.botPeerFactory ? this.botPeerFactory(this.myId) : offlinePeer(this.myId))
+					: keepPeerId(new Peer(this.myId, { ...(options ?? {}), serializers: peerSerializers() }), this.myId);
+			if (testSeams.peerWrap && !exportMode && !botFrame) testSeams.peerWrap(this.peer);
 		};
 
 		// 27-F (audit H2): THE recreate ritual, in one place. Four callers had their own
@@ -874,9 +882,23 @@ export class PeerConnection {
 		p.on('connection', handleConnection.bind(this));
 		};
 
+		/** 61 G3: set once localLink.js has loaded in a bot frame @type {((id: string) => any) | null} */
+		this.botPeerFactory = null;
 		createPeerForMode(false);
 		initVoiceChat(this);
 		wire();
+		// 61 G3: a bot frame swaps its offline boot Peer for the local link's once the transport is here;
+		// the rebuilt Peer opens when the hub accepts its id, and the invite hash dials the host as usual
+		if (botFrame && !exportMode) {
+			const bot = botFrame;
+			Promise.all([import('./testPlayers/localLink.js'), import('./testPlayers/bot.js')])
+				.then(([m, b]) => {
+					this.botPeerFactory = (/** @type {string} */ id) => m.createBotPeer(id, { test: bot.test });
+					recreatePeer(false);
+					b.startBot(bot);
+				})
+				.catch((e) => log('error', 'net', 'test-player link failed to load', { error: String(e) }));
+		}
 
 		// Courtesy goodbye on tab close / refresh (best-effort). Without it,
 		// peers treat the close as a transient drop and spend the whole backoff
@@ -1079,8 +1101,12 @@ export class PeerConnection {
 						}
 						log('info', 'net', 'a guest reloaded and is back on its id — re-admitted', { peer: conn.peer });
 					}
+					// 61 G3: a bot this tab started, over its local link — admitted with no card and no toast
+					const testBot = !found && !!testSeams.botAdmit?.(conn);
 					const verdict = found
 						? undefined
+						: testBot
+							? 'admit'
 						: invite
 							? invite.ok ? 'admit' : { label: knockLabel }
 							: auth && typeof auth.decide === 'function' ? auth.decide(conn.peer, cloudMeta, { kind: dialKind }) : undefined;
@@ -1127,7 +1153,7 @@ export class PeerConnection {
 						}
 						get(peers).send({ type: 'userdata', userdata: get(userdata) });
 						this.approveDialBack(conn.peer);
-						this.announceAutoAdmit(conn.peer, auth, cloudMeta, invite?.ok ? invite.role : undefined);
+						if (!testBot) this.announceAutoAdmit(conn.peer, auth, cloudMeta, invite?.ok ? invite.role : undefined);
 					}
 				} catch (e) {
 					console.error('cloud auth provider threw:', e);

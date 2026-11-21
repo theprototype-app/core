@@ -289,6 +289,8 @@
 		// 78 F27: the starter recipes (door, guard)
 		DoorOpen,
 		Shield,
+		// 61-nav G10: Make this an enemy
+		Swords,
 		// uir-people: the presence statuses (Busy / Away) and the pill's Join…
 		CircleMinus,
 		Clock,
@@ -527,6 +529,7 @@
 		'volume-x': VolumeX,
 		'wand-sparkles': WandSparkles,
 		waypoints: Waypoints,
+		swords: Swords,
 		'whole-word': WholeWord,
 		wifi: Wifi,
 		'wifi-off': WifiOff,

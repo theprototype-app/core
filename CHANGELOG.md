@@ -6,6 +6,14 @@
      rendering, so maintainer notes stay out of the user-facing window. No emoji from
      1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
 
+## 1.72.0 — Make real games
+
+- **Test with players**: right-click **Play** (long-press on a phone) ▸ **Test with players…** adds 1 to 3 simulated players to your session: real copies of the app in this tab, each a Player, Viewer or Editor. Watch them in small views, **Drive** one to play as it, and **Stop test** removes them all with no rows, saves or settings left behind. Phones and headsets run one; they start one after another, and one that does not start says **Did not start**. Simulated players start with the modules you have installed. <!-- 61-test G3, 61-int -->
+- **Enemies that patrol, see and chase**: right-click any object ▸ **Make this an enemy…** It walks a Path or guards its spot, sees you inside its cone (walls block it) and hears noises, chases you round walls, attacks when it reaches you, gives up and walks back. Where it cannot reach you it stops at the closest point and says why. Crates you push block doorways and free them again. One player's machine runs the enemies and everyone sees them in the same place, viewers included, and they chase viewers too. **View ▸ Navmesh overlay** and **View ▸ NPC debug view** show the walkable area and each enemy's path and state on your screen only. New nodes in **Navigation**: Enemy (NPC), Move To, Chase, Flee, Wander, Patrol (Path), Make Noise, On NPC Event, NPC State, Navmesh. It comes as the **Navigation** module, installed the first time you use it: scenes without enemies download none of it. <!-- 61-nav G1 G5-G8 G10, 61-int -->
+- **New template: A guard on patrol**: a walled yard with a guard walking its round, crates to hide behind and an exit to sneak to. <!-- 61-int G9 -->
+- **For AI agents**: `game_setup` takes `npc` to make an object an enemy (the same recipe as the sheet). No tool names changed. <!-- 61-nav G10 -->
+- **For module authors**: `api.paths`, `api.colliderGeometry`, `api.players()` (with `playing` for other peers), `api.isAuthority()`, `api.isExport()`, `api.registerViewToggle` and `api.registerObjectAction` (MODULES.md "Game world"); `api.flow.removeNodes`. A viewer's module messages do not reach the others (the roles gate), so a module that elects one peer should elect only a peer the others hear. <!-- 61-nav, 61-int -->
+
 ## 1.71.0 — Convert to code
 
 - **Code view, on for everyone**: the Nodes editor's **Code** tab shows the current graph as code, read-only: one line per node, its changed settings and what is wired into it. Press a line to select that node; **Copy** takes the whole text. On a phone it opens as a sheet; in VR the Logic panel has a **Code** button. AI agents get the same text as `code` in `list_scene {flow}`. To hide it: `localStorage['flag:codeView'] = '0'`. <!-- 2.0-n012 2.0-int -->

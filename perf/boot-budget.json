@@ -4,12 +4,12 @@
 	"pages": {
 		"play": {
 			"html": "play.html",
-			"maxJsGzBytes": 2166784,
+			"maxJsGzBytes": 2170880,
 			"maxFirstFrameMs": 20000
 		},
 		"editor": {
 			"html": "index.html",
-			"maxJsGzBytes": 3398758,
+			"maxJsGzBytes": 3404800,
 			"maxFirstFrameMs": 32000
 		}
 	},
@@ -49,6 +49,13 @@
 			"play": "v1.70.0 2111.0 KB -> 2114.3 KB (+3.3: formatMinor 3 rules in sceneSchema, the n3b runtime fixes in flowRuntime, behaviour lint hints in analyze) -> line 2116.0 KB = v1.70.0 + 5 KB",
 			"editor": "v1.70.0 3459.5 KB -> 3314.1 KB (-145.4) -> line 3319.1 KB = measured + 5 KB (LOWERED from 3461.6)",
 			"note": "the agent tool set (ai/tools, lookTools, flowTools, pathTools, ~150 KB gz) rode the editor boot only because the chat window, the quick-prompt pill and Welcome imported their stores from ai/assistant.js; the stores and runPrompt/stopAi are now the ai/aiState.js leaf and the assistant loads on the first prompt. Convert to code's applier, planner and reference bodies load on the first Convert (nodes/convertState.js + nodes/referenceShape.js stay for the node menu). The editor line comes down with it so the win cannot slip back"
+		},
+		{
+			"date": "2026-11-21",
+			"lane": "61-int (Test with players, enemies that patrol, see and chase)",
+			"play": "v1.71.0 2114.3 KB -> 2117.6 KB (+3.3: 61-test ~0.5 bot-frame storage guard; 61-nav ~2.4 SDK gameWorld slice, pathCore split, moduleWorldItems, modules; 61-int ~0.4 presence in api.players) -> line 2120.0 KB (the INT BOOT RULE: merged tag + the union, rounded up to the next 5 KB)",
+			"editor": "v1.71.0 3314.1 KB -> 3320.3 KB (+6.2: 61-test ~1.6 storage guard + the Test with players menu leaf; 61-nav ~4.2 the same SDK slice, pathCore, moduleWorldItems, modules; 61-int ~0.4 presence) -> line 3325.0 KB (the INT BOOT RULE)",
+			"note": "what 61 keeps on the boots after its lazy splits (the enemy sheet entry and the collider reader load on first use): the bot-frame storage guard (safeStorage overlay + idb memory store, it must run before any store is read), the SDK gameWorld slice (paths.of/list, players, isAuthority and the two registries, kept sync so makeApi stays sync), moduleWorldItems + the Test with players menu leaf, a pathCore chunk split, and api.players()[].playing (the peerPlayModes store moved into stores/appStore so the SDK reads presence without gamePresence's graph). The recast navmesh WASM is a module asset only scenes with NPCs download. QUESTIONS-61-int 2, accepted by the orchestrator; lane split approximate (per-chunk diff; renamed-chunk churn ~1 KB)"
 		}
 	],
 	"throttle": {

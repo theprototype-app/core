@@ -72,6 +72,7 @@
 	import { simpleUntilPlay, holdAdvanced } from '$lib/onboarding/onboardState.js'; // 76 FW1
 	// 60 Q1: Play here — a roster button (Customize), a row in Play's own menu, Ctrl+Shift+Enter
 	import { playHere, playHereItems, playingHere } from '$lib/playHere';
+	import { testPlayersItems } from '$lib/testPlayers/testPlayers.js'; // 61 G3
 	import { animateInEditor, toggleAnimateInEditor } from '$lib/editorMotion'; // 78 F6
 	import { arPlayItems } from '$lib/arTable';
 	// 30 P2: Test play — the play button's right-click row beside the game chip's button
@@ -1025,6 +1026,8 @@
 			...arPlayItems(),
 			// 60 Q1: Play here (the phone's Play menu carries the same row)
 			...playHereItems(),
+			// 61 G3: Test with players (the phone's Play menu carries the same rows)
+			...testPlayersItems(),
 			// 30 P2: TEST PLAY — back to the menu, into Play, the Start screen. Offered only
 			// where it means something: a scene with no game shell has no menu to start from.
 			...($hudIsGame

@@ -294,7 +294,8 @@ h.run(async () => {
 		`on a MOBILE viewport the panel still seats on the circle (${JSON.stringify(mob)})`
 	);
 	h.check(
-		!!mob && mob.inset >= 12 && Math.abs(mob.circleGap ?? 99) <= 2,
+		// 80a-fix4-ui O4: the profile button sits at the burger's inset (8 px); the panel keeps that inset, not 0
+		!!mob && mob.inset >= 8 && Math.abs(mob.circleGap ?? 99) <= 2,
 		'it does not slide to the window edge and clip the circle off the screen'
 	);
 

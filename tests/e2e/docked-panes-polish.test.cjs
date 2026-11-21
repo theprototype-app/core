@@ -117,7 +117,8 @@ h.run(async () => {
 	await page.waitForTimeout(400);
 	h.check((await rightOpen()) === true, 'B5 mouse over it: Ctrl+Alt+B shows its right pane');
 	// focus inside the Explorer, mouse over the viewport
-	await page.locator('#explorer-list .tp-pane-handle.ph-left').first().focus();
+	// (80a-fix4-ui O2: an open pane's handle is hidden and takes no focus — focus a control inside the Explorer)
+	await page.locator('#explorer-list button:visible').first().focus();
 	await page.mouse.move(960, 200);
 	await page.keyboard.press('Control+b');
 	await page.waitForTimeout(400);

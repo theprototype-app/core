@@ -105,7 +105,7 @@
 		enterEditMode
 	} from '$lib/meshEdit';
 	import { bottomInset } from '$lib/bottomDock';
-	import { geometryParamsOf, applyGeometry } from '$lib/geometryEdit';
+	import { geometryParamsOf, applyGeometry, roundedBoxOffer, convertToRoundedBox } from '$lib/geometryEdit';
 	import { nameOf } from '$lib/lockControl';
 	import { geometrySpec } from '$lib/geometryParams';
 	import { LIGHT_PARAMS, SHADOW_TYPES, SHADOW_SIZES, setShadowMapSize, cappedShadowSize } from '$lib/lightParams';
@@ -908,6 +908,12 @@
 		return !isLight && !isGroup && $selectedObject ? geometryParamsOf($selectedObject) : null;
 	});
 	const geoSpec = $derived(geoParams ? geometrySpec(geoParams.gtype) : null);
+	// 102b-papercuts: a baked rounded box the Geometry section can offer to convert (never converts by itself)
+	const roundOffer = $derived.by(() => {
+		geoTick;
+		$objectsGroup;
+		return !geoParams && !isLight && !isGroup && $selectedObject ? roundedBoxOffer($selectedObject) : null;
+	});
 
 	// 21-C1: the parametric LOCK has to notice a poke. Every meshgeo commit stamps
 	// userData.faceEdited (so every sculpt stroke does), and a THREE tree is not
@@ -3975,6 +3981,21 @@
 											{/each}
 										</div>
 									</div>
+								{:else if spec.optional}
+									<!-- 102b-papercuts: an optional row (a Box's corner radius) carries its own id and tooltip -->
+									<div title={spec.title ?? spec.label}>
+										<SliderRow
+											id={'geo-' + spec.key}
+											label={spec.label}
+											min={spec.min ?? 0}
+											max={spec.max ?? 10}
+											step={spec.kind === 'int' ? 1 : spec.step ?? 0.05}
+											decimals={spec.kind === 'int' ? 0 : 2}
+											value={Number(geoParams.params[spec.key] ?? spec.def)}
+											mixed={geoMixed(spec.key, spec.def)}
+											onchange={(v) => editGeometry(spec.key, spec.kind === 'int' ? Math.round(v) : v)}
+										/>
+									</div>
 								{:else}
 									<SliderRow
 										label={spec.label}
@@ -3990,6 +4011,24 @@
 							{/each}
 						</div>
 					{/if}
+				</Section>
+			{:else if roundOffer && !multiCount}
+				<!-- 102b-papercuts: a BAKED rounded box (a mesh of vertices that is exactly one) is OFFERED as a Box
+				     with a corner radius. Never automatic: the shape stays the same, the file gets smaller and the
+				     Geometry rows come back. One undo step. -->
+				<Section variant="panel" label="Geometry">
+					<p id="geometry-rounded-offer" class="px-1 text-[length:var(--fs-badge)] text-text-2">
+						This mesh is a rounded box ({roundOffer.width} x {roundOffer.height} x {roundOffer.depth} m, corner {roundOffer.radius} m).
+					</p>
+					<UiButton
+						id="geometry-convert-rounded"
+						size="sm"
+						variant="outline"
+						title="Make it a Box with a corner radius: it looks the same, saves as a few numbers instead of every vertex, and gets its Geometry rows back. Undo puts the mesh back."
+						onclick={() => {
+							if (convertToRoundedBox($selectedObject.uuid)) geoTick++;
+						}}>Convert to a rounded Box</UiButton
+					>
 				</Section>
 			{/if}
 

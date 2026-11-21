@@ -16,12 +16,16 @@ import { terrainGeometry, TERRAIN_FALLOFFS, latheGeometry, cleanLathe, extrudeGe
 // `build`-hook shape as Terrain, plus `fromArgs` (createGeometry maps `/create` numbers to
 // params with it) and the collider hint stamped at creation
 import { ARCH_SPECS } from './arch/archGeometry.js';
+// 102b-papercuts: a Box may be ROUNDED (corner radius + segments), still a Box in the file
+import { boxGeometryFor, MAX_RADIUS_SEGMENTS, DEFAULT_RADIUS_SEGMENTS } from './roundedBox.js';
 
 const TAU = Math.PI * 2;
 
 /** `show` (37 R3): the Inspector hides the row while it returns false for the current params
  * (a door width with no doors, a spiral's column on a straight stair).
- * @typedef {{key: string, label: string, kind: 'slider'|'int'|'angle'|'bool'|'choice', min?: number, max?: number, step?: number, options?: string[], def: number|boolean|string, show?: (params: any) => boolean}} ParamSpec */
+ * `optional` (102b): the row is stored only once someone sets it, so an object that never uses it keeps
+ * exactly the params it always had (a Box's corner radius). `title` = the row's tooltip.
+ * @typedef {{key: string, label: string, kind: 'slider'|'int'|'angle'|'bool'|'choice', min?: number, max?: number, step?: number, options?: string[], def: number|boolean|string, show?: (params: any) => boolean, optional?: boolean, title?: string}} ParamSpec */
 
 /** @type {Record<string, {order: string[], params: ParamSpec[], build?: (params: any) => any, fromArgs?: (args: any[]) => Record<string, any>, clean?: (params: any) => Record<string, any>, colliderHint?: string}>} */
 export const GEOMETRY_PARAMS = {
@@ -31,10 +35,15 @@ export const GEOMETRY_PARAMS = {
 			{ key: 'width', label: 'Width', kind: 'slider', min: 0.1, max: 20, step: 0.1, def: 1 },
 			{ key: 'height', label: 'Height', kind: 'slider', min: 0.1, max: 20, step: 0.1, def: 1 },
 			{ key: 'depth', label: 'Depth', kind: 'slider', min: 0.1, max: 20, step: 0.1, def: 1 },
-			{ key: 'widthSegments', label: 'Width segs', kind: 'int', min: 1, max: 10, def: 1 },
-			{ key: 'heightSegments', label: 'Height segs', kind: 'int', min: 1, max: 10, def: 1 },
-			{ key: 'depthSegments', label: 'Depth segs', kind: 'int', min: 1, max: 10, def: 1 }
-		]
+			// a rounded box builds its own grid, so the segment rows only apply to a square one
+			{ key: 'widthSegments', label: 'Width segs', kind: 'int', min: 1, max: 10, def: 1, show: (p) => !(Number(p?.radius) > 0) },
+			{ key: 'heightSegments', label: 'Height segs', kind: 'int', min: 1, max: 10, def: 1, show: (p) => !(Number(p?.radius) > 0) },
+			{ key: 'depthSegments', label: 'Depth segs', kind: 'int', min: 1, max: 10, def: 1, show: (p) => !(Number(p?.radius) > 0) },
+			// 102b-papercuts: corner rounding, saved as two numbers (not 270 KB of vertices)
+			{ key: 'radius', label: 'Corner radius', kind: 'slider', min: 0, max: 2, step: 0.01, def: 0, optional: true, title: 'Rounds every edge and corner of the box (0 = square corners). Stops at half the shortest side.' },
+			{ key: 'radiusSegments', label: 'Corner segs', kind: 'int', min: 1, max: MAX_RADIUS_SEGMENTS, def: DEFAULT_RADIUS_SEGMENTS, optional: true, show: (p) => Number(p?.radius) > 0, title: 'How smooth the rounding is: more segments, rounder corners, more triangles.' }
+		],
+		build: boxGeometryFor
 	},
 	Sphere: {
 		order: ['radius', 'widthSegments', 'heightSegments', 'phiStart', 'phiLength', 'thetaStart', 'thetaLength'],

@@ -4,6 +4,7 @@ import { objectsGroup, pokeScene } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { recordEntry, registerHistoryKind } from './history';
 import { GEOMETRY_PARAMS, geometrySpec, boundGeometryParams } from './geometryParams';
+import { matchRoundedBox, bakedRoundedBox } from './roundedBox.js';
 
 // Live geometry parameter editing (phase 78). Params live in
 // object.userData.geometryParams = { gtype, params } — userData survives the
@@ -84,8 +85,11 @@ export function geometryParamsOf(object) {
 	if (!spec || !object.geometry.parameters) return null;
 	/** @type {any} */
 	const params = {};
-	for (const p of spec.params)
+	for (const p of spec.params) {
+		// 102b: an optional row the geometry does not carry stays out (a square box keeps its six params)
+		if (p.optional && object.geometry.parameters[p.key] === undefined) continue;
 		params[p.key] = object.geometry.parameters[p.key] ?? p.def;
+	}
 	return { gtype, params };
 }
 
@@ -99,7 +103,7 @@ export function stampGeometryParams(object) {
 export function defaultGeometryParams(gtype) {
 	/** @type {any} */
 	const params = {};
-	for (const p of geometrySpec(gtype)?.params ?? []) params[p.key] = p.def;
+	for (const p of geometrySpec(gtype)?.params ?? []) if (!p.optional) params[p.key] = p.def;
 	return params;
 }
 
@@ -150,6 +154,11 @@ export function applyRemoteGeometry(data) {
 	const group = get(objectsGroup);
 	const object = group?.getObjectByProperty('uuid', data.uuid);
 	if (!object?.geometry) return;
+	// 102b: an undone Convert goes back to the BAKED mesh (`baked` is additive: an older peer builds the box)
+	if (data.baked) {
+		unconvertLocal(object, data.params);
+		return;
+	}
 	// 85 G2/G4: a profile / outline rides `params` — the builder gets the cleaned set, never the raw wire
 	const fresh = buildGeometry(data.gtype, cleanFor(data.gtype, { ...data.params }));
 	if (!fresh) return;
@@ -160,6 +169,74 @@ export function applyRemoteGeometry(data) {
 	delete object.userData.faceEdited; // same lock, same reset as the local path
 	pokeScene();
 }
+
+/**
+ * 102b-papercuts: is this baked mesh a rounded box the Inspector can OFFER to convert? The params, or null.
+ * Cached per geometry (the check rebuilds one box to compare). Never converts anything.
+ * @type {WeakMap<object, any>} */
+const matchCache = new WeakMap();
+/** @param {any} object */
+export function roundedBoxOffer(object) {
+	const g = object?.geometry;
+	if (!object?.isMesh || !g || object.userData?.geometryParams || object.userData?.terrain || Array.isArray(object.material)) return null;
+	if (g.type !== 'BufferGeometry') return null;
+	if (!matchCache.has(g)) matchCache.set(g, matchRoundedBox(g));
+	return matchCache.get(g);
+}
+
+/**
+ * Turn a baked rounded box into a Box with a corner radius: same vertices, now two numbers in the file.
+ * One undo step (undo puts the baked mesh back), replicated as the ordinary `geometry` message.
+ * @param {string} uuid @param {{replicate?: boolean, record?: boolean}} [options] @returns {boolean}
+ */
+export function convertToRoundedBox(uuid, options = {}) {
+	const { replicate = true, record = true } = options;
+	const object = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+	const params = roundedBoxOffer(object);
+	if (!params) return false;
+	const full = cleanFor('Box', { ...defaultGeometryParams('Box'), ...params });
+	const fresh = buildGeometry('Box', full);
+	if (!fresh) return false;
+	const g = /** @type {any} */ (object).geometry;
+	// what the mesh carried that a rebuild would not (material groups are refused above; keep its userData)
+	fresh.userData = { ...(g.userData ?? {}) };
+	g.dispose();
+	/** @type {any} */ (object).geometry = fresh;
+	/** @type {any} */ (object).userData.geometryParams = { gtype: 'Box', params: full };
+	pokeScene();
+	if (record) recordEntry({ kind: 'roundconvert', uuid, params: full, before: { baked: true }, after: { baked: false } });
+	if (replicate) /** @type {any} */ (get(peers))?.send({ type: 'geometry', uuid, gtype: 'Box', params: full });
+	return true;
+}
+
+/** back to the baked mesh (undo of a Convert, here or from a peer) @param {any} object @param {any} params */
+function unconvertLocal(object, params) {
+	const baked = bakedRoundedBox(cleanFor('Box', { ...params }));
+	if (!baked) return;
+	object.geometry.dispose();
+	object.geometry = baked;
+	delete object.userData.geometryParams;
+	pokeScene();
+}
+
+registerHistoryKind('roundconvert', (entry, state) => {
+	const object = get(objectsGroup)?.getObjectByProperty('uuid', entry.uuid);
+	if (!object) return false;
+	if (!state?.baked) {
+		const params = entry.params;
+		const fresh = buildGeometry('Box', params);
+		if (!fresh) return false;
+		/** @type {any} */ (object).geometry.dispose();
+		/** @type {any} */ (object).geometry = fresh;
+		/** @type {any} */ (object).userData.geometryParams = { gtype: 'Box', params };
+		pokeScene();
+		/** @type {any} */ (get(peers))?.send({ type: 'geometry', uuid: entry.uuid, gtype: 'Box', params });
+		return true;
+	}
+	unconvertLocal(object, entry.params);
+	/** @type {any} */ (get(peers))?.send({ type: 'geometry', uuid: entry.uuid, gtype: 'Box', params: entry.params, baked: true });
+	return true;
+});
 
 // undo/redo replays the full param set — `state` is the recorded
 // {gtype, params} side (history passes entry.before/.after by value)

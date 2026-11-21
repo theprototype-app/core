@@ -125,7 +125,7 @@ h.run(async () => {
 	for (const p of [A, B]) await watch(p.page, drafts);
 
 	// §1 a scripted session of edits on both drafts
-	await A.page.evaluate(
+	const roots = await A.page.evaluate(
 		async ({ drafts, partner }) => {
 			const t = window.__tp.test.v1;
 			const g = await new Promise((r) => t.objectsGroup.subscribe(r)());
@@ -148,9 +148,14 @@ h.run(async () => {
 			await wait(200);
 			t.objectActions.applySelectionSet([]);
 			t.objectActions.duplicateObject(drafts[1]);
+			await wait(50);
+			// a copy of a draft is a draft (the flag rides the clone): return every draft root now
+			return t.objectPermissions.localOnlyRoots().map((o) => o.uuid);
 		},
 		{ drafts, partner }
 	);
+	const twin = roots.filter((u) => !drafts.includes(u));
+	h.check(twin.length === 1, `§1 Duplicate of a draft made one more draft (${twin.length})`);
 	await A.page.waitForTimeout(2500);
 	let c = await counts(A.page);
 	const stats = await A.page.evaluate(() => ({ ...window.__tp.test.v1.objectPermissions.draftGateStats }));
@@ -160,6 +165,9 @@ h.run(async () => {
 	h.check(sum((await counts(B.page)).in, drafts) === 0, '§1 B received nothing naming a draft');
 	h.check((await has(B.page, moved)) === 0 && (await has(B.page, fresh)) === 0, '§1 B has neither draft');
 	h.check((await has(B.page, partner)) === 1, '§1 ... and still has the shared partner box');
+	for (const u of twin) h.check((await has(B.page, u)) === 0, '§1 B has no copy of the duplicated draft either');
+	drafts.push(...twin);
+	for (const p of [A, B]) await watch(p.page, drafts);
 	const bLock = await B.page.evaluate((u) => new Promise((r) => window.__tp.test.v1.lockedObjects.subscribe((l) => r(JSON.stringify(l).includes(u)))()), partner);
 	console.log('DIAG B saw the shared half of the mixed lock (since released):', bLock);
 
@@ -183,7 +191,14 @@ h.run(async () => {
 		return btoa(s);
 	});
 	const bundled = strFromU8(unzipSync(new Uint8Array(Buffer.from(bundle, 'base64')))['session.json'] || new Uint8Array());
-	h.check(bundled.includes(shared) && !drafts.some((u) => bundled.includes(u)), '§3 the publish bundle leaves both drafts out');
+	// which top-level blocks of a file still name a draft (empty when green)
+	const namedIn = (json) => {
+		let o = {};
+		try { o = JSON.parse(json); } catch {}
+		return Object.keys(o).filter((k) => drafts.some((u) => JSON.stringify(o[k]).includes(u)));
+	};
+	console.log('DIAG bundle blocks naming a draft:', JSON.stringify(namedIn(bundled)));
+	h.check(bundled.includes(shared) && !drafts.some((u) => bundled.includes(u)), '§3 the publish bundle leaves every draft out');
 	const saved = await A.page.evaluate(async () => {
 		const t = window.__tp.test.v1;
 		const item = await t.levels.saveSceneAsLevel('Draft proof');
@@ -193,8 +208,10 @@ h.run(async () => {
 		return btoa(s);
 	});
 	const scene = strFromU8(unzipSync(new Uint8Array(Buffer.from(saved, 'base64')))['session.json'] || new Uint8Array());
-	h.check(scene.includes(shared) && !drafts.some((u) => scene.includes(u)), '§3 an Explorer scene save (its bytes reach peers) leaves both drafts out');
-	h.check((await toasts(A.page)).some((t) => /^2 drafts not included — share first\?/.test(t)), '§3 toast "2 drafts not included — share first?"');
+	console.log('DIAG scene save blocks naming a draft:', JSON.stringify(namedIn(scene)));
+	h.check(scene.includes(shared) && !drafts.some((u) => scene.includes(u)), '§3 an Explorer scene save (its bytes reach peers) leaves every draft out');
+	const want = new RegExp('^' + drafts.length + ' drafts not included — share first\\?');
+	h.check((await toasts(A.page)).some((t) => want.test(t)), `§3 toast "${drafts.length} drafts not included — share first?" (${JSON.stringify((await toasts(A.page)).filter((t) => /draft/.test(t)))})`);
 	h.check(
 		(await A.page.evaluate(() => window.__tp.test.v1.sceneIdentity.recomputeSceneDirty())) === false,
 		'§3 the saved scene does not read as changed while its drafts exist'

@@ -212,10 +212,38 @@ export function liftLocalObjects() {
 export function withoutLocalObjects(fn) {
 	const lift = liftLocalObjects();
 	try {
-		return { result: scrubWorkspace(fn(), lift.uuids), excluded: lift.excluded };
+		return { result: scrubPayloadDrafts(scrubWorkspace(fn(), lift.uuids), lift.uuids), excluded: lift.excluded };
 	} finally {
 		lift.restore();
 	}
+}
+
+/** the tree-shaped blocks of a session payload: already without the lifted objects (the tree was) */
+const PAYLOAD_TREE_KEYS = new Set(['objects', 'animated', 'thumbnail']);
+
+/** 80a D2: lifting the objects is not the whole of it — the payload's documents KEYED BY or
+ * POINTING AT a draft (its clips in `animations`, its `joints`, a camera look in `post`, a HUD doc)
+ * are built from stores, not from the tree, and still named it. Each block goes through the gate's
+ * own rule (draftGateCore.scrubDrafts): a key or a list entry about a draft goes. A block that would
+ * be dropped WHOLE (a draft uuid on a singleton's own chain, e.g. a game camera) is a reference and
+ * is kept, the gate's rule 4. The object tree itself is skipped: it is the megabytes, and it already
+ * lost the drafts. @template T @param {T} payload @param {Set<string>} uuids @returns {T} */
+function scrubPayloadDrafts(payload, uuids) {
+	/** @type {any} */
+	const p = payload;
+	if (!uuids.size || !p || typeof p !== 'object') return payload;
+	const isDraft = (/** @type {string} */ u) => uuids.has(u);
+	/** @type {any} */
+	let out = null;
+	for (const key of Object.keys(p)) {
+		const v = p[key];
+		if (PAYLOAD_TREE_KEYS.has(key) || !v || typeof v !== 'object') continue;
+		const next = scrubDrafts({ v }, isDraft);
+		if (next === null || next.v === v) continue;
+		if (!out) out = { ...p };
+		out[key] = next.v;
+	}
+	return out ?? payload;
 }
 
 /** A session payload's `workspace` (#20 P5: where the author left off) names the SELECTION and

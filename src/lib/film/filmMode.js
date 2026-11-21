@@ -33,9 +33,9 @@ import {
 	quatNorm,
 	cameraQuatFromDevice,
 	deviceQuatFromAngles,
-	forwardOf,
-	yawOf,
 	recentreOffset,
+	handoverOffset,
+	touchLook,
 	filmOrientation,
 	withRoll,
 	moveStep,
@@ -152,12 +152,6 @@ function sensorCamQ() {
 	return live.deviceQ && live.useSensor ? cameraQuatFromDevice(live.deviceQ, screenAngle()) : null;
 }
 
-/** pitch (radians, + = up) of an orientation's forward @param {number[]} q */
-function pitchOf(q) {
-	const f = forwardOf(q);
-	return Math.atan2(f[1], Math.hypot(f[0], f[2]));
-}
-
 /** The orientation Film draws this frame (before horizon lock / roll). */
 function rawOrientation() {
 	const camQ = sensorCamQ();
@@ -165,10 +159,9 @@ function rawOrientation() {
 		const q = quatMul(live.offset, camQ);
 		return live.dragYaw ? quatMul(quatAxisAngle([0, 1, 0], live.dragYaw), q) : q;
 	}
-	// touch look: yaw + pitch about the start (or where Touch took over), no roll (a dragged camera has no reason to tilt)
-	const yaw = yawOf(live.lookBase) + live.dragYaw;
-	const pitch = Math.max(-1.5, Math.min(1.5, pitchOf(live.lookBase) + live.dragPitch));
-	return quatNorm(quatMul(quatAxisAngle([0, 1, 0], yaw), quatAxisAngle([1, 0, 0], pitch)));
+	// touch look: yaw + pitch about the start (or where Touch took over). 80a-fix4-ui G4: about the carried QUATERNION —
+	// rebuilding it from the forward's yaw flipped the view of a phone lying flat (the yaw is undefined straight down)
+	return touchLook(live.lookBase, live.dragYaw, live.dragPitch);
 }
 
 /** @param {number[]} deviceQ @param {'sensor' | 'event'} source */
@@ -680,16 +673,16 @@ export function setMotion(motion, opts = {}) {
 	const current = drawn?.qBase ?? live.q;
 	const sensor = motion === 'tilt' || motion === 'tripod' || motion === 'walk';
 	if (live.useSensor && !sensor) {
-		// sensor → drag: the drag turns about the view as it is now
-		live.lookBase = levelHorizon(current);
+		// sensor → drag: the drag turns about the view as it is now (G4: the whole orientation, not its forward's yaw)
+		live.lookBase = current.slice();
 		live.dragYaw = 0;
 		live.dragPitch = 0;
 	}
 	live.useSensor = sensor;
 	if (sensor) {
-		// drag → sensor: where the phone points now shows what the view showed
+		// drag → sensor: where the phone points now shows what the view showed (G4: the yaw TWIST, defined at the pole)
 		const camQ = sensorCamQ();
-		if (camQ) live.offset = recentreOffset(camQ, current);
+		if (camQ) live.offset = handoverOffset(camQ, current);
 		live.dragYaw = 0;
 		live.dragPitch = 0;
 	}

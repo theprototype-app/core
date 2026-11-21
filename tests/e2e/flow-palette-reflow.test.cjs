@@ -28,7 +28,7 @@ h.run(async () => {
 	// showhide-v8 (owner 2026-11-09, "Flow: remove the swap button"): the palette moves sides from its arrow
 	// handle's menu ("Move the palette to the other side"), the dock-inset pattern
 	const paletteSwap = async () => {
-		await A.page.locator('#palette-toggle').click({ button: 'right' });
+		await h.paneHandleClick(A.page, '#palette-toggle', { button: 'right' }); // O2: the open pane's band menu
 		await A.page.locator('[role=menu] [role=menuitem]', { hasText: 'Move the palette to the other side' }).first().click();
 	};
 	// move the palette to the right -> props toggle reflows to the LEFT

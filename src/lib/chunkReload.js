@@ -11,7 +11,7 @@
 // `vite:preloadError` / an unhandled rejection — ONE sticky "A new version is ready – Reload"
 // toast. Never an automatic reload, so there is no reload loop; error reports file every chunk
 // failure under one signature (errorReportCore CHUNK_LOAD_RE).
-import { showToast } from '../stores/appStore.js';
+import { showToast, dismissToastById } from '../stores/appStore.js';
 import { CHUNK_LOAD_RE } from './errorReportCore.js';
 
 /** how long to wait before the one retry (a dropped fetch on a phone usually recovers this fast) */
@@ -48,11 +48,22 @@ export async function retryImport(load, err) {
 
 let noticed = false;
 
+/** 80a-fix4-ui aa: the update check's "New version X available" card carries this id. One deploy is ONE reload
+ * prompt: the stale-code notice takes that card's place (it is sticky and says why something did not open), and an
+ * update check that lands after the notice shows nothing more (`reloadPromptShown`). */
+export const UPDATE_TOAST_ID = 'update-available';
+
+/** has this page already asked for a reload (the stale-code notice)? */
+export function reloadPromptShown() {
+	return noticed;
+}
+
 /** say so ONCE per page; the person decides when to reload */
 export function noteStaleCode() {
 	if (noticed) return;
 	noticed = true;
 	chunkReloadDebug.notices++;
+	dismissToastById(UPDATE_TOAST_ID);
 	showToast('A new version is ready – Reload to keep working.', [{ label: 'Reload', action: () => location.reload() }], { keep: true });
 }
 

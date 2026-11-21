@@ -54,6 +54,23 @@
 		hudset: ['trigger', 'value', 'options']
 	};
 	$: inputs = INPUTS[data.type] ?? [];
+	// 80a-fix4-ui D2: each socket sits BESIDE ITS ROW (it used to sit at 34 + 38 * i px, which drifted off the rows as
+	// soon as a card had a picker or a note above them) and says what it takes. An input with a param row rides that
+	// row; one without (a trigger, a wired-only text) gets a named row of its own at the top
+	const TIPS: Record<string, string> = {
+		value: 'value: the number to show',
+		format: 'format: the whole text, wired in',
+		min: 'min: the empty end of the bar',
+		max: 'max: the full end of the bar',
+		start: 'start: a pulse starts the timer',
+		duration: 'duration: seconds',
+		trigger: 'trigger: a pulse runs this node',
+		text: 'text: the rows, one per line',
+		options: 'options: the dropdown choices, one per line'
+	};
+	const tip = (key: string) => TIPS[key] ?? key;
+	$: paramKeys = new Set(((spec?.params ?? []) as any[]).map((p) => p.key));
+	$: namedRows = inputs.filter((k) => !paramKeys.has(k));
 	$: wiredSource = (key: string) =>
 		($flowEdges as any[]).find((e) => e.target === id && e.targetHandle === key)?.source ?? null;
 	function fmt(v: any) {
@@ -67,10 +84,13 @@
 
 <NodeWrapper type={data.type} label={data.label}>
 	<Socket kind="source" nodeType={data.type} position={Position.Right} />
-	{#each inputs as handle, i (handle)}
-		<Socket kind="target" nodeType={data.type} position={Position.Left} id={handle} style={`top: ${34 + i * 38}px`} />
-	{/each}
 	<div class="flex w-full flex-col gap-1">
+		{#each namedRows as handle (handle)}
+			<div class="hud-in relative -mx-3 flex h-5 items-center px-3" data-socket={handle}>
+				<Socket kind="target" nodeType={data.type} position={Position.Left} id={handle} style="top: 50%;" title={tip(handle)} />
+				<span class="truncate text-[10px] text-text-2" title={tip(handle)}>{handle}</span>
+			</div>
+		{/each}
 		{#if isScreenNode}
 			<div class="flex flex-col">
 				<span>screen</span>
@@ -99,6 +119,10 @@
 		{#if spec?.params}
 			{#each spec.params as param (param.key)}
 				{#if !(isScreenNode && param.key === 'screen')}
+					<div class="relative" class:hud-row-in={inputs.includes(param.key)} data-socket={inputs.includes(param.key) ? param.key : undefined}>
+					{#if inputs.includes(param.key)}
+						<Socket kind="target" nodeType={data.type} position={Position.Left} id={param.key} style="top: 50%;" title={tip(param.key)} />
+					{/if}
 					<label class="flex flex-col">
 						<span class="flex justify-between">
 							<span>{param.key}</span>
@@ -150,6 +174,7 @@
 							</select>
 						{/if}
 					</label>
+					</div>
 				{/if}
 			{/each}
 		{/if}
@@ -164,6 +189,11 @@
 </NodeWrapper>
 
 <style>
+	/* D2: a param row that takes a wire reaches the card's edge, so its socket sits on the edge beside it */
+	.hud-row-in {
+		margin-inline: -0.75rem;
+		padding-inline: 0.75rem;
+	}
 	.hud-note {
 		margin-top: 2px;
 		font-size: 10px;

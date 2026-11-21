@@ -10,10 +10,8 @@
 	import SliderRow from '../../ui/SliderRow.svelte';
 	import ThemedSelect from '../../ui/ThemedSelect.svelte';
 	import { environment, presetPayload, editEnvSky } from '$lib/environment';
-	import { bundledHdri } from '$lib/hdri/catalog.js';
+	import { bundledHdri, skyTiers } from '$lib/hdri/catalog.js';
 	import { hdriOf, skyMaxLabelHere } from '$lib/hdri/hdriCore.js';
-	// fix-play-link (r1590-09): what Max loads on this device
-	const MAX_LABEL = skyMaxLabelHere();
 	import { hdriStatus } from '$lib/hdri/skyEnv.js';
 	import { explorerItems, addItemFromBytes } from '$lib/explorer';
 	import { showToast } from '../../../stores/appStore';
@@ -26,6 +24,11 @@
 
 	const payload = $derived(presetPayload($environment));
 	const hdri = $derived(hdriOf(payload));
+	// fix-play-link (r1590-09) + 80a-fix4-ui G3: what Max loads on this device FOR THIS SKY (8K on Meadow, 4K elsewhere)
+	const MAX_LABEL = $derived.by(() => {
+		const row = hdri?.src ? bundledHdri(hdri.src) : null;
+		return skyMaxLabelHere(row ? skyTiers(row) : null);
+	});
 	const customs = $derived(
 		$explorerItems.filter((/** @type {any} */ item) => item.kind === 'hdri' || /\.(hdr|exr)$/i.test(item.name ?? ''))
 	);

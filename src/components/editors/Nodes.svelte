@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { untrack, tick, onMount } from 'svelte';
 	import PaneHandle from '../ui/PaneHandle.svelte'; // showhide-v8: the one pane-handle pattern
+	// 80a-fix4-ui O2: the panes' elements (an open pane's handle is not drawn; its menu moves to the pane's top band)
+	let paletteEl = $state<HTMLElement | null>(null);
+	let propsEl = $state<HTMLElement | null>(null);
 	import Icon from '../ui/Icon.svelte';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import {
@@ -2110,6 +2113,7 @@
 	{#if paletteOpen}
 		<div
 			class="flex h-full w-40 shrink-0 flex-col overflow-hidden"
+			bind:this={paletteEl}
 			style="order: {paletteSide === 'right' ? 3 : 1}"
 			bind:clientHeight={paletteColH}
 		>
@@ -2134,6 +2138,7 @@
 			edge={paletteSide === 'right' ? 'right' : 'left'}
 			open={paletteOpen}
 			label="the node palette"
+			pane={paletteEl}
 			windowKey="flow"
 			style="top: 2.5rem; {paletteSide === 'right' ? 'right' : 'left'}: 0"
 			onclick={() => {
@@ -2354,6 +2359,7 @@
 			edge={propsSide === 'left' ? 'left' : 'right'}
 			open={propsOpen}
 			label="properties"
+			pane={propsEl}
 			role={propsTab === 'info' ? 'info' : 'settings'}
 			windowKey="flow"
 			style="top: 2.5rem; {propsSide === 'left' ? 'left' : 'right'}: 0"
@@ -2364,7 +2370,7 @@
 		/>
 	</div>
 	{#if propsOpen}
-		<div id="flow-props" class="relative flex h-full {shownTab === 'code' ? 'w-[min(26rem,88vw)]' : 'w-52'} shrink-0 flex-col gap-2 overflow-y-auto bg-surface-1 p-2 text-xs text-text-2" use:minimalScroll style="order: {propsSide === 'left' ? -1 : 5}">
+		<div id="flow-props" bind:this={propsEl} class="relative flex h-full {shownTab === 'code' ? 'w-[min(26rem,88vw)]' : 'w-52'} shrink-0 flex-col gap-2 overflow-y-auto bg-surface-1 p-2 text-xs text-text-2" use:minimalScroll style="order: {propsSide === 'left' ? -1 : 5}">
 			<!-- 4.3: Explorer-style tabs — ⓘ = the selected node's PARAMETERS,
 			     the cog = graph settings + node name/note (as before) -->
 			<div class="flex gap-1">

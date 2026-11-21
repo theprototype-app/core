@@ -18,7 +18,7 @@ import { requestAsset } from '../assetShare';
 import { cinematicState } from '../cinematic/cinematicStore.js';
 import { finishTier } from '../post/finishCore.js';
 import { isHeadsetUA } from '../hdri/hdriCore.js';
-import { isSplatObject, applySplatProxyLook } from './splatObject.js';
+import { isSplatObject, applySplatProxyLook, applySplatTo } from './splatObject.js';
 import { normalizeSplat, splatBudget, withinBudget, splatCountText } from './splatCore.js';
 import { splatStatus } from './splatStatus.js';
 import { setTriangleDiscount } from '../sceneBudget.js';
@@ -38,6 +38,8 @@ let sparkRenderer = null;
  * @type {Map<string, Entry>}
  */
 const entries = new Map();
+/** records already normalized onto their carrier (a new object = a new write) @type {WeakSet<object>} */
+const seenRecords = new WeakSet();
 /** hashes asked of peers, built when they land @type {Set<string>} */
 const awaiting = new Set();
 /** @type {(() => void) | null} */
@@ -198,6 +200,12 @@ export function tickSplats(carriers) {
 	for (const c of carriers) {
 		if (!isSplatObject(c)) continue;
 		live.add(c.uuid);
+		// a record written by the wire or by undo (a plain object, not yet normalized): normalize it and
+		// keep the proxy box in step — applySplatTo rebuilds the box only when it changed
+		if (!seenRecords.has(c.userData.splat)) {
+			applySplatTo(c, c.userData.splat);
+			seenRecords.add(c.userData.splat);
+		}
 		const hash = String(c.userData.splat.hash ?? '');
 		let e = entries.get(c.uuid);
 		if (e && (e.carrier !== c || e.hash !== hash)) {

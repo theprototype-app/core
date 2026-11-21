@@ -46,7 +46,6 @@
 	import FlowPathSection from '../sim/FlowPathSection.svelte'; // 36-fb F24
 	import LevelObjectSection from './inspector/LevelObjectSection.svelte'; // 93 LP1/LP3
 	import TextPathSection from './TextPathSection.svelte'; // 64 D2
-	import SplatSection from './SplatSection.svelte'; // 102: Gaussian splats
 	import TextOnPathButton from './TextOnPathButton.svelte'; // 64 D2
 	import PathSection from './inspector/PathSection.svelte'; // 78 F4
 	import FluidTankSection from '../sim/FluidTankSection.svelte'; // 36-sim U2b
@@ -4537,7 +4536,7 @@
 			{#if $selectedObject.userData?.flowPath}<FlowPathSection object={$selectedObject} />{/if}<!-- 36-fb F24 -->
 			{#if $selectedObject.userData?.portal || $selectedObject.userData?.checkpoint}<LevelObjectSection object={$selectedObject} />{/if}<!-- 93 LP1/LP3 -->
 			{#if $selectedObject.userData?.textPath}<TextPathSection object={$selectedObject} />{/if}<!-- 64 D2 -->
-			{#if $selectedObject.userData?.splat}<SplatSection object={$selectedObject} />{/if}<!-- 102 -->
+			{#if $selectedObject.userData?.splat}{#await import('./SplatSection.svelte') then m}<m.default object={$selectedObject} />{/await}{/if}<!-- 102: a lazy chunk (off the boot path) -->
 			{#if !$selectedObject.isLight && !$selectedObject.userData?.splat}
 				<Section variant="panel" label="Physics" clip={{ count: () => insTargets.length, fans: true }}>
 					{#if multiCount}

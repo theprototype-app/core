@@ -1,7 +1,6 @@
 import { get } from 'svelte/store';
 import { objectsGroup } from '../../stores/sceneStore';
 import { registerSceneEntrySource } from '../sceneAssets';
-import { isSplatObject } from './splatObject.js';
 
 // 102-splats: the per-frame entry for Gaussian splats — ONE line in Scene's useTask (the textPathTick
 // shape). Spark (~1 MB gzip) and the runtime are imported only once a scene holds a splat object; a
@@ -30,7 +29,8 @@ function findCarriers(root) {
 	/** @type {any[]} */
 	const out = [];
 	root?.traverse?.((/** @type {any} */ o) => {
-		if (isSplatObject(o)) out.push(o);
+		// the carrier test inline (splatObject.isSplatObject): nothing of the splat code rides the boot
+		if (o.isMesh && o.userData?.splat && typeof o.userData.splat === 'object') out.push(o);
 	});
 	return out;
 }

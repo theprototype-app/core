@@ -29,7 +29,6 @@ import { normalizeEmitter, normalizeInteraction } from '$lib/sim/fluidEmitterCor
 import { applyFlowPathTo } from '$lib/sim/flowPathObject.js'; // 36-fb F24
 import { normalizePortal, normalizeCheckpoint } from '$lib/gameLevels/objects.js'; // 93 LP1 / LP3
 import { applyTextPathTo, bumpTextTurn } from '$lib/textPathObject.js'; // 64 D2
-import { applySplatTo } from '$lib/splat/splatObject.js'; // 102: a three leaf
 import { runSceneClearHandlers } from '$lib/moduleSDK'
 import { annotations } from '$lib/annotationsHandler'
 import { isViewer, warnViewerReadOnly } from '$lib/objectPermissions'
@@ -726,11 +725,13 @@ export async function objectParameters(data, from = 'peer') {
             pokeScene();
         }
     } else if (data.parameter == 'splat') {
-        // 102: a Gaussian splat's record (crop, opacity, the file), normalized at the boundary; the proxy
-        // box follows it and every peer's runtime redraws from it
+        // 102: a Gaussian splat's record (crop, opacity, the file); the proxy box follows it and every
+        // peer's runtime redraws from it
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
         if (mesh) {
-            if (data.splat) applySplatTo(mesh, data.splat);
+            // the record only (wireValidate checked its shape): the splat runtime normalizes it and rebuilds
+            // the proxy box on its next frame, so none of the splat code rides the boot
+            if (data.splat) mesh.userData.splat = { ...data.splat };
             else delete mesh.userData.splat;
             pokeScene();
         }

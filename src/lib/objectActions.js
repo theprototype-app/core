@@ -50,7 +50,6 @@ import { desktopSpawn, spawnEyePose } from './playSpawn'; // 30b P4 (+ vrOnly: c
 import { shareDuplicatedMaterials, linkMaterials } from './materialSharing';
 import { applyFlowPathTo } from './sim/flowPathObject.js'; // 36-fb F24 (a three leaf)
 import { applyTextPathTo, bumpTextTurn } from './textPathObject.js'; // 64 D2 (a three leaf)
-import { applySplatTo } from './splat/splatObject.js'; // 102 (a three leaf)
 import {
 	duplicateCarriesAnimation,
 	duplicateCarriesFlow,
@@ -941,7 +940,8 @@ registerHistoryKind('props', (entry, state) => {
 	}
 	if ('splat' in state) {
 		// 102: a Gaussian splat's record — the proxy box is rebuilt from it, the splats redraw from it
-		if (state.splat) applySplatTo(object, state.splat);
+		// the record only: the splat runtime normalizes it and rebuilds the proxy box next frame (off the boot path)
+		if (state.splat) object.userData.splat = { ...state.splat };
 		else delete object.userData.splat;
 		if (peer) peer.send({ type: 'objectParameters', parameter: 'splat', uuid: entry.uuid, splat: state.splat ?? null });
 	}

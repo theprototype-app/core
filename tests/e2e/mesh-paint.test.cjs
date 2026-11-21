@@ -163,7 +163,16 @@ h.run(async () => {
 	const twin = await make(A.page, '/create Sphere 0.5', 'paint-twin');
 	const soft = await make(A.page, '/create Sphere 0.5', 'paint-soft');
 	await A.page.waitForTimeout(600);
-	const s2 = await stroke(A.page, soft, { from: 0.1, to: 0.9, n: 16, y: 0.2 });
+	// held open first: the commit is a webp (lossy), so the bytes a replay must match are the LIVE canvas the sender
+	// painted, which is what a peer's replay shows until that commit lands
+	const held = await stroke(A.page, soft, { from: 0.1, to: 0.9, n: 16, y: 0.2, hold: true });
+	const hSoft = await hashOf(A.page, soft, 'color');
+	const s2 = held.ok
+		? await A.page.evaluate(() => {
+				const m = window.__tp.test.v1.meshPaint;
+				return { ok: true, committed: m.endStroke(), last: m.meshPaintDebug().last };
+			})
+		: held;
 	h.check(s2.ok && s2.committed, 'a soft, low-flow, mirrored colour stroke commits');
 	h.check((s2.last?.points?.length ?? 0) > 1 && s2.last?.b?.m === 1, 'the stroke carries its brush (mirror) and rounded points');
 	const replay = await A.page.evaluate(
@@ -176,7 +185,6 @@ h.run(async () => {
 		{ twin, last: s2.last }
 	);
 	h.check(replay, 'premise: the replay ran');
-	const hSoft = await hashOf(A.page, soft, 'color');
 	const hTwin = await hashOf(A.page, twin, 'color');
 	h.check(!!hSoft && !!hTwin && hSoft.hash === hTwin.hash, `a replayed stroke draws byte-identical pixels (${hSoft?.hash} vs ${hTwin?.hash})`);
 	const mirrored = await A.page.evaluate(async (uuid) => {
@@ -246,7 +254,36 @@ h.run(async () => {
 	const keep = await hashOf(A.page, ball, 'roughness');
 	await A.page.evaluate(() => window.__tp.test.v1.autosave.saveNow());
 	await h.freshReload(A);
-	await h.answerRestore(A, 'restore', 30000);
+	// the restore by hand (not h.answerRestore): its click waits only 10 s for the page, and a restore that decodes
+	// several painted maps is measured here instead of timing out
+	const offered = await A.page
+		.waitForFunction(
+			() => {
+				const m = window.__tp?.test.v1?.autosave;
+				if (!m?.restoreAvailable) return false;
+				let v;
+				m.restoreAvailable.subscribe((x) => (v = x))();
+				return !!v;
+			},
+			null,
+			{ timeout: 30000, polling: 200 }
+		)
+		.then(() => true)
+		.catch(() => false);
+	h.check(offered, 'after a reload the painted session is offered back');
+	const t0 = Date.now();
+	await A.page.locator('#restore-session-restore').click({ timeout: 10000, noWaitAfter: true });
+	await A.page.waitForFunction(
+		() => {
+			let v;
+			window.__tp.test.v1.autosave.restoreAvailable.subscribe((x) => (v = x))();
+			return !v && !document.querySelector('#restore-session-modal[open]');
+		},
+		null,
+		{ timeout: 60000, polling: 100 }
+	);
+	const restoreMs = Date.now() - t0;
+	h.check(restoreMs < 20000, `the restore finishes (${restoreMs} ms)`);
 	const reloaded = await h.eventually(
 		() =>
 			A.page.evaluate(async () => {

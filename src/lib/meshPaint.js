@@ -418,9 +418,11 @@ function footprint(h, c, R, W, H) {
 }
 
 /** A dab on vertex colours. @param {any} s @param {number[]} c @param {number} R @param {number} a */
-function dabVertex(s, c, R, a) {
+function dabVertex(s, c, R, a, mirrored = false) {
 	const v = s.vertex;
-	const touched = vertexDab(v.positions, c, R, s.brush.hardness, a, v.acc);
+	// the stroke's normal faces the nearest-vertex fallback (a low-poly mesh); the mirrored half faces the mirror way
+	const n = s.n ? (mirrored ? [-s.n[0], s.n[1], s.n[2]] : s.n) : null;
+	const touched = vertexDab(v.positions, c, R, s.brush.hardness, a, v.acc, { normals: v.normals, n });
 	if (!touched.length) return;
 	blendVertexColors(v.base, v.target, v.acc, s.brush.opacity, v.out, touched);
 	v.dirty = true;
@@ -454,7 +456,7 @@ function strokePoint(s, p) {
 			if (s.sp === 'vtx') {
 				// vertex dabs stack per call, so the mirrored half (disjoint off the plane) is its own call
 				dabVertex(s, c, r, a);
-				if (mirrored) dabVertex(s, mirrored, r, a);
+				if (mirrored) dabVertex(s, mirrored, r, a, true);
 			} else {
 				dabModel(s, c, r, a);
 				if (mirrored) dabModel(s, mirrored, r, a);
@@ -670,6 +672,7 @@ async function openStroke(spec, local) {
 		const lin = hexToRgb(spec.c).map(srgbToLinear);
 		s.vertex = {
 			positions: pos.array,
+			normals: geometry.attributes.normal?.array ?? null,
 			attr,
 			hadColors,
 			wasVertexColors,

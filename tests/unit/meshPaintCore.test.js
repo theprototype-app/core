@@ -198,6 +198,23 @@ describe('vertex colours', () => {
 		};
 		expect(run()).toBe(run());
 	});
+	it('a dab between the corners of a low-poly face paints the nearest corners that face it', () => {
+		// the +z face of a unit box (4 corners) plus the SAME corner positions of the +x face, which faces away
+		const P = new Float32Array([-0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5]);
+		const N = new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 0]);
+		const acc = new Float32Array(6);
+		// no corner within r: before the fallback this touched nothing. With no normals the +x copies count too
+		expect(vertexDab(P, [0, 0, 0.5], 0.3, 1, 0.8, new Float32Array(6))).toEqual([0, 1, 2, 3, 4, 5]);
+		expect(vertexDab(P, [0, 0, 0.5], 0.3, 1, 0.8, new Float32Array(6), { normals: N, n: [0, 0, 1] })).toEqual([0, 1, 2, 3]);
+		const touched = vertexDab(P, [0.2, 0, 0.5], 0.3, 1, 0.8, acc, { normals: N, n: [0, 0, 1] });
+		expect(touched).toEqual([1, 2]); // the two right corners of the +z face, not the +x face's copies
+		expect(acc[1]).toBeCloseTo(0.8, 6);
+		expect(acc[4]).toBe(0);
+		// a dab that reaches a vertex keeps the ordinary falloff path
+		expect(vertexDab(P, [0.45, 0.45, 0.5], 0.3, 1, 1, new Float32Array(6), { normals: N, n: [0, 0, 1] })).toEqual([2, 5]);
+		// zero flow paints nothing at all
+		expect(vertexDab(P, [0, 0, 0.5], 0.3, 1, 0, new Float32Array(6))).toEqual([]);
+	});
 	it('mirror X flips the point and knows the plane', () => {
 		expect(mirrorX([1, 2, 3, 0.5])).toEqual([-1, 2, 3, 0.5]);
 		expect(onMirrorPlane([0.001, 0, 0], 1)).toBe(true);

@@ -455,10 +455,18 @@ export function paintTarget(facts) {
 /**
  * One dab on per-vertex data: every vertex within `r` of `c` gets its stroke-layer alpha raised by
  * falloff * flow (source-over). `acc` is the stroke layer (one float per vertex, 0 at the stroke's start).
- * Returns the vertex indices it touched, ascending. @param {ArrayLike<number>} positions 3 per vertex
+ * Returns the vertex indices it touched, ascending.
+ *
+ * A LOW-POLY mesh is the case this fallback exists for (a default box has four corners per face), and there a dab
+ * between the corners reaches none of them: painted along the middle of a box face, nothing changed. So a dab that
+ * reaches no vertex paints the NEAREST ones at full strength instead, those within 0.1 % of the nearest distance
+ * (a face centre reaches all four corners). With `normals` and the stroke normal `n`, only vertices facing the dab
+ * count, so the same corner of the neighbouring faces (a box keeps its own copy per face) stays clean.
+ * @param {ArrayLike<number>} positions 3 per vertex
  * @param {number[]} c @param {number} r @param {number} hardness @param {number} flow @param {Float32Array} acc
+ * @param {{normals?: ArrayLike<number> | null, n?: number[] | null}} [facing]
  */
-export function vertexDab(positions, c, r, hardness, flow, acc) {
+export function vertexDab(positions, c, r, hardness, flow, acc, facing) {
 	/** @type {number[]} */
 	const touched = [];
 	if (!(r > 0)) return touched;
@@ -473,6 +481,31 @@ export function vertexDab(positions, c, r, hardness, flow, acc) {
 		const a = falloff(Math.sqrt(d2) / r, hardness) * flow;
 		if (a <= 0) continue;
 		acc[i] = acc[i] + a * (1 - acc[i]);
+		touched.push(i);
+	}
+	if (touched.length || !(flow > 0)) return touched;
+	const N = facing?.normals && facing.n && facing.normals.length >= n * 3 ? facing.normals : null;
+	const fn = N ? /** @type {number[]} */ (facing?.n) : null;
+	/** @param {number} i */
+	const faces = (i) => !N || !fn || N[i * 3] * fn[0] + N[i * 3 + 1] * fn[1] + N[i * 3 + 2] * fn[2] > 0.1;
+	let best = Infinity;
+	for (let i = 0; i < n; i++) {
+		if (!faces(i)) continue;
+		const dx = positions[i * 3] - c[0];
+		const dy = positions[i * 3 + 1] - c[1];
+		const dz = positions[i * 3 + 2] - c[2];
+		const d2 = dx * dx + dy * dy + dz * dz;
+		if (d2 < best) best = d2;
+	}
+	if (!Number.isFinite(best)) return touched;
+	const reach = best * 1.002 + 1e-12;
+	for (let i = 0; i < n; i++) {
+		if (!faces(i)) continue;
+		const dx = positions[i * 3] - c[0];
+		const dy = positions[i * 3 + 1] - c[1];
+		const dz = positions[i * 3 + 2] - c[2];
+		if (dx * dx + dy * dy + dz * dz > reach) continue;
+		acc[i] = acc[i] + flow * (1 - acc[i]);
 		touched.push(i);
 	}
 	return touched;

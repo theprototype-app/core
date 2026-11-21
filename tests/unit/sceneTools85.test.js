@@ -92,6 +92,17 @@ describe('scene: sky', () => {
 		expect(scene.planSky({ fog: { near: 10, far: 5 } }, NOW).error).toMatch(/far must be beyond near/);
 		expect(scene.planSky({ fog: null }, NOW).state.customPreset.fog).toBe(null);
 	});
+	it('102b-papercuts: a density is real distance fog; base / thickness make ground fog; near / far stay for older builds', () => {
+		const d = scene.planSky({ fog: { color: '#ffffff', density: 0.05 } }, NOW).state.customPreset.fog;
+		expect(d).toMatchObject({ kind: 'distance', density: 0.05, near: 0, far: 40 });
+		const h = scene.planSky({ fog: { color: '#ffffff', density: 0.1, base: 1, thickness: 3 } }, NOW).state.customPreset.fog;
+		expect(h).toMatchObject({ kind: 'height', density: 0.1, base: 1, thickness: 3 });
+		const k = scene.planSky({ fog: { kind: 'height' } }, NOW).state.customPreset.fog;
+		expect(k).toMatchObject({ kind: 'height', density: 0.02, base: 0, thickness: 6 });
+		expect(scene.planSky({ fog: { near: 2, far: 30 } }, NOW).state.customPreset.fog.kind).toBe('linear');
+		expect(scene.planSky({ fog: { kind: 'volumetric' } }, NOW).error).toMatch(/fog.kind/);
+		expect(scene.planSky({ fog: { thickness: 0 } }, NOW).error).toMatch(/thickness/);
+	});
 	it('takes a bundled sky with quality, never a URL', () => {
 		const r = scene.planSky({ hdri: { name: 'starlight', quality: 'high', rotation: 1 } }, NOW);
 		expect(r.state.customPreset.hdri).toMatchObject({ src: 'bundled:starlight', quality: 'high', rotation: 1 });

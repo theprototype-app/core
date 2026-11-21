@@ -3155,7 +3155,7 @@
 		{
 			"name": "set_sky",
 			"title": "Change the sky and fog",
-			"description": "The sky and the air: a look preset (studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio, product, cinematic, stylised), a sky image by name (clearsky, meadow, sunrise, starlight, photostudio; a search_assets HDRI id \"cc0:polyhaven/<id>\" (fetched into the library once) or \"lib:<hash>\"; or {hash} of an HDR in the library — upload your own .hdr / .exr with assets upload; never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres, or {color, density}; null = none) and exposure. \"Make it night\": preset night or hdri starlight + a dark fog. Changes the whole scene's look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step.\nTake a screenshot after each change to check your work.",
+			"description": "The sky and the air: a look preset (studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio, product, cinematic, stylised), a sky image by name (clearsky, meadow, sunrise, starlight, photostudio; a search_assets HDRI id \"cc0:polyhaven/<id>\" (fetched into the library once) or \"lib:<hash>\"; or {hash} of an HDR in the library — upload your own .hdr / .exr with assets upload; never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres; {color, density} for distance fog; {color, density, base, thickness} for ground fog lying from base up over thickness metres; null = none) and exposure. \"Make it night\": preset night or hdri starlight + a dark fog. Changes the whole scene's look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -3236,6 +3236,15 @@
 							"null"
 						],
 						"properties": {
+							"kind": {
+								"type": "string",
+								"enum": [
+									"linear",
+									"distance",
+									"height"
+								],
+								"description": "linear = near to far; distance = thickens with distance (density); height = ground fog (density, base, thickness)"
+							},
 							"color": {
 								"type": "string"
 							},
@@ -3250,6 +3259,15 @@
 							"density": {
 								"type": "number",
 								"exclusiveMinimum": 0
+							},
+							"base": {
+								"type": "number",
+								"description": "ground fog: the height (m) where it is thickest"
+							},
+							"thickness": {
+								"type": "number",
+								"exclusiveMinimum": 0,
+								"description": "ground fog: how far up (m) it thins out"
 							}
 						}
 					},
@@ -9006,6 +9024,15 @@
 										"null"
 									],
 									"properties": {
+										"kind": {
+											"type": "string",
+											"enum": [
+												"linear",
+												"distance",
+												"height"
+											],
+											"description": "linear = near to far; distance = thickens with distance (density); height = ground fog (density, base, thickness)"
+										},
 										"color": {
 											"type": "string"
 										},
@@ -9020,6 +9047,15 @@
 										"density": {
 											"type": "number",
 											"exclusiveMinimum": 0
+										},
+										"base": {
+											"type": "number",
+											"description": "ground fog: the height (m) where it is thickest"
+										},
+										"thickness": {
+											"type": "number",
+											"exclusiveMinimum": 0,
+											"description": "ground fog: how far up (m) it thins out"
 										}
 									}
 								},
@@ -9037,7 +9073,7 @@
 									"description": "with confirmId: seconds to wait for the answer (up to 60)"
 								}
 							},
-							"description": "The sky and the air: a look preset (studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio, product, cinematic, stylised), a sky image by name (clearsky, meadow, sunrise, starlight, photostudio; a assets {action: 'search'} HDRI id \"cc0:polyhaven/<id>\" (fetched into the library once) or \"lib:<hash>\"; or {hash} of an HDR in the library — upload your own .hdr / .exr with assets upload; never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres, or {color, density}; null = none) and exposure. \"Make it night\": preset night or hdri starlight + a dark fog. Changes the whole scene's look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step."
+							"description": "The sky and the air: a look preset (studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio, product, cinematic, stylised), a sky image by name (clearsky, meadow, sunrise, starlight, photostudio; a assets {action: 'search'} HDRI id \"cc0:polyhaven/<id>\" (fetched into the library once) or \"lib:<hash>\"; or {hash} of an HDR in the library — upload your own .hdr / .exr with assets upload; never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres; {color, density} for distance fog; {color, density, base, thickness} for ground fog lying from base up over thickness metres; null = none) and exposure. \"Make it night\": preset night or hdri starlight + a dark fog. Changes the whole scene's look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step."
 						},
 						"light": {
 							"type": "object",

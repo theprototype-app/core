@@ -8,6 +8,9 @@ import { globalScene, globalRenderer, objectsGroup, backgroundColor, TControls, 
 import { peers } from '../stores/appStore';
 import { sceneRadius } from './sceneBounds';
 import { fogFarFor, mergeFogPatch } from './fogReach';
+// 102b-papercuts: distance + height fog (fogShader patches three's fog chunks at import, before any compile)
+import { fogKindOf, fogDensityOf, heightFogParams } from './fogModes.js';
+import { setHeightFog } from './fogShader.js';
 import { registerSystemGroup } from './moduleSDK';
 import { createLight } from './geometries.svelte';
 import { cappedShadowSize, shadowsDisabled } from './lightParams';
@@ -458,6 +461,7 @@ export function applyEnvironment() {
 		// compositor blends the camera feed under); 'room' leaves nothing (three clears to clear)
 		scene.background = get(roomLook) === 'dim' ? dimBackdrop() : null;
 		scene.fog = null;
+		setHeightFog([0, 0, 0, 0]);
 	} else {
 		// 30 author-kit: a gradient sky when the payload carries one, else the flat colour
 		const gradient = skyGradientOf(preset);
@@ -469,9 +473,15 @@ export function applyEnvironment() {
 		}
 		// fog never swallows a big scene: a PRESET's reach grows with the scene bounds; a fog the
 		// user set by hand (`fit: false`) keeps its own (36 A5, fogReach.js)
-		scene.fog = preset.fog
-			? new THREE.Fog(preset.fog.color, preset.fog.near, fogFarFor(preset.fog, sceneRadius()))
-			: null;
+		// 102b-papercuts: `kind` distance / height = exponential fog (height adds the ground layer, fogShader.js);
+		// absent = the linear fog every older document and build has
+		const kind = preset.fog ? fogKindOf(preset.fog) : 'linear';
+		scene.fog = !preset.fog
+			? null
+			: kind === 'linear'
+				? new THREE.Fog(preset.fog.color, preset.fog.near, fogFarFor(preset.fog, sceneRadius()))
+				: new THREE.FogExp2(preset.fog.color, fogDensityOf(preset.fog));
+		setHeightFog(heightFogParams(preset.fog));
 	}
 	backgroundColor.set(preset.background);
 

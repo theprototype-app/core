@@ -21,6 +21,8 @@
 	import LoadStatePanel from './LoadStatePanel.svelte';
 	import WaterPanel from '../water/WaterPanel.svelte';
 	import SliderRow from '../ui/SliderRow.svelte';
+	import FogKindRows from './scene/FogKindRows.svelte'; // 102b-papercuts
+	import { fogKindOf } from '$lib/fogModes.js';
 	import SceneLodSection from './SceneLodSection.svelte'; // 46 P2
 	import PropRow from '../ui/PropRow.svelte';
 	import Chips from '../ui/Chips.svelte';
@@ -2252,10 +2254,14 @@
 					}}
 				/>
 				</FieldClip>
+				<!-- 102b-papercuts: Linear / Distance / Height fog (Near and Far are the linear fog's rows) -->
+				<FogKindRows fog={envFog} />
+				{#if fogKindOf(envFog) === 'linear'}
 				<SliderRow id="fog-near" label="Near" min={0} max={Math.max(10, Math.ceil(envFog?.near ?? 0))} step={0.1} decimals={1} value={envFog?.near ?? 0}
 					onchange={(v) => editEnvSky({ fog: { near: v } })} />
 				<SliderRow id="fog-far" label="Far" min={0} max={Math.max(100, Math.ceil(envFog?.far ?? 0))} step={0.1} decimals={1} value={envFog?.far ?? 0}
 					onchange={(v) => editEnvSky({ fog: { far: v } })} />
+				{/if}
 				<UiButton
 					size="sm"
 					variant="outline"

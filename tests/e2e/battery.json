@@ -721,6 +721,7 @@
 		"physics-ground-bounds": 226,
 		"physics-joints": 160,
 		"physics-joints-more": 300,
+		"physics-102b-compat": 240,
 		"physics-body-tuning": 300,
 		"physics-kinematic": 120,
 		"place-drag": 56,

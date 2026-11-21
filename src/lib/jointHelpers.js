@@ -1,7 +1,7 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
 import { get } from 'svelte/store';
-import { globalScene, objectsGroup, selectedObject, selectedObjects } from '../stores/sceneStore';
+import { globalScene, objectsGroup, selectedObjects } from '../stores/sceneStore';
 import { sceneJoints } from './joints';
 import { showColliders } from './colliderHelpers';
 import { wireframeActive } from './viewMode';
@@ -42,9 +42,8 @@ function shownJoints() {
 	const list = get(sceneJoints);
 	if (!list.length) return list;
 	if (get(showColliders)) return list;
+	// the selection SET, never the sticky `selectedObject` (a deselect keeps it for the Properties panel)
 	const picked = new Set(/** @type {string[]} */ (get(selectedObjects) ?? []));
-	const primary = /** @type {any} */ (get(selectedObject));
-	if (primary?.uuid) picked.add(primary.uuid);
 	if (!picked.size) return [];
 	return list.filter((j) => picked.has(j.a) || picked.has(j.b));
 }

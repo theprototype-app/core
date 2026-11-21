@@ -20,7 +20,7 @@
 		{
 			key: 'gravityScale',
 			id: 'physics-gravity-scale',
-			label: 'Gravity ×',
+			label: 'Gravity scale',
 			tip: 'How strongly gravity pulls this body: 1 = normal, 0 = floats in place, below 0 = rises. Reset = 1.',
 			value: Number.isFinite(p.gravityScale) ? p.gravityScale : 1,
 			scene: 1,
@@ -29,7 +29,7 @@
 		{
 			key: 'linearDamping',
 			id: 'physics-linear-damping',
-			label: 'Air drag',
+			label: 'Drag',
 			tip: `Slows this body's movement over time (linear damping). Reset = the scene's value (${sceneLinear}).`,
 			value: Number.isFinite(p.linearDamping) ? p.linearDamping : sceneLinear,
 			scene: sceneLinear,

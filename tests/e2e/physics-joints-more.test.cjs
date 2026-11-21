@@ -134,7 +134,7 @@ h.run(async () => {
 	h.check(block.kind === 'rope' && /Rope/.test(block.text) && /RopePost/.test(block.text) && block.del, `it names the kind, both ends and a labelled delete (${JSON.stringify(block)})`);
 	const gizmo = await A.page.evaluate(() => window.__tp.test.v1.jointHelpers.jointHelpersDebug());
 	h.check(gizmo.joints === 1 && gizmo.segments >= 4 && gizmo.visible, `the selected rope draws its gizmo (${JSON.stringify(gizmo)})`);
-	const lengthField = A.page.locator('#physics-joints .physics-joint[data-kind="rope"] input').first();
+	const lengthField = A.page.locator('#physics-joints .physics-joint[data-kind="rope"] input[type="text"]').first();
 	await lengthField.click();
 	await A.page.keyboard.press('Control+A');
 	await A.page.keyboard.type('2.5');

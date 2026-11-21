@@ -251,7 +251,9 @@ h.run(async () => {
 	// ---- §8 (LAST: a reload gives A a new peer id) ------------------------------------------
 	const before = (await surface(A.page, decal))?.record;
 	await A.page.evaluate(() => window.__tp.test.v1.autosave.saveNow());
-	await h.freshReload(A);
+	// a remote slot boots the dev app in ~110 s: freshReload's 30 s wait is too short there
+	await A.page.reload({ waitUntil: 'domcontentloaded' });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, null, { timeout: 180000 });
 	await h.answerRestore(A, 'restore');
 	await h.eventually(() => one(A.page, decal).catch(() => null), (d) => !!d && d.tris > 0 && d.target === wall, '§8 after save + reload the decal is back on the wall, rebuilt', 60000);
 	const after = (await surface(A.page, decal))?.record;

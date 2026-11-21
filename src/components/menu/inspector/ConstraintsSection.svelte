@@ -144,7 +144,7 @@
 					<b class="min-w-0 flex-1 truncate" title="Runs {i + 1} of {list.length}: the stack runs top to bottom">{i + 1}. {KIND_LABEL[c.kind] ?? 'Newer constraint'}</b>
 					{#if KIND_LABEL[c.kind]}
 						<UiButton variant="icon" size="sm" icon={c.mute ? 'eye-off' : 'eye'} pressed={!c.mute} title={c.mute ? 'Muted: turn this constraint back on' : 'Mute this constraint'} aria-label={c.mute ? 'Unmute' : 'Mute'} data-constraint-mute onclick={() => updateConstraint(object.uuid, c.id, { mute: !c.mute })} />
-						<UiButton variant="icon" size="sm" icon="key" title="Key this weight on the Timeline at the playhead" aria-label="Key weight" data-constraint-key onclick={() => keyWeight(c)} />
+						<UiButton variant="icon" size="sm" icon="keyframe" title="Key this weight on the Timeline at the playhead" aria-label="Key weight" data-constraint-key onclick={() => keyWeight(c)} />
 					{/if}
 					<UiButton variant="icon" size="sm" icon="chevron-up" disabled={i === 0} title="Move up (runs earlier)" aria-label="Move up" onclick={() => moveConstraint(object.uuid, c.id, -1)} />
 					<UiButton variant="icon" size="sm" icon="chevron-down" disabled={i === list.length - 1} title="Move down (runs later)" aria-label="Move down" onclick={() => moveConstraint(object.uuid, c.id, 1)} />

@@ -20,6 +20,35 @@ const filmShown = (page) => page.evaluate(() => {
 	return !!el && el.getBoundingClientRect().width > 0;
 });
 
+/** the live peer id @param {any} P */
+const liveId = async (P) => {
+	const id = await P.page.waitForFunction(() => {
+		/** @type {any} */ let p;
+		/** @type {any} */ (window).__tp.test.v1.peers.subscribe((/** @type {any} */ v) => (p = v))();
+		return p?.peer?.open && p.peer.id ? p.peer.id : false;
+	}, null, { timeout: 20000 }).then((/** @type {any} */ r) => r.jsonValue()).catch(() => null);
+	if (id) P.id = id;
+	return P.id;
+};
+/** both ends hold an open conn @param {any} a @param {any} b */
+const linked = (a, b) => a.page.evaluate((/** @type {string} */ id) => new Promise((r) => /** @type {any} */ (window).__tp.test.v1.peers.subscribe((/** @type {any} */ p) => r(!!p?.connections?.[id]?.open))()), b.id).catch(() => false);
+
+/** the folded phone dials from its own Connect sheet (the chip ▸ Join… ▸ the field ▸ Connect), the host approves
+ * @param {any} P @param {any} host */
+async function phoneDial(P, host) {
+	await liveId(P);
+	const to = await liveId(host);
+	const page = P.page;
+	const wrap = '.connect-wrap[data-ps-host]';
+	await page.locator('#ps-connect-chip').tap();
+	await page.locator(`${wrap} #connect-join`).tap({ timeout: 10000 }).catch(() => {});
+	await page.locator(`${wrap} .cx-input`).fill(to, { timeout: 10000 });
+	await page.locator(`${wrap} .cx-connect button`).first().tap();
+	await h.approveButton(host.page).click({ timeout: 30000 });
+	for (const until = Date.now() + 45000; Date.now() < until; await page.waitForTimeout(250)) if ((await linked(P, host)) && (await linked(host, P))) return true;
+	return false;
+}
+
 /** three tries of More ▸ Film on the phone @param {any} P @param {string} label */
 async function tries(P, label) {
 	const page = P.page;
@@ -58,7 +87,8 @@ h.run(async () => {
 	{
 		const A = await h.setupPage(browser, 'host', { context: { viewport: { width: 1280, height: 800 } } });
 		const P = await h.setupPage(browser, 'phone', { context: FOLDED });
-		await h.connect(P, A);
+		const joined = await phoneDial(P, A);
+		h.check(joined, 'premise: the phone dialled the host from its Connect sheet and both ends are linked');
 		const ok = await tries(P, 'phone joined');
 		h.check(ok === 3, `G14 a phone that JOINED a session opens Film from More ${ok}/3`);
 		await P.ctx.close();
@@ -69,6 +99,7 @@ h.run(async () => {
 		const P = await h.setupPage(browser, 'phone2', { context: FOLDED });
 		const A = await h.setupPage(browser, 'guest', { context: { viewport: { width: 1280, height: 800 } } });
 		await h.connect(A, P);
+		h.check((await linked(P, A)) && (await linked(A, P)), 'premise: the desktop joined the phone and both ends are linked');
 		const ok = await tries(P, 'phone hosting');
 		h.check(ok === 3, `G14 a phone HOSTING a session opens Film from More ${ok}/3`);
 	}

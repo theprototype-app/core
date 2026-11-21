@@ -8,6 +8,8 @@
 //      round-trip the triangle count; 3MF is millimetres; the size line is in mm; an open plane
 //      gets the manifold warning (not a block). USDZ builds, shows its size, and is a zip with a
 //      USD layer inside.
+//  SAVE/SYNC  the simplified scene is written as a .tpscene (test-results/simplify-export/, read by
+//      simplify-file-compat in the newest release) and B reloads, rejoins and gets the 25 % back.
 const h = require('./helpers.cjs');
 const fs = require('fs');
 const { unzipSync, strFromU8 } = require('fflate');
@@ -108,6 +110,33 @@ h.run(async () => {
 	await h.eventually(() => meshFacts(B.page, uuid), (f) => f?.tris === full.tris, 'undo: B holds the full ball again', 30000);
 	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	await h.eventually(() => meshFacts(B.page, uuid), (f) => f?.tris === after.tris, 'redo: B holds the 25 % again', 30000);
+
+	// ---------- the save file + a reload (the 21 Nov rule for a lane that touches save and sync) ----------
+	// A's whole scene as a .tpscene, for simplify-file-compat to open in the newest release
+	const saveDir = require('path').join(process.cwd(), 'test-results', 'simplify-export');
+	fs.mkdirSync(saveDir, { recursive: true });
+	const sceneB64 = await A.page.evaluate(async () => {
+		const ss = window.__tp.test.v1.sessions;
+		const zip = await ss.exportSessionZip(ss.buildSessionPayload('Simplified ball'), { assets: true, packs: false, flow: true });
+		let bin = '';
+		for (let i = 0; i < zip.length; i += 32768) bin += String.fromCharCode(...zip.subarray(i, i + 32768));
+		return btoa(bin);
+	});
+	fs.writeFileSync(require('path').join(saveDir, 'simplified.tpscene'), Buffer.from(sceneB64, 'base64'));
+	fs.writeFileSync(require('path').join(saveDir, 'simplified.expect.json'), JSON.stringify({ uuid, tris: after.tris }));
+	h.check(sceneB64.length > 1000, `the simplified scene saved as a .tpscene (${Math.round((sceneB64.length * 3) / 4 / 1024)} KB)`);
+	// B reloads: a joiner reload re-dials on its own; the simplified mesh must come back, not the full one
+	await h.freshReload(B);
+	await h.answerRestore(B, 'dismiss', 3000).catch(() => {});
+	await h.eventually(
+		() => B.page.evaluate((id) => { let p; window.__tp.test.v1.peers.subscribe((v) => (p = v))(); return !!p?.openedPeers?.has(id); }, A.id),
+		(v) => v,
+		'B: rejoined after its reload',
+		60000
+	);
+	await h.eventually(() => meshFacts(B.page, uuid), (f) => f?.tris === after.tris, `B after reload: the 25 % arrived (${after.tris})`, 60000);
+	const bAfter = await meshFacts(B.page, uuid);
+	h.check(!!bAfter?.channels?.includes('uv') && !!bAfter?.channels?.includes('normal'), `B after reload: uv + normal kept (${bAfter?.channels})`);
 
 	// ---------- M1: a parametric primitive is refused politely, bake: true simplifies it ----------
 	const prim = await A.page.evaluate(async () => {

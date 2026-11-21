@@ -199,7 +199,7 @@
 			"scope": "viewport",
 			"label": "Simplify mesh… (fewer triangles, one undo step)",
 			"kind": "action",
-			"when": false
+			"when": true
 		},
 		{
 			"id": "objects.export-3d",

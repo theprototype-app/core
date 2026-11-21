@@ -33,7 +33,7 @@ import { openSettingsAt } from './settings/openSettingsAt.js'; // uir-account: c
 import { currentLevel } from './levels';
 import { myPlayMode, peerPlayModes } from './gamePresence';
 import { onPlayOrigin, playUrl } from './playOrigin.js';
-import { safeStorage } from './safeStorage';
+import { safeStorage, storageIsolated } from './safeStorage'; // 61 G3: storageIsolated
 import { setLockMode, lockMode } from './lockMode'; // 80a K15
 // v3.1 (roadmap 29 G-3): the hosted-AI preset seam. Both provider modules are LEAVES
 // (svelte/store + safeStorage), so a static edge from here closes nothing.
@@ -97,6 +97,8 @@ const sceneFeed = sceneChangeFeed(() => autosaveLib?.dirtyPulse ?? null);
 export async function startCloudPlugin() {
 	// 36-export: an exported game is the OSS runtime alone — the hosted tier never loads there
 	if (exportMode) return settleRoles();
+	// 61 G3: nor does a "Test with players" bot frame
+	if (storageIsolated) return settleRoles();
 	let url = '';
 	try {
 		url = pluginUrl();

@@ -333,6 +333,8 @@
 		"photo-mode": 420,
 		"cinematic-view": 600,
 		"cinematic-fx": 480,
+		"test-players": 600,
+		"test-players-devices": 900,
 		"cinematic-offer-net": 240,
 		"text-path": 360,
 		"text-object": 480,
@@ -970,7 +972,10 @@
 		"wire-proto": 420,
 		"workspace-layouts": 193,
 		"workspace-restore": 52,
-		"z-scale-layering": 117
+		"z-scale-layering": 117,
+		"navigation-npc": 400,
+		"navigation-devices": 240,
+		"guard-patrol-template": 420
 	},
 	"modules": {
 		"dungeon-realms": 458,
@@ -1038,6 +1043,7 @@
 		"character-skeleton": false,
 		"character-vrm": false,
 		"characters-proof": false,
+		"cinematic-offer-net": false,
 		"click-once": false,
 		"code-flow-text": false,
 		"collider-custom": false,
@@ -1085,6 +1091,7 @@
 		"fix4-panels-button": false,
 		"fix4-sky-swap-longtask": false,
 		"flow-clock-origin": false,
+		"flow-code-view": false,
 		"flow-dock-toggle": false,
 		"flow-impact-any": false,
 		"flow-impact-static": false,
@@ -1173,6 +1180,7 @@
 		"move-wire-shape": false,
 		"multiselect-v2": false,
 		"narrow-header": false,
+		"navigation-npc": false,
 		"net-drop": false,
 		"net-handshake": false,
 		"net-mesh": false,
@@ -1340,6 +1348,7 @@
 		"window-tabs": false,
 		"window-tabs-move": false,
 		"wire-hardening": false,
+		"wire-proto": false,
 		"workspace-layouts": false,
 		"workspace-restore": false,
 		"z-scale-layering": false

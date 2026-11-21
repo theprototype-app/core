@@ -60,6 +60,20 @@ export function setFrameRefusalHandler(fn) {
 	refuse = typeof fn === 'function' ? fn : () => {};
 }
 
+/** 61 G3: the local test transport reports a dropped frame through the same handler @param {string} peerId @param {string} reason */
+export function reportFrameRefusal(peerId, reason) {
+	try {
+		refuse(String(peerId), reason);
+	} catch {
+		/* a reporting failure never breaks the link */
+	}
+}
+
+/** 61 G3: the bytes of one frame in PeerJS's binary format (what a link sends); may be a Promise for Blobs @param {any} data */
+export function packFrame(data) {
+	return util.pack(data);
+}
+
 class FrameError extends Error {
 	/** @param {string} reason */
 	constructor(reason) {

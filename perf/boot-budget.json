@@ -52,6 +52,13 @@
 		},
 		{
 			"date": "2026-11-21",
+			"lane": "61-int (Test with players, enemies that patrol, see and chase)",
+			"play": "v1.71.0 2114.3 KB -> 2117.6 KB (+3.3: 61-test ~0.5 bot-frame storage guard; 61-nav ~2.4 SDK gameWorld slice, pathCore split, moduleWorldItems, modules; 61-int ~0.4 presence in api.players) -> line 2120.0 KB (the INT BOOT RULE: merged tag + the union, rounded up to the next 5 KB)",
+			"editor": "v1.71.0 3314.1 KB -> 3320.3 KB (+6.2: 61-test ~1.6 storage guard + the Test with players menu leaf; 61-nav ~4.2 the same SDK slice, pathCore, moduleWorldItems, modules; 61-int ~0.4 presence) -> line 3325.0 KB (the INT BOOT RULE)",
+			"note": "what 61 keeps on the boots after its lazy splits (the enemy sheet entry and the collider reader load on first use): the bot-frame storage guard (safeStorage overlay + idb memory store, it must run before any store is read), the SDK gameWorld slice (paths.of/list, players, isAuthority and the two registries, kept sync so makeApi stays sync), moduleWorldItems + the Test with players menu leaf, a pathCore chunk split, and api.players()[].playing (the peerPlayModes store moved into stores/appStore so the SDK reads presence without gamePresence's graph). The recast navmesh WASM is a module asset only scenes with NPCs download. QUESTIONS-61-int 2, accepted by the orchestrator; lane split approximate (per-chunk diff; renamed-chunk churn ~1 KB)"
+		},
+		{
+			"date": "2026-11-21",
 			"lane": "80a-int (Locks that hold + fix-batch-4)",
 			"play": "v1.71.0 (+#579) 2114.2 KB -> 2127.8 KB (+13.6) -> line 2129.2 KB = v1.71.0 + 15 KB (the int boot rule: tag + the union's sum rounded up to 5 KB)",
 			"editor": "v1.71.0 (+#579) 3315.2 KB -> 3334.3 KB (+19.1) -> line 3335.2 KB = v1.71.0 + 20 KB (over the ~15 KB tell line: orchestrator + claude:9 OK, no trim; next int claws back ~5 KB by making HeldBanner and the held-lock-only UI lazy)",

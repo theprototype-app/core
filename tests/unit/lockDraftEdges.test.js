@@ -2,11 +2,14 @@
 // 80a-int: edges of the lock table, the lock mode, the heal answer and the drafts gate.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as THREE from 'three';
+// lockControl's scene appliers (runes / the whole selection stack) are not what these cases test
+vi.mock('../../src/lib/geometries.svelte', () => ({ lockGeometry: () => {} }));
+vi.mock('../../src/lib/objectActions', () => ({ selectObject: () => {}, applySelectionSet: () => {}, deselectObject: () => {} }));
 import { get } from 'svelte/store';
 import { scrubDrafts } from '../../src/lib/draftGateCore.js';
 import { clearInboundDraftFlags } from '../../src/lib/objectPermissions.js';
 import { stampRestoredRows, holderOf, sortLockTable, LOCK_RACE_MS } from '../../src/lib/lockTrust.js';
-import { lockMode, setLockMode, applyLockMode, resetLockMode } from '../../src/lib/lockMode.js';
+import { lockMode, applyLockMode, resetLockMode, LOCK_MODE_SKEW_MS } from '../../src/lib/lockMode.js';
 import { sessionHost } from '../../src/lib/connectionState.js';
 import { VALIDATORS, LOCK_SET_MAX, LOCK_TABLE_MAX_ROWS } from '../../src/lib/wireValidate.js';
 
@@ -63,14 +66,19 @@ describe('lock mode: a stamp far ahead does not freeze the mode', () => {
 		resetLockMode();
 	});
 	afterEach(() => sessionHost.set(null));
-	it('the host can still change the mode after a far-future stamp', () => {
-		applyLockMode({ mode: 'edit', at: Number.MAX_VALUE }, 'host-1');
-		expect(get(lockMode).mode).toBe('edit');
-		sessionHost.set(null); // we host now
-		expect(setLockMode('select')).toBe(true);
-		sessionHost.set('host-1');
-		applyLockMode({ mode: 'edit', at: get(lockMode).at + 1 }, 'host-1');
-		expect(get(lockMode).mode).toBe('edit');
+	it('a far-future stamp holds the mode for at most LOCK_MODE_SKEW_MS', () => {
+		vi.useFakeTimers();
+		try {
+			vi.setSystemTime(1_000_000);
+			applyLockMode({ mode: 'edit', at: Number.MAX_VALUE }, 'host-1');
+			expect(get(lockMode).mode).toBe('edit');
+			expect(get(lockMode).at).toBe(1_000_000 + LOCK_MODE_SKEW_MS);
+			vi.setSystemTime(1_000_000 + LOCK_MODE_SKEW_MS + 1000);
+			applyLockMode({ mode: 'select', at: Date.now() }, 'host-1');
+			expect(get(lockMode).mode).toBe('select');
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });
 
@@ -90,7 +98,7 @@ describe('wire shapes: lock sets and tables are bounded', () => {
 describe('heal answers are paced', () => {
 	beforeEach(() => vi.useFakeTimers());
 	afterEach(() => vi.useRealTimers());
-	it('a stream of refused flow edits gets one heal per peer per second', async () => {
+	it('refused flow edits get at most one heal per peer per second', async () => {
 		const lc = await import('../../src/lib/lockControl.js');
 		const { lockedObjects } = await import('../../src/stores/sceneStore.js');
 		const { peers } = await import('../../src/stores/appStore.js');
@@ -101,14 +109,17 @@ describe('heal answers are paced', () => {
 		const heal = vi.fn();
 		const send = vi.fn();
 		const conn = { open: true, send };
-		for (let i = 0; i < 40; i++) {
-			lc.gateLockedEdit('mallory', { type: 'nodemove', graphId: 'G', id: 'n' + i, position: { x: 0, y: 0 } }, { runtime: false, replay: () => {}, heal, conn });
-			vi.advanceTimersByTime(50);
+		myLocks.set(new Map([['G1', 1], ['G2', 1]]));
+		// one refused edit every 350 ms (just past LOCK_HEAL_MS), alternating two flows: 20 edits over 7 s
+		for (let i = 0; i < 20; i++) {
+			const graphId = i % 2 ? 'G2' : 'G1';
+			lc.gateLockedEdit('mallory', { type: 'nodemove', graphId, id: 'n' + i, position: { x: 0, y: 0 } }, { runtime: false, replay: () => {}, heal, conn });
+			vi.advanceTimersByTime(350);
 		}
 		vi.advanceTimersByTime(5000);
-		// 2 s of edits: the heal waits LOCK_HEAL_MS after a pause, and no more than one per LOCK_HEAL_GAP_MS
+		// a flow heal sends every flow document: one per peer per LOCK_HEAL_GAP_MS (7 s -> at most 8), never one per edit
 		expect(heal.mock.calls.length).toBeGreaterThan(0);
-		expect(heal.mock.calls.length).toBeLessThanOrEqual(3);
+		expect(heal.mock.calls.length).toBeLessThanOrEqual(8);
 		lc.dropPeerLockState('mallory');
 	});
 	it('a link that heals again at once does not make us let go twice', async () => {

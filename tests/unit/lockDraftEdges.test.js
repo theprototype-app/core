@@ -7,7 +7,7 @@ vi.mock('../../src/lib/geometries.svelte', () => ({ lockGeometry: () => {} }));
 vi.mock('../../src/lib/objectActions', () => ({ selectObject: () => {}, applySelectionSet: () => {}, deselectObject: () => {} }));
 import { get } from 'svelte/store';
 import { scrubDrafts } from '../../src/lib/draftGateCore.js';
-import { clearInboundDraftFlags, isDraftId, gateDraftsInbound, markLocalOnly } from '../../src/lib/objectPermissions.js';
+import { clearInboundDraftFlags, isDraftId, gateDraftsInbound, markLocalOnly, adoptLoadedDrafts } from '../../src/lib/objectPermissions.js';
 import { objectsGroup } from '../../src/stores/sceneStore.js';
 import { stampRestoredRows, holderOf, sortLockTable, mergeLockRows, acceptedLockRows, LOCK_RACE_MS, LOCK_ROWS_PER_PEER } from '../../src/lib/lockTrust.js';
 import { lockMode, applyLockMode, resetLockMode, LOCK_MODE_SKEW_MS } from '../../src/lib/lockMode.js';
@@ -55,7 +55,37 @@ describe('drafts gate: only object ids count as drafts', () => {
 	it('a list read by position is never trimmed', () => {
 		const isDraft = (u) => u === 'd';
 		expect(scrubDrafts({ type: 'object', uuids: ['a', 'd', 'b'], element: {} }, isDraft)).toBe(null);
-		expect(scrubDrafts({ type: 'duplicate', sourceUuid: 's', uuids: ['a', 'd'] }, isDraft)).toBe(null);
+	});
+	it("a duplicate we send leaves out the copy's draft nodes; one that names a draft of ours is not applied", () => {
+		const isDraft = (u) => u === 'd';
+		expect(scrubDrafts({ type: 'duplicate', sourceUuid: 's', uuids: ['a', 'd', 'b'] }, isDraft).uuids).toEqual(['a', 'b']);
+		expect(scrubDrafts({ type: 'duplicate', sourceUuid: 's', uuids: ['a', 'd'] }, isDraft, { flags: false })).toBe(null);
+	});
+	it('a serialized tree that loses a draft node loses its geometry, material and texture too', () => {
+		const element = {
+			geometries: [{ uuid: 'g1' }, { uuid: 'g2' }],
+			materials: [{ uuid: 'm1' }, { uuid: 'm2', map: 't2' }],
+			textures: [{ uuid: 't2', image: 'i2' }],
+			images: [{ uuid: 'i2', url: 'data:secret' }],
+			object: { uuid: 'L', type: 'PointLight', children: [{ uuid: 'k', geometry: 'g1', material: 'm1' }, { uuid: 'd', geometry: 'g2', material: 'm2' }] }
+		};
+		const out = scrubDrafts({ type: 'light', element }, (u) => u === 'd');
+		expect(out.element.object.children.map((c) => c.uuid)).toEqual(['k']);
+		expect(out.element.geometries.map((g) => g.uuid)).toEqual(['g1']);
+		expect(out.element.materials.map((m) => m.uuid)).toEqual(['m1']);
+		expect(out.element.textures).toEqual([]);
+		expect(out.element.images).toEqual([]);
+		expect(element.geometries.length).toBe(2); // the scene's own copy is untouched
+	});
+	it('a file flag on an id the app did not make is not a draft', () => {
+		const root = new THREE.Group();
+		root.uuid = 'scene';
+		root.userData.__localOnly = true;
+		expect(adoptLoadedDrafts(root)).toBe(false);
+		expect('__localOnly' in root.userData).toBe(false);
+		const mine = new THREE.Group();
+		mine.userData.__localOnly = true;
+		expect(adoptLoadedDrafts(mine)).toBe(true);
 	});
 	it("a peer's local-only flag means nothing on receive", () => {
 		const msg = { type: 'object', element: { object: { uuid: 'x', userData: { __localOnly: true } } } };
@@ -209,6 +239,32 @@ describe('heal answers are paced', () => {
 		vi.advanceTimersByTime(lc.LOCK_HEAL_GAP_MS * 4);
 		expect(new Set(heal.mock.calls.map((c) => c[1])).size).toBe(40);
 		lc.dropPeerLockState('mallory');
+	});
+	it('heals of a big group wait their turn: the objects sent per peer per second are capped', async () => {
+		const lc = await import('../../src/lib/lockControl.js');
+		const { lockedObjects, objectsGroup } = await import('../../src/stores/sceneStore.js');
+		const { peers } = await import('../../src/stores/appStore.js');
+		const { myLocks } = await import('../../src/lib/lockHeld.js');
+		peers.set({ peer: { id: 'me' }, connections: {} });
+		lockedObjects.set([]);
+		const scene = new THREE.Group();
+		const big = new THREE.Group();
+		big.uuid = 'big';
+		for (let i = 0; i < lc.LOCK_HEAL_PEER_NODES; i++) big.add(new THREE.Object3D());
+		const small = new THREE.Object3D();
+		small.uuid = 'small';
+		scene.add(big, small);
+		objectsGroup.set(scene);
+		myLocks.set(new Map([['big', 1], ['small', 1]]));
+		const heal = vi.fn();
+		const conn = { open: true, send: () => {} };
+		for (const u of ['big', 'small']) lc.gateLockedEdit('mallory', { type: 'move', uuid: u, pos: [0, 0, 0] }, { runtime: false, replay: () => {}, heal, conn });
+		vi.advanceTimersByTime(lc.LOCK_HEAL_GAP_MS - 1);
+		expect(heal.mock.calls.length).toBe(1);
+		vi.advanceTimersByTime(lc.LOCK_HEAL_GAP_MS * 2);
+		expect(heal.mock.calls.length).toBe(2);
+		lc.dropPeerLockState('mallory');
+		objectsGroup.set(undefined);
 	});
 	it('a lock message carries at most one lock set', async () => {
 		const { lockMessage, myLocks } = await import('../../src/lib/lockHeld.js');

@@ -53,7 +53,31 @@ function isDraftNode(o) {
 }
 
 /** messages whose `uuids` are matched to nodes by position */
-const POSITIONAL = new Set(['object', 'duplicate']);
+const POSITIONAL = new Set(['object']);
+
+/** every string anywhere inside `value` @param {any} value @param {Set<string>} into */
+function strings(value, into) {
+	if (typeof value === 'string') into.add(value);
+	else if (value && typeof value === 'object' && !isBinary(value)) for (const k of Object.keys(value)) strings(value[k], into);
+	return into;
+}
+
+/**
+ * A serialized object tree (three.js JSON: `object` plus its `geometries` / `materials` / `textures` / `images`)
+ * that lost a draft node keeps only the resources the nodes left in it still use. `json` is a copy (walk made it).
+ * @param {any} json
+ */
+function pruneResources(json) {
+	const keep = (/** @type {any} */ list, /** @type {Set<string>} */ refs) =>
+		Array.isArray(list) ? list.filter((r) => !(r && typeof r === 'object' && typeof r.uuid === 'string') || refs.has(r.uuid)) : list;
+	const refs = strings(json.object, new Set());
+	if (json.geometries) json.geometries = keep(json.geometries, refs);
+	if (json.materials) json.materials = keep(json.materials, refs);
+	const texRefs = strings(json.materials, new Set());
+	if (json.textures) json.textures = keep(json.textures, texRefs);
+	const imgRefs = strings(json.textures, new Set());
+	if (json.images) json.images = keep(json.images, imgRefs);
+}
 
 /**
  * @param {any} value
@@ -110,6 +134,7 @@ function walk(value, chain, isDraft, flags) {
 			}
 		}
 	}
+	if (out && out.object && out.object !== value.object && (Array.isArray(out.geometries) || Array.isArray(out.materials))) pruneResources(out);
 	return out ?? value;
 }
 
@@ -142,7 +167,8 @@ export function scrubDrafts(payload, isDraft, { flags = true } = {}) {
 		const keep = msg.uuids.map((/** @type {any} */ u) => !(typeof u === 'string' && isDraft(u)));
 		if (keep.includes(false)) {
 			// these lists are read by position (the n-th uuid is the n-th node): a gap would shift every one after it
-			if (POSITIONAL.has(msg.type)) return null;
+			// (a duplicate we send leaves out the copy's draft nodes, which the receiver's copy does not have either)
+			if (POSITIONAL.has(msg.type) || (!flags && msg.type === 'duplicate')) return null;
 			// a mixed selection's lock: keep the shared half (with its stamps), aimed at the last shared one
 			const uuids = msg.uuids.filter((/** @type {any} */ _, /** @type {number} */ i) => keep[i]);
 			msg = { ...msg, uuids };

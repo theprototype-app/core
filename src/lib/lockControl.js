@@ -190,12 +190,15 @@ const parked = new Map();
 /** how long an edit from a peer that is taking an object over may wait for the hand-over */
 export const LOCK_PARK_MS = 1500;
 const PARK_MAX = 240;
+/** objects with edits waiting for a hand-over, all peers together */
+const PARKED_MAX = 512;
 
 /** @param {string} from @param {string} uuid @param {() => void} replay */
 function park(from, uuid, replay) {
 	const key = from + '\n' + uuid;
 	let entry = parked.get(key);
 	if (!entry) {
+		if (parked.size >= PARKED_MAX) return; // a hand-over waits for a few objects, not thousands
 		entry = { replays: [], timer: setTimeout(() => parked.delete(key), LOCK_PARK_MS) };
 		parked.set(key, entry);
 	}
@@ -217,9 +220,17 @@ lockedObjects.subscribe(() => {
 /** Apply, in order, the parked edits of every peer that now holds its object. */
 export function flushParked() {
 	if (!parked.size) return;
+	/** @type {Map<string, any[]>} the table by object, once per flush */
+	const byUuid = new Map();
+	for (const l of get(lockedObjects) ?? []) {
+		if (!Array.isArray(l)) continue;
+		const rows = byUuid.get(l[1]);
+		if (rows) rows.push(l);
+		else byUuid.set(l[1], [l]);
+	}
 	for (const [key, entry] of [...parked]) {
 		const [from, uuid] = key.split('\n');
-		const holder = holderNow(uuid);
+		const holder = holderOf(byUuid.get(uuid) ?? [], uuid, myClaim(uuid));
 		if (holder && holder !== from) continue;
 		parked.delete(key);
 		clearTimeout(entry.timer);
@@ -259,8 +270,18 @@ export const LOCK_HEAL_GAP_MS = 1000;
 const healAt = new Map();
 /** object heals per peer in one LOCK_HEAL_GAP_MS (each one sends a whole object); more wait for the next window */
 export const LOCK_HEAL_PEER_MAX = 16;
-/** @type {Map<string, {start: number, n: number}>} peer -> object heals in the current window */
+/** the objects those heals may carry in one window (a heal of a group sends everything inside it) */
+export const LOCK_HEAL_PEER_NODES = 256;
+/** @type {Map<string, {start: number, n: number, nodes: number}>} peer -> object heals in the current window */
 const healBudget = new Map();
+
+/** how many objects a heal of `uuid` sends (it and everything inside it; 1 when it is not here) @param {string} uuid */
+function subtreeSize(uuid) {
+	const root = get(objectsGroup)?.getObjectByProperty?.('uuid', uuid);
+	let n = 0;
+	root?.traverse?.(() => void n++);
+	return Math.max(1, n);
+}
 
 /**
  * THE RECEIVING-SIDE GATE (80a K3). An edit of an object somebody else holds is not applied. When
@@ -303,10 +324,12 @@ export function gateLockedEdit(from, data, { runtime, replay, heal, conn: via })
 					if (wait > 0) return void schedule(wait);
 					if (!flow) {
 						const t = Date.now();
+						const size = subtreeSize(uuid);
 						const b = healBudget.get(from);
-						if (!b || t - b.start >= LOCK_HEAL_GAP_MS) healBudget.set(from, { start: t, n: 1 });
-						else if (b.n >= LOCK_HEAL_PEER_MAX) return void schedule(LOCK_HEAL_GAP_MS - (t - b.start));
-						else b.n++;
+						if (!b || t - b.start >= LOCK_HEAL_GAP_MS) healBudget.set(from, { start: t, n: 1, nodes: size });
+						else if (b.n >= LOCK_HEAL_PEER_MAX || b.nodes + size > LOCK_HEAL_PEER_NODES)
+							return void schedule(LOCK_HEAL_GAP_MS - (t - b.start));
+						else (b.n++, (b.nodes += size));
 					}
 					healTimers.delete(hkey);
 					healAt.set(hkey, Date.now());

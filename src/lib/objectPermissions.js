@@ -405,6 +405,8 @@ export function draftsInSelection(uuids) {
 	return n;
 }
 
+const APP_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** 80a migration: an object a LOAD just built (a scene file, a saved session, the autosave) that
  * carries local-only flags is a draft here too — every flagged node is marked (the gate's index
  * hears of it at once, the Local objects section shows), and the caller sends nothing for a draft
@@ -412,7 +414,10 @@ export function draftsInSelection(uuids) {
  * @param {any} object @returns {boolean} true when the object itself is a draft */
 export function adoptLoadedDrafts(object) {
 	object?.traverse?.((/** @type {any} */ o) => {
-		if (o?.userData?.__localOnly === true) markLocalOnly(o);
+		if (o?.userData?.__localOnly !== true) return;
+		// the app saved its drafts under its own uuids; a flag on any other id is not one of ours
+		if (APP_UUID.test(String(o.uuid))) markLocalOnly(o);
+		else delete o.userData.__localOnly;
 	});
 	return isLocalOnly(object);
 }

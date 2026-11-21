@@ -823,6 +823,12 @@ export function applyRemoteDuplicate(sourceUuid, uuids, name, pos, transient = f
 	if (draftUuids().has(sourceUuid)) return;
 	const clone = source.clone(true);
 	stripEditOverlays(clone); // see duplicateObject: the index walk below counts nodes
+	// a draft inside the source stays ours: the copy is shared, so it is made without it (the sender's
+	// copy has no draft of ours either, so the uuids still line up node for node)
+	/** @type {any[]} */
+	const drafts = [];
+	clone.traverse((/** @type {any} */ o) => { if (o !== clone && o.userData?.__localOnly) drafts.push(o); });
+	for (const o of drafts) o.parent?.remove(o);
 	clearInboundDraftFlags(clone);
 	detachMaterials(clone);
 	collectTree(clone).forEach((node, index) => {

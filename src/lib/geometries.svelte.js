@@ -414,17 +414,30 @@ export function moveCamera(data) {
  */
 export function lockGeometry(uuid, peerId, uuids, ats) {
     const list = uuids && uuids.length ? uuids : [uuid];
+    if (!sceneObjects) return;
     // 80a K3: each row keeps the moment the peer took the object (`ats`, parallel to `uuids`);
     // claimStamp keeps a stamp we stored before and will not let a new claim on a held object
     // be dated back past the race window
     const others = locked.filter((/** @type {any} */ l) => l[0] != peerId);
+    /** @type {Map<string, any[]>} the other peers' rows by object (one pass, not one per row) */
+    const othersOf = new Map();
+    for (const l of others) {
+        const rows = othersOf.get(l[1]);
+        if (rows) rows.push(l);
+        else othersOf.set(l[1], [l]);
+    }
     /** @type {Map<string, any>} */
     const prev = new Map(locked.filter((/** @type {any} */ l) => l[0] == peerId).map((/** @type {any} */ l) => [l[1], l[2]]));
     const now = sessionNow();
+    /** @type {Set<string>} */
+    const inScene = new Set();
+    sceneObjects.traverse((/** @type {any} */ o) => { inScene.add(o.uuid); });
+    /** @type {Set<string>} */
+    const seen = new Set();
     const wanted = stampedRows(peerId, list, uuids && uuids.length ? ats : undefined)
-        .filter((/** @type {any} */ row) => typeof row[1] === 'string' && sceneObjects.getObjectByProperty('uuid', row[1]))
+        .filter((/** @type {any} */ row) => typeof row[1] === 'string' && inScene.has(row[1]) && !seen.has(row[1]) && !!seen.add(row[1]))
         .map((/** @type {any} */ row) => {
-            const at = claimStamp({ claimed: row[2], prev: prev.get(row[1]), contested: !!holderOf(others, row[1], myClaim(row[1])), now });
+            const at = claimStamp({ claimed: row[2], prev: prev.get(row[1]), contested: !!holderOf(othersOf.get(row[1]) ?? [], row[1], myClaim(row[1])), now });
             return at === undefined ? [row[0], row[1]] : [row[0], row[1], at];
         });
     if (!wanted.length) return;

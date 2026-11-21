@@ -945,7 +945,8 @@
 		"workspace-restore": 52,
 		"z-scale-layering": 117,
 		"navigation-npc": 400,
-		"navigation-devices": 240
+		"navigation-devices": 240,
+		"guard-patrol-template": 420
 	},
 	"modules": {
 		"dungeon-realms": 458,

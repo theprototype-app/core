@@ -29,6 +29,10 @@ import { storageIsolated } from './safeStorage';
 // so it keeps its snapshots in memory instead (safeStorage.js says why). Nothing it saves survives Stop.
 /** @type {Map<string, any> | null} */
 const memoryStore = storageIsolated ? new Map() : null;
+/** 61-int: the keys a bot frame still READS from the real store (writes stay in memory): it starts with this
+ * user's installed modules, as it starts with their settings — a scene with an enemy needs `navigation` in
+ * every player, and nobody can answer the "This scene uses modules" ask inside a hidden frame. */
+const READ_THROUGH = new Set(['user-modules-v1']);
 
 const DB_NAME = 'theprototype';
 const STORE = 'snapshots';
@@ -235,7 +239,8 @@ function applyForcedFailure(tx, request) {
 
 /** @param {string} key */
 export function idbGet(key) {
-	if (memoryStore) return Promise.resolve(memoryStore.get(String(key)));
+	if (memoryStore && (memoryStore.has(String(key)) || !READ_THROUGH.has(String(key))))
+		return Promise.resolve(memoryStore.get(String(key)));
 	return withDb('get', (db) => {
 		const tx = db.transaction(STORE);
 		const request = tx.objectStore(STORE).get(key);

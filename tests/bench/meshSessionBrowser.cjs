@@ -63,6 +63,15 @@ const { launch, setupPage } = require('../e2e/helpers.cjs');
 					const enter = [];
 					const ready = [];
 					const longest = [];
+					// lossless leave, in the app: enter + exit with no edit keeps the geometry object and its bytes
+					const fnv = (a) => {
+						const u8 = new Uint8Array(a.buffer, a.byteOffset, a.byteLength);
+						let x = 0x811c9dc5;
+						for (let i = 0; i < u8.length; i++) x = Math.imul(x ^ u8[i], 0x01000193) >>> 0;
+						return x;
+					};
+					const hash0 = fnv(geometry.attributes.position.array);
+					const leaves = [];
 					for (let r = 0; r < runs; r++) {
 						const tasks = [];
 						const obs = new PerformanceObserver((list) =>
@@ -97,6 +106,14 @@ const { launch, setupPage } = require('../e2e/helpers.cjs');
 						longest.push(tasks.length ? Math.max(...tasks) : 0);
 						s.faceEdit.exitFaceEdit();
 						await frame();
+						await new Promise((r) => setTimeout(r, 50)); // the deferred seal
+						const leave = k3 ? es.editSessionDebug().lastLeave : null;
+						leaves.push(
+							(object.geometry === geometry &&
+							fnv(object.geometry.attributes.position.array) === hash0
+								? 'same bytes'
+								: 'CHANGED') + (leave ? ', leave=' + leave.source : '')
+						);
 					}
 					if (enter.length)
 						rows.push({
@@ -104,7 +121,8 @@ const { launch, setupPage } = require('../e2e/helpers.cjs');
 							tris,
 							enterMs: median(enter),
 							kernelReadyMs: k3 ? median(ready) : null,
-							longestTaskMs: median(longest)
+							longestTaskMs: median(longest),
+							leave: [...new Set(leaves)].join(' / ')
 						});
 				}
 				const builds = [];
@@ -135,12 +153,12 @@ const { launch, setupPage } = require('../e2e/helpers.cjs');
 		const lines = [
 			`### enter-edit in the app (${result.k3 ? 'K3 branch' : 'base, pre-K3'}), ${result.ua}, ${new URL(process.env.APP_URL).port}, median of ${runs}`,
 			'',
-			'| mesh | tris | enterFaceEdit ms | kernel ready ms (off-thread) | longest main-thread task ms (1.5 s after entry) |',
-			'|---|---|---|---|---|',
+			'| mesh | tris | enterFaceEdit ms | kernel ready ms (off-thread) | longest main-thread task ms (1.5 s after entry) | enter + exit, no edit |',
+			'|---|---|---|---|---|---|',
 			...result.rows.map((r) =>
 				r.error
 					? `| ${r.size} | ${r.tris} | ${r.error} | | |`
-					: `| ${r.size} | ${r.tris} | ${r1(r.enterMs)} | ${r1(r.kernelReadyMs)} | ${r1(r.longestTaskMs)} |`
+					: `| ${r.size} | ${r.tris} | ${r1(r.enterMs)} | ${r1(r.kernelReadyMs)} | ${r1(r.longestTaskMs)} | ${r.leave} |`
 			)
 		];
 		if (result.builds.length)

@@ -67,8 +67,29 @@ const sceneFacts = (page) =>
 			if (o.userData?.splat) splats.push({ uuid: o.uuid, rec: JSON.parse(JSON.stringify(o.userData.splat)), opacity: o.material?.opacity, visible: o.visible });
 		});
 		const { sceneSignature } = await import('/src/lib/levels.js');
-		return { meshes, splats, sig: sceneSignature(v1.sessions.buildSessionPayload('facts')) };
+		// geometry / material uuids are minted fresh by any rebuild (3D text lays itself out again on every load,
+		// in the release too): masked, while object uuids, names, transforms and every value still compare
+		const sig = sceneSignature(v1.sessions.buildSessionPayload('facts'));
+		const masked = sig.replace(/"(geometry|material|uuid)":"[0-9A-Fa-f-]{36}"/g, (m, k) => `"${k}":"-"`);
+		const objects = [];
+		g.traverse((o) => o !== g && objects.push(o.uuid + ':' + o.name)); // the root is each page's own
+		return { meshes, splats, sig: masked + '|' + objects.sort().join(',') };
 	});
+/** a real viewport drop of one file (App.svelte handleDrop) @param {any} page @param {string} name @param {Buffer} buffer */
+const dropFile = (page, name, buffer) =>
+	page.evaluate(
+		([n, b]) => {
+			const bin = atob(b);
+			const bytes = new Uint8Array(bin.length);
+			for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+			const dt = new DataTransfer();
+			dt.items.add(new File([bytes], n, { type: 'application/octet-stream' }));
+			const canvas = document.querySelector('canvas');
+			const r = canvas.getBoundingClientRect();
+			canvas.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 }));
+		},
+		[name, buffer.toString('base64')]
+	);
 /** @param {any} peer @param {string} url */
 async function onServer(peer, url) {
 	await peer.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 });
@@ -105,16 +126,25 @@ h.run(async () => {
 	const oldFacts = await sceneFacts(R.page);
 	console.log(`  old scene: ${old.size} bytes, ${oldFacts.meshes} meshes`);
 	h.check((await openZip(L.page, old.b64)).ok, '§1 the release\'s .tpscene opens here');
+	// the A/B: the release opening its OWN file is the reference (a load re-stamps what any load re-stamps)
+	h.check((await openZip(R.page, old.b64)).ok, '§1 premise: the release reopens its own file');
 	await L.page.waitForTimeout(2500);
+	await R.page.waitForTimeout(500);
 	const oldHere = await sceneFacts(L.page);
-	h.check(oldHere.sig === oldFacts.sig, `§1 ...and re-saves with the same scene signature (${oldHere.sig === oldFacts.sig ? 'equal' : 'DIFFERENT'})`);
-	if (oldHere.sig !== oldFacts.sig) console.log(`  release sig ${oldFacts.sig.slice(0, 300)}\n  lane sig    ${oldHere.sig.slice(0, 300)}`);
+	const oldThere = await sceneFacts(R.page);
+	console.log(`  meshes: release ${oldFacts.meshes}, release reopened ${oldThere.meshes}, lane ${oldHere.meshes}`);
+	h.check(oldHere.sig === oldThere.sig, `§1 ...and holds the same scene as the release opening it (signature ${oldHere.sig === oldThere.sig ? 'equal' : 'DIFFERENT'})`);
+	if (oldHere.sig !== oldThere.sig) {
+		let i = 0;
+		while (i < oldHere.sig.length && oldHere.sig[i] === oldThere.sig[i]) i++;
+		console.log(`  first difference at ${i}:\n  release ...${oldThere.sig.slice(Math.max(0, i - 120), i + 200)}\n  lane    ...${oldHere.sig.slice(Math.max(0, i - 120), i + 200)}`);
+	}
 	const d1 = await L.page.evaluate(() => window.__tp.test.v1.splatTick.splatDebug());
 	h.check(!d1.runtimeLoaded && sparkOnLane.length === 0 && oldHere.splats.length === 0, '§1 no splat runtime and no Spark chunk for a scene without splats');
 
 	// ---- §2 a lane file opens in the release -------------------------------------------------
-	await L.page.setInputFiles('#import-file', { name: 'ring.splat', mimeType: 'application/octet-stream', buffer: ringSplat() });
-	await h.eventually(() => sceneFacts(L.page), (f) => f.splats.length >= 1, '§2 premise: the lane scene holds a splat object', 20000);
+	await dropFile(L.page, 'ring.splat', ringSplat());
+	await h.eventually(() => sceneFacts(L.page), (f) => f.splats.length >= 1, '§2 premise: the lane scene holds a splat object', 90000);
 	await h.eventually(
 		() => L.page.evaluate(() => window.__tp.test.v1.splatTick.splatDebug().entries.some((e) => e.state === 'ready')),
 		(v) => v === true,

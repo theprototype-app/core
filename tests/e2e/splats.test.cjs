@@ -6,17 +6,17 @@
 // HERE, procedurally (a coloured shell of splats) — no scan data in the repo.
 //
 //   §0 feature unused = zero change: a scene with no splat loads no Spark chunk and no runtime
-//   §1 import a .splat on A through the Import picker: one carrier, the record (count, bounds), the
+//   §1 drop a .splat on A's viewport: one carrier, the record (count, bounds), the
 //      runtime draws it (ready, visible, every splat); B receives the carrier AND pulls the bytes
 //   §2 the frame shows it: opacity 0 vs 1 changes the pixels where the scan is
 //   §3 opacity + crop box on A replicate to B; the proxy box follows the crop; undo reverts both peers
-//   §4 the .ply gate: a mesh .ply is refused (no Library item); a small 3DGS .ply is stored as it is;
-//      an over-25 MB .ply asks, and "Make a smaller copy" stores a .spz under the cap with every splat
+//   §4 the .ply gate: a mesh .ply is refused (no Library item); a small 3DGS .ply is stored as it is
 //   §5 Photo parity + Cinematic: the carrier is left out of a Photo (counted), Spark meshes are
 //      helpers; Cinematic mode hides the splat meshes and the chip names "Gaussian splats"
 //   §6 save + reload: an autosave restores the carrier and the runtime draws it again from the Library;
 //      a lane-saved .tpscene bundles the bytes (scene asset group "splats")
 //   §7 mesh edit refuses a splat; the Inspector shows the Splat section, no Material / Physics
+//   §8 an over-25 MB .ply asks, and "Make a smaller copy" stores a .spz under the cap with every splat
 //
 // Counterfactual: v1.70.0 has no splat kind — the import toasts "Unsupported", §1 onward is red.
 // Run: e2e-slot --dev <lane> 7076 -- env APP_URL=https://theprototype.app:7076/ npm run e2e -- splats
@@ -135,10 +135,23 @@ const toasts = (page) =>
 	page.evaluate(() => {
 		let v = [];
 		window.__tp.test.v1.toastStore.subscribe((x) => (v = x))();
-		return v.map((t) => String(t.text ?? ''));
+		return v.map((t) => String(typeof t === 'string' ? t : (t?.text ?? '')));
 	});
-/** @param {any} page @param {string} name @param {Buffer} buffer */
-const pick = (page, name, buffer) => page.setInputFiles('#import-file', { name, mimeType: 'application/octet-stream', buffer });
+/** a real viewport drop of one file (App.svelte handleDrop: the splat route) @param {any} page @param {string} name @param {Buffer} buffer */
+const pick = (page, name, buffer) =>
+	page.evaluate(
+		([n, b]) => {
+			const bin = atob(b);
+			const bytes = new Uint8Array(bin.length);
+			for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+			const dt = new DataTransfer();
+			dt.items.add(new File([bytes], n, { type: 'application/octet-stream' }));
+			const canvas = document.querySelector('canvas');
+			const r = canvas.getBoundingClientRect();
+			canvas.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 }));
+		},
+		[name, buffer.toString('base64')]
+	);
 /** @param {any} page @param {string} uuid */
 const entry = async (page, uuid) => (await dbg(page)).entries.find((/** @type {any} */ e) => e.uuid === uuid) ?? null;
 const near = (/** @type {number} */ a, /** @type {number} */ b, eps = 0.06) => Math.abs(a - b) <= eps;
@@ -159,6 +172,12 @@ h.run(async () => {
 	A.page.on('request', (/** @type {any} */ r) => {
 		if (/spark/i.test(r.url())) sparkRequests.push(r.url());
 	});
+	for (const P of [A, B]) P.page.on('crash', () => console.log(`  [${P === A ? 'A' : 'B'}] PAGE CRASHED`));
+	for (const P of [A, B])
+		P.page.on('console', (/** @type {any} */ m) => {
+			const t = m.text();
+			if (/splat|spark/i.test(t)) console.log(`  [${P === A ? 'A' : 'B'} console] ${t.slice(0, 300)}`);
+		});
 	await h.connect(B, A);
 
 	// ---- §0 feature unused -------------------------------------------------------------------
@@ -171,8 +190,13 @@ h.run(async () => {
 	// ---- §1 import a .splat ------------------------------------------------------------------
 	const N = 2000;
 	await pick(A.page, 'shell.splat', splatFile(N));
-	await h.eventually(() => carriers(A.page), (c) => c.length === 1, '§1 premise: A has one splat carrier after the import', 20000);
+	// the first splat loads Spark (a cold dev server transforms it on demand): a generous wait
+	await h.eventually(() => carriers(A.page), (c) => c.length === 1, '§1 premise: A has one splat carrier after the drop', 90000);
 	const [cA] = await carriers(A.page);
+	if (!cA) {
+		console.log(`  toasts ${JSON.stringify(await toasts(A.page))}\n  items ${JSON.stringify(await items(A.page))}\n  debug ${JSON.stringify(await dbg(A.page))}`);
+		throw new Error('no carrier after the drop');
+	}
 	console.log(`  record ${JSON.stringify({ ...cA.splat, bounds: cA.splat.bounds.map((v) => +v.toFixed(3)) })} pos ${cA.pos.map((v) => +v.toFixed(3))}`);
 	h.check(cA.splat.count === N && cA.splat.file === 'shell.splat' && /^[0-9a-f]{64}$/.test(cA.splat.hash), `§1 the record: ${N} splats, the file, its content hash`);
 	const b = cA.splat.bounds;
@@ -185,17 +209,20 @@ h.run(async () => {
 	h.check(!!eB && eB.numSplats === N, `§1 ...B draws every splat too (${eB?.numSplats})`);
 
 	// ---- §2 the frame shows it ---------------------------------------------------------------
-	await A.page.evaluate((u) => {
+	// aim at the scan (it landed where the drop ray met the ground), through the orbit controls so they hold it
+	await A.page.evaluate((p) => {
 		const v1 = window.__tp.test.v1;
-		let cam;
+		let cam, oc;
 		v1.globalCamera.subscribe((c) => (cam = c))();
-		cam.position.set(0, 0.6, 2.2);
-		cam.lookAt(0, 0.5, 0);
-		v1.TControls?.subscribe?.((t) => t?.detach?.())?.();
+		v1.orbitControls?.subscribe?.((c) => (oc = c))?.();
 		v1.selectedObjects.set([]);
 		v1.selectedObject.set(null);
-		void u;
-	}, cA.uuid);
+		cam.position.set(p[0], p[1] + 0.6, p[2] + 2.2);
+		if (oc?.target) {
+			oc.target.set(p[0], p[1] + 0.5, p[2]);
+			oc.update?.();
+		} else cam.lookAt(p[0], p[1] + 0.5, p[2]);
+	}, [cA.pos[0], cA.pos[1] + cA.splat.bounds[1], cA.pos[2]]);
 	await A.page.waitForTimeout(600);
 	const shotOn = await h.grabFrame(A);
 	await A.page.evaluate((u) => window.__tp.test.v1.splatEdit.setSplatFor(u, { opacity: 0 }), cA.uuid);
@@ -229,6 +256,18 @@ h.run(async () => {
 	h.check(!!undone && undone.splat.opacity === 0.5, '§3 ...one step: the opacity stays');
 
 	// ---- §4 the .ply gate --------------------------------------------------------------------
+	await A.page.screenshot({ path: `${OUT}/splats-before-s4.png` }).catch(() => {});
+	console.log(
+		'  open dialogs: ' +
+			JSON.stringify(
+				await A.page.evaluate(() =>
+					[...document.querySelectorAll('[role="dialog"],[role="alertdialog"],.modal,[aria-modal="true"]')]
+						.filter((e) => e.getBoundingClientRect().width > 0)
+						.map((e) => (e.id || e.className || e.tagName) + ': ' + (e.textContent ?? '').trim().slice(0, 160))
+				)
+			)
+	);
+	console.log(`  toasts now ${JSON.stringify(await toasts(A.page))}`);
 	const before = (await items(A.page)).length;
 	await pick(A.page, 'triangle.ply', MESH_PLY);
 	await h.eventually(() => toasts(A.page), (t) => t.some((x) => /triangle\.ply is a mesh, not a Gaussian splat/.test(x)), '§4 a mesh .ply is refused with the way out', 10000);
@@ -237,28 +276,6 @@ h.run(async () => {
 	await h.eventually(() => carriers(A.page), (c) => c.some((x) => x.splat.file === 'small.ply'), '§4 a small 3DGS .ply imports as it is', 20000);
 	const small = (await carriers(A.page)).find((x) => x.splat.file === 'small.ply');
 	h.check(small?.splat.count === 500 && small?.splat.sh === 1, `§4 ...500 splats, one colour band (${small?.splat.count}, sh ${small?.splat.sh})`);
-	const BIG = 110000;
-	const big = gaussianPly(BIG, 3);
-	console.log(`  big .ply ${(big.length / 1048576).toFixed(1)} MB`);
-	await pick(A.page, 'big.ply', big);
-	await h.eventually(
-		() => A.page.evaluate(() => {
-			let d;
-			window.__tp.test.v1.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
-			return d ? { id: d.id, title: d.title, message: d.message, items: d.items } : null;
-		}),
-		(d) => !!d && d.id === 'splat-reduce',
-		'§4 an over-cap .ply asks to make a smaller copy',
-		30000
-	);
-	await A.page.evaluate(() => window.__tp.test.v1.confirmDialog.resolveConfirm('reduce'));
-	await h.eventually(() => carriers(A.page), (c) => c.some((x) => x.splat.file === 'big.spz'), '§4 the smaller copy is placed as big.spz', 90000);
-	const bigItem = (await items(A.page)).find((it) => it.name === 'big.spz');
-	const bigRec = (await carriers(A.page)).find((x) => x.splat.file === 'big.spz');
-	h.check(!!bigItem && bigItem.size <= 25 * 1024 * 1024, `§4 ...under the 25 MB cap (${((bigItem?.size ?? 0) / 1048576).toFixed(1)} MB from ${(big.length / 1048576).toFixed(1)} MB)`);
-	h.check(bigRec?.splat.count === BIG, `§4 ...every splat kept (${bigRec?.splat.count})`);
-	h.check(!(await items(A.page)).some((it) => it.name === 'big.ply'), '§4 the over-cap original is not stored');
-
 	// ---- §5 Photo parity + Cinematic ---------------------------------------------------------
 	const photo = await A.page.evaluate(async () => {
 		const { meshKind, parityNotes } = await import('/src/lib/photo/photoCore.js');
@@ -271,7 +288,7 @@ h.run(async () => {
 		});
 		return { kinds, notes: parityNotes({ 'skip-splat': kinds.filter((k) => k === 'skip-splat').length }) };
 	});
-	h.check(photo.kinds.filter((k) => k === 'skip-splat').length === 3 && photo.kinds.every((k) => k === 'skip-splat' || k === 'skip-helper'), `§5 Photo: three carriers counted, Spark meshes are helpers (${photo.kinds.join(' ')})`);
+	h.check(photo.kinds.filter((k) => k === 'skip-splat').length === 2 && photo.kinds.every((k) => k === 'skip-splat' || k === 'skip-helper'), `§5 Photo: both carriers counted, Spark meshes are helpers (${photo.kinds.join(' ')})`);
 	h.check(/Gaussian splats/.test(photo.notes[0]?.note ?? ''), '§5 ...and the parity note names them');
 	await A.page.evaluate(() => window.__tp.test.v1.cinematicState.cinematicState.update((s) => ({ ...s, mode: 'on' })));
 	await h.eventually(() => dbg(A.page), (d) => d.entries.every((e) => !e.visible), '§5 Cinematic on: every splat mesh stands down', 5000);
@@ -297,7 +314,7 @@ h.run(async () => {
 	});
 	await h.freshReload(A);
 	await h.answerRestore(A, 'restore', 30000);
-	const back = await until(() => carriers(A.page), (c) => c.length === 3, '§6 the reload restores the three splat objects', 30000);
+	const back = await until(() => carriers(A.page), (c) => c.length === 2, '§6 the reload restores both splat objects', 30000);
 	h.check(!!back && back.find((c) => c.uuid === cA.uuid)?.splat.opacity === 0.5, '§6 ...with their records');
 	const eR = await until(() => entry(A.page, cA.uuid), (e) => !!e && e.state === 'ready' && e.visible, '§6 the runtime draws it again from the Library', 30000);
 	h.check(eR?.numSplats === N, `§6 ...every splat (${eR?.numSplats})`);
@@ -314,6 +331,30 @@ h.run(async () => {
 	);
 	h.check(!!insp, `§7 ...facts "${insp?.facts.trim()}"`);
 	await A.page.screenshot({ path: `${OUT}/splats-inspector.png` }).catch(() => {});
+
+	// ---- §8 reduce to fit (last: the heaviest step) ------------------------------------------
+	const BIG = 110000;
+	const big = gaussianPly(BIG, 3);
+	console.log(`  big .ply ${(big.length / 1048576).toFixed(1)} MB`);
+	await pick(A.page, 'big.ply', big);
+	await h.eventually(
+		() => A.page.evaluate(() => {
+			let d;
+			window.__tp.test.v1.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
+			return d ? { id: d.id, title: d.title, message: d.message, items: d.items } : null;
+		}),
+		(d) => !!d && d.id === 'splat-reduce',
+		'§8 an over-cap .ply asks to make a smaller copy',
+		30000
+	);
+	await A.page.evaluate(() => window.__tp.test.v1.confirmDialog.resolveConfirm('reduce'));
+	await h.eventually(() => carriers(A.page), (c) => c.some((x) => x.splat.file === 'big.spz'), '§8 the smaller copy is placed as big.spz', 90000);
+	const bigItem = (await items(A.page)).find((it) => it.name === 'big.spz');
+	const bigRec = (await carriers(A.page)).find((x) => x.splat.file === 'big.spz');
+	h.check(!!bigItem && bigItem.size <= 25 * 1024 * 1024, `§8 ...under the 25 MB cap (${((bigItem?.size ?? 0) / 1048576).toFixed(1)} MB from ${(big.length / 1048576).toFixed(1)} MB)`);
+	h.check(bigRec?.splat.count === BIG, `§8 ...every splat kept (${bigRec?.splat.count})`);
+	h.check(!(await items(A.page)).some((it) => it.name === 'big.ply'), '§8 the over-cap original is not stored');
+
 
 	await h.finish(browser);
 });

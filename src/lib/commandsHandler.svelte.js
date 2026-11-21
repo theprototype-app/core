@@ -1139,6 +1139,12 @@ export function sendObjects(peerId, element, opts = {}) {
         peer.send({ type: 'object', element: stubElementOf(element), groupuuid: element.parent?.uuid, ...(opts.override ? { override: true } : {}) });
         return;
     }
+    if (peerId === null && element?.isMesh && element.userData?.splat) {
+        // 102: a placed SPLAT carrier is ONE mesh, not an import root — the root path below sends a
+        // 'group' (the record without the mesh) and then only its children, so a peer got an empty node
+        peer.send({ type: 'object', element: element.toJSON(), groupuuid: element.parent?.uuid, pos: element.position.toArray(), rot: element.rotation.toArray(), scale: element.scale.toArray(), ...(opts.override ? { override: true } : {}) });
+        return;
+    }
     if (peerId === null) {
         groupid = element.uuid;
         // 59 T1: `groupparent` (additive) — a replaced model keeps its parent on every peer

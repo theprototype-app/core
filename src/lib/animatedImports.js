@@ -1264,8 +1264,7 @@ export async function applyObjectFile(data, opts = {}) {
 		// animation on every walk-in for no gain.
 		if (!data.override) return;
 		if (data.name) held.name = data.name;
-		applyUserDataFields(held, data.userData);
-		if (opts.inbound) clearInboundDraftFlags(held);
+		applyUserDataFields(held, opts.inbound ? withoutDraftFlag(data.userData) : data.userData);
 		if (data.lod && typeof data.lod === 'object') held.userData.lod = data.lod;
 		applyRootData(held, data);
 		if (data.character)
@@ -1390,6 +1389,13 @@ function userDataFields(root) {
 }
 
 /** what an objectfile / save entry's `userData` puts back on the parsed root @param {any} root @param {any} rows */
+/** a peer's rows never say whether an object is a draft here @param {any} rows */
+function withoutDraftFlag(rows) {
+	if (!rows || typeof rows !== 'object' || Array.isArray(rows) || !('__localOnly' in rows)) return rows;
+	const { __localOnly, ...rest } = rows;
+	return rest;
+}
+
 function applyUserDataFields(root, rows) {
 	if (!rows || typeof rows !== 'object' || Array.isArray(rows)) return;
 	for (const key of Object.keys(rows)) if (!CARRIED_ELSEWHERE.has(key)) root.userData[key] = rows[key];

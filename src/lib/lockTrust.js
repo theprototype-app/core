@@ -13,6 +13,9 @@ const isId = (v) => typeof v === 'string' && v.length > 0 && v.length <= 128;
 /** a lock stamp: when the holder took the object, on the session clock (sessionNow) @param {any} v */
 const isStamp = (v) => typeof v === 'number' && Number.isFinite(v);
 
+/** the most rows a peer's own `locked` may name (the `lock` set cap, wireValidate LOCK_SET_MAX) */
+export const LOCK_ROWS_PER_PEER = 4096;
+
 /**
  * The rows of a `locked` table (handshake / room arrival) that its sender may speak for.
  * The session host forwards the room's table, so its rows may name anyone; every other
@@ -23,9 +26,6 @@ const isStamp = (v) => typeof v === 'number' && Number.isFinite(v);
  * @param {{from: string, selfId?: string | null, fromHost: boolean, mayLock: boolean}} ctx
  * @returns {([string, string] | [string, string, number])[]}
  */
-/** the most rows a peer's own `locked` may name (the `lock` set cap, wireValidate LOCK_SET_MAX) */
-export const LOCK_ROWS_PER_PEER = 4096;
-
 export function acceptedLockRows(rows, { from, selfId, fromHost, mayLock }) {
 	if (!Array.isArray(rows) || !mayLock || !isId(from)) return [];
 	/** @type {([string, string] | [string, string, number])[]} */

@@ -304,12 +304,11 @@ function draftsChanged() {
 	draftsStale = true;
 }
 
-// a draft's id is a three.js uuid (or one with a part suffix, `<uuid>-glass`): the gate only ever matches
-// those, so no message word, peer id or graph id can be read as a draft
-const DRAFT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+// a draft's id is an object id (a three.js uuid, or a file's own id): short words such as a message type or
+// `scene` are never read as one
 /** @param {unknown} id */
 export function isDraftId(id) {
-	return typeof id === 'string' && DRAFT_ID.test(id);
+	return typeof id === 'string' && id.length >= 8;
 }
 
 /** the uuids of every draft and everything inside one (rebuilt when stale) @returns {Set<string>} */
@@ -347,6 +346,21 @@ export function clearInboundDraftFlags(object) {
 /** is this uuid a draft (or inside one)? @param {any} uuid */
 export function isDraftUuid(uuid) {
 	return typeof uuid === 'string' && draftUuids().has(uuid);
+}
+
+/** 80a: the receiving half of the drafts gate. A draft is only on this device, so nothing a peer sends may
+ * touch one: a message about a draft is not applied, and the parts of a bigger message that name one are
+ * left out (the same scrub as the sending half) @param {any} payload @returns {any} */
+export function gateDraftsInbound(payload) {
+	if (!payload || typeof payload !== 'object') return payload;
+	const set = draftUuids();
+	if (!set.size) return payload;
+	const out = scrubDrafts(payload, (u) => set.has(u));
+	if (out !== payload) {
+		const key = 'in:' + String(payload.type ?? '?') + (out === null ? ':dropped' : ':trimmed');
+		draftGateStats[key] = (draftGateStats[key] ?? 0) + 1;
+	}
+	return out;
 }
 
 /**

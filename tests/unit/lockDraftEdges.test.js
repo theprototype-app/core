@@ -7,7 +7,8 @@ vi.mock('../../src/lib/geometries.svelte', () => ({ lockGeometry: () => {} }));
 vi.mock('../../src/lib/objectActions', () => ({ selectObject: () => {}, applySelectionSet: () => {}, deselectObject: () => {} }));
 import { get } from 'svelte/store';
 import { scrubDrafts } from '../../src/lib/draftGateCore.js';
-import { clearInboundDraftFlags, isDraftId } from '../../src/lib/objectPermissions.js';
+import { clearInboundDraftFlags, isDraftId, gateDraftsInbound, markLocalOnly } from '../../src/lib/objectPermissions.js';
+import { objectsGroup } from '../../src/stores/sceneStore.js';
 import { stampRestoredRows, holderOf, sortLockTable, mergeLockRows, acceptedLockRows, LOCK_RACE_MS, LOCK_ROWS_PER_PEER } from '../../src/lib/lockTrust.js';
 import { lockMode, applyLockMode, resetLockMode, LOCK_MODE_SKEW_MS } from '../../src/lib/lockMode.js';
 import { sessionHost } from '../../src/lib/connectionState.js';
@@ -37,10 +38,29 @@ describe('drafts gate: a message type is never a draft', () => {
 });
 
 describe('drafts gate: only object ids count as drafts', () => {
-	it('a message word, a peer id or a graph id is never a draft id', () => {
-		for (const id of ['type', 'move', 'scene', 'peer-abc123', 'G1', '']) expect(isDraftId(id)).toBe(false);
+	it('a message word or a short graph id is never a draft id', () => {
+		for (const id of ['type', 'move', 'scene', 'G1', '', null]) expect(isDraftId(id)).toBe(false);
 		expect(isDraftId('3f2b8c1e-9a4d-4e6f-8b2a-1c3d5e7f9a0b')).toBe(true);
-		expect(isDraftId('3f2b8c1e-9a4d-4e6f-8b2a-1c3d5e7f9a0b-glass')).toBe(true);
+		expect(isDraftId('crate-0001')).toBe(true); // a file's own id
+	});
+	it('nothing a peer sends touches one of our drafts', () => {
+		const group = new THREE.Group();
+		const draft = new THREE.Group();
+		draft.uuid = 'aaaaaaaa-0000-4000-8000-000000000001';
+		const shared = new THREE.Mesh();
+		shared.uuid = 'bbbbbbbb-0000-4000-8000-000000000002';
+		group.add(draft, shared);
+		markLocalOnly(draft);
+		objectsGroup.set(group);
+		try {
+			expect(gateDraftsInbound({ type: 'group', uuid: draft.uuid, userData: { __localOnly: false } })).toBe(null);
+			expect(gateDraftsInbound({ type: 'objectfile', uuid: draft.uuid, override: true })).toBe(null);
+			expect(gateDraftsInbound({ type: 'group', uuid: shared.uuid, group: draft.uuid })).toBe(null);
+			const move = { type: 'move', uuid: shared.uuid, pos: [0, 0, 0] };
+			expect(gateDraftsInbound(move)).toBe(move);
+		} finally {
+			objectsGroup.set(undefined);
+		}
 	});
 	it('a script cannot set or clear the draft flag', async () => {
 		const { applyObjectPatch } = await import('../../src/lib/sandbox/scripts.js');

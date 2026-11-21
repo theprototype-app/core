@@ -2,7 +2,7 @@ import Peer from 'peerjs';
 import { peerSerializers, setFrameRefusalHandler } from './peerCodec.js';
 import { backoffDelay } from '$lib/netBackoff';
 import { sceneCommand, lockRestore, checkLocks, createObject, sendObjects, healObjectTo, deleteObject, colorObject, createLoader, userData, handleDisconnected, specator, cameraSettings, objectParameters, applyClearScene, ROSTER_GRACE_MS } from './commandsHandler.svelte';
-import { gateCreationBroadcast, gateDraftsOutbound } from './objectPermissions';
+import { gateCreationBroadcast, gateDraftsOutbound, gateDraftsInbound } from './objectPermissions';
 import { createGeometry, createLight, createGroup, changeName, moveGeometry, moveCamera } from '$lib/geometries.svelte';
 import { sendNodes, applyNodesSnapshot, applyNodeSync, noteNodesSnapshot, noteNodeSyncHandshake, forgetNodeSyncPeer, createFlowNode, moveFlowNode, updateFlowNodeData, deleteFlowNodes, createFlowEdge, deleteFlowEdges, applyFlowCursor } from '$lib/nodesHandler';
 import { preloadSandboxFor } from '$lib/sandbox/preload.js';
@@ -1341,6 +1341,9 @@ export class PeerConnection {
 				// absent row, or an empty scene on either side, APPLIES. That is today's
 				// behaviour byte for byte.
 				if (data && !canApplyByRoom(conn.peer, data.type)) return;
+				// 80a D1: our drafts are ours: nothing a peer sends edits, replaces, moves or unflags one
+				data = gateDraftsInbound(data);
+				if (!data) return;
 				// R22 round 32: THE SHARE-OR-STASH ASK IS SYMMETRIC NOW. It only ever gated
 				// what we SEND, so while our own question sat on screen the other side could
 				// answer Share (or arrive with a latched verdict) and pour its world into ours
@@ -1458,7 +1461,8 @@ export class PeerConnection {
 					if (data.userData && typeof data.userData === 'object' && data.uuid) {
 						const made = get(objectsGroup)?.getObjectByProperty('uuid', data.uuid);
 						if (made) {
-							made.userData = { ...made.userData, ...data.userData };
+							const { __localOnly, ...rows } = data.userData; // whether it is a draft is ours to say
+							made.userData = { ...made.userData, ...rows };
 							pokeScene();
 						}
 					}

@@ -160,7 +160,7 @@ describe('rule 5: a serialized object that says it is local-only (the migration 
 describe('migration wiring', () => {
 	const src = (f) => readFileSync(new URL('../../src/lib/' + f, import.meta.url), 'utf8');
 	it('the scene loader and the autosave restore mark drafts and send none', () => {
-		expect(src('sessions.js')).toMatch(/const draft = adoptLoadedDrafts\(object\);\s*if \(replicate && peer && !draft\)/);
+		expect(src('sessions.js')).toMatch(/const draft = replicate \? adoptLoadedDrafts\(object\) : false;\s*if \(replicate && peer && !draft\)/);
 		expect(src('autosave.js')).toMatch(/const draft = adoptLoadedDrafts\(child\);\s*if \(connected && !draft\)/);
 	});
 });

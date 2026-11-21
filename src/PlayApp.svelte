@@ -158,6 +158,8 @@
     startGameShell();
     // `?scene=<url>`, `window.tpPlay`, the frame's postMessage events (src/lib/play/playBoot.js)
     startPlayEntry();
+    // 102b-play: the screen stays awake while playing or watching (lazy, only where Wake Lock exists)
+    if ('wakeLock' in navigator) void import('$lib/wakeLockWiring.js').then((m) => m.startAppWakeLock());
     // the hook table is ~300 lazy loaders: a play link pays for it only when a test asks
     if (safeStorage.getItem('debugStores')) import('$lib/debugHooks').then((m) => m.installDebugHooks());
   });

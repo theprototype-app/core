@@ -430,7 +430,7 @@ function dabVertex(s, c, R, a) {
 function strokePoint(s, p) {
 	const dim = s.sp === 'uv' ? 2 : 3;
 	const last = s.last;
-	if (last && last.length === p.length && last.every((x, i) => x === p[i])) return;
+	if (last && last.length === p.length && last.every((/** @type {number} */ x, /** @type {number} */ i) => x === p[i])) return;
 	// the UV canvas measures in texture px, the model in its own units
 	const metric = s.sp === 'uv' ? [p[0] * s.layer.W, (s.flip ? 1 - p[1] : p[1]) * s.layer.H, p[2] ?? 1] : [p[0], p[1], p[2], p[3] ?? 1];
 	const step = Math.max(DAB_SPACING * 2 * s.r, s.sp === 'uv' ? 0.5 : 1e-6);

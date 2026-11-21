@@ -9,7 +9,7 @@ import { parseCheckedObject, seeThroughFromOpacity } from '../../src/lib/loadGua
 function saved(fields) {
 	const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
 	mesh.name = 'beam';
-	const json = mesh.toJSON();
+	const json = /** @type {any} */ (mesh.toJSON());
 	Object.assign(json.materials[0], fields);
 	return json;
 }
@@ -40,7 +40,7 @@ describe('G16 see-through materials load see-through', () => {
 	});
 	it('a multi-material mesh: each slot on its own', () => {
 		const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), [new THREE.MeshStandardMaterial(), new THREE.MeshStandardMaterial()]);
-		const json = mesh.toJSON();
+		const json = /** @type {any} */ (mesh.toJSON());
 		json.materials[1].opacity = 0.2;
 		const o = /** @type {any} */ (parseCheckedObject(json, 'file', 'scene'));
 		expect(o.material.map((/** @type {any} */ m) => m.transparent)).toEqual([false, true]);

@@ -25,7 +25,7 @@
 // paints the rounded point too). The truth is the commit that follows (`map`, `mapSlot`, `meshgeo`), so a late
 // joiner gets the texture, never the path history. Both types are ROOM_SCOPED.
 import * as THREE from 'three';
-import { get } from 'svelte/store';
+import { get, derived } from 'svelte/store';
 import { objectsGroup, pokeScene, globalScene, globalCamera, globalRenderer } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { beginHistoryBatch, endHistoryBatch, historyBatchOpen } from './history';
@@ -46,7 +46,7 @@ import {
 	uvPenPressure
 } from './uvEditor';
 import { readTriangles, trisToPositions, trisToGroups, trisToUVs, commitMeshGeoTriple } from './faceEdit';
-import { paintChannel, paintValue, paintMapSize, paintTargetInfo, BRUSH_STORES } from './meshPaintPrefs';
+import { paintChannel, paintValue, paintMapSize, paintTargetInfo, paintShowChannel, BRUSH_STORES } from './meshPaintPrefs';
 import {
 	channelOf,
 	normalizeBrush,
@@ -77,6 +77,22 @@ import {
 	hashBytes
 } from './meshPaintCore.js';
 import { quantizePoint } from './meshPaintWire.js';
+
+// 102 M6 (boot rule): the UV editor reads the brush state through this lazy chunk, so the prefs leaf and the
+// brush panel stay out of the boot bundle. `newBrush` = a channel other than colour or a brush other than the
+// shipped hard round one, which paints through this module instead of uvEditor's own painter.
+export const paintUi = derived(
+	[paintChannel, paintShowChannel, BRUSH_STORES.hardness, BRUSH_STORES.opacity, BRUSH_STORES.flow, BRUSH_STORES.erase, BRUSH_STORES.stamp],
+	([channel, showChannel, hardness, opacity, flow, erase, stamp]) => ({
+		channel,
+		showChannel: !!showChannel,
+		newBrush: channel !== 'color' || hardness !== 1 || opacity !== 1 || flow !== 1 || !!erase || !!stamp
+	})
+);
+/** forget what the panel says a stroke paints (the editor lost its target) */
+export function clearTargetInfo() {
+	paintTargetInfo.set(null);
+}
 
 const TILE = 64;
 /** seam padding, texture px past an island's edge */

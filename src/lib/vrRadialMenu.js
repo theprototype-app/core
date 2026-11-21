@@ -18,7 +18,6 @@ import { duplicateSelection, deleteSelection, groupSelection, selectionUuids } f
 import { savePrefab, savePrefabSelection } from './prefabs';
 import { perfContext } from './perf/perfMarks.js'; // 34 PF: an import-free leaf
 import { vrDollhouseOpen, vrSculptActive, vrPaintActive } from './vr/worldStores.js'; // 37: a leaf
-import { paintChannel, paintErase, paintMirror } from './meshPaintPrefs'; // 102 M6: a leaf
 import { sculptOp, sculptMode } from './terrainSculpt';
 import { paintLayer } from './terrainPaint';
 import { registerMeasureRings, registerArrangeRings } from './vr/buildRings.js'; // 52 V1/V2
@@ -523,7 +522,7 @@ function registerBuiltins() {
 		id: 'obj:paint',
 		group: 'object',
 		label: 'Paint',
-		icon: 'paintbrush',
+		icon: 'brush',
 		order: 1.5,
 		closes: true,
 		visible: () =>
@@ -629,35 +628,7 @@ function registerBuiltins() {
 		action: () => deleteSelection()
 	});
 
-	// 102 M6: the Paint ring — the radial opens on it while a VR paint session is up (Back = the usual menu)
-	[
-		['color', 'Colour', 'palette'],
-		['roughness', 'Roughness', 'circle-dashed'],
-		['metalness', 'Metalness', 'circle-dot'],
-		['emissive', 'Glow', 'sun']
-	].forEach(([ch, label, icon], order) =>
-		registerVRMenuEntry({
-			id: 'paint:' + ch,
-			group: 'paint',
-			label,
-			icon,
-			order,
-			closes: true,
-			active: () => get(paintChannel) === ch,
-			action: () => paintChannel.set(/** @type {any} */ (ch))
-		})
-	);
-	registerVRMenuEntry({ id: 'paint:erase', group: 'paint', label: 'Eraser', icon: 'eraser', order: 4, closes: true, active: () => get(paintErase), action: () => paintErase.update((v) => !v) });
-	registerVRMenuEntry({ id: 'paint:mirror', group: 'paint', label: 'Mirror X', icon: 'flip-horizontal', order: 5, closes: true, active: () => get(paintMirror), action: () => paintMirror.update((v) => !v) });
-	registerVRMenuEntry({
-		id: 'paint:done',
-		group: 'paint',
-		label: 'Done',
-		icon: 'check',
-		order: 6,
-		closes: true,
-		action: () => void import('./vr/meshPaint.js').then((m) => m.stopVRPaint())
-	});
+	// 102 M6: the Paint ring registers itself from vr/meshPaint.js on the first paint session (boot stays small)
 
 	// 37 R9: the Sculpt ring — the radial opens on it while a VR sculpt session is up (Back = the usual menu)
 	[

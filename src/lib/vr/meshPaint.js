@@ -25,6 +25,8 @@ import { uvBrushSize, meshWithUvs } from '../uvEditor';
 import { paintChannel, paintFlow, paintErase, paintMirror } from '../meshPaintPrefs';
 import { beginStroke, strokeTo, endStroke, cancelStroke, localHit, showRing, hideRing, worldNormal, ringRadius, slotOfHit } from '../meshPaint';
 import { channelOf } from '../meshPaintCore.js';
+import { registerVRMenuEntry } from '../vrRadialMenu';
+import { LUCIDE_NODES } from './iconData.js';
 
 export const SIZE_MIN = 1;
 export const SIZE_MAX = 128;
@@ -53,9 +55,41 @@ function target() {
 	return object ? meshWithUvs(object) : null;
 }
 
+/** the Paint ring (the radial opens on it while a session is up; Back = the usual menu). Registered here, on the
+ * first session, so none of it is in the boot bundle. */
+function registerPaintRing() {
+	// the ring's own icons (Lucide, the iconData format), added here rather than in the boot icon table
+	Object.assign(LUCIDE_NODES, {
+		'eraser': [["path",{"d":"M21 21H8a2 2 0 0 1-1.42-.587l-3.994-3.999a2 2 0 0 1 0-2.828l10-10a2 2 0 0 1 2.829 0l5.999 6a2 2 0 0 1 0 2.828L12.834 21"}],["path",{"d":"m5.082 11.09 8.828 8.828"}]],
+		'circle-dashed': [["path",{"d":"M10.1 2.182a10 10 0 0 1 3.8 0"}],["path",{"d":"M13.9 21.818a10 10 0 0 1-3.8 0"}],["path",{"d":"M17.609 3.721a10 10 0 0 1 2.69 2.7"}],["path",{"d":"M2.182 13.9a10 10 0 0 1 0-3.8"}],["path",{"d":"M20.279 17.609a10 10 0 0 1-2.7 2.69"}],["path",{"d":"M21.818 10.1a10 10 0 0 1 0 3.8"}],["path",{"d":"M3.721 6.391a10 10 0 0 1 2.7-2.69"}],["path",{"d":"M6.391 20.279a10 10 0 0 1-2.69-2.7"}]],
+		'flip-horizontal': [["path",{"d":"M8 3H5a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h3"}],["path",{"d":"M16 3h3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-3"}],["path",{"d":"M12 20v2"}],["path",{"d":"M12 14v2"}],["path",{"d":"M12 8v2"}],["path",{"d":"M12 2v2"}]]
+	});
+	[
+		['color', 'Colour', 'palette'],
+		['roughness', 'Roughness', 'circle-dashed'],
+		['metalness', 'Metalness', 'circle-dot'],
+		['emissive', 'Glow', 'sun']
+	].forEach(([ch, label, icon], order) =>
+		registerVRMenuEntry({
+			id: 'paint:' + ch,
+			group: 'paint',
+			label,
+			icon,
+			order,
+			closes: true,
+			active: () => get(paintChannel) === ch,
+			action: () => paintChannel.set(/** @type {any} */ (ch))
+		})
+	);
+	registerVRMenuEntry({ id: 'paint:erase', group: 'paint', label: 'Eraser', icon: 'eraser', order: 4, closes: true, active: () => get(paintErase), action: () => paintErase.update((v) => !v) });
+	registerVRMenuEntry({ id: 'paint:mirror', group: 'paint', label: 'Mirror X', icon: 'flip-horizontal', order: 5, closes: true, active: () => get(paintMirror), action: () => paintMirror.update((v) => !v) });
+	registerVRMenuEntry({ id: 'paint:done', group: 'paint', label: 'Done', icon: 'check', order: 6, closes: true, action: () => stopVRPaint() });
+}
+
 function ensureHooks() {
 	if (hooked) return;
 	hooked = true;
+	registerPaintRing();
 	registerStickOwner(() => (get(vrPaintActive) && !get(vrMenuOpen) ? pointerHand() : null));
 	registerVRTriggerHooks({
 		start: (/** @type {number} */ i) => paintTriggerStart(i),

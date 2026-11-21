@@ -104,6 +104,8 @@ h.run(async () => {
 	// ---- 1. the panel: every new control is there, with a tooltip --------------------------------------------------
 	const ball = await make(A.page, '/create Sphere 0.5', 'paint-ball');
 	await A.page.waitForTimeout(800);
+	// the panel is a lazy chunk (boot rule): it lands with the painter when Paint is armed
+	await A.page.waitForSelector('#paint-channel', { timeout: 20000 }).catch(() => {});
 	const panel = await A.page.evaluate(() => {
 		const ids = ['paint-channel', 'paint-hardness', 'paint-opacity', 'paint-flow', 'paint-erase', 'paint-mirror', 'paint-stamp', 'paint-map-size', 'paint-show-channel'];
 		const missing = ids.filter((id) => !document.getElementById(id));

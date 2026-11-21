@@ -210,7 +210,7 @@ h.run(async () => {
 	/** in-page: the pixels piece P adds (all vs P hidden), compared GL vs view */
 	const compare = (piece) =>
 		page.evaluate(
-			({ piece, W, H }) => {
+			({ piece, W, H, PIECES }) => {
 				const S = window.__fxShots;
 				const mask = (a, b) => {
 					const m = new Uint8Array(W * H);
@@ -233,11 +233,30 @@ h.run(async () => {
 				};
 				const g = mask(S['gl:all'], S['gl:-' + piece]);
 				const v = mask(S['view:all'], S['view:-' + piece]);
-				for (let j = 0; j < W * H; j++) {
-					if (window.__fxNoiseGl?.[j]) g[j] = 0;
-					if (window.__fxNoise?.[j]) v[j] = 0;
+				// pixels inside ANOTHER piece's own footprint (grown 3 px) are not this piece's, in either view: the jiggle
+				// spring swings in the wind between two shots (tickSim, not held by the flow pause), and one PC run read
+				// the jelly's moving edge as 41 px of the burst's centre (fx11). The same rule on both sides.
+				const other = new Uint8Array(W * H);
+				for (const q of PIECES) {
+					if (q === piece) continue;
+					for (const [a, b] of [[S['gl:all'], S['gl:-' + q]], [S['view:all'], S['view:-' + q]]]) {
+						const m = mask(a, b);
+						for (let y = 0; y < H; y++)
+							for (let x = 0; x < W; x++) {
+								if (!m[y * W + x]) continue;
+								for (let dy = -3; dy <= 3; dy++)
+									for (let dx = -3; dx <= 3; dx++) {
+										const X = x + dx, Y = y + dy;
+										if (X >= 0 && Y >= 0 && X < W && Y < H) other[Y * W + X] = 1;
+									}
+							}
+					}
 				}
-				// debug picture: gl footprint red, view footprint green, the noise floor blue
+				for (let j = 0; j < W * H; j++) {
+					if (window.__fxNoiseGl?.[j] || other[j]) g[j] = 0;
+					if (window.__fxNoise?.[j] || other[j]) v[j] = 0;
+				}
+				// debug picture: gl footprint red, view footprint green, the noise floor and the other pieces blue
 				const mc = document.createElement('canvas');
 				mc.width = W;
 				mc.height = H;
@@ -246,7 +265,7 @@ h.run(async () => {
 				for (let j = 0; j < W * H; j++) {
 					img.data[j * 4] = g[j] * 255;
 					img.data[j * 4 + 1] = v[j] * 255;
-					img.data[j * 4 + 2] = window.__fxNoise?.[j] ? 255 : 0;
+					img.data[j * 4 + 2] = window.__fxNoise?.[j] || other[j] ? 160 : 0;
 					img.data[j * 4 + 3] = 255;
 				}
 				x.putImageData(img, 0, 0);
@@ -270,7 +289,7 @@ h.run(async () => {
 				const c = (sx, sy, n) => (n ? [Math.round(sx / n), Math.round(sy / n)] : null);
 				return { maskUrl, glLift, viewLift, gl: ga, view: va, glCovered: ga ? +(gIn / ga).toFixed(2) : 0, viewCovered: va ? +(vIn / va).toFixed(2) : 0, glCentre: c(gx, gy, ga), viewCentre: c(vx, vy, va) };
 			},
-			{ piece, W, H }
+			{ piece, W, H, PIECES }
 		);
 
 	// ---- 2. the standard view, every piece and every piece-hidden ---------------------------------------------------

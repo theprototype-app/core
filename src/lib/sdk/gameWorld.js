@@ -183,7 +183,7 @@ function players() {
 export function sdkGameWorld(ctx) {
 	const { moduleId, onDispose } = ctx;
 	return {
-		/** 61-nav: 78's Path objects, read through pathOf (F9) — `{uuid, name, points (WORLD), closed, mode,
+		/** 61-nav: 78's Path objects, read through pathOf (F9) — `{uuid, name, points: [{pos (WORLD), …extras}], closed, mode,
 		 * speed, length, period, poseAt(t, {start, offset}), eventsBetween(a, b, o)}` or null. */
 		paths: Object.freeze({
 			/** @param {string} uuid */

@@ -57,7 +57,7 @@ export const NPC_AI_TOOLS = [
 				'chases, attacks in attack range (an "attack" event every attack.every s), gives up after giveUp s without the player and walks ' +
 				'back to its path or home spot. A target it cannot reach stops it at the closest point with an "unreachable" event. ' +
 				'path = a Path object uuid, "new" (a loop path around it) or "none" (guard the spot). Fields you leave out keep their value ' +
-				'(the defaults on a new enemy). remove: true makes it an ordinary object again. Same as the object menu\'s "Make this an enemy" sheet. One undo step.',
+				'(the defaults on a new enemy). remove: true makes it an ordinary object again. Same as the object menu\'s "Make this an enemy" sheet. One undo step (two with path "new": the path, then the enemy).',
 			parameters: {
 				type: 'object',
 				properties: {

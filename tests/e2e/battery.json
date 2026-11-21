@@ -941,7 +941,8 @@
 		"wire-proto": 420,
 		"workspace-layouts": 193,
 		"workspace-restore": 52,
-		"z-scale-layering": 117
+		"z-scale-layering": 117,
+		"navigation-npc": 400
 	},
 	"modules": {
 		"dungeon-realms": 458,
@@ -1140,6 +1141,7 @@
 		"move-wire-shape": false,
 		"multiselect-v2": false,
 		"narrow-header": false,
+		"navigation-npc": false,
 		"net-drop": false,
 		"net-handshake": false,
 		"net-mesh": false,

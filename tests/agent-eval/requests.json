@@ -32,6 +32,7 @@
 		{ "id": "import-glb", "say": "Bring in the chair model at https://example.com/models/chair.glb and put it by the table.", "pass": [{ "tool": "create_shape", "action": "import" }], "partial": [{ "tool": "assets" }] },
 		{ "id": "cinematic-look", "say": "Make this scene look cinematic, like a film still.", "pass": [{ "tool": "set_look", "action": "preset" }], "partial": [{ "tool": "set_look", "action": "post" }, { "tool": "set_look", "action": "sky" }] },
 		{ "id": "bake-light", "say": "Bake the lighting so the corners get soft shadows.", "pass": [{ "tool": "set_look", "action": "bake" }], "partial": [{ "tool": "set_look", "action": "post" }] },
-		{ "id": "nice-photo", "say": "Take a really nice high-quality photo of what I'm looking at.", "pass": [{ "tool": "run", "action": "photo" }], "partial": [{ "tool": "screenshot" }] }
+		{ "id": "nice-photo", "say": "Take a really nice high-quality photo of what I'm looking at.", "pass": [{ "tool": "run", "action": "photo" }], "partial": [{ "tool": "screenshot" }] },
+		{ "id": "crate-guard", "say": "Make the crate a guard that walks around and chases me when it sees me.", "pass": [{ "tool": "game_setup", "action": "npc" }], "partial": [{ "tool": "create_flow_nodes" }] }
 	]
 }

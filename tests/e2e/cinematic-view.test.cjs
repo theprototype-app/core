@@ -140,6 +140,32 @@ const labelInk = (page) =>
 	});
 
 /**
+ * G30: record every toast and every showing of the switch's reason note from now on. The note stays 10 s
+ * and a toast a few seconds, and a loaded slot can take longer than that between the failure and the
+ * check (r4: s9 read both after they had gone), so the check reads what the USER WAS SHOWN, not only
+ * what is still on screen. Call before the press. @param {any} page
+ */
+async function watchFallback(page) {
+	await page.evaluate(() => {
+		const seen = { toasts: /** @type {string[]} */ ([]), notes: /** @type {string[]} */ ([]) };
+		/** @type {any} */ (window).__g30seen = seen;
+		window.__tp.test.v1.toastStore.subscribe((/** @type {any} */ list) => {
+			for (const x of list ?? []) {
+				const m = typeof x === 'string' ? x : String(x?.text ?? '');
+				if (m && !seen.toasts.includes(m)) seen.toasts.push(m);
+			}
+		});
+		setInterval(() => {
+			const w = document.getElementById('cinematic-why');
+			if (w && !w.hidden && w.textContent && !seen.notes.includes(w.textContent)) seen.notes.push(w.textContent);
+		}, 100);
+	});
+}
+
+/** what watchFallback recorded @param {any} page @returns {Promise<{toasts: string[], notes: string[]}>} */
+const seenFallback = (page) => page.evaluate(() => /** @type {any} */ (window).__g30seen ?? { toasts: [], notes: [] });
+
+/**
  * G30: the fallback after a dropped instance / lost device, as the user sees it: the view's own note (never
  * "Something went wrong"), the switch still on screen, disabled, with the reason, no unhandled rejection,
  * and the WebGL view drawing again.
@@ -152,7 +178,8 @@ async function assertFallback(P, label) {
 	await waitMode(page, 'off', label + ': the view fell back');
 	const s = await state(page);
 	h.check(s.offered === false && /lost/.test(s.disabled ?? ''), `${label}: off for the session with its reason (${JSON.stringify({ why: s.why, disabled: s.disabled, error: s.error })})`);
-	const t = await toasts(page);
+	const seen = await seenFallback(page);
+	const t = [...new Set([...(await toasts(page)), ...seen.toasts])];
 	h.check(t.some((m) => /Cinematic view is off: the graphics device was lost/.test(m)), `   the view's own note says so (${JSON.stringify(t).slice(0, 240)})`);
 	h.check(!t.some((m) => /Something went wrong/i.test(m)), '   and no "Something went wrong" toast');
 	await page.waitForSelector('#cinematic-toggle', { timeout: 10000 }).catch(() => null);
@@ -161,7 +188,8 @@ async function assertFallback(P, label) {
 		const w = document.getElementById('cinematic-why');
 		return b ? { disabled: b.getAttribute('aria-disabled'), why: b.getAttribute('data-why'), title: b.getAttribute('title'), note: w && !w.hidden ? w.textContent : null } : null;
 	});
-	h.check(!!sw && sw.disabled === 'true' && /lost/.test(sw.why ?? '') && /lost/.test(sw.title ?? '') && /lost/.test(sw.note ?? ''), `   the switch stays, disabled, and shows the reason (${JSON.stringify(sw)})`);
+	const note = sw?.note ?? seen.notes.find((n) => /lost/.test(n)) ?? null;
+	h.check(!!sw && sw.disabled === 'true' && /lost/.test(sw.why ?? '') && /lost/.test(sw.title ?? '') && /lost/.test(note ?? ''), `   the switch stays, disabled, and shows the reason (${JSON.stringify({ ...sw, note })})`);
 	await page.click('#cinematic-toggle', { force: true }); // aria-disabled: Playwright would wait for "enabled"
 	await page.waitForTimeout(400);
 	h.check((await mode(page)) === 'off', '   pressing it does not start the view again');
@@ -209,6 +237,7 @@ h.run(async () => {
 	h.check(ids.every(Boolean), `three objects to draw (${ids.length})`);
 
 	// ---- 2. the pill turns it on; the WebGPU canvas draws a real frame ----------------------------------------
+	await watchFallback(page);
 	await page.click('#cinematic-toggle');
 	// G30: a browser that drops the WebGPU instance while the view starts (a loaded software-GL worker) takes
 	// the fallback path for real: assert it, run the forced-drop check, and skip the sections that need the view
@@ -478,6 +507,7 @@ async function forcedDrop(browser, A) {
 		await D.page.waitForSelector('#cinematic-toggle', { timeout: 30000 });
 		await D.page.evaluate(() => window.__tp.test.v1.addObjects.spawnAtPoint('/create Box 1 1 1', [0, 0.5, 0]));
 		await D.page.evaluate(async () => (await window.__tp.test.v1.cinematicState.cinematicView()).dropInstanceOnNextStartForTest());
+		await watchFallback(D.page);
 		await D.page.click('#cinematic-toggle');
 		await assertFallback(D, '9. instance dropped mid-start (forced)');
 		const dbg = await debug(D.page);

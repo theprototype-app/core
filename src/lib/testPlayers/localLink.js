@@ -29,6 +29,9 @@ export { LINK_TAG };
 
 /** a peer id this transport accepts: what createPeer() makes, plus room for test ids */
 const ID_RE = /^[0-9a-z][0-9a-z_-]{2,40}$/i;
+/** a bot re-sends its hello this often until welcomed, for at most HELLO_TRIES more times (30 s) */
+export const HELLO_EVERY_MS = 1000;
+export const HELLO_TRIES = 30;
 
 /** A tiny EventEmitter with the eventemitter3 surface the app calls on a Peer / DataConnection. */
 class Emitter {
@@ -370,7 +373,15 @@ export function createBotPeer(id, opts) {
 		peer.closeAll();
 		peer.emit('close');
 	};
-	hub.postMessage({ [LINK_TAG]: 1, kind: 'hello', test, id }, origin);
+	// say hello until the hub answers: one postMessage is all a frame gets otherwise, and a frame that loses
+	// it (a hub busy booting its other frame) would sit at "loading" for the whole run
+	const hello = () => hub.postMessage({ [LINK_TAG]: 1, kind: 'hello', test, id }, origin);
+	hello();
+	let tries = 0;
+	const again = setInterval(() => {
+		if (peer.open || peer.destroyed || ++tries > HELLO_TRIES) clearInterval(again);
+		else hello();
+	}, HELLO_EVERY_MS);
 	return peer;
 }
 
@@ -413,15 +424,21 @@ export function createHub(opts) {
 		}
 	};
 
+	/** every hello that reached the hub (n null = from a frame it never added), for the debug hook */
+	const stats = { hellos: /** @type {{n: number | null, id: string | null, at: number}[]} */ ([]) };
+
 	/** @param {MessageEvent} e */
 	const onMessage = (e) => {
 		if (e.origin !== origin) return;
 		const d = e.data;
 		if (!d || d[LINK_TAG] !== 1 || d.test !== test) return;
 		const frame = frames.get(/** @type {Window} */ (e.source));
+		if (d.kind === 'hello' && stats.hellos.length < 50) stats.hellos.push({ n: frame?.n ?? null, id: typeof d.id === 'string' ? d.id.slice(0, 40) : null, at: Date.now() % 1e7 });
 		if (!frame) return; // only frames this hub made
 		if (d.kind === 'hello') {
 			const id = typeof d.id === 'string' ? d.id : '';
+			// a repeated hello from the frame we already accepted lost our welcome: answer it again
+			if (frame.id && frame.id === id) return /** @type {Window} */ (e.source).postMessage({ [LINK_TAG]: 1, kind: 'welcome', test, id }, origin);
 			if (frame.id || !ID_RE.test(id) || ids.has(id) || id === opts.hostId()) return;
 			frame.id = id;
 			ids.set(id, /** @type {Window} */ (e.source));
@@ -456,6 +473,7 @@ export function createHub(opts) {
 	return {
 		endpoint,
 		test,
+		stats,
 		/** @param {Window} win @param {number} n */
 		addFrame(win, n) {
 			frames.set(win, { n, id: null });

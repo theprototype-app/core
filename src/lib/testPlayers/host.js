@@ -22,7 +22,7 @@ import { log } from '../diagnostics';
 import { botMayApply, JOIN_STATE_TYPES, JOIN_QUIET_MS } from './roles.js';
 
 /**
- * @typedef {{n: number, role: 'editor' | 'viewer' | 'player', id: string | null, status: 'loading' | 'joining' | 'joined' | 'playing' | 'left', frame: HTMLIFrameElement | null, openAt: number}} BotRow
+ * @typedef {{n: number, role: 'editor' | 'viewer' | 'player', id: string | null, status: 'loading' | 'joining' | 'joined' | 'playing' | 'failed' | 'left', frame: HTMLIFrameElement | null, openAt: number, loadAt: number, reloads: number}} BotRow
  */
 
 /** gamePresence's playModeOf, loaded when a test starts (a static edge would put its graph in the boot's preload list) @type {(peerId: string) => string} */
@@ -80,7 +80,7 @@ export async function startTest(roles) {
 	/** @type {any} */
 	const pc = get(peers);
 	const test = newTestId();
-	const list = roles.slice(0, botCap()).map((role, i) => /** @type {BotRow} */ ({ n: i + 1, role: TEST_ROLE_LABELS[role] ? role : 'player', id: null, status: 'loading', frame: null, openAt: 0 }));
+	const list = roles.slice(0, botCap()).map((role, i) => /** @type {BotRow} */ ({ n: i + 1, role: TEST_ROLE_LABELS[role] ? role : 'player', id: null, status: 'loading', frame: null, openAt: 0, loadAt: 0, reloads: 0 }));
 	const hub = createHub({
 		test,
 		hostId: () => get(peers)?.peer?.id ?? pc.myId,
@@ -101,6 +101,7 @@ export async function startTest(roles) {
 			}
 			publish();
 			tellRoles();
+			pumpFrames();
 		}
 	});
 	run = { test, hub, bots: list, unwrap: () => {}, peer: pc.peer, refused: [], timer: null };
@@ -134,7 +135,7 @@ export async function startTest(roles) {
 		if (!run) return;
 		/** @type {any} */
 		const now = get(peers);
-		let changed = false;
+		let changed = bootWatch();
 		for (const bot of run.bots) {
 			if (!bot.id || bot.status === 'left') continue;
 			const open = !!now?.openedPeers?.has(bot.id);
@@ -161,6 +162,50 @@ export function attachFrame(n, frame) {
 	if (!run || !bot || !frame.contentWindow) return;
 	bot.frame = frame;
 	run.hub.addFrame(frame.contentWindow, n);
+	pumpFrames();
+}
+
+/**
+ * Frames boot ONE AT A TIME. Every bot is a whole app: started together, N frames ask for every module
+ * of the app at once, and on a dev server (unbundled, ~1000 requests a frame) the tab runs out of request
+ * slots (net::ERR_INSUFFICIENT_RESOURCES) and a frame whose import failed never boots. The next frame
+ * starts when the last one says hello, or after NEXT_FRAME_MS whatever it is doing.
+ */
+export const NEXT_FRAME_MS = 15000;
+/** a frame that has not said hello this long after it started is reloaded, once; then it has failed */
+export const BOOT_RETRY_MS = 45000;
+
+function pumpFrames() {
+	if (!run) return;
+	const now = Date.now();
+	const booting = run.bots.some((b) => b.loadAt && !b.id && b.status === 'loading' && now - b.loadAt < NEXT_FRAME_MS);
+	if (booting) return;
+	const next = run.bots.find((b) => b.frame && !b.loadAt);
+	if (!next?.frame) return;
+	next.loadAt = now;
+	next.frame.src = botUrl(next.n);
+}
+
+/** the boot watchdog (the status timer runs it): reload a silent frame once, then mark it failed @returns {boolean} changed */
+function bootWatch() {
+	if (!run) return false;
+	const now = Date.now();
+	let changed = false;
+	for (const bot of run.bots) {
+		if (bot.id || !bot.loadAt || !bot.frame || bot.status !== 'loading' || now - bot.loadAt < BOOT_RETRY_MS) continue;
+		if (bot.reloads < 1) {
+			bot.reloads++;
+			bot.loadAt = now;
+			log('warn', 'net', 'test player did not start; reloading its frame', { n: bot.n });
+			bot.frame.src = botUrl(bot.n); // the same URL navigates again; the hub still knows this frame
+		} else {
+			bot.status = 'failed';
+			changed = true;
+			log('warn', 'net', 'test player did not start', { n: bot.n });
+		}
+	}
+	pumpFrames();
+	return changed;
 }
 
 /** The URL a bot frame opens: this app, flagged as bot `n`, dialling this tab. @param {number} n */
@@ -264,9 +309,11 @@ export function testPlayersDebug() {
 	return run
 		? {
 				test: run.test,
-				bots: run.bots.map((b) => ({ n: b.n, role: b.role, id: b.id, status: b.status })),
+				bots: run.bots.map((b) => ({ n: b.n, role: b.role, id: b.id, status: b.status, reloads: b.reloads })),
 				refused: run.refused.slice(),
-				links: Object.fromEntries(Object.entries(run.hub.endpoint.connections).map(([id, list]) => [id, /** @type {any[]} */ (list).length]))
+				links: Object.fromEntries(Object.entries(run.hub.endpoint.connections).map(([id, list]) => [id, /** @type {any[]} */ (list).length])),
+				attached: run.bots.map((b) => !!b.frame),
+				hellos: run.hub.stats.hellos.slice()
 			}
 		: null;
 }

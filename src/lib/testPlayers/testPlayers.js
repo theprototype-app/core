@@ -24,11 +24,15 @@ export const testSheetOpen = writable(false);
 
 /**
  * How many bots this device may run at once. Every bot is a whole app instance (its own scene, renderer
- * and flow runtime): MEASURED on the desktop at ~150-250 MB and one WebGL context each; a phone holds one.
+ * and flow runtime): MEASURED on the desktop at ~150-250 MB and one WebGL context each; a phone or a headset holds one
+ * (tests/e2e/test-players-devices.test.cjs logs the measured cost: TP-DEVICE-COST).
  * @returns {number}
  */
 export function botCap() {
-	return get(deviceClass) === 'phone' ? 1 : 3;
+	if (get(deviceClass) === 'phone') return 1;
+	// a standalone headset shares one GPU with its own two eye views: one bot, like a phone
+	if (typeof navigator !== 'undefined' && /OculusBrowser|Quest/.test(String(navigator.userAgent || ''))) return 1;
+	return 3;
 }
 
 let mounted = false;

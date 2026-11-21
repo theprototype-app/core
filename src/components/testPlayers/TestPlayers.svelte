@@ -9,7 +9,7 @@
 	import Button from '../ui/Button.svelte';
 	import Icon from '../ui/Icon.svelte';
 	import { testRun, testSheetOpen, botCap, TEST_ROLE_LABELS, stopTestPlayers } from '$lib/testPlayers/testPlayers.js';
-	import { startTest, cannotStart, attachFrame, botUrl, tellBot } from '$lib/testPlayers/host.js';
+	import { startTest, cannotStart, attachFrame, tellBot } from '$lib/testPlayers/host.js';
 	import { showToast } from '../../stores/appStore';
 
 	/** @typedef {'player' | 'editor' | 'viewer'} Role */
@@ -75,12 +75,11 @@
 	/** register a bot's frame with the hub BEFORE it loads, so its first message is heard
 	 * @param {HTMLIFrameElement} node @param {number} n */
 	function botFrame(node, n) {
-		attachFrame(n, node);
-		node.src = botUrl(n);
+		attachFrame(n, node); // the host starts the frames one at a time (host.js pumpFrames)
 		return {};
 	}
 
-	const STATUS = /** @type {Record<string, string>} */ ({ loading: 'Loading', joining: 'Joining', joined: 'Joined', playing: 'Playing', left: 'Left' });
+	const STATUS = /** @type {Record<string, string>} */ ({ loading: 'Loading', joining: 'Joining', joined: 'Joined', playing: 'Playing', failed: 'Did not start', left: 'Left' });
 </script>
 
 <ModalDialog bind:open={$testSheetOpen} title="Test with players" width="sm" desktopWidth="420px" id="test-players-sheet">
@@ -125,7 +124,7 @@
 						<iframe
 							id={'test-player-frame-' + bot.n}
 							title={'Test player ' + bot.n + ' (' + TEST_ROLE_LABELS[bot.role] + ')'}
-							tabindex={driving === bot.n ? undefined : -1}
+							inert={driving !== bot.n}
 							use:botFrame={bot.n}
 						></iframe>
 					</div>

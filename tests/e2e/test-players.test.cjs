@@ -13,6 +13,7 @@
 //   APP_URL=https://theprototype.app:5941/ node tests/e2e/test-players.test.cjs
 //   E2E_VIDEO=<dir> records the host tab (the docs clip)
 const h = require('./helpers.cjs');
+const spy = require('./test-players-spy.cjs');
 
 const NOW = () => (Date.now() % 86400000) / 1000;
 
@@ -75,7 +76,7 @@ const storageFacts = (page) =>
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const video = process.env.E2E_VIDEO ? { recordVideo: { dir: process.env.E2E_VIDEO, size: { width: 1280, height: 800 } } } : {};
-	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1280, height: 800 }, ...video } });
+	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1280, height: 800 }, ...video }, init: { content: spy.writeSpy() } });
 	const page = A.page;
 	await h.answerRestore(A).catch(() => {});
 
@@ -123,6 +124,7 @@ h.run(async () => {
 		await page.waitForTimeout(1000);
 	}
 	console.log('joined:', JSON.stringify(st), 'after', Math.round((Date.now() - t0) / 1000), 's');
+	if (!(st.dbg && st.dbg.bots.every((b) => b.id))) await spy.stuck(page, st.dbg);
 	const [p1, p2] = st.dbg.bots;
 	h.check(st.dbg.bots.length === 2 && st.dbg.bots.every((b) => b.id && st.opened.includes(b.id)), `both bots joined over the local link (${JSON.stringify(st.dbg.bots)})`);
 	h.check(st.roster.includes(p1.id) && st.roster.includes(p2.id), `both are on the host's roster (${JSON.stringify(st.roster)})`);
@@ -205,6 +207,8 @@ h.run(async () => {
 	h.check(v2won.game.state === 'over' && v2won.game.outcome === 'win', `... and so does the other bot (${JSON.stringify(v2won.game)})`);
 	await page.getByRole('button', { name: 'Stop driving player 1' }).click().catch(() => {});
 
+	h.check(await spy.probe(page, f1), 'the bot-write spy sees a bot frame\'s real write (positive control)');
+
 	// ---- 5. Stop test: a clean session ---------------------------------------------------------
 	await page.click('#test-players-stop');
 	await page.waitForFunction(() => !document.querySelector('#test-players-strip'), null, { timeout: 20000 }).catch(() => {});
@@ -219,7 +223,13 @@ h.run(async () => {
 	const newIdb = after.idb.filter((k) => !before.idb.includes(k) && k !== 'latest');
 	const newLs = after.ls.filter((k) => !before.ls.includes(k));
 	h.check(after.sessions === before.sessions && newIdb.length === 0, `0 extra saves: no new IndexedDB records (${JSON.stringify(newIdb)}; sessions ${before.sessions} -> ${after.sessions})`);
-	h.check(newLs.length === 0, `the bots wrote no settings into this tab's storage (${JSON.stringify(newLs)})`);
+	const botWrites = await spy.writes(page);
+	h.check(botWrites.length === 0, `the bots wrote nothing to this tab's real storage (${JSON.stringify(botWrites)})`);
+	// a key the HOST added is its own (a one-time hint it showed because of the test): one-time hints are logged,
+	// anything else still fails
+	const hostHints = newLs.filter((k) => /:hintSeen$/.test(k));
+	if (hostHints.length) console.log('the host itself added (its own one-time hints):', JSON.stringify(hostHints));
+	h.check(newLs.length === hostHints.length, `no other settings appeared in this tab's storage (${JSON.stringify(newLs)})`);
 	h.check(after.rejoin === null, `no tp:rejoin left behind by a bot's goodbye (${after.rejoin})`);
 	const rows2 = await (async () => {
 		await page.click('#play-button', { button: 'right' });

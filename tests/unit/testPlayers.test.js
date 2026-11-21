@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { LocalDataConnection } from '../../src/lib/testPlayers/localLink.js';
+import { describe, it, expect, vi } from 'vitest';
+import { LocalDataConnection, createBotPeer, LINK_TAG, HELLO_EVERY_MS, HELLO_TRIES } from '../../src/lib/testPlayers/localLink.js';
 import { botMayApply, VIEWER_ALLOWED } from '../../src/lib/testPlayers/roles.js';
 import { overlayStorage } from '../../src/lib/safeStorage.js';
 import { setFrameRefusalHandler } from '../../src/lib/peerCodec.js';
@@ -186,5 +186,64 @@ describe('bot storage overlay', () => {
 		expect(s.getItem('tp:rejoin')).toBeNull();
 		s.setItem('tp:rejoin', '{}');
 		expect(s.getItem('tp:rejoin')).toBe('{}');
+	});
+});
+
+describe('bot hello', () => {
+	/** a node stand-in for the frame's window: messages are dispatched to it by hand */
+	function fakeFrame() {
+		const g = /** @type {any} */ (globalThis);
+		const had = { window: g.window, location: g.location };
+		g.window = new EventTarget();
+		g.location = { origin: 'https://x.test' };
+		/** @type {any[]} */
+		const sent = [];
+		const hub = /** @type {any} */ ({ postMessage: (/** @type {any} */ m) => sent.push(m) });
+		const deliver = (/** @type {any} */ data) => {
+			const ev = /** @type {any} */ (new Event('message'));
+			Object.defineProperty(ev, 'data', { value: data });
+			Object.defineProperty(ev, 'source', { value: hub });
+			Object.defineProperty(ev, 'origin', { value: 'https://x.test' });
+			ev.ports = [];
+			g.window.dispatchEvent(ev);
+		};
+		const restore = () => Object.assign(g, had);
+		return { hub, sent, deliver, restore };
+	}
+
+	it('says hello again until the hub welcomes it (a lost first hello does not strand the frame)', () => {
+		vi.useFakeTimers();
+		const f = fakeFrame();
+		try {
+			const peer = createBotPeer('abc12', { test: 'tst1', hub: f.hub });
+			const hellos = () => f.sent.filter((m) => m[LINK_TAG] === 1 && m.kind === 'hello' && m.id === 'abc12').length;
+			expect(hellos()).toBe(1);
+			// the hub never saw it: the frame keeps asking
+			vi.advanceTimersByTime(HELLO_EVERY_MS * 3);
+			expect(hellos()).toBe(4);
+			expect(peer.open).toBe(false);
+			f.deliver({ [LINK_TAG]: 1, kind: 'welcome', test: 'tst1', id: 'abc12' });
+			expect(peer.open).toBe(true);
+			vi.advanceTimersByTime(HELLO_EVERY_MS * 5);
+			expect(hellos()).toBe(4); // welcomed: no more hellos
+			peer.destroy();
+		} finally {
+			f.restore();
+			vi.useRealTimers();
+		}
+	});
+
+	it('gives up after HELLO_TRIES (a frame whose host is gone does not ask for ever)', () => {
+		vi.useFakeTimers();
+		const f = fakeFrame();
+		try {
+			const peer = createBotPeer('abc13', { test: 'tst2', hub: f.hub });
+			vi.advanceTimersByTime(HELLO_EVERY_MS * (HELLO_TRIES + 10));
+			expect(f.sent.filter((m) => m.kind === 'hello').length).toBe(1 + HELLO_TRIES);
+			peer.destroy();
+		} finally {
+			f.restore();
+			vi.useRealTimers();
+		}
 	});
 });

@@ -589,6 +589,39 @@ export function notifyFunnelEvent(ev) {
 	}
 }
 
+/** @typedef {{ v: 1, s: string, d: string, e: any[] }} PlayStatsBeacon */
+/** @type {Set<(b: PlayStatsBeacon) => boolean | void>} */
+const playStatsListeners = new Set();
+/** 102 M4: something sends play statistics (a plugin that counts) — without it core collects nothing */
+export const playStatsListening = writable(false);
+
+/** cloudApi `onPlayStats(fn)` — 102 M4: one anonymous play-statistics beacon for the published scene
+ *  on screen (play/playStats.js decided it may be counted). `fn` must send it SYNCHRONOUSLY (it is
+ *  called from pagehide) and return true when it went out. Closed vocabularies + the scene id the
+ *  page was opened with; never a player id. No queue: a beacon nobody takes is simply not sent.
+ *  @param {(b: PlayStatsBeacon) => boolean | void} fn @returns {() => void} off */
+export function onPlayStats(fn) {
+	if (typeof fn !== 'function') return () => {};
+	playStatsListeners.add(fn);
+	playStatsListening.set(true);
+	return () => {
+		playStatsListeners.delete(fn);
+		playStatsListening.set(playStatsListeners.size > 0);
+	};
+}
+/** core → plugin; true when a listener says it went out @param {PlayStatsBeacon} b */
+export function notifyPlayStats(b) {
+	let sent = false;
+	for (const fn of playStatsListeners) {
+		try {
+			if (fn(JSON.parse(JSON.stringify(b))) === true) sent = true;
+		} catch (e) {
+			console.error('play stats listener threw:', e);
+		}
+	}
+	return sent;
+}
+
 /**
  * C6: THE HEART FOR THE SCENE ON SCREEN — the play-link start card and a published game's pause
  * menu render a heart toggle while this is set. The plugin sets it after loading a published

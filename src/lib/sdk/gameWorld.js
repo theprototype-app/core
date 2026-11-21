@@ -20,7 +20,7 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { objectsGroup, globalScene, globalCamera } from '../../stores/sceneStore';
-import { peers } from '../../stores/appStore';
+import { peers, peerPlayModes } from '../../stores/appStore';
 import { pathOf, pathObjectsIn } from '../path/pathRuntime.js';
 import { kitIsAuthority } from '../kit/runtime.js';
 import { exportMode } from '../export/exportBoot.js';
@@ -32,10 +32,12 @@ async function colliderGeometry(opts) {
 	return (await import('./gameWorldColliders.js')).colliderGeometry(opts);
 }
 
-/** every player's place in WORLD space: this peer's camera + each open peer's avatar
- * @returns {{id: string, pos: number[], me: boolean}[]} */
+/** every player's place in WORLD space: this peer's camera + each open peer's avatar. `playing` (other peers):
+ * core's presence says it is in Play (the `playmode` message) — a module's own heartbeat may not reach this
+ * peer (a viewer's module messages are refused by the roles gate), presence does.
+ * @returns {{id: string, pos: number[], me: boolean, playing?: boolean}[]} */
 function players() {
-	/** @type {{id: string, pos: number[], me: boolean}[]} */
+	/** @type {{id: string, pos: number[], me: boolean, playing?: boolean}[]} */
 	const out = [];
 	const p = /** @type {any} */ (get(peers));
 	const myId = p?.peer?.id ?? '';
@@ -47,13 +49,15 @@ function players() {
 			me: true
 		});
 	const scene = /** @type {any} */ (get(globalScene));
+	const modes = /** @type {Record<string, string>} */ (get(peerPlayModes));
 	for (const id of p?.openedPeers ?? []) {
 		const avatar = scene?.getObjectByName(String(id));
 		if (avatar?.getWorldPosition)
 			out.push({
 				id: String(id),
 				pos: avatar.getWorldPosition(new THREE.Vector3()).toArray(),
-				me: false
+				me: false,
+				playing: modes?.[String(id)] === 'playing'
 			});
 	}
 	return out;

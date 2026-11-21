@@ -1023,3 +1023,9 @@ export function mergeChatHistory(list) {
 	});
 	return added;
 }
+
+/** REMOTE peers only, `peerId -> 'editor' | 'playing'` (gamePresence.js owns the writes and re-exports it; it
+ * lives here so the module SDK's api.players()[].playing reads it without gamePresence's graph). An absent peer
+ * is an editor — that is the whole compatibility story, so nothing writes 'editor' defensively.
+ * @type {import('svelte/store').Writable<Record<string, string>>} */
+export const peerPlayModes = writable({});

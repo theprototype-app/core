@@ -48,8 +48,7 @@ import { registerMetricSource, ingestVerdict, profileFor } from './sceneBudget';
 import { globalRenderer } from '../stores/sceneStore.js';
 // 33 (L4): the scene going away is when its modules may be left behind (a leaf)
 import { noteSceneLeaving } from './sceneScope';
-import { normalizeConstraints } from './rig/constraintCore.js'; // 102 M7 (three only)
-import { markConstraintsDirty } from './rig/constraintRuntime.js'; // 102 M7
+import { markConstraintsDirty } from './rig/constraintHub.js'; // 102 M7 (the solver loads on first use)
 
 //Access scene Store
 let scene = $state();
@@ -683,7 +682,9 @@ export async function objectParameters(data, from = 'peer') {
         // evaluates it locally from the synced targets (no pose travels)
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
         if (mesh) {
-            const list = normalizeConstraints(data.constraints);
+            // stored as validated (wireValidate: <= 16 plain objects with an id); the runtime and the
+            // Inspector normalize on read, so the boot path carries no solver code
+            const list = Array.isArray(data.constraints) ? data.constraints.slice(0, 16).map((/** @type {any} */ c) => ({ ...c })) : [];
             if (list.length) mesh.userData.constraints = list;
             else delete mesh.userData.constraints;
             markConstraintsDirty();

@@ -50,7 +50,7 @@ import { desktopSpawn, spawnEyePose } from './playSpawn'; // 30b P4 (+ vrOnly: c
 import { shareDuplicatedMaterials, linkMaterials } from './materialSharing';
 import { applyFlowPathTo } from './sim/flowPathObject.js'; // 36-fb F24 (a three leaf)
 import { applyTextPathTo, bumpTextTurn } from './textPathObject.js'; // 64 D2 (a three leaf)
-import { markConstraintsDirty } from './rig/constraintRuntime.js'; // 102 M7 (stores + three + parkHooks only)
+import { markConstraintsDirty } from './rig/constraintHub.js'; // 102 M7 (the solver loads on first use)
 import {
 	duplicateCarriesAnimation,
 	duplicateCarriesFlow,

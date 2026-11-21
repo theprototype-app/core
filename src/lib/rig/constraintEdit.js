@@ -8,7 +8,8 @@ import { objectsGroup, pokeScene } from '../../stores/sceneStore';
 import { peers } from '../../stores/appStore';
 import { recordEntry } from '../history';
 import { normalizeConstraints, normalizeConstraint, makeConstraint, captureOffset, CONSTRAINT_KINDS } from './constraintCore.js';
-import { markConstraintsDirty, nodeIn } from './constraintRuntime.js';
+import { nodeIn } from './constraintRuntime.js';
+import { markConstraintsDirty } from './constraintHub.js'; // the hub loads + forwards to the runtime
 
 /** @typedef {import('./constraintCore.js').Constraint} Constraint */
 

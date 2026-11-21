@@ -93,6 +93,8 @@ export const NODE_DOCS = {
 	setcolor: "Paints the connected object's material with a color, re-applied every frame.",
 	visibility: "Shows or hides the connected object based on a boolean.",
 	setuniform: "Writes one number inside an object's shader graph, so a trigger, a",
+	constraintweight: "Sets the weight (0-1) of one of the object's constraints (1 = the first in Inspector > Constraints) while it runs: fade an IK reach or a look-at in and out.",
+	constrainttarget: "Points one of the object's constraints (1 = the first in Inspector > Constraints) at another object while it runs.",
 	onclick: "Fires a short pulse when its object is clicked - the bridge from user input into the graph.",
 	keypress: "Fires a pulse while a keyboard key is pressed - the bridge from your keyboard into the graph.",
 	onimpact: "Fires a pulse when the connected object hits something in a physics simulation - from any side (a wall, a target), or only when it lands with From: landing only.",

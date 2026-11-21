@@ -30,6 +30,7 @@ import { createGltfLoader, registerAnimatedImport, recordAnimatedImport, sendAni
 import { parseGltfSceneSafe, withTwins } from '$lib/ktx2Twins';
 import { environment } from './environment';
 import { parkAnimatedAtBase } from '$lib/flowRuntime';
+import { withConstraintsPosed } from '$lib/rig/constraintHub.js'; // 102 M7: GLTF "Bake constraints"
 import { stripEditOverlays } from '$lib/editOverlays';
 import { stampPackRef } from '$lib/packRefs';
 import { hashBytes, explorerItems, hiddenItems } from '$lib/explorer';
@@ -184,7 +185,8 @@ function exportGltf(format, input, opts = {}) {
 	const lift = opts.excludeLocal ? liftLocalObjects() : null;
 	noteLocalObjectsExcluded(lift?.excluded ?? 0);
 	// saves store animation BASE poses, not the current swing (88)
-	const unpark = parkAnimatedAtBase();
+	// 102 M7: "Bake constraints" keeps the constrained pose (everything else still parks)
+	const unpark = get(saveOptions).bakeConstraints ? withConstraintsPosed(parkAnimatedAtBase) : parkAnimatedAtBase();
 	const restore = () => {
 		unpark();
 		lift?.restore();
@@ -264,7 +266,7 @@ function exportGltf(format, input, opts = {}) {
  * it, and dropping it silently is the documented GLTFExporter trap (options are parse()'s
  * FOURTH argument, and onlyVisible defaults to TRUE).
  * @param {any} roots one root or an array of them
- * @param {{binary?: boolean, excludeLocal?: boolean, lookAnimation?: boolean}} [opts] `excludeLocal` (fix-batch-2) = a
+ * @param {{binary?: boolean, excludeLocal?: boolean, lookAnimation?: boolean, bakeConstraints?: boolean}} [opts] `excludeLocal` (fix-batch-2) = a
  *   whole-scene export: local objects stay out; `lookAnimation: false` (72 LK4) = no pointer channels or cameras
  * @returns {Promise<ArrayBuffer|null>}
  */
@@ -274,7 +276,9 @@ export function gltfBytesFor(roots, opts = {}) {
 	// fix-batch-2 (1.45.1): the whole-scene export leaves local objects out (see exportGltf)
 	const lift = opts.excludeLocal ? liftLocalObjects() : null;
 	noteLocalObjectsExcluded(lift?.excluded ?? 0);
-	const unpark = parkAnimatedAtBase();
+	// 102 M7: "Bake constraints" (opts.bakeConstraints, else the save option) keeps the constrained pose
+	const bake = opts.bakeConstraints ?? get(saveOptions).bakeConstraints;
+	const unpark = bake ? withConstraintsPosed(parkAnimatedAtBase) : parkAnimatedAtBase();
 	const restore = () => {
 		unpark();
 		lift?.restore();

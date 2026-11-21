@@ -174,7 +174,7 @@ describe('two-bone IK', () => {
 });
 
 describe('chain IK (CCD)', () => {
-	/** a tail of n links of 0.5 m along +x */
+	/** a tail of n links of 0.5 m along +x @param {number} n */
 	function tail(n) {
 		const root = new THREE.Group();
 		/** @type {THREE.Object3D[]} */

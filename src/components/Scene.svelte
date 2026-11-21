@@ -57,7 +57,7 @@
 	import { startArchParts } from '$lib/arch/archParts.js';
 	import { tickAnimationPreview, captureAutoKey, playheadOf } from '$lib/animationPreview';
 	import { tickSequences } from '$lib/sequencePlayer'; // 48 S2: the Timeline's runs
-	import { tickConstraints, holdConstraints, releaseConstraints } from '$lib/rig/constraintRuntime.js'; // 102 M7
+	import { tickConstraints, holdConstraints, releaseConstraints, updateConstraintHelpers } from '$lib/rig/constraintHub.js'; // 102 M7 (the solver loads on first use)
 	import { drawMode, drawTool, strokePointFromRay, endStroke, setDrawScene } from '$lib/drawMode';
 	import { splinePlaceFromRay, splineToolActive, finishSpline } from '$lib/splineTool';
 	import { flattenPicking, flattenPickClick } from '$lib/flattenActions';
@@ -472,6 +472,7 @@
 		tickPathObjects(scene, $objectsGroup, { playing: $isLocked === true, selected: $selectedObjects ?? [] }); // 78 F4: hide in Play, numbers, scrub ghost
 		updateLightHelpers();
 		updateColliderHelpers(); // CL-A A7: collider proxies follow their objects
+		updateConstraintHelpers(scene, $objectsGroup, $selectedObjects ?? []); // 102 M7
 		updateSnapAnchor(); // 19-B P3: the picked snap-anchor marker follows its object
 		updateCameraHelpers(); // 16-P5: camera-object frustums follow their markers
 		updateCables(); // 23-A4: patch cables follow their plugs; the routing diff runs here too

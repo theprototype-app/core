@@ -136,6 +136,7 @@ import { runParkHooks } from './parkHooks.js'; // 68: extra parks (prop tracks),
 import { INPUT_LETTERS, socketCount, opFolds, foldMath, foldGate, switcherItems, switcherHandle, switcherIndexOf, switcherRadioIndex } from './variadicNodes.js';
 import { blendSpeedWeights, smoothWeights, clipForSlot } from './tpanim/blendSpeed.js'; // 57 M3 (a leaf)
 import { newTracker, trackPose } from './avatars/locomotion.js'; // 57 M3: a stream-safe speed (a leaf)
+import { setConstraintOverride } from './rig/constraintHub.js'; // 102 M7 (the solver loads on first use)
 
 // H3: inputRuntime is reached via a PRIMED dynamic import (the moduleSDK
 // pattern) — a static edge would close the TDZ cycle history -> flowRuntime ->
@@ -580,7 +581,7 @@ animateInEditor.subscribe((on) => (editorMotionOn = on));
  */
 // 36-fb F25: a rotor on a DYNAMIC body during a run drives it with torque (no pose write)
 // 85 N4: the light nodes write intensity / colour only
-const POSE_FREE_EFFECTS = new Set(['setcolor', 'setuniform', 'deviceparam', 'notetrigger', 'rotor', 'lightswitch', 'lightintensity', 'lightcycle', 'windsway', 'waterflow', 'highlight']);
+const POSE_FREE_EFFECTS = new Set(['setcolor', 'setuniform', 'constraintweight', 'constrainttarget', 'deviceparam', 'notetrigger', 'rotor', 'lightswitch', 'lightintensity', 'lightcycle', 'windsway', 'waterflow', 'highlight']);
 
 /** @param {any} object */
 function captureBase(object) {
@@ -4664,6 +4665,21 @@ function applyAnimation(object, base, anim, time, ctx) {
 				},
 				{ replicate: false }
 			);
+		}
+	} else if (anim.type === 'constraintweight' || anim.type === 'constrainttarget') {
+		// 102 M7: a LOCAL override of one constraint (rig/constraintRuntime), refreshed every frame
+		// while the node runs and lapsing 250 ms after it stops; no message (the graph replicates)
+		const list = object.userData?.constraints;
+		if (Array.isArray(list) && list.length) {
+			const pick = String(data.constraint ?? '1').trim();
+			const n = Number(pick);
+			const c = Number.isInteger(n) && n >= 1 ? list[n - 1] : list.find((/** @type {any} */ x) => x?.id === pick);
+			if (c && typeof c.id === 'string') {
+				if (anim.type === 'constraintweight') {
+					const w = Number(data.weight);
+					if (Number.isFinite(w)) setConstraintOverride(object.uuid, c.id, { weight: w });
+				} else if (typeof data.target === 'string' && data.target) setConstraintOverride(object.uuid, c.id, { target: { uuid: data.target } });
+			}
 		}
 	} else if (anim.type === 'setuniform') {
 		// SH7: drive a shader-graph uniform from a behaviour graph. LOCAL per peer, exactly

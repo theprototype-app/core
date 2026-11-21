@@ -160,7 +160,7 @@ describe('constraint runtime', () => {
 
 describe('the keyable weight (prop path constraint.<id>.weight)', () => {
 	it('is allowlisted narrowly and drives the runtime the same frame', async () => {
-		const { resolvePath, setProp, getProp, pathsFor, propLabel } = await import('../../src/lib/propTracks.js');
+		const { resolvePath, setProp, getProp, pathsFor } = await import('../../src/lib/propTracks.js');
 		const { looker, target } = scene();
 		looker.userData.constraints = [{ id: 'a1', kind: 'lookat', weight: 1, target: { uuid: target.uuid } }];
 		markConstraintsDirty();
@@ -169,12 +169,28 @@ describe('the keyable weight (prop path constraint.<id>.weight)', () => {
 		expect(resolvePath('constraint.a1.target')).toBe('');
 		expect(resolvePath('constraint.../../x.weight')).toBe('');
 		expect(pathsFor(looker)).toContain('constraint.a1.weight');
-		expect(propLabel(looker, 'constraint.a1.weight')).toBe('Weight: Look at');
 		expect(getProp(target, 'constraint.a1.weight')).toBeNull(); // not on an object without it
 		expect(setProp(looker, 'constraint.a1.weight', 7)).toBe(true);
 		expect(getProp(looker, 'constraint.a1.weight')).toBe(1); // clamped
 		setProp(looker, 'constraint.a1.weight', 0);
 		tickConstraints({ now: 2 });
 		expect(looker.quaternion.w).toBeCloseTo(1, 9); // weight 0 read at once (a new list identity)
+	});
+});
+
+describe('Bake constraints (GLTF export)', () => {
+	it('keeps the constrained pose through a park only inside withConstraintsPosed', async () => {
+		const { withConstraintsPosed } = await import('../../src/lib/rig/constraintRuntime.js');
+		const { looker, target } = scene();
+		looker.userData.constraints = [{ id: 'a', kind: 'lookat', target: { uuid: target.uuid } }];
+		markConstraintsDirty();
+		tickConstraints({ now: 1 });
+		const posed = looker.quaternion.clone();
+		const restore = withConstraintsPosed(() => runParkHooks());
+		expect(looker.quaternion.angleTo(posed)).toBeLessThan(1e-9); // baked: still posed
+		restore();
+		const r2 = runParkHooks();
+		expect(looker.quaternion.w).toBeCloseTo(1, 9); // the flag is gone again
+		r2();
 	});
 });

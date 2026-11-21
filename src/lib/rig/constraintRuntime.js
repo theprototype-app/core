@@ -274,8 +274,24 @@ export function clearConstraintOverrides() {
 	overrides.clear();
 }
 
+/** "Bake constraints" (a GLTF export): the next parks leave constrained poses in place */
+let keepPosed = false;
+/**
+ * Run `fn` with constraint parking off (the export's parkAnimatedAtBase keeps the posed result);
+ * everything else still parks. @template T @param {() => T} fn @returns {T}
+ */
+export function withConstraintsPosed(fn) {
+	keepPosed = true;
+	try {
+		return fn();
+	} finally {
+		keepPosed = false;
+	}
+}
+
 /** Park every constrained node on its base (serializers); returns the re-apply. */
 function park() {
+	if (keepPosed) return null;
 	/** @type {[THREE.Object3D, Pose, {written: Pose | null}][]} */
 	const lifted = [];
 	for (const [n, e] of bases) {

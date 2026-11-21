@@ -1114,7 +1114,7 @@ if (api.colliderGeometry) {
 	const p = api.paths.of(pathUuid);   // 78's Path: {uuid, name, points: [{pos: [x, y, z]}] (WORLD), closed, mode, speed, length, poseAt, …} | null
 	api.paths.list();                   // [{uuid, name}] for a picker
 	await api.paths.create({ points: [[0, 0, 0], [4, 0, 0], [4, 0, 4]], closed: true }); // replicated, one undo step
-	api.players();                      // [{id, pos (WORLD), me}] — your camera + every open peer's avatar
+	api.players();                      // [{id, pos (WORLD), me, playing}] — your camera + every open peer's avatar; playing = core presence says that peer is in Play (1.72; a viewer's api.send never reaches the others, its presence does)
 	api.isAuthority();                  // the kit authority (physics initiator, else the lowest peer id)
 	api.isExport();                     // an exported game: never draw debug views there
 	api.registerViewToggle({ id: 'overlay', label: 'Navmesh overlay', get: () => on, set: (v) => (on = v) });

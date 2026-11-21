@@ -1760,6 +1760,17 @@
 	});
 
 	function oncreate() { $TControls.visible = false; }
+	// 80a K15: the gizmo fires `change` on attach, hover and axis changes too; only a pose that moved
+	// is an edit (a `move` sent on select would take the object in "Lock only while editing")
+	let gizmoPose = { uuid: '', key: '' };
+	/** true = the pose moved since the last one we sent */
+	function gizmoPoseMoved(o: any): boolean {
+		const key = o.position.toArray().join() + '|' + o.rotation.toArray().slice(0, 3).join() + '|' + o.scale.toArray().join();
+		const fresh = gizmoPose.uuid !== o.uuid;
+		const moved = fresh ? !!$TControls.dragging : gizmoPose.key !== key;
+		gizmoPose = { uuid: o.uuid, key };
+		return moved;
+	}
 	function onchange() {
 		// vertex-edit proxy: write through to the geometry, never broadcast a move
 		if ($TControls.object?.userData?.isVertexProxy) {
@@ -1821,6 +1832,7 @@
 						dropToSurface($TControls.object, $objectsGroup);
 					}
 					$TControls.visible = true;
+					if (!gizmoPoseMoved($TControls.object)) return;
 					// 60 Q2: the gizmo drag is a stream (fast); its keyframe lands the last pose
 					$peers.send({
 						type: 'move',

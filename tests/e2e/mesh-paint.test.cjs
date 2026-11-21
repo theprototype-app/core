@@ -348,16 +348,33 @@ h.run(async () => {
 		for (let k = 0; k < 10; k++) if (await one(k)) ok++;
 		await new Promise((r) => setTimeout(r, 1500)); // the committed images decode
 		const h1 = await heap();
-		return { ok, h0, h1, gc: typeof (/** @type {any} */ (window).gc) === 'function', size: o.material.metalnessMap?.image?.width ?? 0 };
+		// what the ten strokes KEEP: the strings in their undo entries (the before/after images). Deterministic, where
+		// usedJSHeapSize is quantised without --enable-precise-memory-info and moves with whatever else the page does
+		const stack = await new Promise((r) => w.history.undoStack.subscribe(r)());
+		const seen = new Set();
+		/** @param {any} v @param {number} d @returns {number} */
+		const bytes = (v, d) => {
+			if (typeof v === 'string') return v.length;
+			if (!v || typeof v !== 'object' || d > 5 || seen.has(v)) return 0;
+			seen.add(v);
+			if (v.isObject3D || v.isMaterial || v.isTexture || ArrayBuffer.isView(v)) return 0;
+			let n = 0;
+			for (const k of Object.keys(v)) n += bytes(v[k], d + 1);
+			return n;
+		};
+		const last10 = stack.slice(-10);
+		const undoBytes = last10.reduce((n, e) => n + bytes(e, 0), 0);
+		return { ok, h0, h1, undoBytes, entries: last10.length, gc: typeof (/** @type {any} */ (window).gc) === 'function', size: o.material.metalnessMap?.image?.width ?? 0 };
 	});
 	h.check(mem.ok === 10, `ten 2k strokes commit (${mem.ok})`);
 	h.check(mem.size === 2048, `the new map is 2k (${mem.size})`);
 	const ONE_MAP = 2048 * 2048 * 4;
-	if (mem.h0 == null) h.check(true, 'memory gate: SKIP (no performance.memory in this browser)');
-	else {
-		const grew = mem.h1 - mem.h0;
-		h.check(grew <= ONE_MAP, `memory gate: the JS heap grew ${(grew / 1048576).toFixed(1)} MB over ten 2k strokes, at most one map (${(ONE_MAP / 1048576).toFixed(0)} MB)${mem.gc ? '' : ' (no forced GC)'}`);
-	}
+	h.check(
+		mem.entries === 10 && mem.undoBytes > 0 && mem.undoBytes <= ONE_MAP,
+		`memory gate: ten 2k strokes keep ${(mem.undoBytes / 1048576).toFixed(2)} MB in their ${mem.entries} undo entries, at most one map (${(ONE_MAP / 1048576).toFixed(0)} MB)`
+	);
+	// the heap reading is reported, not gated (quantised in Chromium without precise memory info)
+	if (mem.h0 != null) console.log(`INFO JS heap ${(((mem.h1 - mem.h0) / 1048576)).toFixed(1)} MB over the ten strokes${mem.gc ? '' : ' (no forced GC)'}`);
 
 	await h.finish(browser);
 });

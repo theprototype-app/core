@@ -292,6 +292,32 @@ export function beginHistorySession() {
 	sessionRedoBase = get(redoStack).length;
 }
 
+
+/**
+ * Deep value equality of two history states (99 K2: a meshgeo side holds typed arrays now, and
+ * JSON.stringify writes a Float32Array as an object of index keys — slow, and never equal to the
+ * plain array an older producer stored). Arrays and typed arrays compare by element.
+ * @param {any} a @param {any} b @returns {boolean}
+ */
+function sameState(a, b) {
+	if (a === b) return true;
+	if (a == null || b == null || typeof a !== 'object' || typeof b !== 'object') return a === b;
+	const listA = Array.isArray(a) || ArrayBuffer.isView(a);
+	const listB = Array.isArray(b) || ArrayBuffer.isView(b);
+	if (listA || listB) {
+		/** @type {any} */ const x = a;
+		/** @type {any} */ const y = b;
+		if (!listA || !listB || x.length !== y.length) return false;
+		for (let i = 0; i < x.length; i++) if (!sameState(x[i], y[i])) return false;
+		return true;
+	}
+	const keysA = Object.keys(a).filter((k) => a[k] !== undefined);
+	const keysB = Object.keys(b).filter((k) => b[k] !== undefined);
+	if (keysA.length !== keysB.length) return false;
+	for (const k of keysA) if (!sameState(a[k], b[k])) return false;
+	return true;
+}
+
 /**
  * Seal the session.
  * - 'collapse' (default): pop the session's entries; all-meshgeo/verts on ONE
@@ -336,7 +362,7 @@ export function endHistorySession(mode = 'collapse', label = 'Mesh edit') {
 		// cannot bracket the compacted before/after; verts-only or verts-bracketed
 		// sessions take the composite path below, which replays each sub-entry
 		// through its own kind
-		if (JSON.stringify(first.before) !== JSON.stringify(last.after))
+		if (!sameState(first.before, last.after))
 			recordEntry({ kind: 'meshgeo', uuid: first.uuid, before: first.before, after: last.after });
 		return;
 	}

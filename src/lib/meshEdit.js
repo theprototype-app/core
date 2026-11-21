@@ -37,7 +37,8 @@ import {
 	smoothVertices,
 	connectVertices,
 	dissolveVertices,
-	beginOpAdjust
+	beginOpAdjust,
+	recordMeshGeo
 } from './faceEdit';
 // 19-A P4: the proportional stores/falloff moved to a LEAF (faceEdit needs them
 // too, and it cannot import this module — we import faceEdit above). Re-exported
@@ -1826,12 +1827,7 @@ export function onProxyDragChanged(dragging) {
 			// 37 R11: twins moved too, which a one-position 'verts' entry cannot hold
 			const afterExpanded = trisToPositions(readTriangles(edited.geometry));
 			if (dragStartExpanded && JSON.stringify(dragStartExpanded) !== JSON.stringify(afterExpanded))
-				recordEntry({
-					kind: 'meshgeo',
-					uuid: edited.uuid,
-					before: dragStartExpanded,
-					after: afterExpanded
-				});
+				recordMeshGeo(edited.uuid, dragStartExpanded, afterExpanded); // 99 K2: the one record step
 		} else if (JSON.stringify(dragStartLocal) !== JSON.stringify(after)) {
 			recordEntry({
 				kind: 'verts',

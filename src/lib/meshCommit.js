@@ -14,13 +14,12 @@
 //   pair, the kernel's optional ID channels Int32), so `meshBudget.entryBytes` counts the bytes
 //   that are really held. Before K2 history kept plain number arrays: 8 bytes per number in V8,
 //   counted as 4, so the 256 MB budget held about twice that.
-// - `commitStateFromKernel`: the kernel's output (`toMeshGeo`, the one commit shape) as a
-//   commit state, for the edit session (K3) and the kernel operators (K4).
+// The kernel's side (`toMeshGeo` -> a commit state) is `meshCommitKernel.js`, kept apart so this
+// module — imported by every editor — pulls no kernel code into their chunks.
 
 import { get } from 'svelte/store';
 import { peers } from '../stores/appStore';
 import { packFaces } from './meshTopology.js';
-import { toMeshGeo } from './meshKernel/topo.js';
 
 /**
  * @typedef {{ faceCounts: ArrayBuffer, faceTris: ArrayBuffer }} FaceFields
@@ -151,27 +150,4 @@ export function stateFaceFields(state) {
 		return { faceCounts: exactBuffer(counts), faceTris: exactBuffer(i32(state.faceTris)) };
 	}
 	return null;
-}
-
-/**
- * The kernel's output as a commit state — `toMeshGeo`, the one commit shape — with the ID
- * channels when asked (history keeps them so an undo rebuilds the same element IDs).
- * @param {import('./meshKernel/kernel.js').MeshKernel} mesh @param {{ ids?: boolean }} [options]
- * @returns {MeshState}
- */
-export function commitStateFromKernel(mesh, options = {}) {
-	const geo = toMeshGeo(mesh, { ids: !!options.ids });
-	/** @type {MeshState} */
-	const state = {
-		positions: geo.positions,
-		groups: geo.groups,
-		uvs: geo.uvs,
-		...(geo.colors ? { colors: geo.colors } : {})
-	};
-	if (geo.faceCounts) {
-		state.faceCounts = geo.faceCounts;
-		state.faceTris = geo.faceTris;
-	}
-	if (geo.ids) state.ids = geo.ids;
-	return compactMeshState(state);
 }

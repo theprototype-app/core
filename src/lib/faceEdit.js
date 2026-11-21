@@ -1252,18 +1252,14 @@ export function bridgeFaces(cuts = 0, twist = 0, invert = false) {
 	}
 	const groups = trisToGroups(next);
 	const uvs = trisToUVs(next);
-	applyGeometrySnapshot(
-		positions,
-		groups,
-		uvs,
-		composeFaces(priorFaces, result.origin, result.authored)
-	);
-	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
-	recordOp({
-		kind: 'meshgeo',
-		uuid: faceEdited.uuid,
+	commitMesh({
+		apply: 'session',
 		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
-		after: withFaces({ positions, groups, uvs })
+		after: { positions, groups, uvs },
+		faces: composeFaces(priorFaces, result.origin, result.authored),
+		stampFaces: true,
+		record: 'op',
+		cap: false
 	});
 	faceEditSelectedTris.set([]);
 	faceEditHighlight.set(-1);
@@ -2501,18 +2497,14 @@ export function commitLoopCut(cuts = 1, position = 0.5) {
 	faceEditSelectedTris.set([]);
 	faceEditHighlight.set(-1);
 	faceEditHoverTri.set(-1);
-	applyGeometrySnapshot(
-		positions,
-		groups,
-		uvs,
-		composeFaces(priorFaces, result.origin, result.authored)
-	);
-	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
-	recordOp({
-		kind: 'meshgeo',
-		uuid: faceEdited.uuid,
+	commitMesh({
+		apply: 'session',
 		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
-		after: withFaces({ positions, groups, uvs })
+		after: { positions, groups, uvs },
+		faces: composeFaces(priorFaces, result.origin, result.authored),
+		stampFaces: true,
+		record: 'op',
+		cap: false
 	});
 	// leave the NEW band selected: it is what you reach for next (scale it, move
 	// it, cut it again), and an empty selection after an op that just rebuilt the
@@ -3255,18 +3247,14 @@ export function bevelFaces(width = 0.15, segments = 1, profile = 1, direction = 
 	const groups = trisToGroups(tris);
 	const uvs = trisToUVs(tris);
 	faceEditHoverTri.set(-1);
-	applyGeometrySnapshot(
-		positions,
-		groups,
-		uvs,
-		composeFaces(priorFaces, appendOrigin(workingTris.length, tris.length), result.authored)
-	);
-	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
-	recordOp({
-		kind: 'meshgeo',
-		uuid: faceEdited.uuid,
+	commitMesh({
+		apply: 'session',
 		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
-		after: withFaces({ positions, groups, uvs })
+		after: { positions, groups, uvs },
+		faces: composeFaces(priorFaces, appendOrigin(workingTris.length, tris.length), result.authored),
+		stampFaces: true,
+		record: 'op',
+		cap: false
 	});
 	// the cap stays selected: scaling or moving it is the usual next move
 	faceEditSelectedTris.set([...result.capTriIndices]);
@@ -3620,23 +3608,19 @@ export function bevelVertices(uuid, vertexKeys, options = {}) {
  * @returns {boolean}
  */
 export function commitMeshGeoTriple(uuid, before, after, op = false) {
-	if (after.positions.length > MAX_SNAPSHOT) {
-		showToast(tooLargeMessage(after.positions.length, 'edit'));
-		return false;
-	}
-	const packed = after.faces?.length ? packFaces(after.faces) : null;
-	// mcp-shapes: a coloured mesh's colours go into BOTH sides of the entry, so an undo brings them back exactly
-	// (an op's own snapshots are positions/groups/uvs only)
-	const had = lookupEditable(uuid)?.geometry?.attributes?.color;
-	if (had && before && typeof before === 'object' && before.colors == null && before.positions?.length === had.count * 3) before = { ...before, colors: Array.from(had.array) };
-	applyMeshGeo(uuid, after.positions, after.groups, after.uvs, packed?.faceCounts, packed?.faceTris, after.colors);
-	const now = lookupEditable(uuid)?.geometry?.attributes?.color;
-	if (now && after.colors == null) after = { ...after, colors: Array.from(now.array) };
-	// broadcastMeshGeo reads the topology off the object we just applied to
-	broadcastMeshGeo(uuid, after.positions, after.groups, after.uvs, after.colors);
+	// 99 K2: the one commit. `faces` = the partition the caller authored (applied packed); the
+	// colours ride both sides (mcp-shapes); the topology on the wire is read off the object.
 	// 37 R11: `op` = an operator's commit (vertex mode) — the live-symmetry boundary
-	(op ? recordOp : recordEntry)({ kind: 'meshgeo', uuid, before, after });
-	return true;
+	return !!commitMesh({
+		uuid,
+		apply: 'object',
+		before,
+		after,
+		faces: after.faces,
+		carryColors: true,
+		record: op ? 'op' : 'entry',
+		cap: 'edit'
+	});
 }
 
 
@@ -3887,13 +3871,13 @@ export function bevelEdges(width = 0.1, segments = 1, profile = 0) {
 	faceEditHoverTri.set(-1);
 	faceEditSelectedTris.set([]);
 	faceEditHighlight.set(-1);
-	applyGeometrySnapshot(positions, trisToGroups(tris), trisToUVs(tris), null);
-	broadcastMeshGeo(faceEdited.uuid, positions, trisToGroups(tris), trisToUVs(tris));
-	recordOp({
-		kind: 'meshgeo',
-		uuid: faceEdited.uuid,
+	commitMesh({
+		apply: 'session',
 		before,
-		after: withFaces({ positions, groups: trisToGroups(tris), uvs: trisToUVs(tris) })
+		after: { positions, groups: trisToGroups(tris), uvs: trisToUVs(tris) },
+		stampFaces: true,
+		record: 'op',
+		cap: false
 	});
 	showToast(
 		'Bevelled ' +
@@ -4841,13 +4825,13 @@ export function knifePolyline(points) {
 		uvs: trisToUVs(out),
 		faces: null
 	};
-	applyGeometrySnapshot(after.positions, after.groups, after.uvs, null);
-	broadcastMeshGeo(faceEdited.uuid, after.positions, after.groups, after.uvs);
-	recordOp({
-		kind: 'meshgeo',
-		uuid: faceEdited.uuid,
+	commitMesh({
+		apply: 'session',
 		before,
-		after: withFaces({ positions: after.positions, groups: after.groups, uvs: after.uvs })
+		after: { positions: after.positions, groups: after.groups, uvs: after.uvs },
+		stampFaces: true,
+		record: 'op',
+		cap: false
 	});
 	showToast(
 		'Knife: cut ' +
@@ -5085,13 +5069,14 @@ export function symmetrizeMesh(axis = 'x', keep = 1) {
 	clearEdgeSelectionInner();
 	const groups = trisToGroups(result.tris);
 	const uvs = trisToUVs(result.tris);
-	applyGeometrySnapshot(positions, groups, uvs, result.faces);
-	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
-	recordEntry({
-		kind: 'meshgeo',
-		uuid: faceEdited.uuid,
+	commitMesh({
+		apply: 'session',
 		before,
-		after: withFaces({ positions, groups, uvs })
+		after: { positions, groups, uvs },
+		faces: result.faces,
+		stampFaces: true,
+		record: 'entry',
+		cap: false
 	});
 	showToast(
 		'Symmetrized across ' +
@@ -5225,6 +5210,8 @@ export function liveMirrorEntry(entry) {
 	}
 	const groups = trisToGroups(result.tris);
 	const uvs = trisToUVs(result.tris);
+	/** @type {any} */
+	let mirrored = null;
 	liveMirroring = true;
 	try {
 		if (session) {
@@ -5237,7 +5224,7 @@ export function liveMirrorEntry(entry) {
 			faceEditSelectedTris.set(/** @type {number[]} */ (picked));
 			faceEditHighlight.set(-1);
 			faceEditHoverTri.set(-1);
-			applyGeometrySnapshot(positions, groups, uvs, result.faces);
+			mirrored = mirrorCommit(entry.uuid, true, positions, groups, uvs, result.faces);
 			if (hadHighlight && picked.length) {
 				faceEditHighlight.set(faceIndexForTriangle(/** @type {number} */ (picked[0])));
 				refreshFaceOverlay();
@@ -5250,17 +5237,34 @@ export function liveMirrorEntry(entry) {
 			// the vertex session rebuilds its handles in triangle order on the swap, so the
 			// picks are carried as POSITIONS (the commitFalloffSnapshot rule)
 			const picks = vertexSelectionHistory?.positions?.() ?? null;
-			const packed = result.faces?.length ? packFaces(result.faces) : null;
-			applyMeshGeo(entry.uuid, positions, groups, uvs, packed?.faceCounts, packed?.faceTris);
+			mirrored = mirrorCommit(entry.uuid, false, positions, groups, uvs, result.faces);
 			if (picks) vertexSelectionHistory?.reselect?.(picks);
 		}
-		broadcastMeshGeo(entry.uuid, positions, groups, uvs);
-		const live = session ? faceEdited : lookupEditable(entry.uuid);
-		entry.after = withFacesOn(live, { positions, groups, uvs });
+		// the op's ONE entry now holds the mirrored state (99 K2: compact, like every entry)
+		entry.after = mirrored.after;
 	} finally {
 		liveMirroring = false;
 	}
 	return true;
+}
+
+/**
+ * 99 K2: the live mirror's apply + broadcast through the one commit; it records nothing (the
+ * op's own entry is rewritten instead). @param {string} uuid @param {boolean} session
+ * @param {number[]} positions @param {any} groups @param {any} uvs @param {number[][] | null} faces
+ */
+function mirrorCommit(uuid, session, positions, groups, uvs, faces) {
+	return /** @type {any} */ (
+		commitMesh({
+			uuid,
+			apply: session ? 'session' : 'object',
+			after: { positions, groups, uvs },
+			faces,
+			stampFaces: true,
+			record: false,
+			cap: false
+		})
+	);
 }
 
 /**
@@ -5433,18 +5437,14 @@ export function dissolveEdges() {
 		for (let i = from; i < to; i++) face.push(survivors.length + i);
 		return face;
 	});
-	applyGeometrySnapshot(
-		positions,
-		groups,
-		uvs,
-		composeFaces(currentPartition(), origin, fanFaces)
-	);
-	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
-	recordOp({
-		kind: 'meshgeo',
-		uuid: faceEdited.uuid,
+	commitMesh({
+		apply: 'session',
 		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
-		after: withFaces({ positions, groups, uvs })
+		after: { positions, groups, uvs },
+		faces: composeFaces(currentPartition(), origin, fanFaces),
+		stampFaces: true,
+		record: 'op',
+		cap: false
 	});
 	clearEdgeSelection();
 	showToast(
@@ -5514,13 +5514,14 @@ export function deleteSelectedEdges() {
 	faceEditSelectedTris.set([]);
 	faceEditHighlight.set(-1);
 	faceEditHoverTri.set(-1);
-	applyGeometrySnapshot(positions, groups, uvs, composeFaces(priorFaces, origin, []));
-	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
-	recordOp({
-		kind: 'meshgeo',
-		uuid: faceEdited.uuid,
+	commitMesh({
+		apply: 'session',
 		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
-		after: withFaces({ positions, groups, uvs })
+		after: { positions, groups, uvs },
+		faces: composeFaces(priorFaces, origin, []),
+		stampFaces: true,
+		record: 'op',
+		cap: false
 	});
 	showToast(
 		'Deleted ' +
@@ -5693,13 +5694,14 @@ export function subdivideSelectedEdges() {
 	faceEditSelectedTris.set([]);
 	faceEditHighlight.set(-1);
 	faceEditHoverTri.set(-1);
-	applyGeometrySnapshot(positions, groups, uvs, composeFaces(priorFaces, origin, []));
-	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
-	recordOp({
-		kind: 'meshgeo',
-		uuid: faceEdited.uuid,
+	commitMesh({
+		apply: 'session',
 		before,
-		after: withFaces({ positions, groups, uvs })
+		after: { positions, groups, uvs },
+		faces: composeFaces(priorFaces, origin, []),
+		stampFaces: true,
+		record: 'op',
+		cap: false
 	});
 	// select the half-edges (direct store write — withSelectionHistory would put a
 	// selection entry ON TOP of the meshgeo and Ctrl+Z would undo the housekeeping)
@@ -6825,14 +6827,15 @@ export function fillHole() {
 	const uvs = trisToUVs(r.tris);
 	clearEdgeSelectionInner(); // the rim is interior now — op housekeeping, not a pick
 	faceEditHoverTri.set(-1);
-	applyGeometrySnapshot(
-		positions,
-		groups,
-		uvs,
-		composeFaces(priorFaces, appendOrigin(origLen, r.tris.length), [r.cap])
-	);
-	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
-	recordOp({ kind: 'meshgeo', uuid: faceEdited.uuid, before, after: withFaces({ positions, groups, uvs }) });
+	commitMesh({
+		apply: 'session',
+		before,
+		after: { positions, groups, uvs },
+		faces: composeFaces(priorFaces, appendOrigin(origLen, r.tris.length), [r.cap]),
+		stampFaces: true,
+		record: 'op',
+		cap: false
+	});
 	showToast(
 		'Filled a ' + r.loopKeys.length + '-edge hole' + (r.centroid ? ' (fanned from its centre — the outline is not a flat convex polygon)' : '')
 	);
@@ -6950,9 +6953,16 @@ export function separateSelectedFaces() {
 		faceEditHighlight.set(-1);
 		faceEditHoverTri.set(-1);
 		clearEdgeSelectionInner();
-		applyGeometrySnapshot(positions, groups, uvs, keptFaces);
-		broadcastMeshGeo(source.uuid, positions, groups, uvs);
-		recordEntry({ kind: 'meshgeo', uuid: source.uuid, before, after: withFaces({ positions, groups, uvs }) });
+		commitMesh({
+			uuid: source.uuid,
+			apply: 'session',
+			before,
+			after: { positions, groups, uvs },
+			faces: keptFaces,
+			stampFaces: true,
+			record: 'entry',
+			cap: false
+		});
 	} finally {
 		endHistoryBatch('Separate');
 	}
@@ -7061,13 +7071,13 @@ export function recalculateNormals() {
 	const positions = trisToPositions(next);
 	const groups = trisToGroups(next);
 	const uvs = trisToUVs(next);
-	applyGeometrySnapshot(positions, groups, uvs);
-	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
-	recordOp({
-		kind: 'meshgeo',
-		uuid: faceEdited.uuid,
+	commitMesh({
+		apply: 'session',
 		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
-		after: withFaces({ positions, groups, uvs })
+		after: { positions, groups, uvs },
+		stampFaces: true,
+		record: 'op',
+		cap: false
 	});
 	showToast('Recalculated normals: flipped ' + flipped + ' triangles');
 	return true;
@@ -7150,13 +7160,14 @@ export function mergeByDistance(threshold = 0.001) {
 	faceEditHoverTri.set(-1);
 	// a weld only MOVES vertices and drops degenerate triangles, so every survivor
 	// keeps the face it was in; a face whose triangles all collapsed simply goes away
-	applyGeometrySnapshot(positions, groups, uvs, composeFaces(priorFaces, survived, []));
-	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
-	recordOp({
-		kind: 'meshgeo',
-		uuid: faceEdited.uuid,
+	commitMesh({
+		apply: 'session',
 		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
-		after: withFaces({ positions, groups, uvs })
+		after: { positions, groups, uvs },
+		faces: composeFaces(priorFaces, survived, []),
+		stampFaces: true,
+		record: 'op',
+		cap: false
 	});
 	showToast(
 		'Merged ' + moved + ' vertices' + (dropped ? ', removed ' + dropped + ' degenerate faces' : '')
@@ -8044,13 +8055,14 @@ export function commitFaceOp(op, amount) {
 		if (get(faceEditSelectedTris).length) faceEditSelectedTris.set([]);
 		if (op === 'delete') faceEditHighlight.set(-1);
 	}
-	applyGeometrySnapshot(positions, groups, uvs, nextFaces);
-	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
-	recordOp({
-		kind: 'meshgeo',
-		uuid: faceEdited.uuid,
+	commitMesh({
+		apply: 'session',
 		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
-		after: withFaces({ positions, groups, uvs })
+		after: { positions, groups, uvs },
+		faces: nextFaces,
+		stampFaces: true,
+		record: 'op',
+		cap: false
 	});
 	if (op === 'inset' || op === 'extrude' || op === 'move') {
 		// E6: keep the CAP selected — its tri indices survive the op (cloneTris
@@ -8126,18 +8138,14 @@ export function duplicateSelectedFaces() {
 	// the survivors keep their indices (append-only), so the selection needs no
 	// pre-swap clear — but the hover does, always (no desktop pointermove path)
 	faceEditHoverTri.set(-1);
-	applyGeometrySnapshot(
-		positions,
-		groups,
-		uvs,
-		composeFaces(priorFaces, appendOrigin(base, next.length), authored)
-	);
-	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
-	recordOp({
-		kind: 'meshgeo',
-		uuid: faceEdited.uuid,
+	commitMesh({
+		apply: 'session',
 		before,
-		after: withFaces({ positions, groups, uvs })
+		after: { positions, groups, uvs },
+		faces: composeFaces(priorFaces, appendOrigin(base, next.length), authored),
+		stampFaces: true,
+		record: 'op',
+		cap: false
 	});
 	// the COPIES are the selection now (they are what you drag next); the gizmo seats
 	// on them exactly like commitFaceOp's extrude cap
@@ -8300,14 +8308,8 @@ export function recordMeshGeo(uuid, before, after, op = false) {
  * @returns {boolean}
  */
 export function commitMeshGeoSnapshot(uuid, before, after, op = false) {
-	if (after.length > MAX_SNAPSHOT) {
-		showToast(tooLargeMessage(after.length, 'edit'));
-		return false;
-	}
-	applyMeshGeo(uuid, after);
-	broadcastMeshGeo(uuid, after);
-	(op ? recordOp : recordEntry)({ kind: 'meshgeo', uuid, before, after });
-	return true;
+	// 99 K2: the one commit, positions only (a bare array on both sides, as before)
+	return !!commitMesh({ uuid, apply: 'object', before, after, record: op ? 'op' : 'entry', cap: 'edit' });
 }
 
 /** Order 4 coplanar-ish points into a convex ring around their centroid, so a
@@ -8797,13 +8799,13 @@ export function commitFaceGrab() {
 	// P7b: BEFORE the swap — applyGeometrySnapshot rebuilds the edge overlay from
 	// the selection, which must already carry the moved edges' NEW keys
 	remapEdgeSelectionAfterGrab(before.positions);
-	applyGeometrySnapshot(positions, groups, uvs);
-	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
-	recordOp({
-		kind: 'meshgeo',
-		uuid: faceEdited.uuid,
+	commitMesh({
+		apply: 'session',
 		before,
-		after: withFaces({ positions, groups, uvs })
+		after: { positions, groups, uvs },
+		stampFaces: true,
+		record: 'op',
+		cap: false
 	});
 	return true;
 }
@@ -9369,17 +9371,20 @@ function runAdjustCore(a) {
  * unconditional broadcast. Returns the meshgeo `after` state.
  * @param {any} a @param {any} result */
 function applyAdjustFull(a, result) {
-	const positions = trisToPositions(result.tris);
-	const groups = trisToGroups(result.tris);
-	const uvs = trisToUVs(result.tris);
-	if (a.session) {
-		applyGeometrySnapshot(positions, groups, uvs, result.faces);
-	} else {
-		const packed = result.faces?.length ? packFaces(result.faces) : null;
-		applyMeshGeo(a.uuid, positions, groups, uvs, packed?.faceCounts, packed?.faceTris);
-	}
-	broadcastMeshGeo(a.uuid, positions, groups, uvs);
-	return withFacesOn(liveObjectOf(a), { positions, groups, uvs });
+	// 99 K2: the one commit, recording nothing — the engine records at its own moment
+	// (at apply, or on the VR commit) and keeps the entry's `after` current in place
+	const entry = /** @type {any} */ (
+		commitMesh({
+			uuid: a.uuid,
+			apply: a.session ? 'session' : 'object',
+			after: { positions: trisToPositions(result.tris), groups: trisToGroups(result.tris), uvs: trisToUVs(result.tris) },
+			faces: result.faces,
+			stampFaces: true,
+			record: false,
+			cap: false
+		})
+	);
+	return entry.after;
 }
 
 /** The op's post-selection rule, copied from its one-shot wrapper. The gizmo
@@ -9701,8 +9706,7 @@ export function beginOpAdjust(op, params, opts = {}) {
 	// recording AT APPLY is what makes Ctrl+Z work at any moment with zero
 	// special cases; a 'deferred' (VR) begin records on its explicit commit
 	if (opts.record !== 'deferred') {
-		a.entry = { kind: 'meshgeo', uuid: a.uuid, before: a.before, after: a.after };
-		recordEntry(a.entry);
+		a.entry = recordMeshGeo(a.uuid, a.before, a.after);
 	}
 	a.installedGeometry = liveObjectOf(a)?.geometry ?? null;
 	opAdjust = a;
@@ -9897,7 +9901,7 @@ export function commitFaceAdjust() {
 	if (!a || !faceEdited) return false;
 	if (!settleOpAdjust()) return false;
 	if (a.record === 'deferred')
-		recordEntry({ kind: 'meshgeo', uuid: a.uuid, before: a.before, after: a.after });
+		recordMeshGeo(a.uuid, a.before, a.after);
 	endOpAdjust();
 	return true;
 }

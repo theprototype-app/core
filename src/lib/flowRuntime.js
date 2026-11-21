@@ -1888,6 +1888,20 @@ export function heldRestamp(sources, prev, stamp) {
 	return dt > 0 && dt < pulse;
 }
 
+/** 2.0-int: Key Press / Gamepad Button node id -> the stamp of its newest HELD re-stamp (local or
+ * received with `held: 1`) @type {Map<string, number>} */
+const heldStamps = new Map();
+
+/**
+ * 2.0-int: is `stamp` a held-key re-stamp made by one of `sources` (a Key Press / Gamepad Button
+ * node)? Marked at the source, so true only for a re-stamp, never for a press.
+ * @param {any[]} sources @param {number} stamp
+ */
+export function isHeldStamp(sources, stamp) {
+	for (const src of sources) if (src && heldStamps.get(src.id) === stamp) return true;
+	return false;
+}
+
 /** the nodes wired into one input of `node` @param {any} node @param {string} handle */
 function sourcesInto(node, handle) {
 	return edgesInto(edges, node.id)
@@ -1923,7 +1937,13 @@ function updateBehaviourInputs(time, ctx) {
 			// and each re-stamp is a new stamp — so `keypress P -> behaviour.pressed` ran on.pressed twice
 			// for a press longer than ~0.2 s and a toggle (pause, resume) cancelled itself. A stamp that
 			// lands while the previous one from the same key is still alive is the SAME press.
-			if (prev !== undefined && heldRestamp(sourcesInto(node, handle), prev, stamp)) {
+			// 2.0-int: the dt rule alone fails on slow frames — the re-stamp runs per FRAME once
+			// 0.66 of the pulse has passed, so under ~10 fps (headless, a loaded phone or Quest) two
+			// re-stamps land more than a pulse apart and the toggle ran twice. A re-stamp is MARKED
+			// at its source (heldStamps, and `held: 1` on the wire), so it is never a new press,
+			// whatever the gap; the dt rule stays as the fallback for stamps from older peers.
+			const sources = sourcesInto(node, handle);
+			if (isHeldStamp(sources, stamp) || (prev !== undefined && heldRestamp(sources, prev, stamp))) {
 				behaviourInputStats.held = (behaviourInputStats.held ?? 0) + 1;
 				continue;
 			}
@@ -3369,8 +3389,12 @@ function logicNow() {
  * @param {string} nodeId @param {number} t @param {boolean} replicate
  * @param {string|null} [sourceHandle]
  * @param {any} [at] 31: where it happened ([x, y, z], objects-group frame), for a received clap
+ * @param {any} [other] 36 X6: a contact's other body @param {boolean} [received] @param {string|null} [from] the sender
+ * @param {boolean} [held] 2.0-int: a held-key re-stamp (never a new press for a behaviour input)
  */
-export function applyNodeTrigger(nodeId, t, replicate = true, sourceHandle = null, at = null, other = undefined, received = false, from = null) {
+export function applyNodeTrigger(nodeId, t, replicate = true, sourceHandle = null, at = null, other = undefined, received = false, from = null, held = false) {
+	// 2.0-int: a held-key re-stamp is marked so a behaviour input never reads it as a new press
+	if (held && typeof nodeId === 'string') heldStamps.set(nodeId, t);
 	// 36 X6: a contact's other body, received with the stamp (see contactOthers)
 	if (typeof other === 'string') contactOthers.set(nodeId, other);
 	// 2.0-n3b: WHO made this stamp — this peer for a local fire, the sender for a received one — so a
@@ -3393,7 +3417,7 @@ export function applyNodeTrigger(nodeId, t, replicate = true, sourceHandle = nul
 	if (replicate) {
 		/** @type {any} */
 		const peer = get(peers);
-		if (peer) peer.send({ type: 'nodetrigger', id: nodeId, t });
+		if (peer) peer.send(held ? { type: 'nodetrigger', id: nodeId, t, held: 1 } : { type: 'nodetrigger', id: nodeId, t });
 	}
 }
 
@@ -5613,7 +5637,7 @@ function runTick(now) {
 				if ((node.data?.edge ?? 'down') === 'up') return;
 				const pulse = node.data?.pulse ?? 0.3;
 				const last = trigs[node.id]?.lastT ?? -Infinity;
-				if (liveTime - last > pulse * 0.66) applyNodeTrigger(node.id, syncedNow(), replicatesPulse(node));
+				if (liveTime - last > pulse * 0.66) applyNodeTrigger(node.id, syncedNow(), replicatesPulse(node), null, null, undefined, false, null, true);
 			});
 		}
 		if (paused) toView();

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { heldRestamp } from '../../src/lib/flowRuntime.js';
+import { heldRestamp, isHeldStamp, applyNodeTrigger } from '../../src/lib/flowRuntime.js';
 
 // 2.0-n3b (G28 pause-p): a held key re-stamps its Key Press node ~3/s, so `keypress P -> behaviour.pressed`
 // ran on.pressed twice for a press longer than ~0.2 s — pause, then resume. A behaviour input treats a stamp
@@ -23,5 +23,25 @@ describe('held-key re-stamp on a behaviour input', () => {
 	});
 	it('a stamp from the past (a clock step, a restored log) is not swallowed', () => {
 		expect(heldRestamp([key], 100, 99.9)).toBe(false);
+	});
+});
+
+// 2.0-int (pause-p): under ~10 fps two re-stamps land more than a pulse apart, so the dt rule
+// read the second as a new press and a toggle ran twice. A re-stamp is MARKED at its source.
+describe('isHeldStamp (marked held re-stamps)', () => {
+	const src = { id: 'kp-held', type: 'keypress', data: { code: 'KeyP' } };
+	it('a marked re-stamp is the same press whatever the gap; a press is not', () => {
+		applyNodeTrigger('kp-held', 200, false);
+		expect(isHeldStamp([src], 200)).toBe(false);
+		applyNodeTrigger('kp-held', 200.45, false, null, null, undefined, false, null, true);
+		expect(isHeldStamp([src], 200.45)).toBe(true);
+		expect(heldRestamp([src], 200, 200.45)).toBe(false); // the old rule alone missed it
+		applyNodeTrigger('kp-held', 203, false);
+		expect(isHeldStamp([src], 203)).toBe(false);
+	});
+	it('a received re-stamp is marked the same way', () => {
+		applyNodeTrigger('kp-held2', 50.5, false, null, null, undefined, true, 'peer-b', true);
+		expect(isHeldStamp([{ ...src, id: 'kp-held2' }], 50.5)).toBe(true);
+		expect(isHeldStamp([], 50.5)).toBe(false);
 	});
 });

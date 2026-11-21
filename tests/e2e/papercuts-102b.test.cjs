@@ -121,7 +121,7 @@ h.run(async () => {
 	// ---- 1. corner radius
 	console.log('\n=== 1. rounded box ===');
 	const crate = await make('Crate', [0, 0.5, 0], [2, 1, 1]);
-	const set = await exec(A, 'set_geometry', { objects: [crate], params: { radius: 0.2, radiusSegments: 3 } });
+	const set = await exec(A, 'set_geometry', { updates: [{ uuid: crate, params: { radius: 0.2, radiusSegments: 3 } }] });
 	h.check(!set?.error, '1. set_geometry takes {radius, radiusSegments}: ' + short(set));
 	await h.eventually(() => geoOf(B.page, crate), (o) => o?.verts === 1764 && o.gp?.params?.radius === 0.2, '1. B rebuilds the same rounded box (1764 vertices, radius 0.2)', 20000);
 	const a1 = await geoOf(A.page, crate);
@@ -142,7 +142,7 @@ h.run(async () => {
 		return {
 			radius: !!document.getElementById('geo-radius'),
 			segs: !!document.getElementById('geo-radiusSegments'),
-			tip: document.getElementById('geo-radius')?.closest('[title]')?.getAttribute('title') ?? '',
+			tip: document.getElementById('geo-radius')?.closest('[title^="Rounds"]')?.getAttribute('title') ?? '',
 			squareSegs: /Width segs/.test(txt)
 		};
 	});
@@ -152,7 +152,7 @@ h.run(async () => {
 	// ---- 2. Convert a baked one
 	console.log('\n=== 2. Convert ===');
 	const baked = await make('Baked', [3, 0.5, 0], [1.2, 0.8, 0.6]);
-	await exec(A, 'set_geometry', { objects: [baked], params: { radius: 0.08, radiusSegments: 2 } });
+	await exec(A, 'set_geometry', { updates: [{ uuid: baked, params: { radius: 0.08, radiusSegments: 2 } }] });
 	await h.eventually(() => geoOf(B.page, baked), (o) => o?.verts === 900, 'premise: B has the rounded box', 20000);
 	// bake it on both pages, as the template generator did (a plain mesh of vertices, no params)
 	for (const P of [A, B])
@@ -231,9 +231,9 @@ h.run(async () => {
 	// two-peer + reload: B reloads, rejoins, and has the rounded box (GLTF sync carries vertices + params)
 	await h.freshReload(B);
 	await h.answerRestore(B).catch(() => false);
-	await h.eventually(() => B.page.evaluate(() => window.__tp.test.v1.peers && (() => { let p; window.__tp.test.v1.peers.subscribe((x) => (p = x))(); return p?.openedPeers?.length ?? 0; })()), (n) => n >= 1, '3. B is back in the session after its reload', 60000);
+	await h.eventually(() => B.page.evaluate(() => { let p; window.__tp.test.v1.peers.subscribe((x) => (p = x))(); const o = p?.openedPeers; return o ? (o.size ?? o.length ?? Object.keys(o).length) : 0; }), (n) => n >= 1, '3. B is back in the session after its reload', 60000);
 	await h.eventually(() => geoOf(B.page, crate), (o) => o?.verts === 1764 && o.gp?.params?.radius === 0.2, '3. after the reload B has the rounded box with its radius (rows editable)', 60000);
-	await exec(A, 'set_geometry', { objects: [crate], params: { radius: 0.4 } });
+	await exec(A, 'set_geometry', { updates: [{ uuid: crate, params: { radius: 0.4 } }] });
 	await h.eventually(() => geoOf(B.page, crate), (o) => o?.gp?.params?.radius === 0.4, '3. ...and a later radius edit still reaches it', 20000);
 
 	// ---- 3b. the newest release opens this file
@@ -325,9 +325,9 @@ h.run(async () => {
 			{ ref: 'tick', type: 'script', data: { code: 'return { hit: Math.floor(time * 2) % 2 === 0 };', outputs: [{ name: 'hit', type: 'event' }] } },
 			{ ref: 'count', type: 'counter' }
 		],
-		edges: [{ from: 'tick', fromHandle: 'hit', to: 'count', toHandle: 'trigger' }]
+		edges: [{ from: 'tick', fromHandle: 'hit', to: 'count', toHandle: 'pulse' }]
 	});
-	console.log('   create_flow_nodes: ' + short(scr));
+	console.log("   create_flow_nodes: " + JSON.stringify(scr).slice(0, 900));
 	const countId = scr?.created?.find?.((c) => c.ref === 'count')?.id ?? scr?.created?.[1]?.id;
 	const counterOf = (page) => page.evaluate((id) => { let t; window.__tp.test.v1.flowTriggers.subscribe((x) => (t = x))(); return t?.[id]?.count ?? 0; }, countId);
 	const c0 = await counterOf(A.page);
@@ -346,7 +346,7 @@ h.run(async () => {
 	await h.eventually(lineOf, (t) => t === 'acts on nothing: add an Object Selector', '7. an unwired Spin in the scene graph says "acts on nothing" on its card', 10000);
 	const lint = await exec(A, 'validate_scene', {});
 	h.check(JSON.stringify(lint).includes('effect-no-object'), '7. validate_scene lists it (effect-no-object)');
-	const wire = await exec(A, 'create_flow_nodes', { graph: 'scene', nodes: [{ ref: 'sel', type: 'objectselector', data: { object: plain } }], edges: [{ from: spinId, to: 'sel' }] });
+	const wire = await exec(A, 'create_flow_nodes', { graph: 'scene', nodes: [{ ref: 'sel', type: 'objectselector', data: { selected: plain } }], edges: [{ from: spinId, to: 'sel' }] });
 	h.check(!wire?.error, '7. wiring it to an Object Selector: ' + short(wire?.error ?? 'ok'));
 	await h.eventually(lineOf, (t) => t !== 'acts on nothing: add an Object Selector', '7. ...and the line goes', 10000);
 	await A.page.evaluate(() => window.__tp.test.v1.nodeLiveState.liveStateGraph.set(null));
@@ -389,11 +389,11 @@ h.run(async () => {
 	const cross = png(64, 48, cell);
 	await A.page.evaluate(() => window.__tp.test.v1.openSceneSection('Environment'));
 	await A.page.waitForSelector('#hdri-upload-file', { state: 'attached', timeout: 15000 });
+	const toastSeen = A.page.waitForFunction(() => /Cube map converted to a sky image/.test(document.body.textContent ?? ''), null, { timeout: 30000 }).then(() => true, () => false);
 	await A.page.setInputFiles('#hdri-upload-file', { name: 'test-sky-cross.png', mimeType: 'image/png', buffer: cross });
 	const items = () => A.page.evaluate(() => { let x; window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (x = v))(); return (x ?? []).filter((i) => /test-sky-cross/.test(i.name)).map((i) => ({ name: i.name, kind: i.kind })); });
 	await h.eventually(items, (l) => l.some((i) => i.name === 'test-sky-cross-equirect.hdr' && i.kind === 'hdri'), '9. the cross becomes test-sky-cross-equirect.hdr in the library (kind hdri)', 30000);
-	const toast = await A.page.evaluate(() => [...document.querySelectorAll('.tp-toast')].map((t) => t.textContent).join(' | '));
-	h.check(/Cube map converted to a sky image/.test(toast), '9. a toast names the conversion: ' + toast.slice(0, 120));
+	h.check(await toastSeen, '9. a toast names the conversion ("Cube map converted to a sky image")');
 
 	await h.finish(browser);
 });

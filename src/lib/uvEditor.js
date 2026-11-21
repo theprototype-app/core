@@ -1189,6 +1189,23 @@ export async function beginPaintStroke(uuid, slot = 0) {
 	return true;
 }
 
+/**
+ * 102 M6: the base-colour paint surface for meshPaint.js — the SAME canvas this module paints, so a brush stroke
+ * from either painter, the UV editor's live backdrop and the next stroke all see one image. Async for the reason
+ * paintSurface is. @param {string} uuid @param {number} [slot] @returns {Promise<any>}
+ */
+export function openColorSurface(uuid, slot = 0) {
+	return paintSurface(uuid, slot);
+}
+
+/** 102 M6: forget a colour surface (meshPaint cancelled a stroke on it) @param {string} uuid @param {number} [slot] */
+export function dropColorSurface(uuid, slot = 0) {
+	paintCanvases.delete(paintKey(uuid, slot));
+}
+
+/** 102 M6: the shared encoder and pressure curve, so both painters commit and taper alike */
+export { canvasToDataUrl as encodePaintCanvas, pressureFactor as paintPressureFactor };
+
 /** is a stroke open? */
 export function painting() {
 	return !!paintStroke;

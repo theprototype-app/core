@@ -204,3 +204,28 @@ describe('vertex colours', () => {
 		expect(onMirrorPlane([0.3, 0, 0], 1)).toBe(false);
 	});
 });
+
+import { CHANNEL_KEYS, validMeshPaint, quantizePoint, MAX_SEG_POINTS } from '../../src/lib/meshPaintWire.js';
+
+describe('the live stroke wire', () => {
+	const good = { type: 'meshpaint', id: 'p:m1', uuid: 'u-1', sp: 'obj', c: '#ff0000', r: 0.05, seg: [[0, 1, 2], [0.1, 1, 2, 0.5]] };
+	it('the wire leaf names the same channels as the core', () => {
+		expect([...CHANNEL_KEYS]).toEqual(CHANNELS.map((c) => c.key));
+	});
+	it('accepts a well-formed stroke and refuses bad ones', () => {
+		expect(validMeshPaint(good)).toBe(true);
+		expect(validMeshPaint({ ...good, sp: 'uv', seg: [[0.1, 0.2]] })).toBe(true);
+		expect(validMeshPaint({ ...good, ch: 'metalness', b: { h: 0.5 }, n: [0, 1, 0], slot: 2 })).toBe(true);
+		expect(validMeshPaint({ ...good, sp: 'uv' })).toBe(false); // 3D points on a UV stroke
+		expect(validMeshPaint({ ...good, seg: [[NaN, 0, 0]] })).toBe(false);
+		expect(validMeshPaint({ ...good, c: 'red' })).toBe(false);
+		expect(validMeshPaint({ ...good, r: -1 })).toBe(false);
+		expect(validMeshPaint({ ...good, ch: 'normal' })).toBe(false);
+		expect(validMeshPaint({ ...good, seg: new Array(MAX_SEG_POINTS + 1).fill([0, 0, 0]) })).toBe(false);
+		expect(validMeshPaint({ ...good, b: [1] })).toBe(false);
+	});
+	it('rounds points, drops full pressure', () => {
+		expect(quantizePoint([0.1234567, 2, 3, 1], 3)).toEqual([0.12346, 2, 3]);
+		expect(quantizePoint([0.5, 0.5, 0.33333], 2)).toEqual([0.5, 0.5, 0.333]);
+	});
+});

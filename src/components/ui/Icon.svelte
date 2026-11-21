@@ -122,6 +122,7 @@
 		Eye,
 		EyeOff,
 		FileCode,
+		Eraser,
 		FileInput,
 		FilePlus,
 		FileText,
@@ -376,6 +377,7 @@
 		'file-input': FileInput,
 		'file-plus': FilePlus,
 		'file-text': FileText,
+		eraser: Eraser, // 102 M6 paint eraser
 		filter: Filter,
 		flag: Flag,
 		'flip-horizontal': FlipHorizontal,

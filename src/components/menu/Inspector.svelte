@@ -615,6 +615,10 @@
 		if (!uuid) return;
 		const count = sharedWith.length;
 		if (!unlinkMaterial(uuid)) return;
+		// 102 M6 (found on the way): the unlink used to stay on this machine, so a peer kept the objects linked
+		// and the next edit of this one changed both over there. An older peer ignores the parameter.
+		const peer = $peers;
+		/** @type {any} */ (peer)?.send({ type: 'objectParameters', parameter: 'materialUnlink', uuid });
 		showToast(
 			'This object has its own material now — the other ' +
 				count +

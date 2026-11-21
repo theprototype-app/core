@@ -131,19 +131,6 @@ function prefabInstanceMenu(object, group) {
 }
 
 /**
- * The FULL object context menu, shared so the direct object menu (right-click an
- * object / an object-list row, Controls.svelte) and the empty-space menu's
- * "Selected" submenu (ViewportMenu.svelte) expose the SAME actions — they used to
- * drift (the indirect path had fewer). Reads stores via get() (menus rebuild on
- * open, so this is fine).
- *
- * Multi-select aware (U-2): when the right-clicked uuid is part of the current
- * selection AND the selection has 2+ members, set-oriented items act on the whole
- * SET with a counted label; a "Group selection" item appears. Object-specific
- * items (rename / edit mesh / add note / request control) stay on the clicked one.
- * @param {string} uuid @param {{ point?: number[] | null, locked?: boolean, selection?: string[] }} [opts]
- */
-/**
  * 61-nav: the module object actions for one object (`api.registerObjectAction`), with core's own
  * "Make this an enemy…" door first — the navigation module's row when it is loaded, else the door
  * that installs it (npcEntry.js).
@@ -171,6 +158,19 @@ function objectActionRows(uuid) {
 	];
 }
 
+/**
+ * The FULL object context menu, shared so the direct object menu (right-click an
+ * object / an object-list row, Controls.svelte) and the empty-space menu's
+ * "Selected" submenu (ViewportMenu.svelte) expose the SAME actions — they used to
+ * drift (the indirect path had fewer). Reads stores via get() (menus rebuild on
+ * open, so this is fine).
+ *
+ * Multi-select aware (U-2): when the right-clicked uuid is part of the current
+ * selection AND the selection has 2+ members, set-oriented items act on the whole
+ * SET with a counted label; a "Group selection" item appears. Object-specific
+ * items (rename / edit mesh / add note / request control) stay on the clicked one.
+ * @param {string} uuid @param {{ point?: number[] | null, locked?: boolean, selection?: string[] }} [opts]
+ */
 export function buildObjectMenuItems(uuid, opts = {}) {
 	const point = opts.point ?? null;
 	const locks = get(lockedObjects);

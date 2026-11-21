@@ -53,9 +53,37 @@ function visibleChain(o, root) {
 function pushBox(pos, idx, b) {
 	const base = pos.length / 3;
 	const { min: n, max: x } = b;
-	pos.push(n.x, n.y, n.z, x.x, n.y, n.z, x.x, n.y, x.z, n.x, n.y, x.z, n.x, x.y, n.z, x.x, x.y, n.z, x.x, x.y, x.z, n.x, x.y, x.z);
+	pos.push(
+		n.x,
+		n.y,
+		n.z,
+		x.x,
+		n.y,
+		n.z,
+		x.x,
+		n.y,
+		x.z,
+		n.x,
+		n.y,
+		x.z,
+		n.x,
+		x.y,
+		n.z,
+		x.x,
+		x.y,
+		n.z,
+		x.x,
+		x.y,
+		x.z,
+		n.x,
+		x.y,
+		x.z
+	);
 	// faces wound outward (top first: the walkable side a bake reads)
-	const f = [4, 7, 6, 4, 6, 5, 0, 1, 2, 0, 2, 3, 0, 4, 5, 0, 5, 1, 1, 5, 6, 1, 6, 2, 2, 6, 7, 2, 7, 3, 3, 7, 4, 3, 4, 0];
+	const f = [
+		4, 7, 6, 4, 6, 5, 0, 1, 2, 0, 2, 3, 0, 4, 5, 0, 5, 1, 1, 5, 6, 1, 6, 2, 2, 6, 7, 2, 7, 3, 3, 7,
+		4, 3, 4, 0
+	];
 	for (const k of f) idx.push(base + k);
 }
 
@@ -69,9 +97,20 @@ function pushBox(pos, idx, b) {
  */
 async function colliderGeometry(opts = {}) {
 	const root = /** @type {any} */ (get(objectsGroup));
-	const empty = { positions: new Float32Array(0), indices: new Uint32Array(0), triangles: 0, objects: 0, truncated: false, moving: [], signature: '' };
+	const empty = {
+		positions: new Float32Array(0),
+		indices: new Uint32Array(0),
+		triangles: 0,
+		objects: 0,
+		truncated: false,
+		moving: [],
+		signature: ''
+	};
 	if (!root) return empty;
-	const cap = Math.max(1000, Math.min(Number(opts.maxTriangles) || COLLIDER_TRIANGLE_CAP, COLLIDER_TRIANGLE_CAP));
+	const cap = Math.max(
+		1000,
+		Math.min(Number(opts.maxTriangles) || COLLIDER_TRIANGLE_CAP, COLLIDER_TRIANGLE_CAP)
+	);
 	const exclude = new Set((opts.exclude ?? []).map(String));
 	/** @type {Set<string>} */
 	const dynamic = new Set();
@@ -79,7 +118,8 @@ async function colliderGeometry(opts = {}) {
 	let animated = () => false;
 	try {
 		const physics = await import('../physics.js');
-		for (const row of physics.listPhysicsObjects()) if (row.mode === 'dynamic') dynamic.add(row.uuid);
+		for (const row of physics.listPhysicsObjects())
+			if (row.mode === 'dynamic') dynamic.add(row.uuid);
 		const flow = await import('../flowRuntime.js');
 		animated = (uuid) => flow.isAnimatedTarget(uuid);
 	} catch {
@@ -92,6 +132,7 @@ async function colliderGeometry(opts = {}) {
 	const idx = [];
 	/** @type {{uuid: string, name: string, min: number[], max: number[]}[]} */
 	const moving = [];
+	/** @type {(string | number)[]} */
 	const sig = [];
 	let objects = 0;
 	let truncated = false;
@@ -99,7 +140,13 @@ async function colliderGeometry(opts = {}) {
 		if (exclude.has(top.uuid) || top.visible === false) continue;
 		if (isMoving(top, dynamic, animated)) {
 			box.setFromObject(top);
-			if (!box.isEmpty()) moving.push({ uuid: top.uuid, name: top.name || '', min: box.min.toArray(), max: box.max.toArray() });
+			if (!box.isEmpty())
+				moving.push({
+					uuid: top.uuid,
+					name: top.name || '',
+					min: box.min.toArray(),
+					max: box.max.toArray()
+				});
 			continue;
 		}
 		top.traverse((/** @type {any} */ o) => {
@@ -107,11 +154,17 @@ async function colliderGeometry(opts = {}) {
 			if (exclude.has(o.uuid) || !visibleChain(o, root)) return;
 			const ud = o.userData ?? {};
 			if (ud.physics?.sensor || ud.water || isPathObject(o) || ud.navIgnore) return;
-			for (let n = o.parent; n && n !== root; n = n.parent) if (exclude.has(n.uuid) || isPathObject(n)) return;
+			for (let n = o.parent; n && n !== root; n = n.parent)
+				if (exclude.has(n.uuid) || isPathObject(n)) return;
 			const g = o.geometry;
 			const p = g.attributes.position;
 			objects++;
-			sig.push(o.uuid, g.uuid, p.version, o.matrixWorld.elements.map((/** @type {number} */ v) => v.toFixed(3)).join(','));
+			sig.push(
+				o.uuid,
+				g.uuid,
+				p.version,
+				o.matrixWorld.elements.map((/** @type {number} */ v) => v.toFixed(3)).join(',')
+			);
 			if (opts.signatureOnly) {
 				if (o.isInstancedMesh) sig.push(o.count, o.instanceMatrix?.version ?? 0);
 				return;
@@ -140,15 +193,19 @@ async function colliderGeometry(opts = {}) {
 			}
 			// a mirrored object (negative scale) flips its winding: keep the walkable side up
 			const flip = o.matrixWorld.determinant() < 0;
-			if (g.index) for (let i = 0; i + 2 < g.index.count; i += 3) {
-				const a = g.index.getX(i), b = g.index.getX(i + 1), c = g.index.getX(i + 2);
-				if (flip) idx.push(base + a, base + c, base + b);
-				else idx.push(base + a, base + b, base + c);
-			}
-			else for (let i = 0; i + 2 < p.count; i += 3) {
-				if (flip) idx.push(base + i, base + i + 2, base + i + 1);
-				else idx.push(base + i, base + i + 1, base + i + 2);
-			}
+			if (g.index)
+				for (let i = 0; i + 2 < g.index.count; i += 3) {
+					const a = g.index.getX(i),
+						b = g.index.getX(i + 1),
+						c = g.index.getX(i + 2);
+					if (flip) idx.push(base + a, base + c, base + b);
+					else idx.push(base + a, base + b, base + c);
+				}
+			else
+				for (let i = 0; i + 2 < p.count; i += 3) {
+					if (flip) idx.push(base + i, base + i + 2, base + i + 1);
+					else idx.push(base + i, base + i + 1, base + i + 2);
+				}
 		});
 	}
 	return {
@@ -170,11 +227,21 @@ function players() {
 	const p = /** @type {any} */ (get(peers));
 	const myId = p?.peer?.id ?? '';
 	const cam = /** @type {any} */ (get(globalCamera));
-	if (cam?.getWorldPosition) out.push({ id: myId || 'me', pos: cam.getWorldPosition(new THREE.Vector3()).toArray(), me: true });
+	if (cam?.getWorldPosition)
+		out.push({
+			id: myId || 'me',
+			pos: cam.getWorldPosition(new THREE.Vector3()).toArray(),
+			me: true
+		});
 	const scene = /** @type {any} */ (get(globalScene));
 	for (const id of p?.openedPeers ?? []) {
 		const avatar = scene?.getObjectByName(String(id));
-		if (avatar?.getWorldPosition) out.push({ id: String(id), pos: avatar.getWorldPosition(new THREE.Vector3()).toArray(), me: false });
+		if (avatar?.getWorldPosition)
+			out.push({
+				id: String(id),
+				pos: avatar.getWorldPosition(new THREE.Vector3()).toArray(),
+				me: false
+			});
 	}
 	return out;
 }
@@ -189,7 +256,8 @@ export function sdkGameWorld(ctx) {
 			/** @param {string} uuid */
 			of: (uuid) => pathOf(get(objectsGroup), String(uuid ?? '')),
 			/** every Path object: `[{uuid, name}]` (a sheet's picker) */
-			list: () => pathObjectsIn(get(objectsGroup)).map((o) => ({ uuid: o.uuid, name: o.name || 'Path' })),
+			list: () =>
+				pathObjectsIn(get(objectsGroup)).map((o) => ({ uuid: o.uuid, name: o.name || 'Path' })),
 			/**
 			 * A new Path object through 78's own `createPath` (the replicated `/create Path` + one spline
 			 * edit, ONE undo step): `points` are WORLD `[x, y, z]` (2..200).
@@ -198,9 +266,17 @@ export function sdkGameWorld(ctx) {
 			 */
 			async create(spec) {
 				const { createPath } = await import('../path/pathActions.js');
-				const points = (Array.isArray(spec?.points) ? spec.points : []).slice(0, 200).map((p) => [+p?.[0] || 0, +p?.[1] || 0, +p?.[2] || 0]);
+				const points = (Array.isArray(spec?.points) ? spec.points : [])
+					.slice(0, 200)
+					.map((p) => [+p?.[0] || 0, +p?.[1] || 0, +p?.[2] || 0]);
 				if (points.length < 2) return null;
-				const r = /** @type {any} */ (createPath({ points, closed: !!spec?.closed, name: spec?.name ? String(spec.name).slice(0, 60) : undefined }));
+				const r = /** @type {any} */ (
+					createPath({
+						points,
+						closed: !!spec?.closed,
+						name: spec?.name ? String(spec.name).slice(0, 60) : undefined
+					})
+				);
 				return r?.object?.uuid ?? null;
 			}
 		}),

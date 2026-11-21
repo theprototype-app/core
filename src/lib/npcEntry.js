@@ -56,7 +56,9 @@ export async function ensureNavigationModule(opts = {}) {
 		const { enableRequired } = await import('./sessions');
 		await enableRequired([{ id: NAV_MODULE_ID }], { quiet: true });
 		const a = await waitForAction(8000);
-		return a ? { action: a } : { error: 'The Navigation module is installed but did not start — reload and try again.' };
+		return a
+			? { action: a }
+			: { error: 'The Navigation module is installed but did not start — reload and try again.' };
 	}
 	if (opts.ask !== false) {
 		const { showChoice } = await import('./confirmDialog');
@@ -72,12 +74,21 @@ export async function ensureNavigationModule(opts = {}) {
 	const { loadModuleGallery, galleryModules, galleryInstallUrl } = await import('./moduleGallery');
 	await loadModuleGallery();
 	const found = get(galleryModules).find((/** @type {any} */ e) => e.id === NAV_MODULE_ID);
-	if (!found) return { error: 'The Navigation module is not in the module gallery yet (Modules ▸ User ▸ Install from zip works).' };
+	if (!found)
+		return {
+			error:
+				'The Navigation module is not in the module gallery yet (Modules ▸ User ▸ Install from zip works).'
+		};
 	const { installModuleJob } = await import('./moduleInstallJobs');
 	const ok = await installModuleJob(NAV_MODULE_ID, galleryInstallUrl(found));
-	if (!ok) return { error: 'Could not install the Navigation module — check Modules ▸ Browse for the reason.' };
+	if (!ok)
+		return {
+			error: 'Could not install the Navigation module — check Modules ▸ Browse for the reason.'
+		};
 	const a = await waitForAction(10000);
-	return a ? { action: a } : { error: 'The Navigation module installed but did not register its sheet.' };
+	return a
+		? { action: a }
+		: { error: 'The Navigation module installed but did not register its sheet.' };
 }
 
 /** the object-menu row's action: open the module's sheet for `uuid` (installing it first if asked) @param {string} uuid */

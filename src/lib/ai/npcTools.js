@@ -9,10 +9,22 @@ import { objectsGroup } from '../../stores/sceneStore.js';
 export const NPC_TOOL_NAMES = ['set_npc'];
 
 /** @param {string} uuid */
-const objectOf = (uuid) => /** @type {any} */ (get(objectsGroup))?.getObjectByProperty('uuid', uuid);
+const objectOf = (uuid) =>
+	/** @type {any} */ (get(objectsGroup))?.getObjectByProperty('uuid', uuid);
 
 /** the fields the recipe reads (the module normalizes and clamps every one) */
-const SPEC_KEYS = ['path', 'sight', 'hearing', 'chase', 'attack', 'speed', 'run', 'giveUp', 'alert', 'remove'];
+const SPEC_KEYS = [
+	'path',
+	'sight',
+	'hearing',
+	'chase',
+	'attack',
+	'speed',
+	'run',
+	'giveUp',
+	'alert',
+	'remove'
+];
 
 /**
  * @param {string} name @param {any} args
@@ -25,12 +37,17 @@ export async function npcTool(name, args) {
 	if (!uuid) return { error: 'object: the uuid of the object to make an enemy (list_scene)' };
 	const object = objectOf(uuid);
 	if (!object) return { error: 'object: no object ' + uuid.slice(0, 40) + ' (list_scene)' };
-	if (object.userData?.terrain) return { error: 'object: a terrain cannot walk — pick the object that should be the enemy' };
+	if (object.userData?.terrain)
+		return { error: 'object: a terrain cannot walk — pick the object that should be the enemy' };
 	const { ensureNavigationModule, NAV_MODULE_ID } = await import('../npcEntry.js');
 	const wasLoaded = (await import('../moduleSDK.js')).isModuleLoaded?.(NAV_MODULE_ID) ?? false;
 	const got = await ensureNavigationModule({ ask: false });
 	if ('error' in got) return { error: got.error };
-	if (typeof got.action.apply !== 'function') return { error: 'The Navigation module on this device is too old for game_setup {npc} — update it (Modules ▸ User).' };
+	if (typeof got.action.apply !== 'function')
+		return {
+			error:
+				'The Navigation module on this device is too old for game_setup {npc} — update it (Modules ▸ User).'
+		};
 	/** @type {Record<string, any>} */
 	const spec = {};
 	for (const k of SPEC_KEYS) if (a[k] !== undefined) spec[k] = a[k];
@@ -38,12 +55,24 @@ export async function npcTool(name, args) {
 	try {
 		result = await got.action.apply(uuid, spec);
 	} catch (error) {
-		return { error: 'The enemy recipe failed: ' + (error instanceof Error ? error.message : String(error)).slice(0, 200) };
+		return {
+			error:
+				'The enemy recipe failed: ' +
+				(error instanceof Error ? error.message : String(error)).slice(0, 200)
+		};
 	}
 	if (!result || result.error) return { error: result?.error ?? 'The enemy recipe did nothing.' };
 	const warnings = [...(Array.isArray(result.warnings) ? result.warnings : [])];
-	if (!wasLoaded) warnings.unshift('Installed the Navigation module on this device; every player needs it (the scene asks them when they open it).');
-	return { updated: [{ uuid, ok: true }], npc: result.npc ?? null, note: result.note ?? '', ...(warnings.length ? { warnings } : {}) };
+	if (!wasLoaded)
+		warnings.unshift(
+			'Installed the Navigation module on this device; every player needs it (the scene asks them when they open it).'
+		);
+	return {
+		updated: [{ uuid, ok: true }],
+		npc: result.npc ?? null,
+		note: result.note ?? '',
+		...(warnings.length ? { warnings } : {})
+	};
 }
 
 export const NPC_AI_TOOLS = [
@@ -65,18 +94,36 @@ export const NPC_AI_TOOLS = [
 					path: { type: 'string', description: 'a Path object uuid, "new" or "none"' },
 					sight: {
 						type: 'object',
-						properties: { angle: { type: 'number', description: 'degrees, 10..360 (default 100)' }, range: { type: 'number', description: 'm (default 12)' } }
+						properties: {
+							angle: { type: 'number', description: 'degrees, 10..360 (default 100)' },
+							range: { type: 'number', description: 'm (default 12)' }
+						}
 					},
-					hearing: { type: 'number', description: 'm, how far a normal noise is heard (default 6)' },
-					chase: { type: 'number', description: 'm, it gives up when the player gets further than this (default 25)' },
+					hearing: {
+						type: 'number',
+						description: 'm, how far a normal noise is heard (default 6)'
+					},
+					chase: {
+						type: 'number',
+						description: 'm, it gives up when the player gets further than this (default 25)'
+					},
 					attack: {
 						type: 'object',
-						properties: { range: { type: 'number', description: 'm (default 1.6)' }, every: { type: 'number', description: 's between attacks (default 1)' } }
+						properties: {
+							range: { type: 'number', description: 'm (default 1.6)' },
+							every: { type: 'number', description: 's between attacks (default 1)' }
+						}
 					},
 					speed: { type: 'number', description: 'walking speed on patrol, m/s (default 1.6)' },
 					run: { type: 'number', description: 'chase speed, m/s (default 3.6)' },
-					giveUp: { type: 'number', description: 's without seeing or hearing the player before it returns (default 4)' },
-					alert: { type: 'number', description: 's it looks toward a noise before searching (default 1.5)' },
+					giveUp: {
+						type: 'number',
+						description: 's without seeing or hearing the player before it returns (default 4)'
+					},
+					alert: {
+						type: 'number',
+						description: 's it looks toward a noise before searching (default 1.5)'
+					},
 					remove: { type: 'boolean' }
 				},
 				required: ['object']

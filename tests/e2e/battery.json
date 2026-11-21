@@ -942,7 +942,8 @@
 		"workspace-layouts": 193,
 		"workspace-restore": 52,
 		"z-scale-layering": 117,
-		"navigation-npc": 400
+		"navigation-npc": 400,
+		"navigation-devices": 240
 	},
 	"modules": {
 		"dungeon-realms": 458,
@@ -1142,6 +1143,7 @@
 		"multiselect-v2": false,
 		"narrow-header": false,
 		"navigation-npc": false,
+		"navigation-devices": false,
 		"net-drop": false,
 		"net-handshake": false,
 		"net-mesh": false,

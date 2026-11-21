@@ -89,28 +89,35 @@ h.run(async () => {
 		'A is told about the decline'
 	);
 
-	// fix-batch-4 B1: B holds many big saved sessions, the shape that made the 'Backup before' save slow
+	// fix-batch-4 B1: A (the PROPOSER, which runs the backup) holds many big saved sessions, the shape that made the 'Backup before' save slow
 	// (it re-read every saved session for the list: ~8 of ~10 s under load). Seeded straight into idb so
-	// the seeding itself reads nothing; the timer runs in B's page from the Accept press.
+	// the seeding itself reads nothing; the clock runs from B's Accept press to A's backup row and objects phase.
 	const SEED = Number(process.env.SESSIONS_B1_SEED ?? 24);
-	await B.page.evaluate(async (n) => {
+	await A.page.evaluate(async (n) => {
 		const t = window.__tp.test.v1;
 		const pad = 'x'.repeat(1_500_000);
 		for (let i = 0; i < n; i++)
 			await t.idb.idbPut('session:b1-seed-' + i, { id: 'b1-seed-' + i, name: 'B1 seed ' + i, createdAt: Date.now() - 1e6 - i, format: 1, objects: [], pad });
 		// @ts-ignore
-		window.__b1 = { accept: 0, backup: 0, objects: 0 };
+		window.__b1 = { armed: -1, backup: 0, objects: 0 };
 		t.sessions.sessions.subscribe((list) => {
 			// @ts-ignore
-			if (window.__b1.accept && !window.__b1.backup && list.some((m) => /^Backup before/.test(m.name))) window.__b1.backup = performance.now();
+			if (window.__b1.armed >= 0 && !window.__b1.backup && list.filter((m) => /^Backup before/.test(m.name)).length > window.__b1.armed) window.__b1.backup = Date.now();
 		});
 		t.sceneLoader.sceneLoad.subscribe((/** @type {any} */ l) => {
 			// @ts-ignore
-			if (window.__b1.accept && !window.__b1.objects && l?.phase === 'objects') window.__b1.objects = performance.now();
+			if (window.__b1.armed >= 0 && !window.__b1.objects && l?.phase === 'objects') window.__b1.objects = Date.now();
 		});
 	}, SEED);
 	// then B accepts: the load applies and replicates
-	await A.page.evaluate((id) => window.__tp.test.v1.sessions.requestLoadSession(id), target.id);
+	await A.page.evaluate((id) => {
+		const t = window.__tp.test.v1;
+		/** @type {any[]} */ let list = [];
+		t.sessions.sessions.subscribe((/** @type {any} */ v) => (list = v))();
+		// @ts-ignore
+		window.__b1.armed = list.filter((m) => /^Backup before/.test(m.name)).length;
+		return t.sessions.requestLoadSession(id);
+	}, target.id);
 	await B.page.waitForTimeout(800);
 	// the press is stamped IN THE PAGE in the same task that presses it (a document capture listener never
 	// saw Playwright's pointerdown/click reach the toast button: the app's own capture handlers get it first)
@@ -119,7 +126,7 @@ h.run(async () => {
 		const toast = [...document.querySelectorAll('.tp-toast')].find((t) => /wants to load session/.test(t.textContent ?? ''));
 		const btn = /** @type {HTMLButtonElement | undefined} */ ([...(toast?.querySelectorAll('button') ?? [])].find((x) => (x.textContent ?? '').trim() === 'Accept'));
 		// @ts-ignore
-		window.__b1.accept = performance.now();
+		window.__b1accept = Date.now();
 		btn?.click();
 	});
 	let replaced = false;
@@ -138,7 +145,9 @@ h.run(async () => {
 		60000
 	);
 	// @ts-ignore
-	const b1 = await B.page.evaluate(() => window.__b1);
+	// the PROPOSER (A) runs the backup and the load and replicates it; B's Accept only answers. Both pages run in
+	// one browser on one machine, so Date.now() is one clock
+	const b1 = { ...(await A.page.evaluate(() => window.__b1)), accept: await B.page.evaluate(() => window.__b1accept ?? 0) };
 	const ms = (/** @type {number} */ t) => (t && b1.accept ? Math.round(t - b1.accept) : -1);
 	h.check(b1.accept > 0, 'premise: B pressed Accept (stamped in the page)');
 	console.log(`  B1: Accept -> backup saved ${ms(b1.backup)} ms, -> objects building ${ms(b1.objects)} ms (${SEED} seeded sessions of 1.5 MB)`);

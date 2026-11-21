@@ -157,9 +157,12 @@ async function trip(page) {
 			const st = window.__stores;
 			st.sceneSwitch?.modulesOnOpen?.set('keep');
 			await st.sceneTemplates.loadTemplatesIndex(true);
-			let list;
-			st.sceneTemplates.templates.subscribe((v) => (list = v))();
-			return st.sceneTemplates.loadRemoteScene(list.find((x) => x.slug === slug));
+			// templates, examples and games (stars-room is a game, aquarium an example: 100-cover-fx)
+			const list = [];
+			for (const k of ['templates', 'examples', 'games']) st.sceneTemplates[k]?.subscribe((/** @type {any[]} */ v) => list.push(...(v || [])))();
+			const entry = list.find((x) => x.slug === slug);
+			if (!entry) return false;
+			return st.sceneTemplates.loadRemoteScene(entry);
 		}, SCENE);
 		log('load', SCENE, ok);
 		await page.waitForTimeout(12000);

@@ -17,6 +17,12 @@ const OLD_FILE = process.env.E2E_OLD_TPSCENE || '';
 /** a page on the v1.70.0 server (setupPage always opens APP_URL) */
 async function basePage(browser, errors) {
 	const ctx = await browser.newContext({ ignoreHTTPSErrors: true, serviceWorkers: 'block' });
+	// the same opt-ins setupPage gives every page: the test API, and no first-visit overlays
+	await ctx.addInitScript(() => {
+		localStorage.setItem('debugStores', 'true');
+		localStorage.setItem('hasSeenDisclaimer', 'true');
+		localStorage.setItem('hasSeenWelcome', 'true');
+	});
 	const page = await ctx.newPage();
 	page.on('pageerror', (e) => errors.push(String(e?.message ?? e)));
 	await page.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 90000 });

@@ -8,6 +8,26 @@
 // the values back. Red on v1.70.0: there is no row, no key is read, physicsDebug has no gravityScale.
 const h = require('./helpers.cjs');
 
+/** reload ALONE (peers closed first, so nothing can come back from them) and restore the autosave
+ * through restoreSnapshot (what the Restore button runs); long waits — a loaded slot boots slowly */
+async function reloadAndRestore(peer, others) {
+	for (const o of others) await o.ctx.close().catch(() => {});
+	await peer.page.evaluate(() => window.__tp.test.v1.autosave.saveNow());
+	await peer.page.waitForTimeout(2000);
+	await peer.page.reload({ waitUntil: 'domcontentloaded', timeout: 120000 });
+	await peer.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, null, { timeout: 180000 });
+	await peer.page.waitForFunction(
+		() => {
+			let v;
+			window.__tp.test.v1.autosave.restoreAvailable.subscribe((x) => (v = x))();
+			return !!v;
+		},
+		null,
+		{ timeout: 60000, polling: 250 }
+	);
+	await peer.page.evaluate(() => window.__tp.test.v1.autosave.restoreSnapshot());
+}
+
 h.run(async () => {
 	const browser = await h.launch();
 	{
@@ -62,11 +82,12 @@ h.run(async () => {
 	const simOn = (page) => page.evaluate(() => new Promise((r) => window.__tp.test.v1.physics.simulating.subscribe(r)()));
 	const debugOf = (page, name) =>
 		page.evaluate((uuid) => window.__tp.test.v1.physics.physicsDebug().find((e) => e.uuid === uuid) ?? null, ids[name]);
-	/** run `ms` of simulation on `page` and return the heights */
-	const drop = async (page, label, ms = 700, { stop = true } = {}) => {
+	/** run the simulation on `page` until the PLAIN ball has dropped `fall` metres (sim time, not wall time:
+	 * a loaded slot steps slowly), then return the heights */
+	const drop = async (page, label, fall = 1.5, { stop = true } = {}) => {
 		if (!(await simOn(page))) await page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 		await h.eventually(() => page.evaluate((u) => window.__tp.test.v1.physics.physicsDebug().filter((e) => Object.values(u).includes(e.uuid)).length, ids), (n) => n === 4, `${label}: four bodies`, 15000);
-		await page.waitForTimeout(ms);
+		await h.eventually(() => heights(page), (y) => y.Plain < 5 - fall, `${label}: the plain ball falls ${fall} m`, 30000);
 		const out = await heights(page);
 		if (stop) await page.evaluate(() => window.__tp.test.v1.physics.stopSimulation({ reset: true }));
 		return out;
@@ -74,11 +95,11 @@ h.run(async () => {
 
 	// 1) the counterfactual: nothing set — all four fall alike, and the body reads the scene's values
 	await place(A.page);
-	const before = await drop(A.page, 'untouched', 700, { stop: false });
+	const before = await drop(A.page, 'untouched', 1.5, { stop: false });
 	const plainBody = await debugOf(A.page, 'Plain');
 	await A.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation({ reset: true }));
 	const spread = Math.max(...Object.values(before)) - Math.min(...Object.values(before));
-	h.check(before.Plain < 4 && spread < 0.05, `COUNTERFACTUAL: with no own values the four balls fall together (${JSON.stringify(before)})`);
+	h.check(spread < 0.05, `COUNTERFACTUAL: with no own values the four balls fall together (${JSON.stringify(before)})`);
 	h.check(plainBody?.gravityScale === 1 && Math.abs(plainBody.angularDamping - 0.05) < 1e-6 && plainBody.linearDamping === 0, `an untouched body = gravity 1 and the scene damping (${JSON.stringify({ g: plainBody?.gravityScale, l: plainBody?.linearDamping, a: plainBody?.angularDamping })})`);
 	h.check((await physicsOf(A.page, 'Plain')) && !('gravityScale' in (await physicsOf(A.page, 'Plain'))), 'and writes no key');
 
@@ -115,30 +136,30 @@ h.run(async () => {
 
 	// 4) one run: float stays, riser rises, feather falls slower than plain
 	await place(A.page);
-	const run = await drop(A.page, 'tuned', 900, { stop: false });
+	const run = await drop(A.page, 'tuned', 2.5, { stop: false });
 	const floatBody = await debugOf(A.page, 'Float');
 	await A.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation({ reset: true }));
 	h.check(Math.abs(run.Float - 5) < 0.02, `gravity 0: the ball stays where it is (y ${run.Float.toFixed(3)})`);
 	h.check(floatBody?.gravityScale === 0, `the live body holds gravity scale 0 (${floatBody?.gravityScale})`);
 	h.check(run.Riser > 5.05, `gravity -0.5: the ball rises (y ${run.Riser.toFixed(3)})`);
-	h.check(run.Feather < 5 && run.Feather > run.Plain + 0.5, `air drag 5: it falls, far slower than the plain ball (${run.Feather.toFixed(2)} vs ${run.Plain.toFixed(2)})`);
+	h.check(run.Feather < 5 && 5 - run.Feather < 0.7 * (5 - run.Plain), `air drag 5: it falls, far slower than the plain ball (${run.Feather.toFixed(2)} vs ${run.Plain.toFixed(2)})`);
 
 	// 5) a PEER's own run reads the replicated values
 	await h.eventually(() => physicsOf(B.page, 'Feather'), (p) => p?.linearDamping === 5, 'premise: the peer holds the drag', 10000);
 	await place(B.page);
-	const peerRun = await drop(B.page, 'peer run', 900);
+	const peerRun = await drop(B.page, 'peer run', 2.5);
 	h.check(Math.abs(peerRun.Float - 5) < 0.02 && peerRun.Riser > 5.05, `the peer's run floats and lifts the same balls (${JSON.stringify(peerRun)})`);
 	await A.page.waitForTimeout(1500);
 
 	// 6) a mid-run change reaches the live body with no restart
 	await place(A.page);
-	await drop(A.page, 'live', 200, { stop: false });
+	await drop(A.page, 'live', 0.3, { stop: false });
 	const y0 = (await heights(A.page)).Float;
 	await A.page.evaluate((u) => window.__tp.test.v1.physics.setPhysicsFor(u.Float, { gravityScale: 1 }), ids);
-	await A.page.waitForTimeout(500);
-	const y1 = (await heights(A.page)).Float;
+	let y1 = y0;
+	await h.eventually(async () => (y1 = (await heights(A.page)).Float), (y) => y < y0 - 0.3, 'setting gravity 1 mid-run drops the floating ball with no restart', 30000);
 	await A.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation({ reset: true }));
-	h.check(y1 < y0 - 0.3, `setting gravity 1 mid-run drops the floating ball at once (${y0.toFixed(2)} -> ${y1.toFixed(2)})`);
+	h.check(y1 < y0 - 0.3, `the floating ball fell after the mid-run change (${y0.toFixed(2)} -> ${y1.toFixed(2)})`);
 
 	// 7) Reset = no key (the scene's value again); undo puts the value back
 	await A.page.evaluate((u) => window.__tp.test.v1.physics.setPhysicsFor(u.Float, { gravityScale: null }), ids);
@@ -148,10 +169,7 @@ h.run(async () => {
 	await A.page.evaluate((u) => window.__tp.test.v1.physics.setPhysicsFor(u.Float, { gravityScale: 0 }), ids);
 
 	// 8) reload: the values come back from the autosave (LAST — a reload gives A a new peer id)
-	await A.page.evaluate(() => window.__tp.test.v1.autosave.saveNow());
-	await A.page.waitForTimeout(1500);
-	await h.freshReload(A);
-	await h.answerRestore(A, 'restore');
+	await reloadAndRestore(A, [B]);
 	await h.eventually(() => physicsOf(A.page, 'Feather').catch(() => null), (p) => p?.linearDamping === 5, 'after a reload the air drag is back', 30000);
 	const reloaded = { float: await physicsOf(A.page, 'Float'), riser: await physicsOf(A.page, 'Riser') };
 	h.check(reloaded.float?.gravityScale === 0 && reloaded.riser?.gravityScale === -0.5, `and both gravity scales (${JSON.stringify(reloaded)})`);

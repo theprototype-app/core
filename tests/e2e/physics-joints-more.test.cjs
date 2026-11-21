@@ -12,6 +12,26 @@ const h = require('./helpers.cjs');
 const jointsOf = (page) =>
 	page.evaluate(() => new Promise((r) => window.__tp.test.v1.joints.sceneJoints.subscribe((j) => r(JSON.parse(JSON.stringify(j))))()));
 
+/** reload ALONE (peers closed first, so nothing can come back from them) and restore the autosave
+ * through restoreSnapshot (what the Restore button runs); long waits — a loaded slot boots slowly */
+async function reloadAndRestore(peer, others) {
+	for (const o of others) await o.ctx.close().catch(() => {});
+	await peer.page.evaluate(() => window.__tp.test.v1.autosave.saveNow());
+	await peer.page.waitForTimeout(2000);
+	await peer.page.reload({ waitUntil: 'domcontentloaded', timeout: 120000 });
+	await peer.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, null, { timeout: 180000 });
+	await peer.page.waitForFunction(
+		() => {
+			let v;
+			window.__tp.test.v1.autosave.restoreAvailable.subscribe((x) => (v = x))();
+			return !!v;
+		},
+		null,
+		{ timeout: 60000, polling: 250 }
+	);
+	await peer.page.evaluate(() => window.__tp.test.v1.autosave.restoreSnapshot());
+}
+
 h.run(async () => {
 	const browser = await h.launch();
 	{
@@ -198,10 +218,7 @@ h.run(async () => {
 	);
 
 	// ---- reload (LAST: a reload gives A a new peer id) -------------------------------------------
-	await A.page.evaluate(() => window.__tp.test.v1.autosave.saveNow());
-	await A.page.waitForTimeout(1500);
-	await h.freshReload(A);
-	await h.answerRestore(A, 'restore');
+	await reloadAndRestore(A, [B, C]);
 	await h.eventually(
 		() => jointsOf(A.page).catch(() => []),
 		(l) => expected.every((e) => JSON.stringify(l.find((d) => d.id === e.id)) === JSON.stringify(e)),

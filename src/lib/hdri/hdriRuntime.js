@@ -35,6 +35,7 @@ import { isVRMode } from '../../stores/sceneStore';
 import { hdriQuality } from './hdriPrefs.js';
 import { environment, presetPayload } from '../environment';
 import { createRenderTarget } from '../render/renderTargets.js'; // 101 F3: the one factory
+import { compileAsync } from '../render/compile.js'; // 101 F3: the one compileAsync
 
 const HALF_MAX = 65000; // a sun pixel past half-float range becomes Inf and NaNs the PMREM blur
 
@@ -222,7 +223,7 @@ async function recoverUltraHdr(renderer, buffer, maxWidth) {
 		await nextTask();
 		renderer.initTexture?.(gain);
 		await nextTask();
-		if (typeof renderer.compileAsync === 'function') await renderer.compileAsync(scene, camera);
+		await compileAsync(renderer, scene, camera);
 		await nextTask();
 	} catch {
 		/* the draw below uploads and compiles what is left, as before */

@@ -16,6 +16,7 @@
 		"perf-beacon": "reads a hosts-mapped preview origin",
 		"timeline-export": "needs the built app (scripts/serve-build.cjs), not the dev server",
 		"stale-chunk": "needs the built app (scripts/serve-build.cjs): vite's preload helper is build-only, so it only SKIPs on a dev server",
+		"stale-deploy-swap": "needs the built app: it serves build/ itself through a symlink it swaps (80a-fix4-ui aa); SKIPs without a build",
 		"text-export": "needs the built app (scripts/serve-build.cjs): the exporter reads build/export-manifest.json, so it only SKIPs on a dev server",
 		"levels-export": "needs the built app (scripts/serve-build.cjs): the exporter reads build/export-manifest.json, so it only SKIPs on a dev server"
 	},
@@ -330,6 +331,7 @@
 		"path-object": 480,
 		"no-webgl": 120,
 		"stale-chunk": 150,
+		"stale-deploy-swap": 180,
 		"model-replace": 540,
 		"sky-cdn": 180,
 		"sky-quality": 240,
@@ -1251,6 +1253,7 @@
 		"sim-on-play": false,
 		"sound-node": false,
 		"stale-chunk": false,
+		"stale-deploy-swap": false,
 		"starter-recipes-78": false,
 		"static-level-play": false,
 		"strip-follow-41b": false,

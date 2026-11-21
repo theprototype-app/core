@@ -28,6 +28,7 @@ export const NODE_DOCS = {
 	velocity: "Outputs how fast the connected object is moving right now, in metres per second.",
 	measure: "Reads a number off an object: how tall it is, where its top is, how fast it is going.",
 	spawn: "Makes copies of an object while the simulation runs - crates off a conveyor, targets, debris, ammo, waves of anything.",
+	decalstamp: "Presses a mark onto a surface - a footprint, a scorch, a paint splat - where the wired On Impact touched (or at a point you wire). Marks last for the run, the oldest go past the cap.",
 	flowinput: "Declares a public input socket for an object flow - the way the Scene flow feeds a value into an object's own graph.",
 	flowoutput: "Declares a public output socket for an object flow - the way an object publishes a value back to the Scene flow.",
 	objectflow: "Embeds an object's own graph into the Scene flow as a single card - the way to compose object flows into a bigger machine without opening each one.",

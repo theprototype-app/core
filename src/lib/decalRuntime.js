@@ -19,6 +19,7 @@ import { registerParkHook } from './parkHooks.js';
 import { TControls } from '../stores/sceneStore';
 import { showToast } from '../stores/appStore';
 import { sessionNow } from './sessionClock.js';
+import { simulating, remoteSimulating } from './physics.js';
 
 // 102 M3 — DECALS, the runtime. LOCAL per peer and never saved: only the record on the carrier
 // (and the carrier's transform) travels; every peer builds the same clipped surface from it and
@@ -510,6 +511,24 @@ export function clearDecalStamps() {
 	for (const s of stamps) dropStamp(s);
 	stamps = [];
 }
+
+// a run ending (here, or on the peer that stepped it) clears the marks it made
+let running = false;
+/** @param {boolean} now */
+function runEdge(now) {
+	if (running && !now) clearDecalStamps();
+	running = now;
+}
+let localRun = false;
+let remoteRun = false;
+simulating.subscribe((v) => {
+	localRun = !!v;
+	runEdge(localRun || remoteRun);
+});
+remoteSimulating.subscribe((v) => {
+	remoteRun = !!v;
+	runEdge(localRun || remoteRun);
+});
 
 /** @param {any} root @param {number} _now */
 function tickStamps(root, _now) {

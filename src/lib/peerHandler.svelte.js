@@ -1866,6 +1866,9 @@ export class PeerConnection {
 						// merged per node (newer stamp wins), and the merge marks the history
 						// epoch so nothing in it can be ACTED on — see triggerSync
 						applyRemoteTriggers(data);
+					} else if(data.type == 'decalstamp') {
+						// 102 M3: a mark the stepping peer stamped — every peer draws the same one
+						void import('$lib/decalStamp.js').then((m) => m.applyRemoteDecalStamp(data));
 					} else if(data.type == 'particleburst') {
 						// PFX-A: shared-timestamp burst — every peer seeds the identical
 						// particle burst from t (no re-broadcast)

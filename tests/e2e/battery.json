@@ -20,6 +20,9 @@
 		"levels-export": "needs the built app (scripts/serve-build.cjs): the exporter reads build/export-manifest.json, so it only SKIPs on a dev server"
 	},
 	"optional": {
+		"text-bake-peers": "joined from 80a-fix4-net (fix-batch-4 G5, 2026-11-20; two peers, ten bakes): not yet measured on a GitHub runner, so it reports and does not gate",
+		"people-after-join": "joined from 80a-fix4-net (fix-batch-4 G21, 2026-11-20; two peers, a timing check): not yet measured on a GitHub runner, so it reports and does not gate",
+		"towers-late-join": "joined from 80a-fix4-net (fix-batch-4 G18, 2026-11-20; two peers, the real Towers scene): not yet measured on a GitHub runner, so it reports and does not gate",
 		"path-object": "joined from 78-path (roadmap 78 F4 the Path object, 2026-11-09): not yet measured on a GitHub runner, so it reports and does not gate",
 		"play-link-devices": "joined from fix-play-link (device-lab play-link fixes, 2026-11-05; IWER Quest + folded/unfolded phone): not yet measured on a GitHub runner, so it reports and does not gate",
 		"play-entry": "joined from 94-play (roadmap 94 slim play runtime, 2026-11-03): not yet measured on a GitHub runner, so it reports and does not gate",
@@ -574,6 +577,9 @@
 		"game-state": 136,
 		"game-target-toss": 100,
 		"game-towers": 67,
+		"towers-late-join": 240,
+		"people-after-join": 160,
+		"text-bake-peers": 300,
 		"game-untangle": 86,
 		"game-waves": 106,
 		"gamepad-input": 102,

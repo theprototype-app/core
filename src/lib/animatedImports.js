@@ -1388,7 +1388,6 @@ function userDataFields(root) {
 	}
 }
 
-/** what an objectfile / save entry's `userData` puts back on the parsed root @param {any} root @param {any} rows */
 /** a peer's rows never say whether an object is a draft here @param {any} rows */
 function withoutDraftFlag(rows) {
 	if (!rows || typeof rows !== 'object' || Array.isArray(rows) || !('__localOnly' in rows)) return rows;
@@ -1396,6 +1395,7 @@ function withoutDraftFlag(rows) {
 	return rest;
 }
 
+/** what an objectfile / save entry's `userData` puts back on the parsed root @param {any} root @param {any} rows */
 function applyUserDataFields(root, rows) {
 	if (!rows || typeof rows !== 'object' || Array.isArray(rows)) return;
 	for (const key of Object.keys(rows)) if (!CARRIED_ELSEWHERE.has(key)) root.userData[key] = rows[key];

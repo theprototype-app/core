@@ -2528,6 +2528,8 @@ function stampOfSource(edge, ctx, seen) {
 	// 36 (U10): a NAMED event output keeps its own log entry, `<node>#<output>` (a behaviour's
 	// `this.emit('holeSunk')`) — several events on one node, each its own stamp
 	if (edge.sourceHandle && source?.type === 'behaviour') return ctx?.triggers?.[edge.source + '#' + edge.sourceHandle]?.lastT ?? null;
+	// 102b-papercuts: a Script node's EVENT output is its own entry too (updateScriptEvents)
+	if (edge.sourceHandle && source?.type === 'script') return ctx?.triggers?.[edge.source + '#' + edge.sourceHandle]?.lastT ?? null;
 	// 78 F3: a Toggle Animation's opened / closed are its own entries too (derived on every peer)
 	if (source?.type === 'toggleanim') return edge.sourceHandle === 'opened' || edge.sourceHandle === 'closed' ? (ctx?.triggers?.[edge.source + '#' + edge.sourceHandle]?.lastT ?? null) : null;
 	return ctx?.triggers?.[edge.source]?.lastT ?? null;
@@ -2679,6 +2681,44 @@ function updateDerivedPulses(ctx, fired = scheduledFired) {
 	for (const key of [...fired.keys()])
 		if (!nodes.some((/** @type {any} */ n) => n.id === key.slice(0, key.lastIndexOf('|'))))
 			fired.delete(key);
+}
+
+/** 102b-papercuts: the last truthiness of each Script event output, keyed `<node>#<output>`. LOCAL:
+ * every peer runs the same pure code against the same replicated inputs and clock. @type {Map<string, boolean>} */
+const scriptEventLevels = new Map();
+
+/**
+ * 102b-papercuts (scout row 18, "a script cannot fire an event"): a Script node with an output of
+ * type `event` fires it when the value its code returns for that output turns true. The pulse is
+ * stamped as `<node>#<output>` (the behaviour emit shape, so stampOfSource and the PUSH walk in
+ * nextTriggerLog already know it) with `replicate: false` — the Delay / Once rule: the code is a
+ * pure function of replicated inputs and the synced clock, so each peer sees the same edge and a
+ * broadcast would count it once per peer. The FIRST reading only seeds (a joiner, or a load, must
+ * not fire an event that is merely already true). Costs nothing while no script declares one.
+ * @param {number} time @param {any} ctx
+ */
+function updateScriptEvents(time, ctx) {
+	let any = false;
+	for (const node of nodes) {
+		if (node.type !== 'script' || !Array.isArray(node.data?.outputs)) continue;
+		const events = scriptOutputs(node.data).filter((o) => o.type === 'event');
+		if (!events.length) continue;
+		any = true;
+		const value = evalNode(node, nodes, edges, time, new Set(), ctx);
+		const handles = value && typeof value === 'object' ? value.__handles : null;
+		for (const o of events) {
+			const key = node.id + '#' + o.name;
+			const level = !!handles?.[o.name];
+			const prev = scriptEventLevels.get(key);
+			scriptEventLevels.set(key, level);
+			if (prev === false && level) applyNodeTrigger(key, time, false);
+		}
+	}
+	if (!any && !scriptEventLevels.size) return;
+	for (const key of [...scriptEventLevels.keys()]) {
+		const id = key.slice(0, key.indexOf('#'));
+		if (!nodes.some((/** @type {any} */ n) => n.id === id)) scriptEventLevels.delete(key);
+	}
 }
 
 /** The shared timestamp of whatever event is wired into this node's `trigger`
@@ -5586,6 +5626,8 @@ function runTick(now) {
 	// the bump on the NEXT tick - one frame, the same latency every derived reaction
 	// in this file has.
 	updateDerivedPulses(ctx, paused ? viewScheduled : scheduledFired);
+	// 102b-papercuts: a Script node's event outputs (never while the debugger holds a pause)
+	if (!paused) updateScriptEvents(time, ctx);
 	// ONE prune for the shared stale-stamp cutoffs, after every family has had its turn
 	// to register this tick's nodes (physics runs first, then game, then character)
 	pruneActionSeenAt();

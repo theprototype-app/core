@@ -97,10 +97,14 @@ export function tooLargeMessage(floats, noun = 'edit') {
 	return `That ${noun} is too large to sync — ${verts} vertices, and the limit is ${max}`;
 }
 
-/** Rough byte cost of one history entry's geometry payload — what `HISTORY_BYTES`
- * counts. Arrays are float64 in JS but travel/store as float32, so 4 bytes per
- * element is the honest wire-shaped figure; anything unrecognised counts as 0
- * (a transform or a selection entry is noise next to a geometry one).
+/** Byte cost of one history entry's geometry payload — what `HISTORY_BYTES` counts.
+ * 99 K2: the bytes history really HOLDS. Every `meshgeo` producer records through the commit
+ * service (faceEdit `commitMesh` / `recordMeshGeo`), which keeps typed arrays (`meshCommit.
+ * compactMeshState`: Float32 positions / uvs / colours, the face partition as packed Int32, the
+ * kernel's Int32 ID channels), so a typed array counts its `byteLength`. A plain number array is
+ * counted as the Float32 it is stored as (4 bytes per element) — before K2 history kept such
+ * arrays as they came, at 8 bytes per number in V8, and counted them at 4. Anything
+ * unrecognised counts as 0 (a transform or a selection entry is noise next to a geometry one).
  * @param {any} entry */
 export function entryBytes(entry) {
 	if (!entry) return 0;
@@ -111,18 +115,21 @@ export function entryBytes(entry) {
 	return total;
 }
 
+/** @param {any} value */
+function arrayBytes(value) {
+	if (Array.isArray(value)) return value.length * 4;
+	return value?.byteLength ?? 0;
+}
+
 /** @param {any} state */
 function stateBytes(state) {
 	if (!state) return 0;
-	if (Array.isArray(state)) return state.length * 4; // a bare positions array
+	if (Array.isArray(state) || ArrayBuffer.isView(state)) return arrayBytes(state); // a bare positions array
 	if (typeof state !== 'object') return 0;
 	let total = 0;
-	for (const key of ['positions', 'uvs', 'faceTris', 'faceCounts']) {
-		const value = state[key];
-		if (Array.isArray(value)) total += value.length * 4;
-		else if (value?.byteLength) total += value.byteLength;
-	}
+	for (const key of ['positions', 'uvs', 'colors', 'faceTris', 'faceCounts']) total += arrayBytes(state[key]);
 	if (Array.isArray(state.faces))
 		for (const face of state.faces) total += (face?.length ?? 0) * 4;
+	if (state.ids) total += arrayBytes(state.ids.cornerVertex) + arrayBytes(state.ids.triFace);
 	return total;
 }

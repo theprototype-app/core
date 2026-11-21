@@ -34,6 +34,8 @@ import { viewPrefs, editWireOverride } from './viewPrefs';
 import { canvasRect } from './canvasRect';
 // The size ceilings, and the measurement behind them. Another import-nothing leaf.
 import { MAX_SNAPSHOT, previewReplicable, tooLargeMessage } from './meshBudget';
+// 99 K2: the one commit shape + the one meshgeo sender (pure half of commitMesh)
+import { compactMeshState, sendMeshGeo, stateFaceFields } from './meshCommit';
 import { editOverlaysParked } from './editOverlays';
 // 19-A P3: the desktop pane's extrude/inset extras, read at BEGIN so a click-
 // extrude matches the toolbox's Apply. meshToolParams is a svelte/store-only
@@ -8189,34 +8191,105 @@ function withFaces(state) {
 	return faces ? { ...state, faces } : state;
 }
 
-/** @param {string} uuid @param {number[]} positions @param {any[] | null} [groups]
- * @param {number[] | null} [uvs] @param {ArrayLike<number> | null} [colors] */
+/** @param {string} uuid @param {ArrayLike<number>} positions @param {any[] | null} [groups]
+ * @param {ArrayLike<number> | null} [uvs] @param {ArrayLike<number> | null} [colors] */
 function broadcastMeshGeo(uuid, positions, groups, uvs, colors) {
-	/** @type {any} */
-	const peer = get(peers);
 	// P9: the topology rides as OPTIONAL sibling fields read off the object we just
 	// committed to — that is the partition by construction, so no call site has to
 	// thread it through. An older peer ignores the fields and re-derives, exactly as it
 	// does today: absent topology is never WRONG, only less capable.
-	const faceFields = facesWireFields(readStoredFaces(lookupEditable(uuid)?.geometry));
-	// raw Float32 BYTES, not a plain number array: binarypack recurses per
-	// element and blows the call stack on big arrays (a 48-seg terrain snapshot
-	// = 41k numbers silently vanished — broadcast() catches the throw), and
-	// bytes are ~half the wire size anyway. applyMeshGeo accepts either shape.
-	// `groups` is a handful of small objects — safe as a plain value, and absent
-	// entirely for the single-material case (an older peer simply ignores it)
-	// M1: `uvs` ride as raw bytes too, and only for a textured mesh
-	if (peer)
-		peer.send({
-			type: 'meshgeo',
-			uuid: uuid,
-			positions: new Float32Array(positions).buffer,
-			...(groups?.length ? { groups } : {}),
-			...(uvs?.length ? { uvs: new Float32Array(uvs).buffer } : {}),
-			// mcp-shapes: per-vertex colours, raw bytes, only when the commit carries them (create_mesh colors)
-			...(colors?.length ? { colors: new Float32Array(colors).buffer } : {}),
-			...faceFields
-		});
+	// The bytes (raw Float32, optional fields only when present) are meshCommit's one sender.
+	if (!get(peers)) return;
+	sendMeshGeo(uuid, positions, {
+		groups,
+		uvs,
+		colors,
+		faceFields: facesWireFields(readStoredFaces(lookupEditable(uuid)?.geometry))
+	});
+}
+
+/**
+ * 99 K2: THE mesh commit — snapshot -> apply -> broadcast -> record, in one place. Every
+ * operator, the vertex tools, sculpt, the UV editor, the agent tools and the history replay's
+ * sender used to run their own copy of these four steps (about twenty-five of them); they all
+ * call this now, and each keeps exactly the message and the history entry it produced before.
+ *
+ * - snapshot: `before` is the caller's (taken before it mutated anything); both sides are
+ *   kept as `compactMeshState` typed arrays, so history counts the bytes it really holds.
+ * - apply: `'session'` swaps the live face session's geometry (applyGeometrySnapshot:
+ *   overlays, face cache, wireframe); `'object'` swaps any object's (applyMeshGeo).
+ * - broadcast: one `meshgeo` through meshCommit's sender, the topology read off the object
+ *   just applied to (`wireFaces: 'object'`) or not sent at all (`'none'`, the UV editor's
+ *   message, which never carried it).
+ * - record: `'op'` (recordOp: the live-symmetry operator boundary), `'entry'` (recordEntry)
+ *   or false (the caller owns the entry: the live mirror rewrites one, the adjust engine
+ *   records at its own moment).
+ *
+ * @param {{
+ *   uuid?: string,
+ *   before?: any,
+ *   after: any,
+ *   apply: 'session' | 'object',
+ *   faces?: number[][] | null,
+ *   record?: 'op' | 'entry' | false,
+ *   cap?: string | false,
+ *   stampFaces?: boolean,
+ *   carryColors?: boolean,
+ *   wireFaces?: 'object' | 'none'
+ * }} c `after` = `{positions, groups?, uvs?, colors?}` or a bare positions array; `faces` = the
+ *   partition the operator AUTHORED (applied as stored topology; absent = carry or derive);
+ *   `cap` = the noun of the size refusal (false: the caller already refused); `stampFaces` =
+ *   record the stored partition the apply left (withFaces, A5); `carryColors` = keep a
+ *   coloured mesh's colours in both sides (commitMeshGeoTriple's rule).
+ * @returns {{ kind: 'meshgeo', uuid: string, before: any, after: any } | null} the entry
+ *   (recorded unless `record` is false), or null when the size cap refused the commit
+ */
+export function commitMesh(c) {
+	const uuid = c.uuid ?? faceEdited?.uuid;
+	if (!uuid) return null;
+	let after = c.after;
+	const bare = Array.isArray(after) || ArrayBuffer.isView(after);
+	const positions = bare ? after : after.positions;
+	if (c.cap !== false && positions.length > MAX_SNAPSHOT) {
+		showToast(tooLargeMessage(positions.length, c.cap || 'edit'));
+		return null;
+	}
+	let before = c.before;
+	const groups = bare ? undefined : after.groups;
+	const uvs = bare ? undefined : after.uvs;
+	if (c.apply === 'session') {
+		applyGeometrySnapshot(positions, groups, uvs, c.faces);
+	} else if (bare) {
+		applyMeshGeo(uuid, positions);
+	} else {
+		// mcp-shapes: a coloured mesh's colours go into BOTH sides of the entry, so an undo brings them back exactly
+		// (an op's own snapshots are positions/groups/uvs only)
+		const had = c.carryColors ? lookupEditable(uuid)?.geometry?.attributes?.color : null;
+		if (had && before && typeof before === 'object' && before.colors == null && before.positions?.length === had.count * 3) before = { ...before, colors: Array.from(had.array) };
+		const packed = c.faces?.length ? packFaces(c.faces) : null;
+		applyMeshGeo(uuid, positions, groups, uvs, packed?.faceCounts, packed?.faceTris, after.colors);
+		const now = c.carryColors ? lookupEditable(uuid)?.geometry?.attributes?.color : null;
+		if (now && after.colors == null) after = { ...after, colors: Array.from(now.array) };
+	}
+	if (c.wireFaces === 'none') sendMeshGeo(uuid, positions, { groups, uvs });
+	else broadcastMeshGeo(uuid, positions, groups, uvs, bare ? undefined : after.colors);
+	if (c.stampFaces) after = withFacesOn(c.apply === 'session' ? faceEdited : lookupEditable(uuid), { positions, groups, uvs });
+	const entry = /** @type {const} */ ({ kind: 'meshgeo', uuid, before: compactMeshState(before), after: compactMeshState(after) });
+	if (c.record === 'op') recordOp(entry);
+	else if (c.record === 'entry') recordEntry(entry);
+	return entry;
+}
+
+/**
+ * 99 K2: record a `meshgeo` entry for a change already applied and sent (a vertex drag streams
+ * its own previews and lands in place): the record step of `commitMesh` alone, so every
+ * producer stores the same compact shape.
+ * @param {string} uuid @param {any} before @param {any} after @param {boolean} [op] (37 R11)
+ */
+export function recordMeshGeo(uuid, before, after, op = false) {
+	const entry = { kind: 'meshgeo', uuid, before: compactMeshState(before), after: compactMeshState(after) };
+	(op ? recordOp : recordEntry)(entry);
+	return entry;
 }
 
 /**
@@ -9847,23 +9920,12 @@ registerHistoryKind('meshgeo', (entry, state) => {
 	const uvs = state?.positions ? state.uvs : undefined;
 	const colors = state?.positions ? state.colors : undefined; // mcp-shapes
 	// P9: topology travels INSIDE the state object (A5), and only for producers that
-	// authored one. Packed here so the replay and the re-broadcast agree byte for byte.
-	const packed = state?.faces ? packFaces(state.faces) : null;
+	// authored one. Packed here so the replay and the re-broadcast agree byte for byte
+	// (99 K2: history keeps it packed already — `faceCounts`/`faceTris` — or as `faces`).
+	const packed = stateFaceFields(state);
 	applyMeshGeo(entry.uuid, positions, groups, uvs, packed?.faceCounts, packed?.faceTris, colors);
-	// same raw-bytes wire format as broadcastMeshGeo (big plain arrays blow
-	// binarypack's recursion and the replay would silently not replicate)
-	/** @type {any} */
-	const peer = get(peers);
-	if (peer)
-		peer.send({
-			type: 'meshgeo',
-			uuid: entry.uuid,
-			positions: new Float32Array(positions).buffer,
-			...(groups?.length ? { groups } : {}),
-			...(uvs?.length ? { uvs: new Float32Array(uvs).buffer } : {}),
-			...(colors?.length ? { colors: new Float32Array(colors).buffer } : {}),
-			...(packed ? packed : {})
-		});
+	// the one meshgeo sender; the topology is the STATE's, never the object's carry-over
+	sendMeshGeo(entry.uuid, positions, { groups, uvs, colors, faceFields: packed });
 	return true;
 });
 

@@ -1848,7 +1848,7 @@ const PHYSICS_AI_TOOLS = [
 		function: {
 			name: 'create_joints',
 			description:
-				'Attach object pairs with physics joints: "fixed" welds them rigidly, "revolute" hinges around an axis (optional motor spins it). Move parts to their final pose WORLD-ALIGNED (no rotation) before jointing. Without anchor a hinge sits at b\'s origin (its centre) and a weld midway: pass anchor [x,y,z] (world) for the real pivot, e.g. the top of a pendulum rod or a door\'s edge. Jointed bodies that touch (a door in its frame, a wheel in its arch) also need contacts:false, or the solver pushes them apart.',
+				'Attach object pairs with physics joints: "fixed" welds them rigidly, "revolute" hinges around an axis (optional motor spins it), "ball" lets b swing and twist freely about one point (a ragdoll shoulder, a wrecking ball on a rod), "slider" lets b move only along a\'s axis (a piston, a drawer, an elevator; limits in metres), "spring" pulls the two toward rest metres apart (a bouncy seat, a car suspension), "rope" lets them get no further than length metres apart and never pushes (a hanging lamp, a rope bridge plank). Move parts to their final pose WORLD-ALIGNED (no rotation) before jointing. Without anchor a hinge sits at b\'s origin (its centre) and a weld midway: pass anchor [x,y,z] (world) for the real pivot, e.g. the top of a pendulum rod or a door\'s edge. Jointed bodies that touch (a door in its frame, a wheel in its arch) also need contacts:false, or the solver pushes them apart.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1857,10 +1857,10 @@ const PHYSICS_AI_TOOLS = [
 						items: {
 							type: 'object',
 							properties: {
-								kind: { type: 'string', enum: ['fixed', 'revolute'] },
+								kind: { type: 'string', enum: ['fixed', 'revolute', 'ball', 'slider', 'spring', 'rope'] },
 								a: { type: 'string', description: 'uuid of the base object' },
-								b: { type: 'string', description: 'uuid of the attached object (hinge anchors at its origin)' },
-								axis: { type: 'string', enum: ['x', 'y', 'z'], description: 'hinge axis (revolute only, default y)' },
+								b: { type: 'string', description: 'uuid of the attached object (hinge, ball and slider anchor at its origin)' },
+								axis: { type: 'string', enum: ['x', 'y', 'z'], description: 'hinge or slider axis, a\'s local axis (revolute and slider only, default y)' },
 								anchor: {
 									type: 'array',
 									items: { type: 'number' },
@@ -1870,8 +1870,17 @@ const PHYSICS_AI_TOOLS = [
 								limits: {
 									type: 'array',
 									items: { type: 'number' },
-									description: 'revolute only: [min, max] radians the hinge may turn'
+									description: 'revolute: [min, max] radians the hinge may turn; slider: [min, max] metres b may move along the axis'
 								},
+								anchors: {
+									type: 'array',
+									items: { type: 'array', items: { type: 'number' } },
+									description: 'spring and rope only: [[x,y,z] on a, [x,y,z] on b] world points the spring or rope ties (default: the two origins)'
+								},
+								rest: { type: 'number', description: 'spring only: rest length in metres (default: the current distance)' },
+								stiffness: { type: 'number', description: 'spring only: how hard it pulls (default 50; 10 soft, 500 stiff)' },
+								damping: { type: 'number', description: 'spring only: how fast the bounce dies (default 2)' },
+								length: { type: 'number', description: 'rope only: maximum distance in metres (default: the current distance)' },
 								motor: {
 									type: 'object',
 									description: 'revolute only: {vel: rad/s, maxForce}',
@@ -1980,7 +1989,8 @@ export function buildSystemPrompt(opts) {
 				'Physics: objects made with create_objects are STATIC (they stay put in Play) unless you',
 				'create them with physics "dynamic" or a mass — then they fall and collide once a',
 				'simulation runs. Use set_physics to make existing objects dynamic, tune bodies or pin',
-				'scenery. create_joints welds (fixed) or hinges (revolute, optional motor) pairs:',
+				'scenery; its gravityScale / linearDamping make one body float, rise or drift down slowly.',
+				'create_joints welds (fixed), hinges (revolute, optional motor), ball, slider, spring or rope pairs:',
 				'assemble parts at their final pose WORLD-ALIGNED (no rotation) BEFORE jointing, or the',
 				'hinge axis is wrong and the solver launches the assembly. Give a hinge its pivot with',
 				'anchor [x,y,z] (default: b\'s origin) and contacts:false for parts that touch. A door =',

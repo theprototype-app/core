@@ -45,3 +45,128 @@ export function bodyTuningPatch(input) {
 	}
 	return out;
 }
+
+// ---- joints (102b row 2) -----------------------------------------------------------------------
+// The canonical kinds are rapier's own joint names. `weld` was stored verbatim by the Joint node and
+// the module SDK before 102b and still builds as a fixed joint, so it stays a known kind.
+
+/** @typedef {'fixed'|'revolute'|'spherical'|'prismatic'|'spring'|'rope'} JointKind */
+export const JOINT_KINDS = /** @type {const} */ (['fixed', 'revolute', 'spherical', 'prismatic', 'spring', 'rope']);
+
+/** What people call each kind (UI labels, agent words). */
+export const JOINT_LABELS = {
+	fixed: 'Weld',
+	revolute: 'Hinge',
+	spherical: 'Ball',
+	prismatic: 'Slider',
+	spring: 'Spring',
+	rope: 'Rope'
+};
+
+/** @type {Record<string, JointKind>} */
+const JOINT_ALIASES = {
+	fixed: 'fixed',
+	weld: 'fixed',
+	revolute: 'revolute',
+	hinge: 'revolute',
+	spherical: 'spherical',
+	ball: 'spherical',
+	socket: 'spherical',
+	'ball-socket': 'spherical',
+	prismatic: 'prismatic',
+	slider: 'prismatic',
+	piston: 'prismatic',
+	spring: 'spring',
+	rope: 'rope',
+	chain: 'rope'
+};
+
+/** A caller's joint word as a canonical kind, or null. @param {any} raw @returns {JointKind|null} */
+export function jointKindOf(raw) {
+	const key = String(raw ?? '').trim().toLowerCase();
+	return Object.prototype.hasOwnProperty.call(JOINT_ALIASES, key) ? JOINT_ALIASES[key] : null;
+}
+
+/** Kinds whose anchor is ONE point (on b's origin by default) vs TWO (a's and b's origins). */
+export const TWO_POINT_KINDS = /** @type {const} */ (['spring', 'rope']);
+/** Kinds that have an axis (a's local x / y / z). */
+export const AXIS_KINDS = /** @type {const} */ (['revolute', 'prismatic']);
+
+export const SPRING_DEFAULTS = { stiffness: 50, damping: 2 };
+export const JOINT_RANGE = {
+	slide: [-100, 100], // prismatic limits, metres
+	rest: [0, 1000],
+	stiffness: [0, 100000],
+	damping: [0, 1000],
+	length: [0.01, 1000]
+};
+
+/** @param {number} v @param {number[]} r */
+const clampTo = (v, r) => Math.min(Math.max(v, r[0]), r[1]);
+const fin = (/** @type {any} */ v) => typeof v === 'number' && Number.isFinite(v);
+
+/** A [min, max] pair, ordered and clamped, or null. @param {any} l @param {number[]} range */
+function limitsOf(l, range) {
+	if (!Array.isArray(l) || l.length !== 2 || !l.every(fin) || l[0] > l[1]) return null;
+	return [clampTo(l[0], range), clampTo(l[1], range)];
+}
+
+/**
+ * The kind-specific fields a NEW joint gets: slider limits, the spring's rest length, stiffness and
+ * damping, the rope's maximum length. `distance` = how far apart the two anchors are now, which is
+ * the default rest length and rope length (the pair starts at rest / with the rope just taut).
+ * @param {JointKind} kind @param {any} input @param {number} distance
+ * @returns {Record<string, any>}
+ */
+export function jointParamsFor(kind, input, distance) {
+	const o = input && typeof input === 'object' ? input : {};
+	const d = fin(distance) ? distance : 1;
+	if (kind === 'prismatic') {
+		const limits = limitsOf(o.limits, JOINT_RANGE.slide);
+		return limits ? { limits } : {};
+	}
+	if (kind === 'spring')
+		return {
+			rest: clampTo(fin(o.rest) ? o.rest : d, JOINT_RANGE.rest),
+			stiffness: clampTo(fin(o.stiffness) ? o.stiffness : SPRING_DEFAULTS.stiffness, JOINT_RANGE.stiffness),
+			damping: clampTo(fin(o.damping) ? o.damping : SPRING_DEFAULTS.damping, JOINT_RANGE.damping)
+		};
+	if (kind === 'rope') return { length: clampTo(fin(o.length) ? o.length : d, JOINT_RANGE.length) };
+	return {};
+}
+
+/**
+ * An edit to an existing joint, as the next def (a NEW object; null = nothing valid in the patch).
+ * Only fields that mean something for the joint's kind are taken. `limits: null` clears limits.
+ * `axis` 'x'|'y'|'z' re-points a hinge or slider along a's local axis.
+ * @param {any} def @param {any} patch @returns {any|null}
+ */
+export function jointEditPatch(def, patch) {
+	if (!def || !patch || typeof patch !== 'object') return null;
+	const kind = jointKindOf(def.kind);
+	if (!kind) return null;
+	const next = { ...def };
+	let changed = false;
+	const set = (/** @type {string} */ key, /** @type {any} */ value) => {
+		if (value === undefined) delete next[key];
+		else next[key] = value;
+		changed = true;
+	};
+	if (AXIS_KINDS.includes(/** @type {any} */ (kind)) && ['x', 'y', 'z'].includes(patch.axis))
+		set('axisA', patch.axis === 'x' ? [1, 0, 0] : patch.axis === 'z' ? [0, 0, 1] : [0, 1, 0]);
+	if ((kind === 'revolute' || kind === 'prismatic') && 'limits' in patch) {
+		if (patch.limits === null) set('limits', undefined);
+		else {
+			const l = limitsOf(patch.limits, kind === 'prismatic' ? JOINT_RANGE.slide : [-2 * Math.PI, 2 * Math.PI]);
+			if (l) set('limits', l);
+		}
+	}
+	if (kind === 'spring') {
+		if (fin(patch.rest)) set('rest', clampTo(patch.rest, JOINT_RANGE.rest));
+		if (fin(patch.stiffness)) set('stiffness', clampTo(patch.stiffness, JOINT_RANGE.stiffness));
+		if (fin(patch.damping)) set('damping', clampTo(patch.damping, JOINT_RANGE.damping));
+	}
+	if (kind === 'rope' && fin(patch.length)) set('length', clampTo(patch.length, JOINT_RANGE.length));
+	if (typeof patch.contacts === 'boolean') set('contacts', patch.contacts ? undefined : false);
+	return changed ? next : null;
+}

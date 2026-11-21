@@ -42,7 +42,8 @@ export function sdkPhysics(ctx) {
 			 * (history entry + objectParameters + live collider rebuild).
 			 * @param {string} uuid @param {any} patch */
 			set: (uuid, patch) => physicsApi()?.setPhysicsFor(uuid, patch),
-			/** Replicated joint (P-B): 'weld' | 'revolute', anchored in OBJECT-local
+			/** Replicated joint (P-B): 'weld' | 'revolute' (102b: + 'ball' | 'slider' | 'spring' | 'rope',
+			 * opts `{limits, anchors, rest, stiffness, damping, length}`), anchored in OBJECT-local
 			 * space. 37-fx: `motor` may be `{pos, stiffness, damping}` (an angle motor), and
 			 * `opts` `{limits: [min, max] radians, contacts: false, sparks: false}`.
 			 * @param {string} kind @param {string} a @param {string} b

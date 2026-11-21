@@ -25,7 +25,7 @@ import {
 	simulationGaps
 } from '$lib/physics';
 import { createJoint } from '$lib/joints';
-import { bodyTuningPatch } from '$lib/physicsTuning.js'; // 102b
+import { bodyTuningPatch, jointKindOf } from '$lib/physicsTuning.js'; // 102b
 import { scriptNodeWarnings } from './scriptNotes.js';
 import { isGroupId, normalizeCollidesWith } from '$lib/collisionGroups'; // 36 X5
 import { parseGraphText } from '$lib/graphText';
@@ -734,15 +734,10 @@ export function createJointsTool(args) {
 	if (!specs.length)
 		return { error: 'no joints provided — pass joints: [{ kind: "fixed"|"revolute", a, b }]' };
 	const results = specs.map((/** @type {any} */ j) => {
-		const rawKind = String(j?.kind ?? '').toLowerCase();
-		const kind =
-			rawKind === 'fixed' || rawKind === 'weld'
-				? 'fixed'
-				: rawKind === 'revolute' || rawKind === 'hinge'
-					? 'revolute'
-					: null;
+		// 102b: ball / slider / spring / rope beside weld and hinge (rapier's own joints)
+		const kind = jointKindOf(j?.kind);
 		if (!kind)
-			return { error: 'unknown joint kind "' + j?.kind + '" — use fixed (weld) or revolute (hinge)' };
+			return { error: 'unknown joint kind "' + j?.kind + '" — use fixed (weld), revolute (hinge), ball, slider, spring or rope' };
 		const a = j?.a;
 		const b = j?.b;
 		if (!a || !objectOf(a)) return { error: 'joint "a" object not found: ' + a };
@@ -765,13 +760,20 @@ export function createJointsTool(args) {
 			Array.isArray(j?.anchor) && j.anchor.length === 3 && j.anchor.every((/** @type {any} */ n) => Number.isFinite(n))
 				? j.anchor
 				: undefined;
-		const def = createJoint(/** @type {'fixed'|'revolute'} */ (kind), a, b, axis, motor, {
+		const def = createJoint(kind, a, b, axis, motor, {
 			...(anchor ? { anchor } : {}),
 			...(j?.contacts === false ? { contacts: false } : {}),
-			...(Array.isArray(j?.limits) ? { limits: j.limits } : {})
+			...(Array.isArray(j?.limits) ? { limits: j.limits } : {}),
+			...(Array.isArray(j?.anchors) ? { anchors: j.anchors } : {}),
+			...['rest', 'stiffness', 'damping', 'length'].reduce((o, k) => (Number.isFinite(j?.[k]) ? { ...o, [k]: j[k] } : o), {})
 		});
 		if (!def) return { error: 'joint creation failed', a, b };
-		return { id: def.id, kind, a, b, ...(def.contacts === false ? { contacts: false } : {}) };
+		/** what the joint really got (defaults filled in), so the model can say it and tune it */
+		const got = ['limits', 'rest', 'stiffness', 'damping', 'length'].reduce(
+			(o, k) => (/** @type {any} */ (def)[k] !== undefined ? { ...o, [k]: /** @type {any} */ (def)[k] } : o),
+			{}
+		);
+		return { id: def.id, kind, a, b, ...got, ...(def.contacts === false ? { contacts: false } : {}) };
 	});
 	if (results.every((/** @type {any} */ r) => r.error))
 		return { error: 'nothing was attached: ' + results[0].error, joints: results };

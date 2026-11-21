@@ -672,7 +672,36 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 											tooltip:
 												'Revolute joint about the first object’s local ' + axis.toUpperCase() + ' axis, anchored at the second object',
 											action: () => createJoint('revolute', targets[0], targets[1], /** @type {'x'|'y'|'z'} */ (axis))
-										}))
+										})),
+										// 102b: rapier's ball, slider, spring and rope joints (tune them in Properties ▸ Physics ▸ Joints)
+										{
+											label: 'Ball joint',
+											icon: 'tool:joint-ball',
+											tooltip: 'Ball and socket — the second object swings and twists freely about its own origin',
+											action: () => createJoint('spherical', targets[0], targets[1])
+										},
+										{
+											label: 'Slider',
+											icon: 'tool:joint-slider',
+											tooltip: 'The second object moves only along one of the first object’s local axes (a piston, a drawer)',
+											children: ['x', 'y', 'z'].map((axis) => ({
+												label: `${axis.toUpperCase()} axis`,
+												tooltip: 'Slide along the first object’s local ' + axis.toUpperCase() + ' axis; set limits in Properties',
+												action: () => createJoint('prismatic', targets[0], targets[1], /** @type {'x'|'y'|'z'} */ (axis))
+											}))
+										},
+										{
+											label: 'Spring',
+											icon: 'tool:joint-spring',
+											tooltip: 'Pulls the two origins back to the distance they have now — tune stiffness in Properties',
+											action: () => createJoint('spring', targets[0], targets[1])
+										},
+										{
+											label: 'Rope',
+											icon: 'tool:joint-rope',
+											tooltip: 'The two origins can get no further apart than they are now, and come closer freely',
+											action: () => createJoint('rope', targets[0], targets[1])
+										}
 									]
 								: []),
 							...(jointsFor(targets).length

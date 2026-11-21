@@ -355,6 +355,7 @@ export const DEBUG_HOOKS = [
 	['playSettings', () => import('./playSettings')],
 	['colliderSpec', () => import('./colliderSpec')],
 	['colliderHelpers', () => import('./colliderHelpers')],
+	['jointHelpers', () => import('./jointHelpers')],
 	['colliderDecompose', () => import('./colliderDecompose')],
 	['colliderEdit', () => import('./colliderEdit')],
 	['editSession', () => import('./editSession')],

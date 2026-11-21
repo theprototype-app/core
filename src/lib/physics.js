@@ -106,6 +106,8 @@ let bodies = [];
 /** @type {{uuid: string, before: any}[]} */ let beforeStates = [];
 /** @type {Map<string, any>} joint def id -> live rapier impulse joint (P-B) */
 let liveJoints = new Map();
+/** @type {Map<string, string>} 102b: joint def id -> the def (JSON) its live joint was built from */
+const liveJointDefs = new Map();
 /** @type {Map<string, any>} uuid -> FIXED body (scenery a joint may pin to) */
 let fixedBodies = new Map();
 /** @type {string[]} dynamic+animated uuids whose effects we suspended for the run */
@@ -276,13 +278,6 @@ export function simulationGaps() {
 	return { nested, lockedOut };
 }
 
-/**
- * Per-object physics params. Source of truth = object.userData.physics
- * {mode:'auto'|'static'|'dynamic', mass, restitution, friction, collider}
- * (replicates free via object sync / GLTF extras / sessions), seeded first;
- * flow nodes (mass/bounciness/friction -> objectselector) OVERRIDE it, so
- * existing graphs behave byte-identically. @param {any} group
- */
 /** 102b: push the resolved tuning onto a live dynamic body. @param {any} body @param {any} p @param {any} defaults */
 function applyBodyTuning(body, p, defaults) {
 	const t = bodyTuningOf(p, defaults);
@@ -292,6 +287,13 @@ function applyBodyTuning(body, p, defaults) {
 	if (body.gravityScale?.() !== t.gravityScale) body.setGravityScale(t.gravityScale, true);
 }
 
+/**
+ * Per-object physics params. Source of truth = object.userData.physics
+ * {mode:'auto'|'static'|'dynamic', mass, restitution, friction, collider}
+ * (replicates free via object sync / GLTF extras / sessions), seeded first;
+ * flow nodes (mass/bounciness/friction -> objectselector) OVERRIDE it, so
+ * existing graphs behave byte-identically. @param {any} group
+ */
 function collectParams(group) {
 	/** @type {Record<string, any>} */
 	const map = {};
@@ -452,19 +454,34 @@ function buildLiveJoint(def) {
 	const a1 = bodyLocal(objA, movedA && !movedB ? anchorOn(objB, def.anchorB, objA) : def.anchorA, bodyA);
 	const a2 = bodyLocal(objB, movedB ? anchorOn(objA, def.anchorA, objB) : def.anchorB, bodyB);
 	let data;
-	if (def.kind === 'revolute') {
+	/** a's local axis, in body A's frame (identity at sim start, so the second turn is a no-op then) */
+	const axisInBodyA = () => {
 		objA.getWorldQuaternion(tempJointQuat);
 		jointAxisWorld.fromArray(def.axisA ?? [0, 1, 0]).applyQuaternion(tempJointQuat);
-		// into body A's frame (identity at sim start, so this is a no-op then)
 		const r = bodyA.rotation();
 		jointAxisWorld.applyQuaternion(tempJointQuat.set(r.x, r.y, r.z, r.w).invert()).normalize();
-		data = RAPIER.JointData.revolute(a1, a2, { x: jointAxisWorld.x, y: jointAxisWorld.y, z: jointAxisWorld.z });
-	} else {
+		return { x: jointAxisWorld.x, y: jointAxisWorld.y, z: jointAxisWorld.z };
+	};
+	if (def.kind === 'revolute') {
+		data = RAPIER.JointData.revolute(a1, a2, axisInBodyA());
+	} else if (def.kind === 'spherical') {
+		data = RAPIER.JointData.spherical(a1, a2); // 102b ball
+	} else if (def.kind === 'prismatic') {
+		data = RAPIER.JointData.prismatic(a1, a2, axisInBodyA()); // 102b slider
+	} else if (def.kind === 'spring') {
+		data = RAPIER.JointData.spring(def.rest ?? 1, def.stiffness ?? 50, def.damping ?? 2, a1, a2); // 102b
+	} else if (def.kind === 'rope') {
+		data = RAPIER.JointData.rope(def.length ?? 1, a1, a2); // 102b
+	} else if (def.kind === 'fixed' || def.kind === 'weld' || !def.kind) {
 		data = RAPIER.JointData.fixed(a1, { w: 1, x: 0, y: 0, z: 0 }, a2, { w: 1, x: 0, y: 0, z: 0 });
+	} else {
+		// 102b: a kind a NEWER build made — holding it as a weld would be a wrong joint, not a missing one
+		return;
 	}
 	const joint = world.createImpulseJoint(data, bodyA, bodyB, true);
-	// 37-fx: limits, no self-collision, an ANGLE motor (a steering knuckle)
-	if (def.kind === 'revolute' && Array.isArray(def.limits)) joint.setLimits?.(def.limits[0], def.limits[1]);
+	liveJointDefs.set(def.id, JSON.stringify(def));
+	// 37-fx: limits, no self-collision, an ANGLE motor (a steering knuckle); 102b: slider limits (metres)
+	if ((def.kind === 'revolute' || def.kind === 'prismatic') && Array.isArray(def.limits)) joint.setLimits?.(def.limits[0], def.limits[1]);
 	if (def.contacts === false) joint.setContactsEnabled?.(false);
 	if (def.kind === 'revolute' && def.motor) {
 		if (Number.isFinite(def.motor.pos))
@@ -485,7 +502,18 @@ function syncLiveJoints(list) {
 		if (!ids.has(id)) {
 			dropLiveJoint(joint);
 			liveJoints.delete(id);
+			liveJointDefs.delete(id);
 		}
+	// 102b: an EDITED def (same id, new object — updateJoint / its undo / a peer's jointcreate) is
+	// rebuilt from the current poses, which is how a mid-run edit takes effect with no restart
+	for (const def of list) {
+		const built = liveJointDefs.get(def.id);
+		if (built && built !== JSON.stringify(def) && liveJoints.has(def.id)) {
+			dropLiveJoint(liveJoints.get(def.id));
+			liveJoints.delete(def.id);
+			liveJointDefs.delete(def.id);
+		}
+	}
 	list.forEach((def) => buildLiveJoint(def));
 }
 
@@ -515,6 +543,7 @@ function jointBroke(def) {
 	if (live) {
 		dropLiveJoint(live);
 		liveJoints.delete(def.id);
+		liveJointDefs.delete(def.id);
 	}
 	if (!get(simulating) && !get(remoteSimulating)) return;
 	if (def.sparks === false) return;
@@ -1210,6 +1239,7 @@ async function startSimulation(opts = {}) {
 	// so body-local = world - translation and ONE world-space axis is valid in
 	// both bodies' local frames — which rapier's revolute() requires.
 	liveJoints = new Map();
+	liveJointDefs.clear(); // 102b
 	get(sceneJoints).forEach((def) => buildLiveJoint(def));
 
 	// C2: initial angular velocities + graph-driven motors (needs liveJoints).
@@ -2472,6 +2502,7 @@ export function stopSimulation(opts = {}) {
 	bodies = [];
 	beforeStates = [];
 	liveJoints = new Map();
+	liveJointDefs.clear(); // 102b
 	fixedBodies = new Map();
 	fixedColliders = new Map();
 	fixedShapeKeys = new Map();

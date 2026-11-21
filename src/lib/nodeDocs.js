@@ -147,7 +147,7 @@ export const NODE_DOCS = {
 	motor: "Drives every hinge joint attached to the connected object - the flow way to make wheels turn, turntables spin and doors swing under power.",
 	impulse: "Pushes or spins a physics body when an event fires - a jump, a kick, a cannon, a nudge.",
 	setvelocity: "Sets a physics body's speed outright - to launch it at an exact velocity, to hold it at a constant one, or to stop it dead.",
-	joint: "Attaches two objects to each other when an event fires - a hinge, or a rigid weld.",
+	joint: "Attaches two objects to each other when an event fires - a hinge, a rigid weld, a ball joint, a slider along an axis, a spring or a rope.",
 	pulse: "Throbs the connected object's scale in and out around its resting size.",
 	blink: "Flashes the connected object on and off at a steady rate.",
 	sound: "Plays an Explorer audio clip on the connected object when a pulse arrives - spatial, replicated, by content hash.",

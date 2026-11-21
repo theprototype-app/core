@@ -151,7 +151,7 @@ h.run(async () => {
 		[...document.querySelectorAll('#material-presets .mp-swatch[data-preset-kind="starter"]')].map((b) => b.getAttribute('data-preset-name'))
 	);
 	h.check(
-		JSON.stringify(starters) === JSON.stringify(['Wood', 'Metal', 'Plastic', 'Glass', 'Stone', 'Rubber', 'Fish scales', 'Neon']),
+		JSON.stringify(starters) === JSON.stringify(['Wood', 'Metal', 'Plastic', 'Glass', 'Stone', 'Rubber', 'Fish scales', 'Neon', 'Water']),
 		'1.1 the starter set renders in the Material section: ' + starters.join(', ')
 	);
 	h.check((await pressed(A.page)).length === 0, '1.2 a plain box wears none of them (no swatch lit)');

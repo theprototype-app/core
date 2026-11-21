@@ -144,11 +144,11 @@ export function setDecalFor(uuid, patch) {
 }
 
 /**
- * Size a decal (width, height, depth = its scale): one transform undo step and the transform
- * message, the path the gizmo's scale handle takes.
- * @param {string} uuid @param {number[]} size
+ * Size a decal (width, height, depth = its scale): the move message at once, and ONE transform
+ * undo step — at once, or (a scrub: `record: false` per step) through `endDecalSizeScrub`.
+ * @param {string} uuid @param {number[]} size @param {{ record?: boolean }} [opts]
  */
-export function setDecalSize(uuid, size) {
+export function setDecalSize(uuid, size, opts = {}) {
 	const object = objectOf(uuid);
 	if (!isDecalObject(object)) return false;
 	const [w, h, d] = clampDecalSize(size);
@@ -157,12 +157,26 @@ export function setDecalSize(uuid, size) {
 	object.updateMatrix();
 	const after = { pos: before.pos, rot: before.rot, scale: object.scale.toArray() };
 	if (JSON.stringify(before.scale) === JSON.stringify(after.scale)) return true;
-	recordTransform({ uuid, before, after });
+	if (opts.record !== false) recordTransform({ uuid, before, after });
 	pokeScene();
 	/** @type {any} */
 	const peer = get(peers);
 	if (peer) peer.send({ type: 'move', uuid, pos: after.pos, rot: after.rot, scale: after.scale });
 	return true;
+}
+
+/**
+ * A size scrub ended: one undo step from the scale it started at.
+ * @param {string} uuid @param {number[]} startScale
+ */
+export function endDecalSizeScrub(uuid, startScale) {
+	const object = objectOf(uuid);
+	if (!isDecalObject(object) || !Array.isArray(startScale)) return;
+	const pos = object.position.toArray();
+	const rot = object.rotation.toArray();
+	const scale = object.scale.toArray();
+	if (JSON.stringify(scale) === JSON.stringify(startScale)) return;
+	recordTransform({ uuid, before: { pos, rot, scale: startScale }, after: { pos, rot, scale } });
 }
 
 /**

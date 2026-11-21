@@ -467,6 +467,13 @@ export const VALIDATORS = {
 		if (d.parameter === 'terrainLayers') return isUuid(d.uuid) && (d.terrainLayers === null || isArray(d.terrainLayers));
 		if (d.parameter === 'terrainScatter')
 			return isUuid(d.uuid) && (d.terrainScatter === null || (!!d.terrainScatter && typeof d.terrainScatter === 'object' && isArray(d.terrainScatter.sets)));
+		// 102 M7: a constraint stack is a short array of plain objects (normalized again by the applier), or null
+		if (d.parameter === 'constraints')
+			return (
+				isUuid(d.uuid) &&
+				(d.constraints === null ||
+					(isArray(d.constraints) && d.constraints.length <= 16 && d.constraints.every((/** @type {any} */ c) => !!c && typeof c === 'object' && !isArray(c) && typeof c.id === 'string' && c.id.length <= 24)))
+			);
 		// 48 B2: a measurement's record — null is not a record (an item is deleted, never emptied)
 		if (d.parameter === 'measure')
 			return isUuid(d.uuid) && !!d.measure && typeof d.measure === 'object' && isArray(d.measure.points) && d.measure.points.length <= 64;

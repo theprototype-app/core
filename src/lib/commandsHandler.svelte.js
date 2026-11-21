@@ -48,6 +48,8 @@ import { registerMetricSource, ingestVerdict, profileFor } from './sceneBudget';
 import { globalRenderer } from '../stores/sceneStore.js';
 // 33 (L4): the scene going away is when its modules may be left behind (a leaf)
 import { noteSceneLeaving } from './sceneScope';
+import { normalizeConstraints } from './rig/constraintCore.js'; // 102 M7 (three only)
+import { markConstraintsDirty } from './rig/constraintRuntime.js'; // 102 M7
 
 //Access scene Store
 let scene = $state();
@@ -675,6 +677,17 @@ export async function objectParameters(data, from = 'peer') {
             else delete mesh.userData.physics;
             pokeScene(); // collider viz re-syncs
             physicsShapeChanged(data.uuid); // CL-A A2: live mid-sim rebuild
+        }
+    } else if (data.parameter == 'constraints') {
+        // 102 M7: an object's constraint stack, normalized at the boundary; every peer
+        // evaluates it locally from the synced targets (no pose travels)
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            const list = normalizeConstraints(data.constraints);
+            if (list.length) mesh.userData.constraints = list;
+            else delete mesh.userData.constraints;
+            markConstraintsDirty();
+            pokeScene();
         }
     } else if (data.parameter == 'fluid') {
         // 36-sim U2b: a fluid tank's settings (the particles are each peer's own).

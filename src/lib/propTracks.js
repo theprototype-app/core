@@ -113,16 +113,57 @@ export const ALIASES = /** @type {Record<string, string>} */ ({
 	'rot.z': 'rotation.z'
 });
 
+// 102 M7: a constraint's WEIGHT is keyable — `constraint.<id>.weight`, the one dynamic family.
+// Still an allowlist: the id is a short token, the def only reads / writes the `weight` field of
+// the entry with that id in the object's `userData.constraints`, clamped 0-1, and a write REPLACES
+// the array (the constraint runtime re-reads a list whose identity changed).
+const CONSTRAINT_WEIGHT = /^constraint\.([A-Za-z0-9_-]{1,24})\.weight$/;
+const KIND_LABELS = /** @type {Record<string, string>} */ ({ lookat: 'Look at', copy: 'Copy transform', limit: 'Limit rotation', ik2: 'Two-bone IK', ikchain: 'Chain IK' });
+
+/** @param {any} o @param {string} id */
+const constraintEntry = (o, id) => (Array.isArray(o?.userData?.constraints) ? o.userData.constraints.find((/** @type {any} */ c) => c?.id === id) : null) ?? null;
+
+/** @param {string} id @returns {PropDef} */
+function constraintWeightDef(id) {
+	return {
+		type: 'number',
+		label: 'Constraint weight',
+		unit: '',
+		min: 0,
+		max: 1,
+		applies: (o) => !!constraintEntry(o, id),
+		get: (o) => {
+			const w = Number(constraintEntry(o, id)?.weight);
+			return Number.isFinite(w) ? w : 1;
+		},
+		set: (o, v) => {
+			const w = Math.min(1, Math.max(0, Number(v)));
+			o.userData.constraints = o.userData.constraints.map((/** @type {any} */ c) => (c?.id === id ? { ...c, weight: w } : c));
+		}
+	};
+}
+
 /** The canonical path for a name (alias resolved), or '' when it is not allowlisted. @param {string} path */
 export function resolvePath(path) {
 	const p = ALIASES[path] ?? path;
+	if (typeof p === 'string' && CONSTRAINT_WEIGHT.test(p)) return p;
 	return Object.prototype.hasOwnProperty.call(PROPS, p) ? p : '';
 }
 
 /** @param {string} path @returns {PropDef|null} */
 export function propDef(path) {
 	const p = resolvePath(path);
-	return p ? PROPS[p] : null;
+	if (!p) return null;
+	const m = CONSTRAINT_WEIGHT.exec(p);
+	return m ? constraintWeightDef(m[1]) : PROPS[p];
+}
+
+/** A label for a path on an object (a constraint weight names its constraint). @param {any} object @param {string} path */
+export function propLabel(object, path) {
+	const m = CONSTRAINT_WEIGHT.exec(resolvePath(path));
+	if (!m) return propDef(path)?.label ?? path;
+	const c = constraintEntry(object, m[1]);
+	return 'Weight: ' + (c?.name || KIND_LABELS[c?.kind] || 'constraint');
 }
 
 /** The curve type a path animates with ('' = not allowlisted). @param {string} path */
@@ -160,7 +201,10 @@ export function setProp(object, path, value) {
 
 /** Paths that apply to an object, for menus. @param {any} object */
 export function pathsFor(object) {
-	return Object.keys(PROPS).filter((p) => PROPS[p].applies(object));
+	const out = Object.keys(PROPS).filter((p) => PROPS[p].applies(object));
+	const list = object?.userData?.constraints;
+	if (Array.isArray(list)) for (const c of list) if (typeof c?.id === 'string' && CONSTRAINT_WEIGHT.test('constraint.' + c.id + '.weight')) out.push('constraint.' + c.id + '.weight');
+	return out;
 }
 
 /** The camera paths a Film take records (each its own track). */

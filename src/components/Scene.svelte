@@ -33,7 +33,7 @@
 	import { noteXRSessionStarted } from '$lib/playMode';
 	import { recordTransform } from '$lib/history';
 	import { suspendAnimation, resumeAnimation, pumpFlowTick } from '$lib/flowRuntime';
-	import { holdBody, releaseBody } from '$lib/physics';
+	import { holdBody, releaseBody, simulating as physicsSimulating, remoteSimulating as physicsRemoteSimulating } from '$lib/physics';
 	import { sculptObject, enterSculpt, beginStroke, strokeMove, endStroke as sculptEndStroke, showCursorAt, hideCursor } from '$lib/terrainSculpt';
 	import { scatterSelectArmed, scatterSelectDown, scatterSelectMove, scatterSelectUp, onScatterProxyMoved, onScatterProxyDragChanged } from '$lib/scatterEdit';
 	import { sceneHits } from '$lib/scenePick';
@@ -57,6 +57,7 @@
 	import { startArchParts } from '$lib/arch/archParts.js';
 	import { tickAnimationPreview, captureAutoKey, playheadOf } from '$lib/animationPreview';
 	import { tickSequences } from '$lib/sequencePlayer'; // 48 S2: the Timeline's runs
+	import { tickConstraints, holdConstraints, releaseConstraints } from '$lib/rig/constraintRuntime.js'; // 102 M7
 	import { drawMode, drawTool, strokePointFromRay, endStroke, setDrawScene } from '$lib/drawMode';
 	import { splinePlaceFromRay, splineToolActive, finishSpline } from '$lib/splineTool';
 	import { flattenPicking, flattenPickClick } from '$lib/flattenActions';
@@ -461,6 +462,9 @@
 		tickTextPathsLazy($objectsGroup, performance.now()); // 64 D2: letters follow their carriers (and linked paths)
 		tickAnimationPreview(); // Animation window: local transform preview (not synced)
 		tickSequences(); // 48 S2: shots / clips / audio / events of running sequences
+		// 102 M7: constraints + IK, after every animation runtime above (mixers, clips, the sequencer's
+		// keyed weights) and before physics reads the poses; a no-op when no object has constraints
+		tickConstraints({ physicsRunning: $physicsSimulating || !!$physicsRemoteSimulating });
 		tickMeshEdit(); // vertex handles follow the object if it moves (119)
 		tickEditWireframe(); // ...and the edit wireframe stays parented to it (faceEdit)
 		tickMeshPivotMarker(); // ...and the placed transform pivot's marker (meshPivot)
@@ -531,6 +535,7 @@
 			if (event.value) {
 				// animated objects: park at their base so the gizmo edits the base transform
 				suspendAnimation(object.uuid);
+				holdConstraints(object.uuid); // 102 M7: the gizmo edits the authored pose, not the constrained one
 				// P-A: mid-sim, a grabbed dynamic body follows the gizmo kinematically
 				holdBody(object.uuid);
 				dragStartState = {
@@ -541,6 +546,7 @@
 				};
 			} else if (dragStartState && dragStartState.uuid === object.uuid) {
 				resumeAnimation(object.uuid);
+				releaseConstraints(object.uuid);
 				releaseBody(object.uuid); // back to dynamic + throw velocity
 				const after = {
 					pos: object.position.toArray(),

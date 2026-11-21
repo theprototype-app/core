@@ -122,3 +122,11 @@ describe('Game Value node', () => {
 		expect(run({ read: 'level' }, rt).__default).toBe('0');
 	});
 });
+
+describe('Game Value reaches a wire', () => {
+	it('is a value type resolveInputs accepts (a wired gamevalue delivered nothing without it)', async () => {
+		const src = (await import('node:fs')).readFileSync('src/lib/flowRuntime.js', 'utf8');
+		const list = src.slice(src.indexOf('export const valueTypes = ['), src.indexOf('];', src.indexOf('export const valueTypes = [')));
+		expect(list).toContain("'gamevalue'");
+	});
+});

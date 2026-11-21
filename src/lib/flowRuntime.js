@@ -2847,6 +2847,7 @@ export const valueTypes = [
 	'ongamestate', 'getvariable', 'gametime',
 	'onplaystart', 'onplaystop', // 78 F13: Play began / ended (session or me)
 	'storedvalue', // 30 P4: what Store Value saved on this device
+	'gamevalue', // 102b-hud: a game value as words (a handle map: __default text + value/max)
 	// 24-A A4: `peervariable` was MISSING here since 21-G4, and the omission was silent in
 	// every direction that is easy to look at — it has an OUTPUT type in flowSockets, an
 	// evaluator case below, and the editor draws its source handle — but `resolveInputs`

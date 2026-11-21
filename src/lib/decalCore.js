@@ -306,13 +306,15 @@ export function projectDecal(sources, worldToBox, boxToWorld, opts = {}) {
 /**
  * Why this surface cannot take a decal in this version (null = it can). Facts the caller reads
  * off the hit object and its ancestors.
- * @param {{ skinned?: boolean, scattered?: boolean, instanced?: boolean, decal?: boolean, none?: boolean, tris?: number }} facts
+ * @param {{ skinned?: boolean, scattered?: boolean, instanced?: boolean, decal?: boolean, none?: boolean, tris?: number, animatedFile?: boolean }} facts
  * @returns {string | null}
  */
 export function targetRefusal(facts) {
 	if (facts.none) return 'Click a surface to put the decal on.';
 	if (facts.decal) return 'A decal cannot go on another decal — click the surface under it.';
 	if (facts.skinned) return 'Decals cannot go on animated characters (skinned meshes) in this version.';
+	// an animated import travels and saves as its original file, which cannot carry a decal
+	if (facts.animatedFile) return 'Decals cannot go on animated imported models in this version.';
 	if (facts.scattered || facts.instanced) return 'Decals cannot go on scattered copies in this version — place it on a single object.';
 	if ((facts.tris ?? 0) > DECAL_MAX_SOURCE_TRIS)
 		return 'That object is too detailed for a decal (' + Math.round((facts.tris ?? 0) / 1000) + 'k triangles, at most ' + DECAL_MAX_SOURCE_TRIS / 1000 + 'k).';

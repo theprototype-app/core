@@ -7,6 +7,7 @@ import { recordEntry, recordTransform, recordObjectPresence, beginHistoryBatch, 
 import { normalizeDecal, isDecalObject, targetRefusal, decalPoseMatrix, DECAL_DEFAULTS } from './decalCore.js';
 import { makeDecalCarrier, applyDecalTo } from './decalObject.js';
 import { loadDecalRuntime } from './decalTick.js';
+import { hasAnimatedImport } from './animatedImports.js';
 
 // 102 M3: the ONE write path for decals — placing one (a carrier CHILD of the object it was
 // put on: the create message + one presence undo step) and changing its record (one `props`
@@ -43,7 +44,7 @@ export function decalHostOf(hit) {
 export function decalRefusalFor(hit, host) {
 	if (!hit || !host) return targetRefusal({ none: true });
 	if (isDecalObject(hit)) return targetRefusal({ decal: true });
-	const facts = { skinned: false, scattered: false, instanced: !!hit.isInstancedMesh, tris: 0, none: false };
+	const facts = { skinned: false, scattered: false, instanced: !!hit.isInstancedMesh, tris: 0, none: false, animatedFile: hasAnimatedImport(host.uuid) };
 	if (hit.isSkinnedMesh) facts.skinned = true;
 	let meshes = 0;
 	host.traverse((/** @type {any} */ o) => {

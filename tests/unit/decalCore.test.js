@@ -156,6 +156,7 @@ describe('targets refused in this version', () => {
 		expect(targetRefusal({ scattered: true })).toMatch(/scattered/);
 		expect(targetRefusal({ instanced: true })).toMatch(/scattered/);
 		expect(targetRefusal({ decal: true })).toMatch(/another decal/);
+		expect(targetRefusal({ animatedFile: true })).toMatch(/animated imported/);
 		expect(targetRefusal({ tris: 1e7 })).toMatch(/too detailed/);
 	});
 });

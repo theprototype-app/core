@@ -8,7 +8,7 @@
 	import DragRow from '../ui/DragRow.svelte';
 	import ShaderTexturePicker from '../editors/nodes/ShaderTexturePicker.svelte';
 	import { objectsGroup } from '../../stores/sceneStore';
-	import { normalizeDecal } from '$lib/decalCore.js';
+	import { normalizeDecal, DECAL_DEFAULTS } from '$lib/decalCore.js';
 	import { setDecalFor, setDecalSize, endDecalSizeScrub } from '$lib/decalEdit.js';
 	import { dismissTip, tipShown, TIP_DECAL } from '$lib/tips.js';
 	import { itemByHash } from '$lib/explorer';
@@ -104,8 +104,8 @@
 					value={r.tint}
 					onchange={(/** @type {any} */ e) => set({ tint: e.currentTarget.value })}
 				/>
-				{#if r.tint !== '#ffffff'}
-					<button id="decal-tint-reset" class="ui-chip text-text-2" title="Back to white (the image as it is)" aria-label="Reset the tint" onclick={() => set({ tint: '#ffffff' })}>✕</button>
+				{#if r.tint !== DECAL_DEFAULTS.tint}
+					<button id="decal-tint-reset" class="ui-chip text-text-2" title="Back to white (the image as it is)" aria-label="Reset the tint" onclick={() => set({ tint: DECAL_DEFAULTS.tint })}>✕</button>
 				{/if}
 			</div>
 		</div>

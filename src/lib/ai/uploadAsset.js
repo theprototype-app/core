@@ -58,8 +58,8 @@ export async function uploadAssetTool(args) {
 	if (type.kind === 'hdri') {
 		const { prepareSky } = await import('../hdri/cubeImport.js');
 		const ready = await prepareSky([{ name, buffer: /** @type {ArrayBuffer} */ (bytes.slice().buffer) }]);
-		if ('error' in ready) return { error: ready.error };
-		if (ready.converted) {
+		// anything else (a 2:1 sky, a file it cannot read) is filed exactly as before
+		if (!('error' in ready) && ready.converted) {
 			bytes = ready.bytes;
 			name = ready.name;
 			converted = ready.converted;

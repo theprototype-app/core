@@ -645,10 +645,11 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 	// mesh): a lone primitive would gain a top-level row past the budget, so it gets both rows from
 	// Properties ▸ Model (and the drop onto it) instead
 	if (mesh.length || isGroup) mesh.unshift(...model);
-	// 102 M1: Simplify — fewer triangles, attributes kept, one undo step. Offered on any single
-	// object with a mesh in it (a primitive too: the action asks to bake it first), so a lone mesh
-	// gains the Mesh ▸ row; why something cannot be simplified is said when it is picked.
-	if (!multi && !loadingStub && hasMesh(object))
+	// 102 M1: Simplify — fewer triangles, attributes kept, one undo step — inside Mesh ▸ wherever
+	// Mesh ▸ is there anyway (an imported model, a group, a reduced import). A lone primitive gets
+	// no Mesh ▸ for it (the top-level row budget, NOTES-38 #22): Ctrl+Alt+D and the palette reach
+	// it, and the action asks to bake it first. Why something cannot be simplified is said when picked.
+	if (!multi && !loadingStub && (mesh.length || isGroup) && hasMesh(object))
 		mesh.push(/** @type {any} */ ({
 			label: 'Simplify…',
 			icon: 'shrink',

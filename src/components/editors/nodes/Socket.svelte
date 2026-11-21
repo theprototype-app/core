@@ -15,6 +15,8 @@
 	// H5: interface sockets carry a DATA-declared type (flowinput.vtype), not a
 	// table lookup — an explicit type wins when provided
 	export let forceType: string | undefined = undefined;
+	/** 80a-fix4-ui D2: the socket's name / what it takes, as its tooltip and accessible name */
+	export let title: string | undefined = undefined;
 
 	const RIGHT = Position.Right;
 	const LEFT = Position.Left;
@@ -24,4 +26,4 @@
 	$: css = `--socket-color: ${typeColor(socketType)}; --socket-shape: ${socketShape(socketType)};${top !== undefined ? ` top: ${top}px;` : ''}${style}`;
 </script>
 
-<Handle type={kind} position={pos} {id} class="socket-typed" style={css} data-socket-type={socketType} />
+<Handle type={kind} position={pos} {id} class="socket-typed" style={css} data-socket-type={socketType} {title} aria-label={title} />

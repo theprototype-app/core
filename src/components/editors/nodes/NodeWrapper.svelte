@@ -43,7 +43,9 @@
 		class="flex items-center gap-1.5 rounded-t-md border-b border-border bg-app/40 px-3 py-1.5 font-mono text-xs font-semibold text-text"
 	>
 		<span class="h-2 w-2 shrink-0 rounded-full" style="background: var(--node-accent)"></span>
-		<span class="overflow-hidden text-ellipsis whitespace-nowrap">{label ? label : type}</span>
+		<!-- 80a-fix4-ui D3: the title SIZES the card (up to 18rem) instead of being cut to the body's width — an
+		     overflow-hidden flex item contributes no width, so "Character Controller" was cut on a narrow body -->
+		<span class="max-w-[18rem] shrink-0 overflow-hidden text-ellipsis whitespace-nowrap" title={label ? label : type}>{label ? label : type}</span>
 	</div>
 	<div class="relative flex rounded-b-lg p-3 text-xs text-text-2">
 		<slot />

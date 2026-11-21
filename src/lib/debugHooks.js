@@ -318,6 +318,8 @@ export const DEBUG_HOOKS = [
 	['peerServer', () => import('./peerServer')],
 	['cloudHooks', () => import('./cloudHooks')],
 	['cloudPlugin', () => import('./cloudPlugin')],
+	// 102 M4: anonymous play statistics (the tracker's view + a flush as a hide would do)
+	['playStats', () => import('./play/playStats')],
 	['connectionState', () => import('./connectionState')],
 	['peerApproval', () => import('./peerApproval')],
 	['inviteStore', () => import('./inviteStore')],

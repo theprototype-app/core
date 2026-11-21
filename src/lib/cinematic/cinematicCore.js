@@ -117,7 +117,8 @@ export const STAND_IN_LABELS = Object.freeze({
 	shader: 'Shader graph and code materials',
 	terrain: 'Terrain paint layers',
 	deform: 'Jiggle and sway',
-	custom: 'Custom materials'
+	custom: 'Custom materials',
+	splats: 'Gaussian splats' // 102: Spark's GLSL cannot run on the WebGPU renderer; the splats stand down
 });
 
 /** @typedef {keyof typeof STAND_IN_LABELS} StandInKind */

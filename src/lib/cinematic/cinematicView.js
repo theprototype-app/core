@@ -127,6 +127,13 @@ function createSwapper(W, scene) {
 				if (o.visible && !grids.some((x) => x.g === o)) gridTwin(o);
 				return;
 			}
+			// 102: Spark's splat meshes are never swapped (a stand-in material on its quads draws garbage, and
+			// its GLSL is a fatal compile here) — splatRuntime hides them for the view; the chip names them
+			if (o.userData?.splatVisual) {
+				o.visible = false;
+				return;
+			}
+			if (o.userData?.splat && o.visible !== false) now.add('splats');
 			const list = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
 			list.forEach((/** @type {any} */ m, /** @type {number} */ i) => {
 				if (stands.has(m)) {

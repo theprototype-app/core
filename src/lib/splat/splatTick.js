@@ -1,4 +1,6 @@
+import { get } from 'svelte/store';
 import { objectsGroup } from '../../stores/sceneStore';
+import { registerSceneEntrySource } from '../sceneAssets';
 import { isSplatObject } from './splatObject.js';
 
 // 102-splats: the per-frame entry for Gaussian splats — ONE line in Scene's useTask (the textPathTick
@@ -30,6 +32,15 @@ function findCarriers(root) {
 	});
 	return out;
 }
+
+// the scan files are scene assets: listed in Explorer ▸ Scene ▸ splats and bundled into a .tpscene
+registerSceneEntrySource(() => {
+	const seen = new Set();
+	return findCarriers(get(objectsGroup))
+		.map((c) => c.userData.splat)
+		.filter((r) => typeof r?.hash === 'string' && r.hash && !seen.has(r.hash) && seen.add(r.hash))
+		.map((r) => ({ id: 'splat:' + r.hash, group: 'splats', name: String(r.file || 'splat.spz'), kind: 'splat', hash: r.hash, derived: false }));
+});
 
 /** force a rescan on the next frame (an import or a record change that did not poke the scene) */
 export function pokeSplats() {

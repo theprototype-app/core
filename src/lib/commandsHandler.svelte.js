@@ -29,6 +29,7 @@ import { normalizeEmitter, normalizeInteraction } from '$lib/sim/fluidEmitterCor
 import { applyFlowPathTo } from '$lib/sim/flowPathObject.js'; // 36-fb F24
 import { normalizePortal, normalizeCheckpoint } from '$lib/gameLevels/objects.js'; // 93 LP1 / LP3
 import { applyTextPathTo, bumpTextTurn } from '$lib/textPathObject.js'; // 64 D2
+import { applySplatTo } from '$lib/splat/splatObject.js'; // 102: a three leaf
 import { runSceneClearHandlers } from '$lib/moduleSDK'
 import { annotations } from '$lib/annotationsHandler'
 import { isViewer, warnViewerReadOnly } from '$lib/objectPermissions'
@@ -724,6 +725,15 @@ export async function objectParameters(data, from = 'peer') {
             else delete mesh.userData.textPath;
             pokeScene();
         }
+    } else if (data.parameter == 'splat') {
+        // 102: a Gaussian splat's record (crop, opacity, the file), normalized at the boundary; the proxy
+        // box follows it and every peer's runtime redraws from it
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            if (data.splat) applySplatTo(mesh, data.splat);
+            else delete mesh.userData.splat;
+            pokeScene();
+        }
     } else if (data.parameter == 'fluidInteraction') {
         // 36-fb F23: how a mesh meets particle fluid (absent = auto)
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
@@ -1314,7 +1324,8 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
                 ...heal
             });
             sendObject(conn, element, element.uuid, opts);
-        } else if (element.userData?.textPath) {
+        } else if (element.userData?.textPath || element.userData?.splat) {
+            // 102: a SPLAT carrier too — a box proxy + its record; toJSON keeps the proxy's draw-nothing flags
             // 64 TX1: a TEXT carrier travels as its RECORD — toJSON read NOW, while the park hook holds
             // the placeholder (~3 KB). The GLTF branch below exported it in a later callback, after the
             // park was restored: the solid's [face, side] array split into a GROUP of primitives and a

@@ -50,6 +50,7 @@ import { desktopSpawn, spawnEyePose } from './playSpawn'; // 30b P4 (+ vrOnly: c
 import { shareDuplicatedMaterials, linkMaterials } from './materialSharing';
 import { applyFlowPathTo } from './sim/flowPathObject.js'; // 36-fb F24 (a three leaf)
 import { applyTextPathTo, bumpTextTurn } from './textPathObject.js'; // 64 D2 (a three leaf)
+import { applySplatTo } from './splat/splatObject.js'; // 102 (a three leaf)
 import {
 	duplicateCarriesAnimation,
 	duplicateCarriesFlow,
@@ -937,6 +938,12 @@ registerHistoryKind('props', (entry, state) => {
 		else delete object.userData.textPath;
 		if (peer)
 			peer.send({ type: 'objectParameters', parameter: 'textPath', uuid: entry.uuid, textPath: state.textPath ?? null, ...(state.bake ? { bake: true } : {}) });
+	}
+	if ('splat' in state) {
+		// 102: a Gaussian splat's record — the proxy box is rebuilt from it, the splats redraw from it
+		if (state.splat) applySplatTo(object, state.splat);
+		else delete object.userData.splat;
+		if (peer) peer.send({ type: 'objectParameters', parameter: 'splat', uuid: entry.uuid, splat: state.splat ?? null });
 	}
 	if ('fluidInteraction' in state) {
 		// 36-fb F23: how a mesh meets particle fluid (none / collide / float; absent = auto)

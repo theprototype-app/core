@@ -46,6 +46,7 @@
 	import FlowPathSection from '../sim/FlowPathSection.svelte'; // 36-fb F24
 	import LevelObjectSection from './inspector/LevelObjectSection.svelte'; // 93 LP1/LP3
 	import TextPathSection from './TextPathSection.svelte'; // 64 D2
+	import SplatSection from './SplatSection.svelte'; // 102: Gaussian splats
 	import TextOnPathButton from './TextOnPathButton.svelte'; // 64 D2
 	import PathSection from './inspector/PathSection.svelte'; // 78 F4
 	import FluidTankSection from '../sim/FluidTankSection.svelte'; // 36-sim U2b
@@ -4177,7 +4178,7 @@
 			{/if}
 
 			<!-- 64 D2: a text's carrier draws nothing — its look is the Text section's -->
-			{#if material && !$selectedObject.userData?.textPath}
+			{#if material && !$selectedObject.userData?.textPath && !$selectedObject.userData?.splat}<!-- 102: a splat's material is its invisible hit box -->
 				<Section variant="panel" label="Material" clip={{ count: () => matTargets.length, fans: true }}>
 					{#if matCount}
 						<p id="material-multi-note" class="text-[length:var(--fs-badge)] italic text-text-muted">
@@ -4536,7 +4537,8 @@
 			{#if $selectedObject.userData?.flowPath}<FlowPathSection object={$selectedObject} />{/if}<!-- 36-fb F24 -->
 			{#if $selectedObject.userData?.portal || $selectedObject.userData?.checkpoint}<LevelObjectSection object={$selectedObject} />{/if}<!-- 93 LP1/LP3 -->
 			{#if $selectedObject.userData?.textPath}<TextPathSection object={$selectedObject} />{/if}<!-- 64 D2 -->
-			{#if !$selectedObject.isLight}
+			{#if $selectedObject.userData?.splat}<SplatSection object={$selectedObject} />{/if}<!-- 102 -->
+			{#if !$selectedObject.isLight && !$selectedObject.userData?.splat}
 				<Section variant="panel" label="Physics" clip={{ count: () => insTargets.length, fans: true }}>
 					{#if multiCount}
 						<p id="physics-multi-note" class="text-[length:var(--fs-badge)] italic text-text-muted">

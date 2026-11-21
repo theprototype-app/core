@@ -21,6 +21,7 @@ import { isHeadsetUA } from '../hdri/hdriCore.js';
 import { isSplatObject, applySplatProxyLook } from './splatObject.js';
 import { normalizeSplat, splatBudget, withinBudget, splatCountText } from './splatCore.js';
 import { splatStatus } from './splatStatus.js';
+import { setTriangleDiscount } from '../sceneBudget.js';
 
 /** the editor grid and other transparent helpers draw first; the splats composite over them */
 const SPLAT_RENDER_ORDER = 10;
@@ -70,6 +71,8 @@ function ensureRenderer() {
 		sparkRenderer.raycast = () => {};
 	}
 	scene.add(sparkRenderer);
+	// the frame meter counts scene geometry; Spark's two triangles per splat are capped by the splat budget
+	setTriangleDiscount((s) => (sparkRenderer && sparkRenderer.visible && sparkRenderer.parent === s ? (sparkRenderer.activeSplats ?? 0) * 2 : 0));
 	return sparkRenderer;
 }
 
@@ -247,6 +250,7 @@ export function tickSplats(carriers) {
 	if (changed) publishStatus();
 	if (!entries.size && sparkRenderer) {
 		sparkRenderer.removeFromParent();
+		setTriangleDiscount(null);
 	}
 }
 

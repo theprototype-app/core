@@ -154,7 +154,21 @@ const objectNames = (page) =>
 		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		return g.children.map((o) => o.name).filter(Boolean).sort();
 	});
-const clearScene = (page) => page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear'));
+/** clear and WAIT until the world is empty (a scene's pack pieces can still be arriving: clear again) */
+async function clearScene(page) {
+	await h.eventually(
+		() =>
+			page.evaluate(() => {
+				let g;
+				window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
+				if (g.children.length) window.__tp.test.v1.commandsHandler.sceneCommand('/clear');
+				return g.children.length;
+			}),
+		(n) => n === 0,
+		'the scene is empty before the next file',
+		30000
+	);
+}
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -202,13 +216,14 @@ h.run(async () => {
 	// ---- §2 a file saved by this build opens in the older one ----
 	await clearScene(L.page);
 	const kinds = await buildNew(L.page);
+	const savedNames = await objectNames(L.page);
 	const newZip = await saveZip(L.page);
 	const newSurface = await surface(L.page, newZip);
 	h.check(newSurface.jointCount === kinds && newSurface.blocks.filter((b) => b.includes('"gravityScale":0.5')).length === kinds, `premise: the new file holds ${kinds} joints and ${kinds} tuned bodies`);
 	await clearScene(older);
 	await openZip(older, newZip, `§2 new file in ${BASE ? 'v1.70.0' : 'this build'}`);
 	const names = await objectNames(older);
-	h.check(names.length === kinds + 1 && names.includes('Bob-rope') && names.includes('Post'), `§2 every object arrives (${names.join(', ')})`);
+	h.check(savedNames.length === kinds + 1 && JSON.stringify(names) === JSON.stringify(savedNames), `§2 every object arrives (${names.join(', ')})`);
 	const there = await surface(older);
 	h.check(JSON.stringify(there.blocks) === JSON.stringify(newSurface.blocks), '§2 every userData.physics key survives, gravityScale / linearDamping / angularDamping included');
 	h.check(there.joints === newSurface.joints, '§2 all six joint defs arrive field for field (an older build keeps what it does not use)');

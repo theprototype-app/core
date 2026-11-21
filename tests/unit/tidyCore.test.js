@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import { similarKey, matchesSimilar, renamePlan, randomisePlan, seeded } from '../../src/lib/tidyCore.js';
 import { normalizeLayers, lockedLayerIds, LAYERS_MAX } from '../../src/lib/layersCore.js';
-import { isSeeThrough } from '../../src/lib/selectThrough.js';
+import { pickStack } from '../../src/lib/selectThrough.js';
 
 // 102b-arrange row 2: select similar, rename many, randomise, the layer table, the lock pass.
 
@@ -72,12 +72,16 @@ describe('layers', () => {
 		expect(normalizeLayers('x')).toBeNull();
 		expect(normalizeLayers(Array.from({ length: 99 }, (_, i) => ({ id: 'l' + i }))).length).toBe(LAYERS_MAX);
 	});
-	it('a locked layer is click-through only when the pass carries it', () => {
-		const target = { userData: { layer: 'a' } };
-		const hit = { object: { visible: true, material: { opacity: 1 } } };
+	it('a locked layer leaves the pick stack only when the pass carries it', () => {
+		const locked = { uuid: 'a', userData: { layer: 'a' } };
+		const other = { uuid: 'b', userData: { layer: 'b' } };
+		const hits = [{ object: locked, distance: 1 }, { object: other, distance: 2 }];
 		const pass = { water: true, transparent: false, triggers: false };
-		expect(isSeeThrough(hit, target, pass)).toBe(false);
-		expect(isSeeThrough(hit, target, { ...pass, lockedLayers: lockedLayerIds([{ id: 'a', locked: true }]) })).toBe(true);
-		expect(isSeeThrough(hit, { userData: { layer: 'b' } }, { ...pass, lockedLayers: new Set(['a']) })).toBe(false);
+		const top = (o) => o;
+		expect(pickStack(hits, top, pass).map((e) => e.uuid)).toEqual(['a', 'b']);
+		const stack = pickStack(hits, top, { ...pass, lockedLayers: lockedLayerIds([{ id: 'a', locked: true }]) });
+		expect(stack.map((e) => e.uuid)).toEqual(['b']);
+		// nothing but the locked object under the click: nothing to select (primaryIndex never falls back to it)
+		expect(pickStack([hits[0]], top, { ...pass, lockedLayers: new Set(['a']) })).toEqual([]);
 	});
 });

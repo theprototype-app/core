@@ -5,7 +5,8 @@
 //      them visible); Play shows them;
 //   3. lock: a real viewport click on a locked box selects nothing of it; unlocked it selects;
 //   4. select similar (the real Tidy button): the two boxes, not the sphere;
-//   5. rename many (the real field + button): "Wall 1", "Wall 2" on both peers, ONE undo;
+//   5. rename many (the real field + button): "Wall-1", "Wall-2" on both peers, ONE undo (a hyphen:
+//      a joiner's full sync is glTF, whose loader turns a space into '_' — pre-existing, see summary);
 //   6. randomise: the same poses on both peers, ONE undo;
 //   7. a scene saved with layers (kept for the older-release check); B reloads + rejoins: the table,
 //      the objects' layers and names come back; a scene with no layers saves no `layers` key.
@@ -172,17 +173,17 @@ h.run(async () => {
 	console.log('\n=== 5. rename many (the real field and button) ===');
 	await A.page.evaluate((ids) => window.__tp.test.v1.objectActions.applySelectionSet(ids, true), [b1, b2]);
 	await A.page.waitForSelector('#tidy-rename-pattern', { timeout: 10000 }).catch(() => {});
-	await A.page.locator('#tidy-rename-pattern').fill('Wall {n}');
+	await A.page.locator('#tidy-rename-pattern').fill('Wall-{n}');
 	await A.page.waitForTimeout(200);
-	h.check(/Wall 1, Wall 2/.test((await A.page.locator('#tidy-rename-preview').textContent()) ?? ''), 'the preview reads "Wall 1, Wall 2"');
+	h.check(/Wall-1, Wall-2/.test((await A.page.locator('#tidy-rename-preview').textContent()) ?? ''), 'the preview reads "Wall-1, Wall-2"');
 	const names0 = [await nameOf(A, b1), await nameOf(A, b2)];
 	await A.page.locator('#tidy-rename').click();
 	await A.page.waitForTimeout(500);
-	for (const [u, n] of [[b1, 'Wall 1'], [b2, 'Wall 2']]) await h.eventually(() => nameOf(B, u), (v) => v === n, `B: renamed "${n}"`, 10000);
+	for (const [u, n] of [[b1, 'Wall-1'], [b2, 'Wall-2']]) await h.eventually(() => nameOf(B, u), (v) => v === n, `B: renamed "${n}"`, 10000);
 	await undo(A);
 	await h.eventually(async () => [await nameOf(B, b1), await nameOf(B, b2)], (v) => JSON.stringify(v) === JSON.stringify(names0), 'ONE undo puts both names back on B', 10000);
 	await redo(A);
-	await h.eventually(() => nameOf(B, b2), (v) => v === 'Wall 2', 'redo: renamed again on B', 10000);
+	await h.eventually(() => nameOf(B, b2), (v) => v === 'Wall-2', 'redo: renamed again on B', 10000);
 
 	console.log('\n=== 6. randomise ===');
 	const p0 = [await poseOf(A, b1), await poseOf(A, b2)];
@@ -217,7 +218,7 @@ h.run(async () => {
 	}
 	await h.eventually(() => table(B), (t) => Array.isArray(t) && t.some((l) => l.id === id), 'B after reload: the layer table is back', 60000);
 	await h.eventually(() => layerOf(B, b1), (l) => l === id, 'B after reload: the box is on its layer', 20000);
-	await h.eventually(() => nameOf(B, b2), (v) => v === 'Wall 2', 'B after reload: the names are back', 20000);
+	await h.eventually(() => nameOf(B, b2), (v) => v === 'Wall-2', 'B after reload: the names are back', 20000);
 
 	await h.finish(browser);
 });

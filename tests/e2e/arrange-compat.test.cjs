@@ -75,6 +75,8 @@ h.run(async () => {
 		const bytes = await A.page.evaluate(async () => {
 			const s = window.__tp.test.v1;
 			s.commandsHandler.sceneCommand('/clear all');
+			// /clear keeps the scene physics block, which still holds the lane file's layer table
+			s.scenePhysics.scenePhysicsRestore(null);
 			await new Promise((r) => setTimeout(r, 600));
 			for (const cmd of ['/create Box 1 1 1', '/create Sphere', '/create Cylinder', '/create Box 2 0.2 2']) {
 				s.commandsHandler.sceneCommand(cmd);
@@ -94,7 +96,7 @@ h.run(async () => {
 		const r1 = await openBytes(A.page, bytes);
 		const r2 = await openBytes(A.page, bytes);
 		h.check(r1.count >= 4 && r1.signature === r2.signature, `old-base: opens with 4 objects and the same signature twice (${sha(r1.signature)})`);
-		h.check(!r1.layers && !r1.resavedArray && !r1.resavedLayer, 'old-base: carries no array, layer or layer table');
+		h.check(!r1.layers && !r1.resavedArray && !r1.resavedLayer, 'old-base: carries no array, layer or layer table | ' + JSON.stringify({ layers: r1.layers, array: r1.resavedArray, layer: r1.resavedLayer }));
 		fs.writeFileSync(path.join(DIR, 'old-base.signature.txt'), r1.signature);
 	} else {
 		console.log('\n=== 3. the old scene loads unchanged in this lane ===');
@@ -106,7 +108,7 @@ h.run(async () => {
 			const r = await openBytes(A.page, fs.readFileSync(p));
 			h.check(r.count >= 4, 'old-base opens with its objects | ' + r.count);
 			h.check(r.signature === base, `the content signature equals the older release's (${sha(r.signature)} vs ${sha(base)})`);
-			h.check(!r.layers && !r.resavedArray && !r.resavedLayer, 'nothing new is written for an old scene (no array, layer or layer table)');
+			h.check(!r.layers && !r.resavedArray && !r.resavedLayer, 'nothing new is written for an old scene (no array, layer or layer table) | ' + JSON.stringify({ layers: r.layers, array: r.resavedArray, layer: r.resavedLayer }));
 			if (r.signature !== base) {
 				fs.writeFileSync(path.join(DIR, 'old-base.lane-signature.txt'), r.signature);
 				console.log('signatures differ: see old-base.lane-signature.txt');

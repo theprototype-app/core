@@ -126,9 +126,6 @@ function hitTransparent(hit) {
  */
 export function isSeeThrough(hit, target, pass = PASS_DEFAULTS) {
 	if (target?.userData?.pick === 'through') return true;
-	// 102b-arrange: an object on a locked layer (the editor pass carries the set)
-	const locked = /** @type {any} */ (pass)?.lockedLayers;
-	if (locked && target?.userData?.layer && locked.has(target.userData.layer)) return true;
 	if (hitOpacity(hit) < SEE_THROUGH_OPACITY) return true;
 	const kind = nonBlockingKind(target);
 	if (kind === 'water' && pass.water) return true;
@@ -159,9 +156,13 @@ export function pickStack(hits, topOf, pass = PASS_DEFAULTS) {
 	const stack = [];
 	/** @type {Map<string, number>} */
 	const at = new Map();
+	// 102b-arrange: an object on a LOCKED layer is not pickable in the viewport at all (the editor
+	// pass carries the set; a see-through entry would still be the fallback pick of primaryIndex)
+	const locked = /** @type {any} */ (pass)?.lockedLayers;
 	for (const hit of hits ?? []) {
 		const target = topOf(hit.object);
 		if (!target) continue;
+		if (locked?.size && target.userData?.layer && locked.has(target.userData.layer)) continue;
 		const through = isSeeThrough(hit, target, pass);
 		const index = at.get(target.uuid);
 		if (index === undefined) {

@@ -32,7 +32,7 @@ const drag = (page, ids, aim) =>
 			controls.dispatchEvent({ type: 'dragging-changed', value: true });
 			boxA.position.x = 0.5;
 			boxA.updateMatrixWorld(true);
-			controls.dispatchEvent({ type: 'objectChange' });
+			controls.dispatchEvent({ type: 'change' }); // Scene's onchange = three's 'change' (threlte maps it)
 			let candidate = null;
 			w.snapEngine.activeSnapCandidate.subscribe((v) => (candidate = v))();
 			const box = new w.THREE.Box3().setFromObject(boxA);

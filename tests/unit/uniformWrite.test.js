@@ -16,7 +16,7 @@ describe('writeUniformSlot', () => {
 		expect(writeUniformSlot(slot, { value: 0, color: '#ff8000' })).toBe('color');
 		expect(slot.value).toBe(arr); // same array three uploads from
 		expect(arr[0]).toBeCloseTo(1);
-		expect(arr[1]).toBeCloseTo(hexToLinear('#008000')[1]);
+		expect(arr[1]).toBeCloseTo(/** @type {number[]} */ (hexToLinear('#008000'))[1]);
 		expect(arr[1]).toBeLessThan(0.5); // linear, not 128/255
 		expect(arr[2]).toBe(0);
 	});

@@ -118,7 +118,7 @@ describe('encodeRGBE', () => {
 		const data = new Float32Array(W * H * 4);
 		for (let i = 0; i < W * H; i++) data.set([i / 10, 1, 0.01 * i, 1], i * 4);
 		const bytes = encodeRGBE({ data, width: W, height: H });
-		const t = /** @type {any} */ (new HDRLoader().setDataType(THREE.FloatType).parse(bytes.buffer));
+		const t = /** @type {any} */ (new HDRLoader().setDataType(THREE.FloatType).parse(/** @type {ArrayBuffer} */ (bytes.buffer)));
 		expect([t.width, t.height]).toEqual([W, H]);
 		for (let i = 0; i < W * H; i++)
 			for (let k = 0; k < 3; k++) {

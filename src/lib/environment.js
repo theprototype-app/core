@@ -8,9 +8,19 @@ import { globalScene, globalRenderer, objectsGroup, backgroundColor, TControls, 
 import { peers } from '../stores/appStore';
 import { sceneRadius } from './sceneBounds';
 import { fogFarFor, mergeFogPatch } from './fogReach';
-// 102b-papercuts: distance + height fog (fogShader patches three's fog chunks at import, before any compile)
-import { fogKindOf, fogDensityOf, heightFogParams } from './fogModes.js';
-import { setHeightFog } from './fogShader.js';
+// 102b-papercuts: distance + height fog (the height layer's chunk patch, fogShader.js, loads with the first height fog)
+import { fogKindOf, fogDensityOf, heightFogParams, setHeightFog } from './fogModes.js';
+
+/** 102b: the height-fog chunk patch is a lazy chunk; the first height fog installs it and recompiles what is live
+ * @param {any} scene */
+function ensureHeightFogShader(scene) {
+	void import('./fogShader.js').then((m) => {
+		if (!m.installHeightFog()) return;
+		scene?.traverse?.((/** @type {any} */ o) => {
+			for (const mat of Array.isArray(o.material) ? o.material : o.material ? [o.material] : []) mat.needsUpdate = true;
+		});
+	});
+}
 import { registerSystemGroup } from './moduleSDK';
 import { createLight } from './geometries.svelte';
 import { cappedShadowSize, shadowsDisabled } from './lightParams';
@@ -481,7 +491,9 @@ export function applyEnvironment() {
 			: kind === 'linear'
 				? new THREE.Fog(preset.fog.color, preset.fog.near, fogFarFor(preset.fog, sceneRadius()))
 				: new THREE.FogExp2(preset.fog.color, fogDensityOf(preset.fog));
-		setHeightFog(heightFogParams(preset.fog));
+		const layer = heightFogParams(preset.fog);
+		setHeightFog(layer);
+		if (layer[2] > 0.5) ensureHeightFogShader(scene);
 	}
 	backgroundColor.set(preset.background);
 
@@ -640,7 +652,7 @@ function detachedPayload() {
  * 37-hdri: `hdri` is the third sky field — a partial patch merged into the payload's hdri
  * (hdriCore.mergeHdriPatch), `null` removes it. It rides the same commit, so an HDRI pick,
  * rotation or exposure drag persists and replicates like a background colour does.
- * @param {{background?: string, fog?: {color?: string, near?: number, far?: number} | null, hdri?: any}} patch
+ * @param {{background?: string, fog?: {color?: string, near?: number, far?: number, kind?: string, density?: number, base?: number, thickness?: number} | null, hdri?: any}} patch
  * @param {{replicate?: boolean}} [opts]
  */
 export function editEnvSky(patch, opts = {}) {

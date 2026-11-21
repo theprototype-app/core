@@ -1,5 +1,5 @@
 import { parseCheckedObject } from './loadGuard.js';
-import { shareGeometries, inflateSharedGeometries } from './sharedGeometry.js';
+import { inflateSharedGeometries } from './sharedGeometry.js';
 import * as THREE from 'three';
 import { renderOffscreen } from './render/offscreen.js';
 import './threeFixes.js'; // 36-fb-water F14: transmissive materials survive a JSON trip (the export runtime loads scenes here too)
@@ -1020,6 +1020,7 @@ export async function exportSessionZip(payload, opts = { assets: true, packs: fa
 		wire = { ...payload, library: { folders: payload.library.folders ?? [], items: libIndex } };
 	}
 	// 102b: equal shapes are written once (sharedGeometry.js); the live payload is not changed
+	const { shareGeometries } = await import('./sharedGeometryWrite.js');
 	files['session.json'] = strToU8(JSON.stringify(shareGeometries(wire)));
 	Object.assign(files, presetFiles);
 	/** @type {Array<{hash: string, name: string, kind: string, file: string}>} */

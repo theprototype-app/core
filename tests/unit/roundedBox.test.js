@@ -1,12 +1,26 @@
 // 102b-papercuts: a rounded box is a Box setting (two numbers in the file), a baked one is recognised
 // (never converted by itself), and equal shapes are saved once.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import * as THREE from 'three';
-import { RoundedBox, boxGeometryFor, matchRoundedBox, bakedRoundedBox, restoreRoundedBoxes, roundedBoxVertexCount } from '../../src/lib/roundedBox.js';
-import { shareGeometries, inflateSharedGeometries } from '../../src/lib/sharedGeometry.js';
+import { RoundedBox, matchRoundedBox, bakedRoundedBox, restoreRoundedBoxes, roundedBoxVertexCount } from '../../src/lib/roundedBox.js';
+import { boxGeometryFor, loadRoundedBox, roundedBoxModule } from '../../src/lib/roundedBoxGate.js';
+import { shareGeometries, inflateSharedGeometries } from '../../src/lib/sharedGeometryWrite.js';
 import { geometrySpec } from '../../src/lib/geometryParams.js';
 
+describe('rounded box: before its chunk', () => {
+	it('a radius builds the square box for that moment', () => {
+		expect(roundedBoxModule()).toBeNull();
+		const g = boxGeometryFor({ width: 2, height: 1, depth: 1, radius: 0.2 });
+		expect(g).not.toBeInstanceOf(RoundedBox);
+		expect(g.attributes.position.count).toBe(24);
+	});
+});
+
 describe('rounded box', () => {
+	beforeAll(async () => {
+		await loadRoundedBox();
+	});
+
 	it('radius 0 or absent is exactly the old BoxGeometry', () => {
 		const g = boxGeometryFor({ width: 2, height: 1, depth: 1, widthSegments: 1, heightSegments: 1, depthSegments: 1 });
 		expect(g).toBeInstanceOf(THREE.BoxGeometry);
@@ -32,7 +46,7 @@ describe('rounded box', () => {
 	});
 
 	it('an older reader (stock BoxGeometry.fromJSON) gets a plain box of the same size', () => {
-		const json = boxGeometryFor({ width: 2, height: 1, depth: 3, radius: 0.2 }).toJSON();
+		const json = /** @type {any} */ (boxGeometryFor({ width: 2, height: 1, depth: 3, radius: 0.2 }).toJSON());
 		const stock = new THREE.BoxGeometry(json.width, json.height, json.depth, json.widthSegments, json.heightSegments, json.depthSegments);
 		stock.computeBoundingBox();
 		expect(stock.boundingBox?.max.toArray()).toEqual([1, 0.5, 1.5]);
@@ -40,7 +54,7 @@ describe('rounded box', () => {
 
 	it('recognises a baked rounded box and nothing else', () => {
 		const baked = bakedRoundedBox({ width: 1.2, height: 0.8, depth: 0.6, radius: 0.08, radiusSegments: 2 });
-		expect(baked.parameters).toBeUndefined();
+		expect(/** @type {any} */ (baked).parameters).toBeUndefined();
 		expect(matchRoundedBox(baked)).toEqual({ width: 1.2, height: 0.8, depth: 0.6, radius: 0.08, radiusSegments: 2 });
 		// a moved one, an edited one, a sphere and a typed box are not offered
 		const moved = baked.clone().translate(0.5, 0, 0);

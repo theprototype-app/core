@@ -2,7 +2,7 @@
 // from JSON it did not just make itself goes through here, so the check, the count and the one
 // toast are the same everywhere. See loadGuardCore.js for the rules.
 // 102b: importing it teaches ObjectLoader to read a Box's corner radius
-import { restoreRoundedBoxes } from './roundedBox.js';
+import { healRoundedBoxes } from './roundedBoxGate.js';
 import * as THREE from 'three';
 import { guardChanged, isEmbeddedUrl, isLocalImageUrl, stlWithinLimits } from './loadGuardCore.js';
 // 101 F2: the full object / material schema runs here, on top of loadGuardCore's rules
@@ -163,7 +163,7 @@ export function parseCheckedObject(json, from, what) {
 	if (!checkObjectJson(json, from, what)) throw refusal('object');
 	const object = new THREE.ObjectLoader(embeddedOnlyManager(from, what)).parse(json);
 	// 102b: a rounded box an older build wrote back square (its radius kept in userData) is rounded again
-	restoreRoundedBoxes(object);
+	healRoundedBoxes(object);
 	return object;
 }
 

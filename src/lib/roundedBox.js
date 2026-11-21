@@ -11,14 +11,15 @@
 //
 // What is NOT parametric: GLTF (autosave, the join sync) writes vertices, as it always did; the object's
 // `userData.geometryParams` carries the radius there, so its Geometry rows stay editable.
+//
+// A LAZY CHUNK: roundedBoxGate.js is the boot half (the Box builder, the ObjectLoader hook, the cheap tests)
+// and loads this the first time a radius or a candidate mesh shows up.
 
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { MAX_RADIUS_SEGMENTS, DEFAULT_RADIUS_SEGMENTS } from './roundedBoxGate.js';
 
-/** the most corner segments a radius may ask for (each one is 4x the vertices of the last) */
-export const MAX_RADIUS_SEGMENTS = 6;
-/** the default corner segments (the addon's own default) */
-export const DEFAULT_RADIUS_SEGMENTS = 2;
+export { MAX_RADIUS_SEGMENTS, DEFAULT_RADIUS_SEGMENTS };
 
 export class RoundedBox extends RoundedBoxGeometry {
 	/** @param {number} [width] @param {number} [height] @param {number} [depth] @param {number} [segments] @param {number} [radius] */
@@ -50,19 +51,10 @@ export function boxGeometryFor(p) {
 	return new THREE.BoxGeometry(p?.width, p?.height, p?.depth, p?.widthSegments, p?.heightSegments, p?.depthSegments);
 }
 
-let installed = false;
-/** teach ObjectLoader (every parse path: files, peers, undo, prefabs) to read a radius back */
-export function installRoundedBoxLoader() {
-	if (installed) return;
-	installed = true;
-	const Box = /** @type {any} */ (THREE.BoxGeometry);
-	const stock = Box.fromJSON;
-	Box.fromJSON = function (/** @type {any} */ data) {
-		if (Number(data?.radius) > 0) return new RoundedBox(data.width, data.height, data.depth, data.radiusSegments, data.radius);
-		return stock.call(this, data);
-	};
+/** the rounded box for these params (the gate's builder, once this chunk is here) @param {any} p */
+export function roundedBoxGeometry(p) {
+	return new RoundedBox(p.width, p.height, p.depth, p.radiusSegments ?? DEFAULT_RADIUS_SEGMENTS, p.radius);
 }
-installRoundedBoxLoader();
 
 /**
  * A plain box an older build wrote back (it read our rounded box as a Box and dropped the radius) still carries

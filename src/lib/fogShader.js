@@ -10,15 +10,18 @@
 // its inverse is a transpose: world y = column 1 of the rotation . (view position - translation)) — no new
 // attribute, no worldpos chunk dependency.
 
+// A LAZY chunk since the boot pass: environment.js imports it the first time a scene asks for height fog,
+// and then asks every live material to recompile once (installHeightFog returns true on that first call).
 import * as THREE from 'three';
+import { HEIGHT_FOG } from './fogModes.js';
 
-/** the shared uniform value (see above) */
-export const HEIGHT_FOG = new Float32Array(4);
+export { HEIGHT_FOG };
 
 let installed = false;
 
+/** @returns {boolean} true when this call installed the patch (materials compiled before it need a recompile) */
 export function installHeightFog() {
-	if (installed) return;
+	if (installed) return false;
 	installed = true;
 	const C = /** @type {any} */ (THREE.ShaderChunk);
 	C.fog_pars_vertex = C.fog_pars_vertex.replace('varying float vFogDepth;', 'varying float vFogDepth;\n\tvarying float vFogWorldY;');
@@ -48,11 +51,5 @@ export function installHeightFog() {
 	for (const lib of Object.values(/** @type {any} */ (THREE.ShaderLib)))
 		if (lib?.uniforms?.fogColor && !lib.uniforms.fogHeight) lib.uniforms.fogHeight = { value: HEIGHT_FOG };
 	/** @type {any} */ (THREE.UniformsLib.fog).fogHeight = { value: HEIGHT_FOG };
+	return true;
 }
-
-/** write the layer (from fogModes.heightFogParams) @param {number[]} params */
-export function setHeightFog(params) {
-	for (let i = 0; i < 4; i++) HEIGHT_FOG[i] = Number(params[i]) || 0;
-}
-
-installHeightFog();

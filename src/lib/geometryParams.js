@@ -17,7 +17,7 @@ import { terrainGeometry, TERRAIN_FALLOFFS, latheGeometry, cleanLathe, extrudeGe
 // params with it) and the collider hint stamped at creation
 import { ARCH_SPECS } from './arch/archGeometry.js';
 // 102b-papercuts: a Box may be ROUNDED (corner radius + segments), still a Box in the file
-import { boxGeometryFor, MAX_RADIUS_SEGMENTS, DEFAULT_RADIUS_SEGMENTS } from './roundedBox.js';
+import { boxGeometryFor, MAX_RADIUS_SEGMENTS, DEFAULT_RADIUS_SEGMENTS } from './roundedBoxGate.js';
 
 const TAU = Math.PI * 2;
 

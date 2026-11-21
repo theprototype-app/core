@@ -25,7 +25,7 @@ import { compileAsync } from '../render/compile.js';
 import { captureEnvironment, useCopies, restoreEnvironment } from './envHandover.js';
 import { buildPipeline } from './pipeline.js';
 import { classifyMaterial, notShownText, effectiveQuality, createDropWatch, quantile } from './cinematicCore.js';
-import { HEIGHT_FOG } from '../fogShader.js';
+import { HEIGHT_FOG } from '../fogModes.js';
 
 /** 102b-papercuts: what the chip names — the stand-ins, plus a height fog (WebGL-only shader chunk) @param {any} swap */
 const shownKinds = (swap) => (HEIGHT_FOG[2] > 0.5 ? [...swap.kinds, 'heightfog'] : swap.kinds);

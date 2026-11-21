@@ -2704,7 +2704,7 @@ function updateScriptEvents(time, ctx) {
 		const events = scriptOutputs(node.data).filter((o) => o.type === 'event');
 		if (!events.length) continue;
 		any = true;
-		const value = evalNode(node, nodes, edges, time, new Set(), ctx);
+		const value = /** @type {any} */ (evalNode(node, nodes, edges, time, new Set(), ctx));
 		const handles = value && typeof value === 'object' ? value.__handles : null;
 		for (const o of events) {
 			const key = node.id + '#' + o.name;

@@ -2,7 +2,8 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { fogKindOf, fogDensityOf, heightFogOf, heightFogParams, fogKindPatch, fogFactorAt } from '../../src/lib/fogModes.js';
-import { HEIGHT_FOG, setHeightFog } from '../../src/lib/fogShader.js';
+import { HEIGHT_FOG, setHeightFog } from '../../src/lib/fogModes.js';
+import { installHeightFog } from '../../src/lib/fogShader.js';
 import { mergeFogPatch } from '../../src/lib/fogReach.js';
 
 describe('fog kinds', () => {
@@ -53,6 +54,9 @@ describe('fogFactorAt (the shader maths)', () => {
 
 describe('the shader patch', () => {
 	it('three\'s fog chunks carry the layer; the stock branches are still there', () => {
+		expect(THREE.ShaderChunk.fog_fragment).not.toContain('fogHeight'); // nothing until a height fog asks
+		expect(installHeightFog()).toBe(true);
+		expect(installHeightFog()).toBe(false); // once
 		expect(THREE.ShaderChunk.fog_fragment).toContain('fogHeight.z > 0.5');
 		expect(THREE.ShaderChunk.fog_fragment).toContain('smoothstep( fogNear, fogFar, vFogDepth )');
 		expect(THREE.ShaderChunk.fog_vertex).toContain('vFogWorldY');

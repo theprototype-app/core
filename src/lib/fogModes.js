@@ -82,3 +82,12 @@ export function fogFactorAt(fog, dist, camY, pointY) {
 	const f = Math.abs(h1 - h0) > 1e-3 ? (Math.exp(-k * h0) - Math.exp(-k * h1)) / (k * (h1 - h0)) : Math.exp(-k * h0);
 	return 1 - Math.exp(-d * dist * f);
 }
+
+/** 102b: the shared height-fog uniform value [base, 1/thickness, on, 0] (fogShader.js puts it in every fog
+ * material; a leaf here so the Cinematic view and environment.js can read and write it without the patch) */
+export const HEIGHT_FOG = new Float32Array(4);
+
+/** write the layer (from heightFogParams) @param {number[]} params */
+export function setHeightFog(params) {
+	for (let i = 0; i < 4; i++) HEIGHT_FOG[i] = Number(params[i]) || 0;
+}

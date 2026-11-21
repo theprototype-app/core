@@ -21,7 +21,6 @@
 	import LoadStatePanel from './LoadStatePanel.svelte';
 	import WaterPanel from '../water/WaterPanel.svelte';
 	import SliderRow from '../ui/SliderRow.svelte';
-	import FogKindRows from './scene/FogKindRows.svelte'; // 102b-papercuts
 	import { fogKindOf } from '$lib/fogModes.js';
 	import SceneLodSection from './SceneLodSection.svelte'; // 46 P2
 	import PropRow from '../ui/PropRow.svelte';
@@ -105,7 +104,8 @@
 		enterEditMode
 	} from '$lib/meshEdit';
 	import { bottomInset } from '$lib/bottomDock';
-	import { geometryParamsOf, applyGeometry, roundedBoxOffer, convertToRoundedBox } from '$lib/geometryEdit';
+	import { geometryParamsOf, applyGeometry } from '$lib/geometryEdit';
+	import { roundedBoxOffer } from '$lib/roundedBoxGate.js'; // 102b-papercuts
 	import { nameOf } from '$lib/lockControl';
 	import { geometrySpec } from '$lib/geometryParams';
 	import { LIGHT_PARAMS, SHADOW_TYPES, SHADOW_SIZES, setShadowMapSize, cappedShadowSize } from '$lib/lightParams';
@@ -2261,7 +2261,8 @@
 				/>
 				</FieldClip>
 				<!-- 102b-papercuts: Linear / Distance / Height fog (Near and Far are the linear fog's rows) -->
-				<FogKindRows fog={envFog} />
+				<!-- 102b-papercuts: a lazy chunk (the boot carries no fog-kind rows) -->
+				{#await import('./scene/FogKindRows.svelte') then m}<m.default fog={envFog} />{/await}
 				{#if fogKindOf(envFog) === 'linear'}
 				<SliderRow id="fog-near" label="Near" min={0} max={Math.max(10, Math.ceil(envFog?.near ?? 0))} step={0.1} decimals={1} value={envFog?.near ?? 0}
 					onchange={(v) => editEnvSky({ fog: { near: v } })} />
@@ -4026,7 +4027,10 @@
 						variant="outline"
 						title="Make it a Box with a corner radius: it looks the same, saves as a few numbers instead of every vertex, and gets its Geometry rows back. Undo puts the mesh back."
 						onclick={() => {
-							if (convertToRoundedBox($selectedObject.uuid)) geoTick++;
+							const uuid = $selectedObject.uuid;
+							void import('$lib/roundedBoxConvert.js').then((m) => {
+								if (m.convertToRoundedBox(uuid)) geoTick++;
+							});
 						}}>Convert to a rounded Box</UiButton
 					>
 				</Section>

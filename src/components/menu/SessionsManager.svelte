@@ -22,7 +22,7 @@
 	// the same unsaved-changes question through the SAME guard. `sceneOpenGuard` exists
 	// because a guard with two copies is a guard with one bug; this is its third caller.
 	import { guardSceneReplace, sceneAtRisk } from '$lib/sceneOpenGuard';
-	import { currentLevel, sceneSignature } from '$lib/levels';
+	import { currentLevel, sceneSignature, payloadHoldsDrafts, liveSceneSignature } from '$lib/levels';
 	import { containerType } from '$lib/download/containerType.js';
 	// R22 round 13: MOUNT is not Load. Load replaces the whole project; mounting adds this
 	// saved project to the Explorer as a root of its own, above Library, leaving whatever is
@@ -373,7 +373,8 @@
 			hash: '',
 			name: name + ' (from Sessions)',
 			unsaved: true,
-			...(payload ? { signature: sceneSignature(payload) } : {})
+			// 80a: a saved session may hold drafts (local saves keep them); compare as a file sees it
+			...(payload ? { signature: payloadHoldsDrafts(payload) ? liveSceneSignature(name + ' (from Sessions)') : sceneSignature(payload) } : {})
 		});
 	}
 

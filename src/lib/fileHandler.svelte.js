@@ -1333,9 +1333,11 @@ function disposeParsed(root) {
  * @param {any} payload the session payload that just applied
  */
 async function markOpenedUnsaved(payload) {
-	const { currentLevel, sceneSignature, armSaveIntoProject } = await import('./levels');
+	const { currentLevel, sceneSignature, armSaveIntoProject, payloadHoldsDrafts, liveSceneSignature } = await import('./levels');
 	const name = String(payload?.name ?? '').trim() || 'Opened scene';
-	currentLevel.set({ hash: '', name, unsaved: true, signature: sceneSignature(payload) });
+	// 80a migration: an old file holding drafts is compared as a file sees the scene (drafts out)
+	const signature = payloadHoldsDrafts(payload) ? liveSceneSignature(name) : sceneSignature(payload);
+	currentLevel.set({ hash: '', name, unsaved: true, signature });
 	// loose-scenes fix: the offer itself lives in levels.js now, because travel to a
 	// scene file the project does not name reaches the identical state and the two
 	// copies of this prompt would drift

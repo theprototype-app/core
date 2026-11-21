@@ -11,6 +11,7 @@ import { flowViewsSnapshot } from './flowView';
 import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
 import { stripEditOverlays } from './editOverlays';
+import { adoptLoadedDrafts } from './objectPermissions'; // 80a migration
 import { withCleanView } from './cleanView'; // 50-window (C2): thumbnails without the editor's scaffolding
 import { isPristinePackRef, stubElementOf, stubNodeCount, fillPackRef, warmPrograms } from './packRefs';
 // 36 L2: the scene's saved view is applied at the START of a load (startView.js)
@@ -1645,7 +1646,10 @@ async function applySessionNow(payload, opts, job) {
 			// on the way in; the peers do the same in `createObject`.
 			stripEditOverlays(object);
 			group.add(object); // keep original uuids — every peer converges on them
-			if (replicate && peer) peer.send({ type: 'object', element });
+			// 80a migration: a file saved with drafts in it loads them as private drafts — marked
+			// here, before anything is sent, and the draft itself is not sent at all
+			const draft = adoptLoadedDrafts(object);
+			if (replicate && peer && !draft) peer.send({ type: 'object', element });
 			// a kit piece is not loaded until its pack refilled it: counted when it lands,
 			// and asked for NOW rather than on the scan's next debounce
 			if (object.userData?.packStub) refills.push(fillPackRef(object).finally(() => progress(job)));

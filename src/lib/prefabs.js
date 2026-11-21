@@ -8,6 +8,7 @@ import { recordObjectPresence, beginHistoryBatch, endHistoryBatch } from './hist
 import { patch as audioPatch, addCablesRemapped } from './audioPatch';
 import { selectObject } from './objectActions';
 import { parkEditOverlays, stripEditOverlays } from './editOverlays';
+import { draftsInSelection, isDraftUuid, liftLocalObjects, noteLocalObjectsExcluded } from './objectPermissions';
 import { idbGet, idbPut, idbDelete } from './idb';
 import { stampElementKeys, linkNode, linkRoot, elementKey } from './prefabSync';
 import { graphOf } from '../stores/flowStore';
@@ -172,6 +173,26 @@ function stampCables(element, cables) {
 }
 
 /**
+ * 80a D2: a prefab is a file — a draft in the selection (or inside a selected group) stays out of
+ * it, said once ("N drafts not included — share first?"); a selection of drafts only makes none.
+ * @param {string[]} uuids @param {string} [name] @param {any} [opts]
+ */
+function buildPrefabElement(uuids, name, opts = {}) {
+	const all = (uuids ?? []).filter(Boolean);
+	const drafts = draftsInSelection(all);
+	if (!drafts) return buildPrefabElementInner(all, name, opts);
+	noteLocalObjectsExcluded(drafts);
+	const list = all.filter((uuid) => !isDraftUuid(uuid));
+	if (!list.length) return null;
+	const lift = liftLocalObjects();
+	try {
+		return buildPrefabElementInner(list, name, opts);
+	} finally {
+		lift.restore();
+	}
+}
+
+/**
  * 21-H2: the serialized snapshot behind every prefab write — ONE object by uuid, or a
  * MULTI-selection baked into a holder group (U-2). Extracted so "Update from selection"
  * cannot drift from "Save as prefab": they are the same bytes by construction, and the
@@ -180,7 +201,7 @@ function stampCables(element, cables) {
  * @param {{keepUuids?: boolean}} [opts]
  * @returns {{element: any, name: string, liveToElement: Record<string, string>}|null}
  */
-function buildPrefabElement(uuids, name, opts = {}) {
+function buildPrefabElementInner(uuids, name, opts = {}) {
 	const group = get(objectsGroup);
 	const list = (uuids ?? []).filter(Boolean);
 	if (!list.length) return null;

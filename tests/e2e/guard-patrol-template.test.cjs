@@ -197,19 +197,25 @@ h.run(async () => {
 		await page.waitForTimeout(4000);
 		const b = shown(await frame.evaluate(() => window.__navigation?.debug?.() ?? null));
 		h.check(!!a && !!b && Math.hypot(a[0] - b[0], a[2] - b[2]) > 1, '5.3 in the bot\'s view the guard moves (' + JSON.stringify([a, b]) + ')');
-		// the bot draws what the host's crowd sends: sample both together until they agree (a loaded worker starves
-		// the bot frame's rAF, so one pair of samples can be seconds apart; a bot running its own crowd never converges)
+		// one peer runs the crowd (the lowest active peer id: the host OR the bot, by chance of the ids) and the
+		// other draws its snapshots. Compare the authority's own agent with the follower's drawn guard, sampled
+		// together until they agree (a loaded worker starves the bot frame's rAF; two crowds never converge).
+		const where = (d, auth) => (auth ? guard(d)?.feet : shown(d)) ?? null;
 		const t0 = Date.now();
 		let pair = null;
 		while (Date.now() - t0 < 20000) {
-			const bb = shown(await frame.evaluate(() => window.__navigation?.debug?.() ?? null));
-			const hh = guard(await dbg(page));
-			pair = { bot: bb, host: hh?.feet ?? null, ms: Date.now() - t0 };
-			if (bb && hh && Math.hypot(bb[0] - hh.feet[0], bb[2] - hh.feet[2]) < 3) break;
+			const bd = await frame.evaluate(() => window.__navigation?.debug?.() ?? null);
+			const hd = await dbg(page);
+			const botAuth = !!bd && bd.authority === bd.me;
+			const hostAuth = !!hd && hd.authority === hd.me;
+			const bp = where(bd, botAuth);
+			const hp = where(hd, hostAuth);
+			pair = { runs: botAuth ? 'bot' : hostAuth ? 'host' : 'nobody', both: botAuth && hostAuth, bot: bp, host: hp, ms: Date.now() - t0 };
+			if (botAuth !== hostAuth && bp && hp && Math.hypot(bp[0] - hp[0], bp[2] - hp[2]) < 3) break;
 			pair.off = true;
 			await page.waitForTimeout(500);
 		}
-		h.check(!!pair && !pair.off, '5.4 where the host\'s crowd puts it (' + JSON.stringify(pair) + ')');
+		h.check(!!pair && !pair.off, '5.4 ONE peer runs the guard and the other draws it there (' + JSON.stringify(pair) + ')');
 	}
 	await page.evaluate(() => window.__tp.test.v1.testPlayersUi.stopTestPlayers());
 	const gone = await until(() => page.evaluate(() => window.__tp.test.v1.testPlayers.testPlayersDebug()), (d) => d === null, 30000);

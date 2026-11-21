@@ -15,6 +15,7 @@ vi.mock('$lib/objectActions', () => ({
 	// `duplicate` message and a create entry
 	duplicateObject: (uuid, options = {}) => globalThis.__testDuplicate?.(uuid, options)
 }));
+vi.mock('$lib/geometries.svelte', async () => (await import('./helpers/geometriesStub.js')).geometriesStub());
 vi.mock('$lib/physics', () => ({ setPhysicsFor: () => {}, physicsShapeChanged: () => {} }));
 
 const { objectsGroup } = await import('../../src/stores/sceneStore');

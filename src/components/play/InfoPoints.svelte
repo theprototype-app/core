@@ -35,7 +35,7 @@
 		if (note && card) tick().then(() => card?.focus());
 	});
 	$effect(() => {
-		if (listOpen && list) tick().then(() => list?.querySelector('button')?.focus());
+		if (listOpen && list) tick().then(() => list?.querySelector(/** @type {'button'} */ ('button.ip-item'))?.focus());
 	});
 
 	/** @param {string} id */

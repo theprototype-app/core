@@ -25,7 +25,7 @@
 	import MomentButton from '../moment/MomentButton.svelte';
 	// 102b-play: info points — the card is a LAZY chunk, fetched only when the scene has a visitor note
 	import { annotations } from '$lib/annotationsHandler';
-	const hasInfoPoints = $derived($annotations.some((n) => n?.visitors === true));
+	const hasInfoPoints = $derived($annotations.some((/** @type {any} */ n) => n?.visitors === true));
 	// 53 (A6): captions / colour filter / text size / controls, set before pressing Play
 	import { openAccessCard } from '$lib/gameShell';
 

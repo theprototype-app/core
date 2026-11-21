@@ -2789,6 +2789,21 @@ function implicitOwnerOf(node) {
 	return wired ? null : graph;
 }
 
+/**
+ * 102b-papercuts (scout row 18): an EFFECT node with nothing to act on — a scene-graph node (an object graph
+ * targets its owner) with no target of its own and no wire into an Object Selector that picks an object. Read
+ * only for the card line (4 Hz, the one graph the node editor shows), so it may walk the edges.
+ * @param {any} node @returns {boolean}
+ */
+export function effectActsOnNothing(node) {
+	if (!node || node.data?.muted) return false;
+	const effect = animationTypes.includes(node.type) || !!moduleEffects[node.type] || (node.type === 'script' && !isScriptValue(node.data)) || node.type === 'customnode';
+	if (!effect) return false;
+	if (node.__graph && node.__graph !== SCENE_GRAPH) return false; // the owner is its object
+	if (directTargetOf(node)) return false;
+	return !edges.some((/** @type {any} */ e) => e.source === node.id && targetUuidOf(e));
+}
+
 function applyColors() {
 	if (!sceneObjects) return;
 	edges.forEach((edge) => {
@@ -5708,7 +5723,8 @@ function runTick(now) {
 			value: (node) => evalNode(node, nodes, edges, time, new Set(), ctx),
 			pulseAt: (id) => ctx.triggers?.[id]?.lastT ?? null,
 			// 78 F26: the trigger nodes' "why not" line
-			why: (node) => (WHY_TYPES.has(node.type) ? whyCardLine(lastCheck(node.id), standingWhy(node, time, ctx)) : null)
+			why: (node) => (WHY_TYPES.has(node.type) ? whyCardLine(lastCheck(node.id), standingWhy(node, time, ctx)) : null),
+			inert: effectActsOnNothing // 102b-papercuts
 		});
 	if (paused) toLive();
 	phaseEnd(PHASE_FLOW);

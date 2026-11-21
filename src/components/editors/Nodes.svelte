@@ -110,7 +110,7 @@
 	import { lintFlowGraph, type FlowLintFinding } from '$lib/flowLint.js'; // 78 F24
 	import { fittingNodes, wireMenuRows, candidateOutputs, type WireEnd } from '$lib/wireSearch.js'; // 78 F1
 	import { animateInEditor, toggleAnimateInEditor } from '$lib/editorMotion'; // 78 F6
-	import { liveStateGraph, nodeLiveStates, clearLiveStates } from '$lib/nodeLiveState'; // 78 F7
+	import { liveStateGraph, nodeLiveStates, clearLiveStates, INERT_LINE } from '$lib/nodeLiveState'; // 78 F7
 	import { variadicSocketExists, switcherItems, MAX_SWITCHER_ITEMS, SWITCHER_TYPES, switcherVType } from '$lib/variadicNodes.js'; // 37 (R6)
 	import { removeVariadicSocket, setSwitcherType, addSwitcherItem } from '$lib/variadicEdit.js'; // 37 (R6)
 	import KitButton from '../ui/Button.svelte'; // 37: the Switcher ⓘ rows on the redesign kit
@@ -2293,7 +2293,7 @@
 			<!-- 78 F7: what each node is doing right now, under its card -->
 			{#each liveChips as chip (chip.id)}
 				<ViewportPortal target="front">
-					<div class="flow-live-state" data-node-id={chip.id} style="transform: translate({chip.x}px, {chip.y}px); max-width: {chip.w}px">{chip.text}</div>
+					<div class="flow-live-state" class:flow-live-warn={chip.text === INERT_LINE} data-node-id={chip.id} style="transform: translate({chip.x}px, {chip.y}px); max-width: {chip.w}px">{chip.text}</div>
 				</ViewportPortal>
 			{/each}
 			<!-- 78 F24: a chip on every wire the lint flags (tooltip = what is wrong; press = the fix) -->
@@ -2526,6 +2526,10 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+	/* 102b-papercuts: an effect that acts on nothing (the words say it too: not colour alone) */
+	.flow-live-state.flow-live-warn {
+		color: var(--warn-text);
 	}
 	/* 78 F6: the motion switch reads as OFF at a glance (not by colour alone: the glyph is a pause) */
 	:global(.svelte-flow__controls-button.flow-motion-off) {

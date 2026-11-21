@@ -4,12 +4,12 @@
 	"pages": {
 		"play": {
 			"html": "play.html",
-			"maxJsGzBytes": 2163727,
+			"maxJsGzBytes": 2176041,
 			"maxFirstFrameMs": 20000
 		},
 		"editor": {
 			"html": "index.html",
-			"maxJsGzBytes": 3544646,
+			"maxJsGzBytes": 3562767,
 			"maxFirstFrameMs": 32000
 		}
 	},
@@ -42,6 +42,13 @@
 			"play": "v1.69.0 2108.0 KB -> 2111.0 KB (+3.0) -> line 2113.0 KB = v1.69.0 + 5 KB",
 			"editor": "v1.69.0 3456.6 KB -> 3459.5 KB (+2.9) -> line 3461.6 KB = v1.69.0 + 5 KB",
 			"note": "the orchestrator's line for the SvelteKit 3 release: the 1.69.0 measurement (same machine, same run) + 5 KB. Kit 3's client runtime is bigger (navigation 14.6 + client 8.7 + client.svelte 1.9 KB vs kit 2's index-client 24.9 KB); the AI chat client left both boots to pay for it (sk3-int Q1). On kit 3 the 100 C1 three.core group must be output.codeSplitting (kit 3 sets that option itself and an advancedChunks group is dropped: three split again, +2 KB per page)"
+		},
+		{
+			"date": "2026-11-21",
+			"lane": "80a-int (Locks that hold + fix-batch-4)",
+			"play": "v1.70.0 2110.8 KB -> 2123.0 KB (+12.2) -> line 2125.0 KB = measured + 2 KB",
+			"editor": "v1.70.0 3459.0 KB -> 3477.3 KB (+18.3) -> line 3479.3 KB = measured + 2 KB",
+			"note": "orchestrator OK (QUESTIONS-80a-int Q1), measured against a v1.70.0 build on the same machine and node_modules. Growth per module (gzip): peerHandler's chunk (lock receive gate, lockreject, held set in the handshake, drafts outbound gate, signaling hold) +2.85; lockHeld +1.95 (new); lockControl +1.12; objectPermissions (drafts scrub + adopt on load) +1.10; lockMode +0.89 (new); rosterOrigin +0.48 (new); editor only: HeldBanner +1.76, PeerAvatar +0.77, Flow +0.94, debugHooks +0.56. The play check: play joins sessions (PlayApp imports peerHandler) and its selection, session and cloud paths (objectActions, commandsHandler, cloudPlugin) call nearly every lock export; the editor-only exports left are a few lines each. lockIdle (the 5-minute idle ask) moved to a lazy import: -0.8 play / -1.1 editor. After the 1.71.0 merge (its editor line 3319.1 KB) re-measure and lower the editor line to the new measurement + 2 KB."
 		}
 	],
 	"throttle": {

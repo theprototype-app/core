@@ -2,7 +2,6 @@ import { get, writable } from 'svelte/store';
 import { lockedObjects, objectsGroup, TControls, selectedObject, selectedObjects } from '../stores/sceneStore';
 import { peers, showToast, closeSelectionInspector } from '../stores/appStore';
 import { selectObject, applySelectionSet, deselectObject } from './objectActions';
-import { startLockIdle } from './lockIdle';
 import { registerLockModeHooks, clearEditTimers, resetLockMode, lockOnEdit, lockMode } from './lockMode';
 import { sessionHost } from './connectionState';
 import { createRequestLimiter, holdsLock, isHeld, holderOf, gatedUuid, lockGateVerdict } from './lockTrust';
@@ -397,14 +396,19 @@ export function startLockLifecycle() {
 		if (lastHost !== undefined && hostId !== lastHost) resetLockMode();
 		lastHost = hostId;
 	});
-	startLockIdle({
-		say: (text, actions) => showToast(text, actions),
-		letGo: letGoOf,
-		nameOf: objectName,
-		alone: () => {
-			/** @type {any} */
-			const p = get(peers);
-			return !Object.values(p?.connections ?? {}).some((c) => /** @type {any} */ (c)?.open);
-		}
-	});
+	// 80a-int: the idle expiry is a lazy chunk (off the play boot: a shared play link holds nothing
+	// for minutes). Its first check is 15 s out and it subscribes to myLocks on start, so nothing held
+	// before the chunk lands is missed.
+	void import('./lockIdle').then(({ startLockIdle }) =>
+		startLockIdle({
+			say: (text, actions) => showToast(text, actions),
+			letGo: letGoOf,
+			nameOf: objectName,
+			alone: () => {
+				/** @type {any} */
+				const p = get(peers);
+				return !Object.values(p?.connections ?? {}).some((c) => /** @type {any} */ (c)?.open);
+			}
+		})
+	);
 }

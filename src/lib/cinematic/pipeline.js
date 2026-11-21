@@ -13,6 +13,10 @@
 //     space apply at the end (RenderPipeline.outputColorTransform).
 //   · Basic = tone mapping + GTAO + TRAA + bloom. Standard = SSGI + SSR at half resolution (r186's SSGI
 //     has no resolution scale: its targets are scaled here). High = full resolution.
+//   · C2-2: particles, bursts and bubbles (fxCover.js twins, layer FX_LAYER) are drawn in a pass of their own, cleared
+//     to transparent with no background, and laid over the anti-aliased image as premultiplied colour before the bloom
+//     (so sparks glow). Kept out of the scene pass because its normal / velocity / diffuse targets are written
+//     unblended: a sprite there replaced the surface normals behind it and the AO went black under it.
 //   · the selection outline (W14) is TSL's OutlineNode over the objects Outline.svelte outlines,
 //     composited LAST, after the bloom (an editor helper, never graded).
 import { QUALITY } from './cinematicCore.js';
@@ -21,7 +25,7 @@ import { QUALITY } from './cinematicCore.js';
 const LIGHT = { slices: 2, steps: 8, giIntensity: 10, aoIntensity: 1, radius: 12, thickness: 1, ssrMaxDistance: 6, ssrIntensity: 1, dielectric: 0.25 };
 
 /**
- * @param {{ W: any, T: any, renderer: any, scene: any, camera: any, quality: import('./cinematicCore.js').Quality, outline?: () => { selected: any[], locked: any[], colors?: { selected?: any, locked?: any } } }} o
+ * @param {{ W: any, T: any, renderer: any, scene: any, camera: any, quality: import('./cinematicCore.js').Quality, outline?: () => { selected: any[], locked: any[], colors?: { selected?: any, locked?: any } }, fx?: { layer: number, count: number, setSceneDepth: (tex: any) => void } | null }} o
  */
 export async function buildPipeline(o) {
 	const { W, T, renderer, scene, camera } = o;
@@ -99,9 +103,12 @@ export async function buildPipeline(o) {
 	}
 	const aa = traa(lit, depth, vel, camera);
 	nodes.traa = aa;
-	const glow = bloom(aa, 0.25, 0.4, 0.85);
+	/** @type {any} */
+	let shown = aa;
+	if (o.fx) shown = fxOver(o.fx, aa);
+	const glow = bloom(shown, 0.25, 0.4, 0.85);
 	nodes.bloom = glow;
-	let final = aa.add(glow);
+	let final = shown.add(glow);
 	// the selection + lock outlines, last (the selected objects array is refreshed every frame)
 	/** @type {any} */
 	let sel = null;
@@ -125,6 +132,46 @@ export async function buildPipeline(o) {
 		final = vec4(T.mix(T.mix(rgb, lockColor, e2), selColor, e1), final.a);
 	}
 	pipeline.outputNode = final;
+
+	/**
+	 * The fx pass over `under`: the twins only, no background, cleared to (0, 0, 0, 0); skipped while there are none (one
+	 * empty render clears what the last one left). @param {any} fx @param {any} under */
+	function fxOver(fx, under) {
+		const fxPass = pass(scene, camera);
+		const layers = new W.Layers();
+		layers.set(fx.layer);
+		fxPass.setLayers(layers);
+		fx.setSceneDepth(scenePass.getTexture('depth'));
+		const clear = new W.Color();
+		let empty = false;
+		const draw = fxPass.updateBefore.bind(fxPass);
+		fxPass.updateBefore = (/** @type {any} */ frame) => {
+			if (!fx.count) {
+				if (empty) return;
+				empty = true;
+			} else empty = false;
+			const bg = scene.background;
+			renderer.getClearColor(clear);
+			const alpha = renderer.getClearAlpha();
+			// TRAA jitters the camera for the whole pipeline (its view offset); the twins are not accumulated by it, so a
+			// jittered sprite would shimmer by a sub-pixel every frame. Drawn from the un-jittered camera instead.
+			const v = camera.view;
+			const jitter = v?.enabled ? [v.fullWidth, v.fullHeight, v.offsetX, v.offsetY, v.width, v.height] : null;
+			if (jitter) camera.clearViewOffset();
+			scene.background = null;
+			renderer.setClearColor(0x000000, 0);
+			try {
+				draw(frame);
+			} finally {
+				scene.background = bg;
+				renderer.setClearColor(clear, alpha);
+				if (jitter) camera.setViewOffset(...jitter);
+			}
+		};
+		nodes.fxPass = fxPass;
+		const c = fxPass.getTextureNode('output');
+		return vec4(under.rgb.mul(c.a.oneMinus()).add(c.rgb), under.a);
+	}
 	return {
 		pipeline,
 		nodes,

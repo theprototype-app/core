@@ -241,9 +241,9 @@
 		// the panel chunk imports the painter: a dynamic import's preload list (the painter's whole static graph,
 		// ~400 chunk names) is written into the IMPORTING chunk, so it must not be this boot one (5 KB gz measured)
 		paintLoading ??= import('./MeshPaintPanel.svelte').then(async (panel) => {
-			const m = await panel.loadPainter();
+			// the panel shows as soon as its own small chunk lands; the painter follows (the old brush paints meanwhile)
 			PaintPanel = panel.default;
-			paintMod = m;
+			paintMod = await panel.loadPainter();
 		});
 		return paintLoading;
 	}

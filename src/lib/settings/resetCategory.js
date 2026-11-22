@@ -79,7 +79,7 @@ import { flowMouseBindings } from '../flowPrefs';
 import { nodeEditorOpens } from '../flowView';
 import { setTouchPrefs, DEFAULT_TOUCH_PREFS, touchTextures, touchLayouts } from '../touchActions';
 import { setTouchLookSpeed } from '../touchControls';
-import { resetAllShortcuts } from '../shortcuts';
+import { resetAllShortcuts, changedFromDefaultsCount, keymapPreset } from '../shortcuts';
 import { lightHelperLength } from '../lightHelpers';
 import { shadowQuality } from '../lightParams';
 import { autoQuality } from '../qualityGovernor';
@@ -334,7 +334,9 @@ export async function askResetCategory(key, label) {
 	const ok = await showConfirm({
 		title: `Reset ${label} to defaults?`,
 		message:
-			key === 'toolsconnections'
+			key === 'shortcuts'
+				? shortcutsResetMessage()
+				: key === 'toolsconnections'
 				? 'Every tool here is switched back to its default on this device: the assistant and mesh generation off, voice typing on OpenAI, desktop tools on. Your saved providers and API keys stay.'
 				: `Every setting on the ${label} page goes back to its default, on this device only. Nothing else changes.`,
 		confirmLabel: 'Reset',
@@ -344,6 +346,14 @@ export async function askResetCategory(key, label) {
 	resetCategory(key);
 	showToast(`${label} reset to defaults`);
 	return true;
+}
+
+/** 103 row 10: the third reset level says how many bindings change (and that saved keymaps stay) */
+function shortcutsResetMessage() {
+	const n = changedFromDefaultsCount();
+	const preset = get(keymapPreset);
+	const what = n ? `${n} shortcut${n === 1 ? ' goes' : 's go'} back to the ThePrototype defaults` : 'Every shortcut already has its ThePrototype default';
+	return `${what}${preset !== 'theprototype' ? ', and the keymap goes back to ThePrototype (default)' : ''}, on this device. Your saved keymaps stay; the fly settings are not touched.`;
 }
 
 /** About › Danger zone: ask, then wipe every setting on this device (1.25.0's "Reset settings") */

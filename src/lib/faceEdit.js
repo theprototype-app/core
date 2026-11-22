@@ -4,7 +4,7 @@ import { writable, get } from 'svelte/store';
 import { globalScene, globalCamera, objectsGroup, TControls, lockedObjects, isVRMode, pokeScene } from '../stores/sceneStore';
 // 15-F: session-scoped undo — editSession imports ONLY history (an edge we
 // already have), so this closes no cycle
-import { noteEditEnter, noteEditExit, noteSelectionIds, sealEditHistorySession } from './editSession';
+import { noteEditEnter, noteEditExit, noteSelectionIds, sealEditHistorySession, captureEntry, geometryChanged, loadKernelOps } from './editSession';
 import { session as editSession } from './editSessionState';
 import { peers, showToast, settingsOpen, settingsSection } from '../stores/appStore';
 import {
@@ -292,24 +292,6 @@ function uvLerp(a, b, t) {
 	return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 }
 
-/** M1: the uv centroid of a triangle set — inset shrinks toward it in uv space
- * exactly as the positions shrink toward the spatial centroid.
- * @param {any[]} tris @param {number[]} triIndices */
-function uvCentroidOf(tris, triIndices) {
-	let u = 0;
-	let v = 0;
-	let n = 0;
-	for (const ti of triIndices) {
-		if (!tris[ti]?.uv) continue;
-		for (const pair of tris[ti].uv) {
-			u += pair[0];
-			v += pair[1];
-			n++;
-		}
-	}
-	return n ? [u / n, v / n] : [0, 0];
-}
-
 /** @param {any[]} t triangle */
 function triNormal(t) {
 	return new THREE.Vector3()
@@ -590,51 +572,54 @@ function edgeOutward(p0, p1, normal) {
 	return out.normalize();
 }
 
-/** Extrude a face by dist along its normal, stitching visible side walls @param {any[]} tris @param {any} face @param {number} dist */
+// ---- 99 K4 family 1: extrude / inset / move run on the kernel (meshOps/extrude.js) -------------------------
+// The triangle-soup exports below keep their arguments and return shape (VR, the bevel core and the e2e
+// suites call them): each converts the soup to an op mesh, runs the ONE kernel operator and converts back.
+// The session, adjust and agent paths skip the soup altogether (sessionOpMesh / objectOpMesh).
+
+/** the kernel operators, or a refusal while their lazy chunk is still loading @returns {any} */
+function kernelOps() {
+	const ops = editSession.ops;
+	if (!ops) throw new Error(KERNEL_LOADING);
+	return ops;
+}
+const KERNEL_LOADING = 'Mesh tools are still loading — try again in a moment';
+export { loadKernelOps };
+
+/** a triangle soup as an op mesh, begun @param {any[]} tris */
+const soupOpMesh = (tris) => kernelOps().fromSoup(tris);
+/** an op mesh back to a triangle soup (mi + uv tags) @param {any} om @returns {any[]} */
+const opMeshTris = (om) => kernelOps().toSoup(om);
+
+/** @param {any} n a Vector3 @returns {number[]} */
+const vec = (n) => [n.x, n.y, n.z];
+
+/** Extrude a face by dist along its normal, stitching visible side walls (kernel: extrudeRegion)
+ * @param {any[]} tris @param {any} face @param {number} dist */
 export function extrudeFace(tris, face, dist) {
-	const out = cloneTris(tris);
-	const offset = face.normal.clone().multiplyScalar(dist);
-	const faceSet = new Set(face.triIndices);
-	const boundary = boundaryEdges(tris, face);
-	out.forEach((t, ti) => {
-		if (faceSet.has(ti)) t.forEach((/** @type {any} */ v) => v.add(offset));
-	});
-	boundary.forEach(({ p0, p1, ti, c0, c1 }) => {
-		const a = p0.clone();
-		const b = p1.clone();
-		const a2 = p0.clone().add(offset);
-		const b2 = p1.clone().add(offset);
-		// The wall's uv runs ALONG the extrusion, at the base edge's own texel
-		// density. The first M1 pass gave the offset copies their base corner's
-		// uv, which collapsed the wall's v range to zero and smeared a single
-		// texel line up the whole side — the "second extrude breaks the texture"
-		// report. Advancing perpendicular in uv space by (world distance x uv
-		// units per world unit) keeps the aspect ratio, so repeated extrudes
-		// stack bands of consistent scale.
-		const uvA = uvAt(tris[ti], c0);
-		const uvB = uvAt(tris[ti], c1);
-		const along = [uvB[0] - uvA[0], uvB[1] - uvA[1]];
-		const uvLen = Math.hypot(along[0], along[1]);
-		const worldLen = p0.distanceTo(p1);
-		const step = uvLen > 1e-9 && worldLen > 1e-9 ? (uvLen / worldLen) * dist : dist;
-		const perp =
-			uvLen > 1e-9 ? [(-along[1] / uvLen) * step, (along[0] / uvLen) * step] : [0, step];
-		const uvA2 = [uvA[0] + perp[0], uvA[1] + perp[1]];
-		const uvB2 = [uvB[0] + perp[0], uvB[1] + perp[1]];
-		// each wall takes its OWN triangle's normal + slot: a multi-selection can
-		// span shells (and, in a mixed selection, differently-facing faces)
-		pushQuad(
-			out,
-			a,
-			b,
-			b2,
-			a2,
-			edgeOutward(p0, p1, triNormal(tris[ti])),
-			tris[ti].mi,
-			tris[ti].uv ? [uvA, uvB, uvB2, uvA2] : undefined
-		);
-	});
-	return out;
+	const om = soupOpMesh(tris);
+	kernelOps().extrudeRegion(om, face.triIndices, vec(face.normal), dist);
+	return opMeshTris(om);
+}
+
+/**
+ * Push/pull a face along its normal, WELDED (138): every vertex sharing the face's corner positions
+ * moves too, so adjacent faces stretch with it instead of tearing a hole (kernel: moveRegion).
+ * @param {any[]} tris @param {any} face @param {number} dist
+ */
+export function moveFaceAlongNormal(tris, face, dist) {
+	const om = soupOpMesh(tris);
+	kernelOps().moveRegion(om, face.triIndices, vec(face.normal), dist);
+	return opMeshTris(om);
+}
+
+/** Inset: each connected piece shrinks toward its own centroid (15-G) and a visible frame ring is stitched
+ * so the gap does not read as a hole (121) — kernel: insetRegion. @param {any[]} tris @param {any} face
+ * @param {number} amount */
+export function insetFace(tris, face, amount) {
+	const om = soupOpMesh(tris);
+	kernelOps().insetRegion(om, face.triIndices, amount);
+	return opMeshTris(om);
 }
 
 /** position keys of a face's vertices (138: weld set for a move) @param {any[]} tris @param {any} face */
@@ -644,62 +629,6 @@ function faceVertexKeys(tris, face) {
 		tris[ti].forEach((/** @type {any} */ v) => keys.add(keyOf(v.x, v.y, v.z)))
 	);
 	return keys;
-}
-
-/**
- * Push/pull a face along its normal, WELDED (138): every vertex sharing the
- * face's corner positions moves too, so adjacent faces stretch with it instead
- * of the face detaching and tearing a hole. @param {any[]} tris @param {any} face @param {number} dist
- */
-export function moveFaceAlongNormal(tris, face, dist) {
-	const out = cloneTris(tris);
-	const offset = face.normal.clone().multiplyScalar(dist);
-	const keys = faceVertexKeys(tris, face);
-	out.forEach((t) => t.forEach((/** @type {any} */ v) => { if (keys.has(keyOf(v.x, v.y, v.z))) v.add(offset); }));
-	return out;
-}
-
-/** Inset: shrink a face toward its centroid + stitch a visible frame ring so
- * the gap doesn't read as a hole (121).
- *
- * 15-G: each CONNECTED COMPONENT shrinks toward its OWN centre. A multi-select
- * spanning two shells arrives as one synthetic face whose centroid sits between
- * them, so shrinking toward it slid both faces sideways into the gap instead of
- * insetting either of them in place.
- * @param {any[]} tris @param {any} face @param {number} amount */
-export function insetFace(tris, face, amount) {
-	const out = cloneTris(tris);
-	const t = Math.min(Math.max(amount, 0), 0.95);
-	for (const component of componentsOfTris(tris, face.triIndices)) {
-		const centroid = centroidOfTris(tris, component);
-		// M1: the cap shrinks in UV space by the same factor it shrinks in
-		// space, so the texture stays put on the smaller face instead of
-		// stretching across it
-		const uvCentroid = uvCentroidOf(tris, component);
-		const componentSet = new Set(component);
-		out.forEach((tri, ti) => {
-			if (!componentSet.has(ti)) return;
-			tri.forEach((/** @type {any} */ v) => v.lerp(centroid, t));
-			if (tri.uv) tri.uv = tri.uv.map((/** @type {number[]} */ p) => uvLerp(p, uvCentroid, t));
-		});
-		// frame ring: original boundary edge → its inset counterpart, facing outward
-		// like the face did (normal ≈ the face normal)
-		boundaryEdges(tris, { triIndices: component }).forEach(({ p0, p1, ti, c0, c1 }) => {
-			const a = p0.clone();
-			const b = p1.clone();
-			const b2 = p1.clone().lerp(centroid, t);
-			const a2 = p0.clone().lerp(centroid, t);
-			const uvA = uvAt(tris[ti], c0);
-			const uvB = uvAt(tris[ti], c1);
-			pushQuad(out, a, b, b2, a2, triNormal(tris[ti]), tris[ti].mi, tris[ti].uv && [
-				uvA,
-				uvB,
-				uvLerp(uvB, uvCentroid, t),
-				uvLerp(uvA, uvCentroid, t)
-			]);
-		});
-	}
-	return out;
 }
 
 /** Remove a face's triangles @param {any[]} tris @param {any} face */
@@ -744,77 +673,29 @@ export function insetDistanceToFraction(tris, componentTriIndices, width) {
 	return Math.min(Math.max(width / mean, 0), 0.95);
 }
 
-/** averaged (unit) normal of a triangle subset — the per-piece direction the
- * individual ops move along @param {any[]} tris @param {number[]} triIndices */
-function averagedNormal(tris, triIndices) {
-	const normal = new THREE.Vector3();
-	for (const ti of triIndices) normal.add(triNormal(tris[ti]));
-	if (normal.lengthSq() < 1e-9) normal.copy(triNormal(tris[triIndices[0]]));
-	return normal.normalize();
-}
-
 /**
- * 19-A P3: EXTRUDE INDIVIDUAL — split the target into its connected pieces
- * (componentsOfTris) and extrude each along its OWN averaged normal, instead
- * of the one direction the synthesized target face averages across all of
- * them. Pure: it just loops `extrudeFace` per component, which appends its
- * walls after the survivors, so the component indices stay valid throughout
- * and `appendedQuads(origLen, out.length)` still authors every wall.
- * @param {any[]} tris @param {any} face the op target ({triIndices})
+ * 19-A P3: EXTRUDE INDIVIDUAL — each connected piece along its OWN averaged normal (kernel:
+ * extrudeIndividual). @param {any[]} tris @param {any} face the op target ({triIndices})
  * @param {number} dist @returns {any[]}
  */
 export function extrudeFacesIndividual(tris, face, dist) {
-	let out = tris;
-	for (const component of componentsOfTris(tris, face.triIndices)) {
-		// the normal comes from the INPUT triangles: components are disjoint, so
-		// no earlier component's move has touched this one's triangles
-		out = extrudeFace(out, { triIndices: component, normal: averagedNormal(tris, component) }, dist);
-	}
-	return out;
+	const om = soupOpMesh(tris);
+	kernelOps().extrudeIndividual(om, face.triIndices, dist);
+	return opMeshTris(om);
 }
 
 /**
- * 19-A P3: INSET, extended — `insetFace` stays as the {amount} fast path (VR,
- * commitFaceOp and every replayed message go through it unchanged).
- *
- * `individual` insets each face UNIT separately, one ring apiece. The units are
- * the granularity units the selection was built from, captured by the engine
- * onto `face.units` (per QUAD at the default granularity — per connected
- * component alone would make Individual a no-op on the common case, since
- * several coplanar quads on one surface are ONE component). A caller without
- * captured units falls back to components, which is still correct across
- * shells.
- *
- * `depth` then pushes the resulting cap along its normal (world units), per
- * connected component of the CAP so a multi-piece target rises along each
- * piece's own direction — via the welded `moveFaceAlongNormal`, so the ring
- * stretches with it.
+ * 19-A P3: INSET, extended — `individual` insets each face UNIT separately (`face.units`, the
+ * granularity units the engine captured; components when absent), then `depth` pushes each piece of
+ * the cap along its own normal, welded (kernel: insetExtended).
  * @param {any[]} tris @param {any} face the op target ({triIndices, units?})
  * @param {{amount?: number, depth?: number, individual?: boolean}} [options]
  * @returns {any[]}
  */
 export function insetFaceEx(tris, face, options = {}) {
-	const amount = options.amount ?? 0.2;
-	const depth = options.depth ?? 0;
-	let out = tris;
-	if (options.individual) {
-		const units =
-			face.units?.length ? face.units : componentsOfTris(tris, face.triIndices);
-		// insetFace appends each ring after the survivors, so unit indices stay valid
-		for (const unit of units) out = insetFace(out, { triIndices: unit }, amount);
-	} else {
-		out = insetFace(out, face, amount);
-	}
-	if (depth) {
-		for (const component of componentsOfTris(out, face.triIndices)) {
-			out = moveFaceAlongNormal(
-				out,
-				{ triIndices: component, normal: averagedNormal(out, component) },
-				depth
-			);
-		}
-	}
-	return out;
+	const om = soupOpMesh(tris);
+	kernelOps().insetExtended(om, face.triIndices, { ...options, units: face.units ?? null });
+	return opMeshTris(om);
 }
 
 /** B4: subdivide each target tri into 4 via edge midpoints. Midpoints of an
@@ -5298,7 +5179,7 @@ function mirrorAdjustResult(a, result) {
 		select = { kind: 'set', tris: map(band) };
 	}
 	if (select?.kind === 'cap' && !select.tris.length) select = { kind: 'cleared' };
-	return { ...result, tris: mirrored.tris, faces: mirrored.faces, select };
+	return { ...result, tris: mirrored.tris, faces: mirrored.faces, ids: null, select };
 }
 
 /**
@@ -7694,7 +7575,10 @@ export function enterFaceEdit(uuid) {
 	noteEditEnter('face', uuid, object); // 15-F: opens (or continues) the undo barrier (99 K3: and the session)
 	refreshFaceWireframe(); // B2: face mode gets the same wireframe as vertex mode
 	refreshMeshPivotMarker(object); // a placed pivot comes back with the session
-	if (typeof window !== 'undefined') window.addEventListener('keydown', onFaceKeydown);
+	if (typeof window !== 'undefined') {
+		window.addEventListener('keydown', onFaceKeydown);
+		prebuildOpMesh(object); // 99 K4: the first operator finds its op mesh built
+	}
 	// 175: restore the face selected last time in this object (per-mode memory)
 	if (stashedFace.uuid === uuid && stashedFace.fi >= 0 && FS.faces[stashedFace.fi]) {
 		faceEditHighlight.set(stashedFace.fi);
@@ -7956,6 +7840,167 @@ function refreshFaceOverlay() {
 	FS.overlay = FS.overlayParts.sel; // the teardown paths still hold one reference
 }
 
+// ---- 99 K4: the session's op mesh -----------------------------------------------------------------------
+// An operator runs on the op mesh of the live geometry. It is KEPT across operators (the output of one is
+// the next one's input, IDs and all) and rebuilt only when something else replaced or wrote the geometry —
+// an undo or redo, a peer's edit, a vertex drag, an operator not on the kernel yet. A rebuild takes the
+// IDs the geometry was applied with (history), else the session kernel's vertex map (built off-thread at
+// entry with the same weld), else welds.
+
+/** the IDs to rebuild `geometry`'s op mesh with, or null (weld) @param {any} geometry */
+function knownIds(geometry) {
+	// valid while nothing wrote the geometry since (a drag that lands two vertices on one key must weld)
+	const applied = editSession.geometryIds.get(geometry);
+	if (applied && !geometryChanged(applied.stamp, geometry)) return applied.ids;
+	const maps = editSession.kernelMaps;
+	if (maps && maps.geometry === geometry && !geometryChanged(editSession.kernelStamp ?? editSession.entry, geometry))
+		// the worker's faces follow the STORED partition only; a derived one regroups from the vertex IDs
+		return { cornerVertex: maps.cornerVertex, triFace: readStoredFaces(geometry) ? maps.triFace : null };
+	return null;
+}
+
+/** the partner key of the agent / headless path (its derived partition is not the session's pairing) */
+const OBJECT_PARTNER = Object.freeze({});
+
+/**
+ * The op mesh of `geometry`, begun for one operator: the held one while nothing replaced or wrote the
+ * geometry since (and its partition is the same: a stored one, else the same derivation), else a fresh
+ * build (with the IDs the geometry is known to have). ONE slot, shared by the session and the agent's
+ * headless path, so consecutive operators never rebuild.
+ * @param {any} ops @param {any} geometry @param {() => number[][] | null} partition @param {any} partner
+ */
+function heldOpMesh(ops, geometry, partition, partner) {
+	const held = editSession.opMesh;
+	const topo = geometry.userData?.__topo;
+	if (
+		held &&
+		held.geometry === geometry &&
+		!geometryChanged(held.stamp, geometry) &&
+		held.topo === topo &&
+		(!!topo || held.partner === partner)
+	)
+		return ops.beginOp(held.om);
+	const om = ops.opMeshFromGeometry(geometry, partition(), knownIds(geometry));
+	editSession.opMesh = { geometry, stamp: captureEntry(geometry), topo, partner, om };
+	return ops.beginOp(om);
+}
+
+/** the live face session's op mesh, begun for one operator; null while the kernel chunk loads */
+function sessionOpMesh() {
+	const ops = editSession.ops;
+	if (!ops || !FS.object?.geometry) return null;
+	return heldOpMesh(ops, FS.object.geometry, currentPartition, FS.quadPartner);
+}
+
+/**
+ * 99 K4: build the session's op mesh while the user picks (an idle moment after entry), so the first
+ * operator does not pay for it. Skipped when the session moved on.
+ * @param {any} object
+ */
+function prebuildOpMesh(object) {
+	loadKernelOps().then(() => {
+		const run = () => {
+			if (FS.object === object && !FS.adjust && !FS.grab) sessionOpMesh();
+		};
+		const idle = typeof window !== 'undefined' ? /** @type {any} */ (window).requestIdleCallback : null;
+		if (idle) idle(run, { timeout: 2000 });
+		else setTimeout(run, 0);
+	});
+}
+
+/**
+ * After a kernel operator's commit on `uuid`: the op mesh IS the new geometry's (the next operator reuses
+ * it), and on the session's object its ID channels become the session's ID maps (meshSessionAdapters read
+ * them). Dropped when the stored partition is not the one the op mesh grouped (it never should be).
+ * @param {string} uuid @param {any} om @param {{ faces: number[][], ids: any }} out @param {any} partner
+ */
+function keepOpMesh(uuid, om, out, partner) {
+	const geometry = lookupEditable(uuid)?.geometry;
+	const stored = geometry ? readStoredFaces(geometry) : null;
+	if (!stored || stored.length !== out.faces.length) {
+		editSession.opMesh = null;
+		return;
+	}
+	const stamp = captureEntry(geometry);
+	editSession.opMesh = { geometry, stamp, topo: geometry.userData?.__topo, partner, om };
+	if (uuid !== editSession.uuid) return;
+	editSession.kernelMaps = { triFace: out.ids.triFace, cornerVertex: out.ids.cornerVertex, ms: 0, geometry };
+	editSession.kernelStamp = stamp;
+	editSession.kernel = null; // the worker's kernel describes the entry geometry, not this one
+}
+
+/** 99 K4: remember the element IDs the object's CURRENT geometry was applied with (a weak key: a replaced
+ * geometry takes its IDs with it) @param {string} uuid @param {any} ids */
+function noteGeometryIds(uuid, ids) {
+	const geometry = lookupEditable(uuid)?.geometry;
+	if (geometry && ids?.cornerVertex && ids?.triFace) editSession.geometryIds.set(geometry, { ids, stamp: captureEntry(geometry) });
+}
+
+/** the closed-region refusal (extrude has no border to build walls from) */
+const CLOSED_EXTRUDE =
+	'Nothing to extrude from: the selection is a CLOSED surface, so it has no border. Select fewer faces, or use Move/Scale to reposition it.';
+
+/**
+ * 99 K4 family 1: extrude / inset / move on the session's op mesh, committed straight from the kernel
+ * (no triangle soup): the same positions, partition, uvs and slots as the soup ops, plus the ID channels
+ * in both history states, so an undo / redo rebuilds the same element IDs.
+ * @param {'extrude'|'inset'|'move'} op @param {any} face the op target @param {number} amount
+ * @returns {boolean}
+ */
+function commitKernelFaceOp(op, face, amount) {
+	const om = sessionOpMesh();
+	if (!om) {
+		showToast(KERNEL_LOADING);
+		return false;
+	}
+	const ops = editSession.ops;
+	if (op === 'extrude' && !ops.regionHasBorder(om, face.triIndices)) {
+		showToast(CLOSED_EXTRUDE);
+		return false;
+	}
+	const before = {
+		positions: trisToPositions(FS.workingTris),
+		groups: trisToGroups(FS.workingTris),
+		uvs: trisToUVs(FS.workingTris),
+		faces: readStoredFaces(FS.object?.geometry),
+		ids: ops.idChannels(om)
+	};
+	/** @type {any} */
+	let out;
+	try {
+		if (op === 'extrude') ops.extrudeRegion(om, face.triIndices, vec(face.normal), amount);
+		else if (op === 'inset') ops.insetRegion(om, face.triIndices, amount);
+		else ops.moveRegion(om, face.triIndices, vec(face.normal), amount);
+		out = ops.opOutput(om, { order: op === 'move' ? 'stored' : 'appearance' });
+	} finally {
+		// the op mesh was edited in place: nothing may reuse it until the commit re-keeps it
+		editSession.opMesh = null;
+	}
+	if (out.positions.length > MAX_SNAPSHOT) {
+		showToast(tooLargeMessage(out.positions.length, 'edit'));
+		return false;
+	}
+	// the hover holds a pre-op triangle forever otherwise (no desktop pointermove path); the cap's
+	// indices survive (walls and rings append), so the selection needs no pre-swap clear
+	faceEditHoverTri.set(-1);
+	commitMesh({
+		apply: 'session',
+		before,
+		after: { positions: out.positions, groups: out.groups, uvs: out.uvs, ids: out.ids },
+		faces: out.faces,
+		stampFaces: true,
+		record: 'op',
+		cap: false
+	});
+	keepOpMesh(FS.object.uuid, om, out, FS.quadPartner);
+	// E6: keep the CAP selected (its triangle indices survive the op); E7: the gizmo comes back seated on it
+	faceEditSelectedTris.set([...face.triIndices]);
+	faceEditHighlight.set(faceIndexForTriangle(face.triIndices[0]));
+	refreshFaceOverlay();
+	if (typeof window !== 'undefined') attachFaceGizmo();
+	return true;
+}
+
 /**
  * Run an op on the highlighted face and commit: rebuild geometry, replicate
  * the snapshot, record history. subdivide/flip take no amount (B4); for M3's
@@ -7972,17 +8017,8 @@ export function commitFaceOp(op, amount) {
 	// 212: target the multi selection / hovered unit / highlighted face group
 	const face = opTargetFace();
 	if (!FS.object || !face) return false;
-	// A CLOSED region has no border to extrude from, so the walls degenerate and
-	// every vertex simply moves — the whole object slides sideways along whatever
-	// the averaged normal happened to be. That is what Select-all + Extrude did,
-	// and what Shell/Object granularity does on a one-piece mesh. Refuse and say
-	// why rather than silently translating the object.
-	if (op === 'extrude' && !boundaryEdges(FS.workingTris, face).length) {
-		showToast(
-			'Nothing to extrude from: the selection is a CLOSED surface, so it has no border. Select fewer faces, or use Move/Scale to reposition it.'
-		);
-		return false;
-	}
+	// 99 K4 family 1: on the kernel
+	if (op === 'extrude' || op === 'inset' || op === 'move') return commitKernelFaceOp(op, face, amount);
 	const before = trisToPositions(FS.workingTris);
 	const beforeGroups = trisToGroups(FS.workingTris);
 	const beforeUVs = trisToUVs(FS.workingTris);
@@ -7994,28 +8030,7 @@ export function commitFaceOp(op, amount) {
 	 * describe its own output. Null falls back to derive-and-store. */
 	let nextFaces = null;
 	const priorFaces = currentPartition();
-	if (op === 'extrude') {
-		next = extrudeFace(FS.workingTris, face, amount);
-		// the walls arrive as consecutive pushQuad pairs after the untouched input,
-		// so the partition is the input's plus one face per wall quad. Deriving would
-		// agree TODAY and disagree the moment the band is rotated.
-		nextFaces = composeFaces(
-			priorFaces,
-			appendOrigin(FS.workingTris.length, next.length),
-			appendedQuads(FS.workingTris.length, next.length)
-		);
-	} else if (op === 'inset') {
-		next = insetFace(FS.workingTris, face, amount);
-		nextFaces = composeFaces(
-			priorFaces,
-			appendOrigin(FS.workingTris.length, next.length),
-			appendedQuads(FS.workingTris.length, next.length)
-		);
-	} else if (op === 'move') {
-		next = moveFaceAlongNormal(FS.workingTris, face, amount);
-		// a pure vertex move: same triangles, same faces
-		nextFaces = priorFaces;
-	} else if (op === 'delete') {
+	if (op === 'delete') {
 		next = deleteFaceTris(FS.workingTris, face);
 		// the survivors are REINDEXED by the filter, so the partition has to be
 		// re-keyed rather than carried; the deleted face simply disappears from it
@@ -8049,11 +8064,9 @@ export function commitFaceOp(op, amount) {
 	// up an unrelated scattering. The hover is the worse half: desktop has no
 	// pointermove path, so faceEditHoverTri keeps the pre-op triangle forever.
 	faceEditHoverTri.set(-1);
-	if (op !== 'inset' && op !== 'extrude' && op !== 'move') {
-		// subdivide/flip/delete rebuild the topology: indices are stale (212)
-		if (get(faceEditSelectedTris).length) faceEditSelectedTris.set([]);
-		if (op === 'delete') faceEditHighlight.set(-1);
-	}
+	// subdivide/flip/delete rebuild the topology: indices are stale (212)
+	if (get(faceEditSelectedTris).length) faceEditSelectedTris.set([]);
+	if (op === 'delete') faceEditHighlight.set(-1);
 	commitMesh({
 		apply: 'session',
 		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
@@ -8063,19 +8076,7 @@ export function commitFaceOp(op, amount) {
 		record: 'op',
 		cap: false
 	});
-	if (op === 'inset' || op === 'extrude' || op === 'move') {
-		// E6: keep the CAP selected — its tri indices survive the op (cloneTris
-		// keeps order, ring/walls APPEND). groupFaces re-merges a coplanar inset
-		// cap with its ring into ONE logical face, so the highlight alone cannot
-		// describe the cap; the selection is what makes "inset then Move the cap"
-		// possible at all.
-		faceEditSelectedTris.set([...face.triIndices]);
-		faceEditHighlight.set(faceIndexForTriangle(face.triIndices[0]));
-		refreshFaceOverlay();
-		// E7: the gizmo comes back seated on the new cap (attachFaceGizmo reads
-		// the selection-first op target). NEVER on arm — that's the B1 fix.
-		if (typeof window !== 'undefined') attachFaceGizmo();
-	} else if (subdivided?.length) {
+	if (subdivided?.length) {
 		// keep the subdivided AREA selected (its new pieces) rather than dropping
 		// to nothing: "subdivide, then loop through one of the new quads" is the
 		// point of the op, and an empty selection there reads as a failed edit
@@ -8284,7 +8285,15 @@ export function commitMesh(c) {
 	if (uuid === editSession.uuid) editSession.edited = true;
 	if (c.wireFaces === 'none') sendMeshGeo(uuid, positions, { groups, uvs });
 	else broadcastMeshGeo(uuid, positions, groups, uvs, bare ? undefined : after.colors);
-	if (c.stampFaces) after = withFacesOn(c.apply === 'session' ? FS.object : lookupEditable(uuid), { positions, groups, uvs });
+	if (c.stampFaces)
+		after = withFacesOn(c.apply === 'session' ? FS.object : lookupEditable(uuid), {
+			positions,
+			groups,
+			uvs,
+			...(!bare && c.after.ids ? { ids: c.after.ids } : {})
+		});
+	// 99 K4: the IDs this geometry now has, for the next operator's rebuild
+	if (!bare && c.after.ids) noteGeometryIds(uuid, c.after.ids);
 	const entry = meshGeoEntry(uuid, before, after);
 	if (c.record === 'op') recordOp(entry);
 	else if (c.record === 'entry') recordEntry(entry);
@@ -9191,16 +9200,19 @@ function runAdjustCore(a) {
 	const p = a.params;
 	const origLen = a.originalTris.length;
 	if (a.op === 'extrude' || a.op === 'inset') {
-		const next =
-			a.op === 'inset'
-				? insetFaceEx(a.originalTris, a.target, {
-						amount: p.distance,
-						depth: p.depth,
-						individual: p.individual
-					})
-				: p.individual
-					? extrudeFacesIndividual(a.originalTris, a.target, p.distance)
-					: extrudeFace(a.originalTris, a.target, p.distance);
+		// 99 K4 family 1: every scrub re-runs the kernel operator on a COPY of the op mesh captured at begin
+		const ops = kernelOps();
+		const om = ops.beginOp(ops.cloneOpMesh(a.opBase));
+		if (a.op === 'inset')
+			ops.insetExtended(om, a.target.triIndices, {
+				amount: p.distance,
+				depth: p.depth,
+				individual: p.individual,
+				units: a.target.units ?? null
+			});
+		else if (p.individual) ops.extrudeIndividual(om, a.target.triIndices, p.distance);
+		else ops.extrudeRegion(om, a.target.triIndices, vec(a.target.normal), p.distance);
+		const next = opMeshTris(om);
 		// scale the cap (the original face tris, moved in place) around its
 		// centroid — the VR stick's second axis. Same trap as the gizmo grab: a
 		// plain .map drops the mi/uv that withSlot hangs off the triangle array,
@@ -9224,11 +9236,10 @@ function runAdjustCore(a) {
 		}
 		return {
 			tris: next,
-			faces: composeFaces(
-				a.priorFaces,
-				appendOrigin(origLen, next.length),
-				appendedQuads(origLen, next.length)
-			),
+			// the kernel's partition = composeFaces(prior, appended walls) (the parity gate)
+			faces: ops.opPartition(om, 'appearance'),
+			// the element IDs of this output (same triangles, same order); a mirror drops them
+			ids: ops.idChannels(om),
 			select: { kind: 'cap', tris: [...a.target.triIndices] }
 		};
 	}
@@ -9398,7 +9409,12 @@ function applyAdjustFull(a, result) {
 		commitMesh({
 			uuid: a.uuid,
 			apply: a.session ? 'session' : 'object',
-			after: { positions: trisToPositions(result.tris), groups: trisToGroups(result.tris), uvs: trisToUVs(result.tris) },
+			after: {
+				positions: trisToPositions(result.tris),
+				groups: trisToGroups(result.tris),
+				uvs: trisToUVs(result.tris),
+				...(result.ids ? { ids: result.ids } : {})
+			},
 			faces: result.faces,
 			stampFaces: true,
 			record: false,
@@ -9577,7 +9593,14 @@ export function beginOpAdjust(op, params, opts = {}) {
 	if (op === 'extrude' || op === 'inset') {
 		const face = opts.target ?? opTargetFace();
 		if (!face?.triIndices?.length) return false;
-		if (op === 'extrude' && !boundaryEdges(FS.workingTris, face).length) {
+		// 99 K4: the op mesh every re-run copies (captured BEFORE anything changes the session)
+		const base = sessionOpMesh();
+		if (!base) {
+			showToast(KERNEL_LOADING);
+			return false;
+		}
+		a.opBase = base;
+		if (op === 'extrude' && !editSession.ops.regionHasBorder(base, face.triIndices)) {
 			showToast(
 				'Nothing to extrude from: the selection is a CLOSED surface, so it has no border. Select fewer faces, or use Move/Scale to reposition it.'
 			);
@@ -9685,7 +9708,8 @@ export function beginOpAdjust(op, params, opts = {}) {
 		positions: trisToPositions(a.originalTris),
 		groups: trisToGroups(a.originalTris),
 		uvs: trisToUVs(a.originalTris),
-		faces: readStoredFaces(liveGeometry)
+		faces: readStoredFaces(liveGeometry),
+		...(a.opBase ? { ids: editSession.ops.idChannels(a.opBase) } : {})
 	};
 	a.selectionBefore = {
 		faces: [...get(faceEditSelectedTris)],
@@ -9720,6 +9744,7 @@ export function beginOpAdjust(op, params, opts = {}) {
 		faceEditHighlight.set(-1);
 	}
 	a.lastFaces = result.faces;
+	a.lastIds = result.ids ?? null;
 	a.lastSelect = result.select;
 	a.after = applyAdjustFull(a, result);
 	applyAdjustSelection(a, result.select, true);
@@ -9762,6 +9787,7 @@ export function reapplyOpAdjust(patch = {}) {
 		return false;
 	}
 	a.lastFaces = result.faces;
+	a.lastIds = result.ids ?? null;
 	a.lastSelect = result.select;
 	if (a.session) {
 		FS.workingTris = result.tris;
@@ -9800,7 +9826,8 @@ export function settleOpAdjust() {
 	}
 	const result = {
 		tris: a.session ? FS.workingTris : readTriangles(object.geometry),
-		faces: a.lastFaces
+		faces: a.lastFaces,
+		ids: a.lastIds ?? null
 	};
 	a.after = applyAdjustFull(a, result);
 	applyAdjustSelection(a, a.lastSelect, true);
@@ -9949,6 +9976,8 @@ registerHistoryKind('meshgeo', (entry, state) => {
 	// (99 K2: history keeps it packed already — `faceCounts`/`faceTris` — or as `faces`).
 	const packed = stateFaceFields(state);
 	applyMeshGeo(entry.uuid, positions, groups, uvs, packed?.faceCounts, packed?.faceTris, colors);
+	// 99 K4: an undo / redo of a kernel op's step brings its element IDs back with it
+	if (state?.ids) noteGeometryIds(entry.uuid, state.ids);
 	// the one meshgeo sender; the topology is the STATE's, never the object's carry-over
 	sendMeshGeo(entry.uuid, positions, { groups, uvs, colors, faceFields: packed });
 	return true;
@@ -10002,23 +10031,16 @@ export function faceOpOnObject(uuid, op, triIndices, options = {}) {
 	if (normal.lengthSq() < 1e-9) normal.copy(triNormal(tris[picked[0]]));
 	const face = { triIndices: picked, normal: normal.normalize(), centroid: centroid.divideScalar(picked.length * 3) };
 	const amount = Number.isFinite(options.amount) ? Number(options.amount) : 0.3;
+	// 99 K4 family 1: extrude / inset / move on the kernel, IDs carried
+	if (op === 'extrude' || op === 'inset' || op === 'move') return kernelOpOnObject(uuid, object, op, face, partition, tris, amount);
 	const open = boundaryEdges(tris, face).length > 0;
-	if ((op === 'extrude' || op === 'bevel') && !open)
+	if (op === 'bevel' && !open)
 		return { ok: false, error: op + ': the selection is a CLOSED surface (no border) — select fewer faces' };
 	/** @type {any[]} */
 	let next;
 	/** @type {number[][] | null} */
 	let nextFaces;
-	if (op === 'extrude') {
-		next = extrudeFace(tris, face, amount);
-		nextFaces = composeFaces(partition, appendOrigin(tris.length, next.length), appendedQuads(tris.length, next.length));
-	} else if (op === 'inset') {
-		next = insetFace(tris, face, Math.min(Math.max(amount, 0.01), 0.95));
-		nextFaces = composeFaces(partition, appendOrigin(tris.length, next.length), appendedQuads(tris.length, next.length));
-	} else if (op === 'move') {
-		next = moveFaceAlongNormal(tris, face, amount);
-		nextFaces = partition;
-	} else if (op === 'bevel') {
+	if (op === 'bevel') {
 		const result = bevelFacesCore(tris, face, {
 			width: Math.max(Number(options.width ?? 0.15) || 0.15, 0.001),
 			segments: Math.max(1, Math.min(Math.round(Number(options.segments ?? 1)) || 1, 8)),
@@ -10044,6 +10066,43 @@ export function faceOpOnObject(uuid, op, triIndices, options = {}) {
 	if (after.positions.length > MAX_SNAPSHOT) return { ok: false, error: tooLargeMessage(after.positions.length, 'edit') };
 	if (!commitMeshGeoTriple(uuid, before, after)) return { ok: false, error: 'the edit could not be committed' };
 	return { ok: true, triangles: next.length, kept: KEEPS_SELECTION.has(op) ? picked : null };
+}
+
+/**
+ * 99 K4: faceOpOnObject's extrude / inset / move — the session's kernel operators on an op mesh of the
+ * object's own geometry (built with the IDs it was applied with when known), committed with its IDs.
+ * @param {string} uuid @param {any} object @param {'extrude'|'inset'|'move'} op @param {any} face
+ * @param {number[][]} partition @param {any[]} tris @param {number} amount @returns {any}
+ */
+function kernelOpOnObject(uuid, object, op, face, partition, tris, amount) {
+	const ops = editSession.ops;
+	if (!ops) return { ok: false, error: KERNEL_LOADING };
+	const geometry = object.geometry;
+	const om = heldOpMesh(ops, geometry, () => partition, OBJECT_PARTNER);
+	if (op === 'extrude' && !ops.regionHasBorder(om, face.triIndices))
+		return { ok: false, error: op + ': the selection is a CLOSED surface (no border) — select fewer faces' };
+	const before = {
+		positions: trisToPositions(tris),
+		groups: trisToGroups(tris),
+		uvs: trisToUVs(tris),
+		faces: readStoredFaces(geometry),
+		ids: ops.idChannels(om)
+	};
+	/** @type {any} */
+	let out;
+	try {
+		if (op === 'extrude') ops.extrudeRegion(om, face.triIndices, vec(face.normal), amount);
+		else if (op === 'inset') ops.insetRegion(om, face.triIndices, Math.min(Math.max(amount, 0.01), 0.95));
+		else ops.moveRegion(om, face.triIndices, vec(face.normal), amount);
+		out = ops.opOutput(om, { order: op === 'move' ? 'stored' : 'appearance' });
+	} finally {
+		editSession.opMesh = null; // edited in place: re-kept only by a commit
+	}
+	if (out.positions.length > MAX_SNAPSHOT) return { ok: false, error: tooLargeMessage(out.positions.length, 'edit') };
+	const after = { positions: out.positions, groups: out.groups, uvs: out.uvs, faces: out.faces, ids: out.ids };
+	if (!commitMeshGeoTriple(uuid, before, after)) return { ok: false, error: 'the edit could not be committed' };
+	keepOpMesh(uuid, om, out, OBJECT_PARTNER);
+	return { ok: true, triangles: out.positions.length / 9, kept: face.triIndices };
 }
 
 /** the face ops whose picked triangles survive at the same indices (moved in place; new ones appended) */

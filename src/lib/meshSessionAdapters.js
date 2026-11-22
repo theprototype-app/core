@@ -63,7 +63,8 @@ export const K4_INPUT = [
 /** the session's maps, but only while they still describe the live geometry */
 function liveMaps() {
 	const maps = session.kernelMaps;
-	if (!maps || geometryChanged(session.entry, session.object?.geometry)) return null;
+	// 99 K4: after a kernel operator the maps are the op's output, stamped with its geometry
+	if (!maps || geometryChanged(session.kernelStamp ?? session.entry, session.object?.geometry)) return null;
 	return maps;
 }
 

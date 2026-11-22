@@ -29,6 +29,19 @@ export const session = {
 	kernelMaps: null,
 	/** @type {{ faces: number[], verts: number[], edges: [number, number][] }} the last stashed selection, as element IDs */
 	selection: { faces: [], verts: [], edges: [] },
+	/** @type {any} 99 K4: what `kernelMaps` were built from when an operator (not the entry) set them: a
+	 * captureEntry snapshot of that geometry; null = the entry */
+	kernelStamp: null,
+	/** @type {any} 99 K4: the lazy kernel operators (`meshOps/index.js`) once loaded; shared by every session */
+	ops: null,
+	/** @type {any} 99 K4: the op mesh of the live geometry, kept across operators:
+	 * `{ geometry, stamp, topo, partner, om }` — valid while the geometry, its stored partition and the quad
+	 * pairing are the ones it was built for */
+	opMesh: null,
+	/** 99 K4: element IDs a geometry was applied with (an undo / redo of a kernel op's entry): the next op
+	 * rebuilds with them, so IDs survive the round trip — `{ ids, stamp }`, valid while the geometry is unwritten
+	 * since @type {WeakMap<object, any>} */
+	geometryIds: new WeakMap(),
 	face: {
 		/** @type {any} the face-mode object (null outside face mode) */
 		object: null,

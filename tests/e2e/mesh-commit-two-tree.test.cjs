@@ -8,6 +8,8 @@
 //   4. branch undoes 3 and 1 (the compact history replays through the one sender): the bytes equal
 //      the state before each step, on both peers; redo restores step 3's bytes exactly
 //   5. the old peer undoes its own inset; the branch follows
+//   5b-5f. (99 K4 family 1) the branch insets and moves on the kernel, the old peer extrudes the result,
+//      the branch extrudes that and undoes it: same bytes + partition after each step
 //   6. the old peer (the joiner) reloads and rejoins: its mesh comes back equal (two-peer + reload)
 // Run: OLD_APP_URL=https://theprototype.app:<old port>/ APP_URL=https://theprototype.app:<branch port>/ npm run -s e2e mesh-commit-two-tree
 const path = require('path');
@@ -78,7 +80,8 @@ const faceOp = (peer, uuid, axis, op) =>
 			if (k < 0) return { ok: false, why: 'no face along ' + axis };
 			fe.highlightFaceByTriangle(faces[k].triIndices[0]);
 			fe.setFaceOp(op);
-			const ok = fe.autoApplyFaceOp() !== false;
+			// a click auto-applies extrude / inset (the adjust path); Move is the toolbox's Apply (no click op)
+			const ok = op === 'move' ? fe.commitFaceOp('move', 0.25) !== false : fe.autoApplyFaceOp() !== false;
 			fe.exitFaceEdit();
 			return { ok };
 		},
@@ -236,6 +239,36 @@ h.run(async () => {
 	// 5. the release peer undoes its inset (its own, pre-K2, replay)
 	await undo(O);
 	await agree('5. release undo (inset) -> the branch follows');
+
+	// 5b-5f. roadmap 99 K4 family 1 (extrude / inset / move on the kernel): the branch runs each op on
+	// the kernel, the release peer runs its soup op on the branch's output and the branch its kernel op
+	// on the release's output; after every step both peers hold the same bytes + partition
+	const s5 = await facts(L, uuid);
+	const ins2 = await faceOp(L, uuid, '+y', 'inset');
+	h.check(ins2.ok, '5b. branch: inset ran (premise)');
+	const s5b = await agree('5b. branch inset (kernel) -> the release peer holds the same bytes + partition');
+	h.check(s5b.facts.tris > s5.tris, `5b. ...and the inset added its ring (${s5.tris} -> ${s5b.facts.tris} tris)`);
+	const mv = await faceOp(L, uuid, '+y', 'move');
+	h.check(mv.ok, '5c. branch: move ran (premise)');
+	const s5c = await agree('5c. branch move (kernel) -> the release peer holds the same bytes + partition');
+	h.check(
+		s5c.facts.tris === s5b.facts.tris && s5c.facts.positions !== s5b.facts.positions,
+		'5c. ...and the move moved vertices without changing the triangle count'
+	);
+	await release(L, uuid);
+	await unlocked(O, uuid);
+	const ext2 = await faceOp(O, uuid, '-y', 'extrude');
+	h.check(ext2.ok, '5d. release: extrude ran on the branch output (premise)');
+	await agree('5d. release extrude (soup) on the kernel output -> the branch holds the same bytes + partition');
+	await release(O, uuid);
+	await unlocked(L, uuid);
+	const ext3 = await faceOp(L, uuid, '+z', 'extrude');
+	h.check(ext3.ok, '5e. branch: extrude ran on the release output (premise)');
+	const s5e = await agree('5e. branch extrude (kernel) on the soup output -> the release peer holds the same bytes + partition');
+	h.check(s5e.facts.tris > s5c.facts.tris, '5e. ...and the extrude added walls');
+	await undo(L);
+	const u5 = await agree('5f. branch undo (kernel extrude) -> both peers agree');
+	h.check(u5.facts.tris < s5e.facts.tris, '5f. ...and the extrude is gone');
 
 	// 6. two-peer + reload: the joiner reloads and rejoins
 	const beforeReload = await facts(L, uuid);

@@ -16,8 +16,10 @@
 import { fromArrays, toArrays, geometryArrays } from './meshKernel/index.js';
 import { MAX_SNAPSHOT } from './meshBudget';
 
-/** the editor's weld — keyOf's tolerance (K1 QUESTIONS #1) */
-export const SESSION_WELD = 1e-4;
+/** the editor's weld — faceEdit's keyOf (Math.round(x * 1e4) per axis; K1 QUESTIONS #1). 99 K4: by KEY, not by
+ * distance, so the session kernel's vertices are exactly the ones the operators weld (meshOps OP_WELD) and an
+ * operator can rebuild from this kernel's vertex map without welding again */
+export const SESSION_WELD = { key: 1e4 };
 
 /** a mesh above this many triangles gets no session kernel: the commit ceiling (MAX_SNAPSHOT
  * floats, 9 per triangle) — an edit beyond it can never commit, so its IDs would serve nothing */

@@ -171,8 +171,24 @@ function openSession(uuid, object) {
 	session.kernel = null;
 	session.kernelMaps = null;
 	session.selection = { faces: [], verts: [], edges: [] };
+	session.kernelStamp = null;
+	session.opMesh = null;
 	kernelBuild = null;
+	loadKernelOps(); // 99 K4: the operators run on the kernel; load them while the user picks
 	startKernel(uuid, object?.geometry);
+}
+
+/** @type {Promise<any> | null} */
+let opsLoad = null;
+/**
+ * 99 K4: load the kernel operators (lazy chunk) onto the session. Every edit session starts it; the
+ * agent tools and the debug hooks await it, so their synchronous operator calls always find it.
+ * @returns {Promise<any>} the module
+ */
+export function loadKernelOps() {
+	if (session.ops) return Promise.resolve(session.ops);
+	opsLoad ??= import('./meshOps/index.js').then((m) => (session.ops = m));
+	return opsLoad;
 }
 
 function closeSession() {
@@ -188,6 +204,8 @@ function closeSession() {
 	session.edited = false;
 	session.kernel = null;
 	session.kernelMaps = null;
+	session.kernelStamp = null;
+	session.opMesh = null;
 	kernelBuild = null;
 }
 
@@ -213,6 +231,6 @@ export function whenSessionKernel() {
  * @param {(x: number, y: number, z: number) => string} [keyOf] the editor's position key (edges)
  */
 export function noteSelectionIds(selection, keyOf) {
-	if (session.kernelMaps && kernelModule && !geometryChanged(session.entry, session.object?.geometry))
+	if (session.kernelMaps && kernelModule && !geometryChanged(session.kernelStamp ?? session.entry, session.object?.geometry))
 		kernelModule.storeSelectionIds(session, selection, keyOf);
 }

@@ -390,6 +390,9 @@ export const DEBUG_HOOKS = [
 	['moduleGallery', () => import('./moduleGallery')],
 	['moduleInstallJobs', () => import('./moduleInstallJobs')],
 	['uvEditor', () => import('./uvEditor')],
+	// 102 M6: paint on meshes (the lazy painter + its prefs leaf)
+	['meshPaint', () => import('./meshPaint')],
+	['meshPaintPrefs', () => import('./meshPaintPrefs')],
 	['uvUnwrap', () => import('./uvUnwrap')],
 	['meshTopology', () => import('./meshTopology')],
 	['meshBoolean', () => import('./meshBoolean')],

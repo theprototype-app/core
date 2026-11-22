@@ -272,6 +272,7 @@
 		saveSnapAnchorAsOrigin
 	} from '$lib/snapEngine';
 	import { peers, inspectorClose, inspectorKind, showToast, inspectorFilter, userdata, closeSelectionInspector } from '../../stores/appStore.js';
+	import { get as getStore } from 'svelte/store'; // 102 M6: the unlink send reads the peer once
 	// 78-int PL13: "changed by <peer / agent> · time" under the shared Configure Scene sections
 	import { sceneSectionEdits } from '$lib/sceneEditBy.js';
 	import { editLine } from '$lib/sceneEditByCore.js';
@@ -631,6 +632,11 @@
 		if (!uuid) return;
 		const count = sharedWith.length;
 		if (!unlinkMaterial(uuid)) return;
+		// 102 M6 (found on the way): the unlink used to stay on this machine, so a peer kept the objects linked
+		// and the next edit of this one changed both over there. An older peer ignores the parameter.
+		/** @type {any} */
+		const peer = getStore(peers);
+		peer?.send({ type: 'objectParameters', parameter: 'materialUnlink', uuid });
 		showToast(
 			'This object has its own material now — the other ' +
 				count +

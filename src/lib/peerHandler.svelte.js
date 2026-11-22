@@ -2096,6 +2096,10 @@ export class PeerConnection {
 					applyUvPaint(data);
 				} else if(data.type == 'uvpaintend') {
 					applyUvPaintEnd(data);
+				} else if(data.type == 'meshpaint' || data.type == 'meshpaintend') {
+					// 102 M6: a live mesh-paint stroke (a lazy chunk; import() keeps the messages in order once loaded)
+					const kind = data.type;
+					import('$lib/meshPaint').then((m) => (kind == 'meshpaint' ? m.applyMeshPaint(data) : m.applyMeshPaintEnd(data))).catch(() => {});
 				} else if(data.type == 'splineedit') {
 					// 57.3: only the RECORD travels — the receiver rebuilds the tube
 					applySplineEdit(data.uuid, data.spline);

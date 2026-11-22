@@ -39,7 +39,7 @@ import { applyAgentChatMessage, sendAgentChatBacklogTo, agentChatPeerGone } from
 import { pauseToastText } from '$lib/inviteLimits';
 import { resumeInviteJoins, resetInviteJoinGate } from '$lib/inviteStore';
 import { captureInviteHash, verifyInviteDial, joinerInviteMeta, dialingWithInvite, myKind, noteDialKind, noteJoinedVia, agentsAsGuests, isAgentSession, isAgentPeer } from '$lib/inviteStore';
-import { applyKick, isBlocked, isHeldOut, resetModeration, blockReplay } from '$lib/peerModeration'; // 55 A9
+import { applyKick, isBlocked, isHeldOut, resetModeration, blockReplay, requireApproval } from '$lib/peerModeration'; // 55 A9, 71 AS3
 import { notePeerFacts, notePeerActivity, dropPeerFacts, myDevice } from '$lib/peerFacts'; // 55 A9
 import { sessionHost, pendingConnectDecision, markPeerJoined, resetSession, signalingRetry, noteSignalingRetry, clearSignalingRetry, noteApprovalStarted, clearApprovalStarted, approvalStartedAt, APPROVAL_WINDOW_MS, MAX_PENDING_APPROVALS, HARD_PEER_CAP, roomIsFull } from '$lib/connectionState';
 import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo, rolesPending, isFloorMessage, holdUntilRoles } from '$lib/cloudHooks';
@@ -1153,6 +1153,12 @@ export class PeerConnection {
 					if (authorized && !invite && dialKind === 'agent' && !get(agentsAsGuests)) {
 						authorized = false;
 						knockLabel = knockLabel || 'An AI agent wants to join (guests join automatically, but AI agents ask first)';
+					}
+					// 71 AS3: "Require approval to join" (this session) — nothing joins by itself, a working invite
+					// included: the card, saying why. A bot this tab started is the tab's own and still admits.
+					if (authorized && !testBot && get(requireApproval)) {
+						authorized = false;
+						knockLabel = invite?.ok ? 'Has a working invite link — you asked to approve everyone who joins' : knockLabel || 'You asked to approve everyone who joins';
 					}
 					if (authorized) {
 						// the OSS build has no roles: an invite simply admits, and everyone edits

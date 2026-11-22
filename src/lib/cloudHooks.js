@@ -695,6 +695,24 @@ export function setPeerMenuItems(items) {
 }
 
 /**
+ * 71 AS3: the ROOM-ACCESS fixes the block toast offers. A session block holds a PEER ID, and a guest
+ * (not signed in) comes back with a fresh one, so blocking a guest offers the real fix in the same
+ * toast. Core owns "Require approval to join" for this session (every automatic join, invite links
+ * included, becomes the approval card); a plugin adds what only it can do. Shape, all optional:
+ *   { isGuest(peerId) → boolean | null   false = signed in: the account block list already holds,
+ *                                         so the toast stays the plain one; null/absent = unknown (guest)
+ *     requireApproval() → void|Promise   also make the ROOM ask (the cloud's "Require approval to join")
+ *     signedInOnly() → void|Promise      offered as "Signed-in people only" only when present
+ *     state() → {gated?, signedInOnly?}  what is on already (that button is then left out) }
+ * Null = the OSS state: the toast offers Require approval only. Set via cloudApi.setRoomAccess.
+ * @type {import('svelte/store').Writable<any>} */
+export const roomAccess = writable(null);
+/** @param {any} p */
+export function setRoomAccess(p) {
+	roomAccess.set(p && typeof p === 'object' ? p : null);
+}
+
+/**
  * Roadmap 86 B1/B5: THE CLAUDE CONNECTOR's account half, as a provider the cloud plugin installs. A person
  * presses Connect Claude in their own tab; the PLUGIN (signed in) asks the connector service for a
  * single-use pairing and lists / revokes the account's connected apps. Core draws every button and runs

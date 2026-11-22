@@ -38,7 +38,7 @@ import { safeStorage, storageIsolated } from './safeStorage'; // 61 G3: storageI
 import { setLockMode, lockMode } from './lockMode'; // 80a K15
 // v3.1 (roadmap 29 G-3): the hosted-AI preset seam. Both provider modules are LEAVES
 // (svelte/store + safeStorage), so a static edge from here closes nothing.
-import { meshJobStatus, onExportBuilt, onTemplateOpen, onFunnelEvent, onPlayStats, setSceneHeart, problemReporter, setWhatsNewCloud, setConnectBadge, setPeerMenuItems, setConnectorProvider, connectorSignInSlot } from './cloudHooks';
+import { meshJobStatus, onExportBuilt, onTemplateOpen, onFunnelEvent, onPlayStats, setSceneHeart, problemReporter, setWhatsNewCloud, setConnectBadge, setPeerMenuItems, setConnectorProvider, connectorSignInSlot, setRoomAccess } from './cloudHooks';
 // 36-community (C4): a leaf (svelte/store only) — safe as a static edge
 import { gameIdentity, ensureGameId, forkGameId } from './gameIdentity.js';
 import { exportMode } from './export/exportBoot.js';
@@ -689,6 +689,9 @@ export function makeCloudApi() {
 		/** 71 TR7: remove someone from this session, the Users menu's own action (`{block: true}` keeps them
 		 *  out for the session). Under the same rule as that menu: false, with a toast, if you may not. Probe with typeof. */
 		removePeer: (/** @type {string} */ peerId, /** @type {{block?: boolean}} */ opts) => removePeer(peerId, opts),
+		/** 71 AS3: the room-access fixes the block toast offers for a guest — `{isGuest(peerId), requireApproval(),
+		 *  signedInOnly(), state()}`, all optional (see cloudHooks.roomAccess); null removes. Probe with typeof. */
+		setRoomAccess: (/** @type {any} */ p) => setRoomAccess(p),
 		/** 86 B1/B5: the Claude connector's account half — `{pair({resume}), connections(), revoke(id),
 		 *  revokeAll(), account()}` (see cloudHooks.connectorProvider) or null. Core shows Connect Claude
 		 *  and Settings ▸ Account ▸ Connected apps only while one is installed. Probe with typeof. */

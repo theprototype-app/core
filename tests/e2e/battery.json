@@ -21,6 +21,7 @@
 		"levels-export": "needs the built app (scripts/serve-build.cjs): the exporter reads build/export-manifest.json, so it only SKIPs on a dev server"
 	},
 	"optional": {
+		"block-guest-fix": "joined from 71-rooms (roadmap 71 AS3, 2026-11-23; three peers): new, reports and does not gate until measured on a runner",
 		"invite-limits": "joined from 71-rooms (roadmap 71 AS4, 2026-11-23; three peers + a scripted flood): new, reports and does not gate until measured on a runner",
 		"text-bake-peers": "joined from 80a-fix4-net (fix-batch-4 G5, 2026-11-20; two peers, ten bakes): not yet measured on a GitHub runner, so it reports and does not gate",
 		"people-after-join": "joined from 80a-fix4-net (fix-batch-4 G21, 2026-11-20; two peers, a timing check): not yet measured on a GitHub runner, so it reports and does not gate",
@@ -433,6 +434,7 @@
 		"avatars-rigged": 52,
 		"behaviour-load-joiner": 130,
 		"behaviours": 384,
+		"block-guest-fix": 240,
 		"budget-chip-place": 369,
 		"budget-meter": 216,
 		"burger-project-actions": 193,

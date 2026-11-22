@@ -59,7 +59,7 @@ export const sculptRadius = writable(3);
 export const sculptStrength = writable(0.5);
 
 /** @type {{uuid: string, attr: any, columns: Map<string, number[]>, colPos: {x: number, z: number, key: string, indices: number[]}[],
- *   neighbors: Map<string, string[]>, cell: number} | null} */
+ *   neighbors: Map<string, string[]>, cell: number, hash: BrushHash | null} | null} */
 let weld = null;
 /** @type {Float32Array | null} stroke-start snapshot */
 let strokeBefore = null;
@@ -69,6 +69,153 @@ let cursor = null;
 
 const KEY = (/** @type {number} */ x, /** @type {number} */ z) =>
 	Math.round(x * 1e4) + '|' + Math.round(z * 1e4);
+
+// ---- 99 K6: the brush's "who is inside the radius" on the kernel's SpatialHash ----------------------------------
+// Both brushes used to scan EVERY welded vertex twice per dab (once for the nearest, once for the radius). They ask a
+// SpatialHash now (meshKernel/spatialHash.js, CSR-packed, a query visits only the cells its radius touches). The hash
+// is a cache over the weld map and lives ON it, so it dies with it: every rebuild (enter, the applyMeshGeo hook after
+// a remote stroke / undo, the position-ATTRIBUTE identity guard) drops it — the stale-cache guarantee is the weld
+// map's own. TERRAIN indexes each column's (x, 0, z): a terrain stroke only moves Y, so that hash never goes stale.
+// MESH indexes the group positions at build time and keeps `drift` = the furthest any group moved since, and every
+// query is padded by it — so a group that moved INTO the radius is still found. MEASURED (zzBenchSculpt99, report
+// ROW3): rebuilt once per stroke (beginStroke), and again when the drift passes half a cell or the radius leaves
+// [cell / 4, cell * 2]; per-dab rebuilds cost more than the scans they replace. Every candidate list is visited in
+// ASCENDING index order — the linear scan's order — because smooth reads its neighbours in place (Gauss-Seidel), so
+// the order is part of the result. Parity with the pre-K6 brush: tests/unit/sculptHash99.test.js.
+// The class is loaded LAZILY (enterSculpt / the first dab): this module is in the boot graph and the hash is not
+// needed to draw a frame. Until it lands a dab scans every vertex as before (same result, slower), so no dab is lost.
+
+/** @typedef {{ hash: any, pos: Float64Array, cell: number, drift: number, cx: number, cy: number, cz: number, half: number }} BrushHash */
+
+/** @type {any} the SpatialHash class once loaded */
+let SpatialHashCtor = null;
+/** @type {Promise<boolean> | null} */
+let hashLoading = null;
+/** 'adaptive' (the measured default) | 'stroke' (never re-index for drift) | 'dab' (rebuild every dab) | 'scan' (no hash) */
+let hashPolicy = 'adaptive';
+const hashStats = { builds: 0, hashed: 0, scanned: 0 };
+
+/** Load the SpatialHash (idempotent; resolves true once the brush can use it). */
+export function sculptHashReady() {
+	if (!hashLoading)
+		hashLoading = import('./meshKernel/spatialHash.js').then(
+			(m) => {
+				SpatialHashCtor = m.SpatialHash;
+				return true;
+			},
+			() => {
+				hashLoading = null;
+				return false;
+			}
+		);
+	return hashLoading;
+}
+
+/** Suites / benches: the brush hash's state, optionally switching the rebuild policy.
+ * @param {'adaptive'|'stroke'|'dab'|'scan'} [policy] */
+export function sculptHashDebug(policy) {
+	if (policy) hashPolicy = policy;
+	return { ready: !!SpatialHashCtor, policy: hashPolicy, ...hashStats };
+}
+
+/** a hash over `n` points of `pos` (x,y,z), with its bounding sphere-ish extent for the nearest search
+ * @param {Float64Array} pos @param {number} n @param {number} cell @returns {BrushHash} */
+function buildBrushHash(pos, n, cell) {
+	let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+	for (let i = 0; i < n * 3; i += 3) {
+		const x = pos[i], y = pos[i + 1], z = pos[i + 2];
+		if (x < x0) x0 = x;
+		if (x > x1) x1 = x;
+		if (y < y0) y0 = y;
+		if (y > y1) y1 = y;
+		if (z < z0) z0 = z;
+		if (z > z1) z1 = z;
+	}
+	hashStats.builds++;
+	return {
+		hash: new SpatialHashCtor(pos, { cellSize: cell, count: n }),
+		pos,
+		cell,
+		drift: 0,
+		cx: (x0 + x1) / 2,
+		cy: (y0 + y1) / 2,
+		cz: (z0 + z1) / 2,
+		half: Math.hypot(x1 - x0, y1 - y0, z1 - z0) / 2
+	};
+}
+
+/** may a hash built at `cell` serve a dab of `radius`? (a query window stays within the dedupe scratch)
+ * @param {BrushHash | null} h @param {number} radius */
+function hashFits(h, radius) {
+	return !!h && hashPolicy !== 'dab' && radius <= h.cell * 2 && radius >= h.cell / 4 && (hashPolicy === 'stroke' || h.drift <= h.cell / 2);
+}
+
+/** the query pad: a float sum may land a hair off the exact distance test the brush then applies */
+const pad = (/** @type {number} */ r) => r * (1 + 1e-9) + 1e-12;
+
+/** candidate scratch, reused across dabs */
+let cand = new Int32Array(4096);
+let mark = new Uint8Array(0);
+
+/** Every index the hash finds within `r` of (x,y,z) into `cand`, ASCENDING (the linear scan's visiting order).
+ * Returns the count. @param {BrushHash} h @param {number} n @param {number} x @param {number} y @param {number} z @param {number} r */
+function ascendingWithin(h, n, x, y, z, r) {
+	let count = 0;
+	h.hash.query(x, y, z, r, (/** @type {number} */ i) => {
+		if (count === cand.length) {
+			const grown = new Int32Array(cand.length * 2);
+			grown.set(cand);
+			cand = grown;
+		}
+		cand[count++] = i;
+	});
+	if (count * 8 > n) {
+		// a dense window: one flag sweep beats a sort
+		if (mark.length < n) mark = new Uint8Array(n);
+		for (let k = 0; k < count; k++) mark[cand[k]] = 1;
+		let w = 0;
+		for (let i = 0; i < n; i++)
+			if (mark[i]) {
+				mark[i] = 0;
+				cand[w++] = i;
+			}
+	} else cand.subarray(0, count).sort();
+	return count;
+}
+
+/** The index nearest (x,y,z) by the caller's exact `dist`, ties to the LOWEST index — the linear scan's answer —
+ * through widening hash queries padded by the drift; -1 when there is none.
+ * @param {BrushHash} h @param {number} x @param {number} y @param {number} z @param {number} start
+ * @param {(i: number) => number} dist */
+function nearestVia(h, x, y, z, start, dist) {
+	const bound = Math.hypot(x - h.cx, y - h.cy, z - h.cz) + h.half + h.drift;
+	if (!Number.isFinite(bound)) {
+		// a non-finite point or centre: no window is safe to widen — the linear scan's own answer
+		let best = -1;
+		let bestD = Infinity;
+		for (let i = 0; i < h.hash.size; i++) {
+			const d = dist(i);
+			if (d < bestD) {
+				bestD = d;
+				best = i;
+			}
+		}
+		return best;
+	}
+	for (let r = Math.max(start, h.cell / 4, 1e-9); ; r *= 4) {
+		let best = -1;
+		let bestD = Infinity;
+		h.hash.query(x, y, z, pad(r) + h.drift, (/** @type {number} */ i) => {
+			const d = dist(i);
+			if (d < bestD || (d === bestD && i < best)) {
+				bestD = d;
+				best = i;
+			}
+		});
+		// any point nearer than the best has a distance <= r too, so this window held it
+		if ((best >= 0 && bestD <= r) || r > bound) return best;
+	}
+}
 
 /** @param {string} uuid */
 function objectOf(uuid) {
@@ -112,16 +259,51 @@ export function rebuildWeldMap(object) {
 	/** @type {Map<string, string[]>} */
 	const neighbors = new Map();
 	const reach = cell * 1.55;
-	for (const a of colPos) {
-		const list = [];
-		for (const b of colPos) {
-			if (a === b) continue;
-			if (Math.abs(a.x - b.x) <= reach && Math.abs(a.z - b.z) <= reach) list.push(b.key);
+	if (SpatialHashCtor && hashPolicy !== 'scan' && colPos.length) {
+		// 99 K6: the same box test over the hash's candidates (the box sits inside its circumcircle), in colPos order
+		const xz = columnXZ(colPos);
+		const h = buildBrushHash(xz, colPos.length, reach);
+		for (let ai = 0; ai < colPos.length; ai++) {
+			const a = colPos[ai];
+			const count = ascendingWithin(h, colPos.length, a.x, 0, a.z, pad(reach * Math.SQRT2));
+			const list = [];
+			for (let k = 0; k < count; k++) {
+				const b = colPos[cand[k]];
+				if (a === b) continue;
+				if (Math.abs(a.x - b.x) <= reach && Math.abs(a.z - b.z) <= reach) list.push(b.key);
+			}
+			neighbors.set(a.key, list);
 		}
-		neighbors.set(a.key, list);
-	}
-	weld = { uuid: object.uuid, attr: position, columns, colPos, neighbors, cell };
+	} else
+		for (const a of colPos) {
+			const list = [];
+			for (const b of colPos) {
+				if (a === b) continue;
+				if (Math.abs(a.x - b.x) <= reach && Math.abs(a.z - b.z) <= reach) list.push(b.key);
+			}
+			neighbors.set(a.key, list);
+		}
+	weld = { uuid: object.uuid, attr: position, columns, colPos, neighbors, cell, hash: null };
 	return weld;
+}
+
+/** the columns as hash points (x, 0, z) @param {{x: number, z: number}[]} colPos */
+function columnXZ(colPos) {
+	const xz = new Float64Array(colPos.length * 3);
+	for (let i = 0; i < colPos.length; i++) {
+		xz[i * 3] = colPos[i].x;
+		xz[i * 3 + 2] = colPos[i].z;
+	}
+	return xz;
+}
+
+/** the terrain brush hash: columns never move in x/z, so only a radius change rebuilds it
+ * @param {NonNullable<typeof weld>} map @param {number} radius */
+function terrainHashFor(map, radius) {
+	void sculptHashReady();
+	if (!SpatialHashCtor || hashPolicy === 'scan' || !map.colPos.length || !(radius > 0 && radius < Infinity)) return null;
+	if (!hashFits(map.hash, radius)) map.hash = buildBrushHash(columnXZ(map.colPos), map.colPos.length, radius);
+	return map.hash;
 }
 
 // ---- MESH sculpt (CL-B follow-up): normal-direction brush on any mesh ------
@@ -130,8 +312,25 @@ export function rebuildWeldMap(object) {
 // along each welded vertex's averaged normal.
 
 /** @type {{uuid: string, attr: any, groups: {indices: number[], pos: any}[],
- *   neighbors: Map<number, Set<number>>} | null} */
+ *   neighbors: Map<number, Set<number>>, hash: BrushHash | null} | null} */
 let meshWeld = null;
+
+/** the mesh brush hash over the group positions (indexed at build; `drift` pads the queries since)
+ * @param {NonNullable<typeof meshWeld>} map @param {number} radius */
+function meshHashFor(map, radius) {
+	void sculptHashReady();
+	const n = map.groups.length;
+	if (!SpatialHashCtor || hashPolicy === 'scan' || !n || !(radius > 0 && radius < Infinity)) return null;
+	if (hashFits(map.hash, radius)) return map.hash;
+	const pos = new Float64Array(n * 3);
+	for (let i = 0; i < n; i++) {
+		const p = map.groups[i].pos;
+		pos[i * 3] = p.x;
+		pos[i * 3 + 1] = p.y;
+		pos[i * 3 + 2] = p.z;
+	}
+	return (map.hash = buildBrushHash(pos, n, radius));
+}
 
 const KEY3 = (/** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ z) =>
 	Math.round(x * 1e4) + '|' + Math.round(y * 1e4) + '|' + Math.round(z * 1e4);
@@ -182,7 +381,7 @@ export function rebuildMeshWeldMap(object) {
 		link(c, a);
 		link(a, c);
 	}
-	meshWeld = { uuid: object.uuid, attr: position, groups, neighbors };
+	meshWeld = { uuid: object.uuid, attr: position, groups, neighbors, hash: null };
 	return meshWeld;
 }
 
@@ -212,22 +411,35 @@ export function applyMeshBrushAt(uuid, x, y, z, op, radius, strength, dt = 0.016
 		for (const i of g.indices) n.add(new THREE.Vector3(normal.getX(i), normal.getY(i), normal.getZ(i)));
 		return n.lengthSq() > 1e-12 ? n.normalize() : n.set(0, 1, 0);
 	};
-	// the hit group (nearest) anchors flatten's tangent plane
+	// (a non-finite centre scans, as before: no window can hold it)
+	const h = Number.isFinite(x + y + z) ? meshHashFor(map, radius) : null;
+	const groups = map.groups;
+	// the hit group (nearest) anchors flatten's tangent plane (only flatten reads it)
 	let hit = null;
-	let hitDist = Infinity;
-	for (const g of map.groups) {
-		const d = g.pos.distanceTo(center);
-		if (d < hitDist) {
-			hitDist = d;
-			hit = g;
+	if (op === 'flatten') {
+		if (h) {
+			const gi = nearestVia(h, x, y, z, radius, (i) => groups[i].pos.distanceTo(center));
+			hit = gi >= 0 ? groups[gi] : null;
+		} else {
+			let hitDist = Infinity;
+			for (const g of groups) {
+				const d = g.pos.distanceTo(center);
+				if (d < hitDist) {
+					hitDist = d;
+					hit = g;
+				}
+			}
 		}
 	}
 	const hitNormal = hit ? groupNormal(hit) : new THREE.Vector3(0, 1, 0);
 	const hitPos = hit ? hit.pos.clone() : center;
 	let touched = false;
 	const next = new THREE.Vector3();
-	for (let gi = 0; gi < map.groups.length; gi++) {
-		const g = map.groups[gi];
+	const count = h ? ascendingWithin(h, groups.length, x, y, z, pad(radius) + h.drift) : groups.length;
+	hashStats[h ? 'hashed' : 'scanned']++;
+	for (let k = 0; k < count; k++) {
+		const gi = h ? cand[k] : k;
+		const g = groups[gi];
 		const d = g.pos.distanceTo(center);
 		if (d > radius) continue;
 		// smoothstep falloff 1 -> 0 across the radius
@@ -251,6 +463,10 @@ export function applyMeshBrushAt(uuid, x, y, z, op, radius, strength, dt = 0.016
 		if (!next.equals(g.pos)) {
 			g.pos.copy(next);
 			for (const i of g.indices) position.setXYZ(i, next.x, next.y, next.z);
+			if (h) {
+				const moved = Math.hypot(next.x - h.pos[gi * 3], next.y - h.pos[gi * 3 + 1], next.z - h.pos[gi * 3 + 2]);
+				if (moved > h.drift) h.drift = moved;
+			}
 			touched = true;
 		}
 	}
@@ -316,6 +532,7 @@ export function enterSculpt(uuid, opts = {}) {
 		// 99 K2: meshCommit's one sender (raw Float32 bytes, positions only)
 		sendMeshGeo(uuid, nonIndexed.getAttribute('position').array);
 	}
+	void sculptHashReady(); // 99 K6: the brush hash class (lazy; dabs scan until it lands)
 	if (isTerrain) rebuildWeldMap(object);
 	else rebuildMeshWeldMap(object);
 	sculptMode.set(isTerrain ? 'terrain' : 'mesh');
@@ -399,20 +616,32 @@ export function applyBrushAt(uuid, x, z, op, radius, strength, dt = 0.016) {
 		const list = map.columns.get(key);
 		return list ? position.getY(list[0]) : 0;
 	};
-	// the hit column (nearest) for flatten's target height
+	const h = Number.isFinite(x + z) ? terrainHashFor(map, radius) : null;
+	const colPos = map.colPos;
+	// the hit column (nearest) for flatten's target height (only flatten reads it)
 	let hitKey = null;
-	let hitDist = Infinity;
-	for (const col of map.colPos) {
-		const d = Math.hypot(col.x - x, col.z - z);
-		if (d < hitDist) {
-			hitDist = d;
-			hitKey = col.key;
+	if (op === 'flatten') {
+		if (h) {
+			const ci = nearestVia(h, x, 0, z, radius, (i) => Math.hypot(colPos[i].x - x, colPos[i].z - z));
+			hitKey = ci >= 0 ? colPos[ci].key : null;
+		} else {
+			let hitDist = Infinity;
+			for (const col of colPos) {
+				const d = Math.hypot(col.x - x, col.z - z);
+				if (d < hitDist) {
+					hitDist = d;
+					hitKey = col.key;
+				}
+			}
 		}
 	}
 	const targetHeight = hitKey ? heightOf(hitKey) : 0;
 
 	let touched = false;
-	for (const col of map.colPos) {
+	const count = h ? ascendingWithin(h, colPos.length, x, 0, z, pad(radius)) : colPos.length;
+	hashStats[h ? 'hashed' : 'scanned']++;
+	for (let k = 0; k < count; k++) {
+		const col = colPos[h ? cand[k] : k];
 		const d = Math.hypot(col.x - x, col.z - z);
 		if (d > radius) continue;
 		// smoothstep falloff 1 -> 0 across the radius
@@ -461,6 +690,8 @@ export function beginStroke(uuid) {
 	const object = objectOf(uuid);
 	if (!object?.geometry?.attributes?.position) return;
 	strokeBefore = object.geometry.attributes.position.array.slice();
+	// 99 K6: one mesh-hash build per stroke (the first dab re-indexes; drift starts at 0 again)
+	if (meshWeld) meshWeld.hash = null;
 }
 
 /** Per-move during a stroke: brush + throttled preview (~5/s). `y` feeds the
@@ -507,11 +738,23 @@ export function endStroke() {
 		strokeBefore = null;
 		return;
 	}
-	const before = Array.from(strokeBefore);
-	const after = Array.from(object.geometry.attributes.position.array);
+	const before = strokeBefore;
+	const after = object.geometry.attributes.position.array;
 	strokeBefore = null;
-	if (uuid && JSON.stringify(before) !== JSON.stringify(after))
-		commitMeshGeoSnapshot(uuid, before, after);
+	if (uuid && positionsDiffer(before, after)) commitMeshGeoSnapshot(uuid, Array.from(before), Array.from(after));
+}
+
+/** 99 K6: did the stroke move anything? The typed-array form of the JSON.stringify compare it replaces, with the
+ * same answer: a length change differs, and two values are equal when === or both non-finite (JSON writes NaN and
+ * ±Infinity alike as null; -0 and 0 alike as 0). @param {ArrayLike<number>} a @param {ArrayLike<number>} b */
+export function positionsDiffer(a, b) {
+	if (a.length !== b.length) return true;
+	for (let i = 0; i < a.length; i++) {
+		const x = a[i];
+		const y = b[i];
+		if (x !== y && (Number.isFinite(x) || Number.isFinite(y))) return true;
+	}
+	return false;
 }
 
 // ---- brush cursor (scene-root ring: never in objectsGroup -> never syncs) ---

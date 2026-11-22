@@ -3,7 +3,8 @@
 //
 // The soup operators' recipes on the op mesh, computed from the same corner positions in the same order, so the
 // output triangles, their order and the stored partition are the soup's:
-// - merge: the soup's grid clusters (cell = round(p / eps), the mean of every CORNER in it), its degenerate-triangle
+// - merge: distance clusters (99 K6: every pair within eps, through the kernel's SpatialHash — the soup's one-cell
+//   grid never merged two points across a cell wall), the mean of every CORNER in one, the soup's degenerate-triangle
 //   drop, then the kernel's own `mergeVertices` (lowest ID of a cluster survives) — after the degenerate triangles
 //   are gone, so every surviving face keeps its corners, triangulation and order keys;
 // - dissolve edges: the two triangles on the edge plus their quad partners, fanned from a corner off the edge, as
@@ -15,6 +16,7 @@
 import { appendToView, newGroup, isolateTriangles } from './opMesh.js';
 import { sub, add, scale, dot, cross, triNormal, pos, keyOfPos } from './rebuild.js';
 import { lengthSq, triVerts, triUv, pairKey, removeTriangles, boundaryLoopOf } from './bridgeFill.js';
+import { SpatialHash } from '../meshKernel/spatialHash.js';
 
 /** @typedef {import('./opMesh.js').OpMesh} OpMesh @typedef {[number, number, number]} Vec */
 
@@ -76,10 +78,17 @@ export function deleteTriangles(om, tris) {
 // ---- MERGE BY DISTANCE --------------------------------------------------------------------------------
 
 /**
- * faceEdit `mergeByDistance` on the op mesh. Every corner falls in a grid cell of size `eps` (round(p / eps) per
- * axis); a cell holding two corners or more moves them all to their MEAN (summed in output corner order — the soup's
- * arithmetic); a triangle left with no area or two corners on one welded key is dropped; the vertices of a cell then
- * merge into its lowest ID (`mergeVertices`). The refusal is the soup's toast text.
+ * faceEdit `mergeByDistance` on the op mesh. The vertices the output corners use are CLUSTERED BY DISTANCE through
+ * the kernel's `SpatialHash` (99 K6: the query reaches the neighbouring cells, so two copies 1e-6 apart on either side
+ * of a cell wall merge — the soup's round(p / eps) grid left exactly that pair apart). THE RULE IS GREEDY, Blender's
+ * "merge by distance": in first-corner order, a vertex not yet claimed becomes a cluster's TARGET and claims every
+ * unclaimed vertex within `eps` of it (inclusive). A cluster is therefore at most `eps` around its target — a strip
+ * of vertices spaced closer than `eps` merges into a coarser strip, never end to end (a transitive rule would chain the
+ * whole run into one point), the same bound the grid had (a cell's extent).
+ * A cluster of two CORNERS or more then moves them all to their MEAN (summed in output corner order — the soup's
+ * arithmetic); a triangle left with no area or two corners on one welded key is dropped; the vertices of a cluster
+ * then merge into its lowest ID (`mergeVertices`). Clusters are numbered in first-corner order, the order the grid's
+ * cells were. The refusal is the soup's toast text.
  * @param {OpMesh} om @param {number} [threshold]
  * @returns {{ ok: true, moved: number, dropped: number, eps: number } | { error: string }}
  *   moved = corners that moved (the soup's count), dropped = degenerate triangles removed
@@ -93,10 +102,40 @@ export function mergeByDistance(om, threshold = 0.001) {
 	const { tFace, tLoc } = view;
 	/** output corner -> vertex */
 	const VV = new Int32Array(T * 3);
-	/** vertex -> its cell (one vertex = one position = one cell: the soup keyed every corner) */
+	/** vertex -> its cluster ("cell"; one vertex = one position = one cluster) */
 	const cellOfV = new Int32Array(m.vTop).fill(-1);
-	/** @type {Map<string, number>} */
-	const cellIndex = new Map();
+	// the used vertices in first-corner order, clustered by distance (the representative = the lowest local index,
+	// i.e. the vertex of the cluster met first)
+	const localOf = new Int32Array(m.vTop).fill(-1);
+	const order = new Int32Array(Math.min(m.vTop, T * 3));
+	let L = 0;
+	for (let t = 0; t < T; t++) {
+		const base = fFirst[tFace[t]];
+		for (let k = 0; k < 3; k++) {
+			const x = cVert[base + tLoc[t * 3 + k]];
+			VV[t * 3 + k] = x;
+			if (localOf[x] < 0) {
+				localOf[x] = L;
+				order[L++] = x;
+			}
+		}
+	}
+	const lp = new Float64Array(L * 3);
+	for (let i = 0; i < L; i++) {
+		lp[i * 3] = vPos[order[i] * 3];
+		lp[i * 3 + 1] = vPos[order[i] * 3 + 1];
+		lp[i * 3 + 2] = vPos[order[i] * 3 + 2];
+	}
+	// greedy targets in first-met order: rep[i] = the local index of the target that claimed i (itself for a target)
+	const hash = new SpatialHash(lp, { cellSize: eps * 2, count: L });
+	const rep = new Int32Array(L).fill(-1);
+	for (let i = 0; i < L; i++) {
+		if (rep[i] >= 0) continue;
+		rep[i] = i;
+		hash.query(lp[i * 3], lp[i * 3 + 1], lp[i * 3 + 2], eps, (j) => {
+			if (rep[j] < 0) rep[j] = i;
+		});
+	}
 	/** per cell: the corner sum (corner by corner in output order: the soup's arithmetic), the corner count, the
 	 * vertices, the target (NaN = fewer than two corners: nothing moves) @type {number[]} */
 	const sx = [];
@@ -109,20 +148,18 @@ export function mergeByDistance(om, threshold = 0.001) {
 	/** @type {number[][]} */
 	const cverts = [];
 	for (let t = 0; t < T; t++) {
-		const base = fFirst[tFace[t]];
 		for (let k = 0; k < 3; k++) {
-			const x = cVert[base + tLoc[t * 3 + k]];
-			VV[t * 3 + k] = x;
+			const x = VV[t * 3 + k];
 			const px = vPos[x * 3];
 			const py = vPos[x * 3 + 1];
 			const pz = vPos[x * 3 + 2];
 			let c = cellOfV[x];
 			if (c < 0) {
-				const key = Math.round(px / eps) + ',' + Math.round(py / eps) + ',' + Math.round(pz / eps);
-				c = cellIndex.get(key) ?? -1;
+				const root = rep[localOf[x]];
+				// a cluster's root is its first-met vertex, so it has its cluster already unless it is x itself
+				c = root === localOf[x] ? -1 : cellOfV[order[root]];
 				if (c < 0) {
 					c = cn.length;
-					cellIndex.set(key, c);
 					sx.push(0), sy.push(0), sz.push(0), cn.push(0), cverts.push([]);
 				}
 				cellOfV[x] = c;

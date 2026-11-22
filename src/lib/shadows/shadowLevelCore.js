@@ -96,3 +96,14 @@ export function cappedNote(asked, tier) {
 	if (drawn === want) return '';
 	return 'This device draws ' + drawn[0].toUpperCase() + drawn.slice(1);
 }
+
+/**
+ * The Cinematic view (WebGPU) picks a light's shadow node by the light's CLASS, so the WebGL cascade path (an
+ * `isSunLight` flag on the rig sun) cannot reach it: while the view is on, Far is drawn as Soft there (its own
+ * best: the fitted sun shadow with the wide kernel). Everything else is drawn as asked.
+ * @param {ShadowLevel} drawn @param {boolean} cinematic
+ * @returns {ShadowLevel}
+ */
+export function cinematicShadowLevel(drawn, cinematic) {
+	return cinematic && drawn === 'far' ? 'soft' : drawn;
+}

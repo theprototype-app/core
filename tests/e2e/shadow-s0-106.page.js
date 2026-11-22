@@ -1,3 +1,4 @@
+// @ts-nocheck — a page-side script evaluated as text in the app tab (window.__stores is untyped)
 // 106 S0 — the PAGE half of the shadow measurement (one source for every device: a Playwright page on the Deck
 // or the PC evaluates it, the HONOR's raw CDP tab evaluates the same text). Defines window.__s0 = { load,
 // inventory, measure }. Needs localStorage.debugStores = 'true' (window.__stores).
@@ -38,7 +39,8 @@
 		for (let i = 0; i < 3 && ok !== true; i++) {
 			try {
 				await s.sceneTemplates.loadTemplatesIndex(true);
-				const list = read(s.sceneTemplates.templates);
+				const T = s.sceneTemplates;
+				const list = [...read(T.templates), ...read(T.examples), ...(T.games ? read(T.games) : [])];
 				const e = list.find((x) => x.slug === slug);
 				if (!e) ok = 'no template ' + slug;
 				else {
@@ -113,6 +115,8 @@
 					return null;
 				}
 			})(),
+			// the 26-D governor's local steps (shadowsOff = what this device really draws today, whatever the pref)
+			governor: s.qualityGovernor ? read(s.qualityGovernor.qualityOverrides) : null,
 			lights,
 			meshes,
 			casters,
@@ -144,18 +148,26 @@
 		const px = new Uint8Array(4);
 		const prev = r.getRenderTarget();
 		r.setRenderTarget(null);
-		r.render(scene, cam);
-		gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+		// warm-up: programs still compiling (parallel compile) would be timed otherwise
+		for (let i = 0; i < 5; i++) {
+			r.render(scene, cam);
+			gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+		}
 		const info = { calls: r.info.render.calls, tris: r.info.render.triangles };
+		const programs0 = r.info.programs ? r.info.programs.length : null;
 		const t = [];
+		const cpu = [];
 		for (let i = 0; i < n; i++) {
 			const t0 = performance.now();
 			r.render(scene, cam);
+			const t1 = performance.now();
 			gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
 			t.push(performance.now() - t0);
+			cpu.push(t1 - t0);
 		}
 		r.setRenderTarget(prev);
-		return { n, median: q(t, 0.5), p95: q(t, 0.95), ...info };
+		// cpu = the render call alone (JS + GL command submission); the rest of `median` is the GPU draining
+		return { n, median: q(t, 0.5), p95: q(t, 0.95), cpu: q(cpu, 0.5), programs: [programs0, r.info.programs ? r.info.programs.length : null], ...info };
 	}
 
 	/** one level: set it (scene data, the real path), wait for the lazy chunk + recompiles, then sample */
@@ -163,6 +175,9 @@
 		const s = S();
 		const sampleMs = opts.sampleMs ?? 6000;
 		const env = s.environment;
+		// price the level, not the governor: full quality and no automatic step for this page session (opts.full
+		// false keeps today's governor, which is the "what is drawn today" reading)
+		if (opts.full !== false && s.qualityGovernor) s.qualityGovernor.keepFullQuality();
 		if (opts.tier !== undefined && env.setShadowTierOverride) env.setShadowTierOverride(opts.tier || null);
 		env.setSceneShadowLevel(level);
 		await sleep(opts.waitMs ?? 3500);
@@ -179,6 +194,8 @@
 			forced: fr,
 			contact,
 			lights: inventory().lights,
+			governor: s.qualityGovernor ? read(s.qualityGovernor.qualityOverrides) : null,
+			shadowMapOn: read(s.globalRenderer).shadowMap.enabled,
 			debug: dbg
 		};
 	}

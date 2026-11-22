@@ -32,7 +32,8 @@ import { sceneLodBias } from './lod';
 import { mergeHdriPatch, rotateAboutY } from './hdri/hdriCore.js';
 import { ENV_RIG_SUN } from './shadowFitCore.js';
 // 106 S1: the scene's shadow quality (pure half; Soft / Far load lazily in ./shadows/shadowLevels.js)
-import { shadowLevelOf, drawnShadowLevel, shadowTierOf } from './shadows/shadowLevelCore.js';
+import { shadowLevelOf, drawnShadowLevel, shadowTierOf, cinematicShadowLevel } from './shadows/shadowLevelCore.js';
+import { cinematicState } from './cinematic/cinematicStore.js';
 import { isHeadsetUA } from './hdri/hdriCore.js';
 
 // Environment v2 (phase 70). Everything environmental lives under ONE group at
@@ -600,7 +601,7 @@ function commit(partial, replicate = true) {
 /**
  * 85 H4 / H5 / H7: a whole environment state through the one write path — the agent's set_sky / set_light
  * and their undo (the `environment` history kind, ai/sceneSetupHistory.js). Persists, applies, replicates.
- * @param {{preset?: string, exposure?: number, customPreset?: any, lights?: any[], lodBias?: number}} state
+ * @param {{preset?: string, exposure?: number, customPreset?: any, lights?: any[], lodBias?: number, shadowLevel?: string}} state
  */
 export function commitEnvironment(state) {
 	commit({
@@ -930,6 +931,31 @@ export function setSceneLodBias(value) {
 
 environment.subscribe((state) => sceneLodBias.set(lodBiasOf(state)));
 environment.subscribe((state) => sceneShadowsOff.set(shadowLevelOf(state.shadowLevel) === 'off'));
+// 106: the Cinematic view draws Far as Soft (cinematicShadowLevel); its state store is a boot-safe leaf. The
+// switch to Soft lands on 'entering', before the WebGPU renderer first draws, and Far returns on 'off'.
+let cinematicLive = false;
+cinematicState.subscribe((st) => {
+	const live = st.mode !== 'off';
+	if (live === cinematicLive) return;
+	cinematicLive = live;
+	if (shadowLevelOf(get(environment).shadowLevel) === 'far') applyEnvironment();
+});
+
+// 106: entering or leaving a headset changes the tier (XR presenting = the Quest cap), so a scene that asks for
+// Soft / Far is drawn again at what the headset may draw. Basic scenes pay nothing (one string read per switch).
+// renderer.xr's own events, not isVRMode: that store flips BEFORE the session presents.
+const xrWired = new WeakSet();
+globalRenderer.subscribe((r) => {
+	const xr = /** @type {any} */ (r)?.xr;
+	if (!xr?.addEventListener || xrWired.has(xr)) return;
+	xrWired.add(xr);
+	const again = () => {
+		const asked = shadowLevelOf(get(environment).shadowLevel);
+		if (asked === 'soft' || asked === 'far') applyEnvironment();
+	};
+	xr.addEventListener('sessionstart', again);
+	xr.addEventListener('sessionend', again);
+});
 
 /** 106 S1: Configure Scene ▸ Lights ▸ Shadow quality (replicated, saved; absent = Basic).
  * @param {any} level 'off' | 'basic' | 'soft' | 'far' */
@@ -960,7 +986,8 @@ export function shadowTier(renderer) {
 
 /** What this device draws for the scene's ask right now. @param {any} [renderer] */
 export function drawnSceneShadowLevel(renderer) {
-	return drawnShadowLevel(get(environment).shadowLevel, shadowTier(renderer ?? get(globalRenderer)));
+	const d = drawnShadowLevel(get(environment).shadowLevel, shadowTier(renderer ?? get(globalRenderer)));
+	return cinematicShadowLevel(d, cinematicLive);
 }
 
 // 106 S1: Soft / Far are a lazy chunk; Basic and Off never load it. Once loaded it stays (it restores

@@ -12,7 +12,7 @@ import { setScenePhysics, scenePhysicsState_ } from '../scenePhysics';
 export function environmentNow() {
 	const s = get(environment);
 	return JSON.parse(
-		JSON.stringify({ preset: s.preset ?? 'studio', exposure: s.exposure ?? 1, customPreset: s.customPreset ?? null, lights: s.lights ?? [], ...(s.lodBias ? { lodBias: s.lodBias } : {}) })
+		JSON.stringify({ preset: s.preset ?? 'studio', exposure: s.exposure ?? 1, customPreset: s.customPreset ?? null, lights: s.lights ?? [], ...(s.lodBias ? { lodBias: s.lodBias } : {}), ...(s.shadowLevel ? { shadowLevel: s.shadowLevel } : {}) })
 	);
 }
 

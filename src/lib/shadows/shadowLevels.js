@@ -12,6 +12,7 @@
 //     radius, the screen draws the level's.
 // Going back to Basic restores every original, so Basic after Soft / Far is today's Basic again.
 import * as THREE from 'three';
+// @ts-expect-error — @types/three has no declaration for the r186 SunLightShadow addon yet
 import { SunLightShadow } from 'three/addons/lights/SunLightShadow.js';
 import { get } from 'svelte/store';
 import { objectsGroup } from '../../stores/sceneStore';
@@ -31,7 +32,8 @@ let guarded = false;
 function guardToJSON() {
 	if (guarded) return;
 	guarded = true;
-	const proto = /** @type {any} */ (THREE.LightShadow.prototype);
+	// LightShadow is a real three export that @types/three leaves out
+	const proto = /** @type {any} */ (THREE).LightShadow.prototype;
 	const original = proto.toJSON;
 	proto.toJSON = function () {
 		if (!radiusBack.has(this)) return original.call(this);

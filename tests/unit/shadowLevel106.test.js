@@ -57,3 +57,12 @@ describe('106 shadow level core', () => {
 		expect(cappedNote('basic', 'quest')).toBe('');
 	});
 });
+
+import { cinematicShadowLevel } from '../../src/lib/shadows/shadowLevelCore.js';
+describe('106 the Cinematic view', () => {
+	it('draws Far as Soft, everything else as asked', () => {
+		expect(cinematicShadowLevel('far', true)).toBe('soft');
+		expect(cinematicShadowLevel('far', false)).toBe('far');
+		for (const l of ['off', 'basic', 'soft']) expect(cinematicShadowLevel(l, true)).toBe(l);
+	});
+});

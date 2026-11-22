@@ -294,7 +294,11 @@ h.run(async () => {
 	h.check((await Promise.all([s2, s3].map((u) => graphSummary(B, u)))).every((x) => x?.nodes === 5), '3.10 B: redo brought the copies back');
 
 	// ---- reload: B rejoins; tags, links and copies come back with the handshake ----
-	await h.freshReload(B);
+	// a loaded Deck (battery beside it) can take > 30 s to boot the reloaded page: give it 120 s in all
+	await h.freshReload(B).catch(async (e) => {
+		if (!/Timeout/.test(String(e?.message ?? e))) throw e;
+		await B.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, null, { timeout: 90000 });
+	});
 	await h.eventually(
 		() => B.page.evaluate(() => { let pr; window.__tp.test.v1.peers.subscribe((v) => (pr = v))(); return pr?.openedPeers?.size ?? 0; }),
 		(n) => n >= 1,

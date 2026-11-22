@@ -6,6 +6,7 @@ import { gameValueOf, gameValueMax } from './gameValues.js';
 import { cameraShake, screenFlash, hitPause } from './gameFeelFx.js'; // 102b-hud row 19 // 102b-hud: the Game Value node's published source
 import { sessionNow, onSessionClockJump } from './sessionClock'; // 25-E: the synced clock is the SESSION's
 import { elapsedNow } from './scriptElapsed.js';
+import { autostartElapsed, wiredElapsed } from './hudTimerClock.js'; // 92-correct row 1: a leaf
 import { setScriptElapsed } from './sandbox/scripts.js';
 import { get } from 'svelte/store';
 import { phaseBegin, phaseEnd, PHASE_INPUT, PHASE_FLOW, PHASE_MODULES, PHASE_PHYSICS } from './perf/perfMarks.js'; // 34 PF: an import-free leaf
@@ -1661,31 +1662,33 @@ function runGameFeelFx(type, data) {
  * @type {Map<string, string>} */
 const hudButtonPressed = new Map();
 
-/** fix-batch-1: node id -> the clock time an autostart HUD Timer was first seen @type {Map<string, number>} */
-const hudTimerSeen = new Map();
+/** 92-correct row 1: node id -> where its autostart / wired clock counts from (hudTimerClock.js)
+ * @type {Map<string, any>} */
+const hudTimerAnchors = new Map();
 
-/** Seconds left on a HUD Timer. DERIVED from the shared trigger stamp, so every peer
- * reads the same number with no clock and no message of its own — the same reasoning
- * as a looping sound's phase. An `autostart` timer with nothing wired counts from when THIS
- * peer first saw the node (fix-batch-1, docs-1: it counted from the clock's origin, and the
- * synced clock is seconds since midnight, so an autostart timer always read 0). That one is
- * per peer — a timer everyone must agree on is wired to a shared pulse (`start`).
+/** Seconds left on a HUD Timer. A WIRED timer derives from the shared trigger stamp of its
+ * `start`, so every peer reads the same number with no clock and no message of its own (the
+ * looping sound's phase reasoning); 92-correct: a pause stops it. An `autostart` timer with
+ * nothing wired counts from the ROUND when the game shell is in use (the shared `startedAt`, so
+ * a late joiner reads the host's number) and from this peer's Play press otherwise — never from
+ * the editor (it used to count from when this peer first saw the node, so it had run down before
+ * anyone pressed Play: the 2.0-eval2 round-timer task, 0/10).
  * @param {any} node @param {any} data @param {number} time @param {any} ctx */
 function hudTimerRemaining(node, data, time, ctx) {
 	const duration = Math.max(0, num(data.duration));
 	// fix-batch-1 (docs-1 Q1): the card's socket is `start` (flowSockets types it), and only an
 	// unnamed / `trigger` wire counted — a Start wired by hand was ignored
 	const stamp = triggerStampFor(node.id, ctx, 'start');
+	let anchor = hudTimerAnchors.get(node.id);
+	if (!anchor) hudTimerAnchors.set(node.id, (anchor = {}));
 	if (stamp === null) {
 		if (data.autostart === false) return duration;
-		const seen = hudTimerSeen.get(node.id);
-		// a clock that went BACK by more than a second (midnight, a session clock adopted on join)
-		// re-bases; frame jitter does not (it would hold the timer at its full duration)
-		if (seen === undefined || time < seen - 1) hudTimerSeen.set(node.id, time);
-		return Math.max(0, duration - (time - /** @type {number} */ (hudTimerSeen.get(node.id))));
+		const ran = autostartElapsed({ game: viewGame(), nowMs: sessionNow(), playing: get(isLocked) === true, effNow: effectTime(time) }, anchor);
+		return Math.max(0, duration - ran);
 	}
+	const ran = wiredElapsed({ time, stamp, paused: time - effectTime(time) }, anchor);
 	// a synced stamp can sit AHEAD of `time` by a frame; clamp both ends
-	return Math.max(0, Math.min(duration, duration - (time - stamp)));
+	return Math.max(0, Math.min(duration, duration - ran));
 }
 
 // --- 21-D6: the game shell's ACTION half -------------------------------------

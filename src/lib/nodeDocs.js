@@ -70,7 +70,7 @@ export const NODE_DOCS = {
 	movespeed: "On a pulse into set, writes the player's movement speed - sprint, mud, slow motion.",
 	hudscreen: "Shows, hides or toggles a whole HUD screen (a named layer of elements) on each pulse.",
 	hudtext: "Writes a number into a HUD text element through a format such as 'Gems: {v}' - a score, a count, a readout.",
-	hudtimer: "Counts down in a HUD Timer element from its duration, formatted like '{v}s' - by itself (Autostart) or from a pulse into start.",
+	hudtimer: "Counts down in a HUD Timer element from its duration, formatted like '{v}s' - by itself (Autostart: from the round's start, or from Play when the game has no rounds; it waits in the editor) or from a pulse into start. A pause stops it.",
 	hudbar: "Drives a HUD bar element's fill from a number - health, fuel, progress.",
 	hudbutton: "Fires a pulse when a HUD button is pressed - the on-screen counterpart of On Click.",
 	hudlist: "Names a HUD List element and sets its title and how many rows it shows; HUD Rows and Leaderboard fill it.",

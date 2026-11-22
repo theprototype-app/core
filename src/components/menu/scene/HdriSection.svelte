@@ -44,20 +44,25 @@
 	}
 	/** @param {any} event */
 	async function onUpload(event) {
-		const file = event.currentTarget.files?.[0];
+		const picked = [...(event.currentTarget.files ?? [])];
 		event.currentTarget.value = '';
-		if (!file) return;
-		if (!/\.(hdr|exr)$/i.test(file.name)) {
-			showToast('Pick a .hdr or .exr file');
+		if (!picked.length) return;
+		// 102b-papercuts: a cube map (a cross, a strip, or six face files) or a plain image is converted to an
+		// equirectangular .hdr first; a 2:1 .hdr / .exr goes in untouched, as before
+		const { prepareSky } = await import('$lib/hdri/cubeImport.js');
+		const ready = await prepareSky(await Promise.all(picked.map(async (f) => ({ name: f.name, buffer: await f.arrayBuffer() }))));
+		if ('error' in ready) {
+			showToast(ready.error);
 			return;
 		}
-		if (file.size > MAX_UPLOAD) {
+		if (ready.bytes.byteLength > MAX_UPLOAD) {
 			showToast('That HDRI is over 25 MB — peers could not receive it. A 1k or 2k file is plenty.');
 			return;
 		}
 		try {
-			const item = await addItemFromBytes(await file.arrayBuffer(), file.name, null, { imported: true, kind: 'hdri' });
+			const item = await addItemFromBytes(/** @type {ArrayBuffer} */ (ready.bytes.buffer), ready.name, null, { imported: true, kind: 'hdri' });
 			if (item?.hash) pickCustom(item);
+			if (ready.converted && ready.converted !== 'image') showToast('Cube map converted to a sky image: ' + ready.name);
 		} catch (err) {
 			showToast('Could not add that HDRI');
 			console.warn('[hdri] upload failed', err);
@@ -80,7 +85,7 @@
 	);
 </script>
 
-<div id="env-hdri" data-keywords="hdri hdr exr ultrahdr sky quality minimum resolution sky image skybox environment map ibl image based lighting reflections exposure tone mapping rotation">
+<div id="env-hdri" data-keywords="hdri hdr exr cube map cubemap cross skybox faces ultrahdr sky quality minimum resolution sky image skybox environment map ibl image based lighting reflections exposure tone mapping rotation">
 	<p class="ui-section-label">Sky image</p>
 	<div class="hdri-row">
 		<button
@@ -103,11 +108,11 @@
 				{item.name}
 			</button>
 		{/each}
-		<button id="hdri-upload" class="hdri-chip" title="Use your own .hdr or .exr (equirectangular) — it is added to the Explorer and shared with peers"
+		<button id="hdri-upload" class="hdri-chip" title="Use your own sky: an equirectangular .hdr or .exr, a cube map (a cross, a strip or six face files) or an image — it is added to the Explorer and shared with peers"
 			onclick={() => document.getElementById('hdri-upload-file')?.click()}>
 			Upload HDRI…
 		</button>
-		<input type="file" id="hdri-upload-file" style="display: none" accept=".hdr,.exr" onchange={onUpload} />
+		<input type="file" id="hdri-upload-file" style="display: none" accept=".hdr,.exr,.png,.jpg,.jpeg,.webp" multiple onchange={onUpload} />
 	</div>
 	{#if hdri}
 		<SliderRow id="hdri-rotation" label="Rotation" min={0} max={360} step={1} decimals={0} value={hdri.rotation}

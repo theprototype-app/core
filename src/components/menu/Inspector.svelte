@@ -21,6 +21,7 @@
 	import LoadStatePanel from './LoadStatePanel.svelte';
 	import WaterPanel from '../water/WaterPanel.svelte';
 	import SliderRow from '../ui/SliderRow.svelte';
+	import { fogKindOf } from '$lib/fogModes.js';
 	import SceneLodSection from './SceneLodSection.svelte'; // 46 P2
 	import PropRow from '../ui/PropRow.svelte';
 	import Chips from '../ui/Chips.svelte';
@@ -41,6 +42,8 @@
 	import HdriSection from './scene/HdriSection.svelte'; // 37-hdri
 	import BakeLightSection from './scene/BakeLightSection.svelte'; // 98 P1
 	import PhysicsFloats from '../sim/PhysicsFloats.svelte'; // 36-sim I1
+	import PhysicsTuningRows from '../sim/PhysicsTuningRows.svelte'; // 102b row 1
+	import JointsSection from '../sim/JointsSection.svelte'; // 102b row 2
 	import FluidEmitterSection from '../sim/FluidEmitterSection.svelte'; // 36-fb F23
 	import FluidInteractionRow from '../sim/FluidInteractionRow.svelte'; // 36-fb F23
 	import FlowPathSection from '../sim/FlowPathSection.svelte'; // 36-fb F24
@@ -104,6 +107,7 @@
 	} from '$lib/meshEdit';
 	import { bottomInset } from '$lib/bottomDock';
 	import { geometryParamsOf, applyGeometry } from '$lib/geometryEdit';
+	import { roundedBoxOffer } from '$lib/roundedBoxGate.js'; // 102b-papercuts
 	import { nameOf } from '$lib/lockControl';
 	import { geometrySpec } from '$lib/geometryParams';
 	import { LIGHT_PARAMS, SHADOW_TYPES, SHADOW_SIZES, setShadowMapSize, cappedShadowSize } from '$lib/lightParams';
@@ -922,6 +926,12 @@
 		return !isLight && !isGroup && $selectedObject ? geometryParamsOf($selectedObject) : null;
 	});
 	const geoSpec = $derived(geoParams ? geometrySpec(geoParams.gtype) : null);
+	// 102b-papercuts: a baked rounded box the Geometry section can offer to convert (never converts by itself)
+	const roundOffer = $derived.by(() => {
+		geoTick;
+		$objectsGroup;
+		return !geoParams && !isLight && !isGroup && $selectedObject ? roundedBoxOffer($selectedObject) : null;
+	});
 
 	// 21-C1: the parametric LOCK has to notice a poke. Every meshgeo commit stamps
 	// userData.faceEdited (so every sculpt stroke does), and a THREE tree is not
@@ -2268,10 +2278,15 @@
 					}}
 				/>
 				</FieldClip>
+				<!-- 102b-papercuts: Linear / Distance / Height fog (Near and Far are the linear fog's rows) -->
+				<!-- 102b-papercuts: a lazy chunk (the boot carries no fog-kind rows) -->
+				{#await import('./scene/FogKindRows.svelte') then m}<m.default fog={envFog} />{/await}
+				{#if fogKindOf(envFog) === 'linear'}
 				<SliderRow id="fog-near" label="Near" min={0} max={Math.max(10, Math.ceil(envFog?.near ?? 0))} step={0.1} decimals={1} value={envFog?.near ?? 0}
 					onchange={(v) => editEnvSky({ fog: { near: v } })} />
 				<SliderRow id="fog-far" label="Far" min={0} max={Math.max(100, Math.ceil(envFog?.far ?? 0))} step={0.1} decimals={1} value={envFog?.far ?? 0}
 					onchange={(v) => editEnvSky({ fog: { far: v } })} />
+				{/if}
 				<UiButton
 					size="sm"
 					variant="outline"
@@ -2426,6 +2441,9 @@
 					{/if}
 				</div>
 			</Section>
+
+			<!-- 102b-arrange row 2: the scene's layers (a lazy chunk) -->
+			<Section variant="panel" label="Layers" closed aliases={['Layer', 'Hide layer', 'Lock layer']}>{#await import('./inspector/LayersSection.svelte') then m}<m.default />{/await}</Section>
 
 			<Section variant="panel" label="Levels" closed aliases={['Level', 'Portals', 'Checkpoints', 'Loading screen', 'Keep across levels']} note={sectionNote('Levels')}><LevelsSection /></Section>
 
@@ -3800,6 +3818,11 @@
 				<ArrangeSection count={multiCount} />
 			{/if}
 
+			<!-- 102b-arrange row 2: Tidy (layer, select similar, rename many, randomise) — a lazy chunk -->
+			{#if $selectedObjects?.length}
+				{#await import('./inspector/TidySection.svelte') then m}<m.default />{/await}
+			{/if}
+
 			{#if !isLight}
 				<Section variant="panel" label="Object" clip={{ count: () => insTargets.length, fans: true }}>
 					<PropRow label="Render order" labelFor="inspector-render-order" valueBox={false}>
@@ -3863,6 +3886,11 @@
 				     pour emitter rows; instances live in the object's own frame (a Terrain keeps its
 				     Scatter section beside Terrain paint) -->
 				<ScatterSection object={$selectedObject} />
+			{/if}
+
+			{#if !isLight && !multiCount && $selectedObject?.uuid && $selectedObject?.isObject3D}
+				<!-- 102b-arrange row 1: Array (a lazy chunk — nothing here is paid at boot) -->
+				{#await import('./inspector/ArraySection.svelte') then m}<m.default object={$selectedObject} />{/await}
 			{/if}
 
 			{#if devPrimary}
@@ -3958,6 +3986,19 @@
 							>
 						{/if}
 					{:else}
+						{#snippet geoSlider(/** @type {any} */ spec, /** @type {string | undefined} */ rowId)}
+							<SliderRow
+								id={rowId}
+								label={spec.label}
+								min={spec.min ?? 0}
+								max={spec.max ?? 10}
+								step={spec.kind === 'int' ? 1 : spec.step ?? 0.05}
+								decimals={spec.kind === 'int' ? 0 : 2}
+								value={Number(geoParams.params[spec.key] ?? spec.def)}
+								mixed={geoMixed(spec.key, spec.def)}
+								onchange={(v) => editGeometry(spec.key, spec.kind === 'int' ? Math.round(v) : v)}
+							/>
+						{/snippet}
 						<div id="inspector-geometry" class="flex flex-col gap-1">
 							<!-- 37 R3: a row whose `show` says it does not apply (a door width on a wall
 							     with no doors) is hidden, not disabled -->
@@ -3988,22 +4029,21 @@
 											{/each}
 										</div>
 									</div>
+								{:else if spec.optional}
+									<!-- 102b-papercuts: an optional row (a Box's corner radius) carries its own id and tooltip -->
+									<div title={spec.title ?? spec.label}>{@render geoSlider(spec, 'geo-' + spec.key)}</div>
 								{:else}
-									<SliderRow
-										label={spec.label}
-										min={spec.min ?? 0}
-										max={spec.max ?? 10}
-										step={spec.kind === 'int' ? 1 : spec.step ?? 0.05}
-										decimals={spec.kind === 'int' ? 0 : 2}
-										value={Number(geoParams.params[spec.key] ?? spec.def)}
-										mixed={geoMixed(spec.key, spec.def)}
-										onchange={(v) => editGeometry(spec.key, spec.kind === 'int' ? Math.round(v) : v)}
-									/>
+									{@render geoSlider(spec, undefined)}
 								{/if}
 							{/each}
 						</div>
 					{/if}
 				</Section>
+			{:else if roundOffer && !multiCount}
+				<!-- 102b-papercuts: a BAKED rounded box (a mesh of vertices that is exactly one) is OFFERED as a Box
+				     with a corner radius. Never automatic: the shape stays the same, the file gets smaller and the
+				     Geometry rows come back. One undo step. -->
+				{#await import('./RoundedBoxOffer.svelte') then m}<m.default offer={roundOffer} uuid={$selectedObject.uuid} onconverted={() => geoTick++} />{/await}
 			{/if}
 
 			{#if $selectedObject?.userData?.terrain && !multiCount}
@@ -4690,9 +4730,11 @@
 								onchange={(/** @type {any} */ v) => setPhysics({ ccd: v === 'on' ? true : v === 'off' ? false : null })}
 							/>
 						</div>
+						<PhysicsTuningRows object={$selectedObject} {setPhysics} {mixed} /><!-- 102b row 1 -->
 						<PhysicsFloats object={$selectedObject} {setPhysics} /><!-- 36-sim I1 -->
 					{/if}
 					<FluidInteractionRow targets={insTargets} /><!-- 36-fb F23 -->
+					<JointsSection targets={insTargets.map((/** @type {any} */ o) => o.uuid)} /><!-- 102b row 2 -->
 					<!-- CL-A A7: per-object collider preview (local, this device) -->
 					<InsToggle
 						id="physics-show-collider"

@@ -73,6 +73,10 @@ const STYLE = {
 };
 
 /** the text-ish style set, shared by text/timer/button/panel/list */
+/** 102b-hud: the press sounds a button offers (a subset of gameSfx's GAME_SOUNDS — this file stays a
+ * leaf, so the list is written here and a unit test holds it to the real set) */
+export const BUTTON_SOUNDS = ['none', 'click', 'pop', 'success', 'fail', 'coin', 'levelup', 'ring', 'sparkle', 'whoosh'];
+
 const TEXT_STYLE = [STYLE.size, STYLE.weight, STYLE.font, STYLE.color, STYLE.align, STYLE.opacity];
 
 /** @type {HudKindDef[]} */
@@ -104,7 +108,10 @@ export const HUD_KIND_DEFS = [
 		styleDefaults: { size: 14, align: 'center', bg: 'rgb(17 24 39 / 0.72)', border: 'rgb(75 85 99 / 0.7)', radius: 6, pad: 6 },
 		fields: [
 			{ key: 'label', kind: 'text', label: 'text', placeholder: 'Button' },
-			{ key: 'enabled', kind: 'toggle', label: 'enabled', hint: 'A disabled button dims and ignores presses.' }
+			{ key: 'enabled', kind: 'toggle', label: 'enabled', hint: 'A disabled button dims and ignores presses.' },
+			// 102b-hud (row 14): a press sound for the one who pressed it, and a value the HUD Button node passes on
+			{ key: 'sound', kind: 'select', label: 'sound', options: BUTTON_SOUNDS, hint: 'Plays for the player who presses it.' },
+			{ key: 'value', kind: 'text', label: 'value', placeholder: 'e.g. 3', hint: 'Passed on by the HUD Button node (its value output): one node for a whole level grid.' }
 		],
 		style: [...TEXT_STYLE, STYLE.bg, STYLE.border, STYLE.radius, STYLE.pad]
 	},

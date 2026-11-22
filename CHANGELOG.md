@@ -6,6 +6,47 @@
      rendering, so maintainer notes stay out of the user-facing window. No emoji from
      1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
 
+## 1.74.0 — Games and play
+
+### Game values and game feel
+- **Show any game value in the HUD without code**: the new **Game Value** node reads the score, your score, the best score, the clock, time left, the round, the level, stars, lives, a variable or a stored value, and writes it as words ("1:04", "3 / 10", "★★☆") ready for a **HUD Text**. Its **value** output is the number, for a **HUD Bar**. Module authors publish their own with `api.values.set`. <!-- 102b-hud -->
+- **HUD buttons**: a press **sound** and a **value**. A **HUD Button** node with a screen and no element answers every button on that screen, and its **value** output says which was pressed: one node for a whole level grid. <!-- 102b-hud -->
+- **Show / Hide Element**: show, hide or toggle one HUD element, on a trigger or from a wired value. <!-- 102b-hud -->
+- **Variables that hold words and flags**: **Set Variable** ▸ **toggle** flips a flag, **text** stores words; **Get Variable** ▸ **text** reads them back. <!-- 102b-hud -->
+- **Camera Shake, Screen Flash and Hit Pause** nodes for hits and pickups, for the player who made the hit or for everyone. **Reduced motion** turns them down. <!-- 102b-hud -->
+
+### Physics
+- **Physics per object**: gravity scale, drag and spin drag on each body (Properties ▸ Physics). <!-- 102b-physics -->
+- **Four more joints**: ball, slider, spring and rope, with a **Joints** panel in Properties and gizmos in the view. <!-- 102b-physics -->
+- **Joints are kept when the page reloads** (they used to be lost on every reload). <!-- 102b-physics -->
+- **Joint and body values from a file or a peer are checked**, and a scene's arrays share one drawing budget (20,000 copies, 2 million triangles). <!-- 102-int-1 -->
+
+### Arrange and tidy
+- **Arrays**: repeat an object in a line, a grid, a circle or along a path, with a turn and a growth per copy. The copies stay live and follow the object until you press **Make real objects** (Properties ▸ Array). <!-- 102b-arrange -->
+- **Hold B while moving an object** to snap its nearest corner onto another object's corner or edge middle. <!-- 102b-arrange -->
+- **Layers**: name, colour, hide on your screen, lock for everyone (Configure Scene ▸ Layers; Properties ▸ Tidy ▸ Layer). Object list rows show the layer's colour. <!-- 102b-arrange -->
+- **Tidy**: select similar (shape, material, prefab, tag, layer), rename many with a counter, and randomise turn, size and place within ranges. Each is one undo step. <!-- 102b-arrange -->
+
+### Play
+- **Your touch layout ships with the scene**: the **For players** layout is saved in the scene; a player's own layout still wins, item by item. <!-- 102b-play -->
+- **Info points**: a note can be shown to visitors in Play, with one picture; Play lists them and opens each as a card with **Show the view**. <!-- 102b-play -->
+- **The screen stays awake** while you play, film or hand off to a phone, and a **colour dropper** sits beside colour fields where the browser has one (or press I). <!-- 102b-play -->
+
+### Paper cuts
+- **Rounded boxes**: a Box has **Corner radius** and **Corner segs**, and saves as its size plus two numbers instead of about 270 KB of vertices. A mesh that is exactly a rounded box gets a **Convert to a rounded Box** button (never automatic, one undo). <!-- 102b-papercuts -->
+- **Repeated meshes are saved once**: ten copies of one mesh store it one time. <!-- 102b-papercuts -->
+- **Fog kinds**: Linear, Distance and Height (ground fog). **Cube-map skies**: Upload HDRI… takes a cube cross, a strip, six face files or an equirectangular image. <!-- 102b-papercuts -->
+- **Set Shader Uniform drives colours and vectors**; **a Script node can fire an event**; **an effect that acts on nothing says so** on its card. <!-- 102b-papercuts -->
+
+### For AI agents, module authors and developers
+- **Agents**: `set_physics` takes gravity scale and drag, `create_joints` the new kinds, `update_objects` takes `array`, `makeReal` and `layer` (and `list_scene` reports them), `set_geometry` takes `radius` / `radiusSegments`, `set_sky fog` takes `kind`, `density`, `base`, `thickness`. No tool names changed. <!-- 102b-physics 102b-arrange 102b-papercuts -->
+- **Module authors**: `api.values` publishes values for the Game Value node. <!-- 102b-hud -->
+- **Internal**: a headless mesh kernel (src/lib/meshKernel/) for the coming mesh-editing work; not used by the editor yet. <!-- 99-kernel -->
+
+### Compatibility
+- **Scene files**: format minor 4. A file written by 1.74 opens in 1.73: rounded boxes and repeated meshes show there as plain boxes of the same size, new joint kinds as welds, arrays and layers are kept but not drawn. <!-- 102b-papercuts 102b-physics 102b-arrange -->
+- **In a session with someone on 1.73**: they see rounded boxes as square boxes and Height or Distance fog as Linear, do not draw array copies, and a layer lock does not apply on their screen; the new HUD variable ops (toggle, text) are refused by a 1.73 host. <!-- 102b-papercuts 102b-arrange 102b-hud -->
+
 ## 1.73.0 — Locks that hold
 
 ### Locks that hold

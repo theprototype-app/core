@@ -18,6 +18,7 @@
 //   · the physics ground is OFF (you fall into the clouds) and the module catches a fall 7 m
 //     under the stage's start pad; ~70 meshes in all, well under the 150-call budget, and NO
 //     authored light (the env rig lights it; the portals glow through bloom — budget: 2 lights).
+const { gameValueData } = require('./_game-values.cjs');
 const { graphBuilder, rulesSource } = require('./_builders.cjs');
 
 const PANEL = { bg: 'rgba(12, 22, 48, 0.9)', radius: 18, border: '1px solid rgba(160, 220, 255, 0.35)' };
@@ -227,7 +228,8 @@ function skyGraph() {
 	const text = (id, read, element, i, extra = {}) => {
 		const x = 1300 + (i % 2) * 520;
 		const y = 40 + Math.floor(i / 2) * 120;
-		hud.push(N(id + 'i', 'skyruninfo', 'Sky Run: ' + read, x, y, { read, ...extra }));
+		// 102b-hud: the core Game Value node over the module's published values (_game-values.cjs)
+		hud.push(N(id + 'i', 'gamevalue', 'Game value: ' + read, x, y, gameValueData('skyruninfo', { read, ...extra })));
 		hud.push(N(id + 't', 'hudtext', 'HUD ' + element, x + 250, y, { element, format: '', decimals: 0, value: 0 }));
 		E(id + 'i', id + 't', 'format');
 	};
@@ -236,7 +238,7 @@ function skyGraph() {
 		.forEach(([id, read, el], i) => text(id, read, el, i));
 	for (let s = 1; s <= 3; s++) text('sb' + s, 'stageBest', 'stage-' + s + '-best', 7 + s, { level: String(s) });
 	G('g-hud', 'HUD words', hud, 1300, 40);
-	T('n-hud', 'HUD words', 'Each **Sky Run info** node reads one line of the run (the stage, the clock, your coins, your flag, your best…) into a HUD Text.', 1300, 170, { w: 260, h: 110, color: 'purple' });
+	T('n-hud', 'HUD words', 'Each **Game Value** node reads one value the Sky Run engine publishes (the stage, the clock, your coins, your flag, your best…) and writes it as words into a HUD Text — no game code in the HUD.', 1300, 170, { w: 260, h: 110, color: 'purple' });
 
 	// ---- every moving thing: a mover effect on its object -----------------------------------
 	const movers = [];

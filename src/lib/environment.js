@@ -8,6 +8,19 @@ import { globalScene, globalRenderer, objectsGroup, backgroundColor, TControls, 
 import { peers } from '../stores/appStore';
 import { sceneRadius } from './sceneBounds';
 import { fogFarFor, mergeFogPatch } from './fogReach';
+// 102b-papercuts: distance + height fog (the height layer's chunk patch, fogShader.js, loads with the first height fog)
+import { fogKindOf, fogDensityOf, heightFogParams, setHeightFog } from './fogModes.js';
+
+/** 102b: the height-fog chunk patch is a lazy chunk; the first height fog installs it and recompiles what is live
+ * @param {any} scene */
+function ensureHeightFogShader(scene) {
+	void import('./fogShader.js').then((m) => {
+		if (!m.installHeightFog()) return;
+		scene?.traverse?.((/** @type {any} */ o) => {
+			for (const mat of Array.isArray(o.material) ? o.material : o.material ? [o.material] : []) mat.needsUpdate = true;
+		});
+	});
+}
 import { registerSystemGroup } from './moduleSDK';
 import { createLight } from './geometries.svelte';
 import { cappedShadowSize, shadowsDisabled } from './lightParams';
@@ -458,6 +471,7 @@ export function applyEnvironment() {
 		// compositor blends the camera feed under); 'room' leaves nothing (three clears to clear)
 		scene.background = get(roomLook) === 'dim' ? dimBackdrop() : null;
 		scene.fog = null;
+		setHeightFog([0, 0, 0, 0]);
 	} else {
 		// 30 author-kit: a gradient sky when the payload carries one, else the flat colour
 		const gradient = skyGradientOf(preset);
@@ -469,9 +483,17 @@ export function applyEnvironment() {
 		}
 		// fog never swallows a big scene: a PRESET's reach grows with the scene bounds; a fog the
 		// user set by hand (`fit: false`) keeps its own (36 A5, fogReach.js)
-		scene.fog = preset.fog
-			? new THREE.Fog(preset.fog.color, preset.fog.near, fogFarFor(preset.fog, sceneRadius()))
-			: null;
+		// 102b-papercuts: `kind` distance / height = exponential fog (height adds the ground layer, fogShader.js);
+		// absent = the linear fog every older document and build has
+		const kind = preset.fog ? fogKindOf(preset.fog) : 'linear';
+		scene.fog = !preset.fog
+			? null
+			: kind === 'linear'
+				? new THREE.Fog(preset.fog.color, preset.fog.near, fogFarFor(preset.fog, sceneRadius()))
+				: new THREE.FogExp2(preset.fog.color, fogDensityOf(preset.fog));
+		const layer = heightFogParams(preset.fog);
+		setHeightFog(layer);
+		if (layer[2] > 0.5) ensureHeightFogShader(scene);
 	}
 	backgroundColor.set(preset.background);
 
@@ -630,7 +652,7 @@ function detachedPayload() {
  * 37-hdri: `hdri` is the third sky field — a partial patch merged into the payload's hdri
  * (hdriCore.mergeHdriPatch), `null` removes it. It rides the same commit, so an HDRI pick,
  * rotation or exposure drag persists and replicates like a background colour does.
- * @param {{background?: string, fog?: {color?: string, near?: number, far?: number} | null, hdri?: any}} patch
+ * @param {{background?: string, fog?: {color?: string, near?: number, far?: number, kind?: string, density?: number, base?: number, thickness?: number} | null, hdri?: any}} patch
  * @param {{replicate?: boolean}} [opts]
  */
 export function editEnvSky(patch, opts = {}) {

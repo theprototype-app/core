@@ -1,4 +1,5 @@
 import { writable, derived, get } from 'svelte/store';
+import { normalizeLayers } from './layersCore.js';
 import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { peers } from '../stores/appStore';
 import { normalizeLocomotion, normalizeSpawn } from './locomotionPolicy'; // 30b P3/P4
@@ -6,6 +7,7 @@ import { normalizeBounds } from './teleportRules'; // 31 K1
 import { normalizeReach } from './playReach'; // 31-towers P1
 import { normalizePassThrough, PASS_DEFAULTS } from './selectThrough'; // 36 F22 (a leaf)
 import { normalizeLevelsTable } from './gameLevels/table.js'; // 93 LP0 (a leaf)
+import { coerceTouchLayout } from './touchActions'; // 102b-play: the author's touch layout (a leaf)
 
 // CL-A A6 / 21-B B1: scene-wide physics settings. ONE shared object for the
 // whole session, replicated as its OWN latest-wins singleton message (the
@@ -104,6 +106,13 @@ export function normalizePlayBanner(v) {
 	if (v.mode === 'hide') return { mode: 'hide' };
 	if (v.mode === 'custom') return { mode: 'custom', text: typeof v.text === 'string' ? v.text.slice(0, 80) : '' };
 	return null;
+}
+
+/** 102b-play: a scene's touch layout = the device layout's own coercion; an empty one is no layout.
+ *  @param {any} v @returns {import('./touchActions').TouchLayout | null} */
+export function normalizeSceneTouch(v) {
+	const layout = coerceTouchLayout(v);
+	return layout && Object.keys(layout.items).length ? layout : null;
 }
 
 /** @param {any} v @param {boolean} fallback */
@@ -213,9 +222,12 @@ export function normalizeScenePhysics(raw) {
 				...optional('banner', normalizePlayBanner(playRaw.banner)),
 				// 95 SM3: a published game's players may share moments (the last 10 s) — present only
 				// when the author allowed it (absent = off, every scene before it)
-				...(playRaw.moments === true ? { moments: true } : {})
+				...(playRaw.moments === true ? { moments: true } : {}),
+				// 102b-play: the AUTHOR's touch-button layout, shipped with the scene — present only
+				// when one was saved (a player's own layout on their device still wins, item by item)
+				...optional('touch', normalizeSceneTouch(playRaw.touch))
 			},
-			['interaction', 'grounded', 'simOnPlay', 'cursor', 'locomotion', 'spawn', 'bounds', 'reach', 'rayHits', 'banner', 'moments']
+			['interaction', 'grounded', 'simOnPlay', 'cursor', 'locomotion', 'spawn', 'bounds', 'reach', 'rayHits', 'banner', 'moments', 'touch']
 		),
 		// A1: the 20 ceiling is throwVelocity's MAX_LINVEL, restated rather than imported —
 		// this module is store-only and the response clamps through clampThrow anyway
@@ -253,6 +265,8 @@ export function normalizeScenePhysics(raw) {
 		// 93 LP0: the game's ONE Levels table (+ its keep list and loading screen) — present only when
 		// authored, so a scene that never used it stays byte-identical (gameLevels/table.js)
 		...optional('levels', normalizeLevelsTable(source.levels)),
+		// 102b-arrange: the scene's LAYERS (name, colour, lock) — present only when authored (layersCore.js)
+		...optional('layers', normalizeLayers(source.layers)),
 		changedAt: typeof source.changedAt === 'number' ? source.changedAt : 0
 	};
 	return withUnknown(source, state, [
@@ -271,6 +285,7 @@ export function normalizeScenePhysics(raw) {
 		'simOnLoad',
 		'fluidBudget',
 		'levels',
+		'layers',
 		'changedAt',
 		'type' // the wire envelope's own field, never state
 	]);

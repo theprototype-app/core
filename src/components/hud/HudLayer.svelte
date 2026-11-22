@@ -134,7 +134,7 @@
 	// 21-E3: every INTERACTIVE kind, not buttons alone - a settings menu is sliders and
 	// dropdowns, and under pointer lock the ring is the only hand a player has. A
 	// disabled control is skipped the way it ignores presses.
-	const focusables = $derived(elements.filter((el) => isInteractiveKind(el.kind) && el.enabled !== false));
+	const focusables = $derived(elements.filter((el) => isInteractiveKind(el.kind) && el.enabled !== false && $hudRuntime[el.id]?.hidden !== true));
 	// 94 SP6 — THE SAFE AREAS (top row + bottom row). While playing (never while authoring: the artboard is the author's
 	// own frame), measured twice a second like the badge's lift (MadeWithBadge): the play chrome
 	// changes as chips come and go, and a 500 ms check costs a few rect reads.
@@ -468,8 +468,12 @@
 {#if anyVisible}
 	<div id="hud-layer" class="hud-layer" style:--hud-top-shift={shown ? `max(env(safe-area-inset-top, 0px), ${topShift}px)` : '0px'} data-top-shift={topShift} style:--hud-bottom-lift={shown ? `max(env(safe-area-inset-bottom, 0px), ${bottomLift}px)` : '0px'} data-bottom-lift={bottomLift} class:hud-authoring={!shown} class:hud-inert={gameInEditor} data-authoring={!shown} data-inert={gameInEditor} use:arPortal={arPlaying}>
 		{#each elements as el (el.__key + ':' + el.id)}
+			<!-- 102b-hud: a Show / Hide Element node hides one element (per peer); the slot stays so
+			     focus order and the box are kept, it just draws nothing and takes no press -->
 			<div
 				class="hud-slot"
+				class:hud-hidden={$hudRuntime[el.id]?.hidden === true}
+				aria-hidden={$hudRuntime[el.id]?.hidden === true ? 'true' : undefined}
 				class:hud-focused={playing &&
 				isInteractiveKind(el.kind) &&
 				focusables[focused % Math.max(1, focusables.length)]?.id === el.id}
@@ -484,6 +488,10 @@
 {/if}
 
 <style>
+	/* 102b-hud: Show / Hide Element */
+	.hud-slot.hud-hidden {
+		display: none;
+	}
 	.hud-layer {
 		position: fixed;
 		inset: 0;

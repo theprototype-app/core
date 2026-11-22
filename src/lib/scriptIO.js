@@ -29,9 +29,10 @@ export const SCRIPT_INPUT_TYPES = ['number', 'boolean', 'vector3', 'color', 'obj
 // nothing is wired and nothing is dialled — what a converted HUD Text's value and a converted
 // Math / Gate's extra sockets need to read exactly what the built-in read. An older build reads an
 // 'any' input as 'number' (normalizeSockets' fallback).
-/** an output carries a value; an EVENT output would need a stamp, which a pure function
- * of (inputs, time) cannot mint — so outputs are values only */
-export const SCRIPT_OUTPUT_TYPES = ['number', 'boolean', 'vector3', 'color', 'object', 'any'];
+/** an output carries a value. 102b-papercuts: an EVENT output fires when the value the code
+ * returns for it turns TRUE (a rising edge, seen by every peer from the same pure code, so it
+ * fires locally on each with no message — the Delay rule). An older build reads it as 'number'. */
+export const SCRIPT_OUTPUT_TYPES = ['number', 'boolean', 'vector3', 'color', 'object', 'any', 'event'];
 // 36 (U10): 'any' passes the returned value through unchanged — TEXT for a HUD Text's format,
 // a list — there is no string socket type, and 'object' only carries an object reference
 
@@ -162,7 +163,8 @@ export function harvestOutputs(result, outputs) {
 	const bag = result && typeof result === 'object' && !Array.isArray(result) ? result : null;
 	if (!bag) problems.push('return an object like { ' + outputs.map((o) => o.name + ': …').join(', ') + ' }');
 	for (const o of outputs) {
-		if (bag && !(o.name in bag)) problems.push('missing output `' + o.name + '`');
+		// an event output is quiet most of the time: leaving it out of the return means "not now"
+		if (bag && !(o.name in bag) && o.type !== 'event') problems.push('missing output `' + o.name + '`');
 		handles[o.name] = coerceOutput(o.type, bag?.[o.name]);
 	}
 	return { value: { __handles: handles, __default: outputs.length ? handles[outputs[0].name] : undefined }, problems };

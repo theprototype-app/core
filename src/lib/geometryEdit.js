@@ -4,6 +4,7 @@ import { objectsGroup, pokeScene } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { recordEntry, registerHistoryKind } from './history';
 import { GEOMETRY_PARAMS, geometrySpec, boundGeometryParams } from './geometryParams';
+import { loadRoundedBox } from './roundedBoxGate.js';
 
 // Live geometry parameter editing (phase 78). Params live in
 // object.userData.geometryParams = { gtype, params } — userData survives the
@@ -63,7 +64,7 @@ function terrainParamsOf(object) {
 
 /** 37 R3: a spec with a `clean` hook stores only what its builder reads (clamped, known keys)
  * @param {string} gtype @param {any} params */
-function cleanFor(gtype, params) {
+export function cleanFor(gtype, params) {
 	const clean = geometrySpec(gtype)?.clean;
 	return clean ? clean(params) : boundGeometryParams(gtype, params);
 }
@@ -84,8 +85,11 @@ export function geometryParamsOf(object) {
 	if (!spec || !object.geometry.parameters) return null;
 	/** @type {any} */
 	const params = {};
-	for (const p of spec.params)
+	for (const p of spec.params) {
+		// 102b: an optional row the geometry does not carry stays out (a square box keeps its six params)
+		if (p.optional && object.geometry.parameters[p.key] === undefined) continue;
 		params[p.key] = object.geometry.parameters[p.key] ?? p.def;
+	}
 	return { gtype, params };
 }
 
@@ -99,7 +103,7 @@ export function stampGeometryParams(object) {
 export function defaultGeometryParams(gtype) {
 	/** @type {any} */
 	const params = {};
-	for (const p of geometrySpec(gtype)?.params ?? []) params[p.key] = p.def;
+	for (const p of geometrySpec(gtype)?.params ?? []) if (!p.optional) params[p.key] = p.def;
 	return params;
 }
 
@@ -150,6 +154,18 @@ export function applyRemoteGeometry(data) {
 	const group = get(objectsGroup);
 	const object = group?.getObjectByProperty('uuid', data.uuid);
 	if (!object?.geometry) return;
+	// 102b: an undone Convert goes back to the BAKED mesh (`baked` is additive: an older peer builds the box)
+	if (data.baked) {
+		// (through the gate's small chunk: importing roundedBoxConvert here would put its preload list on boot)
+		void loadRoundedBox().then((m) => {
+			const baked = m.bakedRoundedBox(cleanFor('Box', { ...data.params }));
+			object.geometry.dispose();
+			object.geometry = baked;
+			delete object.userData.geometryParams;
+			pokeScene();
+		});
+		return;
+	}
 	// 85 G2/G4: a profile / outline rides `params` — the builder gets the cleaned set, never the raw wire
 	const fresh = buildGeometry(data.gtype, cleanFor(data.gtype, { ...data.params }));
 	if (!fresh) return;

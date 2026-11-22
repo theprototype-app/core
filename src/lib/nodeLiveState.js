@@ -132,6 +132,10 @@ registerLiveState('pathpatrol', (node, api) => {
 	return to === null ? null : `to point ${to}`;
 });
 
+/** 102b-papercuts (scout row 18): the line an EFFECT node shows when nothing it could act on is wired —
+ * node-system.md used to call such a node "silently inert". The card renders it in the warning ink. */
+export const INERT_LINE = 'acts on nothing: add an Object Selector';
+
 let publishedAt = -Infinity;
 let lastJson = '';
 
@@ -139,7 +143,8 @@ let lastJson = '';
  * Called by flowRuntime at the end of its tick. Throttled to ~4 Hz, only for the wanted graph's
  * nodes, and the store is written only when a line changed.
  * @param {{ nodes: any[], now: number, motionTime: number, motionRests: boolean, capturing: string | null,
- *   value: (node: any) => any, pulseAt: (id: string) => number | null, time: number, why?: (node: any) => string | null }} tick
+ *   value: (node: any) => any, pulseAt: (id: string) => number | null, time: number, why?: (node: any) => string | null,
+ *   inert?: (node: any) => boolean }} tick
  */
 export function publishLiveStates(tick) {
 	if (!wantedGraph) return;
@@ -152,7 +157,9 @@ export function publishLiveStates(tick) {
 		const reader = readers.get(node.type);
 		/** @type {string | null | undefined} */
 		let text = null;
-		if (reader) {
+		// 102b-papercuts: an effect that reaches no object says so before anything else it could say
+		if (tick.inert?.(node)) text = INERT_LINE;
+		else if (reader) {
 			try {
 				text = reader(node, {
 					value: () => tick.value(node),

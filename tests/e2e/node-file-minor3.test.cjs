@@ -88,7 +88,7 @@ h.run(async () => {
 	h.check(conv?.ok === true, 'Math converts to code');
 	await h.eventually(() => value(p, 'm'), (v) => v === 12, 'the converted Math reads 12');
 	const payload = await p.evaluate(() => JSON.parse(JSON.stringify(window.__tp.test.v1.sessions.buildSessionPayload('minor3'))));
-	h.check(payload.formatMinor === 3, `the file says formatMinor 3 (${payload.formatMinor})`);
+	h.check(payload.formatMinor >= 3, `the file says formatMinor 3 or later (${payload.formatMinor})`);
 	h.check(Array.isArray(payload.nodeDefs) && payload.nodeDefs.length === 1 && payload.nodeDefs[0].id === DEF.id && payload.nodeDefs[0].code === DEF.code, 'the .tpscene carries nodeDefs (the definition, whole)');
 	const mSaved = payload.graphs.scene.nodes.find((n) => n.id === 'm');
 	h.check(mSaved?.type === 'script' && mSaved.data.convertedFrom?.type === 'math' && mSaved.v === undefined, 'the converted node is saved with its marker and no v (every core definition is v 1)');

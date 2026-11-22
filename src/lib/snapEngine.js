@@ -81,6 +81,91 @@ let alignApplied = false;
 let started = false;
 
 const SEARCH_INTERVAL_MS = 33;
+
+// ---- 102b-arrange row 3: CORNER SNAP (hold B while moving) ---------------------
+// A momentary mode on top of element snap: while B is held during a translate drag, the search
+// offers only exact points (the hovered triangle's corners, edge MIDPOINTS, and the hovered object's
+// box corners + box edge midpoints) and the anchor is the dragged object's NEAREST CORNER to that
+// point (its own vertices, capped; else its box corners). The stored snapTargets are untouched, and
+// with no candidate in range the grid snap applies as it always did. LOCAL, never sent.
+/** @type {import('svelte/store').Writable<boolean>} */
+export const cornerSnapHeld = writable(false);
+/** the hold key (V is push-to-talk) */
+export const CORNER_SNAP_CODE = 'KeyB';
+/** the most own vertices a drag remembers as anchors (beyond: the 8 box corners) */
+const CORNER_VERTEX_CAP = 4000;
+/** @type {Float32Array|null} the dragged object's corner points in ITS OWN local frame */
+let cornerLocal = null;
+/** @type {any} the object `cornerLocal` was read from (null = not read this drag) */
+let cornerFor = null;
+const CORNER_TARGETS = { enabled: true, vertex: true, edge: true, face: false, surface: false, object: false, edgeMid: true, boxCorners: true };
+if (typeof window !== 'undefined') {
+	const typing = (/** @type {any} */ t) => !!t && (t.isContentEditable || t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && !['range', 'checkbox', 'button', 'radio'].includes(t.type)));
+	window.addEventListener('keydown', (e) => {
+		if (e.code === CORNER_SNAP_CODE && !e.ctrlKey && !e.metaKey && !e.altKey && !typing(e.target)) cornerSnapHeld.set(true);
+	});
+	window.addEventListener('keyup', (e) => {
+		if (e.code === CORNER_SNAP_CODE) cornerSnapHeld.set(false);
+	});
+	window.addEventListener('blur', () => cornerSnapHeld.set(false));
+}
+
+/** the 8 corners of a box, then its 12 edge midpoints @param {any} box @returns {any[]} */
+function boxCornerPoints(box) {
+	const out = [];
+	for (let i = 0; i < 8; i++) out.push(new THREE.Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z));
+	for (let i = 0; i < 8; i++)
+		for (const bit of [1, 2, 4]) if (!(i & bit)) out.push(out[i].clone().add(out[i | bit]).multiplyScalar(0.5));
+	return out;
+}
+
+/** remember the dragged object's corners in its own frame (its vertices, or its box corners)
+ * @param {any} object */
+function captureCorners(object) {
+	cornerLocal = null;
+	if (!object) return;
+	object.updateMatrixWorld(true);
+	const inv = new THREE.Matrix4().copy(object.matrixWorld).invert();
+	/** @type {number[]} */
+	const pts = [];
+	let over = false;
+	object.traverse((/** @type {any} */ n) => {
+		const pos = n.isMesh && n.geometry?.attributes?.position;
+		if (!pos || over) return;
+		if (pts.length / 3 + pos.count > CORNER_VERTEX_CAP) return void (over = true);
+		const m = new THREE.Matrix4().multiplyMatrices(inv, n.matrixWorld);
+		for (let i = 0; i < pos.count; i++) pts.push(..._corner.fromBufferAttribute(pos, i).applyMatrix4(m).toArray());
+	});
+	if (over || !pts.length) {
+		const box = new THREE.Box3().setFromObject(object).applyMatrix4(inv);
+		if (box.isEmpty()) return;
+		pts.length = 0;
+		for (const p of boxCornerPoints(box).slice(0, 8)) pts.push(p.x, p.y, p.z);
+	}
+	cornerLocal = new Float32Array(pts);
+}
+
+/** the nearest of `object`'s remembered corners to `target`, in WORLD space (null without any)
+ * @param {any} object @param {any} target @param {any} out */
+function nearestCorner(object, target, out) {
+	if (!object) return null;
+	if (cornerFor !== object) {
+		captureCorners(object);
+		cornerFor = object;
+	}
+	if (!cornerLocal) return null;
+	object.updateMatrixWorld(true);
+	let best = Infinity;
+	for (let i = 0; i < cornerLocal.length; i += 3) {
+		_corner.set(cornerLocal[i], cornerLocal[i + 1], cornerLocal[i + 2]).applyMatrix4(object.matrixWorld);
+		const d = _corner.distanceToSquared(target);
+		if (d < best) {
+			best = d;
+			out.copy(_corner);
+		}
+	}
+	return best < Infinity ? out : null;
+}
 const MARKER_NAME = 'snap-candidate-marker';
 const FACE_TINT_NAME = 'snap-candidate-face';
 const MARKER_COLOR = 0xffa02e;
@@ -175,6 +260,7 @@ export function beginSnapDrag(excludeUuids) {
 			};
 		}
 	}
+	if (!reentrant) cornerFor = null; // 102b-arrange: corners are read on the first held-B frame
 	const targets = get(snapTargets);
 	if (!targets.enabled || !targets.object) return;
 	if (!group) return;
@@ -190,6 +276,8 @@ export function endSnapDrag() {
 	dragActive = false;
 	dragExclude = [];
 	dragObjectPoints = null;
+	cornerLocal = null;
+	cornerFor = null;
 	pivotDragStart = null;
 	pointerClient = null;
 	// P4: deliberately NO restore here — a drag that ENDS on a live candidate
@@ -486,7 +574,8 @@ export function findSnapCandidate(camera, pointerNdc, excludeUuids, opts) {
 			// is perspective-exact by construction (the knife's screen-parameter trap)
 			const onEdge = new THREE.Vector3();
 			_raycaster.ray.distanceSqToSegment(v0, v1, undefined, onEdge);
-			candidates.push({
+			// 102b-arrange: corner snap wants exact points only — the sliding point is skipped
+			if (!(/** @type {any} */ (targets).edgeMid)) candidates.push({
 				type: 'edge',
 				point: onEdge,
 				normal,
@@ -505,6 +594,13 @@ export function findSnapCandidate(camera, pointerNdc, excludeUuids, opts) {
 				px: projectPx(mid, camera, rect)
 			});
 		}
+	}
+	// 102b-arrange: the hovered object's box corners + box edge midpoints (corner snap)
+	if (/** @type {any} */ (targets).boxCorners && uuid) {
+		const top = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+		const box = top ? new THREE.Box3().setFromObject(top) : null;
+		if (box && !box.isEmpty())
+			boxCornerPoints(box).forEach((point, i) => candidates.push({ type: 'vertex', bonus: i < 8 ? 0 : 1, point, normal: null, uuid, px: projectPx(point, camera, rect) }));
 	}
 	if (targets.object && dragObjectPoints) {
 		for (const entry of dragObjectPoints) {
@@ -544,6 +640,8 @@ export function anchorWorldPoint(object, candidate) {
 			return _anchor.fromArray(anchor.local).applyMatrix4(picked.matrixWorld);
 		}
 	}
+	// 102b-arrange: B held = the object's nearest corner to the target lands on it
+	if (get(cornerSnapHeld) && nearestCorner(object, candidate.point, _anchor)) return _anchor;
 	const targets = get(snapTargets);
 	if (targets.anchorMode === 'pivot') return originWorld(object, _anchor.set(0, 0, 0));
 	_box.setFromObject(object);
@@ -612,9 +710,10 @@ export function applyElementSnap(target, primaryObject) {
 function snapGatesOpen() {
 	if (!dragActive) return false;
 	const targets = get(snapTargets);
-	if (!targets.enabled) return false;
-	if (!(targets.vertex || targets.edge || targets.face || targets.surface || targets.object))
-		return false;
+	if (!get(cornerSnapHeld)) {
+		if (!targets.enabled) return false;
+		if (!(targets.vertex || targets.edge || targets.face || targets.surface || targets.object)) return false;
+	}
 	/** @type {any} */
 	const controls = get(TControls);
 	if (!controls?.dragging || controls.mode !== 'translate') return false;
@@ -638,7 +737,7 @@ function runThrottledSearch() {
 			-((pointerClient[1] - rect.top) / rect.height) * 2 + 1
 		];
 	}
-	findSnapCandidate(camera, ndc, dragExclude);
+	findSnapCandidate(camera, ndc, dragExclude, get(cornerSnapHeld) ? { targets: CORNER_TARGETS } : undefined);
 }
 
 /**
@@ -685,6 +784,18 @@ function adjustPivotForSnap(pivot, primary) {
 	const targets = get(snapTargets);
 	if (anchor.mode === 'picked' && anchor.uuid && anchor.local) {
 		_anchor.copy(pivot.position);
+	} else if (get(cornerSnapHeld) && pivotDragStart) {
+		// 102b-arrange: a set anchors on the nearest corner of the primary's box, moved with the pivot
+		_pivotShift.copy(pivot.position).sub(pivotDragStart.pivotPos);
+		_boxProposed.copy(pivotDragStart.primaryBox).translate(_pivotShift);
+		let best = Infinity;
+		for (const c of boxCornerPoints(_boxProposed).slice(0, 8)) {
+			const d = c.distanceToSquared(candidate.point);
+			if (d < best) {
+				best = d;
+				_anchor.copy(c);
+			}
+		}
 	} else if (targets.anchorMode === 'pivot' && pivotDragStart) {
 		_anchor.copy(pivot.position).add(pivotDragStart.originOffset);
 	} else if (pivotDragStart) {

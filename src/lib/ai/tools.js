@@ -1,5 +1,6 @@
 import { parentTarget } from './parentTarget.js';
 import { get } from 'svelte/store';
+import { scenePhysicsState_ } from '../scenePhysics'; // 102b-arrange: layer names for list_scene
 import * as THREE from 'three';
 import { objectsGroup, lockedObjects, pokeScene } from '../../stores/sceneStore.js';
 import { peers } from '../../stores/appStore.js';
@@ -145,6 +146,12 @@ function r3(n) {
 	return Math.round(n * 1000) / 1000;
 }
 
+/** 102b-arrange: a layer id as its name (the id when the table does not name it) @param {string} id */
+function layerNameOf(id) {
+	const list = get(scenePhysicsState_)?.layers;
+	return (Array.isArray(list) && list.find((/** @type {any} */ l) => l?.id === id)?.name) || id;
+}
+
 /** @param {any} object @returns {any} */
 function describeObject(object) {
 	/** @type {any} */
@@ -161,6 +168,9 @@ function describeObject(object) {
 		if (material.color) out.color = '#' + material.color.getHexString();
 	}
 	if (object.userData?.physics) out.physics = { ...object.userData.physics };
+	// 102b-arrange: a live array, as stored (drawn copies, not objects — update_objects {array, makeReal})
+	if (object.userData?.array && typeof object.userData.array === 'object') out.array = { ...object.userData.array };
+	if (typeof object.userData?.layer === 'string') out.layer = layerNameOf(object.userData.layer);
 	const pivot = originOf(object);
 	if (pivot) out.pivot = pivot.map(r3); // 85 set_pivot: object space
 	const geometry = geometrySummary(object);
@@ -774,6 +784,35 @@ async function updateOne(spec) {
 		}
 	}
 	if (typeof spec.visible === 'boolean' && object.visible !== spec.visible) toggleObjectVisibility(uuid);
+	// 102b-arrange: the object's layer by NAME (a new name makes the layer)
+	if (spec.layer !== undefined) {
+		const tidy = await import('../tidyActions.js');
+		if (spec.layer === null || spec.layer === '') tidy.setObjectsLayer([uuid], null);
+		else if (typeof spec.layer !== 'string' || spec.layer.length > 60) errors.push('layer: a layer name (up to 60 characters) or null');
+		else {
+			const name = spec.layer.trim();
+			const found = tidy.sceneLayers().find((l) => l.name.toLowerCase() === name.toLowerCase());
+			const id = found?.id ?? tidy.addLayer(name);
+			if (id) tidy.setObjectsLayer([uuid], id);
+			else errors.push('layer: the scene is full of layers');
+		}
+	}
+	// 102b-arrange: a live array (record only) and Make real objects — the Inspector's write path
+	/** @type {string[] | null} */
+	let made = null;
+	if (spec.array !== undefined || spec.makeReal === true) {
+		const arr = await import('../arrayActions.js');
+		if (spec.array === null) arr.setArray(uuid, null);
+		else if (spec.array !== undefined) {
+			if (!spec.array || typeof spec.array !== 'object' || Array.isArray(spec.array)) errors.push('array: takes an object like {"mode": "grid", "grid": [4, 1, 4]} or null');
+			else if (spec.array.mode !== undefined && !['line', 'grid', 'circle', 'path'].includes(spec.array.mode)) errors.push('array.mode: one of line, grid, circle, path');
+			else arr.setArray(uuid, spec.array);
+		}
+		if (spec.makeReal === true) {
+			if (!object.userData.array) errors.push('makeReal: this object has no array');
+			else made = arr.makeArrayReal(uuid);
+		}
+	}
 	// mcp-shapes: after the move, so a new position is where it looks from
 	if (spec.lookAt !== undefined) {
 		const why = lookAtTarget(object, spec.lookAt, spec.front);
@@ -787,7 +826,7 @@ async function updateOne(spec) {
 		applyAiTransform(object, was);
 		return { uuid, ok: false, errors: [...errors, clash + ' (it was put back)'] };
 	}
-	const extra = { ...(place.placed ? { placed: place.placed } : {}), ...(unitsOf.units ? { units: unitsOf.units } : {}) };
+	const extra = { ...(place.placed ? { placed: place.placed } : {}), ...(unitsOf.units ? { units: unitsOf.units } : {}), ...(made ? { made } : {}) };
 	return errors.length ? { uuid, ok: false, errors, ...extra } : { uuid, ok: true, ...extra };
 }
 
@@ -1457,7 +1496,7 @@ export const AI_TOOLS = [
 									type: 'array',
 									items: { type: 'number' },
 									description:
-										'up to 4 constructor args. Box=[w,h,d], Sphere=[radius], Cylinder=[rTop,rBottom,height], Cone=[radius,height], Plane=[w,h], Torus=[radius,tube]. Omit for sensible defaults. Sizes go down to 0.001 m.'
+										'up to 4 constructor args. Box=[w,h,d], Sphere=[radius], Cylinder=[rTop,rBottom,height], Cone=[radius,height], Plane=[w,h], Torus=[radius,tube]. Omit for sensible defaults. For a rounded box, create a Box and then set_geometry {radius}. Sizes go down to 0.001 m.'
 								},
 								name: { type: 'string' },
 								position: { type: 'array', items: { type: 'number' }, description: '[x,y,z]' },
@@ -1551,6 +1590,12 @@ export const AI_TOOLS = [
 								face_user: { description: 'turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users' },
 								front: { type: 'string', enum: ['+z', '-z', '+x', '-x', '+y', '-y'], description: 'which local axis is its front for lookAt and face_user (default +z; many models face +x or -z — look at a screenshot)' },
 								visible: { type: 'boolean' },
+								array: {
+									description:
+										'102b: repeat this object as a live ARRAY (drawn copies that follow every change to it; one undo, one message): {mode: line|grid|circle|path, count (2-500, the object included), step [x,y,z] (line), grid [nx,ny,nz] + gridStep [x,y,z] (grid), radius + arc degrees + faceOut (circle, centre radius m on -X), path (a Path uuid) + spacing (0 = even) + follow (path), rotStep [x,y,z] degrees per copy, scaleStep per copy}. Fields merge over the current array. null removes it. Copies have no physics or logic until makeReal'
+								},
+								layer: { type: ['string', 'null'], description: '102b: put it on the layer with this NAME (made when new; Configure Scene > Layers hides and locks layers), or null for no layer' },
+								makeReal: { type: 'boolean', description: '102b: true = turn the object\'s array copies into ordinary objects (one undo); the result lists their uuids' },
 								parentUuid: {
 									type: 'string',
 									description: 'group uuid (or any object, not a light or camera) to nest under, or "root" to un-nest. The object keeps its world pose; a position given in the same update is LOCAL to the new parent. A uuid not in the scene is an error'
@@ -1839,6 +1884,18 @@ const PHYSICS_AI_TOOLS = [
 									type: 'array',
 									items: { type: 'string', enum: ['default', 'a', 'b', 'c', 'd', 'water', 'player'] },
 									description: 'groups this object collides with (omit = all); leave out player for a ghost wall the player walks through'
+								},
+								gravityScale: {
+									type: 'number',
+									description: 'dynamic bodies: how strongly gravity pulls this one, -5..5 (1 normal, 0 floats in place, below 0 rises — a balloon, a jump pad feel)'
+								},
+								linearDamping: {
+									type: 'number',
+									description: 'dynamic bodies: air drag on movement 0..5 (a feather, a parachute); omit = the scene\'s value'
+								},
+								angularDamping: {
+									type: 'number',
+									description: 'dynamic bodies: drag on spinning 0..5; omit = the scene\'s value'
 								}
 							},
 							required: ['uuid']
@@ -1854,7 +1911,7 @@ const PHYSICS_AI_TOOLS = [
 		function: {
 			name: 'create_joints',
 			description:
-				'Attach object pairs with physics joints: "fixed" welds them rigidly, "revolute" hinges around an axis (optional motor spins it). Move parts to their final pose WORLD-ALIGNED (no rotation) before jointing. Without anchor a hinge sits at b\'s origin (its centre) and a weld midway: pass anchor [x,y,z] (world) for the real pivot, e.g. the top of a pendulum rod or a door\'s edge. Jointed bodies that touch (a door in its frame, a wheel in its arch) also need contacts:false, or the solver pushes them apart.',
+				'Attach object pairs with physics joints: "fixed" welds them rigidly, "revolute" hinges around an axis (optional motor spins it), "ball" lets b swing and twist freely about one point (a ragdoll shoulder, a wrecking ball on a rod), "slider" lets b move only along a\'s axis (a piston, a drawer, an elevator; limits in metres), "spring" pulls the two toward rest metres apart (a bouncy seat, a car suspension), "rope" lets them get no further than length metres apart and never pushes (a hanging lamp, a rope bridge plank). Move parts to their final pose WORLD-ALIGNED (no rotation) before jointing. Without anchor a hinge sits at b\'s origin (its centre) and a weld midway: pass anchor [x,y,z] (world) for the real pivot, e.g. the top of a pendulum rod or a door\'s edge. Jointed bodies that touch (a door in its frame, a wheel in its arch) also need contacts:false, or the solver pushes them apart.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1863,10 +1920,10 @@ const PHYSICS_AI_TOOLS = [
 						items: {
 							type: 'object',
 							properties: {
-								kind: { type: 'string', enum: ['fixed', 'revolute'] },
+								kind: { type: 'string', enum: ['fixed', 'revolute', 'ball', 'slider', 'spring', 'rope'] },
 								a: { type: 'string', description: 'uuid of the base object' },
-								b: { type: 'string', description: 'uuid of the attached object (hinge anchors at its origin)' },
-								axis: { type: 'string', enum: ['x', 'y', 'z'], description: 'hinge axis (revolute only, default y)' },
+								b: { type: 'string', description: 'uuid of the attached object (hinge, ball and slider anchor at its origin)' },
+								axis: { type: 'string', enum: ['x', 'y', 'z'], description: 'hinge or slider axis, a\'s local axis (revolute and slider only, default y)' },
 								anchor: {
 									type: 'array',
 									items: { type: 'number' },
@@ -1876,8 +1933,17 @@ const PHYSICS_AI_TOOLS = [
 								limits: {
 									type: 'array',
 									items: { type: 'number' },
-									description: 'revolute only: [min, max] radians the hinge may turn'
+									description: 'revolute: [min, max] radians the hinge may turn; slider: [min, max] metres b may move along the axis'
 								},
+								anchors: {
+									type: 'array',
+									items: { type: 'array', items: { type: 'number' } },
+									description: 'spring and rope only: [[x,y,z] on a, [x,y,z] on b] world points the spring or rope ties (default: the two origins)'
+								},
+								rest: { type: 'number', description: 'spring only: rest length in metres (default: the current distance)' },
+								stiffness: { type: 'number', description: 'spring only: how hard it pulls (default 50; 10 soft, 500 stiff)' },
+								damping: { type: 'number', description: 'spring only: how fast the bounce dies (default 2)' },
+								length: { type: 'number', description: 'rope only: maximum distance in metres (default: the current distance)' },
 								motor: {
 									type: 'object',
 									description: 'revolute only: {vel: rad/s, maxForce}',
@@ -1986,7 +2052,8 @@ export function buildSystemPrompt(opts) {
 				'Physics: objects made with create_objects are STATIC (they stay put in Play) unless you',
 				'create them with physics "dynamic" or a mass — then they fall and collide once a',
 				'simulation runs. Use set_physics to make existing objects dynamic, tune bodies or pin',
-				'scenery. create_joints welds (fixed) or hinges (revolute, optional motor) pairs:',
+				'scenery; its gravityScale / linearDamping make one body float, rise or drift down slowly.',
+				'create_joints welds (fixed), hinges (revolute, optional motor), ball, slider, spring or rope pairs:',
 				'assemble parts at their final pose WORLD-ALIGNED (no rotation) BEFORE jointing, or the',
 				'hinge axis is wrong and the solver launches the assembly. Give a hinge its pivot with',
 				'anchor [x,y,z] (default: b\'s origin) and contacts:false for parts that touch. A door =',

@@ -7,10 +7,15 @@ import { get } from 'svelte/store';
 import { scenePhysicsState_ } from './scenePhysics';
 import { normalizePassThrough, gamePassThrough } from './selectThrough';
 import { gameFeelActive } from './gameFeel';
+import { lockedLayerIds } from './layersCore.js';
 
 /** What the editor's selection passes through in this scene. */
 export function editorPass() {
-	return normalizePassThrough(get(scenePhysicsState_)?.pick);
+	const state = get(scenePhysicsState_);
+	// 102b-arrange: a LOCKED layer's objects are click-through for the editor only (never a game's rays)
+	const locked = state?.layers ? lockedLayerIds(state.layers) : null;
+	const pass = normalizePassThrough(state?.pick);
+	return locked?.size ? { ...pass, lockedLayers: locked } : pass;
 }
 
 /** What a game's interaction rays pass through in this scene. */

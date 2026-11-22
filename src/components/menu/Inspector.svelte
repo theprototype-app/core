@@ -3903,8 +3903,8 @@
 				<ScatterSection object={$selectedObject} />
 			{/if}
 
-			{#if !isLight && !multiCount && $selectedObject?.uuid && $selectedObject?.isObject3D}
-				<!-- 102b-arrange row 1: Array (a lazy chunk — nothing here is paid at boot) -->
+			{#if !isLight && !multiCount && $selectedObject?.uuid && $selectedObject?.isObject3D && !$selectedObject.userData?.decal && !$selectedObject.userData?.splat}
+				<!-- 102b-arrange row 1: Array (102-int-2: not on a decal or splat carrier, which has no mesh of its own) (a lazy chunk — nothing here is paid at boot) -->
 				{#await import('./inspector/ArraySection.svelte') then m}<m.default object={$selectedObject} />{/await}
 			{/if}
 

@@ -465,7 +465,6 @@
 		tickPackBehaviors(); // 33 P2: doors/lids/levers pose from their shared state (rest in Edit)
 		tickSim($objectsGroup, camera.current, renderer, performance.now()); // 36-sim (after mixers: jiggle rides the posed bones)
 		tickTextPathsLazy($objectsGroup, performance.now()); // 64 D2: letters follow their carriers (and linked paths)
-		tickArraysLazy($objectsGroup, performance.now()); // 102b-arrange: every peer draws its arrays' copies
 		tickAnimationPreview(); // Animation window: local transform preview (not synced)
 		tickSequences(); // 48 S2: shots / clips / audio / events of running sequences
 		// 102 M7: constraints + IK, after every animation runtime above (mixers, clips, the sequencer's
@@ -473,6 +472,7 @@
 		tickConstraints({ physicsRunning: $physicsSimulating || !!$physicsRemoteSimulating });
 		tickDecalsLazy($objectsGroup, performance.now()); // 102 M3: decal surfaces follow their targets (after constraints pose them)
 		tickSplatsLazy($objectsGroup, performance.now()); // 102: splat meshes follow their carriers (after anything that poses them)
+		tickArraysLazy($objectsGroup, performance.now()); // 102b-arrange: every peer draws its arrays' copies (102-int-2: after constraints, decals and splats pose the originals)
 		tickMeshEdit(); // vertex handles follow the object if it moves (119)
 		tickEditWireframe(); // ...and the edit wireframe stays parented to it (faceEdit)
 		tickMeshPivotMarker(); // ...and the placed transform pivot's marker (meshPivot)

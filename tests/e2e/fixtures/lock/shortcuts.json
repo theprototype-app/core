@@ -502,6 +502,16 @@
 			"when": false
 		},
 		{
+			"id": "scene.cornerSnap",
+			"keys": "B (hold)",
+			"defaultKeys": "B (hold)",
+			"group": "Scene",
+			"scope": "viewport",
+			"label": "Hold while moving: snap the nearest corner onto a corner or edge middle",
+			"kind": "fixed",
+			"when": false
+		},
+		{
 			"id": "view.cycle",
 			"keys": "Z",
 			"defaultKeys": "Z",

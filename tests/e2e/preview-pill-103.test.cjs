@@ -471,8 +471,12 @@ h.run(async () => {
 	h.check(offer.length >= 1, '10. Customize toolbar offers the optional Preview item');
 	await R.getByRole('menuitem', { name: 'Preview', exact: true }).first().click();
 	await R.waitForTimeout(500);
-	await R.keyboard.press('Escape');
-	await R.waitForTimeout(300);
+	// the Customize menu keeps open on its switches (keepOpen) and may need more than one Esc
+	for (let i = 0; i < 4 && (await R.evaluate(() => !!document.querySelector('[role="menu"]'))); i++) {
+		await R.keyboard.press('Escape');
+		await R.waitForTimeout(300);
+	}
+	h.check(!(await R.evaluate(() => !!document.querySelector('[role="menu"]'))), '10. premise: the Customize menu closed');
 	const onBar = await R.evaluate(() => !!JSON.parse(localStorage.getItem('controlsLayout') ?? '{}')?.order?.includes('preview'));
 	h.check(onBar, '10. …ticked, it is on the bar (the record says so)');
 	if (await R.locator('#preview-button').isVisible().catch(() => false)) await R.locator('#preview-button').click();

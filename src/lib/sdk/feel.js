@@ -1,9 +1,10 @@
 // Module SDK — haptics and the knock feed (onHit / hitLog).
 // One slice of the api object makeApi() assembles (sdk/index.js, the ONE table).
 
-import { knockRef, knockReady } from './refs.js';
+import { vrControlsRef, knockRef, knockReady } from './refs.js';
 import { gameFeelActive } from '../gameFeel';
-import { hapticSchedule } from '../hapticPatterns';
+import { hapticLevel } from '../gameSettings';
+import { hapticSchedule, xrHaptics } from '../hapticPatterns';
 
 // 103 (H6): the vibration output layer (gamepads, Android phones, VR controllers) — LAZY, so a
 // module that never buzzes costs nothing; a call before it lands plays once it has
@@ -14,6 +15,15 @@ let outLoad = null;
 const load = () => (outLoad ??= import('../hapticOutput.js').then((m) => (out = m)));
 /** @param {any} spec @param {any} opts @returns {boolean} */
 function buzz(spec, opts) {
+	// in a headset: the controllers directly, synchronously, as before 103 (vrControls owns that gate)
+	if (vrControlsRef && xrHaptics()?.active?.()) {
+		const k = Number.isFinite(opts?.scale) ? Math.max(0, opts.scale) : 1;
+		if (typeof spec === 'string') return vrControlsRef.hapticPattern?.(spec, opts?.hand, k) ?? false;
+		const i = Math.min(1, Math.max(0, Number(spec?.strength ?? 0.6) * k * (hapticLevel() || 1)));
+		const ms = Math.min(1000, Math.max(1, Number(spec?.ms ?? 80)));
+		vrControlsRef.hapticPulse?.(i, ms, opts?.hand);
+		return gameFeelActive();
+	}
 	if (!gameFeelActive()) return false;
 	if (out) return out.playHaptic(spec, opts);
 	load().then((m) => m.playHaptic(spec, opts));

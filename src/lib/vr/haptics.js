@@ -1,7 +1,9 @@
 // VR controls — haptics: pulses, patterns, knocks (silent in Edit).
 // 34 R4 (A5): one concern of src/lib/vrControls.js, which re-exports the public names unchanged.
 import { gameFeelActive } from '../gameFeel';
-import { hapticsAllowed } from '../gameSettings';
+import { get } from 'svelte/store';
+import { hapticsAllowed, hapticLevel } from '../gameSettings';
+import { gameState } from '../gameState';
 import { hapticSchedule, knockHapticScale, registerXrHaptics } from '../hapticPatterns';
 import { renderer } from './core.js';
 // 103 (H6): patterns play through the one output layer (hapticOutput: gamepads and phones too),
@@ -58,17 +60,41 @@ export function hapticPulse(intensity = 0.5, durationMs = 50, hand = undefined, 
  * @returns {boolean}
  */
 export function hapticPattern(name, hand = undefined, scale = 1) {
-	const pulses = hapticSchedule(name, scale);
-	if (!pulses.length || !gameFeelActive()) return false;
-	// 103 (H6): scheduled by the output layer, which stops it on pause / tab hidden / scene leave
-	output().then((m) => m.playHaptic(String(name), { hand, scale }));
+	const pulses = hapticSchedule(name, scale * hapticLevel());
+	if (!hapticSchedule(name).length || !gameFeelActive()) return false;
+	if (!renderer?.xr?.getSession?.()) {
+		// 103 (H6): no headset — the output layer (a gamepad, a phone), loaded on first use
+		output().then((m) => m.playHaptic(String(name), { hand, scale }));
+		return true;
+	}
+	// in a headset: as before — timed pulses on the controllers, SYNCHRONOUS (a hover tap lands in the
+	// frame that caused it), each gated again as it fires; 103: a paused round stops it too
+	for (const pulse of pulses) {
+		const play = () => {
+			if (get(gameState)?.state === 'paused') return;
+			hapticPulse(pulse.intensity, pulse.ms, hand);
+		};
+		if (pulse.at <= 0) play();
+		else {
+			const id = setTimeout(() => {
+				xrTimers.delete(id);
+				play();
+			}, pulse.at);
+			xrTimers.add(id);
+		}
+	}
 	return true;
 }
+
+/** 103: a headset pattern's pending pulses, so the output layer's stop reaches them @type {Set<any>} */
+const xrTimers = new Set();
 
 registerXrHaptics({
 	active: () => !!renderer?.xr?.getSession?.(),
 	pulse: (intensity, ms, hand) => hapticPulse(intensity, ms, hand),
 	stop: () => {
+		for (const id of xrTimers) clearTimeout(id);
+		xrTimers.clear();
 		renderer?.xr?.getSession?.()?.inputSources?.forEach((/** @type {any} */ source) => source.gamepad?.hapticActuators?.[0]?.pulse?.(0, 1));
 	}
 });

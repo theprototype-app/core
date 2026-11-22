@@ -15,6 +15,11 @@
 		paintChannel, paintValue, paintHardness, paintOpacity, paintFlow, paintErase, paintMirror, paintStamp,
 		paintMapSize, paintShowChannel, paintTargetInfo, paintSpacing, paintSmoothing
 	} from '$lib/meshPaintPrefs';
+	import { penOnlyDraws, penSeen } from '$lib/penInput';
+	// 103: the pen-pressure store comes as a PROP — importing $lib/uvEditor here would write the whole app graph
+	// into this lazy chunk's preload list, which lives in the boot chunk that imports it (the 102 trap)
+	/** @type {{ uvPenPressure: import('svelte/store').Writable<string> }} */
+	let { uvPenPressure } = $props();
 
 	const CHANNEL_CHOICES = /** @type {const} */ ([
 		['color', 'Colour', 'Paint the base colour'],
@@ -24,6 +29,28 @@
 	]);
 </script>
 
+<!-- 24-F1: pen pressure — size (default) · opacity · off; 103 H1 adds Size + opacity. Moved here from the UV
+     editor (103, boot rule): this panel is the lazy brush chunk -->
+<div class="text-[11px] text-text-muted">Pen pressure</div>
+<div id="uv-pen-pressure" class="mt-1 grid grid-cols-2 gap-1" role="radiogroup" aria-label="Pen pressure">
+	{#each [['size', 'Size', 'Pressing harder paints wider'], ['opacity', 'Opacity', 'Pressing harder paints stronger; a light touch tints'], ['both', 'Size + opacity', 'Pressing harder paints wider and stronger'], ['off', 'Off', 'The pen paints like a mouse']] as [value, label, hint] (value)}
+		<button
+			type="button"
+			role="radio"
+			aria-checked={$uvPenPressure === value}
+			data-value={value}
+			title={hint}
+			class={'rounded-sm px-2 py-0.5 text-[11px] ' + ($uvPenPressure === value ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 text-text-2 hover:bg-surface-active')}
+			onclick={() => uvPenPressure.set(/** @type {any} */ (value))}>{label}</button>
+	{/each}
+</div>
+<!-- 103 H2: fingers stop drawing once a pen is seen -->
+<label class="mt-2 flex items-center gap-2 text-[11px] text-text-muted" title="Once a pen touches the screen, fingers pan and pinch-zoom instead of painting. Turn off to paint with a finger too.">
+	<input id="uv-pen-only" type="checkbox" class="tp-check" checked={$penOnlyDraws}
+		onchange={(e) => penOnlyDraws.set(e.currentTarget.checked)} />
+	Pen only draws
+</label>
+{#if $penSeen && $penOnlyDraws}<p id="uv-pen-only-note" class="mt-0.5 text-[10px] text-text-faint">Pen found: one finger pans, two pinch-zoom.</p>{/if}
 <div class="mt-3 text-[11px] text-text-muted">Channel</div>
 <div id="paint-channel" class="mt-1 grid grid-cols-4 gap-1" role="radiogroup" aria-label="Paint channel">
 	{#each CHANNEL_CHOICES as [value, label, hint] (value)}

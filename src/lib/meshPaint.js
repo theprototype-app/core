@@ -82,6 +82,7 @@ import {
 	pressureModeOf
 } from './meshPaintCore.js';
 import { quantizePoint } from './meshPaintWire.js';
+import { notePointer, mayDraw } from './penInput';
 
 // 102 M6 (boot rule): the UV editor reads the brush state through this lazy chunk, so the prefs leaf and the
 // brush panel stay out of the boot bundle. `newBrush` = a channel other than colour or a brush other than the
@@ -1338,6 +1339,11 @@ export function attachViewportPainting(opts) {
 	/** @type {any} */ let lastRaw = null;
 	/** @param {any} e @param {number[]} at */
 	const at = (e, at) => ({ clientX: at[0], clientY: at[1], pressure: e.pressure, pointerType: e.pointerType });
+	// 103 H2: the pointer that owns the stroke; a pen's or a finger's stroke answers to it alone (a palm under the pen)
+	let ownId = -1;
+	let ownType = '';
+	/** @param {PointerEvent} e */
+	const foreign = (e) => active && (ownType === 'pen' || ownType === 'touch') && e.pointerId !== ownId;
 	/** @param {any} e */
 	const hitAt = (e) => {
 		const cam = /** @type {any} */ (get(globalCamera));
@@ -1357,7 +1363,23 @@ export function attachViewportPainting(opts) {
 	};
 	/** @param {PointerEvent} e */
 	const down = (e) => {
+		notePointer(e);
+		if (foreign(e)) {
+			if (ownType === 'touch' && e.pointerType === 'touch') {
+				// a second finger: the camera's pinch, never a stroke — drop the open one with no dot left behind
+				cancelStroke();
+				active = false;
+				lastRaw = null;
+				return;
+			}
+			// a palm while the pen paints: keep it from the camera too
+			e.stopPropagation();
+			e.stopImmediatePropagation();
+			return;
+		}
 		if (e.button !== 0) return;
+		// once a pen is seen a finger orbits the camera instead ("Pen only draws")
+		if (!mayDraw(e)) return;
 		const canvas = /** @type {any} */ (get(globalRenderer))?.domElement;
 		if (!canvas || e.target !== canvas) return;
 		const found = hitAt(e);
@@ -1370,6 +1392,8 @@ export function attachViewportPainting(opts) {
 			return;
 		}
 		active = true;
+		ownId = e.pointerId;
+		ownType = e.pointerType || 'mouse';
 		brushAt = [e.clientX, e.clientY];
 		lastRaw = null;
 		const h = localHit(found.mesh, found.hit);
@@ -1379,6 +1403,7 @@ export function attachViewportPainting(opts) {
 	};
 	/** @param {PointerEvent} e */
 	const move = (e) => {
+		if (foreign(e)) return;
 		if (active) {
 			e.stopPropagation();
 			let samples = [];
@@ -1404,7 +1429,7 @@ export function attachViewportPainting(opts) {
 	};
 	/** @param {PointerEvent} e */
 	const up = (e) => {
-		if (!active) return;
+		if (!active || foreign(e)) return;
 		e.stopPropagation();
 		active = false;
 		// a smoothed stroke catches up: it ends where the pen lifted, not a string's length short of it
@@ -1430,11 +1455,13 @@ export function attachViewportPainting(opts) {
 	window.addEventListener('pointerdown', down, true);
 	window.addEventListener('pointermove', move, true);
 	window.addEventListener('pointerup', up, true);
+	window.addEventListener('pointercancel', up, true);
 	window.addEventListener('keydown', key, true);
 	return () => {
 		window.removeEventListener('pointerdown', down, true);
 		window.removeEventListener('pointermove', move, true);
 		window.removeEventListener('pointerup', up, true);
+		window.removeEventListener('pointercancel', up, true);
 		window.removeEventListener('keydown', key, true);
 		if (active) endStroke();
 		active = false;

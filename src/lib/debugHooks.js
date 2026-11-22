@@ -386,6 +386,8 @@ export const DEBUG_HOOKS = [
 	// 102 M6: paint on meshes (the lazy painter + its prefs leaf)
 	['meshPaint', () => import('./meshPaint')],
 	['meshPaintPrefs', () => import('./meshPaintPrefs')],
+	// 103 H2: pen / finger rule
+	['penInput', () => import('./penInput')],
 	['uvUnwrap', () => import('./uvUnwrap')],
 	['meshTopology', () => import('./meshTopology')],
 	['meshBoolean', () => import('./meshBoolean')],

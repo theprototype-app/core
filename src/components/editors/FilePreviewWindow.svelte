@@ -463,7 +463,68 @@
 	function onWheel(e: WheelEvent) {
 		if (face !== 'image' || editing) return;
 		e.preventDefault();
-		zoom = clamp(zoom * (e.deltaY > 0 ? 0.9 : 1.1));
+		// 103 H2: toward the pointer — the image point under it stays put (it zoomed about the centre)
+		zoomAbout(e.currentTarget as HTMLElement, zoom * (e.deltaY > 0 ? 0.9 : 1.1), e.clientX, e.clientY);
+	}
+	/** zoom to `next` keeping the image point under (clientX, clientY) where it is. The image is drawn centred in
+	 * the body, then panned, then scaled about its centre: screen = centre + pan + p * zoom. */
+	function zoomAbout(body: HTMLElement, next: number, clientX: number, clientY: number) {
+		const r = body.getBoundingClientRect();
+		const z = clamp(next);
+		const k = z / zoom;
+		const dx = clientX - (r.left + r.width / 2);
+		const dy = clientY - (r.top + r.height / 2);
+		panX = dx - (dx - panX) * k;
+		panY = dy - (dy - panY) * k;
+		zoom = z;
+	}
+	// 103 H2: two fingers pinch-zoom about their centre and pan as it moves; one finger pans (when there is
+	// something to pan), by client deltas because a touch's movementX is not reliable everywhere
+	const fingers = new Map<number, { x: number; y: number }>();
+	let pinch: { d: number; zoom: number; px: number; py: number } | null = null;
+	let last: { x: number; y: number } | null = null;
+	function pinchState(body: HTMLElement) {
+		const [a, b] = [...fingers.values()];
+		const r = body.getBoundingClientRect();
+		return { d: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), cx: (a.x + b.x) / 2 - (r.left + r.width / 2), cy: (a.y + b.y) / 2 - (r.top + r.height / 2) };
+	}
+	function bodyDown(e: PointerEvent) {
+		const body = e.currentTarget as HTMLElement;
+		if (e.pointerType === 'touch' && face === 'image' && !editing) {
+			fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+			body.setPointerCapture(e.pointerId);
+			if (fingers.size === 2) {
+				const st = pinchState(body);
+				// the image point under the fingers' centre, in unscaled image px
+				pinch = { d: st.d, zoom, px: (st.cx - panX) / zoom, py: (st.cy - panY) / zoom };
+				panning = false;
+				return;
+			}
+		}
+		if (!canPan || pinch) return;
+		panning = true;
+		last = { x: e.clientX, y: e.clientY };
+		body.setPointerCapture(e.pointerId);
+	}
+	function bodyMove(e: PointerEvent) {
+		if (fingers.has(e.pointerId)) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+		if (pinch && fingers.size >= 2) {
+			const st = pinchState(e.currentTarget as HTMLElement);
+			zoom = clamp((pinch.zoom * st.d) / pinch.d);
+			panX = st.cx - pinch.px * zoom;
+			panY = st.cy - pinch.py * zoom;
+			return;
+		}
+		if (!panning || !last) return;
+		panX += e.clientX - last.x;
+		panY += e.clientY - last.y;
+		last = { x: e.clientX, y: e.clientY };
+	}
+	function bodyUp(e: PointerEvent) {
+		fingers.delete(e.pointerId);
+		if (fingers.size < 2) pinch = null;
+		panning = false;
+		last = null;
 	}
 
 	/** show one Explorer grid entry in this window, without touching the grid */
@@ -996,18 +1057,12 @@
 			class="pv-body relative min-h-0 flex-1 overflow-hidden"
 			style="cursor: {canPan ? (panning ? 'grabbing' : 'grab') : 'default'}"
 			style:--pv-reading={readingInset}
+			style:touch-action={face === 'image' && !editing ? 'none' : null}
 			onwheel={onWheel}
-			onpointerdown={(e) => {
-				if (!canPan) return;
-				panning = true;
-				(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-			}}
-			onpointermove={(e) => {
-				if (!panning) return;
-				panX += e.movementX;
-				panY += e.movementY;
-			}}
-			onpointerup={() => (panning = false)}
+			onpointerdown={bodyDown}
+			onpointermove={bodyMove}
+			onpointerup={bodyUp}
+			onpointercancel={bodyUp}
 		>
 			{#if editing}
 				<!-- uir-preview: the Edit face — the image editor, with the images filmstrip on its left -->

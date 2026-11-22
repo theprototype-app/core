@@ -285,6 +285,7 @@
 		"window-size-clamp": "red on the GitHub runner (SwiftShader, no retry) with unchanged code: deps-auto run 5, 2026-10-24",
 		"mesh-paint": "102-paint: new, not yet measured on a GitHub runner, so it reports and does not gate until a deps run has seen it green",
 		"uv-pressure-layer": "103-uv-touch: new, not yet measured on a GitHub runner, so it reports and does not gate until a deps run has seen it green",
+		"uv-touch-gestures": "103-uv-touch: new, not yet measured on a GitHub runner, so it reports and does not gate until a deps run has seen it green",
 		"windows-polish": "78 pl-windows (1.64): new, not yet measured on a GitHub runner, so it reports and does not gate until a deps run has seen it green",
 		"workspace-restore": "joined from the 1.43 desk battery (pipeline-1): not yet measured on a GitHub runner, so it reports and does not gate until a deps run has seen it green"
 	},
@@ -901,6 +902,7 @@
 		"uv-editor": 38,
 		"uv-paint": 162,
 		"uv-pressure-layer": 150,
+		"uv-touch-gestures": 120,
 		"viewport-scale": 102,
 		"voice-ptt": 69,
 		"vr-asset-browser-iwer": 240,

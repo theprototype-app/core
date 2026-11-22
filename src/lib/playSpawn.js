@@ -8,10 +8,12 @@
 // a publisher's userData.play.spawn, else the scene's play.spawn.
 import * as THREE from 'three';
 import { get } from 'svelte/store';
-import { playerCam } from '../stores/sceneStore';
+import { playerCam, objectsGroup } from '../stores/sceneStore';
 import { resolvePlaySettings } from './playSettings';
 import { globalScene } from '../stores/sceneStore';
-import { peers, userdata } from '../stores/appStore';
+import { peers, userdata, peerPlayModes } from '../stores/appStore';
+import { peerJoinedAt } from './connectionState';
+import { spawnCandidates, arrivingSlot, pickSpawn } from './spawnSlots';
 // 60 Q1: the Play here rule (pure, three only) lives in its own leaf so the unit layer can run it
 export { playHereSpawnFrom, headingOf } from './playHereCore';
 
@@ -72,18 +74,125 @@ export function spawnDesktopPlayer(spawn = desktopSpawn()) {
 	if (!spawn || !cam?.isObject3D) return false;
 	// fix-play-link: every spawn path (entering play, the game shell's restart, a module's
 	// respawnPlayer) lands clear of a player already standing on the spawn
-	const ids = otherPlayerIds();
-	const eye = clearOfAvatars(spawnEyePose(spawn).eye, avatarPositions(ids), spawn.yaw, AVATAR_CLEARANCE, mySlot(ids));
+	// fix-late-joiners row 3: …and on THIS player's own spot (spawn points, then the ring, never in geometry)
+	const mine = mySpawn(spawn) ?? spawn;
+	const eye = spawnEyePose(mine).eye;
 	const target = new THREE.Vector3(eye[0], eye[1], eye[2]);
 	if (cam.parent) {
 		cam.parent.updateWorldMatrix(true, false);
 		cam.parent.worldToLocal(target);
 	}
 	cam.position.copy(target);
-	cam.quaternion.setFromEuler(new THREE.Euler(0, spawn.yaw, 0, 'YXZ'));
+	cam.quaternion.setFromEuler(new THREE.Euler(0, mine.yaw, 0, 'YXZ'));
 	cam.updateMatrixWorld(true);
 	return true;
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// fix-late-joiners row 3 — THIS PLAYER'S OWN SPAWN (the rule is spawnSlots.js; this feeds it the facts).
+
+/** an arriving peer's link counts as new for this long (ms) — see spawnSlots' header */
+export const ARRIVE_MS = 15000;
+
+/** objects marked as spawn points (`userData.spawnPoint`), their world feet and facing, by uuid */
+export function spawnPointMarks() {
+	/** @type {any} */
+	const group = get(objectsGroup);
+	if (!group?.traverse) return [];
+	/** @type {{id: string, position: number[], yaw: number}[]} */
+	const out = [];
+	const v = new THREE.Vector3();
+	const q = new THREE.Quaternion();
+	group.traverse((/** @type {any} */ o) => {
+		if (o === group || o.userData?.spawnPoint !== true) return;
+		o.updateWorldMatrix(true, false);
+		o.getWorldPosition(v);
+		o.getWorldQuaternion(q);
+		out.push({ id: o.uuid, position: [v.x, v.y, v.z], yaw: new THREE.Euler().setFromQuaternion(q, 'YXZ').y });
+	});
+	return out;
+}
+
+/** is that peer arriving now (not in play; its avatar unseen or its link moments old)? @param {string} id */
+function arrivingPeer(id) {
+	if (/** @type {any} */ (get(peerPlayModes))?.[id] === 'playing') return false;
+	if (unseenPlayers([id]).length) return true;
+	const at = /** @type {any} */ (get(peerJoinedAt))?.[id];
+	return typeof at === 'number' && Date.now() - at < ARRIVE_MS;
+}
+
+const probeRay = new THREE.Raycaster();
+const DOWN = new THREE.Vector3(0, -1, 0);
+/** the meshes a spawn can stand on or be blocked by: visible, not a trigger zone @param {any} o */
+function solid(o) {
+	if (!o.isMesh || o.userData?.physics?.sensor) return false;
+	for (let p = o; p; p = p.parent) if (p.visible === false) return false;
+	return true;
+}
+/**
+ * fix-late-joiners: never spawn inside geometry. A ring spot is refused when something stands between the first
+ * spawn and it at chest height (a wall, a crate), and its feet go on the floor one ray down finds (within 0.6 m up
+ * or 1.5 m down of the spawn's own height; nothing found keeps the spawn's height: the ground plane, the grid).
+ * The spawn points themselves are the author's and are taken as they are.
+ * @param {{position: number[]}} origin @returns {(spot: {position: number[], yaw: number, ring?: boolean}) => any}
+ */
+function spawnProbe(origin) {
+	/** @type {any} */
+	const group = get(objectsGroup);
+	const meshes = [];
+	group?.traverse?.((/** @type {any} */ o) => { if (solid(o)) meshes.push(o); });
+	return (spot) => {
+		if (!spot.ring || !meshes.length) return spot;
+		const [x, y, z] = spot.position;
+		const from = new THREE.Vector3(origin.position[0], origin.position[1] + 1.0, origin.position[2]);
+		const to = new THREE.Vector3(x, y + 1.0, z);
+		const dir = to.clone().sub(from);
+		const dist = dir.length();
+		if (dist > 1e-6) {
+			probeRay.set(from, dir.normalize());
+			probeRay.far = dist + 0.4;
+			if (probeRay.intersectObjects(meshes, false).length) return null;
+		}
+		probeRay.set(new THREE.Vector3(x, y + 1.8, z), DOWN);
+		probeRay.far = 1.8 + 1.5;
+		const hit = probeRay.intersectObjects(meshes, false)[0];
+		if (!hit) return spot;
+		if (hit.distance < 0.2) return null; // something at head height: inside or under geometry
+		const floor = hit.point.y;
+		if (floor > y + 0.6) return null; // on top of something taller than a step
+		return { ...spot, position: [x, floor, z] };
+	};
+}
+
+/**
+ * Where THIS player spawns: `spawn` (default the one in force; the marked spawn points join it only then), this
+ * player's slot among the players arriving now, clear of every avatar, probed. Null without a spawn.
+ * Read by desktop Play (spawnDesktopPlayer) and VR (vr/locomotion.spawnPlayer).
+ * @param {{position: number[], yaw: number} | null} [spawn]
+ * @returns {{position: [number, number, number], yaw: number} | null}
+ */
+export function mySpawn(spawn) {
+	const inForce = currentSpawn();
+	const primary = spawn === undefined ? inForce : spawn;
+	// the marked spawn points belong to the scene's own spawn, never to a checkpoint or a module's respawn spot
+	const same = !!primary && !!inForce && primary.position.every((v, i) => Math.abs(v - inForce.position[i]) < 1e-6);
+	const marks = same ? spawnPointMarks() : [];
+	const candidates = spawnCandidates(primary ?? null, marks);
+	if (!candidates.length) return null;
+	/** @type {any} */
+	const me = get(peers)?.peer?.id;
+	const others = otherPlayerIds();
+	const slot = typeof me === 'string' && me ? arrivingSlot(me, others, arrivingPeer) : { rank: 0, of: 1 };
+	const picked = pickSpawn(candidates, slot, avatarPositions(others), spawnProbe(candidates[0])).spot;
+	if (!picked) return null;
+	last = { slot, at: picked.position.slice(), candidates: candidates.length };
+	return { position: [picked.position[0], picked.position[1], picked.position[2]], yaw: picked.yaw };
+}
+
+/** @type {{slot: {rank: number, of: number}, at: number[], candidates: number} | null} */
+let last = null;
+/** the last spawn this page chose (the e2e reads it) */
+export const lastSpawnPick = () => last;
 
 /** fix-play-link: the other players' peer ids (the roster, minus me) @returns {string[]} */
 export function otherPlayerIds() {

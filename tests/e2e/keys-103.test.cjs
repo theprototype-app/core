@@ -319,6 +319,48 @@ h.run(async () => {
 		window.__tp.test.v1.shortcutsRegistry.setKeymapPreset('theprototype');
 	});
 
+	// ---- 5b. the status line never covers a touch bar (row 6) --------------------------------
+	await page.evaluate(() => {
+		const v = window.__tp.test.v1;
+		v.touchTools.set(true);
+		v.shortcutsRegistry.setKeymapPreset('blender');
+	});
+	await page.waitForTimeout(500);
+	// park the touch row right where the line sits by default (top centre)
+	// a stylesheet rule, because the cluster layout rewrites the row's classes and style attribute
+	await page.evaluate(() => {
+		const css = document.createElement('style');
+		css.id = 'park-touch-103';
+		css.textContent = `#touch-tools { left: ${Math.round(innerWidth / 2 - 60)}px !important; top: 56px !important; }`;
+		document.head.appendChild(css);
+	});
+	await page.waitForTimeout(300);
+	const tt = await page.evaluate(() => {
+		const r = document.querySelector('#touch-tools')?.getBoundingClientRect();
+		return r ? { left: r.left, right: r.right, top: r.top, bottom: r.bottom } : null;
+	});
+	h.check(!!tt && tt.top < 90 && tt.bottom > 64 && tt.left < 1440 / 2 && tt.right > 1440 / 2, `5.6 premise: the touch row sits over the line's default spot (${JSON.stringify(tt)})`);
+	await selectBox('5.6');
+	await page.mouse.move(c.x, c.y);
+	await startNow(page, 'KeyG');
+	const lineBox = await page.evaluate(() => {
+		const r = document.querySelector('#modal-transform-line')?.getBoundingClientRect();
+		return r ? { left: r.left, right: r.right, top: r.top, bottom: r.bottom } : null;
+	});
+	const ttNow = await page.evaluate(() => {
+		const r = document.querySelector('#touch-tools')?.getBoundingClientRect();
+		return r ? { left: r.left, right: r.right, top: r.top, bottom: r.bottom } : null;
+	});
+	await page.keyboard.press('Escape');
+	h.check(JSON.stringify(ttNow) === JSON.stringify(tt), `5.6b premise: the touch row is still parked there while the line shows (${JSON.stringify(ttNow)})`);
+	const clear = !!lineBox && !!tt && !(lineBox.left < tt.right && tt.left < lineBox.right && lineBox.top < tt.bottom && tt.top < lineBox.bottom);
+	h.check(clear && lineBox.top >= 0 && lineBox.bottom <= 900, `5.7 the line steps clear of the touch row and stays on screen (${JSON.stringify(lineBox)})`);
+	await page.evaluate(() => {
+		document.getElementById('park-touch-103')?.remove();
+		window.__tp.test.v1.touchTools.set(false);
+		window.__tp.test.v1.shortcutsRegistry.setKeymapPreset('theprototype');
+	});
+
 	// ---- 6. the object list takes the keyboard -----------------------------------------------
 	await page.evaluate(() => window.__tp.test.v1.objectListClose.set(true));
 	await page.mouse.click(c.x + 300, c.y + 250);

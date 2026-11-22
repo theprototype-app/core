@@ -76,7 +76,20 @@ h.run(async () => {
 	await h.eventually(() => posOf(H.page, X), (x) => x === 4, "and H's copy is put back to E's");
 	// 3 s after E's last edit the box is free
 	await h.eventually(() => holderOn(H.page, X), (v) => !v, '3 s after the last edit the box is free', 8000);
-	h.check((await E.page.evaluate(() => { let v; window.__tp.test.v1.selectedObjects.subscribe((x) => (v = x))(); return v; })).includes(X), 'E keeps its selection');
+	const kept = (await E.page.evaluate(() => { let v; window.__tp.test.v1.selectedObjects.subscribe((x) => (v = x))(); return v; })).includes(X);
+	// on a red: which path let go of the selection (a lost race says "took ... first", a refused edit "... was not kept")
+	if (!kept)
+		console.log(
+			'  [diag selection] ' +
+				JSON.stringify(
+					await E.page.evaluate(() => {
+						const s = window.__tp.test.v1;
+						const read = (n) => { let v; s[n].subscribe((x) => (v = x))(); return v; };
+						return { toasts: (read('toastStore') || []).map((t) => t?.message ?? t?.text ?? String(t)).slice(-6), locks: read('lockedObjects'), mine: s.lockHeld.myLockRows() };
+					}).catch((e) => 'err ' + e.message)
+				)
+		);
+	h.check(kept, 'E keeps its selection');
 	await moveX(H, X, -5);
 	await h.eventually(() => posOf(E.page, X), (x) => x === -5, "after the burst H's edit applies on E");
 	await h.eventually(() => holderOn(E.page, X), (v) => !v, 'and frees again 3 s after');

@@ -54,7 +54,6 @@
 	import ScatterDetailSetting from './ScatterDetailSetting.svelte'; // 51
 	import GpuFluidSetting from '../../sim/GpuFluidSetting.svelte'; // 49-fluid W2
 	import HdriSettings from '../../hdri/HdriSettings.svelte'; // 37-hdri
-	import GizmoSettings from './GizmoSettings.svelte'; // 103 H7
 	import { showSimControls, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader, showToast } from '../../../stores/appStore.js';
 	import { showGrid } from '../../../stores/sceneStore.js';
 	import { syncedAnimations } from '../../../stores/flowStore';
@@ -141,7 +140,10 @@
 		</SettingRow>
 	</Section>
 
-	<GizmoSettings />
+	<!-- 103 H7: the Gizmo card loads with this page, not with the app (boot rule) -->
+	{#await import('./GizmoSettings.svelte') then m}
+		<m.default />
+	{/await}
 
 	<Section variant="card" label="Performance" badge="This device">
 		<SettingRow id="row-quality-preset" label="Quality preset" description="Auto lowers quality on its own when the scene is heavy; High, Medium and Low hold one level. A game’s own Quality setting wins while you play it." wide>

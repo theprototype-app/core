@@ -15,6 +15,7 @@
 // object's own axes (three resizes in local axes only), and D draws its box at the object's real
 // size with screen-sized knobs on it.
 import * as THREE from 'three';
+import { installFaceDriver } from './gizmoControls.js';
 
 const TOUCH_SLACK = 22;
 const MOUSE_SLACK = 7;
@@ -767,6 +768,7 @@ function rayAxisParam(/** @type {THREE.Ray} */ ray, /** @type {THREE.Vector3} */
  * @returns {Face}
  */
 export function createFace(style, tc) {
+	installFaceDriver(tc);
 	let face;
 	if (style === 'C') face = new Face('C', puckHandles());
 	else if (style === 'D') {

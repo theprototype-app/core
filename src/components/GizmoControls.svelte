@@ -7,8 +7,8 @@
 	import { T, useThrelte, useThrelteUserContext } from '@threlte/core';
 	import { Group } from 'three';
 	import { writable, type Writable } from 'svelte/store';
-	import { GizmoControls } from '$lib/gizmo/gizmoControls.js';
-	import { activeGizmoStyle, handleSet, gizmoHide, gizmoSize, SIZE_FACTOR, selectionAppeared } from '$lib/gizmo/gizmoPrefs.js';
+	import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
+	import { activeGizmoStyle, handleSet, gizmoSize, SIZE_FACTOR, selectionAppeared } from '$lib/gizmo/gizmoPrefs.js';
 	import { theme } from '$lib/themes';
 	import { selectedObjects, objectsGroup } from '../stores/sceneStore';
 	import { get } from 'svelte/store';
@@ -23,7 +23,9 @@
 		transformControls: writable(undefined)
 	}) as any;
 
-	const tc: any = new GizmoControls(camera.current, dom);
+	const tc: any = new TransformControls(camera.current, dom);
+	// 103 H7: three's own gizmo; the faces chunk makes it face-capable when a style B / C / D loads
+	tc.isGizmoControls = true;
 	// D's box around a multi-selection: the members the pivot moves
 	tc.boxMembers = () => {
 		const group: any = get(objectsGroup);
@@ -73,7 +75,7 @@
 		const token = ++faceToken;
 		tc.gizmoStyle = $activeGizmoStyle;
 		if (style === 'A') {
-			tc.setFace(null);
+			tc.setFace?.(null);
 			invalidate();
 			return;
 		}
@@ -85,8 +87,7 @@
 	});
 	$effect(() => {
 		tc.handleSet = $activeGizmoStyle === 'A' ? 'all' : $handleSet;
-		tc.hiddenKinds = new Set($gizmoHide[faceStyle] ?? []);
-		tc.syncFace();
+		tc.syncFace?.();
 		invalidate();
 	});
 	$effect(() => {

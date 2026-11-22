@@ -426,7 +426,7 @@ h.run(async () => {
 	await page.waitForTimeout(300);
 	await setStyle(page, 'B');
 	await page.evaluate(async () => {
-		const p = await window.__tp.test.v1.gizmoPrefs;
+		const p = await window.__tp.test.v1.gizmoHide;
 		p.setKindShown('B', 'rings', false);
 	});
 	await select('8.2');
@@ -434,8 +434,8 @@ h.run(async () => {
 	g = await gizmo(page);
 	h.check(!g.kinds.includes('rings') && g.kinds.includes('arrows'), `8.2 show only: rings off hides the rings (${g.kinds})`);
 	await page.evaluate(async () => {
+		(await window.__tp.test.v1.gizmoHide).setKindShown('B', 'rings', true);
 		const p = await window.__tp.test.v1.gizmoPrefs;
-		p.setKindShown('B', 'rings', true);
 		p.gizmoSize.set('L');
 	});
 	await page.waitForTimeout(300);

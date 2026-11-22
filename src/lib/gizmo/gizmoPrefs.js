@@ -10,7 +10,7 @@
 //              'C'               touch puck: ground disc, lift arrow, turn ring, even-resize knob
 //              'D'               box handles: corner resize, face push / pull, a turn arc, the size shown
 //  gizmoSize   'S' | 'M' (default) | 'L'
-//  gizmoHide   per style, the handle kinds switched off in Settings ("show only")
+//  gizmoHide   per style, the handle kinds switched off in Settings ("show only"): ./gizmoHide.js (lazy)
 //
 //  handleSet   row 8's triple switch: 'tool' = the active tool's handles, 'all' = all in one. The third
 //              step (hidden) is the existing repeat-press exit (objectActions.setTransformMode), so it is
@@ -23,12 +23,6 @@ export const GIZMO_STYLES = ['auto', 'A', 'B', 'C', 'D'];
 export const GIZMO_SIZES = ['S', 'M', 'L'];
 /** the size factor per step (M = three's own default size) */
 export const SIZE_FACTOR = { S: 0.8, M: 1, L: 1.3 };
-/** the handle kinds each style can switch off ("show only") */
-export const STYLE_KINDS = {
-	B: ['arrows', 'planes', 'rings', 'cubes', 'knob'],
-	C: ['disc', 'lift', 'ring', 'knob'],
-	D: ['corners', 'faces', 'arc']
-};
 
 /** @param {string} key @param {string} fallback @param {string[]} allowed */
 function pref(key, fallback, allowed) {
@@ -56,47 +50,6 @@ function pref(key, fallback, allowed) {
 export const gizmoStyle = pref('gizmoStyle', 'auto', GIZMO_STYLES);
 /** @type {import('svelte/store').Writable<string>} */
 export const gizmoSize = pref('gizmoSize', 'M', GIZMO_SIZES);
-
-/** @returns {Record<string, string[]>} */
-function loadHide() {
-	try {
-		const raw = typeof localStorage !== 'undefined' ? safeStorage.getItem('gizmoHide') : null;
-		const v = raw ? JSON.parse(raw) : null;
-		/** @type {Record<string, string[]>} */
-		const out = {};
-		for (const s of Object.keys(STYLE_KINDS)) {
-			const list = Array.isArray(v?.[s]) ? v[s].filter((/** @type {any} */ k) => STYLE_KINDS[/** @type {'B'} */ (s)].includes(k)) : [];
-			if (list.length) out[s] = list;
-		}
-		return out;
-	} catch {
-		return {};
-	}
-}
-/** @type {import('svelte/store').Writable<Record<string, string[]>>} */
-export const gizmoHide = writable(loadHide());
-gizmoHide.subscribe((value) => {
-	try {
-		if (typeof localStorage === 'undefined') return;
-		if (!Object.keys(value).length) safeStorage.removeItem('gizmoHide');
-		else safeStorage.setItem('gizmoHide', JSON.stringify(value));
-	} catch {
-		/* private mode */
-	}
-});
-
-/** @param {string} style @param {string} kind @param {boolean} shown */
-export function setKindShown(style, kind, shown) {
-	gizmoHide.update((all) => {
-		const list = new Set(all[style] ?? []);
-		if (shown) list.delete(kind);
-		else list.add(kind);
-		const next = { ...all };
-		if (list.size) next[style] = [...list];
-		else delete next[style];
-		return next;
-	});
-}
 
 // --- what kind of pointer this person uses now (Auto picks from it) ---
 function coarseAtBoot() {

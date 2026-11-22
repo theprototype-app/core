@@ -6,7 +6,8 @@
 	import SettingRow from '../../ui/SettingRow.svelte';
 	import Segmented from '../../ui/Segmented.svelte';
 	import ThemedSelect from '../../ui/ThemedSelect.svelte';
-	import { gizmoStyle, gizmoSize, gizmoHide, activeGizmoStyle, setKindShown, STYLE_KINDS } from '$lib/gizmo/gizmoPrefs';
+	import { gizmoStyle, gizmoSize, activeGizmoStyle } from '$lib/gizmo/gizmoPrefs';
+	import { gizmoHide, setKindShown, STYLE_KINDS } from '$lib/gizmo/gizmoHide';
 
 	const STYLES = [
 		{ value: 'auto', label: 'Auto', title: 'All in one with a mouse, the touch puck on a touch screen (default)' },

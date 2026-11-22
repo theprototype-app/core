@@ -235,6 +235,7 @@ export const DEBUG_HOOKS = [
 	// 103 H7: the gizmo styles (prefs, the row 8 cycle) and the faces' test seam (describeFace)
 	['gizmoPrefs', () => import('./gizmo/gizmoPrefs')],
 	['gizmoFaces', () => import('./gizmo/faces')],
+	['gizmoHide', () => import('./gizmo/gizmoHide')],
 	['keyScope', () => import('./keyScope')],
 	// 36 F3/F4: the window-chrome rules (isHeaderDrag, windowDragActive)
 	['windowGrip', () => import('./windowGrip')],

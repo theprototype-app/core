@@ -1,8 +1,8 @@
 // 103 H7 row 4 — press-and-drag from a Move / Rotate / Resize button = that transform at once,
-// anywhere on screen (the touch twin of the keys). A Svelte action for buttons that have no drag of
-// their own (the phone strip); the desktop bar's cells share its toolbar-drag listener instead
-// (Controls.svelte). A press that never travels stays a click; one that does swallows the click.
-// The engine ($lib/modalTransform) loads on the first travel, never at boot.
+// anywhere on screen (the touch twin of the keys), for buttons that have no drag of their own (the
+// phone strip; the desktop bar's cells share its toolbar-drag listener instead, Controls.svelte).
+// LAZY: the strip imports this on the press itself, and the engine ($lib/modalTransform) on the first
+// travel — neither is boot. The few ms the import takes on the first press are inside the slop.
 
 const SLOP = 8;
 
@@ -22,46 +22,27 @@ function swallowClick() {
 }
 
 /**
- * @param {HTMLElement} node
- * @param {{mode: 'translate'|'rotate'|'scale', enabled?: () => boolean}} opts
+ * Follow a press that went down on a Move / Rotate / Resize button: past the slop it becomes that
+ * transform at once (and the button's click is swallowed); a press that never travels stays a click.
+ * @param {PointerEvent} press @param {'translate'|'rotate'|'scale'} mode
  */
-export function toolPressDrag(node, opts) {
-	let o = opts;
-	/** @type {PointerEvent|null} */
-	let press = null;
+export function trackToolPress(press, mode) {
 	const done = () => {
-		press = null;
 		window.removeEventListener('pointermove', onMove);
 		window.removeEventListener('pointerup', done);
 		window.removeEventListener('pointercancel', done);
 	};
 	const onMove = (/** @type {PointerEvent} */ e) => {
-		if (!press) return;
+		// released before the lazy import landed (a first press): its pointerup was never heard
+		if (e.buttons === 0) return done();
 		if (Math.abs(e.clientX - press.clientX) + Math.abs(e.clientY - press.clientY) < SLOP) return;
-		const origin = press;
 		done();
 		swallowClick();
 		void import('../modalTransform').then((m) => {
-			if (m.startDragTransform(o.mode, origin)) window.dispatchEvent(new PointerEvent('pointermove', { clientX: e.clientX, clientY: e.clientY, pointerType: e.pointerType }));
+			if (m.startDragTransform(mode, press)) window.dispatchEvent(new PointerEvent('pointermove', { clientX: e.clientX, clientY: e.clientY, pointerType: e.pointerType }));
 		});
 	};
-	const onDown = (/** @type {PointerEvent} */ e) => {
-		if (e.button !== 0 || (o.enabled && !o.enabled())) return;
-		press = e;
-		window.addEventListener('pointermove', onMove);
-		window.addEventListener('pointerup', done);
-		window.addEventListener('pointercancel', done);
-	};
-	node.addEventListener('pointerdown', onDown);
-	node.style.touchAction = 'none';
-	return {
-		/** @param {typeof opts} next */
-		update(next) {
-			o = next;
-		},
-		destroy() {
-			done();
-			node.removeEventListener('pointerdown', onDown);
-		}
-	};
+	window.addEventListener('pointermove', onMove);
+	window.addEventListener('pointerup', done);
+	window.addEventListener('pointercancel', done);
 }

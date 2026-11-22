@@ -4713,14 +4713,15 @@ export function recalculateNormals() {
  * explicit hand-picked pair; this is the cleanup pass for imported or
  * bridged geometry with near-coincident duplicates.
  *
- * Clusters by a quantized grid at the threshold, which is O(n) and deterministic
- * — every peer that replays the same snapshot gets the same result.
+ * 99 K6: clusters by distance through the kernel's SpatialHash (greedy targets in first-corner order, Blender's
+ * rule — the old quantized grid left a pair straddling a cell wall apart); deterministic — every peer that replays
+ * the same snapshot gets the same result.
  * @param {number} threshold @returns {boolean}
  */
 export function mergeByDistance(threshold = 0.001) {
 	interruptOpAdjust(); // 19-A P2: a one-shot commit ends any live adjust first
 	if (!FS.object) return false;
-	// 99 K4 family 5: on the session's op mesh — the soup's grid clusters, then the kernel's own vertex merge
+	// 99 K4 family 5: on the session's op mesh — distance clusters (K6), then the kernel's own vertex merge
 	// (a weld only MOVES vertices and drops degenerate triangles, so every survivor keeps the face it was in)
 	const r = sessionKernelCommit(
 		(ops, om) => ops.mergeByDistance(om, threshold),

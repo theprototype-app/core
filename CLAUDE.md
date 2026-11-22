@@ -884,10 +884,11 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   (meshEdit `liveTwins`; plane vertices are pinned to the plane). The source side is the side
   the edit CHANGED (`editSide`), `symKeep` only breaks a tie. `mirrorTrisCore` is the shared
   pure half of Symmetrize.
-  Two traps live here. The LIVE PREVIEW (`liveGeometryUpdate`) swaps geometry every
-  frame, so topology has to survive the preview or there is nothing left for the
+  Two traps live here. The LIVE PREVIEW (`liveGeometryUpdate`) swapped geometry every
+  frame, so topology had to survive the preview or there was nothing left for the
   commit to carry — that was the real reason a rotated band still lost its quads after
-  the commit path already carried them. GLTF autosave DOES carry `__topo` for a
+  the commit path already carried them (99 K5: a grab and a same-layout scrub now write IN PLACE into a
+  session-private geometry, so the stored partition simply stays; a layout change still swaps, with the carry). GLTF autosave DOES carry `__topo` for a
   single-material mesh (99 K1 measured it, `meshKernelGltfTopo.test.js`: GLTFExporter writes
   geometry.userData as the primitive's `extras`, GLTFLoader reads them back, triangle order
   kept); a multi-slot mesh is split into per-group primitives whose copies fail
@@ -930,8 +931,8 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   leaves the geometry edited. Bridge pairs its loops by ANGLE around their centres in
   one basis perpendicular to the tunnel axis (the old closest-vertex anchor + direction
   vote was tie-sensitive between aligned caps, and a one-step rotation = a skewed tunnel).
-  M6 `recalculateNormals` (signed volume per shell), `mergeByDistance` (quantized-grid
-  clusters, deterministic), `setShadingSmooth` (userData.shading, replicates as just
+  M6 `recalculateNormals` (signed volume per shell), `mergeByDistance` (99 K6: greedy
+  distance clusters through the kernel's SpatialHash — a pair across a cell wall merges; deterministic), `setShadingSmooth` (userData.shading, replicates as just
   the FLAG, re-applied by applyMeshGeo). A CLOSED region has no border, so extrude
   degenerates to a translate — refused with an explanation (that is also what
   Shell/Object granularity means for extrude). `stashSelections`/`restoreSelection`
@@ -1118,7 +1119,8 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   any object + chase/orbit camera; possessing = selecting; ONE undo per ride),
   `handModels` (#12: custom hand GLB = IDENTITY — hash on `handmodel` msg + handshake,
   assetShare pull, rigid-at-wrist render), `terrainSculpt` (#12: brush raise/lower/
-  smooth/flatten over the meshgeo channel; weld by quantized (x,z) COLUMNS, rebuilt in
+  smooth/flatten over the meshgeo channel (99 K6: the brush finds its vertices through the kernel's SpatialHash —
+  terrain hashes its columns' x/z, mesh mode per stroke with a drift pad; no linear scan); weld by quantized (x,z) COLUMNS, rebuilt in
   the applyMeshGeo hook (`rebuildSculptCaches`) AND guarded by position-ATTRIBUTE
   identity so a same-tick brush after a remote/undo swap never hits a stale cache;
   one snapshot+undo per stroke; CL-B follow-up MESH mode (`sculptMode`): the same
@@ -1759,7 +1761,7 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   `faceEdit.commitMesh(c)` = snapshot -> apply ('session' | 'object') -> broadcast -> record ('op' | 'entry' | false),
   the one path every mesh commit takes (session ops, commitMeshGeoTriple/Snapshot, the UV editor, adjust, live mirror).
   **99 K3 — ONE EDIT SESSION.** `editSessionState.js` (a leaf) holds it: `session.face` (`FS` in faceEdit: object,
-  workingTris, faces, quadPartner, overlay(s), grab, adjust, proxy) and `session.vertex` (`VS` in meshEdit: object,
+  frame, faces, quadPartner, overlay(s), grab, adjust, proxy) and `session.vertex` (`VS` in meshEdit: object,
   handles, handleMesh, overlay, proxy, selectedHandle, selection, proxyGesture) replace the module globals; the shared
   part (uuid, entry, edited, kernel, ID selection) opens and closes in `editSession.js` on the 15-F moments. ENTRY IS
   LOSSLESS: the entry geometry is kept by reference and a leave with nothing edited re-emits it (never the welded
@@ -1768,6 +1770,16 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   bridge/fill/solidify, merge/dissolve/delete, subdivide/symmetrize on the session's op mesh (`heldOpMesh` ->
   `sessionKernelCommit`/`objectKernelCommit`, IDs carried; the K3 adapter module had no caller left and went). History counts a typed
   array shared by several steps once (`meshBudget.historyBytes`; `meshCommit.shareIds` shares equal ID channels).
+  **99 K5 — NO SOUP, LIVE EDITS IN PLACE.** `triFrame.js` (a leaf, THREE only) is the session's view of its geometry:
+  `FS.frame` = the position attribute itself (zero-copy when plain non-indexed Float32), slot per triangle, uvs, an
+  integer weld on the keyOf grid; every reader (faces, quads, shells, borders, loops, picks, overlays) runs on it and
+  the soup-shaped exports (`groupFaces`, `boundaryEdges`, ...) wrap it — `FS.workingTris` is gone. A grab writes its
+  corners into a SESSION-PRIVATE copy (`ensureLiveGeometry`; never the entry geometry, which a clone may share; a
+  cancel puts the original object back), normals by `normalPlan`/`applyNormalPlan` (flat corners -> face normal,
+  smoothing groups -> summed normal, untouched corners byte-identical; `applyMeshGeo` applies the same plan for a
+  move so peers and undo match), the quad wire in place (`fromCorners`), the pick BVH refitted
+  (`ensureBoundsTrees(root, skip, live)`). The adjust engine's kernel ops return a flat `state` (soup lazy), and a
+  scrub with an unchanged layout writes in place. Suite `mesh-live-edit`.
   `meshKernel/` (99 K1; the app reaches it only lazily, through meshSession.js — K4 moves the operators onto it): a
   headless face-vertex mesh in flat typed arrays (BMesh disk + radial cycles), no three.js in
   the core (`three.js` is the one adapter that imports it), stable vertex/edge/face IDs = slots
@@ -4347,7 +4359,7 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   on which way the feature pushes (this cost three wrong red/green readings across the
   vertex and edge bevels).
 - **A helper that indexes SESSION state cannot be reused outside that session.**
-  `quadRingKeys(a, b)` takes triangle INDICES and reads the face session's `workingTris`,
+  `quadRingKeys(a, b)` takes triangle INDICES and reads the face session's `workingTris` (99 K5: the frame),
   so `diagonalEdgeKeys` — built on it — returned an EMPTY set whenever no face session was
   open. Two consequences went unnoticed for a long time: the quad-structure WIREFRAME was
   silently the raw triangulation in VERTEX mode, and M9's vertex slide offered face
@@ -4396,7 +4408,8 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   Face granularity resolves all 10 triangles and the heal fires. Pass `false` when the
   selection is the thing you mean.
 - **State attached to a geometry must survive the LIVE PREVIEW, not just the commit.**
-  `liveGeometryUpdate` builds a FRESH BufferGeometry on every frame of a face gesture,
+  `liveGeometryUpdate` built a FRESH BufferGeometry on every frame of a face gesture (99 K5: only when the
+  layout changes — a grab and a same-layout scrub write in place),
   so anything hanging off the geometry (P9's stored topology; anything similar you add)
   is gone by the time the commit runs — and a commit-side carry-over then finds nothing
   to carry. The symptom is maddening because the commit path looks correct in isolation:

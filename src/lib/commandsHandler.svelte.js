@@ -1009,8 +1009,9 @@ async function drainIngest() {
                     continue;
                 }
                 try {
-                    // @ts-ignore - spread of a fixed-length arg tuple
-                    job.resolve(await applyCreateObject(...job.args));
+                    lookAheadIngest();
+                    const [a0, a1, a2, a3, a4, a5, a6, a7] = job.args;
+                    job.resolve(await applyCreateObject(a0, a1, a2, a3, a4, a5, a6, a7, /** @type {any} */ (job).parsed));
                     if (Number.isFinite(ingestCap)) ingestCap--;
                 } catch (error) {
                     // a parse that rejects is still an ARRIVAL as far as the progress bar
@@ -1045,6 +1046,34 @@ export function dropIngestQueue() {
     return dropped;
 }
 
+// fix-late-joiners row 1 — LOOK AHEAD. A glTF parse is mostly waiting (a data-URI fetch per buffer, then the
+// loader's own promise chain), and the drainer applied objects strictly one after another, so each glTF object
+// cost several tasks of nothing; at a joiner's fps that was seconds per object. The next few glTF jobs start
+// their parse while the current one is applied. ORDER IS UNCHANGED: a job is still applied only after every
+// job before it, and a parse touches no scene state. Not while the ingest gate holds the queue (the user may
+// say no), and never past the cap the user agreed to.
+const INGEST_LOOKAHEAD = 8;
+
+/** checked, then parsed by three's loader (embedded data only) @param {any} object @param {string} from */
+function parseIncomingGltf(object, from) {
+    if (!checkGltf(object.element, from, 'object')) return Promise.reject(refusal('object'));
+    const loader = new GLTFLoader(embeddedOnlyManager(from, 'object'));
+    return new Promise((resolve, reject) => {
+        loader.parse(object.element, '', (gltf) => resolve(gltf), (error) => reject(error));
+    });
+}
+
+/** start the parse of the next few glTF jobs (their promise rides the job) */
+function lookAheadIngest() {
+    const n = Math.min(INGEST_LOOKAHEAD, ingestQueue.length, Number.isFinite(ingestCap) ? Math.max(0, ingestCap) : Infinity);
+    for (let k = 0; k < n; k++) {
+        const job = /** @type {any} */ (ingestQueue[k]);
+        if (job.parsed || job.args[1] == null) continue;
+        job.parsed = parseIncomingGltf(job.args[0], job.args[7] ?? 'peer');
+        job.parsed.catch(() => {}); // a rejection is reported when the job is applied, not here
+    }
+}
+
 /** How many objects are parked. Read by the suite and the 26-A meter. */
 export function ingestBacklog() {
     return ingestQueue.length;
@@ -1054,9 +1083,9 @@ registerMetricSource('ingestBacklog', ingestBacklog);
 /**
  * @param {any} object @param {string[]|null} uuid @param {boolean} [override]
  * @param {string} [groupuuid] @param {number[]} [pos] @param {number[]} [rot] @param {number[]} [scale]
- * @param {string} [from]
+ * @param {string} [from] @param {Promise<any>} [parsed] the glTF already being parsed (the drainer's look-ahead)
  */
-async function applyCreateObject(object, uuid, override, groupuuid, pos, rot, scale, from = 'peer') {
+async function applyCreateObject(object, uuid, override, groupuuid, pos, rot, scale, from = 'peer', parsed = undefined) {
     let parent;
     if (uuid == null) {
     // checked before three's loader sees it (loadGuardCore.js); a refusal throws into the
@@ -1088,11 +1117,8 @@ async function applyCreateObject(object, uuid, override, groupuuid, pos, rot, sc
         // console.log("Adding GLTF object " + uuid)
         // a glTF made by the sender's exporter embeds everything it needs: a uri that is not a data
         // URL (or an absurd size) refuses the object, and the loader cannot fetch either way
-        if (!checkGltf(object.element, from, 'object')) throw refusal('object');
-        const loader = new GLTFLoader(embeddedOnlyManager(from, 'object'));
-        const result = await new Promise((resolve, reject) => {
-          loader.parse(object.element, '', (gltf) => resolve(gltf), (error) => reject(error));
-        });
+        // fix-late-joiners: parsed ahead by the drainer when it could (parseIncomingGltf), applied here in order
+        const result = await (parsed ?? parseIncomingGltf(object, from));
         // 46: a texture the sender drew from a KTX2 twin arrives with the twin beside its
         // plain image (KHR_texture_basisu + fallback): re-form the twin here
         void attachTwinsFromGltf(result, object.element);
@@ -1263,6 +1289,31 @@ function multiMaterialSyncable(element) {
 }
 
 /**
+ * fix-late-joiners row 1 — A PRIMITIVE TRAVELS AS ITS RECIPE. Every app-made box, sphere or cylinder used to
+ * go through GLTFExporter (async, base64 buffers) and arrive through GLTFLoader (a parse with a data-URI
+ * fetch per buffer, several tasks each), one object per drain step: a 500-object scene took 26 s to land on
+ * a late joiner at CPU x4, and the joiner got a plain BufferGeometry back instead of the parametric one.
+ * A pristine parametric geometry is a few numbers in toJSON and ObjectLoader builds it synchronously; every
+ * receiver already reads that shape (lights, parents and convert-to-mesh use it), so the wire stays as it is.
+ * PRISTINE is the whole condition: toJSON writes a parametric geometry as its PARAMETERS ONLY, so any
+ * in-place edit (a vertex drag, a sculpt) would be lost — every attribute must be unmodified (version 0)
+ * and no edit flag set. Textured materials keep the GLTF path (its KTX2 twins, its image packing).
+ * @param {any} element
+ */
+export function primitiveSyncable(element) {
+    if (!element?.isMesh || element.type !== 'Mesh') return false;
+    const geometry = element.geometry;
+    if (!geometry || geometry.type === 'BufferGeometry' || !geometry.parameters) return false;
+    if (element.userData?.vertexEdited || element.userData?.faceEdited || geometry.userData?.__topo) return false;
+    if (Object.keys(geometry.morphAttributes ?? {}).length) return false;
+    for (const attribute of Object.values(geometry.attributes ?? {})) if (/** @type {any} */ (attribute).version !== 0) return false;
+    const material = element.material;
+    if (!material || Array.isArray(material)) return false;
+    for (const value of Object.values(material)) if (/** @type {any} */ (value)?.isTexture) return false;
+    return true;
+}
+
+/**
  * 80a K3: one object, as it is here, to one peer as an arrival heal (`override`: the receiver
  * replaces its copy in place). The answer to an edit the lock gate refused. Its subtree goes too.
  * @param {any} conn @param {string} uuid @returns {boolean} sent
@@ -1402,6 +1453,18 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
             conn.send({
                 type: 'object',
                 element: serializeMeshWithGroups(element),
+                groupuuid: groupuuid,
+                pos: element.position.toArray(),
+                rot: element.rotation.toArray(),
+                scale: element.scale.toArray(),
+                ...heal
+            });
+        } else if (primitiveSyncable(element)) {
+            // fix-late-joiners row 1: a pristine primitive as its recipe (see primitiveSyncable); the
+            // ObjectLoader path keeps name, visibility, userData and the parametric geometry exactly
+            conn.send({
+                type: 'object',
+                element: element.toJSON(),
                 groupuuid: groupuuid,
                 pos: element.position.toArray(),
                 rot: element.rotation.toArray(),

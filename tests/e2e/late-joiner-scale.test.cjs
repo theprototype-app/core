@@ -67,6 +67,15 @@ h.run(async () => {
 			made++;
 			return m;
 		};
+		// thirty made the way a person makes them (the create command), so the scene holds real app primitives
+		const ch = await s.commandsHandler;
+		const kinds = ['box', 'sphere', 'cylinder', 'cone', 'torus', 'capsule'];
+		for (let k = 0; k < 30; k++) {
+			ch.sceneCommand('/create ' + kinds[k % kinds.length]);
+			made++;
+		}
+		await new Promise((r) => setTimeout(r, 500));
+		for (const o of g.children.slice(-30)) o.name = 'Made ' + o.name;
 		// groups of five (a tenth of the scene sits in groups), the rest at the root
 		let i = 0;
 		// the templates below are four more, so the scene holds exactly `count`
@@ -123,9 +132,17 @@ h.run(async () => {
 		st.flowEdges.set(graph.edges);
 		const all = [];
 		g.traverse((o) => { if (o !== g) all.push({ uuid: o.uuid, name: o.name, visible: o.visible, parent: o.parent === g ? null : o.parent.uuid }); });
-		return { all, templates: [coin.uuid, zone.uuid, orig.uuid, body.uuid] };
+		// how many leaf meshes travel as their recipe (fix-late-joiners row 1; absent on a base build)
+		let recipe = -1;
+		let madeRecipe = -1;
+		if (typeof ch.primitiveSyncable === 'function') {
+			recipe = 0;
+			g.traverse((o) => { if (o.isMesh && ch.primitiveSyncable(o)) recipe++; });
+			madeRecipe = g.children.filter((o) => /^Made /.test(o.name) && ch.primitiveSyncable(o)).length;
+		}
+		return { all, templates: [coin.uuid, zone.uuid, orig.uuid, body.uuid], recipe, madeRecipe };
 	}, COUNT);
-	console.log(`host scene: ${built.all.length} objects (${built.templates.length} templates)`);
+	console.log(`host scene: ${built.all.length} objects (${built.templates.length} templates); as a recipe: ${built.recipe} meshes, ${built.madeRecipe} of the 30 made by /create`);
 	h.check(built.all.length >= COUNT, `premise: the host holds ${COUNT}+ objects (${built.all.length})`);
 	const hostByUuid = new Map(built.all.map((o) => [o.uuid, o]));
 
@@ -146,7 +163,17 @@ h.run(async () => {
 		await B.page.evaluate((want) => {
 			const w = /** @type {any} */ (window);
 			const wanted = new Set(want);
-			w.__lj = { on: false, t0: 0, conn: -1, first: -1, all: -1, longtasks: [], frames: 0 };
+			w.__lj = { on: false, t0: 0, conn: -1, first: -1, all: -1, longtasks: [], frames: 0, links: [] };
+			// every shader program this page links while the scene lands (a compile is the costliest thing a join does)
+			for (const C of [w.WebGL2RenderingContext, w.WebGLRenderingContext]) {
+				if (!C || C.prototype.__ljWrapped) continue;
+				const link = C.prototype.linkProgram;
+				C.prototype.linkProgram = function (prog) {
+					if (w.__lj?.on) w.__lj.links.push(Math.round(performance.now() - w.__lj.t0));
+					return link.call(this, prog);
+				};
+				C.prototype.__ljWrapped = true;
+			}
 			new PerformanceObserver((l) => {
 				if (w.__lj.on) for (const e of l.getEntries()) w.__lj.longtasks.push(Math.round(e.duration));
 			}).observe({ type: 'longtask', buffered: false });
@@ -205,9 +232,25 @@ h.run(async () => {
 			maxLongtaskMs: r.longtasks.length ? Math.max(...r.longtasks) : 0,
 			over200: r.longtasks.filter((d) => d > 200).length,
 			frames: r.frames,
+			// programs linked during the join, and when (0.5 s buckets)
+			programs: r.links.length,
+			programBuckets: Object.entries(r.links.reduce((m, t) => ((m[Math.floor(t / 500) * 500] = (m[Math.floor(t / 500) * 500] ?? 0) + 1), m), {})).map(([k, v]) => k + ':' + v).join(' '),
 			url: h.URL
 		};
 		console.log('LJ-METRIC ' + JSON.stringify(metric));
+		// which programs B holds, and what tells its MeshStandardMaterial programs apart (the compile per object hunt)
+		const programs = await B.page.evaluate(() => {
+			let r;
+			/** @type {any} */ (window).__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
+			const list = r?.info?.programs ?? [];
+			const names = {};
+			for (const p of list) names[p.name] = (names[p.name] ?? 0) + 1;
+			const std = list.filter((p) => p.name === 'MeshStandardMaterial').map((p) => String(p.cacheKey).split(','));
+			const differs = {};
+			for (const k of std.slice(1)) k.forEach((v, i) => { if (v !== std[0][i]) differs[i] = (differs[i] ?? new Set()).add(v); });
+			return { total: list.length, names, differs: Object.fromEntries(Object.entries(differs).slice(0, 12).map(([i, set]) => [i, [std[0][+i], ...[...set].slice(0, 4)].map((x) => String(x).slice(0, 60))])) };
+		});
+		console.log('LJ-PROGRAMS ' + JSON.stringify(programs));
 		return { metric, ok: !!done };
 	};
 

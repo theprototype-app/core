@@ -170,5 +170,19 @@ h.run(async () => {
 	const afterReload = await sample(B.page, uuid, 0.5, 0.75);
 	h.check(!!afterReload && afterReload.px[1] < 120, `...with the strokes in it (rgb ${afterReload?.px.join(',')} where the heavy stroke went)`);
 
+	// ---- docs shots (SHOTS_DIR set): the brush panel dark + light, and the UV canvas with the strokes -------------
+	if (process.env.SHOTS_DIR) {
+		const fs = require('fs');
+		fs.mkdirSync(process.env.SHOTS_DIR, { recursive: true });
+		const panel = A.page.locator('#uv-pen-pressure').locator('xpath=ancestor::div[contains(@class,"border-b")][1]');
+		for (const t of ['dark', 'light']) {
+			await A.page.evaluate((x) => window.__tp.test.v1.themes.theme.set(x), t);
+			await A.page.waitForTimeout(400);
+			await panel.screenshot({ path: `${process.env.SHOTS_DIR}/01-brush-panel-${t}.png` }).catch((e) => console.log('shot failed', String(e)));
+		}
+		await A.page.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
+		await A.page.locator('#uv-canvas').screenshot({ path: `${process.env.SHOTS_DIR}/02-pressure-opacity.png` }).catch((e) => console.log('shot failed', String(e)));
+	}
+
 	await h.finish(browser);
 });

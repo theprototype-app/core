@@ -659,12 +659,13 @@ export async function forkCodeTab(id) {
 
 // ---------------------------------------------------------------- the sidebars (36-fb-code F6/F7)
 
-/** show a line of an open tab (Outline, Problems, a Find hit in an open file)
- * @param {string} tabId @param {number} line */
-export function revealInTab(tabId, line) {
+/** show a line of an open tab (Outline, Problems, a Find hit in an open file). 104 C2: `select`
+ * = a range to select, {from: [line, col], to: [line, col]} (1-based lines, 0-based columns)
+ * @param {string} tabId @param {number} line @param {{from: number[], to?: number[]}} [select] */
+export function revealInTab(tabId, line, select) {
 	if (!tabById(tabId)) return;
 	activeCodeTab.set(tabId);
-	codeRevealLine.set({ tabId, line: Math.max(1, Math.floor(line) || 1), token: ++lineToken });
+	codeRevealLine.set({ tabId, line: Math.max(1, Math.floor(line) || 1), token: ++lineToken, ...(select ? { select } : {}) });
 }
 
 /**

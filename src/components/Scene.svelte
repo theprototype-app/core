@@ -34,7 +34,7 @@
 	import { noteXRSessionStarted } from '$lib/playMode';
 	import { recordTransform } from '$lib/history';
 	import { suspendAnimation, resumeAnimation, pumpFlowTick } from '$lib/flowRuntime';
-	import { holdBody, releaseBody } from '$lib/physics';
+	import { holdBody, releaseBody, simulating as physicsSimulating, remoteSimulating as physicsRemoteSimulating } from '$lib/physics';
 	import { sculptObject, enterSculpt, beginStroke, strokeMove, endStroke as sculptEndStroke, showCursorAt, hideCursor } from '$lib/terrainSculpt';
 	import { scatterSelectArmed, scatterSelectDown, scatterSelectMove, scatterSelectUp, onScatterProxyMoved, onScatterProxyDragChanged } from '$lib/scatterEdit';
 	import { sceneHits, hitWorldNormal } from '$lib/scenePick';
@@ -60,6 +60,7 @@
 	import { startArchParts } from '$lib/arch/archParts.js';
 	import { tickAnimationPreview, captureAutoKey, playheadOf } from '$lib/animationPreview';
 	import { tickSequences } from '$lib/sequencePlayer'; // 48 S2: the Timeline's runs
+	import { tickConstraints, holdConstraints, releaseConstraints, updateConstraintHelpers } from '$lib/rig/constraintHub.js'; // 102 M7 (the solver loads on first use)
 	import { drawMode, drawTool, strokePointFromRay, endStroke, setDrawScene } from '$lib/drawMode';
 	import { splinePlaceFromRay, splineToolActive, finishSpline } from '$lib/splineTool';
 	import { flattenPicking, flattenPickClick } from '$lib/flattenActions';
@@ -462,9 +463,12 @@
 		tickPackBehaviors(); // 33 P2: doors/lids/levers pose from their shared state (rest in Edit)
 		tickSim($objectsGroup, camera.current, renderer, performance.now()); // 36-sim (after mixers: jiggle rides the posed bones)
 		tickTextPathsLazy($objectsGroup, performance.now()); // 64 D2: letters follow their carriers (and linked paths)
-		tickDecalsLazy($objectsGroup, performance.now()); // 102 M3: decal surfaces follow their targets
 		tickAnimationPreview(); // Animation window: local transform preview (not synced)
 		tickSequences(); // 48 S2: shots / clips / audio / events of running sequences
+		// 102 M7: constraints + IK, after every animation runtime above (mixers, clips, the sequencer's
+		// keyed weights) and before physics reads the poses; a no-op when no object has constraints
+		tickConstraints({ physicsRunning: $physicsSimulating || !!$physicsRemoteSimulating });
+		tickDecalsLazy($objectsGroup, performance.now()); // 102 M3: decal surfaces follow their targets (after constraints pose them)
 		tickSplatsLazy($objectsGroup, performance.now()); // 102: splat meshes follow their carriers (after anything that poses them)
 		tickMeshEdit(); // vertex handles follow the object if it moves (119)
 		tickEditWireframe(); // ...and the edit wireframe stays parented to it (faceEdit)
@@ -473,6 +477,7 @@
 		tickPathObjects(scene, $objectsGroup, { playing: $isLocked === true, selected: $selectedObjects ?? [] }); // 78 F4: hide in Play, numbers, scrub ghost
 		updateLightHelpers();
 		updateColliderHelpers(); // CL-A A7: collider proxies follow their objects
+		updateConstraintHelpers(scene, $objectsGroup, $selectedObjects ?? []); // 102 M7
 		updateSnapAnchor(); // 19-B P3: the picked snap-anchor marker follows its object
 		updateCameraHelpers(); // 16-P5: camera-object frustums follow their markers
 		updateCables(); // 23-A4: patch cables follow their plugs; the routing diff runs here too
@@ -536,6 +541,7 @@
 			if (event.value) {
 				// animated objects: park at their base so the gizmo edits the base transform
 				suspendAnimation(object.uuid);
+				holdConstraints(object.uuid); // 102 M7: the gizmo edits the authored pose, not the constrained one
 				// P-A: mid-sim, a grabbed dynamic body follows the gizmo kinematically
 				holdBody(object.uuid);
 				dragStartState = {
@@ -546,6 +552,7 @@
 				};
 			} else if (dragStartState && dragStartState.uuid === object.uuid) {
 				resumeAnimation(object.uuid);
+				releaseConstraints(object.uuid);
 				releaseBody(object.uuid); // back to dynamic + throw velocity
 				const after = {
 					pos: object.position.toArray(),

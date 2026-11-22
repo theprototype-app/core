@@ -52,6 +52,7 @@ import { desktopSpawn, spawnEyePose } from './playSpawn'; // 30b P4 (+ vrOnly: c
 import { shareDuplicatedMaterials, linkMaterials } from './materialSharing';
 import { applyFlowPathTo } from './sim/flowPathObject.js'; // 36-fb F24 (a three leaf)
 import { applyTextPathTo, bumpTextTurn } from './textPathObject.js'; // 64 D2 (a three leaf)
+import { markConstraintsDirty } from './rig/constraintHub.js'; // 102 M7 (the solver loads on first use)
 import {
 	duplicateCarriesAnimation,
 	duplicateCarriesFlow,
@@ -934,6 +935,13 @@ registerHistoryKind('props', (entry, state) => {
 		if (state.lod) object.userData.lod = state.lod;
 		else delete object.userData.lod;
 		if (peer) peer.send({ type: 'objectParameters', parameter: 'lod', uuid: entry.uuid, lod: state.lod ?? null });
+	}
+	if ('constraints' in state) {
+		// 102 M7: an object's constraint stack (rig/constraintEdit.js is the write path)
+		if (Array.isArray(state.constraints) && state.constraints.length) object.userData.constraints = state.constraints;
+		else delete object.userData.constraints;
+		markConstraintsDirty();
+		if (peer) peer.send({ type: 'objectParameters', parameter: 'constraints', uuid: entry.uuid, constraints: state.constraints ?? null });
 	}
 	if ('fluid' in state) {
 		// 36-sim U2b: a fluid tank's settings (fluidActions.setFluidFor is the write path)

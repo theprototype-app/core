@@ -114,6 +114,7 @@
 		Crop,
 		CornerLeftUp,
 		Crosshair,
+		Diamond,
 		Download,
 		Droplet,
 		Droplets,
@@ -417,6 +418,8 @@
 		inbox: Inbox,
 		info: Info,
 		keyboard: Keyboard,
+		// 102-ik: a keyframe mark (Timeline key buttons)
+		keyframe: Diamond,
 		lasso: Lasso,
 		layers: Layers,
 		'layout-dashboard': LayoutDashboard,

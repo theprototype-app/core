@@ -3468,6 +3468,10 @@
 			{#if $animatedObjects[$selectedObject.uuid] && restRowsOf($selectedObject.uuid).length}
 				<CharacterSection object={$selectedObject} />
 			{/if}
+			<!-- 102 M7: constraints + IK on any object or bone (lazy: its own chunk) -->
+			{#if $selectedObject?.uuid && !multiCount && !$selectedObject.userData?.isHelper}
+				{#await import('./inspector/ConstraintsSection.svelte') then m}<m.default object={$selectedObject} />{/await}
+			{/if}
 
 			<!-- 16-P5: a camera OBJECT is a marker mesh carrying userData.camera. All
 			     writes go through setCameraFor (props history + objectParameters +

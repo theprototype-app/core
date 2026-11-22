@@ -23,6 +23,9 @@ export const DEBUG_HOOKS = [
 	['*', () => import('../stores/sceneStore')],
 	['*', () => import('../stores/appStore')],
 	['*', () => import('../stores/flowStore')],
+	// 102 M7: constraints + IK (the runtime's state + the write path)
+	['constraints', () => import('./rig/constraintRuntime.js')],
+	['constraintEdit', () => import('./rig/constraintEdit.js')],
 	// 34 R2: the game kit (kit, kitDebug, kitAuthorityId)
 	['kit', () => import('./kit/runtime.js')],
 	// 55: the pure authority pick, so a suite can re-run it on a page's live facts

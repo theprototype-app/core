@@ -52,6 +52,7 @@ import { globalRenderer } from '../stores/sceneStore.js';
 import { yieldToEventLoop } from './sceneLoader';
 // 33 (L4): the scene going away is when its modules may be left behind (a leaf)
 import { noteSceneLeaving } from './sceneScope';
+import { markConstraintsDirty } from './rig/constraintHub.js'; // 102 M7 (the solver loads on first use)
 
 //Access scene Store
 let scene = $state();
@@ -688,6 +689,19 @@ export async function objectParameters(data, from = 'peer') {
             else delete mesh.userData.physics;
             pokeScene(); // collider viz re-syncs
             physicsShapeChanged(data.uuid); // CL-A A2: live mid-sim rebuild
+        }
+    } else if (data.parameter == 'constraints') {
+        // 102 M7: an object's constraint stack, normalized at the boundary; every peer
+        // evaluates it locally from the synced targets (no pose travels)
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            // stored as validated (wireValidate: <= 16 plain objects with an id); the runtime and the
+            // Inspector normalize on read, so the boot path carries no solver code
+            const list = Array.isArray(data.constraints) ? data.constraints.slice(0, 16).map((/** @type {any} */ c) => ({ ...c })) : [];
+            if (list.length) mesh.userData.constraints = list;
+            else delete mesh.userData.constraints;
+            markConstraintsDirty();
+            pokeScene();
         }
     } else if (data.parameter == 'fluid') {
         // 36-sim U2b: a fluid tank's settings (the particles are each peer's own).

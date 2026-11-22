@@ -52,6 +52,7 @@
 	import ModelPreview from './ModelPreview.svelte';
 	import { get } from 'svelte/store';
 	import AudioPlayer from './AudioPlayer.svelte';
+	import { soundEdits } from '$lib/soundEdits';
 	import AnimationPlayer from './AnimationPlayer.svelte';
 	import { keyOf } from '$lib/keyOf';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
@@ -78,6 +79,10 @@
 	 */
 	const cogOpen = $derived($openPreviewCog === winId);
 	let player: any = $state(null);
+	// 102b-sound: trim / fade / normalise a library sound (SoundEditPanel, lazy); the player plays the edit
+	let soundEdit: any = $state(null);
+	let soundEditOpen = $state(false);
+	let soundEditUrl = $state('');
 	let stats: any = $state(null);
 	/**
 	 * R22 round 13 (user): "cog auto rotate is a default setting for all objects which
@@ -236,6 +241,13 @@
 	/** 40-image (F13): an image in YOUR library can be edited — a pack card or a mounted
 	 * project's file has no record to save into */
 	const libItem = $derived(target?.itemId ? ($explorerItems.find((i: any) => i.id === target?.itemId) ?? null) : null);
+	// a library sound can be trimmed (a mounted volume's or a pack's file is not this scene's library)
+	const editHash = $derived(face === 'audio' && libItem?.hash ? String(libItem.hash) : '');
+	$effect(() => {
+		// a sound that already has an edit opens with its editor showing
+		if (editHash && $soundEdits.edits[editHash]) untrack(() => (soundEditOpen = true));
+		if (!editHash) untrack(() => ((soundEditOpen = false), (soundEditUrl = '')));
+	});
 	const editable = $derived(face === 'image' && !!libItem);
 	/** what the header says: the target's title, else (a bridged open) the library name */
 	const title = $derived(target?.title || libItem?.name || '');
@@ -424,6 +436,10 @@
 				if (k === 'M') return stop(), player.toggleMute();
 				if (k === 'L') return stop(), player.toggleLoop();
 				if (/^[0-9]$/.test(k)) return stop(), player.toFraction(Number(k) / 10);
+				// 102b-sound: E opens the trim editor, I / O set its start / end at the playhead
+				if (k === 'E' && editHash) return stop(), void (soundEditOpen = !soundEditOpen);
+				if (k === 'I' && soundEditOpen && soundEdit?.ready?.()) return stop(), soundEdit.markStart();
+				if (k === 'O' && soundEditOpen && soundEdit?.ready?.()) return stop(), soundEdit.markEnd();
 			}
 			if (onRange) return;
 			if (e.key === 'ArrowLeft') return stop(), step(-1);
@@ -1040,10 +1056,30 @@
 				<!-- SLIM AND WIDE, whatever the window's height: the strip sits at the bottom and
 				     the space above it is left empty rather than stretched (the user's words). -->
 				<div class="pv-audio">
-					<div class="pv-audio-art">
-						<Icon name="audio-lines" size={48} aria-hidden="true" />
-					</div>
-					<AudioPlayer bind:this={player} itemId={target.itemId} name={target.name ?? target.title} />
+					{#if soundEditOpen && editHash}
+						<div class="pv-audio-edit">
+							{#await import('./SoundEditPanel.svelte') then m}
+								<m.default bind:this={soundEdit} itemId={target.itemId} hash={editHash} playhead={() => player?.currentTime?.() ?? 0} onpreview={(url: string) => (soundEditUrl = url)} />
+							{/await}
+						</div>
+					{:else}
+						<div class="pv-audio-art">
+							<Icon name="audio-lines" size={48} aria-hidden="true" />
+						</div>
+					{/if}
+					<AudioPlayer bind:this={player} itemId={target.itemId} src={soundEditOpen ? soundEditUrl : ''} name={target.name ?? target.title} />
+					{#if editHash}
+						<button
+							id="sound-edit-toggle"
+							type="button"
+							class="pv-audio-editbtn"
+							aria-pressed={soundEditOpen}
+							title={soundEditOpen ? 'Close the trim editor (E)' : 'Trim, fade or normalise this sound for the scene (E). The file stays as it is.'}
+							onclick={() => (soundEditOpen = !soundEditOpen)}
+						>
+							<Icon name="scissors" size={16} aria-hidden="true" /> Trim and fade{$soundEdits.edits[editHash] ? ' (edited)' : ''}
+						</button>
+					{/if}
 				</div>
 			{:else if face === 'object'}
 				{#key target.itemId + '|' + (target.prefabId ?? '')}
@@ -1354,6 +1390,28 @@
 		flex-direction: column;
 		gap: 8px;
 		padding: 8px;
+	}
+	.pv-audio-edit {
+		min-height: 0;
+		flex: 1;
+		overflow: auto;
+	}
+	.pv-audio-editbtn {
+		display: inline-flex;
+		align-self: flex-start;
+		align-items: center;
+		gap: 4px;
+		padding: 2px 8px;
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		background: transparent;
+		color: var(--text-muted);
+		font-size: 11px;
+		cursor: pointer;
+	}
+	.pv-audio-editbtn[aria-pressed='true'] {
+		border-color: var(--accent);
+		color: var(--text);
 	}
 	/* the empty space the transport refuses to grow into */
 	.pv-audio-art {

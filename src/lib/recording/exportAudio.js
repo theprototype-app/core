@@ -95,9 +95,9 @@ export async function renderExportAudio(o) {
 }
 
 /**
- * The seam a sound's own edits go through (none yet: every sound plays as it is).
+ * 102b-sound row 3: a sound's trim / fade / normalise, the same edit the scene plays it with.
  * @returns {Promise<((hash: string, buffer: AudioBuffer, ctx: BaseAudioContext) => AudioBuffer) | null>}
  */
 async function soundEditor() {
-	return null;
+	return (await import('../soundEdits')).editedBuffer;
 }

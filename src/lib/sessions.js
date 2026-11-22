@@ -70,6 +70,7 @@ import { sceneBakeSnapshot, sceneBakeRestore } from './sceneBake'; // 98 P1
 import { environmentSnapshot, environmentRestore } from './environment';
 import { scenePhysicsSnapshot, scenePhysicsRestore, scenePhysicsState_ } from './scenePhysics';
 import { musicSnapshot, musicRestore } from './sceneMusic';
+import { soundEditsSnapshot, soundEditsRestore } from './soundEdits'; // 102b-sound
 // 23-A2: the musical transport, on the same terms as physics/music — null at the
 // default, omitted rather than written, restart-from-now when it was playing
 import { transportSnapshot, transportRestore } from './musicClock';
@@ -282,6 +283,7 @@ export function buildSessionPayload(name, opts = {}) {
 	const env = environmentSnapshot();
 	const gravity = scenePhysicsSnapshot();
 	const track = musicSnapshot();
+	const cuts = soundEditsSnapshot(); // 102b-sound: null when no sound is trimmed → no field
 	const baked = sceneBakeSnapshot(); // 98 P1: null when unbaked → no field
 	const clock = transportSnapshot();
 	const seqs = sequencesSnapshot(); // 48 S2
@@ -347,6 +349,7 @@ export function buildSessionPayload(name, opts = {}) {
 			...(env ? { environment: env } : {}),
 			...(gravity ? { physics: gravity } : {}),
 			...(track ? { music: track } : {}),
+			...(cuts ? { soundEdits: cuts } : {}),
 			...(baked ? { bake: baked } : {}),
 			...(clock ? { transport: clock } : {}),
 			...(routing ? { patch: routing } : {}),
@@ -1770,6 +1773,7 @@ async function applySessionNow(payload, opts, job) {
 	// (the environment was restored before the objects — see the build loop)
 	scenePhysicsRestore(payload.physics, replicate);
 	musicRestore(payload.music, replicate);
+	soundEditsRestore(payload.soundEdits, replicate); // 102b-sound: absent = no sound is trimmed
 	// 23-A2: and the transport — absent means the default (stopped, 120), and a saved
 	// PLAYING transport restarts from beat 0 now so every peer shares the phase
 	transportRestore(payload.transport, replicate);

@@ -289,6 +289,8 @@ export const DEBUG_HOOKS = [
 	['explorerDrop', () => import('./explorerDrop')],
 	['assetShare', () => import('./assetShare')],
 	['soundRuntime', () => import('./soundRuntime')],
+	// 102b-sound: a scene's sound trims / fades (soundEdits, setSoundEdit, editedBuffer)
+	['soundEdits', () => import('./soundEdits')],
 	['dungeonPlay', () => import('./dungeonPlay')],
 	['modelLoader', () => import('./modelLoader')],
 	['sceneAssets', () => import('./sceneAssets')],

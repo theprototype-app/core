@@ -5,6 +5,7 @@ import { ensureAudioContext, bus } from './audioEngine';
 import { itemByHash, itemBlob } from './explorer';
 import { requestAsset, sendAsset } from './assetShare';
 import { safeStorage } from './safeStorage';
+import { editedBuffer, soundEditKey } from './soundEdits'; // 102b-sound
 
 // Scene music (M-1): ONE shared background track per scene — a singleton synced
 // latest-wins like the environment, so everyone hears the same track at the same
@@ -98,14 +99,15 @@ function startSource(state) {
 	}
 	gain.gain.value = effectiveGain();
 	const src = context.createBufferSource();
-	src.buffer = buffer;
+	// 102b-sound: the track plays with this scene's trim / fade / normalise
+	src.buffer = editedBuffer(state.hash, buffer, context);
 	src.loop = true;
 	src.connect(gain);
 	// synced phase: everyone starts inside the same loop cycle
-	const offset = ((sessionNow() - (state.startedAt || sessionNow())) / 1000) % buffer.duration;
+	const offset = ((sessionNow() - (state.startedAt || sessionNow())) / 1000) % src.buffer.duration;
 	src.start(0, Math.max(0, offset));
 	source = src;
-	startedKey = state.hash + '|' + state.startedAt;
+	startedKey = state.hash + '|' + state.startedAt + '|' + soundEditKey(state.hash);
 }
 
 /** Reconcile the audio graph to the shared+local state. Runs on a 500ms timer so
@@ -127,7 +129,7 @@ function reconcile() {
 		ensureBuffer(state.hash);
 		return;
 	}
-	const key = state.hash + '|' + state.startedAt;
+	const key = state.hash + '|' + state.startedAt + '|' + soundEditKey(state.hash);
 	if (!source || startedKey !== key) {
 		if (context && context.state === 'running') startSource(state);
 		return;

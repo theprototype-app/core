@@ -5,6 +5,8 @@ import { itemByHash, itemBlob } from './explorer';
 import { requestAsset } from './assetShare';
 // 53 (A6): a starting sound says its caption (the player's Captions switch decides if it shows)
 import { captionSound } from './captions';
+// 102b-sound: a sound plays with this scene's trim / fade / normalise
+import { editedBuffer, soundEditKey } from './soundEdits';
 
 // Sound node runtime (97): flowRuntime hands over (sound node, target uuid)
 // pairs each tick. Every playing pair keeps an AudioBufferSource ->
@@ -128,7 +130,7 @@ function playOnce(entry, data) {
 	const ctx = ensureChain(entry, data);
 	if (!ctx || !entry.buffer) return;
 	const src = ctx.createBufferSource();
-	src.buffer = entry.buffer;
+	src.buffer = editedBuffer(entry.hash, entry.buffer, ctx);
 	src.loop = false;
 	src.connect(entry.gain);
 	src.start(0);
@@ -142,11 +144,11 @@ function startSource(entry, data, time) {
 	const ctx = ensureChain(entry, data);
 	if (!ctx) return;
 	const src = ctx.createBufferSource();
-	src.buffer = entry.buffer;
+	src.buffer = editedBuffer(entry.hash, entry.buffer, ctx);
 	src.loop = data.loop !== false;
 	src.connect(entry.gain);
-	// synced phase: everyone starts inside the same loop cycle
-	const offset = src.loop ? time % entry.buffer.duration : 0;
+	// synced phase: everyone starts inside the same loop cycle (of the edited sound: every peer has the edit)
+	const offset = src.loop ? time % src.buffer.duration : 0;
 	src.start(0, offset);
 	src.onended = () => {
 		if (entry.src === src) entry.src = null;
@@ -195,7 +197,7 @@ export function updateSounds(pairs, sceneObjects, time) {
 		// #22 A1 finding 4: volume/radius/rolloff are NOT in the key. They were, and a
 		// key change tears the source down and restarts it — so every fader drag clicked
 		// and every one-shot restarted from zero. They are live params; set them below.
-		const key = [!!data.playing, data.loop !== false].join('|');
+		const key = [!!data.playing, data.loop !== false, soundEditKey(data.hash)].join('|');
 		if (data.playing && (!entry.src || entry.key !== key)) {
 			// 53 (A6): a sound that STARTS (not a loop re-keyed while it plays) says its caption
 			if (!entry.src) captionSound(data.caption, { source: 'sound' });

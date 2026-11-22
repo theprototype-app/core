@@ -93,6 +93,7 @@ import { applyHandModel, handModelState, dropPeerHandModel } from '$lib/handMode
 import { applyRemoteEnvironment, environmentState, envPresetsState, applyRemoteEnvPresets, dropPeerEnvPresets, environment as environmentStore } from '$lib/environment';
 import { materialPresetsState, applyRemoteMaterialPresets, dropPeerMaterialPresets, answerMaterialPresetRequest, applyMaterialPresetPart } from '$lib/materialPresets'; // 37 R5, 48 F2
 import { applyRemoteMusic, musicState, music as musicStore } from '$lib/sceneMusic';
+import { applyRemoteSoundEdits, soundEditsState } from '$lib/soundEdits'; // 102b-sound
 import { applyRemoteScenePhysics, scenePhysicsState, scenePhysicsState_ } from '$lib/scenePhysics';
 // CO1: where the physical room's origin sits in content coords. The scenephysics
 // shape — one latest-wins singleton + a getroomanchor reply. The per-device ALIGNMENT
@@ -1565,6 +1566,8 @@ export class PeerConnection {
 				} else if(data.type == 'music') {
 					applyRemoteMusic(data);
 					noteSceneEditFrom(data, conn.peer);
+				} else if(data.type == 'soundedits') {
+					applyRemoteSoundEdits(data); // 102b-sound: a scene's trims and fades
 				} else if(data.type == 'scenephysics') {
 					applyRemoteScenePhysics(data);
 					noteSceneEditFrom(data, conn.peer);
@@ -2387,6 +2390,7 @@ export class PeerConnection {
 		if (!holdContent) {
 			conn.send(environmentState())
 			conn.send(musicState())
+			if (soundEditsState().changedAt) conn.send(soundEditsState()) // 102b-sound
 			conn.send(scenePhysicsState())
 			// 23-A2/A4: the musical transport and the patch are scene singletons like the
 			// three above, so they are withheld by the same condition — a joiner's fresher
@@ -3541,6 +3545,7 @@ function pushWorldState(peerId) {
 	if (!conn?.open) return;
 	conn.send(environmentState());
 	conn.send(musicState());
+	if (soundEditsState().changedAt) conn.send(soundEditsState()); // 102b-sound
 	conn.send(scenePhysicsState());
 	// L-C: one per post DOCUMENT — the scene look and any camera looks
 	for (const state of scenePostStates()) conn.send(state);

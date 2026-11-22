@@ -1023,10 +1023,27 @@ export async function packSoundItem(id) {
 	}
 }
 
+/**
+ * 102b-sound: `trim` on place_sound / set_music — how this scene plays the file (non-destructive, the
+ * Trim and fade editor's setting; one undo step of its own). null resets it. '' = fine, else the error.
+ * @param {string} hash @param {any} trim
+ */
+async function applyTrimArg(hash, trim) {
+	if (trim === undefined) return '';
+	if (trim !== null && (typeof trim !== 'object' || Array.isArray(trim))) return 'trim: {start, end, fadeIn, fadeOut} seconds and normalize true/false, or null for the original';
+	for (const k of ['start', 'end', 'fadeIn', 'fadeOut'])
+		if (trim && trim[k] !== undefined && !(typeof trim[k] === 'number' && trim[k] >= 0)) return `trim.${k}: seconds, 0 or more`;
+	const sync = await import('$lib/soundEditSync.js');
+	sync.commitSoundEdit(hash, trim);
+	return '';
+}
+
 /** @param {any} args @param {CreateBase} createBase */
 async function placeSoundTool(args, createBase) {
 	const snd = await soundItem(args.asset ?? args.url ?? args.hash);
 	if ('error' in snd) return snd;
+	const trimError = await applyTrimArg(snd.hash, args.trim);
+	if (trimError) return { error: trimError };
 	const volume = args.volume ?? 0.8;
 	const radius = args.radius ?? 5;
 	if (typeof volume !== 'number' || volume < 0 || volume > 1) return { error: 'volume: 0-1' };
@@ -1069,7 +1086,7 @@ async function placeSoundTool(args, createBase) {
 	} catch {
 		/* peers pull a missing hash themselves */
 	}
-	const row = { uuid: owner.uuid, name: owner.name, sound: snd.hash, file: snd.name, node: done.created?.[0]?.id, ...(on ? { on } : {}), ...(snd.from === 'url' ? { addedToLibrary: true } : {}) };
+	const row = { uuid: owner.uuid, name: owner.name, sound: snd.hash, file: snd.name, node: done.created?.[0]?.id, ...(on ? { on } : {}), ...(snd.from === 'url' ? { addedToLibrary: true } : {}), ...(args.trim !== undefined ? { trim: args.trim } : {}) };
 	return made ? { created: [row] } : { updated: [{ ...row, ok: true }] };
 }
 
@@ -1111,6 +1128,11 @@ async function setMusicTool(args) {
 	}
 	const after = get(sm.music);
 	recordEntry({ kind: 'music', before: pick(before), after: pick(after) });
+	if (args.trim !== undefined) {
+		if (!after.hash) return { error: 'trim: there is no music track to trim' };
+		const trimError = await applyTrimArg(after.hash, args.trim);
+		if (trimError) return { error: trimError };
+	}
 	return { updated: [{ uuid: 'scene', ok: true, music: after.name || after.hash || null, playing: !!after.playing, volume: after.volume }] };
 }
 
@@ -1340,7 +1362,13 @@ export const WORLD_AI_TOOLS = [
 					volume: { type: 'number', minimum: 0, maximum: 1 },
 					radius: { type: 'number' },
 					loop: { type: 'boolean' },
-					on: { type: 'string', enum: Object.keys(SOUND_TRIGGERS) }
+					on: { type: 'string', enum: Object.keys(SOUND_TRIGGERS) },
+					trim: {
+						type: ['object', 'null'],
+						description:
+							'how this scene plays the file, without changing it: start / end (seconds into the file; end 0 = its end), fadeIn / fadeOut (seconds), normalize (true = the loudest moment at -1 dB). Every player of this file in the scene uses it (sound nodes, timeline clips, the music, videos). null = the original. Its own undo step.',
+						properties: { start: { type: 'number' }, end: { type: 'number' }, fadeIn: { type: 'number' }, fadeOut: { type: 'number' }, normalize: { type: 'boolean' } }
+					}
 				},
 				required: ['asset']
 			}
@@ -1358,7 +1386,13 @@ export const WORLD_AI_TOOLS = [
 					asset: { type: ['string', 'null'] },
 					volume: { type: 'number', minimum: 0, maximum: 1 },
 					play: { type: 'boolean' },
-					stop: { type: 'boolean' }
+					stop: { type: 'boolean' },
+					trim: {
+						type: ['object', 'null'],
+						description:
+							'how this scene plays the file, without changing it: start / end (seconds into the file; end 0 = its end), fadeIn / fadeOut (seconds), normalize (true = the loudest moment at -1 dB). Every player of this file in the scene uses it (sound nodes, timeline clips, the music, videos). null = the original. Its own undo step.',
+						properties: { start: { type: 'number' }, end: { type: 'number' }, fadeIn: { type: 'number' }, fadeOut: { type: 'number' }, normalize: { type: 'boolean' } }
+					}
 				}
 			}
 		}

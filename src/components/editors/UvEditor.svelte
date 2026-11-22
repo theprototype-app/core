@@ -889,7 +889,7 @@
 		if (e.pointerType === 'touch') touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
 		// 103 H2: a second FINGER pinch-zooms and pans, and abandons whatever the first one started (no stray dot);
 		// any other second pointer (a palm under a pen's stroke) is ignored
-		if (gesture !== 'idle' && gesture !== 'pinch' && e.pointerId !== gestureId) {
+		if (gesture !== 'idle' && gesture !== 'pinch' && strictGesture() && e.pointerId !== gestureId) {
 			if (e.pointerType === 'touch' && gestureType === 'touch' && touches.size >= 2) startPinch();
 			return;
 		}

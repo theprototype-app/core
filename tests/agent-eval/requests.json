@@ -33,6 +33,7 @@
 		{ "id": "cinematic-look", "say": "Make this scene look cinematic, like a film still.", "pass": [{ "tool": "set_look", "action": "preset" }], "partial": [{ "tool": "set_look", "action": "post" }, { "tool": "set_look", "action": "sky" }] },
 		{ "id": "bake-light", "say": "Bake the lighting so the corners get soft shadows.", "pass": [{ "tool": "set_look", "action": "bake" }], "partial": [{ "tool": "set_look", "action": "post" }] },
 		{ "id": "nice-photo", "say": "Take a really nice high-quality photo of what I'm looking at.", "pass": [{ "tool": "run", "action": "photo" }], "partial": [{ "tool": "screenshot" }] },
-		{ "id": "crate-guard", "say": "Make the crate a guard that walks around and chases me when it sees me.", "pass": [{ "tool": "game_setup", "action": "npc" }], "partial": [{ "tool": "create_flow_nodes" }] }
+		{ "id": "crate-guard", "say": "Make the crate a guard that walks around and chases me when it sees me.", "pass": [{ "tool": "game_setup", "action": "npc" }], "partial": [{ "tool": "create_flow_nodes" }] },
+		{ "id": "furnish-room", "scene": "scene-my-room.json", "say": "I just scanned my room. Furnish it: a rug on the floor, a lamp on the table, a plant in a corner, and paint the walls a warm colour.", "pass": [{ "tool": "create_objects", "after": "list_scene" }, { "tool": "update_objects", "after": "list_scene" }, { "tool": "set_look", "action": "material", "after": "list_scene" }], "partial": [{ "tool": "create_objects" }, { "tool": "update_objects" }, { "tool": "set_look", "action": "material" }] }
 	]
 }

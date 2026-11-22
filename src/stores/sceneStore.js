@@ -317,6 +317,15 @@ export const sceneRevision = writable(0);
 
 /** One poke per this many ms while an ingest batch is open (~one frame at 60Hz). */
 const POKE_BATCH_MS = 16;
+/** fix-late-joiners row 1: …but never more often than POKE_BATCH_COST x what the last flush cost, up to
+ * POKE_BATCH_MAX_MS. A flush re-runs every subscriber over the whole tree (the object list, the meters), so
+ * it grows with the scene: measured at 500 objects on a throttled joiner, a 16 ms cadence left the drainer
+ * ~8 ms of work between flushes that each cost far more, and the scene landed at ~40 objects a second.
+ * Pacing by the measured cost keeps the UI's share of a big ingest near a quarter; a small scene's flush
+ * costs under 5 ms, so its cadence is the old one. The batch's END still flushes at once. */
+const POKE_BATCH_COST = 3;
+const POKE_BATCH_MAX_MS = 1000;
+let lastFlushMs = 0;
 
 let pokePending = false;
 /** @type {any} */
@@ -329,8 +338,17 @@ function flushScenePoke() {
 		clearTimeout(pokeTimer);
 		pokeTimer = null;
 	}
+	const started = typeof performance !== 'undefined' ? performance.now() : 0;
 	sceneRevision.update((n) => n + 1);
 	objectsGroup.update((value) => value);
+	// the components re-render in the microtask svelte queued during the update: one queued after it lands
+	// after that flush, so this measures the subscribers AND the re-render
+	if (started) queueMicrotask(() => (lastFlushMs = performance.now() - started));
+}
+
+/** the batch-mode poke interval right now (ms) */
+export function batchPokeInterval() {
+	return Math.min(POKE_BATCH_MAX_MS, Math.max(POKE_BATCH_MS, lastFlushMs * POKE_BATCH_COST));
 }
 
 /**
@@ -342,7 +360,7 @@ export function pokeScene() {
 		// batch mode: a timer already armed means this poke is already covered
 		if (pokeTimer !== null) return;
 		pokePending = true;
-		pokeTimer = setTimeout(flushScenePoke, POKE_BATCH_MS);
+		pokeTimer = setTimeout(flushScenePoke, batchPokeInterval());
 		return;
 	}
 	if (pokePending) return;

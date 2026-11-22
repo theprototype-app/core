@@ -39,10 +39,47 @@ function printProfile(profile) {
 	const total = [...self.values()].reduce((a, b) => a + b, 0);
 	console.log(`PROFILE total ${Math.round(total)} ms (throttled wall)`);
 	for (const [k, ms] of [...self.entries()].sort((a, b) => b[1] - a[1]).slice(0, 40)) console.log(`  ${String(Math.round(ms)).padStart(6)} ms  ${k}`);
+	// the same samples by 2 s window, each native call charged to its nearest app caller (who compiled, who read)
+	const parent = new Map();
+	for (const n of profile.nodes) for (const c of n.children ?? []) parent.set(c, n.id);
+	const appCaller = (id) => {
+		const chain = [];
+		for (let cur = id, d = 0; cur !== undefined && d < 40; cur = parent.get(cur), d++) {
+			const f = byId.get(cur).callFrame;
+			if (f.url) chain.push(`${f.functionName || '(anon)'}@${String(f.url).split('/').pop()}:${f.lineNumber + 1}`);
+			if (chain.length >= 3) break;
+		}
+		return chain.join(' < ');
+	};
+	const windows = new Map();
+	let t = 0;
+	for (let i = 0; i < profile.samples.length; i++) {
+		t += (dt[i] ?? 0) / 1000;
+		const n = byId.get(profile.samples[i]);
+		const name = n.callFrame.functionName || '(anon)';
+		if (name === '(idle)' || name === '(program)' || name === '(garbage collector)') continue;
+		const w = Math.floor(t / 2000) * 2;
+		const key = `${name} [${appCaller(n.id)}]`;
+		const m = windows.get(w) ?? new Map();
+		m.set(key, (m.get(key) ?? 0) + (dt[i] ?? 0) / 1000);
+		windows.set(w, m);
+	}
+	for (const [w, m] of [...windows.entries()].sort((a, b) => a[0] - b[0])) {
+		const busy = [...m.values()].reduce((a, b) => a + b, 0);
+		console.log(`PROFILE ${w}-${w + 2} s: busy ${Math.round(busy)} ms`);
+		for (const [k, ms] of [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5)) console.log(`    ${String(Math.round(ms)).padStart(5)} ms  ${k.slice(0, 260)}`);
+	}
 }
 
+// LJ_GPU=d3d12 (the pc host, WSL): the real GPU through Mesa's d3d12 driver (docs/pc-host.md ▸ The GPU). The plain
+// GPU_ARGS there land on llvmpipe, a CPU rasteriser, whose shader compiles and context creation are the costliest
+// part of a join and say nothing about a device's GPU. The CPU throttle stays: the Deck's CPU is the slow part.
+const GPU_LAUNCH =
+	process.env.LJ_GPU === 'd3d12' ? ['--use-gl=angle', '--use-angle=gl-egl', '--enable-gpu', '--ignore-gpu-blocklist'] : h.GPU_ARGS;
+if (process.env.LJ_GPU === 'd3d12') process.env.GALLIUM_DRIVER = 'd3d12';
+
 h.run(async () => {
-	const browser = await h.launch({ args: h.GPU_ARGS });
+	const browser = await h.launch({ args: GPU_LAUNCH });
 	const A = await h.setupPage(browser, 'A');
 
 	// ---- the host's scene ------------------------------------------------------------------------------
@@ -193,6 +230,7 @@ h.run(async () => {
 					}
 					if (n > 0 && r.first < 0) r.first = t;
 					if (n >= wanted.size) r.all = t;
+					if (n !== r.have) (r.curve ??= []).push([t, n]);
 					r.have = n;
 				}
 				requestAnimationFrame(tick);
@@ -233,6 +271,8 @@ h.run(async () => {
 			over200: r.longtasks.filter((d) => d > 200).length,
 			frames: r.frames,
 			// programs linked during the join, and when (0.5 s buckets)
+			// objects held at each second after the approval (the arrival curve)
+			curve: (() => { const out = {}; for (const [t, n] of r.curve ?? []) out[Math.floor(t / 1000)] = n; return Object.entries(out).map(([k, v]) => k + 's:' + v).join(' '); })(),
 			programs: r.links.length,
 			programBuckets: Object.entries(r.links.reduce((m, t) => ((m[Math.floor(t / 500) * 500] = (m[Math.floor(t / 500) * 500] ?? 0) + 1), m), {})).map(([k, v]) => k + ':' + v).join(' '),
 			url: h.URL
@@ -248,7 +288,10 @@ h.run(async () => {
 			const std = list.filter((p) => p.name === 'MeshStandardMaterial').map((p) => String(p.cacheKey).split(','));
 			const differs = {};
 			for (const k of std.slice(1)) k.forEach((v, i) => { if (v !== std[0][i]) differs[i] = (differs[i] ?? new Set()).add(v); });
-			return { total: list.length, names, differs: Object.fromEntries(Object.entries(differs).slice(0, 12).map(([i, set]) => [i, [std[0][+i], ...[...set].slice(0, 4)].map((x) => String(x).slice(0, 60))])) };
+			const gl = r?.getContext?.();
+			const dbg = gl?.getExtension?.('WEBGL_debug_renderer_info');
+			const gpu = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl?.getParameter?.(gl.RENDERER);
+			return { gpu: String(gpu).slice(0, 120), parallel: !!gl?.getExtension?.('KHR_parallel_shader_compile'), total: list.length, names, differs: Object.fromEntries(Object.entries(differs).slice(0, 12).map(([i, set]) => [i, [std[0][+i], ...[...set].slice(0, 4)].map((x) => String(x).slice(0, 60))])) };
 		});
 		console.log('LJ-PROGRAMS ' + JSON.stringify(programs));
 		return { metric, ok: !!done };

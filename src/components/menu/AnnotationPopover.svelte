@@ -33,7 +33,7 @@
 		noteWalk
 	} from '$lib/annotationsHandler';
 	import { globalCamera, globalRenderer, orbitControls } from '../../stores/sceneStore';
-	import { notesDrawerOpen } from '../../stores/appStore.js';
+	import { notesDrawerOpen, showToast } from '../../stores/appStore.js';
 
 	// H5 (notes v2): ONE note card with a VIEW face and an EDIT face, anchored
 	// NEAR its pin by a continuous screen projection — the card rides the camera
@@ -67,6 +67,23 @@
 	let shape = $state('round');
 	let pose = $state<any>(null); // H11 saved framing {position, target} | null
 	let followOnOpen = $state(false);
+	// 102b-play: an info point for visitors (the play app) and its one picture
+	let visitors = $state(false);
+	let picture = $state<string | null>(null);
+	let pictureBusy = $state(false);
+	let pictureInput: HTMLInputElement | null = $state(null);
+	async function pickPicture(e: Event) {
+		const input = e.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		input.value = '';
+		if (!file) return;
+		pictureBusy = true;
+		const { pictureFromFile } = await import('$lib/infoPicture.js'); // lazy: only when a picture is added
+		const url = await pictureFromFile(file);
+		pictureBusy = false;
+		if (url) picture = url;
+		else showToast('That picture could not be used — try a PNG or JPEG');
+	}
 	let seeded = '';
 	$effect(() => {
 		const key = (note?.id ?? '') + ':' + (editing ? 'edit' : 'view');
@@ -81,6 +98,8 @@
 			shape = source?.shape || 'round';
 			pose = source?.camera ?? null;
 			followOnOpen = source?.follow === true;
+			visitors = source?.visitors === true;
+			picture = source?.picture ?? null;
 		});
 	});
 
@@ -215,6 +234,8 @@
 			shape,
 			camera: pose,
 			follow: followOnOpen,
+			visitors,
+			picture,
 			label: label.trim(),
 			author: mine ? myAuthorName() : base.author,
 			authorKey: mine ? myAuthorKey() : base.authorKey,
@@ -394,6 +415,33 @@
 					<input type="checkbox" class="note-switch" bind:checked={followOnOpen} />
 					<span>Follow the pin when opened</span>
 				</label>
+				<!-- 102b-play: info points — the play app shows these notes to whoever opens the scene -->
+				<label class="note-check" title="Visitors of the published scene can open this note in Play: its title, text, picture and saved view">
+					<input id="note-visitors" type="checkbox" class="note-switch" bind:checked={visitors} />
+					<span>Show to visitors in Play</span>
+				</label>
+				<span class="note-caption">Picture — shown with the note</span>
+				<div class="note-camera">
+					{#if picture}
+						<img class="note-picture-thumb" src={picture} alt="" />
+					{/if}
+					<button
+						id="note-picture-pick"
+						class="note-flat"
+						title="Add one picture to this note (it is made smaller to fit)"
+						disabled={pictureBusy}
+						onclick={() => pictureInput?.click()}
+					>
+						<Icon name="image" size={16} aria-hidden="true" />
+						{pictureBusy ? 'Adding…' : picture ? 'Replace picture' : 'Add picture'}
+					</button>
+					{#if picture}
+						<button class="note-icon" title="Remove the picture" aria-label="Remove the picture" onclick={() => (picture = null)}>
+							<Icon name="x" size={16} aria-hidden="true" />
+						</button>
+					{/if}
+					<input bind:this={pictureInput} type="file" accept="image/png,image/jpeg,image/webp" hidden onchange={pickPicture} />
+				</div>
 			</div>
 			<div class="note-actions">
 				{#if existing}
@@ -409,6 +457,7 @@
 			</div>
 		{:else}
 			<div class="note-body" use:minimalScroll>
+				{#if note.picture}<img class="note-picture" src={note.picture} alt="" />{/if}
 				{#if note.name?.trim() && note.text?.trim()}
 					<p class="note-desc">{note.text}</p>
 				{:else if !note.text?.trim()}
@@ -656,6 +705,20 @@
 		border-color: var(--accent);
 		background: var(--accent-soft);
 		color: var(--accent-soft-text);
+	}
+	.note-picture-thumb {
+		width: 2.5rem;
+		height: 2.5rem;
+		object-fit: cover;
+		border-radius: var(--radius-input);
+	}
+	.note-picture {
+		display: block;
+		width: 100%;
+		max-height: 12rem;
+		object-fit: contain;
+		margin-bottom: 0.5rem;
+		border-radius: var(--radius-input);
 	}
 	.note-camera {
 		display: flex;

@@ -74,6 +74,13 @@
 				"80a-int (gates hardening, heal keeps locks) + the v1.71.0 merge": "+0.5 / -0.2",
 				"the v1.72.0 merge (on v1.72.0, same machine)": "+0.7 / +1.1"
 			}
+		},
+		{
+			"date": "2026-11-21",
+			"lane": "102b-play",
+			"play": "v1.70.0 2110.8 KB -> 2112.2 KB (+1.4), line unchanged",
+			"editor": "v1.70.0 3459.0 KB -> 3461.2..3461.8 KB across builds of the same code (+2.2..+2.8) -> line 3462.5 KB",
+			"note": "inside the ~3 KB boot rule (claude:9, 21 Nov): the scene touch-layout validator, the info-point field normalizer and the note pin filter. The info points card, the picture downscaler, wake lock and the colour dropper are lazy chunks. Chunk-hash churn moves the editor ~0.6 KB between builds; the integrator may veto"
 		}
 	],
 	"throttle": {

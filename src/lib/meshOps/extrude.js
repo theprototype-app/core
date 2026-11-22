@@ -11,7 +11,6 @@
 // edge gets a wall / ring quad, a corner-only contact gets none); every other region vertex moves
 // in place. Every face keeps its ID; a region face keeps its corner order and triangulation.
 
-import { NONE } from '../meshKernel/kernel.js';
 import { isolateTriangles, refaceKeep, appendToView, newGroup, cornerOf } from './opMesh.js';
 
 /** @typedef {import('./opMesh.js').OpMesh} OpMesh @typedef {[number, number, number]} Vec */
@@ -67,29 +66,43 @@ export function averagedNormal(om, tris) {
  */
 export function triangleComponents(om, tris) {
 	const m = om.mesh;
-	/** @type {Map<number, number>} */
-	const parent = new Map();
+	// joined by POSITION KEY on the current positions (faceEdit's keyOf), the soup's rule: after an op moved
+	// points, two vertices that now share a key belong to one piece even when the topology keeps them apart
+	/** @type {Map<number, string>} */
+	const keyOfVertex = new Map();
 	/** @param {number} v */
-	const find = (v) => {
-		let r = v;
-		while (parent.get(r) !== r) r = /** @type {number} */ (parent.get(r));
-		while (parent.get(v) !== r) {
-			const next = /** @type {number} */ (parent.get(v));
-			parent.set(v, r);
-			v = next;
+	const key = (v) => {
+		let k = keyOfVertex.get(v);
+		if (k === undefined) {
+			const p = m.vPos;
+			k = `${Math.round(p[v * 3] * 1e4)},${Math.round(p[v * 3 + 1] * 1e4)},${Math.round(p[v * 3 + 2] * 1e4)}`;
+			keyOfVertex.set(v, k);
+		}
+		return k;
+	};
+	/** @type {Map<string, string>} */
+	const parent = new Map();
+	/** @param {string} k */
+	const find = (k) => {
+		let r = k;
+		while (parent.get(r) !== r) r = /** @type {string} */ (parent.get(r));
+		while (parent.get(k) !== r) {
+			const next = /** @type {string} */ (parent.get(k));
+			parent.set(k, r);
+			k = next;
 		}
 		return r;
 	};
-	const vertsOf = (/** @type {number} */ t) => [0, 1, 2].map((k) => m.cVert[cornerOf(om, t, k)]);
+	const keysOf = (/** @type {number} */ t) => [0, 1, 2].map((c) => key(m.cVert[cornerOf(om, t, c)]));
 	for (const t of tris) {
-		const vs = vertsOf(t);
-		for (const v of vs) if (!parent.has(v)) parent.set(v, v);
-		for (let i = 1; i < 3; i++) parent.set(find(vs[0]), find(vs[i]));
+		const ks = keysOf(t);
+		for (const k of ks) if (!parent.has(k)) parent.set(k, k);
+		for (let i = 1; i < 3; i++) parent.set(find(ks[0]), find(ks[i]));
 	}
-	/** @type {Map<number, number[]>} */
+	/** @type {Map<string, number[]>} */
 	const byRoot = new Map();
 	for (const t of tris) {
-		const root = find(vertsOf(t)[0]);
+		const root = find(keysOf(t)[0]);
 		let list = byRoot.get(root);
 		if (!list) byRoot.set(root, (list = []));
 		list.push(t);
@@ -98,31 +111,48 @@ export function triangleComponents(om, tris) {
 }
 
 /**
- * The region's border, in soup order: every side of a region triangle that is a face side walked
- * by exactly one region face. @param {OpMesh} om @param {number[]} tris @param {Set<number>} faces
+ * The region's border, in soup order, by the soup's RULE: a side of a region triangle whose unordered pair of
+ * POSITION KEYS (faceEdit's keyOf, on the current positions) is walked by exactly one region triangle side. On a
+ * clean mesh that is the topological border (key weld = one vertex per key, a fully covered face's diagonal is
+ * walked twice); it also stays the soup's answer where an op squeezed points into one key cell (a saturated bevel
+ * step: a collapsed side counts twice or pairs a key with itself, and is no border, as it was).
+ * @param {OpMesh} om @param {number[]} tris @param {Set<number>} [_faces] unused (kept for the callers)
  * @returns {{ t: number, va: number, vb: number, ca: number, cb: number, f: number }[]}
  */
-function borderOf(om, tris, faces) {
+export function borderOf(om, tris, _faces) {
 	const m = om.mesh;
-	/** @type {{ t: number, va: number, vb: number, ca: number, cb: number, f: number }[]} */
-	const out = [];
+	const p = m.vPos;
+	/** @type {Map<number, string>} */
+	const keys = new Map();
+	/** @param {number} v */
+	const keyOfVertex = (v) => {
+		let k = keys.get(v);
+		if (k === undefined) {
+			k = `${Math.round(p[v * 3] * 1e4)},${Math.round(p[v * 3 + 1] * 1e4)},${Math.round(p[v * 3 + 2] * 1e4)}`;
+			keys.set(v, k);
+		}
+		return k;
+	};
+	/** @type {Map<string, number>} */
+	const count = new Map();
+	/** @type {{ t: number, va: number, vb: number, ca: number, cb: number, f: number, ek: string }[]} */
+	const sides = [];
 	for (const t of tris) {
 		const f = om.view.tFace[t];
-		const n = m.fLen[f];
+		const first = m.fFirst[f];
 		for (let e = 0; e < 3; e++) {
-			const la = om.view.tLoc[t * 3 + e];
-			const lb = om.view.tLoc[t * 3 + ((e + 1) % 3)];
-			if ((la + 1) % n !== lb) continue; // a diagonal: inside the face
-			const ca = m.fFirst[f] + la;
-			const edge = m.cEdge[ca];
-			if (edge === NONE) continue;
-			let sides = 0;
-			for (const c of m.edgeCorners(edge)) if (faces.has(m.cFace[c])) sides++;
-			if (sides !== 1) continue;
-			out.push({ t, va: m.cVert[ca], vb: m.cVert[m.fFirst[f] + lb], ca, cb: m.fFirst[f] + lb, f });
+			const ca = first + om.view.tLoc[t * 3 + e];
+			const cb = first + om.view.tLoc[t * 3 + ((e + 1) % 3)];
+			const va = m.cVert[ca];
+			const vb = m.cVert[cb];
+			const ka = keyOfVertex(va);
+			const kb = keyOfVertex(vb);
+			const ek = ka < kb ? ka + '|' + kb : kb + '|' + ka;
+			count.set(ek, (count.get(ek) ?? 0) + 1);
+			sides.push({ t, va, vb, ca, cb, f, ek });
 		}
 	}
-	return out;
+	return sides.filter((s) => count.get(s.ek) === 1);
 }
 
 /**

@@ -11,6 +11,7 @@ export {
 	idChannels,
 	isolateTriangles,
 	cloneOpMesh,
+	authoredFaces,
 	beginOp
 } from './opMesh.js';
 export {
@@ -25,3 +26,4 @@ export {
 } from './extrude.js';
 export { plainAttribute } from '../meshKernel/geometry.js';
 export { fromSoup, toSoup, opMeshFromGeometry } from './soup.js';
+export { insetFraction, bevelRegion, bevelVertices, bevelEdges } from './bevel.js';

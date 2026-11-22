@@ -4,7 +4,9 @@ import { describe, it, expect } from 'vitest';
 import { timelineSegments, planTimelineAudio, planMusicBed } from '../../src/lib/recording/exportAudioCore.js';
 import { timelineTime, rangeTime } from '../../src/lib/recording/frameClock.js';
 
+/** @param {any[]} items @param {boolean} [muted] */
 const audioTrack = (items, muted = false) => ({ kind: 'audio', muted, items });
+/** @param {number} t @param {number} dur @param {string} [sound] @param {number} [gain] */
 const clip = (t, dur, sound = 'h1', gain = 1) => ({ t, dur, sound, gain });
 
 describe('timelineSegments', () => {

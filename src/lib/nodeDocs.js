@@ -63,7 +63,7 @@ export const NODE_DOCS = {
 	hitpause: "Holds this device's picture for a few milliseconds on a trigger (a hit-stop). The game, the clock and physics keep running.",
 	gametime: "Seconds since the game (or the round) started, the same on every peer - a clock that pauses with the game.",
 	peervariable: "A value kept PER PLAYER (score, lives, team) - each peer reads its own row, or a named player's.",
-	charcontroller: "Sets how the player moves in Play - fly or walk, speed, jump and eye height, gravity - driving the player's own view rather than an object (the newest one in the scene wins).",
+	charcontroller: "Sets how the player moves in Play - fly or walk, speed, jump and eye height, gravity - driving the player's own view rather than an object (the newest one in the scene wins). Speed 0.1 = 6 m/s, the same at any frame rate.",
 	moveinput: "This player's WASD keys as two numbers, x (A/D) and y (W/S), each -1 to 1 - read on every device for its own player.",
 	possessnode: "Puts the player in control of the connected object when a pulse arrives - a vehicle, a turret, a ball. W/S (or the left stick) drive it, A/D turn it, Space (or gamepad A) jumps (Jump height; 0 = no jump), Esc hands it back.",
 	camerafollow: "On a pulse, the camera flies behind the target object and follows it until stop is pulsed - for an object something else moves (the sim, a clip).",

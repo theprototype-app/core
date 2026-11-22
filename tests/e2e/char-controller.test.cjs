@@ -110,28 +110,30 @@ const values = (page) =>
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 const distXZ = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 
-/** Hold a key for `ms` and report how far the rig travelled — and over how many FRAMES.
- * Fly moves a fixed step per frame (PointerLockControls translates by `speed` each tick),
- * so a wall-clock window measures the frame rate as much as the speed: on software GL the
- * same 1200 ms was 20 frames once and 10 the next (2.000 vs 1.000 units). `perFrame` (the
- * median step over the frames in which the rig actually moved, from an in-page rAF
- * sampler) is the number the speed comparisons below read. */
+/** Hold a key for `ms` and report how far the rig travelled — and how FAST. A wall-clock window
+ * measures the frame rate's start/stop latency as much as the speed, so `perFrame` (the median of
+ * each moving frame's distance over that frame's own time, from an in-page rAF sampler, expressed
+ * per 60 Hz frame — the unit the speeds are stored in) is the number the comparisons below read.
+ * 92-correct row 4: movement is per SECOND, so this is the authored speed at any frame rate. */
 async function travel(page, code, ms) {
 	await page.evaluate(() => {
 		let cam = null;
 		window.__tp.test.v1.playerCam.subscribe((c) => (cam = c))();
 		const V = window.__tp.test.v1.THREE.Vector3;
 		const w0 = cam ? cam.getWorldPosition(new V()) : null;
-		const s = (window.__travelSampler = { frames: 0, on: true, start: w0, last: w0, moved: 0, steps: [] });
-		const step = () => {
+		const s = (window.__travelSampler = { frames: 0, on: true, start: w0, last: w0, lastT: 0, moved: 0, steps: [] });
+		const step = (/** @type {number} */ now) => {
 			if (!s.on) return;
 			const w = cam ? cam.getWorldPosition(new V()) : null;
-			if (w && s.last && w.distanceToSquared(s.last) > 1e-10) {
+			if (w && s.last && w.distanceToSquared(s.last) > 1e-10 && s.lastT > 0 && now > s.lastT) {
 				s.frames++;
 				s.moved += w.distanceTo(s.last);
-				s.steps.push(w.distanceTo(s.last));
+				// 92-correct row 4: movement is per SECOND now, so a step is the distance over the frame's own time,
+				// expressed per 60 Hz frame (the unit the speeds are stored in): 0.1 at speed 0.1 at any frame rate
+				s.steps.push(w.distanceTo(s.last) / ((now - s.lastT) / 1000) / 60);
 			}
 			s.last = w;
+			s.lastT = now;
 			requestAnimationFrame(step);
 		};
 		requestAnimationFrame(step);
@@ -156,7 +158,7 @@ async function travel(page, code, ms) {
 	const median = sorted.length ? (sorted.length % 2 ? sorted[(sorted.length - 1) / 2] : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2) : 0;
 	return { before, after, moved, movedXZ: distXZ(before, after), frames, perFrame: median };
 }
-const perFrameText = (t) => `${t.perFrame.toFixed(4)}/frame (median) over ${t.frames}`;
+const perFrameText = (t) => `${t.perFrame.toFixed(4)} per 60 Hz frame (median) over ${t.frames}`;
 
 // ---- driving the graph ------------------------------------------------------
 // THE SCOPE RESET IS LOAD-BEARING (logic-nodes documents the cost): the editor's scope

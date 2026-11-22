@@ -41,9 +41,10 @@ import { playerInteractionGroups } from './collisionGroups'; // 36 X5: a leaf
 //
 // UNITS, which are deliberately not uniform. `speed` IS PointerLockControls' own
 // `moveSpeed`: per-FRAME translate units, the number the scroll wheel has always
-// adjusted, and the parity contract pins it there (0.1). Walk mode scales it by
-// dt * 60, so it covers the same distance at the nominal 60fps and stays stable when
-// frames are dropped. `jumpHeight`, `eyeHeight` and gravity are metres and seconds,
+// adjusted, and the parity contract pins it there (0.1). 92-correct row 4: it is
+// the distance of one 60 Hz frame, APPLIED PER SECOND in both modes (x 60 x real dt,
+// realStep.js): 0.1 = 6 m/s at any frame rate, so an old scene keeps its feel at 60 Hz
+// and a 120 Hz screen or a throttled tab covers the same ground. `jumpHeight`, `eyeHeight` and gravity are metres and seconds,
 // because they describe the WORLD rather than the input.
 //
 // `eyeHeight` is the eye's height above the ground in WORLD metres (1.7 = a person).

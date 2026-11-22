@@ -366,6 +366,7 @@ export const DEBUG_HOOKS = [
 	['playSettings', () => import('./playSettings')],
 	['colliderSpec', () => import('./colliderSpec')],
 	['colliderHelpers', () => import('./colliderHelpers')],
+	['jointHelpers', () => import('./jointHelpers')],
 	['colliderDecompose', () => import('./colliderDecompose')],
 	['colliderEdit', () => import('./colliderEdit')],
 	['editSession', () => import('./editSession')],
@@ -538,6 +539,9 @@ export const DEBUG_HOOKS = [
 	['scenePrivacy', () => import('./scenePrivacy')],
 	['touchControls', () => import('./touchControls')],
 	['touchActions', () => import('./touchActions')],
+	// 102b-play: wakeLock, infoPoints
+	['wakeLock', () => import('./wakeLock.js')],
+	['infoPoints', () => import('./infoPoints.js')],
 	['touchSpec', () => import('./touchSpec')],
 	['playMode', () => import('./playMode')],
 	// phone-polish: Android Back closes the top surface
@@ -679,6 +683,11 @@ export const DEBUG_HOOKS = [
 	['splatCore', () => import('./splat/splatCore.js')],
 	['splatEdit', () => import('./splat/splatEdit.js')],
 	['splatImport', () => import('./splat/splatImport.js')],
+	// 102b-arrange: arrays (runtime debug + actions), tidy, vertex snap
+	['arrayRuntime', () => import('./arrayRuntime.js')],
+	['arrayActions', () => import('./arrayActions.js')],
+	['tidyActions', () => import('./tidyActions.js')],
+	['layersRuntime', () => import('./layersRuntime.js')],
 	// 64-text: fonts (bundled + Library + Google), the solid build, the export licence walk
 	['textFonts', () => import('./textFonts.js')],
 	['text3dBuild', () => import('./text3dBuild.js')],

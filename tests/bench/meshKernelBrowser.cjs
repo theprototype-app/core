@@ -1,0 +1,47 @@
+// @ts-nocheck — bench runner (browser). Roadmap 99 K1 row 4, the Deck-browser half.
+// Loads the app from a dev server (APP_URL), then imports tests/bench/meshKernelBench.js and runs
+// the same bench node runs. Vite refuses to serve tests/ (outside its allow list), so the runner
+// serves the module itself through a route, with its imports rewritten to the URLs vite serves:
+// `$lib/...` -> `/src/lib/...`, `three` -> the app's own pre-bundled three (the instance faceEdit uses). Not an e2e suite (not in battery.json): a measurement.
+//   APP_URL=https://theprototype.app:7060/ e2e-slot --local --dev <tree> 7060 -- node tests/bench/meshKernelBrowser.cjs
+// BENCH_OUT=<file> writes the table; BENCH_TODAY_MAX caps the old path (default 100k: at 1M it
+// holds a Vector3 per corner in one tab).
+const fs = require('fs');
+const path = require('path');
+const { launch, setupPage } = require('../e2e/helpers.cjs');
+
+(async () => {
+	const browser = await launch({ args: ['--enable-precise-memory-info', '--js-flags=--expose-gc'] });
+	let rc = 0;
+	try {
+		const { page } = await setupPage(browser, 'bench');
+		const adapter = await page.evaluate(() => fetch('/src/lib/meshKernel/three.js').then((r) => r.text()));
+		const threeUrl = adapter.match(/from "(\/node_modules\/\.vite\/deps\/three\.js[^"]*)"/)?.[1];
+		if (!threeUrl) throw new Error('could not find the app\'s three URL in the vite-served adapter');
+		const source = fs
+			.readFileSync(path.join(__dirname, 'meshKernelBench.js'), 'utf8')
+			.replace(/from 'three'/g, `from '${threeUrl}'`)
+			.replace(/from '\$lib\//g, "from '/src/lib/");
+		await page.route('**/tests/bench/meshKernelBench.js', (route) => route.fulfill({ status: 200, contentType: 'text/javascript', body: source }));
+		page.on('console', (msg) => msg.text().startsWith('[bench]') && console.log(msg.text()));
+		const todayMax = process.env.BENCH_TODAY_MAX || '100k';
+		const sizes = process.env.BENCH_SIZES ? process.env.BENCH_SIZES.split(',') : undefined;
+		const { rows, table, ua } = await page.evaluate(
+			async ({ todayMax, sizes }) => {
+				const m = await import('/tests/bench/meshKernelBench.js');
+				const rows = await m.runBench({ todayMax, sizes, log: (s) => console.log('[bench] ' + s) });
+				const ua = navigator.userAgent.match(/(HeadlessChrome|Chrome)\/[\d.]+/)?.[0] ?? navigator.userAgent;
+				return { rows, ua, table: m.benchTable(rows, `browser ${ua}, gc ${typeof globalThis.gc === 'function' ? 'exposed' : 'off'}`) };
+			},
+			{ todayMax, sizes }
+		);
+		console.log(table);
+		if (process.env.BENCH_OUT) fs.writeFileSync(process.env.BENCH_OUT, JSON.stringify({ ua, rows }, null, 2) + '\n\n' + table + '\n');
+	} catch (error) {
+		console.error('bench failed:', error);
+		rc = 1;
+	} finally {
+		await browser.close();
+	}
+	process.exit(rc);
+})();

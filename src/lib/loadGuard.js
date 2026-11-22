@@ -1,6 +1,8 @@
 // The reporting half of loadGuardCore.js: every place that rebuilds an object or a material set
 // from JSON it did not just make itself goes through here, so the check, the count and the one
 // toast are the same everywhere. See loadGuardCore.js for the rules.
+// 102b: importing it teaches ObjectLoader to read a Box's corner radius
+import { healRoundedBoxes } from './roundedBoxGate.js';
 import * as THREE from 'three';
 import { guardChanged, isEmbeddedUrl, isLocalImageUrl, stlWithinLimits } from './loadGuardCore.js';
 // 101 F2: the full object / material schema runs here, on top of loadGuardCore's rules
@@ -163,6 +165,8 @@ export function parseCheckedObject(json, from, what) {
 	object.traverse((/** @type {any} */ node) => {
 		for (const m of Array.isArray(node.material) ? node.material : node.material ? [node.material] : []) seeThroughFromOpacity(m);
 	});
+	// 102b: a rounded box an older build wrote back square (its radius kept in userData) is rounded again
+	healRoundedBoxes(object);
 	return object;
 }
 

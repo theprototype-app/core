@@ -972,7 +972,7 @@ async function describeShaderNodesTool(args) {
 	return {
 		nodes: rows,
 		format: 'one line per node: id = type {param: value}; one per edge: source[.output] -> target.input. End at a "' + cat.outputNodeFor(domain) + '" node.',
-		uniforms: 'a param marked uniform compiles to u_<nodeId>_<param>; a float one can be driven by a flow "setuniform" node (data.uniform = that name) on the same object.'
+		uniforms: 'a param marked uniform compiles to u_<nodeId>_<param>; a flow "setuniform" node (data.uniform = that name) on the same object drives it: data.value for a float, data.color ("#rrggbb") or data.vector ([x, y, z]) for a vec3/vec2/vec4.'
 	};
 }
 
@@ -1474,7 +1474,7 @@ export const LOOK_AI_TOOLS = [
 		function: {
 			name: 'create_shader',
 			description:
-				'Give objects a node shader, written as text like flow graphs: one line per node (id = type {param: value}), one per edge (source[.output] -> target.input), ending at a "surface" node. Example: c = color {value: "#ff8800"}\\nout = surface\\nc -> out.emissive. Call describe_shader_nodes for the types. Each object gets its own copy. Compiler errors come back in the result and nothing is written. Returns the graph key and its uniforms: a float one (u_<nodeId>_<param>) can be driven by a flow "setuniform" node on that object. scene: true makes the default for every object, which asks the host first.',
+				'Give objects a node shader, written as text like flow graphs: one line per node (id = type {param: value}), one per edge (source[.output] -> target.input), ending at a "surface" node. Example: c = color {value: "#ff8800"}\\nout = surface\\nc -> out.emissive. Call describe_shader_nodes for the types. Each object gets its own copy. Compiler errors come back in the result and nothing is written. Returns the graph key and its uniforms (u_<nodeId>_<param>): a flow "setuniform" node on that object drives a float, colour or vector one. scene: true makes the default for every object, which asks the host first.',
 			parameters: {
 				type: 'object',
 				properties: {

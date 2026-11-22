@@ -617,8 +617,35 @@ export default {
 		};
 
 		let wasActive = false;
+		// 102b-hud (row 4): the RAW values, published for the core Game Value node (the scene writes
+		// the words around them). escapeinfo stays registered for scenes saved before the official
+		// scene moved to Game Value.
+		let publishedAt = -1;
+		/** @param {number} time */
+		const publish = (time) => {
+			const out = api.values;
+			if (!out?.set || (time - publishedAt < 0.1 && time >= publishedAt) || !active()) return;
+			publishedAt = time;
+			const f = flags();
+			const pl = placed();
+			const items = [];
+			if (f & F.key) items.push('Key');
+			if (f & F.crank && !(f & F.fitted)) items.push('Crank');
+			if (f & F.note) items.push('Note');
+			if (f & F.sun && !(pl & P.sun)) items.push('Sun gem');
+			if (f & F.moon && !(pl & P.moon)) items.push('Moon gem');
+			if (f & F.star && !(pl & P.star)) items.push('Star gem');
+			out.set('room', ROOMS[curRoom].name);
+			out.set('inventory', items.join(' · '));
+			out.set('gems', [F.sun, F.moon, F.star].filter((b) => f & b).length, { max: 3 });
+			out.set('goal', info({ read: 'goal' }));
+			out.set('escapeTime', lastTime);
+			out.set('best', best());
+		};
+
 		api.registerFrameTask((/** @type {number} */ time) => {
 			if (!gs || !stores) return;
+			publish(time);
 			const on = active();
 			if (on !== wasActive) {
 				wasActive = on;

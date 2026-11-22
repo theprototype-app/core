@@ -189,7 +189,7 @@ export default {
 			// says which end of the joint each one is
 			inputLabels: { a: 'a — anchor', b: 'b — attached' },
 			params: [
-				{ key: 'kind', kind: 'select', options: ['revolute', 'weld'] },
+				{ key: 'kind', kind: 'select', options: ['revolute', 'weld', 'ball', 'slider', 'spring', 'rope'] }, // 102b
 				{ key: 'axis', kind: 'select', options: ['x', 'y', 'z'] },
 				{ key: 'vel', kind: 'range', min: -20, max: 20, step: 0.1 },
 				{ key: 'maxForce', kind: 'range', min: 0, max: 500, step: 5 }

@@ -157,22 +157,47 @@ export function planSky(args, now) {
 				if (!c) return { error: 'fog.color: a colour' };
 				fog.color = c;
 			}
+			// 102b-papercuts: a density is REAL exponential fog now (kind distance), or the ground layer (kind height);
+			// near / far are still written, as the linear fog an older build falls back to
+			if (f.kind !== undefined && !['linear', 'distance', 'height'].includes(f.kind)) return { error: 'fog.kind: linear (near / far), distance (density) or height (density, base, thickness)' };
 			if (f.density !== undefined) {
 				if (!finite(f.density) || f.density <= 0) return { error: 'fog.density: a number above 0 (0.01 thin, 0.1 thick)' };
+				fog.density = r3(clamp(f.density, 0.0005, 1)) || 0.001;
 				fog.near = 0;
 				fog.far = r3(clamp(DENSITY_FAR / f.density, 1, 20000));
 				fog.fit = false;
-				warnings.push('density ' + f.density + ' became linear fog from 0 to ' + fog.far + ' m (the scene renders linear fog)');
+				if (f.kind === undefined && fog.kind !== 'height') fog.kind = 'distance';
+			}
+			if (f.kind !== undefined) {
+				fog.kind = f.kind;
+				if (f.kind !== 'linear' && !(fog.density > 0)) fog.density = 0.02;
+			}
+			for (const k of ['base', 'thickness']) {
+				if (f[k] === undefined) continue;
+				if (!finite(f[k]) || (k === 'thickness' && f[k] <= 0)) return { error: 'fog.' + k + (k === 'base' ? ' is the ground height in metres' : ' is metres above 0') };
+				fog[k] = r3(clamp(f[k], k === 'base' ? -10000 : 0.1, 10000));
+				if (f.kind === undefined) fog.kind = 'height';
+			}
+			if (fog.kind === 'height') {
+				if (!finite(fog.base)) fog.base = 0;
+				if (!(fog.thickness > 0)) fog.thickness = 6;
 			}
 			for (const k of ['near', 'far']) {
 				if (f[k] === undefined) continue;
+				if (f.kind === undefined && f.density === undefined) fog.kind = 'linear';
 				if (!finite(f[k]) || f[k] < 0) return { error: 'fog.' + k + ' is metres (0 or more)' };
 				fog[k] = r3(clamp(f[k], 0, 20000));
 				fog.fit = false;
 			}
 			if (fog.far <= fog.near) return { error: 'fog: far must be beyond near' };
 			payload.fog = fog;
-			words.push('fog ' + fog.color + ' ' + fog.near + '-' + fog.far + ' m');
+			words.push(
+				fog.kind === 'height'
+					? 'ground fog ' + fog.color + ' density ' + fog.density + ', ' + fog.thickness + ' m thick from ' + fog.base + ' m'
+					: fog.kind === 'distance'
+						? 'fog ' + fog.color + ' density ' + fog.density
+						: 'fog ' + fog.color + ' ' + fog.near + '-' + fog.far + ' m'
+			);
 		}
 		custom = true;
 	}

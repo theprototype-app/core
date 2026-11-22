@@ -1,4 +1,5 @@
 import { parseCheckedObject } from './loadGuard.js';
+import { inflateSharedGeometries } from './sharedGeometry.js';
 import * as THREE from 'three';
 import { renderOffscreen } from './render/offscreen.js';
 import './threeFixes.js'; // 36-fb-water F14: transmissive materials survive a JSON trip (the export runtime loads scenes here too)
@@ -671,13 +672,17 @@ export const SESSION_FORMAT = 1;
 // 2.0-n3c: 3 = custom node definitions are saved (`nodeDefs`), a graph node may carry `v` (its
 // definition's version; absent = 1) and a Script node `data.convertedFrom` (Convert to code). An older
 // reader ignores all three: the scene opens, its custom nodes without definitions (as before).
-export const SESSION_FORMAT_MINOR = 3;
+// 102b-papercuts: 4 = a Box geometry may carry `radius` / `radiusSegments` (a rounded box; an older reader
+// draws the plain box of the same size) and a file may carry `sharedGeometries` (repeated meshes saved once,
+// see sharedGeometry.js; an older reader draws each repeat as a plain box of its size).
+export const SESSION_FORMAT_MINOR = 4;
 
 /** Parse + shape-validate a session JSON string. @param {string} json */
 function parseSessionJson(json) {
 	const payload = JSON.parse(json);
 	if (!payload || !Array.isArray(payload.objects)) throw new Error('not a session file');
-	return payload;
+	// 102b: a file's repeated meshes come back where they were used before anything reads the objects
+	return inflateSharedGeometries(payload);
 }
 
 /** V4: true when the payload's format is loadable; a NEWER format asks first.
@@ -1019,7 +1024,9 @@ export async function exportSessionZip(payload, opts = { assets: true, packs: fa
 		}
 		wire = { ...payload, library: { folders: payload.library.folders ?? [], items: libIndex } };
 	}
-	files['session.json'] = strToU8(JSON.stringify(wire));
+	// 102b: equal shapes are written once (sharedGeometry.js); the live payload is not changed
+	const { shareGeometries } = await import('./sharedGeometryWrite.js');
+	files['session.json'] = strToU8(JSON.stringify(shareGeometries(wire)));
 	Object.assign(files, presetFiles);
 	/** @type {Array<{hash: string, name: string, kind: string, file: string}>} */
 	const index = [];

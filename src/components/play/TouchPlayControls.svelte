@@ -38,6 +38,7 @@
 	import { inputClaims } from '$lib/inputRuntime';
 	import { exitPlay } from '$lib/playMode';
 	import { gameId } from '$lib/gameSettings';
+	import { scenePlay } from '$lib/scenePhysics'; // 102b-play: the author's layout ships in the scene
 	import {
 		TOUCH_STICK_RADIUS,
 		TOUCH_TAP_SLOP,
@@ -110,7 +111,7 @@
 	const buttonsShown = $derived(
 		wanted && !editing && !$isVRMode && spec.actions.length > 0 && (playing ? !$playPointerFree : $touchPrefs.showInEdit)
 	);
-	const layout = $derived(effectiveTouchLayout(spec, savedLayoutFor($touchLayouts, $gameId), viewW, viewH));
+	const layout = $derived(effectiveTouchLayout(spec, savedLayoutFor($touchLayouts, $gameId), viewW, viewH, $scenePlay.touch ?? null));
 	const stickItem = $derived(layout.items.stick);
 	const stickRadius = $derived((stickItem?.size ?? TOUCH_STICK_RADIUS * 2) / 2);
 

@@ -17,7 +17,7 @@ import {
 	shellMenu,
 	markShellGame
 } from '../gameShell';
-import { roundCutoff, roundUnderway, gameVar, setGameVar, gameState } from '../gameState';
+import { roundCutoff, roundUnderway, gameVar, setGameVar, gameState, setGameState, GAME_STATES } from '../gameState';
 import { get } from 'svelte/store';
 import { flowRuntimeRef } from './refs.js';
 
@@ -57,6 +57,20 @@ export function sdkGame(ctx) {
 			 * @param {string} name @param {number} value */
 			setVar(name, value) {
 				setGameVar(name, value);
+			},
+			/**
+			 * 102b-hud (DEVX #19): MOVE THE GAME SHELL — 'menu' | 'playing' | 'paused' | 'over', with an
+			 * optional outcome ('won', a reason). The replicated latest-wins singleton Set Game State
+			 * writes; already in that state = nothing happens, so several peers making the same call
+			 * is harmless. Returns false for an unknown state.
+			 * @param {string} state @param {string=} outcome @returns {boolean}
+			 */
+			setState(state, outcome) {
+				if (!GAME_STATES.includes(state)) return false;
+				const held = get(gameState);
+				if (held.state === state && (outcome === undefined || held.outcome === String(outcome))) return true;
+				setGameState(state, outcome === undefined ? {} : { outcome: String(outcome).slice(0, 80) });
+				return true;
 			},
 			/** R29 S2: `fn()` runs after the game singleton changes (state, round, a
 			 * variable) — COALESCED, at most once per frame however many writes land, never per
@@ -151,6 +165,7 @@ sdkGame.surface = {
 	'game.playActive': 'read',
 	'game.getVar': 'read',
 	'game.setVar': 'content',
+	'game.setState': 'content',
 	'game.onChange': 'registers',
 	'game.levels': 'registers',
 	'game.addSetting': 'registers',

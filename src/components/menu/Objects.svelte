@@ -28,6 +28,14 @@
     // THREE children/userData aren't reactive — re-derive on each objectsGroup poke
     const kids = $derived.by(() => { void $objectsGroup; return (element?.children ?? []).filter((/** @type {any} */ c) => !c.userData?.archPart); }); // 37 R3: a door's leaf is not a row
     const isLocal = $derived.by(() => { void $objectsGroup; return !!element?.userData?.__localOnly; });
+    // 102b-arrange: the layer this row is on (a colour dot; absent = no layer, the row is unchanged)
+    const layerRow = $derived.by(() => {
+        void $objectsGroup;
+        const id = element?.userData?.layer;
+        if (!id) return null;
+        const list = $scenePhysicsState_?.layers;
+        return (Array.isArray(list) && list.find((/** @type {any} */ l) => l?.id === id)) || null;
+    });
     // groups on the path to a match auto-expand while filtering
     $effect(() => {
         if ($objectFilter && kids.length > 0 && $objectFilter.has(element.uuid))
@@ -37,6 +45,7 @@
     import { withExpanded } from '$lib/objectListNav';
     import { objectsGroup, TControls, selectedObject, selectedObjects, lockedObjects } from '../../stores/sceneStore';
     import { sceneCommand } from '$lib/commandsHandler.svelte';
+    import { scenePhysicsState_ } from '$lib/scenePhysics';
     import { selectObject, renameObject, toggleObjectVisibility, dragUuidsFor, moveObjectsToParent } from '$lib/objectActions';
     import { nameOf, peerColor } from '$lib/lockControl';
     import { myLocks, heldByMe } from '$lib/lockHeld'; // 80a K6: the "Held by me" chip
@@ -336,6 +345,9 @@
                 >
                     {element.name}
                 </p>
+            {/if}
+            {#if layerRow}
+                <span class="layer-dot h-2 w-2 shrink-0 rounded-full" style={'background:' + layerRow.color} title={'Layer: ' + layerRow.name + (layerRow.locked ? ' (locked)' : '')} aria-label={'Layer ' + layerRow.name}></span>
             {/if}
 
             <!-- quick actions: appear on hover; lock badge when held by a peer -->

@@ -24,6 +24,12 @@
 
 <NodeWrapper type={data.type} label={data.label}>
 	<Socket kind="target" nodeType={data.type} position={Position.Left} id={handleId} style="top: 30px" />
+	{#if data.type === 'setuniform'}
+		<!-- 102b-papercuts: a colour or a vector reaches a vec3/vec2/vec4 uniform; the number
+		     still drives a float one (and fills every component of a vector one) -->
+		<Socket kind="target" nodeType={data.type} position={Position.Left} id="color" style="top: 88px" />
+		<Socket kind="target" nodeType={data.type} position={Position.Left} id="vector" style="top: 108px" />
+	{/if}
 	<Socket kind="source" nodeType={data.type} position={Position.Right} />
 	<div class="flex w-full flex-col gap-1">
 		{#if data.type === 'lookat'}
@@ -44,6 +50,8 @@
 			<p class="text-[9px] leading-tight text-text-faint">
 				the name shown beside that param in the Shader editor
 			</p>
+			<span class="text-[9px] text-text-muted" title="Wire a colour here to drive a colour uniform">color</span>
+			<span class="text-[9px] text-text-muted" title="Wire a Vector3 here to drive a vector uniform">vector</span>
 		{:else if data.type === 'constraintweight' || data.type === 'constrainttarget'}
 			<!-- 102 M7: which of the object's constraints: its number in the Inspector's stack (or its id) -->
 			<label class="flex items-center gap-2 text-[10px] text-text-muted" title="Which constraint: 1 = the first in the object's Constraints stack">

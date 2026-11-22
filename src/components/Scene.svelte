@@ -56,6 +56,7 @@
 	import { tickTextPathsLazy } from '$lib/textPathTick.js'; // 64 D2: text on a path
 	import { tickDecalsLazy } from '$lib/decalTick.js'; // 102 M3: decals
 	import { tickSplatsLazy } from '$lib/splat/splatTick.js'; // 102: Gaussian splats (Spark loads with the first one)
+	import { tickArraysLazy } from '$lib/arrayTick.js'; // 102b-arrange: array copies (lazy runtime)
 	import { startPackBehaviors, tickPackBehaviors } from '$lib/packBehavior';
 	import { startArchParts } from '$lib/arch/archParts.js';
 	import { tickAnimationPreview, captureAutoKey, playheadOf } from '$lib/animationPreview';
@@ -95,6 +96,7 @@
 	import { startLightHelpers, updateLightHelpers, lightProxiesGroup } from '$lib/lightHelpers';
 	import { HELPER_LAYER } from '$lib/helperLayer';
 	import { startColliderHelpers, updateColliderHelpers } from '$lib/colliderHelpers';
+	import { updateJointHelpers } from '$lib/jointHelpers'; // 102b joint gizmos
 	import { startCameraHelpers, updateCameraHelpers } from '$lib/cameraHelpers';
 	import { updateOnionSkin } from '$lib/onionSkin';
 	import { startCables, updateCables } from '$lib/audioPatch';
@@ -463,6 +465,7 @@
 		tickPackBehaviors(); // 33 P2: doors/lids/levers pose from their shared state (rest in Edit)
 		tickSim($objectsGroup, camera.current, renderer, performance.now()); // 36-sim (after mixers: jiggle rides the posed bones)
 		tickTextPathsLazy($objectsGroup, performance.now()); // 64 D2: letters follow their carriers (and linked paths)
+		tickArraysLazy($objectsGroup, performance.now()); // 102b-arrange: every peer draws its arrays' copies
 		tickAnimationPreview(); // Animation window: local transform preview (not synced)
 		tickSequences(); // 48 S2: shots / clips / audio / events of running sequences
 		// 102 M7: constraints + IK, after every animation runtime above (mixers, clips, the sequencer's
@@ -478,6 +481,7 @@
 		updateLightHelpers();
 		updateColliderHelpers(); // CL-A A7: collider proxies follow their objects
 		updateConstraintHelpers(scene, $objectsGroup, $selectedObjects ?? []); // 102 M7
+		updateJointHelpers(); // 102b: joint anchors, axes and limits
 		updateSnapAnchor(); // 19-B P3: the picked snap-anchor marker follows its object
 		updateCameraHelpers(); // 16-P5: camera-object frustums follow their markers
 		updateCables(); // 23-A4: patch cables follow their plugs; the routing diff runs here too
@@ -1124,7 +1128,11 @@
 			const area = $marqueeRect;
 			const picked = [];
 			const center = new THREE.Vector3();
+			// 102b-arrange: a box skips objects on a LOCKED layer and on a layer hidden here
+			const locked: Set<string> | undefined = (editorPass() as any).lockedLayers;
 			for (const object of $objectsGroup?.children ?? []) {
+				const layer = object.userData?.layer;
+				if (layer && (locked?.has(layer) || object.visible === false)) continue;
 				const box = new THREE.Box3().setFromObject(object);
 				if (!isFinite(box.min.x)) continue;
 				box.getCenter(center).project(camera.current);

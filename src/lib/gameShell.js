@@ -27,7 +27,7 @@
 // can all import this without closing a cycle into history.
 import { writable, get } from 'svelte/store';
 import { globalScene, isLocked, editorMode } from '../stores/sceneStore';
-import { hudDocs, isGameHud, hudScreenOverride } from './hudDocs';
+import { hudDocs, isGameHud, hudScreenOverride, hudElementShown } from './hudDocs';
 import { resolvePlaySettings, playPublishers } from './playSettings';
 import { CORE_SETTINGS, gameSettingRows, gameSettingValues, setGameSetting, settingRow, currentGameId } from './gameSettings';
 // 33 (L4): a registration belongs to its owner module, and counts only while that module
@@ -290,6 +290,7 @@ export function restartGame() {
 		}
 	}
 	hudScreenOverride.set({});
+	hudElementShown.clear();
 	seams.respawn?.();
 	debug.restarts++;
 	closeShellMenu();

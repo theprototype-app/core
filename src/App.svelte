@@ -230,6 +230,10 @@ import { startMusicToolbox } from './lib/musicToolbox'
   // node graph animations keep running even when the flow drawer is closed
   onMount(() => {
     startFlowCodeRedirect() // showhide-v8 §4: the old Flow code tab opens Code's flow code tab
+    // 102b-play: the screen stays awake while playing, filming, recording or watching a hand-off,
+    // and a colour dropper sits beside colour fields — both only where the browser has the API
+    if (typeof navigator !== 'undefined' && 'wakeLock' in navigator) void import('$lib/wakeLockWiring.js').then((m) => m.startAppWakeLock({ filming: true }))
+    if (typeof window !== 'undefined' && 'EyeDropper' in window) void import('$lib/ui/eyeDropper.js').then((m) => m.startEyeDropper())
     // showhide-v8 §6: Windows ▸ Remember layout per scene (both modules lazily: neither belongs on the boot path)
     void Promise.all([import('$lib/uiLayouts'), import('$lib/levels')]).then(([u, l]) => u.startSceneLayouts(l.currentLevel))
     // 27-B: FIRST, so a failure during the rest of this boot is already recorded.

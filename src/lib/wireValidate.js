@@ -374,8 +374,9 @@ export const VALIDATORS = {
 		typeof d.name === 'string' &&
 		d.name.length > 0 &&
 		d.name.length <= 200 &&
-		(d.op === 'set' || d.op === 'add' || d.op === 'subtract') &&
-		Number.isFinite(d.value),
+		(d.op === 'set' || d.op === 'add' || d.op === 'subtract' || d.op === 'toggle' || d.op === 'text') &&
+		// 102b-hud: a `text` op carries words (a variable that holds a name, a code), capped
+		(d.op === 'text' ? typeof d.value === 'string' && d.value.length <= 200 : Number.isFinite(d.value)),
 	kitreq: (d) =>
 		typeof d.rid === 'string' &&
 		d.rid.length > 0 &&
@@ -549,6 +550,11 @@ export const VALIDATORS = {
 			if (v === null) return isUuid(d.uuid);
 			return isUuid(d.uuid) && !!v && typeof v === 'object' && !isArray(v) && (v.hash === undefined || (typeof v.hash === 'string' && /^[0-9a-f]{0,128}$/i.test(v.hash)));
 		}
+		// 102b-arrange: an object's layer id (from the scene's layer table) or null
+		if (d.parameter === 'layer') return isUuid(d.uuid) && (d.layer === null || (typeof d.layer === 'string' && d.layer.length <= 64));
+		// 102b-arrange: an array record is a small plain object or null (normalizeArray cleans it on read)
+		if (d.parameter === 'array')
+			return isUuid(d.uuid) && (d.array === null || (!!d.array && typeof d.array === 'object' && !isArray(d.array) && JSON.stringify(d.array).length <= 2000));
 		if (d.parameter === 'water' || d.parameter === 'bubbles' || d.parameter === 'pour') {
 			const v = d[d.parameter];
 			return isUuid(d.uuid) && (v === null || (!!v && typeof v === 'object' && !isArray(v)));

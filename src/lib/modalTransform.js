@@ -294,7 +294,7 @@ function onKey(ctx, e) {
 	if (!down) return false;
 	if (e.key === 'Enter' || e.key === 'Escape') return false; // the engine's
 	const combo = comboOf(e);
-	// an axis lock (rebindable; the Blender preset binds X / Y / Z)
+	// an axis lock (rebindable; X / Y / Z by default in every preset)
 	for (const axis of AXES) {
 		const bound = bindingOf('transform.lock-' + axis);
 		if (bound && combo === bound) {

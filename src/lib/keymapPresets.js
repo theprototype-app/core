@@ -37,9 +37,7 @@ export function presetKeys(preset) {
 			'transform.now-scale': freeS ? 'S' : 'Alt+S',
 			// Alt+S was the Shader editor's; it moves to Alt+Shift+S (only while Alt+S resizes)
 			...(freeS ? {} : { 'panels.shader-editor': 'Alt+Shift+S' }),
-			'transform.lock-x': 'X',
-			'transform.lock-y': 'Y',
-			'transform.lock-z': 'Z',
+			// X / Y / Z lock an axis in every preset (the registry's own default)
 			// the UV editor (WASD never flies there, so bare S is free): G takes uv.grab's G, which
 			// stays on 1 (arm Move); the tool keys follow Blender's W (select), B (box), C (circle)
 			'uv.now-move': 'G',

@@ -248,10 +248,12 @@ export const shortcuts = [
 		action: () => void import('./modalTransform').then((m) => m.startModalTransform(/** @type {'translate'|'rotate'|'scale'} */ (mode)))
 	})),
 	// the lock keys are read by the running gesture itself (capture phase), so they are `external`
-	// rows in their own scope: they never collide with Z (view mode) or anything else outside one
+	// rows in their own scope: they never collide with Z (view mode) or anything else outside one.
+	// X / Y / Z by default in EVERY preset (owner, 22 Nov follow-up): they act only while a gesture
+	// runs, so binding just "Move now" gives axis locks at once and nobody else sees a change
 	...['X', 'Y', 'Z'].map((axis) => ({
 		id: 'transform.lock-' + axis.toLowerCase(),
-		keys: '',
+		keys: axis,
 		group: 'Transform',
 		scope: 'modal',
 		external: true,

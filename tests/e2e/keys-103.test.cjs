@@ -2,7 +2,8 @@
 // Fly direction, and the object list taking the keyboard. Two peers for the modal move.
 //   1  presets: ThePrototype = today's keys; Blender / Unity bindings; no new collisions; a user's
 //      own rebind wins and makes a colliding preset key stand down
-//   2  nothing changes with no setting touched: G still picks Move, no gesture starts
+//   2  nothing changes with no setting touched: G still picks Move, no gesture starts; with only
+//      Move now bound (default preset) X / Y / Z lock at once; the ? sheet lists them only then
 //   3  Blender preset: G X 2 Enter, typed; G + pointer + X lock; Esc and right-click cancel; one
 //      undo step; R Z 90; Alt+S 2; Alt+S X 2; the on-screen line
 //   4  a second peer sees the committed pose (the gizmo's `move`)
@@ -77,7 +78,7 @@ h.run(async () => {
 		};
 		const out = { base: {}, blender: {}, blenderRmb: {}, unity: {}, unityRmb: {} };
 		out.premise = { preset: r.shortcuts && localStorage.getItem('keymapPreset'), fly: localStorage.getItem('flyWithWasd') };
-		const ids = ['transform.move', 'transform.grab', 'transform.now-move', 'transform.now-rotate', 'transform.now-scale', 'transform.lock-x', 'panels.shader-editor', 'uv.now-scale', 'uv.grab', 'movement.fly-direction'];
+		const ids = ['transform.move', 'transform.grab', 'transform.now-move', 'transform.now-rotate', 'transform.now-scale', 'transform.lock-x', 'transform.lock-y', 'transform.lock-z', 'panels.shader-editor', 'uv.now-scale', 'uv.grab', 'movement.fly-direction'];
 		const snap = (bucket) => {
 			for (const id of ids) bucket[id] = key(id);
 			bucket.collisions = collisions();
@@ -103,7 +104,9 @@ h.run(async () => {
 		return out;
 	});
 	const b = presets.base;
-	h.check(b['transform.move'] === '1' && b['transform.grab'] === 'G' && b['transform.now-move'] === '' && b['transform.lock-x'] === '' && b['movement.fly-direction'] === '', `1.1 ThePrototype = today's keys: 1 / G, the new rows unbound (${JSON.stringify(b)})`);
+	h.check(b['transform.move'] === '1' && b['transform.grab'] === 'G' && b['transform.now-move'] === '' && b['movement.fly-direction'] === '', `1.1 ThePrototype = today's keys: 1 / G, the new rows unbound (${JSON.stringify(b)})`);
+	const locks = ['base', 'blender', 'blenderRmb', 'unity', 'unityRmb'].map((k) => ['x', 'y', 'z'].map((a) => presets[k]['transform.lock-' + a]).join(''));
+	h.check(locks.every((l) => l === 'XYZ'), `1.1b the X / Y / Z locks are X / Y / Z in every preset (${JSON.stringify(locks)})`);
 	const bl = presets.blender;
 	h.check(bl['transform.now-move'] === 'G' && bl['transform.grab'] === '' && bl['transform.now-rotate'] === 'R' && bl['transform.now-scale'] === 'Alt+S' && bl['panels.shader-editor'] === 'Alt+Shift+S' && bl['transform.lock-x'] === 'X' && bl['transform.move'] === '1', `1.2 Blender: G / R / Alt+S, X lock, shader editor -> Alt+Shift+S, 1 stays (${JSON.stringify(bl)})`);
 	h.check(presets.blenderRmb['transform.now-scale'] === 'S' && presets.blenderRmb['panels.shader-editor'] === 'Alt+S' && bl['uv.now-scale'] === 'S' && bl['uv.grab'] === '', `1.3 Blender + right-button fly: bare S resizes, Alt+S is the shader editor again; UV S (${presets.blenderRmb['transform.now-scale']})`);
@@ -146,6 +149,41 @@ h.run(async () => {
 	const p2 = await pose(page, boxId);
 	const mode2 = await page.evaluate(() => new Promise((r) => window.__tp.test.v1.transformMode.subscribe(r)()));
 	h.check(JSON.stringify(p2) === JSON.stringify(start) && !(await lineState(page)) && mode2 === 'translate', `2.1 default keys: G picks Move and starts nothing (${mode2}, moved: ${JSON.stringify(p2) !== JSON.stringify(start)})`);
+
+	// 2.2-2.5 the default preset with ONLY "Move now" bound: the X / Y / Z locks work at once, and the
+	// `?` sheet lists them only from then on (the default sheet is unchanged)
+	const sheetLocks = async () => {
+		await page.evaluate(() => window.__tp.test.v1.shortcutsRegistry.cheatSheetOpen.set(true));
+		await page.waitForSelector('#shortcut-sheet', { timeout: 5000 });
+		const n = await page.evaluate(() => document.querySelectorAll('#shortcut-sheet [data-shortcut-id^="transform.lock-"]').length);
+		await page.evaluate(() => window.__tp.test.v1.shortcutsRegistry.cheatSheetOpen.set(false));
+		await page.waitForTimeout(200);
+		return n;
+	};
+	const sheetBefore = await sheetLocks();
+	h.check(sheetBefore === 0, `2.2 default keys: the ? sheet lists no lock rows (${sheetBefore})`);
+	const bind = await page.evaluate(() => {
+		const r = window.__tp.test.v1.shortcutsRegistry;
+		const clash = r.conflictOf('Alt+G', 'transform.now-move', 'viewport');
+		r.setOverride('transform.now-move', 'Alt+G');
+		return { clash: clash.shortcut?.id ?? (clash.meshEdit ? 'mesh-edit' : null), key: r.bindingOf('transform.now-move'), preset: localStorage.getItem('keymapPreset') };
+	});
+	h.check(bind.key === 'Alt+G' && !bind.clash && bind.preset === null, `2.3 premise: ThePrototype preset, only Move now bound, to a free key (${JSON.stringify(bind)})`);
+	await selectBox('2.4');
+	await page.mouse.move(c.x, c.y);
+	await startNow(page, 'Alt+KeyG');
+	await page.keyboard.press('KeyX');
+	await page.keyboard.press('Digit2');
+	const l24 = await lineState(page);
+	await page.keyboard.press('Enter');
+	await page.waitForTimeout(300);
+	const p24 = await pose(page, boxId);
+	h.check(l24?.locks === 'x' && near(p24.pos[0], start.pos[0] + 2) && near(p24.pos[1], start.pos[1]) && near(p24.pos[2], start.pos[2]), `2.4 default preset: Move now, X, 2, Enter moves exactly 2 m along X (${JSON.stringify(l24)}, ${p24.pos.map((n) => n.toFixed(3))})`);
+	await page.evaluate(() => window.__tp.test.v1.history.undo());
+	await page.waitForTimeout(300);
+	const sheetAfter = await sheetLocks();
+	h.check(sheetAfter === 3, `2.5 with Move now bound the ? sheet lists the three locks (${sheetAfter})`);
+	await page.evaluate(() => window.__tp.test.v1.shortcutsRegistry.resetShortcut('transform.now-move'));
 
 	// ---- 3. Blender preset, the gesture -------------------------------------------------------
 	await page.evaluate(() => window.__tp.test.v1.shortcutsRegistry.setKeymapPreset('blender'));

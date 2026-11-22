@@ -13,22 +13,8 @@
 // Pure (no three.js, no stores): node tests, a Worker and the page run the same code.
 
 import { appendToView, newGroup, isolateTriangles } from './opMesh.js';
-import {
-	sub,
-	add,
-	scale,
-	dot,
-	cross,
-	lengthSq,
-	triNormal,
-	pos,
-	triVerts,
-	triUv,
-	pairKey,
-	removeTriangles,
-	keyOfPos,
-	boundaryLoopOf
-} from './bridgeFill.js';
+import { sub, add, scale, dot, cross, triNormal, pos, keyOfPos } from './rebuild.js';
+import { lengthSq, triVerts, triUv, pairKey, removeTriangles, boundaryLoopOf } from './bridgeFill.js';
 
 /** @typedef {import('./opMesh.js').OpMesh} OpMesh @typedef {[number, number, number]} Vec */
 

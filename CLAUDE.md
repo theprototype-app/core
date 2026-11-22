@@ -1764,8 +1764,9 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   part (uuid, entry, edited, kernel, ID selection) opens and closes in `editSession.js` on the 15-F moments. ENTRY IS
   LOSSLESS: the entry geometry is kept by reference and a leave with nothing edited re-emits it (never the welded
   kernel). The kernel is built after entry in `meshSession.worker.js` (lazy `meshSession.js`, skipped above the commit
-  ceiling); stashed picks are stored as IDs (faces, vertices, edges = vertex-ID pairs). Operators still run on the
-  triangle soup: `meshSessionAdapters.js` is K4's port seam (`K4_INPUT` lists what each reads). History counts a typed
+  ceiling); stashed picks are stored as IDs (faces, vertices, edges = vertex-ID pairs). K4 runs bevel, extrude/inset/move,
+  bridge/fill/solidify, merge/dissolve/delete, subdivide/symmetrize on the session's op mesh (`heldOpMesh` ->
+  `sessionKernelCommit`/`objectKernelCommit`, IDs carried; the K3 adapter module had no caller left and went). History counts a typed
   array shared by several steps once (`meshBudget.historyBytes`; `meshCommit.shareIds` shares equal ID channels).
   `meshKernel/` (99 K1; the app reaches it only lazily, through meshSession.js — K4 moves the operators onto it): a
   headless face-vertex mesh in flat typed arrays (BMesh disk + radial cycles), no three.js in

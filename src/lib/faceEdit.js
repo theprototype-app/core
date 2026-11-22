@@ -6155,7 +6155,7 @@ function prebuildOpMesh(object) {
 
 /**
  * After a kernel operator's commit on `uuid`: the op mesh IS the new geometry's (the next operator reuses
- * it), and on the session's object its ID channels become the session's ID maps (meshSessionAdapters read
+ * it), and on the session's object its ID channels become the session's ID maps (selectionToIds reads
  * them). Dropped when the stored partition is not the one the op mesh grouped (it never should be).
  * @param {string} uuid @param {any} om @param {{ faces: number[][], ids: any }} out @param {any} partner
  */

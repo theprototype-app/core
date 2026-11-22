@@ -10,8 +10,8 @@
 //   vertex). The import keeps the source triangle order, so output triangle i IS geometry
 //   triangle i, and a map built on the entry geometry reads the live selection directly.
 //
-// K3 STORES the selection as IDs beside the index-based stash; the index stash stays the one
-// restore reads until the operators work on the kernel (K4) — see meshSessionAdapters.js.
+// K3 STORES the selection as IDs beside the index-based stash; the index stash stays the one restore
+// reads (K4 ported the operators onto the session's op mesh: faceEdit heldOpMesh / sessionKernelCommit).
 
 import { fromArrays, toArrays, geometryArrays } from './meshKernel/index.js';
 import { MAX_SNAPSHOT } from './meshBudget';

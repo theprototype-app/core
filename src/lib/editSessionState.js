@@ -10,9 +10,10 @@
  * (`openSession` / `closeSession` below): the entry arrays, whether anything was edited, the
  * kernel and the selection as element IDs.
  *
- * Operators are not ported yet (K4): they still read `face.workingTris` / `face.faces` /
- * `face.quadPartner`, which are now ADAPTERS — views of the session the face mode rebuilds from
- * the live geometry (`rebuildFaces`), listed in meshSessionAdapters.js as K4's input.
+ * `face.workingTris` / `face.faces` / `face.quadPartner` are ADAPTERS — views of the session the face
+ * mode rebuilds from the live geometry (`rebuildFaces`). K4 moved families 1-6 onto the kernel; the
+ * operators K4 did not reach (flip, loop cut, grab, duplicate/separate, normals, triangulate, quads)
+ * and the selection/overlay readers still read them.
  */
 export const session = {
 	/** @type {string|null} the uuid the shared part belongs to */

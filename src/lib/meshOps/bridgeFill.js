@@ -12,39 +12,15 @@
 // Pure (no three.js, no stores): node tests, a Worker and the page run the same code.
 
 import { isolateTriangles, appendToView, newGroup, cornerOf, NONE } from './opMesh.js';
+import { sub, add, scale, dot, cross, normalize, lerp, triNormal, pos, keyOfPos } from './rebuild.js';
+
+export { keyOfPos };
 
 /** @typedef {import('./opMesh.js').OpMesh} OpMesh @typedef {[number, number, number]} Vec */
 
-/** @param {ArrayLike<number>} a @param {ArrayLike<number>} b @returns {Vec} */
-const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-/** @param {ArrayLike<number>} a @param {ArrayLike<number>} b @returns {Vec} */
-const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
-/** @param {ArrayLike<number>} a @param {number} s @returns {Vec} */
-const scale = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
-/** @param {ArrayLike<number>} a @param {ArrayLike<number>} b */
-const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-/** @param {ArrayLike<number>} a @param {ArrayLike<number>} b @returns {Vec} */
-const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+// the vector maths and the op-weld key are ops-a's (meshOps/rebuild.js, family 2): one copy for every operator
 /** @param {ArrayLike<number>} a */
 const lengthSq = (a) => a[0] * a[0] + a[1] * a[1] + a[2] * a[2];
-/** THREE's normalize: a zero vector stays zero @param {ArrayLike<number>} a @returns {Vec} */
-function normalize(a) {
-	const l = Math.sqrt(lengthSq(a)) || 1;
-	return [a[0] / l, a[1] / l, a[2] / l];
-}
-/** THREE's lerp @param {ArrayLike<number>} a @param {ArrayLike<number>} b @param {number} t @returns {Vec} */
-const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
-/** @param {ArrayLike<number>} a @param {ArrayLike<number>} b @param {ArrayLike<number>} c */
-const triNormal = (a, b, c) => normalize(cross(sub(b, a), sub(c, a)));
-
-/** @param {OpMesh} om @param {number} v @returns {Vec} */
-function pos(om, v) {
-	const p = om.mesh.vPos;
-	return [p[v * 3], p[v * 3 + 1], p[v * 3 + 2]];
-}
-
-/** the op weld's key of a position (faceEdit keyOf) @param {ArrayLike<number>} p */
-export const keyOfPos = (p) => `${Math.round(p[0] * 1e4)},${Math.round(p[1] * 1e4)},${Math.round(p[2] * 1e4)}`;
 
 /** vertex IDs of output triangle t @param {OpMesh} om @param {number} t @returns {number[]} */
 function triVerts(om, t) {
@@ -690,4 +666,4 @@ export function edgesOfKeys(om, edgeKeys) {
 }
 
 // the vector and op-mesh helpers family 5 (dissolve.js) shares; they move onto ops-a's rebuild.js once both are on one branch
-export { sub, add, scale, dot, cross, lengthSq, normalize, triNormal, pos, triVerts, triUv, pairKey, removeTriangles };
+export { lengthSq, triVerts, triUv, pairKey, removeTriangles };

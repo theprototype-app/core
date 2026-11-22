@@ -8,13 +8,10 @@
 // meets them. Pure (no three.js, no stores).
 
 import { isolateTriangles, newGroup } from './opMesh.js';
-import { dot, triNormal, pos, triVerts, triUv, pairKey, keyOfPos } from './bridgeFill.js';
+import { dot, triNormal, pos, keyOfPos, uvLerp } from './rebuild.js';
+import { triVerts, triUv, pairKey } from './bridgeFill.js';
 
 /** @typedef {import('./opMesh.js').OpMesh} OpMesh */
-
-/** faceEdit uvLerp (argument order kept: it is not symmetric in floats) @param {number[]} a @param {number[]} b
- * @param {number} t @returns {number[]} */
-const uvLerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 
 /** the order key of every output triangle (the view is sorted by them) @param {OpMesh} om */
 function triOrders(om) {

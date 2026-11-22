@@ -128,6 +128,7 @@
   import { startShadowDefaults } from '$lib/shadowDefaults'
   import { startPackRefs } from '$lib/packRefs'
   import { startViewMode } from '$lib/viewMode'
+  import { startDrawAs } from '$lib/drawAs.js' // 103 H11: Draw as (lazy half on first use)
   import { startInputRuntime } from '$lib/inputRuntime'
   // 21-E2.4: right-drag a HUD element in the viewport. Installed here rather than from
   // HudLayer because it is a window-CAPTURE gesture that must exist whether or not the
@@ -336,6 +337,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
     startShadowDefaults()
     startPackRefs()
     startViewMode()
+    startDrawAs()
     startInputRuntime()
     startHudViewportDrag()
     startPossess()

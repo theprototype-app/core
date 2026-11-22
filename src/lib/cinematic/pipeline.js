@@ -19,7 +19,7 @@
 //     unblended: a sprite there replaced the surface normals behind it and the AO went black under it.
 //   · C2-3: water (waterCover.js twins, layer WATER_LAYER) in a pass of its own BEFORE the fx pass, for the same reason;
 //     its twins read the scene pass's colour + depth as the standard view's refraction pre-pass. Under water, the fog,
-//     tint and caustics go over the finished linear image (the runtime's fog swap and full-screen overlay).
+//     tint and caustics go over the finished image in display space (the runtime's fog swap and full-screen overlay).
 //   · the selection outline (W14) is TSL's OutlineNode over the objects Outline.svelte outlines,
 //     composited LAST, after the bloom (an editor helper, never graded).
 import { QUALITY } from './cinematicCore.js';
@@ -150,9 +150,10 @@ export async function buildPipeline(o) {
 		final = vec4(T.mix(T.mix(rgb, lockColor, e2), selColor, e1), final.a);
 	}
 	if (o.water) {
-		// under water the look is laid over the finished LINEAR image, before the output transform (tone mapping +
-		// sRGB): the standard view draws the scene into a render target, so its fog and overlay mix in linear too
+		// under water the look is laid over the FINISHED image, as the standard view lays it: the output transform
+		// (tone mapping + sRGB) is applied here first, and the pipeline's own is switched off
 		final = underwater(o.water.under, final, drawn ?? T.float(0));
+		pipeline.outputColorTransform = false;
 	}
 	pipeline.outputNode = final;
 
@@ -220,20 +221,22 @@ export async function buildPipeline(o) {
 	/**
 	 * Under water (the camera inside a volume): the standard view swaps the scene's fog for the water's (three's linear
 	 * fog, near 0.05 m, far = the water's Visibility), paints the sky in the fog colour, and draws a full-screen tint +
-	 * caustic net over the frame (waterShader.js overlayFragment, blended One / OneMinusSrcAlpha). It draws into a
-	 * render target, so all of that mixes in LINEAR, before the output pass tone-maps it (measured: the fog colour
-	 * reaches the screen lighter and greyer than its hex). The same here, last before the output transform; the water
-	 * and fx twins are not fogged (the water fades its own walls; bubbles skip fog). Not under water every term is 0.
+	 * caustic net over the frame (waterShader.js overlayFragment, blended One / OneMinusSrcAlpha). It renders straight
+	 * to the canvas (Outline.svelte, whenever no post effect is on), so: three's fog mixes AFTER tone mapping and the
+	 * sRGB encode with the fog colour uploaded in the output space (getUnlitUniformColorSpace), the background is that
+	 * same encoded colour, and the overlay (a ShaderMaterial with no colorspace chunk) writes its LINEAR tint values
+	 * into the display buffer as they are. The same here, after the output transform; the water and fx twins are not
+	 * fogged (the water fades its own walls; bubbles skip fog). Not under water this is the output transform alone.
 	 * @param {Record<string, any>} u waterCover's `under` uniforms @param {any} img @param {any} drawn the twins' alpha */
 	function underwater(u, img, drawn) {
-		const out = img;
+		const out = T.renderOutput(img);
 		const uv = T.screenUV;
 		const d = depth.sample(uv).x;
 		const vp = viewAt(uv);
 		const sky = d.greaterThanEqual(0.99999);
 		const f = T.select(sky, T.float(1), T.smoothstep(T.float(0.05), u.fogFar, vp.z.negate())).mul(u.on).mul(T.float(1).sub(drawn));
 		/** @type {any} */
-		let rgb = T.mix(out.rgb, u.fogColor, f);
+		let rgb = T.mix(out.rgb, T.sRGBTransferOETF(u.fogColor), f);
 		const vgn = T.length(uv.sub(0.5)).mul(1.4);
 		const a = u.strength.mul(vgn.mul(0.4).add(0.6)).mul(u.on);
 		const w = camWorld.mul(vec4(vp, 1)).xyz;

@@ -116,6 +116,27 @@ const compare = (page) =>
 				if (ng[j]) g[j] = 0;
 				if (nv[j]) v[j] = 0;
 			}
+			// an opening (3x3 erode, then dilate), the same for both views: hiding the water moves the view's TRAA and
+			// GI by a pixel along every edge in the frame, which would read as "water" on a scene with little of it
+			const open = (m) => {
+				const e = new Uint8Array(W * H);
+				for (let y = 1; y < H - 1; y++)
+					for (let x = 1; x < W - 1; x++) {
+						let all = 1;
+						for (let dy = -1; dy <= 1 && all; dy++) for (let dx = -1; dx <= 1; dx++) if (!m[(y + dy) * W + x + dx]) { all = 0; break; }
+						e[y * W + x] = all;
+					}
+				const o = new Uint8Array(W * H);
+				for (let y = 1; y < H - 1; y++)
+					for (let x = 1; x < W - 1; x++) {
+						let any = 0;
+						for (let dy = -1; dy <= 1 && !any; dy++) for (let dx = -1; dx <= 1; dx++) if (e[(y + dy) * W + x + dx]) { any = 1; break; }
+						o[y * W + x] = any;
+					}
+				return o;
+			};
+			g.set(open(g));
+			v.set(open(v));
 			let ga = 0, va = 0, both = 0, gx = 0, gy = 0, vx = 0, vy = 0;
 			// mean |gl - view| per channel inside the shared footprint, and on the pixels neither view counts as water
 			let inSum = 0, inN = 0, outSum = 0, outN = 0, lumG = 0, lumV = 0;
@@ -133,6 +154,20 @@ const compare = (page) =>
 				} else if (!g[j] && !v[j]) {
 					outSum += diff(A, B, i) / 3;
 					outN++;
+				}
+			}
+			// threshold-free: hiding the water should change both views by the same amount (signed, per channel), over
+			// the union of the two footprints — what decides faint, shallow water whose pixels sit near the mask threshold
+			const GA = S['gl:all'], GD = S['gl:-water'], VA = S['view:all'], VD = S['view:-water'];
+			let agreeSum = 0, glChange = 0, un = 0;
+			for (let j = 0, i = 0; j < W * H; j++, i += 4) {
+				if (!g[j] && !v[j]) continue;
+				un++;
+				for (let k = 0; k < 3; k++) {
+					const dg = GA[i + k] - GD[i + k];
+					const dv = VA[i + k] - VD[i + k];
+					agreeSum += Math.abs(dg - dv) / 3;
+					glChange += Math.abs(dg) / 3;
 				}
 			}
 			const mc = document.createElement('canvas');
@@ -159,6 +194,8 @@ const compare = (page) =>
 				waterDelta: inN ? +(inSum / inN).toFixed(1) : null,
 				restDelta: outN ? +(outSum / outN).toFixed(1) : null,
 				waterLuma: inN ? [+(lumG / inN).toFixed(1), +(lumV / inN).toFixed(1)] : null,
+				changeGap: un ? +(agreeSum / un).toFixed(1) : null,
+				changeGl: un ? +(glChange / un).toFixed(1) : null,
 				noise: [noiseG, noiseV]
 			};
 		},
@@ -337,7 +374,9 @@ async function oneScene(browser, slug, first) {
 		delete r.maskUrl;
 		row.compare = r;
 		const near = r.glCentre && r.viewCentre ? Math.hypot(r.glCentre[0] - r.viewCentre[0], r.glCentre[1] - r.viewCentre[1]) : 999;
-		h.check(r.gl > 200 && r.overlapOfGl >= 0.7 && r.overlapOfView >= 0.6 && near < 25, `${slug}: 3. the view draws the water where the standard view does (px ${r.gl} / ${r.view}, shared ${r.overlapOfGl} of gl / ${r.overlapOfView} of view, centres ${JSON.stringify(r.glCentre)} vs ${JSON.stringify(r.viewCentre)})`);
+		const masksAgree = r.overlapOfGl >= 0.7 && r.overlapOfView >= 0.6 && near < 25;
+		const changeAgrees = r.changeGap != null && r.changeGl > 0 && r.changeGap <= r.changeGl * 0.5;
+		h.check(r.gl > 200 && (masksAgree || changeAgrees), `${slug}: 3. the view draws the water where the standard view does (px ${r.gl} / ${r.view}, shared ${r.overlapOfGl} of gl / ${r.overlapOfView} of view, centres ${JSON.stringify(r.glCentre)} vs ${JSON.stringify(r.viewCentre)}; hiding it changes the views by ${r.changeGl} vs a gap of ${r.changeGap} per channel, pass at <= half)`);
 		// The view lights the scene itself (GI, AO, bloom, its own tone path), so its pixels differ from the standard
 		// view everywhere; the water must not differ by more than that plus WATER_TOL (mean |delta| per channel, 0-255)
 		const tol = Number(process.env.WATER_TOL || 18);
@@ -502,16 +541,20 @@ async function oneScene(browser, slug, first) {
 				}))
 			);
 			const tone = await page.evaluate(({ W, H }) => {
-				const mean = (d) => {
-					const m = [0, 0, 0];
-					for (let i = 0; i < d.length; i += 4) for (let k = 0; k < 3; k++) m[k] += d[i + k];
-					return m.map((v) => +(v / (W * H)).toFixed(1));
-				};
-				return { gl: mean(window.__wShots['gl:under']), view: mean(window.__wShots['view:under']) };
+				// medians, not means: the fish swim between the two shots, and a median ignores what covers < half the frame
+				const median = (d) =>
+					[0, 1, 2].map((k) => {
+						const h = new Uint32Array(256);
+						for (let i = k; i < d.length; i += 4) h[d[i]]++;
+						let n = 0;
+						for (let c = 0; c < 256; c++) if ((n += h[c]) >= (W * H) / 2) return c;
+						return 255;
+					});
+				return { gl: median(window.__wShots['gl:under']), view: median(window.__wShots['view:under']) };
 			}, { W, H });
 			const dm = Math.max(...tone.gl.map((v, k) => Math.abs(v - tone.view[k])));
 			row.underwater = { ...row.underwater, gl: glUnder, tone };
-			h.check(!!glUnder && dm <= Number(process.env.WATER_UNDER_TOL || 40), `   ${slug}: under the surface both views are tinted alike (mean RGB standard ${JSON.stringify(tone.gl)}, Cinematic ${JSON.stringify(tone.view)}; largest channel gap ${dm.toFixed(1)})`);
+			h.check(!!glUnder && dm <= Number(process.env.WATER_UNDER_TOL || 40), `   ${slug}: under the surface both views are tinted alike (median RGB standard ${JSON.stringify(tone.gl)}, Cinematic ${JSON.stringify(tone.view)}; largest channel gap ${dm.toFixed(1)})`);
 			fs.writeFileSync(path.join(out, '06-sheet-under.png'), png(await sideBySide(page, [sheet.glUnder, sheet.viewUnder])));
 		}
 

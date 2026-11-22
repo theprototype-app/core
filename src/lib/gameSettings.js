@@ -26,6 +26,17 @@ import { writable, get } from 'svelte/store';
 import { safeStorage } from './safeStorage';
 // 33 (L4): a row counts only while its owner module belongs to the scene on screen (a leaf)
 import { leftBehindModules, ownerInScope } from './sceneScope';
+// 103 (H6): the OS / app reduced-motion answer turns vibration off by default (a leaf)
+import { reducedMotion } from './motion';
+
+/** @returns {boolean} */
+function reducedNow() {
+	try {
+		return !!get(reducedMotion);
+	} catch {
+		return false;
+	}
+}
 
 /**
  * @typedef {{id: string, label: string, type: 'toggle' | 'choice' | 'range', options?: string[],
@@ -41,7 +52,10 @@ export const CORE_SETTINGS = [
 	{ id: 'musicVolume', label: 'Music volume', type: 'range', min: 0, max: 100, step: 10, default: 100 },
 	{ id: 'sfx', label: 'Sound effects', type: 'toggle', default: true },
 	{ id: 'sfxVolume', label: 'Effects volume', type: 'range', min: 0, max: 100, step: 10, default: 100 },
-	{ id: 'haptics', label: 'Controller vibration', type: 'toggle', default: true, vrOnly: true },
+	// 103 (H6): every device now (gamepads, Android phones, VR controllers), so no longer VR-only.
+	// Unset = on, or OFF when the device asks for reduced motion (coreValuesFrom); a stored value wins
+	{ id: 'haptics', label: 'Vibration', type: 'toggle', default: true, help: 'Controller, gamepad and phone vibration in this game.' },
+	{ id: 'hapticStrength', label: 'Vibration strength', type: 'range', min: 0, max: 100, step: 10, default: 100 },
 	{ id: 'showFps', label: 'Show FPS', type: 'toggle', default: false },
 	{
 		id: 'turning',
@@ -195,6 +209,8 @@ export function coreValuesFrom(raw) {
 	/** @type {Record<string, any>} */
 	const out = {};
 	for (const row of CORE_SETTINGS) out[row.id] = coerceSettingValue(row, raw?.[row.id]);
+	// 103 (H6): reduced motion means "off by default" — only while the player never chose
+	if (raw?.haptics === undefined && reducedNow()) out.haptics = false;
 	return out;
 }
 
@@ -383,9 +399,14 @@ export function musicLevel() {
 	const v = get(gameSettingValues);
 	return v.music === false ? 0 : Math.min(1, Math.max(0, Number(v.musicVolume ?? 100) / 100));
 }
-/** controller vibration allowed in this game? */
+/** vibration allowed in this game? */
 export function hapticsAllowed() {
 	return get(gameSettingValues).haptics !== false;
+}
+/** 103 (H6): 0..1 — this game's vibration strength (0 when switched off) */
+export function hapticLevel() {
+	const v = get(gameSettingValues);
+	return v.haptics === false ? 0 : Math.min(1, Math.max(0, Number(v.hapticStrength ?? 100) / 100));
 }
 
 /**

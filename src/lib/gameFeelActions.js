@@ -29,7 +29,7 @@ import { announce } from './gameAnnounce';
 // 53 (A6): the Game Sound node's caption line
 import { captionSound } from './captions';
 import { playGameMusic, stopGameMusic, gameMusicState, MUSIC_PRESET_IDS } from './gameMusic';
-import { gameFeelActive } from './gameFeel';
+import { gameFeelActive, gameFeelOn } from './gameFeel';
 import { HAPTIC_PATTERN_NAMES } from './hapticPatterns';
 
 export { GAME_SOUNDS, MUSIC_PRESET_IDS, HAPTIC_PATTERN_NAMES };
@@ -41,10 +41,69 @@ export const GAME_FEEL_ACTIONS = ['announce', 'gamesound', 'effectburst', 'hapti
 /** @type {any} */ let burstRef = null;
 /** @type {any} */ let vrRef = null;
 
+/** 103 (H6): the vibration output layer — LAZY (not in the boot bundle): fetched the first time this
+ * device enters Interact / Play, or on the first buzz asked for before that @type {any} */
+let hapticRef = null;
+/** @type {Promise<any> | null} */
+let hapticLoad = null;
+const loadHaptics = () => (hapticLoad ??= import('./hapticOutput').then((m) => (hapticRef = m)));
+
+/** 103 (H6): the output layer itself, loaded on demand (the suites' handle) @returns {Promise<any>} */
+export const hapticOutputModule = () => loadHaptics();
+
 /** flowRuntime's init: resolve the two primed modules (see the header). */
 export function primeGameFeelActions() {
 	import('./effectsBurst').then((m) => (burstRef = m));
 	import('./vrControls').then((m) => (vrRef = m));
+	gameFeelOn.subscribe((on) => {
+		if (on) loadHaptics();
+	});
+}
+
+/**
+ * 103 (H6): buzz THIS device (the caller already decided it is the right one). A pattern name or a
+ * custom {strength, ms}; `scale` sizes a pattern. false outside Interact / Play.
+ * @param {string | {strength?: number, ms?: number}} spec @param {{hand?: 'left' | 'right', scale?: number}} [opts]
+ * @returns {boolean}
+ */
+export function vibrateHere(spec, opts = {}) {
+	if (!gameFeelActive()) return false;
+	if (hapticRef) return hapticRef.playHaptic(spec, opts);
+	loadHaptics().then((m) => m.playHaptic(spec, opts));
+	return true;
+}
+
+/**
+ * 103 (H6): the Vibrate node's stamp edge, past flowRuntime's `who` gate. PURE over its data apart
+ * from the buzz itself. @param {any} data @returns {boolean}
+ */
+export function runVibrate(data) {
+	const n = Number(data?.strength);
+	const strength = Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 1;
+	const hand = data?.hand === 'left' || data?.hand === 'right' ? data.hand : undefined;
+	const pattern = String(data?.pattern ?? 'bump');
+	const ok = pattern === 'custom' ? vibrateHere({ strength, ms: Number(data?.ms ?? 120) }, { hand }) : vibrateHere(pattern, { hand, scale: strength });
+	note('vibrate', { pattern, strength, hand: hand ?? 'both', felt: !!ok });
+	return ok;
+}
+
+/**
+ * 103 (H6): the DEFAULT feel that goes with a game-feel effect (#580's Camera Shake, Screen Flash,
+ * Hit Pause) — played where the effect plays, unless the node's `vibrate` is off. PURE mapping:
+ * a shake rumbles for its length at its strength, a hit pause is a `hit`, a flash a light `tap`.
+ * @param {string} type @param {any} data
+ * @returns {{spec: string | {strength: number, ms: number}, scale?: number} | null}
+ */
+export function feelVibration(type, data) {
+	if (data?.vibrate === false) return null;
+	const num = (/** @type {any} */ v, /** @type {number} */ d) => (Number.isFinite(Number(v)) ? Number(v) : d);
+	if (type === 'camerashake') {
+		const s = Math.min(1, Math.max(0, num(data?.strength, 0.15)));
+		return { spec: { strength: Math.round(Math.min(1, 0.35 + 1.3 * s) * 1000) / 1000, ms: Math.min(1000, Math.max(40, num(data?.seconds, 0.35) * 1000)) } };
+	}
+	if (type === 'hitpause') return { spec: 'hit', scale: Math.min(1, 0.5 + num(data?.ms, 80) / 400) };
+	if (type === 'screenflash') return { spec: 'tap', scale: 1 + Math.min(1, Math.max(0, num(data?.strength, 0.6))) };
+	return null;
 }
 
 /** what each node type did — the suites' view (no headset, no ears) */

@@ -96,7 +96,7 @@ import { safeStorage } from './safeStorage';
 // 30 P4: the device-local store Store Value / Stored Value read and write (a leaf)
 import { sceneStorageKey, readStored, writeStored } from './gameStorage';
 // 30b (core-games): the game-feel nodes' runtime half (announce/sound/burst/haptic/music)
-import { GAME_FEEL_ACTIONS, runGameFeelAction, updateGameMusicNodes, primeGameFeelActions } from './gameFeelActions';
+import { GAME_FEEL_ACTIONS, runGameFeelAction, updateGameMusicNodes, primeGameFeelActions, runVibrate, vibrateHere, feelVibration } from './gameFeelActions';
 // 34 R2 (T3): the game kit — its action nodes act on the stamp edge here, its document ticks here
 import { KIT_ACTION_TYPES, runKitNodeAction, installKitNodes } from './kit/nodes.js';
 import { tickKit, primeKitRuntime, kitAuthorityId, kit } from './kit/runtime.js';
@@ -1655,6 +1655,17 @@ function runGameFeelFx(type, data) {
 	if (type === 'camerashake') cameraShake({ strength: num(data.strength), seconds: num(data.seconds), frequency: num(data.frequency) });
 	else if (type === 'screenflash') screenFlash({ color: String(data.color ?? ''), seconds: num(data.seconds), strength: num(data.strength) });
 	else if (type === 'hitpause') hitPause(num(data.ms));
+	// 103 (H6): the default vibration that goes with it, on the same device (off: the node's `vibrate`)
+	const feel = feelVibration(type, data);
+	if (feel) vibrateHere(feel.spec, feel.scale === undefined ? {} : { scale: feel.scale });
+}
+/** 103 (H6): is a pulse AIMED at this device's player? The peer whose event made the stamp when it is
+ * known (2.0-n3b's origins), else whether this peer made the stamp itself.
+ * @param {string} nodeId @param {number} stamp @param {any} ctx */
+function aimedHere(nodeId, stamp, ctx) {
+	const origin = stampOrigin(nodeId, stamp, ctx);
+	if (origin) return origin === String(/** @type {any} */ (get(peers))?.peer?.id ?? '');
+	return localStamps.has(stamp);
 }
 /** 102b-hud: a HUD Button node id -> the element its last press came from (its `value` handle)
  * @type {Map<string, string>} */
@@ -2099,7 +2110,7 @@ function updateGameNodes(time, ctx) {
 	// 1. the ACTIONS, on a fresh trigger stamp only
 	for (const node of nodes) {
 		const type = node.type;
-		if (type !== 'setgamestate' && type !== 'setcamera' && type !== 'setvariable' && type !== 'setlook' && type !== 'travel' && type !== 'storevalue' && type !== 'playseq' && !GAME_FEEL_ACTIONS.includes(type) && !GAME_FEEL_FX.has(type) && !KIT_ACTION_TYPES.has(type))
+		if (type !== 'setgamestate' && type !== 'setcamera' && type !== 'setvariable' && type !== 'setlook' && type !== 'travel' && type !== 'storevalue' && type !== 'playseq' && !GAME_FEEL_ACTIONS.includes(type) && !GAME_FEEL_FX.has(type) && type !== 'vibrate' && !KIT_ACTION_TYPES.has(type))
 			continue;
 		seeActionNode(node, time);
 		const stamp = triggerStampFor(node.id, ctx);
@@ -2158,6 +2169,9 @@ function updateGameNodes(time, ctx) {
 			// saw it — and a perPlayer pulse, seen only by its player, still reaches it
 			// 2.0-n3b: + the peer whose event it was, so "collect" credits the toucher, not the authority
 			runKitNodeAction(type, data, node.id, stamp, node.__graph && node.__graph !== SCENE_GRAPH ? node.__graph : null, stampOrigin(node.id, stamp, ctx));
+		} else if (type === 'vibrate') {
+			// 103 (H6): a buzz is aimed — `who: me` (the default) only on the player whose pulse it was
+			if (data.who === 'everyone' || aimedHere(node.id, stamp, ctx)) runVibrate(data);
 		} else if (GAME_FEEL_FX.has(type)) {
 			// 102b-hud (row 19): shake / flash / hit pause — LOCAL presentation inside the actionSeenAt
 			// family above. `who: me` (the default) acts only where the pulse was MADE (this peer's

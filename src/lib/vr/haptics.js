@@ -2,8 +2,14 @@
 // 34 R4 (A5): one concern of src/lib/vrControls.js, which re-exports the public names unchanged.
 import { gameFeelActive } from '../gameFeel';
 import { hapticsAllowed } from '../gameSettings';
-import { hapticSchedule, knockHapticScale } from '../hapticPatterns';
+import { hapticSchedule, knockHapticScale, registerXrHaptics } from '../hapticPatterns';
 import { renderer } from './core.js';
+// 103 (H6): patterns play through the one output layer (hapticOutput: gamepads and phones too),
+// reached LAZILY (this file is in the boot bundle, the layer is not); this file is its XR sink, so a
+// pattern in a headset still lands on the controllers exactly as before
+/** @type {Promise<any> | null} */
+let outputLoad = null;
+const output = () => (outputLoad ??= import('../hapticOutput.js'));
 
 /** 30b: what the actuators were asked for (a ring, newest last) and how many pulses the
  * Edit-mode gate swallowed — the suites' view, since no headset is attached headless */
@@ -54,12 +60,18 @@ export function hapticPulse(intensity = 0.5, durationMs = 50, hand = undefined, 
 export function hapticPattern(name, hand = undefined, scale = 1) {
 	const pulses = hapticSchedule(name, scale);
 	if (!pulses.length || !gameFeelActive()) return false;
-	for (const pulse of pulses) {
-		if (pulse.at <= 0) hapticPulse(pulse.intensity, pulse.ms, hand);
-		else setTimeout(() => hapticPulse(pulse.intensity, pulse.ms, hand), pulse.at);
-	}
+	// 103 (H6): scheduled by the output layer, which stops it on pause / tab hidden / scene leave
+	output().then((m) => m.playHaptic(String(name), { hand, scale }));
 	return true;
 }
+
+registerXrHaptics({
+	active: () => !!renderer?.xr?.getSession?.(),
+	pulse: (intensity, ms, hand) => hapticPulse(intensity, ms, hand),
+	stop: () => {
+		renderer?.xr?.getSession?.()?.inputSources?.forEach((/** @type {any} */ source) => source.gamepad?.hapticActuators?.[0]?.pulse?.(0, 1));
+	}
+});
 
 /** 30b: the knock's haptic seam (Scene hands this to knock.js) — a `hit` sized by the
  * knock's own strength, on the hand that hit. `intensity` arrives as knock.js computes

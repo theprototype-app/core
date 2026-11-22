@@ -317,13 +317,15 @@ export default {
 		{
 			type: 'camerashake',
 			label: 'Camera Shake',
-			defaults: { strength: 0.15, seconds: 0.35, frequency: 18, who: 'me' },
+			defaults: { strength: 0.15, seconds: 0.35, frequency: 18, who: 'me', vibrate: true },
 			inputs: ['trigger'],
 			params: [
 				{ key: 'strength', kind: 'range', min: 0, max: 1, step: 0.01 },
 				{ key: 'seconds', kind: 'range', min: 0.05, max: 3, step: 0.05 },
 				{ key: 'frequency', kind: 'range', min: 2, max: 40, step: 1 },
-				{ key: 'who', kind: 'select', options: ['me', 'everyone'] }
+				{ key: 'who', kind: 'select', options: ['me', 'everyone'] },
+				// 103 (H6): the default feel — a rumble sized to the shake, where the shake plays
+				{ key: 'vibrate', kind: 'toggle' }
 			],
 			note: 'Shakes the Play camera on this device (never in VR). me = the player who made the pulse.',
 			sockets: { out: 'effect', in: { trigger: 'event' } },
@@ -332,13 +334,14 @@ export default {
 		{
 			type: 'screenflash',
 			label: 'Screen Flash',
-			defaults: { color: '#ffffff', strength: 0.6, seconds: 0.25, who: 'me' },
+			defaults: { color: '#ffffff', strength: 0.6, seconds: 0.25, who: 'me', vibrate: true },
 			inputs: ['trigger'],
 			params: [
 				{ key: 'color', kind: 'color' },
 				{ key: 'strength', kind: 'range', min: 0, max: 1, step: 0.05 },
 				{ key: 'seconds', kind: 'range', min: 0.05, max: 3, step: 0.05 },
-				{ key: 'who', kind: 'select', options: ['me', 'everyone'] }
+				{ key: 'who', kind: 'select', options: ['me', 'everyone'] },
+				{ key: 'vibrate', kind: 'toggle' }
 			],
 			note: 'A colour over the screen that fades out, on this device. Reduced motion keeps it faint.',
 			sockets: { out: 'effect', in: { trigger: 'event' } },
@@ -347,11 +350,12 @@ export default {
 		{
 			type: 'hitpause',
 			label: 'Hit Pause',
-			defaults: { ms: 80, who: 'me' },
+			defaults: { ms: 80, who: 'me', vibrate: true },
 			inputs: ['trigger'],
 			params: [
 				{ key: 'ms', kind: 'range', min: 20, max: 500, step: 10 },
-				{ key: 'who', kind: 'select', options: ['me', 'everyone'] }
+				{ key: 'who', kind: 'select', options: ['me', 'everyone'] },
+				{ key: 'vibrate', kind: 'toggle' }
 			],
 			note: 'Holds this device\'s picture for a moment. The game and physics keep running.',
 			sockets: { out: 'effect', in: { trigger: 'event' } },
@@ -423,8 +427,29 @@ export default {
 				{ key: 'pattern', kind: 'select', options: [...HAPTIC_PATTERN_NAMES] },
 				{ key: 'hand', kind: 'select', options: ['both', 'left', 'right'] }
 			],
-			note: 'VR controllers only, and only in Interact or Play — the editor stays still.',
+			note: 'VR controllers, on every player. Vibrate does more: gamepads, phones, one player only.',
 			sockets: { out: 'effect', in: { trigger: 'event' } },
+			card: 'AnimationNode'
+		},
+		// 103 (H6): VIBRATE — a pattern or a custom buzz on whatever this device has (VR controllers, a
+		// gamepad's motors and trigger motors, an Android phone). LOCAL like the rest of Game Feel, and
+		// AIMED: `who: me` buzzes only the player whose press / hit made the pulse (the default),
+		// `everyone` every player. Interact / Play only; the player's Vibration setting rules.
+		{
+			type: 'vibrate',
+			label: 'Vibrate',
+			defaults: { pattern: 'bump', strength: 1, ms: 120, hand: 'both', who: 'me' },
+			inputs: ['trigger', 'strength'],
+			inputLabels: { strength: 'strength - 0..1 (wired = sizes it)' },
+			params: [
+				{ key: 'pattern', kind: 'select', options: [...HAPTIC_PATTERN_NAMES, 'custom'] },
+				{ key: 'strength', kind: 'range', min: 0, max: 1, step: 0.05 },
+				{ key: 'ms', kind: 'range', min: 10, max: 1000, step: 10, label: 'length ms (custom)' },
+				{ key: 'hand', kind: 'select', options: ['both', 'left', 'right'] },
+				{ key: 'who', kind: 'select', options: ['me', 'everyone'] }
+			],
+			note: 'Gamepads, phones (Android) and VR controllers, in Interact or Play only. me = the player who made the pulse.',
+			sockets: { out: 'effect', in: { trigger: 'event', strength: 'number' } },
 			card: 'AnimationNode'
 		},
 		{

@@ -1033,7 +1033,7 @@ export class PeerConnection {
 					this.approvedBy.add(conn.peer);
 					confirmRosterRows(conn.peer); // 80a R1
 					// Our own guests ask that peer too, and it decides: it approved us, not them.
-					this.announceJoinedHost(conn.peer);
+					this.announceJoinedHost(conn.peer, undefined, conn);
 					settleRejoin('joined'); // fix-agenttest 6: no-op unless this was the reload's dial
 
 					// Show approved toast message
@@ -3438,13 +3438,26 @@ export class PeerConnection {
 
 	/**
 	 * 80a R1: the session we joined, to our guests (or one link).
-	 * @param {string | null} hostId @param {any} [conn]
+	 * @param {string | null} hostId @param {any} [conn] @param {any} [hostLink] the host's link, when it may not be open yet
 	 */
-	announceJoinedHost(hostId, conn) {
+	announceJoinedHost(hostId, conn, hostLink) {
 		if (!hostId) return;
 		const go = () => {
 			if (get(sessionHost) !== hostId && !this.approvedBy.has(hostId)) return;
-			if (!this.connections[hostId]?.open) return;
+			const cur = this.connections[hostId];
+			if (!cur?.open && !hostLink?.open) {
+				// approved before its link opened (the dial-back): say it once that link is up. The dial-back, not
+				// whatever sits under the host's id now — that can still be our own request, which never opens
+				const link = hostLink ?? cur;
+				if (link && typeof link.once === 'function' && !link.__tpAnnounceWait) {
+					link.__tpAnnounceWait = true;
+					link.once('open', () => setTimeout(() => {
+						link.__tpAnnounceWait = false;
+						go();
+					}, 0));
+				}
+				return;
+			}
 			const msg = { type: 'hosts', hosts: [hostId], joined: true };
 			if (conn) {
 				if (conn.peer !== hostId && conn.open) conn.send(msg);

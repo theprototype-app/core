@@ -60,8 +60,16 @@ export function cappedShadowSize(wanted) {
  * re-asserted the saved preference on every apply.
  */
 export function shadowsDisabled() {
-	return get(shadowQuality) === 'off' || get(qualityOverrides).shadowsOff;
+	return get(shadowQuality) === 'off' || get(qualityOverrides).shadowsOff || get(sceneShadowsOff);
 }
+
+/** 106 S1: the SCENE asks for no shadows (Configure Scene ▸ Lights ▸ Shadow quality: Off). environment.js
+ * writes it from the scene's shadowLevel (this module cannot import environment: environment imports it). */
+export const sceneShadowsOff = writable(false);
+
+/** 106 S2: the drawn shadow level wants contact shadows on THIS device (shadowLevels.js writes it once the kind is
+ * registered; Outline.svelte prepends the local entry to the post stack). Never saved, never sent. */
+export const contactShadowsWanted = writable(false);
 
 export function applyShadowQualityCap() {
 	const off = shadowsDisabled();

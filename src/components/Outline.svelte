@@ -40,7 +40,9 @@
 	import { recordingClean } from '$lib/helperLayer';
 	// 41 G10: the character studio hides the scene, so the selection glare stands down with it
 	import { studioIsolating } from '$lib/avatars/avatarState';
-	import { shadowQuality } from '$lib/lightParams';
+	import { shadowQuality, contactShadowsWanted } from '$lib/lightParams';
+	// 106 S2: the local contact-shadow entry (its kind registers lazily with Soft / Far)
+	const CONTACT_ENTRY = Object.freeze({ id: 'builtin-contact', kind: 'contactshadows', enabled: true, params: { steps: 12 } });
 	import { useTask, useThrelte } from '@threlte/core';
 	import { applyShake, frameHeldByHitPause } from '$lib/gameFeelFx';
 	import { framesHeld, registerComposerWarm, schedule } from '$lib/sceneLoader';
@@ -375,8 +377,12 @@
 			postOk,
 			postWarm
 		}).filter((entry) => !(reduced.aoOff && entry.kind === 'ao'));
+		// 106 S2: contact shadows are the drawn shadow level's, LOCAL (never in a document): first in the chain,
+		// on the lit image, wherever post runs at all here; the governor's lighter look and shadows-off drop them
+		const contact = $contactShadowsWanted && adoptedMode !== 'wireframe' && postOk && postWarm && !reduced.postOff && !reduced.lookLite && !reduced.shadowsOff;
+		const withContact = contact ? [CONTACT_ENTRY, ...entries] : entries;
 		// 98-int: the governor's "Scene look lighter" step keeps the grade and drops the heavy passes
-		const shown = reduced.lookLite ? liteLook(entries) : entries;
+		const shown = reduced.lookLite ? liteLook(withContact) : withContact;
 		const signature = postStackSignature(shown);
 		if (signature === stackSignature) return;
 		stackSignature = signature;

@@ -70,10 +70,13 @@ h.run(async () => {
 	// ---- 0. a fresh box, "Add material slot", nothing assigned (the state the scout found) ----------------------
 	await A.page.evaluate(async (name) => {
 		const w = window.__tp.test.v1;
+		const g0 = await new Promise((r) => w.objectsGroup.subscribe(r)());
+		const before = new Set(g0.children.map((/** @type {any} */ c) => c.uuid));
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		for (let i = 0; i < 50; i++) {
 			const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
-			const box = g.children.find((/** @type {any} */ c) => c.isMesh && !c.name);
+			// a new box gets a default name, so it is found as the mesh that was not there before
+			const box = g.children.find((/** @type {any} */ c) => c.isMesh && !before.has(c.uuid));
 			if (box) {
 				box.name = name;
 				box.position.set(0, 0.5, 0);
@@ -86,6 +89,61 @@ h.run(async () => {
 	const live = await state(A, NAME);
 	h.check(good(live), '0 a box with an added slot draws all 12 triangles on slot 0: ' + JSON.stringify(live));
 	const frame0 = await frameOf(A);
+	// premise for every pixel check below: the box IS in the frame (hiding it changes the picture)
+	const setVisible = (/** @type {boolean} */ on) =>
+		A.page.evaluate(
+			async ({ name, on }) => {
+				const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
+				g.traverse((/** @type {any} */ n) => n.name === name && (n.visible = on));
+			},
+			{ name: NAME, on }
+		);
+	await setVisible(false);
+	const hidden = await h.frameDelta(A.page, frame0, await frameOf(A), 24);
+	await setVisible(true);
+	h.check(!hidden.error && hidden.fraction > 0.05, '0 premise: the box shows in the pixel square (hiding it changes ' + (hidden.error ?? (hidden.fraction * 100).toFixed(1) + '%') + ')');
+	/** this peer draws the crate whole: its slot list vs the same crate drawn with slot 0 alone (missing faces = a
+	 * hole only the first frame has). Per peer, so two peers' cameras never meet. @param {any} peer @param {string} label */
+	const wholeFrame = async (peer, label) => {
+		const withSlots = await frameOf(peer);
+		const swap = (/** @type {boolean} */ single) =>
+			peer.page.evaluate(
+				async ({ name, single }) => {
+					const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
+					/** @type {any} */ let o = null;
+					g.traverse((/** @type {any} */ n) => (o ??= n.isMesh && n.name === name ? n : null));
+					if (!o) return;
+					if (single) {
+						o.userData.__slotsForTest = o.material;
+						o.material = o.material[0];
+					} else if (o.userData.__slotsForTest) {
+						o.material = o.userData.__slotsForTest;
+						delete o.userData.__slotsForTest;
+					}
+				},
+				{ name: NAME, single }
+			);
+		await swap(true);
+		const slotZero = await frameOf(peer);
+		await swap(false);
+		const shown = (/** @type {boolean} */ on) =>
+			peer.page.evaluate(
+				async ({ name, on }) => {
+					const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
+					g.traverse((/** @type {any} */ n) => n.name === name && (n.visible = on));
+				},
+				{ name: NAME, on }
+			);
+		await shown(false);
+		const without = await h.frameDelta(peer.page, slotZero, await frameOf(peer), 24);
+		await shown(true);
+		const d = await h.frameDelta(peer.page, slotZero, withSlots, 24);
+		const premise = !without.error && without.fraction > 0.05;
+		h.check(
+			premise && !d.error && d.fraction < 0.02,
+			label + ' (pixels: ' + (d.error ?? (d.fraction * 100).toFixed(2) + '% changed') + '; premise: hiding it changes ' + (without.error ?? (without.fraction * 100).toFixed(1) + '%') + ')'
+		);
+	};
 	const sameFrame = async (/** @type {any} */ peer, /** @type {string} */ label, /** @type {any} */ base = frame0) => {
 		const d = await h.frameDelta(peer.page, base, await frameOf(peer), 24);
 		h.check(!d.error && d.fraction < 0.02, label + ' (pixels: ' + (d.error ?? (d.fraction * 100).toFixed(2) + '% changed') + ')');
@@ -172,7 +230,24 @@ h.run(async () => {
 				continue;
 			}
 			const now = o.toJSON();
-			if (JSON.stringify(now.geometries) !== JSON.stringify(element.geometries)) diffs.push(o.name + ' geometry');
+			// what DRAWS: drop what rendering adds by itself (a computed bounding sphere) on both builds
+			const drawnOf = (/** @type {any[]} */ list) =>
+				list.map((/** @type {any} */ g) => {
+					const { data, ...rest } = g;
+					if (!data) return rest;
+					const { boundingSphere: _bs, ...kept } = data;
+					return { ...rest, data: kept };
+				});
+			const a = drawnOf(now.geometries);
+			const b = drawnOf(element.geometries);
+			if (JSON.stringify(a) !== JSON.stringify(b)) {
+				const keys = new Set([...Object.keys(a[0] ?? {}), ...Object.keys(a[0]?.data ?? {}).map((k) => 'data.' + k)]);
+				const differ = [...keys].filter((k) => {
+					const pick = (/** @type {any} */ x) => (k.startsWith('data.') ? x?.data?.[k.slice(5)] : x?.[k]);
+					return JSON.stringify(pick(a[0])) !== JSON.stringify(pick(b[0]));
+				});
+				diffs.push(o.name + ' geometry (' + differ.join(',') + ')');
+			}
 			if (now.materials.length !== element.materials.length) diffs.push(o.name + ' materials');
 		}
 		return diffs;
@@ -194,7 +269,7 @@ h.run(async () => {
 	await h.answerRestore(B);
 	await h.connect(B, A);
 	await h.eventually(() => state(B, NAME), good, '7a the joiner receives the crate with every face', 30000);
-	await sameFrame(B, '7a pixels: the joiner draws the crate the host draws');
+	await wholeFrame(B, '7a pixels: the joiner draws every face of the crate');
 
 	await h.freshReload(B);
 	await h.eventually(() => state(B, NAME), good, '7b the joiner reloads, rejoins and still sees every face', 60000);
@@ -207,7 +282,7 @@ h.run(async () => {
 	await load(A, fixedFile, true);
 	await h.eventually(() => state(A, NAME), good, '7d the host opens the saved scene: every face', 20000);
 	await h.eventually(() => state(B, NAME), good, '7d the joiner receives the opened scene: every face', 30000);
-	await sameFrame(B, '7d pixels: the joiner still draws the whole crate');
+	await wholeFrame(B, '7d pixels: the joiner still draws every face of the crate');
 
 	// ---- 8. a file saved by this build opens in the newest release (stock page, own context, no peers) -----------
 	const stock = process.env.STOCK_URL;

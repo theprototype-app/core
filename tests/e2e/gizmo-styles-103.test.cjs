@@ -83,12 +83,44 @@ async function drag(page, from, dx, dy, opts = {}) {
 	await page.waitForTimeout(250);
 }
 
-const undo = (page) => page.evaluate(() => window.__tp.test.v1.history.undo()).then(() => page.waitForTimeout(250));
-const setStyle = (page, s) =>
-	page.evaluate(async (v) => {
+// undo the drag just made — and ONLY a drag: when a drag did not happen, the top entry is the box's own
+// create, and undoing that deleted the box and turned one red into a cascade of null poses
+const undo = (page) =>
+	page
+		.evaluate(() => {
+			const hist = window.__tp.test.v1.history;
+			let stack;
+			hist.undoStack.subscribe((v) => (stack = v))();
+			const top = stack?.at(-1);
+			if (!top || top.kind === 'create') return 'skipped (' + (top?.kind ?? 'empty') + ')';
+			hist.undo();
+			return top.kind;
+		})
+		.then((k) => (String(k).startsWith('skipped') ? console.log(`  undo ${k}: the drag before it recorded nothing`) : null))
+		.then(() => page.waitForTimeout(250));
+// set the style and wait until the gizmo wears it (A: no face; B / C / D: that face) — says so when it does not
+const setStyle = async (page, s) => {
+	await page.evaluate(async (v) => {
 		const p = await window.__tp.test.v1.gizmoPrefs;
 		p.gizmoStyle.set(v);
-	}, s).then(() => page.waitForTimeout(500));
+	}, s);
+	const want = s === 'auto' ? null : s;
+	const ok = await page
+		.waitForFunction(
+			(w) => {
+				let tc;
+				window.__tp.test.v1.TControls.subscribe((v) => (tc = v))();
+				if (!w) return true;
+				return w === 'A' ? !tc?._face : tc?._face?.style === w;
+			},
+			want,
+			{ timeout: 10000 }
+		)
+		.then(() => true)
+		.catch(() => false);
+	if (!ok) console.log(`  setStyle(${s}): the face did not follow within 10 s (${JSON.stringify(await gizmo(page))})`);
+	await page.waitForTimeout(200);
+};
 const handleSetNow = (page) => page.evaluate(async () => {
 	const p = await window.__tp.test.v1.gizmoPrefs;
 	let v;
@@ -266,7 +298,7 @@ h.run(async () => {
 	p1 = await pose(page, boxId);
 	h.check(p1.pos[1] - p0.pos[1] > 0.05 && near(p1.pos[0], p0.pos[0]) && near(p1.pos[2], p0.pos[2]), `4.3 the lift arrow raises it (${fx(p1.pos)})`);
 	await undo(page);
-	at = await handleAt(page, 'ring', 'Y', 0.1);
+	at = await handleAt(page, 'ring', 'Y', 0.35); // the knob sits ON the ring at 45 deg (0.125): aim well away from it
 	await drag(page, at, 90, 20);
 	p1 = await pose(page, boxId);
 	h.check(Math.abs(p1.rot[1] - p0.rot[1]) > 0.05, `4.4 the turn ring turns it about up (${fx(p1.rot)})`);
@@ -284,28 +316,36 @@ h.run(async () => {
 	h.check(g.kinds.includes('arrows') && g.kinds.includes('cubes') && JSON.stringify(p1.pos) === JSON.stringify(p0.pos), `4.6 a tap on the disc opens the per-axis handles and moves nothing (${g.kinds})`);
 	await page.mouse.click(at.x, at.y);
 	await page.waitForTimeout(300);
-	// hit areas: 20 px off the lift arrow's shaft
+	// hit areas, measured from the lift's DRAWN edge (its cone is ~14 px wide each side at this zoom): a finger
+	// takes it 15 px past the edge (the 44 px target = 22 px slack), a mouse does not (7 px); 30 px past, neither
 	const hitTest = await page.evaluate(async () => {
 		let tc;
 		window.__tp.test.v1.TControls.subscribe((v) => (tc = v))();
 		const faces = await window.__tp.test.v1.gizmoFaces;
+		tc._face.expanded = false; // 4.6's per-axis handles closed: the X arrow must not answer for the lift
 		const p = faces.handlePoint(tc, 'lift', undefined, 0.5);
+		const liftScore = (dx) => faces.pickScores(tc, p.x + dx, p.y).find((x) => x.kind === 'lift')?.score ?? Infinity;
+		const firstPast = (px) => {
+			for (let dx = 0; dx <= 120; dx++) if (liftScore(dx) >= px) return dx;
+			return null;
+		};
+		const d15 = firstPast(15), d30 = firstPast(30);
 		const r = tc.domElement.getBoundingClientRect();
 		const ndc = (x, y) => ({ x: ((x - r.left) / r.width) * 2 - 1, y: -((y - r.top) / r.height) * 2 + 1, button: 0 });
-		const ask = (kind) => {
+		const ask = (kind, dx) => {
 			tc.pointerKind = kind;
-			tc.pointerHover(ndc(p.x + 20, p.y));
-			const a = tc.axis;
-			tc.pointerHover(ndc(p.x + 40, p.y));
-			const b = tc.axis;
-			return [a, b];
+			tc.pointerHover(ndc(p.x + dx, p.y));
+			return tc._hit?.kind ?? null;
 		};
-		const out = { touch: ask('touch'), mouse: ask('mouse') };
+		const out = { d15, d30, touch15: ask('touch', d15), touch30: ask('touch', d30), mouse15: ask('mouse', d15), mouse0: ask('mouse', 0) };
 		tc.pointerKind = 'mouse';
-		tc.axis = null;
+		tc.pointerHover(ndc(-5, -5));
 		return out;
 	});
-	h.check(hitTest.touch[0] === 'Y' && hitTest.touch[1] !== 'Y' && hitTest.mouse[0] !== 'Y', `4.7 a finger 20 px off the lift still takes it (44 px target), 40 px does not; a mouse needs to be on it (${JSON.stringify(hitTest)})`);
+	h.check(
+		hitTest.d15 !== null && hitTest.touch15 === 'lift' && hitTest.touch30 !== 'lift' && hitTest.mouse15 !== 'lift' && hitTest.mouse0 === 'lift',
+		`4.7 a finger 15 px past the lift's edge still takes it (44 px target), 30 px does not; a mouse needs to be on it (${JSON.stringify(hitTest)})`
+	);
 
 	// ---- 5. style D, box handles --------------------------------------------------------------------
 	await setStyle(page, 'D');
@@ -434,7 +474,7 @@ h.run(async () => {
 	await select('8.2');
 	await page.waitForTimeout(300);
 	g = await gizmo(page);
-	h.check(!g.kinds.includes('rings') && g.kinds.includes('arrows'), `8.2 show only: rings off hides the rings (${g.kinds})`);
+	h.check(!g.kinds.includes('rings') && g.kinds.includes('arrows'), `8.2 show only: rings off hides the rings (${g.kinds}; ${JSON.stringify(g)})`);
 	await page.evaluate(async () => {
 		(await window.__tp.test.v1.gizmoHide).setKindShown('B', 'rings', true);
 		const p = await window.__tp.test.v1.gizmoPrefs;

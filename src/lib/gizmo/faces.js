@@ -234,7 +234,7 @@ function scoreHandle(/** @type {Handle} */ h, /** @type {THREE.Ray} */ ray, /** 
 	const hit = h.hit;
 	if (hit.type === 'point') {
 		_p.copy(hit.p).applyMatrix4(mw);
-		const d = Math.sqrt(ray.distanceSqToPoint(_p));
+		const d = Math.sqrt(Math.max(0, ray.distanceSqToPoint(_p)));
 		const wpp = worldPerPx(tc, _p);
 		// not clamped: a press deep inside a cube / knob beats an arrow shaft that runs through it (both
 		// would score 0 and the first listed, the arrow, took every cube press)
@@ -250,7 +250,9 @@ function scoreHandle(/** @type {Handle} */ h, /** @type {THREE.Ray} */ ray, /** 
 			const onSeg = _v1;
 			const d2 = ray.distanceSqToSegment(_p, _q, undefined, onSeg);
 			const wpp = worldPerPx(tc, onSeg);
-			const s = Math.sqrt(d2) / wpp - (hit.r * scale) / wpp;
+			// three's distanceSqToSegment comes back a hair below 0 for a ray dead on the segment: sqrt -> NaN,
+			// and a NaN score lost to everything (a press exactly on the lift arrow picked nothing)
+			const s = Math.sqrt(Math.max(0, d2)) / wpp - (hit.r * scale) / wpp;
 			if (s < best) best = s;
 		}
 		return Math.max(0, best);
@@ -417,6 +419,7 @@ class Face {
 		for (const h of this.handles) {
 			if (!h.obj.visible || h.hidden) continue;
 			const sc = scoreHandle(h, ray, tc, slack);
+			if (Number.isNaN(sc)) continue;
 			if (sc < bestScore) {
 				bestScore = sc;
 				best = h;
@@ -845,6 +848,21 @@ export function handlePoint(tc, kind, axis, along = 0.7) {
 	p.applyMatrix4(h.obj.matrixWorld).project(tc.camera);
 	const r = tc.domElement.getBoundingClientRect();
 	return { x: r.left + ((p.x + 1) / 2) * r.width, y: r.top + ((1 - p.y) / 2) * r.height };
+}
+
+/** test seam: every visible handle's score (px past its edge; <= the slack = a hit) at client x / y */
+export function pickScores(/** @type {any} */ tc, /** @type {number} */ x, /** @type {number} */ y) {
+	const face = tc?._face;
+	if (!face) return null;
+	tc.getHelper().updateMatrixWorld(true);
+	const r = tc.domElement.getBoundingClientRect();
+	const ray = new THREE.Raycaster();
+	ray.setFromCamera(new THREE.Vector2(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1), tc.camera);
+	const slack = tc.pointerKind === 'touch' ? TOUCH_SLACK : MOUSE_SLACK;
+	const pool = face.b && !face.usesBox(tc.object) ? face.b.handles : face.handles;
+	return pool
+		.filter((/** @type {Handle} */ h) => h.obj.visible && !h.hidden)
+		.map((/** @type {Handle} */ h) => ({ kind: h.kind, axis: h.axis, score: +scoreHandle(h, ray.ray, tc, slack).toFixed(2), wpp: +worldPerPx(tc, new THREE.Vector3().setFromMatrixPosition(h.obj.matrixWorld)).toFixed(5) }));
 }
 
 /** test seam: a face's handles as plain data */

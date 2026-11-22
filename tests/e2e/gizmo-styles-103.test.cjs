@@ -298,7 +298,9 @@ h.run(async () => {
 	p1 = await pose(page, boxId);
 	h.check(p1.pos[1] - p0.pos[1] > 0.05 && near(p1.pos[0], p0.pos[0]) && near(p1.pos[2], p0.pos[2]), `4.3 the lift arrow raises it (${fx(p1.pos)})`);
 	await undo(page);
-	at = await handleAt(page, 'ring', 'Y', 0.35); // the knob sits ON the ring at 45 deg (0.125): aim well away from it
+	// the NEAR side of the ring (about 315 deg): the knob sits ON the ring at 45 deg, and on screen the lift
+	// arrow runs over the FAR side, where the lift (drawn over it) rightly takes the press
+	at = await handleAt(page, 'ring', 'Y', 0.875);
 	await drag(page, at, 90, 20);
 	p1 = await pose(page, boxId);
 	h.check(Math.abs(p1.rot[1] - p0.rot[1]) > 0.05, `4.4 the turn ring turns it about up (${fx(p1.rot)})`);

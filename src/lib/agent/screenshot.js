@@ -156,8 +156,30 @@ export async function takeScreenshot(opts = {}) {
 		if (!through) return refuse('view camera: ' + opts.uuid + ' is not a camera in the scene (list_scene shows the cameras)');
 		if (opts.aspect === undefined || opts.aspect === null) opts = { ...opts, aspect: co.aspectRatio(co.cameraSpec(through).aspect) || canvasAspect };
 	}
-	const plan = planShot(opts, canvasAspect);
+	let plan = planShot(opts, canvasAspect);
 	if (plan.problem !== null) return refuse(plan.problem);
+	// 104 B2: 'current' while the person looks through a scene camera (a preview, a game, a sequence shot, Film,
+	// a recording) is THAT camera: its framing aspect (the letterbox they see) unless one is asked for, and an
+	// orthographic one is drawn from its marker (the render camera's lens there is not a perspective fov)
+	/** @type {any} */
+	let lookThrough = null;
+	if (plan.current && !through) {
+		const { lookingThrough } = await import('$lib/connector/throughCamera.js');
+		lookThrough = lookingThrough((uuid) => group?.getObjectByProperty?.('uuid', uuid));
+		if (lookThrough?.uuid) {
+			const co = await import('$lib/cameraObjects');
+			const marker = co.findCameraObject(lookThrough.uuid);
+			if (marker) {
+				const lens = co.cameraSpec(marker);
+				if (opts.aspect === undefined || opts.aspect === null) {
+					opts = { ...opts, aspect: co.aspectRatio(lens.aspect) || canvasAspect };
+					plan = planShot(opts, canvasAspect);
+					if (plan.problem !== null) return refuse(plan.problem);
+				}
+				if (userCamera?.isOrthographicCamera || lens.kind === 'orthographic') through = marker;
+			}
+		}
+	}
 	const { w, h, view } = plan;
 
 	const spec = through ? (await import('$lib/cameraObjects')).cameraSpec(through) : null;
@@ -165,7 +187,7 @@ export async function takeScreenshot(opts = {}) {
 	const camera = new THREE.PerspectiveCamera(fov, w / h, 0.05, 2000);
 	/** @type {number[] | null} */
 	let aimedAt = null;
-	/** @type {{kind: string, uuids?: string[], names?: string[]}} */
+	/** @type {{kind: string, uuids?: string[], names?: string[], through?: any}} */
 	let subject = { kind: 'none' };
 	if (through) {
 		through.updateWorldMatrix(true, false);
@@ -179,7 +201,9 @@ export async function takeScreenshot(opts = {}) {
 		camera.zoom = plan.zoom;
 		const roll = Number(spec?.roll);
 		if (Number.isFinite(roll) && roll) camera.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), (-roll * Math.PI) / 180));
-		subject = { kind: 'camera', uuids: [through.uuid], names: [String(through.name ?? '')] };
+		subject = lookThrough
+			? { kind: 'what the person sees', through: lookThrough }
+			: { kind: 'camera', uuids: [through.uuid], names: [String(through.name ?? '')] };
 	} else if (plan.free) {
 		camera.position.fromArray(plan.free.position);
 		// a straight-up or straight-down look has no "up" of its own
@@ -196,7 +220,7 @@ export async function takeScreenshot(opts = {}) {
 		camera.near = userCamera.near ?? 0.05;
 		camera.far = userCamera.far ?? 2000;
 		camera.zoom = plan.zoom;
-		subject = { kind: 'what the person sees' };
+		subject = { kind: 'what the person sees', ...(lookThrough ? { through: lookThrough } : {}) };
 	} else {
 		let objects = group ? [group] : [];
 		subject = { kind: 'scene' };

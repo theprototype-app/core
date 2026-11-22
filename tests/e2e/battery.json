@@ -310,6 +310,8 @@
 	},
 	"suites": {
 		"render-seam": 180,
+		"agent-probe-float": 150,
+		"connector-through": 150,
 		"load-check": 240,
 		"schema-two-peers": 360,
 		"uir-people": 300,

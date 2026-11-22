@@ -377,6 +377,13 @@ function applyShot(run, seq, t) {
 	}
 }
 
+/** 104 B2: the camera a running sequence is showing on this peer right now (its shot), or null */
+export function sequenceCamera() {
+	if (!cameraOwner) return null;
+	const run = runs.get(cameraOwner);
+	return run?.shot ? { run: cameraOwner, uuid: run.shot } : null;
+}
+
 /** Give the view back: the camera this peer looked through before, or its own. */
 function releaseCamera() {
 	const prior = priorCamera;

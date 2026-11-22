@@ -3,7 +3,7 @@
 	"format": 2,
 	"generator": {
 		"source": "tpAgent.tools() via core scripts/agent-tool-catalog.cjs, mapped by tools/agent/src/catalog.js",
-		"hostTools": 84,
+		"hostTools": 85,
 		"dropped": []
 	},
 	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
@@ -21,7 +21,7 @@
 		{
 			"name": "list_scene",
 			"title": "Read the scene",
-			"description": "List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. Every mesh also has mesh {vertexCount, faceCount (triangles), bounds {local, world}} — each box [[minX, minY, minZ], [maxX, maxY, maxZ]], local in the mesh's own space (its vertices), world in the scene. The transform is the AUTHORED pose: an object an effect is moving also has animated: true, and live {position, rotation, scale, visible} when this frame differs; update_objects writes the authored pose, so never copy live back into it. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: \"scene\" | object uuid, page} to read one page of one graph.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall list_scene before editing so you use real uuids; batch many objects into one call.",
+			"description": "List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. Every mesh also has mesh {vertexCount, faceCount (triangles), bounds {local, world}} — each box [[minX, minY, minZ], [maxX, maxY, maxZ]], local in the mesh's own space (its vertices), world in the scene. The transform is the AUTHORED pose: an object an effect is moving also has animated: true, and live {position, rotation, scale, visible} when this frame differs; update_objects writes the authored pose, so never copy live back into it. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius} (near = WHICH OBJECTS are around a spot; the ground height, slope or water under a point is probe). A big flow graph shows its first page and says how to read the rest: pass {flow: \"scene\" | object uuid, page} to read one page of one graph.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall list_scene before editing so you use real uuids; batch many objects into one call.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -5058,6 +5058,83 @@
 			}
 		},
 		{
+			"name": "probe",
+			"title": "Read the ground and water under a point",
+			"description": "Read what is UNDER a point, without changing anything: the height of the ground (a terrain, a floor, a table top, the ground plane) straight under an x/z, its surface normal and which object it is, and the water there (its still surface level and how deep it is). Use it before placing things \"on the ground\", \"on the beach\", \"on the water\" or along a slope: put an object's base at y, or a floating thing at water.surface. at: [x, z] for one point, points: [[x, z], …] (up to 64) for many (a row of posts, a path), ray: {from, dir, max} for the first thing a ray meets (what is in front of a door, under a lamp). Water bodies and trigger volumes are looked through unless include is \"all\". probe answers \"what is under this point\"; list_scene {near} answers \"which objects are around here\".",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"at": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 2,
+						"maxItems": 3,
+						"description": "[x, z] in metres (the frame create_objects builds in)"
+					},
+					"points": {
+						"type": "array",
+						"maxItems": 64,
+						"items": {
+							"type": "array",
+							"items": {
+								"type": "number"
+							},
+							"minItems": 2,
+							"maxItems": 3
+						},
+						"description": "many [x, z] at once; the answer lists them in the same order"
+					},
+					"ray": {
+						"type": "object",
+						"description": "instead of at / points: the first surface along a ray, {uuid, name, surface, point, normal, distance}",
+						"properties": {
+							"from": {
+								"type": "array",
+								"items": {
+									"type": "number"
+								},
+								"minItems": 3,
+								"maxItems": 3,
+								"description": "[x, y, z]"
+							},
+							"dir": {
+								"type": "array",
+								"items": {
+									"type": "number"
+								},
+								"minItems": 3,
+								"maxItems": 3,
+								"description": "direction [x, y, z] (any length)"
+							},
+							"max": {
+								"type": "number",
+								"description": "metres, default and at most 1000"
+							}
+						},
+						"required": [
+							"from",
+							"dir"
+						]
+					},
+					"include": {
+						"type": "string",
+						"enum": [
+							"solid",
+							"all"
+						],
+						"description": "solid (default) = ground only: water and trigger volumes are looked through; all = they count too, and each point also lists every surface top-down (hits)"
+					}
+				}
+			},
+			"annotations": {
+				"title": "Read the ground and water under a point",
+				"readOnlyHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
 			"name": "create_flow_nodes",
 			"title": "Add behaviour (flow) nodes",
 			"description": "Add behavior (flow) nodes to a node graph — this is how objects get MOTION and interactivity: spin, bounce, patrol a path, pulse, blink, react to clicks. graph is \"scene\" or an object uuid (ONE graph per call). KEY RULE: a behavior node placed in an OBJECT's graph with no edges automatically drives that object — most behaviors are one node, zero edges, so usually OMIT edges. A script node runs every frame FROM THE BASE POSE, so object.rotation.y += 0.02 lands at base + 0.02 and stays: write object.rotation.y = base.rot[1] + elapsed * speed (base has pos, rot, scale as arrays; elapsed = seconds since Play started, time = the shared clock, seconds of the day, a large number). Particle gravity is the acceleration along world Y: negative falls, positive rises. Describe nodes EITHER as text (graph lines, see the system prompt) OR as nodes/edges arrays. A call with some bad nodes still creates the good ones and returns partial:true + errors[] — resend only what errors[] names. GAME RULES (state, scoring, rounds, toggles two people press) belong in a behaviour (create_behaviour); nodes WIRE them (an event into its inputs, its outputs into Visibility / HUD / Set Game State). An action needs an EVENT: a value (latch, gate, compare) wired into a trigger is refused. Worked builds: describe_node_types {recipe: \"\"}.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.",
@@ -5296,7 +5373,7 @@
 		{
 			"name": "set_physics",
 			"title": "Set physics",
-			"description": "Set physics body params on objects (batch). NOTE: objects made with create_objects are STATIC unless created with physics \"dynamic\" or a mass — use this to make existing objects dynamic, to TUNE bodies, or to pin scenery (mode \"static\"). mode \"auto\" reverts to scenery defaults.\nTake a screenshot after each change to check your work.",
+			"description": "Set physics body params on objects (batch). NOTE: objects made with create_objects are STATIC unless created with physics \"dynamic\" or a mass — use this to make existing objects dynamic, to TUNE bodies, or to pin scenery (mode \"static\"). mode \"auto\" reverts to scenery defaults. FLOATING: a dynamic body floats in any water (effects water, or an object made water). How deep it sits comes from its float setting, not its mass: float \"auto\" = half under, \"foam\" / \"cork\" ride high, \"wood\" / \"ice\" sit low, \"rubber\" / \"stone\" / \"metal\" / \"sink\" sink; or density in kg/m³ (water is 1000: below floats, above sinks); float \"mass\" makes it mass ÷ its volume, so a heavier object of the same size sits lower and past 1000 kg per m³ sinks. buoyancy scales the lift, waterDrag how fast the water slows it. Any float field answers water {density, under (share below the surface), draft (metres under), height, sinks} and, when water is under it, surface and restingBottomY (where its bottom rests): put a floating thing at that height so it does not drop in. A cube between ~0.2 and ~0.8 of the density of water tips onto an edge, as a real one does (upright: false, with a note). probe reads the water surface and depth at any point.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -5371,6 +5448,35 @@
 										]
 									},
 									"description": "groups this object collides with (omit = all); leave out player for a ghost wall the player walks through"
+								},
+								"float": {
+									"type": "string",
+									"enum": [
+										"auto",
+										"foam",
+										"cork",
+										"wood",
+										"ice",
+										"rubber",
+										"stone",
+										"metal",
+										"sink",
+										"mass",
+										"off"
+									],
+									"description": "how it sits in water (makes it dynamic): auto = half under; foam / cork ride high; wood / ice low; rubber, stone, metal, sink go down; mass = mass ÷ volume decides; off = ignores water"
+								},
+								"density": {
+									"type": "number",
+									"description": "kg/m³ for floating, 10-20000 (water 1000: below floats, above sinks); instead of float"
+								},
+								"buoyancy": {
+									"type": "number",
+									"description": "lift factor 0-10 (1 = as the density says; 2 = rides higher)"
+								},
+								"waterDrag": {
+									"type": "number",
+									"description": "how hard the water slows it, factor 0-10 (1 = the water's own; 0.3 = drifts, 3 = holds still)"
 								}
 							},
 							"required": [
@@ -6018,7 +6124,7 @@
 		{
 			"name": "screenshot",
 			"title": "Take a picture of the scene",
-			"description": "See the scene: a PNG of a clean frame (no gizmos, no people) from a temporary camera, never moving anyone's view. view: current | top | front | iso | focus | camera (focus needs uuid or uuids; camera looks through the scene camera uuid, its lens and framing); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person's window). Answers with the camera it used. postEffects: true draws the scene's post effects too; hud: true the game HUD on top; avatars: true keeps the people in (current keeps them unless false).",
+			"description": "See the scene: a PNG of a clean frame (no gizmos, no people) from a temporary camera, never moving anyone's view. view: current | top | front | iso | focus | camera (focus needs uuid or uuids; camera looks through the scene camera uuid, its lens and framing); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person's window, or the framing of the scene camera they look through: where_are_users through). Answers with the camera it used. postEffects: true draws the scene's post effects too; hud: true the game HUD on top; avatars: true keeps the people in (current keeps them unless false).",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -6192,7 +6298,7 @@
 		{
 			"name": "where_are_users",
 			"title": "Where the people are",
-			"description": "Where each person in the session is and which way they look (their desktop camera, or the VR headset): position, facing as a compass yaw plus forward and right vectors, the floor under them, and ready-made spots 1.5 m and 3 m in front of them at floor level. The entry with \"you\": true is the person you act as. Use it for \"in front of me\", \"around me\", \"behind me\", \"to my left\". A person can PING a spot (Ctrl+Alt+click, Ping in a menu, the VR stick click): each row carries their latestPing, and pings: true lists the recent ones (2 minutes). For \"put it here\", build with create_objects / update_objects at: {ping: \"latest\"} (align: \"surface\" for a wall). Each row also has body (eye, height, shoulder, hip, knee, reach, room — \"a table at hip height\") and, in VR, hands (left, right, apart — \"as wide as my hands\"). Nothing you make may appear inside a person in VR (0.45 m around the head, through the body): that call is refused and says so.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.",
+			"description": "Where each person in the session is and which way they look (their desktop camera, or the VR headset): position, facing as a compass yaw plus forward and right vectors, the floor under them, and ready-made spots 1.5 m and 3 m in front of them at floor level. The entry with \"you\": true is the person you act as. Use it for \"in front of me\", \"around me\", \"behind me\", \"to my left\". A person can PING a spot (Ctrl+Alt+click, Ping in a menu, the VR stick click): each row carries their latestPing, and pings: true lists the recent ones (2 minutes). For \"put it here\", build with create_objects / update_objects at: {ping: \"latest\"} (align: \"surface\" for a wall). Each row also has body (eye, height, shoulder, hip, knee, reach, room — \"a table at hip height\") and, in VR, hands (left, right, apart — \"as wide as my hands\"). Nothing you make may appear inside a person in VR (0.45 m around the head, through the body): that call is refused and says so. When the person looks through a scene camera full-screen, the \"you\" row has through {uuid, name, kind}: kind preview (they pressed Preview), play (the game looks through it), sequence (a sequence shot), phone (Film mode, a phone as a virtual camera) or recording (a video is being taken); position and forward are then that camera's, and screenshot view current shows what it sees.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -6292,7 +6398,7 @@
 			{
 				"name": "list_scene",
 				"title": "Read the scene",
-				"description": "List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. Every mesh also has mesh {vertexCount, faceCount (triangles), bounds {local, world}} — each box [[minX, minY, minZ], [maxX, maxY, maxZ]], local in the mesh's own space (its vertices), world in the scene. The transform is the AUTHORED pose: an object an effect is moving also has animated: true, and live {position, rotation, scale, visible} when this frame differs; update_objects writes the authored pose, so never copy live back into it. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: \"scene\" | object uuid, page} to read one page of one graph.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall list_scene before editing so you use real uuids; batch many objects into one call.",
+				"description": "List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. Every mesh also has mesh {vertexCount, faceCount (triangles), bounds {local, world}} — each box [[minX, minY, minZ], [maxX, maxY, maxZ]], local in the mesh's own space (its vertices), world in the scene. The transform is the AUTHORED pose: an object an effect is moving also has animated: true, and live {position, rotation, scale, visible} when this frame differs; update_objects writes the authored pose, so never copy live back into it. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius} (near = WHICH OBJECTS are around a spot; the ground height, slope or water under a point is probe). A big flow graph shows its first page and says how to read the rest: pass {flow: \"scene\" | object uuid, page} to read one page of one graph.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall list_scene before editing so you use real uuids; batch many objects into one call.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -11132,6 +11238,83 @@
 				}
 			},
 			{
+				"name": "probe",
+				"title": "Read the ground and water under a point",
+				"description": "Read what is UNDER a point, without changing anything: the height of the ground (a terrain, a floor, a table top, the ground plane) straight under an x/z, its surface normal and which object it is, and the water there (its still surface level and how deep it is). Use it before placing things \"on the ground\", \"on the beach\", \"on the water\" or along a slope: put an object's base at y, or a floating thing at water.surface. at: [x, z] for one point, points: [[x, z], …] (up to 64) for many (a row of posts, a path), ray: {from, dir, max} for the first thing a ray meets (what is in front of a door, under a lamp). Water bodies and trigger volumes are looked through unless include is \"all\". probe answers \"what is under this point\"; list_scene {near} answers \"which objects are around here\".",
+				"inputSchema": {
+					"type": "object",
+					"properties": {
+						"at": {
+							"type": "array",
+							"items": {
+								"type": "number"
+							},
+							"minItems": 2,
+							"maxItems": 3,
+							"description": "[x, z] in metres (the frame create_objects builds in)"
+						},
+						"points": {
+							"type": "array",
+							"maxItems": 64,
+							"items": {
+								"type": "array",
+								"items": {
+									"type": "number"
+								},
+								"minItems": 2,
+								"maxItems": 3
+							},
+							"description": "many [x, z] at once; the answer lists them in the same order"
+						},
+						"ray": {
+							"type": "object",
+							"description": "instead of at / points: the first surface along a ray, {uuid, name, surface, point, normal, distance}",
+							"properties": {
+								"from": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3,
+									"description": "[x, y, z]"
+								},
+								"dir": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3,
+									"description": "direction [x, y, z] (any length)"
+								},
+								"max": {
+									"type": "number",
+									"description": "metres, default and at most 1000"
+								}
+							},
+							"required": [
+								"from",
+								"dir"
+							]
+						},
+						"include": {
+							"type": "string",
+							"enum": [
+								"solid",
+								"all"
+							],
+							"description": "solid (default) = ground only: water and trigger volumes are looked through; all = they count too, and each point also lists every surface top-down (hits)"
+						}
+					}
+				},
+				"annotations": {
+					"title": "Read the ground and water under a point",
+					"readOnlyHint": true,
+					"openWorldHint": false
+				}
+			},
+			{
 				"name": "create_flow_nodes",
 				"title": "Add behaviour (flow) nodes",
 				"description": "Add behavior (flow) nodes to a node graph — this is how objects get MOTION and interactivity: spin, bounce, patrol a path, pulse, blink, react to clicks. graph is \"scene\" or an object uuid (ONE graph per call). KEY RULE: a behavior node placed in an OBJECT's graph with no edges automatically drives that object — most behaviors are one node, zero edges, so usually OMIT edges. A script node runs every frame FROM THE BASE POSE, so object.rotation.y += 0.02 lands at base + 0.02 and stays: write object.rotation.y = base.rot[1] + elapsed * speed (base has pos, rot, scale as arrays; elapsed = seconds since Play started, time = the shared clock, seconds of the day, a large number). Particle gravity is the acceleration along world Y: negative falls, positive rises. Describe nodes EITHER as text (graph lines, see the system prompt) OR as nodes/edges arrays. A call with some bad nodes still creates the good ones and returns partial:true + errors[] — resend only what errors[] names. GAME RULES (state, scoring, rounds, toggles two people press) belong in a behaviour (create_behaviour); nodes WIRE them (an event into its inputs, its outputs into Visibility / HUD / Set Game State). An action needs an EVENT: a value (latch, gate, compare) wired into a trigger is refused. Worked builds: describe_node_types {recipe: \"\"}.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.",
@@ -11370,7 +11553,7 @@
 			{
 				"name": "set_physics",
 				"title": "Set physics",
-				"description": "Set physics body params on objects (batch). NOTE: objects made with create_objects are STATIC unless created with physics \"dynamic\" or a mass — use this to make existing objects dynamic, to TUNE bodies, or to pin scenery (mode \"static\"). mode \"auto\" reverts to scenery defaults.\nTake a screenshot after each change to check your work.",
+				"description": "Set physics body params on objects (batch). NOTE: objects made with create_objects are STATIC unless created with physics \"dynamic\" or a mass — use this to make existing objects dynamic, to TUNE bodies, or to pin scenery (mode \"static\"). mode \"auto\" reverts to scenery defaults. FLOATING: a dynamic body floats in any water (effects water, or an object made water). How deep it sits comes from its float setting, not its mass: float \"auto\" = half under, \"foam\" / \"cork\" ride high, \"wood\" / \"ice\" sit low, \"rubber\" / \"stone\" / \"metal\" / \"sink\" sink; or density in kg/m³ (water is 1000: below floats, above sinks); float \"mass\" makes it mass ÷ its volume, so a heavier object of the same size sits lower and past 1000 kg per m³ sinks. buoyancy scales the lift, waterDrag how fast the water slows it. Any float field answers water {density, under (share below the surface), draft (metres under), height, sinks} and, when water is under it, surface and restingBottomY (where its bottom rests): put a floating thing at that height so it does not drop in. A cube between ~0.2 and ~0.8 of the density of water tips onto an edge, as a real one does (upright: false, with a note). probe reads the water surface and depth at any point.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -11445,6 +11628,35 @@
 											]
 										},
 										"description": "groups this object collides with (omit = all); leave out player for a ghost wall the player walks through"
+									},
+									"float": {
+										"type": "string",
+										"enum": [
+											"auto",
+											"foam",
+											"cork",
+											"wood",
+											"ice",
+											"rubber",
+											"stone",
+											"metal",
+											"sink",
+											"mass",
+											"off"
+										],
+										"description": "how it sits in water (makes it dynamic): auto = half under; foam / cork ride high; wood / ice low; rubber, stone, metal, sink go down; mass = mass ÷ volume decides; off = ignores water"
+									},
+									"density": {
+										"type": "number",
+										"description": "kg/m³ for floating, 10-20000 (water 1000: below floats, above sinks); instead of float"
+									},
+									"buoyancy": {
+										"type": "number",
+										"description": "lift factor 0-10 (1 = as the density says; 2 = rides higher)"
+									},
+									"waterDrag": {
+										"type": "number",
+										"description": "how hard the water slows it, factor 0-10 (1 = the water's own; 0.3 = drifts, 3 = holds still)"
 									}
 								},
 								"required": [
@@ -11957,7 +12169,7 @@
 			{
 				"name": "screenshot",
 				"title": "Take a picture of the scene",
-				"description": "See the scene: a PNG of a clean frame (no gizmos, no people) from a temporary camera, never moving anyone's view. view: current | top | front | iso | focus | camera (focus needs uuid or uuids; camera looks through the scene camera uuid, its lens and framing); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person's window). Answers with the camera it used. postEffects: true draws the scene's post effects too; hud: true the game HUD on top; avatars: true keeps the people in (current keeps them unless false).",
+				"description": "See the scene: a PNG of a clean frame (no gizmos, no people) from a temporary camera, never moving anyone's view. view: current | top | front | iso | focus | camera (focus needs uuid or uuids; camera looks through the scene camera uuid, its lens and framing); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person's window, or the framing of the scene camera they look through: where_are_users through). Answers with the camera it used. postEffects: true draws the scene's post effects too; hud: true the game HUD on top; avatars: true keeps the people in (current keeps them unless false).",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -12131,7 +12343,7 @@
 			{
 				"name": "where_are_users",
 				"title": "Where the people are",
-				"description": "Where each person in the session is and which way they look (their desktop camera, or the VR headset): position, facing as a compass yaw plus forward and right vectors, the floor under them, and ready-made spots 1.5 m and 3 m in front of them at floor level. The entry with \"you\": true is the person you act as. Use it for \"in front of me\", \"around me\", \"behind me\", \"to my left\". A person can PING a spot (Ctrl+Alt+click, Ping in a menu, the VR stick click): each row carries their latestPing, and pings: true lists the recent ones (2 minutes). For \"put it here\", build with create_objects / update_objects at: {ping: \"latest\"} (align: \"surface\" for a wall). Each row also has body (eye, height, shoulder, hip, knee, reach, room — \"a table at hip height\") and, in VR, hands (left, right, apart — \"as wide as my hands\"). Nothing you make may appear inside a person in VR (0.45 m around the head, through the body): that call is refused and says so.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.",
+				"description": "Where each person in the session is and which way they look (their desktop camera, or the VR headset): position, facing as a compass yaw plus forward and right vectors, the floor under them, and ready-made spots 1.5 m and 3 m in front of them at floor level. The entry with \"you\": true is the person you act as. Use it for \"in front of me\", \"around me\", \"behind me\", \"to my left\". A person can PING a spot (Ctrl+Alt+click, Ping in a menu, the VR stick click): each row carries their latestPing, and pings: true lists the recent ones (2 minutes). For \"put it here\", build with create_objects / update_objects at: {ping: \"latest\"} (align: \"surface\" for a wall). Each row also has body (eye, height, shoulder, hip, knee, reach, room — \"a table at hip height\") and, in VR, hands (left, right, apart — \"as wide as my hands\"). Nothing you make may appear inside a person in VR (0.45 m around the head, through the body): that call is refused and says so. When the person looks through a scene camera full-screen, the \"you\" row has through {uuid, name, kind}: kind preview (they pressed Preview), play (the game looks through it), sequence (a sequence shot), phone (Film mode, a phone as a virtual camera) or recording (a video is being taken); position and forward are then that camera's, and screenshot view current shows what it sees.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {

@@ -12,6 +12,9 @@
 // puts the real mesh back. Only a geometry that appears TWICE or more is shared, so a scene without repeats
 // is written byte-for-byte as before.
 
+/** what the repeats of one file may expand to: the 50 MB a whole scene file may weigh (sessions.js MAX_SESSION_BYTES) */
+export const SHARED_EXPAND_MAX_BYTES = 50 * 1024 * 1024;
+
 /** a buffer geometry entry worth sharing @param {any} g */
 function isBuffer(g) {
 	return g && typeof g === 'object' && g.type === 'BufferGeometry' && g.data && typeof g.data === 'object' && g.data.attributes?.position;
@@ -20,11 +23,27 @@ function isBuffer(g) {
 /**
  * Put every shared geometry back where it was used (in place) and drop the table. Safe on any payload:
  * one without a table is left alone, a stub naming a missing entry stays the older build's stand-in box.
- * @param {any} payload @returns {any} the same payload
+ * Throws when the copies would pass `maxBytes` (see SHARED_EXPAND_MAX_BYTES).
+ * @param {any} payload @param {number} [maxBytes] @returns {any} the same payload
  */
-export function inflateSharedGeometries(payload) {
+export function inflateSharedGeometries(payload, maxBytes = SHARED_EXPAND_MAX_BYTES) {
 	const table = payload?.sharedGeometries;
 	if (!Array.isArray(table)) return payload;
+	// a file whose repeats would expand past what a whole scene may weigh is refused before any copy is made
+	// (a small file can name one big mesh thousands of times)
+	/** @type {Map<number, number>} */
+	const sizeOf = new Map();
+	let total = 0;
+	for (const el of Array.isArray(payload.objects) ? payload.objects : []) {
+		if (!Array.isArray(el?.geometries)) continue;
+		for (const g of el.geometries) {
+			const i = g?.sharedGeometry;
+			if (!Number.isInteger(i) || !isBuffer(table[i])) continue;
+			if (!sizeOf.has(i)) sizeOf.set(i, JSON.stringify(table[i]).length);
+			total += /** @type {number} */ (sizeOf.get(i));
+			if (total > maxBytes) throw new Error('This scene file expands to more than ' + Math.round(maxBytes / 1048576) + ' MB of meshes, so it was not opened.');
+		}
+	}
 	for (const el of Array.isArray(payload.objects) ? payload.objects : []) {
 		if (!Array.isArray(el?.geometries)) continue;
 		for (let k = 0; k < el.geometries.length; k++) {

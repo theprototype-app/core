@@ -462,23 +462,30 @@ function buildLiveJoint(def) {
 		jointAxisWorld.applyQuaternion(tempJointQuat.set(r.x, r.y, r.z, r.w).invert()).normalize();
 		return { x: jointAxisWorld.x, y: jointAxisWorld.y, z: jointAxisWorld.z };
 	};
-	if (def.kind === 'revolute') {
-		data = RAPIER.JointData.revolute(a1, a2, axisInBodyA());
-	} else if (def.kind === 'spherical') {
-		data = RAPIER.JointData.spherical(a1, a2); // 102b ball
-	} else if (def.kind === 'prismatic') {
-		data = RAPIER.JointData.prismatic(a1, a2, axisInBodyA()); // 102b slider
-	} else if (def.kind === 'spring') {
-		data = RAPIER.JointData.spring(def.rest ?? 1, def.stiffness ?? 50, def.damping ?? 2, a1, a2); // 102b
-	} else if (def.kind === 'rope') {
-		data = RAPIER.JointData.rope(def.length ?? 1, a1, a2); // 102b
-	} else if (def.kind === 'fixed' || def.kind === 'weld' || !def.kind) {
-		data = RAPIER.JointData.fixed(a1, { w: 1, x: 0, y: 0, z: 0 }, a2, { w: 1, x: 0, y: 0, z: 0 });
-	} else {
-		// 102b: a kind a NEWER build made — holding it as a weld would be a wrong joint, not a missing one
+	let joint;
+	try {
+		if (def.kind === 'revolute') {
+			data = RAPIER.JointData.revolute(a1, a2, axisInBodyA());
+		} else if (def.kind === 'spherical') {
+			data = RAPIER.JointData.spherical(a1, a2); // 102b ball
+		} else if (def.kind === 'prismatic') {
+			data = RAPIER.JointData.prismatic(a1, a2, axisInBodyA()); // 102b slider
+		} else if (def.kind === 'spring') {
+			data = RAPIER.JointData.spring(def.rest ?? 1, def.stiffness ?? 50, def.damping ?? 2, a1, a2); // 102b
+		} else if (def.kind === 'rope') {
+			data = RAPIER.JointData.rope(def.length ?? 1, a1, a2); // 102b
+		} else if (def.kind === 'fixed' || def.kind === 'weld' || !def.kind) {
+			data = RAPIER.JointData.fixed(a1, { w: 1, x: 0, y: 0, z: 0 }, a2, { w: 1, x: 0, y: 0, z: 0 });
+		} else {
+			// 102b: a kind a NEWER build made — holding it as a weld would be a wrong joint, not a missing one
+			return;
+		}
+		joint = world.createImpulseJoint(data, bodyA, bodyB, true);
+	} catch (err) {
+		// one joint the engine cannot build must not stop the run: it is left out, the rest still start
+		console.warn('[physics] joint ' + def.id + ' left out:', err);
 		return;
 	}
-	const joint = world.createImpulseJoint(data, bodyA, bodyB, true);
 	liveJointDefs.set(def.id, JSON.stringify(def));
 	// 37-fx: limits, no self-collision, an ANGLE motor (a steering knuckle); 102b: slider limits (metres)
 	if ((def.kind === 'revolute' || def.kind === 'prismatic') && Array.isArray(def.limits)) joint.setLimits?.(def.limits[0], def.limits[1]);

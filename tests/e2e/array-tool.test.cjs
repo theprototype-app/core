@@ -141,6 +141,19 @@ h.run(async () => {
 		return g.children.slice(k).map((o) => Math.round(o.position.x * 1000) / 1000);
 	}, kidsA0);
 	h.check(sameArr(xs, [box[0] + 2, box[0] + 4, box[0] + 6].map((n) => Math.round(n * 1000) / 1000)), 'the objects stand where the copies were (2 m apart)' + ' | ' + JSON.stringify(xs));
+	// a copy is a clone of the object: it must not carry the array on (it would draw its own copies everywhere)
+	/** @param {any} P @param {number} k */
+	const carried = (P, k) =>
+		P.page.evaluate((from) => {
+			let g;
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
+			return g.children.slice(from).filter((o) => !!o.userData.array).length;
+		}, k);
+	h.check((await carried(A, kidsA0)) === 0, 'A: no made object carries an array');
+	await h.eventually(() => carried(B, kidsB0), (n) => n === 0, 'B: no made object carries an array either', 10000);
+	/** @param {any} P */
+	const allDrawn = (P) => P.page.evaluate(() => Object.values(window.__tp.test.v1.arrayRuntime.arraysDebug().copies).reduce((a, b) => a + b, 0));
+	await h.eventually(() => allDrawn(B), (n) => n === 0, 'B: no array copies drawn anywhere after Make real objects', 10000);
 	await undo(A);
 	await h.eventually(() => childCount(A), (n) => n === kidsA0, 'A: ONE undo takes all 3 away', 10000);
 	await h.eventually(() => childCount(B), (n) => n === kidsB0, 'B: and on the other peer', 10000);

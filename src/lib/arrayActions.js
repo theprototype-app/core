@@ -96,6 +96,9 @@ export function makeArrayReal(uuid) {
 	const base = object.name || 'Object';
 	try {
 		withWireBatch(() => {
+			// the record goes FIRST: a copy is a clone of the object (here and, from the `duplicate`
+			// message, on every peer), so a source still holding the array would hand it to every copy
+			setArray(uuid, null);
 			poses.forEach((pose, i) => {
 				const clone = duplicateObject(uuid, { select: false, history: false, at: pose.position, name: `${base} ${i + 2}` });
 				if (!clone) return;
@@ -108,7 +111,6 @@ export function makeArrayReal(uuid) {
 				recordObjectPresence('create', clone);
 				made.push(clone.uuid);
 			});
-			setArray(uuid, null);
 		});
 	} finally {
 		if (own) endHistoryBatch('Make real objects');

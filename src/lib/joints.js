@@ -5,7 +5,7 @@ import { objectsGroup } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { registerHistoryKind, recordEntry } from './history';
 import { originWorld } from './objectOrigin';
-import { jointKindOf, jointParamsFor, jointEditPatch, TWO_POINT_KINDS, AXIS_KINDS } from './physicsTuning';
+import { jointKindOf, jointParamsFor, jointEditPatch, normalizeJointDef, TWO_POINT_KINDS, AXIS_KINDS } from './physicsTuning';
 
 // Physics joints (P-B): a REPLICATED list of joint definitions between object
 // pairs (the annotations pattern — a joint references two uuids, so it can't
@@ -256,7 +256,8 @@ export function copyJointsWithin(uuidMap) {
 
 /** @param {any} data */
 export function applyJointCreate(data) {
-	if (data?.joint?.id) upsertLocal(data.joint);
+	const joint = normalizeJointDef(data?.joint);
+	if (joint) upsertLocal(joint);
 }
 
 /** @param {any} data */
@@ -267,7 +268,10 @@ export function applyJointDelete(data) {
 /** Merge a late-joiner snapshot by id. @param {any[]} list */
 export function applyJointsSnapshot(list) {
 	if (!Array.isArray(list)) return;
-	list.forEach((joint) => joint?.id && upsertLocal(joint));
+	for (const raw of list) {
+		const joint = normalizeJointDef(raw);
+		if (joint) upsertLocal(joint);
+	}
 }
 
 /** Full-state reply on handshake (sendAnnotations retry pattern). @param {string} peerId */
@@ -293,7 +297,8 @@ export function jointsSnapshot() {
 
 /** @param {any[]} list */
 export function jointsRestore(list) {
-	sceneJoints.set(Array.isArray(list) ? list : []);
+	// a file's or the autosave's joints are checked like a peer's (normalizeJointDef keeps a valid def as it is)
+	sceneJoints.set(Array.isArray(list) ? list.map(normalizeJointDef).filter(Boolean) : []);
 }
 
 // ---- undo/redo --------------------------------------------------------------

@@ -21,7 +21,14 @@ import { isProxyCarrier } from './proxyCarrier.js'; // 102-int-2
 
 const VISUAL_NAME = 'Array copies (visual)';
 
-/** @typedef {{carrier: any, key: string, recRef: any, rec: any, meshes: {src: any, inst: any}[], shape: string}} Entry */
+// What all the arrays of a scene may draw together, on every screen. One array is already capped at
+// ARRAY_MAX copies (arrayCore); this caps the sum, so many arrays of a heavy mesh (from a file or a
+// peer) cannot stall the GPU. An array past the budget draws the copies that fit; it gets the rest
+// once another array lets go of its share.
+export const ARRAY_SCENE_TRIANGLES = 2_000_000;
+export const ARRAY_SCENE_COPIES = 20_000;
+
+/** @typedef {{carrier: any, key: string, recRef: any, rec: any, meshes: {src: any, inst: any}[], shape: string, tris?: number, copies?: number, capped?: boolean}} Entry */
 
 /** @type {Map<string, Entry>} */
 const entries = new Map();
@@ -121,11 +128,44 @@ function dropMeshes(e) {
 	e.shape = '';
 }
 
+/** triangles one copy of these meshes draws @param {any[]} meshes */
+function trianglesOf(meshes) {
+	let n = 0;
+	for (const m of meshes) {
+		const g = m.geometry;
+		const count = g?.index ? g.index.count : (g?.attributes?.position?.count ?? 0);
+		n += Math.ceil(count / 3);
+	}
+	return n;
+}
+
+let warnedBudget = false;
+
 /** (re)build an entry's instanced meshes and their matrices @param {Entry} e @param {any} root */
 function rebuild(e, root) {
 	const c = e.carrier;
-	const poses = e.rec && shown(c, root) ? copyPosesOf(c, root) : [];
+	let poses = e.rec && shown(c, root) ? copyPosesOf(c, root) : [];
 	const meshes = poses.length ? meshesOf(c) : [];
+	// the scene-wide budget: what the OTHER arrays draw now, and what is left for this one
+	let otherTris = 0;
+	let otherCopies = 0;
+	for (const other of entries.values()) {
+		if (other === e) continue;
+		otherTris += other.tris ?? 0;
+		otherCopies += other.copies ?? 0;
+	}
+	const perCopy = Math.max(1, trianglesOf(meshes));
+	const fits = Math.max(0, Math.min(Math.floor((ARRAY_SCENE_TRIANGLES - otherTris) / perCopy), ARRAY_SCENE_COPIES - otherCopies));
+	e.capped = poses.length > fits;
+	if (e.capped) {
+		poses = poses.slice(0, fits);
+		if (!warnedBudget) {
+			warnedBudget = true;
+			console.warn('[arrays] the scene draws ' + ARRAY_SCENE_COPIES + ' array copies or ' + ARRAY_SCENE_TRIANGLES + ' triangles at most: some copies are not drawn');
+		}
+	}
+	e.copies = meshes.length ? poses.length : 0;
+	e.tris = e.copies * perCopy;
 	const shape = meshes.map((m) => `${m.uuid}:${m.geometry?.uuid}`).join('|') + `#${poses.length}`;
 	if (shape !== e.shape) {
 		dropMeshes(e);
@@ -166,6 +206,7 @@ export function tickArrays(carriers, root) {
 	visualParent = root?.parent ?? null;
 	/** @type {Set<string>} */
 	const alive = new Set();
+	let freed = false;
 	if (visualParent) {
 		visualParent.updateWorldMatrix(true, false);
 		for (const c of carriers) {
@@ -188,14 +229,19 @@ export function tickArrays(carriers, root) {
 			const key = keyOf(e, root);
 			if (key === e.key) continue;
 			e.key = key;
+			const before = e.tris ?? 0;
 			rebuild(e, root);
+			if ((e.tris ?? 0) < before) freed = true;
 		}
 	}
 	for (const [uuid, e] of entries) {
 		if (alive.has(uuid)) continue;
+		if (e.tris) freed = true;
 		dropMeshes(e);
 		entries.delete(uuid);
 	}
+	// budget given back: a capped array tries again next frame
+	if (freed) for (const e of entries.values()) if (e.capped) e.key = '';
 }
 
 /** the debug read: {uuid: copies drawn} plus the draw calls it costs */
@@ -203,9 +249,12 @@ export function arraysDebug() {
 	/** @type {Record<string, number>} */
 	const copies = {};
 	let draws = 0;
+	/** @type {string[]} */
+	const capped = [];
 	for (const [uuid, e] of entries) {
 		copies[uuid] = e.meshes[0]?.inst.count ?? 0;
 		draws += e.meshes.length;
+		if (e.capped) capped.push(uuid);
 	}
-	return { copies, draws };
+	return { copies, draws, capped };
 }

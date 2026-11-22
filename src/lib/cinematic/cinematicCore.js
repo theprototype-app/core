@@ -7,6 +7,7 @@
 //   standInKind       what a material the WebGPU renderer cannot draw is, in the words the chip uses
 //   notShownText      the one chip line: "Not shown in Cinematic view: Water, Particles"
 //   (troika text is not a stand-in since C2-1: it draws as canvas-texture quads, labelQuads.js)
+//   waterCoverKind    which water meshes the view draws itself through TSL (C2-3: surface, tank body, underwater tint)
 //   fxCoverKind       which effects the view draws itself through TSL (C2-2 / C2-4: particles, bursts, bubbles,
 //                     vertex deformers), so they get no stand-in and the chip does not list them
 
@@ -188,10 +189,11 @@ export const DEFORM_COVERED = Object.freeze(['jiggle', 'bodywave', 'windsway', '
  *   burst          an effectsBurst system (THREE.Points + PointsMaterial over CPU buffers): WebGPU draws a Points
  *                  at ONE pixel, so before C2-2 a burst showed as specks and was listed nowhere
  *   bubbles        the water runtime's bubble mesh (standalone userData.bubbles and water-volume bubbles)
+ *   drops          a pour / spill drop pool (pourDrops.js: THREE.Points + a GLSL sphere sprite over CPU buffers; C2-3)
  *   deform         a mesh whose material is a vertexDeform clone and every deformer on it is a covered kind
  * null for everything else (a stand-in or the renderer's own conversion, as before).
  * @param {any} o @param {any} m @param {(o: any) => string[]} [deformKinds] the deformer kinds on a mesh
- * @returns {'particles' | 'particleStrip' | 'burst' | 'bubbles' | 'deform' | null}
+ * @returns {'particles' | 'particleStrip' | 'burst' | 'bubbles' | 'drops' | 'deform' | null}
  */
 export function fxCoverKind(o, m, deformKinds) {
 	if (!o || !m || m.isNodeMaterial || Array.isArray(o.material)) return null;
@@ -203,9 +205,25 @@ export function fxCoverKind(o, m, deformKinds) {
 	}
 	if (o.isPoints && m.isPointsMaterial && /^effects-burst-/.test(name) && o.geometry?.getAttribute?.('color')) return 'burst';
 	if (o.isMesh && m.isShaderMaterial && m.name === 'water-bubbles' && o.geometry?.isInstancedBufferGeometry) return 'bubbles';
+	if (o.isPoints && m.isShaderMaterial && /^(pour|spill)-drops$/.test(name) && m.uniforms?.uSize && m.uniforms?.uScale && o.geometry?.getAttribute?.('aFade')) return 'drops';
 	if (o.isMesh && deformKinds) {
 		const kinds = deformKinds(o);
 		if (kinds.length && kinds.every((k) => DEFORM_COVERED.includes(k))) return 'deform';
 	}
+	return null;
+}
+
+/**
+ * Which water mesh the Cinematic view draws itself (waterCover.js), from the mesh and its CURRENT material: the water
+ * runtime's surface and tank-body programs (one GLSL program, `uBody` tells them apart) and its full-screen underwater
+ * tint (drawn as post nodes in the view). null for everything else, the author's placeholder mesh included (the view
+ * hides that one itself, frame by frame, as the runtime does under WebGL).
+ * @param {any} o @param {any} m
+ * @returns {'surface' | 'body' | 'overlay' | null}
+ */
+export function waterCoverKind(o, m) {
+	if (!o?.isMesh || !m || !m.isShaderMaterial || Array.isArray(o.material)) return null;
+	if ((m.name === 'water-surface' || m.name === 'water-body') && m.uniforms?.uWaveA && m.uniforms?.uBody) return m.uniforms.uBody.value > 0.5 ? 'body' : 'surface';
+	if (m.name === 'water-underwater' && /^water-underwater$/.test(String(o.name || ''))) return 'overlay';
 	return null;
 }

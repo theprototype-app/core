@@ -9,6 +9,7 @@ import { deviceClass, browserSaysMobile } from '../deviceClass.js';
 import { isVRMode, globalRenderer, globalScene, globalCamera } from '../../stores/sceneStore';
 import { showToast } from '../../stores/appStore';
 import { safeStorage } from '../safeStorage';
+import { waterViewState } from '../water/waterRuntime.js';
 import { offerVerdict, asQuality, HEADSET_UA } from './cinematicOffer.js';
 import { cinematicPrefs, cinematicState, cinematicDisabled } from './cinematicStore.js';
 
@@ -78,7 +79,10 @@ function ctx() {
 		gl: /** @type {any} */ (get(globalRenderer)),
 		scene: /** @type {any} */ (get(globalScene)),
 		camera: () => /** @type {any} */ (get(globalCamera)),
-		toast: (/** @type {string} */ msg) => showToast(msg)
+		toast: (/** @type {string} */ msg) => showToast(msg),
+		// C2-3: the water runtime's entries + underwater test (boot code already; the view chunk imports no app module)
+		water: waterViewState,
+		noWater: safeStorage.getItem('debugCinematicNoWater') === '1'
 	};
 }
 

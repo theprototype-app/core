@@ -30,8 +30,9 @@ import { cinematicState, cinematicPrefs, disableCinematic, cinematicDisabled } f
 import { deformersOf } from '../vertexDeform.js';
 import { createLabelQuads } from './labelQuads.js';
 import { createFxCover } from './fxCover.js';
+import { createWaterCover } from './waterCover.js';
 
-/** @typedef {{ gl: any, scene: any, camera: () => any, toast: (msg: string) => void }} ViewCtx */
+/** @typedef {{ gl: any, scene: any, camera: () => any, toast: (msg: string) => void, water?: (camera: any, out?: any[]) => any, noWater?: boolean }} ViewCtx */
 /** @type {ViewCtx | null} what the app handed over (cinematicState.js) */
 let app = null;
 
@@ -312,7 +313,7 @@ async function enterSteps() {
 	const gpuEra = gpuGenerationStarting();
 	/** @type {any} */
 	const r = new W.WebGPURenderer({ canvas, antialias: false, alpha: false, powerPreference: 'high-performance' });
-	live = { W, T, r, gpuEra, gl, scene, canvas, glCanvas, env, built: null, swap: null, labels: null, ro: null, errors: [], frames: 0, last: 0, drop: createDropWatch(), drops: 0, rebuilding: false, failing: false, camera: cam, t };
+	live = { W, T, r, gpuEra, gl, scene, canvas, glCanvas, env, built: null, swap: null, labels: null, fx: null, water: null, ro: null, errors: [], frames: 0, last: 0, drop: createDropWatch(), drops: 0, rebuilding: false, failing: false, camera: cam, t };
 	r.onDeviceLost = (/** @type {any} */ info) => {
 		log.errors.push({ at: Math.round(now()), lost: String(info?.message ?? info?.reason ?? '') });
 		void fail(LOST);
@@ -361,7 +362,14 @@ async function enterSteps() {
 	// C2-2 / C2-4: particles, bursts, bubbles and deformers drawn through TSL (before the stand-ins, which skip them)
 	live.fx = createFxCover({ W, T, scene, glCanvas });
 	live.fx.scan();
-	live.swap = createSwapper(W, scene, live.fx);
+	// C2-3: water surfaces and tank bodies drawn through TSL (also before the stand-ins)
+	// (debugCinematicNoWater: the water as the plain stand-in, the C2-2 view, for the frame-cost A/B)
+	const viewState = app?.water;
+	live.water = viewState && !app?.noWater ? createWaterCover({ W, T, scene, viewState, camera: () => live?.camera }) : null;
+	live.water?.scan();
+	const fx = live.fx;
+	const water = live.water;
+	live.swap = createSwapper(W, scene, { covered: (/** @type {any} */ ob, /** @type {any} */ m) => fx.covered(ob, m) || !!water?.covered(ob, m) });
 	live.swap.scan();
 	patchState({ notShown: notShownText(live.swap.kinds) });
 	try {
@@ -402,7 +410,7 @@ function targetQuality() {
 
 /** @param {import('./cinematicCore.js').Quality} quality */
 function build(quality) {
-	return buildPipeline({ W: live.W, T: live.T, renderer: live.r, scene: live.scene, camera: live.camera, quality, outline: viewSelection, fx: live.fx });
+	return buildPipeline({ W: live.W, T: live.T, renderer: live.r, scene: live.scene, camera: live.camera, quality, outline: viewSelection, fx: live.fx, water: live.water });
 }
 
 /** a new pipeline beside the old one (the old keeps drawing until the new one is ready) */
@@ -448,14 +456,22 @@ function draw(_delta) {
 	// every frame: a burst fires and is gone in half a second, so its twin must exist the frame it appears
 	g.fx?.scan();
 	try {
+		g.water?.scan();
+	} catch (e) {
+		if (log.errors.length < 200) log.errors.push({ at: Math.round(a), water: String(/** @type {any} */ (e)?.message ?? e).slice(0, 300) });
+	}
+	try {
 		g.labels?.tick();
 	} catch (e) {
 		if (log.errors.length < 200) log.errors.push({ at: Math.round(a), labels: String(/** @type {any} */ (e)?.message ?? e).slice(0, 300) });
 	}
 	try {
+		g.water?.beforeRender();
 		g.built.render();
 	} catch (e) {
 		if (log.errors.length < 200) log.errors.push({ at: Math.round(a), render: String(/** @type {any} */ (e)?.message ?? e).slice(0, 300) });
+	} finally {
+		g.water?.afterRender();
 	}
 	if (g.last) {
 		const ms = a - g.last;
@@ -503,6 +519,7 @@ async function teardown(reason) {
 	g.ro?.disconnect();
 	g.built?.dispose();
 	g.fx?.undo();
+	g.water?.undo();
 	g.swap?.undo();
 	g.labels?.undo();
 	try {
@@ -603,9 +620,9 @@ export async function viewStill(plan) {
 		r.setSize(plan.width, plan.height, false);
 		g.camera.aspect !== undefined && ((g.camera.aspect = plan.width / plan.height), g.camera.updateProjectionMatrix());
 		// TRAA accumulates: a few frames settle the image
-		for (let i = 0; i < 8; i++) built.render();
+		for (let i = 0; i < 8; i++) renderWith(g, built);
 		await r.backend?.device?.queue?.onSubmittedWorkDone?.();
-		built.render();
+		renderWith(g, built);
 		const blob = await new Promise((resolve) => g.canvas.toBlob(resolve, 'image/png'));
 		return /** @type {Blob | null} */ (blob);
 	} finally {
@@ -616,6 +633,18 @@ export async function viewStill(plan) {
 			g.camera.aspect = b.width / Math.max(1, b.height);
 			g.camera.updateProjectionMatrix();
 		}
+	}
+}
+
+/**
+ * One frame outside the frame loop (a still, an e2e grab): the water placeholders are hidden for it as in draw().
+ * @param {any} g @param {any} built */
+function renderWith(g, built) {
+	g.water?.beforeRender();
+	try {
+		built.render();
+	} finally {
+		g.water?.afterRender();
 	}
 }
 
@@ -637,6 +666,7 @@ export function cinematicDebug(reset = false) {
 		memory: live ? { ...live.r.info.memory } : null,
 		labels: live?.labels ? live.labels.stats() : null,
 		fx: live?.fx ? live.fx.stats() : null,
+		water: live?.water ? live.water.stats() : null,
 		generations: generationStats(),
 		adapter: live?.r?.backend?.adapter?.info ? { vendor: live.r.backend.adapter.info.vendor, architecture: live.r.backend.adapter.info.architecture, description: live.r.backend.adapter.info.description } : null,
 		state: get(cinematicState)
@@ -650,7 +680,7 @@ export async function grabCinematic() {
 	if (!live?.built) return null;
 	await nextFrame();
 	// a WebGPU canvas reads blank once its frame was presented: draw and read in the same task
-	live.built.render();
+	renderWith(live, live.built);
 	return live.canvas.toDataURL('image/png');
 }
 

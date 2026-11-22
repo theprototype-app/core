@@ -17,6 +17,9 @@
 //     to transparent with no background, and laid over the anti-aliased image as premultiplied colour before the bloom
 //     (so sparks glow). Kept out of the scene pass because its normal / velocity / diffuse targets are written
 //     unblended: a sprite there replaced the surface normals behind it and the AO went black under it.
+//   · C2-3: water (waterCover.js twins, layer WATER_LAYER) in a pass of its own BEFORE the fx pass, for the same reason;
+//     its twins read the scene pass's colour + depth as the standard view's refraction pre-pass. Under water, a fog
+//     node before it and the tint / caustics after the fx pass (the runtime's fog swap and full-screen overlay).
 //   · the selection outline (W14) is TSL's OutlineNode over the objects Outline.svelte outlines,
 //     composited LAST, after the bloom (an editor helper, never graded).
 import { QUALITY } from './cinematicCore.js';
@@ -25,7 +28,7 @@ import { QUALITY } from './cinematicCore.js';
 const LIGHT = { slices: 2, steps: 8, giIntensity: 10, aoIntensity: 1, radius: 12, thickness: 1, ssrMaxDistance: 6, ssrIntensity: 1, dielectric: 0.25 };
 
 /**
- * @param {{ W: any, T: any, renderer: any, scene: any, camera: any, quality: import('./cinematicCore.js').Quality, outline?: () => { selected: any[], locked: any[], colors?: { selected?: any, locked?: any } }, fx?: { layer: number, count: number, setSceneDepth: (tex: any) => void } | null }} o
+ * @param {{ W: any, T: any, renderer: any, scene: any, camera: any, quality: import('./cinematicCore.js').Quality, outline?: () => { selected: any[], locked: any[], colors?: { selected?: any, locked?: any } }, fx?: { layer: number, count: number, setSceneDepth: (tex: any) => void } | null, water?: { layer: number, count: number, under: Record<string, any>, setSceneTextures: (color: any, depth: any) => void } | null }} o
  */
 export async function buildPipeline(o) {
 	const { W, T, renderer, scene, camera } = o;
@@ -105,7 +108,12 @@ export async function buildPipeline(o) {
 	nodes.traa = aa;
 	/** @type {any} */
 	let shown = aa;
-	if (o.fx) shown = fxOver(o.fx, aa);
+	if (o.water) {
+		shown = underFog(o.water.under, shown);
+		shown = waterOver(o.water, shown);
+	}
+	if (o.fx) shown = fxOver(o.fx, shown);
+	if (o.water) shown = underTint(o.water.under, shown);
 	const glow = bloom(shown, 0.25, 0.4, 0.85);
 	nodes.bloom = glow;
 	let final = shown.add(glow);
@@ -134,27 +142,27 @@ export async function buildPipeline(o) {
 	pipeline.outputNode = final;
 
 	/**
-	 * The fx pass over `under`: the twins only, no background, cleared to (0, 0, 0, 0); skipped while there are none (one
-	 * empty render clears what the last one left). @param {any} fx @param {any} under */
-	function fxOver(fx, under) {
-		const fxPass = pass(scene, camera);
+	 * A pass of its own over the scene's twins on `layer`: no background, cleared to (0, 0, 0, 0), drawn from the
+	 * UN-JITTERED camera (TRAA jitters the camera for the whole pipeline through its view offset; these twins are not
+	 * accumulated by it, so a jittered twin would shimmer by a sub-pixel every frame); skipped while there are none (one
+	 * empty render clears what the last one left). Returns the pass's colour, premultiplied.
+	 * @param {number} layer @param {() => number} count @param {string} key */
+	function ownPass(layer, count, key) {
+		const own = pass(scene, camera);
 		const layers = new W.Layers();
-		layers.set(fx.layer);
-		fxPass.setLayers(layers);
-		fx.setSceneDepth(scenePass.getTexture('depth'));
+		layers.set(layer);
+		own.setLayers(layers);
 		const clear = new W.Color();
 		let empty = false;
-		const draw = fxPass.updateBefore.bind(fxPass);
-		fxPass.updateBefore = (/** @type {any} */ frame) => {
-			if (!fx.count) {
+		const draw = own.updateBefore.bind(own);
+		own.updateBefore = (/** @type {any} */ frame) => {
+			if (!count()) {
 				if (empty) return;
 				empty = true;
 			} else empty = false;
 			const bg = scene.background;
 			renderer.getClearColor(clear);
 			const alpha = renderer.getClearAlpha();
-			// TRAA jitters the camera for the whole pipeline (its view offset); the twins are not accumulated by it, so a
-			// jittered sprite would shimmer by a sub-pixel every frame. Drawn from the un-jittered camera instead.
 			const v = camera.view;
 			const jitter = v?.enabled ? [v.fullWidth, v.fullHeight, v.offsetX, v.offsetY, v.width, v.height] : null;
 			if (jitter) camera.clearViewOffset();
@@ -168,9 +176,69 @@ export async function buildPipeline(o) {
 				if (jitter) camera.setViewOffset(...jitter);
 			}
 		};
-		nodes.fxPass = fxPass;
-		const c = fxPass.getTextureNode('output');
+		nodes[key] = own;
+		return own.getTextureNode('output');
+	}
+
+	/** the fx pass (particles, bursts, bubbles: fxCover.js) over `under` @param {any} fx @param {any} under */
+	function fxOver(fx, under) {
+		fx.setSceneDepth(scenePass.getTexture('depth'));
+		const c = ownPass(fx.layer, () => fx.count, 'fxPass');
 		return vec4(under.rgb.mul(c.a.oneMinus()).add(c.rgb), under.a);
+	}
+
+	/**
+	 * C2-3: the water pass (waterCover.js) over `under`. Its twins read the scene pass's colour and depth as the
+	 * standard view's pre-pass (the water is on a layer the scene pass does not draw); opaque where drawn.
+	 * @param {any} water @param {any} under */
+	function waterOver(water, under) {
+		water.setSceneTextures(scenePass.getTexture('output'), scenePass.getTexture('depth'));
+		const c = ownPass(water.layer, () => water.count, 'waterPass');
+		return vec4(under.rgb.mul(c.a.oneMinus()).add(c.rgb), under.a);
+	}
+
+	/** what the scene pass saw at `uv` in view space (water and fx twins are not in it) @param {any} uv */
+	function viewAt(uv) {
+		return T.getViewPosition(uv, depth.sample(uv).x, T.cameraProjectionMatrixInverse);
+	}
+
+	/**
+	 * Under water (the camera inside a volume), 1 of 2: the scene fades into the water's fog colour with distance, the
+	 * linear fog the runtime swaps into the scene under WebGL (near 0.05 m, far = the water's Visibility); the sky is
+	 * the fog colour. Before the water pass, which fades its own walls and surface itself (as under WebGL).
+	 * @param {Record<string, any>} u waterCover's `under` uniforms @param {any} img */
+	function underFog(u, img) {
+		const d = depth.sample(T.screenUV).x;
+		const dist = viewAt(T.screenUV).negate().z;
+		const f = T.select(d.greaterThanEqual(0.99999), T.float(1), T.smoothstep(T.float(0.05), u.fogFar, dist)).mul(u.on);
+		return vec4(T.mix(img.rgb, u.fogColor, f), img.a);
+	}
+
+	/**
+	 * Under water, 2 of 2 (waterShader.js overlayFragment): a vignetted tint over everything and the caustic net on what
+	 * lies below the surface, last before the bloom.
+	 * @param {Record<string, any>} u @param {any} img */
+	function underTint(u, img) {
+		const uv = T.screenUV;
+		const vgn = T.length(uv.sub(0.5)).mul(1.4);
+		const a = u.strength.mul(vgn.mul(0.4).add(0.6)).mul(u.on);
+		const d = depth.sample(uv).x;
+		const vp = viewAt(uv);
+		const w = T.cameraWorldMatrix.mul(vec4(vp, 1)).xyz;
+		/** @type {any} */
+		let c = T.float(0);
+		/** @type {any} */
+		let q = w.xz.div(u.causticScale);
+		const t = u.time.mul(u.causticSpeed);
+		for (let i = 0; i < 3; i++) {
+			q = q.add(T.vec2(T.sin(q.y.mul(1.7).add(t.mul(0.9 + i * 0.3))), T.cos(q.x.mul(1.3).sub(t.mul(0.7 + i * 0.2)))).mul(0.35));
+			const g = T.fract(q.mul(1 + i * 0.37)).sub(0.5);
+			c = c.add(T.pow(max(T.float(1).sub(T.length(g).mul(2.2)), 0), 3));
+		}
+		c = T.clamp(c.mul(0.8), 0, 2);
+		const below = T.step(w.y, u.surfaceY).mul(T.step(d, T.float(0.9999))).mul(T.step(T.float(1e-6), u.caustics));
+		const add = vec3(c.mul(u.caustics).mul(0.18).mul(u.sun)).mul(T.exp(u.surfaceY.sub(w.y).mul(-0.25))).mul(T.exp(T.length(vp).mul(-0.08))).mul(below).mul(u.on);
+		return vec4(img.rgb.mul(a.oneMinus()).add(u.tint.mul(a)).add(add), img.a);
 	}
 	return {
 		pipeline,

@@ -165,7 +165,7 @@ h.run(async () => {
 	const row = H.page.locator('#require-approval');
 	await row.waitFor({ timeout: 10000 }).catch(() => {});
 	h.check((await row.count()) === 1, '5.1 Settings ▸ Connection has the row');
-	h.check((await row.getAttribute('aria-checked').catch(() => null)) === 'true' || (await row.isChecked().catch(() => false)), '5.2 …and it shows the flag on');
+	h.check((await row.getAttribute('aria-pressed').catch(() => null)) === 'true', '5.2 …and it shows the flag on');
 	await inPage(H, 'pc.leaveSession()');
 	await H.page.waitForTimeout(300);
 	h.check((await read(H, 'peerModeration.requireApproval')) === false, '5.3 leaving the session turns it off');

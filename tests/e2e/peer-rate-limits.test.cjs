@@ -55,46 +55,33 @@ h.run(async () => {
 	// object, so a flood of creates reaches its gate slower than Strict's refill and proves nothing.
 	const target = 'aaaa0000-0000-4000-8000-000000000000';
 	const rename = `(i) => ({ type: 'name', uuid: '${target}', name: 'flood-' + i })`;
-	const nameOn = (peer) => inPage(peer, `let g; s.objectsGroup.subscribe((v) => (g = v))(); return g.getObjectByProperty('uuid', arg)?.name ?? null;`, target);
-	const diag = async (label) => {
-		const d = await B.page.evaluate(() => {
-			const t = window.__tp?.test?.v1 ?? window.__stores;
-			const errs = t?.wireErrors?.wireErrors?.() ?? null;
-			const name = (t?.sceneBudget?.wireStats?.()?.rows ?? t?.sceneBudget?.wireStats?.() ?? []);
-			return { errs, name: Array.isArray(name) ? name.filter((r) => r.type === 'name' || r.type === 'batch') : name };
-		}).catch((e) => String(e));
-		const a = await A.page.evaluate(() => {
-			const t = window.__tp?.test?.v1 ?? window.__stores;
-			const rows = t?.sceneBudget?.wireStats?.()?.rows ?? t?.sceneBudget?.wireStats?.() ?? [];
-			return Array.isArray(rows) ? rows.filter((r) => r.type === 'name' || r.type === 'batch') : rows;
-		}).catch((e) => String(e));
-		console.log('DIAG ' + label + ' B=' + JSON.stringify(d).slice(0, 1500) + ' A=' + JSON.stringify(a).slice(0, 600));
-	};
+	// 71-rooms (re-check on 1.74): count the renames B APPLIES (a setter on the target, test-only). The old
+	// measure — "the last name to land is short of #999" — is a coin flip on 1.74, where the flood reaches B
+	// over ~0.5 s: Strict's 20/s refill admits a few late renames, and one of them may be #999 itself.
+	const COUNT = `const o = (() => { let g; s.objectsGroup.subscribe((v) => (g = v))(); return g.getObjectByProperty('uuid', arg); })();
+		let v = o.name; window.__renames = []; Object.defineProperty(o, 'name', { configurable: true, get: () => v, set: (x) => { v = x; window.__renames.push(x); } }); return true;`;
+	const applied = () => B.page.evaluate(() => window.__renames ?? []);
+	h.check(await inPage(B, COUNT, target), '4.0 B counts the renames it applies');
 	await inPage(B, `s.peerRateGate.peerRateLimits.set('strict');`);
-	const nameIn = () => B.page.evaluate(() => (window.__tp?.test?.v1 ?? window.__stores)?.sceneBudget?.wireStats?.()?.rows?.find((r) => r.type === 'name')?.in ?? 0).catch(() => -1);
-	const in0 = await nameIn();
-	const hostOnB = await inPage(B, `let v; s.connectionState.sessionHost.subscribe((x) => (v = x))(); let p; s.peerRateGate.peerRateLimits.subscribe((x) => (p = x))(); return { host: v, preset: p };`);
 	const tSend = Date.now();
 	await sendN(A, rename, 1000);
 	const sendMs = Date.now() - tSend;
-	await B.page.waitForTimeout(1000);
-	const in1 = await nameIn();
-	await B.page.waitForTimeout(2000);
-	const in3 = await nameIn();
-	console.log('DIAG strict-flood ' + JSON.stringify({ hostOnB, A: A.id, sendMs, arrivedBy1s: in1 - in0, arrivedBy3s: in3 - in0 }));
 	await h.eventually(() => toast(B, 'is sending too many edits'), (v) => v === true, '4.1 the receiver is told', 15000);
 	await B.page.waitForTimeout(1500);
-	const landed = Number(String(await nameOn(B)).replace('flood-', ''));
-	h.check(landed >= 119 && landed < 999, `4.2 the flood stopped short on Strict: the last of 1000 to land was #${landed}`);
-	await diag('after-strict');
+	const strictApplied = await applied();
+	// the burst (120) plus the refill (20/s) over however long the flood took to arrive; generous on the top
+	h.check(strictApplied.length >= 119 && strictApplied.length <= 120 + 20 * 3 + 20 * Math.ceil(sendMs / 1000), `4.2 Strict applies the burst and the refill only: ${strictApplied.length} of 1000 (sent in ${sendMs} ms)`);
+	h.check(strictApplied[0] === 'flood-0' && strictApplied.slice(0, 119).every((n, k) => n === 'flood-' + k), '4.3 …the first 119 in order (the burst)');
 
 	// ---- 5 Off passes everything
-	await inPage(B, `s.peerRateGate.peerRateLimits.set('off');`);
+	await inPage(B, `s.peerRateGate.peerRateLimits.set('off'); window.__renames = [];`);
 	await A.page.waitForTimeout(100);
 	await sendN(A, chat('free-'), 60);
 	await sendN(A, rename, 1000);
-	await h.eventually(() => nameOn(B), (n) => n === 'flood-999', '5.0 with limits off the whole flood of edits lands', 30000);
-	await diag('after-off');
+	await h.eventually(() => applied().then((a) => a.length), (n) => n === 1000, '5.0 with limits off all 1000 renames are applied', 30000);
+	const offApplied = await applied();
+	const inOrder = offApplied.every((n, k) => n === 'flood-' + k);
+	h.check(inOrder, `5.0b …in the order they were sent (${inOrder ? 'yes' : 'first out of order at #' + offApplied.findIndex((n, k) => n !== 'flood-' + k)})`);
 	await h.eventually(() => chatCount(B, 'free-'), (n) => n === 60, '5.1 with limits off all 60 arrive', 15000);
 	await inPage(B, `s.peerRateGate.peerRateLimits.set('normal');`);
 

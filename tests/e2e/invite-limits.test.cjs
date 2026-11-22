@@ -69,6 +69,8 @@ h.run(async () => {
 	const mint = (opts) => inPage(H, 'const r = s.inviteStore.createInvite({ hostId: pc.peer.id, ...arg }); return { id: r.record?.id ?? null, link: r.link, refused: r.refused };', opts);
 	const tokOf = (link) => core.parseHashParams(new URL(link).hash).invite;
 	const dial = (peer, metadata) => inPage(H, EMIT, { peer, metadata: { jr: 1, ...metadata } });
+	/** a control of the failed-invite row, in whichever copy is visible */
+	const row = (sel) => H.page.locator(`#failed-invite-joins ${sel}, #failed-invite-joins-drawer ${sel}`).filter({ visible: true }).first();
 
 	// ==================================================================== 0
 	console.log('\n=== 0. feature unused ===');
@@ -139,9 +141,9 @@ h.run(async () => {
 	h.check(!(await roster(H)).some((u) => u[0] === J.id), '3.3 J is not in');
 	// the Invite sheet in section 1 left the Connect drawer open, which routes the floating cards into it:
 	// the row is there too (its own id), then the drawer closes and the floating row takes the clicks
-	h.check((await H.page.locator('#failed-invite-joins-drawer').count()) <= 1, '3.4a the drawer carries the row while it is open');
-	await inPage(H, 's.connectDrawerOpen?.set?.(false)');
-	await H.page.locator('#failed-invite-joins .fij-resume').click({ timeout: 10000 });
+	// whichever copy of the row is on screen (the floating one, or the drawer's while the drawer is open)
+	h.check((await H.page.locator('#failed-invite-joins, #failed-invite-joins-drawer').count()) >= 1, '3.4a the row is drawn');
+	await row('.fij-resume').click({ timeout: 10000 });
 	h.check((await failed(H)).pausedUntil === 0, '3.4 Resume now lifts the pause');
 	await J.page.evaluate(() => {
 		const t = [...document.querySelectorAll('.tp-toast')].find((el) => /paused invite joins/.test(el.textContent || ''));
@@ -152,14 +154,14 @@ h.run(async () => {
 
 	// ==================================================================== 4
 	console.log('\n=== 4. Review lets one in by hand ===');
-	await H.page.locator('#failed-invite-joins .fij-review').click({ timeout: 5000 });
-	const firstRow = H.page.locator('#failed-invite-joins .fij-row').first();
+	await row('.fij-review').click({ timeout: 5000 });
+	const firstRow = row('.fij-row');
 	const pid = await firstRow.getAttribute('data-peer', { timeout: 5000 }).catch(() => null);
 	await firstRow.locator('.fij-letin').click({ timeout: 5000 }).catch(() => {});
 	await until(() => roster(H).then((r) => r.some((u) => u[0] === pid)), (v) => v === true, `4.1 Let in admits ${pid}`);
 	h.check(!(await failed(H)).rows.some((r) => r.peerId === pid), '4.2 …and its row goes');
-	await H.page.locator('#failed-invite-joins .fij-dismiss').click({ timeout: 5000 });
-	await until(() => H.page.locator('#failed-invite-joins').count(), (n) => n === 0, '4.3 Dismiss clears the row');
+	await row('.fij-dismiss').click({ timeout: 5000 });
+	await until(() => H.page.locator('#failed-invite-joins, #failed-invite-joins-drawer').count(), (n) => n === 0, '4.3 Dismiss clears the row');
 
 	// ==================================================================== 5
 	console.log('\n=== 5. re-joining too fast ===');

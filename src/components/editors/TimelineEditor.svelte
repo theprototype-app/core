@@ -152,6 +152,7 @@
 	// 70 W2: `popped` = this instance lives in a pop-out window ($lib/windows/panelHost mounts it there)
 	// ---- 102 M8: the curve view under a property track (LOCAL view state, never saved or sent) ----
 	let curveOpen = $state<Record<string, boolean>>({});
+	const CURVE_GESTURE = { begin: beginSequenceGesture, end: endSequenceGesture, cancel: cancelSequenceGesture };
 	/** the component is a lazy chunk: loaded the first time a curve row opens */
 	let curveMod: Promise<any> | null = $state(null);
 	function toggleCurve(track: any) {
@@ -1182,6 +1183,7 @@
 								{snapOn}
 								liveValue={() => liveValueOf(track)}
 								onedited={curveEdited}
+								gesture={CURVE_GESTURE}
 							/>
 						{/await}
 					{/if}

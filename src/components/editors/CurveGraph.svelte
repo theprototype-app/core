@@ -17,7 +17,6 @@
 	import Icon from '../ui/Icon.svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import { updateTrack } from '$lib/sequences';
-	import { beginSequenceGesture, endSequenceGesture, cancelSequenceGesture } from '$lib/sequenceSync';
 	import { propDef } from '$lib/propTracks';
 	import { sampleCurve, moveKeys, deleteKeys, insertKey, setHandle, canBezier, widthOf, SAME_TIME } from '$lib/curveCore';
 	import {
@@ -43,7 +42,8 @@
 		playhead = 0,
 		snapOn = true,
 		liveValue = () => null,
-		onedited = () => {}
+		onedited = () => {},
+		gesture
 	}: {
 		track: any;
 		seqId: string;
@@ -55,6 +55,9 @@
 		snapOn?: boolean;
 		liveValue?: () => any;
 		onedited?: () => void;
+		/** the Timeline's undo gesture (sequenceSync), passed in so this lazy chunk does not import the
+		 *  history family: a static import there made its preload list name ~400 chunks (3.4 KB gz of boot) */
+		gesture: { begin: (id: string) => void; end: (id: string) => void; cancel: (id: string) => void };
 	} = $props();
 
 	const H = 168;
@@ -267,7 +270,7 @@
 			return;
 		}
 		if (!drag.moved) {
-			beginSequenceGesture(seqId);
+			gesture.begin(seqId);
 			drag.moved = true;
 		}
 		if (drag.kind === 'keys') {
@@ -323,11 +326,11 @@
 			sel = d.add ? [...new Set([...sel, ...hit])] : hit;
 			return;
 		}
-		if (d.moved) endSequenceGesture(seqId);
+		if (d.moved) gesture.end(seqId);
 	}
 	function cancel() {
 		if (drag && drag.kind !== 'box' && drag.moved) {
-			cancelSequenceGesture(seqId);
+			gesture.cancel(seqId);
 			onedited();
 		}
 		drag = null;

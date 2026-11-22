@@ -38,9 +38,10 @@ const activeSeq = (page) =>
 		return a ? m[a] : null;
 	});
 const propTrack = (seq) => seq?.tracks?.find((t) => t.kind === 'prop') ?? null;
-/** the curve's value at t, by the app's own evaluation */
-const sampleAt = (page, track, t) =>
-	page.evaluate(({ track, t }) => window.__tp.test.v1.curveCore.sampleCurve(track.type, track.keys, t), { track, t });
+/** the curve's value at t, by the app's own evaluation (curveCore imports nothing, so node runs the same file;
+ *  a debug hook here would be a dynamic import of the whole module, which keeps every export in the boot chunk) */
+const curveCore = import(require('node:path').join(__dirname, '../../src/lib/curveCore.js'));
+const sampleAt = async (_page, track, t) => (await curveCore).sampleCurve(track.type, track.keys, t);
 /** the box's position.y */
 const boxY = (page, uuid) =>
 	page.evaluate((u) => {

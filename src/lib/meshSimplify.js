@@ -135,9 +135,12 @@ export function simplifyGeometryData(simplifier, data, want) {
 /**
  * Why an object cannot be simplified, or '' when it can. PURE over plain facts, so the menu, the
  * agent tool and the suite agree. `parametric` = a primitive whose Geometry rows still drive it.
- * @param {{mesh?: boolean, instanced?: boolean, scatter?: boolean, parametric?: boolean, morph?: boolean, triangles?: number, vrm?: boolean}} f
+ * @param {{mesh?: boolean, instanced?: boolean, scatter?: boolean, parametric?: boolean, morph?: boolean, triangles?: number, vrm?: boolean, carrier?: string}} f
  */
 export function simplifyRefusal(f) {
+	// 102-int-2: a decal / splat is rebuilt from its record (its mesh is a placeholder or a proxy box)
+	if (f.carrier === 'decal') return 'A decal follows the surface under it — simplify that object instead.';
+	if (f.carrier === 'splat') return 'A Gaussian splat is not a mesh — use Crop in the Splat section, or a splat editor.';
 	if (f.scatter || f.instanced) return 'This is an instanced scatter — simplify its source object instead.';
 	if (!f.mesh) return 'Nothing to simplify: pick a mesh or an imported model.';
 	if (f.parametric) return 'This shape is still parametric (its Geometry settings drive it). Bake it to a mesh first.';

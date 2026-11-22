@@ -20,6 +20,7 @@ import { perfContext } from './perf/perfMarks.js'; // 34 PF: an import-free leaf
 import { vrDollhouseOpen, vrSculptActive, vrPaintActive } from './vr/worldStores.js'; // 37: a leaf
 import { sculptOp, sculptMode } from './terrainSculpt';
 import { paintLayer } from './terrainPaint';
+import { isProxyCarrier } from './proxyCarrier.js'; // 102-int-2
 import { registerMeasureRings, registerArrangeRings } from './vr/buildRings.js'; // 52 V1/V2
 import { primitivesCatalog } from './primitivesCatalog';
 import { startPeopleRing } from './vr/peopleRing.js'; // 55 A9
@@ -529,7 +530,8 @@ function registerBuiltins() {
 			selCount() <= 1 &&
 			!isSplineSelection() &&
 			!isTerrainSelection() &&
-			!!(/** @type {any} */ (get(selectedObject))?.uuid),
+			!!(/** @type {any} */ (get(selectedObject))?.uuid) &&
+			!isProxyCarrier(get(selectedObject)), // 102-int-2: decals and splats have no surface to paint
 		action: () => {
 			const uuid = /** @type {any} */ (get(selectedObject))?.uuid;
 			if (uuid) void import('./vr/meshPaint.js').then((m) => m.startVRPaint(uuid));

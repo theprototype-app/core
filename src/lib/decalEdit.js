@@ -45,6 +45,8 @@ export function decalHostOf(hit) {
 export function decalRefusalFor(hit, host) {
 	if (!hit || !host) return targetRefusal({ none: true });
 	if (isDecalObject(hit)) return targetRefusal({ decal: true });
+	// 102-int-2: a splat's box is an invisible proxy, not a surface
+	if (hit.userData?.splat || host.userData?.splat) return targetRefusal({ splat: true });
 	const facts = { skinned: false, scattered: false, instanced: !!hit.isInstancedMesh, tris: 0, none: false, animatedFile: hasAnimatedImport(host.uuid) };
 	if (hit.isSkinnedMesh) facts.skinned = true;
 	let meshes = 0;

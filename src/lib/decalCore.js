@@ -99,12 +99,13 @@ export const isDecalObject = (o) => !!o?.userData?.decal && typeof o.userData.de
 /**
  * Why this surface cannot take a decal in this version (null = it can). Facts the caller reads
  * off the hit object and its ancestors.
- * @param {{ skinned?: boolean, scattered?: boolean, instanced?: boolean, decal?: boolean, none?: boolean, tris?: number, animatedFile?: boolean }} facts
+ * @param {{ skinned?: boolean, scattered?: boolean, instanced?: boolean, decal?: boolean, splat?: boolean, none?: boolean, tris?: number, animatedFile?: boolean }} facts
  * @returns {string | null}
  */
 export function targetRefusal(facts) {
 	if (facts.none) return 'Click a surface to put the decal on.';
 	if (facts.decal) return 'A decal cannot go on another decal — click the surface under it.';
+	if (facts.splat) return 'A decal cannot go on a Gaussian splat (it has no surface) — click a mesh.';
 	if (facts.skinned) return 'Decals cannot go on animated characters (skinned meshes) in this version.';
 	// an animated import travels and saves as its original file, which cannot carry a decal
 	if (facts.animatedFile) return 'Decals cannot go on animated imported models in this version.';

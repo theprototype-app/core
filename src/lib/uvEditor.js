@@ -1,6 +1,7 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
 import { mapPreviewUrl } from './loadGuard.js';
+import { isProxyCarrier } from './proxyCarrier.js'; // 102-int-2
 import { writable, get } from 'svelte/store';
 import { objectsGroup, pokeScene } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
@@ -156,12 +157,13 @@ export function uvTargetOf(primary, set, editing) {
  * (an imported .obj/.gltf is a Group of meshes), else its first mesh.
  * @param {any} object @returns {any} */
 export function meshWithUvs(object) {
-	if (!object) return null;
+	// 102-int-2: a decal / splat carrier draws nothing of its own: never the UV or Paint target
+	if (!object || isProxyCarrier(object)) return null;
 	if (object.geometry?.attributes?.position) return object;
 	/** @type {any} */ let firstMesh = null;
 	/** @type {any} */ let textured = null;
 	object.traverse?.((/** @type {any} */ child) => {
-		if (!child.geometry?.attributes?.position) return;
+		if (!child.geometry?.attributes?.position || isProxyCarrier(child)) return;
 		if (!firstMesh) firstMesh = child;
 		if (!textured && child.geometry.attributes.uv) textured = child;
 	});

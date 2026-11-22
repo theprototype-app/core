@@ -25,6 +25,7 @@
 // paints the rounded point too). The truth is the commit that follows (`map`, `mapSlot`, `meshgeo`), so a late
 // joiner gets the texture, never the path history. Both types are ROOM_SCOPED.
 import * as THREE from 'three';
+import { carrierRefusal } from './proxyCarrier.js'; // 102-int-2: decals and splats draw nothing of their own
 import { get, derived } from 'svelte/store';
 import { objectsGroup, pokeScene, globalScene, globalCamera, globalRenderer } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
@@ -837,6 +838,11 @@ export async function beginStroke(opts) {
 	if (stroke) endStroke();
 	const object = objectOf(opts.uuid);
 	if (!object?.geometry) return false;
+	const carrier = carrierRefusal(object, 'paint');
+	if (carrier) {
+		showToast(carrier);
+		return false;
+	}
 	const slot = opts.slot ?? 0;
 	const ch = get(paintChannel);
 	/** @type {'uv'|'obj'|'vtx'} */

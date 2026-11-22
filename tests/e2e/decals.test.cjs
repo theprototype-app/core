@@ -119,6 +119,35 @@ h.run(async () => {
 	h.check(near(b1.centre, s1.centre, 0.002), `§1 ...in the same place (${b1.centre})`);
 	await A.page.screenshot({ path: `${OUT}/decal-placed.png` });
 
+	// ---- §1b (102-int-2) the union's other tools skip or refuse a decal carrier ---------------
+	const seams = await A.page.evaluate(async (u) => {
+		const s = window.__tp.test.v1;
+		let g;
+		s.objectsGroup.subscribe((v) => (g = v))();
+		const d = g.getObjectByProperty('uuid', u);
+		const simp = await s.meshSimplifyAction;
+		const paint = await s.meshPaint;
+		const uv = await s.uvEditor;
+		const ex = await s.export3dAction;
+		const wallUuid = d.parent?.uuid;
+		const parts = ex.collectParts([wallUuid]);
+		return {
+			simplify: simp.simplifyBlocker(u).why,
+			wallTris: simp.objectTriangles(d.parent),
+			wallOwn: d.parent.geometry ? Math.floor((d.parent.geometry.index ? d.parent.geometry.index.count : d.parent.geometry.attributes.position.count) / 3) : -1,
+			paint: await paint.beginStroke({ uuid: u, sp: 'uv', at: [0.5, 0.5] }),
+			uvTarget: uv.meshWithUvs(d) ? 'decal' : null,
+			uvOfWall: uv.meshWithUvs(d.parent)?.uuid === wallUuid,
+			printParts: parts.length
+		};
+	}, decal);
+	console.log('  §1b', JSON.stringify(seams));
+	h.check(/decal/i.test(seams.simplify), `§1b Simplify refuses a decal (${seams.simplify})`);
+	h.check(seams.wallTris === seams.wallOwn, `§1b the wall's triangle count leaves its decal out (${seams.wallTris} vs ${seams.wallOwn})`);
+	h.check(seams.paint === false, '§1b Paint refuses a decal (no map made on the carrier)');
+	h.check(seams.uvTarget === null && seams.uvOfWall, '§1b the UV editor never targets the decal, the wall still resolves to itself');
+	h.check(seams.printParts === 1, `§1b a 3D-print export of the wall has one part, not the decal sheet (${seams.printParts})`);
+
 	// ---- §2 ------------------------------------------------------------------------------
 	const builds0 = (await dbg(A.page)).builds;
 	await moveTo(A.page, decal, [-0.1, 0.5, 0.8]); // wall-local: up 0.5, along 0.8 (still on the face)

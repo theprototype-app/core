@@ -4,6 +4,7 @@ import { get } from 'svelte/store';
 import { objectsGroup } from '../../stores/sceneStore';
 import { showToast } from '../../stores/appStore';
 import { isEditOverlay } from '../editOverlays';
+import { carrierKindOf } from '../proxyCarrier.js'; // 102-int-2
 import { parkAnimatedAtBase } from '../flowRuntime';
 import { saveBytes } from '../saveAs';
 import { writeStl, write3mf, openEdges, partsBounds, partTriangles, MM_PER_M } from './print3dCore';
@@ -69,6 +70,8 @@ export function collectParts(uuids) {
 			root.traverse((/** @type {any} */ o) => {
 				if (seen.has(o) || !o.isMesh || !o.geometry?.attributes?.position || isEditOverlay(o) || !shown(o, group.parent)) return;
 				if (o.userData?.isScatterProxy || o.userData?.helper || o.userData?.noExport) return;
+				// 102-int-2: a splat's proxy box and a decal's placeholder sheet are not printable parts
+				if (carrierKindOf(o) === 'splat' || carrierKindOf(o) === 'decal') return;
 				seen.add(o);
 				const index = indexOf(o.geometry);
 				if (o.isInstancedMesh) {
@@ -153,12 +156,14 @@ export function exportScene(uuids) {
 		group.updateMatrixWorld(true);
 		for (const root of roots) {
 			if (!shown(root, group.parent)) continue;
+			// 102-int-2: a splat (proxy box) or a decal (placeholder sheet) would export as an empty box or sheet
+			if (carrierKindOf(root) === 'splat' || carrierKindOf(root) === 'decal') continue;
 			const copy = root.clone();
 			root.matrixWorld.decompose(copy.position, copy.quaternion, copy.scale);
 			/** @type {any[]} */
 			const drop = [];
 			copy.traverse((/** @type {any} */ o) => {
-				if (o !== copy && (isEditOverlay(o) || !o.visible || o.userData?.isScatterProxy || o.userData?.helper)) drop.push(o);
+				if (o !== copy && (isEditOverlay(o) || !o.visible || o.userData?.isScatterProxy || o.userData?.helper || carrierKindOf(o) === 'splat' || carrierKindOf(o) === 'decal')) drop.push(o);
 			});
 			for (const o of drop) o.parent?.remove(o);
 			scene.add(copy);

@@ -16,6 +16,8 @@ import { undoEntry } from './history';
 import { showChoiceEx } from './confirmDialog';
 import { simplifyDialog } from './makerDialogs';
 import { geometryParamsOf } from './geometryEdit';
+import { parkAnimatedAtBase } from './flowRuntime';
+import { carrierKindOf, isProxyCarrier } from './proxyCarrier.js'; // 102-int-2
 
 // 102 M1 — SIMPLIFY, the scene half. The arithmetic is `meshSimplify` (pure) on the import
 // reducer's worker; this module only touches THREE objects:
@@ -50,7 +52,8 @@ function meshesOf(root) {
 	/** @type {any[]} */
 	const out = [];
 	root?.traverse?.((/** @type {any} */ o) => {
-		if (o.isMesh && !o.isInstancedMesh && o.geometry?.attributes?.position) out.push(o);
+		// 102-int-2: a decal on the model (or a splat carrier) is rebuilt from its record, never simplified
+		if (o.isMesh && !o.isInstancedMesh && o.geometry?.attributes?.position && !isProxyCarrier(o)) out.push(o);
 	});
 	return out;
 }
@@ -68,8 +71,9 @@ export function objectTriangles(root) {
 /** plain facts for `simplifyRefusal` @param {any} object */
 export function simplifyFacts(object) {
 	/** @type {any} */
-	const f = { mesh: false, instanced: false, scatter: false, parametric: false, vrm: false, morph: false, triangles: 0 };
+	const f = { mesh: false, instanced: false, scatter: false, parametric: false, vrm: false, morph: false, triangles: 0, carrier: '' };
 	if (!object) return f;
+	f.carrier = carrierKindOf(object);
 	object.traverse((/** @type {any} */ o) => {
 		if (o.isInstancedMesh) f.instanced = true;
 		if (o.userData?.isScatterProxy || o.userData?.terrainScatter || o.userData?.terrainScatterOf) f.scatter = true;
@@ -272,7 +276,17 @@ function copyUuids(/** @type {any} */ from, /** @type {any} */ to) {
 
 /** a static rebuild: a clone of the live tree carrying the new geometries @param {any} live @param {any[]} geometries */
 function staticRebuild(live, geometries) {
-	const root = cloneSkinned(live);
+	// 102-int-2: clone the AUTHORED pose (clips, sequences, constraints and IK parked), never the pose
+	// on screen: a constraint takes an unseen node's pose as its base, so a posed clone would stack
+	const unpark = parkAnimatedAtBase();
+	/** @type {any} */
+	let root;
+	try {
+		live.updateMatrixWorld(true);
+		root = cloneSkinned(live);
+	} finally {
+		unpark();
+	}
 	copyUuids(live, root);
 	// a later material edit on the new tree must not reach the old one an undo puts back
 	root.traverse((/** @type {any} */ o) => {

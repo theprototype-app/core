@@ -156,6 +156,32 @@ h.run(async () => {
 	await h.eventually(() => carriers(A.page), (c) => c.some((x) => x.splat.file === 'small.ply'), '§4 a small 3DGS .ply imports as it is', 60000);
 	const small = (await carriers(A.page)).find((x) => x.splat.file === 'small.ply');
 	h.check(small?.splat.count === 500 && small?.splat.sh === 1, `§4 ...500 splats, one colour band (${small?.splat.count}, sh ${small?.splat.sh})`);
+	// ---- §4b (102-int-2) the union's other tools skip or refuse a splat carrier -------------
+	const seams = await A.page.evaluate(async (u) => {
+		const s = window.__tp.test.v1;
+		let g;
+		s.objectsGroup.subscribe((v) => (g = v))();
+		const c = g.getObjectByProperty('uuid', u);
+		const simp = await s.meshSimplifyAction;
+		const paint = await s.meshPaint;
+		const ex = await s.export3dAction;
+		const de = await s.decalEdit;
+		const geoBefore = c.geometry.uuid;
+		const made = de.placeDecalOn(c, c.getWorldPosition(new s.THREE.Vector3()).toArray(), [0, 1, 0], { quiet: true });
+		return {
+			simplify: simp.simplifyBlocker(u).why,
+			paint: await paint.beginStroke({ uuid: u, sp: 'obj', at: [0, 0, 0], normal: [0, 1, 0], tri: 0 }),
+			geoKept: c.geometry.uuid === geoBefore,
+			printParts: ex.collectParts([u]).length,
+			usdzRoots: ex.exportScene([u]).children.length,
+			decal: made ? 'made' : de.lastDecalRefusal()
+		};
+	}, small.uuid);
+	console.log('  §4b', JSON.stringify(seams));
+	h.check(/splat/i.test(seams.simplify), `§4b Simplify refuses a splat (${seams.simplify})`);
+	h.check(seams.paint === false && seams.geoKept, '§4b Paint refuses a splat and leaves its proxy box alone');
+	h.check(seams.printParts === 0 && seams.usdzRoots === 0, `§4b 3D print and AR exports leave the proxy box out (${seams.printParts}, ${seams.usdzRoots})`);
+	h.check(/Gaussian splat/.test(seams.decal), `§4b a decal is refused on a splat (${seams.decal})`);
 	// ---- §5 Photo parity + Cinematic ---------------------------------------------------------
 	const photo = await A.page.evaluate(async () => {
 		const { meshKind, parityNotes } = await import('/src/lib/photo/photoCore.js');

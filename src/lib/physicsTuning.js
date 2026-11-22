@@ -19,10 +19,17 @@ export const BODY_TUNING_RANGE = {
  * @returns {{gravityScale: number, linear: number, angular: number}}
  */
 export function bodyTuningOf(p, defaults) {
+	// a body's own values are clamped here too: they may come from a file or a peer, not only the Inspector
+	const own = (/** @type {'gravityScale'|'linearDamping'|'angularDamping'} */ key) => {
+		const v = p?.[key];
+		if (!Number.isFinite(v)) return null;
+		const [lo, hi] = BODY_TUNING_RANGE[key];
+		return Math.min(Math.max(v, lo), hi);
+	};
 	return {
-		gravityScale: Number.isFinite(p?.gravityScale) ? p.gravityScale : 1,
-		linear: Number.isFinite(p?.linearDamping) ? p.linearDamping : (defaults?.damping?.linear ?? 0),
-		angular: Number.isFinite(p?.angularDamping) ? p.angularDamping : (defaults?.damping?.angular ?? 0)
+		gravityScale: own('gravityScale') ?? 1,
+		linear: own('linearDamping') ?? (defaults?.damping?.linear ?? 0),
+		angular: own('angularDamping') ?? (defaults?.damping?.angular ?? 0)
 	};
 }
 
@@ -169,4 +176,91 @@ export function jointEditPatch(def, patch) {
 	if (kind === 'rope' && fin(patch.length)) set('length', clampTo(patch.length, JOINT_RANGE.length));
 	if (typeof patch.contacts === 'boolean') set('contacts', patch.contacts ? undefined : false);
 	return changed ? next : null;
+}
+
+// ---- a joint def from a file or a peer -----------------------------------------------------------
+// The UI and the agent tools build joints through jointParamsFor / jointEditPatch, which clamp. A def
+// that ARRIVES (a peer's jointcreate / joints snapshot, a .tpscene, the autosave) is checked here before
+// anything stores it: every number the simulator reads must be finite and in range, an axis must have
+// a length, and a malformed def is dropped. A valid def comes back as the SAME object, so an older
+// scene's joints stay byte-identical.
+
+const JOINT_SPACE = 10000; // metres: anchors and any limit beyond this mean nothing in a scene
+const MOTOR_RANGE = {
+	vel: [-1000, 1000],
+	maxForce: [0, 1000000],
+	pos: [-4 * Math.PI, 4 * Math.PI],
+	stiffness: [0, 1000000],
+	damping: [0, 100000]
+};
+const isRef = (/** @type {any} */ v) => typeof v === 'string' && v.length > 0 && v.length <= 64;
+
+/** @param {any} v @returns {boolean} three finite numbers inside the scene */
+const isVec3 = (v) => Array.isArray(v) && v.length === 3 && v.every((n) => fin(n) && Math.abs(n) <= JOINT_SPACE);
+
+/**
+ * A joint def as received, made safe for the simulator; null when it cannot be a joint.
+ * @param {any} raw @returns {any|null}
+ */
+export function normalizeJointDef(raw) {
+	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+	if (!isRef(raw.id) || !isRef(raw.a) || !isRef(raw.b) || raw.a === raw.b) return null;
+	if (raw.kind !== undefined && (typeof raw.kind !== 'string' || !/^[a-z][\w-]{0,31}$/i.test(raw.kind))) return null;
+	const kind = raw.kind === undefined || raw.kind === 'weld' ? 'fixed' : jointKindOf(raw.kind);
+	/** @type {any} */
+	const next = { ...raw };
+	let changed = false;
+	const fix = (/** @type {string} */ key, /** @type {any} */ value) => {
+		if (value === undefined) delete next[key];
+		else next[key] = value;
+		changed = true;
+	};
+	for (const key of ['anchorA', 'anchorB']) if (!isVec3(raw[key])) fix(key, [0, 0, 0]);
+	if ('axisA' in raw) {
+		// absent stays absent (the simulator's default is a's local y, as before)
+		const v = raw.axisA;
+		const len = isVec3(v) ? Math.hypot(v[0], v[1], v[2]) : 0;
+		if (!(len > 1e-6)) fix('axisA', AXIS_KINDS.includes(/** @type {any} */ (kind)) ? [0, 1, 0] : undefined);
+	}
+	if ('limits' in raw) {
+		const l = raw.limits;
+		const ok = Array.isArray(l) && l.length === 2 && l.every((n) => fin(n) && Math.abs(n) <= JOINT_SPACE) && l[0] <= l[1];
+		if (!ok) fix('limits', undefined);
+	}
+	if ('motor' in raw) {
+		const m = raw.motor;
+		if (!m || typeof m !== 'object' || Array.isArray(m)) fix('motor', undefined);
+		else {
+			/** @type {Record<string, number>} */
+			const motor = {};
+			let motorChanged = false;
+			for (const key of Object.keys(m)) {
+				const range = /** @type {Record<string, number[]>} */ (MOTOR_RANGE)[key];
+				const v = m[key];
+				if (!range || !fin(v)) {
+					motorChanged = true;
+					continue;
+				}
+				const c = clampTo(v, range);
+				if (c !== v) motorChanged = true;
+				motor[key] = c;
+			}
+			if (motorChanged) fix('motor', motor);
+		}
+	}
+	/** @type {[string, number[]][]} */
+	const ranged = [
+		['rest', JOINT_RANGE.rest],
+		['stiffness', JOINT_RANGE.stiffness],
+		['damping', JOINT_RANGE.damping],
+		['length', JOINT_RANGE.length]
+	];
+	for (const [key, range] of ranged) {
+		if (!(key in raw)) continue;
+		const v = raw[key];
+		if (!fin(v)) fix(key, undefined);
+		else if (clampTo(v, range) !== v) fix(key, clampTo(v, range));
+	}
+	for (const key of ['contacts', 'sparks']) if (key in raw && typeof raw[key] !== 'boolean') fix(key, undefined);
+	return changed ? next : raw;
 }

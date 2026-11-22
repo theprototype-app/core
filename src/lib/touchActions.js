@@ -334,7 +334,8 @@ export function coerceTouchLayout(raw) {
 	const items = {};
 	for (const [id, value] of Object.entries(raw.items).slice(0, 40)) {
 		const item = coerceTouchItem(value);
-		if (item && /^[\w:-]{1,40}$/.test(id)) items[id] = item;
+		// a layout may come from a scene file or a peer: an id that names an object's own machinery is skipped
+		if (item && /^[\w:-]{1,40}$/.test(id) && id !== '__proto__' && id !== 'constructor' && id !== 'prototype') items[id] = item;
 	}
 	return { v: 1, items };
 }

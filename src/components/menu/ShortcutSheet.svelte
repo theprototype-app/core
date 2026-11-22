@@ -21,6 +21,8 @@
 		/** @type {Map<string, Map<string, any[]>>} */
 		const byScope = new Map();
 		for (const row of shortcuts) {
+			// 103 H5: a row with no key (the start-at-once actions in the default preset) has nothing to show
+			if (!row.keys) continue;
 			const scope = row.scope || 'global';
 			if (!byScope.has(scope)) byScope.set(scope, new Map());
 			const groups = /** @type {Map<string, any[]>} */ (byScope.get(scope));

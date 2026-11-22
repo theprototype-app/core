@@ -229,6 +229,9 @@ export const DEBUG_HOOKS = [
 	['viewModeCtl', () => import('./viewMode')],
 	['inputRuntime', () => import('./inputRuntime')],
 	['shortcutsRegistry', () => import('./shortcuts')],
+	// 103 H4/H5/H10: the fly prefs and the start-at-once engine (modalTransformState)
+	['flyPrefs', () => import('./flyPrefs')],
+	['modalTransform', () => import('./modalTransform')],
 	['keyScope', () => import('./keyScope')],
 	// 36 F3/F4: the window-chrome rules (isHeaderDrag, windowDragActive)
 	['windowGrip', () => import('./windowGrip')],

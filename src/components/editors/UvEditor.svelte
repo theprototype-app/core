@@ -593,7 +593,8 @@
 		if (xform === 'move') {
 			// screen delta -> UV delta (dv negated: v is up)
 			const scale = span * zoom;
-			applyUvSnapshot(object, ctx.snapshot, { du: ctx.dx / scale, dv: -ctx.dy / scale });
+			// 103 H4: a U / V lock (Move now's X / Y) keeps the other axis still
+			applyUvSnapshot(object, ctx.snapshot, { du: uvLocks.v && !uvLocks.u ? 0 : ctx.dx / scale, dv: uvLocks.u && !uvLocks.v ? 0 : -ctx.dy / scale });
 			return;
 		}
 		const pivot = ctx.pivot;
@@ -609,7 +610,9 @@
 			const r0 = Math.hypot(from.u - pivot.cu, from.v - pivot.cv);
 			const r1 = Math.hypot(to.u - pivot.cu, to.v - pivot.cv);
 			const k = r0 > 1e-6 ? Math.max(r1 / r0, 0.01) : 1;
-			applyUvSnapshot(object, ctx.snapshot, { scaleU: k, scaleV: k, pivot });
+			// 103 H4: a U / V lock scales that axis alone
+			const oneAxis = uvLocks.u !== uvLocks.v;
+			applyUvSnapshot(object, ctx.snapshot, { scaleU: oneAxis && uvLocks.v ? 1 : k, scaleV: oneAxis && uvLocks.u ? 1 : k, pivot });
 		}
 	}
 
@@ -656,8 +659,42 @@
 		},
 		onActive: (on, modal) => {
 			grabbing = on && modal;
+			if (!on) uvLocks = { u: false, v: false };
+		},
+		// 103 H4: Esc / a right-click cancels (Blender's rule), and the start-at-once keys' locks
+		rightCancels: true,
+		key: (_ctx, e) => {
+			if (e.type !== 'keydown') return false;
+			const combo = comboOf(e);
+			if (bindingOf('uv.lock-u') && combo === bindingOf('uv.lock-u')) {
+				uvLocks = { ...uvLocks, u: !uvLocks.u };
+				grab.refresh();
+				return true;
+			}
+			if (bindingOf('uv.lock-v') && combo === bindingOf('uv.lock-v')) {
+				uvLocks = { ...uvLocks, v: !uvLocks.v };
+				grab.refresh();
+				return true;
+			}
+			for (const [row, mode] of UV_NOW) {
+				if (bindingOf(row) && combo === bindingOf(row)) {
+					armXform(mode);
+					return true;
+				}
+			}
+			return false;
 		}
 	});
+	/** 103 H4: the start-at-once rows ('' = no key; the Blender preset binds G / R / S) */
+	const UV_NOW = /** @type {[string, 'move'|'rotate'|'scale'][]} */ ([
+		['uv.now-move', 'move'],
+		['uv.now-rotate', 'rotate'],
+		['uv.now-scale', 'scale']
+	]);
+	/** 103 H4: X / Y locks while a start-at-once (or middle-button) grab runs */
+	let uvLocks = $state({ u: false, v: false });
+	/** 103 H4: where the pointer last hovered the canvas — a key has no coordinates */
+	let hoverClient = /** @type {[number, number] | null} */ (null);
 
 	/** open a transform gesture on the current selection
 	 * @param {PointerEvent|null} e @param {boolean} modal @param {number[]|null} [collapseTo] */
@@ -909,6 +946,10 @@
 		} else if ($uvTool === 'lasso') {
 			lasso = [[x, y]];
 			gesture = 'lasso';
+		} else if (e.shiftKey && $uvTool === 'select') {
+			// 103 H4: Shift-drag on empty space box-selects (adding), whatever tool is armed
+			marquee = { x0: x, y0: y, x1: x, y1: y };
+			gesture = 'box';
 		} else {
 			gesture = 'pan';
 		}
@@ -1009,6 +1050,7 @@
 	}
 
 	function onHover(/** @type {PointerEvent} */ e) {
+		hoverClient = [e.clientX, e.clientY];
 		if (gesture !== 'idle' || !target || !editable.ok || wireTooDense) return;
 		const { x, y } = localPoint(e);
 		hoverIndex = nearestUvIndex(target, slot, toU(x), toV(y), grabRadius(), faceScope);
@@ -1101,6 +1143,28 @@
 		// registry rather than written as a letter here, so rebinding the row in
 		// Settings really moves the key. Tested first, so the binding is authoritative
 		// whatever the user moves it onto.
+		// 103 H4: START AT ONCE — the selection follows the pointer with no button held (rebindable,
+		// no key by default; the Blender preset binds G / R / S). Asked first, like uv.grab below.
+		for (const [row, mode] of UV_NOW) {
+			const bound = bindingOf(row);
+			if (bound && comboOf(e) === bound && selCluster.length && !grab.active()) {
+				claim();
+				armXform(mode);
+				const rect = canvasEl?.getBoundingClientRect();
+				const at = hoverClient ?? (rect ? [rect.left + rect.width / 2, rect.top + rect.height / 2] : [0, 0]);
+				startTransform(/** @type {any} */ ({ clientX: at[0], clientY: at[1] }), true);
+				return;
+			}
+		}
+		// 103 H4: the tool keys (no key by default; the Blender preset binds W / B / C / P)
+		for (const tool of TOOLS) {
+			const bound = bindingOf('uv.tool-' + tool.key);
+			if (bound && comboOf(e) === bound) {
+				claim();
+				uvTool.set(tool.key);
+				return;
+			}
+		}
 		if (comboOf(e) === bindingOf('uv.grab')) {
 			claim();
 			armXform('move');

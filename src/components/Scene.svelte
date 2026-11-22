@@ -100,6 +100,7 @@
 	import CameraPreview from './CameraPreview.svelte';
 	import { startEditorNavigation, updateEditorNavigation } from '$lib/editorNavigation';
 	import { flyWithWasd, flewThisHold } from '$lib/flyPrefs'; // 103 H5
+	import { notePointer } from '$lib/pointerAt'; // 103 H4
 	import { vrMenuOpen } from '../stores/sceneStore';
 	import VRMenu from './play/VRMenu.svelte';
 	import VRStats from './play/VRStats.svelte';
@@ -1058,6 +1059,7 @@
 			// remember where the cursor is so keyboard commands (Shift+A) can anchor to
 			// it and spawn under it — null until the pointer has moved at least once
 			lastPointerXY = [event.clientX, event.clientY];
+			notePointer(event.clientX, event.clientY); // 103 H4: Move now starts from here
 			// 19-B: the element-snap search is cursor-based — track the pointer while a
 			// gizmo drag runs (this listener is on window, so mid-gesture moves arrive)
 			if ($TControls?.dragging) setSnapPointer(event.clientX, event.clientY);

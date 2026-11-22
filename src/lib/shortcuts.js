@@ -268,6 +268,19 @@ export const shortcuts = [
 		external: true,
 		scope: 'uv'
 	},
+	// 103 H4: the UV editor's start-at-once keys, its U / V locks and its tool keys — run by the
+	// editor's own capture handler (external), no key by default; the Blender preset binds them
+	...[
+		['uv.now-move', 'Move now (in the UV editor) — the selection follows the pointer'],
+		['uv.now-rotate', 'Rotate now (in the UV editor)'],
+		['uv.now-scale', 'Resize now (in the UV editor)'],
+		['uv.lock-u', 'Lock to U while a UV move / resize runs'],
+		['uv.lock-v', 'Lock to V while a UV move / resize runs'],
+		['uv.tool-select', 'Select tool (in the UV editor)'],
+		['uv.tool-box', 'Box select tool (in the UV editor)'],
+		['uv.tool-lasso', 'Lasso select tool (in the UV editor)'],
+		['uv.tool-paint', 'Paint tool (in the UV editor)']
+	].map(([id, label]) => ({ id, keys: '', group: 'UV editor', label, external: true, scope: 'uv' })),
 	{
 		id: 'animation.grab',
 		keys: 'G',
@@ -1071,7 +1084,16 @@ export function applyOverrides() {
 		const scope = s.scope || 'global';
 		if (shortcuts.some((o) => o !== s && overrides[o.id] === s.keys && scopesCollide(s, scope, o))) s.keys = '';
 	}
+	// 103 H4: once a start-at-once key is bound, fetch its lazy engine while the page is idle, so the
+	// FIRST press starts the gesture at once (a cold chunk took over a second on a loaded machine)
+	if (typeof window !== 'undefined' && !warmed && shortcuts.some((s) => s.id.startsWith('transform.now-') && s.keys)) {
+		warmed = true;
+		const warm = () => void import('./modalTransform').catch(() => (warmed = false));
+		if (typeof requestIdleCallback === 'function') requestIdleCallback(warm, { timeout: 3000 });
+		else setTimeout(warm, 500);
+	}
 }
+let warmed = false;
 
 /* ------------------------------------------------------- 103 H5: keymap presets -- */
 
@@ -1127,6 +1149,18 @@ export function presetKeys(preset) {
 			'transform.lock-x': 'X',
 			'transform.lock-y': 'Y',
 			'transform.lock-z': 'Z',
+			// the UV editor (WASD never flies there, so bare S is free): G takes uv.grab's G, which
+			// stays on 1 (arm Move); the tool keys follow Blender's W (select), B (box), C (circle)
+			'uv.now-move': 'G',
+			'uv.grab': '',
+			'uv.now-rotate': 'R',
+			'uv.now-scale': 'S',
+			'uv.lock-u': 'X',
+			'uv.lock-v': 'Y',
+			'uv.tool-select': 'W',
+			'uv.tool-box': 'B',
+			'uv.tool-lasso': 'C',
+			'uv.tool-paint': 'P',
 			...PRESET_EXTRA.blender
 		};
 	if (preset === 'unity')

@@ -66,7 +66,9 @@ const sample = (page, uuid, u, v) =>
 			const img = m?.map?.image;
 			if (!c && img && typeof img.getContext === 'function') c = img;
 			if (!c && img) {
-				if (!img.complete) await new Promise((r) => (img.onload = r));
+				// an <img> still decoding: wait (bounded); an ImageBitmap / canvas has no `complete` and is ready
+				if (typeof HTMLImageElement !== 'undefined' && img instanceof HTMLImageElement && !img.complete)
+					await new Promise((r) => { img.addEventListener('load', r, { once: true }); setTimeout(r, 5000); });
 				c = document.createElement('canvas');
 				c.width = img.naturalWidth || img.width;
 				c.height = img.naturalHeight || img.height;

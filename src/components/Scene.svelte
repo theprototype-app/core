@@ -99,6 +99,7 @@
 	import { cameraPreview, activeOrbit, setOrbitEnabled } from '$lib/cameraPreview';
 	import CameraPreview from './CameraPreview.svelte';
 	import { startEditorNavigation, updateEditorNavigation } from '$lib/editorNavigation';
+	import { flyWithWasd, flewThisHold } from '$lib/flyPrefs'; // 103 H5
 	import { vrMenuOpen } from '../stores/sceneStore';
 	import VRMenu from './play/VRMenu.svelte';
 	import VRStats from './play/VRStats.svelte';
@@ -1500,8 +1501,25 @@
 			// only a short stationary tap opens menus — right-DRAG keeps panning
 			const moved = Math.hypot(event.clientX - down[0], event.clientY - down[1]);
 			if (moved > 5 || Date.now() - down[2] > 400) return;
+			// 103 H5: 'Fly with WASD: only while holding the right mouse button'. Where contextmenu
+			// fires on the PRESS (Linux), the menu would open before the hold could fly — wait for the
+			// release, and open nothing if a fly key moved the camera meanwhile.
+			if (get(flyWithWasd) === 'rmb' && event.buttons & 2) {
+				pendingRightMenu = [event.clientX, event.clientY, down[2]];
+				return;
+			}
+			if (flewThisHold()) return;
 			openViewportMenuAt(event.clientX, event.clientY);
 		};
+		let pendingRightMenu: [number, number, number] | null = null;
+		const onRightRelease = (event: PointerEvent) => {
+			if (event.button !== 2 || !pendingRightMenu) return;
+			const [x, y, at] = pendingRightMenu;
+			pendingRightMenu = null;
+			if (flewThisHold() || Math.hypot(event.clientX - x, event.clientY - y) > 5 || Date.now() - at > 400) return;
+			openViewportMenuAt(x, y);
+		};
+		window.addEventListener('pointerup', onRightRelease);
 		dom.addEventListener('contextmenu', onContextMenu);
 
 		// touch long-press = right-click (touch has no contextmenu). A stationary
@@ -1738,6 +1756,7 @@
 			stopVrGameInput(); // 30b
 			element.removeEventListener('pointerdown', onPointerDown);
 			dom.removeEventListener('contextmenu', onContextMenu);
+			window.removeEventListener('pointerup', onRightRelease);
 			offContextLoss();
 			window.removeEventListener('pointerup', onPointerUp);
 			window.removeEventListener('pointercancel', onPointerCancel);

@@ -13,7 +13,8 @@
 	import SettingRow from '../../ui/SettingRow.svelte';
 	import Icon from '../../ui/Icon.svelte';
 	import { showToast } from '../../../stores/appStore.js';
-	import { shortcuts, comboOf, isRebindable, rebindShortcut, resetShortcut, setOverride, setShortcutCapture, nonLatinLayoutSeen } from '$lib/shortcuts';
+	import { shortcuts, comboOf, isRebindable, rebindShortcut, resetShortcut, setOverride, setShortcutCapture, nonLatinLayoutSeen, KEYMAP_PRESETS, keymapPreset, setKeymapPreset, presetDefaultOf } from '$lib/shortcuts';
+	import { flyWithWasd, flyDirection } from '$lib/flyPrefs'; // 103 H5 / H10
 	import { scopeLabel } from '$lib/keyScope';
 	import { settingsResetTick } from '$lib/settings/resetCategory.js';
 
@@ -124,7 +125,46 @@
 		     non-Latin layout — say how letters resolve -->
 		<p id="shortcut-layout-note" class="sc-note">Letter shortcuts use the physical key position on this layout — the key where the letter sits on a QWERTY keyboard.</p>
 	{/if}
-	{#key `${version}:${$settingsResetTick}`}
+	<!-- 103 H5: the keymap preset (a set of default bindings; your own rebinds win) and the two fly
+	     prefs the presets lean on -->
+	<Section variant="card" label="Keymap">
+		<SettingRow label="Keymap preset" description={KEYMAP_PRESETS.find((p) => p.id === $keymapPreset)?.hint ?? ''}>
+			<select
+				id="keymap-preset"
+				class="settings-text"
+				value={$keymapPreset}
+				onchange={(e) => {
+					setKeymapPreset(/** @type {HTMLSelectElement} */ (e.currentTarget).value);
+					version++;
+				}}
+			>
+				{#each KEYMAP_PRESETS as preset (preset.id)}
+					<option value={preset.id}>{preset.label}</option>
+				{/each}
+			</select>
+		</SettingRow>
+		<SettingRow label="Fly with WASD" description="Only while holding the right mouse button frees W A S D Q E for commands (Blender's bare S, Unity's W / E / R).">
+			<select
+				id="fly-with-wasd"
+				class="settings-text"
+				value={$flyWithWasd}
+				onchange={(e) => {
+					flyWithWasd.set(/** @type {HTMLSelectElement} */ (e.currentTarget).value);
+					version++;
+				}}
+			>
+				<option value="always">Always</option>
+				<option value="rmb">Only while holding the right mouse button</option>
+			</select>
+		</SettingRow>
+		<SettingRow label="Fly direction" description="Where I look: W / S follow the view, so looking up and pressing W climbs. Q / E always move straight down / up.">
+			<select id="fly-direction" class="settings-text" bind:value={$flyDirection}>
+				<option value="level">Level</option>
+				<option value="look">Where I look</option>
+			</select>
+		</SettingRow>
+	</Section>
+	{#key `${version}:${$settingsResetTick}:${$keymapPreset}:${$flyWithWasd}`}
 		<div id="shortcut-grid" class="sc-groups">
 			{#each groups as group (group)}
 				<Section variant="card" label={group} badge={groupScope(group) ? 'Keys work ' + groupScope(group) : ''}>
@@ -134,12 +174,12 @@
 								<span class="shortcut-layout sc-hint" title="Your keyboard layout prints this on that key">· {layoutHint(shortcut.keys, layoutLabels)} on your layout</span>
 							{/if}
 							{#if isRebindable(shortcut)}
-								{#if shortcut.keys !== shortcut.defaultKeys}
+								{#if shortcut.keys !== presetDefaultOf(shortcut.id)}
 									<button
 										type="button"
 										class="shortcut-reset sc-reset"
-										title={'Reset to ' + shortcut.defaultKeys}
-										aria-label={'Reset ' + shortcut.label + ' to ' + shortcut.defaultKeys}
+										title={'Reset to ' + (presetDefaultOf(shortcut.id) || 'no key')}
+										aria-label={'Reset ' + shortcut.label + ' to ' + (presetDefaultOf(shortcut.id) || 'no key')}
 										onclick={() => resetOne(shortcut.id)}><Icon name="rotate-ccw" size={16} strokeWidth={1.75} /></button
 									>
 								{/if}
@@ -149,7 +189,7 @@
 									class:sc-capturing={capturingId === shortcut.id}
 									title="Click to rebind"
 									aria-label={'Rebind ' + shortcut.label}
-									onclick={() => startCapture(shortcut.id)}>{capturingId === shortcut.id ? 'Press keys… Esc cancels' : shortcut.keys}</button
+									onclick={() => startCapture(shortcut.id)}>{capturingId === shortcut.id ? 'Press keys… Esc cancels' : shortcut.keys || 'Not set'}</button
 								>
 							{:else}
 								<span class="sc-locked" title={shortcut.fixedReason || 'listed for reference'}>

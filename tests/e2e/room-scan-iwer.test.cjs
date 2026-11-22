@@ -128,6 +128,12 @@ const menuLabels = async (page) => {
 };
 const closeMenu = (page) => page.keyboard.press('Escape');
 const toasts = (page) => page.evaluate(() => [...document.querySelectorAll('.tp-toast-text')].map((t) => t.textContent.trim()));
+/** h.eventually checks and returns nothing: this one also hands back the value that passed (or the last one) */
+async function until(fn, pred, label, ms) {
+	let v;
+	await h.eventually(async () => (v = await fn()), pred, label, ms);
+	return v;
+}
 
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
@@ -160,7 +166,7 @@ h.run(async () => {
 	await h.eventually(() => iwer.state(page), (s) => s.presenting && s.mode === 'immersive-ar', 'the press entered a passthrough session', 20000);
 	const feats = await page.evaluate(() => [...(window.__iwer.sessions.at(-1).session.enabledFeatures ?? [])]);
 	h.check(feats.includes('plane-detection') && feats.includes('mesh-detection'), `plane-detection and mesh-detection granted (${feats.join(',')})`);
-	const r1 = await h.eventually(
+	const r1 = await until(
 		() => page.evaluate(() => window.__tp.test.v1.roomScan?.roomScanDebug.last()),
 		(r) => r && r.status !== undefined,
 		'the scan after the session started reported',
@@ -180,7 +186,7 @@ h.run(async () => {
 	await iwer.frames(page, 3);
 	await page.evaluate(() => window.__tp.test.v1.toastStore.set([]));
 	await page.evaluate(() => window.__tp.test.v1.vrRadialMenu.findMenuEntry('roomscan').action());
-	const r2 = await h.eventually(
+	const r2 = await until(
 		() => page.evaluate(() => window.__tp.test.v1.roomScan.roomScanDebug.last()),
 		(r) => r && r.status === 'ok',
 		'the VR menu scan finished',
@@ -208,7 +214,7 @@ h.run(async () => {
 	await page.screenshot({ path: path.join(OUT, '01-room-iwer.png') }).catch(() => {});
 
 	// ---- 3. the desktop peer sees the same ----
-	const b3 = await h.eventually(() => myRoom(B.page), (r) => r.groups === 1 && r.kids?.length === 9, 'the room reached the desktop peer', 20000);
+	const b3 = await until(() => myRoom(B.page), (r) => r.groups === 1 && r.kids?.length === 9, 'the room reached the desktop peer', 20000);
 	const same = a2.kids.every((k) => {
 		const o = b3.kids.find((x) => x.uuid === k.uuid);
 		return o && o.name === k.name && near(o.pos, k.pos) && near(o.size, k.size);

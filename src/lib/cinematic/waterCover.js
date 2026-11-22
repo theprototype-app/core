@@ -118,6 +118,7 @@ export function createWaterCover(o) {
 	/**
 	 * The surface / body twin material: waterShader.js surfaceVertex + surfaceFragment (WATER_SS), line for line.
 	 * @param {any} sm the runtime ShaderMaterial (its uniforms are the entry's) @param {boolean} body @param {any} env the scene's environment (a texture the WebGPU renderer can sample) or null
+	 * @param {any} [mirror] the TSL reflector for Reflection: Planar, or null
 	 */
 	function waterMaterial(sm, body, env, mirror = null) {
 		const S = sm.uniforms;

@@ -43,6 +43,52 @@ const debug = (page, reset = false) => page.evaluate(async (r) => (await window.
 const waitMode = (page, want, label, ms = 120000) => h.eventually(async () => (await state(page)).mode, (m) => m === want, label, ms);
 
 /** in-page: capture (GL or view) into window.__wShots[name] (W x H RGBA) and return a PNG @param {any} page @param {string} name @param {boolean} view */
+// WATER_KNOBS=1 (diagnosis, off by default): sample a few pixels under the surface in one view with water terms switched
+// off one at a time (the same uniform objects drive both views), to say which term the two views disagree on
+async function underKnobs(page, view) {
+	return page.evaluate(async (view) => {
+		const s = window.__tp.test.v1;
+		const st = s.waterRuntime.waterViewState(null);
+		const U = st.entries[0].uniforms;
+		const keys = ['uReflectivity', 'uFogDistance', 'uEnvOn', 'uOpacity', 'uClarity', 'uFresnel', 'uRefraction'];
+		const saved = Object.fromEntries(keys.map((k) => [k, U[k]?.value]));
+		const info = { ...saved, colours: ['uSkyTop', 'uSkyHorizon', 'uSkyBottom', 'uFogColor', 'uDeep', 'uShallow'].map((k) => U[k]?.value?.toArray?.().map((v) => +v.toFixed(3))) };
+		const pts = [[1300, 120], [200, 150], [870, 230], [720, 60], [1100, 450]];
+		const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+		const sample = async () => {
+			await frames();
+			let url;
+			if (view) url = (await s.cinematicState.cinematicView()).grabCinematic();
+			else {
+				let r, sc, cam;
+				s.globalRenderer.subscribe((v) => (r = v))();
+				s.globalScene.subscribe((v) => (sc = v))();
+				s.globalCamera.subscribe((v) => (cam = v))();
+				r.render(sc, cam);
+				url = r.domElement.toDataURL('image/png');
+			}
+			const img = new Image();
+			img.src = url;
+			await img.decode();
+			const c = document.createElement('canvas');
+			c.width = 1440;
+			c.height = 900;
+			const x = c.getContext('2d');
+			x.drawImage(img, 0, 0, 1440, 900);
+			return pts.map(([a, b]) => Array.from(x.getImageData(a, b, 1, 1).data.slice(0, 3)));
+		};
+		const out = { info, base: await sample() };
+		U.uReflectivity.value = 0;
+		out.noRefl = await sample();
+		U.uReflectivity.value = saved.uReflectivity;
+		U.uFogDistance.value = 1000;
+		out.noFog = await sample();
+		U.uFogDistance.value = saved.uFogDistance;
+		out.after = await sample();
+		return out;
+	}, view);
+}
+
 const grab = (page, name, view) =>
 	page.evaluate(
 		async ({ name, view, W, H }) => {
@@ -452,6 +498,7 @@ async function oneScene(browser, slug, first) {
 			for (let i = 0; i < 10; i++) await page.evaluate(() => new Promise((r) => requestAnimationFrame(r)));
 			const du = await debug(page);
 			sheet.viewUnder = await grab(page, 'view:under', true);
+			if (process.env.WATER_KNOBS) console.log('KNOBS view ' + JSON.stringify(await underKnobs(page, true)));
 			fs.writeFileSync(path.join(out, '05-cinematic-under-full.png'), png(await page.evaluate(async () => (await window.__tp.test.v1.cinematicState.cinematicView()).grabCinematic())));
 			h.check(!!placed && du.water?.underwater === true && du.errors.length === 0, `${slug}: 4. camera under the surface at ${JSON.stringify(placed)}: the view knows (${JSON.stringify(du.water)})`);
 			row.underwater = { at: placed, view: du.water };
@@ -536,6 +583,7 @@ async function oneScene(browser, slug, first) {
 				return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(s.waterRuntime.waterDebug().underwater))));
 			});
 			sheet.glUnder = await grab(page, 'gl:under', false);
+			if (process.env.WATER_KNOBS) console.log('KNOBS gl ' + JSON.stringify(await underKnobs(page, false)));
 			fs.writeFileSync(
 				path.join(out, '05-standard-under-full.png'),
 				png(await page.evaluate(() => {

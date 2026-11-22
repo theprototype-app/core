@@ -85,6 +85,14 @@ const faceOp = (peer, uuid, axis, op) =>
 		{ uuid, axis, op }
 	);
 
+/** the peer lets go of the mesh (its selection lock): the other peer may edit it next */
+const release = (peer, uuid) =>
+	peer.page.evaluate(async (uuid) => {
+		const s = window.__tp.test.v1;
+		const lc = s.lockControl?.releaseLock ? s.lockControl : await s.lockControl;
+		lc?.releaseLock?.(uuid);
+	}, uuid);
+
 /** wait until the object is free of locks on this page (the other peer's session ended) */
 const unlocked = (peer, uuid) =>
 	h.eventually(
@@ -166,7 +174,8 @@ h.run(async () => {
 		`the extrude changed the mesh and stored a partition (${s1.facts.tris} tris)`
 	);
 
-	// 2. the release peer insets
+	// 2. the release peer insets (the branch created the box, so it holds the selection lock)
+	await release(L, uuid);
 	await unlocked(O, uuid);
 	const ins = await faceOp(O, uuid, '-x', 'inset');
 	h.check(ins.ok, 'release: inset ran (premise)');
@@ -174,6 +183,7 @@ h.run(async () => {
 	h.check(s2.facts.positions !== s1.facts.positions, 'the inset changed the mesh (premise)');
 
 	// 3. the branch commits a positions-only snapshot (the vertex tools' commitMeshGeoSnapshot)
+	await release(O, uuid);
 	await unlocked(L, uuid);
 	await L.page.evaluate((uuid) => {
 		const s = window.__tp.test.v1;
@@ -229,7 +239,9 @@ h.run(async () => {
 
 	// 6. two-peer + reload: the joiner reloads and rejoins
 	const beforeReload = await facts(L, uuid);
-	await hOld.freshReload(O);
+	// a plain reload with a long boot wait (a third boot in one browser takes 50-90 s headless)
+	await O.page.reload({ waitUntil: 'domcontentloaded' });
+	await O.page.waitForFunction(() => !!window.__tp?.test?.v1?.peers, null, { timeout: 150000 });
 	await h.eventually(
 		() =>
 			O.page.evaluate(() => {

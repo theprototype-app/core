@@ -155,7 +155,7 @@ h.run(async () => {
 	await pulse(page);
 	await page.waitForTimeout(300);
 	const phone = await motors(page);
-	h.check(phone.vibrates.length === 1 && JSON.stringify(phone.vibrates[0]) === '[23]', '3.1 an Android phone gets navigator.vibrate([23]) for a bump (' + JSON.stringify(phone.vibrates) + ')');
+	h.check(phone.vibrates.length === 1 && JSON.stringify(phone.vibrates[0]) === '[19]', '3.1 an Android phone gets navigator.vibrate([19]) for a bump: no amplitude, so its 0.45 becomes 67 % of 28 ms (' + JSON.stringify(phone.vibrates) + ')');
 	await installMotors(page, { pad: false, vibrate: false });
 	await pulse(page);
 	await page.waitForTimeout(300);
@@ -203,10 +203,11 @@ h.run(async () => {
 		const a = api.feel.vibrate({ strength: 0.9, ms: 150 }, { hand: 'right' });
 		const b = api.hapticPattern('tap');
 		await new Promise((r) => setTimeout(r, 300));
-		return { a, b, effects: window.__effects, outputs: api.feel.outputs(), unknown: api.hapticPattern('nope') };
+		const dbg = (await window.__tp.test.v1.gameKit.gameFeelActions.hapticOutputModule()).hapticOutputDebug();
+		return { a, b, effects: window.__effects, outputs: api.feel.outputs(), unknown: api.hapticPattern('nope'), dbg: { plays: dbg.plays, suppressed: dbg.suppressed, calls: dbg.calls.slice(-3), env: dbg.env, state: (() => { let v; window.__tp.test.v1.gameState.gameState?.subscribe?.((x) => (v = x?.state))?.(); return v; })() } };
 	});
 	h.check(mod.a === true && mod.b === true && mod.unknown === false, '6.1 api.feel.vibrate and api.hapticPattern accept, an unknown pattern is refused');
-	h.check(mod.effects.length === 2 && mod.effects[0].duration === 150 && mod.effects[0].strongMagnitude === 0 && mod.effects[0].weakMagnitude === 0.9, '6.2 both reached the pad: a custom right-side buzz, then a tap (' + JSON.stringify(mod.effects) + ')');
+	h.check(mod.effects.length === 2 && mod.effects[0].duration === 150 && mod.effects[0].strongMagnitude === 0 && mod.effects[0].weakMagnitude === 0.9, '6.2 both reached the pad: a custom right-side buzz, then a tap (' + JSON.stringify(mod.effects) + ' ' + JSON.stringify(mod.dbg) + ')');
 	h.check(mod.outputs.gamepads === 1 && mod.outputs.vr === false && mod.outputs.phone === false, '6.3 feel.outputs() says what this device has (' + JSON.stringify(mod.outputs) + ')');
 	await mode(page, 'edit');
 

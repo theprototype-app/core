@@ -4,7 +4,7 @@
 import { vrControlsRef, knockRef, knockReady } from './refs.js';
 import { gameFeelActive } from '../gameFeel';
 import { hapticLevel } from '../gameSettings';
-import { hapticSchedule, xrHaptics } from '../hapticPatterns';
+import { hapticSchedule, xrHaptics, hapticDeviceEnv } from '../hapticPatterns';
 
 // 103 (H6): the vibration output layer (gamepads, Android phones, VR controllers) — LAZY, so a
 // module that never buzzes costs nothing; a call before it lands plays once it has
@@ -83,11 +83,8 @@ export function sdkFeel(ctx) {
 			},
 			/** @returns {{vr: boolean, gamepads: number, triggerRumble: boolean, phone: boolean}} */
 			outputs: () => {
-				const env = out?.hapticEnv?.();
-				if (!env) {
-					load();
-					return { vr: false, gamepads: 0, triggerRumble: false, phone: false };
-				}
+				// the layer's read when it is loaded (a suite's fake env), else the browser's, synchronously
+				const env = out?.hapticEnv?.() ?? hapticDeviceEnv();
 				const pads = env.pads.filter((/** @type {any} */ p) => p.effects.length || p.pulse);
 				return {
 					vr: env.xr,

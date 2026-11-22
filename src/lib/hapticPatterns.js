@@ -27,6 +27,31 @@ export function xrHaptics() {
 	return xrSink;
 }
 
+/* the device read */
+/** the connected gamepads, as the browser hands them (navigator.getGamepads can throw in a
+ * sandboxed frame) @returns {any[]} */
+export function connectedGamepads() {
+	try {
+		const list = typeof navigator !== 'undefined' && typeof navigator.getGamepads === 'function' ? navigator.getGamepads() : [];
+		return Array.from(list ?? []).filter((p) => p && p.connected !== false);
+	} catch {
+		return [];
+	}
+}
+
+/** 103 (H6): what this device can vibrate with — VR controllers, pads, a phone motor. Lives here, in
+ * the boot chunk, so `api.feel.outputs()` answers on its first call (the output layer is lazy). @returns {import('./hapticOutput.js').HapticEnv} */
+export function hapticDeviceEnv() {
+	const pads = connectedGamepads().map((/** @type {any} */ p) => {
+		const actuator = p.vibrationActuator;
+		const effects = actuator && typeof actuator.playEffect === 'function' ? (Array.isArray(actuator.effects) ? [...actuator.effects] : ['dual-rumble']) : [];
+		const pulse = typeof p.hapticActuators?.[0]?.pulse === 'function';
+		return { index: Number(p.index), effects, pulse };
+	});
+	const vibrate = typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function';
+	return { xr: !!xrHaptics()?.active?.(), pads, vibrate };
+}
+
 /** @type {Record<string, HapticPulse[]>} */
 export const HAPTIC_PATTERNS = {
 	// a fingertip on a button: the lightest thing that is still felt

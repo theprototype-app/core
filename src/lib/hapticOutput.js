@@ -22,7 +22,7 @@
 import { get } from 'svelte/store';
 import { gameFeelActive, gameFeelOn } from './gameFeel';
 import { hapticsAllowed, hapticLevel } from './gameSettings';
-import { hapticSchedule, customHapticSchedule, xrHaptics } from './hapticPatterns';
+import { hapticSchedule, customHapticSchedule, xrHaptics, hapticDeviceEnv, connectedGamepads as gamepads } from './hapticPatterns';
 import { gameState } from './gameState';
 
 /** @typedef {import('./hapticPatterns').HapticPulse} HapticPulse */
@@ -153,28 +153,9 @@ export function setHapticEnvForTest(env) {
 	envOverride = env;
 }
 
-/** the connected gamepads, as the browser hands them (navigator.getGamepads can throw in a
- * sandboxed frame) @returns {any[]} */
-function gamepads() {
-	try {
-		const list = typeof navigator !== 'undefined' && typeof navigator.getGamepads === 'function' ? navigator.getGamepads() : [];
-		return Array.from(list ?? []).filter((p) => p && p.connected !== false);
-	} catch {
-		return [];
-	}
-}
-
-/** Read the device. @returns {HapticEnv} */
+/** Read the device (the browser's own, unless a suite set a fake). @returns {HapticEnv} */
 export function hapticEnv() {
-	if (envOverride) return envOverride;
-	const pads = gamepads().map((/** @type {any} */ p) => {
-		const actuator = p.vibrationActuator;
-		const effects = actuator && typeof actuator.playEffect === 'function' ? (Array.isArray(actuator.effects) ? [...actuator.effects] : ['dual-rumble']) : [];
-		const pulse = typeof p.hapticActuators?.[0]?.pulse === 'function';
-		return { index: Number(p.index), effects, pulse };
-	});
-	const vibrate = typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function';
-	return { xr: !!xrHaptics()?.active?.(), pads, vibrate };
+	return envOverride ?? hapticDeviceEnv();
 }
 
 /** may a pulse fire NOW? the edit-mode gate, the player's switch, a paused round, a hidden tab */

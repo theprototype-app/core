@@ -27,6 +27,8 @@
 	import { safeStorage } from '$lib/safeStorage';
 	import { chromeButton } from '$lib/chromeButtons.js';
 	import { toolbarSlots } from '$lib/toolbarSlots.js';
+	import { previewMenuAsk } from '$lib/previewPill.js';
+	import { get } from 'svelte/store';
 	import { cinematicState, toggleCinematic } from '$lib/cinematic/cinematicState.js';
 	import { QUALITY } from '$lib/cinematic/cinematicCore.js';
 	import { drawAs, drawRowOf, isUnusualRow, DRAW_AS_LABEL } from '$lib/drawAs.js';
@@ -170,7 +172,11 @@
 	function toggleMenu() {
 		if (menuOpen) return void (menuOpen = false);
 		const r = pill?.getBoundingClientRect();
-		if (r) {
+		if (r && !r.width) {
+			// hidden (Hide this button) and asked from Configure scene: open where the pill would be
+			const free = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sb-free-right')) || 0;
+			menuPos = { top: 76, right: 16 + free, bottom: null };
+		} else if (r) {
 			const below = window.innerHeight - r.bottom;
 			menuPos = below >= 360 || below >= r.top ? { top: r.bottom + 6, right: Math.max(8, window.innerWidth - r.right), bottom: null } : { top: 0, right: Math.max(8, window.innerWidth - r.right), bottom: window.innerHeight - r.top + 6 };
 		}
@@ -200,6 +206,14 @@
 	});
 	$effect(() => {
 		if (!shown) menuOpen = false;
+	});
+	// Configure scene ▸ View's "open Preview" row
+	let asked = get(previewMenuAsk);
+	$effect(() => {
+		const n = $previewMenuAsk;
+		if (n === asked) return;
+		asked = n;
+		if (!menuOpen) toggleMenu();
 	});
 
 	onMount(() => {

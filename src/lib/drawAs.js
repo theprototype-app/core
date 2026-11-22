@@ -1,15 +1,17 @@
 // 103 H11 — "DRAW AS": how THIS device draws the viewport, beyond the three view modes (viewMode: shaded,
-// shaded + AO, wireframe). A boot leaf (svelte/store + safeStorage): the materials and hooks are the lazy
-// half (./drawAsRender.js), fetched only when someone picks a mode other than Normal.
+// shaded + AO, wireframe). NOT on the boot: only the Preview pill / drawer import it, and the materials and
+// hooks are a second lazy half (./drawAsRender.js), fetched only when someone picks a mode other than Normal.
 //
-// LOCAL, every bit of it: saved on this device (like viewMode), never sent, never in a scene file, never
-// published to a watcher (lookPresence carries viewMode only — a watcher keeps their own look). Play always
-// draws the normal look, and so do a headset and the Cinematic view (the lazy half reads `drawAsActive`).
+// LOCAL and SESSION-ONLY (claude:9's Q8 ruling): never saved, so a reload — and a scene change — is back to
+// the everyday look; only viewMode's three persist, as they always have. Nobody opens a white clay scene the
+// next day and wonders where the colours went. Never sent, never in a scene file, never published to a
+// watcher (lookPresence carries viewMode only). Play always draws the normal look, and so do a headset and
+// the Cinematic view (the lazy half reads `drawAsActive`).
 //
 // One choice at a time. Picking a view mode (the Preview menu, Configure scene ▸ View, the Z key) puts
 // Draw as back to Normal, so the two never stack into something nobody picked.
 import { writable, derived, get } from 'svelte/store';
-import { safeStorage } from './safeStorage';
+import { drawAsWantsAo } from './viewMode';
 import { viewMode, isLocked, isVRMode } from '../stores/sceneStore';
 import { cinematicState } from './cinematic/cinematicStore.js';
 
@@ -41,17 +43,11 @@ export const DRAW_AS_HINT = /** @type {Record<string, string>} */ ({
 	weights: 'Skin weights: the selected bone’s influence from blue (none) to red (all); with no bone selected, each bone a colour'
 });
 
-const KEY = 'drawAs';
 /** @param {any} v @returns {DrawAs} */
 export const asDrawAs = (v) => (DRAW_AS.includes(v) ? v : 'normal');
 
-/** the chosen mode (this device) @type {import('svelte/store').Writable<DrawAs>} */
-export const drawAs = writable(asDrawAs(typeof localStorage === 'undefined' ? null : safeStorage.getItem(KEY)));
-drawAs.subscribe((v) => {
-	if (typeof localStorage === 'undefined') return;
-	if (v === 'normal') safeStorage.removeItem(KEY);
-	else safeStorage.setItem(KEY, v);
-});
+/** the chosen mode (this device, this page only) @type {import('svelte/store').Writable<DrawAs>} */
+export const drawAs = writable(/** @type {DrawAs} */ ('normal'));
 
 // a view mode picked anywhere (the menu, Configure scene ▸ View, Z) ends the Draw as mode
 let lastMode = get(viewMode);
@@ -65,6 +61,22 @@ viewMode.subscribe((m) => {
 export const drawAsActive = derived([drawAs, isLocked, isVRMode, cinematicState], ([$d, $locked, $vr, $cine]) =>
 	$locked === true || $vr || ($cine?.mode && $cine.mode !== 'off') ? 'normal' : $d
 );
+// Ambient occlusion only asks Outline (boot) for the personal AO pass through a one-line flag in viewMode,
+// so Outline never has to import this module
+drawAsActive.subscribe((d) => drawAsWantsAo.set(d === 'ao-only'));
+
+// a scene change (open, travel, New scene) ends the Draw as mode, like a reload. levels is already loaded
+// by the boot's own lazy import, so this costs no extra fetch.
+if (typeof window !== 'undefined')
+	void import('./levels.js').then(({ currentLevel }) => {
+		/** @type {string | null | undefined} */
+		let was;
+		currentLevel.subscribe((l) => {
+			const id = l ? (l.hash || '') + '|' + (l.name || '') : null;
+			if (was !== undefined && id !== was && get(drawAs) !== 'normal') drawAs.set('normal');
+			was = id;
+		});
+	});
 
 /** the menu's one list: viewMode's three, then Draw as's own */
 export const DRAW_ROWS = ['shaded', 'shaded-ao', 'wireframe', 'wire-over', 'ao-only', 'normals', 'uv-checker', 'weights'];
@@ -89,11 +101,8 @@ export function pickDrawRow(row) {
 	drawAs.set(d);
 }
 
-let started = false;
-/** wire the lazy half in: it loads the first time a mode other than Normal is in force */
-export function startDrawAs() {
-	if (started || typeof window === 'undefined') return;
-	started = true;
+// the lazy half loads the first time a mode other than Normal is in force
+if (typeof window !== 'undefined') {
 	/** @type {Promise<any> | null} */
 	let half = null;
 	drawAsActive.subscribe((d) => {

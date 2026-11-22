@@ -55,7 +55,9 @@
 	import { provideFieldClip, fieldClip, nativeFieldSpec } from '$lib/fieldMenu'; // 43 J3
 	import SheetGrip from '../ui/SheetGrip.svelte';
 	import { saveSheetH } from '$lib/ui/sheetDrag.js';
-	import { phoneSheetMaxH, phoneShellActive } from '$lib/ui/phoneShell.js';
+	import { phoneSheetMaxH, phoneShellActive, phoneShell } from '$lib/ui/phoneShell.js';
+	import { unfoldedPhone } from '$lib/deviceClass.js'; // 103 H11 (Q6): where the Preview pill shows, View links to it
+	import { openPreviewMenu } from '$lib/previewPill.js';
 	import { inspectorSide, sidebarShown, sidebarTabs, memberPlacement, sceneSide, inspectorElementSide, inspectorDual } from '$lib/sidebars'; // 42 I2/I3 + uir-polish E5
 	import Segmented from '../ui/Segmented.svelte';
 	import ParticleMotionRows from '../fx/ParticleMotionRows.svelte';
@@ -2735,6 +2737,14 @@
 			<SceneQualitySection closed />
 			<Section variant="panel" label="View" closed>
 				<p class="ui-section-label">Viewport — this device</p>
+				{#if !$phoneShell && !$unfoldedPhone}
+				<!-- 103 H11 (claude:9, Q6): one home per setting. Where the Preview pill shows, how this device
+					 draws the scene lives in its menu, and this row points there; phones keep the chips. -->
+				<button type="button" id="view-open-preview" class="mb-1 flex w-full items-center gap-2 rounded-[var(--radius-control,6px)] px-2 py-1.5 text-left hover:bg-surface-hover" title="Shaded, Shaded + AO, Wireframe and the Draw as modes live in the Preview menu (top right of the 3D view)" onclick={openPreviewMenu}>
+					<Icon name="eye" size={16} aria-hidden="true" />
+					<span class="flex-1">How this device draws the scene: <span class="text-accent underline">open Preview</span></span>
+				</button>
+				{:else}
 				<div id="view-mode-switch" class="flex flex-wrap gap-1">
 					{#each [['shaded', 'Shaded'], ['shaded-ao', 'Shaded + AO'], ['wireframe', 'Wireframe']] as [mode, label] (mode)}
 						{@const aoTaken = mode === 'shaded-ao' && sceneProvidesAo($scenePost)}
@@ -2753,6 +2763,7 @@
 						</button>
 					{/each}
 				</div>
+				{/if}
 				<p class="mb-1 text-xs text-text-muted">
 					How YOUR viewport shades the scene — not shown to peers. The scene's own look
 					(post-processing) renders for everyone regardless; switch it off below if you need to.

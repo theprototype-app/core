@@ -10,7 +10,10 @@
 //     "Scene look settings…" opens Configure scene at Scene look
 //  4. Draw as: every mode draws (pixel delta against Shaded), its override is ours and LOCAL, the chevron dot +
 //     tooltip name it, Weights is greyed without a skinned mesh and draws with one, Z puts it back, Play draws
-//     the normal look and the mode comes back after
+//     the normal look and the mode comes back after; Q8 (claude:9): a debug mode is never stored and a reload
+//     or a scene change is back to the everyday look, while Wireframe (a view mode) still survives a reload
+//  4b. Q6 (claude:9): Configure scene ▸ View has no view-mode chips where the pill shows, one "open Preview"
+//     row instead, which opens the pill's menu (also with the pill hidden); folded N6 keeps the chips
 //  5. Quality: the preset switches from the menu (the same store as Configure scene ▸ Quality)
 //  6. Judge for: toggles show parts (percent always printed), persist, This device switches itself on ONCE over
 //     100 % (never Quest), never again after a hand toggle (also across a reload)
@@ -200,7 +203,7 @@ h.run(async () => {
 	}
 	const nu = await h.frameDelta(P, frames.normals, frames['uv-checker'], 24);
 	h.check(nu.fraction > 0.04, `4. normals and the UV checker are different pictures (${(nu.fraction * 100).toFixed(1)} %)`);
-	h.check((await T(P, () => localStorage.getItem('drawAs'))) === 'uv-checker', '4. the pick is LOCAL (this device storage)');
+	h.check((await T(P, () => Object.keys(localStorage).filter((k) => /drawAs/i.test(k) || localStorage.getItem(k) === 'uv-checker'))).length === 0, '4. Q8: the debug mode is not stored anywhere on this device');
 	const look = await T(P, () => window.__tp.test.v1.lookPresence?.publishedLook?.() ?? null);
 	h.check(!look || !JSON.stringify(look).includes('uv-checker'), '4. never published to a watcher (lookPresence carries viewMode only)');
 	// Weights: greyed with no skinned mesh, draws with one
@@ -258,7 +261,36 @@ h.run(async () => {
 	h.check((await P.locator('#preview-pill').count()) === 0, '4. …and the pill is not drawn in Play');
 	await h.leavePlay(A);
 	await h.eventually(() => T(P, () => window.__tp.test.v1.drawAsRender.drawAsDebug()), (d) => d.current === 'normals', '4. back in the editor the picked mode returns');
+	// Q8: a scene change ends it
+	await T(P, () => window.__tp.test.v1.levels.currentLevel.set({ hash: '', name: 'Another scene 103', unsaved: true }));
+	await h.eventually(() => read(P, 'drawAs.drawAs'), (d) => d === 'normal', '4. Q8: a scene change puts Draw as back to the everyday look');
+	// Q8: a reload ends it; Wireframe (a view mode) survives a reload as it always has
+	await pick('wireframe');
+	await pick('normals');
+	h.check((await read(P, 'viewMode')) === 'shaded', '4. premise: a Draw as mode leaves Wireframe first');
+	await pick('wireframe');
+	await h.freshReload(A);
+	await h.answerRestore(A);
+	await h.eventually(() => pill(P), (x) => !!x?.visible, '4. premise: the pill after the reload');
+	h.check((await read(P, 'viewMode')) === 'wireframe', '4. Q8: Wireframe, an everyday mode, survives the reload');
+	await pick('normals');
+	await h.freshReload(A);
+	await h.answerRestore(A);
+	await h.eventually(() => pill(P), (x) => !!x?.visible, '4. premise: the pill after the second reload');
+	const back = await T(P, () => ({ view: (() => { let v; window.__tp.test.v1.viewMode.subscribe((x) => (v = x))(); return v; })(), override: (() => { let s; window.__tp.test.v1.globalScene.subscribe((x) => (s = x))(); return s?.overrideMaterial?.type ?? null; })() }));
+	h.check((await read(P, 'drawAs.drawAs')) === 'normal' && back.view === 'shaded' && back.override === null && !(await pill(P)).dot, `4. Q8: a debug mode does NOT survive a reload: the everyday look, no dot (${JSON.stringify(back)})`);
 	await pick('shaded');
+
+	// ---------- 4b. Q6: Configure scene ▸ View points at the pill ----------
+	await T(P, () => window.__tp.test.v1.openSceneSection('View'));
+	await h.eventually(() => T(P, () => !!document.getElementById('view-open-preview')), (v) => v, '4b. Configure scene ▸ View shows the "open Preview" row');
+	h.check((await P.locator('#view-mode-switch').count()) === 0, '4b. …and no view-mode chips (one home per setting)');
+	h.check(/How this device draws the scene: open Preview/.test(await P.locator('#view-open-preview').textContent()), '4b. …worded as asked');
+	await P.locator('#view-open-preview').click();
+	await h.eventually(() => P.locator('#preview-menu').count(), (n) => n === 1, '4b. the row opens the Preview menu');
+	await closeMenu(P);
+	await T(P, () => window.__tp.test.v1.inspectorClose.set(true));
+	await P.waitForTimeout(600);
 
 	// ---------- 5. Quality ----------
 	await openMenu(P);
@@ -353,6 +385,13 @@ h.run(async () => {
 	await P.getByRole('menuitem', { name: 'Hide this button', exact: true }).click();
 	await h.eventually(() => pill(P), (x) => !x?.visible, '8. Hide this button hides the pill');
 	h.check((await T(P, () => JSON.parse(localStorage.getItem('controlsLayout') ?? '{}')?.clusters?.budget?.hidden)) === true, '8. …in the Edit positions record (one source with Edit positions and Customize toolbar)');
+	await T(P, () => window.__tp.test.v1.openSceneSection('View'));
+	await h.eventually(() => T(P, () => !!document.getElementById('view-open-preview')), (v) => v, '8. premise: the View row with the pill hidden');
+	await P.locator('#view-open-preview').click();
+	await h.eventually(() => P.locator('#preview-menu').count(), (n) => n === 1, '8. Q6: with the pill hidden the View row still opens the Preview menu');
+	await closeMenu(P);
+	await T(P, () => window.__tp.test.v1.inspectorClose.set(true));
+	await P.waitForTimeout(400);
 	await T(P, () => window.__tp.test.v1.chromeButtons.showChromeButton('top.preview'));
 	await h.eventually(() => pill(P), (x) => !!x?.visible, '8. shown again (Customize buttons / Show buttons path)');
 	await A.ctx.close();
@@ -404,6 +443,15 @@ h.run(async () => {
 		return out;
 	});
 	h.check(tr.length === 0, '10. nothing of the Preview renders at the top right');
+	await tap('#preview-drawer-close');
+	await Q.evaluate(() => window.__tp.test.v1.openSceneSection('View'));
+	await h.eventually(() => Q.evaluate(() => !!document.getElementById('view-mode-switch')), (v) => v, '10. Q6: on a phone Configure scene ▸ View keeps its three chips');
+	h.check((await Q.locator('#view-open-preview').count()) === 0, '10. …and no "open Preview" row (Preview is optional there)');
+	await Q.evaluate(() => window.__tp.test.v1.inspectorClose.set(true));
+	await Q.waitForTimeout(500);
+	await tap('#ps-more');
+	await tap('#ps-tile-preview');
+	await Q.waitForSelector('#preview-drawer', { timeout: 5000 });
 	await shot(Q, '07-n6-folded-drawer');
 	await tap('#preview-drawer-close');
 	h.check((await Q.locator('#preview-drawer').count()) === 0, '10. the drawer closes');

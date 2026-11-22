@@ -13,6 +13,11 @@ import { toolbarSlots, patchCluster } from './toolbarSlots.js';
 /** the phone drawer (Draw as, Quality, Cinematic view where offered) — a toolbar item opens it */
 export const previewDrawerOpen = writable(false);
 
+/** asks the pill to open its menu (Configure scene ▸ View's link row: one home per setting); a counter, so
+ *  every press is a fresh ask @type {import('svelte/store').Writable<number>} */
+export const previewMenuAsk = writable(0);
+export const openPreviewMenu = () => previewMenuAsk.update((n) => n + 1);
+
 /** hidden = the cluster's own `hidden`, outside Edit positions (inside it the pill is drawn faint) */
 const hidden = derived(toolbarSlots, (s) => !!s.clusters?.budget?.hidden && !s.editing);
 

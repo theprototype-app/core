@@ -3,8 +3,7 @@
 	import { objectsGroup, selectedObjects, lockedObjects, viewMode, isLocked, editorMode } from '../stores/sceneStore.js';
 	import { showToast } from '../stores/appStore.js';
 	import { get } from 'svelte/store';
-	import { chromiumMajor, postSupported } from '$lib/viewMode';
-	import { drawAsActive } from '$lib/drawAs.js'; // 103 H11: Ambient occlusion only asks for the personal AO pass
+	import { chromiumMajor, postSupported, drawAsWantsAo } from '$lib/viewMode'; // 103 H11: Ambient occlusion only asks for the personal AO pass
 	import { registerToneMappingOwner, applyEnvironment } from '$lib/environment';
 	// 21/L-C: which camera we are LOOKING THROUGH, so its own look composes on top of
 	// the scene's. Exactly how HudLayer resolves an attached HUD — a look on a camera IS
@@ -366,7 +365,7 @@
 		// up post to keep its frames, and that must not be undone by watching somebody.
 		const reduced = $qualityOverrides;
 		const overrides = adopted ? adopted.look : undefined;
-		const adoptedMode = adopted ? adopted.mode : $drawAsActive === 'ao-only' ? 'shaded-ao' : $viewMode;
+		const adoptedMode = adopted ? adopted.mode : $drawAsWantsAo ? 'shaded-ao' : $viewMode;
 		const entries = effectivePostStack({
 			stack: resolvedDoc(POST_SCENE_KEY, overrides),
 			cameraStack: /** @type {any} */ (throughCamera ? resolvedDoc(throughCamera, overrides) : null),

@@ -282,11 +282,12 @@ export function scanWhenSessionStarts(opts = {}) {
 			// let three set the reference space up before the first read
 			setTimeout(() => resolve(scanMyRoom()), 0);
 		};
-		// a permission prompt the person never answers: stop listening, say nothing (nothing was started)
+		// a permission prompt the person never answers: stop listening, say nothing (nothing was started). Long:
+		// Quest Browser asks once per site, and on the real Quest 3 that first answer came after 6.5 min
 		const timer = setTimeout(() => {
 			xr.removeEventListener('sessionstart', onStart);
 			resolve((last = { status: 'no-session-started' }));
-		}, opts.timeoutMs ?? 60000);
+		}, opts.timeoutMs ?? 10 * 60000);
 		xr.addEventListener('sessionstart', onStart);
 	});
 }

@@ -188,6 +188,44 @@ describe('104 room scan — the room', () => {
 	});
 });
 
+// What a REAL Quest 3 hands the page (Quest Browser 157, measured 2026-11-22; the shape only, not that room):
+// the room mesh comes with NO semanticLabel (thousands of vertices), and a shelf as an unlabelled 8-corner
+// volume plus a labelled 'shelf' top plane.
+describe('104 room scan — Quest Browser 157 labels', () => {
+	/** a closed triangle soup with n vertices spread through a w x h x d box (the room mesh's shape) */
+	const roomMesh = (/** @type {number} */ n, /** @type {number[]} */ s) => {
+		const v = new Float32Array(n * 3);
+		for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) v[i * 3 + k] = ((((i * 7919 + k * 104729) % 1000) / 1000) - 0.5) * s[k];
+		return v;
+	};
+	const QUEST = {
+		planes: [
+			...ROOM.planes.filter((p) => p.label !== 'table' && p.label !== 'couch' && p.label !== 'invisible wall face'),
+			{ label: 'shelf', polygon: rect(0.55, 0.3), matrix: pose([-1.5, 0.9, 1.2]) }
+		],
+		meshes: [
+			{ label: undefined, vertices: roomMesh(6245, [4.4, 2.7, 3.4]), matrix: pose([0, 1.3, 0]) },
+			{ label: undefined, vertices: boxVerts([0.55, 0.9, 0.3]), matrix: pose([-1.5, 0.45, 1.2]) },
+			{ label: 'table', vertices: boxVerts([1.2, 0.75, 0.8]), matrix: pose([1, 0.375, -0.8]) }
+		]
+	};
+	const pieces = roomPieces(QUEST);
+	it('an unlabelled mesh that is not a box is the room mesh: never built', () => {
+		expect(pieces.some((p) => p.size.some((n) => n > 4.1))).toBe(false);
+		expect(pieces.filter((p) => p.base === 'Object')).toEqual([]);
+		expect(meshPiece({ label: undefined, vertices: roomMesh(6245, [4, 2.5, 3]), matrix: pose([0, 1, 0]) })).toBeNull();
+		// an unlabelled BOX is still built (an object Space Setup drew without a kind)
+		expect(meshPiece({ label: undefined, vertices: boxVerts([0.5, 0.5, 0.5]), matrix: pose([0, 0.25, 0]) })?.base).toBe('Object');
+	});
+	it('an unlabelled volume under a labelled shelf top is ONE shelf, the volume', () => {
+		const shelves = pieces.filter((p) => p.base === 'Shelf');
+		expect(shelves).toHaveLength(1);
+		expect(shelves[0].from).toBe('volume');
+		expect(shelves[0].size).toEqual([0.55, 0.9, 0.3]);
+		expect(pieces.map((p) => p.name)).toEqual(['Floor', 'Ceiling', 'Wall 1', 'Wall 2', 'Wall 3', 'Wall 4', 'Door', 'Shelf', 'Table']);
+	});
+});
+
 describe('104 room scan — re-scan plan', () => {
 	const pieces = roomPieces(ROOM);
 

@@ -24,6 +24,10 @@ export const INSET = 0.01;
 export const MAX_PIECES = 64;
 /** a plane or volume smaller than this on a side is noise (m) */
 const MIN_SIDE = 0.03;
+/** Space Setup's furniture volumes are boxes (8 corners; 24 if a browser sends a vertex per face corner). An
+ * UNLABELLED mesh with more vertices is the room mesh: Quest Browser 157 sends it with no semanticLabel
+ * (real Quest 3, 2026-11-22: 6245 vertices), not as 'global mesh'. */
+const MAX_BOX_VERTICES = 24;
 
 /** label → base name; `null` = never built (the room mesh, the invisible walls Space Setup adds) */
 const LABELS = /** @type {Record<string, string | null>} */ ({
@@ -84,6 +88,9 @@ export function labelName(label) {
 	if (key in LABELS) return LABELS[key];
 	return 'Object';
 }
+
+/** no semantic label at all (Quest Browser leaves the room mesh and some volumes unlabelled) @param {unknown} label */
+const unlabelled = (label) => !String(label ?? '').trim();
 
 /** @param {string} base */
 export function colorOf(base) {
@@ -191,6 +198,7 @@ export function meshPiece(mesh) {
 	if (!base || SHELL.has(base) || !mesh?.matrix || mesh.matrix.length !== 16) return null;
 	const v = mesh.vertices;
 	if (!v || v.length < 9 || v.length % 3) return null;
+	if (unlabelled(mesh?.label) && v.length / 3 > MAX_BOX_VERTICES) return null; // the room mesh
 	const min = [Infinity, Infinity, Infinity];
 	const max = [-Infinity, -Infinity, -Infinity];
 	for (let i = 0; i < v.length; i += 3)
@@ -227,13 +235,23 @@ export function roomPieces(input) {
 	let floorY = /** @type {number | null} */ (null);
 	for (const p of planes)
 		if (labelName(p?.label) === 'Floor' && p?.matrix?.length === 16) floorY = floorY == null ? p.matrix[13] : Math.min(floorY, p.matrix[13]);
-	const volumes = /** @type {Piece[]} */ (meshes.map(meshPiece).filter(Boolean));
+	const built = meshes.map((m) => ({ m, piece: meshPiece(m) })).filter((x) => x.piece);
+	const volumes = /** @type {Piece[]} */ (built.map((x) => x.piece));
+	const builtPlanes = planes.map((p) => ({ p, piece: planePiece(p, { floorY }) }));
+	/** a plane's own origin in world space (the polygon's frame) @param {PlaneIn} p @param {Piece} piece */
+	const originOf = (p, piece) => (p.matrix.length === 16 ? [p.matrix[12], p.matrix[13], p.matrix[14]] : piece.position);
+	// An unlabelled volume (Quest Browser sends a shelf's volume with no label, its top plane labelled 'shelf')
+	// takes the kind of a labelled furniture plane inside it, so the two become one box, the volume
+	built.forEach(({ m, piece: v }) => {
+		if (!v || v.base !== 'Object' || !unlabelled(m?.label)) return;
+		const top = builtPlanes.find(({ p, piece }) => piece && piece.base !== 'Object' && !SHELL.has(piece.base) && !ON_WALL.has(piece.base) && inside(v, originOf(p, piece), 0.1));
+		if (top?.piece) v.base = top.piece.base;
+	});
 	/** @type {Piece[]} */
 	const pieces = [...volumes];
-	for (const p of planes) {
-		const piece = planePiece(p, { floorY });
+	for (const { p, piece } of builtPlanes) {
 		if (!piece) continue;
-		if (!SHELL.has(piece.base) && !ON_WALL.has(piece.base) && volumes.some((v) => v.base === piece.base && inside(v, p.matrix.length === 16 ? [p.matrix[12], p.matrix[13], p.matrix[14]] : piece.position, 0.1)))
+		if (!SHELL.has(piece.base) && !ON_WALL.has(piece.base) && volumes.some((v) => v.base === piece.base && inside(v, originOf(p, piece), 0.1)))
 			continue;
 		pieces.push(piece);
 	}

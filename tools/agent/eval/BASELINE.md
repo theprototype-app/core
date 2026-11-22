@@ -1,4 +1,69 @@
-# N3a results eval — baseline v1.68.0
+# Agent eval — baseline v1.72.0 (23 tasks)
+
+The gate number for the 2.0 lanes: **18.65 / 23**. It is the sum of the per-task means over 10 full runs of the unchanged v1.72.0 build. It replaces 10.00 / 15 (v1.68.0, below).
+
+**Gate rule.** A candidate run of 5 must pass two tests:
+- Its total mean must not be lower than 18.65.
+- No task's mean may be lower than the baseline mean by more than twice that task's spread. The spread is the sd over the 10 baseline runs.
+
+Floor: a task with spread 0 may drop by one run in five (0.20) before it counts as down. Without the floor, a single bad agent run on any always-passing task would fail the gate (see QUESTIONS Q5 of lane 2.0-eval2).
+
+What was run (lane 2.0-eval2, 2026-11-22):
+- Two arms, A and B, each 5 × `node eval/results.mjs --runs 1 --label armX-rN --catalog-dir <catalog-v172>`, interleaved A1 B1 A2 B2 …, on one Deck local slot (software GL, 2-5 fps).
+- Model sonnet, max 60 turns. Catalog synced from the v1.72.0 core (39 tools). The harness was this branch.
+- The two arms are the noise measurement. Together they are the baseline.
+
+Score: 1 works for both people · 0.5 works for one person only, or only after a reload · 0 does not work.
+
+| task | A mean | B mean | \|A-B\| | spread (sd) | baseline mean | runs |
+|---|---|---|---|---|---|---|
+| door-near | 1.00 | 1.00 | 0.00 | 0.00 | 1.00 | 10 |
+| star-once | 0.80 | 0.80 | 0.00 | 0.42 | 0.80 | 10 |
+| win-five | 0.60 | 0.40 | 0.20 | 0.53 | 0.50 | 10 |
+| score-round | 0.80 | 1.00 | 0.20 | 0.32 | 0.90 | 10 |
+| round-timer | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 10 |
+| pause-p | 1.00 | 1.00 | 0.00 | 0.00 | 1.00 | 10 |
+| best-time | 1.00 | 0.80 | 0.20 | 0.32 | 0.90 | 10 |
+| pickup-own | 1.00 | 1.00 | 0.00 | 0.00 | 1.00 | 10 |
+| toggle-shared | 1.00 | 1.00 | 0.00 | 0.00 | 1.00 | 10 |
+| platform-loop | 1.00 | 1.00 | 0.00 | 0.00 | 1.00 | 10 |
+| countdown | 0.80 | 0.80 | 0.00 | 0.35 | 0.80 | 10 |
+| hit-sound | 1.00 | 1.00 | 0.00 | 0.00 | 1.00 | 10 |
+| health-respawn | 1.00 | 1.00 | 0.00 | 0.00 | 1.00 | 10 |
+| checkpoint | 1.00 | 1.00 | 0.00 | 0.00 | 1.00 | 10 |
+| late-joiner | 1.00 | 1.00 | 0.00 | 0.00 | 1.00 | 10 |
+| key-door | 0.60 | 0.60 | 0.00 | 0.52 | 0.60 | 10 |
+| lap-counter * | 0.60 | 0.80 | 0.20 | 0.48 | 0.70 | 10 |
+| spawner-cap | 0.40 | 0.50 | 0.10 | 0.37 | 0.45 | 10 |
+| team-score | 0.50 | 0.50 | 0.00 | 0.00 | 0.50 | 10 |
+| dialogue-own | 0.50 | 0.50 | 0.00 | 0.00 | 0.50 | 10 |
+| inventory-respawn | 1.00 | 1.00 | 0.00 | 0.00 | 1.00 | 10 |
+| day-night | 1.00 | 1.00 | 0.00 | 0.00 | 1.00 | 10 |
+| two-plates | 1.00 | 1.00 | 0.00 | 0.00 | 1.00 | 10 |
+| **total** | **18.60** | **18.70** | 0.10 | | **18.65** / 23 | |
+
+**Noise.** No task's arm means differ by more than 0.20. Four tasks sit exactly at 0.20: win-five, score-round, best-time and lap-counter.
+
+**lap-counter (\*).** The first arms measured lap-counter at 0.40 apart. The cause was the harness: a 5 m/s lap moved 2.5 m per frame and stepped over the agents' own halfway checkpoint. Its row above is the 5+5 rerun with both laps at 2 m/s.
+
+The check in this branch goes one step further. Lap 1's corner stop lasts as long as the walk, so lap 1 is about twice lap 2. The lap-2 best must also sit nearer lap 2 than lap 1. That check is verified: control 1, empty start scene 0, one agent run 1. Its own 5+5 rerun was stopped by memory pressure on the Deck and is owed. Rerun it before the first gate that leans on this row.
+
+**Rows held down by the app, not the agent:**
+- **round-timer 0.00.** Every agent builds an autostart HUD Timer. It counts from the editor, not from the round, so it is 15-25 s off the round start. A control wired `kit-round-started -> hudtimer.start` scores 1.
+- **team-score 0.50.** There is no per-person output for behaviour state, so "show each person their team" cannot be built. The best possible score, the hand-built control, is also 0.5.
+- **dialogue-own 0.50.** Agents use `onenter -> hudscreen`, which shows for everyone. The per-peer form, `proximity {to: "player"} -> visibility`, scores 1 as a control.
+
+**Cost.** 2.38 USD and 44 min per full 23-task run, the mean of 10 (Deck local slot). The lane's whole eval spend was 25.4 USD.
+
+**What changed in the harness** (so 1.68 numbers do not compare):
+- The late joiner waits for its own LOAD through `__tp.test.v1`, not a fixed 12 s. The old check scored a correct build 0/5 at 2-4 fps; the new one scores it 10/10.
+- round-timer is judged against the round-start event the scene emits.
+- Every fixed sleep and wall-clock floor in the other checks is scaled by the measured frame time (`P.loadScale`).
+- There are 8 new tasks: key-door, lap-counter, spawner-cap, team-score, dialogue-own, inventory-respawn, day-night and two-plates. Their controls are in `controls-eval2.json`; run them with `npm run eval:controls2`, which leaves out team-score at 0.5.
+
+---
+
+# Previous baseline — v1.68.0 (15 tasks, old harness)
 
 The gate number for roadmap 2.0 N3b and N3c: **10.00 / 15** (3 runs, totals 9 · 10 · 11, so the spread is 2 points).
 

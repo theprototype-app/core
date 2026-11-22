@@ -8,7 +8,8 @@
 // 3. Build: the pieces become ordinary objects (Box primitives, `create` / `group` / `name` / `move` /
 //    `geometry` / `color` messages — the same ones the editor sends), so they sync, save and undo like any
 //    other, as ONE undo step. A second scan updates the "My room" group by name (planUpdate) instead of
-//    adding a second room.
+//    adding a second room; its walls are matched to the old ones by shape first (nameWalls), so "Wall 2"
+//    stays the same real wall when a new session faces another way.
 // No camera image is read, used or stored: the room comes from the shapes drawn in the headset's room setup.
 
 import * as THREE from 'three';
@@ -21,7 +22,7 @@ import { renameObject, moveObjectToGroup, deleteObjectsByUuid } from '../objectA
 import { setObjectColor, setMaterialParam } from '../materialsHandler';
 import { applyGeometry } from '../geometryEdit';
 import { isViewer } from '../objectPermissions';
-import { roomPieces, planUpdate, scanSummary, readFrame, colorOf, ROOM_GROUP_NAME } from './roomScanCore.js';
+import { roomPieces, planUpdate, nameWalls, scanSummary, readFrame, colorOf, ROOM_GROUP_NAME, ROOM_NAME_RE } from './roomScanCore.js';
 
 /** how see-through the pieces are, so the fit against the real room shows in passthrough */
 export const ROOM_OPACITY = 0.45;
@@ -120,10 +121,10 @@ export async function scanMyRoom() {
 	const room = await readRoom(session, space);
 	const pieces = roomPieces(room);
 	if (!pieces.length) return (last = noRoomSetup(session, room));
-	const result = applyRoom(pieces);
-	const line = scanSummary(pieces, result);
+	const { pieces: named, ...result } = applyRoom(pieces);
+	const line = scanSummary(named, result);
 	say(line);
-	return (last = { status: 'ok', line, ...result, pieces: pieces.map((p) => ({ name: p.name, size: p.size, position: p.position })) });
+	return (last = { status: 'ok', line, ...result, pieces: named.map((p) => ({ name: p.name, size: p.size, position: p.position })) });
 }
 
 /** @param {any} session @param {{planes: any[], meshes: any[]}} room */
@@ -193,15 +194,46 @@ function place(object, position, quaternion) {
 	recordTransform({ uuid: object.uuid, before, after });
 }
 
+const _wp = new THREE.Vector3();
+const _wq = new THREE.Quaternion();
+const _ws = new THREE.Vector3();
+
 /**
- * Build or update the "My room" group from named pieces, as one undo step.
+ * What a re-scan matches walls against (nameWalls): the group's "Wall N" boxes and its other scan-made pieces,
+ * in world space like the scan's pieces. A wall's length is its Box width as it stands now (scaled by the world).
+ * @param {any} group
+ */
+function oldRoom(group) {
+	/** @type {import('./roomScanCore.js').OldWall[]} */
+	const walls = [];
+	/** @type {import('./roomScanCore.js').OldThing[]} */
+	const others = [];
+	group.updateWorldMatrix(true, true);
+	for (const c of group.children) {
+		const name = String(c.name ?? '');
+		if (!ROOM_NAME_RE.test(name)) continue;
+		c.matrixWorld.decompose(_wp, _wq, _ws);
+		const base = name.replace(/ \d+$/, '');
+		if (base === 'Wall') {
+			const width = c.userData?.geometryParams?.params?.width;
+			if (!Number.isFinite(width)) continue;
+			const n = new THREE.Vector3(0, 1, 0).applyQuaternion(_wq);
+			walls.push({ uuid: c.uuid, name, length: width * Math.abs(_ws.x), position: _wp.toArray(), normal: n.toArray() });
+		} else others.push({ base, position: _wp.toArray() });
+	}
+	return { walls, others };
+}
+
+/**
+ * Build or update the "My room" group from named pieces, as one undo step. Walls are first renamed to the
+ * group's old ones by shape (nameWalls); the pieces come back with their final names.
  * @param {import('./roomScanCore.js').NamedPiece[]} pieces
- * @returns {{group: string, created: number, updated: number, removed: number, skipped: string[]}}
+ * @returns {{group: string, created: number, updated: number, removed: number, skipped: string[], missing: string[], pieces: import('./roomScanCore.js').NamedPiece[]}}
  */
 export function applyRoom(pieces) {
 	/** @type {any} */
 	const root = get(objectsGroup);
-	if (!root) return { group: '', created: 0, updated: 0, removed: 0, skipped: [] };
+	if (!root) return { group: '', created: 0, updated: 0, removed: 0, skipped: [], missing: [], pieces };
 	beginHistoryBatch();
 	try {
 		let group = findRoomGroup();
@@ -214,6 +246,9 @@ export function applyRoom(pieces) {
 			recordObjectPresence('create', group);
 			renameObject(uuid, ROOM_GROUP_NAME);
 		}
+		const old = oldRoom(group);
+		const walls = nameWalls(pieces, old.walls, { others: old.others });
+		pieces = walls.pieces;
 		const plan = planUpdate(
 			group.children.map((/** @type {any} */ c) => ({ uuid: c.uuid, name: c.name })),
 			pieces
@@ -259,7 +294,7 @@ export function applyRoom(pieces) {
 		const removable = plan.remove.filter((u) => !lockedByPeer(u));
 		const removed = removable.length ? deleteObjectsByUuid(removable) : 0;
 		pokeScene();
-		return { group: group.uuid, created, updated, removed: Number(removed) || 0, skipped };
+		return { group: group.uuid, created, updated, removed: Number(removed) || 0, skipped, missing: walls.missing, pieces };
 	} finally {
 		endHistoryBatch('Scan my room');
 	}

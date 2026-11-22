@@ -11,7 +11,8 @@
 //            a box from its top down to the floor.
 //   volume → the mesh's own bounding box.
 // and plans the update of an existing "My room" group by NAME (planUpdate): names are deterministic, so a
-// second scan of the same room updates the same objects instead of adding a second room.
+// second scan of the same room updates the same objects instead of adding a second room. WALLS are first
+// matched to the old ones by shape (nameWalls), because their numbers follow the session's facing.
 
 import * as THREE from 'three';
 
@@ -284,9 +285,139 @@ export function roomPieces(input) {
 	});
 }
 
+/** a re-scan wall matches an old one when their lengths are this close (m) — the orchestrator's 3 cm */
+export const WALL_LENGTH_TOL = 0.03;
+/** …and, once the two rooms are laid over each other, their centres this close (m) */
+const WALL_PLACE_TOL = 0.3;
+/** …and their faces turned no more than this apart (radians) */
+const WALL_TURN_TOL = (20 * Math.PI) / 180;
+/** furniture further than this from its match counts as this far (one moved chair must not decide) (m) */
+const FURNITURE_CAP = 1;
+/** two fits whose furniture differs by less than this are a tie (m, mean) */
+const FURNITURE_TIE = 0.05;
+const WALL_NAME_RE = /^Wall (\d+)$/;
+
+/**
+ * @typedef {{uuid: string, name: string, length: number, position: number[], normal: number[]}} OldWall
+ *   a "Wall N" already in the group, in the SAME world frame as this scan's pieces (its width, centre, face normal)
+ * @typedef {{base: string, position: number[]}} OldThing  another scan-made piece already in the group (a tie-breaker)
+ */
+
+/** a wall's face normal (its box's +Y) in world space @param {Piece} piece */
+export function wallNormal(piece) {
+	_p.set(0, 1, 0).applyQuaternion(_q.fromArray(piece.quaternion));
+	return [_p.x, _p.y, _p.z];
+}
+
+/** the turn about +Y (radians, in [-π, π]) @param {number} a */
+const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+/** a direction's angle on the floor @param {number[]} n */
+const heading = (n) => Math.atan2(n[2], n[0]);
+
+/**
+ * WALL NAMES THAT STAY PUT. The first scan numbers the walls clockwise from the one ahead of the session's
+ * -Z (roomPieces); a later session faces another way, so that rule alone gives "Wall 1" to another real
+ * wall and the person's edits on it move with the name (real Quest 3, 2026-11-22: session 1 named the long
+ * walls Wall 2 + Wall 4, session 2 Wall 1 + Wall 3). So a re-scan matches by SHAPE: every pairing of an old
+ * wall with a new one of the same length (within WALL_LENGTH_TOL) proposes one turn + shift that lays the
+ * old room over the new one; the proposal that then places the most walls (length, facing and centre — so
+ * each wall's clockwise neighbours line up too) wins. A rectangle fits two ways round; the room's other
+ * pieces (a table near one long wall) decide, then the smaller move (the session did not turn), then the
+ * closer fit. Matched walls take their old names; a new wall takes the next free number; an old wall not
+ * found keeps its name and is reported (`missing`) — it is never removed by a scan.
+ * @param {NamedPiece[]} pieces this scan (roomPieces' names) @param {OldWall[]} oldWalls
+ * @param {{others?: OldThing[]}} [opts]
+ * @returns {{pieces: NamedPiece[], missing: string[], matched: number}}
+ */
+export function nameWalls(pieces, oldWalls, opts = {}) {
+	const old = (oldWalls ?? []).filter(
+		(w) => WALL_NAME_RE.test(String(w?.name ?? '')) && Number.isFinite(w.length) && w.position?.length === 3 && w.normal?.length === 3
+	);
+	if (!old.length) return { pieces, missing: [], matched: 0 };
+	const fresh = pieces.map((p, i) => ({ p, i })).filter((x) => x.p.base === 'Wall');
+	const freshN = fresh.map((x) => wallNormal(x.p));
+	const others = (opts.others ?? []).filter((o) => o?.base && o.base !== 'Wall' && !SHELL.has(o.base) && o.position?.length === 3);
+	const freshOthers = pieces.filter((p) => p.base !== 'Wall' && !SHELL.has(p.base));
+	/** @param {number} turn @param {number[]} shift @param {number[]} at an old point → where it lands in this scan (x, z) */
+	const lay = (turn, shift, at) => {
+		const c = Math.cos(turn);
+		const s = Math.sin(turn);
+		// the same turn as the headings: angle(x, z) grows by `turn`
+		return [at[0] * c - at[2] * s + shift[0], at[0] * s + at[2] * c + shift[1]];
+	};
+	/** @type {{pairs: [number, number][], turn: number, shift: number[], residual: number, furniture: number} | null} */
+	let best = null;
+	for (let a = 0; a < old.length; a++)
+		for (let b = 0; b < fresh.length; b++) {
+			if (Math.abs(old[a].length - fresh[b].p.size[0]) > WALL_LENGTH_TOL) continue;
+			const turn = wrap(heading(freshN[b]) - heading(old[a].normal));
+			const at = lay(turn, [0, 0], old[a].position);
+			const shift = [fresh[b].p.position[0] - at[0], fresh[b].p.position[2] - at[1]];
+			// every old wall → the closest new wall that fits it, one each (closest pairs first)
+			/** @type {{k: number, j: number, d: number}[]} */
+			const options = [];
+			old.forEach((w, k) => {
+				const to = lay(turn, shift, w.position);
+				fresh.forEach((f, j) => {
+					if (Math.abs(w.length - f.p.size[0]) > WALL_LENGTH_TOL) return;
+					if (Math.abs(wrap(heading(freshN[j]) - heading(w.normal) - turn)) > WALL_TURN_TOL) return;
+					const d = Math.hypot(f.p.position[0] - to[0], f.p.position[2] - to[1]);
+					if (d <= WALL_PLACE_TOL) options.push({ k, j, d });
+				});
+			});
+			options.sort((x, y) => x.d - y.d || x.k - y.k || x.j - y.j);
+			const takenK = new Set();
+			const takenJ = new Set();
+			/** @type {[number, number][]} */
+			const pairs = [];
+			let residual = 0;
+			for (const o of options) {
+				if (takenK.has(o.k) || takenJ.has(o.j)) continue;
+				takenK.add(o.k);
+				takenJ.add(o.j);
+				pairs.push([o.k, o.j]);
+				residual += o.d;
+			}
+			// the room's other pieces under this fit: mean distance to the nearest new piece of their kind
+			let furniture = 0;
+			for (const o of others) {
+				const to = lay(turn, shift, o.position);
+				let d = FURNITURE_CAP;
+				for (const f of freshOthers) if (f.base === o.base) d = Math.min(d, Math.hypot(f.position[0] - to[0], f.position[2] - to[1]));
+				furniture += d;
+			}
+			if (others.length) furniture /= others.length;
+			const cand = { pairs, turn, shift, residual, furniture };
+			if (!best || better(cand, best)) best = cand;
+		}
+	/** @type {Map<number, string>} piece index → its old name */
+	const named = new Map();
+	const found = new Set();
+	for (const [k, j] of best?.pairs ?? []) {
+		named.set(fresh[j].i, old[k].name);
+		found.add(old[k].name);
+	}
+	let next = Math.max(0, ...old.map((w) => Number(WALL_NAME_RE.exec(w.name)?.[1] ?? 0)));
+	const out = pieces.map((p, i) => (p.base !== 'Wall' ? p : { ...p, name: named.get(i) ?? 'Wall ' + ++next }));
+	const missing = [...new Set(old.map((w) => w.name))]
+		.filter((n) => !found.has(n))
+		.sort((x, y) => Number(WALL_NAME_RE.exec(x)?.[1]) - Number(WALL_NAME_RE.exec(y)?.[1]));
+	return { pieces: out, missing, matched: found.size };
+}
+
+/** fit ranking: more walls placed → furniture closer (beyond a tie) → the smaller move → the closer fit
+ * @param {{pairs: any[], turn: number, shift: number[], residual: number, furniture: number}} a @param {typeof a} b */
+function better(a, b) {
+	if (a.pairs.length !== b.pairs.length) return a.pairs.length > b.pairs.length;
+	if (Math.abs(a.furniture - b.furniture) > FURNITURE_TIE) return a.furniture < b.furniture;
+	const move = (/** @type {typeof a} */ f) => Math.abs(f.turn) + Math.hypot(f.shift[0], f.shift[1]);
+	if (Math.abs(move(a) - move(b)) > 1e-6) return move(a) < move(b);
+	return a.residual < b.residual - 1e-9;
+}
+
 /**
  * A re-scan against the group already there: a child whose name a scan writes is updated (same name) or
- * removed (gone from the room); every other child (renamed, added by hand or by the assistant) is left alone.
+ * removed (gone from the room; never a "Wall N", see nameWalls); every other child (renamed, added by hand or by the assistant) is left alone.
  * @param {{uuid: string, name: string}[]} children @param {NamedPiece[]} pieces
  * @returns {{create: NamedPiece[], update: {uuid: string, piece: NamedPiece}[], remove: string[]}}
  */
@@ -305,13 +436,14 @@ export function planUpdate(children, pieces) {
 			used.add(uuid);
 		} else create.push(piece);
 	}
-	const remove = [...byName.values()].filter((u) => !used.has(u));
+	// a wall is never removed by a scan: one not found keeps its name (nameWalls reports it)
+	const remove = [...byName.entries()].filter(([n, u]) => !used.has(u) && !WALL_NAME_RE.test(n)).map(([, u]) => u);
 	return { create, update, remove };
 }
 
 /**
  * The line the person reads when the scan lands (the confirm line — it says no camera image was used).
- * @param {NamedPiece[]} pieces @param {{created: number, updated: number, removed: number}} [counts]
+ * @param {NamedPiece[]} pieces @param {{created: number, updated: number, removed: number, missing?: string[]}} [counts]
  */
 export function scanSummary(pieces, counts) {
 	/** @type {Record<string, number>} */
@@ -320,9 +452,12 @@ export function scanSummary(pieces, counts) {
 	const order = Object.keys(by).sort((a, b) => (a === 'Wall' ? -1 : b === 'Wall' ? 1 : 0));
 	const parts = order.map((b) => (by[b] === 1 ? b.toLowerCase() : by[b] + ' ' + plural(b.toLowerCase())));
 	const again = counts && counts.updated ? ' (updated)' : '';
-	return ROOM_GROUP_NAME + again + ': ' + parts.join(', ') + '. From your headset’s room setup; no camera image used or stored.';
+	const missing = counts?.missing?.length ? ' ' + listOf(counts.missing) + ' not found in this scan.' : '';
+	return ROOM_GROUP_NAME + again + ': ' + parts.join(', ') + '.' + missing + ' From your headset’s room setup; no camera image used or stored.';
 }
 
+/** "Wall 3", "Wall 1 and Wall 3", "Wall 1, Wall 2 and Wall 3" @param {string[]} names */
+const listOf = (names) => (names.length < 2 ? names.join('') : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1]);
 /** @param {string} word */
 const plural = (word) => (word.endsWith('s') ? word : word.endsWith('h') ? word + 'es' : word + 's');
 /** 0.1 mm @param {number} n */

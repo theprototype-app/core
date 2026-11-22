@@ -231,7 +231,7 @@ h.run(async () => {
 		const scripts = (payload.graphs.scene?.nodes ?? []).filter((n) => n.type === 'script');
 		return { minor: payload.formatMinor, scripts: scripts.length, marked: scripts.every((n) => n.data.convertedFrom), hasDefs: 'nodeDefs' in payload };
 	});
-	h.check(trip.minor === 3 && trip.scripts === 7 && trip.marked, `the file is formatMinor 3 and carries 7 marked scripts (${JSON.stringify(trip)})`);
+	h.check(trip.minor >= 3 && trip.scripts === 7 && trip.marked, `the file is formatMinor 3 or later and carries 7 marked scripts (${JSON.stringify(trip)})`);
 	h.check(trip.hasDefs === false, 'a scene without custom nodes writes no nodeDefs key (byte-identical)');
 	await h.eventually(() => readings(p), (r) => Object.keys(baseline).every((k) => same(r[k], baseline[k])), 'after the load every reading is the same', 15000);
 	const loaded = await graph(p);

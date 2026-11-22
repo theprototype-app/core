@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-11-20T11:34:27.020Z",
+	"recordedAt": "2026-11-22T15:22:48.707Z",
 	"settings": {
 		"Theme": {
 			"rows": [
@@ -3415,6 +3415,7 @@
 				"Group the selection",
 				"Grow the selection (faces)",
 				"HUD editor: show / bring to front / hide",
+				"Hold while moving: snap the nearest corner onto a corner or edge middle",
 				"Invert the selection (any mode)",
 				"Keyboard cheat sheet (every scope; the focused one first)",
 				"Leave focus mode",
@@ -3568,6 +3569,7 @@
 				"Auto checkpoints on large scenes",
 				"Automatic checkpoint every",
 				"Checkpoint storage",
+				"Hold while moving: snap the nearest corner onto a corner or edge middle",
 				"Keep automatic checkpoints",
 				"Mirror turn",
 				"Snap angle",
@@ -3864,6 +3866,7 @@
 				"Group the selection",
 				"Grow the selection (faces)",
 				"HUD editor: show / bring to front / hide",
+				"Hold while moving: snap the nearest corner onto a corner or edge middle",
 				"Invert the selection (any mode)",
 				"Keyboard cheat sheet (every scope; the focused one first)",
 				"Leave focus mode",
@@ -3988,6 +3991,7 @@
 				"Group the selection",
 				"Grow the selection (faces)",
 				"HUD editor: show / bring to front / hide",
+				"Hold while moving: snap the nearest corner onto a corner or edge middle",
 				"Invert the selection (any mode)",
 				"Keyboard cheat sheet (every scope; the focused one first)",
 				"Leave focus mode",
@@ -4112,6 +4116,7 @@
 				"Group the selection",
 				"Grow the selection (faces)",
 				"HUD editor: show / bring to front / hide",
+				"Hold while moving: snap the nearest corner onto a corner or edge middle",
 				"Invert the selection (any mode)",
 				"Keyboard cheat sheet (every scope; the focused one first)",
 				"Leave focus mode",
@@ -4659,6 +4664,7 @@
 	"inspector": {
 		"object": {
 			"": [
+				"Array",
 				"Emission",
 				"Geometry",
 				"LOD",
@@ -4671,6 +4677,7 @@
 				"Scatter",
 				"Shadow",
 				"Texture",
+				"Tidy",
 				"Transform",
 				"Water"
 			],
@@ -4681,9 +4688,14 @@
 			"transform": [
 				"Transform"
 			],
+			"tidy": [
+				"Tidy"
+			],
 			"object": [
+				"Array",
 				"LOD",
 				"Object",
+				"Physics",
 				"Scatter",
 				"Transform",
 				"Water"
@@ -4703,6 +4715,9 @@
 			"scatter": [
 				"Scatter"
 			],
+			"array": [
+				"Array"
+			],
 			"geometry": [
 				"Geometry"
 			],
@@ -4712,7 +4727,8 @@
 				"Material",
 				"Physics",
 				"Shadow",
-				"Texture"
+				"Texture",
+				"Tidy"
 			],
 			"texture": [
 				"Emission",
@@ -4774,7 +4790,9 @@
 			"colour": [],
 			"intensity": [],
 			"fog": [],
-			"grid": [],
+			"grid": [
+				"Array"
+			],
 			"camera": [],
 			"render": [
 				"Object"
@@ -4804,10 +4822,14 @@
 				"Aim at",
 				"Light",
 				"Shadow",
+				"Tidy",
 				"Transform"
 			],
 			"transform": [
 				"Transform"
+			],
+			"tidy": [
+				"Tidy"
 			],
 			"light": [
 				"Aim at",
@@ -4837,7 +4859,9 @@
 			"color": [],
 			"colour": [],
 			"physics": [],
-			"material": [],
+			"material": [
+				"Tidy"
+			],
 			"intensity": [
 				"Aim at",
 				"Light",
@@ -4875,6 +4899,7 @@
 				"Environment",
 				"Fog",
 				"Grid",
+				"Layers",
 				"Level of detail",
 				"Levels",
 				"Music",
@@ -4957,6 +4982,14 @@
 				"Scene track (shared)",
 				"Shader materials",
 				"This device"
+			],
+			"layers": [
+				"Baked light",
+				"Layers",
+				"Physics",
+				"Play",
+				"Scene look",
+				"Shader materials"
 			],
 			"levels": [
 				"Level of detail",

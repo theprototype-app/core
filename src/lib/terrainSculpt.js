@@ -310,7 +310,7 @@ export function applyMeshBrushAt(uuid, x, y, z, op, radius, strength, dt = 0.016
 	let hit = null;
 	if (op === 'flatten') {
 		if (h) {
-			const gi = H.nearestVia(h, x, y, z, radius, (i) => groups[i].pos.distanceTo(center));
+			const gi = H.nearestVia(h, x, y, z, radius, (/** @type {number} */ i) => groups[i].pos.distanceTo(center));
 			hit = gi >= 0 ? groups[gi] : null;
 		} else {
 			let hitDist = Infinity;
@@ -514,7 +514,7 @@ export function applyBrushAt(uuid, x, z, op, radius, strength, dt = 0.016) {
 	let hitKey = null;
 	if (op === 'flatten') {
 		if (h) {
-			const ci = H.nearestVia(h, x, 0, z, radius, (i) => Math.hypot(colPos[i].x - x, colPos[i].z - z));
+			const ci = H.nearestVia(h, x, 0, z, radius, (/** @type {number} */ i) => Math.hypot(colPos[i].x - x, colPos[i].z - z));
 			hitKey = ci >= 0 ? colPos[ci].key : null;
 		} else {
 			let hitDist = Infinity;

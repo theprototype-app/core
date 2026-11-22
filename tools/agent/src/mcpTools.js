@@ -86,7 +86,7 @@ export function bridgeTools(engine = 'browser') {
 			{
 				name: 'screenshot',
 				description:
-					'See the scene: a PNG of a clean frame (no gizmos, no people) from a temporary camera, never moving anyone\'s view. view: current | top | front | iso | focus | camera (focus needs uuid or uuids; camera looks through the scene camera uuid, its lens and framing); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person\'s window). Answers with the camera it used. postEffects: true draws the scene\'s post effects too; hud: true the game HUD on top; avatars: true keeps the people in (current keeps them unless false).',
+					'See the scene: a PNG of a clean frame (no gizmos, no people) from a temporary camera, never moving anyone\'s view. view: current | top | front | iso | focus | camera (focus needs uuid or uuids; camera looks through the scene camera uuid, its lens and framing); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person\'s window, or the framing of the scene camera they look through: where_are_users through). Answers with the camera it used. postEffects: true draws the scene\'s post effects too; hud: true the game HUD on top; avatars: true keeps the people in (current keeps them unless false).',
 				inputSchema: {
 					type: 'object',
 					properties: {
@@ -161,7 +161,8 @@ export const WHERE_ARE_USERS_TOOL = {
 		'A person can PING a spot (Ctrl+Alt+click, Ping in a menu, the VR stick click): each row carries their latestPing, and pings: true lists the ' +
 		'recent ones (2 minutes). For "put it here", build with create_objects / update_objects at: {ping: "latest"} (align: "surface" for a wall). ' +
 		'Each row also has body (eye, height, shoulder, hip, knee, reach, room — "a table at hip height") and, in VR, hands (left, right, apart — "as wide as my hands"). ' +
-		'Nothing you make may appear inside a person in VR (0.45 m around the head, through the body): that call is refused and says so.',
+		'Nothing you make may appear inside a person in VR (0.45 m around the head, through the body): that call is refused and says so. ' +
+		'When the person looks through a scene camera full-screen, the "you" row has through {uuid, name, kind}: kind preview (they pressed Preview), play (the game looks through it), sequence (a sequence shot), phone (Film mode, a phone as a virtual camera) or recording (a video is being taken); position and forward are then that camera\'s, and screenshot view current shows what it sees.',
 	inputSchema: {
 		type: 'object',
 		properties: { pings: { type: 'boolean', description: 'also list the recent pings (85b S2): id, who, how long ago, position, surface normal, the object it is on' } }

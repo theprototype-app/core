@@ -108,7 +108,9 @@ export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?:
 	logs: { title: 'Read the recent log', read: true },
 	playtest: { title: 'Play the game as a test player', destructive: false },
 	// 98 P2
-	take_photo: { title: 'Take a path-traced photo of the view', destructive: false }
+	take_photo: { title: 'Take a path-traced photo of the view', destructive: false },
+	// 104 B1
+	probe: { title: 'Read the ground and water under a point', read: true }
 });
 
 /** a title from a tool name: `create_objects` → `Create objects` @param {string} name */
@@ -365,6 +367,8 @@ export const CONNECTOR_STANDALONE = Object.freeze([
 	'join_session',
 	'where_are_users',
 	'undo_last',
+	// 104 B1 (roadmap 104 row B1, owner-approved name): the ground / water / ray read
+	'probe',
 	// left out by the Worker's own policy (generate_mesh), kept listed so the Worker's EXCLUDED_TOOLS stays the scope call
 	'generate_mesh'
 ]);

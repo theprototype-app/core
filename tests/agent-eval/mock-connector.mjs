@@ -55,6 +55,12 @@ function answer(tool, args) {
 			return { ok: true, effects: [{ kind: 'bloom' }] };
 		case 'undo_last':
 			return { undone: [{ text: 'changed the floor colour' }] };
+		case 'probe': {
+			// 104 B1: the room's floor is a flat 0 everywhere; a ray meets the floor too
+			const at = Array.isArray(args?.at) ? args.at : [0, 0];
+			if (args?.ray) return { hit: { uuid: 'floor-1', name: 'Floor', surface: 'mesh', point: [0, 0, 0], normal: [0, 1, 0], distance: 1 } };
+			return { at, y: 0, uuid: 'floor-1', name: 'Floor', normal: [0, 1, 0], surface: 'mesh' };
+		}
 		default: {
 			const id = 'new-' + ++made;
 			return { ok: true, created: [{ uuid: id }], updated: [] };

@@ -24,6 +24,7 @@ import { isViewer } from '../objectPermissions';
 import { showToast } from '../../stores/appStore';
 import { onFilmFrame, setPoseFilter, liveState, placeCamera, setPresenceRecording, parentInContent, filmCamera } from './filmMode';
 import { captureThumb, storeThumb } from './filmThumb';
+import { filmRecording } from './filmState'; // 104 B2
 import { commitTake, uniformSamples, filmShots, DEFAULT_BUDGET } from './filmTake';
 import { packRaw, moveEase, RAW_LAYOUT } from './filmCore';
 import { sampleCurve } from '../curveCore';
@@ -40,6 +41,8 @@ export const FLY_SECONDS = 1.5;
  */
 /** @type {import('svelte/store').Writable<TakeUi>} */
 export const take = writable(idleUi());
+// 104 B2: the leaf flag where_are_users reads (the take store lives in this lazy chunk)
+take.subscribe((t) => filmRecording.set(t.state === 'recording'));
 
 function idleUi() {
 	return { state: /** @type {'idle'} */ ('idle'), seq: null, t: 0, segStart: 0, shots: 0, choosing: false, saving: false, mode: 'cut' };

@@ -33,6 +33,8 @@
 		{ "id": "cinematic-look", "say": "Make this scene look cinematic, like a film still.", "pass": [{ "tool": "set_look", "action": "preset" }], "partial": [{ "tool": "set_look", "action": "post" }, { "tool": "set_look", "action": "sky" }] },
 		{ "id": "bake-light", "say": "Bake the lighting so the corners get soft shadows.", "pass": [{ "tool": "set_look", "action": "bake" }], "partial": [{ "tool": "set_look", "action": "post" }] },
 		{ "id": "nice-photo", "say": "Take a really nice high-quality photo of what I'm looking at.", "pass": [{ "tool": "run", "action": "photo" }], "partial": [{ "tool": "screenshot" }] },
-		{ "id": "crate-guard", "say": "Make the crate a guard that walks around and chases me when it sees me.", "pass": [{ "tool": "game_setup", "action": "npc" }], "partial": [{ "tool": "create_flow_nodes" }] }
+		{ "id": "crate-guard", "say": "Make the crate a guard that walks around and chases me when it sees me.", "pass": [{ "tool": "game_setup", "action": "npc" }], "partial": [{ "tool": "create_flow_nodes" }] },
+		{ "id": "ground-height", "say": "How high is the ground right under the door? I want to put a doormat there.", "pass": [{ "tool": "probe" }], "partial": [{ "tool": "create_objects" }] },
+		{ "id": "float-crate", "say": "If the crate falls in water, make it float high like a cork.", "pass": [{ "tool": "set_physics" }], "partial": [{ "tool": "update_objects" }] }
 	]
 }

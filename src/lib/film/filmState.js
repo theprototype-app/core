@@ -20,6 +20,10 @@ export function openFilm(uuid = null) {
 	filmOpen.set({ uuid: uuid ?? null });
 }
 
+/** 104 B2: a Film take is RECORDING right now (filmRecorder writes it; where_are_users reads it without the lazy chunk)
+ * @type {import('svelte/store').Writable<boolean>} */
+export const filmRecording = writable(false);
+
 export function closeFilm() {
 	filmOpen.set(null);
 }

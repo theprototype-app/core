@@ -317,6 +317,8 @@
 		"array-tool": 300,
 		"corner-snap": 180,
 		"tidy-layers": 300,
+		"agent-probe-float": 150,
+		"connector-through": 150,
 		"load-check": 240,
 		"schema-two-peers": 360,
 		"game-value-hud": 240,

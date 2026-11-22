@@ -91,6 +91,7 @@
 	import { startLightHelpers, updateLightHelpers, lightProxiesGroup } from '$lib/lightHelpers';
 	import { HELPER_LAYER } from '$lib/helperLayer';
 	import { startColliderHelpers, updateColliderHelpers } from '$lib/colliderHelpers';
+	import { updateJointHelpers } from '$lib/jointHelpers'; // 102b joint gizmos
 	import { startCameraHelpers, updateCameraHelpers } from '$lib/cameraHelpers';
 	import { updateOnionSkin } from '$lib/onionSkin';
 	import { startCables, updateCables } from '$lib/audioPatch';
@@ -468,6 +469,7 @@
 		tickPathObjects(scene, $objectsGroup, { playing: $isLocked === true, selected: $selectedObjects ?? [] }); // 78 F4: hide in Play, numbers, scrub ghost
 		updateLightHelpers();
 		updateColliderHelpers(); // CL-A A7: collider proxies follow their objects
+		updateJointHelpers(); // 102b: joint anchors, axes and limits
 		updateSnapAnchor(); // 19-B P3: the picked snap-anchor marker follows its object
 		updateCameraHelpers(); // 16-P5: camera-object frustums follow their markers
 		updateCables(); // 23-A4: patch cables follow their plugs; the routing diff runs here too

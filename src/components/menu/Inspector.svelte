@@ -41,6 +41,8 @@
 	import HdriSection from './scene/HdriSection.svelte'; // 37-hdri
 	import BakeLightSection from './scene/BakeLightSection.svelte'; // 98 P1
 	import PhysicsFloats from '../sim/PhysicsFloats.svelte'; // 36-sim I1
+	import PhysicsTuningRows from '../sim/PhysicsTuningRows.svelte'; // 102b row 1
+	import JointsSection from '../sim/JointsSection.svelte'; // 102b row 2
 	import FluidEmitterSection from '../sim/FluidEmitterSection.svelte'; // 36-fb F23
 	import FluidInteractionRow from '../sim/FluidInteractionRow.svelte'; // 36-fb F23
 	import FlowPathSection from '../sim/FlowPathSection.svelte'; // 36-fb F24
@@ -4690,9 +4692,11 @@
 								onchange={(/** @type {any} */ v) => setPhysics({ ccd: v === 'on' ? true : v === 'off' ? false : null })}
 							/>
 						</div>
+						<PhysicsTuningRows object={$selectedObject} {setPhysics} {mixed} /><!-- 102b row 1 -->
 						<PhysicsFloats object={$selectedObject} {setPhysics} /><!-- 36-sim I1 -->
 					{/if}
 					<FluidInteractionRow targets={insTargets} /><!-- 36-fb F23 -->
+					<JointsSection targets={insTargets.map((/** @type {any} */ o) => o.uuid)} /><!-- 102b row 2 -->
 					<!-- CL-A A7: per-object collider preview (local, this device) -->
 					<InsToggle
 						id="physics-show-collider"

@@ -257,6 +257,23 @@
 			base: ['M2 14.5h8v4H2z', 'M14.8 13.2l5-6 3.1 2.6-5 6z'],
 			accent: ['M14 16.5a2 2 0 1 1-4 0 2 2 0 0 1 4 0z']
 		},
+		// 102b: the four new joints, same 24-box line style as weld / hinge
+		'joint-ball': {
+			base: ['M2 9h7v6H2z', 'M15 12h7'],
+			accent: ['M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z']
+		},
+		'joint-slider': {
+			base: ['M2 11h20v2H2z', 'M9 7h6v10H9z'],
+			accent: ['M4 7l-2 2 2 2', 'M20 13l2 2-2 2']
+		},
+		'joint-spring': {
+			base: ['M3 3h18', 'M8 19h8v3H8z'],
+			accent: ['M12 3v2l-4 1.5 8 2-8 2 8 2-8 2 4 1.5V19']
+		},
+		'joint-rope': {
+			base: ['M3 3h18', 'M8 17h8v5H8z'],
+			accent: ['M12 3c-3 3 3 5 0 8s3 4 0 6']
+		},
 		'collider': {
 			base: ['M9 9h6v6H9z'],
 			accent: ['M3 7V3h4', 'M17 3h4v4', 'M21 17v4h-4', 'M7 21H3v-4']

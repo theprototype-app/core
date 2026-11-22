@@ -29,6 +29,7 @@ import {
 	dprBoost,
 	bitrateFor,
 	pickMimeType,
+	pickAvMimeType,
 	recordingFileName,
 	planOrbit,
 	turntablePose,
@@ -93,7 +94,8 @@ export function registerRecordingDriver(d) {
  *   stream: MediaStream, track: any, manual: boolean, recorder: MediaRecorder, chunks: Blob[], mime: string, ext: string,
  *   phase: 'preparing' | 'recording' | 'finishing', t0: number, lastCapture: number, lastRenderFrame: number,
  *   frames: number, thumbnail: string | null, lastPublish: number, cancelled: boolean, stopAt: number,
- *   restore: () => void, onStop: Promise<void>, prepFrames: number
+ *   restore: () => void, onStop: Promise<void>, prepFrames: number,
+ *   sound: {dispose: () => void} | null, soundNote: string
  * }}
  */
 let session = null;
@@ -289,7 +291,24 @@ export async function startRecording(override) {
 		recordingState.set({ ...IDLE_RECORDING, status: 'error', error: 'Nothing to record along.' });
 		return false;
 	}
-	const picked = /** @type {{mime: string, ext: string}} */ (pickMimeType((m) => MediaRecorder.isTypeSupported(m)));
+	let picked = /** @type {{mime: string, ext: string}} */ (pickMimeType((m) => MediaRecorder.isTypeSupported(m)));
+	// 102b-sound: the scene's own sound (music and sound effects, never voices or a mic) as a second track
+	const sound = prefs.sound ? await openSound(prefs) : { audio: null, note: '' };
+	if (sound.audio) {
+		const av = pickAvMimeType((m) => MediaRecorder.isTypeSupported(m));
+		if (av) picked = av;
+		else {
+			sound.audio.dispose();
+			sound.audio = null;
+			sound.note = 'No sound: this browser cannot record audio into a video, so the take is silent.';
+		}
+	}
+	// the take may have been refused or another started while the sound was being set up
+	if (session || frameHooks) {
+		sound.audio?.dispose();
+		recordingState.set({ ...IDLE_RECORDING, status: 'error', error: 'A recording is already running.' });
+		return false;
+	}
 	const dom = /** @type {HTMLCanvasElement} */ (frameCanvas(renderer));
 	const out = outputSize(prefs.resolution, { w: dom.width, h: dom.height });
 
@@ -312,6 +331,7 @@ export async function startRecording(override) {
 		stream = canvas.captureStream(prefs.fps);
 		track = stream.getVideoTracks()[0];
 	}
+	if (sound.audio) stream.addTrack(sound.audio.track);
 	/** @type {Blob[]} */
 	const chunks = [];
 	let recorder;
@@ -319,6 +339,7 @@ export async function startRecording(override) {
 		recorder = new MediaRecorder(stream, { mimeType: picked.mime, videoBitsPerSecond: bitrateFor(out, prefs.fps, prefs.quality) });
 	} catch (e) {
 		stream.getTracks().forEach((t) => t.stop());
+		sound.audio?.dispose();
 		canvas.remove();
 		restoreScene();
 		recordingState.set({ ...IDLE_RECORDING, status: 'error', error: 'The video encoder refused these settings: ' + (e instanceof Error ? e.message : String(e)) });
@@ -357,11 +378,36 @@ export async function startRecording(override) {
 		stopAt: 0,
 		restore: restoreScene,
 		onStop,
-		prepFrames: 0
+		prepFrames: 0,
+		sound: sound.audio,
+		soundNote: sound.note
 	};
 	document.addEventListener('visibilitychange', onVisibility);
 	recordingState.set({ ...IDLE_RECORDING, status: 'preparing', duration: prefs.duration });
 	return true;
+}
+
+/**
+ * 102b-sound: the scene-sound track for a take, when the scene has sound. A timeline whose audio track
+ * holds a clip starts the audio context itself (its first sound plays a moment into the take), so the
+ * context is made here first, from the Start click.
+ * @param {import('./recordingCore.js').RecordingPrefs} prefs
+ * @returns {Promise<{audio: {track: MediaStreamTrack, dispose: () => void} | null, note: string}>}
+ */
+async function openSound(prefs) {
+	try {
+		const sa = await import('./sceneAudio.js');
+		if (prefs.mode === 'timeline' && timelineHasSound(prefs.sequence)) (await import('../audioEngine')).ensureAudioContext();
+		return { audio: await sa.openSceneAudioTrack(), note: '' };
+	} catch (e) {
+		return { audio: null, note: 'No sound: ' + (e instanceof Error ? e.message : String(e)) };
+	}
+}
+
+/** does the timeline carry a sound clip on an audible track? @param {string} id */
+export function timelineHasSound(id) {
+	const seq = /** @type {any} */ (findSequence(get(sequences), id));
+	return !!seq?.tracks?.some((/** @type {any} */ t) => t.kind === 'audio' && !t.muted && t.items?.some((/** @type {any} */ i) => i.sound));
 }
 
 function onVisibility() {
@@ -485,6 +531,7 @@ function teardown() {
 		void import('../sequencePlayer').then((m) => m.stopSequence(id, { restore: true }));
 	}
 	s.stream.getTracks().forEach((t) => t.stop());
+	s.sound?.dispose();
 	s.canvas.remove();
 	s.restore();
 	session = null;
@@ -530,7 +577,8 @@ async function finish() {
 				fps: s.prefs.fps,
 				mime: type,
 				itemId: saved.itemId,
-				savedNote: saved.note
+				savedNote: [s.soundNote, saved.note].filter(Boolean).join(' '),
+				sound: s.sound ? s.mime.split('codecs=')[1]?.split(',')[1] ?? 'audio' : null
 			}
 		});
 	} catch (e) {
@@ -609,5 +657,5 @@ export function downloadRecording() {
 /** test/debug read: the live session's numbers (null when idle) */
 export function recordingDebug() {
 	const s = session;
-	return s ? { phase: s.phase, frames: s.frames, out: s.out, mime: s.mime, manual: s.manual } : null;
+	return s ? { phase: s.phase, frames: s.frames, out: s.out, mime: s.mime, manual: s.manual, sound: !!s.sound } : null;
 }

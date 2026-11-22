@@ -10,7 +10,7 @@ import { exportPlan } from '../recording/videoExportCore.js';
 import { coerceRecordingPrefs } from '../recording/recordingCore.js';
 import { sinkHasRoom } from '../recording/frameClock.js';
 import { exportCaps } from '../recording/offlineRender.js';
-import { resampleFrames, momentFileName } from './momentCore.js';
+import { resampleFrames, momentFileName, momentAudioSlice } from './momentCore.js';
 
 /** the formats a moment offers, in the order the preview shows them */
 export const MOMENT_FORMATS = Object.freeze(['gif', 'mp4']);
@@ -34,10 +34,12 @@ function planFor(format, seconds, size) {
 /**
  * Write the file.
  * @param {{frames: {t: number, data: Blob}[], start: number, end: number, format: string, size: {w: number, h: number},
- *   fps: number, signal?: AbortSignal, onProgress?: (done: number, total: number) => void}} o
- *   `start`/`end` seconds from the first kept frame
+ *   fps: number, signal?: AbortSignal, onProgress?: (done: number, total: number) => void,
+ *   audio?: {sampleRate: number, channels: Float32Array[]} | null}} o
+ *   `start`/`end` seconds from the first kept frame; `audio` (102b-sound) the moment's sound, t = 0 at the first kept
+ *   frame — an MP4 carries it, a GIF has no sound
  * @returns {Promise<{blob: Blob, name: string, mime: string, ext: string, frames: number, fps: number, durationMs: number,
- *   width: number, height: number, encoder: string}>}
+ *   width: number, height: number, encoder: string, sound: string | null, soundNote: string}>}
  */
 export async function encodeMoment(o) {
 	const first = o.frames[0]?.t ?? 0;
@@ -55,7 +57,8 @@ export async function encodeMoment(o) {
 	// willReadFrequently: the GIF encoder reads every frame back
 	const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d', { alpha: false, willReadFrequently: plan.path === 'gif' }));
 	const name = momentFileName(new Date(), plan.ext);
-	const sink = await createSink(plan.path, canvas, { format: plan.format, size: plan.size, fps, frames: order.length, quality: 'medium', alpha: false, name });
+	const audio = plan.path === 'webcodecs' ? momentAudioSlice(o.audio, o.start, order.length / fps) : null;
+	const sink = await createSink(plan.path, canvas, { format: plan.format, size: plan.size, fps, frames: order.length, quality: 'medium', alpha: false, name, audio });
 	let drawn = -1;
 	try {
 		for (let i = 0; i < order.length; i++) {
@@ -88,7 +91,9 @@ export async function encodeMoment(o) {
 			durationMs: Math.round((order.length / fps) * 1000),
 			width: w,
 			height: h,
-			encoder: sink.label
+			encoder: sink.label,
+			sound: out.extra?.sound ?? null,
+			soundNote: out.extra?.soundNote ?? ''
 		};
 	} catch (e) {
 		sink.cancel();

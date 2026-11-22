@@ -20,7 +20,9 @@ import { muxAnimatedWebp } from './webpAnim.js';
  * @typedef {{limit: number, pending: () => number, add: (canvas: HTMLCanvasElement, i: number) => void,
  *   finish: () => Promise<SinkResult>, cancel: () => void, error: () => Error | null, label: string}} Sink
  * @typedef {{format: string, size: {w: number, h: number}, fps: number, frames: number, quality: string,
- *   alpha: boolean, name: string}} SinkOptions
+ *   alpha: boolean, name: string, audio?: SinkAudio | null}} SinkOptions
+ * @typedef {{sampleRate: number, channels: Float32Array[]}} SinkAudio  102b-sound: the file's sound, planar PCM from
+ *   t = 0 (an MP4 / WebM gets it as an audio track when the browser can encode one; the other formats have no sound)
  */
 
 /** @param {any} e */
@@ -65,7 +67,10 @@ async function videoSink(canvas, o) {
 	});
 	const source = new mb.CanvasSource(canvas, { codec, bitrate, keyFrameInterval: 2 });
 	output.addVideoTrack(source, { frameRate: o.fps });
+	// 102b-sound: the sound, when there is some and this browser can encode it
+	const sound = o.audio && o.audio.channels.length ? await audioTrack(mb, output, o.format, o.audio) : null;
 	await output.start();
+	if (sound) await sound.feed(AUDIO_LEAD_S);
 	let pending = 0;
 	/** @type {Error | null} */
 	let err = null;
@@ -80,7 +85,9 @@ async function videoSink(canvas, o) {
 			pending++;
 			// the sample is taken from the canvas inside add(), before it awaits anything
 			last = source.add(i / o.fps, 1 / o.fps).then(
-				() => {
+				async () => {
+					// the sound follows the picture, a little ahead, so the muxer interleaves the two
+					if (sound) await sound.feed((i + 1) / o.fps + AUDIO_LEAD_S);
 					pending--;
 				},
 				(e) => {
@@ -92,12 +99,73 @@ async function videoSink(canvas, o) {
 		async finish() {
 			await last;
 			if (err) throw err;
+			if (sound) await sound.feed(Infinity);
 			await output.finalize();
 			const buffer = /** @type {ArrayBuffer} */ (target.buffer);
-			return { bytes: new Uint8Array(buffer), mime: o.format === 'webm' ? 'video/webm' : 'video/mp4', ext: o.format, extra: { codec } };
+			return {
+				bytes: new Uint8Array(buffer),
+				mime: o.format === 'webm' ? 'video/webm' : 'video/mp4',
+				ext: o.format,
+				extra: { codec, sound: sound ? sound.codec : null, soundNote: sound ? '' : o.audio ? NO_AUDIO_ENCODER : '' }
+			};
 		},
 		cancel() {
 			void output.cancel().catch(() => {});
+		}
+	};
+}
+
+/* ----------------------------------------------------------------- sound ---- */
+
+/** seconds of sound written ahead of the picture */
+const AUDIO_LEAD_S = 0.5;
+/** frames of sound per encoder call */
+const AUDIO_BLOCK = 4096;
+/** what the result says when the sound had to be left out */
+export const NO_AUDIO_ENCODER = 'No sound: this browser cannot encode audio, so the video is silent.';
+
+/**
+ * Audio codecs to try, best first, for a container. AAC is what every phone and editor plays; Opus is
+ * what Chromium builds without AAC encode (and Firefox) have, and MP4 carries it.
+ * @param {string} format mp4 | webm @returns {('aac'|'opus'|'vorbis')[]}
+ */
+export function audioCodecCandidates(format) {
+	return format === 'webm' ? ['opus', 'vorbis'] : ['aac', 'opus'];
+}
+
+/**
+ * Add the sound track to a Mediabunny output (before start). Null when no codec can encode it here.
+ * `feed(t)` encodes the PCM up to `t` seconds (Infinity = the rest).
+ * @param {any} mb @param {any} output @param {string} format @param {SinkAudio} audio
+ * @returns {Promise<{codec: string, feed: (t: number) => Promise<void>} | null>}
+ */
+async function audioTrack(mb, output, format, audio) {
+	const channels = Math.min(2, audio.channels.length);
+	const sampleRate = audio.sampleRate;
+	let codec = null;
+	try {
+		codec = await mb.getFirstEncodableAudioCodec(audioCodecCandidates(format), { numberOfChannels: channels, sampleRate, bitrate: 128_000 });
+	} catch {
+		codec = null;
+	}
+	if (!codec) return null;
+	const source = new mb.AudioSampleSource({ codec, bitrate: 128_000 });
+	output.addAudioTrack(source);
+	const total = audio.channels[0].length;
+	let at = 0;
+	return {
+		codec,
+		async feed(t) {
+			const until = Math.min(total, t === Infinity ? total : Math.round(t * sampleRate));
+			while (at < until) {
+				const n = Math.min(AUDIO_BLOCK, until - at);
+				const data = new Float32Array(n * channels);
+				for (let c = 0; c < channels; c++) data.set(audio.channels[c].subarray(at, at + n), c * n);
+				const sample = new mb.AudioSample({ data, format: 'f32-planar', numberOfChannels: channels, sampleRate, timestamp: at / sampleRate });
+				await source.add(sample);
+				sample.close();
+				at += n;
+			}
 		}
 	};
 }

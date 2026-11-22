@@ -2,7 +2,9 @@
 // be shared after it happened (Share a moment, SM2).
 //
 // What it records: the 3D view's drawing buffer and nothing else — no editor UI, no HUD DOM, no
-// chat, and never anybody's voice or microphone (there is no audio path at all). It records only in
+// chat, and never anybody's voice or microphone. 102b-sound: and the SCENE'S OWN SOUND (its music and
+// sound effects, never voices or a mic: recording/sceneAudio.js taps the non-voice buses only), kept as
+// a PCM ring beside the frames on the same clock, from the first sound the scene makes. It records only in
 // Play, never in VR, never on a device short of memory, never when this device's setting is off, and
 // for a published game's player only when the game's author allows it (SM3). Leaving Play forgets
 // everything. Nothing is sent anywhere: the frames live in this tab until the person makes a file.
@@ -41,6 +43,30 @@ import {
 
 /** captures being encoded at most (a slow encoder skips captures rather than queueing them) */
 const MAX_IN_FLIGHT = 4;
+
+/** 102b-sound: the sound ring (sceneAudio.js, loaded once the scene makes a sound) @type {any} */
+let audioRing = null;
+let audioLoading = false;
+
+/** keep the sound ring in step with the frame ring: listening while armed, kept while frozen */
+function syncAudio() {
+	if (armed) {
+		if (audioRing) {
+			if (!audioRing.listening()) void audioRing.start();
+		} else if (!audioLoading) {
+			audioLoading = true;
+			import('../recording/sceneAudio.js')
+				.then((m) => {
+					// nothing to tap until the scene has made a sound: try again on the next tick
+					if (!m.sceneAudioContext()) return;
+					audioRing = m.createSceneAudioRing({ seconds: MOMENT_SECONDS });
+					if (armed) void audioRing.start();
+				})
+				.catch(() => {})
+				.finally(() => (audioLoading = false));
+		}
+	} else audioRing?.stop();
+}
 
 /** @type {ReturnType<typeof createMomentRing<Blob>>} */
 const ring = createMomentRing();
@@ -238,10 +264,15 @@ function update() {
 		armed = false;
 		setMomentTap(null);
 		// standing down for any reason but the preview (which took the frames) forgets them
-		if (!frozen) ring.clear();
+		if (!frozen) {
+			ring.clear();
+			audioRing?.clear();
+		}
 	}
+	syncAudio();
 	if (reason !== '' && !frozen) {
 		ring.clear();
+		audioRing?.clear();
 		// out of Play: the encoder goes too (a new one starts with the next Play)
 		if (reason === 'idle' && worker) {
 			worker.terminate();
@@ -284,6 +315,7 @@ export function startMomentBuffer() {
 	// age the window in a quiet stretch and keep the status line current
 	setInterval(() => {
 		if (armed) ring.age(performance.now() / 1000);
+		syncAudio();
 		publish();
 	}, 500);
 	registerDebugHook('momentBuffer', momentDebugApi);
@@ -291,11 +323,33 @@ export function startMomentBuffer() {
 
 /**
  * SM2: hand the kept frames to the preview (the buffer is frozen while it is open, so the moment
- * does not roll away under the trim). Oldest first; `t` in seconds.
- * @returns {{frames: {t: number, bytes: number, data: Blob}[], size: {w: number, h: number}, fps: number}}
+ * does not roll away under the trim). Oldest first; `t` in seconds. 102b-sound: `audio` = the scene's
+ * sound from the first frame to just past the last (planar PCM, t = 0 at `frames[0].t`), null when the
+ * scene made no sound in that span.
+ * @returns {{frames: {t: number, bytes: number, data: Blob}[], size: {w: number, h: number}, fps: number,
+ *   audio: {sampleRate: number, channels: Float32Array[]} | null}}
  */
 export function takeMoment() {
-	return { frames: ring.take(), size: { ...size }, fps: MOMENT_FPS };
+	const frames = ring.take();
+	return { frames, size: { ...size }, fps: MOMENT_FPS, audio: momentAudio(frames) };
+}
+
+/** the sound under a run of frames, or null @param {{t: number}[]} frames */
+function momentAudio(frames) {
+	if (!audioRing || !frames.length) return null;
+	const t0 = frames[0].t;
+	const t1 = frames[frames.length - 1].t + 1 / MOMENT_FPS;
+	if (!audioRing.covers(t0, t1)) return null;
+	const s = audioRing.slice(t0, t1);
+	// Play makes the audio context even in a scene that plays nothing: a moment of silence gets no track,
+	// so a silent scene's file is the picture-only file it always was
+	return s.filled && audibleSound(s.channels) ? { sampleRate: s.sampleRate, channels: s.channels } : null;
+}
+
+/** below about -80 dBFS everywhere = silence @param {Float32Array[]} channels */
+function audibleSound(channels) {
+	for (const ch of channels) for (let i = 0; i < ch.length; i++) if (ch[i] > 1e-4 || ch[i] < -1e-4) return true;
+	return false;
 }
 
 /**
@@ -329,7 +383,8 @@ export const momentDebugApi = {
 		skipped,
 		lastError,
 		cost: { mean: meter.mean(), p95: meter.p95(), max: meter.max(), samples: meter.samples() },
-		captureCost: { mean: captureMeter.mean(), p95: captureMeter.p95(), max: captureMeter.max(), samples: captureMeter.samples() }
+		captureCost: { mean: captureMeter.mean(), p95: captureMeter.p95(), max: captureMeter.max(), samples: captureMeter.samples() },
+		audio: audioRing ? audioRing.debug() : null
 	}),
 	/** force a capture path for a measurement ('worker' | 'canvas') @param {'worker'|'canvas'} p */
 	setPath(p) {

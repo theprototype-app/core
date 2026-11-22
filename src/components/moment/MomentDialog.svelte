@@ -22,6 +22,10 @@
 	let size = $state({ w: 0, h: 0 });
 	let fps = $state(15);
 	let ready = $state(false);
+	/** 102b-sound: the scene's sound under the kept frames (null = the scene made none) @type {{sampleRate: number, channels: Float32Array[]} | null} */
+	let audio = $state.raw(null);
+	/** put the sound in the MP4 (a GIF has none) */
+	let withSound = $state(true);
 	/** the buffer module (returnMoment on close) @type {any} */
 	let buffer = null;
 
@@ -58,7 +62,7 @@
 	let note = $state('');
 	/** @type {AbortController | null} */
 	let abort = null;
-	/** @type {null | {blob: Blob, url: string, name: string, mime: string, frames: number, fps: number, durationMs: number, width: number, height: number, encoder: string}} */
+	/** @type {null | {blob: Blob, url: string, name: string, mime: string, frames: number, fps: number, durationMs: number, width: number, height: number, encoder: string, sound?: string | null, soundNote?: string}} */
 	let result = $state(null);
 	let canShare = $state(false);
 
@@ -68,6 +72,7 @@
 		frames = m.frames;
 		size = m.size;
 		fps = m.fps || 15;
+		audio = m.audio ?? null;
 		urls = m.frames.map((/** @type {any} */ f) => URL.createObjectURL(f.data));
 		trim = defaultTrim(total);
 		playhead = trim.start;
@@ -120,6 +125,7 @@
 				format,
 				size,
 				fps,
+				audio: withSound ? audio : null,
 				signal: abort.signal,
 				onProgress: (done, totalFrames) => (progress = { done, total: totalFrames })
 			});
@@ -132,7 +138,7 @@
 			if (!$embedMode) {
 				const { saveToExplorer } = await import('$lib/recording/recorder.js');
 				const saved = await saveToExplorer(new Uint8Array(await out.blob.arrayBuffer()), out.name, null, out.mime, out.mime.startsWith('video/') ? 'video' : 'image');
-				note = saved.note;
+				note = [out.soundNote, saved.note].filter(Boolean).join(' ');
 			}
 		} catch (e) {
 			const err = /** @type {any} */ (e);
@@ -221,14 +227,14 @@
 			<p id="moment-empty" class="mo-dim">Nothing recorded yet: play a few seconds, then try again.</p>
 			<div class="mo-actions"><UiButton id="moment-close" variant="secondary" onclick={close}>Close</UiButton></div>
 		{:else if phase === 'done' && result}
-			<div id="moment-result" class="mo-result" data-mime={result.mime} data-bytes={result.blob.size} data-frames={result.frames} data-fps={result.fps} data-duration-ms={result.durationMs}>
+			<div id="moment-result" class="mo-result" data-sound={result.sound ?? ''} data-mime={result.mime} data-bytes={result.blob.size} data-frames={result.frames} data-fps={result.fps} data-duration-ms={result.durationMs}>
 				{#if result.mime.startsWith('video/')}
 					<!-- svelte-ignore a11y_media_has_caption -->
 					<video id="moment-video" class="mo-view" src={result.url} controls loop muted playsinline autoplay={playing}></video>
 				{:else}
 					<img id="moment-image" class="mo-view" src={result.url} alt="The moment, looping" />
 				{/if}
-				<div class="mo-dim">{(result.durationMs / 1000).toFixed(1)} s · {result.width} × {result.height} · {result.fps} fps · {formatBytes(result.blob.size)}</div>
+				<div class="mo-dim">{(result.durationMs / 1000).toFixed(1)} s · {result.width} × {result.height} · {result.fps} fps{result.sound ? ' · with sound' : ''} · {formatBytes(result.blob.size)}</div>
 				<div class="mo-actions">
 					<UiButton id="moment-download" variant="primary" icon="download" onclick={download}>Download</UiButton>
 					{#if canShare}
@@ -269,6 +275,12 @@
 				<span>Format</span>
 				<Segmented id="moment-format" label="Format" options={formats} value={format} disabled={phase === 'encoding'} onchange={(v) => (format = v)} />
 			</div>
+			{#if audio}
+				<label class="mo-check" title={format === 'gif' ? 'A GIF has no sound: pick MP4 to keep it' : "Put the scene's music and sound effects in the MP4 (never voices or a microphone)"}>
+					<input id="moment-sound" class="tp-check" type="checkbox" checked={withSound && format !== 'gif'} disabled={format === 'gif' || phase === 'encoding'} onchange={(e) => (withSound = e.currentTarget.checked)} />
+					Scene sound{format === 'gif' ? ' (MP4 only)' : ''}
+				</label>
+			{/if}
 			{#if blockers[format]}<p class="mo-warn">{blockers[format]}</p>{/if}
 			{#if error}<p id="moment-error" class="mo-warn" role="alert">{error}</p>{/if}
 			{#if phase === 'encoding'}
@@ -350,6 +362,12 @@
 	.mo-row input[type='range'] {
 		flex: 1;
 		accent-color: var(--accent);
+	}
+	.mo-check {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		color: var(--text-muted);
 	}
 	.mo-num {
 		width: 48px;

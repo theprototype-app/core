@@ -29,7 +29,8 @@ const MAX_BITRATE = 25_000_000;
 
 /** @typedef {{mode: 'turntable'|'flythrough'|'timeline', target: 'selection'|'scene', resolution: string, fps: number,
  *   duration: number, quality: 'low'|'medium'|'high', revolutions: number, direction: 'cw'|'ccw',
- *   frame: boolean, hideHelpers: boolean, format: string, sequence: string, transparent: boolean}} RecordingPrefs */
+ *   frame: boolean, hideHelpers: boolean, format: string, sequence: string, transparent: boolean, sound: boolean}} RecordingPrefs
+ * (102b-sound: `sound` = put the scene's own sound in an MP4 / WebM — music and sound effects, never voices or a mic) */
 
 /** @type {RecordingPrefs} */
 export const DEFAULT_RECORDING_PREFS = Object.freeze({
@@ -46,7 +47,9 @@ export const DEFAULT_RECORDING_PREFS = Object.freeze({
 	// 65 M4
 	format: 'mp4',
 	sequence: '',
-	transparent: false
+	transparent: false,
+	// 102b-sound
+	sound: true
 });
 
 /** Typed, clamped prefs from whatever was stored (unknown keys dropped). @param {any} raw @returns {RecordingPrefs} */
@@ -70,7 +73,8 @@ export function coerceRecordingPrefs(raw) {
 		hideHelpers: bool(r.hideHelpers, d.hideHelpers),
 		format: EXPORT_FORMATS.includes(r.format) ? r.format : d.format,
 		sequence: typeof r.sequence === 'string' ? r.sequence.slice(0, 200) : d.sequence,
-		transparent: bool(r.transparent, d.transparent)
+		transparent: bool(r.transparent, d.transparent),
+		sound: bool(r.sound, d.sound)
 	};
 }
 
@@ -146,6 +150,23 @@ export function pickMimeType(isSupported) {
 			if (isSupported(mime)) return { mime, ext: mime.startsWith('video/mp4') ? 'mp4' : 'webm' };
 		} catch {
 			/* a browser that throws on an unknown type: try the next */
+		}
+	}
+	return null;
+}
+
+/**
+ * 102b-sound: the first container the browser can record WITH a sound track (the live recorder's
+ * scene sound), or null — then the take is silent. Same order as `pickMimeType`.
+ * @param {(mime: string) => boolean} isSupported
+ * @returns {{mime: string, ext: string} | null}
+ */
+export function pickAvMimeType(isSupported) {
+	for (const mime of ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4;codecs=avc1,opus']) {
+		try {
+			if (isSupported(mime)) return { mime, ext: mime.startsWith('video/mp4') ? 'mp4' : 'webm' };
+		} catch {
+			/* next */
 		}
 	}
 	return null;

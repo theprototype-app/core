@@ -46,7 +46,7 @@ import {
 	uvPenPressure
 } from './uvEditor';
 import { readTriangles, trisToPositions, trisToGroups, trisToUVs, commitMeshGeoTriple } from './faceEdit';
-import { paintChannel, paintValue, paintMapSize, paintTargetInfo, paintShowChannel, BRUSH_STORES } from './meshPaintPrefs';
+import { paintChannel, paintValue, paintMapSize, paintTargetInfo, paintShowChannel, paintSmoothing, BRUSH_STORES } from './meshPaintPrefs';
 import {
 	channelOf,
 	normalizeBrush,
@@ -75,6 +75,8 @@ import {
 	onMirrorPlane,
 	srgbToLinear,
 	hashBytes,
+	pullString,
+	SMOOTH_MAX_PX,
 	accumulate,
 	pressureEffect,
 	pressureModeOf
@@ -85,13 +87,21 @@ import { quantizePoint } from './meshPaintWire.js';
 // brush panel stay out of the boot bundle. `newBrush` = a channel other than colour or a brush other than the
 // shipped hard round one, which paints through this module instead of uvEditor's own painter.
 export const paintUi = derived(
-	[paintChannel, paintShowChannel, BRUSH_STORES.hardness, BRUSH_STORES.opacity, BRUSH_STORES.flow, BRUSH_STORES.erase, BRUSH_STORES.stamp],
-	([channel, showChannel, hardness, opacity, flow, erase, stamp]) => ({
+	[paintChannel, paintShowChannel, BRUSH_STORES.hardness, BRUSH_STORES.opacity, BRUSH_STORES.flow, BRUSH_STORES.erase, BRUSH_STORES.stamp, BRUSH_STORES.spacing, paintSmoothing],
+	([channel, showChannel, hardness, opacity, flow, erase, stamp, spacing, smoothing]) => ({
 		channel,
 		showChannel: !!showChannel,
-		newBrush: channel !== 'color' || hardness !== 1 || opacity !== 1 || flow !== 1 || !!erase || !!stamp
+		newBrush: channel !== 'color' || hardness !== 1 || opacity !== 1 || flow !== 1 || !!erase || !!stamp || spacing !== 0.2,
+		// 103 H1: the stabiliser's string length in screen px (0 = off); input-side, so both painters use it
+		smoothPx: toSmoothPx(smoothing)
 	})
 );
+/** @param {any} v 0..1 */
+const toSmoothPx = (v) => Math.max(0, Math.min(1, Number(v) || 0)) * SMOOTH_MAX_PX;
+const smoothPx = () => toSmoothPx(get(paintSmoothing));
+
+/** 103 H1: the stabiliser for a caller that holds its own screen points (the UV editor) */
+export { pullString };
 /** forget what the panel says a stroke paints (the editor lost its target) */
 export function clearTargetInfo() {
 	paintTargetInfo.set(null);
@@ -456,7 +466,8 @@ function strokePoint(s, p) {
 	if (last && last.length === p.length && last.every((/** @type {number} */ x, /** @type {number} */ i) => x === p[i])) return;
 	// the UV canvas measures in texture px, the model in its own units
 	const metric = s.sp === 'uv' ? [p[0] * s.layer.W, (s.flip ? 1 - p[1] : p[1]) * s.layer.H, p[2] ?? 1] : [p[0], p[1], p[2], p[3] ?? 1];
-	const step = Math.max(DAB_SPACING * 2 * s.r, s.sp === 'uv' ? 0.5 : 1e-6);
+	// 103 H1: the brush's own spacing (DAB_SPACING unless set); a pressure-sized stroke spaces by the full radius
+	const step = Math.max((s.brush.spacing ?? DAB_SPACING) * 2 * s.r, s.sp === 'uv' ? 0.5 : 1e-6);
 	const from = s.lastMetric ?? metric;
 	const run = s.lastMetric ? dabsAlong(from, metric, dim, step, s.carry) : { dabs: [metric], carry: 0 };
 	s.carry = run.carry;
@@ -1322,6 +1333,11 @@ export function ringRadius(mesh, slot, hit) {
 export function attachViewportPainting(opts) {
 	const ray = new THREE.Raycaster();
 	let active = false;
+	// 103 H1: the stabiliser, in screen px: where the brush is, and the last raw sample (the stroke ends there)
+	/** @type {number[] | null} */ let brushAt = null;
+	/** @type {any} */ let lastRaw = null;
+	/** @param {any} e @param {number[]} at */
+	const at = (e, at) => ({ clientX: at[0], clientY: at[1], pressure: e.pressure, pointerType: e.pointerType });
 	/** @param {any} e */
 	const hitAt = (e) => {
 		const cam = /** @type {any} */ (get(globalCamera));
@@ -1354,6 +1370,8 @@ export function attachViewportPainting(opts) {
 			return;
 		}
 		active = true;
+		brushAt = [e.clientX, e.clientY];
+		lastRaw = null;
 		const h = localHit(found.mesh, found.hit);
 		void beginStroke({ uuid: found.mesh.uuid, slot: slotOfHit(found.mesh, found.hit, opts.slot()), sp: 'obj', at: h.local, w: pressure(e), normal: h.normal }).then((ok) => {
 			if (!ok) active = false;
@@ -1369,7 +1387,13 @@ export function attachViewportPainting(opts) {
 			} catch {
 				samples = [];
 			}
-			for (const sample of samples.length ? samples : [e]) {
+			const R = smoothPx();
+			for (const raw of samples.length ? samples : [e]) {
+				lastRaw = raw;
+				const next = R > 0 ? pullString(brushAt, [raw.clientX, raw.clientY], R) : null;
+				if (R > 0 && !next) continue;
+				if (next) brushAt = next;
+				const sample = next ? at(raw, next) : raw;
 				const found = hitAt(sample);
 				if (found) strokeTo(localHit(found.mesh, found.hit).local, pressure(sample));
 			}
@@ -1383,6 +1407,12 @@ export function attachViewportPainting(opts) {
 		if (!active) return;
 		e.stopPropagation();
 		active = false;
+		// a smoothed stroke catches up: it ends where the pen lifted, not a string's length short of it
+		if (lastRaw && smoothPx() > 0) {
+			const found = hitAt(lastRaw);
+			if (found) strokeTo(localHit(found.mesh, found.hit).local, pressure(lastRaw));
+		}
+		lastRaw = null;
 		endStroke();
 	};
 	/** @param {KeyboardEvent} e */

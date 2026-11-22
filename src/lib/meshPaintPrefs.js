@@ -43,6 +43,10 @@ export const paintErase = pref('paint:erase', false, bool);
 export const paintMirror = pref('paint:mirror', false, bool);
 /** the stamp brush: an Explorer image's content hash, '' = a round brush */
 export const paintStamp = pref('paint:stamp', '', (raw) => (/^[A-Za-z0-9_:.-]{0,128}$/.test(raw) ? raw : undefined));
+/** 103 H1: the gap between dabs, a fraction of the brush diameter (0.2 = the 102 spacing) */
+export const paintSpacing = pref('paint:spacing', 0.2, num(0.05, 1));
+/** 103 H1: the stroke stabiliser, 0 (off, the default) .. 1 (a long string). Input-side: never on the wire. */
+export const paintSmoothing = pref('paint:smoothing', 0, num(0, 1));
 /** the size a NEW map is made at (the first stroke on a slot with no image) */
 export const paintMapSize = pref('paint:mapSize', 1024, (raw) => (raw === '1024' ? 1024 : raw === '2048' ? 2048 : undefined));
 /** LOCAL view: show the painted channel alone on the model (never saved, never sent) */
@@ -51,4 +55,4 @@ export const paintShowChannel = writable(false);
 export const paintTargetInfo = writable(/** @type {{mode: 'map' | 'vertex', reason: string} | null} */ (null));
 
 /** the brush as one plain object (meshPaintCore.normalizeBrush takes it) */
-export const BRUSH_STORES = { hardness: paintHardness, opacity: paintOpacity, flow: paintFlow, erase: paintErase, mirror: paintMirror, stamp: paintStamp };
+export const BRUSH_STORES = { hardness: paintHardness, opacity: paintOpacity, flow: paintFlow, erase: paintErase, mirror: paintMirror, stamp: paintStamp, spacing: paintSpacing };

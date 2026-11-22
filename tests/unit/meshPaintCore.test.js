@@ -6,6 +6,7 @@ import {
 	pressureEffect,
 	pressureModeOf,
 	PRESSURE_MODES,
+	pullString,
 	channelOf,
 	normalizeBrush,
 	isDefaultBrush,
@@ -44,14 +45,48 @@ describe('channels and brush', () => {
 	});
 	it('clamps a hostile brush', () => {
 		const b = normalizeBrush({ hardness: -3, opacity: 9, flow: 0, erase: 'yes', mirror: true, stamp: '<script>' });
-		expect(b).toEqual({ hardness: 0, opacity: 1, flow: 0.01, erase: false, mirror: true, stamp: '' });
+		expect(b).toEqual({ hardness: 0, opacity: 1, flow: 0.01, erase: false, mirror: true, stamp: '', spacing: 0.2 });
 	});
 	it('a default brush sends nothing and round-trips', () => {
 		expect(brushWire({})).toEqual({});
 		expect(isDefaultBrush({})).toBe(true);
-		const b = { hardness: 0.25, opacity: 0.5, flow: 0.3, erase: true, mirror: true, stamp: 'abc123' };
+		const b = { hardness: 0.25, opacity: 0.5, flow: 0.3, erase: true, mirror: true, stamp: 'abc123', spacing: 0.2 };
 		expect(isDefaultBrush(b)).toBe(false);
 		expect(brushFromWire(brushWire(b))).toEqual(b);
+	});
+	it('103: spacing is a brush field, absent on the wire at the default, clamped, an older brush reads as 0.2', () => {
+		expect(isDefaultBrush({ spacing: 0.2 })).toBe(true);
+		expect(isDefaultBrush({ spacing: 0.5 })).toBe(false);
+		expect(brushWire({ spacing: 0.5 })).toEqual({ d: 0.5 });
+		expect(brushFromWire({ d: 0.5 }).spacing).toBe(0.5);
+		expect(brushFromWire({ h: 0.5 }).spacing).toBe(0.2);
+		expect(normalizeBrush({ spacing: 9 }).spacing).toBe(1);
+		expect(normalizeBrush({ spacing: 0 }).spacing).toBe(0.05);
+	});
+	it('103: the pulled-string stabiliser', () => {
+		expect(pullString(null, [3, 4], 10)).toEqual([3, 4]);
+		expect(pullString([0, 0], [3, 4], 10)).toBe(null); // slack: 5 px inside a 10 px string
+		const p = pullString([0, 0], [30, 40], 10); // 50 px away: the brush moves to 10 px behind the pointer
+		expect(Math.hypot(30 - p[0], 40 - p[1])).toBeCloseTo(10, 9);
+		expect(pullString([0, 0], [30, 40], 0)).toEqual([30, 40]); // off
+		// a jittery path: the stabilised one travels less sideways
+		let at = null;
+		let raw = 0;
+		let calm = 0;
+		let prevRaw = 0;
+		let prevCalm = 0;
+		for (let i = 0; i < 200; i++) {
+			const y = i % 2 ? 6 : -6;
+			const q = pullString(at, [i * 3, y], 12);
+			if (q) at = q;
+			raw += Math.abs(y - prevRaw);
+			prevRaw = y;
+			if (at) {
+				calm += Math.abs(at[1] - prevCalm);
+				prevCalm = at[1];
+			}
+		}
+		expect(calm).toBeLessThan(raw / 4);
 	});
 	it('the eraser paints the value that hides the map', () => {
 		expect(paintStyle('color', '#FF0000', 0, false)).toBe('#ff0000');

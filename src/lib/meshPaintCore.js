@@ -15,7 +15,7 @@
 // blended toward the brush value by L * opacity. So flow is "how much each dab adds" and opacity is "the most the
 // whole stroke can reach" — the usual painter's meaning of the two.
 
-/** @typedef {{hardness: number, opacity: number, flow: number, erase: boolean, mirror: boolean, stamp: string}} Brush */
+/** @typedef {{hardness: number, opacity: number, flow: number, erase: boolean, mirror: boolean, stamp: string, spacing: number}} Brush */
 
 /** The channels a brush can paint. `map` is the material key; `gray` channels take a 0..1 value, the others a
  * colour; `erase` is what the eraser paints: the value that leaves the material's own setting showing (a map
@@ -36,7 +36,10 @@ export function channelOf(key) {
 /** @param {any} key */
 export const isChannelKey = (key) => CHANNELS.some((c) => c.key === key);
 
-export const BRUSH_DEFAULTS = Object.freeze({ hardness: 1, opacity: 1, flow: 1, erase: false, mirror: false, stamp: '' });
+/** 103 H1: `spacing` = the gap between dabs as a fraction of the brush diameter (0.2 = DAB_SPACING, the 102 value) */
+export const BRUSH_DEFAULTS = Object.freeze({ hardness: 1, opacity: 1, flow: 1, erase: false, mirror: false, stamp: '', spacing: 0.2 });
+/** the spacing range: 5 % (dense, smooth) .. 100 % (a dab per diameter: a dotted line) */
+export const SPACING_RANGE = Object.freeze([0.05, 1]);
 
 /** the sizes a NEW map is made at (the first stroke on a slot with no image) */
 export const NEW_MAP_SIZES = Object.freeze([1024, 2048]);
@@ -64,7 +67,8 @@ export function normalizeBrush(raw) {
 		flow: clampNum(b.flow, 0.01, 1, 1),
 		erase: b.erase === true,
 		mirror: b.mirror === true,
-		stamp: cleanStamp(b.stamp)
+		stamp: cleanStamp(b.stamp),
+		spacing: clampNum(b.spacing, SPACING_RANGE[0], SPACING_RANGE[1], BRUSH_DEFAULTS.spacing)
 	};
 }
 
@@ -72,7 +76,7 @@ export function normalizeBrush(raw) {
  * @param {any} raw */
 export function isDefaultBrush(raw) {
 	const b = normalizeBrush(raw);
-	return b.hardness === 1 && b.opacity === 1 && b.flow === 1 && !b.erase && !b.mirror && !b.stamp;
+	return b.hardness === 1 && b.opacity === 1 && b.flow === 1 && !b.erase && !b.mirror && !b.stamp && b.spacing === BRUSH_DEFAULTS.spacing;
 }
 
 /** The brush on the wire: only the fields that differ from the default (rule 6: absent when it does not apply).
@@ -87,13 +91,15 @@ export function brushWire(raw) {
 	if (b.erase) out.e = 1;
 	if (b.mirror) out.m = 1;
 	if (b.stamp) out.s = b.stamp;
+	// 103: an older peer drops `d` and spaces its preview at the default; the commit carries the real pixels
+	if (b.spacing !== BRUSH_DEFAULTS.spacing) out.d = round3(b.spacing);
 	return out;
 }
 
 /** @param {any} w @returns {Brush} */
 export function brushFromWire(w) {
 	const x = w && typeof w === 'object' ? w : {};
-	return normalizeBrush({ hardness: x.h, opacity: x.o, flow: x.f, erase: x.e === 1, mirror: x.m === 1, stamp: x.s });
+	return normalizeBrush({ hardness: x.h, opacity: x.o, flow: x.f, erase: x.e === 1, mirror: x.m === 1, stamp: x.s, spacing: x.d });
 }
 
 /** @param {number} n */
@@ -161,6 +167,28 @@ export function pressureEffect(pm, factor) {
 	const mode = pressureModeOf(pm);
 	const f = mode === 'off' || !Number.isFinite(factor) ? 1 : Math.min(1, Math.max(0, factor));
 	return { size: mode === 'size' || mode === 'both' ? f : 1, ceil: mode === 'opacity' || mode === 'both' ? f : 1 };
+}
+
+// ---- smoothing (103 H1: the stroke stabiliser) ----------------------------------------------------------------
+
+/** the longest string, in screen px, at smoothing 1 */
+export const SMOOTH_MAX_PX = 48;
+
+/**
+ * The "pulled string" stabiliser: the brush trails the pointer on a string of length `R` (screen px) and moves only
+ * when the pointer pulls it taut, so a shaky hand draws a calm line and a slow deliberate one is not delayed. It runs
+ * on the SENDER before a point enters the stroke, so peers receive the smoothed points and nothing new travels.
+ * `at` = where the brush is (null before the first point). Returns where the brush goes, or null (still slack).
+ * @param {number[] | null} at @param {number[]} p @param {number} R @returns {number[] | null}
+ */
+export function pullString(at, p, R) {
+	if (!at || !(R > 0)) return [p[0], p[1]];
+	const dx = p[0] - at[0];
+	const dy = p[1] - at[1];
+	const d = Math.hypot(dx, dy);
+	if (d <= R) return null;
+	const k = (d - R) / d;
+	return [at[0] + dx * k, at[1] + dy * k];
 }
 
 // ---- falloff and dab spacing ---------------------------------------------------------------------------------

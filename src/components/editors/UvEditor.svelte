@@ -251,7 +251,7 @@
 		if ($uvTool === 'paint') untrack(() => void loadPaint());
 	});
 	/** the brush state the editor needs (channel, channel view, and whether meshPaint owns the stroke) */
-	let paintUi = $state({ channel: 'color', showChannel: false, newBrush: false });
+	let paintUi = $state({ channel: 'color', showChannel: false, newBrush: false, smoothPx: 0 });
 	$effect(() => {
 		const mod = paintMod;
 		if (!mod) return;
@@ -926,6 +926,8 @@
 			// so the overlaps stacked to opaque; meshPaint draws one layer per stroke and composites it once.
 			gesture = 'paint';
 			paintEngine = 'mesh';
+			brushAt = [x, y];
+			lastRaw = null;
 			attachDragListeners();
 			const begin = { uuid: target.uuid, slot, sp: 'uv', at: [toU(x), toV(y)], w: pressureOf(e) };
 			const open = () =>
@@ -951,6 +953,8 @@
 		if ($uvTool === 'paint') {
 			gesture = 'paint';
 			paintEngine = 'uv';
+			brushAt = [x, y];
+			lastRaw = null;
 			// 24-F1 (found on the way): this branch returned WITHOUT the window move/up
 			// pair, so a pointer stroke got its first dab and nothing else — no moves
 			// painted and no pointerup ever committed it (the uv-paint suite asserted only
@@ -1054,10 +1058,16 @@
 			}
 			for (const sample of samples.length ? samples : [e]) {
 				const { x, y } = localPoint(sample);
-				if (paintEngine === 'mesh') {
-					if (meshHeld) meshHeld.moves.push({ at: [toU(x), toV(y)], w: pressureOf(sample) });
-					else paintMod?.strokeTo([toU(x), toV(y)], pressureOf(sample));
-				} else paintMove(toU(x), toV(y), $uvBrushColor, brushUv(), pressureOf(sample));
+				const w = pressureOf(sample);
+				// 103 H1: the stabiliser (Smoothing in the brush panel) trails the pen on a string, in screen px
+				const R = paintMod ? paintUi.smoothPx : 0;
+				if (R > 0) {
+					lastRaw = { x, y, w };
+					const next = paintMod.pullString(brushAt, [x, y], R);
+					if (!next) continue;
+					brushAt = next;
+					paintAt(next[0], next[1], w);
+				} else paintAt(x, y, w);
 			}
 		}
 	}
@@ -1071,6 +1081,18 @@
 		return Number.isFinite(p) ? Math.max(0, Math.min(1, p)) : undefined;
 	}
 
+	/** one stroke point at view px (x, y) to whichever painter owns the stroke @param {number} x @param {number} y
+	 * @param {number | undefined} w */
+	function paintAt(x, y, w) {
+		if (paintEngine === 'mesh') {
+			if (meshHeld) meshHeld.moves.push({ at: [toU(x), toV(y)], w });
+			else paintMod?.strokeTo([toU(x), toV(y)], w);
+		} else paintMove(toU(x), toV(y), $uvBrushColor, brushUv(), w);
+	}
+	/** 103 H1 smoothing: where the brush is (view px) and the last raw sample, which the stroke ends on */
+	/** @type {number[] | null} */ let brushAt = null;
+	/** @type {{x: number, y: number, w: number | undefined} | null} */ let lastRaw = null;
+
 	/** 103 H1: does this press paint through meshPaint's stroke layer? A PEN, with its pressure on opacity.
 	 * @param {PointerEvent} e */
 	const layerStroke = (e) => e.pointerType === 'pen' && ($uvPenPressure === 'opacity' || $uvPenPressure === 'both');
@@ -1083,6 +1105,11 @@
 	const brushUv = () => $uvBrushSize;
 
 	function onPointerUp(/** @type {PointerEvent} */ e) {
+		if (gesture === 'paint' && lastRaw) {
+			// a smoothed stroke catches up and ends where the pen lifted
+			paintAt(lastRaw.x, lastRaw.y, lastRaw.w);
+			lastRaw = null;
+		}
 		if (gesture === 'paint') {
 			if (paintEngine === 'mesh') {
 				if (meshHeld) meshHeld.ended = true;

@@ -13,7 +13,7 @@
 	import HudImagePicker from '../hud/HudImagePicker.svelte';
 	import {
 		paintChannel, paintValue, paintHardness, paintOpacity, paintFlow, paintErase, paintMirror, paintStamp,
-		paintMapSize, paintShowChannel, paintTargetInfo
+		paintMapSize, paintShowChannel, paintTargetInfo, paintSpacing, paintSmoothing
 	} from '$lib/meshPaintPrefs';
 
 	const CHANNEL_CHOICES = /** @type {const} */ ([
@@ -58,6 +58,17 @@
 	Flow <span class="tabular-nums text-text-2">{Math.round($paintFlow * 100)}%</span>
 	<input id="paint-flow" type="range" min="0.01" max="1" step="0.01" class="mt-1 w-full accent-accent"
 		value={$paintFlow} oninput={(e) => paintFlow.set(parseFloat(e.currentTarget.value))} />
+</label>
+<!-- 103 H1: dab spacing and the stroke stabiliser -->
+<label class="mt-2 block text-[11px] text-text-muted" title="The gap between dabs, as a share of the brush width: low is a smooth line, high a dotted one">
+	Spacing <span class="tabular-nums text-text-2">{Math.round($paintSpacing * 100)}%</span>
+	<input id="paint-spacing" type="range" min="0.05" max="1" step="0.01" class="mt-1 w-full accent-accent"
+		value={$paintSpacing} oninput={(e) => paintSpacing.set(parseFloat(e.currentTarget.value))} />
+</label>
+<label class="mt-2 block text-[11px] text-text-muted" title="Steadies the line: the brush trails the pen on a string and only moves when you pull it. 0 is off.">
+	Smoothing <span class="tabular-nums text-text-2">{Math.round($paintSmoothing * 100)}%</span>
+	<input id="paint-smoothing" type="range" min="0" max="1" step="0.01" class="mt-1 w-full accent-accent"
+		value={$paintSmoothing} oninput={(e) => paintSmoothing.set(parseFloat(e.currentTarget.value))} />
 </label>
 <div class="mt-2 flex gap-1">
 	<button id="paint-erase" type="button" aria-pressed={$paintErase}

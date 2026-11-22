@@ -285,9 +285,22 @@ async function oneScene(browser, slug, first) {
 			window.__parkedTasks = s.moduleSDK.moduleFrameTasks.splice(0);
 			s.flowPaused.set({ paused: true, reason: 'cinematic-water: time held' });
 			s.waterRuntime.freezeWaterClock(s.waterRuntime.waterClock());
-			return s.waterRuntime.waterDebug().entries.filter((e) => e.visible).length;
+			// fluid tanks are a stand-in in the view by design (roadmap 100: "fluid tanks stay a stand-in"), and their
+			// particles fill water-works' mill pond: out of both views, so the comparison is water against water
+			let sc;
+			s.globalScene.subscribe((x) => (sc = x))();
+			let fluid = 0;
+			sc.traverse((o) => {
+				const ud = o.userData || {};
+				if ((ud.fluid && typeof ud.fluid === 'object') || ud.fluidEmitter || o.name === 'Fluid (visual)') {
+					o.visible = false;
+					fluid++;
+				}
+			});
+			return { drawn: s.waterRuntime.waterDebug().entries.filter((e) => e.visible).length, fluid };
 		});
-		h.check(held > 0, `   ${slug}: time held, ${held} of ${wd.volumes} water volume(s) drawn (${row.shapes.join(', ')}; tier ${wd.tier})`);
+		row.fluidHidden = held.fluid;
+		h.check(held.drawn > 0, `   ${slug}: time held, ${held.drawn} of ${wd.volumes} water volume(s) drawn (${row.shapes.join(', ')}; tier ${wd.tier}${held.fluid ? `; ${held.fluid} fluid object(s) hidden in both views` : ''})`);
 
 		// ---- 1. the standard view ---------------------------------------------------------------------------------
 		const sheet = { gl: await grab(page, 'gl:all', false) };
@@ -302,8 +315,9 @@ async function oneScene(browser, slug, first) {
 		const d0 = await debug(page);
 		row.quality = d0.quality;
 		row.water = d0.water;
-		const surfaces = wd.entries.filter((e) => e.visible).length;
-		const bodies = wd.entries.filter((e) => e.visible && e.body).length;
+		const live = await page.evaluate(() => window.__tp.test.v1.waterRuntime.waterDebug().entries);
+		const surfaces = live.filter((/** @type {any} */ e) => e.visible).length;
+		const bodies = live.filter((/** @type {any} */ e) => e.visible && e.body).length;
 		h.check(d0.errors.length === 0, `${slug}: 2. the view is on (${d0.quality}), no errors (${JSON.stringify(d0.errors).slice(0, 400)})`);
 		h.check(!!d0.water && d0.water.surfaces === surfaces && d0.water.bodies === bodies && !d0.water.errors.length, `   ${slug}: every surface and tank body drawn through TSL (${JSON.stringify(d0.water)}; want ${surfaces} surfaces, ${bodies} bodies)`);
 		h.check(d0.water?.planar === 0, `   ${slug}: no planar mirror asked, none drawn (${d0.water?.planar})`);
@@ -458,8 +472,11 @@ async function oneScene(browser, slug, first) {
 			return n;
 		}, { W, H });
 		const noise = row.compare?.noise?.[0] ?? 0;
-		row.zeroChange = { changed: zero, noise };
-		h.check(zero <= Math.max(60, noise * 3), `   ${slug}: the standard view after the trip is the standard view before it (${zero} px changed; noise floor ${noise} px)`);
+		// a view left behind (a twin, a hidden material, a swapped placeholder) changes most of the water's footprint;
+		// what moves on its own between the two shots (a wandering fish: the PC builds keep it swimming) is a few px
+		const limit = Math.max(60, noise * 3, Math.round((row.compare?.gl ?? 0) * 0.1));
+		row.zeroChange = { changed: zero, noise, limit };
+		h.check(zero <= limit, `   ${slug}: the standard view after the trip is the standard view before it (${zero} px changed; limit ${limit} = max(noise floor ${noise} x 3, 10 % of the water's ${row.compare?.gl ?? 0} px))`);
 		// the standard view from the same spot under the surface, for the sheet and the mean colour
 		if (first && sheet.viewUnder) {
 			const glUnder = await page.evaluate(() => {

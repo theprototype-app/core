@@ -9,6 +9,10 @@
 </script>
 
 <script>
+	// 89 I2: Settings ▸ AI again (it was "Tools & connections" since 59 T4; 'tools' / 'toolsconnections' stay deep-link
+	// aliases), in TWO cards: "AI inside the app (your key)" — every form below, unchanged — and "AI apps that work in
+	// your scene" — the agents rows + Connected apps (moved here from Settings ▸ Account, which keeps a link row).
+	// Desktop tools sit under them as "Other tools". One docs page explains both: USE_ANY_AI_DOCS_URL.
 	// 59 T4: this page is Settings ▸ TOOLS & CONNECTIONS now. Its main view is the registry's hub
 	// (ToolsHub.svelte); the provider / mesh / voice FORMS below stay here as its sub-pages, unchanged,
 	// so the stores and storage keys they write are the ones every saved setup already uses.
@@ -27,6 +31,12 @@
 	import ToolsHub from './ToolsHub.svelte';
 	import { toolsFocus } from '$lib/tools/toolStatus.js';
 	import ChatPictureSettings from './ChatPictureSettings.svelte'; // 56 C8
+	import ConnectedAppsSettings from './ConnectedAppsSettings.svelte'; // 86 B5, moved here by 89 I2
+	import { USE_ANY_AI_DOCS_URL } from '$lib/connector/connectorLinks.js';
+	/** 89 I2: the tool sections each card draws (toolStatus TOOL_SECTIONS ids) */
+	const IN_APP = ['chat', 'mesh', 'animation', 'aibox'];
+	const IN_SCENE = ['agents'];
+	const OTHER = ['desktop'];
 	import { NAV_CONTEXT } from '$lib/settingsNav';
 	import { showToast } from '../../../stores/appStore.js';
 	import {
@@ -56,8 +66,8 @@
 
 	const nav = /** @type {any} */ (getContext(NAV_CONTEXT));
 	const sub = nav?.sub;
-	/** this page's section key (sectionKeyOf('Tools & connections')) */
-	const PAGE = 'toolsconnections';
+	/** this page's section key (sectionKeyOf('AI')) */
+	const PAGE = 'ai';
 
 	/** a hub row's form (built-in sections) @param {string} kind @param {any} [ref] */
 	function openForm(kind, ref) {
@@ -458,19 +468,74 @@
 			{/if}
 		</div>
 	{:else}
-		<ToolsHub onform={openForm}>
-			{#snippet afterChat()}
-				<Section variant="card" label="Chat pictures" badge="This device">
-					<ChatPictureSettings /><!-- 56 C8 -->
-				</Section>
-			{/snippet}
-		</ToolsHub>
+		<div class="ai-card" id="ai-card-in-app" data-ai-card="in-app" data-settings-group role="group" aria-labelledby="ai-card-in-app-title">
+			<div class="ai-card-head">
+				<h3 class="ai-card-title" id="ai-card-in-app-title">AI inside the app (your key)</h3>
+				<p class="ai-card-desc">The app's own assistant, voice typing and 3D generation, run with a key or a server you set up here.</p>
+			</div>
+			<ToolsHub onform={openForm} only={IN_APP}>
+				{#snippet afterChat()}
+					<Section variant="card" label="Chat pictures" badge="This device">
+						<ChatPictureSettings /><!-- 56 C8 -->
+					</Section>
+				{/snippet}
+			</ToolsHub>
+			<!-- roadmap 84 (connect any AI) adds its presets and "Test connection" to THIS card; nothing of it is built here -->
+		</div>
+		<div class="ai-card" id="ai-card-in-scene" data-ai-card="in-scene" data-settings-group role="group" aria-labelledby="ai-card-in-scene-title">
+			<div class="ai-card-head">
+				<h3 class="ai-card-title" id="ai-card-in-scene-title">AI apps that work in your scene</h3>
+				<p class="ai-card-desc">
+					Claude, ChatGPT and other AI apps build in this tab with your access. No key here: add theprototype in the app, connect this tab, and revoke an app
+					any time below.
+					<a class="ai-card-link" href={USE_ANY_AI_DOCS_URL} target="_blank" rel="noopener">Which one do I need?</a>
+				</p>
+			</div>
+			<ToolsHub onform={openForm} only={IN_SCENE} footnote={false} />
+			<ConnectedAppsSettings />
+		</div>
+		<div class="ai-card" id="ai-card-other" data-ai-card="other" data-settings-group role="group" aria-labelledby="ai-card-other-title">
+			<div class="ai-card-head">
+				<h3 class="ai-card-title" id="ai-card-other-title">Other tools</h3>
+			</div>
+			<ToolsHub onform={openForm} only={OTHER} footnote={false} />
+		</div>
 	{/if}
 </div>
 
 <style>
 	.settings-page-body {
 		display: contents;
+	}
+	/* 89 I2: the page's two cards (and Other tools) — a heading + a line, then that card's groups */
+	.ai-card {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-3);
+	}
+	.ai-card + .ai-card {
+		margin-top: var(--space-4);
+		padding-top: var(--space-4);
+		border-top: 1px solid var(--border);
+	}
+	.ai-card-head {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
+	}
+	.ai-card-title {
+		margin: 0;
+		font-size: var(--fs-panel-title);
+		font-weight: 600;
+		color: var(--text);
+	}
+	.ai-card-desc {
+		margin: 0;
+		font-size: var(--fs-desc);
+		color: var(--text-muted);
+	}
+	.ai-card-link {
+		color: var(--accent-text);
 	}
 	.ai-actions {
 		display: flex;

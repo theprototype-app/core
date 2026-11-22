@@ -34,10 +34,11 @@ const META = {
 	import: { group: 'workspace', order: 8.5, description: 'What happens to big models and textures as they come in.' },
 	export: { group: 'workspace', order: 9, description: 'What the next exported game starts with.' },
 	vr: { group: 'devices', order: 10, description: 'Comfort, body, buttons and display in the headset — the same table as the headset’s own Settings.' },
-	toolsconnections: { group: 'devices', order: 11, description: 'Everything outside the app — chat and mesh providers, voice typing, agents, desktop tools. Set up only the ones you use: each shows whether it is ready, a Test and the features it turns on, and a button whose tool is missing brings you here.' }, // 59 T4 (was 'ai')
+	// 89 I2: 'ai' again (59 T4 had named it toolsconnections): two cards — the app's own AI with your key, and AI apps that work in your scene
+	ai: { group: 'devices', order: 11, description: 'Two kinds of AI. Inside the app: the assistant, voice typing and 3D generation, with your own key. In your scene: Claude, ChatGPT and other AI apps building in this tab, with Connected apps and Revoke.' },
 	connection: { group: 'devices', order: 12, description: 'How you find other people.' },
 	// profile-notify; uir-account: + Sign-in methods, Devices (cloud plugin) and Connected apps (86 B5, its own page before)
-	account: { group: 'account', order: 14, description: 'Your theprototype.app account: its emails, the ways you sign in, your devices and the apps you connected.' },
+	account: { group: 'account', order: 14, description: 'Your theprototype.app account: its emails, the ways you sign in, your devices, and a link to the AI apps you connected.' },
 	privacy: { group: 'devices', order: 13, description: 'What this device sends about errors — anonymous, and you can switch it off.' },
 	aboutwhatsnew: { group: 'about', order: 99, description: '' }
 };

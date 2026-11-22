@@ -56,11 +56,11 @@
 	import ImportSettingsSection from './ImportSettingsSection.svelte'; // 46 P2
 	import PrivacySettings from './settings/PrivacySettings.svelte'; // 48 O1
 	import MomentSettings from './settings/MomentSettings.svelte'; // 95 SM3
-	import ConnectedAppsSettings from './settings/ConnectedAppsSettings.svelte'; // 86 B5
+	import ConnectedAppsLink from './settings/ConnectedAppsLink.svelte'; // 89 I2: Account's link to Settings ▸ AI ▸ Connected apps
 	import { connectorProvider, settingsSlots } from '$lib/cloudHooks';
 	import CloudSlot from '../CloudSlot.svelte';
 	import VRSettingsSection from './VRSettingsSection.svelte'; // the whole VR page
-	import AiSettings from './settings/AiSettings.svelte'; // 59 T4: the Tools & connections page (+ its provider forms)
+	import AiSettings from './settings/AiSettings.svelte'; // 89 I2: the AI page (+ its provider forms; was Tools & connections)
 	import ConnectionSettings from './settings/ConnectionSettings.svelte';
 	import { settingsOpen, settingsSection, settingsSearchSeed, settingsAnchor, hidePanels, restorePanels, showToast } from '../../stores/appStore.js';
 	import { cloudPluginInfo } from '$lib/cloudHooks';
@@ -89,10 +89,18 @@
 	let privacyExpanded = false;
 	$: if ((settingsQuery || '').trim() || ($settingsOpen && $settingsSection === 'privacy')) privacyExpanded = true;
 	// profile-notify: Settings ▸ Account — only while the cloud plugin has mounted into it (cloudApi.mountSettingsSection)
-	// uir-account: + Connected apps (86 B5, its own page before: 'connectedapps' is now an alias of this page), so the
-	// page also exists while only a connector provider is installed
+	// uir-account: + a Connected apps row, so the page also exists while only a connector provider is installed.
+	// 89 I2: Connected apps itself lives on Settings ▸ AI now ('connectedapps' opens it there); Account keeps a link row
 	let accountExpanded = false;
-	$: if ((settingsQuery || '').trim() || ($settingsOpen && ($settingsSection === 'account' || $settingsSection === 'connectedapps'))) accountExpanded = true;
+	$: if ((settingsQuery || '').trim() || ($settingsOpen && $settingsSection === 'account')) accountExpanded = true;
+	// 89 I2: the old 'connectedapps' deep link (set straight on the store, not through openSettingsAt) still lands ON the
+	// Connected apps card of the AI page — once per arrival, not again after revealAnchor clears the anchor
+	let connectedAppsLanded = false;
+	$: if (!$settingsOpen || $settingsSection !== 'connectedapps') connectedAppsLanded = false;
+	$: if ($settingsOpen && $settingsSection === 'connectedapps' && !connectedAppsLanded) {
+		connectedAppsLanded = true;
+		if (!$settingsAnchor) settingsAnchor.set('connected-apps-settings');
+	}
 	let accessibilityExpanded = false; // 53: Settings ▸ Accessibility (AccessibilitySettings.svelte)
 	$: if ((settingsQuery || '').trim() || ($settingsOpen && $settingsSection === 'accessibility')) accessibilityExpanded = true;
 	let sceneExpanded = false;
@@ -130,8 +138,8 @@
 	$: if ($settingsOpen) {
 		stepPanelsAside();
 		shortcutsExpanded = $settingsSection === 'shortcuts';
-		// 59 T4: Settings ▸ AI became Tools & connections ('ai' stays a deep-link alias)
-		aiExpanded = $settingsSection === 'ai' || String($settingsSection ?? '').startsWith('tools');
+		// 89 I2: Settings ▸ AI again (59 T4 had made it Tools & connections): 'tools…' and 'connectedapps' open it too
+		aiExpanded = $settingsSection === 'ai' || $settingsSection === 'connectedapps' || String($settingsSection ?? '').startsWith('tools');
 		sceneExpanded = $settingsSection === 'scene';
 		connectionExpanded = $settingsSection === 'connection';
 		vrExpanded = $settingsSection === 'vr';
@@ -285,6 +293,11 @@
 				page.querySelectorAll<HTMLElement>('.sec-card-wrap').forEach((card) => {
 					const any = [...card.querySelectorAll<HTMLElement>('.setting-row, .tp-ui.nr')].some((r) => r.style.display !== 'none');
 					card.style.display = needle && !any ? 'none' : '';
+				});
+				// 89 I2: a page's own group of cards (Settings ▸ AI's two) goes with its last card, heading and all
+				page.querySelectorAll<HTMLElement>('[data-settings-group]').forEach((grp) => {
+					const any = [...grp.querySelectorAll<HTMLElement>('.setting-row, .tp-ui.nr')].some((r) => r.style.display !== 'none');
+					grp.style.display = needle && !any ? 'none' : '';
 				});
 				// hide a page only when we KNOW it has rows and none of them matched;
 				// an unmounted body (0 rows) is unknown, and the observer will revisit it
@@ -613,7 +626,7 @@
 					<VRSettingsSection />
 				</AccordionItem>
 				<AccordionItem bind:open={aiExpanded}>
-					{#snippet header()}Tools & connections{/snippet}
+					{#snippet header()}AI{/snippet}
 					<AiSettings />
 				</AccordionItem>
 				<AccordionItem bind:open={importExpanded}>
@@ -640,7 +653,7 @@
 						{#snippet header()}Account{/snippet}
 						<div id="settings-account" class="settings-account" data-keywords="account">
 							{#if $settingsSlots.account}<CloudSlot mount={$settingsSlots.account} />{/if}
-							<ConnectedAppsSettings />
+							<ConnectedAppsLink />
 						</div>
 					</AccordionItem>
 				{/if}

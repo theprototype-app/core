@@ -13,7 +13,7 @@ export const SETTINGS_SECTION_IDS = {
 	"Scene": "scene",
 	"Explorer": "explorer",
 	"VR": "vr",
-	"Tools & connections": "tools",
+	"AI": "ai",
 	"Import": "import",
 	"Export": "export",
 	"Node types": "nodetypes",
@@ -22,7 +22,7 @@ export const SETTINGS_SECTION_IDS = {
 	"About": null
 };
 
-/** @type {[string, string, string][]} [section, row name, one-line description] */
+/** @type {([string, string, string] | [string, string, string, string])[]} [section, row name, one-line description, (89) an element id to land on instead of searching the name] */
 export const SETTINGS_ROWS = [
 	["Interface", "Allow text selection everywhere", "Off: only text fields, code, chat, logs and help text can be selected, so a drag across a menu or a panel n…"],
 	["Interface", "Your character", "Pick your character, head, hat, outfit colour and ping, with a live preview on yourself."],
@@ -172,12 +172,18 @@ export const SETTINGS_ROWS = [
 	["VR", "Colocation probe (dev)", "CO0 on-device probe — run this inside the headset: it opens an immersive-ar session, creates an anchor at y…"],
 	["VR", "Colocation", "Not colocated — share one physical room with a co-present peer."],
 	["VR", "Ghost hands", "While colocated, a room-mate's avatar body, name label and voice are hidden — you are looking at and listen…"],
-	["Tools & connections", "Chat providers", "The models behind the AI assistant, the quick prompt bar and voice typing."],
-	["Tools & connections", "Add chat provider", "Grok, Gemini or any OpenAI-compatible server."],
-	["Tools & connections", "Voice typing", "Speech to text for the assistant's mic — in the AI window and in VR."],
-	["Tools & connections", "Mesh providers", "Text → 3D models from the Add menu or the assistant (ComfyUI or Meshy)."],
-	["Tools & connections", "Add mesh provider", "A self-hosted ComfyUI with TRELLIS, or Meshy."],
-	["Tools & connections", "Desktop tools", "Blender and other 3D tools: edit a model there and drop it back."],
+	// 89 I2: the page is "AI" again, in two cards; Connected apps moved here from Account (the words are what people search)
+	["AI", "AI inside the app (your key)", "The app's own assistant, voice typing and 3D generation with your API key: Grok, Gemini, OpenAI-compatible, Meshy, ComfyUI.", "ai-card-in-app"],
+	["AI", "Chat providers", "The models behind the AI assistant, the quick prompt bar and voice typing — your key for Grok, Gemini or another provider."],
+	["AI", "Add chat provider", "Grok, Gemini or any OpenAI-compatible server, with your API key."],
+	["AI", "Voice typing", "Speech to text for the assistant's mic — in the AI window and in VR."],
+	["AI", "Mesh providers", "Text → 3D models from the Add menu or the assistant (ComfyUI or Meshy), with your key."],
+	["AI", "Add mesh provider", "A self-hosted ComfyUI with TRELLIS, or Meshy."],
+	["AI", "AI apps that work in your scene", "Claude, ChatGPT and other AI apps build in this tab through the connector — no key; connected apps and revoke.", "ai-card-in-scene"],
+	["AI", "Connect Claude", "Let claude.ai, ChatGPT or another AI app you added build in this tab (the connector)."],
+	["AI", "Coding agents", "Claude Code or any MCP client in this session, through an invite link."],
+	["AI", "Connected apps", "Every AI app you allowed (Claude, ChatGPT…) with its access and Revoke — remove an app here."],
+	["AI", "Desktop tools", "Blender and other 3D tools: edit a model there and drop it back."],
 	["Import", "Optimize big models automatically", "Over the thresholds, an import gets an LOD chain and its textures are resized and GPU-compressed; the original stays in the Library."],
 	["Import", "Triangle threshold", "A model with more triangles than this gets its LOD chain."],
 	["Import", "Texture threshold", "A texture larger than this is resized and compressed."],

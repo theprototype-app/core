@@ -6,6 +6,8 @@ import { settingsOpen, settingsSection, settingsAnchor } from '../../stores/appS
 
 /** an element id: letters, digits, '-' and '_' only (it goes into getElementById, never a selector) */
 const ANCHOR_RE = /^[A-Za-z][\w-]{0,79}$/;
+/** 89 I2: the Connected apps groups moved from Settings ▸ Account to Settings ▸ AI — their anchors follow them */
+const MOVED_TO_AI = /^(connected-apps-|row-connected-app|row-connector-tab)/;
 
 /**
  * @param {string} section a deep-link key
@@ -13,10 +15,16 @@ const ANCHOR_RE = /^[A-Za-z][\w-]{0,79}$/;
  * @returns {boolean} false for a malformed request (nothing opens)
  */
 export function openSettingsAt(section, anchor = null) {
-	const key = String(section ?? '').trim();
+	let key = String(section ?? '').trim();
 	if (!key || key.length > 40) return false;
-	const id = anchor == null || anchor === '' ? null : String(anchor);
+	let id = anchor == null || anchor === '' ? null : String(anchor);
 	if (id !== null && !ANCHOR_RE.test(id)) return false;
+	// 89 I2: an old link to Account's Connected apps (the cloud plugin's, a saved one) lands on the AI page's card
+	const page = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+	if (page === 'connectedapps' || (page === 'account' && id !== null && MOVED_TO_AI.test(id))) {
+		key = 'ai';
+		id = id ?? 'connected-apps-settings';
+	}
 	settingsAnchor.set(id);
 	settingsSection.set(key);
 	settingsOpen.set(true);

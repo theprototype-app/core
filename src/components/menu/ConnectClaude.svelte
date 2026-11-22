@@ -54,7 +54,7 @@
 
 	function openConnectedApps() {
 		// uir-account: Connected apps lives in Settings ▸ Account now
-		openSettingsAt('account', 'connected-apps-settings');
+		openSettingsAt('ai', 'connected-apps-settings'); // 89 I2: Connected apps lives on Settings ▸ AI
 	}
 </script>
 

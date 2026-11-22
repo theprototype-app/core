@@ -111,7 +111,7 @@ describe('feature status (T5)', () => {
 		const s = featureStatus('generateMesh');
 		expect(s).toMatchObject({ ready: false, section: 'mesh', row: 'mesh:p1' });
 		expect(s.message).toBe(
-			'Generate 3D model needs a Mesh provider: set one up in Settings ▸ Tools & connections.'
+			'Generate 3D model needs a Mesh provider: set one up in Settings ▸ AI.'
 		);
 		ready.set(true);
 		expect(featureStatus('generateMesh')).toMatchObject({ ready: true, message: '' });
@@ -119,7 +119,7 @@ describe('feature status (T5)', () => {
 
 	it('the fix phrase can be the feature’s own', () => {
 		expect(missingMessage('Edit in Blender', 'Desktop tools ▸ Blender', 'switch it on')).toBe(
-			'Edit in Blender needs Desktop tools ▸ Blender: switch it on in Settings ▸ Tools & connections.'
+			'Edit in Blender needs Desktop tools ▸ Blender: switch it on in Settings ▸ AI.'
 		);
 	});
 
@@ -262,7 +262,7 @@ describe('migration: the moved Settings sections keep their stored settings', ()
 		again['desktop:blender'].setEnabled(false);
 		expect(data.get('tools:blender')).toBe('false');
 		expect(reg.featureStatus('editInBlender').message).toBe(
-			'Edit in Blender needs Desktop tools ▸ Blender: switch it on in Settings ▸ Tools & connections.'
+			'Edit in Blender needs Desktop tools ▸ Blender: switch it on in Settings ▸ AI.'
 		);
 	});
 });

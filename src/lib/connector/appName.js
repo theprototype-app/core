@@ -22,15 +22,15 @@ export function appNameOf(g) {
 /**
  * Who the tab is talking to: the grant `grantId` names (a call's), else the link's own (`connection`, the most recently
  * used grant when it linked), else the most recently used of `connections`, else Claude.
- * @param {{connection?: {app?: unknown} | null, connections?: {id: string, app?: unknown, lastUsed?: number}[]} | null | undefined} s
+ * @param {any} s a relay state / ready frame: `{connection?: {app?}, connections?: {id, app?, lastUsed?}[]}`
  * @param {string | null} [grantId]
  */
 export function whoOf(s, grantId = null) {
 	const list = Array.isArray(s?.connections) ? s.connections : [];
-	const byId = grantId ? list.find((g) => g.id === grantId) : null;
+	const byId = grantId ? list.find((/** @type {any} */ g) => g.id === grantId) : null;
 	if (byId) return appNameOf(byId);
 	if (s?.connection) return appNameOf(s.connection);
-	const recent = [...list].sort((a, b) => (b.lastUsed ?? 0) - (a.lastUsed ?? 0))[0];
+	const recent = [...list].sort((/** @type {any} */ a, /** @type {any} */ b) => (b.lastUsed ?? 0) - (a.lastUsed ?? 0))[0];
 	return recent ? appNameOf(recent) : FALLBACK_APP;
 }
 

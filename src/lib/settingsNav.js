@@ -28,8 +28,9 @@ import { safeStorage } from './safeStorage';
 
 export const NAV_CONTEXT = 'settings-nav';
 /** deep-link keys a renamed section still answers to (the identifier stays, the word changes) */
-// uir-account: Connected apps moved into Settings ▸ Account ('connectedapps' still opens it)
-const KEY_ALIASES = /** @type {Record<string, string>} */ ({ ai: 'toolsconnections', connectedapps: 'account' }); // 59 T4
+// uir-account: Connected apps moved into Settings ▸ Account; 89 I2: it moved on to Settings ▸ AI, which is called AI
+// again ('tools' / 'toolsconnections', the 59 T4 name, and 'connectedapps' all open it)
+const KEY_ALIASES = /** @type {Record<string, string>} */ ({ tools: 'ai', toolsconnections: 'ai', connectedapps: 'ai' });
 const LAST_KEY = 'settings:section';
 
 /** 'Node types' -> 'nodetypes' — the shape of `settingsSection` deep-link keys ('vr', 'ai', 'explorer'…)
@@ -122,7 +123,7 @@ export function createSettingsNav() {
 		const pick =
 			(current && list.includes(current) ? current : null) ??
 			list.find((e) => e.isOpen()) ??
-			list.find((e) => remembered && sectionKeyOf(e.label) === remembered) ??
+			list.find((e) => remembered && sectionKeyOf(e.label) === (KEY_ALIASES[remembered] ?? remembered)) ??
 			list[0];
 		activate(pick, { remember: false, keepHome: true });
 	}

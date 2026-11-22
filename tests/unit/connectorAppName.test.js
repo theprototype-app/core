@@ -43,10 +43,10 @@ describe('89 appName', () => {
 		expect(CLOSE_WORDS.revoked).toMatch(/Settings ▸ AI ▸ Connected apps/);
 	});
 	it('the ready frame keeps app only when the Worker sent it', () => {
-		const old = parseFrame(JSON.stringify({ type: 'ready', connection: { id: 't_1', client: 'Claude', account: 'A' }, connections: [{ id: 'g_1', client: 'Claude' }] }));
+		const old = /** @type {any} */ (parseFrame(JSON.stringify({ type: 'ready', connection: { id: 't_1', client: 'Claude', account: 'A' }, connections: [{ id: 'g_1', client: 'Claude' }] })));
 		expect(old && 'app' in old.connection).toBe(false);
 		expect(old && whoOf(old)).toBe('Claude');
-		const neu = parseFrame(JSON.stringify({ type: 'ready', connection: { id: 't_1', client: 'ChatGPT', app: 'ChatGPT', account: 'A' }, connections: [{ id: 'g_1', client: 'ChatGPT', app: 'ChatGPT' }] }));
+		const neu = /** @type {any} */ (parseFrame(JSON.stringify({ type: 'ready', connection: { id: 't_1', client: 'ChatGPT', app: 'ChatGPT', account: 'A' }, connections: [{ id: 'g_1', client: 'ChatGPT', app: 'ChatGPT' }] })));
 		expect(neu?.connection.app).toBe('ChatGPT');
 		expect(neu?.connections[0].app).toBe('ChatGPT');
 		expect(neu && whoOf(neu)).toBe('ChatGPT');

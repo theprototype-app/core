@@ -482,7 +482,10 @@ async function createParticlesTool(args, createBase) {
 
 // ---------------------------------------------------------------- W2 terrain
 
-const TERRAIN_FIELDS = /** @type {Record<string, string>} */ ({ size: 'size', segments: 'segments', seed: 'seed', height: 'amplitude', amplitude: 'amplitude', detail: 'frequency', frequency: 'frequency', octaves: 'octaves', ridged: 'ridged', warp: 'warp', edges: 'falloff', falloff: 'falloff', offsetX: 'offsetX', offsetZ: 'offsetZ' });
+/** 104 A2: the rim depth a new island gets (m): under the ocean preset's 1.2 m troughs at a surface near 0 */
+export const ISLAND_RIM = -2;
+
+const TERRAIN_FIELDS = /** @type {Record<string, string>} */ ({ size: 'size', segments: 'segments', seed: 'seed', height: 'amplitude', amplitude: 'amplitude', detail: 'frequency', frequency: 'frequency', octaves: 'octaves', ridged: 'ridged', warp: 'warp', edges: 'falloff', falloff: 'falloff', offsetX: 'offsetX', offsetZ: 'offsetZ', rim: 'rim' });
 
 /** @param {any} args @param {CreateBase} createBase */
 async function terrainTool(args, createBase) {
@@ -522,7 +525,9 @@ async function terrainTool(args, createBase) {
 		else {
 			const { geometryParamsOf } = await import('$lib/geometryEdit');
 			const { terrainGeometry } = await import('$lib/customGeometries');
-			const probe = terrainGeometry({ ...(geometryParamsOf(object) ?? {}), ...params, amplitude: 1 });
+			// 104: geometryParamsOf answers {gtype, params} — the probe used to spread the wrapper, so an existing
+			// terrain's own size / seed / edges were left out of the measure
+			const probe = terrainGeometry({ ...(geometryParamsOf(object)?.params ?? {}), ...params, amplitude: 1, rim: 0 });
 			const ys = probe.attributes.position.array;
 			let unit = 0;
 			for (let i = 1; i < ys.length; i += 3) unit = Math.max(unit, ys[i]);
@@ -535,9 +540,18 @@ async function terrainTool(args, createBase) {
 			peak = r3(unit * params.amplitude);
 		}
 	}
+	// 104 A2: an island's rim sinks below 0 so the flat skirt stays under a sea (default troughs reach 1.2 m down).
+	// Only a terrain made or turned into an island here gets the default: a saved island keeps its rim at 0.
+	if (args.rim !== undefined) {
+		if (typeof args.rim !== 'number' || !Number.isFinite(args.rim) || args.rim > 0 || args.rim < -20) return { error: 'rim: how far an island\'s edge sinks, metres from 0 to -20', ...(made ? { created: [{ uuid, name: object.name }] } : {}) };
+		if ((params.falloff ?? (await import('$lib/geometryEdit')).geometryParamsOf(object)?.params?.falloff) !== 'island') warnings.push('rim shapes only an island (edges: "island")');
+	} else if (params.falloff === 'island') {
+		const { geometryParamsOf } = await import('$lib/geometryEdit');
+		if (made || geometryParamsOf(object)?.params?.falloff !== 'island') params.rim = ISLAND_RIM;
+	}
 	if (args.edges !== undefined && params.amplitude === undefined) {
 		const { geometryParamsOf } = await import('$lib/geometryEdit');
-		if (!(Number(geometryParamsOf(object)?.amplitude) > 0)) warnings.push('edges shape the noise, and this terrain is flat: give height too');
+		if (!(Number(geometryParamsOf(object)?.params?.amplitude) > 0)) warnings.push('edges shape the noise, and this terrain is flat: give height too');
 	}
 	// 1. the shape (the geometry message + history kind — set_geometry's path), BEFORE any sculpting
 	if (Object.keys(params).length) {
@@ -882,7 +896,10 @@ async function waterTool(args, createBase) {
 	const patch = {};
 	if (args.level !== undefined) {
 		if (typeof args.level !== 'number' || args.level < 0 || args.level > 1) return { error: 'level: how full, 0-1' };
-		patch.level = args.level;
+		// 104 A5: the blob's level is a LOCAL Y (the Water panel's slider); the tool's is how full, 0-1 — it was
+		// written through as a height, so "level 0.5" on an ocean box 2 m tall set the surface 0.5 m above its middle
+		const { fillToLevel } = await import('./waterReport.js');
+		patch.level = args.level === 1 ? null : fillToLevel(object, args.level);
 	}
 	for (const k of ['look', 'waves', 'flow']) {
 		if (args[k] === undefined) continue;
@@ -897,12 +914,25 @@ async function waterTool(args, createBase) {
 	}
 	if (Object.keys(patch).length) wa.updateObjectWater(object.uuid, patch, { immediate: true });
 	const water = object.userData.water;
+	// 104 A2: how high the waves run, and a warning when a terrain lies inside the band over a large area
+	const wr = await import('./waterReport.js');
+	const facts = wr.waterFacts(object);
+	/** @type {any[]} */
+	const grounds = [];
+	get(objectsGroup)?.traverse((/** @type {any} */ o) => {
+		if (o.userData?.terrain && o.isMesh) grounds.push(o);
+	});
+	const band = wr.waveBand(object, grounds);
+	const warning = wr.waveBandWarning(band);
 	const row = {
 		uuid: object.uuid,
 		name: object.name,
 		preset: water?.preset ?? args.preset,
-		level: water?.level,
-		...(water?.look ? { look: { shallowColor: water.look.shallowColor, deepColor: water.look.deepColor } } : {})
+		level: facts ? facts.level : water?.level,
+		...(water?.look ? { look: { shallowColor: water.look.shallowColor, deepColor: water.look.deepColor } } : {}),
+		...(facts ? { surface: facts.surface } : {}),
+		...(facts?.waves ? { waves: { height: facts.waves.height, ...(band ? { groundInBand: band.area } : {}) } } : {}),
+		...(warning ? { warnings: [warning] } : {})
 	};
 	return made ? { created: [row] } : { updated: [{ ...row, ok: true }] };
 }
@@ -1275,7 +1305,7 @@ export const WORLD_AI_TOOLS = [
 		function: {
 			name: 'terrain',
 			description:
-				'Make or change a terrain. Without uuid it makes one (size metres, at position); with uuid it changes that one. Shape by noise: height (the highest peak, metres — the answer says the peak it got), detail (0.005-0.6), octaves, ridged, warp, edges (flat|island|bowl: island sinks the rim to 0 so it rises out of water; bowl raises the rim), seed; amplitude is the raw noise scale if you want it. Sculpt with ops [{op: raise|lower|smooth|flatten, at: [x, z] from the terrain\'s centre, radius, strength 0-1, height (metres, raise/lower), passes}] and paint with {op: "paint", at, radius, layer 0-3, strength}. layers: up to 4 {color, texture (a library hash or a pattern name like grass, sand, stone), tiling} — layer 0 covers the ground until you paint the others; paintBy: "height" paints them for you, layer 0 in the low ground up to the last on the peaks. One undo step.',
+				'Make or change a terrain. Without uuid it makes one (size metres, at position); with uuid it changes that one. Shape by noise: height (the highest peak, metres — the answer says the peak it got), detail (0.005-0.6), octaves, ridged, warp, edges (flat|island|bowl: island sinks the rim below the water so it rises out of a sea — rim metres, default -2 on a new island; bowl raises the rim), seed; amplitude is the raw noise scale if you want it. Sculpt with ops [{op: raise|lower|smooth|flatten, at: [x, z] from the terrain\'s centre, radius, strength 0-1, height (metres, raise/lower), passes}] and paint with {op: "paint", at, radius, layer 0-3, strength}. layers: up to 4 {color, texture (a library hash or a pattern name like grass, sand, stone), tiling} — layer 0 covers the ground until you paint the others; paintBy: "height" paints them for you, layer 0 in the low ground up to the last on the peaks. One undo step.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1291,6 +1321,7 @@ export const WORLD_AI_TOOLS = [
 					ridged: { type: 'boolean' },
 					warp: { type: 'number' },
 					edges: { type: 'string', enum: ['flat', 'island', 'bowl'] },
+					rim: { type: 'number', maximum: 0, minimum: -20, description: 'island only: how far the edge sinks (metres, default -2 on a new island)' },
 					seed: { type: 'integer' },
 					ops: { type: 'array', maxItems: 64, items: { type: 'object' } },
 					layers: { type: 'array', maxItems: 4, items: { type: 'object', properties: { color: { type: 'string' }, texture: { type: 'string' }, pattern: PATTERN_SCHEMA, tiling: { type: 'number' } } } },
@@ -1304,7 +1335,7 @@ export const WORLD_AI_TOOLS = [
 		function: {
 			name: 'water',
 			description:
-				'Water: without uuid it makes a body of water — kind tank, pool, round, lake or ocean, size [w, h, d] (round: [diameter, depth, diameter]), at position (its bottom centre). With uuid it changes one (or makes an object water with a preset). preset: pool, aquarium, ocean, lake, river, lava, swamp, toxic, ice. level 0-1 (how full), color (tints the whole body, shallow to deep), look {shallowColor, deepColor, clarity, foam, …}, waves {count, amplitude, wavelength, speed, direction}, flow. Things float in it in Play. remove: true makes it a plain object again. One undo step.',
+				'Water: without uuid it makes a body of water — kind tank, pool, round, lake or ocean, size [w, h, d] (round: [diameter, depth, diameter]), at position (its bottom centre). With uuid it changes one (or makes an object water with a preset). preset: pool, aquarium, ocean, lake, river, lava, swamp, toxic, ice. level 0-1 (how full; 1 = to the top), color (tints the whole body, shallow to deep), look {shallowColor, deepColor, clarity, foam, …}, waves {count, amplitude, wavelength, speed, direction}, flow. Things float in it in Play. remove: true makes it a plain object again. The answer gives surface (world height of the still water) and waves {height} (how far they rise and fall), and warns when a terrain lies inside that band. One undo step.',
 			parameters: {
 				type: 'object',
 				properties: {

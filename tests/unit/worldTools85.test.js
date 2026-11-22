@@ -22,6 +22,7 @@ const { summarizeToolCall } = await import('../../src/lib/agentLogCore.js');
 const { viewerToolRefusal } = await import('../../src/lib/ai/viewerGate.js');
 const { READ_ONLY_TOOLS } = await import('../../src/lib/agent/agentCore.js');
 const { stampGeometryParams } = await import('../../src/lib/geometryEdit.js');
+const { terrainGeometry } = await import('../../src/lib/customGeometries.js');
 const sm = await import('../../src/lib/sceneMusic.js');
 // objectActions is mocked (it reaches geometries.svelte.js), so its 'props' kind is stood in for: the userData half
 history.registerHistoryKind('props', (entry, state) => {
@@ -53,6 +54,17 @@ function createBase(spec) {
 		group.add(g);
 		history.recordObjectPresence('create', g);
 		return { uuid: g.uuid, name: g.name };
+	}
+	if (spec.primitive === 'Terrain') {
+		// geometries.svelte.js's Terrain: the flat grid, the sage look, the marker the sculpt + paint tools key off
+		const t = new THREE.Mesh(terrainGeometry({ size: spec.params?.[0] ?? 24, segments: spec.params?.[1] ?? 48 }), new THREE.MeshStandardMaterial());
+		t.name = spec.name || 'Terrain';
+		t.userData.terrain = true;
+		stampGeometryParams(t);
+		if (spec.position) t.position.fromArray(spec.position);
+		group.add(t);
+		history.recordObjectPresence('create', t);
+		return { uuid: t.uuid, name: t.name };
 	}
 	const g = spec.primitive === 'Sphere' ? new THREE.SphereGeometry(spec.params?.[0] ?? 0.5) : spec.primitive === 'Cylinder' ? new THREE.CylinderGeometry() : new THREE.BoxGeometry(...(spec.params ?? [1, 1, 1]));
 	const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial());
@@ -229,12 +241,59 @@ describe('W4 water', () => {
 		const r = await call('water', { kind: 'lake', position: [0, 0, 0], level: 0.7 });
 		const o = find(r.created[0].uuid);
 		expect(o.userData.water.preset).toBe('lake');
-		expect(o.userData.water.level).toBeCloseTo(0.7);
+		// 104 A5: level is how FULL (0-1); the blob keeps the Water panel's local Y (the lake box is 1 m tall, centred)
+		expect(o.userData.water.level).toBeCloseTo(0.2);
+		expect(r.created[0].level).toBeCloseTo(0.7);
+		expect(r.created[0].surface).toBeCloseTo(0.7);
 		expect(o.castShadow).toBe(false);
 		expect(physicsCalls).toEqual([[o.uuid, { mode: 'static', sensor: true }]]);
 		expect(stack().length).toBe(1);
 		await history.undo();
 		expect(find(r.created[0].uuid)).toBeUndefined();
+	});
+	it('104 A2: an ocean answers its wave height, and warns when an island skirt sits inside the band', async () => {
+		const t = await call('terrain', { size: 24, height: 2.5, edges: 'island', rim: 0, name: 'Island' });
+		const land = find(t.created[0].uuid);
+		const r = await call('water', { kind: 'ocean', size: [80, 2, 80], position: [0, -1.6, 0], name: 'Ocean' });
+		const row = r.created[0];
+		expect(row.surface).toBeCloseTo(0.4, 3);
+		expect(row.waves.height).toBeCloseTo(0.45 * 2.685, 2);
+		expect(row.waves.groundInBand).toBeGreaterThan(400);
+		expect(row.warnings?.[0]).toMatch(/waves rise and fall 1\.208 m .* Island .*Sink the ground below -0\.808 m/);
+		// the default rim on a new island (-2 m) takes the skirt out of the band: far less ground in it
+		await call('terrain', { uuid: land.uuid, rim: -2 });
+		const again = await call('water', { uuid: row.uuid, preset: 'ocean' });
+		expect(again.updated[0].waves.groundInBand).toBeLessThan(row.waves.groundInBand / 2);
+		// a pool far from the island: tiny waves, nothing in their band
+		const calm = await call('water', { kind: 'pool', position: [100, 0, 0] });
+		expect(calm.created[0].waves.height).toBeLessThan(0.1);
+		expect(calm.created[0].waves.groundInBand).toBeUndefined();
+		expect(calm.created[0].warnings).toBeUndefined();
+	});
+	it('104 A2: a new island gets rim -2 (its edge sits 2 m under 0); rim is checked; a saved island keeps 0', async () => {
+		const t = await call('terrain', { size: 24, height: 2.5, edges: 'island' });
+		const o = find(t.created[0].uuid);
+		expect(o.userData.geometryParams.params.rim).toBe(-2);
+		o.geometry.computeBoundingBox();
+		expect(o.geometry.boundingBox.min.y).toBeCloseTo(-2, 3);
+		expect(t.created[0].peak).toBeGreaterThan(2.3);
+		expect((await call('terrain', { uuid: o.uuid, rim: 3 })).error).toMatch(/rim:/);
+		expect((await call('terrain', { size: 24, height: 1, rim: -1 })).created[0].warnings).toContain('rim shapes only an island (edges: "island")');
+		// an island saved before 104 (no rim) re-touched with edges: island keeps its edge at 0
+		const old = await call('terrain', { size: 24, height: 2.5, edges: 'island', rim: 0 });
+		const oo = find(old.created[0].uuid);
+		delete oo.userData.geometryParams.params.rim;
+		await call('terrain', { uuid: oo.uuid, edges: 'island', height: 3 });
+		expect(oo.userData.geometryParams.params.rim ?? 0).toBe(0);
+	});
+	it('104 A5: list_scene shows a water body as water {preset, colours, level, surface, waves}, not its box colour', async () => {
+		const r = await call('water', { kind: 'ocean', size: [80, 2, 80], position: [0, -1.6, 0] });
+		const { waterFacts } = await import('../../src/lib/ai/waterReport.js');
+		const facts = waterFacts(find(r.created[0].uuid));
+		expect(facts).toMatchObject({ preset: 'ocean', shallowColor: '#3fb6c8', deepColor: '#06304a', level: 1, shape: 'plane' });
+		expect(facts.surface).toBeCloseTo(0.4, 3);
+		expect(facts.waves.height).toBeGreaterThan(1.2);
+		expect(waterFacts(find(createBase({ primitive: 'Box' }).uuid))).toBe(null);
 	});
 	it('names a wrong kind / preset, and refuses a non-water object without a preset', async () => {
 		expect((await call('water', { kind: 'puddle' })).error).toMatch(/kind: one of/);

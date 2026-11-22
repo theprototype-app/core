@@ -1483,7 +1483,7 @@ export const AI_TOOLS = [
 									}
 								},
 								align: { type: 'string', enum: ['surface'], description: 'with at: back it onto the pinged surface (its +Z along the surface normal, upright on a wall) — a painting on a wall' },
-								snap: { type: 'string', enum: ['floor'], description: 'stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground' },
+								snap: { type: 'string', enum: ['floor'], description: 'stand it on whatever is straight under it: a terrain at any height, a floor or table at most 2 m above its base, else the ground; water and trigger volumes are passed through. The answer says placed {on, uuid, y, surface: terrain|mesh|ground}' },
 								face_user: { description: 'turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users' },
 								front: { type: 'string', enum: ['+z', '-z', '+x', '-x', '+y', '-y'], description: 'which local axis is its front for lookAt and face_user (default +z; many models face +x or -z — look at a screenshot)' },
 								parentUuid: { type: 'string', description: 'uuid of an existing group (or any object, not a light or camera) to nest under — position/rotation/scale are then LOCAL to it. A uuid that is not in the scene is an error and that object is not made' },
@@ -1547,7 +1547,7 @@ export const AI_TOOLS = [
 									}
 								},
 								align: { type: 'string', enum: ['surface'], description: 'with at: back it onto the pinged surface (its +Z along the surface normal, upright on a wall) — a painting on a wall' },
-								snap: { type: 'string', enum: ['floor'], description: 'stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground' },
+								snap: { type: 'string', enum: ['floor'], description: 'stand it on whatever is straight under it: a terrain at any height, a floor or table at most 2 m above its base, else the ground; water and trigger volumes are passed through. The answer says placed {on, uuid, y, surface: terrain|mesh|ground}' },
 								face_user: { description: 'turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users' },
 								front: { type: 'string', enum: ['+z', '-z', '+x', '-x', '+y', '-y'], description: 'which local axis is its front for lookAt and face_user (default +z; many models face +x or -z — look at a screenshot)' },
 								visible: { type: 'boolean' },

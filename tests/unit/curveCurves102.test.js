@@ -1,12 +1,9 @@
+// @ts-nocheck -- fixture-heavy: reference implementations and random clips, typed by their use
 // 102 M8: Timeline curves — one evaluation, key modes, presets, value entry, copy / paste,
 // the angle unwrap guard and the export maps (CUBICSPLINE when exact, sampled with a bound).
 import { describe, it, expect } from 'vitest';
+import { normalizeCurve, sampleCurve, fromLegacyKeys, easeSegment, sampleLegacyKeys, setHandle } from '../../src/lib/curveCore.js';
 import {
-	normalizeCurve,
-	sampleCurve,
-	fromLegacyKeys,
-	easeSegment,
-	sampleLegacyKeys,
 	setKeyMode,
 	keyModeOf,
 	applyPreset,
@@ -19,9 +16,8 @@ import {
 	toCubicSpline,
 	sampleCubicSpline,
 	sampleForExport,
-	exportError,
-	setHandle
-} from '../../src/lib/curveCore.js';
+	exportError
+} from '../../src/lib/curveEdit.js';
 import { sampleTrack, cubicBezierEase } from '../../src/lib/animationPreview.js';
 
 // the 17-E evaluation exactly as v1.72.0 shipped it in animationPreview.js (the reference)

@@ -70,6 +70,7 @@
 		duplicateSequence,
 		updateSequence,
 		addTrack,
+		addPropTrack,
 		updateTrack,
 		removeTrack,
 		moveTrack,
@@ -108,8 +109,8 @@
 	} from '$lib/sequenceCore';
 	import { listCameraObjects } from '$lib/cameraObjects';
 	import { timelineFocus } from '$lib/timelineOpen';
-	import { propDef } from '$lib/propTracks';
-	import { smoothKeys } from '$lib/curveCore';
+	import { propDef, pathsFor, propType, getProp } from '$lib/propTracks';
+	import { smoothKeys, insertKey } from '$lib/curveCore';
 	import { animations, clipList } from '$lib/animationPreview';
 	import { animatedObjects, clipInfo } from '$lib/animatedImports';
 	import { explorerItems } from '$lib/explorer';
@@ -149,6 +150,57 @@
 
 	// ---- shell: docked vs floating (HudEditor's verbatim) ------------------------------
 	// 70 W2: `popped` = this instance lives in a pop-out window ($lib/windows/panelHost mounts it there)
+	// ---- 102 M8: the curve view under a property track (LOCAL view state, never saved or sent) ----
+	let curveOpen = $state<Record<string, boolean>>({});
+	/** the component is a lazy chunk: loaded the first time a curve row opens */
+	let curveMod: Promise<any> | null = $state(null);
+	function toggleCurve(track: any) {
+		curveOpen = { ...curveOpen, [track.id]: !curveOpen[track.id] };
+		if (!curveMod) curveMod = import('./CurveGraph.svelte');
+	}
+	function targetOf(uuid: string) {
+		return ($objectsGroup as any)?.getObjectByProperty?.('uuid', uuid) ?? null;
+	}
+	/** the value a property track's object has NOW (what K keys) */
+	function liveValueOf(track: any) {
+		const v = getProp(targetOf(track.target), track.path);
+		return Array.isArray(v) ? v.slice() : v;
+	}
+	/** a key at the playhead with the object's value now (the track menu's entry; K in the curve) */
+	function keyTrackAtPlayhead(track: any) {
+		if (!seqId || !seq) return;
+		const v = liveValueOf(track);
+		if (v === null || v === undefined) {
+			showToast('The object of this track is not in the scene');
+			return;
+		}
+		const t = snapOn ? Math.round(playhead * seq.fps) / seq.fps : playhead;
+		updateTrack(seqId, track.id, { keys: insertKey(track.type, track.keys ?? [], t, v, { src: 'user' }) });
+	}
+	/** after a curve edit: re-pose the scrubbed objects so the viewport shows the new curve */
+	function curveEdited() {
+		if (!playing && !runningGame) scrubTo(playhead, true);
+	}
+	/** "Animate a property": one prop track for the selected object's allowlisted path */
+	function animateProperty(path: string) {
+		const uuid = pickedObject();
+		const obj = uuid ? targetOf(uuid) : null;
+		if (!seqId || !obj) return;
+		const value = getProp(obj, path);
+		const id = addPropTrack(seqId, {
+			target: obj.uuid,
+			path,
+			type: propType(path),
+			name: (obj.name || 'Object') + ' · ' + (propDef(path)?.label ?? path),
+			t: playhead,
+			value: Array.isArray(value) ? value.slice() : value
+		});
+		if (id) {
+			curveOpen = { ...curveOpen, [id]: true };
+			if (!curveMod) curveMod = import('./CurveGraph.svelte');
+		}
+	}
+
 	let { popped = false } = $props();
 	let docked = $state(true);
 	const WIN_MIN = { minW: 420, minH: 260 };
@@ -621,6 +673,8 @@
 			const tag = (e.target as HTMLElement)?.tagName;
 			if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
 			if (!seq || !seqId) return;
+			// 102 M8: a focused curve graph owns its keys (Delete, copy / paste, arrows, K, F); Space still plays
+			if (e.key !== ' ' && (e.target as HTMLElement)?.closest?.('[data-curve-graph]')) return;
 			let used = true;
 			const frame = 1 / seq.fps;
 			if (e.key === ' ') togglePlay();
@@ -697,14 +751,29 @@
 		};
 	}
 	function addTrackMenu(e: MouseEvent) {
+		const uuid = pickedObject();
+		const obj = uuid ? targetOf(uuid) : null;
+		// 102 M8: the selected object's allowlisted properties (the registry is the security surface)
+		const paths = obj ? pathsFor(obj).filter((p: string) => p !== 'quaternion') : [];
 		menu = {
 			x: e.clientX,
 			y: e.clientY,
-			items: ADDABLE_KINDS.map((kind) => ({
-				label: TRACK_LABELS[kind] + ' track',
-				icon: KIND_ICON[kind],
-				action: () => addTrackOf(kind)
-			}))
+			items: [
+				...ADDABLE_KINDS.map((kind) => ({
+					label: TRACK_LABELS[kind] + ' track',
+					icon: KIND_ICON[kind],
+					action: () => addTrackOf(kind)
+				})),
+				{ section: obj ? 'Animate a property of ' + (obj.name || 'the selection') : 'Animate a property' },
+				...(paths.length
+					? paths.map((p: string) => ({
+							label: propDef(p)?.label ?? p,
+							icon: 'spline',
+							title: 'A property track with its first key at the playhead',
+							action: () => animateProperty(p)
+						}))
+					: [{ label: 'Select an object first', disabled: true }])
+			]
 		};
 	}
 	function trackMenu(e: MouseEvent, track: any, index: number) {
@@ -716,7 +785,11 @@
 			items: [
 				{ label: 'Rename…', action: () => (renamingTrack = track.id) },
 				...(track.kind === 'prop'
-					? [{ label: 'Smooth keys', disabled: !(track.keys?.length >= 3), action: () => smoothTrack(track) }]
+					? [
+							{ label: curveOpen[track.id] ? 'Hide curve' : 'Show curve', icon: 'spline', action: () => toggleCurve(track) },
+							{ label: 'Key at playhead', action: () => keyTrackAtPlayhead(track) },
+							{ label: 'Smooth keys', disabled: !(track.keys?.length >= 3), action: () => smoothTrack(track) }
+						]
 					: []),
 				{
 					label: track.muted ? 'Unmute' : 'Mute',
@@ -994,6 +1067,15 @@
 								ondblclick={() => (renamingTrack = track.id)}>{track.kind === 'prop' ? propTrackLabel(track) : track.name}</span
 							>
 						{/if}
+						{#if track.kind === 'prop'}
+							<button
+								class="tl-icon-btn"
+								title={curveOpen[track.id] ? 'Hide the curve' : 'Show the curve: edit keys, handles and eases'}
+								aria-pressed={!!curveOpen[track.id]}
+								data-track-curve={track.id}
+								onclick={() => toggleCurve(track)}><Icon name="spline" size={16} /></button
+							>
+						{/if}
 						<button
 							class="tl-icon-btn tl-mute"
 							title={track.muted ? 'Unmute track' : 'Mute track'}
@@ -1019,7 +1101,7 @@
 						title={!isTrackKind(track.kind)
 							? NEWER_NOTE
 							: track.kind === 'prop'
-								? propTrackLabel(track) + ' · ' + (track.keys?.length ?? 0) + ' keys — the track menu ⋯ smooths them'
+								? propTrackLabel(track) + ' · ' + (track.keys?.length ?? 0) + ' keys — the curve button edits them'
 								: 'Double-click to add ' + (track.kind === 'event' ? 'an event' : 'a ' + TRACK_LABELS[track.kind].toLowerCase() + ' item')}
 						ondblclick={(e) => {
 							if (isTrackKind(track.kind) && track.kind !== 'prop') laneDblClick(e, track);
@@ -1087,6 +1169,22 @@
 						<span class="tl-head-mark" style="left: {xOf(playhead)}px"></span>
 						{#if guide !== null}<span class="tl-guide" style="left: {xOf(guide)}px"></span>{/if}
 					</div>
+					{#if track.kind === 'prop' && curveOpen[track.id] && curveMod}
+						{#await curveMod then m}
+							<m.default
+								{track}
+								seqId={seqId!}
+								fps={seq.fps}
+								{viewStart}
+								{viewEnd}
+								width={lanesW}
+								{playhead}
+								{snapOn}
+								liveValue={() => liveValueOf(track)}
+								onedited={curveEdited}
+							/>
+						{/await}
+					{/if}
 				{/each}
 			</div>
 
@@ -1660,7 +1758,8 @@
 		flex: 1 1 auto;
 		grid-template-columns: var(--tl-head) minmax(0, 1fr);
 		grid-template-rows: 24px;
-		grid-auto-rows: var(--tl-row);
+		/* 102 M8: a curve row is taller; every other row's content is shorter than --tl-row, so they stay exact */
+		grid-auto-rows: minmax(var(--tl-row), auto);
 		align-content: start;
 		overflow-x: hidden;
 		overflow-y: auto;

@@ -466,6 +466,10 @@ export const DEBUG_HOOKS = [
 	// 68 V7: who is filming (presence) + the prop-playback ledger a presence pose sits in
 	['filmPresence', () => import('./film/filmPresence')],
 	['propPlayback', () => import('./propPlayback')],
+	// 102 M8: the curve model + the property registry (timeline-curves samples the expected values)
+	['curveCore', () => import('./curveCore')],
+	['curveEdit', () => import('./curveEdit')],
+	['propTracks', () => import('./propTracks')],
 	['idb', () => import('./idb')],
 	['hudKinds', () => import('./hudKinds')],
 	['hudImages', () => import('./hudImages')],

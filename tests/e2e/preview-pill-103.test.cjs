@@ -140,9 +140,16 @@ h.run(async () => {
 	h.check(menuTop, '2. the menu draws on top (popover tier)');
 
 	// ---------- 3. the menu ----------
-	const groups = await T(P, () => [...document.querySelectorAll('#preview-menu .pm-g')].map((g) => g.textContent.trim()));
-	const wantGroups = (offered?.offered ? ['Cinematic view'] : []).concat(['Draw as', 'Quality', 'Judge for']);
-	h.check(JSON.stringify(groups) === JSON.stringify(wantGroups), `3. groups in order: ${groups.join(' · ')}`);
+	// the offer (or the "off for this session" state) can land after section 1 (an async GPU check): read the
+	// groups and the state in ONE tick, and want the Cinematic group exactly when the menu's own rule says so
+	const g3 = await T(P, () => {
+		let st;
+		window.__tp?.test.v1?.cinematicState?.cinematicState?.subscribe((x) => (st = x))();
+		return { groups: [...document.querySelectorAll('#preview-menu .pm-g')].map((g) => g.textContent.trim()), cine: !!st?.offered || (!!st?.disabled && st?.mode === 'off'), st: { offered: !!st?.offered, disabled: st?.disabled ?? null, mode: st?.mode } };
+	});
+	const groups = g3.groups;
+	const wantGroups = (g3.cine ? ['Cinematic view'] : []).concat(['Draw as', 'Quality', 'Judge for']);
+	h.check(JSON.stringify(groups) === JSON.stringify(wantGroups), `3. groups in order: ${groups.join(' · ')} (${JSON.stringify(g3.st)})`);
 	const tail = await T(P, () => ({ stats: !!document.getElementById('preview-stats'), look: !!document.getElementById('preview-scene-look'), foot: document.getElementById('preview-foot')?.textContent ?? '' }));
 	h.check(tail.stats && tail.look && /never saved, never shared/.test(tail.foot) && /Configure scene/.test(tail.foot), '3. Statistics…, Scene look settings… and the footer drawing the line with Configure scene');
 	await P.locator('#preview-draw-normals').click();
@@ -471,10 +478,20 @@ h.run(async () => {
 	h.check(offer.length >= 1, '10. Customize toolbar offers the optional Preview item');
 	await R.getByRole('menuitem', { name: 'Preview', exact: true }).first().click();
 	await R.waitForTimeout(500);
-	// the Customize menu keeps open on its switches (keepOpen) and may need more than one Esc
-	for (let i = 0; i < 4 && (await R.evaluate(() => !!document.querySelector('[role="menu"]'))); i++) {
-		await R.keyboard.press('Escape');
-		await R.waitForTimeout(300);
+	// the Customize menu stays open on its switches (keepOpen); on a phone it closes by a tap outside it (its backdrop)
+	// (ContextMenu's backdrop closes only on its own pointerdown + click: touch it where IT is the top element)
+	for (let i = 0; i < 3 && (await R.evaluate(() => !!document.querySelector('[role="menu"]'))); i++) {
+		const out = await R.evaluate(() => {
+			for (let y = Math.round(innerHeight / 2); y > 20; y -= 40)
+				for (const x of [12, innerWidth - 12, Math.round(innerWidth / 2)]) {
+					const el = document.elementFromPoint(x, y);
+					if (el?.getAttribute('role') === 'presentation' && el.classList.contains('inset-0')) return { x, y };
+				}
+			return null;
+		});
+		if (out) await R.touchscreen.tap(out.x, out.y);
+		else await R.keyboard.press('Escape');
+		await R.waitForTimeout(500);
 	}
 	h.check(!(await R.evaluate(() => !!document.querySelector('[role="menu"]'))), '10. premise: the Customize menu closed');
 	const onBar = await R.evaluate(() => !!JSON.parse(localStorage.getItem('controlsLayout') ?? '{}')?.order?.includes('preview'));

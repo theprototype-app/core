@@ -48,7 +48,9 @@
 		right: 0;
 		bottom: var(--ps-bar-h, 0px);
 		z-index: var(--z-sheet);
-		max-height: min(70dvh, 560px);
+		/* the shell's half detent, like More: a taller drawer put its header (and the close X) under the toast
+		   band at the top, where a toast took the tap on the real folded phone (HONOR, 22 Nov). The body scrolls. */
+		max-height: min(var(--ps-sheet-max, 70dvh), 55dvh, 560px);
 		display: flex;
 		flex-direction: column;
 		border-radius: var(--radius-card) var(--radius-card) 0 0;

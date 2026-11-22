@@ -12,7 +12,6 @@ import { playerCam, objectsGroup } from '../stores/sceneStore';
 import { resolvePlaySettings } from './playSettings';
 import { globalScene } from '../stores/sceneStore';
 import { peers, userdata, peerPlayModes } from '../stores/appStore';
-import { peerJoinedAt } from './connectionState';
 import { spawnCandidates, arrivingSlot, pickSpawn } from './spawnSlots';
 // 60 Q1: the Play here rule (pure, three only) lives in its own leaf so the unit layer can run it
 export { playHereSpawnFrom, headingOf } from './playHereCore';
@@ -91,9 +90,6 @@ export function spawnDesktopPlayer(spawn = desktopSpawn()) {
 // ---------------------------------------------------------------------------------------------------------------
 // fix-late-joiners row 3 — THIS PLAYER'S OWN SPAWN (the rule is spawnSlots.js; this feeds it the facts).
 
-/** an arriving peer's link counts as new for this long (ms) — see spawnSlots' header */
-export const ARRIVE_MS = 15000;
-
 /** objects marked as spawn points (`userData.spawnPoint`), their world feet and facing, by uuid */
 export function spawnPointMarks() {
 	/** @type {any} */
@@ -113,12 +109,10 @@ export function spawnPointMarks() {
 	return out;
 }
 
-/** is that peer arriving now (not in play; its avatar unseen or its link moments old)? @param {string} id */
+/** could that peer be arriving now? Anyone not in play yet: a peer pressing Play this second has told nobody,
+ * however long its link has been open (see spawnSlots' header) @param {string} id */
 function arrivingPeer(id) {
-	if (/** @type {any} */ (get(peerPlayModes))?.[id] === 'playing') return false;
-	if (unseenPlayers([id]).length) return true;
-	const at = /** @type {any} */ (get(peerJoinedAt))?.[id];
-	return typeof at === 'number' && Date.now() - at < ARRIVE_MS;
+	return /** @type {any} */ (get(peerPlayModes))?.[id] !== 'playing';
 }
 
 const probeRay = new THREE.Raycaster();

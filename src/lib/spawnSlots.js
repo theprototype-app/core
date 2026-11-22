@@ -7,10 +7,9 @@
 // facing kept. 40 spots with one spawn point: room for 16 players and the editors in the roster beside them.
 //
 // THE SLOT: who is ARRIVING is the same set on every arriving peer: me, plus every roster peer not yet in play
-// whose avatar I cannot see or whose link opened moments ago (a peer opening the same link has told nobody it
-// is playing, and from a fresh page every link is moments old). A host sitting in the editor counts too, so a
-// lone joiner beside an editing host may take the first ring spot instead of the spawn: the price of never
-// needing a message to agree. Ranked by peer id in that set, each
+// (a peer opening the same link, or pressing Play this same second, has told nobody it is playing). A host
+// sitting in the editor counts too, so a lone joiner beside an editing host may take the first ring spot (1.4 m
+// behind the spawn) instead of the spawn itself: the price of never needing a message to agree. Ranked by peer id in that set, each
 // arriving player takes its own residue class of the candidates (rank r of n: r, r + n, r + 2n ...), so two
 // classes never share a spot even before either has seen the other's avatar. A lone player is {0, 1}: the
 // spawn itself. A player joining a game already under way ranks alone too, finds the spawn taken by a visible
@@ -70,9 +69,7 @@ export function spawnCandidates(primary, points = []) {
 /**
  * This player's place among the players arriving now (see the header).
  * @param {string} me @param {string[]} roster every peer id in the session (may include me)
- * @param {(id: string) => boolean} arriving is that peer arriving too? (playSpawn: not in play, and its avatar
- *   unseen or its link opened within ARRIVE_MS — from a fresh joiner's view every link is new, so two joiners
- *   opening a link together both count the same peers)
+ * @param {(id: string) => boolean} arriving could that peer be arriving too? (playSpawn: anyone not in play)
  * @returns {{rank: number, of: number}}
  */
 export function arrivingSlot(me, roster, arriving) {

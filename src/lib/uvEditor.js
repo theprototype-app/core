@@ -57,12 +57,14 @@ export const uvBrushColor = writable('#ff3b30');
 /** UV3 brush @type {import('svelte/store').Writable<number>} */
 export const uvBrushSize = writable(24);
 /** 24-F1: what pen PRESSURE does to a stroke — 'size' (width, default) · 'opacity'
- * (alpha) · 'off'. LOCAL pref; the sender's mode rides the stroke as an optional
- * `pmode` (absent = size) so a receiver draws the same picture.
- * @type {import('svelte/store').Writable<'size'|'opacity'|'off'>} */
+ * (alpha) · 'both' (103 H1: Size + opacity) · 'off'. LOCAL pref; the sender's mode rides
+ * the stroke as an optional `pmode` / `pm` (absent = size) so a receiver draws the same
+ * picture. A pen stroke in 'opacity' or 'both' paints through meshPaint's stroke layer
+ * (one layer per stroke, per-point alpha by max), never this module's segment painter.
+ * @type {import('svelte/store').Writable<'size'|'opacity'|'both'|'off'>} */
 export const uvPenPressure = writable(
 	/** @type {any} */ (
-		typeof localStorage !== 'undefined' && ['size', 'opacity', 'off'].includes(safeStorage.getItem('uvPenPressure') || '')
+		typeof localStorage !== 'undefined' && ['size', 'opacity', 'both', 'off'].includes(safeStorage.getItem('uvPenPressure') || '')
 			? safeStorage.getItem('uvPenPressure')
 			: 'size'
 	)
@@ -972,7 +974,7 @@ const STROKE_STALE_MS = 5000;
 const paintCanvases = new Map();
 /** @type {Map<string, {ts: number}>} */
 const liveUvStrokes = new Map();
-/** @type {{id: string, uuid: string, slot: number, before: string|null, sent: number, points: number[][], pmode: 'size'|'opacity'|'off'} | null} */
+/** @type {{id: string, uuid: string, slot: number, before: string|null, sent: number, points: number[][], pmode: 'size'|'opacity'|'both'|'off'} | null} */
 let paintStroke = null;
 let strokeSeq = 0;
 
@@ -1143,7 +1145,7 @@ function canvasY(entry, v) {
  * before and an older peer indexing [0]/[1] ignores it. The segment takes its
  * factor from its END point: width for `pmode` 'size' (default), alpha for 'opacity'.
  * @param {any} entry @param {number[]} from @param {number[]} to @param {string} color
- * @param {number} size @param {'size'|'opacity'|'off'} [pmode]
+ * @param {number} size @param {'size'|'opacity'|'both'|'off'} [pmode]
  */
 function strokeSegment(entry, from, to, color, size, pmode = 'size') {
 	const ctx = entry.canvas.getContext('2d');

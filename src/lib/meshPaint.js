@@ -74,7 +74,10 @@ import {
 	mirrorX,
 	onMirrorPlane,
 	srgbToLinear,
-	hashBytes
+	hashBytes,
+	accumulate,
+	pressureEffect,
+	pressureModeOf
 } from './meshPaintCore.js';
 import { quantizePoint } from './meshPaintWire.js';
 
@@ -274,15 +277,15 @@ function tileAt(layer, tx, ty) {
 	return t;
 }
 
-/** Add `a` of the stroke at pixel (x, y), once per dab. @param {any} layer @param {number} x @param {number} y @param {number} a */
-function touch(layer, x, y, a) {
+/** Add `a` of the stroke at pixel (x, y), once per dab, toward the dab's ceiling `q` (103 H1: `accumulate`).
+ * @param {any} layer @param {number} x @param {number} y @param {number} a @param {number} [q] */
+function touch(layer, x, y, a, q = 1) {
 	if (!(a > 0) || x < 0 || y < 0 || x >= layer.W || y >= layer.H) return;
 	const t = tileAt(layer, (x / TILE) | 0, (y / TILE) | 0);
 	const i = (y - t.y) * t.w + (x - t.x);
 	if (t.mark[i] === layer.dab) return;
 	t.mark[i] = layer.dab;
-	const aa = a > 1 ? 1 : a;
-	t.L[i] = t.L[i] + aa * (1 - t.L[i]);
+	t.L[i] = accumulate(t.L[i], a, q);
 	layer.dirty.add(t.key);
 }
 
@@ -331,8 +334,9 @@ function sampleMask(mask, sx, sy) {
 	return a * (1 - ty) + b * ty;
 }
 
-/** A dab in texture px (the UV canvas). @param {any} s the stroke @param {number} cx @param {number} cy @param {number} r @param {number} a */
-function dabUv(s, cx, cy, r, a) {
+/** A dab in texture px (the UV canvas). @param {any} s the stroke @param {number} cx @param {number} cy @param {number} r @param {number} a
+ * @param {number} [q] the dab's opacity ceiling */
+function dabUv(s, cx, cy, r, a, q = 1) {
 	const layer = s.layer;
 	const x0 = Math.max(0, Math.floor(cx - r));
 	const x1 = Math.min(layer.W - 1, Math.ceil(cx + r));
@@ -345,16 +349,16 @@ function dabUv(s, cx, cy, r, a) {
 			const d = Math.sqrt(dx * dx + dy * dy);
 			if (d > r) continue;
 			const cov = s.mask ? sampleMask(s.mask, dx / r, dy / r) : falloff(d / r, s.brush.hardness);
-			touch(layer, x, y, a * cov);
+			touch(layer, x, y, a * cov, q);
 		}
 }
 
 /**
  * A dab on the model: a sphere (centre `c`, radius `R`, object space) painted into the map through every triangle
  * it touches. Pass 1 paints pixels a touched triangle OWNS; pass 2 pads each into the uncovered gutter.
- * @param {any} s @param {number[]} c @param {number} R @param {number} a
+ * @param {any} s @param {number[]} c @param {number} R @param {number} a @param {number} [q] the dab's opacity ceiling
  */
-function dabModel(s, c, R, a) {
+function dabModel(s, c, R, a, q = 1) {
 	const { layer, model } = s;
 	const W = layer.W;
 	const H = layer.H;
@@ -412,7 +416,7 @@ function dabModel(s, c, R, a) {
 						const st = s.stampFrame;
 						k = sampleMask(s.mask, (wx * st.t[0] + wy * st.t[1] + wz * st.t[2]) / R, (wx * st.b[0] + wy * st.b[1] + wz * st.b[2]) / R);
 					} else k = falloff(Math.sqrt(d2) / R, hard);
-					touch(layer, x, y, a * k);
+					touch(layer, x, y, a * k, q);
 				}
 		}
 }
@@ -433,12 +437,13 @@ function footprint(h, c, R, W, H) {
 	return [Math.max(0, Math.floor(cx - ex - 1)), Math.min(W - 1, Math.ceil(cx + ex + 1)), Math.max(0, Math.floor(cy - ey - 1)), Math.min(H - 1, Math.ceil(cy + ey + 1))];
 }
 
-/** A dab on vertex colours. @param {any} s @param {number[]} c @param {number} R @param {number} a */
-function dabVertex(s, c, R, a, mirrored = false) {
+/** A dab on vertex colours. @param {any} s @param {number[]} c @param {number} R @param {number} a
+ * @param {boolean} [mirrored] @param {number} [q] the dab's opacity ceiling */
+function dabVertex(s, c, R, a, mirrored = false, q = 1) {
 	const v = s.vertex;
 	// the stroke's normal faces the nearest-vertex fallback (a low-poly mesh); the mirrored half faces the mirror way
 	const n = s.n ? (mirrored ? [-s.n[0], s.n[1], s.n[2]] : s.n) : null;
-	const touched = vertexDab(v.positions, c, R, s.brush.hardness, a, v.acc, { normals: v.normals, n });
+	const touched = vertexDab(v.positions, c, R, s.brush.hardness, a, v.acc, { normals: v.normals, n }, q);
 	if (!touched.length) return;
 	blendVertexColors(v.base, v.target, v.acc, s.brush.opacity, v.out, touched);
 	v.dirty = true;
@@ -459,23 +464,26 @@ function strokePoint(s, p) {
 	s.lastMetric = metric;
 	for (const d of run.dabs) {
 		const w = d[dim];
-		const factor = s.pm === 'off' ? 1 : paintPressureFactor(Number.isFinite(w) ? w : 1);
-		const r = s.pm === 'opacity' || s.pm === 'off' ? s.r : s.r * factor;
-		const a = s.brush.flow * (s.pm === 'opacity' ? factor : 1);
+		// 103 H1: pressure scales the radius (size, both) and/or sets the dab's opacity CEILING (opacity, both).
+		// The ceiling used to be multiplied into the flow, so overlapping dabs summed to opaque at any pressure.
+		const fx = pressureEffect(s.pm, paintPressureFactor(Number.isFinite(w) ? w : 1));
+		const r = s.r * fx.size;
+		const a = s.brush.flow;
+		const q = fx.ceil;
 		// one mark per dab: a pixel takes a dab once, and the mirrored half is the SAME dab, so where the two halves
 		// meet on the mirror plane they union rather than stack
 		if (s.layer) s.layer.dab++;
-		if (s.sp === 'uv') dabUv(s, d[0], d[1], r, a);
+		if (s.sp === 'uv') dabUv(s, d[0], d[1], r, a, q);
 		else {
 			const c = [d[0], d[1], d[2]];
 			const mirrored = s.brush.mirror && !onMirrorPlane(c, r) ? mirrorX(c) : null;
 			if (s.sp === 'vtx') {
 				// vertex dabs stack per call, so the mirrored half (disjoint off the plane) is its own call
-				dabVertex(s, c, r, a);
-				if (mirrored) dabVertex(s, mirrored, r, a, true);
+				dabVertex(s, c, r, a, false, q);
+				if (mirrored) dabVertex(s, mirrored, r, a, true, q);
 			} else {
-				dabModel(s, c, r, a);
-				if (mirrored) dabModel(s, mirrored, r, a);
+				dabModel(s, c, r, a, q);
+				if (mirrored) dabModel(s, mirrored, r, a, q);
 			}
 		}
 		s.dabs++;
@@ -874,7 +882,7 @@ export async function beginStroke(opts) {
 		c: paintStyle(ch, get(uvBrushColor), get(paintValue), brush.erase),
 		r: Math.round(r * 1e5) / 1e5 || 1e-5,
 		b: brushWire(brush),
-		pm: get(uvPenPressure),
+		pm: pressureModeOf(get(uvPenPressure)),
 		n: opts.normal ? opts.normal.map((x) => Math.round(x * 1e4) / 1e4) : null
 	};
 	// the image before the stroke — what undo goes back to (an imported colour map has no data URL, so it is
@@ -966,7 +974,8 @@ function flush(s) {
 		c: s.c,
 		r: s.r,
 		...(b ? { b } : {}),
-		...(s.pm === 'opacity' || s.pm === 'off' ? { pm: s.pm } : {}),
+		// absent = size; 103's 'both' reads as size on a 102 peer (width varies, full opacity) until the commit lands
+		...(s.pm !== 'size' ? { pm: s.pm } : {}),
 		...(s.n ? { n: s.n } : {}),
 		seg
 	});
@@ -1110,7 +1119,7 @@ const remote = new Map();
 export async function applyMeshPaint(data) {
 	let entry = remote.get(data.id);
 	if (!entry) {
-		const spec = { id: data.id, uuid: data.uuid, slot: data.slot ?? 0, ch: data.ch ?? 'color', sp: data.sp, c: data.c, r: data.r, b: brushWire(brushFromWire(data.b)), pm: data.pm ?? 'size', n: data.n ?? null };
+		const spec = { id: data.id, uuid: data.uuid, slot: data.slot ?? 0, ch: data.ch ?? 'color', sp: data.sp, c: data.c, r: data.r, b: brushWire(brushFromWire(data.b)), pm: pressureModeOf(data.pm), n: data.n ?? null };
 		entry = { ready: openStroke(spec, false), ts: Date.now() };
 		remote.set(data.id, entry);
 	}

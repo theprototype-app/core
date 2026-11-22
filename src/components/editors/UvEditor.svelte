@@ -399,6 +399,7 @@
 			cancelUvDrag();
 			cancelPaintStroke();
 			paintMod?.cancelStroke();
+			meshHeld = null;
 			selCluster = [];
 			hoverIndex = -1;
 			pivotPlaced = null; // an origin belongs to the map you placed it on
@@ -919,13 +920,31 @@
 		// The stroke opens ASYNChronously (the canvas has to carry the existing
 		// texture before the first dab), so claim the gesture NOW and let the
 		// pending moves queue behind the seed.
-		if ($uvTool === 'paint' && usesNewBrush && paintMod) {
-			// 102 M6: a new channel or brush paints through meshPaint (the same canvas for colour)
+		if ($uvTool === 'paint' && ((usesNewBrush && paintMod) || layerStroke(e))) {
+			// 102 M6: a new channel or brush paints through meshPaint (the same canvas for colour). 103 H1: so does a
+			// pen stroke whose pressure drives OPACITY — the shipped painter strokes each segment at its own alpha,
+			// so the overlaps stacked to opaque; meshPaint draws one layer per stroke and composites it once.
 			gesture = 'paint';
 			paintEngine = 'mesh';
 			attachDragListeners();
-			void paintMod.beginStroke({ uuid: target.uuid, slot, sp: 'uv', at: [toU(x), toV(y)], w: pressureOf(e) }).then((/** @type {boolean} */ ok) => {
-				if (!ok && gesture === 'paint') gesture = 'idle';
+			const begin = { uuid: target.uuid, slot, sp: 'uv', at: [toU(x), toV(y)], w: pressureOf(e) };
+			const open = () =>
+				void paintMod.beginStroke(begin).then((/** @type {boolean} */ ok) => {
+					if (!ok && gesture === 'paint') gesture = 'idle';
+				});
+			if (paintMod) {
+				open();
+				return;
+			}
+			// the painter is still loading (Paint was armed a moment ago): hold the samples, then replay them
+			const held = { moves: /** @type {any[]} */ ([]), ended: false };
+			meshHeld = held;
+			void loadPaint().then(() => {
+				if (meshHeld !== held || !paintMod) return;
+				meshHeld = null;
+				open();
+				for (const m of held.moves) paintMod.strokeTo(m.at, m.w);
+				if (held.ended) paintMod.endStroke();
 			});
 			return;
 		}
@@ -1035,8 +1054,10 @@
 			}
 			for (const sample of samples.length ? samples : [e]) {
 				const { x, y } = localPoint(sample);
-				if (paintEngine === 'mesh') paintMod?.strokeTo([toU(x), toV(y)], pressureOf(sample));
-				else paintMove(toU(x), toV(y), $uvBrushColor, brushUv(), pressureOf(sample));
+				if (paintEngine === 'mesh') {
+					if (meshHeld) meshHeld.moves.push({ at: [toU(x), toV(y)], w: pressureOf(sample) });
+					else paintMod?.strokeTo([toU(x), toV(y)], pressureOf(sample));
+				} else paintMove(toU(x), toV(y), $uvBrushColor, brushUv(), pressureOf(sample));
 			}
 		}
 	}
@@ -1050,6 +1071,12 @@
 		return Number.isFinite(p) ? Math.max(0, Math.min(1, p)) : undefined;
 	}
 
+	/** 103 H1: does this press paint through meshPaint's stroke layer? A PEN, with its pressure on opacity.
+	 * @param {PointerEvent} e */
+	const layerStroke = (e) => e.pointerType === 'pen' && ($uvPenPressure === 'opacity' || $uvPenPressure === 'both');
+	/** a layer stroke that started before the painter chunk landed: its samples, replayed on load */
+	/** @type {{moves: any[], ended: boolean} | null} */ let meshHeld = null;
+
 	/** The brush is set in TEXTURE pixels, so it paints the same width whatever
 	 * the view zoom — a brush measured in screen px would get finer as you zoom
 	 * in, which is the opposite of what a painter expects. */
@@ -1057,8 +1084,10 @@
 
 	function onPointerUp(/** @type {PointerEvent} */ e) {
 		if (gesture === 'paint') {
-			if (paintEngine === 'mesh') paintMod?.endStroke();
-			else endPaintStroke($uvBrushColor, brushUv());
+			if (paintEngine === 'mesh') {
+				if (meshHeld) meshHeld.ended = true;
+				else paintMod?.endStroke();
+			} else endPaintStroke($uvBrushColor, brushUv());
 		} else if (gesture === 'box' && marquee && target) {
 			const hits = uvIndicesInRect(target, slot, {
 				u0: toU(marquee.x0), v0: toV(marquee.y0), u1: toU(marquee.x1), v1: toV(marquee.y1)
@@ -2010,23 +2039,24 @@
 								oninput={(e) => uvBrushSize.set(parseInt(e.currentTarget.value) || 1)}
 							/>
 						</label>
-						<!-- 24-F1: pen pressure — size (default) · opacity · off -->
+						<!-- 24-F1: pen pressure — size (default) · opacity · off; 103 H1 adds Size + opacity -->
 						<div class="mt-2 text-[11px] text-text-muted">Pen pressure</div>
-						<div id="uv-pen-pressure" class="mt-1 flex gap-1" role="radiogroup" aria-label="Pen pressure">
-							{#each [['size', 'Size'], ['opacity', 'Opacity'], ['off', 'Off']] as [value, label] (value)}
+						<div id="uv-pen-pressure" class="mt-1 grid grid-cols-2 gap-1" role="radiogroup" aria-label="Pen pressure">
+							{#each [['size', 'Size', 'Pressing harder paints wider'], ['opacity', 'Opacity', 'Pressing harder paints stronger; a light touch tints'], ['both', 'Size + opacity', 'Pressing harder paints wider and stronger'], ['off', 'Off', 'The pen paints like a mouse']] as [value, label, hint] (value)}
 								<button
 									type="button"
 									role="radio"
 									aria-checked={$uvPenPressure === value}
 									data-value={value}
-									class={'flex-1 rounded-sm px-2 py-0.5 text-[11px] ' + ($uvPenPressure === value ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 text-text-2 hover:bg-surface-active')}
+									title={hint}
+									class={'rounded-sm px-2 py-0.5 text-[11px] ' + ($uvPenPressure === value ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 text-text-2 hover:bg-surface-active')}
 									onclick={() => uvPenPressure.set(/** @type {any} */ (value))}>{label}</button>
 							{/each}
 						</div>
 						<p class="mt-1 text-[10px] leading-relaxed text-text-faint">
 							Size is in texture pixels, so it paints the same width at any zoom.
 							Each stroke is one undo step; peers watch it live. A pen's pressure varies the
-							width (or the opacity); a mouse stroke is unchanged.
+							width, the opacity, or both; a mouse stroke is unchanged.
 						</p>
 						<!-- 102 M6: what the brush paints, and how (a lazy chunk, with the painter) -->
 						{#if PaintPanel}<PaintPanel />{/if}

@@ -2,6 +2,10 @@
 import { describe, it, expect } from 'vitest';
 import {
 	CHANNELS,
+	accumulate,
+	pressureEffect,
+	pressureModeOf,
+	PRESSURE_MODES,
 	channelOf,
 	normalizeBrush,
 	isDefaultBrush,
@@ -244,5 +248,46 @@ describe('the live stroke wire', () => {
 	it('rounds points, drops full pressure', () => {
 		expect(quantizePoint([0.1234567, 2, 3, 1], 3)).toEqual([0.12346, 2, 3]);
 		expect(quantizePoint([0.5, 0.5, 0.33333], 2)).toEqual([0.5, 0.5, 0.333]);
+	});
+});
+
+// 103 H1: pressure opacity is a CEILING per dab (max, not sum). The 102 rule multiplied the pressure into the flow,
+// so twenty overlapping dabs at a light touch summed to nearly opaque — the owner's N6 report.
+describe('103 H1: the stroke layer pixel rule', () => {
+	it('q = 1 is the 102 source-over build-up exactly', () => {
+		for (const [L, a] of [[0, 1], [0, 0.3], [0.4, 0.5], [0.99, 0.2], [1, 1]]) expect(accumulate(L, a)).toBeCloseTo(L + a * (1 - L), 12);
+	});
+	it('overlapping dabs of one pressure stop at that pressure', () => {
+		let L = 0;
+		for (let i = 0; i < 40; i++) L = accumulate(L, 1, 0.3);
+		expect(L).toBeCloseTo(0.3, 12);
+		let soft = 0;
+		for (let i = 0; i < 400; i++) soft = accumulate(soft, 0.2, 0.3);
+		expect(soft).toBeLessThanOrEqual(0.3 + 1e-12);
+		expect(soft).toBeGreaterThan(0.29);
+	});
+	it('the counterfactual: the 102 rule (pressure inside the flow) stacks to opaque', () => {
+		let old = 0;
+		for (let i = 0; i < 20; i++) old = accumulate(old, 0.3); // a = flow * factor, q = 1
+		expect(old).toBeGreaterThan(0.99);
+	});
+	it('a lighter dab over a darker spot adds nothing; a darker one raises it', () => {
+		expect(accumulate(0.8, 1, 0.3)).toBe(0.8);
+		expect(accumulate(0.3, 1, 0.8)).toBeCloseTo(0.8, 12);
+	});
+	it('pressure modes: size, opacity, both, off; unknown reads as size', () => {
+		expect(pressureEffect('size', 0.4)).toEqual({ size: 0.4, ceil: 1 });
+		expect(pressureEffect('opacity', 0.4)).toEqual({ size: 1, ceil: 0.4 });
+		expect(pressureEffect('both', 0.4)).toEqual({ size: 0.4, ceil: 0.4 });
+		expect(pressureEffect('off', 0.4)).toEqual({ size: 1, ceil: 1 });
+		expect(pressureModeOf('curve')).toBe('size');
+		expect(pressureModeOf(undefined)).toBe('size');
+		expect(PRESSURE_MODES).toEqual(['size', 'opacity', 'both', 'off']);
+	});
+	it('vertex colours take the same ceiling', () => {
+		const positions = new Float32Array([0, 0, 0, 3, 0, 0]);
+		const acc = new Float32Array(2);
+		for (let i = 0; i < 30; i++) vertexDab(positions, [0, 0, 0], 1, 1, 1, acc, undefined, 0.25);
+		expect(acc[0]).toBeCloseTo(0.25, 12);
 	});
 });

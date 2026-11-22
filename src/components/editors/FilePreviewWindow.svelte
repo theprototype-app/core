@@ -420,6 +420,8 @@
 			 * nothing: Home/End, 0-9 for a percentage jump, M for mute and L for loop are
 			 * exactly what every player binds them to.
 			 */
+			// 102b-sound: E opens the trim editor; it needs the sound, not the loaded player
+			if (face === 'audio' && k === 'E' && editHash) return stop(), void (soundEditOpen = !soundEditOpen);
 			if (face === 'audio' && player?.hasAudio?.()) {
 				if (e.key === ',' || e.key === '.') {
 					stop();
@@ -436,8 +438,7 @@
 				if (k === 'M') return stop(), player.toggleMute();
 				if (k === 'L') return stop(), player.toggleLoop();
 				if (/^[0-9]$/.test(k)) return stop(), player.toFraction(Number(k) / 10);
-				// 102b-sound: E opens the trim editor, I / O set its start / end at the playhead
-				if (k === 'E' && editHash) return stop(), void (soundEditOpen = !soundEditOpen);
+				// 102b-sound: I / O set the trim editor's start / end at the playhead
 				if (k === 'I' && soundEditOpen && soundEdit?.ready?.()) return stop(), soundEdit.markStart();
 				if (k === 'O' && soundEditOpen && soundEdit?.ready?.()) return stop(), soundEdit.markEnd();
 			}

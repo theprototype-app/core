@@ -88,6 +88,11 @@ h.run(async () => {
 	const toggleTitle = await page.locator('#sound-edit-toggle').getAttribute('title');
 	check(/\(E\)/.test(toggleTitle || '') && /file stays/.test(toggleTitle || ''), `the audio window offers "Trim and fade", with its key and the promise (${toggleTitle})`);
 	// E opens it (the window owns its keys)
+	// the window takes focus once it has opened and the player has its file: press E after that
+	await page
+		.waitForFunction(() => /** @type {any} */ (document.querySelector('#image-preview-window audio'))?.duration > 0, null, { timeout: 15000 })
+		.catch(() => {});
+	await page.waitForTimeout(300);
 	await page.locator('#audio-toggle').focus();
 	await page.keyboard.press('e');
 	const opened = await page

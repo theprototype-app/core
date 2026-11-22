@@ -56,7 +56,7 @@ export const NODE_DOCS = {
 	gamesetting: "Declares one row in the game's Settings (a toggle, a range or a choice) and outputs this player's value - saved on this device for this game, never shared.",
 	pointgrab: "While 'enabled' reads off, players cannot pick objects up by pointing at them (the VR grip ray, the desktop carry); a hand touching an object still moves it.",
 	onclap: "Fires a pulse when a VR player brings both hands together and holds them - with where they met (point) and whether it was you (byMe); wire 'enabled' to a setting to switch it.",
-	gamevalue: "Reads one game value (score, round clock, best, level, stars, lives, a variable, a stored or a published value) and writes it as text - a number, a clock (1:04.2), 3 / 10, a percent or stars - for HUD Text; its value output feeds HUD Bar.",
+	gamevalue: "Reads one game value (score, round clock, best, level, stars, lives, a variable, a stored or a published value) and writes it as text - a number, a clock (1:04.2), 3 / 10, a percent or stars - for HUD Text; its value output feeds HUD Bar. For: me shows each player their own entry of a value kept per player (a map keyed by player, such as a behaviour's team or score).",
 	hudvisible: "Shows, hides or toggles ONE HUD element on a trigger, or follows a wired visible value (above 0 = shown) - per player, like a screen.",
 	camerashake: "Shakes the Play camera on a trigger (strength, seconds, frequency) - on this device only, never in VR; who: me = the player who made the pulse, everyone = every player. Reduced motion turns it down.",
 	screenflash: "Flashes a colour over the screen that fades out (a hit, a pickup) - on this device; who: me or everyone. Reduced motion keeps it faint.",

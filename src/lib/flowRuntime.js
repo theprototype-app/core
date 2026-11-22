@@ -6175,6 +6175,8 @@ const RT = {
 	localPlayerBody,
 	mulberry32,
 	myPeerVar,
+	/** 92-correct row 3: this peer's id, for a Game Value read `for: me` */
+	myPeerId: () => /** @type {any} */ (get(peers))?.peer?.id ?? '',
 	nodeById,
 	num,
 	opFolds,

@@ -393,6 +393,8 @@ export function createBehaviourRuntime(host) {
 			log: (...a) => console.log('[behaviour ' + inst.name + ']', ...a),
 			isAuthority: () => host.isAuthority(),
 			me: () => host.me(),
+			/** 92-correct row 3: who is in Play right now, sorted peer ids (this peer included) */
+			players: () => playersNow(),
 			/** scene objects whose NAME (or a tag) matches a glob: `[{uuid, name, pos, tags}]` @param {string} pattern */
 			findAll: (pattern) => host.findObjects?.(String(pattern ?? '')) ?? [],
 			/** the first of findAll, or null @param {string} pattern */
@@ -488,6 +490,7 @@ export function createBehaviourRuntime(host) {
 				continue;
 			}
 			if (ev.name === 'start' || ev.name === 'load') continue; // the runtime's own (tick / loaded())
+			if (ev.name === 'playerJoined' || ev.name === 'playerLeft') continue; // 92-correct: tick announces them
 			if (ev.input) continue; // 36 (U10): a wired input — `input()` dispatches it
 			const label = 'on.' + name;
 			if (ev.name === 'grabRequest') {
@@ -579,6 +582,37 @@ export function createBehaviourRuntime(host) {
 		return false;
 	};
 
+	/** 92-correct row 3: the players in Play (the host's view), sorted @returns {string[]} */
+	const playersNow = () => {
+		const list = host.players?.();
+		return Array.isArray(list) ? [...new Set(list.map(String).filter(Boolean))].sort() : [];
+	};
+	/**
+	 * 92-correct row 3: on the authority, `playerJoined` / `playerLeft` once per change. Who was
+	 * announced lives in the replicated document's `inputs` record (keys `player:<id>`, which no input
+	 * name can be: an input is an identifier), so a new authority carries on from it and the wire shape
+	 * is unchanged. Only for a behaviour that listens. @param {any} inst
+	 */
+	const announcePlayers = (inst) => {
+		const join = inst.def.on?.playerJoined;
+		const left = inst.def.on?.playerLeft;
+		if (typeof join !== 'function' && typeof left !== 'function') return;
+		const now = playersNow();
+		const inputs = inst.doc.inputs ?? {};
+		const had = Object.keys(inputs).filter((k) => k.startsWith('player:')).map((k) => k.slice(7));
+		const joined = now.filter((p) => !had.includes(p));
+		const gone = had.filter((p) => !now.includes(p));
+		if (!joined.length && !gone.length) return;
+		const next = { ...inputs };
+		for (const p of joined) next['player:' + p] = host.now();
+		for (const p of gone) delete next['player:' + p];
+		inst.doc.inputs = next;
+		let ran = false;
+		for (const p of gone) if (typeof left === 'function') (dispatch(inst, 'on.playerLeft', left, [{ by: p }]), (ran = true));
+		for (const p of joined) if (typeof join === 'function') (dispatch(inst, 'on.playerJoined', join, [{ by: p }]), (ran = true));
+		if (!ran) flush(inst);
+	};
+
 	/** per frame on every peer: the authority starts, fires due timers, flushes */
 	const tick = () => {
 		const now = host.now();
@@ -599,6 +633,7 @@ export function createBehaviourRuntime(host) {
 				if (typeof fn === 'function') dispatch(inst, 'on.start', fn, [{}]);
 				else flush(inst);
 			}
+			announcePlayers(inst);
 			// 54i F15: timers count PLAY time — held while the game is paused, then moved on by the
 			// pause's length (the round's own clock does the same), so a countdown never runs out
 			// during a pause

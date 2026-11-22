@@ -1079,6 +1079,10 @@ export function ingestBacklog() {
     return ingestQueue.length;
 }
 registerMetricSource('ingestBacklog', ingestBacklog);
+// fix-late-joiners row 1: the objects a peer ANNOUNCED (`loading`) that have not arrived yet. A late join's
+// objects come one wire message (one task) at a time, so the parked queue stays short (measured: <= 18 of
+// 500) while the batch is far from done — the ingest draw rule must see the announcement, not only the queue.
+registerMetricSource('loadingLeft', () => /** @type {string[]} */ (get(loading)).length);
 
 /**
  * @param {any} object @param {string[]|null} uuid @param {boolean} [override]

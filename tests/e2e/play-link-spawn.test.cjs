@@ -18,6 +18,9 @@ const WALL_X = 2.0;
 
 h.run(async () => {
 	const signal = await ensureSignalServer();
+	// a red run exits from inside h.run: the server it started must not outlive it (a stale one on the shared
+	// :9001 swallowed the next run's dials — measured, the second joiner's offer never reached the host)
+	process.on('exit', () => stopSignalServer(signal));
 	const browser = await h.launch();
 	const opts = { storage: LOCAL_PEER_STORAGE };
 	const A = await h.setupPage(browser, 'A', opts);
@@ -64,16 +67,20 @@ h.run(async () => {
 		await h.eventually(async () => (await linked(J, A.id)) && (await linked(A, J.id)), (v) => v === true, `${J.id} and the host are linked`, 45000);
 	};
 
+	// everybody joins first (in the editor), then each size presses Play together; the others stay in the
+	// editor, so they count as arriving too (the rule's worst case: the set is the whole roster)
+	const all = [];
+	for (let i = 0; i < Math.max(...SIZES); i++) {
+		const J = await h.setupPageQuiet(browser, 'J' + i, [A, ...all], opts);
+		await join(J);
+		all.push(J);
+	}
 	let joiners = [];
 	for (const n of SIZES) {
 		console.log(`\n=== ${n} joiners at once ===`);
-		while (joiners.length < n) {
-			const J = await h.setupPageQuiet(browser, 'J' + joiners.length, [A, ...joiners], opts);
-			await join(J);
-			joiners.push(J);
-		}
+		joiners = all.slice(0, n);
 		// everybody back in the editor, then Play in the same instant
-		for (const J of joiners) if ((await locked(J)) === true) await J.page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.playMode.exitPlay());
+		for (const J of all) if ((await locked(J)) === true) await J.page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.playMode.exitPlay());
 		await A.page.waitForTimeout(2500);
 		await Promise.all(joiners.map((J) => play(J)));
 		for (const J of joiners) await h.eventually(() => locked(J), (v) => v === true, `${J.id} is in play`, 20000);

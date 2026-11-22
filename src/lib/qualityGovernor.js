@@ -234,8 +234,11 @@ export function decideNow(t = now()) {
 
 	// THE INGEST RULE (26-E): while a received batch drains through slow frames, draw at
 	// most four frames a second so the queue gets the main thread back
-	const draining = sceneBatchOpen();
-	const backlog = Number(ctx.metrics?.ingestBacklog) || 0;
+	// fix-late-joiners: an announced batch still arriving is a drain too (its objects come a message at a time,
+	// so the parked queue alone stays under the threshold for a whole 500-object join)
+	const left = Number(ctx.metrics?.loadingLeft) || 0;
+	const draining = sceneBatchOpen() || left > 0;
+	const backlog = Math.max(Number(ctx.metrics?.ingestBacklog) || 0, left);
 	const gap = enabled ? drawGapFor({ engaged: drawGapEngaged, engagedGap: drawGapMsEngaged, draining, backlog, p95: d.p95, profile: ctx.profile }) : 0;
 	drawGapEngaged = gap > 0;
 	drawGapMsEngaged = gap;

@@ -27,3 +27,13 @@ export { plainAttribute } from '../meshKernel/geometry.js';
 export { fromSoup, toSoup, opMeshFromGeometry } from './soup.js';
 // 99-ops-b family 4
 export { bridgeRegions, fillHole, solidifyRegion, boundaryLoopOf, edgesOfKeys, keyOfPos } from './bridgeFill.js';
+// 99-ops-b family 5
+export {
+	verticesOfKeys,
+	trianglesTouching,
+	trianglesOnSides,
+	deleteTriangles,
+	mergeByDistance,
+	dissolveEdges,
+	dissolveVertices
+} from './dissolve.js';

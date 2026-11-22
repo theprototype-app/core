@@ -37,13 +37,14 @@
 	} from '$lib/ai/meshJobs';
 	import { agoText } from '$lib/peerFacts.js';
 	import { explorerItems } from '$lib/explorer';
-	import { pickFromExplorer } from '$lib/explorerPick.js';
 	import { prepareImage, viewportPicture, explorerPicture } from '$lib/chat/attachments.js';
 	import { MESH_IMAGE } from '$lib/chat/attachCore.js';
 	import { rolesInfo } from '$lib/cloudHooks';
 	import { openToolRow } from '$lib/tools/toolLinks.js';
 	import { tipShown, dismissTip, TIP_MESH_PICTURE } from '$lib/tips.js';
 	import { pictureConsentFor } from '$lib/ai/meshConsent.js';
+	// 105 T1: the picker and its leaf are lazy (boot rule) — loaded on the first press
+	const pickFromExplorer = (opts: any) => import('$lib/explorerPick.js').then((m) => m.pickFromExplorer(opts));
 
 	const KEY = 'meshGen';
 	/** 73 AI6: the first-use hint, until a picture is picked */

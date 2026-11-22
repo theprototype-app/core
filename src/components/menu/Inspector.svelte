@@ -68,7 +68,6 @@
 	import { applyExplorerImage } from '$lib/explorerDrop';
 	import MaterialMapSlots from './MaterialMapSlots.svelte';
 	import { explorerDropTarget } from '$lib/explorerDropTarget.js';
-	import { pickFromExplorer } from '$lib/explorerPick.js';
 	import { explorerItems, explorerFolders, inspectedFile, itemBlob, renameItem, deleteItem, updateItemBytes } from '$lib/explorer';
 	import { decodeMeta } from '$lib/audioEngine';
 	import { openTextEditor, openImagePreview } from '$lib/fileWindows';
@@ -294,6 +293,9 @@
 		SCENE_GRAPH_KEY,
 		shaderDrivenCount
 	} from '$lib/shaderGraph';
+	// 105 T1: the picker and its leaf are lazy (boot rule) — loaded on the first press
+	/** @param {any} opts */
+	const pickFromExplorer = (opts) => import('$lib/explorerPick.js').then((m) => m.pickFromExplorer(opts));
 
 	/**
 	 * P6 — the material layer's COST, in the same voice as the post stack's

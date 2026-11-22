@@ -11,10 +11,12 @@
 	import { removeObjectsMapSlot, setNormalStrength, setObjectsMapSet, setObjectsMapSlot, setTexTransform } from '$lib/materialMaps';
 	import { applyExplorerImageToMapSlot } from '$lib/explorerDrop';
 	import { explorerDropTarget } from '$lib/explorerDropTarget.js';
-	import { pickFromExplorer } from '$lib/explorerPick.js';
 	import { setMaterialParam } from '$lib/materialsHandler';
 	import { beginHistoryBatch, endHistoryBatch } from '$lib/history';
 	import { withWireBatch, withWireBatchAsync } from '$lib/wireBatch';
+	// 105 T1: the picker and its leaf are lazy (boot rule) — loaded on the first press
+	/** @param {any} opts */
+	const pickFromExplorer = (opts) => import('$lib/explorerPick.js').then((m) => m.pickFromExplorer(opts));
 
 	const ACCEPT = 'image/png, image/jpeg, image/webp, image/heic, image/heif, .heic, .heif';
 	const DEG = 180 / Math.PI;

@@ -21,7 +21,6 @@
 	import { setObjectTexture, removeObjectTexture, addMaterialSlot } from '$lib/materialsHandler';
 	import { applyExplorerImage, holdsUnsavedPixels } from '$lib/explorerDrop';
 	import { explorerDropTarget } from '$lib/explorerDropTarget.js';
-	import { pickFromExplorer } from '$lib/explorerPick.js';
 	import { showConfirm } from '$lib/confirmDialog';
 	import { notePointer, mayDraw } from '$lib/penInput';
 	import { unwrapBackends } from '$lib/uvUnwrap';
@@ -55,6 +54,9 @@
 	import { setDockOccupant, dockHeight, visibleDockKey, dockShownKeys, dockPaneOf, dockMinimized, activateDock, dockModeArm, forgetDockTab } from '$lib/bottomDock';
 	import { bottomDockable } from '$lib/bottomDockDrop';
 	import { safeStorage } from '$lib/safeStorage';
+	// 105 T1: the picker and its leaf are lazy (boot rule) — loaded on the first press
+	/** @param {any} opts */
+	const pickFromExplorer = (opts) => import('$lib/explorerPick.js').then((m) => m.pickFromExplorer(opts));
 
 	/** the armed transform modes, in 1/2/3 order */
 	const MODES = /** @type {['move'|'rotate'|'scale', string, string][]} */ ([

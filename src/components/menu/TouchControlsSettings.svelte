@@ -26,7 +26,6 @@
 	import { settingsOpen, settingsSection, showToast } from '../../stores/appStore.js';
 	import { NAV_CONTEXT } from '$lib/settingsNav';
 	import { itemBlob } from '$lib/explorer';
-	import { pickFromExplorer } from '$lib/explorerPick.js';
 	import { touchLookSpeed, setTouchLookSpeed, TOUCH_LOOK_SPEED_RANGE } from '$lib/touchControls';
 	import {
 		BUILTIN_ACTIONS,
@@ -43,6 +42,9 @@
 	} from '$lib/touchActions';
 	import { touchSpec } from '$lib/touchSpec';
 	import { gameId } from '$lib/gameSettings';
+	// 105 T1: the picker and its leaf are lazy (boot rule) — loaded on the first press
+	/** @param {any} opts */
+	const pickFromExplorer = (opts) => import('$lib/explorerPick.js').then((m) => m.pickFromExplorer(opts));
 
 	/** while the settings search has a query, the section is open so its rows can match */
 	let { searching = false } = $props();

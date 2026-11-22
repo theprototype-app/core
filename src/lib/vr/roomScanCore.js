@@ -345,7 +345,7 @@ export function nameWalls(pieces, oldWalls, opts = {}) {
 		// the same turn as the headings: angle(x, z) grows by `turn`
 		return [at[0] * c - at[2] * s + shift[0], at[0] * s + at[2] * c + shift[1]];
 	};
-	/** @type {{pairs: [number, number][], turn: number, shift: number[], residual: number, furniture: number} | null} */
+	/** @type {WallFit | null} */
 	let best = null;
 	for (let a = 0; a < old.length; a++)
 		for (let b = 0; b < fresh.length; b++) {
@@ -405,12 +405,13 @@ export function nameWalls(pieces, oldWalls, opts = {}) {
 	return { pieces: out, missing, matched: found.size };
 }
 
+/** @typedef {{pairs: [number, number][], turn: number, shift: number[], residual: number, furniture: number}} WallFit */
 /** fit ranking: more walls placed → furniture closer (beyond a tie) → the smaller move → the closer fit
- * @param {{pairs: any[], turn: number, shift: number[], residual: number, furniture: number}} a @param {typeof a} b */
+ * @param {WallFit} a @param {WallFit} b */
 function better(a, b) {
 	if (a.pairs.length !== b.pairs.length) return a.pairs.length > b.pairs.length;
 	if (Math.abs(a.furniture - b.furniture) > FURNITURE_TIE) return a.furniture < b.furniture;
-	const move = (/** @type {typeof a} */ f) => Math.abs(f.turn) + Math.hypot(f.shift[0], f.shift[1]);
+	const move = (/** @type {WallFit} */ f) => Math.abs(f.turn) + Math.hypot(f.shift[0], f.shift[1]);
 	if (Math.abs(move(a) - move(b)) > 1e-6) return move(a) < move(b);
 	return a.residual < b.residual - 1e-9;
 }

@@ -12,6 +12,10 @@
 //      chair stays, nothing is duplicated; one undo takes the re-scan back
 //   5. a VR session (threlte asks for plane-detection too) scans the same room; one without plane-detection
 //      says how to get room data and creates nothing
+//   6. (104 wall names) a NEW session facing another way (the room turned 90°): every wall keeps its name and
+//      object on the same real wall — the person's colour on Wall 3 stays on the south wall although the
+//      session's own numbering would call it Wall 2 — the peer agrees; a wall gone from the room setup keeps
+//      its name, is not removed, and the toast says "Wall 2 not found in this scan"
 // What stays OWED on the real Quest (device lab): a real room's numbers against a tape measure (3 cm), Space
 // Setup really opening from initiateRoomCapture, the passthrough look of the 45 % boxes.
 // Run: APP_URL=https://theprototype.app:7180/ node tests/e2e/room-scan-iwer.test.cjs
@@ -114,11 +118,34 @@ const myRoom = (page) =>
 				name: c.name,
 				size: [p.width, p.height, p.depth].map((n) => (typeof n === 'number' ? Math.round(n * 1000) / 1000 : null)),
 				pos: w.toArray().map((n) => Math.round(n * 1000) / 1000),
-				opacity: c.material?.opacity ?? null
+				opacity: c.material?.opacity ?? null,
+				color: c.material?.color?.getHexString?.() ?? null
 			};
 		});
 		return { groups: groups.length, uuid: grp.uuid, kids };
 	});
+
+/** a room spec as a session turned `deg` about +Y sees it (positions and plane poses turned; polygons are local)
+ * @param {ReturnType<typeof room>} spec @param {number} deg */
+function turned(spec, deg) {
+	const a = (deg * Math.PI) / 180;
+	const c = Math.cos(a);
+	const s = Math.sin(a);
+	const r = [0, Math.sin(a / 2), 0, Math.cos(a / 2)];
+	/** r * q (x, y, z, w) @param {number[]} q */
+	const mul = (q) => [
+		r[3] * q[0] + r[0] * q[3] + r[1] * q[2] - r[2] * q[1],
+		r[3] * q[1] - r[0] * q[2] + r[1] * q[3] + r[2] * q[0],
+		r[3] * q[2] + r[0] * q[1] - r[1] * q[0] + r[2] * q[3],
+		r[3] * q[3] - r[0] * q[0] - r[1] * q[1] - r[2] * q[2]
+	];
+	// three's Ry: x' = x cos + z sin, z' = -x sin + z cos
+	const at = (/** @type {number[]} */ p) => [p[0] * c + p[2] * s, p[1], -p[0] * s + p[2] * c];
+	return {
+		planes: spec.planes.map((p) => ({ ...p, pos: at(p.pos), quat: mul(p.quat ?? [0, 0, 0, 1]) })),
+		meshes: spec.meshes.map((m) => ({ ...m, pos: at(m.pos) }))
+	};
+}
 
 const menuLabels = async (page) => {
 	await page.locator('#play-button').click({ button: 'right' });
@@ -260,6 +287,51 @@ h.run(async () => {
 	h.check(r5b.status === 'no-planes-feature', `a session without plane-detection is told how (${r5b.status})`);
 	h.check((await toasts(page)).some((t) => /no room data/.test(t)), 'the toast says so');
 	h.check((await myRoom(page)).kids.length === 10, 'and nothing changed');
+	await iwer.exit(page);
+
+	// ---- 6. a new session facing another way: names stay on their real walls (104 wall names) ----
+	const before6 = await myRoom(page);
+	const south = before6.kids.filter((k) => /^Wall /.test(k.name)).sort((x, y) => y.pos[2] - x.pos[2])[0];
+	h.check(south?.name === 'Wall 3', `the south wall is Wall 3 (${south?.name})`);
+	await page.evaluate((uuid) => window.__tp.test.v1.materialsHandler.setObjectColor(uuid, '#c0392b'), south.uuid);
+	await iwer.enter(page);
+	const spec6 = turned(room(), 90);
+	await page.evaluate((spec) => window.__room.set(spec), spec6);
+	await iwer.frames(page, 3);
+	const r6 = await page.evaluate(() => window.__tp.test.v1.roomScan.scanMyRoom());
+	h.check(r6.status === 'ok' && r6.created === 0 && r6.updated === 9 && r6.removed === 0 && (r6.missing ?? []).length === 0, `the turned re-scan updated the same nine (${JSON.stringify({ c: r6.created, u: r6.updated, r: r6.removed, m: r6.missing })})`);
+	const a6 = await myRoom(page);
+	const rot = (/** @type {number[]} */ p) => turned({ planes: [{ label: 'x', polygon: [], pos: p }], meshes: [] }, 90).planes[0].pos;
+	const kept = before6.kids
+		.filter((k) => /^Wall /.test(k.name))
+		.every((k) => {
+			const now = a6.kids.find((x) => x.uuid === k.uuid);
+			return now && now.name === k.name && near(now.pos, rot(k.pos), 0.002);
+		});
+	h.check(kept, `every wall kept its object and name and turned with the room (${a6.kids.filter((k) => /^Wall /.test(k.name)).map((k) => k.name + '@' + k.pos.join(',')).join(' ')})`);
+	const red = a6.kids.find((k) => k.uuid === south.uuid);
+	h.check(red?.name === 'Wall 3' && red.color === 'c0392b', `the person's colour stayed on Wall 3, the same real wall (${JSON.stringify(red)})`);
+	const sessionNames = r6.pieces.filter((p) => /^Wall /.test(p.name)).map((p) => p.name).sort();
+	h.check(JSON.stringify(sessionNames) === JSON.stringify(['Wall 1', 'Wall 2', 'Wall 3', 'Wall 4']), `still Wall 1-4, no new numbers (${sessionNames.join(',')})`);
+	await h.eventually(
+		() => myRoom(B.page),
+		(r) => before6.kids.filter((k) => /^Wall /.test(k.name)).every((k) => { const o = r.kids?.find((x) => x.uuid === k.uuid); return o && o.name === k.name && near(o.pos, rot(k.pos), 0.002); }),
+		'the peer has the same walls, names and turned poses',
+		15000
+	);
+	h.check((await myRoom(B.page)).kids.find((k) => k.uuid === south.uuid)?.color === 'c0392b', 'and the colour on the same wall');
+	// a wall gone from the room setup (the east wall, Wall 2): kept, flagged, not removed
+	const east = before6.kids.find((k) => k.name === 'Wall 2');
+	h.check(!!east && east.pos[0] > 1.9, `Wall 2 is the east wall (${JSON.stringify(east?.pos)})`);
+	const spec6b = turned({ planes: room().planes.filter((p) => !(p.label === 'wall' && p.pos[0] > 1.9)), meshes: room().meshes }, 90);
+	await page.evaluate((spec) => window.__room.set(spec), spec6b);
+	await iwer.frames(page, 3);
+	await page.evaluate(() => window.__tp.test.v1.toastStore.set([]));
+	const r6b = await page.evaluate(() => window.__tp.test.v1.roomScan.scanMyRoom());
+	h.check(r6b.status === 'ok' && JSON.stringify(r6b.missing) === '["Wall 2"]' && r6b.removed === 0 && r6b.updated === 8, `Wall 2 not found: reported, nothing removed (${JSON.stringify({ m: r6b.missing, r: r6b.removed, u: r6b.updated, c: r6b.created })})`);
+	h.check((await toasts(page)).some((t) => /Wall 2 not found in this scan\./.test(t)), `the toast says "Wall 2 not found in this scan" (${(await toasts(page)).join(' | ')})`);
+	const a6b = await myRoom(page);
+	h.check(a6b.kids.length === 10 && a6b.kids.some((k) => k.uuid === east.uuid && k.name === 'Wall 2'), 'Wall 2 is still there under its name');
 	await iwer.exit(page);
 
 	await browser.close();

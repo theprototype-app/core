@@ -55,7 +55,7 @@ const frame = (rows, deg = 0, shift = [0, 0, 0]) => {
 	};
 };
 /** @param {number} deg @param {number[]} shift */
-const space = (deg, shift) => new THREE.Matrix4().makeRotationY((deg * Math.PI) / 180).setPosition(...shift);
+const space = (deg, shift) => new THREE.Matrix4().makeRotationY((deg * Math.PI) / 180).setPosition(shift[0], shift[1], shift[2]);
 /** a point of a turned session back in the first one's frame @param {number[]} p @param {number} deg @param {number[]} shift */
 const back = (p, deg, shift) => new THREE.Vector3(...p).applyMatrix4(space(deg, shift).invert()).toArray();
 

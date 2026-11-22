@@ -30,7 +30,7 @@
 import { get } from 'svelte/store';
 import { peers } from '../stores/appStore';
 import { flowTriggers, allNodes } from '../stores/flowStore';
-import { instanceBaseId } from './copyGraphs.js';
+import { instanceBaseId } from './copyRegistry.js';
 import { markTriggerHistory } from './flowRuntime';
 
 // ---- outbound -------------------------------------------------------------------

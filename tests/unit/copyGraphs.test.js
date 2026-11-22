@@ -1,7 +1,8 @@
 // @ts-nocheck — test glue
 // 92-correct row 2: a spawned copy runs its template's event flow, with "this object" = the copy.
 import { describe, expect, test } from 'vitest';
-import { instanceGraphs, instanceKey, instanceBaseId, instanceOwnerOf, eventPart, registerCopy, unregisterCopy, extraCopyList, extraCopyFrom, onCopiesChanged } from '../../src/lib/copyGraphs.js';
+import { instanceGraphs, eventPart } from '../../src/lib/copyGraphs.js';
+import { instanceKey, instanceBaseId, instanceOwnerOf, registerCopy, unregisterCopy, extraCopyList, extraCopyFrom, onCopiesChanged } from '../../src/lib/copyRegistry.js';
 
 const T = 'aaaaaaaa-0000-4000-8000-000000000001';
 const C = 'cccccccc-0000-4000-8000-000000000002';

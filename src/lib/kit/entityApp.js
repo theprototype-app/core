@@ -40,7 +40,7 @@ import { kit } from './runtime.js';
 import { setEntityHost, entitiesOfKit } from './entityHub.js';
 import { renderPos } from './entityCore.js';
 import { kitNodeType } from './spec.js';
-import { registerCopy, unregisterCopy } from '../copyGraphs.js'; // 92-correct row 2: a leaf
+import { registerCopy, unregisterCopy } from '../copyRegistry.js'; // 92-correct row 2: a leaf
 
 /** the scene-root group every peer draws its entity copies in */
 export const KIT_ENTITY_GROUP = 'kit-entities';

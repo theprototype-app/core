@@ -4,12 +4,12 @@
 	"pages": {
 		"play": {
 			"html": "play.html",
-			"maxJsGzBytes": 2201600,
+			"maxJsGzBytes": 2206720,
 			"maxFirstFrameMs": 20000
 		},
 		"editor": {
 			"html": "index.html",
-			"maxJsGzBytes": 3450880,
+			"maxJsGzBytes": 3456000,
 			"maxFirstFrameMs": 32000
 		}
 	},
@@ -98,6 +98,13 @@
 				"102b-papercuts #595": "+3.6 / +5.4",
 				"build-to-build churn (two builds of ce7ec23b)": "+0.1 / +0.3"
 			}
+		},
+		{
+			"date": "2026-11-23",
+			"lane": "92-correct (rows 1-4: HUD Timer from Play, spawned copies run the template's event flow, per-player Game Value + behaviour player events, per-second movement)",
+			"play": "v1.74.0 2148.6 KB -> 2150.5 KB (+1.9) -> line 2155.0 KB (rounded up to the next 5 KB)",
+			"editor": "v1.74.0 3369.2 KB -> 3371.2 KB (+2.0) -> line 3375.0 KB (the same rule)",
+			"note": "measured on the Deck, v1.74.0 and the lane built in one worktree with one node_modules. Inside the ~3 KB boot-wiring rule (claude:9, 21 Nov). The copy instancing (copyGraphs.js, 0.9 KB) is a lazy chunk loaded with the first spawned copy; what stays on boot: modules +0.6 (behaviour player events, Game Value for: me, node docs), flowRuntime +0.5 (timer clock, copy registry, myPeerId), nodes +0.2, playInteract +0.1. The int recomputes the line from its union."
 		}
 	],
 	"throttle": {

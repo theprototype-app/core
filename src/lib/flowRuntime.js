@@ -108,7 +108,7 @@ let behavioursRef = null;
 import { registerGameSetting, gameSettingValue } from './gameSettings';
 import { setPointGrabEnabled } from './pointGrab';
 import { spawnedFromOf, transientObjects } from './transientObjects';
-import { instanceGraphs, instanceKey, extraCopyList, extraCopyFrom, onCopiesChanged } from './copyGraphs.js'; // 92-correct row 2: a leaf // 31: a copy answers to its template (a leaf)
+import { instanceKey, extraCopyList, extraCopyFrom, onCopiesChanged } from './copyRegistry.js'; // 92-correct row 2: a leaf (the instancing, copyGraphs.js, loads with the first copy) // 31: a copy answers to its template (a leaf)
 import { pathCaptureNode } from './pathCaptureState'; // fix-batch-2: a leaf
 import { animateInEditor, EDITOR_MOTION_TYPES } from './editorMotion'; // 78 F6: a leaf
 import { publishLiveStates, liveStatesWanted } from './nodeLiveState'; // 78 F7: a leaf
@@ -561,12 +561,30 @@ function spawnedCopies() {
 function instanceableGraphs() {
 	return new Set(nodes.filter((n) => n.__graph && n.__graph !== SCENE_GRAPH && !n.__instanceOf).map((n) => n.__graph));
 }
+/** 92-correct row 2: copyGraphs.js once a scene holds a copy whose template has a flow @type {any} */
+let copyGraphsRef = null;
+let copyGraphsLoading = false;
 /** 92-correct row 2: append each spawned copy's instance of its template's object graph (copyGraphs.js) */
 function addCopyInstances() {
 	const copies = spawnedCopies();
 	copyInstanceKey = instanceKey(copies, instanceableGraphs());
 	if (!copyInstanceKey) return;
-	const extra = instanceGraphs(copies, nodes, edges);
+	if (!copyGraphsRef) {
+		// lazy: a scene with no spawned copies never pays for the instancing; the first copy's frame
+		// waits one import, then the runtime rebuilds with it
+		if (!copyGraphsLoading) {
+			copyGraphsLoading = true;
+			import('./copyGraphs.js')
+				.then((m) => {
+					copyGraphsRef = m;
+					rebuildRuntimeGraph();
+				})
+				.catch((error) => console.warn('copy instances failed to load', error))
+				.finally(() => (copyGraphsLoading = false));
+		}
+		return;
+	}
+	const extra = copyGraphsRef.instanceGraphs(copies, nodes, edges);
 	if (!extra.nodes.length) return;
 	nodes = [...nodes, ...extra.nodes];
 	edges = [...edges, ...extra.edges];

@@ -53,6 +53,7 @@
   import { startDiagnostics } from '$lib/diagnostics';
   import { startWireErrors } from '$lib/wireErrors';
   import { startErrorReports } from '$lib/errorReports';
+  import { embedSceneId } from '$lib/playMode';
   import { startSceneMetrics } from './lib/sceneBudget';
   import { startPerfRecorder } from './lib/perf/recorder';
   import { startPerfBeacon } from './lib/perf/beacon';
@@ -111,6 +112,8 @@
     startDiagnostics();
     startWireErrors();
     startErrorReports();
+    // 102 M4: anonymous play statistics for the published scene (?s=<id>) — lazy, sent by the cloud plugin
+    if (embedSceneId) void import('$lib/play/playStats').then((m) => m.startPlayStats(embedSceneId));
     if (!webglOk) reportNoWebGL();
     startSceneMetrics();
     startPerfRecorder();

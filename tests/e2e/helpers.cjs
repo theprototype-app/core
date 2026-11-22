@@ -1386,4 +1386,26 @@ function t(page) {
 	};
 }
 
-module.exports = { t, URL, coverageKey, openDial, GPU_ARGS, N6_UA, PATIENT_CLICK_MS, APPROVE_LABEL, approveButton, watchPress, check, launch, setupPage, setupPageQuiet, connect, leavePlay, eventually, caughtUp, eventuallyAfter, projectPoint, freshReload, answerRestore, closePeer, finish, run, installModule, moduleZipPath, makeCollectibleChains, pageErrors, externalErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta, routeSkies, SKIES_DIR, openWsMode };
+/**
+ * 80a-fix4-ui O2: press a side-pane handle (PaneHandle) the way a person can. A CLOSED pane's handle is drawn and is
+ * clicked; an OPEN pane's handle is hidden, and its menu lives on the open pane's top band (right-click there): a
+ * left press picks "Hide ..." from that menu (what pressing the handle did), a right press leaves the menu open.
+ * @param {any} page @param {string} sel the handle (the first match) @param {{ button?: 'left'|'right' }=} opts
+ */
+async function paneHandleClick(page, sel, opts = {}) {
+	const button = opts.button || 'left';
+	const st = await page.locator(sel).first().evaluate((/** @type {HTMLElement} */ el) => {
+		const r = el.getBoundingClientRect();
+		const drawn = r.width > 0 && getComputedStyle(el).visibility !== 'hidden';
+		const key = el.dataset.phKey;
+		const pane = key ? document.querySelector(`[data-ph-pane="${key}"]`) : null;
+		const p = pane?.getBoundingClientRect();
+		return { drawn, band: p && p.width > 0 ? { x: p.x + p.width / 2, y: p.y + 10 } : null };
+	});
+	if (st.drawn || !st.band) return page.locator(sel).first().click({ button });
+	await page.mouse.click(st.band.x, st.band.y, { button: 'right' });
+	if (button === 'right') return;
+	await page.locator('[role=menu] [role=menuitem]', { hasText: /^\s*Hide\b/ }).first().click();
+}
+
+module.exports = { t, URL, paneHandleClick, coverageKey, openDial, GPU_ARGS, N6_UA, PATIENT_CLICK_MS, APPROVE_LABEL, approveButton, watchPress, check, launch, setupPage, setupPageQuiet, connect, leavePlay, eventually, caughtUp, eventuallyAfter, projectPoint, freshReload, answerRestore, closePeer, finish, run, installModule, moduleZipPath, makeCollectibleChains, pageErrors, externalErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta, routeSkies, SKIES_DIR, openWsMode };

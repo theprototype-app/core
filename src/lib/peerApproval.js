@@ -1,3 +1,4 @@
+import { rollBackRosterRows } from './rosterOrigin'; // 80a R1
 import { get } from 'svelte/store';
 import { peers, userdata, pendingApprovals, waitingForApproval, showToast, cloudIdentity } from '../stores/appStore';
 import {
@@ -246,7 +247,8 @@ function dial(peerId, cloudMeta) {
 	if (!users.some((/** @type {any} */ u) => u[0] === peerId)) {
 		users.push([peerId, '', '']);
 		userdata.set(/** @type {any} */ (users));
-		peer.send({ type: 'userdata', userdata: get(userdata) });
+		// 80a R1: roster changes are tied to the connection that made them
+		peer.send({ type: 'userdata', userdata: get(userdata).filter((/** @type {any} */ u) => u[0] !== peerId) });
 		peer.connectToPeer(peerId, true);
 		const waiting = /** @type {any[]} */ (get(waitingForApproval));
 		if (!waiting.some((/** @type {any} */ w) => w[0] === peerId)) waiting.push([peerId, 'pending']);
@@ -346,6 +348,8 @@ export function cancelOutboundRequest(peerId) {
 	if (peer && conn) delete peer.connections[peerId]; // BEFORE close: stale-guard no-ops the event
 	try { conn?.close?.(); } catch { /* already gone */ }
 	userdata.set(get(userdata).filter((/** @type {any} */ u) => u[0] !== peerId));
+	// 80a R1: roster changes are tied to the connection that made them
+	rollBackRosterRows(peerId, { self: peer?.peer?.id ?? null, linked: (id) => !!peer?.connections?.[id]?.open });
 	if (get(sessionHost) === peerId) sessionHost.set(null);
 	peer?.approvedBy?.delete(peerId);
 	if (peer) peers.update((v) => v);

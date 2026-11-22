@@ -840,7 +840,10 @@
 	function placeDropdown() {
 		if (!dropdownEl || !triggerEl) return;
 		const r = triggerEl.getBoundingClientRect();
-		dropdownEl.style.top = `${r.bottom + 2}px`;
+		// 80a-fix4-ui O5 (owner 2026-11-20): the panel's top edge IS the button's top edge (it used to be the button's
+		// bottom + 2 px pulled up by a -50 px margin, which only fit a 48 px circle), and the avatar it carries sits
+		// across its 1 px border (.pm-seat), so opening the menu moves the picture by 0 px
+		dropdownEl.style.top = `${r.top}px`;
 		// 45 N4: the RIGHT edge follows the circle too. It was pinned at the corner's 20 px, so with a pinned
 		// right sidebar (which moves the circle inward by its width) the menu opened over the sidebar, far from the
 		// button ("clicking profile button when right sidebar pinned opens menu in wrong place"). The edge is
@@ -1035,11 +1038,13 @@
      circle over the 3D viewport an opaque one (translucent, the light theme's dark silhouette
      vanished into the scene) -->
 {#snippet avatarImg(src: string | undefined, cls: string)}
+	<!-- 80a-fix4-ui O4 (owner 2026-11-20): the profile button wears the burger button's shape exactly: the same 44 px
+	     tile (--hud-fab), the same corner radius (rounded-xl) and the logo's inset mirrored on the right -->
 	{#if src}
-		<img alt="" {src} class="relative flex items-center justify-center rounded-full text-text-2 {cls}" />
+		<img alt="" {src} class="pm-avatar relative flex items-center justify-center overflow-hidden rounded-xl object-cover text-text-2 {cls}" />
 	{:else}
-		<div class="relative flex items-center justify-center rounded-full text-text-2 {cls}">
-			<svg class="h-full w-full rounded-full" fill="currentColor" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"
+		<div class="pm-avatar relative flex items-center justify-center overflow-hidden rounded-xl text-text-2 {cls}">
+			<svg class="h-full w-full" fill="currentColor" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"
 				><path fill-rule="evenodd" d="M8 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"></path></svg
 			>
 		</div>
@@ -1260,7 +1265,7 @@
 <div class="top-right-chrome" style="position: fixed; right: var(--sb-free-top-right, 0px); z-index: var(--z-chrome-top); top: {$connectDocked ? $connectBarHeight + 'px' : '0px'};">
 	<!-- 38 R8: one glass group (styles/hud.css) — notes, notifications, peers — sitting just
 	     left of the profile circle, which keeps its own place (its dropdown is anchored to it) -->
-	<div id="hud-tr" bind:this={trEl} class="tp-ui hud-glass hud-tr" class:tr-stacked={trStacked} style="position: absolute; top: 10px; right: 76px; z-index: 2;" role="toolbar" aria-label="Notes, notifications and people" use:roving={{ item: '.hud-cell:not(.hud-edit-item):not(.hud-edit-add)', axis: 'x' }}>
+	<div id="hud-tr" bind:this={trEl} class="tp-ui hud-glass hud-tr" class:tr-stacked={trStacked} style="position: absolute; top: 10px; right: 60px; z-index: 2;" role="toolbar" aria-label="Notes, notifications and people" use:roving={{ item: '.hud-cell:not(.hud-edit-item):not(.hud-edit-add)', axis: 'x' }}>
 	<!-- E2: scene-notes drawer toggle -->
 	{#if trShown('notes')}
 	<button
@@ -1608,12 +1613,12 @@
 				aria-label="Profile and account"
 				aria-haspopup="true"
 				aria-expanded={openDropdown}
-				style="position: absolute; top: 8px; right: 20px; cursor: pointer; z-index: 4; line-height: 0;"
+				style="position: absolute; top: 8px; right: 8px; cursor: pointer; z-index: 4; line-height: 0;"
 				onmousedown={() => (openDropdown = !openDropdown)}
 				onkeydown={triggerKey}
 				onfocusout={dropdownFocusOut}
 			>
-				{@render avatarImg(effAvatar || undefined, 'bg-surface-2 h-12 w-12 border-2 border-border-strong')}
+				{@render avatarImg(effAvatar || undefined, 'bg-surface-2 h-[var(--hud-fab)] w-[var(--hud-fab)] border-2 border-border-strong')}
 			</div>
 		</div>
 	</div>
@@ -1635,26 +1640,25 @@
 			in:fade|global={{ duration: motionMs(100), easing: sineIn }}
 			onfocusout={dropdownFocusOut}
 			class="tp-ui w-72 overflow-visible rounded-lg border border-border bg-surface-2 text-text shadow-sm"
-			style="position: fixed; bottom: auto; left: auto; border-top-right-radius: 1.5rem; padding-right: 0px; z-index: 1; margin-top: -50px;{$phoneShellActive && profileH ? ` --profile-sheet-h: ${profileH}px;` : ''}"
+			style="position: fixed; bottom: auto; left: auto; padding-right: 0px; z-index: 1;{$phoneShellActive && profileH ? ` --profile-sheet-h: ${profileH}px;` : ''}"
 		>
 		{#if $phoneShellActive}
 			<SheetGrip class="pm-grip" label="profile menu" height={profileH || dropdownEl?.offsetHeight || 240} onresize={profileResize} onclose={() => (openDropdown = false)} />
 		{/if}
-		<!-- the profile circle, seated in the 1.5rem notch this panel's top-right corner
-		     exists for (24px radius = half of a 48px avatar, so it is exactly inscribed and
-		     the panel's own overflow-hidden does not bite it). Clicking it closes the menu,
-		     the same as clicking the trigger again.
+		<!-- the profile button, seated in this panel's top-right corner, which takes the button's own radius
+		     (80a-fix4-ui O5: across the 1 px border, so it lands exactly on the trigger). Clicking it closes the
+		     menu, the same as clicking the trigger again.
 		     41b H11: NOT on the phone — there the menu is a bottom sheet, nowhere near the corner,
 		     and the avatar is already on screen top right; a second copy in the sheet's header
 		     only repeated it (the grab bar and a swipe close the sheet). -->
 		{#if !$phoneShellActive}
 			<button
 				type="button"
-				class="absolute right-0 top-0 z-10 cursor-pointer rounded-full leading-none"
+				class="pm-seat absolute z-10 cursor-pointer rounded-xl leading-none"
 				aria-label="Close profile menu"
 				onclick={() => (openDropdown = false)}
 			>
-				{@render avatarImg(effAvatar || undefined, 'bg-surface-2 h-12 w-12 border-2 border-border-strong')}
+				{@render avatarImg(effAvatar || undefined, 'bg-surface-2 h-[var(--hud-fab)] w-[var(--hud-fab)] border-2 border-border-strong')}
 			</button>
 		{/if}
 		<!-- PM (roadmap #14): identity header — name, then the cloud email (or "You") under it.
@@ -1899,6 +1903,15 @@
 		overscroll-behavior: contain;
 		/* 98-int: the app's minimal scrollbar (use:minimalScroll on the panel), never the native bar (NOTES-38 #1) */
 		scrollbar-width: none;
+	}
+	/* 80a-fix4-ui O5: the open panel's top-right corner takes the profile button's shape (the button reads as part of
+	   the menu), and the avatar it carries is seated across the panel's 1 px border, so its box is the trigger's box */
+	:global(:root:not(.phone-shell) #avatar-dropdown) {
+		border-top-right-radius: var(--radius-xl, 0.75rem);
+	}
+	.pm-seat {
+		top: -1px;
+		right: -1px;
 	}
 	:global(#avatar-dropdown) {
 		left: auto !important;

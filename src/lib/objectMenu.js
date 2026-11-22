@@ -14,7 +14,8 @@ import {
 	applySelectionSet,
 	selectionUuids
 } from './objectActions';
-import { requestControl, nameOf } from './lockControl';
+import { requestControl, nameOf, letGoOf } from './lockControl';
+import { heldByMe, touchMyLock } from './lockHeld'; // 80a K6
 import { createJoint, detachJoints, jointsFor } from './joints';
 import { addParticlesPreset, removeObjectParticles, burstObjectParticles } from './particleActions';
 import { PARTICLE_PRESETS } from './particlePresets';
@@ -201,6 +202,27 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 	// 15-Q still holds: no Show/Hide (the object-list eye owns visibility), lucide kebab icons
 	// (ui/Icon.svelte), shortcut hints as the dimmed right column.
 
+	// 80a K6: what we hold, we can let go of (or say we are still on it, which restarts the idle count).
+	// Owner 2026-11-21: its own group AFTER the act-on-it group, so Properties stays the first action (NOTES-38 #5)
+	/** @type {any[]} */
+	const held = [
+		...(!locked && targets.some((u) => heldByMe(u))
+			? [
+					{
+						label: 'Release' + suffix,
+						icon: 'lock-open',
+						tooltip: 'Let go so others can edit it',
+						action: () => letGoOf(targets.filter((u) => heldByMe(u)))
+					},
+					{
+						label: 'Keep holding',
+						icon: 'lock',
+						tooltip: 'You are still editing: do not let go when idle',
+						action: () => targets.forEach((u) => touchMyLock(u))
+					}
+				]
+			: []),
+	];
 	/** @type {any[]} the act-on-it group: what a right-click is most often for */
 	const primary = [
 		...(locked
@@ -868,7 +890,7 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 		}
 	];
 
-	const groups = [loading, primary, view, edit, more].filter((g) => g.length);
+	const groups = [loading, primary, held, view, edit, more].filter((g) => g.length);
 	return [
 		{
 			header: {

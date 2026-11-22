@@ -119,6 +119,9 @@ function isNum(v) {
 
 /** 34 R2: the most rows one `kitentity` message may carry (the kit's entity ceiling, 200, + slack) */
 export const KIT_ENTITY_MAX_ROWS = 256;
+/** 80a K3: one peer's lock set (`lock` uuids / ats) and a whole lock table (`locked`) */
+export const LOCK_SET_MAX = 4096;
+export const LOCK_TABLE_MAX_ROWS = 16384;
 
 /**
  * 34 R2: one full kit entity record. Its pose and hp are applied the moment it lands (a NaN
@@ -204,8 +207,15 @@ export const VALIDATORS = {
 		(d.src === undefined || (typeof d.src === 'string' && d.src.startsWith('data:image/') && d.src.length <= 12 * 1024 * 1024)),
 	underlaydelete: (d) => typeof d.id === 'string' && d.id.length <= 64,
 	userdata: (d) => isArray(d.userdata),
-	locked: (d) => isArray(d.lockeditems),
-	lock: (d) => isUuid(d.uuid) && (d.uuids === undefined || isArray(d.uuids)),
+	locked: (d) => isArray(d.lockeditems) && d.lockeditems.length <= LOCK_TABLE_MAX_ROWS,
+	lock: (d) =>
+		isUuid(d.uuid) &&
+		(d.uuids === undefined || (isArray(d.uuids) && d.uuids.length <= LOCK_SET_MAX)) &&
+		(d.ats === undefined || (isArray(d.ats) && d.ats.length <= LOCK_SET_MAX)),
+	// 80a K3: the holder refused an edit of ours (only the holder's is acted on: lockControl)
+	lockreject: (d) => isUuid(d.uuid),
+	// 80a K15: the room's lock mode (only the host's or an admin's is followed: lockMode.js)
+	lockmode: (d) => (d.mode === 'select' || d.mode === 'edit') && Number.isFinite(d.at),
 	unlock: (d) => d.peerId === undefined || typeof d.peerId === 'string',
 	clearscene: (d) => typeof d.peerId === 'string',
 	delete: (d) => isUuid(d.uuid),

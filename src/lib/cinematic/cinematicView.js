@@ -29,6 +29,7 @@ import { classifyMaterial, notShownText, effectiveQuality, createDropWatch, quan
 import { cinematicState, cinematicPrefs, disableCinematic, cinematicDisabled } from './cinematicStore.js';
 import { deformersOf } from '../vertexDeform.js';
 import { createLabelQuads } from './labelQuads.js';
+import { createFxCover } from './fxCover.js';
 
 /** @typedef {{ gl: any, scene: any, camera: () => any, toast: (msg: string) => void }} ViewCtx */
 /** @type {ViewCtx | null} what the app handed over (cinematicState.js) */
@@ -83,9 +84,9 @@ function padNewSkeletons() {
  * Stand-ins for what the WebGPU renderer cannot draw, and the editor grid's twin (W2: its ShaderMaterial's
  * fallback is OPAQUE and wrote depth over the whole view). `scan()` runs on the way in and then about once
  * a second, so objects added while the view is on (a load, a peer's edit, a new emitter) get theirs too.
- * @param {any} W @param {any} scene
+ * @param {any} W @param {any} scene @param {{ covered: (o: any, m: any) => boolean } | null} [fx] what the view draws itself (C2-2 / C2-4)
  */
-function createSwapper(W, scene) {
+function createSwapper(W, scene, fx = null) {
 	/** @type {{ o: any, i: number, m: any, stand: any, kind?: any }[]} */
 	const swapped = [];
 	/** @type {{ g: any, twin: any }[]} */
@@ -135,7 +136,7 @@ function createSwapper(W, scene) {
 					if (rec?.kind && o.visible !== false) now.add(rec.kind);
 					return;
 				}
-				const c = classifyMaterial(o, m, { deformed });
+				const c = classifyMaterial(o, m, { deformed, covered: fx?.covered });
 				if (c.kind && o.visible !== false && !o.userData?.localOnly) now.add(c.kind);
 				if (!c.swap) return;
 				const tint = m.uniforms?.color?.value ?? m.uniforms?.uColor?.value ?? m.uniforms?.diffuse?.value;
@@ -357,7 +358,10 @@ async function enterSteps() {
 	live.labels = createLabelQuads(W);
 	live.labels.scan(scene);
 	live.labels.tick();
-	live.swap = createSwapper(W, scene);
+	// C2-2 / C2-4: particles, bursts, bubbles and deformers drawn through TSL (before the stand-ins, which skip them)
+	live.fx = createFxCover({ W, T, scene, glCanvas });
+	live.fx.scan();
+	live.swap = createSwapper(W, scene, live.fx);
 	live.swap.scan();
 	patchState({ notShown: notShownText(live.swap.kinds) });
 	try {
@@ -398,7 +402,7 @@ function targetQuality() {
 
 /** @param {import('./cinematicCore.js').Quality} quality */
 function build(quality) {
-	return buildPipeline({ W: live.W, T: live.T, renderer: live.r, scene: live.scene, camera: live.camera, quality, outline: viewSelection });
+	return buildPipeline({ W: live.W, T: live.T, renderer: live.r, scene: live.scene, camera: live.camera, quality, outline: viewSelection, fx: live.fx });
 }
 
 /** a new pipeline beside the old one (the old keeps drawing until the new one is ready) */
@@ -441,6 +445,8 @@ function draw(_delta) {
 	}
 	syncRenderer();
 	const a = now();
+	// every frame: a burst fires and is gone in half a second, so its twin must exist the frame it appears
+	g.fx?.scan();
 	try {
 		g.labels?.tick();
 	} catch (e) {
@@ -496,6 +502,7 @@ async function teardown(reason) {
 	g.onFirst?.();
 	g.ro?.disconnect();
 	g.built?.dispose();
+	g.fx?.undo();
 	g.swap?.undo();
 	g.labels?.undo();
 	try {
@@ -629,6 +636,7 @@ export function cinematicDebug(reset = false) {
 		errors: log.errors.slice(-60),
 		memory: live ? { ...live.r.info.memory } : null,
 		labels: live?.labels ? live.labels.stats() : null,
+		fx: live?.fx ? live.fx.stats() : null,
 		generations: generationStats(),
 		adapter: live?.r?.backend?.adapter?.info ? { vendor: live.r.backend.adapter.info.vendor, architecture: live.r.backend.adapter.info.architecture, description: live.r.backend.adapter.info.description } : null,
 		state: get(cinematicState)

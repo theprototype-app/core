@@ -140,14 +140,15 @@ h.run(async () => {
 	h.check(rows.box?.level === '2' && rows.ball?.level === '2', `4.5 the objects inside the group are aria-level 2 (${rows.box?.level}, ${rows.ball?.level})`);
 	h.check(rows.group?.expanded === 'true' && rows.ball?.expanded == null, `4.6 the open group says expanded, a leaf says nothing (${rows.group?.expanded}, ${rows.ball?.expanded})`);
 	h.check(rows.group?.selected === 'true' && rows.ball?.selected === 'false', `4.7 aria-selected follows the selection (${rows.group?.selected}, ${rows.ball?.selected})`);
-	h.check(/, group$/.test(rows.group?.label ?? '') && rows.ball?.label === `${ball.name}, ${String(ball.gtype ?? 'sphere').toLowerCase()}`, `4.8 a row is NAMED "<name>, <type>", not by its buttons (${rows.group?.label} / ${rows.ball?.label})`);
+	// 80a K6: a row we hold also says so (its chip), after the states that describe the object
+	h.check(/, group(, held by me)?$/.test(rows.group?.label ?? '') && rows.ball?.label === `${ball.name}, ${String(ball.gtype ?? 'sphere').toLowerCase()}`, `4.8 a row is NAMED "<name>, <type>", not by its buttons (${rows.group?.label} / ${rows.ball?.label})`);
 	// a real click on a row: the reader hears the pick
 	await page.locator(`[id="${ball.uuid}"] .row-name`).click();
 	await hears(page, 'polite', `${ball.name}, ${String(ball.gtype ?? 'sphere').toLowerCase()}`, '4.9 a real click on a row announces the object');
 	await page.evaluate((u) => window.__tp.test.v1.objectActions.toggleObjectVisibility(u), ball.uuid);
 	await page.waitForTimeout(400);
 	const hiddenLabel = await page.getAttribute(`[id="${ball.uuid}"]`, 'aria-label');
-	h.check(/, hidden$/.test(hiddenLabel ?? ''), `4.10 a hidden object's row says "hidden" (${hiddenLabel})`);
+	h.check(/, hidden(, held by me)?$/.test(hiddenLabel ?? ''), `4.10 a hidden object's row says "hidden" (${hiddenLabel})`);
 
 	await h.finish(browser);
 });

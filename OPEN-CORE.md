@@ -62,6 +62,8 @@ export function register(api) {
   // Roles / presence bridges (core renders, the plugin decides)
   api.setRolesInfo(info)           // { myId, myRole, amAdmin, order, roleOf, setRole } | null
   api.setScenePresence(data)       // who is in the project's OTHER rooms | null — v2.4
+  api.setLockMode(mode)            // 'select' | 'edit': the room's lock mode (host / admin only; false = refused) — 80a
+  api.lockMode.get() / .subscribe  // the current {mode, at}; everyone follows the host's value
   api.setAccountIdentity(id)       // {username, avatar, email} | null — the collaborative identity
   api.currentScene() / api.playModes() / api.peerRoster() / api.sessionHost()
   api.connectToPeer(peerId)        // dial through the normal request flow
@@ -263,6 +265,7 @@ static|embed>`. Core never talks to a server about it.
 | `onTemplateOpen(fn)` → off | a Games-tab template was started: `fn(slug)` (one "template open") |
 | `onFunnelEvent(fn)` → off | 76 FW2: one anonymous first-visit funnel event `fn({e, c, b, d, x})` — closed vocabularies only (event name, Welcome answer, release, desktop/touch/vr, a time bucket or quest step), never an id. Core has already applied once-per-browser, Do Not Track / Global Privacy Control and the under-test guard; events from before registration are queued (20 max) and handed to the first listener. With no plugin nothing is sent anywhere. Probe with `typeof` |
 | `funnelEvent(name)` → Promise\<boolean\> | 76 FW2: the plugin's own funnel event through the same rules; only `'ob_waitlist'` (a feature-update opt-in) is accepted |
+| `onPlayStats(fn)` → off | 102 M4: one anonymous play-statistics beacon `fn({v: 1, s, d, e})` for the PUBLISHED scene the page was opened with (`s` = its `?s=` id, `d` = desktop / phone / headset, `e` = up to 8 of `{k: 'start'}` / `{k: 'end', t: <time bucket>, l: <level name>, g: <state>, w: 1 \| -1}`), at most 16 events per play, sent when the page is hidden or left. Core has already applied Do Not Track / Global Privacy Control, Settings ▸ Privacy ▸ Count my visits anonymously and the under-test guard; never an id of the player, tab or device. `fn` must send SYNCHRONOUSLY (pagehide) and return `true` when it went out — anything else and core tries again on the next hide. No queue: with no plugin core collects nothing. Probe with `typeof` |
 | `toast(message, actions?, {keep?})` | fix-live F-2: with `keep: true` an action toast's buttons also stay on its notification-history entry until one is pressed (a role offer the user sees later) |
 | `setPeerMenuItems(items)` | fix-live: `[{id, label, run(peerId, {name})}]` (≤ 8, labels ≤ 40) appended to the Users peer menu (right-click a peer) under core's own entries — the cloud's "Report…"; `[]` clears |
 | `setConnectorProvider(p)` | 86 B1/B5: the Claude connector's account half — `{pair({resume}) → {wsUrl, pairingToken, replaces?, connections?}, connections() → {connections, tab?}, revoke(id), revokeAll(), account() → {signedIn, name?}}` (`pair` rejects `{code:'signin'}` signed out); core draws Connect Claude, the connected indicator and Settings ▸ Account ▸ Connected apps only while one is installed and runs every relayed call through tpAgent; null removes it |
@@ -415,8 +418,11 @@ and is **1**; a peer that sends no `proto` speaks 1 (every build up to 1.65).
 - **Bump `proto` only** when a message changes meaning in a way an older build would apply wrongly.
   Additive fields and new message types do not bump it (an older build counts and drops a type it
   does not know); they become a **`caps` flag** instead — today `wb` (batch envelopes), `fc` (fast
-  movement channel), `dev` (a device row in `modules`). Extensions (80a's held-set handshake) add a
-  flag here and read it from `peerCaps`; absent = the peer does not have it.
+  movement channel), `dev` (a device row in `modules`), `lk` (80a: object locks are stamped and gated —
+  `lock` carries `ats` parallel to `uuids` (when each object was taken, session clock), the handshake's
+  `locked` carries every held object, an edit of an object someone else holds is not applied and the
+  holder answers `lockreject {uuid}` plus the object as it is; `lockmode {mode, at}` from the host says
+  whether selecting locks). Read a flag from `peerCaps`; absent = the peer does not have it.
 - **Inbound limits (F4):** each peer has a per-second budget of messages and bytes and an `object`
   size cap ([src/lib/wireBudget.js](src/lib/wireBudget.js) `LIMITS`, set at >= 4x the measured
   peaks); a message over budget is dropped and counted (`budget:*` in Diagnostics), the person is

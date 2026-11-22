@@ -34,9 +34,10 @@ import { currentLevel } from './levels';
 import { myPlayMode, peerPlayModes } from './gamePresence';
 import { onPlayOrigin, playUrl } from './playOrigin.js';
 import { safeStorage, storageIsolated } from './safeStorage'; // 61 G3: storageIsolated
+import { setLockMode, lockMode } from './lockMode'; // 80a K15
 // v3.1 (roadmap 29 G-3): the hosted-AI preset seam. Both provider modules are LEAVES
 // (svelte/store + safeStorage), so a static edge from here closes nothing.
-import { meshJobStatus, onExportBuilt, onTemplateOpen, onFunnelEvent, setSceneHeart, problemReporter, setWhatsNewCloud, setConnectBadge, setPeerMenuItems, setConnectorProvider, connectorSignInSlot } from './cloudHooks';
+import { meshJobStatus, onExportBuilt, onTemplateOpen, onFunnelEvent, onPlayStats, setSceneHeart, problemReporter, setWhatsNewCloud, setConnectBadge, setPeerMenuItems, setConnectorProvider, connectorSignInSlot } from './cloudHooks';
 // 36-community (C4): a leaf (svelte/store only) — safe as a static edge
 import { gameIdentity, ensureGameId, forkGameId } from './gameIdentity.js';
 import { exportMode } from './export/exportBoot.js';
@@ -399,6 +400,13 @@ export function makeCloudApi() {
 		 *  viewer actions (2026-07-25). Pass null to clear. */
 		setRolesInfo: (/** @type {any} */ info) => rolesInfo.set(info || null),
 
+		// --- 80a K15: the room's lock mode, for the room settings (additive; typeof-probe it) ---
+		/** 'select' (lock while selected, default) | 'edit' (lock only while editing); false = not
+		 *  ours to set (host or admin only). Everyone follows the host's value. */
+		setLockMode: (/** @type {any} */ mode) => setLockMode(mode),
+		/** the current mode, and a subscription to it: {mode, at} */
+		lockMode: { get: () => get(lockMode).mode, subscribe: (/** @type {any} */ fn) => lockMode.subscribe(fn) },
+
 		// --- 21-G5 (F7): cross-scene presence, v2.4 --------------------------------
 		/** publish who is in the project's OTHER rooms/scenes (the rolesInfo bridge
 		 *  shape — see cloudHooks.scenePresence for the document). Null clears. */
@@ -661,6 +669,10 @@ export function makeCloudApi() {
 		/** 76 FW2: an anonymous first-visit funnel event `fn({e, c, b, d, x})` — closed fields only,
 		 *  already past core's once-per-browser / DNT / GPC rules. Returns `off`. Probe with typeof. */
 		onFunnelEvent: (/** @type {any} */ fn) => onFunnelEvent(fn),
+		/** 102 M4: an anonymous play-statistics beacon `fn({v, s, d, e})` for the published scene on
+		 *  screen — already past DNT / GPC / Settings ▸ Privacy / the under-test guard. Send it
+		 *  synchronously (pagehide) and return true when it went out. Returns `off`. Probe with typeof. */
+		onPlayStats: (/** @type {any} */ fn) => onPlayStats(fn),
 		/** 76 FW2: the plugin's own funnel event, through the same rules. Only `ob_waitlist` (a
 		 *  feature-update opt-in) is accepted; anything else is ignored. Returns whether it went out. */
 		funnelEvent: async (/** @type {any} */ name) => (String(name) === 'ob_waitlist' ? (await import('./onboarding/funnel.js')).funnelEvent('ob_waitlist') : false),

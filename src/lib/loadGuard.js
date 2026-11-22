@@ -159,7 +159,27 @@ export function refusal(what) {
  */
 export function parseCheckedObject(json, from, what) {
 	if (!checkObjectJson(json, from, what)) throw refusal('object');
-	return new THREE.ObjectLoader(embeddedOnlyManager(from, what)).parse(json);
+	const object = new THREE.ObjectLoader(embeddedOnlyManager(from, what)).parse(json);
+	object.traverse((/** @type {any} */ node) => {
+		for (const m of Array.isArray(node.material) ? node.material : node.material ? [node.material] : []) seeThroughFromOpacity(m);
+	});
+	return object;
+}
+
+/**
+ * 80a-fix4-ui G16 (ad-video showcase on 1.60: lighthouse beams, the winter aurora band): a material saved with an
+ * opacity below 1 but no `transparent` flag draws SOLID (three ignores opacity on an opaque material). Scenes written
+ * by hand or by a script do that; the editor's own opacity control and the agent's look tool set both. On the way in,
+ * such a material is made see-through. Left alone: opacity 0 (a hidden placeholder drawn solid by its author's
+ * choice reads as on purpose), and alpha-hash / alpha-to-coverage materials (they use opacity without blending).
+ * @param {any} m a THREE.Material @returns {boolean} whether it changed
+ */
+export function seeThroughFromOpacity(m) {
+	if (!m || m.transparent || m.alphaHash || m.alphaToCoverage) return false;
+	if (!(typeof m.opacity === 'number' && m.opacity > 0 && m.opacity < 1)) return false;
+	m.transparent = true; // what the Inspector's opacity row sets (transparent = opacity < 1)
+	m.needsUpdate = true;
+	return true;
 }
 
 /**
@@ -172,5 +192,7 @@ export function parseCheckedMaterials(payload, from, what) {
 	const loader = new THREE.ObjectLoader(embeddedOnlyManager(from, what));
 	const images = loader.parseImages(payload.images ?? [], () => {});
 	const textures = loader.parseTextures(payload.textures ?? [], images);
-	return loader.parseMaterials(payload.materials, textures);
+	const out = loader.parseMaterials(payload.materials, textures);
+	for (const m of Object.values(out ?? {})) seeThroughFromOpacity(m); // G16, as parseCheckedObject
+	return out;
 }

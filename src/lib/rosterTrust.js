@@ -65,13 +65,27 @@ export const SELF_SPOKEN = {
 	lookstate: 'peerId'
 };
 
+/** the requests that are not `get…`: the clock handshake (its samples are filed under `sender`) */
+const CLOCK_TYPES = new Set(['clockping', 'clockpong']);
+
+/**
+ * 80a K12: requests (`get…`) and the clock handshake name the asker in `sender`, and the answer goes there. Every
+ * sender writes its own id, nothing relays a request, so the field is read as the connection the request came on:
+ * the answer goes back to whoever asked.
+ * @param {string} type
+ */
+export function repliesToSender(type) {
+	return CLOCK_TYPES.has(type) || /^get[a-z]{2,}$/.test(type);
+}
+
 /**
  * @param {any} data a message
  * @param {string} from the peer it came from
  * @returns {any} the message as its sender's own: the same object when it already is, else a copy
  */
 export function asSendersOwn(data, from) {
-	const field = data && typeof data.type === 'string' && Object.prototype.hasOwnProperty.call(SELF_SPOKEN, data.type) ? SELF_SPOKEN[data.type] : null;
+	const type = data && typeof data.type === 'string' ? data.type : '';
+	const field = Object.prototype.hasOwnProperty.call(SELF_SPOKEN, type) ? SELF_SPOKEN[type] : repliesToSender(type) ? 'sender' : null;
 	return !field || data[field] === from ? data : { ...data, [field]: from };
 }
 
@@ -85,4 +99,13 @@ export function asSendersOwn(data, from) {
 export function acceptedChatLines(lines, { from, speaksForSession }) {
 	if (!Array.isArray(lines)) return [];
 	return speaksForSession ? lines : lines.filter((m) => m && m.sender === from);
+}
+
+/**
+ * 80a R3: with no roles, the person whose link to us opened first (ties: the lower id).
+ * @param {string[]} people @param {Record<string, number>} joinedAt
+ */
+export function firstArrived(people, joinedAt) {
+	const at = (/** @type {string} */ id) => (Number.isFinite(joinedAt?.[id]) ? joinedAt[id] : Infinity);
+	return [...people].sort((a, b) => at(a) - at(b) || (a < b ? -1 : a > b ? 1 : 0))[0] ?? '';
 }

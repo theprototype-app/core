@@ -13,6 +13,7 @@ import { flowViewsSnapshot } from './flowView';
 import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
 import { stripEditOverlays } from './editOverlays';
+import { adoptLoadedDrafts, clearInboundDraftFlags } from './objectPermissions'; // 80a migration
 import { withCleanView } from './cleanView'; // 50-window (C2): thumbnails without the editor's scaffolding
 import { isPristinePackRef, stubElementOf, stubNodeCount, fillPackRef, warmPrograms } from './packRefs';
 // 36 L2: the scene's saved view is applied at the START of a load (startView.js)
@@ -503,7 +504,9 @@ export function emptySessionPayload(name) {
 }
 
 /** Persist a payload as a slot @param {any} payload */
-async function persistSession(payload) {
+/** @param {any} payload @param {{listOnly?: boolean}} [opts] fix-batch-4 B1: `listOnly` adds this one row
+ * to the Sessions list instead of re-reading every saved session (see the backup in applySessionNow) */
+async function persistSession(payload, opts = {}) {
 	// 37 R15: a SAVED SESSION keeps the conversation (Sessions manager saves, projects and the
 	// "Backup before" stashes all come through here). Additive and local: absent when nobody
 	// has said anything, never written into a .tpscene/.zip export (exportSessionZip strips it).
@@ -516,7 +519,8 @@ async function persistSession(payload) {
 		return null;
 	}
 	await idbPut(KEY + payload.id, payload);
-	await loadSessions();
+	if (opts.listOnly) sessions.update((list) => [metaOf(payload), ...list.filter((m) => m.id !== payload.id)]);
+	else await loadSessions();
 	return payload;
 }
 
@@ -592,8 +596,9 @@ export async function restoreSessionLibrary(payload) {
 }
 
 /** Snapshot the current scene into a named session @param {string} name */
-export async function saveSession(name) {
-	const payload = await persistSession(buildSessionPayload(name));
+/** @param {string} name @param {{listOnly?: boolean}} [opts] */
+export async function saveSession(name, opts = {}) {
+	const payload = await persistSession(buildSessionPayload(name), opts);
 	if (payload) showToast('Session saved: ' + payload.name);
 	return payload;
 }
@@ -1564,7 +1569,15 @@ async function applySessionNow(payload, opts, job) {
 	// 33 L1: a load that interrupted another one still building finds HALF of that scene on
 	// screen — nothing anybody made, so no "Backup before" of it
 	const hadContent = !!group?.children.length && !job.interrupted;
-	if (backup && hadContent) await saveSession('Backup before "' + payload.name + '"');
+	// fix-batch-4 B1: the backup used to re-read EVERY saved session for the list afterwards
+	// (loadSessions reads each payload whole: ~8 of the ~10 s an Accept waited under load).
+	// It adds its own row instead (the manager re-reads on open anyway), and the bar says so.
+	if (backup && hadContent) {
+		const phase = job.phase;
+		updateLoad(job, { phase: 'backup' });
+		await saveSession('Backup before "' + payload.name + '"', { listOnly: true });
+		updateLoad(job, { phase });
+	}
 	// 36-community (C4): the arriving scene's game identity — AFTER the backup, which saves the
 	// scene being LEFT under its own id
 	noteLoadedGame(payload);
@@ -1664,7 +1677,12 @@ async function applySessionNow(payload, opts, job) {
 			// on the way in; the peers do the same in `createObject`.
 			stripEditOverlays(object);
 			group.add(object); // keep original uuids — every peer converges on them
-			if (replicate && peer) peer.send({ type: 'object', element });
+			// 80a migration: a file saved with drafts in it loads them as private drafts — marked
+			// here, before anything is sent, and the draft itself is not sent at all
+			// a load that replicates nothing (a travel node) is everyone's scene: it brings no drafts
+			if (!replicate) clearInboundDraftFlags(object);
+			const draft = replicate ? adoptLoadedDrafts(object) : false;
+			if (replicate && peer && !draft) peer.send({ type: 'object', element });
 			// a kit piece is not loaded until its pack refilled it: counted when it lands,
 			// and asked for NOW rather than on the scan's next debounce
 			if (object.userData?.packStub) refills.push(fillPackRef(object).finally(() => progress(job)));

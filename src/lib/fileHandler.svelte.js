@@ -1,5 +1,6 @@
 import { embeddedOnlyManager, checkFbx, refusal, checkStl, checkGltf } from './loadGuard.js';
 import { addProvenance } from '$lib/provenance';
+import { lockMessage } from './lockHeld';
 import { APP_VERSION } from '$lib/version';
 import { glbIsVrm } from '$lib/vrm/vrmDetect';
 import * as THREE from 'three';
@@ -486,7 +487,7 @@ function addAnimatedImport(result, buffer, name, kind, position) {
 	selectedObject.set(root);
 	// 15-K3: the selection SET drives the outline + Ctrl+D — keep it in sync
 	selectedObjects.set([root.uuid]);
-	peer.send({ type: 'lock', uuid: root.uuid, peerId: peer.peer.id });
+	peer.send(lockMessage([root.uuid], peer.peer.id));
 	// 33 P2: nothing autoplays any more (registerAnimatedImport); say what does play it
 	showToast(
 		root.userData.behavior
@@ -513,7 +514,7 @@ export function addImported(imported, name, position) {
 	selectedObject.set(sceneObjects.getObjectByProperty('uuid', imported.uuid));
 	// 15-K3: the selection SET drives the outline + Ctrl+D — keep it in sync
 	selectedObjects.set([imported.uuid]);
-	peer.send({ type: 'lock', uuid: imported.uuid, peerId: peer.peer.id });
+	peer.send(lockMessage([imported.uuid], peer.peer.id));
 
 	// the environment rig lights every preset except Classic — only nag about
 	// missing lights there (same guard as /create in commandsHandler; imports
@@ -1333,9 +1334,11 @@ function disposeParsed(root) {
  * @param {any} payload the session payload that just applied
  */
 async function markOpenedUnsaved(payload) {
-	const { currentLevel, sceneSignature, armSaveIntoProject } = await import('./levels');
+	const { currentLevel, sceneSignature, armSaveIntoProject, payloadHoldsDrafts, liveSceneSignature } = await import('./levels');
 	const name = String(payload?.name ?? '').trim() || 'Opened scene';
-	currentLevel.set({ hash: '', name, unsaved: true, signature: sceneSignature(payload) });
+	// 80a migration: an old file holding drafts is compared as a file sees the scene (drafts out)
+	const signature = payloadHoldsDrafts(payload) ? liveSceneSignature(name) : sceneSignature(payload);
+	currentLevel.set({ hash: '', name, unsaved: true, signature });
 	// loose-scenes fix: the offer itself lives in levels.js now, because travel to a
 	// scene file the project does not name reaches the identical state and the two
 	// copies of this prompt would drift

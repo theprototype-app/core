@@ -1,6 +1,7 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
+import { lockMessage } from './lockHeld'; // 80a K3
 import {
 	globalScene,
 	globalRenderer,
@@ -270,7 +271,7 @@ export function enterSplineEdit(uuid) {
 	// peers must not edit/select it meanwhile (same contract as mesh edit)
 	/** @type {any} */
 	const peer = get(peers);
-	if (peer) peer.send({ type: 'lock', uuid, peerId: peer.peer.id });
+	if (peer) peer.send(lockMessage([uuid], peer.peer.id)); // 80a K3: stamped
 
 	splineEditObject.set(uuid);
 	if (typeof window !== 'undefined') window.addEventListener('keydown', onKeydown, true);

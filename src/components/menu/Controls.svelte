@@ -2,7 +2,7 @@
 	import { onLayoutRestore } from '$lib/uiLayoutsCore';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { edgeFade } from '$lib/ui/edgeFade.js';
-	import { objectsGroup, TControls, transformMode, editorMode, isLocked, lockedObjects, globalScene, vrPassthrough, selectedObject, selectedObjects } from '../../stores/sceneStore';
+	import { objectsGroup, TControls, transformMode, editorMode, isLocked, lockedObjects, globalScene, selectedObject, selectedObjects } from '../../stores/sceneStore';
 	import { chatUnread, chatMentioned } from '../../stores/appStore.js'; // 37 R15: the chat button's badge
 	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, uvEditorClose, shaderEditorClose, hudEditorClose, timelineClose, explorerClose, profilerClose, codeWorkspaceClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, floatingToolbar, toolbarAlwaysOnTop, hudStackLift, showSimControls, expandedObjects } from '../../stores/appStore.js';
 	// 24-B2: keyboard navigation in the object list (the Explorer's gridKeydown shape)
@@ -68,7 +68,7 @@
 	import { bottomDockable } from '$lib/bottomDockDrop';
 	import { dockShownKeys, dockOccupants, bottomInset, FLOW_FAMILY, armDockMode, DOCK_TITLES } from '$lib/bottomDock';
 	import { togglePanel, toggleHostedWindow } from '$lib/panelToggles';
-	import { requestPlay, willEnterXR, willEnterAR, xrSessionFailed, playAsItems } from '$lib/playMode';
+	import { requestPlay, willEnterXR, willEnterAR, playAsItems } from '$lib/playMode';
 	import { simpleUntilPlay, holdAdvanced } from '$lib/onboarding/onboardState.js'; // 76 FW1
 	// 60 Q1: Play here — a roster button (Customize), a row in Play's own menu, Ctrl+Shift+Enter
 	import { playHere, playHereItems, playingHere } from '$lib/playHere';
@@ -112,7 +112,7 @@
 	import type { ToolbarLayout, LayoutConfig, Placements, Region } from '$lib/toolbarLayout';
 	import { pivotMode, pivotParentAvailable } from '$lib/multiTransform'; // 37 R1: the toolbar Pivot cell
 	import { cssPx, scaledPx, uiScale } from '$lib/uiScale'; // 53 A1: hud.css px tokens read back as calc(...)
-	import { VRButton, XRButton } from '@threlte/xr'
+	import XrButtons from '../play/XrButtons.svelte';
 
 	// A panel is "shown" when it is open AND either the visible dock tab OR floating
 	// (floating = open but not the docked occupant). The toolbar icon tints whenever its
@@ -4076,24 +4076,9 @@
      mounted the aim is a QUERY, not a mount, and the entry stays gesture-synchronous.
      `data-aim` says which one a plain press would click — the preference, echoed for
      anyone (including the suites) who needs to read the decision off the DOM. -->
-<div class="hidden" id="vrButton" data-aim={$vrPassthrough ? 'ar' : 'vr'}>
-	<!-- W3: `onerror` is the ONE signal threlte gives for a session request that
-	     REJECTS — a denied permission, no headset, a spent user activation — and it
-	     was going nowhere, so the optimistic `isVRMode = true` in requestPlay stuck
-	     and took the context menus down with it. -->
-	<div id="vrButtonVr"><VRButton onerror={() => xrSessionFailed()} /></div>
-	<!-- passthrough (90): same button flow, immersive-ar session -->
-	<div id="vrButtonAr">
-		<XRButton
-			mode="immersive-ar"
-			onerror={() => xrSessionFailed()}
-			sessionInit={{
-				requiredFeatures: [],
-				optionalFeatures: ['local-floor', 'bounded-floor', 'anchors', 'hand-tracking', 'plane-detection', 'layers', 'depth-sorted-layers', 'hit-test', 'mesh-detection']
-			}}
-		/>
-	</div>
-</div>
+<!-- 80a-fix4-ui G9: the block lives ONCE, in XrButtons (the play page mounts the same component) — two copies had
+     to be kept alike by hand -->
+<XrButtons />
 
 {#if playMenu}
 	<ContextMenu

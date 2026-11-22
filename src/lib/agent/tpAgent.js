@@ -28,7 +28,8 @@ import { globalRenderer, objectsGroup } from '../../stores/sceneStore.js';
 import { agentBudgetReport } from '$lib/sceneBudget';
 import { recentLogs } from '$lib/ai/runtimeTools.js'; // 85b R3
 import { scriptErrors } from '../../stores/flowStore';
-import { sessionHost, snapshotPending } from '$lib/connectionState';
+import { sessionHost, snapshotPending, peerJoinedAt } from '$lib/connectionState';
+import { firstArrived } from '$lib/rosterTrust'; // 80a R3
 import { isAgentPeer } from '$lib/inviteStore';
 import { pingLog } from '$lib/pingLog.js';
 import { describePing } from '$lib/connector/whereAreUsers.js';
@@ -198,7 +199,7 @@ function startFollow(core) {
 // to answer to it would have built alone (exec only checked the role). Now:
 //   · a PERSON remains → the agent continues with the room's successor: with roles, the person the
 //     room's authority makes admin (the cloud plugin's pickSuccessor, which never picks an agent), else
-//     the lowest id among the people. No new invite: it is already connected to them.
+//     the person whose link to this page opened first (80a R3). No new invite: it is already connected to them.
 //   · NOBODY remains → paused: edits refused, status().hostAway says so and until when (10 min, or
 //     `agentHostAwayMin`), and it knocks on the host's door now and then — the host decides whether it
 //     comes back (the ordinary card). It never hosts (no auto-admit) and never saves (publish guard).
@@ -233,8 +234,9 @@ function successorOf(gone) {
 		};
 		return people.find((id) => role(id) === 'admin') ?? people.find((id) => role(id) === 'editor') ?? '';
 	}
-	return [...people].sort()[0];
+	return firstArrived(people, get(peerJoinedAt));
 }
+
 
 /** status().hostAway, or null while a host is here */
 function hostAwayState() {

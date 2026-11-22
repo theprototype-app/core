@@ -11,7 +11,7 @@ h.run(async () => {
 	h.check(await A.page.locator('#palette-filter').isVisible(), 'palette open by default');
 
 	// collapse via the notebook tab, persisted
-	await A.page.locator('#palette-toggle').click();
+	await h.paneHandleClick(A.page, '#palette-toggle'); // O2: hidden while open -> its band menu
 	await A.page.waitForTimeout(300);
 	h.check(
 		!(await A.page.locator('#palette-filter').isVisible().catch(() => false)),
@@ -21,14 +21,14 @@ h.run(async () => {
 		(await A.page.evaluate(() => localStorage.getItem('flowPaletteOpen'))) === 'false',
 		'collapse persisted'
 	);
-	await A.page.locator('#palette-toggle').click();
+	await h.paneHandleClick(A.page, '#palette-toggle'); // O2: hidden while open -> its band menu
 	await A.page.waitForTimeout(300);
 	h.check(await A.page.locator('#palette-filter').isVisible(), 'palette reopens');
 
 	// showhide-v8 (owner 2026-11-09, "Flow: remove the swap button"): the palette moves sides from its arrow
 	// handle's menu ("Move the palette to the other side"), the dock-inset pattern
 	const paletteSwap = async () => {
-		await A.page.locator('#palette-toggle').click({ button: 'right' });
+		await h.paneHandleClick(A.page, '#palette-toggle', { button: 'right' });
 		await A.page.locator('[role=menu] [role=menuitem]', { hasText: 'Move the palette to the other side' }).first().click();
 	};
 	// side toggle flips the palette across the editor

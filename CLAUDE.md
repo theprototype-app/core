@@ -5111,8 +5111,23 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   (`createFaceFromVerts` — else it faces away and you see nothing, 191). VR Stretch =
   per-axis infinite sliders in the Edit▸Stretch menu (grab a `vrstretch-<axis>` handle,
   horizontal controller motion scales that axis), NOT a spatial gesture (193).
-- Locks: `lockedObjects` holds REMOTE locks only — "we hold X" = X is our selection;
-  one lock per peer (a new lock replaces the old one); `unlock` message exists.
+- Locks: `lockedObjects` holds REMOTE rows only (`[peerId, uuid, at]`, holder-first); what
+  WE hold is `lockHeld.myLocks` (a `lock` carries our whole held set, `unlock` lets go).
+  80a: the RECEIVER gates (`gateLockedEdit`: an edit of an object held by someone else is
+  dropped and answered `lockreject`, which heals the sender's copy), a tie on the same object
+  goes to the earlier `at` then the lower id, and the handshake carries the whole held set
+  (caps flag `lk`, OPEN-CORE.md). A held object is read-only in Properties (`HeldBanner`,
+  `heldReadOnly.js`), its flow opens view-only, and the viewport shows the holder's avatar
+  (`lock-avatar` child of the highlight; suites counting highlight boxes skip it). Letting go:
+  Release / Keep holding in the row menu, Object list chips, 5 min idle expiry asked 30 s
+  before (`lockIdle.js`, never while alone), and a healed link lets go on BOTH sides at the top
+  of `sendHandshake(..., {heal:true})` (the hook every fix4-net heal path ends in). ROOM LOCK
+  MODE (`lockMode.js`): `select` (default) or `edit` = the first SENT edit takes the object
+  (the claim goes out ahead of the edit on the same ordered conns) and it frees 3 s after the
+  last; host-only writer (an admin under roles), `lockmode {mode, at}` latest-wins, the host's
+  handshake carries it only once it was ever set. Roster changes are tied to the connection
+  that made them (`rosterOrigin.js`). Suites lock-gate / lock-held-ui / lock-release /
+  lock-mode / roster-origin.
 - vite re-optimizes new deps on first page load (one reload) — rerun once; lazy wasm
   (rapier) needs a throwaway prewarm page in tests.
 - Postprocessing composers (Outline) do NOT render in WebXR — VR indicators are

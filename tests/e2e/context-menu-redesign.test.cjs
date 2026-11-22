@@ -61,7 +61,15 @@ h.run(async () => {
 		'rare work lives in submenus: Transform ▸, Physics & effects ▸, Save as… ▸'
 	);
 	h.check(chrome.top[0] !== '|' && chrome.top[chrome.top.length - 1] !== '|', 'no divider leads or trails the menu');
-	h.check(chrome.top.length <= 16, `the top level stays short (${chrome.top.length} rows incl. dividers)`);
+	// owner 2026-11-21 (80a K6): an object we hold adds its own group, Release · Keep holding, after the first one;
+	// only while that group shows may the top level grow by its two rows and their divider
+	const heldGroup = chrome.top.some((t) => t.startsWith('Release')) && chrome.top.some((t) => t.startsWith('Keep holding'));
+	if (heldGroup) {
+		const d = chrome.top.indexOf('|');
+		h.check(chrome.top[d + 1]?.startsWith('Release') && chrome.top[d + 2]?.startsWith('Keep holding') && chrome.top[d + 3] === '|', `a held object's Release · Keep holding are their own group, right after the first (${chrome.top.join(' ')})`);
+	}
+	const maxRows = heldGroup ? 19 : 16;
+	h.check(chrome.top.length <= maxRows, `the top level stays short (${chrome.top.length} rows incl. dividers, at most ${maxRows}${heldGroup ? ' with the held group' : ''})`);
 	h.check(chrome.focusHasIcon, 'rows carry lucide icons');
 	h.check(chrome.focusHint === 'F' && chrome.deleteHint === 'Del', `shortcut hints render (${chrome.focusHint}/${chrome.deleteHint})`);
 	h.check(

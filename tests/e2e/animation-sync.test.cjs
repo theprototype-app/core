@@ -140,6 +140,9 @@ h.run(async () => {
 	);
 
 	// ---------- an edit on B reaches A (both directions) ----------
+	// 80a: A made the cube and holds it, and a held object refuses another peer's edits: A lets go first
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
+	await h.eventually(() => B.page.evaluate((u) => window.__tp.test.v1.lockHeld.holderNow(u), uuid), (v) => !v, 'premise: nobody holds the cube now');
 	await B.page.evaluate((id) => {
 		const ap = window.__tp.test.v1.animationPreview;
 		let map;

@@ -102,6 +102,7 @@ import { myKind } from './inviteStore';
 import { isLocked } from '../stores/sceneStore';
 import { registerPerfContext } from './perf/perfMarks.js';
 import { ensureGameId } from './gameIdentity.js';
+import { withoutLocalObjects, noteLocalObjectsExcluded } from './objectPermissions';
 
 /** 21-G1: the name of the conventional scenes folder. It is freely renamable and
  * deletable, because it is NOT how a scene is found: `levelItems()` discovers by KIND
@@ -114,6 +115,29 @@ import { ensureGameId } from './gameIdentity.js';
  * game word. An existing `Levels` folder keeps working BY CONSTRUCTION: its items are
  * ordinary kind-'scene' items, which is the only thing discovery looks at. */
 export const SCENES_FOLDER = 'Scenes';
+
+/**
+ * 80a D2: the scene as a FILE sees it — drafts lifted out (objectPermissions.withoutLocalObjects).
+ * A scene save lands in the library, whose bytes reach peers, so it may not carry a draft; and the
+ * "has this scene changed" signature is taken the same way, or every draft edit would read as an
+ * unsaved change of a file that will never hold it. @param {string} name
+ * @returns {{payload: any, excluded: number}}
+ */
+export function filePayload(name) {
+	const { result, excluded } = withoutLocalObjects(() => buildSessionPayload(name));
+	return { payload: result, excluded };
+}
+
+/** the signature of the live scene as a file would hold it @param {string} name */
+export function liveSceneSignature(name) {
+	return sceneSignature(filePayload(name).payload);
+}
+
+/** does a session payload carry local-only objects (a file saved before drafts were kept out)?
+ * @param {any} payload */
+export function payloadHoldsDrafts(payload) {
+	return (payload?.objects ?? []).some((/** @type {any} */ o) => o?.object?.userData?.__localOnly === true);
+}
 
 /** Where we are: `{hash, name, signature}` after a travel or a save, null before
  * either. LOCAL on purpose — a late joiner converges on the level's CONTENT through the
@@ -551,7 +575,10 @@ export async function saveSceneAsLevel(name, folderId = null, opts = {}) {
 	const target = await targetFolder(folderId);
 	// 36-community (C4): a deliberate save gives the scene its permanent game id (forks a remix)
 	ensureGameId();
-	const payload = /** @type {any} */ (buildSessionPayload(String(name ?? '').trim() || 'Scene'));
+	// 80a D2: a scene save is a file — drafts stay out of it, said once
+	const { payload: built, excluded } = filePayload(String(name ?? '').trim() || 'Scene');
+	const payload = /** @type {any} */ (built);
+	noteLocalObjectsExcluded(excluded);
 	delete payload.workspace;
 	// 56 C10: the scene's OWN file keeps every chat (a download of it later is a door and filters)
 	const bytes = await exportSessionZip(payload, { assets: true, packs: false, flow: true, chats: 'all' });
@@ -729,7 +756,7 @@ export async function publishCurrentIfChanged(opts = {}) {
 	/** @type {any} */
 	let payload = null;
 	try {
-		payload = buildSessionPayload(at.name);
+		payload = filePayload(at.name).payload; // 80a D2: an auto-version is a file too (silent: nobody asked)
 	} catch {
 		return false;
 	}
@@ -875,7 +902,7 @@ export function applySceneRenames() {
 		const at = get(currentLevel);
 		if (at?.name && typeof at.signature === 'string') {
 			try {
-				currentLevel.set({ ...at, signature: sceneSignature(buildSessionPayload(at.name)) });
+				currentLevel.set({ ...at, signature: liveSceneSignature(at.name) });
 			} catch {}
 		}
 	}
@@ -1250,7 +1277,10 @@ export async function travelToLevel(hash, name = '', opts = {}) {
 		currentLevel.set({
 			hash: key,
 			name: here,
-			signature: sceneSignature(payload),
+			// 80a migration: an old file that still holds drafts loads them as drafts, and the
+			// signature is then the live scene's as a file sees it (drafts left out), or the scene
+			// would read as changed the moment it opened
+			signature: payloadHoldsDrafts(payload) ? liveSceneSignature(here) : sceneSignature(payload),
 			...(tracked ? {} : { unsaved: true }),
 			...(secret ? { private: true } : {})
 		});

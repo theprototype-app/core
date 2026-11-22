@@ -11,6 +11,7 @@ import { rolesInfo } from './cloudHooks';
 import { parkEditOverlays } from './editOverlays';
 import { showToast, showLocalObjects, peers } from '../stores/appStore';
 import { objectsGroup, pokeScene } from '../stores/sceneStore';
+import { scrubDrafts } from './draftGateCore.js';
 
 /** broadcast message `type`s that CREATE a scene object (peerHandler send-gate) */
 const CREATE_TYPES = new Set(['create', 'light', 'group', 'object', 'objectfile', 'duplicate']);
@@ -34,6 +35,7 @@ export function isLocalOnly(object) {
 export function markLocalOnly(object) {
 	if (object && object.userData) {
 		object.userData.__localOnly = true;
+		draftsChanged();
 		showLocalObjects.set(true);
 	}
 }
@@ -41,6 +43,7 @@ export function markLocalOnly(object) {
  * @param {any} object */
 export function clearLocalOnly(object) {
 	if (object?.userData) delete object.userData.__localOnly;
+	draftsChanged();
 }
 
 /** Promote a local-only object to a SHARED one: re-parent into `groupUuid` when given
@@ -181,12 +184,20 @@ export function liftLocalObjects() {
 	/** @type {Set<string>} */
 	const uuids = new Set();
 	for (const { object } of lifted) object.traverse((/** @type {any} */ o) => uuids.add(o.uuid));
+	// 80a D1: a lifted draft is still a draft — the outbound gate keeps counting it while a slow
+	// (async GLTF) export has it out of the tree, or a message about it would pass in that window
+	if (lifted.length) {
+		liftedDrafts.add(uuids);
+		draftsChanged();
+	}
 	return {
 		excluded: lifted.length,
 		uuids,
 		restore: () => {
 			if (done) return;
 			done = true;
+			liftedDrafts.delete(uuids);
+			draftsChanged();
 			for (let i = lifted.length - 1; i >= 0; i--) {
 				const { parent, index, object } = lifted[i];
 				parent.children.splice(index, 0, object);
@@ -201,10 +212,38 @@ export function liftLocalObjects() {
 export function withoutLocalObjects(fn) {
 	const lift = liftLocalObjects();
 	try {
-		return { result: scrubWorkspace(fn(), lift.uuids), excluded: lift.excluded };
+		return { result: scrubPayloadDrafts(scrubWorkspace(fn(), lift.uuids), lift.uuids), excluded: lift.excluded };
 	} finally {
 		lift.restore();
 	}
+}
+
+/** the tree-shaped blocks of a session payload: already without the lifted objects (the tree was) */
+const PAYLOAD_TREE_KEYS = new Set(['objects', 'animated', 'thumbnail']);
+
+/** 80a D2: lifting the objects is not the whole of it — the payload's documents KEYED BY or
+ * POINTING AT a draft (its clips in `animations`, its `joints`, a camera look in `post`, a HUD doc)
+ * are built from stores, not from the tree, and still named it. Each block goes through the gate's
+ * own rule (draftGateCore.scrubDrafts): a key or a list entry about a draft goes. A block that would
+ * be dropped WHOLE (a draft uuid on a singleton's own chain, e.g. a game camera) is a reference and
+ * is kept, the gate's rule 4. The object tree itself is skipped: it is the megabytes, and it already
+ * lost the drafts. @template T @param {T} payload @param {Set<string>} uuids @returns {T} */
+function scrubPayloadDrafts(payload, uuids) {
+	/** @type {any} */
+	const p = payload;
+	if (!uuids.size || !p || typeof p !== 'object') return payload;
+	const isDraft = (/** @type {string} */ u) => uuids.has(u);
+	/** @type {any} */
+	let out = null;
+	for (const key of Object.keys(p)) {
+		const v = p[key];
+		if (PAYLOAD_TREE_KEYS.has(key) || !v || typeof v !== 'object') continue;
+		const next = scrubDrafts({ v }, isDraft);
+		if (next === null || next.v === v) continue;
+		if (!out) out = { ...p };
+		out[key] = next.v;
+	}
+	return out ?? payload;
 }
 
 /** A session payload's `workspace` (#20 P5: where the author left off) names the SELECTION and
@@ -222,17 +261,163 @@ function scrubWorkspace(payload, uuids) {
 	return /** @type {T} */ ({ ...p, workspace: next });
 }
 
-/** fix-batch-2: the one line a publish/export says when it left local objects out
+/** fix-batch-2, 80a D2: the one line a publish / export / file save says when it left drafts out —
+ * "N drafts not included — share first?". An editor gets a Share button that shares every draft
+ * (then they save again); a viewer cannot share, so their line says the drafts stay here. Not a
+ * blocking question: exports are also driven by code (the connector, auto-versions, publish).
  * @param {number} excluded */
 export function noteLocalObjectsExcluded(excluded) {
-	if (excluded > 0)
-		showToast(
-			excluded +
-				(excluded === 1 ? ' local object was' : ' local objects were') +
-				' not included — share ' +
-				(excluded === 1 ? 'it' : 'them') +
-				' from the object list to include ' +
-				(excluded === 1 ? 'it' : 'them') +
-				'.'
-		);
+	if (!(excluded > 0)) return;
+	const what = excluded + (excluded === 1 ? ' draft' : ' drafts') + ' not included';
+	if (isViewer()) {
+		showToast(what + ' — ' + (excluded === 1 ? 'it stays' : 'they stay') + ' on this device.');
+		return;
+	}
+	showToast(what + ' — share first?', [
+		{
+			label: excluded === 1 ? 'Share it' : 'Share them',
+			action: () => {
+				const roots = localOnlyRoots();
+				for (const object of roots) shareObject(object);
+				if (roots.length) showToast('Shared ' + roots.length + (roots.length === 1 ? ' draft' : ' drafts') + ' with the session. Save again to include ' + (roots.length === 1 ? 'it.' : 'them.'));
+			}
+		}
+	]);
+}
+
+// ---------------------------------------------------------------------------------------------
+// 80a D1 — THE DRAFT INDEX behind the one outbound gate (draftGateCore.js has the rule).
+//
+// A draft = a local-only object or anything inside one. The set is rebuilt LAZILY: marking or
+// clearing a draft, any scene poke (objectsGroup.set: loads, restores, creates) and a one-second age
+// all make it stale, and the next outgoing message rebuilds it. With no drafts at all the gate costs
+// one size check per message.
+
+let draftSet = /** @type {Set<string>} */ (new Set());
+/** uuid sets of drafts a `liftLocalObjects` has out of the scene tree right now */
+const liftedDrafts = /** @type {Set<Set<string>>} */ (new Set());
+let draftsStale = true;
+let draftsBuiltAt = 0;
+let draftWatch = false;
+
+function draftsChanged() {
+	draftsStale = true;
+}
+
+// every draft id counts, whatever its shape (a file's own id included); the gate never reads a message's `type`
+// as one (draftGateCore), and a peer cannot make an object a draft here (gateDraftsInbound, clearInboundDraftFlags)
+/** @param {unknown} id */
+export function isDraftId(id) {
+	return typeof id === 'string' && id.length > 0;
+}
+
+/** the uuids of every draft and everything inside one (rebuilt when stale) @returns {Set<string>} */
+export function draftUuids() {
+	if (!draftWatch) {
+		draftWatch = true;
+		// every structural change pokes this store (pokeScene); a subscribe is cheaper than a walk per message
+		objectsGroup.subscribe(() => draftsChanged());
+	}
+	const now = Date.now();
+	if (draftsStale || now - draftsBuiltAt > 1000) {
+		/** @type {Set<string>} */
+		const next = new Set();
+		for (const root of localOnlyRoots()) root.traverse?.((/** @type {any} */ o) => { if (isDraftId(o.uuid)) next.add(o.uuid); });
+		for (const set of liftedDrafts) for (const u of set) if (isDraftId(u)) next.add(u);
+		draftSet = next;
+		draftsStale = false;
+		draftsBuiltAt = now;
+	}
+	return draftSet;
+}
+
+/**
+ * An object that arrived from a peer is never a draft here: a draft is something made or kept on THIS device
+ * (markLocalOnly, adoptLoadedDrafts), and a peer never sends one. So the flag is cleared on everything that
+ * came over the wire, before it joins the scene.
+ * @param {any} object
+ */
+export function clearInboundDraftFlags(object) {
+	object?.traverse?.((/** @type {any} */ o) => {
+		if (o?.userData && '__localOnly' in o.userData) delete o.userData.__localOnly;
+	});
+}
+
+/** is this uuid a draft (or inside one)? @param {any} uuid */
+export function isDraftUuid(uuid) {
+	return typeof uuid === 'string' && draftUuids().has(uuid);
+}
+
+/** 80a: the receiving half of the drafts gate. A draft is only on this device, so nothing a peer sends may
+ * touch one: a message about a draft is not applied, and the parts of a bigger message that name one are
+ * left out (the same scrub as the sending half) @param {any} payload @returns {any} */
+export function gateDraftsInbound(payload) {
+	if (!payload || typeof payload !== 'object') return payload;
+	const set = draftUuids();
+	if (!set.size) return payload;
+	const out = scrubDrafts(payload, (u) => set.has(u), { flags: false });
+	if (out !== payload) {
+		const key = 'in:' + String(payload.type ?? '?') + (out === null ? ':dropped' : ':trimmed');
+		draftGateStats[key] = (draftGateStats[key] ?? 0) + 1;
+	}
+	return out;
+}
+
+/**
+ * 80a D1: THE outbound gate. Every message that leaves this machine passes here — once in
+ * `PeerConnection.broadcast` (before batching and the fast channel) and once in the wrapper
+ * `handleData` puts on every connection's `send` (handshake replies and direct answers). A message
+ * about a draft is dropped, one that only contains a draft among other things is trimmed
+ * (draftGateCore.js). Counted per message type in `draftGateStats` for the debug hook.
+ * @param {any} payload @returns {any} what may be sent, or null
+ */
+export function gateDraftsOutbound(payload) {
+	if (!payload || typeof payload !== 'object') return payload;
+	const set = draftUuids();
+	if (!set.size) return payload;
+	const out = scrubDrafts(payload, (u) => set.has(u));
+	if (out !== payload) {
+		const key = String(payload.type ?? '?') + (out === null ? ':dropped' : ':trimmed');
+		draftGateStats[key] = (draftGateStats[key] ?? 0) + 1;
+	}
+	return out;
+}
+
+/** what the gate held back this page, keyed `<type>:dropped|trimmed` (debug hook, never sent) */
+export const draftGateStats = /** @type {Record<string, number>} */ ({});
+
+/** 80a D2: how many drafts a selection holds — selected drafts plus drafts inside selected objects
+ * @param {string[]} uuids @returns {number} */
+export function draftsInSelection(uuids) {
+	const picked = new Set(uuids ?? []);
+	let n = 0;
+	for (const uuid of picked) if (isDraftUuid(uuid)) n++;
+	// a draft inside a selected (shared) group
+	for (const root of localOnlyRoots()) {
+		if (picked.has(root.uuid)) continue;
+		for (let o = root.parent; o; o = o.parent) {
+			if (picked.has(o.uuid)) {
+				n++;
+				break;
+			}
+		}
+	}
+	return n;
+}
+
+const APP_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** 80a migration: an object a LOAD just built (a scene file, a saved session, the autosave) that
+ * carries local-only flags is a draft here too — every flagged node is marked (the gate's index
+ * hears of it at once, the Local objects section shows), and the caller sends nothing for a draft
+ * root. Older builds saved drafts into files; they load as private drafts, never shared on load.
+ * @param {any} object @returns {boolean} true when the object itself is a draft */
+export function adoptLoadedDrafts(object) {
+	object?.traverse?.((/** @type {any} */ o) => {
+		if (o?.userData?.__localOnly !== true) return;
+		// the app saved its drafts under its own uuids; a flag on any other id is not one of ours
+		if (APP_UUID.test(String(o.uuid))) markLocalOnly(o);
+		else delete o.userData.__localOnly;
+	});
+	return isLocalOnly(object);
 }

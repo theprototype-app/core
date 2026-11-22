@@ -78,7 +78,11 @@ export function freeArea() {
 		fl = parseFloat(cs.getPropertyValue('--sb-free-left')) || 0;
 		fr = parseFloat(cs.getPropertyValue('--sb-free-right')) || 0;
 	} catch {}
-	const left = Math.max(0, fl);
+	// 80a-int: the touch tools STACKED into a column on the left edge (no room for their row beside the logo) are left
+	// chrome drawn above every window, like the toolbar is bottom chrome — a window opening under them lost its edge
+	const tt = document.querySelector('#touch-tools.tt-stacked')?.getBoundingClientRect();
+	const ttRight = tt && tt.width > 0 && tt.height > 0 && tt.left < window.innerWidth / 3 ? Math.round(tt.right) + 4 : 0;
+	const left = Math.max(0, fl, ttRight);
 	const right = Math.max(left + 120, window.innerWidth - Math.max(0, fr));
 	const top = topChromeFloor(left, right - left, TOP_CHROME.map((sel) => document.querySelector(sel)?.getBoundingClientRect() ?? null));
 	let bottom = window.innerHeight - bottomReserve({ dock: false });
@@ -256,6 +260,11 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 	 *  open, so a window parked by hand keeps its spot until a column takes that room. */
 	function fitFree() {
 		if (typeof document === 'undefined' || node.dataset.tabMember || node.dataset.docked || rect.overColumn || typeof rect.left !== 'number') return;
+		// 80a-int: a width cap this function set is lifted before measuring, so the window gets its own width back
+		if (node.dataset.freeCap) {
+			node.style.maxWidth = '';
+			delete node.dataset.freeCap;
+		}
 		const w = node.offsetWidth || 0;
 		if (!w) return;
 		const a = freeArea();
@@ -263,6 +272,15 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 		if (rect.left >= a.left && rect.left + w <= a.right) return;
 		const lo = a.left + 8;
 		const hi = a.right - 8;
+		// 80a-int: a resizable window whose width follows its content (no saved width — the floating Statistics on the
+		// HONOR beside the stacked touch tools) is drawn narrower to fit the free area, never saved: the max-height cap's
+		// rule turned sideways. A window with a width of its own keeps it and goes to the free area's left edge.
+		if (hi - lo < w && resizable && typeof rect.w !== 'number' && hi - lo >= scaledPx(minW)) {
+			node.style.maxWidth = hi - lo + 'px';
+			node.dataset.freeCap = '1';
+			rect.left = lo;
+			return;
+		}
 		rect.left = hi - lo >= w ? Math.min(Math.max(lo, rect.left), hi - w) : Math.max(0, Math.min(lo, window.innerWidth - w));
 	}
 
@@ -278,6 +296,11 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 		if (resizable) {
 			clampSize();
 			if (typeof rect.w === 'number') node.style.width = rect.w + 'px';
+			// 80a-int: a width of its own (the grip) replaces fitFree's display cap, or the grip could not widen it
+			if (typeof rect.w === 'number' && node.dataset.freeCap) {
+				node.style.maxWidth = '';
+				delete node.dataset.freeCap;
+			}
 			if (axis !== 'x' && typeof rect.h === 'number') node.style.height = clearOfToolbar(rect.h) + 'px';
 		}
 		// a window whose height follows its content (no saved height — the Statistics window, HONOR) is capped by a

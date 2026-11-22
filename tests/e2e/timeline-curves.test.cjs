@@ -147,6 +147,18 @@ h.run(async () => {
 		`dragging the out handle up makes the key 'free' and lifts the curve (h ${tr.keys[0].h}, mid ${before.mid.toFixed(3)} -> ${mid.toFixed(3)})`
 	);
 	await shot(pa, '02-curve-handle-dragged.png');
+	if (SHOTS) {
+		const was = await pa.evaluate(() => {
+			let v;
+			window.__tp.test.v1.themes.theme.subscribe((x) => (v = x))();
+			window.__tp.test.v1.themes.theme.set('light');
+			return v;
+		});
+		await pa.waitForTimeout(300);
+		await shot(pa, '02b-curve-handle-dragged-light.png');
+		await pa.evaluate((v) => window.__tp.test.v1.themes.theme.set(v), was);
+		await pa.waitForTimeout(300);
+	}
 	await pa.keyboard.press('Control+z');
 	tr = propTrack(await activeSeq(pa));
 	h.check(

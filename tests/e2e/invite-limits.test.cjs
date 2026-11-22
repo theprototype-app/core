@@ -137,7 +137,11 @@ h.run(async () => {
 	await until(() => toastCount(J, 'paused invite joins'), (n) => n >= 1, '3.1 J is told invite joins are paused', 30000);
 	h.check((await toastCount(J, 'declined your connection request')) === 0, '3.2 …not "declined"');
 	h.check(!(await roster(H)).some((u) => u[0] === J.id), '3.3 J is not in');
-	await H.page.locator('#failed-invite-joins .fij-resume').click({ timeout: 5000 });
+	// the Invite sheet in section 1 left the Connect drawer open, which routes the floating cards into it:
+	// the row is there too (its own id), then the drawer closes and the floating row takes the clicks
+	h.check((await H.page.locator('#failed-invite-joins-drawer').count()) <= 1, '3.4a the drawer carries the row while it is open');
+	await inPage(H, 's.connectDrawerOpen?.set?.(false)');
+	await H.page.locator('#failed-invite-joins .fij-resume').click({ timeout: 10000 });
 	h.check((await failed(H)).pausedUntil === 0, '3.4 Resume now lifts the pause');
 	await J.page.evaluate(() => {
 		const t = [...document.querySelectorAll('.tp-toast')].find((el) => /paused invite joins/.test(el.textContent || ''));

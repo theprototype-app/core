@@ -97,7 +97,8 @@ h.run(async () => {
 	await until(() => toastWith(H, 'needs your approval to join'), (t) => !!t && t.buttons.includes('Undo'), '2.3 the host is told, with Undo');
 	const inv = await inPage(H, "const r = s.inviteStore.createInvite({ hostId: pc.peer.id, kind: 'person', maxUses: 5 }); return { link: r.link, id: r.record?.id, refused: r.refused };");
 	h.check(!!inv?.link && !inv.refused, 'a working five-use invite link');
-	// C and B are done: close them so the fourth page boots on a box with two fewer renderers
+	// C and B are done: close them so the fourth page boots on a box with two fewer renderers (C2 is let in
+	// below, so H still hosts someone — removing people needs a session)
 	await C.ctx.close();
 	await B.ctx.close();
 	const C2 = await h.setupPage(browser, 'C2', { hash: new URL(inv.link).hash });
@@ -105,13 +106,13 @@ h.run(async () => {
 	h.check(/working invite link/.test(card?.label ?? ''), `2.5 the card says why it is not automatic (${card?.label})`);
 	h.check(!(await roster(H)).some((u) => u[0] === C2.id), '2.6 and nobody let it in');
 	h.check((await read(C2, 'connectionState.sessionHost')) !== H.id, '2.7 C2 is still waiting');
-	await inPage(H, 's.peerApproval.denyPeer(arg)', C2.id);
+	await inPage(H, 's.peerApproval.approvePeer(arg)', C2.id);
+	await until(() => inPage(H, 'return pc.openedPeers.has(arg)', C2.id), (v) => v === true, '2.8 approved by hand, C2 is in (H hosts a session for section 3)', 30000);
 	// counterfactual: the flag is what made the difference
 	await inPage(H, 's.peerModeration.setRequireApproval(false, { quiet: true })');
 	const tok = core.parseHashParams(new URL(inv.link).hash).invite;
 	await inPage(H, EMIT, { peer: 'eeee1', metadata: { jr: 1, invite: core.dialInvite(tok, 'eeee1', H.id) } });
-	await until(() => roster(H).then((r) => r.some((u) => u[0] === 'eeee1')), (v) => v === true, '2.8 COUNTERFACTUAL: with it off, the same link admits');
-	await C2.ctx.close();
+	await until(() => roster(H).then((r) => r.some((u) => u[0] === 'eeee1')), (v) => v === true, '2.9 COUNTERFACTUAL: with it off, the same link admits');
 
 	// ==================================================================== 3
 	console.log('\n=== 3. a plugin room access: both fixes ===');

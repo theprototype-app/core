@@ -183,7 +183,8 @@ h.run(async () => {
 			'5.1 the row says there is no relay'
 		);
 		await F.page.evaluate(() => window.__stores.settingsOpen.set(false));
-		await F.page.locator('input[placeholder="Enter peer ID to connect"]').fill(G.id);
+		// 1.74's Invite-first pill shows the field after Join… (helpers.openDial knows every shape of it)
+		await (await h.openDial(F.page)).fill(G.id);
 		await F.page.getByRole('button', { name: 'Connect', exact: true }).click();
 		await h.eventually(
 			() => F.page.getByText('Could not connect through a relay server').first().isVisible().catch(() => false),

@@ -71,7 +71,17 @@ h.run(async () => {
 		console.log('DIAG ' + label + ' B=' + JSON.stringify(d).slice(0, 1500) + ' A=' + JSON.stringify(a).slice(0, 600));
 	};
 	await inPage(B, `s.peerRateGate.peerRateLimits.set('strict');`);
+	const nameIn = () => B.page.evaluate(() => (window.__tp?.test?.v1 ?? window.__stores)?.sceneBudget?.wireStats?.()?.rows?.find((r) => r.type === 'name')?.in ?? 0).catch(() => -1);
+	const in0 = await nameIn();
+	const hostOnB = await inPage(B, `let v; s.connectionState.sessionHost.subscribe((x) => (v = x))(); let p; s.peerRateGate.peerRateLimits.subscribe((x) => (p = x))(); return { host: v, preset: p };`);
+	const tSend = Date.now();
 	await sendN(A, rename, 1000);
+	const sendMs = Date.now() - tSend;
+	await B.page.waitForTimeout(1000);
+	const in1 = await nameIn();
+	await B.page.waitForTimeout(2000);
+	const in3 = await nameIn();
+	console.log('DIAG strict-flood ' + JSON.stringify({ hostOnB, A: A.id, sendMs, arrivedBy1s: in1 - in0, arrivedBy3s: in3 - in0 }));
 	await h.eventually(() => toast(B, 'is sending too many edits'), (v) => v === true, '4.1 the receiver is told', 15000);
 	await B.page.waitForTimeout(1500);
 	const landed = Number(String(await nameOn(B)).replace('flood-', ''));

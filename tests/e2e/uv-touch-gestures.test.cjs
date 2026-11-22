@@ -101,7 +101,7 @@ h.run(async () => {
 	const page = A.page;
 	const uuid = await openOnBox(page);
 	h.check(!!uuid, 'premise: a box in the UV editor, Paint armed');
-	await page.evaluate(() => window.__tp.test.v1.penInput.penSeen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.penInput?.penSeen.set(false)); // absent on the base (counterfactual run)
 
 	// ---- 1. the wheel zooms toward the pointer ---------------------------------------------------------------------
 	const before = await page.evaluate(() => window.__uvDebug().project(0.25, 0.75));
@@ -197,7 +197,7 @@ h.run(async () => {
 	}
 	await ev(page, 'pointerup', 0.28, 0.1, PEN);
 	await wait(page, 600);
-	const seen = await page.evaluate(() => { let v; window.__tp.test.v1.penInput.penSeen.subscribe((x) => (v = x))(); return v; });
+	const seen = await page.evaluate(() => { let v; window.__tp.test.v1.penInput?.penSeen.subscribe((x) => (v = x))(); return v; });
 	h.check(seen === true, 'a pen event switches "Pen only draws" on');
 	const note = await page.evaluate(() => !!document.getElementById('uv-pen-only-note'));
 	h.check(note, '...and the brush panel says so');
@@ -215,7 +215,7 @@ h.run(async () => {
 	h.check(fingerPaint === 0 && fingerPanned.gesture === 'pan' && fingerPanned.panX !== p0.panX, `with a pen seen a finger pans (gesture ${fingerPanned.gesture}, pan ${p0.panX} -> ${fingerPanned.panX}) and paints nothing (${fingerPaint} px)`);
 
 	// ---- 5. the setting off: fingers paint again ----------------------------------------------------------------
-	await page.click('#uv-pen-only');
+	await page.click('#uv-pen-only', { timeout: 5000 }).catch(() => console.log('FAIL no #uv-pen-only toggle'));
 	await wait(page, 150);
 	await ev(page, 'pointerdown', 0.6, 0.6, F1);
 	await wait(page, 200);
@@ -227,7 +227,7 @@ h.run(async () => {
 	await wait(page, 700);
 	const fingerAgain = await blueIn(page, uuid, 0.55, 0.85, 0.5, 0.7);
 	h.check(fingerAgain > 300, `with "Pen only draws" off a finger paints again (${fingerAgain} blue px)`);
-	await page.click('#uv-pen-only');
+	await page.click('#uv-pen-only', { timeout: 5000 }).catch(() => console.log('FAIL no #uv-pen-only toggle'));
 
 	// ---- 6. a palm while the pen paints: ignored, the pen's stroke runs to its end -------------------------------
 	const PALM = { id: 41, type: 'touch' };

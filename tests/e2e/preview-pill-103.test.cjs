@@ -360,6 +360,7 @@ h.run(async () => {
 	p = await pill(P);
 	console.log('  at 1280: pill ' + Math.round(p.rect.w) + ' px wide, collapsed ' + p.collapsed);
 	h.check(!p.collapsed && p.parts.length === 3, `7. 1280 x 800 with three devices: one row, all parts (${Math.round(p.rect.w)} px)`);
+	const worst = [...p.parts].sort((x, y) => parseInt(y.text) - parseInt(x.text))[0]?.id;
 	await shot(P, '06-desktop-1280-three-devices');
 	await T(P, () => {
 		const tr = document.getElementById('hud-tr');
@@ -370,7 +371,7 @@ h.run(async () => {
 	});
 	await h.eventually(() => pill(P), (x) => x?.collapsed, '7. other chrome in its way: the parts fold');
 	p = await pill(P);
-	h.check(p.parts.length === 1 && /\+2/.test(p.parts[0].text) && p.parts[0].id === 'quest', `7. …to the worst one + "+2" (${JSON.stringify(p.parts)})`);
+	h.check(p.parts.length === 1 && /\+2/.test(p.parts[0].text) && p.parts[0].id === worst, `7. …to the worst one (${worst}) + "+2" (${JSON.stringify(p.parts)})`);
 	await T(P, () => {
 		const tr = document.getElementById('hud-tr');
 		tr.style.cssText = tr.dataset.was ?? '';

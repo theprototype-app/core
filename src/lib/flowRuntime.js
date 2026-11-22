@@ -1007,6 +1007,14 @@ function warnNoSimulation(type) {
 	showToast(label + ' fired, but no simulation is running — press P (or the play button) to start physics');
 }
 
+/**
+ * 102 M3: WHERE an On Impact node's last contact touched (world point, the hit surface's normal,
+ * the other body) — initiator-local, which is the peer that stamps. @type {Map<string, {point: number[], normal: number[], other: string}>}
+ */
+const contactPlaces = new Map();
+/** 102 M3: the stamp a Stamp Decal node last acted on @type {Map<string, number>} */
+const decalStampActed = new Map();
+
 /** B7: the stamp a spawn node last acted on (the setgamestate shape, not the physics
  * family's rising VALUE — a spawn must fire once per pulse whatever a held key does to
  * the level) @type {Map<string, number>} */
@@ -1378,6 +1386,68 @@ function updateSpawnNodes(time, ctx) {
 	}
 	// forget nodes that no longer exist, so a rebuilt node starts fresh
 	for (const id of [...spawnActed.keys()]) if (!nodes.some((n) => n.id === id)) spawnActed.delete(id);
+}
+
+/**
+ * 102 M3: the Stamp Decal node. Acts on the trigger's stamp edge (the spawn shape); while a run is
+ * stepped by ANOTHER peer that peer stamps and this one waits for its `decalstamp`. With no run
+ * (an On Click mark) the peer whose node fires stamps and sends; the mark's id (node + stamp)
+ * makes a second copy of the same mark a no-op everywhere.
+ * @param {number} time @param {any} ctx
+ */
+function updateDecalStampNodes(time, ctx) {
+	for (const node of nodes) {
+		if (node.type !== 'decalstamp') continue;
+		seeActionNode(node, time);
+		const stamp = triggerStampFor(node.id, ctx);
+		if (stamp === null) continue;
+		if (decalStampActed.get(node.id) === stamp) continue;
+		decalStampActed.set(node.id, stamp);
+		if (staleTrigger(node, stamp)) continue;
+		const initiator = !!physicsRef?.isInitiator?.();
+		const remote = !!(physicsRef?.remoteSimulating && get(physicsRef.remoteSimulating));
+		if (remote && !initiator) continue;
+		const data = resolveInputs(node, nodes, edges, time, ctx);
+		/** @type {{point: number[], normal: number[], other: string} | null} */
+		let place = null;
+		if (isPlace(data.point)) {
+			place = {
+				point: [num(data.point[0]), num(data.point[1]), num(data.point[2])],
+				normal: isPlace(data.normal) ? [num(data.normal[0]), num(data.normal[1]), num(data.normal[2])] : [0, 1, 0],
+				other: ''
+			};
+		} else {
+			for (const edge of edgesInto(edges, node.id)) {
+				if (edge.targetHandle && edge.targetHandle !== 'trigger') continue;
+				const c = contactPlaces.get(edge.source);
+				if (c) {
+					place = c;
+					break;
+				}
+			}
+		}
+		if (!place) continue;
+		const explicit = typeof data.target === 'string' && data.target && data.target !== '-None-' ? data.target : '';
+		// the ground ('' other) has no surface object to carry a mark
+		const target = explicit || place.other || (isPlace(data.point) ? implicitOwnerOf(node) : '');
+		if (!target || target === 'player') continue;
+		const source = typeof data.source === 'string' && data.source && data.source !== '-None-' ? data.source : '';
+		const stampRequest = {
+			id: (node.id + ':' + stamp.toFixed(3)).slice(0, 64),
+			target,
+			point: place.point,
+			normal: place.normal,
+			source,
+			size: num(data.size ?? 0.4),
+			depth: num(data.depth ?? 0.3),
+			life: num(data.lifetime ?? 10),
+			cap: num(data.cap ?? 64)
+		};
+		import('./decalStamp.js')
+			.then((m) => m.stampDecalFromFlow(stampRequest))
+			.catch((err) => console.log('decal stamp failed', err));
+	}
+	for (const id of [...decalStampActed.keys()]) if (!nodes.some((n) => n.id === id)) decalStampActed.delete(id);
 }
 
 /** a finite [x, y, z] @param {any} v */
@@ -4156,8 +4226,9 @@ export function objectHasHoverHighlight(uuid) {
  * @param {string} uuid @param {number | null} down downward speed at contact (m/s)
  * @param {string=} otherUuid @param {number | null=} speed closing speed along the normal
  *   (m/s; omitted = `down`, a caller that only knows one number)
+ * @param {{point: number[], normal: number[]} | null=} contact 102 M3: where it touched (initiator-local)
  */
-export function fireObjectImpact(uuid, down, otherUuid = '', speed = down) {
+export function fireObjectImpact(uuid, down, otherUuid = '', speed = down, contact = null) {
 	const ctx = runtimeCtx();
 	nodes.forEach((node) => {
 		if (node.type !== 'onimpact') return;
@@ -4165,7 +4236,11 @@ export function fireObjectImpact(uuid, down, otherUuid = '', speed = down) {
 		const strength = impactStrengthFor(data.direction, down, speed ?? null);
 		if (strength === null || strength < num(data.minStrength ?? 0)) return;
 		if (!contactPasses(data, otherUuid)) return;
-		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid) fireContact(node, otherUuid);
+		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid) {
+			// 102 M3: where it touched, for a Stamp Decal behind this node (initiator-local)
+			if (contact) contactPlaces.set(node.id, { point: contact.point, normal: contact.normal, other: otherUuid });
+			fireContact(node, otherUuid);
+		}
 	});
 }
 
@@ -5546,6 +5621,7 @@ function runTick(now) {
 	// this runs before the physics post-tick hook, so a body created this frame is
 	// stepped this frame instead of hanging for one.
 	updateSpawnNodes(ownTime, ownCtx);
+	updateDecalStampNodes(ownTime, ownCtx); // 102 M3
 	if (ownLive) toView();
 	// 31: a scene's own settings rows (only when the graph changed) and the pointing switch
 	updateGameSettingNodes();

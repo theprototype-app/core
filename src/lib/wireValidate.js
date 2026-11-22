@@ -188,6 +188,9 @@ export const VALIDATORS = {
 	chathistory: (d) => isArray(d.messages) && d.messages.length <= 500,
 	// 48 S2: a sequence document (normalized again on apply) / its delete / the full map
 	seq: (d) => typeof d.id === 'string' && d.id.length <= 64 && !!d.doc && typeof d.doc === 'object' && !Array.isArray(d.doc),
+	// 102 M3: a stamped mark (applyDecalStamp re-checks and clamps every field)
+	decalstamp: (d) =>
+		typeof d.id === 'string' && d.id.length <= 64 && isUuid(d.target) && isNumberArray(d.pose) && d.pose.length === 16 && (d.image === undefined || (typeof d.image === 'string' && d.image.length <= 128)),
 	seqdelete: (d) => typeof d.id === 'string' && d.id.length <= 64,
 	seqs: (d) => !!d.seqs && typeof d.seqs === 'object' && !Array.isArray(d.seqs),
 	// 50 Y1: shared text — a document key (`n:<graph>:<node>` / `f:<name>`) and Yjs's own binary
@@ -523,6 +526,8 @@ export const VALIDATORS = {
 			if (v === null) return isUuid(d.uuid);
 			return isUuid(d.uuid) && !!v && typeof v === 'object' && !isArray(v) && (v.text === undefined || (typeof v.text === 'string' && v.text.length <= 4000));
 		}
+		// 102 M3: a decal record (normalizeDecal clamps every field)
+		if (d.parameter === 'decal') return isUuid(d.uuid) && !!d.decal && typeof d.decal === 'object' && !isArray(d.decal);
 		if (d.parameter === 'water' || d.parameter === 'bubbles' || d.parameter === 'pour') {
 			const v = d[d.parameter];
 			return isUuid(d.uuid) && (v === null || (!!v && typeof v === 'object' && !isArray(v)));

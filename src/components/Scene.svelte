@@ -18,6 +18,7 @@
 		deselectObject,
 		applySelectionSet,
 		topLevelObjectOf,
+		editorTargetOf,
 		focusObject,
 		selectSameType,
 		isolateObjects,
@@ -36,7 +37,7 @@
 	import { holdBody, releaseBody } from '$lib/physics';
 	import { sculptObject, enterSculpt, beginStroke, strokeMove, endStroke as sculptEndStroke, showCursorAt, hideCursor } from '$lib/terrainSculpt';
 	import { scatterSelectArmed, scatterSelectDown, scatterSelectMove, scatterSelectUp, onScatterProxyMoved, onScatterProxyDragChanged } from '$lib/scatterEdit';
-	import { sceneHits } from '$lib/scenePick';
+	import { sceneHits, hitWorldNormal } from '$lib/scenePick';
 	import { pickStack, chooseInStack, altCycleIndex, primaryIndex } from '$lib/selectThrough';
 	import { editorPass } from '$lib/pickPass'; // 36 F22
 	import { showPickPreview, hidePickPreview, notePickCycled } from '$lib/pickCycle'; // 36 F22 / S6
@@ -53,6 +54,7 @@
 	import { tickAnimatedMixers } from '$lib/animatedImports';
 	import { tickSim } from '$lib/sim/runtime.js'; // 36-sim: jiggle, splashes, fluid tanks
 	import { tickTextPathsLazy } from '$lib/textPathTick.js'; // 64 D2: text on a path
+	import { tickDecalsLazy } from '$lib/decalTick.js'; // 102 M3: decals
 	import { startPackBehaviors, tickPackBehaviors } from '$lib/packBehavior';
 	import { startArchParts } from '$lib/arch/archParts.js';
 	import { tickAnimationPreview, captureAutoKey, playheadOf } from '$lib/animationPreview';
@@ -459,6 +461,7 @@
 		tickPackBehaviors(); // 33 P2: doors/lids/levers pose from their shared state (rest in Edit)
 		tickSim($objectsGroup, camera.current, renderer, performance.now()); // 36-sim (after mixers: jiggle rides the posed bones)
 		tickTextPathsLazy($objectsGroup, performance.now()); // 64 D2: letters follow their carriers (and linked paths)
+		tickDecalsLazy($objectsGroup, performance.now()); // 102 M3: decal surfaces follow their targets
 		tickAnimationPreview(); // Animation window: local transform preview (not synced)
 		tickSequences(); // 48 S2: shots / clips / audio / events of running sequences
 		tickMeshEdit(); // vertex handles follow the object if it moves (119)
@@ -638,7 +641,7 @@
 		// node no longer wins the click); a plain repeat on the same spot walks down it.
 		// 36 F22: water (and, by the scene's setting, transparent surfaces and triggers) stands
 		// aside too; Alt+click walks the whole stack front to back instead
-		const stack = pickStack(hits, topLevelObjectOf, editorPass());
+		const stack = pickStack(hits, editorTargetOf, editorPass());
 		const altPick = cycle && click ? altCycleIndex(stack, click, lastAltClick) : null;
 		// 41 G14: on a finger, a repeat tap on a SELECTED front object lets go of it rather than
 		// walking to what is behind (on a phone the Objects list reaches that) — in most scenes
@@ -998,7 +1001,7 @@
 			const at = document.elementFromPoint(x, y);
 			if (at !== element) return hidePickPreview();
 			selectionRaycaster.setFromCamera(new THREE.Vector2(((x - rect.left) / rect.width) * 2 - 1, -((y - rect.top) / rect.height) * 2 + 1), camera.current);
-			const stack = pickStack(pickSceneObjects(), topLevelObjectOf, editorPass());
+			const stack = pickStack(pickSceneObjects(), editorTargetOf, editorPass());
 			const next = altCycleIndex(stack, { x, y }, lastAltClick);
 			if (next.index < 0) return hidePickPreview();
 			showPickPreview($globalScene, stack[next.index].target, x, y, next.index, next.of);
@@ -1439,7 +1442,7 @@
 			}
 			setRayFromEvent({ clientX, clientY });
 			const hits = pickSceneObjects();
-			const top = !forceEmpty && hits.length ? topLevelObjectOf(hits[0].object) : null;
+			const top = !forceEmpty && hits.length ? editorTargetOf(hits[0].object) : null;
 			if (top) {
 				// an object under the cursor gets its regular context menu; the
 				// hit point rides along so Add note pins exactly there (87)
@@ -1448,6 +1451,9 @@
 					y: menuY,
 					uuid: top.uuid,
 					point: hits[0].point.toArray(),
+					// 102 M3: the surface direction + the mesh hit, for "Add decal here"
+					normal: hitWorldNormal(hits[0])?.toArray() ?? null,
+					hitUuid: hits[0].object.uuid,
 					locked: !!$lockedObjects.find((lock) => lock[1] === top.uuid)
 				};
 				return;

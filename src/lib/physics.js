@@ -165,7 +165,7 @@ let lastAnyImpactAt = new Map();
 /** contacts collected inside the substep loop (36 X6: + the other body; fix-batch-1 #14: the
  * two channels — `down` = downward speed, `speed` = closing speed along the contact normal,
  * null where that channel did not count the contact)
- * @type {{uuid: string, down: number | null, speed: number | null, other: string}[]} */
+ * @type {{uuid: string, down: number | null, speed: number | null, other: string, contact?: {point: number[], normal: number[]} | null}[]} */
 let pendingImpacts = [];
 /** CL-A: colliders attached to FIXED scenery bodies (rebuild bookkeeping —
  * BodyEntry only exists for dynamic/kinematic). @type {Map<string, any[]>} */
@@ -2140,9 +2140,10 @@ function queueContact(h1, h2, now) {
 		if (down !== null) lastImpactAt.set(uuid, now);
 		if (speed !== null) lastAnyImpactAt.set(uuid, now);
 		// 36 X6: and what it hit — the other collider's owner, '' for the ground
-		pendingImpacts.push({ uuid, down, speed, other: hit?.uuid ?? '' });
+		// 102 M3: + WHERE (world point, the other surface's outward normal) for Stamp decal
+		pendingImpacts.push({ uuid, down, speed, other: hit?.uuid ?? '', contact: contactPlace(handle, other) });
 		if (hit && !hit.sensor && hit.uuid !== uuid && hit.entry?.mode !== 'dynamic')
-			pendingImpacts.push({ uuid: hit.uuid, down, speed, other: uuid });
+			pendingImpacts.push({ uuid: hit.uuid, down, speed, other: uuid, contact: contactPlace(other, handle) });
 	}
 }
 
@@ -2164,6 +2165,55 @@ function contactNormal(h1, h2) {
 		n = { x: v.x, y: v.y, z: v.z };
 	});
 	return n;
+}
+
+/**
+ * 102 M3: where a contact that just started touches, in world space, and the normal of the
+ * OTHER collider's surface there (pointing out of it, toward `mover`). Null when rapier holds
+ * no manifold for the pair. Initiator-local (only the stepping peer has contacts).
+ * @param {number} mover @param {number} other @returns {{point: number[], normal: number[]} | null}
+ */
+function contactPlace(mover, other) {
+	const c1 = world?.getCollider(mover);
+	const c2 = world?.getCollider(other);
+	if (!c1 || !c2) return null;
+	/** @type {{point: number[], normal: number[]} | null} */
+	let out = null;
+	try {
+		world.contactPair(c1, c2, (/** @type {any} */ manifold, /** @type {boolean} */ flipped) => {
+			if (out || !manifold.numContacts()) return;
+			const n = manifold.normal();
+			// the manifold's normal points from its first collider to its second: first = the mover
+			// unless flipped, and the surface we want faces the mover
+			const s = flipped ? 1 : -1;
+			let p = null;
+			if (manifold.numSolverContacts() > 0) {
+				const v = manifold.solverContactPoint(0);
+				p = [v.x, v.y, v.z];
+			} else {
+				const first = flipped ? c2 : c1;
+				const l = manifold.localContactPoint1(0);
+				if (l) {
+					const t = first.translation();
+					const q = first.rotation();
+					// rotate the local point by the collider's quaternion, then translate
+					const ix = q.w * l.x + q.y * l.z - q.z * l.y;
+					const iy = q.w * l.y + q.z * l.x - q.x * l.z;
+					const iz = q.w * l.z + q.x * l.y - q.y * l.x;
+					const iw = -q.x * l.x - q.y * l.y - q.z * l.z;
+					p = [
+						ix * q.w + iw * -q.x + iy * -q.z - iz * -q.y + t.x,
+						iy * q.w + iw * -q.y + iz * -q.x - ix * -q.z + t.y,
+						iz * q.w + iw * -q.z + ix * -q.y - iy * -q.x + t.z
+					];
+				}
+			}
+			if (p && p.every(Number.isFinite)) out = { point: p, normal: [n.x * s, n.y * s, n.z * s] };
+		});
+	} catch {
+		return null;
+	}
+	return out;
 }
 
 /**
@@ -2352,11 +2402,11 @@ function dispatchImpacts() {
 	const impacts = pendingImpacts;
 	pendingImpacts = [];
 	const group = get(objectsGroup);
-	impacts.forEach(({ uuid, down, speed, other }) => {
+	impacts.forEach(({ uuid, down, speed, other, contact }) => {
 		// flow path: pulse On Impact nodes targeting this object — the trigger
 		// stamp replicates (nodetrigger), so every peer computes the same pulse.
 		// fix-batch-1 #14: each node picks its channel (direction any | down)
-		fireObjectImpact(uuid, down, other, speed);
+		fireObjectImpact(uuid, down, other, speed, contact);
 		// the emitters keep the landing rule: their "On impact" has no direction option, so
 		// a sideways contact bursting them would change every scene that uses one
 		if (down === null) return;

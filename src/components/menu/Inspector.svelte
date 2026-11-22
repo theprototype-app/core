@@ -3412,7 +3412,12 @@
 			</div>
 			{/if}
 
-			{#if !multiCount && isReplaceableModel($selectedObject)}
+			<!-- 102 M3: a decal's look is its own section, first (where a model's source sits) -->
+			{#if !multiCount && $selectedObject.userData?.decal}
+				<!-- a lazy chunk: the boot never pays for decals -->
+				{#await import('./DecalSection.svelte') then m}<m.default object={$selectedObject} />{/await}
+			{/if}
+			{#if !multiCount && isReplaceableModel($selectedObject) && !$selectedObject.userData?.decal}
 				<!-- 59 T1/T2/T7a: Replace model… / Edit in Blender… / the watched file -->
 				<ModelSourceSection object={$selectedObject} />
 			{/if}
@@ -4196,7 +4201,8 @@
 			{/if}
 
 			<!-- 64 D2: a text's carrier draws nothing — its look is the Text section's -->
-			{#if material && !$selectedObject.userData?.textPath}
+			<!-- 102 M3: nor does a decal's — its look is the Decal section's -->
+			{#if material && !$selectedObject.userData?.textPath && !$selectedObject.userData?.decal}
 				<Section variant="panel" label="Material" clip={{ count: () => matTargets.length, fans: true }}>
 					{#if matCount}
 						<p id="material-multi-note" class="text-[length:var(--fs-badge)] italic text-text-muted">

@@ -250,6 +250,7 @@
 		StepBack,
 		StepForward,
 		StickyNote,
+		Sticker,
 		Sun,
 		Tag, // 37 R4: prefab rows
 		Target,
@@ -505,6 +506,7 @@
 		'step-back': StepBack,
 		'step-forward': StepForward,
 		'sticky-note': StickyNote,
+		sticker: Sticker,
 		sun: Sun,
 		tag: Tag,
 		target: Target,

@@ -622,7 +622,7 @@ export const ROOM_SCOPED = new Set([
 	// flow
 	'nodes', 'nodesync', 'graphcreate', 'graphdelete', 'nodecreate', 'nodemove',
 	'nodedata', 'nodedelete', 'edgecreate', 'edgedelete', 'nodetrigger', 'triggers',
-	'particleburst', 'flowcursor',
+	'particleburst', 'flowcursor', 'decalstamp',
 	// scene singletons and keyed documents
 	// 23-A2/A4: 'transport' (the musical clock) and 'patch' (the cable routing) are scene
 	// singletons exactly like 'music' beside them, and 'devicenote' is a runtime event on a

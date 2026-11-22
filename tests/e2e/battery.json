@@ -337,6 +337,8 @@
 		"test-players-devices": 900,
 		"cinematic-offer-net": 240,
 		"text-path": 360,
+		"decals": 480,
+		"decal-compat": 180,
 		"text-object": 480,
 		"path-object": 480,
 		"no-webgl": 120,

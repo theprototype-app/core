@@ -602,16 +602,24 @@ async function terrainTool(args, createBase) {
 	if ('error' in parsed) return parsed;
 	let sculpted = 0;
 	let painted = 0;
+	/** @type {{y: number, radius: number, at: number[]}[]} */
+	const pads = [];
 	if (parsed.ops.length) {
 		const ts = await import('$lib/terrainSculpt');
 		const tp = await import('$lib/terrainPaint');
-		const before = object.geometry.attributes.position.array.slice();
 		const paints = parsed.ops.filter((o) => o.op === 'paint');
-		for (const o of parsed.ops.filter((o) => o.op !== 'paint')) {
+		const brushes = parsed.ops.filter((o) => o.op !== 'paint');
+		// 104 A3: un-index first, as the Sculpt toolbar does on entry — the snapshot below is a position SOUP, and an
+		// indexed list committed as one drew 800 junk triangles (the island vanished; undo restored the same wreck)
+		if (brushes.length) ts.unindexForSculpt(object);
+		const before = object.geometry.attributes.position.array.slice();
+		for (const o of brushes) {
 			for (let p = 0; p < o.passes; p++) {
 				const dt = o.height ? o.height / (Math.max(0.01, o.strength) * 8) : 1 / 6;
 				if (ts.applyBrushAt(uuid, o.x, o.z, o.op, o.radius, o.strength, dt)) sculpted++;
 			}
+			// 104 A3: a flatten says the height of the pad it made (world metres) so the next build stands on it
+			if (o.op === 'flatten') pads.push(padAt(object, o));
 		}
 		if (sculpted) {
 			const after = object.geometry.attributes.position.array;
@@ -644,11 +652,33 @@ async function terrainTool(args, createBase) {
 		name: object.name,
 		...(peak !== undefined ? { peak } : {}),
 		...(sculpted ? { sculpted } : {}),
+		...(pads.length === 1 ? { pad: pads[0] } : pads.length ? { pads } : {}),
 		...(painted ? { painted } : {}),
 		...(paintedBy ? { paintedBy } : {}),
 		...(warnings.length ? { warnings } : {})
 	};
 	return made ? { created: [row] } : { updated: [{ ...row, ok: true }] };
+}
+
+/**
+ * 104 A3: the pad a flatten made — the WORLD height of the terrain at its centre and its radius in metres.
+ * @param {any} object @param {{x: number, z: number, radius: number}} o terrain-local op
+ */
+function padAt(object, o) {
+	const pos = object.geometry.attributes.position;
+	let best = -1;
+	let bestD = Infinity;
+	for (let i = 0; i < pos.count; i++) {
+		const d = Math.hypot(pos.getX(i) - o.x, pos.getZ(i) - o.z);
+		if (d < bestD) {
+			bestD = d;
+			best = i;
+		}
+	}
+	object.updateWorldMatrix(true, false);
+	const p = new THREE.Vector3(o.x, best < 0 ? 0 : pos.getY(best), o.z).applyMatrix4(object.matrixWorld);
+	const s = object.getWorldScale(new THREE.Vector3());
+	return { y: r3(p.y), radius: r3(o.radius * (Math.abs(s.x) + Math.abs(s.z)) / 2), at: [r3(p.x), r3(p.z)] };
 }
 
 // ---------------------------------------------------------------- W3 scatter
@@ -1305,7 +1335,7 @@ export const WORLD_AI_TOOLS = [
 		function: {
 			name: 'terrain',
 			description:
-				'Make or change a terrain. Without uuid it makes one (size metres, at position); with uuid it changes that one. Shape by noise: height (the highest peak, metres — the answer says the peak it got), detail (0.005-0.6), octaves, ridged, warp, edges (flat|island|bowl: island sinks the rim below the water so it rises out of a sea — rim metres, default -2 on a new island; bowl raises the rim), seed; amplitude is the raw noise scale if you want it. Sculpt with ops [{op: raise|lower|smooth|flatten, at: [x, z] from the terrain\'s centre, radius, strength 0-1, height (metres, raise/lower), passes}] and paint with {op: "paint", at, radius, layer 0-3, strength}. layers: up to 4 {color, texture (a library hash or a pattern name like grass, sand, stone), tiling} — layer 0 covers the ground until you paint the others; paintBy: "height" paints them for you, layer 0 in the low ground up to the last on the peaks. One undo step.',
+				'Make or change a terrain. Without uuid it makes one (size metres, at position); with uuid it changes that one. Shape by noise: height (the highest peak, metres — the answer says the peak it got), detail (0.005-0.6), octaves, ridged, warp, edges (flat|island|bowl: island sinks the rim below the water so it rises out of a sea — rim metres, default -2 on a new island; bowl raises the rim), seed; amplitude is the raw noise scale if you want it. Sculpt with ops [{op: raise|lower|smooth|flatten, at: [x, z] from the terrain\'s centre, radius, strength 0-1, height (metres, raise/lower), passes}] and paint with {op: "paint", at, radius, layer 0-3, strength}; a flatten answers pad {y (world height of the flat ground), radius, at} to build on. layers: up to 4 {color, texture (a library hash or a pattern name like grass, sand, stone), tiling} — layer 0 covers the ground until you paint the others; paintBy: "height" paints them for you, layer 0 in the low ground up to the last on the peaks. One undo step.',
 			parameters: {
 				type: 'object',
 				properties: {

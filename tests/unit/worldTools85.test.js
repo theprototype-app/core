@@ -9,6 +9,7 @@ import { get } from 'svelte/store';
 vi.mock('$lib/objectActions', () => ({ moveObjectToGroup: () => {}, renameObject: () => {}, selectionTintOriginals: () => null }));
 const physicsCalls = vi.hoisted(() => []);
 vi.mock('$lib/physics', () => ({ setPhysicsFor: (uuid, p) => physicsCalls.push([uuid, p]), physicsShapeChanged: () => {} }));
+vi.mock('../../src/lib/lockControl', () => ({ nameOf: (id) => id, peerColor: () => '#f80' }));
 vi.mock('$lib/audioEngine', () => ({ ensureAudioContext: () => null, bus: () => null }));
 
 const { objectsGroup } = await import('../../src/stores/sceneStore');
@@ -234,6 +235,45 @@ describe('W5 particles (+ W5b fireflies)', () => {
 		expect((await call('create_particles', { preset: 'fire', overrides: { glow: 1 } })).error).toMatch(/overrides\.glow/);
 		expect((await call('create_particles', { preset: 'lasers' })).error).toMatch(/fireflies/);
 	});
+});
+
+describe('104 A3 sculpt through the assistant', () => {
+	/** every triangle of a soup, upward-facing and not degenerate @param {any} o */
+	const soup = (o) => {
+		const p = o.geometry.attributes.position;
+		const idx = o.geometry.index;
+		const n3 = idx ? idx.count : p.count;
+		const at = (/** @type {number} */ k) => (idx ? idx.getX(k) : k);
+		let up = 0, flat = 0;
+		const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+		for (let i = 0; i + 2 < n3; i += 3) {
+			a.fromBufferAttribute(p, at(i)); b.fromBufferAttribute(p, at(i + 1)); c.fromBufferAttribute(p, at(i + 2));
+			const n = new THREE.Vector3().crossVectors(b.clone().sub(a), c.clone().sub(a));
+			if (n.length() < 1e-9) flat++;
+			else if (n.y > 0) up++;
+		}
+		return { tris: n3 / 3, up, flat, indexed: !!idx };
+	};
+	for (const op of ['flatten', 'raise', 'lower', 'smooth']) {
+		it(op + ' keeps the island whole (4,608 upward triangles, no index), ONE undo, the same shape back', async () => {
+			const t = await call('terrain', { size: 24, height: 2.5, edges: 'island', name: 'Island' });
+			const o = find(t.created[0].uuid);
+			expect(soup(o)).toMatchObject({ tris: 4608, indexed: true });
+			const depth = stack().length;
+			const r = await call('terrain', { uuid: o.uuid, ops: [{ op, at: [0, 0], radius: 1.5, ...(op === 'raise' || op === 'lower' ? { height: 0.5 } : {}) }] });
+			expect(r.updated[0]).toMatchObject({ ok: true, sculpted: expect.any(Number) });
+			// COUNTERFACTUAL (base v1.73.0): no index and 800 triangles — the indexed vertex list committed as a soup
+			expect(soup(o)).toEqual({ tris: 4608, up: 4608, flat: 0, indexed: false });
+			if (op === 'flatten') {
+				expect(r.updated[0].pad.radius).toBe(1.5);
+				expect(r.updated[0].pad.at).toEqual([0, 0]);
+				expect(r.updated[0].pad.y).toBeGreaterThan(0.5);
+			} else expect(r.updated[0].pad).toBeUndefined();
+			expect(stack().length).toBe(depth + 1);
+			await history.undo();
+			expect(soup(o)).toMatchObject({ tris: 4608, up: 4608, flat: 0 });
+		});
+	}
 });
 
 describe('W4 water', () => {

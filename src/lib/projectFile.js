@@ -24,6 +24,7 @@
 // A project with five scenes has no opinion about which one you want open, and
 // auto-loading one would replace the world someone is standing in.
 
+import { inflateSharedGeometries } from './sharedGeometry.js';
 import { get } from 'svelte/store';
 import { showToast, explorerClose, armExplorerSceneSave } from '../stores/appStore';
 import { bottomDockActive } from './bottomDock';
@@ -1158,7 +1159,7 @@ export async function importProjectAsSession(buffer, opts = {}) {
 		try {
 			const inner = unzipSync(sceneBytes);
 			const json = inner['session.json'];
-			if (json) payload = JSON.parse(strFromU8(json));
+			if (json) payload = inflateSharedGeometries(JSON.parse(strFromU8(json)));
 		} catch {
 			payload = null;
 		}

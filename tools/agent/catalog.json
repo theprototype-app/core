@@ -213,7 +213,7 @@
 									"items": {
 										"type": "number"
 									},
-									"description": "up to 4 constructor args. Box=[w,h,d], Sphere=[radius], Cylinder=[rTop,rBottom,height], Cone=[radius,height], Plane=[w,h], Torus=[radius,tube]. Omit for sensible defaults. Sizes go down to 0.001 m."
+									"description": "up to 4 constructor args. Box=[w,h,d], Sphere=[radius], Cylinder=[rTop,rBottom,height], Cone=[radius,height], Plane=[w,h], Torus=[radius,tube]. Omit for sensible defaults. For a rounded box, create a Box and then set_geometry {radius}. Sizes go down to 0.001 m."
 								},
 								"name": {
 									"type": "string"
@@ -746,7 +746,7 @@
 		{
 			"name": "set_geometry",
 			"title": "Reshape objects",
-			"description": "Reshape existing objects in place (they keep uuid, transform, material and flows): change a primitive's params (the keys list_scene shows under geometry, e.g. {width, height, depth} for a Box, {radiusTop, radiusBottom, height, radialSegments} for a Cylinder, {segments, phiLength} for a Lathe, {depth, bevel} for an extrusion), or its TYPE (box → Cylinder) with params on top of the new type's defaults. A tube (create_tube) takes path, radius / radii, closed. A 3D text (create_text) takes its text fields as params (text, font, size, depth, bevel, align, maxWidth, anchor, color …). An object whose vertices were hand-edited refuses unless force: true (the rebuild replaces those edits). Up to 100 objects per call, one undo step.\nTake a screenshot after each change to check your work.",
+			"description": "Reshape existing objects in place (they keep uuid, transform, material and flows): change a primitive's params (the keys list_scene shows under geometry, e.g. {width, height, depth} for a Box (plus {radius, radiusSegments} to round its edges and corners: a rounded box, saved as two numbers), {radiusTop, radiusBottom, height, radialSegments} for a Cylinder, {segments, phiLength} for a Lathe, {depth, bevel} for an extrusion), or its TYPE (box → Cylinder) with params on top of the new type's defaults. A tube (create_tube) takes path, radius / radii, closed. A 3D text (create_text) takes its text fields as params (text, font, size, depth, bevel, align, maxWidth, anchor, color …). An object whose vertices were hand-edited refuses unless force: true (the rebuild replaces those edits). Up to 100 objects per call, one undo step.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -2243,7 +2243,7 @@
 		{
 			"name": "create_shader",
 			"title": "Give objects a shader",
-			"description": "Give objects a node shader, written as text like flow graphs: one line per node (id = type {param: value}), one per edge (source[.output] -> target.input), ending at a \"surface\" node. Example: c = color {value: \"#ff8800\"}\\nout = surface\\nc -> out.emissive. Call describe_shader_nodes for the types. Each object gets its own copy. Compiler errors come back in the result and nothing is written. Returns the graph key and its uniforms: a float one (u_<nodeId>_<param>) can be driven by a flow \"setuniform\" node on that object. scene: true makes the default for every object, which asks the host first.\nTake a screenshot after each change to check your work.",
+			"description": "Give objects a node shader, written as text like flow graphs: one line per node (id = type {param: value}), one per edge (source[.output] -> target.input), ending at a \"surface\" node. Example: c = color {value: \"#ff8800\"}\\nout = surface\\nc -> out.emissive. Call describe_shader_nodes for the types. Each object gets its own copy. Compiler errors come back in the result and nothing is written. Returns the graph key and its uniforms (u_<nodeId>_<param>): a flow \"setuniform\" node on that object drives a float, colour or vector one. scene: true makes the default for every object, which asks the host first.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -3155,7 +3155,7 @@
 		{
 			"name": "set_sky",
 			"title": "Change the sky and fog",
-			"description": "The sky and the air: a look preset (studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio, product, cinematic, stylised), a sky image by name (clearsky, meadow, sunrise, starlight, photostudio; a search_assets HDRI id \"cc0:polyhaven/<id>\" (fetched into the library once) or \"lib:<hash>\"; or {hash} of an HDR in the library — upload your own .hdr / .exr with assets upload; never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres, or {color, density}; null = none) and exposure. \"Make it night\": preset night or hdri starlight + a dark fog. Changes the whole scene's look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step.\nTake a screenshot after each change to check your work.",
+			"description": "The sky and the air: a look preset (studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio, product, cinematic, stylised), a sky image by name (clearsky, meadow, sunrise, starlight, photostudio; a search_assets HDRI id \"cc0:polyhaven/<id>\" (fetched into the library once) or \"lib:<hash>\"; or {hash} of an HDR in the library — upload your own .hdr / .exr with assets upload; never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres; {color, density} for distance fog; {color, density, base, thickness} for ground fog lying from base up over thickness metres; null = none) and exposure. \"Make it night\": preset night or hdri starlight + a dark fog. Changes the whole scene's look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -3236,6 +3236,15 @@
 							"null"
 						],
 						"properties": {
+							"kind": {
+								"type": "string",
+								"enum": [
+									"linear",
+									"distance",
+									"height"
+								],
+								"description": "linear = near to far; distance = thickens with distance (density); height = ground fog (density, base, thickness)"
+							},
 							"color": {
 								"type": "string"
 							},
@@ -3250,6 +3259,15 @@
 							"density": {
 								"type": "number",
 								"exclusiveMinimum": 0
+							},
+							"base": {
+								"type": "number",
+								"description": "ground fog: the height (m) where it is thickest"
+							},
+							"thickness": {
+								"type": "number",
+								"exclusiveMinimum": 0,
+								"description": "ground fog: how far up (m) it thins out"
 							}
 						}
 					},
@@ -4897,7 +4915,7 @@
 		{
 			"name": "validate_scene",
 			"title": "Check the game for problems",
-			"description": "Check the scene for what would not work when someone presses Play: actions nothing fires, an Object Selector wired the wrong way round, a scene-graph On Click that reaches no object, Game Start wired as an event, HUD nodes pointing at elements that do not exist, walk mode with no spawn, a scene with no light, behaviour code problems. Each issue says what to fix. Run it after building a game, then playtest.",
+			"description": "Check the scene for what would not work when someone presses Play: actions nothing fires, effects that act on no object, an Object Selector wired the wrong way round, a scene-graph On Click that reaches no object, Game Start wired as an event, HUD nodes pointing at elements that do not exist, walk mode with no spawn, a scene with no light, behaviour code problems. Each issue says what to fix. Run it after building a game, then playtest.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {}
@@ -5750,7 +5768,7 @@
 		{
 			"name": "upload_asset",
 			"title": "Upload a sound or an HDR sky",
-			"description": "Put a SOUND or an HDR SKY you hold as bytes into the library and get its hash: your own generated music or ambience, or a file you fetched yourself (any site — the bytes come from you, so nothing needs the site to allow cross-origin reads). data = base64; a big file goes as chunk: {id, index, total} parts (each a multiple of 4 base64 characters). Sounds: WAV, OGG, MP3, FLAC, M4A or WebM up to 16 MB (decoded once to prove it is audio) → place it with effects sound {asset: hash} or music {asset: hash}. Skies: Radiance .hdr or OpenEXR up to 25 MB → set_look sky {hdri: {hash}}. The type comes from the bytes, never the name. Images go through image instead. Everyone in the session can pull it by hash.\nTake a screenshot after each change to check your work.",
+			"description": "Put a SOUND or an HDR SKY you hold as bytes into the library and get its hash: your own generated music or ambience, or a file you fetched yourself (any site — the bytes come from you, so nothing needs the site to allow cross-origin reads). data = base64; a big file goes as chunk: {id, index, total} parts (each a multiple of 4 base64 characters). Sounds: WAV, OGG, MP3, FLAC, M4A or WebM up to 16 MB (decoded once to prove it is audio) → place it with effects sound {asset: hash} or music {asset: hash}. Skies: Radiance .hdr or OpenEXR up to 25 MB, equirectangular (2:1) or a cube map as a cross (4:3, 3:4) or a strip of six faces (6:1, 1:6), which is converted → set_look sky {hdri: {hash}}. The type comes from the bytes, never the name. Images go through image instead. Everyone in the session can pull it by hash.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -6526,7 +6544,7 @@
 										"items": {
 											"type": "number"
 										},
-										"description": "up to 4 constructor args. Box=[w,h,d], Sphere=[radius], Cylinder=[rTop,rBottom,height], Cone=[radius,height], Plane=[w,h], Torus=[radius,tube]. Omit for sensible defaults. Sizes go down to 0.001 m."
+										"description": "up to 4 constructor args. Box=[w,h,d], Sphere=[radius], Cylinder=[rTop,rBottom,height], Cone=[radius,height], Plane=[w,h], Torus=[radius,tube]. Omit for sensible defaults. For a rounded box, create a Box and then set_geometry {radius}. Sizes go down to 0.001 m."
 									},
 									"name": {
 										"type": "string"
@@ -8014,7 +8032,7 @@
 							"required": [
 								"updates"
 							],
-							"description": "Reshape existing objects in place (they keep uuid, transform, material and flows): change a primitive's params (the keys list_scene shows under geometry, e.g. {width, height, depth} for a Box, {radiusTop, radiusBottom, height, radialSegments} for a Cylinder, {segments, phiLength} for a Lathe, {depth, bevel} for an extrusion), or its TYPE (box → Cylinder) with params on top of the new type's defaults. A tube (create_shape {action: 'tube'}) takes path, radius / radii, closed. A 3D text (create_shape {action: 'text'}) takes its text fields as params (text, font, size, depth, bevel, align, maxWidth, anchor, color …). An object whose vertices were hand-edited refuses unless force: true (the rebuild replaces those edits). Up to 100 objects per call, one undo step."
+							"description": "Reshape existing objects in place (they keep uuid, transform, material and flows): change a primitive's params (the keys list_scene shows under geometry, e.g. {width, height, depth} for a Box (plus {radius, radiusSegments} to round its edges and corners: a rounded box, saved as two numbers), {radiusTop, radiusBottom, height, radialSegments} for a Cylinder, {segments, phiLength} for a Lathe, {depth, bevel} for an extrusion), or its TYPE (box → Cylinder) with params on top of the new type's defaults. A tube (create_shape {action: 'tube'}) takes path, radius / radii, closed. A 3D text (create_shape {action: 'text'}) takes its text fields as params (text, font, size, depth, bevel, align, maxWidth, anchor, color …). An object whose vertices were hand-edited refuses unless force: true (the rebuild replaces those edits). Up to 100 objects per call, one undo step."
 						},
 						"mesh": {
 							"type": "object",
@@ -8684,7 +8702,7 @@
 									"description": "with confirmId: seconds to wait for the answer (up to 60)"
 								}
 							},
-							"description": "Give objects a node shader, written as text like flow graphs: one line per node (id = type {param: value}), one per edge (source[.output] -> target.input), ending at a \"surface\" node. Example: c = color {value: \"#ff8800\"}\\nout = surface\\nc -> out.emissive. Call set_look {action: 'shader_nodes'} for the types. Each object gets its own copy. Compiler errors come back in the result and nothing is written. Returns the graph key and its uniforms: a float one (u_<nodeId>_<param>) can be driven by a flow \"setuniform\" node on that object. scene: true makes the default for every object, which asks the host first."
+							"description": "Give objects a node shader, written as text like flow graphs: one line per node (id = type {param: value}), one per edge (source[.output] -> target.input), ending at a \"surface\" node. Example: c = color {value: \"#ff8800\"}\\nout = surface\\nc -> out.emissive. Call set_look {action: 'shader_nodes'} for the types. Each object gets its own copy. Compiler errors come back in the result and nothing is written. Returns the graph key and its uniforms (u_<nodeId>_<param>): a flow \"setuniform\" node on that object drives a float, colour or vector one. scene: true makes the default for every object, which asks the host first."
 						},
 						"edit_shader": {
 							"type": "object",
@@ -9048,6 +9066,15 @@
 										"null"
 									],
 									"properties": {
+										"kind": {
+											"type": "string",
+											"enum": [
+												"linear",
+												"distance",
+												"height"
+											],
+											"description": "linear = near to far; distance = thickens with distance (density); height = ground fog (density, base, thickness)"
+										},
 										"color": {
 											"type": "string"
 										},
@@ -9062,6 +9089,15 @@
 										"density": {
 											"type": "number",
 											"exclusiveMinimum": 0
+										},
+										"base": {
+											"type": "number",
+											"description": "ground fog: the height (m) where it is thickest"
+										},
+										"thickness": {
+											"type": "number",
+											"exclusiveMinimum": 0,
+											"description": "ground fog: how far up (m) it thins out"
 										}
 									}
 								},
@@ -9079,7 +9115,7 @@
 									"description": "with confirmId: seconds to wait for the answer (up to 60)"
 								}
 							},
-							"description": "The sky and the air: a look preset (studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio, product, cinematic, stylised), a sky image by name (clearsky, meadow, sunrise, starlight, photostudio; a assets {action: 'search'} HDRI id \"cc0:polyhaven/<id>\" (fetched into the library once) or \"lib:<hash>\"; or {hash} of an HDR in the library — upload your own .hdr / .exr with assets upload; never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres, or {color, density}; null = none) and exposure. \"Make it night\": preset night or hdri starlight + a dark fog. Changes the whole scene's look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step."
+							"description": "The sky and the air: a look preset (studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio, product, cinematic, stylised), a sky image by name (clearsky, meadow, sunrise, starlight, photostudio; a assets {action: 'search'} HDRI id \"cc0:polyhaven/<id>\" (fetched into the library once) or \"lib:<hash>\"; or {hash} of an HDR in the library — upload your own .hdr / .exr with assets upload; never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres; {color, density} for distance fog; {color, density, base, thickness} for ground fog lying from base up over thickness metres; null = none) and exposure. \"Make it night\": preset night or hdri starlight + a dark fog. Changes the whole scene's look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step."
 						},
 						"light": {
 							"type": "object",
@@ -9364,7 +9400,7 @@
 						"validate": {
 							"type": "object",
 							"properties": {},
-							"description": "Check the scene for what would not work when someone presses Play: actions nothing fires, an Object Selector wired the wrong way round, a scene-graph On Click that reaches no object, Game Start wired as an event, HUD nodes pointing at elements that do not exist, walk mode with no spawn, a scene with no light, behaviour code problems. Each issue says what to fix. Run it after building a game, then playtest."
+							"description": "Check the scene for what would not work when someone presses Play: actions nothing fires, effects that act on no object, an Object Selector wired the wrong way round, a scene-graph On Click that reaches no object, Game Start wired as an event, HUD nodes pointing at elements that do not exist, walk mode with no spawn, a scene with no light, behaviour code problems. Each issue says what to fix. Run it after building a game, then playtest."
 						},
 						"logs": {
 							"type": "object",
@@ -9730,7 +9766,7 @@
 							"required": [
 								"data"
 							],
-							"description": "Put a SOUND or an HDR SKY you hold as bytes into the library and get its hash: your own generated music or ambience, or a file you fetched yourself (any site — the bytes come from you, so nothing needs the site to allow cross-origin reads). data = base64; a big file goes as chunk: {id, index, total} parts (each a multiple of 4 base64 characters). Sounds: WAV, OGG, MP3, FLAC, M4A or WebM up to 16 MB (decoded once to prove it is audio) → place it with effects sound {asset: hash} or music {asset: hash}. Skies: Radiance .hdr or OpenEXR up to 25 MB → set_look sky {hdri: {hash}}. The type comes from the bytes, never the name. Images go through image instead. Everyone in the session can pull it by hash."
+							"description": "Put a SOUND or an HDR SKY you hold as bytes into the library and get its hash: your own generated music or ambience, or a file you fetched yourself (any site — the bytes come from you, so nothing needs the site to allow cross-origin reads). data = base64; a big file goes as chunk: {id, index, total} parts (each a multiple of 4 base64 characters). Sounds: WAV, OGG, MP3, FLAC, M4A or WebM up to 16 MB (decoded once to prove it is audio) → place it with effects sound {asset: hash} or music {asset: hash}. Skies: Radiance .hdr or OpenEXR up to 25 MB, equirectangular (2:1) or a cube map as a cross (4:3, 3:4) or a strip of six faces (6:1, 1:6), which is converted → set_look sky {hdri: {hash}}. The type comes from the bytes, never the name. Images go through image instead. Everyone in the session can pull it by hash."
 						},
 						"fonts": {
 							"type": "object",

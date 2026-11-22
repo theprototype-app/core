@@ -312,6 +312,7 @@
 		"import-file": "agent"
 	},
 	"suites": {
+		"papercuts-102b": 300,
 		"render-seam": 180,
 		"array-tool": 300,
 		"corner-snap": 180,
@@ -1078,6 +1079,7 @@
 		"context-menu-overflow": false,
 		"context-menu-redesign": false,
 		"context-menu-v2": false,
+		"convert-to-code-sync": false,
 		"csp-build": false,
 		"deform-stack": false,
 		"diagnostics": false,
@@ -1136,6 +1138,7 @@
 		"gamepad-input": false,
 		"gem-arena-nodes": false,
 		"gltf-export-selection": false,
+		"guard-patrol-template": false,
 		"hdri-drop-toast": false,
 		"hit-slop": false,
 		"hotkeys-layout": false,

@@ -1,3 +1,4 @@
+import { writeUniformSlot } from './uniformWrite.js';
 import * as THREE from 'three';
 // `{v}` labels for the HUD — 'Gems: {v}' needs no string node and no string socket type
 import { hudFormat } from './hudFormat.js';
@@ -2590,6 +2591,8 @@ function stampOfSource(edge, ctx, seen) {
 	// 36 (U10): a NAMED event output keeps its own log entry, `<node>#<output>` (a behaviour's
 	// `this.emit('holeSunk')`) — several events on one node, each its own stamp
 	if (edge.sourceHandle && source?.type === 'behaviour') return ctx?.triggers?.[edge.source + '#' + edge.sourceHandle]?.lastT ?? null;
+	// 102b-papercuts: a Script node's EVENT output is its own entry too (updateScriptEvents)
+	if (edge.sourceHandle && source?.type === 'script') return ctx?.triggers?.[edge.source + '#' + edge.sourceHandle]?.lastT ?? null;
 	// 78 F3: a Toggle Animation's opened / closed are its own entries too (derived on every peer)
 	if (source?.type === 'toggleanim') return edge.sourceHandle === 'opened' || edge.sourceHandle === 'closed' ? (ctx?.triggers?.[edge.source + '#' + edge.sourceHandle]?.lastT ?? null) : null;
 	return ctx?.triggers?.[edge.source]?.lastT ?? null;
@@ -2743,6 +2746,44 @@ function updateDerivedPulses(ctx, fired = scheduledFired) {
 			fired.delete(key);
 }
 
+/** 102b-papercuts: the last truthiness of each Script event output, keyed `<node>#<output>`. LOCAL:
+ * every peer runs the same pure code against the same replicated inputs and clock. @type {Map<string, boolean>} */
+const scriptEventLevels = new Map();
+
+/**
+ * 102b-papercuts (scout row 18, "a script cannot fire an event"): a Script node with an output of
+ * type `event` fires it when the value its code returns for that output turns true. The pulse is
+ * stamped as `<node>#<output>` (the behaviour emit shape, so stampOfSource and the PUSH walk in
+ * nextTriggerLog already know it) with `replicate: false` — the Delay / Once rule: the code is a
+ * pure function of replicated inputs and the synced clock, so each peer sees the same edge and a
+ * broadcast would count it once per peer. The FIRST reading only seeds (a joiner, or a load, must
+ * not fire an event that is merely already true). Costs nothing while no script declares one.
+ * @param {number} time @param {any} ctx
+ */
+function updateScriptEvents(time, ctx) {
+	let any = false;
+	for (const node of nodes) {
+		if (node.type !== 'script' || !Array.isArray(node.data?.outputs)) continue;
+		const events = scriptOutputs(node.data).filter((o) => o.type === 'event');
+		if (!events.length) continue;
+		any = true;
+		const value = /** @type {any} */ (evalNode(node, nodes, edges, time, new Set(), ctx));
+		const handles = value && typeof value === 'object' ? value.__handles : null;
+		for (const o of events) {
+			const key = node.id + '#' + o.name;
+			const level = !!handles?.[o.name];
+			const prev = scriptEventLevels.get(key);
+			scriptEventLevels.set(key, level);
+			if (prev === false && level) applyNodeTrigger(key, time, false);
+		}
+	}
+	if (!any && !scriptEventLevels.size) return;
+	for (const key of [...scriptEventLevels.keys()]) {
+		const id = key.slice(0, key.indexOf('#'));
+		if (!nodes.some((/** @type {any} */ n) => n.id === id)) scriptEventLevels.delete(key);
+	}
+}
+
 /** The shared timestamp of whatever event is wired into this node's `trigger`
  * (the newest, with several sources fanned in). `alias` = a second handle name that counts as
  * the trigger (HUD Timer's `start`). @param {string} nodeId @param {any} ctx @param {string} [alias] */
@@ -2809,6 +2850,21 @@ function implicitOwnerOf(node) {
 		(e) => e.source === node.id && nodeById(nodes, e.target)?.type === 'objectselector'
 	);
 	return wired ? null : graph;
+}
+
+/**
+ * 102b-papercuts (scout row 18): an EFFECT node with nothing to act on — a scene-graph node (an object graph
+ * targets its owner) with no target of its own and no wire into an Object Selector that picks an object. Read
+ * only for the card line (4 Hz, the one graph the node editor shows), so it may walk the edges.
+ * @param {any} node @returns {boolean}
+ */
+export function effectActsOnNothing(node) {
+	if (!node || node.data?.muted) return false;
+	const effect = animationTypes.includes(node.type) || !!moduleEffects[node.type] || (node.type === 'script' && !isScriptValue(node.data)) || node.type === 'customnode';
+	if (!effect) return false;
+	if (node.__graph && node.__graph !== SCENE_GRAPH) return false; // the owner is its object
+	if (directTargetOf(node)) return false;
+	return !edges.some((/** @type {any} */ e) => e.source === node.id && targetUuidOf(e));
 }
 
 function applyColors() {
@@ -4760,11 +4816,8 @@ function applyAnimation(object, base, anim, time, ctx) {
 		// uniform also needs no recompile — that is what the live uniform record is for.
 		const name = typeof data.uniform === 'string' ? data.uniform.trim() : '';
 		if (name && shaderRef?.shaderUniform) {
-			const slot = shaderRef.shaderUniform(object.uuid, name);
-			// NUMBERS only in v1: a flow number socket is what drives this, and a vecN would
-			// need an array that socket cannot carry
-			const value = Number(data.value);
-			if (slot && Number.isFinite(value)) slot.value = value;
+			// 102b-papercuts: a vecN slot now takes a vector or a colour too (uniformWrite.js)
+			writeUniformSlot(shaderRef.shaderUniform(object.uuid, name), data);
 		}
 	}
 }
@@ -5676,6 +5729,8 @@ function runTick(now) {
 	// the bump on the NEXT tick - one frame, the same latency every derived reaction
 	// in this file has.
 	updateDerivedPulses(ctx, paused ? viewScheduled : scheduledFired);
+	// 102b-papercuts: a Script node's event outputs (never while the debugger holds a pause)
+	if (!paused) updateScriptEvents(time, ctx);
 	// ONE prune for the shared stale-stamp cutoffs, after every family has had its turn
 	// to register this tick's nodes (physics runs first, then game, then character)
 	pruneActionSeenAt();
@@ -5756,7 +5811,8 @@ function runTick(now) {
 			value: (node) => evalNode(node, nodes, edges, time, new Set(), ctx),
 			pulseAt: (id) => ctx.triggers?.[id]?.lastT ?? null,
 			// 78 F26: the trigger nodes' "why not" line
-			why: (node) => (WHY_TYPES.has(node.type) ? whyCardLine(lastCheck(node.id), standingWhy(node, time, ctx)) : null)
+			why: (node) => (WHY_TYPES.has(node.type) ? whyCardLine(lastCheck(node.id), standingWhy(node, time, ctx)) : null),
+			inert: effectActsOnNothing // 102b-papercuts
 		});
 	if (paused) toLive();
 	phaseEnd(PHASE_FLOW);

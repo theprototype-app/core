@@ -25,6 +25,10 @@ import { compileAsync } from '../render/compile.js';
 import { captureEnvironment, useCopies, restoreEnvironment } from './envHandover.js';
 import { buildPipeline } from './pipeline.js';
 import { classifyMaterial, notShownText, effectiveQuality, createDropWatch, quantile } from './cinematicCore.js';
+import { HEIGHT_FOG } from '../fogModes.js';
+
+/** 102b-papercuts: what the chip names — the stand-ins, plus a height fog (WebGL-only shader chunk) @param {any} swap */
+const shownKinds = (swap) => (HEIGHT_FOG[2] > 0.5 ? [...swap.kinds, 'heightfog'] : swap.kinds);
 // the STORE leaf, never ./cinematicState.js (that one reaches the app's stores: this chunk's preload list)
 import { cinematicState, cinematicPrefs, disableCinematic, cinematicDisabled } from './cinematicStore.js';
 import { deformersOf } from '../vertexDeform.js';
@@ -363,7 +367,7 @@ async function enterSteps() {
 	live.fx.scan();
 	live.swap = createSwapper(W, scene, live.fx);
 	live.swap.scan();
-	patchState({ notShown: notShownText(live.swap.kinds) });
+	patchState({ notShown: notShownText(shownKinds(live.swap)) });
 	try {
 		live.built = await build(targetQuality());
 		await compileAsync(r, scene, cam);
@@ -474,10 +478,10 @@ function draw(_delta) {
 
 /** @param {any} g */
 function rescan(g) {
-	const before = notShownText(g.swap.kinds);
+	const before = notShownText(shownKinds(g.swap));
 	g.swap.scan();
 	g.labels?.scan(g.scene);
-	const after = notShownText(g.swap.kinds);
+	const after = notShownText(shownKinds(g.swap));
 	if (after !== before) patchState({ notShown: after });
 }
 

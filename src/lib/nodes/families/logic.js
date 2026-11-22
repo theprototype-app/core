@@ -460,8 +460,10 @@ export default {
 		// editor shows beside a uniform-backed param; the value rides a number socket, so
 		// no recompile and no message of its own (the flow value is already replicated).
 		{
+			// 102b-papercuts: `color` and `vector` reach a vec3/vec2/vec4 uniform (uniformWrite.js);
+			// both optional, so an old node's data is unchanged
 			type: 'setuniform', label: 'Set Shader Uniform', defaults: { uniform: '', value: 0 },
-			sockets: { out: 'effect', in: { value: 'number' } },
+			sockets: { out: 'effect', in: { value: 'number', color: 'color', vector: 'vector3' } },
 			card: 'EffectNode'
 		}
 	]

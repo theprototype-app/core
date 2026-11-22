@@ -10,6 +10,7 @@
 //                                                          into a valley fogs more than looking across it
 //
 // near / far stay in the document, so an older build (which only knows linear fog) still draws a fog.
+// The editing half (switching kind, the shader maths for tests) is fogEdit.js, which only the lazy Fog rows load.
 
 /** @typedef {'linear' | 'distance' | 'height'} FogKind */
 export const FOG_KINDS = /** @type {const} */ (['linear', 'distance', 'height']);
@@ -42,45 +43,6 @@ export function heightFogOf(fog) {
 export function heightFogParams(fog) {
 	const h = heightFogOf(fog);
 	return h ? [h.base, 1 / h.thickness, 1, 0] : [0, 0, 0, 0];
-}
-
-/**
- * A patch that switches the kind, with the defaults the new kind needs (a density, a layer). Merged by
- * mergeFogPatch like any fog edit; near / far are left as they were (they are an older build's fog).
- * @param {any} fog @param {FogKind} kind
- */
-export function fogKindPatch(fog, kind) {
-	if (kind === 'linear') return { kind: 'linear' };
-	/** @type {Record<string, any>} */
-	const patch = { kind };
-	if (!(Number(fog?.density) > 0)) patch.density = FOG_DENSITY_DEFAULT;
-	if (kind === 'height') {
-		if (!Number.isFinite(Number(fog?.base))) patch.base = 0;
-		if (!(Number(fog?.thickness) > 0)) patch.thickness = FOG_THICKNESS_DEFAULT;
-	}
-	return patch;
-}
-
-/**
- * The fraction of fog colour one point gets — the same maths the shader runs, for tests and probes.
- * @param {any} fog @param {number} dist metres from the camera @param {number} camY @param {number} pointY
- */
-export function fogFactorAt(fog, dist, camY, pointY) {
-	const kind = fogKindOf(fog);
-	if (kind === 'linear') {
-		const near = Number(fog?.near) || 0;
-		const far = Number(fog?.far) || 0;
-		const t = Math.min(1, Math.max(0, (dist - near) / Math.max(1e-6, far - near)));
-		return t * t * (3 - 2 * t); // smoothstep, as three
-	}
-	const d = fogDensityOf(fog);
-	if (kind === 'distance') return 1 - Math.exp(-d * d * dist * dist);
-	const h = /** @type {{base: number, thickness: number}} */ (heightFogOf(fog));
-	const k = 1 / h.thickness;
-	const h0 = Math.max(camY - h.base, 0);
-	const h1 = Math.max(pointY - h.base, 0);
-	const f = Math.abs(h1 - h0) > 1e-3 ? (Math.exp(-k * h0) - Math.exp(-k * h1)) / (k * (h1 - h0)) : Math.exp(-k * h0);
-	return 1 - Math.exp(-d * dist * f);
 }
 
 /** 102b: the shared height-fog uniform value [base, 1/thickness, on, 0] (fogShader.js puts it in every fog

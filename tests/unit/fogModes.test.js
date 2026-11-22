@@ -1,7 +1,8 @@
 // 102b-papercuts (scout row 18): real distance and height fog
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { fogKindOf, fogDensityOf, heightFogOf, heightFogParams, fogKindPatch, fogFactorAt } from '../../src/lib/fogModes.js';
+import { fogKindOf, fogDensityOf, heightFogOf, heightFogParams } from '../../src/lib/fogModes.js';
+import { fogKindPatch, fogFactorAt } from '../../src/lib/fogEdit.js';
 import { HEIGHT_FOG, setHeightFog } from '../../src/lib/fogModes.js';
 import { installHeightFog } from '../../src/lib/fogShader.js';
 import { mergeFogPatch } from '../../src/lib/fogReach.js';

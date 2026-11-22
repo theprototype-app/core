@@ -8,7 +8,8 @@
 	import SliderRow from '../../ui/SliderRow.svelte';
 	import ThemedSelect from '../../ui/ThemedSelect.svelte';
 	import { editEnvSky } from '$lib/environment';
-	import { fogKindOf, fogDensityOf, heightFogOf, fogKindPatch } from '$lib/fogModes.js';
+	import { fogKindOf, fogDensityOf, heightFogOf } from '$lib/fogModes.js';
+	import { fogKindPatch } from '$lib/fogEdit.js';
 
 	/** @type {{fog: any}} */
 	let { fog } = $props();

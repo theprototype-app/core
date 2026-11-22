@@ -229,7 +229,8 @@ h.run(async () => {
 	if (process.env.OUT) fs.writeFileSync(process.env.OUT + '/102b-saved.tpscene', Buffer.from(b64, 'base64'));
 
 	// two-peer + reload: B reloads, rejoins, and has the rounded box (GLTF sync carries vertices + params)
-	await h.freshReload(B);
+	// a loaded machine can take longer than the helper's 30 s to boot the reloaded page
+	await h.freshReload(B).catch(() => B.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, null, { timeout: 120000 }));
 	await h.answerRestore(B).catch(() => false);
 	await h.eventually(() => B.page.evaluate(() => { let p; window.__tp.test.v1.peers.subscribe((x) => (p = x))(); const o = p?.openedPeers; return o ? (o.size ?? o.length ?? Object.keys(o).length) : 0; }), (n) => n >= 1, '3. B is back in the session after its reload', 60000);
 	await h.eventually(() => geoOf(B.page, crate), (o) => o?.verts === 1764 && o.gp?.params?.radius === 0.2, '3. after the reload B has the rounded box with its radius (rows editable)', 60000);
@@ -322,7 +323,7 @@ h.run(async () => {
 	const scr = await exec(A, 'create_flow_nodes', {
 		graph: 'scene',
 		nodes: [
-			{ ref: 'tick', type: 'script', data: { code: 'return { hit: Math.floor(time * 2) % 2 === 0 };', outputs: [{ name: 'hit', type: 'event' }] } },
+			{ ref: 'tick', type: 'script', data: { code: 'return { hit: Math.floor(time / 2) % 2 === 0 };', outputs: [{ name: 'hit', type: 'event' }] } },
 			{ ref: 'count', type: 'counter' }
 		],
 		edges: [{ from: 'tick', fromHandle: 'hit', to: 'count', toHandle: 'pulse' }]
@@ -330,12 +331,17 @@ h.run(async () => {
 	console.log("   create_flow_nodes: " + JSON.stringify(scr).slice(0, 900));
 	const countId = scr?.created?.find?.((c) => c.ref === 'count')?.id ?? scr?.created?.[1]?.id;
 	const counterOf = (page) => page.evaluate((id) => { let t; window.__tp.test.v1.flowTriggers.subscribe((x) => (t = x))(); return t?.[id]?.count ?? 0; }, countId);
-	const c0 = await counterOf(A.page);
-	await new Promise((r) => setTimeout(r, 4200));
-	const c1 = await counterOf(A.page);
-	h.check(c1 - c0 >= 3 && c1 - c0 <= 5, '6. the Script event fires once per rising edge (a 1 Hz square wave over 4.2 s: +' + (c1 - c0) + ', 3..5)');
-	const cb = await counterOf(B.page);
-	h.check(Math.abs(cb - c1) <= 1, '6. B counts it too (its own run of the same code: A ' + c1 + ', B ' + cb + ')');
+	// the first Script on a page loads the sandbox guest (lazy): wait for the first pulse on each peer, then measure one window
+	for (const P of [A, B]) await h.eventually(() => counterOf(P.page), (n) => n >= 1, 'premise: ' + P.name + ' runs the Script (sandbox loaded, first pulse)', 60000);
+	// a 4 s square wave (2 s halves): the flow tick rides rAF, and a loaded headless page draws ~1-4 frames a
+	// second, so a faster wave would be sampled too coarsely to see every edge (that is aliasing, not a miss)
+	const fps = await A.page.evaluate(() => new Promise((r) => { let n = 0; const t0 = performance.now(); const f = () => { n++; if (performance.now() - t0 < 2000) requestAnimationFrame(f); else r(Math.round((n / 2) * 10) / 10); }; requestAnimationFrame(f); }));
+	console.log('   A draws ' + fps + ' frames/s');
+	const [s0, t0] = [await counterOf(A.page), await counterOf(B.page)];
+	await new Promise((r) => setTimeout(r, 12200));
+	const [s1, t1] = [await counterOf(A.page), await counterOf(B.page)];
+	h.check(s1 - s0 >= 2 && s1 - s0 <= 4, '6. the Script event fires once per rising edge (a 4 s square wave over 12.2 s: +' + (s1 - s0) + ', 2..4)');
+	h.check(t1 - t0 >= 2 && t1 - t0 <= 4, '6. B counts it too (its own run of the same code: +' + (t1 - t0) + ')');
 
 	// ---- 7. an effect that acts on nothing
 	console.log('\n=== 7. acts on nothing ===');
@@ -365,8 +371,11 @@ h.run(async () => {
 	await h.eventually(() => envOf(B), (e) => JSON.stringify(e).includes('"kind":"height"'), '8. B reads a height fog back (get_environment)', 20000);
 	const fb = await fogOn(B.page);
 	h.check(fb.exp2 && Math.abs(fb.density - 0.05) < 1e-6, '8. B draws it as a distance-integrated fog (FogExp2, density 0.05): ' + short(fb));
-	await A.page.evaluate(() => window.__tp.test.v1.openSceneSection('Fog'));
-	await A.page.waitForSelector('#fog-kind', { timeout: 15000 }).catch(() => {});
+	// the Fog rows are a lazy chunk: under load the section can need a second ask and longer than 15 s
+	for (let i = 0; i < 4; i++) {
+		await A.page.evaluate(() => window.__tp.test.v1.openSceneSection('Fog'));
+		if (await A.page.waitForSelector('#fog-kind', { timeout: 15000 }).then(() => true, () => false)) break;
+	}
 	const kindRow = await A.page.evaluate(() => ({ there: !!document.getElementById('fog-kind'), tip: document.getElementById('fog-kind')?.getAttribute('title') ?? document.getElementById('fog-kind')?.closest('[title]')?.getAttribute('title') ?? '', base: !!document.getElementById('fog-base'), near: !!document.getElementById('fog-near') }));
 	h.check(kindRow.there && kindRow.base && !kindRow.near, '8. the Fog rows show Kind + Ground height, and hide Near/Far for a height fog: ' + short(kindRow));
 	const picked = await exec(A, 'set_sky', { fog: { kind: 'linear', near: 5, far: 60 } });

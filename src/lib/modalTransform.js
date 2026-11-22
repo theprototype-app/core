@@ -652,11 +652,38 @@ function showLine() {
 		el.style.cssText =
 			'position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:var(--z-hud);pointer-events:none;' +
 			'padding:4px 10px;border-radius:6px;font:12px/1.4 var(--font-mono, ui-monospace, monospace);white-space:nowrap;' +
+			'max-width:calc(100vw - 32px);overflow:hidden;text-overflow:ellipsis;' +
 			'background:var(--surface-deep);color:var(--text);border:1px solid var(--border-strong)';
 		st.line = el;
 	}
 	document.body.appendChild(st.line);
+	placedFor = '';
 	updateLine();
+}
+
+/** the touch bars the line must never cover (row 6): the touch tools row wherever its cluster sits,
+ * and the phone shell's top chips and edit strip */
+const TOUCH_BARS = '#touch-tools, #ps-strip, #ps-connect-chip, #ps-mic';
+let placedFor = '';
+
+/** Put the line at the top centre, then step it clear of any touch bar it would cover: below a bar
+ * in the top half of the screen, above one in the bottom half. Re-run when the text changes shape. */
+function placeLine() {
+	const el = st.line;
+	if (!el) return;
+	el.style.top = '64px';
+	/** @param {DOMRect} a @param {DOMRect} b */
+	const hits = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+	const bars = [...document.querySelectorAll(TOUCH_BARS)]
+		.map((n) => n.getBoundingClientRect())
+		.filter((r) => r.width > 0 && r.height > 0);
+	for (let pass = 0; pass < 4; pass++) {
+		const me = el.getBoundingClientRect();
+		const bar = bars.find((r) => hits(me, r));
+		if (!bar) return;
+		const below = bar.top + bar.height / 2 < innerHeight / 2;
+		el.style.top = Math.round(below ? bar.bottom + 8 : bar.top - me.height - 8) + 'px';
+	}
 }
 
 function updateLine() {
@@ -669,6 +696,12 @@ function updateLine() {
 	st.line.dataset.locks = [...st.locks].sort().join('');
 	st.line.textContent =
 		MODE_WORD[st.mode] + ' · ' + locks + ' · ' + shown + (extras ? ' · ' + extras : '') + '   Enter / click keeps · Esc / right-click cancels';
+	// the width moves with the mode, the locks and a typed number: place again only then (not per move)
+	const shape = st.mode + st.line.dataset.locks + (st.typed ? 't' : '') + extras;
+	if (shape !== placedFor) {
+		placedFor = shape;
+		placeLine();
+	}
 }
 
 function hideLine() {

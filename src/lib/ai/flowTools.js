@@ -37,6 +37,10 @@ import { describeNodeTypes, paramsOf, paramValue } from './nodeTypesCore.js';
 import { nodeDoc } from '$lib/nodeDocs';
 import { inputType, outputType, outputHandleType } from '$lib/flowSockets';
 import { codeViewOn } from '$lib/nodes/codeViewFlag.js'; // 2.0 N2
+import * as THREE from 'three';
+import { FLOAT_PRESETS } from '$lib/sim/buoyancy.js'; // 104 B3
+import { floatSummary } from '$lib/sim/floatSummary.js'; // 104 B3
+import { waterUnder } from './probeTools.js'; // 104 B3
 
 // AI flow + physics executors (assistant v3). The behavior counterpart to
 // tools.js: create/update flow nodes (the @xyflow editor graphs driving
@@ -717,6 +721,71 @@ function updateFlowNodes(args, convertNode) {
 }
 
 const PHYSICS_MODES = ['auto', 'static', 'dynamic'];
+/** 104 B3: set_physics `float` words → userData.physics.floats.density (the Inspector's Floats list) */
+const FLOAT_WORDS = /** @type {Record<string, number | 'mass' | 'off'>} */ ({ ...FLOAT_PRESETS, sink: FLOAT_PRESETS.stone, mass: 'mass', off: 'off' });
+
+/**
+ * 104 B3: the `float` / `density` / `buoyancy` / `waterDrag` fields of one update → the next floats block (null =
+ * back to the default, which writes no key), or an error. Undefined = the update touches no float field.
+ * @param {any} u @param {any} cur userData.physics.floats now
+ * @returns {{floats: any} | {error: string} | undefined}
+ */
+function floatsPatch(u, cur) {
+	if (u.float === undefined && u.density === undefined && u.buoyancy === undefined && u.waterDrag === undefined) return undefined;
+	/** @type {any} */
+	const next = { ...(cur && typeof cur === 'object' ? cur : {}) };
+	if (u.float !== undefined) {
+		const w = typeof u.float === 'string' ? FLOAT_WORDS[u.float.toLowerCase()] : undefined;
+		if (w === undefined) return { error: 'float: one of ' + Object.keys(FLOAT_WORDS).join(', ') };
+		delete next.off;
+		if (w === 'off') next.off = true;
+		else if (u.float.toLowerCase() === 'auto') delete next.density;
+		else next.density = w;
+	}
+	if (u.density !== undefined) {
+		if (typeof u.density !== 'number' || !(u.density >= 10 && u.density <= 20000)) return { error: 'density: kg/m³, 10 to 20000 (water is 1000: below floats, above sinks)' };
+		delete next.off;
+		next.density = u.density;
+	}
+	if (u.buoyancy !== undefined) {
+		if (typeof u.buoyancy !== 'number' || !(u.buoyancy >= 0 && u.buoyancy <= 10)) return { error: 'buoyancy: a factor 0 to 10 (1 = as the density says)' };
+		if (u.buoyancy === 1) delete next.multiplier;
+		else next.multiplier = u.buoyancy;
+	}
+	if (u.waterDrag !== undefined) {
+		if (typeof u.waterDrag !== 'number' || !(u.waterDrag >= 0 && u.waterDrag <= 10)) return { error: 'waterDrag: a factor 0 to 10 (1 = the water\'s own drag)' };
+		if (u.waterDrag === 1) delete next.drag;
+		else next.drag = u.waterDrag;
+	}
+	return { floats: Object.keys(next).length ? next : null };
+}
+
+/**
+ * 104 B3: how the object sits in water after the update, and where it rests when water is under it.
+ * @param {any} object
+ */
+function waterAnswer(object) {
+	const s = floatSummary(object);
+	if (!s) return null;
+	const group = get(objectsGroup);
+	const p = object.getWorldPosition(new THREE.Vector3());
+	const local = group ? group.worldToLocal(p.clone()) : p;
+	const under = group ? waterUnder(group, local.x, local.z) : null;
+	const { volume: _v, ...rest } = s;
+	return {
+		...rest,
+		...(under
+			? {
+					in: under.name || under.uuid,
+					surface: under.surface,
+					// upright, at rest: its bottom sits `draft` under the still surface (waves move it up and down)
+					...(s.draft !== null ? { restingBottomY: Math.round((under.surface - s.draft) * 1000) / 1000 } : {}),
+					...(s.sinks ? { note: 'it sinks here (denser than the water): it ends on the floor under the water, or falls out of the world over open sea' } : {}),
+					...(s.upright === false ? { note: 'a box this shape at this density is not stable flat: it tips onto an edge (as a real one does), so its lowest corner sits deeper than restingBottomY. A density under ~0.2 or over ~0.8 of water floats a cube flat; a flatter box stays flat more easily' } : {})
+				}
+			: {})
+	};
+}
 const COLLIDER_KINDS = ['box', 'sphere', 'capsule', 'cylinder', 'hull', 'trimesh'];
 
 /**
@@ -752,15 +821,26 @@ export function setPhysicsTool(args) {
 		if (typeof u.sensor === 'boolean') patch.sensor = u.sensor; // CL-A A3 trigger volume
 		if (isGroupId(u.group)) patch.group = u.group === 'default' ? null : u.group; // 36 X5
 		if (Array.isArray(u.collidesWith)) patch.collidesWith = normalizeCollidesWith(u.collidesWith);
+		const fl = floatsPatch(u, objectOf(uuid)?.userData?.physics?.floats);
+		if (fl && 'error' in fl) return { uuid, error: fl.error };
+		if (fl) {
+			patch.floats = fl.floats;
+			// floating only means anything on a dynamic body
+			if (!patch.mode && objectOf(uuid)?.userData?.physics?.mode !== 'dynamic') patch.mode = 'dynamic';
+		}
 		if (!Object.keys(patch).length)
-			return { uuid, error: 'no physics keys — pass mode/mass/restitution/friction/collider' };
+			return { uuid, error: 'no physics keys — pass mode/mass/restitution/friction/collider/float' };
 		setPhysicsFor(uuid, patch);
 		// mcp-fix: only a top-level object gets a body, so say it now and not at the start
 		const held = objectOf(uuid);
-		if (held?.parent && held.parent !== get(objectsGroup)) return { uuid, ok: true, physics: patch, warning: nestedWords([{ name: held.name || held.type, group: held.parent.name || 'a group' }]) };
+		// 104 B3: a float field, or mass on a body that floats by mass, answers how it sits in water
+		const floatsNow = held?.userData?.physics?.floats;
+		const water = fl || (patch.mass !== undefined && floatsNow?.density === 'mass') ? waterAnswer(held) : null;
+		const wx = water ? { water } : {};
+		if (held?.parent && held.parent !== get(objectsGroup)) return { uuid, ok: true, physics: patch, ...wx, warning: nestedWords([{ name: held.name || held.type, group: held.parent.name || 'a group' }]) };
 		// mcp-fix: a body's kind is fixed for a run, so say that instead of seeming to have changed it
-		if (patch.mode && get(simulating)) return { uuid, ok: true, physics: patch, note: 'the simulation is running: the new mode applies from the next start (stop, then start)' };
-		return { uuid, ok: true, physics: patch };
+		if (patch.mode && get(simulating)) return { uuid, ok: true, physics: patch, ...wx, note: 'the simulation is running: the new mode applies from the next start (stop, then start)' };
+		return { uuid, ok: true, physics: patch, ...wx };
 	});
 	if (results.every((/** @type {any} */ r) => r.error))
 		return { error: 'nothing was updated: ' + results[0].error, updated: results };

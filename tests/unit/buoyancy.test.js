@@ -68,10 +68,10 @@ function run(o) {
 
 describe('normalizeFloats', () => {
 	it('defaults, clamps and drops garbage', () => {
-		expect(normalizeFloats(undefined)).toEqual({ off: false, density: 500, multiplier: 1 });
-		expect(normalizeFloats({ density: 1e9, multiplier: -3 })).toEqual({ off: false, density: 20000, multiplier: 0 });
-		expect(normalizeFloats({ density: 'mass', off: true })).toEqual({ off: true, density: 'mass', multiplier: 1 });
-		expect(normalizeFloats({ density: 'lots', multiplier: NaN, evil: 1 })).toEqual({ off: false, density: 500, multiplier: 1 });
+		expect(normalizeFloats(undefined)).toEqual({ off: false, density: 500, multiplier: 1, drag: 1 });
+		expect(normalizeFloats({ density: 1e9, multiplier: -3 })).toEqual({ off: false, density: 20000, multiplier: 0, drag: 1 });
+		expect(normalizeFloats({ density: 'mass', off: true })).toEqual({ off: true, density: 'mass', multiplier: 1, drag: 1 });
+		expect(normalizeFloats({ density: 'lots', multiplier: NaN, evil: 1 })).toEqual({ off: false, density: 500, multiplier: 1, drag: 1 });
 	});
 });
 

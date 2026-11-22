@@ -51,7 +51,9 @@
  *   onActive?: (active: boolean, modal: boolean) => void,
  *   touchDrag?: boolean,
  *   rebase?: (ctx: GestureContext) => void,
- *   passDown?: (e: PointerEvent) => boolean
+ *   passDown?: (e: PointerEvent) => boolean,
+ *   key?: (ctx: GestureContext, e: KeyboardEvent) => boolean,
+ *   rightCancels?: boolean
  * }} hooks
  *   `snapshot` returns whatever the consumer needs to re-derive absolute state
  *   (falsy, or an empty array, refuses the gesture). `start` opens the undo session
@@ -63,6 +65,10 @@
  *   and commits on the lift) instead of committing; `rebase` folds what is applied so far into
  *   `ctx.snapshot` first, so the drag continues from there. `passDown(e)` true lets a press through
  *   untouched (a Cancel button drawn for the armed gesture).
+ *   103 H4 — `key(ctx, e)`: a MODAL gesture's own keys (axis locks, a typed number), offered every
+ *   keydown AND keyup before Enter / Escape; true = consumed (the engine stops it). `rightCancels`:
+ *   a right-button press cancels instead of committing (Blender's rule), and the browser's trailing
+ *   context menu is swallowed.
  */
 export function createGesture(hooks) {
 	/** @type {GestureContext|null} */
@@ -75,6 +81,7 @@ export function createGesture(hooks) {
 			// capture, so the click that COMMITS cannot also start a fresh gesture
 			window.addEventListener('pointerdown', onModalDown, true);
 			window.addEventListener('keydown', onModalKey, true);
+			window.addEventListener('keyup', onModalKey, true);
 		} else {
 			window.addEventListener('pointerup', onUp);
 		}
@@ -84,6 +91,7 @@ export function createGesture(hooks) {
 		window.removeEventListener('pointerup', onUp);
 		window.removeEventListener('pointerdown', onModalDown, true);
 		window.removeEventListener('keydown', onModalKey, true);
+		window.removeEventListener('keyup', onModalKey, true);
 		window.removeEventListener('pointerup', onTouchUp, true);
 		window.removeEventListener('pointercancel', onTouchUp, true);
 	}
@@ -100,6 +108,13 @@ export function createGesture(hooks) {
 		if (hooks.passDown?.(e)) return;
 		e.preventDefault();
 		e.stopPropagation();
+		// 103 H4: right-click cancels; its trailing contextmenu (on the press on Linux, the release
+		// elsewhere) must not open the viewport menu over the object that just went back
+		if (hooks.rightCancels && e.button === 2) {
+			swallowContextMenu();
+			finish(false);
+			return;
+		}
 		// 44 M4: a FINGER has no hover, so "follow the pointer, click to commit" committed on the very
 		// first touch, wherever the thing was. With `touchDrag` a touch / pen press GRABS instead: the
 		// gesture re-bases on what has been applied so far, follows the finger, and commits on the lift.
@@ -122,6 +137,12 @@ export function createGesture(hooks) {
 	}
 	function onModalKey(/** @type {KeyboardEvent} */ e) {
 		if (!ctx?.modal) return;
+		if (hooks.key?.(ctx, e)) {
+			e.preventDefault();
+			e.stopPropagation();
+			return;
+		}
+		if (e.type !== 'keydown') return;
 		if (e.key === 'Escape') {
 			e.preventDefault();
 			e.stopPropagation();
@@ -131,6 +152,16 @@ export function createGesture(hooks) {
 			e.stopPropagation();
 			finish(true);
 		}
+	}
+
+	function swallowContextMenu() {
+		const swallow = (/** @type {Event} */ ev) => {
+			ev.preventDefault();
+			ev.stopPropagation();
+			window.removeEventListener('contextmenu', swallow, true);
+		};
+		window.addEventListener('contextmenu', swallow, true);
+		setTimeout(() => window.removeEventListener('contextmenu', swallow, true), 1000);
 	}
 
 	/**

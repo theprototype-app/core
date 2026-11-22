@@ -7959,6 +7959,7 @@
 		<div
 			bind:this={gridEl}
 			id="explorer-grid"
+			data-list-focus
 			class="relative h-full min-w-0 select-none overflow-y-auto p-1 outline-hidden"
 			style="scrollbar-gutter: stable"
 			use:minimalScroll

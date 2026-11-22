@@ -51,6 +51,7 @@ export const SCOPE_LABELS = /** @type {Record<string, string>} */ ({
 	shader: 'Shader editor',
 	hud: 'HUD editor',
 	objects: 'Object list',
+	modal: 'While Move / Rotate / Resize now runs',
 	panel: 'Panels and tool windows',
 	text: 'Text fields'
 });

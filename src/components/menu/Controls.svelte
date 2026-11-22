@@ -4247,6 +4247,7 @@
 		     (1280 px at xl), so the docked list stopped short of the dock's right edge on a wide screen -->
 		<div
 			id="object-tree"
+			data-list-focus
 			class="w-full outline-none focus-visible:ring-1 focus-visible:ring-accent"
 			role="tree"
 			tabindex="0"

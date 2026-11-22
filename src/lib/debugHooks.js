@@ -229,6 +229,9 @@ export const DEBUG_HOOKS = [
 	['viewModeCtl', () => import('./viewMode')],
 	['inputRuntime', () => import('./inputRuntime')],
 	['shortcutsRegistry', () => import('./shortcuts')],
+	// 103 H4/H5/H10: the fly prefs and the start-at-once engine (modalTransformState)
+	['flyPrefs', () => import('./flyPrefs')],
+	['modalTransform', () => import('./modalTransform')],
 	['keyScope', () => import('./keyScope')],
 	// 36 F3/F4: the window-chrome rules (isHeaderDrag, windowDragActive)
 	['windowGrip', () => import('./windowGrip')],
@@ -686,7 +689,12 @@ export const DEBUG_HOOKS = [
  * @returns {Promise<Record<string, any>>} */
 export function installDebugHooks() {
 	// 101 F5: the facade module loads WITH the rows (lazy: the boot graph never carries it)
-	return Promise.all([Promise.all(DEBUG_HOOKS.map(([, load]) => load())), import('./testFacade.js')]).then(([mods, facade]) => {
+	// 99 K4: + the kernel operators' lazy chunk, so a test's synchronous operator call finds them loaded
+	return Promise.all([
+		Promise.all(DEBUG_HOOKS.map(([, load]) => load())),
+		import('./testFacade.js'),
+		import('./editSession').then((m) => m.loadKernelOps())
+	]).then(([mods, facade]) => {
 		/** @type {Record<string, any>} */
 		const stores = {};
 		DEBUG_HOOKS.forEach(([name], i) => {

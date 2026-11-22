@@ -695,7 +695,7 @@ function updateLine() {
 	st.line.dataset.mode = st.mode;
 	st.line.dataset.locks = [...st.locks].sort().join('');
 	st.line.textContent =
-		MODE_WORD[st.mode] + ' · ' + locks + ' · ' + shown + (extras ? ' · ' + extras : '') + '   Enter / click keeps · Esc / right-click cancels';
+		MODE_WORD[st.mode] + ' · ' + locks + ' · ' + shown + (extras ? ' · ' + extras : '') + (gesture.isModal() ? '   Enter / click keeps · Esc / right-click cancels' : '   Let go to keep'); // 103 H7: a bar press-and-drag commits on release
 	// the width moves with the mode, the locks and a typed number: place again only then (not per move)
 	const shape = st.mode + st.line.dataset.locks + (st.typed ? 't' : '') + extras;
 	if (shape !== placedFor) {

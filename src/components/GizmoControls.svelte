@@ -81,7 +81,9 @@
 		}
 		void import('$lib/gizmo/faces.js').then((m) => {
 			if (token !== faceToken) return;
-			tc.setFace(m.createFace(style, tc));
+			// createFace installs the face driver on tc: make the face BEFORE reading tc.setFace
+			const face = m.createFace(style, tc);
+			tc.setFace(face);
 			invalidate();
 		});
 	});

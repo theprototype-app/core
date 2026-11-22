@@ -53,6 +53,7 @@
 	import { tickAnimatedMixers } from '$lib/animatedImports';
 	import { tickSim } from '$lib/sim/runtime.js'; // 36-sim: jiggle, splashes, fluid tanks
 	import { tickTextPathsLazy } from '$lib/textPathTick.js'; // 64 D2: text on a path
+	import { tickArraysLazy } from '$lib/arrayTick.js'; // 102b-arrange: array copies (lazy runtime)
 	import { startPackBehaviors, tickPackBehaviors } from '$lib/packBehavior';
 	import { startArchParts } from '$lib/arch/archParts.js';
 	import { tickAnimationPreview, captureAutoKey, playheadOf } from '$lib/animationPreview';
@@ -460,6 +461,7 @@
 		tickPackBehaviors(); // 33 P2: doors/lids/levers pose from their shared state (rest in Edit)
 		tickSim($objectsGroup, camera.current, renderer, performance.now()); // 36-sim (after mixers: jiggle rides the posed bones)
 		tickTextPathsLazy($objectsGroup, performance.now()); // 64 D2: letters follow their carriers (and linked paths)
+		tickArraysLazy($objectsGroup, performance.now()); // 102b-arrange: every peer draws its arrays' copies
 		tickAnimationPreview(); // Animation window: local transform preview (not synced)
 		tickSequences(); // 48 S2: shots / clips / audio / events of running sequences
 		tickMeshEdit(); // vertex handles follow the object if it moves (119)
@@ -1114,7 +1116,11 @@
 			const area = $marqueeRect;
 			const picked = [];
 			const center = new THREE.Vector3();
+			// 102b-arrange: a box skips objects on a LOCKED layer and on a layer hidden here
+			const locked: Set<string> | undefined = (editorPass() as any).lockedLayers;
 			for (const object of $objectsGroup?.children ?? []) {
+				const layer = object.userData?.layer;
+				if (layer && (locked?.has(layer) || object.visible === false)) continue;
 				const box = new THREE.Box3().setFromObject(object);
 				if (!isFinite(box.min.x)) continue;
 				box.getCenter(center).project(camera.current);

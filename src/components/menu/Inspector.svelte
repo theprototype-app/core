@@ -2429,6 +2429,9 @@
 				</div>
 			</Section>
 
+			<!-- 102b-arrange row 2: the scene's layers (a lazy chunk) -->
+			<Section variant="panel" label="Layers" closed aliases={['Layer', 'Hide layer', 'Lock layer']}>{#await import('./inspector/LayersSection.svelte') then m}<m.default />{/await}</Section>
+
 			<Section variant="panel" label="Levels" closed aliases={['Level', 'Portals', 'Checkpoints', 'Loading screen', 'Keep across levels']} note={sectionNote('Levels')}><LevelsSection /></Section>
 
 			<Section variant="panel" label="Physics" closed note={sectionNote('Physics')}>
@@ -3802,6 +3805,11 @@
 				<ArrangeSection count={multiCount} />
 			{/if}
 
+			<!-- 102b-arrange row 2: Tidy (layer, select similar, rename many, randomise) — a lazy chunk -->
+			{#if $selectedObjects?.length}
+				{#await import('./inspector/TidySection.svelte') then m}<m.default />{/await}
+			{/if}
+
 			{#if !isLight}
 				<Section variant="panel" label="Object" clip={{ count: () => insTargets.length, fans: true }}>
 					<PropRow label="Render order" labelFor="inspector-render-order" valueBox={false}>
@@ -3865,6 +3873,11 @@
 				     pour emitter rows; instances live in the object's own frame (a Terrain keeps its
 				     Scatter section beside Terrain paint) -->
 				<ScatterSection object={$selectedObject} />
+			{/if}
+
+			{#if !isLight && !multiCount && $selectedObject?.uuid && $selectedObject?.isObject3D}
+				<!-- 102b-arrange row 1: Array (a lazy chunk — nothing here is paid at boot) -->
+				{#await import('./inspector/ArraySection.svelte') then m}<m.default object={$selectedObject} />{/await}
 			{/if}
 
 			{#if devPrimary}

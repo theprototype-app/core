@@ -524,6 +524,11 @@ export const VALIDATORS = {
 			if (v === null) return isUuid(d.uuid);
 			return isUuid(d.uuid) && !!v && typeof v === 'object' && !isArray(v) && (v.text === undefined || (typeof v.text === 'string' && v.text.length <= 4000));
 		}
+		// 102b-arrange: an object's layer id (from the scene's layer table) or null
+		if (d.parameter === 'layer') return isUuid(d.uuid) && (d.layer === null || (typeof d.layer === 'string' && d.layer.length <= 64));
+		// 102b-arrange: an array record is a small plain object or null (normalizeArray cleans it on read)
+		if (d.parameter === 'array')
+			return isUuid(d.uuid) && (d.array === null || (!!d.array && typeof d.array === 'object' && !isArray(d.array) && JSON.stringify(d.array).length <= 2000));
 		if (d.parameter === 'water' || d.parameter === 'bubbles' || d.parameter === 'pour') {
 			const v = d[d.parameter];
 			return isUuid(d.uuid) && (v === null || (!!v && typeof v === 'object' && !isArray(v)));

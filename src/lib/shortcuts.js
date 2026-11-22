@@ -732,6 +732,16 @@ export const shortcuts = [
 		}
 	},
 	{
+		// 102b-arrange row 3: corner snap — read straight off the keyboard by snapEngine (needs keyup)
+		id: 'scene.cornerSnap',
+		keys: 'B (hold)',
+		group: 'Scene',
+		scope: 'viewport',
+		label: 'Hold while moving: snap the nearest corner onto a corner or edge middle',
+		fixed: true,
+		fixedReason: 'hold key, handled by the snap engine'
+	},
+	{
 		// 37 R18: the HUD view-mode quick toggle — cycle Shaded / Shaded + AO / Wireframe
 		// (LOCAL, never replicated); viewMode.js is a leaf, so the static edge is safe
 		id: 'view.cycle',

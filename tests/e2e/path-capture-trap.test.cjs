@@ -7,26 +7,26 @@ const h = require('./helpers.cjs');
 
 const S = (page, fn, arg) => page.evaluate(fn, arg);
 const capturing = (page) =>
-	S(page, () => new Promise((r) => window.__stores.pathCapture.pathCaptureNode.subscribe(r)()));
+	S(page, () => new Promise((r) => window.__tp.test.v1.pathCapture.pathCaptureNode.subscribe(r)()));
 const pointCount = (page, uuid) =>
 	S(
 		page,
 		(uuid) =>
 			new Promise((r) =>
-				window.__stores.flowGraphs.subscribe((g) =>
+				window.__tp.test.v1.flowGraphs.subscribe((g) =>
 					r(g[uuid]?.nodes.find((n) => n.id === 'pp1')?.data.points?.length ?? -1)
 				)()
 			),
 		uuid
 	);
 const selection = (page) =>
-	S(page, () => new Promise((r) => window.__stores.selectedObjects.subscribe((s) => r([...s]))()));
+	S(page, () => new Promise((r) => window.__tp.test.v1.selectedObjects.subscribe((s) => r([...s]))()));
 const boxPos = (page, uuid) =>
 	S(
 		page,
 		(uuid) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => r(g.getObjectByProperty('uuid', uuid).position.toArray()))()
+				window.__tp.test.v1.objectsGroup.subscribe((g) => r(g.getObjectByProperty('uuid', uuid).position.toArray()))()
 			),
 		uuid
 	);
@@ -40,15 +40,15 @@ h.run(async () => {
 
 	// --- scaffold: a box whose OWN flow holds a Path patrol node (implicit owner) ---------
 	const uuid = await S(page, async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = g.children[g.children.length - 1];
-		window.__stores.flowGraphsCtl.createObjectGraph(box.uuid);
-		window.__stores.nodesHandler.createFlowNode(
+		window.__tp.test.v1.flowGraphsCtl.createObjectGraph(box.uuid);
+		window.__tp.test.v1.nodesHandler.createFlowNode(
 			{ id: 'pp1', type: 'pathpatrol', position: { x: 40, y: 40 }, data: { type: 'pathpatrol', points: [], speed: 2, mode: 'loop' } },
 			box.uuid
 		);
-		window.__stores.objectActions.applySelectionSet([]);
+		window.__tp.test.v1.objectActions.applySelectionSet([]);
 		return box.uuid;
 	});
 	await page.waitForTimeout(500);
@@ -57,7 +57,7 @@ h.run(async () => {
 			page,
 			(uuid) =>
 				new Promise((r) =>
-					window.__stores.objectsGroup.subscribe((g) => {
+					window.__tp.test.v1.objectsGroup.subscribe((g) => {
 						const o = g.getObjectByProperty('uuid', uuid);
 						o.updateMatrixWorld(true);
 						const v = o.getWorldPosition(o.position.clone());
@@ -75,10 +75,10 @@ h.run(async () => {
 
 	// --- §1 capture adds points; the mode is visible; the object holds still -----------------
 	await S(page, (id) => {
-		window.__stores.objectActions.selectObject(id);
+		window.__tp.test.v1.objectActions.selectObject(id);
 	}, uuid);
 	await page.waitForTimeout(400);
-	await S(page, () => window.__stores.pathCapture.togglePathCapture('pp1'));
+	await S(page, () => window.__tp.test.v1.pathCapture.togglePathCapture('pp1'));
 	h.check((await capturing(page)) === 'pp1', '§1 capture is on');
 	h.check(await page.locator('#path-capture-toolbar').isVisible(), '§1 the "Placing waypoints" toolbox is visible');
 	await click(await groundSpot(page, -2));
@@ -95,7 +95,7 @@ h.run(async () => {
 	h.check(Math.hypot(p1[0] - p2[0], p1[2] - p2[2]) < 1e-6, '§1 the patrolling object holds still while its points are placed');
 
 	// --- §2 THE TRAP: deselect, then click the object -----------------------------------
-	await S(page, () => window.__stores.objectActions.applySelectionSet([]));
+	await S(page, () => window.__tp.test.v1.objectActions.applySelectionSet([]));
 	await page.waitForTimeout(300);
 	h.check((await capturing(page)) === null, '§2 deselecting ends capture');
 	h.check(!(await page.locator('#path-capture-toolbar').isVisible()), '§2 the toolbox is gone');
@@ -109,8 +109,8 @@ h.run(async () => {
 	h.check(Math.hypot(q1[0] - q2[0], q1[2] - q2[2]) > 1e-3, '§2 with capture off the object patrols again');
 
 	// --- §3 Esc ends capture -----------------------------------------------------------------
-	await S(page, () => window.__stores.objectActions.applySelectionSet([]));
-	await S(page, () => window.__stores.pathCapture.togglePathCapture('pp1'));
+	await S(page, () => window.__tp.test.v1.objectActions.applySelectionSet([]));
+	await S(page, () => window.__tp.test.v1.pathCapture.togglePathCapture('pp1'));
 	h.check((await capturing(page)) === 'pp1', '§3 capture on again');
 	await page.mouse.move(10, 400);
 	await page.keyboard.press('Escape');
@@ -118,7 +118,7 @@ h.run(async () => {
 	h.check((await capturing(page)) === null, '§3 Esc ends capture');
 
 	// --- §4 a click on the patrolling object ends capture and selects it --------------------
-	await S(page, () => window.__stores.pathCapture.togglePathCapture('pp1'));
+	await S(page, () => window.__tp.test.v1.pathCapture.togglePathCapture('pp1'));
 	await page.waitForTimeout(600); // the object parks at its base pose
 	await click(await boxCenter());
 	h.check((await capturing(page)) === null, '§4 clicking the patrolling object ends capture');
@@ -126,9 +126,9 @@ h.run(async () => {
 	h.check((await pointCount(page, uuid)) === 2, '§4 ... with no point added');
 
 	// --- §5 a click on the node-editor pane ends capture ----------------------------------
-	await S(page, () => window.__stores.flowGraphClose.set(false));
+	await S(page, () => window.__tp.test.v1.flowGraphClose.set(false));
 	await page.waitForTimeout(600);
-	await S(page, () => window.__stores.pathCapture.togglePathCapture('pp1'));
+	await S(page, () => window.__tp.test.v1.pathCapture.togglePathCapture('pp1'));
 	const pane = page.locator('.svelte-flow__pane').first();
 	if (await pane.isVisible().catch(() => false)) {
 		const box = await pane.boundingBox();
@@ -138,18 +138,18 @@ h.run(async () => {
 		h.check((await capturing(page)) === null, '§5 a click on the node-editor pane ends capture');
 	} else {
 		h.check(false, '§5 the node-editor pane is visible');
-		await S(page, () => window.__stores.pathCapture.endPathCapture());
+		await S(page, () => window.__tp.test.v1.pathCapture.endPathCapture());
 	}
 
 	// --- §6 Play ends capture; deleting the node ends it -------------------------------------
-	await S(page, () => window.__stores.pathCapture.togglePathCapture('pp1'));
-	await S(page, () => window.__stores.isLocked.set(true));
+	await S(page, () => window.__tp.test.v1.pathCapture.togglePathCapture('pp1'));
+	await S(page, () => window.__tp.test.v1.isLocked.set(true));
 	await page.waitForTimeout(200);
 	h.check((await capturing(page)) === null, '§6 entering Play ends capture');
-	await S(page, () => window.__stores.isLocked.set(false));
+	await S(page, () => window.__tp.test.v1.isLocked.set(false));
 	await page.waitForTimeout(300);
-	await S(page, () => window.__stores.pathCapture.togglePathCapture('pp1'));
-	await S(page, (id) => window.__stores.nodesHandler.setNodeData('pp1', { muted: true }, id), uuid);
+	await S(page, () => window.__tp.test.v1.pathCapture.togglePathCapture('pp1'));
+	await S(page, (id) => window.__tp.test.v1.nodesHandler.setNodeData('pp1', { muted: true }, id), uuid);
 	await page.waitForTimeout(200);
 	h.check((await capturing(page)) === null, '§6 muting the node ends capture');
 

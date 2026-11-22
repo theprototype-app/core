@@ -17,7 +17,7 @@ h.run(async () => {
 		const P = X.page;
 		const cdp = await P.context().newCDPSession(P);
 		const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }] });
-		const quiet = () => P.evaluate(() => window.__stores.toastStore.set([]));
+		const quiet = () => P.evaluate(() => window.__tp.test.v1.toastStore.set([]));
 		const shot = async (name) => {
 			await quiet();
 			await P.waitForTimeout(300);
@@ -34,21 +34,21 @@ h.run(async () => {
 				return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
 			}, sel);
 		const sheet = (d) => P.evaluate((dd) => {
-			const s = window.__stores.phoneShell;
+			const s = window.__tp.test.v1.phoneShell;
 			s.phoneSheet.set('more');
 			s.setPhoneDetent('more', dd);
 		}, d);
 		const rest = async () => {
 			await P.keyboard.press('Escape').catch(() => {});
 			await P.evaluate(() => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				s.phoneShell.phoneSheet.set(null);
 				s.inspectorClose.set(true);
 				s.explorerClose.set(true);
 			});
 			await P.waitForTimeout(500);
 		};
-		const after = await P.evaluate(() => !!window.__stores.phoneBar);
+		const after = await P.evaluate(() => !!window.__tp.test.v1.phoneBar);
 		await P.waitForTimeout(1200);
 		await shot('bar-default');
 		await sheet('half');
@@ -101,7 +101,7 @@ h.run(async () => {
 			await touch('touchEnd');
 			await P.waitForTimeout(500);
 			// Play off the bar: it waits in More ▸ Windows
-			await P.evaluate(() => window.__stores.phoneBar.setBar(['add', 'objects', 'explorer', 'more']));
+			await P.evaluate(() => window.__tp.test.v1.phoneBar.setBar(['add', 'objects', 'explorer', 'more']));
 			await P.waitForTimeout(400);
 			await P.evaluate(() => {
 				const b = document.getElementById('ps-more-sheet');
@@ -110,12 +110,12 @@ h.run(async () => {
 			await shot('play-in-more');
 			// seven items: icons only
 			await rest();
-			await P.evaluate(() => window.__stores.phoneBar.setBar(['add', 'objects', 'move', 'play', 'rotate', 'explorer', 'more']));
+			await P.evaluate(() => window.__tp.test.v1.phoneBar.setBar(['add', 'objects', 'move', 'play', 'rotate', 'explorer', 'more']));
 			await P.waitForTimeout(400);
 			await shot('bar-seven');
 			// the three switches off: a selection with no strip, a docked view with no tab row and no grab pill
 			await P.evaluate(async () => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				s.phoneBar.setBar(['add', 'objects', 'play', 'explorer', 'more']);
 				s.commandsHandler.sceneCommand('/create box');
 				for (let t = 0; t < 60; t++) {
@@ -133,7 +133,7 @@ h.run(async () => {
 			await P.waitForTimeout(1200);
 			await shot('switches-on');
 			await P.evaluate(() => {
-				const p = window.__stores.phonePrefs;
+				const p = window.__tp.test.v1.phonePrefs;
 				p.phoneSelectionStrip.set(false);
 				p.phoneDockTabs.set(false);
 				p.phoneGrabHandle.set(false);
@@ -141,7 +141,7 @@ h.run(async () => {
 			await P.waitForTimeout(800);
 			await shot('switches-off');
 			await P.evaluate(() => {
-				const p = window.__stores.phonePrefs;
+				const p = window.__tp.test.v1.phonePrefs;
 				p.phoneSelectionStrip.set(true);
 				p.phoneDockTabs.set(true);
 				p.phoneGrabHandle.set(true);

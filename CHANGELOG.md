@@ -1,9 +1,561 @@
 # Changelog
 
 <!-- This file is rendered INSIDE the app (What's new, from the logo menu) as well as
-     on GitHub, so keep entries short, human and emoji-led: one "## <version>" heading
+     on GitHub, so keep entries short and human: one "## <version>" heading
      per release, newest first. HTML comments like this one are stripped before
-     rendering, so maintainer notes stay out of the user-facing window. -->
+     rendering, so maintainer notes stay out of the user-facing window. No emoji from
+     1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
+
+## 1.72.0 — Make real games
+
+- **Test with players**: right-click **Play** (long-press on a phone) ▸ **Test with players…** adds 1 to 3 simulated players to your session: real copies of the app in this tab, each a Player, Viewer or Editor. Watch them in small views, **Drive** one to play as it, and **Stop test** removes them all with no rows, saves or settings left behind. Phones and headsets run one; they start one after another, and one that does not start says **Did not start**. Simulated players start with the modules you have installed. <!-- 61-test G3, 61-int -->
+- **Enemies that patrol, see and chase**: right-click any object ▸ **Make this an enemy…** It walks a Path or guards its spot, sees you inside its cone (walls block it) and hears noises, chases you round walls, attacks when it reaches you, gives up and walks back. Where it cannot reach you it stops at the closest point and says why. Crates you push block doorways and free them again. One player's machine runs the enemies and everyone sees them in the same place, viewers included, and they chase viewers too. **View ▸ Navmesh overlay** and **View ▸ NPC debug view** show the walkable area and each enemy's path and state on your screen only. New nodes in **Navigation**: Enemy (NPC), Move To, Chase, Flee, Wander, Patrol (Path), Make Noise, On NPC Event, NPC State, Navmesh. It comes as the **Navigation** module, installed the first time you use it: scenes without enemies download none of it. <!-- 61-nav G1 G5-G8 G10, 61-int -->
+- **New template: A guard on patrol**: a walled yard with a guard walking its round, crates to hide behind and an exit to sneak to. <!-- 61-int G9 -->
+- **For AI agents**: `game_setup` takes `npc` to make an object an enemy (the same recipe as the sheet). No tool names changed. <!-- 61-nav G10 -->
+- **For module authors**: `api.paths`, `api.colliderGeometry`, `api.players()` (with `playing` for other peers), `api.isAuthority()`, `api.isExport()`, `api.registerViewToggle` and `api.registerObjectAction` (MODULES.md "Game world"); `api.flow.removeNodes`. A viewer's module messages do not reach the others (the roles gate), so a module that elects one peer should elect only a peer the others hear. <!-- 61-nav, 61-int -->
+
+## 1.71.0 — Convert to code
+
+- **Code view, on for everyone**: the Nodes editor's **Code** tab shows the current graph as code, read-only: one line per node, its changed settings and what is wired into it. Press a line to select that node; **Copy** takes the whole text. On a phone it opens as a sheet; in VR the Logic panel has a **Code** button. AI agents get the same text as `code` in `list_scene {flow}`. To hide it: `localStorage['flag:codeView'] = '0'`. <!-- 2.0-n012 2.0-int -->
+- **Convert to code**: right-click a **Math**, **Compare**, **Gate**, **Select**, **Map Range**, **Random** or **HUD Text** node and pick **Convert to code**: it becomes a Script node that does exactly the same thing, with every wire kept, so you can change how it works. **Convert back** returns the built-in node while the code is unchanged. One undo step, and everyone in the session sees it. On a phone or in VR the node sheet shows the code read-only. <!-- 2.0-n3c -->
+- **Custom nodes keep their definitions**: a scene with custom nodes saved and opened again (or restored after a reload) brings their sockets and code back; they used to come back empty and do nothing. <!-- 2.0-n3c -->
+- **Animation Finished, Animation Marker, On Animation State and On Grab fire again**: they had read 0 since 1.23, so a marker wired to Play Animation never fired. <!-- 2.0-n3c -->
+- **Games built from nodes work more often**: a behaviour input fed by a held key fires once per press (a P toggle no longer pauses and resumes in one press, also on a busy phone or headset); a pickup taken with a node-only Collect counts for the person who took it, not the host; an **On Enter** / **On Exit** in the scene graph with no sensor of its own fires for the sensors in the scene. **Collect pickup** has **Hide when collected** (on for new pickups): a taken pickup disappears for everyone until it comes back. <!-- 2.0-n3b 2.0-int -->
+- **Cinematic view: text and labels**: 3D text, names over people and other labels now show in the Cinematic view instead of being left out. <!-- 100-cover-labels C2-1 -->
+- **Cinematic view: a clear note when the graphics card drops out**: if the browser drops the graphics device while the Cinematic view starts, the view switches back with its own note instead of "Something went wrong", and **Preview** stays on screen, greyed out, saying why, until you reload. <!-- 2.0-int G30 -->
+- **The editor starts lighter**: the AI assistant's tools load when you send your first prompt, and Convert to code when you first use it, so the editor downloads about 145 KB less before it starts. <!-- 2.0-int -->
+- **For AI agents**: agent contract 1.11.0 (additive). `update_flow_nodes` takes `convert: [{id, to: "code" | "back"}]`. Every node setting can be set (**Reset each round** on Latch and Once, **Who** on On Enter / On Exit, **To** on Proximity and others were silently dropped). `validate_scene` names wiring mistakes with a one-line fix (a value such as a Gate wired into an event input, a Latch or Counter that fires on every change); `describe_node_types {recipe}` has six worked builds; a behaviour input handler hears who fired it (`on.x({by})`). <!-- 2.0-n3b 2.0-n3c -->
+- **Scene files**: format minor 3 (saved custom node definitions, a per-node version, the Convert marker). Older versions still open them. <!-- 2.0-n3c -->
+- **For module and script authors**: the module SDK reports `SDK_API_VERSION` 3 and scripts `api.version` 2 (`api.self`, `api.stamp`). See OPEN-CORE.md. <!-- 2.0-n3c -->
+- **For developers**: `npm run eval:results` in tools/agent plays what an AI agent built through the Claude connector across 15 game tasks (one and two players) and scores whether it works: 10 / 15 on 1.68, 13.4 / 15 with this release's fixes. <!-- 2.0-n3a 2.0-n3b -->
+
+## 1.70.0 — SvelteKit 3
+
+- **Under the hood**: moved to SvelteKit 3 and TypeScript 6. Nothing changes for you; the app starts the same. <!-- sk3-int -->
+- **For developers**: `svelte.config.js` is gone; the SvelteKit options live in `vite.config.ts` (`sveltekit({...})`). `$lib` imports still work (the project's own alias). SvelteKit's version poll is off, so the **New version — Reload** notice stays the one update prompt. The play and Back history entries go through `src/lib/shallowHistory.js`. <!-- sk3-int -->
+
+## 1.69.0 — Cinematic view
+
+- **Preview: the Cinematic view**: **Preview** at the top right of the 3D view (or **Shift+Z**) draws your scene with bounced light, reflections, softer shadows and glow, live while you keep editing, playing and working with other people. The arrow beside it picks **Basic**, **Standard** or **High**; when frames get slow it steps down by itself and says so. It is on this computer only: never sent to the people in your session and never saved in the scene. Offered on desktops with Chrome or Edge and a hardware graphics card; phones, tablets and headsets download nothing for it. <!-- 100-view C1 -->
+- **Not shown in the Cinematic view yet**: shader-graph materials and hand-written shaders, water and fluid tanks, particles, 3D text, painted terrain layers and jiggle show as plain stand-ins, and a note under the switch names the ones in your scene. If the graphics card fails, the view switches back by itself and says why. Photo mode and video takes go through it while it is on; VR turns it off. <!-- 100-view C1 -->
+
+## 1.68.0 — Share a moment
+
+- **Share a moment**: while you play, the last 10 s of the game view is kept. Press **F8**, the clapperboard in the Play bar or a controller's View button to trim 3-10 s and save or share it as a GIF or MP4; **Copy picture** copies the frame on screen. Off in VR and on low-memory devices; **Settings ▸ Privacy ▸ Recording the last 10 s** turns it off. Players of a published game get it only when the author allows it (**Configure Scene ▸ Play**). The **Topple tower** starter is set up for sharing. <!-- 95 SM1-SM4 -->
+- **Node types live in one registry**: each built-in node is one definition (palette entry, sockets, card, value) in `src/lib/nodes/families/`. Adding a node type is one file, and a type missing a part fails the build. No change to saved scenes or to how graphs run. <!-- 2.0-n012 N1 -->
+- **Preview, off by default: the graph as code**: a read-only **Code** tab in the Nodes editor shows the graph as code (press a line to select its node, **Copy** copies it all). On a phone it is a full-width sheet; in VR the Logic panel has a **Code** button. Turn it on with `localStorage['flag:codeView']='1'`. <!-- 2.0-n012 N2 -->
+- **For AI agents**: agent contract 1.10.0 (additive): with the code view on, `list_scene {flow}` also returns `code`, and `describe_node_types` cards carry a `code` shape. <!-- 2.0-n012 N2 -->
+
+## 1.67.1 — Steadier sessions
+
+- **Messages from other people are read within fixed limits**: a message whose stated sizes do not match the data that arrived, or that would need far more memory than its size, is skipped and counted in Diagnostics, and the connection stays up. Large messages sent in pieces are put back together within the same limits, also when their pieces arrive out of order.
+- **One data channel per connection**: an extra channel opened on an existing connection is closed.
+
+## 1.67.0 — Foundations
+
+- **Sessions check versions**: when people join, their apps first agree that they speak the same session version. If one app is older, it is asked to reload (**This session uses a newer version. Reload to update.**) and People shows who still needs to; nothing from the scene is exchanged until they match. <!-- 101-proto F1 -->
+- **Objects and materials are validated**: objects and materials from other people, from saved scenes and from glTF files are checked against the known object, material and texture types when they arrive; unknown types load as standard ones and unknown fields are left out. <!-- 101-schema F2 -->
+- **Sending limits per person**: each person in a session has a generous limit on how many messages and how much data they can send per second, and on the size of one object. Anything far beyond a normal session is skipped with one notice, and the connection stays up. <!-- 101-proto F4 -->
+- **For module authors**: the module api reports `api.version` 2. Renderers and render targets now come from one place inside the app, which prepares it for a future renderer switch; nothing changes on screen. <!-- 101-seam F3 F5 F6 -->
+- **For self-hosting**: a build without a separate play origin lets only its own site frame the editor; the play page can still be embedded anywhere. <!-- 101-proto F4 frame-ancestors -->
+
+## 1.66.1 — Safer loading, continued
+
+- **Every part of an object counts towards the load limits**, and messages from other people that are not plain data are set aside. Anything that does not pass loads like a missing file, and the rest of the scene is unchanged.
+- **.gltf files opened from the sidebar, and models from a model generator, get the same size check** as every other model file.
+
+## 1.66.0 — Menus and panels, polished
+
+### Sidebars and the dock
+- **Handles stay out of the way**: when the bottom dock leaves no room above it, the sidebar handles go behind it and come back when it hides; each handle keeps its place in proportion when the window is resized. <!-- uir-polish A1/A2 -->
+- **Docked windows' side panes**: a closed pane's handle sits flush against the window edge, the main area keeps its scrollbar clear of it, and **Ctrl+B** / **Ctrl+Alt+B** open and close the panes of the docked window under the mouse or holding the focus. **Switch sidebar side** moved into the handles' right-click menu. <!-- uir-polish B1-B6 -->
+- **Tabs keep their names**: sidebar tabs never shrink; when they do not fit, a **...** button lists them all and the mouse wheel scrolls the strip. A menu row that moves a window reads **Move here**. <!-- uir-polish F1-F3 -->
+
+### Properties and Configure Scene
+- **No pin, no lock**: Properties follows your selection and keeps showing the last object after you click away (it closes when that object is deleted); its header always stays at the top. <!-- uir-polish E1-E4 -->
+- **Configure Scene moves on its own**: drag its tab to the other sidebar and Properties stays where it is. <!-- uir-polish E5 -->
+
+### Windows
+- **Dock and Pop out in every floating header**: one icon-only **Dock** button (and **Pop out** where a window can pop out) in the Node editor, Timeline, Explorer, Objects, Chat, Free assets and the other dockable windows. Docked, a window closes from its dock tab; Code docked has no header row at all. <!-- uir-polish G1-G4 -->
+
+### Main menu and reports
+- **Layouts** is the first row of **Window**; **What's new** is the version line at the bottom, with a dot when there is something new. The menu is solid to its bottom edge, and **Help** is a grid with a bug icon on **Report a bug**. <!-- uir-polish C1-C4 -->
+- **One Report a bug view**: the moment report and the bug report are one form. It names the seconds it holds ("the last 16 s"), and with no account it sends through the anonymous channel. <!-- uir-polish D1 -->
+
+## 1.65.1 — Safer loading
+
+- **Objects and materials from other people and from files are checked before they load.** Anything that does not pass loads like a missing file, and the rest of the scene is unchanged.
+
+
+## 1.65.0 — New menus and panels
+
+### Chat and the AI assistant
+- **One window, two tabs**: Chat and the AI assistant are one window with **Session** and **Assistant** tabs. The Chat button (or C) opens it on Session, the AI button on Assistant; one **History** lists both kinds of chat, and chats come back after a reload. <!-- uir-chat -->
+
+### People
+- **Person card**: press anyone in the People list for their card: what they are doing, their connection, and every action in one place. <!-- uir-people -->
+- **Invite first**: the Connect bar leads with **Invite** and **Join…**; Join takes a pasted invite link or a peer id. <!-- uir-people -->
+- **Show my status**: let others see whether you are Available, Busy or Away (Settings ▸ Interface ▸ Show my status, off by default). <!-- uir-people -->
+- Someone who joins with your invite is announced by name ("Guest 2 joined with your invite"), not by an id. <!-- uir-int, device-lab D4 -->
+
+### Files and preview
+- **Preview follows the Explorer**: the file preview pins to the dock as a **Preview** tab that shows whatever you select in the Explorer. <!-- uir-preview -->
+- **Edit images in the preview**: images open for editing in the same window (**View | Edit**) with a filmstrip of the folder's images. The separate Image editor window is gone; a saved layout that had it opens the Preview instead. <!-- uir-preview Q5 -->
+
+### Timeline and Generate 3D
+- **Timeline panes**: the Sequences list on the left, Properties (Sequence with its frame rate | Item) on the right. <!-- uir-timeline -->
+- **Generate 3D is a window**: dock it like any other; its **Jobs** and **History** survive a reload, and a running job carries on after a reload without starting again. <!-- uir-timeline -->
+
+### Account
+- **Settings ▸ Account**: Sign-in methods, Devices and Connected apps moved here. The profile menu keeps the email-updates question and Sign out, with a **Manage** link to the new page; settings search finds every row. <!-- uir-account -->
+
+### Under the hood
+- Layouts and window positions saved by earlier versions open the new windows (the AI assistant's window becomes Chat's Assistant tab, the Image editor's tab becomes Preview). <!-- uir-chat, uir-preview, uir-int uir-migration -->
+- TypeScript 6. <!-- core #558 -->
+
+## 1.64.0 — Doors, paths and levels
+
+### Rooms that react
+- **Starter recipes**: select an object, open the node editor and pick **Recipes** in the node search: **Door** (click to open), **Door that opens when you walk up**, **Bell** (click, point at or knock it) and **Guard** (walks a loop and says *Spotted!* when you step into its sight). One undo takes a recipe back, and everyone in the session sees it at once. New template: **Doors, a bell and a guard**. <!-- 78-int F27 -->
+- **Why did this not fire?** Trigger nodes (On Enter, On Exit, On Hover, On Click, Collect pickup, Timer) remember their last check: the card says *fired 2 s ago*, *blocked: not the player* or *won't fire: in Edit mode (use Play)*, and the Flow debugger says who, when and what stopped it. <!-- 78-int F26 -->
+- **On Hover** fires when a player's pointer, phone tap or VR laser goes over an object; **Hover Animate** swings, wobbles or pops it, and every player sees the same swing. An unwired **Highlight** now lights under the mouse in Interact and under a phone tap too. <!-- 78-nodes F2; 78-int I2 rewire -->
+- **Toggle Animation** opens and closes doors, lids and drawers between poses you capture (or named poses like "ajar"); the state is shared and saved, so late joiners see the same door. <!-- 78-nodes -->
+- **On Enter / On Exit work for the player** (every peer's own player, joiners too) with a new *who* option (anything / the player / objects only), and **Proximity** can measure to your own player. <!-- 78-nodes -->
+- **New nodes for a room that feels alive**: Oscillate, Move To / Rotate To / Scale To, Light Switch, Light Intensity, Colour Cycle, Wind Sway, Flowing Water and Ambient Animal; **Grabbable** (pick things up in Play or with the VR grip, no physics needed); **Highlight** + **Press Button**; **Sit Spot** (click a chair to sit, a move key stands you up). <!-- 85-nodes -->
+- **Node-only gems**: the Collect pickup node has *Collect on touch* (on by default), so walking over a gem takes it. <!-- 78-nodes -->
+- **On Play start / On Play stop** pulse once when the session (or just you) starts or stops playing; *Game Start* is now called **Start camera**. <!-- 78-nodes -->
+- **Announce** no longer flashes over the editor: in Edit its line goes to the Debugger's new **Console**; the banner shows in Play and in Interact. <!-- 78-nodes, 78-int -->
+
+### Paths
+- **Add ▸ Path** draws a route you can edit: waits, speeds, eases, jumps, facing and events per point; loop, ping-pong, once or random walks; hidden in Play. **Path patrol** walks a Path and every peer sees each walker in the same place; older patrols convert in one click. <!-- 78-path -->
+
+### Wiring
+- **Drag a wire into empty space to add a node**: a search opens right there with the nodes that fit; picking one adds the node and the wire in one undo step. **Tab** opens the same search for the selected node. <!-- 78-wire F1 -->
+- **Backwards wires are flagged**: a wire from an Object Selector *into* On Click (and other triggers) is drawn dashed red with a chip that offers **Reverse wire**. <!-- 78-wire -->
+- **Live state on node cards**: while the node editor is open, cards say what they are doing ("count 3", "fired 1.2 s ago", "to point 3"). <!-- 78-wire F7 -->
+- **One banner for click-to-place tools** (waypoints, measuring, drawing a spline, a flatten point): it names the tool that owns your next click, and Esc leaves only the top one. <!-- 78-wire F5 -->
+- **Animate in editor** (optional toolbar button): switch it off and Spin, Bounce, Orbit, Path patrol and friends rest at their pose while you edit. <!-- 78-wire F6 -->
+
+### Levels and portals
+- **Levels and progress**: one Levels table per game (Configure Scene ▸ Levels) shared by the Kit: Levels nodes, portals and Claude, with a keep-across-levels list (score, inventory, health, variables). <!-- 93-levels -->
+- **Portals** to another level, scene or spot, one player at a time, with fade, iris or card transitions and background preloading; **Checkpoints** with Back to checkpoint and New game nodes. <!-- 93-levels -->
+- **Loading screens** with real progress (five styles), and exported games **remember progress** and resume at the last checkpoint. New template: **Two levels and a portal**. <!-- 93-levels -->
+
+### Physics and the game kit
+- **The fastest device runs the physics**: when the device running a simulation is much slower than another player's, the run moves there by itself; a slow device alone keeps real time instead of slow motion. <!-- 78-nodes -->
+- A level made only of static objects runs its physics when Play starts (walls stop you). <!-- 78-nodes; the default walker is held back, 78-int -->
+
+### Interface
+- **No emoji anywhere in the app**: icons are drawn as icons, so they look the same on every phone. <!-- 78-int PL42 -->
+- **Touch**: tab rows scroll with a sideways swipe instead of tearing tabs off; moving or tearing off a tab takes a long press. <!-- panel-gestures -->
+- **Hide chrome buttons you do not use** (right-click or long press ▸ Hide this button); Show buttons and Settings ▸ Customize buttons bring them back, saved per layout. <!-- panel-gestures -->
+- **Bigger tap areas on touch screens** are on: small buttons answer a finger that lands just beside them. <!-- hitslop-fix -->
+- **Profile menu** regrouped (Profile, Your stuff, Account), with a one-time card about email updates and **Settings ▸ Account ▸ Email**. <!-- profile-notify -->
+- **The menu is regrouped**: search on top, then File, Scene, Versions, Window, Help and Settings, with the version at the foot. Its **Windows** list and **Save as…** submenu open again. <!-- showhide-v8 #547 -->
+- **The dock and sidebar "+" now move a window** that is open elsewhere (floating or on the other side) to where you pressed it, instead of only bringing it to the front. <!-- showhide-v8 #547 -->
+- **Docked windows on a narrow phone** show one header of views instead of side-by-side panes; panel handles show the panel's own icon. <!-- showhide-v8 #547 -->
+- **The Profiler is one window**: the live profile is a row of its list, and Live opens it even when it is closed. Flow code opens in the Code window. <!-- showhide-v8 #547 -->
+- **One Invite button** (person-plus) with **Person** and **AI agent** tabs replaces "Request AI"; the Person tab shows a **QR code** of the join link that a phone can scan, made on your device. <!-- 78-pl-peers PL36 PL37 -->
+- **Your name when you join**: you are asked once what others should call you, and it is remembered; anyone without a name is **Guest 1**, **Guest 2**… instead of "Peer". <!-- 78-pl-peers PL34 -->
+- **One avatar everywhere**: your photo, or your colour with an initial, ringed in the same colour as your cursor and locks. The People list shows its menu (⋯) and **Go to** on every row and counts people once. <!-- 78-pl-peers PL31 PL33 -->
+- The Connect drawer says **Ready** when you are not in a session (no more "Offline" with a working connection), says the state once and folds the network details under one **Network** row; the Connect Claude steps name the **Sign in to connect** button when you are signed out. <!-- 78-pl-peers PL10 PL35 -->
+- **A person who joins no longer appears inside your view**: an avatar near your camera fades out, and a joiner arrives beside you. <!-- 78-pl-peers PL32 -->
+- **Configure Scene is tidier**: two groups, **The scene** (everyone sees it) and **This device** (only you), with only Environment and Scene look open at first. <!-- 78-pl-scene PL17 -->
+- **Environment** shows six preset pills plus **More**, says what the preset sets, and after an edit shows *Studio · Modified: sun* with a one-press **Reset**; a dot beside a changed value puts it back, for everyone, in one undo step. <!-- 78-pl-scene PL15 PL16 PL12 -->
+- Under each shared Configure Scene section you can see **who changed it last** and when, an AI included. <!-- 78-pl-scene PL13 -->
+- The side panel has **one header**: the follow-selection pin sits in the sidebar strip (on a phone, in the tab's long-press menu, with the lock in the grab bar), and the filter box says what it filters. <!-- 78-pl-scene PL14 -->
+- **Statistics** shows the baked light: atlas size, MB and objects baked / shown, or *none*. <!-- 78-pl-scene PL1 -->
+- The sky-image picture cards and their tour are gone, and the *Reduce quality when heavy* switch left Configure Scene (a line says what Auto does; the switch stays in Settings). <!-- 78-pl-scene PL29 PL18 -->
+- **Floating windows have Small, Half and Full sizes**: double-click or double-tap the header to cycle them, or use the header menu's **Size** row. <!-- 78-pl-windows PL39 -->
+- **Chat and the AI assistant can be resized** and keep their size; the text viewer and the 3D preview keep theirs too. On a touch screen the resize corner is easier to grab. <!-- 78-pl-windows PL3 PL38 PL39 -->
+- A window that opens while a sidebar is open appears beside the sidebar, not under it. <!-- 78-pl-windows PL4 -->
+- **Restore and saved layouts** now bring back Chat, the AI assistant, Statistics, Free assets, the HUD editor, the Timeline and the Profiler. <!-- 78-pl-windows PL3 -->
+- **On a folded phone**, Chat, the AI assistant and Free assets are tabs of the phone dock, and go back where they were when you unfold. <!-- 78-pl-windows PL23 -->
+- Context-menu rows show an icon for what they do. <!-- 78-pl-windows PL2 -->
+
+### AI apps
+- Agents can build all of this: `create_shape` with `action: "path"`, `game_setup` with `portal`, `checkpoint` and `loading`, and `describe_node_types` knows the new nodes (common words like door, lamp, cat, button and hover work as aliases). `inspect_runtime` shows the game kit's round, score and pickups. <!-- 78-path, 93-levels, 85-nodes -->
+
+### Fixes
+- Someone joining a session late now sees the pickups already taken (and cannot take them again); loading or clearing a scene alone before joining no longer resets the room's game. <!-- 78-kit -->
+- A kit action that cannot run right now (Win during the results, for example) says why, in the session log on every peer and to the AI. <!-- 78-kit -->
+- A behaviour handler that throws is rolled back (its state, timers and events) and its error says so. <!-- 78-kit -->
+- Things spawned from code that die stop counting at once and are removed after 1 second, like the Spawn node's. <!-- 78-kit -->
+- The scene load bar moves while a scene's objects are being built (it used to sit still, then jump to the end). <!-- 93-levels -->
+- **Phones are judged as phones**: the scene budget held a phone's frames to a headset's limits, so every phone scene showed a red cross; it now uses phone limits, and while quality is already lowered the dot is a calm grey note instead of a warning beside *Reduced quality*. <!-- 78-int PL11 PL22 -->
+- *Lowered for now* names the one resolution in force instead of listing four. <!-- 78-int PL9 -->
+- The AI window no longer covers the toolbar on small screens, and the main menu ends above the toolbar. <!-- 78-pl-windows PL6 PL7 -->
+- The Objects filter chips and the Free assets tabs wrap instead of being cut off; Far clip lines up with the other camera rows. <!-- 78-pl-windows PL8 PL20 PL21 -->
+- A walker standing on a floor that rises or sinks rides with it instead of sinking in or floating. <!-- 78-int -->
+- On a slow device, a player who starts Play over a platform now lands on it: the player waits for the level's physics to be ready instead of falling into the platform or the ground. <!-- 78-int -->
+- The physics no longer moves to another device while someone is carrying or has just thrown an object, so a throw keeps its speed. <!-- 78-int F25 -->
+- After a hitch the physics catches up at most a quarter of a second, so crates no longer jump forward. <!-- 78-int F25 -->
+- In the Animation editor, the first and last keys of a clip can be clicked and dragged again; the side-panel arrows no longer cover them. <!-- 78-fix-547 -->
+- The menu's Save stays available after you cancel the unsaved-changes question or save without the scene's changes. <!-- 78-fix-547 -->
+- A popped-out Inspector says Configure Scene when it shows the scene settings. <!-- 78-fix-547 -->
+- Closing Configure Scene or Properties closes its sidebar at once. <!-- 78-fix-547 -->
+- On a phone, a menu row brought into view no longer hides under the Settings footer. <!-- 78-fix-547 -->
+- The sidebar handles now sit lower, below the profile menu, and stay put when you open the profile menu or any other menu. <!-- 78-fix-547 -->
+- The sidebar handles never sit on top of the bottom dock: they slide up with it and go back to your chosen spot when it closes. <!-- 78-fix-547 -->
+- In the file preview, stepping with the Left and Right arrows no longer draws a blue ring round the whole window. <!-- 78-fix-547 -->
+
+## 1.63.0 — Pro look 📸
+
+### 📸 Pro look
+- **Pro presets, one press**: **Product shot**, **Cinematic** and **Stylised** sit beside the other Environment presets and set the sky, the light, the exposure, the tone mapping and a whole stack of post effects together. Undo takes it all back in one step; the look is saved with the scene and everyone sees it. Each device draws its own share: a phone runs lighter fog and god rays, a headset leaves fog, god rays and lens flare out. <!-- 98 P5 -->
+- **Baked light** (Configure Scene ▸ Scene look): one button bakes soft corner shadows and light bouncing off walls for everything that does not move — progress, Cancel, one Undo step, an *Out of date* chip when things move, Bake again. Saved in the scene and seen by every peer; phones and headsets get a smaller copy. Objects with overlapping UVs get the corner shadows only, and the panel says so. A baked kit scene (a tavern of repeated pieces) still draws each kind of piece in one go, so the bake costs no frame time. <!-- 98 P1 + 98-int T1b -->
+- **Photo mode** (Scene look ▸ **Photo…**): a path-traced still of your view — soft shadows, real reflections, glass — as a PNG. Samples and time limit, denoise, Stop any time, **Download PNG** or **Save to scene shots**. On a headset or a phone, a PC in the session renders it for you. <!-- 98 P2 -->
+- **Lens flare, god rays and volumetric fog** join the look stack (Camera FX). Each is off until added, and an effect that is off costs nothing. <!-- 98 P4 -->
+- **Smoother edges**: temporal anti-aliasing (**TRAA**) replaces SMAA as the default — one Anti-aliasing entry with a Method — with motion tracked on animated characters so they do not smear. Older scenes keep their SMAA. <!-- 98 P3 -->
+- Ambient occlusion is cheaper on phones, and a phone keeps the full sky when Auto quality turns the look off (it used to drop to the headset's 512 px sky). <!-- 98 P3, fix-batch-4 G12 -->
+- A new starter scene, **Product shot**, and a tip on the Bake button show the way: preset, bake, photo. <!-- 98 P6 -->
+- AI apps: `set_look` takes `action: "preset"` and `action: "bake"`, and `run` takes `action: "photo"` — no new tool names. <!-- 98 P5 P1 P2 -->
+
+### 📱 Phones and tablets
+- **Android Back closes what is on top**: a menu, a dialog, a window or the bottom panel closes with the Back button or gesture, one at a time, instead of leaving the app. Play mode and shared play links keep their own Back. <!-- phone-polish 1 -->
+- **The keyboard no longer covers Save**: dialogs with a text field (Layouts, Report a problem, the command palette and others) move up above the on-screen keyboard, and on a touch screen they no longer pop the keyboard open by themselves. <!-- phone-polish 2 -->
+- **Bigger on touch screens when you want it**: **Settings ▸ Accessibility ▸ UI scale** grows the whole interface, panel tab strips and menus included. <!-- phone-polish 3 (the invisible 44 px tap areas ship off in 1.63: lane hitslop-fix) -->
+- **Tablets**: with the Properties column pinned full height, the toolbar moves over and centres in the space beside it instead of hiding under it. <!-- phone-polish 4 -->
+- **Long menus scroll**: the profile menu (and every other long menu) stays on screen in landscape and scrolls with a finger or the wheel. <!-- phone-polish 6 -->
+- Smaller ones: the animation player's controls wrap in landscape; the logo menu has a **Command palette** row; the "lowered the scene look" card sits at the bottom on touch screens so it does not cover the panels at the top; the **Towers** start screen has a touch line. <!-- phone-polish 5 -->
+
+### 🪟 Panels and sidebars
+- **Windows and menus stay out of the side columns**: the toolbar, floating windows and menus use the space between the open columns, and the toolbar centres there, pinned or not. When the bottom panel leaves a column too little room, the column hides itself and comes back when there is room again. <!-- dock-fixes 4, A', E -->
+- **Every column has its hide button**, the AI button opens and closes its own tab (an emptied column folds away), and the AI window keeps its size when you drag it partly off the screen. <!-- dock-fixes 1-3 -->
+- **A Panels button** on unfolded phones and tablets brings the side columns back with one tap. <!-- dock-fixes 8 -->
+- Smaller ones: the main menu opens over the left column instead of pushing it; **Free assets** opens where you are working; segmented buttons wrap instead of squeezing; long rows of filter chips and long menus fade at the edge that scrolls; dock tab menus have icons; a window that opened short can be made taller with its corner grip. <!-- dock-fixes B C D, PC-4, UI-6, 98-int 4a -->
+
+### 🥽 Play links on headsets and phones
+- **Enter VR works from a play link**: on a headset the game no longer starts flat by itself; the start card stays with **Enter VR** first, and pressing it opens VR (it used to start flat play on the screen instead). Leaving VR brings the card back. <!-- fix-play-link 1 -->
+- **"This scene uses modules" asks less, and looks right**: a module from the official modules collection installs by itself when you open a game's play link, a module you installed is remembered on the next visit, and **Load anyway** is remembered for that version. The question is styled like the rest of the app. <!-- fix-play-link 1 -->
+- **The play page is styled on every device** (it showed a plain serif font on some phones). <!-- fix-play-link 2 -->
+- Joining a game from a play link **no longer puts your camera inside another player's head**: you start a step away from them, also when two players join at the same moment. <!-- fix-play-link 4 + 98-int F4 -->
+- **Game menus fit narrow screens**: a menu made on a computer shrinks to fit a folded phone instead of running off both sides. <!-- fix-play-link 5 -->
+- **Sky quality ▸ Max** says what it loads on your device: "up to 8K" where the 8K sky loads, "4K" elsewhere. <!-- fix-play-link 6 -->
+- For developers: `window.tpPlay.state` reaches `ready` after a play link joins a session. <!-- fix-play-link 3 -->
+
+## 1.62.0 — Sign in from another device 🔑
+
+### 🔑 Sign in from another device (on theprototype.app)
+- **No typing passwords on a headset**: a device that is not signed in shows a short code (and a QR code behind a small icon). Open **theprototype.app/link** on a phone or computer where you are signed in, check which device is asking, and approve it. Works in every direction: Quest from a PC or phone, a PC from a phone, one browser from another. <!-- 88 L1-L4 -->
+- **Approve only a device you are holding**: the approve sheet says which device, browser and system is asking and how long ago; a device it cannot recognise needs a second tap. <!-- 88 L3 L9 -->
+- **Borrowed browsers stay short**: a sign-in made with a code lasts at most 24 hours, unless you tick **Trust this device** on it. <!-- 88 L8 -->
+- **Account ▸ Devices** lists every device signed in to your account (how it signed in, when it was last used), with **Sign out** per device and **Sign out all other devices**. Signing out now also ends that device's session on the server. <!-- 88 L7 -->
+- Five wrong codes pause approving for 15 minutes. Codes, secrets and sign-ins are never written to any log. <!-- 88 L4 L5 -->
+
+### 🔧 Fixes
+- **Bake to mesh, Undo, Redo in quick succession** now bakes the text on your own screen too: it could stay a text for you while everyone else in the session saw the mesh. <!-- fix-bake (1.61 Q1) -->
+
+## 1.61.0 — Write in 3D ✍️
+
+### ✍️ 3D text
+- **Signs and titles in 3D**: Add ▸ Text writes words into the scene — **flat** letters with an outline, or **solid** letters with depth and a bevel. Switch between the two and the words and style stay. <!-- 64-text TX1 -->
+- **Every setting live, one undo each**: align, wrap width, line and letter spacing, bold / italic, size in metres, where it is anchored, and for solid letters the side colour, metal, roughness and glow. <!-- 64-text TX2 -->
+- **Six fonts built in** (sans, serif, mono, rounded, pixel and IBM Plex Sans), loaded only when a text uses them. **Add your own**: upload a TTF, OTF, WOFF or WOFF2 file, or type a **Google Fonts** name. Either way the font is stored once in your Library, travels with the scene and the exported game, and never has to be fetched again. <!-- 64-text TX3 -->
+- **Font licences in view**: the Inspector shows a font's licence, and a font that does not allow embedding gets the usual licence warning when you export. <!-- 64-text TX3b -->
+- Everyone in the session sees the same text, built from its settings; a scene saves the words and settings, not a heavy mesh. <!-- 64-text TX4 -->
+- **Bake to mesh** turns solid text into a normal mesh you can edit vertex by vertex (one undo step). <!-- 64-text TX5 -->
+- Phones and headsets keep a lower letter count per text so they stay smooth; past it you get a plain message. <!-- 64-text TX6 -->
+- **Agents write too**: "a solid HELLO with a bevel" works from an AI app, and an agent can list the fonts it may use. A new starter scene, **Text sign**, shows both kinds. <!-- 64-text TX7 TX8 -->
+- For developers: `create_shape {action: "text"}` (= `create_text`), `edit_shape {action: "params"}` on a text, `assets {action: "fonts"}` (= `list_fonts`), `import_file` takes font files; no new connector tool names. <!-- 64-text TX7 -->
+
+### 🦊 Fixes from an agent's diorama build
+- **Groups come back as groups** after "Restore previous session": a group used to return as a plain node, so its parts looked loose and an agent could not build into it. <!-- mcp-diorama2 1 -->
+- An agent that names a **group that is not there** now gets an error and nothing is made, instead of a part dropped at the middle of the scene; any object (not a light or camera) can hold parts. <!-- mcp-diorama2 1 -->
+- A mesh an agent **paints per vertex** keeps its true colours: no random pastel tint on top, and colours mean what a colour picker means (sRGB), with `#rrggbb` per vertex allowed. <!-- mcp-diorama2 2, 3 -->
+- Agents can make **tiny parts** of every shape alike (down to 1 mm; an octahedron used to stop at 10 cm). <!-- mcp-diorama2 5 -->
+- When a mesh's colour, vertex or UV list is wrong, the agent hears **how many entries arrived and which one is bad**. <!-- mcp-diorama2 6 -->
+- An agent's **screenshot can show the post effects** (bloom, vignette, grade) as your screen draws them, and says when your screen does not draw them and why. <!-- mcp-diorama2 7 -->
+- **Phones that hide post effects to stay smooth are no longer a mystery**: the agent says so, and can ask you for higher quality on your own device — a card with **Allow / Keep**, then Undo; nobody else's device changes. <!-- mcp-diorama2 7 -->
+- Agents can **copy and mirror** what they build: a row of fence posts, or a left ear made into the right one, its faces turned the right way. One undo step, and everyone sees it. <!-- mcp-diorama2 8 -->
+- **Scatter keeps paths clear** and can spread **real copies of something you built** (up to 200, each one editable) instead of simple instances; the same seed gives the same layout. <!-- mcp-diorama2 8 -->
+- Agents can **bring in a model file** — glTF, GLB or OBJ, sent in parts or from a public https address. It goes into your library first, and its named parts (a lid, a wheel) can be animated. Nothing in a model runs, and a file that points at other files is refused. <!-- mcp-diorama2 9 -->
+- New shader nodes: **Polar coordinates, Twirl and Rotate UV** (whirlpools, portals, spinning patterns), and the **GLSL expression** node takes colours and vectors as they are. <!-- mcp-diorama2 10 -->
+- An agent can see **what makes your scene heavy** (the objects drawing the most triangles and draw calls) and can tell a slow scene from a screen that simply refreshes at 60 Hz. <!-- mcp-diorama2 14 -->
+- Agents can **turn shadows on or off per part** as they build or import it. <!-- mcp-diorama2 13 -->
+- Ask Claude "what can you do?" and it now mentions the **sky, background and fog**, and the **opening view** players start from. <!-- mcp-diorama2 12 -->
+- **Claude on claude.ai reads the right words again**: tool replies no longer turn ordinary words like "logs" into tool names (`status` had a field called "run {action: 'logs'}"). <!-- mcp-diorama2 4 -->
+- Claude on claude.ai **keeps your names and ids as they are**: prefab ids, object names, undo lines and messages no longer come back with tool wording mixed in. <!-- mcp-diorama2 15 -->
+- **"Allow" now does what it says**: when an agent asks to change the whole look and you press Allow, its change goes through (a repeated ask used to open a new question each time), and the agent hears pending, allowed, denied or expired. Going back to a checkpoint is asked as exactly that. <!-- mcp-diorama2 17 -->
+- **Pings land where you point**: Ctrl+Alt+click and "Ping this object" mark the spot you clicked, not the middle of a nearby object. Building a group at a ping no longer breaks its position, and an agent waiting for you wakes up when you ping. <!-- mcp-diorama2 19 -->
+- **Game rounds keep going with view-only guests**: a guest is never the one who decides the round; the host (or an editor) is. <!-- mcp-diorama2 20 -->
+- A **round pond** is the size you ask for ([diameter, depth, diameter]), sits on its spot, and its colour tints the whole water. <!-- mcp-diorama2 18 -->
+- A particle effect placed on its own (fireflies, rain) no longer shows a **ball** where it comes from. <!-- mcp-diorama2 21 -->
+- An agent can light the scene with a **Poly Haven sky** it found in search (it lands in your library first), or **send its own HDR sky**. <!-- mcp-diorama2 16 -->
+- Agents find the **sounds in the sound packs** (a fire crackle, wind, rain) and use them straight away; they are copied into your library the first time. An agent can also **send its own sound or music** to the library, so a site that blocks downloads no longer matters. <!-- mcp-diorama2 24 -->
+- **Terrain does what an agent asks**: "6 m high" is the highest peak, island edges sink into the water, colour layers show straight away, and the layers can be painted by height for you (sand low, rock and snow on top). <!-- mcp-diorama2 22 -->
+- **Scatter keeps a circle clear** round a spot or an object (the campfire, the tent door), and several kinds of plant or rock in one call make one set with the name the agent gives it. <!-- mcp-diorama2 23 -->
+- An agent can say **which way a model faces** (`front: "+x"`), so a fox placed "facing you" or "looking at the fire" turns its nose, not its side. <!-- mcp-diorama2 25 -->
+- An agent's **screenshot leaves the people out** (a clean picture of the scene), can **show the game HUD** on top, and can **look through one of your scene cameras**. <!-- mcp-diorama2 26 -->
+- An agent no longer calls a scene **slow when your screen simply refreshes at its own rate** (a headset at 72 Hz included), and it can see **where the draw calls come from**: your objects, shadows, effects, or camera previews. <!-- mcp-diorama2 27 -->
+- An agent asking **"what is in this area?"** can count a long wall or a big rock that only reaches into it, not only things whose middle is there. <!-- mcp-diorama2 28 -->
+- For developers: `tpAgent` contract 1.8.0 (`edit_shape {action: "duplicate"}`, `create_shape {action: "import"}`, `set_look {quality}`, screenshot `postEffects`, `sceneBudget.top` / `vsync`, scatter `source` / `avoid`, `assets {action: "upload"}` = `upload_asset`, `set_look sky {hdri: "cc0:polyhaven/<id>"}`, pack sound ids `pack:<name>/<file>`, terrain `paintBy` / `peak`, scatter `id` + avoid circles, `front` on lookAt / face_user, screenshot `view: "camera"` / `hud` / `avatars`, `sceneBudget.callsBySource`, list_scene `near.by` / `bounds.by`); no new connector tool names. <!-- mcp-diorama2 -->
+
+## 1.60.0 — An agent builds the game around your scene 🎮
+
+### 🌲 Agents build whole places
+- **Terrain, forests and water**: an agent can make hills and paint them, scatter a forest or rocks over them (kept off steep slopes and to the right paint), and add a pool, a lake or the sea. One undo step each, and everyone sees it at once.
+- **Fire, smoke and fireflies**: particles by name, on their own or on an object. **Fireflies** is a new preset in Add ▸ Effects too.
+- **Sounds where they belong**: a crackle on the campfire, a sound when something is clicked or entered, and the scene's background music. A sound from a web address goes into the library first and must really be a sound file.
+- **Find and place assets**: agents search your library, the model packs, your prefabs and free CC0 materials, then place them or save a group as a prefab.
+- **Textures by name**: wood, planks, brick, marble, stone, grass … drawn on the spot and kept in the library.
+- **Smoother models**: a mesh an agent makes can be smoothed as it is made, and changed afterwards with new vertices.
+
+### 🤖 Agents set up the game
+- Agents can **make a HUD**: screens with text, timers, bars, buttons and images on the nine anchors, plus **panels** for a pause menu or a scoreboard. They get the ids back to wire live values.
+- They can set the **sky, fog and light**: a look preset or a sky image, a background colour or gradient, fog by distance or density, exposure, the sun, the ambient light and extra lights. These change everyone's view, so the agent **asks the host first**.
+- They can say **where Play starts** and which way the player faces, switch on **first-person walking or flying**, and set the view a scene **opens with**. Lights an agent places take a **shadow quality**.
+
+### 🔍 Agents test and fix games
+- **Check my game**: an agent lists what would not work when someone presses Play (a selector wired the wrong way, an action nothing triggers, walking with no start spot, a HUD bound to nothing, an unlit scene …), each with its fix, and explains why a node did not fire.
+- **A test player** on the agent's own page walks, looks, clicks, grabs and presses keys and HUD buttons, then says what fired and what the HUD showed.
+- **Checkpoints**: an agent can save a named point and go back to it in one step; with people present the host is asked first.
+- `status` shows the last few errors and toasts, and the full log is one call away.
+
+### 👉 "Put a lamp here"
+- **Point at a spot** (a ping) and say "put a lamp here": the agent builds at your ping, stands things on the floor or a table, backs a painting onto a wall, and turns things to face you. Pings now remember what they landed on and follow it if it moves.
+- Agents know where you are and how tall you are ("a table at hip height"), and in a headset nothing they make appears inside you; what they make fades in.
+
+### 🔌 On claude.ai
+- The connector gains **four tools**: `hud`, `game_setup`, `effects` and `run`; `set_look` gains `sky`, `light` and `environment`, `assets` gains `search`, `place` and `prefab`. Claude sees them after the connector reconnects.
+
+### 🧰 Also
+- **Templates ▸ Game plot**: an empty plot to try it on — ask for hills with a forest and a lake, a campfire, a race HUD and a start spot, then "check my game".
+- While Claude is connected, the **Connect Claude** row says what is new until it has used one of these tools.
+
+## 1.59.0 — Looks finished everywhere ✨
+
+### 🎨 Materials with real surface detail
+- **Inspector ▸ Material ▸ Maps**: give a material a **normal, roughness, metalness, emission and AO map** beside its colour image, with **tiling, offset and rotation** per material and a strength for normal and AO.
+- **Load a set of maps…** picks several files at once and sorts them into slots by name (`wood_normal.png`, `wood_roughness.jpg` …).
+- Everyone in the session sees them, it is one undo step, and they are saved in scenes, presets and GLB. Agents can set them too.
+
+### 🌄 Much sharper skies
+- Skies now come as **UltraHDR images up to 4K** (8K for Meadow): a small one shows at once, then the sharp one swaps in.
+- **Configure scene ▸ Sky quality**: Auto, Standard, High or Max, plus a **minimum quality**. While a scene says Auto, players can pick theirs in the game options. Exported games keep the option.
+- A headset, a phone or a slow connection gets a lighter sky on Auto, and a headset never goes past High. The lighting always comes from the small file, so it looks the same at every quality.
+
+### 🥽 Your look in VR
+- A scene's **look now shows in a headset**: tone mapping, hue / saturation, brightness / contrast, LUTs (approximate) and vignette, with no extra rendering pass.
+- The Look panel marks what stays desktop-only (bloom, AO, grain, chromatic aberration, pixelation, scanlines, dot screen, post graphs).
+
+### 📦 GLB export
+- **GLB files now carry look animation**: material changes, fades and visibility, lights and a camera's field of view, through `KHR_animation_pointer`. The Animation window has a new **Field of view** channel, and camera markers export as real glTF cameras.
+- The Quest / web preset leaves look animation out and says so.
+
+### 🎬 Film
+- **Film on a phone's Walk no longer shows the VR welcome** or any headset menu, and the view no longer leaves trails when the camera moves (the AR view is cleared every frame — the Android AR table and headset passthrough get the same fix).
+- **Film hides every headset menu and panel** while it is open, in any session.
+- **Choose how the camera moves**: tap the pill for Phone tilt, Touch, Walk (Android AR), Tripod, or Keyboard + mouse on a desktop. The pill always says which one is on, and the choice is remembered on this device.
+- **Walk view**: what you see behind the scene — Off (the scene's sky), On (the room), or Dimmed — and the walking scale ×0.5 / ×1 / ×2 / ×5. Only the live view changes, never the recording.
+- **If Walk can't start or loses tracking**, the take pauses at a mark, a short message says why, and Film carries on with the thumbstick (with **Recentre**).
+- **First-use cards** (look, move, record and cut) with "Don't show again"; Settings ▸ How to film shows them again.
+- **Shots on this camera**: a shots pill opens a list with a thumbnail, name, length and Cut / Move per shot. Tap to preview with a scrub bar; Trim, Rename, Retake, Delete (with Undo) and Edit in timeline. Export all or only the ticked shots, as one video or one file per shot.
+
+### 🤖 Agents build models part by part
+- **Shapes made inside a group stay in the group's own space**: a mesh, lathe, extrusion or tube made with a parent lands where it was asked, relative to the group, and turns with it. Before, a part made in a moved or turned group ended up in the wrong place.
+- Agents can make **up to 50 shapes in one step** (one undo), and **colour a mesh as they make it**: a colour per vertex, or a material per face, with a flat low-poly look on request.
+- **Shadows, copies and facing** for any object: switch an object's shadows on or off, make a row or ring of copies (with a little random turn and size), and turn something to face a point or another object.
+- Agents see each mesh's size and corners in the scene list, how heavy the scene is (and when it is past its budget) in their status, and the names of the ready-made materials.
+- Making a pivot for several parts can take the point in their group's own space.
+
+### 🔧 Fixes
+- **Switching away from the browser on a phone and coming back says nothing.** The 3D view no longer flashes "The 3D view has stopped" when the browser hands its graphics back within a few seconds of the page showing again; it only appears when the view stays stopped.
+- The browser's harmless "ResizeObserver loop" warning no longer pops up as "Something went wrong". It is still kept in **Copy diagnostics**.
+- Exporting several objects to GLB now keeps their authored movement (it kept none).
+
+## 1.58.0 — Film with your phone, share it as a video 🎬
+
+### 📱 Film with your phone
+- **Your phone becomes a scene camera's viewfinder** (More ▸ Film with phone, a camera's menu, or the Inspector's Film button): turn the phone to look around, the stick and ▲▼ move, recentre and horizon lock keep it level. No motion sensor? Drag to look.
+- **● records into the Timeline** while it plays, so animations stay in sync. **❚❚** adds the shot as one undo step; carry on as a **Cut** (a new shot) or a **Move** (the camera flies to the new spot). Retake any shot; 3-2-1 countdown; markers.
+- **Live lens, each recorded as its own track**: zoom (pinch, the rail, 18–85 mm lens snaps), dutch angle, tap to pull focus with an aperture (new **Depth of field** look effect), smoothing, tripod and follow-a-target rigs, thirds / safe / level guides and 16:9, 9:16 and 2.39:1 masks.
+- **Android: Track my movement** — walk to move the camera (walk scale 0.1–20 ×), and a mini-map to jump anywhere.
+- **In a session** everyone sees the filming camera move and can **Watch the shot**; only editors record.
+
+### 🎞 Share as video
+- **Export a video or GIF**: Tools ▸ Recording… (or **Export video** in Film's shots) renders a Timeline, a turntable or a flythrough frame by frame to **MP4, WebM, a GIF or animated WebP loop, or a PNG sequence** with a transparent background. The frame count is exact, however slow the device.
+- It **renders in the background**: a progress bar with the time left and **Cancel**; **Hide** shrinks it to a corner chip while you keep working in the panels.
+- On a phone an export is at most 20 s and 1920 px (a hot phone renders smaller), with the reason when it says no.
+
+### ⏱ Timeline
+- **Property tracks**: the keys of one value (a recorded camera move, its zoom, focus, roll…) show as a row of keys; **Smooth keys** in the track menu takes the handheld shake out and keeps the key times.
+- A track made with a newer version of the app is kept and shared, with a note, instead of being changed into an event track.
+- Scenes with property tracks need 1.58: 1.57 and older show one as an empty event track (and lose its keys if saved there).
+
+### 🌱 Start here
+- **Templates ▸ Film set**: a small stage that keeps moving, and a camera to film it with.
+- A first-use tip in Film mode, and a docs page: **Film with your phone**.
+
+### 🔧 Fixed
+- On a phone, connecting to a session no longer shows "Something went wrong: ResizeObserver loop…" (the connection chip measured itself while it changed size).
+
+## 1.57.0 — Shared games start fast 🚀
+
+### ▶ A play view made only for playing
+- **Play links, embeds and pasted links now open the play view**: the scene, the game's rules, HUD and touch controls — and none of the editor. About a third less to load than before, so a shared game's first picture comes several seconds sooner on a slow phone.
+- The play view has **Open in theprototype.app** and **Remix** (your own copy in the editor) beside the game.
+- Playing needs no account. Shared games run on their own address (`play.theprototype.app`), where your sign-in, autosaves and AI keys do not exist.
+- A page that embeds a game can follow it: the play view reports when it is ready, shows its first frame and starts playing.
+
+### 👥 Play together from a link
+- **Invite ▸ Person** has a **Play link**: whoever opens it joins your session straight into the game, no editor. A published game's play link can carry an invite too.
+
+### 📱 Phones
+- On a narrow phone the game's HUD (timer, score, stage title) moves out from under the Play buttons (✕, Playing, Menu).
+- The connection chip says **Connect** before you connect, as on a computer, and other live rooms are listed under their own **Public rooms** heading.
+
+### 🌱 Start here
+- **Templates ▸ Topple tower**: a tiny game set up for sharing. Change it, **Publish**, send the play link.
+- A first-use hint on the Publish sheet's play link, and a docs page: **Share a Game**.
+
+### 🔧 Fixes
+- A host now answers a joiner who asks for the session's roles.
+
+## 1.56.0 — Agents build the whole shape and the whole look 🤖
+
+- **Claude and other agents can shape things**: lathe a vase, run a tube or handrail along a path, extrude a star-shaped sign, edit a mesh, set an object's geometry.
+- **…and dress them**: library materials, ambientCG CC0 materials by name, a picture from an https link, node shaders, UVs and post effects (a whole-scene look asks the host first).
+- **"Undo that"** works by voice or text; agents can also set an object's pivot and place images.
+- The Claude connector gains five tools as families: create_shape, edit_shape, set_look, assets, undo_last.
+- 🔒 A texture from a link follows the same rules as an image: https only, no private addresses, a time limit, re-encoded on your device.
+- **Templates ▸ Agent workshop**, and a hint on the Connect Claude row.
+
+## 1.55.0 — Give the AI pictures and shaders 🖼️
+
+### 🧊 A 3D model from a picture
+- **Generate 3D model from a picture**: a photo, an Explorer image or the viewport, with Meshy or a ComfyUI workflow that has `{{IMAGE}}` in a LoadImage node. In the Explorer, a picture's menu has **Make a 3D model…**.
+- **Location data is removed on your device** before a picture is sent anywhere.
+- **You are asked before a picture leaves your device for someone else's server**: for Meshy with the cost (about 20 credits in Preview, 30 in Refine) and a link to Meshy's privacy policy; for a hosted preset or a ComfyUI that is not on your computer or local network, with where it goes. Cancel sends nothing.
+- Mesh-provider errors name the provider and say what to do (key rejected, out of credits, timed out, unreachable), and *No mesh provider set up yet* links to Settings.
+
+### 💬 Pictures in the AI assistant
+- **Attach a picture and ask about it**, or ask for a 3D model of it. The **+** menu shows the limits (up to 4 pictures a message, 1568 px, location data removed).
+- A model that cannot see pictures greys the **+** with the reason and names one that can.
+
+### ✨ Your own shaders
+- **Shader editor `</>` view**: the GLSL a graph compiles to, the graph as editable JSON, and **Your GLSL**: your own vertex + fragment pair for a material, with compile errors shown inline by stage and line.
+- Your GLSL is shared with everyone in the session. Each device tests it first and switches it off for itself if it fails, is too slow or the graphics context is lost, with **Try again**. Shader code from someone else runs only after your device's test has passed.
+- On Quest, custom shaders are off until **Settings ▸ VR ▸ Display ▸ Turn on custom shaders**. An exported game switches off shader code its author did not write.
+- The GLSL expression node takes one expression of names, numbers and operators. A saved graph that used more shows an error and keeps its last good material.
+- 🔒 **Shader graphs and shader code from other people are checked before they reach your graphics card.**
+
+### 🌱 Start here
+- **Templates ▸ Shader garden**: three objects wearing Your GLSL.
+- A first-use tip on Generate 3D model, and a docs page: **Give the AI pictures and shaders**.
+
+## 1.54.3 — Stability: sessions that keep up, friendlier failures, small wins 🛠️
+
+### 🤝 Sessions
+- **A new object's logic shows up for everyone within seconds**, instead of after about half a minute.
+- **A button that toggles a shared variable flips it exactly once** for everybody, even with several players connected.
+- **Cancelling a library download stops it**, even once it has started, and the file no longer appears afterwards.
+- Accepting a proposed scene load on a busy machine is given the time it needs.
+
+### 🛟 When something goes wrong
+- **A browser that can't run 3D now says what to try** (hardware acceleration, an update, another browser) instead of showing a blank page.
+- **A tab left open across an update** retries a missing piece once, then offers **A new version is ready – Reload** instead of doing nothing.
+- Leaving VR on Quest no longer throws an error after the session ends.
+- Error reports say what kind of value an unexplained failure was, so those reports can be fixed.
+
+### 🎮 Play
+- **Possess: Space or gamepad A jumps** (Jump height on the Possess Object node).
+- **Pausing the game pauses behaviour timers** (`this.after`), so a countdown no longer runs out during a pause.
+- **Wander keeps objects on the ground** (new Ground toggle).
+- Dungeon Realms: players no longer start inside the entrance arch.
+
+### 📁 Explorer and windows
+- **Add files…** in the Explorer's right-click menus and on empty folders: a file picker for phones and the Quest browser.
+  **New file ▸ Script / Note / JSON / Text** creates one from a template.
+- No window opens under the bell and profile buttons on tablet-wide screens, and folded phones keep the AI assistant title whole.
+- The Connect Claude welcome fits on a folded or unfolded phone without scrolling.
+- Shortcuts work right after adding a node, and the "ResizeObserver loop" error toast is gone.
+- A quick finger tap selects or deselects on large phones and foldables, even while the page is busy.
+- VR Measure shows one "Pick up a controller" note at your hand, without a toast as well.
+- Exported games no longer carry the app's build settings in their code.
+
+### 🥽 VR sleeve (experimental)
+- A shape you pull out **grows from a ghost to true size** as you draw your hand away, latches with a click, and reels or
+  scales with the grip sticks; bring it back to your wrist to cancel. Grip or pinch at a slot takes too, and miniature
+  worlds get true-size objects.
+
+<!-- maintainer: CI/tests in 1.54.3 — perf-budget runs as three parallel parts; script-guard slow-node check fixed for the
+     sandboxed scripts; net-handshake third-peer check polls (out of quarantine); sessions accepted-load window 60 s (X2,
+     test-only); select-41 G13/G14 out of quarantine; kit-instancing "same picture" quarantined (row u, not fixed);
+     possess back in the battery; node-ux-keys off desk.software. Not in 1.54.3: X1 deployed heal (parked). -->
+
+## 1.54.2 — session fixes 🔒
+
+- **Peers can only change their own name and avatar**, and what each one says and shows in a session is always shown as theirs.
+
+## 1.54.1 — session fixes 🔒
+
+- **Only the host can change who may join.** Someone a guest lets in is still checked by the host's own settings, and a guest's copied invite link names the host.
+- **Travelling to a project scene by name works again** for every peer.
+
+## 1.54.0 — First win and community: one question to start, a game made in three steps, search the community 🌱
+
+Your first visit asks one thing — what do you want to do? — and walks you to a game you made yourself. The Community
+tab can now find any scene by a word or a maker.
+
+### 🌱 A first visit that gets you somewhere
+
+- The welcome card asks **one question**: Play a game, Remix a game, Start from a template, or Describe it (or start
+  from an empty scene). Play opens a game straight in Play; the others start a three-step **first-win quest**:
+  change something, play it, invite a friend.
+- Until your first Play, a new visitor's advanced buttons — the node editor, Animation, Pivot and the click mode —
+  wait in the bottom bar's **»** menu, and Modules and Layouts behind **More** in the logo menu. Settings ▸ Interface ▸
+  **Show everything** brings them all back at any time. If you have used the app before, nothing changes.
+- The interface tour no longer starts by itself: it is in the logo menu as **Tour the interface**, and the quest can
+  be started again from Settings ▸ Interface ▸ **First-game quest**.
+
+### 🔎 Find scenes in the community
+
+- The Templates window has a **search field** on every tab. On the Community tab it searches the whole community —
+  titles, descriptions, tags and makers' @handles — and opens on the **Featured** scenes, with **All** and **Top** beside them.
+
+### 📊 Anonymous first-visit counts
+
+- To learn whether a first visit works, the hosted site counts a few steps of a first visit (the welcome card, a first
+  change, a first Play, a first share), with no ID, account or IP address and **nothing stored in your browser**.
+  After your first Play a small card asks whether to also remember which steps were counted and whether you come
+  back: Agree keeps that note in your browser, No thanks stops the counting and remembers only that answer. Nothing
+  is counted when your browser asks not to be tracked, or after Settings ▸ Privacy ▸ **Count my visits anonymously**
+  is off. Builds of the open-source engine that are not ours count nothing.
+
+### 🔑 One place to sign in
+
+- **Signing in and creating an account are one screen,** GitHub or Google, with an **I agree to the Terms** box the first
+  time. An optional box asks about feature-update emails; older accounts get a small bar to accept the Terms once.
+- **The AI window's Sign in to connect** opens your profile menu at the top right, and the window says so. Signed out with a local
+  model or your own key, the assistant keeps working and the button stays in the window's header.
+
+### 🤖 Claude connector and agents
+
+- **Add to Claude.** theprototype is in Claude's connector directory: the AI window's first step is one button, with the by-hand address and a copy button under it.
+- **Scripts get `elapsed`:** seconds of the game round, shared inside a round, and from your own Play press outside one. `time` is
+  unchanged. The warning about a `+=` script now says why it does not build up and points at `elapsed`.
+- **Particle gravity** is documented as what it is: acceleration along world Y, negative falls, positive rises.
+- **Screenshots from any angle:** `aspect`, `from`, `camera`, `uuids`, `zoom` and `margin`, with the camera used in the result; top, front,
+  iso and focus shots are 4:3 whatever your window's shape, and nobody's view moves. For developers: `tpAgent` 1.5.0 adds `lastShot()`, and
+  `window.tpAgent.screenshot()` with no options is now 4:3 too (it used to take the canvas shape).
+
+## 1.53.2 — session checks 🔒
+
+- **Shared assets follow the current sharing setting.**
+- **Role checks wait for the session's roles.**
+
+## 1.53.1 — Claude connector fixes 🔧
+
+- **"What can you do?" works** through the Claude connector, and so does *save_scene*. Saves keep older versions, and an AI save cannot write over another scene.
+- **Joining a session tells the truth.** *join_session* only reports success once you pressed Join and the connection is really up; *status* no longer contradicts itself.
+- **A reconnect doesn't lose Claude's work.** If the link to your tab drops for a moment, the call carries on and answers when it is back, instead of claiming you connected another tab.
+- **A session that never answers ends the join** instead of leaving the tab waiting. *status* also names tools that can't run right now, such as code that failed to load after a new version went live.
+- **Physics inside a group:** starting the simulation now says which objects are inside a group and how to fix it, instead of claiming nothing has physics.
+- **Fixed joints hold** on bodies moved by flow nodes. Pausing or resuming a stopped simulation now says why nothing happened.
+- **Particles on a rotated parent** can aim in world axes, and gravity always points world down.
+- **Script nodes** warn when a pose grows every frame, or when a script reaches for something that isn't there; errors show in *status*.
+- **A Spin node's angle wraps at a full turn** instead of growing forever, and *list_scene* and *update_objects* work on the pose you authored, not the one the animation is showing right now.
 
 ## 1.53.0 — your tools, connected 🔌
 

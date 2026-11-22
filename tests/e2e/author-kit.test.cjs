@@ -95,7 +95,7 @@ function author(def, tag) {
 /** Load a .tpscene into the page through the Templates modal's own read path. */
 async function load(page, bytes) {
 	return page.evaluate(async (b64) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 		const payload = await s.sessions.readSessionZip(bin.buffer);
 		if (!payload) return false;
@@ -112,12 +112,12 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const peer = await h.setupPage(browser, 'author-kit', { context: { viewport: { width: 1540, height: 774 } } });
 	const page = peer.page;
-	await page.waitForFunction(() => !!window.__stores?.sessions && !!window.__stores?.animationPreview, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.sessions && !!window.__tp?.test.v1?.animationPreview, { timeout: 30000 });
 	check(await load(page, authored.scene), 'the authored file loads through readSessionZip + applySession');
 	await page.waitForTimeout(800);
 
 	const r = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		/** @type {any} */ let group;
 		s.objectsGroup.subscribe((g) => (group = g))();
 		const by = (/** @type {string} */ n) => group.getObjectByName(n);
@@ -268,7 +268,7 @@ h.run(async () => {
 	check(await load(page, sky.scene), 'the custom-sky file loads');
 	await page.waitForTimeout(1200);
 	const e = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		/** @type {any} */ let state;
 		s.environment.environment.subscribe((v) => (state = v))();
 		/** @type {any} */ let scene;
@@ -396,7 +396,7 @@ h.run(async () => {
 		// Waves a custom dusk gradient; the check predates it)
 		const authoredBg = typeof wavesEnv === 'object' && wavesEnv ? wavesEnv.background : null;
 		const want = await page.evaluate(({ preset, bg }) => {
-			const hexc = (bg && typeof bg === 'object' ? bg.top : bg) || window.__stores.environment.ENVIRONMENT_PRESETS[preset]?.background || '#000000';
+			const hexc = (bg && typeof bg === 'object' ? bg.top : bg) || window.__tp.test.v1.environment.ENVIRONMENT_PRESETS[preset]?.background || '#000000';
 			const n = parseInt(String(hexc).replace('#', '').slice(0, 6), 16);
 			return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 		}, { preset: wavesEnv?.preset ?? wavesEnv, bg: authoredBg });

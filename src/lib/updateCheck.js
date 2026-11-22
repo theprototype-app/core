@@ -8,6 +8,12 @@ import { showToast } from '../stores/appStore.js';
 import { markContentStale } from './contentBase.js';
 
 const SHOWN_KEY = 'updateToastShown';
+
+/** The ONE reload that picks up a new deploy — the update toast's button and 101 F1's "This session uses
+ * a newer version" notice both press it. */
+export function reloadToUpdate() {
+	location.reload();
+}
 const POLL_MS = 15 * 60 * 1000;
 
 async function poll() {
@@ -23,7 +29,7 @@ async function poll() {
 		markContentStale();
 		sessionStorage.setItem(SHOWN_KEY, 'true');
 		showToast('New version ' + remote.version + ' available — reload to update.', [
-			{ label: 'Reload', action: () => location.reload() }
+			{ label: 'Reload', action: reloadToUpdate }
 		]);
 	} catch {
 		/* offline / file:// — stay silent, try again next tick */

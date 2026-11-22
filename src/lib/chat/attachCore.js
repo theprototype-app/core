@@ -16,6 +16,8 @@
 export const MAX_EDGE = 1568;
 export const MAX_ATTACH_BYTES = 1024 * 1024;
 export const MAX_ATTACHMENTS = 4;
+/** Roadmap 73 AI1: a picture a 3D model is built from gets more room than a chat picture */
+export const MESH_IMAGE = { maxEdge: 2048, maxBytes: 4 * 1024 * 1024 };
 /** quality ladder for the encoder; past its end the picture shrinks by SHRINK and the ladder restarts */
 export const QUALITIES = [0.86, 0.78, 0.7, 0.62, 0.54];
 export const SHRINK = 0.8;

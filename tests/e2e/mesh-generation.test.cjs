@@ -13,7 +13,7 @@ const WORKFLOW = '{"3":{"inputs":{"text":"{{PROMPT}}","seed":"{{SEED}}"},"class_
 
 const objCount = (peer) =>
 	peer.page.evaluate(
-		() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g ? g.children.length : 0))())
+		() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g ? g.children.length : 0))())
 	);
 
 h.run(async () => {
@@ -24,7 +24,7 @@ h.run(async () => {
 	// meshJobs module and the __stores hook share ONE module instance (helpers.freshReload).
 	await A.page.evaluate(
 		({ comfy, meshy, workflow }) => {
-			const mp = window.__stores.meshProviders;
+			const mp = window.__tp.test.v1.meshProviders;
 			mp.addMeshProvider({ kind: 'comfyui', label: 'MockComfy', baseUrl: comfy, workflowJson: workflow });
 			mp.addMeshProvider({ kind: 'meshy', label: 'MockMeshy', baseUrl: meshy, apiKey: 'k', mode: 'preview' });
 			mp.setMeshGenEnabled(true);
@@ -32,12 +32,12 @@ h.run(async () => {
 		{ comfy: COMFY, meshy: MESHY, workflow: WORKFLOW }
 	);
 	await h.freshReload(A);
-	h.check(await A.page.evaluate(() => window.__stores.meshProviders.meshGenReady()), 'mesh provider ready after reload');
+	h.check(await A.page.evaluate(() => window.__tp.test.v1.meshProviders.meshGenReady()), 'mesh provider ready after reload');
 
 	// Export a valid GLB from a box, in-page, and hand the bytes to Node for the mocks.
 	const glbArray = await A.page.evaluate(async () => {
-		const THREE = window.__stores.THREE;
-		const { GLTFExporter } = window.__stores.GLTFExporterModule;
+		const THREE = window.__tp.test.v1.THREE;
+		const { GLTFExporter } = window.__tp.test.v1.GLTFExporterModule;
 		const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0x3388ff }));
 		const glb = await new Promise((res, rej) => new GLTFExporter().parse(mesh, res, rej, { binary: true }));
 		return Array.from(new Uint8Array(glb));
@@ -95,12 +95,12 @@ h.run(async () => {
 
 	// ComfyUI generation -> import -> provenance
 	await A.page.evaluate(() => {
-		const list = window.__stores.meshProviders;
+		const list = window.__tp.test.v1.meshProviders;
 		let providers;
 		list.meshProviders.subscribe((v) => (providers = v))();
 		const comfy = providers.find((p) => p.kind === 'comfyui');
 		list.setMeshActiveProvider(comfy.id);
-		return window.__stores.meshJobs.generateMesh({ prompt: 'a wooden crate' });
+		return window.__tp.test.v1.meshJobs.generateMesh({ prompt: 'a wooden crate' });
 	});
 
 	await h.eventually(() => objCount(A), (n) => n === base + 1, 'ComfyUI mesh imported into the scene', 20000);
@@ -108,7 +108,7 @@ h.run(async () => {
 	const prov = await A.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const child = g.children[g.children.length - 1];
 					r(child && child.userData && child.userData.aiGen ? child.userData.aiGen : null);
 				})()
@@ -118,12 +118,12 @@ h.run(async () => {
 
 	// Meshy generation (switch active provider) -> import
 	await A.page.evaluate(() => {
-		const list = window.__stores.meshProviders;
+		const list = window.__tp.test.v1.meshProviders;
 		let providers;
 		list.meshProviders.subscribe((v) => (providers = v))();
 		const meshy = providers.find((p) => p.kind === 'meshy');
 		list.setMeshActiveProvider(meshy.id);
-		return window.__stores.meshJobs.generateMesh({ prompt: 'a clay pot' });
+		return window.__tp.test.v1.meshJobs.generateMesh({ prompt: 'a clay pot' });
 	});
 	await h.eventually(() => objCount(A), (n) => n === base + 2, 'Meshy mesh imported into the scene', 20000);
 	h.check(meshyPolls > 0, 'Meshy task was polled');
@@ -131,12 +131,12 @@ h.run(async () => {
 	// Meshy with a CORS-blocked CDN url -> the adapter retries through the asset proxy
 	meshyGlbUrl = MESHY + '/blocked.glb';
 	await A.page.evaluate(() => {
-		const list = window.__stores.meshProviders;
+		const list = window.__tp.test.v1.meshProviders;
 		let providers;
 		list.meshProviders.subscribe((v) => (providers = v))();
 		const meshy = providers.find((p) => p.kind === 'meshy');
 		list.updateMeshProvider(meshy.id, { assetProxy: 'https://theprototype.app:5173/mock-proxy' });
-		return window.__stores.meshJobs.generateMesh({ prompt: 'a stone well' });
+		return window.__tp.test.v1.meshJobs.generateMesh({ prompt: 'a stone well' });
 	});
 	await h.eventually(() => objCount(A), (n) => n === base + 3, 'CORS-blocked GLB imported via the asset proxy', 20000);
 	h.check(proxied > 0, 'download went through the proxy (' + proxied + ' request(s))');
@@ -155,12 +155,12 @@ h.run(async () => {
 	await A.page.route('**/peerjs.theprototype.app/proxy**', serveDefault);
 	await A.page.route('**/proxy?url=*', serveDefault); // same-origin dev default ('/mock-proxy' has no '/proxy' segment)
 	await A.page.evaluate(() => {
-		const list = window.__stores.meshProviders;
+		const list = window.__tp.test.v1.meshProviders;
 		let providers;
 		list.meshProviders.subscribe((v) => (providers = v))();
 		const meshy = providers.find((p) => p.kind === 'meshy');
 		list.updateMeshProvider(meshy.id, { assetProxy: '' });
-		return window.__stores.meshJobs.generateMesh({ prompt: 'a rope bridge' });
+		return window.__tp.test.v1.meshJobs.generateMesh({ prompt: 'a rope bridge' });
 	});
 	await h.eventually(() => objCount(A), (n) => n === base + 4, 'empty provider field falls back to the default proxy', 20000);
 	h.check(defaultProxied > 0, 'default proxy served the download (' + defaultProxied + ' request(s))');
@@ -175,12 +175,12 @@ h.run(async () => {
 	});
 	meshyGlbUrl = 'https://assets.meshy.ai/mock/tasks/t1/output/model.glb?sig=x';
 	await A.page.evaluate(() => {
-		const list = window.__stores.meshProviders;
+		const list = window.__tp.test.v1.meshProviders;
 		let providers;
 		list.meshProviders.subscribe((v) => (providers = v))();
 		const meshy = providers.find((p) => p.kind === 'meshy');
 		list.updateMeshProvider(meshy.id, { assetProxy: 'https://theprototype.app:5173/mock-proxy' });
-		return window.__stores.meshJobs.generateMesh({ prompt: 'a clay oven' });
+		return window.__tp.test.v1.meshJobs.generateMesh({ prompt: 'a clay oven' });
 	});
 	await h.eventually(() => objCount(A), (n) => n === base + 5, 'known no-CORS host imported proxy-first', 20000);
 	h.check(directAttempts === 0, 'no direct fetch attempted for assets.meshy.ai (no console CORS noise)');
@@ -194,18 +194,18 @@ h.run(async () => {
 	});
 	meshyGlbUrl = MESHY + '/blocked.glb';
 	await A.page.evaluate(() => {
-		const list = window.__stores.meshProviders;
+		const list = window.__tp.test.v1.meshProviders;
 		let providers;
 		list.meshProviders.subscribe((v) => (providers = v))();
 		const meshy = providers.find((p) => p.kind === 'meshy');
 		list.updateMeshProvider(meshy.id, { assetProxy: 'https://theprototype.app:5173/dead-proxy' });
-		return window.__stores.meshJobs.generateMesh({ prompt: 'a watch tower' });
+		return window.__tp.test.v1.meshJobs.generateMesh({ prompt: 'a watch tower' });
 	});
 	await h.eventually(() => objCount(A), (n) => n === base + 6, 'dead primary proxy fell back to the next candidate', 20000);
 	h.check(deadTried > 0, 'the dead proxy was tried first (' + deadTried + ' attempt(s))');
 
 	// undo removes the last generated mesh (standard history)
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => objCount(A), (n) => n === base + 5, 'undo removed the last generated mesh', 8000);
 
 	await h.finish(browser);

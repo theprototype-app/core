@@ -13,7 +13,7 @@ const h = require('./helpers.cjs');
 const camPos = (page) =>
 	page.evaluate(() => {
 		let c;
-		window.__stores.globalCamera.subscribe((v) => (c = v))();
+		window.__tp.test.v1.globalCamera.subscribe((v) => (c = v))();
 		return c.position.toArray();
 	});
 const moved = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
@@ -21,7 +21,7 @@ const moved = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
  * look for it at the moment it is needed) @returns {Promise<{x: number, y: number} | null>} */
 const emptyPixel = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let cam, group, renderer;
 		s.globalCamera.subscribe((v) => (cam = v))();
 		s.objectsGroup.subscribe((v) => (group = v))();
@@ -49,7 +49,7 @@ h.run(async () => {
 
 	// a box at the origin to press on
 	const boxUuid = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1100));
 		let g;
@@ -62,7 +62,7 @@ h.run(async () => {
 	});
 	await page.evaluate(async () => {
 		window.__ptr = { downs: [], moves: 0, ups: 0, claim: true, misses: 0, play: [] };
-		await window.__stores.moduleSDK.initModules([
+		await window.__tp.test.v1.moduleSDK.initModules([
 			{
 				id: 'ptrseam',
 				name: 'Pointer seam test',
@@ -92,7 +92,7 @@ h.run(async () => {
 	h.check(st.play.length === 1 && st.play[0] === false, `onPlayMode answers at once: not playing (${st.play})`);
 
 	console.log('\n=== 1. Interact: a claimed press-drag-release ===');
-	await page.evaluate(() => window.__stores.objectActions.setEditorMode('interact'));
+	await page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('interact'));
 	await page.waitForTimeout(300);
 	const onBox = await h.projectPoint(page, [0, 0.5, 0]);
 	const at = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.tagName, [onBox.x, onBox.y]);
@@ -120,7 +120,7 @@ h.run(async () => {
 	h.check(st.moves === movesBefore && st.ups === 1, `...and an unclaimed gesture sends no move/up (moves ${movesBefore} -> ${st.moves}, ups ${st.ups})`);
 
 	console.log('\n=== 3. onClickMiss: an Edit click on nothing ===');
-	await page.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
+	await page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('edit'));
 	await page.waitForTimeout(300);
 	const sky = await emptyPixel(page);
 	h.check(!!sky, `premise: a canvas pixel that hits nothing (${JSON.stringify(sky)})`);
@@ -130,7 +130,7 @@ h.run(async () => {
 	h.check((await seam(page)).misses === misses0 + 1, `a click on empty space reached onClickMiss (${misses0} -> ${(await seam(page)).misses})`);
 
 	console.log('\n=== 5. camera() ===');
-	h.check(await page.evaluate(() => { let c; window.__stores.globalCamera.subscribe((v) => (c = v))(); return window.__ptr.api.camera() === c; }), 'api.camera() is the camera the user looks through');
+	h.check(await page.evaluate(() => { let c; window.__tp.test.v1.globalCamera.subscribe((v) => (c = v))(); return window.__ptr.api.camera() === c; }), 'api.camera() is the camera the user looks through');
 
 	console.log('\n=== 2 + 4. Play: onPlayMode, inGame, and the press ===');
 	await page.evaluate(() => (window.__ptr.claim = true));
@@ -149,24 +149,24 @@ h.run(async () => {
 	await page.waitForTimeout(300);
 	st = await seam(page);
 	h.check(st.downs.length === downs0 + 1 && st.downs[st.downs.length - 1].mode === 'play', `a Play press reaches the handler with mode 'play' (${JSON.stringify(st.downs[st.downs.length - 1])})`);
-	h.check(await page.evaluate(() => window.__stores.playInteract.playInteractDebug?.().lastUp ?? 'module') === 'module', 'the claimed Play release is the module\'s (no tap, no carry)');
+	h.check(await page.evaluate(() => window.__tp.test.v1.playInteract.playInteractDebug?.().lastUp ?? 'module') === 'module', 'the claimed Play release is the module\'s (no tap, no carry)');
 	await h.leavePlay(A);
 	await h.eventually(() => seam(page).then((s) => s.play), (p) => p[p.length - 1] === false, 'leaving Play: onPlayMode(false)', 6000);
 
 	console.log('\n=== 6. unloading the module takes it all down ===');
-	await page.evaluate(() => window.__stores.moduleSDK.deactivateModule('ptrseam'));
-	await page.evaluate(() => window.__stores.objectActions.setEditorMode('interact'));
+	await page.evaluate(() => window.__tp.test.v1.moduleSDK.deactivateModule('ptrseam'));
+	await page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('interact'));
 	await page.waitForTimeout(300);
 	const d0 = (await seam(page)).downs.length;
 	const after = await drag(onBox.x, onBox.y);
 	h.check((await seam(page)).downs.length === d0 && after > 0.2, `no handler hears the press and the drag orbits again (moved ${after.toFixed(2)})`);
-	await page.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
+	await page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('edit'));
 	const m0 = (await seam(page)).misses;
 	const sky2 = (await emptyPixel(page)) ?? sky;
 	await page.mouse.click(sky2.x, sky2.y);
 	await page.waitForTimeout(300);
 	h.check((await seam(page)).misses === m0, 'onClickMiss is gone');
-	const seamDbg = await page.evaluate(() => window.__stores.modulePointer?.modulePointerDebug?.() ?? null);
+	const seamDbg = await page.evaluate(() => window.__tp.test.v1.modulePointer?.modulePointerDebug?.() ?? null);
 	if (seamDbg) h.check(seamDbg.handlers === 0, `the pointer registry is empty (${JSON.stringify(seamDbg)})`);
 	await browser.close();
 });

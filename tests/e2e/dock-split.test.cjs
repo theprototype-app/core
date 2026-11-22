@@ -28,18 +28,18 @@ const OUT = process.env.OUT || '/tmp';
 
 const DESK = { viewport: { width: 1440, height: 900 } };
 const UNFOLD = { viewport: { width: 770, height: 850 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2.9 };
-const DOCKED = { flowDocked: 'true', explorerDocked: 'true', animationDocked: 'true', flowCodeDocked: 'true', statsDocked: 'true' };
+const DOCKED = { flowDocked: 'true', explorerDocked: 'true', animationDocked: 'true', timelineDocked: 'true', statsDocked: 'true' };
 const S = (page, fn, arg) => page.evaluate(fn, arg);
 const read = (page, path) =>
 	S(page, (path) => {
 		const [mod, name] = path.split('.');
-		const st = name ? window.__stores[mod]?.[name] : window.__stores[mod];
+		const st = name ? window.__tp.test.v1[mod]?.[name] : window.__tp.test.v1[mod];
 		if (!st?.subscribe) return null;
 		let v;
 		st.subscribe((x) => (v = x))();
 		return v;
 	}, path);
-const call = (page, name, ...args) => S(page, ([name, args]) => window.__stores.bottomDock[name]?.(...args), [name, args]);
+const call = (page, name, ...args) => S(page, ([name, args]) => window.__tp.test.v1.bottomDock[name]?.(...args), [name, args]);
 
 /** what is on screen in the dock */
 const view = (page) =>
@@ -113,8 +113,8 @@ async function answerRestore(page) {
 }
 async function openDocked(page, keys) {
 	await S(page, async (keys) => {
-		const s = window.__stores;
-		const close = { flow: s.flowGraphClose, explorer: s.explorerClose, animation: s.animationClose, flowcode: s.flowCodeClose };
+		const s = window.__tp?.test.v1;
+		const close = { flow: s.flowGraphClose, explorer: s.explorerClose, animation: s.animationClose, timeline: s.timelineClose };
 		for (const k of keys) {
 			if (k === 'stats') s.sceneBudget.statsOpen.set(true);
 			else close[k]?.set(false);
@@ -269,13 +269,13 @@ h.run(async () => {
 	await shots(page, 'm9-empty-pane');
 	await click(page, '#dock-split-empty-add');
 	items = await menuItems(page);
-	h.check(items.includes('Flow Code'), `6.4 its "+" opens the window menu (${items.length} rows)`);
-	await clickRow(page, 'Flow Code');
+	h.check(items.includes('Timeline'), `6.4 its "+" opens the window menu (${items.length} rows)`);
+	await clickRow(page, 'Timeline');
 	await page.waitForTimeout(800);
 	split = (await read(page, 'bottomDock.dockSplits'))?.[0];
 	v = await view(page);
-	h.check(split?.b === 'flowcode' && !v.empty, `6.5 picking Flow Code fills the empty pane (${JSON.stringify(split)})`);
-	const fcPane = await S(page, () => document.querySelector('.tp-dock-panel[aria-label="Flow Code (docked)"]')?.getAttribute('data-dock-pane'));
+	h.check(split?.b === 'timeline' && !v.empty, `6.5 picking Timeline fills the empty pane (${JSON.stringify(split)})`);
+	const fcPane = await S(page, () => document.querySelector('.tp-dock-panel[aria-label="Timeline (docked)"]')?.getAttribute('data-dock-pane'));
 	h.check(fcPane === 'b', `6.6 ...in the right pane (${fcPane})`);
 	await call(page, 'unsplitDock', lastKey);
 	await page.waitForTimeout(300);

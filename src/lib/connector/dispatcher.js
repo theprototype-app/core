@@ -29,9 +29,36 @@ export const BRIDGE_SCHEMAS = /** @type {Record<string, any>} */ ({
 	screenshot: {
 		type: 'object',
 		properties: {
-			view: { type: 'string', enum: ['current', 'top', 'front', 'iso', 'focus'] },
-			uuid: { type: 'string', description: 'object to frame (view focus)' },
-			size: { type: 'number', description: 'longest side in pixels' }
+			view: { type: 'string', enum: ['current', 'top', 'front', 'iso', 'focus', 'camera'] },
+			uuid: { type: 'string', description: 'object to frame, or the camera to look through (view camera)' },
+			uuids: { type: 'array', items: { type: 'string' }, description: 'objects to frame together' },
+			from: {
+				description: 'the angle around the subject, instead of view: front, back, left, right, top, below, iso, or {yaw, pitch} in degrees (yaw 0 = front, 90 = right; pitch 90 = from above)',
+				anyOf: [
+					{ type: 'string', enum: ['front', 'back', 'left', 'right', 'top', 'below', 'iso'] },
+					{ type: 'object', properties: { yaw: { type: 'number' }, pitch: { type: 'number' } }, required: ['yaw', 'pitch'] }
+				]
+			},
+			camera: {
+				type: 'object',
+				description: 'a free camera, instead of view and from',
+				properties: {
+					position: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3, description: '[x,y,z]' },
+					target: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3, description: '[x,y,z]' }
+				},
+				required: ['position', 'target']
+			},
+			aspect: { description: 'width to height: "4:3" (default), "1:1", "16:9" or a number. view current defaults to the person\'s window', anyOf: [{ type: 'string' }, { type: 'number' }] },
+			zoom: { type: 'number', description: 'above 1 is closer, 0.1 to 10' },
+			margin: { type: 'number', description: 'room around the subject: 1 touches the frame, default 1.15' },
+			size: { type: 'number', description: 'longest side in pixels' },
+			hud: { type: 'boolean', description: 'true = draw the game HUD this screen shows on top (score, timer, menus), laid out as on screen' },
+			avatars: { type: 'boolean', description: 'true = keep the people (avatars, an agent\'s camera marker) in the frame; default leaves them out, except view current' },
+			postEffects: {
+				type: 'boolean',
+				description:
+					'true = draw it through the scene\'s post effects (bloom, vignette, colour grade …) as this screen shows them. The answer says postEffects "applied", or "unavailable" with a reason ("quality tier" = this device turned them off to keep its frame rate, usual on a phone — `how` says where the person raises it, or ask the person for higher quality: set_look action "quality" — set_quality for a local agent)'
+			}
 		}
 	},
 	wait_for_edit: { type: 'object', properties: { timeout_ms: { type: 'number', description: 'default 30000, at most 120000' } } }
@@ -44,7 +71,10 @@ export const CONNECTOR_SCHEMAS = /** @type {Record<string, any>} */ ({
 		properties: { link: { type: 'string', description: 'the session link, invite link or session id the person gave you' } },
 		required: ['link']
 	},
-	where_are_users: { type: 'object', properties: {} }
+	where_are_users: {
+		type: 'object',
+		properties: { pings: { type: 'boolean', description: 'also list the recent pings (85b S2): id, who, how long ago, position, surface normal, the object it is on' } }
+	}
 });
 
 /** tools that change nothing: allowed under a read scope */
@@ -53,16 +83,23 @@ const READ_TOOLS = new Set([...READ_ONLY_TOOLS, ...BRIDGE_TOOLS, 'where_are_user
 /** @param {any} t */
 const nameOf = (t) => String(t?.function?.name ?? t?.name ?? '');
 
+/** what a browser says when a code chunk cannot be fetched (Chromium, Firefox, Safari) */
+const CODE_LOAD_FAILED = /dynamically imported module|error loading dynamically|importing a module script failed|unable to preload/i;
+const CODE_WORDS = 'its code could not be loaded, usually because a new version went live while this tab stayed open. Ask the person to reload the tab.';
+const PROBE_WAIT_MS = 3000;
+
 /**
  * @param {{
  *   agent: {tools: () => any[], exec: (name: string, args: any) => Promise<any>, status: () => any,
- *     waitForEdit: (ms?: number) => Promise<any>, screenshot: (opts: any) => Promise<string|null>},
+ *     waitForEdit: (ms?: number) => Promise<any>, screenshot: (opts: any) => Promise<string|null>, lastShot?: () => any},
  *   send: (text: string) => void,
  *   visible: () => boolean,
  *   encodeShot: (dataUrl: string) => Promise<{image: {mimeType: string, data: string}, width: number, height: number} | null>,
  *   joinSession?: (args: any, ctx: {onCancel: (fn: () => void) => void}) => Promise<any>,
- *   whereAreUsers?: () => any,
+ *   whereAreUsers?: (args?: any) => any,
+ *   toolCode?: Record<string, () => Promise<any>>,
  *   you?: () => {peerId: string|null, name: string, role: 'host'|'guest'|'editor'|'viewer', inVR: boolean},
+ *   lastJoinResult?: () => any,
  *   onCallStart?: (call: {id: string, tool: string}) => void,
  *   onCallEnd?: (call: {id: string, tool: string, ok: boolean}) => void
  * }} deps
@@ -95,6 +132,25 @@ export function createDispatcher(deps) {
 		return [...BRIDGE_TOOLS, ...ownTools(), ...[...sceneTools().keys()].filter((n) => !BRIDGE_SCHEMAS[n] && !CONNECTOR_SCHEMAS[n])];
 	}
 
+	/** mcp-fix: listed tools this tab could not run just now, for status.missingTools @type {Map<string, string>} */
+	const broken = new Map();
+	/** @param {string} tool @param {any} a the call's answer */
+	function noteOutcome(tool, a) {
+		if (!('error' in a)) return void broken.delete(tool);
+		const message = String(a.error?.message ?? '');
+		if (CODE_LOAD_FAILED.test(message)) broken.set(tool, CODE_WORDS);
+		else if (tool === 'where_are_users') broken.set(tool, message);
+	}
+	/** lazily-loaded tool code, tried once when the first status asks, so it is reported before anyone calls the tool */
+	/** @type {Promise<void> | null} */
+	let probed = null;
+	function probeToolCode() {
+		probed ??= Promise.all(
+			Object.entries(deps.toolCode ?? {}).map(([name, load]) => load().then(() => broken.delete(name), () => void broken.set(name, CODE_WORDS)))
+		).then(() => {});
+		return Promise.race([probed, new Promise((resolve) => setTimeout(resolve, PROBE_WAIT_MS))]);
+	}
+
 	/** @param {string} id @param {{result: any} | {error: {code: string, message: string}}} answer */
 	function answer(id, answer) {
 		const call = inFlight.get(id);
@@ -104,6 +160,7 @@ export function createDispatcher(deps) {
 		try {
 			deps.onCallEnd?.({ id, tool: call.tool, ok: !('error' in answer) });
 		} catch {}
+		noteOutcome(call.tool, answer);
 		deps.send(answerFrame(id, answer));
 	}
 
@@ -121,20 +178,33 @@ export function createDispatcher(deps) {
 		const you = deps.you?.() ?? null;
 		const others = Array.isArray(rest.peers) ? rest.peers : [];
 		const users = you ? [{ id: you.peerId, name: you.name, you: true }, ...others] : others;
-		return { ...rest, ...(you ? { you, peers: users } : {}), tab: { visible: deps.visible(), connector: true } };
+		const lastJoinResult = deps.lastJoinResult?.() ?? null;
+		const gaps = [...broken].map(([name, reason]) => ({ name, reason }));
+		if (gaps.length) rest.missingTools = [...(rest.missingTools ?? []).filter((/** @type {any} */ m) => !broken.has(m?.name)), ...gaps];
+		return { ...rest, ...(you ? { you, peers: users } : {}), ...(lastJoinResult ? { lastJoinResult } : {}), tab: { visible: deps.visible(), connector: true } };
 	}
 
 	/** @param {string} id @param {any} args */
 	async function screenshot(id, args) {
 		if (!deps.visible()) return fail('hidden', 'Your theprototype tab is in the background, so nothing is rendered. Ask the person to bring the tab to the front, then try again.');
 		const size = Math.max(64, Math.min(SHOT_MAX, Number(args.size) || SHOT_DEFAULT));
-		const url = await deps.agent.screenshot({ view: args.view, uuid: args.uuid, size });
+		const asked = Date.now();
+		const { view, uuid, uuids, from, camera, aspect, zoom, margin } = args;
+		const postEffects = args.postEffects === true ? true : undefined;
+		// mcp-diorama2 (26): the HUD on top, and whether the people stay in the frame
+		const extra = { ...(args.hud === true ? { hud: true } : {}), ...(typeof args.avatars === 'boolean' ? { avatars: args.avatars } : {}) };
+		const url = await deps.agent.screenshot({ view, uuid, uuids, from, camera, aspect, zoom, margin, size, ...(postEffects ? { postEffects } : {}), ...extra });
+		const used = deps.agent.lastShot?.();
+		const fresh = used && used.at >= asked ? used : null;
 		if (inFlight.get(id)?.cancelled) return fail('cancelled', 'cancelled');
-		if (!url) return fail('failed', 'No frame: the person is in VR, or the 3D view is not ready.');
+		if (!url) return fail('failed', fresh?.error ?? 'No frame: the person is in VR, or the 3D view is not ready.');
 		// hidden while it rendered: nothing leaves the tab
 		if (!deps.visible()) return fail('hidden', 'Your theprototype tab went to the background.');
 		const shot = await deps.encodeShot(url);
-		return shot ? { result: shot } : fail('failed', 'The screenshot could not be encoded.');
+		if (!shot) return fail('failed', 'The screenshot could not be encoded.');
+		// mcp-diorama2: what the post stack did for this frame, when it was asked for
+		const post = postEffects && fresh?.postEffects ? { postEffects: fresh.postEffects, ...(fresh.reason ? { reason: fresh.reason } : {}), ...(fresh.detail ? { detail: fresh.detail } : {}), ...(fresh.how ? { how: fresh.how } : {}) } : {};
+		return { result: fresh ? { ...shot, ...post, camera: { position: fresh.position, target: fresh.target, fov: fresh.fov, zoom: fresh.zoom, view: fresh.view, subject: fresh.subject }, ...(fresh.hud ? { hud: fresh.hud } : {}) } : shot };
 	}
 
 	/** @param {string} id @param {any} args */
@@ -154,6 +224,12 @@ export function createDispatcher(deps) {
 			const r = await deps.agent.exec(tool, args);
 			if (r && typeof r === 'object' && r.refused) return fail('refused', String(r.error ?? 'refused'));
 			if (isError(r)) return fail('failed', String(r.error) + (r.created ? ' ' + JSON.stringify(r.created).slice(0, 600) : ''));
+			// 98 P2: a photo comes back as an image the AI app can see (downscaled like a screenshot)
+			if (tool === 'take_photo' && typeof r?.image_url === 'string') {
+				const { image_url, ...rest } = r;
+				const shot = image_url ? await deps.encodeShot(image_url) : null;
+				return { result: shot ? { ...shot, ...rest } : rest };
+			}
 			return { result: r };
 		});
 		queue = job.catch(() => {});
@@ -174,11 +250,14 @@ export function createDispatcher(deps) {
 	}
 
 	/** 86-fix: read-only, answered from this tab's own scene */
-	/** @param {'read'|'edit'} scope a look-only grant gets the person's own pose, nobody else's */
-	async function whereCall(scope) {
-		const r = /** @type {NonNullable<typeof deps.whereAreUsers>} */ (deps.whereAreUsers)();
+	/** @param {'read'|'edit'} scope a look-only grant gets the person's own pose, nobody else's @param {any} [args] */
+	async function whereCall(scope, args) {
+		const r = /** @type {NonNullable<typeof deps.whereAreUsers>} */ (deps.whereAreUsers)(args && typeof args === 'object' ? args : {});
 		if (isError(r)) return fail('failed', String(r.error));
-		return { result: scope === 'edit' ? r : { ...r, users: r.users.filter((/** @type {any} */ u) => u.you) } };
+		if (scope === 'edit') return { result: r };
+		// a read scope sees only the person it acts as — their pings too
+		const you = r.users.find((/** @type {any} */ u) => u.you);
+		return { result: { ...r, users: you ? [you] : [], ...(r.pings ? { pings: r.pings.filter((/** @type {any} */ p) => p.by === you?.id) } : {}) } };
 	}
 
 	/** the DO cancelled one call @param {string} id */
@@ -220,6 +299,12 @@ export function createDispatcher(deps) {
 			const bridge = Object.prototype.hasOwnProperty.call(BRIDGE_SCHEMAS, tool);
 			const own = ownTools().includes(tool);
 			if (!bridge && !own && !scene.has(tool)) {
+				// mcp-fix: a listed tool this tab cannot offer right now (no mesh provider): say why, not "unknown"
+				const gap = (deps.agent.status()?.missingTools ?? []).find((/** @type {any} */ m) => m?.name === tool);
+				if (gap) {
+					deps.send(answerFrame(id, fail('refused', tool + ' is not available in this tab: ' + gap.reason)));
+					return;
+				}
 				deps.send(answerFrame(id, fail('unknown_tool', 'Unknown tool "' + tool + '". This tab answers: ' + toolNames().join(', ') + '.')));
 				return;
 			}
@@ -239,13 +324,13 @@ export function createDispatcher(deps) {
 			/** @type {Promise<any>} */
 			const run =
 				tool === 'status'
-					? Promise.resolve({ result: status() })
+					? probeToolCode().then(() => ({ result: status() }))
 					: tool === 'screenshot'
 						? screenshot(id, args)
 						: tool === 'wait_for_edit'
 							? waitForEdit(id, args)
 							: tool === 'where_are_users'
-								? whereCall(frame.scope)
+								? whereCall(frame.scope, args)
 								: own
 									? joinCall(id, args)
 									: sceneCall(id, tool, args);

@@ -40,14 +40,14 @@ async function meanLum(peer, clip) {
 }
 
 /** @param {any} page */
-const status = (page) => page.evaluate(`(${GET})(window.__stores.hdriStores.hdriStatus)`);
+const status = (page) => page.evaluate(`(${GET})(window.__tp.test.v1.hdriStores.hdriStatus)`);
 /** @param {any} page */
 const post = (page) => page.evaluate(() => window.__postDebug?.());
 /** @param {any} page */
 const sceneState = (page) =>
 	page.evaluate(`(() => {
 		const get = ${GET};
-		const st = window.__stores;
+		const st = window.__tp?.test.v1;
 		const scene = get(st.globalScene);
 		const renderer = get(st.globalRenderer);
 		const hemi = scene.getObjectByName('env-rig-hemi');
@@ -69,7 +69,7 @@ async function lookAlong(page, dir) {
 	return page.evaluate(
 		`((dir) => {
 			const get = ${GET};
-			const st = window.__stores;
+			const st = window.__tp?.test.v1;
 			const scene = get(st.globalScene);
 			const camera = get(st.globalCamera);
 			const orbit = get(st.orbitControls);
@@ -103,23 +103,25 @@ h.run(async () => {
 	// 59 T3: the skies come from the packs CDN — served from a local packs checkout when there is one
 	await h.routeSkies(A.page);
 	await h.routeSkies(B.page);
+	// 72 LK2: this suite is about the light's map, which also draws a Standard sky (sky-quality owns the rest)
+	for (const P of [A, B]) await P.page.evaluate(() => window.__tp.test.v1.hdriPrefs.hdriQuality.set('standard'));
 
 	// a box to select (a selection makes the desktop frame go through the composer)
 	const boxUuid = await A.page.evaluate(`(() => {
 		const get = ${GET};
-		const st = window.__stores;
+		const st = window.__tp?.test.v1;
 		st.commandsHandler.sceneCommand('/create box');
 		const g = get(st.objectsGroup);
 		return g.children[g.children.length - 1].uuid;
 	})()`);
-	await A.page.evaluate((u) => window.__stores.selectedObjects.set([u]), boxUuid);
+	await A.page.evaluate((u) => window.__tp.test.v1.selectedObjects.set([u]), boxUuid);
 	await A.page.waitForTimeout(600);
 	let p = await post(A.page);
 	h.check(p.composerBufferType === 1009 && !p.chain.includes('env-tone'), 'stock studio: 8-bit composer, no env tone pass (' + p.chain.join(',') + ')');
 
 	// ---- 1. an HDRI preset ----------------------------------------------------------------
-	await A.page.evaluate(() => window.__stores.environment.setEnvironment('meadow'));
-	const settled = await A.page.evaluate(() => window.__stores.hdri.hdriDebug.settle());
+	await A.page.evaluate(() => window.__tp.test.v1.environment.setEnvironment('meadow'));
+	const settled = await A.page.evaluate(() => window.__tp.test.v1.hdri.hdriDebug.settle());
 	let s = await status(A.page);
 	h.check(settled === 'ready' && s.src === 'bundled:meadow' && s.tier === 'full', 'Meadow loads + prefilters (' + settled + ', ' + s.tier + ', ' + s.ms + ' ms)');
 	h.check(s.width === 1024 && s.pmremSize === 256, 'full tier: 1024 px source, 256 px PMREM (' + s.width + '/' + s.pmremSize + ')');
@@ -139,17 +141,17 @@ h.run(async () => {
 	const sky = { x: 80, y: 120, width: 400, height: 220 };
 	await A.page.waitForTimeout(600);
 	const lum1 = await meanLum(A, sky);
-	await A.page.evaluate(() => window.__stores.environment.setEnvironment('meadow', 2));
+	await A.page.evaluate(() => window.__tp.test.v1.environment.setEnvironment('meadow', 2));
 	await A.page.waitForTimeout(600);
 	const lum2 = await meanLum(A, sky);
 	h.check(lum2 > lum1 + 15, `Exposure 2 brightens the composed frame (${lum1.toFixed(1)} -> ${lum2.toFixed(1)})`);
-	await A.page.evaluate(() => window.__stores.environment.setEnvironment('meadow', 1));
+	await A.page.evaluate(() => window.__tp.test.v1.environment.setEnvironment('meadow', 1));
 	// counterfactual: pull the env pass (the HDRI stays) — exposure must then do nothing. The
 	// exposure is written on the RENDERER here: setEnvironment re-applies, and the layer would
 	// put the pass straight back
-	await A.page.evaluate(() => window.__stores.hdriStores.envToneMapping.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.hdriStores.envToneMapping.set(null));
 	const setExposure = (/** @type {number} */ v) =>
-		A.page.evaluate(`(${GET})(window.__stores.globalRenderer).toneMappingExposure = ${v}`);
+		A.page.evaluate(`(${GET})(window.__tp.test.v1.globalRenderer).toneMappingExposure = ${v}`);
 	await setExposure(2);
 	await A.page.waitForTimeout(500);
 	p = await post(A.page);
@@ -158,17 +160,17 @@ h.run(async () => {
 	await A.page.waitForTimeout(500);
 	const cf1 = await meanLum(A, sky);
 	h.check(!p.chain.includes('env-tone') && Math.abs(cf2 - cf1) < 1.5, `COUNTERFACTUAL: without the env pass exposure is inert on the composed frame (${cf2.toFixed(1)} vs ${cf1.toFixed(1)})`);
-	await A.page.evaluate(() => window.__stores.environment.applyEnvironment()); // the layer re-asks for its curve
+	await A.page.evaluate(() => window.__tp.test.v1.environment.applyEnvironment()); // the layer re-asks for its curve
 	await A.page.waitForTimeout(400);
 	p = await post(A.page);
 	h.check(p.chain.includes('env-tone'), 'the next apply puts the env pass back');
 
 	// ---- 4. the sun ------------------------------------------------------------------------
-	await A.page.evaluate(() => window.__stores.selectedObjects.set([])); // direct path is fine here too
+	await A.page.evaluate(() => window.__tp.test.v1.selectedObjects.set([])); // direct path is fine here too
 	const d0 = await lookAlong(A.page, null);
 	const sun0 = await sunAtCentre(A);
 	h.check(sun0 >= 220, `rotation 0: looking along the rig sun finds the sky's sun (centre ${sun0})`);
-	await A.page.evaluate(() => window.__stores.environment.editEnvSky({ hdri: { rotation: 90 } }));
+	await A.page.evaluate(() => window.__tp.test.v1.environment.editEnvSky({ hdri: { rotation: 90 } }));
 	await A.page.waitForTimeout(300);
 	await lookAlong(A.page, null);
 	const sun90 = await sunAtCentre(A);
@@ -178,7 +180,7 @@ h.run(async () => {
 	const old = await sunAtCentre(A);
 	h.check(old < sun90 - 40, `rotation 90: the old direction holds no sun any more (centre ${old})`);
 	// ...and the sign: the same 90 degrees the OTHER way round finds none either
-	const wrong = await A.page.evaluate((d) => window.__stores.hdriCore.rotateAboutY(d, -90), d0);
+	const wrong = await A.page.evaluate((d) => window.__tp.test.v1.hdriCore.rotateAboutY(d, -90), d0);
 	await lookAlong(A.page, wrong);
 	const opp = await sunAtCentre(A);
 	h.check(opp < sun90 - 40, `the opposite turn finds no sun (centre ${opp})`);
@@ -191,7 +193,7 @@ h.run(async () => {
 
 	// ---- 6. a custom HDRI by content hash -----------------------------------------------------
 	const hash = await A.page.evaluate(async () => {
-		const st = window.__stores;
+		const st = window.__tp?.test.v1;
 		const res = await fetch(st.hdriSky.skyUrl('hdri/spruit_sunrise_1k.hdr')); // 59 T3: off the bundle
 		const src = new Uint8Array(await res.arrayBuffer());
 		// trailing bytes after the last scanline: same image, a hash no bundled file has
@@ -204,42 +206,42 @@ h.run(async () => {
 	});
 	await h.eventually(() => status(A.page), (v) => v.state === 'ready' && v.src === 'hash:' + hash, 'A lights the scene with the uploaded .hdr', 20000);
 	await h.eventually(() => status(B.page), (v) => v.state === 'ready' && v.src === 'hash:' + hash, 'B pulled the file by hash and renders it', 40000);
-	h.check(await B.page.evaluate((hh) => !!window.__stores.explorer.itemByHash(hh), hash), "the file landed in B's library");
+	h.check(await B.page.evaluate((hh) => !!window.__tp.test.v1.explorer.itemByHash(hh), hash), "the file landed in B's library");
 	await h.eventually(
-		() => A.page.evaluate(() => window.__stores.sceneAssets.sceneAssetList().map((a) => a.hash)),
+		() => A.page.evaluate(() => window.__tp.test.v1.sceneAssets.sceneAssetList().map((a) => a.hash)),
 		(list) => list.includes(hash),
 		'the custom HDRI is a scene asset (a save / export bundles it)',
 		12000
 	);
 
 	// ---- 7. the headset tier -----------------------------------------------------------------
-	await A.page.evaluate(() => window.__stores.hdriPrefs.hdriQuality.set('low'));
+	await A.page.evaluate(() => window.__tp.test.v1.hdriPrefs.hdriQuality.set('low'));
 	await h.eventually(() => status(A.page), (v) => v.state === 'ready' && v.tier === 'low' && v.width === 512 && v.pmremSize === 128, 'low tier: 512 px source, 128 px PMREM', 20000);
-	await A.page.evaluate(() => window.__stores.hdriPrefs.hdriQuality.set('auto'));
+	await A.page.evaluate(() => window.__tp.test.v1.hdriPrefs.hdriQuality.set('standard'));
 	await h.eventually(() => status(A.page), (v) => v.state === 'ready' && v.tier === 'full', 'back to the full tier');
 
 	// ---- 8. water ----------------------------------------------------------------------------
 	await A.page.evaluate(() => {
-		const st = window.__stores;
+		const st = window.__tp?.test.v1;
 		st.waterActions.makeWater(st.addObjects.spawnAtPoint('/create Box 80 2 80', [0, -1, 0]), 'ocean');
 	});
 	await h.eventually(
-		() => A.page.evaluate(() => window.__stores.waterRuntime.waterDebug().env),
+		() => A.page.evaluate(() => window.__tp.test.v1.waterRuntime.waterDebug().env),
 		(env) => env?.on === true && String(env.texture).startsWith('hdri:'),
 		'the water sky model samples the HDRI',
 		15000
 	);
 
 	// ---- 9. None -----------------------------------------------------------------------------
-	await A.page.evaluate(() => window.__stores.environment.editEnvSky({ hdri: null }));
-	await A.page.evaluate((u) => window.__stores.selectedObjects.set([u]), boxUuid);
+	await A.page.evaluate(() => window.__tp.test.v1.environment.editEnvSky({ hdri: null }));
+	await A.page.evaluate((u) => window.__tp.test.v1.selectedObjects.set([u]), boxUuid);
 	await h.eventually(() => status(A.page), (v) => v.state === 'off', 'None: the layer is off on A');
 	await A.page.waitForTimeout(500);
 	sc = await sceneState(A.page);
 	p = await post(A.page);
 	h.check(sc.environment === null && sc.background === 'color' && sc.hemiVisible === true, 'None: colour sky, no IBL, the hemi is back');
 	h.check(p.composerBufferType === 1009 && !p.chain.includes('env-tone'), 'None: the stock 8-bit chain again (' + p.chain.join(',') + ')');
-	h.check((await A.page.evaluate(() => window.__stores.waterRuntime.waterDebug().env)).on === false, 'None: the water is back on its sky model');
+	h.check((await A.page.evaluate(() => window.__tp.test.v1.waterRuntime.waterDebug().env)).on === false, 'None: the water is back on its sky model');
 	await h.eventually(() => status(B.page), (v) => v.state === 'off', 'None replicated to B');
 
 	await h.finish(browser);

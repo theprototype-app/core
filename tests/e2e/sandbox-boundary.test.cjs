@@ -33,12 +33,12 @@ h.run(async () => {
 
 	// ---- 1. a Script node ----------------------------------------------------------------
 	const uuid = await page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		return new Promise((resolve) => window.__stores.objectsGroup.subscribe((g) => resolve(g.children[g.children.length - 1].uuid))());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		return new Promise((resolve) => window.__tp.test.v1.objectsGroup.subscribe((g) => resolve(g.children[g.children.length - 1].uuid))());
 	});
 	await page.evaluate(
 		({ uuid, probe }) => {
-			window.__stores.flowNodes.set([
+			window.__tp.test.v1.flowNodes.set([
 				{
 					id: 'probe',
 					type: 'script',
@@ -47,14 +47,14 @@ h.run(async () => {
 				},
 				{ id: 'sel', type: 'objectselector', position: { x: 300, y: 0 }, data: { type: 'objectselector', selected: uuid } }
 			]);
-			window.__stores.flowEdges.set([{ id: 'e1', source: 'probe', target: 'sel' }]);
+			window.__tp.test.v1.flowEdges.set([{ id: 'e1', source: 'probe', target: 'sel' }]);
 		},
 		{ uuid, probe: PROBE }
 	);
 	const readObject = () =>
 		page.evaluate((uuid) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const o = g.getObjectByProperty('uuid', uuid);
 			return { seen: o?.userData?.seen ?? null, hasParent: o?.userData?.hasParent ?? null, y: o?.position.y };
 		}, uuid);
@@ -67,7 +67,7 @@ h.run(async () => {
 	// ---- 2. a custom HUD element ---------------------------------------------------------
 	await page.evaluate(
 		({ hudProbe, host }) => {
-			window.__stores.hudDocs.setHudDocFor('scene', {
+			window.__tp.test.v1.hudDocs.setHudDocFor('scene', {
 				screens: [
 					{
 						id: 'probe',

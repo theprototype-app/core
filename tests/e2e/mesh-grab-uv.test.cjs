@@ -17,7 +17,7 @@ const h = require('./helpers.cjs');
 /** a textured box in face-edit mode, with per-face uv bookkeeping */
 const setup = (page, multiMaterial = false) =>
 	page.evaluate(async (multiMaterial) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.children[g.children.length - 1];
@@ -49,7 +49,7 @@ const setup = (page, multiMaterial = false) =>
 const triState = (page, uuid, tris) =>
 	page.evaluate(
 		async ({ uuid, tris }) => {
-			const w = window.__stores;
+			const w = window.__tp?.test.v1;
 			const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 			const geo = g.getObjectByProperty('uuid', uuid).geometry;
 			const uv = geo.attributes.uv;
@@ -79,7 +79,7 @@ const triState = (page, uuid, tris) =>
 /** drive the gizmo exactly as a click on the seated gizmo does */
 const grabWithDelta = (page, dx) =>
 	page.evaluate(async (dx) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.faceEdit.attachFaceGizmo();
 		w.faceEdit.onFaceGizmoDragChanged(true);
 		const controls = await new Promise((r) => w.TControls.subscribe(r)());
@@ -100,7 +100,7 @@ h.run(async () => {
 	// ---------- single material: the reported case ----------
 	const uuid = await setup(A.page);
 	const picked = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const top = w.faceEdit.currentFaces().find((f) => f.normal.y > 0.99);
 		w.faceEdit.pickFaceUnit(top.triIndices[0]);
 		return top.triIndices;
@@ -126,7 +126,7 @@ h.run(async () => {
 
 	// aggregate health must ALSO still hold (this is what used to pass alone)
 	const aggregate = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const geo = g.getObjectByProperty('uuid', uuid).geometry;
 		return { covers: geo.attributes.uv.count === geo.attributes.position.count };
@@ -135,7 +135,7 @@ h.run(async () => {
 
 	// undo must restore, which needs the commit to carry uvs (it stored bare
 	// positions before, so undo could not heal the damage)
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(400);
 	const undone = await triState(A.page, uuid, picked);
 	h.check(
@@ -145,13 +145,13 @@ h.run(async () => {
 
 	// ---------- six materials: the mi half of the same defect ----------
 	await A.page.evaluate(() => {
-		window.__stores.faceEdit.exitFaceEdit();
-		window.__stores.commandsHandler.sceneCommand('/clear all');
+		window.__tp.test.v1.faceEdit.exitFaceEdit();
+		window.__tp.test.v1.commandsHandler.sceneCommand('/clear all');
 	});
 	await A.page.waitForTimeout(400);
 	const multiUuid = await setup(A.page, true);
 	const multiPicked = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const top = w.faceEdit.currentFaces().find((f) => f.normal.y > 0.99);
 		w.faceEdit.pickFaceUnit(top.triIndices[0]);
 		return top.triIndices;

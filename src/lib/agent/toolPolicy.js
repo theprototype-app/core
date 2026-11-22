@@ -13,7 +13,8 @@
 export const GATED_TOOLS = /** @type {const} */ (['generate_mesh', 'create_behaviour', 'edit_behaviour']);
 
 /**
- * @param {{meshLocal: boolean, meshHost: boolean, hostKnown: boolean, behaviours: boolean, physics: boolean}} facts
+ * @param {{meshLocal: boolean, meshHost: boolean, hostKnown: boolean, behaviours: boolean, physics: boolean, personTab?: boolean}} facts
+ *   `personTab` = a person's own tab (the connector): no host means it hosts its own session, so "not joined" would be wrong
  * @returns {{name: string, reason: string}[]}
  */
 export function missingToolsFor(facts) {
@@ -27,7 +28,9 @@ export function missingToolsFor(facts) {
 			name: 'generate_mesh',
 			reason: facts.hostKnown
 				? 'the host has no mesh-generation provider ready (Settings ▸ Tools & connections ▸ Mesh providers on the host\'s machine); build with primitives instead'
-				: 'not joined to a session, and this page has no mesh-generation provider; build with primitives instead'
+				: facts.personTab
+					? 'this tab has no mesh-generation provider ready (Settings ▸ Tools & connections ▸ Mesh providers); build with primitives instead'
+					: 'not joined to a session, and this page has no mesh-generation provider; build with primitives instead'
 		});
 	if (!facts.behaviours)
 		for (const name of ['create_behaviour', 'edit_behaviour'])

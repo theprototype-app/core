@@ -43,10 +43,13 @@ import { stripEditOverlays, isEditOverlay } from './editOverlays';
 import { markTransient } from './transientObjects';
 // 30 P3: a LEAF (THREE + stores), so a static import here closes no cycle
 import { clearModuleSelection } from './moduleContent';
+import { sidebarsWide, addInspectorTabQuietly } from './sidebars'; // showhide-v8: Properties + Configure Scene tabs
+import { phoneShell } from './ui/phoneShell.js';
 import { desktopSpawn, spawnEyePose } from './playSpawn'; // 30b P4 (+ vrOnly: core-games)
 // D2: a LEAF (svelte stores + THREE), so a static import here closes no cycle
 import { shareDuplicatedMaterials, linkMaterials } from './materialSharing';
 import { applyFlowPathTo } from './sim/flowPathObject.js'; // 36-fb F24 (a three leaf)
+import { applyTextPathTo, bumpTextTurn } from './textPathObject.js'; // 64 D2 (a three leaf)
 import {
 	duplicateCarriesAnimation,
 	duplicateCarriesFlow,
@@ -253,9 +256,25 @@ export function applySelectionSet(uuids, openProperties = false) {
 	// 15-O: explicit request (double-click / context menu / object list), a
 	// PINNED panel (follows every selection), or a panel already showing the
 	// selection. A plain viewport click alone no longer forces it open.
-	if (openProperties || get(inspectorPinned) || (!get(inspectorClose) && get(inspectorKind) === 'selection')) {
-		showSidebar('properties', { focus: !!openProperties }); // 42 I3: following the selection never steals a covered tab's place
+	followSelection(openProperties); // 42 I3: following the selection never steals a covered tab's place
+}
+
+/**
+ * 15-O / 42 I3 + showhide-v8 (owner 2026-11-09, R2): what a selection does to the Inspector. An explicit request
+ * (double-click, context menu, the object list's ⓘ) opens Properties and brings it forward. Otherwise a PINNED panel,
+ * or one showing the selection, follows it — but "selecting no longer swaps Properties in place of Configure Scene":
+ * with Configure Scene in front, a pinned panel only makes sure a Properties tab is there behind it (it shows the
+ * new selection when it comes to the front) and the scene tab stays where it is.
+ * @param {boolean | undefined} openProperties
+ */
+function followSelection(openProperties) {
+	if (openProperties) return showSidebar('properties', { focus: true });
+	const open = !get(inspectorClose);
+	if (open && get(inspectorKind) === 'scene') {
+		if (get(inspectorPinned) && get(sidebarsWide) && !get(phoneShell)) addInspectorTabQuietly('inspector');
+		return;
 	}
+	if (get(inspectorPinned) || (open && get(inspectorKind) === 'selection')) showSidebar('properties', { focus: false });
 }
 
 /** 41 G13: what Interact took away, given back when it ends @type {string[]} */
@@ -342,9 +361,7 @@ export function selectObject(uuid, openProperties = false, additive = false) {
 		selectedObjects.set([]);
 		if (controls && !get(isVRMode)) controls.detach();
 		selectedObject.set(object);
-		if (openProperties || get(inspectorPinned) || (!get(inspectorClose) && get(inspectorKind) === 'selection')) {
-			showSidebar('properties', { focus: !!openProperties });
-		}
+		followSelection(openProperties);
 		return;
 	}
 	applySelectionSet([uuid], openProperties);
@@ -378,7 +395,18 @@ export function deselectObject() {
 	if (controls && !get(isVRMode)) controls.detach();
 	// selectedObject keeps the last object on purpose — the open inspector binds
 	// to $selectedObject.position/material and would crash on an empty value
+	// uir-polish E3 (owner 2026-11-11): on a wider screen the Properties tab KEEPS showing that last object
+	// (a deselect is not a reason to lose the panel you were reading). The phone's sheet still closes — it
+	// covers the viewport. The read-only "<name> is editing" state for a kept object a peer takes is 80a K1.
+	if (keepsLastObject()) return;
 	closeSelectionInspector();
+}
+
+/** E3: does a deselect leave Properties on the last object (wide posture, the object still in the scene) */
+function keepsLastObject() {
+	if (!get(sidebarsWide) || get(phoneShell)) return false;
+	const last = /** @type {any} */ (get(selectedObject));
+	return !!last?.uuid && get(objectsGroup)?.getObjectByProperty('uuid', last.uuid) === last;
 }
 
 /**
@@ -886,11 +914,29 @@ registerHistoryKind('props', (entry, state) => {
 		else delete object.userData.fluidEmitter;
 		if (peer) peer.send({ type: 'objectParameters', parameter: 'fluidEmitter', uuid: entry.uuid, fluidEmitter: state.fluidEmitter ?? null });
 	}
+	for (const key of ['portal', 'checkpoint']) {
+		if (!(key in state)) continue;
+		// 93 LP1 / LP3: a portal's / checkpoint's record (gameLevels/objectEdit.js is the write path)
+		if (state[key]) object.userData[key] = state[key];
+		else delete object.userData[key];
+		if (peer) peer.send({ type: 'objectParameters', parameter: key, uuid: entry.uuid, [key]: state[key] ?? null });
+	}
 	if ('flowPath' in state) {
 		// 36-fb F24: a flow path's record — the geometry is rebuilt from it (applyFlowPathTo)
 		if (state.flowPath) applyFlowPathTo(object, state.flowPath);
 		else delete object.userData.flowPath;
 		if (peer) peer.send({ type: 'objectParameters', parameter: 'flowPath', uuid: entry.uuid, flowPath: state.flowPath ?? null });
+	}
+	if ('textPath' in state) {
+		// 64 D2: text on a path — the record only; every peer lays the letters out from it
+		// 64 TX5: a REDO of Bake bakes again (dropping the record alone would leave a text with no mesh).
+		// fix-bake: every step is a new TURN, taken NOW — a later undo cancels a bake still waiting on its import
+		const turn = bumpTextTurn(entry.uuid);
+		if (state.textPath) applyTextPathTo(object, state.textPath);
+		else if (state.bake && object.userData.textPath) void import('./textPathEdit.js').then((m) => m.applyRemoteBake(object, turn));
+		else delete object.userData.textPath;
+		if (peer)
+			peer.send({ type: 'objectParameters', parameter: 'textPath', uuid: entry.uuid, textPath: state.textPath ?? null, ...(state.bake ? { bake: true } : {}) });
 	}
 	if ('fluidInteraction' in state) {
 		// 36-fb F23: how a mesh meets particle fluid (none / collide / float; absent = auto)

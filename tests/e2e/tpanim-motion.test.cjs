@@ -12,13 +12,13 @@ const h = require('./helpers.cjs');
 const animOf = (page, uuid) =>
 	page.evaluate((uuid) => {
 		let map;
-		window.__stores.animatedImports.animatedObjects.subscribe((m) => (map = m))();
+		window.__tp.test.v1.animatedImports.animatedObjects.subscribe((m) => (map = m))();
 		const st = map?.[uuid];
 		if (!st) return null;
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const root = g.getObjectByProperty('uuid', uuid);
-		return { ...st, info: window.__stores.animatedImports.clipInfo(uuid), refs: window.__stores.animatedImports.clipRefsOf(root) };
+		return { ...st, info: window.__tp.test.v1.animatedImports.clipInfo(uuid), refs: window.__tp.test.v1.animatedImports.clipRefsOf(root) };
 	}, uuid);
 
 /** the largest frame-to-frame turn (degrees) of the knight's left upper arm over `ms`, sampled per animation frame */
@@ -26,7 +26,7 @@ const sampleJumps = (page, uuid, ms) =>
 	page.evaluate(
 		({ uuid, ms }) =>
 			new Promise((resolve) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				let g;
 				s.objectsGroup.subscribe((x) => (g = x))();
 				const bone = g.getObjectByProperty('uuid', uuid).getObjectByName(s.THREE.PropertyBinding.sanitizeNodeName('upperarm.l'));
@@ -59,7 +59,7 @@ h.run(async () => {
 
 	// the knight + three clips from the shared clips file
 	const uuid = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const knight = await (await fetch('/avatars/knight.glb')).arrayBuffer();
 		const id = await s.fileHandler.importFile(new File([knight], 'knight.glb'), 'Knight');
 		const clips = await (await fetch('/avatars/clips.glb')).arrayBuffer();
@@ -74,7 +74,7 @@ h.run(async () => {
 	await h.eventually(() => animOf(B.page, uuid), (s) => s?.info?.filter((c) => c.asset).length === 3, 'and on B', 30000);
 
 	// ---------- M3 crossfade: no snap on either peer ----------
-	await A.page.evaluate((uuid) => window.__stores.animatedImports.setAnimationState(uuid, { clip: 'Idle', playing: true }), uuid);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.animatedImports.setAnimationState(uuid, { clip: 'Idle', playing: true }), uuid);
 	await h.eventually(() => animOf(B.page, uuid), (s) => s?.clip === 'Idle' && s.playing, 'Idle plays on B');
 	await A.page.waitForTimeout(800);
 	const own = await sampleJumps(A.page, uuid, 600); // the idle's own frame-to-frame motion
@@ -82,7 +82,7 @@ h.run(async () => {
 		(async () => {
 			const p = sampleJumps(A.page, uuid, 1400);
 			await A.page.waitForTimeout(200);
-			await A.page.evaluate((uuid) => window.__stores.animatedImports.setAnimationState(uuid, { clip: 'Running_A', playing: true, fade: 0.7 }), uuid);
+			await A.page.evaluate((uuid) => window.__tp.test.v1.animatedImports.setAnimationState(uuid, { clip: 'Running_A', playing: true, fade: 0.7 }), uuid);
 			return p;
 		})(),
 		sampleJumps(B.page, uuid, 1600)
@@ -91,12 +91,12 @@ h.run(async () => {
 	const stB = await animOf(B.page, uuid);
 	h.check(stB.from === 'Idle' && stB.fade === 0.7 && Math.abs(stB.at - stA.at) < 1e-6, `M3: B crossfades from the same stamp (from ${stB.from}, fade ${stB.fade}, Δat ${(stB.at - stA.at).toFixed(6)})`);
 	await A.page.waitForTimeout(600);
-	await A.page.evaluate((uuid) => window.__stores.animatedImports.setAnimationState(uuid, { clip: 'Idle', playing: true }), uuid);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.animatedImports.setAnimationState(uuid, { clip: 'Idle', playing: true }), uuid);
 	await A.page.waitForTimeout(900);
 	const hard = await (async () => {
 		const p = sampleJumps(A.page, uuid, 900);
 		await A.page.waitForTimeout(200);
-		await A.page.evaluate((uuid) => window.__stores.animatedImports.setAnimationState(uuid, { clip: 'Running_A', playing: true }), uuid);
+		await A.page.evaluate((uuid) => window.__tp.test.v1.animatedImports.setAnimationState(uuid, { clip: 'Running_A', playing: true }), uuid);
 		return p;
 	})();
 	h.check(hard.worst > Math.max(own.worst * 3, 8), `M3 counterfactual: a change with NO fade snaps (${hard.worst.toFixed(1)}° in one frame, the idle moves ${own.worst.toFixed(1)}°)`);
@@ -105,19 +105,19 @@ h.run(async () => {
 
 	// ---------- M3 Blend by Speed: idle / walk from the knight's own speed, on A and on B ----------
 	await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.animatedImports.setAnimationState(uuid, { playing: false });
 		s.flowGraphsCtl.createObjectGraph(uuid);
 		s.nodesHandler.createFlowNode({ id: 'knight-blend', type: 'blendspeed', position: { x: 0, y: 0 }, data: { type: 'blendspeed', idle: '', walk: '', run: '', walkSpeed: 1.4, runSpeed: 3.5, crossfade: 0.25 } }, uuid);
 	}, uuid);
-	const weightsOf = (page) => page.evaluate((uuid) => window.__stores.animatedImports.poseDriverOf(uuid)?.weights ?? null, uuid);
+	const weightsOf = (page) => page.evaluate((uuid) => window.__tp.test.v1.animatedImports.poseDriverOf(uuid)?.weights ?? null, uuid);
 	await h.eventually(() => weightsOf(A.page), (w) => w && w.Idle > 0.95, 'M3: standing still, the blend is all Idle on A');
 	await h.eventually(() => weightsOf(B.page), (w) => w && w.Idle > 0.95, 'M3: ...and on B (its graph replicated)', 60000);
 	// walk the knight at 1.4 m/s along x for 3 s, broadcasting moves at ~10 Hz like a drag does
 	const walking = A.page.evaluate(
 		(uuid) =>
 			new Promise((resolve) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				let g;
 				s.objectsGroup.subscribe((x) => (g = x))();
 				const o = g.getObjectByProperty('uuid', uuid);
@@ -147,17 +147,17 @@ h.run(async () => {
 	h.check(wB && wB.Walking_A > 0.6, `M3: ...and on B from the replicated moves (${JSON.stringify(wB)})`);
 	await walking;
 	await h.eventually(() => weightsOf(A.page), (w) => w && w.Idle > 0.9, 'M3: stopped, it eases back to Idle', 5000);
-	await A.page.evaluate((uuid) => window.__stores.nodesHandler.deleteFlowNodes(['knight-blend'], uuid), uuid);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.nodesHandler.deleteFlowNodes(['knight-blend'], uuid), uuid);
 
 	// ---------- per-clip settings: ref fields, replicated ----------
-	await A.page.evaluate((uuid) => window.__stores.clipAssets.updateClipRef(uuid, 'Walking_A', { mode: 'inplace', speed: 1.25, loop: true }), uuid);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.clipAssets.updateClipRef(uuid, 'Walking_A', { mode: 'inplace', speed: 1.25, loop: true }), uuid);
 	await h.eventually(() => animOf(B.page, uuid), (s) => s?.refs?.some((r) => r.name === 'Walking_A' && r.mode === 'inplace' && r.speed === 1.25), 'M3: In place + speed replicate as ref settings');
-	await A.page.evaluate((uuid) => window.__stores.clipAssets.updateClipRef(uuid, 'Walking_A', { name: 'Walk' }), uuid);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.clipAssets.updateClipRef(uuid, 'Walking_A', { name: 'Walk' }), uuid);
 	await h.eventually(() => animOf(B.page, uuid), (s) => s?.info?.some((c) => c.name === 'Walk' && c.asset) && !s.info.some((c) => c.name === 'Walking_A'), 'M8: a rename replicates (and rebinds under the new name)');
 
 	// ---------- M3 Loop it + the seam check ----------
 	const seam = await A.page.evaluate(async (uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const edit = s.clipEdit;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
@@ -173,7 +173,7 @@ h.run(async () => {
 
 	// ---------- M8 trim / split / join ----------
 	const ops = await A.page.evaluate(async (uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const edit = s.clipEdit;
 		const info = () => s.animatedImports.clipInfo(uuid);
 		const run = info().find((c) => c.name === 'Running_A');
@@ -192,14 +192,14 @@ h.run(async () => {
 	h.check(ops.joined && Math.abs(ops.joined - (ops.split[0] + ops.trimmed - 0.2)) < 0.05, `M8: join overlaps by the crossfade (${ops.joined?.toFixed(2)} s)`);
 	await h.eventually(() => animOf(B.page, uuid), (s) => s?.info?.some((c) => c.name === 'Idle to run' && c.asset), 'M8: the joined clip reached B (a new file, pulled once)', 20000);
 	// one undo takes the join back off, everywhere
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => animOf(B.page, uuid), (s) => s && !s.info.some((c) => c.name === 'Idle to run'), 'M8: undo removes the joined clip on B');
 
 	// ---------- M8 Extract clips from a model with its own clip (bytes untouched) ----------
 	const mover = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				const { GLTFExporter } = s.GLTFExporterModule;
 				const root = new s.THREE.Group();
 				const mesh = new s.THREE.Mesh(new s.THREE.BoxGeometry(1, 1, 1), new s.THREE.MeshStandardMaterial());
@@ -218,12 +218,12 @@ h.run(async () => {
 			})
 	);
 	await h.eventually(() => animOf(A.page, mover), (s) => s?.info?.some((c) => c.name === 'slide'), 'a model with its own clip');
-	const bytesBefore = await A.page.evaluate((id) => window.__stores.explorer.hashBytes(window.__stores.animatedImports.animatedImportPayload(id)), mover);
-	await A.page.evaluate((id) => window.__stores.clipEdit.extractClips(id, { useFiles: true }), mover);
+	const bytesBefore = await A.page.evaluate((id) => window.__tp.test.v1.explorer.hashBytes(window.__tp.test.v1.animatedImports.animatedImportPayload(id)), mover);
+	await A.page.evaluate((id) => window.__tp.test.v1.clipEdit.extractClips(id, { useFiles: true }), mover);
 	await h.eventually(() => animOf(A.page, mover), (s) => s?.info?.length === 1 && s.info[0].name === 'slide' && !!s.info[0].asset, 'M8: Extract ▸ use the files: the clip now comes from a .tpanim (same name)');
 	await h.eventually(() => animOf(B.page, mover), (s) => s?.info?.length === 1 && !!s.info[0].asset, 'M8: ...on B too', 20000);
 	const moves = await A.page.evaluate(async (id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.animatedImports.setAnimationState(id, { clip: 'slide', playing: true });
 		const rec = s.animatedImports.animatedRecordOf(id);
 		rec.mixer.setTime(1);
@@ -232,14 +232,14 @@ h.run(async () => {
 		return g.getObjectByProperty('uuid', id).getObjectByName('mover').position.x;
 	}, mover);
 	h.check(Math.abs(moves - 2) < 0.01, `M8: the extracted clip drives the node by name (x at 1 s = ${moves.toFixed(3)})`);
-	const bytesAfter = await A.page.evaluate((id) => window.__stores.explorer.hashBytes(window.__stores.animatedImports.animatedImportPayload(id)), mover);
+	const bytesAfter = await A.page.evaluate((id) => window.__tp.test.v1.explorer.hashBytes(window.__tp.test.v1.animatedImports.animatedImportPayload(id)), mover);
 	h.check(bytesAfter === bytesBefore, 'M8: the model bytes did not change');
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => animOf(B.page, mover), (s) => s?.info?.some((c) => c.name === 'slide' && !c.asset), 'M8: one undo brings the embedded clip back on B');
 
 	// ---------- the Animation window shows the clip tools ----------
 	await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.objectActions.selectObject(uuid);
 		s.animationClose.set(false);
 		s.animatedImports.setAnimationState(uuid, { clip: 'Walk', playing: true });

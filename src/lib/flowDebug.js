@@ -70,7 +70,7 @@ export const debugStatus = writable({
  * The values the panel shows, published by the runtime (≤ ~6/s running, after every step paused).
  * @typedef {{edgeId: string, nodeId: string, label: string, handle: string, kind: 'event'|'value', text: string, high: boolean}} WireRow
  * @typedef {{key: string, label: string, text: string, missing: boolean}} WatchRow
- * @type {import('svelte/store').Writable<{focus: null | {id: string, label: string, type: string, eventless: boolean}, inputs: WireRow[], outputs: WireRow[], watches: WatchRow[]}>}
+ * @type {import('svelte/store').Writable<{focus: null | {id: string, label: string, type: string, eventless: boolean, why?: {last: string, standing: string | null} | null}, inputs: WireRow[], outputs: WireRow[], watches: WatchRow[]}>}
  */
 export const debugValues = writable({ focus: null, inputs: [], outputs: [], watches: [] });
 

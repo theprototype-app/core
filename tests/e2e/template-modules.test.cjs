@@ -19,7 +19,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	const peer = await h.setupPage(browser, 'template-modules');
 	const page = peer.page;
-	await page.waitForFunction(() => !!window.__stores?.moduleRequirements, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.moduleRequirements, { timeout: 30000 });
 
 	// a real, installable module zip served from the mocked gallery: manifest at the
 	// ZIP ROOT (a nested folder fails with "zip has no manifest.json at its root")
@@ -75,12 +75,12 @@ h.run(async () => {
 	// ---- 1. requirements are DERIVED from the flow ---------------------------
 	// Nothing installed, nothing used: the list must be empty, or buildSessionPayload
 	// would stamp a `modules` field onto every ordinary scene.
-	const empty = await page.evaluate(() => window.__stores.moduleRequirements.moduleRequirements());
+	const empty = await page.evaluate(() => window.__tp.test.v1.moduleRequirements.moduleRequirements());
 	h.check(empty.length === 0, 'a scene using no module nodes requires nothing (' + empty.length + ')');
 
 	// install the module for real (the local zip path), then USE one of its nodes
 	await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		await s.moduleSDK.initModules([
 			{
 				id: 'gizmomod',
@@ -98,7 +98,7 @@ h.run(async () => {
 	});
 	await page.waitForTimeout(600);
 	const installedButUnused = await page.evaluate(() =>
-		window.__stores.moduleRequirements.moduleRequirements()
+		window.__tp.test.v1.moduleRequirements.moduleRequirements()
 	);
 	h.check(
 		installedButUnused.length === 0,
@@ -108,7 +108,7 @@ h.run(async () => {
 	);
 
 	const derived = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.updateGraph(s.SCENE_GRAPH, () => ({
 			nodes: [
 				{ id: 'g1', type: 'gizmoknob', position: { x: 40, y: 40 }, data: { type: 'gizmoknob' } },
@@ -126,7 +126,7 @@ h.run(async () => {
 	h.check(derived.required[0].version === '2.1.0', 'carried with its version (' + derived.required[0].version + ')');
 	// ONE shape for "which modules" in the whole system - the handshake's
 	const shapeMatch = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const req = s.moduleRequirements.moduleRequirements()[0];
 		const hs = s.moduleSDK.moduleVersions().find((/** @type {any} */ m) => m.id === 'gizmomod');
 		return JSON.stringify(Object.keys(req).sort()) === JSON.stringify(Object.keys(hs).sort());
@@ -143,7 +143,7 @@ h.run(async () => {
 
 	// ---- 2. classify against this device ------------------------------------
 	const classified = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		return {
 			ready: s.moduleRequirements.classifyRequirements([{ id: 'gizmomod', version: '2.1.0' }]),
 			missing: s.moduleRequirements.classifyRequirements([{ id: 'nosuchmod', version: '1.0.0' }]),
@@ -177,13 +177,13 @@ h.run(async () => {
 		})
 	);
 	const slotsBefore = await page.evaluate(async () => {
-		await window.__stores.sessions.loadSessions();
-		return new Promise((r) => window.__stores.sessions.sessions.subscribe((l) => r(l.length))());
+		await window.__tp.test.v1.sessions.loadSessions();
+		return new Promise((r) => window.__tp.test.v1.sessions.sessions.subscribe((l) => r(l.length))());
 	});
 	// kick the import off without awaiting it - it blocks on the dialog
 	await page.evaluate((bytes) => {
 		window.__importResult = 'pending';
-		window.__stores.sessions
+		window.__tp.test.v1.sessions
 			.importSessionZip(new Uint8Array(bytes).buffer)
 			.then((p) => (window.__importResult = p ? 'applied' : 'cancelled'));
 	}, Array.from(tpscene));
@@ -193,7 +193,7 @@ h.run(async () => {
 		'a scene naming an uninstalled module prompts before anything is touched'
 	);
 	const promptText = await page.evaluate(
-		() => new Promise((r) => window.__stores.confirmDialog.confirmDialog.subscribe((d) => r(d?.message ?? ''))())
+		() => new Promise((r) => window.__tp.test.v1.confirmDialog.confirmDialog.subscribe((d) => r(d?.message ?? ''))())
 	);
 	h.check(/ghostmod/.test(promptText), 'the prompt names the missing module: ' + JSON.stringify(promptText.slice(0, 90)));
 	// the sentence users would otherwise file as a bug
@@ -210,8 +210,8 @@ h.run(async () => {
 		'Cancel resolves the import as a silent no-op'
 	);
 	const slotsAfter = await page.evaluate(async () => {
-		await window.__stores.sessions.loadSessions();
-		return new Promise((r) => window.__stores.sessions.sessions.subscribe((l) => r(l.length))());
+		await window.__tp.test.v1.sessions.loadSessions();
+		return new Promise((r) => window.__tp.test.v1.sessions.sessions.subscribe((l) => r(l.length))());
 	});
 	h.check(slotsAfter === slotsBefore, 'and NO session slot was written (' + slotsBefore + ' -> ' + slotsAfter + ')');
 
@@ -220,7 +220,7 @@ h.run(async () => {
 	// un-openable because a module is absent.
 	await page.evaluate((bytes) => {
 		window.__importResult = 'pending';
-		window.__stores.sessions
+		window.__tp.test.v1.sessions
 			.importSessionZip(new Uint8Array(bytes).buffer)
 			.then((p) => (window.__importResult = p ? 'applied' : 'cancelled'));
 	}, Array.from(tpscene));
@@ -241,7 +241,7 @@ h.run(async () => {
 	// mocked gallery serves a real manifest + entry file and the module must LOAD.
 	await page.evaluate((bytes) => {
 		window.__importResult = 'pending';
-		window.__stores.sessions
+		window.__tp.test.v1.sessions
 			.importSessionZip(new Uint8Array(bytes).buffer)
 			.then((p) => (window.__importResult = p ? 'applied' : 'cancelled'));
 	}, Array.from(tpscene));
@@ -262,7 +262,7 @@ h.run(async () => {
 	const reported = await page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.toastStore.subscribe((/** @type {any[]} */ list) =>
+				window.__tp.test.v1.toastStore.subscribe((/** @type {any[]} */ list) =>
 					r(list.map((t) => (typeof t === 'string' ? t : t.text)).join(' | '))
 				)()
 			)
@@ -276,11 +276,11 @@ h.run(async () => {
 	// A module that IS installed but switched off is a different answer: nothing to
 	// download, just a flag to flip.
 	await page.evaluate(() => {
-		window.__stores.moduleSDK.disabledModules.set(['gizmomod']);
+		window.__tp.test.v1.moduleSDK.disabledModules.set(['gizmomod']);
 	});
 	await page.waitForTimeout(300);
 	const offClass = await page.evaluate(() =>
-		window.__stores.moduleRequirements.classifyRequirements([{ id: 'gizmomod', version: '2.1.0' }])
+		window.__tp.test.v1.moduleRequirements.classifyRequirements([{ id: 'gizmomod', version: '2.1.0' }])
 	);
 	h.check(offClass.disabled.length === 1 && !offClass.satisfied, 'a switched-off module classifies as disabled, not missing');
 	const onlyDisabled = Buffer.from(
@@ -301,7 +301,7 @@ h.run(async () => {
 	);
 	await page.evaluate((bytes) => {
 		window.__importResult = 'pending';
-		window.__stores.sessions
+		window.__tp.test.v1.sessions
 			.importSessionZip(new Uint8Array(bytes).buffer)
 			.then((p) => (window.__importResult = p ? 'applied' : 'cancelled'));
 	}, Array.from(onlyDisabled));
@@ -313,7 +313,7 @@ h.run(async () => {
 	h.check(await page.locator('#confirm-dialog-install').count() === 0, 'with nothing to download, Install is not offered');
 	await page.locator('#confirm-dialog-enable').click();
 	await h.eventually(
-		() => page.evaluate(() => new Promise((r) => window.__stores.moduleSDK.disabledModules.subscribe((l) => r(l))())),
+		() => page.evaluate(() => new Promise((r) => window.__tp.test.v1.moduleSDK.disabledModules.subscribe((l) => r(l))())),
 		(list) => !list.includes('gizmomod'),
 		'Enable switches it back on'
 	);

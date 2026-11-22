@@ -58,7 +58,9 @@ function coreNodeTypes() {
 	const block = nodes.slice(nodes.indexOf('const CORE_NODE_TYPES'), nodes.indexOf('};', nodes.indexOf('const CORE_NODE_TYPES')));
 	for (const m of block.matchAll(/^\s*([a-z0-9_]+):/gm)) types.add(m[1]);
 	// the palette, and the info line per node
-	for (const m of read('src/lib/nodeCatalog.js').matchAll(/\btype: '([a-z0-9_]+)'/g)) types.add(m[1]);
+	// 2.0 N1: the core palette lives in the node definitions (each one also names its card, so the
+	// renderer table's core rows are this same list)
+	for (const m of require('./node-catalog-source.cjs').catalogSource(ROOT).matchAll(/\btype: '([a-z0-9_]+)'/g)) types.add(m[1]);
 	for (const k of Object.keys(require('../src/lib/nodeDocs.js').NODE_DOCS)) types.add(k);
 	// 36 (N1): the editor-only view kinds — a node group and a note (never evaluated, always drawn)
 	types.add('group');

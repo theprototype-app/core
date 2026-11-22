@@ -7,10 +7,10 @@ const h = require('./helpers.cjs');
 const makeBoxes = (page, n) =>
 	page.evaluate((n) => {
 		const before = new Set();
-		window.__stores.objectsGroup.subscribe((g) => g?.children.forEach((c) => before.add(c.uuid)))();
-		for (let i = 0; i < n; i++) window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.objectsGroup.subscribe((g) => g?.children.forEach((c) => before.add(c.uuid)))();
+		for (let i = 0; i < n; i++) window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		const ids = [];
-		window.__stores.objectsGroup.subscribe((g) =>
+		window.__tp.test.v1.objectsGroup.subscribe((g) =>
 			g?.children.forEach((c) => {
 				if (!before.has(c.uuid) && c.name === 'Box') ids.push(c.uuid);
 			})
@@ -22,7 +22,7 @@ const topLevel = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const groups = [];
 					g?.children.forEach((c) => {
 						if (c.type === 'Group') groups.push({ uuid: c.uuid, children: c.children.length });
@@ -43,8 +43,8 @@ h.run(async () => {
 	h.check(ids.length === 3, `created 3 boxes (${ids.length})`);
 
 	const menu = await A.page.evaluate((ids) => {
-		window.__stores.objectActions.applySelectionSet(ids);
-		const items = window.__stores.objectMenu.buildObjectMenuItems(ids[1]);
+		window.__tp.test.v1.objectActions.applySelectionSet(ids);
+		const items = window.__tp.test.v1.objectMenu.buildObjectMenuItems(ids[1]);
 		// 15-Q: header/section rows carry no label — drop them
 		return items.map((i) => i.label).filter(Boolean);
 	}, ids);
@@ -52,7 +52,7 @@ h.run(async () => {
 	h.check(menu.some((l) => l === 'Delete (3)'), `Delete label is counted (${menu.find((l) => l.startsWith('Delete'))})`);
 	h.check(menu.some((l) => l === 'Duplicate (3)'), 'Duplicate label is counted');
 
-	await A.page.evaluate(() => window.__stores.objectActions.groupSelection());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.groupSelection());
 	await B.page.waitForTimeout(1200);
 
 	let a = await topLevel(A.page);
@@ -61,7 +61,7 @@ h.run(async () => {
 	h.check(b.groups.length === 1 && b.groups[0].children === 3, `B: group replicated with 3 children (${JSON.stringify(b.groups)})`);
 
 	// undo restores the flat layout in ONE step (aibatch)
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await B.page.waitForTimeout(800);
 	a = await topLevel(A.page);
 	h.check(a.groups.length === 0, `A: undo removed the group in one step (${a.groups.length} groups)`);
@@ -69,14 +69,14 @@ h.run(async () => {
 	// --- Multi delete: removes ALL selected, replicated ----------------------
 	ids = await makeBoxes(A.page, 3);
 	await A.page.evaluate((ids) => {
-		window.__stores.objectActions.applySelectionSet(ids);
-		window.__stores.objectActions.requestDeleteSelection();
+		window.__tp.test.v1.objectActions.applySelectionSet(ids);
+		window.__tp.test.v1.objectActions.requestDeleteSelection();
 	}, ids);
 	await B.page.waitForTimeout(1000);
 	const goneA = await A.page.evaluate(
 		(ids) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => r(ids.every((u) => !g.getObjectByProperty('uuid', u))))()
+				window.__tp.test.v1.objectsGroup.subscribe((g) => r(ids.every((u) => !g.getObjectByProperty('uuid', u))))()
 			),
 		ids
 	);
@@ -84,7 +84,7 @@ h.run(async () => {
 	const goneB = await B.page.evaluate(
 		(ids) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => r(ids.every((u) => !g.getObjectByProperty('uuid', u))))()
+				window.__tp.test.v1.objectsGroup.subscribe((g) => r(ids.every((u) => !g.getObjectByProperty('uuid', u))))()
 			),
 		ids
 	);
@@ -93,8 +93,8 @@ h.run(async () => {
 	// --- Multi prefab: one entry whose element is a group of 3 ----------------
 	ids = await makeBoxes(A.page, 3);
 	const prefab = await A.page.evaluate(async (ids) => {
-		window.__stores.objectActions.applySelectionSet(ids);
-		const entry = await window.__stores.prefabs.savePrefabSelection(ids, 'Trio');
+		window.__tp.test.v1.objectActions.applySelectionSet(ids);
+		const entry = await window.__tp.test.v1.prefabs.savePrefabSelection(ids, 'Trio');
 		return { name: entry?.name, childCount: entry?.element?.object?.children?.length ?? 0 };
 	}, ids);
 	h.check(prefab.name === 'Trio', `multi prefab saved (${prefab.name})`);

@@ -6,7 +6,6 @@ import { keyOf } from './keyOf';
 import { scopeOfEvent, pickForScope, startKeyScope, setVrScopeProbe } from './keyScope';
 import { runNodeAction, hasNodeAction, nodeEditorInsideGroup } from './nodeEditorActions';
 import {
-	chatHidden,
 	settingsOpen,
 	commandPaletteOpen,
 	anyModalOpen,
@@ -16,7 +15,8 @@ import {
 	showToast,
 	showSimControls,
 	armExplorerSceneSave,
-	explorerClose
+	explorerClose,
+	flowCodeClose
 } from '../stores/appStore';
 import { explainMissing } from './tools/toolLinks.js';
 import {
@@ -40,7 +40,9 @@ import { cycleViewMode } from './viewMode'; // 37 R18
 import { toggleFocusAtPointer, focusActive, exitFocus } from './focusMode'; // 42 I14 (a leaf: appStore/sceneStore/bottomDock)
 import { viewportPipOpen, framePipSelection } from './viewportPip'; // 43 K5 (a leaf: sceneStore + three)
 import { togglePanel, toggleDock } from './panelToggles';
+import { toggleChatTab } from './chat/chatWindow.js'; // uir-chat
 import { toggleSidebar } from './sidebars'; // 44 M7 (a leaf: app stores + safeStorage)
+import { togglePaneOfTarget } from './ui/paneKeys.js'; // uir-polish B5 (a leaf)
 // Phase 5: the play FAB's own entry point. playMode.js imports sceneStore +
 // svelte/store ONLY (it says so at the top of the file, and that is deliberate),
 // so this static edge adds nothing to shortcuts' subtree — which matters, because
@@ -474,16 +476,18 @@ export const shortcuts = [
 		keys: 'Ctrl+B',
 		group: 'Panels',
 		scope: 'global',
+		// uir-polish B5: a docked window's left pane when it has the focus or the mouse (the label stays: Settings search)
 		label: 'Left sidebar: show / hide',
-		action: () => toggleSidebar('left')
+		action: () => togglePaneOfTarget('left') || toggleSidebar('left')
 	},
 	{
 		id: 'panels.sidebar-right',
 		keys: 'Ctrl+Alt+B',
 		group: 'Panels',
 		scope: 'global',
+		// uir-polish B5: a docked window's right pane when it has the focus or the mouse (the label stays: Settings search)
 		label: 'Right sidebar: show / hide',
-		action: () => toggleSidebar('right')
+		action: () => togglePaneOfTarget('right') || toggleSidebar('right')
 	},
 	{
 		id: 'panels.explorer',
@@ -498,8 +502,9 @@ export const shortcuts = [
 		keys: 'Alt+F',
 		group: 'Panels',
 		scope: 'global',
-		label: 'Flow Code: show / bring to front / hide',
-		action: () => togglePanel('flowcode')
+		label: 'Flow code: open it in the Code window',
+		// showhide-v8 §4: the old open store is the seam (flowCodeRedirect opens Code on the active graph's flow code)
+		action: () => flowCodeClose.set(false)
 	},
 	{
 		id: 'panels.animation',
@@ -547,7 +552,7 @@ export const shortcuts = [
 		group: 'Panels',
 		scope: 'viewport',
 		label: 'Toggle chat',
-		action: () => chatHidden.update((value) => (value === 'hidden' ? '' : 'hidden'))
+		action: () => toggleChatTab('session') // uir-chat: the Session tab of the one Chat window
 	},
 	{
 		id: 'panels.ai-prompt',
@@ -739,6 +744,20 @@ export const shortcuts = [
 		}
 	},
 	{
+		// 100 C1: the Cinematic view (this device only; a strong desktop on Chrome's WebGPU path)
+		id: 'view.cinematic',
+		keys: 'Shift+Z',
+		group: 'View',
+		scope: 'viewport',
+		label: 'Cinematic view on / off (bounced light and reflections)',
+		action: () => {
+			void import('./cinematic/cinematicState.js').then(async (m) => {
+				if (await m.probeCinematic()) void m.toggleCinematic();
+				else showToast('Cinematic view: ' + (get(m.cinematicState).why || 'not on this device.'));
+			});
+		}
+	},
+	{
 		// 42 I14: FOCUS MODE, Blender's "maximize area" key. GLOBAL, so it answers over the dock and
 		// over chrome as well as the viewport — the area under the POINTER decides what maximizes
 		// (focusMode.areaAt). The UV editor and the animation timeline keep Ctrl+Space for keyboard
@@ -871,7 +890,7 @@ export const shortcuts = [
 		['nodes.collapse', 'H', 'collapse', 'Collapse / expand the selected nodes'],
 		['nodes.group', 'Ctrl+G', 'group', 'Group the selection'],
 		['nodes.ungroup', 'Ctrl+Shift+G', 'ungroup', 'Ungroup (the selected group, or the one you are in)'],
-		['nodes.enter-group', 'Tab', 'toggleGroup', 'Enter the selected group / leave the one you are in'],
+		['nodes.enter-group', 'Tab', 'toggleGroup', 'Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)'],
 		['nodes.add-note', 'N', 'addNote', 'Add a note at the cursor'],
 		['nodes.note-around', 'Shift+N', 'noteAround', 'Add a note around the selection (a frame)'],
 		['nodes.tidy', 'L', 'tidy', 'Tidy the graph: lay it out left to right, nothing overlapping, no wire across a card'],

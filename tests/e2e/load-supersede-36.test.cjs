@@ -28,13 +28,13 @@ const HOLD_MS = 4000;
 const names = (page) =>
 	page.evaluate(() => {
 		let group;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		return (group?.children ?? []).map((c) => c.name);
 	});
 const loadJob = (page) =>
 	page.evaluate(() => {
 		let v;
-		window.__stores.sceneLoader.sceneLoad.subscribe((x) => (v = x))();
+		window.__tp.test.v1.sceneLoader.sceneLoad.subscribe((x) => (v = x))();
 		return v ? { name: v.name, phase: v.phase } : null;
 	});
 
@@ -47,7 +47,7 @@ h.run(async () => {
 
 	// -- real session payloads, built with the page's own THREE (current format)
 	const scenes = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const mk = (name, x) => {
 			const m = new s.THREE.Mesh(new s.THREE.BoxGeometry(1, 1, 1), new s.THREE.MeshStandardMaterial({ color: 0x88aaff }));
 			m.name = name;
@@ -163,30 +163,30 @@ h.run(async () => {
 				animated: [{ uuid: rigUuid, name: 'Slow rig', kind: 'gltf', animRef: { pack: 'f20', item: 'rig', path: location.origin + '/__f20/rig.gltf' } }]
 			};
 			// not awaited: the newer load below supersedes it while the rig downloads
-			window.__stores.sessions.applySession(rigged, { backup: false, quiet: true });
+			window.__tp.test.v1.sessions.applySession(rigged, { backup: false, quiet: true });
 		},
 		{ island: scenes.island, rigUuid }
 	);
 	await h.eventually(() => names(page), (n) => n.includes('islandA'), 'the rigged island built its objects', 8000);
 	// supersede only once the rig is really on its way: the parse-side guard is what is tested
 	await h.eventually(() => page.evaluate(() => window.__f20RigAsked === true), (v) => v, 'premise: the rig download has started', 8000);
-	await page.evaluate((room) => window.__stores.sessions.applySession(room, { backup: false, quiet: true }), scenes.room);
+	await page.evaluate((room) => window.__tp.test.v1.sessions.applySession(room, { backup: false, quiet: true }), scenes.room);
 	await h.eventually(() => names(page), (n) => n.includes('roomA') && !n.includes('islandA'), 'the newer room replaced the island', 8000);
 	await h.eventually(() => Promise.resolve(rigServed), (n) => n >= 1, 'the rig download was served', 6000);
 	await page.waitForTimeout(1500);
 	const rigLanded = await page.evaluate((uuid) => {
 		let group;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		return !!group.getObjectByProperty('uuid', uuid);
 	}, rigUuid);
 	h.check(!rigLanded, 'the superseded scene\'s rig never lands in the newer scene');
 
 	// ---- 5: two Sessions requests — the second one wins --------------------------------------
 	const order = await page.evaluate(async ({ island, room }) => {
-		const s = window.__stores.sessions;
+		const s = window.__tp.test.v1.sessions;
 		// slow the FIRST request down the way an idb read / a dialog would: its payload is
 		// handed to requestLoadPayload only after a delay, while the second goes straight on
-		const { claimLoad } = window.__stores.sceneLoader;
+		const { claimLoad } = window.__tp.test.v1.sceneLoader;
 		const first = (async () => {
 			const job = claimLoad ? claimLoad('first') : undefined; // (absent on 1.23.0: the repro run)
 			await new Promise((r) => setTimeout(r, 1500));

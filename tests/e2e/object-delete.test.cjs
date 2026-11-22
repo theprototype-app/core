@@ -7,35 +7,35 @@ const h = require('./helpers.cjs');
 const inScene = (page, uuid) =>
 	page.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		return !!g?.getObjectByProperty('uuid', u);
 	}, uuid);
 
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
-	await A.page.evaluate(() => window.__stores.flowGraphClose.set(true)); // node editor closed
+	await A.page.evaluate(() => window.__tp.test.v1.flowGraphClose.set(true)); // node editor closed
 
 	// --- requestDeleteSelection removes a single object + undo restores it ---
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		window.__box = g.children[g.children.length - 1].uuid;
-		window.__stores.objectActions.selectObject(window.__box);
-		window.__stores.objectActions.requestDeleteSelection(); // what the menu Delete calls
+		window.__tp.test.v1.objectActions.selectObject(window.__box);
+		window.__tp.test.v1.objectActions.requestDeleteSelection(); // what the menu Delete calls
 	});
 	await A.page.waitForTimeout(150);
 	h.check(!(await inScene(A.page, await A.page.evaluate(() => window.__box))), 'menu Delete removes a single object');
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(150);
 	h.check(await inScene(A.page, await A.page.evaluate(() => window.__box)), 'the delete is undoable');
 
 	// --- the Delete KEY removes the current selection ---
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create sphere');
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create sphere');
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		window.__sphere = g.children[g.children.length - 1].uuid;
-		window.__stores.objectActions.selectObject(window.__sphere);
+		window.__tp.test.v1.objectActions.selectObject(window.__sphere);
 		document.body.focus();
 	});
 	await A.page.keyboard.press('Delete');
@@ -44,12 +44,12 @@ h.run(async () => {
 
 	// --- the key is IGNORED while a text field is focused (renaming) ---
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create cylinder');
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create cylinder');
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		window.__cyl = g.children[g.children.length - 1].uuid;
-		window.__stores.objectActions.selectObject(window.__cyl);
+		window.__tp.test.v1.objectActions.selectObject(window.__cyl);
 	});
-	await A.page.locator('input[placeholder="Enter peer ID to connect"]').focus();
+	await (await h.openDial(A.page)).focus();
 	await A.page.keyboard.press('Delete');
 	await A.page.waitForTimeout(150);
 	h.check(await inScene(A.page, await A.page.evaluate(() => window.__cyl)), 'Delete is ignored while a text field is focused');
@@ -57,7 +57,7 @@ h.run(async () => {
 
 	// --- deleting a GROUP asks in a modal (41 G16) + only removes on confirm ---
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		let group;
 		s.objectsGroup.subscribe((g) => (group = g))();

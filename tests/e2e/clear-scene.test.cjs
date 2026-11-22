@@ -3,14 +3,14 @@ const h = require('./helpers.cjs');
 
 const childCount = (page) =>
 	page.evaluate(
-		() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g?.children.length ?? -1))())
+		() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g?.children.length ?? -1))())
 	);
 
 const pongPresent = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.globalScene.subscribe((s) => r(!!s?.getObjectByName('pong-module')))()
+				window.__tp.test.v1.globalScene.subscribe((s) => r(!!s?.getObjectByName('pong-module')))()
 			)
 	);
 
@@ -21,12 +21,12 @@ h.run(async () => {
 	await h.connect(B, A);
 
 	// content everywhere: objects from both sides + pong module content
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
-	await B.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create sphere 1'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
+	await B.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create sphere 1'));
 	await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.moduleSDK.moduleMenuItems.subscribe((items) => {
+				window.__tp.test.v1.moduleSDK.moduleMenuItems.subscribe((items) => {
 					items.find((i) => i.label === 'Pong: spawn / remove')?.action();
 					resolve();
 				})();
@@ -36,9 +36,9 @@ h.run(async () => {
 	await h.eventually(() => pongPresent(B.page), (v) => v === true, 'pong content on B');
 
 	// clear via the sidebar with the confirmation toast
-	await A.page.evaluate(() => window.__stores.closeMenu.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.closeMenu.set(false));
 	await A.page.waitForTimeout(400);
-	await A.page.getByText('Clear Scene', { exact: true }).click();
+	await A.page.locator('#clear-scene').click();
 	await A.page.waitForTimeout(300);
 	h.check(
 		await A.page.getByText(/Clear the scene for everyone/).isVisible(),
@@ -51,7 +51,7 @@ h.run(async () => {
 	h.check((await childCount(A.page)) === 2, 'cancel keeps the scene');
 
 	// confirm — everything clears on BOTH peers, including module content
-	await A.page.getByText('Clear Scene', { exact: true }).click();
+	await A.page.locator('#clear-scene').click();
 	await A.page.waitForTimeout(300);
 	await A.page.getByRole('button', { name: 'Clear', exact: true }).click();
 	await h.eventually(() => childCount(A.page), (n) => n === 0, 'objects cleared on A');
@@ -63,7 +63,7 @@ h.run(async () => {
 	const toasts = await B.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.toastStore.subscribe((t) =>
+				window.__tp.test.v1.toastStore.subscribe((t) =>
 					r(t.map((x) => (typeof x === 'string' ? x : x.text)).join('|'))
 				)()
 			)
@@ -73,7 +73,7 @@ h.run(async () => {
 	// 15-J: viewer send-gate — with a roles plugin publishing viewer, Clear warns
 	// instead of clearing (peers would drop the broadcast → desync). Spy on send.
 	await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const p = await new Promise((r) => w.peers.subscribe((v) => r(v))());
 		w.__clearSends = 0;
 		const orig = p.send.bind(p);
@@ -90,31 +90,31 @@ h.run(async () => {
 			setRole: () => {}
 		});
 	});
-	await A.page.evaluate(() => window.__stores.closeMenu.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.closeMenu.set(false));
 	await A.page.waitForTimeout(300);
-	await A.page.getByText('Clear Scene', { exact: true }).click();
+	await A.page.locator('#clear-scene').click();
 	await A.page.waitForTimeout(300);
 	h.check(
 		await A.page.getByText(/View-only — ask an editor to clear the scene/).isVisible(),
 		'viewer gets the view-only toast'
 	);
 	h.check(
-		(await A.page.evaluate(() => window.__stores.__clearSends)) === 0,
+		(await A.page.evaluate(() => window.__tp.test.v1.__clearSends)) === 0,
 		'viewer clear sends no clearscene'
 	);
 	// the chat-command path is gated too
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	h.check(
-		(await A.page.evaluate(() => window.__stores.__clearSends)) === 0,
+		(await A.page.evaluate(() => window.__tp.test.v1.__clearSends)) === 0,
 		'viewer /clear all sends no clearscene'
 	);
 	// drop the roles plugin → behavior returns to normal (empty scene clears w/o confirm)
-	await A.page.evaluate(() => window.__stores.cloudHooks.rolesInfo.set(null));
-	await A.page.evaluate(() => window.__stores.closeMenu.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.cloudHooks.rolesInfo.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.closeMenu.set(false));
 	await A.page.waitForTimeout(300);
-	await A.page.getByText('Clear Scene', { exact: true }).click();
+	await A.page.locator('#clear-scene').click();
 	await h.eventually(
-		() => A.page.evaluate(() => window.__stores.__clearSends),
+		() => A.page.evaluate(() => window.__tp.test.v1.__clearSends),
 		(n) => n === 1,
 		'editor clear broadcasts again'
 	);

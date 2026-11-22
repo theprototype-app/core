@@ -14,6 +14,7 @@ export const SETTINGS_GROUPS = [
 	{ id: 'general', label: 'General' },
 	{ id: 'workspace', label: 'Workspace' },
 	{ id: 'devices', label: 'Devices & services' },
+	{ id: 'account', label: 'Account' }, // profile-notify: shown only while a cloud plugin fills Settings ▸ Account
 	{ id: 'more', label: 'More' }
 ];
 
@@ -35,7 +36,8 @@ const META = {
 	vr: { group: 'devices', order: 10, description: 'Comfort, body, buttons and display in the headset — the same table as the headset’s own Settings.' },
 	toolsconnections: { group: 'devices', order: 11, description: 'Everything outside the app — chat and mesh providers, voice typing, agents, desktop tools. Set up only the ones you use: each shows whether it is ready, a Test and the features it turns on, and a button whose tool is missing brings you here.' }, // 59 T4 (was 'ai')
 	connection: { group: 'devices', order: 12, description: 'How you find other people.' },
-	connectedapps: { group: 'devices', order: 11.5, description: 'The apps you allowed to build for you — Claude in claude.ai, chat or voice — and Revoke.' }, // 86 B5
+	// profile-notify; uir-account: + Sign-in methods, Devices (cloud plugin) and Connected apps (86 B5, its own page before)
+	account: { group: 'account', order: 14, description: 'Your theprototype.app account: its emails, the ways you sign in, your devices and the apps you connected.' },
 	privacy: { group: 'devices', order: 13, description: 'What this device sends about errors — anonymous, and you can switch it off.' },
 	aboutwhatsnew: { group: 'about', order: 99, description: '' }
 };

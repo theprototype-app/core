@@ -105,7 +105,7 @@ function sync() {
 		migrateSpotTarget(light); // 24-E1: an old spot aims by rotation from here on
 		// a RectArea light that arrived by ANY path (a session, a peer, a restore) renders
 		// black on Standard/Physical materials until this has run once
-		if (light.isRectAreaLight) ensureRectAreaUniforms();
+		if (light.isRectAreaLight) ensureRectAreaUniforms(light);
 		const known = entries.get(light.uuid);
 		if (known?.light === light) return;
 		// the same uuid on a NEW object (a restore or a reload re-creates lights under their

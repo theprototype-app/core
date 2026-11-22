@@ -11,8 +11,8 @@ h.run(async () => {
 
 	// --- topology core: a box groups into 6 faces; ops rebuild geometry ---
 	const core = await A.page.evaluate(() => {
-		const f = window.__stores.faceEdit;
-		const THREE = window.__stores.THREE;
+		const f = window.__tp.test.v1.faceEdit;
+		const THREE = window.__tp.test.v1.THREE;
 		const box = new THREE.BoxGeometry(1, 1, 1);
 		const tris = f.readTriangles(box);
 		const faces = f.groupFaces(tris);
@@ -53,8 +53,8 @@ h.run(async () => {
 
 	// --- eligibility cap ---
 	const cap = await A.page.evaluate(() => {
-		const f = window.__stores.faceEdit;
-		const THREE = window.__stores.THREE;
+		const f = window.__tp.test.v1.faceEdit;
+		const THREE = window.__tp.test.v1.THREE;
 		const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
 		const dense = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 32));
 		return { cap: f.VR_FACE_CAP, boxOk: f.vrFaceEditable(box), denseOk: f.vrFaceEditable(dense) };
@@ -66,7 +66,7 @@ h.run(async () => {
 
 	// --- VR flow: enter mode, arm op, highlight, commit an extrude ---
 	const flow = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const read = (store) => {
 			let v;
 			store.subscribe((x) => (v = x))();
@@ -106,7 +106,7 @@ h.run(async () => {
 	const undo = await A.page.evaluate(() => {
 		const box = window.__fbox;
 		const before = box.geometry.attributes.position.count / 3;
-		window.__stores.history.undo();
+		window.__tp.test.v1.history.undo();
 		const after = box.geometry.attributes.position.count / 3;
 		return { before, after };
 	});
@@ -114,7 +114,7 @@ h.run(async () => {
 
 	// --- commit broadcasts a meshgeo snapshot ---
 	const sent = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const captured = [];
 		let original;
 		s.peers.subscribe((p) => (original = p))();
@@ -137,7 +137,7 @@ h.run(async () => {
 
 	// --- applyMeshGeo swaps a receiver's geometry ---
 	const applied = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const box = window.__fbox;
 		const flat = [];
 		const p = box.geometry.attributes.position;
@@ -150,7 +150,7 @@ h.run(async () => {
 
 	// --- exit + grip exits, back on the faces ring exits ---
 	const exit = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const read = (store) => {
 			let v;
 			store.subscribe((x) => (v = x))();
@@ -166,7 +166,7 @@ h.run(async () => {
 
 	// --- locked objects refuse entering face mode ---
 	const locked = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const read = (store) => {
 			let v;
 			store.subscribe((x) => (v = x))();

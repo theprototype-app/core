@@ -45,7 +45,9 @@ describe('hdriOf', () => {
 			intensity: 1,
 			background: true,
 			blur: 0,
-			toneMapping: 'aces'
+			toneMapping: 'aces',
+			quality: 'auto',
+			minQuality: 'standard'
 		});
 		const h = hdriOf({ hdri: { src: 'bundled:meadow', rotation: -90, intensity: 99, blur: -1, background: false, toneMapping: 'weird' } });
 		expect(h.rotation).toBe(270);
@@ -84,6 +86,9 @@ describe('tier', () => {
 		expect(resolveHdriTier({ presenting: true })).toBe('low');
 		expect(resolveHdriTier({ headset: true })).toBe('low');
 		expect(resolveHdriTier({ postOff: true })).toBe('low');
+		// 98 G12 tier floor: a phone whose governor turned the look off keeps the full-light tier
+		expect(resolveHdriTier({ postOff: true, phone: true })).toBe('full');
+		expect(resolveHdriTier({ phone: true, headset: true })).toBe('low');
 		expect(resolveHdriTier({ headset: true, pref: 'full' })).toBe('full');
 		expect(resolveHdriTier({ pref: 'low' })).toBe('low');
 	});

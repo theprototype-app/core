@@ -1,3 +1,4 @@
+import { mapPreviewUrl } from './loadGuard.js';
 import { writable, get } from 'svelte/store';
 import { flowGraphs, allNodes } from '../stores/flowStore';
 import { objectsGroup } from '../stores/sceneStore';
@@ -141,7 +142,7 @@ function compute() {
 		if (!object.material) return;
 		const materials = Array.isArray(object.material) ? object.material : [object.material];
 		materials.forEach((/** @type {any} */ material, /** @type {number} */ slot) => {
-			const dataUrl = material?.userData?.mapDataUrl;
+			const dataUrl = mapPreviewUrl(material);
 			if (!dataUrl) return;
 			out.push({
 				id: 'tex:' + object.uuid + (slot ? ':' + slot : ''),

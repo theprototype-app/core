@@ -11,7 +11,7 @@ const h = require('./helpers.cjs');
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
-	await A.page.waitForFunction(() => !!window.__stores?.cloudHooks, { timeout: 30000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.cloudHooks, { timeout: 30000 });
 
 	// ---- 1. INERT without a plugin: solo + no plugin = no popover host AT ALL --------
 	h.check(
@@ -24,7 +24,7 @@ h.run(async () => {
 	// being alone is exactly when "where is everyone" matters)
 	await A.page.evaluate(() => {
 		/** @type {any} */ (window).__inviteCalls = [];
-		window.__stores.cloudHooks.scenePresence.set({
+		window.__tp.test.v1.cloudHooks.scenePresence.set({
 			myRoomId: 'room-me',
 			rooms: [
 				{ id: 'room-me', name: 'My room', scene: 'Arena', hostPeerId: 'me', members: [{ peerId: 'x', name: 'ShouldNotShow', mode: 'playing' }] },
@@ -51,6 +51,9 @@ h.run(async () => {
 	const text = await section.textContent();
 	h.check(text.includes('in Pit') && text.includes('Alice') && text.includes('Bob'), `the other room's scene and members render (${text.trim().slice(0, 60)}…)`);
 	h.check(!text.includes('ShouldNotShow'), 'MY room is excluded — these are the OTHER scenes');
+	// 94 SP6: public rooms are not your session — they sit under their own heading
+	const heading = (await section.locator('#cross-scene-heading').textContent().catch(() => null))?.trim() ?? null;
+	h.check(heading === 'Public rooms', `the other rooms sit under a "Public rooms" heading (${JSON.stringify(heading)})`);
 	h.check(!text.includes('in Void'), 'a room with nobody to show is skipped, not an empty header');
 	const chips = await section.locator('.mode-chip').allTextContents();
 	h.check(JSON.stringify(chips.map((c) => c.trim())) === '["playing","editor"]', `mode chips per member (${JSON.stringify(chips)})`);
@@ -72,7 +75,7 @@ h.run(async () => {
 	);
 
 	// ---- 5. clearing the store clears the section -------------------------------------
-	await A.page.evaluate(() => window.__stores.cloudHooks.scenePresence.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.cloudHooks.scenePresence.set(null));
 	await A.page.waitForTimeout(200);
 	h.check((await A.page.locator('#cross-scene-presence').count()) === 0, 'a plugin sign-out clears the section');
 

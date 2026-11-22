@@ -17,12 +17,12 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1440, height: 900 } } });
 	const page = A.page;
-	await page.waitForFunction(() => !!window.__stores?.explorer, null, { timeout: 30000 });
-	await page.evaluate(() => window.__stores.explorer.loadExplorer());
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.explorer, null, { timeout: 30000 });
+	await page.evaluate(() => window.__tp.test.v1.explorer.loadExplorer());
 	await page.waitForTimeout(400);
 
 	const seeded = await page.evaluate(async () => {
-		const e = window.__stores.explorer;
+		const e = window.__tp.test.v1.explorer;
 		await e.clearLibrary();
 		const dest = e.createFolder('Destination', null);
 		const audio = e.createFolder('Only audio', null);
@@ -63,7 +63,7 @@ h.run(async () => {
 	await page.waitForTimeout(700);
 	const placed = await page.evaluate((s) => {
 		let items;
-		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
 		return items
 			.filter((i) => i.folderId === s.dest)
 			.map((i) => i.name)
@@ -76,7 +76,7 @@ h.run(async () => {
 
 	// ---- 2. the drop band follows the scroll ---------------------------------------
 	await page.evaluate(async () => {
-		const e = window.__stores.explorer;
+		const e = window.__tp.test.v1.explorer;
 		const enc = (s) => new TextEncoder().encode(s).buffer;
 		for (let i = 0; i < 60; i++) await e.addItemFromBytes(enc('filler' + i), 'f' + i + '.txt', null);
 	});
@@ -119,7 +119,7 @@ h.run(async () => {
 		page.evaluate(() =>
 			[...document.querySelectorAll('.explorer-folder-card')].map((c) => c.innerText.trim())
 		);
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await page.waitForTimeout(400);
 	const before = await folders();
 	h.check(before.length === 2, 'premise: two folders with no filter (' + JSON.stringify(before) + ')');

@@ -30,7 +30,7 @@
 	// ---------------------------------------------------------------- Outline
 	// acorn reads a few thousand lines in a few ms, so the outline simply follows the text
 	const outline = $derived(active ? outlineOf(active.code, { lang: active.lang, kind: active.kind }) : { items: [], partial: false });
-	const KIND_MARK = { function: 'ƒ', method: 'ƒ', handler: '⚡', param: '◆', state: '▣', input: '→', output: '←', class: 'C', const: '·', node: '◇' };
+	const KIND_MARK = { function: 'ƒ', method: 'ƒ', handler: 'ϟ', param: '◆', state: '▣', input: '→', output: '←', class: 'C', const: '·', node: '◇' };
 
 	// ---------------------------------------------------------------- Problems
 	// the kit's specs, so a behaviour's kit events resolve (the loader's own reading)

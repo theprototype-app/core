@@ -43,7 +43,7 @@ import {
 
 /** the words the tab shows for a final close @type {Record<string, string>} */
 export const CLOSE_WORDS = {
-	revoked: 'Claude’s access was revoked (Settings ▸ Connected apps). Press Connect Claude to connect again.',
+	revoked: 'Claude’s access was revoked (Settings ▸ Account ▸ Connected apps). Press Connect Claude to connect again.',
 	replaced: 'Claude is now connected in another tab. Press Connect Claude here to bring it back to this tab.',
 	refused: 'The connection was refused — the pairing expired. Press Connect Claude to try again.'
 };

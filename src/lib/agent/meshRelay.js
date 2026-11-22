@@ -15,9 +15,9 @@
 
 import { get, writable } from 'svelte/store';
 import { peers, userdata, showToast } from '../../stores/appStore.js';
-import { rolesInfo } from '$lib/cloudHooks';
+import { knownRoleOf } from '$lib/cloudHooks';
 import { meshGenReady } from '$lib/ai/meshProviders.js';
-import { registerDebugHook } from '$lib/debugHooks';
+import { registerDebugHook } from '$lib/debugHookRegistry.js';
 
 /** longest prompt the host will run */
 export const MAX_PROMPT = 500;
@@ -98,9 +98,7 @@ export async function handleMeshRelay(from, data) {
 			}
 		} else if (data.type === 'meshgenreq') {
 			const id = String(data.id ?? '');
-			/** @type {any} */
-			const roles = get(rolesInfo);
-			const role = roles?.roleOf ? roles.roleOf(from) ?? null : null;
+			const role = knownRoleOf(from);
 			const refusal = refuseReason({ ready: meshGenReady(), role, runningForAsker: running.get(from) ?? 0, prompt: data.prompt });
 			if (refusal) {
 				sendTo(from, { type: 'meshgenack', id, ok: false, error: refusal });

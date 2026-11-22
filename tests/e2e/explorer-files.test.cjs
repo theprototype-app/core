@@ -15,7 +15,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(500);
 	await A.page.evaluate(async (png) => {
 		const bytes = Uint8Array.from(atob(png), (c) => c.charCodeAt(0));
-		await window.__stores.explorer.importFiles(
+		await window.__tp.test.v1.explorer.importFiles(
 			[
 				new File([bytes], 'pixel.png', { type: 'image/png' }),
 				new File([new Blob(['line one\nline two\nline three'])], 'notes.txt', { type: 'text/plain' })
@@ -27,7 +27,7 @@ h.run(async () => {
 
 	// 197 note: single-click SELECTS; the Properties (ⓘ) panel shows the details
 	// once it's open (via its tab or right-click Properties). Open the tab, pick.
-	await A.page.locator('[data-ws-mode="props"]').first().click();
+	await h.openWsMode(A.page, ':is(#explorer-window, #explorer-list)', 'props');
 	await A.page.waitForTimeout(200);
 	await A.page.locator('.explorer-card', { hasText: 'notes.txt' }).click();
 	await A.page.waitForTimeout(700);
@@ -43,7 +43,7 @@ h.run(async () => {
 		A.page.evaluate(
 			() =>
 				new Promise((resolve) => {
-					window.__stores.explorer.explorerItems.subscribe((items) =>
+					window.__tp.test.v1.explorer.explorerItems.subscribe((items) =>
 						resolve(items.find((i) => i.name === 'notes.txt'))
 					)();
 				})
@@ -51,7 +51,7 @@ h.run(async () => {
 	const hashBefore = (await itemOf())?.hash;
 	await A.page.locator('.explorer-card', { hasText: 'notes.txt' }).dblclick();
 	const tabsOf = () =>
-		A.page.evaluate(() => new Promise((r) => window.__stores.codeWorkspace.codeTabs.subscribe((v) => r(JSON.parse(JSON.stringify(v))))()));
+		A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.codeWorkspace.codeTabs.subscribe((v) => r(JSON.parse(JSON.stringify(v))))()));
 	const notesTab = async () => (await tabsOf()).find((t) => t.title === 'notes.txt') ?? null;
 	await h.eventually(
 		notesTab,
@@ -68,8 +68,8 @@ h.run(async () => {
 	await h.eventually(async () => (await itemOf())?.hash, (v) => !!v && v !== hashBefore, 'Ctrl+S saves back (hash recomputed)', 15000);
 	const savedText = await A.page.evaluate(async () => {
 		let items = [];
-		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
-		const blob = await window.__stores.explorer.itemBlob(items.find((i) => i.name === 'notes.txt').id);
+		window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
+		const blob = await window.__tp.test.v1.explorer.itemBlob(items.find((i) => i.name === 'notes.txt').id);
 		return blob.text();
 	});
 	h.check(/ added/.test(savedText), 'edited content round-trips');

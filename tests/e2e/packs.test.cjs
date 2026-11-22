@@ -35,7 +35,7 @@ h.run(async () => {
 	});
 
 	const defaults = await A.page.evaluate(async () => {
-		const p = window.__stores.packs;
+		const p = window.__tp.test.v1.packs;
 		await p.loadPacks();
 		let list;
 		p.packs.subscribe((x) => (list = x))();
@@ -83,7 +83,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(400);
 	await A.page.locator('#explorer-list [data-pack="mockpack"]').click();
 	await A.page.waitForTimeout(600);
-	await A.page.locator('#bottom-dock [data-ws-mode="props"], [data-ws-mode="props"]').first().click();
+	await h.openWsMode(A.page, ':is(#explorer-window, #explorer-list)', 'props');
 	await A.page.waitForTimeout(300);
 	const srcBtn = A.page.locator('#pack-source');
 	h.check(
@@ -103,7 +103,7 @@ h.run(async () => {
 	await A.page.unroute('**/cdn.jsdelivr.net/**');
 	await A.page.route('**/cdn.jsdelivr.net/**', (route) => route.abort());
 	const fallback = await A.page.evaluate(async () => {
-		const p = window.__stores.packs;
+		const p = window.__tp.test.v1.packs;
 		await p.loadPacks();
 		let list;
 		p.packs.subscribe((x) => (list = x))();
@@ -116,13 +116,13 @@ h.run(async () => {
 	);
 	await A.page.unroute('**/cdn.jsdelivr.net/**');
 
-	const lbl = await A.page.evaluate(() => window.__stores.packs.licenseLabel('CC-BY-4.0'));
+	const lbl = await A.page.evaluate(() => window.__tp.test.v1.packs.licenseLabel('CC-BY-4.0'));
 	h.check(/Creative Commons/.test(lbl), `SPDX id maps to a human label (${lbl})`);
 
 	// a box glb from the page (bare 'fflate' won't resolve in a raw page eval, so
 	// the zip is assembled in Node from these bytes)
 	const glbArr = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
 		const glb = await new Promise((res, rej) =>
@@ -140,7 +140,7 @@ h.run(async () => {
 		{ level: 6 }
 	);
 	const imported = await A.page.evaluate(async (zipArr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const file = new File([new Uint8Array(zipArr)], 'testpack.zip');
 		const pack = await s.packs.importPackZip(file);
 		let list;
@@ -178,7 +178,7 @@ h.run(async () => {
 
 	// P2: thumbnail cache round-trips + is dropped on remove
 	const thumb = await A.page.evaluate(() => {
-		const p = window.__stores.packs;
+		const p = window.__tp.test.v1.packs;
 		p.rememberThumb('testpack', 'box', 'https://x/thumb.png');
 		const before = p.cachedThumb('testpack', 'box');
 		p.removeImportedPack('testpack');
@@ -189,7 +189,7 @@ h.run(async () => {
 
 	const afterRemove = await A.page.evaluate(() => {
 		let list;
-		window.__stores.packs.packs.subscribe((x) => (list = x))();
+		window.__tp.test.v1.packs.packs.subscribe((x) => (list = x))();
 		return list.some((x) => x.name === 'testpack');
 	});
 	h.check(!afterRemove, 'removeImportedPack drops it from the list');
@@ -203,8 +203,8 @@ h.run(async () => {
 		{ level: 6 }
 	);
 	const wrapped = await A.page.evaluate(async (zipArr) => {
-		const pack = await window.__stores.packs.importPackZip(new File([new Uint8Array(zipArr)], 'mypack-main.zip'));
-		const items = await window.__stores.packs.loadPackItems(pack);
+		const pack = await window.__tp.test.v1.packs.importPackZip(new File([new Uint8Array(zipArr)], 'mypack-main.zip'));
+		const items = await window.__tp.test.v1.packs.loadPackItems(pack);
 		return { name: pack.name, title: pack.title, itemCount: items.length };
 	}, Array.from(wrapZip));
 	h.check(

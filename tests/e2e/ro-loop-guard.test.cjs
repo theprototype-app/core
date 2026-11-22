@@ -35,7 +35,7 @@ const LISTEN = () => {
 /** everything seen so far: the window listener's list + the diagnostics ring's matching lines */
 const seen = (P) =>
 	P.evaluate(() => {
-		const d = window.__stores && window.__stores.diagnostics;
+		const d = window.__tp?.test.v1 && window.__tp.test.v1.diagnostics;
 		const lines = d && typeof d.lines === 'function' ? d.lines().filter((l) => /ResizeObserver loop/.test(l)) : null;
 		return { win: window.__roLoop.slice(), diag: lines };
 	});
@@ -64,7 +64,7 @@ const S = (P, fn, arg) => P.evaluate(fn, arg);
 const rect = (P, sel) => S(P, (s) => { const el = document.querySelector(s); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; }, sel);
 
 /** every bar-able button on the bar (the J10 driver's record) */
-const ALL_ON = { order: ['move', 'rotate', 'scale', 'pivot', 'mode', 'objects', 'flow', 'explorer', 'animation', 'flowcode', 'uv', 'shader', 'hud', 'profiler', 'code'], hidden: [], spacerIndex: 5, seen: ['move', 'rotate', 'scale', 'pivot', 'mode', 'objects', 'flow', 'explorer', 'animation', 'flowcode', 'uv', 'shader', 'hud', 'profiler', 'code', 'ai', 'add', 'chat', 'mic', 'notes', 'notifications', 'peers', 'undo', 'redo', 'multiselect'] };
+const ALL_ON = { order: ['move', 'rotate', 'scale', 'pivot', 'mode', 'objects', 'flow', 'explorer', 'animation', 'timeline', 'uv', 'shader', 'hud', 'profiler', 'code'], hidden: [], spacerIndex: 5, seen: ['move', 'rotate', 'scale', 'pivot', 'mode', 'objects', 'flow', 'explorer', 'animation', 'timeline', 'uv', 'shader', 'hud', 'profiler', 'code', 'ai', 'add', 'chat', 'mic', 'notes', 'notifications', 'peers', 'undo', 'redo', 'multiselect'] };
 const CROWDED = { ...ALL_ON, left: [], right: [], top: ['notes', 'notifications', 'chat', 'mic'], touch: ['undo', 'redo', 'multiselect', 'ai'] };
 const SPARSE = { ...ALL_ON, top: [], touch: [] };
 /** swap the stored toolbar record in place (no reload) */
@@ -72,12 +72,12 @@ const setBar = (P, rec) =>
 	S(P, (v) => {
 		if (v == null) localStorage.removeItem('controlsLayout');
 		else localStorage.setItem('controlsLayout', JSON.stringify(v));
-		window.__stores.uiLayoutsCore?.runLayoutReloaders();
+		window.__tp.test.v1.uiLayoutsCore?.runLayoutReloaders();
 	}, rec);
 /** the Inspector as a sidebar column */
 const sidebar = (P, o) =>
 	S(P, ({ side = 'right', open = true, full = false, w = 320, kind = 'scene' }) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.sidebars.inspectorSide.set(side);
 		s.inspectorKind.set(kind);
 		s.inspectorClose.set(!open);
@@ -115,7 +115,7 @@ async function mouseDrag(P, a, b, steps = 14) {
 /** a box + the Code window docked in front (the focus/PiP fixture) */
 async function seedScene(P) {
 	await S(P, async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Box 2 2 2');
 		await new Promise((r) => setTimeout(r, 500));
 		s.objectActions.deselectObject();
@@ -130,7 +130,7 @@ h.run(async () => {
 		const T = `[desk ${THEME}] `;
 		const A = await h.setupPage(browser, 'desk', {
 			context: { viewport: { width: 1440, height: 900 } },
-			storage: { theme: THEME, toastsInDrawerOnly: 'true', flowCodeDocked: 'true', flowDockHeight: '300' },
+			storage: { theme: THEME, toastsInDrawerOnly: 'true', timelineDocked: 'true', flowDockHeight: '300' },
 			init: LISTEN
 		});
 		const P = A.page;
@@ -186,7 +186,7 @@ h.run(async () => {
 		await phase(P, T, 'K1 sidebar grip resize', async () => {
 			await P.setViewportSize({ width: 1440, height: 900 });
 			await S(P, () => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				s.sidebars.toggleSidebarFull('left', true);
 				s.sidebars.toggleSidebarFull('right', true);
 				s.objectListClose?.set?.(false);
@@ -209,7 +209,7 @@ h.run(async () => {
 		// J4 — the sidebar tab strip: several windows in one column, narrowed until the strip scrolls
 		await phase(P, T, 'J4 sidebar tab strip', async () => {
 			await S(P, () => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				for (const k of ['objects', 'explorer', 'flow']) {
 					try {
 						s.sidebars.moveSidebarTab(k, 'right');
@@ -220,16 +220,16 @@ h.run(async () => {
 				s.sidebars.setSidebarWidth('right', 260);
 			});
 			await P.waitForTimeout(900);
-			await S(P, () => window.__stores.sidebars.setSidebarWidth('right', 480));
+			await S(P, () => window.__tp.test.v1.sidebars.setSidebarWidth('right', 480));
 			await P.waitForTimeout(600);
-			await S(P, () => window.__stores.sidebars.setSidebarWidth('right', 250));
+			await S(P, () => window.__tp.test.v1.sidebars.setSidebarWidth('right', 250));
 			await P.waitForTimeout(600);
 		});
 
 		// K4 — the Connect pill takes its own row when the top row fills, and comes back
 		await phase(P, T, 'K4 Connect pill row', async () => {
 			await S(P, () => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				s.sidebars.toggleSidebarFull('left', false);
 				s.sidebars.toggleSidebarFull('right', false);
 				s.inspectorClose.set(true);
@@ -243,7 +243,7 @@ h.run(async () => {
 				}
 			}
 			await P.setViewportSize({ width: 1440, height: 900 });
-			await S(P, () => window.__stores.touchTools.set(false));
+			await S(P, () => window.__tp.test.v1.touchTools.set(false));
 			await setBar(P, null);
 		});
 
@@ -264,10 +264,10 @@ h.run(async () => {
 		await phase(P, T, 'K5 focus + viewport PiP', async () => {
 			await sidebar(P, { side: 'right', full: true, w: 320 });
 			await S(P, async () => {
-				const s = window.__stores;
-				s.flowCodeClose.set(false);
+				const s = window.__tp?.test.v1;
+				s.timelineClose.set(false);
 				await new Promise((r) => setTimeout(r, 700));
-				s.bottomDock.activateDock('flowcode');
+				s.bottomDock.activateDock('timeline');
 			});
 			await P.waitForTimeout(900);
 			const dock = await S(P, () => {
@@ -289,10 +289,10 @@ h.run(async () => {
 			await P.waitForTimeout(300);
 			await P.click('#viewport-pip .pip-close').catch(() => {});
 			await P.waitForTimeout(300);
-			await S(P, () => window.__stores.bottomDock.dockHeight.set(420));
+			await S(P, () => window.__tp.test.v1.bottomDock.dockHeight.set(420));
 			await P.waitForTimeout(500);
-			await S(P, () => window.__stores.viewportPip.viewportPipClosed.set(false));
-			await S(P, () => window.__stores.bottomDock.dockHeight.set(window.__stores.focusMode.fullDockHeight()));
+			await S(P, () => window.__tp.test.v1.viewportPip.viewportPipClosed.set(false));
+			await S(P, () => window.__tp.test.v1.bottomDock.dockHeight.set(window.__tp.test.v1.focusMode.fullDockHeight()));
 			await P.waitForTimeout(600);
 			await P.setViewportSize({ width: 1100, height: 800 });
 			await P.waitForTimeout(400);
@@ -304,7 +304,7 @@ h.run(async () => {
 
 		await phase(P, T, 'K5 camera preview resize', async () => {
 			await S(P, async () => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				s.inspectorClose.set(true);
 				s.commandsHandler.sceneCommand('/create Camera');
 				await new Promise((r) => setTimeout(r, 400));
@@ -325,7 +325,7 @@ h.run(async () => {
 			await mouseDrag(P, [g.x, g.y], [g.x - 120, g.y - 90], 10);
 			await P.waitForTimeout(300);
 			await mouseDrag(P, [g.x - 120, g.y - 90], [g.x + 30, g.y + 20], 10);
-			await S(P, () => window.__stores.objectActions.deselectObject());
+			await S(P, () => window.__tp.test.v1.objectActions.deselectObject());
 		});
 
 		h.check(!(await crashToast(P)), `${T}no "Something went wrong: ResizeObserver" card at the end`);
@@ -350,7 +350,7 @@ h.run(async () => {
 		await P.waitForTimeout(600);
 		const c1 = await seen(P);
 		h.check(c1.win.length > c0.win.length && c1.diag.length > c0.diag.length, `${T}control: a deliberate loop IS seen by both readers (window +${c1.win.length - c0.win.length}, diagnostics +${c1.diag.length - c0.diag.length})`);
-		await S(P, () => window.__stores.diagnostics.clearDiagnostics());
+		await S(P, () => window.__tp.test.v1.diagnostics.clearDiagnostics());
 		const all = await seen(P);
 		console.log(`${T}RO loop errors by phase: ${JSON.stringify(all.win.map((e) => e.phase))}`);
 		await A.ctx.close();
@@ -361,7 +361,7 @@ h.run(async () => {
 		const T = `[unfolded ${THEME}] `;
 		const A = await h.setupPage(browser, 'unfolded', {
 			context: { viewport: { width: 770, height: 850 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2.9 },
-			storage: { theme: THEME, toastsInDrawerOnly: 'true', toursSeen: '{"editor-touch":true,"editor":true}', flowCodeDocked: 'true', flowDockHeight: '300' },
+			storage: { theme: THEME, toastsInDrawerOnly: 'true', toursSeen: '{"editor-touch":true,"editor":true}', timelineDocked: 'true', flowDockHeight: '300' },
 			init: LISTEN
 		});
 		const P = A.page;
@@ -371,7 +371,7 @@ h.run(async () => {
 
 		await phase(P, T, 'K2 sidebar grip past the minimum (touch)', async () => {
 			await S(P, async () => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				let g;
 				s.objectsGroup.subscribe((v) => (g = v))();
 				s.objectActions.selectObject(g.children[g.children.length - 1].uuid, true);
@@ -383,11 +383,12 @@ h.run(async () => {
 			if (!g) throw new Error('no right grip');
 			const x = Math.round(g.x + g.w / 2);
 			const y = Math.round(g.y + Math.min(300, g.h / 2));
-			await touch.drag([x, y], [760, y], 20);
+			// showhide-v8: past the minimum but short of the border-close zone (MIN_W - 80 px closes the column now)
+			await touch.drag([x, y], [770 - 210, y], 20);
 			await P.waitForTimeout(400);
 			await touch.drag([Math.round((await rect(P, '#sidebar-grip-right')).x + 3), y], [300, y], 20);
 			await P.waitForTimeout(400);
-			await S(P, () => window.__stores.showSidebar('scene'));
+			await S(P, () => window.__tp.test.v1.showSidebar('scene'));
 			await P.waitForTimeout(800);
 		});
 
@@ -404,12 +405,12 @@ h.run(async () => {
 
 		await phase(P, T, 'K5 Maximize + PiP (touch)', async () => {
 			await S(P, async () => {
-				const s = window.__stores;
-				s.flowCodeClose.set(false);
+				const s = window.__tp?.test.v1;
+				s.timelineClose.set(false);
 				await new Promise((r) => setTimeout(r, 700));
-				s.bottomDock.activateDock('flowcode');
+				s.bottomDock.activateDock('timeline');
 				await new Promise((r) => setTimeout(r, 900));
-				s.focusMode.maximizeDockTab('flowcode');
+				s.focusMode.maximizeDockTab('timeline');
 			});
 			await P.waitForTimeout(1200);
 			const pip = await rect(P, '#viewport-pip canvas');
@@ -439,11 +440,11 @@ h.run(async () => {
 		await phase(P, T, 'boot + a box', async () => {});
 
 		await phase(P, T, 'J1 phone dock tabs (Statistics, Objects, Explorer)', async () => {
-			await S(P, () => window.__stores.sceneBudget.statsOpen.set(true));
+			await S(P, () => window.__tp.test.v1.sceneBudget.statsOpen.set(true));
 			await P.waitForTimeout(900);
-			await S(P, () => window.__stores.objectListClose.set(false));
+			await S(P, () => window.__tp.test.v1.objectListClose.set(false));
 			await P.waitForTimeout(700);
-			await S(P, () => window.__stores.explorerClose.set(false));
+			await S(P, () => window.__tp.test.v1.explorerClose.set(false));
 			await P.waitForTimeout(1200);
 			for (let k = 0; k < 2; k++) {
 				for (const name of ['Statistics', 'Objects', 'Explorer']) {

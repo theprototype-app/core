@@ -25,12 +25,12 @@ h.run(async () => {
 			const out = {};
 			const root = document.documentElement;
 			for (const t of themes) {
-				window.__stores.themes.theme.set(t);
+				window.__tp.test.v1.themes.theme.set(t);
 				const cs = getComputedStyle(root);
 				out[t] = {};
 				for (const k of tokens) out[t][k] = cs.getPropertyValue(k).trim();
 			}
-			window.__stores.themes.theme.set('dark');
+			window.__tp.test.v1.themes.theme.set('dark');
 			return out;
 		},
 		{ themes: THEMES, tokens: TOKENS }
@@ -54,13 +54,13 @@ h.run(async () => {
 
 	// the token resolves through var() to a real color when used
 	const probe = await A.page.evaluate(() => {
-		window.__stores.themes.theme.set('green');
+		window.__tp.test.v1.themes.theme.set('green');
 		const el = document.createElement('div');
 		el.style.color = 'var(--scrollbar-thumb)';
 		document.body.appendChild(el);
 		const c = getComputedStyle(el).color;
 		el.remove();
-		window.__stores.themes.theme.set('dark');
+		window.__tp.test.v1.themes.theme.set('dark');
 		return c;
 	});
 	h.check(probe === 'rgb(20, 83, 45)', `the scrollbar-thumb token resolves to the green value (${probe})`);

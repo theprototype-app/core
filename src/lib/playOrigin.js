@@ -23,11 +23,11 @@ export function originOf(url) {
 	}
 }
 
-const env = /** @type {Record<string, string | undefined>} */ ((import.meta && import.meta.env) || {});
+// 54 X7: literal keys, never the whole env object (vite inlines that object into the chunk)
 /** the configured play origin ('' = none: play happens where the app is) */
-export const PLAY_ORIGIN = originOf(env.VITE_PLAY_ORIGIN);
+export const PLAY_ORIGIN = originOf(import.meta.env.VITE_PLAY_ORIGIN);
 /** the configured editor origin ('' = unknown) */
-export const APP_ORIGIN = originOf(env.VITE_APP_ORIGIN);
+export const APP_ORIGIN = originOf(import.meta.env.VITE_APP_ORIGIN);
 
 const here = typeof location !== 'undefined' ? location.origin : '';
 

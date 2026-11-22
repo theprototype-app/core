@@ -1,9 +1,10 @@
 import Peer from 'peerjs';
+import { peerSerializers, setFrameRefusalHandler } from './peerCodec.js';
 import { backoffDelay } from '$lib/netBackoff';
-import { sceneCommand, lockRestore, checkLocks, createObject, sendObjects, deleteObject, colorObject, createLoader, userData, handleDisconnected, specator, cameraSettings, objectParameters, applyClearScene } from './commandsHandler.svelte';
+import { sceneCommand, lockRestore, checkLocks, createObject, sendObjects, deleteObject, colorObject, createLoader, userData, handleDisconnected, specator, cameraSettings, objectParameters, applyClearScene, ROSTER_GRACE_MS } from './commandsHandler.svelte';
 import { gateCreationBroadcast } from './objectPermissions';
 import { createGeometry, createLight, createGroup, changeName, moveGeometry, lockGeometry, moveCamera } from '$lib/geometries.svelte';
-import { sendNodes, applyNodesSnapshot, applyNodeSync, noteNodesSnapshot, forgetNodeSyncPeer, createFlowNode, moveFlowNode, updateFlowNodeData, deleteFlowNodes, createFlowEdge, deleteFlowEdges, applyFlowCursor } from '$lib/nodesHandler';
+import { sendNodes, applyNodesSnapshot, applyNodeSync, noteNodesSnapshot, noteNodeSyncHandshake, forgetNodeSyncPeer, createFlowNode, moveFlowNode, updateFlowNodeData, deleteFlowNodes, createFlowEdge, deleteFlowEdges, applyFlowCursor } from '$lib/nodesHandler';
 import { preloadSandboxFor } from '$lib/sandbox/preload.js';
 import { applyGraphCreate, applyGraphDelete } from '$lib/flowGraphs';
 import { applyNodeTrigger } from '$lib/flowRuntime';
@@ -24,26 +25,34 @@ import { resolvePeerOptions, describePeerServer, peerServerStatus, parseInviteHa
 import { log } from '$lib/diagnostics';
 // 25-F: the join result (peerApproval is store-only, so a static edge closes no cycle)
 import { isRefusal, noteSnapshotAsked } from '$lib/connectionState';
-import { applyJoinRefusal } from '$lib/peerApproval';
+import { applyJoinRefusal, cancelOutboundRequest } from '$lib/peerApproval';
+// 101 F1/F4: the session protocol number + capabilities, and the per-peer inbound budget (both leaves)
+import { WIRE_PROTO, PROTO_ABSENT, protoOf, protoVerdict, myCaps, capsOf, refuseMessage, isRefuseMessage, noteOlderPeer, clearOlderPeer, staleNotice, olderPeers, resetWireProto, setWireProtoForTest } from '$lib/wireProto';
+import { createInboundBudget, approxSize } from '$lib/wireBudget';
+import { reloadToUpdate } from '$lib/updateCheck';
 // 55 A4: invite links — the host's check and the joiner's proof (store-only, no cycle)
 // 55 A7/A8: the agent action log + where an agent looked (store-only)
 import { applyAgentLog, applyAgentUndo, applyAgentView, dropAgentView, sendAgentLogTo } from '$lib/agentLog';
 import { applyAgentChatMessage, sendAgentChatBacklogTo, agentChatPeerGone } from '$lib/agentChat'; // 56 C1
-import { captureInviteHash, verifyInviteDial, joinerInviteMeta, dialingWithInvite, myKind, noteDialKind, noteJoinedVia, agentsAsGuests, isAgentSession } from '$lib/inviteStore';
+import { captureInviteHash, verifyInviteDial, joinerInviteMeta, dialingWithInvite, myKind, noteDialKind, noteJoinedVia, agentsAsGuests, isAgentSession, isAgentPeer } from '$lib/inviteStore';
 import { applyKick, isBlocked, isHeldOut, resetModeration, blockReplay } from '$lib/peerModeration'; // 55 A9
 import { notePeerFacts, notePeerActivity, dropPeerFacts, myDevice } from '$lib/peerFacts'; // 55 A9
 import { sessionHost, markPeerJoined, resetSession, signalingRetry, noteSignalingRetry, clearSignalingRetry, noteApprovalStarted, clearApprovalStarted, approvalStartedAt, APPROVAL_WINDOW_MS, MAX_PENDING_APPROVALS, HARD_PEER_CAP, roomIsFull } from '$lib/connectionState';
-import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo } from '$lib/cloudHooks';
+import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo, rolesPending, isFloorMessage, holdUntilRoles } from '$lib/cloudHooks';
 // 27-A (audit H1): shape validation + per-peer failure counters. Both are LEAVES, so the
 // dispatcher can reject a malformed message before any applier sees it.
 import { validateWireMessage } from '$lib/wireValidate';
-import { holdForWireBatch } from '$lib/wireBatch';
+import { isPlainMessage } from '$lib/wireShape';
+import { acceptedRosterRows, acceptedMeshIds, acceptsGoneReport, asSendersOwn, acceptedChatLines } from '$lib/rosterTrust';
+import { holdForWireBatch, withWireBatch } from '$lib/wireBatch';
 // 60 Q2: the fast movement channel (an unordered, unreliable second channel for pose streams)
 import { tapAgentEdit } from '$lib/agentPresence';
 import { createFastLinks, createStaleFilter, createKeyframer, stampPose, poseKey, fastChannelEnabled, setPoseTap, tapPose } from '$lib/fastChannel';
-import { registerDebugHook } from '$lib/debugHooks';
+import { registerDebugHook } from '$lib/debugHookRegistry.js';
 import { routePerfLive, perfLivePeerGone } from '$lib/perf/liveWire.js'; // 34 PF: the live perf stream (an import-free leaf)
-import { noteWireError } from '$lib/wireErrors';
+import { noteWireError, noteWireDrop } from '$lib/wireErrors';
+// a frame the data-channel codec refused (peerCodec) is counted like any other failing message
+setFrameRefusalHandler((peerId, reason) => noteWireError(peerId, 'frame', reason));
 import { composeAdmitNotice, shortPeer } from '$lib/admitNotice';
 import { ICE_DROP_GRACE_MS, LINK_POLL_MS, strikesNeeded, quietPeerError, unavailablePeerId, consentCounters, linkSilence, keepPeerId, silenceCloseAllowed, meshHosts } from '$lib/peerDrop';
 import { takeRejoin, rememberRejoin, settleRejoin, REJOIN_WINDOW_MS, REJOIN_DIAL_MS } from '$lib/rejoin'; // fix-agenttest 6
@@ -51,13 +60,14 @@ import { createDialBackQueue } from '$lib/dialBackQueue'; // scatter-sync: room 
 import { noteWire } from '$lib/sceneBudget';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
 import { applyPing } from '$lib/ping';
-import { applyAssetFile, answerAssetRequest, applyAssetThumb, answerAssetThumbRequest, applyAssetStart, applyAssetChunk, applyAssetMissing } from '$lib/assetShare';
+import { applyAssetFile, applyAssetThumb, applyAssetStart, applyAssetChunk, applyAssetMissing } from '$lib/assetShare';
 import { applyRemoteCameraPreview, clearPeerPreview, sendCameraPreviewState } from '$lib/cameraPreview';
 // 21-F3: play-mode PRESENCE, the campreview shape — a tiny per-peer message, a reply
 // riding the getmodulestate request, and a drop on disconnect (golden rule 3).
 import { applyRemotePlayMode, dropPeerPlayMode, sendPlayModeState } from '$lib/gamePresence';
 // P2: watch adopts the watched peer's LOOK STATE — the campreview shape, one row per peer
 import { applyRemoteLookState, dropPeerLook, sendLookState } from '$lib/lookPresence';
+import { applyRemoteFilmPose, dropPeerFilm } from '$lib/film/filmPresence'; // 68 V7
 // P2b: which SCENE each peer is standing in — the gamePresence shape exactly
 import { applyRemotePeerScene, dropPeerScene, sendMySceneState, peerScenes, myScene, mySceneWire, amPrivate, privacySplit, elsewhereThan, sceneOfPeer, ROOM_SCOPED, canApplyByRoom, sameRoomOrUnknown, myRoomLabel, roomLabelOf } from '$lib/peerScenes';
 // 21-G2: the project manifest — a latest-wins singleton like environment/scenephysics
@@ -70,16 +80,16 @@ import { applyModuleMessage, moduleVersions, checkModuleVersions, checkPeerAppVe
 import { APP_VERSION, COMMIT_SHA } from '$lib/version.js';
 import { applyLockRequest, applyUnlock, applyLockDenied } from '$lib/lockControl';
 import { applyDrawLive, applyDrawEnd } from '$lib/drawMode';
-import { applySimulate, physicsExternalMove, applyThrow, applyHit, simulating, simPaused } from '$lib/physics';
+import { applySimulate, applySimVote, applySimHandoff, physicsExternalMove, applyThrow, applyHit, simulating, simPaused } from '$lib/physics';
 import { noteRemoteMove } from '$lib/moveSmoothing';
 import { noteRemoteHit, endKnockPrediction } from '$lib/knock';
 import { applyJointCreate, applyJointDelete, applyJointsSnapshot, sendJoints } from '$lib/joints';
 import { applyAnimData, applyAnimPlay, applyAnimationsSnapshot, sendAnimations } from '$lib/animationPreview';
 import { applyHandModel, handModelState, dropPeerHandModel } from '$lib/handModels';
-import { applyRemoteEnvironment, environmentState, envPresetsState, applyRemoteEnvPresets, dropPeerEnvPresets } from '$lib/environment';
+import { applyRemoteEnvironment, environmentState, envPresetsState, applyRemoteEnvPresets, dropPeerEnvPresets, environment as environmentStore } from '$lib/environment';
 import { materialPresetsState, applyRemoteMaterialPresets, dropPeerMaterialPresets, answerMaterialPresetRequest, applyMaterialPresetPart } from '$lib/materialPresets'; // 37 R5, 48 F2
-import { applyRemoteMusic, musicState } from '$lib/sceneMusic';
-import { applyRemoteScenePhysics, scenePhysicsState } from '$lib/scenePhysics';
+import { applyRemoteMusic, musicState, music as musicStore } from '$lib/sceneMusic';
+import { applyRemoteScenePhysics, scenePhysicsState, scenePhysicsState_ } from '$lib/scenePhysics';
 // CO1: where the physical room's origin sits in content coords. The scenephysics
 // shape — one latest-wins singleton + a getroomanchor reply. The per-device ALIGNMENT
 // that composes with it is deliberately not on the wire at all.
@@ -88,7 +98,10 @@ import { applyRoomAnchorRemote, sendRoomAnchor } from '$lib/colocation';
 // message, a reply riding getmodulestate, a drop at every disconnect site). Everything it
 // drives is LOCAL receive-side filtering; nobody stops broadcasting because of it.
 import { applyRemoteColocation, dropPeerColocation, sendColocationState } from '$lib/colocationPresence';
-import { applyRemoteScenePost, scenePostStates, sendScenePost } from '$lib/scenePost';
+import { applyRemoteScenePost, scenePostStates, sendScenePost, scenePost as scenePostStore } from '$lib/scenePost';
+// 78-int PL13: "changed by <peer / agent> · time" under the shared Configure Scene sections
+import { trackSceneStore, noteLocalSceneEdit, noteRemoteSceneEdit } from '$lib/sceneEditBy.js';
+import { applyRemoteSceneBake, sceneBakeState, sendSceneBake } from '$lib/sceneBake'; // 98 P1
 // 23-A2: the musical transport (a latest-wins singleton like scenephysics) and the
 // peer clock-offset estimate it carries alongside
 import { applyRemoteTransport, transportState, sendTransport } from '$lib/musicClock';
@@ -136,11 +149,13 @@ import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, show
 import { GIVE_UP_ATTEMPTS } from '$lib/connectionStatus';
 import { get } from 'svelte/store';
 import { exportMode } from './export/exportBoot.js';
+import { botFrame } from './testPlayers/botFrame.js'; // 61 G3
+import * as testSeams from './testPlayers/seams.js'; // 61 G3: peerWrap / botAdmit (the runner sets them)
 
 /** 55: the full-state requests an AGENT page leaves unanswered — every one whose reply is scene content
  * (see the dispatch gate). Not getasset/getproject/getchat/getmodulestate/getnodedefs: bytes, the manifest,
  * chat and module versions are not a world, and a getasset answer is how a scene's files reach the room. */
-export const AGENT_UNANSWERED = new Set(['getobjects', 'getnodes', 'getjoints', 'getanim', 'getscenepost', 'gettransport', 'getpatch', 'getshadergraphs', 'gethuds', 'getseqs', 'gethudvalues', 'getgame', 'getunderlays', 'gettriggers', 'getannotations', 'getkitentities', 'getytext']);
+export const AGENT_UNANSWERED = new Set(['getobjects', 'getnodes', 'getjoints', 'getanim', 'getscenepost', 'getscenebake', 'gettransport', 'getpatch', 'getshadergraphs', 'gethuds', 'getseqs', 'gethudvalues', 'getgame', 'getunderlays', 'gettriggers', 'getannotations', 'getkitentities', 'getytext']);
 
 /**
  * 36-export: the Peer an exported game holds — the same shape the rest of the app reads
@@ -225,6 +240,41 @@ selectedObject.subscribe(value => { selected = value });
 let users = $state();
 userdata.subscribe(value => { users = value });
 
+/** how long an invite notice waits for the joiner's roster name before it says "A guest" */
+const ADMIT_NAME_WAIT_MS = 2500;
+/**
+ * The name an admission notice uses (uir-int D4): the joiner's roster name once their row carries one,
+ * else "An AI agent" / "A guest" after ADMIT_NAME_WAIT_MS.
+ * @param {string} peerId @param {any} cloudMeta @returns {Promise<string>}
+ */
+function admittedName(peerId, cloudMeta) {
+	const rowOf = () => (/** @type {any[]} */ (get(userdata)) ?? []).find((/** @type {any} */ u) => Array.isArray(u) && u[0] === peerId);
+	const named = () => String(rowOf()?.[1] ?? '').trim();
+	const fallback = () => (rowOf()?.[6]?.kind === 'agent' || cloudMeta?.kind === 'agent' ? 'An AI agent' : 'A guest');
+	return new Promise((resolve) => {
+		if (named()) return resolve(named());
+		/** @type {() => void} */
+		let stop = () => {};
+		const t = setTimeout(() => { stop(); resolve(fallback()); }, ADMIT_NAME_WAIT_MS);
+		stop = userdata.subscribe(() => {
+			const n = named();
+			if (!n) return;
+			clearTimeout(t);
+			queueMicrotask(() => stop());
+			resolve(n);
+		});
+	});
+}
+trackSceneStore('environment', environmentStore);
+trackSceneStore('scenepost', scenePostStore);
+trackSceneStore('scenephysics', scenePhysicsState_);
+trackSceneStore('music', musicStore);
+/** 78-int PL13: who a scene-singleton edit came from @param {any} data @param {string} peerId */
+function noteSceneEditFrom(data, peerId) {
+	const row = (users ?? []).find((/** @type {any} */ r) => Array.isArray(r) && r[0] === peerId);
+	noteRemoteSceneEdit(data, { peerName: (row && row[1]) || peerId, peerIsAgent: isAgentPeer(peerId) });
+}
+
 
 /** P2b: the only messages `broadcast` will withhold from a peer in another scene.
  * Pure presence, re-sent continuously, useless to somebody in a different world. */
@@ -242,6 +292,12 @@ const STREAM_TYPES = new Set(['camera', 'vrhands']);
 function dialOptions(result, cloud, extra) {
 	/** @type {Record<string, any>} */
 	const metadata = result ? { jr: 1, joinresult: result } : { jr: 1 };
+	// 101 F1: every dial says which session protocol it speaks and what it can do — read by the far
+	// side BEFORE any data flows (an absent `proto` is protocol 1: every build up to 1.65)
+	metadata.proto = WIRE_PROTO;
+	metadata.caps = myCaps({ fc: fastChannelEnabled() });
+	// 101 F1: a refusal dial for a protocol mismatch carries the refuser's own protocol
+	if (extra?.refuse && result) metadata.refuse = extra.refuse;
 	// 29 (rooms access): a cloud plugin's own dial data — a knock's name, a room-code
 	// proof — rides the join dial so the host's auth hook reads it BEFORE any data flows
 	// (an unapproved conn is closed at once). Absent = the dial is byte-identical.
@@ -275,6 +331,16 @@ function inviteRefusalLabel(reason, kind) {
  * metadata, which the joiner has at its `connection` event — the conn never needs to
  * open, and a joiner that closes it at once is the normal case. */
 const REFUSAL_DIAL_MS = 15000;
+/** 101: AUTOMATIC refusal dials are bounded per pool (see mayRefusalDial); a person's own Reject/Full never is.
+ * `auto` = answers the app gives by itself (blocked, removed, a plugin's deny, a full room, a protocol refusal to a
+ * peer we asked or know); `stranger` = a protocol refusal to a dial nobody asked for. */
+const REFUSAL_POOLS = { auto: { perSec: 5, inFlight: 20 }, stranger: { perSec: 2, inFlight: 5 } };
+/** 101: the least time between two automatic refusal dials to one peer */
+const REFUSAL_PEER_GAP_MS = 1000;
+/** 101 F1: proto/caps entries kept for peers with no open link */
+const PEER_PROTO_KEEP = 256;
+/** 101 F1: bytes held on a link whose protocol is not known yet (a newer build only) */
+const HELD_BYTES = 16 * 1024 * 1024;
 
 /**
  * 27-E: keep the pending queue bounded, dropping the EXPIRED first and only then the
@@ -305,6 +371,11 @@ function sessionVolumesNow() {
 	return (sessionVolumesMod ??= import('$lib/sessionVolumes.js'));
 }
 
+/** 85b S5: an agent peer made this object — in a headset it fades in (agentComfort checks the headset) @param {string} uuid */
+function agentMadeObject(uuid) {
+	import('$lib/vr/agentComfort.js').then((m) => m.agentObjectArrived(uuid)).catch(() => {});
+}
+
 export class PeerConnection {
 	constructor(id, updateIdFn) {
 		this.updateIdFn = updateIdFn;
@@ -315,6 +386,11 @@ export class PeerConnection {
 		this.rejoinHost = rejoin?.host ?? null;
 		/** @type {Map<string, number>} id -> when it said goodbye from a pagehide */
 		this.unloadedPeers = new Map();
+		/** @type {ReturnType<typeof setTimeout> | null} the roster sweep a refused goodbye report schedules (one at a time) */
+		this.goneReportSweep = null;
+		this.goneReportAgain = false;
+		/** @type {Set<string>} peers that approved a request of ours: they speak for a session we asked into */
+		this.approvedBy = new Set();
 		this.myId = rejoin?.id ?? id;
 		this.reconnectAttempts = 0;
 		this.hasOpened = false;   // the signaling link has opened at least once
@@ -389,6 +465,39 @@ export class PeerConnection {
 		this.invitedRoles = new Map();
 		/** 25-F: peers a refusal dial is out to — their `peer-unavailable` is not news @type {Set<string>} */
 		this.refusalDials = new Set();
+		/** 101: refusal dials still open, per peer @type {Map<string, {conn: any, pool: string, finish: () => void}>} */
+		this.refusalInFlight = new Map();
+		/** 101: when each peer last got an automatic refusal dial @type {Map<string, number>} */
+		this.refusalLastAt = new Map();
+		/** 101: automatic refusal dial times per pool, last second @type {Record<string, number[]>} */
+		this.refusalTimes = {};
+		// 101 F1: what each peer said about its protocol (dial metadata, else its `modules`), the peers a
+		// mismatch refused (-> their protocol; never redialled by mesh fill or the reconnect window, and
+		// cleared by a later dial on our protocol or by a Connect you press), and per-peer counts of the
+		// messages actually dispatched (what the e2e reads as "0 applied on the refused side")
+		/** @type {Map<string, number>} */
+		this.peerProto = new Map();
+		/** @type {Map<string, Record<string, any>>} */
+		this.peerCaps = new Map();
+		/** @type {Map<string, number>} */
+		this.protoRefused = new Map();
+		/** @type {Map<string, number>} */
+		this.appliedFrom = new Map();
+		// 101 F4: the per-peer inbound budget (messages/s, bytes/s, the `object` size cap)
+		this.inboundBudget = createInboundBudget({ onDrop: (peerId, reason) => noteWireDrop(peerId, reason) });
+		registerDebugHook('wireProto', {
+			proto: () => WIRE_PROTO,
+			setProto: setWireProtoForTest,
+			refused: () => Object.fromEntries(this.protoRefused),
+			peerProto: () => Object.fromEntries(this.peerProto),
+			peerCaps: () => Object.fromEntries(this.peerCaps),
+			applied: (/** @type {string} */ peerId) => this.appliedFrom.get(peerId) ?? 0,
+			olderPeers,
+			staleNotice,
+			budget: this.inboundBudget,
+			approxSize,
+			withWireBatch // the flood suite's 500-object batch goes through the real envelope
+		});
 		// 60 Q2: the fast movement channel (fastChannel.js). `fastLinks` = one unreliable channel per
 		// peer that advertised `fc: 1`; `staleFilter` drops a pose older than the newest applied from
 		// its sender; `keyframer` re-sends a stream's last pose reliably once the stream goes quiet.
@@ -443,7 +552,15 @@ export class PeerConnection {
 			// Peer that never opens (`connect()` answers undefined, which every dial site already
 			// guards, the signaling-down rule), so `$peers.peer.id` and every send stay valid
 			// net-drop-1: the id stays readable through a signaling drop (peerDrop.keepPeerId)
-			this.peer = exportMode ? /** @type {Peer} */ (offlinePeer(this.myId)) : keepPeerId(new Peer(this.myId, options), this.myId);
+			// every link reads and writes through this app's own data-channel codec (peerCodec), whatever codec a
+			// dial asks for; the server options are unchanged
+			// 61 G3: a bot frame holds the local test link's Peer (offline until localLink.js has loaded)
+			this.peer = exportMode
+				? /** @type {Peer} */ (offlinePeer(this.myId))
+				: botFrame
+					? /** @type {Peer} */ (this.botPeerFactory ? this.botPeerFactory(this.myId) : offlinePeer(this.myId))
+					: keepPeerId(new Peer(this.myId, { ...(options ?? {}), serializers: peerSerializers() }), this.myId);
+			if (testSeams.peerWrap && !exportMode && !botFrame) testSeams.peerWrap(this.peer);
 		};
 
 		// 27-F (audit H2): THE recreate ritual, in one place. Four callers had their own
@@ -765,9 +882,23 @@ export class PeerConnection {
 		p.on('connection', handleConnection.bind(this));
 		};
 
+		/** 61 G3: set once localLink.js has loaded in a bot frame @type {((id: string) => any) | null} */
+		this.botPeerFactory = null;
 		createPeerForMode(false);
 		initVoiceChat(this);
 		wire();
+		// 61 G3: a bot frame swaps its offline boot Peer for the local link's once the transport is here;
+		// the rebuilt Peer opens when the hub accepts its id, and the invite hash dials the host as usual
+		if (botFrame && !exportMode) {
+			const bot = botFrame;
+			Promise.all([import('./testPlayers/localLink.js'), import('./testPlayers/bot.js')])
+				.then(([m, b]) => {
+					this.botPeerFactory = (/** @type {string} */ id) => m.createBotPeer(id, { test: bot.test });
+					recreatePeer(false);
+					b.startBot(bot);
+				})
+				.catch((e) => log('error', 'net', 'test-player link failed to load', { error: String(e) }));
+		}
 
 		// Courtesy goodbye on tab close / refresh (best-effort). Without it,
 		// peers treat the close as a transient drop and spend the whole backoff
@@ -808,6 +939,19 @@ export class PeerConnection {
 		/** @this {any} @param {any} conn */
 		function handleConnection(conn) {
 
+			// 101 F1: A PROTOCOL REFUSAL DIAL — the far side speaks another session protocol and said so
+			// in the metadata of a short dial (no data channel ever opens on a refused link). Read FIRST:
+			// it also carries `joinresult: 'denied'`, which is what a build before this one understands.
+			const refuseMeta = conn?.metadata?.refuse;
+			if (refuseMeta && typeof refuseMeta === 'object') {
+				const said = { type: 'refuse', reason: refuseMeta.reason, need: refuseMeta.need };
+				// only an answer to a link WE asked for counts (a join request or a dial of ours); anything else is noise
+				if (isRefuseMessage(said) && said.need !== WIRE_PROTO && this.protoAsked(conn.peer)) this.refuseProto(conn.peer, said.need, null, { told: true });
+				else noteWireDrop(conn.peer, 'proto', 'refuse-dial');
+				try { conn.close(); } catch {}
+				return;
+			}
+
 			// 25-F: A REFUSAL DIAL. Its metadata IS the answer, so it is read here, before
 			// anything below can treat an incoming conn from the host as the approval it
 			// used to mean. Never whitelisted, never adopted, never wired — closed at once.
@@ -818,12 +962,41 @@ export class PeerConnection {
 				return;
 			}
 
+			// 101 F1: THE PROTOCOL CHECK, before anything below can whitelist, card or wire this conn.
+			// Same protocol = everything below exactly as before. Different (or unreadable) = refused
+			// here: the dialer hears it through a refusal dial (`jr` dials) and no data channel opens.
+			// The host decides for a joiner; a mesh-fill dial meets the same rule at every peer.
+			const theirProto = protoOf(conn?.metadata?.proto);
+			if (protoVerdict(theirProto) !== 'ok') {
+				log('info', 'net', 'protocol mismatch — refused', { peer: conn.peer, theirs: theirProto, mine: WIRE_PROTO });
+				const hears = !!conn?.metadata?.jr;
+				try { conn.close(); } catch {}
+				// a blocked peer is refused as blocked (below), and a protocol that is not a number is closed quietly
+				if (isBlocked(conn.peer)) {
+					if (hears) this.sendJoinResult(conn.peer, 'removed', undefined, 'auto');
+					return;
+				}
+				if (!Number.isInteger(theirProto)) {
+					noteWireDrop(conn.peer, 'proto', 'dial');
+					return;
+				}
+				this.refuseProto(conn.peer, theirProto, null, { dial: hears, unasked: !this.protoAsked(conn.peer) });
+				return;
+			}
+			/** @type {any} */ (conn).__proto = theirProto;
+			/** @type {any} */ (conn).__protoOk = true;
+			this.peerProto.set(conn.peer, theirProto);
+			this.peerCaps.set(conn.peer, capsOf(conn?.metadata?.caps));
+			this.prunePeerProto();
+			// a peer we refused is back on our protocol (it reloaded): the refusal is history
+			if (this.protoRefused.delete(conn.peer)) clearOlderPeer(conn.peer);
+
 			// 55 A9: a peer REMOVED AND BLOCKED from this session. Refused before anything
 			// below can whitelist it (an auth provider's auto-admit included), and told so when
 			// its dial can hear a join result — "You were removed from this session".
 			if (isBlocked(conn.peer)) {
 				log('info', 'net', 'blocked peer refused', { peer: conn.peer });
-				if (conn?.metadata?.jr) this.sendJoinResult(conn.peer, 'removed');
+				if (conn?.metadata?.jr) this.sendJoinResult(conn.peer, 'removed', undefined, 'auto');
 				try { conn.close(); } catch {}
 				return;
 			}
@@ -843,6 +1016,9 @@ export class PeerConnection {
 					// CN: OUR outbound request was approved — that peer is the session
 					// host (first approval wins; null while hosting ourselves).
 					if (!get(sessionHost)) sessionHost.set(conn.peer);
+					this.approvedBy.add(conn.peer);
+					// Our own guests ask that peer too, and it decides: it approved us, not them.
+					if ([...this.openedPeers].some((/** @type {string} */ id) => id !== conn.peer)) this.broadcast({ type: 'hosts', hosts: [conn.peer], joined: true });
 					settleRejoin('joined'); // fix-agenttest 6: no-op unless this was the reload's dial
 
 					// Show approved toast message
@@ -903,7 +1079,7 @@ export class PeerConnection {
 					// F-5: someone the host removed stays out (the setting would just let them back,
 					// and so would an invite: a removal outranks the link they arrived with)
 					if (this.removedPeers.has(conn.peer)) {
-						if (conn?.metadata?.jr) this.sendJoinResult(conn.peer, 'denied');
+						if (conn?.metadata?.jr) this.sendJoinResult(conn.peer, 'denied', undefined, 'auto');
 						conn.close();
 						return;
 					}
@@ -911,7 +1087,7 @@ export class PeerConnection {
 					// we approved a moment ago — re-admitted as the auto-approve below does, no new card
 					const leftAt = this.unloadedPeers.get(conn.peer);
 					this.unloadedPeers.delete(conn.peer);
-					if (leftAt !== undefined && Date.now() - leftAt <= REJOIN_WINDOW_MS && !roomIsFull(this)) {
+					if (leftAt !== undefined && Date.now() - leftAt <= REJOIN_WINDOW_MS && !roomIsFull(this) && !isHeldOut(conn.peer)) {
 						found = true;
 						const roster = /** @type {any[]} */ (get(userdata));
 						if (!roster.some((/** @type {any} */ e) => e[0] === conn.peer))
@@ -925,13 +1101,17 @@ export class PeerConnection {
 						}
 						log('info', 'net', 'a guest reloaded and is back on its id — re-admitted', { peer: conn.peer });
 					}
+					// 61 G3: a bot this tab started, over its local link — admitted with no card and no toast
+					const testBot = !found && !!testSeams.botAdmit?.(conn);
 					const verdict = found
 						? undefined
+						: testBot
+							? 'admit'
 						: invite
 							? invite.ok ? 'admit' : { label: knockLabel }
 							: auth && typeof auth.decide === 'function' ? auth.decide(conn.peer, cloudMeta, { kind: dialKind }) : undefined;
 					if (verdict === 'deny') {
-						if (conn?.metadata?.jr) this.sendJoinResult(conn.peer, 'denied');
+						if (conn?.metadata?.jr) this.sendJoinResult(conn.peer, 'denied', undefined, 'auto');
 						conn.close();
 						return;
 					}
@@ -956,7 +1136,7 @@ export class PeerConnection {
 					if (authorized && roomIsFull(this) && conn?.metadata?.jr) {
 						// 25-F: a plugin would let them in, but the mesh cannot take one more —
 						// say so rather than auto-approving past the hard cap
-						this.sendJoinResult(conn.peer, 'full');
+						this.sendJoinResult(conn.peer, 'full', undefined, 'auto');
 						conn.close();
 						return;
 					} else if (authorized) {
@@ -973,7 +1153,7 @@ export class PeerConnection {
 						}
 						get(peers).send({ type: 'userdata', userdata: get(userdata) });
 						this.approveDialBack(conn.peer);
-						this.announceAutoAdmit(conn.peer, auth, cloudMeta, invite?.ok ? invite.role : undefined);
+						if (!testBot) this.announceAutoAdmit(conn.peer, auth, cloudMeta, invite?.ok ? invite.role : undefined);
 					}
 				} catch (e) {
 					console.error('cloud auth provider threw:', e);
@@ -1093,6 +1273,32 @@ export class PeerConnection {
 			};
 			if (conn.open) watchSilence();
 			conn.on('open', watchSilence);
+			// 101 F4: the wire bytes of the reliable channel, every chunk, for the per-peer bytes budget.
+			// A listener BESIDE peerjs's own (it decodes; this only counts). peerjs also wires any LATER
+			// in-band channel the far side opens on the same connection into this conn's `data`, so every
+			// channel announced on the RTCPeerConnection is metered too (the fast channel is negotiated:
+			// it never fires `datachannel` and is metered by its own receive).
+			/** @type {WeakSet<any>} */
+			const metered = new WeakSet();
+			const meterChannel = (/** @type {any} */ dc) => {
+				if (!dc || metered.has(dc) || typeof dc.addEventListener !== 'function') return;
+				metered.add(dc);
+				dc.addEventListener('message', (/** @type {MessageEvent} */ e) => {
+					const d = /** @type {any} */ (e.data);
+					this.inboundBudget.noteBytes(conn.peer, typeof d === 'string' ? d.length : (d?.byteLength ?? d?.size ?? 0));
+				});
+			};
+			const meterBytes = () => {
+				meterChannel(conn.dataChannel);
+				const pc = conn.peerConnection;
+				if (pc && !conn.__tpMetered && typeof pc.addEventListener === 'function') {
+					conn.__tpMetered = true;
+					pc.addEventListener('datachannel', (/** @type {RTCDataChannelEvent} */ e) => meterChannel(e.channel));
+				}
+			};
+			// now (an outgoing conn already has its channel and RTCPeerConnection) and again on open
+			meterBytes();
+			conn.on('open', meterBytes);
 			conn.on('close', () => {
 				if (iceDropTimer) clearTimeout(iceDropTimer);
 				if (silenceTimer) clearInterval(silenceTimer);
@@ -1101,10 +1307,26 @@ export class PeerConnection {
 			// The dispatch chain itself, called from the guarded handler below. Naming it is
 			// what lets a try/catch wrap 440 lines without re-indenting any of them.
 			const dispatch = (/** @type {any} */ data) => {
+				// A build with roles, before its plugin has spoken: nobody can say yet what this peer may
+				// do. The message waits (in order) and comes back through this whole chain, gate included.
+				if (data && rolesPending() && !isFloorMessage(data.type)) {
+					const kept = holdUntilRoles(conn.peer, data, () => {
+						if (conn.open === false) return;
+						try {
+							dispatch(data);
+						} catch (error) {
+							noteWireError(conn.peer, data.type, error);
+						}
+					});
+					if (!kept) noteWireError(conn.peer, 'held-over:' + data.type);
+					return;
+				}
 				// M1a (open-core): the ONE receive-side capability gate. Default allows
 				// everything (byte-identical OSS behavior); a cloud plugin's provider
 				// drops disallowed message types from a peer (e.g. a viewer's mutations).
 				if (data && !canApply(conn.peer, data.type)) return;
+				// a peer speaks for itself: presence and chat are read as the sender's own (rosterTrust.js)
+				data = asSendersOwn(data, conn.peer);
 				// A2: the ROOM gate. A message describing the content of a scene is not
 				// applied when its sender is demonstrably standing in a different one.
 				//
@@ -1168,8 +1390,11 @@ export class PeerConnection {
 					}
 				} else if(data.type == 'hosts') {
 					console.log('Connecting to received hosts');
-					data.hosts.forEach( id =>
+					// our host joined that peer: it speaks for the session we are now part of
+					if (data.joined === true && this.rosterTrustFor(conn.peer).speaksForSession) data.hosts.forEach((/** @type {any} */ id) => { if (typeof id === 'string' && id !== this.peer.id) this.approvedBy.add(id); });
+					acceptedMeshIds(data.hosts, this.rosterTrustFor(conn.peer)).forEach( id =>
 					{
+						if (id === this.peer.id) return;
 						// 27-E (audit L7): a joiner must not fill the mesh past the cap the
 						// approving side is enforcing, or the room grows by the back door.
 						// Counted off the OPEN connections, never `userdata` — that roster is
@@ -1198,11 +1423,14 @@ export class PeerConnection {
 					const back = this.connections[conn.peer] ?? conn;
 					if (history.length && back?.open) back.send({type: 'chathistory', messages: history});
 				} else if(data.type == 'chathistory') {
-					mergeChatHistory(data.messages);
+					// it carries other peers' lines: all of them from the peer that speaks for the session,
+					// only its own from anybody else
+					mergeChatHistory(acceptedChatLines(data.messages, this.rosterTrustFor(conn.peer)));
 				} else if(data.type == 'info') {
 					addMessage({message: data.message, type: data.type, sender: data.sender});
 				} else if(data.type == 'create') {
 					createGeometry(data.command, data.uuid);
+					if (isAgentPeer(conn.peer)) agentMadeObject(data.uuid); // 85b S5: fades in, in a headset
 				} else if(data.type == 'light') {
 					createLight(data.command, data.uuid);
 				} else if(data.type == 'group') {
@@ -1252,6 +1480,10 @@ export class PeerConnection {
 					noteRemoteHit(data, conn.peer);
 				} else if(data.type == 'simulate') {
 					applySimulate(data);
+				} else if(data.type == 'simvote') {
+					applySimVote(data, conn.peer); // 78 F25: the connection's peer, never the payload's
+				} else if(data.type == 'simhandoff') {
+					applySimHandoff(data, conn.peer);
 				} else if(data.type == 'jointcreate') {
 					applyJointCreate(data);
 				} else if(data.type == 'jointdelete') {
@@ -1280,10 +1512,13 @@ export class PeerConnection {
 					applyHandModel(data);
 				} else if(data.type == 'environment') {
 					applyRemoteEnvironment(data);
+					noteSceneEditFrom(data, conn.peer);
 				} else if(data.type == 'music') {
 					applyRemoteMusic(data);
+					noteSceneEditFrom(data, conn.peer);
 				} else if(data.type == 'scenephysics') {
 					applyRemoteScenePhysics(data);
+					noteSceneEditFrom(data, conn.peer);
 				} else if(data.type == 'roomanchor') {
 					// CO1: the room anchor, latest-wins on `at`. Applying it never re-poses
 					// the rig here — a peer that is not colocated has no alignment to
@@ -1300,8 +1535,15 @@ export class PeerConnection {
 					// L1/L2: the authored post stack, latest-wins on changedAt. An effect
 					// KIND we don't know is kept and skipped at render time, never dropped.
 					applyRemoteScenePost(data);
+					noteSceneEditFrom(data, conn.peer);
 				} else if(data.type == 'getscenepost') {
 					if (sameRoomOrUnknown(conn.peer)) sendScenePost(data.sender);
+				} else if(data.type == 'scenebake') {
+					// 98 P1: the baked-light record (two content hashes + where each object sits
+					// in the atlas), latest-wins on changedAt; the pixels pull through getasset
+					applyRemoteSceneBake(data);
+				} else if(data.type == 'getscenebake') {
+					if (sameRoomOrUnknown(conn.peer)) sendSceneBake(data.sender);
 				} else if(data.type == 'transport') {
 					// 23-A2: the musical transport, latest-wins on changedAt (the scenephysics
 					// shape). Every peer then derives the beat LOCALLY from the shared startedAt.
@@ -1379,6 +1621,9 @@ export class PeerConnection {
 				} else if(data.type == 'getytext') {
 					// answered across rooms too, with `none`, so the asker stops waiting at once
 					answerYText(data, conn.peer, sameRoomOrUnknown(conn.peer));
+				} else if(data.type == 'photoreq' || data.type == 'photores' || data.type == 'photostop') {
+					// 98 P2: Photo mode's hand-off (a Quest / phone asks a PC to path-trace its view); lazy
+					import('$lib/photo/photoMode.js').then((m) => m.onPhotoMessage(data, conn.peer)).catch(() => {});
 				} else if(data.type == 'tpchat') {
 					// 56 C10: one chat, whole-doc latest-wins on changedAt (one writer per session)
 					applyRemoteTpchat(data);
@@ -1465,9 +1710,18 @@ export class PeerConnection {
 				} else if(data.type == 'userdata') {
 					// F-5: the roster applier UNIONS, so a third peer still linked to someone this host
 					// removed would put them straight back in Users — a removed peer stays out of ours
-					userData(this.removedPeers.size && Array.isArray(data.userdata)
-						? data.userdata.filter((/** @type {any} */ e) => !this.removedPeers.has(e?.[0]))
-						: data.userdata);
+					const rows = acceptedRosterRows(data.userdata, this.rosterTrustFor(conn.peer));
+					userData(this.removedPeers.size ? rows.filter((/** @type {any} */ e) => !this.removedPeers.has(e?.[0])) : rows);
+					// a mesh dial that beat this roster left a card; the roster answers it
+					if (this.rosterTrustFor(conn.peer).speaksForSession) {
+						const named = /** @type {any[]} */ (get(userdata));
+						const cards = /** @type {any[]} */ (get(pendingApprovals));
+						const open = cards.filter((a) => a.status === 'retry' || !named.some((u) => u[0] === a.peerId));
+						if (open.length !== cards.length) {
+							for (const a of cards) if (!open.includes(a)) clearApprovalStarted(a.peerId);
+							pendingApprovals.set(/** @type {any} */ (open));
+						}
+					}
 				} else if(data.type == 'specator') {
 					specator(data, data.watching);
 				} else if(data.type == 'cameraSettings') {
@@ -1529,9 +1783,9 @@ export class PeerConnection {
 					// Latest-wins on the sessionNow stamp; every peer derives the pose itself.
 					applyRemoteBehavior(data);
 				} else if(data.type == 'object') {
-					createObject(data, data.uuids, data.override, data.groupuuid, data.pos, data.rot, data.scale);
+					createObject(data, data.uuids, data.override, data.groupuuid, data.pos, data.rot, data.scale, conn.peer);
 				} else if(data.type == 'objectParameters') {
-					objectParameters(data);
+					objectParameters(data, conn.peer);
 				} else if(data.type == 'duplicate') {
 					// B7: `transient` is additive — absent for every ordinary duplicate.
 					// D2: so is `shareMaterial` — absent means the copy gets its own material,
@@ -1569,6 +1823,11 @@ export class PeerConnection {
 						// a relayed rumor about a peer we have FIRST-HAND state on — our
 						// own conn (or reconnect window) decides, a third party doesn't.
 						// Honoring these evicted live peers meshwide during formation (B5).
+					} else if (!acceptsGoneReport(data.peerId, this.rosterTrustFor(conn.peer))) {
+						// only the session host speaks for peers we have no link to; a row nobody
+						// reaches still ages out locally: the reaper stamps it now and prunes it once
+						// the grace has passed with no link (it never touches a peer we reach)
+						this.sweepRosterLater();
 					} else {
 						handleDisconnected(data.peerId);
 						dropPeerPlayMode(data.peerId); // 21-F3
@@ -1621,7 +1880,7 @@ export class PeerConnection {
 				} else if(data.type == 'edgedelete') {
 					deleteFlowEdges(data.ids, data.graphId);
 				} else if(data.type == 'nodetrigger') {
-						applyNodeTrigger(data.id, data.t, false, null, data.at ?? null, data.other, true); // 134: shared-timestamp pulse (31: + where, for a clap; 36 X6: + the contact's other body)
+						applyNodeTrigger(data.id, data.t, false, null, data.at ?? null, data.other, true, conn.peer, data.held === 1); // 2.0-int: + a held re-stamp. 2.0-n3b: + who sent it. 134: shared-timestamp pulse (31: + where, for a clap; 36 X6: + the contact's other body)
 					} else if(data.type == 'gettriggers') {
 						// DEVX #18: the trigger LOG for a late joiner. Deliberately NOT behind
 						// share-or-stash like getobjects/getnodes: there is nothing here for a
@@ -1640,7 +1899,7 @@ export class PeerConnection {
 					} else if(data.type == 'flowcursor') {
 					applyFlowCursor(data);
 				} else if(data.type == 'ping') {
-					applyPing(data);
+					applyPing(data, conn.peer); // 85b S2: the sender is the connection
 				} else if(data.type == 'assetfile') {
 					// shared Explorer bytes (97) — dedup by content hash
 					applyAssetFile(data, conn.peer);
@@ -1664,8 +1923,9 @@ export class PeerConnection {
 					// stable outgoing connection to them.
 					// R22: `thumb` is an ADDITIVE flag asking for the thumbnail INSTEAD of the
 					// bytes; an older peer never sets it and is unaffected.
-					if (data.thumb) answerAssetThumbRequest(conn.peer, data);
-					else answerAssetRequest(conn.peer, data);
+					// The current share settings decide per request (sessionVolumes.answerAssetAsk).
+					const from = conn.peer;
+					sessionVolumesNow().then((m) => m.answerAssetAsk(from, data)).catch(() => {});
 				} else if(data.type == 'module') {
 					applyModuleMessage(data);
 				} else if(data.type == 'volidx' || data.type == 'volthumbs' || data.type == 'volget' || data.type == 'volsave' || data.type == 'volsaveack' || data.type == 'volcancel' || data.type == 'volresolve' || data.type == 'volhash') {
@@ -1681,6 +1941,10 @@ export class PeerConnection {
 					// page stepping the world slowed the whole session's physics 4-6x
 					const from = conn.peer;
 					import('$lib/agent/simRelay.js').then((m) => m.handleSimRelay(from, data)).catch(() => {});
+				} else if(data.type == 'agentconfirmreq' || data.type == 'agentconfirmans') {
+					// 85 rule 7: Allow / Deny for a scene-wide look change — lazy, like the two above
+					const from = conn.peer;
+					import('$lib/agent/confirmGate.js').then((m) => m.handleConfirmRelay(from, data)).catch(() => {});
 				} else if(data.type == 'modules') {
 					// 37 R1: `wb` is ADDITIVE — an older peer omits it and keeps getting bare messages
 					if (data.wb === 1) this.wireBatchPeers.add(conn.peer);
@@ -1747,6 +2011,9 @@ export class PeerConnection {
 				} else if(data.type == 'campreview') {
 					// 16-P5: presence only — "X is previewing camera Y" (peers may join it)
 					applyRemoteCameraPreview(data);
+				} else if(data.type == 'filmpose') {
+					// 68 V7: presence only — a phone filming through a camera (posed locally, never saved)
+					applyRemoteFilmPose(data);
 				} else if(data.type == 'lookstate') {
 					// P2: presence only — how X is LOOKING at the scene, so a watcher renders
 					// X's chain rather than its own. ADDITIVE: an older build never sends it.
@@ -1760,7 +2027,7 @@ export class PeerConnection {
 				} else if(data.type == 'verts') {
 					applyVerts(data.uuid, data.indices, data.position);
 				} else if(data.type == 'meshgeo') {
-					applyMeshGeo(data.uuid, data.positions, data.groups, data.uvs, data.faceCounts, data.faceTris);
+					applyMeshGeo(data.uuid, data.positions, data.groups, data.uvs, data.faceCounts, data.faceTris, data.colors);
 				} else if(data.type == 'uvpaint') {
 					applyUvPaint(data);
 				} else if(data.type == 'uvpaintend') {
@@ -1801,18 +2068,9 @@ export class PeerConnection {
 				}
 			};
 
-			// 60 Q2: ONE receive path for both channels — the reliable conn and the fast channel
-			// opened on its RTCPeerConnection (`openFastChannel` reads it off the conn)
-			const receive = (/** @type {any} */ data, /** @type {'fast' | 'reliable'} */ via = 'reliable') => {
-				// 27-A (audit H1): SHAPE FIRST, before any gate reads `data.type`. A null, a
-				// string or a number used to fall through the whole chain to
-				// `data.startsWith(...)` and throw out of the handler, where peerjs swallowed
-				// it and nothing counted it. canApply stays the first POLICY gate; this is
-				// only "is this a message at all".
-				if (!data || typeof data !== 'object') {
-					noteWireError(conn.peer, 'shape', typeof data);
-					return;
-				}
+			// 101: everything past the head — the shape table, the stale-pose filter, the dispatch. A
+			// message held by the protocol gate (`protoGate`) re-enters HERE once its link is agreed.
+			const proceed = (/** @type {any} */ data, /** @type {'fast' | 'reliable'} */ via) => {
 				// 26-A (roadmap 26 section 3, audit H7): WHICH STREAM IS CHATTY. Counted per
 				// type here and in `broadcast`; local only, never replicated, and the byte
 				// figure is a 1-in-16 sample so the measurement cannot become the cost.
@@ -1829,12 +2087,47 @@ export class PeerConnection {
 				// to the committed (reliable, newer) move that ended the drag
 				if (!this.staleFilter.accept(conn.peer, data)) return;
 				tapPose(conn.peer, data, via);
+				this.appliedFrom.set(conn.peer, (this.appliedFrom.get(conn.peer) ?? 0) + 1); // 101: what reached dispatch
 				try {
 					dispatch(data);
 				} catch (error) {
 					// One bad message must not take this connection's handler down with it.
 					noteWireError(conn.peer, data.type, error);
 				}
+			};
+
+			// 60 Q2: ONE receive path for both channels — the reliable conn and the fast channel
+			// opened on its RTCPeerConnection (`openFastChannel` reads it off the conn)
+			const receive = (/** @type {any} */ data, /** @type {'fast' | 'reliable'} */ via = 'reliable', /** @type {number} */ bytes = 0) => {
+				// 101 F4: the bytes count first (the fast channel's own text length; the reliable channel
+				// is metered off its data channel), whatever the message turns out to be.
+				if (bytes) this.inboundBudget.noteBytes(conn.peer, bytes);
+				// 27-A (audit H1): SHAPE FIRST, before any gate reads `data.type`. A null, a
+				// string or a number used to fall through the whole chain to
+				// `data.startsWith(...)` and throw out of the handler, where peerjs swallowed
+				// it and nothing counted it. canApply stays the first POLICY gate; this is
+				// only "is this a message at all".
+				if (!data || typeof data !== 'object') {
+					noteWireError(conn.peer, 'shape', typeof data);
+					return;
+				}
+				// plain data all the way down (wireShape.js), before anything reads a field of it
+				if (!isPlainMessage(data)) {
+					noteWireError(conn.peer, 'shape', 'plain');
+					return;
+				}
+				// 101 F4: the per-person budget — every message from here on counts against its sender's
+				// per-second budget; over it, the message is dropped and counted (and the person told
+				// once), and the link stays up
+				if (!this.inboundBudget.admit(conn.peer, data)) return;
+				// every gate below compares `type` as a string, and a Set lookup and `==` disagree on anything else
+				if (typeof data.type !== 'string') {
+					noteWireError(conn.peer, 'shape', 'type');
+					return;
+				}
+				// 101 F1: the protocol gate — nothing from a link on another protocol reaches anything below
+				if (!this.protoGate(conn, data, via, proceed)) return;
+				proceed(data, via);
 			};
 			conn.__tpReceive = receive;
 			conn.on('data', (/** @type {any} */ data) => receive(data));
@@ -1909,10 +2202,12 @@ export class PeerConnection {
 		noteSnapshotAsked(conn.peer)
 		conn.send({type: 'gettriggers', sender: this.peer.id})
 		conn.send({type: 'getnodes', sender: this.peer.id})
+		noteNodeSyncHandshake(conn.peer) // 54i row g: a deferred ask re-arms the nodesync join window
 		conn.send({type: 'getannotations', sender: this.peer.id})
 		conn.send({type: 'getjoints', sender: this.peer.id})
 		conn.send({type: 'getanim', sender: this.peer.id})
 		conn.send({type: 'getscenepost', sender: this.peer.id})
+		conn.send({type: 'getscenebake', sender: this.peer.id}) // 98 P1
 		// CO1: a REQUEST rather than a push, because a scene that never colocated must
 		// send nothing at all — `sendRoomAnchor` returns early on a null anchor, so the
 		// handshake of a non-colocated session is byte-identical to what it always was.
@@ -1930,6 +2225,7 @@ export class PeerConnection {
 	/** @param {any} conn @param {string} peerId @param {boolean} getobjects @param {string} id
 	 * @param {{heal?: boolean}} [opts] heal: this conn REPLACES one that dropped (the reconnect window) */
 	sendHandshake(conn, peerId, getobjects, id, opts = {}) {
+		noteNodeSyncHandshake(peerId) // 54i row g: the nodesync join window runs from the link, not a later first nodesync
 		// 25-F: an approval dial-back SAYS it is one, ahead of everything else (the roadmap's
 		// "first message"). The metadata already carried it; this is the same answer for a
 		// peer that reads messages rather than metadata, and it is idempotent on a joiner
@@ -1976,7 +2272,8 @@ export class PeerConnection {
 		for (const k of blockReplay()) conn.send(k);
 		// V3: app version rides the modules handshake — old peers ignore the extras,
 		// old senders omit them (checkPeerAppVersion is silent on absence)
-		conn.send({type: 'modules', versions: moduleVersions(), appVersion: APP_VERSION, sha: COMMIT_SHA, wb: 1, dev: myDevice(get(isVRMode)), ...(fastChannelEnabled() ? { fc: 1 } : {})}) // 55 A9: `dev` is additive
+		// 101 F1: `proto` + `caps` are additive too (the same two the dial metadata carries)
+		conn.send({type: 'modules', versions: moduleVersions(), appVersion: APP_VERSION, sha: COMMIT_SHA, wb: 1, dev: myDevice(get(isVRMode)), ...(fastChannelEnabled() ? { fc: 1 } : {}), proto: WIRE_PROTO, caps: myCaps({ fc: fastChannelEnabled() })}) // 55 A9: `dev` is additive
 		// 37 R15: the chat so far. Chat is MESH-WIDE (not a room's content), so this goes out
 		// whatever the connect decision / privacy hold below decides about the scene.
 		conn.send({type: 'getchat', sender: this.peer.id})
@@ -2029,6 +2326,8 @@ export class PeerConnection {
 			conn.send(patchState())
 			// L-C: one per post DOCUMENT — the scene look and any camera looks
 			for (const state of scenePostStates()) conn.send(state)
+			// 98 P1: the bake, only once this scene has ever had one (an unbaked scene says nothing)
+			if (sceneBakeState().changedAt) conn.send(sceneBakeState())
 		}
 		conn.send(handModelState())
 		conn.send(envPresetsState())
@@ -2096,27 +2395,208 @@ export class PeerConnection {
 	}
 
 	/**
+	 * 101 F1: THE PROTOCOL GATE at the receive pipeline head. Returns true when the message may go on.
+	 * A link is AGREED once (its dial metadata, else this peer's dial on another conn, else the first
+	 * `modules` on it) and latched; a `modules` that contradicts the agreement refuses the link.
+	 * While a link is unknown a protocol-1 build lets messages through — absent IS protocol 1, so that
+	 * is today's behaviour byte for byte — and a newer build HOLDS them, in order, until `modules`
+	 * says: then they all go on, or none do. A `refuse` message is read here and never dispatched.
+	 * @param {any} conn @param {any} data @param {'fast' | 'reliable'} via
+	 * @param {(data: any, via: 'fast' | 'reliable') => void} proceed @returns {boolean}
+	 */
+	protoGate(conn, data, via, proceed) {
+		if (data.type === 'refuse') {
+			// a link already agreed on our protocol cannot be refused for it — that would contradict its own dial
+			if (isRefuseMessage(data) && data.need !== WIRE_PROTO && !conn.__protoOk) this.refuseProto(conn.peer, data.need, conn, { told: true });
+			else noteWireDrop(conn.peer, 'proto', 'refuse');
+			return false;
+		}
+		if (conn.__protoOk) {
+			if (data.type !== 'modules') return true;
+			const said = protoOf(data.proto);
+			if (said !== conn.__proto) {
+				this.refuseProto(conn.peer, said, conn);
+				return false;
+			}
+			this.peerCaps.set(conn.peer, capsOf(data.caps));
+			return true;
+		}
+		if (conn.__protoRefused) {
+			noteWireDrop(conn.peer, 'proto', data.type);
+			return false;
+		}
+		let theirs = data.type === 'modules' ? protoOf(data.proto) : this.peerProto.get(conn.peer);
+		if (theirs === undefined) {
+			if (WIRE_PROTO === PROTO_ABSENT) return true;
+			const held = (conn.__protoHeld ??= []);
+			const room = HELD_BYTES - (conn.__protoHeldBytes ?? 0);
+			const size = room > 0 ? approxSize(data, room) : Infinity;
+			if (held.length < 4096 && size <= room) {
+				held.push([data, via]);
+				conn.__protoHeldBytes = (conn.__protoHeldBytes ?? 0) + size;
+			} else noteWireDrop(conn.peer, 'proto', 'hold-overflow');
+			return false;
+		}
+		if (protoVerdict(theirs) !== 'ok') {
+			this.refuseProto(conn.peer, theirs, conn);
+			return false;
+		}
+		conn.__proto = theirs;
+		conn.__protoOk = true;
+		this.peerProto.set(conn.peer, theirs);
+		if (data.type === 'modules') this.peerCaps.set(conn.peer, capsOf(data.caps));
+		const held = conn.__protoHeld;
+		conn.__protoHeld = null;
+		conn.__protoHeldBytes = 0;
+		if (held) for (const [d, v] of held) proceed(d, v);
+		return true;
+	}
+
+	/**
+	 * 101 F1: refuse every link to `peerId` because it speaks protocol `theirs`. Tells them (a refusal
+	 * dial when they dialled us and can hear one, a `refuse` message on any open link) unless THEY told
+	 * US, closes the links without a reconnect window, and shows this side's half of the verdict.
+	 * @param {string} peerId @param {number} theirs @param {any} conn the link it was found on, if any
+	 * @param {{told?: boolean, dial?: boolean, unasked?: boolean}} [opts] `unasked` = a dial from a peer we neither asked to
+	 * join nor are linked to: its claim is shown, never latched (anyone who knows an id can dial it)
+	 */
+	refuseProto(peerId, theirs, conn, opts = {}) {
+		const first = this.protoRefused.get(peerId) !== theirs;
+		this.protoRefused.set(peerId, theirs);
+		this.prunePeerProto();
+		if (conn) {
+			conn.__protoRefused = true;
+			conn.__protoOk = false;
+			const held = conn.__protoHeld;
+			conn.__protoHeld = null;
+			if (held) for (const [d] of held) noteWireDrop(peerId, 'proto', d?.type);
+		}
+		const links = [...new Set([conn, this.connections[peerId], this.inboundDials.get(peerId)])].filter(Boolean);
+		if (!opts.told) {
+			if (opts.dial) this.sendJoinResult(peerId, 'denied', { refuse: { reason: 'proto', need: WIRE_PROTO } }, opts.unasked ? 'stranger' : 'auto');
+			for (const c of links) {
+				if (!c.open) continue;
+				try { c.send(refuseMessage()); } catch { /* already going */ }
+			}
+		}
+		// a moment for the refusal to leave before the link it rides on closes
+		const closeAll = () => { for (const c of links) { try { c.close(); } catch { /* gone */ } } };
+		if (opts.told) closeAll();
+		else setTimeout(closeAll, 500);
+		if (first) this.applyProtoVerdict(peerId, protoVerdict(theirs), theirs, !!opts.unasked);
+	}
+
+	/**
+	 * 101 F1: whether a protocol claim from `peerId` answers something WE did — a join request still
+	 * waiting, or a link of ours to them (dialled or open). A dial from anyone else is a stranger's.
+	 * @param {string} peerId @returns {boolean}
+	 */
+	protoAsked(peerId) {
+		if (this.openedPeers.has(peerId) || this.connections[peerId]) return true;
+		return /** @type {any[]} */ (get(waitingForApproval)).some((w) => w[0] === peerId && w[1] === 'pending');
+	}
+
+	/**
+	 * 101: an automatic refusal dial costs a peer connection for up to REFUSAL_DIAL_MS, so each pool is bounded
+	 * (a rate and a number in flight) and one peer gets at most one automatic dial per REFUSAL_PEER_GAP_MS.
+	 * A person's own answer (`user`) is never refused here.
+	 * @param {string} peerId @param {'user' | 'auto' | 'stranger'} pool @returns {boolean}
+	 */
+	mayRefusalDial(peerId, pool) {
+		if (pool === 'user') return true;
+		const now = Date.now();
+		const lastAt = this.refusalLastAt;
+		if (now - (lastAt.get(peerId) ?? 0) < REFUSAL_PEER_GAP_MS) return false;
+		const limit = REFUSAL_POOLS[pool];
+		const times = this.refusalTimes;
+		times[pool] = (times[pool] ?? []).filter((t) => now - t < 1000);
+		let inFlight = 0;
+		for (const f of this.refusalInFlight.values()) if (f.pool === pool) inFlight++;
+		if (times[pool].length >= limit.perSec || inFlight >= limit.inFlight) return false;
+		times[pool].push(now);
+		lastAt.set(peerId, now);
+		if (lastAt.size > PEER_PROTO_KEEP) for (const [id, t] of lastAt) if (now - t > REFUSAL_PEER_GAP_MS) lastAt.delete(id);
+		return true;
+	}
+
+	/**
+	 * 101 F1: per-peer protocol records (proto, caps, refusals) are kept to PEER_PROTO_KEEP entries each:
+	 * past that the OLDEST go first, never a peer with a link open or in flight (ours or theirs).
+	 */
+	prunePeerProto() {
+		const live = (/** @type {string} */ id) => this.openedPeers.has(id) || !!this.connections[id] || this.inboundDials.has(id);
+		for (const map of [this.peerProto, this.peerCaps, this.protoRefused]) {
+			if (map.size <= PEER_PROTO_KEEP) continue;
+			for (const id of [...map.keys()]) {
+				if (map.size <= PEER_PROTO_KEEP) break;
+				if (!live(id)) map.delete(id);
+			}
+		}
+	}
+
+	/**
+	 * 101 F1: what this side shows. The LOWER protocol is told to reload (once per page, with the update
+	 * toast's own Reload); the HIGHER lists the other in People as needing to reload. A request we were
+	 * waiting on ends either way — and a joiner whose HOST is the older one has no People row for it,
+	 * so it gets the same line as a toast.
+	 * A stranger's dial (`unasked`) cannot latch the notice: it gets the same line as a plain toast,
+	 * at most once a minute, so a real notice later still shows.
+	 * @param {string} peerId @param {'ok' | 'stale' | 'older'} verdict @param {number} theirs @param {boolean} [unasked]
+	 */
+	applyProtoVerdict(peerId, verdict, theirs, unasked = false) {
+		if (verdict === 'ok') return;
+		log('info', 'net', 'protocol refusal', { peer: peerId, verdict, theirs, mine: WIRE_PROTO });
+		const waiting = /** @type {any[]} */ (get(waitingForApproval)).some((w) => w[0] === peerId && w[1] === 'pending');
+		const row = (/** @type {any[]} */ (get(userdata)) ?? []).find((u) => Array.isArray(u) && u[0] === peerId);
+		const name = String(row?.[1] ?? '').trim() || shortPeer(peerId);
+		if (waiting) cancelOutboundRequest(peerId);
+		if (verdict === 'stale') {
+			if (get(staleNotice)) return;
+			if (unasked) {
+				const now = Date.now();
+				if (now - (this.unaskedStaleAt ?? 0) < 60000) return;
+				this.unaskedStaleAt = now;
+				showToast('This session uses a newer version. Reload to update.', [{ label: 'Reload', action: reloadToUpdate }]);
+				return;
+			}
+			staleNotice.set({ peerId, theirs, at: Date.now() });
+			showLastingToast('This session uses a newer version. Reload to update.', [{ label: 'Reload', action: reloadToUpdate }]);
+		} else {
+			noteOlderPeer(peerId, name, theirs);
+			if (waiting) showToast(name + ' needs to reload (older version).');
+		}
+	}
+
+	/**
 	 * 25-F: tell a would-be joiner "no" (or "full"). A short dial whose METADATA is the
 	 * answer — delivered through signaling with the offer, so it arrives even where a data
 	 * channel could never open — never added to `connections`, never wired, closed by the
 	 * joiner at once and by us after REFUSAL_DIAL_MS whatever happens. Callers only send
 	 * this to a dial that advertised `jr` (see denyPeer). 55 A9: 'removed' answers a blocked
 	 * peer's re-dial. @param {string} peerId
-	 * @param {'denied' | 'full' | 'removed'} result @returns {boolean} whether a dial went out
+	 * @param {'denied' | 'full' | 'removed'} result @param {{refuse?: {reason: string, need: number}}} [extra] 101 F1:
+	 * a protocol refusal rides the same dial (`joinresult: 'denied'` is what an older build reads)
+	 * @param {'user' | 'auto' | 'stranger'} [pool] 101: who is answering — a person's own click (`user`, the default:
+	 * never limited), the app by itself (`auto`), or a protocol refusal to a stranger's dial (`stranger`); see mayRefusalDial
+	 * @returns {boolean} whether a dial went out
 	 */
-	sendJoinResult(peerId, result) {
-		if (!isRefusal(result) || !this.peer?.open) return false;
-		const conn = this.peer.connect(peerId, dialOptions(result));
+	sendJoinResult(peerId, result, extra, pool = 'user') {
+		if (!isRefusal(result) || !this.peer?.open || !this.mayRefusalDial(peerId, pool)) return false;
+		// the newest answer to a peer replaces one still in flight (a quick re-dial hears the new verdict)
+		this.refusalInFlight.get(peerId)?.finish();
+		const conn = this.peer.connect(peerId, dialOptions(result, undefined, extra));
 		if (!conn) return false;
 		this.refusalDials.add(peerId);
 		let done = false;
 		const finish = () => {
 			if (done) return;
 			done = true;
+			if (this.refusalInFlight.get(peerId)?.conn === conn) this.refusalInFlight.delete(peerId);
 			try { conn.close(); } catch {}
 			// keep the quiet-unavailable mark a little longer: the error can trail the close
-			setTimeout(() => this.refusalDials.delete(peerId), 5000);
+			setTimeout(() => { if (!this.refusalInFlight.has(peerId)) this.refusalDials.delete(peerId); }, 5000);
 		};
+		this.refusalInFlight.set(peerId, { conn, pool, finish });
 		conn.on?.('close', finish);
 		conn.on?.('error', finish);
 		conn.on?.('open', () => setTimeout(finish, 1000));
@@ -2126,6 +2606,13 @@ export class PeerConnection {
 	}
 
 	connectToPeer(peerId, getobjects = true, id = this.peer.id) {
+		// 101 F1: a peer refused for its protocol is never redialled by mesh fill; a join you ask for
+		// (or an approval dial-back) tries again, and its far side checks again
+		if (this.protoRefused.has(peerId)) {
+			if (!getobjects) return;
+			this.protoRefused.delete(peerId);
+			clearOlderPeer(peerId);
+		}
 		// remember the intent: if this dial dies and an adopted inbound conn takes
 		// its place, the adoption still owes them the full-state requests (B5)
 		if (getobjects) this.wantsStateFrom.add(peerId);
@@ -2258,6 +2745,12 @@ export class PeerConnection {
 		console.log('connection to ' + peerId + ' closed');
 		delete this.connections[peerId];
 		peers.update((value) => value);
+		// 101 F1: a link closed by a protocol refusal is over — no reconnect window, no redial
+		if (this.protoRefused.has(peerId)) {
+			if (this.openedPeers.has(peerId)) this.finalizeDisconnect(peerId, false);
+			else checkLocks();
+			return;
+		}
 		// a conn that never opened was a failed connect, not a live peer dropping
 		// (peer.on('error') already told the user) — just re-check locks and bail
 		if (!this.openedPeers.has(peerId)) {
@@ -2285,6 +2778,12 @@ export class PeerConnection {
 	// resync every adoption already does).
 	/** @param {string} peerId @param {number} attempt */
 	scheduleReconnect(peerId, attempt) {
+		// 101 F1: refused while the window ran — it ends here, without a redial
+		if (this.protoRefused.has(peerId)) {
+			this.reconnecting.delete(peerId);
+			if (this.openedPeers.has(peerId)) this.finalizeDisconnect(peerId, false);
+			return;
+		}
 		const delay = backoffDelay(attempt, { base: 500, max: 5 });
 		if (delay === null) {
 			// test-health-1: the verdict waits out a dial that is still negotiating, either way
@@ -2336,13 +2835,23 @@ export class PeerConnection {
 	// join automatically") and Remove. The provider says why; without one, a generic line.
 	// 55 owner finding 4: an INVITE admission is the invite's notice, never the provider's
 	// ("joined as a guest (view-only)" for an Edit invite, with a Turn off that is not why).
+	// uir-int (device-lab-4 D4, 78 PL34): the notice names the person — their roster name ("Guest 2", or the
+	// one they typed) — never a peer id. The name rides their userdata row, which lands a moment AFTER the
+	// admission, so an invite notice waits for it (ADMIT_NAME_WAIT_MS at most), then says "A guest" /
+	// "An AI agent".
 	/** @param {string} peerId @param {any} auth @param {any} cloudMeta @param {string} [invitedRole] */
 	announceAutoAdmit(peerId, auth, cloudMeta, invitedRole) {
-		let provided = null;
-		if (invitedRole) {
-			const canEdit = invitedRole === 'edit' || !get(rolesInfo);
-			provided = { text: shortPeer(peerId) + ' joined with your invite (' + (canEdit ? 'can edit' : 'view-only') + ').' };
-		} else try {
+		if (!invitedRole) return this.showAutoAdmit(peerId, auth, cloudMeta, null);
+		const canEdit = invitedRole === 'edit' || !get(rolesInfo);
+		void admittedName(peerId, cloudMeta).then((who) =>
+			this.showAutoAdmit(peerId, auth, cloudMeta, { text: who + ' joined with your invite (' + (canEdit ? 'can edit' : 'view-only') + ').' })
+		);
+	}
+
+	/** @param {string} peerId @param {any} auth @param {any} cloudMeta @param {any} invited the invite's own notice, or null */
+	showAutoAdmit(peerId, auth, cloudMeta, invited) {
+		let provided = invited;
+		if (!provided) try {
 			provided = typeof auth?.admitNotice === 'function' ? auth.admitNotice(peerId, cloudMeta) : null;
 		} catch (e) {
 			console.error('cloud auth provider admitNotice threw:', e);
@@ -2454,6 +2963,7 @@ export class PeerConnection {
 	// state ignore it. checkLocks releases the peer's object locks.
 	/** @param {string} peerId @param {boolean} relay */
 	finalizeDisconnect(peerId, relay) {
+		this.approvedBy.delete(peerId);
 		this.reconnecting.delete(peerId);
 		this.unavailableStrikes.delete(peerId);
 		this.silentDrops.delete(peerId);
@@ -2461,6 +2971,9 @@ export class PeerConnection {
 		forgetNodeSyncPeer(peerId);
 		this.lastLeaveAt = Date.now();
 		this.inboundDials.delete(peerId);
+		this.peerProto.delete(peerId); // 101 F1: a later link says its protocol again
+		this.peerCaps.delete(peerId);
+		this.inboundBudget.forget(peerId); // 101 F4
 		const conn = this.connections[peerId];
 		if (conn) {
 			delete this.connections[peerId];
@@ -2472,6 +2985,7 @@ export class PeerConnection {
 		clearPeerPreview(peerId); // 16-P5
 		perfLivePeerGone(peerId); // 34 PF
 		dropPeerLook(peerId); // P2
+		dropPeerFilm(peerId); // 68 V7
 		dropPeerPlayMode(peerId); // 21-F3
 		dropPeerScene(peerId); // P2b
 		dropPeerVars(peerId); // 21-G4
@@ -2511,6 +3025,11 @@ export class PeerConnection {
 		this.inboundDials.clear();
 		this.gracefulLeft.clear();
 		this.wantsStateFrom.clear();
+		// 101 F1: protocol marks belong to the session they were made in
+		this.peerProto.clear();
+		this.peerCaps.clear();
+		this.protoRefused.clear();
+		resetWireProto();
 		// 60 Q2: every fast channel, sequence and owed keyframe goes with the session
 		this.fastLinks.closeAll();
 		this.staleFilter.clear();
@@ -2529,6 +3048,7 @@ export class PeerConnection {
 				clearPeerPreview(peerId); // 16-P5
 				perfLivePeerGone(peerId); // 34 PF
 				dropPeerLook(peerId); // P2
+				dropPeerFilm(peerId); // 68 V7
 				dropPeerPlayMode(peerId); // 21-F3
 				dropPeerScene(peerId); // P2b
 				dropPeerVars(peerId); // 21-G4
@@ -2542,6 +3062,8 @@ export class PeerConnection {
 		userdata.set(get(userdata).filter(u => u[0] === this.peer.id));
 		waitingForApproval.set([]);
 		pendingApprovals.set([]);
+		this.approvedBy.clear();
+		this.unloadedPeers.clear();
 		// 27-H (audit M9): leaving a session must hand the microphone back. Nothing here
 		// touched voice, so the tab's recording indicator stayed on and the device stayed
 		// claimed after you left — for the life of the page.
@@ -2727,9 +3249,48 @@ export class PeerConnection {
 		// viewer perms: a viewer's object CREATIONS never leave this machine — mark
 		// them local-only + warn, and skip the broadcast (peers drop them anyway).
 		if (gateCreationBroadcast(data)) return;
+		// 78-int PL13: a live scene-singleton edit says it is one (`by`, additive; older peers ignore it)
+		const by = noteLocalSceneEdit(data);
+		if (by) data.by = by;
 		if(data.type == 'create')
 		this.sendMessage('created a ' + data.command.split(' ')[1], 'info');
 		this.broadcast(data, opts);
+	}
+
+	/**
+	 * A refused goodbye report leaves the row to the local reaper (checkLocks): one pass now stamps it, one
+	 * after the grace prunes it if still nothing reaches it. One sweep at a time; a report during it earns
+	 * one more.
+	 */
+	sweepRosterLater() {
+		if (this.goneReportSweep) {
+			this.goneReportAgain = true;
+			return;
+		}
+		checkLocks();
+		this.goneReportSweep = setTimeout(() => {
+			this.goneReportSweep = null;
+			checkLocks();
+			if (this.goneReportAgain) {
+				this.goneReportAgain = false;
+				this.sweepRosterLater();
+			}
+		}, ROSTER_GRACE_MS + 1000);
+	}
+
+	/**
+	 * What decides whether this sender may name new peers, change other peers' rows or say they have
+	 * gone (rosterTrust.js): the host we joined, a peer that approved us, or one we are still asking.
+	 * @param {string} from
+	 */
+	rosterTrustFor(from) {
+		const roster = /** @type {any[]} */ (get(userdata));
+		return {
+			from,
+			speaksForSession:
+				get(sessionHost) === from || this.approvedBy.has(from) || get(waitingForApproval).some((/** @type {any} */ w) => w[0] === from),
+			known: (/** @type {string} */ id) => roster.some((u) => u[0] === id)
+		};
 	}
 }
 
@@ -2766,6 +3327,7 @@ function pushWorldState(peerId) {
 	conn.send(scenePhysicsState());
 	// L-C: one per post DOCUMENT — the scene look and any camera looks
 	for (const state of scenePostStates()) conn.send(state);
+	if (sceneBakeState().changedAt) conn.send(sceneBakeState()); // 98 P1
 	conn.send(gameStatePayload());
 	conn.send(kitPayload());
 	for (const msg of kitEntityPayloads()) conn.send(msg);

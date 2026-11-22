@@ -5,6 +5,7 @@ import { normalizeLocomotion, normalizeSpawn } from './locomotionPolicy'; // 30b
 import { normalizeBounds } from './teleportRules'; // 31 K1
 import { normalizeReach } from './playReach'; // 31-towers P1
 import { normalizePassThrough, PASS_DEFAULTS } from './selectThrough'; // 36 F22 (a leaf)
+import { normalizeLevelsTable } from './gameLevels/table.js'; // 93 LP0 (a leaf)
 
 // CL-A A6 / 21-B B1: scene-wide physics settings. ONE shared object for the
 // whole session, replicated as its OWN latest-wins singleton message (the
@@ -126,6 +127,14 @@ function withUnknown(raw, known, claimed) {
 	return out;
 }
 
+/** 85 H6: `{position, target}` of finite triples, else null @param {any} raw @returns {{position: number[], target: number[]} | null} */
+export function normalizeStartViewField(raw) {
+	const ok = (/** @type {any} */ v) => Array.isArray(v) && v.length === 3 && v.every((n) => typeof n === 'number' && Number.isFinite(n) && Math.abs(n) < 1e6);
+	if (!raw || typeof raw !== 'object' || !ok(raw.position)) return null;
+	const r = (/** @type {number} */ n) => Math.round(n * 1000) / 1000;
+	return { position: raw.position.map(r), target: ok(raw.target) ? raw.target.map(r) : [0, 0, 0] };
+}
+
 /**
  * The ONE boundary normalizer — every store write (local edit, remote apply,
  * handshake, restore) goes through it. Clamps live HERE, not in the setters, so
@@ -201,9 +210,12 @@ export function normalizeScenePhysics(raw) {
 				// 36 F22: a game's rays skip water + triggers unless it opts back in here
 				...optional('rayHits', normalizeRayHits(playRaw.rayHits)),
 				// 38 R8: the play banner, present only when not the default hint
-				...optional('banner', normalizePlayBanner(playRaw.banner))
+				...optional('banner', normalizePlayBanner(playRaw.banner)),
+				// 95 SM3: a published game's players may share moments (the last 10 s) — present only
+				// when the author allowed it (absent = off, every scene before it)
+				...(playRaw.moments === true ? { moments: true } : {})
 			},
-			['interaction', 'grounded', 'simOnPlay', 'cursor', 'locomotion', 'spawn', 'bounds', 'reach', 'rayHits', 'banner']
+			['interaction', 'grounded', 'simOnPlay', 'cursor', 'locomotion', 'spawn', 'bounds', 'reach', 'rayHits', 'banner', 'moments']
 		),
 		// A1: the 20 ceiling is throwVelocity's MAX_LINVEL, restated rather than imported —
 		// this module is store-only and the response clamps through clampThrow anyway
@@ -224,6 +236,10 @@ export function normalizeScenePhysics(raw) {
 		// that never used it stays byte-identical. Scene-wide like the rest of this block, and
 		// housed here for the same reason the play block is: zero new wire surface.
 		...(source.holdCamera === true ? { holdCamera: true } : {}),
+		// 85 H6: the editor OPENING VIEW an author (or an agent) chose — where the editor camera starts
+		// when the scene opens. Present only when authored; a save writes it as the payload's `camera`
+		// instead of the saver's live view (sessions.buildSessionPayload). Nobody's camera moves on set.
+		...optional('startView', normalizeStartViewField(source.startView)),
 		// 36 F22: Configure Scene ▸ Advanced ▸ "Selection passes through" — present only when it
 		// differs from the defaults (water on, transparent + triggers off)
 		...optional('pick', normalizePick(source.pick)),
@@ -234,6 +250,9 @@ export function normalizeScenePhysics(raw) {
 		...(typeof source.fluidBudget === 'number' && Number.isFinite(source.fluidBudget)
 			? { fluidBudget: Math.round(Math.max(200, Math.min(20000, source.fluidBudget))) }
 			: {}),
+		// 93 LP0: the game's ONE Levels table (+ its keep list and loading screen) — present only when
+		// authored, so a scene that never used it stays byte-identical (gameLevels/table.js)
+		...optional('levels', normalizeLevelsTable(source.levels)),
 		changedAt: typeof source.changedAt === 'number' ? source.changedAt : 0
 	};
 	return withUnknown(source, state, [
@@ -247,9 +266,11 @@ export function normalizeScenePhysics(raw) {
 		'play',
 		'knock',
 		'holdCamera',
+		'startView',
 		'pick',
 		'simOnLoad',
 		'fluidBudget',
+		'levels',
 		'changedAt',
 		'type' // the wire envelope's own field, never state
 	]);
@@ -266,7 +287,7 @@ scenePhysicsState_.subscribe((s) => sceneGravity.set(s.gravity));
 export const scenePhysicsGround = derived(scenePhysicsState_, (s) => s.ground);
 /** out-of-bounds config. NOT named `sceneBounds` — that is sceneBounds.js */
 export const scenePhysicsBounds = derived(scenePhysicsState_, (s) => s.bounds);
-/** play-mode block ({interaction, grounded, simOnPlay, cursor?: 'free', spawn?: {position, yaw}, banner?}) */
+/** play-mode block ({interaction, grounded, simOnPlay, cursor?: 'free', spawn?: {position, yaw}, banner?, moments?: true}) */
 export const scenePlay = derived(scenePhysicsState_, (s) => s.play);
 /** A1: the knock block ({enabled, gain, maxSpeed, minSpeed, radius, spin, predict}) */
 export const sceneKnock = derived(scenePhysicsState_, (s) => s.knock);

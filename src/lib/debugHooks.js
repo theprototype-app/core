@@ -14,6 +14,10 @@
 // of a session that did not ask for the hook. Code that already holds an object can publish it with
 // `registerDebugHook(name, obj)` (before or after the install) instead of adding a row.
 
+// 94 SP1: the runtime registry lives in a leaf (the play entry imports it without this table)
+import { registeredDebugHooks as registered, registerDebugHook } from './debugHookRegistry.js';
+export { registerDebugHook };
+
 /** @type {[string, () => Promise<any>][]} */
 export const DEBUG_HOOKS = [
 	['*', () => import('../stores/sceneStore')],
@@ -34,8 +38,13 @@ export const DEBUG_HOOKS = [
 	['perfDetailed', () => import('./perf/detailed')],
 	['perfBeacon', () => import('./perf/beacon')],
 	['errorReports', () => import('./errorReports')],
+	// 54i aa: the lazy-chunk retry + new-version notice (chunkReloadDebug)
+	['chunkReload', () => import('./chunkReload.js')],
 	['staleModules', () => import('./staleModules')],
 	['perfMoment', () => import('./perf/moment')],
+	// 95 SM1-SM3: Share a moment — the stores (setting, status, open); the buffer itself publishes
+	// `momentBuffer` through registerDebugHook when the first Play loads it
+	['momentStores', () => import('./moment/momentStores.js')],
 	['problemReport', () => import('./problemReport')],
 	['profilerView', () => import('./perf/profilerView')],
 	['profilerModel', () => import('./perf/profilerModel.js')],
@@ -43,8 +52,14 @@ export const DEBUG_HOOKS = [
 	// 36 U3b/I5: the tour engine (tours, activeTour, toursDebug) + the built-in tours
 	['tours', () => import('./tours/index.js')],
 	['toursBuiltin', () => import('./tours/builtin.js')],
+	// 76 FW1: the first-win quest (start / choose / debug) + its local state
+	['firstWin', () => import('./onboarding/firstWin.js')],
+	['onboardState', () => import('./onboarding/onboardState.js')],
+	['funnel', () => import('./onboarding/funnel.js')],
 	// 39: drag to place — the preview setting, the measured dims, the pack downloads, the ghost
 	['placementPrefs', () => import('./placementPrefs.js')],
+	// uir-people: the optional status (Available / Busy / Away) and its roster merge
+	['peoplePresence', () => import('./peoplePresence.js')],
 	['placementDims', () => import('./placementDims.js')],
 	['packCache', () => import('./packCache.js')],
 	// 60 Q6: the local asset cache (OPFS) — index, stats, clear, persist
@@ -61,6 +76,8 @@ export const DEBUG_HOOKS = [
 	['recording', () => import('./recording/recorder.js')],
 	['recordingStores', () => import('./recording/recordingStores.js')],
 	['webmDuration', () => import('./recording/webmDuration.js')],
+	// 65 M4/M7: the frame-exact export (startExport, cancelExport, exportDebug, exportCaps)
+	['videoExport', () => import('./recording/offlineRender.js')],
 	// 36 A2: the offerSession decision (xrOfferMode, xrOfferEnabled, xrOfferDebug)
 	['xrOffer', () => import('./xrOffer')],
 	// 36-avatars: rigged avatars (avatarsDebug, avatarInstances, avatarIkPeers, avatarPreview) + assets/catalog
@@ -93,28 +110,56 @@ export const DEBUG_HOOKS = [
 	['annotationsHandler', () => import('./annotationsHandler')],
 	['noteHistory', () => import('./noteHistory')],
 	['flowRuntime', () => import('./flowRuntime')],
+	// 78 F27: the starter recipes (door, walk-up door, bell, guard)
+	['starterRecipes', () => import('./starterRecipes.js')],
+	['gameAnnounce', () => import('./gameAnnounce')],
 	// 48 D1: the node graph debugger (stores + requests; the runtime half is flowRuntime.flowDebugRuntime)
 	['flowDebug', () => import('./flowDebug.js')],
 	['history', () => import('./history')],
+	['historyGesture', () => import('./historyGesture')],
 	['materialsHandler', () => import('./materialsHandler')],
+	['materialMaps', () => import('./materialMaps')],
+	['materialMapTextures', () => import('./materialMapTextures.js')],
 	// 37 R5: material presets (materialPresets, peerMaterialPresets, applyMaterialPreset, materialPresetsDebug…)
 	['materialPresets', () => import('./materialPresets')],
 	// 40 F16: the look tier (materialTiersDebug, pinMaterialTier, applyMaterialTiers)
 	['materialTiers', () => import('./materialTiers.js')],
 	// 40 F15: the motion nodes (motionNodesDebug, resetMotionNodes)
 	['motionNodes', () => import('./motion/motionNodes.js')],
+	// 85 N1/N2/N4: the swing / tween / light nodes (tweenNodesDebug, lightNodesDebug) + the pure core
+	['tweenNodes', () => import('./motion/tweenNodes.js')],
+	['lightNodes', () => import('./motion/lightNodes.js')],
+	['tweenCore', () => import('./motion/tweenCore.js')],
+	// 85 N5: Wind Sway + Flowing Water
+	['swayNodes', () => import('./motion/swayNodes.js')],
+	// 85 N3: Ambient Animal
+	['ambientNodes', () => import('./motion/ambientNodes.js')],
+	// 85 I1: a Grabbable's return glides (suites read grabReturnDebug)
+	['grabReturn', () => import('./grabReturn.js')],
+	// 85 I2: Highlight + Press Button, and what this device points at
+	['pressNodes', () => import('./motion/pressNodes.js')],
+	['hoverState', () => import('./hoverState.js')],
+	// 85 I3: Sit Spot
+	['sitSpot', () => import('./sitSpot.js')],
 	['objectActions', () => import('./objectActions')],
 	['commandsHandler', () => import('./commandsHandler.svelte')],
 	['moduleSDK', () => import('./moduleSDK')],
 	['moduleLifecycle', () => import('./sdk/lifecycleEnv.js')],
 	['drawMode', () => import('./drawMode')],
 	['pathCapture', () => import('./pathCapture')],
+	// 78: the capture stack (F5), Animate in editor (F6), live card states (F7), the flow lint (F24)
+	['captureStack', () => import('./captureStack')],
+	['editorMotion', () => import('./editorMotion')],
+	['nodeLiveState', () => import('./nodeLiveState')],
+	['flowLint', () => import('./flowLint.js')],
 	['lockControl', () => import('./lockControl')],
 	['prefabs', () => import('./prefabs')],
 	['prefabLinks', () => import('./prefabLinks')],
 	['prefabSync', () => import('./prefabSync')],
 	['prefabLibrary', () => import('./prefabLibrary')],
 	['physics', () => import('./physics')],
+	// 78 F2: the hover sampler's view (hoverInputDebug)
+	['hoverInput', () => import('./hoverInput')],
 	// 36-sim: buoyancy/jiggle/fluid/splash state
 	['sim', () => import('./sim/debug.js')],
 	// 49-fluid W2: the GPU fluid switch + verdict (gpuFluidDebug, remeasureGpuFluid, loseGpuDeviceForTest)
@@ -249,12 +294,17 @@ export const DEBUG_HOOKS = [
 	['networkQuality', () => import('./networkQuality')],
 	['packs', () => import('./packs')],
 	['customNodes', () => import('./customNodes')],
+	['convertToCode', () => import('./convertToCode')],
 	['nodesHandler', () => import('./nodesHandler')],
 	['nodeCatalog', () => import('./nodeCatalog')],
 	['objectMenu', () => import('./objectMenu')],
 	['animationPreview', () => import('./animationPreview')],
 	['aiProviders', () => import('./ai/providers')],
 	['aiTools', () => import('./ai/tools')],
+	// 2.0 N1/N2: the node definition registry, the codeView flag and the code generator (flow-code-view suite)
+	['nodeRegistry', () => import('./nodes/index.js')],
+	['codeView', () => import('./nodes/codeViewFlag.js')],
+	['flowCode', () => import('./nodes/flowCodeView.js')],
 	['aiAssistant', () => import('./ai/assistant')],
 	['meshProviders', () => import('./ai/meshProviders')],
 	['toolStatus', () => import('./tools/toolStatus.js')],
@@ -276,6 +326,9 @@ export const DEBUG_HOOKS = [
 	// 56 C1: the agent chat window; `tpchatStore` = the same module as `tpchats` below (56-chat's suites read it by this name)
 	['agentChat', () => import('./agentChat')],
 	['tpchatStore', () => import('./chat/tpchatStore.js')],
+	// uir-chat: the one Chat window's tab routing + the chats this device keeps
+	['chatWindow', () => import('./chat/chatWindow.js')],
+	['chatSaves', () => import('./chat/chatSaves.js')],
 	// 86: the Claude connector's UI state (a leaf — the connector itself stays a lazy chunk)
 	['connectorStore', () => import('./connector/connectorStore.js')],
 	['peerModeration', () => import('./peerModeration')],
@@ -322,6 +375,8 @@ export const DEBUG_HOOKS = [
 	['viewportPip', () => import('./viewportPip')],
 	['inputDevice', () => import('./inputDevice')],
 	['sceneTemplates', () => import('./sceneTemplates')],
+	// 100 C1: the Cinematic view (state; `cinematicView()` returns the lazy half's debug/e2e surface)
+	['cinematicState', () => import('./cinematic/cinematicState.js')],
 	['bvhPicking', () => import('./bvhPicking')],
 	['multiTransform', () => import('./multiTransform')],
 	['objectOrigin', () => import('./objectOrigin')],
@@ -345,11 +400,23 @@ export const DEBUG_HOOKS = [
 	['editOverlays', () => import('./editOverlays')],
 	['objectPermissions', () => import('./objectPermissions')],
 	['scenePost', () => import('./scenePost')],
+	// 98 P1: the bake record + job, the runner and the apply side (each loads only when asked)
+	['sceneBake', () => import('./sceneBake')],
+	['bakeRunner', () => import('./bake/bakeRunner.js')],
+	['bakeApply', () => import('./bake/bakeApply.js')],
 	['postEffects', () => import('./postEffects')],
+	['proPresets', () => import('./post/proPresets.js')],
+	['finishCore', () => import('./post/finishCore.js')],
+	['finishEffects', () => import('./post/finishEffects.js')],
+	['traaPass', () => import('./post/traaPass.js')],
+	['xrLook', () => import('./xrLook.js')],
+	['xrLookCore', () => import('./xrLookCore.js')],
 	['viewportOverrides', () => import('./viewportOverrides')],
 	['postprocessing', () => import('postprocessing')],
 	['shaderBackends', () => import('./shaderBackends')],
 	['shaderGraph', () => import('./shaderGraph')],
+	['shaderCodeGuard', () => import('./shaderCodeGuard')],
+	['shaderCodeReach', () => import('./shaderCodeReach.js')],
 	['shaderSync', () => import('./shaderSync')],
 	['shaderTextures', () => import('./shaderTextures')],
 	['shaderCatalog', () => import('./shaderCatalog')],
@@ -361,6 +428,13 @@ export const DEBUG_HOOKS = [
 	['undoToast', () => import('./undoToast')],
 	['docking', () => import('./docking')],
 	['sidebars', () => import('./sidebars')],
+	['sidebarHandles', () => import('./sidebarHandles')],
+	['windowPrefs', () => import('./windowPrefs.js')],
+	['deviceClass', () => import('./deviceClass.js')],
+	['paneLocks', () => import('./ui/paneLocks.js')],
+	// dock-fixes: the hosted windows' toggle tree + the Panels button (item 3 / item 8 suites)
+	['panelToggles', () => import('./panelToggles')],
+	['panelsButton', () => import('./panelsButton')],
 	// 43 J9: dismissible tips (the phone More sheet's drag how-to) + Reset tips
 	['tips', () => import('./tips')],
 	// 43: the layout reloaders (a suite swaps the stored toolbar without reloading the page)
@@ -387,6 +461,11 @@ export const DEBUG_HOOKS = [
 	['fflate', () => import('fflate')],
 	['sequenceSync', () => import('./sequenceSync')],
 	['sequencePlayer', () => import('./sequencePlayer')],
+	// 68 V1: Film mode's leaf store (openFilm/closeFilm); the runtime registers `filmMode` itself when it loads (lazy)
+	['filmState', () => import('./film/filmState')],
+	// 68 V7: who is filming (presence) + the prop-playback ledger a presence pose sits in
+	['filmPresence', () => import('./film/filmPresence')],
+	['propPlayback', () => import('./propPlayback')],
 	['idb', () => import('./idb')],
 	['hudKinds', () => import('./hudKinds')],
 	['hudImages', () => import('./hudImages')],
@@ -409,6 +488,12 @@ export const DEBUG_HOOKS = [
 	['hudArrange', () => import('./hudArrange')],
 	['gamePresence', () => import('./gamePresence')],
 	['levels', () => import('./levels')],
+	// 93: levels and progress (the table runtime, portals / checkpoints at play time, travel, loading, saves)
+	['levelsPlay', () => import('./gameLevels/play.js')],
+	['levelsTravel', () => import('./gameLevels/travel.js')],
+	['levelsCheckpoints', () => import('./gameLevels/checkpoints.js')],
+	['levelsLoading', () => import('./gameLevels/loading.js')],
+	['levelsSave', () => import('./gameLevels/save.js')],
 	['peerVars', () => import('./peerVars')],
 	['projectManifest', () => import('./projectManifest')],
 	['projectFile', () => import('./projectFile')],
@@ -425,6 +510,7 @@ export const DEBUG_HOOKS = [
 	['filePreview', () => import('./filePreview')],
 	['saveAs', () => import('./saveAs')],
 	['windowTabs', () => import('./windowTabs')],
+	['chromeButtons', () => import('./chromeButtons')],
 	['colocation', () => import('./colocation')],
 	['colocationCalibrate', () => import('./colocationCalibrate')],
 	['colocationPresence', () => import('./colocationPresence')],
@@ -441,9 +527,16 @@ export const DEBUG_HOOKS = [
 	['touchActions', () => import('./touchActions')],
 	['touchSpec', () => import('./touchSpec')],
 	['playMode', () => import('./playMode')],
+	// phone-polish: Android Back closes the top surface
+	['backStack', () => import('./backStack.js')],
+	// phone-polish: invisible tap areas (A/B: setHitSlopEnabled)
+	['hitSlop', () => import('./ui/hitSlop.js')],
 	['arTable', () => import('./arTable')],
 	// 60 Q1: Play here
 	['playHere', () => import('./playHere')],
+	// 61 G3: Test with players — the runner (startTest / stopTest / testPlayersDebug) and the leaf (startTestPlayers)
+	['testPlayers', () => import('./testPlayers/host.js')],
+	['testPlayersUi', () => import('./testPlayers/testPlayers.js')],
 	// 60 Q5: reference image underlays
 	['underlays', () => import('./underlays')],
 	['underlayPose', () => import('./underlayPose')],
@@ -454,7 +547,6 @@ export const DEBUG_HOOKS = [
 	['projectActions', () => import('./projectActions.js')],
 	['saveOptions', () => import('./saveOptions.js')],
 	// 42 I1: sticky panel headers
-	['panelHeaderPrefs', () => import('./panelHeaderPrefs.js')],
 	['rowFit', () => import('./ui/rowFit.js')],
 	['exportBoot', () => import('./export/exportBoot.js')],
 	['exportRuntime', () => import('./export/exportRuntime.js')],
@@ -472,6 +564,8 @@ export const DEBUG_HOOKS = [
 	['diagnostics', () => import('./diagnostics')],
 	['wireValidate', () => import('./wireValidate')],
 	['wireErrors', () => import('./wireErrors')],
+	// the load check in front of three's generic loaders (totals + reset for the suites)
+	['loadGuard', () => import('./loadGuard.js')],
 	['safeStorage', () => import('./safeStorage')],
 	['sceneBudget', () => import('./sceneBudget')],
 	// 46 B1/B2: the budget chip + Statistics ▸ Budget (budgetTarget, sceneCost, sampleBudget, openBudget, TARGETS)
@@ -488,6 +582,11 @@ export const DEBUG_HOOKS = [
 	['gameKit', () => import('./gameKit')],
 	['moduleWorld', () => import('./moduleWorld')],
 	['playSpawn', () => import('./playSpawn')],
+	// 78 PL32: the joiner's side step (lastJoinSideStep) + the near-avatar fade maths
+	['joinSideStep', () => import('./joinSideStep.js')],
+	['nearAvatars', () => import('./nearAvatars.js')],
+	// 78 PL34: the join name ask + guest names
+	['guestName', () => import('./guestName.js')],
 	['packRefs', () => import('./packRefs')],
 	// 36 U9: per-file load states + the placeholder renderer
 	['loadStates', () => import('./loadStates')],
@@ -548,24 +647,30 @@ export const DEBUG_HOOKS = [
 	['mainGraph', () => import('./mainGraph.js')],
 	// 36 (U10, games-graphs): engine pieces, the behaviour runtime, authored-group sockets
 	['engines', () => import('./behaviours/engines.js')],
-	['groupReconcile', () => import('./groupReconcile.js')]
+	['groupReconcile', () => import('./groupReconcile.js')],
+	// 64 D2: text on a path (textPathDebug, setLetterOverrides)
+	['textPath', () => import('./textPathRuntime.js')],
+	['textPathEdit', () => import('./textPathEdit.js')],
+	// 64-text: fonts (bundled + Library + Google), the solid build, the export licence walk
+	['textFonts', () => import('./textFonts.js')],
+	['text3dBuild', () => import('./text3dBuild.js')],
+	['sceneLicences', () => import('./sceneLicences.js')],
+	// 78 F4: the Path object (pathOf = the F9 read API, the actions, the agent tool)
+	['pathRuntime', () => import('./path/pathRuntime.js')],
+	['pathActions', () => import('./path/pathActions.js')],
+	['pathObject', () => import('./path/pathObject.js')],
+	['pathState', () => import('./path/pathState.js')],
+	['pathTools', () => import('./ai/pathTools.js')],
+	// 101 F3: the renderer seam (disposeRenderer, recycleMainRenderer, seamState, the factories)
+	['renderSeam', () => import('./render/index.js')]
 ];
 
-/** hooks published at runtime through registerDebugHook @type {Record<string, any>} */
-const registered = {};
-
-/** Publish `obj` on the debug hook as `__stores[name]` — now if the hook is installed, else when
- * it is. @param {string} name @param {any} obj */
-export function registerDebugHook(name, obj) {
-	registered[name] = obj;
-	/** @type {any} */
-	const w = typeof window !== 'undefined' ? window : null;
-	if (w?.__stores) w.__stores[name] = obj;
-}
-
-/** Load every row and publish `window.__stores`. @returns {Promise<Record<string, any>>} */
+/** Load every row and publish `window.__stores` + the 101 F5 facade `window.__tp.test.v1` over it
+ * (the facade forwards to this same live object, so a later registerDebugHook shows on both).
+ * @returns {Promise<Record<string, any>>} */
 export function installDebugHooks() {
-	return Promise.all(DEBUG_HOOKS.map(([, load]) => load())).then((mods) => {
+	// 101 F5: the facade module loads WITH the rows (lazy: the boot graph never carries it)
+	return Promise.all([Promise.all(DEBUG_HOOKS.map(([, load]) => load())), import('./testFacade.js')]).then(([mods, facade]) => {
 		/** @type {Record<string, any>} */
 		const stores = {};
 		DEBUG_HOOKS.forEach(([name], i) => {
@@ -576,6 +681,7 @@ export function installDebugHooks() {
 		});
 		Object.assign(stores, registered);
 		/** @type {any} */ (window).__stores = stores;
+		facade.installTestFacade(stores);
 		return stores;
 	});
 }

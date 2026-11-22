@@ -10,7 +10,7 @@ h.run(async () => {
 
 	// --- pure step math ---
 	const steps = await A.page.evaluate(() => {
-		const v = window.__stores.vrControls;
+		const v = window.__tp.test.v1.vrControls;
 		const s = { translate: 0.5, rotateDeg: 15, scale: 0.1 };
 		return {
 			posSnap: v.nudgeStep('pos', true, s),
@@ -51,7 +51,7 @@ h.run(async () => {
 			store.subscribe((x) => (v = x))();
 			return v;
 		};
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const inRing = s.vrRadialMenu.ringEntries('object').some((e) => e.id === 'obj:props');
 		s.vrPaletteOpen.set(true);
 		s.vrMenuOpen.set(true);
@@ -71,17 +71,17 @@ h.run(async () => {
 
 	// --- rendered control set (needs a selection) ---
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = group.children[group.children.length - 1];
-		window.__stores.objectActions.selectObject(box);
+		window.__tp.test.v1.objectActions.selectObject(box);
 		window.__box = box;
 	});
 	await A.page.waitForTimeout(500);
 	const names = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((scene) => {
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
 					const panel = scene?.getObjectByName('vr-props-panel');
 					const found = [];
 					panel?.traverse((o) => {
@@ -104,7 +104,7 @@ h.run(async () => {
 
 	// --- nudges: local apply + undo entry + replicated move path ---
 	const nudge = await A.page.evaluate(() => {
-		const v = window.__stores.vrControls;
+		const v = window.__tp.test.v1.vrControls;
 		const box = window.__box;
 		const x0 = box.position.x;
 		v.executeVRMenuAction('props:nudge:pos:x:1');
@@ -115,7 +115,7 @@ h.run(async () => {
 		const sz0 = box.scale.z;
 		v.executeVRMenuAction('props:nudge:scale:z:1');
 		const sz1 = box.scale.z;
-		window.__stores.history.undo();
+		window.__tp.test.v1.history.undo();
 		const szAfterUndo = box.scale.z;
 		return { dx: x1 - x0, dry: ry1 - ry0, dsz: sz1 - sz0, szAfterUndo, sz0 };
 	});
@@ -128,7 +128,7 @@ h.run(async () => {
 
 	// --- opacity routes through setMaterialParam (transparent auto-arms) ---
 	const opacity = await A.page.evaluate(() => {
-		const v = window.__stores.vrControls;
+		const v = window.__tp.test.v1.vrControls;
 		const box = window.__box;
 		v.executeVRMenuAction('props:opacity:-1');
 		return { opacity: box.material.opacity, transparent: box.material.transparent };
@@ -140,7 +140,7 @@ h.run(async () => {
 
 	// --- visibility (color/duplicate/delete moved to the Edit ring, 120) ---
 	const actions = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const v = s.vrControls;
 		const box = window.__box;
 		v.executeVRMenuAction('props:visible');
@@ -153,7 +153,7 @@ h.run(async () => {
 
 	// --- 33 (K6, P3): the LOD row — readout + Force LOD cycling through the replicated path ---
 	const lod = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const v = s.vrControls;
 		const box = window.__box;
 		const out = { press: v.propsRowAction('lod'), none: v.lodReadout(box.uuid) };

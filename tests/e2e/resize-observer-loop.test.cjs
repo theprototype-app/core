@@ -21,9 +21,9 @@ async function boot(browser, name, context, theme) {
 	const A = await h.setupPage(browser, name, { context, storage: { theme, toursSeen: '{"editor-touch":true,"editor":true}' } });
 	await A.ctx.addInitScript(LISTEN);
 	await A.page.reload();
-	await A.page.waitForFunction(() => window.__stores && window.__stores.commandsHandler && window.__roLoop, null, { timeout: 60000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && window.__tp.test.v1.commandsHandler && window.__roLoop, null, { timeout: 60000 });
 	await A.page.waitForTimeout(1500);
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await A.page.waitForTimeout(800);
 	return A;
 }
@@ -44,7 +44,7 @@ h.run(async () => {
 
 		// + the Animation window in Graph mode beside it, tab switches and a dock resize
 		await P.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let g;
 			s.objectsGroup.subscribe((v) => (g = v))();
 			const o = g.children[0];
@@ -87,7 +87,7 @@ h.run(async () => {
 
 	// desktop: the floating Explorer narrowed past its header thresholds
 	const D = await boot(browser, 'desk', { viewport: { width: 1440, height: 900 } }, 'dark');
-	await D.page.evaluate(() => window.__stores.explorerClose.set(false));
+	await D.page.evaluate(() => window.__tp.test.v1.explorerClose.set(false));
 	await D.page.waitForTimeout(2000);
 	h.check((await roErrors(D.page)) === 0, `desktop: opening the Explorer raises no loop error (${await roErrors(D.page)})`);
 	await D.page.setViewportSize({ width: 640, height: 900 });

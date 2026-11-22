@@ -8,7 +8,7 @@ fs.mkdirSync(OUT, { recursive: true });
 async function load(page, slug) {
 	const bytes = Array.from(fs.readFileSync(path.join(SC, slug, 'scene.tpscene')));
 	await page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		await s.sessions.applySession(payload, { backup: false });
 	}, bytes);
@@ -17,26 +17,26 @@ async function load(page, slug) {
 async function look(page, p, t) {
 	await page.evaluate(([p, t]) => {
 		let cam, orbit;
-		window.__stores.editorCam.subscribe((v) => (cam = v))();
-		window.__stores.orbitControls.subscribe((v) => (orbit = v))();
+		window.__tp.test.v1.editorCam.subscribe((v) => (cam = v))();
+		window.__tp.test.v1.orbitControls.subscribe((v) => (orbit = v))();
 		cam.position.set(...p); orbit?.target?.set(...t); orbit?.update?.(); cam.lookAt(...t);
 	}, [p, t]);
 }
-const sel = (page, name) => page.evaluate((n) => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); const o = g.getObjectByName(n); window.__stores.objectActions.selectObject(o.uuid); return o.position.toArray(); }, name);
+const sel = (page, name) => page.evaluate((n) => { let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))(); const o = g.getObjectByName(n); window.__tp.test.v1.objectActions.selectObject(o.uuid); return o.position.toArray(); }, name);
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1280, height: 720 } } });
 	await load(A.page, 'fluid-tank-toy');
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await A.page.waitForTimeout(7000);
 	const d = await sel(A.page, 'Duck 1');
 	console.log('duck', d);
 	await look(A.page, [d[0] + 0.1, d[1] + 0.35, d[2] + 1.5], d);
 	await A.page.waitForTimeout(1500);
 	await A.page.screenshot({ path: path.join(OUT, 'f13b-tank-duck.png') });
-	await A.page.evaluate(() => window.__stores.physics.stopSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	await load(A.page, 'aquarium');
-	const wb = await A.page.evaluate(() => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); const T = window.__stores.THREE; const b = new T.Box3().setFromObject(g.getObjectByName('Aquarium water')); return [b.min.toArray(), b.max.toArray()]; });
+	const wb = await A.page.evaluate(() => { let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))(); const T = window.__tp.test.v1.THREE; const b = new T.Box3().setFromObject(g.getObjectByName('Aquarium water')); return [b.min.toArray(), b.max.toArray()]; });
 	console.log('water box', JSON.stringify(wb));
 	const f = (await sel(A.page, 'Clownfish 1')) ?? (await sel(A.page, 'Fish orange')); // 40: the reef fish
 	console.log('fish', f);

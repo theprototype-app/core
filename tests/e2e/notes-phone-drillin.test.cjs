@@ -13,7 +13,7 @@
 // Then the desktop: the side drawer and the anchored card are unchanged, and the card's ‹ › walk too.
 const h = require('./helpers.cjs');
 
-const store = (name) => `(() => { let v; window.__stores.${name}.subscribe((x) => (v = x))(); return v; })()`;
+const store = (name) => `(() => { let v; window.__tp.test.v1.${name}.subscribe((x) => (v = x))(); return v; })()`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const SHOTS = process.env.SHOT_DIR || '';
 
@@ -58,7 +58,7 @@ h.run(async () => {
 
 	// 14 notes: 4 labelled "mech" (so a group walk has neighbours), the rest General — enough to scroll
 	const ids = await P.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		for (let i = 0; i < 4; i++) s.commandsHandler.sceneCommand('/create box');
 		let g;
 		for (let t = 0; t < 100; t++) {
@@ -83,7 +83,7 @@ h.run(async () => {
 	await P.waitForTimeout(600);
 
 	// ---- open the drawer, scroll it, open a note ------------------------------------------
-	await P.evaluate(() => window.__stores.notesDrawerOpen.set(true));
+	await P.evaluate(() => window.__tp.test.v1.notesDrawerOpen.set(true));
 	await P.waitForTimeout(900);
 	const drawer0 = await rect('#notes-drawer');
 	h.check(!!drawer0, `the Notes drawer opens (${JSON.stringify(drawer0)})`);
@@ -116,10 +116,10 @@ h.run(async () => {
 	h.check(!!card && !!drawer1 && Math.abs(card.top - drawer1.top) < 3 && Math.abs(card.bottom - drawer1.bottom) < 3, `the card covers the Notes tab exactly — a page of the same sheet (card ${Math.round(card?.top)}-${Math.round(card?.bottom)}, drawer ${Math.round(drawer1?.top)}-${Math.round(drawer1?.bottom)})`);
 	if (SHOTS) {
 		await P.screenshot({ path: `${SHOTS}/g12-folded-2-note-dark.png` });
-		await P.evaluate(() => window.__stores.themes?.theme?.set('light'));
+		await P.evaluate(() => window.__tp.test.v1.themes?.theme?.set('light'));
 		await P.waitForTimeout(500);
 		await P.screenshot({ path: `${SHOTS}/g12-folded-2-note-light.png` });
-		await P.evaluate(() => window.__stores.themes?.theme?.set('dark'));
+		await P.evaluate(() => window.__tp.test.v1.themes?.theme?.set('dark'));
 		await P.waitForTimeout(300);
 	}
 
@@ -127,10 +127,10 @@ h.run(async () => {
 	const walkOf = () =>
 		P.evaluate(() => {
 			let list;
-			window.__stores.annotationsHandler.annotations.subscribe((v) => (list = v))();
+			window.__tp.test.v1.annotationsHandler.annotations.subscribe((v) => (list = v))();
 			let act;
-			window.__stores.annotationsHandler.activeAnnotation.subscribe((v) => (act = v))();
-			return act?.id ? window.__stores.annotationsHandler.noteWalk(list, act.id) : null;
+			window.__tp.test.v1.annotationsHandler.activeAnnotation.subscribe((v) => (act = v))();
+			return act?.id ? window.__tp.test.v1.annotationsHandler.noteWalk(list, act.id) : null;
 		});
 	const activeId = () => read(`${store('annotationsHandler.activeAnnotation')}?.id`);
 	const walk = await walkOf();
@@ -145,7 +145,7 @@ h.run(async () => {
 	await P.waitForTimeout(700);
 	h.check((await activeId()) === active1, 'Previous goes back to the first note');
 	// wrap both ways
-	await P.evaluate((id) => window.__stores.annotationsHandler.openAnnotation(id, 'view'), walk.ids[0]);
+	await P.evaluate((id) => window.__tp.test.v1.annotationsHandler.openAnnotation(id, 'view'), walk.ids[0]);
 	await P.waitForTimeout(500);
 	await tapSel('#note-prev');
 	await P.waitForTimeout(600);
@@ -165,7 +165,7 @@ h.run(async () => {
 	if (SHOTS) await P.screenshot({ path: `${SHOTS}/g12-folded-3-back-to-list.png` });
 
 	// ---- swipe the card down: back to the list too ----------------------------------------
-	await P.evaluate((id) => window.__stores.annotationsHandler.openAnnotation(id, 'view'), walk.ids[1]);
+	await P.evaluate((id) => window.__tp.test.v1.annotationsHandler.openAnnotation(id, 'view'), walk.ids[1]);
 	await P.waitForTimeout(800);
 	const grip = await rect('.note-card [data-sheet-grip]');
 	h.check(!!grip, 'the phone card wears the sheet grab bar');
@@ -175,7 +175,7 @@ h.run(async () => {
 		h.check(!(await rect('.note-card')) && (await read(store('notesDrawerOpen'))), 'swiping the card down closes the note and leaves the list open');
 	}
 	// ---- the grab bar resizes the ONE notes sheet --------------------------------------------
-	await P.evaluate((id) => window.__stores.annotationsHandler.openAnnotation(id, 'view'), walk.ids[2]);
+	await P.evaluate((id) => window.__tp.test.v1.annotationsHandler.openAnnotation(id, 'view'), walk.ids[2]);
 	await P.waitForTimeout(800);
 	const g2 = await rect('.note-card [data-sheet-grip]');
 	const c0 = await rect('.note-card');
@@ -184,7 +184,7 @@ h.run(async () => {
 	const c1 = await rect('.note-card');
 	const d1 = await rect('#notes-drawer');
 	h.check(c1 && c1.h - c0.h > 60, `the card's grab bar resizes it (${Math.round(c0.h)} -> ${Math.round(c1?.h ?? 0)})`);
-	await P.evaluate(() => window.__stores.annotationsHandler.activeAnnotation.set(null));
+	await P.evaluate(() => window.__tp.test.v1.annotationsHandler.activeAnnotation.set(null));
 	await P.waitForTimeout(500);
 	// 41b H1: the notes list is the dock's Notes TAB on the phone — the card covers the dock frame, one height
 	const d2 = await rect('#phone-dock');
@@ -192,7 +192,7 @@ h.run(async () => {
 	void d1;
 
 	// ---- OPENED FROM THE SCENE: tap a note's pin marker (the drawer closed) ---------------------
-	await P.evaluate(() => window.__stores.notesDrawerOpen.set(false));
+	await P.evaluate(() => window.__tp.test.v1.notesDrawerOpen.set(false));
 	await P.waitForTimeout(500);
 	/** the first single-note marker badge on screen (a cluster is tapped open first) */
 	const markerBadge = async () => {
@@ -244,7 +244,7 @@ h.run(async () => {
 	const D = await h.setupPage(browser, 'desktop', { context: { viewport: { width: 1440, height: 900 } } });
 	const Q = D.page;
 	await Q.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 900));
 		let g;
@@ -267,7 +267,7 @@ h.run(async () => {
 	h.check(!!dc && !dc.sheet && dc.next && dc.pos === '1/3', `desktop: the card is the anchored card (not a sheet) and walks all the notes (${JSON.stringify(dc)})`);
 	h.check(await Q.evaluate(store('notesDrawerOpen')), 'desktop: the drawer stays open beside the card (as before)');
 	// desktop, opened from the SCENE: click a pin marker with the drawer closed
-	await Q.evaluate(() => { window.__stores.annotationsHandler.activeAnnotation.set(null); window.__stores.notesDrawerOpen.set(false); });
+	await Q.evaluate(() => { window.__tp.test.v1.annotationsHandler.activeAnnotation.set(null); window.__tp.test.v1.notesDrawerOpen.set(false); });
 	await Q.waitForTimeout(600);
 	let badge = await Q.evaluate(() => { const e = [...document.querySelectorAll('.marker-badge')].find((b) => b.getBoundingClientRect().width > 0); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, cluster: e.classList.contains('is-cluster') }; });
 	if (badge?.cluster) {

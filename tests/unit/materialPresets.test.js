@@ -39,7 +39,7 @@ function fakeMaterial(fields) {
 
 describe('the starter set', () => {
 	it('is the seven the brief names, in order', () => {
-		expect(STARTER_PRESETS.map((p) => p.id)).toEqual(['wood', 'metal', 'plastic', 'glass', 'stone', 'rubber', 'fishscale', 'neon']);
+		expect(STARTER_PRESETS.map((p) => p.id)).toEqual(['wood', 'metal', 'plastic', 'glass', 'stone', 'rubber', 'fishscale', 'neon', 'water']); // 85 N5 + water
 	});
 
 	it('every starter survives its own normalisation unchanged in look', () => {

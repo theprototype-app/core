@@ -155,6 +155,8 @@ export function sceneSignature(payload) {
 		environment: stripStamps(payload.environment ?? null),
 		physics: stripStamps(payload.physics ?? null),
 		music: stripStamps(payload.music ?? null),
+		// 98 P1: a bake is scene data worth a save — keyed in only when present
+		...(payload.bake ? { bake: stripStamps(payload.bake) } : {}),
 		hud: stripStamps(payload.hud ?? null),
 		// 48 S2: a sequence is scene data like the HUD — keyed in only when present, so
 		// every scene without one keeps the signature an older build computed
@@ -167,7 +169,9 @@ export function sceneSignature(payload) {
 		// is a change worth a save, and they take stripStamps like every block above
 		// (the branch's own merge note asked for exactly this)
 		transport: stripStamps(payload.transport ?? null),
-		patch: stripStamps(payload.patch ?? null)
+		patch: stripStamps(payload.patch ?? null),
+		// 2.0-n3c: a custom node definition is scene data worth a save — keyed in only when present
+		...(payload.nodeDefs ? { nodeDefs: payload.nodeDefs } : {})
 	};
 	return JSON.stringify(pick);
 }
@@ -1085,7 +1089,7 @@ export async function duplicateScene(item, newName, opts = {}) {
  * attempt that never comes. Resolves null only if watching is impossible.
  * @param {string} hash @returns {Promise<any>}
  */
-function resolveLevelItem(hash) {
+export function resolveLevelItem(hash) {
 	const item = itemByHash(hash);
 	if (item) return Promise.resolve(item);
 	requestAsset(hash);
@@ -1110,6 +1114,22 @@ function resolveLevelItem(hash) {
 		};
 		unsubs.push(explorerItems.subscribe(check), hiddenItems.subscribe(check));
 	});
+}
+
+/**
+ * 93 LP4 — WHAT A HOP CARRIES BESIDE THE GAME STATE: the Levels table (a level scene with no table of
+ * its own keeps the game's) and the keep-across-levels list (only the kept variables carry when the
+ * game has a list; the kit score is put back after the load's kit reset). gameLevels/travel.js
+ * registers it; absent = every hop byte-identical to 21-F fork 3.
+ * @typedef {{capture: () => any, shapeGame?: (carried: any, captured: any) => any, restore?: (captured: any) => any}} TravelCarry
+ * @type {TravelCarry | null} */
+let travelCarry = null;
+/** @param {TravelCarry} carry @returns {() => void} */
+export function registerTravelCarry(carry) {
+	travelCarry = carry;
+	return () => {
+		if (travelCarry === carry) travelCarry = null;
+	};
 }
 
 /**
@@ -1174,11 +1194,25 @@ export async function travelToLevel(hash, name = '', opts = {}) {
 		// fork 3: capture the LIVE game before the world is replaced… (33 L4: unless a person
 		// is opening this scene fresh — then the file's own game state applies)
 		const fresh = opts.freshGame === true;
-		const carried = fresh ? null : { ...get(gameState), vars: { ...get(gameState).vars } };
+		let carried = fresh ? null : { ...get(gameState), vars: { ...get(gameState).vars } };
+		/** @type {any} 93 LP4 */
+		let extra = null;
+		try {
+			extra = fresh ? null : (travelCarry?.capture() ?? null);
+		} catch {}
 		adopted = true;
 		if (!(await applySession(payload, { backup: false, replicate: false, game: fresh, workspace: false, job }))) return false;
+		// 93 LP4: a game with a keep list carries only what the list names
+		try {
+			if (carried && extra && travelCarry?.shapeGame) carried = travelCarry.shapeGame(carried, extra);
+		} catch {}
 		// …and put it back. The level's own `game` field never applied (game: false).
 		if (carried) gameStateRestore(carried, false);
+		try {
+			if (extra) await travelCarry?.restore?.(extra);
+		} catch (error) {
+			console.warn('travel: carrying the levels state failed', error);
+		}
 		// R5: the graphs that just arrived from disk may name a scene by a name the
 		// project has since renamed — bring them up to date (idempotent, local)
 		applySceneRenames();

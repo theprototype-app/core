@@ -23,7 +23,7 @@ h.run(async () => {
 
 	const r = await A.page.evaluate(async () => {
 		let pc;
-		window.__stores.peers.subscribe((p) => (pc = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (pc = p))();
 		// signaling stub: dials return inert conn objects we control
 		Object.defineProperty(pc.peer, 'open', { value: true });
 		const made = [];

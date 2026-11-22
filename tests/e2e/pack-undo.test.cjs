@@ -21,7 +21,7 @@ const DUCK = 'library/default/Duck/glTF-Binary/Duck.glb';
 async function place(peer, url, name) {
 	return peer.page.evaluate(
 		async ({ url, name }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			/** @type {any} */ let g;
 			s.objectsGroup.subscribe((v) => (g = v))();
 			const before = new Set(g.children.map((c) => c.uuid));
@@ -43,7 +43,7 @@ async function place(peer, url, name) {
 /** the scene's roots that carry a pack reference, with their refill state */
 const pieces = (peer) =>
 	peer.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		/** @type {any} */ let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		return g.children
@@ -60,7 +60,7 @@ const pieces = (peer) =>
 /** the create entries on the undo stack, with the size of what each one keeps */
 const createEntries = (peer) =>
 	peer.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		/** @type {any[]} */ let stack = [];
 		s.history.undoStack.subscribe((v) => (stack = v))();
 		return stack
@@ -70,7 +70,7 @@ const createEntries = (peer) =>
 
 const toasts = (peer) =>
 	peer.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		/** @type {any[]} */ let list = [];
 		(s.notifications ?? s.toastStore).subscribe((v) => (list = v))();
 		return (list || []).map((t) => String(t.message ?? t.text ?? t)).filter((m) => /too large for undo/i.test(m)).length;
@@ -97,11 +97,11 @@ h.run(async () => {
 	);
 
 	// 2. undo all ten -------------------------------------------------------------------
-	for (let i = 0; i < 10; i++) await A.page.evaluate(() => window.__stores.history.undo());
+	for (let i = 0; i < 10; i++) await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => pieces(A), (p) => p.length === 0, 'undo x10 removes every piece', 8000);
 
 	// 3. redo all ten: back as stubs, refilled from the pack under the SAME uuids ---------
-	for (let i = 0; i < 10; i++) await A.page.evaluate(() => window.__stores.history.redo());
+	for (let i = 0; i < 10; i++) await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	await h.eventually(
 		() => pieces(A),
 		(p) => p.length === 10 && p.every((x) => !x.stub && x.tris === tris0),
@@ -112,9 +112,9 @@ h.run(async () => {
 	h.check(placed.every((u) => back.some((p) => p.uuid === u)), 'the restored pieces keep their uuids');
 
 	// 4. and once more round the loop (redo recaptured each snapshot on its way out) -------
-	for (let i = 0; i < 10; i++) await A.page.evaluate(() => window.__stores.history.undo());
+	for (let i = 0; i < 10; i++) await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => pieces(A), (p) => p.length === 0, 'a second undo x10 still removes them all', 8000);
-	for (let i = 0; i < 10; i++) await A.page.evaluate(() => window.__stores.history.redo());
+	for (let i = 0; i < 10; i++) await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	await h.eventually(() => pieces(A), (p) => p.length === 10 && p.every((x) => !x.stub), 'a second redo x10 still restores them all', 20000);
 
 	// 5. a REAL kit wall (7.9 MB as toJSON): no "too large" toast, and it undoes ----------
@@ -128,9 +128,9 @@ h.run(async () => {
 		const e = (await createEntries(A)).find((x) => x.uuid === wall);
 		h.check(!!e && e.stub && e.bytes < 4000, `the wall's undo entry is its stub (${e && e.bytes} B)`);
 		h.check((await toasts(A)) === t0, 'no "too large for undo history" toast for the wall');
-		await A.page.evaluate(() => window.__stores.history.undo());
+		await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 		await h.eventually(() => pieces(A), (p) => !p.some((x) => x.uuid === wall), 'undo removes the wall', 8000);
-		await A.page.evaluate(() => window.__stores.history.redo());
+		await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 		await h.eventually(() => pieces(A), (p) => p.some((x) => x.uuid === wall && !x.stub && x.tris > 500), 'redo brings the wall back, refilled', 30000);
 	}
 

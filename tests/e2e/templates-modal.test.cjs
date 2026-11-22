@@ -13,7 +13,7 @@ h.run(async () => {
 
 	// -- build a REAL loadable .tpscene in-page (three toJSON objects, current format)
 	const sessionJson = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const mk = (/** @type {string} */ name, /** @type {number} */ x) => {
 			const m = new s.THREE.Mesh(new s.THREE.BoxGeometry(1, 1, 1), new s.THREE.MeshStandardMaterial({ color: 0x88aaff }));
 			m.name = name;
@@ -181,7 +181,7 @@ h.run(async () => {
 
 	// -- 5: community populated (force refetch — 404 memoizes as 'empty')
 	galleryMode = 'ready';
-	await A.page.evaluate(() => window.__stores.sceneTemplates.loadCommunityGallery(true));
+	await A.page.evaluate(() => window.__tp.test.v1.sceneTemplates.loadCommunityGallery(true));
 	await h.eventually(
 		() => A.page.locator('[data-scene-slug="mock-castle"]').isVisible(),
 		(v) => v === true,
@@ -195,7 +195,7 @@ h.run(async () => {
 
 	// -- 6: template load round-trip (backup stash + replace via the session path)
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const seed = new s.THREE.Mesh(new s.THREE.BoxGeometry(1, 1, 1), new s.THREE.MeshStandardMaterial());
 		seed.name = 'preexisting';
 		let group;
@@ -211,7 +211,7 @@ h.run(async () => {
 		() =>
 			A.page.evaluate(() => {
 				let group;
-				window.__stores.objectsGroup.subscribe((g) => (group = g))();
+				window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 				return (group?.children ?? []).map((c) => c.name);
 			}),
 		(names) => names.includes('tplA') && names.includes('tplB') && !names.includes('preexisting'),
@@ -220,7 +220,7 @@ h.run(async () => {
 	);
 	const sessionNames = await A.page.evaluate(() => {
 		let list;
-		window.__stores.sessions.sessions.subscribe((x) => (list = x))();
+		window.__tp.test.v1.sessions.sessions.subscribe((x) => (list = x))();
 		return (list ?? []).map((m) => m.name);
 	});
 	h.check(
@@ -245,7 +245,7 @@ h.run(async () => {
 		() =>
 			A.page.evaluate(() => {
 				let group;
-				window.__stores.objectsGroup.subscribe((g) => (group = g))();
+				window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 				return group?.children.length ?? -1;
 			}),
 		(n) => n === 0,
@@ -254,7 +254,7 @@ h.run(async () => {
 
 	// -- 8: viewer gate (roles plugin active) — no fetch, no replace, warn toast
 	await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.cloudHooks.rolesInfo.set({
 			myId: 'me',
 			myRole: 'viewer',
@@ -265,7 +265,7 @@ h.run(async () => {
 		});
 	});
 	const viewerResult = await A.page.evaluate(async () => {
-		const st = window.__stores.sceneTemplates;
+		const st = window.__tp.test.v1.sceneTemplates;
 		let entries;
 		st.templates.subscribe((x) => (entries = x))();
 		return st.loadRemoteScene(entries[0]);
@@ -276,12 +276,12 @@ h.run(async () => {
 		await A.page.locator('.tp-toast-text', { hasText: 'View-only — ask an editor to load a scene.' }).first().isVisible(),
 		'viewer sees the read-only toast'
 	);
-	await A.page.evaluate(() => window.__stores.cloudHooks.rolesInfo.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.cloudHooks.rolesInfo.set(null));
 
 	// -- 9: offline fallback → the bundled static/templates seed index
 	scenesMode = 'down';
 	const fallback = await A.page.evaluate(async () => {
-		const st = window.__stores.sceneTemplates;
+		const st = window.__tp.test.v1.sceneTemplates;
 		await st.loadTemplatesIndex(true);
 		let state, list;
 		st.templatesState.subscribe((x) => (state = x))();
@@ -308,7 +308,7 @@ h.run(async () => {
 		() =>
 			A.page.evaluate(() => {
 				let group;
-				window.__stores.objectsGroup.subscribe((g) => (group = g))();
+				window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 				return (group?.children ?? []).map((c) => c.name);
 			}),
 		(names) => names.includes('Floor') && names.includes('Tower') && names.includes('Ramp'),
@@ -319,7 +319,7 @@ h.run(async () => {
 	// exported before a frame ran loads every object at the origin
 	const towerPos = await A.page.evaluate(() => {
 		let group;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		return group?.getObjectByName('Tower')?.position.toArray() ?? null;
 	});
 	h.check(
@@ -336,7 +336,7 @@ h.run(async () => {
 	await A.page.locator('#open-templates').click();
 	await A.page.waitForTimeout(400);
 	scenesMode = 'up';
-	await A.page.evaluate(() => window.__stores.sceneTemplates.loadTemplatesIndex(true));
+	await A.page.evaluate(() => window.__tp.test.v1.sceneTemplates.loadTemplatesIndex(true));
 	await h.eventually(
 		() => A.page.locator('#templates-tab-games').count(),
 		(n) => n === 1,
@@ -428,7 +428,7 @@ h.run(async () => {
 	// and that must be an empty tab rather than an error.
 	indexVersion = 1;
 	const v1 = await A.page.evaluate(async () => {
-		const st = window.__stores.sceneTemplates;
+		const st = window.__tp.test.v1.sceneTemplates;
 		await st.loadTemplatesIndex(true);
 		let state, gameList, tplList;
 		st.templatesState.subscribe((/** @type {any} */ x) => (state = x))();

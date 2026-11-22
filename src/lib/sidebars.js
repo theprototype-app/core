@@ -1,8 +1,9 @@
 import { writable, readable, derived, get } from 'svelte/store';
 import { safeStorage } from './safeStorage';
-import { inspectorClose, inspectorKind, closeMenu, connectDocked, connectBarHeight, setInspectorFocuser } from '../stores/appStore';
+import { inspectorClose, inspectorKind, connectDocked, connectBarHeight, setInspectorFocuser } from '../stores/appStore';
 import { onLayoutRestore } from './uiLayoutsCore';
-import { scaledPx, uiScale } from './uiScale'; // 53 A1: the default + minimum width follow the UI scale
+import { scaledPx, uiScale, cssPx } from './uiScale'; // 53 A1: the default + minimum width follow the UI scale
+import { dockHeight, bottomInset } from './bottomDock'; // dock-fixes A: the free-space rule reads the dock's height
 import { panelAway } from './windows/panelPlaces.js'; // 70 W2: a popped Inspector leaves its column
 
 // 42 I2/I3 — ONE SIDEBAR PER SCREEN SIDE (user decision 2026-10-14, roadmap 42).
@@ -28,7 +29,17 @@ import { panelAway } from './windows/panelPlaces.js'; // 70 W2: a popped Inspect
 //   --sb-<side>-top / -bottom     the column's top / bottom (the header sits at top)
 //   --sb-left-x                   the left column's x (the menu insets an UNPINNED left column)
 //   --sb-dock-left / -right       a PINNED, shown column's width, else 0px: what the bottom dock
-//                                 and the corner chrome give way to
+//                                 gives way to (an unpinned column stops above the dock)
+//   --sb-free-left / -right       dock-fixes (owner 2026-11-08) — THE FREE VIEWPORT RECT: how far from
+//                                 each edge the room between the OPEN columns starts, pinned or not
+//                                 (the left one includes the menu inset). Every floating overlay —
+//                                 the corner stacks (+, AI, mic, chat), the bottom toolbar's track, the
+//                                 sim transport, a placed cluster — is laid out inside it, never over
+//                                 a column ("never covered, never covering")
+//   --sb-free-top-left / -right   the same for the TOP ROW (logo row: the top-right group, the
+//                                 profile): only a column that reaches that row counts — a pinned one,
+//                                 or the right one tucked under a docked Connect bar; an unpinned
+//                                 column under a floating pill starts below the row
 //
 // A leaf: svelte/store + the app stores. Members REPORT themselves (`reportMember`); nothing
 // here reaches into a component.
@@ -78,6 +89,35 @@ function readWidth(side) {
 /** which side the Inspector docks to (LOCAL, persisted) */
 export const inspectorSide = writable(/** @type {Side} */ (ls ? asSide(safeStorage.getItem('sidebar:inspectorSide')) : 'right'));
 inspectorSide.subscribe((v) => ls && safeStorage.setItem('sidebar:inspectorSide', v));
+/**
+ * uir-polish E5 (owner 2026-11-11, "moving Configure scene to the other sidebar drags the Properties tab with it"):
+ * the Configure Scene TAB has a side of its own (LOCAL, persisted). Absent = wherever Properties is (the pre-E5
+ * single-side model, which is also every state where the two sides agree). See `inspectorDual` for what changes when
+ * they differ.
+ */
+export const sceneSide = writable(/** @type {Side} */ (ls && safeStorage.getItem('sidebar:sceneSide') ? asSide(safeStorage.getItem('sidebar:sceneSide')) : get(inspectorSide)));
+// stored only while the two are APART: a stored inspectorSide alone (an older layout, a reload after a direct write)
+// then means "together", never a stale split
+const persistSceneSide = () => {
+	if (!ls) return;
+	const v = get(sceneSide);
+	if (v === get(inspectorSide)) safeStorage.removeItem('sidebar:sceneSide');
+	else safeStorage.setItem('sidebar:sceneSide', v);
+};
+sceneSide.subscribe(persistSceneSide);
+// uir-polish E5: only a TAB move (moveSidebarTab) splits the two. Any other write of inspectorSide — a layout restore, a
+// pop-out coming back, a module or a test that places "the Inspector" — moves Configure Scene along while the two
+// share a side, which is what every writer before E5 meant by it.
+let inspectorMovesAlone = false;
+{
+	let prevInspectorSide = get(inspectorSide);
+	inspectorSide.subscribe((v) => {
+		const was = prevInspectorSide;
+		prevInspectorSide = v;
+		if (v !== was && !inspectorMovesAlone && get(sceneSide) === was) sceneSide.set(v);
+		persistSceneSide();
+	});
+}
 
 /** the Full-height pin, per side (LOCAL, persisted) */
 export const sidebarFull = writable({
@@ -218,13 +258,26 @@ function rank(side, key) {
 	return i < 0 ? 1e6 : i;
 }
 
+/**
+ * dock-fixes A' (owner 2026-11-08, correction): the sides the FREE-SPACE RULE took off screen. Growing the bottom
+ * dock is the point, so the dock is never clamped; instead an UNPINNED column whose room under its strip drops below
+ * MIN_COLUMN_H collapses to its show button and comes back by itself when the room returns. Across the screen the
+ * same: when both columns together would leave less than MIN_FREE_W of viewport (the unfolded phone), the side opened
+ * EARLIER collapses and comes back when there is room again. Nothing here is persisted or touches a side's mode, tabs
+ * or width — it is a mask over `sidebarWanted`.
+ * @type {import('svelte/store').Writable<Record<Side, boolean>>}
+ */
+export const sidebarAutoHidden = writable({ left: false, right: false });
+
 /** the tab in front on each side (null = the side is empty, or 44 M7: hidden) */
-export const sidebarShown = derived([sidebarTabs, mru, sidebarMode], ([$tabs, $mru, $mode]) => {
+// dock-fixes A': an auto-hidden side draws NO member either (device lab UI-3 again: the right column's strip went,
+// the Inspector stayed, full height over the top-right group) — the same path a hidden mode takes
+export const sidebarShown = derived([sidebarTabs, mru, sidebarMode, sidebarAutoHidden], ([$tabs, $mru, $mode, $auto]) => {
 	/** @type {Record<Side, string|null>} */
 	const out = { left: null, right: null };
 	for (const side of SIDES) {
 		const tabs = $tabs[side];
-		if (!tabs.length || $mode[side] === 'hidden') continue;
+		if (!tabs.length || $mode[side] === 'hidden' || $auto[side]) continue;
 		out[side] = $mru[side].find((k) => tabs.includes(k)) ?? tabs[0];
 	}
 	return out;
@@ -234,9 +287,19 @@ export const sidebarShown = derived([sidebarTabs, mru, sidebarMode], ([$tabs, $m
  * 44 M7 — is each side's column on screen: not hidden, and holding a tab or kept open empty.
  * @type {import('svelte/store').Readable<Record<Side, boolean>>}
  */
-export const sidebarVisible = derived([sidebarTabs, sidebarMode], ([$tabs, $mode]) => ({
+export const sidebarWanted = derived([sidebarTabs, sidebarMode], ([$tabs, $mode]) => ({
 	left: $mode.left !== 'hidden' && ($tabs.left.length > 0 || $mode.left === 'open'),
 	right: $mode.right !== 'hidden' && ($tabs.right.length > 0 || $mode.right === 'open')
+}));
+
+/**
+ * 44 M7 — is each side's column on screen: not hidden, holding a tab or kept open empty, and (dock-fixes A') not
+ * collapsed by the free-space rule.
+ * @type {import('svelte/store').Readable<Record<Side, boolean>>}
+ */
+export const sidebarVisible = derived([sidebarWanted, sidebarAutoHidden], ([$w, $a]) => ({
+	left: $w.left && !$a.left,
+	right: $w.right && !$a.right
 }));
 
 /** 44 M7: is this side an open column with NO tab (the "+" and the helper line)? @param {Side} side */
@@ -252,6 +315,13 @@ export function sidebarEmptyOpen(side) {
 export function toggleSidebar(side, on) {
 	const show = on ?? !get(sidebarVisible)[side];
 	setMode(side, show ? (get(sidebarTabs)[side].length ? 'auto' : 'open') : 'hidden');
+	// dock-fixes A': an explicit SHOW of a side the free-space rule collapsed wins — it becomes the newest side (the
+	// other one gives way across the screen) and, when the dock left it no room, the dock gives the room back
+	if (show && get(sidebarAutoHidden)[side]) {
+		latestSide = side;
+		makeRoomFor(side);
+		autoHideTick();
+	}
 }
 
 /**
@@ -266,6 +336,21 @@ export function keepSideOpen(key) {
 	if (!m || !m.present) return;
 	const tabs = get(sidebarTabs)[m.side];
 	if (tabs.length === 1 && tabs[0] === key && get(sidebarMode)[m.side] !== 'hidden') setMode(m.side, 'open');
+}
+
+/**
+ * dock-fixes (owner 2026-11-08) — the OPPOSITE of `keepSideOpen`, for a toolbar button / shortcut that
+ * HIDES a panel ("click the AI assistant button again: … the sidebar does not collapse when it was the
+ * only tab"). A button press is "put this away", not "empty this column for something else", so when
+ * `key` is its side's last tab the column goes with it, even one the user once kept open empty (44 M7's
+ * 'open' is dropped back to 'auto'). Its tabs, order and width are untouched.
+ * @param {string} key
+ */
+export function collapseSideIfLast(key) {
+	const m = get(members)[key];
+	if (!m || !m.present) return;
+	const tabs = get(sidebarTabs)[m.side];
+	if (tabs.length === 1 && tabs[0] === key && get(sidebarMode)[m.side] === 'open') setMode(m.side, 'auto');
 }
 
 /** bring a panel's tab to the front of its side @param {string} key */
@@ -301,36 +386,214 @@ export function setDockMover(fn) {
 /** move a panel to a side (the tab drag's drop) @param {string} key @param {Side} side */
 export function moveSidebarTab(key, side) {
 	if (get(members)[key]?.side !== side) keepSideOpen(key);
-	if (key === 'inspector') inspectorSide.set(side);
-	else if (!dockMover?.(key, side)) return false;
+	// uir-polish E5: each Inspector tab moves ALONE (showhide-v8 moved both — one element cannot be in two columns;
+	// `inspectorDual` now draws Configure Scene with a second instance while the two sides differ)
+	if (key === 'scene') sceneSide.set(side);
+	else if (key === 'inspector') {
+		// Properties alone carries the element's side; with Configure Scene CLOSED its side follows (it opens beside)
+		if (!get(inspectorTabs).scene) sceneSide.set(side);
+		inspectorMovesAlone = true;
+		try {
+			inspectorSide.set(side);
+		} finally {
+			inspectorMovesAlone = false;
+		}
+	} else if (!dockMover?.(key, side)) return false;
 	activateSidebarTab(key);
 	return true;
 }
 
 // ---- the Inspector is a member -----------------------------------------------------------------
 
-/** the Inspector's tab label */
-export const inspectorTabTitle = derived(inspectorKind, ($k) => ($k === 'scene' ? 'Configure Scene' : $k === 'file' ? 'File' : 'Properties'));
+// ---- showhide-v8 (owner 2026-11-09, R2): Properties and Configure Scene are TWO TABS -----------------
+//
+// The owner's reversal: Object Properties and Configure Scene stay separate Inspector tabs that can BOTH be open at
+// once, and selecting an object no longer swaps Properties in place of Configure Scene. They are two column members
+// over ONE Inspector element (the phone dock's model, phoneDock.js `inspTabs`): `'inspector'` is the Properties tab
+// (the selection, or a File), `'scene'` the Configure Scene tab. Both live on `inspectorSide` (one element cannot be
+// drawn in two columns at once), `inspectorClose` / `inspectorKind` stay the app's truth — every caller keeps writing
+// them — and this module keeps the tab set and the element in step:
+//   - the Inspector OPENS with a kind  -> that kind's tab is open (and comes to the front, as a member arriving does)
+//   - a tab comes to the FRONT          -> the element shows its kind
+//   - the Inspector CLOSES              -> the tab that was showing closes; with the other tab still open, the
+//                                          element reopens on it (a close is a tab's close, not the panel's)
+// Off the wide posture (the phone shell) phoneDock owns the same two tabs; this half stands down there.
+
+/** the Inspector's two column members: the Properties tab (selection / file) and the Configure Scene tab */
+export const INSPECTOR_KEYS = ['inspector', 'scene'];
+/** @param {string} key */
+export const isInspectorKey = (key) => key === 'inspector' || key === 'scene';
+/** @param {string} kind @returns {'inspector'|'scene'} */
+export const tabOfKind = (kind) => (kind === 'scene' ? 'scene' : 'inspector');
+
+/** which Inspector tabs are open in the wide posture (LOCAL, not persisted — the Inspector's open state is not) */
+export const inspectorTabs = writable({ inspector: false, scene: false });
+
+/** the Properties tab's label (a File shows in the same tab) */
+export const inspectorTabTitle = derived(inspectorKind, ($k) => ($k === 'file' ? 'File' : 'Properties'));
+/** the Inspector ELEMENT's name where it is one panel of its own (a pop-out window's tab and title): it names what it
+ * shows, Configure Scene included — 78-fix-547: a popped Inspector switched to the scene kept saying "Properties" */
+export const inspectorPanelTitle = derived(inspectorKind, ($k) => ($k === 'scene' ? 'Configure Scene' : $k === 'file' ? 'File' : 'Properties'));
+/** the label of either Inspector tab @param {string} key @param {string} kind */
+export function inspectorTabLabel(key, kind) {
+	if (key === 'scene') return 'Configure Scene';
+	return kind === 'file' ? 'File' : 'Properties';
+}
+
+/** the kind last shown in the Properties tab (a File stays a File when its tab comes back to the front) */
+let propsKind = /** @type {'selection'|'file'} */ ('selection');
+/** writes this module makes to the Inspector stores, so its own listener does not answer them */
+let insOurs = 0;
+/** @param {() => void} fn */
+function insQuietly(fn) {
+	insOurs++;
+	try {
+		fn();
+	} finally {
+		queueMicrotask(() => insOurs--);
+	}
+}
+/** the pending "was that a close or a switch?" check (showSidebar closes + reopens across a 50 ms timer) */
+let closeTimer = /** @type {any} */ (0);
+
+/** the element shows `key`'s kind @param {'inspector'|'scene'} key */
+function showInspectorKind(key) {
+	const want = key === 'scene' ? 'scene' : propsKind;
+	if (!get(inspectorClose) && get(inspectorKind) === want) return;
+	insQuietly(() => {
+		inspectorKind.set(/** @type {any} */ (want));
+		inspectorClose.set(false);
+	});
+}
+
+/**
+ * Close ONE Inspector tab (its ×, Close in its menu, Close others). The other tab, when open, keeps the element.
+ * @param {'inspector'|'scene'} key
+ */
+export function closeInspectorTab(key) {
+	const tabs = get(inspectorTabs);
+	if (!tabs[key]) return;
+	const other = key === 'scene' ? 'inspector' : 'scene';
+	const showing = !get(inspectorClose) && tabOfKind(get(inspectorKind)) === key;
+	inspectorTabs.set({ ...tabs, [key]: false });
+	if (!showing) return;
+	if (tabs[other]) showInspectorKind(other);
+	else insQuietly(() => inspectorClose.set(true));
+}
+
+/**
+ * Open an Inspector tab WITHOUT bringing it to the front (a pinned Properties tab following the selection while
+ * Configure Scene is in front: "selecting fills an open Properties tab, it does not replace another tab").
+ * @param {'inspector'|'scene'} key
+ */
+export function addInspectorTabQuietly(key) {
+	if (get(inspectorTabs)[key]) return;
+	const side = get(inspectorSide);
+	const front = get(sidebarShown)[side];
+	inspectorTabs.update((t) => ({ ...t, [key]: true }));
+	// a member arriving comes to the front (reportMember): put the front tab back where it was
+	if (front && front !== key) activateSidebarTab(front);
+}
+
+/** the app opened / switched / closed the Inspector (wide posture only) @param {boolean} closed @param {string} kind */
+function onInspector(closed, kind) {
+	if (insOurs || !get(sidebarsWide)) return;
+	clearTimeout(closeTimer);
+	if (!closed) {
+		const key = tabOfKind(kind);
+		if (key === 'inspector') propsKind = kind === 'file' ? 'file' : 'selection';
+		const tabs = get(inspectorTabs);
+		// uir-polish E5: Properties open in another column than Configure Scene's — asking for the scene opens / brings
+		// forward ITS tab (the second instance draws it) and the element stays on Properties
+		if (key === 'scene' && tabs.inspector && get(sceneSide) !== get(inspectorSide)) {
+			if (!tabs.scene) inspectorTabs.set({ ...tabs, scene: true });
+			else activateSidebarTab('scene');
+			insQuietly(() => inspectorKind.set(/** @type {any} */ (propsKind)));
+			return;
+		}
+		if (!tabs[key]) inspectorTabs.set({ ...tabs, [key]: true });
+		else activateSidebarTab(key); // an open of a covered tab brings it forward (the old one-member arrival)
+		return;
+	}
+	// a close: wait out showSidebar's close-then-reopen (a switch), then close the tab that was showing
+	const was = tabOfKind(kind);
+	const other = was === 'scene' ? 'inspector' : 'scene';
+	const settle = () => {
+		if (!get(inspectorClose)) return;
+		const tabs = get(inspectorTabs);
+		if (tabs[other] && !get(panelAway).inspector) {
+			inspectorTabs.set({ ...tabs, [was]: false });
+			showInspectorKind(other);
+		} else if (tabs.inspector || tabs.scene) inspectorTabs.set({ inspector: false, scene: false });
+	};
+	// 78-fix-547: with no other Inspector tab to fall back to, the column closes AT ONCE — waiting the 80 ms left an
+	// empty column on screen for five frames and the top clusters and the profile jumped after it (controls-clusters
+	// N3: they move with the column, never after it). A switch only waits when the other tab can take the element.
+	const tabs = get(inspectorTabs);
+	if (!(tabs[other] && !get(panelAway).inspector)) return settle();
+	closeTimer = setTimeout(settle, 80);
+}
 
 let wired = false;
 /** wire the Inspector's membership + the CSS bus (once, from the always-mounted editor chrome) */
 export function startSidebars() {
 	if (wired || typeof document === 'undefined') return;
 	wired = true;
+	// showhide-v8: seed the tab set from an Inspector already open at boot
+	if (!get(inspectorClose)) inspectorTabs.set({ inspector: get(inspectorKind) !== 'scene', scene: get(inspectorKind) === 'scene' });
+	derived([inspectorClose, inspectorKind], (x) => x).subscribe(([closed, kind]) => onInspector(closed, kind));
+	// back from the phone posture (phoneDock owned the tabs there): the column's tabs follow the Inspector as it is now
+	sidebarsWide.subscribe((wide) => {
+		if (!wide) return;
+		const closed = get(inspectorClose);
+		const key = tabOfKind(get(inspectorKind));
+		const tabs = get(inspectorTabs);
+		if (closed && (tabs.inspector || tabs.scene)) inspectorTabs.set({ inspector: false, scene: false });
+		else if (!closed && !tabs[key]) inspectorTabs.set({ ...tabs, [key]: true });
+	});
 	// 70 W2: an Inspector in a pop-out window is no column member (it keeps its side for coming back)
-	derived([inspectorClose, inspectorSide, panelAway], (x) => x).subscribe(([closed, side, away]) => reportMember('inspector', side, !closed && !away.inspector));
+	derived([inspectorTabs, inspectorSide, sceneSide, panelAway], (x) => x).subscribe(([tabs, side, sSide, away]) => {
+		reportMember('inspector', side, tabs.inspector && !away.inspector);
+		reportMember('scene', sSide, tabs.scene && !away.inspector); // uir-polish E5: its own side
+	});
+	// uir-polish E5: entering the dual state (a tab moved apart) while the element showed the scene: it goes back to
+	// Properties — Configure Scene now has its own instance in its own column
+	inspectorDual.subscribe((dual) => {
+		if (dual && get(inspectorKind) === 'scene') insQuietly(() => inspectorKind.set(/** @type {any} */ (propsKind)));
+	});
+	// a tab brought to the front shows its kind in the one element
+	sidebarShown.subscribe((shown) => {
+		// uir-polish E5: in the dual state the element is Properties' alone — Configure Scene's tab coming forward in
+		// its own column is the second instance's business
+		if (get(inspectorDual)) return;
+		const tabs = get(inspectorTabs);
+		// one tab open: it shows on its own side (Configure Scene alone may sit in the other column)
+		const side = !tabs.inspector && tabs.scene ? get(sceneSide) : get(inspectorSide);
+		const key = shown[side];
+		if (key && isInspectorKey(key) && tabs[/** @type {'inspector'|'scene'} */ (key)]) showInspectorKind(/** @type {any} */ (key));
+	});
 	// an explicit open of an Inspector that is already open (Configure Scene, double-click,
 	// a deep link) brings its tab to the front of the column
 	setInspectorFocuser(() => {
-		const covered = sidebarTabCovered('inspector');
-		activateSidebarTab('inspector');
+		const key = tabOfKind(get(inspectorKind));
+		const covered = sidebarTabCovered(key);
+		activateSidebarTab(key);
 		return covered;
 	});
 	geometry.subscribe(publish);
-	// the left inset is measured from the menu's DOM, which mounts after the store fires
-	closeMenu.subscribe(() => requestAnimationFrame(() => leftInsetTick.update((n) => n + 1)));
+	// dock-fixes A': the newest side wins across the screen; the free-space rule re-runs on every change of the wanted
+	// sides, their widths / pins, the dock's height and the window size (geometry carries the last two families)
+	/** @type {Record<Side, boolean>} */
+	let wasWanted = { left: false, right: false };
+	sidebarWanted.subscribe((w) => {
+		for (const side of SIDES) if (w[side] && !wasWanted[side]) latestSide = side;
+		wasWanted = w;
+	});
+	derived([sidebarWanted, sidebarFull, sidebarWidth, bottomInset, connectDocked, connectBarHeight, resizeTick, sidebarsWide, uiScale], (x) => x).subscribe(() =>
+		requestAnimationFrame(autoHideTick)
+	);
 	window.addEventListener('resize', () => {
-		leftInsetTick.update((n) => n + 1);
+		resizeTick.update((n) => n + 1);
 		sidebarWidth.update((v) => ({ left: clampWidth(v.left), right: clampWidth(v.right) }));
 	});
 }
@@ -343,6 +606,7 @@ onLayoutRestore(() => {
 		right: safeStorage.getItem('sidebar:full:right') === 'true'
 	});
 	inspectorSide.set(asSide(safeStorage.getItem('sidebar:inspectorSide')));
+	sceneSide.set(safeStorage.getItem('sidebar:sceneSide') ? asSide(safeStorage.getItem('sidebar:sceneSide')) : get(inspectorSide));
 	sidebarMode.set({ left: readMode('left'), right: readMode('right') });
 	for (const side of SIDES) order[side] = readOrder(side);
 	mru.update((v) => {
@@ -368,20 +632,29 @@ export const sidebarsWide = readable(true, (set) => {
 	return () => mq.removeEventListener('change', on);
 });
 
-const leftInsetTick = writable(0);
+/**
+ * uir-polish E5 — BOTH Inspector tabs open, in DIFFERENT columns (wide posture, the Inspector not in a pop-out window).
+ * Then the one Inspector element keeps Properties (on `inspectorSide`) and Configure Scene is drawn by a second
+ * instance (`<Inspector pane="scene">`, Menu.svelte) on `sceneSide`; `inspectorKind` never reads 'scene' in this state
+ * (a request for it activates the Configure Scene tab instead — `onInspector`). Every other state is the single
+ * element of showhide-v8: one tab open shows on ITS side, both on one side share the element.
+ */
+export const inspectorDual = derived([inspectorTabs, inspectorSide, sceneSide, sidebarsWide, panelAway], ([tabs, iSide, sSide, wide, away]) => !!(wide && tabs.inspector && tabs.scene && iSide !== sSide && !away.inspector));
+/** the column the one Inspector element draws in: Configure Scene's own side while it shows alone, else Properties' */
+export const inspectorElementSide = derived([inspectorKind, inspectorTabs, inspectorSide, sceneSide, inspectorDual], ([kind, tabs, iSide, sSide, dual]) =>
+	dual || tabs.inspector ? iSide : tabs.scene || kind === 'scene' ? sSide : iSide
+);
 
-// An UNPINNED left column starts past the open main menu (the menu used to cover the docked
-// panel's header — dock-sidebar-inset); a PINNED one keeps its edge and the logo + menu move
-// inward instead, so the menu opens beside the column, above every sidebar.
-function measureLeftInset() {
-	if (typeof document === 'undefined' || get(closeMenu) !== false) return 0;
-	const el = document.querySelector('.app-sidebar');
-	return el ? Math.round(el.getBoundingClientRect().right) + 8 : 228;
-}
 
+const resizeTick = writable(0);
+
+// dock-fixes B (owner 2026-11-08, shot 5): the open main menu OVERLAYS the left column (it sits on --z-popover,
+// above every sidebar) and never relayouts it. An unpinned column used to start past the open menu
+// (dock-sidebar-inset), which shoved a left-docked Configure Scene sideways over the right column on the unfolded
+// phone; a PINNED column keeps its edge and the logo + menu move inward beside it (--sb-dock-left), unchanged.
 export const geometry = derived(
 	// 53 A1: `uiScale` is a dependency only so the column's top re-derives with the scale
-	[sidebarShown, sidebarFull, sidebarWidth, connectDocked, connectBarHeight, leftInsetTick, sidebarsWide, sidebarVisible, uiScale],
+	[sidebarShown, sidebarFull, sidebarWidth, connectDocked, connectBarHeight, resizeTick, sidebarsWide, sidebarVisible, uiScale],
 	([$shown, $full, $w, $cDocked, $cBar, _tick, $wide, $visible]) => {
 		const TOP = scaledPx(TOP_PX);
 		/** @param {Side} side */
@@ -398,16 +671,62 @@ export const geometry = derived(
 		};
 		const left = col('left');
 		const right = col('right');
+		const leftX = 0;
 		return {
 			left,
 			right,
 			wide: $wide,
-			leftX: left.full || !$wide ? 0 : measureLeftInset(),
+			leftX,
 			dockLeft: $wide && left.visible && left.full ? left.w : 0,
-			dockRight: $wide && right.visible && right.full ? right.w : 0
+			dockRight: $wide && right.visible && right.full ? right.w : 0,
+			// dock-fixes: the free viewport rect (see the bus above) — every OPEN column, pinned or not
+			freeLeft: $wide && left.visible ? leftX + left.w : 0,
+			freeRight: $wide && right.visible ? right.w : 0,
+			freeTopLeft: $wide && left.visible && left.full ? left.w : 0,
+			freeTopRight: $wide && right.visible && (right.full || !!$cDocked) ? right.w : 0
 		};
 	}
 );
+
+/** the least height an UNPINNED open column keeps under its tab strip (design px, scaled) */
+export const MIN_COLUMN_H = 240;
+/** the least viewport width both columns together leave free (design px, scaled) */
+export const MIN_FREE_W = 300;
+
+/** the side opened most recently (it wins when both do not fit) @type {Side} */
+let latestSide = 'right';
+
+/** room under an unpinned column's strip for the dock's current height, or Infinity for a pinned one @param {Side} side */
+function columnRoom(side) {
+	const g = get(geometry);
+	if (g[side].full) return Infinity;
+	const controls = cssPx(getComputedStyle(document.documentElement).getPropertyValue('--controls-inset')) || 0;
+	return window.innerHeight - g[side].top - scaledPx(STRIP_H) - controls - (get(bottomInset) || 0);
+}
+
+/** dock-fixes A': the free-space rule (see `sidebarAutoHidden`) */
+function autoHideTick() {
+	if (typeof window === 'undefined') return;
+	const want = get(sidebarWanted);
+	const next = { left: false, right: false };
+	if (get(sidebarsWide) && !document.documentElement.dataset.focus) {
+		for (const side of SIDES) if (want[side] && columnRoom(side) < scaledPx(MIN_COLUMN_H)) next[side] = true;
+		const w = get(sidebarWidth);
+		if (want.left && want.right && !next.left && !next.right && window.innerWidth - w.left - w.right < scaledPx(MIN_FREE_W)) {
+			next[latestSide === 'left' ? 'right' : 'left'] = true;
+		}
+	}
+	const cur = get(sidebarAutoHidden);
+	if (cur.left !== next.left || cur.right !== next.right) sidebarAutoHidden.set(next);
+}
+
+/** an explicit show of a column the dock left no room for: the dock shrinks just enough @param {Side} side */
+function makeRoomFor(side) {
+	const short = scaledPx(MIN_COLUMN_H) - columnRoom(side);
+	if (short <= 0) return;
+	const h = get(dockHeight);
+	dockHeight.set(Math.max(scaledPx(160), Math.round(h - short)));
+}
 
 /** @param {any} g */
 function publish(g) {
@@ -421,6 +740,15 @@ function publish(g) {
 	root.setProperty('--sb-left-x', g.leftX + 'px');
 	root.setProperty('--sb-dock-left', g.dockLeft + 'px');
 	root.setProperty('--sb-dock-right', g.dockRight + 'px');
+	root.setProperty('--sb-free-left', g.freeLeft + 'px');
+	root.setProperty('--sb-free-right', g.freeRight + 'px');
+	root.setProperty('--sb-free-top-left', g.freeTopLeft + 'px');
+	root.setProperty('--sb-free-top-right', g.freeTopRight + 'px');
+	// dock-fixes: the free width between the columns is a PHONE's (<= 600 px, ui.css's breakpoint for the corner
+	// stacks): the stacks lift above the toolbar's row as they do on a narrow screen, so the bar gets the whole free
+	// width to fold into instead of three clusters sharing one row (the unfolded N6 with both columns open)
+	const freeW = typeof window !== 'undefined' ? window.innerWidth - g.freeLeft - g.freeRight : 1e4;
+	document.documentElement.classList.toggle('sb-free-narrow', !!g.wide && !!(g.freeLeft || g.freeRight) && freeW <= 600);
 	document.documentElement.classList.toggle('sb-full-left', !!g.dockLeft);
 	document.documentElement.classList.toggle('sb-full-right', !!g.dockRight);
 }
@@ -435,6 +763,9 @@ export function memberPlacement(side) {
 	return (
 		`position: fixed; ${x} top: calc(var(--sb-${side}-top, 64px) + var(--sb-strip-h, 30px)); ` +
 		`bottom: var(--sb-${side}-bottom, 0px); width: var(--sb-${side}-w, 320px); ` +
-		`height: calc(100vh - var(--sb-${side}-top, 64px) - var(--sb-strip-h, 30px) - var(--sb-${side}-bottom, 0px));`
+		`height: calc(100vh - var(--sb-${side}-top, 64px) - var(--sb-strip-h, 30px) - var(--sb-${side}-bottom, 0px)); ` +
+		// ui-audit-honor: the VISIBLE viewport where supported (a later declaration wins; 100vh is the fallback) —
+		// on Android Chrome 100vh ignores the URL bar and the column ran off the bottom
+		`height: calc(100dvh - var(--sb-${side}-top, 64px) - var(--sb-strip-h, 30px) - var(--sb-${side}-bottom, 0px));`
 	);
 }

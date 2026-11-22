@@ -13,14 +13,14 @@ h.run(async () => {
 	const browser = await h.launch();
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(3000);
 		await warm.ctx.close();
 	}
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const T = s.THREE;
 		s.commandsHandler.sceneCommand('/clear all');
 		/** @type {any} */ let g;
@@ -47,9 +47,9 @@ h.run(async () => {
 		s.flowEdges.set([]);
 	});
 	await page.waitForTimeout(1500);
-	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await h.eventually(
-		() => page.evaluate(() => { let v; window.__stores.physics.simulating.subscribe((x) => (v = x))(); return v; }),
+		() => page.evaluate(() => { let v; window.__tp.test.v1.physics.simulating.subscribe((x) => (v = x))(); return v; }),
 		(v) => v === true,
 		'premise: Play starts the simulation',
 		15000
@@ -57,7 +57,7 @@ h.run(async () => {
 	await page.waitForTimeout(1200);
 	const rig = () =>
 		page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let cam;
 			s.playerCam.subscribe((c) => (cam = c))();
 			const w = cam.getWorldPosition(new s.THREE.Vector3());

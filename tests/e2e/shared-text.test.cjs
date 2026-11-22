@@ -12,13 +12,13 @@ const SHOTS = process.env.YJS_SHOTS || '';
 const shot = async (page, name) => SHOTS && page.screenshot({ path: SHOTS + '/' + name });
 
 const tabsOf = (page) =>
-	page.evaluate(() => new Promise((r) => window.__stores.codeWorkspace.codeTabs.subscribe((v) => r(JSON.parse(JSON.stringify(v))))()));
-const activeId = (page) => page.evaluate(() => new Promise((r) => window.__stores.codeWorkspace.activeCodeTab.subscribe(r)()));
+	page.evaluate(() => new Promise((r) => window.__tp.test.v1.codeWorkspace.codeTabs.subscribe((v) => r(JSON.parse(JSON.stringify(v))))()));
+const activeId = (page) => page.evaluate(() => new Promise((r) => window.__tp.test.v1.codeWorkspace.activeCodeTab.subscribe(r)()));
 const nodeCode = (page, id) =>
 	page.evaluate(
 		(id) =>
 			new Promise((r) =>
-				window.__stores.flowGraphs.subscribe((all) => {
+				window.__tp.test.v1.flowGraphs.subscribe((all) => {
 					for (const g of Object.values(all)) {
 						const n = g.nodes.find((x) => x.id === id);
 						if (n) return r(n.data?.code ?? null);
@@ -35,7 +35,7 @@ const paneOf = async (page, pred) => {
 	return t ? page.locator(`[data-pane="${t.id}"]`) : null;
 };
 const openNodeTab = (page, nodeId) =>
-	page.evaluate((nodeId) => window.__stores.codeWorkspace.openCode({ source: 'script', ref: { nodeId } }), nodeId);
+	page.evaluate((nodeId) => window.__tp.test.v1.codeWorkspace.openCode({ source: 'script', ref: { nodeId } }), nodeId);
 /** wait until the tab's editor is bound to the shared document (or time out and let the checks say so) */
 async function waitShared(page, pred, label, timeout = 45000) {
 	const t0 = Date.now();
@@ -66,8 +66,8 @@ h.run(async () => {
 	// ---------------------------------------------------------------- the node both edit
 	await A.page.evaluate(async (code) => {
 		const node = { id: 'yjs1', type: 'script', position: { x: 0, y: 0 }, data: { type: 'script', code }, class: 'w-[150px]' };
-		window.__stores.flowNodes.update((n) => [...n, node]);
-		const peer = await new Promise((r) => window.__stores.peers.subscribe(r)());
+		window.__tp.test.v1.flowNodes.update((n) => [...n, node]);
+		const peer = await new Promise((r) => window.__tp.test.v1.peers.subscribe(r)());
 		peer.send({ type: 'nodecreate', node });
 	}, START);
 	await h.eventually(() => nodeCode(B.page, 'yjs1'), (c) => c === START, 'premise: the Script node reached B');
@@ -159,7 +159,7 @@ h.run(async () => {
 
 	// ---------------------------------------------------------------- 5 a viewer is read-only
 	await C.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.cloudHooks.rolesInfo.set({ myId: 'c', myRole: 'viewer', amAdmin: false, order: ['viewer', 'editor', 'admin'], roleOf: () => 'viewer', setRole: () => {} });
 	});
 	const paneC = await paneOf(C.page, isNode);
@@ -170,7 +170,7 @@ h.run(async () => {
 	await C.page.waitForTimeout(1200);
 	const afterViewer = [(await tabFor(C.page, isNode))?.code, (await tabFor(A.page, isNode))?.code];
 	h.check(afterViewer.every((c) => c === MERGED + UNSAVED), "a viewer's keys change nothing — on its own screen or anyone else's");
-	await C.page.evaluate(() => window.__stores.cloudHooks.rolesInfo.set(null));
+	await C.page.evaluate(() => window.__tp.test.v1.cloudHooks.rolesInfo.set(null));
 
 	h.check(h.pageErrors(A).length === 0 && h.pageErrors(B).length === 0 && h.pageErrors(C).length === 0, 'no page errors on any peer');
 	await h.finish(browser);

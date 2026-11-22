@@ -515,7 +515,7 @@
 	}
 
 	/** @param {string} icon */
-	const iconOf = (icon) => ({ script: 'file-code', behaviour: 'sparkles', builtin: 'user-round', graph: 'braces', file: 'file-code', module: 'package' })[icon] ?? 'file-code';
+	const iconOf = (icon) => ({ script: 'file-code', behaviour: 'sparkles', builtin: 'user-round', graph: 'braces', flow: 'file-text', file: 'file-code', module: 'package' })[icon] ?? 'file-code';
 </script>
 
 {#snippet nameField(/** @type {number} */ depth, /** @type {string} */ icon)}

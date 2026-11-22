@@ -1,6 +1,6 @@
 import { get } from 'svelte/store';
 import { HELPER_LAYER } from './helperLayer'; // 60 Q5
-import { showToast, appNotice, peers, cloudIdentity, userdata } from '../stores/appStore';
+import { showToast, appNotice, peers, cloudIdentity, userdata, waitingForApproval } from '../stores/appStore';
 import { globalScene, globalCamera, globalRenderer, orbitControls, cameraClaim, isLocked, isVRMode } from '../stores/sceneStore';
 import { requestConnect } from './peerApproval';
 import { sessionHost } from './connectionState';
@@ -14,29 +14,34 @@ import {
 	connectSlot,
 	usersSlot,
 	profileSlot,
+	settingsSlots,
+	SETTINGS_SLOT_KEYS,
 	drawerSlot,
 	rolesInfo,
 	scenePresence,
 	CLOUD_HOOKS_VERSION,
 	cloudPluginInfo,
 	sidebarSlot,
-	setCommunityProvider
+	setCommunityProvider,
+	settleRoles
 } from './cloudHooks';
+import { notifyOn } from './notifyPrefs';
+import { openSettingsAt } from './settings/openSettingsAt.js'; // uir-account: cloudApi.openSettings
 // 21-G5 (F7): the two reads a rooms roster wants — which scene this session is in,
 // and who is playing. Both leaves (levels reaches sessions, but nothing on the
 // cloudPlugin path is in history's import subtree — App alone imports this module).
 import { currentLevel } from './levels';
 import { myPlayMode, peerPlayModes } from './gamePresence';
 import { onPlayOrigin, playUrl } from './playOrigin.js';
-import { safeStorage } from './safeStorage';
+import { safeStorage, storageIsolated } from './safeStorage'; // 61 G3: storageIsolated
 // v3.1 (roadmap 29 G-3): the hosted-AI preset seam. Both provider modules are LEAVES
 // (svelte/store + safeStorage), so a static edge from here closes nothing.
-import { aiProviders, aiActiveProvider, aiEnabled, addAiProvider, updateAiProvider, removeAiProvider, setAiActiveProvider, setAiEnabled } from './ai/providers';
-import { meshProviders, meshActiveProvider, meshGenEnabled, addMeshProvider, updateMeshProvider, removeMeshProvider, setMeshActiveProvider, setMeshGenEnabled } from './ai/meshProviders';
-import { meshJobStatus, onExportBuilt, onTemplateOpen, setSceneHeart, problemReporter, setWhatsNewCloud, setConnectBadge, setPeerMenuItems, setConnectorProvider, connectorSignInSlot } from './cloudHooks';
+import { meshJobStatus, onExportBuilt, onTemplateOpen, onFunnelEvent, setSceneHeart, problemReporter, setWhatsNewCloud, setConnectBadge, setPeerMenuItems, setConnectorProvider, connectorSignInSlot } from './cloudHooks';
 // 36-community (C4): a leaf (svelte/store only) — safe as a static edge
 import { gameIdentity, ensureGameId, forkGameId } from './gameIdentity.js';
 import { exportMode } from './export/exportBoot.js';
+// 94 SP1: the play entry (`/play`) loads the play-side plugin build and says so (a leaf)
+import { playEntry } from './play/playEntry.js';
 import { publishSlot, publishedLink, openPublishExport } from './export/exportStores.js';
 // CL-5 (37-continuity): a zero-import leaf — the scene-change feed over autosave's dirtyPulse
 import { sceneChangeFeed } from './sceneChangeFeed.js';
@@ -56,7 +61,20 @@ let playModeLib = null;
  *  arrives through the same primed dynamic import as the two above. App already loaded it at boot.
  *  @type {any} */
 let autosaveLib = null;
+/** 94 SP1 (94-routes Q2 F2): the aiPresets seam's provider stores, PRIMED rather than static — a static
+ * edge put the AI provider tables (and their imports) in every shared play link's boot. The editor has
+ * them in its own boot anyway, so the prime resolves at once there and the seam stays synchronous;
+ * the play entry never loads them and offers no aiPresets (plugins typeof-probe it). */
+/** @type {any} */ let aiLib = null;
+/** @type {any} */ let meshLib = null;
+const aiReady = playEntry
+	? Promise.resolve()
+	: Promise.all([import('./ai/providers'), import('./ai/meshProviders')]).then(([a, m]) => {
+			aiLib = a;
+			meshLib = m;
+		});
 async function primeSeams() {
+	await aiReady;
 	[cameraBookmarksLib, playModeLib, autosaveLib] = await Promise.all([import('./cameraBookmarks'), import('./playMode'), import('./autosave')]);
 }
 /** CL-5: `sceneRevision()` / `onSceneChange(fn)` — nothing subscribes until a plugin asks */
@@ -77,18 +95,21 @@ const sceneFeed = sceneChangeFeed(() => autosaveLib?.dirtyPulse ?? null);
  */
 export async function startCloudPlugin() {
 	// 36-export: an exported game is the OSS runtime alone — the hosted tier never loads there
-	if (exportMode) return;
+	if (exportMode) return settleRoles();
+	// 61 G3: nor does a "Test with players" bot frame
+	if (storageIsolated) return settleRoles();
 	let url = '';
 	try {
-		url =
-			(import.meta && import.meta.env && import.meta.env.VITE_CLOUD_PLUGIN) ||
-			(typeof localStorage !== 'undefined' && safeStorage.getItem('cloudPluginUrl')) ||
-			'';
+		url = pluginUrl();
 	} catch {
 		url = '';
 	}
-	if (!url) return;
+	if (!url) return settleRoles();
 
+	// Held messages must not wait on a load that never ends. A plugin that arrives after this takes over.
+	const tooLong = setTimeout(() => {
+		withoutRoles('The cloud plugin is taking too long to load: guests are view-only for now.');
+	}, Number(safeStorage.getItem('cloudPluginWaitMs')) || PLUGIN_WAIT_MS);
 	try {
 		const mod = await import(/* @vite-ignore */ url);
 		// V2 fail-closed gate: a plugin may declare the hooks contract it NEEDS.
@@ -96,21 +117,60 @@ export async function startCloudPlugin() {
 		// inert); only old-app + new-plugin refuses to register.
 		const needs = Number(mod.compatibleHooks ?? (mod.default && mod.default.compatibleHooks));
 		if (Number.isFinite(needs) && needs > CLOUD_HOOKS_VERSION) {
-			showToast('Cloud plugin requires a newer app version — running in local mode.');
+			withoutRoles('Cloud plugin requires a newer app version — running in local mode, guests are view-only.');
 			return;
 		}
 		const register = mod.register || (mod.default && (mod.default.register || mod.default));
 		if (typeof register !== 'function') {
-			showToast('Cloud plugin loaded but exports no register() — ignoring.');
+			withoutRoles('Cloud plugin loaded but exports no register() — ignoring, guests are view-only.');
 			return;
 		}
 		await primeSeams();
 		await register(makeCloudApi());
 		console.log('cloud plugin registered:', url);
+		settleRoles();
 	} catch (e) {
 		console.error('cloud plugin failed to load:', e);
-		showToast('Cloud plugin failed to load — running in local mode.');
+		withoutRoles('Cloud plugin failed to load — running in local mode, guests are view-only.');
+	} finally {
+		clearTimeout(tooLong);
 	}
+}
+
+/**
+ * Which plugin build this page loads. 94 SP1 (agreed with 94-routes, A1): the play entry asks for the
+ * PLAY-SIDE build first (`VITE_CLOUD_PLAY_PLUGIN`, dev override `cloudPlayPluginUrl`) and falls back to
+ * the editor's, so nothing breaks before a play build is deployed. Same register/compatibleHooks contract.
+ * @returns {string}
+ */
+export function pluginUrl() {
+	const ls = (/** @type {string} */ k) => (typeof localStorage !== 'undefined' && safeStorage.getItem(k)) || '';
+	const editor = import.meta.env.VITE_CLOUD_PLUGIN || ls('cloudPluginUrl') || '';
+	if (!playEntry) return editor;
+	return import.meta.env.VITE_CLOUD_PLAY_PLUGIN || ls('cloudPlayPluginUrl') || editor;
+}
+
+/** how long messages may wait for the plugin (`localStorage.cloudPluginWaitMs`: the dev override, as `cloudPluginUrl`) */
+const PLUGIN_WAIT_MS = 30000;
+
+/** What a peer may still do when a build meant to have roles has none: what a viewer may (the plugin's
+ * own list), so people still see and hear each other. */
+const NO_ROLES_ALLOWED = new Set(['sent', 'info', 'ping', 'camera', 'specator', 'agentview']);
+
+/**
+ * This build has roles and the plugin did not come: nobody's role is known, so nobody gets more than a
+ * viewer does, except the host we joined (it holds the room's scene, and a joiner must receive it).
+ * @param {string} message
+ */
+function withoutRoles(message) {
+	showToast(message);
+	setCapabilityProvider(
+		(peerId, msgType) =>
+			NO_ROLES_ALLOWED.has(msgType) ||
+			peerId === get(sessionHost) ||
+			/** @type {any[]} */ (get(waitingForApproval) ?? []).some((w) => w?.[0] === peerId)
+	);
+	settleRoles();
 }
 
 /**
@@ -135,12 +195,15 @@ export async function startCloudPlugin() {
  * `null` for `ai` or `mesh` REMOVES that entry (the store's own remove re-points the
  * active slot at the first remaining provider, exactly as a user delete does).
  */
+function aiNotReady() {
+	if (!aiLib || !meshLib) throw new Error('aiPresets: the AI provider stores are not loaded yet (a register() runs after them)');
+}
 const aiPresets = {
 	/** does the user have a provider of their OWN (the tagged entry excluded)?
 	 *  @param {string} tag @returns {{ai: boolean, mesh: boolean}} */
-	userHas: (tag) => ({
-		ai: get(aiProviders).some((p) => p.managedBy !== tag),
-		mesh: get(meshProviders).some((p) => p.managedBy !== tag)
+	userHas: (tag) => (aiNotReady(), {
+		ai: get(aiLib.aiProviders).some((/** @type {any} */ p) => p.managedBy !== tag),
+		mesh: get(meshLib.meshProviders).some((/** @type {any} */ p) => p.managedBy !== tag)
 	}),
 	/**
 	 * Create / update / remove the managed entry in aiProviders + meshProviders.
@@ -149,35 +212,36 @@ const aiPresets = {
 	 * @returns {{ai: {id: string, active: boolean}, mesh: {id: string, active: boolean}, enabled: {ai: boolean, mesh: boolean}}}
 	 */
 	seed(tag, { ai, mesh, activate, enable } = {}) {
+		aiNotReady();
 		if (typeof tag !== 'string' || !tag) throw new Error('aiPresets.seed: a non-empty tag is required');
 		const mayActivate = { ai: activate?.ai !== false, mesh: activate?.mesh !== false };
 		const out = { ai: { id: '', active: false }, mesh: { id: '', active: false }, enabled: { ai: false, mesh: false } };
 
 		out.ai.id = seedOne(tag, ai, mayActivate.ai, {
-			list: aiProviders,
-			active: aiActiveProvider,
-			add: (/** @type {any} */ cfg) => addAiProvider({ ...cfg, preset: 'custom' }),
-			update: updateAiProvider,
-			remove: removeAiProvider,
-			setActive: setAiActiveProvider
+			list: aiLib.aiProviders,
+			active: aiLib.aiActiveProvider,
+			add: (/** @type {any} */ cfg) => aiLib.addAiProvider({ ...cfg, preset: 'custom' }),
+			update: aiLib.updateAiProvider,
+			remove: aiLib.removeAiProvider,
+			setActive: aiLib.setAiActiveProvider
 		});
-		out.ai.active = !!out.ai.id && get(aiActiveProvider) === out.ai.id;
-		if (enable && out.ai.active && !get(aiEnabled)) {
-			setAiEnabled(true);
+		out.ai.active = !!out.ai.id && get(aiLib.aiActiveProvider) === out.ai.id;
+		if (enable && out.ai.active && !get(aiLib.aiEnabled)) {
+			aiLib.setAiEnabled(true);
 			out.enabled.ai = true;
 		}
 
 		out.mesh.id = seedOne(tag, mesh, mayActivate.mesh, {
-			list: meshProviders,
-			active: meshActiveProvider,
-			add: (/** @type {any} */ cfg) => addMeshProvider({ kind: 'comfyui', ...cfg }),
-			update: updateMeshProvider,
-			remove: removeMeshProvider,
-			setActive: setMeshActiveProvider
+			list: meshLib.meshProviders,
+			active: meshLib.meshActiveProvider,
+			add: (/** @type {any} */ cfg) => meshLib.addMeshProvider({ kind: 'comfyui', ...cfg }),
+			update: meshLib.updateMeshProvider,
+			remove: meshLib.removeMeshProvider,
+			setActive: meshLib.setMeshActiveProvider
 		});
-		out.mesh.active = !!out.mesh.id && get(meshActiveProvider) === out.mesh.id;
-		if (enable && out.mesh.active && !get(meshGenEnabled)) {
-			setMeshGenEnabled(true);
+		out.mesh.active = !!out.mesh.id && get(meshLib.meshActiveProvider) === out.mesh.id;
+		if (enable && out.mesh.active && !get(meshLib.meshGenEnabled)) {
+			meshLib.setMeshGenEnabled(true);
 			out.enabled.mesh = true;
 		}
 		return out;
@@ -281,6 +345,9 @@ export function makeCloudApi() {
 		 *  and nothing that signs anyone in belongs here (a token on this origin is what the split
 		 *  exists to avoid). Absent on older engines — probe it; false on the app origin. */
 		playOrigin: onPlayOrigin,
+		/** 94 SP1 (A2): this page is the slim play entry (`/play`) — editor slots never render here;
+		 *  `mountProfile` mounts into the play start card's `#play-account-slot` */
+		playEntry,
 		/** 69 T4: an absolute play / embed URL — on the play origin when one is configured, else here.
 		 *  @param {string} path e.g. `/?s=<id>&play=1&embed=1` */
 		playUrl: (/** @type {string} */ path) => playUrl(String(path ?? '/')),
@@ -304,6 +371,27 @@ export function makeCloudApi() {
 		/** render into the profile dropdown (login / account / preferences) — v2 */
 		mountProfile: (/** @type {any} */ mountFn) =>
 			profileSlot.set(typeof mountFn === 'function' ? mountFn : null),
+		/** profile-notify: may the plugin show this kind of automatic notification? The per-device switches in
+		 *  Settings ▸ Interface ▸ Notifications; the plugin's kinds are `roomInvites` and `contests`. Unknown = true.
+		 *  @param {string} kind */
+		notificationOn: (/** @type {string} */ kind) => notifyOn(String(kind)),
+		/** profile-notify: fill a Settings section — only `'account'` (Settings ▸ Account) so far. The section exists
+		 *  only while mounted; pass a non-function to remove it. Additive (no version bump): plugins typeof-probe it.
+		 *  @param {string} key @param {any} mountFn `(el) => cleanup` */
+		mountSettingsSection: (/** @type {string} */ key, /** @type {any} */ mountFn) => {
+			if (!SETTINGS_SLOT_KEYS.includes(key)) return false;
+			settingsSlots.update((m) => {
+				const next = { ...m };
+				if (typeof mountFn === 'function') next[key] = mountFn;
+				else delete next[key];
+				return next;
+			});
+			return true;
+		},
+		/** uir-account: open Settings on a page (a deep-link key: 'account', 'interface'…) and, optionally, at an element
+		 *  of it (an id the page — or the plugin's own section — renders). Returns false for a malformed request. Additive
+		 *  (no version bump): probe with typeof. @param {string} section @param {string} [anchor] */
+		openSettings: (/** @type {string} */ section, /** @type {string | undefined} */ anchor) => openSettingsAt(String(section ?? ''), anchor ?? null),
 		/** render into the Connect info drawer (room / host settings) — v2 */
 		mountConnectDrawer: (/** @type {any} */ mountFn) =>
 			drawerSlot.set(typeof mountFn === 'function' ? mountFn : null),
@@ -479,11 +567,14 @@ export function makeCloudApi() {
 		 * LOCK only inside a user gesture; called from a boot deep link the mode still
 		 * holds (a refused lock never exits play) and the pointer locks on the player's
 		 * first click. Returns false only before the seam is primed (never after boot).
+		 * fix-play-link: it is an AUTOPLAY (no gesture) and goes through `autoPlay` — flat on a
+		 * screen, and none at all on an XR-capable device, where the start card's Enter VR must stay
+		 * reachable (the only caller is the `play=1` deep link).
 		 * @returns {boolean}
 		 */
 		startPlay: () => {
 			if (!playModeLib) return false;
-			playModeLib.requestPlay();
+			void playModeLib.autoPlay();
 			return true;
 		},
 		/** A4: leave play mode — the canonical exit (Escape / the touch ✕ / a HUD quit).
@@ -536,7 +627,7 @@ export function makeCloudApi() {
 		/** ONE plugin-managed provider preset in Settings ▸ AI — `userHas(tag)` +
 		 *  `seed(tag, {ai, mesh, activate, enable})`; see `aiPresets` above. Additive and
 		 *  typeof-probed: no CLOUD_HOOKS_VERSION bump, an older engine simply has none. */
-		aiPresets,
+		aiPresets: playEntry ? undefined : aiPresets,
 		/** an extra status line under each mesh-job card ("You are #3 in queue"). Pass
 		 *  `fn() → string | null` (null renders nothing) or null to remove it; call it
 		 *  again whenever the line may have changed — every set is a poke. */
@@ -567,6 +658,12 @@ export function makeCloudApi() {
 		onExportBuilt: (/** @type {any} */ fn) => onExportBuilt(fn),
 		/** A Games-tab template was started: `fn(slug)`. Returns `off`. */
 		onTemplateOpen: (/** @type {any} */ fn) => onTemplateOpen(fn),
+		/** 76 FW2: an anonymous first-visit funnel event `fn({e, c, b, d, x})` — closed fields only,
+		 *  already past core's once-per-browser / DNT / GPC rules. Returns `off`. Probe with typeof. */
+		onFunnelEvent: (/** @type {any} */ fn) => onFunnelEvent(fn),
+		/** 76 FW2: the plugin's own funnel event, through the same rules. Only `ob_waitlist` (a
+		 *  feature-update opt-in) is accepted; anything else is ignored. Returns whether it went out. */
+		funnelEvent: async (/** @type {any} */ name) => (String(name) === 'ob_waitlist' ? (await import('./onboarding/funnel.js')).funnelEvent('ob_waitlist') : false),
 		/** C6: the heart for the scene on screen (play-link start card + pause menu):
 		 *  `{count, liked, toggle() → Promise<{liked, count} | null>}`, or null to remove it. */
 		setSceneHeart: (/** @type {any} */ info) => setSceneHeart(info),
@@ -578,7 +675,7 @@ export function makeCloudApi() {
 		setPeerMenuItems: (/** @type {any} */ items) => setPeerMenuItems(items),
 		/** 86 B1/B5: the Claude connector's account half — `{pair({resume}), connections(), revoke(id),
 		 *  revokeAll(), account()}` (see cloudHooks.connectorProvider) or null. Core shows Connect Claude
-		 *  and Settings ▸ Connected apps only while one is installed. Probe with typeof. */
+		 *  and Settings ▸ Account ▸ Connected apps only while one is installed. Probe with typeof. */
 		setConnectorProvider: (/** @type {any} */ provider) => setConnectorProvider(provider),
 		/** 86-fix N1: a `(el) => cleanup` "Sign in to connect" for the AI window's welcome while the connector is
 		 *  built in and nobody is signed in; null removes it. Probe with typeof. */

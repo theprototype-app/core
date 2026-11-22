@@ -65,13 +65,13 @@ h.run(async () => {
 		});
 	const toastIds = (page) => page.evaluate(() => {
 		let list = [];
-		window.__stores.toastStore.subscribe((x) => (list = x))();
+		window.__tp.test.v1.toastStore.subscribe((x) => (list = x))();
 		return list.filter((t) => t && t.id).map((t) => t.id);
 	});
 	const openInterface = async (page) => {
 		await page.evaluate(() => {
-			window.__stores.settingsSection.set('interface');
-			window.__stores.settingsOpen.set(true);
+			window.__tp.test.v1.settingsSection.set('interface');
+			window.__tp.test.v1.settingsOpen.set(true);
 		});
 		await page.waitForTimeout(600);
 	};
@@ -81,7 +81,7 @@ h.run(async () => {
 		const A = await h.setupPage(browser, 'A', { storage: { 'perfStats:show': 'true' } });
 		const page = A.page;
 		await mock(A.ctx);
-		const dbg = await page.evaluate(() => window.__stores.perfBeacon.beaconDebug());
+		const dbg = await page.evaluate(() => window.__tp.test.v1.perfBeacon.beaconDebug());
 		h.check(dbg.url === null && dbg.running === false, 'A1 no VITE_PERF_REPORTS_URL: no endpoint, not running');
 		await openInterface(page);
 		h.check((await page.locator('#show-perf-stats').count()) === 1 && (await page.locator('#send-perf-reports').count()) === 0, 'A2 the Settings row does not exist without an endpoint');
@@ -100,7 +100,7 @@ h.run(async () => {
 		await openInterface(page);
 		const toggle = page.locator('#send-perf-reports');
 		h.check((await toggle.count()) === 1 && (await toggle.getAttribute('aria-pressed')) === 'false', 'B2 the row exists and is OFF by default');
-		await page.evaluate(() => window.__stores.settingsOpen.set(false));
+		await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 		await page.waitForTimeout(11000);
 		h.check(requests.length === 0, `B3 off = nothing sent in 11 s of real time (${requests.length} requests)`);
 		h.check((await page.locator('#perf-report-dot').count()) === 0, 'B4 no dot while off');
@@ -108,11 +108,11 @@ h.run(async () => {
 		await openInterface(page);
 		await toggle.evaluate((el) => el.click());
 		await page.waitForTimeout(300);
-		await page.evaluate(() => window.__stores.settingsOpen.set(false));
-		const on = await page.evaluate(() => window.__stores.perfBeacon.beaconDebug());
+		await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
+		const on = await page.evaluate(() => window.__tp.test.v1.perfBeacon.beaconDebug());
 		h.check(on.running && on.url === 'https://perf.mock.test/api/collections/perf_reports/records?fields=id', 'B5 the Settings toggle turns reports on');
 		h.check((await page.locator('#perf-report-dot').getAttribute('data-state')) === 'idle', 'B6 the reporting dot is on the FPS counter (idle until a send)');
-		const strip = await page.evaluate(() => window.__stores.gameKit.vrPerfStrip.perfSegments({ fps: 72, ms: 13.9, calls: 100, tris: 1000, source: 'xr' }));
+		const strip = await page.evaluate(() => window.__tp.test.v1.gameKit.vrPerfStrip.perfSegments({ fps: 72, ms: 13.9, calls: 100, tris: 1000, source: 'xr' }));
 		// 53 A2: idle / sent / failed are a ring / disc / triangle (never colour alone); idle here, like B6
 		h.check(strip[0].text === '○' && strip[1].text === '72 fps', `B6b the headset FPS strip carries the same dot, idle = a ring (${strip[0].text})`);
 		// a real stall inside the first window
@@ -146,22 +146,22 @@ h.run(async () => {
 
 		// a failure is dropped, never retried
 		const failed = await page.evaluate(async () => {
-			const b = window.__stores.perfBeacon;
+			const b = window.__tp.test.v1.perfBeacon;
 			b.cutWindow();
 			return { queued: b.beaconDebug().queued.length };
 		});
 		failNext = 10;
 		const before = requests.length;
-		const okCount = await page.evaluate(() => window.__stores.perfBeacon.flushQueue());
+		const okCount = await page.evaluate(() => window.__tp.test.v1.perfBeacon.flushQueue());
 		const tried = requests.length - before;
 		failNext = 0;
-		const after = await page.evaluate(() => window.__stores.perfBeacon.beaconDebug());
+		const after = await page.evaluate(() => window.__tp.test.v1.perfBeacon.beaconDebug());
 		h.check(failed.queued >= 1 && okCount === 0 && tried === failed.queued, `B17 a failing endpoint is tried once per window (${tried})`);
 		h.check(after.queued.length === 0 && after.status.state === 'failed' && after.status.failed >= 1, 'B18 ...then dropped, the status says failed');
 		await page.waitForTimeout(200);
 		h.check((await page.locator('#perf-report-dot').getAttribute('data-state')) === 'failed', 'B19 the dot turns amber');
 		const n0 = requests.length;
-		await page.evaluate(() => window.__stores.perfBeacon.flushQueue());
+		await page.evaluate(() => window.__tp.test.v1.perfBeacon.flushQueue());
 		h.check(requests.length === n0, 'B20 nothing is re-sent afterwards');
 
 		// hiding the page: the partial window goes by sendBeacon
@@ -170,7 +170,7 @@ h.run(async () => {
 		const beaconed = await page.evaluate(() => {
 			Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
 			document.dispatchEvent(new Event('visibilitychange'));
-			return window.__stores.perfBeacon.beaconDebug().queued.length;
+			return window.__tp.test.v1.perfBeacon.beaconDebug().queued.length;
 		});
 		await page.waitForTimeout(1500);
 		const hid = requests.slice(n1);
@@ -185,7 +185,7 @@ h.run(async () => {
 		const n2 = requests.length;
 		await page.evaluate(() => {
 			let r;
-			window.__stores.globalRenderer.subscribe((x) => (r = x))();
+			window.__tp.test.v1.globalRenderer.subscribe((x) => (r = x))();
 			r.xr.dispatchEvent({ type: 'sessionend' });
 		});
 		await page.waitForTimeout(1500);
@@ -194,9 +194,9 @@ h.run(async () => {
 		await openInterface(page);
 		await toggle.evaluate((el) => el.click());
 		await page.waitForTimeout(300);
-		const off = await page.evaluate(() => window.__stores.perfBeacon.beaconDebug());
+		const off = await page.evaluate(() => window.__tp.test.v1.perfBeacon.beaconDebug());
 		h.check(!off.running && (await page.locator('#perf-report-dot').count()) === 0, 'B23 off stops it and removes the dot');
-		const stripOff = await page.evaluate(() => window.__stores.gameKit.vrPerfStrip.perfSegments({ fps: 72, ms: 13.9, calls: 100, tris: 1000, source: 'xr' }));
+		const stripOff = await page.evaluate(() => window.__tp.test.v1.gameKit.vrPerfStrip.perfSegments({ fps: 72, ms: 13.9, calls: 100, tris: 1000, source: 'xr' }));
 		h.check(stripOff[0].text === '72 fps', 'B23b ...and from the headset strip');
 		h.check(h.pageErrors(B).length === 0, 'B24 no page errors');
 		await B.ctx.close();
@@ -217,21 +217,21 @@ h.run(async () => {
 		page.__errors = [];
 		page.on('pageerror', (e) => page.__errors.push(String(e.message)));
 		await page.goto(`https://${PREVIEW_HOST}:${port}/`, { waitUntil: 'domcontentloaded', timeout: 60000 });
-		await page.waitForFunction(() => window.__stores?.perfBeacon, null, { timeout: 60000 });
+		await page.waitForFunction(() => window.__tp?.test.v1?.perfBeacon, null, { timeout: 60000 });
 		await page.waitForTimeout(1500);
 		h.check((await page.evaluate(() => location.hostname)) === PREVIEW_HOST, 'C0 premise: the page runs on the preview host');
 		h.check((await toastIds(page)).includes('perf-reports-offer'), 'C1 a preview build offers reports once');
-		h.check(!(await page.evaluate(() => window.__stores.perfBeacon.beaconDebug().running)), 'C2 ...and sends nothing before the answer');
+		h.check(!(await page.evaluate(() => window.__tp.test.v1.perfBeacon.beaconDebug().running)), 'C2 ...and sends nothing before the answer');
 		await page.getByRole('button', { name: 'Send reports' }).first().click();
 		await page.waitForTimeout(400);
-		const st = await page.evaluate(() => ({ running: window.__stores.perfBeacon.beaconDebug().running, offered: localStorage.getItem('perfReports:offered'), send: localStorage.getItem('perfReports:send') }));
+		const st = await page.evaluate(() => ({ running: window.__tp.test.v1.perfBeacon.beaconDebug().running, offered: localStorage.getItem('perfReports:offered'), send: localStorage.getItem('perfReports:send') }));
 		h.check(st.running && st.offered === 'yes' && st.send === 'true', 'C3 accepting turns reports on and remembers the answer');
 		h.check(!(await toastIds(page)).includes('perf-reports-offer'), 'C4 the offer card goes away');
 		await page.reload({ waitUntil: 'domcontentloaded' });
-		await page.waitForFunction(() => window.__stores?.perfBeacon, null, { timeout: 60000 });
+		await page.waitForFunction(() => window.__tp?.test.v1?.perfBeacon, null, { timeout: 60000 });
 		await page.waitForTimeout(1500);
 		h.check(!(await toastIds(page)).includes('perf-reports-offer'), 'C5 never offered twice');
-		h.check(await page.evaluate(() => window.__stores.perfBeacon.beaconDebug().running), 'C6 the switch survives the reload');
+		h.check(await page.evaluate(() => window.__tp.test.v1.perfBeacon.beaconDebug().running), 'C6 the switch survives the reload');
 		await ctx.close();
 	}
 

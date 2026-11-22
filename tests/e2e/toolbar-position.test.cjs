@@ -260,7 +260,7 @@ h.run(async () => {
 	// a neighbour that sits in a DIFFERENT ROW must change nothing. `#sim-controls` is
 	// at bottom:112px — well above this bar — so it can never be in its way, and a
 	// clamp that simply collected every corner button would wrongly shrink the track.
-	await A.page.evaluate(() => window.__stores.showSimControls.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.showSimControls.set(true));
 	await A.page.waitForTimeout(500);
 	const simGeom = await geom(A.page);
 	h.check(
@@ -277,7 +277,7 @@ h.run(async () => {
 		Math.abs(g2.right - hardRight) <= 2,
 		`a neighbour in another row does NOT clamp the bar (${Math.round(g2.right)} vs ${Math.round(hardRight)})`
 	);
-	await A.page.evaluate(() => window.__stores.showSimControls.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.showSimControls.set(false));
 	await A.page.waitForTimeout(300);
 
 	// ---- snap to the middle -------------------------------------------------------

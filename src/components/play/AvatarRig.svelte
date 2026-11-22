@@ -11,6 +11,7 @@
 	import { avatarIkPeers, avatarInstances, peersAsClassic } from '$lib/avatars/avatarState'
 	import { feetBelowHead } from '$lib/avatars/catalog'
 	import { DizzyFx } from '$lib/avatars/dizzy'
+	import { nearFadeAlpha, fadeAvatar } from '$lib/nearAvatars'
 
 	// Builds a peer's character from their replicated avatar config (userdata
 	// slot 5: { character, head, outfit, body, hat, face, shape, showLabel }).
@@ -144,6 +145,8 @@
 	let card: any = null
 	let labelGroup: any = null
 	const viewer = new THREE.Vector3()
+	const headAt = new THREE.Vector3()
+	let nearAlpha = 1
 	useTask((delta) => {
 		const cam: any = camera.current
 		if (!cam) return
@@ -156,6 +159,15 @@
 		if (labelGroup) labelGroup.lookAt(viewer)
 		if (avatar && root) avatar.update(Math.min(delta, 0.1), performance.now() / 1000, root, preview ? null : $peerHands[user[0]], viewer)
 		tickClassicDizzy(Math.min(delta, 0.1))
+		// 78 PL32: an avatar standing in (or right in front of) THIS screen's camera fades out
+		if (!preview && root) {
+			const alpha = nearFadeAlpha(root.getWorldPosition(headAt).distanceTo(viewer))
+			if (alpha < 1 || nearAlpha < 1) {
+				fadeAvatar([root, avatar?.object], alpha)
+				nearAlpha = alpha
+				root.userData.nearFade = alpha
+			}
+		}
 	})
 </script>
 <!-- tokens-ok-begin: three.js material / troika Text colours of a peer avatar in the 3D view (meshes cannot read CSS var()) -->

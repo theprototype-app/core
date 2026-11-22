@@ -43,6 +43,7 @@ const SIM_COMMON = /* glsl */ `
 	uniform vec3 uOffset;     // emission point offset in the object's local frame
 	uniform vec4 uQuat;       // emitter world quaternion (world mode)
 	uniform float uWorldSpace;
+	uniform float uAimWorld;  // mcp-fix: world mode, the shape and its directions keep world axes, not the emitter's
 	uniform float uInherit;   // 37-fx: share of the emitter's velocity a particle is born with (world mode)
 	uniform vec2 uArea;       // 36 B3: box half-extents (x, z) in the emitter frame
 	uniform vec3 uWind;       // 36 B3: constant drift, m/s
@@ -106,6 +107,13 @@ const SIM_COMMON = /* glsl */ `
 			posBase = vec3(cos(ph), 0.0, sin(ph)) * uRadius * r.z;
 		}
 
+		// mcp-fix: "up" is the world's up however the emitter is turned
+		if (uWorldSpace > 0.5 && uAimWorld > 0.5) {
+			vec4 toEmitter = vec4(-uQuat.xyz, uQuat.w);
+			dir = qrot(toEmitter, dir);
+			posBase = qrot(toEmitter, posBase);
+		}
+
 		// emit from an offset point inside the object (default center)
 		posBase += uOffset;
 
@@ -118,7 +126,8 @@ const SIM_COMMON = /* glsl */ `
 		// emitter frame so the ground below still catches it.
 		if (uWorldSpace > 0.5 && uInherit > 0.0)
 			disp += qrot(vec4(-uQuat.xyz, uQuat.w), vel) * (uInherit * travel);
-		disp.y += 0.5 * uGravity * age * age;
+		// mcp-fix: in world space gravity pulls down the WORLD's Y, so a turned emitter does not rain sideways
+		disp += (uWorldSpace > 0.5 ? qrot(vec4(-uQuat.xyz, uQuat.w), vec3(0.0, 1.0, 0.0)) : vec3(0.0, 1.0, 0.0)) * (0.5 * uGravity * age * age);
 		if (uTurbulence > 0.001) {
 			float f1 = 1.7 + r2.x * 2.0;
 			float f2 = 1.3 + r2.y * 2.0;

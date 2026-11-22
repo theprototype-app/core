@@ -2,11 +2,14 @@ import * as THREE from 'three';
 import { toggleExpand, fixLight } from '../stores/appStore.js';
 import { customGeometryBuilders } from '$lib/customGeometries';
 import { stampGeometryParams } from '$lib/geometryEdit';
-import { GEOMETRY_PARAMS } from '$lib/geometryParams';
+import { GEOMETRY_PARAMS, boundCreateArgs } from '$lib/geometryParams';
 import { paletteColorFor } from '$lib/palette';
 import { stampFluidTank } from '$lib/sim/fluidTank.js';
 import { stampFluidEmitter } from '$lib/sim/fluidEmitterObject.js';
 import { stampFlowPath } from '$lib/sim/flowPathObject.js';
+import { stampTextPath } from '$lib/textPathObject.js';
+import { stampPathObject } from '$lib/path/pathObject.js';
+import { stampPortal, stampCheckpoint } from '$lib/gameLevels/objects.js'; // 93 LP1 / LP3
 
 // RectAreaLight renders black on Standard/Physical materials until the
 // uniforms lib initializes — once per session is enough (79; lightSnapshot.js)
@@ -62,6 +65,8 @@ export function createGeometry(command, uuid) {
         const value = parseFloat(command.split(' ')[index]);
         return Number.isNaN(value) ? undefined : value;
     });
+    // the command arrives from peers too: counts and sizes in bounds before anything is built
+    options = boundCreateArgs(geometry, options);
     let geometryList = ["Box","Capsule","Circle","Cone","Cylinder","Dodecahedron","Edges","Extrude","Icosahedron","Lathe","Octahedron","Plane","Polyhedron","Ring","Shape","Sphere","Tetrahedron","Torus","TorusKnot","Tube","Wireframe"]
     // 37 R3: a parametric architecture primitive maps its /create numbers to PARAMS
     // (fromArgs) and builds from them, so the variant (a door in the wall, an L stair)
@@ -129,6 +134,10 @@ export function createGeometry(command, uuid) {
         if (geometry === 'FluidTank') stampFluidTank(object, options[0], options[1], options[2]);
         if (geometry === 'FluidEmitter') stampFluidEmitter(object); // 36-fb F23
         if (geometry === 'FlowPath') stampFlowPath(object); // 36-fb F24
+        if (geometry === 'Portal') stampPortal(object); // 93 LP1
+        if (geometry === 'Checkpoint') stampCheckpoint(object); // 93 LP3
+        if (geometry === 'Text') stampTextPath(object, command.split(' ')[2] ?? ''); // 64-text: '' | solid | path (a word, not a number)
+        if (geometry === 'Path') stampPathObject(object); // 78 F4: the Path object
         // PFX-C follow-up: standard primitives are DYNAMIC by default (mass 1) so
         // a fresh cube falls, collides and THROWS the moment a sim runs — fun by
         // default. Explicit allow-list: Terrain + module-registered primitives
@@ -186,8 +195,8 @@ export function createLight(command, uuid) {
         if (uuid) light.uuid = uuid
     } else if (lightType == 'rectarea') {
         // needs the uniforms lib once, or Standard/Physical materials render black
-        initRectAreaUniforms();
         light = new THREE.RectAreaLight(0xffffff, 2, 4, 4);
+        initRectAreaUniforms(light); // 94: the tables load lazily; materials refresh when they land
         light.name = 'RectArea';
     } else {
         console.log('Invalid light: ' + light);

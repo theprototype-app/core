@@ -104,3 +104,91 @@ export function checkMaterialParam(material, key, value, opts = {}) {
 	if (opts.texture && value && value.isTexture === true) return { ok: true, value };
 	return { ok: false, error: '"' + key + '" is a texture slot: it takes a library image (its hash, on "map"), not ' + (typeof value === 'string' ? 'a string' : typeof value) };
 }
+
+// ---- 72 LK1: the Inspector's texture map slots -------------------------------------------------
+// The base colour map keeps its own older `map` message; these five travel as `mapSlot`.
+
+/** the slots, in the order the Inspector lists them. `srgb` = colour data; the rest are read as numbers */
+export const MAP_SLOTS = Object.freeze([
+	{ key: 'normalMap', label: 'Normal', srgb: false, hint: 'Surface detail from a normal map' },
+	{ key: 'roughnessMap', label: 'Roughness', srgb: false, hint: 'Where the surface is rough or shiny (reads the green channel)' },
+	{ key: 'metalnessMap', label: 'Metalness', srgb: false, hint: 'Where the surface is metal (reads the blue channel)' },
+	{ key: 'emissiveMap', label: 'Emission', srgb: true, hint: 'Where the surface glows' },
+	{ key: 'aoMap', label: 'AO', srgb: false, hint: 'Ambient occlusion: darkens creases (reads the red channel)' }
+]);
+const MAP_SLOT_KEYS = new Set(MAP_SLOTS.map((slot) => slot.key));
+
+/** @param {any} key */
+export const isMapSlotKey = (key) => typeof key === 'string' && MAP_SLOT_KEYS.has(key);
+
+/** the longest image a `mapSlot` message may carry (a 1024 px image encodes far below this) */
+export const MAP_SLOT_MAX_URL = 24 * 1024 * 1024;
+
+/** A slot image is an inline PNG, JPEG or WebP, or null to clear. Never a URL: a peer must not be
+ * able to make this machine fetch something. @param {any} value */
+export function isMapSlotImage(value) {
+	if (value === null) return true;
+	return typeof value === 'string' && value.length <= MAP_SLOT_MAX_URL && /^data:image\/(png|jpeg|webp);base64,/.test(value);
+}
+
+export const IDENTITY_TEX_TRANSFORM = Object.freeze({ repeat: Object.freeze([1, 1]), offset: Object.freeze([0, 0]), rotation: 0 });
+
+/** @param {any} pair @returns {pair is [number, number]} */
+const isFinitePair = (pair) => Array.isArray(pair) && pair.length === 2 && pair.every((n) => typeof n === 'number' && Number.isFinite(n));
+
+const TILING_LIMIT = 1000;
+const OFFSET_LIMIT = 1000;
+
+/**
+ * Check a material's tiling / offset / rotation. Tiling keeps its sign (a negative value mirrors) but
+ * never reaches 0, where every texel would collapse to one colour.
+ * @param {any} raw @returns {{repeat: number[], offset: number[], rotation: number} | null}
+ */
+export function normalizeTexTransform(raw) {
+	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+	const repeat = raw.repeat === undefined ? [1, 1] : raw.repeat;
+	const offset = raw.offset === undefined ? [0, 0] : raw.offset;
+	const rotation = raw.rotation === undefined ? 0 : raw.rotation;
+	if (!isFinitePair(repeat) || !isFinitePair(offset) || typeof rotation !== 'number' || !Number.isFinite(rotation)) return null;
+	const tile = (/** @type {number} */ n) => {
+		const size = Math.min(TILING_LIMIT, Math.max(0.001, Math.abs(n)));
+		return n < 0 ? -size : size;
+	};
+	const shift = (/** @type {number} */ n) => Math.min(OFFSET_LIMIT, Math.max(-OFFSET_LIMIT, n));
+	return { repeat: [tile(repeat[0]), tile(repeat[1])], offset: [shift(offset[0]), shift(offset[1])], rotation };
+}
+
+/** @param {any} t */
+export function isIdentityTexTransform(t) {
+	return !t || (t.repeat[0] === 1 && t.repeat[1] === 1 && t.offset[0] === 0 && t.offset[1] === 0 && t.rotation === 0);
+}
+
+export const NORMAL_STRENGTH_MAX = 10;
+
+/** the words a texture file name uses for each map, as the common PBR exporters write them */
+const MAP_NAME_WORDS = /** @type {Record<string, string>} */ (
+	Object.assign(Object.create(null), {
+		normal: 'normalMap', normals: 'normalMap', nor: 'normalMap', norm: 'normalMap', nrm: 'normalMap', normalgl: 'normalMap', normaldx: 'normalMap',
+		roughness: 'roughnessMap', rough: 'roughnessMap', rgh: 'roughnessMap',
+		metalness: 'metalnessMap', metallic: 'metalnessMap', metal: 'metalnessMap', mtl: 'metalnessMap',
+		emissive: 'emissiveMap', emission: 'emissiveMap', glow: 'emissiveMap', emit: 'emissiveMap',
+		ao: 'aoMap', occlusion: 'aoMap', ambientocclusion: 'aoMap',
+		basecolor: 'map', basecolour: 'map', albedo: 'map', diffuse: 'map', diff: 'map', color: 'map', colour: 'map', col: 'map'
+	})
+);
+
+/** the slot a file name says it is, for a set of maps picked together (a PBR export, an AI tool's
+ * output): 'map' for base colour, a slot key, or null when the name says nothing. Whole words only:
+ * "chaos_color" must not read as AO through the "ao" inside a longer word.
+ * @param {any} name @returns {string | null} */
+export function guessMapSlot(name) {
+	if (typeof name !== 'string') return null;
+	const stem = name.replace(/\.[a-zA-Z0-9]+$/, '').replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();
+	const words = stem.split(/[^a-z0-9]+/).filter(Boolean);
+	// the LAST word that names a map decides: in "metal_plate_diff_1k" the material is metal, the map is colour
+	for (let i = words.length - 1; i >= 0; i--) {
+		const slot = MAP_NAME_WORDS[words[i]];
+		if (slot) return slot;
+	}
+	return null;
+}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Icon from '../../ui/Icon.svelte';
 	// 34 R3 (D2): one node of a behaviour's DERIVED view — read-only, its live value and its
 	// fired glow laid on by BehaviourView every 100 ms. A param node carries a knob that writes
 	// back into the source literal (one AST edit, one undo entry) when released.
@@ -6,7 +7,7 @@
 	import { formatValue } from '$lib/behaviours/graph.js';
 
 	let { id, data }: { id: string; data: any } = $props();
-	const ICON: Record<string, string> = { event: '⚡', param: '◆', fn: 'ƒ', state: '▣', kit: '⊕', timer: '⏱', action: '✋' };
+	const ICON: Record<string, string> = { event: 'ϟ', param: '◆', fn: 'ƒ', state: '▣', kit: '⊕', timer: '◷', action: '↦' };
 	const kind = $derived(data.view?.kind ?? 'fn');
 	let dragging = $state<number | null>(null);
 	const shown = $derived(dragging ?? data.live);
@@ -26,7 +27,7 @@
 	<div class="bview-head">
 		<span class="bview-icon">{ICON[kind] ?? '•'}</span>
 		<span class="bview-label">{data.label}</span>
-		{#if kind === 'fn' && data.random}<span class="bview-tag" title="uses this.rand()">🎲</span>{/if}
+		{#if kind === 'fn' && data.random}<span class="bview-tag" title="uses this.rand()">⚄</span>{/if}
 	</div>
 	{#if data.sub}<div class="bview-sub">{data.sub}</div>{/if}
 	{#if kind === 'event' && data.outputs?.length}
@@ -59,7 +60,7 @@
 	{:else if data.liveText !== undefined}
 		<div class="bview-value" data-bview-value>{data.liveText}</div>
 	{/if}
-	{#if data.error}<div class="bview-err">⚠ {data.error}</div>{/if}
+	{#if data.error}<div class="bview-err"><Icon name="triangle-alert" size={16} class="inline-block shrink-0 align-[-2px]" /> {data.error}</div>{/if}
 	{#if kind !== 'state' && kind !== 'kit' && kind !== 'action'}
 		<Handle type="source" position={Position.Right} isConnectable={false} />
 	{/if}

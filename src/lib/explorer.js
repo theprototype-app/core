@@ -1,5 +1,7 @@
+import { embeddedOnlyManager, checkGltf, checkFbx, refusal, checkStl } from './loadGuard.js';
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
+import { renderOffscreen } from './render/offscreen.js';
 import { writable, get } from 'svelte/store';
 // @ts-ignore - see above
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -13,6 +15,7 @@ import { idbGet, idbPut, idbDelete } from './idb';
 import { showToast } from '../stores/appStore';
 import { heicToJpegFile } from './heic.js';
 import { measureDims } from './placementDims';
+import { localThumb } from './loadGuardCore.js';
 
 // Explorer (phase 95): a LOCAL asset library (like prefabs — nothing here
 // replicates until an asset is USED). Folder tree + items live as one small
@@ -83,7 +86,10 @@ const EXTENSIONS = {
 	hdri: ['hdr', 'exr'],
 	// 57 M1: an animation CLIP (.tpanim). A .vrma / .bvh / animation-only .glb or .fbx is converted
 	// to one on import (tpanim/convert.js), so the library only ever holds .tpanim clips
-	anim: ['tpanim']
+	anim: ['tpanim'],
+	// 64-text TX3: a FONT the 3D text object draws with (a WOFF2 is decoded to TTF on import —
+	// troika and opentype.js cannot read it)
+	font: ['ttf', 'otf', 'woff', 'woff2']
 };
 
 /** 57 M1: extensions whose files MAY be animation clips — the converter decides (lazy chunk) */
@@ -95,6 +101,18 @@ const MAYBE_ANIMATION = /\.(vrma|bvh|glb|fbx)$/i;
  * @param {File} file @returns {Promise<File[] | null | false>}
  */
 async function convertForImport(file) {
+	if (/\.woff2$/i.test(file.name)) {
+		// 64-text: the Library keeps fonts as sfnt bytes (lazy WASM decoder)
+		try {
+			const { decodeWoff2 } = await import('./textFonts.js');
+			const ttf = await decodeWoff2(new Uint8Array(await file.arrayBuffer()));
+			return [new File([/** @type {BlobPart} */ (ttf)], file.name.replace(/\.woff2$/i, '.ttf'), { type: 'font/ttf' })];
+		} catch (error) {
+			console.log('woff2 import failed', file.name, error);
+			showToast('Could not read the font ' + file.name);
+			return false;
+		}
+	}
 	if (!MAYBE_ANIMATION.test(file.name)) return null;
 	try {
 		const { convertAnimationFile } = await import('./tpanim/convert.js');
@@ -364,8 +382,6 @@ export function hashBytes(buffer) {
 /** offscreen render shared by every 3D kind (prefabs pattern) @param {any} object */
 function renderObjectThumbnail(object) {
 	try {
-		const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-		renderer.setSize(128, 128);
 		const scene = new THREE.Scene();
 		scene.add(new THREE.HemisphereLight(0xffffff, 0x444466, 2.4));
 		scene.add(object);
@@ -376,11 +392,11 @@ function renderObjectThumbnail(object) {
 		const camera = new THREE.PerspectiveCamera(40, 1, size / 100, size * 10);
 		camera.position.copy(center).add(new THREE.Vector3(size * 0.7, size * 0.55, size * 0.9));
 		camera.lookAt(center);
-		renderer.render(scene, camera);
-		const url = renderer.domElement.toDataURL('image/webp', 0.72);
-		renderer.dispose();
-		renderer.forceContextLoss?.();
-		return url;
+		// 101 F3: the shared off-screen renderer (one WebGL context for every thumbnail)
+		return renderOffscreen(128, 128, (renderer) => {
+			renderer.render(scene, camera);
+			return renderer.domElement.toDataURL('image/webp', 0.72);
+		}, { release: scene });
 	} catch (error) {
 		console.log('explorer thumbnail failed', error);
 		return null;
@@ -413,13 +429,18 @@ function imageThumbnail(blob) {
 export async function parseObjectFile(buffer, ext) {
 	if (ext === 'obj') return new OBJLoader().parse(new TextDecoder().decode(buffer));
 	if (ext === 'stl') {
+		if (!checkStl(buffer, 'library', 'model')) throw refusal('model');
 		const geometry = new STLLoader().parse(buffer);
 		return new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0x8899aa }));
 	}
-	if (ext === 'fbx') return new FBXLoader().parse(buffer, '');
+	if (ext === 'fbx') {
+		if (!checkFbx(buffer, 'library', 'model')) throw refusal('model');
+		return new FBXLoader(embeddedOnlyManager('library', 'model')).parse(buffer, '');
+	}
 	// glb/gltf
+	if (!checkGltf(buffer, 'library', 'model', { uris: false })) throw new Error('model refused by the load check');
 	const gltf = await new Promise((resolve, reject) =>
-		new GLTFLoader().parse(buffer, '', resolve, reject)
+		new GLTFLoader(embeddedOnlyManager('library', 'model')).parse(buffer, '', resolve, reject)
 	);
 	// R22 ROUND 15: CARRY THE CLIPS. GLTFLoader hands back `{scene, animations}` as two
 	// separate fields, so returning the scene alone silently dropped every animation in
@@ -628,8 +649,9 @@ async function writeItemNow(buffer, name, folderId, meta) {
 	// assets on the receiving peer, R-3); the card falls back to an icon
 	/** @type {{thumbnail: string | null, dims: any}} */
 	const facts =
+		// a carried thumbnail goes straight into an <img>: an embedded image or nothing
 		meta.thumbnail !== undefined
-			? { thumbnail: meta.thumbnail, dims: null }
+			? { thumbnail: localThumb(meta.thumbnail), dims: null }
 			: /** @type {any} */ (
 					await Promise.race([
 						itemFacts(blob, name, kind),

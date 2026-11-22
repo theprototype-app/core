@@ -39,6 +39,16 @@ export function ignoredMessage(message) {
 	return !m || IGNORE.some((re) => re.test(m));
 }
 
+/** 54i c: the renderer could not get a WebGL context (three's two wordings + the browser's event) */
+export const WEBGL_CREATE_RE = /Error creating WebGL context|WebGL could not be created|WebGL context could not be created|WebGL 1 is not supported|WebGL(?:2)? (?:is )?(?:not supported|unavailable)/i;
+/** the ONE message every WebGL create failure files under, whichever seam caught it */
+export const WEBGL_CREATE_MSG = 'WebGL could not be created';
+
+/** 54i aa: a lazy code chunk could not be fetched (Chromium, Firefox, Safari, vite's CSS preload) */
+export const CHUNK_LOAD_RE = /dynamically imported module|error loading dynamically|importing a module script failed|unable to preload/i;
+/** the ONE message every chunk failure files under (the chunk url is scrubbed anyway) */
+export const CHUNK_LOAD_MSG = 'Failed to fetch dynamically imported module';
+
 /** an out-of-memory failure, whatever the engine calls it @param {string} message */
 export function looksLikeOom(message) {
 	return /out of memory|allocation failed|Array buffer allocation|Cannot allocate|insufficient memory|GL_OUT_OF_MEMORY|OOM\b/i.test(String(message ?? ''));
@@ -133,7 +143,9 @@ export function fnv1a(s) {
  * @param {{kind: string, msg: string, frames: string[]}} r
  */
 export function signatureOf(r) {
-	const top = (r.frames[0] || '').replace(/:\d+$/, '');
+	// 54i c: a graphics failure is one failure whichever seam (error, rejection, the boot probe)
+	// and whichever frame caught it — so it dedupes to one report
+	const top = r.kind === 'webgl' || r.msg === CHUNK_LOAD_MSG ? '' : (r.frames[0] || '').replace(/:\d+$/, '');
 	return fnv1a(r.kind + '|' + r.msg + '|' + top);
 }
 
@@ -221,6 +233,95 @@ export function releaseLabel(version, hostname, explicit) {
 	return (v + '-preview').slice(0, 24);
 }
 
+/** a string inside a non-Error reason longer than this is somebody's words, not a code */
+export const MAX_REASON_STRING = 32;
+/** the JSON of a non-Error reason is cut to this before the message scrub */
+export const MAX_REASON_JSON = 140;
+
+/** the constructor name of a value, '' when it has none we can read @param {any} v */
+function ctorName(v) {
+	try {
+		const n = v?.constructor?.name;
+		return typeof n === 'string' ? n.slice(0, 40) : '';
+	} catch {
+		return '';
+	}
+}
+
+/**
+ * A small, safe JSON of a value: depth 2, 6 keys an object, 4 items an array, strings over
+ * MAX_REASON_STRING replaced by their length, functions by `fn`, cycles by `cycle`. The message
+ * scrub runs on the result too (urls, emails, ids, quoted phrases). Pure.
+ * @param {any} value
+ */
+export function safeReasonJson(value) {
+	const seen = new Set();
+	/** @param {any} v @param {number} depth @returns {any} */
+	const walk = (v, depth) => {
+		if (v === null || typeof v === 'number' || typeof v === 'boolean') return v;
+		if (typeof v === 'undefined') return 'undefined';
+		if (typeof v === 'string') return v.length > MAX_REASON_STRING ? '<str:' + v.length + '>' : v;
+		if (typeof v === 'bigint') return 'bigint';
+		if (typeof v === 'function') return 'fn';
+		if (typeof v === 'symbol') return 'symbol';
+		if (seen.has(v)) return 'cycle';
+		if (depth >= 2) return '<' + (ctorName(v) || 'object') + '>';
+		seen.add(v);
+		if (Array.isArray(v)) return v.slice(0, 4).map((x) => walk(x, depth + 1)).concat(v.length > 4 ? ['+' + (v.length - 4)] : []);
+		/** @type {Record<string, any>} */
+		const out = {};
+		let keys = [];
+		try {
+			keys = Object.keys(v);
+			// an Event / DOMException keeps what identifies it on the prototype
+			for (const k of ['name', 'code', 'type', 'message']) if (!keys.includes(k) && k in v && typeof v[k] !== 'object' && typeof v[k] !== 'function') keys.push(k);
+		} catch {
+			return '<' + (ctorName(v) || 'object') + '>';
+		}
+		for (const k of keys.slice(0, 6)) {
+			try {
+				out[k.length > MAX_REASON_STRING ? '<key>' : k] = walk(v[k], depth + 1);
+			} catch {
+				out[k] = 'unreadable';
+			}
+		}
+		if (keys.length > 6) out['+'] = keys.length - 6;
+		return out;
+	};
+	let text = '';
+	try {
+		text = JSON.stringify(walk(value, 0)) ?? '';
+	} catch {
+		text = '';
+	}
+	return text.length > MAX_REASON_JSON ? text.slice(0, MAX_REASON_JSON - 1) + '…' : text;
+}
+
+/**
+ * 54i (fix-batch-3 b) — what a rejection (or a thrown non-Error) SAYS, for a report. An Error
+ * keeps its message and stack; with no stack its constructor name leads the message, so a
+ * minified `Ma` is at least a class to look for. Anything else is named by type + constructor
+ * with a safe JSON of its contents (the opaque iPad report "Ma" said nothing else). Pure.
+ * @param {any} reason @returns {{message: string, stack?: string}}
+ */
+export function describeReason(reason) {
+	const isErrorLike = reason instanceof Error || (reason && typeof reason === 'object' && typeof reason.message === 'string' && ('stack' in reason || 'name' in reason));
+	if (isErrorLike) {
+		const message = String(reason.message ?? '');
+		const stack = typeof reason.stack === 'string' && reason.stack ? reason.stack : undefined;
+		if (stack) return { message, stack };
+		const ctor = ctorName(reason) || String(reason.name ?? '');
+		return { message: ctor && !message.startsWith(ctor) ? ctor + ': ' + message : message };
+	}
+	const type = reason === null ? 'null' : typeof reason;
+	if (reason == null) return { message: 'Non-Error rejection (' + type + ')' };
+	if (type === 'string') return { message: 'Non-Error rejection (string): ' + (reason.length > MAX_REASON_STRING * 4 ? reason.slice(0, MAX_REASON_STRING * 4) + '…' : reason) };
+	if (type !== 'object' && type !== 'function') return { message: 'Non-Error rejection (' + type + '): ' + String(reason) };
+	const ctor = ctorName(reason) || type;
+	const json = type === 'function' ? '' : safeReasonJson(reason);
+	return { message: 'Non-Error rejection (' + ctor + ')' + (json ? ': ' + json : '') };
+}
+
 /**
  * Build one report from what was caught. Returns null when it is not ours to report (noise,
  * another origin's error with none of our frames). Pure.
@@ -232,10 +333,14 @@ export function buildReport(caught, ctx) {
 	const raw = String(caught.message ?? '');
 	if ((kind === 'error' || kind === 'rejection') && ignoredMessage(raw)) return null;
 	if ((kind === 'error' || kind === 'rejection') && looksLikeOom(raw)) kind = 'oom';
+	const webglCreate = (kind === 'error' || kind === 'rejection' || kind === 'webgl') && WEBGL_CREATE_RE.test(raw);
+	if (webglCreate) kind = 'webgl';
 	const frames = ownFrames(caught.stack, ctx.origin);
 	// an uncaught error thrown from another origin's script (an extension) with none of ours in it
 	if (kind === 'error' && !frames.length && caught.filename && ctx.origin && !String(caught.filename).startsWith(ctx.origin)) return null;
-	const msg = scrubMessage(raw) || kind;
+	// 54i aa: every stale-chunk failure is one report, whichever chunk and call site
+	const chunkLoad = (kind === 'error' || kind === 'rejection') && CHUNK_LOAD_RE.test(raw);
+	const msg = webglCreate ? WEBGL_CREATE_MSG : chunkLoad ? CHUNK_LOAD_MSG : scrubMessage(raw) || kind;
 	const report = {
 		v: 1,
 		kind,

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Icon from '../../ui/Icon.svelte';
 	// 34 R3 (D1): a Behaviour node's card — its name, whether it runs (and where: the authority
 	// runs the handlers), and the way into its derived live node view (D2).
 	// 36 (U10): a behaviour that declares `inputs` / `outputs` has SOCKETS — triggers in on the
@@ -70,7 +71,7 @@
 				{#if socket.kind === 'value'}
 					<span class="max-w-[110px] truncate font-mono text-[10px] text-accent-text" title="live value (replicated)">{fmt(live?.[socket.name])}</span>
 				{/if}
-				<span class="truncate text-[10px] text-text-2">{socket.name}{socket.kind === 'event' ? ' ⚡' : ''}</span>
+				<span class="truncate text-[10px] text-text-2">{socket.name}{socket.kind === 'event' ? ' ϟ' : ''}</span>
 				<Socket kind="source" nodeType="behaviour" id={socket.name} position={Position.Right} forceType={socket.type} style="top: 50%;" />
 			</div>
 		{/each}
@@ -108,10 +109,10 @@
 			</button>
 		</div>
 		{#if pending}
-			<span class="max-w-[200px] wrap-break-word text-[10px] text-ink-warn" title={pending}>⚠ {pending}</span>
+			<span class="max-w-[200px] wrap-break-word text-[10px] text-ink-warn" title={pending}><Icon name="triangle-alert" size={16} class="inline-block shrink-0 align-[-2px]" /> {pending}</span>
 		{/if}
 		{#if firstError}
-			<span class="max-w-[200px] wrap-break-word text-[10px] text-ink-bad" title={firstError.message}>⚠ {firstError.line ? 'line ' + firstError.line + ': ' : ''}{firstError.message}</span>
+			<span class="max-w-[200px] wrap-break-word text-[10px] text-ink-bad" title={firstError.message}><Icon name="triangle-alert" size={16} class="inline-block shrink-0 align-[-2px]" /> {firstError.line ? 'line ' + firstError.line + ': ' : ''}{firstError.message}</span>
 		{/if}
 	</div>
 </NodeWrapper>

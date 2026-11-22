@@ -12,6 +12,7 @@
 // without importing it; every call is a no-op until it has.
 import { writable, derived, get } from 'svelte/store';
 import { safeStorage } from '../safeStorage';
+import { layoutLocked } from '../windowPrefs.js';
 import { emptyLayout, removeTab, windowOf, poppedKeys } from './panelLayout.js';
 
 /** @typedef {import('./panelLayout.js').Layout} Layout */
@@ -104,6 +105,7 @@ export function popOutDockPanels(keys, origin, active) {
  */
 export function tearOffAt(key, e) {
 	if (typeof window === 'undefined' || !canPopOut(key)) return false;
+	if (get(layoutLocked)) return false; // showhide-v8 §6: Lock layout — no tearing off by a drag
 	const outside = e.clientX < 0 || e.clientY < 0 || e.clientX > window.innerWidth || e.clientY > window.innerHeight;
 	if (!outside) return false;
 	popOutPanel(key, { rect: { left: e.screenX - 60, top: e.screenY - 16 } });

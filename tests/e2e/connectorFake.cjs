@@ -8,7 +8,7 @@ async function installProvider(page, grants = [{ id: 'g_1', client: 'Claude', sc
 	await page.evaluate(
 		({ relay, grants }) => {
 			window.__connectorFake = { revoked: [], pairs: [] };
-			window.__stores.cloudHooks.setConnectorProvider({
+			window.__tp.test.v1.cloudHooks.setConnectorProvider({
 				pair: async ({ resume }) => {
 					window.__connectorFake.pairs.push(resume ?? null);
 					return { wsUrl: relay, pairingToken: 'tpp_e2e_' + window.__connectorFake.pairs.length, expiresAt: Date.now() + 60000, replaces: false, connections: grants };
@@ -45,6 +45,8 @@ async function fakeRelay(page, url = RELAY) {
 		ws.onClose((code) => relay.closed.push(code));
 	});
 	relay.call = (id, tool, args = {}, scope = 'edit') => relay.ws.send(JSON.stringify({ type: 'call', id, tool, args, scope, connection: 'g_1', timeoutMs: 120000 }));
+	/** the link dies under the tab, which sees a blip and pairs again @param {number} code */
+	relay.drop = (code = 4000) => relay.ws.close({ code, reason: 'drop' });
 	relay.cancel = (id) => relay.ws.send(JSON.stringify({ type: 'cancel', id }));
 	/** the tab's answer to one call (or null when none came) */
 	relay.answer = async (id, timeout = 20000) => {
@@ -62,7 +64,7 @@ async function fakeRelay(page, url = RELAY) {
 const connectorPhase = (peer) =>
 	peer.page.evaluate(() => {
 		let s;
-		window.__stores.connectorStore.connectorState.subscribe((v) => (s = v))();
+		window.__tp.test.v1.connectorStore.connectorState.subscribe((v) => (s = v))();
 		return s.phase;
 	});
 

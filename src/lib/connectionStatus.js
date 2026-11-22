@@ -49,6 +49,10 @@ export function connectionStatusOf(s) {
 export function connectionLabel(tone) {
 	if (tone === 'connected') return 'Connected';
 	if (tone === 'connecting') return 'Connecting…';
+	// 94 SP6: a fresh page is not "offline" — it simply has not connected yet, and the desktop pill
+	// says Connect for the same state, so the phone chip says the same one word. A peer server
+	// that keeps failing still says Offline: that one IS a fault.
+	if (tone === 'idle') return 'Connect';
 	return 'Offline';
 }
 

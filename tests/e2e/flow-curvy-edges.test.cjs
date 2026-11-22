@@ -12,7 +12,7 @@ h.run(async () => {
 
 	// a Number -> Spin.speed edge, typed bezier like onedgecreate now produces
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowNodes.set([
 			{ id: 'ce-a', type: 'number', position: { x: 0, y: 0 }, data: { type: 'number', value: 1 }, class: 'w-[150px]' },
 			{ id: 'ce-b', type: 'spin', position: { x: 320, y: 0 }, data: { type: 'spin', label: 'Spin', axis: 'y', speed: 1 }, class: 'w-[150px]' }

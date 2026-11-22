@@ -19,8 +19,8 @@ h.run(async () => {
 
 	const openForm = async () => {
 		await page.evaluate(() => {
-			window.__stores.settingsSection.set('ai');
-			window.__stores.settingsOpen.set(true);
+			window.__tp.test.v1.settingsSection.set('ai');
+			window.__tp.test.v1.settingsOpen.set(true);
 		});
 		await page.locator('#tools-add-chat').first().click({ timeout: 15000 });
 		await page.locator('#ai-form-preset').selectOption('custom');
@@ -84,18 +84,18 @@ h.run(async () => {
 		return rect.bottom > 0 && rect.top < window.innerHeight;
 	});
 	h.check(inView, '§8 the test result is in view');
-	await page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 
 	// §7 B4: the assistant against a vLLM without the tool flags -> the one-line fix
 	await page.evaluate((base) => {
-		window.__stores.aiProviders.addAiProvider({ preset: 'custom', label: 'Mock', baseUrl: base, apiKey: 'test', model: 'mock-model' });
-		window.__stores.aiProviders.setAiEnabled(true);
+		window.__tp.test.v1.aiProviders.addAiProvider({ preset: 'custom', label: 'Mock', baseUrl: base, apiKey: 'test', model: 'mock-model' });
+		window.__tp.test.v1.aiProviders.setAiEnabled(true);
 	}, mock.bare('notools'));
 	await page.evaluate(async () => {
-		await window.__stores.aiAssistant.runPrompt('make a box');
+		await window.__tp.test.v1.aiAssistant.runPrompt('make a box');
 	});
 	const errs = await page.evaluate(
-		() => new Promise((r) => window.__stores.aiAssistant.aiMessages.subscribe((m) => r(m.filter((x) => x.role === 'error').map((x) => x.content)))())
+		() => new Promise((r) => window.__tp.test.v1.aiAssistant.aiMessages.subscribe((m) => r(m.filter((x) => x.role === 'error').map((x) => x.content)))())
 	);
 	h.check(errs.some((e) => /--enable-auto-tool-choice/.test(e)), `§7 the tool-flag 400 becomes a hint (${errs.join(' | ').slice(0, 200)})`);
 

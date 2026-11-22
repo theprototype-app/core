@@ -7,15 +7,15 @@ const inspector = (page) =>
 		() =>
 			new Promise((resolve) => {
 				let open, kind;
-				window.__stores.inspectorClose.subscribe((v) => (open = v === false))();
-				window.__stores.inspectorKind.subscribe((v) => (kind = v))();
+				window.__tp.test.v1.inspectorClose.subscribe((v) => (open = v === false))();
+				window.__tp.test.v1.inspectorKind.subscribe((v) => (kind = v))();
 				resolve({ open, kind });
 			})
 	);
 
 const isOpen = (page, store) =>
 	page.evaluate(
-		(store) => new Promise((r) => window.__stores[store].subscribe((v) => r(v === false))()),
+		(store) => new Promise((r) => window.__tp.test.v1[store].subscribe((v) => r(v === false))()),
 		store
 	);
 
@@ -31,7 +31,7 @@ h.run(async () => {
 	await A.page.locator('#logo-menu').click();
 	await A.page.waitForTimeout(400);
 	let menuOpen = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.closeMenu.subscribe((v) => r(v === false))())
+		() => new Promise((r) => window.__tp.test.v1.closeMenu.subscribe((v) => r(v === false))())
 	);
 	h.check(menuOpen, 'clicking the logo opens the sidebar');
 	// 38 NOTES-38 #24: the ring is the accent `.logo-open` state now (was Tailwind ring-2 in the
@@ -44,11 +44,11 @@ h.run(async () => {
 	await A.page.locator('#logo-menu').click();
 	await A.page.waitForTimeout(400);
 	menuOpen = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.closeMenu.subscribe((v) => r(v === false))())
+		() => new Promise((r) => window.__tp.test.v1.closeMenu.subscribe((v) => r(v === false))())
 	);
 	h.check(!menuOpen, 'clicking the logo again closes the sidebar');
 
-	await A.page.evaluate(() => window.__stores.closeMenu.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.closeMenu.set(false));
 	await A.page.waitForTimeout(400);
 
 	// Configure Scene: click opens, click again closes
@@ -73,15 +73,15 @@ h.run(async () => {
 
 	// selection stays open-only: repeated showSidebar('properties') never closes
 	await A.page.evaluate(() => {
-		window.__stores.showSidebar('properties');
-		window.__stores.showSidebar('properties');
+		window.__tp.test.v1.showSidebar('properties');
+		window.__tp.test.v1.showSidebar('properties');
 	});
 	await A.page.waitForTimeout(300);
 	state = await inspector(A.page);
 	h.check(state.open && state.kind === 'selection', 'selection inspector keeps open-only semantics');
 
 	// switching scene -> selection retargets the same drawer
-	await A.page.evaluate(() => window.__stores.showSidebar('scene'));
+	await A.page.evaluate(() => window.__tp.test.v1.showSidebar('scene'));
 	await A.page.waitForTimeout(300);
 	state = await inspector(A.page);
 	h.check(state.open && state.kind === 'scene', 'showSidebar retargets to scene');

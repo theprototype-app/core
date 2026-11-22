@@ -27,20 +27,20 @@ const MODULE = (key) => `({
 const load = (peer, key) =>
 	peer.page.evaluate((src) => {
 		const mod = (0, eval)(src);
-		window.__stores.moduleSDK.initModules([mod]);
+		window.__tp.test.v1.moduleSDK.initModules([mod]);
 		return window.__seedResult;
 	}, MODULE(key));
-const unload = (peer) => peer.page.evaluate(() => window.__stores.moduleSDK.unloadModule('seedtest'));
+const unload = (peer) => peer.page.evaluate(() => window.__tp.test.v1.moduleSDK.unloadModule('seedtest'));
 const seeded = (peer) =>
 	peer.page.evaluate(() => {
 		let g;
-		window.__stores.flowGraphs.subscribe((v) => (g = v))();
+		window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))();
 		return {
 			nodes: g.scene.nodes.filter((n) => n.data?.seed === 'seedtest:demo').map((n) => ({ id: n.id, type: n.type })),
 			edges: g.scene.edges.length
 		};
 	});
-const valueOf = (peer, id) => peer.page.evaluate((id) => new Promise((r) => window.__stores.flowValues.subscribe((v) => r(v[id] ?? null))()), id);
+const valueOf = (peer, id) => peer.page.evaluate((id) => new Promise((r) => window.__tp.test.v1.flowValues.subscribe((v) => r(v[id] ?? null))()), id);
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -62,7 +62,7 @@ h.run(async () => {
 	// a scene already using the module: one of its types, no seed mark → left alone
 	await unload(A);
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowNodes.set([{ id: 'own', type: 'seedthing', position: { x: 0, y: 0 }, data: { type: 'seedthing', label: 'Seed thing' } }]);
 		s.flowEdges.set([]);
 	});

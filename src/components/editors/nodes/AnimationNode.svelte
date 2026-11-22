@@ -123,7 +123,7 @@
 						<span class="nodrag nopan flex items-center gap-1.5">
 							<input
 								type="checkbox"
-								checked={!!(data[param.key] ?? spec.defaults[param.key])}
+								checked={!!(data[param.key] ?? ('legacy' in param ? param.legacy : spec.defaults[param.key]))}
 								on:change={(e) => setNodeData(id, { [param.key]: e.currentTarget.checked })}
 							/>
 						</span>

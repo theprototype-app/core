@@ -10,9 +10,17 @@ function esc(s) {
 	return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// 78-int PL42 (owner rule: no emoji in the UI): older entries lead with emoji for the GitHub view;
+// the app drops them (a colour-emoji character, or any character forced to emoji with VS16)
+const EMOJI = /(?:\p{Emoji_Presentation}|\p{Extended_Pictographic}\uFE0F)\uFE0F?\s?/gu;
+/** @param {string} s */
+export function stripEmoji(s) {
+	return s.replace(EMOJI, '').trim();
+}
+
 /** @param {string} s */
 function inline(s) {
-	return esc(s)
+	return esc(stripEmoji(s))
 		.replace(/`([^`]+)`/g, '<code>$1</code>')
 		.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
 		.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');

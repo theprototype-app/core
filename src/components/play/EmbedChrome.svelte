@@ -10,16 +10,25 @@
 	//     embed only — the corner link that opens the same scene in the full app. An export has
 	//     no "same scene" to open: the badge is its way to theprototype.app.
 	// --z-hud: above the canvas, below modals.
-	import { embedMode, embedOpenUrl, requestPlay, vrSupported } from '$lib/playMode';
+	import { embedMode, embedOpenUrl, embedSceneId, requestPlay, vrSupported } from '$lib/playMode';
+	// 94 (94-routes A3 + A5): the play entry's account line (a cloud plugin's mountProfile) and Remix
+	import { playEntry } from '$lib/play/playEntry.js';
+	import { appUrl } from '$lib/playOrigin.js';
+	import { profileSlot } from '$lib/cloudHooks';
+	import CloudSlot from '../CloudSlot.svelte';
 	import { isLocked, isVRMode } from '../../stores/sceneStore';
 	import { exportConfig, exportMode } from '$lib/export/exportBoot.js';
 	// 36-community (C6): the published scene's heart on the start card (a cloud plugin sets it)
 	import { sceneHeart } from '$lib/cloudHooks';
 	import HeartButton from '../ui/HeartButton.svelte';
+	// 95 SM2/SM3: Share a moment — shown only while the buffer records, i.e. the author allowed it
+	import MomentButton from '../moment/MomentButton.svelte';
 	// 53 (A6): captions / colour filter / text size / controls, set before pressing Play
 	import { openAccessCard } from '$lib/gameShell';
 
 	const vrAllowed = exportConfig ? exportConfig.vrButton : true;
+	/** the same scene opened in the editor as a remix ('' without a scene id; an export has none) */
+	const remixHref = embedSceneId && !exportMode ? appUrl(`/?s=${encodeURIComponent(embedSceneId)}&remix=1`) : '';
 	const title = exportConfig?.title || '';
 	let fullscreen = $state(typeof document !== 'undefined' && !!document.fullscreenElement);
 	const canFullscreen = typeof document !== 'undefined' && !!document.fullscreenEnabled;
@@ -49,7 +58,8 @@
 <svelte:document onfullscreenchange={() => (fullscreen = !!document.fullscreenElement)} />
 
 {#if $embedMode && !$isVRMode}
-	<div id="embed-chrome" class="embed-chrome">
+	<div id="embed-chrome" class="embed-chrome" data-play-chrome>
+		<MomentButton id="embed-moment" variant="embed" />
 		{#if canFullscreen}
 			<button
 				id="embed-fullscreen"
@@ -72,21 +82,30 @@
 		{#if !exportMode}
 			<a id="embed-open-link" class="embed-btn embed-link" href={embedOpenUrl()} target="_blank" rel="noopener">Open in theprototype.app ↗</a>
 		{/if}
+		{#if remixHref}
+			<a id="embed-remix-link" class="embed-btn embed-link" href={remixHref} target="_blank" rel="noopener">Remix ↗</a>
+		{/if}
 	</div>
 	{#if $isLocked !== true}
 		<div id="embed-start" class="embed-start">
 			{#if title}<div class="embed-title">{title}</div>{/if}
-			<div class="embed-actions">
-				<button id="embed-play" type="button" class="embed-play" onclick={play}>▶ Play</button>
+			<!-- fix-play-link: on a headset Enter VR comes FIRST (data-vr-first) — it is what the device
+			     is for, and nothing autoplays there (playMode.autoPlay) so this card stays until a press -->
+			<div class="embed-actions" data-vr-first={vrAllowed && $vrSupported ? '' : undefined}>
 				{#if vrAllowed && $vrSupported}
 					<button id="embed-vr" type="button" class="embed-play embed-vr" onclick={() => requestPlay()}>Enter VR</button>
 				{/if}
+				<button id="embed-play" type="button" class="embed-play" onclick={play}>▶ Play</button>
 				{#if $sceneHeart}
 					<HeartButton id="embed-heart" size="md" count={$sceneHeart.count} liked={$sceneHeart.liked} label="Like this game" ontoggle={() => $sceneHeart.toggle()} />
 				{/if}
 			</div>
 			<button id="embed-access" type="button" class="embed-access" onclick={() => openAccessCard()}>Accessibility</button>
 			<div class="embed-hint">Click to look around · Esc to pause</div>
+			{#if playEntry}
+				<!-- 94-routes A3: the cloud plugin's account line (sign in to join, who you are) -->
+				<div id="play-account-slot" class="embed-account"><CloudSlot mount={$profileSlot} /></div>
+			{/if}
 		</div>
 	{/if}
 {/if}
@@ -169,6 +188,15 @@
 		background: var(--accent-muted);
 		color: var(--accent-soft-text);
 	}
+	/* on a headset Enter VR is the primary press and the flat ▶ Play the secondary one */
+	[data-vr-first] .embed-vr {
+		background: var(--live);
+		color: var(--on-live);
+	}
+	[data-vr-first] .embed-play:not(.embed-vr) {
+		background: var(--accent-muted);
+		color: var(--accent-soft-text);
+	}
 	.embed-play:hover {
 		filter: brightness(1.1);
 	}
@@ -187,6 +215,9 @@
 	.embed-access:focus-visible {
 		border-color: var(--accent);
 		outline: none;
+	}
+	.embed-account:empty {
+		display: none;
 	}
 	.embed-hint {
 		font: 500 11px/1.3 system-ui, sans-serif;

@@ -24,14 +24,14 @@ const h = require('./helpers.cjs');
 const readRetry = (page) =>
 	page.evaluate(() => {
 		let v = null;
-		window.__stores.connectionState.signalingRetry.subscribe((x) => (v = x))();
+		window.__tp.test.v1.connectionState.signalingRetry.subscribe((x) => (v = x))();
 		return v;
 	});
 
 const toastTexts = (page) =>
 	page.evaluate(() => {
 		let list = [];
-		window.__stores.toastStore.subscribe((v) => (list = v))();
+		window.__tp.test.v1.toastStore.subscribe((v) => (list = v))();
 		return list.map((t) => (typeof t === 'string' ? t : (t && (t.text || t.message)) || ''));
 	});
 
@@ -43,14 +43,14 @@ const dot = (page) =>
 const notes = (page) =>
 	page.evaluate(() => {
 		let list = [];
-		window.__stores.notifications.subscribe((v) => (list = v))();
+		window.__tp.test.v1.notifications.subscribe((v) => (list = v))();
 		return list.map((n) => n.text);
 	});
 
 const emitOnPeer = (page, event) =>
 	page.evaluate((name) => {
 		let pc = null;
-		window.__stores.peers.subscribe((v) => (pc = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
 		pc.peer.emit(name, pc.peer.id);
 	}, event);
 
@@ -58,12 +58,12 @@ h.run(async () => {
 	const browser = await h.launch();
 	const peer = await h.setupPage(browser, 'signaling');
 	const page = peer.page;
-	await page.waitForFunction(() => !!window.__stores?.connectionState?.signalingRetry, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.connectionState?.signalingRetry, { timeout: 30000 });
 
 	// ---- 0. premise -----------------------------------------------------------------
 	const premise = await page.evaluate(() => {
 		let pc = null;
-		window.__stores.peers.subscribe((v) => (pc = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
 		return { open: !!pc?.peer?.open, id: pc?.peer?.id ?? '' };
 	});
 	h.check(premise.open && !!premise.id, `premise: the signaling link is open (${premise.id})`);
@@ -120,7 +120,7 @@ h.run(async () => {
 	// ---- 4. a CLOSED peer is rebuilt, on the same id -----------------------------------
 	const beforeClose = await page.evaluate(() => {
 		let pc = null;
-		window.__stores.peers.subscribe((v) => (pc = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
 		window.__sigOld = pc.peer;
 		// A real `close` leaves the peer NOT open, and the rebuild is guarded on exactly
 		// that — so a synthetic event on a live socket must say so, or the guard correctly
@@ -133,7 +133,7 @@ h.run(async () => {
 	await page.waitForTimeout(2500);
 	const rebuilt = await page.evaluate(() => {
 		let pc = null;
-		window.__stores.peers.subscribe((v) => (pc = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
 		return { fresh: pc.peer !== window.__sigOld, id: pc.peer?.id ?? '', open: !!pc.peer?.open };
 	});
 	h.check(rebuilt.fresh, 'a closed peer is REBUILT rather than mourned (a new Peer object)');
@@ -145,7 +145,7 @@ h.run(async () => {
 		.waitForFunction(
 			() => {
 				let pc = null;
-				window.__stores.peers.subscribe((v) => (pc = v))();
+				window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
 				return !!pc?.peer?.open;
 			},
 			{ timeout: 20000 }
@@ -159,7 +159,7 @@ h.run(async () => {
 	// link — so shadow the three flags it reads to stage a down link, then restore them.
 	await page.evaluate(() => {
 		let pc = null;
-		window.__stores.peers.subscribe((v) => (pc = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
 		const p = pc.peer;
 		window.__sig = { calls: 0, pc };
 		Object.defineProperty(p, 'open', { get: () => false, configurable: true });
@@ -230,7 +230,7 @@ h.run(async () => {
 			width: Math.round(c?.getBoundingClientRect().width ?? 0)
 		};
 	});
-	h.check(['Offline', 'Connecting…', 'Connected'].includes(chip.text), `phone: with room the Connect chip says its state in one word (41b H4) ("${chip.text}")`);
+	h.check(['Connect', 'Offline', 'Connecting…', 'Connected'].includes(chip.text), `phone: with room the Connect chip says its state in one word (41b H4) ("${chip.text}")`);
 	h.check(/Not connected|Connecting/.test(chip.label) && chip.title.length > 0, `phone: its words are the aria-label and tooltip ("${chip.label}")`);
 	h.check(chip.width <= chip.slot, `phone: the chip fits its slot beside the bell (${chip.width} of ${chip.slot} px)`);
 	await emitOnPeer(phone, 'disconnected');

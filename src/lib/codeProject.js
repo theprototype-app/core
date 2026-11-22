@@ -22,7 +22,7 @@ import { filesTree } from './codeFilesCore.js';
 /**
  * @typedef {{
  *   key: string, label: string, detail?: string,
- *   icon: 'script' | 'behaviour' | 'builtin' | 'graph' | 'file' | 'module' | 'folder',
+ *   icon: 'script' | 'behaviour' | 'builtin' | 'graph' | 'flow' | 'file' | 'module' | 'folder',
  *   request?: any, readOnly?: boolean, fork?: 'node' | 'module',
  *   children?: ProjectNode[], lazy?: string,
  *   folderId?: string, itemId?: string, parentId?: string | null
@@ -53,7 +53,7 @@ export function keyOfTab(tab) {
 		case 'module':
 			return 'm:' + (tab.moduleId || '') + '/' + (tab.name || '');
 		case 'graph':
-			return 'g:' + (tab.graphId || SCENE);
+			return (tab.format === 'text' ? 'ft:' : 'g:') + (tab.graphId || SCENE);
 	}
 	return '';
 }
@@ -125,6 +125,7 @@ export function projectTree(input) {
 			});
 		}
 		leaves.sort((a, b) => a.label.localeCompare(b.label));
+		leaves.push({ key: 'ft:' + graphId, label: 'flow code', detail: 'the graph as editable text', icon: 'flow', request: { source: 'flowtext', ref: { graphId } } });
 		leaves.push({ key: 'g:' + graphId, label: 'graph.json', detail: 'the whole graph as JSON', icon: 'graph', request: { source: 'graph', ref: { graphId } } });
 		graphGroups.push({ key: 'grp:' + graphId, label: title(graphId), icon: 'folder', children: leaves });
 	}

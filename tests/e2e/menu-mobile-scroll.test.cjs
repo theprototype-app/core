@@ -45,8 +45,8 @@ async function mobilePage(browser, name, vp, dpr) {
 /** open the menu and read its geometry @param {any} page */
 async function readMenu(page) {
 	await page.evaluate(() => {
-		window.__stores.settingsOpen.set(false);
-		window.__stores.closeMenu.set(false);
+		window.__tp.test.v1.settingsOpen.set(false);
+		window.__tp.test.v1.closeMenu.set(false);
 	});
 	await page.waitForSelector('#sidebar70', { timeout: 5000 });
 	await page.waitForTimeout(350); // the fade-in
@@ -57,7 +57,7 @@ async function readMenu(page) {
 		const cs = getComputedStyle(nav);
 		const borders = parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
 		const rows = [...nav.querySelectorAll('.side-row')];
-		const last = /** @type {HTMLElement} */ (nav.querySelector('#open-whats-new'));
+		const last = /** @type {HTMLElement} */ (nav.querySelector('#report-bug'));
 		return {
 			vh: window.innerHeight,
 			vw: window.innerWidth,
@@ -84,7 +84,15 @@ async function swipeMenu(page, m) {
 	const x = 60;
 	const y0 = Math.round(Math.min(m.bottom, m.vh) - 12);
 	const dist = Math.round((Math.min(m.bottom, m.vh) - Math.max(m.top, 0)) * 0.8);
-	for (let pass = 0; pass < 3; pass++) {
+	// 98-int (dock-fixes A', owner 2026-11-08): an UNPINNED docked menu ends above the Controls band, so on the 360 px
+	// landscape phone it is ~160 px tall and three swipes no longer reach the end — swipe until it stops moving (max 8)
+	for (let pass = 0, prev = -1; pass < 8; pass++) {
+		const at = await page.evaluate(() => {
+			const n = /** @type {HTMLElement} */ (document.getElementById('sidebar70'));
+			return n.scrollTop + n.clientHeight >= n.scrollHeight - 1 ? -2 : Math.round(n.scrollTop);
+		});
+		if (at === -2 || at === prev) break;
+		prev = at;
 		await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y: y0 }] });
 		for (let i = 1; i <= 12; i++) {
 			await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y0 - (dist * i) / 12 }] });
@@ -96,7 +104,7 @@ async function swipeMenu(page, m) {
 	await page.waitForTimeout(500);
 	return page.evaluate(() => {
 		const nav = /** @type {HTMLElement} */ (document.getElementById('sidebar70'));
-		const last = /** @type {HTMLElement} */ (nav.querySelector('#open-whats-new'));
+		const last = /** @type {HTMLElement} */ (nav.querySelector('#report-bug'));
 		const nr = nav.getBoundingClientRect();
 		const lr = last.getBoundingClientRect();
 		return {
@@ -104,6 +112,8 @@ async function swipeMenu(page, m) {
 			lastTop: Math.round(lr.top),
 			lastBottom: Math.round(lr.bottom),
 			visBottom: Math.round(Math.min(nr.bottom, window.innerHeight)),
+			// uir-polish C3: the sticky Settings footer reaches the menu's bottom edge (no see-through strip under it)
+			footGap: Math.round(nr.bottom - parseFloat(getComputedStyle(nav).borderBottomWidth) - /** @type {HTMLElement} */ (nav.querySelector('.side-foot')).getBoundingClientRect().bottom),
 			pageScrolled: Math.round(window.scrollY + document.documentElement.scrollTop)
 		};
 	});
@@ -129,9 +139,10 @@ async function checkPosture(page, label) {
 			s.lastBottom <= s.visBottom + 1 && s.lastTop >= 0,
 			`${label}: ...and brings the last row fully into view (${s.lastTop}..${s.lastBottom} within ..${s.visBottom})`
 		);
+		h.check(Math.abs(s.footGap) <= 1, `${label}: C3 scrolled, the Settings footer covers the menu down to its bottom edge (gap ${s.footGap}px)`);
 		await page.screenshot({ path: path.join(SHOTS, `menu-${PHASE}-${label}-swiped.png`) }).catch(() => {});
 	}
-	await page.evaluate(() => window.__stores.closeMenu.set(true));
+	await page.evaluate(() => window.__tp.test.v1.closeMenu.set(true));
 	await page.waitForTimeout(250);
 }
 
@@ -182,7 +193,7 @@ h.run(async () => {
 
 	// ---- 4. the Live view's new home: the Profiler tab header opens it (desktop)
 	const D = await h.setupPage(browser, 'desk', { context: { viewport: { width: 1440, height: 900 } } });
-	await D.page.evaluate(() => window.__stores.profilerView.openProfiler());
+	await D.page.evaluate(() => window.__tp.test.v1.profilerView.openProfiler());
 	await D.page.click('#profiler-open-live', { timeout: 15000 });
 	await D.page.waitForSelector('#profiler-live', { timeout: 5000 });
 	h.check(true, 'the Profiler tab header opens the Live profiler (#profiler-open-live)');

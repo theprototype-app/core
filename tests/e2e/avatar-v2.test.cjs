@@ -16,7 +16,7 @@ h.run(async () => {
 
 	// --- pure model ---
 	const model = await A.page.evaluate(() => {
-		const m = window.__stores.avatarModel;
+		const m = window.__tp.test.v1.avatarModel;
 		const d = m.resolveAvatar(null);
 		return {
 			shape: d.shape,
@@ -34,8 +34,8 @@ h.run(async () => {
 	// --- inject a fake box-headed peer with a crown + label ---
 	await A.page.evaluate(() => {
 		const ud = [];
-		window.__stores.userdata.subscribe((v) => ud.push(...(v ?? [])))();
-		window.__stores.userdata.set([
+		window.__tp.test.v1.userdata.subscribe((v) => ud.push(...(v ?? [])))();
+		window.__tp.test.v1.userdata.set([
 			...ud,
 			['peerBox', 'Zoe', null, null, null, { character: 'classic', shape: 'box', hat: 'crown', showLabel: true }]
 		]);
@@ -44,7 +44,7 @@ h.run(async () => {
 	const boxPeer = await A.page.evaluate(
 		() =>
 			new Promise((r) => {
-				window.__stores.globalScene.subscribe((s) => {
+				window.__tp.test.v1.globalScene.subscribe((s) => {
 					const body = s?.getObjectByName('peerBox-body');
 					r({
 						hasBody: !!body,
@@ -62,8 +62,8 @@ h.run(async () => {
 	// --- a photo peer renders a card instead of a head ---
 	await A.page.evaluate((png) => {
 		const ud = [];
-		window.__stores.userdata.subscribe((v) => ud.push(...(v ?? [])))();
-		window.__stores.userdata.set([
+		window.__tp.test.v1.userdata.subscribe((v) => ud.push(...(v ?? [])))();
+		window.__tp.test.v1.userdata.set([
 			...ud,
 			['peerPhoto', 'Max', png, null, null, { character: 'classic', face: 'image', showLabel: false }]
 		]);
@@ -72,7 +72,7 @@ h.run(async () => {
 	const photoPeer = await A.page.evaluate(
 		() =>
 			new Promise((r) => {
-				window.__stores.globalScene.subscribe((s) => {
+				window.__tp.test.v1.globalScene.subscribe((s) => {
 					r({
 						hasCard: !!s?.getObjectByName('peerPhoto-face-card'),
 						noBody: !s?.getObjectByName('peerPhoto-body'),

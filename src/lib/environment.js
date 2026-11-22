@@ -1,7 +1,10 @@
+import { basedOnOf } from './envPresetCore.js'; // 78-int PL16
 import * as THREE from 'three';
+// 101 F3: tone curve + exposure go through the renderer seam's hooks
+import { setToneMapping, setExposure } from './render/mainRenderer.js';
 import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { writable, get } from 'svelte/store';
-import { globalScene, globalRenderer, objectsGroup, backgroundColor, TControls, passthroughActive, pokeScene } from '../stores/sceneStore';
+import { globalScene, globalRenderer, objectsGroup, backgroundColor, TControls, passthroughActive, roomLook, skyOverRoom, pokeScene } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { sceneRadius } from './sceneBounds';
 import { fogFarFor, mergeFogPatch } from './fogReach';
@@ -115,6 +118,41 @@ export const ENVIRONMENT_PRESETS = {
 		// an interior: as a sky it reads as a giant blurred wall, so it LIGHTS a plain backdrop
 		// (the product-shot setup) — reflections still show the softboxes
 		hdri: { src: 'bundled:photostudio', background: false }
+	},
+	// 98 P5 PRO PRESETS: the sky + light half of Product shot / Cinematic / Stylised. They live in this
+	// ONE list (the 72 look presets) so every preset picker shows them; picking one also writes the
+	// look (tone mapping, exposure, post effects) through post/proPresets.js as ONE undo step. `pro`
+	// marks them. An older peer that does not know the key renders Studio (the normalize rule).
+	product: {
+		label: 'Product shot',
+		pro: true,
+		background: '#2e3136',
+		gradient: { top: '#44484f', bottom: '#202226' },
+		fog: null,
+		hemi: { sky: '#ffffff', ground: '#c8c4c2', intensity: 0.9 },
+		sun: { color: '#ffffff', intensity: 1.1, position: [-6, 9, 7] },
+		exposure: 1,
+		hdri: { src: 'bundled:photostudio', background: false }
+	},
+	cinematic: {
+		label: 'Cinematic',
+		pro: true,
+		background: '#ccd0c5',
+		fog: null,
+		hemi: { sky: '#7a97bc', ground: '#594f24', intensity: 0.8 },
+		sun: { color: '#ffc78a', intensity: 1.6, position: [12.9, 2.2, 9.2] },
+		exposure: 1.05,
+		hdri: { src: 'bundled:sunrise' }
+	},
+	stylised: {
+		label: 'Stylised',
+		pro: true,
+		background: '#9cc8f0',
+		gradient: { top: '#6fb2ef', bottom: '#d9ecfb' },
+		fog: null,
+		hemi: { sky: '#d6ecff', ground: '#9c8a6e', intensity: 1.4 },
+		sun: { color: '#fff1d0', intensity: 2.2, position: [7, 12, 5] },
+		exposure: 1.1
 	}
 };
 
@@ -266,6 +304,33 @@ function gradientTexture(gradient) {
 	return texture;
 }
 
+/** @type {{key: string, texture: any} | null} */
+let solidCache = null;
+/** a 1x1 sRGB texture of one colour (a backdrop three DRAWS rather than clears) @param {any} color */
+function solidBackdrop(color) {
+	const key = color.getHexString();
+	if (solidCache && solidCache.key === key) return solidCache.texture;
+	const c = { r: 0, g: 0, b: 0 };
+	color.getRGB(c, THREE.SRGBColorSpace);
+	const texture = new THREE.DataTexture(new Uint8Array([Math.round(c.r * 255), Math.round(c.g * 255), Math.round(c.b * 255), 255]), 1, 1);
+	texture.colorSpace = THREE.SRGBColorSpace;
+	texture.needsUpdate = true;
+	solidCache?.texture.dispose();
+	solidCache = { key, texture };
+	return texture;
+}
+/** @type {any} */
+let dimTexture = null;
+/** black at 60% — the AR room seen at 40% behind the scene (Film's "Dimmed" passthrough) */
+function dimBackdrop() {
+	if (!dimTexture) {
+		dimTexture = new THREE.DataTexture(new Uint8Array([0, 0, 0, 153]), 1, 1);
+		dimTexture.colorSpace = THREE.SRGBColorSpace;
+		dimTexture.needsUpdate = true;
+	}
+	return dimTexture;
+}
+
 /** The solid ground disc (a scene-root mesh in ENV_ROOT, like the catcher, so it never
  * enters objectsGroup, sync or a save — the payload's `ground` field is what travels).
  * @param {any} scene @param {boolean} create */
@@ -319,6 +384,31 @@ function reconcileExtraLights(scene, defs) {
  */
 let toneMappingOwner = () => false;
 
+/**
+ * 72 LK3: the VR look decides what the curve finally is while a session runs (xrLook.js, through this
+ * seam for the reason above). Identity otherwise.
+ * @type {(constant: number, hasSkyImage: boolean) => number}
+ */
+let toneFilter = (constant) => constant;
+/** @param {((constant: number, hasSkyImage: boolean) => number) | null} fn */
+export function setToneFilter(fn) {
+	toneFilter = fn ?? ((constant) => constant);
+}
+/** what the last apply knew about the sky image @type {{ready: boolean, mode: string}} */
+let lastHdriTone = { ready: false, mode: '' };
+
+/** The curve alone, with no rig rebuild: a VR session starting or ending moves only this */
+export function reapplyToneMapping() {
+	const renderer = /** @type {any} */ (get(globalRenderer));
+	if (!renderer) return;
+	const wanted = toneMappingOwner()
+		? THREE.NoToneMapping
+		: lastHdriTone.ready
+			? toneMappingConstant(lastHdriTone.mode)
+			: THREE.ACESFilmicToneMapping;
+	setToneMapping(renderer, toneFilter(wanted, lastHdriTone.ready));
+}
+
 /** @param {(() => boolean) | null} fn */
 export function registerToneMappingOwner(fn) {
 	toneMappingOwner = fn ?? (() => false);
@@ -364,13 +454,19 @@ export function applyEnvironment() {
 	// passthrough (90): local view mode — the room shows through where the sky
 	// would render; the replicated env STATE keeps its colors untouched
 	if (passthrough) {
-		scene.background = null;
+		// fix-film: 'dim' keeps a faint black veil over the room (an alpha-0.6 backdrop the
+		// compositor blends the camera feed under); 'room' leaves nothing (three clears to clear)
+		scene.background = get(roomLook) === 'dim' ? dimBackdrop() : null;
 		scene.fog = null;
 	} else {
 		// 30 author-kit: a gradient sky when the payload carries one, else the flat colour
 		const gradient = skyGradientOf(preset);
-		if (!(hdri.ready && hdri.background))
-			scene.background = (gradient && gradientTexture(gradient)) || new THREE.Color(preset.background);
+		if (!(hdri.ready && hdri.background)) {
+			const sky = (gradient && gradientTexture(gradient)) || new THREE.Color(preset.background);
+			// fix-film: over a camera feed three clears a COLOUR background to transparent, so the
+			// scene's sky would vanish — a 1x1 texture of that colour is drawn as an opaque backdrop
+			scene.background = get(skyOverRoom) && sky instanceof THREE.Color ? solidBackdrop(sky) : sky;
+		}
 		// fog never swallows a big scene: a PRESET's reach grows with the scene bounds; a fog the
 		// user set by hand (`fit: false`) keeps its own (36 A5, fogReach.js)
 		scene.fog = preset.fog
@@ -385,17 +481,13 @@ export function applyEnvironment() {
 		// TWICE — visibly crushed highlights. The stack says so through the seam
 		// below rather than this module importing it, which keeps environment out of
 		// the post/history import family entirely.
-		const stackTonemaps = toneMappingOwner();
 		// 37-hdri: an HDRI picks its curve (ACES unless the payload says AgX/Neutral) — this is
 		// what VR and the PiP inset show; the desktop composer gets the same curve as a pass
-		renderer.toneMapping = stackTonemaps
-			? THREE.NoToneMapping
-			: hdri.ready
-				? toneMappingConstant(hdri.toneMapping)
-				: THREE.ACESFilmicToneMapping;
+		lastHdriTone = { ready: hdri.ready, mode: hdri.toneMapping };
+		reapplyToneMapping();
 		// exposure is only read by three's tone mapping chunk, so it is inert under
 		// NoToneMapping — left as authored so switching back needs no re-apply
-		renderer.toneMappingExposure = (preset.exposure ?? 1) * (state.exposure ?? 1);
+		setExposure(renderer, (preset.exposure ?? 1) * (state.exposure ?? 1));
 		// honor a persisted 'off' shadow pref here too: the renderer arrives
 		// after lightParams' first subscribe fires (which would no-op on a null
 		// renderer), so re-assert it on every apply
@@ -479,6 +571,21 @@ function commit(partial, replicate = true) {
 	if (peer) peer.send({ type: 'environment', ...state });
 }
 
+/**
+ * 85 H4 / H5 / H7: a whole environment state through the one write path — the agent's set_sky / set_light
+ * and their undo (the `environment` history kind, ai/sceneSetupHistory.js). Persists, applies, replicates.
+ * @param {{preset?: string, exposure?: number, customPreset?: any, lights?: any[], lodBias?: number}} state
+ */
+export function commitEnvironment(state) {
+	commit({
+		preset: state.preset ?? 'studio',
+		exposure: state.exposure ?? 1,
+		customPreset: state.customPreset ?? null,
+		lights: Array.isArray(state.lights) ? state.lights : [],
+		lodBias: lodBiasOf(state) === 1 ? undefined : lodBiasOf(state)
+	});
+}
+
 /** User action: switch preset/exposure (extra lights survive preset switches)
  * @param {string} preset @param {number=} exposure */
 export function setEnvironment(preset, exposure) {
@@ -499,6 +606,21 @@ export function applyCustomPreset(payload) {
 }
 
 /**
+ * The live custom payload an edit writes into: a copy of what renders now, labelled Custom as before.
+ * 78-int PL16: it REMEMBERS the preset it came from (`basedOn`, an additive key — older peers and old
+ * scenes simply have none), so the panel can say "Cinematic · Modified: sun" and Reset to it.
+ */
+function detachedPayload() {
+	const state = get(environment);
+	const payload = JSON.parse(JSON.stringify(presetPayload(state)));
+	payload.label = 'Custom';
+	const basedOn = basedOnOf(state, PRESETS);
+	if (basedOn) payload.basedOn = basedOn;
+	else delete payload.basedOn;
+	return payload;
+}
+
+/**
  * 15-C: the scene inspector's Background / Fog controls wrote the scene (and
  * the backgroundColor store) DIRECTLY, and the next applyEnvironment() restored
  * the preset's values — so the edit looked like it did nothing. (Invisible
@@ -512,8 +634,7 @@ export function applyCustomPreset(payload) {
  * @param {{replicate?: boolean}} [opts]
  */
 export function editEnvSky(patch, opts = {}) {
-	const payload = JSON.parse(JSON.stringify(presetPayload()));
-	payload.label = 'Custom';
+	const payload = detachedPayload();
 	if (patch.background !== undefined) payload.background = patch.background;
 	if (patch.hdri !== undefined) {
 		const next = mergeHdriPatch(payload.hdri, patch.hdri);
@@ -529,11 +650,27 @@ export function editEnvSky(patch, opts = {}) {
 	commit({ preset: 'custom', customPreset: payload }, opts.replicate !== false);
 }
 
+/**
+ * 78-int PL12: put parts of the environment back to a preset's own values (the row reset). Unlike
+ * the edit paths it REPLACES each part (a fog reset must not pick up `fit: false`, which a near/far
+ * patch adds) and `undefined`/null removes it. One detach + ONE commit, so one message for peers.
+ * @param {Partial<Record<'fog'|'background'|'gradient'|'hemi'|'sun', any>>} parts
+ */
+export function resetEnvParts(parts) {
+	const payload = detachedPayload();
+	for (const [part, value] of Object.entries(parts)) {
+		if (value === undefined || value === null) {
+			if (part === 'fog') payload.fog = null;
+			else delete payload[part];
+		} else payload[part] = typeof value === 'object' ? JSON.parse(JSON.stringify(value)) : value;
+	}
+	commit({ preset: 'custom', customPreset: payload });
+}
+
 /** Editing a rig component detaches into a live custom payload
  * @param {'hemi'|'sun'} part @param {any} patch */
 export function editRigComponent(part, patch) {
-	const payload = JSON.parse(JSON.stringify(presetPayload()));
-	payload.label = 'Custom';
+	const payload = detachedPayload();
 	payload[part] = { ...(payload[part] ?? {}), ...patch };
 	commit({ preset: 'custom', customPreset: payload });
 }
@@ -633,12 +770,15 @@ const PRESET_KEY = 'envpreset:';
 /** Snapshot the current environment as a named payload @param {string} name */
 export function snapshotPreset(name) {
 	const state = get(environment);
-	return {
+	const out = {
 		...JSON.parse(JSON.stringify(presetPayload(state))),
 		label: name,
 		exposure: state.exposure ?? 1,
 		lights: JSON.parse(JSON.stringify(state.lights ?? []))
 	};
+	// 78-int PL16: a NAMED preset of your own is its own origin — it must not read as "<built-in> · Modified"
+	delete out.basedOn;
+	return out;
 }
 
 export async function loadEnvPresets() {
@@ -838,6 +978,8 @@ export function startEnvironment() {
 	globalRenderer.subscribe(() => applyEnvironment());
 	// entering/leaving a passthrough session swaps the local sky in and out
 	passthroughActive.subscribe(() => applyEnvironment());
+	skyOverRoom.subscribe(() => applyEnvironment()); // fix-film
+	roomLook.subscribe(() => applyEnvironment());
 	// user lights dim the rig so custom lighting reads properly
 	objectsGroup.subscribe((group) => {
 		if (!group) return;

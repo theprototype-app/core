@@ -11,7 +11,7 @@ const posX = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.selectedObject.subscribe((o) => r(Math.round((o?.position.x ?? 0) * 1000) / 1000))()
+				window.__tp.test.v1.selectedObject.subscribe((o) => r(Math.round((o?.position.x ?? 0) * 1000) / 1000))()
 			)
 	);
 
@@ -21,7 +21,7 @@ h.run(async () => {
 
 	// a box selected with its properties open
 	await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		await new Promise((r) => setTimeout(r, 250));
 		let g = null;
@@ -93,7 +93,7 @@ h.run(async () => {
 
 	// ---------- an INTEGER field steps by whole numbers ----------
 	const intStep = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		localStorage.setItem('inspector:sec:Object', 'open');
 		await new Promise((r) => setTimeout(r, 500));
 		const el = document.querySelector('#inspector-render-order');
@@ -117,9 +117,9 @@ h.run(async () => {
 
 	// ---------- the boxes beside sliders are the same field ----------
 	const sliderBox = await A.page.evaluate(async () => {
-		window.__stores.showSidebar('scene');
+		window.__tp.test.v1.openSceneSection('Camera'); // 78-int PL17: Configure Scene opens with only Environment + Scene look expanded — deep-link the section
 		await new Promise((r) => setTimeout(r, 600));
-		window.__stores.inspectorScrollTo.set('Camera');
+		window.__tp.test.v1.inspectorScrollTo.set('Camera');
 		await new Promise((r) => setTimeout(r, 400));
 		const far = document.querySelector('#camera-far');
 		if (!far) return null;
@@ -138,7 +138,7 @@ h.run(async () => {
 
 	// ---------- 16-Q6: a scrub must not put a caret in the field -----------------
 	await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let g = null;
 		w.objectsGroup.subscribe((v) => (g = v))();
 		w.objectActions.selectObject(g.children[0].uuid, true);

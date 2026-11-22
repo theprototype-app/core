@@ -37,10 +37,10 @@ const rect = (page, sel) =>
 	}, sel);
 
 async function openProperties(page) {
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await page.waitForTimeout(900);
 	await page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let g;
 		w.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.children[g.children.length - 1];
@@ -144,13 +144,15 @@ h.run(async () => {
 			return e ? `${e.tagName.toLowerCase()}#${e.id}.${[...e.classList].slice(0, 2).join('.')}` : null;
 		}, [Math.round(grip.x + grip.w / 2), grip.y + 300]);
 		h.check(/sidebar-grip-right/.test(under ?? ''), `(premise) the finger lands on the grip, not the panel (${under}; grip ${JSON.stringify(grip)})`);
-		await touch.drag([Math.round(grip.x + grip.w / 2), grip.y + 300], [760, grip.y + 300], 20);
+		// showhide-v8 (owner 2026-11-09): a column now CLOSES by its border when dragged MIN_W - 80 px or narrower, so the
+		// finger goes past the minimum (to a 210 px width) but stops short of that close zone
+		await touch.drag([Math.round(grip.x + grip.w / 2), grip.y + 300], [770 - 210, grip.y + 300], 20);
 		await page.waitForTimeout(400);
 		const ins = await rect(page, '#inspector');
 		h.check(ins && ins.w === 250, `the resize stops at the minimum width (${ins?.w}px)`);
 		for (const kind of ['properties', 'scene']) {
 			if (kind === 'scene') {
-				await page.evaluate(() => window.__stores.showSidebar('scene'));
+				await page.evaluate(() => window.__tp.test.v1.showSidebar('scene'));
 				await page.waitForTimeout(1000);
 			}
 			let sw = await sideways(page);

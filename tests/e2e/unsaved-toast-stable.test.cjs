@@ -21,7 +21,7 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'joiner', { context: { viewport: { width: 1280, height: 800 } } });
 	// the host's world: two boxes, never saved
 	await A.page.evaluate(() => {
-		const c = window.__stores.commandsHandler;
+		const c = window.__tp.test.v1.commandsHandler;
 		c.sceneCommand('/create box');
 		c.sceneCommand('/create box');
 	});
@@ -29,7 +29,7 @@ h.run(async () => {
 	await h.connect(B, A);
 	// the joiner is empty, so it adopts the host's world and receives the boxes
 	await h.eventually(
-		() => B.page.evaluate(() => window.__stores.objectsGroup && (() => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); return g?.children?.length ?? 0; })()),
+		() => B.page.evaluate(() => window.__tp.test.v1.objectsGroup && (() => { let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))(); return g?.children?.length ?? 0; })()),
 		(n) => n >= 2,
 		'premise: the joiner holds the host\'s two boxes',
 		30000
@@ -72,7 +72,7 @@ h.run(async () => {
 	// the host edits its unsaved scene: six creates and six moves, ~400 ms apart
 	for (let i = 0; i < 12; i++) {
 		await A.page.evaluate((k) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			if (k % 2 === 0) {
 				s.commandsHandler.sceneCommand('/create box');
 				return;
@@ -98,7 +98,7 @@ h.run(async () => {
 		w.__i11 = null;
 		return out;
 	});
-	const objects = await B.page.evaluate(() => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); return g?.children?.length ?? 0; });
+	const objects = await B.page.evaluate(() => { let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))(); return g?.children?.length ?? 0; });
 	console.log('transitions', JSON.stringify(r), 'joiner objects', objects);
 	h.check(objects >= 8, `premise: the host's edits reached the joiner (${objects} objects)`);
 	h.check(r.added === 0 && r.removed === 0, `the unsaved-scene card never re-mounts while the host edits (added ${r.added}, removed ${r.removed})`);
@@ -107,7 +107,7 @@ h.run(async () => {
 	h.check(still === 1, `exactly one unsaved-scene card at the end (${still})`);
 	if (OUT) {
 		for (const t of ['dark', 'light']) {
-			await B.page.evaluate((th) => window.__stores.themes.theme.set(th), t);
+			await B.page.evaluate((th) => window.__tp.test.v1.themes.theme.set(th), t);
 			await B.page.waitForTimeout(350);
 			await B.page.screenshot({ path: path.join(OUT, `i11-joiner-card-${t}.png`) });
 		}

@@ -24,11 +24,11 @@ const FILL_RGB = [0, 255, 0];
 /** Register the test effect kinds through the real registry seam. */
 async function registerTestEffects(page) {
 	return page.evaluate(() => {
-		const { Effect, BlendFunction } = window.__stores.postprocessing;
+		const { Effect, BlendFunction } = window.__tp.test.v1.postprocessing;
 		const shader = (body) =>
 			'void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) { ' + body + ' }';
 		// an Effect: merges with its neighbours
-		window.__stores.scenePost.registerPostEffect('test-fill', {
+		window.__tp.test.v1.scenePost.registerPostEffect('test-fill', {
 			label: 'Test fill',
 			group: 'test',
 			make: () =>
@@ -37,12 +37,12 @@ async function registerTestEffects(page) {
 				})
 		});
 		// a second Effect, visually a no-op, purely to prove the merge
-		window.__stores.scenePost.registerPostEffect('test-noop', {
+		window.__tp.test.v1.scenePost.registerPostEffect('test-noop', {
 			label: 'Test noop',
 			group: 'test',
 			make: () => new Effect('TestNoop', shader('outputColor = inputColor;'), { blendFunction: BlendFunction.SET })
 		});
-		return window.__stores.scenePost.postEffectKinds().map((def) => def.kind);
+		return window.__tp.test.v1.scenePost.postEffectKinds().map((def) => def.kind);
 	});
 }
 
@@ -63,7 +63,7 @@ h.run(async () => {
 	);
 
 	const normalized = await page.evaluate(() => {
-		const { normalizeScenePost } = window.__stores.scenePost;
+		const { normalizeScenePost } = window.__tp.test.v1.scenePost;
 		// an old save with missing fields, a duplicate id, and an effect kind from a
 		// NEWER peer that this build has never heard of
 		const raw = {
@@ -110,7 +110,7 @@ h.run(async () => {
 	h.check(normalized.changedAt === 0, '1.9 a stampless save normalizes to changedAt 0');
 
 	const matrix = await page.evaluate(() => {
-		const { effectivePostStack, normalizeScenePost } = window.__stores.scenePost;
+		const { effectivePostStack, normalizeScenePost } = window.__tp.test.v1.scenePost;
 		const stack = normalizeScenePost({
 			enabled: true,
 			effects: [
@@ -191,7 +191,7 @@ h.run(async () => {
 	console.log('\n=== 2. the Effect-merging rule (with counterfactual) ===');
 
 	const merge = await page.evaluate(() => {
-		const { planPostStack, normalizeScenePost } = window.__stores.scenePost;
+		const { planPostStack, normalizeScenePost } = window.__tp.test.v1.scenePost;
 		const plan = (list) => {
 			const stack = normalizeScenePost({ effects: list.map((kind, i) => ({ id: 'e' + i, kind })) });
 			const out = planPostStack(stack.effects);
@@ -248,7 +248,7 @@ h.run(async () => {
 		20000
 	);
 
-	await page.evaluate(() => window.__stores.viewMode.set('shaded-ao'));
+	await page.evaluate(() => window.__tp.test.v1.viewMode.set('shaded-ao'));
 	await page.waitForTimeout(800);
 	let chain = await page.evaluate(() => window.__postDebug());
 	h.check(
@@ -257,7 +257,7 @@ h.run(async () => {
 	);
 	h.check(chain.outlinesLast === true, '3.4 the outline passes are the last two passes');
 
-	await page.evaluate(() => window.__stores.viewMode.set('shaded'));
+	await page.evaluate(() => window.__tp.test.v1.viewMode.set('shaded'));
 	await page.waitForTimeout(600);
 	chain = await page.evaluate(() => window.__postDebug());
 	h.check(
@@ -268,13 +268,13 @@ h.run(async () => {
 
 	// author a stack: two Effects, an unknown kind, and AO
 	await page.evaluate(() => {
-		const post = window.__stores.scenePost;
+		const post = window.__tp.test.v1.scenePost;
 		post.addPostEffect('test-noop');
 		post.addPostEffect('test-noop');
 		post.addPostEffect('ao');
 		post.addPostEffect('test-noop');
 	});
-	await page.evaluate(() => window.__stores.viewMode.set('shaded'));
+	await page.evaluate(() => window.__tp.test.v1.viewMode.set('shaded'));
 	await page.waitForTimeout(900);
 	chain = await page.evaluate(() => window.__postDebug());
 	h.check(
@@ -289,7 +289,7 @@ h.run(async () => {
 	// THE INVARIANT. Editor gizmos are not part of the authored look.
 	h.check(chain.outlinesLast === true, '3.9 the outlines stay last with a four-entry stack between them and render');
 
-	await page.evaluate(() => window.__stores.viewMode.set('wireframe'));
+	await page.evaluate(() => window.__tp.test.v1.viewMode.set('wireframe'));
 	await page.waitForTimeout(600);
 	chain = await page.evaluate(() => window.__postDebug());
 	h.check(
@@ -303,9 +303,9 @@ h.run(async () => {
 
 	await page.evaluate(() => {
 		// a fresh stack for the pixel work, and something to shade
-		window.__stores.scenePost.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 1 } });
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		window.__stores.viewMode.set('shaded');
+		window.__tp.test.v1.scenePost.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 1 } });
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.viewMode.set('shaded');
 	});
 	await page.waitForTimeout(2500);
 
@@ -335,7 +335,7 @@ h.run(async () => {
 		'4.2 premise: the frame is a rendered scene, not a blank buffer (' + Math.round(spread.fraction * 100) + '% non-black)'
 	);
 
-	await page.evaluate(() => window.__stores.viewMode.set('shaded-ao'));
+	await page.evaluate(() => window.__tp.test.v1.viewMode.set('shaded-ao'));
 	await page.waitForTimeout(1800);
 	const frameAo = await h.grabFrame(A, clip);
 	const aoDelta = await h.frameDelta(page, frameShaded, frameAo);
@@ -348,9 +348,9 @@ h.run(async () => {
 
 	// a full-frame effect through the stack in `custom`
 	await page.evaluate(() => {
-		window.__stores.scenePost.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 2 } });
-		window.__stores.scenePost.addPostEffect('test-fill');
-		window.__stores.viewMode.set('shaded');
+		window.__tp.test.v1.scenePost.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 2 } });
+		window.__tp.test.v1.scenePost.addPostEffect('test-fill');
+		window.__tp.test.v1.viewMode.set('shaded');
 	});
 	await page.waitForTimeout(1500);
 	const frameFill = await h.grabFrame(A, clip);
@@ -368,7 +368,7 @@ h.run(async () => {
 	// (15-K), so the box was still selected here and the "control" frame carried
 	// the very outline it is supposed to be the baseline for — the two counts came
 	// out identical and the check read as a broken feature.
-	await page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await h.eventually(
 		() => page.evaluate(() => window.__outlineDebug().selected),
 		(count) => count === 0,
@@ -387,10 +387,10 @@ h.run(async () => {
 	// demand that it SURVIVES a stack effect that repaints every scene pixel.
 	// Compile the stack after the outlines instead and this count goes to zero.
 	const selected = await page.evaluate(() => {
-		const group = window.__stores.objectsGroup;
+		const group = window.__tp.test.v1.objectsGroup;
 		let uuid = '';
 		group.subscribe((g) => (uuid = g?.children?.[0]?.uuid ?? ''))();
-		window.__stores.objectActions.selectObject(uuid);
+		window.__tp.test.v1.objectActions.selectObject(uuid);
 		return uuid;
 	});
 	await h.eventually(
@@ -419,9 +419,9 @@ h.run(async () => {
 	// no mode picking, no promotion: put a look on the scene while the viewer sits
 	// in the ordinary desktop default and demand the chain builds it
 	const defaultOn = await page.evaluate(async () => {
-		const post = window.__stores.scenePost;
-		window.__stores.viewMode.set('shaded');
-		window.__stores.viewportOverrides.setRenderLayer('post', true);
+		const post = window.__tp.test.v1.scenePost;
+		window.__tp.test.v1.viewMode.set('shaded');
+		window.__tp.test.v1.viewportOverrides.setRenderLayer('post', true);
 		post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 30 } });
 		post.addPostEffect('test-noop');
 		await new Promise((r) => setTimeout(r, 1000));
@@ -433,10 +433,10 @@ h.run(async () => {
 	);
 
 	const overrideOff = await page.evaluate(async () => {
-		window.__stores.viewportOverrides.setRenderLayer('post', false);
+		window.__tp.test.v1.viewportOverrides.setRenderLayer('post', false);
 		await new Promise((r) => setTimeout(r, 900));
 		const off = window.__postDebug();
-		window.__stores.viewportOverrides.setRenderLayer('post', true);
+		window.__tp.test.v1.viewportOverrides.setRenderLayer('post', true);
 		await new Promise((r) => setTimeout(r, 900));
 		return { off, back: window.__postDebug() };
 	});
@@ -448,9 +448,9 @@ h.run(async () => {
 
 	// the override survives a reload, since it is a device preference
 	const persisted = await page.evaluate(() => {
-		window.__stores.viewportOverrides.setRenderLayer('post', false);
+		window.__tp.test.v1.viewportOverrides.setRenderLayer('post', false);
 		const raw = localStorage.getItem('viewportOverrides');
-		window.__stores.viewportOverrides.setRenderLayer('post', true);
+		window.__tp.test.v1.viewportOverrides.setRenderLayer('post', true);
 		return raw;
 	});
 	h.check(
@@ -463,9 +463,9 @@ h.run(async () => {
 	console.log('\n=== 6. the `look` history kind ===');
 
 	const undoResult = await page.evaluate(() => {
-		const post = window.__stores.scenePost;
-		const history = window.__stores.history;
-		const peers = window.__stores.peers;
+		const post = window.__tp.test.v1.scenePost;
+		const history = window.__tp.test.v1.history;
+		const peers = window.__tp.test.v1.peers;
 		// "did it broadcast?" through a capture stub — the public cloud is the
 		// slowest, flakiest layer and a message COUNT needs neither peer
 		let original = null;
@@ -558,7 +558,7 @@ h.run(async () => {
 	// which is the late-joiner path, exercised without a third browser context
 	// (three pages is the practical ceiling on a loaded box)
 	await page.evaluate(() => {
-		const post = window.__stores.scenePost;
+		const post = window.__tp.test.v1.scenePost;
 		post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 1 } });
 		const id = post.addPostEffect('ao');
 		post.setPostEffectParams(id, { intensity: 3.75, aoRadius: 2.25 });
@@ -569,7 +569,7 @@ h.run(async () => {
 	const readStack = (peer) =>
 		peer.page.evaluate(() => {
 			let state = null;
-			window.__stores.scenePost.scenePost.subscribe((s) => (state = s))();
+			window.__tp.test.v1.scenePost.scenePost.subscribe((s) => (state = s))();
 			return {
 				enabled: state.enabled,
 				changedAt: state.changedAt,
@@ -596,7 +596,7 @@ h.run(async () => {
 	const clipB = await h.centeredClip(B, [0, 0, 0], 360);
 	const bMode = await B.page.evaluate(() => {
 		let mode = '';
-		window.__stores.viewMode.subscribe((v) => (mode = v))();
+		window.__tp.test.v1.viewMode.subscribe((v) => (mode = v))();
 		return mode;
 	});
 	h.check(
@@ -606,7 +606,7 @@ h.run(async () => {
 	await B.page.waitForTimeout(1500);
 	const bWithLook = await h.grabFrame(B, clipB);
 	await B.page.evaluate(async () => {
-		window.__stores.viewportOverrides.setRenderLayer('post', false);
+		window.__tp.test.v1.viewportOverrides.setRenderLayer('post', false);
 		await new Promise((r) => setTimeout(r, 1600));
 	});
 	const bWithout = await h.grabFrame(B, clipB);
@@ -616,13 +616,13 @@ h.run(async () => {
 		'7.3b B RENDERS the received stack by default: ' + bDelta.changed + ' px change when B switches it off'
 	);
 	await B.page.evaluate(async () => {
-		window.__stores.viewportOverrides.setRenderLayer('post', true);
+		window.__tp.test.v1.viewportOverrides.setRenderLayer('post', true);
 		await new Promise((r) => setTimeout(r, 1200));
 	});
 
 	// a live edit on A follows to B
 	await page.evaluate(() => {
-		const post = window.__stores.scenePost;
+		const post = window.__tp.test.v1.scenePost;
 		let state = null;
 		post.scenePost.subscribe((s) => (state = s))();
 		post.setPostEffectParams(state.effects[0].id, { intensity: 7.5 });
@@ -639,7 +639,7 @@ h.run(async () => {
 	// normalize buys, and the one a "drop what we cannot render" normalize fails
 	await B.page.evaluate(() => {
 		let peer = null;
-		window.__stores.peers.subscribe((p) => (peer = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (peer = p))();
 		peer.send({
 			type: 'scenepost',
 			enabled: true,
@@ -666,7 +666,7 @@ h.run(async () => {
 	);
 
 	// now A edits the stack — the unknown entry must come back out on the wire
-	await page.evaluate(() => window.__stores.scenePost.addPostEffect('test-noop'));
+	await page.evaluate(() => window.__tp.test.v1.scenePost.addPostEffect('test-noop'));
 	await h.eventually(
 		() => readStack(B),
 		(stack) => stack.effects.some((e) => e.kind === 'from-the-future') && stack.effects.length === 3,
@@ -683,7 +683,7 @@ h.run(async () => {
 	const beforeStale = await readStack(A);
 	await B.page.evaluate(() => {
 		let peer = null;
-		window.__stores.peers.subscribe((p) => (peer = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (peer = p))();
 		peer.send({ type: 'scenepost', enabled: true, changedAt: 1, effects: [] });
 	});
 	await page.waitForTimeout(3000);
@@ -696,10 +696,10 @@ h.run(async () => {
 	// the explicit full-state request path
 	const answered = await B.page.evaluate(async () => {
 		let peer = null;
-		window.__stores.peers.subscribe((p) => (peer = p))();
-		window.__stores.scenePost.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 1 } });
+		window.__tp.test.v1.peers.subscribe((p) => (peer = p))();
+		window.__tp.test.v1.scenePost.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 1 } });
 		let id = '';
-		window.__stores.peers.subscribe((p) => (id = p?.peer?.id))();
+		window.__tp.test.v1.peers.subscribe((p) => (id = p?.peer?.id))();
 		peer.send({ type: 'getscenepost', sender: id });
 		return true;
 	});
@@ -716,8 +716,8 @@ h.run(async () => {
 	console.log('\n=== 8. persistence ===');
 
 	const sessionRound = await page.evaluate(async () => {
-		const post = window.__stores.scenePost;
-		const sessions = window.__stores.sessions;
+		const post = window.__tp.test.v1.scenePost;
+		const sessions = window.__tp.test.v1.sessions;
 		post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 5 } });
 		const id = post.addPostEffect('ao');
 		post.setPostEffectParams(id, { intensity: 6.25 });
@@ -745,25 +745,25 @@ h.run(async () => {
 	);
 
 	const emptyPayload = await page.evaluate(() => {
-		const post = window.__stores.scenePost;
+		const post = window.__tp.test.v1.scenePost;
 		post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 7 } });
-		return window.__stores.sessions.buildSessionPayload('no look').post;
+		return window.__tp.test.v1.sessions.buildSessionPayload('no look').post;
 	});
 	h.check(emptyPayload === null, '8.3 a scene with no look adds no field (an older build sees nothing new)');
 
 	// AUTOSAVE across a real reload. "It still looks right" is not "it survived",
 	// so assert the SHAPE: the exact kinds, and the params, off a restored snapshot.
 	await page.evaluate(async () => {
-		const post = window.__stores.scenePost;
+		const post = window.__tp.test.v1.scenePost;
 		post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 8 } });
 		const id = post.addPostEffect('ao');
 		post.setPostEffectParams(id, { intensity: 4.5, aoRadius: 3.5 });
 		post.addPostEffect('test-fill'); // becomes UNKNOWN after the reload
 		// only sceneStore/appStore/flowStore are SPREAD into __stores; a lib's own
 		// exports live under its module key
-		window.__stores.autosave.autosaveEnabled.set(true);
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		await window.__stores.autosave.saveNow();
+		window.__tp.test.v1.autosave.autosaveEnabled.set(true);
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		await window.__tp.test.v1.autosave.saveNow();
 	});
 	await page.waitForTimeout(1200);
 	await h.freshReload(A);
@@ -771,11 +771,11 @@ h.run(async () => {
 	const restored = await page.evaluate(async () => {
 		// the restore is offered as a sticky prompt, never applied automatically
 		let offer = null;
-		window.__stores.autosave.restoreAvailable.subscribe((value) => (offer = value))();
+		window.__tp.test.v1.autosave.restoreAvailable.subscribe((value) => (offer = value))();
 		if (!offer) return { offered: false };
-		await window.__stores.autosave.restoreSnapshot();
+		await window.__tp.test.v1.autosave.restoreSnapshot();
 		let state = null;
-		window.__stores.scenePost.scenePost.subscribe((s) => (state = s))();
+		window.__tp.test.v1.scenePost.scenePost.subscribe((s) => (state = s))();
 		return {
 			offered: true,
 			kinds: state.effects.map((e) => e.kind),
@@ -800,7 +800,7 @@ h.run(async () => {
 	// `shaded`, so reading it in any other mode would report nothing skipped and
 	// pass whatever happened.
 	const afterReload = await page.evaluate(async () => {
-		window.__stores.viewMode.set('shaded');
+		window.__tp.test.v1.viewMode.set('shaded');
 		await new Promise((r) => setTimeout(r, 900));
 		return window.__postDebug();
 	});
@@ -812,8 +812,8 @@ h.run(async () => {
 			JSON.stringify(afterReload.kinds)
 	);
 	const reRegistered = await page.evaluate(async () => {
-		const { Effect, BlendFunction } = window.__stores.postprocessing;
-		window.__stores.scenePost.registerPostEffect('test-fill', {
+		const { Effect, BlendFunction } = window.__tp.test.v1.postprocessing;
+		window.__tp.test.v1.scenePost.registerPostEffect('test-fill', {
 			label: 'Test fill',
 			make: () =>
 				new Effect(
@@ -822,7 +822,7 @@ h.run(async () => {
 					{ blendFunction: BlendFunction.SET }
 				)
 		});
-		window.__stores.viewMode.set('shaded');
+		window.__tp.test.v1.viewMode.set('shaded');
 		await new Promise((r) => setTimeout(r, 900));
 		return window.__postDebug();
 	});
@@ -836,8 +836,8 @@ h.run(async () => {
 	console.log('\n=== 9. AO parameters + tone mapping ===');
 
 	await page.evaluate(async () => {
-		window.__stores.scenePost.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 20 } });
-		window.__stores.viewMode.set('shaded-ao');
+		window.__tp.test.v1.scenePost.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 20 } });
+		window.__tp.test.v1.viewMode.set('shaded-ao');
 		await new Promise((r) => setTimeout(r, 900));
 	});
 	const aoDefaults = await page.evaluate(() => window.__postDebug().ao);
@@ -851,11 +851,11 @@ h.run(async () => {
 
 	// the params reach the PASS, which is the only place they live
 	const aoTuned = await page.evaluate(async () => {
-		const post = window.__stores.scenePost;
+		const post = window.__tp.test.v1.scenePost;
 		post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 21 } });
 		const id = post.addPostEffect('ao');
 		post.setPostEffectParams(id, { aoRadius: 4.25, intensity: 0.75, distanceFalloff: 2.5 });
-		window.__stores.viewMode.set('shaded');
+		window.__tp.test.v1.viewMode.set('shaded');
 		await new Promise((r) => setTimeout(r, 1200));
 		return window.__postDebug().ao;
 	});
@@ -869,8 +869,8 @@ h.run(async () => {
 
 	// quality / halfRes: 'auto' follows the LOCAL shadow pref, a pinned value wins
 	const halfRes = await page.evaluate(async () => {
-		const post = window.__stores.scenePost;
-		const quality = window.__stores.lightParams.shadowQuality;
+		const post = window.__tp.test.v1.scenePost;
+		const quality = window.__tp.test.v1.lightParams.shadowQuality;
 		let state = null;
 		post.scenePost.subscribe((s) => (state = s))();
 		const id = state.effects[0].id;
@@ -906,13 +906,13 @@ h.run(async () => {
 	// down or the frame is graded twice.
 	// read the enum from THREE rather than hardcoding numbers that can be renumbered
 	const { NO_TONE_MAPPING, ACES } = await page.evaluate(() => ({
-		NO_TONE_MAPPING: window.__stores.THREE.NoToneMapping,
-		ACES: window.__stores.THREE.ACESFilmicToneMapping
+		NO_TONE_MAPPING: window.__tp.test.v1.THREE.NoToneMapping,
+		ACES: window.__tp.test.v1.THREE.ACESFilmicToneMapping
 	}));
 	const tone = await page.evaluate(async () => {
-		const post = window.__stores.scenePost;
+		const post = window.__tp.test.v1.scenePost;
 		post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 22 } });
-		window.__stores.viewMode.set('shaded');
+		window.__tp.test.v1.viewMode.set('shaded');
 		await new Promise((r) => setTimeout(r, 900));
 		const before = window.__postDebug();
 		post.addPostEffect('tonemapping');
@@ -948,10 +948,10 @@ h.run(async () => {
 	// canvas), NOT because the desktop frame would otherwise be graded twice.
 	const clip9 = await h.centeredClip(A, [0, 0, 0], 360);
 	const staged = await page.evaluate(async () => {
-		const post = window.__stores.scenePost;
+		const post = window.__tp.test.v1.scenePost;
 		post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 23 } });
-		window.__stores.commandsHandler.sceneCommand('/create sphere');
-		window.__stores.viewMode.set('shaded');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create sphere');
+		window.__tp.test.v1.viewMode.set('shaded');
 		await new Promise((r) => setTimeout(r, 1600));
 		return window.__postDebug();
 	});
@@ -965,7 +965,7 @@ h.run(async () => {
 
 	await page.evaluate(async () => {
 		// flip the RENDERER's own tone mapping, through the public seam
-		window.__stores.environment.registerToneMappingOwner(() => true);
+		window.__tp.test.v1.environment.registerToneMappingOwner(() => true);
 		await new Promise((r) => setTimeout(r, 1000));
 	});
 	const rendererOffFrame = await h.grabFrame(A, clip9);
@@ -979,8 +979,8 @@ h.run(async () => {
 
 	// the effect, by contrast, is the thing that actually maps the composed image
 	await page.evaluate(async () => {
-		window.__stores.environment.registerToneMappingOwner(null);
-		const post = window.__stores.scenePost;
+		window.__tp.test.v1.environment.registerToneMappingOwner(null);
+		const post = window.__tp.test.v1.scenePost;
 		const id = post.addPostEffect('tonemapping');
 		post.setPostEffectParams(id, { mode: 'REINHARD' });
 		await new Promise((r) => setTimeout(r, 1400));
@@ -995,7 +995,7 @@ h.run(async () => {
 			effectDelta.max
 	);
 	await page.evaluate(() => {
-		window.__stores.scenePost.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 24 } });
+		window.__tp.test.v1.scenePost.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 24 } });
 	});
 
 	// A TOUCH DEVICE gets the scene's look too. That is a deliberate reversal: the
@@ -1009,8 +1009,8 @@ h.run(async () => {
 	// and software GL is slow on every page — pin it, or 9.12 measures the governor, not the touch rule
 	const T = await h.setupPage(browser, 'Touch', { context: { hasTouch: true }, storage: { autoQuality: 'false' } });
 	const touch = await T.page.evaluate(async () => {
-		window.__stores.viewMode.set('shaded');
-		window.__stores.scenePost.scenePostRestore({
+		window.__tp.test.v1.viewMode.set('shaded');
+		window.__tp.test.v1.scenePost.scenePostRestore({
 			enabled: true,
 			effects: [{ id: 'a', kind: 'ao' }],
 			changedAt: 99
@@ -1023,12 +1023,12 @@ h.run(async () => {
 			await new Promise((r) => requestAnimationFrame(r));
 			on = window.__postDebug();
 		}
-		window.__stores.viewportOverrides.setRenderLayer('post', false);
+		window.__tp.test.v1.viewportOverrides.setRenderLayer('post', false);
 		await new Promise((r) => setTimeout(r, 900));
 		let mode = null;
-		window.__stores.viewMode.subscribe((v) => (mode = v))();
+		window.__tp.test.v1.viewMode.subscribe((v) => (mode = v))();
 		return {
-			coarse: window.__stores.inputDevice.coarsePointer(),
+			coarse: window.__tp.test.v1.inputDevice.coarsePointer(),
 			kinds: on.kinds,
 			// what the composer said, so a red names its reason (warm-up, a skip, an empty plan, the mode)
 			why: { postWarm: on.postWarm, postOk: on.postOk, skipped: on.skipped, plan: (on.plan ?? []).length, stackPasses: on.stackPasses, mode, auto: localStorage.getItem('autoQuality') },

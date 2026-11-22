@@ -1,3 +1,4 @@
+import { embeddedOnlyManager, checkGltf } from './loadGuard.js';
 // @ts-ignore - three addons ship no declarations here (project-wide)
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 // @ts-ignore
@@ -35,9 +36,10 @@ function sharedDraco() {
 	return draco;
 }
 
-/** A GLTFLoader with Draco + Meshopt wired (KTX2 is attached by parseGltf when needed). */
-export function createGltfLoader() {
-	const loader = new GLTFLoader();
+/** A GLTFLoader with Draco + Meshopt wired (KTX2 is attached by parseGltf when needed).
+ * @param {any} [manager] a LoadingManager (bytes with no folder of their own pass embeddedOnlyManager) */
+export function createGltfLoader(manager) {
+	const loader = new GLTFLoader(manager);
 	loader.setDRACOLoader(sharedDraco());
 	loader.setMeshoptDecoder(MeshoptDecoder);
 	return loader;
@@ -76,9 +78,15 @@ function ktx2Loader() {
  * @returns {Promise<any>} three's `{scene, animations, ...}`
  */
 export async function parseGltf(bytes, resourcePath = '') {
-	const loader = createGltfLoader();
+	// bytes with no folder of their own have nothing legitimate to fetch (loadGuard.js), and no size
+	// three would allocate from a count alone may exceed what any file holds
+	const loader = createGltfLoader(resourcePath ? undefined : embeddedOnlyManager('file', 'model'));
+	const ktx2File = gltfUsesExtension(bytes, 'KHR_texture_basisu');
+	// the KTX2 loader is shared and has its own manager, so a KTX2 file must carry no outside uri at all
+	if (!resourcePath && !checkGltf(bytes, 'file', 'model', { uris: ktx2File }))
+		throw new Error('model refused by the load check');
 	stats.parses++;
-	if (gltfUsesExtension(bytes, 'KHR_texture_basisu')) {
+	if (ktx2File) {
 		stats.ktx2Files++;
 		const k = await ktx2Loader();
 		if (k) loader.setKTX2Loader(k);

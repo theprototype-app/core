@@ -3,14 +3,14 @@ const h = require('./helpers.cjs');
 
 const locks = (page) =>
 	page.evaluate(
-		() => new Promise((r) => window.__stores.lockedObjects.subscribe((l) => r(l.map((x) => [...x])))())
+		() => new Promise((r) => window.__tp.test.v1.lockedObjects.subscribe((l) => r(l.map((x) => [...x])))())
 	);
 
 const highlightCount = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((scene) => {
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
 					resolve(scene?.getObjectByName('lock-highlights')?.children.length ?? 0);
 				})();
 			})
@@ -20,7 +20,7 @@ const toasts = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.toastStore.subscribe((t) =>
+				window.__tp.test.v1.toastStore.subscribe((t) =>
 					r(t.map((x) => (typeof x === 'string' ? x : x.text)))
 				)()
 			)
@@ -34,9 +34,9 @@ h.run(async () => {
 
 	// A creates a box -> auto-selected -> A holds the lock
 	const uuid = await A.page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		return new Promise((resolve) =>
-			window.__stores.objectsGroup.subscribe((g) => resolve(g.children[g.children.length - 1].uuid))()
+			window.__tp.test.v1.objectsGroup.subscribe((g) => resolve(g.children[g.children.length - 1].uuid))()
 		);
 	});
 	await h.eventually(
@@ -51,7 +51,7 @@ h.run(async () => {
 	);
 	if ((await highlightCount(B.page)) !== 1)
 		console.log('  B why: ' + JSON.stringify(await B.page.evaluate(async () => {
-			const s = window.__stores; const read = (st) => { let v; st?.subscribe?.((x) => (v = x))(); return v; };
+			const s = window.__tp?.test.v1; const read = (st) => { let v; st?.subscribe?.((x) => (v = x))(); return v; };
 			const f0 = read(s.globalRenderer)?.info?.render?.frame; await new Promise((r) => setTimeout(r, 1000));
 			const scene = read(s.globalScene); const g = scene?.getObjectByName('lock-highlights');
 			return { group: !!g, children: g?.children.length, visible: g?.visible, helpers: read(s.helperLayer?.editorHelpersShown), mode: read(s.editorMode), frames1s: (read(s.globalRenderer)?.info?.render?.frame ?? 0) - (f0 ?? 0), hidden: document.hidden };
@@ -59,7 +59,7 @@ h.run(async () => {
 	h.check((await highlightCount(A.page)) === 0, 'A has no highlight for its own lock');
 
 	// B requests control; A approves via the toast button
-	await B.page.evaluate((uuid) => window.__stores.lockControl.requestControl(uuid), uuid);
+	await B.page.evaluate((uuid) => window.__tp.test.v1.lockControl.requestControl(uuid), uuid);
 	await h.eventually(
 		() => toasts(A.page),
 		(t) => t.some((x) => x.includes('asks to control')),
@@ -72,7 +72,7 @@ h.run(async () => {
 		'approve hands the lock to B (visible on A)'
 	);
 	const bSelected = await B.page.evaluate(
-		() => new Promise((r) => window.__stores.selectedObject.subscribe((s) => r(s?.uuid))())
+		() => new Promise((r) => window.__tp.test.v1.selectedObject.subscribe((s) => r(s?.uuid))())
 	);
 	h.check(bSelected === uuid, 'requester auto-selected the object');
 	await h.eventually(
@@ -82,7 +82,7 @@ h.run(async () => {
 	);
 
 	// A requests it back; B denies
-	await A.page.evaluate((uuid) => window.__stores.lockControl.requestControl(uuid), uuid);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.lockControl.requestControl(uuid), uuid);
 	await h.eventually(
 		() => toasts(B.page),
 		(t) => t.some((x) => x.includes('asks to control')),

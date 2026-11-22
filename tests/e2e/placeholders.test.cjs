@@ -49,7 +49,7 @@ async function until(fn, predicate, label, timeout = 12000) {
 function addStub(peer, url, pos = [0, 0, 0], opts = {}) {
 	return peer.page.evaluate(
 		({ url, pos, box, name }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			/** @type {any} */ let g;
 			s.objectsGroup.subscribe((v) => (g = v))();
 			const stub = new g.constructor();
@@ -68,7 +68,7 @@ function addStub(peer, url, pos = [0, 0, 0], opts = {}) {
 /** Facts about a stub/piece + its placeholder instance. */
 function facts(peer, uuid) {
 	return peer.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		/** @type {any} */ let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', uuid);
@@ -89,14 +89,14 @@ function facts(peer, uuid) {
 }
 
 /** the stuck setting, live (a held download must not be abandoned mid-section) */
-const setStuck = (peer, seconds) => peer.page.evaluate((v) => window.__stores.loadStates.placeholderStuckSeconds.set(v), seconds);
+const setStuck = (peer, seconds) => peer.page.evaluate((v) => window.__tp.test.v1.loadStates.placeholderStuckSeconds.set(v), seconds);
 
-const stats = (peer) => peer.page.evaluate(() => window.__stores.placeholders.placeholderStats());
+const stats = (peer) => peer.page.evaluate(() => window.__tp.test.v1.placeholders.placeholderStats());
 
 /** Clear the scene's objects (not the settings) between sections. */
 const wipe = (peer) =>
 	peer.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		/** @type {any} */ let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		for (const c of [...g.children]) g.remove(c);
@@ -114,10 +114,12 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A', { storage: { placeholderStuckSeconds: '2' } });
 	const shot = async (name) => SHOTS && A.page.screenshot({ path: SHOTS + '/' + name });
+	// pack files load only from pack sources (the load check): this suite's own server is one
+	await A.page.evaluate((u) => window.__tp.test.v1.packRefs.allowPackSourceForTest(u), fsrv.url('ok'));
 	// record outgoing peer messages (send works with zero connections)
 	await A.page.evaluate(async () => {
 		window.__sent = [];
-		const inst = await new Promise((r) => window.__stores.peers.subscribe(r)());
+		const inst = await new Promise((r) => window.__tp.test.v1.peers.subscribe(r)());
 		const orig = inst.send.bind(inst);
 		inst.send = (m) => {
 			window.__sent.push(m);
@@ -125,14 +127,14 @@ h.run(async () => {
 		};
 	});
 	// a camera that frames the area the sections place boxes in
-	await A.page.evaluate(() => window.__stores.objectActions.flyTo([0, 5, 9], [0, 0.5, 0], 0));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.flyTo([0, 5, 9], [0, 0.5, 0], 0));
 	await A.page.waitForTimeout(600);
 
 	// ---- 1. the settings section -------------------------------------------------------
 	console.log('-- 1. settings');
 	await A.page.evaluate(() => {
-		window.__stores.settingsSection.set('scene');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('scene');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	await A.page.waitForSelector('#placeholder-style', { timeout: 10000 });
 	for (const id of ['#placeholder-style', '#placeholder-grid-on', '#placeholder-grid-size', '#placeholder-grid-color', '#placeholder-grid-opacity', '#placeholder-anim-speed', '#placeholder-stuck-seconds'])
@@ -142,10 +144,10 @@ h.run(async () => {
 	await A.page.waitForTimeout(300);
 	h.check(await A.page.locator('#placeholder-style').isVisible(), 'searching "placeholder" keeps the Loading rows');
 	await A.page.locator('#settings-search').fill('');
-	h.check(await A.page.evaluate(() => window.__stores.loadStates.placeholderStyle && true), 'style store reachable');
+	h.check(await A.page.evaluate(() => window.__tp.test.v1.loadStates.placeholderStyle && true), 'style store reachable');
 	const defaultStyle = await A.page.evaluate(() => {
 		let v;
-		window.__stores.loadStates.placeholderStyle.subscribe((x) => (v = x))();
+		window.__tp.test.v1.loadStates.placeholderStyle.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(defaultStyle === 'modern', `the default style is Modern (36 L1) (${defaultStyle})`);
@@ -160,7 +162,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(200);
 	const stored = await A.page.evaluate(() => localStorage.getItem('placeholderStyle'));
 	h.check(stored === '"modern"', `choosing Modern in the UI persists it (${stored})`);
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await A.page.waitForTimeout(300);
 
 	// ---- 2. slow: per-object byte progress ------------------------------------------------
@@ -190,9 +192,9 @@ h.run(async () => {
 	await A.page.waitForTimeout(400);
 	const sel1 = await A.page.evaluate(() => {
 		let v;
-		window.__stores.selectedObjects.subscribe((x) => (v = x))();
+		window.__tp.test.v1.selectedObjects.subscribe((x) => (v = x))();
 		let tc;
-		window.__stores.TControls.subscribe((x) => (tc = x))();
+		window.__tp.test.v1.TControls.subscribe((x) => (tc = x))();
 		return { set: v, gizmo: tc?.object?.uuid ?? null };
 	});
 	h.check(sel1.set.length === 1 && sel1.set[0] === held1, 'a real viewport click on a placeholder selects its stub');
@@ -206,12 +208,12 @@ h.run(async () => {
 	await A.page.waitForTimeout(300);
 	const multi = await A.page.evaluate(() => {
 		let v;
-		window.__stores.selectedObjects.subscribe((x) => (v = x))();
+		window.__tp.test.v1.selectedObjects.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(multi.length === 2 && multi.includes(held1) && multi.includes(held2), 'shift-click multi-selects two placeholders');
 	// the Inspector, single selection
-	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), held1);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, true), held1);
 	await A.page.waitForSelector('#load-state-panel', { timeout: 8000 }).catch(() => {});
 	h.check(await A.page.locator('#load-state-panel').isVisible(), 'the Inspector shows the Loading panel for a loading piece');
 	const label = await A.page.locator('#load-state-label').textContent();
@@ -229,7 +231,7 @@ h.run(async () => {
 	h.check(!!moveMsg && moveMsg.pos[0] === 3, 'the edit goes out as an ordinary replicated `move`');
 	// a rotation + scale through the object itself (the gizmo's write path is the same object)
 	await A.page.evaluate((u) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', u);
@@ -240,7 +242,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(200);
 	// the placeholder follows the stub the frame it moves (the instance matrix)
 	const followed = await A.page.evaluate((u) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let scene;
 		s.globalScene.subscribe((v) => (scene = v))();
 		const body = scene.getObjectByName('kit-placeholders');
@@ -254,9 +256,9 @@ h.run(async () => {
 	h.check(arrived?.pos[0] === 3, `the model took the placeholder's CURRENT position (${arrived?.pos})`);
 	const pose = await A.page.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', u);
-		return { ry: Math.round(o.rotation.y * 100) / 100, s: Math.round(o.scale.x * 100) / 100, pristine: window.__stores.packRefs.isPristinePackRef(o) };
+		return { ry: Math.round(o.rotation.y * 100) / 100, s: Math.round(o.scale.x * 100) / 100, pristine: window.__tp.test.v1.packRefs.isPristinePackRef(o) };
 	}, held1);
 	h.check(pose.ry === 0.5 && pose.s === 1.5, `…and its current rotation and scale (${pose.ry}, ${pose.s})`);
 	h.check(pose.pristine, 'the arrived piece is still a pristine reference (saves as a stub)');
@@ -287,7 +289,7 @@ h.run(async () => {
 	// The menu a right-click opens on this object: the store Scene's contextmenu handler writes
 	// and Controls renders. (A headless right TAP opens no menu at all here — not even the
 	// empty-space one — so the gesture itself is owed on device; the menu content is real.)
-	await A.page.evaluate((u) => window.__stores.objectContextMenu.set({ x: 400, y: 300, uuid: u, point: [0, 0, 0], locked: false }), nf);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectContextMenu.set({ x: 400, y: 300, uuid: u, point: [0, 0, 0], locked: false }), nf);
 	await A.page.waitForTimeout(400);
 	const menuText = (await A.page.locator('[role="menuitem"]').allTextContents()).join(' | ');
 	h.check(/Retry loading/.test(menuText) && /Replace model/.test(menuText) && /Delete/.test(menuText), `right-click offers Retry loading / Replace model… / Delete (${menuText.slice(0, 160)})`);
@@ -295,7 +297,7 @@ h.run(async () => {
 	await shot('06-context-menu-dark.png');
 	await A.page.keyboard.press('Escape');
 	await A.page.waitForTimeout(300);
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	fsrv.setMode('/404/Missing.glb', 'ok');
 	await A.page.waitForTimeout(450); // past the double-click window of any earlier click
 	await A.page.mouse.dblclick(c404.x, c404.y);
@@ -349,7 +351,7 @@ h.run(async () => {
 	console.log('-- 8. replace');
 	const rep = await addStub(A, fsrv.url('404', 'Gone'), [1, 0, 0]);
 	await until(() => facts(A, rep), (f) => f?.phase === 'failed', 'the piece to replace is red');
-	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), rep);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, true), rep);
 	await A.page.locator('#load-replace').click();
 	await until(() => A.page.locator('#replace-model').isVisible(), (v) => v === true, 'Replace model… opens the picker');
 	await shot('08-replace-model-picker-dark.png');
@@ -357,12 +359,12 @@ h.run(async () => {
 	await A.page.evaluate(() => (window.__sent.length = 0));
 	const okUrl = fsrv.url('ok', 'Replacement');
 	// the picker's own call (a pack card), through the app's module instance
-	await A.page.evaluate(({ u, url }) => window.__stores.replaceModel.replaceWithPackItem(u, { glbUrl: url, name: 'Replacement', packName: 'test' }), { u: rep, url: okUrl });
+	await A.page.evaluate(({ u, url }) => window.__tp.test.v1.replaceModel.replaceWithPackItem(u, { glbUrl: url, name: 'Replacement', packName: 'test' }), { u: rep, url: okUrl });
 	const replaced = await until(() => facts(A, rep), (f) => f && !f.stub && f.children > 0, 'the replacement loads under the SAME uuid');
 	h.check(replaced?.path === okUrl && replaced?.pos[0] === 1, `it points at the new file and kept its place (${replaced?.pos})`);
 	const wire = await A.page.evaluate(() => window.__sent.map((m) => m.type));
 	h.check(wire.includes('delete') && wire.includes('object'), `it replicates as the ordinary delete + object (${wire.join(',')})`);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(500);
 	const undone = await facts(A, rep);
 	h.check(undone?.stub && undone.path?.includes('/404/Gone.glb'), 'one undo puts the old placeholder back');
@@ -373,7 +375,7 @@ h.run(async () => {
 	await setStuck(A, 120);
 	const many = await A.page.evaluate(
 		({ url, box }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let g;
 			s.objectsGroup.subscribe((v) => (g = v))();
 			for (let i = 0; i < 500; i++) {
@@ -391,7 +393,7 @@ h.run(async () => {
 	await until(() => stats(A), (s) => s.count === 500, '500 placeholders drawn');
 	const calls = (style) =>
 		A.page.evaluate((style) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.loadStates.placeholderStyle.set(style);
 			let scene, camera, renderer;
 			s.globalScene.subscribe((v) => (scene = v))();
@@ -421,10 +423,10 @@ h.run(async () => {
 	// per-frame allocations: heap sampling over 2000 synchronous frames of 500 instances
 	const cdp = await A.page.context().newCDPSession(A.page);
 	await cdp.send('HeapProfiler.enable');
-	await A.page.evaluate(() => window.__stores.placeholders.placeholderFrameForTest());
+	await A.page.evaluate(() => window.__tp.test.v1.placeholders.placeholderFrameForTest());
 	await cdp.send('HeapProfiler.startSampling', { samplingInterval: 128 });
 	await A.page.evaluate(() => {
-		for (let i = 0; i < 2000; i++) window.__stores.placeholders.placeholderFrameForTest();
+		for (let i = 0; i < 2000; i++) window.__tp.test.v1.placeholders.placeholderFrameForTest();
 	});
 	const { profile } = await cdp.send('HeapProfiler.stopSampling');
 	let inFrame = 0;
@@ -436,7 +438,7 @@ h.run(async () => {
 	};
 	walk(profile.head, false);
 	h.check(inFrame < 64 * 1024, `the per-frame sync allocates nothing measurable over 2000 frames x 500 (${inFrame} sampled bytes)`);
-	await A.page.evaluate(() => window.__stores.loadStates.placeholderStyle.set('modern'));
+	await A.page.evaluate(() => window.__tp.test.v1.loadStates.placeholderStyle.set('modern'));
 	fsrv.release('/hold/Many.glb');
 	await wipe(A);
 

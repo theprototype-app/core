@@ -11,7 +11,7 @@
 const h = require('./helpers.cjs');
 
 const sceneGraph = (peer) =>
-	peer.page.evaluate(() => new Promise((r) => window.__stores.flowGraphs.subscribe((g) => r({
+	peer.page.evaluate(() => new Promise((r) => window.__tp.test.v1.flowGraphs.subscribe((g) => r({
 		nodes: g.scene.nodes.map((n) => ({ id: n.id, type: n.type })),
 		edges: g.scene.edges.map((e) => ({ id: e.id, source: e.source, target: e.target }))
 	}))()));
@@ -22,11 +22,11 @@ h.run(async () => {
 
 	// --- scaffold: box + object flow with a declared interface ----------------
 	const uuid = await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = g.children[g.children.length - 1];
-		window.__stores.flowGraphsCtl.createObjectGraph(box.uuid);
-		const nh = window.__stores.nodesHandler;
+		window.__tp.test.v1.flowGraphsCtl.createObjectGraph(box.uuid);
+		const nh = window.__tp.test.v1.nodesHandler;
 		// interface: input 'speed' -> spin.speed AND -> output 'echo'
 		nh.createFlowNode({ id: 'fi-speed', type: 'flowinput', position: { x: 0, y: 0 }, data: { type: 'flowinput', name: 'speed', vtype: 'number', fallback: 1 } }, box.uuid);
 		nh.createFlowNode({ id: 'spin-emb', type: 'spin', position: { x: 200, y: 0 }, data: { type: 'spin', axis: 'y', speed: 1 } }, box.uuid);
@@ -38,15 +38,15 @@ h.run(async () => {
 	await A.page.waitForTimeout(400);
 
 	// --- embed via the context-menu helper ------------------------------------
-	const added = await A.page.evaluate((id) => window.__stores.objectFlow.addObjectFlowToScene(id, 'Box'), uuid);
+	const added = await A.page.evaluate((id) => window.__tp.test.v1.objectFlow.addObjectFlowToScene(id, 'Box'), uuid);
 	h.check(added === true, 'addObjectFlowToScene embeds the flow into the scene graph');
-	const addedTwice = await A.page.evaluate((id) => window.__stores.objectFlow.addObjectFlowToScene(id, 'Box'), uuid);
+	const addedTwice = await A.page.evaluate((id) => window.__tp.test.v1.objectFlow.addObjectFlowToScene(id, 'Box'), uuid);
 	h.check(addedTwice === false, 'a flow embeds only once per graph (v1)');
 
 	// --- wire scene values through the embed -----------------------------------
 	await A.page.evaluate(async (id) => {
-		const nh = window.__stores.nodesHandler;
-		let graphs; window.__stores.flowGraphs.subscribe((g) => (graphs = g))();
+		const nh = window.__tp.test.v1.nodesHandler;
+		let graphs; window.__tp.test.v1.flowGraphs.subscribe((g) => (graphs = g))();
 		const embed = graphs.scene.nodes.find((n) => n.type === 'objectflow' && n.data.flowUuid === id);
 		// scene: number 7 -> embed.speed ; embed.echo -> math(+0) probe
 		nh.createFlowNode({ id: 'num-7', type: 'number', position: { x: 0, y: 0 }, data: { type: 'number', value: 7 } }, 'scene');
@@ -59,22 +59,22 @@ h.run(async () => {
 	await h.eventually(
 		() =>
 			A.page.evaluate(
-				() => new Promise((r) => window.__stores.flowValues.subscribe((v) => r(v['probe']))())
+				() => new Promise((r) => window.__tp.test.v1.flowValues.subscribe((v) => r(v['probe']))())
 			),
 		(v) => v === 7,
 		'scene value round-trips: injected input surfaces on the embed output (7)'
 	);
 	// and the spin inside the flow drives the OWNER object (implicit rule intact)
 	await h.eventually(
-		() => A.page.evaluate((id) => window.__stores.flowRuntime.isAnimatedTarget(id), uuid),
+		() => A.page.evaluate((id) => window.__tp.test.v1.flowRuntime.isAnimatedTarget(id), uuid),
 		(v) => v === true,
 		'the flow’s spin animates the owner with the injected speed'
 	);
 
 	// --- a WIRED param renders the live incoming value, not its slider ---------
 	await A.page.evaluate((id) => {
-		window.__stores.flowGraphClose.set(false);
-		window.__stores.objectActions.selectObject(id); // editor shows the object flow
+		window.__tp.test.v1.flowGraphClose.set(false);
+		window.__tp.test.v1.objectActions.selectObject(id); // editor shows the object flow
 	}, uuid);
 	await A.page.waitForTimeout(700);
 	h.check(
@@ -85,31 +85,31 @@ h.run(async () => {
 		(await A.page.locator('[data-id="spin-emb"] input[type="range"]').count()) === 0,
 		'the wired param slider is replaced'
 	);
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await A.page.waitForTimeout(400);
 
 	// --- double-clicking the embed node opens the object's flow ----------------
 	await A.page.evaluate(async (id) => {
-		window.__stores.flowGraphClose.set(false);
+		window.__tp.test.v1.flowGraphClose.set(false);
 		// park the embed node in an unobstructed spot for the real dblclick
-		let graphs; window.__stores.flowGraphs.subscribe((g) => (graphs = g))();
+		let graphs; window.__tp.test.v1.flowGraphs.subscribe((g) => (graphs = g))();
 		const embed = graphs.scene.nodes.find((n) => n.type === 'objectflow' && n.data.flowUuid === id);
-		window.__stores.nodesHandler.moveFlowNode(embed.id, { x: 620, y: 260 }, 'scene');
+		window.__tp.test.v1.nodesHandler.moveFlowNode(embed.id, { x: 620, y: 260 }, 'scene');
 	}, uuid);
 	await A.page.waitForTimeout(600);
 	await A.page.locator('.svelte-flow__node').filter({ hasText: 'double-click to open' }).first().dblclick();
 	await A.page.waitForTimeout(500);
 	const scopeAfterDbl = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.activeGraphId.subscribe((v) => r(v))())
+		() => new Promise((r) => window.__tp.test.v1.activeGraphId.subscribe((v) => r(v))())
 	);
 	h.check(scopeAfterDbl === uuid, 'double-clicking the embed node opens the object flow');
 	// back to the scene graph for the remaining checks
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await A.page.waitForTimeout(400);
 
 	// --- single-connection inputs: a new wire replaces the old -----------------
 	const singleRules = await A.page.evaluate(() => {
-		const fs = window.__stores.flowSockets;
+		const fs = window.__tp.test.v1.flowSockets;
 		const nodes = [
 			{ id: 'n1', type: 'number', data: {} },
 			{ id: 'n2', type: 'number', data: {} },
@@ -138,7 +138,7 @@ h.run(async () => {
 
 	// --- interface change prunes stale embed edges ----------------------------
 	await A.page.evaluate((id) => {
-		window.__stores.nodesHandler.updateFlowNodeData('fi-speed', { name: 'velocity' }, id);
+		window.__tp.test.v1.nodesHandler.updateFlowNodeData('fi-speed', { name: 'velocity' }, id);
 	}, uuid);
 	await A.page.waitForTimeout(500);
 	const afterRename = await sceneGraph(A);
@@ -149,11 +149,11 @@ h.run(async () => {
 
 	// --- self-embed is blocked in the picker -----------------------------------
 	await A.page.evaluate(async (id) => {
-		window.__stores.nodesHandler.createFlowNode(
+		window.__tp.test.v1.nodesHandler.createFlowNode(
 			{ id: 'self-embed-probe', type: 'objectflow', position: { x: 500, y: 100 }, data: { type: 'objectflow', label: 'Object Flow', flowUuid: '' } },
 			id
 		);
-		window.__stores.objectActions.selectObject(id); // view the object's own flow
+		window.__tp.test.v1.objectActions.selectObject(id); // view the object's own flow
 	}, uuid);
 	await A.page.waitForTimeout(600);
 	const pickerValues = await A.page.evaluate(() =>
@@ -161,13 +161,13 @@ h.run(async () => {
 	);
 	h.check(!pickerValues.includes(uuid), 'the picker never offers the flow it lives in (no self-embed)');
 	await A.page.evaluate((id) => {
-		window.__stores.nodesHandler.deleteFlowNodes(['self-embed-probe'], id);
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.nodesHandler.deleteFlowNodes(['self-embed-probe'], id);
+		window.__tp.test.v1.objectActions.deselectObject();
 	}, uuid);
 	await A.page.waitForTimeout(400);
 
 	// --- deleting the flow removes the embedded node ---------------------------
-	await A.page.evaluate((id) => window.__stores.flowGraphsCtl.deleteObjectGraph(id), uuid);
+	await A.page.evaluate((id) => window.__tp.test.v1.flowGraphsCtl.deleteObjectGraph(id), uuid);
 	await A.page.waitForTimeout(400);
 	const afterDelete = await sceneGraph(A);
 	h.check(!afterDelete.nodes.some((n) => n.type === 'objectflow'), 'deleting the flow removes its embedded node');

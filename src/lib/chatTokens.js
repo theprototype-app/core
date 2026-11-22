@@ -1,3 +1,4 @@
+// emoji-ok-file: chat shortcodes are USER content (what a person types), not the app's UI chrome (PL42)
 // 37 R15 — CHAT v2's TEXT RULES: emoji shortcodes and @mentions.
 //
 // A ZERO-IMPORT LEAF (vitest: tests/unit/chatTokens.test.js), because both rules are string

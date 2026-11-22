@@ -6,7 +6,7 @@
 // those verbs decide before they write:
 //
 //   templates   what a new file starts with — a script with the behaviour lifecycle stub, a
-//               Markdown note, a JSON document
+//               Markdown note, a JSON document, plain text (81 X1: the Explorer's New file ▸)
 //   names       a file name is valid, gets its template's extension when it has none, and is
 //               UNIQUE among the library's text files. Unique library-wide, not per folder: the
 //               shared-typing document of a file tab is keyed by its NAME (sharedTextCore
@@ -53,7 +53,7 @@ function titleOf(name) {
 const jsQuote = (s) => String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
 /**
- * @typedef {{key: 'script' | 'note' | 'json', label: string, ext: string, defaultName: string,
+ * @typedef {{key: 'script' | 'note' | 'json' | 'text', label: string, ext: string, defaultName: string,
  *   icon: string, tooltip: string, body: (name: string) => string}} FileTemplate
  */
 
@@ -103,6 +103,15 @@ export default behaviour({
 		icon: 'braces',
 		tooltip: 'A JSON document — settings or data a script can read',
 		body: () => '{\n\t\n}\n'
+	},
+	{
+		key: 'text',
+		label: 'Text (.txt)',
+		ext: 'txt',
+		defaultName: 'text.txt',
+		icon: 'type',
+		tooltip: 'A plain text file — no formatting, nothing runs',
+		body: () => ''
 	}
 ];
 

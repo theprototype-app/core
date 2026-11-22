@@ -7,7 +7,7 @@ const boxColors = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const out = {};
 					g?.traverse((o) => {
 						if (o.isMesh && o.name === 'Box') out[o.uuid] = '#' + o.material.color.getHexString();
@@ -21,7 +21,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 
-	const palette = await A.page.evaluate(() => window.__stores.palette.DEFAULT_PALETTE);
+	const palette = await A.page.evaluate(() => window.__tp.test.v1.palette.DEFAULT_PALETTE);
 	h.check(Array.isArray(palette) && palette.length === 8, `palette has 8 colors (${palette.length})`);
 	h.check(!palette.includes('#00ff00'), 'palette does not contain the old bright green');
 
@@ -32,7 +32,7 @@ h.run(async () => {
 	await h.connect(B, A);
 
 	await A.page.evaluate(() => {
-		for (let i = 0; i < 5; i++) window.__stores.commandsHandler.sceneCommand('/create box');
+		for (let i = 0; i < 5; i++) window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 	});
 	await B.page.waitForTimeout(1500);
 

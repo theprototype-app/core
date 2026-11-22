@@ -14,7 +14,7 @@ const compileFile = (/** @type {string} */ source) =>
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createSim } from './logicSim.js';
-import { createBehaviourRuntime, BHV } from '../../../src/lib/behaviours/core.js';
+import { createBehaviourRuntime, BHV, behaviourPausedSince } from '../../../src/lib/behaviours/core.js';
 import { compileBehaviour, dataUrlImporter } from '../../../src/lib/behaviours/source.js';
 import { compileBehaviourInGuest } from '../../../src/lib/sandbox/behaviours.js';
 import { pickAuthority } from '../../../src/lib/kit/authority.js';
@@ -58,7 +58,9 @@ export function createBehaviourSim(opts = {}) {
 					.map((o) => ({ uuid: o.uuid, name: o.name, pos: [...o.pos], tags: [...(o.tags ?? [])] })),
 			warn: (msg) => (p.warnings ??= []).push(msg),
 			// 36 (U10): what `this.emit(name)` asks the app to pulse, recorded per peer
-			emit: (id, name, payload) => (p.emits ??= []).push({ id, name, payload, at: sim.now() })
+			emit: (id, name, payload) => (p.emits ??= []).push({ id, name, payload, at: sim.now() }),
+			// 54i F15: the app's pause hold (behaviours/app.js passes the same function)
+			pausedSince: () => behaviourPausedSince(p.game.get(), p.kit?.doc()?.slices?.round)
 		});
 		/** load (or reload, with new source) a behaviour file on THIS peer @param {string} id @param {string} source */
 		p.loadBehaviour = async (id, source) => {

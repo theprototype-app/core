@@ -29,6 +29,7 @@ import { HUD_KINDS as REGISTERED_KINDS, defaultsForKind, styleDefaultsForKind, k
 // cycle — and it is what lets a menu hide itself when the game starts, with no wiring.
 import { gameState } from './gameState';
 import { safeStorage } from './safeStorage';
+import { isSafeCssValue } from './loadGuardCore.js';
 
 /** The scene-wide HUD, and the only key the v1 UI creates. */
 export const HUD_SCENE_KEY = 'scene';
@@ -258,6 +259,9 @@ function num(v, fallback) {
 	return Number.isFinite(n) ? n : fallback;
 }
 
+/** The largest a HUD element's box may be, in pixels (a screen is far smaller). */
+const HUD_MAX_SIDE = 4096;
+
 /**
  * ONE normalize at every store boundary (wire, autosave restore, session load, undo).
  * SPREADS its input, so a field a NEWER peer added survives our edit and rides back onto
@@ -284,19 +288,32 @@ export function normalizeHudElement(el, i = 0) {
 		anchor: HUD_ANCHORS.includes(el?.anchor) ? el.anchor : 'top-left',
 		x: num(el?.x, 16),
 		y: num(el?.y, 16),
-		w: Math.max(8, num(el?.w, size?.w ?? 120)),
-		h: Math.max(8, num(el?.h, size?.h ?? 28)),
+		// bounded: some kinds draw a canvas the size of the box
+		w: Math.min(HUD_MAX_SIDE, Math.max(8, num(el?.w, size?.w ?? 120))),
+		h: Math.min(HUD_MAX_SIDE, Math.max(8, num(el?.h, size?.h ?? 28))),
 		z: num(el?.z, 0),
 		label: typeof el?.label === 'string' ? el.label : kd.label ?? '',
 		// style values may be THEME TOKEN names, resolved at render with a literal
 		// fallback (the ToolboxWindow rule: every var() must end in a literal, because
 		// neither dark nor light defines --surface)
-		style: { ...styleDefaultsForKind(kind), ...(el?.style && typeof el.style === 'object' ? el.style : {}) },
+		style: { ...styleDefaultsForKind(kind), ...safeStyle(el?.style) },
 		// `at` is a per-element stamp, DECLARED NOW AND UNREAD (the viewportOverrides
 		// trick): the document replicates whole today, and a future per-element merge is
 		// then additive rather than a redesign.
 		at: num(el?.at, 0)
 	};
+}
+
+/** An element's style with every value that could load something or break out of its declaration
+ * dropped (it falls back to the kind's default). @param {any} style @returns {Record<string, any>} */
+function safeStyle(style) {
+	/** @type {Record<string, any>} */
+	const out = {};
+	if (!style || typeof style !== 'object') return out;
+	for (const [key, value] of Object.entries(style)) {
+		if (value === null || typeof value === 'boolean' || isSafeCssValue(value)) out[key] = value;
+	}
+	return out;
 }
 
 /** @param {any} screen @param {number} i @returns {HudScreen} */
@@ -665,7 +682,16 @@ export function removeHudElements(key, screenId, elementIds) {
 
 /** @param {string} key @param {string} name @returns {string} the new screen's id */
 export function addHudScreen(key, name) {
-	const doc = hudDocOf(key) ?? normalizeHudDoc({});
+	const existing = hudDocOf(key);
+	// 85 H1 (the agent tester's trap): on a key with NO document, normalizeHudDoc({}) invents an empty
+	// `main`, so the first added screen came second and `main` stayed active — nothing showed. The first
+	// screen of a new document is now its only screen, and the active one.
+	if (!existing) {
+		const id = 'screen-1-' + Math.floor(Math.random() * 1e6).toString(36);
+		setHudDocFor(key, { screens: [normalizeHudScreen({ id, name: name || 'Screen 1' })], active: id });
+		return id;
+	}
+	const doc = existing;
 	const id = 'screen-' + (doc.screens.length + 1) + '-' + Math.floor(Math.random() * 1e6).toString(36);
 	setHudDocFor(key, {
 		...doc,

@@ -24,7 +24,7 @@ import {
 
 describe('which stored keys are the layout', () => {
 	it('takes window rects, docks and panel modes, nothing else', () => {
-		for (const key of ['win:chat', 'dockWidth:explorer', 'dockSplit:left', 'dockedWindows', 'bottomDockActive', 'flowDockHeight', 'dockTabOrder', 'windowTabGroups', 'objectListRect', 'flowDocked', 'explorerWinW', 'codeWinH', 'sidebarWidth:left', 'sidebar:full:right', 'sidebar:inspectorSide', 'sidebar:order:left', 'sidebar:active:right'])
+		for (const key of ['win:chat', 'dockWidth:explorer', 'dockSplit:left', 'dockedWindows', 'bottomDockActive', 'flowDockHeight', 'dockTabOrder', 'windowTabGroups', 'objectListRect', 'flowDocked', 'explorerWinW', 'codeWinH', 'sidebarWidth:left', 'sidebar:full:right', 'sidebar:inspectorSide', 'sidebar:order:left', 'sidebar:active:right', 'chat:tab'])
 			expect(isLayoutKey(key), key).toBe(true);
 		for (const key of ['uiLayouts', 'theme', 'controlsLayout', 'viewMode', 'win', 'flowPaletteOpen', 'explorerSingleClickOpen', 'shortcutOverrides'])
 			expect(isLayoutKey(key), key).toBe(false);

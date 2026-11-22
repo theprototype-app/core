@@ -1,10 +1,14 @@
+import { parseCheckedObject } from './loadGuard.js';
 import * as THREE from 'three';
+import { renderOffscreen } from './render/offscreen.js';
 import './threeFixes.js'; // 36-fb-water F14: transmissive materials survive a JSON trip (the export runtime loads scenes here too)
 import { writable, get } from 'svelte/store';
 import { objectsGroup, globalCamera, globalScene, globalRenderer, orbitControls, TControls, pokeScene, beginSceneBatch, endSceneBatch } from '../stores/sceneStore';
-import { restoreGraphs, clearGraphs, SCENE_GRAPH, allNodes } from '../stores/flowStore';
+import { restoreGraphs, clearGraphs, SCENE_GRAPH, allNodes, withDataType } from '../stores/flowStore';
 import { ensureMainGraph } from './mainGraph.js'; // 36 (G1): a leaf
 import { serializeGraphs, copyGraphFrom } from './flowGraphs';
+import { customNodeDefsSnapshot, customNodeDefsRestore } from './customNodes'; // 2.0-n3c
+import { stampNodeVersions } from './nodes/index.js'; // 2.0-n3c: per-node `v`
 import { flowViewsSnapshot } from './flowView';
 import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
@@ -55,13 +59,14 @@ import { annotationsSnapshot, annotationsRestore } from './autosave';
 import { captureEditResume, applyEditResume } from './editResume';
 import { jointsSnapshot, jointsRestore } from './joints';
 import { scenePostSnapshot, scenePostRestore } from './scenePost';
+import { sceneBakeSnapshot, sceneBakeRestore } from './sceneBake'; // 98 P1
 // A6.1: the scene's LOOK and RULES ride the file beside its objects. They were
 // missing, so a template loaded into whatever sky and gravity the room happened to
 // have — and a physics scene is unplayable at a peer's edited gravity. Each pair
 // follows scenePost exactly: null when default, and restore stamps a fresh
 // changedAt because a restore is an authoritative local write.
 import { environmentSnapshot, environmentRestore } from './environment';
-import { scenePhysicsSnapshot, scenePhysicsRestore } from './scenePhysics';
+import { scenePhysicsSnapshot, scenePhysicsRestore, scenePhysicsState_ } from './scenePhysics';
 import { musicSnapshot, musicRestore } from './sceneMusic';
 // 23-A2: the musical transport, on the same terms as physics/music — null at the
 // default, omitted rather than written, restart-from-now when it was playing
@@ -87,12 +92,17 @@ import { sceneCommand, sendObjects, clearSceneLocal } from './commandsHandler.sv
 import { nameOf } from './lockControl';
 import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
 import { showConfirm, showChoice } from './confirmDialog';
+// fix-play-link: the modules ask on a player page (/play, /p/<id>, the play origin) — leaves
+import { planPlayerAsk, rememberLoadAnyway } from './play/moduleAsk.js';
+import { playEntry } from './play/playEntry.js';
+import { onPlayOrigin } from './playOrigin.js';
 // 33 (L2/L4): what happens to modules when the scene changes
 import { prepareSceneSwitch, sceneArrived } from './sceneSwitch';
 import { APP_VERSION } from './version.js';
 import { oldRulesGame, RETIRED_GAME_NODES } from './oldGameScene.js';
 // 36-community (C4): the scene's permanent game id rides session.json; a load takes it from the file
 import { gameFields, noteLoadedGame } from './gameIdentity.js';
+import { localThumb } from './loadGuardCore.js';
 
 // Multi-slot sessions (phase 50) on top of the autosave format. Each session
 // stores its top-level objects as individual ObjectLoader jsons — that makes
@@ -166,19 +176,15 @@ export function viewportThumbnail(maxW = 256) {
 
 /** The saved entry's picture. @param {any} group @returns {string|null} */
 function renderSceneThumbnail(group) {
-	/** @type {THREE.WebGLRenderer | null} */
-	let renderer = null;
 	try {
 		if (!group || group.children.length === 0) return null;
 		// the live viewport first — see viewportThumbnail for why
 		const live = viewportThumbnail();
 		if (live) return live;
-		renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-		renderer.setSize(256, 160);
 		const scene = new THREE.Scene();
 		scene.background = new THREE.Color('#232a33');
 		scene.add(new THREE.HemisphereLight(0xffffff, 0x444466, 2.2));
-		const clone = new THREE.ObjectLoader().parse(group.toJSON());
+		const clone = parseCheckedObject(group.toJSON(), 'device', 'thumbnail');
 		scene.add(clone);
 		const box = new THREE.Box3().setFromObject(clone);
 		if (!isFinite(box.min.x)) return null;
@@ -187,16 +193,15 @@ function renderSceneThumbnail(group) {
 		const camera = new THREE.PerspectiveCamera(40, 256 / 160, size / 100, size * 10);
 		camera.position.copy(center).add(new THREE.Vector3(size * 0.65, size * 0.5, size * 0.85));
 		camera.lookAt(center);
-		renderer.render(scene, camera);
-		return renderer.domElement.toDataURL('image/webp', 0.7);
+		// 101 F3: the shared off-screen renderer — one WebGL context for every thumbnail, made on
+		// first use and released after idle (Chromium caps live contexts at 16)
+		return renderOffscreen(256, 160, (renderer) => {
+			renderer.render(scene, camera);
+			return renderer.domElement.toDataURL('image/webp', 0.7);
+		}, { release: scene });
 	} catch (error) {
 		console.log('session thumbnail failed', error);
 		return null;
-	} finally {
-		// every exit, the empty-box early return and a throw included: a renderer that is not
-		// released holds its WebGL context until GC, and Chromium caps live contexts at 16
-		renderer?.dispose();
-		renderer?.forceContextLoss?.();
 	}
 }
 
@@ -229,7 +234,7 @@ function metaOf(payload) {
 		name: payload.name,
 		createdAt: payload.createdAt,
 		count: payload.count,
-		thumbnail: payload.thumbnail,
+		thumbnail: localThumb(payload.thumbnail),
 		// R22 round 9: the PROJECT/SCENE distinction is not a new field to store — a project
 		// entry is one that carries a library, which is exactly what `saveSessionWithLibrary`
 		// adds. Derived, so every session ever saved answers correctly with no migration.
@@ -256,7 +261,7 @@ export async function loadSessions() {
 
 /** Build a session payload from the current scene
  * @param {string} name
- * @param {{thumbnail?: boolean}} [opts] 37 R25: `thumbnail: false` for an in-memory snapshot
+ * @param {{thumbnail?: boolean, refsOnly?: boolean}} [opts] 37 R25: `thumbnail: false` for an in-memory snapshot
  *   nobody will see (the Undo after Clear scene) — the picture is a fresh render */
 export function buildSessionPayload(name, opts = {}) {
 	const group = get(objectsGroup);
@@ -275,6 +280,7 @@ export function buildSessionPayload(name, opts = {}) {
 	const env = environmentSnapshot();
 	const gravity = scenePhysicsSnapshot();
 	const track = musicSnapshot();
+	const baked = sceneBakeSnapshot(); // 98 P1: null when unbaked → no field
 	const clock = transportSnapshot();
 	const seqs = sequencesSnapshot(); // 48 S2
 	const talk = chatsSnapshot('all'); // 56 C10
@@ -307,13 +313,16 @@ export function buildSessionPayload(name, opts = {}) {
 					// 30c: a pristine KIT PIECE is written as a stub its pack refills (packRefs.js
 					// has the measurement: one wall is 7.9 MB as toJSON)
 					.map((/** @type {any} */ child) => (isPristinePackRef(child) ? stubElementOf(child) : child.toJSON())),
-				animated: animatedImportsSnapshot(group),
+				animated: animatedImportsSnapshot(group, { refsOnly: opts.refsOnly }),
 				// authored movement tracks (the Animation window) were never saved
 				animations: animationsSnapshot(),
 				// H1: full graph map (+ legacy SCENE fields so old builds can load it)
-			graphs: (graphs = serializeGraphs(serializeNode, serializeEdge, {
+			graphs: (graphs = stampNodeVersions(serializeGraphs(serializeNode, serializeEdge, {
 				pruneMissing: (uuid) => !group?.getObjectByProperty?.('uuid', uuid)
-			})),
+			}))),
+			// 2.0-n3c (formatMinor 3): the custom node definitions the graphs' instances run — OMITTED
+			// when there are none, so a scene without one is byte-identical
+			...usedNodeDefs(graphs),
 			nodes: graphs[SCENE_GRAPH]?.nodes ?? [],
 			edges: graphs[SCENE_GRAPH]?.edges ?? [],
 			// SH4: toJSON would write our injected material as the object's own, so the
@@ -336,6 +345,7 @@ export function buildSessionPayload(name, opts = {}) {
 			...(env ? { environment: env } : {}),
 			...(gravity ? { physics: gravity } : {}),
 			...(track ? { music: track } : {}),
+			...(baked ? { bake: baked } : {}),
 			...(clock ? { transport: clock } : {}),
 			...(routing ? { patch: routing } : {}),
 			// A6.2: {id, version} — the handshake's shape, so there is one shape for
@@ -357,9 +367,10 @@ export function buildSessionPayload(name, opts = {}) {
 			// exportSessionZip's `chats` option and tpchatCore.payloadForDoor.
 			...(talk ? { chats: talk } : {}),
 			...(kept ? { chatRefs: kept } : {}),
-			camera: camera
-				? { position: camera.position.toArray(), target: controls?.target?.toArray() ?? [0, 0, 0] }
-				: null,
+			// 85 H6: an authored opening view wins over wherever the saver's camera happens to be
+			camera:
+				get(scenePhysicsState_).startView ??
+				(camera ? { position: camera.position.toArray(), target: controls?.target?.toArray() ?? [0, 0, 0] } : null),
 			// P5: where the author left off — the selection and any open mesh-edit /
 			// sculpt session with its picks. NULL for an ordinary scene, so the field is
 			// absent and every existing file stays byte-identical.
@@ -406,6 +417,8 @@ export function buildSelectionPayload(name, uuids) {
 		object?.traverse?.((/** @type {any} */ node) => inSet.add(node.uuid));
 	}
 	const missing = (/** @type {string} */ id) => !inSet.has(id);
+	/** @type {any} */
+	let selGraphs; // 2.0-n3c
 	const restore = parkAnimatedAtBase();
 	const animatedUuids = animatedImportUuids(group);
 	try {
@@ -434,11 +447,13 @@ export function buildSelectionPayload(name, uuids) {
 			// so it survives every predicate. Measured while building the counterfactual —
 			// the payload came out holding `{scene, <the box>}`, which would have travelled
 			// the author's whole scene logic inside a prefab.
-			graphs: Object.fromEntries(
+			graphs: (selGraphs = stampNodeVersions(Object.fromEntries(
 				Object.entries(serializeGraphs(serializeNode, serializeEdge, { pruneMissing: missing })).filter(
 					([key]) => key !== SCENE_GRAPH
 				)
-			),
+			))),
+			// 2.0-n3c: the custom node definitions THESE graphs use (a prefab carries its own nodes)
+			...usedNodeDefs(selGraphs),
 			nodes: [],
 			edges: [],
 			shaderGraphs: shaderGraphsSnapshot({ pruneMissing: missing }),
@@ -633,6 +648,13 @@ export function exportSession(payload) {
 	return JSON.stringify(payload);
 }
 
+/** 2.0-n3c: `{nodeDefs}` holding the custom definitions some node in `graphs` runs (by `data.defId`), or {}
+ * @param {Record<string, {nodes: any[]}>} graphs */
+function usedNodeDefs(graphs) {
+	const defs = customNodeDefsSnapshot(graphs ?? {});
+	return defs ? { nodeDefs: defs } : {};
+}
+
 /** V4: the .tpscene/.session format this build writes and knows how to read. */
 export const SESSION_FORMAT = 1;
 /** 47 T1/T2: the ADDITIVE revision inside a format — what an older reader can still load
@@ -641,7 +663,10 @@ export const SESSION_FORMAT = 1;
  * only `format` does — so bumping it never prompts an older app. Absent = 0.
  * 48 S2: 2 = the payload may carry `sequences` (the Timeline); an older reader ignores
  * the field and loads the scene without its cutscenes. */
-export const SESSION_FORMAT_MINOR = 2;
+// 2.0-n3c: 3 = custom node definitions are saved (`nodeDefs`), a graph node may carry `v` (its
+// definition's version; absent = 1) and a Script node `data.convertedFrom` (Convert to code). An older
+// reader ignores all three: the scene opens, its custom nodes without definitions (as before).
+export const SESSION_FORMAT_MINOR = 3;
 
 /** Parse + shape-validate a session JSON string. @param {string} json */
 function parseSessionJson(json) {
@@ -666,6 +691,13 @@ async function confirmSessionFormat(payload) {
 }
 
 
+/** does the payload name any module at all (the cheap test before the boot-restore wait)
+ * @param {any} payload */
+function classifyHasNeeds(payload) {
+	const { missing, disabled, outdated } = classifyRequirements(payload?.modules);
+	return !!(missing.length || disabled.length || outdated.length);
+}
+
 /**
  * A6.2: the module-requirement prompt. A scene's `modules` field names what its
  * FLOW needs; this is where a player finds out before the scene lands looking
@@ -682,8 +714,37 @@ async function confirmSessionFormat(payload) {
  * @param {any} payload @returns {Promise<boolean>} false = cancel the import
  */
 async function confirmModuleRequirements(payload) {
-	const { missing, disabled, outdated } = classifyRequirements(payload?.modules);
+	if (!classifyHasNeeds(payload)) return true;
+	// fix-play-link: a module this player installed last visit is restored at boot — wait for that
+	// restore (bounded) before calling it "Not installed"
+	try {
+		const { userModulesRestored } = await import('./userModules');
+		await Promise.race([userModulesRestored(), new Promise((r) => setTimeout(r, 8000))]);
+	} catch {
+		/* no idb: nothing was restored, the classification below is the truth */
+	}
+	let { missing, disabled, outdated } = classifyRequirements(payload?.modules);
 	if (!missing.length && !disabled.length && !outdated.length) return true;
+	// fix-play-link (Q1): on a PLAYER page the person chose this one game. A module the official
+	// modules repo lists installs without asking (it is first-party code, pinned to the release tag);
+	// "Load anyway" is remembered per module + version. Only what is left is asked about.
+	if (playEntry || onPlayOrigin) {
+		let official = new Set();
+		try {
+			const { loadModuleGallery, galleryModules } = await import('./moduleGallery');
+			await loadModuleGallery();
+			official = new Set(get(galleryModules).map((/** @type {any} */ m) => m.id));
+		} catch {
+			/* gallery unreachable: everything is asked about, as before */
+		}
+		const plan = planPlayerAsk({ fetchable: [...missing, ...outdated], disabled, official });
+		if (plan.autoInstall.length) await installRequired(plan.autoInstall);
+		if (plan.skipAsk) return true;
+		const left = new Set(plan.ask.fetchable.map((e) => e.id));
+		missing = missing.filter((e) => left.has(e.id));
+		outdated = outdated.filter((e) => left.has(e.id));
+		disabled = plan.ask.disabled;
+	}
 	const name = (/** @type {any} */ entry) => entry.id + (entry.version ? ' v' + entry.version : '');
 	const lines = [];
 	if (missing.length) lines.push('Not installed: ' + missing.map(name).join(', '));
@@ -710,6 +771,7 @@ async function confirmModuleRequirements(payload) {
 		choices
 	});
 	if (!answer) return false; // Cancel / Esc / outside-close: nothing has been touched
+	if (answer === 'anyway' && (playEntry || onPlayOrigin)) rememberLoadAnyway([...missing, ...outdated, ...disabled]);
 	if (answer === 'enable') await enableRequired(disabled);
 	if (answer === 'install') await installRequired([...missing, ...outdated]);
 	return true;
@@ -1141,7 +1203,7 @@ export function sessionFileList(payload) {
 		name: (payload?.name ?? 'Scene') + '.tpscene',
 		kind: 'scene',
 		own: true,
-		thumbnail: payload?.thumbnail ?? null,
+		thumbnail: localThumb(payload?.thumbnail),
 		objects: (payload?.objects ?? []).length
 	};
 	const files = (payload?.library?.items ?? []).map((/** @type {any} */ row, /** @type {number} */ index) => ({
@@ -1149,7 +1211,7 @@ export function sessionFileList(payload) {
 		name: row.name,
 		kind: row.kind,
 		own: false,
-		thumbnail: row.thumbnail ?? null,
+		thumbnail: localThumb(row.thumbnail),
 		bytes: Number(row.blob?.size) || 0
 	}));
 	return [own, ...files];
@@ -1206,7 +1268,7 @@ function fileRow(entry, depth, path) {
 		path: path + '/' + entry.row.name,
 		index: entry.index,
 		kindOf: entry.row.kind,
-		thumbnail: entry.row.thumbnail ?? null,
+		thumbnail: localThumb(entry.row.thumbnail),
 		bytes: Number(entry.row.blob?.size) || 0
 	};
 }
@@ -1319,7 +1381,7 @@ export function importObjects(payload, indices) {
 		if (!element) continue;
 		let object;
 		try {
-			object = new THREE.ObjectLoader().parse(element);
+			object = parseCheckedObject(element, 'file', 'import');
 		} catch {
 			continue;
 		}
@@ -1555,6 +1617,7 @@ async function applySessionNow(payload, opts, job) {
 		return;
 	}
 	scenePostRestore(payload.post, replicate);
+	sceneBakeRestore(payload.bake, replicate); // 98 P1: absent = no bake (an old scene stays unbaked)
 	// the composer's own pass shaders, off-frame too (Outline registers the warm-up)
 	await within(warmComposer(), WARM_WAIT_MS);
 	releaseFrames();
@@ -1589,7 +1652,7 @@ async function applySessionNow(payload, opts, job) {
 			await slice(job);
 			let object;
 			try {
-				object = new THREE.ObjectLoader().parse(element);
+				object = parseCheckedObject(element, 'file', 'scene');
 			} catch {
 				progress(job);
 				continue;
@@ -1647,15 +1710,23 @@ async function applySessionNow(payload, opts, job) {
 	// its object graphs) — here, before the restore, so the one 'nodes' snapshot below carries
 	// them to the room. A G1-authored or already-migrated scene comes back unchanged.
 	const graphsPayload = ensureMainGraph(loadedGraphs, { modules: payload.modules, sceneKey: SCENE_GRAPH }).graphs;
+	// 2.0-n3c (formatMinor 3): the definitions BEFORE their instances, so no instance renders unknown
+	customNodeDefsRestore(payload.nodeDefs, replicate);
 	if (graphsPayload) {
 		restoreGraphs(graphsPayload, { views: payload.flowViews });
-		if (replicate && peer)
+		if (replicate && peer) {
+			// 2.0-n3c: send the nodes as restoreGraphs made them (data.type filled, withDataType), not as the file
+			// held them, or a file node lacking data.type hashes differently here and on every peer that merged it
+			const sent = Object.fromEntries(
+				Object.entries(graphsPayload).map(([id, g]) => [id, { ...g, nodes: (g?.nodes ?? []).map(withDataType) }])
+			);
 			peer.send({
 				type: 'nodes',
-				graphs: graphsPayload,
-				nodes: graphsPayload[SCENE_GRAPH]?.nodes ?? [],
-				edges: graphsPayload[SCENE_GRAPH]?.edges ?? []
+				graphs: sent,
+				nodes: sent[SCENE_GRAPH]?.nodes ?? [],
+				edges: sent[SCENE_GRAPH]?.edges ?? []
 			});
+		}
 	}
 	// a scene LOAD replaces the world, so replace the documents too
 	shaderGraphsRestore(payload.shaderGraphs ?? {}, replicate);

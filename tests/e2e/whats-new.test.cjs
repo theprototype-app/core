@@ -21,7 +21,7 @@ async function firstVisitPage(browser, seed) {
 	page.on('pageerror', (err) => console.log('[pageerror] ' + err.stack));
 	await page.goto(h.URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
 	// the suite's 4th page boots slowly on a loaded box (options are waitForFunction's THIRD argument)
-	await page.waitForFunction(() => window.__stores && !!window.__stores.whatsNew, null, { timeout: 150000 });
+	await page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.whatsNew, null, { timeout: 150000 });
 	await page.waitForTimeout(600);
 	return { ctx, page };
 }
@@ -61,7 +61,7 @@ h.run(async () => {
 
 	// --- second visit: nothing greets the user ---------------------------------
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.whatsNew, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.whatsNew, null, { timeout: 90000 });
 	await A.page.waitForTimeout(600);
 	h.check(!(await A.page.locator('#welcome-overlay').isVisible()), 'RW: a returning user gets no overlay');
 	await A.ctx.close();
@@ -146,7 +146,7 @@ h.run(async () => {
 
 	// a reload no longer nags
 	await B.page.reload({ waitUntil: 'domcontentloaded' });
-	await B.page.waitForFunction(() => window.__stores && !!window.__stores.whatsNew, { timeout: 30000 });
+	await B.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.whatsNew, null, { timeout: 90000 });
 	await B.page.waitForTimeout(600);
 	h.check(
 		!(await B.page.locator('#logo-menu .update-dot').isVisible().catch(() => false)),
@@ -156,9 +156,9 @@ h.run(async () => {
 	// --- the logo menu always has a way back ----------------------------------
 	await B.page.locator('#logo-menu').click();
 	await B.page.waitForTimeout(250);
-	await B.page.locator('#open-whats-new').click();
+	await B.page.locator('#open-version').click();
 	await B.page.waitForTimeout(350);
-	h.check(await B.page.locator('#whats-new-window').isVisible(), 'RW: the logo menu reopens the changelog');
+	h.check(await B.page.locator('#whats-new-window').isVisible(), 'RW: the logo menu reopens the changelog (the version beside Settings, uir-polish C2)');
 
 	// --- the "announce new versions" setting silences the cue -----------------
 	const C = await firstVisitPage(browser, {

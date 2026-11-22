@@ -29,7 +29,7 @@ const read = (page, path) =>
 	S(page, (path) => {
 		const [mod, name] = path.split('.');
 		let v;
-		(name ? window.__stores[mod][name] : window.__stores[mod]).subscribe((x) => (v = x))();
+		(name ? window.__tp.test.v1[mod][name] : window.__tp.test.v1[mod]).subscribe((x) => (v = x))();
 		return v;
 	}, path);
 
@@ -47,7 +47,7 @@ const scene = (page) =>
 			const r = el.getBoundingClientRect();
 			return { top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), width: Math.round(r.width), height: Math.round(r.height) };
 		};
-		const canvas = window.__stores?.globalRenderer ? null : null;
+		const canvas = window.__tp?.test.v1?.globalRenderer ? null : null;
 		const cv = document.querySelector('.viewport canvas');
 		const dock = [...document.querySelectorAll('.tp-dock-panel')].find((d) => !d.classList.contains('hidden') && d.getBoundingClientRect().height > 0);
 		return {
@@ -83,7 +83,7 @@ const viewportPoint = (page) =>
 
 async function openDock(page) {
 	await S(page, async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphClose.set(false);
 		s.explorerClose.set(false);
 		await new Promise((r) => setTimeout(r, 600));
@@ -98,7 +98,7 @@ h.run(async () => {
 	const P = await h.setupPage(browser, 'D', { context: DESK, storage: { flowDocked: 'true', explorerDocked: 'true', flowDockHeight: '300', theme: THEME } });
 	const page = P.page;
 	await openDock(page);
-	await S(page, () => window.__stores.objectListClose.set(false));
+	await S(page, () => window.__tp.test.v1.objectListClose.set(false));
 	await page.waitForTimeout(900);
 	let st = await scene(page);
 	h.check(st.connect && st.objects && st.dock && !st.focus, `premise: Connect, the Objects window and the dock are on screen (${JSON.stringify(st)})`);
@@ -168,7 +168,7 @@ h.run(async () => {
 	h.check(!st.focus && st.dock && Math.abs(st.dockBox.height - dockedH) <= 2 && st.connect, `3.5 Ctrl+Space restores it to its dock height (${st.dockBox?.height} vs ${dockedH})`);
 
 	// ---- 4. a hosted docked window from its tab menu; the pill restores --------------------------
-	await S(page, () => window.__stores.dockHost.setHostedDocked('objects', true));
+	await S(page, () => window.__tp.test.v1.dockHost.setHostedDocked('objects', true));
 	await page.waitForTimeout(1000);
 	await page.locator('[data-dock-tab="objects"]:visible').first().click({ button: 'right' });
 	await page.waitForTimeout(300);
@@ -184,12 +184,12 @@ h.run(async () => {
 	await page.waitForTimeout(500);
 	st = await scene(page);
 	h.check(!st.focus && st.connect, '4.2 the "Exit focus" pill restores');
-	await S(page, () => window.__stores.dockHost.setHostedDocked('objects', false));
+	await S(page, () => window.__tp.test.v1.dockHost.setHostedDocked('objects', false));
 	await page.waitForTimeout(800);
 
 	// ---- 5. View ▸ Focus mode -------------------------------------------------------------------
 	vp = await viewportPoint(page);
-	await S(page, (vp) => window.__stores.viewportMenu.set({ x: vp.x, y: vp.y, point: [0, 0, 0] }), vp);
+	await S(page, (vp) => window.__tp.test.v1.viewportMenu.set({ x: vp.x, y: vp.y, point: [0, 0, 0] }), vp);
 	await page.waitForTimeout(400);
 	await page.locator('[role="menu"] [role="menuitem"]').filter({ hasText: /^\s*View/ }).first().hover();
 	await page.waitForTimeout(400);
@@ -197,7 +197,7 @@ h.run(async () => {
 	await page.waitForTimeout(500);
 	st = await scene(page);
 	h.check(st.focus === 'viewport' && !st.connect, `5.1 View ▸ Focus mode enters viewport focus (${st.focus})`);
-	await S(page, (vp) => window.__stores.viewportMenu.set({ x: vp.x, y: vp.y, point: [0, 0, 0] }), vp);
+	await S(page, (vp) => window.__tp.test.v1.viewportMenu.set({ x: vp.x, y: vp.y, point: [0, 0, 0] }), vp);
 	await page.waitForTimeout(400);
 	const menuOk = await S(page, () => !!document.querySelector('[role="menu"]'));
 	h.check(menuOk, '5.2 the viewport menu still opens in focus mode (menus are not hidden)');
@@ -212,22 +212,22 @@ h.run(async () => {
 	await page.mouse.move(vp.x, vp.y);
 	await page.keyboard.press('Control+Space');
 	await page.waitForTimeout(300);
-	await S(page, () => window.__stores.settingsOpen.set(true));
+	await S(page, () => window.__tp.test.v1.settingsOpen.set(true));
 	await page.waitForTimeout(500);
 	st = await scene(page);
 	h.check(!st.focus, `6.1 opening Settings leaves focus mode (${st.focus})`);
-	await S(page, () => window.__stores.settingsOpen.set(false));
+	await S(page, () => window.__tp.test.v1.settingsOpen.set(false));
 	await page.waitForTimeout(500);
 
 	// ---- 7. the keymap registry -------------------------------------------------------------------
 	const reg = await S(page, () => {
-		const r = window.__stores.shortcutsRegistry;
+		const r = window.__tp.test.v1.shortcutsRegistry;
 		const row = r.shortcuts.find((s) => s.id === 'view.focus');
 		const esc = r.shortcuts.find((s) => s.id === 'view.focus-exit');
 		return { keys: row?.keys, group: row?.group, rebindable: r.isRebindable?.(row), esc: esc?.keys };
 	});
 	h.check(reg.keys === 'Ctrl+Space' && reg.group === 'View' && reg.rebindable === true && reg.esc === 'Escape', `7.1 the registry row: Ctrl+Space, View, rebindable (+ the Esc row) (${JSON.stringify(reg)})`);
-	const rb = await S(page, () => window.__stores.shortcutsRegistry.rebindShortcut('view.focus', 'Ctrl+Shift+F'));
+	const rb = await S(page, () => window.__tp.test.v1.shortcutsRegistry.rebindShortcut('view.focus', 'Ctrl+Shift+F'));
 	await page.mouse.move(vp.x, vp.y);
 	await page.mouse.click(vp.x, vp.y);
 	await page.keyboard.press('Control+Shift+F');
@@ -235,14 +235,14 @@ h.run(async () => {
 	const rebound = (await scene(page)).focus;
 	await page.keyboard.press('Escape');
 	await page.waitForTimeout(300);
-	await S(page, () => window.__stores.shortcutsRegistry.resetShortcut?.('view.focus') ?? window.__stores.shortcutsRegistry.rebindShortcut('view.focus', 'Ctrl+Space'));
+	await S(page, () => window.__tp.test.v1.shortcutsRegistry.resetShortcut?.('view.focus') ?? window.__tp.test.v1.shortcutsRegistry.rebindShortcut('view.focus', 'Ctrl+Space'));
 	h.check(rb?.ok !== false && rebound === 'viewport', `7.2 rebound to Ctrl+Shift+F, the new key drives it (${JSON.stringify(rb)}, ${rebound})`);
 	await P.ctx.close();
 
 	// ---- 8. phone: More ▸ Focus mode, real touch ---------------------------------------------------
 	const Ph = await h.setupPage(browser, 'phone', { context: FOLDED, storage: { theme: THEME } });
 	const pp = Ph.page;
-	await S(pp, () => window.__stores.phoneShell.phoneSheet.set('more'));
+	await S(pp, () => window.__tp.test.v1.phoneShell.phoneSheet.set('more'));
 	await pp.waitForTimeout(800);
 	h.check(!!(await pp.locator('#ps-focus-mode').count()), '8.0 premise: More lists "Focus mode"');
 	await pp.locator('#ps-focus-mode').tap();

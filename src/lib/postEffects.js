@@ -3,6 +3,7 @@ import {
 	BloomEffect,
 	BrightnessContrastEffect,
 	ChromaticAberrationEffect,
+	DepthOfFieldEffect,
 	DotScreenEffect,
 	EffectPass,
 	HueSaturationEffect,
@@ -23,10 +24,20 @@ import {
 // @ts-ignore - n8ao ships no bundled type declarations
 import { N8AOPostPass } from 'n8ao';
 import { registerPostEffect, postEffectDef, planPostStack } from './scenePost';
+import { lutAffine } from './xrLookCore.js';
+// 98 P4: lens flare, god rays, volumetric fog (registered by side effect, own passes each)
+import { currentFinishTier } from './post/finishEffects.js';
+import { scaleProEffects } from './post/proPresetsCore.js';
+import { aoTierSettings } from './post/finishCore.js';
 // L5: a LUT is an Explorer ASSET, so it must ride the content-hash push/pull or a
 // peer (and every late joiner) grades with a missing texture — golden rule 9.
 import { itemByHash, itemBlob, explorerItems } from './explorer';
 import { requestAsset } from './assetShare';
+import { get } from 'svelte/store';
+import { cameraPreview } from './cameraPreview';
+import { objectsGroup, isLocked } from '../stores/sceneStore';
+import { TRAAPass } from './post/traaPass.js';
+import { traaActive } from './post/traaCore.js';
 
 // L1 — the built-in post effects and the COMPILER.
 //
@@ -47,7 +58,9 @@ import { requestAsset } from './assetShare';
  * @returns {{passes: any[], instances: {kind: string, id: string, object: any, def: any, isPass: boolean}[], skipped: any[], plan: any[]}}
  */
 export function compilePostStack(entries, ctx) {
-	const { groups, skipped } = planPostStack(entries);
+	// 98 P5: the scene keeps ONE look; THIS device builds its tier's share of it (a headset leaves
+	// fog, god rays and lens flare out — they stay in the document for everyone else)
+	const { groups, skipped } = planPostStack(scaleProEffects(entries, currentFinishTier()));
 	/** @type {any[]} */
 	const passes = [];
 	/** @type {any[]} */
@@ -214,8 +227,11 @@ function applyAoQuality(pass, params, prefs) {
 	const q = prefs?.shadowQuality;
 	const quality = params?.quality && params.quality !== 'auto' ? params.quality : q;
 	const half = params?.halfRes;
-	pass.configuration.halfRes =
-		half === 'on' ? true : half === 'off' ? false : q === 'low' || q === 'medium' || q === 'off';
+	// 98 P3: 'auto' follows the device TIER too — a phone is always half res + a lighter denoise
+	const tier = aoTierSettings(currentFinishTier(), q);
+	pass.configuration.halfRes = half === 'on' ? true : half === 'off' ? false : tier.halfRes;
+	if (pass.configuration.denoiseSamples !== tier.denoiseSamples) pass.configuration.denoiseSamples = tier.denoiseSamples;
+	if (pass.configuration.denoiseRadius !== tier.denoiseRadius) pass.configuration.denoiseRadius = tier.denoiseRadius;
 	if (pass.setQualityMode)
 		pass.setQualityMode(quality === 'high' ? 'High' : quality === 'medium' ? 'Medium' : 'Low');
 }
@@ -328,6 +344,46 @@ registerPostEffect('lut', {
 	}
 });
 
+/** Read a library item as a LookupTexture (.cube, or a strip image); throws on a bad file. @param {any} item @returns {Promise<any>} */
+async function readLutTexture(item) {
+	const blob = await itemBlob(item.id);
+	if (!blob) return null;
+	const name = String(item.name ?? '').toLowerCase();
+	if (name.endsWith('.cube')) return new LUTCubeLoader().parse(await blob.text());
+	// a STRIP image, the other common form. LookupTexture.from unfolds the
+	// strip itself, but its wide-image path tests `image instanceof Image`, so
+	// it needs a real <img> — a canvas or an ImageBitmap silently takes the
+	// raw-data branch and comes out wrong.
+	const url = URL.createObjectURL(blob);
+	try {
+		const image = new Image();
+		await new Promise((resolve, reject) => {
+			image.onload = resolve;
+			image.onerror = reject;
+			image.src = url;
+		});
+		return LookupTexture.from(/** @type {any} */ ({ image }));
+	} finally {
+		URL.revokeObjectURL(url);
+	}
+}
+
+/**
+ * 72 LK3: a LUT's affine fit for the headset's look (xrLookCore), or null when the bytes are not here.
+ * @param {string} hash @returns {Promise<number[] | null>}
+ */
+export async function lutTableOf(hash) {
+	const item = itemByHash(hash);
+	if (!item) return null;
+	const texture = await readLutTexture(item);
+	const image = texture?.image;
+	if (!image?.data || !image.width) return null;
+	const size = image.width;
+	const fit = lutAffine(image.data, size, Math.round(image.data.length / size ** 3));
+	texture.dispose?.();
+	return fit;
+}
+
 /**
  * Resolve a LUT hash to a texture and hand it to a live effect.
  *
@@ -355,30 +411,7 @@ async function loadLutInto(effect, hash) {
 		return;
 	}
 	try {
-		const blob = await itemBlob(item.id);
-		if (!blob) return;
-		const name = String(item.name ?? '').toLowerCase();
-		let texture = null;
-		if (name.endsWith('.cube')) {
-			texture = new LUTCubeLoader().parse(await blob.text());
-		} else {
-			// a STRIP image, the other common form. LookupTexture.from unfolds the
-			// strip itself, but its wide-image path tests `image instanceof Image`, so
-			// it needs a real <img> — a canvas or an ImageBitmap silently takes the
-			// raw-data branch and comes out wrong.
-			const url = URL.createObjectURL(blob);
-			try {
-				const image = new Image();
-				await new Promise((resolve, reject) => {
-					image.onload = resolve;
-					image.onerror = reject;
-					image.src = url;
-				});
-				texture = LookupTexture.from(/** @type {any} */ ({ image }));
-			} finally {
-				URL.revokeObjectURL(url);
-			}
-		}
+		const texture = await readLutTexture(item);
 		if (!texture) return;
 		const previous = effect.lut;
 		effect.lut = texture;
@@ -409,6 +442,60 @@ registerPostEffect('bloom', {
 			mipmapBlur: true,
 			kernelSize: KernelSize.LARGE
 		})
+});
+
+// 68 V8: DEPTH OF FIELD. With `source: camera` the focus distance and the f-number come from the
+// camera you are looking through (`userData.camera.focus` / `.aperture` — what Film's focus pull and
+// aperture record as prop tracks, so a take plays its pull back); a camera with neither falls back
+// to the manual values. Read per frame in `tick`, never through a rebuild.
+/** f-number + focus distance → the effect's bokeh scale and in-focus depth range */
+export function dofFromLens(/** @type {number} */ focus, /** @type {number} */ aperture) {
+	const n = Math.max(0.7, Math.min(64, aperture || 5.6));
+	const d = Math.max(0.05, focus || 10);
+	return { focusDistance: d, focusRange: Math.max(0.05, (d * n) / 16), bokehScale: Math.max(0, Math.min(10, (4 * 2.8) / n)) };
+}
+
+/** the lens of the camera being looked through, or null @returns {{focus: number, aperture: number} | null} */
+function activeLens() {
+	const uuid = get(cameraPreview)?.uuid;
+	if (!uuid) return null;
+	const spec = /** @type {any} */ (get(objectsGroup))?.getObjectByProperty?.('uuid', uuid)?.userData?.camera;
+	const focus = Number(spec?.focus);
+	const aperture = Number(spec?.aperture);
+	return Number.isFinite(focus) || Number.isFinite(aperture) ? { focus, aperture } : null;
+}
+
+registerPostEffect('dof', {
+	label: 'Depth of field',
+	group: 'camera',
+	params: [
+		{ key: 'source', label: 'Focus from', type: 'select', default: 'camera',
+			options: [
+				{ value: 'camera', label: 'The camera (Film focus pull)' },
+				{ value: 'manual', label: 'These values' }
+			],
+			hint: 'A camera filmed with focus or aperture carries its own; otherwise the values below.' },
+		{ key: 'focusDistance', label: 'Focus distance', min: 0.1, max: 200, step: 0.1, decimals: 1, default: 10 },
+		{ key: 'aperture', label: 'Aperture (f/)', min: 0.7, max: 32, step: 0.1, decimals: 1, default: 2.8,
+			hint: 'Lower = more blur and a thinner sharp zone.' }
+	],
+	make: (params, ctx) => {
+		const lens = dofFromLens(num(params.focusDistance, 10), num(params.aperture, 2.8));
+		const effect = new DepthOfFieldEffect(ctx.camera, { focusDistance: lens.focusDistance, focusRange: lens.focusRange, bokehScale: lens.bokehScale });
+		/** @type {any} */ (effect).__dofParams = params;
+		return effect;
+	},
+	tick: (effect) => {
+		const params = effect.__dofParams ?? {};
+		const live = params.source === 'manual' ? null : activeLens();
+		const lens = dofFromLens(
+			Number.isFinite(live?.focus) ? /** @type {number} */ (live?.focus) : num(params.focusDistance, 10),
+			Number.isFinite(live?.aperture) ? /** @type {number} */ (live?.aperture) : num(params.aperture, 2.8)
+		);
+		effect.cocMaterial.focusDistance = lens.focusDistance;
+		effect.cocMaterial.focusRange = lens.focusRange;
+		if (Math.abs(effect.bokehScale - lens.bokehScale) > 1e-4) effect.bokehScale = lens.bokehScale;
+	}
 });
 
 registerPostEffect('vignette', {
@@ -524,6 +611,9 @@ registerPostEffect('dotscreen', {
 registerPostEffect('smaa', {
 	label: 'Anti-aliasing (SMAA)',
 	group: 'aa',
+	// 98 P3: superseded by 'antialias' (one AA setting). Kept so every saved scene still renders; not offered
+	// in the add menu any more.
+	legacy: true,
 	params: [
 		{ key: 'preset', label: 'Quality', type: 'select', default: 'MEDIUM',
 			options: [
@@ -535,4 +625,62 @@ registerPostEffect('smaa', {
 	],
 	make: (params) =>
 		new SMAAEffect({ preset: /** @type {any} */ (SMAAPreset)[params.preset] ?? SMAAPreset.MEDIUM })
+});
+
+// ---- 98 P3: ONE anti-aliasing setting ---------------------------------------
+
+// TRAA (temporal, with reprojection) or SMAA, in ONE entry — the author picks a method, not between two effects.
+// Its own pass either way (`isPass`): TRAA is a Pass, and an SMAA in its own EffectPass can never meet another
+// convolution effect in a merge run (the group-drop post-finish caught with chromatic aberration).
+registerPostEffect('antialias', {
+	label: 'Anti-aliasing',
+	group: 'aa',
+	isPass: true,
+	params: [
+		{ key: 'method', label: 'Method', type: 'select', default: 'traa',
+			hint: 'TRAA blends frames for the smoothest edges; SMAA is single-frame (no trails on fast motion).',
+			options: [
+				{ value: 'traa', label: 'TRAA (temporal)' },
+				{ value: 'smaa', label: 'SMAA' }
+			] },
+		{ key: 'quality', label: 'SMAA quality', type: 'select', default: 'MEDIUM',
+			options: [
+				{ value: 'LOW', label: 'Low' },
+				{ value: 'MEDIUM', label: 'Medium' },
+				{ value: 'HIGH', label: 'High' },
+				{ value: 'ULTRA', label: 'Ultra' }
+			] },
+		{ key: 'inPlay', label: 'TRAA in Play', type: 'select', default: 'auto',
+			hint: 'Auto keeps it on a computer and turns it off on a phone, where fast motion could leave trails.',
+			options: [
+				{ value: 'auto', label: 'Auto (per device)' },
+				{ value: 'on', label: 'On' },
+				{ value: 'off', label: 'Off' }
+			] },
+		{ key: 'blend', label: 'TRAA new-frame weight', min: 0.03, max: 0.5, step: 0.01, decimals: 2, default: 0.1,
+			hint: 'Lower = smoother, higher = less trailing.' }
+	],
+	make: (params, ctx) => {
+		if (params.method === 'smaa') {
+			const pass = /** @type {any} */ (
+				new EffectPass(ctx.camera, new SMAAEffect({ preset: /** @type {any} */ (SMAAPreset)[params.quality] ?? SMAAPreset.MEDIUM }))
+			);
+			pass.__aa = 'smaa';
+			return pass;
+		}
+		const pass = /** @type {any} */ (new TRAAPass(ctx.scene, ctx.camera, { blend: num(params.blend, 0.1) }));
+		pass.__aa = 'traa';
+		pass.__inPlay = params.inPlay ?? 'auto';
+		return pass;
+	},
+	retarget: (/** @type {any} */ pass, /** @type {any} */ camera) => {
+		if (pass.__aa === 'traa') pass.setMainCamera(camera);
+		else pass.mainCamera = camera;
+	},
+	// before the composer renders: decide on/off for this device + mode, and jitter the projection
+	tick: (/** @type {any} */ pass) => {
+		if (pass.__aa !== 'traa') return;
+		pass.active = traaActive({ tier: currentFinishTier(), playing: get(isLocked) === true, inPlay: pass.__inPlay });
+		pass.prepareFrame();
+	}
 });

@@ -9,7 +9,7 @@ const posOf = (page, uuid) =>
 	page.evaluate(
 		(uuid) =>
 			new Promise((resolve) => {
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const o = g?.getObjectByProperty('uuid', uuid);
 					resolve(o ? { x: o.position.x, y: o.position.y, z: o.position.z } : null);
 				})();
@@ -18,7 +18,7 @@ const posOf = (page, uuid) =>
 	);
 
 const undoDepth = (page) =>
-	page.evaluate(() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))()));
+	page.evaluate(() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((s) => r(s.length))()));
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -26,7 +26,7 @@ h.run(async () => {
 	// throwaway page warms the vite dep-optimizer for the lazy rapier import
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(4000);
 		await warm.ctx.close();
 	}
@@ -38,17 +38,17 @@ h.run(async () => {
 	for (const peer of [A, B]) {
 		await h.freshReload(peer);
 		peer.id = await peer.page.evaluate(
-			() => new Promise((r) => window.__stores.peers.subscribe((p) => r(p?.peer?.id))())
+			() => new Promise((r) => window.__tp.test.v1.peers.subscribe((p) => r(p?.peer?.id))())
 		);
 	}
 	await h.connect(B, A);
 
 	// --- scene: a wide slab with a SPIN effect + a dynamic box resting on it ----
 	const { slabUuid, boxUuid } = await A.page.evaluate(async () => {
-		const cmd = window.__stores.commandsHandler.sceneCommand;
+		const cmd = window.__tp.test.v1.commandsHandler.sceneCommand;
 		cmd('/create Box 6 0.4 6'); // slab
 		cmd('/create Box 1 1 1'); // rider
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const [slab, box] = group.children.slice(-2);
 		slab.position.set(0, 1, 0);
 		// /create makes every primitive dynamic since 95df3a66 — the slab must be scenery, so the spin
@@ -57,7 +57,7 @@ h.run(async () => {
 		box.position.set(2, 1.75, 0); // resting on the slab top, 2m off-axis
 		// dynamic via Inspector-style userData.physics (NO flow mass node)
 		box.userData.physics = { mode: 'dynamic', mass: 1 };
-		const peer = await new Promise((r) => window.__stores.peers.subscribe(r)());
+		const peer = await new Promise((r) => window.__tp.test.v1.peers.subscribe(r)());
 		peer.send({ type: 'move', uuid: slab.uuid, pos: [0, 1, 0], rot: [0, 0, 0], scale: [1, 1, 1] });
 		peer.send({ type: 'move', uuid: box.uuid, pos: [2, 1.75, 0], rot: [0, 0, 0], scale: [1, 1, 1] });
 		peer.send({ type: 'objectParameters', parameter: 'physics', uuid: box.uuid, physics: box.userData.physics });
@@ -68,23 +68,23 @@ h.run(async () => {
 			{ id: 'sel1', type: 'objectselector', position: { x: 300, y: 0 }, data: { type: 'objectselector', selected: slab.uuid }, class: 'w-[150px]' }
 		];
 		const edge = { id: 'e1', source: 'sp1', target: 'sel1' };
-		window.__stores.flowNodes.set(nodes);
-		window.__stores.flowEdges.set([edge]);
+		window.__tp.test.v1.flowNodes.set(nodes);
+		window.__tp.test.v1.flowEdges.set([edge]);
 		nodes.forEach((node) => peer.send({ type: 'nodecreate', node }));
 		peer.send({ type: 'edgecreate', edge });
 		return { slabUuid: slab.uuid, boxUuid: box.uuid };
 	});
 	await A.page.waitForTimeout(2000); // let the flow tick adopt the slab (baseState)
 
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(
-		() => A.page.evaluate(() => new Promise((r) => window.__stores.physics.simulating.subscribe(r)())),
+		() => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.physics.simulating.subscribe(r)())),
 		(v) => v === true,
 		'simulation started on A'
 	);
 
 	// classification: slab = kinematic platform, box = dynamic (Inspector-only)
-	const debug = await A.page.evaluate(() => window.__stores.physics.physicsDebug());
+	const debug = await A.page.evaluate(() => window.__tp.test.v1.physics.physicsDebug());
 	const slabEntry = debug.find((d) => d.uuid === slabUuid);
 	const boxEntry = debug.find((d) => d.uuid === boxUuid);
 	h.check(slabEntry?.mode === 'kinematic', `spin slab classified kinematic (${slabEntry?.mode})`);
@@ -110,7 +110,7 @@ h.run(async () => {
 
 	// --- external move hold: B drags the dynamic box mid-sim -------------------
 	await B.page.evaluate(async (uuid) => {
-		const peer = await new Promise((r) => window.__stores.peers.subscribe(r)());
+		const peer = await new Promise((r) => window.__tp.test.v1.peers.subscribe(r)());
 		window.__extDrag = setInterval(() => {
 			peer.send({ type: 'move', uuid, pos: [0, 5, 3], rot: [0, 0, 0], scale: [1, 1, 1] });
 		}, 100);
@@ -121,7 +121,7 @@ h.run(async () => {
 	const sawHold = await A.page.evaluate(
 		async (uuid) => {
 			for (let i = 0; i < 30; i++) {
-				const d = window.__stores.physics.physicsDebug().find((e) => e.uuid === uuid);
+				const d = window.__tp.test.v1.physics.physicsDebug().find((e) => e.uuid === uuid);
 				if (d?.hold === 'external') return true;
 				await new Promise((r) => setTimeout(r, 50));
 			}
@@ -143,14 +143,14 @@ h.run(async () => {
 
 	// --- pause halts, reset restores exactly with NO undo entry ----------------
 	const depthBefore = await undoDepth(A.page);
-	await A.page.evaluate(() => window.__stores.physics.pauseSimulation(true));
+	await A.page.evaluate(() => window.__tp.test.v1.physics.pauseSimulation(true));
 	await A.page.waitForTimeout(300);
 	const p1 = await posOf(A.page, boxUuid);
 	await A.page.waitForTimeout(500);
 	const p2 = await posOf(A.page, boxUuid);
 	h.check(p1 && p2 && p1.y === p2.y, `pause halts the fall (y ${p1?.y.toFixed(2)} == ${p2?.y.toFixed(2)})`);
 
-	await A.page.evaluate(() => window.__stores.physics.resetSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.resetSimulation());
 	await h.eventually(
 		() => posOf(A.page, boxUuid),
 		(p) => p && Math.abs(p.x - 2) < 0.01 && Math.abs(p.y - 1.75) < 0.01,
@@ -166,19 +166,19 @@ h.run(async () => {
 
 	// --- hull colliders: opt-in per object, groups fall back -------------------
 	const hullInfo = await A.page.evaluate(async () => {
-		const cmd = window.__stores.commandsHandler.sceneCommand;
+		const cmd = window.__tp.test.v1.commandsHandler.sceneCommand;
 		cmd('/create Sphere 1');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const sphere = group.children[group.children.length - 1];
 		sphere.position.set(-5, 4, 0);
 		sphere.userData.physics = { mode: 'dynamic', mass: 1, collider: 'hull' };
-		window.__stores.objectActions.selectObject(sphere.uuid);
-		await window.__stores.physics.toggleSimulation();
-		const debug = window.__stores.physics.physicsDebug();
+		window.__tp.test.v1.objectActions.selectObject(sphere.uuid);
+		await window.__tp.test.v1.physics.toggleSimulation();
+		const debug = window.__tp.test.v1.physics.physicsDebug();
 		return debug.find((d) => d.uuid === sphere.uuid);
 	});
 	h.check(hullInfo?.hull === true, `sphere uses a convex-hull collider (${JSON.stringify(hullInfo)})`);
-	await A.page.evaluate(() => window.__stores.physics.stopSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 
 	await h.finish(browser);
 });

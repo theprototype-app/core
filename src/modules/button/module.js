@@ -3,7 +3,8 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { allNodes } from '../../stores/flowStore';
 import { setNodeData } from '$lib/nodesHandler';
 import { runtimeNow } from '$lib/moduleSDK';
-import ButtonTriggerNode from './ButtonTriggerNode.svelte';
+// 94 SP1: a lazy wrapper, so the card (and @xyflow/svelte) stays out of a play link's boot
+import ButtonTriggerNode from './ButtonTriggerNodeLazy.svelte';
 
 // Button/actuator: pick any scene object as a button in the "Button trigger"
 // node; clicking that object (desktop click or VR trigger) presses the node,

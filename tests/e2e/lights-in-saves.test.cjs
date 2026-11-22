@@ -32,7 +32,7 @@ h.run(async () => {
 
 	const authored = await page.evaluate(
 		async ({ types, read }) => {
-			const S = window.__stores;
+			const S = window.__tp?.test.v1;
 			const readLight = eval(read);
 			const g = await new Promise((r) => S.objectsGroup.subscribe(r)());
 			const out = {};
@@ -78,7 +78,7 @@ h.run(async () => {
 		const now = await page.evaluate(
 			async ({ read }) => {
 				const readLight = eval(read);
-				const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+				const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 				const out = {};
 				g.traverse((o) => {
 					const tag = o.userData?.tag;
@@ -100,19 +100,19 @@ h.run(async () => {
 	page.on('console', (m) => {
 		if (m.type() === 'warning' && /GLTFExporter/.test(m.text())) warns.push(m.text());
 	});
-	await page.evaluate(() => window.__stores.autosave.saveNow());
+	await page.evaluate(() => window.__tp.test.v1.autosave.saveNow());
 	h.check(warns.length === 0, 'the autosave export logs no GLTFExporter light warning: ' + JSON.stringify(warns.slice(0, 2)));
 	await h.freshReload(A);
 	await h.eventually(
-		() => page.evaluate(() => new Promise((r) => window.__stores.autosave.restoreAvailable.subscribe((v) => r(!!v))())),
+		() => page.evaluate(() => new Promise((r) => window.__tp.test.v1.autosave.restoreAvailable.subscribe((v) => r(!!v))())),
 		(v) => v === true,
 		'the restore offer appears after reload'
 	);
-	await page.evaluate(() => window.__stores.autosave.restoreSnapshot());
+	await page.evaluate(() => window.__tp.test.v1.autosave.restoreSnapshot());
 	await h.eventually(
 		() =>
 			page.evaluate(async () => {
-				const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+				const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 				let n = 0;
 				g.traverse((o) => o.isLight && n++);
 				return n;
@@ -125,7 +125,7 @@ h.run(async () => {
 	// ---- 2. SESSION payload (toJSON) -> applySession ----------------------
 	const roundTrip = async (how) =>
 		page.evaluate(async (how) => {
-			const S = window.__stores;
+			const S = window.__tp?.test.v1;
 			let payload = S.sessions.buildSessionPayload('lights-' + how);
 			if (how === 'session') payload = JSON.parse(JSON.stringify(payload));
 			if (how === 'tpscene') {
@@ -150,7 +150,7 @@ h.run(async () => {
 		await h.eventually(
 			() =>
 				page.evaluate(async () => {
-					const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+					const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 					let n = 0;
 					g.traverse((o) => o.isLight && String(o.userData?.tag ?? '').startsWith('light-') && n++);
 					return n;

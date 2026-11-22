@@ -24,8 +24,20 @@
 		<div class="flex justify-between">
 			<span>{isProximity ? 'within' : 'dist'}</span><span class="font-mono">{readout}</span>
 		</div>
-		<p class="text-[10px] text-text-muted">wire two Object Selectors to a/b</p>
+		<p class="text-[10px] text-text-muted">{isProximity && data.to === 'player' ? 'wire an Object Selector to a' : 'wire two Object Selectors to a/b'}</p>
 		{#if isProximity}
+			<!-- 78 F10: to: player = b is THIS peer's player (each peer reads its own) -->
+			<label class="flex items-center gap-1"><span class="w-12 text-text-muted">to</span>
+				<select
+					class="nodrag nopan flex-1 text-[10px]"
+					data-proximity-to
+					aria-label="Measure to"
+					value={data.to ?? 'object'}
+					on:change={(e) => setNodeData(id, { to: e.currentTarget.value })}
+				>
+					<option value="object">object b</option>
+					<option value="player">my player</option>
+				</select></label>
 			<label class="flex items-center gap-1"><span class="w-12 text-text-muted">radius</span>
 				<DragRow nodrag step={0.01} decimals={2} min={0} value={data.radius ?? 3} onchange={(/** @type {number} */ v) => setNodeData(id, { radius: v })} /></label>
 		{/if}

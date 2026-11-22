@@ -6,8 +6,8 @@ const rigInfo = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((scene) => {
-					window.__stores.globalRenderer.subscribe((renderer) => {
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
+					window.__tp.test.v1.globalRenderer.subscribe((renderer) => {
 						let hemis = 0;
 						let suns = 0;
 						scene?.traverse((o) => {
@@ -29,7 +29,7 @@ const rigInfo = (page) =>
 
 const presetOf = (page) =>
 	page.evaluate(
-		() => new Promise((r) => window.__stores.environment.environment.subscribe((e) => r(e.preset))())
+		() => new Promise((r) => window.__tp.test.v1.environment.environment.subscribe((e) => r(e.preset))())
 	);
 
 h.run(async () => {
@@ -42,7 +42,7 @@ h.run(async () => {
 	const inObjects = await A.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) =>
+				window.__tp.test.v1.objectsGroup.subscribe((g) =>
 					r(g?.children.some((c) => c.name?.startsWith('env-rig')) ?? false)
 				)()
 			)
@@ -50,10 +50,10 @@ h.run(async () => {
 	h.check(inObjects === false, 'rig lives at the scene root, not in the synced objects');
 
 	// studio preset means no "no light" nag
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await A.page.waitForTimeout(400);
 	const fixLight = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.fixLight.subscribe(r)())
+		() => new Promise((r) => window.__tp.test.v1.fixLight.subscribe(r)())
 	);
 	h.check(fixLight === false, 'no missing-light toast under the rig');
 
@@ -64,7 +64,7 @@ h.run(async () => {
 	h.check(rig.hemis === 1 && rig.suns === 1, 'connecting does not duplicate the rig');
 
 	// preset change replicates
-	await A.page.evaluate(() => window.__stores.environment.setEnvironment('night'));
+	await A.page.evaluate(() => window.__tp.test.v1.environment.setEnvironment('night'));
 	await h.eventually(() => presetOf(B.page), (p) => p === 'night', 'preset replicated to B');
 	const bRig = await rigInfo(B.page);
 	h.check(bRig.background === '0b0e1a', `background followed the preset (${bRig.background})`);
@@ -76,7 +76,7 @@ h.run(async () => {
 
 	// a user light dims the rig
 	const before = (await rigInfo(A.page)).sunIntensity;
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/light point'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/light point'));
 	await h.eventually(
 		() => rigInfo(A.page),
 		(r) => r.sunIntensity !== null && r.sunIntensity < before,

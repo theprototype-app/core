@@ -6,6 +6,13 @@ runtime: `src/lib/flowRuntime.js` (evalNode + baseState rebase; effects apply on
 through an Object Selector sink). Widgets write via `setNodeData` (replicated).
 Verdicts: OK · FIX(ed this batch) · DOC(umented quirk).
 
+## For node authors (2.0 N1 registry, 1.68)
+
+Every built-in node type is defined once, in `src/lib/nodes/families/<group>.js`: its palette entry, its socket
+types, its card and its value function (the registry is `src/lib/nodes/registry.js`, the design page
+`src/lib/nodes/DESIGN.md`). Adding a node type is one entry in one file; a definition missing a part fails
+`npm run build`. The table below is the stage-1 audit and predates the registry.
+
 | Type | Group | Out | Inputs | Verdict / notes |
 |---|---|---|---|---|
 | slider | Input | number | — | FIX: adjustable min/max (data-seeded, runtime-clamped; editors in the ⓘ tab). Legacy `/20` scale when wired straight to an Object Selector — DOC. |

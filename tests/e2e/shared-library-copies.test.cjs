@@ -19,14 +19,14 @@ const h = require('./helpers.cjs');
 const manifestOf = (peer) =>
 	peer.page.evaluate(() => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (m = v))();
 		return m;
 	});
 
 const itemsOf = (peer) =>
 	peer.page.evaluate(() => {
 		let v;
-		window.__stores.explorer.explorerItems.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (v = x))();
 		return v.map((i) => ({
 			id: i.id,
 			name: i.name,
@@ -40,7 +40,7 @@ const itemsOf = (peer) =>
 const hiddenOf = (peer) =>
 	peer.page.evaluate(() => {
 		let v;
-		window.__stores.explorer.hiddenItems.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.hiddenItems.subscribe((x) => (v = x))();
 		return v.map((i) => ({ id: i.id, name: i.name, hash: i.hash, share: i.share ?? null }));
 	});
 
@@ -48,7 +48,7 @@ const hiddenOf = (peer) =>
 const inTransfers = (peer) =>
 	peer.page.evaluate(() => {
 		let v;
-		window.__stores.transferLedger.transfers.subscribe((x) => (v = x))();
+		window.__tp.test.v1.transferLedger.transfers.subscribe((x) => (v = x))();
 		return v
 			.filter((t) => t.dir === 'in')
 			.map((t) => ({ hash: t.hash, state: t.state, size: t.size, at: t.at, endedAt: t.endedAt ?? null, error: t.error ?? null }));
@@ -61,14 +61,14 @@ const brief = (rows) => JSON.stringify(rows.map((t) => ({ hash: t.hash.slice(0, 
 const allTransfers = (peer) =>
 	peer.page.evaluate(() => {
 		let v;
-		window.__stores.transferLedger.transfers.subscribe((x) => (v = x))();
+		window.__tp.test.v1.transferLedger.transfers.subscribe((x) => (v = x))();
 		return v.map((t) => ({ hash: t.hash, state: t.state, dir: t.dir }));
 	});
-const clearLedger = (peer) => peer.page.evaluate(() => window.__stores.transferLedger.transfers.set([]));
+const clearLedger = (peer) => peer.page.evaluate(() => window.__tp.test.v1.transferLedger.transfers.set([]));
 
 const blobText = (peer, id) =>
 	peer.page.evaluate(async (id) => {
-		const blob = await window.__stores.explorer.itemBlob(id);
+		const blob = await window.__tp.test.v1.explorer.itemBlob(id);
 		return blob ? await blob.text() : null;
 	}, id);
 
@@ -76,18 +76,18 @@ const addFile = (peer, text, name, folderId = null) =>
 	peer.page.evaluate(
 		async ([text, name, folderId]) => {
 			const buf = new TextEncoder().encode(text).buffer;
-			const item = await window.__stores.explorer.addItemFromBytes(buf, name, folderId);
+			const item = await window.__tp.test.v1.explorer.addItemFromBytes(buf, name, folderId);
 			return { id: item.id, hash: item.hash, name: item.name };
 		},
 		[text, name, folderId]
 	);
 
 const settle = async (peer) => {
-	await peer.page.waitForFunction(() => !!window.__stores?.sharedLibrary && !!window.__stores?.explorer, { timeout: 30000 });
-	await peer.page.evaluate(() => window.__stores.explorer.loadExplorer());
+	await peer.page.waitForFunction(() => !!window.__tp?.test.v1?.sharedLibrary && !!window.__tp?.test.v1?.explorer, { timeout: 30000 });
+	await peer.page.evaluate(() => window.__tp.test.v1.explorer.loadExplorer());
 	// the share-new-files ASK is its own surface (shared-library covers it); `never` is
 	// exactly "behave as before" and keeps the strip out of the way of every read below
-	await peer.page.evaluate(() => window.__stores.sharedLibrary.shareNewFiles.set('never'));
+	await peer.page.evaluate(() => window.__tp.test.v1.sharedLibrary.shareNewFiles.set('never'));
 };
 
 const X_TEXT = 'row identity fixture: ' + 'the bytes of X, a few hundred of them. '.repeat(6);
@@ -107,7 +107,7 @@ h.run(async () => {
 	// the hash, stable on every machine, so two old peers still agree — and two real-id rows
 	// sharing one hash both survive, which is the whole point.
 	const norm = await A.page.evaluate(() =>
-		window.__stores.projectManifest.normalizeManifest({
+		window.__tp.test.v1.projectManifest.normalizeManifest({
 			scenes: {},
 			assets: [],
 			changedAt: 1,
@@ -142,7 +142,7 @@ h.run(async () => {
 	// the .tp remap seam: item ids are rewritten like folder ids; a legacy (id-less) row
 	// and a row whose id the file did not carry are left alone rather than dropped
 	const remapped = await A.page.evaluate(() => {
-		const pf = window.__stores.projectFile;
+		const pf = window.__tp.test.v1.projectFile;
 		if (!pf.__remapSharedIndexForTest) return 'no seam';
 		return pf.__remapSharedIndexForTest(
 			{
@@ -174,12 +174,12 @@ h.run(async () => {
 
 	// ---- 2. the premise: X shared, B auto-downloads it ONCE, under A's record id -------
 	const assets = await A.page.evaluate(() => {
-		const f = window.__stores.explorer.createFolder('Assets', null);
-		window.__stores.sharedLibrary.shareFolder(f.id);
+		const f = window.__tp.test.v1.explorer.createFolder('Assets', null);
+		window.__tp.test.v1.sharedLibrary.shareFolder(f.id);
 		return f.id;
 	});
 	const X = await addFile(A, X_TEXT, 'notes.txt', assets);
-	await A.page.evaluate(() => window.__stores.sharedLibrary.publishMine(true));
+	await A.page.evaluate(() => window.__tp.test.v1.sharedLibrary.publishMine(true));
 	await h.eventually(
 		() => manifestOf(A),
 		(m) => (m.items ?? []).some((r) => r.id === X.id && r.hash === X.hash),
@@ -204,7 +204,7 @@ h.run(async () => {
 	await clearLedger(A);
 	await clearLedger(B);
 	const copy = await A.page.evaluate(
-		(id) => window.__stores.explorer.duplicateItem(id).then((i) => i && { id: i.id, name: i.name, hash: i.hash, folderId: i.folderId }),
+		(id) => window.__tp.test.v1.explorer.duplicateItem(id).then((i) => i && { id: i.id, name: i.name, hash: i.hash, folderId: i.folderId }),
 		X.id
 	);
 	h.check(!!copy && copy.hash === X.hash && copy.id !== X.id && copy.folderId === assets, `A duplicates X: "${copy?.name}", same hash, its own id, same folder`);
@@ -232,7 +232,7 @@ h.run(async () => {
 	h.check(ledgerA.length === 0, `...and A sent nothing either (${JSON.stringify(ledgerA)})`);
 
 	// ---- 4. DELETE IS PER COPY: A deletes "X copy", B keeps X -------------------------
-	await A.page.evaluate((id) => window.__stores.sharedLibrary.deleteItemsToBin([id]), copy.id);
+	await A.page.evaluate((id) => window.__tp.test.v1.sharedLibrary.deleteItemsToBin([id]), copy.id);
 	await h.eventually(
 		() => manifestOf(A),
 		(m) => (m.deleted ?? []).some((r) => r.id === copy.id && r.hash === X.hash),
@@ -249,15 +249,15 @@ h.run(async () => {
 	const hiddenB = await hiddenOf(B);
 	h.check(hiddenB.some((i) => i.id === copy.id && i.hash === X.hash), 'the deleted copy sits on B\'s hidden shelf — bytes intact, the recycle bin rule');
 	h.check(
-		await B.page.evaluate((id) => window.__stores.sharedLibrary.canRestoreDeleted(id), copy.id),
+		await B.page.evaluate((id) => window.__tp.test.v1.sharedLibrary.canRestoreDeleted(id), copy.id),
 		'and B can restore it by its row id'
 	);
 	const binB = await B.page.evaluate(() => {
-		const sl = window.__stores.sharedLibrary;
+		const sl = window.__tp.test.v1.sharedLibrary;
 		let m, items, hidden;
-		window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
-		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
-		window.__stores.explorer.hiddenItems.subscribe((v) => (hidden = v))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (m = v))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
+		window.__tp.test.v1.explorer.hiddenItems.subscribe((v) => (hidden = v))();
 		const held = new Set([...items, ...hidden].flatMap((i) => [i.id, i.hash]));
 		return sl.partitionDeleted(m.deleted ?? [], held, []).bin.map((r) => r.id ?? r.hash);
 	});
@@ -266,7 +266,7 @@ h.run(async () => {
 	h.check((await allTransfers(B)).length === 0, 'a delete moves no bytes');
 
 	// ---- 5. RESTORE by id puts the copy back everywhere, still with no transfer -------
-	await A.page.evaluate((id) => window.__stores.sharedLibrary.restoreDeletedItem(id), copy.id);
+	await A.page.evaluate((id) => window.__tp.test.v1.sharedLibrary.restoreDeletedItem(id), copy.id);
 	await h.eventually(
 		() => manifestOf(A),
 		(m) => (m.items ?? []).some((r) => r.id === copy.id) && !(m.deleted ?? []).some((r) => r.id === copy.id) && !m.removed?.items?.[copy.id],
@@ -285,7 +285,7 @@ h.run(async () => {
 	// Done BEFORE the edit below, so the file carries two rows that still share one hash —
 	// the case a hash-keyed reader would have folded into one.
 	const exported = await A.page.evaluate(async () => {
-		const r = await window.__stores.projectFile.exportProject();
+		const r = await window.__tp.test.v1.projectFile.exportProject();
 		let s = '';
 		for (let i = 0; i < r.bytes.length; i += 8192) s += String.fromCharCode.apply(null, r.bytes.subarray(i, i + 8192));
 		return { b64: btoa(s), items: r.items };
@@ -311,7 +311,7 @@ h.run(async () => {
 		const bin = atob(b64);
 		const bytes = new Uint8Array(bin.length);
 		for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-		return await window.__stores.projectFile.importProjectAsFolder(bytes.buffer, { name: 'From A' });
+		return await window.__tp.test.v1.projectFile.importProjectAsFolder(bytes.buffer, { name: 'From A' });
 	}, exported.b64);
 	h.check(!!importedD, 'the .tp imports as a folder on a fresh page');
 	const dItems = (await itemsOf(D)).filter((i) => i.hash === X.hash);
@@ -326,19 +326,19 @@ h.run(async () => {
 		const bin = atob(b64);
 		const bytes = new Uint8Array(bin.length);
 		for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-		return await window.__stores.projectFile.openProject(bytes.buffer);
+		return await window.__tp.test.v1.projectFile.openProject(bytes.buffer);
 	}, exported.b64);
 	await h.eventually(
 		() =>
 			D.page.evaluate(() => {
 				let d;
-				window.__stores.confirmDialog.confirmDialog.subscribe((v) => (d = v))();
+				window.__tp.test.v1.confirmDialog.confirmDialog.subscribe((v) => (d = v))();
 				return d?.title ?? null;
 			}),
 		(t) => typeof t === 'string' && t.startsWith('Open project'),
 		'the OPEN warning appeared'
 	);
-	await D.page.evaluate(() => window.__stores.confirmDialog.resolveConfirm(true));
+	await D.page.evaluate(() => window.__tp.test.v1.confirmDialog.resolveConfirm(true));
 	await openPromise;
 	await D.page.waitForTimeout(800);
 	const dOpened = (await itemsOf(D)).filter((i) => i.hash === X.hash);
@@ -374,7 +374,7 @@ h.run(async () => {
 	// ---- 8. AN EDITED COPY IS NEW BYTES: one transfer per peer, same record --------------
 	await clearLedger(B);
 	await clearLedger(C);
-	await A.page.evaluate(([id, text]) => window.__stores.explorer.updateItemBytes(id, text), [copy.id, X2_TEXT]);
+	await A.page.evaluate(([id, text]) => window.__tp.test.v1.explorer.updateItemBytes(id, text), [copy.id, X2_TEXT]);
 	const edited = (await itemsOf(A)).find((i) => i.id === copy.id);
 	h.check(!!edited && edited.hash !== X.hash, `the copy has a new hash after the edit (${edited?.hash?.slice(0, 8)}…)`);
 	await h.eventually(

@@ -9,7 +9,7 @@
 const h = require('./helpers.cjs');
 
 const lockedState = (page) =>
-	page.evaluate(() => new Promise((r) => window.__stores.isLocked.subscribe((v) => r(v))()));
+	page.evaluate(() => new Promise((r) => window.__tp.test.v1.isLocked.subscribe((v) => r(v))()));
 
 /** every row of the open menu, with the two things that decide how it reads */
 const menuRows = (page) =>
@@ -141,7 +141,7 @@ h.run(async () => {
 	const stored = await A.page.evaluate(() => localStorage.getItem('vrOverride'));
 	h.check(stored === 'true', `the desktop pick persists the override (${stored})`);
 	const storeSide = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.vrOverride.subscribe((v) => r(v))())
+		() => new Promise((r) => window.__tp.test.v1.vrOverride.subscribe((v) => r(v))())
 	);
 	h.check(!!storeSide, 'the store half of the override moved with the localStorage half');
 	const closed = await menuRows(A.page);

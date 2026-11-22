@@ -1,5 +1,8 @@
+import { parseCheckedObject, embeddedOnlyManager, checkGltf, refusal } from './loadGuard.js';
 import * as THREE from 'three';
+import { notifyOn } from './notifyPrefs';
 import { globalScene, objectsGroup, showGrid, TControls, lockedObjects, selectedObject, globalCamera, peerHands, pokeScene, beginSceneBatch, endSceneBatch } from '../stores/sceneStore.js';
+import { receiveMapSlot, receiveTexTransform, receiveNormalStrength } from '$lib/materialMaps';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createGeometry, createLight, createGroup } from '$lib/geometries.svelte'
@@ -24,6 +27,8 @@ import { normalizeLodGroup } from '$lib/lodGroupCore'
 import { normalizeFluid } from '$lib/sim/fluidCore.js'; // 36-sim
 import { normalizeEmitter, normalizeInteraction } from '$lib/sim/fluidEmitterCore.js'; // 36-fb F23
 import { applyFlowPathTo } from '$lib/sim/flowPathObject.js'; // 36-fb F24
+import { normalizePortal, normalizeCheckpoint } from '$lib/gameLevels/objects.js'; // 93 LP1 / LP3
+import { applyTextPathTo, bumpTextTurn } from '$lib/textPathObject.js'; // 64 D2
 import { runSceneClearHandlers } from '$lib/moduleSDK'
 import { annotations } from '$lib/annotationsHandler'
 import { isViewer, warnViewerReadOnly } from '$lib/objectPermissions'
@@ -32,6 +37,7 @@ import { get, writable } from 'svelte/store'
 import { addMessage, loading, loadingcount, showToast, fixLight, specatorMode } from '../stores/appStore';
 import { dropWireErrors } from './wireErrors';
 import { peers, userdata } from '../stores/appStore';
+import { mergeRowMeta } from '$lib/peoplePresence' // uir-people: the optional status on roster slot 6
 // 27-G (audit H6): removing an object frees NOTHING on the GPU. These free what only
 // the departing object was using, and never what the rest of the scene still holds.
 import { disposeTree, keepSet } from '$lib/disposeTree';
@@ -79,7 +85,6 @@ specatorMode.subscribe(value => { specating = value });
 let camera = $state();
 globalCamera.subscribe(value => { camera = value });
 
-const loader = new THREE.ObjectLoader();
 
 
 export function userData(data) {
@@ -108,7 +113,9 @@ export function userData(data) {
             // avatar config (slot 5) from newer clients
             if (element[5]) users[index][5] = element[5];
             // 55 A7: the peer's kind (slot 6, `{kind: 'agent'}`) — self-declared presence
-            if (element[6] && typeof element[6] === 'object') users[index][6] = { kind: element[6].kind === 'agent' ? 'agent' : 'person' };
+            // uir-people: + the optional status (Available / Busy / Away), latest-wins on its OWNER's stamp,
+            // and never taken for our own row ($lib/peoplePresence)
+            if (element[6] && typeof element[6] === 'object') users[index][6] = mergeRowMeta(users[index][6], element[6], { self: element[0] === get(peers)?.peer?.id });
         }
 
     })
@@ -167,7 +174,7 @@ export function sceneCommand(command) {
                 // 15-J: viewer send-gate — peers drop a viewer's clearscene (cloud
                 // capability gate), so clearing locally would only desync this client.
                 if (isViewer()) { warnViewerReadOnly('View-only — ask an editor to clear the scene.'); return; }
-                clearSceneLocal();
+                clearSceneLocal({ shared: true });
                 peer.send({type: 'clearscene', peerId: peer.peer.id});
             } else {
                 let object = sceneObjects.getObjectByProperty('uuid', command.split(' ')[1])
@@ -283,7 +290,10 @@ function sceneRoot() {
     return scene ?? sceneObjects;
 }
 
-export function clearSceneLocal() {
+/** @param {{shared?: boolean}} [opts] `shared`: the room clears together (a replicated
+ * `/clear all` or a peer's `clearscene`); absent = only this peer's world is replaced (a
+ * travel, a non-replicated load), which must not outrank the room's live game state (78 F16) */
+export function clearSceneLocal(opts = {}) {
     // 33 (L4): what the scene uses is read BEFORE anything is wiped — those are the
     // modules a replacement may leave behind (sceneScope)
     noteSceneLeaving();
@@ -299,7 +309,7 @@ export function clearSceneLocal() {
         for (const child of doomed) disposeTree(child, { keep });
     }
     sceneObjects?.clear();
-    runSceneClearHandlers(); // modules remove their scene-root content
+    runSceneClearHandlers({ shared: !!opts.shared }); // modules remove their scene-root content
     annotations.set([]);
     lockedObjects.set([]);
     // animated-import bytes/mixers are per-object — all gone now
@@ -312,7 +322,7 @@ export function clearSceneLocal() {
 
 /** A peer wiped the shared scene @param {string} peerId */
 export function applyClearScene(peerId) {
-    clearSceneLocal();
+    clearSceneLocal({ shared: true });
     showToast(peerId + ' cleared the scene');
 }
 
@@ -338,7 +348,7 @@ export function handleDisconnected(peerId) {
     // peer is still known, so relayed duplicates don't stack toasts (172).
     delete rosterFirstSeen[peerId];
     const known = users.some((/** @type {any} */ u) => u[0] === peerId);
-    if (known) showToast(peerId + ' disconnected');
+    if (known && notifyOn('peerLeft')) showToast(peerId + ' disconnected'); // profile-notify: Settings ▸ Interface ▸ Notifications
     users = users.filter(u => u[0] !== peerId);
     userdata.set(users);
     userdata.update((value) => value);
@@ -375,7 +385,7 @@ export function handleDisconnected(peerId) {
 // vanished between the roster broadcast and our dial). First sighted -> pruned
 // after ROSTER_GRACE_MS with no conn. LOCAL only, and long enough that mesh
 // formation (roster runs ahead of the dials) never trips it.
-const ROSTER_GRACE_MS = 30000;
+export const ROSTER_GRACE_MS = 30000;
 /** @type {Record<string, number>} */
 let rosterFirstSeen = {};
 
@@ -581,7 +591,8 @@ export async function colorObject(uuid, color, near, far) {
     }
 }
 
-export async function objectParameters(data) {
+/** @param {any} data @param {string} [from] the sending peer */
+export async function objectParameters(data, from = 'peer') {
     if (data.parameter == 'visible') {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
         if (mesh) mesh.visible = data.visible;
@@ -592,7 +603,7 @@ export async function objectParameters(data) {
         // UV4: the whole slot list + geometry groups. Both halves must arrive
         // together — an array material with no groups renders nothing.
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
-        if (mesh) applyMaterials(mesh, data.payload, false);
+        if (mesh) applyMaterials(mesh, data.payload, false, from);
     } else if (data.parameter == 'map') {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
         // UV2: `slot` addresses one material of an ARRAY. Absent (an older peer,
@@ -601,6 +612,12 @@ export async function objectParameters(data) {
         if (mesh) applyMap(mesh, data.map, data.slot ?? 0, typeof data.source === 'string' ? data.source : null);
     } else if (data.parameter == 'materialParam') {
         setMaterialParam(data.uuid, data.key, data.value, false);
+    } else if (data.parameter == 'mapSlot') {
+        receiveMapSlot(data); // 72 LK1: normal, roughness, metalness, emissive, AO
+    } else if (data.parameter == 'texTransform') {
+        receiveTexTransform(data);
+    } else if (data.parameter == 'normalStrength') {
+        receiveNormalStrength(data);
     } else if (data.parameter == 'animation') {
         // 57 M3: the stamp + crossfade ride along when the sender has them (absent = an older peer)
         /** @type {any} */
@@ -682,6 +699,29 @@ export async function objectParameters(data) {
         if (mesh) {
             if (data.flowPath) applyFlowPathTo(mesh, data.flowPath);
             else delete mesh.userData.flowPath;
+            pokeScene();
+        }
+    } else if (data.parameter == 'portal' || data.parameter == 'checkpoint') {
+        // 93 LP1 / LP3: a portal's / checkpoint's record, normalized at the boundary
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            const key = data.parameter;
+            const value = data[key];
+            if (value) mesh.userData[key] = key === 'portal' ? normalizePortal(value) : normalizeCheckpoint(value);
+            else delete mesh.userData[key];
+            pokeScene();
+        }
+    } else if (data.parameter == 'textPath') {
+        // 64 D2: text on a path's record, normalized at the boundary; every peer lays it out
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            // fix-bake: each message is a new TURN of the record, taken in arrival order — a record after a
+            // bake (the writer's undo) cancels a bake still building here
+            const turn = bumpTextTurn(data.uuid);
+            if (data.textPath) applyTextPathTo(mesh, data.textPath);
+            // 64-text TX5: Bake — this peer bakes its own build of the record (the mesh never travels)
+            else if (data.bake === true && mesh.userData.textPath) void import('$lib/textPathEdit.js').then((m) => m.applyRemoteBake(mesh, turn));
+            else delete mesh.userData.textPath;
             pokeScene();
         }
     } else if (data.parameter == 'fluidInteraction') {
@@ -801,9 +841,10 @@ export async function deleteObject(uuid) {
  * tolerate a uuid we do not hold — an override for an unknown object is just a create.
  * @param {any} object @param {string[]|null} uuid @param {boolean} [override]
  * @param {string} [groupuuid] @param {number[]} [pos] @param {number[]} [rot] @param {number[]} [scale]
+ * @param {string} [from] the sending peer (counts what the load check changed)
  */
-export async function createObject(object, uuid, override, groupuuid, pos, rot, scale) {
-    return enqueueIngest([object, uuid, override, groupuuid, pos, rot, scale]);
+export async function createObject(object, uuid, override, groupuuid, pos, rot, scale, from) {
+    return enqueueIngest([object, uuid, override, groupuuid, pos, rot, scale, from]);
 }
 
 // ---------------------------------------------------------------------------
@@ -942,7 +983,9 @@ async function drainIngest() {
                     console.log('Failed to create an incoming object: ' + error);
                     const uuid = job.args[1];
                     noteLoadFailed(Array.isArray(uuid) ? uuid : [job.args[0]?.element?.object?.uuid].filter(Boolean));
-                    job.reject(error);
+                    // a refusal is counted and told once by the check; it is not a failure to raise
+                    if (/** @type {any} */ (error)?.loadCheck) job.resolve(undefined);
+                    else job.reject(error);
                 }
             }
             if (ingestQueue.length && !ingestHeld) await new Promise((r) => setTimeout(r, 0));
@@ -976,11 +1019,14 @@ registerMetricSource('ingestBacklog', ingestBacklog);
 /**
  * @param {any} object @param {string[]|null} uuid @param {boolean} [override]
  * @param {string} [groupuuid] @param {number[]} [pos] @param {number[]} [rot] @param {number[]} [scale]
+ * @param {string} [from]
  */
-async function applyCreateObject(object, uuid, override, groupuuid, pos, rot, scale) {
+async function applyCreateObject(object, uuid, override, groupuuid, pos, rot, scale, from = 'peer') {
     let parent;
     if (uuid == null) {
-    let mesh = loader.parse(object.element);
+    // checked before three's loader sees it (loadGuardCore.js); a refusal throws into the
+    // ingest queue's failure path like any other object that cannot be built
+    let mesh = parseCheckedObject(object.element, from, 'object');
     // an incoming object can only carry a STALE edit wireframe (a peer on an
     // older build, or a scene saved with a session open) — never a live one
     stripEditOverlays(mesh);
@@ -1004,7 +1050,10 @@ async function applyCreateObject(object, uuid, override, groupuuid, pos, rot, sc
     }
     } else {
         // console.log("Adding GLTF object " + uuid)
-        const loader = new GLTFLoader();
+        // a glTF made by the sender's exporter embeds everything it needs: a uri that is not a data
+        // URL (or an absurd size) refuses the object, and the loader cannot fetch either way
+        if (!checkGltf(object.element, from, 'object')) throw refusal('object');
+        const loader = new GLTFLoader(embeddedOnlyManager(from, 'object'));
         const result = await new Promise((resolve, reject) => {
           loader.parse(object.element, '', (gltf) => resolve(gltf), (error) => reject(error));
         });
@@ -1265,6 +1314,20 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
                 ...heal
             });
             sendObject(conn, element, element.uuid, opts);
+        } else if (element.userData?.textPath) {
+            // 64 TX1: a TEXT carrier travels as its RECORD — toJSON read NOW, while the park hook holds
+            // the placeholder (~3 KB). The GLTF branch below exported it in a later callback, after the
+            // park was restored: the solid's [face, side] array split into a GROUP of primitives and a
+            // late joiner got a Group the text runtime never picks up (measured: type Group, no text)
+            conn.send({
+                type: 'object',
+                element: element.toJSON(),
+                groupuuid: groupuuid,
+                pos: element.position.toArray(),
+                rot: element.rotation.toArray(),
+                scale: element.scale.toArray(),
+                ...heal
+            });
         } else if (multiMaterialSyncable(element)) {
             // A MATERIAL ARRAY cannot survive the GLTF round trip: the exporter
             // splits geometry.groups into one primitive per material and the loader

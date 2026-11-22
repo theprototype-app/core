@@ -19,8 +19,8 @@ const co = (page, fn, arg) =>
 	page.evaluate(
 		([body, a]) =>
 			new Function('co', 'S', 'arg', body)(
-				window.__stores.colocation,
-				window.__stores,
+				window.__tp.test.v1.colocation,
+				window.__tp?.test.v1,
 				a
 			),
 		[fn, arg ?? null]

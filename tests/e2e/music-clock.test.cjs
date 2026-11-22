@@ -15,7 +15,7 @@ const h = require('./helpers.cjs');
 /** run a snippet against the musicClock module in the page */
 const mc = (page, body, arg) =>
 	page.evaluate(
-		([src, a]) => Object.getPrototypeOf(async function () {}).constructor('mc', 'eng', 'arg', src)(window.__stores.musicClock, window.__stores.audioEngine, a),
+		([src, a]) => Object.getPrototypeOf(async function () {}).constructor('mc', 'eng', 'arg', src)(window.__tp.test.v1.musicClock, window.__tp.test.v1.audioEngine, a),
 		[body, arg ?? null]
 	);
 
@@ -109,11 +109,11 @@ h.run(async () => {
 	h.check(resume.bPlaying === false, '3.6 resume:false brings it back stopped (autosave)');
 
 	const session = await page.evaluate(() => {
-		const mcl = window.__stores.musicClock;
+		const mcl = window.__tp.test.v1.musicClock;
 		mcl.transportRestore(null);
-		const plain = window.__stores.sessions.buildSessionPayload('plain');
+		const plain = window.__tp.test.v1.sessions.buildSessionPayload('plain');
 		mcl.setBpm(133);
-		const tuned = window.__stores.sessions.buildSessionPayload('tuned');
+		const tuned = window.__tp.test.v1.sessions.buildSessionPayload('tuned');
 		mcl.transportRestore(null);
 		return { plainHas: 'transport' in plain, tunedBpm: tuned.transport?.bpm ?? null };
 	});
@@ -121,8 +121,8 @@ h.run(async () => {
 	h.check(session.tunedBpm === 133, '3.8 a tuned transport rides the session payload (bpm ' + session.tunedBpm + ')');
 
 	const undo = await page.evaluate(() => {
-		const mcl = window.__stores.musicClock;
-		const hist = window.__stores.history;
+		const mcl = window.__tp.test.v1.musicClock;
+		const hist = window.__tp.test.v1.history;
 		mcl.setBpm(140);
 		mcl.setSwing(0.5);
 		const afterEdits = mcl.clockDebug().transport;
@@ -235,9 +235,9 @@ h.run(async () => {
 	const stampsA = await mc(page, 'const a = mc.clockDebug().transport.changedAt; mc.setBpm(96); return { a, b: mc.clockDebug().transport.changedAt }');
 	h.check(stampsA.b > stampsA.a, '5.4 every commit bumps the stamp strictly past the previous one');
 
-	await page.evaluate(() => window.__stores.history.undo());
+	await page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(readB, (t) => t.bpm === 95, '5.5 an undo on A replicates to B');
-	await page.evaluate(() => window.__stores.history.redo());
+	await page.evaluate(() => window.__tp.test.v1.history.redo());
 	await h.eventually(readB, (t) => t.bpm === 96, '5.6 and so does the redo');
 
 	// B edits too: latest wins in the other direction
@@ -246,9 +246,9 @@ h.run(async () => {
 
 	// the explicit re-pull: wipe B locally, ask A for it
 	await B.page.evaluate((aId) => {
-		const mcl = window.__stores.musicClock;
+		const mcl = window.__tp.test.v1.musicClock;
 		mcl.transport.set(mcl.normalizeTransport(null)); // stamp 0, a local wipe with no broadcast
-		const peer = window.__stores.peers;
+		const peer = window.__tp.test.v1.peers;
 		let p;
 		peer.subscribe((v) => (p = v))();
 		p.connections[aId].send({ type: 'gettransport', sender: p.peer.id });
@@ -306,7 +306,7 @@ h.run(async () => {
 		Date.now = () => real() + 300;
 	});
 	await h.freshReload(C);
-	C.id = await C.page.evaluate(() => new Promise((r) => window.__stores.peers.subscribe((p) => r(p?.peer?.id))()));
+	C.id = await C.page.evaluate(() => new Promise((r) => window.__tp.test.v1.peers.subscribe((p) => r(p?.peer?.id))()));
 	console.log('C (skewed +300ms) id: ' + C.id);
 	const skewed = await C.page.evaluate(() => Date.now() - new Date().getTime());
 	h.check(skewed >= 299 && skewed <= 301, '6.5 (premise) C\'s Date.now runs 300 ms ahead of its real clock (' + skewed + ')');
@@ -340,7 +340,7 @@ h.run(async () => {
 
 	// 6c. teardown cleans up — a graceful leave says goodbye, and the receiver's full
 	// per-peer teardown (handleDisconnected) runs at once
-	await C.page.evaluate(() => { let p; window.__stores.peers.subscribe((v) => (p = v))(); p.leaveSession(); });
+	await C.page.evaluate(() => { let p; window.__tp.test.v1.peers.subscribe((v) => (p = v))(); p.leaveSession(); });
 	await h.eventually(() => mc(page, 'return mc.clockDebug().peers').then((p) => C.id in p), (has) => has === false, '6.10 a departed peer\'s clock samples are dropped', 15000);
 	await C.ctx.close();
 

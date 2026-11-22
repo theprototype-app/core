@@ -29,13 +29,17 @@ import { safeStorage } from './safeStorage';
  * `.tpscene` opens a world, so neither belongs in a walk through pictures — stepping onto
  * one would either do nothing or replace the scene, and both are worse than skipping it.
  */
-export const PREVIEW_KINDS = ['image', 'audio', 'video', 'object', 'prefab'];
+export const PREVIEW_KINDS = ['image', 'audio', 'video', 'object', 'prefab', 'text'];
 
 /**
  * Which face the window draws for a row. Returns null for anything it cannot show, which
  * is also what excludes that row from the walk.
  * @param {any} entry a grid entry `{kind: 'folder', folder}` or `{kind: 'item', item}`
- * @returns {'folder'|'image'|'audio'|'video'|'object'|null}
+ * uir-preview: a TEXT file has a face now (read-only, the first 256 KB) — the pinned Preview tab
+ * follows the Explorer selection and the owner's list for it is "text / image / 3D / sound", so
+ * stepping PAST something the window can show would read as broken. Opening it for editing is
+ * still the Explorer's double-click (the code editor); a `.tpscene` still has no face.
+ * @returns {'folder'|'image'|'audio'|'video'|'object'|'text'|null}
  */
 export function previewFaceOf(entry) {
 	if (!entry) return null;
@@ -49,8 +53,44 @@ export function previewFaceOf(entry) {
 	if (item?.kind === 'audio') return 'audio';
 	if (item?.kind === 'video') return 'video';
 	if (item?.kind === 'object' || item?.kind === 'prefab') return 'object';
+	if (item?.kind === 'text') return 'text';
 	return null;
 }
+
+/**
+ * uir-preview — THE IMAGES THE EDIT FACE WALKS: library images only (a mounted project's file or a
+ * Scene-derived row has no record a save could write into, the 40-image rule). `[` `]` / Ctrl+arrows
+ * and the filmstrip read this list, so the strip and the keys cannot disagree. PURE.
+ * @param {any[]} entries @returns {any[]}
+ */
+export function imageWalk(entries) {
+	return (entries ?? []).filter((e) => {
+		if (previewFaceOf(e) !== 'image') return false;
+		const item = e.item ?? e;
+		return !item.volumeItem && !item.dataUrl && !!item.id;
+	});
+}
+
+/** Step through `imageWalk`, clamped like `stepPreview` (an id not in the list starts at an end).
+ * @param {any[]} entries @param {string} id @param {number} delta @returns {any|null} */
+export function stepImage(entries, id, delta) {
+	const walk = imageWalk(entries);
+	if (!walk.length) return null;
+	const at = walk.findIndex((e) => previewIdOf(e) === id);
+	if (at < 0) return walk[delta >= 0 ? 0 : walk.length - 1];
+	const next = at + (delta >= 0 ? 1 : -1);
+	if (next < 0 || next >= walk.length) return null;
+	return walk[next];
+}
+
+/**
+ * uir-preview — WHAT THE EXPLORER HAS SELECTED: its single-click ANCHOR (the card the Properties pane
+ * shows), as a grid entry `{kind: 'item', item} | {kind: 'folder', folder}` or null. Published by the
+ * Explorer for the same reason `previewSiblings` is — only it knows — and read by the PINNED preview,
+ * which follows it. A multi-select follows its anchor.
+ * @type {import('svelte/store').Writable<any>}
+ */
+export const explorerSelection = writable(null);
 
 /** The entries the arrows walk: every folder, plus every item with a face. PURE.
  * @param {any[]} entries @returns {any[]} */
@@ -153,6 +193,16 @@ export function clampPreviewOpacity(v) {
  */
 export const previewMultiWindow = writable(readFlag('preview:multiWindow', false));
 previewMultiWindow.subscribe((v) => saveFlag('preview:multiWindow', v));
+
+/**
+ * uir-preview (owner 2026-11-09, "Pin to dock"): the PINNED preview follows the Explorer selection.
+ * One window is the pinned one — the first — and pinning it from its header also docks it (the
+ * "Pin to dock" button); undocking keeps it pinned and floating. LOCAL, default off (today's
+ * behaviour: a preview shows what you opened, nothing else moves it).
+ * @type {import('svelte/store').Writable<boolean>}
+ */
+export const previewPinned = writable(readFlag('preview:pinned', false));
+previewPinned.subscribe((v) => saveFlag('preview:pinned', v));
 
 /**
  * R22 round 12 (user): "keep tris/verts/meshes statistics, also add it into cog as

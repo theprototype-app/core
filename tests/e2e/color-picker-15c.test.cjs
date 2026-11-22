@@ -31,7 +31,7 @@ h.run(async () => {
 
 	// a white box, selected with the Properties inspector open
 	await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.children[g.children.length - 1];
@@ -56,7 +56,7 @@ h.run(async () => {
 
 	// ---- C1: the picker's onInput applies + replicates (was a silent no-op) ----
 	await A.page.evaluate(async () => {
-		const peer = await new Promise((r) => window.__stores.peers.subscribe(r)());
+		const peer = await new Promise((r) => window.__tp.test.v1.peers.subscribe(r)());
 		window.__sentColors = [];
 		const orig = peer.send.bind(peer);
 		peer.send = (m) => {
@@ -81,26 +81,26 @@ h.run(async () => {
 	// both collapse into one gesture — which is the intended live-drag behavior)
 	await A.page.waitForTimeout(900);
 	const depthBefore = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))())
+		() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((s) => r(s.length))())
 	);
 	await typeIntoPicker(A.page, 0, '#22cc55');
 	await A.page.waitForTimeout(900); // past the 600ms gesture debounce
 	const afterGesture = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))())
+		() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((s) => r(s.length))())
 	);
 	h.check(
 		afterGesture === depthBefore + 1,
 		`a color gesture records exactly one undo entry (${depthBefore} -> ${afterGesture})`
 	);
 	const undone = await A.page.evaluate(async () => {
-		window.__stores.history.undo();
+		window.__tp.test.v1.history.undo();
 		await new Promise((r) => setTimeout(r, 200));
 		return window.__box.material.color.getHexString();
 	});
 	h.check(undone === '3366ff', `undo steps back one color change (${undone})`);
 
 	// ---- C1: the SCENE pickers (Configure scene ▸ background / fog) ----
-	await A.page.evaluate(() => window.__stores.showSidebar('scene'));
+	await A.page.evaluate(() => window.__tp.test.v1.showSidebar('scene'));
 	await A.page.waitForTimeout(600);
 	const wrappers = await A.page.evaluate(() => document.querySelectorAll('.wrapper').length);
 	h.check(wrappers >= 2, `the scene inspector renders background + fog pickers (${wrappers})`);
@@ -108,8 +108,8 @@ h.run(async () => {
 	h.check(await typeIntoPicker(A.page, 0, '#123456'), 'the background picker hex field is reachable');
 	await A.page.waitForTimeout(250);
 	const bg = await A.page.evaluate(async () => {
-		const store = await new Promise((r) => window.__stores.backgroundColor.subscribe((v) => r(v))());
-		const scene = await new Promise((r) => window.__stores.globalScene.subscribe((s) => r(s))());
+		const store = await new Promise((r) => window.__tp.test.v1.backgroundColor.subscribe((v) => r(v))());
+		const scene = await new Promise((r) => window.__tp.test.v1.globalScene.subscribe((s) => r(s))());
 		return { store, applied: '#' + (scene.background?.getHexString?.() ?? '') };
 	});
 	h.check(String(bg.store).toLowerCase() === '#123456', `the background store follows (${bg.store})`);
@@ -121,7 +121,7 @@ h.run(async () => {
 	// preset detached to custom and the box visibly changed shade — and made
 	// selecting a light or a mesh broadcast a colour update nobody asked for.
 	const openScene = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const envPreset = () =>
 			new Promise((r) => w.environment.environment.subscribe((e) => r(e.preset))());
 		const sceneBg = async () => {
@@ -167,7 +167,7 @@ h.run(async () => {
 
 	// selecting a LIGHT must not replicate a colour edit just by showing its picker
 	const lightEcho = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create pointlight');
 		await new Promise((r) => setTimeout(r, 500));
 		let g;

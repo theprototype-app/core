@@ -42,7 +42,7 @@ h.run(async () => {
 
 	// ---- 1. arrangement Alpha: node editor FLOATING, Explorer docked, chat open at a dragged spot
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphClose.set(false);
 		s.explorerClose.set(false);
 		s.chatHidden.set('');
@@ -53,36 +53,36 @@ h.run(async () => {
 	const chatAlpha = await rectOf('#chat-window');
 	const storedAlpha = JSON.parse((await st('win:chat')) ?? 'null');
 	h.check(!!storedAlpha && Math.abs(storedAlpha.left - chatAlpha.left) <= 2, `premise: the chat drag persisted its rect (${JSON.stringify(storedAlpha)})`);
-	await page.evaluate(() => window.__stores.bottomDock.dockHeight.set(300));
-	const saveA = await page.evaluate(() => window.__stores.uiLayouts.saveLayout('Alpha'));
+	await page.evaluate(() => window.__tp.test.v1.bottomDock.dockHeight.set(300));
+	const saveA = await page.evaluate(() => window.__tp.test.v1.uiLayouts.saveLayout('Alpha'));
 	h.check(saveA.ok && !saveA.updated, 'Alpha saved as a new layout');
 
 	// ---- 2. arrangement Beta: node editor closed, profiler open, chat moved again, taller dock
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphClose.set(true);
 		s.profilerClose.set(false);
 	});
 	await dragHeader('#chat-window', 220, 80);
-	await page.evaluate(() => window.__stores.bottomDock.dockHeight.set(420));
+	await page.evaluate(() => window.__tp.test.v1.bottomDock.dockHeight.set(420));
 	await page.waitForTimeout(300);
 	const chatBeta = await rectOf('#chat-window');
 	h.check(Math.abs(chatBeta.left - chatAlpha.left) > 100, `premise: chat moved between the two (${chatAlpha.left} -> ${chatBeta.left})`);
-	const saveB = await page.evaluate(() => window.__stores.uiLayouts.saveLayout('Beta'));
+	const saveB = await page.evaluate(() => window.__tp.test.v1.uiLayouts.saveLayout('Beta'));
 	h.check(saveB.ok, 'Beta saved');
 	const ids = await page.evaluate(() => {
 		let list = [];
-		window.__stores.uiLayouts.uiLayouts.subscribe((v) => (list = v))();
+		window.__tp.test.v1.uiLayouts.uiLayouts.subscribe((v) => (list = v))();
 		return list.map((l) => ({ id: l.id, name: l.name }));
 	});
 	h.check(ids.length === 2 && ids[0].name === 'Alpha' && ids[1].name === 'Beta', 'two layouts listed in save order');
 
 	// ---- 3. apply Alpha
-	const okA = await page.evaluate((id) => window.__stores.uiLayouts.applyLayout(id), ids[0].id);
+	const okA = await page.evaluate((id) => window.__tp.test.v1.uiLayouts.applyLayout(id), ids[0].id);
 	await page.waitForTimeout(600);
 	h.check(okA === true, 'applyLayout(Alpha) resolves true');
 	const afterA = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const read = (/** @type {any} */ store) => {
 			let v;
 			store.subscribe((x) => (v = x))();
@@ -106,25 +106,25 @@ h.run(async () => {
 	h.check(Math.abs(chatAfterA.left - chatAlpha.left) <= 2 && Math.abs(chatAfterA.top - chatAlpha.top) <= 2, `Alpha: the live chat window moved back (${chatAfterA.left},${chatAfterA.top} vs ${chatAlpha.left},${chatAlpha.top})`);
 
 	// ---- 4. apply Beta
-	await page.evaluate((id) => window.__stores.uiLayouts.applyLayout(id), ids[1].id);
+	await page.evaluate((id) => window.__tp.test.v1.uiLayouts.applyLayout(id), ids[1].id);
 	await page.waitForTimeout(600);
 	const chatAfterB = await rectOf('#chat-window');
 	h.check(Math.abs(chatAfterB.left - chatBeta.left) <= 2, `Beta: the chat window moved to Beta's spot (${chatAfterB.left} vs ${chatBeta.left})`);
 	const flowB = await page.evaluate(() => {
 		let v;
-		window.__stores.flowGraphClose.subscribe((x) => (v = x))();
+		window.__tp.test.v1.flowGraphClose.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(flowB === true, 'Beta: the node editor is closed');
 
 	// ---- 5. a docked flag on a mounted panel follows the layout (the panel re-read)
 	await page.evaluate(() => localStorage.setItem('flowDocked', 'true'));
-	await page.evaluate((id) => window.__stores.uiLayouts.applyLayout(id), ids[0].id);
+	await page.evaluate((id) => window.__tp.test.v1.uiLayouts.applyLayout(id), ids[0].id);
 	await page.waitForTimeout(600);
 	h.check(!!(await rectOf('#flow-window'))?.shown && (await st('flowDocked')) === 'false', 'a stale docked flag is overwritten: Alpha re-floats the node editor');
 
 	// ---- 6. the UI: menu ▸ Layouts popover saves, lists, applies, renames, deletes
-	await page.evaluate(() => window.__stores.closeMenu.set(false));
+	await page.evaluate(() => window.__tp.test.v1.closeMenu.set(false));
 	await page.waitForTimeout(300);
 	await page.click('#open-layouts');
 	await page.waitForSelector('#layouts-menu');
@@ -144,7 +144,7 @@ h.run(async () => {
 	// rename Beta via the pencil
 	await page.click('#open-layouts').catch(() => {});
 	if (!(await page.$('#layouts-menu'))) {
-		await page.evaluate(() => window.__stores.uiLayouts.layoutsMenuOpen.set(true));
+		await page.evaluate(() => window.__tp.test.v1.uiLayouts.layoutsMenuOpen.set(true));
 		await page.waitForSelector('#layouts-menu');
 	}
 	await page.click('#layouts-menu-list li:nth-child(2) .wl-icon[title="Rename"]');
@@ -164,15 +164,15 @@ h.run(async () => {
 	await h.freshReload(A);
 	const reload = await page.evaluate(() => {
 		let flow, list;
-		window.__stores.flowGraphClose.subscribe((x) => (flow = x))();
-		window.__stores.uiLayouts.uiLayouts.subscribe((x) => (list = x))();
+		window.__tp.test.v1.flowGraphClose.subscribe((x) => (flow = x))();
+		window.__tp.test.v1.uiLayouts.uiLayouts.subscribe((x) => (list = x))();
 		return { flowClosed: flow, count: list.length };
 	});
 	h.check(reload.flowClosed === true, 'after a reload nothing is open (no layout is applied at boot)');
 	h.check(reload.count === 2, 'the saved layouts survive the reload');
 
 	// ---- 8. Settings ▸ Interface carries the same list, searchable
-	await page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await page.waitForTimeout(500);
 	await page.getByText('Interface', { exact: true }).first().click();
 	await page.waitForTimeout(300);
@@ -182,7 +182,7 @@ h.run(async () => {
 	await page.waitForTimeout(800);
 	const settingsClosed = await page.evaluate(() => {
 		let v;
-		window.__stores.settingsOpen.subscribe((x) => (v = x))();
+		window.__tp.test.v1.settingsOpen.subscribe((x) => (v = x))();
 		return !v;
 	});
 	h.check(settingsClosed && !!(await rectOf('#flow-window'))?.shown, 'applying from Settings closes Settings and the layout STAYS (not undone by the panel restore)');

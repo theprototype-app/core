@@ -7,7 +7,8 @@
 	},
 	"modules": {
 		"repo": "theprototype-app/modules",
-		"ref": "dev"
+		"ref": "80fca17f7cd963cf698d6b5f29beaff14f28f9e1",
+		"comment": "68-int refactor slot: pinned to the commit the e2e battery runs (tests/e2e/battery.json refs.modules) instead of the moving dev branch, so a red perf gate is about this tree and not about a module edit made since; move it with the battery refs"
 	},
 	"defaults": {
 		"calls": 150,

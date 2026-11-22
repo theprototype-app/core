@@ -11,7 +11,17 @@
 // major. The bridge feature-detects methods, so an older bridge keeps working against a newer page.
 
 /** The contract version (`tpAgent.version`). */
-export const TP_AGENT_VERSION = '1.3.0';
+// 1.8.0 (mcp-diorama2): screenshot {postEffects} + its {postEffects, reason, detail, how} answer, status sceneBudget
+// {top, vsync}; new tools duplicate, import_shape, set_quality (all additive: optional fields, new tools)
+// 1.9.0 (98-finish): set_look {action: 'preset'} (set_look_preset: product / cinematic / stylised); set_post kinds
+// lensflare, godrays, volumetricfog (additive: a new tool behind an existing family, new effect kinds)
+// 1.10.0 (2.0 N2): behind the codeView flag, list_scene {flow} answers carry `code` (the graph as read-only code) and
+// describe_node_types cards a `code` shape (additive: optional fields, no tool renamed)
+// 1.11.0 (2.0 N3b): describe_node_types {recipe} (six worked builds) + a `rule`/`recipes` line in its no-argument
+// answer; behaviour input handlers get {by}; validate_scene issue codes value-into-event, fires-on-every-change,
+// missing-handle, action-as-event, not-a-sensor, sensor-is-target, sensor-any, pickup-stays, toggle-per-person;
+// kit-pickups-collect param `hide` (additive: an optional argument, optional fields, new codes, no tool renamed)
+export const TP_AGENT_VERSION = '1.11.0';
 
 /** Every method of the contract, in the order the docs list them. */
 export const TP_AGENT_METHODS = /** @type {const} */ ([
@@ -36,7 +46,7 @@ export const TP_AGENT_METHODS = /** @type {const} */ ([
 ]);
 
 /** Camera views `screenshot` renders from (A5). */
-export const SCREENSHOT_VIEWS = /** @type {const} */ (['current', 'top', 'front', 'iso', 'focus']);
+export const SCREENSHOT_VIEWS = /** @type {const} */ (['current', 'top', 'front', 'iso', 'focus', 'camera']);
 
 /** Largest side a screenshot may ask for (px); `size` is clamped to it. */
 export const SCREENSHOT_MAX_SIZE = 2048;
@@ -66,9 +76,12 @@ export const SCREENSHOT_DEFAULT_SIZE = 768;
  * @property {string} appVersion the app's own version (APP_VERSION)
  * @property {string|null} peerId this page's peer id (null before signaling opens)
  * @property {string|null} host the peer whose session we joined (null = not joined / we host)
- * @property {boolean} joined true once a host admitted us (approval or invite), the link is open and (cloud) the
- *   host's roles have arrived, so `role`/`canEdit` are final
- * @property {boolean} waiting true while a join request waits for the host's Approve
+ * @property {boolean} joined true when this page can act in its session: on an agent page once a host admitted it (approval
+ *   or invite), the link is open and (cloud) the host's roles have arrived, so `role`/`canEdit` are final. In a person's own
+ *   tab (the connector) their own session counts, alone or hosting, so `host` is null and `joined` is true. An edit runs
+ *   only while this is true
+ * @property {boolean} waiting true while a join request is out and unanswered. Never true together with `joined`: while a
+ *   request is out this page is not joined, and an edit is refused until it is
  * @property {'admin'|'editor'|'viewer'|null} role null = no roles in this build (everyone edits)
  * @property {boolean} canEdit false for a viewer: `exec` refuses every edit
  * @property {{id: string, name: string}[]} peers peers with an open connection
@@ -87,8 +100,15 @@ export const SCREENSHOT_DEFAULT_SIZE = 768;
  * @property {{host: string, since: number, until: number, expired: boolean}} [hostAway] 1.2: the host LEFT and no person
  *   is here: the agent is paused (edits refused, `withHost` false), knocks on the host's door until `until`, never
  *   hosts and never saves. When a person remains instead, it continues with the room's successor (`host` changes).
+ * @property {{node: string, message: string}[]} [scriptErrors] mcp-fix: Script nodes failing now (their code threw, or it was paused for being slow)
  * @property {{name: string, where: string, message: string}[]} [behaviourErrors] 1.2: the latest errors thrown by
  *   the scene's code behaviours (on whichever peer runs them); absent when none — fix with edit_behaviour
+ * @property {{tier: string, profile: 'desktop'|'vr', objects?: number, meshes?: number, triangles?: number, calls?: number, textures?: number, lights?: number, frameP95?: number, over?: string[], top?: {byTriangles: {uuid: string, name: string, triangles: number, calls: number}[], byCalls: {uuid: string, name: string, triangles: number, calls: number}[]}, vsync?: {onVsync: boolean, hz: number, say: string}, callsBySource?: {objects: number, otherInView: number, shadows: number, post: number, otherViews: number}}} [sceneBudget]
+ *   1.6.0 (mcp-shapes): how heavy the scene is — the Statistics overlay's numbers, the worst tier (green | amber | red |
+ *   unknown) on the profile it is judged by, and `over` = each budget past green; a frame time ON the display refresh
+ *   (vsync.onVsync) is never judged (mcp-diorama2 27), and `callsBySource` splits the draw calls by where they come from
+ * @property {{level: string, text: string, at: number}[]} [logs] 1.7.0 (roadmap 85b, R3): the newest errors, warnings
+ *   and toasts on this page (at most 5; the `logs` tool returns the rest); absent when there are none
  * @property {{status: 'listening'|'working'|'away', muted: boolean, queued: number, waiting: number, current: any, chatId: string|null}} [chat]
  *   1.3.0 (roadmap 56): the chat inbox — the badge people see, requests waiting, the running request
  */
@@ -101,16 +121,28 @@ export const SCREENSHOT_DEFAULT_SIZE = 768;
 
 /**
  * `waitForEdit` result.
- * @typedef {{changed: true, at: number} | {changed: false, timedOut: true}} TpAgentEditWait
+ * @typedef {{changed: true, at: number, ping?: any} | {changed: false, timedOut: true}} TpAgentEditWait  (`ping`: 1.8.0, a new ping woke it)
  */
 
 /**
  * `screenshot` options.
  * @typedef {object} TpAgentScreenshotOptions
- * @property {'current'|'top'|'front'|'iso'|'focus'} [view] default 'iso'
- * @property {string} [uuid] the object `focus` frames (required for 'focus')
+ * @property {'current'|'top'|'front'|'iso'|'focus'|'camera'} [view] default 'iso'; 'camera' looks through the scene camera `uuid`
+ *   (its pose, lens and framing aspect — mcp-diorama2)
+ * @property {string} [uuid] the object to frame (`focus` needs this or `uuids`), or the camera for view 'camera'
+ * @property {string[]} [uuids] objects to frame together
+ * @property {string|{yaw: number, pitch: number}} [from] the angle around the subject, instead of `view`: front, back, left, right, top, below, iso, or degrees
+ * @property {{position: number[], target: number[]}} [camera] a free camera, instead of `view` and `from`
+ * @property {string|number} [aspect] width to height, default 4:3 ('current' defaults to the person's canvas)
+ * @property {number} [zoom] above 1 is closer, 0.1 to 10
+ * @property {number} [margin] room around the subject: 1 touches the frame, default 1.15
  * @property {number} [size] longest side in px (default 768, max 2048)
  * @property {boolean} [grid] draw the grid (default false)
+ * @property {boolean} [postEffects] draw the frame through the post stack this tab draws (bloom, vignette, grade …);
+ *   lastShot().postEffects then says "applied" or "unavailable" with a reason (mcp-diorama2)
+ * @property {boolean} [avatars] draw the people (avatars, an agent's camera marker) — default false: a clean frame
+ *   shows the scene; view 'current' keeps them unless this is false (mcp-diorama2)
+ * @property {boolean} [hud] draw the game HUD on top, the screens this tab shows (default false; mcp-diorama2)
  */
 
 /**
@@ -124,6 +156,7 @@ export const SCREENSHOT_DEFAULT_SIZE = 768;
  * @property {(cap?: number) => any} snapshot the scene as the assistant sees it (objects, flows, behaviours, joints)
  * @property {() => TpAgentStatus} status
  * @property {(timeoutMs?: number) => Promise<TpAgentEditWait>} waitForEdit resolves on the next scene change
+ * @property {() => any} lastShot what the last screenshot used: position, target, fov, zoom, width, height, view, subject; or {error}
  * @property {(opts?: TpAgentScreenshotOptions) => Promise<string|null>} screenshot a `data:image/png;base64,…`
  *   frame from a temporary camera (no gizmos, selection or helpers); null in VR or with no renderer
  * @property {() => TpAgentOffer[]} pendingOffers

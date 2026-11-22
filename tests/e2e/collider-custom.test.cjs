@@ -9,9 +9,9 @@ h.run(async () => {
 
 	// target object
 	const uuid = await A.page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create Box 1 1 1');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create Box 1 1 1');
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const box = g.children[g.children.length - 1];
 		window.__target = box;
 		return box.uuid;
@@ -19,19 +19,19 @@ h.run(async () => {
 
 	// 1) enter the session: proxy at the scene root + face edit runs ON it
 	const session = await A.page.evaluate((uuid) => {
-		const ok = window.__stores.colliderEdit.enterColliderEdit(uuid);
+		const ok = window.__tp.test.v1.colliderEdit.enterColliderEdit(uuid);
 		let scene, faceUuid;
-		window.__stores.globalScene.subscribe((v) => (scene = v))();
-		window.__stores.faceEdit.faceEditObject.subscribe((v) => (faceUuid = v))();
+		window.__tp.test.v1.globalScene.subscribe((v) => (scene = v))();
+		window.__tp.test.v1.faceEdit.faceEditObject.subscribe((v) => (faceUuid = v))();
 		const proxy = scene.children.find((c) => c.name === 'collider-edit-proxy');
 		let inGroup;
-		window.__stores.objectsGroup.subscribe((v) => (inGroup = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (inGroup = v))();
 		return {
 			ok,
 			proxyExists: !!proxy,
 			proxyInObjectsGroup: proxy ? inGroup.children.includes(proxy) : null,
 			faceEditOnProxy: !!proxy && faceUuid === proxy.uuid,
-			shells: window.__stores.colliderEdit.colliderShellCount()
+			shells: window.__tp.test.v1.colliderEdit.colliderShellCount()
 		};
 	}, uuid);
 	h.check(session.ok && session.proxyExists, 'session builds a proxy at the scene root');
@@ -55,9 +55,9 @@ h.run(async () => {
 	// 3) + Box piece = a second shell, seated OUTSIDE the seed (15-A2: it used
 	// to spawn buried inside the seed — invisible through the 0.35 material)
 	const shells = await A.page.evaluate(() => {
-		window.__stores.colliderEdit.addColliderPiece('box');
+		window.__tp.test.v1.colliderEdit.addColliderPiece('box');
 		let scene;
-		window.__stores.globalScene.subscribe((v) => (scene = v))();
+		window.__tp.test.v1.globalScene.subscribe((v) => (scene = v))();
 		const proxy = scene.children.find((c) => c.name === 'collider-edit-proxy');
 		const pos = proxy.geometry.attributes.position;
 		// merged order: seed soup first (box = 36 verts), the new piece after
@@ -68,7 +68,7 @@ h.run(async () => {
 			if (i < 36) seedMaxX = Math.max(seedMaxX, x);
 			else pieceMinX = Math.min(pieceMinX, x);
 		}
-		return { count: window.__stores.colliderEdit.colliderShellCount(), separated: pieceMinX > seedMaxX };
+		return { count: window.__tp.test.v1.colliderEdit.colliderShellCount(), separated: pieceMinX > seedMaxX };
 	});
 	h.check(shells.count === 2, `+ Box piece adds a shell (${shells.count})`);
 	h.check(shells.separated, 'new piece seats outside the seed shell (visible)');
@@ -82,15 +82,15 @@ h.run(async () => {
 	const done = await A.page.evaluate((uuid) => {
 		window.__sent = [];
 		let peer;
-		window.__stores.peers.subscribe((p) => (peer = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (peer = p))();
 		const original = peer.send;
 		peer.send = (m) => window.__sent.push({ type: m.type, parameter: m.parameter });
-		const ok = window.__stores.colliderEdit.commitColliderEdit();
+		const ok = window.__tp.test.v1.colliderEdit.commitColliderEdit();
 		peer.send = original;
 		const p = window.__target.userData.physics;
-		const spec = window.__stores.colliderSpec.colliderSpecOf(window.__target);
+		const spec = window.__tp.test.v1.colliderSpec.colliderSpecOf(window.__target);
 		let scene;
-		window.__stores.globalScene.subscribe((v) => (scene = v))();
+		window.__tp.test.v1.globalScene.subscribe((v) => (scene = v))();
 		return {
 			ok,
 			collider: p?.collider,
@@ -113,7 +113,7 @@ h.run(async () => {
 
 	// 5) undo restores the previous collider config
 	const undone = await A.page.evaluate(() => {
-		window.__stores.history.undo();
+		window.__tp.test.v1.history.undo();
 		const p = window.__target.userData.physics;
 		return { collider: p?.collider ?? null, verts: p?.colliderVerts ?? null };
 	});
@@ -121,11 +121,11 @@ h.run(async () => {
 
 	// 6) cancel path: enter again, cancel — nothing written, proxy gone
 	const cancelled = await A.page.evaluate((uuid) => {
-		window.__stores.colliderEdit.enterColliderEdit(uuid);
-		window.__stores.colliderEdit.exitColliderEdit();
+		window.__tp.test.v1.colliderEdit.enterColliderEdit(uuid);
+		window.__tp.test.v1.colliderEdit.exitColliderEdit();
 		let scene, faceUuid;
-		window.__stores.globalScene.subscribe((v) => (scene = v))();
-		window.__stores.faceEdit.faceEditObject.subscribe((v) => (faceUuid = v))();
+		window.__tp.test.v1.globalScene.subscribe((v) => (scene = v))();
+		window.__tp.test.v1.faceEdit.faceEditObject.subscribe((v) => (faceUuid = v))();
 		return {
 			proxyGone: !scene.children.find((c) => c.name === 'collider-edit-proxy'),
 			faceEditClosed: faceUuid === null,
@@ -141,7 +141,7 @@ h.run(async () => {
 	// keyOf used to hash only vert COUNTS, so a vertex move (the common edit)
 	// left the green proxy stale until Show collider was toggled off/on.
 	const vizRefresh = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.colliderEdit.enterColliderEdit(uuid);
 		w.colliderEdit.commitColliderEdit(); // seed verts stored as custom
 		w.colliderHelpers.setColliderViz(uuid, true);

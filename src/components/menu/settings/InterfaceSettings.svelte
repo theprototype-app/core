@@ -1,5 +1,6 @@
 <script module>
 	import { registerSettingsKeywords } from '$lib/settingsSearch';
+	import { NOTIFY_KINDS } from '$lib/notifyPrefs';
 	// 36 I4 / 37-settings: the words this page answers to beyond its row names — the old labels of the
 	// rows this redesign renamed (docs/settings-inventory.md, Decision C) and the words the absorbed
 	// section files carried (text selection, avatars, tours).
@@ -10,9 +11,12 @@
 		density: ['compact', 'comfortable', 'spacing', 'rows', 'dense', 'size'],
 		'welcome card on start': ['welcome on start', 'welcome'],
 		'show pop-ups only in the drawer': ['toasts in drawer only', 'toasts', 'notifications'],
+		'announce new versions': ["what's new", 'whats new', 'update', 'version', 'notifications'],
 		'show tours automatically': ['tour', 'tours', 'tutorial', 'onboarding', 'first run', 'guide'],
 		'vr welcome tour': ['vr welcome', 'controllers', 'quest', 'tour', 'tutorial'],
-		'editor tour': ['tour', 'tutorial', 'help', 'guide'],
+		'editor tour': ['tour', 'tutorial', 'help', 'guide', 'tour the interface'],
+		'first-game quest': ['quest', 'first win', 'onboarding', 'tutorial', 'guide', 'make it yours'],
+		'show everything': ['simple', 'beginner', 'more', 'hidden buttons', 'node editor', 'modules', 'onboarding', 'advanced'],
 		'offer enter vr in a headset browser': ['offer enter vr', 'enter vr', 'headset browser', 'quest'],
 		'reset tours': ['tour', 'tours', 'tutorial'],
 		'reset tips': ['tip', 'tips', 'hint', 'hints', 'help', 'how-to'],
@@ -29,6 +33,8 @@
 		'workspace layouts': ['layout', 'layouts', 'workspace', 'windows', 'dock', 'docked', 'panels', 'arrangement', 'save layout', 'restore layout', 'sizes']
 	};
 	for (const [row, words] of Object.entries(ROW_WORDS)) registerSettingsKeywords(row, words);
+	// profile-notify: every Notifications switch answers "notifications" and its own words
+	for (const k of NOTIFY_KINDS) registerSettingsKeywords(k.label.toLowerCase(), ['notifications', 'notify', 'alerts', ...k.keywords.split(' ')]);
 </script>
 
 <script>
@@ -64,18 +70,25 @@
 	import { peersAsClassic, knockedAfterSeconds, KNOCKED_AFTER_CHOICES } from '$lib/avatars/avatarState';
 	import WorkspaceLayoutsSettings from './WorkspaceLayoutsSettings.svelte'; // 37 R14
 	import UndockButtonSettings from './UndockButtonSettings.svelte'; // 40 F8
+	import PanelsButtonSettings from './PanelsButtonSettings.svelte'; // dock-fixes item 8
+	import SidebarHandlesSettings from './SidebarHandlesSettings.svelte'; // showhide-v8 (R3)
+	import PresenceSettings from './PresenceSettings.svelte'; // uir-people
 	import PopOutWindowSettings from './PopOutWindowSettings.svelte'; // 70 W3/W5
-	import PanelHeaderSettings from './PanelHeaderSettings.svelte'; // 42 I1
+	import ChromeButtonsSettings from './ChromeButtonsSettings.svelte'; // panel-gestures item 5
 	import PhoneBarSettings from './PhoneBarSettings.svelte'; // 42 I5
 	import { gameSoundVolume } from '$lib/gameSfx';
 	import { gameMusicVolume } from '$lib/gameMusic';
 	import { showWelcomeOnStart, showWhatsNewNotice, openWelcome } from '$lib/whatsNew';
 	import { tours, tourRecords } from '$lib/tours/index.js';
 	import { VR_TOUR, editorTourId, startVRWelcome, startEditorTour, resetAllTours } from '$lib/tours/builtin.js';
+	import { FIRST_WIN_TOUR } from '$lib/onboarding/quests.js'; // 76 FW1
+	import { startFirstWin } from '$lib/onboarding/firstWin.js';
+	import { simpleUntilPlay } from '$lib/onboarding/onboardState.js';
 	// 43 J9: closed tips (the phone More sheet's how-to) come back from one row
 	import { resetTips, dismissedTips } from '$lib/tips';
 	import { xrOfferEnabled } from '$lib/xrOffer';
-	import { drawerSlot } from '$lib/cloudHooks';
+	import { drawerSlot, cloudPluginInfo } from '$lib/cloudHooks';
+	import { notifyPrefs, setNotify } from '$lib/notifyPrefs';
 	import { resetWindowLayout } from '$lib/dragWindow';
 	import { perfStatsShown } from '$lib/fpsMeter';
 	import { perfReportsOn, perfReportsAvailable } from '$lib/perf/beacon';
@@ -158,6 +171,7 @@
 				}}>Customize</Button
 			>
 		</SettingRow>
+		<PresenceSettings />
 		<SettingRow id="row-classic-heads" label="Show others as classic heads" badge="This device" description="Lighter on headsets in busy rooms. Others still see your full character.">
 			<Toggle id="avatars-peers-classic" label="Show others as classic heads" bind:checked={$peersAsClassic} />
 		</SettingRow>
@@ -206,10 +220,26 @@
 		<SettingRow id="row-toasts-drawer" label="Show pop-ups only in the drawer" description="Pop-ups, connection requests included, go to the connection drawer’s Toasts tab instead of the viewport.">
 			<Toggle id="toasts-in-drawer" label="Show pop-ups only in the drawer" bind:checked={$toastsInDrawerOnly} />
 		</SettingRow>
+		<!-- profile-notify (owner 2026-11-09): one switch per automatic notification, on this device. Requests you
+		     must answer (connection, take control, role offers, agent permission) and safety notices always show. -->
+		{#each NOTIFY_KINDS.filter((k) => !k.cloud || $cloudPluginInfo) as k (k.id)}
+			<SettingRow id={'row-notify-' + k.id} label={k.label} badge="This device">
+				{#snippet desc()}{k.description}{#if k.id === 'pingSound'}{' '}Your own ping sound is in <button
+							type="button"
+							class="iface-link"
+							id="notify-ping-character"
+							onclick={() => {
+								close();
+								characterModalOpen.set(true);
+							}}>Customize character</button
+						>.{/if}{/snippet}
+				<Toggle id={'notify-' + k.id} label={k.label} checked={$notifyPrefs[k.id] !== false} onchange={(on) => setNotify(k.id, on)} />
+			</SettingRow>
+		{/each}
 	</Section>
 
 	<Section variant="card" label="Tours">
-		<SettingRow id="row-tours-auto" label="Show tours automatically" description="Starts the editor tour after the welcome card, and the VR welcome on your first VR visit.">
+		<SettingRow id="row-tours-auto" label="Show tours automatically" description="Starts the first-game quest after the welcome card, and the VR welcome on your first VR visit.">
 			<Toggle id="setting-tours-auto" label="Show tours automatically" checked={autoTours} onchange={(on) => tours.setAutoStart(on)} />
 		</SettingRow>
 		<SettingRow id="row-tour-vr" label="VR welcome tour">
@@ -235,6 +265,23 @@
 					startEditorTour();
 				}}>Start</Button
 			>
+		</SettingRow>
+		<!-- 76 FW1: the welcome card's three-step quest, again (change something → Play → invite) -->
+		<SettingRow id="row-tour-firstwin" label="First-game quest">
+			{#snippet desc()}Three steps: change something, play it, invite a friend. <span class="iface-status">{tourStatus(FIRST_WIN_TOUR, $tourRecords)}</span>{/snippet}
+			<Button
+				id="setting-tour-firstwin"
+				size="sm"
+				variant="outline"
+				onclick={() => {
+					close();
+					startFirstWin({ choice: 'empty', force: true });
+				}}>Start</Button
+			>
+		</SettingRow>
+		<!-- 76 FW1: a new user's advanced buttons wait behind More until their first Play -->
+		<SettingRow id="row-show-everything" label="Show everything" description="Off: the node editor, animation and other advanced buttons wait behind More (new users start this way until their first Play).">
+			<Toggle id="setting-show-everything" label="Show everything" checked={!$simpleUntilPlay} onchange={(on) => simpleUntilPlay.set(!on)} />
 		</SettingRow>
 		<SettingRow id="row-xr-offer" label="Offer Enter VR in a headset browser" description="Lets the Quest browser show its own Enter VR button, once per visit.">
 			<Toggle id="setting-xr-offer" label="Offer Enter VR in a headset browser" bind:checked={$xrOfferEnabled} />
@@ -275,8 +322,10 @@
 		</SettingRow>
 		<WorkspaceLayoutsSettings />
 		<UndockButtonSettings />
+		<PanelsButtonSettings />
+		<SidebarHandlesSettings />
 		<PopOutWindowSettings />
-		<PanelHeaderSettings />
+		<ChromeButtonsSettings />
 		<SettingRow id="row-touch-tools" label="Touch tools" description="Undo, Redo and Multi-select buttons beside the logo. On by default on phones.">
 			<Toggle id="setting-touch-tools" label="Touch tools" bind:checked={$touchTools} />
 		</SettingRow>

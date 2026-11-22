@@ -1,4 +1,5 @@
 <script>
+	import { backClose } from '$lib/backStack.js'; // phone-polish: Android Back closes it (no apply)
 	// 36-avatars (plan 76.5, decision: "a Settings-style side panel — opening it moves the viewport
 	// camera to YOUR character, every change previews live on it, Apply closes the panel and returns
 	// the camera"). Replaces the 17/129 Customize Character modal.
@@ -496,6 +497,7 @@
 	<aside
 		bind:this={panelEl}
 		id="character-panel"
+		use:backClose={() => end(false)}
 		class="tp-ui cp"
 		class:cp-resizing={resizing}
 		aria-label="Customize character"

@@ -4,7 +4,8 @@
 // already received), and every other peer sends the event there.
 import { describe, it, expect, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { gameState, applyGameVarOp, GAMEVAR_RID_WINDOW, gameVar, commitGameState, mergeGameState } from '../../src/lib/gameState.js';
+import { get } from 'svelte/store';
+import { gameState, applyGameVarOp, GAMEVAR_RID_WINDOW, GAMEVAR_RID_SHARED, gameVar, commitGameState, mergeGameState } from '../../src/lib/gameState.js';
 import { validateWireMessage } from '../../src/lib/wireValidate.js';
 
 beforeEach(() => gameState.update((s) => ({ ...s, vars: {} })));
@@ -97,5 +98,52 @@ describe('mergeGameState: each variable keeps its own stamp', () => {
 		expect(after.varsAt).toEqual({ a: 10, b: 99, c: 99 });
 		const next = commitGameState({ state: 'playing' }, { silent: true, stamp: 120 });
 		expect(next.varsAt).toEqual({ a: 10, b: 99, c: 99 });
+	});
+});
+
+// 54i row n: the rids an event applied travel IN the game state, so two peers that disagree about the
+// authority (each applying the event it was sent) cannot count it twice
+describe('applyGameVarOp across two writers (peers that disagree about the authority)', () => {
+	const st = (o) => ({ state: 'menu', round: 0, startedAt: 0, pausedAt: 0, pausedMs: 0, outcome: '', vars: {}, changedAt: 0, ...o });
+	beforeEach(() => gameState.set(st({ vars: { k: 0, t: 0 }, varsAt: { k: 1, t: 1 }, changedAt: 1 })));
+
+	it('a write carries the rid it applied', () => {
+		applyGameVarOp({ rid: 'var:addK:500.5', name: 'k', op: 'add', value: 1 });
+		expect(get(gameState).varOps).toEqual(['var:addK:500.5']);
+	});
+
+	it('an Add the other writer already applied (its write arrived first) is not applied again', () => {
+		// the other writer applied the click's Add 1 and its write reached us before the event did
+		const other = st({ vars: { k: 1, t: 0 }, varsAt: { k: 600, t: 1 }, changedAt: 600, varOps: ['var:addK:601.25'] });
+		commitGameState(mergeGameState(get(gameState), other), { silent: true, stamp: 600, varsAt: { k: 600, t: 1 } });
+		expect(applyGameVarOp({ rid: 'var:addK:601.25', name: 'k', op: 'add', value: 1 })).toBe(false);
+		expect(gameVar('k')).toBe(1);
+	});
+
+	it('a toggle the other writer already flipped is not flipped back', () => {
+		const other = st({ vars: { k: 0, t: 1 }, varsAt: { k: 1, t: 700 }, changedAt: 700, varOps: ['var:setT:701.5'] });
+		commitGameState(mergeGameState(get(gameState), other), { silent: true, stamp: 700, varsAt: { k: 1, t: 700 } });
+		// our requester resolved NOT t after the first write had landed: 0
+		expect(applyGameVarOp({ rid: 'var:setT:701.5', name: 't', op: 'set', value: 0 })).toBe(false);
+		expect(gameVar('t')).toBe(1);
+	});
+
+	it('two writers that apply one event at once keep ONE result, and both rids', () => {
+		applyGameVarOp({ rid: 'var:addK:800', name: 'k', op: 'add', value: 1 });
+		const mine = get(gameState);
+		// the other writer applied the same event from the same value, a moment later
+		const other = st({ vars: { k: 1, t: 0 }, varsAt: { k: mine.changedAt + 3, t: 1 }, changedAt: mine.changedAt + 3, varOps: ['var:addK:800'] });
+		const merged = mergeGameState(mine, other);
+		expect(merged.vars.k).toBe(1);
+		expect(merged.varOps).toEqual(['var:addK:800']);
+	});
+
+	it('the shared window is bounded, and an older state that only brings rids is still taken', () => {
+		const local = st({ vars: { k: 2 }, varsAt: { k: 900 }, changedAt: 900, varOps: ['a'] });
+		const older = st({ vars: { k: 2 }, varsAt: { k: 900 }, changedAt: 800, varOps: ['b'] });
+		expect(mergeGameState(local, older)?.varOps).toEqual(['a', 'b']);
+		expect(mergeGameState(local, { ...older, varOps: ['a'] })).toBe(null);
+		const many = Array.from({ length: GAMEVAR_RID_SHARED + 10 }, (_, i) => 'r' + i);
+		expect(mergeGameState(st({ changedAt: 1 }), st({ changedAt: 2, varOps: many })).varOps).toHaveLength(GAMEVAR_RID_SHARED);
 	});
 });

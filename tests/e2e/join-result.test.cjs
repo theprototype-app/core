@@ -22,13 +22,13 @@
 // Run: APP_URL=https://theprototype.app:5175/ PEER_CONFIG=... npm run e2e -- join-result
 const h = require('./helpers.cjs');
 
-/** run a snippet with `s = window.__stores` and `pc` (the PeerConnection) in scope */
+/** run a snippet with `s = window.__tp?.test.v1` and `pc` (the PeerConnection) in scope */
 const inPage = (peer, body, arg) =>
 	peer.page.evaluate(
 		([src, a]) => {
 			let pc = null;
-			window.__stores.peers.subscribe((v) => (pc = v))();
-			return Object.getPrototypeOf(async function () {}).constructor('s', 'pc', 'arg', src)(window.__stores, pc, a);
+			window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
+			return Object.getPrototypeOf(async function () {}).constructor('s', 'pc', 'arg', src)(window.__tp?.test.v1, pc, a);
 		},
 		[body, arg ?? null]
 	);
@@ -60,7 +60,7 @@ const text = (loc) => loc.textContent({ timeout: 3000 }).catch(() => '');
 const click = (loc, timeout = 5000) => loc.click({ timeout }).then(() => true, () => false);
 
 async function dialVia(peer, id) {
-	await peer.page.locator('input[placeholder="Enter peer ID to connect"]').fill(id);
+	await (await h.openDial(peer.page)).fill(id);
 	await peer.page.getByRole('button', { name: 'Connect', exact: true }).click();
 	await peer.page.waitForTimeout(400);
 }
@@ -68,7 +68,7 @@ async function dialVia(peer, id) {
 h.run(async () => {
 	const browser = await h.launch();
 	const J = await h.setupPage(browser, 'joiner');
-	await J.page.waitForFunction(() => !!window.__stores?.connectionState?.isRefusal, { timeout: 30000 });
+	await J.page.waitForFunction(() => !!window.__tp?.test.v1?.connectionState?.isRefusal, { timeout: 30000 });
 	await inPage(J, DIAL_STUB);
 
 	// ---- 1. declined -----------------------------------------------------------------
@@ -137,7 +137,7 @@ h.run(async () => {
 	// ---- 7. host: Reject tells them -----------------------------------------------------
 	console.log('\n=== 7. host: Reject ===');
 	const H = await h.setupPage(browser, 'host');
-	await H.page.waitForFunction(() => !!window.__stores?.connectionState?.isRefusal, { timeout: 30000 });
+	await H.page.waitForFunction(() => !!window.__tp?.test.v1?.connectionState?.isRefusal, { timeout: 30000 });
 	await inPage(H, DIAL_STUB);
 	await inPage(H, EMIT, { peer: 'eeee1', metadata: { jr: 1 } });
 	const cards = await read(H, 'pendingApprovals');

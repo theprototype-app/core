@@ -23,6 +23,7 @@ import { recordEntry } from './history';
 import { applyMaterials, materialsPayload } from './materialsHandler';
 import { fanTargets } from './materialSharing';
 import {
+	EXTRA_MAP_FIELDS,
 	MAT_PRESET_KEY,
 	STARTER_PRESETS,
 	normalizePreset,
@@ -39,6 +40,7 @@ import {
 	LOOK_DEFAULTS
 } from './materialPresetsCore';
 import { proceduralMaps } from './materialPresetMaps';
+import { mapSlotKnownUrl } from './materialMapTextures.js';
 
 // PRIMED dynamic import (the materialsHandler/animationPreview pattern): objectActions holds the
 // selection-tint memory, and a static edge from here would put this module (reached from
@@ -87,7 +89,7 @@ export function starterPresets() {
 
 /** three's texture JSON for a data-URL image (the ObjectLoader input shape)
  * @param {string} uuid @param {string} image @param {boolean} color @param {number[]|undefined} repeat */
-function textureJson(uuid, image, color, repeat) {
+export function textureJson(uuid, image, color, repeat) {
 	return {
 		uuid,
 		name: '',
@@ -168,6 +170,15 @@ export function presetWirePayload(preset, current) {
 		const s = preset.normalScale ?? 1;
 		json.normalScale = [s, s];
 	}
+	// 72 LK1
+	for (const key of EXTRA_MAP_FIELDS) {
+		if (!preset[key] || !(key in material)) continue;
+		const tex = THREE.MathUtils.generateUUID();
+		const img = THREE.MathUtils.generateUUID();
+		images.push({ uuid: img, url: preset[key] });
+		textures.push(textureJson(tex, img, key === 'emissiveMap', preset.repeat));
+		json[key] = tex;
+	}
 	return {
 		materials: [json],
 		textures,
@@ -188,18 +199,33 @@ export function applyMaterialPreset(uuid, preset) {
 	const object = objectOf(uuid);
 	const resolved = resolvePreset(preset);
 	if (!object?.material || Array.isArray(object.material) || !resolved) return false;
+	return replaceMaterials(uuid, () => presetWirePayload(resolved, object.material));
+}
+
+/**
+ * THE one material replace (a preset, and 85 L1 / L4's texture slots + sampler state): a `materials`
+ * payload built from the current one, applied here, ONE undo entry, one message — and on a shared
+ * material (D2) the new instance handed to every object sharing it.
+ * @param {string} uuid @param {(before: any) => any} build gets a private copy of the current payload
+ * @returns {boolean}
+ */
+export function replaceMaterials(uuid, build) {
+	const object = objectOf(uuid);
+	if (!object?.material) return false;
 	const before = materialsPayload(object);
 	// a tinted member's material carries the selection highlight in `emissive`: the undo
 	// snapshot must hold the author's emissive, or undo restores the highlight as the look
 	const tinted = actionsRef?.selectionTintOriginals?.(uuid)?.[object.uuid];
 	if (typeof tinted === 'number' && before.materials?.[0] && 'emissive' in before.materials[0]) before.materials[0].emissive = tinted;
-	const after = presetWirePayload(resolved, object.material);
+	const after = build(structuredClone(before));
+	if (!after?.materials?.length) return false;
 	applyMaterials(object, after, false);
 	const fresh = object.material;
-	for (const other of fanTargets(uuid)) {
-		const node = objectOf(other);
-		if (node && !Array.isArray(node.material)) node.material = fresh;
-	}
+	if (!Array.isArray(fresh))
+		for (const other of fanTargets(uuid)) {
+			const node = objectOf(other);
+			if (node && !Array.isArray(node.material)) node.material = fresh;
+		}
 	// a multi-select member wears the selection tint: the new material takes it too, and the
 	// tint memory now restores THIS material's emissive on deselect (not the replaced one's)
 	actionsRef?.refreshMemberTint?.(uuid);
@@ -227,7 +253,8 @@ export function lookOfMaterial(material, label = 'Material') {
 	if (!material || Array.isArray(material)) return null;
 	return snapshotLook(material, label, {
 		mapUrl: material.userData?.mapDataUrl ?? null,
-		normalMapUrl: material.normalMap ? (material.userData?.normalMapDataUrl ?? null) : null
+		normalMapUrl: material.normalMap ? (mapSlotKnownUrl(material, 'normalMap') ?? material.userData?.normalMapDataUrl ?? null) : null,
+		slotUrls: Object.fromEntries(EXTRA_MAP_FIELDS.map((key) => [key, material[key] ? mapSlotKnownUrl(material, key) : null]))
 	});
 }
 

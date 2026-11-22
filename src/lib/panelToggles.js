@@ -2,7 +2,6 @@ import { tick } from 'svelte';
 import { get } from 'svelte/store';
 import {
 	flowGraphClose,
-	flowCodeClose,
 	animationClose,
 	uvEditorClose,
 	shaderEditorClose,
@@ -29,7 +28,8 @@ import { raiseWindow, isTopVisibleWindow } from './windowFocus';
 import { groupOfKey, activateTab } from './windowTabs';
 import { revealWindow } from './dragWindow';
 import { safeStorage } from './safeStorage';
-import { sidebarTabCovered, activateSidebarTab } from './sidebars';
+import { sidebarTabCovered, activateSidebarTab, sidebarSideOf, collapseSideIfLast } from './sidebars';
+import { HOSTED, hostedDocked } from './dockHost';
 
 // ONE decision tree for the Controls panel buttons AND their keyboard shortcuts
 // (O / N). Before this module the Object list button had taskbar semantics
@@ -94,7 +94,6 @@ import { sidebarTabCovered, activateSidebarTab } from './sidebars';
  */
 const PANELS = {
 	flow: { key: 'flow', openStore: flowGraphClose, dragKey: 'flowWin', dockedLs: 'flowDocked' },
-	flowcode: { key: 'flowcode', openStore: flowCodeClose, dragKey: 'flowCode', dockedLs: 'flowCodeDocked' },
 	animation: { key: 'animation', openStore: animationClose, dragKey: 'animation', dockedLs: 'animationDocked' },
 	uv: { key: 'uv', openStore: uvEditorClose, dragKey: 'uv', dockedLs: 'uvDocked' },
 	shader: { key: 'shader', openStore: shaderEditorClose, dragKey: 'shader', dockedLs: 'shaderDocked' },
@@ -194,6 +193,60 @@ export function togglePanel(key) {
 		return;
 	}
 	cfg.openStore.set(true);
+}
+
+/**
+ * dock-fixes (owner 2026-11-08) — THE SAME TREE for the hosted windows' own buttons (the AI assistant,
+ * Chat: `$lib/dockHost` HOSTED, whose open stores are not the inverted booleans `PANELS` holds). The
+ * report: "click AI assistant -> dock it to a sidebar -> click the AI assistant button again: the window
+ * hides but its sidebar tab stays and the sidebar does not collapse when it was the only tab". The tab
+ * staying was docking.js's presence test (fixed there); this is what the button does with each state:
+ *
+ *   closed                          -> open (it returns where it was: floating, its sidebar tab, its dock tab)
+ *   a sidebar tab, covered          -> bring that tab to the front
+ *   a bottom-dock tab, not showing  -> bring that tab to the front (un-minimizes the dock)
+ *   otherwise                       -> close it — and a sidebar it was the LAST tab of collapses with it
+ *
+ * A floating window keeps the plain toggle its button always had.
+ * @param {string} key a HOSTED key ('aiAssistant', 'chat', …)
+ */
+export function toggleHostedWindow(key) {
+	const h = HOSTED[key];
+	if (!h) return;
+	if (!h.isOpen(get(h.store))) {
+		h.open();
+		return;
+	}
+	if (sidebarSideOf(key)) {
+		if (sidebarTabCovered(key)) {
+			activateSidebarTab(key);
+			return;
+		}
+		collapseSideIfLast(key);
+		h.close();
+		return;
+	}
+	if (!get(phoneShell) && get(hostedDocked)[key] && (get(dockMinimized) || !get(dockShownKeys).includes(key))) {
+		activateDock(key);
+		return;
+	}
+	h.close();
+}
+
+/**
+ * uir-chat: bring an OPEN hosted window forward where it lives (its covered sidebar tab, its bottom-dock
+ * tab that is not showing) — the first two branches of `toggleHostedWindow`, never its close. Used when
+ * the Chat window's other tab is asked for while it is already open.
+ * @param {string} key a HOSTED key
+ */
+export function revealHostedWindow(key) {
+	const h = HOSTED[key];
+	if (!h || !h.isOpen(get(h.store))) return;
+	if (sidebarSideOf(key)) {
+		if (sidebarTabCovered(key)) activateSidebarTab(key);
+		return;
+	}
+	if (!get(phoneShell) && get(hostedDocked)[key] && (get(dockMinimized) || !get(dockShownKeys).includes(key))) activateDock(key);
 }
 
 /**

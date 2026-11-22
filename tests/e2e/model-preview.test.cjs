@@ -10,14 +10,14 @@ h.run(async () => {
 
 	const t0 = await A.page.evaluate(() => {
 		let v;
-		window.__stores.enable3dPreview.subscribe((x) => (v = x))();
+		window.__tp.test.v1.enable3dPreview.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(t0 === false, '3D preview defaults off');
 
 	// build a box, export to glb, import it as an Explorer object item
 	const item = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.enable3dPreview.set(true);
 		const THREE = s.THREE;
 		const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0x88aa88 }));
@@ -30,7 +30,7 @@ h.run(async () => {
 
 	// open the popup -> window mounts, model loads, stats box fills in
 	await A.page.evaluate(
-		(it) => window.__stores.fileWindows.openModelPreview({ title: 'testbox', itemId: it.id, name: 'testbox.glb' }),
+		(it) => window.__tp.test.v1.fileWindows.openModelPreview({ title: 'testbox', itemId: it.id, name: 'testbox.glb' }),
 		item
 	);
 	await A.page.waitForTimeout(1000);
@@ -48,7 +48,7 @@ h.run(async () => {
 	h.check(persisted === 'true', 'the 3D-preview toggle persists (localStorage)');
 
 	// P1: with the toggle OFF, double-clicking an object item STILL opens the popup
-	await A.page.evaluate(() => window.__stores.enable3dPreview.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.enable3dPreview.set(false));
 	await A.page.locator('#explorer-slot').click();
 	await A.page.waitForTimeout(500);
 	// R22 round 12 (cefc68ee): a library OBJECT double-clicks into the file preview window
@@ -57,7 +57,7 @@ h.run(async () => {
 	const opened = await A.page
 		.waitForSelector('#image-preview-window', { timeout: 8000 })
 		.then(() => true, () => false);
-	const kind = await A.page.evaluate(() => new Promise((r) => window.__stores.fileWindows.imagePreviewTarget.subscribe((t) => r(t?.kind ?? null))()));
+	const kind = await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.fileWindows.imagePreviewTarget.subscribe((t) => r(t?.kind ?? null))()));
 	h.check(opened && kind === 'object', `double-click opens the preview even with the toggle off (P1) (window ${opened}, kind ${kind})`);
 
 	await h.finish(browser);

@@ -17,7 +17,7 @@ const objectNames = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) =>
+				window.__tp.test.v1.objectsGroup.subscribe((g) =>
 					r((g?.children ?? []).map((c) => c.name))
 				)()
 			)
@@ -30,11 +30,11 @@ h.run(async () => {
 
 	// both sides own objects BEFORE connecting
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		window.__stores.commandsHandler.sceneCommand('/create sphere 1');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create sphere 1');
 	});
 	await B.page.evaluate(() =>
-		window.__stores.commandsHandler.sceneCommand('/create Cylinder 1 1 2')
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create Cylinder 1 1 2')
 	);
 	await A.page.waitForTimeout(400);
 
@@ -72,9 +72,9 @@ h.run(async () => {
 
 	// B keeps its cylinder one click away in Sessions
 	const stash = await B.page.evaluate(async () => {
-		await window.__stores.sessions.loadSessions();
+		await window.__tp.test.v1.sessions.loadSessions();
 		const list = await new Promise((r) =>
-			window.__stores.sessions.sessions.subscribe(r)()
+			window.__tp.test.v1.sessions.sessions.subscribe(r)()
 		);
 		return list.find((s) => s.name.startsWith('Stashed before joining'));
 	});

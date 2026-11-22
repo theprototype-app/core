@@ -19,7 +19,7 @@ async function load(page, slug) {
 	if (!file) throw new Error('scene not found: ' + slug);
 	const bytes = Array.from(fs.readFileSync(file));
 	await page.evaluate(async (/** @type {number[]} */ arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		if (await new Promise((r) => s.physics.simulating.subscribe(r)())) s.physics.stopSimulation();
 		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		await s.sessions.applySession(payload, { backup: false });
@@ -31,19 +31,19 @@ async function look(page, pos, target) {
 	await page.evaluate(
 		([p, t]) => {
 			let cam, orbit;
-			window.__stores.editorCam.subscribe((v) => (cam = v))();
-			window.__stores.orbitControls.subscribe((v) => (orbit = v))();
+			window.__tp.test.v1.editorCam.subscribe((v) => (cam = v))();
+			window.__tp.test.v1.orbitControls.subscribe((v) => (orbit = v))();
 			cam.position.set(p[0], p[1], p[2]);
 			orbit?.target?.set(t[0], t[1], t[2]);
 			orbit?.update?.();
 			cam.lookAt(t[0], t[1], t[2]);
-			window.__stores.objectActions.deselectObject?.();
+			window.__tp.test.v1.objectActions.deselectObject?.();
 		},
 		[pos, target]
 	);
 }
 /** @param {any} page @param {string} theme */
-const setTheme = (page, theme) => page.evaluate((t) => window.__stores.themes.theme.set(t), theme);
+const setTheme = (page, theme) => page.evaluate((t) => window.__tp.test.v1.themes.theme.set(t), theme);
 /** both themes, `NN-name-dark.png` / `-light.png` @param {any} page @param {string} name */
 async function shots(page, name) {
 	if (!SHOTS) return;
@@ -58,10 +58,10 @@ async function shots(page, name) {
 const ys = (page, names) =>
 	page.evaluate((ns) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return Object.fromEntries(ns.map((n) => [n, g.getObjectByName(n)?.position.y ?? null]));
 	}, names);
-const simulating = (page) => page.evaluate(() => new Promise((r) => window.__stores.physics.simulating.subscribe(r)()));
+const simulating = (page) => page.evaluate(() => new Promise((r) => window.__tp.test.v1.physics.simulating.subscribe(r)()));
 
 /** mean colour of a small square of the frame around a world point (in-page decode)
  * @param {any} peer @param {number[]} world @param {number} [size] */
@@ -84,10 +84,10 @@ async function meanRGB(peer, world, size = 16) {
 const centreOf = (page, name) =>
 	page.evaluate((n) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByName(n);
-		const b = new window.__stores.THREE.Box3().setFromObject(o);
-		return b.getCenter(new window.__stores.THREE.Vector3()).toArray();
+		const b = new window.__tp.test.v1.THREE.Box3().setFromObject(o);
+		return b.getCenter(new window.__tp.test.v1.THREE.Vector3()).toArray();
 	}, name);
 
 /** centroid + count of the outline (pure green) and of the object (pure magenta) in a clip
@@ -119,17 +119,17 @@ async function outlineVsObject(peer, clip) {
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1280, height: 720 } } });
-	await A.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+	await A.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 
 	// ── F12: a body placed UNDER the water rises by density (Pool party) ────────────────────
 	if (want('f12')) {
 		await load(A.page, 'pool-party');
 		// the re-authored Pool party starts simulating on load: probes join a FRESH run
-		await A.page.evaluate(() => window.__stores.physics.resetSimulation());
+		await A.page.evaluate(() => window.__tp.test.v1.physics.resetSimulation());
 		await A.page.evaluate(() => {
-			const cmd = window.__stores.commandsHandler.sceneCommand;
+			const cmd = window.__tp.test.v1.commandsHandler.sceneCommand;
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const last = () => g.children[g.children.length - 1];
 			const mk = (/** @type {string} */ name, /** @type {number} */ x, /** @type {any} */ floats, /** @type {string} */ color) => {
 				cmd('/create Box 0.5 0.5 0.5');
@@ -146,9 +146,9 @@ h.run(async () => {
 		});
 		h.check((await A.page.evaluate(() => window.__f12)).every((m) => m === 'dynamic'), 'the three probes are dynamic (as Add ▸ Box makes them)');
 		await look(A.page, [0, 0.35, 6.2], [0, -0.7, 0]);
-		await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+		await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 		await h.eventually(() => simulating(A.page), (v) => v === true, 'simulation started');
-		const dbg = await A.page.evaluate(() => window.__stores.physics.physicsWorldDebug());
+		const dbg = await A.page.evaluate(() => window.__tp.test.v1.physics.physicsWorldDebug());
 		h.check(dbg.groundSlabs > 1, `the scene ground is cut around the sunk pool (${dbg.groundSlabs} slabs, holes ${dbg.groundHoles})`);
 		let peakFoam = -Infinity;
 		for (let i = 0; i < 30; i++) {
@@ -166,13 +166,13 @@ h.run(async () => {
 		h.check(r['Probe stone'] < -1.2, `a stone sinks to the pool floor (y ${r['Probe stone'].toFixed(2)})`);
 		h.check(r['Beach ball'] > -0.1 && r['Rubber duck'] > -0.1, `the authored toys still float (ball ${r['Beach ball'].toFixed(2)}, duck ${r['Rubber duck'].toFixed(2)})`);
 		await shots(A.page, '10-after-F12-pool-submerged');
-		await A.page.evaluate(() => window.__stores.physics.stopSimulation());
+		await A.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 		// the new Flow & physics rows (Flow up, Bob damping) in the Water section
 		await A.page.evaluate(() => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			localStorage.setItem('inspector:sec:Water', 'open');
-			window.__stores.objectActions.selectObject(g.getObjectByName('Pool water').uuid, true);
+			window.__tp.test.v1.objectActions.selectObject(g.getObjectByName('Pool water').uuid, true);
 		});
 		const bob = await A.page.waitForSelector('text=Bob damping', { timeout: 8000 }).then(() => true).catch(() => false);
 		h.check(bob, 'Water ▸ Flow & physics shows Flow up + Bob damping');
@@ -181,7 +181,7 @@ h.run(async () => {
 			await A.page.waitForTimeout(300);
 			await shots(A.page, '11-after-F12-flow-physics-params');
 		}
-		await A.page.evaluate(() => window.__stores.objectActions.deselectObject?.());
+		await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject?.());
 	}
 
 
@@ -190,8 +190,8 @@ h.run(async () => {
 		await load(A.page, 'aquarium');
 		const fish = await A.page.evaluate(() => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
-			const T = window.__stores.THREE;
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
+			const T = window.__tp.test.v1.THREE;
 			// a STATIC object under the water (the fish swim away between aiming and measuring)
 			const f = g.getObjectByName('Rock small');
 			const b = new T.Box3().setFromObject(g.getObjectByName('Aquarium water'));
@@ -200,17 +200,17 @@ h.run(async () => {
 			// moves the VISIBLE blob's centroid between two reads (5.8 .. 8.5 px for one view)
 			window.__f13bHidden = g.children.filter((o) => /^Fish /.test(o.name) && o.visible);
 			for (const o of window.__f13bHidden) o.visible = false;
-			window.__stores.waterRuntime.freezeWaterClock(100.25);
+			window.__tp.test.v1.waterRuntime.freezeWaterClock(100.25);
 			return { uuid: f.uuid, pos: f.position.toArray(), front: b.max.z };
 		});
 		const frontView = [fish.pos[0] + 0.3, fish.pos[1] + 0.2, fish.front + 1.4];
 		await look(A.page, frontView, fish.pos);
-		await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), fish.uuid);
+		await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), fish.uuid);
 		await A.page.waitForTimeout(1200);
 		await shots(A.page, '12-after-F13b-aquarium-selected');
 		// measurement colours: the outline pure green, the fish flat magenta
 		await A.page.evaluate((u) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.viewPrefs.setViewPrefs({ outlineColor: '#00ff00' });
 			let g;
 			s.objectsGroup.subscribe((v) => (g = v))();
@@ -219,21 +219,21 @@ h.run(async () => {
 		await A.page.waitForTimeout(800);
 		const clip = await h.centeredClip(A, fish.pos, 360);
 		const on = await outlineVsObject(A, clip);
-		await A.page.evaluate(() => window.__stores.waterRuntime.setSelectionUnrefract(false));
+		await A.page.evaluate(() => window.__tp.test.v1.waterRuntime.setSelectionUnrefract(false));
 		await A.page.waitForTimeout(800);
 		const off = await outlineVsObject(A, clip);
 		if (SHOTS) await A.page.screenshot({ path: path.join(SHOTS, '13-F13b-counterfactual-mask-off.png') });
-		await A.page.evaluate(() => window.__stores.waterRuntime.setSelectionUnrefract(true));
+		await A.page.evaluate(() => window.__tp.test.v1.waterRuntime.setSelectionUnrefract(true));
 		await A.page.waitForTimeout(600);
 		if (SHOTS) await A.page.screenshot({ path: path.join(SHOTS, '14-F13b-measure-mask-on.png') });
 		h.check(on.outline > 50 && on.object > 200, `the measurement sees the outline and the object (${on.outline} / ${on.object} px)`);
 		// the REFERENCE: the Quest tier has no screen-space refraction, so the object is exactly
 		// under its outline there; the metric's floor (an occluded corner shifts the visible blob's
 		// centroid) is whatever it reads in that view
-		await A.page.evaluate(() => window.__stores.waterPrefs.waterQuality.set('low'));
+		await A.page.evaluate(() => window.__tp.test.v1.waterPrefs.waterQuality.set('low'));
 		await A.page.waitForTimeout(1200);
 		const quest = await outlineVsObject(A, clip);
-		await A.page.evaluate(() => window.__stores.waterPrefs.waterQuality.set('high'));
+		await A.page.evaluate(() => window.__tp.test.v1.waterPrefs.waterQuality.set('high'));
 		await A.page.waitForTimeout(800);
 		h.check(quest.offset !== null, `reference (Quest tier, no refraction): ${quest.offset?.toFixed(1)} px`);
 		h.check(on.offset !== null && Math.abs(on.offset - quest.offset) < 1.5, `desktop: the object sits under its outline as exactly as with no refraction at all (${on.offset?.toFixed(1)} vs ${quest.offset?.toFixed(1)} px)`);
@@ -241,18 +241,18 @@ h.run(async () => {
 		// underwater: the camera inside the tank, above the rock
 		await look(A.page, [fish.pos[0] + 0.3, fish.pos[1] + 0.45, fish.pos[2] + 0.55], fish.pos);
 		// look() deselects (it parks the camera as a fresh view) — select again AFTER aiming
-		await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), fish.uuid);
+		await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), fish.uuid);
 		await A.page.waitForTimeout(1200);
 		const underClip = await h.centeredClip(A, fish.pos, 360);
 		const under = await outlineVsObject(A, underClip);
 		if (SHOTS) await A.page.screenshot({ path: path.join(SHOTS, 'diag-f13b-underwater.png') });
-		await A.page.evaluate(() => window.__stores.waterPrefs.waterQuality.set('low'));
+		await A.page.evaluate(() => window.__tp.test.v1.waterPrefs.waterQuality.set('low'));
 		await A.page.waitForTimeout(1000);
 		const underRef = await outlineVsObject(A, underClip);
-		await A.page.evaluate(() => window.__stores.waterPrefs.waterQuality.set('high'));
+		await A.page.evaluate(() => window.__tp.test.v1.waterPrefs.waterQuality.set('high'));
 		h.check(under.offset !== null && underRef.offset !== null && Math.abs(under.offset - underRef.offset) < 1.5, `underwater: aligned (${under.offset?.toFixed(1)} vs ${underRef.offset?.toFixed(1)} px)`);
 		await A.page.evaluate((u) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.viewPrefs.setViewPrefs({ outlineColor: '#353535' });
 			let g;
 			s.objectsGroup.subscribe((v) => (g = v))();
@@ -263,11 +263,11 @@ h.run(async () => {
 		}, fish.uuid);
 		// the fluid tank toy: a duck in the particle fluid (no refraction there — measured aligned)
 		await load(A.page, 'fluid-tank-toy');
-		if (!(await simulating(A.page))) await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+		if (!(await simulating(A.page))) await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 		await A.page.waitForTimeout(6000);
-		await A.page.evaluate(() => window.__stores.physics.pauseSimulation(true)); // hold the duck still for the measurement
+		await A.page.evaluate(() => window.__tp.test.v1.physics.pauseSimulation(true)); // hold the duck still for the measurement
 		const duck = await A.page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let g;
 			s.objectsGroup.subscribe((v) => (g = v))();
 			const d = g.getObjectByName('Duck 1');
@@ -280,14 +280,14 @@ h.run(async () => {
 		await look(A.page, [duck[0] + 0.2, duck[1] + 1.1, duck[2] + 0.7], duck); // from above: the duck's top is out of the fluid
 		await A.page.evaluate(() => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
-			window.__stores.objectActions.selectObject(g.getObjectByName('Duck 1').uuid);
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectActions.selectObject(g.getObjectByName('Duck 1').uuid);
 		});
 		await A.page.waitForTimeout(1000);
 		// the gizmo's green arrow would count as outline pixels; the fluid's particles cover part of
 		// the duck, which drags the VISIBLE blob's centroid away from the duck — so the outline ring
 		// (a circle round a sphere) is measured against where the duck really projects
-		await A.page.evaluate(() => window.__stores.TControls.subscribe((tc) => tc?.detach?.())());
+		await A.page.evaluate(() => window.__tp.test.v1.TControls.subscribe((tc) => tc?.detach?.())());
 		await A.page.waitForTimeout(400);
 		const dclip = await h.centeredClip(A, duck, 320);
 		const dk = await outlineVsObject(A, dclip);
@@ -296,7 +296,7 @@ h.run(async () => {
 		if (SHOTS) await A.page.screenshot({ path: path.join(SHOTS, 'diag-f13b-duck.png') });
 		h.check(dk.outline > 50 && ring !== null && ring < 4, `Fluid tank toy: a duck in the fluid sits under its outline (ring centre ${ring?.toFixed(1)} px from the duck; ${dk.outline} outline px; the fluid does not refract)`);
 		await A.page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.viewPrefs.setViewPrefs({ outlineColor: '#353535' });
 			let g;
 			s.objectsGroup.subscribe((v) => (g = v))();
@@ -310,11 +310,11 @@ h.run(async () => {
 	if (want('f14')) {
 		await load(A.page, 'jelly-room');
 		// the re-authored room starts on load: back to the authored layout for the colour reads
-		await A.page.evaluate(() => window.__stores.physics.resetSimulation());
+		await A.page.evaluate(() => window.__tp.test.v1.physics.resetSimulation());
 		await A.page.waitForTimeout(1500);
 		const att = await A.page.evaluate(() => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			return g.getObjectByName('Jelly lime').material.attenuationDistance;
 		});
 		h.check(att === Infinity, `a loaded transmissive jelly keeps attenuationDistance = Infinity (${att}; the file says null)`);
@@ -324,8 +324,8 @@ h.run(async () => {
 		h.check(lemon[0] > 120 && lemon[1] > 100, `Jelly lemon renders yellow (rgb ${lemon})`);
 		await shots(A.page, '20-after-F14-jelly-room');
 		// the setting: Configure Scene ▸ Camera ▸ Start view
-		await A.page.evaluate(() => window.__stores.scenePhysics.setScenePhysics({ simOnLoad: false }));
-		await A.page.evaluate(() => window.__stores.openSceneSection('Camera:Start view'));
+		await A.page.evaluate(() => window.__tp.test.v1.scenePhysics.setScenePhysics({ simOnLoad: false }));
+		await A.page.evaluate(() => window.__tp.test.v1.openSceneSection('Camera:Start view'));
 		const box = await A.page.waitForSelector('#sim-on-load', { timeout: 8000 }).catch(() => null);
 		h.check(!!box, 'Configure Scene shows "Start simulation on load" beside "Hold camera until loaded"');
 		if (box) {
@@ -336,20 +336,20 @@ h.run(async () => {
 		}
 		const on = await A.page.evaluate(() => {
 			let s;
-			window.__stores.scenePhysics.scenePhysicsState_.subscribe((v) => (s = v))();
+			window.__tp.test.v1.scenePhysics.scenePhysicsState_.subscribe((v) => (s = v))();
 			return s.simOnLoad;
 		});
 		h.check(on === true, 'ticking it sets scenePhysics.simOnLoad (scene data)');
 		// saved into the scene, and a load of that file starts the run by itself
 		const bytes = await A.page.evaluate(async () => {
-			const s = window.__stores.sessions;
+			const s = window.__tp.test.v1.sessions;
 			const zip = await s.exportSessionZip(s.buildSessionPayload('Jelly sim'));
 			const buf = new Uint8Array(zip instanceof Blob ? await zip.arrayBuffer() : zip);
 			return Array.from(buf);
 		});
-		await A.page.evaluate(() => window.__stores.scenePhysics.setScenePhysics({ simOnLoad: false }));
+		await A.page.evaluate(() => window.__tp.test.v1.scenePhysics.setScenePhysics({ simOnLoad: false }));
 		await A.page.evaluate(async (arr) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 			window.__f14saved = payload.physics;
 			await s.sessions.applySession(payload, { backup: false });
@@ -357,17 +357,17 @@ h.run(async () => {
 		h.check((await A.page.evaluate(() => window.__f14saved?.simOnLoad)) === true, 'the saved scene carries simOnLoad');
 		await h.eventually(() => simulating(A.page), (v) => v === true, 'opening that scene starts the simulation by itself', 10000);
 		await A.page.waitForTimeout(1500);
-		const wob = await A.page.evaluate(() => Math.max(...window.__stores.sim.jiggleDebug().map((d) => Math.abs(d.wobble))));
+		const wob = await A.page.evaluate(() => Math.max(...window.__tp.test.v1.sim.jiggleDebug().map((d) => Math.abs(d.wobble))));
 		h.check(wob > 0.01, `...the jellies drop and wobble with nobody pressing P (${wob.toFixed(3)})`);
-		await A.page.evaluate(() => window.__stores.physics.stopSimulation());
+		await A.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 		// counterfactual: the same scene WITHOUT the flag opens still
-		await A.page.evaluate(() => window.__stores.scenePhysics.setScenePhysics({ simOnLoad: false }));
+		await A.page.evaluate(() => window.__tp.test.v1.scenePhysics.setScenePhysics({ simOnLoad: false }));
 		await load(A.page, 'pool-party');
 		await A.page.waitForTimeout(1500);
-		const scenesHaveFlag = await A.page.evaluate(() => window.__stores.scenePhysics.scenePhysicsSnapshot()?.simOnLoad === true);
+		const scenesHaveFlag = await A.page.evaluate(() => window.__tp.test.v1.scenePhysics.scenePhysicsSnapshot()?.simOnLoad === true);
 		if (!scenesHaveFlag) h.check((await simulating(A.page)) === false, 'a scene without the flag does not start by itself');
 		else h.check((await simulating(A.page)) === true, 'the re-authored Pool party starts by itself');
-		await A.page.evaluate(() => window.__stores.physics.stopSimulation());
+		await A.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	}
 
 	// ── F15: Island ocean — the boat floats (rides the swell, stays upright, keeps its mast) ─
@@ -375,7 +375,7 @@ h.run(async () => {
 		await load(A.page, 'island-ocean');
 		const authored = await A.page.evaluate(() => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const hull = g.getObjectByName('Boat hull');
 			const was = hull.userData.physics?.mode ?? null;
 			if (was !== 'dynamic') {
@@ -389,20 +389,20 @@ h.run(async () => {
 		});
 		console.log('boat as authored:', authored);
 		await look(A.page, [16, 3.2, 15], [10.5, 0, 9.5]);
-		if (!(await simulating(A.page))) await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+		if (!(await simulating(A.page))) await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 		await h.eventually(() => simulating(A.page), (v) => v === true, 'simulation running');
 		const pose = () =>
 			A.page.evaluate(() => {
 				let g;
-				window.__stores.objectsGroup.subscribe((v) => (g = v))();
-				const T = window.__stores.THREE;
+				window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
+				const T = window.__tp.test.v1.THREE;
 				const hull = g.getObjectByName('Boat hull');
 				const mast = g.getObjectByName('Boat mast');
 				hull.updateMatrixWorld(true);
 				const up = new T.Vector3(0, 1, 0).applyQuaternion(hull.getWorldQuaternion(new T.Quaternion()));
 				const m = mast.getWorldPosition(new T.Vector3()).sub(hull.getWorldPosition(new T.Vector3()));
-				const vols = window.__stores.waterVolumes.waterVolumes.list();
-				const sy = window.__stores.waterVolumes.waterVolumes.surfaceY(vols[0], hull.position.x, hull.position.z);
+				const vols = window.__tp.test.v1.waterVolumes.waterVolumes.list();
+				const sy = window.__tp.test.v1.waterVolumes.waterVolumes.surfaceY(vols[0], hull.position.x, hull.position.z);
 				return { y: hull.position.y, x: hull.position.x, up: up.y, mastOff: m.length(), surface: sy };
 			});
 		const p0 = await pose();
@@ -422,27 +422,27 @@ h.run(async () => {
 		h.check(Math.min(...samples.map((p) => p.up)) > 0.85, `...upright (min up ${Math.min(...samples.map((p) => p.up)).toFixed(2)})`);
 		h.check(Math.abs(last.mastOff - p0.mastOff) < 0.01, `the mast rides the hull (offset ${p0.mastOff.toFixed(2)} -> ${last.mastOff.toFixed(2)})`);
 		await shots(A.page, '30-after-F15-island-boat');
-		await A.page.evaluate(() => window.__stores.physics.stopSimulation());
+		await A.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	}
 
 	// ── F16: tipping a fluid tank spills it (drops fall, splash, settle) — within its limits ─
 	if (want('f16')) {
 		await load(A.page, 'fluid-tank-toy');
-		await h.eventually(() => A.page.evaluate(() => window.__stores.sim.fluidDebug()), (t) => t.length === 2 && t.every((x) => x.count > 500 && x.steps > 20), 'both tanks run', 20000);
+		await h.eventually(() => A.page.evaluate(() => window.__tp.test.v1.sim.fluidDebug()), (t) => t.length === 2 && t.every((x) => x.count > 500 && x.steps > 20), 'both tanks run', 20000);
 		const tank = await A.page.evaluate(() => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const t = g.getObjectByName('Honey tank');
-			window.__stores.sim.setFluidFor(t.uuid, { spill: { maxDrops: 300, lifetime: 6 } });
+			window.__tp.test.v1.sim.setFluidFor(t.uuid, { spill: { maxDrops: 300, lifetime: 6 } });
 			return { uuid: t.uuid, pos: t.position.toArray() };
 		});
 		await look(A.page, [tank.pos[0] + 2.6, tank.pos[1] + 1.2, 3.4], [tank.pos[0] + 0.8, 0.6, 0]);
-		const before = await A.page.evaluate(() => window.__stores.sim.fluidDebug().find((t) => t.uuid));
+		const before = await A.page.evaluate(() => window.__tp.test.v1.sim.fluidDebug().find((t) => t.uuid));
 		// tip it over sideways, as a gizmo rotate would (the runtime reads the pose every frame)
 		for (let i = 1; i <= 20; i++) {
 			await A.page.evaluate(([u, a]) => {
 				let g;
-				window.__stores.objectsGroup.subscribe((v) => (g = v))();
+				window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 				const t = g.getObjectByProperty('uuid', u);
 				t.rotation.z = -a;
 				t.updateMatrixWorld(true);
@@ -453,30 +453,30 @@ h.run(async () => {
 		let maxCount = 0;
 		for (let i = 0; i < 25; i++) {
 			await A.page.waitForTimeout(200);
-			const n = await A.page.evaluate(() => window.__stores.sim.totalDropCount());
+			const n = await A.page.evaluate(() => window.__tp.test.v1.sim.totalDropCount());
 			maxCount = Math.max(maxCount, n);
 		}
-		const after = await A.page.evaluate((u) => ({ tank: window.__stores.sim.fluidDebug().find((t) => t.uuid === u), drops: window.__stores.sim.pourDebug().find((d) => d.key === 'spill:' + u) }), tank.uuid);
+		const after = await A.page.evaluate((u) => ({ tank: window.__tp.test.v1.sim.fluidDebug().find((t) => t.uuid === u), drops: window.__tp.test.v1.sim.pourDebug().find((d) => d.key === 'spill:' + u) }), tank.uuid);
 		h.check((after.tank?.spilled ?? 0) > 50, `the tipped tank spilled over its rim (${after.tank?.spilled} particles left the tank)`);
 		h.check(after.tank.count < (before?.count ?? 3000), `...so the tank holds less (${after.tank.count})`);
 		h.check((after.drops?.settled ?? 0) + (after.drops?.splashes ?? 0) > 20, `the spilled drops landed (settled ${after.drops?.settled}, splashed ${after.drops?.splashes})`);
 		h.check(maxCount <= 300 + 10, `...and never exceeded the spill cap (${maxCount} <= 300 drops alive)`);
 		await shots(A.page, '51-after-F16-spilled-and-settled');
 		// spill off: tipped further, nothing more leaves
-		await A.page.evaluate((u) => window.__stores.sim.setFluidFor(u, { spill: { on: false } }), tank.uuid);
+		await A.page.evaluate((u) => window.__tp.test.v1.sim.setFluidFor(u, { spill: { on: false } }), tank.uuid);
 		await A.page.waitForTimeout(800);
-		const s1 = await A.page.evaluate((u) => window.__stores.sim.fluidDebug().find((t) => t.uuid === u).spilled, tank.uuid);
+		const s1 = await A.page.evaluate((u) => window.__tp.test.v1.sim.fluidDebug().find((t) => t.uuid === u).spilled, tank.uuid);
 		await A.page.waitForTimeout(2000);
-		const s2 = await A.page.evaluate((u) => window.__stores.sim.fluidDebug().find((t) => t.uuid === u).spilled, tank.uuid);
+		const s2 = await A.page.evaluate((u) => window.__tp.test.v1.sim.fluidDebug().find((t) => t.uuid === u).spilled, tank.uuid);
 		h.check(s2 - s1 <= 5, `Spill when tipped OFF keeps the fluid in (${s2 - s1} more after switching it off)`);
 	}
 
 	// ── F17: a pour emitter from Add ▸ Water ▸ Pour and on a plain Water tank ───────────────
 	if (want('f17')) {
-		await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+		await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 		await A.page.waitForTimeout(500);
 		const ids = await A.page.evaluate(() => {
-			const st = window.__stores;
+			const st = window.__tp?.test.v1;
 			// Add ▸ Water ▸ Water tank, then Add ▸ Water ▸ Pour — the menu's own actions
 			const water = st.addObjects.buildAddChildren(() => [0, 0, 0]).find((g) => g.label === 'Water');
 			water.children.find((c) => c.label === 'Water tank').action();
@@ -494,7 +494,7 @@ h.run(async () => {
 		// the Water section's button on the Water tank
 		await A.page.evaluate((u) => {
 			localStorage.setItem('inspector:sec:Water', 'open');
-			window.__stores.objectActions.selectObject(u, true);
+			window.__tp.test.v1.objectActions.selectObject(u, true);
 		}, ids.tank);
 		const btn = await A.page.waitForSelector('#pour-add', { timeout: 8000 }).catch(() => null);
 		h.check(!!btn, 'a Water tank offers "Add pour emitter"');
@@ -509,19 +509,19 @@ h.run(async () => {
 				await shots(A.page, '61-after-F17-pour-panel');
 			}
 		}
-		await A.page.evaluate(() => window.__stores.objectActions.deselectObject?.());
+		await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject?.());
 		await look(A.page, [0.5, 2.2, 5.2], [0, 0.4, 0]);
 		await A.page.waitForTimeout(3000);
-		const d = await A.page.evaluate(() => window.__stores.sim.pourDebug());
+		const d = await A.page.evaluate(() => window.__tp.test.v1.sim.pourDebug());
 		const tankPour = d.find((x) => x.key === 'pour:' + ids.tank);
 		const spoutPour = d.find((x) => x.key === 'pour:' + ids.spout);
 		h.check((tankPour?.count ?? 0) > 20, `the Water tank pours (${tankPour?.count} drops alive)`);
 		h.check((spoutPour?.count ?? 0) > 20 && (spoutPour?.settled ?? 0) > 5, `the spout pours and its drops settle on the ground (${spoutPour?.count} alive, ${spoutPour?.settled} settled)`);
 		await shots(A.page, '60-after-F17-pour-emitters');
 		// limits from the panel's model: max drops caps it
-		await A.page.evaluate((u) => window.__stores.waterActions.updateObjectPour(u, { maxParticles: 25, rate: 200 }, { immediate: true }), ids.spout);
+		await A.page.evaluate((u) => window.__tp.test.v1.waterActions.updateObjectPour(u, { maxParticles: 25, rate: 200 }, { immediate: true }), ids.spout);
 		await A.page.waitForTimeout(1500);
-		const capped = await A.page.evaluate((u) => window.__stores.sim.pourDebug().find((x) => x.key === 'pour:' + u)?.count, ids.spout);
+		const capped = await A.page.evaluate((u) => window.__tp.test.v1.sim.pourDebug().find((x) => x.key === 'pour:' + u)?.count, ids.spout);
 		h.check(capped <= 25, `Max drops caps a spout (${capped} <= 25 at rate 200)`);
 	}
 
@@ -530,40 +530,40 @@ h.run(async () => {
 		await load(A.page, 'fluid-tank-toy');
 		console.log('S9 scene:', JSON.stringify(await A.page.evaluate(() => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			let l;
-			window.__stores.sceneLoader?.sceneLoad?.subscribe?.((v) => (l = v))();
-			return { names: g.children.map((o) => o.name), load: l ?? null, fluid: window.__stores.sim.fluidDebug().length };
+			window.__tp.test.v1.sceneLoader?.sceneLoad?.subscribe?.((v) => (l = v))();
+			return { names: g.children.map((o) => o.name), load: l ?? null, fluid: window.__tp.test.v1.sim.fluidDebug().length };
 		})));
-		await A.page.evaluate(() => window.__stores.scenePhysics.setScenePhysics({ simOnLoad: true }));
+		await A.page.evaluate(() => window.__tp.test.v1.scenePhysics.setScenePhysics({ simOnLoad: true }));
 		const pill = await A.page.waitForSelector('#sim-controls', { timeout: 5000 }).catch(() => null);
 		h.check(!!pill, 'a simulation scene shows the simulation transport without the Settings toggle');
 		if (!(await simulating(A.page))) await A.page.$eval('#sim-play', (el) => /** @type {any} */ (el).click());
 		await h.eventually(() => simulating(A.page), (v) => v === true, 'running');
-		await h.eventually(() => A.page.evaluate(() => window.__stores.sim.fluidDebug()), (t) => t.length === 2 && t.every((x) => x.steps > 20), 'tanks running', 20000);
+		await h.eventually(() => A.page.evaluate(() => window.__tp.test.v1.sim.fluidDebug()), (t) => t.length === 2 && t.every((x) => x.steps > 20), 'tanks running', 20000);
 		const duck0 = (await ys(A.page, ['Duck 1']))['Duck 1'];
 		// the pill is clicked by dispatch: an open Configure Scene drawer can sit over it
 		const press = (/** @type {string} */ sel) => A.page.$eval(sel, (el) => /** @type {any} */ (el).click());
 		await press('#sim-pause');
 		await A.page.waitForTimeout(500);
-		const a = await A.page.evaluate(() => ({ steps: window.__stores.sim.fluidDebug().map((t) => t.steps), y: null }));
+		const a = await A.page.evaluate(() => ({ steps: window.__tp.test.v1.sim.fluidDebug().map((t) => t.steps), y: null }));
 		const yA = (await ys(A.page, ['Duck 1']))['Duck 1'];
 		await A.page.waitForTimeout(1500);
-		const b = await A.page.evaluate(() => window.__stores.sim.fluidDebug().map((t) => t.steps));
+		const b = await A.page.evaluate(() => window.__tp.test.v1.sim.fluidDebug().map((t) => t.steps));
 		const yB = (await ys(A.page, ['Duck 1']))['Duck 1'];
 		h.check(b.every((n, i) => n - a.steps[i] <= 1), `Pause holds the fluid tanks still (steps ${a.steps} -> ${b})`);
 		h.check(Math.abs(yB - yA) < 1e-4, `...and the bodies (duck y ${yA.toFixed(3)} -> ${yB.toFixed(3)})`);
 		await press('#sim-pause'); // resume
 		await A.page.waitForTimeout(1500);
-		const c = await A.page.evaluate(() => window.__stores.sim.fluidDebug().map((t) => t.steps));
+		const c = await A.page.evaluate(() => window.__tp.test.v1.sim.fluidDebug().map((t) => t.steps));
 		h.check(c.every((n, i) => n > b[i] + 5), `Resume carries on (steps ${b} -> ${c})`);
-		const cNow = await A.page.evaluate(() => window.__stores.sim.fluidDebug().map((t) => t.steps));
+		const cNow = await A.page.evaluate(() => window.__tp.test.v1.sim.fluidDebug().map((t) => t.steps));
 		await press('#sim-reset');
-		await h.eventually(() => A.page.evaluate(() => window.__stores.sim.fluidDebug().map((t) => t.steps)), (d) => d.length === 2 && d.every((n, i) => n < cNow[i]), `Reset refills every tank (steps ${cNow} -> fewer)`, 8000);
+		await h.eventually(() => A.page.evaluate(() => window.__tp.test.v1.sim.fluidDebug().map((t) => t.steps)), (d) => d.length === 2 && d.every((n, i) => n < cNow[i]), `Reset refills every tank (steps ${cNow} -> fewer)`, 8000);
 		await h.eventually(() => simulating(A.page), (v) => v === true, '...and plays it again from the start', 8000);
 		console.log('duck start', duck0);
-		await A.page.evaluate(() => window.__stores.physics.stopSimulation());
-		await A.page.evaluate(() => window.__stores.scenePhysics.setScenePhysics({ simOnLoad: false }));
+		await A.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
+		await A.page.evaluate(() => window.__tp.test.v1.scenePhysics.setScenePhysics({ simOnLoad: false }));
 	} catch (error) {
 		h.check(false, 'S9 section stopped: ' + (error?.message ?? error));
 		if (SHOTS) await A.page.screenshot({ path: path.join(SHOTS, 'diag-s9-failure.png') }).catch(() => {});
@@ -574,7 +574,7 @@ h.run(async () => {
 		await load(A.page, 'water-works');
 		const emitter = await A.page.evaluate(() => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			let hit = null;
 			g.traverse((o) => {
 				if (!hit && o.userData?.fluidEmitter) hit = o.getWorldPosition(o.position.clone()).toArray();
@@ -585,14 +585,14 @@ h.run(async () => {
 		if (emitter) await look(A.page, [emitter[0] + 4, emitter[1] + 2, emitter[2] + 4], emitter);
 		// Water works has no dynamic body, so it never runs a simulation (its emitters pour in Edit too): add one
 		// box so there is a run to pause, then start it through the pill
-		await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+		await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 		await A.page.waitForTimeout(800);
-		await A.page.evaluate(() => window.__stores.scenePhysics.setScenePhysics({ simOnLoad: true }));
+		await A.page.evaluate(() => window.__tp.test.v1.scenePhysics.setScenePhysics({ simOnLoad: true }));
 		await A.page.waitForSelector('#sim-controls', { timeout: 5000 });
 		if (!(await simulating(A.page))) await A.page.$eval('#sim-play', (el) => /** @type {any} */ (el).click());
 		await h.eventually(() => simulating(A.page), (v) => v === true, 'the simulation runs', 15000);
 		await A.page.waitForSelector('#sim-pause', { timeout: 10000 });
-		const emDbg = () => A.page.evaluate(() => window.__stores.sim.fluidEmitterDebug().filter((e) => e.visible));
+		const emDbg = () => A.page.evaluate(() => window.__tp.test.v1.sim.fluidEmitterDebug().filter((e) => e.visible));
 		await h.eventually(emDbg, (d) => d.length > 0 && d.every((e) => e.steps > 20 && e.count > 0), 'emitters running', 20000);
 		const press = (/** @type {string} */ sel) => A.page.$eval(sel, (el) => /** @type {any} */ (el).click());
 		await press('#sim-pause');
@@ -608,13 +608,13 @@ h.run(async () => {
 		const before = c.reduce((s, e) => s + e.released, 0);
 		await press('#sim-reset');
 		await h.eventually(
-			() => A.page.evaluate(() => window.__stores.sim.fluidEmitterDebug().reduce((s, e) => s + e.released, 0)),
+			() => A.page.evaluate(() => window.__tp.test.v1.sim.fluidEmitterDebug().reduce((s, e) => s + e.released, 0)),
 			(n) => n < before,
 			`Reset empties the emitters and pours again (released ${before} -> fewer)`,
 			8000
 		);
-		await A.page.evaluate(() => window.__stores.physics.stopSimulation());
-		await A.page.evaluate(() => window.__stores.scenePhysics.setScenePhysics({ simOnLoad: false }));
+		await A.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
+		await A.page.evaluate(() => window.__tp.test.v1.scenePhysics.setScenePhysics({ simOnLoad: false }));
 	} catch (error) {
 		h.check(false, 'S9e section stopped: ' + (error?.message ?? error));
 	}
@@ -623,9 +623,9 @@ h.run(async () => {
 	if (want('f18')) {
 		await load(A.page, 'pool-party');
 		const ids = await A.page.evaluate(() => {
-			const cmd = window.__stores.commandsHandler.sceneCommand;
+			const cmd = window.__tp.test.v1.commandsHandler.sceneCommand;
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const last = () => g.children[g.children.length - 1];
 			cmd('/create Box 0.5 0.5 0.5');
 			const wet = last();
@@ -644,7 +644,7 @@ h.run(async () => {
 		for (const uuid of [ids.wet, ids.dry]) {
 			await A.page.evaluate((u) => {
 				localStorage.setItem('inspector:sec:Water', 'open');
-				window.__stores.objectActions.selectObject(u, true);
+				window.__tp.test.v1.objectActions.selectObject(u, true);
 			}, uuid);
 			const btn = await A.page.waitForSelector('#bubbles-add', { timeout: 8000 }).catch(() => null);
 			h.check(!!btn, 'the Water section offers "Add bubble emitter" on a plain object');
@@ -660,22 +660,31 @@ h.run(async () => {
 		h.check(
 			(await A.page.evaluate((i) => {
 				let g;
-				window.__stores.objectsGroup.subscribe((v) => (g = v))();
+				window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 				return [i.wet, i.dry].every((u) => g.getObjectByProperty('uuid', u)?.userData?.bubbles?.enabled === true);
 			}, ids)),
 			'both objects carry an enabled bubble emitter (userData.bubbles)'
 		);
-		await A.page.evaluate(() => window.__stores.objectActions.deselectObject?.());
+		await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject?.());
+		// showhide-v8: Configure Scene is its own Inspector tab and stays open past a deselect, so the column S7 opened
+		// would cover the dry emitter's clip at the right edge; close it as the user would
+		// uir-polish E3: Properties keeps the last object past a deselect too — close both tabs
+		await A.page.evaluate(() => {
+			window.__tp.test.v1.sidebars.closeInspectorTab('scene');
+			window.__tp.test.v1.sidebars.closeInspectorTab('inspector');
+		});
 		await look(A.page, [0, 1.6, 7.2], [0, -0.2, 2]);
 		await A.page.waitForTimeout(1500);
 		/** pixels the bubbles change around an emitter: on vs off, same frame otherwise */
 		const delta = async (/** @type {string} */ uuid, /** @type {number[]} */ at) => {
 			const clip = await h.centeredClip(A, at, 220);
+			const onCanvas = await A.page.evaluate((c) => document.elementFromPoint(c.x + c.width / 2, c.y + c.height / 2)?.tagName === 'CANVAS', clip);
+			h.check(onCanvas, `premise: the 3D view, not a panel, is under the clip at ${clip.x},${clip.y}`);
 			const on = await A.page.screenshot({ clip });
-			await A.page.evaluate((u) => window.__stores.waterActions.updateObjectBubbles(u, { enabled: false }, { immediate: true }), uuid);
+			await A.page.evaluate((u) => window.__tp.test.v1.waterActions.updateObjectBubbles(u, { enabled: false }, { immediate: true }), uuid);
 			await A.page.waitForTimeout(500);
 			const off = await A.page.screenshot({ clip });
-			await A.page.evaluate((u) => window.__stores.waterActions.updateObjectBubbles(u, { enabled: true }, { immediate: true }), uuid);
+			await A.page.evaluate((u) => window.__tp.test.v1.waterActions.updateObjectBubbles(u, { enabled: true }, { immediate: true }), uuid);
 			await A.page.waitForTimeout(500);
 			return h.frameDelta(A.page, on, off, 24);
 		};

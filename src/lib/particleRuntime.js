@@ -187,6 +187,7 @@ function buildEntry(key, count, render = 'points', segs = 1) {
 			uGround: { value: 0 },
 			uQuat: { value: new THREE.Vector4(0, 0, 0, 1) },
 			uWorldSpace: { value: 0 },
+			uAimWorld: { value: 0 },
 			// 37-fx: inherit velocity + the strip modes
 			uInherit: { value: 0 },
 			uRender: { value: RENDER_INDEX[/** @type {'points'} */ (render)] ?? 0 },
@@ -339,6 +340,7 @@ function applyUniforms(entry, cfg) {
 	u.uPhaseNoise.value = phaseNoiseOf(entry);
 	// 37-fx: inherit velocity (0..1 of the emitter's speed, world space) and how much path a
 	// stretched spark / a trail covers, in seconds
+	u.uAimWorld.value = cfg.aim === 'world' ? 1 : 0;
 	u.uInherit.value = Math.min(Math.max(Number(cfg.inherit) || 0, 0), 2);
 	u.uTrail.value =
 		entry.render === 'stretch'
@@ -577,6 +579,7 @@ export function particleEntries() {
 		drawRange: entry.geometry.drawRange.count,
 		vel: [...entry.vel],
 		inherit: entry.material.uniforms.uInherit.value,
+		aimWorld: entry.material.uniforms.uAimWorld.value,
 		trail: entry.material.uniforms.uTrail.value,
 		space: entry.space,
 		sprite: entry.sprite,

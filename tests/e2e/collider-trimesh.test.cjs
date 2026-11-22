@@ -14,7 +14,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(4000);
 		await warm.ctx.close();
 	}
@@ -25,11 +25,11 @@ h.run(async () => {
 
 	// scene: an Arch across the z axis, a small ball 3 m in front of its opening
 	await A.page.evaluate(() => {
-		const cmd = window.__stores.commandsHandler.sceneCommand;
+		const cmd = window.__tp.test.v1.commandsHandler.sceneCommand;
 		cmd('/create Arch');
 		cmd('/create Sphere 0.2');
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		window.__arch = g.children.find((c) => c.name === 'Arch');
 		window.__ball = g.children.find((c) => c.name === 'Sphere');
 		window.__park = () => {
@@ -38,15 +38,15 @@ h.run(async () => {
 			window.__ball.updateMatrixWorld(true);
 		};
 		window.__park();
-		window.__stores.physics.setPhysicsFor(window.__arch.uuid, { mode: 'static' });
-		window.__stores.physics.setPhysicsFor(window.__ball.uuid, { mode: 'dynamic', mass: 1, collider: 'sphere' });
+		window.__tp.test.v1.physics.setPhysicsFor(window.__arch.uuid, { mode: 'static' });
+		window.__tp.test.v1.physics.setPhysicsFor(window.__ball.uuid, { mode: 'dynamic', mass: 1, collider: 'sphere' });
 	});
 
 	const hint = await A.page.evaluate(() => window.__arch.userData.colliderHint);
 	h.check(hint === 'trimesh', `a new Arch stamps the exact-mesh hint (${hint})`);
 
 	// --- 1) the Inspector offers the exact mesh for a static body, not a dynamic one
-	await A.page.evaluate(() => window.__stores.objectActions.selectObject(window.__arch.uuid, true));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.selectObject(window.__arch.uuid, true));
 	await h.eventually(
 		() => A.page.evaluate(() => !!document.querySelector('#physics-collider')),
 		(v) => v,
@@ -70,28 +70,28 @@ h.run(async () => {
 	h.check(staticOpts.opts.includes('Exact mesh (static)'), `static body offers Exact mesh (${JSON.stringify(staticOpts.opts)})`);
 	h.check(/Exact mesh/.test(staticOpts.label), `a static Arch shows the inferred Exact mesh (${staticOpts.label})`);
 	await A.page.evaluate(() => {
-		window.__stores.physics.setPhysicsFor(window.__arch.uuid, { mode: 'dynamic', mass: 1 });
-		window.__stores.selectedObject.update((v) => v);
+		window.__tp.test.v1.physics.setPhysicsFor(window.__arch.uuid, { mode: 'dynamic', mass: 1 });
+		window.__tp.test.v1.selectedObject.update((v) => v);
 	});
 	await A.page.waitForTimeout(400);
 	const dynOpts = await colliderOptions(A.page);
 	h.check(!dynOpts.opts.includes('Exact mesh (static)'), `a dynamic body is not offered Exact mesh (${JSON.stringify(dynOpts.opts)})`);
 	await A.page.evaluate(() => {
-		window.__stores.physics.setPhysicsFor(window.__arch.uuid, { mode: 'static', mass: undefined });
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.physics.setPhysicsFor(window.__arch.uuid, { mode: 'static', mass: undefined });
+		window.__tp.test.v1.objectActions.deselectObject();
 	});
 
 	// --- sim helpers
 	const start = async () => {
-		await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+		await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 		await h.eventually(
-			() => A.page.evaluate(() => new Promise((r) => window.__stores.physics.simulating.subscribe(r)())),
+			() => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.physics.simulating.subscribe(r)())),
 			(v) => v === true,
 			'simulation started'
 		);
 	};
 	const stop = async () => {
-		await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+		await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 		await A.page.waitForTimeout(400);
 		await A.page.evaluate(() => window.__park());
 	};
@@ -99,7 +99,7 @@ h.run(async () => {
 	// STOPPED — a fixed wait lies on a loaded box, where the sim steps slowly
 	const roll = () =>
 		A.page.evaluate(async () => {
-			const p = window.__stores.physics;
+			const p = window.__tp.test.v1.physics;
 			await new Promise((r) => setTimeout(r, 300)); // let it settle on the ground
 			p.setBodyVelocity(window.__ball.uuid, [0, 0, 4], [0, 0, 0]);
 			const t0 = Date.now();
@@ -117,8 +117,8 @@ h.run(async () => {
 		});
 	const archShapes = () =>
 		A.page.evaluate(() => {
-			const fixed = window.__stores.physics.physicsWorldDebug().fixed.find((f) => f.name === 'Arch');
-			const body = window.__stores.physics.physicsDebug().find((b) => b.name === 'Arch');
+			const fixed = window.__tp.test.v1.physics.physicsWorldDebug().fixed.find((f) => f.name === 'Arch');
+			const body = window.__tp.test.v1.physics.physicsDebug().find((b) => b.name === 'Arch');
 			return fixed?.shapes ?? body?.shapes ?? null;
 		});
 
@@ -131,7 +131,7 @@ h.run(async () => {
 	await stop();
 
 	// --- 3) counterfactual: the hull seals the opening
-	await A.page.evaluate(() => window.__stores.physics.setPhysicsFor(window.__arch.uuid, { collider: 'hull' }));
+	await A.page.evaluate(() => window.__tp.test.v1.physics.setPhysicsFor(window.__arch.uuid, { collider: 'hull' }));
 	await start();
 	const shapes3 = await archShapes();
 	h.check(JSON.stringify(shapes3) === '["ConvexPolyhedron"]', `the hull pick is a convex polyhedron (${JSON.stringify(shapes3)})`);
@@ -143,11 +143,11 @@ h.run(async () => {
 	);
 
 	// --- 4) live rebuild: switch to the exact mesh MID-SIM, no restart
-	await A.page.evaluate(() => window.__stores.physics.setPhysicsFor(window.__arch.uuid, { collider: 'trimesh' }));
+	await A.page.evaluate(() => window.__tp.test.v1.physics.setPhysicsFor(window.__arch.uuid, { collider: 'trimesh' }));
 	await A.page.waitForTimeout(200);
 	const shapes4 = await archShapes();
 	h.check(JSON.stringify(shapes4) === '["TriMesh"]', `mid-sim switch rebuilds the arch as a TriMesh (${JSON.stringify(shapes4)})`);
-	const sim4 = await A.page.evaluate(() => new Promise((r) => window.__stores.physics.simulating.subscribe(r)()));
+	const sim4 = await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.physics.simulating.subscribe(r)()));
 	h.check(sim4 === true, 'the simulation kept running through the rebuild');
 	const after = await roll();
 	h.check(after.z > 2, `after the live switch the ball passes (z ${after.z.toFixed(2)})`);
@@ -155,20 +155,20 @@ h.run(async () => {
 
 	// --- 5) a dynamic body with an exact pick gets its hull, and says so
 	await A.page.evaluate(() => {
-		window.__stores.toastStore.set([]);
+		window.__tp.test.v1.toastStore.set([]);
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
-		window.__stores.commandsHandler.sceneCommand('/create Corner');
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create Corner');
 		window.__corner = g.children[g.children.length - 1];
 		window.__corner.position.set(6, 3, 6);
 		window.__corner.updateMatrixWorld(true);
-		window.__stores.physics.setPhysicsFor(window.__corner.uuid, { mode: 'dynamic', mass: 1, collider: 'trimesh' });
+		window.__tp.test.v1.physics.setPhysicsFor(window.__corner.uuid, { mode: 'dynamic', mass: 1, collider: 'trimesh' });
 	});
 	await start();
 	const dyn = await A.page.evaluate(() => {
-		const body = window.__stores.physics.physicsDebug().find((b) => b.uuid === window.__corner.uuid);
+		const body = window.__tp.test.v1.physics.physicsDebug().find((b) => b.uuid === window.__corner.uuid);
 		let toasts;
-		window.__stores.toastStore.subscribe((v) => (toasts = v))();
+		window.__tp.test.v1.toastStore.subscribe((v) => (toasts = v))();
 		return {
 			shapes: body?.shapes ?? null,
 			mode: body?.mode ?? null,
@@ -179,65 +179,65 @@ h.run(async () => {
 	h.check(/static bodies/.test(dyn.toast ?? ''), `the fallback says why (${dyn.toast})`);
 	await stop();
 	await A.page.evaluate(() => {
-		window.__stores.objectActions.selectObject(window.__corner.uuid, true);
-		window.__stores.objectActions.deleteSelection();
+		window.__tp.test.v1.objectActions.selectObject(window.__corner.uuid, true);
+		window.__tp.test.v1.objectActions.deleteSelection();
 	});
 
 	// --- 6) the viz draws the exact mesh (and a dynamic body's hull)
-	await A.page.evaluate(() => window.__stores.colliderHelpers.showColliders.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.colliderHelpers.showColliders.set(true));
 	await h.eventually(
 		() =>
 			A.page.evaluate(() =>
-				window.__stores.colliderHelpers.colliderHelpersDebug().find((e) => e.uuid === window.__arch.uuid) ?? null
+				window.__tp.test.v1.colliderHelpers.colliderHelpersDebug().find((e) => e.uuid === window.__arch.uuid) ?? null
 			),
 		(e) => !!e && e.key.startsWith('trimesh'),
 		'the collider viz builds the exact mesh'
 	);
 	const viz = await A.page.evaluate(() =>
-		window.__stores.colliderHelpers.colliderHelpersDebug().find((e) => e.uuid === window.__arch.uuid) ?? null
+		window.__tp.test.v1.colliderHelpers.colliderHelpersDebug().find((e) => e.uuid === window.__arch.uuid) ?? null
 	);
 	h.check(!!viz && viz.key.startsWith('trimesh') && viz.pieces === 1, `viz entry is the trimesh (${viz?.key?.slice(0, 20)})`);
 	fs.mkdirSync(EVIDENCE, { recursive: true });
 	// evidence frames: the arch MESH hidden locally so the green collider proxy
 	// is what the picture shows (exact = the arch with its opening, hull = a slab)
 	await A.page.evaluate(() => {
-		window.__stores.objectActions.deselectObject();
-		window.__stores.closeSelectionInspector?.();
+		window.__tp.test.v1.objectActions.deselectObject();
+		window.__tp.test.v1.closeSelectionInspector?.();
 		window.__ball.visible = false;
 		window.__arch.visible = false;
-		window.__stores.objectActions.flyTo([1.6, 1.6, -4.2], [0, 0.9, 0], 0);
+		window.__tp.test.v1.objectActions.flyTo([1.6, 1.6, -4.2], [0, 0.9, 0], 0);
 	});
 	await A.page.waitForTimeout(1000);
 	await A.page.screenshot({ path: path.join(EVIDENCE, '01-trimesh-arch-viz-dark.png') });
-	await A.page.evaluate(() => window.__stores.themes.theme.set('light'));
+	await A.page.evaluate(() => window.__tp.test.v1.themes.theme.set('light'));
 	await A.page.waitForTimeout(500);
 	await A.page.screenshot({ path: path.join(EVIDENCE, '02-trimesh-arch-viz-light.png') });
 	await A.page.evaluate(() => {
-		window.__stores.physics.setPhysicsFor(window.__arch.uuid, { collider: 'hull' });
+		window.__tp.test.v1.physics.setPhysicsFor(window.__arch.uuid, { collider: 'hull' });
 	});
 	await A.page.waitForTimeout(600);
 	await A.page.screenshot({ path: path.join(EVIDENCE, '03-hull-arch-viz-before.png') });
 	await A.page.evaluate(() => {
-		window.__stores.themes.theme.set('dark');
+		window.__tp.test.v1.themes.theme.set('dark');
 		window.__arch.visible = true;
 		window.__ball.visible = true;
-		window.__stores.physics.setPhysicsFor(window.__arch.uuid, { collider: 'trimesh' });
+		window.__tp.test.v1.physics.setPhysicsFor(window.__arch.uuid, { collider: 'trimesh' });
 	});
 
 	// --- 7) two peers: the pick replicates and B builds the same exact mesh
 	const archUuid = await A.page.evaluate(() => window.__arch.uuid);
 	const aTris = await A.page.evaluate(
-		() => window.__stores.colliderSpec.colliderSpecOf(window.__arch).pieces[0].indices.length
+		() => window.__tp.test.v1.colliderSpec.colliderSpecOf(window.__arch).pieces[0].indices.length
 	);
-	await A.page.evaluate(() => window.__stores.physics.setPhysicsFor(window.__arch.uuid, { collider: 'trimesh', friction: 0.4 }));
+	await A.page.evaluate(() => window.__tp.test.v1.physics.setPhysicsFor(window.__arch.uuid, { collider: 'trimesh', friction: 0.4 }));
 	/** @param {string} uuid */
 	const bRead = (uuid) =>
 			B.page.evaluate((uuid) => {
 				let g;
-				window.__stores.objectsGroup.subscribe((v) => (g = v))();
+				window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 				const arch = g?.getObjectByProperty('uuid', uuid);
 				if (!arch) return null;
-				const spec = window.__stores.colliderSpec.colliderSpecOf(arch, arch.userData.physics?.collider);
+				const spec = window.__tp.test.v1.colliderSpec.colliderSpecOf(arch, arch.userData.physics?.collider);
 				return {
 					collider: arch.userData.physics?.collider ?? null,
 					friction: arch.userData.physics?.friction ?? null,

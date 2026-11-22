@@ -27,12 +27,12 @@ h.run(async () => {
 		if (/peer error|peerjs|Lost connection/i.test(t)) return;
 		if (/Shader Error|ERROR: \d|VALIDATE_STATUS/i.test(t)) glsl.push(t.slice(0, 400));
 	});
-	await page.waitForFunction(() => !!window.__stores?.shaderGraph, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.shaderGraph, { timeout: 30000 });
 
 	// a row of boxes, each given a DISTINCT base colour by hand so the flattening check
 	// does not depend on which uuids palette.js happened to produce
 	const built = await page.evaluate(async (count) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		const read = (s) => new Promise((r) => s.subscribe((v) => r(v))());
 		for (let i = 0; i < count; i++) S.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 2500));
@@ -57,10 +57,10 @@ h.run(async () => {
 
 	// ---- 1. one scene graph drives all of them ------------------------------
 	const applied = await page.evaluate(async () => {
-		const S = window.__stores.shaderGraph;
-		const renderer = await new Promise((r) => window.__stores.globalRenderer.subscribe((v) => r(v))());
-		const scene = await new Promise((r) => window.__stores.globalScene.subscribe((v) => r(v))());
-		const camera = await new Promise((r) => window.__stores.globalCamera.subscribe((v) => r(v))());
+		const S = window.__tp.test.v1.shaderGraph;
+		const renderer = await new Promise((r) => window.__tp.test.v1.globalRenderer.subscribe((v) => r(v))());
+		const scene = await new Promise((r) => window.__tp.test.v1.globalScene.subscribe((v) => r(v))());
+		const camera = await new Promise((r) => window.__tp.test.v1.globalCamera.subscribe((v) => r(v))());
 		// render once so the renderer's program list reflects the pre-shader state
 		renderer.render(scene, camera);
 		const programsBefore = renderer.info.programs?.length ?? -1;
@@ -129,7 +129,7 @@ h.run(async () => {
 	// compiled material would give every object the same base colour.
 	const colours = await page.evaluate(async (uuids) => {
 		const read = (s) => new Promise((r) => s.subscribe((v) => r(v))());
-		const group = await read(window.__stores.objectsGroup);
+		const group = await read(window.__tp.test.v1.objectsGroup);
 		const pick = (i) => {
 			const o = group.getObjectByProperty('uuid', uuids[i]);
 			return o?.material?.color ? o.material.color.getHexString() : null;
@@ -167,7 +167,7 @@ h.run(async () => {
 
 	// ---- 4. an own graph still wins, at scale ------------------------------
 	const optOut = await page.evaluate(async (uuids) => {
-		const S = window.__stores.shaderGraph;
+		const S = window.__tp.test.v1.shaderGraph;
 		const read = (s) => new Promise((r) => s.subscribe((v) => r(v))());
 		S.setShaderGraphFor(uuids[0], {
 			nodes: [
@@ -177,7 +177,7 @@ h.run(async () => {
 			edges: [{ id: 'e', source: 'c', sourceHandle: 'out', target: 's', targetHandle: 'albedo' }]
 		});
 		await S.compileAndApply(uuids[0]);
-		const group = await read(window.__stores.objectsGroup);
+		const group = await read(window.__tp.test.v1.objectsGroup);
 		const own = group.getObjectByProperty('uuid', uuids[0]);
 		return {
 			key: S.graphKeyFor(uuids[0]),
@@ -200,7 +200,7 @@ h.run(async () => {
 
 	// ---- 5. removing the scene graph puts everything back ------------------
 	const cleared = await page.evaluate(async () => {
-		const S = window.__stores.shaderGraph;
+		const S = window.__tp.test.v1.shaderGraph;
 		S.setShaderGraphFor('scene', null);
 		await S.compileAndApply('scene');
 		await new Promise((r) => setTimeout(r, 400));

@@ -26,7 +26,7 @@ const read = (page, path) =>
 	S(page, (path) => {
 		const [mod, name] = path.split('.');
 		let v;
-		window.__stores[mod][name].subscribe((x) => (v = x))();
+		window.__tp.test.v1[mod][name].subscribe((x) => (v = x))();
 		return v;
 	}, path);
 const order = async (page) => (await read(page, 'bottomDock.dockTabs')).map((t) => t.key);
@@ -67,7 +67,7 @@ const headerPoint = (page, sel) =>
 
 async function openDock(page) {
 	await S(page, async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphClose.set(false);
 		s.explorerClose.set(false);
 		await new Promise((r) => setTimeout(r, 600));
@@ -80,23 +80,23 @@ h.run(async () => {
 	const browser = await h.launch();
 	const P = await h.setupPage(browser, 'D', {
 		context: DESK,
-		storage: { flowDocked: 'true', explorerDocked: 'true', flowCodeDocked: 'false', animationDocked: 'false', uvDocked: 'false', dockTabOrder: '["flow","explorer"]' }
+		storage: { flowDocked: 'true', explorerDocked: 'true', timelineDocked: 'false', animationDocked: 'false', uvDocked: 'false', dockTabOrder: '["flow","explorer"]' }
 	});
 	const page = P.page;
 	await openDock(page);
 	h.check(JSON.stringify(await order(page)) === '["flow","explorer"]', `premise: the dock holds Node editor | Explorer (${JSON.stringify(await order(page))})`);
 
 	// ---- 1. a lone window onto the strip, between the two tabs -----------------------------
-	await S(page, () => window.__stores.flowCodeClose.set(false));
+	await S(page, () => window.__tp.test.v1.timelineClose.set(false));
 	await page.waitForTimeout(800);
-	let from = await headerPoint(page, '#flow-code-window');
+	let from = await headerPoint(page, '#timeline-window');
 	let gap = await gapPoint(page, 1);
 	await page.mouse.move(from.x, from.y);
 	await page.mouse.down();
 	await page.mouse.move(gap.x, gap.y - 120, { steps: 8 });
 	await page.mouse.move(gap.x, gap.y, { steps: 8 });
 	await page.waitForTimeout(150);
-	let fb = await feedback(page, '#flow-code-window');
+	let fb = await feedback(page, '#timeline-window');
 	await page.screenshot({ path: (process.env.OUT || '/tmp') + '/g7-strip-caret-dark.png' });
 	h.check(fb.caret && fb.caretX >= gap.lo && fb.caretX <= gap.hi, `1.1 over the strip a caret marks the slot between the two tabs (caret x ${fb.caretX}, gap ${gap.lo}..${gap.hi})`);
 	h.check(fb.ghost && Math.abs(fb.opacity - 0.6) < 0.05, `1.2 ...and the dragged window turns see-through (opacity ${fb.opacity})`);
@@ -104,13 +104,13 @@ h.run(async () => {
 	await page.mouse.up();
 	await page.waitForTimeout(1200);
 	let ord = await order(page);
-	h.check(JSON.stringify(ord) === '["flow","flowcode","explorer"]', `1.4 released, it docks AT the caret: ${JSON.stringify(ord)}`);
-	h.check((await read(page, 'bottomDock.visibleDockKey')) === 'flowcode', '1.5 ...and is the visible tab');
+	h.check(JSON.stringify(ord) === '["flow","timeline","explorer"]', `1.4 released, it docks AT the caret: ${JSON.stringify(ord)}`);
+	h.check((await read(page, 'bottomDock.visibleDockKey')) === 'timeline', '1.5 ...and is the visible tab');
 	fb = await feedback(page, null);
 	h.check(!fb.caret && !fb.target && !(await S(page, () => !!document.querySelector('.dock-drag-ghost'))), '1.6 no feedback is left behind after the drop');
 
 	// ---- 2. over the dock body and the drawer: floats, follows the cursor ------------------
-	await S(page, () => window.__stores.animationClose.set(false));
+	await S(page, () => window.__tp.test.v1.animationClose.set(false));
 	await page.waitForTimeout(800);
 	from = await headerPoint(page, '#animation-window');
 	const start = await S(page, () => {
@@ -153,7 +153,7 @@ h.run(async () => {
 		const w = document.getElementById('animation-window');
 		const b = w.getBoundingClientRect();
 		let p;
-		window.__stores.bottomDock.dockOccupants.subscribe((v) => (p = v))();
+		window.__tp.test.v1.bottomDock.dockOccupants.subscribe((v) => (p = v))();
 		return { top: b.top, floating: !w.dataset.docked && !p.animation?.present, dockTop: window.innerHeight - parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bottom-inset')) };
 	});
 	h.check(rest.floating && rest.top > rest.dockTop, `2.4 released over the dock it stays FLOATING, parked over the dock (top ${Math.round(rest.top)} > dock ${Math.round(rest.dockTop)})`);
@@ -187,10 +187,10 @@ h.run(async () => {
 	h.check(ord[ord.length - 1] === 'animation', `3.2 dropped on the edge band it docks at the end (${JSON.stringify(ord)})`);
 
 	// ---- 4. a tab torn out of a group, onto the strip ---------------------------------------
-	await S(page, () => window.__stores.bottomDock.armDockMode('animation', false));
+	await S(page, () => window.__tp.test.v1.bottomDock.armDockMode('animation', false));
 	await page.waitForTimeout(900);
 	await S(page, async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.objectListClose.set(false);
 		await new Promise((r) => setTimeout(r, 700));
 		s.windowTabs.mergeWindows('objects', 'animation');
@@ -221,12 +221,12 @@ h.run(async () => {
 
 	// ---- 5. a whole group by its strip ---------------------------------------------------------
 	await S(page, async () => {
-		const s = window.__stores;
-		s.bottomDock.armDockMode('flowcode', false);
+		const s = window.__tp?.test.v1;
+		s.bottomDock.armDockMode('timeline', false);
 		await new Promise((r) => setTimeout(r, 400));
 		s.uvEditorClose.set(false);
 		await new Promise((r) => setTimeout(r, 900));
-		s.windowTabs.mergeWindows('flowcode', 'uv');
+		s.windowTabs.mergeWindows('timeline', 'uv');
 		await new Promise((r) => setTimeout(r, 300));
 		let g;
 		s.windowTabs.tabGroups.subscribe((v) => (g = v))();
@@ -252,29 +252,40 @@ h.run(async () => {
 	ord = await order(page);
 	h.check(sp.ok && fb.caret, `5.1 a group dragged by its strip shows the caret on the dock strip (${JSON.stringify(fb)})`);
 	h.check(
-		JSON.stringify(ord.slice(-2)) === '["flowcode","uv"]' && ord.length === before.length + 2,
+		JSON.stringify(ord.slice(-2)) === '["timeline","uv"]' && ord.length === before.length + 2,
 		`5.2 released, both of its tabs dock there, in tab order (${JSON.stringify(before)} -> ${JSON.stringify(ord)})`
 	);
 	h.check((await read(page, 'bottomDock.visibleDockKey')) === 'uv', '5.3 ...showing the tab that was active in the group');
 
-	// ---- 6. G24 — the Image editor in the dock ---------------------------------------------------
+	// ---- 6. G24 -> uir-preview — the Preview tab (the Image editor is its Edit face now) ----------
 	await S(page, () => {
 		const b = document.getElementById('dock-add-view');
 		b.click();
 	});
 	await page.waitForTimeout(400);
 	const rows = await S(page, () => [...document.querySelectorAll('[role="menuitem"]')].map((r) => r.textContent.trim()));
-	h.check(rows.some((r) => /Image editor/.test(r)), `6.1 the dock "+" lists the Image editor (${JSON.stringify(rows)})`);
-	await S(page, () => [...document.querySelectorAll('[role="menuitem"]')].find((r) => /Image editor/.test(r.textContent))?.click());
+	h.check(rows.some((r) => /^Preview/.test(r)) && !rows.some((r) => /Image editor/.test(r)), `6.1 the dock "+" lists Preview, no separate Image editor (${JSON.stringify(rows)})`);
+	await S(page, () => [...document.querySelectorAll('[role="menuitem"]')].find((r) => /^Preview/.test(r.textContent.trim()))?.click());
 	await page.waitForTimeout(1200);
-	let ie = await S(page, () => ({
-		dock: !!document.querySelector('#image-editor-dock:not(.hidden)'),
-		win: !!document.getElementById('image-editor-window'),
-		empty: !!document.getElementById('image-editor-empty'),
-		tab: !!document.querySelector('[data-dock-tab="imageEditor"]')
-	}));
-	h.check(ie.dock && !ie.win && ie.tab && ie.empty, `6.2 "+ Image editor" opens it as a dock tab, saying how to pick an image (${JSON.stringify(ie)})`);
-	await page.screenshot({ path: (process.env.OUT || '/tmp') + '/g24-image-editor-docked-empty-dark.png' });
+	const pv = () =>
+		S(page, () => {
+			const w = document.getElementById('image-preview-window');
+			let v;
+			window.__tp.test.v1.bottomDock.visibleDockKey.subscribe((x) => (v = x))();
+			return {
+				hosted: w?.getAttribute('data-pd-host') ?? null,
+				win: !!w,
+				pinned: w?.dataset.previewPinned === 'true',
+				mode: w?.dataset.previewMode ?? null,
+				empty: !!document.getElementById('preview-empty'),
+				tab: !!document.querySelector('[data-dock-tab="preview"]'),
+				visible: v,
+				size: w?.querySelector('#image-editor-size')?.textContent ?? ''
+			};
+		});
+	let ie = await pv();
+	h.check(ie.hosted === 'shown' && ie.tab && ie.pinned && ie.empty, `6.2 "+ Preview" opens it as a pinned dock tab, saying what to do (${JSON.stringify(ie)})`);
+	await page.screenshot({ path: (process.env.OUT || '/tmp') + '/uir-preview-docked-empty-dark.png' });
 	const img = await S(page, async () => {
 		const c = document.createElement('canvas');
 		c.width = 64;
@@ -285,46 +296,42 @@ h.run(async () => {
 		ctx.fillStyle = '#3030c0';
 		ctx.fillRect(32, 0, 32, 48);
 		const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
-		await window.__stores.explorer.loadExplorer?.();
-		const rec = await window.__stores.explorer.addItemFromBytes(await blob.arrayBuffer(), 'g24.png', null, { imported: true });
-		window.__stores.bottomDock.activateDock('flow');
+		await window.__tp.test.v1.explorer.loadExplorer?.();
+		const rec = await window.__tp.test.v1.explorer.addItemFromBytes(await blob.arrayBuffer(), 'g24.png', null, { imported: true });
+		window.__tp.test.v1.bottomDock.activateDock('flow');
 		await new Promise((r) => setTimeout(r, 300));
-		window.__stores.imageEditor.openImageEditor(rec.id);
+		window.__tp.test.v1.imageEditor.openImageEditor(rec.id);
 		return rec.id;
 	});
 	await page.waitForTimeout(1500);
-	ie = await S(page, () => ({
-		visible: (() => {
-			let v;
-			window.__stores.bottomDock.visibleDockKey.subscribe((x) => (v = x))();
-			return v;
-		})(),
-		size: document.querySelector('#image-editor-dock #image-editor-size')?.textContent ?? ''
-	}));
-	h.check(!!img && ie.visible === 'imageEditor' && /64 × 48/.test(ie.size), `6.3 opening an Explorer image brings the docked editor forward with it (${JSON.stringify(ie)})`);
-	await page.screenshot({ path: (process.env.OUT || '/tmp') + '/g24-image-editor-docked-dark.png' });
+	ie = await pv();
+	h.check(!!img && ie.visible === 'preview' && ie.mode === 'edit' && /64 × 48/.test(ie.size), `6.3 Edit image… brings the docked Preview forward, in Edit (${JSON.stringify(ie)})`);
+	await page.screenshot({ path: (process.env.OUT || '/tmp') + '/uir-preview-docked-edit-dark.png' });
 	await S(page, () => document.getElementById('dock-undock').click());
 	await page.waitForTimeout(1000);
-	ie = await S(page, () => ({ dock: !!document.getElementById('image-editor-dock'), win: !!document.getElementById('image-editor-window'), size: document.querySelector('#image-editor-window #image-editor-size')?.textContent ?? '' }));
-	h.check(!ie.dock && ie.win && /64 × 48/.test(ie.size), `6.4 undock: it floats again, same image (${JSON.stringify(ie)})`);
-	await S(page, () => document.getElementById('image-editor-dock-btn').click());
+	ie = await pv();
+	h.check(ie.win && !ie.hosted && ie.mode === 'edit' && /64 × 48/.test(ie.size), `6.4 undock: it floats again, same image, still pinned (${JSON.stringify(ie)})`);
+	h.check(ie.pinned, '6.4b ...and still pinned');
+	await S(page, () => document.getElementById('preview-pin').click()); // unpin
+	await page.waitForTimeout(300);
+	await S(page, () => document.getElementById('preview-pin').click()); // Pin to dock
 	await page.waitForTimeout(1000);
-	ie = await S(page, () => ({ dock: !!document.querySelector('#image-editor-dock:not(.hidden)'), win: !!document.getElementById('image-editor-window') }));
-	h.check(ie.dock && !ie.win, `6.5 its header's Dock button docks it again (${JSON.stringify(ie)})`);
+	ie = await pv();
+	h.check(ie.hosted === 'shown' && ie.pinned, `6.5 its header's Pin to dock docks it again (${JSON.stringify(ie)})`);
 	await page.reload({ waitUntil: 'domcontentloaded' });
-	await page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, { timeout: 30000 });
+	await page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, { timeout: 30000 });
 	await page.waitForTimeout(2500);
 	await S(page, async (id) => {
-		await window.__stores.explorer.loadExplorer?.();
-		window.__stores.imageEditor.openImageEditor(id);
+		await window.__tp.test.v1.explorer.loadExplorer?.();
+		window.__tp.test.v1.imageEditor.openImageEditor(id);
 	}, img);
 	await page.waitForTimeout(1500);
-	ie = await S(page, () => ({ dock: !!document.querySelector('#image-editor-dock:not(.hidden)'), win: !!document.getElementById('image-editor-window') }));
-	h.check(ie.dock && !ie.win, `6.6 the docked mode survives a reload (${JSON.stringify(ie)})`);
+	ie = await pv();
+	h.check(ie.hosted === 'shown' && ie.mode === 'edit', `6.6 the docked mode survives a reload (${JSON.stringify(ie)})`);
 	// light theme shot of the strip feedback for the record
 	await S(page, () => { document.documentElement.dataset.theme = 'light'; document.documentElement.classList.remove('dark'); });
 	await page.waitForTimeout(300);
-	await page.screenshot({ path: (process.env.OUT || '/tmp') + '/g24-image-editor-docked-light.png' });
+	await page.screenshot({ path: (process.env.OUT || '/tmp') + '/uir-preview-docked-light.png' });
 
 	h.check((h.pageErrors(P) || []).length === 0, `no page errors (${(h.pageErrors(P) || []).join(' | ')})`);
 	await h.finish(browser);

@@ -19,6 +19,8 @@ export default {
 			authority: true
 		},
 		{ name: 'setMode', kind: 'action', label: 'Set game mode', doc: 'Switches the game\'s mode (a globe and a board, easy and hard) and KEEPS the current level: progress belongs to the level, whichever mode reached it.', args: [{ key: 'mode', type: 'string', default: '' }], authority: true },
+		{ name: 'respawn', kind: 'action', local: true, label: 'Back to checkpoint', doc: 'Puts THIS player back at their last checkpoint (or the level start). Per player: mark the chain Per player so a press moves only whoever pressed it.', args: [] },
+		{ name: 'newGame', kind: 'action', local: true, label: 'New game', doc: 'Starts over for THIS player: forgets the saved progress on this device, resets what the game keeps across levels, and goes to the first level.', args: [] },
 		{ name: 'current', kind: 'value', label: 'Current level', vtype: 'any', doc: 'The current level\'s id (empty in the level select).', args: [] },
 		{ name: 'currentLabel', kind: 'value', label: 'Level name', vtype: 'any', doc: 'The current level\'s label, for a HUD title.', args: [] },
 		{ name: 'index', kind: 'value', label: 'Level number', vtype: 'number', doc: 'The current level\'s position in the list (1, 2, 3…), 0 when none.', args: [] },
@@ -26,6 +28,7 @@ export default {
 		{ name: 'unlocked', kind: 'value', label: 'Level unlocked?', vtype: 'boolean', doc: 'Is a level unlocked (by the game\'s rule, on this device\'s progress)?', args: [{ key: 'level', type: 'string', default: '1' }] },
 		{ name: 'totalStars', kind: 'value', label: 'Total stars', vtype: 'number', doc: 'All the stars earned across the levels, on this device.', args: [] },
 		{ name: 'mode', kind: 'value', label: 'Game mode', vtype: 'any', doc: 'The current mode (empty when the game has none).', args: [] },
+		{ name: 'checkpoint', kind: 'value', label: 'Last checkpoint', vtype: 'any', doc: 'The name of the checkpoint (or portal) THIS player last passed, empty when none.', args: [] },
 		{ name: 'selected', kind: 'event', label: 'On level chosen', doc: 'Pulses when a level becomes current.', args: [] },
 		{ name: 'completed', kind: 'event', label: 'On level finished', doc: 'Pulses when a level is recorded as finished (won or not).', args: [] },
 		{ name: 'unlockedNext', kind: 'event', label: 'On level unlocked', doc: 'Pulses when a win opens a level that was locked.', args: [] }

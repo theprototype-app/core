@@ -27,6 +27,19 @@ const TOAST_COOLDOWN_MS = 60_000;
 
 /** @type {Map<string, WireFailure>} keyed `<peerId>|<type>` */
 const failures = new Map();
+/** Rows kept at most: a dial from a stranger is counted under the stranger's id, and ids cost nothing to
+ * make, so the table forgets the row touched longest ago rather than growing with every id. */
+export const MAX_WIRE_ROWS = 512;
+/** Store a row as the most recently touched one, dropping the oldest past the cap. @param {string} key @param {WireFailure} entry */
+function remember(key, entry) {
+	failures.delete(key);
+	failures.set(key, entry);
+	while (failures.size > MAX_WIRE_ROWS) {
+		const oldest = failures.keys().next().value;
+		if (oldest === undefined) break;
+		failures.delete(oldest);
+	}
+}
 /** @type {Map<string, number>} last toast per peer, so one bad peer cannot spam */
 const lastToastAt = new Map();
 
@@ -42,22 +55,23 @@ const shortId = (peerId) => String(peerId || '?').slice(0, 6).toUpperCase();
  * @param {string} type the message type, or a pseudo-type: 'shape' (not an object),
  *   'invalid' (failed its validator), 'unknown:<t>' (no branch), 'threw' (applier threw)
  * @param {unknown} [error]
+ * @param {{quiet?: boolean}} [opts] quiet = count it, but the caller tells the user itself
  */
-export function noteWireError(peerId, type, error) {
+export function noteWireError(peerId, type, error, opts) {
 	const key = peerId + '|' + type;
 	const now = Date.now();
 	const entry = failures.get(key) ?? { count: 0, first: now, last: now, sample: '' };
 	entry.count++;
 	entry.last = now;
 	if (error !== undefined && !entry.sample) entry.sample = String(error).slice(0, 200);
-	failures.set(key, entry);
+	remember(key, entry);
 	wireErrorCount.update((n) => n + 1);
 
 	// The first three carry the detail; after that the counter is the record.
 	if (entry.count <= 3)
 		log('warn', 'wire', 'message from ' + shortId(peerId) + ' failed (' + type + ')', entry.sample || undefined);
 
-	if (entry.count === TOAST_AFTER) {
+	if (entry.count === TOAST_AFTER && !opts?.quiet) {
 		const since = lastToastAt.get(peerId) ?? 0;
 		if (now - since > TOAST_COOLDOWN_MS) {
 			lastToastAt.set(peerId, now);
@@ -65,6 +79,33 @@ export function noteWireError(peerId, type, error) {
 				'Messages from ' + shortId(peerId) + ' are failing (' + type + ') - you may be on different versions.'
 			);
 		}
+	}
+}
+
+/** 101 F4: last "sending too fast" toast per peer — ONE per peer per cooldown @type {Map<string, number>} */
+const lastDropToastAt = new Map();
+
+/**
+ * 101 F4: a message dropped by the inbound budget (`reason` 'msgs' | 'bytes' | 'object') or by the
+ * protocol gate ('proto'). Counted in the same table as failures (`budget:<reason>` /
+ * `proto:<type>`), logged three times, and — for the budget only — one toast per peer per minute.
+ * The link is never closed here.
+ * @param {string} peerId @param {string} reason @param {string} [type]
+ */
+export function noteWireDrop(peerId, reason, type) {
+	const key = peerId + '|' + (reason === 'proto' ? 'proto:' + String(type ?? '?').slice(0, 40) : 'budget:' + reason);
+	const now = Date.now();
+	const entry = failures.get(key) ?? { count: 0, first: now, last: now, sample: '' };
+	entry.count++;
+	entry.last = now;
+	remember(key, entry);
+	wireErrorCount.update((n) => n + 1);
+	if (entry.count <= 3) log('warn', 'wire', 'message from ' + shortId(peerId) + ' dropped (' + key.split('|')[1] + ')');
+	if (reason === 'proto') return;
+	const since = lastDropToastAt.get(peerId) ?? 0;
+	if (now - since > TOAST_COOLDOWN_MS) {
+		lastDropToastAt.set(peerId, now);
+		showToast(shortId(peerId) + ' is sending faster than this session can take - some of their messages were skipped.');
 	}
 }
 
@@ -87,12 +128,14 @@ export function wireErrorTotal() {
 export function dropWireErrors(peerId) {
 	for (const key of [...failures.keys()]) if (key.startsWith(peerId + '|')) failures.delete(key);
 	lastToastAt.delete(peerId);
+	lastDropToastAt.delete(peerId);
 }
 
 /** Tests, and a fresh session. */
 export function clearWireErrors() {
 	failures.clear();
 	lastToastAt.clear();
+	lastDropToastAt.clear();
 	wireErrorCount.set(0);
 }
 

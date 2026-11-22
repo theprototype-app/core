@@ -1,7 +1,8 @@
 // VR sleeve palette (K, experimental): a flat strip of ghost mini-primitives
-// riding the sleeve-hand forearm in VR — point + trigger detaches a held
-// preview (stick scales, wrist rotates), release creates it with the active
-// snap rules as one undo step. Grip-drop an existing object ONTO the strip to
+// riding the sleeve-hand forearm in VR — point + trigger (pinch), or grip with
+// the other hand at a slot, takes a ghost that grows to true size as the hand
+// moves away from the wrist (back at the wrist cancels); release creates it with
+// the active snap rules as one undo step. Grip-drop an existing object ONTO the strip to
 // capture it as a personal prefab slot (LOCAL persistence, never replicated).
 // This shell only wires the feature in; the logic lives in $lib/vrSleeve.js
 // and stays DORMANT until Settings ▸ VR ▸ "VR sleeve palette" is enabled
@@ -12,7 +13,7 @@ export default {
 	name: 'VR Sleeve Palette',
 	version: '1.0.0',
 	description:
-		'Experimental VR forearm palette: trigger-drag ghost primitives (or captured prefab slots) off your sleeve to place them. Enable it in Settings > VR.',
+		'Experimental VR forearm palette: grip or trigger a ghost primitive (or a captured prefab slot) off your sleeve and pull it out to full size to place it. Enable it in Settings > VR.',
 	/** @param {any} api */
 	register(api) {
 		// the sleeve is LOCAL-ONLY (nothing replicates through the module channel);

@@ -21,19 +21,19 @@ const { zipSync, strToU8, unzipSync, strFromU8 } = require('fflate');
 const manifestOf = (peer) =>
 	peer.page.evaluate(() => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (m = v))();
 		return m;
 	});
 const itemsOf = (peer) =>
 	peer.page.evaluate(() => {
 		let v;
-		window.__stores.explorer.explorerItems.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (v = x))();
 		return v.map((i) => ({ id: i.id, name: i.name, kind: i.kind, hash: i.hash, folderId: i.folderId ?? null, share: i.share ?? null, thumbnail: i.thumbnail ?? null }));
 	});
 const foldersOf = (peer) =>
 	peer.page.evaluate(() => {
 		let v;
-		window.__stores.explorer.explorerFolders.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.explorerFolders.subscribe((x) => (v = x))();
 		return v.map((f) => ({ id: f.id, name: f.name, parentId: f.parentId ?? null, share: f.share ?? null }));
 	});
 const scenesOf = (items) => items.filter((i) => i.kind === 'scene');
@@ -41,29 +41,29 @@ const scenesOf = (items) => items.filter((i) => i.kind === 'scene');
 const inTransfers = (peer) =>
 	peer.page.evaluate(() => {
 		let v;
-		window.__stores.transferLedger.transfers.subscribe((x) => (v = x))();
+		window.__tp.test.v1.transferLedger.transfers.subscribe((x) => (v = x))();
 		return v.filter((t) => t.dir === 'in').map((t) => ({ hash: t.hash, state: t.state, size: t.size, error: t.error ?? null }));
 	});
 const allTransfers = (peer) =>
 	peer.page.evaluate(() => {
 		let v;
-		window.__stores.transferLedger.transfers.subscribe((x) => (v = x))();
+		window.__tp.test.v1.transferLedger.transfers.subscribe((x) => (v = x))();
 		return v.map((t) => ({ hash: t.hash.slice(0, 8), state: t.state, dir: t.dir }));
 	});
 /** rows that MOVED BYTES for a hash — a 6 s "nobody answered" fuse that lost to a slow
  *  peer leaves a failed row beside the done one; the property is that bytes moved ONCE */
 const doneFor = (rows, hash) => rows.filter((t) => t.hash === hash && t.state === 'done');
 const brief = (rows) => JSON.stringify(rows.map((t) => ({ hash: t.hash.slice(0, 8), state: t.state, size: t.size, error: t.error })));
-const clearLedger = (peer) => peer.page.evaluate(() => window.__stores.transferLedger.transfers.set([]));
+const clearLedger = (peer) => peer.page.evaluate(() => window.__tp.test.v1.transferLedger.transfers.set([]));
 const blobText = (peer, id) =>
 	peer.page.evaluate(async (id) => {
-		const blob = await window.__stores.explorer.itemBlob(id);
+		const blob = await window.__tp.test.v1.explorer.itemBlob(id);
 		return blob ? await blob.text() : null;
 	}, id);
 /** a stored file's bytes, base64 — decoded in NODE so the assertion reads the zip itself */
 const blobB64 = (peer, id) =>
 	peer.page.evaluate(async (id) => {
-		const blob = await window.__stores.explorer.itemBlob(id);
+		const blob = await window.__tp.test.v1.explorer.itemBlob(id);
 		if (!blob) return null;
 		const bytes = new Uint8Array(await blob.arrayBuffer());
 		let s = '';
@@ -77,13 +77,13 @@ const sessionJsonOf = (b64) => {
 const currentLevelOf = (peer) =>
 	peer.page.evaluate(() => {
 		let v;
-		window.__stores.levels.currentLevel.subscribe((x) => (v = x))();
+		window.__tp.test.v1.levels.currentLevel.subscribe((x) => (v = x))();
 		return v;
 	});
 const worldCount = (peer) =>
 	peer.page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return (g?.children ?? []).length;
 	});
 const menuLabels = (page) =>
@@ -98,22 +98,22 @@ const newCardValue = (page) => page.locator('#explorer-new-card input').inputVal
 const toastTexts = (page) =>
 	page.evaluate(() => {
 		let v;
-		window.__stores.notifications.subscribe((x) => (v = x))();
+		window.__tp.test.v1.notifications.subscribe((x) => (v = x))();
 		return v.map((n) => String(n.text ?? ''));
 	});
 const settle = async (peer) => {
-	await peer.page.waitForFunction(() => !!window.__stores?.sharedLibrary && !!window.__stores?.explorer && !!window.__stores?.levels, { timeout: 30000 });
-	await peer.page.evaluate(() => window.__stores.explorer.loadExplorer());
+	await peer.page.waitForFunction(() => !!window.__tp?.test.v1?.sharedLibrary && !!window.__tp?.test.v1?.explorer && !!window.__tp?.test.v1?.levels, { timeout: 30000 });
+	await peer.page.evaluate(() => window.__tp.test.v1.explorer.loadExplorer());
 	// the share-new-files ASK is its own surface (shared-library covers it); `never` is
 	// "behave as before" for OWN new files — folder inheritance still shares what lands in a
 	// shared folder, which is the rule both halves below stand on
-	await peer.page.evaluate(() => window.__stores.sharedLibrary.shareNewFiles.set('never'));
+	await peer.page.evaluate(() => window.__tp.test.v1.sharedLibrary.shareNewFiles.set('never'));
 };
 const addFile = (peer, text, name, folderId = null) =>
 	peer.page.evaluate(
 		async ([text, name, folderId]) => {
 			const buf = new TextEncoder().encode(text).buffer;
-			const item = await window.__stores.explorer.addItemFromBytes(buf, name, folderId);
+			const item = await window.__tp.test.v1.explorer.addItemFromBytes(buf, name, folderId);
 			return { id: item.id, hash: item.hash, name: item.name };
 		},
 		[text, name, folderId]
@@ -133,21 +133,21 @@ h.run(async () => {
 
 	// ---- 1. PREMISE: a shared folder holding a saved scene, which B downloads ONCE -----
 	const levelsId = await A.page.evaluate(() => {
-		const f = window.__stores.explorer.createFolder('Levels', null);
-		window.__stores.sharedLibrary.shareFolder(f.id);
+		const f = window.__tp.test.v1.explorer.createFolder('Levels', null);
+		window.__tp.test.v1.sharedLibrary.shareFolder(f.id);
 		return f.id;
 	});
 	await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1200));
 		s.objectActions.deselectObject();
 	});
-	const saved = await A.page.evaluate((fid) => window.__stores.levels.saveSceneAsLevel('Arena', fid), levelsId);
+	const saved = await A.page.evaluate((fid) => window.__tp.test.v1.levels.saveSceneAsLevel('Arena', fid), levelsId);
 	h.check(!!saved?.hash && saved.name === 'Arena.tpscene', `premise: Arena saved into the shared folder (${saved?.hash?.slice(0, 8)})`);
 	// a picture on the source card, so "the thumbnail is carried over" below can FAIL: a
 	// .tpscene decodes to no thumbnail of its own, and null === null proves nothing
-	await A.page.evaluate(([id, png]) => window.__stores.explorer.patchRecord(id, { thumbnail: png }), [saved.id, TINY_PNG]);
+	await A.page.evaluate(([id, png]) => window.__tp.test.v1.explorer.patchRecord(id, { thumbnail: png }), [saved.id, TINY_PNG]);
 	await h.eventually(() => manifestOf(A), (m) => (m.scenes?.Arena?.history ?? []).length === 1 && m.scenes.Arena.history[0] === saved.hash, 'the manifest names Arena with one version');
 	await h.eventually(() => itemsOf(B), (items) => items.some((i) => i.hash === saved.hash && i.share === 'peer'), 'B auto-downloads the scene from the shared folder', 30000);
 	await h.eventually(() => inTransfers(B), (rows) => doneFor(rows, saved.hash).length === 1, 'exactly one transfer moved the scene (the premise every count below rests on)', 30000);
@@ -155,7 +155,7 @@ h.run(async () => {
 
 	// ---- 2. THE NAMING RULES (pure) ---------------------------------------------------
 	const names = await A.page.evaluate(() => {
-		const l = window.__stores.levels;
+		const l = window.__tp.test.v1.levels;
 		return {
 			copy: l.sceneCopyName('Arena'),
 			fromFile: l.sceneCopyName('Arena.tpscene'),
@@ -173,7 +173,7 @@ h.run(async () => {
 	// ---- 3. THE UI PATH: Duplicate on a scene card is ENABLED, asks a name, makes a scene
 	await A.page.locator('#explorer-slot').click();
 	await A.page.waitForTimeout(500);
-	await A.page.evaluate((id) => window.__stores.explorer.activeFolder.set(id), levelsId);
+	await A.page.evaluate((id) => window.__tp.test.v1.explorer.activeFolder.set(id), levelsId);
 	await A.page.waitForTimeout(400);
 	await A.page.locator('.explorer-card', { hasText: 'Arena.tpscene' }).first().click({ button: 'right' });
 	await A.page.waitForTimeout(300);
@@ -246,17 +246,17 @@ h.run(async () => {
 	// ---- 7. FOLDER: duplicate a folder holding a shared file; share the copy; B copies it
 	//         from its own disk with NO transfer -----------------------------------------
 	const propsId = await A.page.evaluate(() => {
-		const f = window.__stores.explorer.createFolder('Props', null);
-		window.__stores.sharedLibrary.shareFolder(f.id);
+		const f = window.__tp.test.v1.explorer.createFolder('Props', null);
+		window.__tp.test.v1.sharedLibrary.shareFolder(f.id);
 		return f.id;
 	});
 	const notes = await addFile(A, NOTES_TEXT, 'notes.txt', propsId);
-	await A.page.evaluate(() => window.__stores.sharedLibrary.publishMine(true));
+	await A.page.evaluate(() => window.__tp.test.v1.sharedLibrary.publishMine(true));
 	await h.eventually(() => itemsOf(B), (items) => items.some((i) => i.id === notes.id && i.hash === notes.hash && i.share === 'peer'), 'B downloads the shared text file under A\'s record id', 30000);
 	await h.eventually(() => inTransfers(B), (rows) => doneFor(rows, notes.hash).length === 1, 'once', 30000);
 	await clearLedger(A);
 	await clearLedger(B);
-	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await A.page.waitForTimeout(400);
 	// the folder menu offers the C1 quartet
 	await A.page.locator('.explorer-folder-card', { hasText: 'Props' }).first().click({ button: 'right' });
@@ -279,7 +279,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(2500);
 	h.check((await itemsOf(B)).filter((i) => i.hash === notes.hash).length === 1 && !(await foldersOf(B)).some((f) => f.id === copyFolder.id), 'so B has heard nothing about it yet');
 	// share the copy: the rows go out with NEW ids and a hash B already holds
-	await A.page.evaluate((id) => window.__stores.sharedLibrary.shareFolder(id), copyFolder.id);
+	await A.page.evaluate((id) => window.__tp.test.v1.sharedLibrary.shareFolder(id), copyFolder.id);
 	await h.eventually(() => foldersOf(B), (fs) => fs.some((f) => f.id === copyFolder.id && f.name === 'Props copy'), 'B creates the copy folder under the SAME id (the folder rule)', 30000);
 	await h.eventually(() => itemsOf(B), (items) => items.some((i) => i.id === copyItem.id && i.hash === notes.hash && i.share === 'peer' && i.folderId === copyFolder.id), 'B materialises the copied file under its record id, in the copy folder', 30000);
 	h.check((await itemsOf(B)).filter((i) => i.hash === notes.hash).length === 2, 'B now holds two records for the hash');
@@ -291,7 +291,7 @@ h.run(async () => {
 	h.check(ledgerA.length === 0, `...and A sent no bytes either (${JSON.stringify(ledgerA)})`);
 
 	// ---- 8. OPEN THE COPY: a double-click loads it as a scene of its own -----------------
-	await A.page.evaluate((id) => window.__stores.explorer.activeFolder.set(id), levelsId);
+	await A.page.evaluate((id) => window.__tp.test.v1.explorer.activeFolder.set(id), levelsId);
 	await A.page.waitForTimeout(400);
 	await A.page.locator('.explorer-card', { hasText: 'Arena copy.tpscene' }).first().dblclick();
 	await h.eventually(() => currentLevelOf(A), (at) => at?.name === 'Arena copy' && at.hash === copy.hash, 'double-clicking the copy opens it — currentLevel names the copy', 20000);
@@ -301,7 +301,7 @@ h.run(async () => {
 
 	// ---- 9. TEMPLATES: "Save to Library" files a template as a new scene, loading nothing
 	const sessionJson = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const mk = (name, x) => {
 			const m = new s.THREE.Mesh(new s.THREE.BoxGeometry(1, 1, 1), new s.THREE.MeshStandardMaterial({ color: 0x88aaff }));
 			m.name = name;

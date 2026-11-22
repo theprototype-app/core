@@ -13,11 +13,14 @@
   // (it must read the hash before the dial consumes it); the API itself is a dynamic import.
   import { agentRequested } from '$lib/agent/agentMode'
   import { onMount } from 'svelte'
+  // phone-polish item 2: the on-screen keyboard as --kb-inset / --kb-top (dialogs with a field read them)
+  import { installKeyboardInset } from '$lib/ui/keyboardInset.js'
+  // phone-polish: small controls get an invisible 44 px tap area on touch screens (no new look)
+  import { installHitSlop } from '$lib/ui/hitSlop.js'
   import { Canvas } from '@threlte/core'
-  // 30 P0: threlte's Canvas defaults `shadows` to PCFSoftShadowMap, which three 0.185
-  // deprecates and silently downgrades to PCFShadowMap on the first shadow render (with a
-  // console warning). Asking for PCF directly is the identical picture, minus the warning.
-  import { PCFShadowMap } from 'three'
+  // 101 F3: the main renderer is made by the renderer seam (threlte's own defaults, in one
+  // place); MAIN_SHADOW_MAP is the 30 P0 PCF choice (PCFSoft is deprecated in three 0.185)
+  import { createMainRenderer, MAIN_SHADOW_MAP } from '$lib/render/mainRenderer.js'
   import Scene from './components/Scene.svelte'
   import Menu from './components/Menu.svelte'
   // 53 A3: the skip link, Esc out of the viewport, F6 between regions
@@ -37,7 +40,7 @@
   import CharacterDialogs from './components/characters/CharacterDialogs.svelte'
   import PlaceholderTooltip from './components/menu/PlaceholderTooltip.svelte'
   import Flow from './components/Flow.svelte'
-  import FlowCode from './components/editors/FlowCode.svelte'
+  import { startFlowCodeRedirect } from '$lib/flowCodeRedirect.js'
   import AnimationWindow from './components/editors/AnimationWindow.svelte'
   import UvEditor from './components/editors/UvEditor.svelte'
   import ShaderEditor from './components/editors/ShaderEditor.svelte'
@@ -45,16 +48,13 @@
   import Explorer from './components/editors/Explorer.svelte'
   import TextEditorWindow from './components/editors/TextEditorWindow.svelte'
   import FilePreviewWindow from './components/editors/FilePreviewWindow.svelte'
-  import ImageEditorWindow from './components/editors/ImageEditorWindow.svelte'
   import { previewWindows } from './lib/fileWindows'
   import ModelPreviewWindow from './components/editors/ModelPreviewWindow.svelte'
   import DungeonMinimap from './components/play/DungeonMinimap.svelte'
   // 26-A: the desktop Statistics window + the sampler that feeds it and the status-line
   // budget meter. `renderer.info` had exactly one reader before this (the VR plate).
   import StatsOverlay from './components/menu/StatsOverlay.svelte'
-  import MomentReport from './components/menu/MomentReport.svelte'
   import ProblemReport from './components/menu/ProblemReport.svelte' // 37 R20
-  import ProfilerLive from './components/menu/ProfilerLive.svelte'
   import { startSceneMetrics, budgetSummary } from './lib/sceneBudget'
   import { startPerfRecorder } from './lib/perf/recorder'
   import { startDetailedProbe } from './lib/perf/detailed'
@@ -67,6 +67,7 @@
   import { startKitInstancing } from './lib/kitInstancing'
   import PlayReticle from './components/play/PlayReticle.svelte'
   import PlayBanner from './components/play/PlayBanner.svelte'
+  import MomentHost from './components/moment/MomentHost.svelte' // 95 SM1/SM2: Share a moment (buffer + preview load lazily)
   import CommandPalette from './components/menu/CommandPalette.svelte'
   import TouchPlayControls from './components/play/TouchPlayControls.svelte'
   import DrawToolbar from './components/menu/DrawToolbar.svelte'
@@ -74,6 +75,8 @@
   import SplineToolbar from './components/menu/SplineToolbar.svelte'
   import MeasureToolbar from './components/menu/MeasureToolbar.svelte' // 47 M1
   import PathCaptureToolbar from './components/menu/PathCaptureToolbar.svelte' // fix-batch-2
+  import CaptureBanner from './components/menu/CaptureBanner.svelte' // 78 F5
+  import { startCaptureModes } from '$lib/captureModes' // 78 F5: the viewport capture stack
   import UnderlayWindow from './components/menu/UnderlayWindow.svelte' // 60 Q5
   import { underlayDropMenu } from '$lib/underlays'
   import ModuleToolboxLayer from './components/ui/ModuleToolboxLayer.svelte'
@@ -91,6 +94,8 @@
   // 47-cc0: the free CC0 asset browser (lazy, like the export modal)
   import { assetBrowserOpen } from '$lib/cc0/assetBrowserState.js'
   import { recordingOpen, recordingState } from '$lib/recording/recordingStores.js'
+  import { filmOpen } from '$lib/film/filmState.js'
+  import { photoOpen } from '$lib/photo/photoOpen.js' // 98 P2: Photo mode, mounted only while open
   import { exportMode } from '$lib/export/exportBoot.js'
   import { startExportRuntime } from '$lib/export/exportRuntime.js'
   import { objectsGroup, globalRenderer } from './stores/sceneStore'
@@ -98,6 +103,10 @@
   // 27-G: the one overlay that must sit above everything, because nothing else on
   // screen is usable while the graphics context is gone.
   import ContextLostOverlay from './components/ContextLostOverlay.svelte'
+  // 54i c: no WebGL 2 context at boot → this screen instead of the <Canvas> (and one report)
+  import NoWebGLScreen from './components/NoWebGLScreen.svelte'
+  import { probeWebGL2, reportNoWebGL } from '$lib/webglSupport.js'
+  import { installChunkReload } from '$lib/chunkReload.js'
   // 26-G: the frame-freeze half of Stage 4 (the context-loss half is the overlay above)
   import RenderPausedOverlay from './components/RenderPausedOverlay.svelte'
   import './lib/overloadGuard'
@@ -168,6 +177,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
   import AutoQualityNotice from './components/AutoQualityNotice.svelte' // 40 F12 (was SimplifiedWaterNotice)
   import ShortcutSheet from './components/menu/ShortcutSheet.svelte' // 36 I3
   import HudLayer from './components/hud/HudLayer.svelte'
+  import LevelTransition from './components/hud/LevelTransition.svelte' // 93 LP1/LP2
   import ARTableOverlay from './components/play/ARTableOverlay.svelte' // 50 R1
   import PickCycleHint from './components/menu/PickCycleHint.svelte' // 36 F22 / S6 / S12
   import LiveRegions from './components/ui/LiveRegions.svelte' // 53-reader: toasts, errors, selection read aloud
@@ -194,6 +204,8 @@ import { startMusicToolbox } from './lib/musicToolbox'
   import WindowsOverlay from './components/windows/WindowsOverlay.svelte'
   import { peers, userdata } from './stores/appStore'
   import { get } from 'svelte/store'
+  import { deviceClass, browserSaysMobile } from '$lib/deviceClass.js'
+  import { worthProbing } from '$lib/cinematic/cinematicOffer.js'
   import { initModules, disabledModules } from '$lib/moduleSDK'
   import { coreModules } from './modules/index.js'
   import ModulesManager from './components/menu/ModulesManager.svelte'
@@ -206,17 +218,37 @@ import { startMusicToolbox } from './lib/musicToolbox'
   // flow editor and runtime first look them up
   initModules(coreModules.filter((mod) => !get(disabledModules).includes(mod.id)))
 
+  // 54i c: asked BEFORE the markup mounts — three throws inside <Canvas> without a context, which
+  // took the whole page down. The prerender (no document) answers yes.
+  const webglOk = probeWebGL2()
+  // 54i aa: one retry for a lazy chunk that failed to load, then "A new version is ready – Reload".
+  // Before the markup too: the {#await import()} panels below start loading as it mounts.
+  installChunkReload()
+
   // node graph animations keep running even when the flow drawer is closed
   onMount(() => {
+    startFlowCodeRedirect() // showhide-v8 §4: the old Flow code tab opens Code's flow code tab
+    // showhide-v8 §6: Windows ▸ Remember layout per scene (both modules lazily: neither belongs on the boot path)
+    void Promise.all([import('$lib/uiLayouts'), import('$lib/levels')]).then(([u, l]) => u.startSceneLayouts(l.currentLevel))
     // 27-B: FIRST, so a failure during the rest of this boot is already recorded.
     startDiagnostics()
     startWireErrors()
     // 48 O1: anonymous error + crash reports (default on, Settings ▸ Privacy; inert without VITE_ERROR_REPORTS_URL)
     startErrorReports()
+    if (!webglOk) reportNoWebGL()
     // 26-A: one rAF loop, ~2 samples a second. Started here rather than inside Scene so
     // it keeps measuring while the canvas is remounting — which is exactly when a
     // report about the app freezing tends to be written.
     startSceneMetrics()
+    // 100 C1: is the Cinematic view offered here (a strong desktop on Chrome's WebGPU path)? Asked after the
+    // first load has had its turn; a device that left it on comes back to it (the probe mounts the lazy switch).
+    // Phones, tablets and headsets stop at worthProbing and download nothing (100-int).
+    if (webglOk) setTimeout(() => {
+      if (!worthProbing({ desktop: get(deviceClass) === 'desktop' && !browserSaysMobile(), userAgent: navigator.userAgent, gpu: !!(/** @type {any} */ (navigator)).gpu })) return
+      void import('$lib/cinematic/cinematicState.js').then((m) => m.probeCinematic().then((ok) => { if (ok && get(m.cinematicPrefs).on) void m.setCinematic(true) }))
+    }, 4000)
+    // 78 F5: the viewport capture stack (one Esc owner, installed before any tool arms)
+    startCaptureModes()
     // 34 PF/R1: the always-on light ring (moments, beacon windows) + user recordings
     startPerfRecorder()
     startDetailedProbe()
@@ -224,6 +256,8 @@ import { startMusicToolbox } from './lib/musicToolbox'
     startPerfLive()
     // 34 R1: performance reports (opt-in; inert without VITE_PERF_REPORTS_URL)
     startPerfBeacon()
+    installKeyboardInset()
+    installHitSlop()
     // 34 R1: an installed module older than this build expects -> toast + a Modules row
     startStaleModuleWatch()
     // 31-perf P2: automatic levels of detail (a render-time swap; see lod.js)
@@ -449,7 +483,6 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <!-- 70 W2: a panel in a pop-out window is unmounted here (one panel, one place); it remounts in its
      own last dock / float mode when it comes back -->
 {#if !$panelAway.flow}<Flow />{/if}
-{#if !$panelAway.flowcode}<FlowCode />{/if}
 {#if !$panelAway.animation}<AnimationWindow />{/if}
 {#if !$panelAway.uv}<UvEditor />{/if}
 {#if !$panelAway.shader}<SvelteFlowProvider><ShaderEditor /></SvelteFlowProvider>{/if}
@@ -464,7 +497,6 @@ import { startMusicToolbox } from './lib/musicToolbox'
 {/if}
 <TextEditorWindow />
 <!-- 40-image (F13): the Image editor; renders nothing until an image is opened in it -->
-<ImageEditorWindow />
 <!-- R22 round 12: ONE INSTANCE PER OPEN PREVIEW. With the multi-window pref off the list
      never holds more than one, so this renders exactly what it always did. -->
 {#each $previewWindows as w, i (w.id)}
@@ -499,6 +531,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <SplineToolbar />
 <MeasureToolbar />
 <PathCaptureToolbar />
+<CaptureBanner />
 <!-- 60 Q5: Reference images (+ the image-drop "Use as reference" menu) -->
 <UnderlayWindow />
 <!-- A5: module toolboxes. OUTSIDE the {#if !$isLocked} block — a toolbox that opted
@@ -518,11 +551,17 @@ import { startMusicToolbox } from './lib/musicToolbox'
 {#if $recordingOpen || $recordingState.status !== 'idle'}
 {#await import('./components/menu/RecordingDialog.svelte') then m}<m.default />{/await}
 {/if}
+<!-- 98 P2: Photo mode (a path-traced still) — loaded only while open; the tracer is a further chunk -->
+{#if $photoOpen && !$embedMode}
+{#await import('./components/photo/PhotoDialog.svelte') then m}<m.default />{/await}
+{/if}
+<!-- 68 V1: Film mode (the phone as a scene camera's viewfinder) — loaded only while open -->
+{#if $filmOpen && !$embedMode}
+{#await import('./components/film/FilmMode.svelte') then m}<m.default />{/await}
+{/if}
 <DungeonMinimap />
 <StatsOverlay />
-<MomentReport />
 <ProblemReport />
-<ProfilerLive />
 <!-- 47-cc0: the Asset Browser — loaded the first time it opens, so the boot carries none of it -->
 {#if $assetBrowserOpen}
 {#await import('./components/editors/AssetBrowser.svelte') then m}<m.default />{/await}
@@ -530,6 +569,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <PlayReticle />
 <!-- 38 R8 (NOTES-38 #4): "Playing · Press Esc to stop" — scene-configurable, play-only -->
 <PlayBanner />
+<MomentHost />
 <!-- W4: the touch play controls (virtual stick, look drag, exit). Beside PlayReticle
      and outside the {#if !$isLocked} block for the same reason: they exist ONLY while
      playing, which is exactly where that block draws nothing. -->
@@ -540,6 +580,8 @@ import { startMusicToolbox } from './lib/musicToolbox'
      above (a game HUD that dies when you press play is no HUD at all). --z-hud, no
      new tier: it beats the camera PiP and loses to modal/toast/menu. -->
 <HudLayer />
+<!-- 93: the level-change cover, the game's loading screen, the checkpoint flash (LOCAL) -->
+<LevelTransition />
 <!-- 50 R1: the AR table's dom-overlay root (rendered always, hidden until a phone asks for AR) -->
 <ARTableOverlay />
 <PickCycleHint />
@@ -575,10 +617,13 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <!-- 53 A3: #viewport is the skip link's target; it takes focus only when the keyboard asks
      (keyboardNav.focusViewport lends it a tabindex), so a mouse press still focuses <body> -->
 <div id="viewport" role="region" aria-label="3D viewport" class="viewport" class:viewport-inset={$viewPrefs.dockPushesViewport && !$embedMode}>
-  <Canvas shadows={PCFShadowMap}>
+  {#if webglOk}
+  <Canvas shadows={MAIN_SHADOW_MAP} createRenderer={createMainRenderer}>
     <Scene />
   </Canvas>
+  {/if}
 </div>
+{#if !webglOk}<NoWebGLScreen />{/if}
 
 <style>
   .viewport {

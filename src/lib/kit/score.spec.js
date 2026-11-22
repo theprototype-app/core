@@ -15,12 +15,12 @@ export default {
 			],
 			authority: true
 		},
-		{ name: 'set', kind: 'action', label: 'Set score', doc: 'Sets a player\'s score (or the shared score when no player is named) to a number.', args: [{ key: 'amount', type: 'number', default: 0, min: -100000, max: 100000, step: 1 }, { key: 'player', type: 'string', default: '' }], authority: true },
+		{ name: 'set', kind: 'action', label: 'Set score', doc: 'Sets a player\'s score (or the shared score when no player is named) to a number. The player can be any name, not only a peer: it counts for Leader and the leaderboard. Setting a player does not change the shared score.', args: [{ key: 'amount', type: 'number', default: 0, min: -100000, max: 100000, step: 1 }, { key: 'player', type: 'string', default: '' }], authority: true },
 		{ name: 'reset', kind: 'action', label: 'Reset score', doc: 'Zeroes every score (a new round does this by itself).', args: [], authority: true },
 		{ name: 'total', kind: 'value', label: 'Score', vtype: 'number', doc: 'The shared score of this round.', args: [] },
 		{ name: 'mine', kind: 'value', label: 'My score', vtype: 'number', doc: 'This player\'s own score in this round (each peer reads its own).', args: [] },
 		{ name: 'best', kind: 'value', label: 'Best score', vtype: 'number', doc: 'The best shared score this device has seen for this game (and level).', args: [] },
-		{ name: 'leader', kind: 'value', label: 'Leader', vtype: 'any', doc: 'The leading player\'s name (empty with no scores).', args: [] },
+		{ name: 'leader', kind: 'value', label: 'Leader', vtype: 'any', doc: 'The leading player\'s name: ANY player key counts — a peer, or a name you gave Add score / Set score ("lab", "red team"); a peer shows its roster name. Ties go to the first key in alphabetical order. Empty with no player scores (the shared total alone has no leader).', args: [] },
 		{ name: 'scored', kind: 'event', label: 'On score', doc: 'Pulses whenever points are added.', args: [] },
 		{ name: 'newBest', kind: 'event', local: true, label: 'On new best', doc: 'Pulses on each device whose best score this round beat, when the round ends.', args: [] }
 	]

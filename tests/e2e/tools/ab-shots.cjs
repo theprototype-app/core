@@ -33,7 +33,7 @@ async function boot(ctx, url) {
 	// a dev server's second fresh context sometimes never publishes the stores (deps re-optimised): reload
 	for (let attempt = 1; ; attempt++) {
 		await p.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 }).catch(() => {});
-		const ok = await p.waitForFunction(() => /** @type {any} */ (window).__stores?.themes, null, { timeout: 90000 }).then(
+		const ok = await p.waitForFunction(() => /** @type {any} */ (window).__tp?.test.v1?.themes, null, { timeout: 90000 }).then(
 			() => true,
 			() => false
 		);
@@ -77,20 +77,20 @@ async function shoot(url, out) {
 			};
 			const reset = () =>
 				p.evaluate(() => {
-					const s = /** @type {any} */ (window).__stores;
+					const s = /** @type {any} */ (window).__tp?.test.v1;
 					s.settingsOpen.set(false);
 					s.inspectorClose.set(true);
 					s.objectListClose?.set(true);
 				});
-			await p.evaluate(() => /** @type {any} */ (window).__stores.commandsHandler.sceneCommand('/create box'));
+			await p.evaluate(() => /** @type {any} */ (window).__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 			await p.waitForTimeout(700);
 			await reset();
 			await shot('start');
-			await p.evaluate(() => /** @type {any} */ (window).__stores.objectListClose?.set(false));
+			await p.evaluate(() => /** @type {any} */ (window).__tp.test.v1.objectListClose?.set(false));
 			await shot('list');
 			await reset();
 			await p.evaluate(() => {
-				const s = /** @type {any} */ (window).__stores;
+				const s = /** @type {any} */ (window).__tp?.test.v1;
 				/** @type {any} */
 				let g;
 				s.objectsGroup.subscribe((/** @type {any} */ x) => (g = x))();
@@ -103,7 +103,7 @@ async function shoot(url, out) {
 			await p.screenshot({ path: path.join(out, `inspector-${dev}-${theme}.png`), mask: [p.getByText(/^[A-Z0-9]{5}$/), p.getByText(/[0-9a-f]{8}-[0-9a-f]{4}-/), p.locator('.tp-toast, [class*="toast"]')] }).catch(() => failed++);
 			await reset();
 			await p.evaluate(() => {
-				const s = /** @type {any} */ (window).__stores;
+				const s = /** @type {any} */ (window).__tp?.test.v1;
 				s.settingsSection.set('interface');
 				s.settingsOpen.set(true);
 			});

@@ -30,7 +30,7 @@ const TPSCENE =
 async function loadTowers(page) {
 	const bytes = Array.from(fs.readFileSync(TPSCENE));
 	await page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		await s.sessions.applySession(payload, { backup: false });
 	}, bytes);
@@ -40,7 +40,7 @@ async function loadTowers(page) {
 /** @param {any} page */
 const snap = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		/** @param {any} st */
 		const g = (st) => {
 			let v;
@@ -104,7 +104,7 @@ h.run(async () => {
 	// A REAL click where the Start button used to be changes nothing. The spot is computed
 	// from the element's own anchored rect, the rule HudLayer places it by.
 	const start = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const doc = s.hudDocs.hudDocOf('scene');
 		const menu = doc.screens.find((sc) => sc.id === 'menu');
 		const el = menu.elements.find((e) => e.kind === 'button' && /start|^1 · /i.test(String(e.label ?? e.text ?? '')));
@@ -153,7 +153,7 @@ h.run(async () => {
 	// =====================================================================
 	// leave the round somewhere Test play must undo: mid-game, with a local screen override
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.gameState.setGameState('playing');
 		s.hudDocs.showHudScreen('scene', 'pause');
 	});
@@ -200,9 +200,9 @@ h.run(async () => {
 	await h.eventually(() => snap(page), (v) => v.locked === true, 'A enters Play through Test play', 6000);
 	await page.locator('#hud-layer button', { hasText: START }).first().click();
 	await h.eventually(() => both(), (v) => v.a.state === 'playing' && v.b.state === 'playing', 'Start in A\'s Play starts the round for both', 8000);
-	await B.page.evaluate(() => window.__stores.playMode.requestPlay());
+	await B.page.evaluate(() => window.__tp.test.v1.playMode.requestPlay());
 	await h.eventually(
-		() => page.evaluate(() => window.__stores.gamePresence.gamePresenceDebug().peers),
+		() => page.evaluate(() => window.__tp.test.v1.gamePresence.gamePresenceDebug().peers),
 		(m) => Object.values(m).includes('playing'),
 		'A sees B in play',
 		8000
@@ -217,7 +217,7 @@ h.run(async () => {
 	await leavePlay(B.page);
 	await h.eventually(() => snap(B.page), (v) => v.locked !== true, 'B back in the editor', 6000);
 	await h.eventually(() => both(), (v) => v.a.state === 'menu' && v.b.state === 'menu', 'the LAST player leaving resets the round to menu on BOTH (the host writes it)', 20000);
-	const writes = await Promise.all([page, B.page].map((p) => p.evaluate(() => window.__stores.gamePresence.gamePresenceDebug().abandonWrites)));
+	const writes = await Promise.all([page, B.page].map((p) => p.evaluate(() => window.__tp.test.v1.gamePresence.gamePresenceDebug().abandonWrites)));
 	h.check(writes[0] >= 1 && writes[1] === 0, `written by the host alone (A=${writes[0]}, B=${writes[1]})`);
 
 	await h.finish(browser);

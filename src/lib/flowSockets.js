@@ -8,6 +8,7 @@ import { graphOf } from '../stores/flowStore';
 import { moduleValueTypes, moduleNodeInputs } from './moduleNodeIO';
 import { scriptSocketType } from './scriptIO'; // 34 D3: a Script node's DECLARED sockets
 import { dataSocketType } from './variadicNodes.js'; // 37 (R6): the Switcher's data-typed sockets
+import { coreSocketTables } from './nodes/index.js'; // 2.0 N1: the node definitions
 
 /**
  * 36 (U10): a BEHAVIOUR node's sockets are declared in its CODE (`inputs`, `outputs`), which only
@@ -29,237 +30,10 @@ export function behaviourSocketType(node, handle, dir) {
 	return list?.find((s) => s.name === handle)?.type ?? null;
 }
 
-/** output type of a node's source handle @type {Record<string,string>} */
-const OUTPUT = {
-	number: 'number', slider: 'number', time: 'number', loop: 'number', timer: 'number',
-	random: 'number', math: 'number', distance: 'number', counter: 'number',
-	switcher: 'number', // 4.4: a real value source (the selected index)
-	maprange: 'number', select: 'number', // 4.6: loop-closers
-	vector3: 'vector3',
-	toggle: 'boolean', compare: 'boolean', gate: 'boolean', proximity: 'boolean',
-	colorpicker: 'color',
-	objectselector: 'object',
-	onclick: 'event',
-	ongrab: 'event', // 30b (core-games)
-	keypress: 'event', // H3
-	// 21-E5: a pad button is an EVENT (the keypress channel), a stick is a NUMBER. Both
-	// therefore reach every existing consumer with no coercion of their own.
-	gamepadbutton: 'event',
-	gamepadaxis: 'number',
-	onimpact: 'event', // PFX-C
-	// 24-A A2: the pulse is the unnamed handle; `speed`/`byMe` are named handles that
-	// reach number/boolean inputs through the event coercion row (outputType is per NODE)
-	onhit: 'event',
-	// 31: the clap — the pulse unnamed, `point` (vector3) and `byMe` named (OUTPUT_HANDLES)
-	onclap: 'event',
-	// 31: a player's setting. Typed by its commonest kind (a toggle: true/false); a range's
-	// number or a choice's text rides the same socket — resolveInputs never coerces a value
-	gamesetting: 'boolean',
-	pointgrab: 'effect', // 31: a DECLARATION (the gamemusic shape) — it drives nothing
-	onenter: 'event', onexit: 'event', // CL-C: sensor overlap edges
-	animfinished: 'event', // 17-E: a clip reached its end
-	animmarker: 'event', // 17-E F5: the playhead crossed a named point in a clip
-	onanimstate: 'event', // 57 M11: an Animation states machine entered a state
-	onseqevent: 'event', // 48 S2: a running sequence crossed an event item (or ended)
-	animstate: 'number', // 17-E F3: progress / playing / position, one at a time
-	velocity: 'number', // CL-C: live speed readout
-	measure: 'number', // B6: top / bottom / height / y / speed
-	onrest: 'event', // B6: a body settled
-	impulse: 'effect', // B6: the physics ACTION nodes feed an Object Selector
-	setvelocity: 'effect',
-	joint: 'effect',
-	// B7: a spawner's Object Selector names the TEMPLATE it copies, not a target it
-	// writes to — but the channel is the same one, so no coercion table change
-	spawn: 'effect',
-	flowinput: 'number', // H5 fallback; the live check reads data.vtype
-	// A3 HUD: only the button and the timer produce anything. hudtext/hudbar/
-	// hudscreen/hudlist are SINKS — they write into an element, so their output stays
-	// the effect channel.
-	hudbutton: 'event',
-	hudtimer: 'number',
-	// 21-E7.1: HUD Rows is a SINK like hudtext/hudlist - it writes into an element - so its
-	// output stays the effect channel. Listed rather than left to the fallback, so the table
-	// says so out loud (the movespeed/charcontroller precedent).
-	hudrows: 'effect',
-	// 21-G4: the derived scoreboard is a SINK for the same reason — it writes rows INTO a
-	// list element and produces nothing a wire could carry.
-	leaderboard: 'effect',
-	// 21-D4: the HUD as a SOURCE. `read` decides what the number MEANS (a slider's
-	// value, a dropdown's index, a toggle as 1/0) but the socket is a number either
-	// way, so one type covers all four input kinds.
-	hudinput: 'number',
-	// 21-D6 game shell: the event half and the two readable ones
-	ongamestate: 'event',
-	getvariable: 'number',
-	gametime: 'number',
-	// 30 P4: the readable half of Store Value (a number socket; `output: text` carries a
-	// string down the same channel, the hudtext precedent)
-	storedvalue: 'number',
-	// 21-F3's `collectcount` MOVED to the collectible module (R3a); a module value
-	// node's socket type comes from its registerValueNode `vtype`, so no entry here.
-	// 21-G4: one player's own number (mine / a named peer / the sum / the max)
-	peervariable: 'number',
-	// 21-E4: the logic a game loop is made of. Latch is the only STATE node here -
-	// a boolean that holds after the pulse that set it has expired. The other three
-	// are event RESHAPERS, so they carry the event channel onward and everything
-	// already wired to an event (Object Selector, Counter, a trigger input) accepts
-	// them with no coercion table change.
-	latch: 'boolean',
-	delay: 'event',
-	sequence: 'event', // all four step handles; outputType is per-NODE, not per-handle
-	once: 'event',
-	// 21-F4: the group-travel gate pulses when every player answers yes — an event,
-	// so it wires into a Travel trigger (or anything else a pulse drives)
-	allplayers: 'event',
-	// 21-E6 the character controller. Only two of these produce a value: Move Speed
-	// reads the live speed and Move Input reads this peer's own WASD. Both of Move
-	// Input's handles are numbers, so ONE per-NODE entry covers them (the sequence
-	// rule). The other three are DECLARATIONS/ACTIONS and keep the effect channel the
-	// fallback would have handed them anyway — listed so the table says so out loud.
-	movespeed: 'number',
-	moveinput: 'number',
-	charcontroller: 'effect',
-	possessnode: 'effect',
-	camerafollow: 'effect'
-};
-
-/** typed named inputs; `_default` covers an unnamed target handle @type {Record<string,Record<string,string>>} */
-const INPUT = {
-	objectselector: { _default: 'effect' },
-	// CL-C: collider takes an object source (shape 'object') + a scale number;
-	// velocity reads the wired object's live speed
-	collider: { source: 'object', scale: 'number' },
-	velocity: { target: 'object' },
-	// B6: the physics action nodes. `target` is an alternative to wiring the node
-	// into an Object Selector, exactly like velocity's.
-	measure: { target: 'object' },
-	impulse: { trigger: 'event', force: 'vector3', target: 'object' },
-	setvelocity: { trigger: 'event', linear: 'vector3', angular: 'vector3', target: 'object' },
-	joint: { trigger: 'event', a: 'object', b: 'object' },
-	// B7: `source` is the alternative to an Object Selector edge (impulse's `target`
-	// precedent); `at` is an offset, so it takes the same vector3 a force does. Every
-	// range param keeps the numeric fallback, so only these three need declaring — an
-	// undeclared handle types as 'number', which would refuse an Object Selector.
-	spawn: { trigger: 'event', at: 'vector3', source: 'object', position: 'vector3' }, // 31: + a place
-	random: { seed: 'number', reroll: 'event' }, // B6
-	animstate: { target: 'object' }, // 17-E F3: whose clip to read (or the graph owner)
-	// 37 (R6): math and gate are VARIADIC — c..h are the extra sockets a node may grow
-	// (variadicNodes.js). Declared here so a group routing one, and the socket colour, read the
-	// right type (an undeclared gate handle would type as 'number').
-	math: { a: 'number', b: 'number', c: 'number', d: 'number', e: 'number', f: 'number', g: 'number', h: 'number' },
-	compare: { a: 'number', b: 'number' },
-	gate: { a: 'boolean', b: 'boolean', c: 'boolean', d: 'boolean', e: 'boolean', f: 'boolean', g: 'boolean', h: 'boolean' },
-	// 37 (R6): the multiplexer's `index` drives the choice; its `in<i>` item sockets are typed by
-	// the node's DATA (vtype), so they live in dataSocketType, not here
-	switcher: { index: 'number' },
-	// 21-E4: `trigger` was the whole reason play-a-sound-on-press was not authorable
-	// by ANY means - the node had `playing` (a continuous state) and nothing else.
-	sound: { volume: 'number', trigger: 'event' },
-	timer: { a: 'number' },
-	maprange: { a: 'number' },
-	// 21-E4: c/d are ADDITIVE - a/b keep their ids, so no saved edge moves
-	select: { index: 'number', a: 'number', b: 'number', c: 'number', d: 'number' },
-	script: { a: 'number', b: 'number', c: 'number' },
-	distance: { a: 'object', b: 'object' },
-	proximity: { a: 'object', b: 'object' },
-	lookat: { target: 'object' },
-	camerarig: { target: 'object', offset: 'vector3' }, // 37 (R8)
-	rotor: { on: 'boolean' }, // 36-fb F25
-	flowfloat: { path: 'object' }, // 36-fb F24
-	followpath: { path: 'object' }, // 40 F15
-	wander: { area: 'object' }, // 40 F15
-	setcolor: { color: 'color' },
-	visibility: { on: 'boolean' },
-	setuniform: { value: 'number' },
-	// 21-E4: `reset` joins `pulse` on the SAME path - the counting lives inside
-	// applyNodeTrigger, so the reset is one more handle it reads there (the `op`
-	// param stays for a counter nobody wires a reset into).
-	counter: { pulse: 'event', reset: 'event' },
-	// 21-E4 logic nodes. Every socket here is an EVENT except delay's wired seconds:
-	// these turn pulses into state and into other pulses, they never take values.
-	latch: { set: 'event', reset: 'event', toggle: 'event' },
-	delay: { trigger: 'event', cancel: 'event', seconds: 'number' },
-	sequence: { trigger: 'event' },
-	once: { trigger: 'event', rearm: 'event' },
-	// 17-E A5: the trigger that starts/stops an authored clip, plus a wired speed
-	playanim: { trigger: 'event', speed: 'number' },
-	blendspeed: { speed: 'number' }, // 57 M3
-	setanimparam: { trigger: 'event', value: 'number' }, // 57 M11
-	attachsocket: { trigger: 'event', item: 'object' }, // 57 M12
-	playseq: { trigger: 'event' }, // 48 S2
-	setexpression: { trigger: 'event', weight: 'number' }, // 57 M4: a VRM's face
-	// PFX-B: drive emission from flow — density, tint, spawn offset, motion, and
-	// a burst fired from any event (On Click / Key Press / On Impact)
-	particle: { count: 'number', color: 'color', offset: 'vector3', speed: 'number', gravity: 'number', size: 'number', trigger: 'event' },
-	// 23-B3: the music nodes (devicelevel / transportbeat are value nodes; their inputs
-	// and output types come from the moduleNodeIO registry they register through)
-	deviceparam: { value: 'number' },
-	notetrigger: { trigger: 'event', note: 'number', velocity: 'number' },
-	// A3 HUD. `value` is the whole point: counter -> hudtext is a live score with no
-	// new code, because Counter already counts replicated pulses and every number
-	// source already reaches a named input through resolveInputs.
-	// 36 (U10): `format` takes TEXT from a wire (a behaviour's state line, a script's words)
-	hudtext: { value: 'number', format: 'any' },
-	hudbar: { value: 'number', min: 'number', max: 'number' },
-	hudscreen: { trigger: 'event' },
-	hudtimer: { start: 'event', duration: 'number' },
-	hudlist: { trigger: 'event' },
-	// 21-E7.1: `text` is the ROW. There is no string socket type in this system, so it is
-	// declared numeric like every other value handle - which accepts a number, an event and
-	// a boolean through the coercion table, and a module value node declaring 'number' that
-	// happens to return a string (a peer name). resolveInputs does not coerce the value, so
-	// the row is whatever the source produced.
-	hudrows: { trigger: 'event', text: 'number' },
-	hudinput: {},
-	// 21-E7.2: `options` joins it - same reasoning as hudrows' `text` about the missing
-	// string type, and additive, so no saved edge moves.
-	hudset: { trigger: 'event', value: 'number', options: 'number' },
-	// 21-D6: every game ACTION is driven by an event, and takes its value wired or typed
-	setgamestate: { trigger: 'event' },
-	setcamera: { trigger: 'event', camera: 'object' },
-	setlook: { trigger: 'event', camera: 'object', on: 'boolean' },
-	setvariable: { trigger: 'event', value: 'number' },
-	storevalue: { trigger: 'event', value: 'number' }, // 30 P4
-	// 30b (core-games): the Game Feel family — an event, a wired number for {v}, a PLACE
-	// (an object: an undeclared handle types as 'number' and would refuse an Object
-	// Selector), and Game Music's on/off
-	// 36 (U10): `sub` — the second line, wired as text (a behaviour's bannerSub)
-	announce: { trigger: 'event', value: 'number', sub: 'any' },
-	gamesound: { trigger: 'event', at: 'object' },
-	effectburst: { trigger: 'event', at: 'object' },
-	hapticpulse: { trigger: 'event' },
-	gamemusic: { on: 'boolean' },
-	onclap: { enabled: 'boolean' }, // 31
-	// 36 X6: contacts take an OBJECT filter — fire only when the other body is that one
-	onimpact: { filter: 'object' },
-	onenter: { filter: 'object' },
-	onexit: { filter: 'object' },
-	pointgrab: { enabled: 'boolean' }, // 31
-	gamestart: { camera: 'object' },
-	// 21-F4: travel fires on its trigger edge; allplayers takes each player's own
-	// boolean answer (a Latch, a Gate, a Compare — anything true/false)
-	travel: { trigger: 'event' },
-	allplayers: { condition: 'boolean' },
-	// 21-E6 the character controller. `target` is the alternative to wiring the node
-	// into an Object Selector (velocity's precedent), and every range param keeps the
-	// numeric fallback, so only the EVENT and OBJECT handles need declaring here — an
-	// undeclared handle types as 'number', which would refuse an Object Selector.
-	charcontroller: { speed: 'number' },
-	possessnode: { trigger: 'event', release: 'event', target: 'object' },
-	camerafollow: { trigger: 'event', stop: 'event', target: 'object' },
-	movespeed: { set: 'event', value: 'number' }
-};
-
-/** 31: a NAMED source handle whose type is not its node's (outputType is per NODE): the
- * clap's pulse is an event, but its `point` is a place and `byMe` a boolean. Only listed
- * handles differ; every other handle keeps its node's type. @type {Record<string, Record<string, string>>} */
-const OUTPUT_HANDLES = {
-	onclap: { point: 'vector3', byMe: 'boolean' },
-	// 36 X6: the OTHER body of the contact, as an object (wire it into lookat/distance)
-	onimpact: { other: 'object' },
-	onenter: { other: 'object' },
-	onexit: { other: 'object' }
-};
+// 2.0 N1: the three socket tables are GENERATED from the node definitions (src/lib/nodes) — a
+// type's sockets live beside its palette entry, card and value now, with the per-type notes that
+// used to sit here. Lookups below are unchanged.
+const { OUTPUT, INPUT, OUTPUT_HANDLES } = coreSocketTables();
 
 /** 74 VH1: the NAMED source handles a node type declares beyond its plain output — the VR logic panel draws
  * sockets from these tables (a headset has no DOM for xyflow to measure handles from) @param {string} nodeType */
@@ -359,6 +133,23 @@ export function socketShape(type) {
 }
 
 /**
+ * The type one source handle of a placed node carries (data-declared types first). 2.0-n3b: shared by the
+ * editor's drag check and the agent tools' edge check, so the two read one rule.
+ * @param {any} source @param {string|null|undefined} sourceHandle @returns {string}
+ */
+export function sourceSocketType(source, sourceHandle) {
+	return source.type === 'flowinput'
+		? source.data?.vtype ?? 'number'
+		: // 34 D3: a script output's type is DATA (its declaration), like flowinput's vtype
+			scriptSocketType(source.type, source.data, sourceHandle, 'output') ??
+				// 37 (R6): the Switcher's `value` output carries its vtype
+				dataSocketType(source, sourceHandle, 'output') ??
+				// 36 (U10): a behaviour's outputs are declared in its code
+				behaviourSocketType(source, sourceHandle, 'output') ??
+				outputHandleType(source.type, sourceHandle);
+}
+
+/**
  * Validate a proposed connection against the two nodes' socket types.
  * @param {any} connection xyflow {source, target, sourceHandle, targetHandle}
  * @param {any[]} nodes the current flow nodes
@@ -371,16 +162,7 @@ export function isValidFlowConnection(connection, nodes) {
 	if (!source || !target) return false;
 	// H5: the object-flow interface types come from node DATA / the referenced
 	// graph's declarations, not the static type table
-	const from =
-		source.type === 'flowinput'
-			? source.data?.vtype ?? 'number'
-			: // 34 D3: a script output's type is DATA (its declaration), like flowinput's vtype
-				scriptSocketType(source.type, source.data, connection.sourceHandle, 'output') ??
-				// 37 (R6): the Switcher's `value` output carries its vtype
-				dataSocketType(source, connection.sourceHandle, 'output') ??
-				// 36 (U10): a behaviour's outputs are declared in its code
-				behaviourSocketType(source, connection.sourceHandle, 'output') ??
-				outputHandleType(source.type, connection.sourceHandle);
+	const from = sourceSocketType(source, connection.sourceHandle);
 	if (source.type === 'objectflow') {
 		// embedded outputs carry whatever the flow's outputs compute — untyped v1,
 		// anything except the effect channel may consume them

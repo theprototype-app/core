@@ -50,13 +50,14 @@ h.run(async () => {
 		}, sel);
 	const rest = async () => {
 		await P.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.phoneShell.phoneSheet.set(null);
 			s.viewportMenu.set(null);
 			s.objectListClose.set(true);
 			s.notificationCenterOpen.set(false);
 			s.notesDrawerOpen.set(false);
 			s.chatHidden.set('hidden');
+			s.mobileUndockAllowed.set(false);
 			s.inspectorClose.set(true);
 			s.closeMenu.set(true);
 			s.explorerClose.set(true);
@@ -66,7 +67,7 @@ h.run(async () => {
 	};
 	const select = async () => {
 		await P.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let g;
 			s.objectsGroup.subscribe((v) => (g = v))();
 			s.objectActions.applySelectionSet([g.children[0].uuid]);
@@ -74,7 +75,7 @@ h.run(async () => {
 		await P.waitForTimeout(500);
 	};
 	h.check(await P.evaluate(() => document.documentElement.classList.contains('phone-shell')), 'premise: the phone shell is mounted at 390x844');
-	await P.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await P.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await P.waitForTimeout(800);
 
 	/** start the per-frame sampler: each frame, the drawer's top and the strip's bottom */
@@ -131,7 +132,11 @@ h.run(async () => {
 			await touch.tap(b.x + b.w / 2, b.y + b.h / 2);
 		}, '.tp-dock-panel:not(.hidden)', '#ps-dock-grip [data-sheet-grip]'],
 		// 41b-int: Objects is a dock tab since 41b H1, so the framed-sheet row drives Chat (still a framed sheet)
-		['a framed sheet (Chat)', async () => P.evaluate(() => window.__stores.chatHidden.set('')), '.ps-sheet', '#ps-sheet-handle']
+		// 78 PL23: Chat is a dock tab now; it is still a framed sheet where undocking is allowed (Settings ▸ Interface)
+		['a framed sheet (Chat)', async () => P.evaluate(() => {
+			window.__tp.test.v1.mobileUndockAllowed.set(true);
+			window.__tp.test.v1.chatHidden.set('');
+		}), '.ps-sheet', '#ps-sheet-handle']
 		// 41b-int: the Inspector is the Properties dock tab on a phone since 41b H1 (the dock row covers its grip)
 	];
 

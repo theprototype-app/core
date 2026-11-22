@@ -11,6 +11,7 @@ import {
 	activeGraphId
 } from '../stores/flowStore';
 import { peers } from '../stores/appStore';
+import { cleanFlowNode, cleanFlowEdge } from './flowClean.js';
 
 // Strip runtime-only fields (computed, selected, dragging, __graph) so the node
 // is serializable for peerjs
@@ -21,13 +22,15 @@ export function serializeNode(node) {
 		type: node.type,
 		position: { x: node.position.x, y: node.position.y },
 		data: { ...node.data },
-		...(node.class ? { class: node.class } : {})
+		...(node.class ? { class: node.class } : {}),
+		// 2.0-n3c: the definition version it was saved with (absent = 1, so every node today is unchanged)
+		...(node.v !== undefined ? { v: node.v } : {})
 	};
 }
 
 /** @param {any} edge */
 export function serializeEdge(edge) {
-	return {
+	const out = {
 		id: edge.id,
 		source: edge.source,
 		target: edge.target,
@@ -37,6 +40,7 @@ export function serializeEdge(edge) {
 		...(edge.type ? { type: edge.type } : {}),
 		...(edge.markerEnd ? { markerEnd: edge.markerEnd } : {})
 	};
+	return cleanFlowEdge(out);
 }
 
 // --- Remote appliers (no re-broadcast). H1: every applier takes the graph the
@@ -45,6 +49,7 @@ export function serializeEdge(edge) {
 
 /** @param {any} node @param {string} [graphId] */
 export function createFlowNode(node, graphId = SCENE_GRAPH) {
+	node = cleanFlowNode(node);
 	updateGraph(graphId, (g) => ({
 		nodes: g.nodes.some((n) => n.id === node.id) ? g.nodes : [...g.nodes, node],
 		edges: g.edges
@@ -77,6 +82,7 @@ export function deleteFlowNodes(ids, graphId = SCENE_GRAPH) {
 
 /** @param {any} edge @param {string} [graphId] */
 export function createFlowEdge(edge, graphId = SCENE_GRAPH) {
+	edge = cleanFlowEdge(edge);
 	updateGraph(graphId, (g) => ({
 		nodes: g.nodes,
 		edges: g.edges.some((e) => e.id === edge.id) ? g.edges : [...g.edges, edge]
@@ -124,6 +130,11 @@ export function dropPeerCursor(peerId) {
 /** Merge one graph's snapshot: known nodes update in place, unknown append. */
 /** @param {string} graphId @param {any[]} nodes @param {any[]} edges */
 function mergeGraphSnapshot(graphId, nodes, edges) {
+	// the receiver mirrors the sender: nothing is filled in here (a fill on this side only - 2.0-n3c tried data.type -
+	// makes a live node created without it hash differently on every joiner for ever: nodesync-join). A file's nodes
+	// are filled by the SENDER (sessions.applySession sends what restoreGraphs made of them).
+	if (Array.isArray(nodes)) nodes = nodes.map(cleanFlowNode);
+	if (Array.isArray(edges)) edges = edges.map(cleanFlowEdge);
 	updateGraph(graphId, (g) => {
 		let nextNodes = g.nodes;
 		if (Array.isArray(nodes)) {
@@ -132,7 +143,13 @@ function mergeGraphSnapshot(graphId, nodes, edges) {
 				const update = incoming.get(n.id);
 				if (!update) return n;
 				incoming.delete(n.id);
-				return { ...n, position: update.position, data: { ...n.data, ...update.data } };
+				// 2.0-n3c: a node whose TYPE changed under the same id (a scene saved with a node converted to code,
+				// loaded into a room that holds the built-in) is a different node: take the snapshot's whole. The
+				// in-place merge kept our type and our data keys, so the nodesync hashes could never agree.
+				if (update.type !== undefined && update.type !== n.type) return { ...update, ...(n.selected ? { selected: true } : {}) };
+				// 2.0-n3c: `v` travels with the node (it is in serializeNode, so in the nodesync hash): a node we
+				// already hold takes the snapshot's, or a resync could never heal a v difference
+				return { ...n, position: update.position, data: { ...n.data, ...update.data }, ...(update.v !== undefined ? { v: update.v } : {}) };
 			});
 			nextNodes = [...nextNodes, ...incoming.values()];
 		}
@@ -210,11 +227,22 @@ let lastResyncRequest = 0;
  * sent — the two conns of a pair are not ordered against each other), and the joiner then
  * logged "Node graph differs ... requesting a snapshot" and pulled the graphs a second time.
  * Until a peer's full `nodes` snapshot has reached us, its nodesync is not compared for
- * NODESYNC_HANDSHAKE_MS from the first one; after that (a snapshot that never came) it pulls
- * as before, and once a snapshot has arrived drift detection is unchanged.
+ * NODESYNC_HANDSHAKE_MS from the start of the handshake; after that (a snapshot that never came)
+ * it pulls as before, and once a snapshot has arrived drift detection is unchanged.
+ *
+ * 54i row g: THE HANDSHAKE STARTS WITH THE LINK, not with the peer's first nodesync. A peer whose
+ * graphs were EMPTY at the join sends no snapshot (sendNodes has nothing to send) and no nodesync
+ * (a count of 0 is not broadcast), so the first nodesync it ever sent came minutes later, with its
+ * first object graph. Timed from THAT, the window held a real change back for 15 s, two more 10 s
+ * rounds went by, and the graph reached the peer after ~25-30 s (measured 26.5 s on a cloud build;
+ * the timeline suite's "B has the graph" premise red). The host side never asks a joiner for its
+ * graphs at all, so there was no snapshot to wait for in the first place. `noteNodeSyncHandshake`
+ * starts the window when the link opens (sendHandshake) and again when we ask (`getnodes` in
+ * requestFullState, which a share-or-stash decision can defer), so that late nodesync is compared
+ * at once; a nodesync that beats both still starts the window itself.
  */
 export const NODESYNC_HANDSHAKE_MS = 15000;
-/** @type {Map<string, number>} peerId -> when its first nodesync arrived before any snapshot */
+/** @type {Map<string, number>} peerId -> when the handshake began: the link / our getnodes, else its first nodesync */
 const handshakeSyncs = new Map();
 /** @type {Set<string>} peers whose full `nodes` snapshot has reached us */
 const snapshotFrom = new Set();
@@ -224,6 +252,12 @@ let handshakeSkips = 0;
 export function noteNodesSnapshot(peerId) {
 	if (peerId) snapshotFrom.add(peerId);
 	handshakeSyncs.delete(peerId);
+}
+
+/** a handshake with `peerId` starts now (the link opened, or we asked for its graphs): the window
+ * runs from here. Nothing to hold once its snapshot has arrived. @param {string} peerId */
+export function noteNodeSyncHandshake(peerId) {
+	if (peerId && !snapshotFrom.has(peerId)) handshakeSyncs.set(peerId, Date.now());
 }
 
 /** forget a departed peer (no argument: everyone, on leaving the session) @param {string} [peerId] */

@@ -15,11 +15,11 @@ const SHOTS = process.env.SHOTS_DIR || '';
 const drawn = (page, uuid) =>
 	page.evaluate((u) => {
 		let scene;
-		window.__stores.globalScene.subscribe((v) => (scene = v))();
+		window.__tp.test.v1.globalScene.subscribe((v) => (scene = v))();
 		const holder = scene?.children.find((c) => c.name === 'terrain-scatter' && c.userData.terrainScatterOf === u);
 		if (!holder) return [];
 		holder.updateMatrixWorld(true);
-		const THREE = window.__stores.THREE ?? null;
+		const THREE = window.__tp.test.v1.THREE ?? null;
 		const out = [];
 		for (const mesh of holder.children) {
 			const ids = mesh.userData.instanceIds ?? [];
@@ -48,7 +48,7 @@ const blockOf = (page, uuid) =>
 	page.evaluate(
 		(u) =>
 			new Promise((resolve) => {
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const o = g?.getObjectByProperty('uuid', u);
 					resolve(o ? JSON.stringify(o.userData.terrainScatter ?? null) : 'missing');
 				})();
@@ -59,15 +59,15 @@ const blockOf = (page, uuid) =>
 const samePlaces = (a, b, eps = 1e-4) =>
 	a.length === b.length && a.every((p, i) => p.id === b[i].id && p.world.every((v, k) => Math.abs(v - b[i].world[k]) < eps));
 /** @param {any} page */
-const undoDepth = (page) => page.evaluate(() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))()));
+const undoDepth = (page) => page.evaluate(() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((s) => r(s.length))()));
 /** @param {any} page @param {string} uuid @param {string} setId @param {any} patch */
 const editSet = (page, uuid, setId, patch) =>
-	page.evaluate(([u, id, p]) => window.__stores.terrainPaint.editScatterSet(u, id, p), [uuid, setId, patch]);
+	page.evaluate(([u, id, p]) => window.__tp.test.v1.terrainPaint.editScatterSet(u, id, p), [uuid, setId, patch]);
 /** the one set on a host @param {any} page @param {string} uuid */
 const firstSet = (page, uuid) =>
 	page.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g.getObjectByProperty('uuid', u)?.userData?.terrainScatter?.sets?.[0] ?? null;
 	}, uuid);
 /** move / turn / scale the host the replicated way @param {any} page @param {string} uuid */
@@ -75,8 +75,8 @@ const moveHost = (page, uuid, pos, rot, scale) =>
 	page.evaluate(
 		([u, p, r, s]) => {
 			let g, peer;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
-			window.__stores.peers.subscribe((v) => (peer = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.peers.subscribe((v) => (peer = v))();
 			const o = g.getObjectByProperty('uuid', u);
 			o.position.set(p[0], p[1], p[2]);
 			o.rotation.set(r[0], r[1], r[2]);
@@ -95,7 +95,7 @@ h.run(async () => {
 
 	// ---- a plain mesh host: a sphere -------------------------------------------------------
 	const uuid = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create sphere');
 		await new Promise((r) => setTimeout(r, 300));
 		const group = await new Promise((r) => s.objectsGroup.subscribe(r)());
@@ -107,14 +107,14 @@ h.run(async () => {
 	await moveHost(A.page, uuid, [0, 1, 0], [0, 0, 0], [1, 1, 1]);
 	const geoBefore = await A.page.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const geo = g.getObjectByProperty('uuid', u).geometry;
 		window.__scatterGeoRef = geo.attributes.position;
 		return { indexed: !!geo.index, verts: geo.attributes.position.count };
 	}, uuid);
 
 	// ---- E2: the "Add scatter" row, right after the Water section -------------------------------
-	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), uuid);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, true), uuid);
 	const add = A.page.locator('#scatter-add');
 	await add.waitFor({ state: 'attached', timeout: h.PATIENT_CLICK_MS });
 	if (!(await add.isVisible().catch(() => false))) {
@@ -157,10 +157,10 @@ h.run(async () => {
 	await h.eventuallyAfter(A, B, () => drawn(B.page, uuid), (d) => samePlaces(d, aDrawn), 'B draws the SAME 200 instances (same seed, same places)', 15000);
 	const reapplied = await A.page.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const block = JSON.parse(JSON.stringify(g.getObjectByProperty('uuid', u).userData.terrainScatter));
-		window.__stores.terrainSurface.applyTerrainScatter(u, null);
-		window.__stores.terrainSurface.applyTerrainScatter(u, block);
+		window.__tp.test.v1.terrainSurface.applyTerrainScatter(u, null);
+		window.__tp.test.v1.terrainSurface.applyTerrainScatter(u, block);
 		return true;
 	}, uuid);
 	h.check(reapplied && samePlaces(await drawn(A.page, uuid), aDrawn), 'a re-applied block (the reload path) lays out identically');
@@ -212,17 +212,17 @@ h.run(async () => {
 	await h.eventually(() => firstSet(A.page, uuid), (s) => s?.gen?.count != null, '...and back to COUNT', 8000);
 	if (SHOTS)
 		for (const t of ['dark', 'light']) {
-			await A.page.evaluate((th) => window.__stores.themes.theme.set(th), t);
+			await A.page.evaluate((th) => window.__tp.test.v1.themes.theme.set(th), t);
 			await A.page.waitForTimeout(400);
 			await A.page.locator('[data-scatter-fill]').first().scrollIntoViewIfNeeded({ timeout: h.PATIENT_CLICK_MS });
 			await A.page.screenshot({ path: `${SHOTS}/02-fill-rows-${t}.png` });
 		}
-	await A.page.evaluate(() => window.__stores.themes.theme.set('dark'));
+	await A.page.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
 
 	// ---- the brush ON the mesh: a scatter-only session, geometry untouched --------------------------
 	await moveHost(A.page, uuid, [0, 1, 0], [0, 0, 0], [1, 1, 1]);
 	const paint = await A.page.evaluate(async (u) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const ts = s.terrainSculpt;
 		const ok = ts.enterSculpt(u, { scatter: true });
 		let only, op, mode;
@@ -254,14 +254,14 @@ h.run(async () => {
 	h.check(boxes.length === paint.painted?.count && boxes.every((p) => Math.abs(Math.hypot(...p.local) - 1) < 0.03 && p.local[0] > 0.3), 'painted instances sit ON the sphere where the brush went');
 	const pBlock = await blockOf(A.page, uuid);
 	await h.eventuallyAfter(A, B, () => blockOf(B.page, uuid), (v) => v === pBlock, 'the stroke replicates', 15000);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => firstSet(A.page, uuid).then(() => blockOf(A.page, uuid)), (v) => !v.includes('"Box"'), 'ONE undo removes the stroke', 8000);
 	await h.eventuallyAfter(A, B, () => blockOf(B.page, uuid), (v) => !v.includes('"Box"'), '...on B too', 15000);
-	await A.page.evaluate(() => window.__stores.terrainSculpt.exitSculpt());
+	await A.page.evaluate(() => window.__tp.test.v1.terrainSculpt.exitSculpt());
 
 	// ---- a terrain fill on a painted layer ------------------------------------------------------------
 	const terrain = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Terrain 20 20');
 		await new Promise((r) => setTimeout(r, 300));
 		const group = await new Promise((r) => s.objectsGroup.subscribe(r)());
@@ -281,7 +281,7 @@ h.run(async () => {
 
 	// ---- a GROUP host (a placed model is one): the fill covers its children, in its frame ------------
 	const grp = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		for (let i = 0; i < 2; i++) w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		await new Promise((r) => setTimeout(r, 300));
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());

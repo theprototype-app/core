@@ -96,7 +96,7 @@ function checkExport(zipPath, preset) {
 async function loadScene(page, file) {
 	const bytes = Array.from(fs.readFileSync(file));
 	await page.evaluate(async (/** @type {number[]} */ arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		await s.sessions.applySession(payload, { backup: false });
 	}, bytes);
@@ -135,7 +135,7 @@ h.run(async () => {
 	// modal opens there instead (exportStores.openPublishExport) — the OSS checks are for a plain build
 	const cloudPublish = await page.evaluate(() => {
 		let v;
-		window.__stores.exportStores.publishSlot.subscribe((x) => (v = x))();
+		window.__tp.test.v1.exportStores.publishSlot.subscribe((x) => (v = x))();
 		return !!v;
 	});
 	h.check((await page.locator('#publish-export-modal').getAttribute('data-tab')) === (cloudPublish ? 'publish' : 'export'), `it opens on ${cloudPublish ? 'Publish (the cloud plugin mounts one)' : 'Export (no cloud plugin)'}`);
@@ -167,13 +167,23 @@ h.run(async () => {
 	h.check(/checked OK/.test((await page.locator('#export-result').textContent()) || ''), 'the result says the zip passed its own check');
 	// 36-int-121: a host that injects into the HTML it serves (Cloudflare Pages Web Analytics; serve-build
 	// --inject-cf-beacon stands in for it) leaves no trace in the zip, and the removal is reported
-	const zipText = (() => {
+	const scanned = (() => {
 		const dir = path.join(WORK, 'scan-golf');
 		unzipTo(new Uint8Array(fs.readFileSync(golfZip)), dir);
-		const walk = (/** @type {string} */ d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : /\.(html?|js|css|json)$/i.test(e.name) ? [fs.readFileSync(path.join(d, e.name), 'utf8')] : []));
-		return walk(dir).join('\n');
+		/** @type {(d: string) => {name: string, text: string}[]} */
+		const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : /\.(html?|js|css|json)$/i.test(e.name) ? [{ name: e.name, text: fs.readFileSync(path.join(d, e.name), 'utf8') }] : []));
+		return walk(dir);
 	})();
-	h.check(!/cloudflareinsights|data-cf-beacon/i.test(zipText), 'no host-injected beacon anywhere in the zip');
+	// 54 X7: the INJECTED TAG (a <script> naming the beacon or carrying data-cf-beacon, or the
+	// analytics comment) — in the HTML, where a host puts it. The bare URL is not the test: a
+	// deployed build's CSP value names the beacon origin and used to ride along in the env object
+	const htmlText = scanned.filter((f) => /\.html?$/i.test(f.name)).map((f) => f.text).join('\n');
+	const injected = htmlText.match(/<script\b[^>]*(cloudflareinsights|data-cf-beacon)[^>]*>|<!--\s*Cloudflare Pages Analytics\s*-->/i);
+	h.check(!injected, `no host-injected beacon tag in the zip's HTML (${injected?.[0]?.slice(0, 120) ?? 'none'})`);
+	// 54 X7: the code reads its VITE_ keys one by one, so no chunk carries the whole env object
+	// (`{VITE_PEER_HOST:"…",VITE_CSP_SCRIPT_SRC:"…",…}` was inlined wherever `import.meta.env` was read whole)
+	const envObject = scanned.map((f) => f.text.match(/\bVITE_[A-Z0-9_]+\s*:\s*[`'"]/)?.[0]).find(Boolean);
+	h.check(!envObject, `no build env object inlined in the zip's code (${envObject ?? 'none'})`);
 	if (process.env.EXPECT_CF_BEACON) {
 		// 36 L3: the beacon is a KNOWN host script — removed quietly: no visible warning, one line
 		// in the result's (collapsed) Details
@@ -203,7 +213,7 @@ h.run(async () => {
 	// ---------------------------------------------- 2b. Sky Run through the builder API
 	await loadScene(page, SKYRUN);
 	const skyB64 = await page.evaluate(async () => {
-		const b = window.__stores.exportBuilder;
+		const b = window.__tp.test.v1.exportBuilder;
 		const out = await b.buildExport({ preset: 'static', title: 'Sky Run', thumbnail: true, startFullscreen: false, showFps: true, quality: 'auto', vrButton: true, useCdnForPacks: false });
 		const buf = new Uint8Array(await out.blob.arrayBuffer());
 		let s = '';
@@ -293,7 +303,7 @@ h.run(async () => {
 			}
 			throw new Error('no game frame');
 		})();
-		await frame.waitForFunction(() => /** @type {any} */ (window).__stores?.exportRuntime?.exportRuntimeState, null, { timeout: 60000 });
+		await frame.waitForFunction(() => /** @type {any} */ (window).__tp?.test.v1?.exportRuntime?.exportRuntimeState, null, { timeout: 60000 });
 		return { ctx, p, frame, foreign, errors };
 	}
 	const read = `(s) => { let v; s.subscribe((x) => (v = x))(); return v; }`;
@@ -301,13 +311,13 @@ h.run(async () => {
 	// ---- Mini Golf
 	const G = await openGame('golf.html');
 	await h.eventually(
-		() => G.frame.evaluate(() => /** @type {any} */ (window).__stores.exportRuntime.exportRuntimeState.phase),
+		() => G.frame.evaluate(() => /** @type {any} */ (window).__tp.test.v1.exportRuntime.exportRuntimeState.phase),
 		(v) => v === 'playing' || v === 'failed',
 		'the exported Mini Golf boots its scene and asks for Play',
 		60000
 	);
 	const gState = await G.frame.evaluate((r) => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		const rd = eval(r);
 		const badge = /** @type {HTMLAnchorElement | null} */ (document.querySelector('#made-with-tp'));
 		const rect = badge?.getBoundingClientRect();
@@ -370,14 +380,14 @@ h.run(async () => {
 	await h.eventually(
 		// the rules' state is the behaviour document since 36 (game-mini-golf reads it the same way) — 48 G1:
 		// this read a `vars()` the module no longer has, so it waited on null on every build
-		() => G.frame.evaluate(() => /** @type {any} */ (() => { const id = globalThis.__minigolf?.rulesNode?.(); const st = id ? window.__stores.behaviours?.behaviourState?.(id) : null; return st ? st.hole ?? null : null; })()),
+		() => G.frame.evaluate(() => /** @type {any} */ (() => { const id = globalThis.__minigolf?.rulesNode?.(); const st = id ? window.__tp.test.v1.behaviours?.behaviourState?.(id) : null; return st ? st.hole ?? null : null; })()),
 		(v) => v === 1,
 		'Tee off starts hole 1 inside the exported game',
 		10000
 	);
 	await G.p.waitForTimeout(900);
 	const ball = await G.frame.evaluate(() => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		let cam;
 		s.globalCamera.subscribe((/** @type {any} */ v) => (cam = v))();
 		let r;
@@ -394,7 +404,7 @@ h.run(async () => {
 	await G.p.mouse.move(ball.x, ball.y + 90, { steps: 4 });
 	await G.p.mouse.up();
 	await h.eventually(
-		() => G.frame.evaluate(() => /** @type {any} */ (() => { const id = globalThis.__minigolf?.rulesNode?.(); const st = id ? window.__stores.behaviours?.behaviourState?.(id) : null; return st ? st.strokes ?? null : null; })()),
+		() => G.frame.evaluate(() => /** @type {any} */ (() => { const id = globalThis.__minigolf?.rulesNode?.(); const st = id ? window.__tp.test.v1.behaviours?.behaviourState?.(id) : null; return st ? st.strokes ?? null : null; })()),
 		(n) => n === 1,
 		'a real-mouse putt in the exported game counts one stroke',
 		6000
@@ -438,13 +448,13 @@ h.run(async () => {
 	// ---- Sky Run (static preset, FPS on by the export's default)
 	const S = await openGame('sky.html');
 	await h.eventually(
-		() => S.frame.evaluate(() => /** @type {any} */ (window).__stores.exportRuntime.exportRuntimeState.phase),
+		() => S.frame.evaluate(() => /** @type {any} */ (window).__tp.test.v1.exportRuntime.exportRuntimeState.phase),
 		(v) => v === 'playing' || v === 'failed',
 		'the exported Sky Run boots and asks for Play',
 		60000
 	);
 	const sState = await S.frame.evaluate((r) => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		const rd = eval(r);
 		return {
 			locked: rd(s.isLocked),
@@ -479,13 +489,13 @@ h.run(async () => {
 	// ---------------------------------------------- 5. the badge cannot be switched off
 	const T = await openGame('tamper.html');
 	await h.eventually(
-		() => T.frame.evaluate(() => /** @type {any} */ (window).__stores.exportRuntime.exportRuntimeState.phase),
+		() => T.frame.evaluate(() => /** @type {any} */ (window).__tp.test.v1.exportRuntime.exportRuntimeState.phase),
 		(v) => v === 'playing' || v === 'failed',
 		'the tampered export still boots',
 		60000
 	);
 	const tamper = await T.frame.evaluate(() => {
-		const cfg = /** @type {any} */ (window).__stores.exportBoot.exportConfig;
+		const cfg = /** @type {any} */ (window).__tp.test.v1.exportBoot.exportConfig;
 		return {
 			badge: !!document.querySelector('#made-with-tp'),
 			raw: JSON.stringify(/** @type {any} */ (window).__TP_EXPORT__).includes('hideBadge'),

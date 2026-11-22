@@ -14,7 +14,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	const P = await h.setupPage(browser, 'keys', { context: { viewport: { width: 1440, height: 900 } }, storage: { toastsInDrawerOnly: 'true' } });
 	const page = P.page;
-	await page.evaluate(() => window.__stores.flowGraphClose.set(false));
+	await page.evaluate(() => window.__tp.test.v1.flowGraphClose.set(false));
 	await page.waitForTimeout(1500);
 	const pane = await page.evaluate(() => {
 		const r = document.querySelector('.svelte-flow__pane')?.getBoundingClientRect();

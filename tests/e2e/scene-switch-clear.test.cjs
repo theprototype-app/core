@@ -58,18 +58,18 @@ h.run(async () => {
 		await ev(S.shell, (s) => s.isGame === false, '3.4 the scene is no longer a game', 20000);
 		h.check((await page.locator('#game-chip').count()) === 0, '3.5 no game chip (the leftover Menu/Play the user saw)');
 		const after = await page.evaluate(() => ({
-			nodes: window.__stores.allNodes().length,
-			hud: window.__stores.hudDocs.hudDocsSnapshot(),
-			play: window.__stores.scenePhysics.scenePhysicsSnapshot(),
-			game: window.__stores.gameState.gameStateSnapshot(),
-			env: window.__stores.environment.environmentSnapshot()
+			nodes: window.__tp.test.v1.allNodes().length,
+			hud: window.__tp.test.v1.hudDocs.hudDocsSnapshot(),
+			play: window.__tp.test.v1.scenePhysics.scenePhysicsSnapshot(),
+			game: window.__tp.test.v1.gameState.gameStateSnapshot(),
+			env: window.__tp.test.v1.environment.environmentSnapshot()
 		}));
 		h.check(after.nodes === 0, `3.6 no flow nodes (${after.nodes})`);
 		h.check(after.hud === null && after.game === null, '3.7 no HUD, game state pristine');
 		h.check(after.play === null && after.env === null, `3.8 the play block and the sky are back to defaults (${JSON.stringify([after.play, after.env]).slice(0, 120)})`);
 		h.check(!(await S.loaded()).includes('waves') && !(await S.loaded()).includes('health'), "3.9 the scene's modules are unloaded");
 		h.check(!(await S.rootGroups()).includes('waves-module'), '3.10 their content left the scene');
-		h.check((await page.evaluate(() => window.__stores.gameKit.gameShell.shellMenuAvailable())) === false, '3.11 no pause menu for the cleared scene');
+		h.check((await page.evaluate(() => window.__tp.test.v1.gameKit.gameShell.shellMenuAvailable())) === false, '3.11 no pause menu for the cleared scene');
 		h.check(!(await S.notes()).some((t) => /^Session loaded: Untitled/.test(t)), '3.12 and no misleading "Session loaded" toast');
 	});
 

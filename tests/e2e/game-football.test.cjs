@@ -80,18 +80,18 @@ async function zipBytes() {
 
 /** h.installModule with the bytes in hand (the helper only knows one folder) */
 async function installZip(peer, bytes, label) {
-	await peer.page.evaluate(() => window.__stores.modulesOpen.set(true));
+	await peer.page.evaluate(() => window.__tp.test.v1.modulesOpen.set(true));
 	await peer.page.waitForTimeout(400);
 	await peer.page.getByRole('tab', { name: /^User/ }).click();
 	await peer.page.waitForTimeout(200);
 	await peer.page.locator('#install-module-zip').setInputFiles({ name: 'football.zip', mimeType: 'application/zip', buffer: bytes });
 	await h.eventually(
-		() => peer.page.evaluate(() => window.__stores.moduleSDK.loadedModules.map((m) => m.id)),
+		() => peer.page.evaluate(() => window.__tp.test.v1.moduleSDK.loadedModules.map((m) => m.id)),
 		(ids) => ids.includes('football'),
 		label + ': the football module installed from the real zip',
 		20000
 	);
-	await peer.page.evaluate(() => window.__stores.modulesOpen.set(false));
+	await peer.page.evaluate(() => window.__tp.test.v1.modulesOpen.set(false));
 	await peer.page.waitForTimeout(300);
 }
 
@@ -103,7 +103,7 @@ const snap = (page) => page.evaluate(() => window.__football?.snapshot() ?? null
 const namesOf = (page) =>
 	page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return Object.fromEntries((g?.children ?? []).map((c) => [c.name, c.uuid]));
 	});
 
@@ -111,22 +111,22 @@ const namesOf = (page) =>
 const clickObject = (page, uuid) =>
 	page.evaluate((uuid) => {
 		let group;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		const object = group?.getObjectByProperty('uuid', uuid);
 		if (!object) return false;
-		return window.__stores.moduleSDK.moduleClickHandlers.some((handler) => handler(object));
+		return window.__tp.test.v1.moduleSDK.moduleClickHandlers.some((handler) => handler(object));
 	}, uuid);
 
 const posOf = (page, uuid) =>
 	page.evaluate((uuid) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g?.getObjectByProperty('uuid', uuid)?.position.toArray() ?? null;
 	}, uuid);
 
 const speedOf = (page, uuid) =>
 	page.evaluate((uuid) => {
-		const b = window.__stores.physics.physicsDebug().find((e) => e.uuid === uuid);
+		const b = window.__tp.test.v1.physics.physicsDebug().find((e) => e.uuid === uuid);
 		return b?.linvel ? Math.hypot(b.linvel.x, b.linvel.y, b.linvel.z) : null;
 	}, uuid);
 
@@ -136,10 +136,10 @@ const hitBall = (page, uuid, speed = 4) =>
 	page.evaluate(
 		({ uuid, speed }) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const o = g?.getObjectByProperty('uuid', uuid);
 			if (!o) return { hits: 0, armed: false };
-			const k = window.__stores.knock;
+			const k = window.__tp.test.v1.knock;
 			const id = 'gf-' + Math.random().toString(36).slice(2, 7);
 			k.dropProbe(id);
 			const [bx, by, bz] = o.position.toArray();
@@ -167,7 +167,7 @@ const touch = async (authority, hitter, uuid) => {
 	let last = null;
 	for (let attempt = 0; attempt < 3; attempt++) {
 		await h.eventually(() => snap(authority), (s) => s?.started && s.serveAt === 0, '  (premise) no serve pending', 10000);
-		await authority.evaluate((uuid) => window.__stores.physics.applyThrow({ uuid, pos: [0, 1.35, 0], rot: [0, 0, 0], linvel: [0, 0, 0], angvel: [0, 0, 0] }), uuid);
+		await authority.evaluate((uuid) => window.__tp.test.v1.physics.applyThrow({ uuid, pos: [0, 1.35, 0], rot: [0, 0, 0], linvel: [0, 0, 0], angvel: [0, 0, 0] }), uuid);
 		await h.eventually(() => posOf(hitter, uuid), (p) => !!p && Math.hypot(p[0], p[1] - 1.35, p[2]) < 0.05, '  (premise) the hitter sees the ball parked', 6000);
 		await hitter.waitForTimeout(150);
 		last = await hitBall(hitter, uuid, 4);
@@ -180,23 +180,23 @@ const touch = async (authority, hitter, uuid) => {
  * the goal detector is an ENTER edge per gate (the flight's lesson) */
 const teleport = async (page, uuid, pos) => {
 	await h.eventually(() => snap(page), (s) => s?.started && s.serveAt === 0, '  (premise) no serve pending', 10000);
-	await page.evaluate(({ uuid, y }) => window.__stores.physics.applyThrow({ uuid, pos: [0, y, 0], rot: [0, 0, 0], linvel: [0, 0, 0], angvel: [0, 0, 0] }), { uuid, y: pos[1] });
+	await page.evaluate(({ uuid, y }) => window.__tp.test.v1.physics.applyThrow({ uuid, pos: [0, y, 0], rot: [0, 0, 0], linvel: [0, 0, 0], angvel: [0, 0, 0] }), { uuid, y: pos[1] });
 	await page.waitForTimeout(400);
-	await page.evaluate(({ uuid, pos }) => window.__stores.physics.applyThrow({ uuid, pos, rot: [0, 0, 0], linvel: [0, 0, 0], angvel: [0, 0, 0] }), { uuid, pos });
+	await page.evaluate(({ uuid, pos }) => window.__tp.test.v1.physics.applyThrow({ uuid, pos, rot: [0, 0, 0], linvel: [0, 0, 0], angvel: [0, 0, 0] }), { uuid, pos });
 };
 
-const myVar = (page, name) => page.evaluate((name) => window.__stores.peerVars.peerVarsDebug().mine[name] ?? 0, name);
-const rowOf = (page, name, id) => page.evaluate(({ name, id }) => window.__stores.peerVars.leaderboardRows(name).find((r) => r.id === id)?.value ?? 0, { name, id });
+const myVar = (page, name) => page.evaluate((name) => window.__tp.test.v1.peerVars.peerVarsDebug().mine[name] ?? 0, name);
+const rowOf = (page, name, id) => page.evaluate(({ name, id }) => window.__tp.test.v1.peerVars.leaderboardRows(name).find((r) => r.id === id)?.value ?? 0, { name, id });
 
 /** a rule edit on the live Match Rules node (the replicated nodedata merge) */
 const setRules = (page, patch) =>
 	page.evaluate((patch) => {
 		let graphs;
-		window.__stores.flowGraphs.subscribe((g) => (graphs = g))();
+		window.__tp.test.v1.flowGraphs.subscribe((g) => (graphs = g))();
 		for (const [graphId, graph] of Object.entries(graphs ?? {}))
 			for (const n of graph.nodes ?? [])
 				if (n.type === 'fbrules') {
-					window.__stores.nodesHandler.setNodeData(n.id, patch, graphId);
+					window.__tp.test.v1.nodesHandler.setNodeData(n.id, patch, graphId);
 					return true;
 				}
 		return false;
@@ -206,7 +206,7 @@ const setRules = (page, patch) =>
 const stampOf = (page, id) =>
 	page.evaluate((id) => {
 		let t;
-		window.__stores.flowTriggers.subscribe((v) => (t = v))();
+		window.__tp.test.v1.flowTriggers.subscribe((v) => (t = v))();
 		const s = t?.[id]?.lastT;
 		return typeof s === 'number' ? s : null;
 	}, id);
@@ -214,17 +214,17 @@ const stampOf = (page, id) =>
 const gameStateOf = (page) =>
 	page.evaluate(() => {
 		let g;
-		window.__stores.gameState.gameState.subscribe((v) => (g = v))();
+		window.__tp.test.v1.gameState.gameState.subscribe((v) => (g = v))();
 		return g?.state ?? null;
 	});
-const screenOf = (page) => page.evaluate(() => window.__stores.hudDocs.visibleScreen('scene')?.id ?? null);
+const screenOf = (page) => page.evaluate(() => window.__tp.test.v1.hudDocs.visibleScreen('scene')?.id ?? null);
 const hudText = async (page) => (await page.locator('#hud-layer').textContent().catch(() => '')) ?? '';
 /** 30-visuals-mod: the playing HUD's score is the SCOREBOARD's two numbers (fb-red-score /
  * fb-blue-score), no longer a "RED n — n BLUE" line; read them as that line */
 const scoreLine = (page) =>
 	page.evaluate(() => {
 		let r = {};
-		window.__stores.hudDocs.hudRuntime.subscribe((v) => (r = v || {}))();
+		window.__tp.test.v1.hudDocs.hudRuntime.subscribe((v) => (r = v || {}))();
 		const red = r['fb-red-score']?.text;
 		const blue = r['fb-blue-score']?.text;
 		return red == null || blue == null ? '' : 'RED ' + red + ' — ' + blue + ' BLUE';
@@ -237,7 +237,7 @@ const pressP = (page) =>
 /** whether this page steps a world, and whose world it believes it is watching */
 const simOf = (page) =>
 	page.evaluate(() => {
-		const p = window.__stores.physics;
+		const p = window.__tp.test.v1.physics;
 		let own, remote;
 		p.simulating.subscribe((v) => (own = v))();
 		p.remoteSimulating.subscribe((v) => (remote = v))();
@@ -262,7 +262,7 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(4000);
 		await warm.ctx.close();
 	}
@@ -273,7 +273,7 @@ h.run(async () => {
 
 	// ---- 1. the world ------------------------------------------------------------------------
 	await A.page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		await s.sessions.applySession(payload, { backup: false });
 	}, Array.from(scene.bytes));
@@ -283,7 +283,7 @@ h.run(async () => {
 	const redGate = names['Red gate'];
 	const blueGate = names['Blue gate'];
 	h.check(Object.keys(names).length === 42, `1.1 the file restored 42 objects — 41 + the Arena decoration group (${Object.keys(names).length})`);
-	const phys = await A.page.evaluate(() => window.__stores.scenePhysics.scenePhysicsDebug());
+	const phys = await A.page.evaluate(() => window.__tp.test.v1.scenePhysics.scenePhysicsDebug());
 	h.check(phys.gravity === 0 && phys.ground?.enabled === false && phys.ccd === true, `1.2 zero-g, no ground, CCD on (${phys.gravity}, ${phys.ground?.enabled}, ${phys.ccd})`);
 	h.check(phys.knock?.enabled === true && phys.knock.maxSpeed === 10 && Math.abs(phys.knock.spin - 0.8) < 1e-9, `1.3 the knock block ON from the file — the ball curls (${JSON.stringify(phys.knock)})`);
 	h.check(phys.play?.simOnPlay === true, '1.4 simOnPlay: entering play starts the sim');
@@ -295,13 +295,13 @@ h.run(async () => {
 
 	// the template's damping (0.35) lets a served ball score on its own inside the 5 m box,
 	// which is the game working and makes an expected score a lottery: the flight's value
-	await A.page.evaluate(() => window.__stores.scenePhysics.setScenePhysics({ damping: { linear: 1.2, angular: 0.5 } }));
+	await A.page.evaluate(() => window.__tp.test.v1.scenePhysics.setScenePhysics({ damping: { linear: 1.2, angular: 0.5 } }));
 	h.check(await setRules(A.page, { serveSpeed: 0.8 }), '1.9 a gentle kick-off written on the live Match Rules node');
 
 	await h.connect(A, B);
 	await h.eventually(() => namesOf(B.page).then((n) => n['Football']), (u) => u === ball, '1.10 B received the pitch with the same ball uuid', 30000);
 	await h.eventually(() => snap(B.page), (s) => s?.ball === ball && Object.keys(s.gates).length === 2 && s.buttons.length === 4 && s.rules.serveSpeed === 0.8, '1.11 B: the graph replicated — same ball, gates, buttons and rules', 20000);
-	await h.eventually(() => B.page.evaluate(() => window.__stores.scenePhysics.scenePhysicsDebug()), (p) => p.gravity === 0 && p.knock?.enabled === true, '1.12 B: the physics block reached B');
+	await h.eventually(() => B.page.evaluate(() => window.__tp.test.v1.scenePhysics.scenePhysicsDebug()), (p) => p.gravity === 0 && p.knock?.enabled === true, '1.12 B: the physics block reached B');
 
 	// ---- 2. play + the menu screen -----------------------------------------------------------
 	// Play is entered in ORDER here: A first, and B only once it has HEARD that A
@@ -341,7 +341,7 @@ h.run(async () => {
 	await h.eventually(() => scoreLine(A.page), (t) => /RED 0 — 0 BLUE/.test(t), '3.7 the HUD scoreboard reads RED 0 — 0 BLUE');
 
 	// ---- 3b. the P menu ------------------------------------------------------------------------
-	const simState = (pg) => pg.evaluate(() => { const p = window.__stores.physics; let a, b, l, f; p.simulating.subscribe((v) => (a = v))(); p.remoteSimulating.subscribe((v) => (b = v))(); window.__stores.isLocked.subscribe((v) => (l = v))(); window.__stores.playPointerFree?.subscribe?.((v) => (f = v))(); return { sim: a, remote: b, locked: l, free: f }; });
+	const simState = (pg) => pg.evaluate(() => { const p = window.__tp.test.v1.physics; let a, b, l, f; p.simulating.subscribe((v) => (a = v))(); p.remoteSimulating.subscribe((v) => (b = v))(); window.__tp.test.v1.isLocked.subscribe((v) => (l = v))(); window.__tp.test.v1.playPointerFree?.subscribe?.((v) => (f = v))(); return { sim: a, remote: b, locked: l, free: f }; });
 	await pressP(A.page);
 	await h.eventually(() => screenOf(A.page), (v) => v === 'pause', '3.8 P opens the pause menu', 6000);
 	h.check(/PAUSED/.test(await hudText(A.page)) && /Quit to menu/.test(await hudText(A.page)), '3.9 the pause menu offers Resume / New match / Quit');
@@ -360,7 +360,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(2000);
 	h.check(bHit.armed && bHit.hits >= 1, `4.1 B's 4 m/s probe knocks the ball (${JSON.stringify(bHit)})`);
 	await h.eventually(() => snap(A.page), (s) => s?.lastTouch?.by === B.id && s.lastTouch.team === 'blue', '4.2 A: lastTouch = B (blue) — the hit crossed the wire');
-	await h.eventually(() => A.page.evaluate((u) => window.__stores.knock.lastHitOf(u)?.by ?? null, ball), (by) => by === B.id, '4.3 A\'s knock hit log names B (stamped from the connection)');
+	await h.eventually(() => A.page.evaluate((u) => window.__tp.test.v1.knock.lastHitOf(u)?.by ?? null, ball), (by) => by === B.id, '4.3 A\'s knock hit log names B (stamped from the connection)');
 	const redPos = await posOf(A.page, redGate);
 	await teleport(A.page, ball, redPos);
 	await h.eventually(() => snap(B.page), (s) => s?.score.blue === 1 && s.score.red === 0, '4.4 the ball into the RED gate scores for BLUE (on B)');
@@ -371,7 +371,7 @@ h.run(async () => {
 	const lamp = (page, name) =>
 		page.evaluate((uuid) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const o = g?.getObjectByProperty('uuid', uuid);
 			return o ? { lit: o.material.userData.fbLit === true, intensity: o.material.emissiveIntensity } : null;
 		}, names[name]);
@@ -423,7 +423,7 @@ h.run(async () => {
 	// a peer in play cannot approve a request (the documented gotcha), and A must keep playing
 	// to keep simulating — so B steps out of play and admits C; the mesh then links C to A,
 	// whose handshake is what must tell C that a sim runs
-	await B.page.evaluate(() => window.__stores.isLocked.set(false));
+	await B.page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 	await B.page.waitForTimeout(2500);
 	await h.connect(C, B);
 	await h.eventually(
@@ -433,20 +433,20 @@ h.run(async () => {
 		30000
 	);
 	await h.eventually(() => rowOf(C.page, 'goals', B.id), (v) => v === 1, '5.2 C sees B\'s goals row');
-	await h.eventually(() => C.page.evaluate(() => new Promise((r) => window.__stores.physics.remoteSimulating.subscribe(r)())), (v) => v === A.id, '5.3 C was TOLD A simulates — no start happened since it joined (the handshake simulate push)');
+	await h.eventually(() => C.page.evaluate(() => new Promise((r) => window.__tp.test.v1.physics.remoteSimulating.subscribe(r)())), (v) => v === A.id, '5.3 C was TOLD A simulates — no start happened since it joined (the handshake simulate push)');
 	await h.eventually(() => gameStateOf(C.page), (v) => v === 'playing', '5.4 C\'s shell reads playing');
-	await C.page.evaluate(() => window.__stores.isLocked.set(true));
+	await C.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await h.eventually(() => screenOf(C.page), (v) => v === 'hud', '5.5 C lands on the playing HUD with no transition witnessed (showWhile)', 6000);
 	await h.eventually(() => snap(A.page), (s) => s?.started && s.serveAt === 0, '  (premise) re-served', 8000);
 	const cHit = await touch(A.page, C.page, ball);
 	h.check(cHit.armed && cHit.hits >= 1, `5.6 C's knock is LIVE (${JSON.stringify(cHit)})`);
 	await h.eventually(() => snap(A.page), (s) => s?.lastTouch?.by === C.id && s.lastTouch.team === null, '5.7 A: lastTouch = C, a spectator (no team)');
 	// counterfactual: C as it would stand WITHOUT the push (remoteSimulating never set)
-	await C.page.evaluate(() => window.__stores.physics.remoteSimulating.set(null));
+	await C.page.evaluate(() => window.__tp.test.v1.physics.remoteSimulating.set(null));
 	const dead = await hitBall(C.page, ball, 4);
 	h.check(!dead.armed && dead.hits === 0, `5.8 counterfactual: without the simulate push C's probe is DEAD (${JSON.stringify(dead)})`);
-	await C.page.evaluate((id) => window.__stores.physics.applySimulate({ running: true, paused: false, peerId: id }), A.id);
-	await h.eventually(() => C.page.evaluate(() => new Promise((r) => window.__stores.physics.remoteSimulating.subscribe(r)())), (v) => v === A.id, '5.9 (restored)');
+	await C.page.evaluate((id) => window.__tp.test.v1.physics.applySimulate({ running: true, paused: false, peerId: id }), A.id);
+	await h.eventually(() => C.page.evaluate(() => new Promise((r) => window.__tp.test.v1.physics.remoteSimulating.subscribe(r)())), (v) => v === A.id, '5.9 (restored)');
 
 	// ---- 6. time mode ends the match for everyone ---------------------------------------------------
 	const overBefore = await stampOf(C.page, 'evover');
@@ -454,7 +454,7 @@ h.run(async () => {
 	await h.eventually(() => snap(A.page), (s) => s?.started === false && s.outcome?.reason === 'time' && s.outcome.winner === 'blue', '6.1 A: time is up — blue wins', 45000);
 	await h.eventually(() => snap(B.page), (s) => s?.started === false && s.outcome?.winner === 'blue', '6.2 B: over');
 	await h.eventually(() => snap(C.page), (s) => s?.started === false && s.outcome?.winner === 'blue', '6.3 C (the late joiner): over');
-	if (process.env.DEBUG_FB) for (const [nm, pg] of [['A', A.page], ['B', B.page], ['C', C.page]]) console.log('DEBUG evover', nm, await stampOf(pg, 'evover'), await stampOf(pg, 'evstart'), JSON.stringify(await pg.evaluate(() => ({ ids: (() => { let g; window.__stores.flowGraphs.subscribe((v) => (g = v))(); return g.scene.nodes.filter((n) => n.type === 'fbevent').map((n) => n.id + ':' + n.data.event); })(), auth: window.__football.snapshot().authority }))));
+	if (process.env.DEBUG_FB) for (const [nm, pg] of [['A', A.page], ['B', B.page], ['C', C.page]]) console.log('DEBUG evover', nm, await stampOf(pg, 'evover'), await stampOf(pg, 'evstart'), JSON.stringify(await pg.evaluate(() => ({ ids: (() => { let g; window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))(); return g.scene.nodes.filter((n) => n.type === 'fbevent').map((n) => n.id + ':' + n.data.event); })(), auth: window.__football.snapshot().authority }))));
 	await h.eventually(() => stampOf(C.page, 'evover'), (t) => t !== null && t !== overBefore, '6.4 C: the "On match over" stamp is in the TRIGGER LOG');
 	await h.eventually(() => gameStateOf(B.page), (v) => v === 'over', '6.5 the shell reads over');
 	await h.eventually(() => snap(B.page), (s) => s?.log.length === 1 && s.log[0].blue === 3 && s.log[0].winner === 'blue', '6.6 the saved match log carries the sheet (gameState.vars)');
@@ -483,10 +483,10 @@ h.run(async () => {
 	// the module's fallback authority are the same peer by construction.
 	// Note what this section asserts and 2.2b cannot: "one simulator" was TRUE while the ball was
 	// unplayable, so the goal at the end is the check that matters.
-	await A.page.evaluate(() => window.__stores.physics.stopSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	await h.eventually(() => simOf(B.page), (v) => v.own === false && v.remote === null, '  (premise) the pitch is idle on B', 10000);
 	await h.eventually(() => simOf(C.page), (v) => v.own === false && v.remote === null, '  (premise) ...and on C', 10000);
-	for (const p of [A, B]) await p.page.evaluate(() => window.__stores.isLocked.set(false));
+	for (const p of [A, B]) await p.page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 	await A.page.waitForTimeout(2600); // the 2 s exit cooldown, so both presses are taken the same way
 	// nothing between the two presses: this IS the window
 	await Promise.all([A.page.locator('#play-button').click(), B.page.locator('#play-button').click()]);
@@ -509,7 +509,7 @@ h.run(async () => {
 	await h.eventually(() => simOf(C.page), (v) => v.own === false && v.remote === holder.id, '7.3 C (a spectator) agrees on the same one', 20000);
 	// the measured shape, directly: a loser's stream must leave nothing pinned
 	const heldBy = (page, id) =>
-		page.evaluate((id) => window.__stores.physics.physicsDebug().filter((e) => e.hold === 'external' && e.holdPeer === id).length, id);
+		page.evaluate((id) => window.__tp.test.v1.physics.physicsDebug().filter((e) => e.hold === 'external' && e.holdPeer === id).length, id);
 	await holder.page.waitForTimeout(1500);
 	const pinned = await heldBy(holder.page, follower.id);
 	h.check(pinned === 0, `7.4 no body on it is pinned by the other peer's move stream (${pinned})`);
@@ -517,9 +517,9 @@ h.run(async () => {
 	// hand the world to the LOWER id, so 7b starts from the state the rule elects (when the
 	// presses DID race that is already true and this is a no-op)
 	if (holder !== low) {
-		await holder.page.evaluate(() => window.__stores.physics.stopSimulation());
+		await holder.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 		await h.eventually(() => simOf(low.page), (v) => v.own === false && v.remote === null, '  (premise) the pitch is idle', 10000);
-		await low.page.evaluate(() => window.__stores.physics.toggleSimulation());
+		await low.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	}
 	await h.eventually(() => simOf(low.page), (v) => v.own === true, `7.5 the lower id holds the world (${low === A ? 'A' : 'B'}: ${low.id} < ${high.id})`, 20000);
 	await h.eventually(() => simOf(high.page), (v) => v.own === false && v.remote === low.id, '  (premise) the higher id follows it', 20000);
@@ -542,7 +542,7 @@ h.run(async () => {
 	// remove the winner's re-announce and 7.6 goes red, which a vacuous check cannot do.
 	const forceStart = (peer) =>
 		peer.page.evaluate(() => {
-			const p = window.__stores.physics;
+			const p = window.__tp.test.v1.physics;
 			p.remoteSimulating.set(null);
 			return p.toggleSimulation();
 		});
@@ -554,9 +554,9 @@ h.run(async () => {
 	h.check(pinned2 === 0, `7.9 nothing left pinned after the forced yield (${pinned2})`);
 
 	// and the other way round: the LOWER id arriving on a world the HIGHER one holds
-	await low.page.evaluate(() => window.__stores.physics.stopSimulation());
+	await low.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	await h.eventually(() => simOf(high.page), (v) => v.own === false && v.remote === null, '  (premise) the pitch is idle again', 10000);
-	await high.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await high.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(() => simOf(low.page), (v) => v.own === false && v.remote === high.id, '  (premise) the higher id holds the world', 20000);
 	await forceStart(low);
 	await h.eventually(() => simOf(high.page), (v) => v.own === false && v.remote === low.id, '7.10 ...and a forced world on the LOWER id takes it BACK from the higher one', 25000);
@@ -571,12 +571,12 @@ h.run(async () => {
 	// real applier with ids whose order is known (`low.id + 'zzz'` is strictly greater than
 	// `low.id` for any id). MEASURED: with the spectator rule removed the race above stays
 	// green, so these two are its only cover.
-	const cRemote = () => C.page.evaluate(() => new Promise((r) => window.__stores.physics.remoteSimulating.subscribe(r)()));
+	const cRemote = () => C.page.evaluate(() => new Promise((r) => window.__tp.test.v1.physics.remoteSimulating.subscribe(r)()));
 	h.check((await cRemote()) === low.id, '  (premise) the spectator is watching the winner');
-	await C.page.evaluate((id) => window.__stores.physics.applySimulate({ running: true, paused: false, peerId: id + 'zzz' }), low.id);
+	await C.page.evaluate((id) => window.__tp.test.v1.physics.applySimulate({ running: true, paused: false, peerId: id + 'zzz' }), low.id);
 	const cAfterStart = await cRemote();
 	h.check(cAfterStart === low.id, `7.13 a spectator told about a HIGHER-id simulator keeps the lower one (${cAfterStart})`);
-	await C.page.evaluate((id) => window.__stores.physics.applySimulate({ running: false, peerId: id + 'zzz' }), low.id);
+	await C.page.evaluate((id) => window.__tp.test.v1.physics.applySimulate({ running: false, peerId: id + 'zzz' }), low.id);
 	const cAfterStop = await cRemote();
 	h.check(cAfterStop === low.id, `7.14 ...and a stop from a peer it was not watching does not blank it (${cAfterStop})`);
 
@@ -587,10 +587,10 @@ h.run(async () => {
 	// stop sends no settling `move` at all (each would put the winner's copy under a fresh
 	// `hold: 'external'` on the way out) and records no transformSet entry (Ctrl+Z over a
 	// layout nobody ever saw), while still telling the mesh the run ended.
-	await low.page.evaluate((uuid) => window.__stores.physics.applyThrow({ uuid, pos: [0, 2.4, 0.9], rot: [0, 0, 0], linvel: [0, 0, 0], angvel: [0, 0, 0] }), ball);
+	await low.page.evaluate((uuid) => window.__tp.test.v1.physics.applyThrow({ uuid, pos: [0, 2.4, 0.9], rot: [0, 0, 0], linvel: [0, 0, 0], angvel: [0, 0, 0] }), ball);
 	await low.page.waitForTimeout(600);
 	const yielded = await low.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let peer;
 		s.peers.subscribe((p) => (peer = p))();
 		const send = peer.send.bind(peer);
@@ -614,7 +614,7 @@ h.run(async () => {
 	h.check(yielded.stops === 1, `7.17 ...while still telling the mesh the run ended (${yielded.stops} stop message)`);
 
 	// put the world back for the goal
-	await low.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await low.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(() => simOf(low.page), (v) => v.own === true, '  (premise) the winner steps a world again', 20000);
 	await h.eventually(() => simOf(high.page), (v) => v.own === false && v.remote === low.id, '  (premise) and the loser follows it', 20000);
 
@@ -636,21 +636,21 @@ h.run(async () => {
 	// ---- 8. 36 U10: THE PROBE — one number from the graph, one from the code, both kept ------------
 	// The match settings are the Match Rules node (ⓘ panel); the DECISIONS are the "Football rules"
 	// behaviour on the Main graph (its code: what a goal is worth). Skipped on a scene without it.
-	const rulesNode = () => A.page.evaluate(() => { let g; window.__stores.flowGraphs.subscribe((v) => (g = v))(); const n = g.scene.nodes.find((x) => x.type === 'behaviour' && /Football rules/.test(x.data?.name ?? '')); return n ? { id: n.id, code: n.data.code } : null; });
+	const rulesNode = () => A.page.evaluate(() => { let g; window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))(); const n = g.scene.nodes.find((x) => x.type === 'behaviour' && /Football rules/.test(x.data?.name ?? '')); return n ? { id: n.id, code: n.data.code } : null; });
 	const fr = await rulesNode();
 	if (fr) {
 		h.check(/const GOAL_POINTS = 1;/.test(fr.code), '8.0 Main holds the "Football rules" behaviour (a goal is worth GOAL_POINTS = 1)');
-		await h.eventually(() => low.page.evaluate((id) => window.__stores.behaviours.behavioursDebug().status[id]?.status, fr.id), (st) => st === 'running', '8.0b the rules run on the authority', 10000);
+		await h.eventually(() => low.page.evaluate((id) => window.__tp.test.v1.behaviours.behavioursDebug().status[id]?.status, fr.id), (st) => st === 'running', '8.0b the rules run on the authority', 10000);
 		// (a) the GRAPH: Match Rules ▸ goals to win = 2, in the properties panel (A's real UI)
-		await A.page.evaluate(() => window.__stores.isLocked.set(false));
+		await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 		await A.page.waitForTimeout(800);
 		if (!(await A.page.evaluate(() => !!document.querySelector('.svelte-flow__pane')))) await A.page.locator('p[title="Node editor (N)"]').click();
 		await A.page.waitForTimeout(1000);
-		await A.page.evaluate(() => window.__stores.bottomDock?.dockHeight?.set(560));
+		await A.page.evaluate(() => window.__tp.test.v1.bottomDock?.dockHeight?.set(560));
 		if (!(await A.page.locator('#flow-props').count())) await A.page.locator('#flow-props-toggle').click();
 		await A.page.locator('#flow-tab-info').click();
-		const fbrulesId = await A.page.evaluate(() => { let g; window.__stores.flowGraphs.subscribe((v) => (g = v))(); return g.scene.nodes.find((n) => n.type === 'fbrules')?.id; });
-		await A.page.evaluate((id) => window.__stores.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: n.id === id }))), fbrulesId);
+		const fbrulesId = await A.page.evaluate(() => { let g; window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))(); return g.scene.nodes.find((n) => n.type === 'fbrules')?.id; });
+		await A.page.evaluate((id) => window.__tp.test.v1.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: n.id === id }))), fbrulesId);
 		await h.eventually(() => A.page.locator('#flow-prop-goalsToWin').count(), (n) => n === 1, '8.1 Match Rules shows "goals to win" in its properties panel', 6000);
 		// first to (blue's score now): the match is decided the moment the setting lands
 		const blueNow = (await snap(low.page)).score.blue;
@@ -660,18 +660,18 @@ h.run(async () => {
 		await h.eventually(() => snap(low.page), (s) => s?.rules.goalsToWin === target, `8.2 the setting replicated to the authority (goals to win ${target})`, 8000);
 		await h.eventually(() => snap(C.page), (s) => s?.started === false && s.outcome?.reason === 'goals' && s.outcome.winner === 'blue', `8.3 Play: with blue on ${blueNow}, first-to-${target} blows the final whistle (the rules read the new setting)`, 15000);
 		// (b) the CODE: a goal is worth 2 — the rules file, edited in the code workspace on A
-		await A.page.evaluate((id) => window.__stores.codeWorkspace.openCode({ source: 'behaviour', ref: { nodeId: id } }), fr.id);
+		await A.page.evaluate((id) => window.__tp.test.v1.codeWorkspace.openCode({ source: 'behaviour', ref: { nodeId: id } }), fr.id);
 		await h.eventually(() => A.page.locator('[data-pane] .cm-content').count(), (n) => n >= 1, '8.4 the rules open in the code workspace', 15000);
-		const pane = await A.page.evaluate(() => { let v; window.__stores.codeWorkspace.activeCodeTab.subscribe((x) => (v = x))(); return v; });
+		const pane = await A.page.evaluate(() => { let v; window.__tp.test.v1.codeWorkspace.activeCodeTab.subscribe((x) => (v = x))(); return v; });
 		await A.page.locator(`[data-pane="${pane}"] .cm-content`).click();
 		await A.page.keyboard.press('Control+A');
 		await A.page.keyboard.insertText(fr.code.replace('const GOAL_POINTS = 1;', 'const GOAL_POINTS = 2;'));
 		await A.page.keyboard.press('Control+S');
 		await h.eventually(() => rulesNode(), (n) => /const GOAL_POINTS = 2;/.test(n?.code ?? ''), '8.5 Ctrl+S put the edited code on the node', 6000);
 		await A.page.locator('#code-ws-close:visible, [data-dock-tab-close="code"]:visible').first().click().catch(() => {});
-		await h.eventually(() => low.page.evaluate((id) => window.__stores.behaviours.behavioursDebug().status[id]?.status, fr.id), (st) => st === 'running', '8.6 the authority reloaded the edited rules', 10000);
+		await h.eventually(() => low.page.evaluate((id) => window.__tp.test.v1.behaviours.behavioursDebug().status[id]?.status, fr.id), (st) => st === 'running', '8.6 the authority reloaded the edited rules', 10000);
 		// both felt in Play: a rematch, ONE goal = 2 for blue, and first-to-2 ends it
-		await A.page.evaluate(() => window.__stores.isLocked.set(true));
+		await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 		await h.eventually(() => screenOf(A.page), (v) => v === 'over', '  (premise) the results screen is up', 8000);
 		await hudButton(A.page, 'Rematch').click();
 		await h.eventually(() => snap(low.page), (s) => s?.started === true && s.score.blue === 0, '8.7 Rematch: a fresh match', 12000);
@@ -681,24 +681,24 @@ h.run(async () => {
 		await h.eventually(() => snap(B.page), (s) => s?.started === false && s.outcome?.winner === 'blue' && s.outcome.reason === 'goals', `8.9 ...and first-to-${target} ends the match on it (the graph change)`, 15000);
 		// (c) both survive a save and a reload — into a FRESH peer, alone
 		const saved = await A.page.evaluate(async () => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const zip = await s.sessions.exportSessionZip(s.sessions.buildSessionPayload('Football probe'), { assets: true, packs: false, flow: true });
 			return Array.from(zip);
 		});
-		for (const p of [A, B, C]) await p.page.evaluate(() => window.__stores.isLocked.set(false)).catch(() => {});
+		for (const p of [A, B, C]) await p.page.evaluate(() => window.__tp.test.v1.isLocked.set(false)).catch(() => {});
 		const D = await h.setupPage(browser, 'D');
 		await installZip(D, zip.bytes, 'D');
 		await D.page.evaluate(async (arr) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 			await s.sessions.applySession(payload, { backup: false });
 		}, saved);
 		await D.page.waitForTimeout(2500);
-		const dGraph = await D.page.evaluate(() => { let g; window.__stores.flowGraphs.subscribe((v) => (g = v))(); return { code: g.scene.nodes.find((n) => n.type === 'behaviour')?.data.code ?? '', goals: g.scene.nodes.find((n) => n.type === 'fbrules')?.data.goalsToWin }; });
+		const dGraph = await D.page.evaluate(() => { let g; window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))(); return { code: g.scene.nodes.find((n) => n.type === 'behaviour')?.data.code ?? '', goals: g.scene.nodes.find((n) => n.type === 'fbrules')?.data.goalsToWin }; });
 		h.check(/const GOAL_POINTS = 2;/.test(dGraph.code) && dGraph.goals === target, `8.10 the saved scene, reopened, keeps both (GOAL_POINTS 2, goals to win ${dGraph.goals})`);
-		await D.page.evaluate(() => window.__stores.isLocked.set(true));
+		await D.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 		await h.eventually(() => D.page.evaluate(() => window.__football?.snapshot?.().ball ?? null), (b) => !!b, '  (premise) D: the module owns the ball', 15000);
-		await h.eventually(() => D.page.evaluate(() => window.__stores.behaviours.behavioursDebug().status[window.__stores.flowGraphs && (() => { let g; window.__stores.flowGraphs.subscribe((v) => (g = v))(); return g.scene.nodes.find((n) => n.type === 'behaviour')?.id; })()]?.status), (st) => st === 'running', '  (premise) D: the rules run', 15000);
+		await h.eventually(() => D.page.evaluate(() => window.__tp.test.v1.behaviours.behavioursDebug().status[window.__tp.test.v1.flowGraphs && (() => { let g; window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))(); return g.scene.nodes.find((n) => n.type === 'behaviour')?.id; })()]?.status), (st) => st === 'running', '  (premise) D: the rules run', 15000);
 		await D.page.evaluate(() => window.__football.game.act('start'));
 		const dBall = await D.page.evaluate(() => window.__football.snapshot().ball);
 		await h.eventually(() => snap(D.page), (s) => s?.started && s.serveAt === 0, '  (premise) D kicked off', 15000);
@@ -708,7 +708,7 @@ h.run(async () => {
 		await h.eventually(() => snap(D.page), (s) => s?.started === false && s.outcome?.reason === 'goals', `8.12 ...and first-to-${target} still ends the match`, 15000);
 	} else console.log('SKIP 8: this scene has no "Football rules" behaviour (an older scene)');
 
-	for (const p of [A, B, C]) await p.page.evaluate(() => window.__stores.isLocked.set(false)).catch(() => {});
+	for (const p of [A, B, C]) await p.page.evaluate(() => window.__tp.test.v1.isLocked.set(false)).catch(() => {});
 	await A.page.waitForTimeout(400);
 	await h.finish(browser);
 });

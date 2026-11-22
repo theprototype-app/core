@@ -34,15 +34,20 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 	for (const name of ['tpchats', 'chatAttach', 'chatAttachCore', 'importModel', 'fflate'])
-		await A.page.waitForFunction((n) => !!window.__stores?.[n], name, { timeout: 30000 });
+		await A.page.waitForFunction((n) => !!window.__tp?.test.v1?.[n], name, { timeout: 30000 });
 
 	// ---- 1. the composer: downscale + EXIF/GPS strip on the sender --------------------------------
-	await A.page.evaluate(() => window.__stores.aiAssistantHidden.set(''));
+	// 1.55 (73 AI11): the assistant takes pictures only for a model that can see them, and none with no assistant set up
+	await A.page.evaluate(() => {
+		const p = window.__tp.test.v1.aiProviders;
+		p.setAiActiveProvider(p.addAiProvider({ preset: 'custom', label: 'MockVision', baseUrl: location.origin + '/mock-ai/v1', model: 'vision-1', apiKey: 'k' }));
+	});
+	await A.page.evaluate(() => window.__tp.test.v1.aiAssistantHidden.set(''));
 	await A.page.waitForSelector('#chat-attach', { timeout: 15000 });
 	await A.page.setInputFiles('#chat-attach-file', BIG);
-	await A.page.waitForFunction(() => window.__stores.chatAttach.composerPending && (() => { let v = []; window.__stores.chatAttach.composerPending.subscribe((x) => (v = x))(); return v.length === 1; })(), null, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__tp.test.v1.chatAttach.composerPending && (() => { let v = []; window.__tp.test.v1.chatAttach.composerPending.subscribe((x) => (v = x))(); return v.length === 1; })(), null, { timeout: 30000 });
 	const prep = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let pending = [];
 		s.chatAttach.composerPending.subscribe((x) => (pending = x))();
 		let last = null;
@@ -60,9 +65,9 @@ h.run(async () => {
 	// ---- 2. Keep in Explorer (from the tray) --------------------------------------------------------
 	await A.page.hover('.chat-attach-thumb');
 	await A.page.click('.chat-thumb-keep');
-	await A.page.waitForFunction(() => { let r = null; window.__stores.tpchats.chatRefs.subscribe((x) => (r = x))(); return r.list.length === 1; }, null, { timeout: 15000 });
+	await A.page.waitForFunction(() => { let r = null; window.__tp.test.v1.tpchats.chatRefs.subscribe((x) => (r = x))(); return r.list.length === 1; }, null, { timeout: 15000 });
 	const keptA = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let r = null;
 		s.tpchats.chatRefs.subscribe((x) => (r = x))();
 		let folders = [];
@@ -75,12 +80,12 @@ h.run(async () => {
 	h.check(keptA.share === 'mine', `shared, so peers file it too (${keptA.share})`);
 	// sceneAssets recomputes on a 400 ms trailing debounce (and a 5 s heartbeat): poll, never sleep
 	const refsSince = Date.now();
-	const sceneRefsA = await waitFor(() => A.page.evaluate(() => window.__stores.sceneAssets.sceneAssetList().filter((e) => e.group === 'references' && e.hash).length), (n) => n === 1, 8000);
+	const sceneRefsA = await waitFor(() => A.page.evaluate(() => window.__tp.test.v1.sceneAssets.sceneAssetList().filter((e) => e.group === 'references' && e.hash).length), (n) => n === 1, 8000);
 	h.check(sceneRefsA === 1, `Scene ▸ references lists it, with its hash (so a .tpscene bundles it) (${sceneRefsA} after ${Date.now() - refsSince} ms)`);
 
 	// ---- 3. a chat (the window's one writer calls saveChat) -----------------------------------------
 	const ids = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let pending = [];
 		s.chatAttach.composerPending.subscribe((x) => (pending = x))();
 		const img = pending[0];
@@ -99,29 +104,29 @@ h.run(async () => {
 		return [priv?.id, pub?.id];
 	});
 	h.check(ids[0] === 'chat-private' && ids[1] === 'chat-public', `saveChat stored both chats (${ids})`);
-	const keptPtr = await A.page.evaluate(() => window.__stores.tpchats.chatsSnapshot('all').find((c) => c.id === 'chat-private').messages[0].images[0]);
+	const keptPtr = await A.page.evaluate(() => window.__tp.test.v1.tpchats.chatsSnapshot('all').find((c) => c.id === 'chat-private').messages[0].images[0]);
 	h.check(!!keptPtr.ref && !keptPtr.data, `in the file form a KEPT picture is a pointer at its References asset (${JSON.stringify({ ref: !!keptPtr.ref, data: !!keptPtr.data })})`);
 
 	// ---- the LATE JOINER --------------------------------------------------------------------------
 	const B = await h.setupPage(browser, 'B');
-	await B.page.waitForFunction(() => !!window.__stores?.tpchats, null, { timeout: 30000 });
+	await B.page.waitForFunction(() => !!window.__tp?.test.v1?.tpchats, null, { timeout: 30000 });
 	await h.connect(A, B);
 	const late = await waitFor(
 		() => B.page.evaluate(() => {
-			const c = window.__stores.tpchats.readChat('chat-private');
-			return c ? { title: c.title, n: c.messages.length, img: !!c.messages[0].images?.[0]?.data, include: c.include, pub: !!window.__stores.tpchats.readChat('chat-public') } : null;
+			const c = window.__tp.test.v1.tpchats.readChat('chat-private');
+			return c ? { title: c.title, n: c.messages.length, img: !!c.messages[0].images?.[0]?.data, include: c.include, pub: !!window.__tp.test.v1.tpchats.readChat('chat-public') } : null;
 		}),
 		(v) => !!v && v.img,
 		20000
 	);
-	const lateNow = late ?? (await B.page.evaluate(() => window.__stores.tpchats.readChat('chat-private')));
+	const lateNow = late ?? (await B.page.evaluate(() => window.__tp.test.v1.tpchats.readChat('chat-private')));
 	h.check(!!lateNow, 'the late joiner got the chat (gettpchats)');
 	h.check(!!late?.img, `with its picture's bytes (${JSON.stringify(late)})`);
 	h.check(late?.include === false && late?.pub === true, `and the other chat with its publish switch (${JSON.stringify(late)})`);
 
 	// Scene ▸ chats in the peer's Explorer, as a .tpchat card
 	const cards = await waitFor(
-		() => B.page.evaluate(() => window.__stores.sceneAssets.sceneAssetList().filter((e) => e.group === 'chats').map((e) => e.name)),
+		() => B.page.evaluate(() => window.__tp.test.v1.sceneAssets.sceneAssetList().filter((e) => e.group === 'chats').map((e) => e.name)),
 		(v) => v.length === 2,
 		8000
 	);
@@ -130,7 +135,7 @@ h.run(async () => {
 	// the kept picture reaches the peer as a scene reference + its Library file
 	const refB = await waitFor(
 		() => B.page.evaluate((hash) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let r = null;
 			s.tpchats.chatRefs.subscribe((x) => (r = x))();
 			const item = s.explorer.itemByHash(hash);
@@ -143,19 +148,19 @@ h.run(async () => {
 	h.check(!!refB?.held, 'and its Library holds the file (shared index + assetShare)');
 
 	// live rename
-	await A.page.evaluate(() => window.__stores.tpchats.renameChat('chat-private', 'Campfire trees'));
-	const renamed = await waitFor(() => B.page.evaluate(() => window.__stores.tpchats.readChat('chat-private')?.title), (t) => t === 'Campfire trees', 8000);
+	await A.page.evaluate(() => window.__tp.test.v1.tpchats.renameChat('chat-private', 'Campfire trees'));
+	const renamed = await waitFor(() => B.page.evaluate(() => window.__tp.test.v1.tpchats.readChat('chat-private')?.title), (t) => t === 'Campfire trees', 8000);
 	h.check(renamed === 'Campfire trees', `a rename replicates live (${renamed})`);
 
 	// the card in the REAL Explorer: Scene ▸ chats, and a double-click opens the chat through the
 	// opener 56-chat's window registers
 	await B.page.evaluate(() => {
 		window.__opened = [];
-		window.__stores.tpchats.registerChatOpener((id) => window.__opened.push(id));
+		window.__tp.test.v1.tpchats.registerChatOpener((id) => window.__opened.push(id));
 	});
 	await B.page.locator('#explorer-slot').click();
 	await B.page.waitForTimeout(600);
-	await B.page.evaluate(() => window.__stores.explorer.activeFolder.set('scene:chats'));
+	await B.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set('scene:chats'));
 	const card = B.page.locator('[data-card-id="chat:chat-private"]');
 	await card.waitFor({ timeout: 10000 }).catch(() => {});
 	const cardText = (await card.count()) ? await card.innerText() : '';
@@ -163,12 +168,12 @@ h.run(async () => {
 	if (await card.count()) await card.dblclick();
 	await B.page.waitForTimeout(300);
 	h.check((await B.page.evaluate(() => window.__opened)).includes('chat-private'), 'double-clicking it opens the chat in the AI window (registered opener)');
-	await B.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await B.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 
 	// ---- 4. import_model ----------------------------------------------------------------------------
 	const b64 = fs.readFileSync(GLB).toString('base64');
 	const imported = await A.page.evaluate(
-		async (data) => window.__stores.aiTools.executeAiTool('import_model', { data, name: 'Campfire', position: [2, 0, 1], rotation: [0, 90, 0], scale: 2, source: 'e2e fixture (img2threejs-shaped)', licence: 'CC0' }),
+		async (data) => window.__tp.test.v1.aiTools.executeAiTool('import_model', { data, name: 'Campfire', position: [2, 0, 1], rotation: [0, 90, 0], scale: 2, source: 'e2e fixture (img2threejs-shaped)', licence: 'CC0' }),
 		b64
 	);
 	h.check(!!imported?.uuid, `import_model placed the model (${imported?.error ?? imported?.uuid})`);
@@ -176,7 +181,7 @@ h.run(async () => {
 	h.check(['Campfire/Logs/Log_1', 'Campfire/Flame_Pivot/Flame', 'Campfire/Socket_Pot'].every((p) => names.some((n) => n.endsWith(p.split('/').slice(1).join('/')))), `the named hierarchy is kept and returned (${names.join(', ')})`);
 	const onB = await waitFor(
 		() => B.page.evaluate((uuid) => {
-			const o = window.__stores.objectsGroup && (() => { let g = null; window.__stores.objectsGroup.subscribe((x) => (g = x))(); return g; })()?.getObjectByProperty('uuid', uuid);
+			const o = window.__tp.test.v1.objectsGroup && (() => { let g = null; window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))(); return g; })()?.getObjectByProperty('uuid', uuid);
 			if (!o) return null;
 			const paths = [];
 			o.traverse((c) => paths.push(c.name));
@@ -191,20 +196,20 @@ h.run(async () => {
 	h.check(onB?.prov?.tool === 'import_model' && onB?.prov?.licence === 'CC0' && /e2e fixture/.test(onB?.prov?.source ?? '') && !!onB?.prov?.sha256, `provenance travels with it (${JSON.stringify(onB?.prov)})`);
 	h.check(Math.abs((onB?.x ?? 0) - 2) < 1e-3 && Math.abs((onB?.sx ?? 0) - 2) < 1e-3, `at the asked transform (${onB?.x}, scale ${onB?.sx})`);
 	// ONE undo removes it everywhere
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	const gone = await waitFor(
-		() => Promise.all([A, B].map((p) => p.page.evaluate((uuid) => { let g = null; window.__stores.objectsGroup.subscribe((x) => (g = x))(); return !g.getObjectByProperty('uuid', uuid); }, imported?.uuid))),
+		() => Promise.all([A, B].map((p) => p.page.evaluate((uuid) => { let g = null; window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))(); return !g.getObjectByProperty('uuid', uuid); }, imported?.uuid))),
 		(v) => v.every(Boolean),
 		10000
 	);
 	h.check(gone[0] && gone[1], `ONE undo removed it on host and peer (${gone})`);
 	// counterfactual: a GLB pointing at an external file is refused
-	const external = await A.page.evaluate(async () => window.__stores.aiTools.executeAiTool('import_model', { data: btoa('glTF\u0002\u0000\u0000\u0000') }));
+	const external = await A.page.evaluate(async () => window.__tp.test.v1.aiTools.executeAiTool('import_model', { data: btoa('glTF\u0002\u0000\u0000\u0000') }));
 	h.check(!!external?.error && !external?.uuid, `a broken / non-self-contained GLB is refused with a reason (${external?.error})`);
 
 	// ---- 5. outward doors ---------------------------------------------------------------------------
 	const doors = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const { unzipSync, strFromU8 } = s.fflate;
 		const chatsIn = (zip) => (JSON.parse(strFromU8(unzipSync(zip)['session.json'])).chats ?? []).map((c) => c.id);
 		const payload = s.sessions.buildSessionPayload('Doors');
@@ -225,7 +230,7 @@ h.run(async () => {
 
 	// a .tp: save the scene into the project, export, and look inside
 	const tp = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const saved = await s.levels.saveSceneAsLevel('Doors scene');
 		const r = await s.projectFile.exportProject({ versions: false });
 		const { unzipSync, strFromU8 } = s.fflate;
@@ -241,11 +246,11 @@ h.run(async () => {
 	h.check(tp.pointerCarried, 'and the manifest points at the rewritten scene file (no dead pointer)');
 
 	// ---- 6. viewers ---------------------------------------------------------------------------------
-	await B.page.evaluate(() => window.__stores.cloudHooks.rolesInfo.set({ myId: 'b', myRole: 'viewer', amAdmin: false, order: [], roleOf: () => 'viewer', setRole() {} }));
-	await B.page.evaluate(() => window.__stores.aiAssistantHidden.set(''));
+	await B.page.evaluate(() => window.__tp.test.v1.cloudHooks.rolesInfo.set({ myId: 'b', myRole: 'viewer', amAdmin: false, order: [], roleOf: () => 'viewer', setRole() {} }));
+	await B.page.evaluate(() => window.__tp.test.v1.aiAssistantHidden.set(''));
 	await B.page.waitForTimeout(400);
 	const viewer = await B.page.evaluate(async (data) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const imp = await s.aiTools.executeAiTool('import_model', { data, name: 'Sneaky' });
 		const keep = await s.tpchats.keepImage({ mimeType: 'image/png', data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==' });
 		const save = s.tpchats.saveChat({ id: 'viewer-chat', messages: [] });
@@ -255,7 +260,7 @@ h.run(async () => {
 	h.check(viewer.imp, 'a viewer’s import_model is refused');
 	h.check(viewer.keep && viewer.save, `a viewer cannot keep a picture or write a chat (${JSON.stringify(viewer)})`);
 	h.check(!viewer.plus, 'a viewer’s composer has no + button');
-	await B.page.evaluate(() => window.__stores.cloudHooks.rolesInfo.set(null));
+	await B.page.evaluate(() => window.__tp.test.v1.cloudHooks.rolesInfo.set(null));
 
 	await h.finish(browser, [A, B]);
 });

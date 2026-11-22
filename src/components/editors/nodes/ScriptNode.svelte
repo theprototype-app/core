@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Icon from '../../ui/Icon.svelte';
 	import { Position, type NodeProps } from '@xyflow/svelte';
 	import Socket from './Socket.svelte';
 	import NodeWrapper from './NodeWrapper.svelte';
@@ -61,7 +62,7 @@
 		{/each}
 		<span class="text-[10px] text-text-muted">{lines} line{lines === 1 ? '' : 's'} of code</span>
 		{#if file}
-			<span class="script-file max-w-[180px] truncate text-[10px] text-accent-text" title="Runs the script file {file} — saving the file reloads every node bound to it">📄 {file}</span>
+			<span class="script-file max-w-[180px] truncate text-[10px] text-accent-text" title="Runs the script file {file} — saving the file reloads every node bound to it"><Icon name="file-text" size={16} class="inline-block shrink-0 align-[-2px]" /> {file}</span>
 		{/if}
 		<button
 			class="nodrag nopan rounded-sm bg-accent-fill px-2 py-0.5 text-on-accent hover:brightness-110"
@@ -70,10 +71,10 @@
 			Edit code
 		</button>
 		{#if error}
-			<span class="max-w-[180px] wrap-break-word text-[10px] text-ink-bad" title={error}>⚠ {error}</span>
+			<span class="max-w-[180px] wrap-break-word text-[10px] text-ink-bad" title={error}><Icon name="triangle-alert" size={16} class="inline-block shrink-0 align-[-2px]" /> {error}</span>
 		{/if}
 		{#if pending}
-			<span class="script-pending max-w-[180px] wrap-break-word text-[10px] text-ink-warn" title={pending}>⚠ {pending}</span>
+			<span class="script-pending max-w-[180px] wrap-break-word text-[10px] text-ink-warn" title={pending}><Icon name="triangle-alert" size={16} class="inline-block shrink-0 align-[-2px]" /> {pending}</span>
 		{/if}
 	</div>
 </NodeWrapper>

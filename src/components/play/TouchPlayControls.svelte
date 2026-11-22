@@ -380,6 +380,7 @@
 	</div>
 	<button
 		id="play-exit"
+		data-play-chrome
 		class="play-exit"
 		aria-label="Exit play"
 		title="Exit play"

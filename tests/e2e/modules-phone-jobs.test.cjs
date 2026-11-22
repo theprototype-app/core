@@ -66,7 +66,7 @@ export default {
 		};
 	});
 
-	await p.evaluate(() => window.__stores.modulesOpen.set(true));
+	await p.evaluate(() => window.__tp.test.v1.modulesOpen.set(true));
 	await p.waitForTimeout(400);
 	await p.getByRole('tab', { name: /^Browse/ }).click();
 	await h.eventually(() => p.locator('[id^=gallery-card-]').count(), (n) => n === IDS.length + FILLER.length, 'premise: the mocked gallery lists every row');
@@ -132,7 +132,7 @@ export default {
 
 		// a second click on a RUNNING install joins it (one promise per id)
 		const joined = await p.evaluate(async () => {
-			const j = window.__stores.moduleInstallJobs;
+			const j = window.__tp.test.v1.moduleInstallJobs;
 			const url = 'https://cdn.jsdelivr.net/gh/theprototype-app/modules@format-1/modules/waves';
 			return j.installModuleJob('waves', url) === j.installModuleJob('waves', url);
 		});
@@ -247,7 +247,7 @@ export default {
 
 	// ---- desktop keeps working: same structure, wide rows ---------------------------------------
 	const D = await h.setupPage(browser, 'D', { context: { viewport: { width: 1440, height: 900 } } });
-	await D.page.evaluate(() => window.__stores.modulesOpen.set(true));
+	await D.page.evaluate(() => window.__tp.test.v1.modulesOpen.set(true));
 	await D.page.waitForTimeout(500);
 	const d = await D.page.evaluate(() => {
 		const row = document.getElementById('module-card-pong');

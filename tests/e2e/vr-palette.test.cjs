@@ -11,7 +11,7 @@ h.run(async () => {
 
 	// --- pure palette math ---
 	const math = await A.page.evaluate(() => {
-		const p = window.__stores.vrPalette;
+		const p = window.__tp.test.v1.vrPalette;
 		return {
 			red: p.paletteColorAt(1, 0.5, 0.5), // angle 0, full saturation
 			center: p.paletteColorAt(0.5, 0.5, 0.5), // saturation 0 = gray
@@ -47,7 +47,7 @@ h.run(async () => {
 			store.subscribe((x) => (v = x))();
 			return v;
 		};
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.vrObjectsPanelOpen.set(true);
 		s.vrMenuOpen.set(true);
 		s.vrControls.executeVRMenuAction('obj:color');
@@ -78,7 +78,7 @@ h.run(async () => {
 	h.check(wiring.closed === false, 'palette:close closes the panel');
 	// with everything closed and unmounted, the raycast helper answers false
 	await A.page.waitForTimeout(400);
-	const rayClosed = await A.page.evaluate(() => window.__stores.vrControls.raycastPalette(0));
+	const rayClosed = await A.page.evaluate(() => window.__tp.test.v1.vrControls.raycastPalette(0));
 	h.check(rayClosed === false, 'raycastPalette answers false while the palette is closed');
 
 	// --- wireframe toggle: default on, persists, flips the store ---
@@ -88,7 +88,7 @@ h.run(async () => {
 			store.subscribe((x) => (v = x))();
 			return v;
 		};
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const initial = read(s.vrWireframeSelection);
 		s.vrControls.executeVRMenuAction('wireframe');
 		const flipped = read(s.vrWireframeSelection);
@@ -105,18 +105,18 @@ h.run(async () => {
 
 	// --- the indicator builds a two-tone wireframe for mesh selections ---
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = group.children[group.children.length - 1];
-		window.__stores.objectActions.selectObject(box);
+		window.__tp.test.v1.objectActions.selectObject(box);
 		window.__box = box;
-		window.__stores.isVRMode.set(true);
+		window.__tp.test.v1.isVRMode.set(true);
 	});
 	await A.page.waitForTimeout(600);
 	const wire = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((scene) => {
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
 					const shell = scene?.getObjectByName('vr-selection-shell');
 					const indicator = shell?.getObjectByName('vr-selection-shell-mesh');
 					const lines = [];
@@ -138,32 +138,32 @@ h.run(async () => {
 	);
 
 	// toggling the preference swaps to the legacy BackSide shell live
-	await A.page.evaluate(() => window.__stores.vrWireframeSelection.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.vrWireframeSelection.set(false));
 	await A.page.waitForTimeout(400);
 	const shell = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((scene) => {
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
 					const indicator = scene
 						?.getObjectByName('vr-selection-shell')
 						?.getObjectByName('vr-selection-shell-mesh');
 					resolve({
 						isMesh: indicator?.isMesh === true,
-						backSide: indicator?.material?.side === window.__stores.THREE.BackSide
+						backSide: indicator?.material?.side === window.__tp.test.v1.THREE.BackSide
 					});
 				})();
 			})
 	);
 	h.check(shell.isMesh && shell.backSide, 'toggle swaps back to the inflated BackSide shell');
 	await A.page.evaluate(() => {
-		window.__stores.vrWireframeSelection.set(true);
-		window.__stores.isVRMode.set(false);
+		window.__tp.test.v1.vrWireframeSelection.set(true);
+		window.__tp.test.v1.isVRMode.set(false);
 	});
 	await A.page.waitForTimeout(300);
 	const hidden = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((scene) =>
+				window.__tp.test.v1.globalScene.subscribe((scene) =>
 					resolve(scene?.getObjectByName('vr-selection-shell')?.visible)
 				)();
 			})

@@ -7,10 +7,12 @@
 	import SliderRow from '../ui/SliderRow.svelte';
 	import { environment, lodBiasOf, setSceneLodBias } from '$lib/environment';
 
+	/** 78-int PL17: collapsed by default; the group label (The scene) replaces the Shared badge */
+	let { closed = false, note = '' } = $props();
 	const value = $derived(lodBiasOf($environment));
 </script>
 
-<Section variant="panel" label="Level of detail" badge="Shared">
+<Section variant="panel" label="Level of detail" {closed} {note}>
 	<SliderRow
 		id="scene-lod-bias"
 		label="LOD distance"

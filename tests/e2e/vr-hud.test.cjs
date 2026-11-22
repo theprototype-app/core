@@ -23,7 +23,7 @@ h.run(async () => {
 	const page = A.page;
 
 	await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.viewMode.set('shaded');
 		await s.moduleSDK.initModules([
 			{
@@ -135,7 +135,7 @@ h.run(async () => {
 	h.check(f1.hud === true && f1.panel === null, '1.1 the playing screen is on the band, no board (' + JSON.stringify(f1) + ')');
 	h.check(f1.strip === undefined && f1.stripLines === undefined, '1.2 the 30b strip is gone from the frame');
 	const inScene = await T(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let scene;
 		s.globalScene.subscribe((v) => (scene = v))();
 		return { band: !!scene.getObjectByName('vr-game-hud'), strip: !!scene.getObjectByName('vr-game-strip')?.visible };
@@ -155,7 +155,7 @@ h.run(async () => {
 
 	console.log('\n=== 3. draw calls ===');
 	const calls = await T(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		let r, scene;
 		s.globalRenderer.subscribe((v) => (r = v))();
@@ -188,7 +188,7 @@ h.run(async () => {
 	h.check(calls.up.every(Boolean), '3.0 premise: band, wrist card and banner are all up (' + JSON.stringify(calls.up) + ')');
 	h.check(calls.bandOnly - calls.none === 1, '3.1 the band is ONE draw call (' + (calls.bandOnly - calls.none) + ')');
 	h.check(calls.all - calls.none <= 3, '3.2 every HUD surface together is <= 3 draw calls (' + (calls.all - calls.none) + ')');
-	await T(() => window.__stores.gameKit.gameAnnounce.clearAnnouncement());
+	await T(() => window.__tp.test.v1.gameKit.gameAnnounce.clearAnnouncement());
 
 	console.log('\n=== 4. crisp ===');
 	const crisp = await T(() => {
@@ -229,7 +229,7 @@ h.run(async () => {
 		const after = (T.dbg().pose.yaw * 180) / Math.PI;
 		// a head roll does not roll the band
 		for (let i = 0; i < 30; i++) T.frame({ yaw: 30, roll: 25 });
-		const e = new window.__stores.THREE.Euler().setFromQuaternion(m.quaternion, 'YXZ');
+		const e = new window.__tp.test.v1.THREE.Euler().setFromQuaternion(m.quaternion, 'YXZ');
 		return { maxMove, maxTurn, first, after, roll: (e.z * 180) / Math.PI };
 	});
 	h.check(comfort.maxMove === 0 && comfort.maxTurn === 0, '5.1 a head tremor (±0.8°, ±6 mm) moves the band not at all (' + comfort.maxMove + ', ' + comfort.maxTurn + ')');
@@ -242,7 +242,7 @@ h.run(async () => {
 		const T = window.__T;
 		for (let i = 0; i < 90; i++) T.frame();
 		const before = T.dbg().radius;
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
@@ -261,7 +261,7 @@ h.run(async () => {
 	h.check(seen.left?.fraction > 0.95 && seen.right?.fraction > 0.95, '6.3 both eyes see the whole band over the nearer wall (' + JSON.stringify({ l: seen.left, r: seen.right }) + ')');
 	const out = await T(() => {
 		const T = window.__T;
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		g.remove(g.getObjectByName('hud-test-wall'));
@@ -276,7 +276,7 @@ h.run(async () => {
 	// the counterfactual for 6.2: the probe ignores what it cannot see (a hidden wall)
 	const hidden = await T(() => {
 		const T = window.__T;
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
@@ -294,7 +294,7 @@ h.run(async () => {
 	console.log('\n=== 7. fixed in the world ===');
 	const world = await T(() => {
 		const T = window.__T;
-		window.__stores.gameKit.vrHudPrefs.setVrHudPlacement('world');
+		window.__tp.test.v1.gameKit.vrHudPrefs.setVrHudPlacement('world');
 		T.frame({ yaw: 0 });
 		const m = T.band();
 		const p0 = m.position.toArray();
@@ -302,9 +302,9 @@ h.run(async () => {
 		const glance = (T.dbg().pose.yaw * 180) / Math.PI;
 		for (let i = 0; i < 288; i++) T.frame({ yaw: 80 });
 		const turned = (T.dbg().pose.yaw * 180) / Math.PI;
-		const e = new window.__stores.THREE.Euler().setFromQuaternion(m.quaternion, 'YXZ');
+		const e = new window.__tp.test.v1.THREE.Euler().setFromQuaternion(m.quaternion, 'YXZ');
 		for (let i = 0; i < 30; i++) T.frame({ yaw: 80, pitch: 20 });
-		const e2 = new window.__stores.THREE.Euler().setFromQuaternion(m.quaternion, 'YXZ');
+		const e2 = new window.__tp.test.v1.THREE.Euler().setFromQuaternion(m.quaternion, 'YXZ');
 		return { glance, turned, pitch: (e.x * 180) / Math.PI, pitchLook: (e2.x * 180) / Math.PI, p0 };
 	});
 	h.check(Math.abs(world.glance) < 0.01, '7.1 a 35° glance leaves the world band where it was (' + world.glance.toFixed(2) + ')');
@@ -314,7 +314,7 @@ h.run(async () => {
 	console.log('\n=== 8. wrist only, and the footer button ===');
 	const wrist = await T(() => {
 		const T = window.__T;
-		window.__stores.gameKit.vrHudPrefs.setVrHudPlacement('wrist');
+		window.__tp.test.v1.gameKit.vrHudPrefs.setVrHudPlacement('wrist');
 		const f = T.frame();
 		return { f, probe: window.__api.hud.vrHud() };
 	});
@@ -322,14 +322,14 @@ h.run(async () => {
 	h.check(wrist.probe.placement === 'wrist' && wrist.probe.visible === false, '8.2 the probe says so');
 	const cycle = await T(() => {
 		const T = window.__T;
-		const k = window.__stores.gameKit.vrGamePanel;
+		const k = window.__tp.test.v1.gameKit.vrGamePanel;
 		T.frame();
 		const hit = k.vrGamePanelDebug().hits['vr-game-wrist'].find((x) => x.id === 'footer:hud');
 		const labels = [];
 		const placements = [];
 		for (let i = 0; i < 3; i++) {
 			k.pressPanelTarget({ surface: 'vr-game-wrist', hit, point: null, distance: 0 });
-			placements.push(window.__stores.gameKit.vrHudPrefs.vrHudState().placement);
+			placements.push(window.__tp.test.v1.gameKit.vrHudPrefs.vrHudState().placement);
 			T.frame();
 		}
 		return { has: !!hit, placements, stored: localStorage.getItem('vr:hudPlacement') };
@@ -338,11 +338,11 @@ h.run(async () => {
 	h.check(JSON.stringify(cycle.placements) === JSON.stringify(['head', 'world', 'wrist']), '8.4 it cycles Head -> World -> Wrist (' + cycle.placements + ')');
 	h.check(cycle.stored === 'wrist', '8.5 persisted locally');
 	const legacy = await T(() => {
-		window.__stores.gameKit.vrGamePanel.setVrStrip(true);
-		const a = window.__stores.gameKit.vrHudPrefs.vrHudState().placement;
-		window.__stores.gameKit.vrGamePanel.setVrStrip(false);
-		const b = window.__stores.gameKit.vrHudPrefs.vrHudState().placement;
-		window.__stores.gameKit.vrHudPrefs.setVrHudPlacement('head');
+		window.__tp.test.v1.gameKit.vrGamePanel.setVrStrip(true);
+		const a = window.__tp.test.v1.gameKit.vrHudPrefs.vrHudState().placement;
+		window.__tp.test.v1.gameKit.vrGamePanel.setVrStrip(false);
+		const b = window.__tp.test.v1.gameKit.vrHudPrefs.vrHudState().placement;
+		window.__tp.test.v1.gameKit.vrHudPrefs.setVrHudPlacement('head');
 		return [a, b];
 	});
 	h.check(legacy[0] === 'head' && legacy[1] === 'wrist', '8.6 the old strip switch maps onto it (' + legacy + ')');
@@ -350,7 +350,7 @@ h.run(async () => {
 	console.log('\n=== 9. the game\'s input actions as headset controls (U8) ===');
 	const hints = await T(async () => {
 		const T = window.__T;
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		window.__api.input.actions(['jump', 'fire', 'crouch']);
 		s.gameKit.gameShell.markShellGame(true);
 		await new Promise((r) => setTimeout(r, 50));
@@ -379,12 +379,12 @@ h.run(async () => {
 		const T = window.__T;
 		const before = T.groupAngles('time').yaw;
 		const builds = T.dbg().builds;
-		window.__stores.gameKit.vrHudPrefs.setVrHudSize('large');
+		window.__tp.test.v1.gameKit.vrHudPrefs.setVrHudSize('large');
 		T.frame();
 		const after = T.groupAngles('time').yaw;
 		const rebuilt = T.dbg().builds > builds;
 		const ratios = T.dbg().groups.map((g) => g.texelRatio);
-		window.__stores.gameKit.vrHudPrefs.setVrHudSize('medium');
+		window.__tp.test.v1.gameKit.vrHudPrefs.setVrHudSize('medium');
 		T.frame();
 		return { before, after, rebuilt, ratios };
 	});
@@ -394,7 +394,7 @@ h.run(async () => {
 	console.log('\n=== 12. not in Edit, not without a headset ===');
 	const off = await T(() => {
 		const T = window.__T;
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.objectActions.setEditorMode('edit');
 		const edit = T.frame();
 		s.objectActions.setEditorMode('interact');
@@ -406,7 +406,7 @@ h.run(async () => {
 
 	console.log('\n=== 13. the settings ===');
 	const rows = await T(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const table = s.vrSettingsSchema?.VR_SETTINGS ?? null;
 		const ids = table ? table.filter((r) => r.id.startsWith('gameHud')).map((r) => r.id + ':' + r.page) : null;
 		const row = table?.find((r) => r.id === 'gameHud');

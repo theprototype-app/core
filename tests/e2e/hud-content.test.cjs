@@ -22,8 +22,8 @@ const h = require('./helpers.cjs');
 
 /** the document every section works against */
 const HUD = () => {
-	window.__stores.hudDocs.clearHudDocs();
-	window.__stores.hudDocs.setHudDocFor('scene', {
+	window.__tp.test.v1.hudDocs.clearHudDocs();
+	window.__tp.test.v1.hudDocs.setHudDocFor('scene', {
 		screens: [
 			{
 				id: 'main',
@@ -58,7 +58,7 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
-	await page.waitForFunction(() => !!window.__stores?.hudRichText && !!window.__stores?.moduleHudKinds, {
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.hudRichText && !!window.__tp?.test.v1?.moduleHudKinds, {
 		timeout: 30000
 	});
 	await page.evaluate(HUD);
@@ -68,7 +68,7 @@ h.run(async () => {
 	// 1. E7.1 — ROWS, DOOR ONE: the properties pane
 	// =====================================================================
 	const field = await page.evaluate(() => {
-		const K = window.__stores.hudKinds;
+		const K = window.__tp.test.v1.hudKinds;
 		return {
 			fields: K.fieldsForKind('list').map((f) => f.key + ':' + f.kind),
 			// the 'list' field kind has been DECLARED in the HudField typedef since 21-D1 and
@@ -84,7 +84,7 @@ h.run(async () => {
 	h.check(field.declared, 'and the registry uses the previously-unrendered `list` field kind');
 
 	const authored = await page.evaluate(async () => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		H.updateHudElement('scene', 'main', 'board', { rowsText: 'Ada 12\nGrace 9\nAlan 7' });
 		await new Promise((r) => setTimeout(r, 700));
 		return [...document.querySelectorAll('[data-hud-id="board"] .hud-list-row')].map((r) => r.textContent.trim());
@@ -95,7 +95,7 @@ h.run(async () => {
 	);
 	// blank lines are not rows — a trailing newline is how a textarea ends, not an empty row
 	const trimmed = await page.evaluate(async () => {
-		window.__stores.hudDocs.updateHudElement('scene', 'main', 'board', { rowsText: 'One\n\n  \nTwo\n' });
+		window.__tp.test.v1.hudDocs.updateHudElement('scene', 'main', 'board', { rowsText: 'One\n\n  \nTwo\n' });
 		await new Promise((r) => setTimeout(r, 700));
 		return [...document.querySelectorAll('[data-hud-id="board"] .hud-list-row')].map((r) => r.textContent.trim());
 	});
@@ -106,7 +106,7 @@ h.run(async () => {
 
 	// the PANE really renders a textarea for it (the widget, not just the schema)
 	const paneWidget = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudEditorClose.set(false);
 		await new Promise((r) => setTimeout(r, 900));
 		s.hudDocs.hudSelection.set({});
@@ -136,12 +136,12 @@ h.run(async () => {
 		area.value = 'Row A\nRow B';
 		area.dispatchEvent(new Event('change', { bubbles: true }));
 		await new Promise((r) => setTimeout(r, 700));
-		const el = window.__stores.hudDocs.elementById('scene', 'board');
+		const el = window.__tp.test.v1.hudDocs.elementById('scene', 'board');
 		return { stored: el?.rowsText ?? null };
 	});
 	h.check(typed.stored === 'Row A\nRow B', `editing it writes the document (${JSON.stringify(typed.stored)})`);
 	await page.evaluate(async () => {
-		window.__stores.hudEditorClose.set(true);
+		window.__tp.test.v1.hudEditorClose.set(true);
 		await new Promise((r) => setTimeout(r, 700));
 	});
 
@@ -149,8 +149,8 @@ h.run(async () => {
 	// 2. E7.1 — ROWS, DOOR TWO: the `hudrows` node, on stamp EDGES
 	// =====================================================================
 	const nodeReg = await page.evaluate(() => {
-		const C = window.__stores.nodeCatalog;
-		const S = window.__stores.flowSockets;
+		const C = window.__tp.test.v1.nodeCatalog;
+		const S = window.__tp.test.v1.flowSockets;
 		const spec = C.findNodeSpec ? C.findNodeSpec('hudrows') : null;
 		return {
 			inCatalog: !!spec,
@@ -176,7 +176,7 @@ h.run(async () => {
 	);
 
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowNodes.set([
 			{ id: 'tick', type: 'onclick', position: { x: 0, y: 0 }, data: { type: 'onclick', pulse: 0.3 } },
 			{ id: 'n', type: 'counter', position: { x: 200, y: 0 }, data: { type: 'counter', step: 1, op: 'up' } },
@@ -200,12 +200,12 @@ h.run(async () => {
 	// count here IS the edge test.
 	const appended = await page.evaluate(async () => {
 		for (let i = 0; i < 3; i++) {
-			window.__stores.flowRuntime.applyNodeTrigger('tick', (Date.now() % 86400000) / 1000, true);
+			window.__tp.test.v1.flowRuntime.applyNodeTrigger('tick', (Date.now() % 86400000) / 1000, true);
 			await new Promise((r) => setTimeout(r, 350));
 		}
 		await new Promise((r) => setTimeout(r, 700));
 		return {
-			store: window.__stores.flowRuntime.hudRowsOf('board'),
+			store: window.__tp.test.v1.flowRuntime.hudRowsOf('board'),
 			dom: [...document.querySelectorAll('[data-hud-id="board"] .hud-list-row')].map((r) => r.textContent.trim())
 		};
 	});
@@ -219,21 +219,21 @@ h.run(async () => {
 	);
 
 	const setOp = await page.evaluate(async () => {
-		window.__stores.nodesHandler.setNodeData('rows', { op: 'set' });
+		window.__tp.test.v1.nodesHandler.setNodeData('rows', { op: 'set' });
 		await new Promise((r) => setTimeout(r, 600));
-		window.__stores.flowRuntime.applyNodeTrigger('tick', (Date.now() % 86400000) / 1000, true);
+		window.__tp.test.v1.flowRuntime.applyNodeTrigger('tick', (Date.now() % 86400000) / 1000, true);
 		await new Promise((r) => setTimeout(r, 800));
-		return window.__stores.flowRuntime.hudRowsOf('board');
+		return window.__tp.test.v1.flowRuntime.hudRowsOf('board');
 	});
 	h.check(setOp.length === 1, `\`set\` REPLACES the list (${JSON.stringify(setOp)})`);
 
 	const cleared = await page.evaluate(async () => {
-		window.__stores.nodesHandler.setNodeData('rows', { op: 'clear' });
+		window.__tp.test.v1.nodesHandler.setNodeData('rows', { op: 'clear' });
 		await new Promise((r) => setTimeout(r, 600));
-		window.__stores.flowRuntime.applyNodeTrigger('tick', (Date.now() % 86400000) / 1000, true);
+		window.__tp.test.v1.flowRuntime.applyNodeTrigger('tick', (Date.now() % 86400000) / 1000, true);
 		await new Promise((r) => setTimeout(r, 900));
 		return {
-			store: window.__stores.flowRuntime.hudRowsOf('board'),
+			store: window.__tp.test.v1.flowRuntime.hudRowsOf('board'),
 			dom: [...document.querySelectorAll('[data-hud-id="board"] .hud-list-row')].map((r) => r.textContent.trim())
 		};
 	});
@@ -247,7 +247,7 @@ h.run(async () => {
 	// 3. E7.1 — ROWS, DOOR THREE: api.hud.rows, and its journal teardown
 	// =====================================================================
 	const sdkRows = await page.evaluate(async () => {
-		await window.__stores.moduleSDK.initModules([
+		await window.__tp.test.v1.moduleSDK.initModules([
 			{
 				id: 'rowsmod',
 				name: 'Rows module',
@@ -261,7 +261,7 @@ h.run(async () => {
 		]);
 		await new Promise((r) => setTimeout(r, 900));
 		return {
-			store: window.__stores.flowRuntime.hudRowsOf('board'),
+			store: window.__tp.test.v1.flowRuntime.hudRowsOf('board'),
 			dom: [...document.querySelectorAll('[data-hud-id="board"] .hud-list-row')].map((r) => r.textContent.trim()),
 			hasApi: typeof window.__rowsApi?.hud?.rows === 'function'
 		};
@@ -273,10 +273,10 @@ h.run(async () => {
 	);
 
 	const afterTeardown = await page.evaluate(async () => {
-		window.__stores.moduleSDK.deactivateModule('rowsmod');
+		window.__tp.test.v1.moduleSDK.deactivateModule('rowsmod');
 		await new Promise((r) => setTimeout(r, 900));
 		return {
-			store: window.__stores.flowRuntime.hudRowsOf('board'),
+			store: window.__tp.test.v1.flowRuntime.hudRowsOf('board'),
 			dom: [...document.querySelectorAll('[data-hud-id="board"] .hud-list-row')].map((r) => r.textContent.trim())
 		};
 	});
@@ -294,14 +294,14 @@ h.run(async () => {
 	// =====================================================================
 	const names = await page.evaluate(async () => {
 		// a roster with a nickname in slot 1, which is where the Users popover reads it
-		window.__stores.userdata.set([
-			[window.__stores.peers && 'self-id', 'Ada', ''],
+		window.__tp.test.v1.userdata.set([
+			[window.__tp.test.v1.peers && 'self-id', 'Ada', ''],
 			['peer-2', 'Grace', ''],
 			['peer-3', '', '']
 		]);
 		await new Promise((r) => setTimeout(r, 300));
 		let api = null;
-		await window.__stores.moduleSDK.initModules([
+		await window.__tp.test.v1.moduleSDK.initModules([
 			{
 				id: 'namesmod',
 				name: 'Names',
@@ -313,7 +313,7 @@ h.run(async () => {
 			}
 		]);
 		const list = api.peerNames();
-		window.__stores.moduleSDK.deactivateModule('namesmod');
+		window.__tp.test.v1.moduleSDK.deactivateModule('namesmod');
 		return list;
 	});
 	h.check(
@@ -334,7 +334,7 @@ h.run(async () => {
 	// =====================================================================
 	const optBefore = await page.evaluate(() => ({
 		dom: [...document.querySelectorAll('[data-hud-id="diff"] option')].map((o) => o.value),
-		live: window.__stores.flowRuntime.hudOptionsOf('diff', window.__stores.hudDocs.elementById('scene', 'diff'))
+		live: window.__tp.test.v1.flowRuntime.hudOptionsOf('diff', window.__tp.test.v1.hudDocs.elementById('scene', 'diff'))
 	}));
 	h.check(
 		optBefore.dom.join(',') === 'Easy,Normal,Hard',
@@ -342,10 +342,10 @@ h.run(async () => {
 	);
 
 	const driven = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		// the roster the dropdown is going to offer
 		s.userdata.set([['id-1', 'Ada', ''], ['id-2', 'Grace', ''], ['id-3', 'Alan', ''], ['id-4', 'Edsger', '']]);
-		await window.__stores.moduleSDK.initModules([
+		await window.__tp.test.v1.moduleSDK.initModules([
 			{
 				id: 'rostermod',
 				name: 'Roster',
@@ -391,7 +391,7 @@ h.run(async () => {
 
 	// the index read must follow the LIVE list, or a Switcher acts on a stale position
 	const indexRead = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudDocs.setHudValue('diff', 'Alan');
 		let nodes;
 		s.flowNodes.subscribe((v) => (nodes = v))();
@@ -412,7 +412,7 @@ h.run(async () => {
 	// a tabs element HOLDS the index, so the same read must answer it directly rather
 	// than looking a number up in a list of words
 	const tabsIndex = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudDocs.addHudElement('scene', 'main', {
 			id: 'pager',
 			kind: 'tabs',
@@ -449,7 +449,7 @@ h.run(async () => {
 		const btns = [...document.querySelectorAll('[data-hud-id="pager"] .hud-tab')];
 		btns[0]?.click();
 		await new Promise((r) => setTimeout(r, 500));
-		return window.__stores.hudDocs.hudValueOf('pager');
+		return window.__tp.test.v1.hudDocs.hudValueOf('pager');
 	});
 	h.check(tabClick === 0, `clicking a tab writes its index (${tabClick})`);
 
@@ -457,7 +457,7 @@ h.run(async () => {
 	// 6. E7.3 — RICH TEXT, and the hostile string
 	// =====================================================================
 	const rich = await page.evaluate(async () => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		H.updateHudElement('scene', 'main', 'note', {
 			label: 'plain **bold** *slanted* {color:#ff0000}red{/color} {icon:heart} end'
 		});
@@ -489,7 +489,7 @@ h.run(async () => {
 	// was cleaned up", it is "there is no HTML path at all", so the assertion is that NO
 	// element was created and the characters survived verbatim.
 	const hostile = await page.evaluate(async () => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		const payload = '<img src=x onerror="window.__pwned=1"> <b>bee</b> {color:javascript:alert(1)}x{/color} {icon:../../etc}';
 		H.updateHudElement('scene', 'main', 'note', { label: payload });
 		await new Promise((r) => setTimeout(r, 900));
@@ -518,7 +518,7 @@ h.run(async () => {
 	);
 	// the parser itself, in isolation: an unrecognised brace body is one text run
 	const parser = await page.evaluate(() => {
-		const R = window.__stores.hudRichText;
+		const R = window.__tp.test.v1.hudRichText;
 		return {
 			unknown: R.parseHudRichText('{wat:1}').map((r) => r.kind + ':' + (r.text ?? r.name)).join(' '),
 			unclosedBrace: R.parseHudRichText('{color:#fff').map((r) => r.kind).join(' '),
@@ -553,7 +553,7 @@ h.run(async () => {
 	// store-reading check, so the invariant is asserted over the WHOLE registry rather than
 	// per kind, which also covers every kind added later.
 	const dupes = await page.evaluate(() => {
-		const K = window.__stores.hudKinds;
+		const K = window.__tp.test.v1.hudKinds;
 		const bad = [];
 		for (const def of K.HUD_KIND_DEFS) {
 			for (const list of ['fields', 'style']) {
@@ -570,8 +570,8 @@ h.run(async () => {
 	// =====================================================================
 	const packKinds = ['minimap', 'iconrow', 'progressradial', 'hotbar', 'damageflash', 'keyhint', 'tabs', 'scrollpanel', 'confirm'];
 	const packed = await page.evaluate(async (kinds) => {
-		const H = window.__stores.hudDocs;
-		const K = window.__stores.hudKinds;
+		const H = window.__tp.test.v1.hudDocs;
+		const K = window.__tp.test.v1.hudKinds;
 		H.setHudDocFor('scene', {
 			screens: [
 				{
@@ -622,7 +622,7 @@ h.run(async () => {
 
 	// and the PANE renders those fields, registry-driven, with no per-kind UI code
 	const paneRows = await page.evaluate(async (kinds) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudEditorClose.set(false);
 		await new Promise((r) => setTimeout(r, 900));
 		const out = {};
@@ -649,7 +649,7 @@ h.run(async () => {
 
 	// the confirm element's two buttons fire the SUB-IDS, which is what the summary says
 	const confirmFire = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowNodes.set([
 			{ id: 'yes', type: 'hudbutton', position: { x: 0, y: 0 }, data: { type: 'hudbutton', element: 'p-confirm-yes' } },
 			{ id: 'no', type: 'hudbutton', position: { x: 0, y: 80 }, data: { type: 'hudbutton', element: 'p-confirm-no' } },
@@ -682,7 +682,7 @@ h.run(async () => {
 
 	// the damage flash reacts to a PULSE, not to a value — and any HUD trigger pokes it
 	const flash = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const before = document.querySelector('[data-hud-id="p-damageflash"] .hud-flash-run');
 		let nodes;
 		s.flowNodes.subscribe((v) => (nodes = v))();
@@ -717,7 +717,7 @@ h.run(async () => {
 	// a PACK kind must be bindable from the Actions section, or the loop is undiscoverable
 	// all over again — which is the exact problem 21-D7 exists to solve, one kind list later.
 	const packActions = await page.evaluate(() => {
-		const A = window.__stores.hudActions;
+		const A = window.__tp.test.v1.hudActions;
 		const out = {};
 		for (const kind of ['iconrow', 'progressradial', 'hotbar', 'richtext', 'keyhint', 'scrollpanel', 'custom', 'tabs', 'confirm'])
 			out[kind] = A.actionsForKind(kind).length;
@@ -748,8 +748,8 @@ h.run(async () => {
 	//   against the two absolute readings that convention has to produce: a heading of
 	//   world +Z points DOWN the screen and world -X points LEFT.
 	const facingMath = await page.evaluate(() => {
-		const M = window.__stores.hudMinimap;
-		const THREE = window.__stores.THREE;
+		const M = window.__tp.test.v1.hudMinimap;
+		const THREE = window.__tp.test.v1.THREE;
 		// four yaws, each read two ways: through the module, and re-derived here
 		const cases = [0, Math.PI / 2, Math.PI, -Math.PI / 2].map((yaw) => {
 			const object = new THREE.Object3D();
@@ -790,8 +790,8 @@ h.run(async () => {
 
 	// the colour rule, and the counterfactual that separates it from "everyone gets peerColor"
 	const colourRule = await page.evaluate(() => {
-		const M = window.__stores.hudMinimap;
-		const L = window.__stores.lockControl;
+		const M = window.__tp.test.v1.hudMinimap;
+		const L = window.__tp.test.v1.lockControl;
 		const me = 'peer-me';
 		const them = 'peer-them';
 		return {
@@ -824,7 +824,7 @@ h.run(async () => {
 	// the REGISTRY entry — the drift rule: the pane renders the new param with no per-kind
 	// branch, so its presence in `fields` is the whole integration
 	const facingField = await page.evaluate(() => {
-		const K = window.__stores.hudKinds;
+		const K = window.__tp.test.v1.hudKinds;
 		const field = K.fieldsForKind('minimap').find((f) => f.key === 'showFacing');
 		return { kind: field?.kind ?? null, defaulted: K.newElementOfKind('minimap').showFacing };
 	});
@@ -840,7 +840,7 @@ h.run(async () => {
 	// NOT work: the rig mounts too, `getObjectByName` finds whichever comes first in the
 	// traversal, and the rig parks at y=1000 where the minimap correctly skips it.)
 	const staged = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.userdata.update((u) => [...u, ['ghost-peer', 'Ghost']]);
 		await new Promise((r) => setTimeout(r, 900)); // let the rig mount
 		let scene = null;
@@ -855,7 +855,7 @@ h.run(async () => {
 	h.check(staged, 'premise: a staged peer rig exists and is posed off a camera euler');
 
 	const plotted = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudDocs.setHudDocFor('scene', {
 			screens: [
 				{
@@ -929,14 +929,14 @@ h.run(async () => {
 
 	// leave no ghost behind for the sections that follow
 	await page.evaluate(() =>
-		window.__stores.userdata.update((u) => u.filter((row) => row[0] !== 'ghost-peer'))
+		window.__tp.test.v1.userdata.update((u) => u.filter((row) => row[0] !== 'ghost-peer'))
 	);
 
 	// =====================================================================
 	// 8. E7.5 — the USER-SCRIPTED element
 	// =====================================================================
 	const custom = await page.evaluate(async () => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		H.setHudDocFor('scene', {
 			screens: [
 				{
@@ -970,7 +970,7 @@ h.run(async () => {
 
 	// HOT-APPLY: editing the code re-runs it with no remount
 	const hot = await page.evaluate(async () => {
-		window.__stores.hudDocs.updateHudElement('scene', 'code', 'cust', {
+		window.__tp.test.v1.hudDocs.updateHudElement('scene', 'code', 'cust', {
 			code: "container.textContent = 'edited';"
 		});
 		await new Promise((r) => setTimeout(r, 800));
@@ -980,7 +980,7 @@ h.run(async () => {
 
 	// and the runtime reaches it, so a node can drive a custom element
 	const customRuntime = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudDocs.updateHudElement('scene', 'code', 'cust', {
 			code: "container.textContent = 'v=' + (runtime && runtime.text);"
 		});
@@ -998,7 +998,7 @@ h.run(async () => {
 	// reason the compile and the run are both wrapped: one bad character in one element
 	// would otherwise unmount the whole HUD.
 	const thrown = await page.evaluate(async () => {
-		window.__stores.hudDocs.updateHudElement('scene', 'code', 'cust', {
+		window.__tp.test.v1.hudDocs.updateHudElement('scene', 'code', 'cust', {
 			code: "throw new Error('boom');"
 		});
 		await new Promise((r) => setTimeout(r, 900));
@@ -1012,7 +1012,7 @@ h.run(async () => {
 	h.check(thrown.layer && thrown.sibling === 'still here', 'and the layer SURVIVES with its other elements intact');
 
 	const syntax = await page.evaluate(async () => {
-		window.__stores.hudDocs.updateHudElement('scene', 'code', 'cust', { code: 'this is not javascript {{{' });
+		window.__tp.test.v1.hudDocs.updateHudElement('scene', 'code', 'cust', { code: 'this is not javascript {{{' });
 		await new Promise((r) => setTimeout(r, 900));
 		return {
 			chip: !!document.querySelector('[data-hud-id="cust"] .hud-code-error'),
@@ -1027,7 +1027,7 @@ h.run(async () => {
 
 	// the pane offers a way in, and the artboard offers the double-click
 	const codeDoor = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudEditorClose.set(false);
 		await new Promise((r) => setTimeout(r, 900));
 		document.querySelector('[data-hud-item="cust"]')?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }));
@@ -1063,7 +1063,7 @@ h.run(async () => {
 	const modKind = await page.evaluate(async () => {
 		window.__mod = { mounts: 0, updates: 0, cleanups: 0 };
 		let kindName = null;
-		await window.__stores.moduleSDK.initModules([
+		await window.__tp.test.v1.moduleSDK.initModules([
 			{
 				id: 'hudmod',
 				name: 'HUD extras',
@@ -1098,7 +1098,7 @@ h.run(async () => {
 			}
 		]);
 		await new Promise((r) => setTimeout(r, 400));
-		const K = window.__stores.hudKinds;
+		const K = window.__tp.test.v1.hudKinds;
 		return {
 			kindName,
 			renderable: K.isRenderableKind(kindName),
@@ -1124,7 +1124,7 @@ h.run(async () => {
 	);
 
 	const modRender = await page.evaluate(async (kind) => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		H.setHudDocFor('scene', {
 			screens: [
 				{
@@ -1132,7 +1132,7 @@ h.run(async () => {
 					name: 'Mods',
 					elements: [
 						{ id: 'keep2', kind: 'text', label: 'sibling', anchor: 'top-left', x: 20, y: 20, w: 120, h: 24 },
-						{ ...window.__stores.hudKinds.newElementOfKind(kind), id: 'g1', anchor: 'top-left', x: 20, y: 70 }
+						{ ...window.__tp.test.v1.hudKinds.newElementOfKind(kind), id: 'g1', anchor: 'top-left', x: 20, y: 70 }
 					]
 				}
 			],
@@ -1157,10 +1157,10 @@ h.run(async () => {
 	);
 
 	const modGone = await page.evaluate(async (kind) => {
-		window.__stores.moduleSDK.deactivateModule('hudmod');
+		window.__tp.test.v1.moduleSDK.deactivateModule('hudmod');
 		await new Promise((r) => setTimeout(r, 1000));
-		const K = window.__stores.hudKinds;
-		const doc = window.__stores.hudDocs.hudDocOf('scene');
+		const K = window.__tp.test.v1.hudKinds;
+		const doc = window.__tp.test.v1.hudDocs.hudDocOf('scene');
 		const el = doc.screens.find((s) => s.id === 'mods').elements.find((e) => e.id === 'g1');
 		return {
 			registered: K.isRenderableKind(kind),
@@ -1187,8 +1187,8 @@ h.run(async () => {
 	// 10. E7.7 — style presets, as ONE undo entry
 	// =====================================================================
 	const preset = await page.evaluate(async () => {
-		const H = window.__stores.hudDocs;
-		const K = window.__stores.hudKinds;
+		const H = window.__tp.test.v1.hudDocs;
+		const K = window.__tp.test.v1.hudKinds;
 		H.setHudDocFor('scene', {
 			screens: [
 				{
@@ -1223,7 +1223,7 @@ h.run(async () => {
 	);
 
 	const applied = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		// PREMISE: no HUD gesture may be open here, or beginHudGesture no-ops into a stale
 		// one and the entry's `before` is whatever that gesture opened with. This is the
 		// thing that made the first version of this section undo the wrong edit.
@@ -1276,18 +1276,18 @@ h.run(async () => {
 	// ONE UNDO. Asserted as a PROPERTY, not as a stack depth: recordEntry's LIMIT trim
 	// evicts the oldest, so a correct gesture can legitimately leave the depth unchanged.
 	const undone = await page.evaluate(async () => {
-		window.__stores.history.undo();
+		window.__tp.test.v1.history.undo();
 		await new Promise((r) => setTimeout(r, 800));
-		const doc = window.__stores.hudDocs.hudDocOf('scene');
+		const doc = window.__tp.test.v1.hudDocs.hudDocOf('scene');
 		const screen = doc.screens.find((sc) => sc.id === 'style');
 		const styles = {};
 		for (const el of screen.elements) styles[el.id] = { ...el.style };
-		window.__stores.history.redo();
+		window.__tp.test.v1.history.redo();
 		await new Promise((r) => setTimeout(r, 800));
-		const after = window.__stores.hudDocs.hudDocOf('scene').screens.find((sc) => sc.id === 'style');
+		const after = window.__tp.test.v1.hudDocs.hudDocOf('scene').screens.find((sc) => sc.id === 'style');
 		const redone = {};
 		for (const el of after.elements) redone[el.id] = { ...el.style };
-		window.__stores.hudEditorClose.set(true);
+		window.__tp.test.v1.hudEditorClose.set(true);
 		await new Promise((r) => setTimeout(r, 500));
 		return { styles, redone };
 	});
@@ -1306,11 +1306,11 @@ h.run(async () => {
 	// 11. TWO PEERS — GOLDEN RULE 8: rows CONVERGE with NO new message type
 	// =====================================================================
 	const B = await h.setupPage(browser, 'B');
-	await B.page.waitForFunction(() => !!window.__stores?.hudRichText, { timeout: 30000 });
+	await B.page.waitForFunction(() => !!window.__tp?.test.v1?.hudRichText, { timeout: 30000 });
 	await h.connect(A, B);
 
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudDocs.setHudDocFor('scene', {
 			screens: [
 				{
@@ -1334,12 +1334,12 @@ h.run(async () => {
 	});
 	// setting the stores directly does NOT broadcast — push, and WAIT for the peer to hold
 	// it, or a pulse can land before the graph does (the documented racy failure)
-	await page.evaluate((peerId) => window.__stores.nodesHandler.sendNodes(peerId), B.id);
+	await page.evaluate((peerId) => window.__tp.test.v1.nodesHandler.sendNodes(peerId), B.id);
 	let peerHasGraph = false;
 	for (let i = 0; i < 40; i++) {
 		peerHasGraph = await B.page.evaluate(() => {
 			let nodes;
-			window.__stores.flowNodes.subscribe((v) => (nodes = v))();
+			window.__tp.test.v1.flowNodes.subscribe((v) => (nodes = v))();
 			return nodes.some((n) => n.id === 'rows2');
 		});
 		if (peerHasGraph) break;
@@ -1348,7 +1348,7 @@ h.run(async () => {
 	h.check(peerHasGraph, 'premise: the peer holds the graph before anything is pulsed');
 	let peerHasDoc = false;
 	for (let i = 0; i < 30; i++) {
-		peerHasDoc = await B.page.evaluate(() => !!window.__stores.hudDocs.elementById('scene', 'lb'));
+		peerHasDoc = await B.page.evaluate(() => !!window.__tp.test.v1.hudDocs.elementById('scene', 'lb'));
 		if (peerHasDoc) break;
 		await B.page.waitForTimeout(250);
 	}
@@ -1358,7 +1358,7 @@ h.run(async () => {
 	// adds no runtime message type, so the evidence is the set of types that actually went
 	// out — nothing about rows may appear in it.
 	const sent = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let peer;
 		s.peers.subscribe((v) => (peer = v))();
 		const seen = [];
@@ -1403,12 +1403,12 @@ h.run(async () => {
 	// the SAME function on both sides — while your own dot is the accent wherever you look.
 	const idA = await page.evaluate(() => {
 		let p;
-		window.__stores.peers.subscribe((v) => (p = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (p = v))();
 		return p?.peer?.id ?? null;
 	});
 	const idB = await B.page.evaluate(() => {
 		let p;
-		window.__stores.peers.subscribe((v) => (p = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (p = v))();
 		return p?.peer?.id ?? null;
 	});
 	h.check(!!idA && !!idB && idA !== idB, `premise: two distinct peer ids (${idA} / ${idB})`);
@@ -1417,9 +1417,9 @@ h.run(async () => {
 	const colourOn = (peer, target, self) =>
 		peer.page.evaluate(
 			([t, s]) => ({
-				dot: window.__stores.hudMinimap.minimapDotColor(t, s),
-				hash: window.__stores.lockControl.peerColor(t),
-				accent: window.__stores.hudMinimap.accentColor()
+				dot: window.__tp.test.v1.hudMinimap.minimapDotColor(t, s),
+				hash: window.__tp.test.v1.lockControl.peerColor(t),
+				accent: window.__tp.test.v1.hudMinimap.accentColor()
 			}),
 			[target, self]
 		);
@@ -1461,14 +1461,14 @@ h.run(async () => {
 	const framesAgree = await (async () => {
 		for (const peer of [A, B])
 			await peer.page.evaluate(() => {
-				window.__stores.hudDocs.setHudDocFor('scene', {
+				window.__tp.test.v1.hudDocs.setHudDocFor('scene', {
 					screens: [
 						{
 							id: 'map2',
 							name: 'Map',
 							elements: [
 								{
-									...window.__stores.hudKinds.newElementOfKind('minimap'),
+									...window.__tp.test.v1.hudKinds.newElementOfKind('minimap'),
 									id: 'mm2',
 									anchor: 'top-left',
 									x: 20,
@@ -1486,8 +1486,8 @@ h.run(async () => {
 		await page.waitForTimeout(1600);
 		const read = (peer) =>
 			peer.page.evaluate(() => {
-				const f = window.__stores.hudMinimap.lastMinimapFrame();
-				return { self: f.self?.color ?? null, accent: window.__stores.hudMinimap.accentColor() };
+				const f = window.__tp.test.v1.hudMinimap.lastMinimapFrame();
+				return { self: f.self?.color ?? null, accent: window.__tp.test.v1.hudMinimap.accentColor() };
 			});
 		return { a: await read(A), b: await read(B) };
 	})();
@@ -1499,7 +1499,7 @@ h.run(async () => {
 	// and a document naming an unknown MODULE kind round-trips through a bare peer, which
 	// is the same story a disabled module tells — the fallback belongs to the format
 	const bare = await page.evaluate(async () => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		H.setHudDocFor('scene', {
 			screens: [
 				{
@@ -1519,7 +1519,7 @@ h.run(async () => {
 	h.check(bare, 'premise: a doc naming a module kind this build never had was authored');
 	await B.page.waitForTimeout(2000);
 	const onBare = await B.page.evaluate(() => {
-		const el = window.__stores.hudDocs.elementById('scene', 'exotic');
+		const el = window.__tp.test.v1.hudDocs.elementById('scene', 'exotic');
 		return {
 			kind: el?.kind ?? null,
 			extra: el?.tuning ?? null,
@@ -1539,12 +1539,12 @@ h.run(async () => {
 
 	// the round trip: the bare peer EDITS the doc and the unknown element survives back
 	await B.page.evaluate(() =>
-		window.__stores.hudDocs.updateHudElement('scene', 'main', 'plain', { label: 'edited by the bare peer' })
+		window.__tp.test.v1.hudDocs.updateHudElement('scene', 'main', 'plain', { label: 'edited by the bare peer' })
 	);
 	await page.waitForTimeout(2000);
 	const backHome = await page.evaluate(() => {
-		const el = window.__stores.hudDocs.elementById('scene', 'exotic');
-		const plain = window.__stores.hudDocs.elementById('scene', 'plain');
+		const el = window.__tp.test.v1.hudDocs.elementById('scene', 'exotic');
+		const plain = window.__tp.test.v1.hudDocs.elementById('scene', 'plain');
 		return { kind: el?.kind ?? null, extra: el?.tuning ?? null, label: plain?.label ?? null };
 	});
 	h.check(

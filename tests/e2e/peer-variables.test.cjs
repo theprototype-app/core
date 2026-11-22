@@ -26,7 +26,7 @@ const h = require('./helpers.cjs');
 
 // ---- reading the world -----------------------------------------------------------
 
-const pv = (peer) => peer.page.evaluate(() => window.__stores.peerVars.peerVarsDebug());
+const pv = (peer) => peer.page.evaluate(() => window.__tp.test.v1.peerVars.peerVarsDebug());
 
 /** What `peer` believes `who` holds for `name`. The whole point of an owner-written row
  * is that this agrees on every screen. */
@@ -38,30 +38,30 @@ const rowOf = async (peer, whoId, name) => {
 const visibleOf = (peer, uuids) =>
 	peer.page.evaluate((ids) => {
 		let group;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		return ids.map((id) => group?.getObjectByProperty('uuid', id)?.visible ?? null);
 	}, uuids);
 
-const varOf = (peer, name) => peer.page.evaluate((n) => window.__stores.gameState.gameVar(n, 0), name);
+const varOf = (peer, name) => peer.page.evaluate((n) => window.__tp.test.v1.gameState.gameVar(n, 0), name);
 
 const gstate = (peer) =>
 	peer.page.evaluate(() => {
 		let g;
-		window.__stores.gameState.gameState.subscribe((v) => (g = v))();
+		window.__tp.test.v1.gameState.gameState.subscribe((v) => (g = v))();
 		return { state: g.state, round: g.round, startedAt: g.startedAt };
 	});
 
-const setPlay = (peer, state) => peer.page.evaluate((s) => window.__stores.isLocked.set(s), state);
+const setPlay = (peer, state) => peer.page.evaluate((s) => window.__tp.test.v1.isLocked.set(s), state);
 
 const playModesOf = (peer) =>
 	peer.page.evaluate(() => {
 		let m;
-		window.__stores.gamePresence.peerPlayModes.subscribe((v) => (m = v))();
+		window.__tp.test.v1.gamePresence.peerPlayModes.subscribe((v) => (m = v))();
 		return m;
 	});
 
 const rowsOf = (peer, elementId) =>
-	peer.page.evaluate((id) => window.__stores.flowRuntime.hudRowsOf(id), elementId);
+	peer.page.evaluate((id) => window.__tp.test.v1.flowRuntime.hudRowsOf(id), elementId);
 
 /** A clean slate on EVERY peer — `clearGraphs()` does not broadcast, so a one-sided wipe
  * is pulled back by nodesync's hash compare. Per-player rows go too, and that clear DOES
@@ -69,17 +69,17 @@ const rowsOf = (peer, elementId) =>
 const wipe = async (peers) => {
 	for (const p of peers)
 		await p.page.evaluate(() => {
-			window.__stores.clearGraphs();
-			window.__stores.gameState.clearGameState();
-			window.__stores.peerVars.clearPeerVars();
-			window.__stores.isLocked.set(null);
+			window.__tp.test.v1.clearGraphs();
+			window.__tp.test.v1.gameState.clearGameState();
+			window.__tp.test.v1.peerVars.clearPeerVars();
+			window.__tp.test.v1.isLocked.set(null);
 		});
 	await peers[0].page.waitForTimeout(1200);
 };
 
 const makeBoxes = (peer, count) =>
 	peer.page.evaluate(async (n) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		/** @type {string[]} */
 		const uuids = [];
 		for (let i = 0; i < n; i++) {
@@ -117,7 +117,7 @@ const recipe = async (peer, uuids, opts = {}) => {
 const countsFor = (peer, variable) =>
 	peer.page.evaluate(
 		(latches) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let g;
 			s.flowGraphs.subscribe((x) => (g = x))();
 			const live = new Set((g.scene?.nodes ?? []).map((n) => n.id));
@@ -134,7 +134,7 @@ const countsFor = (peer, variable) =>
 const chainOf = (peer, uuid) =>
 	peer.page.evaluate((id) => {
 		let g;
-		window.__stores.flowGraphs.subscribe((v) => (g = v))();
+		window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))();
 		const nodes = g.scene?.nodes ?? [];
 		const edges = g.scene?.edges ?? [];
 		const back = (targetId, handle) => {
@@ -174,13 +174,13 @@ const chainOf = (peer, uuid) =>
 const valueOf = (peer, id) =>
 	peer.page.evaluate((nid) => {
 		let v;
-		window.__stores.flowValues.subscribe((x) => (v = x))();
+		window.__tp.test.v1.flowValues.subscribe((x) => (v = x))();
 		return v[nid];
 	}, id);
 
 /** Collect, then SETTLE. 600ms is the documented `actionSeenAt` margin. */
 const collect = async (peer, uuid, settle = 900) => {
-	await peer.page.evaluate((id) => window.__stores.flowRuntime.fireObjectClick(id), uuid);
+	await peer.page.evaluate((id) => window.__tp.test.v1.flowRuntime.fireObjectClick(id), uuid);
 	await peer.page.waitForTimeout(settle);
 };
 
@@ -189,7 +189,7 @@ const collect = async (peer, uuid, settle = 900) => {
  * the names have to be REAL for section 4 to mean anything. */
 const setName = async (peer, name) => {
 	await peer.page.evaluate((n) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let list, p;
 		s.userdata.subscribe((v) => (list = v))();
 		s.peers.subscribe((v) => (p = v))();
@@ -206,7 +206,7 @@ const setName = async (peer, name) => {
 const spyOn = (peer) =>
 	peer.page.evaluate(() => {
 		let p;
-		window.__stores.peers.subscribe((v) => (p = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (p = v))();
 		if (p.__sent) return false;
 		p.__sent = [];
 		const orig = p.send.bind(p);
@@ -223,7 +223,7 @@ const sentSince = (peer, type, from = 0) =>
 	peer.page.evaluate(
 		({ t, f }) => {
 			let p;
-			window.__stores.peers.subscribe((v) => (p = v))();
+			window.__tp.test.v1.peers.subscribe((v) => (p = v))();
 			return (p.__sent ?? []).slice(f).filter((x) => x === t).length;
 		},
 		{ t: type, f: from }
@@ -232,7 +232,7 @@ const sentSince = (peer, type, from = 0) =>
 const sentLength = (peer) =>
 	peer.page.evaluate(() => {
 		let p;
-		window.__stores.peers.subscribe((v) => (p = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (p = v))();
 		return (p.__sent ?? []).length;
 	});
 
@@ -242,7 +242,7 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B');
 	for (const p of [A, B])
 		await p.page.waitForFunction(
-			() => !!window.__stores?.peerVars && !!window.__stores?.flowGraphsCtl && !!window.__stores?.nodesHandler,
+			() => !!window.__tp?.test.v1?.peerVars && !!window.__tp?.test.v1?.flowGraphsCtl && !!window.__tp?.test.v1?.nodesHandler,
 			{ timeout: 30000 }
 		);
 	// connect BEFORE anyone plays — a peer cannot approve a request while in play mode.
@@ -262,7 +262,7 @@ h.run(async () => {
 	h.check(Object.keys(base.mine).length === 0, 'premise: the slate really is clean');
 
 	const beforeSet = await sentLength(A);
-	await A.page.evaluate(() => window.__stores.peerVars.setPeerVar('laps', 3));
+	await A.page.evaluate(() => window.__tp.test.v1.peerVars.setPeerVar('laps', 3));
 	await A.page.waitForTimeout(1200);
 	h.check((await sentSince(A, 'peervars', beforeSet)) === 1, 'setting a per-player value sends exactly ONE peervars message');
 	h.check((await rowOf(A, A.id, 'laps')) === 3, 'A holds its own row');
@@ -271,11 +271,11 @@ h.run(async () => {
 	// the same value again must not put anything on the wire — a per-frame graph could
 	// otherwise broadcast this sixty times a second
 	const beforeSame = await sentLength(A);
-	await A.page.evaluate(() => window.__stores.peerVars.setPeerVar('laps', 3));
+	await A.page.evaluate(() => window.__tp.test.v1.peerVars.setPeerVar('laps', 3));
 	await A.page.waitForTimeout(500);
 	h.check((await sentSince(A, 'peervars', beforeSame)) === 0, 'writing the SAME value sends nothing');
 
-	await B.page.evaluate(() => window.__stores.peerVars.setPeerVar('laps', 5));
+	await B.page.evaluate(() => window.__tp.test.v1.peerVars.setPeerVar('laps', 5));
 	await B.page.waitForTimeout(1200);
 	const bothOnA = await pv(A);
 	const bothOnB = await pv(B);
@@ -290,15 +290,15 @@ h.run(async () => {
 
 	// the aggregate reads, which is what a HUD asks for
 	const agg = await A.page.evaluate(() => ({
-		sum: window.__stores.peerVars.peerVarSum('laps'),
-		max: window.__stores.peerVars.peerVarMax('laps'),
-		mine: window.__stores.peerVars.myPeerVar('laps', 0)
+		sum: window.__tp.test.v1.peerVars.peerVarSum('laps'),
+		max: window.__tp.test.v1.peerVars.peerVarMax('laps'),
+		mine: window.__tp.test.v1.peerVars.myPeerVar('laps', 0)
 	}));
 	h.check(agg.sum === 8 && agg.max === 5 && agg.mine === 3, `sum/max/mine read 8/5/3 (${JSON.stringify(agg)})`);
 
 	// ---- 1b. the node reads the same numbers -------------------------------------
 	const readings = await A.page.evaluate((bid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const mk = (data) => ({
 			id: crypto.randomUUID(),
 			type: 'peervariable',
@@ -330,7 +330,7 @@ h.run(async () => {
 	// two `peervariable -> hudtext` readouts rendered 0 beside a leaderboard reading 1).
 	// The honest check asks the CONSUMER what it resolved, through the real path.
 	const wired = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const src = {
 			id: 'pv-src',
 			type: 'peervariable',
@@ -480,7 +480,7 @@ h.run(async () => {
 	await wipe([A, B]);
 	for (const p of [A, B])
 		await p.page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.hudDocs.clearHudDocs();
 			s.hudDocs.setHudDocFor('scene', {
 				screens: [
@@ -497,8 +497,8 @@ h.run(async () => {
 
 	// the ACTION is the entry point a user has, so build it the way they would
 	const offered = await A.page.evaluate(() => ({
-		list: window.__stores.hudActions.actionsForKind('list').map((a) => a.key),
-		text: window.__stores.hudActions.actionsForKind('text').map((a) => a.key)
+		list: window.__tp.test.v1.hudActions.actionsForKind('list').map((a) => a.key),
+		text: window.__tp.test.v1.hudActions.actionsForKind('text').map((a) => a.key)
 	}));
 	h.check(offered.list.includes('leaderboard'), `a LIST is offered "Show a leaderboard" (${offered.list.join(', ')})`);
 	h.check(
@@ -507,23 +507,23 @@ h.run(async () => {
 	);
 
 	const bound = await A.page.evaluate(() => {
-		const r = window.__stores.hudActions.addBinding('board', 'leaderboard');
+		const r = window.__tp.test.v1.hudActions.addBinding('board', 'leaderboard');
 		// name the variable the players are actually counting into
 		const node = r.nodes[0];
-		if (node) window.__stores.nodesHandler.setNodeData(node.id, { variable: 'laps' });
+		if (node) window.__tp.test.v1.nodesHandler.setNodeData(node.id, { variable: 'laps' });
 		return { ok: r.ok, type: node?.type ?? null, id: node?.id ?? null };
 	});
 	h.check(bound.ok && bound.type === 'leaderboard', `the binding creates a Leaderboard node (${JSON.stringify(bound)})`);
-	const again = await A.page.evaluate(() => window.__stores.hudActions.addBinding('board', 'leaderboard'));
+	const again = await A.page.evaluate(() => window.__tp.test.v1.hudActions.addBinding('board', 'leaderboard'));
 	h.check(again.ok === false, 'and refuses a SECOND one on the same element — two derivations cannot own one list');
-	const listed = await A.page.evaluate(() => window.__stores.hudActions.bindingsFor('board').map((b) => b.label));
+	const listed = await A.page.evaluate(() => window.__tp.test.v1.hudActions.bindingsFor('board').map((b) => b.label));
 	h.check(
 		listed.some((l) => l.includes('Leaderboard of')),
 		`the Actions pane lists it in words (${JSON.stringify(listed)})`
 	);
 
-	await A.page.evaluate(() => window.__stores.peerVars.setPeerVar('laps', 4));
-	await B.page.evaluate(() => window.__stores.peerVars.setPeerVar('laps', 7));
+	await A.page.evaluate(() => window.__tp.test.v1.peerVars.setPeerVar('laps', 4));
+	await B.page.evaluate(() => window.__tp.test.v1.peerVars.setPeerVar('laps', 7));
 	await A.page.waitForTimeout(1500);
 
 	const boardA = await rowsOf(A, 'board');
@@ -554,7 +554,7 @@ h.run(async () => {
 
 	// a value CHANGE moves the board and nothing else does
 	const beforeBoard = await sentLength(A);
-	await B.page.evaluate(() => window.__stores.peerVars.setPeerVar('laps', 9));
+	await B.page.evaluate(() => window.__tp.test.v1.peerVars.setPeerVar('laps', 9));
 	await A.page.waitForTimeout(1500);
 	const boardAfter = await rowsOf(A, 'board');
 	h.check(boardAfter.some((r) => r.endsWith('9')), `A's board follows B's score (${JSON.stringify(boardAfter)})`);
@@ -587,7 +587,7 @@ h.run(async () => {
 	// ---- 5b. a LATE JOINER is caught up by the getmodulestate reply --------------
 	// (the same code path a RECONNECT takes: the owner re-announces its own row)
 	const C = await h.setupPage(browser, 'C');
-	await C.page.waitForFunction(() => !!window.__stores?.peerVars, { timeout: 30000 });
+	await C.page.waitForFunction(() => !!window.__tp?.test.v1?.peerVars, { timeout: 30000 });
 	// a joiner must dial the HOST — a connected peer's pill has no dial input
 	await h.connect(C, B);
 	await h.eventually(
@@ -602,7 +602,7 @@ h.run(async () => {
 		`while holding none of its own (${JSON.stringify(cSees.mine)})`
 	);
 
-	await C.page.evaluate(() => window.__stores.peerVars.setPeerVar('laps', 1));
+	await C.page.evaluate(() => window.__tp.test.v1.peerVars.setPeerVar('laps', 1));
 	await h.eventually(
 		() => rowOf(A, C.id, 'laps'),
 		(v) => v === 1,
@@ -613,7 +613,7 @@ h.run(async () => {
 	// ---- 5c. leaving the SESSION drops the row ----------------------------------
 	await C.page.evaluate(() => {
 		let p;
-		window.__stores.peers.subscribe((v) => (p = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (p = v))();
 		p.leaveSession();
 	});
 	await h.eventually(
@@ -633,7 +633,7 @@ h.run(async () => {
 	await recipe(A, [r1], { variable: 'gems', perPlayer: true });
 	const rc = await chainOf(A, r1);
 	for (const p of [A, B]) await setPlay(p, true);
-	await A.page.evaluate(() => window.__stores.gameState.setGameState('playing'));
+	await A.page.evaluate(() => window.__tp.test.v1.gameState.setGameState('playing'));
 	await A.page.waitForTimeout(1000);
 	const round1 = await gstate(A);
 	h.check(round1.round === 1 && round1.startedAt > 0, `premise: round 1 is underway (${JSON.stringify(round1)})`);
@@ -642,7 +642,7 @@ h.run(async () => {
 	h.check((await visibleOf(A, [r1]))[0] === false, 'A collects it in round 1');
 	h.check((await rowOf(A, A.id, 'gems')) === 1, 'and banks 1 in its own row');
 
-	await A.page.evaluate(() => window.__stores.gameState.setGameState('menu'));
+	await A.page.evaluate(() => window.__tp.test.v1.gameState.setGameState('menu'));
 	await A.page.waitForTimeout(1000);
 	h.check(
 		(await valueOf(A, rc.latch)) === false,
@@ -650,7 +650,7 @@ h.run(async () => {
 	);
 	h.check((await visibleOf(A, [r1]))[0] === true, 'so the gem is back for A');
 
-	await A.page.evaluate(() => window.__stores.gameState.setGameState('playing'));
+	await A.page.evaluate(() => window.__tp.test.v1.gameState.setGameState('playing'));
 	await A.page.waitForTimeout(1000);
 	const round2 = await gstate(A);
 	h.check(round2.round === 2 && round2.startedAt > round1.startedAt, `premise: round 2 bumped the stamp (${JSON.stringify(round2)})`);
@@ -665,7 +665,7 @@ h.run(async () => {
 	);
 
 	// ---- 6b. and an authored clear is all it takes -------------------------------
-	await A.page.evaluate(() => window.__stores.peerVars.setPeerVar('gems', 0));
+	await A.page.evaluate(() => window.__tp.test.v1.peerVars.setPeerVar('gems', 0));
 	await A.page.waitForTimeout(800);
 	h.check((await rowOf(A, A.id, 'gems')) === 0, 'a scope-player write of 0 is the reset a game authors');
 	await h.eventually(

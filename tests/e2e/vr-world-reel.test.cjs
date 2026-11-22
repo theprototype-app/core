@@ -48,12 +48,12 @@ const specHands = (page) =>
 /** pose the right hand in BASE space (yaw 0 aims -Z) @param {any} page @param {number[]} pos @param {{pitch?: number}} [aim] */
 const specRight = (page, pos, aim = {}) =>
 	page.evaluate(({ pos, aim }) => {
-		const THREE = window.__stores.THREE;
+		const THREE = window.__tp.test.v1.THREE;
 		const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(aim.pitch ?? 0, 0, 0, 'YXZ'));
 		window.__specHands[1] = new THREE.Matrix4().compose(new THREE.Vector3(...pos), q, new THREE.Vector3(1, 1, 1));
 		window.__specSync();
 	}, { pos, aim });
-const debug = (page) => page.evaluate(() => window.__stores.vrControls.vrGripDebug());
+const debug = (page) => page.evaluate(() => window.__tp.test.v1.vrControls.vrGripDebug());
 /** hold a stick for `ms`, then centre it */
 const hold = async (page, hand, x, y, ms) => {
 	await xr.stick(page, hand, x, y);
@@ -68,7 +68,7 @@ h.run(async () => {
 
 	// ---- 0. the pure step: Edit's object reel on the reach -----------------------------------------
 	const pure = await A.page.evaluate(() => {
-		const v = window.__stores.vrControls;
+		const v = window.__tp.test.v1.vrControls;
 		return { push: v.worldReelStep(2, -1), pull: v.worldReelStep(2, 1), dead: v.worldReelStep(2, 0.1), far: v.worldReelStep(60, -1), near: v.worldReelStep(0.05, 1) };
 	});
 	h.check(pure.push.push > 0.05 && Math.abs(pure.push.reach - 2.06) < 1e-9, `stick forward pushes the gripped spot away (2 m -> ${pure.push.reach.toFixed(3)} m, the grabStickAdjust share)`);
@@ -78,7 +78,7 @@ h.run(async () => {
 
 	// ---- the room: a floor and a wall 3 m ahead --------------------------------------------------------
 	await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 600));
@@ -131,7 +131,7 @@ h.run(async () => {
 
 	// ---- 2. INTERACT + locomotion.worldGrab: the same reel during a game ----------------------------
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.scenePhysics.setScenePhysics({ play: { locomotion: { worldGrab: true } } });
 		s.objectActions.setEditorMode('interact');
 	});
@@ -145,7 +145,7 @@ h.run(async () => {
 	h.check(head1.z - head0.z > 0.2, `Interact (worldGrab): stick forward pushes the world away too (head z ${head0.z.toFixed(2)} -> ${head1.z.toFixed(2)})`);
 	await grip(A.page, 'right', false);
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.objectActions.setEditorMode('edit');
 		s.scenePhysics.setScenePhysics({ play: { locomotion: null } });
 	});
@@ -153,7 +153,7 @@ h.run(async () => {
 
 	// ---- 3. api.claimInput('sticks'): both sticks' navigation stands down ----------------------------
 	const claimed = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		window.__sticks = {};
 		await s.moduleSDK.initModules([
 			{
@@ -186,8 +186,8 @@ h.run(async () => {
 	h.check(Math.abs(head3.yaw - head1.yaw) > 0.5, `released: the right stick snap-turns again (yaw ${head1.yaw.toFixed(3)} -> ${head3.yaw.toFixed(3)})`);
 	h.check(Math.hypot(head3.x - head1.x, head3.z - head1.z) > 0.2, 'released: the left stick moves you again');
 
-	await A.page.evaluate(() => window.__stores.moduleSDK.deactivateModule('sticks-probe'));
+	await A.page.evaluate(() => window.__tp.test.v1.moduleSDK.deactivateModule('sticks-probe'));
 	await xr.uninstall(A.page);
-	await A.page.evaluate(() => window.__stores.isVRMode.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.isVRMode.set(false));
 	await h.finish(browser);
 });

@@ -29,7 +29,7 @@ h.run(async () => {
 	const page = A.page;
 	const bytes = Array.from(fs.readFileSync(TPSCENE));
 	await page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		await s.sessions.applySession(payload, { backup: false });
 	}, bytes);
@@ -37,7 +37,7 @@ h.run(async () => {
 
 	const snap = () =>
 		page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const g = (st) => { let v; st.subscribe((x) => (v = x))(); return v; };
 			const group = g(s.objectsGroup);
 			return {
@@ -62,7 +62,7 @@ h.run(async () => {
 	}
 	h.check(st.names.some((n) => /spinner/.test(n)) && st.names.some((n) => /tile/.test(n)) && st.names.some((n) => /slider/.test(n)), 'spinners, vanishing tiles and moving platforms are there');
 	const meshes = await page.evaluate(() => {
-		let g; window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		let n = 0;
 		g.traverse((o) => { if (o.isMesh) n++; });
 		return n;
@@ -71,7 +71,7 @@ h.run(async () => {
 	h.check(st.play?.simOnPlay === true && st.state === 'menu' && st.screen === 'menu', `starts on the menu, sim on play (${st.state}/${st.screen})`);
 	// the movers are KINEMATIC-by-effect and run off the synced clock: a slider moves
 	const slide = await page.evaluate(async () => {
-		let g; window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByName('Sky S1 slider');
 		// sample across half its period: two samples 700 ms apart can straddle the sine's turn
 		const xs = [];
@@ -84,18 +84,18 @@ h.run(async () => {
 	h.check(slide[1] - slide[0] > 0.2, `the stage 1 slider moves (range ${slide.map((n) => n.toFixed(2))})`);
 
 	console.log('\n=== 2. Play: the menu, the body, the music ===');
-	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await h.eventually(() => snap().then((v) => v.sim), (v) => v === true, 'entering play starts the sim (the crate is a dynamic body)', 10000);
-	const body = await page.evaluate(() => window.__stores.charController.charControllerDebug().control);
+	const body = await page.evaluate(() => window.__tp.test.v1.charController.charControllerDebug().control);
 	h.check(body?.mode === 'walk' && body.jumpHeight === 1.3 && body.gravity, `the player WALKS and JUMPS 1.3 m (${JSON.stringify(body)})`);
 	await h.eventually(hud, (t) => /SKY RUN/.test(t) && /1 · Cloud Steps/.test(t) && /3 · Sky Gauntlet/.test(t), 'the start menu renders three stages', 6000);
 	h.check(/Space jumps/.test(await hud()) && /A jumps/.test(await hud()), 'the menu says how to play on a desktop and in VR');
 	const eye0 = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let cam; s.playerCam.subscribe((v) => (cam = v))();
 		return cam.getWorldPosition(new s.THREE.Vector3()).toArray().map((n) => +n.toFixed(2));
 	});
-	const vignette = await page.evaluate(() => { let v; window.__stores.gameKit.gameSettings?.gameSettingValues?.subscribe((x) => (v = x))(); return v?.vignette ?? null; });
+	const vignette = await page.evaluate(() => { let v; window.__tp.test.v1.gameKit.gameSettings?.gameSettingValues?.subscribe((x) => (v = x))(); return v?.vignette ?? null; });
 	// test-health-1: 53-play phase 6 (e16c7413) made the vignette a LEVEL (default/off/low/high) and
 	// maps the module's `true` to 'high' (gameSettings aliases), so ON reads 'high' now
 	h.check(vignette === 'high', `the comfort vignette defaults ON (high) for this game (${vignette})`);
@@ -110,7 +110,7 @@ h.run(async () => {
 	await page.evaluate(() => window.__skyrun.teleportTo('Sky S1 step 1'));
 	await h.eventually(() => run().then((r) => r.coins), (n) => n === 1, 'standing under a coin collects it', 4000);
 	const hidden = await page.evaluate(() => {
-		let g; window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g.getObjectByName('Sky S1 coin 1').visible;
 	});
 	h.check(hidden === false, 'the collected coin hides (for its collector)');
@@ -122,7 +122,7 @@ h.run(async () => {
 	await page.waitForTimeout(300);
 	// a 1.5 s window can sit on the slider's turn (it barely moves there): measure up to three windows
 	const rideOnce = () => page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let cam; s.playerCam.subscribe((v) => (cam = v))();
 		let g; s.objectsGroup.subscribe((v) => (g = v))();
 		const sl = g.getObjectByName('Sky S1 slider');
@@ -137,7 +137,7 @@ h.run(async () => {
 	h.check(Math.abs(ride.padMoved) > 0.2 && Math.sign(ride.eyeMoved) === Math.sign(ride.padMoved) && ride.onIt < 1.2 && ride.y > 13.5, `standing still on the slider rides it (${JSON.stringify(ride)})`);
 	// a fall: step off into the sky -> back on the flag
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let cam; s.playerCam.subscribe((v) => (cam = v))();
 		// a peer's spawn is what a teleport lands on; put the player in thin air beside the course
 		const k = window.__skyrun;
@@ -148,7 +148,7 @@ h.run(async () => {
 	});
 	await h.eventually(() => run().then((r) => r.falls), (n) => n >= 1, 'falling off the course is caught', 8000);
 	const back = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let cam; s.playerCam.subscribe((v) => (cam = v))();
 		return cam.getWorldPosition(new s.THREE.Vector3()).toArray().map((n) => +n.toFixed(2));
 	});
@@ -166,7 +166,7 @@ h.run(async () => {
 	await page.screenshot({ path: '/home/deck/.code/lanes-30/after-35/sky-run/results.png' }).catch(() => {});
 	// no editor helper in Play
 	const helpers = await page.evaluate(() => {
-		let sc; window.__stores.globalScene.subscribe((v) => (sc = v))();
+		let sc; window.__tp.test.v1.globalScene.subscribe((v) => (sc = v))();
 		const seen = [];
 		sc.traverse((o) => { if (o.visible && /helper|grid/i.test(o.name ?? '') && o.parent === sc) seen.push(o.name); });
 		return seen;
@@ -186,17 +186,17 @@ h.run(async () => {
 	await page.locator('#hud-layer button', { hasText: 'Next stage' }).first().click();
 	await h.eventually(() => snap().then((v) => v.stage + '/' + v.phase), (v) => v === '2/playing', 'Next stage runs stage 2', 10000);
 	const eye2 = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let cam; s.playerCam.subscribe((v) => (cam = v))();
 		return cam.getWorldPosition(new s.THREE.Vector3()).toArray().map((n) => +n.toFixed(2));
 	});
 	h.check(Math.abs(eye2[0] - 30) < 3 && eye2[1] > 12.5, `and the player stands on stage 2's start pad (${eye2})`);
-	await page.evaluate(() => window.__stores.isLocked.set(false));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 	await page.waitForTimeout(800);
 
 	console.log('\n=== 5. VR: the board presses a stage button through the real trigger hook ===');
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.gameState.setGameState('menu');
 		s.objectActions.setEditorMode('interact');
 		let r;
@@ -228,14 +228,14 @@ h.run(async () => {
 	});
 	await h.eventually(() => snap().then((v) => v.phase), (v) => v === 'menu', 'back on the menu', 6000);
 	const ids = await page.evaluate(() => {
-		const k = window.__stores.gameKit.vrGamePanel;
+		const k = window.__tp.test.v1.gameKit.vrGamePanel;
 		for (let i = 0; i < 3; i++) k.vrGamePanelFrame({ head: window.__T.head(), hands: [null, null], dt: 1 / 72 });
 		return (k.vrGamePanelDebug().hits['vr-game-panel'] ?? []).map((x) => x.id);
 	});
 	h.check(['stage-1', 'stage-2', 'stage-3'].every((i) => ids.includes(i)), `the VR board carries the three stage buttons (${ids.join(', ')})`);
 	await page.waitForTimeout(700);
 	const press = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const T = window.__T;
 		const target = T.rectPoint('vr-game-panel', 'stage-2');
 		T.aim(1, new s.THREE.Vector3(0.25, 13.4, 1.5), target);
@@ -247,23 +247,23 @@ h.run(async () => {
 	});
 	h.check(press.hover === 'stage-2' && press.consumed === true, `the laser hovers and the trigger presses Stage 2 (${JSON.stringify(press)})`);
 	await h.eventually(() => snap().then((v) => v.stage + '/' + v.phase), (v) => v === '2/intro' || v === '2/playing', 'stage 2 starts from the VR board', 8000);
-	await page.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
+	await page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('edit'));
 
 	console.log('\n=== 6. THE U10 PROBE: fall depth from the GRAPH, a stage name from the CODE; felt in Play, kept by a reload ===');
 	const rid = await page.evaluate(() => window.__skyrun?.rulesNode?.() ?? null);
 	h.check(!!rid, `premise: the Main graph carries the Sky Run rules node (${rid})`);
-	await h.eventually(() => page.evaluate((id) => window.__stores.behaviours.behavioursDebug().status[id]?.status, rid), (st) => st === 'running', 'the Sky Run rules behaviour is running', 10000);
+	await h.eventually(() => page.evaluate((id) => window.__tp.test.v1.behaviours.behavioursDebug().status[id]?.status, rid), (st) => st === 'running', 'the Sky Run rules behaviour is running', 10000);
 	h.check(stockDrop > 5.5 && stockDrop < 8.5, `premise: at the stock fall depth a fall is caught ~7 m under the start pad (${stockDrop})`);
-	const codeNow = () => page.evaluate((id) => { let g; window.__stores.flowGraphs.subscribe((v) => (g = v))(); return g.scene.nodes.find((n) => n.id === id)?.data?.code ?? ''; }, rid);
+	const codeNow = () => page.evaluate((id) => { let g; window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))(); return g.scene.nodes.find((n) => n.id === id)?.data?.code ?? ''; }, rid);
 	// (a) the GRAPH: select the rules node, the ⓘ tab, Fall depth 7 -> 2
-	await page.evaluate(() => window.__stores.isLocked.set(null));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(null));
 	await page.waitForTimeout(600);
 	if (!(await page.evaluate(() => !!document.querySelector('.svelte-flow__pane')))) await page.locator('p[title="Node editor (N)"]').click();
 	await page.waitForTimeout(1000);
-	await page.evaluate(() => window.__stores.bottomDock?.dockHeight?.set(600));
+	await page.evaluate(() => window.__tp.test.v1.bottomDock?.dockHeight?.set(600));
 	if (!(await page.locator('#flow-props').count())) await page.locator('#flow-props-toggle').click();
 	await page.locator('#flow-tab-info').click();
-	await page.evaluate((id) => window.__stores.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: n.id === id }))), rid);
+	await page.evaluate((id) => window.__tp.test.v1.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: n.id === id }))), rid);
 	await h.eventually(() => page.locator('#flow-prop-fallDepth').count(), (n) => n === 1, 'the rules node shows Fall depth in its properties panel', 6000);
 	await page.locator('#flow-prop-fallDepth').fill('2');
 	await page.locator('#flow-prop-fallDepth').press('Enter');
@@ -271,35 +271,35 @@ h.run(async () => {
 	// (b) the CODE: open the rules in the code workspace and rename stage 1
 	await page.evaluate((id) => {
 		let ns;
-		window.__stores.flowNodes.subscribe((v) => (ns = v))();
+		window.__tp.test.v1.flowNodes.subscribe((v) => (ns = v))();
 		const n = ns.find((x) => x.id === id);
 		window.__flowViewport?.setViewport({ x: -n.position.x + 300, y: -n.position.y + 60, zoom: 1 });
 	}, rid);
 	await page.waitForTimeout(600);
 	const box = await page.locator(`.svelte-flow__node[data-id="${rid}"]`).boundingBox().catch(() => null);
 	if (box) await page.mouse.dblclick(box.x + box.width / 2, box.y + 8);
-	else await page.evaluate((id) => window.__stores.codeWorkspace.openCode({ source: 'behaviour', ref: { nodeId: id } }), rid);
+	else await page.evaluate((id) => window.__tp.test.v1.codeWorkspace.openCode({ source: 'behaviour', ref: { nodeId: id } }), rid);
 	await h.eventually(() => page.locator('[data-pane] .cm-content').count(), (n) => n >= 1, 'double-click opens the rules in the code workspace', 15000);
 	const edited = (await codeNow()).replace("{ id: '1', name: 'Cloud Steps', par: 45 }", "{ id: '1', name: 'Puff Steps', par: 45 }");
-	const paneId = await page.evaluate(() => { let v; window.__stores.codeWorkspace.activeCodeTab.subscribe((x) => (v = x))(); return v; });
+	const paneId = await page.evaluate(() => { let v; window.__tp.test.v1.codeWorkspace.activeCodeTab.subscribe((x) => (v = x))(); return v; });
 	await page.locator(`[data-pane="${paneId}"] .cm-content`).click();
 	await page.keyboard.press('Control+A');
 	await page.keyboard.insertText(edited);
 	await page.keyboard.press('Control+S');
 	await h.eventually(codeNow, (c) => /name: 'Puff Steps'/.test(c), "Ctrl+S saved the code onto the node (stage 1 is 'Puff Steps')", 6000);
 	await page.locator('#code-ws-close:visible, [data-dock-tab-close="code"]:visible').first().click().catch(() => {});
-	await h.eventually(() => page.evaluate((id) => window.__stores.behaviours.behavioursDebug().status[id]?.status, rid), (st) => st === 'running', 'the edited rules reloaded and run', 8000);
+	await h.eventually(() => page.evaluate((id) => window.__tp.test.v1.behaviours.behavioursDebug().status[id]?.status, rid), (st) => st === 'running', 'the edited rules reloaded and run', 8000);
 	/** stage 1 from the menu, the HUD title (the code change), then a fall (the graph change) */
 	const feel = async (when) => {
-		await page.evaluate(() => window.__stores.isLocked.set(true));
+		await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 		await page.waitForTimeout(800);
-		await page.evaluate(() => window.__stores.gameState.setGameState('menu'));
+		await page.evaluate(() => window.__tp.test.v1.gameState.setGameState('menu'));
 		await h.eventually(hud, (t) => /Cloud Steps|Puff Steps|1 ·/.test(t), `${when}: the start menu`, 8000);
 		await page.locator('#hud-layer button', { hasText: /^\s*1 ·/ }).first().click();
 		await h.eventually(() => snap().then((v) => v.stage + '/' + v.phase), (v) => v === '1/playing', `${when}: stage 1 runs`, 12000);
 		await h.eventually(() => page.evaluate(() => window.__skyrun.info({ read: 'title' })), (t) => t === 'Stage 1 · Puff Steps', `${when}: the HUD title reads 'Stage 1 · Puff Steps' — the code change`, 4000);
 		await page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.playSettings.setRuntimeSpawn([12, 12, -18], 0, 'test');
 			s.playSpawn.spawnDesktopPlayer(s.playSpawn.desktopSpawn());
 		});
@@ -310,15 +310,15 @@ h.run(async () => {
 	await feel('Play');
 	// (c) both survive a save and a reload
 	const saved = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = s.sessions.buildSessionPayload('Sky Run probe');
 		const zip = await s.sessions.exportSessionZip(payload, { assets: true, packs: false, flow: true });
 		return Array.from(zip);
 	});
-	await page.evaluate(() => window.__stores.isLocked.set(null));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(null));
 	await page.waitForTimeout(600);
 	await page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphs.set({ scene: { nodes: [], edges: [] } });
 		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		await s.sessions.applySession(payload, { backup: false });
@@ -326,9 +326,9 @@ h.run(async () => {
 	await page.waitForTimeout(2500);
 	const reloaded = await codeNow();
 	h.check(/fallDepth:\s*\{\s*value:\s*2\b/.test(reloaded) && /name: 'Puff Steps'/.test(reloaded), "after a save and a reload the rules keep fall depth 2 and 'Puff Steps'");
-	await h.eventually(() => page.evaluate(() => window.__stores.behaviours.behavioursDebug().status[window.__skyrun.rulesNode()]?.status), (st) => st === 'running', 'the reloaded rules run', 10000);
+	await h.eventually(() => page.evaluate(() => window.__tp.test.v1.behaviours.behavioursDebug().status[window.__skyrun.rulesNode()]?.status), (st) => st === 'running', 'the reloaded rules run', 10000);
 	await feel('Play after the reload');
-	await page.evaluate(() => window.__stores.isLocked.set(false));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 	await page.waitForTimeout(400);
 	await h.finish(browser);
 });

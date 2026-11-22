@@ -9,7 +9,7 @@
 // change that drops a control from the phone says WHICH one.
 const h = require('./helpers.cjs');
 
-const store = (name) => `(() => { let v; window.__stores.${name}.subscribe((x) => (v = x))(); return v; })()`;
+const store = (name) => `(() => { let v; window.__tp.test.v1.${name}.subscribe((x) => (v = x))(); return v; })()`;
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -27,7 +27,7 @@ h.run(async () => {
 	/** back to rest: no sheet, no window, no menu */
 	const rest = async () => {
 		await P.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.phoneShell.phoneSheet.set(null);
 			s.viewportMenu.set(null);
 			s.objectContextMenu.set(null);
@@ -98,6 +98,9 @@ h.run(async () => {
 	await tap('#ps-connect-chip');
 	row(6, (await read(store('connectDrawerOpen'))) === true, 'Drawer toggle: tapping the chip opens the drawer');
 	row(2, await visible('.connect-wrap[data-ps-host] .connect-pill > button:first-of-type'), 'Copy invite link lives in the Connect sheet');
+	// uir-people (Connect B): the sheet's pill leads with Invite + Join…; Join… shows the field
+	row(3, await visible('.connect-wrap[data-ps-host] #connect-invite'), 'Invite lives in the Connect sheet');
+	await tap('.connect-wrap[data-ps-host] #connect-join');
 	row(3, await visible('.connect-wrap[data-ps-host] .cx-input'), 'Peer ID field lives in the Connect sheet');
 	row(4, await visible('.connect-wrap[data-ps-host] .cx-connect button'), 'Connect button lives in the Connect sheet');
 	const tabs = await read(() => [...document.querySelectorAll('.connect-wrap[data-ps-host] .cxd-tab')].filter((t) => t.offsetParent).map((t) => t.textContent.trim()));
@@ -115,13 +118,13 @@ h.run(async () => {
 	row(9, !roomsWay.btn || roomsWay.tabs.some((t) => t.startsWith('Rooms')), `Browse public rooms: offered through the sheet's Rooms tab when a plugin has rooms (${JSON.stringify(roomsWay)})`);
 	// row 10: Cancel request is contextual — stage a pending dial and look for it in the sheet
 	await P.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.waitingForApproval.set([['ZZZZZ', 'pending']]);
 	});
 	await P.waitForTimeout(400);
 	const cancel = await visible('.connect-wrap[data-ps-host] #cancel-request-button');
 	const chipPending = await read(() => document.querySelector('.ps-chip')?.getAttribute('data-state'));
-	await P.evaluate(() => window.__stores.waitingForApproval.set([]));
+	await P.evaluate(() => window.__tp.test.v1.waitingForApproval.set([]));
 	row(10, cancel, 'Leave session / Cancel request: the contextual button is in the Connect sheet');
 	h.check(chipPending === 'pending', `the chip says the request is pending (${chipPending})`);
 	await tap('#ps-sheet-close');
@@ -142,41 +145,41 @@ h.run(async () => {
 	h.check((await read(store('editorMode'))) === 'interact', 'Interact toggles editorMode');
 	await tap('#ps-more-interact');
 	h.check((await read(store('editorMode'))) === 'edit', 'and back to Edit');
-	await P.evaluate(() => window.__stores.phoneShell?.phoneSheet?.set(null));
+	await P.evaluate(() => window.__tp.test.v1.phoneShell?.phoneSheet?.set(null));
 	await P.waitForTimeout(300);
 
 	// undo/redo drive the real history
 	const before = await P.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create box 1 1 1');
 		await new Promise((r) => setTimeout(r, 900));
 		let g;
 		w.objectsGroup.subscribe((v) => (g = v))();
 		return g.children.length;
 	});
-	await P.evaluate(() => window.__stores.deselectObject?.());
+	await P.evaluate(() => window.__tp.test.v1.deselectObject?.());
 	await P.waitForTimeout(300);
 	await tap('#ps-more');
 	await tap('#ps-more-undo');
 	const afterUndo = await read(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g.children.length;
 	});
 	h.check(afterUndo === before - 1, `More ▸ Undo undoes (${before} -> ${afterUndo})`);
 	await tap('#ps-more-redo');
 	const afterRedo = await read(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g.children.length;
 	});
 	h.check(afterRedo === before, `and Redo redoes (${afterRedo})`);
-	await P.evaluate(() => window.__stores.phoneShell?.phoneSheet?.set(null));
+	await P.evaluate(() => window.__tp.test.v1.phoneShell?.phoneSheet?.set(null));
 	await P.waitForTimeout(300);
 
 	// ---- rows 21-23 + 32: the strip with something selected --------------------------
 	await P.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let g;
 		w.objectsGroup.subscribe((v) => (g = v))();
 		w.commandsHandler.sceneCommand('/select ' + g.children[g.children.length - 1].uuid);
@@ -209,7 +212,7 @@ h.run(async () => {
 	});
 	h.check(layer.playFree && layer.insAboveBar, `#32 (a): the Inspector sheet ends at the bar, Play stays tappable (${JSON.stringify(layer)})`);
 	h.check(layer.stripOnTop, `#32 (b): the selection strip rides on top of the open sheet (${JSON.stringify(layer)})`);
-	await P.evaluate(() => window.__stores.deselectObject?.());
+	await P.evaluate(() => window.__tp.test.v1.deselectObject?.());
 
 	// ---- rows 14-16: top right + More › Notes ----------------------------------------
 	await rest();
@@ -248,15 +251,15 @@ h.run(async () => {
 	await tap('.ctx-back');
 	await P.waitForTimeout(300);
 	h.check((await read(() => document.querySelectorAll('.ctx-scroll:not([role])').length)) === 0 && (await visible('[role=menu].ctx-scroll')), 'Back returns to the Add list');
-	const objsBefore = await read(() => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); return g.children.length; });
+	const objsBefore = await read(() => { let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))(); return g.children.length; });
 	await tap('[role=menu] .ctx-row:has-text("Mesh")');
 	await P.waitForTimeout(400);
 	await tap('.ctx-scroll:not([role]) .ctx-row:has(span.flex-1:text-is("Cube"))');
-	await h.eventually(() => read(() => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); return g.children.length; }), (n) => n === objsBefore + 1, 'tapping Cube in the sheet adds a cube and closes the menu', 5000);
+	await h.eventually(() => read(() => { let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))(); return g.children.length; }), (n) => n === objsBefore + 1, 'tapping Cube in the sheet adds a cube and closes the menu', 5000);
 	h.check(!(await visible('.ctx-scroll')), 'the sheet closes after adding');
 	// leave the scene empty: later rows long-press the empty viewport
-	await read(() => window.__stores.history.undo());
-	await h.eventually(() => read(() => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); return g.children.length; }), (n) => n === objsBefore, 'undo takes the added cube back', 5000);
+	await read(() => window.__tp.test.v1.history.undo());
+	await h.eventually(() => read(() => { let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))(); return g.children.length; }), (n) => n === objsBefore, 'undo takes the added cube back', 5000);
 	await P.keyboard.press('Escape');
 	await P.mouse.click(5, 420).catch(() => {});
 	await rest();
@@ -274,7 +277,7 @@ h.run(async () => {
 	await P.mouse.up();
 	await P.waitForTimeout(400);
 	h.check((await read(store('bottomDock.dockMinimized'))) === true && (await read(store('objectListClose'))) === false, 'dragging the dock grab bar to the bottom puts the dock away (Objects stays open as a tab)');
-	await P.evaluate(() => window.__stores.bottomDock.dockMinimized.set(false));
+	await P.evaluate(() => window.__tp.test.v1.bottomDock.dockMinimized.set(false));
 	// (a framed sheet's handle stepping a detent: NOTES-38 #15 below, on Chat)
 	await rest();
 	await tap('#ps-more');
@@ -288,12 +291,12 @@ h.run(async () => {
 	await tap('#ps-more');
 	await tap('#ps-tile-ai');
 	row(18, (await read(store('aiAssistantHidden'))) === '' || (await read(store('settingsOpen'))) === true, 'AI assistant: More › Windows › AI assistant (or Settings › AI when none is set up)');
-	await P.evaluate(() => window.__stores.settingsOpen.set(false));
+	await P.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 
 	// ---- row 19: the mic rides the chip while connected ------------------------------
 	await rest();
 	await P.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let p;
 		s.peers.subscribe((v) => (p = v))();
 		p.__savedOpened = p.openedPeers;
@@ -303,7 +306,7 @@ h.run(async () => {
 	await P.waitForTimeout(300);
 	row(19, await visible('#ps-mic'), 'Voice chat: the mic is in the Connect chip while in a session');
 	await P.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let p;
 		s.peers.subscribe((v) => (p = v))();
 		p.openedPeers = p.__savedOpened ?? new Set();
@@ -324,14 +327,14 @@ h.run(async () => {
 	}
 	await rest();
 	await tap('#ps-more');
-	const optional = await read(() => ['flowcode', 'uv', 'shader', 'hud', 'profiler', 'code'].filter((k) => !document.querySelector(`#ps-tile-${k}`)?.offsetParent));
+	const optional = await read(() => ['timeline', 'uv', 'shader', 'hud', 'profiler', 'code'].filter((k) => !document.querySelector(`#ps-tile-${k}`)?.offsetParent));
 	row(30, optional.length === 0, `Optional views are tiles in More › Windows (missing ${JSON.stringify(optional)})`);
 	await rest();
 	await tap('#ps-more');
 	await tap('#ps-tile-explorer');
 	const dock = await read(() => {
 		let o;
-		window.__stores.bottomDock.dockOccupants.subscribe((v) => (o = v))();
+		window.__tp.test.v1.bottomDock.dockOccupants.subscribe((v) => (o = v))();
 		return !!o?.explorer?.present;
 	});
 	row(31, dock, 'Dock tab strip: a dock view opens docked (its own tab strip and height)');
@@ -368,7 +371,7 @@ h.run(async () => {
 	await P.waitForTimeout(500);
 	h.check(await visible('#ps-more-sheet'), 'a long press on a bar tab opens More (where the bar is arranged)');
 	h.check(/hold and drag/i.test((await read(() => document.getElementById('ps-more-hint')?.textContent)) ?? ''), "More says how: hold and drag items to or from the bar");
-	await P.evaluate(() => window.__stores.phoneBar.setBar(['add', 'objects', 'play', 'chat', 'more']));
+	await P.evaluate(() => window.__tp.test.v1.phoneBar.setBar(['add', 'objects', 'play', 'chat', 'more']));
 	await P.waitForTimeout(300);
 	const custom = await barIds();
 	h.check(JSON.stringify(custom) === JSON.stringify(['ps-add', 'ps-objects', 'ps-play', 'ps-chat', 'ps-more']), `the bar follows its list (${JSON.stringify(custom)})`);
@@ -382,8 +385,11 @@ h.run(async () => {
 	h.check(JSON.stringify(await barIds()) === JSON.stringify(['ps-add', 'ps-objects', 'ps-play', 'ps-explorer', 'ps-more']) && (await lsBar()) === null, 'Reset bar restores the bar and forgets the key');
 
 	// ---- NOTES-38 #15: each sheet remembers its own height, per device ----------------------
+	// (78 PL23: on the folded phone Chat is a DOCK TAB; it is a framed sheet only with "Allow undocking on
+	// touch screens" on, which is the sheet this section measures)
+	await P.evaluate(() => window.__tp.test.v1.mobileUndockAllowed.set(true));
 	await rest();
-	const detents = () => read(() => { let m; window.__stores.phoneShell.phoneDetents.subscribe((v) => (m = v))(); return m; });
+	const detents = () => read(() => { let m; window.__tp.test.v1.phoneShell.phoneDetents.subscribe((v) => (m = v))(); return m; });
 	await tap('#ps-more');
 	await tap('#ps-tile-chat');
 	h.check((await read(() => document.querySelector('.ps-sheet')?.getAttribute('data-detent'))) === 'half', 'a sheet first opens at half');
@@ -399,7 +405,8 @@ h.run(async () => {
 	h.check(otherDet === 'half', `another window keeps its own height (notifications: ${otherDet})`);
 	const saved = await read(() => JSON.parse(localStorage.getItem('phoneSheetDetents') || '{}'));
 	h.check(saved.chat === 'full', `the heights are saved on this device (${JSON.stringify(saved)})`);
-	await P.evaluate(() => window.__stores.settingsOpen.set(false));
+	await P.evaluate(() => window.__tp.test.v1.mobileUndockAllowed.set(false));
+	await P.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 
 	// ---- rows 34-35: Settings ---------------------------------------------------------
 	await rest();
@@ -410,7 +417,7 @@ h.run(async () => {
 	// 1.26 (37-settings) + the design map row 35: "About & what's new" on the Settings list, and
 	// Reset all settings in About ▸ Danger zone (each category also has its own Reset at the end)
 	const about = await read(() => [...document.querySelectorAll('dialog button, dialog a')].some((b) => b.offsetParent && /what.s new/i.test(b.textContent || '')));
-	await P.evaluate(() => window.__stores.settingsSection.set('about'));
+	await P.evaluate(() => window.__tp.test.v1.settingsSection.set('about'));
 	await P.waitForTimeout(600);
 	const reset = await read(() => [...document.querySelectorAll('dialog button, dialog a')].some((b) => b.offsetParent && /reset/i.test(b.textContent || '')));
 	row(35, about && reset, `Reset settings / What's new are reachable in Settings (about row ${about}, reset in About ${reset})`);

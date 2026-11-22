@@ -184,6 +184,18 @@ export function paintStrokeMove(uuid, x, z, dt, radius, strength) {
 	}
 }
 
+/**
+ * 85-world: one step of an OPEN paint stroke with its own layer and no preview (the agent's `terrain {ops: paint}`
+ * paints several spots in one stroke; endPaintStroke commits them as ONE entry).
+ * @param {string} uuid @param {number} x @param {number} z @param {number} layer @param {number} radius @param {number} strength @param {number} dt
+ */
+export function paintStrokeAt(uuid, x, z, layer, radius, strength, dt) {
+	if (!paintStroke || paintStroke.uuid !== uuid) return false;
+	if (!paintAt(uuid, x, z, layer, radius, strength, dt)) return false;
+	paintStroke.changed = true;
+	return true;
+}
+
 /** Stroke end: ONE commit (the block re-encoded + sent) and ONE undo entry. */
 export function endPaintStroke() {
 	const stroke = paintStroke;
@@ -279,6 +291,26 @@ export function setSplatResolution(uuid, res) {
 	if (s && s.res === res) return false;
 	const before = s ? { bytes: s.bytes.slice(), res: s.res } : { bytes: null, res: SPLAT_RES };
 	const bytes = s ? resampleSplat(s.bytes, s.res, res) : createSplat(res);
+	applyTerrainSplat(uuid, bytes, res);
+	sendSplat(uuid, bytes, res);
+	recordEntry({ kind: 'terrainSplat', uuid, before, after: { bytes: bytes.slice(), res } });
+	return true;
+}
+
+/**
+ * mcp-diorama2 (22): replace a terrain's whole paint map (an agent's paint-by-height): apply, ONE undo entry, ONE
+ * message — setSplatResolution's path with the bytes given. @param {string} uuid @param {Uint8Array} bytes
+ * @param {number} [res]
+ */
+export function setTerrainSplat(uuid, bytes, res = SPLAT_RES) {
+	const object = objectOf(uuid);
+	if (!object?.userData?.terrain || !SPLAT_RES_CHOICES.includes(res) || bytes?.length !== res * res * 4) return false;
+	if (!canEditObject(object)) {
+		warnViewerReadOnly();
+		return false;
+	}
+	const s = liveSplat(object);
+	const before = s ? { bytes: s.bytes.slice(), res: s.res } : { bytes: null, res: SPLAT_RES };
 	applyTerrainSplat(uuid, bytes, res);
 	sendSplat(uuid, bytes, res);
 	recordEntry({ kind: 'terrainSplat', uuid, before, after: { bytes: bytes.slice(), res } });

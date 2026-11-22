@@ -17,7 +17,7 @@ h.run(async () => {
 
 	const defaults = await A.page.evaluate(() => {
 		let prefs = null;
-		window.__stores.viewPrefs.viewPrefs.subscribe((v) => (prefs = v))();
+		window.__tp.test.v1.viewPrefs.viewPrefs.subscribe((v) => (prefs = v))();
 		return prefs;
 	});
 	h.check(defaults?.wireColor === '#9aa4b0', `default wire colour (${defaults?.wireColor})`);
@@ -26,7 +26,7 @@ h.run(async () => {
 
 	// --- wireframe view mode reads (and live-updates) the pref ---------------
 	const wire = await A.page.evaluate(async () => {
-		const { viewPrefs, viewMode, globalScene } = window.__stores;
+		const { viewPrefs, viewMode, globalScene } = window.__tp?.test.v1;
 		viewPrefs.setViewPrefs({ wireColor: '#ff8800' });
 		viewMode.set('wireframe');
 		await new Promise((r) => setTimeout(r, 300));
@@ -47,7 +47,7 @@ h.run(async () => {
 	// --- selection outline colour -------------------------------------------
 	const outline = await A.page.evaluate(async () => {
 		const before = window.__outlineDebug?.();
-		window.__stores.viewPrefs.setViewPrefs({ outlineColor: '#22ff88' });
+		window.__tp.test.v1.viewPrefs.setViewPrefs({ outlineColor: '#22ff88' });
 		await new Promise((r) => setTimeout(r, 300));
 		const after = window.__outlineDebug?.();
 		return { before, after };
@@ -67,7 +67,7 @@ h.run(async () => {
 
 	// --- Edit Mesh overlay: auto (luminance) vs a pinned colour --------------
 	const editWire = await A.page.evaluate(async () => {
-		const { commandsHandler, objectsGroup, objectActions, faceEdit, viewPrefs } = window.__stores;
+		const { commandsHandler, objectsGroup, objectActions, faceEdit, viewPrefs } = window.__tp?.test.v1;
 		commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 600));
 		let group = null;
@@ -99,10 +99,10 @@ h.run(async () => {
 
 	// --- the reset chip ------------------------------------------------------
 	const reset = await A.page.evaluate(async () => {
-		window.__stores.viewPrefs.resetViewPrefs();
+		window.__tp.test.v1.viewPrefs.resetViewPrefs();
 		await new Promise((r) => setTimeout(r, 200));
 		let prefs = null;
-		window.__stores.viewPrefs.viewPrefs.subscribe((v) => (prefs = v))();
+		window.__tp.test.v1.viewPrefs.viewPrefs.subscribe((v) => (prefs = v))();
 		return prefs;
 	});
 	h.check(
@@ -111,7 +111,7 @@ h.run(async () => {
 	);
 
 	// --- the Settings rows exist and are wired -------------------------------
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await A.page.waitForTimeout(500);
 	await A.page.locator('#settings-nav .sn-row', { hasText: 'Scene' }).first().click();
 	await A.page.waitForTimeout(400);
@@ -127,7 +127,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(200);
 	const fromInput = await A.page.evaluate(() => {
 		let prefs = null;
-		window.__stores.viewPrefs.viewPrefs.subscribe((v) => (prefs = v))();
+		window.__tp.test.v1.viewPrefs.viewPrefs.subscribe((v) => (prefs = v))();
 		return prefs?.wireColor;
 	});
 	h.check(fromInput === '#123456', `the Settings swatch writes the pref (${fromInput})`);
@@ -138,20 +138,20 @@ h.run(async () => {
 	await A.page.waitForTimeout(200);
 	const unchecked = await A.page.evaluate(() => {
 		let prefs = null;
-		window.__stores.viewPrefs.viewPrefs.subscribe((v) => (prefs = v))();
+		window.__tp.test.v1.viewPrefs.viewPrefs.subscribe((v) => (prefs = v))();
 		return prefs?.editWireColor;
 	});
 	h.check(unchecked !== 'auto' && /^#/.test(unchecked ?? ''), `picking Custom pins a hex (${unchecked})`);
 	const colorDisabled = await A.page.locator('#edit-wire-color').isDisabled();
 	h.check(colorDisabled === false, 'the swatch is enabled once Auto is off');
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 
 	// prefs survive a reload (localStorage, per device)
 	await h.freshReload(A);
 	await A.page.waitForTimeout(1500);
 	const persisted = await A.page.evaluate(() => {
 		let prefs = null;
-		window.__stores.viewPrefs.viewPrefs.subscribe((v) => (prefs = v))();
+		window.__tp.test.v1.viewPrefs.viewPrefs.subscribe((v) => (prefs = v))();
 		return prefs;
 	});
 	h.check(persisted?.wireColor === '#123456', `colours persist across a reload (${persisted?.wireColor})`);
@@ -162,7 +162,7 @@ h.run(async () => {
 	// sticky 'restore-session' prompt appears and nothing is restored by itself.
 	const B = await h.setupPage(browser, 'B');
 	await B.page.evaluate(async () => {
-		const { commandsHandler, autosave } = window.__stores;
+		const { commandsHandler, autosave } = window.__tp?.test.v1;
 		commandsHandler.sceneCommand('/create box');
 		commandsHandler.sceneCommand('/create sphere');
 		await new Promise((r) => setTimeout(r, 800));
@@ -174,9 +174,9 @@ h.run(async () => {
 
 	const offState = await B.page.evaluate(() => {
 		let toasts = [];
-		window.__stores.toastStore.subscribe((l) => (toasts = l))();
+		window.__tp.test.v1.toastStore.subscribe((l) => (toasts = l))();
 		let group = null;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		return {
 			objects: group?.children.length ?? -1,
 			// 41 G16: the prompt is a kit modal now
@@ -192,7 +192,7 @@ h.run(async () => {
 	// -------------------------------------------------- auto-restore: pref ON
 	const C = await h.setupPage(browser, 'C');
 	await C.page.evaluate(async () => {
-		const { commandsHandler, autosave } = window.__stores;
+		const { commandsHandler, autosave } = window.__tp?.test.v1;
 		commandsHandler.sceneCommand('/create box');
 		commandsHandler.sceneCommand('/create sphere');
 		commandsHandler.sceneCommand('/create cylinder');
@@ -207,9 +207,9 @@ h.run(async () => {
 
 	const onState = await C.page.evaluate(() => {
 		let toasts = [];
-		window.__stores.toastStore.subscribe((l) => (toasts = l))();
+		window.__tp.test.v1.toastStore.subscribe((l) => (toasts = l))();
 		let group = null;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		const done = toasts.find((t) => t && t.id === 'restore-done');
 		return {
 			objects: group?.children.length ?? -1,
@@ -232,17 +232,17 @@ h.run(async () => {
 	await C.page.waitForTimeout(16000);
 	const survived = await C.page.evaluate(() => {
 		let toasts = [];
-		window.__stores.toastStore.subscribe((l) => (toasts = l))();
+		window.__tp.test.v1.toastStore.subscribe((l) => (toasts = l))();
 		return toasts.some((t) => t && t.id === 'restore-done');
 	});
 	h.check(survived, 'the report is still there after the transient timeout');
 
 	// and it goes away when the user closes it
 	const closed = await C.page.evaluate(async () => {
-		window.__stores.dismissToastById('restore-done');
+		window.__tp.test.v1.dismissToastById('restore-done');
 		await new Promise((r) => setTimeout(r, 200));
 		let toasts = [];
-		window.__stores.toastStore.subscribe((l) => (toasts = l))();
+		window.__tp.test.v1.toastStore.subscribe((l) => (toasts = l))();
 		return toasts.some((t) => t && t.id === 'restore-done');
 	});
 	h.check(closed === false, 'closing the report dismisses it');

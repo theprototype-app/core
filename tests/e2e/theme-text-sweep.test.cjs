@@ -21,7 +21,7 @@ const GROSS = 3;
 /** each surface: how to open it, how to close it, what to measure */
 const SURFACES = [
 	{ id: 'flow', open: (s) => s.flowGraphClose.set(false), close: (s) => s.flowGraphClose.set(true), root: 'body' },
-	{ id: 'flowcode', open: (s) => s.flowCodeClose.set(false), close: (s) => s.flowCodeClose.set(true), root: 'body' },
+	{ id: 'timeline', open: (s) => s.timelineClose.set(false), close: (s) => s.timelineClose.set(true), root: 'body' },
 	{ id: 'animation', open: (s) => s.animationClose.set(false), close: (s) => s.animationClose.set(true), root: 'body' },
 	{ id: 'uv', open: (s) => s.uvEditorClose.set(false), close: (s) => s.uvEditorClose.set(true), root: 'body' },
 	{ id: 'shader', open: (s) => s.shaderEditorClose.set(false), close: (s) => s.shaderEditorClose.set(true), root: 'body' },
@@ -40,21 +40,21 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1440, height: 900 } } });
 	const page = A.page;
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		s.selectedObjects?.set?.([]);
 	});
-	const themes = await page.evaluate(() => window.__stores.themes.THEMES.map((t) => t.id));
+	const themes = await page.evaluate(() => window.__tp.test.v1.themes.THEMES.map((t) => t.id));
 	/** @type {Map<string, any>} */
 	const found = new Map();
 	const report = [];
 	for (const theme of themes) {
-		await page.evaluate((t) => window.__stores.themes.theme.set(t), theme);
+		await page.evaluate((t) => window.__tp.test.v1.themes.theme.set(t), theme);
 		for (const surf of SURFACES) {
 			const ok = await page
 				.evaluate(
 					([src]) => {
-						(0, eval)(src)(window.__stores);
+						(0, eval)(src)(window.__tp?.test.v1);
 						return true;
 					},
 					[surf.open.toString()]
@@ -74,7 +74,7 @@ h.run(async () => {
 			if (theme === 'dark' || theme === 'light')
 				await page.screenshot({ path: path.join(OUT, `sweep-${PHASE}-${theme}-${surf.id}.png`) }).catch(() => {});
 			await page
-				.evaluate(([src]) => (0, eval)(src)(window.__stores), [surf.close.toString()])
+				.evaluate(([src]) => (0, eval)(src)(window.__tp?.test.v1), [surf.close.toString()])
 				.catch(() => {});
 			await page.waitForTimeout(200);
 		}
@@ -98,6 +98,6 @@ h.run(async () => {
 			const g = gross.filter((f) => f.theme === theme);
 			h.check(g.length === 0, `${theme}: no chrome text under ${GROSS}:1 (${g.length}${g[0] ? ', e.g. ' + fmt(g[0]).trim() : ''})`);
 		}
-	await page.evaluate(() => window.__stores.themes.theme.set('dark'));
+	await page.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
 	await h.finish(browser);
 });

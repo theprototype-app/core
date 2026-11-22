@@ -17,6 +17,18 @@ export function runtimeNow() {
 	return get(syncedAnimations) ? (sessionNow() % 86400000) / 1000 : performance.now() / 1000;
 }
 
+/**
+ * 101 F6: the module api's contract version (`api.version`). 1 = everything before 101; 2 = the
+ * same api, with a version number to probe and a notice: the RAW renderer a module can reach
+ * (`api.camera()`'s renderer read, the `renderer` handed to shader / post backends) stays for now
+ * but leaves the contract later (roadmap 100 swaps renderers) — use the look / post SDK calls.
+ *
+ * 3 (2.0-n3c, additive): the SCRIPT api a module's behaviours and Script nodes run with gained `api.version`
+ * (scriptIO SCRIPT_API_VERSION, 2), `api.self()` and `api.stamp(input)`. A module that writes such code probes
+ * `(api.version ?? 1) >= 3` here before relying on them on the host it was loaded into.
+ */
+export const SDK_API_VERSION = 3;
+
 /** @param {import('./context.js').SdkContext} ctx */
 export function sdkCore(ctx) {
 	const { moduleId } = ctx;
@@ -37,6 +49,8 @@ export function sdkCore(ctx) {
 		now: runtimeNow,
 		// user modules are self-contained (no imports) — THREE + assets come via the api
 		THREE: THREE,
+		/** 101 F6: the api contract version — feature-probe with `(api.version ?? 1) >= 2` */
+		version: SDK_API_VERSION,
 		/** blob URL for a packaged file, e.g. api.assetUrl('assets/pling.mp3') @param {string} path */
 		assetUrl: (path) => moduleAssets[moduleId]?.[path] ?? null
 	};
@@ -54,5 +68,6 @@ sdkCore.surface = {
 	toast: 'action',
 	now: 'read',
 	THREE: 'value',
+	version: 'value',
 	assetUrl: 'read'
 };

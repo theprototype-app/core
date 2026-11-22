@@ -1,13 +1,13 @@
 // Phase 126: sidebar reorg — Library leaves the sidebar (its packs open from
-// the Explorer), and the Scene group order is Configure Scene, Clear Scene,
-// Modules, Sessions.
+// the Explorer). showhide-v8 §6 (burger direction A): Scene is Configure Scene, Modules, then
+// "Clear scene…" last behind a divider; Sessions moved to Versions, after it.
 const h = require('./helpers.cjs');
 
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 
-	await A.page.evaluate(() => window.__stores.closeMenu.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.closeMenu.set(false));
 	await A.page.waitForTimeout(400);
 
 	// --- Library gone; the four scene actions in order ---
@@ -22,19 +22,19 @@ h.run(async () => {
 			hasModules: has('Modules'),
 			hasSessions: has('Sessions'),
 			order:
-				idx('Configure Scene') < idx('Clear Scene') &&
-				idx('Clear Scene') < idx('Modules') &&
-				idx('Modules') < idx('Sessions')
+				idx('Configure Scene') < idx('Modules') &&
+				idx('Modules') < idx('Clear scene') &&
+				idx('Clear scene') < idx('Sessions')
 		};
 	});
 	h.check(!sidebar.hasLibrary, 'the sidebar has no Library item');
 	h.check(sidebar.hasModules && sidebar.hasSessions, 'Modules + Sessions are in the sidebar');
-	h.check(sidebar.order, 'order is Configure Scene, Clear Scene, Modules, Sessions');
+	h.check(sidebar.order, 'order is Configure Scene, Modules, Clear scene…, Sessions');
 
 	// --- Modules + Sessions still open their managers ---
 	const read = (s) => A.page.evaluate((name) => {
 		let v;
-		window.__stores[name].subscribe((x) => (v = x))();
+		window.__tp.test.v1[name].subscribe((x) => (v = x))();
 		return v;
 	}, s);
 	await A.page.locator('#open-modules-manager').click();
@@ -44,28 +44,28 @@ h.run(async () => {
 	// so it must not cover the modal)
 	h.check((await read('closeMenu')) === true, 'opening a modal from the menu closes the menu');
 	// reset fully (close the modal + its backdrop) before the next menu interaction
-	await A.page.evaluate(() => window.__stores.modulesOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.modulesOpen.set(false));
 	await A.page.waitForTimeout(400);
-	await A.page.evaluate(() => window.__stores.closeMenu.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.closeMenu.set(false));
 	await A.page.waitForTimeout(300);
 	await A.page.locator('#open-sessions-manager').click();
 	await A.page.waitForTimeout(300);
 	h.check((await read('sessionsOpen')) === true, 'Sessions opens the manager');
-	await A.page.evaluate(() => window.__stores.sessionsOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.sessionsOpen.set(false));
 	await A.page.waitForTimeout(300);
-	await A.page.evaluate(() => window.__stores.closeMenu.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.closeMenu.set(false));
 	await A.page.waitForTimeout(200);
 
 	// --- Explorer gains a Packs entry; single-click opens the packs GRID view
 	// (roadmap-8 P4 replaced the old 126 library-drawer stopgap) ---
-	await A.page.evaluate(() => window.__stores.explorerClose?.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.explorerClose?.set(false));
 	await A.page.waitForTimeout(400);
 	const packs = await A.page.evaluate(() => {
 		const btn = document.querySelector('#packs-folder');
 		if (!btn) return { present: false };
 		btn.click();
 		let folder;
-		window.__stores.explorer.activeFolder.subscribe((v) => (folder = v))();
+		window.__tp.test.v1.explorer.activeFolder.subscribe((v) => (folder = v))();
 		return { present: true, opened: folder === 'packs' };
 	});
 	h.check(packs.present, 'the Explorer has a Packs entry');

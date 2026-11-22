@@ -1,4 +1,5 @@
 <script lang="ts">
+import { coarsePointer } from '$lib/inputDevice'; // phone-polish item 5: the parked auto-quality card
 	import Icon from '../ui/Icon.svelte';
     import { cameraPreview, stopCameraPreview, toggleCameraControl, previewLabel } from '$lib/cameraPreview'
     // R22 round 2: the connect-time library offer (see the effect below)
@@ -165,7 +166,14 @@ const stickyToasts = $derived($toastStore.filter((t: any) => t?.sticky));
 // often came FROM a dialog still open (Settings ▸ Reset settings), and an Undo under that
 // dialog is an Undo nobody can press. It is not folded into "+N more" either.
 const undoToasts = $derived($toastStore.filter((t: any) => t?.kind === 'undo'));
-const transientToasts = $derived($toastStore.filter((t: any) => !t?.sticky && t?.kind !== 'undo'));
+// phone-polish item 5: on a touch screen the auto-quality card ("Lowered shadows … Keep full quality")
+// arrives a few seconds after boot, top-centre, right where the thumb reaches for a window header or
+// the menu — it is parked at the BOTTOM there instead, above the Controls band / the phone bar
+const PARKED_ON_TOUCH = new Set(['auto-quality']);
+const touchScreen = coarsePointer(); // read once: a device does not change its pointer mid-session
+const parked = (t: any) => touchScreen && !!t && typeof t === 'object' && PARKED_ON_TOUCH.has(t.id);
+const parkedToasts = $derived($toastStore.filter((t: any) => parked(t)));
+const transientToasts = $derived($toastStore.filter((t: any) => !t?.sticky && t?.kind !== 'undo' && !parked(t)));
 const hiddenCount = $derived(Math.max(0, transientToasts.length - MAX_TOASTS));
 const visibleToasts = $derived([...transientToasts.slice(-MAX_TOASTS), ...stickyToasts]);
 
@@ -650,6 +658,16 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
 </div>
 </div><!-- /toasts-stack -->
 
+{#if parkedToasts.length}
+<!-- parked = out of the way: chrome level, so an open menu, sheet or window covers it (a finger drag on the logo
+     menu sheet landed on this card and closed the menu) -->
+<div class="toasts-parked tp-ui" style="z-index: var(--z-chrome);">
+{#each parkedToasts as toast (toastKey(toast))}
+{@render toastCard(toast)}
+{/each}
+</div>
+{/if}
+
 {#snippet toastCard(toast: any)}
 <div class="my-1 tp-toast" class:tp-toast--info={toast?.kind === 'info'} class:tp-toast--undo={toast?.kind === 'undo'} transition:fly={{ y: -8, duration: motionMs(180) }} use:autoDismiss={toast}>
     {#if toast?.kind === 'undo'}
@@ -707,6 +725,25 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
     .toasts-container {
         position: relative;
         width: 100%;
+    }
+    /* phone-polish item 5: the parked cards (touch screens) — above the bottom chrome, centred */
+    .toasts-parked {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: calc(max(var(--controls-inset, 0px), var(--ps-bar-h, 0px)) + 12px + env(safe-area-inset-bottom, 0px));
+        margin-inline: auto;
+        width: min(500px, 94vw);
+        pointer-events: none;
+    }
+    .toasts-parked > :global(div) {
+        pointer-events: auto;
+    }
+    /* device-lab 2026-11-05: on a phone the card covered Film's motion sheet ("Phone tilt"). Parked, it sits under
+       every sheet, menu and window (chrome level); in Film it would sit under the viewfinder's stick and record
+       button instead, so it stands down there — the bell keeps it */
+    :global(html.film-mode) .toasts-parked {
+        display: none;
     }
     /* the stack owns the top offset now; the containers just flow inside it */
     .toasts-critical:empty,

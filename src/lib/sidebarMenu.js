@@ -1,7 +1,6 @@
 import { get } from 'svelte/store';
-import { sidebarTabs, moveSidebarTab, keepSideOpen, toggleSidebar } from './sidebars';
-import { inspectorClose } from '../stores/appStore';
-import { closeDockView, canDockHere, dockTab, dockAtStrip } from './dockMenu';
+import { sidebarTabs, moveSidebarTab, keepSideOpen, toggleSidebar, isInspectorKey, closeInspectorTab } from './sidebars';
+import { closeDockView, canDockHere, dockTab, dockAtStrip, setSideToDock } from './dockMenu';
 import { undock } from './docking';
 import { canFloatPanel } from './sidebarDrop';
 import { popOutItems, popOutDockPanels, canPopOut } from './windows/panelPlaces.js';
@@ -21,7 +20,8 @@ import { popOutItems, popOutDockPanels, canPopOut } from './windows/panelPlaces.
 /** close the panel behind a sidebar tab (it leaves the sidebar; its side is remembered) @param {string} key */
 export function closeSidebarTab(key) {
 	keepSideOpen(key); // 44 M7: an emptied sidebar stays open with its "+"
-	if (key === 'inspector') inspectorClose.set(true);
+	// showhide-v8: Properties and Configure Scene are two tabs over one Inspector: closing one keeps the other
+	if (isInspectorKey(key)) closeInspectorTab(/** @type {'inspector'|'scene'} */ (key));
 	else closeDockView(key);
 }
 
@@ -35,13 +35,16 @@ export function floatSidebarTab(key, x, y) {
 
 /** move a sidebar tab into the bottom dock (before the tab `before`, else at the end) @param {string} key @param {string|null=} before */
 export function sidebarTabToDock(key, before) {
-	if (key === 'inspector' || !canDockHere(key)) return false;
+	if (isInspectorKey(key) || !canDockHere(key)) return false;
 	keepSideOpen(key);
 	undock(key);
 	if (before !== undefined) dockAtStrip([key], before);
 	else dockTab(key);
 	return true;
 }
+
+// showhide-v8: the "+" of the bottom dock moves a sidebar tab into the dock through this same path
+setSideToDock((key) => sidebarTabToDock(key));
 
 /**
  * The tab's menu rows.
@@ -52,7 +55,7 @@ export function sidebarTabItems(key, side, title) {
 	const other = side === 'left' ? 'right' : 'left';
 	const others = get(sidebarTabs)[side].filter((k) => k !== key);
 	const float = canFloatPanel(key);
-	const dock = key !== 'inspector' && canDockHere(key);
+	const dock = !isInspectorKey(key) && canDockHere(key);
 	return [
 		{ label: 'Close', icon: 'x', tooltip: `Close ${title}`, action: () => closeSidebarTab(key) },
 		{

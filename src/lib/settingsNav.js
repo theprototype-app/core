@@ -28,7 +28,8 @@ import { safeStorage } from './safeStorage';
 
 export const NAV_CONTEXT = 'settings-nav';
 /** deep-link keys a renamed section still answers to (the identifier stays, the word changes) */
-const KEY_ALIASES = /** @type {Record<string, string>} */ ({ ai: 'toolsconnections' }); // 59 T4
+// uir-account: Connected apps moved into Settings ▸ Account ('connectedapps' still opens it)
+const KEY_ALIASES = /** @type {Record<string, string>} */ ({ ai: 'toolsconnections', connectedapps: 'account' }); // 59 T4
 const LAST_KEY = 'settings:section';
 
 /** 'Node types' -> 'nodetypes' — the shape of `settingsSection` deep-link keys ('vr', 'ai', 'explorer'…)

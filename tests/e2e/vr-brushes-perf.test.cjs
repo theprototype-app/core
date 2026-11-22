@@ -39,7 +39,7 @@ h.run(async () => {
 		proto.__timed = true;
 	});
 	const uuid = await g(page, async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Terrain 24 64');
 		await new Promise((r) => setTimeout(r, 300));
 		let sel;
@@ -52,13 +52,13 @@ h.run(async () => {
 	});
 	const count = await g(page, (u) => {
 		let grp;
-		window.__stores.objectsGroup.subscribe((x) => (grp = x))();
-		return Object.values(window.__stores.terrainSurface.scatterCounts(grp.getObjectByProperty('uuid', u))).reduce((a, b) => a + b, 0);
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (grp = x))();
+		return Object.values(window.__tp.test.v1.terrainSurface.scatterCounts(grp.getObjectByProperty('uuid', u))).reduce((a, b) => a + b, 0);
 	}, uuid);
 	h.check(count >= 2000, `premise: the terrain draws 2 000 scattered instances (${count})`);
 	const target = await g(page, () => {
 		let v;
-		window.__stores.budgetMeter?.budgetTarget?.subscribe((x) => (v = x))();
+		window.__tp.test.v1.budgetMeter?.budgetTarget?.subscribe((x) => (v = x))();
 		return v ?? localStorage.getItem('budgetTarget');
 	});
 	h.check(target === 'quest', `premise: the budget meter judges for the Quest (${target})`);
@@ -66,17 +66,17 @@ h.run(async () => {
 	await iwer.enter(page);
 	const menuHand = await g(page, () => {
 		let v;
-		window.__stores.vrMenuHand.subscribe((x) => (v = x))();
+		window.__tp.test.v1.vrMenuHand.subscribe((x) => (v = x))();
 		return v;
 	});
 	const pointer = menuHand === 'right' ? 'left' : 'right';
-	await g(page, (u) => window.__stores.vrSculpt.startVRSculpt(u), uuid);
+	await g(page, (u) => window.__tp.test.v1.vrSculpt.startVRSculpt(u), uuid);
 	const aim = (x = 0) => iwer.pose(page, pointer, [x, 1.3, -2], { pitch: -0.9 });
 	await aim();
 	await iwer.frames(page, 30);
 
 	const drawCalls = await g(page, () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let r, scene, cam;
 		s.globalRenderer.subscribe((x) => (r = x))();
 		s.globalScene.subscribe((x) => (scene = x))();
@@ -114,13 +114,13 @@ h.run(async () => {
 
 	const idle = await sample(90, false);
 	console.log('  idle (brush up, 2 000 instances):', fmt(idle));
-	await g(page, () => window.__stores.vrControls.executeVRMenuAction('sculpt:layer:1'));
+	await g(page, () => window.__tp.test.v1.vrControls.executeVRMenuAction('sculpt:layer:1'));
 	const paint = await sample(120, true);
 	console.log('  paint stroke:', fmt(paint));
-	await g(page, () => window.__stores.vrControls.executeVRMenuAction('sculpt:tool:paint'));
+	await g(page, () => window.__tp.test.v1.vrControls.executeVRMenuAction('sculpt:tool:paint'));
 	const scatter = await sample(120, true);
 	console.log('  scatter stroke:', fmt(scatter));
-	await g(page, () => window.__stores.vrControls.executeVRMenuAction('sculpt:tool:rotate'));
+	await g(page, () => window.__tp.test.v1.vrControls.executeVRMenuAction('sculpt:tool:rotate'));
 	const rotate = await sample(120, true);
 	console.log('  rotate stroke (51 edit brush over the 2 000):', fmt(rotate));
 	for (const [name, x] of [['paint', paint], ['scatter', scatter], ['rotate', rotate]]) {

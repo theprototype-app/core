@@ -11,7 +11,7 @@ const h = require('./helpers.cjs');
 const camerasOn = (page) =>
 	page.evaluate(() =>
 		new Promise((r) =>
-			window.__stores.objectsGroup.subscribe((g) => {
+			window.__tp.test.v1.objectsGroup.subscribe((g) => {
 				const found = [];
 				g?.traverse((n) => {
 					if (n.userData?.camera) found.push({ uuid: n.uuid, name: n.name, ...n.userData.camera });
@@ -25,7 +25,7 @@ const activeCamera = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.globalCamera.subscribe((c) =>
+				window.__tp.test.v1.globalCamera.subscribe((c) =>
 					r({
 						ortho: !!c?.isOrthographicCamera,
 						fov: c?.fov ?? null,
@@ -43,8 +43,8 @@ h.run(async () => {
 
 	// ---------- creation + defaults ----------
 	await A.page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create Camera');
-		window.__stores.commandsHandler.sceneCommand('/create CameraOrtho');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create Camera');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create CameraOrtho');
 	});
 	await A.page.waitForTimeout(400);
 	let cams = await camerasOn(A.page);
@@ -59,7 +59,7 @@ h.run(async () => {
 	const flags = await A.page.evaluate(
 		(uuid) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const o = g.getObjectByProperty('uuid', uuid);
 					r({ physics: !!o?.userData?.physics, shadow: o?.userData?.shadow, cast: o?.castShadow });
 				})()
@@ -78,7 +78,7 @@ h.run(async () => {
 	);
 
 	// ---------- Inspector write: history + replication ----------
-	await A.page.evaluate((uuid) => window.__stores.cameraObjects.setCameraFor(uuid, { fov: 80 }), persp.uuid);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.cameraObjects.setCameraFor(uuid, { fov: 80 }), persp.uuid);
 	await A.page.waitForTimeout(600);
 	h.check((await camerasOn(A.page)).find((c) => c.uuid === persp.uuid).fov === 80, 'FOV write applies locally');
 	await h.eventually(
@@ -86,7 +86,7 @@ h.run(async () => {
 		(list) => list.find((c) => c.uuid === persp.uuid)?.fov === 80,
 		'the FOV write replicated'
 	);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(500);
 	h.check((await camerasOn(A.page)).find((c) => c.uuid === persp.uuid).fov === 50, 'undo restores the previous FOV');
 	await h.eventually(
@@ -96,15 +96,15 @@ h.run(async () => {
 	);
 
 	// ---------- frustum viz lives at the SCENE root ----------
-	const viz = await A.page.evaluate(() => window.__stores.cameraHelpers.cameraHelpersDebug());
+	const viz = await A.page.evaluate(() => window.__tp.test.v1.cameraHelpers.cameraHelpersDebug());
 	h.check(viz.length === 2, `a frustum proxy per camera (${viz.length})`);
 	const vizPlacement = await A.page.evaluate(
 		() =>
 			new Promise((r) => {
 				let scene = null;
 				let objects = null;
-				window.__stores.globalScene.subscribe((s) => (scene = s))();
-				window.__stores.objectsGroup.subscribe((g) => (objects = g))();
+				window.__tp.test.v1.globalScene.subscribe((s) => (scene = s))();
+				window.__tp.test.v1.objectsGroup.subscribe((g) => (objects = g))();
 				const root = scene.getObjectByName('camera-frustums');
 				let underObjects = false;
 				let parent = root?.parent;
@@ -122,11 +122,11 @@ h.run(async () => {
 	// the frustum follows its marker
 	await A.page.evaluate((uuid) => {
 		let g = null;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		g.getObjectByProperty('uuid', uuid).position.set(4, 2, -6);
 	}, persp.uuid);
 	await A.page.waitForTimeout(400);
-	const followed = await A.page.evaluate(() => window.__stores.cameraHelpers.cameraHelpersDebug());
+	const followed = await A.page.evaluate(() => window.__tp.test.v1.cameraHelpers.cameraHelpersDebug());
 	h.check(
 		followed.some((v) => v.position[0] === 4 && v.position[2] === -6),
 		`the frustum follows the marker (${JSON.stringify(followed.map((v) => v.position))})`
@@ -135,14 +135,14 @@ h.run(async () => {
 	// ---------- PREVIEW = a real camera swap ----------
 	const editorBefore = await activeCamera(A.page);
 	h.check(!editorBefore.ortho, 'the editor camera is perspective to begin with');
-	await A.page.evaluate((uuid) => window.__stores.cameraPreview.startCameraPreview(uuid), ortho.uuid);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.cameraPreview.startCameraPreview(uuid), ortho.uuid);
 	await A.page.waitForTimeout(900);
 	const previewing = await activeCamera(A.page);
 	h.check(previewing.ortho === true, 'previewing an ORTHO camera really renders orthographic (true swap)');
 	const bannerText = await A.page.evaluate(() => document.querySelector('.preview-banner')?.textContent?.trim() ?? '');
 	h.check(/Previewing/.test(bannerText), `the mode banner shows what you're in (${bannerText.slice(0, 40)})`);
 	// its own frustum is hidden while you're inside it
-	const insideViz = await A.page.evaluate(() => window.__stores.cameraHelpers.cameraHelpersDebug());
+	const insideViz = await A.page.evaluate(() => window.__tp.test.v1.cameraHelpers.cameraHelpersDebug());
 	h.check(
 		insideViz.find((v) => v.uuid === ortho.uuid)?.visible === false,
 		'the previewed camera hides its own frustum'
@@ -152,7 +152,7 @@ h.run(async () => {
 	await h.eventually(
 		() =>
 			B.page.evaluate(
-				() => new Promise((r) => window.__stores.cameraPreview.cameraPreviews.subscribe((m) => r(Object.values(m)))())
+				() => new Promise((r) => window.__tp.test.v1.cameraPreview.cameraPreviews.subscribe((m) => r(Object.values(m)))())
 			),
 		(list) => list.includes(ortho.uuid),
 		'peers see which camera is being previewed'
@@ -160,13 +160,13 @@ h.run(async () => {
 
 	// ---------- Control: WASD flying writes back, ONE undo entry ----------
 	const undoDepth = () =>
-		A.page.evaluate(() => new Promise((r) => window.__stores.history.undoStack.subscribe((v) => r(v.length))()));
-	await A.page.evaluate(() => window.__stores.cameraPreview.toggleCameraControl());
+		A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((v) => r(v.length))()));
+	await A.page.evaluate(() => window.__tp.test.v1.cameraPreview.toggleCameraControl());
 	await A.page.waitForTimeout(300);
 	const before = await A.page.evaluate(
 		(uuid) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) =>
+				window.__tp.test.v1.objectsGroup.subscribe((g) =>
 					r(g.getObjectByProperty('uuid', uuid).position.toArray())
 				)()
 			),
@@ -182,7 +182,7 @@ h.run(async () => {
 	const after = await A.page.evaluate(
 		(uuid) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) =>
+				window.__tp.test.v1.objectsGroup.subscribe((g) =>
 					r(g.getObjectByProperty('uuid', uuid).position.toArray())
 				)()
 			),
@@ -198,7 +198,7 @@ h.run(async () => {
 	const peerPos = await B.page.evaluate(
 		(uuid) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const o = g.getObjectByProperty('uuid', uuid);
 					r(o ? o.position.toArray() : null);
 				})()
@@ -212,17 +212,17 @@ h.run(async () => {
 
 	// stopping control leaves exactly ONE undo entry for the whole ride
 	const stacksBefore = await undoDepth();
-	await A.page.evaluate(() => window.__stores.cameraPreview.toggleCameraControl());
+	await A.page.evaluate(() => window.__tp.test.v1.cameraPreview.toggleCameraControl());
 	await A.page.waitForTimeout(300);
 	const stacksAfter = await undoDepth();
 	if (stacksBefore === null || stacksAfter === null) {
 		// no debug accessor: fall back to asserting a single undo restores the pose
-		await A.page.evaluate(() => window.__stores.history.undo());
+		await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 		await A.page.waitForTimeout(400);
 		const restored = await A.page.evaluate(
 			(uuid) =>
 				new Promise((r) =>
-					window.__stores.objectsGroup.subscribe((g) =>
+					window.__tp.test.v1.objectsGroup.subscribe((g) =>
 						r(g.getObjectByProperty('uuid', uuid).position.toArray())
 					)()
 				),
@@ -237,7 +237,7 @@ h.run(async () => {
 	}
 
 	// ---------- exiting the preview restores your own view ----------
-	await A.page.evaluate(() => window.__stores.cameraPreview.stopCameraPreview());
+	await A.page.evaluate(() => window.__tp.test.v1.cameraPreview.stopCameraPreview());
 	await A.page.waitForTimeout(900);
 	const back = await activeCamera(A.page);
 	h.check(back.ortho === false, 'exiting returns to your own perspective camera');
@@ -250,7 +250,7 @@ h.run(async () => {
 	await h.eventually(
 		() =>
 			B.page.evaluate(
-				() => new Promise((r) => window.__stores.cameraPreview.cameraPreviews.subscribe((m) => r(Object.keys(m)))())
+				() => new Promise((r) => window.__tp.test.v1.cameraPreview.cameraPreviews.subscribe((m) => r(Object.keys(m)))())
 			),
 		(keys) => keys.length === 0,
 		'peers see the preview end'
@@ -258,7 +258,7 @@ h.run(async () => {
 
 	// ---------- Capture renders through the camera ----------
 	const capture = await A.page.evaluate(
-		(uuid) => window.__stores.cameraObjects.captureThroughCamera(uuid, 360),
+		(uuid) => window.__tp.test.v1.cameraObjects.captureThroughCamera(uuid, 360),
 		persp.uuid
 	);
 	h.check(

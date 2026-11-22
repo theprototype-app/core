@@ -13,6 +13,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 
+	await h.openDial(A.page); // uir-people: the field shows after Join…
 	const info = await A.page.evaluate(() => {
 		const input = document.querySelector('input[placeholder="Enter peer ID to connect"]');
 		if (!input) return { ok: false };

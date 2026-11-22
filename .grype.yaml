@@ -14,4 +14,7 @@
 #
 # A rule pinned to a version stops matching once the package moves, so a stale rule
 # cannot hide a new finding. Medium and lower print but never fail.
-ignore: []
+ignore:
+  - vulnerability: GHSA-fc5q-39xc-vjpf
+    package: { name: picomatch, version: 4.0.7, type: npm }
+    reason: "build/test tooling only (vite, tinyglobby, vitest, svelte-check, rollup pluginutils): globs come from our own config, never from users, and picomatch is not in the shipped bundle (build/_app); GitHub withdrew the advisory 2026-11-18 and no fixed release exists (4.0.7 is the newest) (recheck 2026-12-01)"

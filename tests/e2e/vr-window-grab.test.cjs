@@ -11,8 +11,8 @@ h.run(async () => {
 
 	// --- pure math: compose ∘ inverse round-trips, identity without offset ---
 	const math = await A.page.evaluate(() => {
-		const w = window.__stores.vrWindowPoses;
-		const THREE = window.__stores.THREE;
+		const w = window.__tp.test.v1.vrWindowPoses;
+		const THREE = window.__tp.test.v1.THREE;
 		const anchor = {
 			position: new THREE.Vector3(1, 1.4, -0.6),
 			quaternion: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), 0.7)
@@ -60,8 +60,8 @@ h.run(async () => {
 
 	// --- applyWindowPose: applies composed pose, skips while adjusting ---
 	const apply = await A.page.evaluate(() => {
-		const w = window.__stores.vrWindowPoses;
-		const THREE = window.__stores.THREE;
+		const w = window.__tp.test.v1.vrWindowPoses;
+		const THREE = window.__tp.test.v1.THREE;
 		const group = new THREE.Group();
 		const anchor = {
 			position: new THREE.Vector3(0, 1, 0),
@@ -92,12 +92,12 @@ h.run(async () => {
 	const stored = await A.page.evaluate(() => localStorage.getItem('vrWindowPoses'));
 	h.check(!!stored && stored.includes('testwin'), 'poses persist to localStorage');
 	await A.page.reload();
-	await A.page.waitForFunction(() => !!window.__stores?.vrWindowPoses, { timeout: 20000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.vrWindowPoses, { timeout: 20000 });
 	await A.page.waitForTimeout(500);
 	const rehydrated = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.vrWindowPoses.windowPoses.subscribe((p) => resolve(p?.testwin?.scale))();
+				window.__tp.test.v1.vrWindowPoses.windowPoses.subscribe((p) => resolve(p?.testwin?.scale))();
 			})
 	);
 	h.check(rehydrated === 1.5, `saved poses rehydrate on boot (${rehydrated})`);
@@ -105,7 +105,7 @@ h.run(async () => {
 	// --- Settings ▸ VR ▸ Display ▸ Reset panel positions clears poses ---
 	// 37-settings: VR sits under "Devices & services" in the grouped menu; the reset is the schema's
 	// `resetPanels` action row (vr-set-resetPanels)
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await A.page.waitForTimeout(500);
 	const vrGroup = await A.page.evaluate(() => document.querySelector('#settings-nav .sn-row[data-section="VR"]')?.closest('.sn-group')?.getAttribute('data-group'));
 	h.check(vrGroup === 'devices', `VR is in the Devices & services group (${vrGroup})`);
@@ -117,7 +117,7 @@ h.run(async () => {
 		storage: localStorage.getItem('vrWindowPoses'),
 		poses: (() => {
 			let p;
-			window.__stores.vrWindowPoses.windowPoses.subscribe((x) => (p = x))();
+			window.__tp.test.v1.vrWindowPoses.windowPoses.subscribe((x) => (p = x))();
 			return Object.keys(p ?? {}).length;
 		})()
 	}));

@@ -67,7 +67,7 @@
 		bind:this={winEl}
 		tabindex="-1"
 		class="ui-panel tp-ui tp-window fixed flex flex-col overflow-hidden outline-hidden"
-		use:dragWindow={{ key: WIN_KEY, defaultRect: { left: 280, top: 120 } }}
+		use:dragWindow={{ key: WIN_KEY, defaultRect: { left: 280, top: 120 }, resizable: true, minW: 320, minH: 260 }}
 		use:focusStack={WIN_KEY}
 		style="z-index: var(--z-window); width: 560px; height: 460px"
 		onkeydown={onKeydown}

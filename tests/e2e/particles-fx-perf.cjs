@@ -16,7 +16,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let cam;
 		s.globalCamera.subscribe((c) => (cam = c))();
 		const fwd = cam.getWorldDirection(cam.position.clone());
@@ -50,7 +50,7 @@ h.run(async () => {
 	const measure = () =>
 		page.evaluate(async () => {
 			let renderer;
-			window.__stores.globalRenderer.subscribe((r) => (renderer = r))();
+			window.__tp.test.v1.globalRenderer.subscribe((r) => (renderer = r))();
 			const times = [];
 			let last = 0;
 			let calls = 0;
@@ -81,21 +81,21 @@ h.run(async () => {
 	const rows = [];
 	const setAll = (cfg) =>
 		page.evaluate((c) => {
-			for (const b of window.__perfBoxes) window.__stores.particleActions.setObjectParticles(b.uuid, c);
+			for (const b of window.__perfBoxes) window.__tp.test.v1.particleActions.setObjectParticles(b.uuid, c);
 		}, cfg);
 	await setAll(null);
 	await page.waitForTimeout(1500);
 	rows.push({ mode: 'none (baseline)', vr: false, ...(await measure()) });
 	const base = { mode: 'continuous', count: 500, lifetime: 1.2, speed: 1.5, gravity: -1, drag: 0.5, turbulence: 0.4, sizeStart: 0.06, sizeEnd: 0.02, space: 'world', inherit: 0.5, trail: 0.4, trailSegments: 8, stretch: 0.05, blending: 'additive' };
 	for (const vr of [false, true]) {
-		await page.evaluate((v) => window.__stores.isVRMode.set(v), vr);
+		await page.evaluate((v) => window.__tp.test.v1.isVRMode.set(v), vr);
 		for (const render of ['points', 'stretch', 'trails', 'ribbon']) {
-			await setAll({ ...(await page.evaluate(() => window.__stores.particlePresets.PARTICLE_DEFAULTS)), ...base, render });
+			await setAll({ ...(await page.evaluate(() => window.__tp.test.v1.particlePresets.PARTICLE_DEFAULTS)), ...base, render });
 			await page.waitForTimeout(1500);
 			rows.push({ mode: render, vr, ...(await measure()) });
 		}
 	}
-	await page.evaluate(() => window.__stores.isVRMode.set(false));
+	await page.evaluate(() => window.__tp.test.v1.isVRMode.set(false));
 	console.log('mode | vr cap | frame p50 ms | p95 ms | draw calls | triangles+points');
 	for (const r of rows) console.log(`${r.mode} | ${r.vr ? '200/emitter' : '-'} | ${r.p50} | ${r.p95} | ${r.calls} | ${r.prims}`);
 	const vrRows = rows.filter((r) => r.vr);

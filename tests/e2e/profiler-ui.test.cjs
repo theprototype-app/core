@@ -37,7 +37,7 @@ h.run(async () => {
 
 	// ---- a planted scene: one heavy mesh (60 000 triangles) between two light boxes
 	const planted = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const read = (store) => {
 			let v;
 			store.subscribe((x) => (v = x))();
@@ -74,7 +74,7 @@ h.run(async () => {
 
 	// ---- 1. a dock view
 	const dock = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const family = s.bottomDock.DOCK_FAMILY;
 		await s.profilerView.openProfiler();
 		await new Promise((r) => setTimeout(r, 1500));
@@ -155,7 +155,7 @@ h.run(async () => {
 		};
 	});
 	const top = await page.evaluate(async (id) => {
-		const d = await window.__stores.perf.getRecording(id);
+		const d = await window.__tp.test.v1.perf.getRecording(id);
 		const cap = d.captures[d.captures.length - 1];
 		return cap.objects
 			.slice(0, 8)
@@ -320,7 +320,7 @@ h.run(async () => {
 	);
 	await page.waitForTimeout(500);
 	const picked = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let set, closed;
 		s.selectedObjects.subscribe((x) => (set = x))();
 		s.inspectorClose.subscribe((x) => (closed = x))();
@@ -339,7 +339,7 @@ h.run(async () => {
 		.locator(`#profiler-tree tbody tr[data-uuid="${planted.heavy}"].pf-picked`)
 		.count();
 	h.check(pickedRow >= 1, 'the picked row stays highlighted');
-	await page.evaluate(() => window.__stores.inspectorClose?.set?.(true));
+	await page.evaluate(() => window.__tp.test.v1.inspectorClose?.set?.(true));
 
 	// a light recording carries no per-object rows — the panel says so instead of an empty tree
 	await recordVia('light', 2);
@@ -355,7 +355,7 @@ h.run(async () => {
 
 	// ---- 5. compare: lighten the heavy mesh, record again, compare
 	await page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const o = g.getObjectByProperty('uuid', uuid);
@@ -410,7 +410,7 @@ h.run(async () => {
 	await download.saveAs(file);
 	const bytes = fs.readFileSync(file);
 	const decoded = tp.decodeTpprof(new Uint8Array(bytes));
-	const stored = await page.evaluate((id) => window.__stores.perf.getRecording(id), rec1.id);
+	const stored = await page.evaluate((id) => window.__tp.test.v1.perf.getRecording(id), rec1.id);
 	h.check(
 		download.suggestedFilename().endsWith('.tpprof') && bytes[0] === 0x1f && bytes[1] === 0x8b,
 		`export writes a gzip .tpprof (${download.suggestedFilename()}, ${bytes.length} bytes)`
@@ -446,7 +446,7 @@ h.run(async () => {
 			?.getAttribute('data-uuid');
 	});
 	h.check(reTree === planted.heavy, 'the imported copy shows the same tree (Heavy first)');
-	const reDoc = await page.evaluate((id) => window.__stores.perf.getRecording(id), imported);
+	const reDoc = await page.evaluate((id) => window.__tp.test.v1.perf.getRecording(id), imported);
 	h.check(
 		JSON.stringify(reDoc.frames) === JSON.stringify(stored.frames) &&
 			reDoc.meta.mode === 'detailed',
@@ -534,7 +534,7 @@ h.run(async () => {
 	await h.eventually(
 		() =>
 			page.evaluate(
-				async (id) => (await window.__stores.perf.listRecordings()).find((r) => r.id === id)?.name,
+				async (id) => (await window.__tp.test.v1.perf.listRecordings()).find((r) => r.id === id)?.name,
 				rec2.id
 			),
 		(n) => n === 'After lightening Heavy',
@@ -545,7 +545,7 @@ h.run(async () => {
 	await page.waitForTimeout(400);
 	const pinned = await page.evaluate(
 		async (id) => ({
-			stored: (await window.__stores.perf.listRecordings()).find((r) => r.id === id)?.pinned,
+			stored: (await window.__tp.test.v1.perf.listRecordings()).find((r) => r.id === id)?.pinned,
 			first: document.querySelector('#profiler-recordings li[data-id]')?.getAttribute('data-id')
 		}),
 		rec2.id
@@ -567,11 +567,11 @@ h.run(async () => {
 	await page.keyboard.press('Tab');
 	const editing = await page.evaluate(() => {
 		let e;
-		(window.__stores.meshEdit?.editingObject ?? window.__stores.editingObject)?.subscribe?.(
+		(window.__tp.test.v1.meshEdit?.editingObject ?? window.__tp.test.v1.editingObject)?.subscribe?.(
 			(x) => (e = x)
 		)();
 		let f;
-		(window.__stores.faceEdit?.faceEditObject ?? window.__stores.faceEditObject)?.subscribe?.(
+		(window.__tp.test.v1.faceEdit?.faceEditObject ?? window.__tp.test.v1.faceEditObject)?.subscribe?.(
 			(x) => (f = x)
 		)();
 		return {
@@ -579,7 +579,7 @@ h.run(async () => {
 			f: f ?? null,
 			sel: (() => {
 				let v;
-				window.__stores.selectedObjects.subscribe((x) => (v = x))();
+				window.__tp.test.v1.selectedObjects.subscribe((x) => (v = x))();
 				return v;
 			})()
 		};
@@ -600,7 +600,7 @@ h.run(async () => {
 	const gone = await page.evaluate(
 		async (id) => ({
 			dom: !!document.querySelector(`#profiler-recordings li[data-id="${id}"]`),
-			stored: !!(await window.__stores.perf.getRecording(id))
+			stored: !!(await window.__tp.test.v1.perf.getRecording(id))
 		}),
 		imported
 	);
@@ -613,7 +613,7 @@ h.run(async () => {
 	await page.locator('#dock-undock:visible').click();
 	await page.waitForSelector('#profiler-window', { timeout: 5000 });
 	await shot('7-floating');
-	await page.click('#profiler-window button:text("Dock")');
+	await page.click('#profiler-window [data-head-dock="profiler"]'); // uir-polish G3: the Dock button is icon-only
 	await page.waitForSelector('#profiler-dock', { timeout: 5000 });
 	h.check(true, 'undock → floating window → dock again');
 

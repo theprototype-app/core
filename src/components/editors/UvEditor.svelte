@@ -1,4 +1,5 @@
 <script>
+	import { mapPreviewUrl } from '$lib/loadGuard.js';
 	import { onLayoutRestore, storedPanelLayout } from '$lib/uiLayoutsCore';
 	import { isHeicFileLike } from '$lib/heicCore.js';
 	// UV editor (UV1). A 2D view of the selected mesh's `uv` attribute: the slot's
@@ -13,6 +14,7 @@
 	// DOWN in canvas space, so every mapping flips Y.
 	import { onMount, untrack } from 'svelte';
 	import Icon from '../ui/Icon.svelte';
+	import HeadDockPop from '../ui/HeadDockPop.svelte'; // uir-polish G2/G3
 	import ScrollStrip from '../ui/ScrollStrip.svelte';
 	import { selectedObject, selectedObjects, objectsGroup, globalScene } from '../../stores/sceneStore';
 	import { uvEditorClose, showToast } from '../../stores/appStore.js';
@@ -101,7 +103,7 @@
 			slot: i,
 			name: m?.name || '',
 			type: m?.type || '',
-			mapUrl: m?.userData?.mapDataUrl ?? null
+			mapUrl: mapPreviewUrl(m)
 		}));
 	});
 	const slotTotal = $derived(target ? slotCount(target) : 0);
@@ -197,7 +199,7 @@
 	// seam — an auto-open stays UNPINNED, so it does not fight the user).
 	let shell = $state(/** @type {any} */ (null));
 	$effect(() => {
-		if ($uvTool === 'paint') untrack(() => shell?.showSecondary('tool'));
+		if ($uvTool === 'paint') untrack(() => shell?.showSecondary('tool', true));
 	});
 
 	// --- canvas view state ---
@@ -1626,7 +1628,7 @@
 		>
 			<span
 				class="h-7 w-7 shrink-0 rounded-sm border border-border bg-surface-inset bg-cover bg-center"
-				style={material.mapUrl ? `background-image:url(${material.mapUrl})` : ''}
+				style={material.mapUrl ? `background-image:url("${material.mapUrl}")` : ''}
 			></span>
 			<span class="min-w-0 flex-1 truncate">{material?.name || material?.type || `Slot ${index}`}</span>
 		</button>
@@ -1667,9 +1669,10 @@
 	<WindowShell
 		bind:this={shell}
 		key="uv"
+		mainLabel="UV map"
 		primaryLabel="materials"
 		primaryDefaultWidth={168}
-		secondaryModes={[{ key: 'tool', icon: '🖌', label: 'Tool' }, { key: 'settings', icon: '⚙', label: 'Settings' }]}
+		secondaryModes={[{ key: 'tool', icon: 'brush', label: 'Tool' }, { key: 'settings', icon: 'settings', label: 'Settings' }]}
 	>
 		{#snippet topbar()}
 			<div class="relative border-b border-border px-2 py-1" bind:this={topbarEl}>
@@ -2065,7 +2068,7 @@
 					<span class="flex-1"></span>
 				{/snippet}
 				{#snippet actions()}
-					<button data-wc-chrome class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={16} />Dock</button>
+					<HeadDockPop key="uv" title="UV editor" ondock={() => setDocked(true)} />
 				{/snippet}
 			</WindowChrome>
 			<div class="flex min-h-0 flex-1 flex-col">

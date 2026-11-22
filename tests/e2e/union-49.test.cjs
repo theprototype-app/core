@@ -12,12 +12,12 @@ const h = require('./helpers.cjs');
 const WEBGPU_ARGS = [...h.GPU_ARGS, '--enable-unsafe-webgpu'];
 
 /** @param {any} page @param {string} uuid */
-const tankOf = (page, uuid) => page.evaluate((u) => window.__stores.sim.fluidDebug().find((t) => t.uuid === u) ?? null, uuid);
+const tankOf = (page, uuid) => page.evaluate((u) => window.__tp.test.v1.sim.fluidDebug().find((t) => t.uuid === u) ?? null, uuid);
 
 /** the scene: a pool, a pouring tank and a resting tank standing in it @param {any} page */
 const build = (page) =>
 	page.evaluate(() => {
-		const st = window.__stores;
+		const st = window.__tp?.test.v1;
 		let g;
 		st.objectsGroup.subscribe((v) => (g = v))();
 		const last = () => g.children[g.children.length - 1];
@@ -50,7 +50,7 @@ h.run(async () => {
 	// Auto with this device's verdict = GPU (a seeded calibration: the suite proves the union, not
 	// the bench — fluid-gpu measures that). Off -> Auto re-reads the remembered verdict.
 	const verdict = await A.page.evaluate(async () => {
-		const fg = window.__stores.fluidGpu;
+		const fg = window.__tp.test.v1.fluidGpu;
 		localStorage.setItem('fluid:gpuBench', JSON.stringify({ key: '1|' + navigator.userAgent, gpuMs: 1, cpuMs: 10, adapter: null, reason: '', at: Date.now() }));
 		fg.gpuFluidPref.set('off');
 		fg.gpuFluidPref.set('auto');
@@ -68,11 +68,11 @@ h.run(async () => {
 	h.check(p1.ripples >= 10, `U1 ...rippling it as it lands (${p1.ripples} ripples)`);
 	const rest = await tankOf(A.page, ids.rest);
 	h.check(rest.solver === 'gpu' && rest.count === 1500 && rest.landed === 0, `U2 the GPU tank standing in the pool keeps its fluid (${rest.solver}, ${rest.count}/1500, ${rest.landed} landed)`);
-	const g = await A.page.evaluate(() => window.__stores.fluidGpu.gpuFluidDebug());
+	const g = await A.page.evaluate(() => window.__tp.test.v1.fluidGpu.gpuFluidDebug());
 	h.check(!g.failed, `U1 the GPU worker never failed (${g.failed || 'ok'})`);
 
 	// U3: Off -> the CPU worker re-inits the tanks and lands the same pour
-	await A.page.evaluate(() => window.__stores.fluidGpu.gpuFluidPref.set('off'));
+	await A.page.evaluate(() => window.__tp.test.v1.fluidGpu.gpuFluidPref.set('off'));
 	await h.eventually(() => tankOf(A.page, ids.pour), (t) => !!t && t.solver === 'cpu' && t.landed > 100 && t.ripples >= 10, 'U3 the CPU tank lands the pour after Off', 30000);
 	const p3 = await tankOf(A.page, ids.pour);
 	h.check(p3.solver === 'cpu' && p3.landed > 100 && p3.ripples >= 10, `U3 GPU fluid Off: the CPU worker lands the pour too (${p3.solver}, ${p3.landed} landed, ${p3.ripples} ripples)`);

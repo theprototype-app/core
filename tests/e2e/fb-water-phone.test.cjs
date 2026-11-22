@@ -20,7 +20,7 @@ const PHONE = { viewport: { width: 412, height: 915 }, deviceScaleFactor: 3, isM
 async function load(page, slug) {
 	const bytes = Array.from(fs.readFileSync(path.join(/** @type {string} */ (SC), slug, 'scene.tpscene')));
 	await page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		await s.sessions.applySession(payload, { backup: false });
 	}, bytes);
@@ -28,7 +28,7 @@ async function load(page, slug) {
 /** @param {any} page */
 const state = (page) =>
 	page.evaluate(() => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		let q;
 		S.qualityGovernor.qualityState.subscribe((v) => (q = v))();
 		const w = S.waterRuntime.waterDebug?.();
@@ -126,7 +126,7 @@ h.run(async () => {
 		await load(A.page, slug);
 		await A.page.waitForTimeout(4000);
 		for (const level of LEVELS) {
-			await A.page.evaluate((l) => window.__stores.qualityGovernor.applyGameQuality(l, 'level ' + l), level);
+			await A.page.evaluate((l) => window.__tp.test.v1.qualityGovernor.applyGameQuality(l, 'level ' + l), level);
 			await A.page.waitForTimeout(2500);
 			await A.page.evaluate(startRecorder);
 			await A.page.waitForTimeout(4000);
@@ -135,7 +135,7 @@ h.run(async () => {
 			rows.push(`| ${slug} | ${level} | ${s.water ?? ''} | ${s.tanks.map((t) => t.mode).join(' + ')} | ${r.medianCalls} | ${r.medianTriangles} | ${r.p50?.toFixed(1)} / ${r.p95?.toFixed(1)} | ${r.bufferPx} Mpx |`);
 			if (OUT) await A.page.screenshot({ path: path.join(OUT, `phone-${slug}-L${level}.png`) });
 		}
-		await A.page.evaluate(() => window.__stores.qualityGovernor.applyGameQuality(null));
+		await A.page.evaluate(() => window.__tp.test.v1.qualityGovernor.applyGameQuality(null));
 	}
 	if (OUT)
 		fs.writeFileSync(
@@ -151,13 +151,15 @@ h.run(async () => {
 	const A2 = await h.setupPage(browser, 'phone-notice', { context: PHONE });
 	await load(A2.page, 'aquarium');
 	await A2.page.waitForTimeout(3000);
-	await A2.page.evaluate(() => window.__stores.qualityGovernor.applyGameQuality(6, 'test'));
-	await h.eventually(() => state(A2.page), (s) => s.water === 'quest', 'a pinned level 6: the water is simplified', 8000);
+	// the level whose step turns the scene look off — that drops the screen-space water (7 since 1.63's lookLite step)
+	const postLv = await A2.page.evaluate(() => window.__tp.test.v1.qualityGovernor.governorForTest.levelOf('post'));
+	await A2.page.evaluate((lv) => window.__tp.test.v1.qualityGovernor.applyGameQuality(lv, 'test'), postLv);
+	await h.eventually(() => state(A2.page), (s) => s.water === 'quest', `a pinned level ${postLv}: the water is simplified`, 8000);
 	await A2.page.waitForTimeout(1500);
 	h.check((await A2.page.$('#simplified-water-notice')) === null, 'the old strip is gone');
 	h.check(!(await A2.page.evaluate(() => [...document.querySelectorAll('.tp-toast-text')].some((e) => /^Lowered water quality/.test(e.textContent ?? '')))), 'a game preset is not announced as an automatic drop');
 	if (OUT) await A2.page.screenshot({ path: path.join(OUT, '72-phone-game-preset-no-notice.png') });
-	await A2.page.evaluate(() => window.__stores.qualityGovernor.applyGameQuality(null));
+	await A2.page.evaluate(() => window.__tp.test.v1.qualityGovernor.applyGameQuality(null));
 	h.check((await h.pageErrors(A2)).length === 0, 'no page errors');
 	await h.finish(browser);
 });

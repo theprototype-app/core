@@ -9,17 +9,19 @@
 //     with its grab bar, a scrim, and a swipe down on the grab bar closes it (real touch events).
 const h = require('./helpers.cjs');
 
-const store = (name) => `(() => { let v; window.__stores.${name}.subscribe((x) => (v = x))(); return v; })()`;
+const store = (name) => `(() => { let v; window.__tp.test.v1.${name}.subscribe((x) => (v = x))(); return v; })()`;
 const LONG = ['Alexandra Konstantinopoulou', 'Maximilian von Hohenzollern-Sigmaringen', 'Bo', 'Guinevere Featherstonehaugh', 'Dmitri Ivanovich Rachmaninoff'];
 
 /** @param {import('playwright').Page} page */
 async function seed(page) {
 	await page.evaluate((names) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let p;
 		s.peers.subscribe((x) => (p = x))();
 		const self = p?.peer?.id || 'self';
 		const ids = [self, 'p1', 'p2', 'p3', 'p4'];
+		// 78 PL34: a nameless self takes "Guest N" once a session is live; the own row follows the username store
+		s.username.set(names[0]);
 		s.userdata.set(ids.map((id, i) => [id, names[i], null, null, null, {}]));
 		s.peers.update((x) => {
 			ids.slice(1).forEach((id) => x.openedPeers.add(id));
@@ -93,17 +95,18 @@ h.run(async () => {
 		h.check(m.rows.every((r, i) => r.nameTitle === LONG[i]), `${label}: each name carries its full text as the tooltip`);
 		h.check(m.rows.some((r) => r.nameCut) || m.w < 421, `${label}: at the 420 px cap the longest name ellipsizes rather than wrapping`);
 		h.check(m.rows.slice(1).every((r) => r.actRight !== null && r.actRight <= 12), `${label}: actions sit on the right edge of each row (${m.rows.map((r) => r.actRight).join(',')})`);
-		h.check(m.title === 'Connected' && m.count === '5', `${label}: the header reads Connected + the count (${m.title} ${m.count})`);
+		// 78 PL31 (one count): the trigger keeps the count, the header no longer repeats it
+		h.check(m.title === 'Connected' && m.count === null, `${label}: the header reads Connected, the count stays on the trigger (${m.title} ${m.count})`);
 		// the notification centre's header, for comparison
 		await page.keyboard.press('Escape').catch(() => {});
 		await page.evaluate(() => {
-			window.__stores.peersPanelOpen.set(false);
-			window.__stores.notificationCenterOpen.set(true);
+			window.__tp.test.v1.peersPanelOpen.set(false);
+			window.__tp.test.v1.notificationCenterOpen.set(true);
 		});
 		await page.waitForTimeout(500);
 		const notifHead = await page.evaluate(() => Math.round(document.querySelector('#notif-panel .wc-head')?.getBoundingClientRect().height ?? 0));
 		h.check(notifHead > 0 && notifHead === m.headH, `${label}: its header is the notification centre's (${m.headH} px vs ${notifHead} px)`);
-		await page.evaluate(() => window.__stores.notificationCenterOpen.set(false));
+		await page.evaluate(() => window.__tp.test.v1.notificationCenterOpen.set(false));
 		await page.context().close();
 	}
 

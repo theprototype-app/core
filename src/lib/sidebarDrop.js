@@ -126,7 +126,7 @@ export function windowDropZoneId(t) {
 
 /** can this panel be a floating window? (the Inspector cannot: its homes are the sidebars) @param {string} key */
 export function canFloatPanel(key) {
-	return key !== 'inspector' && canDockFloating(key);
+	return key !== 'inspector' && key !== 'scene' && canDockFloating(key);
 }
 
 // ---- the one highlight ------------------------------------------------------------------------

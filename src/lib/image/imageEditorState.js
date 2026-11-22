@@ -35,3 +35,28 @@ export const imageEditorClose = {
 		this.set(fn(get(closedView)));
 	}
 };
+
+/**
+ * uir-preview — THE EDITOR LIVES IN THE PREVIEW WINDOW NOW (its Edit face), so several things can
+ * take it away from an unsaved edit: the View tab, Esc, the window's close, walking to another image
+ * with `[` `]` or the filmstrip, the pinned preview following the Explorer. They all ask through the
+ * ONE question the editor registers here (its "Close without saving?" choice), so none of them can
+ * discard an edit silently. No editor mounted = nothing unsaved = yes.
+ * @type {((action?: 'leave' | 'switch' | 'close') => Promise<boolean>) | null}
+ */
+let leaveGuard = null;
+/** @param {(action?: 'leave' | 'switch' | 'close') => Promise<boolean>} fn */
+export function registerEditorGuard(fn) {
+	leaveGuard = fn;
+	return () => {
+		if (leaveGuard === fn) leaveGuard = null;
+	};
+}
+/** May the editor's current image be left? Asks only when there are unsaved edits.
+ * @param {'leave' | 'switch' | 'close'} [action] @returns {Promise<boolean>} */
+export function confirmLeaveEditor(action = 'leave') {
+	return leaveGuard ? leaveGuard(action) : Promise.resolve(true);
+}
+
+/** uir-preview: the editor has unsaved edits (the preview header's dot) @type {import('svelte/store').Writable<boolean>} */
+export const imageEditorDirty = writable(false);

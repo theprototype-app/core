@@ -1,4 +1,6 @@
 import { writable, get } from 'svelte/store';
+import { safeStorage, storageIsolated } from './safeStorage';
+import { exportMode } from './export/exportBoot.js';
 
 /**
  * Open-core extension points (roadmap #13 batch M1). These seams are INERT in the
@@ -6,7 +8,7 @@ import { writable, get } from 'svelte/store';
  * closed "cloud" plugin (loaded via cloudPlugin.js) layer identity, roles and rooms
  * on top of the engine WITHOUT the OSS repo carrying any of that code.
  *
- * STORE-ONLY module (imports svelte/store only) so it can be imported by
+ * LEAF module (svelte/store and two zero-import leaves) so it can be imported by
  * peerHandler + UI without closing a module cycle — the peerApproval.js precedent.
  */
 
@@ -79,6 +81,8 @@ const ALWAYS_ALLOWED = new Set([
 	'getshadergraphs',
 	'getanim',
 	'getscenepost',
+	// 98 P1: the bake REQUEST (its `scenebake` reply stays gateable)
+	'getscenebake',
 	'getroomanchor',
 	// 50 Y1: "send me the shared buffer of this code tab" — the getnodes rule: a REQUEST is
 	// floor (a just-approved viewer must still see the text everyone is typing), its `ytext`
@@ -111,6 +115,107 @@ const ALWAYS_ALLOWED = new Set([
 /** @type {((peerId: string, msgType: string) => boolean) | null} */
 let capabilityProvider = null;
 
+// --- Waiting for the plugin ---------------------------------------------------
+//
+// A build that loads a cloud plugin has roles, but only once the plugin has registered. Until then nobody
+// can say what a peer may do, so everything above the floor waits: it is held in arrival order and goes
+// through the whole dispatch chain, gate included, the moment the plugin has spoken. startCloudPlugin ends
+// the wait every way it can end (registered, refused, failed, took too long, nothing to load).
+
+/** Does this build or device load a cloud plugin? (startCloudPlugin reads the same two) */
+export function cloudPluginExpected() {
+	// 61 G3: a "Test with players" bot never loads the hosted tier (it would sign in as the host's account)
+	if (exportMode || storageIsolated) return false;
+	return !!(import.meta.env?.VITE_CLOUD_PLUGIN || safeStorage.getItem('cloudPluginUrl'));
+}
+
+let rolesSettled = false;
+
+/** Is the plugin still to speak? (A message above the floor waits while this is true.) */
+export function rolesPending() {
+	return !rolesSettled && cloudPluginExpected();
+}
+
+/** @param {string} msgType @returns {boolean} on the floor: applied whatever anybody's role is */
+export function isFloorMessage(msgType) {
+	return ALWAYS_ALLOWED.has(msgType);
+}
+
+/** what the wait may hold, per peer and in all: a stuck load must not become a memory leak */
+const HELD_PER_PEER = 2000;
+const HELD_BYTES_PER_PEER = 64 * 1024 * 1024;
+const HELD_BYTES_ALL = 128 * 1024 * 1024;
+const HELD_ALL = 8000;
+
+/** About what one held message weighs: its text, and the binary parts text does not show. @param {any} data */
+function heldSize(data) {
+	let bytes = Number(data?.buffer?.byteLength) || 0;
+	if (Array.isArray(data?.items)) for (const item of data.items) bytes += Number(item?.buffer?.byteLength) || 0;
+	try {
+		bytes += JSON.stringify(data)?.length ?? 0;
+	} catch {
+		// not text: the count limits still hold it
+	}
+	return bytes;
+}
+/** @type {{peerId: string, run: () => void, bytes: number}[]} */
+let held = [];
+/** @type {Map<string, {count: number, bytes: number}>} */
+const heldBy = new Map();
+let heldBytes = 0;
+
+/**
+ * Hold one message until the plugin has spoken.
+ * @param {string} peerId @param {any} data only its size is read @param {() => void} run applies it later
+ * @returns {boolean} false = over the limits, the message is dropped
+ */
+export function holdUntilRoles(peerId, data, run) {
+	const bytes = heldSize(data);
+	const mine = heldBy.get(peerId) ?? { count: 0, bytes: 0 };
+	if (held.length >= HELD_ALL || mine.count >= HELD_PER_PEER || mine.bytes + bytes > HELD_BYTES_PER_PEER || heldBytes + bytes > HELD_BYTES_ALL) return false;
+	mine.count++;
+	mine.bytes += bytes;
+	heldBy.set(peerId, mine);
+	heldBytes += bytes;
+	held.push({ peerId, run, bytes });
+	return true;
+}
+
+/** The plugin has spoken, whatever it said: apply what waited, in order, and stop waiting. */
+export function settleRoles() {
+	if (rolesSettled) return;
+	rolesSettled = true;
+	const due = held;
+	held = [];
+	heldBy.clear();
+	heldBytes = 0;
+	for (const message of due) {
+		try {
+			message.run();
+		} catch (e) {
+			console.error('held message threw:', e);
+		}
+	}
+}
+
+/**
+ * The role a peer has for a decision made HERE about something it asked for. `null` = this build has no roles.
+ * A build meant to have roles that does not have them (yet, or the plugin failed) answers viewer.
+ * @param {string} peerId @returns {string | null}
+ */
+export function knownRoleOf(peerId) {
+	/** @type {any} */
+	const roles = get(rolesInfo);
+	if (typeof roles?.roleOf === 'function') {
+		try {
+			return roles.roleOf(peerId) ?? null;
+		} catch {
+			return cloudPluginExpected() ? 'viewer' : null;
+		}
+	}
+	return !roles && cloudPluginExpected() ? 'viewer' : null;
+}
+
 /**
  * Install (or clear) the capability provider. A cloud plugin sets this to enforce
  * roles: e.g. return false for a viewer-role peer's mutating message types.
@@ -120,16 +225,31 @@ export function setCapabilityProvider(fn) {
 	capabilityProvider = typeof fn === 'function' ? fn : null;
 }
 
+/** 61 G3: the test-players role gate, checked AFTER the plugin's (it can only refuse more) @type {((peerId: string, msgType: string) => boolean) | null} */
+let testGate = null;
+/** 61 G3: install (or clear) the gate "Test with players" uses for its bots' roles. @param {((peerId: string, msgType: string) => boolean) | null} fn */
+export function setTestPlayersGate(fn) {
+	testGate = typeof fn === 'function' ? fn : null;
+}
+
 /**
  * The ONE receive-side choke point (peerHandler `conn.on('data')`): may a message
- * of `msgType` from `peerId` be applied locally? Default — no provider — allows
- * everything, so the OSS build is byte-identical to today. A throwing provider is
+ * of `msgType` from `peerId` be applied locally? Default — no provider and no plugin
+ * expected — allows everything, so the OSS build is byte-identical to today. Above the
+ * floor, nothing is allowed while the plugin is still to speak. A throwing provider is
  * treated as allow, so a buggy plugin can never brick the mesh.
  * @param {string} peerId @param {string} msgType @returns {boolean}
  */
 export function canApply(peerId, msgType) {
-	if (!capabilityProvider) return true;
 	if (ALWAYS_ALLOWED.has(msgType)) return true;
+	if (testGate) {
+		try {
+			if (testGate(peerId, msgType) === false) return false;
+		} catch {
+			/* a broken test gate refuses nothing */
+		}
+	}
+	if (!capabilityProvider) return !rolesPending();
 	try {
 		return capabilityProvider(peerId, msgType) !== false;
 	} catch {
@@ -220,6 +340,16 @@ export const drawerSlot = writable(null);
  * here (moved out of the Connect pill).
  * @type {import('svelte/store').Writable<((el: HTMLElement) => (() => void) | void) | null>} */
 export const profileSlot = writable(null);
+
+/** profile-notify (the profile-menu review's direction C seam): Settings sections a cloud plugin fills, keyed by
+ * section. Only `account` exists — Settings ▸ Account: the plugin's Email, Sign-in methods and Devices groups
+ * (uir-account moved the last two out of the profile menu), then core's Connected apps. Core draws the page (title,
+ * nav row, search) only while a plugin has mounted into it or a connector provider is installed, so the OSS Settings
+ * has no Account page.
+ * @type {import('svelte/store').Writable<Record<string, (el: HTMLElement) => (() => void) | void>>} */
+export const settingsSlots = writable({});
+/** the section keys `mountSettingsSection` accepts */
+export const SETTINGS_SLOT_KEYS = ['account'];
 
 /** 28-A5 (roadmap #28, publish · play · remix): THE SAVE ROW'S NEIGHBOUR. Rendered
  * directly under the Save row's format segment in the logo menu (Sidebar.svelte),
@@ -431,6 +561,49 @@ export function notifyTemplateOpen(slug) {
 	}
 }
 
+/** @typedef {{ e: string, c: string, b: string, d: string, x: string }} FunnelEvent */
+
+/** @type {Set<(ev: FunnelEvent) => void>} */
+const funnelListeners = new Set();
+/** 76 FW2: events from before the plugin registered (ob_view fires at boot); flushed to the first
+ *  listener, capped — an engine with no plugin keeps at most this many and sends nothing
+ *  @type {FunnelEvent[]} */
+const funnelQueue = [];
+const FUNNEL_QUEUE_MAX = 20;
+/** something listens (a plugin that counts) — Settings ▸ Privacy offers its switch only then */
+export const funnelListening = writable(false);
+
+/** cloudApi `onFunnelEvent(fn)` — 76 FW2: one anonymous first-visit funnel event (onboarding/
+ *  funnel.js decided it may be counted). Only closed-vocabulary fields, never an id.
+ *  @param {(ev: FunnelEvent) => void} fn @returns {() => void} off */
+export function onFunnelEvent(fn) {
+	if (typeof fn !== 'function') return () => {};
+	funnelListeners.add(fn);
+	funnelListening.set(true);
+	for (const ev of funnelQueue.splice(0)) {
+		try {
+			fn({ ...ev });
+		} catch (e) {
+			console.error('funnel listener threw:', e);
+		}
+	}
+	return () => funnelListeners.delete(fn);
+}
+/** core → plugin @param {FunnelEvent} ev */
+export function notifyFunnelEvent(ev) {
+	if (!funnelListeners.size) {
+		if (funnelQueue.length < FUNNEL_QUEUE_MAX) funnelQueue.push({ ...ev });
+		return;
+	}
+	for (const fn of funnelListeners) {
+		try {
+			fn({ ...ev });
+		} catch (e) {
+			console.error('funnel listener threw:', e);
+		}
+	}
+}
+
 /**
  * C6: THE HEART FOR THE SCENE ON SCREEN — the play-link start card and a published game's pause
  * menu render a heart toggle while this is set. The plugin sets it after loading a published
@@ -492,7 +665,7 @@ export function setPeerMenuItems(items) {
  * presses Connect Claude in their own tab; the PLUGIN (signed in) asks the connector service for a
  * single-use pairing and lists / revokes the account's connected apps. Core draws every button and runs
  * every relayed call (src/lib/connector/). NULL is the OSS state: no Connect Claude button anywhere, no
- * Settings ▸ Connected apps — the OSS build points to the local `serve` instead.
+ * Settings ▸ Account ▸ Connected apps — the OSS build points to the local `serve` instead.
  *
  * Shape (the plugin owns the logic; core reads defensively):
  *   { pair({resume}) → Promise<{wsUrl, pairingToken, expiresAt?, replaces?, connections?}>
@@ -504,10 +677,11 @@ export function setPeerMenuItems(items) {
  * @type {import('svelte/store').Writable<any>} */
 export const connectorProvider = writable(null);
 
-/** 86-fix N1: the cloud build's "Sign in to connect", a `(el) => cleanup` mount the plugin installs while the
- * connector is built in and nobody is signed in (cloudApi.mountConnectorSignIn). The AI window's welcome renders
- * it in place of Connect Claude; once signed in the plugin installs the provider and the welcome shows the
- * button. Null (the OSS build, or signed in) = nothing. @type {import('svelte/store').Writable<any>} */
+/** 86-fix N1: set by the plugin while the connector is built in and nobody is signed in
+ * (cloudApi.mountConnectorSignIn). FW-AI (76): core only reads whether it is set and draws "Sign in to connect"
+ * itself, which opens the profile pop-up (the one sign-in place); the mount is not rendered. Once signed in the
+ * plugin installs the provider and passes null. Null (the OSS build, or signed in) = nothing.
+ * @type {import('svelte/store').Writable<any>} */
 export const connectorSignInSlot = writable(null);
 
 /** Plugin seam for the above (cloudApi.setConnectorProvider). Anything without `pair` reads as null.

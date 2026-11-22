@@ -463,6 +463,12 @@ export function tickMeshEdit() {
 export function enterEditMode(uuid) {
 	if (get(editingObject)) exitEditMode();
 	const object = lookupEditable(uuid); // A8: also accepts the collider proxy
+	// 64-text: a live text's geometry is rebuilt from its record on every peer — editing it would
+	// be undone by the next rebuild (and a flat one is only its hit proxy)
+	if (object?.userData?.textPath) {
+		showToast('This is a text object: switch it to Solid and use Bake to mesh in the Text section to edit its vertices');
+		return;
+	}
 	if (!object || !object.geometry?.attributes?.position) {
 		// D7: a multi-mesh GROUP is the common blocker for imports — say so
 		if (object?.type === 'Group')

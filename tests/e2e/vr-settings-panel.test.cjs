@@ -9,7 +9,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	const res = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const vc = s.vrControls;
 		const rm = s.vrRadialMenu;
 		const W = s.vrWindowPoses;
@@ -66,7 +66,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(400);
 	const meshes = await A.page.evaluate(() => {
 		let g;
-		window.__stores.vrControls.vrSettingsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.vrControls.vrSettingsGroup.subscribe((v) => (g = v))();
 		if (!g) return [];
 		const names = [];
 		g.traverse((o) => {
@@ -77,11 +77,11 @@ h.run(async () => {
 	// 36: the rows come from the settings table (`vrset:<row id>`), Comfort is the first page
 	h.check(meshes.includes('vrsettings-vrset:teleport') && meshes.includes('vrsettings-vrset:close') && meshes.includes('vrsettings-vrset:page:buttons'), `the panel mounts its control meshes (${meshes.length})`);
 
-	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('settings:close'));
+	await A.page.evaluate(() => window.__tp.test.v1.vrControls.executeVRMenuAction('settings:close'));
 	await A.page.waitForTimeout(150);
 	const closed = await A.page.evaluate(() => {
 		let v;
-		window.__stores.vrSettingsPanelOpen.subscribe((x) => (v = x))();
+		window.__tp.test.v1.vrSettingsPanelOpen.subscribe((x) => (v = x))();
 		return v === false;
 	});
 	h.check(closed, 'settings:close closes the panel');

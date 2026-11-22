@@ -9,7 +9,7 @@ const splineInfo = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const mesh = g?.children.find((c) => c.name === 'Spline');
 					resolve(
 						mesh
@@ -30,7 +30,7 @@ const splineInfo = (page) =>
 	);
 
 const undoDepth = (page) =>
-	page.evaluate(() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))()));
+	page.evaluate(() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((s) => r(s.length))()));
 
 /** screen pixel of a world-space point on that page */
 const project = (page, world) => h.projectPoint(page, world);
@@ -44,7 +44,7 @@ h.run(async () => {
 	// ---- 57.1 the pure builder ------------------------------------------
 	const geo = await A.page.evaluate(() => {
 		const { buildSplineGeometry, radiusAt, insertSplinePoint, removeSplinePoint, radiusFromDrag, normalizeSpline } =
-			window.__stores.splineTube;
+			window.__tp.test.v1.splineTube;
 		// a straight run along X that fattens towards the end
 		const record = {
 			points: [
@@ -101,16 +101,16 @@ h.run(async () => {
 
 	// ---- 57.2 placement from the draw toolbar ---------------------------
 	await A.page.evaluate(() => {
-		window.__stores.drawMode.drawColor.set('#22aaff');
-		window.__stores.drawMode.drawSize.set(0.08);
-		window.__stores.drawMode.toggleDrawMode();
+		window.__tp.test.v1.drawMode.drawColor.set('#22aaff');
+		window.__tp.test.v1.drawMode.drawSize.set(0.08);
+		window.__tp.test.v1.drawMode.toggleDrawMode();
 	});
 	await A.page.waitForTimeout(400);
 	h.check(await A.page.locator('#draw-toolbar').isVisible(), 'draw toolbar appears');
 	await A.page.locator('#draw-tool-spline').click();
 	await A.page.waitForTimeout(200);
 	const toolIsSpline = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.drawMode.drawTool.subscribe((v) => r(v))())
+		() => new Promise((r) => window.__tp.test.v1.drawMode.drawTool.subscribe((v) => r(v))())
 	);
 	h.check(toolIsSpline === 'spline', 'the toolbar switches the draw tool to Spline');
 
@@ -134,7 +134,7 @@ h.run(async () => {
 	const previewLive = await A.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.globalScene.subscribe((scene) => {
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
 					const preview = scene.getObjectByName('spline-preview');
 					r(!!preview && !!preview.getObjectByName('spline-preview-tube')?.visible);
 				})()
@@ -157,7 +157,7 @@ h.run(async () => {
 	const previewGone = await A.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.globalScene.subscribe((scene) => r(!scene.getObjectByName('spline-preview')))()
+				window.__tp.test.v1.globalScene.subscribe((scene) => r(!scene.getObjectByName('spline-preview')))()
 			)
 	);
 	h.check(previewGone, 'the preview is disposed on finish');
@@ -168,11 +168,11 @@ h.run(async () => {
 	);
 	// draw mode stays armed so several splines can be placed in a row
 	h.check(await A.page.locator('#draw-toolbar').isVisible(), 'draw mode stays armed after Finish');
-	await A.page.evaluate(() => window.__stores.drawMode.toggleDrawMode());
+	await A.page.evaluate(() => window.__tp.test.v1.drawMode.toggleDrawMode());
 	await A.page.waitForTimeout(300);
 
 	// ---- 57.3 the edit session ------------------------------------------
-	await A.page.evaluate((uuid) => window.__stores.splineEdit.enterSplineEdit(uuid), spline.uuid);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.splineEdit.enterSplineEdit(uuid), spline.uuid);
 	await A.page.waitForTimeout(500);
 	h.check(await A.page.locator('#spline-edit-toolbar').isVisible(), 'the spline edit toolbar appears');
 	// 21-C2: it rides the SHARED ToolboxWindow shell now (key splineToolbox), which
@@ -199,7 +199,7 @@ h.run(async () => {
 		shell.dragRows === 2 && shell.numberInputs === 0,
 		`thickness + sides are DragRows, not number inputs (${shell.dragRows} rows, ${shell.numberInputs} number inputs)`
 	);
-	let debug = await A.page.evaluate(() => window.__stores.splineEdit.splineEditDebug());
+	let debug = await A.page.evaluate(() => window.__tp.test.v1.splineEdit.splineEditDebug());
 	h.check(
 		debug.handles?.point === 4 && debug.handles?.radius === 4 && debug.handles?.mid === 3,
 		'handles: one per point, one radius dot per point, one insert marker per span'
@@ -209,7 +209,7 @@ h.run(async () => {
 			B.page.evaluate(
 				(uuid) =>
 					new Promise((r) =>
-						window.__stores.lockedObjects.subscribe((locks) => r(!!locks.find((l) => l[1] === uuid)))()
+						window.__tp.test.v1.lockedObjects.subscribe((locks) => r(!!locks.find((l) => l[1] === uuid)))()
 					),
 				spline.uuid
 			),
@@ -221,10 +221,10 @@ h.run(async () => {
 	const handleWorld = await A.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const mesh = g.children.find((c) => c.name === 'Spline');
 					const p = mesh.userData.spline.points[1].pos;
-					const v = new window.__stores.THREE.Vector3(p[0], p[1], p[2]);
+					const v = new window.__tp.test.v1.THREE.Vector3(p[0], p[1], p[2]);
 					mesh.localToWorld(v);
 					r([v.x, v.y, v.z]);
 				})()
@@ -233,10 +233,10 @@ h.run(async () => {
 	const handleAt = await project(A.page, handleWorld);
 	await A.page.mouse.click(handleAt.x, handleAt.y);
 	await A.page.waitForTimeout(300);
-	debug = await A.page.evaluate(() => window.__stores.splineEdit.splineEditDebug());
+	debug = await A.page.evaluate(() => window.__tp.test.v1.splineEdit.splineEditDebug());
 	h.check(debug.selected === 1, 'clicking a control-point handle selects it (gizmo seats on it)');
 	const stillEditing = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.splineEdit.splineEditObject.subscribe((v) => r(v))())
+		() => new Promise((r) => window.__tp.test.v1.splineEdit.splineEditObject.subscribe((v) => r(v))())
 	);
 	h.check(stillEditing === spline.uuid, 'the click never falls through to object selection');
 
@@ -244,10 +244,10 @@ h.run(async () => {
 	const radiusWorld = await A.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const mesh = g.children.find((c) => c.name === 'Spline');
 					const point = mesh.userData.spline.points[1];
-					const v = new window.__stores.THREE.Vector3(point.pos[0], point.pos[1], point.pos[2]);
+					const v = new window.__tp.test.v1.THREE.Vector3(point.pos[0], point.pos[1], point.pos[2]);
 					mesh.localToWorld(v);
 					r([v.x, v.y + point.radius * 1.8, v.z]);
 				})()
@@ -280,9 +280,9 @@ h.run(async () => {
 	const midWorld = await A.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const mesh = g.children.find((c) => c.name === 'Spline');
-					const curve = window.__stores.splineTube.splineCurve(mesh.userData.spline);
+					const curve = window.__tp.test.v1.splineTube.splineCurve(mesh.userData.spline);
 					const v = curve.getPoint(0.5 / 3); // the middle of span 0
 					mesh.localToWorld(v);
 					r([v.x, v.y, v.z]);
@@ -294,17 +294,17 @@ h.run(async () => {
 	await A.page.waitForTimeout(500);
 	h.check((await splineInfo(A.page)).points === 5, 'clicking a span marker inserts a control point');
 	await h.eventually(() => splineInfo(B.page), (s) => s?.points === 5, 'the insert replicates to B');
-	debug = await A.page.evaluate(() => window.__stores.splineEdit.splineEditDebug());
+	debug = await A.page.evaluate(() => window.__tp.test.v1.splineEdit.splineEditDebug());
 	h.check(debug.handles?.point === 5 && debug.handles?.mid === 4, 'the handles regroup around the new point');
 
 	// delete a point with a right-click on its handle
 	const deleteWorld = await A.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const mesh = g.children.find((c) => c.name === 'Spline');
 					const p = mesh.userData.spline.points[2].pos;
-					const v = new window.__stores.THREE.Vector3(p[0], p[1], p[2]);
+					const v = new window.__tp.test.v1.THREE.Vector3(p[0], p[1], p[2]);
 					mesh.localToWorld(v);
 					r([v.x, v.y, v.z]);
 				})()
@@ -315,28 +315,28 @@ h.run(async () => {
 	await A.page.waitForTimeout(500);
 	h.check((await splineInfo(A.page)).points === 4, 'right-clicking a control point deletes it');
 	const menuOpened = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.objectContextMenu.subscribe((m) => r(!!m))())
+		() => new Promise((r) => window.__tp.test.v1.objectContextMenu.subscribe((m) => r(!!m))())
 	);
 	h.check(!menuOpened, 'the object context menu never opens over an edit session');
 	await h.eventually(() => splineInfo(B.page), (s) => s?.points === 4, 'the delete replicates to B');
 
 	// undo/redo walks the record back and forward on BOTH peers
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => splineInfo(A.page), (s) => s?.points === 5, 'undo restores the deleted point');
 	await h.eventually(() => splineInfo(B.page), (s) => s?.points === 5, 'undo replicates to B');
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	await h.eventually(() => splineInfo(A.page), (s) => s?.points === 4, 'redo deletes it again');
 
 	// ---- 57.4 VR: carry a handle with the trigger -----------------------
 	// No headset in CI: fake a controller pose and drive the SAME hooks the
 	// Scene dispatches (on-device feel stays the user's manual check).
 	const vr = await A.page.evaluate(() => {
-		const THREE = window.__stores.THREE;
-		const edit = window.__stores.splineEdit;
+		const THREE = window.__tp.test.v1.THREE;
+		const edit = window.__tp.test.v1.splineEdit;
 		const read = (store) => new Promise((r) => store.subscribe((v) => r(v))());
 		return (async () => {
-			const renderer = await read(window.__stores.globalRenderer);
-			const group = await read(window.__stores.objectsGroup);
+			const renderer = await read(window.__tp.test.v1.globalRenderer);
+			const group = await read(window.__tp.test.v1.objectsGroup);
 			const mesh = group.children.find((c) => c.name === 'Spline');
 			const controller = renderer.xr.getController(0);
 			// three's XR target-ray space has matrixAutoUpdate OFF (WebXRManager
@@ -345,8 +345,8 @@ h.run(async () => {
 			controller.matrixAutoUpdate = true;
 			controller.userData.handedness = 'right';
 			renderer.xr.getController(1).userData.handedness = 'left';
-			window.__stores.vrMenuHand.set('left');
-			window.__stores.isVRMode.set(true);
+			window.__tp.test.v1.vrMenuHand.set('left');
+			window.__tp.test.v1.isVRMode.set(true);
 
 			/** aim the controller at a world point from 1m away along +X */
 			const aim = (target) => {
@@ -387,7 +387,7 @@ h.run(async () => {
 			edit.tickVRSpline();
 			edit.vrSplineTriggerEnd();
 			const radiusAfter = mesh.userData.spline.points[1].radius;
-			window.__stores.isVRMode.set(false);
+			window.__tp.test.v1.isVRMode.set(false);
 			return { started, carrying, moved, swallow, released, startedRadius, radiusBefore, radiusAfter };
 		})();
 	});
@@ -404,16 +404,16 @@ h.run(async () => {
 	);
 
 	// ---- 57.5 Properties rows ------------------------------------------
-	await A.page.evaluate(() => window.__stores.splineEdit.exitSplineEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.splineEdit.exitSplineEdit());
 	await A.page.waitForTimeout(300);
 	h.check(!(await A.page.locator('#spline-edit-toolbar').isVisible()), 'Done closes the session');
-	await A.page.evaluate((uuid) => window.__stores.objectActions.selectObject(uuid, true), spline.uuid);
-	await A.page.waitForTimeout(700);
-	h.check(await A.page.locator('#spline-thickness').isVisible(), 'the Properties panel grows a Spline section');
+	await A.page.evaluate((uuid) => window.__tp.test.v1.objectActions.selectObject(uuid, true), spline.uuid);
+	// the Inspector opens on a timer that takes 0.5-1.5 s under e2e load (showSidebar): poll, never sleep
+	await h.eventually(() => A.page.locator('#spline-thickness').isVisible(), (v) => v === true, 'the Properties panel grows a Spline section', 8000);
 	await A.page.evaluate((uuid) => {
-		window.__stores.splineTool.setSplineColor(uuid, '#ff00aa');
-		window.__stores.splineTool.setSplineRadiusAll(uuid, 0.2);
-		window.__stores.splineTool.setSplineClosed(uuid, true);
+		window.__tp.test.v1.splineTool.setSplineColor(uuid, '#ff00aa');
+		window.__tp.test.v1.splineTool.setSplineRadiusAll(uuid, 0.2);
+		window.__tp.test.v1.splineTool.setSplineClosed(uuid, true);
 	}, spline.uuid);
 	await A.page.waitForTimeout(600);
 	const styled = await splineInfo(A.page);
@@ -435,11 +435,11 @@ h.run(async () => {
 	// Both concerns are about CHILDREN of the edited object / objectsGroup lookups,
 	// and these handles are SCENE-ROOT — so this measures whether that reasoning
 	// holds, with the session OPEN, through the real serializer.
-	await A.page.evaluate((uuid) => window.__stores.splineEdit.enterSplineEdit(uuid), spline.uuid);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.splineEdit.enterSplineEdit(uuid), spline.uuid);
 	await A.page.waitForTimeout(400);
 	const midSave = await A.page.evaluate(async () => {
-		const live = window.__stores.splineEdit.splineEditDebug();
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g))());
+		const live = window.__tp.test.v1.splineEdit.splineEditDebug();
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g))());
 		// the toJSON path .tpscene + sessions use
 		const json = JSON.stringify(group.toJSON());
 		let inTree = 0;
@@ -459,7 +459,7 @@ h.run(async () => {
 	h.check(midSave.inTree === 0, 'no handle and no proxy is inside objectsGroup (golden rule 5)');
 	h.check(!midSave.inJson, 'a save taken MID-SESSION carries no handle and no proxy (the PR #133 bug cannot happen here)');
 	h.check(midSave.hasSpline, 'PREMISE: that same save does carry the spline record (so the check had something to find)');
-	await A.page.evaluate(() => window.__stores.splineEdit.exitSplineEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.splineEdit.exitSplineEdit());
 	await A.page.waitForTimeout(300);
 
 	// ---- late joiner: the record survives the GLTF full-state sync -------
@@ -467,7 +467,7 @@ h.run(async () => {
 	// holds as a LOCK, and a locked object legitimately refuses an edit session.
 	// (deselectObject is not enough — selectedObject deliberately keeps its last
 	// value, so it would still ride the handshake.)
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await A.page.waitForTimeout(800);
 	const C = await h.setupPage(browser, 'C');
 	await h.connect(C, A);
@@ -479,14 +479,14 @@ h.run(async () => {
 	const lateEditable = await C.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const mesh = g.children.find((c) => c.name === 'Spline');
-					r(mesh ? window.__stores.splineEdit.enterSplineEdit(mesh.uuid) : false);
+					r(mesh ? window.__tp.test.v1.splineEdit.enterSplineEdit(mesh.uuid) : false);
 				})()
 			)
 	);
 	h.check(lateEditable, 'the late joiner can open the spline editor on it');
-	const lateDebug = await C.page.evaluate(() => window.__stores.splineEdit.splineEditDebug());
+	const lateDebug = await C.page.evaluate(() => window.__tp.test.v1.splineEdit.splineEditDebug());
 	h.check(lateDebug.handles?.point === styled.points, 'the late joiner builds the same handle set');
 
 	await h.finish(browser);

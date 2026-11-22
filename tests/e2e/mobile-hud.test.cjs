@@ -15,7 +15,7 @@ h.run(async () => {
 
 	// viewportMenuOpener opens the create menu (forceEmpty) even over an object
 	const opened = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		let opener;
 		s.viewportMenuOpener.subscribe((v) => (opener = v))();
@@ -27,12 +27,12 @@ h.run(async () => {
 	});
 	h.check(opened.ran, 'Scene registered viewportMenuOpener');
 	h.check(opened.hasMenu && opened.point, 'the opener opens the viewport create menu with a ground point');
-	await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set(null));
 
 	// the menu position can be DECOUPLED from the ray: the "+" button rays from
 	// screen-centre but anchors the menu to its own rect (menuX/menuY args)
 	const anchored = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let opener;
 		s.viewportMenuOpener.subscribe((v) => (opener = v))();
 		opener(600, 400, true, 16, 720); // ray centre-ish, menu bottom-left (button)
@@ -42,12 +42,12 @@ h.run(async () => {
 	});
 	h.check(anchored.x === 16 && anchored.y === 720, `menu opens at the button anchor, not the ray point (x=${anchored.x}, y=${anchored.y})`);
 	h.check(anchored.hasPoint, 'the ground point is still computed from the ray coords');
-	await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set(null));
 
 	// object-menu parity: the shared builder has the full set (the indirect
 	// "Selected" submenu used to lack these)
 	const items = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const uuid = g.children[g.children.length - 1].uuid;
@@ -60,7 +60,7 @@ h.run(async () => {
 	}
 
 	// object-list window drags via POINTER events (touch-capable) — move the header
-	await A.page.evaluate(() => window.__stores.objectListClose.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.objectListClose.set(false));
 	await A.page.waitForTimeout(400);
 	const moved = await A.page.evaluate(async () => {
 		const win = document.querySelector('#object-list');

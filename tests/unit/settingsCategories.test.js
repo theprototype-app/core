@@ -32,6 +32,6 @@ describe('settings categories', () => {
 			expect(d.length).toBeGreaterThan(10);
 			expect(d.trim().endsWith('.')).toBe(true);
 		}
-		expect(SETTINGS_GROUPS.map((g) => g.id)).toEqual(['general', 'workspace', 'devices', 'more']);
+		expect(SETTINGS_GROUPS.map((g) => g.id)).toEqual(['general', 'workspace', 'devices', 'account', 'more']); // profile-notify: + Account (cloud plugin only)
 	});
 });

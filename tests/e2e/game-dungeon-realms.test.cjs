@@ -82,18 +82,18 @@ async function zipBytes(id, envKey) {
 
 /** install zip bytes through the REAL manager (the helper only knows one folder) */
 async function installZip(peer, id, bytes, label) {
-	await peer.page.evaluate(() => window.__stores.modulesOpen.set(true));
+	await peer.page.evaluate(() => window.__tp.test.v1.modulesOpen.set(true));
 	await peer.page.waitForTimeout(400);
 	await peer.page.getByRole('tab', { name: /^User/ }).click();
 	await peer.page.waitForTimeout(200);
 	await peer.page.locator('#install-module-zip').setInputFiles({ name: id + '.zip', mimeType: 'application/zip', buffer: bytes });
 	await h.eventually(
-		() => peer.page.evaluate(() => window.__stores.moduleSDK.loadedModules.map((m) => m.id)),
+		() => peer.page.evaluate(() => window.__tp.test.v1.moduleSDK.loadedModules.map((m) => m.id)),
 		(ids) => ids.includes(id),
 		label + ': ' + id + ' installed from the real zip',
 		20000
 	);
-	await peer.page.evaluate(() => window.__stores.modulesOpen.set(false));
+	await peer.page.evaluate(() => window.__tp.test.v1.modulesOpen.set(false));
 	await peer.page.waitForTimeout(300);
 }
 
@@ -103,7 +103,7 @@ async function installZip(peer, id, bytes, label) {
 const snap = (page) =>
 	page.evaluate(() => {
 		let scene;
-		window.__stores.globalScene.subscribe((v) => (scene = v))();
+		window.__tp.test.v1.globalScene.subscribe((v) => (scene = v))();
 		const kitGroup = scene?.getObjectByName('dungeon-module');
 		const overlay = scene?.getObjectByName('dungeon-realms');
 		const game = window.__dungeonRealms?.game ?? null;
@@ -132,8 +132,8 @@ const snap = (page) =>
 			gameFloor: game?.state.floorIndex ?? null,
 			// 30-visuals-mod: the Start menu is a core HUD screen (input: 'menu'); the module's DOM
 			// card stays silenced in the template (drmenu show: 'never')
-			menu: window.__stores.hudDocs.visibleScreen('scene')?.id === 'menu' && !document.getElementById('dr-menu'),
-			resolvedGrounded: window.__stores.playSettings.resolvePlaySettings(scene).grounded
+			menu: window.__tp.test.v1.hudDocs.visibleScreen('scene')?.id === 'menu' && !document.getElementById('dr-menu'),
+			resolvedGrounded: window.__tp.test.v1.playSettings.resolvePlaySettings(scene).grounded
 		};
 	});
 
@@ -141,7 +141,7 @@ const snap = (page) =>
 const namesOf = (page) =>
 	page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return Object.fromEntries((g?.children ?? []).map((c) => [c.name, c.uuid]));
 	});
 
@@ -149,7 +149,7 @@ const namesOf = (page) =>
 const stampOf = (page, id) =>
 	page.evaluate((id) => {
 		let t;
-		window.__stores.flowTriggers.subscribe((v) => (t = v))();
+		window.__tp.test.v1.flowTriggers.subscribe((v) => (t = v))();
 		const s = t?.[id]?.lastT;
 		return typeof s === 'number' ? s : null;
 	}, id);
@@ -157,15 +157,15 @@ const stampOf = (page, id) =>
 const gameStateOf = (page) =>
 	page.evaluate(() => {
 		let g;
-		window.__stores.gameState.gameState.subscribe((v) => (g = v))();
+		window.__tp.test.v1.gameState.gameState.subscribe((v) => (g = v))();
 		return g?.state ?? null;
 	});
-const screenOf = (page) => page.evaluate(() => window.__stores.hudDocs.visibleScreen('scene')?.id ?? null);
+const screenOf = (page) => page.evaluate(() => window.__tp.test.v1.hudDocs.visibleScreen('scene')?.id ?? null);
 const hudText = async (page) => (await page.locator('#hud-layer').textContent().catch(() => '')) ?? '';
 const hudRuntime = (page) =>
 	page.evaluate(() => {
 		let r;
-		window.__stores.hudDocs.hudRuntime.subscribe((v) => (r = v))();
+		window.__tp.test.v1.hudDocs.hudRuntime.subscribe((v) => (r = v))();
 		return r ?? {};
 	});
 const pressP = (page) =>
@@ -187,7 +187,7 @@ const clickMenu = (page, id) =>
 const nodesOf = (page, type) =>
 	page.evaluate((type) => {
 		let graphs;
-		window.__stores.flowGraphs.subscribe((g) => (graphs = g))();
+		window.__tp.test.v1.flowGraphs.subscribe((g) => (graphs = g))();
 		const out = [];
 		for (const graph of Object.values(graphs ?? {})) for (const n of graph.nodes ?? []) if (n.type === type) out.push({ id: n.id, data: n.data });
 		return out;
@@ -234,7 +234,7 @@ h.run(async () => {
 	await A.page.evaluate(() => window.__dungeonKit.kit.generate(777, {}));
 	await h.eventually(() => snap(A.page), (s) => s.seed === 777 && s.floorInstances > 0, '1.0 (premise) a menu-seeded dungeon (777) stands before the file loads');
 	const payload = await A.page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		const modules = (payload.modules ?? []).map((m) => m.id);
 		await s.sessions.applySession(payload, { backup: false });
@@ -246,11 +246,11 @@ h.run(async () => {
 	h.check(Object.keys(names).length === 8 && !!names['Entrance plinth'] && !!names['Arch lintel'], '1.2 the file restored the 6 arch objects + Ground + Card camera (' + Object.keys(names).length + ')');
 	const env = await A.page.evaluate(() => {
 		let e;
-		window.__stores.environment.environment.subscribe((v) => (e = v))();
+		window.__tp.test.v1.environment.environment.subscribe((v) => (e = v))();
 		return e?.preset ?? null;
 	});
 	h.check(env === 'custom', '1.3 the custom dusk sky (' + env + ')');
-	const phys = await A.page.evaluate(() => window.__stores.scenePhysics.scenePhysicsDebug());
+	const phys = await A.page.evaluate(() => window.__tp.test.v1.scenePhysics.scenePhysicsDebug());
 	h.check(phys.play?.interaction === 'click' && phys.play?.grounded === true && phys.play?.simOnPlay === false, '1.4 play block: click, grounded, no sim (' + JSON.stringify(phys.play) + ')');
 	await h.eventually(() => snap(A.page), (s) => s.seed === SEED && s.floorInstances > 0 && s.overlay, '1.5 the Kit regenerated SEED ' + SEED + ' FROM THE NODE after /clear all (777 is gone) and Realms overlaid it', 15000);
 	const a1 = await snap(A.page);
@@ -288,6 +288,26 @@ h.run(async () => {
 	const startBefore = await stampOf(B.page, startNode.id);
 	await clickMenu(A.page, 'start');
 	await h.eventually(() => snap(B.page), (s) => s.started, '3.6 B: the game started');
+	// 54i h: floor 1 starts in the entrance room, and the player must not stand INSIDE the
+	// entrance arch's ring (plinth 2.8 x 2.8, pillars, lintel, the lantern's sparks)
+	const start = await A.page.evaluate(() => {
+		let g;
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
+		const at = (name) => g.children.find((c) => c.name === name)?.getWorldPosition(new window.__tp.test.v1.THREE.Vector3()).toArray() ?? null;
+		const sp = window.__dungeonRealms?.game?.state?.spawn ?? null;
+		let scene;
+		window.__tp.test.v1.globalScene.subscribe((v) => (scene = v))();
+		const portal = scene?.getObjectByName('dungeon-realms')?.getObjectByName('dr-portal-up');
+		const camera = (() => {
+			let c;
+			window.__tp.test.v1.globalCamera.subscribe((v) => (c = v))();
+			return c?.getWorldPosition(new window.__tp.test.v1.THREE.Vector3()).toArray() ?? null;
+		})();
+		return { spawn: sp?.position ?? null, yaw: sp?.yaw ?? null, plinth: at('Entrance plinth'), left: at('Arch left'), right: at('Arch right'), portalUp: portal?.getWorldPosition(new window.__tp.test.v1.THREE.Vector3()).toArray() ?? null, camera };
+	});
+	console.log('  spawn ' + JSON.stringify(start));
+	const ringGap = start.spawn && start.plinth ? Math.max(Math.abs(start.spawn[0] - start.plinth[0]), Math.abs(start.spawn[2] - start.plinth[2])) : -1;
+	h.check(ringGap > 1.4 + 0.3, `3.6b the floor-1 spawn stands clear of the entrance arch's ring (${ringGap.toFixed(2)} m from its centre, the plinth reaches 1.4 m)`);
 	await h.eventually(() => stampOf(B.page, startNode.id), (t) => t !== null && t !== startBefore, '3.7 B: the "On start" stamp landed in the TRIGGER LOG');
 	await h.eventually(() => gameStateOf(B.page), (v) => v === 'playing', '3.8 ...and its Set Game State flipped the shell to playing on B');
 	await h.eventually(() => gameStateOf(A.page), (v) => v === 'playing', '3.9 ...and on A');
@@ -315,9 +335,9 @@ h.run(async () => {
 	await h.eventually(() => snap(B.page), (s) => s.sealedUp === false, '5.4 B: unseal replicated');
 	const travelled = await A.page.evaluate(() => {
 		let scene;
-		window.__stores.globalScene.subscribe((v) => (scene = v))();
+		window.__tp.test.v1.globalScene.subscribe((v) => (scene = v))();
 		const ring = scene.getObjectByName('dungeon-realms').getObjectByName('dr-portal-up').children[0];
-		return window.__stores.moduleSDK.moduleClickHandlers.some((handler) => handler(ring));
+		return window.__tp.test.v1.moduleSDK.moduleClickHandlers.some((handler) => handler(ring));
 	});
 	h.check(travelled, '5.5 A clicks the portal (module click handler consumed it)');
 	await h.eventually(() => snap(A.page), (s) => s.floorIndex === 2 && s.gameFloor === 2, '5.6 A: floor 2 (Kit + game agree)');
@@ -363,23 +383,23 @@ h.run(async () => {
 		await installZip(D, 'dungeon', kitZip.bytes, 'D');
 		await installZip(D, 'dungeon-realms', realmsZip.bytes, 'D');
 		await D.page.evaluate(async (arr) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 			await s.sessions.applySession(payload, { backup: false });
 		}, Array.from(scene.bytes));
 		await h.eventually(() => snap(D.page), (s) => s.seed === SEED && s.overlay, '7.0 (premise) D: the dungeon stands', 20000);
 		const rulesId = (await nodesOf(D.page, 'behaviour'))[0].id;
-		const rulesState = (page) => page.evaluate((id) => JSON.parse(JSON.stringify(window.__stores.behaviours.behaviourState(id) ?? null)), rulesId);
+		const rulesState = (page) => page.evaluate((id) => JSON.parse(JSON.stringify(window.__tp.test.v1.behaviours.behaviourState(id) ?? null)), rulesId);
 		await h.eventually(() => rulesState(D.page), (st) => st?.floor === 1 && st.need > 0, '7.1 the rules decided floor 1 (their state carries need)', 15000);
 		const t1 = (await snap(D.page)).total;
 		// (a) the GRAPH: Game Rules ▸ gem share 0.7 → 0.5, in the properties panel
 		if (!(await D.page.evaluate(() => !!document.querySelector('.svelte-flow__pane')))) await D.page.locator('p[title="Node editor (N)"]').click();
 		await D.page.waitForTimeout(1000);
-		await D.page.evaluate(() => window.__stores.bottomDock?.dockHeight?.set(560));
+		await D.page.evaluate(() => window.__tp.test.v1.bottomDock?.dockHeight?.set(560));
 		if (!(await D.page.locator('#flow-props').count())) await D.page.locator('#flow-props-toggle').click();
 		await D.page.locator('#flow-tab-info').click();
 		const drrules = (await nodesOf(D.page, 'drrules'))[0].id;
-		await D.page.evaluate((id) => window.__stores.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: n.id === id }))), drrules);
+		await D.page.evaluate((id) => window.__tp.test.v1.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: n.id === id }))), drrules);
 		await h.eventually(() => D.page.locator('#flow-prop-gemShare').count(), (n) => n === 1, '7.2 Game Rules shows "gem share" in its properties panel', 6000);
 		await D.page.locator('#flow-prop-gemShare').fill('0.5');
 		await D.page.locator('#flow-prop-gemShare').press('Enter');
@@ -387,18 +407,18 @@ h.run(async () => {
 		await h.eventually(() => snap(D.page), (s) => s.need === half, `7.3 the rules re-decided: ${half} of ${t1} gems now open the portal (the graph change)`, 8000);
 		// (b) the CODE: one EXTRA gem, in the code workspace
 		const code = (await nodesOf(D.page, 'behaviour'))[0].data.code;
-		await D.page.evaluate((id) => window.__stores.codeWorkspace.openCode({ source: 'behaviour', ref: { nodeId: id } }), rulesId);
+		await D.page.evaluate((id) => window.__tp.test.v1.codeWorkspace.openCode({ source: 'behaviour', ref: { nodeId: id } }), rulesId);
 		await h.eventually(() => D.page.locator('[data-pane] .cm-content').count(), (n) => n >= 1, '7.4 the rules open in the code workspace', 15000);
-		const pane = await D.page.evaluate(() => { let v; window.__stores.codeWorkspace.activeCodeTab.subscribe((x) => (v = x))(); return v; });
+		const pane = await D.page.evaluate(() => { let v; window.__tp.test.v1.codeWorkspace.activeCodeTab.subscribe((x) => (v = x))(); return v; });
 		await D.page.locator(`[data-pane="${pane}"] .cm-content`).click();
 		await D.page.keyboard.press('Control+A');
 		await D.page.keyboard.insertText(code.replace('const EXTRA_GEMS = 0;', 'const EXTRA_GEMS = 1;'));
 		await D.page.keyboard.press('Control+S');
 		await h.eventually(() => nodesOf(D.page, 'behaviour').then((n) => n[0].data.code), (c) => /const EXTRA_GEMS = 1;/.test(c), '7.5 Ctrl+S put the edited code on the node', 6000);
 		await D.page.locator('#code-ws-close:visible, [data-dock-tab-close="code"]:visible').first().click().catch(() => {});
-		await h.eventually(() => D.page.evaluate((id) => window.__stores.behaviours.behavioursDebug().status[id]?.status, rulesId), (st) => st === 'running', '7.6 the edited rules reloaded', 10000);
+		await h.eventually(() => D.page.evaluate((id) => window.__tp.test.v1.behaviours.behavioursDebug().status[id]?.status, rulesId), (st) => st === 'running', '7.6 the edited rules reloaded', 10000);
 		// both felt in Play: start, the HUD line, and the portal opens on the right gem
-		await D.page.evaluate(() => window.__stores.isLocked.set(true));
+		await D.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 		await D.page.evaluate(() => window.__dungeonRealms.game.start());
 		const want = Math.min(t1, half + 1);
 		await h.eventually(() => snap(D.page), (s) => s.need === want, `7.7 Play: the floor asks for ${want} gems (share 0.5 + EXTRA_GEMS 1)`, 8000);
@@ -410,7 +430,7 @@ h.run(async () => {
 		await h.eventually(() => snap(D.page), (s) => s.sealedUp === false, `7.10 the ${want}th gem opens it`, 6000);
 		// (c) both survive a save and a reload — into a FRESH peer
 		const saved = await D.page.evaluate(async () => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const zip = await s.sessions.exportSessionZip(s.sessions.buildSessionPayload('Realms probe'), { assets: true, packs: false, flow: true });
 			return Array.from(zip);
 		});
@@ -419,14 +439,14 @@ h.run(async () => {
 		await installZip(E, 'dungeon', kitZip.bytes, 'E');
 		await installZip(E, 'dungeon-realms', realmsZip.bytes, 'E');
 		await E.page.evaluate(async (arr) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 			await s.sessions.applySession(payload, { backup: false });
 		}, saved);
 		await h.eventually(() => snap(E.page), (s) => s.seed === SEED && s.overlay, '  (premise) E: the dungeon stands', 20000);
 		const eNodes = { rules: (await nodesOf(E.page, 'behaviour'))[0], drr: (await nodesOf(E.page, 'drrules'))[0] };
 		h.check(/const EXTRA_GEMS = 1;/.test(eNodes.rules.data.code) && eNodes.drr.data.gemShare === 0.5, `7.11 the saved scene, reopened, keeps both (EXTRA_GEMS 1, gem share ${eNodes.drr.data.gemShare})`);
-		await E.page.evaluate(() => window.__stores.isLocked.set(true));
+		await E.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 		await E.page.evaluate(() => window.__dungeonRealms.game.start());
 		await h.eventually(() => snap(E.page), (s) => s.floorIndex === 1 && s.need === want, `7.12 after the reload floor 1 still asks for ${want}`, 15000);
 		await collect(E.page, want);

@@ -44,7 +44,7 @@ const MODULE_OWNED_RUNNING = { waves: /^Enemy / };
  * events, wait, report what stayed. Runs in the page. */
 const moveAll = (page) =>
 	page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const g = (st) => { let v; st.subscribe((x) => (v = x))(); return v; };
 		const group = g(s.objectsGroup);
 		const targets = [];
@@ -103,10 +103,10 @@ h.run(async () => {
 	const page = A.page;
 	const installed = new Set();
 	for (const id of [...new Set(GAMES.flatMap((g) => g.modules))]) if (await h.installModule(A, id)) installed.add(id);
-	await page.evaluate(() => window.__stores.modulesOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.modulesOpen.set(false));
 	const read = (p) =>
 		page.evaluate((p) => {
-			let o = window.__stores;
+			let o = window.__tp?.test.v1;
 			for (const k of p.split('.')) o = o[k];
 			let v;
 			o.subscribe((x) => (v = x))();
@@ -115,7 +115,7 @@ h.run(async () => {
 	const load = async (file) => {
 		const bytes = Array.from(fs.readFileSync(file));
 		await page.evaluate(async (arr) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.templatesModalOpen.set(false);
 			s.objectActions.setEditorMode('edit');
 			const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
@@ -143,7 +143,7 @@ h.run(async () => {
 		// ---- §B the game RUNNING, then Edit
 		await load(file);
 		const run = await page.evaluate(async () => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const g = (st) => { let v; st.subscribe((x) => (v = x))(); return v; };
 			s.objectActions.setEditorMode('interact');
 			s.gameState.setGameState('playing');
@@ -151,7 +151,7 @@ h.run(async () => {
 			return { sim: g(s.physics.simulating) };
 		});
 		await page.waitForTimeout(3000);
-		await page.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
+		await page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('edit'));
 		await page.waitForTimeout(300);
 		h.check((await read('editorMode')) === 'edit' && (await read('gameState.gameState'))?.state === 'playing', `premise ${game.slug} B: Edit while the game plays (sim ${run.sim})`);
 		rows = await moveAll(page);
@@ -166,13 +166,13 @@ h.run(async () => {
 		if (moduleOwned.length) console.log(`NOTE ${game.slug}: ${moduleOwned.length} walking enemies are module-positioned during a wave (modules lane) — ${moduleOwned.map((r) => r.name).slice(0, 4).join(', ')}`);
 		const dynamicMoved = judged.filter((r) => r.phys === 'dynamic');
 		if (run.sim && dynamicMoved.length) {
-			const parked = await page.evaluate(() => window.__stores.physics.parkedBodies());
+			const parked = await page.evaluate(() => window.__tp.test.v1.physics.parkedBodies());
 			parkedSeen += parked.length;
 			h.check(dynamicMoved.every((r) => parked.includes(r.uuid)), `${game.slug} B: every moved dynamic body is PARKED in Edit (${parked.length}/${dynamicMoved.length})`);
 
 			// ---- §C leaving Edit hands them back to physics; Interact still throws
 			const back = await page.evaluate(async (uuid) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				s.objectActions.setEditorMode('interact');
 				await new Promise((r) => setTimeout(r, 50));
 				const afterLeave = s.physics.parkedBodies().length;
@@ -187,7 +187,7 @@ h.run(async () => {
 			h.check(back.held && back.released && !back.parkedInInteract, `${game.slug} C: a release in Interact is NOT parked (the rule is Edit's)`);
 		}
 		await page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let sim;
 			s.physics.simulating.subscribe((v) => (sim = v))();
 			if (sim) s.physics.stopSimulation({ reset: true });

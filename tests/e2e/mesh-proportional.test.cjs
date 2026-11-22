@@ -10,7 +10,7 @@ const h = require('./helpers.cjs');
 /** a flat grid (PlaneGeometry lies in XY), so distances and weights are easy to reason about */
 const editPlane = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Plane 4 4 8 8');
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
@@ -23,7 +23,7 @@ const editPlane = (page) =>
 /** select the handle nearest a local point; returns its index and position */
 const selectNear = (page, point) =>
 	page.evaluate((point) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const me = s.meshEdit;
 		let controls;
 		s.TControls.subscribe((c) => (controls = c))();
@@ -54,7 +54,7 @@ h.run(async () => {
 
 	// --- OFF: a single-vertex drag creases (only that vertex moves) ----------
 	const off = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const me = s.meshEdit;
 		me.proportionalEdit.set(false);
 		let controls;
@@ -78,7 +78,7 @@ h.run(async () => {
 
 	// --- ON: the neighbourhood follows, with the right weights ---------------
 	const on = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const me = s.meshEdit;
 		// a fresh plane so the previous drag does not pollute the measurement
 		s.commandsHandler.sceneCommand('/create Plane 4 4 8 8');
@@ -140,7 +140,7 @@ h.run(async () => {
 
 	// --- no DRIFT: many small frames must equal one big one ------------------
 	const drift = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const me = s.meshEdit;
 		const run = (steps) => {
 			s.commandsHandler.sceneCommand('/create Plane 4 4 8 8');
@@ -180,7 +180,7 @@ h.run(async () => {
 
 	// --- ONE undo for the whole bulge, and the tool disarms with the session --
 	const rest = await A.page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const me = s.meshEdit;
 		const position = () => window.__mesh.geometry.attributes.position;
 		const spread = () => {
@@ -228,7 +228,7 @@ h.run(async () => {
 	const faceGrabRun = (proportional) =>
 		A.page.evaluate(
 			({ proportional, RADIUS }) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				const fe = s.faceEdit;
 				const THREE = s.THREE;
 				s.meshEdit.exitEditMode();
@@ -329,7 +329,7 @@ h.run(async () => {
 	// --- (c) EDGE falloff via edgeGrabTarget -----------------------------------
 	const edge = await A.page.evaluate(
 		({ RADIUS }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const fe = s.faceEdit;
 			const THREE = s.THREE;
 			s.commandsHandler.sceneCommand('/create Plane 4 4 8 8');
@@ -404,7 +404,7 @@ h.run(async () => {
 
 	// --- (d) the ring on the VERTEX drag path + the radius-scrub preview -------
 	const vertexRing = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const me = s.meshEdit;
 		s.commandsHandler.sceneCommand('/create Plane 4 4 8 8');
 		let g;
@@ -432,7 +432,7 @@ h.run(async () => {
 	h.check(vertexRing.after === false, 'and hides at drag end');
 
 	const scrub = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const me = s.meshEdit;
 		const pr = s.proportionalRing;
 		s.commandsHandler.sceneCommand('/create Plane 4 4 8 8');
@@ -477,7 +477,7 @@ h.run(async () => {
 	// nor trackpadNav (window pan) — the camera must not move at all. After the
 	// drag ends the suppression lifts.
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const me = s.meshEdit;
 		s.commandsHandler.sceneCommand('/create Plane 4 4 8 8');
 		let g;
@@ -530,12 +530,12 @@ h.run(async () => {
 	const camPose = () =>
 		A.page.evaluate(() => {
 			let camera;
-			window.__stores.globalCamera.subscribe((v) => (camera = v))();
+			window.__tp.test.v1.globalCamera.subscribe((v) => (camera = v))();
 			return { p: camera.position.toArray(), q: camera.quaternion.toArray() };
 		});
 	const stateNow = () =>
 		A.page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let radius;
 			s.meshEdit.proportionalRadius.subscribe((v) => (radius = v))();
 			let scene;
@@ -603,7 +603,7 @@ h.run(async () => {
 		cam0.q.every((v, i) => Math.abs(v - cam1.q[i]) < 1e-9);
 	h.check(camStill, '32 REAL wheel events moved the camera NOT AT ALL — OrbitControls and trackpadNav both suppressed');
 	// end the drag: ONE undoable entry, and the wheel goes back to navigation
-	await A.page.evaluate(() => window.__stores.meshEdit.onProxyDragChanged(false));
+	await A.page.evaluate(() => window.__tp.test.v1.meshEdit.onProxyDragChanged(false));
 	const afterEnd = await stateNow();
 	await A.page.mouse.wheel(0, -30);
 	await A.page.waitForTimeout(120);
@@ -618,7 +618,7 @@ h.run(async () => {
 
 	// --- the FACE/EDGE grab path recaptures through the same wheel ------------
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		const THREE = s.THREE;
 		s.meshEdit.exitEditMode();
@@ -654,7 +654,7 @@ h.run(async () => {
 		Math.abs(ring1Now - smoothW(0.5, rGrab)) < 1e-3,
 		`ring-1 joined the grab at its recaptured smoothstep weight (${ring1Now?.toFixed(4)} vs ${smoothW(0.5, rGrab).toFixed(4)})`
 	);
-	await A.page.evaluate(() => window.__stores.faceEdit.commitFaceGrab());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.commitFaceGrab());
 	await A.page.mouse.wheel(0, -30);
 	await A.page.waitForTimeout(120);
 	const postGrab = await stateNow();
@@ -672,7 +672,7 @@ h.run(async () => {
 		A.page.evaluate(
 			() =>
 				new Promise((resolve) => {
-					const s = window.__stores;
+					const s = window.__tp?.test.v1;
 					let camera;
 					s.globalCamera.subscribe((v) => (camera = v))();
 					let scene;
@@ -691,7 +691,7 @@ h.run(async () => {
 		);
 	const qDot = (a, b) => Math.abs(a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]);
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.faceEdit.exitFaceEdit();
 		s.meshEdit.enterEditMode(window.__mesh.uuid);
 		s.meshEdit.selectHandle(0);
@@ -705,7 +705,7 @@ h.run(async () => {
 		`the ring's quaternion matches the camera's (dot ${qDot(bb1.ring, bb1.cam).toFixed(5)})`
 	);
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		s.objectActions.flyTo(new THREE.Vector3(4, 3, -5), new THREE.Vector3(0, 0, 0), 250);
 	});
@@ -720,15 +720,15 @@ h.run(async () => {
 		`...and the ring still faces it (dot ${qDot(bb2.ring, bb2.cam).toFixed(5)}) — billboarded, not surface-glued`
 	);
 	await A.page.evaluate(() => {
-		window.__stores.proportionalRing.hideProportionalRing();
-		window.__stores.meshEdit.exitEditMode();
+		window.__tp.test.v1.proportionalRing.hideProportionalRing();
+		window.__tp.test.v1.meshEdit.exitEditMode();
 	});
 
 	// --- and a peer sees the whole neighbourhood, not just the anchor --------
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);
 	const netUuid = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Plane 4 4 8 8');
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
@@ -740,7 +740,7 @@ h.run(async () => {
 	const spreadOn = (page, uuid) =>
 		page.evaluate((uuid) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const object = g.getObjectByProperty('uuid', uuid);
 			const p = object?.geometry?.attributes?.position;
 			if (!p) return null;
@@ -759,7 +759,7 @@ h.run(async () => {
 		20000
 	);
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const me = s.meshEdit;
 		let controls;
 		s.TControls.subscribe((c) => (controls = c))();
@@ -783,6 +783,6 @@ h.run(async () => {
 		20000
 	);
 
-	await A.page.evaluate(() => window.__stores.meshEdit.exitEditMode());
+	await A.page.evaluate(() => window.__tp.test.v1.meshEdit.exitEditMode());
 	await h.finish(browser);
 });

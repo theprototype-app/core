@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { untrack, tick, onMount } from 'svelte';
+	import PaneHandle from '../ui/PaneHandle.svelte'; // showhide-v8: the one pane-handle pattern
 	import Icon from '../ui/Icon.svelte';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import {
@@ -12,6 +13,7 @@
 		MarkerType,
 		SelectionMode,
 		useSvelteFlow,
+		ViewportPortal,
 		type Node,
 		type Edge,
 		type Connection
@@ -34,6 +36,7 @@
 	import SwitcherNode from './nodes/SwitcherNode.svelte';
 	import ObjectSelectorNode from './nodes/ObjectSelectorNode.svelte';
 	import AnimationNode from './nodes/AnimationNode.svelte';
+	import ToggleAnimNode from './nodes/ToggleAnimNode.svelte'; // 78 F3
 	import HudNode from './nodes/HudNode.svelte';
 	import GameCameraNode from './nodes/GameCameraNode.svelte';
 	import TravelNode from './nodes/TravelNode.svelte';
@@ -46,6 +49,7 @@
 	import SelectNode from './nodes/SelectNode.svelte';
 	import CustomNode from './nodes/CustomNode.svelte';
 	import PathPatrolNode from './nodes/PathPatrolNode.svelte';
+	import PathEventNode from './nodes/PathEventNode.svelte'; // 78 F4
 	import SoundNode from './nodes/SoundNode.svelte';
 	import ParticleNode from './nodes/ParticleNode.svelte';
 	import NumberNode from './nodes/NumberNode.svelte';
@@ -80,27 +84,43 @@
 	import GroupIONode from './nodes/GroupIONode.svelte';
 	import NodeUxProps from './NodeUxProps.svelte';
 	import { kitNodeTypes } from '$lib/kit/catalog.js';
+	// 2.0 N1: the core card map is generated from the node definitions
+	import { coreCardKeys } from '$lib/nodes/index.js';
+	import { CARD_KEYS } from '$lib/nodes/registry.js';
+	// 2.0 N2: the read-only Code tab, behind the codeView flag
+	import { codeViewFlag } from '$lib/nodes/codeViewFlag.js';
+	// 95-int: the Code tab (flag codeView, off by default) is a lazy chunk, off the editor's boot path
+	let codePaneLoad: Promise<typeof import('./FlowCodePane.svelte')> | null = null;
+	const codePane = () => (codePaneLoad ??= import('./FlowCodePane.svelte'));
+	type CardKey = (typeof CARD_KEYS)[number];
 	import { flowNodes as flowNodesStore, flowEdges as flowEdgesStore, customNodeDefs, nodeDesignerOpen, flowGraphs, activeGraphId, SCENE_GRAPH, setActiveGraph, updateGraph } from '../../stores/flowStore';
 	import { createObjectGraph, requestDeleteObjectGraph, recordFlowNodesEntry } from '$lib/flowGraphs';
 	import { deselectObject, applySelectionSet } from '$lib/objectActions';
 	import { flowMouseBindings } from '$lib/flowPrefs';
 	import Breadcrumbs from '../ui/Breadcrumbs.svelte'; // 41 G15
-	import { readPanelOpen, writePanelOpen } from '$lib/ui/handheldPanels.js'; // 41 G18
-	import { objectsGroup, selectedObject, selectedObjects } from '../../stores/sceneStore';
+	import { readPanelOpen, writePanelOpen, handheld } from '$lib/ui/handheldPanels.js'; // 41 G18 (+ 2.0-n3c: the read-only code sheet)
+	import { objectsGroup, selectedObject, selectedObjects, isVRMode } from '../../stores/sceneStore';
 	import { serializeNode, serializeEdge, deleteFlowNodes, deleteFlowEdges, setNodeData } from '$lib/nodesHandler';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import { defDefaults } from '$lib/customNodes';
 	import { findNodeSpec, nodeCatalog } from '$lib/nodeCatalog';
+	import { STARTER_RECIPES, insertStarterRecipe } from '$lib/starterRecipes.js'; // 78 F27
 	import { nodeDoc } from '$lib/nodeDocs';
-	import { isValidFlowConnection, typeColor, socketShape, SOCKET_TYPES, replaceableInputEdges, groupSocketType } from '$lib/flowSockets';
+	import { isValidFlowConnection, typeColor, socketShape, SOCKET_TYPES, replaceableInputEdges, groupSocketType, resolvedInputType } from '$lib/flowSockets';
+	import { lintFlowGraph, type FlowLintFinding } from '$lib/flowLint.js'; // 78 F24
+	import { fittingNodes, wireMenuRows, candidateOutputs, type WireEnd } from '$lib/wireSearch.js'; // 78 F1
+	import { animateInEditor, toggleAnimateInEditor } from '$lib/editorMotion'; // 78 F6
+	import { liveStateGraph, nodeLiveStates, clearLiveStates } from '$lib/nodeLiveState'; // 78 F7
 	import { variadicSocketExists, switcherItems, MAX_SWITCHER_ITEMS, SWITCHER_TYPES, switcherVType } from '$lib/variadicNodes.js'; // 37 (R6)
 	import { removeVariadicSocket, setSwitcherType, addSwitcherItem } from '$lib/variadicEdit.js'; // 37 (R6)
 	import KitButton from '../ui/Button.svelte'; // 37: the Switcher ⓘ rows on the redesign kit
 	import { moduleNodeGroups, moduleNodeComponents } from '$lib/moduleSDK';
 	import { peers, username, modulesOpen, flowFocus, showToast } from '../../stores/appStore';
+	import { conversionState } from '$lib/nodes/convertState.js'; // 2.0-int: the applier (convertToCode) loads on the first Convert
 	import { safeStorage } from '$lib/safeStorage';
 	// 48 D1: the node graph debugger — LOCAL breakpoints (a red dot on the card) + the panel
 	import { debugBreakpoints, toggleBreakpoint, setDebugOpen } from '$lib/flowDebug.js';
+	import { announceUnread } from '$lib/gameAnnounce'; // 78 F14
 	// 36 U11: groups/notes as graph data, the scoped keymap's node actions, undo for editor edits
 	import {
 		GROUP_TYPE,
@@ -181,160 +201,61 @@
 	//     node type. Core wins now, and a collision warns instead of vanishing.
 	// (3) A type nothing defines got xyflow's default card with no explanation.
 	//     UnknownNode says what is missing and offers to install it.
+	// 2.0 N1: the core rows are GENERATED from the node definitions (src/lib/nodes): each definition
+	// names its card by KEY, and this is the one place a key becomes a component. A key missing here is
+	// a svelte-check error (the Record below), and a definition naming an unknown key fails the build
+	// (CARD_KEYS + the node-registry-check plugin) — the "two registries, only one complains" trap is gone.
+	const CARDS: Record<CardKey, any> = {
+		AnimStateNode,
+		AnimationNode,
+		BehaviourNode,
+		BinaryNode,
+		BlendSpeedNode,
+		CodeRefNode,
+		ColliderNode,
+		ColorPickerNode,
+		ContactNode,
+		CounterNode,
+		EffectNode,
+		FlowIONode,
+		GameCameraNode,
+		GamepadNode,
+		HudNode,
+		KeyPressNode,
+		LoopNode,
+		MapRangeNode,
+		MoveInputNode,
+		NumberNode,
+		ObjectFlowNode,
+		ObjectPairNode,
+		ObjectSelectorNode,
+		OnClapNode,
+		OnClickNode,
+		OnHitNode,
+		ParticleNode,
+		PathEventNode,
+		PathPatrolNode,
+		PlayAnimNode,
+		RandomNode,
+		ScriptNode,
+		SelectNode,
+		SequenceNode,
+		SliderNode,
+		SoundNode,
+		SwitcherNode,
+		TimeNode,
+		TimelineSeqNode,
+		TimerNode,
+		ToggleAnimNode,
+		ToggleNode,
+		TravelNode,
+		Vector3Node,
+		VelocityNode
+	};
 	const CORE_NODE_TYPES: any = {
-		colorpicker: ColorPickerNode,
-		slider: SliderNode,
-		switcher: SwitcherNode,
-		objectselector: ObjectSelectorNode,
-		shake: AnimationNode,
-		spin: AnimationNode,
-		rotor: AnimationNode, // 36-fb F25
-		flowfloat: AnimationNode, // 36-fb F24
-		followpath: AnimationNode, // 40 F15
-		wander: AnimationNode,
-		orientvelocity: AnimationNode,
-		bodywave: AnimationNode,
-		bounce: AnimationNode,
-		orbit: AnimationNode,
-		pulse: AnimationNode,
-		blink: AnimationNode,
-		script: ScriptNode,
-		behaviour: BehaviourNode, // 34 R3
-		coderef: CodeRefNode, // 36 (G1): a Main-graph link to module/kit code
-		maprange: MapRangeNode,
-		select: SelectNode,
+		...Object.fromEntries(Object.entries(coreCardKeys()).map(([type, key]) => [type, CARDS[key as CardKey]])),
+		// not palette nodes: user-designed custom nodes and a group's boundary card
 		customnode: CustomNode,
-		pathpatrol: PathPatrolNode,
-		sound: SoundNode,
-		particle: ParticleNode,
-		jiggle: AnimationNode, // 36-sim U2b
-		mass: AnimationNode,
-		bounciness: AnimationNode,
-		friction: AnimationNode,
-		angularvelocity: AnimationNode,
-		motor: AnimationNode,
-		// 23-B3 music: the spec-driven card, like the physics family above. A type in
-		// nodeCatalog but NOT here falls through to UnknownNode — "this node comes from a
-		// module that isn't installed" — which is what these four did from the palette.
-		deviceparam: AnimationNode,
-		devicelevel: AnimationNode,
-		transportbeat: AnimationNode,
-		notetrigger: AnimationNode,
-		number: NumberNode,
-		vector3: Vector3Node,
-		toggle: ToggleNode,
-		random: RandomNode,
-		time: TimeNode,
-		math: BinaryNode,
-		compare: BinaryNode,
-		gate: BinaryNode,
-		loop: LoopNode,
-		timer: TimerNode,
-		distance: ObjectPairNode,
-		proximity: ObjectPairNode,
-		lookat: EffectNode,
-		setcolor: EffectNode,
-		visibility: EffectNode,
-		setuniform: EffectNode,
-		onclick: OnClickNode,
-		ongrab: OnClickNode, // 30b (core-games): the same pulse card
-		onimpact: ContactNode, // 36 X6: filter input + other output
-		// 24-A A2: its own card — the pulse dot PLUS speed/byMe value rows (the MoveInput
-		// shape: several source handles need labelled rows, not one right-edge dot)
-		onhit: OnHitNode,
-		onenter: ContactNode, // CL-C sensor edges; 36 X6: the contact card
-		onexit: ContactNode,
-		collider: ColliderNode, // CL-C
-		velocity: VelocityNode, // CL-C
-		measure: AnimationNode, // B6
-		onrest: AnimationNode, // B6 (the onimpact precedent: a trigger with params)
-		impulse: AnimationNode, // B6
-		setvelocity: AnimationNode, // B6
-		joint: AnimationNode, // B6
-		// B7: spec-driven (named input rows, four ranges, and the catalog `note`). A new
-		// node type has TWO registries and only one of them complains — a `spawn` in the
-		// catalog and not here renders as UnknownNode ("install the module that ships it").
-		spawn: AnimationNode,
-		counter: CounterNode,
-		flowinput: FlowIONode,
-		flowoutput: FlowIONode,
-		objectflow: ObjectFlowNode,
-		keypress: KeyPressNode,
-		// 21-E5: ONE card for the pad group (the HudNode precedent)
-		gamepadbutton: GamepadNode,
-		gamepadaxis: GamepadNode,
-		playanim: PlayAnimNode, // 17-E A5
-		blendspeed: BlendSpeedNode, // 57 M3
-		setanimparam: AnimationNode, // 57 M11 (spec-driven: named inputs + text/select/range)
-		onanimstate: AnimationNode, // 57 M11 (the onrest precedent: a trigger with params)
-		attachsocket: AnimationNode, // 57 M12
-		animfinished: OnClickNode, // 17-E: a pulse when a clip ends
-		animmarker: OnClickNode, // 17-E F5: a pulse at a named point in a clip
-		animstate: AnimStateNode, // 17-E F3: the readable half of it
-		playseq: TimelineSeqNode, // 48 S2: Play Sequence
-		onseqevent: TimelineSeqNode, // 48 S2: On Sequence Event
-		setexpression: AnimationNode, // 57 M4: spec-driven (expression text + weight)
-		// A3: ONE generic card for the whole HUD group (the ShaderNode precedent)
-		hudscreen: HudNode,
-		hudtext: HudNode,
-		hudbar: HudNode,
-		hudbutton: HudNode,
-		hudtimer: HudNode,
-		hudlist: HudNode,
-		hudinput: HudNode,
-		// 21-G1 fix, PRE-EXISTING since 21-E7 (ea46a7d): `hudrows` reached `nodeCatalog`
-		// and never this map, so a node dragged out of the CORE HUD palette rendered as
-		// UnknownNode — "this node comes from a module that isn't installed". Exactly the
-		// two-registry gotcha, and `flow-unknown-node` was red on release/next for it.
-		hudrows: HudNode,
-		hudset: HudNode,
-		// 21-G4: the derived scoreboard names an element like every other HUD node
-		leaderboard: HudNode,
-		// 21-D6: the game shell. AnimationNode renders them from their catalog params;
-		// setcamera/gamestart/setlook get their own card for the camera picker.
-		setgamestate: AnimationNode,
-		ongamestate: AnimationNode,
-		setvariable: AnimationNode,
-		getvariable: AnimationNode,
-		// 30 P4: the device-local pair (the second registry — the catalog is the first)
-		storevalue: AnimationNode,
-		storedvalue: AnimationNode,
-		// 30b (core-games): Game Feel — spec-driven like the rest of the game shell
-		announce: AnimationNode,
-		gamesound: AnimationNode,
-		effectburst: AnimationNode,
-		hapticpulse: AnimationNode,
-		gamemusic: AnimationNode,
-		// 31 (Stars Room): a player's setting row, the pointing switch (both spec-driven) and
-		// the clap, whose `point`/`byMe` outputs need labelled rows (the On Hit card's shape)
-		gamesetting: AnimationNode,
-		pointgrab: AnimationNode,
-		onclap: OnClapNode,
-		gametime: AnimationNode,
-		// 21-F3's `collectcount` card MOVED to the collectible module (R3a) — an old
-		// scene's node renders as UnknownNode until the module is installed, honestly
-		// 21-G4: the per-player read, same shape
-		peervariable: AnimationNode,
-		setcamera: GameCameraNode,
-		gamestart: GameCameraNode,
-		setlook: GameCameraNode,
-		// 21-F4: travel gets its own card for the level picker; allplayers is spec-driven
-		travel: TravelNode,
-		allplayers: AnimationNode,
-		// 21-E4: the logic a game loop is made of. All spec-driven except Sequence,
-		// which is the only one with several OUTPUTS and so needs its own four rows.
-		latch: AnimationNode,
-		delay: AnimationNode,
-		once: AnimationNode,
-		sequence: SequenceNode,
-		// 21-E6: the character controller. All spec-driven except Move Input, which is
-		// the only one with several OUTPUTS and so needs its own labelled rows.
-		charcontroller: AnimationNode,
-		possessnode: AnimationNode,
-		camerafollow: AnimationNode,
-		camerarig: AnimationNode, // 37 (R8)
-		movespeed: AnimationNode,
-		moveinput: MoveInputNode,
 		// 34 R2 (T3): every generated kit node renders from its spec params (the card a node
 		// in nodeCatalog but NOT here would get is UnknownNode)
 		...Object.fromEntries(kitNodeTypes().map((type) => [type, AnimationNode])),
@@ -636,6 +557,8 @@
 	let propsOpen = $state(readPanelOpen('flowPropsOpen', false));
 	// 4.3: right-panel tab — 'info' (selected node's params) | 'settings' (graph + name/note)
 	let propsTab = $state(LS?.getItem('flowPropsTab') || 'settings');
+	// 2.0 N2: 'code' only while the codeView flag is on (a remembered 'code' with the flag off reads as settings)
+	const shownTab = $derived(propsTab === 'code' && !$codeViewFlag ? 'settings' : propsTab);
 	// 179: the properties panel auto-reflows to the side OPPOSITE the palette so
 	// their divider tabs never overlap (the palette-side toggle used to hide it)
 	const propsSide = $derived(paletteSide === 'right' ? 'left' : 'right');
@@ -1133,6 +1056,111 @@
 		return edge;
 	};
 
+	// =================================================================================
+	// 78 F1 — DRAG A WIRE INTO SPACE → NODE SEARCH. A wire let go over the empty pane opens the
+	// pane menu's search at the drop point, listing only the nodes that fit (exact type first,
+	// coercions second, "Show all nodes" last — $lib/wireSearch.js probes each with the same
+	// isValidFlowConnection a drag runs). A pick adds the node AND the wire as ONE undo step;
+	// several fitting sockets on one node are one row each. Tab opens the same search; touch takes
+	// the same path (xyflow ends a finger's wire with the same event).
+	// =================================================================================
+	/** The real endpoint behind a dragged socket (a group card's socket = the one inside it). */
+	function wireEndOf(nodeId: string, handleId: string | null, side: 'source' | 'target'): WireEnd | null {
+		if (nodeId === GROUP_IN || nodeId === GROUP_OUT || isPseudo({ id: nodeId })) return null;
+		const c =
+			side === 'source'
+				? realConnection({ source: nodeId, sourceHandle: handleId, target: '', targetHandle: null })
+				: realConnection({ source: '', sourceHandle: null, target: nodeId, targetHandle: handleId });
+		const id = side === 'source' ? c.source : c.target;
+		const node = storeNodesNow().find((n) => n.id === id);
+		return node ? { node, handle: (side === 'source' ? c.sourceHandle : c.targetHandle) ?? null, side } : null;
+	}
+	const wireEndName = (from: WireEnd) => (from.node.data?.label || from.node.type) + (from.handle ? ' · ' + from.handle : '');
+	const wireEndType = (from: WireEnd) =>
+		from.side === 'source' ? groupSocketType(from.node, from.handle, 'out') : resolvedInputType(from.node, from.handle);
+
+	/** Add `type` at `at` wired to `from` through `handle` — ONE undo step (and the wire it replaces). */
+	function placeWired(type: string, label: string, handle: string | null, from: WireEnd, at: { x: number; y: number }) {
+		const spec = findNodeSpec(type);
+		const node = {
+			id: crypto.randomUUID(),
+			type,
+			position: from.side === 'source' ? { x: Math.round(at.x), y: Math.round(at.y - 20) } : { x: Math.round(at.x - 170), y: Math.round(at.y - 20) },
+			data: { label, type, ...(spec?.defaults ?? {}) },
+			class: 'w-[150px]'
+		} as any;
+		const conn =
+			from.side === 'source'
+				? { source: from.node.id, sourceHandle: from.handle, target: node.id, targetHandle: handle }
+				: { source: node.id, sourceHandle: handle, target: from.node.id, targetHandle: from.handle };
+		const stale = from.side === 'target' ? replaceableInputEdges(conn, storeNodesNow(), storeEdgesNow()) : [];
+		inBatch('Add and connect', () => {
+			if (stale.length) commitDelete([], stale);
+			commitCreate([node], [makeEdge(conn)]);
+		});
+	}
+
+	/** The wire search's rows. @param showAll the full catalog under the fitting rows */
+	function wireSearchItems(from: WireEnd, at: { x: number; y: number }, showAll: boolean) {
+		const catalog = enabledCatalog([...nodeCatalog, ...$moduleNodeGroups], $disabledNodeTypes);
+		const rows = wireMenuRows(fittingNodes(from, catalog, findNodeSpec));
+		const fits = new Set(rows.map((r) => r.type));
+		const row = (r: (typeof rows)[number]) => ({
+			label: r.perHandle ? `${r.label} · ${r.handle ?? 'in'}` : r.label,
+			fit: r.fit,
+			tooltip: r.fit ? `${r.fromType} converts to ${r.toType}` : `${r.toType} — an exact fit`,
+			action: () => placeWired(r.type, r.label, r.handle, from, at)
+		});
+		const items: any[] = [{ header: { title: 'Wire from ' + wireEndName(from), badge: wireEndType(from) } }];
+		const exact = rows.filter((r) => r.fit === 0).map(row);
+		const converts = rows.filter((r) => r.fit === 1).map(row);
+		if (exact.length) items.push({ label: 'Fits', children: exact });
+		if (converts.length) items.push({ label: 'Converts', children: converts });
+		if (showAll)
+			items.push({
+				label: 'All nodes',
+				children: catalog.flatMap((group: any) =>
+					group.items
+						.filter((i: any) => !fits.has(i.type) && i.type !== NOTE_TYPE && i.type !== GROUP_TYPE)
+						.map((i: any) => ({ label: i.label, fit: 2, tooltip: 'No socket fits this wire — added unwired', action: () => addNode(i.type, i.label, at) }))
+				)
+			});
+		else
+			items.push({
+				label: 'Show all nodes',
+				icon: 'list',
+				pinned: true,
+				keepOpen: true,
+				tooltip: 'List every node (the ones that do not fit are added unwired)',
+				action: () => {
+					if (menu?.wire) menu = { ...menu, items: wireSearchItems(from, at, true) };
+				}
+			});
+		return items;
+	}
+
+	/** Open the wire search at screen (x, y); the node lands at `at` (flow coords, default the point). */
+	async function openWireSearch(x: number, y: number, from: WireEnd, at?: { x: number; y: number }) {
+		const flowAt = at ?? screenToFlowPosition({ x, y });
+		menu = null; // a fresh menu: `startSearch` is read once, when the menu mounts
+		await tick();
+		menu = { x, y, search: true, wire: true, items: wireSearchItems(from, flowAt, false) };
+	}
+
+	const onConnectEnd = (event: MouseEvent | TouchEvent, state: any) => {
+		if (!state || state.isValid || state.toHandle || !state.fromNode || !state.fromHandle) return;
+		const touch = 'changedTouches' in event && event.changedTouches?.length ? event.changedTouches[0] : null;
+		const x = touch ? touch.clientX : (event as MouseEvent).clientX;
+		const y = touch ? touch.clientY : (event as MouseEvent).clientY;
+		const el = document.elementFromPoint(x, y) as HTMLElement | null;
+		// only a drop on the open pane: not on a card, a socket, the minimap or the zoom controls
+		if (!el?.closest('.svelteFlow') || el.closest('.svelte-flow__node, .svelte-flow__handle, .svelte-flow__panel, .flow-lint-chip')) return;
+		const from = wireEndOf(state.fromNode.id, state.fromHandle.id ?? null, state.fromHandle.type === 'target' ? 'target' : 'source');
+		if (!from) return;
+		// after the click the pointerup makes, or the pane click would close the menu it opened
+		setTimeout(() => openWireSearch(x, y, from), 0);
+	};
+
 	// Replicate deletions xyflow made itself (deleteKey is the registry's now — this is the
 	// path for any delete xyflow still owns)
 	const ondelete = ({ nodes: deletedNodes, edges: deletedEdges }: { nodes: Node[]; edges: Edge[] }) => {
@@ -1489,10 +1517,29 @@
 			setTimeout(() => frameNodes((nodes as any[]).filter((n) => n.id === left)), 30);
 		});
 	}
+	/** Tab: enter the one selected group — else (78 F1) open the node search. With ONE node selected
+	 * it is the drag-to-search list from that node's output, placed to its right; leaving a group is Esc. */
 	function toggleGroup() {
-		const g = selectedVisible().find(isGroup);
-		if (g && selectedVisible().length === 1) enterGroup(g.id);
-		else if (level) leaveGroup();
+		const sel = selectedVisible();
+		const g = sel.find(isGroup);
+		if (g && sel.length === 1) {
+			enterGroup(g.id);
+			return;
+		}
+		// nothing selected inside a group: Tab leaves it, as it always did
+		if (!sel.length && level) {
+			leaveGroup();
+			return;
+		}
+		const one = sel.length === 1 && !isNote(sel[0]) ? storeNodesNow().find((n) => n.id === sel[0].id) : null;
+		const from = one ? wireEndOf(one.id, candidateOutputs(String(one.type))[0] ?? null, 'source') : null;
+		if (!one || !from) {
+			addSearch();
+			return;
+		}
+		const p = lastPointer ?? paneCentre();
+		const w = sel[0].measured?.width ?? sel[0].width ?? 150;
+		openWireSearch(p.x, p.y, from, { x: sel[0].position.x + w + 60, y: sel[0].position.y + 20 });
 	}
 
 	// --- notes -------------------------------------------------------------------------
@@ -1736,6 +1783,79 @@
 		return list;
 	});
 
+	// =================================================================================
+	// 78 F24 — WRONG WIRING IS VISIBLE: the flow lint (pure, $lib/flowLint.js — the agent tools ask
+	// the same function) runs over the drawn graph; a flagged wire is dashed red, carries a chip
+	// at its middle whose tooltip says what is wrong, and the chip and the wire's own menu offer
+	// the fix (Reverse) as ONE undo step.
+	// =================================================================================
+	const lintFindings: FlowLintFinding[] = $derived.by(() => {
+		const drawn = (nodes as any[]).filter((n) => !n.hidden);
+		const ids = new Set(drawn.map((n) => n.id));
+		return lintFlowGraph(drawn, (edges as any[]).filter((e) => !e.hidden && ids.has(e.source) && ids.has(e.target)));
+	});
+	/** where a flagged wire's chip sits: halfway between the source's right edge and the target's left */
+	const lintChips = $derived.by(() => {
+		const byId = new Map((nodes as any[]).map((n) => [n.id, n]));
+		return lintFindings
+			.map((f) => {
+				const a = byId.get(f.source);
+				const b = byId.get(f.target);
+				if (!a || !b) return null;
+				const aw = a.measured?.width ?? a.width ?? 150;
+				const ah = a.measured?.height ?? a.height ?? 40;
+				const bh = b.measured?.height ?? b.height ?? 40;
+				const x1 = a.position.x + aw;
+				const y1 = a.position.y + ah / 2;
+				const x2 = b.position.x;
+				const y2 = b.position.y + bh / 2;
+				return { f, x: (x1 + x2) / 2, y: (y1 + y2) / 2, x1, y1, x2, y2 };
+			})
+			.filter((c): c is { f: FlowLintFinding; x: number; y: number; x1: number; y1: number; x2: number; y2: number } => !!c);
+	});
+	/** Apply a finding's fix: the flagged wire goes, the reversed one comes — ONE undo step. */
+	function reverseWire(f: FlowLintFinding) {
+		const fresh = makeEdge(f.fix);
+		const exists = storeEdgesNow().some((e) => e.id === fresh.id);
+		inBatch('Reverse wire', () => {
+			commitDelete([], [f.edgeId]);
+			if (!exists) commitCreate([], [fresh]);
+		});
+		showToast(exists ? 'Removed the backwards wire (the right one was already there)' : 'Wire reversed');
+	}
+	function lintMenu(f: FlowLintFinding, x: number, y: number) {
+		menu = {
+			x,
+			y,
+			items: [
+				{ header: { title: 'Backwards wire', badge: 'never fires' } },
+				{ label: 'Reverse wire', icon: 'arrow-left-right', tooltip: f.message, action: () => reverseWire(f) },
+				{ label: 'Disconnect', icon: 'x', action: () => commitDelete([], [f.edgeId]) }
+			]
+		};
+	}
+
+	// 78 F7: LIVE STATE ON THE CARDS — the runtime publishes one short line per card of the graph
+	// shown here (~4 Hz, $lib/nodeLiveState.js); each sits just under its card. Only while mounted.
+	$effect(() => {
+		liveStateGraph.set(activeId);
+	});
+	onMount(() => () => {
+		liveStateGraph.set(null);
+		clearLiveStates();
+	});
+	const liveChips = $derived.by(() => {
+		const states = $nodeLiveStates;
+		const out: { id: string; text: string; x: number; y: number; w: number }[] = [];
+		for (const n of nodes as any[]) {
+			const text = states[n.id];
+			if (!text || n.hidden || isPseudo(n)) continue;
+			const h = n.measured?.height ?? n.height ?? 40;
+			out.push({ id: n.id, text, x: n.position.x, y: n.position.y + h + 3, w: n.measured?.width ?? n.width ?? 150 });
+		}
+		return out;
+	});
+
 	// muted / collapsed cards: one generated stylesheet keyed by node id, so no node
 	// component has to learn about either (CSS.escape keeps a hostile id inert)
 	const bpSet = $derived(new Set($debugBreakpoints));
@@ -1754,6 +1874,8 @@
 			// 48 D1: a breakpoint is a red dot on the card's top-left corner (LOCAL, never node data)
 			if (bpSet.has(n.id)) rules.push(`${sel}::before{content:'';position:absolute;z-index:1;top:-5px;left:-5px;width:11px;height:11px;border-radius:9999px;background:var(--danger);box-shadow:0 0 0 2px var(--bg-app)}`);
 		}
+		// 78 F24: a wire the lint flags draws dashed in the danger colour (the chip on it says why)
+		for (const f of lintFindings) rules.push(`.svelteFlow .svelte-flow__edge[data-id="${esc(f.edgeId)}"] .svelte-flow__edge-path{stroke:var(--danger)!important;stroke-dasharray:6 4}`);
 		return rules.join('\n');
 	});
 
@@ -1825,8 +1947,28 @@
 						]
 					: []),
 				{ section: 'Add' },
+				recipeItems(),
 				...addNodeItems(flowPos)
 			]
+		};
+	}
+
+	/** 78 F27: the starter recipes — one-click inserts into the selected object's own flow */
+	function recipeItems() {
+		const onObject = activeId !== SCENE_GRAPH;
+		return {
+			label: 'Recipes',
+			icon: 'wand-sparkles',
+			children: STARTER_RECIPES.map((r) => ({
+				label: r.label,
+				icon: r.icon,
+				tooltip: onObject ? r.tooltip : 'Select an object first: a recipe goes into its own flow',
+				disabled: !onObject,
+				action: () => {
+					const result = insertStarterRecipe(r.id, activeId);
+					showToast(result.ok ? `Added the ${r.label.replace(/ \(.*$/, '').toLowerCase()} recipe — press Play to try it` : result.error);
+				}
+			}))
 		};
 	}
 
@@ -1834,6 +1976,14 @@
 		event.preventDefault();
 		openPaneMenu(event.clientX, event.clientY);
 	};
+
+	/** 2.0-n3c: Convert to code / Convert back, one undo step; the converted node is selected after */
+	async function runConvert(id: string, back: boolean) {
+		const { convertNode } = await import('$lib/convertToCode');
+		const result = convertNode(id, { back, graphId: activeId });
+		if (!result.ok) showToast(result.error);
+		else void tick().then(() => selectOnly([result.focus]));
+	}
 
 	/** The menu for a SET of nodes (a multi-selection, or one node). */
 	function selectionItems(list: any[]) {
@@ -1844,6 +1994,11 @@
 		const n = list.length;
 		const items: any[] = [];
 		if (one && (nodeHasCode(one, findNodeSpec(String(one.type))) || nodeUxHasCode(one))) items.push({ label: 'Open code', icon: 'file-text', action: () => openCode(one) });
+		// 2.0-n3c: a pure value node becomes a Script node holding its own reference JS; back while unchanged
+		const conv = one ? conversionState(one, $flowGraphs[activeId]) : null;
+		if (conv === 'convert') items.push({ label: 'Convert to code', icon: 'file-code', tooltip: 'Turn this node into a Script node that does the same thing, so you can edit how it works', action: () => runConvert(one.id, false) });
+		else if (conv === 'back') items.push({ label: 'Convert back', icon: 'undo-2', tooltip: 'Return the built-in node (its code is unchanged)', action: () => runConvert(one.id, true) });
+		else if (conv === 'changed') items.push({ label: 'Convert back', icon: 'undo-2', disabled: true, tooltip: 'The code was edited since Convert to code, so the built-in cannot do what it does now', action: () => {} });
 		if (one && isGroup(one)) items.push({ label: 'Open group', icon: 'folder-input', hint: hint('nodes.enter-group'), action: () => enterGroup(one.id) });
 		items.push({ label: n > 1 ? `Group ${n} nodes` : 'Group', icon: 'group', hint: hint('nodes.group'), action: groupSelection });
 		if (groups.length) items.push({ label: groups.length > 1 ? `Ungroup ${groups.length}` : 'Ungroup', icon: 'ungroup', hint: hint('nodes.ungroup'), action: () => ungroup() });
@@ -1920,10 +2075,14 @@
 
 	const onEdgeContextMenu = ({ edge, event }: { edge: Edge; event: MouseEvent }) => {
 		event.preventDefault();
+		const finding = lintFindings.find((f) => f.edgeId === edge.id); // 78 F24
 		menu = {
 			x: event.clientX,
 			y: event.clientY,
-			items: [{ label: (edge as any).data?.proxy ? 'Disconnect (the wire inside the group)' : 'Disconnect', action: () => deleteEdge(edge) }]
+			items: [
+				...(finding ? [{ header: { title: 'Backwards wire', badge: 'never fires' } }, { label: 'Reverse wire', icon: 'arrow-left-right', tooltip: finding.message, action: () => reverseWire(finding) }] : []),
+				{ label: (edge as any).data?.proxy ? 'Disconnect (the wire inside the group)' : 'Disconnect', action: () => deleteEdge(edge) }
+			]
 		};
 	};
 
@@ -1953,32 +2112,32 @@
 			</div>
 		</div>
 	{/if}
-	<!-- palette collapse/side controls: notebook-tab buttons on the divider (82) -->
+	<!-- showhide-v8 (owner 2026-11-09): the palette's ARROW handle (the one pane-handle pattern, $components/ui/PaneHandle)
+	     on the divider, taking no margin; the swap button went — "Move the palette to the other side" is in its menu -->
 	<div class="relative z-10 w-0" style="order: 2">
-		<button
+		<PaneHandle
 			id="palette-toggle"
-			class="palette-tab {paletteSide === 'right' ? 'palette-tab-mirrored' : ''} absolute top-8 flex h-14 w-4 items-center justify-center bg-surface-2 text-[10px] text-text-2 hover:bg-surface-active"
-			style="{paletteSide === 'right' ? 'right' : 'left'}: -1px"
-			title={paletteOpen ? 'Hide the node palette' : 'Show the node palette'}
+			edge={paletteSide === 'right' ? 'right' : 'left'}
+			open={paletteOpen}
+			label="the node palette"
+			windowKey="flow"
+			style="top: 2.5rem; {paletteSide === 'right' ? 'right' : 'left'}: 0"
 			onclick={() => {
 				paletteOpen = !paletteOpen;
 				writePanelOpen('flowPaletteOpen', paletteOpen);
 			}}
-		>
-			{paletteOpen ? (paletteSide === 'right' ? '▸' : '◂') : paletteSide === 'right' ? '◂' : '▸'}
-		</button>
-		<button
-			id="palette-side"
-			class="palette-tab {paletteSide === 'right' ? 'palette-tab-mirrored' : ''} absolute top-24 flex h-9 w-4 items-center justify-center bg-surface-2 text-[9px] text-text-2 hover:bg-surface-active"
-			style="{paletteSide === 'right' ? 'right' : 'left'}: -1px"
-			title="Move the palette to the other side" aria-label="Move the palette to the other side"
-			onclick={() => {
-				paletteSide = paletteSide === 'right' ? 'left' : 'right';
-				safeStorage.setItem('flowPaletteSide', paletteSide);
-			}}
-		>
-			⇄
-		</button>
+			extraItems={[
+				{
+					label: 'Move the palette to the other side',
+					icon: 'arrow-left-right',
+					tooltip: 'The palette and the properties trade sides',
+					action: () => {
+						paletteSide = paletteSide === 'right' ? 'left' : 'right';
+						safeStorage.setItem('flowPaletteSide', paletteSide);
+					}
+				}
+			]}
+		/>
 	</div>
 	<!-- 41 G15: the graph column = the breadcrumb bar (in the layout flow, so it can never cover
 	     the graph — the old floating chips wrapped into a tower over the nodes on a phone) + the pane -->
@@ -1999,7 +2158,9 @@
 					>{unknownHere} node{unknownHere === 1 ? ' needs' : 's need'} modules</KitButton>
 				{/if}
 				<!-- 48 D1: the Debugger panel (breakpoints, watch list, Step / Resume in Play) -->
-				<KitButton id="flow-debugger-open" variant="icon" size="sm" icon="bug" label="Debugger" title="Debugger — breakpoints, watch list, step through Play" onclick={() => setDebugOpen(true)} />
+				<KitButton id="flow-debugger-open" variant="icon" size="sm" icon="bug" label="Debugger" title={$announceUnread ? $announceUnread + ' new in the Debugger console (Announce in Edit)' : 'Debugger — breakpoints, watch list, step through Play'} onclick={() => setDebugOpen(true)} />
+				<!-- 78 F14: an Announce in Edit goes to the Debugger's console; a dot says something arrived -->
+				{#if $announceUnread}<span id="flow-console-dot" class="flow-console-dot" aria-label="{$announceUnread} new console lines"></span>{/if}
 				{#if level}
 					<!-- 36 U11: one level out of a group (Esc / Tab do the same) -->
 					<KitButton id="flow-group-leave" variant="icon" size="sm" icon="corner-left-up" label="Leave the group (Esc)" title="Leave the group (Esc)" onclick={leaveGroup} />
@@ -2062,6 +2223,7 @@
 			{snapGrid}
 			bind:viewport
 			{onbeforeconnect}
+			onconnectend={onConnectEnd}
 			{ondelete}
 			{isValidConnection}
 			panOnDrag={selectFirst ? [1, 2] : true}
@@ -2106,6 +2268,17 @@
 				<ControlButton id="flow-tidy" title={'Tidy graph (' + (hint('nodes.tidy') || 'L') + ')'} aria-label="Tidy graph" onclick={() => tidyGraph('layout')}>
 					<Icon name="network" size={16} aria-hidden="true" />
 				</ControlButton>
+				<!-- 78 F6: Animate in editor — off rests every flow-moved object at its authored pose until Play -->
+				<ControlButton
+					id="flow-animate-edit"
+					class={$animateInEditor ? '' : 'flow-motion-off'}
+					title={$animateInEditor ? 'Animate in editor: on (click to rest every moving object until Play)' : 'Animate in editor: off — moving objects rest until Play (click to animate)'}
+					aria-label="Animate in editor"
+					aria-pressed={$animateInEditor}
+					onclick={() => toggleAnimateInEditor()}
+				>
+					<Icon name={$animateInEditor ? 'rotate-cw' : 'pause'} size={16} aria-hidden="true" />
+				</ControlButton>
 			</Controls>
 			{#if showMinimap}
 				<MiniMap
@@ -2117,37 +2290,99 @@
 					maskColor="color-mix(in srgb, var(--bg-app) 65%, transparent)"
 				/>
 			{/if}
+			<!-- 78 F7: what each node is doing right now, under its card -->
+			{#each liveChips as chip (chip.id)}
+				<ViewportPortal target="front">
+					<div class="flow-live-state" data-node-id={chip.id} style="transform: translate({chip.x}px, {chip.y}px); max-width: {chip.w}px">{chip.text}</div>
+				</ViewportPortal>
+			{/each}
+			<!-- 78 F24: a chip on every wire the lint flags (tooltip = what is wrong; press = the fix) -->
+			{#each lintChips as chip (chip.f.edgeId)}
+				{@const bend = Math.max(40, Math.abs(chip.x2 - chip.x1) / 2)}
+				<!-- the flagged wire, drawn here too: xyflow cannot draw a wire into a card with no input
+				     socket (On Click has none), so the backwards wire would otherwise be invisible -->
+				<ViewportPortal target="back">
+					<svg class="flow-lint-wire" data-edge-id={chip.f.edgeId} aria-hidden="true">
+						<path d="M {chip.x1} {chip.y1} C {chip.x1 + bend} {chip.y1}, {chip.x2 - bend} {chip.y2}, {chip.x2} {chip.y2}" />
+					</svg>
+				</ViewportPortal>
+				<ViewportPortal target="front">
+					<button
+						type="button"
+						class="flow-lint-chip nodrag nopan"
+						data-edge-id={chip.f.edgeId}
+						style="transform: translate({chip.x}px, {chip.y}px) translate(-50%, -50%)"
+						title={chip.f.message}
+						aria-label={'Wire warning: ' + chip.f.message}
+						onclick={(e) => lintMenu(chip.f, e.clientX, e.clientY)}
+					>
+						<Icon name="triangle-alert" size={16} aria-hidden="true" />
+					</button>
+				</ViewportPortal>
+			{/each}
 		</SvelteFlow>
 		<PeerCursors {viewport} />
 	</div>
 	</div>
-	<!-- 166/179: flow PROPERTIES panel, auto-reflowed opposite the palette -->
+	<!-- 166/179: flow PROPERTIES panel, auto-reflowed opposite the palette; showhide-v8: its arrow handle carries
+	     the panel's role icon (the hybrid) -->
 	<div class="relative z-10 w-0" style="order: {propsSide === 'left' ? 0 : 4}">
-		<button
+		<PaneHandle
 			id="flow-props-toggle"
-			class="palette-tab {propsSide === 'left' ? '' : 'palette-tab-mirrored'} absolute top-8 flex h-14 w-4 items-center justify-center bg-surface-2 text-xs text-text-2 hover:bg-surface-active"
-			style="{propsSide === 'left' ? 'left' : 'right'}: -1px"
-			title={propsOpen ? 'Hide properties' : 'Show properties'} aria-label={propsOpen ? 'Hide properties' : 'Show properties'}
-			onclick={() => { propsOpen = !propsOpen; writePanelOpen('flowPropsOpen', propsOpen); }}
-		>
-			⚙
-		</button>
+			edge={propsSide === 'left' ? 'left' : 'right'}
+			open={propsOpen}
+			label="properties"
+			role={propsTab === 'info' ? 'info' : 'settings'}
+			windowKey="flow"
+			style="top: 2.5rem; {propsSide === 'left' ? 'left' : 'right'}: 0"
+			onclick={() => {
+				propsOpen = !propsOpen;
+				writePanelOpen('flowPropsOpen', propsOpen);
+			}}
+		/>
 	</div>
 	{#if propsOpen}
-		<div id="flow-props" class="relative flex h-full w-52 shrink-0 flex-col gap-2 overflow-y-auto bg-surface-1 p-2 text-xs text-text-2" use:minimalScroll style="order: {propsSide === 'left' ? -1 : 5}">
+		<div id="flow-props" class="relative flex h-full {shownTab === 'code' ? 'w-[min(26rem,88vw)]' : 'w-52'} shrink-0 flex-col gap-2 overflow-y-auto bg-surface-1 p-2 text-xs text-text-2" use:minimalScroll style="order: {propsSide === 'left' ? -1 : 5}">
 			<!-- 4.3: Explorer-style tabs — ⓘ = the selected node's PARAMETERS,
-			     ⚙ = graph settings + node name/note (as before) -->
+			     the cog = graph settings + node name/note (as before) -->
 			<div class="flex gap-1">
-				<button id="flow-tab-info" class="flex-1 rounded-sm px-2 py-1 {propsTab === 'info' ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 hover:bg-surface-active'}"
+				<button id="flow-tab-info" class="flex-1 rounded-sm px-2 py-1 {shownTab === 'info' ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 hover:bg-surface-active'}"
 					onclick={() => { propsTab = 'info'; LS?.setItem('flowPropsTab', 'info'); }}>ⓘ Params</button>
-				<button id="flow-tab-settings" class="flex-1 rounded-sm px-2 py-1 {propsTab === 'settings' ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 hover:bg-surface-active'}"
-					onclick={() => { propsTab = 'settings'; LS?.setItem('flowPropsTab', 'settings'); }}>⚙ Settings</button>
+				<button id="flow-tab-settings" class="flex-1 rounded-sm px-2 py-1 {shownTab === 'settings' ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 hover:bg-surface-active'}"
+					onclick={() => { propsTab = 'settings'; LS?.setItem('flowPropsTab', 'settings'); }}><Icon name="settings" size={16} class="inline-block shrink-0 align-[-2px]" /> Settings</button>
+				{#if $codeViewFlag}
+					<button id="flow-tab-code" class="rounded-sm px-2 py-1 {shownTab === 'code' ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 hover:bg-surface-active'}"
+						title="The graph as code (read-only)" aria-label="Code" aria-pressed={shownTab === 'code'}
+						onclick={() => { propsTab = 'code'; LS?.setItem('flowPropsTab', 'code'); }}><Icon name="code" size={16} class="inline-block shrink-0 align-[-2px]" />{#if shownTab === 'code'} Code{/if}</button>
+				{/if}
 			</div>
-			{#if propsTab === 'info'}
+			{#if shownTab === 'code'}
+				{#await codePane() then { default: FlowCodePane }}
+					<FlowCodePane graph={$flowGraphs[activeId]} graphId={activeId} selectedId={selectedNode?.id ?? null} />
+				{/await}
+			{:else if shownTab === 'info'}
 				{#if selectedNode}
 					<p class="ui-section-label">{selectedNode.data?.label ?? selectedNode.type}</p>
 					{#if nodeDoc(selectedNode.type)}
 						<p id="flow-node-doc" class="text-[11px] leading-snug text-text-muted">{nodeDoc(selectedNode.type)}</p>
+					{/if}
+					{@const sheetConv = conversionState(selectedNode, $flowGraphs[activeId])}
+					{#if sheetConv}
+						<!-- 2.0-n3c: the node sheet's Convert action (phone, VR and desktop alike) -->
+						<button
+							id="flow-node-convert"
+							type="button"
+							class="flex items-center justify-center gap-1 rounded-sm bg-surface-2 px-2 py-1 hover:bg-surface-active disabled:opacity-60"
+							data-conversion={sheetConv}
+							disabled={sheetConv === 'changed'}
+							title={sheetConv === 'convert' ? 'Turn this node into a Script node that does the same thing' : sheetConv === 'back' ? 'Return the built-in node (its code is unchanged)' : 'The code was edited since Convert to code, so the built-in cannot do what it does now'}
+							onclick={() => runConvert(selectedNode.id, sheetConv !== 'convert')}
+							><Icon name={sheetConv === 'convert' ? 'file-code' : 'undo-2'} size={16} class="shrink-0" />{sheetConv === 'convert' ? 'Convert to code' : 'Convert back'}</button
+						>
+					{/if}
+					{#if selectedNode.type === 'script' && selectedNode.data?.convertedFrom && (handheld() || $isVRMode)}
+						<p class="ui-section-label">Code · read-only on this device</p>
+						<pre id="flow-node-code-ro" use:minimalScroll class="max-h-64 overflow-auto whitespace-pre-wrap rounded-sm bg-surface-2 p-1 font-mono text-[length:var(--fs-badge)] text-text-2">{selectedNode.data.code}</pre>
 					{/if}
 					{#if selectedNode.type === 'slider'}
 						<label class="flex items-center justify-between gap-2">Min
@@ -2250,7 +2485,7 @@
 </div>
 
 {#if menu}
-	<ContextMenu x={menu.x} y={menu.y} items={menu.items} sizeKey="nodes" startSearch={!!menu.search} on:close={() => (menu = null)} />
+	<ContextMenu x={menu.x} y={menu.y} items={menu.items} sizeKey="nodes" startSearch={!!menu.search} browseCap={menu.wire ? 2000 : undefined} on:close={() => (menu = null)} />
 {/if}
 
 <style>
@@ -2278,7 +2513,70 @@
 	:global(.svelte-flow__node-note) {
 		z-index: 0 !important;
 	}
+	/* 78 F7: a card's live line (status text, not a control: it never takes the pointer) */
+	.flow-live-state {
+		position: absolute;
+		pointer-events: none;
+		padding: 0 6px;
+		border-radius: 4px;
+		background: color-mix(in srgb, var(--bg-app) 80%, transparent);
+		color: var(--text-2);
+		font-size: 10px;
+		line-height: 16px;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	/* 78 F6: the motion switch reads as OFF at a glance (not by colour alone: the glyph is a pause) */
+	:global(.svelte-flow__controls-button.flow-motion-off) {
+		color: var(--accent);
+	}
+	/* 78 F24: the flagged wire (dashed: not colour alone) */
+	.flow-lint-wire {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 1px;
+		height: 1px;
+		overflow: visible;
+		pointer-events: none;
+	}
+	.flow-lint-wire path {
+		fill: none;
+		stroke: var(--danger);
+		stroke-width: 2;
+		stroke-dasharray: 6 4;
+	}
+	/* 78 F24: the flagged-wire chip (a real button: focusable, named, its tooltip is the finding) */
+	.flow-lint-chip {
+		position: absolute;
+		pointer-events: all;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 24px;
+		height: 24px;
+		border-radius: 9999px;
+		border: 1px solid var(--danger);
+		background: var(--bg-app);
+		color: var(--danger);
+		cursor: pointer;
+	}
+	.flow-lint-chip:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+	}
 	:global(.svelte-flow__edge.tp-proxy-edge .svelte-flow__edge-path) {
 		stroke-dasharray: 6 3;
+	}
+	/* 78 F14: new Debugger console lines */
+	.flow-console-dot {
+		width: 7px;
+		height: 7px;
+		margin-left: -8px;
+		align-self: flex-start;
+		border-radius: 9999px;
+		background: var(--accent);
+		flex: 0 0 auto;
 	}
 </style>

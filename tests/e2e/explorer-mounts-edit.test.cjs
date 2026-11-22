@@ -34,7 +34,7 @@ const h = require('./helpers.cjs');
 const vols = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.mountedVolumes.mountedVolumes.subscribe((x) => (v = x))();
+		window.__tp.test.v1.mountedVolumes.mountedVolumes.subscribe((x) => (v = x))();
 		return (v ?? []).map((r) => ({
 			id: r.id,
 			sessionId: r.sessionId,
@@ -53,7 +53,7 @@ const vols = (p) =>
 /** the LIVE library, as one comparable string — the thing a mount must never move */
 const librarySnapshot = (p) =>
 	p.page.evaluate(() => {
-		const e = window.__stores.explorer;
+		const e = window.__tp.test.v1.explorer;
 		const read = (s) => {
 			let v;
 			s.subscribe((x) => (v = x))();
@@ -70,7 +70,7 @@ const librarySnapshot = (p) =>
 const sharedIndex = (p) =>
 	p.page.evaluate(() => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((x) => (m = x))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((x) => (m = x))();
 		return JSON.stringify({ folders: m.folders ?? [], items: m.items ?? [] });
 	});
 
@@ -82,13 +82,13 @@ const menuRows = (p) =>
 const activeFolderOf = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.explorer.activeFolder.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.activeFolder.subscribe((x) => (v = x))();
 		return v;
 	});
 
 /** save the CURRENT scene+library as a project, through the real Sessions UI */
 async function saveProject(p, name) {
-	await p.page.evaluate(() => window.__stores.sessionsOpen.set(true));
+	await p.page.evaluate(() => window.__tp.test.v1.sessionsOpen.set(true));
 	await p.page.waitForTimeout(900);
 	await p.page.locator('#session-save-project').click();
 	await p.page.waitForTimeout(400);
@@ -98,14 +98,14 @@ async function saveProject(p, name) {
 		() =>
 			p.page.evaluate(() => {
 				let v;
-				window.__stores.sessions.sessions.subscribe((x) => (v = x))();
+				window.__tp.test.v1.sessions.sessions.subscribe((x) => (v = x))();
 				return (v ?? []).map((m) => m.name);
 			}),
 		(names) => names.includes(name),
 		'the project "' + name + '" is saved',
 		25000
 	);
-	await p.page.evaluate(() => window.__stores.sessionsOpen.set(false));
+	await p.page.evaluate(() => window.__tp.test.v1.sessionsOpen.set(false));
 	await p.page.waitForTimeout(500);
 }
 
@@ -137,7 +137,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1440, height: 900 } } });
 	const page = A.page;
 	await page.waitForFunction(
-		() => !!window.__stores?.mountedVolumes && !!window.__stores?.explorer && !!window.__stores?.sessions,
+		() => !!window.__tp?.test.v1?.mountedVolumes && !!window.__tp?.test.v1?.explorer && !!window.__tp?.test.v1?.sessions,
 		null,
 		{ timeout: 30000 }
 	);
@@ -148,7 +148,7 @@ h.run(async () => {
 	// undivided suite's opening block used to leave behind: the library loaded from idb,
 	// nothing mounted, and one object in the scene so a saved project is a real one.
 	await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		await s.explorer.loadExplorer();
 		await s.explorer.clearLibrary();
 		for (const v of await new Promise((r) => {
@@ -158,7 +158,7 @@ h.run(async () => {
 		s.commandsHandler.sceneCommand('/create box');
 	});
 	await page.waitForTimeout(1400);
-	await page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await page.waitForTimeout(400);
 
 	// and the Explorer OPEN: section 10 mounts through the picker, whose entry point is
@@ -173,7 +173,7 @@ h.run(async () => {
 	// on purpose, so P3b started from a fresh project rather than reasoning about a
 	// broken one. It still does, and that is exactly why the seam is here.
 	await page.evaluate(async () => {
-		const s2 = window.__stores;
+		const s2 = window.__tp?.test.v1;
 		let mv;
 		s2.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
 		for (const v of mv) await s2.mountedVolumes.unmountVolume(v.id);
@@ -195,7 +195,7 @@ h.run(async () => {
 	const libBeforeEdit = await librarySnapshot(A);
 	const savedNames = (peer, sessionId) =>
 		peer.page.evaluate(async (id) => {
-			const rec = await window.__stores.idb.idbGet('session:' + id);
+			const rec = await window.__tp.test.v1.idb.idbGet('session:' + id);
 			return (rec?.library?.items ?? []).map((i) => i.name).sort();
 		}, sessionId);
 	const beforeSave = await savedNames(A, yard.sessionId);
@@ -205,11 +205,11 @@ h.run(async () => {
 	);
 
 	// ---- 11. an edit is BUFFERED: dirty, and disk untouched -------------------------
-	await page.evaluate((key) => window.__stores.explorer.activeFolder.set(key), 'vol:' + yard.id);
+	await page.evaluate((key) => window.__tp.test.v1.explorer.activeFolder.set(key), 'vol:' + yard.id);
 	await page.waitForTimeout(600);
 	const target = (await vols(A))[0].itemIds[0];
 	await page.evaluate(async (id) => {
-		const s2 = window.__stores;
+		const s2 = window.__tp?.test.v1;
 		let mv;
 		s2.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
 		const row = mv[0].items.find((i) => i.id === id);
@@ -236,10 +236,10 @@ h.run(async () => {
 
 	// ---- 12. THE BUFFER SURVIVES A RELOAD (the guard proven by breaking it) ---------
 	await h.freshReload(A);
-	await page.waitForFunction(() => !!window.__stores?.mountedVolumes, null, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.mountedVolumes, null, { timeout: 30000 });
 	await page.evaluate(async () => {
-		await window.__stores.mountedVolumes.loadMountedVolumes();
-		await window.__stores.explorer.loadExplorer();
+		await window.__tp.test.v1.mountedVolumes.loadMountedVolumes();
+		await window.__tp.test.v1.explorer.loadExplorer();
 	});
 	await page.waitForTimeout(1200);
 	const survived = (await vols(A))[0];
@@ -291,10 +291,10 @@ h.run(async () => {
 	// `addItemFromBytes` correctly answers with the item it has. The copy-out was working
 	// and the count could not move. Empty the library so the import has something to do.
 	await page.evaluate(async () => {
-		await window.__stores.explorer.clearLibrary();
+		await window.__tp.test.v1.explorer.clearLibrary();
 	});
 	await page.waitForTimeout(600);
-	await page.evaluate((key) => window.__stores.explorer.activeFolder.set(key), 'vol:' + saved.id);
+	await page.evaluate((key) => window.__tp.test.v1.explorer.activeFolder.set(key), 'vol:' + saved.id);
 	await page.waitForTimeout(700);
 	const copyOut = await page.evaluate(() => {
 		const card = document.querySelector('.ex-cards [data-card-id^="vitem:"]');
@@ -309,7 +309,7 @@ h.run(async () => {
 		() =>
 			page.evaluate(() => {
 				let v;
-				window.__stores.explorer.explorerItems.subscribe((x) => (v = x))();
+				window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (v = x))();
 				return v.map((i) => i.name);
 			}),
 		(names) => names.length === 1,
@@ -317,7 +317,7 @@ h.run(async () => {
 		15000
 	);
 	const afterCopyOut = await page.evaluate((id) => {
-		const s2 = window.__stores;
+		const s2 = window.__tp?.test.v1;
 		let lib;
 		s2.explorer.explorerItems.subscribe((x) => (lib = x))();
 		let mv;
@@ -350,7 +350,7 @@ h.run(async () => {
 	await page.waitForTimeout(1500);
 	const twiceOut = await page.evaluate(() => {
 		let v;
-		window.__stores.explorer.explorerItems.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (v = x))();
 		return v.length;
 	});
 	h.check(
@@ -363,7 +363,7 @@ h.run(async () => {
 	// on its own hashes, so copying in something it already has is a no-op by design
 	await page.evaluate(async () => {
 		const enc = (t) => new TextEncoder().encode(t).buffer;
-		await window.__stores.explorer.addItemFromBytes(enc('k'.repeat(455)), 'brick.txt', null);
+		await window.__tp.test.v1.explorer.addItemFromBytes(enc('k'.repeat(455)), 'brick.txt', null);
 	});
 	await page.waitForTimeout(600);
 	await page.locator('#explorer-root-row').click();
@@ -424,8 +424,8 @@ h.run(async () => {
 	// ---------------------------------------------------------------------------------
 	await page.evaluate(async () => {
 		let mv;
-		window.__stores.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
-		window.__stores.mountedVolumes.volumeRenameItem(mv[0].id, mv[0].items[0].id, 'edited-again.txt');
+		window.__tp.test.v1.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
+		window.__tp.test.v1.mountedVolumes.volumeRenameItem(mv[0].id, mv[0].items[0].id, 'edited-again.txt');
 	});
 	// A SAVE IS SEVERAL AWAITS LONG, so this rename lands while the one above may still be
 	// finishing — and a save that cleared `dirty` unconditionally would mark it saved when
@@ -441,10 +441,10 @@ h.run(async () => {
 	// two places to be. `activeFolder.set` is exactly what `openFolder` does (minus
 	// clearing the search box), and it is how §11 already navigates in this file.
 	const spots = await page.evaluate(() => {
-		const e = window.__stores.explorer;
+		const e = window.__tp.test.v1.explorer;
 		return { away: e.createFolder('Away', null).id, elsewhere: e.createFolder('Elsewhere', null).id };
 	});
-	const goTo = (id) => page.evaluate((f) => window.__stores.explorer.activeFolder.set(f), id);
+	const goTo = (id) => page.evaluate((f) => window.__tp.test.v1.explorer.activeFolder.set(f), id);
 	const armUnmount = async (id) => {
 		await page.locator('#mount-unmount-' + id).click();
 		await page.waitForSelector('#explorer-confirm-yes', { timeout: 15000 });
@@ -536,14 +536,14 @@ h.run(async () => {
 	);
 
 	// 16d — SAVE AND UNMOUNT is the outcome that did not exist before: it writes.
-	await page.evaluate((id) => window.__stores.mountedVolumes.mountVolume(id), dirtyVol.sessionId);
+	await page.evaluate((id) => window.__tp.test.v1.mountedVolumes.mountVolume(id), dirtyVol.sessionId);
 	await h.eventually(() => vols(A), (l) => l.length === 1, 'premise: it is mounted again', 15000);
 	dirtyVol = (await vols(A))[0];
 	await page.evaluate((v) => {
 		let mv;
-		window.__stores.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
+		window.__tp.test.v1.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
 		const rec = mv.find((x) => x.id === v);
-		window.__stores.mountedVolumes.volumeRenameItem(v, rec.items[0].id, 'kept-by-save.txt');
+		window.__tp.test.v1.mountedVolumes.volumeRenameItem(v, rec.items[0].id, 'kept-by-save.txt');
 	}, dirtyVol.id);
 	await page.waitForTimeout(500);
 	await goTo(spots.away);
@@ -570,14 +570,14 @@ h.run(async () => {
 	// 16e — the place you came from can be INSIDE the volume, and after an unmount it is
 	// not a place at all. Walking into one of its subfolders to look at what you are about
 	// to lose is the ordinary thing to do, so this is not a corner case.
-	await page.evaluate((id) => window.__stores.mountedVolumes.mountVolume(id), dirtyVol.sessionId);
+	await page.evaluate((id) => window.__tp.test.v1.mountedVolumes.mountVolume(id), dirtyVol.sessionId);
 	await h.eventually(() => vols(A), (l) => l.length === 1, 'premise: mounted once more', 15000);
 	const inner = (await vols(A))[0];
 	const innerFolder = await page.evaluate((v) => {
 		let mv;
-		window.__stores.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
+		window.__tp.test.v1.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
 		const rec = mv.find((x) => x.id === v);
-		window.__stores.mountedVolumes.volumeRenameItem(v, rec.items[0].id, 'doomed.txt');
+		window.__tp.test.v1.mountedVolumes.volumeRenameItem(v, rec.items[0].id, 'doomed.txt');
 		return rec.folders[0]?.id ?? null;
 	}, inner.id);
 	h.check(!!innerFolder, 'premise: the mount has a folder to stand in');
@@ -601,14 +601,14 @@ h.run(async () => {
 	// Every root the tree pins is checked here, so the next one to arrive is covered by
 	// construction rather than by somebody remembering.
 	const roots = ['prefabs', 'packs', 'scene', 'scene:textures', 'deleted', 'deletedlog'];
-	await page.evaluate((id) => window.__stores.mountedVolumes.mountVolume(id), dirtyVol.sessionId);
+	await page.evaluate((id) => window.__tp.test.v1.mountedVolumes.mountVolume(id), dirtyVol.sessionId);
 	await h.eventually(() => vols(A), (l) => l.length === 1, 'premise: mounted for the roots pass', 15000);
 	const rootVol = (await vols(A))[0];
 	await page.evaluate((v) => {
 		let mv;
-		window.__stores.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
+		window.__tp.test.v1.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
 		const rec = mv.find((x) => x.id === v);
-		window.__stores.mountedVolumes.volumeRenameItem(v, rec.items[0].id, 'roots.txt');
+		window.__tp.test.v1.mountedVolumes.volumeRenameItem(v, rec.items[0].id, 'roots.txt');
 	}, rootVol.id);
 	await page.waitForTimeout(400);
 	const restored = [];
@@ -627,8 +627,8 @@ h.run(async () => {
 	);
 	await page.evaluate(async () => {
 		let mv;
-		window.__stores.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
-		for (const v of mv) await window.__stores.mountedVolumes.unmountVolume(v.id);
+		window.__tp.test.v1.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
+		for (const v of mv) await window.__tp.test.v1.mountedVolumes.unmountVolume(v.id);
 	});
 	await page.waitForTimeout(400);
 	await goTo(null);

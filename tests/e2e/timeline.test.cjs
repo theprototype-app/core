@@ -18,6 +18,8 @@
 //      field and an old scene loads with none
 //  11. the phone sheet layout (folded OPPO Find N6 width): narrow header column, finger rows,
 //      no horizontal page scroll
+//  12. (68-int) a property track draws its keys; Smooth keys keeps the times and takes the shake
+//      out (one undo step back); a track kind from a newer version shows a note and survives edits
 //
 // Counterfactual: on v1.38.0 there is no Timeline — step 1 fails (no editor opens).
 // Run: e2e-slot --dev <lane> 5482 -- env APP_URL=https://localhost:5482/ npm run e2e -- timeline
@@ -33,18 +35,18 @@ const shot = async (page, name) => {
 /** the whole sequences map + the active id */
 const seqs = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let m;
 		let a;
 		s.sequences.sequences.subscribe((v) => (m = v))();
 		s.sequences.activeSequence.subscribe((v) => (a = v))();
 		return { all: m, active: a };
 	});
-const player = (page) => page.evaluate(() => window.__stores.sequencePlayer.sequencePlayerDebug());
+const player = (page) => page.evaluate(() => window.__tp.test.v1.sequencePlayer.sequencePlayerDebug());
 const transportOf = (page, id) =>
 	page.evaluate((sid) => {
 		let m;
-		window.__stores.sequencePlayer.seqTransport.subscribe((v) => (m = v))();
+		window.__tp.test.v1.sequencePlayer.seqTransport.subscribe((v) => (m = v))();
 		return m[sid] ?? null;
 	}, id);
 
@@ -65,6 +67,14 @@ async function pointAt(page, t, kind) {
 	);
 }
 
+/** uir-timeline: Autoplay / Loop / Length live in Properties ▸ Sequence — bring that tab forward (a press on the
+ *  tab already in front would put the pane away) */
+async function sequenceTab(page) {
+	if (await page.locator('#timeline-seq-props').isVisible().catch(() => false)) return;
+	await page.click('.tl-root [data-ws-mode="sequence"]');
+	await page.waitForSelector('#timeline-seq-props', { timeout: 5000 });
+}
+
 /** the single item of a track kind (the newest when several) */
 const itemsOf = (seq, kind) =>
 	seq.tracks.filter((tr) => tr.kind === kind).flatMap((tr) => tr.items);
@@ -82,7 +92,7 @@ h.run(async () => {
 
 	// ---------- the scene: two cameras, a door with a clip, a button, a sound ----------
 	const made = await pa.evaluate(async () => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		const list = () => {
 			let g;
 			S.objectsGroup.subscribe((v) => (g = v))();
@@ -165,7 +175,7 @@ h.run(async () => {
 		!!id && !!st.all[id] && st.all[id].name === 'Sequence',
 		`"New sequence" makes one and shows it (${st.all[id]?.name})`
 	);
-	await pa.evaluate((sid) => window.__stores.sequences.updateSequence(sid, { duration: 6 }), id);
+	await pa.evaluate((sid) => window.__tp.test.v1.sequences.updateSequence(sid, { duration: 6 }), id);
 
 	// ---------- 2. tracks + items through the real UI ----------
 	await pa.locator('#timeline-add-camera').click();
@@ -183,7 +193,7 @@ h.run(async () => {
 
 	// select the door, so the animation item picks it up by itself
 	await pa.evaluate((door) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		let g;
 		S.objectsGroup.subscribe((v) => (g = v))();
 		S.selectedObjects.set([g.getObjectByProperty('uuid', door)]);
@@ -228,7 +238,7 @@ h.run(async () => {
 	// the shot: Cam A gliding to Cam B over 2 s; the door clip
 	await pa.evaluate(
 		({ sid, it, cam1, cam2 }) =>
-			window.__stores.sequences.updateItem(sid, it, { t: 0.1, dur: 2, camera: cam1, to: cam2 }),
+			window.__tp.test.v1.sequences.updateItem(sid, it, { t: 0.1, dur: 2, camera: cam1, to: cam2 }),
 		{ sid: id, it: cams[0].id, cam1: made.cam1, cam2: made.cam2 }
 	);
 	// rename the event through the inspector
@@ -311,7 +321,7 @@ h.run(async () => {
 	);
 	const doorRot = await pa.evaluate((door) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g.getObjectByProperty('uuid', door).rotation.y;
 	}, made.door);
 	h.check(
@@ -349,7 +359,7 @@ h.run(async () => {
 	// ---------- 7. the Play Sequence node, on both peers ----------
 	await pa.evaluate(
 		({ button, sid }) => {
-			const S = window.__stores;
+			const S = window.__tp?.test.v1;
 			S.flowGraphsCtl.createObjectGraph(button);
 			const nh = S.nodesHandler;
 			nh.createFlowNode(
@@ -393,7 +403,7 @@ h.run(async () => {
 	// than itself (actionSeenAt), so a click racing the node's replication is rightly ignored
 	const hasGraph = (page) =>
 		page.evaluate(() => {
-			const ids = window.__stores.allNodes().map((n) => n.id);
+			const ids = window.__tp.test.v1.allNodes().map((n) => n.id);
 			return ['tl-click', 'tl-play', 'tl-boom', 'tl-end'].every((x) => ids.includes(x));
 		});
 	await h.eventually(
@@ -404,9 +414,9 @@ h.run(async () => {
 	);
 	await pa.waitForTimeout(800);
 	const clickAt = await pa.evaluate((button) => {
-		window.__stores.flowRuntime.fireObjectClick(button);
+		window.__tp.test.v1.flowRuntime.fireObjectClick(button);
 		let m;
-		window.__stores.flowTriggers.subscribe((v) => (m = v))();
+		window.__tp.test.v1.flowTriggers.subscribe((v) => (m = v))();
 		return m['tl-click']?.lastT ?? null;
 	}, made.button);
 	await h.eventually(
@@ -426,10 +436,10 @@ h.run(async () => {
 				JSON.stringify(
 					await B.page.evaluate(() => {
 						let m;
-						window.__stores.flowTriggers.subscribe((v) => (m = v))();
+						window.__tp.test.v1.flowTriggers.subscribe((v) => (m = v))();
 						return {
 							click: m['tl-click'] ?? null,
-							play: window.__stores.allNodes().find((n) => n.id === 'tl-play')?.data ?? null
+							play: window.__tp.test.v1.allNodes().find((n) => n.id === 'tl-play')?.data ?? null
 						};
 					})
 				) +
@@ -455,8 +465,8 @@ h.run(async () => {
 		viewB = next;
 	}
 	const diagB = await B.page.evaluate((cam) => ({
-		cam: !!window.__stores.objectsGroup && (() => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); return !!g?.getObjectByProperty?.('uuid', cam); })(),
-		t: (() => { const d = window.__stores.sequencePlayer.sequencePlayerDebug(); return d.runs.map((r) => r.t?.toFixed?.(2)); })()
+		cam: !!window.__tp.test.v1.objectsGroup && (() => { let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))(); return !!g?.getObjectByProperty?.('uuid', cam); })(),
+		t: (() => { const d = window.__tp.test.v1.sequencePlayer.sequencePlayerDebug(); return d.runs.map((r) => r.t?.toFixed?.(2)); })()
 	}), made.cam1);
 	h.check(
 		viewB.preview === made.cam1 || pastAlready,
@@ -467,7 +477,7 @@ h.run(async () => {
 	const pulses = (page) =>
 		page.evaluate((since) => {
 			let m;
-			window.__stores.flowTriggers.subscribe((v) => (m = v))();
+			window.__tp.test.v1.flowTriggers.subscribe((v) => (m = v))();
 			const fresh = (id) => (typeof m[id]?.lastT === 'number' && m[id].lastT >= since ? 1 : 0);
 			return { boom: fresh('tl-boom'), end: fresh('tl-end') };
 		}, clickAt - 0.5);
@@ -501,13 +511,14 @@ h.run(async () => {
 	);
 
 	// ---------- 8. autoplay (the exported game's start path) ----------
+	await sequenceTab(pa);
 	await pa.locator('#timeline-autoplay').click();
 	await h.eventually(
 		() => seqs(B.page),
 		(s) => s.all?.[id]?.autoplay === true,
 		'the Autoplay switch replicates'
 	);
-	await pa.evaluate(() => window.__stores.playMode.requestPlay({ flat: true }));
+	await pa.evaluate(() => window.__tp.test.v1.playMode.requestPlay({ flat: true }));
 	await h.eventually(
 		() => player(pa),
 		(d) => d.runs.some((r) => r.id === id && r.mode === 'game' && r.inPlay),
@@ -517,7 +528,7 @@ h.run(async () => {
 		!(await player(B.page)).runs.some((r) => r.inPlay),
 		'B (still editing) does not — autoplay is per player entering Play'
 	);
-	await pa.evaluate(() => window.__stores.playMode.exitPlay());
+	await pa.evaluate(() => window.__tp.test.v1.playMode.exitPlay());
 	await h.eventually(
 		() => player(pa),
 		(d) => !d.runs.length,
@@ -525,8 +536,9 @@ h.run(async () => {
 	);
 	await pa.waitForTimeout(800);
 	// the editor unmounts in Play and comes back with its open state (do not toggle it shut)
-	await pa.evaluate(() => window.__stores.timelineClose.set(false));
+	await pa.evaluate(() => window.__tp.test.v1.timelineClose.set(false));
 	await pa.locator('.tl-root').first().waitFor({ state: 'visible', timeout: 10000 });
+	await sequenceTab(pa);
 	await pa.locator('#timeline-autoplay').click(); // off again for the rest of the suite
 
 	// ---------- 9. undo replicates; a late joiner ----------
@@ -562,16 +574,16 @@ h.run(async () => {
 
 	// ---------- 10. save → clear → load ----------
 	const saved = await pa.evaluate(async () => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		const payload = await S.sessions.buildSessionPayload('tl');
 		return { json: JSON.stringify(payload), minor: payload.formatMinor, has: !!payload.sequences };
 	});
 	h.check(
-		saved.has && saved.minor === 2,
+		saved.has && saved.minor >= 2, // sequences arrived in formatMinor 2; a later minor (3: 2.0-n3c node defs) still carries them
 		`the save carries the sequences, formatMinor ${saved.minor}`
 	);
 	await pa.evaluate(async () => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		await S.sessions.applySession(S.sessions.emptySessionPayload('blank'), {
 			backup: false,
 			quiet: true
@@ -588,12 +600,12 @@ h.run(async () => {
 		'on B too'
 	);
 	const bare = await pa.evaluate(async () => {
-		const p = await window.__stores.sessions.buildSessionPayload('bare');
+		const p = await window.__tp.test.v1.sessions.buildSessionPayload('bare');
 		return 'sequences' in p;
 	});
 	h.check(!bare, 'a scene without sequences writes NO sequences field (byte-identical to 1.38)');
 	await pa.evaluate(async (json) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		await S.sessions.applySession(JSON.parse(json), { backup: false, quiet: true });
 	}, saved.json);
 	await h.eventually(
@@ -607,7 +619,7 @@ h.run(async () => {
 		'into the live room'
 	);
 	await pa.evaluate(async (json) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		const old = JSON.parse(json);
 		delete old.sequences;
 		old.formatMinor = 1;
@@ -639,7 +651,7 @@ h.run(async () => {
 		'premise: the phone shell is on'
 	);
 	await pp.evaluate(async (json) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		await S.sessions.applySession(JSON.parse(json), { backup: false, quiet: true });
 		S.dockMenu.setDockViewShown('timeline', true);
 	}, saved.json);
@@ -677,7 +689,7 @@ h.run(async () => {
 	await pp.waitForTimeout(300);
 	await shot(pp, '06-phone-sheet-light.png');
 	await pa.evaluate(async (json) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		await S.sessions.applySession(JSON.parse(json), { backup: false, quiet: true });
 		document.documentElement.dataset.theme = 'light';
 		document.documentElement.classList.remove('dark');
@@ -685,5 +697,50 @@ h.run(async () => {
 	await pa.waitForTimeout(500);
 	await shot(pa, '07-timeline-light.png');
 	await P.ctx.close();
+
+	// ---------- 12. (68-int) a property track's keys, Smooth keys, and a newer version's track ----------
+	const take = await pa.evaluate(() => {
+		const S = window.__tp?.test.v1;
+		const keys = Array.from({ length: 21 }, (_, i) => ({ id: 'k' + i, t: i * 0.25, v: 50 + (i % 2 ? 4 : -4), i: 'linear', h: 'vector', src: 'rec' }));
+		const sid = S.sequences.createSequence('Take 68', {
+			duration: 6,
+			tracks: [
+				{ id: 'tr-fov', kind: 'prop', name: '', target: 'nobody', path: 'camera.fov', type: 'number', keys },
+				{ id: 'tr-new', kind: 'hologram', name: 'Hologram', items: [{ id: 'h1', t: 1, beam: 2 }] }
+			]
+		});
+		return { sid, keys: keys.map((k) => [k.t, k.v]) };
+	});
+	await pa.waitForTimeout(500);
+	const rows = await pa.evaluate(() => ({
+		keys: document.querySelectorAll('.tl-lane[data-track-id="tr-fov"] .tl-key').length,
+		newer: document.querySelector('.tl-lane[data-track-id="tr-new"] .tl-newer')?.textContent || '',
+		addProp: document.querySelectorAll('#timeline-add-prop').length
+	}));
+	h.check(rows.keys === 21, `a property track draws its 21 keys as a row (${rows.keys})`);
+	h.check(/newer version of the app/.test(rows.newer), `a newer version's track is kept with a note, not broken ("${rows.newer.slice(0, 60)}")`);
+	await pa.locator('[data-track-menu="tr-fov"]').click();
+	await pa.locator('[role="menuitem"]', { hasText: 'Smooth keys' }).first().click();
+	await pa.waitForTimeout(400);
+	const smoothed = await pa.evaluate((sid) => {
+		let all = /** @type {any} */ (null);
+		window.__tp.test.v1.sequences.sequences.subscribe((/** @type {any} */ v) => (all = v))();
+		const tr = all[sid].tracks.find((/** @type {any} */ t) => t.id === 'tr-fov');
+		return { keys: tr.keys.map((/** @type {any} */ k) => [k.t, k.v]), newerKind: all[sid].tracks.find((/** @type {any} */ t) => t.id === 'tr-new')?.kind };
+	}, take.sid);
+	const sameTimes = smoothed.keys.length === take.keys.length && smoothed.keys.every((k, i) => Math.abs(k[0] - take.keys[i][0]) < 1e-9);
+	const wob = (/** @type {number[][]} */ ks) => ks.slice(2, -2).reduce((m, k) => Math.max(m, Math.abs(k[1] - 50)), 0);
+	h.check(sameTimes && wob(smoothed.keys) < wob(take.keys) / 2, `Smooth keys flattens the shake and keeps every key time (±${wob(take.keys)} → ±${wob(smoothed.keys).toFixed(2)})`);
+	h.check(smoothed.newerKind === 'hologram', 'editing the sequence keeps the newer track as it was');
+	await pa.evaluate(() => window.__tp.test.v1.history.undo());
+	await pa.waitForTimeout(400);
+	const undone = await pa.evaluate((sid) => {
+		let all = /** @type {any} */ (null);
+		window.__tp.test.v1.sequences.sequences.subscribe((/** @type {any} */ v) => (all = v))();
+		return all[sid].tracks.find((/** @type {any} */ t) => t.id === 'tr-fov').keys.map((/** @type {any} */ k) => k.v);
+	}, take.sid);
+	h.check(JSON.stringify(undone) === JSON.stringify(take.keys.map((k) => k[1])), 'one undo puts the recorded keys back');
+	await shot(pa, '08-property-track.png');
+	h.check(!h.pageErrors(A).length, `no page errors on A after the property track (${h.pageErrors(A).slice(0, 2).join(' | ') || 'none'})`);
 	await h.finish(browser);
 });

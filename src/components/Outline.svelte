@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { createRenderTarget } from '$lib/render/renderTargets.js'; // 101 F3: the one factory
 	import { objectsGroup, selectedObjects, lockedObjects, viewMode, isLocked, editorMode } from '../stores/sceneStore.js';
 	import { showToast } from '../stores/appStore.js';
 	import { get } from 'svelte/store';
@@ -42,7 +43,6 @@
 	import { shadowQuality } from '$lib/lightParams';
 	import { useTask, useThrelte } from '@threlte/core';
 	import { framesHeld, registerComposerWarm, schedule } from '$lib/sceneLoader';
-	import { WebGLRenderTarget } from 'three';
 	import { tick } from 'svelte';
 	import {
 		BlendFunction,
@@ -55,7 +55,8 @@
 	} from 'postprocessing';
 	import { onMount, onDestroy, untrack } from 'svelte';
 	import { renderPaused } from '$lib/overloadGuard';
-	import { qualityOverrides, ingestDrawGap } from '$lib/qualityGovernor';
+	import { qualityOverrides, ingestDrawGap, settleQuality } from '$lib/qualityGovernor';
+	import { liteLook } from '$lib/post/proPresetsCore.js';
 	import { agentRequested } from '$lib/agent/agentMode';
 	// 16-Q4 / 43 K5: every PiP window renders as a view of THIS renderer ($lib/pipViews)
 	import { renderPipViews, mainViewCovered, noteMainSkipped } from '$lib/pipViews';
@@ -63,6 +64,7 @@
 	// 37-hdri: half-float buffers + the environment's tone-mapping pass while an HDRI shows
 	import { envToneMapping } from '$lib/hdri/skyEnv';
 	import { setComposerHdr, syncEnvTonePass } from '$lib/hdri/composerHdr';
+	import { viewOwnsFrame, drawView, setViewSelection } from '$lib/render/view.js'; // 100 C1
 
 	let outlineEffectSelected: OutlineEffect | null = null;
 	let outlineEffectLocked: OutlineEffect | null = null;
@@ -116,6 +118,13 @@
 	// family as the meshEditOutline gotcha: an outline is composited after the
 	// scene, so nothing in-scene can beat it.) `rebuildStack` inserts stack passes
 	// at index 1.., never appends, which is what preserves this.
+	// 100 C1 (W14): the Cinematic view draws the same two outlines (TSL) over the same objects and colours
+	setViewSelection(() => ({
+		selected: [...(outlineEffectSelected?.selection ?? [])],
+		locked: [...(outlineEffectLocked?.selection ?? [])],
+		colors: { selected: outlineEffectSelected?.visibleEdgeColor, locked: outlineEffectLocked?.visibleEdgeColor }
+	}));
+	onDestroy(() => setViewSelection(null));
 	const outlinePassLocked = new EffectPass(camera.current, outlineEffectLocked);
 	const outlinePassSelected = new EffectPass(camera.current, outlineEffectSelected);
 	composer.addPass(outlinePassLocked);
@@ -191,6 +200,10 @@
 		});
 		stackPasses = compiled.passes;
 		stackInstances = compiled.instances;
+		// 98-int (device-lab-3, HONOR at Auto): a new chain compiles its shaders on its first frames, and
+		// those hitches are not the look's cost — read as overload, three preset switches walked the phone
+		// to level 6-9 (no post at all) and the flap lock kept it there. The F27 settle, as water and fluid do.
+		if (stackPasses.length) settleQuality();
 		stackPlan = compiled.plan;
 		stackSkipped = compiled.skipped;
 		// index 1.. = after RenderPass, BEFORE the two outline passes. postprocessing's
@@ -361,10 +374,12 @@
 			postOk,
 			postWarm
 		}).filter((entry) => !(reduced.aoOff && entry.kind === 'ao'));
-		const signature = postStackSignature(entries);
+		// 98-int: the governor's "Scene look lighter" step keeps the grade and drops the heavy passes
+		const shown = reduced.lookLite ? liteLook(entries) : entries;
+		const signature = postStackSignature(shown);
 		if (signature === stackSignature) return;
 		stackSignature = signature;
-		untrack(() => rebuildStack(entries));
+		untrack(() => rebuildStack(shown));
 	});
 
 	// the one local perf knob (shadowQuality) pokes the built passes live
@@ -438,7 +453,7 @@
 	let warmComposerTarget: any = null;
 	async function warmComposerPasses() {
 		await tick(); // the post document's effect rebuilds the stack first
-		if (!warmComposerTarget) warmComposerTarget = new WebGLRenderTarget(1, 1);
+		if (!warmComposerTarget) warmComposerTarget = createRenderTarget(1, 1);
 		const found: any[] = [];
 		const seen = new Set<any>();
 		const visit = (pass: any) => {
@@ -490,6 +505,11 @@
 				const drawNow = performance.now();
 				if (drawNow - lastDrawAt < drawGapMs) return;
 				lastDrawAt = drawNow;
+			}
+			// 100 C1: the Cinematic view draws this frame (its own renderer, on its own canvas)
+			if (viewOwnsFrame() && !renderer.xr.isPresenting) {
+				drawView(delta);
+				return;
 			}
 			// In WebXR the EffectComposer can't be used: its passes render to canvas-sized
 			// targets, not the XR framebuffer, so blitting them mismatches sizes

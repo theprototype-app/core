@@ -62,7 +62,7 @@
 			{/if}
 		{/each}
 		{#if !blocks.length && !framing}
-			<p class="tp-note-empty">Select the note and write its description in the properties panel (⚙).</p>
+			<p class="tp-note-empty">Select the note and write its description in the properties panel (the cog tab).</p>
 		{/if}
 	</div>
 </div>

@@ -22,6 +22,7 @@ import {
 	parseHashParams,
 	scrubHash,
 	inviteLink,
+	playInviteLink,
 	mcpCommand,
 	chatSentence,
 	INVITE_EXPIRY,
@@ -80,6 +81,19 @@ describe('tokens and the link', () => {
 		expect(parseHashParams(new URL(agent).hash)).toMatchObject({ peerId: 'A1B2C', agent: true, invite: t });
 		expect(mcpCommand(agent)).toBe("claude mcp add theprototype -- npx -y @theprototype/agent mcp '" + agent + "'");
 		expect(chatSentence(agent, 'agent')).toContain(agent);
+	});
+});
+
+describe('94 SP4: the play invite link', () => {
+	it('is the person link on the play entry — never an agent link — and parses like any invite', () => {
+		const t = newToken();
+		const link = playInviteLink('https://play.theprototype.app/play', HOST, t, '~srv=public');
+		expect(link).toBe('https://play.theprototype.app/play#A1B2C&invite=' + t + '~srv=public');
+		expect(link).not.toContain('&agent');
+		const p = parseHashParams(link.slice(link.indexOf('#')));
+		expect(p.invite).toBe(t);
+		expect(p.agent).toBe(false);
+		expect(p.peerId).toBe('A1B2C');
 	});
 });
 

@@ -173,6 +173,7 @@
 {#if offered && !open}
 	<button
 		id="game-shell-menu-button"
+		data-play-chrome
 		type="button"
 		class="gs-corner"
 		class:gs-corner-play={playing}
@@ -182,7 +183,7 @@
 	>
 		<Icon name="menu" size={16} aria-hidden="true" />
 		<span>Menu</span>
-		{#if playing}<kbd>Esc</kbd>{/if}
+		{#if playing && !coarse}<kbd>Esc</kbd>{/if}
 	</button>
 {/if}
 
@@ -421,6 +422,7 @@
 	.gs-card {
 		width: min(460px, 100%);
 		max-height: calc(100vh - 32px);
+		max-height: calc(100dvh - 32px);
 		overflow-y: auto;
 		padding: 20px 22px 22px;
 		border-radius: 16px;

@@ -19,7 +19,7 @@
 // on the body is left alone.
 const h = require('./helpers.cjs');
 
-const store = (name) => `(() => { let v; window.__stores.${name}.subscribe((x) => (v = x))(); return v; })()`;
+const store = (name) => `(() => { let v; window.__tp.test.v1.${name}.subscribe((x) => (v = x))(); return v; })()`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** @param {import('playwright').Page} page */
@@ -79,7 +79,7 @@ h.run(async () => {
 
 	// ---- content: enough rows that every list SCROLLS ----------------------------------------
 	await P.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		for (let i = 0; i < 26; i++) s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1500));
 		let g;
@@ -98,7 +98,7 @@ h.run(async () => {
 
 	const rest = async () => {
 		await P.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.phoneShell.phoneSheet.set(null);
 			s.viewportMenu.set(null);
 			s.objectListClose.set(true);
@@ -116,7 +116,7 @@ h.run(async () => {
 	};
 	const select = async () => {
 		await P.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let g;
 			s.objectsGroup.subscribe((v) => (g = v))();
 			s.objectActions.applySelectionSet([g.children[0].uuid]);
@@ -134,16 +134,16 @@ h.run(async () => {
 	// dock frame (#phone-dock), and a flick down at the list's top MINIMIZES the dock (the tab stays open)
 	const tabShown = (key) => `!(${store('bottomDock.dockMinimized')}) && ${store('bottomDock.visibleDockKey')} === '${key}'`;
 	const DRAWERS = [
-		['Objects', async () => P.evaluate(() => window.__stores.objectListClose.set(false)), '#phone-dock', '#object-list .obj-scroller', tabShown('objects'), { body: '#object-list .obj-scroller' }],
+		['Objects', async () => P.evaluate(() => window.__tp.test.v1.objectListClose.set(false)), '#phone-dock', '#object-list .obj-scroller', tabShown('objects'), { body: '#object-list .obj-scroller' }],
 		['Explorer', async () => { await tapSel('#ps-explorer'); }, '#explorer-list', null, `!(${store('bottomDock.dockMinimized')}) && !(${store('explorerClose')})`, { body: '#explorer-grid' }],
-		['Notes', async () => P.evaluate(() => window.__stores.notesDrawerOpen.set(true)), '#phone-dock', '#notes-drawer .notes-body', tabShown('notes'), { body: '#notes-drawer .notes-body' }],
+		['Notes', async () => P.evaluate(() => window.__tp.test.v1.notesDrawerOpen.set(true)), '#phone-dock', '#notes-drawer .notes-body', tabShown('notes'), { body: '#notes-drawer .notes-body' }],
 		['Add', async () => { await tapSel('#ps-add'); }, '.ctx-scroll[role=menu]', '.ctx-scroll[role=menu]', `!!document.querySelector('.ctx-scroll[role=menu]')`],
 		['Inspector', async () => { await select(); await tapSel('#ps-inspect'); }, '#phone-dock', '#inspector', tabShown('properties')],
 		['main menu', async () => touch.tap(34, 34), '#sidebar70', '#sidebar70', `!!document.querySelector('#sidebar70')`],
-		['notifications', async () => P.evaluate(() => window.__stores.notificationCenterOpen.set(true)), '.ps-sheet', '#notif-panel [data-notif-list], #notif-panel .wc-body, #notif-panel', store('notificationCenterOpen')],
+		['notifications', async () => P.evaluate(() => window.__tp.test.v1.notificationCenterOpen.set(true)), '.ps-sheet', '#notif-panel [data-notif-list], #notif-panel .wc-body, #notif-panel', store('notificationCenterOpen')],
 		['profile menu', async () => P.locator('#avatar-trigger').dispatchEvent('mousedown'), '#avatar-dropdown', '#avatar-dropdown', `!!document.querySelector('#avatar-dropdown')`],
 		['More', async () => { await tapSel('#ps-more'); }, '.ps-sheet', '#ps-more-sheet', `${store('phoneShell.phoneSheet')} === 'more'`],
-		['Configure Scene', async () => P.evaluate(() => window.__stores.showSidebar('scene')), '#phone-dock', '#inspector', tabShown('scene')]
+		['Configure Scene', async () => P.evaluate(() => window.__tp.test.v1.showSidebar('scene')), '#phone-dock', '#inspector', tabShown('scene')]
 	];
 
 	/** the scroller actually under a point (the first vertically scrollable ancestor) */
@@ -183,7 +183,10 @@ h.run(async () => {
 		 *  a dock tab's frame also holds the panel's header, which has nothing to scroll) */
 		const inY = (y) => Math.max(bodyR ? bodyR.top + 12 : s0.top + 40, Math.min(s0.bottom - 12, y));
 		const sc = await scrollerAt(bx, by);
-		const scrolls = !!sc && sc.max > 30;
+		// 54-int: a list must be able to ABSORB the gestures below (step 1 asks for > 40 px of scroll, the hand-back
+		// travels ~130 px past the start); a body that scrolls only a little (the Explorer's empty state with its
+		// "Add files…" button, 81 X1, overflows a 248 px sheet by ~40 px) hands the rest to the sheet by design
+		const scrolls = !!sc && sc.max > 140;
 		// --- 1. drag UP on the list: the list scrolls, the sheet stays ---
 		if (scrolls) {
 			await setProbeTop(0);
@@ -202,7 +205,7 @@ h.run(async () => {
 			h.check(s2 && Math.abs(s2.h - s0.h) < 4, `${name}: ...and does not move the sheet (${Math.round(s0.h)} -> ${Math.round(s2?.h ?? 0)})`);
 			h.check((await probeTop()) < before, `${name}: ...the list scrolled back toward its top (${before} -> ${await probeTop()})`);
 		} else {
-			h.check(true, `${name}: its body does not scroll at this height (${JSON.stringify(sc)}) — the body is the sheet`);
+			h.check(true, `${name}: its body does not scroll (far) at this height (${JSON.stringify(sc)}) — the body is the sheet`);
 		}
 		// --- 3. at the top: a slow drag down moves the SHEET with the finger ---
 		if (scrolls) await setProbeTop(0);
@@ -259,7 +262,11 @@ h.run(async () => {
 	// ---- rubber band past the max: a framed sheet (Chat) at full, pulled up on the grab bar
 	// (41b H1: Objects is a dock tab now, and the dock frame never stretched past its max) -----------------
 	await rest();
-	await P.evaluate(() => window.__stores.chatHidden.set(''));
+	// 78 PL23: Chat is a dock tab now; a framed sheet where undocking is allowed (Settings ▸ Interface)
+	await P.evaluate(() => {
+		window.__tp.test.v1.mobileUndockAllowed.set(true);
+		window.__tp.test.v1.chatHidden.set('');
+	});
 	await P.waitForTimeout(900);
 	{
 		const g = await rect('#ps-sheet-handle');
@@ -285,8 +292,9 @@ h.run(async () => {
 
 	await rest();
 	await P.evaluate(() => {
-		window.__stores.chatHidden.set('hidden');
-		window.__stores.objectListClose.set(false);
+		window.__tp.test.v1.chatHidden.set('hidden');
+		window.__tp.test.v1.mobileUndockAllowed.set(false);
+		window.__tp.test.v1.objectListClose.set(false);
 	});
 	await P.waitForTimeout(900);
 	// ---- a sideways move on the body is left alone ---------------------------------------------
@@ -301,7 +309,7 @@ h.run(async () => {
 
 	// ---- a dragged touch does not open the row it started on ------------------------------------
 	await rest();
-	await P.evaluate(() => window.__stores.objectListClose.set(false));
+	await P.evaluate(() => window.__tp.test.v1.objectListClose.set(false));
 	await P.waitForTimeout(900);
 	{
 		const row = await P.evaluate(() => {
@@ -333,7 +341,7 @@ h.run(async () => {
 		const iy = wide.ins.top + 160;
 		await touch.flick(ix, iy, 220); // a hard flick down
 		await P.waitForTimeout(700);
-		const after = await P.evaluate(() => { let v; window.__stores.inspectorClose.subscribe((x) => (v = x))(); const r = document.getElementById('inspector')?.getBoundingClientRect(); return { closed: v, h: r ? Math.round(r.height) : 0 }; });
+		const after = await P.evaluate(() => { let v; window.__tp.test.v1.inspectorClose.subscribe((x) => (v = x))(); const r = document.getElementById('inspector')?.getBoundingClientRect(); return { closed: v, h: r ? Math.round(r.height) : 0 }; });
 		h.check(!after.closed && Math.abs(after.h - wide.ins.h) < 4, `unfolded: a flick down on the side Inspector neither closes nor resizes it — its hidden grip is not a sheet (${JSON.stringify(after)})`);
 	}
 	// and back to folded: the drawers are sheets again and the hand-off works
@@ -342,8 +350,8 @@ h.run(async () => {
 	await rest();
 	// (the dock's ONE height was left at its minimum by the pulls above: give the list room again)
 	await P.evaluate(() => {
-		window.__stores.bottomDock.dockHeight.set(380);
-		window.__stores.objectListClose.set(false);
+		window.__tp.test.v1.bottomDock.dockHeight.set(380);
+		window.__tp.test.v1.objectListClose.set(false);
 	});
 	await P.waitForTimeout(900);
 	{

@@ -124,9 +124,47 @@ export function setPreviewPoseHook(fn) {
 	};
 }
 
+/**
+ * 68: Film mode's pose seam. While you film, the PHONE owns the preview camera (pose, fov,
+ * roll) and the marker stays where it is — the live pose travels as presence, not as
+ * `move` edits. Checked BEFORE the sequencer's glide hook.
+ * @type {((camera: any, uuid: string) => boolean)|null}
+ */
+let filmHook = null;
+
+/** @param {(camera: any, uuid: string) => boolean} fn */
+export function setFilmPoseHook(fn) {
+	filmHook = fn;
+	return () => {
+		if (filmHook === fn) filmHook = null;
+	};
+}
+
 /** @param {any} camera @param {string} uuid */
 export function previewPoseOverride(camera, uuid) {
+	if (filmHook && filmHook(camera, uuid)) return true;
 	return poseHook ? poseHook(camera, uuid) : false;
+}
+
+const rollAxis = new THREE.Vector3(0, 0, 1);
+const rollQuat = new THREE.Quaternion();
+
+/**
+ * 68: the lens state a camera marker carries beyond its pose — `fov` (a prop track or the
+ * Inspector may change it after the camera mounted) and the dutch `roll` (degrees about
+ * the view axis, recorded as its own track). Called after the pose is copied each frame.
+ * @param {any} camera @param {any} object
+ */
+export function applyMarkerLens(camera, object) {
+	const spec = object?.userData?.camera;
+	if (!camera || !spec) return;
+	const roll = Number(spec.roll);
+	if (Number.isFinite(roll) && roll) camera.quaternion.multiply(rollQuat.setFromAxisAngle(rollAxis, (-roll * Math.PI) / 180));
+	const fov = Number(spec.fov);
+	if (camera.isPerspectiveCamera && Number.isFinite(fov) && Math.abs(camera.fov - fov) > 1e-4) {
+		camera.fov = fov;
+		camera.updateProjectionMatrix();
+	}
 }
 
 /** pose the marker had when Control began (for the single undo entry) */

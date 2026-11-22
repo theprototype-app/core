@@ -409,6 +409,7 @@
 		/* R22 round 8: never past the bottom of the window — scroll instead. `--dw-top` is
 		   the chrome offset the window system already publishes, so this needs no measuring. */
 		max-height: calc(100vh - var(--dw-top, 64px) - 24px);
+		max-height: calc(100dvh - var(--dw-top, 64px) - 24px);
 		overflow-y: auto;
 		border-radius: 6px;
 		border: 1px solid var(--border);

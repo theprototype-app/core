@@ -10,7 +10,7 @@ h.run(async () => {
 	// throwaway page warms the vite dep-optimizer for the lazy rapier import
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(4000);
 		await warm.ctx.close();
 	}
@@ -19,11 +19,11 @@ h.run(async () => {
 
 	// 1) primitives are dynamic by default; Terrain stays scenery
 	const defaults = await A.page.evaluate(() => {
-		const cmd = window.__stores.commandsHandler.sceneCommand;
+		const cmd = window.__tp.test.v1.commandsHandler.sceneCommand;
 		cmd('/create box');
 		cmd('/create Terrain 24 48');
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const box = g.children.find((c) => c.name === 'Box');
 		const terrain = g.children.find((c) => c.name === 'Terrain');
 		window.__box = box;
@@ -38,11 +38,11 @@ h.run(async () => {
 	// With the old world-AABB capture the ramp was a fat axis-aligned block (flat
 	// top -> the ball just rests); oriented, the ball rolls DOWN the slope.
 	const ballUuid = await A.page.evaluate(() => {
-		const cmd = window.__stores.commandsHandler.sceneCommand;
+		const cmd = window.__tp.test.v1.commandsHandler.sceneCommand;
 		cmd('/create Box 6 0.4 4');
 		cmd('/create Sphere 0.5');
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const ramp = g.children[g.children.length - 2];
 		const ball = g.children[g.children.length - 1];
 		ramp.position.set(0, 2, 0);
@@ -59,9 +59,9 @@ h.run(async () => {
 		return ball.uuid;
 	});
 	await A.page.waitForTimeout(300);
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(
-		() => A.page.evaluate(() => new Promise((r) => window.__stores.physics.simulating.subscribe(r)())),
+		() => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.physics.simulating.subscribe(r)())),
 		(v) => v === true,
 		'simulation started'
 	);
@@ -71,11 +71,11 @@ h.run(async () => {
 		'ball rolls DOWN the rotated ramp (oriented collider)',
 		15000
 	);
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await A.page.waitForTimeout(400);
 
 	// 3) Inspector: search filters sections by rendered text; sections collapse
-	await A.page.evaluate(() => window.__stores.objectActions.selectObject(window.__box.uuid, true));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.selectObject(window.__box.uuid, true));
 	await A.page.waitForTimeout(700);
 	const sectionState = (page) =>
 		page.evaluate(() => {
@@ -87,18 +87,18 @@ h.run(async () => {
 			}
 			return state;
 		});
-	await A.page.evaluate(() => window.__stores.inspectorFilter.set('bounciness'));
+	await A.page.evaluate(() => window.__tp.test.v1.inspectorFilter.set('bounciness'));
 	await A.page.waitForTimeout(400);
 	let vis = await sectionState(A.page);
 	h.check(
 		vis.Physics === true && vis.Transform === false && vis.Material === false,
 		`search "bounciness" leaves only Physics (${JSON.stringify(vis)})`
 	);
-	await A.page.evaluate(() => window.__stores.inspectorFilter.set('emit'));
+	await A.page.evaluate(() => window.__tp.test.v1.inspectorFilter.set('emit'));
 	await A.page.waitForTimeout(400);
 	vis = await sectionState(A.page);
 	h.check(vis.Particles === true && vis.Physics === false, `search "emit" finds Particles (${JSON.stringify(vis)})`);
-	await A.page.evaluate(() => window.__stores.inspectorFilter.set(''));
+	await A.page.evaluate(() => window.__tp.test.v1.inspectorFilter.set(''));
 	await A.page.waitForTimeout(400);
 	vis = await sectionState(A.page);
 	h.check(vis.Transform === true && vis.Physics === true, 'clearing the search restores all sections');

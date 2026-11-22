@@ -607,6 +607,10 @@ function install() {
 
 const LONG_PRESS_MS = 500;
 const SLOP = 10;
+/** 98-int (device-lab-3, HONOR): a slow finger drag on a slider moved < 10 px in the first 500 ms and opened this
+ *  menu instead of dragging. A range thumb has no long-press meaning; the row's label and value box keep the menu.
+ *  @param {EventTarget|null} t */
+const onSlider = (t) => !!(/** @type {any} */ (t)?.closest?.('input[type="range"], [role="slider"]'));
 
 /**
  * Svelte action: copy / paste / reset on a field or a section header.
@@ -619,6 +623,8 @@ export function fieldClip(node, getSpec) {
 	/** @type {any} */ let timer = null;
 	let startX = 0;
 	let startY = 0;
+	/** this touch already travelled past the slop: it is a drag (98-int) */
+	let dragged = false;
 	let swallow = false;
 	/** what had focus BEFORE this press — a right mouse-down focuses the box it lands on
 	 *  @type {Element|null} */
@@ -628,6 +634,12 @@ export function fieldClip(node, getSpec) {
 	function onContext(e) {
 		// the native menu stays on a text box you were ALREADY typing in (cut / copy / paste of TEXT)
 		if (editable(e.target) && e.target === focusAtPress) return;
+		// a touch long-press on a slider is the start of a drag, not a menu (see onSlider); and Chrome's own
+		// long-press can still fire after a slow drag left the slop (device-lab-3: a 0.9 s scrub) — a drag, not a menu
+		if (/** @type {any} */ (e).pointerType === 'touch' && (onSlider(e.target) || dragged)) {
+			e.preventDefault();
+			return;
+		}
 		// Android fires its own contextmenu for the long press we already answered
 		if (Date.now() - menuOpenedAt < 800) {
 			e.preventDefault();
@@ -647,6 +659,7 @@ export function fieldClip(node, getSpec) {
 	/** @param {PointerEvent} e */
 	function onDown(e) {
 		swallow = false;
+		dragged = false;
 		focusAtPress = document.activeElement;
 		if (e.pointerType === 'mouse' || !e.isPrimary) return;
 		startX = e.clientX;
@@ -659,6 +672,7 @@ export function fieldClip(node, getSpec) {
 		if (spec?.(e.target)) /** @type {any} */ (e).__fieldClipOwner = node;
 		timer = setTimeout(() => {
 			timer = null;
+			if (onSlider(target)) return;
 			const s = spec?.(target);
 			if (!s || /** @type {any} */ (e).__fieldClipOwner !== node) return;
 			swallow = open(startX, startY, itemsFor(node, s, target));
@@ -667,6 +681,7 @@ export function fieldClip(node, getSpec) {
 	}
 	/** @param {PointerEvent} e */
 	function onMove(e) {
+		if (e.pointerType !== 'mouse' && Math.hypot(e.clientX - startX, e.clientY - startY) > SLOP) dragged = true;
 		if (timer && Math.hypot(e.clientX - startX, e.clientY - startY) > SLOP) {
 			clearTimeout(timer);
 			timer = null;

@@ -25,25 +25,25 @@ h.run(async () => {
 	await A.page.evaluate(() => {
 		window.__types = {};
 		let p;
-		window.__stores.peers.subscribe((x) => (p = x))();
+		window.__tp.test.v1.peers.subscribe((x) => (p = x))();
 		Object.values(p.connections).forEach((conn) =>
 			conn.on('data', (d) => {
 				if (d && d.type) window.__types[d.type] = (window.__types[d.type] ?? 0) + 1;
 			})
 		);
 		// 60 Q2: camera + vrhands ride the FAST channel between two 1.44 peers; count those arrivals too
-		window.__stores.fastChannel.setPoseTap((peer, d, via) => {
+		window.__tp.test.v1.fastChannel.setPoseTap((peer, d, via) => {
 			if (via === 'fast' && d?.type) window.__types[d.type] = (window.__types[d.type] ?? 0) + 1;
 		});
 	});
 
-	const stateOn = (page, id) => page.evaluate((id) => window.__stores.avatars.avatarsDebug()[id] ?? null, id);
-	const camTo = (page, pos, target) => page.evaluate(({ pos, target }) => window.__stores.objectActions.flyTo(pos, target, 0), { pos, target });
+	const stateOn = (page, id) => page.evaluate((id) => window.__tp.test.v1.avatars.avatarsDebug()[id] ?? null, id);
+	const camTo = (page, pos, target) => page.evaluate(({ pos, target }) => window.__tp.test.v1.objectActions.flyTo(pos, target, 0), { pos, target });
 
 	// ---- 1. B picks the Knight in the customise panel -------------------------------------------
 	await camTo(B.page, [0, 1.6, 0], [0, 1.6, -5]);
 	await B.page.waitForTimeout(500);
-	await B.page.evaluate(() => window.__stores.characterModalOpen.set(true));
+	await B.page.evaluate(() => window.__tp.test.v1.characterModalOpen.set(true));
 	await B.page.waitForSelector('#character-panel');
 	await B.page.click('[data-character="knight"]');
 	await B.page.click('[data-hat="cap"]');
@@ -65,8 +65,8 @@ h.run(async () => {
 	const headFeet = () =>
 		A.page.evaluate((id) => {
 			let scene;
-			window.__stores.globalScene.subscribe((x) => (scene = x))();
-			return { head: scene.getObjectByName(id).position.y, feet: window.__stores.avatars.avatarsDebug()[id]?.feet?.[1] ?? NaN };
+			window.__tp.test.v1.globalScene.subscribe((x) => (scene = x))();
+			return { head: scene.getObjectByName(id).position.y, feet: window.__tp.test.v1.avatars.avatarsDebug()[id]?.feet?.[1] ?? NaN };
 		}, B.id);
 	await h.eventually(
 		headFeet,
@@ -76,7 +76,7 @@ h.run(async () => {
 	);
 	const hat = await A.page.evaluate((id) => {
 		let scene;
-		window.__stores.globalScene.subscribe((x) => (scene = x))();
+		window.__tp.test.v1.globalScene.subscribe((x) => (scene = x))();
 		return !!scene.getObjectByName(id + '-avatar-head');
 	}, B.id);
 	h.check(hat, '1.4 B\'s cap rides the rigged head');
@@ -87,7 +87,7 @@ h.run(async () => {
 	const walked = await B.page.evaluate(async () => {
 		for (let i = 0; i < 40; i++) {
 			const z = -i * 0.065;
-			window.__stores.objectActions.flyTo([0, 1.6, z], [0, 1.6, z - 5], 0);
+			window.__tp.test.v1.objectActions.flyTo([0, 1.6, z], [0, 1.6, z - 5], 0);
 			await new Promise((r) => setTimeout(r, 50));
 		}
 		return true;
@@ -104,7 +104,7 @@ h.run(async () => {
 		B.page.evaluate(async () => {
 			for (let i = 40; i < 80; i++) {
 				const z = -i * 0.065;
-				window.__stores.objectActions.flyTo([0, 1.6, z], [0, 1.6, z - 5], 0);
+				window.__tp.test.v1.objectActions.flyTo([0, 1.6, z], [0, 1.6, z - 5], 0);
 				await new Promise((r) => setTimeout(r, 50));
 			}
 		}),
@@ -127,7 +127,7 @@ h.run(async () => {
 	await camTo(B.page, head, [head[0], head[1], head[2] - 5]);
 	await B.page.waitForTimeout(400);
 	await xr.install(B.page);
-	await B.page.evaluate(() => window.__stores.isVRMode.set(true));
+	await B.page.evaluate(() => window.__tp.test.v1.isVRMode.set(true));
 	// left hand forward at chest height (reachable), right hand held far out (NOT reachable)
 	const left = [head[0] + 0.25, 1.2, head[2] - 0.35];
 	const right = [head[0] - 1.6, 1.4, head[2] - 0.2];
@@ -135,7 +135,7 @@ h.run(async () => {
 	await xr.pose(B.page, 'right', right, { yaw: 0 });
 	// stream the controller poses exactly as Scene's broadcastVRHands builds them (controller branch)
 	await B.page.evaluate(() => {
-		const THREE = window.__stores.THREE;
+		const THREE = window.__tp.test.v1.THREE;
 		const r = window.__fakeXR.renderer;
 		const pose = (i) => {
 			const c = r.xr.getController(i);
@@ -147,7 +147,7 @@ h.run(async () => {
 		};
 		window.__handsTimer = setInterval(() => {
 			let peer;
-			window.__stores.peers.subscribe((x) => (peer = x))();
+			window.__tp.test.v1.peers.subscribe((x) => (peer = x))();
 			peer.send({ type: 'vrhands', peerId: peer.peer.id, left: pose(0), right: pose(1), active: true });
 		}, 33);
 	});
@@ -164,14 +164,14 @@ h.run(async () => {
 	h.check(s3.ik.right < 0.3, `3.3 the out-of-reach RIGHT hand stays with the floating marker (confidence ${s3.ik.right.toFixed(2)})`);
 	const markers = await A.page.evaluate((id) => {
 		let scene;
-		window.__stores.globalScene.subscribe((x) => (scene = x))();
+		window.__tp.test.v1.globalScene.subscribe((x) => (scene = x))();
 		const count = (n) => {
 			let k = 0;
 			scene.getObjectByName(n)?.traverse((o) => o.isMesh && k++);
 			return k;
 		};
 		let ik;
-		window.__stores.avatars.avatarIkPeers.subscribe((x) => (ik = x))();
+		window.__tp.test.v1.avatars.avatarIkPeers.subscribe((x) => (ik = x))();
 		return { left: count(id + '-hand-left'), right: count(id + '-hand-right'), flags: ik[id] ?? null };
 	}, B.id);
 	h.check(markers.flags?.left === true && !markers.flags?.right, `3.4 avatarIkPeers says the body holds the left hand only (${JSON.stringify(markers.flags)})`);
@@ -183,9 +183,9 @@ h.run(async () => {
 	await B.page.evaluate(() => {
 		clearInterval(window.__handsTimer);
 		let peer;
-		window.__stores.peers.subscribe((x) => (peer = x))();
+		window.__tp.test.v1.peers.subscribe((x) => (peer = x))();
 		peer.send({ type: 'vrhands', peerId: peer.peer.id, left: null, right: null, active: false });
-		window.__stores.isVRMode.set(false);
+		window.__tp.test.v1.isVRMode.set(false);
 	});
 	await xr.uninstall(B.page);
 	await h.eventually(
@@ -196,7 +196,7 @@ h.run(async () => {
 	);
 
 	// ---- 5. Classic ----------------------------------------------------------------------------
-	await B.page.evaluate(() => window.__stores.characterModalOpen.set(true));
+	await B.page.evaluate(() => window.__tp.test.v1.characterModalOpen.set(true));
 	await B.page.waitForSelector('#character-panel');
 	await B.page.click('[data-character="classic"]');
 	await B.page.click('#character-apply');
@@ -204,8 +204,8 @@ h.run(async () => {
 		() =>
 			A.page.evaluate((id) => {
 				let scene;
-				window.__stores.globalScene.subscribe((x) => (scene = x))();
-				return { classic: !!scene.getObjectByName(id + '-body'), rigged: !!window.__stores.avatars.avatarsDebug()[id] };
+				window.__tp.test.v1.globalScene.subscribe((x) => (scene = x))();
+				return { classic: !!scene.getObjectByName(id + '-body'), rigged: !!window.__tp.test.v1.avatars.avatarsDebug()[id] };
 			}, B.id),
 		(v) => v.classic && !v.rigged,
 		'5.1 B picks Classic: A draws the floating head and drops the rigged body',

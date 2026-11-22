@@ -19,14 +19,17 @@
 	//              `position: fixed` ancestor — every phone sheet is one — so a list inside
 	//              scrolls and, at its top, a downward drag moves the sheet.
 	//
+	//   end        78-int PL14: a snippet drawn at the bar's right end (the Inspector's header lock on
+	//              the phone); a button in it never starts a sheet drag (sheetDrag skips interactive targets)
+	//
 	// 42 I5: More ▸ "Grab handle" off (phone only) makes the bar BARE — no pill, no tap-to-full /
 	// back, a thinner zone — and it still drags: the invisible edge the user asked to keep.
 	import { sheetDrag } from '$lib/ui/sheetDrag.js';
 	import { phoneSheetMaxH, PHONE_SHEET_MIN, phoneShellActive } from '$lib/ui/phoneShell.js';
 	import { phoneGrabHandle } from '$lib/ui/phonePrefs.js';
 
-	/** @type {{height: number, min?: number, max?: number, dismissible?: boolean, label?: string, class?: string, inset?: number, surface?: () => (Element|null|undefined)[], onresize?: (h: number, done: boolean) => void, onclose?: () => void} & Record<string, any>} */
-	let { height, min = PHONE_SHEET_MIN, max = 0, dismissible = true, label = 'sheet', class: cls = '', inset = 0, surface = undefined, onresize, onclose, ...rest } = $props();
+	/** @type {{height: number, min?: number, max?: number, dismissible?: boolean, label?: string, class?: string, inset?: number, surface?: () => (Element|null|undefined)[], onresize?: (h: number, done: boolean) => void, onclose?: () => void, end?: import('svelte').Snippet} & Record<string, any>} */
+	let { height, min = PHONE_SHEET_MIN, max = 0, dismissible = true, label = 'sheet', class: cls = '', inset = 0, surface = undefined, onresize, onclose, end = undefined, ...rest } = $props();
 	/** @type {HTMLElement | undefined} */
 	let zone = $state();
 	/** the sheet this grip belongs to: its nearest fixed ancestor @returns {Element|null} */
@@ -76,6 +79,10 @@
 		data-sheet-grip
 		aria-label={`Resize ${label}. Drag down to close; arrow keys change the height.`}
 	>{#if !bare}<span class="sg-grabber" aria-hidden="true"></span>{/if}</button>
+	{#if end}
+		<!-- a button here is INTERACTIVE to sheetDrag: its press never starts a drag or a tap-resize -->
+		<div class="sg-end">{@render end()}</div>
+	{/if}
 </div>
 
 <style>
@@ -91,6 +98,16 @@
 		touch-action: none;
 		cursor: grab;
 		background: inherit;
+	}
+	.sg-end {
+		position: absolute;
+		top: 0;
+		right: 8px;
+		height: 100%;
+		display: flex;
+		align-items: center;
+		cursor: default;
+		touch-action: manipulation;
 	}
 	.sg-handle {
 		display: flex;

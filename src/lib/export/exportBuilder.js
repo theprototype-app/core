@@ -204,6 +204,14 @@ export async function buildExport(opts, onProgress = () => {}) {
 	const { result: payload, excluded } = withoutLocalObjects(() => buildSessionPayload(title));
 	noteLocalObjectsExcluded(excluded);
 	if (!payload?.objects?.length) throw new Error('The scene is empty — add something to play first.');
+	// 73 AI9: an exported game carries only the author's own GLSL (written or chosen to run on this device);
+	// someone else's is exported switched off (the graph stays), and the warning says how to keep it
+	{
+		const { foreignShaderCodeOff } = await import('../shaderCodeReach.js');
+		const { shaderCodeHash, usesShaderCode } = await import('../shaderCode.js');
+		const off = foreignShaderCodeOff(payload.shaderGraphs, shaderCodeHash, usesShaderCode);
+		if (off) warnings.push(`${off} custom shader${off === 1 ? '' : 's'} from someone else ${off === 1 ? 'is' : 'are'} left off in the export. To keep one, open it in the shader editor's Your GLSL and press Apply (it becomes yours).`);
+	}
 	// 46 P3: the export preset (Settings ▸ Export ▸ Optimize for, shared with Save) — For Quest / web
 	// bundles resized textures with KTX2 twins and LOD chains (the runtime ships the transcoder)
 	const { saveOptions } = await import('../saveOptions');
@@ -293,16 +301,37 @@ export async function buildExport(opts, onProgress = () => {}) {
 	{
 		const { presetPayload } = await import('../environment');
 		const { hdriOf } = await import('../hdri/hdriCore.js');
-		const { bundledHdri } = await import('../hdri/catalog.js');
+		const { bundledHdri, skyTiers, skyTierFile } = await import('../hdri/catalog.js');
 		const { fetchSky } = await import('../hdri/skyFetch.js');
-		const row = bundledHdri(hdriOf(presetPayload())?.src ?? '');
+		const hdri = hdriOf(presetPayload());
+		const row = bundledHdri(hdri?.src ?? '');
 		if (row) {
-			try {
-				const bytes = new Uint8Array(await fetchSky(row.file));
-				out[row.file] = bytes;
-				breakdown.runtime += bytes.byteLength;
-			} catch (err) {
-				warnings.push(`The sky image ${row.file} could not be copied (${String(/** @type {any} */ (err)?.message ?? err)}) — the export shows its flat sky.`);
+			// 72 LK2: every size a player can pick in the game's options (Sky quality), so the option
+			// keeps working with no CDN. The 8K file only rides in a scene that asks for Max.
+			const files = skyTiers(row)
+				.filter((tier) => tier !== '8k' || hdri?.quality === 'max')
+				.map((tier) => skyTierFile(row, tier));
+			/** @type {string[]} */
+			const copied = [];
+			for (const file of files) {
+				try {
+					const bytes = new Uint8Array(await fetchSky(file));
+					out[file] = bytes;
+					breakdown.runtime += bytes.byteLength;
+					copied.push(file);
+				} catch {}
+			}
+			// the light's file is what matters: without it the .hdr is the sky, and without that, flat
+			if (!copied.includes(skyTierFile(row, '1k'))) {
+				try {
+					const bytes = new Uint8Array(await fetchSky(row.file));
+					out[row.file] = bytes;
+					breakdown.runtime += bytes.byteLength;
+				} catch (err) {
+					warnings.push(`The sky image ${row.file} could not be copied (${String(/** @type {any} */ (err)?.message ?? err)}) — the export shows its flat sky.`);
+				}
+			} else if (copied.length < files.length) {
+				warnings.push(`Some sky sizes could not be copied (${files.filter((f) => !copied.includes(f)).join(', ')}) — the game shows the largest one it has.`);
 			}
 		}
 	}
@@ -310,6 +339,10 @@ export async function buildExport(opts, onProgress = () => {}) {
 	if (!indexRes.ok) throw new Error('index.html — HTTP ' + indexRes.status);
 	const indexHtml = rewriteIndexHtml(fromHost('index.html', await indexRes.text()), { title });
 	out['index.html'] = enc.encode(indexHtml);
+
+	// 93 LP2: the game's own loading screen covers the export's first load
+	const { exportLoadingScreen } = await import('../gameLevels/exportLoading.js');
+	const loading = await exportLoadingScreen(out, payload, warnings);
 
 	// 5. the config, the cover, the readme
 	const config = {
@@ -325,7 +358,8 @@ export async function buildExport(opts, onProgress = () => {}) {
 		quality: opts.quality || 'auto',
 		vrButton: opts.vrButton !== false,
 		preset: opts.preset,
-		builtWith: APP_VERSION
+		builtWith: APP_VERSION,
+		...(loading ? { loading } : {})
 	};
 	const playJs = makePlayJs(config);
 	out['play.js'] = enc.encode(playJs);

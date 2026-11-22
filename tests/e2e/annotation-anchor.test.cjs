@@ -10,8 +10,8 @@ const pinWorld = (A, id) =>
 	A.page.evaluate(
 		(pid) =>
 			new Promise((resolve) => {
-				const THREE = window.__stores.THREE;
-				window.__stores.annotationsHandler.pinsGroup.subscribe((grp) => {
+				const THREE = window.__tp.test.v1.THREE;
+				window.__tp.test.v1.annotationsHandler.pinsGroup.subscribe((grp) => {
 					const pin = grp?.getObjectByName('pin-' + pid);
 					if (!pin) return resolve(null);
 					const v = new THREE.Vector3();
@@ -26,7 +26,7 @@ const pinWorld = (A, id) =>
 const addNote = (A, uuid, offset, text) =>
 	A.page.evaluate(
 		({ uuid, offset, text }) => {
-			const ah = window.__stores.annotationsHandler;
+			const ah = window.__tp.test.v1.annotationsHandler;
 			ah.addAnnotation(uuid, offset);
 			let cur = null;
 			ah.activeAnnotation.subscribe((a) => (cur = a))();
@@ -50,7 +50,7 @@ h.run(async () => {
 
 	// --- normal object (objectsGroup) ---
 	const objUuid = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
@@ -68,7 +68,7 @@ h.run(async () => {
 	);
 	await A.page.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const o = g.getObjectByProperty('uuid', u);
 		o.position.x += 5;
 		o.updateMatrixWorld(true);
@@ -81,8 +81,8 @@ h.run(async () => {
 	const sysUuid = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				const THREE = window.__stores.THREE;
-				window.__stores.globalScene.subscribe((scene) => {
+				const THREE = window.__tp.test.v1.THREE;
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
 					const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial());
 					mesh.name = 'sys-anchor';
 					mesh.position.set(-4, 0.5, 0);

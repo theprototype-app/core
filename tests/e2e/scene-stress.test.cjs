@@ -35,7 +35,7 @@ h.run(async () => {
 
 	// the meter's own rule, on the same numbers, in the page
 	const meterRule = await A.page.evaluate((values) => {
-		const b = window.__stores.sceneBudget;
+		const b = window.__tp.test.v1.sceneBudget;
 		for (let i = 0; i < 300; i++) b.noteFrame(1000); // push the ring out of the way
 		for (const v of values) for (let i = 0; i < 24; i++) b.noteFrame(v);
 		return b.frameStats();
@@ -51,7 +51,7 @@ h.run(async () => {
 	h.check(seeded.count === 150, `premise: 150 real boxes in the scene (${seeded.count})`);
 	await A.page.evaluate(() => window.__stress.frameAll(150));
 	const totals = await A.page.evaluate(async () => {
-		const { sceneBudget, globalRenderer } = window.__stores;
+		const { sceneBudget, globalRenderer } = window.__tp?.test.v1;
 		let r;
 		globalRenderer.subscribe((/** @type {any} */ v) => (r = v))();
 		await new Promise((res) => setTimeout(res, 1200));
@@ -77,7 +77,7 @@ h.run(async () => {
 	await A.page.evaluate(() => window.__stress.frameAll(300));
 	const doubled = await A.page.evaluate(async () => {
 		await new Promise((res) => setTimeout(res, 1200));
-		return window.__stores.sceneBudget.sampleSceneMetrics();
+		return window.__tp.test.v1.sceneBudget.sampleSceneMetrics();
 	});
 	h.check(
 		doubled.calls > totals.calls * 1.5 && doubled.triangles > totals.triangles * 1.5,
@@ -86,7 +86,7 @@ h.run(async () => {
 
 	// ---- 3. stop hands the renderer back, start re-wraps ------------------------------
 	const cycle = await A.page.evaluate(async () => {
-		const { sceneBudget, globalRenderer } = window.__stores;
+		const { sceneBudget, globalRenderer } = window.__tp?.test.v1;
 		let r;
 		globalRenderer.subscribe((/** @type {any} */ v) => (r = v))();
 		// three defines `render` as an OWN property in its constructor, so "restored" means the
@@ -103,14 +103,14 @@ h.run(async () => {
 
 	// ---- 4. the metric sources ---------------------------------------------------------
 	const save = await A.page.evaluate(async () => {
-		await window.__stores.autosave.saveNow();
-		const m = window.__stores.sceneBudget.sampleSceneMetrics();
+		await window.__tp.test.v1.autosave.saveNow();
+		const m = window.__tp.test.v1.sceneBudget.sampleSceneMetrics();
 		return { exportMs: m.autosaveExportMs, bytes: m.autosaveBytes };
 	});
 	h.check(save.exportMs > 0 && save.bytes > 1000, `autosave export ms and bytes reach the sampler (${save.exportMs}ms, ${save.bytes} bytes)`);
 
 	const phys = await A.page.evaluate(async () => {
-		const { physics, sceneBudget } = window.__stores;
+		const { physics, sceneBudget } = window.__tp?.test.v1;
 		const before = sceneBudget.sampleSceneMetrics();
 		const run = await window.__stress.physics(1500);
 		const after = sceneBudget.sampleSceneMetrics();
@@ -126,7 +126,7 @@ h.run(async () => {
 	);
 
 	const sync = await A.page.evaluate(async () => {
-		const { commandsHandler, sceneBudget } = window.__stores;
+		const { commandsHandler, sceneBudget } = window.__tp?.test.v1;
 		// a batch that FINISHES: every announced uuid counted as arrived
 		await commandsHandler.createLoader(2, ['stress-a', 'stress-b'], 'nobody');
 		await new Promise((res) => setTimeout(res, 300));
@@ -152,7 +152,7 @@ h.run(async () => {
 	// 3,000-object join still landing ~10 objects a second was declared dead at 63s. Here
 	// the stall is 800ms and the batch keeps making progress past it.
 	const stall = await A.page.evaluate(async () => {
-		const { commandsHandler, loading } = window.__stores;
+		const { commandsHandler, loading } = window.__tp?.test.v1;
 		const read = () => {
 			let v;
 			loading.subscribe((/** @type {any} */ x) => (v = x))();

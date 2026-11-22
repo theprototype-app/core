@@ -24,7 +24,7 @@ h.run(async () => {
 	const page = A.page;
 	await xr.install(page);
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const r = window.__fakeXR.renderer;
 		window.__L = {
@@ -83,13 +83,13 @@ h.run(async () => {
 		}
 		console.log('\n=== ' + game + ' ===');
 		await page.evaluate(async (arr) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 			await s.sessions.applySession(payload, { backup: false });
 		}, Array.from(fs.readFileSync(file)));
 		await page.waitForTimeout(2000);
 		const menu = await page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.gameState.setGameState('menu');
 			s.objectActions.setEditorMode('interact');
 			const k = s.gameKit.vrGamePanel;
@@ -104,7 +104,7 @@ h.run(async () => {
 		// the pixel at the button's centre BEFORE the ray is on it
 		const px = (id) =>
 			page.evaluate((id) => {
-				const k = window.__stores.gameKit.vrGamePanel;
+				const k = window.__tp.test.v1.gameKit.vrGamePanel;
 				const surf = k.vrGameSurface('vr-game-panel');
 				const rect = k.vrGamePanelDebug().hits['vr-game-panel'].find((x) => x.id === id);
 				const g = surf.canvas.getContext('2d');
@@ -113,7 +113,7 @@ h.run(async () => {
 			}, id);
 		const before = await px(id);
 		const at = await page.evaluate((id) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const L = window.__L;
 			const to = L.rectPoint(id);
 			L.aim(1, new s.THREE.Vector3(0.25, 1.3, -0.1), to);
@@ -128,7 +128,7 @@ h.run(async () => {
 		h.check(d(beam.dot, at) < 0.01, `${game}: the solid hit DOT sits on it (${d(beam.dot, at).toFixed(4)} m)`);
 		// the hover: the board's own hover id + the button's fill
 		const hov = await page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const k = s.gameKit.vrGamePanel;
 			k.panelHover(1, window.__L.ray(1));
 			k.vrGamePanelFrame({ head: window.__L.head(), hands: [null, null] });
@@ -139,19 +139,19 @@ h.run(async () => {
 		const delta = Math.abs(after[0] - before[0]) + Math.abs(after[1] - before[1]) + Math.abs(after[2] - before[2]);
 		h.check(delta > 30, `${game}: the hovered button is FILLED, not just ringed (rgb ${before.slice(0, 3)} -> ${after.slice(0, 3)})`);
 		await page.evaluate(() => {
-			const k = window.__stores.gameKit.vrGamePanel;
+			const k = window.__tp.test.v1.gameKit.vrGamePanel;
 			k.panelHover(1, null);
 			k.hideVrGamePanel();
 		});
 	}
 
 	console.log('\n=== the beam material ===');
-	const blending = await page.evaluate(() => [window.__L.beam(1).blending, window.__stores.THREE.NormalBlending]);
+	const blending = await page.evaluate(() => [window.__L.beam(1).blending, window.__tp.test.v1.THREE.NormalBlending]);
 	h.check(blending[0] === blending[1], `the beam is normal-blended, visible against a bright sky (${blending[0]})`);
 
 	console.log('\n=== a module interactive group ends the beam ===');
 	await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.objectActions.setEditorMode('edit');
 		s.sessions.clearScene?.();
 		await s.moduleSDK.initModules([
@@ -177,7 +177,7 @@ h.run(async () => {
 	});
 	await frames(6);
 	const mod = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const L = window.__L;
 		L.aim(1, new THREE.Vector3(0, 1.4, 0), new THREE.Vector3(0, 1.4, -1.5));
@@ -196,7 +196,7 @@ h.run(async () => {
 	// every frame, which aborted it before the grips ran (worldGrab dead in Untangle's globe)
 	const errorsBefore = h.pageErrors ? h.pageErrors(A).length : 0;
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		let scene;
 		s.globalScene.subscribe((v) => (scene = v))();
@@ -210,7 +210,7 @@ h.run(async () => {
 	});
 	await frames(6);
 	const spriteBeam = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		return { beam: window.__L.beam(1), grip: s.vrControls.vrGripDebug() };
 	});
 	const errorsAfter = h.pageErrors ? h.pageErrors(A).length : 0;
@@ -218,20 +218,20 @@ h.run(async () => {
 	h.check(spriteBeam.beam.reticle && Math.abs(spriteBeam.beam.length - 1.19) < 0.03, `the beam ends ON the sprite (${spriteBeam.beam.length?.toFixed(3)} m)`);
 	await page.evaluate(() => {
 		let scene;
-		window.__stores.globalScene.subscribe((v) => (scene = v))();
+		window.__tp.test.v1.globalScene.subscribe((v) => (scene = v))();
 		const sp = scene.getObjectByName('laser31-sprite');
 		sp?.parent?.remove(sp);
 	});
 
 	console.log('\n=== the radial ring takes the reticle ===');
 	const ring = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.vrMenuOpen.set(true);
 		return null;
 	});
 	await frames(4);
 	const aimRing = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const l = s.vrRadialMenu.sectorLayout(0, 8);
 		const to = new THREE.Vector3(l.labelX, l.labelY, 0);
@@ -244,7 +244,7 @@ h.run(async () => {
 		ringBeam.reticle && Math.hypot(ringBeam.reticle[0] - aimRing[0], ringBeam.reticle[1] - aimRing[1], ringBeam.reticle[2] - aimRing[2]) < 0.01,
 		`the reticle sits on the radial sector (${JSON.stringify(ringBeam.reticle)})`
 	);
-	await page.evaluate(() => window.__stores.vrMenuOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.vrMenuOpen.set(false));
 	void ring;
 
 	await xr.uninstall(page);

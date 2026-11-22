@@ -10,7 +10,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	const res = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		let grp; s.objectsGroup.subscribe((v) => (grp = v))();
 		const box = grp.children[grp.children.length - 1];
@@ -71,7 +71,7 @@ h.run(async () => {
 	// ---- 15-E (E9/E8): face-basis gizmo, Local/World toggle + setSpace leak
 	// fix, per-axis tangential scale, rotation-frame conjugation ----
 	const e9 = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		const T = s.THREE;
 		s.commandsHandler.sceneCommand('/create Box 1 1 1');

@@ -29,7 +29,7 @@ h.run(async () => {
 	const page = A.page;
 	const bytes = Array.from(fs.readFileSync(TPSCENE));
 	await page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		await s.sessions.applySession(payload, { backup: false });
 	}, bytes);
@@ -37,7 +37,7 @@ h.run(async () => {
 
 	const snap = () =>
 		page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const g = (st) => { let v; st.subscribe((x) => (v = x))(); return v; };
 			const group = g(s.objectsGroup);
 			return {
@@ -62,12 +62,12 @@ h.run(async () => {
 	h.check(await page.evaluate(() => !!window.__targetToss), 'the core targettoss module is awake');
 
 	// 2 — Play: the sim, the stage select
-	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await h.eventually(() => snap().then((v) => v.sim), (v) => v === true, 'entering play starts the sim', 10000);
 	await h.eventually(hud, (t) => /TARGET TOSS/.test(t) && /1 · Tin cans/.test(t) && /5 · The cart/.test(t), 'the stage select renders: five stages', 6000);
-	await h.eventually(() => page.evaluate(() => { let m; window.__stores.gameKit.gameMusic.gameMusicState.subscribe((v) => (m = v))(); return m?.preset ?? null; }), (m) => m === 'arcade', 'the fairground music plays', 6000);
+	await h.eventually(() => page.evaluate(() => { let m; window.__tp.test.v1.gameKit.gameMusic.gameMusicState.subscribe((v) => (m = v))(); return m?.preset ?? null; }), (m) => m === 'arcade', 'the fairground music plays', 6000);
 	const eye = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let cam; s.playerCam.subscribe((v) => (cam = v))();
 		const p = cam.getWorldPosition(new s.THREE.Vector3());
 		return [p.x, p.y, p.z].map((n) => +n.toFixed(2));
@@ -87,7 +87,7 @@ h.run(async () => {
 
 	// 3b — the desktop throw with the REAL mouse: hold to charge, release to throw
 	const shelfBefore = await tt('balls');
-	const box = await page.evaluate(() => { let r; window.__stores.globalRenderer.subscribe((v) => (r = v))(); const b = r.domElement.getBoundingClientRect(); return { x: b.left, y: b.top, width: b.width, height: b.height }; });
+	const box = await page.evaluate(() => { let r; window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))(); const b = r.domElement.getBoundingClientRect(); return { x: b.left, y: b.top, width: b.width, height: b.height }; });
 	await page.mouse.move(box.x + box.width / 2, box.y + box.height * 0.35);
 	await page.mouse.down();
 	await page.waitForTimeout(500);
@@ -118,7 +118,7 @@ h.run(async () => {
 	const vars = await tt('vars');
 	h.check(Number(vars.ttStatus) === 2 && Number(vars.ttStars) >= 1, `won with stars (${JSON.stringify(vars)})`);
 	await h.eventually(hud, (t) => /Stage cleared!/.test(t) && /★/.test(t) && /Next stage/.test(t), 'the results screen: cleared, stars, Next stage', 6000);
-	const table = await page.evaluate(() => window.__stores.gameKit ? null : null);
+	const table = await page.evaluate(() => window.__tp.test.v1.gameKit ? null : null);
 	void table;
 	await page.locator('#hud-layer button', { hasText: 'Next stage' }).first().click();
 	await h.eventually(() => tt('vars').then((v) => Number(v.ttStage)), (n) => n === 2, 'Next stage opens stage 2 (unlocked by the win)', 8000);
@@ -134,10 +134,10 @@ h.run(async () => {
 	// 5b — the moving targets: stage 3 swingers, stage 4 pop-ups, stage 5 the cart, each hit by a
 	// ball thrown from just in front of it (the judge, the points, the target dropping away)
 	const posOf = (name) => page.evaluate((n) => {
-		let g; window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByName(n);
 		o.updateMatrixWorld(true);
-		const p = new window.__stores.THREE.Vector3().setFromMatrixPosition(o.matrixWorld);
+		const p = new window.__tp.test.v1.THREE.Vector3().setFromMatrixPosition(o.matrixWorld);
 		return [p.x, p.y, p.z];
 	}, name);
 	const hitFromFront = async (name) => {
@@ -181,20 +181,20 @@ h.run(async () => {
 
 	// 6 — no editor helper in Play
 	const helpers = await page.evaluate(() => {
-		let sc; window.__stores.globalScene.subscribe((v) => (sc = v))();
+		let sc; window.__tp.test.v1.globalScene.subscribe((v) => (sc = v))();
 		const seen = [];
 		sc.traverse((o) => { if (o.visible && /helper|grid/i.test(o.name ?? '') && o.parent === sc) seen.push(o.name); });
 		return seen;
 	});
 	h.check(!helpers.includes('editor-grid'), `no editor grid in Play (${helpers.join(', ') || 'none'})`);
-	await page.evaluate(() => window.__stores.isLocked.set(false));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 	await page.waitForTimeout(800);
 
 	// 7 — VR-emulated: a fake XR session, VR mode -> the game runs in Interact, a stage plays
 	await xr.install(page);
-	await page.evaluate(() => window.__stores.isVRMode.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isVRMode.set(true));
 	await page.waitForTimeout(600);
-	await page.evaluate(() => window.__stores.editorMode?.set?.('interact'));
+	await page.evaluate(() => window.__tp.test.v1.editorMode?.set?.('interact'));
 	await h.eventually(() => snap().then((v) => v.sim), (v) => v === true, 'VR Interact: the simulation runs', 10000);
 	await tt('startStage', [1]);
 	await h.eventually(() => tt('vars').then((v) => Number(v.ttStage)), (n) => n === 1, 'VR: stage 1 starts (Retry from the results)', 8000);
@@ -209,52 +209,52 @@ h.run(async () => {
 	}
 	h.check(knocked > 0, `VR: a throw knocks cans (${knocked} down)`);
 	h.check((await tt('info', [{ read: 'hint' }])) === 'Grip a ball · throw it', 'VR: the hint line says grip and throw (not hold the mouse)');
-	await page.evaluate(() => window.__stores.isVRMode.set(false));
+	await page.evaluate(() => window.__tp.test.v1.isVRMode.set(false));
 	await xr.uninstall(page);
 
 
 	// 8 — THE U10 PROBE: the biggest combo from the GRAPH, a can's points from the CODE; felt in
 	// Play, kept by a save and a reload
-	await page.evaluate(() => window.__stores.editorMode?.set?.('edit'));
+	await page.evaluate(() => window.__tp.test.v1.editorMode?.set?.('edit'));
 	const rid = await tt('rulesNode');
 	h.check(!!rid, `premise: the Main graph carries the Target Toss rules node (${rid})`);
-	await h.eventually(() => page.evaluate((id) => window.__stores.behaviours.behavioursDebug().status[id]?.status, rid), (st) => st === 'running', 'the Target Toss rules behaviour is running', 10000);
-	const codeNow = () => page.evaluate((id) => { let g; window.__stores.flowGraphs.subscribe((v) => (g = v))(); return g.scene.nodes.find((n) => n.id === id)?.data?.code ?? ''; }, rid);
-	await page.evaluate(() => window.__stores.isLocked.set(null));
+	await h.eventually(() => page.evaluate((id) => window.__tp.test.v1.behaviours.behavioursDebug().status[id]?.status, rid), (st) => st === 'running', 'the Target Toss rules behaviour is running', 10000);
+	const codeNow = () => page.evaluate((id) => { let g; window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))(); return g.scene.nodes.find((n) => n.id === id)?.data?.code ?? ''; }, rid);
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(null));
 	await page.waitForTimeout(600);
 	if (!(await page.evaluate(() => !!document.querySelector('.svelte-flow__pane')))) await page.locator('p[title="Node editor (N)"]').click();
 	await page.waitForTimeout(1000);
-	await page.evaluate(() => window.__stores.bottomDock?.dockHeight?.set(600));
+	await page.evaluate(() => window.__tp.test.v1.bottomDock?.dockHeight?.set(600));
 	if (!(await page.locator('#flow-props').count())) await page.locator('#flow-props-toggle').click();
 	await page.locator('#flow-tab-info').click();
-	await page.evaluate((id) => window.__stores.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: n.id === id }))), rid);
+	await page.evaluate((id) => window.__tp.test.v1.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: n.id === id }))), rid);
 	await h.eventually(() => page.locator('#flow-prop-comboMax').count(), (n) => n === 1, 'the rules node shows Biggest combo in its properties panel', 6000);
 	await page.locator('#flow-prop-comboMax').fill('1');
 	await page.locator('#flow-prop-comboMax').press('Enter');
 	await h.eventually(codeNow, (c) => /comboMax:\s*\{\s*value:\s*1\b/.test(c), 'the knob rewrote the literal in the rules source (comboMax: 1)', 4000);
 	await page.evaluate((id) => {
 		let ns;
-		window.__stores.flowNodes.subscribe((v) => (ns = v))();
+		window.__tp.test.v1.flowNodes.subscribe((v) => (ns = v))();
 		const n = ns.find((x) => x.id === id);
 		window.__flowViewport?.setViewport({ x: -n.position.x + 300, y: -n.position.y + 60, zoom: 1 });
 	}, rid);
 	await page.waitForTimeout(600);
 	const nbox = await page.locator(`.svelte-flow__node[data-id="${rid}"]`).boundingBox().catch(() => null);
 	if (nbox) await page.mouse.dblclick(nbox.x + nbox.width / 2, nbox.y + 8);
-	else await page.evaluate((id) => window.__stores.codeWorkspace.openCode({ source: 'behaviour', ref: { nodeId: id } }), rid);
+	else await page.evaluate((id) => window.__tp.test.v1.codeWorkspace.openCode({ source: 'behaviour', ref: { nodeId: id } }), rid);
 	await h.eventually(() => page.locator('[data-pane] .cm-content').count(), (n) => n >= 1, 'double-click opens the rules in the code workspace', 15000);
 	const edited = (await codeNow()).replace('const POINTS = { can: 100,', 'const POINTS = { can: 150,');
-	const paneId = await page.evaluate(() => { let v; window.__stores.codeWorkspace.activeCodeTab.subscribe((x) => (v = x))(); return v; });
+	const paneId = await page.evaluate(() => { let v; window.__tp.test.v1.codeWorkspace.activeCodeTab.subscribe((x) => (v = x))(); return v; });
 	await page.locator(`[data-pane="${paneId}"] .cm-content`).click();
 	await page.keyboard.press('Control+A');
 	await page.keyboard.insertText(edited);
 	await page.keyboard.press('Control+S');
 	await h.eventually(codeNow, (c) => /const POINTS = \{ can: 150,/.test(c), 'Ctrl+S saved the code onto the node (a can is worth 150)', 6000);
 	await page.locator('#code-ws-close:visible, [data-dock-tab-close="code"]:visible').first().click().catch(() => {});
-	await h.eventually(() => page.evaluate((id) => window.__stores.behaviours.behavioursDebug().status[id]?.status, rid), (st) => st === 'running', 'the edited rules reloaded and run', 8000);
+	await h.eventually(() => page.evaluate((id) => window.__tp.test.v1.behaviours.behavioursDebug().status[id]?.status, rid), (st) => st === 'running', 'the edited rules reloaded and run', 8000);
 	/** stage 1, every can swept off: six cans x 150 with no combo = exactly 900 */
 	const feel = async (when) => {
-		await page.evaluate(() => window.__stores.isLocked.set(true));
+		await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 		await h.eventually(() => snap().then((v) => v.sim), (v) => v === true, `${when}: the simulation runs`, 10000);
 		await tt('startStage', [1, true]);
 		await h.eventually(() => tt('cans').then((c) => c.length), (n) => n === 6, `${when}: stage 1 deals its six cans`, 8000);
@@ -266,15 +266,15 @@ h.run(async () => {
 	};
 	await feel('Play');
 	const saved = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = s.sessions.buildSessionPayload('Target Toss probe');
 		const zip = await s.sessions.exportSessionZip(payload, { assets: true, packs: false, flow: true });
 		return Array.from(zip);
 	});
-	await page.evaluate(() => window.__stores.isLocked.set(null));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(null));
 	await page.waitForTimeout(600);
 	await page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphs.set({ scene: { nodes: [], edges: [] } });
 		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		await s.sessions.applySession(payload, { backup: false });
@@ -282,9 +282,9 @@ h.run(async () => {
 	await page.waitForTimeout(2500);
 	const reloaded = await codeNow();
 	h.check(/comboMax:\s*\{\s*value:\s*1\b/.test(reloaded) && /const POINTS = \{ can: 150,/.test(reloaded), 'after a save and a reload the rules keep the combo cap 1 and a 150-point can');
-	await h.eventually(() => page.evaluate(() => window.__stores.behaviours.behavioursDebug().status[window.__targetToss.rulesNode()]?.status), (st) => st === 'running', 'the reloaded rules run', 10000);
+	await h.eventually(() => page.evaluate(() => window.__tp.test.v1.behaviours.behavioursDebug().status[window.__targetToss.rulesNode()]?.status), (st) => st === 'running', 'the reloaded rules run', 10000);
 	await feel('Play after the reload');
-	await page.evaluate(() => window.__stores.isLocked.set(false));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 	await page.waitForTimeout(400);
 
 	await h.finish(browser);

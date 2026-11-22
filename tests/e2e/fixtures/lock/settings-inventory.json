@@ -399,11 +399,6 @@
 			"desc": ""
 		},
 		{
-			"name": "Flow Code: show / bring to front / hide",
-			"kind": "button:Rebind Flow Code: show / bring to front / hide",
-			"desc": ""
-		},
-		{
 			"name": "Animation: show / bring to front / hide",
 			"kind": "button:Rebind Animation: show / bring to front / hide",
 			"desc": ""
@@ -654,8 +649,8 @@
 			"desc": ""
 		},
 		{
-			"name": "Enter the selected group / leave the one you are in",
-			"kind": "button:Rebind Enter the selected group / leave the one you are in",
+			"name": "Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)",
+			"kind": "button:Rebind Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)",
 			"desc": ""
 		},
 		{

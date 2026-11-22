@@ -1,6 +1,8 @@
 import { writable, derived, get } from 'svelte/store';
 import { safeStorage } from '../lib/safeStorage';
+import { notifyOn } from '../lib/notifyPrefs';
 import { mentionsIn, mergeChat } from '../lib/chatTokens'; // 37 R15 (a zero-import leaf)
+import { migrateChatKeys } from '../lib/chat/chatKeys.js'; // uir-chat (a zero-import leaf)
 
 /** @type {import('svelte/store').Writable<any>} */
 export const settingsOpen = writable(null);
@@ -10,6 +12,10 @@ export const settingsSection = writable(null);
 /** 38 R8 (NOTES-38 #14): text to put in Settings' own search when it opens (the command
  *  palette's settings rows); Settings takes it once and clears it. */
 export const settingsSearchSeed = writable('');
+/** uir-account: an element id inside the page `settingsSection` opens (e.g. 'connected-apps-settings'): Settings scrolls
+ *  it into view once it renders (a plugin's rows arrive after an await) and clears it. Set through
+ *  $lib/settings/openSettingsAt.js. @type {import('svelte/store').Writable<string | null>} */
+export const settingsAnchor = writable(/** @type {string | null} */ (null));
 /** 38 R8 (NOTES-38 #14): the Ctrl+K command palette (CommandPalette.svelte) */
 export const commandPaletteOpen = writable(false);
 // unified inspector (phase 64): one drawer serves the selection (mesh/light/
@@ -25,15 +31,13 @@ export const inspectorKind = writable('selection');
  * its properties, nothing selected → the scene's (deselecting no longer closes
  * it). LOCAL preference.
  */
-export const inspectorPinned = writable(
-	typeof localStorage !== 'undefined' && safeStorage.getItem('inspectorPinned') === 'true'
-);
-if (typeof localStorage !== 'undefined')
-	inspectorPinned.subscribe((v) => {
-		try {
-			safeStorage.setItem('inspectorPinned', String(v));
-		} catch {}
-	});
+export const inspectorPinned = writable(false);
+// uir-polish E1 (owner 2026-11-11): the pin button is GONE from every surface, so the flag is no longer a
+// preference — it stays a runtime switch (default off) for the suites that drive the old "follow every
+// selection" posture through __stores, and the value an older build saved is dropped once.
+try {
+	if (typeof localStorage !== 'undefined') safeStorage.removeItem('inspectorPinned');
+} catch {}
 export const flowGraphClose = writable(true);
 // Flow Code: an editable JSON view of the flow graph (roadmap 9). Added via the
 // Flow tab "+"; a standalone floating window that can tab-group with Flow.
@@ -122,9 +126,38 @@ export function revealExplorerItem(name, hash = '') {
 // the tab strip's context menu can undock any of them — and it moved in with the rest of
 // the dock bookkeeping: `dockModeArm` / `armDockMode(key, docked)` in $lib/bottomDock.
 export const objectListClose = writable(true);
+// uir-chat: Chat and the AI assistant are ONE window (#chat-window) with two tabs, Session and
+// Assistant. `chatHidden` is the WINDOW's open state ('' open, 'hidden' closed) — the dock, the
+// sidebars and the layouts open and close the window with it; `chatTab` is the tab it shows.
 export const chatHidden = writable('hidden');
-// AI assistant (roadmap #10): '' = window open, 'hidden' = closed (mirrors chat).
-export const aiAssistantHidden = writable('hidden');
+/** @typedef {'session' | 'assistant'} ChatTab */
+// old saved state that named the assistant's own window ('aiAssistant') is read as this window
+// (chatKeys.js), BEFORE any window module reads its stored place
+const chatKeyMigration = migrateChatKeys(
+	(k) => safeStorage.getItem(k),
+	(k, v) => safeStorage.setItem(k, v),
+	(k) => safeStorage.removeItem(k)
+);
+/** @type {import('svelte/store').Writable<ChatTab>} */
+export const chatTab = writable(chatKeyMigration.assistant || safeStorage.getItem('chat:tab') === 'assistant' ? 'assistant' : 'session');
+chatTab.subscribe((v) => safeStorage.setItem('chat:tab', v));
+// AI assistant (roadmap #10): an ALIAS since uir-chat — '' while the one window is open ON the
+// Assistant tab. set('') opens the window on that tab (every "open the assistant" caller keeps
+// working unchanged); set('hidden') closes the window only while the Assistant tab is what it shows.
+const aiAssistantView = derived([chatHidden, chatTab], ([$hidden, $tab]) => ($hidden === '' && $tab === 'assistant' ? '' : 'hidden'));
+/** @param {string} v */
+function setAiAssistantHidden(v) {
+	if (v === '') {
+		chatTab.set('assistant');
+		chatHidden.set('');
+	} else if (get(aiAssistantView) === '') chatHidden.set('hidden');
+}
+/** @type {import('svelte/store').Writable<string>} */
+export const aiAssistantHidden = {
+	subscribe: aiAssistantView.subscribe,
+	set: setAiAssistantHidden,
+	update: (fn) => setAiAssistantHidden(fn(get(aiAssistantView)))
+};
 // Quick prompt pill — toggled by the backquote shortcut; session-only (not persisted).
 export const aiPromptBarOpen = writable(false);
 // Mesh-generation modal (roadmap #11): { position: number[]|null } when open, else null.
@@ -145,6 +178,9 @@ export const avatarConfig = writable(
 export const characterModalOpen = writable(false);
 /** Profile Settings modal open state (shared so the logo/menu can close it). */
 export const profileSettingsOpen = writable(false);
+/** FW-AI (76): set true to open the top-right profile pop-up from elsewhere (the AI window's "Sign in to connect");
+ * Users.svelte opens it and sets this back. */
+export const profileMenuRequest = writable(false);
 /** @type {import('svelte/store').Writable<any>} */
 export const peers = writable(null);
 export const toggleExpand = writable(null);
@@ -219,8 +255,11 @@ export function showSidebar(store, { focus = true } = {}) {
 	}
 	libraryClose.set(true);
 	if (open && get(inspectorKind) === kind) {
-		revealInspector?.(kind);
-		if (focus) focusInspector?.();
+		// uir-polish E4: a selection (focus: false) leaves a covered Properties tab covered on the phone too
+		if (focus) {
+			revealInspector?.(kind);
+			focusInspector?.();
+		}
 		return; // already showing this target
 	}
 	// 42 I4: an OPEN panel swaps its content in place. Closing it and reopening 50 ms later
@@ -228,8 +267,10 @@ export function showSidebar(store, { focus = true } = {}) {
 	// sidebar "shook". The slide belongs to a panel opening from CLOSED, never to a swap.
 	if (open) {
 		inspectorKind.set(kind);
-		revealInspector?.(kind);
-		if (focus) focusInspector?.();
+		if (focus) {
+			revealInspector?.(kind);
+			focusInspector?.();
+		}
 		return;
 	}
 	inspectorClose.set(true);
@@ -385,10 +426,11 @@ export const templatesModalTab = writable(null);
  * Drawers, floating windows and menus are deliberately NOT included (they're
  * meant to coexist with viewport work).
  */
+// uir-timeline: the Generate window (meshGenModalOpen) is a floating / docked window now, not a modal
 export const anyModalOpen = derived(
-	[settingsOpen, sessionsOpen, modulesOpen, characterModalOpen, profileSettingsOpen, meshGenModalOpen, templatesModalOpen, checkpointsOpen, checkpointSaveOpen],
-	([$settings, $sessions, $modules, $character, $profile, $meshGen, $templates, $checkpoints, $checkpointSave]) =>
-		!!$settings || !!$sessions || !!$modules || !!$character || !!$profile || !!$meshGen || !!$templates || !!$checkpoints || !!$checkpointSave
+	[settingsOpen, sessionsOpen, modulesOpen, characterModalOpen, profileSettingsOpen, templatesModalOpen, checkpointsOpen, checkpointSaveOpen],
+	([$settings, $sessions, $modules, $character, $profile, $templates, $checkpoints, $checkpointSave]) =>
+		!!$settings || !!$sessions || !!$modules || !!$character || !!$profile || !!$templates || !!$checkpoints || !!$checkpointSave
 );
 
 // viewport right-click menu (77): { x, y, point: [x,y,z] } | null — rendered
@@ -930,7 +972,9 @@ export const chatUnread = writable(0);
 export const chatMentioned = writable(false);
 /** @param {string} text */
 function noteUnreadChat(text) {
-	if (get(chatHidden) !== 'hidden') return;
+	// uir-chat: read = the one window open on its Session tab
+	if (get(chatHidden) === '' && get(chatTab) === 'session') return;
+	if (!notifyOn('chat')) return; // profile-notify: the Chat badge switch (Settings ▸ Interface ▸ Notifications)
 	chatUnread.update((n) => n + 1);
 	/** @type {any} */
 	const peer = get(peers);
@@ -938,8 +982,8 @@ function noteUnreadChat(text) {
 	if (me && mentionsIn(text, chatPeople()).includes(me)) chatMentioned.set(true);
 }
 // opening the chat reads it (chatHidden is declared above: the module-level subscribe rule)
-chatHidden.subscribe((v) => {
-	if (v === 'hidden') return;
+derived([chatHidden, chatTab], ([$hidden, $tab]) => $hidden === '' && $tab === 'session').subscribe((reading) => {
+	if (!reading) return;
 	chatUnread.set(0);
 	chatMentioned.set(false);
 });
@@ -979,3 +1023,9 @@ export function mergeChatHistory(list) {
 	});
 	return added;
 }
+
+/** REMOTE peers only, `peerId -> 'editor' | 'playing'` (gamePresence.js owns the writes and re-exports it; it
+ * lives here so the module SDK's api.players()[].playing reads it without gamePresence's graph). An absent peer
+ * is an editor — that is the whole compatibility story, so nothing writes 'editor' defensively.
+ * @type {import('svelte/store').Writable<Record<string, string>>} */
+export const peerPlayModes = writable({});

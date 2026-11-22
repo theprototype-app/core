@@ -27,11 +27,12 @@ import { originPreset, resetOrigin } from './objectOrigin';
 import { pivotMode, reseatPivot, pivotParentAvailable } from './multiTransform';
 import { alignSelection, distributeSelection, dropSelection } from './align'; // 47 M2
 import { addAnnotation } from './annotationsHandler';
-import { pingObject, pingObjects } from './ping';
+import { pingObject, pingObjectAt, pingObjects } from './ping';
 import { hasOriginal } from './decimate';
 import { linkOf } from './prefabSync';
 import { prefabById } from './prefabs';
 import { isReplaceableModel } from './modelTarget'; // 59 T1/T2
+import { moduleObjectActions, ENEMY_ACTION_KEY } from './moduleWorldItems.js'; // 61-nav (G10: npcEntry.js loads on the press)
 
 /** @param {any} object */
 function hasMesh(object) {
@@ -125,6 +126,34 @@ function prefabInstanceMenu(object, group) {
 			tooltip: root === object ? 'This object is a placed copy of a prefab' : 'This object is part of a placed copy of a prefab',
 			children
 		}
+	];
+}
+
+/**
+ * 61-nav: the module object actions for one object (`api.registerObjectAction`), with core's own
+ * "Make this an enemy…" door first — the navigation module's row when it is loaded, else the door
+ * that installs it (npcEntry.js).
+ * @param {string} uuid @returns {any[]}
+ */
+function objectActionRows(uuid) {
+	const list = get(moduleObjectActions).filter((a) => {
+		try {
+			return !a.when || a.when(uuid);
+		} catch {
+			return false;
+		}
+	});
+	const enemy = list.find((a) => a.key === ENEMY_ACTION_KEY);
+	return [
+		{
+			label: enemy?.label || 'Make this an enemy…',
+			icon: enemy?.icon || 'swords',
+			tooltip: enemy?.tooltip || 'It patrols a Path, sees and hears the player, chases, attacks and gives up — set it up in one sheet',
+			action: () => void import('./npcEntry.js').then((m) => m.openMakeEnemy(uuid))
+		},
+		...list
+			.filter((a) => a !== enemy)
+			.map((a) => ({ label: a.label, icon: a.icon || 'box', tooltip: a.tooltip || '', action: () => a.open(uuid) }))
 	];
 }
 
@@ -263,6 +292,12 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 						action: () => import('./cameraPreview').then((m) => m.startCameraPreview(uuid))
 					},
 					{
+						label: 'Film with this camera',
+						icon: 'video',
+						tooltip: 'Film mode: the phone (or mouse) moves this camera; record shots into the Timeline',
+						action: () => import('./film/filmState').then((m) => m.openFilm(uuid))
+					},
+					{
 						label: 'Set from current view',
 						icon: 'focus',
 						disabled: locked,
@@ -275,7 +310,7 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 			label: multi ? 'Ping selection' + suffix : 'Ping this object',
 			icon: 'radar',
 			tooltip: 'Everyone sees a pulse here (Ctrl+Alt+click pings anywhere)',
-			action: () => (multi ? pingObjects(targets) : pingObject(uuid))
+			action: () => (multi ? pingObjects(targets) : point ? pingObjectAt(uuid, point) : pingObject(uuid))
 		},
 		// 15-G audit: a note pins to ONE point on ONE object. The ViewportMenu path passes the
 		// sticky primary (not necessarily what is under the cursor), so during a multi-select
@@ -769,7 +804,10 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 						tooltip: 'Scatter this model with a terrain\u2019s Scatter brush — its look only (model + materials), not its logic',
 						action: () => import('./scatterSources').then((m) => m.useAsScatterSource(uuid))
 					}
-				])
+				]),
+		// 61-nav (G10): "Make this an enemy…" (the navigation module's sheet; offered — and installed
+		// on demand — whether or not the module is here yet) + any other module object action
+		...(multi || !object || locked || object?.userData?.terrain ? [] : objectActionRows(uuid))
 	];
 
 	// 57: a RIGGED model (bones captured at registration) gets Character ▸ — its clips and its skeleton

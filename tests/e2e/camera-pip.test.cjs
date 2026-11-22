@@ -10,7 +10,7 @@
 // visually (a live view through the camera inside the frame).
 const h = require('./helpers.cjs');
 
-const pip = (page) => page.evaluate(() => window.__stores.cameraPip.pipDebug());
+const pip = (page) => page.evaluate(() => window.__tp.test.v1.cameraPip.pipDebug());
 
 const frame = (page) =>
 	page.evaluate(() => {
@@ -25,7 +25,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	const uuid = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 2 2 2');
 		w.commandsHandler.sceneCommand('/create Camera');
 		await new Promise((r) => setTimeout(r, 350));
@@ -38,7 +38,7 @@ h.run(async () => {
 	});
 
 	// ---------- selecting a camera shows it ----------
-	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), uuid);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), uuid);
 	await A.page.waitForTimeout(600);
 	let state = await pip(A.page);
 	let box = await frame(A.page);
@@ -61,7 +61,7 @@ h.run(async () => {
 
 	// ---------- it steps aside for an open panel ----------
 	const withPanel = await A.page.evaluate(async (u) => {
-		window.__stores.objectActions.selectObject(u, true); // opens Properties
+		window.__tp.test.v1.objectActions.selectObject(u, true); // opens Properties
 		await new Promise((r) => setTimeout(r, 700));
 		const el = document.querySelector('.pip');
 		const panel = document.querySelector('#drawer-label')?.getBoundingClientRect();
@@ -98,31 +98,31 @@ h.run(async () => {
 	h.check(clamped && clamped.x >= 0 && clamped.y >= 0, `it clamps on screen (${JSON.stringify(clamped)})`);
 
 	// ---------- hidden while the camera fills the viewport ----------
-	await A.page.evaluate((u) => window.__stores.cameraPreview.startCameraPreview(u), uuid);
+	await A.page.evaluate((u) => window.__tp.test.v1.cameraPreview.startCameraPreview(u), uuid);
 	await A.page.waitForTimeout(600);
 	h.check((await pip(A.page)).target === null, 'no window while you are already inside that camera');
 	h.check((await frame(A.page)) === null, 'the frame is gone with it');
-	await A.page.evaluate(() => window.__stores.cameraPreview.stopCameraPreview());
+	await A.page.evaluate(() => window.__tp.test.v1.cameraPreview.stopCameraPreview());
 	await A.page.waitForTimeout(700);
 	h.check((await pip(A.page)).target === uuid, 'it comes back when the preview ends');
 
 	// ---------- per-camera off switch ----------
-	await A.page.evaluate((u) => window.__stores.cameraObjects.setCameraFor(u, { pip: false }), uuid);
+	await A.page.evaluate((u) => window.__tp.test.v1.cameraObjects.setCameraFor(u, { pip: false }), uuid);
 	await A.page.waitForTimeout(500);
 	h.check((await frame(A.page)) === null, 'turning the camera preview off hides the window');
 	h.check((await pip(A.page)).rect === null, 'and stops the renderer drawing it');
-	await A.page.evaluate((u) => window.__stores.cameraObjects.setCameraFor(u, { pip: true }), uuid);
+	await A.page.evaluate((u) => window.__tp.test.v1.cameraObjects.setCameraFor(u, { pip: true }), uuid);
 	await A.page.waitForTimeout(500);
 	h.check(!!(await frame(A.page)), 'the setting brings it back');
 
 	// ---------- deselecting hides it ----------
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await A.page.waitForTimeout(500);
 	h.check((await frame(A.page)) === null, 'deselecting the camera hides the window');
 
 	// ---------- the DOM→gl rect flip is right (y measured from the bottom) --------
 	const flip = await A.page.evaluate(() =>
-		window.__stores.cameraPip.glRect({ x: 10, y: 20, w: 100, h: 50 }, 500)
+		window.__tp.test.v1.cameraPip.glRect({ x: 10, y: 20, w: 100, h: 50 }, 500)
 	);
 	h.check(
 		flip.x === 10 && flip.y === 430 && flip.w === 100 && flip.h === 50,
@@ -131,9 +131,9 @@ h.run(async () => {
 
 
 	// ---------- 16-Q5: the title bar drags with the LEFT button too --------------
-	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), uuid);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), uuid);
 	await A.page.waitForTimeout(500);
-	await A.page.evaluate(() => window.__stores.cameraPip.resetPipPosition());
+	await A.page.evaluate(() => window.__tp.test.v1.cameraPip.resetPipPosition());
 	await A.page.waitForTimeout(300);
 	let bar = await frame(A.page);
 	await A.page.mouse.move(bar.x + bar.w / 2, bar.y + 6); // on the title bar
@@ -165,7 +165,7 @@ h.run(async () => {
 		// the gizmo is attached to the selected camera; renderPip must hide it for its
 		// draw and restore it afterwards
 		let controls = null;
-		window.__stores.TControls.subscribe((v) => (controls = v))();
+		window.__tp.test.v1.TControls.subscribe((v) => (controls = v))();
 		const attached = !!controls?.object;
 		await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 		return { attached, visibleAfterFrames: controls?.visible };
@@ -178,7 +178,7 @@ h.run(async () => {
 
 
 	// ---------- 16-Q6: the frame sits BELOW the UI chrome ------------------------
-	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), uuid);
+	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u, true), uuid);
 	await A.page.waitForTimeout(600);
 	const layering = await A.page.evaluate(() => {
 		const pip = document.querySelector('.pip');

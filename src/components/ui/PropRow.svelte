@@ -24,10 +24,17 @@
 	// get, set, reset?, unit?, options?}); `clip={false}` opts a row out; `clipKey` is the
 	// row's name in a copied section when its label is not (multi-select's "Origin").
 	// Every such row joins its Section, which is what "Copy section" copies.
+	//
+	// 78-int PL12 (scene panel review G1, owner APPROVED 2026-11-08) — THE CHANGED MARK. Inside the
+	// Inspector a value row whose value differs from its `resetValue` shows a small dot at the end of
+	// its label; one press puts the default back through `onchange` (the row's own write: one undo
+	// step, replicated like any edit). `resetLabel` names a PRESET instead of a default ("differs from
+	// the Cinematic preset"); `onreset` replaces the write (the environment's own undo path); `changed`
+	// drives the mark for a control row that has no number to compare (colour swatches).
 	import DragRow from './DragRow.svelte';
 	import { claimFieldScope, fieldClip, fieldClipScope } from '$lib/fieldMenu';
 
-	/** @type {{label?: string, labelFor?: string, value?: number, step?: number, snap?: number, decimals?: number, min?: number, max?: number, unit?: 'length'|'angle'|'angleDeg'|'', mixed?: boolean, disabled?: boolean, nodrag?: boolean, id?: string, ariaLabel?: string, title?: string, slider?: boolean, sliderMin?: number, sliderMax?: number, sliderStep?: number, valueBox?: boolean, onchange?: (next: number) => void, onscrubstart?: () => void, onscrubend?: () => void, control?: import('svelte').Snippet, clip?: any, clipKey?: string, resetValue?: number} & Record<string, any>} */
+	/** @type {{label?: string, labelFor?: string, value?: number, step?: number, snap?: number, decimals?: number, min?: number, max?: number, unit?: 'length'|'angle'|'angleDeg'|'', mixed?: boolean, disabled?: boolean, nodrag?: boolean, id?: string, ariaLabel?: string, title?: string, slider?: boolean, sliderMin?: number, sliderMax?: number, sliderStep?: number, valueBox?: boolean, onchange?: (next: number) => void, onscrubstart?: () => void, onscrubend?: () => void, control?: import('svelte').Snippet, clip?: any, clipKey?: string, resetValue?: number, resetLabel?: string, onreset?: (() => void) | null, changed?: boolean} & Record<string, any>} */
 	let {
 		label = '',
 		labelFor = undefined,
@@ -56,11 +63,30 @@
 		clip = undefined,
 		clipKey = undefined,
 		resetValue = undefined,
+		resetLabel = '',
+		onreset = null,
+		changed = undefined,
 		...rest
 	} = $props();
 
 	// 43 J3: what this row holds, for the field menu (null = not a clipboard field)
 	const scope = fieldClipScope();
+
+	// 78-int PL12: the changed mark (Inspector rows only, or a row that says so itself)
+	const numericChanged = $derived(
+		resetValue !== undefined && !mixed && Number.isFinite(value) && Math.abs(Number(value) - resetValue) > 0.5 * Math.pow(10, -Math.max(0, Math.min(6, decimals)))
+	);
+	const marked = $derived(!disabled && (changed !== undefined ? changed : (scope?.enabled ?? false) && numericChanged));
+	const markTitle = $derived(
+		(resetLabel ? `Differs from the ${resetLabel} preset` : 'Changed from its default') +
+			(resetValue !== undefined ? ` (${Number(resetValue.toFixed(Math.max(0, Math.min(6, decimals))))})` : '') +
+			' — press to reset'
+	);
+	function resetRow() {
+		if (onreset) onreset();
+		else if (resetValue !== undefined) onchange(resetValue);
+	}
+
 	/** @returns {any} */
 	function clipSpec() {
 		if (clip === false) return null;
@@ -106,10 +132,13 @@
 </script>
 
 <div class="tp-ui pr" class:pr-no-middle={!hasMiddle} class:pr-no-value={!valueBox} class:pr-disabled={disabled} {...rest} use:fieldClip={clipSpec}>
+	{#snippet mark()}
+		{#if marked}<button type="button" class="pr-mark" data-row-changed title={markTitle} aria-label={label + ': ' + markTitle} onclick={resetRow}></button>{/if}
+	{/snippet}
 	{#if labelFor || (valueBox && id)}
-		<label class="pr-label" for={labelFor ?? id}>{label}</label>
+		<label class="pr-label" for={labelFor ?? id}>{label}{@render mark()}</label>
 	{:else}
-		<span class="pr-label">{label}</span>
+		<span class="pr-label">{label}{@render mark()}</span>
 	{/if}
 	{#if slider}
 		<input
@@ -178,6 +207,33 @@
 		overflow-wrap: anywhere;
 		line-height: 1.3;
 		color: var(--text-2);
+	}
+	/* 78-int PL12: the changed mark — a dot after the label; the press area is the whole 16 px box */
+	.pr-mark {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 16px;
+		height: 16px;
+		margin: -2px 0 -2px 2px;
+		padding: 0;
+		vertical-align: middle;
+		border: 0;
+		border-radius: 50%;
+		background: transparent;
+		cursor: pointer;
+	}
+	.pr-mark::before {
+		content: '';
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--accent);
+	}
+	.pr-mark:hover::before,
+	.pr-mark:focus-visible::before {
+		width: 8px;
+		height: 8px;
 	}
 	.pr-disabled .pr-label {
 		opacity: 0.55;

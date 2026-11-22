@@ -2,23 +2,23 @@
 // use the app's buttons. Run: APP_URL='https://localhost:5437/' npm run e2e -- session-volume-limits
 const h = require('./helpers.cjs');
 
-const debug = (p) => p.page.evaluate(() => window.__stores.sessionVolumes.volumeDebug());
+const debug = (p) => p.page.evaluate(() => window.__tp.test.v1.sessionVolumes.volumeDebug());
 const p_role = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.sessionVolumes.sessionVolumes.subscribe((x) => (v = x))();
+		window.__tp.test.v1.sessionVolumes.sessionVolumes.subscribe((x) => (v = x))();
 		return v?.[0]?.role ?? null;
 	});
 const rows = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.sessionVolumes.sessionVolumes.subscribe((x) => (v = x))();
+		window.__tp.test.v1.sessionVolumes.sessionVolumes.subscribe((x) => (v = x))();
 		return (v ?? []).map((x) => ({ name: x.name, host: x.host, folders: x.folders.length, hashes: x.items.map((i) => i.hash) }));
 	});
 const scenes = (p) =>
 	p.page.evaluate(() => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (m = v))();
 		return Object.fromEntries(Object.entries(m.scenes).map(([k, e]) => [k, e.history.length]));
 	});
 /** a raw message from one page to another */
@@ -26,7 +26,7 @@ const raw = (from, to, msg) =>
 	from.page.evaluate(
 		({ to, msg }) => {
 			let p;
-			window.__stores.peers.subscribe((x) => (p = x))();
+			window.__tp.test.v1.peers.subscribe((x) => (p = x))();
 			p.connections[to].send(msg);
 		},
 		{ to, msg }
@@ -36,9 +36,9 @@ h.run(async () => {
 	const browser = await h.launch();
 	const H = await h.setupPage(browser, 'H');
 	const G = await h.setupPage(browser, 'G');
-	for (const p of [H, G]) await p.page.waitForFunction(() => !!window.__stores?.sessionVolumes && !!window.__stores?.levels, null, { timeout: 60000 });
+	for (const p of [H, G]) await p.page.waitForFunction(() => !!window.__tp?.test.v1?.sessionVolumes && !!window.__tp?.test.v1?.levels, null, { timeout: 60000 });
 	const fixture = await H.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		await s.explorer.loadExplorer();
 		await s.explorer.clearLibrary();
 		s.commandsHandler.sceneCommand('/create box');
@@ -66,7 +66,7 @@ h.run(async () => {
 	h.check((await rows(H)).length === 0, 'the host mounts nothing from its guest');
 
 	// ---- a listing names no content hash ----------------------------------------------------------
-	await H.page.evaluate(() => window.__stores.sessionVolumes.setShareScope('library'));
+	await H.page.evaluate(() => window.__tp.test.v1.sessionVolumes.setShareScope('library'));
 	await h.eventually(() => rows(G), (r) => r[0].hashes.length >= 3, 'the wider scope reaches G', 30000);
 	const listed = (await rows(G))[0].hashes;
 	h.check(!listed.some((x) => [fixture.other, fixture.open, fixture.big].includes(x)), 'rows carry handles, not content hashes');
@@ -83,14 +83,14 @@ h.run(async () => {
 	await H.page.waitForTimeout(1500);
 	const outs = await H.page.evaluate((hash) => {
 		let t;
-		window.__stores.transferLedger.transfers.subscribe((v) => (t = v))();
+		window.__tp.test.v1.transferLedger.transfers.subscribe((v) => (t = v))();
 		return t.filter((x) => x.dir === 'out' && x.hash === hash).length;
 	}, fixture.big);
 	h.check(outs <= 1, `40 requests for one file make one send (${outs})`);
 	await H.page.evaluate((hash) => {
 		let p;
-		window.__stores.peers.subscribe((x) => (p = x))();
-		return window.__stores.assetShare.stopSendingTo(Object.keys(p.connections)[0], hash);
+		window.__tp.test.v1.peers.subscribe((x) => (p = x))();
+		return window.__tp.test.v1.assetShare.stopSendingTo(Object.keys(p.connections)[0], hash);
 	}, fixture.big).catch(() => {});
 
 	// ---- a hostile listing or announcement costs the receiver nothing -----------------------------
@@ -105,7 +105,7 @@ h.run(async () => {
 		items: []
 	});
 	await h.eventually(() => rows(G), (r) => r[0].folders === 3, 'a folder list is one row per id', 15000);
-	await G.page.evaluate(() => window.__stores.explorerClose.set(false));
+	await G.page.evaluate(() => window.__tp.test.v1.explorerClose.set(false));
 	await G.page.waitForTimeout(800);
 	await alive('a looped folder list does not hang the Explorer');
 	await raw(H, G.id, { type: 'assetstart', hash: 'x', size: 1, chunks: 4294967295 });
@@ -113,30 +113,30 @@ h.run(async () => {
 	await alive('an impossible announcement is ignored');
 
 	// ---- narrowing stops a send already running ----------------------------------------------------
-	await H.page.evaluate(() => window.__stores.sessionVolumes.setShareScope('project'));
+	await H.page.evaluate(() => window.__tp.test.v1.sessionVolumes.setShareScope('project'));
 	await H.page.waitForTimeout(1000);
-	await H.page.evaluate(() => window.__stores.sessionVolumes.setShareScope('library'));
+	await H.page.evaluate(() => window.__tp.test.v1.sessionVolumes.setShareScope('library'));
 	await h.eventually(() => rows(G), (r) => r[0].hashes.length >= 3, 'the listing comes back', 90000);
 	const running = G.page.evaluate(async () => {
 		let v;
-		window.__stores.sessionVolumes.sessionVolumes.subscribe((x) => (v = x))();
+		window.__tp.test.v1.sessionVolumes.sessionVolumes.subscribe((x) => (v = x))();
 		const vol = v[0];
 		const row = vol.items.find((i) => i.name === 'big2.bin');
 		if (!row) return 'no row';
-		const blob = await window.__stores.sessionVolumes.sessionVolumeBlob(vol.id, row.id, { confirmed: true });
+		const blob = await window.__tp.test.v1.sessionVolumes.sessionVolumeBlob(vol.id, row.id, { confirmed: true });
 		return blob ? blob.size : null;
 	});
 	await h.eventually(
 		() => H.page.evaluate(() => {
 			let t;
-			window.__stores.transferLedger.transfers.subscribe((v) => (t = v))();
+			window.__tp.test.v1.transferLedger.transfers.subscribe((v) => (t = v))();
 			return t.some((x) => x.dir === 'out' && x.state === 'active');
 		}),
 		(a) => a === true,
 		'premise: a send is running',
 		30000
 	);
-	await H.page.evaluate(() => window.__stores.sessionVolumes.setShareScope('none'));
+	await H.page.evaluate(() => window.__tp.test.v1.sessionVolumes.setShareScope('none'));
 	const ended = await Promise.race([running, new Promise((r) => setTimeout(() => r('timeout'), 90000))]);
 	h.check(ended === null, `narrowing to None ends the running send (${ended})`);
 
@@ -144,12 +144,12 @@ h.run(async () => {
 	const role = () => p_role(G);
 	await H.page.evaluate(() => {
 		localStorage.setItem('cloudPluginUrl', 'https://localhost/none.js');
-		window.__stores.cloudHooks.rolesInfo.set(null);
+		window.__tp.test.v1.cloudHooks.rolesInfo.set(null);
 	});
 	await h.eventually(role, (r) => r === 'viewer', 'with the plugin expected and absent, the host reads a guest as a viewer', 10000);
 	await H.page.evaluate(() => {
 		localStorage.removeItem('cloudPluginUrl');
-		window.__stores.cloudHooks.rolesInfo.set(null);
+		window.__tp.test.v1.cloudHooks.rolesInfo.set(null);
 	});
 	await h.eventually(role, (r) => r === 'editor', '…with no plugin expected, as an editor again', 10000);
 

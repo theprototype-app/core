@@ -15,7 +15,7 @@
 //      Revoke all ends them
 //   2  the JOINER: a captured invite rides the dial as {v, i, p} for that host only, with
 //      kind: agent, and the token is nowhere in the dial
-//   3  two real peers (+ a late joiner): the host mints the link in the Request AI sheet, the
+//   3  two real peers (+ a late joiner): the host mints the link in the Invite sheet, the
 //      agent page opens it and is IN with no card; the token is gone from its URL; the host
 //      shows the robot + AI and builds no avatar for it; the agent's tool call lands as a
 //      line in the host's AI window, a click selects it, Undo undoes it for everyone; the
@@ -31,8 +31,8 @@ const inPage = (peer, body, arg) =>
 	peer.page.evaluate(
 		([src, a]) => {
 			let pc = null;
-			window.__stores.peers.subscribe((v) => (pc = v))();
-			return Object.getPrototypeOf(async function () {}).constructor('s', 'pc', 'arg', src)(window.__stores, pc, a);
+			window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
+			return Object.getPrototypeOf(async function () {}).constructor('s', 'pc', 'arg', src)(window.__tp?.test.v1, pc, a);
 		},
 		[body, arg ?? null]
 	);
@@ -79,7 +79,7 @@ h.run(async () => {
 	// ==================================================================== 1. the host
 	console.log('\n=== 1. the host checks every invite dial ===');
 	const H = await h.setupPage(browser, 'host');
-	await H.page.waitForFunction(() => !!window.__stores?.inviteStore?.createInvite, null, { timeout: 30000 });
+	await H.page.waitForFunction(() => !!window.__tp?.test.v1?.inviteStore?.createInvite, null, { timeout: 30000 });
 	await inPage(H, DIAL_STUB);
 	const mint = (opts) => inPage(H, 'const r = s.inviteStore.createInvite({ hostId: pc.peer.id, ...arg }); return { id: r.record.id, link: r.link, mcp: r.mcp, sentence: r.sentence, record: r.record };', opts);
 	const tokenOfLink = (link) => core.parseHashParams(new URL(link).hash).invite;
@@ -158,11 +158,18 @@ h.run(async () => {
 	await inPage(H, "s.cloudHooks.setAuthProvider({ decide() { return 'admit'; }, admitNotice: (id) => ({ text: id + ' joined as a guest (view-only)', turnOff() {} }) })");
 	const guestRoomInv = await mint({ kind: 'agent' });
 	await dial('cccc4', { kind: 'agent', invite: core.dialInvite(tokenOfLink(guestRoomInv.link), 'cccc4', H.id) });
-	await H.page.waitForTimeout(150);
-	const notesNow = await inPage(H, 'let n; s.notifications.subscribe((v) => (n = v.map((x) => x.text)))(); return n;');
+	// uir-int (device-lab-4 D4): the notice names the joiner (their roster name, else "An AI agent" / "A guest"
+	// after ~2.5 s) — never the peer id
+	const notesOf = () => inPage(H, 'let n; s.notifications.subscribe((v) => (n = v.map((x) => x.text)))(); return n;');
+	let notesNow = [];
+	for (let i = 0; i < 40; i++) {
+		notesNow = await notesOf();
+		if (notesNow.some((t) => /joined with your invite/.test(t))) break;
+		await H.page.waitForTimeout(150);
+	}
 	h.check(
-		(await roster(H)).some((u) => u[0] === 'cccc4') && notesNow.some((t) => /CCCC4 joined with your invite/.test(t)) && !notesNow.some((t) => /cccc4 joined as a guest/i.test(t)),
-		'an invite into a guest-admitting room says "joined with your invite", not "as a guest": ' + JSON.stringify(notesNow.filter((t) => /cccc4/i.test(t)))
+		(await roster(H)).some((u) => u[0] === 'cccc4') && notesNow.some((t) => /^An AI agent joined with your invite/.test(t)) && !notesNow.some((t) => /cccc4 joined/i.test(t)),
+		'an invite into a guest-admitting room says "<who> joined with your invite" (a name, not the peer id, not "as a guest"): ' + JSON.stringify(notesNow.filter((t) => /invite|cccc4/i.test(t)))
 	);
 	await inPage(H, 's.inviteStore.agentsAsGuests.set(false); s.cloudHooks.setAuthProvider(null)');
 	// approving the agent's card by hand gives it a kind:agent row too
@@ -189,7 +196,7 @@ h.run(async () => {
 	// ==================================================================== 2. the joiner
 	console.log('\n=== 2. the joiner proves, never sends the token ===');
 	const J = await h.setupPage(browser, 'joiner');
-	await J.page.waitForFunction(() => !!window.__stores?.inviteStore, null, { timeout: 30000 });
+	await J.page.waitForFunction(() => !!window.__tp?.test.v1?.inviteStore, null, { timeout: 30000 });
 	await inPage(J, DIAL_STUB);
 	const jt = core.newToken();
 	await inPage(J, "s.inviteStore.captureInviteHash('#XQ7ZZ&agent&invite=' + arg); return s.peerApproval.requestConnect('xq7zz');", jt);
@@ -205,11 +212,18 @@ h.run(async () => {
 	// ==================================================================== 3. real peers
 	console.log('\n=== 3. two real peers: the link → in, no card ===');
 	const A = await h.setupPage(browser, 'A');
-	await A.page.waitForFunction(() => window.__stores?.peers && (() => { let p; window.__stores.peers.subscribe((v) => (p = v))(); return !!p?.peer?.open; })(), null, { timeout: 30000 }).catch(() => {});
-	await A.page.locator('#connect-request-ai').click({ timeout: 30000, noWaitAfter: true });
+	await A.page.waitForFunction(() => window.__tp?.test.v1?.peers && (() => { let p; window.__tp.test.v1.peers.subscribe((v) => (p = v))(); return !!p?.peer?.open; })(), null, { timeout: 30000 }).catch(() => {});
+	// 78 PL36: ONE Invite button (person-plus) replaced the robot Request AI; it opens on Person
+	h.check((await A.page.locator('#connect-request-ai').count()) === 0, 'no robot Request AI button any more');
+	await A.page.locator('#connect-invite').click({ timeout: 30000, noWaitAfter: true });
 	await A.page.locator('#invite-sheet').waitFor({ timeout: 5000 });
-	h.check((await A.page.locator('#invite-sheet').getAttribute('data-tab')) === 'agent', 'Request AI opens the sheet on the AI agent tab');
-	const rolesOn = await A.page.evaluate(() => { let r; window.__stores.cloudHooks.rolesInfo.subscribe((v) => (r = v))(); return !!r; });
+	h.check((await A.page.locator('#invite-sheet').getAttribute('data-tab')) === 'person', 'Invite opens the sheet on the Person tab');
+	const tabNames = await A.page.locator('#invite-sheet').locator('xpath=ancestor::dialog').getByRole('tab').allInnerTexts().catch(() => []);
+	h.check(tabNames.map((t) => t.trim()).join('|') === 'Person|AI agent', `the tabs read Person | AI agent (${tabNames.join('|')})`);
+	await A.page.locator('#invite-tab-agent').click({ timeout: 5000 });
+	await A.page.waitForFunction(() => document.querySelector('#invite-sheet')?.getAttribute('data-tab') === 'agent', null, { timeout: 5000 });
+	h.check(true, 'the AI agent tab keeps the agent flow');
+	const rolesOn = await A.page.evaluate(() => { let r; window.__tp.test.v1.cloudHooks.rolesInfo.subscribe((v) => (r = v))(); return !!r; });
 	if (rolesOn) h.check((await A.page.locator('#invite-role-edit[aria-checked="true"]').count()) === 1, 'a cloud build offers the role, Edit preselected for an agent');
 	else h.check((await A.page.locator('#invite-role-view').count()) === 0, 'no role choice in the OSS build (everyone edits)');
 	await A.page.locator('#invite-create').click();
@@ -234,19 +248,19 @@ h.run(async () => {
 	await A.page.waitForTimeout(1500);
 	const avatars = await A.page.evaluate((ids) => {
 		let scene;
-		window.__stores.globalScene.subscribe((v) => (scene = v))();
+		window.__tp.test.v1.globalScene.subscribe((v) => (scene = v))();
 		return { agent: !!scene?.getObjectByName(ids.b), marker: !!scene?.getObjectByName('agent-marker-' + ids.b) };
 	}, { b: B.id });
 	h.check(!avatars.agent, 'A builds NO avatar body for the agent (A7)');
 	const bSeesA = await until(
-		() => B.page.evaluate((a) => { let s; window.__stores.globalScene.subscribe((v) => (s = v))(); return !!s?.getObjectByName(a); }, A.id),
+		() => B.page.evaluate((a) => { let s; window.__tp.test.v1.globalScene.subscribe((v) => (s = v))(); return !!s?.getObjectByName(a); }, A.id),
 		(v) => v === true,
 		'premise: the agent page DOES build the human host an avatar',
 		15000
 	);
 	h.check(!!bSeesA, 'counterfactual holds: a person still gets a body');
 	// the automatic-admission notice is a lasting toast at the top: open the panel by its store, not a click under it
-	await A.page.evaluate(() => window.__stores.peersPanelOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.peersPanelOpen.set(true));
 	await A.page.locator('#peers-popover').waitFor({ timeout: 8000 }).catch(() => {});
 	h.check((await A.page.locator('.peer-ai').count()) >= 1, 'Users shows the robot + AI on the agent row');
 	h.check((await A.page.locator('#peers-invites .peers-inv-row[data-state="used"]').count()) === 1, 'Users lists the invite as used');
@@ -262,21 +276,21 @@ h.run(async () => {
 	h.check(!!rockUuid, `premise: the agent's tool call created an object (${JSON.stringify(made)})`);
 	const line = await until(() => read(A, 'agentLog.agentLog'), (log) => log?.some((e) => /created 1 object \(Rock\)/.test(e.text)), "A's log has the agent's line", 20000);
 	h.check(!!line, 'one line per tool call reaches the host');
-	h.check(await until(() => A.page.evaluate((u) => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); return !!g?.getObjectByProperty('uuid', u); }, rockUuid), (v) => v, 'the Rock replicated to A', 15000), 'the edit itself came over the ordinary ops');
+	h.check(await until(() => A.page.evaluate((u) => { let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))(); return !!g?.getObjectByProperty('uuid', u); }, rockUuid), (v) => v, 'the Rock replicated to A', 15000), 'the edit itself came over the ordinary ops');
 	await inPage(A, "s.aiAssistantHidden.set('')");
 	const lineEl = A.page.locator('#agent-log .alog-line', { hasText: 'created 1 object (Rock)' });
 	await lineEl.waitFor({ timeout: 5000 }).catch(() => {});
 	h.check((await lineEl.count()) === 1, 'the AI assistant window shows it under Agent activity');
 	await lineEl.locator('.alog-text').click();
 	await A.page.waitForTimeout(300);
-	const sel = await A.page.evaluate(() => { let v; window.__stores.selectedObjects.subscribe((x) => (v = x))(); return [...(v ?? [])].map((o) => o?.uuid ?? o); });
+	const sel = await A.page.evaluate(() => { let v; window.__tp.test.v1.selectedObjects.subscribe((x) => (v = x))(); return [...(v ?? [])].map((o) => o?.uuid ?? o); });
 	h.check(sel.includes(rockUuid), `clicking the line selects the object (${JSON.stringify(sel)})`);
 	// (selecting the Rock opens its properties, which keeps the window reflowing under a pointer
 	// click — the line's own click is proven above; the press is dispatched on the button)
 	await lineEl.locator('.alog-undo').dispatchEvent('click');
-	const gone = await until(() => A.page.evaluate((u) => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); return !g?.getObjectByProperty('uuid', u); }, rockUuid), (v) => v, 'Undo removes the Rock on A', 15000);
+	const gone = await until(() => A.page.evaluate((u) => { let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))(); return !g?.getObjectByProperty('uuid', u); }, rockUuid), (v) => v, 'Undo removes the Rock on A', 15000);
 	h.check(!!gone, "the line's Undo undid the call for everyone (A)");
-	h.check(await B.page.evaluate((u) => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); return !g?.getObjectByProperty('uuid', u); }, rockUuid), '…and on the agent page');
+	h.check(await B.page.evaluate((u) => { let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))(); return !g?.getObjectByProperty('uuid', u); }, rockUuid), '…and on the agent page');
 	h.check(!!(await until(() => read(A, 'agentLog.agentLog'), (log) => log?.some((e) => e.undone), 'the line reads undone', 10000)), 'the line is marked undone');
 	// a second call stays, for the late joiner
 	await inPage(B, "s.history.beginHistoryBatch(); await s.aiTools.executeAiTool('create_objects', { objects: [{ kind: 'primitive', primitive: 'Sphere', name: 'Flame', position: [0, 0.5, 0] }] }); s.history.endHistoryBatch('AI agent');");
@@ -287,7 +301,7 @@ h.run(async () => {
 	const view = await until(() => read(A, 'agentLog.agentViews'), (m) => !!m?.[B.id], "A knows the agent's view", 10000);
 	h.check(JSON.stringify(view?.[B.id]?.pos) === '[1,2,3]', 'the pose arrived');
 	const marker = await until(
-		() => A.page.evaluate((b) => { let s; window.__stores.globalScene.subscribe((v) => (s = v))(); const m = s?.getObjectByName('agent-marker-' + b); return m ? m.getWorldPosition(new m.position.constructor()).toArray().map((x) => Math.round(x)) : null; }, B.id),
+		() => A.page.evaluate((b) => { let s; window.__tp.test.v1.globalScene.subscribe((v) => (s = v))(); const m = s?.getObjectByName('agent-marker-' + b); return m ? m.getWorldPosition(new m.position.constructor()).toArray().map((x) => Math.round(x)) : null; }, B.id),
 		(p) => !!p,
 		'the AI camera marker is drawn',
 		10000
@@ -295,7 +309,7 @@ h.run(async () => {
 	h.check(JSON.stringify(marker) === '[1,2,3]', `…at the agent's camera (${JSON.stringify(marker)})`);
 	await inPage(A, 's.agentLog.showAgentMarkers.set(false)');
 	await A.page.waitForTimeout(400);
-	h.check(!(await A.page.evaluate((b) => { let s; window.__stores.globalScene.subscribe((v) => (s = v))(); return !!s?.getObjectByName('agent-marker-' + b); }, B.id)), 'the setting turns the marker off');
+	h.check(!(await A.page.evaluate((b) => { let s; window.__tp.test.v1.globalScene.subscribe((v) => (s = v))(); return !!s?.getObjectByName('agent-marker-' + b); }, B.id)), 'the setting turns the marker off');
 	await inPage(A, 's.agentLog.showAgentMarkers.set(true)');
 
 	console.log('\n=== 3d. a late joiner (plain link: the card, as today) sees the log ===');
@@ -304,7 +318,7 @@ h.run(async () => {
 	const cLog = await until(() => read(C, 'agentLog.agentLog'), (log) => log?.some((e) => /Flame/.test(e.text)) && log?.some((e) => e.undone), "the late joiner's AI window has the agent's lines (and the undone one)", 30000);
 	h.check(!!cLog, 'recent lines ride the handshake');
 	await C.page.waitForTimeout(1500);
-	const cBody = await C.page.evaluate((b) => { let s; window.__stores.globalScene.subscribe((v) => (s = v))(); return !!s?.getObjectByName(b); }, B.id);
+	const cBody = await C.page.evaluate((b) => { let s; window.__tp.test.v1.globalScene.subscribe((v) => (s = v))(); return !!s?.getObjectByName(b); }, B.id);
 	h.check(!cBody, 'the late joiner draws no avatar for the agent either');
 
 	await h.finish(browser);

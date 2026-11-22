@@ -1,8 +1,13 @@
+import { parentTarget } from './parentTarget.js';
 import { get } from 'svelte/store';
+import * as THREE from 'three';
 import { objectsGroup, lockedObjects, pokeScene } from '../../stores/sceneStore.js';
 import { peers } from '../../stores/appStore.js';
 import { lockSkip } from './lockNote.js';
-import { sceneFilter } from './sceneFilter.js';
+import { sceneFilter, cursorOffset, cursorAt, PAGE_MAX, SPATIAL_TESTS } from './sceneFilter.js';
+import { placeObject, comfortRefusal, withBodyUnits, frontVector, FRONT_AXES, aimFront } from './placement.js';
+import { ASSIST_TOOL_NAMES, ASSIST_AI_TOOLS, ASSIST_PROMPT, assistTool } from './assistTools.js';
+import { aboutOriginPosition, originOf } from '$lib/objectOrigin';
 import { geometrySpec } from '$lib/geometryParams';
 import { createGeometry, createLight, createGroup } from '$lib/geometries.svelte.js';
 import { recordObjectPresence, recordTransform } from '$lib/history';
@@ -10,15 +15,17 @@ import {
 	renameObject,
 	toggleObjectVisibility,
 	moveObjectToGroup,
-	deleteObjectsByUuid
+	deleteObjectsByUuid,
+	duplicateObject
 } from '$lib/objectActions';
 import { setObjectColor, switchMaterialType, setMaterialParam } from '$lib/materialsHandler';
-import { checkMaterialParam, toHexColor } from '$lib/materialParamRules.js';
+import { checkMaterialParam, toHexColor, isMapSlotKey } from '$lib/materialParamRules.js';
 import { lightStateOf, recordLightChange, sendLight } from '$lib/multiEdit';
-import { aimLight } from '$lib/lightParams';
-import { itemByHash } from '$lib/explorer';
-import { notifyExternalMove } from '$lib/flowRuntime';
-import { meshGenReady } from './meshProviders.js';
+import { aimLight, setShadowMapSize } from '$lib/lightParams';
+import { itemByHash, itemBlob } from '$lib/explorer';
+import { animatedBaseOf, writingBasePose } from '$lib/flowRuntime';
+import { reportedPose } from './poseReport.js';
+import { meshGenReady, meshTakesImage, activeMeshConfig } from './meshProviders.js';
 import { featureStatus, toolSummary } from '../tools/toolStatus.js';
 import '../tools/builtinTools.js'; // 59 T5: the registry the prompt's tool lines read
 import { viewerToolRefusal } from './viewerGate.js';
@@ -29,6 +36,8 @@ import { graphOf, SCENE_GRAPH } from '../../stores/flowStore';
 import { sceneJoints } from '$lib/joints';
 import { graphToText } from '$lib/graphText';
 import { findNodeSpec } from '$lib/nodeCatalog';
+// 2.0 N2: the graph as read-only code, behind the codeView flag (contract 1.10.0)
+import { codeViewOn } from '$lib/nodes/codeViewFlag.js';
 import { aiReferences, behaviourHost } from './aiExtensions.js';
 import { behaviourToolSchemas, behaviourTool, summarizeBehaviours } from './behaviourTools.js';
 import {
@@ -41,6 +50,21 @@ import {
 	createJointsTool,
 	controlSimulationTool
 } from './flowTools.js';
+import { GEOMETRY_TOOL_NAMES, GEOMETRY_AI_TOOLS, GEOMETRY_PROMPT, geometryTool, MIN_SIZE } from './geometryTools.js';
+import { TEXT_TOOL_NAMES, TEXT_AI_TOOLS, TEXT_PROMPT, textTool } from './textTools.js';
+import { PATH_TOOL_NAMES, PATH_AI_TOOLS, PATH_PROMPT, pathTool } from './pathTools.js'; // 78 F4
+import { shapePose } from './shapeBatchCore.js';
+import { meshStats } from './meshStats.js';
+import { applyShadowFlags, SHADOW_SCHEMA } from './shadowFlags.js';
+import { duplicatePlan, DUPLICATE_MAX } from './duplicateCore.js';
+import { LOOK_TOOL_NAMES, LOOK_AI_TOOLS, LOOK_PROMPT, lookTool } from './lookTools.js';
+import { HUD_TOOL_NAMES, HUD_AI_TOOLS, HUD_PROMPT, hudTool } from './hudTools.js';
+import { SCENE_SETUP_TOOL_NAMES, SCENE_SETUP_AI_TOOLS, SCENE_SETUP_PROMPT, sceneSetupTool } from './sceneSetupTools.js';
+import { LEVELS_TOOL_NAMES, LEVELS_AI_TOOLS, LEVELS_PROMPT, levelsTool } from './levelsTools.js'; // 93
+import { NPC_TOOL_NAMES, NPC_AI_TOOLS, NPC_PROMPT, npcTool } from './npcTools.js'; // 61-nav G10
+import { WORLD_TOOL_NAMES, WORLD_AI_TOOLS, WORLD_PROMPT, worldTool, resolvePatterns } from './worldTools.js';
+import { RUNTIME_TOOL_NAMES, RUNTIME_AI_TOOLS, RUNTIME_PROMPT, runtimeTool } from './runtimeTools.js';
+import { beginAiEdit, endAiEdit } from '../sceneEditBy.js'; // 78-int PL13: "changed by Claude (AI)"
 
 // AI tool layer (roadmap #10, A4). Maps OpenAI-style function calls onto the
 // existing REPLICATED mutation surface — every tool applies locally AND broadcasts
@@ -128,11 +152,8 @@ function describeObject(object) {
 		uuid: object.uuid,
 		name: object.name || object.type,
 		type: object.type,
-		parentUuid: object.parent && object.parent.type === 'Group' ? object.parent.uuid : null,
-		position: object.position.toArray().map(r3),
-		rotation: [r3(object.rotation.x), r3(object.rotation.y), r3(object.rotation.z)],
-		scale: object.scale.toArray().map(r3),
-		visible: object.visible !== false
+		parentUuid: object.parent ? object.parent.uuid : null,
+		...reportedPose(object, animatedBaseOf(object.uuid))
 	};
 	const material = object.material;
 	if (material && !Array.isArray(material)) {
@@ -140,8 +161,12 @@ function describeObject(object) {
 		if (material.color) out.color = '#' + material.color.getHexString();
 	}
 	if (object.userData?.physics) out.physics = { ...object.userData.physics };
+	const pivot = originOf(object);
+	if (pivot) out.pivot = pivot.map(r3); // 85 set_pivot: object space
 	const geometry = geometrySummary(object);
 	if (geometry) out.geometry = geometry;
+	const mesh = meshStats(object);
+	if (mesh) out.mesh = mesh;
 	const flow = summarizeGraph(object.uuid);
 	if (flow) out.flow = flow;
 	return out;
@@ -170,7 +195,7 @@ function geometrySummary(object) {
 
 /** 55 (1.48.1): list_scene `brief` — enough to address an object, nothing more @param {any} object */
 function briefObject(object) {
-	return { uuid: object.uuid, name: object.name || object.type, type: object.type, parentUuid: object.parent && object.parent.type === 'Group' ? object.parent.uuid : null };
+	return { uuid: object.uuid, name: object.name || object.type, type: object.type, parentUuid: object.parent ? object.parent.uuid : null };
 }
 
 /** Node data compacted for the model: big point lists reduced to a count, long strings
@@ -195,6 +220,8 @@ function compactNodeData(node) {
 
 /** 34 D5: one graph's summary may spend this many characters (~2k tokens) */
 const GRAPH_SUMMARY_CHARS = 6000;
+/** 2.0 N2: the most of a graph's code one list_scene {flow} answer carries */
+const GRAPH_CODE_CHARS = 24000;
 
 /** the catalog's defaults / label, for the AI view's "say only what differs" @param {string} type */
 const specDefaults = (type) => findNodeSpec(type)?.defaults;
@@ -251,9 +278,9 @@ function pageBlocks(blocks, cap) {
 /**
  * 55 (41's research): one PAGE of a graph's summary (list_scene `{flow, page}`), so an agent can read
  * a whole big graph — the scene summary shows page 1. @param {string} graphId @param {number} page 1-based
- * @returns {{flow: string, page: number, pages: number, text: string} | {error: string}}
+ * @returns {Promise<{flow: string, page: number, pages: number, text: string, code?: string} | {error: string}>}
  */
-export function graphPage(graphId, page) {
+export async function graphPage(graphId, page) {
 	const graph = graphOf(graphId);
 	if (!graph) return { error: 'no flow graph "' + graphId + '" — use "scene" or an object uuid that has a flow' };
 	const opts = { positions: false, defaults: specDefaults, defaultLabel: specLabel };
@@ -271,7 +298,17 @@ export function graphPage(graphId, page) {
 	if (orphans.length) blocks.push(graphToText({ nodes: [], edges: orphans }, opts));
 	const pages = pageBlocks(blocks, GRAPH_SUMMARY_CHARS);
 	const at = Math.min(Math.max(1, Math.floor(Number(page) || 1)), pages.length);
-	return { flow: graphId, page: at, pages: pages.length, text: pages[at - 1] };
+	/** @type {{flow: string, page: number, pages: number, text: string, code?: string}} */
+	const answer = { flow: graphId, page: at, pages: pages.length, text: pages[at - 1] };
+	// 2.0 N2 (flag codeView): the same graph as the Nodes editor's Code tab prints it — one statement per
+	// node, sources first, `// #<id>` = the ids update_flow_nodes takes. Whole on page 1 (capped), never paged.
+	if (codeViewOn() && at === 1) {
+		// 95-int: the code view is a lazy chunk (flag off by default = off the editor's boot path)
+		const { codeForGraph } = await import('$lib/nodes/flowCodeView.js');
+		const code = codeForGraph(graph, graphId).code;
+		answer.code = code.length > GRAPH_CODE_CHARS ? code.slice(0, code.lastIndexOf('\n', GRAPH_CODE_CHARS) + 1) + '// … cut at ' + GRAPH_CODE_CHARS + ' characters: the text pages carry the rest\n' : code;
+	}
+	return answer;
 }
 
 /**
@@ -279,22 +316,28 @@ export function graphPage(graphId, page) {
  * replicated objectsGroup only (scene-root helpers/env stay local). Capped so a
  * huge scene can't blow the context.
  * @param {number} [cap]
- * @param {{brief?: boolean, name?: string, type?: string, near?: {position: number[], radius: number}} | null} [filter]
+ * @param {{brief?: boolean, name?: string, type?: string, near?: {position: number[], radius: number}, bounds?: {min: number[], max: number[]}, limit?: number, cursor?: string} | null} [filter]
  *   55 (1.48.1): list_scene's narrowing — uuid/name/type/parent only, a name glob, a type, a world-space sphere
  * @returns {{objects: any[], truncated?: number}}
  */
 export function summarizeScene(cap = 200, filter = null) {
 	const group = get(objectsGroup);
 	const keep = sceneFilter(filter);
+	// 85b R7: paging — `limit` per page, `cursor` = where this page starts (the previous page's nextCursor)
+	const paged = filter && (filter.limit !== undefined || filter.cursor !== undefined);
+	const skip = paged ? cursorOffset(filter.cursor) : 0;
+	if (paged && Number.isFinite(Number(filter.limit))) cap = Math.max(1, Math.min(PAGE_MAX, Math.floor(Number(filter.limit))));
 	/** @type {any[]} */
 	const objects = [];
 	let truncated = 0;
 	let matched = 0;
 	if (group) {
+		group.updateMatrixWorld(true); // mcp-shapes: meshStats' world box
 		group.traverse((/** @type {any} */ object) => {
 			if (object === group) return;
 			if (keep && !keep(object)) return;
 			matched++;
+			if (matched <= skip) return;
 			if (objects.length >= cap) {
 				truncated++;
 				return;
@@ -304,8 +347,9 @@ export function summarizeScene(cap = 200, filter = null) {
 	}
 	/** @type {any} */
 	const out = truncated ? { objects, truncated } : { objects };
+	if (paged && truncated) out.nextCursor = cursorAt(skip + objects.length);
 	// a filtered read is about objects: the scene-wide flow / behaviours / joints stay in the plain call
-	if (keep || filter?.brief) return { ...out, matched };
+	if (keep || filter?.brief || paged) return { ...out, matched };
 	const sceneFlow = summarizeGraph(SCENE_GRAPH);
 	if (sceneFlow) out.sceneFlow = sceneFlow;
 	const behaviours = summarizeBehaviours();
@@ -338,23 +382,32 @@ function lockedByPeer(uuid) {
  * Move an object and replicate + record (mirrors alignToGround/transformSet).
  * @param {any} object @param {{position?: number[], rotation?: number[], scale?: number[]}} t
  */
-function applyAiTransform(object, t) {
+export function applyAiTransform(object, t) {
 	if (!t.position && !t.rotation && !t.scale) return;
-	const before = {
-		pos: object.position.toArray(),
-		rot: [object.rotation.x, object.rotation.y, object.rotation.z],
-		scale: object.scale.toArray()
-	};
-	if (t.position && t.position.length === 3) object.position.fromArray(t.position);
-	if (t.rotation && t.rotation.length === 3)
-		object.rotation.set(t.rotation[0], t.rotation[1], t.rotation[2]);
-	if (t.scale && t.scale.length === 3) object.scale.fromArray(t.scale);
-	const after = {
-		pos: object.position.toArray(),
-		rot: [object.rotation.x, object.rotation.y, object.rotation.z],
-		scale: object.scale.toArray()
-	};
-	notifyExternalMove(object.uuid);
+	/** @type {any} */ let before;
+	/** @type {any} */ let after;
+	// mcp-fix: what an AI moves is the authored pose, whatever frame an animation is on
+	writingBasePose(object.uuid, () => {
+		before = {
+			pos: object.position.toArray(),
+			rot: [object.rotation.x, object.rotation.y, object.rotation.z],
+			scale: object.scale.toArray()
+		};
+		if (t.position && t.position.length === 3) object.position.fromArray(t.position);
+		const hadQuat = object.quaternion.clone();
+		const hadScale = object.scale.clone();
+		if (t.rotation && t.rotation.length === 3)
+			object.rotation.set(t.rotation[0], t.rotation[1], t.rotation[2]);
+		if (t.scale && t.scale.length === 3) object.scale.fromArray(t.scale);
+		// 85 set_pivot: an object with a pivot turns and scales ABOUT it, the way the gizmo does; a position
+		// given in the same update is where the person asked for it, so it stands
+		if (!t.position) aboutOriginPosition(object, hadQuat, hadScale);
+		after = {
+			pos: object.position.toArray(),
+			rot: [object.rotation.x, object.rotation.y, object.rotation.z],
+			scale: object.scale.toArray()
+		};
+	});
 	pokeScene();
 	broadcast({ type: 'move', uuid: object.uuid, pos: after.pos, rot: after.rot, scale: after.scale });
 	recordTransform({ uuid: object.uuid, before, after });
@@ -364,7 +417,9 @@ function applyAiTransform(object, t) {
 const colorOf = (v) => toHexColor(v) ?? (typeof v === 'string' && /^[a-z]{3,20}$/i.test(v.trim()) ? v.trim().toLowerCase() : null);
 
 /** 55 (41's research, round 4): the light fields create/update_objects take, and what each must be */
-const LIGHT_FIELDS = ['color', 'intensity', 'distance', 'decay', 'angle', 'penumbra', 'width', 'height', 'groundColor', 'castShadow', 'aim'];
+const LIGHT_FIELDS = ['color', 'intensity', 'distance', 'decay', 'angle', 'penumbra', 'width', 'height', 'groundColor', 'castShadow', 'aim', 'shadowQuality'];
+/** 85 H4: shadow quality words → the Inspector's shadow map sizes (lightParams SHADOW_SIZES) */
+const SHADOW_QUALITY = /** @type {Record<string, number>} */ ({ low: 512, medium: 1024, high: 2048 });
 /** the ranges a light number is clamped into @type {Record<string, [number, number]>} */
 const LIGHT_RANGES = { intensity: [0, 1000], distance: [0, 1000], decay: [0, 5], angle: [0.02, Math.PI / 2], penumbra: [0, 1], width: [0.1, 100], height: [0.1, 100] };
 
@@ -397,6 +452,14 @@ function applyAiLight(light, spec) {
 			else if (typeof value !== 'boolean') errors.push('castShadow: takes true or false');
 			else {
 				light.castShadow = value;
+				touched = true;
+			}
+		} else if (key === 'shadowQuality') {
+			const size = SHADOW_QUALITY[String(value).toLowerCase()];
+			if (!light.shadow) errors.push('shadowQuality: a ' + light.type + ' casts no shadow');
+			else if (!size) errors.push('shadowQuality: low, medium or high');
+			else {
+				setShadowMapSize(light, size);
 				touched = true;
 			}
 		} else if (key === 'aim') {
@@ -451,6 +514,27 @@ async function applyAiMaterialParams(uuid, params) {
 			if (!(await applyExplorerImage(uuid, { id: item.id }))) errors.push('map: the image could not be read');
 			continue;
 		}
+		// 72 LK1: a map slot by library image hash, or null to clear; tiling as one object
+		if (isMapSlotKey(key)) {
+			const { setObjectsMapSlot, removeObjectsMapSlot } = await import('$lib/materialMaps');
+			if (value === null) {
+				await removeObjectsMapSlot([uuid], key);
+				continue;
+			}
+			const item = typeof value === 'string' ? itemByHash(value) : null;
+			if (!item || item.kind !== 'image') {
+				errors.push(key + ': pass an image hash from the library, or null to clear');
+				continue;
+			}
+			const blob = await itemBlob(item.id);
+			if (!blob || !(await setObjectsMapSlot([uuid], key, blob))) errors.push(key + ': the image could not be read');
+			continue;
+		}
+		if (key === 'texTransform') {
+			const { setTexTransform } = await import('$lib/materialMaps');
+			if (!setTexTransform(uuid, /** @type {any} */ (value))) errors.push('texTransform: takes { repeat: [u, v], offset: [u, v], rotation: radians }');
+			continue;
+		}
 		const checked = checkMaterialParam(material, key, value);
 		if (!checked.ok) errors.push(key + ': ' + checked.error);
 		else if (!setMaterialParam(uuid, key, checked.value, true)) errors.push(key + ': not applied');
@@ -458,8 +542,72 @@ async function applyAiMaterialParams(uuid, params) {
 	return errors;
 }
 
+/**
+ * mcp-shapes: turn an object so its local +Z axis (its front) points at a world point or at another object, +Y kept
+ * up — three's lookAt, through the transform path (one move, one undo entry; an object with a pivot turns about it).
+ * @param {any} object @param {any} target [x, y, z] world, or a uuid @param {any} [front] the local front axis (default +z)
+ * @returns {string | null} the error
+ */
+function lookAtTarget(object, target, front) {
+	if (object.isLight) return 'lookAt: a light turns with aim: [x, y, z]';
+	// mcp-diorama2 (25): which local axis is the front (default +Z); the turn lands that axis on the target
+	const axis = frontVector(front);
+	if (!axis) return 'front: one of ' + FRONT_AXES.join(', ') + ' (the local axis the model faces along)';
+	const root = get(objectsGroup);
+	root?.updateMatrixWorld(true);
+	/** @type {THREE.Vector3} */
+	let point;
+	if (typeof target === 'string') {
+		const other = objectOf(target);
+		if (!other) return 'lookAt: no object with that uuid';
+		if (other === object) return 'lookAt: an object cannot look at itself';
+		point = other.getWorldPosition(new THREE.Vector3());
+	} else if (Array.isArray(target) && target.length === 3 && target.every((n) => typeof n === 'number' && Number.isFinite(n))) point = new THREE.Vector3().fromArray(target);
+	else return "lookAt: a world point [x, y, z] or another object's uuid";
+	if (object.getWorldPosition(new THREE.Vector3()).distanceTo(point) < 1e-6) return 'lookAt: the target is where the object is';
+	const was = object.quaternion.clone();
+	aimFront(object, point, axis);
+	const rotation = [object.rotation.x, object.rotation.y, object.rotation.z];
+	object.quaternion.copy(was);
+	applyAiTransform(object, { rotation });
+	return null;
+}
+
+/**
+ * mcp-shapes: create_objects {from, count, offset, randomRot, randomScale, seed} — deep copies of one object (children,
+ * clips, flows and joints inside it come along, the Ctrl+D path), each placed by duplicatePlan, in the source's parent.
+ * @param {any} args @returns {any}
+ */
+function duplicateFrom(args) {
+	const uuid = String(args.from);
+	const source = objectOf(uuid);
+	if (!source) return { error: 'from: no object with that uuid' };
+	const plan = duplicatePlan(args, {
+		position: source.position.toArray(),
+		rotation: [source.rotation.x, source.rotation.y, source.rotation.z],
+		scale: source.scale.toArray()
+	});
+	if ('error' in plan) return { error: plan.error };
+	const base = typeof args.name === 'string' && args.name.trim() ? args.name.trim().slice(0, 110) : (source.name || source.type) + ' copy';
+	/** @type {any[]} */
+	const created = [];
+	plan.poses.forEach((pose, i) => {
+		const clone = duplicateObject(uuid, { select: false, at: pose.position, name: plan.poses.length > 1 ? base + ' ' + (i + 1) : base });
+		if (!clone) return created.push({ error: 'the copy could not be made' });
+		applyAiTransform(clone, { rotation: pose.rotation, scale: pose.scale });
+		created.push({ uuid: clone.uuid, name: clone.name, position: pose.position });
+	});
+	return { from: uuid, created, uuids: created.filter((c) => c.uuid).map((c) => c.uuid) };
+}
+
 /** @param {any} spec @returns {any} one created object's result */
-function createOne(spec) {
+function createOne(spec, extraTypes = /** @type {string[]} */ ([])) {
+	// 85b S6: "hip", "0.5 reach" … are metres from here on
+	const unitsOf = withBodyUnits(spec);
+	spec = unitsOf.spec;
+	// mcp-diorama2: a parent that is not there is an error, never a silent part at the scene root
+	const parentCheck = parentTarget(spec.parentUuid);
+	if (parentCheck && 'error' in parentCheck) return { error: parentCheck.error };
 	const uuid = genUuid();
 	let created = null;
 	if (spec.kind === 'light') {
@@ -479,7 +627,8 @@ function createOne(spec) {
 		broadcast({ type: 'group', command, uuid });
 	} else {
 		// primitive (default)
-		const primitive = normalizePrimitive(spec.primitive);
+		// 85 G2/G4: the geometry tools make a Lathe / an Extrude base through this same path
+		const primitive = extraTypes.find((t) => t === spec.primitive) ?? normalizePrimitive(spec.primitive);
 		if (!primitive) return { error: 'unknown primitive "' + spec.primitive + '"; allowed: ' + PRIMITIVE_TYPES.join(', ') };
 		if (spec.params !== undefined && !Array.isArray(spec.params)) return { error: 'params: takes an array of numbers, e.g. Box [w, h, d]' };
 		// 55 (41's research): sizes are positive numbers ([-1, 0, 'a'] for a Box used to be accepted);
@@ -491,7 +640,7 @@ function createOne(spec) {
 		if (bad >= 0) return { error: 'params[' + bad + '] = ' + JSON.stringify(spec.params[bad]) + ': sizes are positive numbers (' + primitive + ')' };
 		const params =
 			Array.isArray(spec.params) && spec.params.length
-				? spec.params.slice(0, 4).map((/** @type {number} */ v) => Math.min(1000, v))
+				? spec.params.slice(0, 4).map((/** @type {number} */ v) => Math.min(1000, v > 0 ? Math.max(MIN_SIZE, v) : v)) // diorama2: one small minimum
 				: DEFAULT_PARAMS[primitive] || [];
 		const command = ('/create ' + primitive + ' ' + params.join(' ')).trim();
 		createGeometry(command, uuid);
@@ -507,13 +656,20 @@ function createOne(spec) {
 	if (spec.name) renameObject(uuid, String(spec.name).slice(0, 120));
 	// 55 (1.48.1 a): nest FIRST, then place — position/rotation/scale are LOCAL to the group, as list_scene reports
 	// them (attach() keeps the world pose, so nesting after the transform read them as world space)
-	if (spec.parentUuid) {
-		const parent = objectOf(spec.parentUuid);
-		if (parent && parent.type === 'Group') moveObjectToGroup(uuid, spec.parentUuid);
-	}
-	applyAiTransform(created, spec);
 	/** @type {string[]} */
 	const warnings = [];
+	let nested = false;
+	// mcp-diorama2: any container is a parent (a group restored as a plain Object3D too); a missing one was
+	// refused before anything was made (createOne's parentTarget check), so this only nests
+	const target = parentTarget(spec.parentUuid);
+	if (target && !('error' in target)) {
+		moveObjectToGroup(uuid, target.parent.uuid, { anyParent: true });
+		nested = true;
+	} else if (target) warnings.push(target.error);
+	// mcp-shapes: nested with no position / rotation / scale = the group's own frame. attach() kept the WORLD
+	// pose (the world origin), so the part sat at the inverse of the group's transform inside it.
+	const pose = shapePose(spec, nested);
+	applyAiTransform(created, 'error' in pose ? spec : pose);
 	// 55 (41's research, round 4): a light takes its fields (it used to come out white at intensity 1)
 	if (created.isLight) warnings.push(...applyAiLight(created, spec));
 	else if (spec.color && created.material && !Array.isArray(created.material)) {
@@ -522,6 +678,24 @@ function createOne(spec) {
 		if (hex) setObjectColor(uuid, hex);
 		else warnings.push('color: takes a hex colour like "#ff8800"');
 	}
+	// mcp-shapes: shadows on a mesh / model (a light's castShadow went through applyAiLight), then lookAt
+	if (!created.isLight) warnings.push(...applyShadowFlags(created, spec));
+	else if (spec.receiveShadow !== undefined) warnings.push('receiveShadow: a light casts shadows, nothing falls on it');
+	if (spec.lookAt !== undefined) {
+		const why = lookAtTarget(created, spec.lookAt, spec.front);
+		if (why) warnings.push(why);
+	}
+	// 85b S2-S4: at a ping / backed onto its surface / standing on the floor / facing a person
+	const place = placeObject(created, spec, applyAiTransform);
+	warnings.push(...place.warnings);
+	// 85b S5: never inside a headset wearer — the object goes again and the call says why
+	const clash = comfortRefusal(created);
+	if (clash) {
+		deleteObjectsByUuid([uuid]);
+		return { error: clash };
+	}
+	// 85b S5: in a headset (a connector tab), it fades in
+	import('$lib/vr/agentComfort.js').then((m) => m.agentObjectArrived(uuid)).catch(() => {});
 	// fix-live F-4: static unless asked — a built scene must not fall apart in Play
 	const physics = aiCreatePhysics(spec, created.userData?.physics);
 	if (physics) setPhysicsFor(uuid, physics);
@@ -529,6 +703,8 @@ function createOne(spec) {
 		uuid,
 		name: created.name,
 		...(created.userData?.physics?.mode ? { physics: created.userData.physics.mode } : {}),
+		...(place.placed ? { placed: place.placed } : {}),
+		...(unitsOf.units ? { units: unitsOf.units } : {}),
 		...(warnings.length ? { warnings } : {})
 	};
 }
@@ -547,6 +723,8 @@ function normalizePrimitive(raw) {
  * @param {any} spec @returns {Promise<any>}
  */
 async function updateOne(spec) {
+	const unitsOf = withBodyUnits(spec); // 85b S6
+	spec = unitsOf.spec;
 	const uuid = spec.uuid;
 	const object = objectOf(uuid);
 	if (!object) return { uuid, error: 'no object with that uuid' };
@@ -554,23 +732,30 @@ async function updateOne(spec) {
 	if (lock) return { uuid, skipped: lock };
 	/** @type {string[]} */
 	const errors = [];
+	// 85b S5: where it was, in case the move would put it inside a headset wearer
+	const was = { position: object.position.toArray(), rotation: [object.rotation.x, object.rotation.y, object.rotation.z], scale: object.scale.toArray() };
+	const moves = ['position', 'rotation', 'scale', 'at', 'snap', 'face_user', 'parentUuid', 'lookAt'].some((k) => spec[k] !== undefined);
 
 	if (typeof spec.name === 'string') renameObject(uuid, spec.name);
 	// 55 (1.48.1 a): re-nest FIRST (the object keeps its world pose), then a given position is LOCAL to the new parent
 	if (spec.parentUuid) {
 		if (spec.parentUuid === 'root') moveObjectToGroup(uuid, 'root');
 		else {
-			const parent = objectOf(spec.parentUuid);
-			if (parent && parent.type === 'Group') moveObjectToGroup(uuid, spec.parentUuid);
-			else errors.push('parentUuid: no group with that uuid');
+			const target = parentTarget(spec.parentUuid);
+			if (target && !('error' in target)) moveObjectToGroup(uuid, target.parent.uuid, { anyParent: true });
+			else if (target) errors.push(target.error.replace(' — nothing was made', ''));
 		}
 	}
 	applyAiTransform(object, spec);
 	if (object.isLight) {
 		errors.push(...applyAiLight(object, spec));
+		if (spec.receiveShadow !== undefined) errors.push('receiveShadow: a light casts shadows, nothing falls on it');
 		if (spec.materialType !== undefined || spec.materialParams !== undefined) errors.push('materialType/materialParams: a light has no material — use color, intensity, distance, angle…');
 	} else {
-		if (hasLightFields(spec)) errors.push(LIGHT_FIELDS.filter((k) => k !== 'color' && spec[k] !== undefined).join(', ') + ': only a light takes these');
+		// mcp-shapes: castShadow is a mesh flag too (receiveShadow is mesh-only)
+		const lightOnly = LIGHT_FIELDS.filter((k) => k !== 'color' && k !== 'castShadow' && spec[k] !== undefined);
+		if (lightOnly.length) errors.push(lightOnly.join(', ') + ': only a light takes these');
+		errors.push(...applyShadowFlags(object, spec));
 		if (spec.color) {
 			const hex = colorOf(spec.color);
 			if (!hex) errors.push('color: takes a hex colour like "#ff8800"');
@@ -589,7 +774,21 @@ async function updateOne(spec) {
 		}
 	}
 	if (typeof spec.visible === 'boolean' && object.visible !== spec.visible) toggleObjectVisibility(uuid);
-	return errors.length ? { uuid, ok: false, errors } : { uuid, ok: true };
+	// mcp-shapes: after the move, so a new position is where it looks from
+	if (spec.lookAt !== undefined) {
+		const why = lookAtTarget(object, spec.lookAt, spec.front);
+		if (why) errors.push(why);
+	}
+	// 85b S2-S4: after the move, so at / snap / face_user see where it is now
+	const place = placeObject(object, spec, applyAiTransform);
+	errors.push(...place.warnings);
+	const clash = moves ? comfortRefusal(object) : null;
+	if (clash) {
+		applyAiTransform(object, was);
+		return { uuid, ok: false, errors: [...errors, clash + ' (it was put back)'] };
+	}
+	const extra = { ...(place.placed ? { placed: place.placed } : {}), ...(unitsOf.units ? { units: unitsOf.units } : {}) };
+	return errors.length ? { uuid, ok: false, errors, ...extra } : { uuid, ok: true, ...extra };
 }
 
 const TOOL_NAMES = [
@@ -610,7 +809,20 @@ const TOOL_NAMES = [
 	'create_behaviour',
 	'edit_behaviour',
 	'import_model', // 56 C9 (offered to agents; see importModel.js)
-	'import_file' // 66 S4b (offered to agents; see importFile.js)
+	'import_file', // 66 S4b (offered to agents; see importFile.js)
+	'upload_asset', // diorama2 items 16 + 24: a sound or an HDR sky as base64 / chunks → the library hash (the connector's assets upload)
+	'import_shape', // diorama2 item 9: glTF / GLB / OBJ by data / chunks / https url (offered to agents; the connector's create_shape import)
+	...GEOMETRY_TOOL_NAMES, // 85 G1-G6 (geometryTools.js)
+	...TEXT_TOOL_NAMES, // 64-text TX7: create_text, list_fonts (textTools.js)
+	...PATH_TOOL_NAMES, // 78 F4: create_path (pathTools.js)
+	...LOOK_TOOL_NAMES, // 85 L1-L5 (lookTools.js)
+	...HUD_TOOL_NAMES, // 85 H1 / H2 + hud panel (hudTools.js)
+	...SCENE_SETUP_TOOL_NAMES, // 85 H3-H7: sky, light, spawn, play camera, opening view (sceneSetupTools.js)
+	...LEVELS_TOOL_NAMES, // 93: the Levels table, portals, loading screens, checkpoints (levelsTools.js)
+	...NPC_TOOL_NAMES, // 61-nav G10: set_npc = game_setup {npc} (npcTools.js)
+	...WORLD_TOOL_NAMES, // 85b W1-W7 (worldTools.js)
+	...ASSIST_TOOL_NAMES, // 85 undo_last, pivots, images (assistTools.js): unlisted, their arguments read as create_objects / update_objects
+	...RUNTIME_TOOL_NAMES // 85b R1-R4 (runtimeTools.js): inspect, validate, logs, playtest
 ];
 
 /** 34 D5: the behaviour family's spellings. They map to the behaviour tools only while a
@@ -658,8 +870,51 @@ const NAME_ALIASES = /** @type {Record<string,string>} */ ({
 	list_objects: 'list_scene',
 	list: 'list_scene',
 	clear: 'clear_scene',
+	undo: 'undo_last',
+	undo_last_call: 'undo_last',
+	undo_tool_call: 'undo_last',
+	set_origin: 'set_pivot',
+	set_object_pivot: 'set_pivot',
+	make_pivot: 'create_pivot',
+	upload_image: 'add_image',
+	import_image: 'add_image',
+	add_texture: 'add_image',
 	generate_model: 'generate_mesh',
-	create_mesh: 'generate_mesh',
+	// (85 G6: `create_mesh` is a tool of its own now — mesh from vertex data, not generation)
+	set_geometry_params: 'set_geometry',
+	reshape: 'set_geometry',
+	change_geometry: 'set_geometry',
+	lathe: 'create_lathe',
+	create_tubes: 'create_tube',
+	extrude: 'extrude_shape',
+	extrude_outline: 'extrude_shape',
+	modify_mesh: 'edit_mesh',
+	edit_geometry: 'edit_mesh',
+	// 85 L1-L5
+	update_material: 'set_material',
+	apply_material: 'set_material',
+	set_texture: 'set_material',
+	set_shader: 'assign_shader',
+	add_shader: 'create_shader',
+	update_shader: 'edit_shader',
+	set_post_effects: 'set_post',
+	add_post_effect: 'set_post',
+	post_stack: 'get_post',
+	list_post: 'get_post',
+	unwrap: 'uv_unwrap',
+	unwrap_uv: 'uv_unwrap',
+	set_tiling: 'set_uv',
+	// 85b R1-R4
+	inspect: 'inspect_runtime',
+	debug_runtime: 'inspect_runtime',
+	why_not_fired: 'inspect_runtime',
+	validate: 'validate_scene',
+	lint_scene: 'validate_scene',
+	get_logs: 'logs',
+	read_logs: 'logs',
+	play_test: 'playtest',
+	test_play: 'playtest',
+	shader_nodes: 'describe_shader_nodes',
 	// flow / behavior invention family
 	add_behavior: 'create_flow_nodes',
 	add_behaviour: 'create_flow_nodes',
@@ -790,8 +1045,9 @@ export function repairToolCall(rawName, rawArgs) {
 const PHYSICS_DISABLED =
 	'physics tools are disabled — enable "Physics tools" for this provider in Settings → AI';
 
-/** @typedef {{physics?: boolean}} ToolOpts `physics`: offer + run the physics tools for THIS caller whatever the
- * provider's checkbox says (86-fix B1: the Claude connector; the person's own assistant keeps its setting) */
+/** @typedef {{physics?: boolean, by?: string}} ToolOpts `physics`: offer + run the physics tools for THIS caller whatever the
+ * provider's checkbox says (86-fix B1: the Claude connector; the person's own assistant keeps its setting).
+ * `by` (78-int PL13): who the scene panel says made the edit ("Claude" for the connector; absent = "AI assistant") */
 
 /** 55 A8: one observer of every tool call — `(name, args) => (result) => void`, set by the agent
  * page's action-log recorder. Null everywhere else (the call path is unchanged). @type {any} */
@@ -809,6 +1065,17 @@ export function setAiToolObserver(fn) {
  * @returns {Promise<any>}
  */
 export async function executeAiTool(rawName, rawArgs, opts) {
+	// 78-int PL13: a scene edit made while the call runs is the AI's on the Configure Scene "changed by" line
+	beginAiEdit(opts?.by || 'AI assistant');
+	try {
+		return await observedAiTool(rawName, rawArgs, opts);
+	} finally {
+		endAiEdit();
+	}
+}
+
+/** @param {string} rawName @param {any} rawArgs @param {ToolOpts} [opts] @returns {Promise<any>} */
+async function observedAiTool(rawName, rawArgs, opts) {
 	if (!aiToolObserver) return runAiTool(rawName, rawArgs, opts);
 	const { name, args } = repairToolCall(rawName, rawArgs);
 	/** @type {any} */
@@ -839,10 +1106,13 @@ async function runAiTool(rawName, rawArgs, opts) {
 		switch (name) {
 			case 'list_scene':
 				// 55: `{flow, page}` reads one page of a big graph's summary
-				if (args && typeof args.flow === 'string' && args.flow) return graphPage(args.flow === 'scene' ? SCENE_GRAPH : args.flow, args.page ?? 1);
+				if (args && typeof args.flow === 'string' && args.flow) return await graphPage(args.flow === 'scene' ? SCENE_GRAPH : args.flow, args.page ?? 1);
 				// 55 (1.48.1): narrowed reads
-				if (args && (args.brief || args.name || args.type || args.near))
-					return summarizeScene(200, { brief: args.brief === true, name: args.name, type: args.type, near: args.near });
+				// mcp-diorama2 (28): near / bounds test origins, or world mesh bounds (by)
+				for (const k of /** @type {const} */ (['near', 'bounds']))
+					if (args?.[k]?.by !== undefined && !SPATIAL_TESTS.includes(args[k].by)) return { error: k + '.by: ' + SPATIAL_TESTS.join(', ') };
+				if (args && (args.brief || args.name || args.type || args.near || args.bounds || args.limit !== undefined || args.cursor !== undefined))
+					return summarizeScene(200, { brief: args.brief === true, name: args.name, type: args.type, near: args.near, bounds: args.bounds, limit: args.limit, cursor: args.cursor });
 				return summarizeScene();
 
 			case 'animate_parts': {
@@ -855,9 +1125,13 @@ async function runAiTool(rawName, rawArgs, opts) {
 
 			case 'create_objects': {
 				const specs = Array.isArray(args?.objects) ? args.objects : [];
+				// mcp-shapes: {from, count, ...} = copies of an existing object (with objects too: both, one undo step)
+				const copies = args?.from !== undefined ? duplicateFrom(args) : null;
+				if (copies && !specs.length) return copies;
 				if (!specs.length)
 					return { error: 'no objects provided — pass objects: [{ kind: "primitive", primitive: "Box", ... }]' };
 				const results = specs.map((/** @type {any} */ s) => createOne(s));
+				if (copies) return { created: results, copies };
 				// surface a total failure at the TOP level so the caller (and the undo
 				// summary) doesn't count a no-op as an applied action
 				if (results.every((/** @type {any} */ r) => r.error))
@@ -917,6 +1191,12 @@ async function runAiTool(rawName, rawArgs, opts) {
 				return { cleared: count };
 			}
 
+			case 'undo_last':
+			case 'set_pivot':
+			case 'create_pivot':
+			case 'add_image':
+				return await assistTool(name, args);
+
 			case 'create_flow_nodes':
 				return createFlowNodesTool(args, { physics });
 
@@ -950,14 +1230,24 @@ async function runAiTool(rawName, rawArgs, opts) {
 				// Kick off the job and return immediately; the job runner places +
 				// replicates the mesh when it lands (a progress card shows status).
 				const prompt = String(args?.prompt || '').trim();
-				if (!prompt) return { error: 'prompt required' };
+				// 73 AI1 + AI2: a picture the person attached to this message, 1 = the first
+				const pictureAt = args?.from_picture === true ? 1 : Number(args?.from_picture) || 0;
+				const picture = pictureAt ? turnPictures[pictureAt - 1] : null;
+				if (pictureAt && !picture) return { error: 'no such picture on this message (' + turnPictures.length + ' attached)' };
+				if (!prompt && !picture) return { error: 'prompt required' };
 				if (!meshGenReady()) return { error: 'no mesh-generation provider is configured — tell the user: ' + featureStatus('generateMesh').message };
+				if (picture && !meshTakesImage(activeMeshConfig())) return { error: 'the active mesh provider cannot start from a picture; describe the object in words instead' };
 				import('$lib/ai/meshJobs')
-					.then((m) => m.generateMesh({ prompt, name: args?.name, position: args?.position }))
+					.then((m) => m.generateMesh({ prompt, name: args?.name, position: args?.position, ...(picture ? { image: picture } : {}) }))
 					.catch(() => {});
 				return {
 					started: true,
-					note: 'Generating a 3D mesh from "' + prompt.slice(0, 60) + '". It will appear in the scene in ~1-3 minutes; a progress card shows status. Do not call generate_mesh again for the same request.'
+					note:
+						'Generating a 3D mesh from ' +
+						(picture ? 'the attached picture' : '"' + prompt.slice(0, 60) + '"') +
+						'. It will appear in the scene in ~1-3 minutes; a progress card shows status.' +
+						(picture && activeMeshConfig()?.kind === 'meshy' ? ' The person is first asked to confirm sending the picture to Meshy; if they cancel, nothing is made.' : '') +
+						' Do not call generate_mesh again for the same request.'
 				};
 			}
 
@@ -965,9 +1255,107 @@ async function runAiTool(rawName, rawArgs, opts) {
 				// 56 C9: a self-contained GLB through the app's own import path (one undo, synced)
 				return await (await import('./importModel.js')).importModelTool(args);
 
+			case 'upload_asset':
+				// diorama2 items 16 + 24: a sound or an HDR sky as bytes → the library, its hash back
+				return await (await import('./uploadAsset.js')).uploadAssetTool(args);
+
+			case 'import_shape':
+				// diorama2 item 9: a model file by data / chunks / https url → library first, then the app's import path
+				return await (await import('./importShape.js')).importShapeTool(args);
+
 			case 'import_file':
 				// 66 S4b: a PNG / WebP / JSON / .tpanim made on the agent's machine (Explorer + a scene card)
 				return await (await import('./importFile.js')).importFileTool(args);
+			case 'set_geometry':
+			case 'create_lathe':
+			case 'create_tube':
+			case 'extrude_shape':
+			case 'edit_mesh':
+			case 'create_mesh':
+			case 'create_shapes':
+			case 'update_mesh':
+			case 'duplicate': // diorama2 item 8
+				// 85 G1-G6 (+ mcp-shapes: create_shapes, many in one call): shape and model objects (geometryTools.js)
+				return await geometryTool(name, args, createOne);
+			case 'create_text':
+			case 'list_fonts':
+				// 64-text TX7: 3D text objects and their fonts (textTools.js)
+				return await textTool(name, args);
+			case 'create_path':
+				// 78 F4: the Path object (pathTools.js)
+				return await pathTool(name, args);
+
+			case 'search_assets':
+			case 'place_asset':
+			case 'prefab':
+			case 'create_particles':
+			case 'scatter':
+			case 'terrain':
+			case 'water':
+			case 'place_sound':
+			case 'set_music':
+				// 85b W1-W7: assets, terrain, scatter, water, particles, sound (worldTools.js)
+				return await worldTool(name, args, createOne);
+
+			case 'set_material': {
+				// 85b L7: a procedural texture by name (pattern / maps.<slot>.pattern) becomes a library image first
+				const resolved = await resolvePatterns(args);
+				if ('error' in resolved) return { error: resolved.error };
+				const done = await lookTool(name, resolved.args);
+				if (!done || typeof done !== 'object' || done.error || !resolved.patterns?.length) return done;
+				// patternScale: the texture repeats that many times (set_uv's tiling, in the same call's undo step)
+				const tiled = resolved.tiling ? await lookTool('set_uv', { objects: resolved.args.objects, tiling: resolved.tiling }) : null;
+				return { ...done, patterns: resolved.patterns, ...(tiled?.error ? { warnings: ['patternScale: ' + tiled.error] } : {}) };
+			}
+			case 'list_materials':
+			case 'get_material':
+			case 'create_shader':
+			case 'edit_shader':
+			case 'assign_shader':
+			case 'describe_shader_nodes':
+			case 'set_post':
+			case 'get_post':
+			case 'create_post_graph':
+			case 'uv_unwrap':
+			case 'set_uv':
+			case 'set_look_preset': // 98 P5 pro presets
+			case 'bake_light': // 98 P1: set_look {action: 'bake'}
+			case 'set_quality': // diorama2 item 7 (owner add-on): this device's quality, asked on its own screen
+				// 85 L1-L5: materials, shaders, the look stack, UVs (lookTools.js)
+				return await lookTool(name, args);
+
+			case 'create_hud':
+			case 'edit_hud':
+			case 'list_hud':
+			case 'hud_panel':
+				// 85 H1 / H2 + hud panel (hudTools.js)
+				return await hudTool(name, args);
+
+			case 'set_sky':
+			case 'set_light':
+			case 'get_environment':
+			case 'place_spawn':
+			case 'set_play_camera':
+				// 85 H3-H7 (sceneSetupTools.js)
+				return await sceneSetupTool(name, args);
+
+			case 'set_levels':
+			case 'set_portal':
+			case 'set_checkpoint':
+			case 'set_loading':
+				// 93 (levelsTools.js)
+				return await levelsTool(name, args, createOne);
+
+			case 'set_npc':
+				// 61-nav G10 (npcTools.js): the navigation module's enemy recipe
+				return await npcTool(name, args);
+
+			case 'inspect_runtime':
+			case 'validate_scene':
+			case 'logs':
+			case 'playtest':
+				// 85b R1-R4: see what the game does (runtimeTools.js)
+				return await runtimeTool(name, args);
 
 			default:
 				return {
@@ -995,7 +1383,8 @@ const LIGHT_SCHEMA = {
 	height: { type: 'number', description: 'rectarea: height in metres' },
 	groundColor: { type: 'string', description: 'hemisphere: the ground colour, hex' },
 	castShadow: { type: 'boolean', description: 'directional/spot/point: cast shadows' },
-	aim: { type: 'array', items: { type: 'number' }, description: 'directional/spot: a world point [x,y,z] to point at' }
+	aim: { type: 'array', items: { type: 'number' }, description: 'directional/spot: a world point [x,y,z] to point at' },
+	shadowQuality: { type: 'string', enum: ['low', 'medium', 'high'], description: 'directional/spot/point: shadow sharpness (each device may cap it)' }
 };
 
 /** OpenAI-format tool schemas. Batch-first so one prompt = few tool calls. */
@@ -1005,7 +1394,7 @@ export const AI_TOOLS = [
 		function: {
 			name: 'list_scene',
 			description:
-				'List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: "scene" | object uuid, page} to read one page of one graph.',
+				'List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. Every mesh also has mesh {vertexCount, faceCount (triangles), bounds {local, world}} — each box [[minX, minY, minZ], [maxX, maxY, maxZ]], local in the mesh\'s own space (its vertices), world in the scene. The transform is the AUTHORED pose: an object an effect is moving also has animated: true, and live {position, rotation, scale, visible} when this frame differs; update_objects writes the authored pose, so never copy live back into it. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: "scene" | object uuid, page} to read one page of one graph.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1016,10 +1405,18 @@ export const AI_TOOLS = [
 					type: { type: 'string', description: 'optional: only objects of this type — Mesh, Group, PointLight… or a primitive shape (Box, Wall, Sphere…)' },
 					near: {
 						type: 'object',
-						description: 'optional: only objects within radius of a WORLD position',
-						properties: { position: { type: 'array', items: { type: 'number' }, description: '[x, y, z]' }, radius: { type: 'number' } },
+						description: 'optional: only objects within radius of a WORLD position (by: origin = where the object is, the default; touches = any part of its world bounds; inside = all of it)',
+						properties: { position: { type: 'array', items: { type: 'number' }, description: '[x, y, z]' }, radius: { type: 'number' }, by: { type: 'string', enum: ['origin', 'touches', 'inside'] } },
 						required: ['position', 'radius']
-					}
+					},
+					bounds: {
+						type: 'object',
+						description: 'optional: only objects inside this WORLD box — by: origin = their position (the default), touches = any part of their world mesh bounds overlaps it (a long wall crossing in), inside = all of it fits',
+						properties: { min: { type: 'array', items: { type: 'number' }, description: '[x, y, z]' }, max: { type: 'array', items: { type: 'number' }, description: '[x, y, z]' }, by: { type: 'string', enum: ['origin', 'touches', 'inside'] } },
+						required: ['min', 'max']
+					},
+					limit: { type: 'number', description: 'optional: objects per page (1-500); the reply has nextCursor when more match' },
+					cursor: { type: 'string', description: 'optional: the nextCursor of the previous page' }
 				}
 			}
 		}
@@ -1029,10 +1426,17 @@ export const AI_TOOLS = [
 		function: {
 			name: 'create_objects',
 			description:
-				'Create one or more primitives, lights or empty groups in a single call. Ground is the y=0 plane; place objects so they rest ON it (a box of height h sits at y=h/2). Returns the new uuids.',
+				'Create one or more primitives, lights or empty groups in a single call. Ground is the y=0 plane; place objects so they rest ON it (a box of height h sits at y=h/2). Returns the new uuids. To copy an existing object instead (a row of fence posts, a ring of chairs), pass from: its uuid, count, offset [x,y,z] between one copy and the next, and optionally randomRot / randomScale with a seed: deep copies (children, materials, flows), one undo step, uuids in order, in the source\'s own group. lookAt turns an object so its local +Z axis (its front) faces a point or another object, +Y kept up.',
 			parameters: {
 				type: 'object',
 				properties: {
+					from: { type: 'string', description: 'copy this object (uuid) instead of making new ones; objects can still be given beside it' },
+					count: { type: 'integer', description: 'with from: how many copies, 1-' + DUPLICATE_MAX + ' (default 1)' },
+					offset: { type: 'array', items: { type: 'number' }, description: 'with from: [x,y,z] metres from one copy to the next, in the source\'s space (copy i = source + i x offset)' },
+					randomRot: { description: 'with from: true (any turn about Y), a number (± radians about Y) or [x,y,z] (± radians per axis)' },
+					randomScale: { description: 'with from: a fraction like 0.2 (sizes 0.8-1.2, uniform) or [min, max] factors' },
+					seed: { type: 'integer', description: 'with from: the same seed makes the same copies (default 1)' },
+					name: { type: 'string', description: 'with from: the copies\' name (numbered when several)' },
 					objects: {
 						type: 'array',
 						items: {
@@ -1053,7 +1457,7 @@ export const AI_TOOLS = [
 									type: 'array',
 									items: { type: 'number' },
 									description:
-										'up to 4 constructor args. Box=[w,h,d], Sphere=[radius], Cylinder=[rTop,rBottom,height], Cone=[radius,height], Plane=[w,h], Torus=[radius,tube]. Omit for sensible defaults.'
+										'up to 4 constructor args. Box=[w,h,d], Sphere=[radius], Cylinder=[rTop,rBottom,height], Cone=[radius,height], Plane=[w,h], Torus=[radius,tube]. Omit for sensible defaults. Sizes go down to 0.001 m.'
 								},
 								name: { type: 'string' },
 								position: { type: 'array', items: { type: 'number' }, description: '[x,y,z]' },
@@ -1065,7 +1469,24 @@ export const AI_TOOLS = [
 								scale: { type: 'array', items: { type: 'number' }, description: '[x,y,z]' },
 								color: { type: 'string', description: 'hex like #ff8800 (a mesh, or a light\'s colour)' },
 								...LIGHT_SCHEMA,
-								parentUuid: { type: 'string', description: 'uuid of an existing group to nest under — position/rotation/scale are then LOCAL to that group' },
+								...SHADOW_SCHEMA,
+								lookAt: { description: 'turn it so its front (local +Z, or the front you give) faces this: a world point [x,y,z] or another object\'s uuid (+Y stays up; lights use aim)' },
+								at: {
+									type: 'object',
+									description: 'build at a spot a person PINGED (Ctrl+Alt+click, the menu\'s Ping, a long-press menu, the VR stick click): {ping: id} from where_are_users {pings: true}, or {ping: "latest"} = "here"; on a floor or table top it stands on it, and the ping follows the object it landed on. Or around a PERSON as they are now: {user: "me" | peer id | name, ahead: 1.5, right: 0, up: 0} (metres or body units; it faces them; call again to follow them as they walk). Sizes, positions and these offsets also take BODY UNITS: "eye", "height", "shoulder", "hip", "knee", "reach", "room", with a factor ("0.5 reach") — that person\'s, from where_are_users body',
+									properties: {
+										ping: { type: 'string' },
+										user: { type: 'string' },
+										ahead: { description: 'metres in front of them (at least 0.6), or a body unit' },
+										right: { description: 'metres to their right (negative = left), or a body unit' },
+										up: { description: 'metres above their floor, or a body unit' }
+									}
+								},
+								align: { type: 'string', enum: ['surface'], description: 'with at: back it onto the pinged surface (its +Z along the surface normal, upright on a wall) — a painting on a wall' },
+								snap: { type: 'string', enum: ['floor'], description: 'stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground' },
+								face_user: { description: 'turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users' },
+								front: { type: 'string', enum: ['+z', '-z', '+x', '-x', '+y', '-y'], description: 'which local axis is its front for lookAt and face_user (default +z; many models face +x or -z — look at a screenshot)' },
+								parentUuid: { type: 'string', description: 'uuid of an existing group (or any object, not a light or camera) to nest under — position/rotation/scale are then LOCAL to it. A uuid that is not in the scene is an error and that object is not made' },
 								physics: {
 									type: 'string',
 									enum: ['static', 'dynamic'],
@@ -1077,7 +1498,7 @@ export const AI_TOOLS = [
 						}
 					}
 				},
-				required: ['objects']
+				required: []
 			}
 		}
 	},
@@ -1086,7 +1507,7 @@ export const AI_TOOLS = [
 		function: {
 			name: 'update_objects',
 			description:
-				'Modify existing objects by uuid: move/rotate/scale, recolor, change material, rename, show/hide, or reparent. Batch many in one call.',
+				'Modify existing objects by uuid: move/rotate/scale, recolor, change material, rename, show/hide, shadows (castShadow / receiveShadow), turn to face something (lookAt), or reparent. Batch many in one call. On an object an effect is moving, a transform sets its authored pose (the one list_scene reports) and the effect carries on from there.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1098,7 +1519,7 @@ export const AI_TOOLS = [
 								uuid: { type: 'string' },
 								name: { type: 'string' },
 								position: { type: 'array', items: { type: 'number' } },
-								rotation: { type: 'array', items: { type: 'number' } },
+								rotation: { type: 'array', items: { type: 'number' } }, // 85: an object with a pivot turns about it (set_pivot says so; the connector's live schema stays byte-identical)
 								scale: { type: 'array', items: { type: 'number' } },
 								color: { type: 'string', description: 'hex #rrggbb' },
 								materialType: {
@@ -1109,13 +1530,30 @@ export const AI_TOOLS = [
 								materialParams: {
 									type: 'object',
 									description:
-										'meshes: numbers (roughness, metalness, opacity, emissiveIntensity, clearcoat, transmission, ior, shininess…, clamped), true/false (wireframe, transparent, flatShading), hex colours (emissive, specular), side (front|back|double), and map = a library image hash (null clears). Each bad key comes back in errors.'
+										'meshes: numbers (roughness, metalness, opacity, emissiveIntensity, clearcoat, transmission, ior, shininess…, clamped), true/false (wireframe, transparent, flatShading), hex colours (emissive, specular), side (front|back|double), map slots (map, normalMap, roughnessMap, metalnessMap, emissiveMap, aoMap: a library image hash, or null to clear), texTransform ({repeat:[u,v], offset:[u,v], rotation:radians}), and map = a library image hash (null clears). Each bad key comes back in errors.'
 								},
 								...LIGHT_SCHEMA,
+								...SHADOW_SCHEMA,
+								lookAt: { description: 'turn it so its front (local +Z, or the front you give) faces this: a world point [x,y,z] or another object\'s uuid (+Y stays up; lights use aim)' },
+								at: {
+									type: 'object',
+									description: 'build at a spot a person PINGED (Ctrl+Alt+click, the menu\'s Ping, a long-press menu, the VR stick click): {ping: id} from where_are_users {pings: true}, or {ping: "latest"} = "here"; on a floor or table top it stands on it, and the ping follows the object it landed on. Or around a PERSON as they are now: {user: "me" | peer id | name, ahead: 1.5, right: 0, up: 0} (metres or body units; it faces them; call again to follow them as they walk). Sizes, positions and these offsets also take BODY UNITS: "eye", "height", "shoulder", "hip", "knee", "reach", "room", with a factor ("0.5 reach") — that person\'s, from where_are_users body',
+									properties: {
+										ping: { type: 'string' },
+										user: { type: 'string' },
+										ahead: { description: 'metres in front of them (at least 0.6), or a body unit' },
+										right: { description: 'metres to their right (negative = left), or a body unit' },
+										up: { description: 'metres above their floor, or a body unit' }
+									}
+								},
+								align: { type: 'string', enum: ['surface'], description: 'with at: back it onto the pinged surface (its +Z along the surface normal, upright on a wall) — a painting on a wall' },
+								snap: { type: 'string', enum: ['floor'], description: 'stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground' },
+								face_user: { description: 'turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users' },
+								front: { type: 'string', enum: ['+z', '-z', '+x', '-x', '+y', '-y'], description: 'which local axis is its front for lookAt and face_user (default +z; many models face +x or -z — look at a screenshot)' },
 								visible: { type: 'boolean' },
 								parentUuid: {
 									type: 'string',
-									description: 'group uuid to nest under, or "root" to un-nest. The object keeps its world pose; a position given in the same update is LOCAL to the new parent'
+									description: 'group uuid (or any object, not a light or camera) to nest under, or "root" to un-nest. The object keeps its world pose; a position given in the same update is LOCAL to the new parent. A uuid not in the scene is an error'
 								}
 							},
 							required: ['uuid']
@@ -1222,12 +1660,21 @@ export const MESH_TOOL = {
 			properties: {
 				prompt: { type: 'string', description: 'what to generate, e.g. "a weathered wooden treasure chest"' },
 				name: { type: 'string' },
-				position: { type: 'array', items: { type: 'number' }, description: '[x,y,z]' }
+				position: { type: 'array', items: { type: 'number' }, description: '[x,y,z]' },
+				from_picture: { type: 'number', description: 'build it from a picture attached to this message: 1 = the first. Only when the person wants the picture turned into a 3D object' }
 			},
 			required: ['prompt']
 		}
 	}
 };
+
+/** 73 AI2: the current prompt's pictures, for generate_mesh's from_picture (assistant.js sets and clears them)
+ * @type {any[]} */
+let turnPictures = [];
+/** @param {any[]} list */
+export function setTurnPictures(list) {
+	turnPictures = list;
+}
 
 /** Flow-node tool schemas. Built per call.
  * 34 D5: the node TYPE is a plain string now — the vocabulary lives once, grouped, in the
@@ -1243,7 +1690,7 @@ function flowToolSchemas(physics) {
 			function: {
 				name: 'create_flow_nodes',
 				description:
-					'Add behavior (flow) nodes to a node graph — this is how objects get MOTION and interactivity: spin, bounce, patrol a path, pulse, blink, react to clicks. graph is "scene" or an object uuid (ONE graph per call). KEY RULE: a behavior node placed in an OBJECT\'s graph with no edges automatically drives that object — most behaviors are one node, zero edges, so usually OMIT edges. Describe nodes EITHER as text (graph lines, see the system prompt) OR as nodes/edges arrays. A call with some bad nodes still creates the good ones and returns partial:true + errors[] — resend only what errors[] names.',
+					'Add behavior (flow) nodes to a node graph — this is how objects get MOTION and interactivity: spin, bounce, patrol a path, pulse, blink, react to clicks. graph is "scene" or an object uuid (ONE graph per call). KEY RULE: a behavior node placed in an OBJECT\'s graph with no edges automatically drives that object — most behaviors are one node, zero edges, so usually OMIT edges. A script node runs every frame FROM THE BASE POSE, so object.rotation.y += 0.02 lands at base + 0.02 and stays: write object.rotation.y = base.rot[1] + elapsed * speed (base has pos, rot, scale as arrays; elapsed = seconds since Play started, time = the shared clock, seconds of the day, a large number). Particle gravity is the acceleration along world Y: negative falls, positive rises. Describe nodes EITHER as text (graph lines, see the system prompt) OR as nodes/edges arrays. A call with some bad nodes still creates the good ones and returns partial:true + errors[] — resend only what errors[] names. GAME RULES (state, scoring, rounds, toggles two people press) belong in a behaviour (create_behaviour); nodes WIRE them (an event into its inputs, its outputs into Visibility / HUD / Set Game State). An action needs an EVENT: a value (latch, gate, compare) wired into a trigger is refused. Worked builds: describe_node_types {recipe: ""}.',
 				parameters: {
 					type: 'object',
 					properties: {
@@ -1269,7 +1716,7 @@ function flowToolSchemas(physics) {
 									data: {
 										type: 'object',
 										description:
-											'node params, e.g. spin {axis:"y",speed:2}; bounce {amplitude:0.5,speed:2}; pathpatrol {points:[[x,y,z],…] (>=2 world waypoints), speed:1, mode:"loop"|"pingpong"}; setcolor {color:"#ff0000"}; latch {initial:false}; delay {seconds:3}; sequence {delay1:0,delay2:0.5,delay3:0.5,delay4:0.5} (delays are CUMULATIVE). Omit for defaults.'
+											'node params, e.g. spin {axis:"y",speed:2}; bounce {amplitude:0.5,speed:2}; pathpatrol {path:"<Path object uuid from create_path>", offset:0, face:true} (walks the Path: its waits/speeds/events live on the Path; legacy {points:[[x,y,z],…], speed, mode} still works); onpathevent {path, event} fires when a walker arrives at a point carrying that event; setcolor {color:"#ff0000"}; latch {initial:false}; delay {seconds:3}; sequence {delay1:0,delay2:0.5,delay3:0.5,delay4:0.5} (delays are CUMULATIVE). Omit for defaults.'
 									}
 								},
 								required: ['type']
@@ -1300,7 +1747,7 @@ function flowToolSchemas(physics) {
 			function: {
 				name: 'update_flow_nodes',
 				description:
-					'Tune or remove existing behavior nodes in one graph. Node ids and current data are in the scene summary under each object\'s "flow" (and "sceneFlow").',
+					'Tune or remove existing behavior nodes in one graph. Node ids and current data are in the scene summary under each object\'s "flow" (and "sceneFlow"). Script code runs every frame from the base pose: use object.rotation.y = base.rot[1] + elapsed * speed, not += (elapsed = seconds since Play started, time = the shared clock, seconds of the day).',
 				parameters: {
 					type: 'object',
 					properties: {
@@ -1316,7 +1763,18 @@ function flowToolSchemas(physics) {
 								required: ['id', 'data']
 							}
 						},
-						remove: { type: 'array', items: { type: 'string' }, description: 'node ids to delete' }
+						remove: { type: 'array', items: { type: 'string' }, description: 'node ids to delete' },
+						// 2.0-n3c: Convert to code / Convert back (the node menu's action)
+						convert: {
+							type: 'array',
+							description:
+								'turn pure value nodes (math, compare, gate, select, maprange, random, hudtext) into a Script node holding the same logic as editable JS ("code"), same id and wires; "back" returns the built-in while that code is unchanged',
+							items: {
+								type: 'object',
+								properties: { id: { type: 'string' }, to: { type: 'string', enum: ['code', 'back'] } },
+								required: ['id', 'to']
+							}
+						}
 					},
 					required: ['graph']
 				}
@@ -1327,12 +1785,13 @@ function flowToolSchemas(physics) {
 			function: {
 				name: 'describe_node_types',
 				description:
-					'Look up flow node types before wiring them: per type its inputs (toHandle names + socket types), its output type and named outputs (fromHandle), its params with types and defaults, and one line on what it does. No arguments = every type name by group; group = that group with one-line docs; types = full details (up to 12). Changes nothing.',
+					'Look up flow node types before wiring them: per type its inputs (toHandle names + socket types), its output type and named outputs (fromHandle), its params with types and defaults, and one line on what it does. No arguments = every type name by group (+ the recipe names); group = that group with one-line docs; types = full details (up to 12); recipe = a worked build (pause on a key, a shared toggle, a pickup, once per round, zone damage + respawn, state a late joiner sees). Changes nothing.',
 				parameters: {
 					type: 'object',
 					properties: {
 						types: { type: 'array', items: { type: 'string' }, description: 'node types to describe, e.g. ["latch","spin","onclick"]' },
-						group: { type: 'string', description: 'a palette group, e.g. "Logic" or "Triggers"' }
+						group: { type: 'string', description: 'a palette group, e.g. "Logic" or "Triggers"' },
+						recipe: { type: 'string', description: 'a recipe name ("pause-key", "shared-toggle", "pickup", "once-per-round", "zone-damage", "remembered-state"), or "" for the list' }
 					}
 				}
 			}
@@ -1369,7 +1828,7 @@ const PHYSICS_AI_TOOLS = [
 								},
 								sensor: {
 									type: 'boolean',
-									description: 'true = a trigger volume: no collision response, fires On Enter/On Exit nodes'
+									description: 'true = a trigger volume: no collision response, fires On Enter/On Exit nodes — for bodies AND for the player walking in (on every peer; set the node\'s who: player to react only to players)'
 								},
 								group: {
 									type: 'string',
@@ -1454,7 +1913,7 @@ const PHYSICS_AI_TOOLS = [
  * Call this per turn (readiness can change). @param {ToolOpts} [opts] @returns {any[]} */
 export function getAiTools(opts) {
 	const physics = !!opts?.physics || physicsToolsEnabled();
-	const tools = [...AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
+	const tools = [...AI_TOOLS, ...GEOMETRY_AI_TOOLS, ...TEXT_AI_TOOLS, ...PATH_AI_TOOLS, ...LOOK_AI_TOOLS, ...HUD_AI_TOOLS, ...SCENE_SETUP_AI_TOOLS, ...LEVELS_AI_TOOLS, ...NPC_AI_TOOLS, ...WORLD_AI_TOOLS, ...ASSIST_AI_TOOLS, ...RUNTIME_AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
 	if (physics) tools.push(...PHYSICS_AI_TOOLS);
 	if (meshGenReady()) tools.push(MESH_TOOL);
 	return tools;
@@ -1463,7 +1922,7 @@ export function getAiTools(opts) {
 /** Build the system prompt with scene-building guidance. @param {ToolOpts} [opts] @returns {string} */
 export function buildSystemPrompt(opts) {
 	const meshLine = meshGenReady()
-		? '\nCustom meshes: for objects no primitive can approximate, call generate_mesh with a text\ndescription (slow, async — it appears shortly). Prefer primitives for simple shapes.'
+		? '\nCustom meshes: for objects no primitive can approximate, call generate_mesh with a text\ndescription (slow, async — it appears shortly). Prefer primitives for simple shapes. To turn an attached picture into a 3D object, add from_picture: 1.'
 		: '';
 	// 59 T5: the assistant reads the same tool status the buttons do — what is NOT set up here, so a
 	// request for it gets "that needs X, set it up in Tools & connections" instead of a guess
@@ -1485,7 +1944,7 @@ export function buildSystemPrompt(opts) {
 		'GRAPH TEXT — the scene summary shows graphs, and create_flow_nodes accepts `text`, as lines:',
 		'  id = type "label" {params}   one node; params omitted = the node\'s defaults',
 		'  a.out -> b.in                one wire, from a node\'s output to another\'s input',
-		'pathpatrol walks world waypoints: points = [[x,y,z],…] (at least 2).',
+		'pathpatrol walks a Path object: make one with create_path (or pass walkers there), then pathpatrol {path: "<uuid>"}; the old points = [[x,y,z],…] form still walks straight lines.',
 		'Logic + timing (latch, delay, sequence, once, counter) are THE EXCEPTION to that',
 		'rule: they do nothing unwired, so they always need edges with toHandle. latch',
 		'toHandle "set"/"reset"/"toggle" turns a ~0.3s pulse into a boolean that HOLDS',
@@ -1559,6 +2018,6 @@ export function buildSystemPrompt(opts) {
 		"an object's name as the tool name — the name of a thing you create belongs in that object's",
 		'`name` field inside create_objects. Every call takes effect immediately, so never repeat a',
 		'call that already came back without an error — once the scene matches the request, stop',
-		'calling tools and write the summary.' + meshLine + toolsLine + flowBlock + extraBlock + physicsBlock
+		'calling tools and write the summary.' + meshLine + toolsLine + GEOMETRY_PROMPT + TEXT_PROMPT + PATH_PROMPT + LOOK_PROMPT + HUD_PROMPT + SCENE_SETUP_PROMPT + LEVELS_PROMPT + NPC_PROMPT + WORLD_PROMPT + ASSIST_PROMPT + RUNTIME_PROMPT + flowBlock + extraBlock + physicsBlock
 	].join('\n');
 }

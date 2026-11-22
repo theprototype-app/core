@@ -1,6 +1,8 @@
 <script lang="ts">
+	import { backClose } from '$lib/backStack.js'; // phone-polish: Android Back closes it
 	import { cameraPreviews, joinPeerPreview, previewLabel } from '$lib/cameraPreview';
 	import Icon from '../ui/Icon.svelte';
+	import PeerAvatar from '../ui/PeerAvatar.svelte'; // 78 PL33: one avatar everywhere
 	import { roving } from '$lib/keyboardNav'; // 53 A3: the top-right group is one tab stop
 	import * as THREE from 'three';
 	import { onMount, untrack } from 'svelte';
@@ -23,6 +25,7 @@
 		hidePanels,
 		characterModalOpen,
 		profileSettingsOpen,
+		profileMenuRequest,
 		notesDrawerOpen,
 		cloudIdentity,
 		connectDocked,
@@ -32,7 +35,9 @@
 	} from '../../stores/appStore.js';
 	import WindowChrome from '../ui/WindowChrome.svelte';
 	// 55 A4/A7: agent rows (robot + "AI") and the active invites with Revoke / Revoke all
-	import { invites, listInvites, revokeInvite, revokeAllInvites, inviteSheet, kindOfRow } from '$lib/inviteStore';
+	import { invites, listInvites, revokeInvite, revokeAllInvites, inviteSheet, kindOfRow, myKind } from '$lib/inviteStore';
+	// 78 PL34: nobody is "Peer" — a nameless person is "Guest N" (the host 1, joiners from 2)
+	import { displayName, nextGuestName, guestClash } from '$lib/guestName';
 	import { globalScene, globalCamera, camSave, peerHands, isLocked, objectsGroup } from '../../stores/sceneStore.js';
 	// 21-F3: who is in play mode, and who may end the round
 	import { peerPlayModes, resetAllowed, requestResetGame } from '$lib/gamePresence';
@@ -105,10 +110,11 @@
 		!self && map?.[peerId]?.private === true;
 	import { gameState } from '$lib/gameState';
 	import { sessionHost } from '$lib/connectionState';
-	import { mutedPeers, toggleMutePeer } from '$lib/voiceChat';
+	import { mutedPeers, toggleMutePeer, speakingPeers } from '$lib/voiceChat';
 	// 55 A9: the peer menu (Profile · Find · Character · Talk · For you only · Moderation)
 	import { buildPeerMenuItems } from '$lib/peerMenu';
 	import { removePeer, allowBack, blockedPeers, inviteStoreModule } from '$lib/peerModeration';
+	import { olderPeers } from '$lib/wireProto'; // 101 F1: peers on an older protocol, refused here
 	import { copyLookOf } from '$lib/peerActions';
 	import { canModerateWith } from '$lib/peerModerationCore';
 	import { hiddenPeers, setPeerHidden } from '$lib/peerHide';
@@ -117,8 +123,14 @@
 	import { selectObject, focusObject, flyTo } from '$lib/objectActions';
 	import { lockedObjects } from '../../stores/sceneStore.js';
 	import PeerProfileCard from './PeerProfileCard.svelte';
+	// uir-people (Peers B): a row press flips the popover to that person's card
+	import PersonCard from './PersonCard.svelte';
+	import { presenceOf, publishPresence, presenceEnabled, myPresence, PRESENCE_ICON, PRESENCE_LABEL } from '$lib/peoplePresence';
+	import { settingsOpen, settingsSection } from '../../stores/appStore.js';
 	import { peerQuality, qGlyph } from '$lib/networkQuality';
 	import ContextMenu from '../ContextMenu.svelte';
+	import { panelsButtonShown, panelsOpen, togglePanels } from '$lib/panelsButton';
+	import { chromeButton } from '$lib/chromeButtons'; // panel-gestures item 5: the Panels button's menu
 	import NotificationCenter from './NotificationCenter.svelte';
 	// 42 I9: which of the group's own buttons are placed here, in what order (Controls' layout)
 	import { toolbarSlots, slotOrder, TOP_DEFAULT } from '$lib/toolbarSlots';
@@ -139,6 +151,35 @@
     let openDropdown = $state(false);
 	/** 55 A9: the open peer menu (was `muteMenu`, which offered Mute voice alone) */
 	let peerMenu: { x: number; y: number; peerId: string; self: boolean; row: HTMLElement | null } | null = $state(null);
+	/** uir-people: the Person card open in the popover (null = the list) */
+	let cardFor: { peerId: string; self: boolean; x: number; y: number } | null = $state(null);
+	function openCard(peerId: string, self: boolean, from: HTMLElement | null) {
+		const r = from?.getBoundingClientRect?.();
+		cardFor = { peerId, self, x: r ? r.left + 24 : window.innerWidth / 2, y: r ? r.bottom : 120 };
+		peerMenu = null;
+		peersPanelOpen.set(true);
+	}
+	/** a press on the ROW itself (not on one of its buttons) opens the card */
+	function rowClick(e: MouseEvent, peerId: string, self: boolean) {
+		if ((e.target as HTMLElement)?.closest?.('button, a, input, select, [role="listbox"]')) return;
+		openCard(peerId, self, e.currentTarget as HTMLElement);
+	}
+	// the popover closing, or the person leaving, ends the card
+	$effect(() => {
+		if (!$peersPanelOpen) cardFor = null;
+	});
+	$effect(() => {
+		if (cardFor && !($userdata as any[]).some((u) => u[0] === cardFor!.peerId)) cardFor = null;
+	});
+	// our own status rides our roster row (slot 6); write it whenever the row or the setting changes —
+	// publishPresence sends only when there is something new to say
+	$effect(() => {
+		void $userdata;
+		void $peers;
+		void $presenceEnabled;
+		void $myPresence;
+		untrack(() => publishPresence());
+	});
 	/** the View profile / View character card */
 	let profileFor: { peerId: string; focus: 'profile' | 'character' } | null = $state(null);
 	/** "Show their recent changes" */
@@ -173,7 +214,19 @@
 		e.preventDefault();
 		openPeerMenu(e.clientX, e.clientY, peerId, self, e.currentTarget as HTMLElement);
 	}
+	/** 78 PL31: the visible ⋯ — the same menu a right-click or a long press opens, now reachable by a tap */
+	function rowMoreClick(e: MouseEvent, peerId: string, self: boolean) {
+		e.stopPropagation();
+		const btn = e.currentTarget as HTMLElement;
+		const r = btn.getBoundingClientRect();
+		openPeerMenu(Math.max(8, r.right - 200), r.bottom + 4, peerId, self, btn.closest('.peers-row') as HTMLElement | null);
+	}
 	function rowKeydown(e: KeyboardEvent, peerId: string, self: boolean) {
+		if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) {
+			e.preventDefault();
+			openCard(peerId, self, e.currentTarget as HTMLElement);
+			return;
+		}
 		if (e.key !== 'ContextMenu' && !(e.shiftKey && e.key === 'F10')) return;
 		e.preventDefault();
 		e.stopPropagation();
@@ -223,12 +276,16 @@
 			.filter(Boolean);
 	}
 	function nameOf(peerId: string) {
-		return (($userdata as any[]).find((u) => u[0] === peerId)?.[1]) || shortId(peerId).toUpperCase();
+		const row = ($userdata as any[]).find((u) => u[0] === peerId);
+		return row?.[1] || (row ? displayName(row) : shortId(peerId).toUpperCase());
 	}
 	/** fly the editor camera to stand a few metres off their avatar, looking at it */
 	function goToPeer(peerId: string) {
 		const avatar = ($globalScene as any)?.getObjectByName?.(peerId);
-		if (!avatar) return;
+		if (!avatar) {
+			showToast(nameOf(peerId) + ' has no avatar in this scene yet.');
+			return;
+		}
 		const at = new THREE.Vector3();
 		avatar.getWorldPosition(at);
 		const cam = $globalCamera as any;
@@ -295,7 +352,8 @@
 				editProfile: () => profileSettingsOpen.set(true),
 				changeCharacter: () => characterModalOpen.set(true),
 				copyId: () => copyPeerId(id),
-				viewProfile: () => (profileFor = { peerId: id, focus: 'profile' }),
+				// uir-people (F5): View profile IS the Person card now; View character keeps the turntable
+					viewProfile: () => openCard(id, false, (m as any).row ?? null),
 				viewCharacter: () => (profileFor = { peerId: id, focus: 'character' }),
 				goTo: () => goToPeer(id),
 				goToScene: () => (away === UNNAMED_ROOM ? doJoinWorld() : goToScene(id)),
@@ -679,6 +737,42 @@
 		});
 	});
 
+	// 78 PL34 — THE GUEST NAME. A person with no name of their own (none typed, no account) takes the smallest
+	// free "Guest N" once a session forms, and says it on the roster like any name — so the popover, the pill,
+	// the chat and the name tags agree on every screen. Never stored: it is dropped when the session ends.
+	let autoGuest = '';
+	$effect(() => {
+		const pc: any = $peers;
+		const rows: any[] = ($userdata as any[]) ?? [];
+		const host = $sessionHost;
+		void $cloudIdentity;
+		untrack(() => {
+			const me = pc?.peer?.id;
+			if (!me || myKind()) return;
+			const live = (pc?.openedPeers?.size ?? 0) > 0;
+			const mine = String($username ?? '').trim();
+			if (!live) {
+				// the session ended: an automatic name goes with it (a typed one is untouched)
+				if (autoGuest && mine === autoGuest) {
+					username.set('' as any);
+					for (const row of rows) if (row[0] === me) row[1] = '';
+				}
+				autoGuest = '';
+				return;
+			}
+			if (cid?.username && !usernameIsCustom()) return;
+			const isAuto = !!autoGuest && mine === autoGuest;
+			if (mine && !isAuto) return;
+			// re-pick only when the automatic name no longer fits: a clash, or a joiner holding the host's "Guest 1"
+			if (isAuto && !guestClash(rows, me, mine) && !(host && mine === 'Guest 1')) return;
+			const name = nextGuestName(rows, me, !host);
+			if (name === mine) return;
+			autoGuest = name;
+			username.set(name as any);
+			broadcastUserdata();
+		});
+	});
+
 	function onUsernameEdited() {
 		try {
 			safeStorage.setItem('username', $username || '');
@@ -753,6 +847,21 @@
 		// still the CIRCLE's right edge, read from its rect (never floating-ui's drifting maths, the mobile-
 		// viewport trap below), so the notch's circle sits exactly over the trigger wherever it is.
 		dropdownEl.style.setProperty('--pm-right', `${Math.max(0, Math.round(window.innerWidth - r.right))}px`);
+		// phone-polish item 6: the menu grew tall (account, sign-in methods, community, sponsor …) and on a
+		// short screen — a phone in landscape, a browser with its bars showing — it ran off the bottom with no
+		// way to reach its last rows. It stops at the visible bottom and SCROLLS (wheel and a finger's drag);
+		// `overscroll-behavior` keeps the drag from scrolling or zooming the page behind it. The visible top is
+		// the rect's top: the -50 px margin seats the notch over the trigger. The phone sheet (phone.css) owns
+		// its own height.
+		// The cap is a CSS variable read by the rule below, not an inline overflow: the inline `overflow-y` was dropped
+		// again after placement (measured: max-height stayed, overflow-y vanished), leaving a clipped menu.
+		if ($phoneShellActive) {
+			dropdownEl.style.removeProperty('--pm-max-h');
+			return;
+		}
+		const visTop = dropdownEl.getBoundingClientRect().top;
+		const vh = window.visualViewport?.height ?? window.innerHeight;
+		dropdownEl.style.setProperty('--pm-max-h', `${Math.max(160, Math.round(vh - Math.max(0, visTop) - 8))}px`);
 	}
 	/** fix-batch-1 #23: the trigger's keys — Enter / Space toggle, ↓ opens; opening moves focus in */
 	function triggerKey(e: KeyboardEvent) {
@@ -764,6 +873,26 @@
 	}
 	/** set by a keyboard open: the panel's mount focuses its first row */
 	let focusFirstRow = false;
+	// FW-AI (76): another window asks for this pop-up ("Sign in to connect"): open it with focus on the
+	// account section's first button, which is where that press was heading
+	let focusAccount = false;
+	$effect(() => {
+		if (!$profileMenuRequest) return;
+		profileMenuRequest.set(false);
+		focusAccount = true;
+		openDropdown = true;
+	});
+	/** profile-notify: a plugin row that opens a window (Cloud saves, Your games & stats, Staff) closes the menu
+	 * after its own click handler ran — a window opened beside an open menu was finding 7 of the review */
+	function closeOnPluginRows(node: HTMLElement) {
+		// a listener, not an onclick attribute: the block is not itself interactive (the rows inside are buttons)
+		const onClick = (e: MouseEvent) => {
+			const t = e.target as Element | null;
+			if (t?.closest?.('[data-pm-close]')) openDropdown = false;
+		};
+		node.addEventListener('click', onClick);
+		return () => node.removeEventListener('click', onClick);
+	}
 	/** focus moving OUT of the menu or its trigger (to a real element) closes it */
 	function dropdownFocusOut(e: FocusEvent) {
 		const to = e.relatedTarget as Node | null;
@@ -808,6 +937,10 @@
 			openDropdown = false;
 			if (inPanel) triggerEl?.focus();
 		};
+		if (focusAccount) {
+			focusAccount = false;
+			queueMicrotask(() => node.querySelector<HTMLElement>('.cloud-profile button')?.focus());
+		}
 		if (focusFirstRow) {
 			focusFirstRow = false;
 			queueMicrotask(() => {
@@ -849,6 +982,39 @@
 	// 43 K3: the phone shell keeps the group's default ORDER, but a native the person took out (Edit
 	// positions / Customize, on the unfolded screen) stays out here too — hidden stays hidden
 	const trSlots = $derived($phoneShell ? { top: TOP_DEFAULT.filter((id) => $toolbarSlots.top.includes(id)), editing: false } : $toolbarSlots);
+	// dock-fixes item 8 — the Panels button. panel-gestures item 5: its menu (right-click, a long press on
+	// touch) is the generic chrome-button one — `use:chromeButton={'top.panels'}`, registered BOUND in
+	// $lib/panelsButton with its own "Show / Hide the sidebars" row on top
+	// dock-fixes item 4 — the top row between two columns that both reach it (a pinned left one + a right one under a
+	// docked Connect bar: the unfolded N6) can be narrower than the group + the profile. The group then STACKS into a
+	// column under the profile, inside the free width, instead of drawing over the left column. The row width is
+	// measured only while it is a row (the stacked box would feed its own decision back — the frozen-span rule).
+	let trEl = $state<HTMLElement | null>(null);
+	let trRowW = 0;
+	let trStacked = $state(false);
+	function measureTr() {
+		if (!trEl || $phoneShell) {
+			trStacked = false;
+			return;
+		}
+		if (!trStacked) trRowW = trEl.offsetWidth;
+		const g = $sidebarGeometry;
+		const free = window.innerWidth - (g?.freeTopLeft ?? 0) - (g?.freeTopRight ?? 0);
+		// the group sits 76 px in from the corner (the profile's place) and wants 8 px clear of the left column
+		trStacked = !!trRowW && free < trRowW + 76 + 8;
+	}
+	$effect(() => {
+		void $sidebarGeometry;
+		void $toolbarSlots;
+		void $panelsButtonShown;
+		const t = setTimeout(measureTr, 0);
+		window.addEventListener('resize', measureTr);
+		return () => {
+			clearTimeout(t);
+			window.removeEventListener('resize', measureTr);
+		};
+	});
+
 	const trOrder = (id: string) => slotOrder(trSlots.top, id);
 	const trShown = (id: string) => !trSlots.editing && trOrder(id) != null;
 </script>
@@ -895,7 +1061,7 @@
 		data-peer-id={user[0]}
 		role="group"
 		tabindex="0"
-		aria-label={(user[1] || 'Peer') + (self ? ' (you)' : '') + ' — menu: Shift+F10'}
+		aria-label={displayName(user) + (self ? ' (you)' : '') + ' — menu: Shift+F10'}
 		oncontextmenu={(e) => rowContextMenu(e, user[0], self)}
 		onkeydown={(e) => rowKeydown(e, user[0], self)}
 		onpointerdown={(e) => rowPointerDown(e, user[0], self)}
@@ -903,11 +1069,14 @@
 		onpointerup={rowPointerEnd}
 		onpointercancel={rowPointerEnd}
 		onclickcapture={rowClickCapture}
+		onclick={(e) => rowClick(e, user[0], self)}
+		title={self ? 'Your card' : 'Open ' + (user[1] || 'their') + ' card'}
 	>
-		{@render avatarImg(user[2], 'bg-surface-active h-8 w-8 shrink-0')}
+		<!-- 78 PL33: their photo, else their colour + initial, ringed in their lock / cursor colour; a speaking ring while they talk -->
+		<PeerAvatar id={user[0]} row={user} size={32} speaking={$speakingPeers.includes(user[0])} />
 		<div class="peer-info">
 			<div class="peer-name">
-				<span class="truncate" title={user[1] || 'Peer'}>{user[1] || (kindOfRow(user) === 'agent' ? 'AI agent' : 'Peer')}</span>
+				<span class="truncate" title={displayName(user)}>{displayName(user)}</span>
 				{#if kindOfRow(user) === 'agent'}
 					<!-- 55 A7: an AI agent is not a person — no character, the robot and "AI" instead -->
 					<span class="peer-ai" title="AI agent — joined over MCP or an agent link; it has no character"
@@ -915,6 +1084,12 @@
 					>
 				{/if}
 				{#if self}<span class="peer-you">(you)</span>{/if}
+				{#if presenceOf(user)}
+					<!-- uir-people: their status (a shape AND a colour, 53 A2) -->
+					<span class="peer-presence" data-presence={presenceOf(user)} title={PRESENCE_LABEL[presenceOf(user) || 'available']}
+						><Icon name={PRESENCE_ICON[presenceOf(user) || 'available']} size={16} aria-hidden="true" /><span class="sr-only">{PRESENCE_LABEL[presenceOf(user) || 'available']}</span></span
+					>
+				{/if}
 			</div>
 			<div class="peer-meta">
 				<!-- P2b: where this peer is. Absent means we have not been told — which is
@@ -954,13 +1129,14 @@
 				{#if $peerHands[user[0]]?.active}<span title="In VR"><Icon name="glasses" size={16} aria-hidden="true" /></span>{/if}
 				{#if !self && $peerQuality[user[0]]}
 					{@const q = $peerQuality[user[0]]}
+					<!-- 78 PL31 (O7): "relayed" is a fact, not a fault — it rides the tooltip, and shows only on a slow link -->
 					<span
-						title={q.rtt != null ? `${Math.round(q.rtt)} ms round-trip` : 'measuring…'}
+						title={(q.rtt != null ? `${Math.round(q.rtt)} ms round-trip` : 'measuring…') + (q.relayed ? ' · relayed through a TURN server' : '')}
 						style="color: {qColor(q.level)}">{qGlyph(q.level)}{q.rtt != null ? ` ${Math.round(q.rtt)}ms` : ''}</span
 					>
-					{#if q.relayed}<span class="text-ink-warn" title="Relayed through a TURN server">relayed</span>{/if}
+					{#if q.relayed && q.level === 'bad'}<span class="text-ink-warn" title="Relayed through a TURN server">relayed</span>{/if}
 				{/if}
-				<span class="peer-id" title={user[0]}>{shortId(user[0])}</span>
+				<span class="peer-id" title={user[0]}>{shortId(user[0]).toUpperCase()}</span>
 			</div>
 		</div>
 		<div class="peer-actions">
@@ -1048,8 +1224,28 @@
 				>
 					<Icon name="eye" size={16} class="mr-1" aria-hidden="true" />{$specatorMode === user[0] ? 'Watching' : 'Watch'}
 				</button>
+				{#if !$phoneShellActive && kindOfRow(user) !== 'agent'}
+					<!-- 78 PL31 (O4): Go to beside Watch — fly the camera to stand by their avatar (same scene; on a
+					     phone it stays in ⋯). Not .peer-goto: that class is the travel-to-their-scene button. -->
+					<button
+						type="button"
+						class="peer-find peer-icon-btn"
+						title={'Go to ' + displayName(user) + ' — fly your camera to them'}
+						aria-label={'Go to ' + displayName(user)}
+						onclick={() => goToPeer(user[0])}
+					><Icon name="locate-fixed" size={16} aria-hidden="true" /></button>
+				{/if}
 			{/if}
 		{/if}
+		<!-- 78 PL31 (O4): the peer menu as a visible button on every row (it was right-click / long-press only) -->
+		<button
+			type="button"
+			class="peer-more peer-icon-btn"
+			title={self ? 'Your menu' : 'More for ' + displayName(user)}
+			aria-label={self ? 'Your menu' : 'More for ' + displayName(user)}
+			aria-haspopup="menu"
+			onclick={(e) => rowMoreClick(e, user[0], self)}
+		><Icon name="ellipsis" size={16} aria-hidden="true" /></button>
 		</div>
 	</div>
 {/snippet}
@@ -1059,10 +1255,12 @@
 <!-- 42 I2: a FULL-HEIGHT right sidebar takes the corner — the cluster moves inward by its width.
      45 N3: in ONE frame (no `right` transition): the user asked for no animation on the profile and the top
      clusters when a sidebar opens, closes or hides -->
-<div class="top-right-chrome" style="position: fixed; right: var(--sb-dock-right, 0px); z-index: var(--z-chrome-top); top: {$connectDocked ? $connectBarHeight + 'px' : '0px'};">
+<!-- dock-fixes (owner 2026-11-08): ANY right column that reaches this row (pinned, or tucked under a docked Connect
+     bar) takes the corner — the group drew over the column's header before (--sb-free-top-right, $lib/sidebars) -->
+<div class="top-right-chrome" style="position: fixed; right: var(--sb-free-top-right, 0px); z-index: var(--z-chrome-top); top: {$connectDocked ? $connectBarHeight + 'px' : '0px'};">
 	<!-- 38 R8: one glass group (styles/hud.css) — notes, notifications, peers — sitting just
 	     left of the profile circle, which keeps its own place (its dropdown is anchored to it) -->
-	<div id="hud-tr" class="tp-ui hud-glass hud-tr" style="position: absolute; top: 10px; right: 76px; z-index: 2;" role="toolbar" aria-label="Notes, notifications and people" use:roving={{ item: '.hud-cell:not(.hud-edit-item):not(.hud-edit-add)', axis: 'x' }}>
+	<div id="hud-tr" bind:this={trEl} class="tp-ui hud-glass hud-tr" class:tr-stacked={trStacked} style="position: absolute; top: 10px; right: 76px; z-index: 2;" role="toolbar" aria-label="Notes, notifications and people" use:roving={{ item: '.hud-cell:not(.hud-edit-item):not(.hud-edit-add)', axis: 'x' }}>
 	<!-- E2: scene-notes drawer toggle -->
 	{#if trShown('notes')}
 	<button
@@ -1089,7 +1287,7 @@
 	 21-G5: OR on cross-scene presence — being alone in YOUR scene is exactly when
 	 "where is everyone" matters, and a popover that only exists once somebody is
 	 already in your mesh could never show you the people who are not. -->
-{#if trShown('peers') && (($userdata && $userdata.length > 1 && $peers && $peers.openedPeers?.size > 0) || crossRooms.length > 0 || inviteRows.length > 0 || $blockedPeers.length > 0)}
+{#if trShown('peers') && (($userdata && $userdata.length > 1 && $peers && $peers.openedPeers?.size > 0) || crossRooms.length > 0 || inviteRows.length > 0 || $blockedPeers.length > 0 || $olderPeers.length > 0)}
 	<div class="relative" style:order={trOrder('peers')}>
 		<!-- compact trigger: a few stacked avatars + the peer count -->
 		<button
@@ -1099,9 +1297,9 @@
 			title="Connected peers"
 			onclick={() => peersPanelOpen.update((v) => !v)}
 		>
-			<div class="flex -space-x-2">
+			<div class="flex items-center gap-1.5 px-0.5">
 				{#each $userdata.slice(1, 4) as user (user[0])}
-					{@render avatarImg(user[2], 'bg-surface-active border-2 border-surface-1 not-first:-ms-4 hud-tr-av h-6 w-6')}
+					<PeerAvatar id={user[0]} row={user} size={22} speaking={$speakingPeers.includes(user[0])} class="hud-tr-av" />
 				{/each}
 			</div>
 			<span class="hud-tr-count">{$userdata.length}</span>
@@ -1117,7 +1315,6 @@
 				<WindowChrome
 					size="tool"
 					title="Connected"
-					count={$userdata.length}
 					elevated
 					padded={false}
 					onclose={() => {
@@ -1150,6 +1347,25 @@
 						>
 					</div>
 				{/snippet}
+				{#if cardFor}
+					<div class="peers-body peers-card-body" use:minimalScroll>
+						{#key cardFor.peerId}
+							<PersonCard
+								peerId={cardFor.peerId}
+								self={cardFor.self}
+								items={peerMenuRows({ x: cardFor.x, y: cardFor.y, peerId: cardFor.peerId, self: cardFor.self, row: null } as any)}
+								where={chipFor($peerScenes, $currentLevel, cardFor.peerId, cardFor.self)}
+								onback={() => (cardFor = null)}
+								onshowediting={() => showEditing(cardFor!.peerId)}
+								onopensettings={() => {
+									peersPanelOpen.set(false);
+									settingsSection.set('interface');
+									settingsOpen.set(true);
+								}}
+							/>
+						{/key}
+					</div>
+				{:else}
 				<div class="peers-body">
 				<!-- R22 round 35: OUR OWN private state, said once at the top rather than as a
 					 badge on our row — it is a fact about this whole list (nobody in it can see
@@ -1243,6 +1459,20 @@
 							{/each}
 						</div>
 					{/if}
+					<!-- 101 F1: a peer on an OLDER session protocol was refused before any scene data moved;
+					     this is the one place it shows on this side (it sees "Reload to update"). -->
+					{#if $olderPeers.length}
+						<div id="peers-older" class="mt-1 border-t border-border pt-1">
+							{#each $olderPeers as o (o.peerId)}
+								<div class="peers-row peers-older-row rounded" data-peer-id={o.peerId}>
+									<Icon name="refresh-cw" size={16} aria-hidden="true" />
+									<div class="peer-info">
+										<div class="peer-meta"><span class="truncate" title={o.peerId}>{(o.name || shortId(o.peerId)) + ' needs to reload (older version)'}</span></div>
+									</div>
+								</div>
+							{/each}
+						</div>
+					{/if}
 				<!-- 21-F3: the ADMIN half of "the game resets only when everyone has left
 					 play, or an admin resets it". Offered only when there is a game to
 					 reset, and DISABLED (with the reason in its tooltip) for anyone who is
@@ -1273,13 +1503,20 @@
 					 is how that gets filed as a bug. Invite's transport belongs to the
 					 plugin; the button renders only when it provides one. -->
 				{#if crossRooms.length}
-					<div class="mt-1 border-t border-border pt-1" id="cross-scene-presence">
+					<!-- 94 SP6: under their OWN heading. These are the project's listed (public) live rooms,
+						 not people in your session — on a fresh page they used to read as your session's
+						 roster (83-batch3 finding 1). -->
+					<div class="mt-1 border-t border-border pt-1" id="cross-scene-presence" role="group" aria-labelledby="cross-scene-heading">
+						<h3 id="cross-scene-heading" class="cross-scene-heading px-1.5 pt-1 text-xs font-semibold text-text-2">Public rooms</h3>
+						<p class="px-1.5 pb-1 text-xs text-text-faint">Live rooms anyone can join — not part of your session.</p>
 						{#each crossRooms as room (room.id)}
 							<div class="px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-text-faint">
 								in {room.scene || room.name || 'another scene'}
 							</div>
 							{#each room.members ?? [] as m (m.peerId)}
-								<div class="peers-row flex items-center gap-2 rounded px-1.5 py-1">
+								<!-- 94 SP6: its own row, not `.peers-row` — that is the roster's 3-column grid
+									 (avatar | info | actions), which put the mode chip in the stretching column -->
+								<div class="cross-scene-row flex items-center gap-2 rounded px-1.5 py-1">
 									<span class="min-w-0 flex-1 truncate text-sm" title={m.name || m.peerId}
 										>{m.name || String(m.peerId ?? '').slice(0, 6)}</span
 									>
@@ -1312,6 +1549,7 @@
 					</div>
 				{/if}
 				</div>
+				{/if}
 				</WindowChrome>
 			</div>
 			<!-- role dropdown — PORTALED to <body> (fixed position) so it isn't clipped by
@@ -1327,6 +1565,24 @@
 		{/if}
 	</div>
 {/if}
+	<!-- dock-fixes item 8 (owner 2026-11-08): the PANELS button — shows / hides both sidebars ($lib/panelsButton),
+	     the last cell of the group, beside the profile. On by default on a touch screen with sidebars; its menu
+	     (right-click, a long press on touch) hides it, Settings ▸ Interface ▸ Panels button brings it back -->
+	{#if $panelsButtonShown && !trSlots.editing}
+	<button
+		id="panels-toggle"
+		class="hud-cell"
+		class:on={$panelsOpen}
+		style:order={900}
+		aria-pressed={$panelsOpen}
+		aria-label={$panelsOpen ? 'Hide the sidebars' : 'Show the sidebars'}
+		title={$panelsOpen ? 'Hide the sidebars (their tabs stay open) — right-click or long-press for more' : 'Show the sidebars — right-click or long-press for more'}
+		onclick={() => togglePanels()}
+		use:chromeButton={'top.panels'}
+	>
+		<Icon name="columns-3" size={20} aria-hidden="true" />
+	</button>
+	{/if}
 	</div>
 	<!-- main profile button: a single clean Avatar (no href -> no navigation bug; no
 		 3-branch) that picks the effective avatar (custom upload > stored > cloud
@@ -1371,6 +1627,8 @@
 	{#if openDropdown}
 		<div
 			id="avatar-dropdown"
+			use:backClose={() => (openDropdown = false)}
+			use:minimalScroll
 			popover={$phoneShellActive ? undefined : 'manual'}
 			role="tooltip"
 			{@attach dropdownAttach}
@@ -1402,10 +1660,14 @@
 		<!-- PM (roadmap #14): identity header — name, then the cloud email (or "You") under it.
 			 No avatar here (it's already the profile button, seated in the notch on the right).
 			 38 R8 (design page "Profile and peers"): the kit's NavRows below, one card. -->
+		<!-- profile-notify (direction A): with a cloud plugin and nobody signed in, the line under the name says so -->
 		<div class="pm-head" class:pm-head-phone={$phoneShellActive}>
 			<span class="pm-name">{effName}</span>
-			<span class="pm-sub">{cid?.email || 'You'}</span>
+			<span class="pm-sub">{cid?.email || ($profileSlot ? 'Not signed in' : 'You')}</span>
 		</div>
+		<!-- profile-notify: the groups wear small headings on a desktop (Profile · the plugin's Your stuff · Account);
+		     the phone sheet drops them (the proposal's folded layout) -->
+		{#if !$phoneShellActive}<div class="pm-group">Profile</div>{/if}
 		<div class="pm-card">
 			<NavRow
 				icon="user"
@@ -1417,7 +1679,7 @@
 			/>
 			<NavRow
 				icon="settings"
-				label="Profile settings"
+				label="Edit profile…"
 				description="Picture and name"
 				onclick={() => {
 					profileSettingsOpen.set(true);
@@ -1429,8 +1691,9 @@
 			 preferences here (moved out of the Connect pill). Plain block: the plugin
 			 owns its own clicks, so it is NOT a menu row. -->
 		{#if $profileSlot}
-			<div class="my-1 h-px bg-border"></div>
-			<div class="cloud-profile px-3 py-2">
+			<!-- profile-notify: the plugin brings its own groups (kit cards, like .pm-card), so no divider or padding here.
+			     A plugin row that opens a window carries `data-pm-close`: the menu closes after its click. -->
+			<div class="cloud-profile" class:cloud-profile-phone={$phoneShellActive} {@attach closeOnPluginRows}>
 				<CloudSlot mount={$profileSlot} />
 			</div>
 		{/if}
@@ -1458,7 +1721,7 @@
 	{/key}
 {/if}
 
-<ModalDialog title="Profile settings" bind:open={$profileSettingsOpen} outsideclose width="md" onkeydown={(e: KeyboardEvent) => { if (e.key === 'Escape') profileSettingsOpen.set(false); }}>
+<ModalDialog title="Edit profile" bind:open={$profileSettingsOpen} outsideclose width="md" onkeydown={(e: KeyboardEvent) => { if (e.key === 'Escape') profileSettingsOpen.set(false); }}>
 
 	<!-- 38 R8: kit rows (label left, control right) instead of the boxed label | input table.
 	     Same ids, same handlers: #avatar-file / #avatar-preview / #avatar-reset / #peer-id /
@@ -1502,17 +1765,42 @@
 		</div>
 		<div class="pf-row">
 			<label class="pf-label" for="peer-id">Peer ID<small>Your address in a session</small></label>
-			<input
-				id="peer-id"
-				class="tp-field pf-input pf-mono"
-				placeholder={$peers.peer.id}
-				disabled
-			/>
+			<!-- profile-notify (review decision 11): the id + Copy (it was a disabled field nobody could copy from) -->
+			<div class="pf-copy">
+				<input
+					id="peer-id"
+					class="tp-field pf-input pf-mono"
+					placeholder={$peers.peer.id}
+					disabled
+				/>
+				<UiButton
+					id="peer-id-copy"
+					variant="ghost"
+					size="sm"
+					disabled={!$peers.peer.id}
+					onclick={() => {
+						void navigator.clipboard?.writeText($peers.peer.id).then(
+							() => showToast('Peer ID copied'),
+							() => showToast('Could not copy the peer ID')
+						);
+					}}>Copy</UiButton
+				>
+			</div>
 		</div>
 	</div>
 </ModalDialog>
 
 <style>
+	/* dock-fixes item 4: too narrow a top row between two columns — the group stands in a column under the profile
+	   (inline `top / right` place the row, so only !important moves it; the cluster's own placement — Edit positions,
+	   `cl-top-placed` in hud.css — is untouched: a placed group never stacks, its area is already the free rect) */
+	:global(:root:not(.cl-top-placed)) .hud-tr.tr-stacked {
+		flex-direction: column;
+		height: auto;
+		padding: 5px 0;
+		top: 56px !important;
+		right: 22px !important;
+	}
 	/* Role pill + change-role dropdown (cloud-roles bridge). These MUST live outside
 	   any media query — they previously sat inside @media(max-width:640px) so on a
 	   normal-width screen the "change role" control rendered as an unstyled native
@@ -1535,6 +1823,13 @@
 	/* 41b H15: the peers panel — 320 px at least, as wide as its rows up to 420 px (then they ellipsize) */
 	.peers-pop { width: max-content; min-width: min(320px, calc(100vw - 24px)); max-width: min(420px, calc(100vw - 24px)); }
 	.peers-body { padding: 6px; }
+	/* uir-people: the Person card takes the list's place — as tall as a short screen allows, then it scrolls */
+	.peers-card-body { padding: 0; max-height: min(70vh, 560px); overflow-y: auto; width: min(380px, calc(100vw - 24px)); }
+	.peers-row { cursor: pointer; }
+	.peer-presence { display: inline-flex; flex: 0 0 auto; }
+	.peer-presence[data-presence='available'] { color: var(--ink-good); }
+	.peer-presence[data-presence='busy'] { color: var(--ink-bad); }
+	.peer-presence[data-presence='away'] { color: var(--ink-warn); }
 	/* 55 A9: a peer you hid stays in the list (it is still in the session), dimmed */
 	.peers-row-hidden .peer-info { opacity: 0.6; }
 	.peers-blocked-row .peer-meta { gap: 6px; }
@@ -1556,6 +1851,11 @@
 	.peer-meta > .scene-chip { flex: 0 1 auto; }
 	.peer-id { color: var(--text-faint); }
 	.peer-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; white-space: nowrap; }
+	/* 78 PL31: the row's icon buttons (Go to, ⋯) — quiet until hovered, a 28 px target (44 on touch) */
+	.peer-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex: 0 0 auto; border: 0; border-radius: 6px; background: transparent; color: var(--text-muted); cursor: pointer; }
+	.peer-icon-btn:hover { background: var(--surface-hover); color: var(--text); }
+	.peer-icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+	@media (pointer: coarse) { .peer-icon-btn { width: 40px; height: 40px; } }
 	/* 21-F3 play-mode chip. Deliberately quieter than the role badge beside it: a role
 	   is an authority and a mode is a passing fact. */
 	.mode-chip { flex: 0 0 auto; font-size: 9px; font-weight: 600; letter-spacing: 0.02em; padding: 0 6px; border-radius: 9999px; text-transform: capitalize; line-height: 1.5; border: 1px solid transparent; }
@@ -1591,6 +1891,15 @@
 	   right: 0 chrome), so pin it and let floating-ui keep only the vertical placement.
 	   !important beats floating-ui's non-important inline `left`; :global because the
 	   panel is rendered by a child component (no scope class). */
+	/* phone-polish item 6: never past the visible bottom; scrolls by wheel and finger (the phone sheet, phone.css,
+	   owns its own height and scroll) */
+	:global(:root:not(.phone-shell) #avatar-dropdown) {
+		max-height: var(--pm-max-h, none);
+		overflow-y: auto;
+		overscroll-behavior: contain;
+		/* 98-int: the app's minimal scrollbar (use:minimalScroll on the panel), never the native bar (NOTES-38 #1) */
+		scrollbar-width: none;
+	}
 	:global(#avatar-dropdown) {
 		left: auto !important;
 		/* 45 N4: the circle's CURRENT right edge (placeDropdown measures it); 20 px = the corner's own inset */
@@ -1622,6 +1931,19 @@
 		font-size: var(--fs-section);
 		color: var(--text-muted);
 	}
+	.pm-group {
+		margin: 4px 14px 4px;
+		font-size: var(--fs-section);
+		font-weight: 600;
+		letter-spacing: var(--tracking-section);
+		text-transform: uppercase;
+		color: var(--text-faint);
+	}
+	/* profile-notify: the phone sheet drops the plugin's group headings too — except one that carries an action
+	   (uir-account: Account's "Manage", the menu's only road to Settings ▸ Account) */
+	.cloud-profile-phone :global(.tpc-pm-head:not(:has(.tpc-pm-head-action))) {
+		display: none;
+	}
 	.pm-card {
 		margin: 0 8px 8px;
 		border: 1px solid var(--border);
@@ -1632,7 +1954,7 @@
 	.pm-card > :global(* + *) {
 		border-top: 1px solid var(--border);
 	}
-	/* Profile settings: one card of SettingRow-shaped rows (label + hint left, control right) */
+	/* Edit profile: one card of SettingRow-shaped rows (label + hint left, control right) */
 	.pf-list {
 		margin: 4px 0;
 		border: 1px solid var(--border);
@@ -1662,6 +1984,11 @@
 	}
 	.pf-input {
 		width: min(260px, 100%);
+	}
+	.pf-copy {
+		display: flex;
+		align-items: center;
+		gap: 8px;
 	}
 	.pf-mono {
 		font-family: var(--font-ui-mono);

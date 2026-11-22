@@ -2,12 +2,23 @@
 	// 36-share (B13) — Tools ▸ Recording…: the options, then a slim progress bar over the viewport
 	// while it records (a modal would cover the very thing being filmed), then the finished file.
 	// App mounts this lazily while the dialog is open OR a recording is under way.
+	// 65 M4 (ships in 68 V9 "Share as video"): what to film grows a Timeline (a 48 sequence), the
+	// output a FORMAT (MP4 / WebM / GIF / WebP / PNG sequence) rendered frame by frame
+	// (offlineRender.js); the live MediaRecorder take stays as the fallback where WebCodecs is missing.
+	// 68 V9: the pill is the progress (percent, frames, time left) with Cancel, and it can shrink to a
+	// chip so the render goes on in the background while you keep working in the panels.
 	import ModalDialog from '../ui/ModalDialog.svelte';
+	import ExportProgress from '../ui/ExportProgress.svelte';
 	import { get } from 'svelte/store';
 	import { untrack } from 'svelte';
-	import { recordingOpen, recordingState, recordingPrefs, setRecordingPrefs } from '$lib/recording/recordingStores.js';
+	import { recordingOpen, recordingState, recordingPrefs, setRecordingPrefs, exportJob } from '$lib/recording/recordingStores.js';
 	import { startRecording, cancelRecording, resetRecording, downloadRecording, recordingBlocker } from '$lib/recording/recorder.js';
-	import { RESOLUTIONS, FPS_CHOICES, MIN_DURATION, MAX_DURATION, outputSize, bitrateFor, estimateBytes } from '$lib/recording/recordingCore.js';
+	import { RESOLUTIONS, FPS_CHOICES, MIN_DURATION, MAX_DURATION, EXPORT_FORMATS } from '$lib/recording/recordingCore.js';
+	import { rangesDuration } from '$lib/recording/frameClock.js';
+	import { exportPlan, estimateExportBytes, FORMAT_INFO, ALPHA_FORMATS, formatBytes } from '$lib/recording/videoExportCore.js';
+	import { startExport, exportBlocker, exportCaps } from '$lib/recording/offlineRender.js';
+	import { sequences } from '$lib/sequences';
+	import { findSequence } from '$lib/sequenceCore';
 	import { bookmarks } from '$lib/cameraBookmarks';
 	import { selectedObjects, globalRenderer } from '../../stores/sceneStore';
 	import { explorerClose } from '../../stores/appStore';
@@ -19,23 +30,65 @@
 		{ id: 'high', label: 'High (large file)' }
 	];
 
-	const p = $derived($recordingPrefs);
+	const rawPrefs = $derived($recordingPrefs);
+	// fix-film: Film's chosen shots (joined, or one file each) — the export films only those, so the length,
+	// the phone cap and the estimate all read the shots' length (the file being made), not the Length field
+	const job = $derived(rawPrefs.mode === 'timeline' && $exportJob && $exportJob.sequence === rawPrefs.sequence ? $exportJob : null);
+	const jobSeconds = $derived(job ? rangesDuration(job.queue[job.done] ?? []) : 0);
+	const p = $derived(job && jobSeconds > 0 ? { ...rawPrefs, duration: jobSeconds } : rawPrefs);
 	const st = $derived($recordingState);
 	const busy = $derived(st.status === 'preparing' || st.status === 'recording' || st.status === 'finishing');
 	const views = $derived(/** @type {any[]} */ ($bookmarks));
 	const hasSelection = $derived((/** @type {string[]} */ ($selectedObjects) || []).length > 0);
 	// re-read on every pref change and every views/selection change (the blocker reads them)
-	const blocker = $derived((void views.length, void p, busy ? '' : recordingBlocker(p)));
-	const estimate = $derived.by(() => {
+	/** @type {Record<string, any>} */
+	const seqMap = $derived($sequences);
+	const seqList = $derived(Object.values(seqMap).sort((a, b) => String(a.name).localeCompare(String(b.name))));
+	const seq = $derived(p.mode === 'timeline' ? findSequence($sequences, p.sequence) : null);
+	const caps = exportCaps();
+	const plan = $derived.by(() => {
 		const dom = /** @type {any} */ ($globalRenderer)?.domElement;
-		const out = outputSize(p.resolution, { w: dom?.width || 1280, h: dom?.height || 720 });
-		return { out, bytes: estimateBytes(bitrateFor(out, p.fps, p.quality), p.duration) };
+		return exportPlan(p, caps, { w: dom?.width || 1280, h: dom?.height || 720 }, seq);
+	});
+	const live = $derived(plan.path === 'mediarecorder');
+	// re-read on every pref change and every views/selection/timeline change (the blockers read them)
+	const blocker = $derived((void views.length, void seqList.length, void p, busy ? '' : live ? recordingBlocker(p) : exportBlocker(p)));
+	const estimate = $derived(estimateExportBytes(plan, p.quality));
+	const alphaOk = $derived(ALPHA_FORMATS.includes(p.format));
+	/** what the progress pill counts while an exact export runs: frames, not seconds */
+	let exportTotal = $state(0);
+	/** 68 V9: the pill shrinks to a chip so the render goes on in the background, out of the way */
+	let pillSmall = $state(false);
+	/** 68 V9: when the frames started coming (the time-left estimate runs from there) */
+	let renderStart = 0;
+	const percent = $derived(Math.round(Math.min(1, Math.max(0, st.progress)) * 100));
+	/** about how many seconds are left, from the frames done so far ('' until there are enough) */
+	const timeLeft = $derived.by(() => {
+		if (st.status !== 'recording' || !(st.progress > 0.04)) return '';
+		if (!renderStart) return '';
+		const spent = (performance.now() - renderStart) / 1000;
+		const left = Math.max(0, (spent / st.progress) * (1 - st.progress));
+		return left < 60 ? `about ${Math.max(1, Math.round(left))} s left` : `about ${Math.round(left / 60)} min left`;
+	});
+	$effect(() => {
+		const status = st.status;
+		untrack(() => {
+			if (status === 'recording' && !renderStart) renderStart = performance.now();
+			if (status !== 'recording' && status !== 'finishing') renderStart = 0;
+		});
 	});
 
-	/** @param {number} b */
-	function fmt(b) {
-		return b < 1024 * 1024 ? Math.max(1, Math.round(b / 1024)) + ' KB' : (b / 1048576).toFixed(1) + ' MB';
+	const fmt = formatBytes;
+
+	/** a timeline picked: the take follows its length @param {string} id */
+	function pickSequence(id) {
+		const s = findSequence(get(sequences), id);
+		setRecordingPrefs({ sequence: id, ...(s ? { duration: Math.min(MAX_DURATION, Math.max(MIN_DURATION, s.duration)) } : {}) });
 	}
+	// entering Timeline mode with nothing picked picks the only (or first) timeline
+	$effect(() => {
+		if (p.mode === 'timeline' && !seq && seqList.length) untrack(() => pickSequence(seqList[0].id));
+	});
 
 	// the dialog steps aside while recording and comes back with the result (or the reason)
 	let wasBusy = false;
@@ -49,13 +102,19 @@
 	});
 
 	async function start() {
-		const ok = await startRecording();
-		if (ok) recordingOpen.set(false);
+		exportTotal = live ? 0 : plan.frames;
+		pillSmall = false;
+		recordingOpen.set(false);
+		const ok = live ? await startRecording() : await startExport();
+		if (!ok) recordingOpen.set(true);
 	}
 
 	function close() {
 		recordingOpen.set(false);
-		if (!busy) resetRecording();
+		if (!busy) {
+			resetRecording();
+			exportJob.set(null);
+		}
 	}
 
 	function reveal() {
@@ -67,17 +126,20 @@
 </script>
 
 {#if busy}
-	<div id="recording-bar" class="rec-bar" role="status" aria-live="polite" data-status={st.status}>
-		<span class="rec-dot" aria-hidden="true"></span>
-		<span class="rec-label"
-			>{st.status === 'preparing' ? 'Getting ready…' : st.status === 'finishing' ? 'Finishing the file…' : 'Recording'}</span
-		>
-		<div class="rec-track"><div class="rec-fill" style:width="{Math.round(st.progress * 100)}%"></div></div>
-		<span id="recording-time" class="rec-time">{st.elapsed.toFixed(1)} / {st.duration.toFixed(1)} s</span>
-		{#if st.status !== 'finishing'}
-			<button id="recording-cancel" type="button" class="rec-cancel" onclick={cancelRecording}>Cancel</button>
-		{/if}
-	</div>
+	<!-- 95: the pill is the shared ExportProgress (Share a moment shows the same one) -->
+	<ExportProgress
+		status={st.status}
+		{percent}
+		label={st.status === 'preparing' ? 'Getting ready…' : st.status === 'finishing' ? 'Finishing the file…' : exportTotal ? 'Rendering' : 'Recording'}
+		ariaLabel={exportTotal ? 'Export progress' : 'Recording progress'}
+		detail={exportTotal ? `frame ${st.frames} / ${exportTotal}${timeLeft ? ' · ' + timeLeft : ''}` : `${st.elapsed.toFixed(1)} / ${st.duration.toFixed(1)} s`}
+		frames={exportTotal ? st.frames : undefined}
+		total={exportTotal || undefined}
+		shrinkable={!!exportTotal}
+		bind:small={pillSmall}
+		cancellable={st.status !== 'finishing'}
+		oncancel={cancelRecording}
+	/>
 {/if}
 
 <ModalDialog
@@ -94,18 +156,27 @@
 		<div id="recording-dialog" class="rec-wrap" data-mode={p.mode}>
 			{#if st.status === 'done' && st.result}
 				{@const r = st.result}
-				<div id="recording-result" class="rec-result" data-bytes={r.bytes} data-duration-ms={r.durationMs} data-item={r.itemId ?? ''}>
-					<!-- svelte-ignore a11y_media_has_caption -->
-					<video id="recording-video" class="rec-video" src={r.url} controls loop muted playsinline></video>
+				<div id="recording-result" class="rec-result" data-bytes={r.bytes} data-duration-ms={r.durationMs} data-item={r.itemId ?? ''} data-format={r.format ?? 'webm'} data-frames={r.frames ?? ''} data-mime={r.mime}>
+					{#if r.mime.startsWith('video/')}
+						<!-- svelte-ignore a11y_media_has_caption -->
+						<video id="recording-video" class="rec-video" src={r.url} controls loop muted playsinline></video>
+					{:else if r.mime.startsWith('image/')}
+						<img id="recording-image" class="rec-video rec-checker" src={r.url} alt="The exported loop" />
+					{/if}
 					<div class="rec-name"><strong>{r.name}</strong></div>
-					<div class="rec-dim">{(r.durationMs / 1000).toFixed(1)} s · {r.width} × {r.height} · {r.fps} fps · {fmt(r.bytes)}</div>
+					<div class="rec-dim">
+						{(r.durationMs / 1000).toFixed(1)} s · {r.width} × {r.height} · {r.fps} fps{#if r.frames} · {r.frames} frames{/if} · {fmt(r.bytes)}{#if r.encoder} · {r.encoder}{/if}
+					</div>
 					<div class="rec-dim">{r.savedNote}</div>
+					{#if job && job.queue.length > 1}
+						<div id="recording-job-progress" class="rec-dim">File {Math.min(job.done, job.queue.length)} of {job.queue.length}{job.done >= job.queue.length ? ' — every file is in Explorer ▸ Recordings' : ''}</div>
+					{/if}
 					<div class="rec-actions">
-						<button id="recording-download" type="button" class="rec-go" onclick={downloadRecording}>Download</button>
+						<button id="recording-download" type="button" class="rec-go" onclick={downloadRecording}>Download{r.mime === 'application/zip' ? ' .zip' : ''}</button>
 						{#if r.itemId}
 							<button id="recording-reveal" type="button" class="rec-ghost" onclick={reveal}>Show in Explorer</button>
 						{/if}
-						<button id="recording-again" type="button" class="rec-ghost" onclick={resetRecording}>Record again</button>
+						<button id="recording-again" type="button" class="rec-ghost" onclick={resetRecording}>{r.exact ? 'Export again' : 'Record again'}</button>
 					</div>
 				</div>
 			{:else}
@@ -113,6 +184,7 @@
 				<div class="tp-seg rec-seg" role="radiogroup" aria-label="Recording mode">
 					<button id="recording-mode-turntable" type="button" class="tp-seg-btn" aria-pressed={p.mode === 'turntable'} onclick={() => setRecordingPrefs({ mode: 'turntable' })}>Turntable</button>
 					<button id="recording-mode-flythrough" type="button" class="tp-seg-btn" aria-pressed={p.mode === 'flythrough'} onclick={() => setRecordingPrefs({ mode: 'flythrough' })}>Flythrough</button>
+					<button id="recording-mode-timeline" type="button" class="tp-seg-btn" aria-pressed={p.mode === 'timeline'} onclick={() => setRecordingPrefs({ mode: 'timeline' })}>Timeline</button>
 				</div>
 
 				{#if p.mode === 'turntable'}
@@ -134,6 +206,22 @@
 						</select>
 					</div>
 					<label class="rec-check"><input id="recording-frame" class="tp-check" type="checkbox" checked={p.frame} onchange={(e) => setRecordingPrefs({ frame: /** @type {any} */ (e.currentTarget).checked })} /> Frame it to fit (otherwise keep your distance)</label>
+				{:else if p.mode === 'timeline'}
+					{#if seqList.length}
+						<div class="rec-grid">
+							<label for="recording-sequence">Timeline</label>
+							<select id="recording-sequence" class="ui-input" value={seq?.id ?? ''} onchange={(e) => pickSequence(/** @type {any} */ (e.currentTarget).value)}>
+								{#each seqList as s (s.id)}<option value={s.id}>{s.name} ({s.duration.toFixed(1)} s)</option>{/each}
+							</select>
+						</div>
+						{#if job}
+							<p id="recording-film-job" class="rec-note">From Film: {job.label}. Only those shots are filmed, in recorded order.</p>
+						{:else}
+							<p class="rec-note">Films the timeline from its start, frame by frame: its camera shots (or your view where it has none), its clips at every frame. The length follows the timeline.</p>
+						{/if}
+					{:else}
+						<p id="recording-no-timeline" class="rec-note">Make a timeline first (Windows ▸ Timeline): camera shots and clips on a track. Then film it here.</p>
+					{/if}
 				{:else}
 					<p id="recording-views" class="rec-note" data-count={views.length}>
 						{#if views.length >= 2}
@@ -146,6 +234,10 @@
 
 				<div class="rec-label-row">Output</div>
 				<div class="rec-grid">
+					<label for="recording-format">Format</label>
+					<select id="recording-format" class="ui-input" value={p.format} onchange={(e) => setRecordingPrefs({ format: /** @type {any} */ (e.currentTarget).value })}>
+						{#each EXPORT_FORMATS as f (f)}<option value={f}>{/** @type {any} */ (FORMAT_INFO)[f].label}</option>{/each}
+					</select>
 					<label for="recording-resolution">Size</label>
 					<select id="recording-resolution" class="ui-input" value={p.resolution} onchange={(e) => setRecordingPrefs({ resolution: /** @type {any} */ (e.currentTarget).value })}>
 						{#each RESOLUTIONS as r (r.id)}<option value={r.id}>{r.label}</option>{/each}
@@ -156,7 +248,7 @@
 					</select>
 					<label for="recording-duration">Length</label>
 					<span class="rec-inline">
-						<input id="recording-duration" class="ui-input rec-num" type="number" min={MIN_DURATION} max={MAX_DURATION} step="0.5" value={p.duration} onchange={(e) => setRecordingPrefs({ duration: Number(/** @type {any} */ (e.currentTarget).value) })} />
+						<input id="recording-duration" class="ui-input rec-num" type="number" min={MIN_DURATION} max={MAX_DURATION} step="0.5" value={p.duration} disabled={!!job} title={job ? "The length of the shots Film is exporting" : undefined} onchange={(e) => setRecordingPrefs({ duration: Number(/** @type {any} */ (e.currentTarget).value) })} />
 						<span class="rec-dim">seconds</span>
 					</span>
 					<label for="recording-quality">Quality</label>
@@ -164,13 +256,21 @@
 						{#each QUALITIES as q (q.id)}<option value={q.id}>{q.label}</option>{/each}
 					</select>
 				</div>
+				<p class="rec-note">{/** @type {any} */ (FORMAT_INFO)[p.format].note}</p>
 				<label class="rec-check"><input id="recording-hide-helpers" class="tp-check" type="checkbox" checked={p.hideHelpers} onchange={(e) => setRecordingPrefs({ hideHelpers: /** @type {any} */ (e.currentTarget).checked })} /> Hide editor helpers (grid, gizmo, outlines, light and camera helpers)</label>
-				<div id="recording-estimate" class="rec-dim">{estimate.out.w} × {estimate.out.h} · about {fmt(estimate.bytes)} as webm</div>
+				<label class="rec-check" class:rec-off={!alphaOk} title={alphaOk ? '' : 'Only WebP and PNG keep transparency'}
+					><input id="recording-transparent" class="tp-check" type="checkbox" disabled={!alphaOk} checked={p.transparent && alphaOk} onchange={(e) => setRecordingPrefs({ transparent: /** @type {any} */ (e.currentTarget).checked })} /> Transparent background (no sky){alphaOk ? '' : ' — WebP and PNG only'}</label
+				>
+				<div id="recording-estimate" class="rec-dim" data-frames={plan.frames} data-path={plan.path}>
+					{plan.size.w} × {plan.size.h} · {plan.frames} frames at {plan.fps} fps · about {fmt(estimate)} as .{plan.ext}{live ? ' (live recording)' : ''}
+				</div>
+				{#each plan.notes as note (note)}<p class="rec-note rec-plan-note">{note}</p>{/each}
 
 				{#if st.status === 'error' && st.error}<p id="recording-error" class="rec-warn">{st.error}</p>{/if}
 				{#if blocker}<p id="recording-blocked" class="rec-warn">{blocker}</p>{/if}
-				<button id="recording-start" type="button" class="rec-go" disabled={!!blocker} onclick={start}>Start recording</button>
-				<p class="rec-note">The camera is yours while it records: nothing is sent to anyone in the session. The file goes to Explorer ▸ Recordings and can be downloaded.</p>
+				<button id="recording-start" type="button" class="rec-go" disabled={!!blocker} onclick={start}>{live ? 'Start recording' : 'Export'}</button>
+				{#if !live}<p id="recording-background-note" class="rec-note">It renders in the background: the dialog closes, a progress bar with Cancel stays at the bottom, and the panels keep working (the 3D view shows the render until it is done).</p>{/if}
+				<p class="rec-note">The camera is yours while it records: nothing is sent to anyone in the session. Videos and loops go to Explorer ▸ Recordings; everything can be downloaded.</p>
 			{/if}
 		</div>
 	{/if}
@@ -262,70 +362,18 @@
 	.rec-name {
 		word-break: break-all;
 	}
+	/* 65: a transparent loop shows its transparency */
+	.rec-checker {
+		object-fit: contain;
+		background: repeating-conic-gradient(var(--surface-2) 0% 25%, var(--surface-1) 0% 50%) 50% / 16px 16px;
+	}
+	.rec-off {
+		opacity: 0.55;
+		cursor: not-allowed;
+	}
 	.rec-actions {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 6px;
-	}
-	/* the progress pill: above the Controls HUD, under modals/toasts */
-	.rec-bar {
-		position: fixed;
-		left: 50%;
-		bottom: calc(var(--controls-inset, 0px) + 72px);
-		transform: translateX(-50%);
-		z-index: var(--z-hud, 45);
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		padding: 8px 12px;
-		border-radius: 999px;
-		background: var(--surface-1);
-		border: 1px solid var(--border);
-		color: var(--text);
-		font-size: 12px;
-		box-shadow: var(--shadow-window);
-		max-width: calc(100vw - 32px);
-	}
-	.rec-dot {
-		width: 10px;
-		height: 10px;
-		border-radius: 50%;
-		background: var(--live);
-		animation: rec-pulse 1.2s ease-in-out infinite;
-		flex: none;
-	}
-	@media (prefers-reduced-motion: reduce) {
-		.rec-dot {
-			animation: none;
-		}
-	}
-	@keyframes rec-pulse {
-		50% {
-			opacity: 0.35;
-		}
-	}
-	.rec-track {
-		width: 140px;
-		height: 6px;
-		border-radius: 3px;
-		background: var(--border-strong);
-		overflow: hidden;
-		flex: 1 1 80px;
-	}
-	.rec-fill {
-		height: 100%;
-		background: var(--accent);
-	}
-	.rec-time {
-		font-variant-numeric: tabular-nums;
-		white-space: nowrap;
-	}
-	.rec-cancel {
-		border: 1px solid var(--border);
-		background: transparent;
-		color: var(--text);
-		border-radius: 999px;
-		padding: 3px 10px;
-		cursor: pointer;
 	}
 </style>

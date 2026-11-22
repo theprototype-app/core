@@ -64,6 +64,33 @@ describe('nodesync during a join', () => {
 		objectsGroup.set(null);
 	});
 
+	// 54i row g: a host whose graphs were empty at the join sent no snapshot and no nodesync, so its
+	// first nodesync came with its first object graph, minutes later — and was held 15 s as if the
+	// join were still on (a new graph reached the peer after ~26 s on a cloud build).
+	it('times the join window from the link: a peer that had no graphs at the join is compared at once later', () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(20_000_000);
+		N.noteNodeSyncHandshake?.('host'); // the join: the link opened, the peer had nothing to send
+		vi.setSystemTime(20_000_000 + 60_000); // a minute later the peer makes its first graph
+		sync();
+		expect(sent.map((m) => m.type)).toEqual(['getnodes']);
+	});
+
+	it('still holds a nodesync that arrives right after our ask (the join is not drift)', () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(30_000_000);
+		sync(); // through an approval: the host's nodesync beats our ask
+		vi.setSystemTime(30_000_000 + N.NODESYNC_HANDSHAKE_MS - 10);
+		N.noteNodeSyncHandshake('host'); // our (deferred) ask re-arms the window
+		vi.setSystemTime(30_000_000 + N.NODESYNC_HANDSHAKE_MS + 10);
+		sync();
+		expect(sent).toEqual([]);
+		N.noteNodesSnapshot('host');
+		N.noteNodeSyncHandshake('host'); // a later ask after the snapshot holds nothing back
+		sync();
+		expect(sent.map((m) => m.type)).toEqual(['getnodes']);
+	});
+
 	it('forgets a departed peer, so its next join is a handshake again', () => {
 		N.noteNodesSnapshot('host');
 		N.forgetNodeSyncPeer('host');

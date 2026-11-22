@@ -6,7 +6,7 @@
 // flow clock (the same (data, time) twice gives the same number).
 const h = require('./helpers.cjs');
 const inPage = (page, body, arg) =>
-	page.evaluate(([src, a]) => Object.getPrototypeOf(async function () {}).constructor('s', 'ad', 'ap', 'mc', 'fr', 'nh', 'arg', src)(window.__stores, window.__stores.audioDevices, window.__stores.audioPatch, window.__stores.musicClock, window.__stores.flowRuntime, window.__stores.nodesHandler, a), [body, arg ?? null]);
+	page.evaluate(([src, a]) => Object.getPrototypeOf(async function () {}).constructor('s', 'ad', 'ap', 'mc', 'fr', 'nh', 'arg', src)(window.__tp?.test.v1, window.__tp.test.v1.audioDevices, window.__tp.test.v1.audioPatch, window.__tp.test.v1.musicClock, window.__tp.test.v1.flowRuntime, window.__tp.test.v1.nodesHandler, a), [body, arg ?? null]);
 const KINDS =
 	"window.__flParams = {}; window.__flNotes = [];" +
 	"ad.registerAudioDevice({ kind: 'fl-osc', label: 'FL osc', ports: { in: [], out: [{ id: 'out', kind: 'audio' }] }," +
@@ -14,7 +14,7 @@ const KINDS =
 	"  build(ctx, node, p) { const osc = ctx.createOscillator(); osc.type = 'sawtooth'; osc.frequency.value = 220; const f = ctx.createBiquadFilter(); f.frequency.value = 200 + p.cutoff * 4000; const amp = ctx.createGain(); amp.gain.value = p.level; osc.connect(f); f.connect(amp); osc.start(); return { output: amp, f, amp, osc, dispose() { osc.stop(); osc.disconnect(); amp.disconnect(); } }; }," +
 	"  onParam(hd, k, v) { window.__flParams[k] = v; if (k === 'cutoff') hd.f.frequency.value = 200 + v * 4000; if (k === 'level') hd.amp.gain.value = v; }," +
 	"  onNote(hd, ev) { window.__flNotes.push(ev.note); } });" +
-	"ad.registerAudioDevice({ kind: 'fl-spk', label: 'FL speaker', ports: { in: [{ id: 'in', kind: 'audio' }], out: [] }, params: [], build(ctx) { const g = ctx.createGain(); g.connect(window.__stores.audioEngine.bus('instruments')); return { input: g, dispose() { g.disconnect(); } }; } });" +
+	"ad.registerAudioDevice({ kind: 'fl-spk', label: 'FL speaker', ports: { in: [{ id: 'in', kind: 'audio' }], out: [] }, params: [], build(ctx) { const g = ctx.createGain(); g.connect(window.__tp.test.v1.audioEngine.bus('instruments')); return { input: g, dispose() { g.disconnect(); } }; } });" +
 	"window.__mk = (node, g) => { nh.createFlowNode(node, g); let p; s.peers.subscribe((x) => (p = x))(); if (p) p.send({ type: 'nodecreate', node: nh.serializeNode(node), graphId: g }); }; window.__wire = (edge, g) => { nh.createFlowEdge(edge, g); let p; s.peers.subscribe((x) => (p = x))(); if (p) p.send({ type: 'edgecreate', edge: nh.serializeEdge(edge), graphId: g }); };" +
 	'return ad.devicesDebug().kinds';
 const cutoffOn = (page, uuid) => inPage(page, 'return ad.deviceOf(ad.findDeviceObject(arg))?.params.cutoff ?? null', uuid);

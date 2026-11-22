@@ -56,36 +56,36 @@ const h = require('./helpers.cjs');
 const at = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.levels.currentLevel.subscribe((x) => (v = x))();
+		window.__tp.test.v1.levels.currentLevel.subscribe((x) => (v = x))();
 		return v;
 	});
 
 const scenesOfPeers = (p) =>
 	p.page.evaluate(() => {
 		let m;
-		window.__stores.peerScenes.peerScenes.subscribe((x) => (m = x))();
+		window.__tp.test.v1.peerScenes.peerScenes.subscribe((x) => (m = x))();
 		return Object.fromEntries(Object.entries(m).map(([id, r]) => [id, r.scene]));
 	});
 
 const objectCount = (p) =>
 	p.page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		return g?.children.length ?? 0;
 	});
 
 const historyOf = (p, name) =>
 	p.page.evaluate((n) => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((x) => (m = x))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((x) => (m = x))();
 		return m.scenes[n]?.history ?? [];
 	}, name);
 
 const addBox = (p) =>
 	p.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1100));
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.objectActions.deselectObject();
 	});
 
 /** Put a raw message on the wire, bypassing every sender — the only way to reach a
@@ -93,7 +93,7 @@ const addBox = (p) =>
 const sendRaw = (from, toId, msg) =>
 	from.page.evaluate(([id, m]) => {
 		let p;
-		window.__stores.peers.subscribe((x) => (p = x))();
+		window.__tp.test.v1.peers.subscribe((x) => (p = x))();
 		const conn = p.connections?.[id];
 		if (!conn?.open) return false;
 		conn.send(m);
@@ -102,7 +102,7 @@ const sendRaw = (from, toId, msg) =>
 
 const wipe = async (p) => {
 	await p.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const uuids = (g?.children ?? []).map((c) => c.uuid);
@@ -127,10 +127,10 @@ h.run(async () => {
 	// joiner in no room at all — while the objects arrived perfectly. The name was the only
 	// thing missing, which is exactly why nobody files this as a sync bug.
 	const A = await h.setupPage(browser, 'A');
-	await A.page.waitForFunction(() => !!window.__stores?.peerScenes, { timeout: 30000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.peerScenes, { timeout: 30000 });
 	await wipe(A);
 	await addBox(A);
-	await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Arena'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Arena'));
 	await h.eventually(
 		() => historyOf(A, 'Arena'),
 		(x) => x.length === 1,
@@ -143,7 +143,7 @@ h.run(async () => {
 	);
 
 	const B = await h.setupPage(browser, 'B');
-	await B.page.waitForFunction(() => !!window.__stores?.peerScenes, { timeout: 30000 });
+	await B.page.waitForFunction(() => !!window.__tp?.test.v1?.peerScenes, { timeout: 30000 });
 	h.check((await at(B)) === null, 'premise: the joiner has never travelled — no identity at all');
 	h.check((await objectCount(B)) === 0, 'premise: …and an empty world, so it brought nothing');
 	await h.connect(B, A);
@@ -186,11 +186,11 @@ h.run(async () => {
 	h.check(
 		(await A.page.evaluate((id) => {
 			let ps, cl;
-			window.__stores.peerScenes.peerScenes.subscribe((v) => (ps = v))();
-			window.__stores.levels.currentLevel.subscribe((v) => (cl = v))();
+			window.__tp.test.v1.peerScenes.peerScenes.subscribe((v) => (ps = v))();
+			window.__tp.test.v1.levels.currentLevel.subscribe((v) => (cl = v))();
 			// the row has to be POPULATED for this to mean anything — an empty scene on
 			// either side is a no-evidence pass, not agreement
-			return (ps[id]?.scene ?? '') + '|' + window.__stores.peerScenes.elsewhereThan(ps, cl?.name ?? '', id);
+			return (ps[id]?.scene ?? '') + '|' + window.__tp.test.v1.peerScenes.elsewhereThan(ps, cl?.name ?? '', id);
 		}, B.id)) === 'Arena|',
 		'…and is NOT read as elsewhere — evidence that agrees is not evidence of a split'
 	);
@@ -212,10 +212,10 @@ h.run(async () => {
 	// exactly where it was — taking the host's name there would label a merge after one of
 	// its two halves.
 	const C = await h.setupPage(browser, 'C');
-	await C.page.waitForFunction(() => !!window.__stores?.peerScenes, { timeout: 30000 });
+	await C.page.waitForFunction(() => !!window.__tp?.test.v1?.peerScenes, { timeout: 30000 });
 	await wipe(C);
 	await addBox(C);
-	await C.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Depot'));
+	await C.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Depot'));
 	await h.eventually(
 		() => historyOf(C, 'Depot'),
 		(x) => x.length === 1,
@@ -223,7 +223,7 @@ h.run(async () => {
 	);
 
 	const D = await h.setupPage(browser, 'D');
-	await D.page.waitForFunction(() => !!window.__stores?.peerScenes, { timeout: 30000 });
+	await D.page.waitForFunction(() => !!window.__tp?.test.v1?.peerScenes, { timeout: 30000 });
 	await addBox(D); // the joiner's OWN work — note /create box stamps dynamic physics
 	h.check((await objectCount(D)) >= 1, 'premise: the joiner brought an object of its own');
 	await h.connect(D, C);
@@ -285,10 +285,10 @@ h.run(async () => {
 	// latest-wins singleton, so the peer that saves LAST owns the shared copy. Arena is
 	// saved second on purpose, which is what lets §5 resolve it by NAME on the joiner.
 	const F = await h.setupPage(browser, 'F');
-	await F.page.waitForFunction(() => !!window.__stores?.peerScenes, { timeout: 30000 });
+	await F.page.waitForFunction(() => !!window.__tp?.test.v1?.peerScenes, { timeout: 30000 });
 	await wipe(F);
 	await addBox(F);
-	await F.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Beta'));
+	await F.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Beta'));
 	await h.eventually(
 		() => at(F),
 		(v) => v?.name === 'Beta' && !!v?.hash,
@@ -297,10 +297,10 @@ h.run(async () => {
 	const betaHash = (await at(F))?.hash;
 
 	const E = await h.setupPage(browser, 'E');
-	await E.page.waitForFunction(() => !!window.__stores?.peerScenes, { timeout: 30000 });
+	await E.page.waitForFunction(() => !!window.__tp?.test.v1?.peerScenes, { timeout: 30000 });
 	await wipe(E);
 	await addBox(E);
-	await E.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Arena'));
+	await E.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Arena'));
 	await h.eventually(
 		() => at(E),
 		(v) => v?.name === 'Arena' && !!v?.hash,
@@ -313,7 +313,7 @@ h.run(async () => {
 	const askOn = (peer) =>
 		peer.page.evaluate(() => {
 			let list;
-			window.__stores.toastStore.subscribe((v) => (list = v))();
+			window.__tp.test.v1.toastStore.subscribe((v) => (list = v))();
 			const entry = list.find((e) => e && e.id === 'share-or-stash');
 			if (!entry) return null;
 			return { text: entry.text, labels: (entry.actions ?? []).map((a) => a.label), sticky: !!entry.sticky, noClose: !!entry.noClose };
@@ -373,14 +373,14 @@ h.run(async () => {
 	// people shout into an empty scene.
 	await E.page.evaluate(() => {
 		let p;
-		window.__stores.peers.subscribe((v) => (p = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (p = v))();
 		p.sendMessage('across the rooms');
 	});
 	await h.eventually(
 		() =>
 			F.page.evaluate(() => {
 				let m;
-				window.__stores.messages.subscribe((v) => (m = v))();
+				window.__tp.test.v1.messages.subscribe((v) => (m = v))();
 				// addMessage stores the body as `text` — `message` is the WIRE field
 				return m.some((row) => (row?.text ?? '') === 'across the rooms');
 			}),
@@ -392,12 +392,12 @@ h.run(async () => {
 	const presetOf = (peer) =>
 		peer.page.evaluate(() => {
 			let e;
-			window.__stores.environment.environment.subscribe((v) => (e = v))();
+			window.__tp.test.v1.environment.environment.subscribe((v) => (e = v))();
 			return e?.preset ?? '';
 		});
 	const beforePreset = await presetOf(F);
 	h.check(beforePreset !== 'sunset', `premise: the joiner is not already on the preset under test (${beforePreset})`);
-	await E.page.evaluate(() => window.__stores.environment.setEnvironment('sunset'));
+	await E.page.evaluate(() => window.__tp.test.v1.environment.setEnvironment('sunset'));
 	await E.page.waitForTimeout(1800);
 	h.check((await presetOf(E)) === 'sunset', 'premise: the host really changed its own sky');
 	h.check(
@@ -414,7 +414,7 @@ h.run(async () => {
 	// different half of the gate by BREAKING it in the page.
 	const roomScoped = (peer, op, type) =>
 		peer.page.evaluate(([o, t]) => {
-			const set = window.__stores.peerScenes.ROOM_SCOPED;
+			const set = window.__tp.test.v1.peerScenes.ROOM_SCOPED;
 			if (o === 'delete') set.delete(t);
 			else set.add(t);
 			return set.has(t);
@@ -457,7 +457,7 @@ h.run(async () => {
 	// (d) and a REAL replicated clear, sent by a peer whose send gate is disarmed: the
 	//     receive guard alone is enough. The two halves are not one mechanism twice.
 	h.check((await roomScoped(F, 'delete', 'clearscene')) === false, 'premise: the sender will now broadcast it');
-	await F.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await F.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	await F.page.waitForTimeout(2000);
 	h.check((await objectCount(F)) === 0, 'premise: the sender really cleared its own scene');
 	h.check(
@@ -469,7 +469,7 @@ h.run(async () => {
 	// re-seed Arena and re-save it, so §5 has a file whose contents are a SUBSET of the
 	// live room — which is the whole point of the arrival re-sync
 	await addBox(E);
-	await E.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Arena'));
+	await E.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Arena'));
 	await h.eventually(
 		() => historyOf(E, 'Arena'),
 		(hist) => hist.length >= 1,
@@ -490,10 +490,10 @@ h.run(async () => {
 	const gameOf = (peer) =>
 		peer.page.evaluate(() => {
 			let g;
-			window.__stores.gameState.gameState.subscribe((v) => (g = v))();
+			window.__tp.test.v1.gameState.gameState.subscribe((v) => (g = v))();
 			return g?.state ?? '';
 		});
-	await E.page.evaluate(() => window.__stores.gameState.setGameState('playing'));
+	await E.page.evaluate(() => window.__tp.test.v1.gameState.setGameState('playing'));
 	await E.page.waitForTimeout(1800);
 	h.check((await gameOf(E)) === 'playing', 'premise: a round is running in Arena');
 	h.check(
@@ -509,7 +509,7 @@ h.run(async () => {
 		25000
 	);
 
-	const travelled = await F.page.evaluate(() => window.__stores.levels.travelToScene('Arena'));
+	const travelled = await F.page.evaluate(() => window.__tp.test.v1.levels.travelToScene('Arena'));
 	h.check(travelled === true, 'the joiner travels to Arena — the bytes pulled from a peer in another room');
 	await h.eventually(
 		() => at(F),
@@ -520,7 +520,7 @@ h.run(async () => {
 	const uuidsOf = (peer) =>
 		peer.page.evaluate(() => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			return (g?.children ?? []).map((c) => c.uuid).sort();
 		});
 	await h.eventually(
@@ -545,7 +545,7 @@ h.run(async () => {
 		(await gameOf(F)) === 'menu',
 		`the traveller keeps the state it CARRIED — arriving does not adopt the room's round (${await gameOf(F)})`
 	);
-	await E.page.evaluate(() => window.__stores.gameState.setGameState('over'));
+	await E.page.evaluate(() => window.__tp.test.v1.gameState.setGameState('over'));
 	await h.eventually(
 		() => gameOf(F),
 		(v) => v === 'over',
@@ -565,7 +565,7 @@ h.run(async () => {
 	// Isolation is not a one-way door: leaving re-arms the gate, and coming back re-runs
 	// the re-sync. By hash rather than by name here, because Beta lives only in THIS
 	// peer's library — the manifest is a latest-wins singleton and Arena's owner won it.
-	const back = await F.page.evaluate((hash) => window.__stores.levels.travelToLevel(hash, 'Beta'), betaHash);
+	const back = await F.page.evaluate((hash) => window.__tp.test.v1.levels.travelToLevel(hash, 'Beta'), betaHash);
 	h.check(back === true, 'the traveller goes back to Beta');
 	await h.eventually(
 		() => at(F),
@@ -581,7 +581,7 @@ h.run(async () => {
 	);
 
 	h.check(
-		(await F.page.evaluate(() => window.__stores.levels.travelToScene('Arena'))) === true,
+		(await F.page.evaluate(() => window.__tp.test.v1.levels.travelToScene('Arena'))) === true,
 		'and back in again'
 	);
 	await h.eventually(
@@ -599,7 +599,7 @@ h.run(async () => {
 	// that matters: an empty joiner has nothing to decide about, so no verdict any peer
 	// recorded earlier can strand it without a name.
 	const G = await h.setupPage(browser, 'G');
-	await G.page.waitForFunction(() => !!window.__stores?.peerScenes, { timeout: 30000 });
+	await G.page.waitForFunction(() => !!window.__tp?.test.v1?.peerScenes, { timeout: 30000 });
 	await wipe(G);
 	h.check((await objectCount(G)) === 0, 'premise: a third peer, empty and nameless');
 	await h.connect(G, E);

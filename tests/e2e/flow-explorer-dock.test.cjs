@@ -13,10 +13,10 @@ const state = (page) =>
 		const explI = document.querySelector('#explorer-slot svg');
 		const ON = 'text-accent';
 		let active, flowClosed, explClosed, occ;
-		window.__stores.bottomDock.bottomDockActive.subscribe((v) => (active = v))();
-		window.__stores.bottomDock.dockOccupants.subscribe((v) => (occ = v))();
-		window.__stores.flowGraphClose.subscribe((v) => (flowClosed = v))();
-		window.__stores.explorerClose.subscribe((v) => (explClosed = v))();
+		window.__tp.test.v1.bottomDock.bottomDockActive.subscribe((v) => (active = v))();
+		window.__tp.test.v1.bottomDock.dockOccupants.subscribe((v) => (occ = v))();
+		window.__tp.test.v1.flowGraphClose.subscribe((v) => (flowClosed = v))();
+		window.__tp.test.v1.explorerClose.subscribe((v) => (explClosed = v))();
 		// the strip of the dock panel actually on screen (both containers stay
 		// mounted; the covered one carries a `hidden` class)
 		const box = [...document.querySelectorAll('#flow-list, #explorer-list')].find(
@@ -43,11 +43,11 @@ h.run(async () => {
 		localStorage.setItem('explorerDocked', 'true');
 	});
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.bottomDock, { timeout: 30000 });
 	await A.page.evaluate(() => {
-		window.__stores.flowGraphClose.set(false);
-		window.__stores.explorerClose.set(false);
-		window.__stores.bottomDock.bottomDockActive.set('flow');
+		window.__tp.test.v1.flowGraphClose.set(false);
+		window.__tp.test.v1.explorerClose.set(false);
+		window.__tp.test.v1.bottomDock.bottomDockActive.set('flow');
 	});
 	await A.page.waitForTimeout(500);
 	let s = await state(A.page);

@@ -19,13 +19,13 @@ async function routeStarterPack(peer) {
 		const type = /\.json$/.test(file) ? 'application/json' : /\.glb$/.test(file) ? 'model/gltf-binary' : 'image/png';
 		return route.fulfill({ contentType: type, body: fs.readFileSync(file) });
 	});
-	await peer.page.evaluate(() => window.__stores.packs.loadPacks());
+	await peer.page.evaluate(() => window.__tp.test.v1.packs.loadPacks());
 }
 
-const pd = (page) => page.evaluate(() => window.__stores.placeDrag.state());
+const pd = (page) => page.evaluate(() => window.__tp.test.v1.placeDrag.state());
 const counts = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g, undo;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		s.history.undoStack.subscribe((v) => (undo = v))();
@@ -37,15 +37,15 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 	const { page } = A;
 	await routeStarterPack(A);
-	await page.evaluate(() => window.__stores.explorerClose.set(false));
+	await page.evaluate(() => window.__tp.test.v1.explorerClose.set(false));
 	await page.waitForTimeout(500);
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set('pack:default'));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set('pack:default'));
 	const duck = page.locator('.explorer-card', { hasText: 'Duck' }).first();
 	const logo = page.locator('.explorer-card', { hasText: 'Logo' }).first();
 	await duck.waitFor({ timeout: 15000 });
 	const canvas = await page.evaluate(() => {
 		let renderer;
-		window.__stores.globalRenderer.subscribe((v) => (renderer = v))();
+		window.__tp.test.v1.globalRenderer.subscribe((v) => (renderer = v))();
 		const r = renderer.domElement.getBoundingClientRect();
 		const pick = (fy) => ({ x: Math.round(r.left + r.width * 0.5), y: Math.round(r.top + r.height * fy) });
 		return { ground: pick(0.5), sky: pick(0.02), top: r.top };
@@ -70,7 +70,7 @@ h.run(async () => {
 	const [p1, p2] = s?.placements ?? [];
 	const gap = p1 && p2 ? Math.hypot(p1.position[0] - p2.position[0], p1.position[2] - p2.position[2]) : 0;
 	h.check(gap > 1, 'each item has its own ghost, side by side in a row (' + gap.toFixed(2) + ' m apart)');
-	h.check((await page.evaluate(() => window.__stores.placeDrag.ghostInfo().items.length)) === 2, 'two ghosts are drawn');
+	h.check((await page.evaluate(() => window.__tp.test.v1.placeDrag.ghostInfo().items.length)) === 2, 'two ghosts are drawn');
 	await page.mouse.up();
 	await h.eventually(() => counts(page), (c) => c.objects === before.objects + 2, 'releasing places both');
 	let after = await counts(page);
@@ -84,7 +84,7 @@ h.run(async () => {
 	// ---- 2. Alt = the camera focus point ----------------------------------------------------
 	const target = await page.evaluate(() => {
 		let c;
-		window.__stores.orbitControls.subscribe((v) => (c = v))();
+		window.__tp.test.v1.orbitControls.subscribe((v) => (c = v))();
 		return c?.target?.toArray() ?? null;
 	});
 	await pickUp(duck, canvas.ground);
@@ -106,7 +106,7 @@ h.run(async () => {
 	// ---- 3. nowhere to place it: red, and the release does nothing ---------------------------
 	// look at the horizon, so the upper half of the view is sky (the default view sees ground everywhere)
 	const sky = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let c, cam, renderer;
 		s.orbitControls.subscribe((v) => (c = v))();
 		s.globalCamera.subscribe((v) => (cam = v))();
@@ -134,7 +134,7 @@ h.run(async () => {
 	await page.waitForTimeout(800);
 	const c1 = await counts(page);
 	h.check(c1.objects === c0.objects && c1.undo === c0.undo, 'releasing there places nothing, no undo entry');
-	h.check((await page.evaluate(() => window.__stores.placeDrag.last())).end === 'invalid', 'the drag ended as invalid');
+	h.check((await page.evaluate(() => window.__tp.test.v1.placeDrag.last())).end === 'invalid', 'the drag ended as invalid');
 
 	await h.finish(browser);
 });

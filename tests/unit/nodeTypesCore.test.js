@@ -76,3 +76,17 @@ describe('86 T1 describe_node_types', () => {
 		expect(paramsOf({ defaults: { c: '#ff0000' } })).toEqual([{ key: 'c', type: 'color', default: '#ff0000' }]);
 	});
 });
+
+describe('2.0 N2 describe_node_types behind the codeView flag', () => {
+	it('flag off: no code anywhere (contract 1.9 shape)', () => {
+		const r = describeNodeTypes({ types: ['latch'] }, SRC);
+		expect(r.types[0].code).toBeUndefined();
+		expect(r.code).toBeUndefined();
+	});
+	it('flag on: each card says how the type reads in the code view', () => {
+		const r = describeNodeTypes({ types: ['latch', 'time'] }, { ...SRC, codeView: true });
+		expect(r.types[0].code).toBe('latch({ perRound?, initial? }, { set: event, reset: event, toggle: event }) -> boolean');
+		expect(r.types[1].code).toBe('time({ mode?, rate? }) -> number');
+		expect(r.code).toMatch(/list_scene \{flow\}/);
+	});
+});

@@ -5,6 +5,7 @@ import { peers, showToast } from '../stores/appStore';
 import { recordEntry } from './history';
 import { flyTo } from './objectActions';
 import { withMarkersHidden } from './helperLayer';
+import { createRenderTarget, readPixels } from './render/renderTargets.js'; // 101 F3: the one factory
 
 // Scene CAMERA objects (16-P5). A camera is a normal replicated MARKER MESH
 // (`/create Camera` / `/create CameraOrtho`, body from customGeometries) whose
@@ -179,7 +180,7 @@ export function setCameraFromView(uuid) {
  * what the guide shows rather than the current window shape.
  * @param {string} uuid @param {number} [height] output height in px
  */
-export function captureThroughCamera(uuid, height = 1080) {
+export async function captureThroughCamera(uuid, height = 1080) {
 	const object = findCameraObject(uuid);
 	/** @type {any} */
 	const renderer = get(globalRenderer);
@@ -190,7 +191,7 @@ export function captureThroughCamera(uuid, height = 1080) {
 	const ratio = aspectRatio(spec.aspect) || renderer.domElement.width / renderer.domElement.height || 16 / 9;
 	const width = Math.round(height * ratio);
 	const camera = buildCamera(object, ratio);
-	const target = new THREE.WebGLRenderTarget(width, height, {
+	const target = createRenderTarget(width, height, {
 		colorSpace: THREE.SRGBColorSpace
 	});
 	const previousTarget = renderer.getRenderTarget();
@@ -200,7 +201,7 @@ export function captureThroughCamera(uuid, height = 1080) {
 	withMarkersHidden(() => renderer.render(scene, camera));
 	renderer.setRenderTarget(previousTarget);
 	const pixels = new Uint8Array(width * height * 4);
-	renderer.readRenderTargetPixels(target, 0, 0, width, height, pixels);
+	await readPixels(renderer, target, 0, 0, width, height, pixels);
 	target.dispose();
 
 	// WebGL rows come bottom-up — flip into a canvas, then download

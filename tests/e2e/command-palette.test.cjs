@@ -8,7 +8,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
-	const st = (name) => page.evaluate((n) => new Promise((r) => window.__stores[n].subscribe(r)()), name);
+	const st = (name) => page.evaluate((n) => new Promise((r) => window.__tp.test.v1[n].subscribe(r)()), name);
 	const isOpen = () => page.evaluate(() => !!document.querySelector('#command-palette'));
 
 	// focus the viewport, not a text field — Ctrl+K is a global shortcut
@@ -24,6 +24,39 @@ h.run(async () => {
 		await page.evaluate(() => document.activeElement?.id === 'command-palette-input'),
 		'the search field has focus when the palette opens'
 	);
+	// showhide-v8 §5 — the palette is a PANEL: field above list, a background of its own, at every width. A merge left the
+	// panel styling inside the on-screen-keyboard rule, so without a keyboard the field and the list sat side by side on
+	// the bare scene (the owner's shots on desktop, unfolded and folded).
+	const panelShape = () =>
+		page.evaluate(() => {
+			const cp = document.getElementById('command-palette');
+			const f = document.querySelector('#command-palette .cp-search')?.getBoundingClientRect();
+			const l = document.getElementById('command-palette-list')?.getBoundingClientRect();
+			const cs = cp ? getComputedStyle(cp) : null;
+			const bg = cs?.backgroundColor ?? '';
+			return {
+				dir: cs?.flexDirection,
+				bg,
+				painted: !!bg && bg !== 'transparent' && !/rgba\(.*,\s*0\)$/.test(bg),
+				stacked: !!f && !!l && l.top >= f.bottom - 1 && Math.abs(l.left - f.left) < 4,
+				kb: document.documentElement.classList.contains('kb-open')
+			};
+		});
+	const vp0 = page.viewportSize();
+	const isPanel = (s) => s.dir === 'column' && s.painted && s.stacked;
+	for (const [label, vp] of [['desktop', { width: 1600, height: 950 }], ['unfolded', { width: 1080, height: 1200 }], ['folded', { width: 412, height: 915 }]]) {
+		await page.setViewportSize(vp);
+		await page.waitForTimeout(250);
+		const s = await panelShape();
+		h.check(!s.kb && isPanel(s), `palette is a panel (field above list, own background) on ${label} (${JSON.stringify(s)})`);
+	}
+	// counterfactual: the side-by-side layout the bug drew fails the same check
+	await page.evaluate(() => document.getElementById('command-palette').style.setProperty('flex-direction', 'row'));
+	h.check(!isPanel(await panelShape()), '(counterfactual) a row layout is caught');
+	await page.evaluate(() => document.getElementById('command-palette').style.removeProperty('flex-direction'));
+	if (vp0) await page.setViewportSize(vp0);
+	await page.waitForTimeout(250);
+
 	const listed = await page.evaluate(() => {
 		const kinds = new Set([...document.querySelectorAll('#command-palette .cp-item')].map((b) => b.dataset.kind));
 		return [...kinds];
@@ -51,7 +84,7 @@ h.run(async () => {
 	await page.keyboard.press('Enter');
 	await h.eventually(isOpen, (v) => v === false, 'Enter closes the palette');
 	await h.eventually(() => st('transformMode'), (v) => v === 'scale', 'Enter ran the Scale command (transformMode = scale)');
-	await page.evaluate(() => window.__stores.transformMode.set('translate'));
+	await page.evaluate(() => window.__tp.test.v1.transformMode.set('translate'));
 
 	// --- arrows move the highlight ---
 	await page.keyboard.press('Control+K');
@@ -84,7 +117,7 @@ h.run(async () => {
 	await page.keyboard.press('Enter');
 	await h.eventually(() => st('explorerClose'), (v) => v === !exBefore, 'Enter toggled the Explorer');
 	// put it back
-	await page.evaluate((v) => window.__stores.explorerClose.set(v), exBefore);
+	await page.evaluate((v) => window.__tp.test.v1.explorerClose.set(v), exBefore);
 
 	// --- a setting: "Theme" opens Settings with the row's name in Settings' own search ---
 	await page.keyboard.press('Control+K');
@@ -118,7 +151,7 @@ h.run(async () => {
 	h.check(typeof afterSecond === 'boolean', 'a second Ctrl+K from inside the palette is handled without error', afterSecond);
 	if (afterSecond) await page.keyboard.press('Escape');
 	await h.eventually(isOpen, (v) => v === false, 'the palette closes');
-	await page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 
 	// --- a click on the scrim closes it ---
 	if (canvas) await page.mouse.click(canvas.x, canvas.y);

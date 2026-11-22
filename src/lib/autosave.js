@@ -1,12 +1,15 @@
+import { parseCheckedObject, embeddedOnlyManager } from './loadGuard.js';
 // @ts-ignore - no bundled three type declarations (project-wide)
-import * as THREE from 'three';
+import { groupUuidsOf, regroup } from './groupRestore.js';
 import { rejoinOutcome } from './rejoin'; // fix-agenttest 6
 import { get, writable } from 'svelte/store';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { objectsGroup, globalCamera, globalScene, orbitControls, pokeScene, beginSceneBatch, endSceneBatch } from '../stores/sceneStore';
-import { flowGraphs, restoreGraphs, SCENE_GRAPH } from '../stores/flowStore';
+import { flowGraphs, restoreGraphs, SCENE_GRAPH, customNodeDefs } from '../stores/flowStore';
 import { serializeGraphs } from './flowGraphs';
+import { customNodeDefsSnapshot, customNodeDefsRestore } from './customNodes'; // 2.0-n3c
+import { stampNodeVersions } from './nodes/index.js'; // 2.0-n3c
 import { flowViewsSnapshot } from './flowView';
 import { serializeNode, serializeEdge } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
@@ -24,6 +27,7 @@ import { startSimOnLoad } from './sim/simOnLoad.js';
 import { animatedImportsSnapshot, animatedImportsRestore } from './animatedImports';
 import { animations, animationsSnapshot, animationsRestore } from './animationPreview';
 import { scenePost, scenePostSnapshot, scenePostRestore } from './scenePost';
+import { bakeRecord, sceneBakeSnapshot, sceneBakeRestore } from './sceneBake'; // 98 P1
 import { environment, environmentSnapshot, environmentRestore } from './environment';
 import { scenePhysicsState_, scenePhysicsSnapshot, scenePhysicsRestore } from './scenePhysics';
 import { transport, transportSnapshot, transportRestore } from './musicClock';
@@ -42,7 +46,7 @@ import { log, registerDiagnosticsSection } from './diagnostics';
 // #20 P5: selection + edit session + panel layout, restored only on an EXPLICIT restore
 import { captureEditResume, applyEditResume } from './editResume';
 import { disposeTree, keepSet } from './disposeTree';
-import { safeStorage } from './safeStorage';
+import { safeStorage, storageIsolated } from './safeStorage';
 import { registerMetricSource } from './sceneBudget';
 
 // Crash safety: snapshots of the scene (GLTF json), the node graph and the
@@ -317,9 +321,9 @@ async function writeSnapshot() {
 	// are pruned from the OUTPUT only. Legacy nodes/edges fields keep carrying the
 	// scene graph so an old build can still restore this snapshot.
 	const group = get(objectsGroup);
-	const graphs = serializeGraphs(serializeNode, serializeEdge, {
+	const graphs = stampNodeVersions(serializeGraphs(serializeNode, serializeEdge, {
 		pruneMissing: (uuid) => !group?.getObjectByProperty?.('uuid', uuid)
-	});
+	}));
 	const nodes = graphs[SCENE_GRAPH]?.nodes ?? [];
 	const edges = graphs[SCENE_GRAPH]?.edges ?? [];
 	const scene = await exportScene();
@@ -342,6 +346,8 @@ async function writeSnapshot() {
 		// same reason, different loss: a MATERIAL ARRAY cannot cross the GLTF round
 		// trip either (it comes back as a Group of single-material children)
 		multiMaterial: multiMaterialSnapshot(),
+		// mcp-diorama2: and a GROUP comes back as a plain Object3D (groupRestore.js) — its uuids, to rebuild it
+		groups: groupUuidsOf(group),
 		// fix-agenttest 1: and no LIGHT survives it whole — Hemisphere/Ambient/RectArea came
 		// back as empty nodes, the rest without shadows, decay or direction (lightSnapshot.js)
 		lights: lightsSnapshot(group, isTransient),
@@ -355,6 +361,8 @@ async function writeSnapshot() {
 		nodes,
 		edges,
 		graphs,
+		// 2.0-n3c: the custom node definitions the graphs run (the .tpscene's `nodeDefs`); null when none is used
+		nodeDefs: customNodeDefsSnapshot(graphs),
 		// 36 F10: where each graph was left in the node editor (null when never moved)
 		flowViews: flowViewsSnapshot((id) => id === SCENE_GRAPH || !!group?.getObjectByProperty?.('uuid', id)),
 		annotations: annotationsProvider ? annotationsProvider() : [],
@@ -362,6 +370,8 @@ async function writeSnapshot() {
 		// live, so it rides beside the snapshot — the same shape rigs and material
 		// arrays use, for the same reason
 		post: scenePostSnapshot(),
+		// 98 P1: the baked-light record (hashes + atlas placement), null when unbaked
+		bake: sceneBakeSnapshot(),
 		// A6.1: the sky and the gravity ride here for the same reason. GRAVITY had
 		// nowhere else at all — scenePhysics keeps no localStorage — so an edited
 		// gravity was simply lost on reload. The environment also persists locally,
@@ -624,14 +634,13 @@ function restoreMultiMaterial(entries) {
 	if (!entries.length) return;
 	const group = get(objectsGroup);
 	if (!group) return;
-	const loader = new THREE.ObjectLoader();
 	for (const entry of entries) {
 		const twin = group.getObjectByProperty('uuid', entry.uuid);
 		if (!twin) continue;
 		/** @type {any} */
 		let mesh;
 		try {
-			mesh = loader.parse(entry.element);
+			mesh = parseCheckedObject(entry.element, 'device', 'autosave');
 		} catch (error) {
 			log('warn', 'autosave', 'multi-material restore failed', String(error));
 			continue;
@@ -697,13 +706,14 @@ async function applyRestore(snapshot, offer = null) {
 			return null;
 		}
 		scenePostRestore(snapshot.post, true);
+		sceneBakeRestore(snapshot.bake, true);
 		await within(warmComposer(), WARM_WAIT_MS);
 		releaseFrames();
 		await nextFrames(2);
 		if (!isLive(job)) return null;
 		holdFrames();
 		if (snapshot.scene && group) {
-			const loader = new GLTFLoader();
+			const loader = new GLTFLoader(embeddedOnlyManager('device', 'autosave'));
 			/** @type {any} */
 			const result = await new Promise((resolve, reject) =>
 				loader.parse(snapshot.scene, '', resolve, reject)
@@ -729,6 +739,8 @@ async function applyRestore(snapshot, offer = null) {
 					delete child.userData.__uuid;
 				}
 			});
+			// mcp-diorama2: the groups as groups again (GLTFLoader made them plain Object3D nodes)
+			regroup(container, snapshot.groups);
 			// fix-agenttest 1: the lights from their sidecar, BEFORE the build loop so the
 			// copy each peer is sent below is the real light, not the GLTF's empty node (an
 			// older snapshot has no sidecar: its punctual lights stay as GLTFLoader built them)
@@ -784,6 +796,8 @@ async function applyRestore(snapshot, offer = null) {
 		await animatedImportsRestore(snapshot.animated ?? [], true, () => isLive(job));
 		if (!isLive(job)) return null; // superseded while the rigs parsed
 		animationsRestore(snapshot.animations ?? {});
+		// 2.0-n3c: definitions before their instances (merged by id; absent in an older snapshot)
+		customNodeDefsRestore(snapshot.nodeDefs, true);
 		if (snapshot.graphs && typeof snapshot.graphs === 'object') {
 			restoreGraphs(snapshot.graphs, { views: snapshot.flowViews }); // H1 format: every graph document
 		} else if (snapshot.nodes?.length || snapshot.edges?.length) {
@@ -888,8 +902,11 @@ export async function clearSavedSession() {
 export function startAutosave() {
 	if (started || typeof window === 'undefined') return;
 	started = true;
+	// 61 G3: a "Test with players" bot keeps no autosave — Stop must leave no save behind (its idb is memory)
+	if (storageIsolated) return;
 	objectsGroup.subscribe(() => markDirty());
 	flowGraphs.subscribe(() => markDirty()); // H1: any graph document change
+	customNodeDefs.subscribe(() => markDirty()); // 2.0-n3c: a definition is saved now
 	// authored animation is its own uuid-keyed store, so building a movement
 	// without touching an object afterwards left nothing to trigger a save (the
 	// H12 annotations bug). This module already imports animationPreview for the
@@ -900,6 +917,7 @@ export function startAutosave() {
 	// without this a scene's post stack would be in the snapshot and never trigger
 	// one being written ("my grading is gone after a reload")
 	scenePost.subscribe(() => markDirty());
+	bakeRecord.subscribe(() => markDirty()); // 98 P1
 	// A6.1: and again for the sky and the gravity — the scenePost lesson is that
 	// without the subscription the field sits in the snapshot and nothing ever
 	// triggers one being written

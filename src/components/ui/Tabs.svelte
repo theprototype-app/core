@@ -1,4 +1,5 @@
 <script>
+	import { edgeFade } from '$lib/ui/edgeFade.js';
 	// 38 R3 — switch views of the same window (SPEC §2 Tabs): ONE style for Modules, Templates,
 	// Connect (Info / Toasts), Explorer views. Underline tabs with an optional count. A
 	// role="tablist" with ONE tab stop and automatic activation — the arrows move and select
@@ -55,11 +56,23 @@
 		select(next);
 		buttons[next]?.focus();
 	}
+
+	// dock-fixes: the edge with more to scroll fades (lib/ui/edgeFade.js); the active tab is kept in view.
+	// scroll the LIST only — scrollIntoView also scrolls every scrollable ancestor, and a kit Tabs inside a sidebar
+	// panel shifted the whole column (its tab strip went out from under the pointer: sidebar-tabs §3)
+	$effect(() => {
+		const b = buttons[activeIndex];
+		const list = b?.parentElement;
+		if (!b || !list || list.scrollWidth <= list.clientWidth) return;
+		const l = b.getBoundingClientRect().left - list.getBoundingClientRect().left + list.scrollLeft;
+		if (l < list.scrollLeft) list.scrollLeft = l;
+		else if (l + b.offsetWidth > list.scrollLeft + list.clientWidth) list.scrollLeft = l + b.offsetWidth - list.clientWidth;
+	});
 </script>
 
 <div class="tp-ui tabs" class:tabs-dock={variant === 'dock'} {...rest}>
 	<div class="tabs-strip" class:tp-dtabs={variant === 'dock'}>
-		<div class="tabs-list" role="tablist" aria-label={label || undefined}>
+		<div class="tabs-list" role="tablist" aria-label={label || undefined} use:edgeFade>
 			{#each tabs as t, i (t.id)}
 				<button
 					bind:this={buttons[i]}

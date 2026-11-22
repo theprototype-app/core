@@ -14,11 +14,11 @@ import {
 } from '../stores/appStore';
 import { imageEditorClose } from './image/imageEditorState';
 import { get, writable } from 'svelte/store';
-import { activateDock, armDockMode, armDockModes, dockOccupants, dockTabs, dockStripTabs, moveDockTab, visibleDockKey, undockButtonMode, placeDockTabs, canDockFloating, splitOf, splitDock, nextSplitPartner, unsplitDock, swapSplitSides, setSplitPane, dissolveSplitOf, DOCK_KEYS, DOCK_TITLES, DOCK_ICONS, PHONE_DOCK_TABS, HOSTED_DOCK_TABS } from './bottomDock';
+import { activateDock, bottomInset, armDockMode, armDockModes, dockOccupants, dockTabs, dockStripTabs, moveDockTab, visibleDockKey, undockButtonMode, placeDockTabs, canDockFloating, splitOf, splitDock, nextSplitPartner, unsplitDock, swapSplitSides, setSplitPane, dissolveSplitOf, DOCK_KEYS, DOCK_TITLES, DOCK_ICONS, PHONE_DOCK_TABS, HOSTED_DOCK_TABS } from './bottomDock';
 import { phoneShell } from './ui/phoneShell.js';
 import { queueMerge, groupOfKey, activateTab, nodeOf } from './windowTabs';
 import { maximizeDockTab } from './focusMode';
-import { sidebarTabs, activateSidebarTab, inspectorSide } from './sidebars';
+import { sidebarTabs, sidebarVisible, activateSidebarTab, inspectorSide, inspectorTabs, moveSidebarTab, keepSideOpen, sceneSide } from './sidebars';
 import { raiseWindow, raiseWindowNode } from './windowFocus';
 import { revealWindow } from './dragWindow';
 import { isAway, releasePanel, focusPanelWindow, popOutItems, popOutDockPanels, canPopOut } from './windows/panelPlaces.js';
@@ -56,7 +56,6 @@ import { isAway, releasePanel, focusPanelWindow, popOutItems, popOutDockPanels, 
  * @type {{key: string, tooltip: string}[]}
  */
 export const DOCK_VIEWS = [
-	{ key: 'flowcode', tooltip: 'Edit the graph as JSON' },
 	{ key: 'animation', tooltip: 'Animate the selected object' },
 	{ key: 'uv', tooltip: 'Edit the selected mesh’s UV map and textures' },
 	{ key: 'shader', tooltip: 'Drive this material from a node graph' },
@@ -64,7 +63,7 @@ export const DOCK_VIEWS = [
 	{ key: 'timeline', tooltip: 'Sequence cutscenes: camera shots, clips, audio and events' },
 	{ key: 'explorer', tooltip: 'Browse the asset library' },
 	{ key: 'profiler', tooltip: 'Record frame time and draw calls, and find what draws most' },
-	{ key: 'code', tooltip: 'Scripts, behaviours and graph JSON in tabs (Ctrl+S saves)' }
+	{ key: 'code', tooltip: 'Scripts, behaviours, flow code and graph JSON in tabs (Ctrl+S saves)' }
 ];
 
 /**
@@ -73,7 +72,8 @@ export const DOCK_VIEWS = [
  * Explorer image, so a toolbar button for it would open an empty editor.
  * @type {{key: string, tooltip: string}[]}
  */
-export const DOCK_EXTRA_VIEWS = [{ key: 'imageEditor', tooltip: 'Crop, rotate, resize and adjust an Explorer image' }];
+// uir-preview: the Image editor is the Preview's Edit face now — the "+" offers Preview (hosted)
+export const DOCK_EXTRA_VIEWS = [];
 
 /**
  * 41 G22 — THE WINDOW REGISTRY: every window that can live in the dock, in menu order. Both
@@ -110,10 +110,10 @@ export const PHONE_DOCK_WINDOWS = [
 export const HOSTED_DOCK_WINDOWS = [
 	{ key: 'objects', tooltip: 'Every object in the scene, as a tree' },
 	{ key: 'stats', tooltip: 'Scene budget: draw calls, triangles, textures and memory' },
-	{ key: 'profilerLive', tooltip: 'Frame time as it happens, this peer or one you watch' },
-	{ key: 'chat', tooltip: 'Talk to the people in this session' },
-	{ key: 'aiAssistant', tooltip: 'Ask the AI assistant to build or change the scene' },
-	{ key: 'assets', tooltip: 'Free CC0 models, skies and materials from Poly Haven and ambientCG' }
+	{ key: 'chat', tooltip: 'Talk to the people in this session and ask the AI assistant' }, // uir-chat
+	{ key: 'assets', tooltip: 'Free CC0 models, skies and materials from Poly Haven and ambientCG' },
+	{ key: 'preview', tooltip: 'Preview the file selected in the Explorer; Edit opens an image in the editor' },
+	{ key: 'meshGen', tooltip: 'Make a 3D model from words or a picture; its jobs and your prompt history' }
 ];
 /** the registry rows for the posture we are in @returns {{key: string, tooltip: string}[]} */
 function windowsHere() {
@@ -229,7 +229,6 @@ export function windowWhere(key) {
 /** where a floating editor window remembers its rect (dragWindow's key), for the reveal */
 const FLOAT_DRAG_KEYS = /** @type {Record<string, string>} */ ({
 	flow: 'flowWin',
-	flowcode: 'flowCode',
 	animation: 'animation',
 	uv: 'uv',
 	shader: 'shader',
@@ -284,6 +283,35 @@ function openInSide(key, side) {
 	if (!sided) return;
 	// the window reports itself a member as it mounts; bring it to the front once it has
 	queueMicrotask(() => activateSidebarTab(key));
+	// dock-fixes D: a window that last lived in the BOTTOM dock (Free assets after a dock tab) mounted floating — its
+	// remembered side was written while the dock host still held it, and the new floating node never read it. Once it
+	// has mounted (two frames), anything not in the column it was sent to is moved there through the mounted path.
+	if (typeof requestAnimationFrame === 'function')
+		requestAnimationFrame(() =>
+			requestAnimationFrame(() => {
+				if (windowWhere(key) === 'floating' && moveToSidebar(key, side)) activateSidebarTab(key);
+			})
+		);
+}
+
+/**
+ * dock-fixes D (owner 2026-11-08) — a window opened from a MENU (the main menu's "Free assets (CC0)", the Add
+ * menu's) opens where the person is working, not as a stray floating window: open anywhere -> shown there
+ * (`focusWindow`); the bottom dock on screen -> a dock tab; else a sidebar column on screen -> a tab of it (the
+ * right one first); else floating, as before. The phone shell keeps its own rules (`fallback`). A "+" menu already
+ * opens into ITS dock or column (`addWindowItems`).
+ * @param {string} key @param {() => void} fallback how it opens floating
+ */
+export function openWindowHere(key, fallback) {
+	if (focusWindow(key)) return;
+	if (get(phoneShell)) return fallback();
+	// the dock's own openers cover the hosted windows (dockHost registers them), so no FLOAT_DOCKABLE gate here —
+	// that list is the EDITORS' floating mode, and gating on it sent Free assets floating
+	if (get(bottomInset) > 0) return dockView(key); // the dock on screen, an empty one included
+	const vis = get(sidebarVisible);
+	const side = vis.right ? 'right' : vis.left ? 'left' : null;
+	if (side) return openInSide(key, side);
+	fallback();
 }
 
 /**
@@ -302,34 +330,80 @@ export function registerFloatOpener(key, fn) {
 
 /**
  * 44 M7 — the Configure Scene row a sidebar "+" offers: the Inspector lives only in the sidebars.
- * Open (as Configure Scene) it is focused where it is; open as Properties it swaps to the scene in
- * place (one panel, two kinds); closed it opens on THIS side.
+ * showhide-v8 (owner 2026-11-09): Configure Scene is its OWN tab beside Properties (R2), and "+" MOVES an
+ * already-open tab to where "+" was pressed: open on this side it is brought to the front; open on the OTHER side
+ * it comes here (uir-polish E5: ALONE — Properties stays in its column); closed it opens here as a new tab — an open
+ * Properties tab stays where it is, never replaced.
  * @param {'left'|'right'} side
  */
 function sceneRow(side) {
-	const open = !get(inspectorClose);
-	const isScene = open && get(inspectorKind) === 'scene';
 	const tabs = get(sidebarTabs);
-	const at = tabs.left.includes('inspector') ? 'left' : tabs.right.includes('inspector') ? 'right' : null;
+	const at = tabs.left.includes('scene') ? 'left' : tabs.right.includes('scene') ? 'right' : null;
 	const title = 'Configure Scene';
 	const icon = 'sun';
-	if (isScene && at)
-		return { key: 'scene', label: title, icon, hint: whereHint(at), checked: true, multiPick: true, tooltip: `${title} is open in the ${at} sidebar — click to show it there`, action: () => activateSidebarTab('inspector') };
+	if (at === side)
+		return { key: 'scene', label: title, icon, hint: whereHint(at), checked: true, multiPick: true, tooltip: `${title} is open in this sidebar — click to show it`, action: () => activateSidebarTab('scene') };
+	if (at)
+		return {
+			key: 'scene',
+			label: title,
+			icon,
+			hint: whereHint(at),
+			hoverHint: 'Move here', // uir-polish F3
+			checked: true,
+			multiPick: true,
+			tooltip: `${title} is open in the ${at} sidebar — click to move it here`,
+			action: () => moveSidebarTab('scene', side)
+		};
 	return {
 		key: 'scene',
 		label: title,
 		icon,
-		hint: open ? 'Show' : 'Open',
+		hint: 'Open',
 		checked: false,
 		multiPick: true,
 		tooltip: 'Sky, light, physics, grid and the rest of the scene’s settings',
 		action: () => {
-			if (!open) inspectorSide.set(side);
+			// uir-polish E5: Configure Scene opens on THIS side, alone — Properties stays where it is
+			sceneSide.set(side);
+			if (!get(inspectorTabs).inspector) inspectorSide.set(side);
 			inspectorKind.set('scene');
 			inspectorClose.set(false);
-			queueMicrotask(() => activateSidebarTab('inspector'));
+			queueMicrotask(() => activateSidebarTab('scene'));
 		}
 	};
+}
+
+/**
+ * showhide-v8 — the seam "+" uses to take a SIDEBAR tab into the bottom dock (sidebarMenu registers its
+ * `sidebarTabToDock`; it imports this module, so it cannot be imported back).
+ * @type {((key: string) => boolean) | null}
+ */
+let sideToDock = null;
+/** @param {((key: string) => boolean) | null} fn */
+export function setSideToDock(fn) {
+	sideToDock = fn;
+}
+
+/**
+ * showhide-v8 (owner 2026-11-09, "+" moves an already-open tab): a window open ELSEWHERE — the other sidebar, the
+ * bottom dock, a floating window — MOVES to where "+" was pressed. No second copy, no no-op, and nothing else in the
+ * layout changes. False when it cannot live there (the caller falls back to showing it where it is).
+ * @param {string} key @param {'dock'|'left'|'right'|'floating'} where @param {'dock'|'left'|'right'} target
+ */
+function moveHere(key, where, target) {
+	if (target === 'dock') {
+		if (!canDockHere(key)) return false;
+		if (where === 'left' || where === 'right') return !!sideToDock?.(key);
+		dockView(key);
+		return true;
+	}
+	if (!canDockFloating(key)) return false;
+	if (where === 'left' || where === 'right') return !!moveSidebarTab(key, target);
+	if (where === 'dock') keepSideOpen(key);
+	if (!moveToSidebar(key, target)) return false;
+	queueMicrotask(() => activateSidebarTab(key));
+	return true;
 }
 
 /**
@@ -364,12 +438,72 @@ export function addWindowItems({ target = 'dock', exclude = [] } = {}) {
 		}
 		if (where) {
 			const place = where === 'dock' ? 'the dock' : where === 'floating' ? 'a floating window' : `the ${where} sidebar`;
-			rows.push({ key: view.key, label: title, icon, hint: whereHint(where), checked: true, multiPick: true, tooltip: `${title} is open in ${place} — click to show it there`, action: () => focusWindow(view.key) });
+			// showhide-v8: open HERE -> shown here; open elsewhere -> moved here (when it can live here)
+			const here = where === target;
+			const canMove = !here && (target === 'dock' ? canDockHere(view.key) : canDockFloating(view.key));
+			rows.push({
+				key: view.key,
+				label: title,
+				icon,
+				hint: whereHint(where),
+				// uir-polish F3 (owner 2026-11-11): on hover / when highlighted the row says what a press does
+				hoverHint: !here && canMove ? 'Move here' : undefined,
+				checked: true,
+				multiPick: true,
+				tooltip: here || !canMove ? `${title} is open in ${place} — click to show it there` : `${title} is open in ${place} — click to move it here`,
+				action: () => {
+					if (!here && canMove && moveHere(view.key, /** @type {any} */ (where), target)) return;
+					focusWindow(view.key);
+				}
+			});
 			continue;
 		}
 		rows.push({ key: view.key, label: title, icon, hint: 'Open', checked: false, multiPick: true, tooltip: view.tooltip, action: open });
 	}
 	return rows;
+}
+
+/**
+ * showhide-v8 §6 (burger direction A) — the main menu's WINDOWS ▸ list: every window this posture has, its shortcut
+ * (`shortcutOf`, the caller's — this module may not import the shortcut registry) and an open mark. A click REVEALS:
+ * an open window is brought to the front where it is (`focusWindow`), a closed one opens where you work
+ * (`openWindowHere`); nothing here ever closes a window.
+ * @param {(key: string) => string | null} [shortcutOf] @returns {any[]}
+ */
+export function burgerWindowItems(shortcutOf = () => null) {
+	return windowsHere().map((view) => {
+		const where = windowWhere(view.key);
+		const title = DOCK_TITLES[view.key] ?? view.key;
+		return {
+			key: view.key,
+			label: title,
+			icon: DOCK_ICONS[view.key] ?? 'app-window',
+			hint: shortcutOf(view.key) ?? undefined,
+			checked: !!where,
+			tooltip: where ? `${title} is open (${whereHint(where).toLowerCase()}) — click to show it` : view.tooltip,
+			action: () => {
+				if (!focusWindow(view.key)) openWindowHere(view.key, () => dockView(view.key));
+			}
+		};
+	});
+}
+
+/** showhide-v8 §6: Windows ▸ Close all floating windows — every window open FLOATING closes (docked, sidebar and
+ * pop-out ones stay) @returns {number} how many closed */
+export function closeAllFloating() {
+	let n = 0;
+	for (const view of windowsHere()) {
+		if (windowWhere(view.key) !== 'floating') continue;
+		const closer = closeStoreFor(view.key);
+		if (closer) {
+			closer.set(true);
+			n++;
+		} else if (dockClosers[view.key]) {
+			dockClosers[view.key]();
+			n++;
+		}
+	}
+	return n;
 }
 
 /**
@@ -437,23 +571,25 @@ export function dockAddItems({ exclude = [], pane } = {}) {
  * over a closed view rather than into a gap, and each disables itself at its end of the
  * strip — a row that can only no-op is worse than a row that says it cannot.
  * @param {string} key
- * @returns {{label: string, tooltip: string, action?: () => void, danger?: boolean, disabled?: boolean, children?: any[]}[]}
+ * @returns {{label: string, icon?: string, tooltip: string, action?: () => void, danger?: boolean, disabled?: boolean, children?: any[], checked?: boolean, testid?: string}[]}
  */
 export function dockTabItems(key) {
 	const title = DOCK_TITLES[key] ?? 'this view';
-	/** @type {{label: string, tooltip: string, action?: () => void, danger?: boolean, disabled?: boolean, children?: any[]}[]} */
+	/** @type {{label: string, icon?: string, tooltip: string, action?: () => void, danger?: boolean, disabled?: boolean, children?: any[], checked?: boolean, testid?: string}[]} */
 	const items = [];
+	// uir-polish E1: the phone tab menu's "Follow the selection" (78-int PL14) went with the pin
 	// 44 M9 — the split rows (decision: Split right / Unsplit / Swap sides); wider screens only
 	if (!get(phoneShell)) {
 		const pair = splitOf(key);
 		if (pair) {
 			const names = `${DOCK_TITLES[pair.a] ?? pair.a} / ${pair.b ? (DOCK_TITLES[pair.b] ?? pair.b) : 'the empty pane'}`;
-			items.push({ label: 'Swap sides', tooltip: `Swap the two halves of ${names}`, disabled: !pair.b, action: () => swapSplitSides(key) });
-			items.push({ label: 'Unsplit', tooltip: `Show ${names} as two tabs again`, action: () => unsplitDock(key) });
+			items.push({ label: 'Swap sides', icon: 'arrow-left-right', tooltip: `Swap the two halves of ${names}`, disabled: !pair.b, action: () => swapSplitSides(key) });
+			items.push({ label: 'Unsplit', icon: 'square', tooltip: `Show ${names} as two tabs again`, action: () => unsplitDock(key) });
 		} else {
 			const next = nextSplitPartner(key);
 			items.push({
 				label: 'Split right',
+				icon: 'columns-2',
 				tooltip: next ? `Show ${title} and ${DOCK_TITLES[next]} side by side` : `Show ${title} beside an empty pane (pick its window with "+")`,
 				action: () => splitDock(key, next)
 			});
@@ -461,6 +597,7 @@ export function dockTabItems(key) {
 			if (others.length > 1)
 				items.push({
 					label: 'Split with',
+					icon: 'columns-2',
 					tooltip: `Pick the view to show beside ${title}`,
 					children: others.map((t) => ({ label: t.title, icon: t.icon, tooltip: `${title} on the left, ${t.title} on the right`, action: () => splitDock(key, t.key) }))
 				});
@@ -472,12 +609,14 @@ export function dockTabItems(key) {
 	const at = present.indexOf(key) >= 0 ? present.indexOf(key) : pairOf ? present.indexOf(pairOf.a) : -1;
 	items.push({
 		label: 'Move left',
+		icon: 'arrow-left',
 		tooltip: `Move ${title} one tab towards the start of the strip`,
 		disabled: at <= 0,
 		action: () => moveDockTab(key, 'left')
 	});
 	items.push({
 		label: 'Move right',
+		icon: 'arrow-right',
 		tooltip: `Move ${title} one tab towards the end of the strip`,
 		disabled: at < 0 || at >= present.length - 1,
 		action: () => moveDockTab(key, 'right')
@@ -488,6 +627,7 @@ export function dockTabItems(key) {
 	if (canUndockTab(key))
 		items.push({
 			label: 'Undock into a floating window',
+			icon: 'app-window',
 			tooltip: `Take ${title} out of the dock`,
 			action: () => armDockMode(key, false)
 		});
@@ -497,6 +637,7 @@ export function dockTabItems(key) {
 		for (const side of /** @type {const} */ (['left', 'right']))
 			items.push({
 				label: `Move to the ${side} sidebar`,
+				icon: side === 'left' ? 'panel-left' : 'panel-right',
 				tooltip: `Dock ${title} in the ${side} sidebar, as one of its tabs`,
 				action: () => moveToSidebar(key, side)
 			});
@@ -507,6 +648,7 @@ export function dockTabItems(key) {
 		if (all.length > 1)
 			items.push({
 				label: 'Pop out the whole dock',
+				icon: 'external-link',
 				tooltip: `Every tab of the bottom dock in ONE browser window, as its tabs`,
 				action: () => popOutDockPanels(all, 'bottom', key)
 			});
@@ -514,11 +656,13 @@ export function dockTabItems(key) {
 	// 42 I14: focus mode's touch/pointer way in for a docked window — the tab fills the window
 	items.push({
 		label: 'Maximize (focus mode)',
+		icon: 'maximize-2',
 		tooltip: `Show ${title} alone, filling the window — Esc, Ctrl+Space or "Exit focus" restores`,
 		action: () => maximizeDockTab(key)
 	});
 	items.push({
 		label: 'Close',
+		icon: 'x',
 		tooltip: `Close ${title} (it leaves the dock; nothing else is touched)`,
 		action: () => closeDockView(key)
 	});

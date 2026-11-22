@@ -18,7 +18,7 @@ const h = require('./helpers.cjs');
 
 const editBox = (page, cmd = '/create Box 1 1 1') =>
 	page.evaluate((c) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand(c);
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
@@ -32,7 +32,7 @@ const editBox = (page, cmd = '/create Box 1 1 1') =>
 /** highlight the +Y face (granularity 'face') */
 const pickTop = (page) =>
 	page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.setFaceGranularity('face');
 		const faces = fe.currentFaces();
 		const yi = faces.findIndex((f) => f.normal.y > 0.9);
@@ -42,7 +42,7 @@ const pickTop = (page) =>
 	});
 
 const triCount = (page) =>
-	page.evaluate(() => window.__stores.faceEdit.readTriangles(window.__box.geometry).length);
+	page.evaluate(() => window.__tp.test.v1.faceEdit.readTriangles(window.__box.geometry).length);
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -55,11 +55,11 @@ h.run(async () => {
 	// positions) — a fresh primitive is INDEXED while every meshgeo replay is a
 	// soup, so raw attribute arrays differ in length for identical shapes
 	await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		window.__soup = () => fe.trisToPositions(fe.readTriangles(window.__box.geometry));
 	});
 	const applied = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		const pos = window.__soup;
 		window.__preOp = pos();
 		const ok = fe.beginOpAdjust('bevel', { width: 0.1, segments: 1 }, { kind: 'faces' });
@@ -76,7 +76,7 @@ h.run(async () => {
 	h.check(applied.tris === 20, `one segment stitches the 4-quad ring (${applied.tris} tris)`);
 	h.check(applied.op === 'bevel', `the state mirror holds the op (${applied.op})`);
 	const undone = await A.page.evaluate(() => {
-		window.__stores.history.undo();
+		window.__tp.test.v1.history.undo();
 		const now = window.__soup();
 		const pre = window.__preOp;
 		return {
@@ -90,7 +90,7 @@ h.run(async () => {
 		`ONE undo returns the exact pre-op geometry (${undone.len} floats) — apply+scrubs+settle recorded one entry`
 	);
 	const redone = await A.page.evaluate(() => {
-		window.__stores.history.redo();
+		window.__tp.test.v1.history.redo();
 		const now = window.__soup();
 		const settled = window.__settled;
 		return {
@@ -106,7 +106,7 @@ h.run(async () => {
 	await editBox(A.page);
 	await pickTop(A.page);
 	const setupB = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		window.__soup = () => fe.trisToPositions(fe.readTriangles(window.__box.geometry));
 		const pos = window.__soup;
 		window.__preExtrude = pos();
@@ -121,7 +121,7 @@ h.run(async () => {
 	});
 	h.check(setupB.ok && setupB.tris > 20, `extrude then adjust-bevel applied (${setupB.tris} tris)`);
 	const reverted = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.cancelOpAdjust();
 		const now = window.__soup();
 		const mid = window.__midState;
@@ -130,7 +130,7 @@ h.run(async () => {
 		fe.opAdjustState.subscribe((v) => (state = v))();
 		// the PROPERTY that proves the entry is GONE: undo now restores the
 		// EARLIER step (the extrude's before), not the bevel again
-		window.__stores.history.undo();
+		window.__tp.test.v1.history.undo();
 		const afterUndo = window.__soup();
 		const pre = window.__preExtrude;
 		const backToPre =
@@ -148,7 +148,7 @@ h.run(async () => {
 	await editBox(A.page);
 	await pickTop(A.page);
 	const picked = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		const state = () => {
 			let v = null;
 			fe.opAdjustState.subscribe((x) => (v = x))();
@@ -174,14 +174,14 @@ h.run(async () => {
 	await editBox(A.page);
 	await pickTop(A.page);
 	const guarded = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		const state = () => {
 			let v = null;
 			fe.opAdjustState.subscribe((x) => (v = x))();
 			return v;
 		};
 		fe.beginOpAdjust('extrude', { distance: 0.3 });
-		window.__stores.history.undo(); // replays the adjust's OWN entry -> geometry swap
+		window.__tp.test.v1.history.undo(); // replays the adjust's OWN entry -> geometry swap
 		let threw = false;
 		let result = null;
 		try {
@@ -203,9 +203,9 @@ h.run(async () => {
 	await A.page.waitForTimeout(300);
 	const zeroPieces = await A.page.evaluate(() => {
 		let st = null;
-		window.__stores.faceEdit.opAdjustState.subscribe((v) => (st = v))();
+		window.__tp.test.v1.faceEdit.opAdjustState.subscribe((v) => (st = v))();
 		return {
-			tris: window.__stores.faceEdit.readTriangles(window.__box.geometry).length,
+			tris: window.__tp.test.v1.faceEdit.readTriangles(window.__box.geometry).length,
 			hint: document.querySelector('#mesh-op-hint')?.textContent?.trim() ?? '',
 			revert: !!document.querySelector('#mesh-adjust-revert'),
 			state: st
@@ -216,7 +216,7 @@ h.run(async () => {
 	// 1 piece: still refused, still explained
 	await pickTop(A.page);
 	await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		const faces = fe.currentFaces();
 		const yi = faces.findIndex((f) => f.normal.y > 0.9);
 		fe.faceEditSelectedTris.set([...faces[yi].triIndices]);
@@ -225,9 +225,9 @@ h.run(async () => {
 	await A.page.waitForTimeout(300);
 	const onePiece = await A.page.evaluate(() => {
 		let st = null;
-		window.__stores.faceEdit.opAdjustState.subscribe((v) => (st = v))();
+		window.__tp.test.v1.faceEdit.opAdjustState.subscribe((v) => (st = v))();
 		return {
-			tris: window.__stores.faceEdit.readTriangles(window.__box.geometry).length,
+			tris: window.__tp.test.v1.faceEdit.readTriangles(window.__box.geometry).length,
 			hint: document.querySelector('#mesh-op-hint')?.textContent?.trim() ?? '',
 			state: st
 		};
@@ -236,7 +236,7 @@ h.run(async () => {
 	h.check(!!onePiece.hint, `and still explains itself ("${onePiece.hint}")`);
 	// two inset caps (the mesh-bridge-normals recipe): the grid click AUTO-APPLIES
 	const capsReady = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		const insetCap = (pick) => {
 			const face = fe.currentFaces().find(pick);
 			if (!face) return null;
@@ -259,9 +259,9 @@ h.run(async () => {
 	await A.page.waitForTimeout(400);
 	const bridged = await A.page.evaluate(() => {
 		let st = null;
-		window.__stores.faceEdit.opAdjustState.subscribe((v) => (st = v))();
+		window.__tp.test.v1.faceEdit.opAdjustState.subscribe((v) => (st = v))();
 		return {
-			tris: window.__stores.faceEdit.readTriangles(window.__box.geometry).length,
+			tris: window.__tp.test.v1.faceEdit.readTriangles(window.__box.geometry).length,
 			op: st?.op ?? null,
 			hint: document.querySelector('#mesh-op-hint')?.textContent?.trim() ?? '',
 			revert: !!document.querySelector('#mesh-adjust-revert')
@@ -280,7 +280,7 @@ h.run(async () => {
 	await editBox(A.page);
 	await pickTop(A.page);
 	const subdiv = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fe = s.faceEdit;
 		const count = () => fe.readTriangles(window.__box.geometry).length;
 		const ok = fe.beginOpAdjust('subdivide', { levels: 1 });
@@ -329,15 +329,15 @@ h.run(async () => {
 	const triCountOn = (page, uuid) =>
 		page.evaluate((u) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const object = g.getObjectByProperty('uuid', u);
 			if (!object?.geometry) return null;
-			return window.__stores.faceEdit.readTriangles(object.geometry).length;
+			return window.__tp.test.v1.faceEdit.readTriangles(object.geometry).length;
 		}, uuid);
 	const geoSumOn = (page, uuid) =>
 		page.evaluate((u) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const pos = g.getObjectByProperty('uuid', u)?.geometry?.attributes?.position;
 			if (!pos) return null;
 			let sum = 0;
@@ -351,7 +351,7 @@ h.run(async () => {
 		20000
 	);
 	const finalA = await A.page.evaluate(() => {
-		const fe = window.__stores.faceEdit;
+		const fe = window.__tp.test.v1.faceEdit;
 		fe.beginOpAdjust('bevel', { width: 0.1, segments: 2 }, { kind: 'faces' });
 		fe.reapplyOpAdjust({ width: 0.25 });
 		fe.settleOpAdjust();
@@ -370,6 +370,6 @@ h.run(async () => {
 		`B's geometry IS A's settled geometry (checksum ${sums.a} == ${sums.b})`
 	);
 
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit?.());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit?.());
 	await h.finish(browser);
 });

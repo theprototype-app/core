@@ -29,9 +29,9 @@ const flatGraph = (hex) => ({
 	]
 });
 
-const driven = (page, uuid) => page.evaluate((u) => window.__stores.shaderGraph.isShaderDriven(u), uuid);
-const keyFor = (page, uuid) => page.evaluate((u) => window.__stores.shaderGraph.graphKeyFor(u), uuid);
-const layerOn = (page) => page.evaluate(() => window.__stores.shaderGraph.shaderLayerOn());
+const driven = (page, uuid) => page.evaluate((u) => window.__tp.test.v1.shaderGraph.isShaderDriven(u), uuid);
+const keyFor = (page, uuid) => page.evaluate((u) => window.__tp.test.v1.shaderGraph.graphKeyFor(u), uuid);
+const layerOn = (page) => page.evaluate(() => window.__tp.test.v1.shaderGraph.shaderLayerOn());
 /**
  * What three is actually drawing each object with.
  *
@@ -44,10 +44,10 @@ const layerOn = (page) => page.evaluate(() => window.__stores.shaderGraph.shader
 const materialsOf = (page, uuids) =>
 	page.evaluate((list) => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		return list.map((u) => {
 			const o = group?.getObjectByProperty('uuid', u);
-			const base = window.__stores.shaderGraph.baseMaterialOf(u);
+			const base = window.__tp.test.v1.shaderGraph.baseMaterialOf(u);
 			return {
 				uuid8: u.slice(0, 8),
 				type: o?.material?.type ?? null,
@@ -65,17 +65,17 @@ h.run(async () => {
 	// ---------------------------------------------------------------- section 1
 	console.log('\n=== 1. resolution: own graph -> scene default -> the real material ===');
 	const uuids = await page.evaluate(async () => {
-		const cmd = window.__stores.commandsHandler.sceneCommand;
+		const cmd = window.__tp.test.v1.commandsHandler.sceneCommand;
 		cmd('/create box');
 		await new Promise((r) => setTimeout(r, 700));
 		cmd('/create sphere');
 		await new Promise((r) => setTimeout(r, 700));
 		cmd('/create cylinder');
 		await new Promise((r) => setTimeout(r, 900));
-		window.__stores.objectActions.deselectObject();
-		window.__stores.viewMode.set('shaded');
+		window.__tp.test.v1.objectActions.deselectObject();
+		window.__tp.test.v1.viewMode.set('shaded');
 		let group = null;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		const meshes = [];
 		group.traverse((n) => {
 			if (n.isMesh) meshes.push(n);
@@ -84,7 +84,7 @@ h.run(async () => {
 		// shader-driven object against an undriven one, and palette.js would otherwise
 		// make that comparison a bet on which uuids this run minted
 		for (const mesh of meshes) mesh.material.color.set('#808080');
-		window.__stores.objectsGroup.update((v) => v);
+		window.__tp.test.v1.objectsGroup.update((v) => v);
 		await new Promise((r) => setTimeout(r, 600));
 		return meshes.map((m) => m.uuid);
 	});
@@ -97,7 +97,7 @@ h.run(async () => {
 	);
 
 	// the SCENE default
-	await page.evaluate((doc) => window.__stores.shaderGraph.setShaderGraphFor('scene', doc), flatGraph('#2266ff'));
+	await page.evaluate((doc) => window.__tp.test.v1.shaderGraph.setShaderGraphFor('scene', doc), flatGraph('#2266ff'));
 	await page.waitForTimeout(1600);
 	const afterScene = await Promise.all(uuids.map((u) => keyFor(page, u)));
 	h.check(
@@ -111,7 +111,7 @@ h.run(async () => {
 
 	// an OWN graph wins
 	await page.evaluate(
-		({ uuid, doc }) => window.__stores.shaderGraph.setShaderGraphFor(uuid, doc),
+		({ uuid, doc }) => window.__tp.test.v1.shaderGraph.setShaderGraphFor(uuid, doc),
 		{ uuid: sphereU, doc: flatGraph('#ff2222') }
 	);
 	await page.waitForTimeout(1600);
@@ -130,7 +130,7 @@ h.run(async () => {
 	const separate = await page.evaluate(
 		({ a, b }) => {
 			let group = null;
-			window.__stores.objectsGroup.subscribe((g) => (group = g))();
+			window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 			const ma = group.getObjectByProperty('uuid', a).material;
 			const mb = group.getObjectByProperty('uuid', b).material;
 			return ma !== mb;
@@ -145,25 +145,25 @@ h.run(async () => {
 	// MULTIPLIES the base rather than replacing it
 	await page.evaluate(
 		({ uuid }) => {
-			window.__stores.shaderGraph.setShaderGraphFor(uuid, null);
+			window.__tp.test.v1.shaderGraph.setShaderGraphFor(uuid, null);
 			let group = null;
-			window.__stores.objectsGroup.subscribe((g) => (group = g))();
+			window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 			const colours = ['#ff0000', '#00ff00', '#0000ff'];
 			let i = 0;
 			group.traverse((n) => {
 				if (n.isMesh) {
-					const base = window.__stores.shaderGraph.baseMaterialOf(n.uuid) ?? n.material;
+					const base = window.__tp.test.v1.shaderGraph.baseMaterialOf(n.uuid) ?? n.material;
 					base.color.set(colours[i++ % 3]);
 				}
 			});
-			window.__stores.objectsGroup.update((v) => v);
+			window.__tp.test.v1.objectsGroup.update((v) => v);
 		},
 		{ uuid: sphereU }
 	);
 	await page.waitForTimeout(1500);
 	const perObject = await page.evaluate((list) => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		return list.map((u) => {
 			const o = group.getObjectByProperty('uuid', u);
 			return o?.material?.color?.getHexString?.() ?? null;
@@ -181,11 +181,11 @@ h.run(async () => {
 	const overrideOf = (page) =>
 		page.evaluate(() => {
 			let scene = null;
-			window.__stores.globalScene.subscribe((s) => (scene = s))();
+			window.__tp.test.v1.globalScene.subscribe((s) => (scene = s))();
 			return scene?.overrideMaterial?.type ?? null;
 		});
 	h.check((await overrideOf(page)) === null, '3.1 premise: nothing overriding while shaded');
-	await page.evaluate(() => window.__stores.viewMode.set('wireframe'));
+	await page.evaluate(() => window.__tp.test.v1.viewMode.set('wireframe'));
 	await page.waitForTimeout(1200);
 	h.check(
 		(await overrideOf(page)) === 'MeshBasicMaterial',
@@ -196,7 +196,7 @@ h.run(async () => {
 	h.check(wireDelta.changed > 2000, '3.3 ...and the frame says so: ' + wireDelta.changed + ' px changed');
 	// still DRIVEN underneath — suppression is a view, never a detach
 	h.check(await driven(page, boxU), '3.4 the objects are still shader-driven underneath (a view, not a detach)');
-	await page.evaluate(() => window.__stores.viewMode.set('shaded'));
+	await page.evaluate(() => window.__tp.test.v1.viewMode.set('shaded'));
 	await page.waitForTimeout(1200);
 	h.check((await overrideOf(page)) === null, '3.5 leaving wireframe hands the materials back');
 
@@ -206,8 +206,8 @@ h.run(async () => {
 	// first run. This drives the same function that effect does.
 	await page.evaluate(() => {
 		let scene = null;
-		window.__stores.globalScene.subscribe((s) => (scene = s))();
-		window.__stores.uvEditor.applyUvChecker(scene, true);
+		window.__tp.test.v1.globalScene.subscribe((s) => (scene = s))();
+		window.__tp.test.v1.uvEditor.applyUvChecker(scene, true);
 	});
 	await page.waitForTimeout(900);
 	const checker = await overrideOf(page);
@@ -218,8 +218,8 @@ h.run(async () => {
 	h.check(await driven(page, boxU), '3.7 ...and again the graphs are untouched underneath');
 	await page.evaluate(() => {
 		let scene = null;
-		window.__stores.globalScene.subscribe((s) => (scene = s))();
-		window.__stores.uvEditor.applyUvChecker(scene, false);
+		window.__tp.test.v1.globalScene.subscribe((s) => (scene = s))();
+		window.__tp.test.v1.uvEditor.applyUvChecker(scene, false);
 	});
 	await page.waitForTimeout(900);
 	h.check((await overrideOf(page)) === null, '3.8 ...and it hands them back too');
@@ -228,7 +228,7 @@ h.run(async () => {
 	console.log('\n=== 4. the LOCAL override: "not on my screen" ===');
 	h.check(await layerOn(page), '4.1 premise: the layer renders by default — nobody opts in to seeing the scene');
 	const before = await h.grabFrame(A, clip);
-	await page.evaluate(() => window.__stores.viewportOverrides.setRenderLayer('shaders', false));
+	await page.evaluate(() => window.__tp.test.v1.viewportOverrides.setRenderLayer('shaders', false));
 	await page.waitForTimeout(1200);
 	h.check(!(await layerOn(page)), '4.2 switching it off takes effect');
 	const off = await h.grabFrame(A, clip);
@@ -246,7 +246,7 @@ h.run(async () => {
 	// A RECOMPILE WHILE IT IS OFF must not sneak the material back on, and that is not a
 	// hypothetical: a peer editing the scene graph recompiles on MY machine, through the
 	// same path, whatever I have switched off here.
-	await page.evaluate((doc) => window.__stores.shaderGraph.setShaderGraphFor('scene', doc), flatGraph('#22ff88'));
+	await page.evaluate((doc) => window.__tp.test.v1.shaderGraph.setShaderGraphFor('scene', doc), flatGraph('#22ff88'));
 	await page.waitForTimeout(1600);
 	const afterRecompile = await materialsOf(page, uuids);
 	h.check(
@@ -258,7 +258,7 @@ h.run(async () => {
 		'4.7 ...and the new material is still REMEMBERED, so switching back is a swap and not a compile'
 	);
 
-	await page.evaluate(() => window.__stores.viewportOverrides.setRenderLayer('shaders', true));
+	await page.evaluate(() => window.__tp.test.v1.viewportOverrides.setRenderLayer('shaders', true));
 	await page.waitForTimeout(1200);
 	const backOnMats = await materialsOf(page, uuids);
 	h.check(
@@ -273,7 +273,7 @@ h.run(async () => {
 
 	// the checkbox exists for a user to find — it was hidden while nothing read the key
 	await page.evaluate(() => {
-		window.__stores.openSceneSection('View');
+		window.__tp.test.v1.openSceneSection('View');
 	});
 	await page.waitForTimeout(900);
 	const box = await page.evaluate(() => {
@@ -286,12 +286,12 @@ h.run(async () => {
 	console.log('\n=== 5. a late joiner inherits the scene default ===');
 	const B = await h.setupPage(browser, 'B');
 	await B.page.evaluate(() => {
-		window.__stores.objectActions.deselectObject();
-		window.__stores.viewMode.set('shaded');
+		window.__tp.test.v1.objectActions.deselectObject();
+		window.__tp.test.v1.viewMode.set('shaded');
 	});
 	await h.connect(B, A);
 	await h.eventually(
-		() => B.page.evaluate(() => window.__stores.shaderGraph.shaderDrivenCount()),
+		() => B.page.evaluate(() => window.__tp.test.v1.shaderGraph.shaderDrivenCount()),
 		(n) => n >= 3,
 		'5.1 B receives the scene graph and drives every mesh it holds',
 		30000
@@ -302,7 +302,7 @@ h.run(async () => {
 	);
 	const bColours = await B.page.evaluate((list) => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		return list.map((u) => group.getObjectByProperty('uuid', u)?.material?.color?.getHexString?.() ?? null);
 	}, uuids);
 	h.check(
@@ -313,11 +313,11 @@ h.run(async () => {
 	// ---------------------------------------------------------------- section 6
 	console.log('\n=== 6. a scene that uses none of it ===');
 	const unused = await page.evaluate(async () => {
-		window.__stores.shaderGraph.clearShaderGraphs();
+		window.__tp.test.v1.shaderGraph.clearShaderGraphs();
 		await new Promise((r) => setTimeout(r, 900));
 		return {
-			snapshot: window.__stores.shaderGraph.shaderGraphsSnapshot(),
-			drivenCount: window.__stores.shaderGraph.shaderDrivenCount()
+			snapshot: window.__tp.test.v1.shaderGraph.shaderGraphsSnapshot(),
+			drivenCount: window.__tp.test.v1.shaderGraph.shaderDrivenCount()
 		};
 	});
 	h.check(

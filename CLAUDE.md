@@ -769,6 +769,27 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   populated at DIAL time — trap). `peerApproval.js` = `requestConnect` (shared dial),
   `cancelOutboundRequest`, `approvePeer`/`denyPeer` (store-only so VR + cloudApi reach
   them without a peerHandler cycle).
+- `src/lib/wireProto.js` + `src/lib/wireBudget.js` (101 F1/F4, both LEAVES) — A SESSION THAT CAN
+  SAY NO. `WIRE_PROTO` (1; absent on the wire = 1, unreadable = refused) + `myCaps()` ride EVERY dial's
+  metadata (`dialOptions`) and the `modules` message. `handleConnection` checks the dial's `proto`
+  BEFORE any whitelist/card/wiring; a mismatch answers with a refusal DIAL (`joinresult: 'denied'` +
+  `refuse {reason, need}` — an older build reads 'denied') and never opens a data channel. The
+  receive head (`receive` → `inboundBudget.admit` → shape → `protoGate` → `proceed`) LATCHES each
+  link's agreement once (`conn.__protoOk`); a link with no dial metadata (an adopted outgoing conn)
+  passes on a proto-1 build and is HELD (in order, bounded) on a newer one until its `modules`.
+  Refused peers (`protoRefused`) get no reconnect window and no mesh-fill redial; a typed Connect
+  clears the mark. Lower proto = the "This session uses a newer version" lasting toast (once per
+  page, `updateCheck.reloadToUpdate`); higher = `olderPeers` → People's `#peers-older` line. Bump
+  `proto` only for a meaning change; additive things are a `caps` flag (OPEN-CORE.md). F4: per-peer
+  messages/s + bytes/s (the reliable dataChannel's own `message` events + the fast channel's text
+  length) and an `object` size cap (`approxSize`, early exit), drops counted as `budget:*` in
+  wireErrors with ONE toast per peer per minute, never a disconnect. 101-int review: a `batch` costs 1 + ceil(items/4)
+  (each `object` item capped alone), every in-band data channel is metered (peerjs wires late ones into the same conn),
+  `disconnected`/`refuse` are exempt only 4x/s; `protoAsked(peer)` (waiting join or a link of ours) is the ONLY source
+  that may latch `staleNotice` — a stranger's dial gets a plain toast <= 1/min; blocked/NaN proto dials close silently;
+  `sendJoinResult(…, pool)` = 'user' (card clicks, never limited) | 'auto' (5/s, 20 in flight) | 'stranger' (2/s, 5); 1/s per peer, a newer answer replaces the one in flight; caps keep small primitives; `prunePeerProto` keeps peerProto/peerCaps/protoRefused to 256 each, oldest first, never a live or in-flight link. Test hooks:
+  `localStorage.debugWireProto` (beside debugStores) and `__stores.wireProto` (setProto for links
+  made from then on, applied(peer), budget.peaks()/limits). Suites `wire-proto`, `wire-flood`.
 - `src/components/menu/Connect.svelte` — a 3-state pill (`data-state`
   idle/pending/connected): idle dial + blue Connect; pending amber Cancel; connected
   green `Connected · <host>` + red Disconnect. A chevron toggles `ConnectInfoDrawer`
@@ -1369,6 +1390,20 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   pane, the palette tooltip AND the docs-site tables from one string; `shader-node-docs`
   fails if a node ships without one. Plan + as-built: cloud `plans/core/pending/shader-graph-editor.md`; the
   scene-wide half (post stack, layer 2) is `scene-look-post-processing.md`.
+  **73 AI3 — THE `</>` VIEW AND YOUR OWN GLSL** (`shaderCode` pure leaf + `shaderCodeGuard` +
+  `shaderCodeProbe.worker` + `ShaderCodePane.svelte`). A document may carry `code: {use, vertex,
+  fragment, uniforms}`; `use` picks code or graph, it rides the document so wire, undo and saves
+  needed nothing, and surface only (post gets the GLSL + Graph JSON tabs). A shader cannot reach
+  DOM or network, so the risk is a HANG, in layers: static gate (no recursion in GLSL ES, so loops
+  are the only way to run for ever: `while`/`do` refused, `for` counts to a constant, the GLSL
+  expression node refuses `;` braces `#`) → device block list → worker probe (own WebGL2 context on
+  16x16; its clock starts when the worker holds the text, because module boot under load measured
+  8 s and said nothing about the shader; it MUST lose its context on exit, the browser sheds the
+  oldest past ~16 and that is the scene's) → first frame boxed by a fence dropped in a microtask
+  from `material.onBeforeRender`, polled on a timer (rAF does not run in XR) → context loss turns
+  it all off in the tab. A journal in localStorage written before a GPU can run the hash makes a
+  crash count at the next boot. VERDICTS ARE THE DEVICE'S: never the document, never the wire.
+  Field writes are value writes on the same material (no recompile). Test seams: `shaderCodeGuardForTest`.
   **THE HUD** (21-A, `hudDocs` + `hudSync` + `components/hud/` + the dock tab) — core
   had not one UI/2D/screen node, so a game's menu and score could not be authored:
   `dungeon-realms` hand-rolls a `#dr-gui` overlay at a hardcoded `z-index: 900` and
@@ -2331,8 +2366,8 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   so every template uses a GAME-SPECIFIC key (`towers-best`, `stars-best`, `jam-best-bpm`) or two
   games' bests collide. hudActions "Save best score" (an additive `via` on the press role).
   · **CONSOLE HYGIENE**: `<Canvas shadows={PCFShadowMap}>` (PCFSoft is deprecated in three
-  0.18x); the play back-marker is a SvelteKit shallow entry (`pushState` from `$app/navigation` +
-  `playMarkerState()`); rapier-compat's own init warning is filtered for that one call (the call is
+  0.18x); the play back-marker is a SvelteKit shallow entry (`shallowHistory.js` — `goto('', {shallow})`
+  since sk3 — + `playMarkerState()`); rapier-compat's own init warning is filtered for that one call (the call is
   inside the frozen dependency — exact prefix, restored in `finally`). helpers.cjs `page.__console`
   captures every console message from BEFORE the first navigation (suite `console-hygiene`).
 - **ROADMAP 30 — THE AUTHOR KIT** (`scripts/author-templates.cjs`; THE DEF SCHEMA is the comment
@@ -2617,7 +2652,7 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   it hears one, is alone, or `GRACE_MS` (2 s) after its last connection change — under the smallest-id rule a
   joiner IS the authority on connect, and its initial state would overwrite the game. LOADING: `analyze` (acorn;
   the LINT bans Math.random/Date/performance.now/storage/DOM/globalThis/network/eval/bare timers/import — an error
-  stops the load on EVERY peer), then the MODULE LOADER (`userModules.importModuleText`, a fresh blob import) with
+  stops the load on EVERY peer), then `behaviours/source.js compileBehaviour(source, importer)` (the caller's importer; `dataUrlImporter` in node/tests) with
   `source.js`'s one-line prologue ON line 1 (`behaviour, kit, dist, clamp, lerp`; `kit` is a proxy bound to the
   behaviour's traced kit face when it starts) and the 27-D loop guard (counter reset per dispatch by an appended
   epilogue line). T2: one lifecycle module per behaviour, `behaviour:<nodeId>`, with ONE kit face for its whole
@@ -2649,6 +2684,39 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   2 (every canvas panel >= 1 texel per Quest pixel). `api.claimInput('sticks')` + the world-pan stick REEL (stick Y
   pushes/pulls a one-grip world, as Edit does an object); `addSetting({onLevels: true})` draws a choice as tabs on the
   VR Levels page, which now lists every level.
+- **ROADMAP 85b (85-scene + 85-world + 85-runtime, 85b-int, 1.60) — AGENT TOOLS FOR THE GAME AROUND A SCENE.** Four tool
+  modules in `lib/ai/`, each exporting `*_TOOL_NAMES` / `*_READ_TOOLS` / `*_AI_TOOLS` / `*_PROMPT` and one dispatcher that
+  `tools.js` calls: `hudTools` (create_hud / edit_hud / list_hud / hud_panel; the first screen added to an EMPTY hud doc is
+  the doc's only and active screen — no stray `main`), `sceneSetupTools` (set_sky / set_light / get_environment write ONE
+  `environment` undo kind and are scene-wide → `confirmGate.gateScenewide`; place_spawn / set_play_camera write the
+  `sceneplay` kind; `startView` on scenePhysics is the opening view a SAVE writes as the payload camera — autosave keeps the
+  live view; only `mode: "first"` exists, third / orbit / fixed answer `unavailable` with the node route), `worldTools`
+  (assets search / place / prefab, terrain, scatter, water, particles, place_sound, set_music, patterns by name, update_mesh;
+  a sound URL goes through lookTools' `checkTextureUrl` + `readHttpsBytes`, an audio byte sniff and a decode before the
+  library; the `music` history kind registers lazily on the first set_music) and `runtimeTools` (inspect_runtime /
+  validate_scene / logs / playtest — playtest runs only on an agent page and is `connectorExcluded` in core AND
+  `EXCLUDED_TOOLS` in the Worker). Every new read must join THREE sets by hand (agentCore READ_ONLY_TOOLS, agentLogCore
+  READ_ONLY, viewerGate VIEWER_SAFE_TOOLS) and `tools/agent/src/catalog.js` CONNECTOR_FAMILIES maps it to a connector family
+  (`hud`, `game_setup`, `effects`, `run`; set_look sky / light / environment; assets search / place / prefab). Regenerate
+  `tools/agent/catalog.json` with `npm run catalog:agent`, never hand-merge it. Pings (`pingCore` / `pingLog`) carry an
+  object-local `on` and are logged 2 min, throttled 250 ms both ways, sender = `conn.peer`; placement params (`at`, `align`,
+  `snap`, `face_user`) live in `ai/placement.js`. Undo checkpoints (R6b) are on `undo_last`; a restore with people present
+  asks the host. Agent contract 1.7.0 (`status.logs`). Release proof: e2e `agent-level-proof`; eval set `tests/agent-eval`.
+- **ROADMAP 72 (72-materials) — MATERIAL MAP SLOTS (LK1) AND LOOK ANIMATION IN GLB (LK4).** LK1: `lib/materialMaps.js` (the
+  `materialmaps` history kind, write paths, receivers; `setObjectsMapSet` = the one seam a generator such as PBRnxt fills)
+  + `lib/materialMapTextures.js` (apply, per-material transform, thumbs) + `materialParamRules.js` (`MAP_SLOTS`, inline
+  png/jpeg/webp only and never a URL; `guessMapSlot`: the LAST naming word in a file name wins) + `MaterialMapSlots.svelte`
+  (Inspector). Traps: a map's URL lives in a WeakMap, not `userData`, or GLTF extras double the image; a texture transform
+  is CLONE-ON-WRITE per material because three shares one texture across slots; a slot set is newest-wins by token (decode
+  is async, a slower older pick must not land last); Remove goes through `mapSlotFilled`, so it beats a load in flight;
+  setting a value map lifts `metalness`/`roughness`/`emissive` IN THE SAME UNDO STEP (a map times 0 draws nothing).
+  LK4: `lib/gltfLookPointers.js` (pure: `pointerTracksFor`, `dropFlatSamples`) + `lib/gltfLookExport.js` (`LookPointerPlugin`,
+  `withLookAnimation`). Samples via `evaluateClip`; writes `KHR_animation_pointer` for material, `KHR_node_visibility`,
+  light and the new `camera.fov` channel, and camera markers become real glTF cameras. GLTFExporter's material cache keys
+  are `uuid`, `uuid:true`, `uuid:false`: read all three. Quest/web preset passes `lookAnimation:false` with a note.
+  GLTFLoader ignores pointers, so look animation does NOT come back on re-import. `bakedForExporter`: GLTFExporter wants
+  animations PER ROOT, so a several-object export used to lose all authored movement silently. Suites: vitest
+  `materialParamRules`, `gltfLookPointers`; e2e `material-map-slots`, `look-animation-export`.
 - **ROADMAP 59 (59-replace + 59-int) — REPLACE MODEL FROM A FILE.** `lib/modelReplace.js` (lazy): parse → F2 keep plans →
   sanity (`modelSanity`) → `installVersion` swaps the tree at the live uuid (undo, redo and the replace share it) → ONE
   `modelreplace` history entry holding both versions. Embedded clips kept by bone name are written INTO the new GLB's
@@ -2678,6 +2746,114 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   on `online`, never an error. e2e: `h.routeSkies` (OPT-IN — a route disables the context's HTTP cache) serves them
   from a local packs checkout. Suites: vitest `toolStatus` (incl. the storage migration); e2e `tools-connections`,
   `sky-cdn`.
+- **ROADMAP 78 F4 + F9 (78-path) — THE PATH OBJECT.** A Path is a SPLINE OBJECT (`userData.spline`) whose record
+  carries a `path` block `{version, mode: loop|pingpong|once|random, speed, smooth, showInPlay, preview, seed}` plus
+  optional per-point extras: the POINT's own `wait`/`event`/`facing`, and the SPAN LEAVING it (point k owns k→k+1)
+  `speed`/`ease`/`gap` (a gap = a JUMP, zero time). `src/lib/path/pathCore.js` is the pure record leaf (normalize,
+  reverse — span keys move to the span's other end —, split, join, `recordFromPatrol`); `splineTube.normalizeSpline`
+  keeps the extras ONLY when the block is present, so a plain spline is byte-identical. Every write is the SPLINE
+  write path (`commitSplineEdit` → `splineedit` wire + `spline` undo kind): no new message, no new history kind.
+  Creation is the replicated `/create Path` (`customGeometryBuilders` + `stampPathObject` in geometries.svelte.js).
+  · DETERMINISM IS THE NETCODE: `motionCore.buildSchedule(points, {closed, smooth, mode, speed, seed})` → timed
+  segments, `scheduleAt(sched, t, {start, offset})` → pose; the walker's t is the shared EFFECT clock (pauses folded
+  in), its start is the node's trigger stamp − pauseOffset, else the round start, else 0 (a `once` walk with neither
+  stands at its first point). Events fire on arrival stamps, which every peer derives alike; the runtime's event
+  clock SEEDS (fires nothing) on first sight, a clock going back, or a jump > 5 s, so a reload never replays the past.
+  · F9, THE READ API (61's Patrol calls this — never a fourth list of points): `pathOf(root, uuid)` /
+  `pathOfObject(o)` in `path/pathRuntime.js` → `{uuid, name, points (WORLD + extras), closed, smooth, mode, speed,
+  seed, showInPlay, preview, schedule, period, length, poseAt(t, o), eventsBetween(a, b, o)}`, cached on the record
+  JSON + matrixWorld. `applyPatrolOnPath` is what the `pathpatrol` node runs when `data.path` is set; walker state
+  (`patrolStateOf(key)`, key = nodeId|objectUuid) carries `t/start/offset/p`, which is how the two-peer suite proves
+  agreement: the other peer recomputes the exact pose.
+  · Leaves: pathCore, pathState (editing uuid, scrub, picked points), pathRuntime — flowRuntime imports pathRuntime,
+  so it may never reach history. `pathActions.js` is history-family (create/settings/point fields/reverse/split/
+  join/convert). A Path is a physics SENSOR (never a collider) and hides in Play through `material.visible` + a
+  raycast no-op, NEVER `object.visible` (that is replicated authored state).
+  · Old `pathpatrol` nodes with clicked `points` keep walking the legacy code; Convert (`convertPatrolNode`) makes a
+  closed straight-line loop (ping-pong for 2 points or mode pingpong) re-centred on the waypoints' centroid —
+  pose-identical, proven in `pathCore.test.js` against a verbatim copy of the old walker.
+  · `captureAdapter.js` maps the Path editor's Add points onto 78-wire's F5 capture stack (one banner; Esc pops
+  the top capture first; it pops only its own entries). Agent: `create_path` (`ai/pathTools.js`), connector `create_shape {action:
+  'path'}`. Node `onpathevent` {path, event}. Suites: vitest `pathCore`, `pathRuntime78`, `pathTools78`; e2e
+  `path-object` (two peers).
+- **ROADMAP 93 (78-93-levels, 1.64 via 78-int) — LEVELS AND PROGRESS.** ONE Levels table per game, on the scene-settings
+  singleton (`scenePhysics.levels`, normalized in `gameLevels/table.js`): rows `{id,name,scene?,spawn?,goal?}`, `unlock`,
+  `keep` (score/inventory/health/`var:<name>`; empty = everything carries, the pre-93 behaviour) and `loading`.
+  `gameLevels/runtime.js syncKitLevels` defines `kit.levels` FROM the table on every peer, so the Kit: Levels nodes, the
+  portals and the agent's `game_setup {levels}` read one list. `travel.js` = the hop (`hopTo`: scene under
+  `withLoadingScreen`, then the start object; `registerTravelCarry` in levels.js is the seam that carries ONLY the keep
+  list). Go to level / Next level move EVERYONE; a PORTAL moves only its walker (`solo`, the `selected` listeners
+  stay put). OBJECTS: Portal and Checkpoint kinds carry `userData.portal` / `userData.checkpoint` records (replicate as
+  `objectParameters`, undo as `props`); `play.js` scans them twice a second while `gameFeelActive()` (locked OR
+  `editorMode === 'interact'`), preloads a portal's scene when the player is near (`preload.js`), and hides a
+  `show:false` portal in Play only (a LOCAL visibility flip restored by a park hook, never saved). A checkpoint's
+  `show` is its reached MESSAGE, not pad visibility. CHECKPOINTS (`checkpoints.js`) are per player and LOCAL: the
+  arrival through a portal counts as one (noted BEFORE the transition opens), Back to checkpoint / New game are kit
+  actions marked `local: true` (spec.js: no authority op — the kitTable invariant skips them). SAVES (`save.js`):
+  `tp:levels-save:<gameId>`, version 1, `upgradeSave` drops removed levels (→ first level) and vars the game no longer
+  keeps, 256 KB cap. They are WRITTEN only in an export (`exportMode`, test seam `checkpointsForTest({persist})`), but
+  MEASURED in the editor too, so the cap sentence (`saveProblem`) shows in Configure Scene ▸ Levels.
+  LOADING (`loading.js` + `loadingConfig.js` leaf): five presets, a 150 ms show delay, 400 ms minimum, progress from
+  the preload bytes, every `sceneLoad` publish (subscribed, not only polled: a fast build finished inside one 100 ms
+  poll and the bar read 0 then 1) and `packTracker` (loadStates forgets a parsed file, so the tracker remembers it);
+  a scene preload-ready skips the screen; an export boots on the author's screen (`coverFirstLoad`). Agent:
+  `ai/levelsTools.js` (`set_levels/set_portal/set_checkpoint/set_loading`, one history batch per call) behind the
+  connector's existing `game_setup` (no new tool names). Template `scripts/templates/two-levels.cjs`.
+  Suites: units `levels*`; e2e `levels-progress` (two peers + one player; the cold hop runs at 6x CPU so the bar has
+  steps) and `levels-export` (BUILT app only: serve-build + `E2E_PC=`; SKIPs without export-manifest.json).
+- **ROADMAP 78 F26 + F27 + PL42 (built in 78-int, 1.64).** F26 "WHY DID THIS NOT FIRE": `triggerWhy.js` is a LEAF (the
+  check map + the words): `noteCheck(nodeId, {who, fired, reason})` is called at the fire sites in flowRuntime
+  (`fireObjectClick`, `fireObjectHover`, `fireSensorEdge`, the Collect refusals), and `standingWhy(node)` in flowRuntime
+  answers "why can it not fire RIGHT NOW" (Edit mode, no sim, not the physics peer, no object, no sensor, disabled,
+  muted, touch off, nothing wired). LOCAL per device (a check is what THIS device saw; nothing replicates).
+  `whyCardLine` (<= 40 chars, a FRESH check wins for 10 s, then the standing reason) feeds the node card through
+  nodeLiveState's `WHY_TRIGGERS` readers; `whySentence` feeds the Flow debugger's `#debug-why` row (live in Play only).
+  `flowRuntime.triggerWhyOf(id)` -> `{type, check, standing (a reason KEY), card, sentence}` is the test seam. F27
+  STARTER RECIPES: `starterRecipes.js` (`STARTER_RECIPES` data + `insertStarterRecipe(id, ownerUuid)`) builds ONLY from
+  existing nodes into the OWNER'S own flow, in one history batch ('Add recipe'), every write on the replicated paths
+  (spawnAtPoint, setPhysicsFor, setMaterialParam, createPath, nodecreate/edgecreate); the walk-up door IS 85's Q9 "On
+  Near" (a static sensor zone + On Enter/Exit who:player). Nodes.svelte puts them under "Recipes" in the pane menu,
+  greyed on the scene graph. I2: hoverInput's F2 sampler writes `hoverState` source `pointer`, so an unwired Highlight
+  lights under the mouse in Interact and a phone tap. PL42 NO EMOJI: `scripts/check-emoji.cjs` (`npm run check:emoji`,
+  CI) fails on a colour emoji in src (comments skipped; `emoji-ok` per line, `emoji-ok-file` for user content such as
+  chatTokens.js); WindowShell mode tabs take a Lucide NAME (lowercase-dash = an icon, anything else = a text glyph);
+  `changelog.js stripEmoji` keeps the emoji-led older CHANGELOG entries out of What's new. Suites: unit `triggerWhy78`,
+  `checkEmoji`; e2e `trigger-why-78`, `starter-recipes-78`.
+- **ROADMAP 61 G1/G5-G8/G10 (61-nav) — ENEMIES THAT WALK.** The navmesh, the crowd and the guard brain are the
+  modules repo's `navigation` module (recast-navigation-js WASM in a lazy blob worker; only a scene with nav nodes
+  downloads it). Core holds only the seams, one SDK slice `sdk/gameWorld.js`: `api.colliderGeometry({maxTriangles,
+  signatureOnly, exclude})` (static colliders + terrain as WORLD triangles from `colliderSpec`, moving solids as
+  `moving` boxes, a signature for a debounced rebake), `api.paths.of/list/create` (78's `pathOf` + `createPath`:
+  Patrol reads the Path object ONLY, so editing the path changes the patrol), `api.players()` (camera + every open
+  peer's avatar), `api.isAuthority()` (`kitIsAuthority` in kit/runtime.js), `api.isExport()`,
+  `api.registerViewToggle` (View-menu rows, LOCAL state the module keeps) and `api.registerObjectAction` (object-menu
+  rows + a UI-less `apply`); `sdk/flow.js` gained `removeNodes(ids, graphId)` and `addNodes` creating a missing object
+  graph. `moduleWorldItems.js` is the leaf store both menus read. `npcEntry.js`: "Make this an enemy…" (object menu,
+  Physics & effects) is listed with the module ABSENT and offers the gallery install, then opens the module's sheet.
+  `ai/npcTools.js` = `game_setup {npc}` -> `set_npc` -> the module's `applyEnemy` (the sheet's own recipe, so the
+  agent and the person build the same guard). The module picks its stepper itself (lowest-id peer in Play via
+  heartbeats) and every peer eases between ~10 Hz snapshots inside the NPC's effect, so the authored pose stays home.
+- **ROADMAP 95 SHARE A MOMENT (SM1-SM3).** `src/lib/moment/`: `momentCore.js` (PURE: the ring with a fake clock,
+  `momentBlocker` = the ONE eligibility rule in order player→setting→browser→memory→slow→vr→idle, `clampTrim` 3-10 s,
+  `resampleFrames` = output frame i shows the LATEST capture at or before start + i/fps, so the file is exactly
+  round(len × fps) frames at the game's speed whatever the capture rate), `momentStores.js` (LEAF: `momentRecording`
+  "Recording the last 10 s" LOCAL default ON, `momentStatus`, `momentOpen`, `openMoment`), `momentBuffer.js` (LAZY, loaded on
+  the first Play by `components/moment/MomentHost.svelte`; never in the boot graph). THE TAP: recorder.js `setMomentTap` —
+  the RecordingDriver capture stage calls it while no recording runs (one null check otherwise); at <= 15 fps it calls
+  `createImageBitmap(canvas, {resizeWidth/Height})` (a snapshot taken SYNCHRONOUSLY in the frame that drew it; 640 px long
+  side, 480 on a phone) and transfers it to `momentEncode.worker.js` (OffscreenCanvas → JPEG); 2D canvas + toBlob fallback.
+  The CANVAS only: no HUD DOM, editor, chat, voice or mic. Leaving Play / VR / setting off / a player of a published game
+  without `play.moments` = disarm AND forget. The preview TAKES the frames (`takeMoment`, the buffer is frozen while
+  `momentOpen`) and gives them back on close (`returnMoment`). SM3: `play.moments: true` in scenePhysics' play block
+  (present only when allowed; Configure Scene ▸ Play), `embedMode` = "a published game's player"; the frame-cost meter
+  disarms the buffer for the visit when its mean per-frame main-thread cost passes 1 ms (phone) / 2.5 ms (desktop).
+  SM2: `MomentDialog.svelte` is a MENU in Play (HudLayer's `menuWanted` frees the pointer) and eats Escape in a window
+  CAPTURE listener (else PLC's Escape also leaves Play); `momentExport.js` writes through the 68-V9 `createSink` +
+  `exportPlan` (no second encoder) and `components/ui/ExportProgress.svelte` is the Recording dialog's pill EXTRACTED
+  (ids `recording-*` unchanged; the moment's are `moment-*`). Keys: F8 (a window capture listener in the buffer — the
+  shortcut table stands down in Play), pad `GamepadSelect` via inputRuntime.onInput, the Play bar's `#moment-share`
+  (PlayBanner) / `#embed-moment` (EmbedChrome). Debug: `momentStores` row + `momentBuffer` registered at runtime
+  (`state()` carries the cost numbers). Suites: unit `moment`; e2e `moment-share`.
 
 ## UI design system (redesign epic)
 
@@ -2795,6 +2971,17 @@ sub-entry with its line: grep the index for a word, then read this file from tha
    a viewer's bytes; peers also drop gated types via `canApply`.
 
 ## Hard-won gotchas (do not rediscover)
+
+- **SVELTEKIT 3 SHALLOW ENTRIES ARE ASYNC, AND THEIR STATE IS A STRING (sk3).** Both history markers
+  (play's `tpPlay`, the Back stack's `tpBack`) go through `src/lib/shallowHistory.js` and nowhere else.
+  `goto(url, {shallow, state})` (and the deprecated `pushState`) push the entry only after an awaited route
+  resolve, so a `history.back()` sent in the same tick pops the USER'S previous page — `afterShallowPush`
+  waits for the push in flight, and `currentShallowState()` answers with the in-flight state meanwhile. The
+  entry's state is `history.state['sveltekit:metadata'].state`, a devalue STRING (2.x had a plain object
+  under `sveltekit:states`); `page.state` is set after an await in the router's own popstate handler, so a
+  popstate listener reading it sees the entry it just left. `$lib` is OUR alias since sk3 (vite.config.ts
+  `resolve.alias` + tsconfig `paths`); tsconfig's `include` mirrors kit 2's globs exactly — a bare
+  `"tests"` pulls in every e2e `.cjs` and reads 55k errors.
 
 - **RAPIER'S KinematicCharacterController COLLIDES WITH SENSORS unless the query passes `EXCLUDE_SENSORS`** — the
   walker treated every grass patch, flower bed, rug and trim of the 30c levels as a wall (33-scenes, suite
@@ -3523,6 +3710,26 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   must be unique (vitest `debugHooks` checks uniqueness, the one-line shape, that every loader
   file exists, and that no tail crept back into App.svelte). Code holding an object can call
   `registerDebugHook(name, obj)` instead. A merge of two lanes' rows is a plain union.
+- **SUITES TALK TO `window.__tp.test.v1`, NOT `__stores` (101 F5).** `installDebugHooks` publishes the
+  read-only, LIVE facade (`src/lib/testFacade.js`) over the same hook table; `__stores` stays as an
+  alias for one release. RENAMING an export a suite reads, or moving a hook: add ONE row to
+  `TEST_V1_RENAMED_EXPORTS` / `TEST_V1_MOVED` and touch no suite (the proof: `backStack.backStackState`
+  is now `backStackSnapshot`). The facade is read-only (a write throws): stub through the module. From
+  Node, `h.t(page)` = `{ready, run(fn, arg), get(path), call(path, ...args)}`. A suite written against
+  `__stores` moves with `node scripts/e2e-facade-codemod.cjs --write <file>` (keeps pre-install
+  semantics: `X.__stores.y` throws before the install, `X.__stores &&` is undefined, exactly as before).
+  battery.json `gpu: {suite: false}` = renderer-neutral suites (`scripts/ci/gpu-neutral-suites.cjs`).
+- **EVERY RENDERER AND RENDER TARGET COMES FROM `src/lib/render/` (101 F3, CI `check-render-seam`).**
+  `createMainRenderer` (threlte `<Canvas createRenderer>`, threlte 8.6.1's defaults verbatim) +
+  `MAIN_SHADOW_MAP` on both Canvas lines; `setToneMapping` / `setExposure` / `mainPixelRatio` /
+  `watchContextLoss` are the hooks; `createRenderTarget` replaces `new WebGLRenderTarget`;
+  `readPixels` returns a PROMISE (the read happens AT THE CALL, the await only hands it back;
+  `readPixelsSync` only where a caller cannot wait — photoRender's cubeUvToEquirect). Thumbnails and
+  live previews borrow ONE shared off-screen renderer (`renderOffscreen` one-shot, `acquireOffscreen`
+  + `blitOffscreen` for a live preview, which copies into its own 2D canvas — a preview canvas has NO
+  WebGL context). Borrowers get a FRESH renderer's state; never call `dispose()` on a borrowed one.
+  `disposeRenderer()` releases what the seam made; `recycleMainRenderer()` loses + restores the main
+  context on purpose (the path roadmap 100's switch runs).
 - **A derived cutoff consulted on both the READ and the MUTATE side needs TWO rules.**
   21-F2's round cutoff returns Infinity in menu/over so latches READ as un-collected
   there (the locked fork) — but `applyNodeTrigger`'s re-arm honoured it too, so in menu
@@ -3629,6 +3836,13 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   eventually through nodesync's periodic hash compare, which makes this fail SLOWLY and
   RACILY rather than cleanly — a Counter pulsed before the peer held the graph read 2
   where the author read 3. Push with `sendNodes(peerId)` and wait for the peer to hold it.
+- **The nodesync join hold is timed from the LINK, not from the peer's first nodesync**
+  (54i row g). A peer with no graphs at the join sends no snapshot and no nodesync (count 0
+  is never broadcast), so its first nodesync arrives with its first object graph, maybe
+  minutes later — and the host never asks a joiner for graphs at all. Timed from that,
+  `NODESYNC_HANDSHAKE_MS` held a real change back and the graph reached the peer after ~26 s
+  (cloud build, timeline red). `noteNodeSyncHandshake` runs in `sendHandshake` and again at
+  the `getnodes` ask; a nodesync that beats both still starts the window.
 - **`setNodeData` is not throttled, but its write chain is heavy enough to look like it
   is**: mirror -> flowGraphs -> autosave markDirty -> serializeGraphs on every call, so
   only ~5 of 50 calls at 40ms intervals landed in 2s. Never use it to drive anything

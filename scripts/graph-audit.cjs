@@ -26,7 +26,7 @@ const read = (/** @type {string} */ p) => fs.readFileSync(path.join(ROOT, p), 'u
 
 /** @returns {{type: string, group: string, label: string, inputs: string[], hasInputs: boolean, params: string[], ranges: string[], note: boolean}[]} */
 function catalogTypes() {
-	const src = read('src/lib/nodeCatalog.js');
+	const src = require('./node-catalog-source.cjs').catalogSource(ROOT); // 2.0 N1: the definitions
 	const out = [];
 	let group = '';
 	const lines = src.split('\n');
@@ -62,33 +62,29 @@ function catalogTypes() {
 }
 
 function cardMap() {
-	const src = read('src/components/editors/Nodes.svelte');
-	const block = src.slice(src.indexOf('const CORE_NODE_TYPES'), src.indexOf('};', src.indexOf('const CORE_NODE_TYPES')));
-	return Object.fromEntries([...block.matchAll(/^\s*'?([a-z0-9_-]+)'?: (\w+),/gm)].map((m) => [m[1], m[2]]));
+	// 2.0 N1: a core type names its card in its definition
+	return require('./node-catalog-source.cjs').definitionTables(ROOT).cards;
 }
 
 function evaluatorInfo() {
 	const src = read('src/lib/flowRuntime.js');
 	const a = src.indexOf('function evalNodeBody');
 	const b = src.indexOf('export function resolveInputs');
-	const cases = new Set([...src.slice(a, b).matchAll(/case '([a-z0-9_-]+)'/g)].map((m) => m[1]));
+	// 2.0 N1: evalNodeBody dispatches through the definitions — a type with an `eval` is a case
+	const cases = require('./node-catalog-source.cjs').definitionTables(ROOT).evaluated;
 	const vt = src.slice(src.indexOf('export const valueTypes'), src.indexOf('];', src.indexOf('export const valueTypes')));
 	const valueTypes = new Set([...vt.matchAll(/'([a-z0-9_-]+)'/g)].map((m) => m[1]));
 	return { cases, valueTypes };
 }
 
 function outputTable() {
-	const src = read('src/lib/flowSockets.js');
-	const block = src.slice(src.indexOf('const OUTPUT = {'), src.indexOf('};', src.indexOf('const OUTPUT = {')));
-	return Object.fromEntries([...block.matchAll(/([a-z0-9_-]+): '([a-z0-9]+)'/g)].map((m) => [m[1], m[2]]));
+	// 2.0 N1: every definition says its output type (\`effect\` was the unlisted fallback)
+	return require('./node-catalog-source.cjs').definitionTables(ROOT).out;
 }
 
-/** flowSockets' INPUT table: type -> the handles the runtime types (and so reads) */
+/** the typed input handles: type -> the handles the runtime types (and so reads) — 2.0 N1: the definitions */
 function inputTable() {
-	const src = read('src/lib/flowSockets.js');
-	const a = src.indexOf('const INPUT = {');
-	const block = src.slice(a, src.indexOf('\n};', a));
-	return Object.fromEntries([...block.matchAll(/^\t'?([a-z0-9_-]+)'?: \{([^}]*)\}/gm)].map((m) => [m[1], [...m[2].matchAll(/'?([A-Za-z0-9_]+)'?:/g)].map((k) => k[1])]));
+	return require('./node-catalog-source.cjs').definitionTables(ROOT).ins;
 }
 
 /** HudNode's own INPUTS map: type -> the sockets that card draws */

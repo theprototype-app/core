@@ -25,13 +25,13 @@
 // Run: APP_URL=https://theprototype.app:5219/ PEER_CONFIG=... npm run e2e -- dial-metadata
 const h = require('./helpers.cjs');
 
-/** run a snippet with `s = window.__stores` and `pc` (the PeerConnection) in scope */
+/** run a snippet with `s = window.__tp?.test.v1` and `pc` (the PeerConnection) in scope */
 const inPage = (peer, body, arg) =>
 	peer.page.evaluate(
 		([src, a]) => {
 			let pc = null;
-			window.__stores.peers.subscribe((v) => (pc = v))();
-			return Object.getPrototypeOf(async function () {}).constructor('s', 'pc', 'arg', src)(window.__stores, pc, a);
+			window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
+			return Object.getPrototypeOf(async function () {}).constructor('s', 'pc', 'arg', src)(window.__tp?.test.v1, pc, a);
 		},
 		[body, arg ?? null]
 	);
@@ -73,7 +73,7 @@ const text = (loc) => loc.textContent({ timeout: 3000 }).catch(() => '');
 const click = (loc, timeout = 5000) => loc.click({ timeout }).then(() => true, () => false);
 
 async function dialVia(peer, id) {
-	await peer.page.locator('input[placeholder="Enter peer ID to connect"]').fill(id);
+	await (await h.openDial(peer.page)).fill(id);
 	await peer.page.getByRole('button', { name: 'Connect', exact: true }).click();
 	await peer.page.waitForTimeout(300);
 }
@@ -83,14 +83,16 @@ h.run(async () => {
 
 	// ==================================================================== the joiner
 	const J = await h.setupPage(browser, 'joiner');
-	await J.page.waitForFunction(() => !!window.__stores?.peerApproval?.requestConnect, { timeout: 30000 });
+	await J.page.waitForFunction(() => !!window.__tp?.test.v1?.peerApproval?.requestConnect, { timeout: 30000 });
 	await inPage(J, DIAL_STUB);
 
 	console.log('\n=== 1. no metadata: the dial is byte-identical ===');
 	h.check((await inPage(J, 'return s.cloudPlugin.makeCloudApi().dialMeta')) === true, 'cloudApi.dialMeta === true is the probe for this engine');
 	await dialVia(J, 'aaaa1');
 	const plain = await lastDial(J, 'aaaa1');
-	h.check(JSON.stringify(plain?.opts) === '{"metadata":{"jr":1}}', `a pill dial carries exactly {jr:1} and nothing else (${JSON.stringify(plain?.opts)})`);
+	// 101 F1: every dial also says its session protocol and capabilities (proto + caps), and nothing else
+	const m = plain?.opts?.metadata ?? {};
+	h.check(Object.keys(plain?.opts ?? {}).join() === 'metadata' && Object.keys(m).sort().join() === 'caps,jr,proto' && m.jr === 1 && m.proto === 1 && m.caps?.wb === 1, `a pill dial carries exactly {jr:1, proto:1, caps} and nothing else (${JSON.stringify(plain?.opts)})`);
 
 	console.log('\n=== 2. metadata rides the dial ===');
 	const META = { v: 1, room: 'amber-mesa', name: 'Ada', proof: 'abc123' };
@@ -124,7 +126,7 @@ h.run(async () => {
 
 	// ==================================================================== the host
 	const H = await h.setupPage(browser, 'host');
-	await H.page.waitForFunction(() => !!window.__stores?.cloudHooks?.setAuthProvider, { timeout: 30000 });
+	await H.page.waitForFunction(() => !!window.__tp?.test.v1?.cloudHooks?.setAuthProvider, { timeout: 30000 });
 	await inPage(H, DIAL_STUB);
 	const cards = () => read(H, 'pendingApprovals');
 	const decided = () => inPage(H, 'return window.__decided');
@@ -216,7 +218,7 @@ h.run(async () => {
 	console.log('\n=== 4. two real peers ===');
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
-	await A.page.waitForFunction(() => !!window.__stores?.cloudHooks?.setAuthProvider, { timeout: 30000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.cloudHooks?.setAuthProvider, { timeout: 30000 });
 	await inPage(A, DECIDER, { label: LABEL });
 	await inPage(B, 's.peerApproval.requestConnect(arg.id, arg.meta)', { id: A.id, meta: { v: 1, room: 'amber-mesa', name: 'Ada' } });
 	const acard = A.page.locator('.tp-toast--req', { hasText: String(B.id).slice(0, 6).toUpperCase() });

@@ -31,6 +31,19 @@ export function licensedAssets(uuids = null) {
 			const extra = clips
 				.map((/** @type {any} */ c) => normalizeLicence(c?.licence))
 				.filter(Boolean);
+			// 64-text TX3b: a text drawn with a font whose OS/2 fsType forbids embedding — an export
+			// carries the font file, so it is a "no redistribution" licence in the same dialog
+			const font = ud.textPath && typeof ud.textPath === 'object' && ud.textPath.fontAsset ? ud.textPath : null;
+			if (font?.fontMeta?.noEmbed)
+				extra.push(
+					normalizeLicence({
+						id: 'font-no-embedding',
+						title: (font.fontName || 'Font') + ' (font)',
+						url: font.fontMeta.url || undefined,
+						redistribution: false,
+						note: 'The font’s embedding bits (OS/2 fsType) forbid carrying it inside a file.'
+					})
+				);
 			if (!ud.provenance && !extra.length) return;
 			out.push({ uuid: o.uuid, name: o.name || o.type || 'Object', userData: ud, extra });
 		});

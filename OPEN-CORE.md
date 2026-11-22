@@ -54,6 +54,8 @@ export function register(api) {
   api.mountConnect(fn)             // into the Connect pill (login / Browse Rooms)
   api.mountUsersSection(fn)        // into the Users popover (roles)
   api.mountProfile(fn)             // into the profile dropdown (account) — v2
+  api.mountSettingsSection('account', fn) // Settings ▸ Account (only while mounted) — profile-notify
+  api.openSettings('account', 'an-element-id') // open Settings on a page, at one element of it — uir-account
   api.mountConnectDrawer(fn)       // into the Connect info drawer (room settings) — v2
   api.mountSidebar(fn)             // a ROW under Save in the logo menu (Publish) — v3
 
@@ -259,10 +261,15 @@ static|embed>`. Core never talks to a server about it.
 | `loadRemoteScene({…, keepGameId?})` | `keepGameId: true` = the OWNER opening their own published scene (no fork); otherwise a community load is a remix |
 | `onExportBuilt(fn)` → off | after an export zip is built: `fn({gameId, buildId, preset, title, template, parentGameId, appVersion})` |
 | `onTemplateOpen(fn)` → off | a Games-tab template was started: `fn(slug)` (one "template open") |
+| `onFunnelEvent(fn)` → off | 76 FW2: one anonymous first-visit funnel event `fn({e, c, b, d, x})` — closed vocabularies only (event name, Welcome answer, release, desktop/touch/vr, a time bucket or quest step), never an id. Core has already applied once-per-browser, Do Not Track / Global Privacy Control and the under-test guard; events from before registration are queued (20 max) and handed to the first listener. With no plugin nothing is sent anywhere. Probe with `typeof` |
+| `funnelEvent(name)` → Promise\<boolean\> | 76 FW2: the plugin's own funnel event through the same rules; only `'ob_waitlist'` (a feature-update opt-in) is accepted |
 | `toast(message, actions?, {keep?})` | fix-live F-2: with `keep: true` an action toast's buttons also stay on its notification-history entry until one is pressed (a role offer the user sees later) |
 | `setPeerMenuItems(items)` | fix-live: `[{id, label, run(peerId, {name})}]` (≤ 8, labels ≤ 40) appended to the Users peer menu (right-click a peer) under core's own entries — the cloud's "Report…"; `[]` clears |
-| `setConnectorProvider(p)` | 86 B1/B5: the Claude connector's account half — `{pair({resume}) → {wsUrl, pairingToken, replaces?, connections?}, connections() → {connections, tab?}, revoke(id), revokeAll(), account() → {signedIn, name?}}` (`pair` rejects `{code:'signin'}` signed out); core draws Connect Claude, the connected indicator and Settings ▸ Connected apps only while one is installed and runs every relayed call through tpAgent; null removes it |
-| `mountConnectorSignIn(fn)` | 86-fix N1: a `(el) => cleanup` mount the AI window's welcome renders in place of Connect Claude while the connector is built in and nobody is signed in ("Sign in to connect"); once signed in, install the provider and pass null |
+| `setConnectorProvider(p)` | 86 B1/B5: the Claude connector's account half — `{pair({resume}) → {wsUrl, pairingToken, replaces?, connections?}, connections() → {connections, tab?}, revoke(id), revokeAll(), account() → {signedIn, name?}}` (`pair` rejects `{code:'signin'}` signed out); core draws Connect Claude, the connected indicator and Settings ▸ Account ▸ Connected apps only while one is installed and runs every relayed call through tpAgent; null removes it |
+| `mountConnectorSignIn(fn)` | 86-fix N1, FW-AI (76): any function = the connector is built in and nobody is signed in. Core draws "Sign in to connect" in the AI window (welcome card, or the header when a provider is set up) and it opens the profile pop-up, where `mountProfile`'s section signs in; `fn` itself is not rendered. Once signed in, install the provider and pass null |
+| `mountSettingsSection(key, fn)` → boolean | profile-notify (1.64): fill a Settings section; only `'account'` so far — Settings ▸ Account, a page in its own "Account" group that exists only while a plugin has mounted into it or a connector provider is installed (the OSS Settings has none). The plugin's groups come first (Email, Sign-in methods, Devices — uir-account moved the last two out of the profile menu); core's Connected apps follow. Draw cards as `section.sec-card-wrap` with an `[data-section-label]` title and rows as `.setting-row` with an `.sr-name`, so Settings search finds them. A non-function removes it; an unknown key returns false. Probe with `typeof` |
+| `openSettings(section, anchor?)` → boolean | uir-account: open Settings on a page — a deep-link key (`'account'`, `'interface'`…; `'connectedapps'` is an alias of Account) — and, with `anchor`, scroll to the element with that id once it renders (it may arrive after an await; up to 4 s) and flash it. A malformed key or id returns false and opens nothing. Probe with `typeof` |
+| `notificationOn(kind)` → boolean | profile-notify (1.64): the per-device switches in Settings ▸ Interface ▸ Notifications (`src/lib/notifyPrefs.js`). The plugin asks before an automatic pop-up: `'roomInvites'`, `'contests'`; an unknown kind is `true`. Probe with `typeof` (absent = show, as before) |
 | `setConnectBadge(badge \| null)` | fix-live F-5: `{text, title?, onClick?}` — a small badge on the Connect pill for a standing setting (e.g. "Public · guests join"); `null` hides it. Probe with `typeof` |
 | `setSceneHeart(info \| null)` | the heart on the play-link start card (`#embed-heart`) and a game's pause menu (`#game-shell-heart`): `{count, liked, toggle() → Promise<{liked, count} \| null>}`; `null` from `toggle` rolls the optimistic flip back |
 
@@ -273,6 +280,22 @@ heart), `mine` (boolean, the viewer's own scene), `notice` (one line on the card
 Promise<{liked, likeCount} | null>` puts a heart on every card (`[data-card-heart]`).
 A play link's frame may carry `&src=play|embed&b=v<n>` (read once with `embed=1`;
 `playMode.embedSource` / `embedBuild`) — the badge inside counts them.
+
+#### 76 FW3: search and sorts on the Community tab — additive, no bump
+
+The Templates modal has ONE search field (`#templates-search`) on every tab: core filters the
+cards client-side — every word must appear in the title, description, author or tags
+(`communitySearch.matchesQuery`) — so the OSS GitHub gallery is searchable with no server. Two
+optional provider members widen it on Community:
+
+| member | contract |
+|---|---|
+| `search: true` | `list()` also receives `q` (lower-case, single-spaced, ≤ 60 chars, debounced 300 ms) when the field is not empty; search the same fields server-side so a returned row also passes core's filter. An older query's late answer is dropped |
+| `sorts: [{id, label}]` | ≤ 5 chips beside the field (`#community-sorts [data-sort]`); the FIRST is the default and is never sent — another chip's `id` arrives as `list({sort})` |
+
+Absent = absent: a provider that declares neither is called `list({force})` exactly as before
+and is never re-listed for a query. While a re-list runs the grid stays up and
+`#community-searching` says "Searching…"; an empty answer to a query reads "No scenes match".
 
 #### 37 R20: "Report a problem" — `setProblemReporter(reporter | null)` — additive, no bump
 
@@ -323,6 +346,29 @@ everyone leaving). Each is inert without a plugin: nothing subscribes until `onS
 A plugin restoring a SCENE uses `loadRemoteScene({sceneUrl, keepGameId: true})` — the owner reopening their own
 scene keeps its game id instead of forking it as a remix.
 
+### 6. Object schema (roadmap 101 F2) — a contract, not a hook
+
+Objects and materials are validated on receive and on load. Every three.js object JSON core takes from a
+peer, a file or its own stores passes [src/lib/sceneSchema.js](src/lib/sceneSchema.js) (through
+`src/lib/loadGuard.js`) before three parses it, and so does every multi-slot `materials` payload. A CI step
+(`npm run check:loaders`) fails on a generic three loader called anywhere else in `src/`.
+
+What a module or plugin can rely on, and what it must keep to:
+
+| | the rule |
+|---|---|
+| object types | three's own (`Object3D`, `Group`, `Mesh`, `SkinnedMesh`, `InstancedMesh`, `Line*`, `Points`, `Sprite`, `LOD`, `Bone`, the two cameras, the lights). Anything else arrives as an `Object3D` with its children |
+| material types | the standard ones (`Mesh*Material`, `Line*Material`, `PointsMaterial`, `SpriteMaterial`, `ShadowMaterial`). Any other material arrives as the standard fallback material; custom looks are made with the shader graph |
+| fields | the fields three's `toJSON()` writes for that type, each with a value rule. An unknown field is stripped; a bad value is stripped and three uses its default |
+| images | embedded data URLs only, each under a size cap |
+| `userData` | any plain JSON under a size cap (no `__proto__` / `constructor` / `prototype` keys, bounded depth). The keys core and the shipped modules write keep a per-key kind |
+
+Every change is counted (the wire diagnostics and one toast per session), never silent. The inventory
+(`scripts/schema-inventory.cjs`, kept as `tests/fixtures/schema-1.65/inventory.json`) found that the shipped
+modules build only the types above and write only plain-JSON `userData`, so modules get no registration
+call. A later release that saves a new field adds it to the type's table in `sceneSchema.js` with a value
+rule and a fixture in `tests/unit/sceneSchema.test.js`; a new `userData` key needs nothing.
+
 ## Versioning
 
 `CLOUD_HOOKS_VERSION` ([src/lib/cloudHooks.js](src/lib/cloudHooks.js)) is the contract
@@ -332,6 +378,51 @@ when `N` is **newer** than the engine, and a new engine always accepts an older 
 (every hook is inert without a consumer). History: 1 (M1) · 2 (roadmap #14: profile and
 drawer mounts, roles bridge) · **3 (roadmap #28-A: the publish · play · remix seams above)**.
 A coupled change therefore deploys the engine first and the plugin after.
+
+**The module api has its own number** (101 F6): `api.version` on the module api (`src/lib/sdk/core.js`
+`SDK_API_VERSION`, now **3**) is NOT the plugin `api.version` above. Version 2 also notes that the raw
+renderer handle a module (or a plugin's `captureThumbnail` path) can reach today stays for now and will
+leave the contract once roadmap 100 swaps renderers: modules use the look / post SDK calls. Every
+renderer the app makes is created in `src/lib/render/` (a CI check keeps it that way).
+
+**Version 3** (2.0-n3c, additive): the SCRIPT api that Script nodes and a module's behaviours run with
+(`api` inside the code) has a number of its own, `api.version` = `SCRIPT_API_VERSION` in
+`src/lib/scriptIO.js`, now **2**: 1 (absent) = `object`, `raycast`, `keys`, `spawn`; 2 adds `self()` (this
+node's id) and `stamp(input)` (the newest trigger stamp on one of this node's inputs, in synced seconds,
+`null` = never), both reads of replicated state so a value script stays deterministic. Inside a script,
+probe `(api.version ?? 1) >= 2`; a module probes its own `api.version >= 3` before writing such code.
+
+### The session protocol (`proto` + `caps`, roadmap 101 F1)
+
+Separate from the plugin contract: two PEERS agree on a session protocol before any scene data
+flows. Every dial carries `{jr: 1, proto: <int>, caps: {…}}` in its PeerJS metadata (plus `cloud`,
+`invite`, `kind` when they apply), and the `modules` handshake message carries the same `proto` and
+`caps` beside `wb` / `fc` / `dev`. `WIRE_PROTO` lives in [src/lib/wireProto.js](src/lib/wireProto.js)
+and is **1**; a peer that sends no `proto` speaks 1 (every build up to 1.65).
+
+- **Same number:** everything as before. **Different (or unreadable):** the link is refused before
+  any whitelist, approval card or data: a refusal dial (`joinresult: 'denied'` + `refuse: {reason:
+  'proto', need}`) when the dialer can hear one, else a `{type: 'refuse', reason: 'proto', need}`
+  message on an open link. `need` is the refuser's own protocol. The lower side shows "This session
+  uses a newer version. Reload to update."; the higher side lists the other in People as needing
+  to reload. No reconnect window, no mesh-fill redial; a later dial on the right protocol gets in.
+  Only an answer to something this side asked for (a join request still waiting, or a link of ours to
+  that peer) can latch the reload notice; the same claim in a stranger's dial shows a plain toast at
+  most once a minute, a blocked peer or an unreadable number is closed without a word, and refusal
+  dials the app sends by itself are bounded (5 a second and 20 in flight; 2 and 5 for dials nobody
+  asked for; one per peer a second, the newest answer replacing one in flight); a person's own Reject or
+  Full always goes out.
+- **Bump `proto` only** when a message changes meaning in a way an older build would apply wrongly.
+  Additive fields and new message types do not bump it (an older build counts and drops a type it
+  does not know); they become a **`caps` flag** instead — today `wb` (batch envelopes), `fc` (fast
+  movement channel), `dev` (a device row in `modules`). Extensions (80a's held-set handshake) add a
+  flag here and read it from `peerCaps`; absent = the peer does not have it.
+- **Inbound limits (F4):** each peer has a per-second budget of messages and bytes and an `object`
+  size cap ([src/lib/wireBudget.js](src/lib/wireBudget.js) `LIMITS`, set at >= 4x the measured
+  peaks); a message over budget is dropped and counted (`budget:*` in Diagnostics), the person is
+  told once a minute, and the link stays up. A `batch` envelope costs one message plus one per four items, and each `object`
+  item in it meets the size cap on its own; every data channel on the link is metered, and a goodbye
+  or refusal passes the budget only a few times a second.
 
 ## Rules for plugin authors
 

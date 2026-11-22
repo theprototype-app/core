@@ -4,6 +4,7 @@
 // Cause (frame log): a HOSTED dock tab (Statistics, Objects, Chat … — PhoneDockHost re-seats their
 // floating windows into its frame by CSS, `top: var(--pd-top)`) was placed against a `--pd-top` measured
 // while that frame was HIDDEN (an editor with its own frame — the Image editor, the Node editor — was the
+// [uir-preview: the Image editor is the hosted Preview's Edit face now, so §1 starts from the Preview]
 // tab in front), i.e. 0px: the window spanned the browser from top 0 to bottom 0 until the next
 // measurement a frame later.
 //
@@ -84,7 +85,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	const D = await h.setupPage(browser, 'desk', {
 		context: DESK,
-		storage: { flowDocked: 'true', imageEditorDocked: 'true', statsDocked: 'true', chatDocked: 'true', objectListDocked: 'true', explorerDocked: 'false' }
+		storage: { flowDocked: 'true', previewDocked: 'true', statsDocked: 'true', chatDocked: 'true', objectListDocked: 'true', explorerDocked: 'false' }
 	});
 	const page = D.page;
 	const id = await S(page, async () => {
@@ -95,33 +96,33 @@ h.run(async () => {
 		ctx.fillStyle = '#c03030';
 		ctx.fillRect(0, 0, 64, 48);
 		const blob = /** @type {Blob} */ (await new Promise((r) => c.toBlob(r, 'image/png')));
-		const rec = await window.__stores.explorer.addItemFromBytes(await blob.arrayBuffer(), 'n5.png', null, { imported: true });
+		const rec = await window.__tp.test.v1.explorer.addItemFromBytes(await blob.arrayBuffer(), 'n5.png', null, { imported: true });
 		return rec.id;
 	});
 	await S(page, () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphClose.set(false);
 		s.sceneBudget.statsOpen.set(true);
 		s.chatHidden.set('');
 		s.objectListClose.set(false);
 	});
 	await page.waitForTimeout(900);
-	await S(page, (id) => window.__stores.imageEditor.imageEditorTarget.set({ itemId: id, raise: 1 }), id);
+	await S(page, (id) => window.__tp.test.v1.imageEditor.imageEditorTarget.set({ itemId: id, raise: 1 }), id);
 	await page.waitForTimeout(1800);
 	const tabs = await S(page, () =>
 		[...document.querySelectorAll('[data-dock-tab]')].filter((t) => t.getBoundingClientRect().width > 0).map((t) => t.getAttribute('data-dock-tab') + (t.getAttribute('aria-selected') === 'true' ? '*' : ''))
 	);
-	h.check(['stats', 'objects', 'chat', 'flow'].every((k) => tabs.includes(k)) && tabs.includes('imageEditor*'), `0 premise: the Image editor is the docked tab in front, beside Statistics/Objects/Chat/Node editor (${tabs})`);
+	h.check(['stats', 'objects', 'chat', 'flow'].every((k) => tabs.includes(k)) && tabs.includes('preview*'), `0 premise: the Preview (in Edit, uir-preview) is the docked tab in front, beside Statistics/Objects/Chat/Node editor (${tabs})`);
 
 	// ---- 1. from the Image editor to each hosted tab --------------------------------------------------
 	const SEL = { stats: '#stats-window', objects: '#object-list', chat: '#chat-window' };
 	for (const key of /** @type {('stats'|'objects'|'chat')[]} */ (['stats', 'objects', 'chat'])) {
-		await clickTab(page, 'imageEditor');
+		await clickTab(page, 'preview');
 		await arm(page);
 		await clickTab(page, key);
 		const r = await result(page);
 		h.check(r.samples > 0, `1.${key} premise: the shown ${key} window was sampled (${r.samples})`);
-		h.check(r.worst && r.worst.over <= 1, `1.${key} Image editor -> ${key}: the hosted window never reaches above the dock frame (${JSON.stringify(r.worst)})`);
+		h.check(r.worst && r.worst.over <= 1, `1.${key} Preview -> ${key}: the hosted window never reaches above the dock frame (${JSON.stringify(r.worst)})`);
 		const p = await placed(page, SEL[key]);
 		h.check(!!p && p.host === 'shown' && Math.abs(p.top - p.bodyTop) <= 1 && p.bottom === p.h, `3.${key} it sits in the frame's body (${JSON.stringify(p)})`);
 	}

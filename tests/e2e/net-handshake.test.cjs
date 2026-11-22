@@ -24,7 +24,7 @@ h.run(async () => {
 		await p.page.evaluate(() => {
 			const w = window;
 			let pc;
-			w.__stores.peers.subscribe((v) => (pc = v))();
+			w.__tp.test.v1.peers.subscribe((v) => (pc = v))();
 			const seen = new WeakSet();
 			w.__rx = {};
 			const hook = (c) => {
@@ -44,32 +44,56 @@ h.run(async () => {
 		});
 	}
 
-	// host A owns a scene
+	const countOn = (p) =>
+		p.page.evaluate(() => {
+			let g;
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
+			return g?.children?.length ?? 0;
+		});
+
+	// host A owns a scene — polled, not a fixed second (54 X11): the count C must reach is A's
+	const before = await countOn(A);
 	await A.page.evaluate(() => {
-		for (let i = 0; i < 5; i++) window.__stores.commandsHandler.sceneCommand('/create box');
+		for (let i = 0; i < 5; i++) window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 	});
-	await A.page.waitForTimeout(1000);
+	await h.eventually(() => countOn(A), (c) => c >= before + 5, 'premise: A holds its five boxes', 20000);
 
 	await h.connect(B, A);
 	await h.connect(C, A); // C meshes with B via the hosts flow
 
-	const countOn = (p) =>
-		p.page.evaluate(() => {
-			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
-			return g?.children?.length ?? 0;
-		});
-	const aCount = await countOn(A);
-	await h.eventually(() => countOn(C), (c) => c === aCount, 'C received the scene (count matches A)', 15000);
+	// 54 X11: C's copy arrives in a stream of messages, which on a loaded box (three pages on software
+	// GL) took longer than the old fixed 15 s — red 2 of 3 with C part-way (last 1 / 3 / 4) while every
+	// request count below was right. Measured from the real event (A has C's getobjects), compared with
+	// A's count as it is NOW on every poll, bounded generously; a red prints how far C got and when.
+	const asked = await A.page
+		.waitForFunction((id) => (window.__rx?.[id] || []).includes('getobjects'), C.id, { timeout: 60000 })
+		.then(() => true)
+		.catch(() => false);
+	h.check(asked, 'premise: C asked A for the scene');
+	const t0 = Date.now();
+	/** @type {string[]} */
+	const trail = [];
+	let match = false;
+	while (Date.now() - t0 < 90000) {
+		const [a, c] = [await countOn(A), await countOn(C)];
+		if (trail[trail.length - 1]?.split(' ')[1] !== `${c}/${a}`) trail.push(`${Math.round((Date.now() - t0) / 1000)}s ${c}/${a}`);
+		if (c === a) {
+			match = true;
+			break;
+		}
+		await new Promise((r) => setTimeout(r, 400));
+	}
+	h.check(match, `C received the scene (count matches A; C/A over time: ${trail.join(', ')})`);
 	await h.eventually(
 		() =>
 			C.page.evaluate(() => {
 				let pc;
-				window.__stores.peers.subscribe((v) => (pc = v))();
+				window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
 				return pc.openedPeers.size;
 			}),
 		(n) => n === 2,
-		'C holds open conns to both A and B'
+		'C holds open conns to both A and B',
+		60000
 	);
 
 	const rx = {};
@@ -91,7 +115,7 @@ h.run(async () => {
 	// and nobody got the share-or-stash prompt out of the mesh fill
 	const bInfo = await B.page.evaluate(() => {
 		let t;
-		window.__stores.toastStore.subscribe((v) => (t = v))();
+		window.__tp.test.v1.toastStore.subscribe((v) => (t = v))();
 		return (t || []).map((x) => (x && x.id) || '');
 	});
 	h.check(!bInfo.includes('share-or-stash'), 'no bogus share-or-stash prompt on an existing peer');

@@ -107,7 +107,7 @@ h.run(async () => {
 			browser = await h.launch({ args: h.GPU_ARGS });
 		}
 		const A = await openWildPage(browser, locate, ANSWERS, { context: { viewport: { width: 1280, height: 800 } } });
-		await A.page.evaluate(() => window.__stores.lod.lodEnabled.set(true));
+		await A.page.evaluate(() => window.__tp.test.v1.lod.lodEnabled.set(true));
 		return A;
 	};
 	let A = await open();
@@ -120,7 +120,7 @@ h.run(async () => {
 		const before = h.pageErrors(A).length;
 		await deliver(A.page, locate, smallest.path);
 		await A.page.evaluate(async () => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.commandsHandler.clearSceneLocal();
 			await s.fileHandler.importFile(new File([/** @type {any} */ (window).__wildFiles.a], 'quick.glb'), 'quick');
 			s.commandsHandler.clearSceneLocal();
@@ -184,7 +184,7 @@ async function oneFixture(page, f) {
 	await deliver(page, locate, f.path);
 	const r = await page.evaluate(
 		async ({ name }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			/** @type {any} */
 			const w = window;
 			s.commandsHandler.clearSceneLocal();
@@ -233,7 +233,7 @@ async function oneFixture(page, f) {
 	// ---- 2. the app measures what the bench measured; the gate follows the app's own rule ------
 	const p = await page.evaluate(
 		({ e }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let settings;
 			s.importOptimize.importSettings.subscribe((v) => (settings = v))();
 			const decision = s.gltfOptimize.importDecision({ triangles: e.cost.triangles, maxTextureSide: e.cost.maxTextureSize }, settings);
@@ -279,7 +279,7 @@ async function oneFixture(page, f) {
 	// The bench's flags are per file; the eligible count is read from the placed tree by the same rule.
 	const countAuto = () => page.evaluate(
 		({ uuid }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.lod.scanForLod();
 			let g;
 			s.objectsGroup.subscribe((x) => (g = x))();
@@ -315,7 +315,7 @@ async function oneFixture(page, f) {
 
 	// ---- 4. scene-lint's static budget on the saved scene ----------------------------------------
 	const lintView = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = s.sessions.buildSessionPayload('import-wild', { thumbnail: false });
 		// the LINT VIEW: scene-lint reads a geometry's box and triangle count, never its vertices,
 		// so each position array becomes its two box corners and each index array its length —
@@ -382,7 +382,7 @@ async function oneFixture(page, f) {
 		const before = await shot(page);
 		const trip = await page.evaluate(
 			async ({ uuid, name }) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				let g;
 				s.objectsGroup.subscribe((x) => (g = x))();
 				const root = g.getObjectByProperty('uuid', uuid);
@@ -419,7 +419,7 @@ async function oneFixture(page, f) {
 			h.check(trip.tris >= e.cost.triangles * 0.98, `${tag}: the round trip keeps the triangles (${trip.tris} of ${e.cost.triangles})`);
 		}
 		await page.evaluate(({ uuid }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let g;
 			s.objectsGroup.subscribe((x) => (g = x))();
 			for (const c of [...g.children]) if (c.uuid !== uuid) g.remove(c);
@@ -431,7 +431,7 @@ async function oneFixture(page, f) {
 	// ---- 6. modelSanity on the file alone (a replace by itself) ----------------------------------
 	const sane = await page.evaluate(
 		async ({ uuid, name }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			/** @type {any} */
 			const w = window;
 			w.__wild.dialogs = [];
@@ -455,7 +455,7 @@ async function oneFixture(page, f) {
  */
 async function shot(page) {
 	const paused = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let p;
 		s.overloadGuard.renderPaused.subscribe((v) => (p = v))();
 		if (p) s.overloadGuard.resumeRendering();
@@ -481,7 +481,7 @@ async function shot(page) {
 async function frameObject(page, uuid) {
 	await page.evaluate(
 		({ uuid }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const get = (/** @type {any} */ store) => {
 				let v;
 				store.subscribe((/** @type {any} */ x) => (v = x))();
@@ -525,7 +525,7 @@ async function frameObject(page, uuid) {
 
 /** @param {any} page */
 async function cleanup(page) {
-	await page.evaluate(() => window.__stores.commandsHandler.clearSceneLocal());
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.clearSceneLocal());
 	await page.waitForTimeout(300);
 }
 
@@ -537,7 +537,7 @@ async function onePair(page, p) {
 	await deliver(page, locate, p.b.path, 'b');
 	const out = await page.evaluate(
 		async ({ na, nb }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			/** @type {any} */
 			const w = window;
 			s.commandsHandler.clearSceneLocal();

@@ -1,5 +1,5 @@
 import { derived, get, writable } from 'svelte/store';
-import { isLocked, isVRMode, vrOverride, vrPassthrough } from '../stores/sceneStore';
+import { isLocked, isVRMode, vrOverride, vrPassthrough, globalScene } from '../stores/sceneStore';
 // appStore is a LEAF (svelte/store and nothing else — sceneStore already pulls in more
 // than it does), so this does not widen the cycle surface the note below is about.
 import { showToast } from '../stores/appStore';
@@ -8,13 +8,18 @@ import { showToast } from '../stores/appStore';
 // SvelteKit's router" warning, and it is right: its own popstate handler reads the index
 // keys only ITS pushState writes. `$app/navigation` is SSR-safe to IMPORT (only a CALL on
 // the server throws, and the marker is only ever pushed from a browser play press).
-import { pushState } from '$app/navigation';
+// sk3: through shallowHistory.js — SvelteKit 3's `goto(..., { shallow: true })`, which is async.
+import { afterShallowPush, currentShallowState, pushShallow } from './shallowHistory.js';
 // 36-export: an exported game is an embed for its whole life too (a leaf, read once at eval)
 import { exportMode } from './export/exportBoot.js';
 import { onPlayOrigin, appUrl } from './playOrigin.js';
+// 94 SP1: the slim play entry (`/play`) is player-only for its whole life too (a leaf)
+import { playEntry } from './play/playEntry.js';
 import { safeStorage } from './safeStorage';
 // 50 R1: a LEAF (svelte/store only) — the AR table's session is not a Play press
 import { arTableActive } from './arTableState.js';
+// phone-polish: the editor's Back stack steps aside while play owns Back (W4 below)
+import { suspendBack } from './backStack.js';
 
 // THE PLAY STATE MACHINE, lifted out of Controls.svelte so the play FAB, the FAB's
 // right-click mode menu and (next) a keyboard shortcut all press the same button.
@@ -39,11 +44,15 @@ export const arSupported = writable(false);
 // try/catch and not just .catch(): a runtime whose isSessionSupported THROWS
 // synchronously would otherwise throw during this module's evaluation, and this
 // module owns the play button — the one control the app cannot lose.
+/** fix-play-link: settles once the immersive-vr probe has answered (at once when there is no probe)
+ * @type {Promise<void>} */
+let vrProbe = Promise.resolve();
 try {
 	const xr = typeof navigator === 'undefined' ? null : /** @type {any} */ (navigator).xr;
-	xr?.isSessionSupported?.('immersive-vr')
-		?.then((/** @type {boolean} */ ok) => vrSupported.set(!!ok))
-		?.catch(() => vrSupported.set(false));
+	vrProbe =
+		xr?.isSessionSupported?.('immersive-vr')
+			?.then((/** @type {boolean} */ ok) => vrSupported.set(!!ok))
+			?.catch(() => vrSupported.set(false)) ?? Promise.resolve();
 	xr?.isSessionSupported?.('immersive-ar')
 		?.then((/** @type {boolean} */ ok) => arSupported.set(!!ok))
 		?.catch(() => arSupported.set(false));
@@ -109,7 +118,7 @@ const embedBoot = readEmbedBoot();
 /** true for the whole life of a page opened with `?embed=1` — or of an EXPORTED game (36-export),
  *  which hides the same editor chrome and draws the same player chrome — or of any page on the
  *  separate play origin (69 T4: it is player-only, `$lib/playOrigin`) */
-export const embedMode = writable(embedBoot.on || exportMode || onPlayOrigin);
+export const embedMode = writable(embedBoot.on || exportMode || onPlayOrigin || playEntry);
 /** the `?s=<id>` the embed opened with ('' when none) — the corner link's target */
 export const embedSceneId = embedBoot.scene;
 /** 36-community (C4): the visit source and published build the frame was opened with ('' when none) */
@@ -185,35 +194,34 @@ export function exitPlay() {
 // nothing of the user's can be underneath ours. The flag is the whole guard — see
 // `consumePlayMarker` for the double-pop it prevents.
 //
-// 30 P0: the entry is a SvelteKit SHALLOW entry (`pushState` from $app/navigation) —
-// same url, same navigation index, so the router's popstate handler treats the Back
-// that spends it as a state change and never navigates; our listener below still sees
-// the popstate. The state object lands under the router's `sveltekit:states` key, which
-// is where `playMarkerState()` reads it.
+// 30 P0: the entry is a SvelteKit SHALLOW entry (now `goto('', { shallow: true })`, via
+// shallowHistory.js) — same url, same navigation index, so the router's popstate handler treats
+// the Back that spends it as a state change and never navigates; our listener below still sees
+// the popstate. `playMarkerState()` reads the state object off the current entry.
+// sk3: the push is ASYNC in SvelteKit 3 (a few microtasks), so the flag goes up at once and the
+// pop waits for the push in flight — an enter+exit in one tick used to be able to pop the
+// user's real previous page otherwise. A refused push takes the flag back down.
 let backMarker = false;
+/** @type {object | null} which push the flag belongs to (a refusal of an older one must not lower it) */
+let markerToken = null;
 
 function pushPlayMarker() {
 	if (backMarker || typeof history === 'undefined') return;
-	try {
-		// the SAME url ('' resolves to the current one) with a state object: no
-		// navigation, nothing to load, and `playMarkerState()` is a readable answer to
-		// "is the marker up?"
-		pushState('', { tpPlay: true });
-		backMarker = true;
-	} catch {
-		/* a sandboxed frame can refuse pushState (and the router refuses before it has
-		   started); play simply keeps its normal exits */
-	}
+	const token = {};
+	markerToken = token;
+	backMarker = true;
+	// the SAME url ('' resolves to the current one) with a state object: no
+	// navigation, nothing to load, and `playMarkerState()` is a readable answer to
+	// "is the marker up?". A sandboxed frame can refuse it (and the router refuses
+	// before it has started); play simply keeps its normal exits.
+	pushShallow({ tpPlay: true }).then((ok) => {
+		if (!ok && markerToken === token) backMarker = false;
+	});
 }
 
 /** the marker's state object as the router stored it on the CURRENT entry (test/debug view) */
 export function playMarkerState() {
-	try {
-		const st = /** @type {any} */ (typeof history === 'undefined' ? null : history.state);
-		return !!st?.['sveltekit:states']?.tpPlay;
-	} catch {
-		return false;
-	}
+	return !!currentShallowState()?.tpPlay;
 }
 
 function consumePlayMarker() {
@@ -222,11 +230,15 @@ function consumePlayMarker() {
 	// below then reads "not ours" and does nothing. Without this the exit that a Back
 	// press just caused would pop a SECOND entry, i.e. the user's real previous page.
 	backMarker = false;
-	try {
-		history.back();
-	} catch {
-		/* nothing to go back to; the marker is spent either way */
-	}
+	markerToken = null;
+	afterShallowPush((ok) => {
+		if (!ok) return; // never pushed: nothing of ours to pop
+		try {
+			history.back();
+		} catch {
+			/* nothing to go back to; the marker is spent either way */
+		}
+	});
 }
 
 /** was the marker pushed? (test/debug view — the state object is the user-visible half) */
@@ -287,6 +299,9 @@ export function simOnPlay() {
 
 /* ------------------------------------------------------------- sim on play ---- */
 
+/** 78 F11: the "walls will not stop you" notice, once per page */
+let walkNoticeShown = false;
+
 // 21-B B8: honour `scenePhysics.play.simOnPlay`. A game template asks for its physics
 // to run the moment someone is IN the world — its whole rule surface (spawn nodes,
 // sensor triggers, grab/throw) is a documented silent no-op without a stepping sim,
@@ -300,16 +315,41 @@ export function simOnPlay() {
 // Dynamic imports for the reason shortcuts.js uses one: physics.js is history-family
 // and this module is imported from shortcuts.
 function maybeSimOnPlay() {
-	Promise.all([import('./scenePhysics'), import('./physics')])
-		.then(([sp, ph]) => {
-			if (get(sp.scenePlay).simOnPlay !== true) return;
+	Promise.all([import('./scenePhysics'), import('./physics'), import('./charController'), import('./playSettings')])
+		.then(([sp, ph, cc, ps]) => {
+			// 78-int: the walker holds still at Play entry until this says whether a world is coming (cc.expectWorld)
+			const start = () => {
+				cc.expectWorld?.('coming');
+				// a start that was refused or failed builds no world: stop holding at once, not after the cap
+				return Promise.resolve(ph.toggleSimulation({ play: true })).finally(() => {
+					if (!ph.physicsRuntime()) cc.expectWorld?.('none');
+				});
+			};
+			const none = () => cc.expectWorld?.('none');
+			const play = get(sp.scenePlay);
 			// a sim already running anywhere (ours or a peer's) means there is nothing
 			// to start — the quiet skip, never toggleSimulation's busy toast
-			if (get(ph.simulating) || get(ph.remoteSimulating)) return;
-			return ph.toggleSimulation();
+			if (get(ph.simulating) || get(ph.remoteSimulating)) return none();
+			if (play.simOnPlay === true) return start();
+			// 78 F11: A WALK LEVEL RUNS ITS WORLD BY ITSELF. Set to walk (or a walking Character
+			// Controller) with nothing dynamic in it, the run is only the player's world — walls,
+			// floors, sensors — so it starts with no flag: without it the walker stood on the flat
+			// ground plane and went through every wall. A scene WITH dynamic bodies keeps the
+			// author's choice (the flag), and Play says why walls do not stop you.
+			const walking = play.grounded === true || get(cc.charControl)?.mode === 'walk';
+			if (!walking) return none();
+			// a module's play contract owns its world (the dungeon walks its own raster)
+			if (ps.playPublishers(get(globalScene)).length) return none();
+			if (!ph.sceneHasDynamicBodies()) return start();
+			none();
+			if (!walkNoticeShown) {
+				walkNoticeShown = true;
+				showToast('Physics is not running, so walls will not stop you here. Turn on "Start the simulation when play mode opens" (Scene, Physics) or press P.');
+			}
 		})
 		.catch(() => {
 			/* physics failing to load must never take the play button down */
+			import('./charController').then((cc) => cc.expectWorld?.('none')).catch(() => {});
 		});
 }
 
@@ -381,6 +421,23 @@ export function requestPlay(/** @type {{flat?: boolean}} */ opts = {}) {
 	// dozen and belongs in its own change.
 	if (get(isLocked) === null) isLocked.set(true);
 }
+
+/**
+ * fix-play-link — WHAT A SCENE THAT JUST LANDED DOES BY ITSELF (no gesture): a play link's
+ * `play=1`, the Welcome card's "Play a game", an exported game. It plays FLAT on a screen — and on
+ * an XR-CAPABLE device it does NOT play at all: flat play hides the start card, and the start card
+ * holds Enter VR, the one press that can open a headset session (it needs that gesture). The Quest
+ * 3 device-lab run found a play link that went straight to flat play with no way into VR but Exit.
+ * Waits for the immersive-vr probe (bounded: a runtime whose probe never settles counts as no XR).
+ * @returns {Promise<boolean>} true when it started play
+ */
+export async function autoPlay() {
+	await Promise.race([vrProbe, new Promise((r) => setTimeout(r, AUTOPLAY_PROBE_WAIT))]);
+	if (get(vrSupported)) return false;
+	requestPlay({ flat: true });
+	return true;
+}
+const AUTOPLAY_PROBE_WAIT = 2000;
 
 /* ------------------------------------------------------------- play as… ---- */
 
@@ -456,6 +513,12 @@ if (typeof window !== 'undefined') {
 		exitPlay();
 	});
 
+	// phone-polish: Back closes the top editor surface (backStack.js) EXCEPT while playing and on
+	// player-only pages, where W4 keeps today's behaviour. Suspended from the first `true`
+	// until the exit has settled (`null`), so the transient `false` never re-pushes a marker
+	// under play's own back() still on its way.
+	embedMode.subscribe((on) => suspendBack('player', !!on));
+	isLocked.subscribe((v) => suspendBack('play', v === true || v === false));
 	isLocked.subscribe((v) => {
 		// W4: the marker follows the state, not the button, so every entry gets one and
 		// every exit spends one — Escape, the ✕, a HUD quit, a peer-driven stop. This

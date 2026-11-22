@@ -12,7 +12,7 @@ const SCENE = 'scene';
 /** register a visible test effect through the public registry seam */
 async function registerFills(page) {
 	return page.evaluate(() => {
-		const { Effect, BlendFunction } = window.__stores.postprocessing;
+		const { Effect, BlendFunction } = window.__tp.test.v1.postprocessing;
 		const fill = (name, rgb) =>
 			new Effect(
 				name,
@@ -21,24 +21,24 @@ async function registerFills(page) {
 					', 1.0); }',
 				{ blendFunction: BlendFunction.SET }
 			);
-		window.__stores.scenePost.registerPostEffect('fill-red', {
+		window.__tp.test.v1.scenePost.registerPostEffect('fill-red', {
 			label: 'Fill red',
 			group: 'test',
 			make: () => fill('FillRed', '1.0, 0.0, 0.0')
 		});
-		window.__stores.scenePost.registerPostEffect('fill-blue', {
+		window.__tp.test.v1.scenePost.registerPostEffect('fill-blue', {
 			label: 'Fill blue',
 			group: 'test',
 			make: () => fill('FillBlue', '0.0, 0.0, 1.0')
 		});
-		return window.__stores.scenePost.postEffectKinds().map((d) => d.kind);
+		return window.__tp.test.v1.scenePost.postEffectKinds().map((d) => d.kind);
 	});
 }
 
 const docs = (page) =>
 	page.evaluate(() => {
 		let map = null;
-		window.__stores.scenePost.postStacks.subscribe((m) => (map = m))();
+		window.__tp.test.v1.scenePost.postStacks.subscribe((m) => (map = m))();
 		return Object.fromEntries(
 			Object.entries(map).map(([key, doc]) => [
 				key,
@@ -59,17 +59,17 @@ h.run(async () => {
 	console.log('\n=== 1. keyed documents ===');
 
 	const camUuid = await page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create sphere');
-		window.__stores.commandsHandler.sceneCommand('/create camera');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create sphere');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create camera');
 		await new Promise((r) => setTimeout(r, 1200));
-		const cams = window.__stores.cameraObjects.listCameraObjects();
+		const cams = window.__tp.test.v1.cameraObjects.listCameraObjects();
 		return cams[0]?.uuid ?? '';
 	});
 	h.check(!!camUuid, '1.1 premise: a camera object exists (' + camUuid.slice(0, 8) + ')');
 
   const keyed = await page.evaluate(
 		async ({ cam }) => {
-			const post = window.__stores.scenePost;
+			const post = window.__tp.test.v1.scenePost;
 			post.postStacks.set({});
 			post.addPostEffect('fill-red'); // no key -> the scene document
 			post.addPostEffect('fill-blue', undefined, cam); // keyed to the camera
@@ -94,8 +94,8 @@ h.run(async () => {
 
 	const chainOf = () => page.evaluate(() => window.__postDebug().kinds);
 	await page.evaluate(async () => {
-		window.__stores.objectActions.deselectObject();
-		window.__stores.viewMode.set('shaded');
+		window.__tp.test.v1.objectActions.deselectObject();
+		window.__tp.test.v1.viewMode.set('shaded');
 		await new Promise((r) => setTimeout(r, 1200));
 	});
 	h.check(
@@ -105,7 +105,7 @@ h.run(async () => {
 
 	const entered = await page.evaluate(
 		async (cam) => {
-			const ok = window.__stores.cameraPreview.startCameraPreview(cam);
+			const ok = window.__tp.test.v1.cameraPreview.startCameraPreview(cam);
 			await new Promise((r) => setTimeout(r, 1600));
 			return ok !== false;
 		},
@@ -120,7 +120,7 @@ h.run(async () => {
 	// replace mode
 	await page.evaluate(
 		async (cam) => {
-			window.__stores.scenePost.setCameraLookMode(cam, 'replace');
+			window.__tp.test.v1.scenePost.setCameraLookMode(cam, 'replace');
 			await new Promise((r) => setTimeout(r, 1200));
 		},
 		camUuid
@@ -131,7 +131,7 @@ h.run(async () => {
 	);
 	await page.evaluate(
 		async (cam) => {
-			window.__stores.scenePost.setCameraLookMode(cam, 'append');
+			window.__tp.test.v1.scenePost.setCameraLookMode(cam, 'append');
 			await new Promise((r) => setTimeout(r, 1200));
 		},
 		camUuid
@@ -142,7 +142,7 @@ h.run(async () => {
 	const clip = await h.centeredClip(A, [0, 0, 0], 300);
 	const framePreview = await h.grabFrame(A, clip);
 	await page.evaluate(async () => {
-		window.__stores.cameraPreview.stopCameraPreview();
+		window.__tp.test.v1.cameraPreview.stopCameraPreview();
 		await new Promise((r) => setTimeout(r, 1600));
 	});
 	h.check(
@@ -161,7 +161,7 @@ h.run(async () => {
 
 	const undo2 = await page.evaluate(
 		async (cam) => {
-			const post = window.__stores.scenePost;
+			const post = window.__tp.test.v1.scenePost;
 			const read = () => {
 				let m = null;
 				post.postStacks.subscribe((x) => (m = x))();
@@ -170,7 +170,7 @@ h.run(async () => {
 			const sceneBefore = read()['scene'].effects.length;
 			post.addPostEffect('fill-blue', undefined, cam);
 			const camAfter = read()[cam].effects.length;
-			window.__stores.history.undo();
+			window.__tp.test.v1.history.undo();
 			await new Promise((r) => setTimeout(r, 400));
 			const after = read();
 			return {
@@ -193,8 +193,8 @@ h.run(async () => {
 
 	// persistence: both documents survive a session round trip
 	const session = await page.evaluate(async (cam) => {
-		const post = window.__stores.scenePost;
-		const payload = window.__stores.sessions.buildSessionPayload('camera looks');
+		const post = window.__tp.test.v1.scenePost;
+		const payload = window.__tp.test.v1.sessions.buildSessionPayload('camera looks');
 		post.postStacks.set({});
 		post.scenePostRestore(payload.post);
 		await new Promise((r) => setTimeout(r, 300));
@@ -240,7 +240,7 @@ h.run(async () => {
 	);
 
 	// a live camera-document edit reaches B and does not touch its scene document
-	await page.evaluate((cam) => window.__stores.scenePost.setCameraLookMode(cam, 'replace'), camUuid);
+	await page.evaluate((cam) => window.__tp.test.v1.scenePost.setCameraLookMode(cam, 'replace'), camUuid);
 	await h.eventually(
 		() => docs(B.page),
 		(m) => m[camUuid]?.mode === 'replace',
@@ -255,11 +255,11 @@ h.run(async () => {
 	// B renders the camera look when B looks through that camera
 	const bChain = await B.page.evaluate(
 		async (cam) => {
-			window.__stores.objectActions.deselectObject();
-			window.__stores.viewMode.set('shaded');
+			window.__tp.test.v1.objectActions.deselectObject();
+			window.__tp.test.v1.viewMode.set('shaded');
 			await new Promise((r) => setTimeout(r, 800));
 			const before = window.__postDebug().kinds;
-			window.__stores.cameraPreview.startCameraPreview(cam);
+			window.__tp.test.v1.cameraPreview.startCameraPreview(cam);
 			await new Promise((r) => setTimeout(r, 1800));
 			return { before, after: window.__postDebug().kinds };
 		},
@@ -280,7 +280,7 @@ h.run(async () => {
 	// OVERRIDE rather than editing the authored document, so a game can turn a look on
 	// without that ending up in what the next edit broadcasts.
 	const nodeRun = await page.evaluate(async (cam) => {
-		const post = window.__stores.scenePost;
+		const post = window.__tp.test.v1.scenePost;
 		const read = () => window.__postDebug().kinds;
 		const docEnabled = () => {
 			let m = null;
@@ -289,7 +289,7 @@ h.run(async () => {
 		};
 		post.clearLookOverride(cam);
 		post.setCameraLookMode(cam, 'append');
-		window.__stores.cameraPreview.startCameraPreview(cam);
+		window.__tp.test.v1.cameraPreview.startCameraPreview(cam);
 		await new Promise((r) => setTimeout(r, 1600));
 		const on = read();
 		post.setLookOverride(cam, false);
@@ -317,7 +317,7 @@ h.run(async () => {
 
 	// the node is REGISTERED, and drives the same seam the runtime calls
 	const nodeDef = await page.evaluate(() => {
-		const groups = window.__stores.nodeCatalog.nodeCatalog ?? [];
+		const groups = window.__tp.test.v1.nodeCatalog.nodeCatalog ?? [];
 		const all = groups.flatMap((g) => g.items ?? []);
 		const def = all.find((n) => n.type === 'setlook');
 		return { found: !!def, defaults: def?.defaults ?? null };
@@ -356,7 +356,7 @@ h.run(async () => {
 	// `activate` (default on) is the fix, so this section drives the WHOLE chain through
 	// real key presses and asserts the picture actually changes.
 	const scenario = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Camera');
 		await new Promise((r) => setTimeout(r, 900));
 		const cams = s.cameraObjects.listCameraObjects();
@@ -402,12 +402,12 @@ h.run(async () => {
 	const through = () =>
 		page.evaluate(() => {
 			let p = null;
-			window.__stores.cameraPreview.cameraPreview.subscribe((x) => (p = x))();
+			window.__tp.test.v1.cameraPreview.cameraPreview.subscribe((x) => (p = x))();
 			return { uuid: p?.uuid ?? null, chain: window.__postDebug().kinds };
 		});
 
 	// press play, then the keys — exactly the reported sequence
-	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await page.waitForTimeout(900);
 	await page.keyboard.press('r');
 	await page.waitForTimeout(1800);
@@ -431,7 +431,7 @@ h.run(async () => {
 
 	// and the silent case still explains itself rather than doing nothing quietly
 	const silent = await page.evaluate(async (c1) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.cameraPreview.stopCameraPreview();
 		s.updateGraph(s.SCENE_GRAPH, (g) => ({
 			...g,
@@ -448,7 +448,7 @@ h.run(async () => {
 	await page.waitForTimeout(1500);
 	const explained = await page.evaluate(() => {
 		let list = [];
-		window.__stores.toastStore.subscribe((t) => (list = t))();
+		window.__tp.test.v1.toastStore.subscribe((t) => (list = t))();
 		return {
 			said: list.some((t) => /looking through that camera/i.test(typeof t === 'string' ? t : (t?.text ?? ''))),
 			chain: window.__postDebug().kinds
@@ -471,7 +471,7 @@ h.run(async () => {
 	// still looks right" is not "it survived". So this goes through the real
 	// exportSessionZip -> importSessionZip pair and asserts the SHAPE on the far side.
 	const zipTrip = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const S = s.sessions;
 		const post = s.scenePost;
 		const cams = s.cameraObjects.listCameraObjects();

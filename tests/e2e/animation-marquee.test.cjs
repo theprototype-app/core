@@ -13,11 +13,11 @@ const h = require('./helpers.cjs');
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
-	await A.page.waitForFunction(() => !!window.__stores?.animationPreview, { timeout: 20000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.animationPreview, { timeout: 20000 });
 
 	// ---------- two channels, four keys each, at known times ----------
 	const uuid = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 400));
 		let g;
@@ -157,7 +157,9 @@ h.run(async () => {
 	await A.page.mouse.up();
 	await A.page.waitForTimeout(200);
 	h.check((await selection())?.length === 2, 'something is selected again');
-	await A.page.mouse.click(plot.x + plot.width - 14, plot.y + plot.height - 3);
+	// showhide-v8: the key-properties arrow handle owns the plot's right 16 px — the empty-body click lands left of it
+	const keyHandle = await A.page.locator('#animation-key-toggle').boundingBox();
+	await A.page.mouse.click(Math.min(plot.x + plot.width - 14, keyHandle ? keyHandle.x - 4 : Infinity), plot.y + plot.height - 3);
 	await A.page.waitForTimeout(250);
 	h.check(
 		(await selection())?.length === 2,
@@ -177,7 +179,9 @@ h.run(async () => {
 
 	// draw a loop around the first row's LAST TWO keys only
 	const lx0 = firstRow[2].x - 10;
-	const lx1 = firstRow[3].x + 10;
+	// ...and the loop's right side stays left of the key-properties handle (it owns the plot's right 16 px)
+	const keyHandle2 = await A.page.locator('#animation-key-toggle').boundingBox();
+	const lx1 = Math.min(firstRow[3].x + 10, keyHandle2 ? keyHandle2.x - 2 : Infinity);
 	const ly0 = rowYs[0] - 8;
 	const ly1 = rowYs[0] + 8;
 	await A.page.mouse.move(lx0, ly0);
@@ -203,7 +207,7 @@ h.run(async () => {
 	// that took everything on the row would also report 2 if the row had only 2
 	const lassoTimes = await A.page.evaluate((id) => {
 		const dbg = /** @type {any} */ (window).__animationDebug;
-		const ap = window.__stores.animationPreview;
+		const ap = window.__tp.test.v1.animationPreview;
 		const clip = ap.activeClip(id);
 		return dbg.selKeys().map((/** @type {string} */ s) => {
 			const [tid, i] = s.split(':');
@@ -250,14 +254,14 @@ h.run(async () => {
 
 	// and the selection it made is usable: Del removes exactly those keys
 	const before = await A.page.evaluate((id) => {
-		const clip = window.__stores.animationPreview.activeClip(id);
+		const clip = window.__tp.test.v1.animationPreview.activeClip(id);
 		return clip.tracks.reduce((n, /** @type {any} */ t) => n + t.keys.length, 0);
 	}, uuid);
 	const picked = graphSel.length;
 	await A.page.keyboard.press('Delete');
 	await A.page.waitForTimeout(300);
 	const after = await A.page.evaluate((id) => {
-		const clip = window.__stores.animationPreview.activeClip(id);
+		const clip = window.__tp.test.v1.animationPreview.activeClip(id);
 		return clip.tracks.reduce((n, /** @type {any} */ t) => n + t.keys.length, 0);
 	}, uuid);
 	h.check(

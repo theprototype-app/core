@@ -8,7 +8,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	const res = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const me = s.meshEdit;
 		const fe = s.faceEdit;
 		s.commandsHandler.sceneCommand('/create box');

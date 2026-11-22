@@ -84,10 +84,10 @@ h.run(async () => {
 	}
 
 	const windows = [
-		['Explorer', () => window.__stores.explorerClose.set(false), '#explorer-window'],
-		['Node editor', () => window.__stores.flowGraphClose.set(false), '#flow-window'],
-		['UV editor', () => window.__stores.uvEditorClose.set(false), '#uv-window'],
-		['Animation', () => window.__stores.animationClose.set(false), '#animation-window']
+		['Explorer', () => window.__tp.test.v1.explorerClose.set(false), '#explorer-window'],
+		['Node editor', () => window.__tp.test.v1.flowGraphClose.set(false), '#flow-window'],
+		['UV editor', () => window.__tp.test.v1.uvEditorClose.set(false), '#uv-window'],
+		['Animation', () => window.__tp.test.v1.animationClose.set(false), '#animation-window']
 	];
 	for (const [name, opener, sel] of windows) {
 		const box = await measure(A.page, opener, sel);
@@ -107,7 +107,7 @@ h.run(async () => {
 	}
 
 	// the object list: same story, its own hand-rolled rect
-	const listBox = await measure(A.page, () => window.__stores.objectListClose.set(false), '#object-list');
+	const listBox = await measure(A.page, () => window.__tp.test.v1.objectListClose.set(false), '#object-list');
 	if (listBox) {
 		h.check(
 			listBox.w <= viewport.w && listBox.h <= viewport.h,
@@ -126,7 +126,7 @@ h.run(async () => {
 	// screen, and "another window is on top of this one" is normal windowing, not
 	// the bug under test (an unreachable grip on an EMPTY desktop is)
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.explorerClose.set(true);
 		s.flowGraphClose.set(true);
 		s.uvEditorClose.set(true);
@@ -135,7 +135,7 @@ h.run(async () => {
 	});
 	await A.page.waitForTimeout(500);
 	await A.page.evaluate(async () => {
-		const { commandsHandler, objectsGroup, objectActions, faceEdit } = window.__stores;
+		const { commandsHandler, objectsGroup, objectActions, faceEdit } = window.__tp?.test.v1;
 		commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 700));
 		let group = null;

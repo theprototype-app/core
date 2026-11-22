@@ -60,7 +60,7 @@ async function firstVisit(browser, url) {
 	const page = await ctx.newPage();
 	page.on('pageerror', (err) => console.log('[pageerror] ' + err.stack));
 	await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-	await page.waitForFunction(() => window.__stores && !!window.__stores.whatsNew, { timeout: 30000 });
+	await page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.whatsNew, { timeout: 30000 });
 	await page.waitForTimeout(600);
 	return { ctx, page };
 }
@@ -96,23 +96,23 @@ h.run(async () => {
 	// ---------------------------------------------------------------- 1. inert defaults
 	const def = await A.page.evaluate((readSrc) => {
 		const read = eval(readSrc);
-		const c = window.__stores.cloudHooks;
+		const c = window.__tp.test.v1.cloudHooks;
 		return {
 			version: c.CLOUD_HOOKS_VERSION,
 			sidebar: read(c.sidebarSlot),
 			provider: read(c.communityProvider),
-			notice: read(window.__stores.sceneTemplates.communityNotice),
-			deepLink: window.__stores.whatsNew.hasDeepLink()
+			notice: read(window.__tp.test.v1.sceneTemplates.communityNotice),
+			deepLink: window.__tp.test.v1.whatsNew.hasDeepLink()
 		};
 	}, readStore);
 	check(def.version === 3, 'CLOUD_HOOKS_VERSION is 3 (' + def.version + ')');
 	check(def.sidebar === null && def.provider === null && def.notice === null, 'A5/A6: sidebar slot, community provider and notice are null without a plugin');
 	check(def.deepLink === false, 'A7: a bare open is not a deep link');
-	await A.page.evaluate(() => window.__stores.closeMenu.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.closeMenu.set(false));
 	await A.page.waitForTimeout(350);
 	check(await A.page.locator('#format-row').isVisible(), 'premise: the logo menu is open and shows the Save format row');
 	check((await A.page.locator('#sidebar-cloud-slot').count()) === 0, 'A5: no sidebar slot renders without a plugin');
-	await A.page.evaluate(() => window.__stores.closeMenu.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.closeMenu.set(true));
 
 	// ---------------------------------------------------------- 2. the example plugin
 	await A.page.evaluate(() => localStorage.setItem('cloudPluginUrl', '/cloud-plugin-example.js'));
@@ -133,7 +133,7 @@ h.run(async () => {
 	check(surface.camMissing.length === 0, 'camera.* present: ' + (surface.camMissing.length ? 'MISSING ' + surface.camMissing.join(',') : 'pose/setPose/bookmarks/recall'));
 
 	// ---------------------------------------------------- 3. the sidebar slot under Save
-	await A.page.evaluate(() => window.__stores.closeMenu.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.closeMenu.set(false));
 	await A.page.waitForTimeout(350);
 	const slot = await A.page.evaluate(() => {
 		const slot = document.querySelector('#sidebar-cloud-slot');
@@ -171,22 +171,22 @@ h.run(async () => {
 	);
 	check(Math.abs(slot.width - slot.nativeWidth) < 1.5, `A5: the plugin row spans the menu like a native row (${slot.width} vs ${slot.nativeWidth})`);
 	check(slot.icoWidth === slot.nativeIcoWidth, 'A5: the .side-ico column matches the native rows (' + slot.icoWidth + ')');
-	await A.page.evaluate(() => window.__stores.closeMenu.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.closeMenu.set(true));
 
 	// ------------------------------------------- 4. buildSceneBundle on a 3-object scene
 	await A.page.evaluate(() => {
-		for (let i = 0; i < 3; i++) window.__stores.commandsHandler.sceneCommand('/create box');
+		for (let i = 0; i < 3; i++) window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 	});
 	await h.eventually(
-		() => A.page.evaluate(() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g?.children?.length ?? 0))())),
+		() => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g?.children?.length ?? 0))())),
 		(n) => n === 3,
 		'premise: three objects in the scene'
 	);
 	// an ASSET the scene references: a music track from the Explorer (sceneAssets lists it)
 	const music = await A.page.evaluate(async (b64) => {
 		const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-		const item = await window.__stores.explorer.addItemFromBytes(bytes, 'tone.wav', null);
-		window.__stores.sceneMusic.setMusicTrack(item.hash, 'tone.wav');
+		const item = await window.__tp.test.v1.explorer.addItemFromBytes(bytes, 'tone.wav', null);
+		window.__tp.test.v1.sceneMusic.setMusicTrack(item.hash, 'tone.wav');
 		return { hash: item.hash, name: item.name };
 	}, wavBase64());
 	check(!!music.hash, 'premise: a wav is in the Explorer and set as the scene music (' + String(music.hash).slice(0, 8) + ')');
@@ -194,9 +194,9 @@ h.run(async () => {
 	const before = await A.page.evaluate((readSrc) => {
 		const read = eval(readSrc);
 		return {
-			level: read(window.__stores.levels.currentLevel),
-			sessions: (read(window.__stores.sessions.sessions) ?? []).length,
-			items: (read(window.__stores.explorer.explorerItems) ?? []).length
+			level: read(window.__tp.test.v1.levels.currentLevel),
+			sessions: (read(window.__tp.test.v1.sessions.sessions) ?? []).length,
+			items: (read(window.__tp.test.v1.explorer.explorerItems) ?? []).length
 		};
 	}, readStore);
 
@@ -233,9 +233,9 @@ h.run(async () => {
 	const after = await A.page.evaluate((readSrc) => {
 		const read = eval(readSrc);
 		return {
-			level: read(window.__stores.levels.currentLevel),
-			sessions: (read(window.__stores.sessions.sessions) ?? []).length,
-			items: (read(window.__stores.explorer.explorerItems) ?? []).length
+			level: read(window.__tp.test.v1.levels.currentLevel),
+			sessions: (read(window.__tp.test.v1.sessions.sessions) ?? []).length,
+			items: (read(window.__tp.test.v1.explorer.explorerItems) ?? []).length
 		};
 	}, readStore);
 	check(
@@ -245,7 +245,7 @@ h.run(async () => {
 
 	// hasFlow flips on the first real NODE; `flow: false` strips it from bundle AND meta
 	await A.page.evaluate(() => {
-		window.__stores.flowNodes.set([{ id: 'seam-n1', type: 'number', position: { x: 0, y: 0 }, data: { value: 1 } }]);
+		window.__tp.test.v1.flowNodes.set([{ id: 'seam-n1', type: 'number', position: { x: 0, y: 0 }, data: { value: 1 } }]);
 	});
 	await A.page.waitForTimeout(200);
 	const flowMeta = await A.page.evaluate(async () => {
@@ -255,7 +255,7 @@ h.run(async () => {
 	});
 	check(flowMeta.withFlow === true, 'A1 meta.hasFlow is true once a graph has a node');
 	check(flowMeta.without === false, 'A1 meta.hasFlow is false for a bundle built with flow:false');
-	await A.page.evaluate(() => window.__stores.flowNodes.set([]));
+	await A.page.evaluate(() => window.__tp.test.v1.flowNodes.set([]));
 
 	// ------------------------------------------------ 5. loadRemoteScene, a served file
 	const blockout = fixture('level-blockout');
@@ -264,7 +264,7 @@ h.run(async () => {
 	);
 	check(loaded === true, 'A2: loadRemoteScene resolves true');
 	await h.eventually(
-		() => A.page.evaluate(() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r((g?.children ?? []).map((c) => c.name)))())),
+		() => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r((g?.children ?? []).map((c) => c.name)))())),
 		(list) => list.length === blockout.count && blockout.names.every((n) => list.includes(n)),
 		`A2: the served .tpscene's ${blockout.count} objects are in the viewport (${blockout.names.slice(0, 3).join(', ')}…)`
 	);
@@ -281,12 +281,12 @@ h.run(async () => {
 		const p1 = c.pose();
 		await new Promise((r) => setTimeout(r, 350)); // two frames: OrbitControls must not revert it
 		const p2 = c.pose();
-		const bm = window.__stores.cameraBookmarks.saveBookmark('Hero shot');
+		const bm = window.__tp.test.v1.cameraBookmarks.saveBookmark('Hero shot');
 		const list = c.bookmarks();
 		c.setPose({ position: [-3, 2, -3], target: [0, 0, 0] });
 		const recalled = c.recall(bm.id);
 		const p3 = c.pose();
-		window.__stores.cameraBookmarks.deleteBookmark(bm.id);
+		window.__tp.test.v1.cameraBookmarks.deleteBookmark(bm.id);
 		const gone = c.recall(bm.id);
 		const bad = c.setPose({ position: [1, 2], target: null });
 		return { p0, ok, p1, p2, bm: { id: bm.id, name: bm.name }, list, recalled, p3, gone, bad };
@@ -304,14 +304,14 @@ h.run(async () => {
 	const started = await A.page.evaluate(() => window.__cloudApi.startPlay());
 	check(started === true, 'A4 startPlay() returns true');
 	await h.eventually(
-		() => A.page.evaluate(() => new Promise((r) => window.__stores.isLocked.subscribe((v) => r(v))())),
+		() => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.isLocked.subscribe((v) => r(v))())),
 		(v) => v === true,
 		'A4 startPlay enters play mode (isLocked === true, no pointer lock needed)'
 	);
 	const stopped = await A.page.evaluate(() => window.__cloudApi.stopPlay());
 	check(stopped === true, 'A4 stopPlay() returns true when we were playing');
 	await h.eventually(
-		() => A.page.evaluate(() => new Promise((r) => window.__stores.isLocked.subscribe((v) => r(v))())),
+		() => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.isLocked.subscribe((v) => r(v))())),
 		(v) => v !== true,
 		'A4 stopPlay leaves play mode'
 	);
@@ -319,13 +319,16 @@ h.run(async () => {
 	check((await A.page.evaluate(() => window.__cloudApi.stopPlay())) === false, 'A4 stopPlay() returns false when not playing');
 
 	// ---------------------------------------------------- 8. the community provider
-	await A.page.evaluate(() => window.__stores.templatesModalOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.templatesModalOpen.set(true));
 	await A.page.waitForTimeout(400);
 	await A.page.locator('#templates-tab-community').click();
+	// the example provider lists every bundled template (static/templates/index.json): 3 until 1.64 added
+	// "Two levels and a portal" (93) and "Doors, a bell and a guard" (F27), so the count is read, not pinned
+	const bundled = await A.page.evaluate(async () => ((await (await fetch('/templates/index.json')).json()).templates || []).length);
 	await h.eventually(
 		() => A.page.locator('#templates-modal [data-scene-slug]').count(),
-		(n) => n === 3,
-		'A6: the Community tab lists the provider rows (3 bundled templates)'
+		(n) => n === bundled && n >= 3,
+		`A6: the Community tab lists the provider rows (${bundled} bundled templates)`
 	);
 	const provided = await A.page.evaluate(() => {
 		const modal = document.querySelector('#templates-modal');
@@ -343,7 +346,7 @@ h.run(async () => {
 	check(provided.notice.includes('Community (example)'), 'A6: the provider\'s notice row renders above the grid');
 	check(provided.submitTag === 'BUTTON' && provided.submitText === 'Publish from the app (example)', 'A6: "Submit yours on GitHub" is swapped for the provider\'s submit action');
 	check(provided.prCopy === false, 'A6: the pull-request copy stands down while a provider is installed');
-	check(provided.likes === 3 && provided.remix === 1, `A6: cards render likeCount/remixOf only when present (${provided.likes} likes badges, ${provided.remix} remix)`);
+	check(provided.likes === bundled && provided.remix === 1, `A6: cards render likeCount/remixOf only when present (${provided.likes} likes badges, ${provided.remix} remix)`);
 	check(provided.slugs.includes('level-blockout') && provided.slugs.includes('physics-playground'), 'A6: the rows are the bundled index entries');
 	galleryFetches = 0;
 
@@ -375,7 +378,7 @@ h.run(async () => {
 	check(swapped.notice === null, 'A6: a provider with no notice() renders no notice row');
 	check(swapped.submit === 'Submit yours on GitHub', 'A6: a provider with no submit keeps the GitHub link');
 	check(swapped.likes === 1, 'A6: likeCount 0 still renders (present), absent does not');
-	const namesBefore = await A.page.evaluate(() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r((g?.children ?? []).map((c) => c.name)))()));
+	const namesBefore = await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r((g?.children ?? []).map((c) => c.name)))()));
 	await A.page.locator('#templates-modal [data-scene-slug="prov-a"]').click();
 	await h.eventually(
 		() => A.page.evaluate(() => window.__providerLoaded),
@@ -383,12 +386,12 @@ h.run(async () => {
 		'A6: a card click goes to the PROVIDER\'s load(entry)'
 	);
 	await A.page.waitForTimeout(600);
-	const namesAfter = await A.page.evaluate(() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r((g?.children ?? []).map((c) => c.name)))()));
+	const namesAfter = await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r((g?.children ?? []).map((c) => c.name)))()));
 	check(JSON.stringify(namesAfter) === JSON.stringify(namesBefore), 'A6: ...and core did NOT fall through to its own loader (scene unchanged)');
 	check(galleryFetches === 0, 'A6: no gallery.json fetch while a provider is installed');
 
 	// null RESTORES the GitHub source: the tab fetches gallery.json again and shows it
-	await A.page.evaluate(() => window.__stores.templatesModalOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.templatesModalOpen.set(true));
 	await A.page.waitForTimeout(300);
 	await A.page.locator('#templates-tab-community').click();
 	await A.page.waitForTimeout(200);
@@ -402,7 +405,7 @@ h.run(async () => {
 	const restored = await A.page.evaluate(() => {
 		const submit = document.querySelector('#community-submit');
 		return {
-			provider: (() => { let v; window.__stores.cloudHooks.communityProvider.subscribe((x) => (v = x))(); return v; })(),
+			provider: (() => { let v; window.__tp.test.v1.cloudHooks.communityProvider.subscribe((x) => (v = x))(); return v; })(),
 			submitTag: submit?.tagName,
 			href: submit?.getAttribute('href'),
 			prCopy: /pull request/i.test(document.querySelector('#templates-modal')?.textContent ?? ''),
@@ -412,7 +415,7 @@ h.run(async () => {
 	check(restored.provider === null, 'A6: the provider store reads null');
 	check(restored.submitTag === 'A' && restored.href === 'https://github.com/theprototype-app/community-gallery', 'A6: the GitHub submit link is back');
 	check(restored.prCopy === true && restored.notice === null, 'A6: the pull-request copy is back and no notice row remains');
-	await A.page.evaluate(() => window.__stores.templatesModalOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.templatesModalOpen.set(false));
 
 	// --------------------------------------------------------- 9. unload -> inert again
 	await A.page.evaluate(() => localStorage.removeItem('cloudPluginUrl'));
@@ -420,11 +423,11 @@ h.run(async () => {
 	await A.page.waitForTimeout(400);
 	const inert = await A.page.evaluate((readSrc) => {
 		const read = eval(readSrc);
-		window.__stores.closeMenu.set(false);
+		window.__tp.test.v1.closeMenu.set(false);
 		return {
 			api: typeof window.__cloudApi,
-			sidebar: read(window.__stores.cloudHooks.sidebarSlot),
-			provider: read(window.__stores.cloudHooks.communityProvider)
+			sidebar: read(window.__tp.test.v1.cloudHooks.sidebarSlot),
+			provider: read(window.__tp.test.v1.cloudHooks.communityProvider)
 		};
 	}, readStore);
 	await A.page.waitForTimeout(350);
@@ -436,10 +439,10 @@ h.run(async () => {
 	// the bare boot FIRST, so the absence below cannot pass vacuously
 	const bare = await firstVisit(browser, h.URL);
 	check(await bare.page.locator('#welcome-overlay').isVisible(), 'A7 premise: a bare first visit shows the welcome overlay');
-	check((await bare.page.evaluate(() => window.__stores.whatsNew.hasDeepLink())) === false, 'A7: hasDeepLink() is false on a bare open');
+	check((await bare.page.evaluate(() => window.__tp.test.v1.whatsNew.hasDeepLink())) === false, 'A7: hasDeepLink() is false on a bare open');
 	await bare.ctx.close();
 	const linked = await firstVisit(browser, h.URL + '?s=x');
-	check((await linked.page.evaluate(() => window.__stores.whatsNew.hasDeepLink())) === true, 'A7: hasDeepLink() is true for /?s=x');
+	check((await linked.page.evaluate(() => window.__tp.test.v1.whatsNew.hasDeepLink())) === true, 'A7: hasDeepLink() is true for /?s=x');
 	check(!(await linked.page.locator('#welcome-overlay').isVisible()), 'A7: /?s=x suppresses the first-visit welcome overlay');
 	check(
 		(await linked.page.evaluate(() => localStorage.getItem('hasSeenWelcome'))) === null,

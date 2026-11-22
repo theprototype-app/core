@@ -272,6 +272,18 @@ describe('waitForEdit()', () => {
 		expect(res).toEqual({ changed: false, timedOut: true });
 		expect(app.subs.size).toBe(0);
 	});
+	it('mcp-diorama2 19: wakes on a NEW ping, says which, and lets go of the ping feed', async () => {
+		const pingSubs = new Set();
+		const app = fakeApp({ onPing: (/** @type {any} */ cb) => (pingSubs.add(cb), () => pingSubs.delete(cb)) });
+		const { agent } = createAgentCore(app.deps);
+		const wait = agent.waitForEdit(1000);
+		await tick();
+		for (const fn of pingSubs) fn({ id: 'p1', by: 'ann', position: [1, 0, 2] });
+		const res = await wait;
+		expect(res).toMatchObject({ changed: true, ping: { id: 'p1', position: [1, 0, 2] } });
+		expect(pingSubs.size).toBe(0);
+		expect(app.subs.size).toBe(0);
+	});
 	it("is not woken by the agent's own exec", async () => {
 		const app = fakeApp();
 		const { agent } = createAgentCore(app.deps);
@@ -377,6 +389,19 @@ describe('86 B3: inSession (the Claude connector in a PERSON’s tab)', () => {
 		app.state.role = 'viewer';
 		const r = await agent.exec('create_objects', { objects: [{ kind: 'primitive' }] });
 		expect(r.refused).toBe(true);
+	});
+	// mcp-fix: the owner saw joined:true and waiting:true at once during a failed join
+	it('joined and waiting can never both be true, and an edit waits with them', async () => {
+		const app = fakeApp({ inSession: () => true });
+		app.state.host = null;
+		app.state.peers = [];
+		const { agent } = createAgentCore(app.deps);
+		expect([agent.status().joined, agent.status().waiting]).toEqual([true, false]);
+		app.state.waiting = true;
+		expect([agent.status().joined, agent.status().waiting]).toEqual([false, true]);
+		const r = await agent.exec('create_objects', { objects: [{ kind: 'primitive' }] });
+		expect(r.refused).toBe(true);
+		expect(r.error).toMatch(/waiting for a host/);
 	});
 	it('counterfactual: without inSession the same tab is refused as "not in a session"', async () => {
 		const app = fakeApp();

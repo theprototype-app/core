@@ -1,6 +1,6 @@
 {
 	"name": "@theprototype/agent",
-	"version": "1.53.0",
+	"version": "1.64.0",
 	"description": "Let an AI agent (Claude Code, Claude Desktop, any MCP host) join a theprototype.app session from its link and build the 3D scene with you.",
 	"type": "module",
 	"license": "MIT",
@@ -39,11 +39,15 @@
 		"access": "public"
 	},
 	"scripts": {
-		"test": "node test/chat.test.mjs && node test/messages.test.mjs && node test/bridge.test.mjs && node test/link.test.mjs && node test/mcp.test.mjs && node test/repl.test.mjs && node test/wire.test.mjs && node test/catalog.test.mjs && node test/http.test.mjs",
+		"test": "node test/eval.test.mjs && node test/chat.test.mjs && node test/messages.test.mjs && node test/bridge.test.mjs && node test/link.test.mjs && node test/mcp.test.mjs && node test/repl.test.mjs && node test/wire.test.mjs && node test/catalog.test.mjs && node test/http.test.mjs",
 		"spike": "node src/spike.js",
 		"smoke": "node src/cli.js smoke",
 		"repl": "node src/cli.js repl",
-		"mcp": "node src/cli.js mcp"
+		"mcp": "node src/cli.js mcp",
+		"eval:results": "node eval/results.mjs",
+		"eval:shapes": "node eval/results.mjs --runs 1 --label shapes --script eval/controls-agent-shapes.json --only star-once,health-respawn,late-joiner,pickup-own --expect 1",
+		"eval:smoke": "node eval/results.mjs --runs 1 --label smoke --script eval/controls.json --only door-near,star-once,hit-sound,health-respawn,pickup-own,pause-p --expect 1",
+		"eval:recipes": "node eval/results.mjs --runs 1 --label recipes --script eval/controls-recipes.json --only pause-p,toggle-shared,pickup-own,star-once,health-respawn,late-joiner --expect 1"
 	},
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "^1.32.1",

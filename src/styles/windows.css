@@ -528,6 +528,9 @@
 	right: auto !important;
 	width: var(--sb-left-w, 320px) !important;
 	height: calc(100vh - var(--sb-left-top, 64px) - var(--sb-strip-h, 30px) - var(--sb-left-bottom, 0px)) !important;
+	/* ui-audit-honor: 100vh is the URL-bar-HIDDEN viewport on Android Chrome; with the bar shown the column ran ~60px
+	   off the bottom (HONOR unfolded). 100dvh = what you can see; 100vh stays as the fallback */
+	height: calc(100dvh - var(--sb-left-top, 64px) - var(--sb-strip-h, 30px) - var(--sb-left-bottom, 0px)) !important;
 }
 [data-docked='right'] {
 	top: calc(var(--sb-right-top, 64px) + var(--sb-strip-h, 30px)) !important;
@@ -535,6 +538,9 @@
 	right: 0px !important;
 	width: var(--sb-right-w, 320px) !important;
 	height: calc(100vh - var(--sb-right-top, 64px) - var(--sb-strip-h, 30px) - var(--sb-right-bottom, 0px)) !important;
+	/* ui-audit-honor: 100vh is the URL-bar-HIDDEN viewport on Android Chrome; with the bar shown the column ran ~60px
+	   off the bottom (HONOR unfolded). 100dvh = what you can see; 100vh stays as the fallback */
+	height: calc(100dvh - var(--sb-right-top, 64px) - var(--sb-strip-h, 30px) - var(--sb-right-bottom, 0px)) !important;
 }
 
 /* 43 K1 — while a sidebar's grip is held ($lib/sidebars `sidebarResizing`), nothing that follows the column's
@@ -643,6 +649,13 @@
 	z-index: calc(var(--z-dock) + 1) !important;
 	background: var(--surface-1);
 }
+/* uir-polish G4 (owner 2026-11-11): a window HOSTED in the bottom dock closes from its dock tab's ×, so its header
+   ✕ stands down — and so do its Dock / pop-out buttons (HeadDockPop: it is docked). A hand-made ✕ marks itself
+   `data-wc-x`; the same mark also drops it in a sidebar column (the J7 rule above covers WindowChrome's ✕). */
+:root:not(.phone-shell) [data-pd-host] :is(.wc-head .wc-close, [data-wc-x], [data-head-dock], [data-head-popout]),
+[data-docked] [data-wc-x] {
+	display: none !important;
+}
 :root:not(.phone-shell) [data-pd-host='hidden'] {
 	display: none !important;
 }
@@ -689,6 +702,10 @@
 :root[data-focus] {
 	--sb-dock-left: 0px !important;
 	--sb-dock-right: 0px !important;
+	--sb-free-left: 0px !important;
+	--sb-free-right: 0px !important;
+	--sb-free-top-left: 0px !important;
+	--sb-free-top-right: 0px !important;
 }
 /* ...and the tab-strip row above the panel is painted too (its tabs float over the view the rest of the
    time): an outer shadow, so the panel's own overflow clipping cannot cut it */
@@ -742,4 +759,20 @@ html:root[data-focus='dock'] [data-pd-host='shown'] {
 }
 :root[data-dock-split][data-focus='dock']:not(.phone-shell) .tp-dock-panel[data-dock-pane='a'] .dt-row {
 	right: calc(var(--focus-exit-reach, 208px) - var(--dock-split-bw));
+}
+
+/* 78 PL39 (owner 2026-11-09) — A 28 PX TOUCH GRIP. The corner resize grips keep their drawn size (16 px for
+   dragWindow's, 14 px for the editors' own); on a coarse pointer the area a finger can grab grows to 28 px,
+   inward from the corner (a pseudo-element hit counts as the grip's own), so a window can be resized by
+   finger without hunting for a 14 px square. */
+@media (pointer: coarse) {
+	.dw-resize::after,
+	.resize-cue.cursor-se-resize::after {
+		content: '';
+		position: absolute;
+		right: 0;
+		bottom: 0;
+		width: 28px;
+		height: 28px;
+	}
 }

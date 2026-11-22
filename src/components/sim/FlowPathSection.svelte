@@ -13,6 +13,7 @@
 	import { objectsGroup } from '../../stores/sceneStore';
 	import { normalizeFlowPath, MAX_FLOW_POINTS, arcLengths } from '$lib/sim/flowPathCore.js';
 	import { setFlowPathFor } from '$lib/sim/fluidEmitterActions.js';
+	import TextOnPathButton from '../menu/TextOnPathButton.svelte'; // 64 D2
 
 	/** @type {{object: any}} */
 	let { object } = $props();
@@ -142,6 +143,7 @@
 					/>
 				{/if}
 			</div>
+			<TextOnPathButton {object} />
 			<p class="mt-1 text-[length:var(--fs-badge)] text-text-muted">
 				Water from a Fluid emitter whose area reaches this path is carried along it. Objects with a "Float along flow" node ride it. Physics bodies pass through the
 				surface (it is a sensor).

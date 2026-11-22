@@ -16,6 +16,7 @@
 	import { buildObjectMenuItems } from '$lib/objectMenu';
 	import { sendPing } from '$lib/ping';
 	import { moduleToolboxes, openToolboxes, buildToolboxItems } from '$lib/moduleToolboxes';
+	import { moduleViewToggles } from '$lib/moduleWorldItems.js'; // 61-nav: module overlays (navmesh, NPC debug)
 	import { togglePanel } from '$lib/panelToggles';
 	import { trackpadMode } from '$lib/trackpadNav';
 	import { helpersInPlay } from '$lib/helperLayer';
@@ -179,6 +180,7 @@
 				},
 				{
 					label: 'Draw mode',
+					icon: 'pen-tool',
 					checked: $drawMode,
 					tooltip: 'Drag on surfaces to draw 3D strokes (Esc exits)',
 					action: toggleDrawMode
@@ -207,6 +209,7 @@
 				},
 				{
 					label: $measureMode ? 'Stop measuring' : 'Measure distance',
+					icon: 'ruler',
 					checked: $measureMode,
 					tooltip: 'Click points (they snap to corners, edges and faces); ✓ or Enter keeps the measurement in the scene; Esc cancels',
 					action: () => toggleMeasure()
@@ -223,7 +226,8 @@
 						]
 					: []),
 				{
-					label: $simulating ? '⏹ Stop simulation' : '▶ Simulate physics',
+					label: $simulating ? 'Stop simulation' : 'Simulate physics',
+					icon: $simulating ? 'square' : 'play',
 					disabled: !!$remoteSimulating,
 					tooltip: $remoteSimulating
 						? nameOf($remoteSimulating) + ' is simulating'
@@ -233,11 +237,13 @@
 				...($simulating
 					? [
 							{
-								label: $simPaused ? '▶ Resume simulation' : '⏸ Pause simulation',
+								label: $simPaused ? 'Resume simulation' : 'Pause simulation',
+								icon: $simPaused ? 'play' : 'pause',
 								action: () => pauseSimulation()
 							},
 							{
-								label: '↺ Reset simulation',
+								label: 'Reset simulation',
+								icon: 'rotate-ccw',
 								tooltip: 'Restore the initial layout (no undo entry)',
 								action: () => resetSimulation()
 							}
@@ -331,6 +337,16 @@
 					tooltip: 'Render light helpers, camera frustums and camera markers inside Play mode (a DEBUG chip marks the frame)',
 					action: () => helpersInPlay.update((v) => !v)
 				},
+				// 61-nav: module overlays (api.registerViewToggle) — LOCAL, read on every menu open
+				...$moduleViewToggles.map((t) => ({
+					label: t.label,
+					checked: t.get(),
+					tooltip: t.tooltip ?? '',
+					action: () => {
+						t.set(!t.get());
+						moduleViewToggles.update((list) => [...list]);
+					}
+				})),
 				{
 					// 24-A2.3: the per-device override, where the problem is. The classifier
 					// (trackpadNav.js) decides by device signature; a user whose wheel still

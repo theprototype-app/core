@@ -10,7 +10,7 @@
 //   D. a tab that died while visible (its unload never cleared the alive flag) reports `crash` on its next load
 //
 // Counterfactual: on v1.38.0 the module does not exist — A..D have nothing to observe, and
-// `window.__stores.errorReports` is undefined (checked first, so the suite fails there).
+// `window.__tp.test.v1.errorReports` is undefined (checked first, so the suite fails there).
 // The mock: `errors.mock.test` routed by Playwright (sendBeacon is intercepted); the URL is the
 // debug-hook-gated override `errorReports:url`, since a build-time env cannot be swapped.
 //
@@ -39,7 +39,7 @@ h.run(async () => {
 		});
 	/** @param {any} page */
 	const dbg = (page) => page.evaluate(() => {
-		const d = window.__stores.errorReports?.errorReportsDebug;
+		const d = window.__tp.test.v1.errorReports?.errorReportsDebug;
 		return d ? { caught: d.caught, sent: d.sent, skipped: { ...d.skipped } } : null;
 	});
 	/** @param {any} page @param {number} n */
@@ -54,7 +54,7 @@ h.run(async () => {
 			setTimeout(() => {
 				// a subscriber that throws stays subscribed, so it throws only on its first call
 				let fired = false;
-				window.__stores.errorReports.errorReportsAvailable.subscribe(() => {
+				window.__tp.test.v1.errorReports.errorReportsAvailable.subscribe(() => {
 					if (fired) return;
 					fired = true;
 					throw new Error(m);
@@ -64,8 +64,8 @@ h.run(async () => {
 	/** @param {any} page @param {string} key */
 	const openSettings = async (page, key) => {
 		await page.evaluate((k) => {
-			window.__stores.settingsSection.set(k);
-			window.__stores.settingsOpen.set(true);
+			window.__tp.test.v1.settingsSection.set(k);
+			window.__tp.test.v1.settingsOpen.set(true);
 		}, key);
 		await page.waitForTimeout(700);
 	};
@@ -75,13 +75,13 @@ h.run(async () => {
 		const A = await h.setupPage(browser, 'A');
 		const page = A.page;
 		await mock(A.ctx);
-		const exists = await page.evaluate(() => !!window.__stores.errorReports);
+		const exists = await page.evaluate(() => !!window.__tp.test.v1.errorReports);
 		h.check(exists, 'A0 the error-report module is in this build (absent on v1.38.0)');
 		if (!exists) {
 			await h.finish(browser);
 			return;
 		}
-		h.check((await page.evaluate(() => window.__stores.errorReports.errorReportsUrl())) === null, 'A1 a dev server with no override has no endpoint');
+		h.check((await page.evaluate(() => window.__tp.test.v1.errorReports.errorReportsUrl())) === null, 'A1 a dev server with no override has no endpoint');
 		await throwUncaught(page, 'e2e no-endpoint boom');
 		await page.waitForTimeout(800);
 		const d = await dbg(page);
@@ -103,7 +103,7 @@ h.run(async () => {
 		const toggle = page.locator('#send-error-reports');
 		h.check((await toggle.count()) === 1 && (await toggle.getAttribute('aria-pressed')) === 'true', 'B1 the Privacy switch exists and is ON by default');
 		h.check((await page.locator('#row-error-reports a[href="/privacy"]').count()) === 1, 'B1b the row links the privacy page');
-		await page.evaluate(() => window.__stores.settingsOpen.set(false));
+		await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 
 		await throwUncaught(page, 'Scene "My secret house" failed to load https://cdn.theprototype.app/pbc_1/abc/castle.glb for peer 3f2504e0-4f89-11d3-9a0c-0305e82c3301');
 		await waitRequests(page, 1);
@@ -132,10 +132,10 @@ h.run(async () => {
 		const rej = requests[1]?.body ?? {};
 		h.check(rej.kind === 'rejection' && rej.msg === 'e2e rejected after <n> ms', `B13 an unhandled rejection: kind rejection, long numbers folded (${rej.kind}: ${rej.msg})`);
 
-		await page.evaluate(() => {
-			window.__stores.contextLost.set(true);
-			window.__stores.contextLost.set(false);
-		});
+		// fix-bgquiet: a loss is reported only once it outlasts the 3 s grace on a visible page
+		await page.evaluate(() => window.__tp.test.v1.contextLost.set(true));
+		await page.waitForTimeout(3600);
+		await page.evaluate(() => window.__tp.test.v1.contextLost.set(false));
 		await waitRequests(page, 3);
 		h.check(requests[2]?.body?.kind === 'webgl', `B14 the main renderer losing its WebGL context: kind webgl (${requests[2]?.body?.kind})`);
 
@@ -166,7 +166,7 @@ h.run(async () => {
 		await page.waitForTimeout(300);
 		h.check((await page.locator('#send-error-reports').getAttribute('aria-pressed')) === 'false', 'C1 the real toggle switches reports off');
 		h.check((await page.evaluate(() => localStorage.getItem('errorReports:send'))) === 'false', 'C2 ...and remembers it on this device');
-		await page.evaluate(() => window.__stores.settingsOpen.set(false));
+		await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 		await throwUncaught(page, 'e2e off boom');
 		await page.waitForTimeout(1200);
 		const d = await dbg(page);
@@ -194,7 +194,7 @@ h.run(async () => {
 			};
 		});
 		await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
-		await page.waitForFunction(() => window.__stores && !!window.__stores.errorReports, null, { timeout: 90000 });
+		await page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.errorReports, null, { timeout: 90000 });
 		await waitRequests(page, 1, 8000);
 		const crash = requests.find((x) => x.body?.kind === 'crash');
 		h.check(!!crash && crash.body.area === 'edit' && crash.body.frames.length === 0, `D2 the next load reports kind crash with the area it died in (${JSON.stringify(crash?.body ?? requests.map((x) => x.body?.kind))})`);

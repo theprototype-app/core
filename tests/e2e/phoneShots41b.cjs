@@ -15,7 +15,7 @@ h.run(async () => {
 		});
 		const P = X.page;
 		const shot = async (name) => {
-			await P.evaluate(() => window.__stores.toastStore.set([]));
+			await P.evaluate(() => window.__tp.test.v1.toastStore.set([]));
 			await P.waitForTimeout(300);
 			const file = `${OUT}/${TAG}-${name}-${theme}.png`;
 			await P.screenshot({ path: file });
@@ -24,7 +24,7 @@ h.run(async () => {
 		const rest = async () => {
 			await P.keyboard.press('Escape').catch(() => {});
 			await P.evaluate(() => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				s.phoneShell.phoneSheet.set(null);
 				s.inspectorClose.set(true);
 				s.explorerClose.set(true);
@@ -41,8 +41,8 @@ h.run(async () => {
 		await rest();
 		// H7: Play with VR on offer (an Android phone's browser offers it)
 		await P.evaluate(() => {
-			window.__stores.playMode.vrSupported.set(true);
-			window.__stores.playMode.arSupported.set(true);
+			window.__tp.test.v1.playMode.vrSupported.set(true);
+			window.__tp.test.v1.playMode.arSupported.set(true);
 		});
 		await P.waitForTimeout(300);
 		await shot('h7-play-default');
@@ -59,10 +59,10 @@ h.run(async () => {
 		await shot('h6-edit-bar');
 		await rest();
 		// H3: the strip over the dock, mid-drag of its grab bar
-		await P.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+		await P.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 		await P.waitForTimeout(800);
 		await P.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let g;
 			s.objectsGroup.subscribe((v) => (g = v))();
 			s.objectActions.applySelectionSet([g.children[0].uuid]);

@@ -1,4 +1,5 @@
 <script>
+	import { backClose } from '$lib/backStack.js'; // phone-polish: Android Back closes it
 	// 38 R3 — the mobile bottom Sheet (SPEC §2 Sheet, §6): a grab handle, DETENTS (peek /
 	// half / full) and drag-to-dismiss. On a phone every floating window (Chat, Objects, AI,
 	// Notes, Inspector, notification centre) becomes one; the Inspector's own handle
@@ -155,6 +156,7 @@
 		style:transform="translateY({heights.full - height}px)"
 		style:clip-path={bottomOff > 0 ? `inset(0 0 ${heights.full - height}px 0)` : undefined}
 		use:escape
+		use:backClose={dismissible ? close : null}
 		{...rest}
 	>
 		<div

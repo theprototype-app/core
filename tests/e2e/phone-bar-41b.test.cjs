@@ -13,7 +13,7 @@
 //   H11 the profile sheet's header has no avatar (it is already top right); desktop keeps its notch.
 const h = require('./helpers.cjs');
 
-const store = (name) => `(() => { let v; window.__stores.${name}.subscribe((x) => (v = x))(); return v; })()`;
+const store = (name) => `(() => { let v; window.__tp.test.v1.${name}.subscribe((x) => (v = x))(); return v; })()`;
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -30,7 +30,7 @@ h.run(async () => {
 	};
 	const rest = async () => {
 		await P.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.phoneShell.phoneSheet.set(null);
 			s.toastStore.set([]);
 		});
@@ -81,7 +81,7 @@ h.run(async () => {
 			};
 		});
 	const roomy = await chip();
-	h.check(['Offline', 'Connecting…', 'Connected'].includes(roomy.text ?? ''), `H4: with room the chip says its state (${JSON.stringify(roomy)})`);
+	h.check(['Connect', 'Offline', 'Connecting…', 'Connected'].includes(roomy.text ?? ''), `H4: with room the chip says its state (${JSON.stringify(roomy)})`);
 	h.check(!roomy.clipped && roomy.chipW <= roomy.wrapW, `H4: the word is whole and the chip fits its slot (${roomy.chipW} of ${roomy.wrapW} px)`);
 	h.check(!!roomy.title && roomy.title.length > 0, `H4: the full sentence is still the tooltip ("${roomy.title}")`);
 	// crowd the slot the way the peers button (and a call's mic) do: the right edge moves in
@@ -96,8 +96,8 @@ h.run(async () => {
 	// ---- H7: Play defaults to plain Play on a phone ------------------------------------------
 	// fake a browser that offers immersive VR + AR (an Android phone does; headless does not)
 	await P.evaluate(() => {
-		window.__stores.playMode.vrSupported.set(true);
-		window.__stores.playMode.arSupported.set(true);
+		window.__tp.test.v1.playMode.vrSupported.set(true);
+		window.__tp.test.v1.playMode.arSupported.set(true);
 	});
 	await P.waitForTimeout(300);
 	const play = () => read(() => ({ as: document.getElementById('ps-play')?.dataset.playAs, label: document.getElementById('ps-play')?.getAttribute('aria-label') }));
@@ -137,7 +137,7 @@ h.run(async () => {
 	await P.getByRole('menuitem', { name: 'Enter VR' }).click();
 	await P.waitForTimeout(800);
 	await h.leavePlay(P);
-	await P.evaluate(() => window.__stores.isVRMode.set(false));
+	await P.evaluate(() => window.__tp.test.v1.isVRMode.set(false));
 	await P.waitForTimeout(500);
 	const p1 = await play();
 	h.check(p1.as === 'vr' && p1.label === 'Enter VR' && (await read(() => localStorage.getItem('vrOverride'))) === 'false', `H7: choosing VR turns Play into the headset and is remembered (${JSON.stringify(p1)})`);
@@ -146,7 +146,7 @@ h.run(async () => {
 	await P.getByRole('menuitem', { name: 'Enter AR passthrough' }).click();
 	await P.waitForTimeout(800);
 	await h.leavePlay(P);
-	await P.evaluate(() => window.__stores.isVRMode.set(false));
+	await P.evaluate(() => window.__tp.test.v1.isVRMode.set(false));
 	await P.waitForTimeout(500);
 	const p2 = await play();
 	h.check(p2.as === 'ar' && (await visible('#ps-play .hud-play-lens')), `H7: choosing AR shows the headset with A and R (${JSON.stringify(p2)})`);
@@ -166,7 +166,7 @@ h.run(async () => {
 	h.check(await visible('#ps-more-sheet'), 'H6: a long press on a tab opens More (where the bar is arranged)');
 	h.check(!(await visible('#ps-edit-bar')) && !(await read(() => !!document.getElementById('ps-more-crumb'))), '42 I5: no Edit bar page and no "More ▸ Edit bar…" crumb any more');
 	await rest();
-	await P.evaluate(() => window.__stores.phoneBar.setBar(['add', 'objects', 'play', 'explorer']));
+	await P.evaluate(() => window.__tp.test.v1.phoneBar.setBar(['add', 'objects', 'play', 'explorer']));
 	await P.waitForTimeout(400);
 	h.check(!(await barIds()).includes('ps-more') && (await read(() => localStorage.getItem('phoneBar'))) === JSON.stringify(['add', 'objects', 'play', 'explorer']), 'H6: the bar without More is saved on this device');
 	await P.locator('#ps-explorer').dispatchEvent('contextmenu');

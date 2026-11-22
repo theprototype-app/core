@@ -25,11 +25,11 @@
 const h = require('./helpers.cjs');
 
 const VISIBLE_PANEL =
-	'#flow-list, #explorer-list, #flow-code-dock, #uv-dock, #shader-editor, #hud-dock, #animation-dock';
+	'#flow-list, #explorer-list, #timeline-dock, #uv-dock, #shader-editor, #hud-dock, #animation-dock';
 
 const state = (page) =>
 	page.evaluate((sel) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let tabs, occ, visible, order;
 		s.bottomDock.dockTabs.subscribe((v) => (tabs = v))();
 		s.bottomDock.dockOccupants.subscribe((v) => (occ = v))();
@@ -131,15 +131,15 @@ h.run(async () => {
 		localStorage.setItem('uvDocked', 'true');
 	});
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.bottomDock, { timeout: 30000 });
 	const open = async (store) => {
-		await A.page.evaluate((s) => window.__stores[s].set(false), store);
+		await A.page.evaluate((s) => window.__tp.test.v1[s].set(false), store);
 		await A.page.waitForTimeout(700);
 	};
 	await open('flowGraphClose');
 	await open('explorerClose');
 	await open('uvEditorClose');
-	await A.page.evaluate(() => window.__stores.bottomDock.activateDock('flow'));
+	await A.page.evaluate(() => window.__tp.test.v1.bottomDock.activateDock('flow'));
 	await A.page.waitForTimeout(500);
 
 	let d = await state(A.page);
@@ -161,7 +161,7 @@ h.run(async () => {
 	// `resolveOrder` SANITIZES a stored list and adds nothing: a key it has never heard
 	// of belongs at the end of the strip, which is `noteDockOrder`'s job, not this one.
 	const resolved = await A.page.evaluate(() => {
-		const b = window.__stores.bottomDock;
+		const b = window.__tp.test.v1.bottomDock;
 		return {
 			// a stored order written before 'hud' and 'uv' existed
 			partial: b.resolveOrder(['explorer', 'flow']),
@@ -187,15 +187,15 @@ h.run(async () => {
 	// anybody had arranged anything, so that exact list has to read as "unset" — else
 	// every existing install keeps all seven keys placed and the reported bug with them.
 	const migrated = await A.page.evaluate(async () => {
-		const family = window.__stores.bottomDock.DOCK_FAMILY;
+		const family = window.__tp.test.v1.bottomDock.DOCK_FAMILY;
 		localStorage.setItem('dockTabOrder', JSON.stringify(family));
 		return { family };
 	});
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.bottomDock, { timeout: 30000 });
 	const afterMigration = await A.page.evaluate(() => {
 		let order;
-		window.__stores.bottomDock.dockTabOrder.subscribe((v) => (order = v))();
+		window.__tp.test.v1.bottomDock.dockTabOrder.subscribe((v) => (order = v))();
 		return order;
 	});
 	h.check(
@@ -205,10 +205,10 @@ h.run(async () => {
 	// ...and a HAND-MADE order is not touched by that migration
 	await A.page.evaluate(() => localStorage.setItem('dockTabOrder', JSON.stringify(['explorer', 'flow'])));
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.bottomDock, { timeout: 30000 });
 	const kept = await A.page.evaluate(() => {
 		let order;
-		window.__stores.bottomDock.dockTabOrder.subscribe((v) => (order = v))();
+		window.__tp.test.v1.bottomDock.dockTabOrder.subscribe((v) => (order = v))();
 		return order;
 	});
 	h.check(kept.join(',') === 'explorer,flow', `1.6 ...but any other stored order survives verbatim (${kept.join(',')})`);
@@ -216,9 +216,9 @@ h.run(async () => {
 	// back to the docking order this file goes on to drag around
 	await A.page.evaluate(() => localStorage.setItem('dockTabOrder', JSON.stringify(['flow', 'explorer', 'uv'])));
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.bottomDock, { timeout: 30000 });
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphClose.set(false);
 		s.explorerClose.set(false);
 		s.uvEditorClose.set(false);
@@ -253,11 +253,11 @@ h.run(async () => {
 	h.check(d.visible === 'flow', `2.4 the drag did NOT change which tab is showing (${d.visible})`);
 
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.bottomDock, { timeout: 30000 });
 	// the close stores are not persisted, so a reload starts with every panel closed —
 	// reopen the same three, which is also the point: the ORDER is what has to survive
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphClose.set(false);
 		s.explorerClose.set(false);
 		s.uvEditorClose.set(false);
@@ -272,7 +272,7 @@ h.run(async () => {
 
 	// --- 3. drag vs click: a press that never travels still activates ---
 	// (both orders, because a sticky "that was a drag" flag would eat exactly one of them)
-	await A.page.evaluate(() => window.__stores.bottomDock.activateDock('flow'));
+	await A.page.evaluate(() => window.__tp.test.v1.bottomDock.activateDock('flow'));
 	await A.page.waitForTimeout(500);
 	let explTab = await tabAt(A.page, 'explorer');
 	await A.page.mouse.click(explTab.x, explTab.y);
@@ -321,7 +321,7 @@ h.run(async () => {
 		d.strip.join(',') === 'explorer,flow,uv',
 		`3.7 ...and it moved nothing (${d.strip.join(',')})`
 	);
-	await A.page.evaluate(() => window.__stores.bottomDock.activateDock('flow'));
+	await A.page.evaluate(() => window.__tp.test.v1.bottomDock.activateDock('flow'));
 	await A.page.waitForTimeout(400);
 
 	// --- 4. the menu's Move rows agree with the drag, and disable at the ends ---
@@ -365,7 +365,7 @@ h.run(async () => {
 	await closeMenus(A.page);
 
 	// --- 5. drag a tab OUT of the strip — it undocks ---
-	await A.page.evaluate(() => window.__stores.bottomDock.activateDock('flow'));
+	await A.page.evaluate(() => window.__tp.test.v1.bottomDock.activateDock('flow'));
 	await A.page.waitForTimeout(500);
 	flowTab = await tabAt(A.page, 'flow');
 	// straight down into the panel body, well past the 44px margin under the strip
@@ -404,7 +404,7 @@ h.run(async () => {
 			const at = await page.evaluate((sel) => {
 				// clear the stack rather than outwait it: an undock raises a toast, and some
 				// of this app's toasts are STICKY by design (they are never auto-dismissed)
-				window.__stores.toastStore.set([]);
+				window.__tp.test.v1.toastStore.set([]);
 				const hd = document.querySelector(sel)?.querySelector('.move-handle');
 				const r = hd?.getBoundingClientRect();
 				if (!r) return null;
@@ -453,7 +453,7 @@ h.run(async () => {
 	);
 
 	// --- 7. the band does not steal an ordinary drag ---
-	await A.page.evaluate(() => window.__stores.bottomDock.armDockMode('flow', false));
+	await A.page.evaluate(() => window.__tp.test.v1.bottomDock.armDockMode('flow', false));
 	await A.page.waitForTimeout(900);
 	from = await headerAt(A.page, '#flow-window');
 	h.check(!!from, '7.0 premise: the Node editor floats again');
@@ -496,7 +496,7 @@ h.run(async () => {
 	// and 282px wide (x 499..781), so 400 is clear of it at every dock height, still
 	// above the band (160) for 8.1c, and still on screen for a ~760px window.
 	await drag(A.page, from, { x: 400, y: 120 });
-	await A.page.evaluate(() => window.__stores.bottomDock.armDockMode('uv', false));
+	await A.page.evaluate(() => window.__tp.test.v1.bottomDock.armDockMode('uv', false));
 	await A.page.waitForTimeout(900);
 	// GROW THE BAND UP TO THE WINDOW rather than pushing the window down into the band.
 	// Shoving a window to the bottom edge is undone twice over — dragWindow's "snap it
@@ -506,7 +506,7 @@ h.run(async () => {
 	// the dock's rect, so a tall dock puts the band under a window sitting at an
 	// ordinary, stable position.
 	await A.page.evaluate(() => {
-		window.__stores.bottomDock.dockHeight.set(560);
+		window.__tp.test.v1.bottomDock.dockHeight.set(560);
 		const el = document.querySelector('#uv-window');
 		if (el) {
 			el.style.left = '300px';
@@ -520,7 +520,7 @@ h.run(async () => {
 		const hd = el?.querySelector('.move-handle');
 		if (!hd) return null;
 		let inset;
-		window.__stores.bottomDock.bottomInset.subscribe((v) => (inset = v))();
+		window.__tp.test.v1.bottomDock.bottomInset.subscribe((v) => (inset = v))();
 		const r = hd.getBoundingClientRect();
 		return {
 			at: { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) },
@@ -557,7 +557,7 @@ h.run(async () => {
 
 	// leave the dock as we found it
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.bottomDock.dockHeight.set(320);
 		s.uvEditorClose.set(true);
 		s.bottomDock.armDockMode('flow', true);
@@ -574,7 +574,7 @@ h.run(async () => {
 	// a drag that does nothing at all reads as the window ignoring you.
 	await A.page.evaluate(() => {
 		localStorage.removeItem('dockedWindows');
-		window.__stores.objectListClose.set(false);
+		window.__tp.test.v1.objectListClose.set(false);
 	});
 	await A.page.waitForTimeout(800);
 	const objDrop = await A.page.evaluate(() => {
@@ -582,7 +582,7 @@ h.run(async () => {
 		const hd = el?.querySelector('.move-handle') ?? el;
 		const r = hd?.getBoundingClientRect();
 		let inset;
-		window.__stores.bottomDock.bottomInset.subscribe((v) => (inset = v))();
+		window.__tp.test.v1.bottomDock.bottomInset.subscribe((v) => (inset = v))();
 		return {
 			from: r
 				? { x: Math.round(r.x + Math.min(60, r.width / 2)), y: Math.round(r.y + r.height / 2) }
@@ -603,7 +603,7 @@ h.run(async () => {
 	const objDocked = await A.page.evaluate(() => {
 		const el = document.querySelector('#object-list');
 		let hosted;
-		window.__stores.dockHost.hostedDocked.subscribe((v) => (hosted = v))();
+		window.__tp.test.v1.dockHost.hostedDocked.subscribe((v) => (hosted = v))();
 		return { side: el?.dataset?.docked ?? null, host: el?.getAttribute('data-pd-host') ?? null, hosted: !!hosted?.objects };
 	});
 	h.check(
@@ -612,8 +612,8 @@ h.run(async () => {
 	);
 	await A.page.evaluate(() => {
 		localStorage.removeItem('dockedWindows');
-		window.__stores.dockHost.setHostedDocked('objects', false);
-		window.__stores.objectListClose.set(true);
+		window.__tp.test.v1.dockHost.setHostedDocked('objects', false);
+		window.__tp.test.v1.objectListClose.set(true);
 	});
 	await A.page.waitForTimeout(400);
 

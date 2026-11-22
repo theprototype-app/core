@@ -24,7 +24,7 @@ h.run(async () => {
 
 	const read = () =>
 		page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const g = (st) => {
 				let v;
 				st.subscribe((x) => (v = x))();
@@ -83,7 +83,7 @@ h.run(async () => {
 	h.check(st.hov === null && st.lit.length === 0, 'a centred stick lights nothing');
 
 	// --- 3 a haptic tick per sector change (Interact — Edit is silent by the C4 rule)
-	await page.evaluate(() => window.__stores.objectActions.setEditorMode('interact'));
+	await page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('interact'));
 	const before = await xr.pulses(page);
 	for (const [x, y] of [[0, -1], [1, 0], [0, 1]]) {
 		await xr.stick(page, hand, x, y);
@@ -94,7 +94,7 @@ h.run(async () => {
 	h.check(ticks >= 3, `three sector changes tick the controller three times (${ticks})`);
 	await xr.stick(page, hand, 0, 0);
 	await settle();
-	await page.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
+	await page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('edit'));
 
 	// --- 4 the trigger picks the stick-lit sector; its own ray misses the ring
 	const menuHandIndex = hand === 'left' ? 0 : 1;
@@ -102,7 +102,7 @@ h.run(async () => {
 	await settle();
 	st = await read();
 	const target = st.hov;
-	const rayMiss = await page.evaluate((i) => window.__stores.vrControls.raycastMenu(i), menuHandIndex);
+	const rayMiss = await page.evaluate((i) => window.__tp.test.v1.vrControls.raycastMenu(i), menuHandIndex);
 	await page.evaluate((i) => {
 		const r = window.__fakeXR.renderer;
 		const c = r.xr.getController(i);
@@ -114,7 +114,7 @@ h.run(async () => {
 	h.check(st.ring === 'add', `the trigger opens the stick-lit sector (ring ${st.ring})`);
 	await xr.stick(page, hand, 0, 0);
 	await settle();
-	await page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('back'));
+	await page.evaluate(() => window.__tp.test.v1.vrControls.executeVRMenuAction('back'));
 	await settle();
 
 	// --- 5 a stick-click picks it too (the 74 gesture, kept)
@@ -127,7 +127,7 @@ h.run(async () => {
 	await settle();
 	st = await read();
 	h.check(st.ring === 'scene', `a stick-click opens the lit sector (ring ${st.ring})`);
-	await page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('back'));
+	await page.evaluate(() => window.__tp.test.v1.vrControls.executeVRMenuAction('back'));
 	await settle();
 
 	// --- 6 the pointer hand's stick navigates too
@@ -140,7 +140,7 @@ h.run(async () => {
 
 	// --- 7 the ray lights the sector it hits (the ring sits at the origin facing +z)
 	const aim = await page.evaluate(() => {
-		const m = window.__stores.vrRadialMenu;
+		const m = window.__tp.test.v1.vrRadialMenu;
 		const l = m.sectorLayout(2, 8);
 		return [l.labelX, l.labelY];
 	});
@@ -154,7 +154,7 @@ h.run(async () => {
 
 	// --- 8 a greyed sector is never lit by the stick
 	const greyed = await page.evaluate(() => {
-		const m = window.__stores.vrRadialMenu;
+		const m = window.__tp.test.v1.vrRadialMenu;
 		m.registerVRMenuEntry({ id: 'r1-grey', label: 'Grey', group: 'r1test', disabled: () => true });
 		m.registerVRMenuEntry({ id: 'r1-live', label: 'Live', group: 'r1test' });
 		m.pushRing('r1test');

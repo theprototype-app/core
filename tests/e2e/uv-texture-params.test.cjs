@@ -19,7 +19,7 @@ const h = require('./helpers.cjs');
 const importedMesh = (page, w = 64, hgt = 64) =>
 	page.evaluate(
 		async ({ w: tw, hgt: th }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const c = document.createElement('canvas');
 			c.width = tw;
 			c.height = th;
@@ -55,7 +55,7 @@ const importedMesh = (page, w = 64, hgt = 64) =>
 /** the live map's sampler state */
 const mapState = (page, uuid) =>
 	page.evaluate(async (uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const g = await new Promise((r) => s.objectsGroup.subscribe(r)());
 		const m = g.getObjectByProperty('uuid', uuid).material;
 		const t = m.map;
@@ -84,7 +84,7 @@ h.run(async () => {
 	);
 
 	await A.page.evaluate(async (uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		await s.uvEditor.beginPaintStroke(uuid, 0);
 		for (let i = 0; i <= 6; i++) s.uvEditor.paintMove(0.55 + i * 0.05, 0.8, '#ffffff', 10);
 		s.uvEditor.endPaintStroke('#ffffff', 10);
@@ -101,7 +101,7 @@ h.run(async () => {
 	// samples NEAR THE BOTTOM of the image: the stroke must land in the image's
 	// BOTTOM-RIGHT quadrant, which started YELLOW.
 	const landed = await A.page.evaluate(async (uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const g = await new Promise((r) => s.objectsGroup.subscribe(r)());
 		const url = g.getObjectByProperty('uuid', uuid).material.userData.mapDataUrl;
 		const img = await new Promise((res, rej) => {
@@ -138,12 +138,12 @@ h.run(async () => {
 	);
 
 	// ---------- 3. a non-square texture keeps its aspect ----------
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	await A.page.waitForTimeout(400);
     const wideUuid = await importedMesh(A.page, 128, 64);
 	await A.page.waitForTimeout(600);
 	await A.page.evaluate(async (uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		await s.uvEditor.beginPaintStroke(uuid, 0);
 		for (let i = 0; i <= 4; i++) s.uvEditor.paintMove(0.3 + i * 0.05, 0.5, '#ffffff', 8);
 		s.uvEditor.endPaintStroke('#ffffff', 8);
@@ -157,7 +157,7 @@ h.run(async () => {
 
 	// ---------- 4. a cancelled stroke restores the original map ----------
 	const cancelled = await A.page.evaluate(async (uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const g = await new Promise((r) => s.objectsGroup.subscribe(r)());
 		const mesh = g.getObjectByProperty('uuid', uuid);
 		const original = mesh.material.map;

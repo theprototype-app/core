@@ -37,7 +37,7 @@ h.run(async () => {
 
 	// a lit, shadow-casting scene: a box under the default environment's sun
 	await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 800));
 	});
@@ -45,9 +45,9 @@ h.run(async () => {
 
 	// ---- 1. the shadow map --------------------------------------------------------
 	const shadow = await page.evaluate(() => {
-		const THREE = window.__stores.THREE;
+		const THREE = window.__tp.test.v1.THREE;
 		let renderer;
-		window.__stores.globalRenderer.subscribe((v) => (renderer = v))();
+		window.__tp.test.v1.globalRenderer.subscribe((v) => (renderer = v))();
 		return {
 			enabled: !!renderer?.shadowMap?.enabled,
 			type: renderer?.shadowMap?.type,
@@ -56,7 +56,7 @@ h.run(async () => {
 			lights: (() => {
 				let n = 0;
 				let scene;
-				window.__stores.globalScene.subscribe((v) => (scene = v))();
+				window.__tp.test.v1.globalScene.subscribe((v) => (scene = v))();
 				scene?.traverse((o) => {
 					if (o.isLight && o.castShadow) n++;
 				});
@@ -71,27 +71,27 @@ h.run(async () => {
 
 	// ---- 2 + 3. enter play (pushes the back marker, warms rapier), exit ---------------
 	await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		await s.physics.warmup();
 		s.playMode.requestPlay();
 	});
 	await h.eventually(
-		() => page.evaluate(() => window.__stores.playMode.playBackMarker()),
+		() => page.evaluate(() => window.__tp.test.v1.playMode.playBackMarker()),
 		(v) => v === true,
 		'entering play pushes the back marker',
 		6000
 	);
-	const marker = await page.evaluate(() => window.__stores.playMode.playMarkerState?.() ?? false);
-	h.check(marker === true, 'the marker is a SvelteKit shallow entry (sveltekit:states.tpPlay)');
-	await page.evaluate(() => window.__stores.playMode.exitPlay());
+	const marker = await page.evaluate(() => window.__tp.test.v1.playMode.playMarkerState?.() ?? false);
+	h.check(marker === true, 'the marker is a SvelteKit shallow entry (tpPlay on the current entry)');
+	await page.evaluate(() => window.__tp.test.v1.playMode.exitPlay());
 	await h.eventually(
-		() => page.evaluate(() => window.__stores.playMode.playBackMarker()),
+		() => page.evaluate(() => window.__tp.test.v1.playMode.playBackMarker()),
 		(v) => v === false,
 		'leaving play spends the marker',
 		6000
 	);
 	await h.eventually(
-		() => page.evaluate(() => { let v; window.__stores.isLocked.subscribe((x) => (v = x))(); return v; }),
+		() => page.evaluate(() => { let v; window.__tp.test.v1.isLocked.subscribe((x) => (v = x))(); return v; }),
 		(v) => v === null,
 		'and play settles back to the editor',
 		6000
@@ -99,7 +99,7 @@ h.run(async () => {
 	await page.waitForTimeout(600);
 	const rapierReady = await page.evaluate(async () => {
 		try {
-			await window.__stores.physics.warmup();
+			await window.__tp.test.v1.physics.warmup();
 			return true;
 		} catch {
 			return false;

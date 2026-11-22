@@ -1,5 +1,7 @@
 <script lang="ts">
 	import * as THREE from 'three';
+	import { mainPixelRatio, watchContextLoss } from '$lib/render/mainRenderer.js';
+	import { mainContextReleased } from '$lib/render/view.js';
 	import { onMount, onDestroy } from 'svelte';
 	import { qualityOverrides } from '$lib/qualityGovernor';
 	import { T, useTask, useThrelte } from '@threlte/core';
@@ -9,7 +11,8 @@
 	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu, viewportMenuOpener, addMenu, addMenuOpener, showToast, multiSelectMode } from '../stores/appStore';
 	import { get } from 'svelte/store';
 	import { vrPostEnabled } from '$lib/viewportOverrides';
-	import { isLocked, editorMode, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, sessionCompositesOverRoom, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode, viewMode, contextLost, readVrOverride } from '../stores/sceneStore';
+	import { isLocked, editorMode, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, sessionCompositesOverRoom, setSessionComposites, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode, viewMode, contextLost, contextLossShown, readVrOverride } from '../stores/sceneStore';
+	import { startContextLossGate } from '$lib/contextLoss.js';
 	import {
 		selectObject,
 		deselectObject,
@@ -19,8 +22,11 @@
 		selectSameType,
 		isolateObjects,
 		clearIsolation,
-		isIsolated
+		isIsolated,
+		flyTo
 	} from '$lib/objectActions';
+	// 78 PL32: a joiner whose camera opens inside the host's avatar steps to the side once
+	import { watchJoinSideStep } from '$lib/joinSideStep';
 	// 85: what a double-click does (a LOCAL pref; store-only leaf, no cycle)
 	import { doubleClickAction } from '$lib/selectionPrefs';
 	import { retryIfFailed } from '$lib/packRefs';
@@ -46,6 +52,7 @@
 	import { updateSpatialAudio } from '$lib/voiceChat';
 	import { tickAnimatedMixers } from '$lib/animatedImports';
 	import { tickSim } from '$lib/sim/runtime.js'; // 36-sim: jiggle, splashes, fluid tanks
+	import { tickTextPathsLazy } from '$lib/textPathTick.js'; // 64 D2: text on a path
 	import { startPackBehaviors, tickPackBehaviors } from '$lib/packBehavior';
 	import { startArchParts } from '$lib/arch/archParts.js';
 	import { tickAnimationPreview, captureAutoKey, playheadOf } from '$lib/animationPreview';
@@ -56,6 +63,8 @@
 	import { onLodProxyMoved, onLodProxyDragChanged } from '$lib/lodLevelEdit';
 	import { splineEditObject, splineEditClick, splineEditRightClick, exitSplineEdit, beginRadiusDrag, radiusDragMove, endRadiusDrag, radiusDragActive, onSplineProxyMoved, onSplineProxyDragChanged, tickSplineEdit } from '$lib/splineEdit';
 	import { capturePathClick } from '$lib/pathCapture';
+	import { captureOwns } from '$lib/captureStack'; // 78 F5: the top capture owns viewport clicks
+	import { tickPathObjects } from '$lib/path/pathObject.js'; // 78 F4
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
 	import { startSnapEngine, setSnapPointer, beginSnapDrag, endSnapDrag, maybeSnapGizmo, snapAnchorPicking, snapAnchorClick, updateSnapAnchor } from '$lib/snapEngine';
 	import { meshPivotPicking, meshPivotClick, tickMeshPivotMarker } from '$lib/meshPivot';
@@ -69,7 +78,8 @@
 	// 30b (vr-play): the game in your hands — hover/press haptics (P1), the sweep (P4)
 	import { startVrGameInput, stopVrGameInput } from '$lib/vrGameInput';
 	import { tickArTable } from '$lib/arTable'; // 50 R1: phone AR table placement
-	import { arTableActive } from '$lib/arTableState.js';
+	import { arTableActive, tickPhoneAr } from '$lib/arTableState.js';
+	import { vrUiHidden } from '$lib/vrUiGate.js';
 	import { gameFeelActive } from '$lib/gameFeel';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
 	import { measureMode, measureClick, measureHoverAt } from '$lib/measure';
@@ -77,7 +87,7 @@
 	import { setParticleRoot } from '$lib/particleRuntime';
 	import WaterLayer from './water/WaterLayer.svelte';
 	import { registerEditResumeSources } from '$lib/editResume';
-	import { sendPing } from '$lib/ping';
+	import { sendPing, surfaceHit } from '$lib/ping';
 	import { startLightHelpers, updateLightHelpers, lightProxiesGroup } from '$lib/lightHelpers';
 	import { HELPER_LAYER } from '$lib/helperLayer';
 	import { startColliderHelpers, updateColliderHelpers } from '$lib/colliderHelpers';
@@ -92,22 +102,14 @@
 	import { vrMenuOpen } from '../stores/sceneStore';
 	import VRMenu from './play/VRMenu.svelte';
 	import VRStats from './play/VRStats.svelte';
-	import VRObjectsPanel from './play/VRObjectsPanel.svelte';
-	import VRColorPalette from './play/VRColorPalette.svelte';
-	import VRPropertiesPanel from './play/VRPropertiesPanel.svelte';
-	import VRPrefabsPanel from './play/VRPrefabsPanel.svelte';
 	import VRKeyboard from './play/VRKeyboard.svelte';
 	import VRChatPanel from './play/VRChatPanel.svelte';
-	import VRAiPanel from './play/VRAiPanel.svelte';
-	import VREditMenu from './play/VREditMenu.svelte';
-	import VRSnapMenu from './play/VRSnapMenu.svelte';
+	import { playEntry } from '$lib/play/playEntry.js';
 	import VRSettingsPanel from './play/VRSettingsPanel.svelte';
 	import VRPeerApprove from './play/VRPeerApprove.svelte';
 	import VRSelectionShell from './play/VRSelectionShell.svelte';
 	// 36 U3b: the VR welcome tour's world-space panel
 	import TourVRPanel from './tours/TourVRPanel.svelte';
-	import VRAssetBrowser from './play/VRAssetBrowser.svelte'; // 52-browser: the wrist Asset Browser
-	import VRLogicPanel from './play/VRLogicPanel.svelte'; // 74 VH1: the logic graph as a VR panel + wrist pad
 	// 36 A2: the headset browser's own "Enter VR" offer — decided by us, not threlte's default
 	import { xrOfferMode } from '$lib/xrOffer';
 	import MeasureOverlay from './MeasureOverlay.svelte';
@@ -120,7 +122,9 @@
 	import Grid from '../extensions/Grid.svelte';
 	import { safeStorage } from '$lib/safeStorage';
 	import { myKind } from '$lib/inviteStore';
+	import { eventNow } from '$lib/eventTime.js';
 	import Outline from './Outline.svelte'
+	import { installXrLook } from '$lib/xrLookWire.js'
 	import RecordingDriver from './RecordingDriver.svelte'
 	import Player from './play/Player.svelte'
 	import { tickStartView } from '$lib/startView'
@@ -185,9 +189,10 @@
 		presenceSlow = o.presenceSlow;
 		if (o.dprScale === appliedDprScale) return;
 		appliedDprScale = o.dprScale;
-		dpr.set((typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1) * o.dprScale);
+		dpr.set(mainPixelRatio(o.dprScale)); // 101 F3: the seam's pixel-ratio hook
 	});
 	onDestroy(stopQualityWatch);
+	onDestroy(watchJoinSideStep((eye, target) => flyTo(eye, target, 600)));
 
 	$globalScene = scene; // console.log($globalScene)
 	$globalRenderer = renderer;
@@ -203,6 +208,8 @@
 	$vrOverride = readVrOverride(); // 41b H7: a choice, or this device's default (a phone plays on its screen)
 	camera.current.position.set(10.5, 7.57, 11.4);
 	let fov = camera.current.fov
+	// fix-film: the renderer's autoClear before an XR session forced it on (null = not forced)
+	let xrAutoClearWas: boolean | null = null;
 	let resetSettings = false;
 	setTimeout(() => {
 		// $peers.send({ type: 'userdata', userdata: $userdata });
@@ -378,6 +385,16 @@
 		if (renderer?.xr?.isPresenting) pumpFlowTick(performance.now());
 		// 50 R1: the AR table's reticle + placement (a no-op unless one is running)
 		if (renderer?.xr?.isPresenting) tickArTable(renderer, camera.current);
+		if (renderer?.xr?.isPresenting) tickPhoneAr(renderer, camera.current); // 68 V3: Film's AR walk
+		// fix-film (the AR smear): an XR frame is CLEARED every frame. postprocessing's EffectComposer
+		// turns autoClear off for the desktop pipeline and nothing turned it back on while presenting;
+		// a headset's opaque sky repainted every pixel and hid it, but over a camera feed (the sky
+		// lifted, or drawn as a texture) Android's AR framebuffer kept the previous frame — every
+		// moving thing left trails. Restored to the desktop value when the session ends.
+		if (renderer?.xr?.isPresenting && !renderer.autoClear) {
+			if (xrAutoClearWas === null) xrAutoClearWas = renderer.autoClear;
+			renderer.autoClear = true;
+		}
 		// console.log(camera.current.lookAt.)
 		if (camera.current.fov !== fov) {
 			// console.log('fov changed')
@@ -441,12 +458,14 @@
 		tickAnimatedMixers(); // imported clips run on the synced clock
 		tickPackBehaviors(); // 33 P2: doors/lids/levers pose from their shared state (rest in Edit)
 		tickSim($objectsGroup, camera.current, renderer, performance.now()); // 36-sim (after mixers: jiggle rides the posed bones)
+		tickTextPathsLazy($objectsGroup, performance.now()); // 64 D2: letters follow their carriers (and linked paths)
 		tickAnimationPreview(); // Animation window: local transform preview (not synced)
 		tickSequences(); // 48 S2: shots / clips / audio / events of running sequences
 		tickMeshEdit(); // vertex handles follow the object if it moves (119)
 		tickEditWireframe(); // ...and the edit wireframe stays parented to it (faceEdit)
 		tickMeshPivotMarker(); // ...and the placed transform pivot's marker (meshPivot)
 		tickSplineEdit(); // 57.3: spline handles do the same (scene-root, world space)
+		tickPathObjects(scene, $objectsGroup, { playing: $isLocked === true, selected: $selectedObjects ?? [] }); // 78 F4: hide in Play, numbers, scrub ghost
 		updateLightHelpers();
 		updateColliderHelpers(); // CL-A A7: collider proxies follow their objects
 		updateSnapAnchor(); // 19-B P3: the picked snap-anchor marker follows its object
@@ -658,7 +677,7 @@
 				// DOUBLE-click (or via the context menu / object list / a pinned
 				// panel). It used to open on EVERY single click — that is exactly
 				// what the pin now controls deliberately.
-				const now = Date.now();
+				const now = click?.t ?? Date.now();
 				const isDouble = !additive && !altPick && lastPick.uuid === target.uuid && now - lastPick.t < 400;
 				lastPick = { uuid: target.uuid, t: now };
 				// 41 G14 (above): a finger's tap on a selected object takes it out of the selection
@@ -702,6 +721,8 @@
 		return false;
 	}
 
+	// 72 LK3: the scene's look in a headset (Outline is not mounted there)
+	onMount(() => installXrLook(renderer, scene));
 	onMount(() => {
 		startLightHelpers();
 		startColliderHelpers();
@@ -761,12 +782,15 @@
 		});
 		// tell peers our controllers are gone when the VR session ends
 		const onSessionEnd = () => {
+			if (xrAutoClearWas !== null) renderer.autoClear = xrAutoClearWas; // fix-film
+			xrAutoClearWas = null;
 			exitEditMode(); // leave vertex edit mode cleanly (113)
 			exitFaceEdit(); // and face edit mode (118)
 			exitSplineEdit(); // and any spline session (57.4)
 			$isVRMode = false; // back to the editor whichever way the session ended
 			resetWorldRig(); // the grabbed world snaps back to 1:1 (least surprise)
 			$peers?.send({ type: 'vrhands', peerId: $peers.peer.id, left: null, right: null, active: false });
+			import('$lib/vr/agentComfort.js').then((m) => m.stopAgentComfort()).catch(() => {}); // 85b S5
 		};
 		renderer.xr.addEventListener('sessionend', onSessionEnd);
 
@@ -783,6 +807,8 @@
 			// a session accepted AFTER the watchdog already fired still come up in VR.
 			noteXRSessionStarted();
 			$isVRMode = true;
+			// 85b S5: agent lines as headset toasts, agent-made objects fade in
+			import('$lib/vr/agentComfort.js').then((m) => m.startAgentComfort()).catch(() => {});
 		};
 		renderer.xr.addEventListener('sessionstart', onSessionStart);
 
@@ -795,6 +821,8 @@
 		// is no way back short of a reload.
 		const onContextLost = (event: any) => {
 			event.preventDefault();
+			// 100 C1: the Cinematic view released the context on purpose (it draws on its own canvas)
+			if (mainContextReleased()) return;
 			$contextLost = true;
 		};
 		const onContextRestored = () => {
@@ -806,8 +834,11 @@
 			});
 			$contextLost = false;
 		};
-		element.addEventListener('webglcontextlost', onContextLost);
-		element.addEventListener('webglcontextrestored', onContextRestored);
+		// a phone backgrounding the tab loses and restores the context routinely: the overlay
+		// (and the error report) wait for a loss that outlasts the grace rule in contextLoss.js
+		startContextLossGate(contextLost, contextLossShown);
+		// 101 F3: the listeners attach through the renderer seam (one place for the 100 switch)
+		const offContextLoss = watchContextLoss(element, onContextLost, onContextRestored);
 		let downPosition = null;
 		let downTime = 0;
 		let strokeActive = false;
@@ -879,7 +910,7 @@
 			}
 			// draw mode: dragging paints a FREEHAND stroke instead of orbiting; the
 			// spline tool places its points on pointerUP instead (57.2)
-			if ($drawMode && $drawTool !== 'spline' && !$isLocked && !$isVRMode) {
+			if ($drawMode && $drawTool !== 'spline' && !$isLocked && !$isVRMode && captureOwns('draw')) {
 				strokeActive = true;
 				setOrbitEnabled(false);
 				setRayFromEvent(event);
@@ -922,7 +953,7 @@
 					return;
 				}
 				downPosition = [event.clientX, event.clientY];
-				downTime = Date.now();
+				downTime = eventNow(event);
 				return;
 			}
 			// Shift+drag = marquee select (13) — orbit pauses for the gesture
@@ -941,7 +972,7 @@
 				elementMarquee = true;
 				setOrbitEnabled(false);
 				downPosition = [event.clientX, event.clientY];
-				downTime = Date.now();
+				downTime = eventNow(event);
 				return;
 			}
 			// #20 P4: the touch Multi-select mode stands in for Shift, since a finger
@@ -951,7 +982,7 @@
 				setOrbitEnabled(false);
 			}
 			downPosition = [event.clientX, event.clientY];
-			downTime = Date.now();
+			downTime = eventNow(event);
 		};
 
 		// 36 S6: while Alt is held, preview what an Alt+click would select — a box around it
@@ -1033,7 +1064,7 @@
 			if ($knifePreview) knifeHover([event.clientX, event.clientY]);
 			// 47 M1: where the next measure click would land (the snap marker + rubber band) — a
 			// mouse that is not pressing; a finger has no hover
-			if ($measureMode && !event.buttons && event.pointerType !== 'touch')
+			if ($measureMode && captureOwns('measure') && !event.buttons && event.pointerType !== 'touch')
 				measureHoverAt([event.clientX, event.clientY], event.target === element);
 			if (marqueeStart) {
 				$marqueeRect = {
@@ -1190,12 +1221,13 @@
 			const moved = Math.hypot(event.clientX - downPosition[0], event.clientY - downPosition[1]);
 			downPosition = null;
 			// only a short, stationary click selects — dragging orbits the camera
-			if (moved > 5 || Date.now() - downTime > 400) return;
+			// 54 X4: timed by the events themselves — a slow frame between them is not a long press
+			if (moved > 5 || eventNow(event) - downTime > 400) return;
 			if ($isLocked || $isVRMode || $specatorMode) return;
 			// 21-C3: the FLATTEN pick captures one click the same way — it is aimed at
 			// another OBJECT rather than a point, so it must also sit ahead of the
 			// selection path below, which would otherwise just select the terrain
-			if ($flattenPicking) {
+			if ($flattenPicking && captureOwns('flatten')) { // 78 F5: the top capture owns the click
 				setRayFromEvent(event);
 				if (flattenPickClick(selectionRaycaster)) return;
 			}
@@ -1240,17 +1272,19 @@
 			// Ctrl+Alt+click pings the pointed spot for every peer (36 F22: plain Alt+click is
 			// the selection cycle now — Blender/Unity's gesture for "the thing behind")
 			if (event.altKey && (event.ctrlKey || event.metaKey)) {
-				const hits = pickSceneObjects();
+				// mcp-diorama2 (19): a SURFACE hit — selection's tiny-object / measurement proxies sit at an object's
+				// origin, so a ping near a small thing used to land on its origin instead of where you pointed
+				const hit = surfaceHit(pickSceneObjects());
 				const planePoint = new THREE.Vector3();
-				const point = hits[0]?.point ??
+				const point = hit?.point ??
 					(selectionRaycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), planePoint)
 						? planePoint : null);
-				if (point) sendPing(point);
+				if (point) sendPing(point, undefined, hit); // 85b S2: the hit = what it landed on
 				return;
 			}
 			// 57.2: the spline tool places a control point per click; a second click
 			// in the same spot (double-click) finishes, like Enter/Finish do
-			if (splineToolActive()) {
+			if (splineToolActive() && captureOwns('draw')) {
 				const now = Date.now();
 				if (now - lastSplineClick < 400) finishSpline();
 				else splinePlaceFromRay(selectionRaycaster);
@@ -1259,11 +1293,11 @@
 			}
 			// 57.3: while editing a spline, clicks pick its handles (move a point /
 			// insert one on a span marker) instead of selecting objects
-			if ($splineEditObject && splineEditClick(selectionRaycaster)) return;
+			if ($splineEditObject && splineEditClick(selectionRaycaster, event.ctrlKey || event.shiftKey || event.metaKey || $multiSelectMode)) return; // 78 F4: additive = multi-select points
 			// a Path patrol node capturing waypoints takes the click
-			if (capturePathClick(selectionRaycaster)) return;
+			if (captureOwns('path') && capturePathClick(selectionRaycaster)) return;
 			// measure mode captures clicks entirely
-			if ($measureMode) {
+			if ($measureMode && captureOwns('measure')) {
 				measureClick(selectionRaycaster, $objectsGroup, [event.clientX, event.clientY], { touch: touchTap });
 				return;
 			}
@@ -1362,7 +1396,7 @@
 			// "click the background to get back" instinct as deselecting.
 			const additive = event.shiftKey || $multiSelectMode;
 			hidePickPreview();
-			if (!raycastSelect(additive, 'edit', { x: event.clientX, y: event.clientY, t: Date.now() }, event.altKey && !additive, { touch: touchTap, onGizmo: touchTap && onGizmo }) && !additive) {
+			if (!raycastSelect(additive, 'edit', { x: event.clientX, y: event.clientY, t: eventNow(event) }, event.altKey && !additive, { touch: touchTap, onGizmo: touchTap && onGizmo }) && !additive) {
 				if (isIsolated()) clearIsolation();
 				deselectObject();
 			}
@@ -1704,8 +1738,7 @@
 			stopVrGameInput(); // 30b
 			element.removeEventListener('pointerdown', onPointerDown);
 			dom.removeEventListener('contextmenu', onContextMenu);
-			element.removeEventListener('webglcontextlost', onContextLost);
-			element.removeEventListener('webglcontextrestored', onContextRestored);
+			offContextLoss();
 			window.removeEventListener('pointerup', onPointerUp);
 			window.removeEventListener('pointercancel', onPointerCancel);
 			window.removeEventListener('keydown', onAltKey);
@@ -1920,30 +1953,46 @@ bind:playerMesh
 position={[0, 2, 3]}
 />
 
+<!-- fix-film: every in-headset UI stands down while Film is open (any session — the gyro view, a
+     headset, the phone's AR walk): Film's own DOM controls are the whole UI, and a head-locked panel
+     would be filmed (on a phone's AR framebuffer it smeared across every frame) -->
+{#if !$vrUiHidden}
 <VRMenu />
 <VRStats />
-<VRObjectsPanel />
-<VRColorPalette />
-<VRPropertiesPanel />
-<VRPrefabsPanel />
+<!-- 94 SP1: the editor's VR panels load when they open, never with a play link's boot. Each one's
+     markup sat entirely inside its own open store already, and none has script side effects, so
+     mounting it on open is the same panel. -->
+{#if $vrObjectsPanelOpen}{#await import('./play/VRObjectsPanel.svelte') then m}<m.default />{/await}{/if}
+{#if $vrPaletteOpen}{#await import('./play/VRColorPalette.svelte') then m}<m.default />{/await}{/if}
+{#if $vrPropsPanelOpen}{#await import('./play/VRPropertiesPanel.svelte') then m}<m.default />{/await}{/if}
+{#if $vrPrefabsPanelOpen}{#await import('./play/VRPrefabsPanel.svelte') then m}<m.default />{/await}{/if}
 <VRChatPanel />
-<VRAiPanel />
-<VREditMenu />
-<VRSnapMenu />
+<!-- 94 SP1 (94-routes Q2 F2): the VR AI panel is an editing tool — a lazy chunk in the editor (it still
+     mounts at boot: it registers the VR menu's AI entry) and absent from the play entry, whose boot it
+     filled with the whole AI stack (providers, speech-to-text) -->
+{#if !playEntry}{#await import('./play/VRAiPanel.svelte') then m}<m.default />{/await}{/if}
+{#if $vrEditMenuOpen}{#await import('./play/VREditMenu.svelte') then m}<m.default />{/await}{/if}
+{#if $vrSnapMenuOpen}{#await import('./play/VRSnapMenu.svelte') then m}<m.default />{/await}{/if}
 <VRSettingsPanel />
 <VRPeerApprove />
 <VRKeyboard />
 <VRSelectionShell />
 <TourVRPanel />
-<VRAssetBrowser />
-<VRLogicPanel />
+<!-- the wrist Asset Browser (52) and the logic panel (74 VH1) only add radial entries + their
+     planes inside an XR session, so they mount with the session -->
+{#if $isVRMode}
+	{#await import('./play/VRAssetBrowser.svelte') then m}<m.default />{/await}
+	{#await import('./play/VRLogicPanel.svelte') then m}<m.default />{/await}
+{/if}
+{/if}
 
 <XR
 	offerSession={$xrOfferMode}
 	onsessionstart={() => {
 		// passthrough (90): AR sessions blend with the room — drop the local sky
 		const session = renderer.xr.getSession();
-		passthroughActive.set(sessionCompositesOverRoom(session));
+		// (fix-film: through roomLook — Film's walk may keep the scene's own sky over the room)
+		setSessionComposites(sessionCompositesOverRoom(session));
 		// B2.1: request the preferred refresh rate (auto = highest supported) —
 		// without this the Quest stays at its 90Hz default
 		applyVRFrameRate();
@@ -1951,7 +2000,7 @@ position={[0, 2, 3]}
 		// GAME lands in Interact on its spawn — not an AR table, which is placed first (50 R1)
 		if (!arTableActive()) onVRSessionStart();
 	}}
-	onsessionend={() => passthroughActive.set(false)}
+	onsessionend={() => setSessionComposites(false)}
 >
 	<Controller left />
 	<Controller right />

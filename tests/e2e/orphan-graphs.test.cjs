@@ -6,15 +6,15 @@
 const h = require('./helpers.cjs');
 
 /** what one page's runtime evaluates @param {any} page */
-const runtime = (page) => page.evaluate(() => window.__stores.flowRuntime.runtimeGraphDebug());
+const runtime = (page) => page.evaluate(() => window.__tp.test.v1.flowRuntime.runtimeGraphDebug());
 /** the flow graph ids one page holds @param {any} page */
 const graphIds = (page) =>
-	page.evaluate(() => new Promise((r) => window.__stores.flowGraphs.subscribe((g) => r(Object.keys(g || {})))()));
+	page.evaluate(() => new Promise((r) => window.__tp.test.v1.flowGraphs.subscribe((g) => r(Object.keys(g || {})))()));
 
 /** @param {any} page @param {string} name */
 async function boxWithSpin(page, name) {
 	return page.evaluate(async (nm) => {
-		const t = window.__stores.aiTools;
+		const t = window.__tp.test.v1.aiTools;
 		const made = await t.executeAiTool('create_objects', { objects: [{ kind: 'primitive', primitive: 'Box', name: nm, position: [0, 0.5, 0] }] });
 		const uuid = made?.created?.[0]?.uuid;
 		const flow = await t.executeAiTool('create_flow_nodes', { graph: uuid, nodes: [{ type: 'spin' }] });
@@ -35,8 +35,8 @@ h.run(async () => {
 		await h.eventually(() => runtime(P.page), (r) => r && r.nodeIds.includes(one.spin), n + ' runs the box\'s Spin', 30000);
 
 	await A.page.evaluate((u) => {
-		window.__stores.objectActions.applySelectionSet([u]);
-		window.__stores.objectActions.deleteSelection();
+		window.__tp.test.v1.objectActions.applySelectionSet([u]);
+		window.__tp.test.v1.objectActions.deleteSelection();
 	}, one.uuid);
 	for (const [P, n] of [[A, 'A'], [B, 'B']]) {
 		await h.eventually(
@@ -56,7 +56,7 @@ h.run(async () => {
 	h.check(!(await graphIds(C.page)).includes(one.uuid), 'C did not receive the deleted box\'s flow');
 
 	// ---- 3. Ctrl+Z: the box and its flow come back, and the Spin runs again — on the peers that kept it
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	for (const [P, n] of [[A, 'A'], [B, 'B']])
 		await h.eventually(
 			() => runtime(P.page),
@@ -69,7 +69,7 @@ h.run(async () => {
 	const two = await boxWithSpin(B.page, 'OrphanTwo');
 	for (const [P, n] of [[A, 'A'], [B, 'B']])
 		await h.eventually(() => runtime(P.page), (r) => r && r.nodeIds.includes(two.spin), n + ' runs the second box\'s Spin', 30000);
-	const del = await B.page.evaluate((u) => window.__stores.aiTools.executeAiTool('delete_objects', { uuids: [u] }), two.uuid);
+	const del = await B.page.evaluate((u) => window.__tp.test.v1.aiTools.executeAiTool('delete_objects', { uuids: [u] }), two.uuid);
 	h.check(del?.deleted === 1, 'delete_objects deleted it: ' + JSON.stringify(del));
 	for (const [P, n] of [[A, 'A'], [B, 'B']])
 		await h.eventually(

@@ -18,9 +18,9 @@
 // gestures are a real mouse. Run: APP_URL='https://theprototype.app:5393/' npm run e2e -- dock-chrome-40
 const h = require('./helpers.cjs');
 
-const VIEWS = ['flow', 'flowcode', 'animation', 'uv', 'shader', 'hud', 'explorer', 'profiler'];
-const CLOSERS = { flow: 'flowGraphClose', flowcode: 'flowCodeClose', animation: 'animationClose', uv: 'uvEditorClose', shader: 'shaderEditorClose', hud: 'hudEditorClose', explorer: 'explorerClose', profiler: 'profilerClose' };
-const DOCKED_KEYS = { flowDocked: 'true', flowCodeDocked: 'true', animationDocked: 'true', uvDocked: 'true', shaderDocked: 'true', hudDocked: 'true', explorerDocked: 'true', profilerDocked: 'true', codeDocked: 'true' };
+const VIEWS = ['flow', 'timeline', 'animation', 'uv', 'shader', 'hud', 'explorer', 'profiler'];
+const CLOSERS = { flow: 'flowGraphClose', timeline: 'timelineClose', animation: 'animationClose', uv: 'uvEditorClose', shader: 'shaderEditorClose', hud: 'hudEditorClose', explorer: 'explorerClose', profiler: 'profilerClose' };
+const DOCKED_KEYS = { flowDocked: 'true', timelineDocked: 'true', animationDocked: 'true', uvDocked: 'true', shaderDocked: 'true', hudDocked: 'true', explorerDocked: 'true', profilerDocked: 'true', codeDocked: 'true' };
 const STRIP = '.dt-scroll';
 const LONG = 'B2ack wall super — the long name of an imported wall piece.glb';
 
@@ -29,7 +29,7 @@ const PHONE = { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile:
 /** open every dock view, docked, and show `active` */
 async function openAll(page, active) {
 	await page.evaluate(({ VIEWS, CLOSERS, active }) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		for (const v of VIEWS) s[CLOSERS[v]].set(false);
 		setTimeout(() => s.bottomDock.activateDock(active), 400);
 	}, { VIEWS, CLOSERS, active });
@@ -107,7 +107,7 @@ h.run(async () => {
 		h.check(s2.tabs.filter((t) => t.visible).every((t) => t.painted), 'F6.4 ...and the tabs on the new panel\'s strip are painted too');
 
 		// ---- F9 — PHONE "+": a sheet of every window with show/hide switches ----------------
-		await page.evaluate(() => window.__stores.explorerClose.set(true));
+		await page.evaluate(() => window.__tp.test.v1.explorerClose.set(true));
 		await page.waitForTimeout(700);
 		h.check((await page.locator('#dock-undock:visible').count()) === 0, 'F9.0 a phone whose windows cannot float shows no undock button (nothing to undock to)');
 		await page.locator('#dock-add-view:visible').first().tap();
@@ -138,13 +138,13 @@ h.run(async () => {
 		});
 		h.check(under === 'ok', `F9.1d the phone's Play (#ps-play, the top of its raised circle) is on top while the Windows sheet is open (${under})`);
 		h.check(!!bar.toggleRight && bar.toggleRight <= bar.vw, `F9.1c every row's switch is on screen (${JSON.stringify(bar)})`);
-		h.check(['flow', 'explorer', 'animation', 'uv', 'shader', 'hud', 'profiler', 'code', 'flowcode'].every((k) => sheet.rows.includes(k)), `F9.2 ...listing EVERY window, the Node editor too (${sheet.rows.join(',')})`);
+		h.check(['flow', 'explorer', 'animation', 'uv', 'shader', 'hud', 'profiler', 'code', 'timeline'].every((k) => sheet.rows.includes(k)), `F9.2 ...listing EVERY window, the Node editor too (${sheet.rows.join(',')})`);
 		const exToggle = page.locator('#dock-view-toggle-explorer');
 		h.check((await exToggle.getAttribute('aria-pressed')) === 'false', 'F9.3 a closed window reads OFF');
 		await exToggle.tap();
 		await page.waitForTimeout(1200);
 		const afterOn = await page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let occ, vis, ec;
 			s.bottomDock.dockOccupants.subscribe((v) => (occ = v))();
 			s.bottomDock.visibleDockKey.subscribe((v) => (vis = v))();
@@ -155,11 +155,11 @@ h.run(async () => {
 		h.check((await exToggle.getAttribute('aria-pressed')) === 'true', 'F9.5 ...and its switch reads ON');
 		await exToggle.tap();
 		await page.waitForTimeout(900);
-		h.check((await page.evaluate(() => { let v; window.__stores.explorerClose.subscribe((x) => (v = x))(); return v; })) === true, 'F9.6 switching it OFF closes it');
+		h.check((await page.evaluate(() => { let v; window.__tp.test.v1.explorerClose.subscribe((x) => (v = x))(); return v; })) === true, 'F9.6 switching it OFF closes it');
 		await page.touchscreen.tap(195, 270); // the modal sheet's scrim, above the sheet and below the top chrome
 		await page.waitForTimeout(600);
 		h.check(!(await page.locator('#dock-views-sheet').count()), 'F9.6b a tap on the scrim closes the sheet');
-		await page.evaluate(() => window.__stores.mobileUndockAllowed.set(true));
+		await page.evaluate(() => window.__tp.test.v1.mobileUndockAllowed.set(true));
 		await page.waitForTimeout(700);
 		await page.locator('#dock-add-view:visible').first().tap();
 		await page.waitForTimeout(700);
@@ -168,12 +168,12 @@ h.run(async () => {
 		await page.keyboard.press('Escape');
 		await page.waitForTimeout(300);
 		if (await page.locator('[role=menu]').count()) await page.touchscreen.tap(195, 120);
-		await page.evaluate(() => window.__stores.mobileUndockAllowed.set(false));
+		await page.evaluate(() => window.__tp.test.v1.mobileUndockAllowed.set(false));
 		await page.waitForTimeout(400);
 
 		// ---- F7 — PHONE: a long name in the docked Animation header -------------------------
 		await page.evaluate((LONG) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.commandsHandler.sceneCommand('/create box');
 			let g;
 			s.objectsGroup.subscribe((x) => (g = x))();
@@ -215,7 +215,7 @@ h.run(async () => {
 		await page.waitForTimeout(300);
 
 		// ---- F11 — PHONE: Layouts (41b H1: a DOCK TAB on the phone; the dialog is its desktop home) --------
-		await page.evaluate(() => window.__stores.uiLayouts.layoutsMenuOpen.set(true));
+		await page.evaluate(() => window.__tp.test.v1.uiLayouts.layoutsMenuOpen.set(true));
 		await page.waitForTimeout(800);
 		const lp = await page.evaluate(() => {
 			const body = document.querySelector('#phone-dock-layouts');
@@ -259,7 +259,7 @@ h.run(async () => {
 		await page.waitForTimeout(800);
 
 		// ---- F8 — the docked chrome ---------------------------------------------------------
-		await page.evaluate(() => window.__stores.bottomDock.activateDock('animation'));
+		await page.evaluate(() => window.__tp.test.v1.bottomDock.activateDock('animation'));
 		await page.waitForTimeout(700);
 		const chrome = await page.evaluate(() => {
 			const panel = document.querySelector('#animation-dock');
@@ -275,25 +275,25 @@ h.run(async () => {
 		h.check(chrome.und && chrome.leftOfMin, `F8.3 undock sits left of "minimize the dock" (${JSON.stringify(chrome)})`);
 		// the setting row exists in Settings ▸ Interface
 		await page.evaluate(() => {
-			window.__stores.settingsSection.set('interface');
-			window.__stores.settingsOpen.set(true);
+			window.__tp.test.v1.settingsSection.set('interface');
+			window.__tp.test.v1.settingsOpen.set(true);
 		});
 		await page.waitForTimeout(900);
 		h.check((await page.locator('#row-undock-button').count()) === 1, 'F8.4 Settings ▸ Interface carries the "Undock button" row');
-		await page.evaluate(() => window.__stores.settingsOpen.set(false));
+		await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 		await page.waitForTimeout(500);
 		// default: undock the ACTIVE window only
 		await page.locator('#dock-undock:visible').first().click();
 		await page.waitForTimeout(1400);
 		const one = await page.evaluate(() => {
 			let occ;
-			window.__stores.bottomDock.dockOccupants.subscribe((v) => (occ = v))();
+			window.__tp.test.v1.bottomDock.dockOccupants.subscribe((v) => (occ = v))();
 			return { animWin: !!document.querySelector('#animation-window'), stillDocked: Object.keys(occ).filter((k) => occ[k]?.present).sort() };
 		});
 		h.check(one.animWin && !one.stillDocked.includes('animation') && one.stillDocked.length >= 6, `F8.5 the default undocks the ACTIVE window only (${JSON.stringify(one)})`);
 
 		// ---- F10 — drop a docked tab INTO that floating window: it joins as a tab ----------
-		await page.evaluate(() => window.__stores.bottomDock.activateDock('uv'));
+		await page.evaluate(() => window.__tp.test.v1.bottomDock.activateDock('uv'));
 		await page.waitForTimeout(800);
 		// the window floats where it last was, over the dock strip — carry it up by its header
 		// first, or the press lands on the window instead of the tab
@@ -319,7 +319,7 @@ h.run(async () => {
 		h.check(lit === true, 'F10.1 dragging a docked tab over a floating window lights it as the drop target');
 		const grouped = await page.evaluate(() => {
 			let g;
-			window.__stores.windowTabs.tabGroups.subscribe((v) => (g = v))();
+			window.__tp.test.v1.windowTabs.tabGroups.subscribe((v) => (g = v))();
 			return g.map((x) => ({ members: x.members, active: x.active }));
 		});
 		h.check(grouped.some((x) => x.members.includes('animation') && x.members.includes('uv')), `F10.2 ...and the drop JOINS it as a tab instead of a second floating window (${JSON.stringify(grouped)})`);
@@ -327,7 +327,7 @@ h.run(async () => {
 		const attached = () =>
 			page.evaluate(() => {
 				let g;
-				window.__stores.windowTabs.tabGroups.subscribe((v) => (g = v))();
+				window.__tp.test.v1.windowTabs.tabGroups.subscribe((v) => (g = v))();
 				const grp = g.find((x) => x.members.includes('uv'));
 				if (!grp) return { active: null, strip: null, win: [0, 0] };
 				const strip = document.querySelector('.tab-strip')?.getBoundingClientRect();
@@ -368,29 +368,29 @@ h.run(async () => {
 		await page.waitForTimeout(1600);
 		const back = await page.evaluate(() => {
 			let occ, g;
-			window.__stores.bottomDock.dockOccupants.subscribe((v) => (occ = v))();
-			window.__stores.windowTabs.tabGroups.subscribe((v) => (g = v))();
+			window.__tp.test.v1.bottomDock.dockOccupants.subscribe((v) => (occ = v))();
+			window.__tp.test.v1.windowTabs.tabGroups.subscribe((v) => (g = v))();
 			return { anim: !!occ.animation?.present, uv: !!occ.uv?.present, groups: g.length, windows: !!document.querySelector('#animation-window, #uv-window') };
 		});
 		h.check(back.anim && back.uv && back.groups === 0 && !back.windows, `F8.7 ...which docks EVERY tab of it (${JSON.stringify(back)})`);
 
 		// ---- F8 — Settings "all as one tabbed group" ---------------------------------------
-		await page.evaluate(() => window.__stores.bottomDock.undockButtonMode.set('group'));
+		await page.evaluate(() => window.__tp.test.v1.bottomDock.undockButtonMode.set('group'));
 		await page.waitForTimeout(300);
-		const nDocked = await page.evaluate(() => { let t; window.__stores.bottomDock.dockTabs.subscribe((v) => (t = v))(); return t.length; });
+		const nDocked = await page.evaluate(() => { let t; window.__tp.test.v1.bottomDock.dockTabs.subscribe((v) => (t = v))(); return t.length; });
 		await page.locator('#dock-undock:visible').first().click();
 		await page.waitForTimeout(nDocked * 700 + 2500);
 		const all = await page.evaluate(() => {
 			let occ, g;
-			window.__stores.bottomDock.dockOccupants.subscribe((v) => (occ = v))();
-			window.__stores.windowTabs.tabGroups.subscribe((v) => (g = v))();
+			window.__tp.test.v1.bottomDock.dockOccupants.subscribe((v) => (occ = v))();
+			window.__tp.test.v1.windowTabs.tabGroups.subscribe((v) => (g = v))();
 			return { docked: Object.keys(occ).filter((k) => occ[k]?.present), groups: g.map((x) => x.members.length) };
 		});
 		h.check(all.docked.length === 0 && all.groups.length === 1 && all.groups[0] === nDocked, `F8.8 "all as one tabbed group": every docked tab leaves as ONE floating window with a tab each (${nDocked} tabs -> ${JSON.stringify(all)})`);
-		await page.evaluate(() => window.__stores.bottomDock.undockButtonMode.set('active'));
+		await page.evaluate(() => window.__tp.test.v1.bottomDock.undockButtonMode.set('active'));
 
 		// ---- F11 — DESKTOP: the Layouts dialog ----------------------------------------------
-		await page.evaluate(() => window.__stores.uiLayouts.layoutsMenuOpen.set(true));
+		await page.evaluate(() => window.__tp.test.v1.uiLayouts.layoutsMenuOpen.set(true));
 		await page.waitForTimeout(800);
 		const ld = await page.evaluate(() => {
 			const el = document.querySelector('#layouts-menu');

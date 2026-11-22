@@ -9,14 +9,14 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 	await A.page.evaluate(() => {
-		window.__stores.uvEditorClose.set(false);
-		window.__stores.bottomDock.activateDock('uv');
+		window.__tp.test.v1.uvEditorClose.set(false);
+		window.__tp.test.v1.bottomDock.activateDock('uv');
 	});
 	await A.page.waitForTimeout(500);
 
 	// a textured mesh over the cap, nested and skinned like a rigged GLB
 	const built = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const c = document.createElement('canvas');
 		c.width = c.height = 16;
@@ -48,7 +48,7 @@ h.run(async () => {
 	);
 
 	const state = await A.page.evaluate(async ({ mesh }) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const target = g.getObjectByProperty('uuid', mesh);
 		return {
@@ -74,7 +74,7 @@ h.run(async () => {
 	// Asserting that here is what stops the checks above from quietly re-testing a
 	// limit that no longer bites the models people actually import.
 	const midSized = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const mesh = new w.THREE.Mesh(
 			new w.THREE.SphereGeometry(1, 64, 48), // ~6000 tris = ~55k floats
@@ -103,7 +103,7 @@ h.run(async () => {
 	// texture with a white sheet, because the paint canvas seeds from mapDataUrl
 	// and an IMPORTED texture has none.
 	const painted = await A.page.evaluate(async ({ mesh }) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const opened = await w.uvEditor.beginPaintStroke(mesh, 0);
 		if (!opened) return { opened: false };
 		for (let i = 0; i <= 6; i++) w.uvEditor.paintMove(0.2 + i * 0.09, 0.5, '#0000ff', 32);
@@ -149,7 +149,7 @@ h.run(async () => {
 
 	// a vertex press must NOT pretend to drag: it pans instead
 	const press = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.uvEditor.uvTool.set('select');
 		await new Promise((r) => setTimeout(r, 200));
 		const el = document.getElementById('uv-canvas');

@@ -1,0 +1,85 @@
+{
+	"id": "seq-old1",
+	"name": "Intro",
+	"duration": 12,
+	"fps": 30,
+	"loop": false,
+	"changedAt": 1762200000000,
+	"tracks": [
+		{
+			"id": "tr-cam",
+			"kind": "camera",
+			"name": "Camera",
+			"items": [
+				{
+					"id": "it-c1",
+					"t": 0,
+					"dur": 5,
+					"camera": "cam-a",
+					"blend": 0.5,
+					"to": "",
+					"ease": "smooth"
+				},
+				{
+					"id": "it-c2",
+					"t": 5,
+					"dur": 7,
+					"camera": "cam-b",
+					"to": "",
+					"ease": "smooth"
+				}
+			],
+			"muted": false
+		},
+		{
+			"id": "tr-anim",
+			"kind": "anim",
+			"name": "Door",
+			"items": [
+				{
+					"id": "it-a1",
+					"t": 1,
+					"dur": 3,
+					"target": "obj-door",
+					"clip": "open",
+					"speed": 1
+				}
+			],
+			"muted": false
+		},
+		{
+			"id": "tr-aud",
+			"kind": "audio",
+			"name": "Music",
+			"items": [
+				{
+					"id": "it-s1",
+					"t": 0,
+					"dur": 12,
+					"sound": "abc123",
+					"name": "theme.mp3",
+					"gain": 0.8
+				}
+			],
+			"muted": false
+		},
+		{
+			"id": "tr-ev",
+			"kind": "event",
+			"name": "Cues",
+			"muted": true,
+			"items": [
+				{
+					"id": "it-e1",
+					"t": 6,
+					"name": "boom",
+					"dur": 0
+				}
+			]
+		}
+	],
+	"extra": {
+		"keptBy": "a newer field"
+	},
+	"autoplay": false
+}

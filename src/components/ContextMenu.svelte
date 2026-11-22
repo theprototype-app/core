@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { backClose } from '$lib/backStack.js'; // phone-polish: Android Back closes the menu
 	import { createEventDispatcher, onDestroy } from 'svelte';
 	import { rememberFocus } from '$lib/keyboardNav';
 	import ContextMenuItems from './ContextMenuItems.svelte';
@@ -161,6 +162,8 @@
 	}
 	/** how many rows the empty-query browse list shows (it scrolls) */
 	const BROWSE_CAP = 200;
+	// 78-wire: a menu that is MEANT to list everything (the wire search's "Show all nodes") raises it
+	export let browseCap: number = BROWSE_CAP;
 	/** 16-Q5: default height of the SEARCH list. A menu that unfolds down the whole
 	 *  screen is unusable, so the list gets a sensible box you can resize from the
 	 *  corner grip. */
@@ -197,7 +200,14 @@
 	/** With a query: ranked matches. In search mode WITHOUT one: every action, so
 	 *  the box doubles as a full browse list (the node editor's old search box did
 	 *  this, and clearing the query should not throw you out of it). */
-	$: matches = query ? rankMatches(leaves, query) : searchMode ? leaves.slice(0, BROWSE_CAP) : [];
+	// 78 F1: a `pinned` leaf (the wire search's "Show all nodes") closes the flat list WHATEVER the
+	// query and the browse cap — the way out of a filtered list must never be filtered away
+	$: pinnedLeaves = leaves.filter((entry) => entry.item.pinned);
+	$: freeLeaves = pinnedLeaves.length ? leaves.filter((entry) => !entry.item.pinned) : leaves;
+	$: matches = [
+		...(query ? rankMatches(freeLeaves, query) : searchMode ? freeLeaves.slice(0, browseCap) : []),
+		...(query || searchMode ? pinnedLeaves : [])
+	];
 	/** flat list instead of the grouped tree? */
 	$: listMode = searchMode || !!query;
 
@@ -417,14 +427,23 @@
 		// replace the item list) — a menu opened near the bottom edge and flipped up
 		// would otherwise grow straight off the screen. Re-place on any size change,
 		// guarded so the maxHeight write can't loop.
+		// 54i: re-placed on the NEXT frame, never inside the observer callback — reposition writes the
+		// menu's own max-height (the search list takes its own height once you type), and resizing the
+		// observed box inside its callback left minimalScroll's observer on the same box undelivered:
+		// "ResizeObserver loop completed with undelivered notifications", toasted as Something went wrong
+		let raf = 0;
 		const observer = new ResizeObserver(() => {
-			if (node.offsetWidth === lastW && node.offsetHeight === lastH) return;
-			reposition();
+			if (raf || (node.offsetWidth === lastW && node.offsetHeight === lastH)) return;
+			raf = win.requestAnimationFrame(() => {
+				raf = 0;
+				if (node.isConnected && (node.offsetWidth !== lastW || node.offsetHeight !== lastH)) reposition();
+			});
 		});
 		observer.observe(node);
 		win.addEventListener('resize', reposition);
 		return {
 			destroy: () => {
+				if (raf) win.cancelAnimationFrame(raf);
 				observer.disconnect();
 				win.removeEventListener('resize', reposition);
 			}
@@ -465,6 +484,7 @@
 	bind:this={menuEl}
 	use:portal
 	use:place
+	use:backClose={() => dispatch('close')}
 	use:minimalScroll
 	class="ctx-scroll tp-ui tp-menu fixed min-w-36 overflow-y-auto overflow-x-hidden"
 	style="left: 0; top: 0; z-index: calc(var(--z-portal) + 1);"
@@ -509,6 +529,7 @@
 				class:ctx-active={index === highlight}
 				data-ctx-active={index === highlight}
 				role="menuitem"
+				aria-disabled={match.item.disabled ? 'true' : undefined}
 				title={match.item.tooltip ?? ''}
 				on:mouseenter={() => (highlight = index)}
 				on:click={() => run(match.item)}

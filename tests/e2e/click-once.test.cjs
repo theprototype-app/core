@@ -40,7 +40,7 @@ const GRAPH = {
 /** watch, from boot, every pulse of `click` and every flip of `latch1` this page sees */
 const watch = (p) =>
 	p.page.evaluate(() => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		window.__seen = { pulses: 0, flips: 0 };
 		let lastT = null;
 		S.flowTriggers.subscribe((m) => {
@@ -63,9 +63,9 @@ const watch = (p) =>
 const read = (p) =>
 	p.page.evaluate(() => {
 		let g;
-		window.__stores.gameState.gameState.subscribe((v) => (g = v))();
+		window.__tp.test.v1.gameState.gameState.subscribe((v) => (g = v))();
 		let v;
-		window.__stores.flowValues.subscribe((x) => (v = x))();
+		window.__tp.test.v1.flowValues.subscribe((x) => (v = x))();
 		return { ...window.__seen, latch: v?.latch1 ?? null, n: g?.vars?.n ?? 0, t: g?.vars?.t ?? 0 };
 	});
 
@@ -73,7 +73,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 	await A.page.evaluate(({ nodes, edges }) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		S.commandsHandler.sceneCommand('/create box');
 		let g;
 		S.objectsGroup.subscribe((x) => (g = x))();
@@ -95,18 +95,18 @@ h.run(async () => {
 	const peers = [A, B, C];
 	const button = await A.page.evaluate(() => window.__button);
 	await h.eventually(
-		() => Promise.all(peers.map((p) => p.page.evaluate(() => window.__stores.nodesHandler.graphHash()))),
+		() => Promise.all(peers.map((p) => p.page.evaluate(() => window.__tp.test.v1.nodesHandler.graphHash()))),
 		(hs) => hs.every((x) => x === hs[0]),
 		'premise: all three peers hold the graph',
 		40000
 	);
 	await h.eventually(
-		() => Promise.all(peers.map((p) => p.page.evaluate(() => { let pr; window.__stores.peers.subscribe((v) => (pr = v))(); return pr?.openedPeers?.size ?? 0; }))),
+		() => Promise.all(peers.map((p) => p.page.evaluate(() => { let pr; window.__tp.test.v1.peers.subscribe((v) => (pr = v))(); return pr?.openedPeers?.size ?? 0; }))),
 		(n) => n.every((v) => v === 2),
 		'premise: a full mesh (a guest\'s click reaches the other guest over their own link; v1.47.0 takes up to ~60 s here too)',
 		90000
 	);
-	console.log('  links per peer (A, B, agent): ' + JSON.stringify(await Promise.all(peers.map((p) => p.page.evaluate(() => { let pr; window.__stores.peers.subscribe((v) => (pr = v))(); return pr?.openedPeers?.size ?? 0; })))));
+	console.log('  links per peer (A, B, agent): ' + JSON.stringify(await Promise.all(peers.map((p) => p.page.evaluate(() => { let pr; window.__tp.test.v1.peers.subscribe((v) => (pr = v))(); return pr?.openedPeers?.size ?? 0; })))));
 	// the agent's headless browser runs slow: throttled from here on (the dial itself is not the subject)
 	await (await C.ctx.newCDPSession(C.page)).send('Emulation.setCPUThrottlingRate', { rate: 4 });
 	for (const p of peers) await watch(p);
@@ -115,7 +115,7 @@ h.run(async () => {
 	const want = (round) => ({ pulses: round, flips: round, latch: round % 2 === 1, n: round, t: round % 2 });
 	const settled = (s, round) => Object.entries(want(round)).every(([k, v]) => s[k] === v);
 	for (const [round, clicker] of [[1, A], [2, C]]) {
-		await clicker.page.evaluate((u) => window.__stores.flowRuntime.fireObjectClick(u), button);
+		await clicker.page.evaluate((u) => window.__tp.test.v1.flowRuntime.fireObjectClick(u), button);
 		// every peer reaches the one-click state (the throttled agent page draws its Latch late)...
 		await h.eventually(() => Promise.all(peers.map(read)), (all) => all.every((s) => settled(s, round)), `${round}.0 every peer settles on one click's worth`, 25000).catch(() => {});
 		// ...and a late second write would land within this

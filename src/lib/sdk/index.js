@@ -28,7 +28,10 @@ import { sdkBehavior } from './behavior.js';
 import { sdkQuality } from './quality.js';
 import { sdkPeerVars } from './peerVars.js';
 import { sdkPossess } from './possess.js';
-import { sdkCore } from './core.js';
+import { sdkCore, SDK_API_VERSION } from './core.js';
+
+// 101 F6: `api.version` (2) — re-exported so a caller can compare without building an api
+export { SDK_API_VERSION };
 import { sdkBackends } from './backends.js';
 import { sdkAudio } from './audio.js';
 import { sdkPost } from './post.js';
@@ -38,6 +41,7 @@ import { sdkKit } from './kit.js';
 import { sdkModels } from './models.js';
 import { sdkWater } from './water.js';
 import { sdkPointerSeam } from './pointerSeam.js';
+import { sdkGameWorld } from './gameWorld.js';
 
 /** The api, slice by slice, in key order. @type {[string, (ctx: import('./context.js').SdkContext) => object][]} */
 export const SDK_TABLE = [
@@ -61,7 +65,7 @@ export const SDK_TABLE = [
 	['peerVars', sdkPeerVars], // api.peerVars
 	['flow', sdkFlow], // api.flow
 	['possess', sdkPossess], // possess, releasePossess, possessModes
-	['core', sdkCore], // selectedUuid, scene, objectsGroup, sceneAssets, peerId, toast, now, THREE, assetUrl
+	['core', sdkCore], // version (101 F6), selectedUuid, scene, objectsGroup, sceneAssets, peerId, toast, now, THREE, assetUrl
 	['backends', sdkBackends], // registerUnwrapBackend, registerShaderBackend, registerAudioDevice
 	['audio', sdkAudio], // api.audio
 	['post', sdkPost], // registerPostEffect, registerPostBackend
@@ -70,7 +74,8 @@ export const SDK_TABLE = [
 	['own', sdkOwn], // onUnload, timers, listen, own (34 R6)
 	['models', sdkModels], // loadModel (34 R7)
 	['water', sdkWater], // api.water (36-water: W1 volumes + W2 disturbances)
-	['pointerSeam', sdkPointerSeam] // registerPointerHandler, onClickMiss, camera, onPlayMode, inGame (37: DEVX #29/#31/#11)
+	['pointerSeam', sdkPointerSeam], // registerPointerHandler, onClickMiss, camera, onPlayMode, inGame (37: DEVX #29/#31/#11)
+	['gameWorld', sdkGameWorld] // paths, colliderGeometry, players, isAuthority, isExport, registerViewToggle, registerObjectAction (61-nav)
 ];
 
 /** @param {string} moduleId @param {string} [moduleName] the DISPLAY name, needed while

@@ -7,7 +7,7 @@ const h = require('./helpers.cjs');
 const store = (page, name) =>
 	page.evaluate((n) => {
 		let v;
-		window.__stores[n].subscribe((x) => (v = x))();
+		window.__tp.test.v1[n].subscribe((x) => (v = x))();
 		return v;
 	}, name);
 
@@ -18,15 +18,15 @@ h.run(async () => {
 	h.check((await store(A.page, 'vrVertexHold')) === true, 'vrVertexHold defaults on (hold to move)');
 
 	const fns = await A.page.evaluate(() => ({
-		start: typeof window.__stores.vrControls.vrVertexGrabStart === 'function',
-		end: typeof window.__stores.vrControls.vrVertexGrabEnd === 'function'
+		start: typeof window.__tp.test.v1.vrControls.vrVertexGrabStart === 'function',
+		end: typeof window.__tp.test.v1.vrControls.vrVertexGrabEnd === 'function'
 	}));
 	h.check(fns.start && fns.end, 'vrControls exposes the hold grab/drop handlers');
 
 	// hold-style state machine: press (selectstart) grabs, release (selectend)
 	// drops, and a full select must NOT toggle-drop while holding
 	const hold = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.vrVertexHold.set(true);
 		s.commandsHandler.sceneCommand('/create box');
 		let grp;
@@ -54,7 +54,7 @@ h.run(async () => {
 	h.check(hold.dropped === false, 'releasing the trigger (selectend) drops it');
 
 	// Settings VR toggle
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await A.page.waitForTimeout(400);
 	await A.page.locator('#settings-nav .sn-row', { hasText: 'VR' }).first().click();
 	await A.page.waitForTimeout(300);
@@ -69,7 +69,7 @@ h.run(async () => {
 		ls: localStorage.getItem('vrVertexHold'),
 		store: (() => {
 			let v;
-			window.__stores.vrVertexHold.subscribe((x) => (v = x))();
+			window.__tp.test.v1.vrVertexHold.subscribe((x) => (v = x))();
 			return v;
 		})()
 	}));

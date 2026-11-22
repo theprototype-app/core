@@ -1,6 +1,6 @@
 // N (and the Node editor toolbar button) answers for the NODE EDITOR TAB ALONE.
 //
-// It used to own the whole docked flow GROUP: one press closed Flow Code, Animation,
+// It used to own the whole docked flow GROUP: one press closed Timeline, Animation,
 // the UV / Shader / HUD editors and the Node editor together, snapshotting them so the
 // next press could bring them back. That was written when the dock showed ONE panel at
 // a time; since #183 the dock is a tab strip and T is the gesture for the strip as a
@@ -14,12 +14,12 @@ const h = require('./helpers.cjs');
 
 const dock = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let tabs, visible, fc, cc, ac, ec;
 		s.bottomDock.dockTabs.subscribe((v) => (tabs = v))();
 		s.bottomDock.visibleDockKey.subscribe((v) => (visible = v))();
 		s.flowGraphClose.subscribe((v) => (fc = v))();
-		s.flowCodeClose.subscribe((v) => (cc = v))();
+		s.timelineClose.subscribe((v) => (cc = v))();
 		s.animationClose.subscribe((v) => (ac = v))();
 		s.explorerClose.subscribe((v) => (ec = v))();
 		return { tabs: tabs.map((t) => t.key), visible, fc, cc, ac, ec };
@@ -51,20 +51,20 @@ h.run(async () => {
 	// Animation needs a selected object to render anything, and the premise is about
 	// what is DOCKED, so give it one.
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		s.objectActions.selectObject(g.children[g.children.length - 1].uuid);
 		localStorage.setItem('flowDocked', 'true');
-		localStorage.setItem('flowCodeDocked', 'true');
+		localStorage.setItem('timelineDocked', 'true');
 		localStorage.setItem('animationDocked', 'true');
 		localStorage.setItem('explorerDocked', 'true');
 	});
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphClose.set(false);
-		s.flowCodeClose.set(false);
+		s.timelineClose.set(false);
 		s.animationClose.set(false);
 		s.explorerClose.set(false);
 		s.bottomDock.activateDock('flow');
@@ -83,7 +83,7 @@ h.run(async () => {
 	h.check(d.fc === true, '1.1 clicking it closes the Node editor');
 	h.check(
 		d.cc === false && d.ac === false,
-		`1.2 ...and Flow Code and Animation STAY OPEN (flowCodeClosed=${d.cc} animationClosed=${d.ac})`
+		`1.2 ...and Timeline and Animation STAY OPEN (timelineClosed=${d.cc} animationClosed=${d.ac})`
 	);
 	h.check(d.ec === false, '1.3 ...and so does the Explorer (it always did — it is not in the flow family)');
 	h.check(
@@ -113,7 +113,7 @@ h.run(async () => {
 	h.check(d.fc === true, '3.1 N closes the Node editor');
 	h.check(
 		d.cc === false && d.ac === false && d.ec === false,
-		`3.2 ...and leaves every other tab alone (flowcode=${!d.cc} animation=${!d.ac} explorer=${!d.ec} open)`
+		`3.2 ...and leaves every other tab alone (timeline=${!d.cc} animation=${!d.ac} explorer=${!d.ec} open)`
 	);
 	await press(A.page, 'n');
 	d = await dock(A.page);
@@ -125,7 +125,7 @@ h.run(async () => {
 	// --- 4. the tree reads the same for a NON-flow panel -----------------------------
 	// The fix removed the only per-panel branch left in panelToggles, so the Explorer's
 	// own button must behave identically: close its tab, touch nothing else.
-	await A.page.evaluate(() => window.__stores.bottomDock.activateDock('explorer'));
+	await A.page.evaluate(() => window.__tp.test.v1.bottomDock.activateDock('explorer'));
 	await A.page.waitForTimeout(400);
 	d = await dock(A.page);
 	h.check(d.visible === 'explorer', `4.0 premise: the Explorer is the visible tab (${d.visible})`);
@@ -140,7 +140,7 @@ h.run(async () => {
 	// --- 5. a COVERED tab is called back, never dismissed ----------------------------
 	// (step 4's other half, unchanged by this fix but the reason a press cannot simply
 	// close whatever it names)
-	await A.page.evaluate(() => window.__stores.bottomDock.activateDock('animation'));
+	await A.page.evaluate(() => window.__tp.test.v1.bottomDock.activateDock('animation'));
 	await A.page.waitForTimeout(400);
 	d = await dock(A.page);
 	h.check(

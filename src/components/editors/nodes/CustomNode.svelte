@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Icon from '../../ui/Icon.svelte';
 	import { Handle, Position, type NodeProps } from '@xyflow/svelte';
 	import Socket from './Socket.svelte';
 	import NodeWrapper from './NodeWrapper.svelte';
@@ -88,7 +89,7 @@
 			</button>
 		{/if}
 		{#if error}
-			<span class="max-w-[180px] wrap-break-word text-[10px] text-ink-bad" title={error}>⚠ {error}</span>
+			<span class="max-w-[180px] wrap-break-word text-[10px] text-ink-bad" title={error}><Icon name="triangle-alert" size={16} class="inline-block shrink-0 align-[-2px]" /> {error}</span>
 		{/if}
 	</div>
 </NodeWrapper>

@@ -66,8 +66,18 @@ describe('normalize', () => {
 		expect(it0.extra).toBe('x');
 		expect(seq.tracks[0].items.map((/** @type {any} */ i) => i.id)).toEqual(['c1', 'c2']);
 	});
-	it('an unknown track kind becomes an event track; events have no length', () => {
-		const tr = normalizeTrack({ kind: 'laser', items: [{ t: 1, dur: 5 }] });
+	it('68: an UNKNOWN track kind is kept opaque (a newer peer\'s track survives our edit)', () => {
+		const tr = normalizeTrack({ id: 'tr-x', kind: 'laser', beam: 3, items: [{ t: 1, dur: 5, power: 9 }] });
+		expect(tr.kind).toBe('laser');
+		expect(tr.beam).toBe(3);
+		expect(tr.items).toEqual([{ t: 1, dur: 5, power: 9 }]);
+		// and it never fires, plays or snaps like one of ours
+		const s = normalizeSequence({ tracks: [tr] });
+		expect(crossedStarts(s, -1, 10)).toEqual([]);
+		expect(shotAt(s, 2)).toBe(null);
+	});
+	it('a track with NO kind is an event track; events have no length', () => {
+		const tr = normalizeTrack({ items: [{ t: 1, dur: 5 }] });
 		expect(tr.kind).toBe('event');
 		expect(tr.items[0].dur).toBe(0);
 		expect(tr.items[0].name).toBe('event');

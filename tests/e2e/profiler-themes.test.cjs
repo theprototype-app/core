@@ -25,7 +25,7 @@ h.run(async () => {
 
 	// ---- a small planted scene so the tree has rows
 	await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		for (const name of ['Crate', 'Barrel', 'Lamp']) {
 			s.commandsHandler.sceneCommand('/create box');
 			let o;
@@ -48,7 +48,7 @@ h.run(async () => {
 
 	// ---- the live overlay with a fake watched peer (frames + a capture) so every element draws
 	await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const sink = s.perfLiveSink;
 		const wire = s.perfLiveWire;
 		const id = 'quest-fake';
@@ -75,7 +75,7 @@ h.run(async () => {
 	});
 	await page.waitForSelector('#profiler-live .live-session', { timeout: 5000 });
 
-	const themes = await page.evaluate(() => window.__stores.themes.THEMES.map((t) => t.id));
+	const themes = await page.evaluate(() => window.__tp.test.v1.themes.THEMES.map((t) => t.id));
 	console.log('themes: ' + themes.join(', '));
 	h.check(themes.length >= 5, `the theme list has the five built-ins (${themes.length})`);
 
@@ -94,17 +94,27 @@ h.run(async () => {
 			if (d) for (let i = 0; i < d.length; i += 4) h = (h * 31 + d[i] + d[i + 1] * 3 + d[i + 2] * 7) >>> 0;
 			return String(h);
 		});
+	// showhide-v8 §5: the live view now takes the Profiler's main area, so the timeline canvas is only drawn while
+	// a recording is in front — leave Live (back to the recording) BEFORE the theme changes, so the canvas is
+	// mounted through the change and a stale one would keep the old ink
+	await page.evaluate(() => window.__tp.test.v1.perfLiveSink.profilerLiveOpen.set(false));
+	await page.waitForSelector('#profiler-timeline canvas', { timeout: 8000 }).catch(() => {});
+	await page.waitForTimeout(500);
 	let lastPrint = await canvasPrint();
 	for (const id of themes) {
-		await page.evaluate((t) => window.__stores.themes.theme.set(t), id);
+		await page.evaluate(() => window.__tp.test.v1.perfLiveSink.profilerLiveOpen.set(false));
+		await page.waitForSelector('#profiler-timeline canvas', { timeout: 8000 }).catch(() => {});
+		await page.waitForTimeout(300);
+		await page.evaluate((t) => window.__tp.test.v1.themes.theme.set(t), id);
 		await page.waitForTimeout(500);
 		const print = await canvasPrint();
-		if (id !== 'dark') h.check(print !== lastPrint, `${id}: the timeline canvas repainted in the new theme's ink`);
+		if (!print) console.log(`  ${id}: no timeline canvas in front`);
+		if (id !== 'dark') h.check(!!print && print !== lastPrint, `${id}: the timeline canvas repainted in the new theme's ink`);
 		lastPrint = print;
 		let worst = Infinity;
 		let count = 0;
 		// the overlay floats over the dock's corner: shoot each surface on its own
-		await page.evaluate(() => window.__stores.perfLiveSink.profilerLiveOpen.set(false));
+		await page.evaluate(() => window.__tp.test.v1.perfLiveSink.profilerLiveOpen.set(false));
 		for (const tab of ['tree', 'ranked', 'cpu', 'events']) {
 			await page.click(`#profiler-tab-${tab}`);
 			await page.waitForTimeout(250);
@@ -116,7 +126,7 @@ h.run(async () => {
 			}
 			if (tab === 'tree') await page.locator('#profiler-dock').screenshot({ path: path.join(SHOTS, `${String(++n).padStart(2, '0')}-${PHASE}-profiler-${id}.png`) }).catch(() => {});
 		}
-		await page.evaluate(() => window.__stores.perfLiveSink.profilerLiveOpen.set(true));
+		await page.evaluate(() => window.__tp.test.v1.perfLiveSink.profilerLiveOpen.set(true));
 		await page.waitForSelector('#profiler-live .live-session', { timeout: 5000 });
 		await page.waitForTimeout(300);
 		const live = await contrastRows(page, '#profiler-live');
@@ -144,6 +154,6 @@ h.run(async () => {
 			h.check(bad.length === 0, `${id}: every profiler text reaches ${AA}:1 (${bad.length} below${bad[0] ? ', e.g. "' + bad[0].text + '" ' + bad[0].ratio + ':1' : ''})`);
 		}
 	}
-	await page.evaluate(() => window.__stores.themes.theme.set('dark'));
+	await page.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
 	await h.finish(browser);
 });

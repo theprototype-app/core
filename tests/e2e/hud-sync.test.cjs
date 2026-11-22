@@ -10,7 +10,7 @@ const h = require('./helpers.cjs');
 
 const readDoc = (peer) =>
 	peer.page.evaluate(() => {
-		const doc = window.__stores.hudDocs.hudDocOf('scene');
+		const doc = window.__tp.test.v1.hudDocs.hudDocOf('scene');
 		return doc
 			? {
 					screens: doc.screens.length,
@@ -27,12 +27,12 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
 	for (const p of [A, B])
-		await p.page.waitForFunction(() => !!window.__stores?.hudDocs, { timeout: 30000 });
+		await p.page.waitForFunction(() => !!window.__tp?.test.v1?.hudDocs, { timeout: 30000 });
 	await h.connect(A, B);
 
 	// ---- 1. an authored document reaches the peer ----------------------------
 	await A.page.evaluate(() => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		H.setHudDocFor('scene', { screens: [{ id: 'main', name: 'Main', elements: [] }], active: 'main' });
 		H.addHudElement('scene', 'main', { kind: 'text', label: 'Gems: 0', anchor: 'top-right', x: 20, y: 20 });
 		H.addHudElement('scene', 'main', { kind: 'button', label: 'Start', anchor: 'center' });
@@ -57,7 +57,7 @@ h.run(async () => {
 	// The counter lives on `window` so it can be read AFTER the inbound edit lands; a
 	// closed-over array inside one evaluate() is gone by the time the next one runs.
 	await B.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		window.__bSent = [];
 		const peer = await new Promise((r) => s.peers.subscribe((p) => r(p))());
 		const real = peer.send.bind(peer);
@@ -68,16 +68,16 @@ h.run(async () => {
 		window.__restoreSend = () => (peer.send = real);
 	});
 	await A.page.evaluate(() =>
-		window.__stores.hudDocs.updateHudElement(
+		window.__tp.test.v1.hudDocs.updateHudElement(
 			'scene',
 			'main',
-			window.__stores.hudDocs.hudDocOf('scene').screens[0].elements[0].id,
+			window.__tp.test.v1.hudDocs.hudDocOf('scene').screens[0].elements[0].id,
 			{ label: 'Gems: 3' }
 		)
 	);
 	await A.page.waitForTimeout(1200);
 	const echoed = await B.page.evaluate(() => {
-		const labels = window.__stores.hudDocs
+		const labels = window.__tp.test.v1.hudDocs
 			.hudDocOf('scene')
 			.screens.flatMap((s) => s.elements.map((e) => e.label));
 		return labels;
@@ -94,8 +94,8 @@ h.run(async () => {
 	// Refusing an equal stamp is the bug that killed every write of a fast gesture after
 	// the first: a DataConnection is ordered, so an equal stamp arrived LATER.
 	const latestWins = await B.page.evaluate(async () => {
-		const H = window.__stores.hudDocs;
-		const S = window.__stores.hudSync;
+		const H = window.__tp.test.v1.hudDocs;
+		const S = window.__tp.test.v1.hudSync;
 		const mine = H.hudDocOf('scene');
 		// a STRICTLY older document must be refused
 		S.applyRemoteHud({
@@ -123,7 +123,7 @@ h.run(async () => {
 
 	// ---- 4. screen visibility is PER-PEER, on purpose -----------------------
 	const perPeer = await A.page.evaluate(async () => {
-		const H = window.__stores.hudDocs;
+		const H = window.__tp.test.v1.hudDocs;
 		H.setHudDocFor('scene', {
 			screens: [
 				{ id: 'main', name: 'Main', elements: [{ id: 'hud-play', kind: 'text', label: 'PLAYING', anchor: 'top-left' }] },
@@ -139,7 +139,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(1400);
 	const bStillPlaying = await B.page.evaluate(() => ({
 		shown: [...document.querySelectorAll('#hud-layer .hud-el')].map((e) => e.textContent),
-		docActive: window.__stores.hudDocs.hudDocOf('scene').active
+		docActive: window.__tp.test.v1.hudDocs.hudDocOf('scene').active
 	}));
 	h.check(perPeer.includes('MENU'), `A is looking at the menu (${JSON.stringify(perPeer)})`);
 	h.check(
@@ -152,10 +152,10 @@ h.run(async () => {
 	);
 
 	// the AUTHORED default, by contrast, DOES replicate
-	await A.page.evaluate(() => window.__stores.hudDocs.setActiveHudScreen('scene', 'menu'));
+	await A.page.evaluate(() => window.__tp.test.v1.hudDocs.setActiveHudScreen('scene', 'menu'));
 	await A.page.waitForTimeout(1300);
 	const bActive = await B.page.evaluate(() => ({
-		docActive: window.__stores.hudDocs.hudDocOf('scene').active,
+		docActive: window.__tp.test.v1.hudDocs.hudDocOf('scene').active,
 		shown: [...document.querySelectorAll('#hud-layer .hud-el')].map((e) => e.textContent)
 	}));
 	h.check(bActive.docActive === 'menu', `the AUTHORED default replicates (${bActive.docActive})`);
@@ -166,7 +166,7 @@ h.run(async () => {
 
 	// ---- 5. a LATE JOINER pulls the whole map through gethuds ---------------
 	const C = await h.setupPage(browser, 'C');
-	await C.page.waitForFunction(() => !!window.__stores?.hudDocs, { timeout: 30000 });
+	await C.page.waitForFunction(() => !!window.__tp?.test.v1?.hudDocs, { timeout: 30000 });
 	await h.connect(C, A);
 	await C.page.waitForTimeout(2500);
 	const onC = await readDoc(C);
@@ -186,7 +186,7 @@ h.run(async () => {
 	);
 
 	// ---- 6. delete replicates too ------------------------------------------
-	await A.page.evaluate(() => window.__stores.hudDocs.setHudDocFor('scene', null));
+	await A.page.evaluate(() => window.__tp.test.v1.hudDocs.setHudDocFor('scene', null));
 	await A.page.waitForTimeout(1400);
 	const gone = await Promise.all([B, C].map((p) => readDoc(p)));
 	h.check(gone[0] === null && gone[1] === null, 'deleting the document reaches every peer');

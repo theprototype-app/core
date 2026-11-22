@@ -1,9 +1,12 @@
 <script lang="ts">
 	import { geometry as sidebarGeometry } from '$lib/sidebars'; // 42 I2
 	import { micActive, pttActive, toggleMic, speakingPeers } from '$lib/voiceChat';
-	import { peerColor } from '$lib/lockControl';
 	import Icon from '../ui/Icon.svelte';
+	import PeerAvatar from '../ui/PeerAvatar.svelte'; // 78 PL33: one avatar everywhere
 	import { phoneShellActive } from '$lib/ui/phoneShell.js';
+	import { tours } from '$lib/tours/index.js'; // 76 FW1: the copy is the first-win quest's share step
+	import { SIGNALS } from '$lib/onboarding/quests.js';
+	import { funnelEvent } from '$lib/onboarding/funnel.js'; // 76 FW2: …and the funnel's first share
 	// 43 K3/K4: whether the pill is shown (Edit positions / Customize), and the top-row items it measures against
 	import { toolbarSlots } from '$lib/toolbarSlots';
 	import { peers, userdata, waitingForApproval, pendingApprovals, showToast, settingsOpen, settingsSection, connectDrawerOpen, connectDrawerTab, connectDrawerPinned, showRoomsButton, connectDocked, connectBarHeight, toastStore, toastsInDrawerOnly, touchTools, aiAssistantHidden } from '../../stores/appStore'
@@ -20,13 +23,17 @@
 	import { connectionStatus } from '$lib/connectionStatus';
 	import CloudSlot from '../CloudSlot.svelte';
 	import ConnectInfoDrawer from './ConnectInfoDrawer.svelte';
-	// 55 A4: Request AI — the invite sheet
+	// 55 A4: the invite sheet (uir-people: opened by the pill's Invite, on Person; AI agent is its second tab)
 	import InviteSheet from './InviteSheet.svelte';
+	import { handleInviteHash } from '$lib/inviteLinks';
 	import { inviteSheet, kindOfRow } from '$lib/inviteStore';
 	import { rolesInfo } from '$lib/cloudHooks';
 	import { safeStorage } from '$lib/safeStorage';
 	// 44 M14: pinned to the top row (the full-width bar) or floating (the centred pill, compact when crowded)
 	import { connectPinned } from '$lib/connectPin';
+	// 78 PL34: the join asks for a name (a card under the pill, never a modal)
+	import JoinNameAsk from './JoinNameAsk.svelte';
+	import { joinNameAsk, displayName } from '$lib/guestName';
 
 	let peerIdToConnect = $state('');
 	let displayid = $state('Generating...');
@@ -273,7 +280,7 @@
 	const COMPACT_W = 104;
 	/** what the full pill's width depends on */
 	function naturalKey() {
-		return [connState, expanded, $showRoomsButton && !!$drawerSlot, !!$connectSlot, !!$joinRefusal].join('|');
+		return [connState, expanded, dialOpen, $showRoomsButton && !!$drawerSlot, !!$connectSlot, !!$joinRefusal].join('|');
 	}
 	// 44 M14: the switch re-decides from the full pill (a docked bar's width says nothing about the pill's)
 	$effect(() => {
@@ -422,9 +429,9 @@
 	const chipPeers = $derived(
 		remoteOpen.slice(0, 3).map((id) => {
 			const row = $userdata.find((u) => u[0] === id);
-			const name = row?.[1] || String(id);
+			const name = row ? displayName(row) : String(id); // 78 PL34: never a raw id or "Peer"
 			// 55 A7: an agent is a robot on the chip, never a voice avatar
-			return { id, name, initial: String(name).trim().charAt(0).toUpperCase() || '?', agent: kindOfRow(row) === 'agent' };
+			return { id, name, row: row ?? [id, ''], agent: kindOfRow(row) === 'agent' };
 		})
 	);
 	const selfSpeaking = $derived(!!$peers?.peer?.id && $speakingPeers.includes($peers.peer.id));
@@ -473,6 +480,59 @@
 		if (peerIdToConnect) void requestConnect(peerIdToConnect);
 	};
 
+	// 78 PL34: a dial that ended without a session (cancelled, refused, expired) takes its name ask with it
+	// (on approval the pill passes through idle — the request row goes before the host's conn opens, which
+	// took seconds on a slow box — while `sessionHost` already names the host: that is not an ended dial;
+	// only an idle with no host that LASTS closes the card)
+	let dialSeen = false;
+	$effect(() => {
+		const host = $sessionHost;
+		if (connState !== 'idle') {
+			dialSeen = true;
+			return;
+		}
+		if (!dialSeen || host) return;
+		const t = setTimeout(() => {
+			dialSeen = false;
+			joinNameAsk.set(false);
+		}, 2500);
+		return () => clearTimeout(t);
+	});
+	// uir-people (Connect B, "Invite-first pill"): idle, the pill leads with two verbs — Invite and Join… —
+	// and the dial field shows only after Join…. The field takes a peer id OR a pasted invite link; a link goes
+	// through the same path as one pasted into the address bar (inviteLinks.handleInviteHash: its token, its
+	// server ask, its already-connected answers), an id through requestConnect as before.
+	let dialOpen = $state(false);
+	let dialEl: HTMLInputElement | null = $state(null);
+	function openDial() {
+		dialOpen = true;
+		tick().then(() => dialEl?.focus());
+	}
+	function closeDial() {
+		dialOpen = false;
+		peerIdToConnect = '';
+	}
+	$effect(() => {
+		if (connState === 'connected') dialOpen = false;
+	});
+	function dialSubmit() {
+		const text = String(peerIdToConnect ?? '').trim();
+		if (!text) return;
+		const hash = text.indexOf('#');
+		if (hash >= 0) {
+			void handleInviteHash(text.slice(hash));
+			peerIdToConnect = '';
+			return;
+		}
+		connectToPeer(text);
+	}
+	/** the idle pill's one word: Ready while the peer server answers (not "Offline"), else what is wrong */
+	const readyWord = $derived(
+		$connectionStatus.tone === 'failed' ? 'Offline' : $connectionStatus.tone === 'connecting' ? 'Connecting…' : 'Ready'
+	);
+	/** the connected chip's name for the session: whose it is */
+	const sessionWord = $derived($sessionHost ? (hostName || String($sessionHost).toUpperCase()) + '’s session' : 'Your session');
+
 	// cancel OUR pending outbound request (the pill covers the single-dial case;
 	// extra simultaneous dials get inline cancels in the info drawer)
 	function cancelPending() {
@@ -493,7 +553,14 @@
 		if (e.key !== 'Enter') return;
 		e.preventDefault();
 		if (!String(peerIdToConnect ?? '').trim()) return;
-		connectToPeer(peerIdToConnect);
+		dialSubmit();
+	}
+	/** uir-people: Escape in an EMPTY field folds it back to Join… */
+	function onDialEscape(e: KeyboardEvent) {
+		if (e.key !== 'Escape' || String(peerIdToConnect ?? '').trim()) return;
+		e.preventDefault();
+		e.stopPropagation();
+		closeDial();
 	}
 
 	function disconnect() {
@@ -513,9 +580,14 @@
 			// build default (fallback / explicit public / custom) so the joiner lands
 			// on the SAME server.
 			navigator.clipboard
-				.writeText(window.location.origin + '#' + myidcap + inviteServerParam(srv))
+				// a guest's link names the session host: the host decides who joins, so a joiner dialing
+				// the guest would be asked again by the host anyway
+				.writeText(window.location.origin + '#' + ($sessionHost ? String($sessionHost).toUpperCase() : myidcap) + inviteServerParam(srv))
 				.then(function () {
-					// alert("yeah!"); // success
+					// 76 FW1: the first-win quest's last step waits for this
+					// (the funnel first: the signal can end the quest, whose own event follows it)
+					funnelEvent('ob_first_share');
+					tours.signal(SIGNALS.copied);
 				})
 				.catch(function () {
 					// alert("err"); // error
@@ -529,11 +601,11 @@
 	 re-enables them. Narrow screens drop the bar to its own row BELOW the logo
 	 (left) and the peers/profile chrome (right) instead of squeezing between them. -->
 <svelte:window onpointerdown={onPeekDown} onkeydown={onPeekKey} />
-<div class="connect-wrap" data-key-scope="keep" class:docked class:squeezed={squeezedView} class:peek class:body-open={$connectDrawerOpen} class:cx-hidden={!pillShown} style:--cx-shift="{cxShift}px">
+<div class="connect-wrap" data-key-scope="keep" class:docked class:squeezed={squeezedView} class:cx-narrow={(squeezedView || compact) && !docked} class:peek class:body-open={$connectDrawerOpen} class:cx-hidden={!pillShown} style:--cx-shift="{cxShift}px">
 	<!-- 38 R8: one glass bar (styles/hud.css) — your invite id as a mono chip, the dial field
 	     with ONE primary button, status as a Badge, icon buttons for the rest. Every id,
 	     testid, placeholder and button name the suites and the tour read is unchanged. -->
-	<div class="connect-pill tp-ui hud-glass" class:drawer-open={drawerVisible} class:compact class:docked class:squeezed={squeezedView} class:sq-left={squareLeft} class:sq-right={squareRight} bind:this={pillEl} role="group" data-state={connState}>
+	<div class="connect-pill tp-ui hud-glass" class:drawer-open={drawerVisible && !((squeezedView || compact) && !docked)} class:compact class:docked class:squeezed={squeezedView} class:sq-left={squareLeft} class:sq-right={squareRight} bind:this={pillEl} role="group" data-state={connState}>
 		{#if squeezedView}
 			<!-- 44 M14: floating with no room on the top row — the compact form (the phone chip's dot + the
 			     chevron). The dot shows the full bar over the row; it expands by itself when room returns. -->
@@ -562,13 +634,14 @@
 			>
 				<!-- 41 G21: no label — the dot and the avatars; the words are the tooltip -->
 				<span class="cx-dot cx-status-dot" data-tone={$connectionStatus.tone} aria-hidden="true"></span>
+				<!-- uir-people (Connect B): whose session this is, then who is in it -->
+				<span class="cx-session" id="connect-session-name">{sessionWord}</span>
 				<span class="cx-avatars" aria-hidden="true">
 					{#each chipPeers as p (p.id)}
-						{#if p.agent}
-							<span class="cx-av cx-av-agent" style:background={peerColor(p.id)} title={p.name + ' (AI agent)'}><Icon name="bot" size={16} aria-hidden="true" /></span>
-						{:else}
-							<span class="cx-av" class:speaking={$speakingPeers.includes(p.id)} style:background={peerColor(p.id)} title={p.name}>{p.initial}</span>
-						{/if}
+						<!-- 78 PL33: the shared avatar (photo, else colour + initial; the robot for an agent) -->
+						<span class="cx-av-slot" class:cx-av-agent={p.agent} title={p.agent ? p.name + ' (AI agent)' : p.name}
+							><PeerAvatar id={p.id} row={p.row} size={24} speaking={!p.agent && $speakingPeers.includes(p.id)} /></span
+						>
 					{/each}
 					{#if remoteOpen.length > 3}<span class="cx-av cx-av-more">+{remoteOpen.length - 3}</span>{/if}
 				</span>
@@ -597,21 +670,36 @@
 			title={$connectionStatus.words + ($signalingRetry.retrying ? ' (' + formatElapsed(retryNow - ($signalingRetry.since ?? retryNow)) + ')' : '')}
 			aria-label={$connectionStatus.words}
 		></span>
+		{#if connState === 'idle' && !dialOpen}
+			<!-- uir-people (Connect B): the status in one word, beside its dot -->
+			<span class="cx-ready" id="connect-ready" data-tone={$connectionStatus.tone}>{readyWord}</span>
+		{/if}
 		<!-- your invite id (click to copy the share link) — the FIRST button in the pill -->
-		<button type="button" class="cx-id" onclick={copy} title="Copy your invite link"
+		<button type="button" class="cx-id" onclick={copy} title={$sessionHost ? "Copy the session's invite link (it names the host)" : 'Copy your invite link'}
 			><span class="cx-id-text">{myidcap}</span><Icon name="copy" size={16} aria-hidden="true" /></button
 		>
 		{#if canInvite}
-			<!-- 55 A4: Request AI — the invite sheet (AI agent / Person tabs over one signed invite) -->
+			<!-- uir-people (Connect B, F4): ONE Invite button, the pill's lead verb. The sheet opens on Person; the
+			     AI agent tab is inside it (was the robot "Request AI", 55 A4). -->
 			<button
 				type="button"
-				id="connect-request-ai"
-				class="hud-cell cx-request-ai"
+				id="connect-invite"
+				class="cx-invite"
 				class:on={!!$inviteSheet}
-				title="Request AI — an invite link for an AI agent (or a person) that joins without an approval card"
-				aria-label="Request AI: create an invite link"
-				onclick={() => inviteSheet.set($inviteSheet ? null : 'agent')}
-			><Icon name="bot" size={20} aria-hidden="true" /></button>
+				title="Invite a person or an AI agent — a link that joins without an approval card"
+				aria-label="Invite a person or an AI agent"
+				aria-expanded={!!$inviteSheet}
+				onclick={() => inviteSheet.set($inviteSheet ? null : 'person')}
+			><Icon name="user-plus" size={16} aria-hidden="true" /><span>Invite</span></button>
+		{/if}
+		{#if connState === 'idle' && !dialOpen}
+			<button
+				type="button"
+				id="connect-join"
+				class="cx-join"
+				title="Join somebody's session — paste their invite link or type their peer id"
+				onclick={openDial}><Icon name="log-in" size={16} aria-hidden="true" /><span>Join…</span></button
+			>
 		{/if}
 		<span class="hud-sep"></span>
 
@@ -648,21 +736,29 @@
 					title="Cancel the connection request">Cancel</button
 				>
 			</div>
-		{:else}
+		{:else if dialOpen}
 			<!-- idle: dial a peer — the field shrinks (down to cx-input's min-width) so the
 				 Connect button stays visible when the row is tight. autocomplete off + a
 				 non-loginish name: Chrome's password manager autofilled Settings keys here -->
 			<div class="cx-connect">
+				<!-- uir-people (F3): the placeholder is kept (every two-peer suite reads it); the field also takes
+				     a pasted invite link, which its title and accessible name say -->
 				<input
 					type="text"
 					name="peer-id"
 					autocomplete="off"
 					placeholder="Enter peer ID to connect"
+					aria-label="Peer id or invite link"
+					title="A peer id, or paste an invite link"
 					class="cx-input"
+					bind:this={dialEl}
 					bind:value={peerIdToConnect}
-					onkeydown={onDialKey}
+					onkeydown={(e) => { onDialEscape(e); onDialKey(e); }}
 				/>
-				<button type="button" class="cx-btn cx-btn-primary" onclick={() => {connectToPeer(peerIdToConnect)}}>Connect</button>
+				<button type="button" class="cx-btn cx-btn-primary" onclick={dialSubmit}>Connect</button>
+				<button type="button" id="connect-join-close" class="cx-btn cx-btn-quiet cx-join-close" title="Close (Esc)" aria-label="Close the join field" onclick={closeDial}
+					><Icon name="x" size={16} aria-hidden="true" /></button
+				>
 			</div>
 		{/if}
 
@@ -764,6 +860,8 @@
 
 	{#if drawerVisible}
 		<ConnectInfoDrawer onClose={() => connectDrawerOpen.set(false)} />
+	{:else if $joinNameAsk && connState !== 'idle'}
+		<JoinNameAsk />
 	{/if}
 </div>
 {#if $inviteSheet}
@@ -840,6 +938,63 @@
 		font: 500 0.78rem var(--font-ui-mono);
 		color: var(--text);
 		letter-spacing: 0.02em;
+	}
+	/* uir-people (Connect B): the idle word, and the two verbs that lead the pill */
+	.cx-ready {
+		flex: 0 0 auto;
+		font-size: var(--fs-desc);
+		color: var(--text-2);
+		padding-right: 2px;
+	}
+	.cx-ready[data-tone='failed'] {
+		color: var(--ink-bad);
+	}
+	.cx-invite,
+	.cx-join {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		flex: 0 0 auto;
+		height: var(--control-h-sm);
+		padding: 0 10px;
+		border-radius: var(--radius-button);
+		font-size: var(--fs-desc);
+		font-weight: 600;
+		cursor: pointer;
+		white-space: nowrap;
+	}
+	.cx-invite {
+		border: 1px solid var(--accent-fill);
+		background: var(--accent-fill);
+		color: var(--on-accent);
+	}
+	.cx-invite:hover,
+	.cx-invite.on {
+		filter: brightness(1.1);
+	}
+	.cx-join {
+		border: 1px solid var(--border-input);
+		background: var(--surface-inset);
+		color: var(--text);
+	}
+	.cx-join:hover {
+		background: var(--surface-hover);
+	}
+	.cx-invite:focus-visible,
+	.cx-join:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 1px;
+	}
+	.cx-join-close {
+		display: inline-flex;
+		align-items: center;
+		padding: 0 8px;
+	}
+	.cx-session {
+		max-width: 14rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	/* the dial field + its one button, joined */
 	.cx-connect {
@@ -981,12 +1136,10 @@
 	.cx-squeeze {
 		padding: 0 10px;
 	}
-	.connect-pill.squeezed.drawer-open {
-		border-bottom-left-radius: var(--radius-window);
-		border-bottom-right-radius: var(--radius-window);
-		border-bottom-color: var(--border);
-	}
-	.connect-wrap.squeezed :global(.cxd-panel) {
+	/* 78 PL35 (C1): the connected CHIP is narrow too — its drawer used to span the chip and cut every row
+	   ("connectec", "self-hoste"). A narrow pill's drawer is its own card at a readable width, centred
+	   under it, exactly like the squeezed form's. */
+	.connect-wrap.cx-narrow :global(.cxd-panel) {
 		left: 50%;
 		right: auto;
 		width: min(420px, calc(100vw - 16px));
@@ -1043,6 +1196,8 @@
 	/* touch: the field and its button reach the touch height too */
 	@media (pointer: coarse) {
 		.cx-connect,
+		.cx-invite,
+		.cx-join,
 		.cx-id {
 			height: 44px;
 		}
@@ -1080,15 +1235,20 @@
 		display: inline-flex;
 		padding-left: 6px;
 	}
+	.cx-av-slot {
+		display: inline-flex;
+		margin-left: -2px;
+	}
+	.cx-av-slot + .cx-av-slot {
+		margin-left: 2px;
+	}
 	.cx-av {
 		display: grid;
 		place-items: center;
 		width: 24px;
 		height: 24px;
-		margin-left: -6px;
+		margin-left: 4px;
 		border-radius: 50%;
-		color: var(--bg-app);
-		font: 600 11px var(--font-ui);
 		box-shadow: 0 0 0 2px var(--surface-1);
 	}
 	.cx-av-more {
@@ -1097,8 +1257,8 @@
 		font-family: var(--font-ui-mono);
 		font-size: 10px;
 	}
-	/* NOTES-38 #12: speaking = a soft pulsing ring in --speaking, never --live */
-	.cx-av.speaking,
+	/* NOTES-38 #12: speaking = a soft pulsing ring in --speaking, never --live (the avatars' own ring is
+	   PeerAvatar's, 78 PL33) */
 	.cx-mic.speaking {
 		box-shadow: 0 0 0 2px var(--surface-1), 0 0 0 4px var(--speaking);
 		animation: cx-speak 1.4s ease-in-out infinite;
@@ -1109,7 +1269,6 @@
 		}
 	}
 	@media (prefers-reduced-motion: reduce) {
-		.cx-av.speaking,
 		.cx-mic.speaking {
 			animation: none;
 		}

@@ -19,18 +19,37 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { globalRenderer, globalScene, globalCamera, objectsGroup, TControls } from '../../stores/sceneStore';
+import { peers } from '../../stores/appStore';
 import { isEditorHelper } from '$lib/water/waterRuntime.js';
-import { normalizeView, clampSize, frameSize, viewPose, boundsOf, linearFrameToSrgb } from './screenshotCore.js';
+import { planShot, viewPose, boundsOf, linearFrameToSrgb } from './screenshotCore.js';
+import { postState, renderWithPost } from './postShot.js';
 // 55 A7 (union): every peer draws the "AI" camera marker where this shot looked (agentLog is store-only)
 import { noteAgentView } from '$lib/agentLog';
+import { createRenderTarget, readPixels } from '../render/renderTargets.js'; // 101 F3: the one factory
 
 /** supersampling factor (the target is not multisampled: an MSAA target reads back as zeros) */
 const SUPERSAMPLE = 2;
 /** the target's largest side, whatever the request */
 const TARGET_CAP = 4096;
 
-/** where the last screenshot looked from — A7's "AI camera marker" reads it @type {{position: number[], target: number[], view: string, at: number} | null} */
+/** what the last screenshot used, or why it could not be taken @type {any} */
 export let lastShot = null;
+
+/** @param {any[]} objects @returns {{min: number[], max: number[]} | null} one box around them all */
+function boxOfAll(objects) {
+	const boxes = objects.map(boxOf).filter((b) => !!b);
+	if (!boxes.length) return null;
+	return {
+		min: [0, 1, 2].map((i) => Math.min(...boxes.map((b) => /** @type {any} */ (b).min[i]))),
+		max: [0, 1, 2].map((i) => Math.max(...boxes.map((b) => /** @type {any} */ (b).max[i])))
+	};
+}
+
+/** @param {string} why @returns {never} */
+function refuse(why) {
+	lastShot = { error: why, at: Date.now() };
+	throw new Error(why);
+}
 
 /** @param {any} renderer */
 function toneMappingName(renderer) {
@@ -61,8 +80,16 @@ function boxOf(object) {
 	return { min: box.min.toArray(), max: box.max.toArray() };
 }
 
-/** @param {any} scene @param {any} renderer */
-function hideHelpers(scene, renderer, keepGrid = false) {
+/** mcp-diorama2 (26): the people in a frame — the peers' avatars (Player.svelte's group), the character preview,
+ * an agent's camera marker, this tab's own rig — named roots OUTSIDE the scene's objects @param {string} self */
+function isPerson(/** @type {any} */ n, self) {
+	const name = String(n.name ?? '');
+	return name === 'peer-avatars' || name === 'avatar-preview' || name.startsWith('agent-marker-') || (!!self && name === self);
+}
+
+/** 98-photo reuses it (Photo mode hides the same helpers while the tracer reads the scene)
+ * @param {any} scene @param {any} renderer @param {boolean} [keepGrid] @param {{people?: boolean, also?: any[]}} [more] */
+export function hideHelpers(scene, renderer, keepGrid = false, more = {}) {
 	/** @type {any[]} */
 	const hidden = [];
 	const tc = /** @type {any} */ (get(TControls));
@@ -71,9 +98,22 @@ function hideHelpers(scene, renderer, keepGrid = false) {
 		gizmo.visible = false;
 		hidden.push(gizmo);
 	}
+	const objects = get(objectsGroup);
+	const self = more.people ? String(/** @type {any} */ (get(peers))?.peer?.id ?? '') : '';
+	for (const n of more.also ?? [])
+		if (n?.visible) {
+			n.visible = false;
+			hidden.push(n);
+		}
 	scene.traverse((/** @type {any} */ n) => {
 		if (!n.visible || n === scene) return;
 		if (keepGrid && n.name === 'editor-grid') return;
+		// people live outside the scene's objects; an object a user NAMED like a peer id is still scene
+		if (more.people && isPerson(n, self) && !isInside(n, objects)) {
+			n.visible = false;
+			hidden.push(n);
+			return;
+		}
 		if (isEditorHelper(n) || n.isTransformControlsRoot || n.isTransformControlsGizmo || n.isTransformControlsPlane) {
 			n.visible = false;
 			hidden.push(n);
@@ -83,6 +123,12 @@ function hideHelpers(scene, renderer, keepGrid = false) {
 	return () => {
 		for (const n of hidden) n.visible = true;
 	};
+}
+
+/** @param {any} n @param {any} root */
+function isInside(n, root) {
+	for (let p = n; p; p = p.parent) if (p === root) return true;
+	return false;
 }
 
 /**
@@ -97,34 +143,76 @@ export async function takeScreenshot(opts = {}) {
 	/** @type {any} */
 	const userCamera = get(globalCamera);
 	const group = get(objectsGroup);
+	lastShot = null;
 	if (!renderer || !scene || renderer.xr?.isPresenting) return null;
-	const view = normalizeView(opts.view);
-	const size = clampSize(opts.size);
 	const canvas = renderer.domElement;
-	const aspect = canvas?.width && canvas?.height ? canvas.width / canvas.height : 16 / 9;
-	const { w, h } = frameSize(size, aspect);
+	const canvasAspect = canvas?.width && canvas?.height ? canvas.width / canvas.height : 16 / 9;
+	// mcp-diorama2 (26): view 'camera' looks through a scene camera — its framing aspect unless one is asked for
+	/** @type {any} */
+	let through = null;
+	if (String(opts.view ?? '').toLowerCase() === 'camera' && typeof opts.uuid === 'string') {
+		const co = await import('$lib/cameraObjects');
+		through = co.findCameraObject(opts.uuid);
+		if (!through) return refuse('view camera: ' + opts.uuid + ' is not a camera in the scene (list_scene shows the cameras)');
+		if (opts.aspect === undefined || opts.aspect === null) opts = { ...opts, aspect: co.aspectRatio(co.cameraSpec(through).aspect) || canvasAspect };
+	}
+	const plan = planShot(opts, canvasAspect);
+	if (plan.problem !== null) return refuse(plan.problem);
+	const { w, h, view } = plan;
 
-	const fov = Number(userCamera?.fov) || 50;
+	const spec = through ? (await import('$lib/cameraObjects')).cameraSpec(through) : null;
+	const fov = spec ? Number(spec.fov) || 50 : Number(userCamera?.fov) || 50;
 	const camera = new THREE.PerspectiveCamera(fov, w / h, 0.05, 2000);
-	if (view === 'current') {
+	/** @type {number[] | null} */
+	let aimedAt = null;
+	/** @type {{kind: string, uuids?: string[], names?: string[]}} */
+	let subject = { kind: 'none' };
+	if (through) {
+		through.updateWorldMatrix(true, false);
+		const pos = new THREE.Vector3();
+		const quat = new THREE.Quaternion();
+		through.matrixWorld.decompose(pos, quat, new THREE.Vector3());
+		camera.position.copy(pos);
+		camera.quaternion.copy(quat);
+		camera.near = Math.max(0.01, Number(spec?.near) || 0.1);
+		camera.far = Math.max(camera.near + 1, Number(spec?.far) || 1000);
+		camera.zoom = plan.zoom;
+		const roll = Number(spec?.roll);
+		if (Number.isFinite(roll) && roll) camera.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), (-roll * Math.PI) / 180));
+		subject = { kind: 'camera', uuids: [through.uuid], names: [String(through.name ?? '')] };
+	} else if (plan.free) {
+		camera.position.fromArray(plan.free.position);
+		// a straight-up or straight-down look has no "up" of its own
+		const look = new THREE.Vector3().fromArray(plan.free.target).sub(camera.position).normalize();
+		if (Math.abs(look.y) > 0.999) camera.up.set(0, 0, look.y < 0 ? -1 : 1);
+		camera.lookAt(new THREE.Vector3().fromArray(plan.free.target));
+		camera.zoom = plan.zoom;
+		aimedAt = plan.free.target;
+	} else if (plan.current) {
 		if (!userCamera) return null;
 		userCamera.updateMatrixWorld?.();
 		camera.position.setFromMatrixPosition(userCamera.matrixWorld);
 		camera.quaternion.setFromRotationMatrix(new THREE.Matrix4().extractRotation(userCamera.matrixWorld));
 		camera.near = userCamera.near ?? 0.05;
 		camera.far = userCamera.far ?? 2000;
+		camera.zoom = plan.zoom;
+		subject = { kind: 'what the person sees' };
 	} else {
-		let subject = group;
-		if (view === 'focus') {
-			subject = opts.uuid ? group?.getObjectByProperty?.('uuid', String(opts.uuid)) : null;
-			if (!subject) throw new Error('focus needs the uuid of an object in the scene');
+		let objects = group ? [group] : [];
+		subject = { kind: 'scene' };
+		if (plan.uuids.length) {
+			objects = plan.uuids.map((uuid) => group?.getObjectByProperty?.('uuid', uuid));
+			const gone = plan.uuids.filter((_, i) => !objects[i]);
+			if (gone.length) return refuse('not in the scene: ' + gone.join(', '));
+			subject = { kind: 'objects', uuids: plan.uuids, names: objects.map((o) => String(o.name ?? '')) };
 		}
-		const pose = viewPose(view, boundsOf(boxOf(subject)), fov, w / h);
+		const pose = viewPose(/** @type {any} */ (view), boundsOf(boxOfAll(objects)), fov, w / h, plan.margin, plan.dir, plan.zoom);
 		camera.position.fromArray(pose.position);
 		camera.up.fromArray(pose.up);
 		camera.lookAt(new THREE.Vector3().fromArray(pose.target));
 		camera.near = pose.near;
 		camera.far = pose.far;
+		aimedAt = pose.target;
 	}
 	camera.updateProjectionMatrix();
 	camera.updateMatrixWorld();
@@ -134,21 +222,41 @@ export async function takeScreenshot(opts = {}) {
 	const rw = Math.max(1, Math.round(w * scale));
 	const rh = Math.max(1, Math.round(h * scale));
 	const float = !!renderer.extensions?.has?.('EXT_color_buffer_float');
-	const target = new THREE.WebGLRenderTarget(rw, rh, {
+	const target = createRenderTarget(rw, rh, {
 		type: float ? THREE.FloatType : THREE.UnsignedByteType,
 		depthBuffer: true
 	});
-	const restore = hideHelpers(scene, renderer, !!opts.grid);
+	// mcp-diorama2 (26): a clean frame leaves the people out (avatars: true keeps them; 'current' keeps them unless
+	// avatars: false — it is what the person sees); looking through a camera, its own body is out of the frame too
+	const people = /** @type {any} */ (opts).avatars === true ? false : /** @type {any} */ (opts).avatars === false ? true : !plan.current;
+	const restore = hideHelpers(scene, renderer, !!opts.grid, { people, also: through ? [through] : [] });
 	const previous = renderer.getRenderTarget();
 	const autoClear = renderer.autoClear;
 	/** @type {Float32Array|Uint8Array} */
-	const pixels = float ? new Float32Array(rw * rh * 4) : new Uint8Array(rw * rh * 4);
+	let pixels = float ? new Float32Array(rw * rh * 4) : new Uint8Array(rw * rh * 4);
+	let bytes = !float;
+	// mcp-diorama2 (item 7): through the post stack this tab draws, when asked and when it draws one
+	/** @type {{postEffects: 'applied' | 'unavailable', reason?: string, detail?: string, how?: string | null} | null} */
+	let post = null;
 	try {
-		renderer.autoClear = true;
-		renderer.setRenderTarget(target);
-		renderer.clear();
-		renderer.render(scene, camera);
-		renderer.readRenderTargetPixels(target, 0, 0, rw, rh, pixels);
+		const wanted = /** @type {any} */ (opts).postEffects === true ? postState() : null;
+		if (wanted && !wanted.live) post = { postEffects: 'unavailable', reason: /** @type {string} */ (wanted.reason), detail: wanted.detail ?? undefined, how: wanted.how };
+		if (wanted?.live) {
+			const shot = await renderWithPost(renderer, scene, camera, rw, rh, wanted.entries);
+			if ('error' in shot) post = { postEffects: 'unavailable', reason: 'render failed', detail: shot.error, how: null };
+			else {
+				pixels = shot.pixels;
+				bytes = !shot.float;
+				post = { postEffects: 'applied', detail: wanted.entries.map((/** @type {any} */ e) => e.kind).join(', ') };
+			}
+		}
+		if (post?.postEffects !== 'applied') {
+			renderer.autoClear = true;
+			renderer.setRenderTarget(target);
+			renderer.clear();
+			renderer.render(scene, camera);
+			await readPixels(renderer, target, 0, 0, rw, rh, pixels);
+		}
 	} finally {
 		renderer.setRenderTarget(previous);
 		renderer.autoClear = autoClear;
@@ -158,7 +266,7 @@ export async function takeScreenshot(opts = {}) {
 	const rgba = linearFrameToSrgb(pixels, rw, rh, {
 		toneMapping: /** @type {any} */ (toneMappingName(renderer)),
 		exposure: Number(renderer.toneMappingExposure) || 1,
-		bytes: !float
+		bytes
 	});
 	const big = document.createElement('canvas');
 	big.width = rw;
@@ -172,10 +280,33 @@ export async function takeScreenshot(opts = {}) {
 	ctx.imageSmoothingEnabled = true;
 	ctx.imageSmoothingQuality = 'high';
 	ctx.drawImage(big, 0, 0, w, h);
+	// mcp-diorama2 (26): the game HUD this tab shows, on top (DOM never reaches a readback)
+	/** @type {any} */
+	let hud = null;
+	if (/** @type {any} */ (opts).hud === true) {
+		try {
+			const { drawHudOver } = await import('./screenshotHud.js');
+			const { cameraPreview } = await import('$lib/cameraPreview');
+			const viewing = through?.uuid ?? (plan.current ? (/** @type {any} */ (get(cameraPreview))?.uuid ?? null) : null);
+			// laid out as on a window of the person's height at this picture's aspect (their own window for 'current')
+			const cssH = canvas?.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 0);
+			hud = drawHudOver(ctx, w, h, { through: viewing, windowW: cssH ? Math.round(cssH * (w / h)) : 0 });
+		} catch (e) {
+			hud = { error: String(/** @type {any} */ (e)?.message ?? e).slice(0, 80) };
+		}
+	}
 	lastShot = {
 		position: camera.position.toArray(),
-		target: camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(5).add(camera.position).toArray(),
+		target: aimedAt ?? camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(5).add(camera.position).toArray(),
+		fov,
+		zoom: camera.zoom,
+		width: w,
+		height: h,
 		view,
+		subject,
+		...(post ?? {}),
+		avatars: !people,
+		...(hud ? { hud } : {}),
 		at: Date.now()
 	};
 	// 56 C8: a PERSON's "ask about this selection" picture is not where an agent looked

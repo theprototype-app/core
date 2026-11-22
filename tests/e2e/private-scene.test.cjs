@@ -34,14 +34,14 @@ const SCENE_B = 'Vault35b';
 const at = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.levels.currentLevel.subscribe((x) => (v = x))();
+		window.__tp.test.v1.levels.currentLevel.subscribe((x) => (v = x))();
 		return v;
 	});
 
 const rowFor = (p, peerId) =>
 	p.page.evaluate((id) => {
 		let m;
-		window.__stores.peerScenes.peerScenes.subscribe((x) => (m = x))();
+		window.__tp.test.v1.peerScenes.peerScenes.subscribe((x) => (m = x))();
 		return m[id] ?? null;
 	}, peerId);
 
@@ -51,7 +51,7 @@ const rowFor = (p, peerId) =>
  *  into a field this suite did not think to name is exactly the one worth catching. */
 const surfaces = (p) =>
 	p.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let rows, doc, notes, items, hidden;
 		s.peerScenes.peerScenes.subscribe((x) => (rows = x))();
 		s.projectManifest.projectManifest.subscribe((x) => (doc = x))();
@@ -69,7 +69,7 @@ const surfaces = (p) =>
 /** What this peer's `manifest` messages would carry — the C4 send boundary itself. */
 const outboundScenes = (p) =>
 	p.page.evaluate(() => {
-		const s = window.__stores.projectManifest;
+		const s = window.__tp.test.v1.projectManifest;
 		let doc;
 		s.projectManifest.subscribe((x) => (doc = x))();
 		return Object.keys(s.outboundManifest(doc).scenes ?? {});
@@ -79,35 +79,35 @@ const objectCount = (p) =>
 	p.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => r((g?.children ?? []).length))()
+				window.__tp.test.v1.objectsGroup.subscribe((g) => r((g?.children ?? []).length))()
 			)
 	);
 
 const addBox = (p) =>
 	p.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1200));
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.objectActions.deselectObject();
 	});
 
 const said = (p) =>
 	p.page.evaluate(() => {
 		let list;
-		window.__stores.notifications.subscribe((v) => (list = v))();
+		window.__tp.test.v1.notifications.subscribe((v) => (list = v))();
 		return list.map((e) => e.text);
 	});
 
 const dialog = (p) =>
 	p.page.evaluate(() => {
 		let d;
-		window.__stores.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
+		window.__tp.test.v1.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
 		return d
 			? { title: d.title, message: d.message, choices: (d.choices ?? []).map((c) => c.value) }
 			: null;
 	});
 
 const answer = (p, value) =>
-	p.page.evaluate((v) => window.__stores.confirmDialog.resolveConfirm(v), value);
+	p.page.evaluate((v) => window.__tp.test.v1.confirmDialog.resolveConfirm(v), value);
 
 /** Wait for a dialog whose TITLE matches — the two questions this suite raises share one
  *  store, and answering the wrong one with the other's value cancels an open. */
@@ -150,7 +150,7 @@ const ensureExplorer = async (p) => {
 		await p.page.locator('#explorer-slot').click();
 		await p.page.waitForTimeout(800);
 	}
-	await p.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await p.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await p.page.waitForTimeout(300);
 };
 
@@ -170,18 +170,18 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
 	for (const p of [A, B])
-		await p.page.waitForFunction(() => !!window.__stores?.scenePrivacy, { timeout: 30000 });
+		await p.page.waitForFunction(() => !!window.__tp?.test.v1?.scenePrivacy, { timeout: 30000 });
 	h.check(true, 'premise: the scenePrivacy module is reachable through the debug hook');
 
 	await ensureExplorer(B);
 	await addBox(B);
-	await B.page.evaluate((n) => window.__stores.levels.saveSceneAsLevel(n), SCENE);
+	await B.page.evaluate((n) => window.__tp.test.v1.levels.saveSceneAsLevel(n), SCENE);
 	await h.eventually(
 		() => at(B),
 		(v) => v?.name === SCENE,
 		'premise: B saved a scene of its own, alone'
 	);
-	await B.page.evaluate((n) => window.__stores.levels.saveSceneAsLevel(n), SCENE_B);
+	await B.page.evaluate((n) => window.__tp.test.v1.levels.saveSceneAsLevel(n), SCENE_B);
 	await h.eventually(
 		() => at(B),
 		(v) => v?.name === SCENE_B,
@@ -193,9 +193,9 @@ h.run(async () => {
 	);
 
 	await h.freshReload(B);
-	await B.page.waitForFunction(() => !!window.__stores?.scenePrivacy, { timeout: 30000 });
+	await B.page.waitForFunction(() => !!window.__tp?.test.v1?.scenePrivacy, { timeout: 30000 });
 	B.id = await B.page.evaluate(
-		() => new Promise((r) => window.__stores.peers.subscribe((p) => r(p?.peer?.id))())
+		() => new Promise((r) => window.__tp.test.v1.peers.subscribe((p) => r(p?.peer?.id))())
 	);
 	h.check(
 		(await at(B)) === null,
@@ -249,7 +249,7 @@ h.run(async () => {
 		`CANCEL OPENS NOTHING — the world on screen is untouched (${JSON.stringify(await at(B))}, ${await objectCount(B)} objects)`
 	);
 	h.check(
-		(await B.page.evaluate((n) => window.__stores.projectManifest.sceneNameShared(n), SCENE)) === false,
+		(await B.page.evaluate((n) => window.__tp.test.v1.projectManifest.sceneNameShared(n), SCENE)) === false,
 		'premise: the ask fired because the SESSION has never been told this name'
 	);
 
@@ -257,11 +257,11 @@ h.run(async () => {
 	// a third page because a live pair cannot express "no peers", and the observable (no
 	// dialog, an immediate 'share') is the whole of the branch.
 	const P = await h.setupPage(browser, 'P');
-	await P.page.waitForFunction(() => !!window.__stores?.scenePrivacy, { timeout: 30000 });
+	await P.page.waitForFunction(() => !!window.__tp?.test.v1?.scenePrivacy, { timeout: 30000 });
 	const alone = await P.page.evaluate(() =>
-		window.__stores.scenePrivacy.askScenePrivacy('Whatever').then((v) => {
+		window.__tp.test.v1.scenePrivacy.askScenePrivacy('Whatever').then((v) => {
 			let d;
-			window.__stores.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
+			window.__tp.test.v1.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
 			return { v, dialog: !!d };
 		})
 	);
@@ -368,7 +368,7 @@ h.run(async () => {
 	// actually LEAVES B, which only the send gate decides.
 	await B.page.evaluate((aid) => {
 		let pc;
-		window.__stores.peers.subscribe((x) => (pc = x))();
+		window.__tp.test.v1.peers.subscribe((x) => (pc = x))();
 		const conn = pc.connections[aid];
 		window.__sentTypes = [];
 		if (conn && !conn.__spied) {
@@ -403,7 +403,7 @@ h.run(async () => {
 	// treats every ROOM_SCOPED type alike would measure the gate, not this feature
 	// (scene-adopt §4b makes the same call).
 	const gates = await A.page.evaluate((bid) => {
-		const s = window.__stores.peerScenes;
+		const s = window.__tp.test.v1.peerScenes;
 		return {
 			content: s.canApplyByRoom(bid, 'create'),
 			replies: s.sameRoomOrUnknown(bid),
@@ -422,14 +422,14 @@ h.run(async () => {
 	);
 	await B.page.evaluate(() => {
 		let pc;
-		window.__stores.peers.subscribe((x) => (pc = x))();
+		window.__tp.test.v1.peers.subscribe((x) => (pc = x))();
 		pc.sendMessage('still here');
 	});
 	await h.eventually(
 		() =>
 			A.page.evaluate(() => {
 				let m;
-				window.__stores.messages.subscribe((x) => (m = x))();
+				window.__tp.test.v1.messages.subscribe((x) => (m = x))();
 				return m.map((e) => e.text);
 			}),
 		(all) => all.includes('still here'),
@@ -444,7 +444,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(1800);
 	const asked = await B.page.evaluate(() => {
 		let list;
-		window.__stores.toastStore.subscribe((x) => (list = x))();
+		window.__tp.test.v1.toastStore.subscribe((x) => (list = x))();
 		const row = list.find((t) => String(t.id ?? '').startsWith('scene-access-'));
 		return row ? { text: row.text, actions: (row.actions ?? []).map((a) => a.label) } : null;
 	});
@@ -510,7 +510,7 @@ h.run(async () => {
 		() =>
 			A.page.evaluate(() => {
 				let list;
-				window.__stores.toastStore.subscribe((x) => (list = x))();
+				window.__tp.test.v1.toastStore.subscribe((x) => (list = x))();
 				const row = list.find((t) => String(t.id ?? '').startsWith('scene-shared-'));
 				return row ? { text: row.text, actions: (row.actions ?? []).map((a) => a.label) } : null;
 			}),
@@ -564,14 +564,14 @@ h.run(async () => {
 	// state every session starts in, and the ending of `rejoinSession` that has no file to
 	// travel to and must rebuild the world from the peers who hold it. (scene-adopt resets a
 	// peer the same way, for the same reason: the premise has to be the state under test.)
-	await A.page.evaluate(() => window.__stores.levels.currentLevel.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.currentLevel.set(null));
 	await A.page.waitForTimeout(800);
 	// THE SECOND EARLY-OUT, and now it can be read live: with a peer connected, a scene the
 	// session already knows about does not ask — there is nothing left to protect.
 	const knownNow = await B.page.evaluate((n) =>
-		window.__stores.scenePrivacy.askScenePrivacy(n).then((v) => {
+		window.__tp.test.v1.scenePrivacy.askScenePrivacy(n).then((v) => {
 			let d;
-			window.__stores.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
+			window.__tp.test.v1.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
 			return { v, dialog: !!d };
 		}), SCENE);
 	h.check(
@@ -592,7 +592,7 @@ h.run(async () => {
 	);
 	// A travelled nowhere, so the session's room is its UNNAMED world — the ending with no
 	// file to travel to, which is the one that has to rebuild the world from the peers.
-	const target = await B.page.evaluate(() => window.__stores.scenePrivacy.sessionRoomTarget());
+	const target = await B.page.evaluate(() => window.__tp.test.v1.scenePrivacy.sessionRoomTarget());
 	h.check(
 		target === null,
 		`premise: nobody is in a NAMED room, so rejoining means the session’s unnamed world (${JSON.stringify(target)})`

@@ -25,7 +25,7 @@ const { installProbe } = require('./sceneStressProbe.cjs');
 
 	const measure = (mode) =>
 		page.evaluate(async (mode) => {
-			const p = window.__stores.perf;
+			const p = window.__tp.test.v1.perf;
 			const frames = [];
 			let last = 0;
 			let alive = true;
@@ -57,7 +57,7 @@ const { installProbe } = require('./sceneStressProbe.cjs');
 		console.log(JSON.stringify(r));
 		await page.waitForTimeout(1500);
 	}
-	const calls = await page.evaluate(() => window.__stores.sceneBudget.sampleSceneMetrics().calls);
+	const calls = await page.evaluate(() => window.__tp.test.v1.sceneBudget.sampleSceneMetrics().calls);
 	const f = (v, d = 3) => (Number.isFinite(v) ? v.toFixed(d) : '–');
 	const md = [
 		`# 34-perf-data — recorder overhead (${new Date().toISOString().slice(0, 16)})`,

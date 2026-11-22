@@ -1,5 +1,6 @@
 import { writable } from 'svelte/store';
 import { APP_VERSION, COMMIT_SHA, IS_DEV } from './version.js';
+import { describeReason, ignoredMessage } from './errorReportCore.js';
 
 // 27-B (hardening audit H4) — THE ONE PLACE A FAILURE LEAVES A TRACE.
 //
@@ -15,7 +16,7 @@ import { APP_VERSION, COMMIT_SHA, IS_DEV } from './version.js';
 //     (the P-A connect dance, B5's mesh formation, the R22 room rounds) was diagnosed by
 //     adding logs AFTER a report and asking the user to reproduce it.
 //
-// A ZERO-DEPENDENCY LEAF, deliberately: `version.js` (itself import-free) and
+// A ZERO-DEPENDENCY LEAF, deliberately: `version.js` + `errorReportCore.js` (both import-free) and
 // svelte/store are the only imports, so ANY module can log without thinking about
 // cycles — and the modules that most need to log (peerHandler, flowRuntime, autosave,
 // moduleSDK) are exactly the ones sitting inside the documented import cycles.
@@ -123,6 +124,11 @@ export function lines() {
 			(e.data ? ' ' + e.data : '') +
 			(e.n && e.n > 1 ? ` (×${e.n}, last ${at(e.last ?? e.t)})` : '')
 	);
+}
+
+/** 85 R3: the ring as plain copies, oldest first (the agent's `logs` tool and status read it) @returns {Entry[]} */
+export function entries() {
+	return ring.map((e) => ({ ...e }));
 }
 
 /** Drop everything (tests, and the "start again" case). */
@@ -263,6 +269,17 @@ export async function copyDiagnostics() {
 }
 
 /**
+ * Does an uncaught error earn the "Something went wrong" toast? The browser's own benign
+ * warnings (ResizeObserver loop, cross-origin "Script error.", an interrupted play()) do not:
+ * the SAME list the error reports skip (errorReportCore's IGNORE), so the two never disagree.
+ * The line still goes into the ring, so Copy diagnostics keeps it.
+ * @param {string} message
+ */
+export function toastsUncaught(message) {
+	return !ignoredMessage(message);
+}
+
+/**
  * Install the global capture. Idempotent, and safe to call before anything else in
  * App.svelte's onMount — it is the first thing that runs there precisely so that a
  * failure DURING boot is already being recorded.
@@ -280,14 +297,15 @@ export function startDiagnostics() {
 		const message = event.error?.message ?? event.message ?? 'unknown error';
 		const where = event.filename ? ` (${event.filename}:${event.lineno}:${event.colno})` : '';
 		log('error', 'window', message + where, event.error?.stack);
-		lastUncaught.set({ message, at: Date.now() });
+		if (toastsUncaught(message)) lastUncaught.set({ message, at: Date.now() });
 	});
 
 	window.addEventListener('unhandledrejection', (event) => {
 		const reason = /** @type {any} */ (event).reason;
-		const message = reason?.message ?? String(reason ?? 'unknown rejection');
+		// 54i b: a non-Error reason is named by constructor + a safe JSON (errorReportCore, a leaf)
+		const message = describeReason(reason).message || 'unknown rejection';
 		log('error', 'promise', message, reason?.stack);
-		lastUncaught.set({ message, at: Date.now() });
+		if (toastsUncaught(message)) lastUncaught.set({ message, at: Date.now() });
 	});
 
 	if (!IS_DEV) {

@@ -43,7 +43,7 @@ const TINY_PNG =
 const matOf = (page, uuid) =>
 	page.evaluate((u) => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		const o = group?.getObjectByProperty('uuid', u);
 		const m = o?.material;
 		if (!m) return null;
@@ -87,14 +87,14 @@ const swatchCount = (page, kind, name, want = 1) =>
 	waitVal(() => page.locator(`#material-presets .mp-swatch[data-preset-kind="${kind}"][data-preset-name="${name}"]`).count(), (n) => n === want, 15000);
 /** the library store, by name @param {any} page */
 const library = (page) =>
-	page.evaluate(async () => (await new Promise((r) => window.__stores.materialPresets.materialPresets.subscribe(r)())).map((p) => p.name).sort());
+	page.evaluate(async () => (await new Promise((r) => window.__tp.test.v1.materialPresets.materialPresets.subscribe(r)())).map((p) => p.name).sort());
 
 const swatch = (page, kind, name) => page.locator(`#material-presets .mp-swatch[data-preset-kind="${kind}"][data-preset-name="${name}"]`);
 
 /** create N boxes, return their uuids @param {any} page @param {number} n */
 const makeBoxes = (page, n) =>
 	page.evaluate(async (count) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const group0 = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const before = new Set(group0.children.map((c) => c.uuid));
 		for (let i = 0; i < count; i++) w.commandsHandler.sceneCommand('/create Box 1 1 1');
@@ -112,7 +112,7 @@ const makeBoxes = (page, n) =>
 /** select (and open the Inspector on) a set @param {any} page @param {string[]} uuids */
 const selectSet = async (page, uuids) => {
 	await page.evaluate(async (list) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.objectActions.selectObject(list[0], true);
 		await new Promise((r) => setTimeout(r, 200));
 		if (list.length > 1) w.objectActions.applySelectionSet(list);
@@ -123,7 +123,7 @@ const selectSet = async (page, uuids) => {
 /** wire spy: record what the app sends @param {any} page */
 const spy = (page) =>
 	page.evaluate(async () => {
-		const peer = await new Promise((r) => window.__stores.peers.subscribe(r)());
+		const peer = await new Promise((r) => window.__tp.test.v1.peers.subscribe(r)());
 		window.__mpSent = [];
 		if (!peer.__mpWrapped) {
 			const orig = peer.send.bind(peer);
@@ -175,11 +175,11 @@ h.run(async () => {
 	await shot(A.page, '01-swatches-dark-wood.png');
 
 	// undo / redo
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(500);
 	m = await matOf(A.page, b1);
 	h.check(m.color === '3366cc' && !m.hasMap && Math.abs(m.roughness - 0.55) < 1e-3, `2.7 ONE undo gives the old material back (#${m.color}, map ${m.hasMap}, r ${m.roughness})`);
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	await A.page.waitForTimeout(500);
 	m = await matOf(A.page, b1);
 	h.check(m.color === 'b98352' && m.hasMap, `2.8 redo puts Wood back (#${m.color}, map ${m.hasMap})`);
@@ -188,10 +188,10 @@ h.run(async () => {
 	console.log('\n=== 3. undo over a textured object keeps the texture ===');
 	await A.page.evaluate(async ({ u, url }) => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		const o = group.getObjectByProperty('uuid', u);
-		window.__stores.materialsHandler.switchMaterialType(u, 'MeshStandardMaterial', false);
-		window.__stores.materialsHandler.applyMap(o, url);
+		window.__tp.test.v1.materialsHandler.switchMaterialType(u, 'MeshStandardMaterial', false);
+		window.__tp.test.v1.materialsHandler.applyMap(o, url);
 		await new Promise((r) => setTimeout(r, 400));
 	}, { u: b2, url: TINY_PNG });
 	m = await matOf(A.page, b2);
@@ -199,11 +199,11 @@ h.run(async () => {
 	// the counterfactual, measured in-page: the OLD meta shape parses zero textures
 	const counter = await A.page.evaluate((u) => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		const o = group.getObjectByProperty('uuid', u);
 		const meta = { textures: [], images: [] }; // the pre-fix shape
 		const json = o.material.toJSON(meta);
-		const fixed = window.__stores.materialsHandler.materialsPayload(o);
+		const fixed = window.__tp.test.v1.materialsHandler.materialsPayload(o);
 		return { oldTextures: meta.textures.length, fixedTextures: fixed.textures.length, fixedImages: fixed.images.length, mapRef: !!json.map };
 	}, b2);
 	h.check(
@@ -215,7 +215,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(700);
 	m = await matOf(A.page, b2);
 	h.check(!m.hasMap && Math.abs(m.metalness - 0.8) < 1e-3, `3.2 Metal replaced the texture (map ${m.hasMap}, metal ${m.metalness})`);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(900);
 	m = await matOf(A.page, b2);
 	h.check(m.hasMap && m.mapUrl.startsWith('data:image/png'), `3.3 undo brings the texture BACK (map ${m.hasMap}, ${m.mapUrl})`);
@@ -234,7 +234,7 @@ h.run(async () => {
 		'4.1 all three are Glass: ' + glass.map((g) => g.type + '/' + g.opacity).join(', ')
 	);
 	h.check((await sent(A.page)).filter((x) => x.type === 'objectParameters' && x.parameter === 'materials').length === 3, '4.2 one message per object (3)');
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(800);
 	const back = await Promise.all([b1, b2, b3].map((u) => matOf(A.page, u)));
 	h.check(
@@ -243,13 +243,13 @@ h.run(async () => {
 	);
 
 	// the selection TINT is not a look: members wear the highlight emissive, the look reads past it
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await selectSet(A.page, [b1, b2, b3]); // a fresh set: every member wears the highlight now
 	const tint = await A.page.evaluate((u) => {
-		const raw = window.__stores.materialPresets.lookOfMaterial(
-			window.__stores.objectsGroup && (() => { let g = null; window.__stores.objectsGroup.subscribe((v) => (g = v))(); return g.getObjectByProperty('uuid', u).material; })()
+		const raw = window.__tp.test.v1.materialPresets.lookOfMaterial(
+			window.__tp.test.v1.objectsGroup && (() => { let g = null; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))(); return g.getObjectByProperty('uuid', u).material; })()
 		);
-		const look = window.__stores.materialPresets.lookOfObject(u);
+		const look = window.__tp.test.v1.materialPresets.lookOfObject(u);
 		return { raw: raw?.emissive ?? null, look: look?.emissive ?? null };
 	}, b3);
 	h.check(tint.raw === '#2a4d8f' && tint.look === null, '4.4 a tinted member reads its OWN look, not the highlight: ' + JSON.stringify(tint));
@@ -257,11 +257,11 @@ h.run(async () => {
 	// the REPLACED material's emissive over the new one — Neon's glow used to vanish)
 	await swatch(A.page, 'starter', 'Neon').click();
 	await A.page.waitForTimeout(700);
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await A.page.waitForTimeout(500);
 	const glow = await Promise.all([b1, b2, b3].map((u) => matOf(A.page, u)));
 	h.check(glow.every((g) => g.emissive === 'ff2bd6'), '4.5 Neon keeps its glow after the set is deselected: ' + glow.map((g) => g.emissive).join(', '));
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(800);
 	const unglow = await Promise.all([b1, b2, b3].map((u) => matOf(A.page, u)));
 	h.check(unglow.every((g) => g.emissive === '000000'), '4.6 and undo takes it back to no glow (no tint baked in): ' + unglow.map((g) => g.emissive).join(', '));
@@ -270,9 +270,9 @@ h.run(async () => {
 	console.log('\n=== 5. save current, persist, rename, delete ===');
 	await selectSet(A.page, [b3]);
 	await A.page.evaluate((u) => {
-		window.__stores.materialsHandler.setObjectColor(u, '#cc2244');
-		window.__stores.materialsHandler.setMaterialParam(u, 'roughness', 0.2);
-		window.__stores.materialsHandler.setMaterialParam(u, 'metalness', 0.4);
+		window.__tp.test.v1.materialsHandler.setObjectColor(u, '#cc2244');
+		window.__tp.test.v1.materialsHandler.setMaterialParam(u, 'roughness', 0.2);
+		window.__tp.test.v1.materialsHandler.setMaterialParam(u, 'metalness', 0.4);
 	}, b3);
 	await A.page.waitForTimeout(400);
 	await A.page.locator('#material-preset-save').click();
@@ -289,8 +289,8 @@ h.run(async () => {
 	});
 	h.check(/rgb\(204, 34, 68\)/.test(ballBg), '5.2b the saved swatch is drawn in its own colour: ' + ballBg.slice(-80));
 	const stored = await A.page.evaluate(async () => {
-		await window.__stores.materialPresets.loadMaterialPresets();
-		const list = await new Promise((r) => window.__stores.materialPresets.materialPresets.subscribe(r)());
+		await window.__tp.test.v1.materialPresets.loadMaterialPresets();
+		const list = await new Promise((r) => window.__tp.test.v1.materialPresets.materialPresets.subscribe(r)());
 		return list.map((p) => ({ name: p.name, color: p.payload.color, roughness: p.payload.roughness, emissive: p.payload.emissive ?? null }));
 	});
 	h.check(
@@ -304,9 +304,10 @@ h.run(async () => {
 	h.check((await swatchCount(A.page, 'mine', 'Candy red 2')) === 1, '5.4 saving a taken name never overwrites (Candy red 2)');
 
 	await h.freshReload(A);
+	await h.answerRestore(A);
 	// a reload is a NEW peer: the id setupPage read is gone, and section 7 dials A by id
 	A.id = await waitVal(
-		() => A.page.evaluate(() => new Promise((r) => window.__stores.peers.subscribe((p) => r(p?.peer?.id ?? ''))())),
+		() => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.peers.subscribe((p) => r(p?.peer?.id ?? ''))())),
 		(v) => !!v,
 		20000
 	);
@@ -346,7 +347,7 @@ h.run(async () => {
 
 	// ------------------------------------------------------------------ 6. light theme
 	console.log('\n=== 6. light theme ===');
-	await A.page.evaluate(() => window.__stores.themes.theme.set('light'));
+	await A.page.evaluate(() => window.__tp.test.v1.themes.theme.set('light'));
 	await A.page.waitForTimeout(500);
 	await shot(A.page, '03-swatches-light.png');
 	const ink = await A.page.evaluate(() => {
@@ -354,7 +355,7 @@ h.run(async () => {
 		return t ? getComputedStyle(t).color : '';
 	});
 	h.check(!!ink && ink !== 'rgb(209, 213, 219)', '6.1 labels take the light theme ink: ' + ink);
-	await A.page.evaluate(() => window.__stores.themes.theme.set('dark'));
+	await A.page.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
 
 	// ------------------------------------------------------------------ 7. two peers
 	console.log('\n=== 7. a peer sees your library, applies from it, and the look replicates ===');
@@ -364,7 +365,7 @@ h.run(async () => {
 	const lib = await waitVal(
 		() =>
 			B.page.evaluate(async () => {
-				const map = await new Promise((r) => window.__stores.materialPresets.peerMaterialPresets.subscribe(r)());
+				const map = await new Promise((r) => window.__tp.test.v1.materialPresets.peerMaterialPresets.subscribe(r)());
 				return Object.values(map).flat().map((p) => p.label);
 			}),
 		(v) => v.includes('Candy red'),
@@ -385,12 +386,12 @@ h.run(async () => {
 	h.check(!!onA && onA.emissive === 'ff2bd6', '7.3 B applied Neon and A sees the glow: ' + JSON.stringify(onA && { e: onA.emissive, c: onA.color }));
 	// A saves a new one -> B hears it without reconnecting
 	await A.page.evaluate(async () => {
-		await window.__stores.materialPresets.saveMaterialPreset('Mint', { version: 1, label: 'Mint', type: 'MeshStandardMaterial', color: '#66ddaa', roughness: 0.3 });
+		await window.__tp.test.v1.materialPresets.saveMaterialPreset('Mint', { version: 1, label: 'Mint', type: 'MeshStandardMaterial', color: '#66ddaa', roughness: 0.3 });
 	});
 	const lib2 = await waitVal(
 		() =>
 			B.page.evaluate(async () => {
-				const map = await new Promise((r) => window.__stores.materialPresets.peerMaterialPresets.subscribe(r)());
+				const map = await new Promise((r) => window.__tp.test.v1.materialPresets.peerMaterialPresets.subscribe(r)());
 				return Object.values(map).flat().map((p) => p.label);
 			}),
 		(v) => v.includes('Mint'),
@@ -400,11 +401,11 @@ h.run(async () => {
 	// leaving drops the library on the other side
 	await A.page.evaluate(() => {
 		let p;
-		window.__stores.peers.subscribe((x) => (p = x))();
+		window.__tp.test.v1.peers.subscribe((x) => (p = x))();
 		p.leaveSession();
 	});
 	const gone = await waitVal(
-		() => B.page.evaluate(async () => Object.keys(await new Promise((r) => window.__stores.materialPresets.peerMaterialPresets.subscribe(r)())).length),
+		() => B.page.evaluate(async () => Object.keys(await new Promise((r) => window.__tp.test.v1.materialPresets.peerMaterialPresets.subscribe(r)())).length),
 		(v) => v === 0,
 		15000
 	);

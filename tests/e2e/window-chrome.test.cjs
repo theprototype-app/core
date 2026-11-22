@@ -42,8 +42,8 @@ h.run(async () => {
 		() =>
 			new Promise((r) => {
 				let chatV, listV;
-				window.__stores.chatHidden.subscribe((v) => (chatV = v))();
-				window.__stores.objectListClose.subscribe((v) => (listV = v))();
+				window.__tp.test.v1.chatHidden.subscribe((v) => (chatV = v))();
+				window.__tp.test.v1.objectListClose.subscribe((v) => (listV = v))();
 				r({ chat: chatV === 'hidden', list: listV === true });
 			})
 	);

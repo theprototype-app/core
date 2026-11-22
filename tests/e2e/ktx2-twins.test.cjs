@@ -30,12 +30,12 @@ h.run(async () => {
 				return v;
 			},
 			async place(arr, name, at) {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				const file = new File([new Uint8Array(arr)], name + '.glb');
 				return s.fileHandler.importFile(file, name, 'glb', at);
 			},
 			root(uuid) {
-				return window.__k2.read(window.__stores.objectsGroup).getObjectByProperty('uuid', uuid);
+				return window.__k2.read(window.__tp.test.v1.objectsGroup).getObjectByProperty('uuid', uuid);
 			},
 			textures(uuid) {
 				const out = [];
@@ -46,9 +46,9 @@ h.run(async () => {
 				return out;
 			},
 			render(n = 3) {
-				const r = window.__k2.read(window.__stores.globalRenderer);
-				const scene = window.__k2.read(window.__stores.globalScene);
-				const cam = window.__k2.read(window.__stores.globalCamera);
+				const r = window.__k2.read(window.__tp.test.v1.globalRenderer);
+				const scene = window.__k2.read(window.__tp.test.v1.globalScene);
+				const cam = window.__k2.read(window.__tp.test.v1.globalCamera);
 				for (let i = 0; i < n; i++) r.render(scene, cam);
 			}
 		};
@@ -57,19 +57,19 @@ h.run(async () => {
 	// ---- 1 the fallback file -------------------------------------------------------------------
 	const uuid = await page.evaluate((arr) => window.__k2.place(arr, 'TwinBall', [0, 1, 0]), fixtures.twin);
 	h.check(typeof uuid === 'string', '1.1 the GLB imported (' + uuid + ')');
-	const first = await page.evaluate((uuid) => window.__k2.textures(uuid).map(({ slot, t }) => ({ slot, compressed: !!t.isCompressedTexture, image: t.image?.constructor?.name, w: t.image?.width, twin: !!window.__stores.ktx2Twins.twinOf(t) })), uuid);
+	const first = await page.evaluate((uuid) => window.__k2.textures(uuid).map(({ slot, t }) => ({ slot, compressed: !!t.isCompressedTexture, image: t.image?.constructor?.name, w: t.image?.width, twin: !!window.__tp.test.v1.ktx2Twins.twinOf(t) })), uuid);
 	h.check(first.length === 2 && first.every((t) => !t.compressed && t.w === 512), '1.2 no CompressedTexture in the scene: ' + JSON.stringify(first));
 	h.check(first.every((t) => t.twin), '1.3 every texture has a KTX2 twin');
 	await h.eventually(
-		() => page.evaluate((uuid) => window.__k2.textures(uuid).map(({ t }) => window.__stores.ktx2Twins.twinState(t)), uuid),
+		() => page.evaluate((uuid) => window.__k2.textures(uuid).map(({ t }) => window.__tp.test.v1.ktx2Twins.twinState(t)), uuid),
 		(s) => s.every((x) => x?.ready),
 		'1.4 the twins transcoded on the live renderer',
 		20000
 	);
-	await page.evaluate(() => window.__stores.objectActions.flyTo([0, 1.2, 3.2], [0, 1, 0], 200));
+	await page.evaluate(() => window.__tp.test.v1.objectActions.flyTo([0, 1.2, 3.2], [0, 1, 0], 200));
 	await page.waitForTimeout(600);
 	await page.evaluate(() => window.__k2.render(3));
-	const states = await page.evaluate((uuid) => window.__k2.textures(uuid).map(({ slot, t }) => ({ slot, ...window.__stores.ktx2Twins.twinState(t), plainGpu: t.image.width * t.image.height * 4 * 4 / 3 })), uuid);
+	const states = await page.evaluate((uuid) => window.__k2.textures(uuid).map(({ slot, t }) => ({ slot, ...window.__tp.test.v1.ktx2Twins.twinState(t), plainGpu: t.image.width * t.image.height * 4 * 4 / 3 })), uuid);
 	h.check(states.every((s) => s.uploadedCompressed), '1.5 THE PROPERTY: the GL texture three holds for each is the COMPRESSED one: ' + JSON.stringify(states.map((s) => ({ slot: s.slot, format: s.format, mips: s.mips, up: s.uploadedCompressed }))));
 	h.check(states.every((s) => s.gpuBytes < s.plainGpu / 3), '1.6 GPU bytes per texture: ' + states.map((s) => s.slot + ' ' + s.gpuBytes + ' vs ' + Math.round(s.plainGpu) + ' as RGBA8').join(', '));
 	const after = await page.evaluate((uuid) => window.__k2.textures(uuid).map(({ t }) => ({ compressed: !!t.isCompressedTexture, format: t.format, mips: t.mipmaps?.length ?? 0 })), uuid);
@@ -85,7 +85,7 @@ h.run(async () => {
 	}, uuid);
 	h.check(json.n >= 1 && json.images.every((u) => u.startsWith('data:image/')), '2.1 toJSON (undo, sessions, .tpscene) writes a real picture: ' + JSON.stringify(json.images));
 	const glb = await page.evaluate(async (uuid) => {
-		const bytes = await window.__stores.fileHandler.gltfBytesFor(window.__k2.root(uuid), { binary: true });
+		const bytes = await window.__tp.test.v1.fileHandler.gltfBytesFor(window.__k2.root(uuid), { binary: true });
 		return Array.from(new Uint8Array(bytes));
 	}, uuid);
 	const glbPost = await esm('src/lib/gltfOptimize/glbPost.js');
@@ -95,7 +95,7 @@ h.run(async () => {
 	h.check(!(written.json.extensionsRequired ?? []).includes('KHR_texture_basisu'), '2.3 …as USED, never REQUIRED (a plain viewer reads the fallback)');
 	// the twin's picture vs the plain picture: same image, block-compressed
 	const dropped = await page.evaluate((uuid) => {
-		const k = window.__stores.ktx2Twins;
+		const k = window.__tp.test.v1.ktx2Twins;
 		const before = k.twinStats().dropped;
 		for (const { t } of window.__k2.textures(uuid)) t.needsUpdate = true;
 		window.__k2.render(2);
@@ -105,13 +105,13 @@ h.run(async () => {
 	const plainShot = await h.grabFrame(A, clip);
 	const diff = await h.frameDelta(page, twinShot, plainShot, 40);
 	h.check(!diff.error && diff.changed < (clip.width * clip.height) * 0.05, '2.5 the compressed twin draws the same picture as the plain texture (pixels off by >40: ' + diff.changed + ' of ' + clip.width * clip.height + ')');
-	await page.evaluate((uuid) => window.__stores.objectActions.deleteObjectsByUuid([uuid]), uuid);
+	await page.evaluate((uuid) => window.__tp.test.v1.objectActions.deleteObjectsByUuid([uuid]), uuid);
 
 	// ---- 3 a KTX2-only file loads back ------------------------------------------------------------
 	const qid = await page.evaluate((arr) => window.__k2.place(arr, 'QuestBall', [0, 1, 0]), fixtures.quest);
 	h.check(typeof qid === 'string', '3.1 the Quest/web file (KTX2 only, meshopt, MSFT_lod) imported');
 	const q = await page.evaluate((uuid) => {
-		const k = window.__stores.ktx2Twins;
+		const k = window.__tp.test.v1.ktx2Twins;
 		let tris = 0;
 		let meshes = 0;
 		window.__k2.root(uuid).traverse((o) => {
@@ -130,13 +130,13 @@ h.run(async () => {
 	h.check(q.meshes === 1 && q.tris === fixtures.reports.quest.trianglesBefore, '3.3 the meshopt geometry decoded, and only LOD0 is in the tree (' + q.meshes + ' mesh, ' + q.tris + ' tris)');
 	await page.evaluate(() => window.__k2.render(3));
 	await h.eventually(
-		() => page.evaluate((uuid) => window.__k2.textures(uuid).map(({ t }) => window.__stores.ktx2Twins.twinState(t)), qid),
+		() => page.evaluate((uuid) => window.__k2.textures(uuid).map(({ t }) => window.__tp.test.v1.ktx2Twins.twinState(t)), qid),
 		(s) => s.every((x) => x?.ready),
 		'3.4 the Quest file\'s twins are ready (the transcoder ran once per texture)',
 		20000
 	);
 	await page.evaluate(() => window.__k2.render(2));
-	const qStates = await page.evaluate((uuid) => window.__k2.textures(uuid).map(({ t }) => window.__stores.ktx2Twins.twinState(t).uploadedCompressed), qid);
+	const qStates = await page.evaluate((uuid) => window.__k2.textures(uuid).map(({ t }) => window.__tp.test.v1.ktx2Twins.twinState(t).uploadedCompressed), qid);
 	h.check(qStates.every(Boolean), '3.5 …and the GPU holds them compressed');
 
 	// ---- 4 two peers: the wire carries the twin ---------------------------------------------------
@@ -153,7 +153,7 @@ h.run(async () => {
 	await h.eventually(
 		() =>
 			B.page.evaluate((uuid) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				const root = window.__k2b(s.objectsGroup).getObjectByProperty('uuid', uuid);
 				const out = [];
 				root?.traverse((o) => {

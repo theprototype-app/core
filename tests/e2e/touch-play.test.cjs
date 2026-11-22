@@ -22,13 +22,13 @@ const TOUCH_CTX = {
 };
 
 const lockedState = (page) =>
-	page.evaluate(() => new Promise((r) => window.__stores.isLocked.subscribe((v) => r(v))()));
+	page.evaluate(() => new Promise((r) => window.__tp.test.v1.isLocked.subscribe((v) => r(v))()));
 
 /** The play rig — the object PointerLockControls translates and turns. */
 const rig = (page) =>
 	page.evaluate(() => {
 		let cam;
-		window.__stores.playerCam.subscribe((v) => (cam = v))();
+		window.__tp.test.v1.playerCam.subscribe((v) => (cam = v))();
 		if (!cam) return null;
 		return { pos: cam.position.toArray(), quat: cam.quaternion.toArray() };
 	});
@@ -75,7 +75,7 @@ const gesture = async (page, cdp, points, { stepMs = 20, holdMs = 0 } = {}) => {
 	await nap(150);
 	return page.evaluate(() => ({
 		prevented: window.__w4prevented,
-		lastUp: window.__stores.playInteract.playInteractDebug().lastUp
+		lastUp: window.__tp.test.v1.playInteract.playInteractDebug().lastUp
 	}));
 };
 
@@ -95,9 +95,9 @@ const watchClaims = (page) =>
 const historyState = (page) =>
 	page.evaluate(() => ({
 		// 30 P0: the marker is a SvelteKit SHALLOW entry now, so its state object sits under
-		// the router's `sveltekit:states` key — playMarkerState() reads it there
-		tpPlay: window.__stores.playMode.playMarkerState(),
-		marker: window.__stores.playMode.playBackMarker(),
+		// the router's current entry (shallowHistory.js reads both kit 2 and kit 3 shapes)
+		tpPlay: window.__tp.test.v1.playMode.playMarkerState(),
+		marker: window.__tp.test.v1.playMode.playBackMarker(),
 		href: location.href,
 		mounted: !!document.querySelector('#play-button') || !!document.querySelector('canvas')
 	}));
@@ -125,7 +125,7 @@ h.run(async () => {
 	await watchClaims(A.page);
 
 	// the premise the whole suite rests on
-	const coarse = await A.page.evaluate(() => window.__stores.inputDevice.coarsePointer());
+	const coarse = await A.page.evaluate(() => window.__tp.test.v1.inputDevice.coarsePointer());
 	h.check(coarse === true, 'the touch context reports (pointer: coarse)');
 
 	// ---- 1. entering play gives a phone a way out -------------------------------
@@ -230,7 +230,7 @@ h.run(async () => {
 	);
 
 	// ---- 5. the menu substate owns the pointer -----------------------------------
-	await A.page.evaluate(() => window.__stores.playPointerFree.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.playPointerFree.set(true));
 	await A.page.waitForTimeout(200);
 	const beforeMenu = await rig(A.page);
 	await gesture(A.page, cdp, [[L, midY], [L, midY - 70]], { holdMs: 500 });
@@ -249,7 +249,7 @@ h.run(async () => {
 		exitDuringMenu.present && !exitDuringMenu.disabled,
 		'the ✕ stays reachable while a menu is up — it is the way out of one'
 	);
-	await A.page.evaluate(() => window.__stores.playPointerFree.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.playPointerFree.set(false));
 	await A.page.waitForTimeout(200);
 
 	// ---- 6. the ✕ leaves play ----------------------------------------------------
@@ -300,7 +300,7 @@ h.run(async () => {
 	// a phone has no gamepad prefs to go and find — switching the pad off must not take
 	// the only movement control on the device with it.
 	await A.page.evaluate(() =>
-		window.__stores.gamepadPrefs.setGamepadPrefs({ enabled: false })
+		window.__tp.test.v1.gamepadPrefs.setGamepadPrefs({ enabled: false })
 	);
 	await A.page.locator('#ps-play').click(); // 38 R9: the phone shell's Play (the toolbar pill stands down < 640px)
 	await h.eventually(() => lockedState(A.page), (v) => v === true, 'play re-enters with the pad off');

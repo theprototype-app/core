@@ -33,59 +33,59 @@ const h = require('./helpers.cjs');
 const at = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.levels.currentLevel.subscribe((x) => (v = x))();
+		window.__tp.test.v1.levels.currentLevel.subscribe((x) => (v = x))();
 		return v;
 	});
 
 const itemNames = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.explorer.explorerItems.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (v = x))();
 		return v.map((i) => i.name).sort();
 	});
 
 const sceneKeys = (p) =>
 	p.page.evaluate(() => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((x) => (m = x))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((x) => (m = x))();
 		return Object.keys(m.scenes).sort();
 	});
 
 const worldUuids = (p) =>
 	p.page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		return (g?.children ?? []).map((c) => c.uuid).sort();
 	});
 
 const dialogOf = (p) =>
 	p.page.evaluate(() => {
 		let d;
-		window.__stores.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
+		window.__tp.test.v1.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
 		return d && { title: d.title, message: d.message, choices: (d.choices ?? []).map((c) => c.label) };
 	});
 
 const answerDialog = (p, value) =>
-	p.page.evaluate((v) => window.__stores.confirmDialog.resolveConfirm(v), value);
+	p.page.evaluate((v) => window.__tp.test.v1.confirmDialog.resolveConfirm(v), value);
 
 const addBox = (p) =>
 	p.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1100));
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.objectActions.deselectObject();
 	});
 
 /** a saved project scene holding one recognisable box; leaves the world holding it */
 const seedScene = async (p, name) => {
 	await addBox(p);
-	const item = await p.page.evaluate((n) => window.__stores.levels.saveSceneAsLevel(n), name);
+	const item = await p.page.evaluate((n) => window.__tp.test.v1.levels.saveSceneAsLevel(n), name);
 	await p.page.waitForTimeout(900);
 	return item;
 };
 
 const wipe = async (p) => {
 	await p.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const uuids = (g?.children ?? []).map((c) => c.uuid);
@@ -170,7 +170,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 	await A.page.locator('#explorer-slot').click();
 	await A.page.waitForTimeout(700);
-	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await A.page.waitForTimeout(300);
 
 	// =====================================================================
@@ -221,14 +221,14 @@ h.run(async () => {
 	// =====================================================================
 	// The whole point is the timing: edit and open IMMEDIATELY, inside the window in
 	// which `$sceneDirty` is still false. Anything slower tests nothing.
-	await A.page.evaluate(() => window.__stores.sceneIdentity.sceneDirty.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.sceneIdentity.sceneDirty.set(false));
 	await A.page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create sphere');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create sphere');
 	});
 	await A.page.waitForTimeout(350); // long enough to exist, far short of the 2s throttle
 	const staleFlag = await A.page.evaluate(() => {
 		let d;
-		window.__stores.sceneIdentity.sceneDirty.subscribe((x) => (d = x))();
+		window.__tp.test.v1.sceneIdentity.sceneDirty.subscribe((x) => (d = x))();
 		return d;
 	});
 	h.check(
@@ -248,7 +248,7 @@ h.run(async () => {
 	// --- the second half: a scene with NO identity at all ---
 	await wipe(A);
 	const gamma = await seedScene(A, 'Gamma');
-	await A.page.evaluate(() => window.__stores.levels.currentLevel.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.currentLevel.set(null));
 	await addBox(A);
 	await A.page.waitForTimeout(400);
 	h.check(
@@ -271,7 +271,7 @@ h.run(async () => {
 	await wipe(A);
 	// a loose .tpscene: built here, imported as a drop, so the project never names it
 	const looseBytes = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1100));
 		s.objectActions.deselectObject();
@@ -315,8 +315,8 @@ h.run(async () => {
 
 	// now the reported sequence: edit, then save
 	await addBox(A);
-	await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel(
-		(() => { let v; window.__stores.levels.currentLevel.subscribe((x) => (v = x))(); return v.name; })()
+	await A.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel(
+		(() => { let v; window.__tp.test.v1.levels.currentLevel.subscribe((x) => (v = x))(); return v.name; })()
 	));
 	await A.page.waitForTimeout(1400);
 	const names = await itemNames(A);
@@ -332,7 +332,7 @@ h.run(async () => {
 	// =====================================================================
 	// 4. BUG 1b — opening a second inline editor must not discard the first
 	// =====================================================================
-	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await A.page.waitForTimeout(300);
 	const before = await itemNames(A);
 	const target = before.find((n) => n.endsWith('.tpscene'));
@@ -340,7 +340,7 @@ h.run(async () => {
 	// deliberately NOT committed — the next editor is what has to settle it
 	await renameCard(A, target, 'typed-then-abandoned.tpscene', null);
 	// …and now open ANOTHER inline editor without committing, the reported sequence
-	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await gridBackgroundMenu(A);
 	const gridRows = await menuRows(A);
 	if (gridRows.some((r) => /New scene/.test(r))) {
@@ -361,12 +361,12 @@ h.run(async () => {
 	await wipe(A);
 	await seedScene(A, 'Archive');
 	await addBox(A);
-	await A.page.evaluate(() => window.__stores.levels.saveSceneVersion('Archive', 'v2'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.saveSceneVersion('Archive', 'v2'));
 	await A.page.waitForTimeout(1400);
 	h.check(
 		(await A.page.evaluate(() => {
 			let m;
-			window.__stores.projectManifest.projectManifest.subscribe((x) => (m = x))();
+			window.__tp.test.v1.projectManifest.projectManifest.subscribe((x) => (m = x))();
 			return m.scenes['Archive']?.history.length ?? 0;
 		})) >= 2,
 		'premise: Archive has more than one version'
@@ -439,13 +439,13 @@ h.run(async () => {
 	// is exactly why every earlier section here stayed green over it.
 	await addBox(A);
 	await A.page.evaluate(async () => {
-		window.__stores.environment.setEnvironment('sunset');
+		window.__tp.test.v1.environment.setEnvironment('sunset');
 		await new Promise((r) => setTimeout(r, 900));
 	});
 	const lit = await seedScene(A, 'Lit');
 	h.check(!!lit?.hash, 'premise: a saved scene carrying an environment');
 	const stampedBlocks = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = s.sessions.buildSessionPayload('Lit');
 		return Object.keys(payload).filter(
 			(k) => payload[k] && typeof payload[k] === 'object' && 'changedAt' in payload[k]
@@ -460,12 +460,12 @@ h.run(async () => {
 	await addBox(A);
 	const other = await seedScene(A, 'Other');
 	h.check(!!other?.hash, 'premise: a second scene to hop to');
-	await A.page.evaluate((hash) => window.__stores.levels.travelToLevel(hash), lit.hash);
+	await A.page.evaluate((hash) => window.__tp.test.v1.levels.travelToLevel(hash), lit.hash);
 	await A.page.waitForTimeout(2500);
 	await h.eventually(() => at(A).then((l) => l?.name ?? null), (n) => n === 'Lit', 'premise: we are standing in Lit, freshly loaded and untouched', 20000);
 
 	const verdict = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let cl;
 		s.levels.currentLevel.subscribe((x) => (cl = x))();
 		const payload = s.sessions.buildSessionPayload(cl.name);
@@ -483,7 +483,7 @@ h.run(async () => {
 	h.check(verdict.dirty === false, '…so it does not read as dirty');
 
 	// and the guard therefore stays quiet
-	await A.page.evaluate(() => window.__stores.confirmDialog.resolveConfirm(false));
+	await A.page.evaluate(() => window.__tp.test.v1.confirmDialog.resolveConfirm(false));
 	await A.page.waitForTimeout(200);
 	await card(A, 'Other.tpscene').dblclick();
 	// wait for the OPEN to land (or for a question to appear), not a fixed 2.6 s: under e2e
@@ -514,24 +514,24 @@ h.run(async () => {
 	await A.page.waitForTimeout(700);
 
 	// THE SECOND SYMPTOM: an idle hop must mint no version
-	await A.page.evaluate((hash) => window.__stores.levels.travelToLevel(hash), lit.hash);
+	await A.page.evaluate((hash) => window.__tp.test.v1.levels.travelToLevel(hash), lit.hash);
 	await A.page.waitForTimeout(2500);
 	const histBefore = await A.page.evaluate(() => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((x) => (m = x))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((x) => (m = x))();
 		return (m.scenes?.Lit?.history ?? []).length;
 	});
 	h.check(histBefore >= 1, `premise: Lit has a version history (${histBefore})`);
 	// hop away and back, touching nothing
-	await A.page.evaluate((hash) => window.__stores.levels.travelToLevel(hash), other.hash);
+	await A.page.evaluate((hash) => window.__tp.test.v1.levels.travelToLevel(hash), other.hash);
 	await A.page.waitForTimeout(2500);
 	await h.eventually(() => at(A).then((l) => l?.name ?? null), (n) => n === 'Other', 'premise: the hop reached Other', 20000);
-	await A.page.evaluate((hash) => window.__stores.levels.travelToLevel(hash), lit.hash);
+	await A.page.evaluate((hash) => window.__tp.test.v1.levels.travelToLevel(hash), lit.hash);
 	await A.page.waitForTimeout(2500);
 	await h.eventually(() => at(A).then((l) => l?.name ?? null), (n) => n === 'Lit', '...and came back to Lit (premise)', 20000);
 	const histAfter = await A.page.evaluate(() => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((x) => (m = x))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((x) => (m = x))();
 		return (m.scenes?.Lit?.history ?? []).length;
 	});
 	h.check(

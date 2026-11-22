@@ -6,14 +6,14 @@ const objectNames = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) =>
+				window.__tp.test.v1.objectsGroup.subscribe((g) =>
 					r((g?.children ?? []).map((c) => c.name))
 				)()
 			)
 	);
 const sessionList = (page) =>
 	page.evaluate(
-		() => new Promise((r) => window.__stores.sessions.sessions.subscribe(r)())
+		() => new Promise((r) => window.__tp.test.v1.sessions.sessions.subscribe(r)())
 	);
 
 h.run(async () => {
@@ -22,20 +22,20 @@ h.run(async () => {
 
 	// build a small scene and save it
 	await A.page.evaluate(async () => {
-		const cmd = window.__stores.commandsHandler.sceneCommand;
+		const cmd = window.__tp.test.v1.commandsHandler.sceneCommand;
 		cmd('/create box');
 		cmd('/create sphere 1');
 		await new Promise((r) => setTimeout(r, 300));
-		await window.__stores.sessions.saveSession('SceneOne');
+		await window.__tp.test.v1.sessions.saveSession('SceneOne');
 	});
 	let list = await sessionList(A.page);
 	h.check(list.length === 1 && list[0].name === 'SceneOne' && list[0].count === 2, 'session saved with meta');
 	h.check(!!list[0].thumbnail, 'thumbnail rendered');
 
 	// clear, then solo load applies immediately (and stashes nothing extra — scene was empty)
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	await A.page.waitForTimeout(300);
-	await A.page.evaluate((id) => window.__stores.sessions.requestLoadSession(id), list[0].id);
+	await A.page.evaluate((id) => window.__tp.test.v1.sessions.requestLoadSession(id), list[0].id);
 	await h.eventually(
 		() => objectNames(A.page),
 		(names) => names.includes('Box') && names.includes('Sphere'),
@@ -45,7 +45,7 @@ h.run(async () => {
 	// selective import: bring only the Box in as a fresh copy
 	const before = (await objectNames(A.page)).length;
 	await A.page.evaluate(async (id) => {
-		const s = window.__stores.sessions;
+		const s = window.__tp.test.v1.sessions;
 		const payload = await s.getSession(id);
 		const entries = s.sessionObjectList(payload);
 		const box = entries.find((e) => e.name === 'Box');
@@ -59,7 +59,7 @@ h.run(async () => {
 
 	// export → import round-trip creates a second slot
 	await A.page.evaluate(async (id) => {
-		const s = window.__stores.sessions;
+		const s = window.__tp.test.v1.sessions;
 		const payload = await s.getSession(id);
 		const json = s.exportSession(payload);
 		await s.importSession(json);
@@ -74,7 +74,7 @@ h.run(async () => {
 
 	// B declines first: nothing changes on B
 	const target = list.find((s) => s.name === 'SceneOne');
-	await A.page.evaluate((id) => window.__stores.sessions.requestLoadSession(id), target.id);
+	await A.page.evaluate((id) => window.__tp.test.v1.sessions.requestLoadSession(id), target.id);
 	await B.page.waitForTimeout(800);
 	h.check(
 		// the TOAST, not its copy in the screen-reader live region (e3edaee5) — getByText matched both
@@ -90,7 +90,7 @@ h.run(async () => {
 	);
 
 	// then B accepts: the load applies and replicates
-	await A.page.evaluate((id) => window.__stores.sessions.requestLoadSession(id), target.id);
+	await A.page.evaluate((id) => window.__tp.test.v1.sessions.requestLoadSession(id), target.id);
 	await B.page.waitForTimeout(800);
 	await B.page.locator('.tp-toast', { hasText: /wants to load session/ }).getByRole('button', { name: 'Accept', exact: true }).click();
 	let replaced = false;
@@ -103,7 +103,10 @@ h.run(async () => {
 				b.filter((n) => n === 'Box').length === 1 &&
 				b.includes('Sphere')),
 		'accepted load replaced the scene on both peers',
-		15000
+		// 54-net: not stuck, slow — traced under load ~20 (x2-trace2): Accept -> the 'Backup before'
+		// save took ~10 s (its session-list reload ~8 s), the clear landed ~15 s after Accept and the
+		// objects after it, so a 15 s window read "nothing happened" while the load was still running
+		60000
 	);
 	// test-health-1: red since the toast check stopped masking it (e3edaee5) and not explained from the
 	// code (A clears and adds nothing, B applies nothing) — a red prints each side's link, load job and
@@ -114,7 +117,7 @@ h.run(async () => {
 				`  ${name} after Accept: ` +
 					JSON.stringify(
 						await p.page.evaluate((otherId) => {
-							const s = window.__stores;
+							const s = window.__tp?.test.v1;
 							let pc;
 							s.peers.subscribe((v) => (pc = v))();
 							const job = s.sceneLoader.currentJob?.();

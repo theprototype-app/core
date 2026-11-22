@@ -10,7 +10,10 @@
 	import { untrack, onMount } from 'svelte';
 	import { registerDockCloser } from '$lib/dockMenu';
 	import { get } from 'svelte/store';
+	import PaneHandle from '../ui/PaneHandle.svelte';
+	import { paneLocks } from '$lib/ui/paneLocks.js';
 	import Icon from '../ui/Icon.svelte';
+	import HeadDockPop from '../ui/HeadDockPop.svelte'; // uir-polish G2/G3
 	import CodeEditor from './CodeEditor.svelte';
 	import CodeSidebarLeft from './CodeSidebarLeft.svelte';
 	import CodeSidebarRight from './CodeSidebarRight.svelte';
@@ -22,7 +25,7 @@
 	import ContextMenu from '../ContextMenu.svelte';
 	import { codeWorkspaceClose, showToast } from '../../stores/appStore.js';
 	import { objectsGroup } from '../../stores/sceneStore';
-	import { flowGraphs, scriptErrors, findNodeAnyGraph, activeGraphId } from '../../stores/flowStore';
+	import { flowGraphs, scriptErrors, findNodeAnyGraph } from '../../stores/flowStore';
 	import {
 		codeTabs,
 		activeCodeTab,
@@ -373,12 +376,15 @@
 	let mainW = $state(0);
 	// narrow = the open sidebars would leave the editor under ~340 px
 	const needW = $derived(($codeLeftOpen ? $codeLeftWidth : 0) + ($codeRightOpen ? $codeRightWidth : 0) + 340);
-	const narrow = $derived(mainW > 0 && mainW < needW);
+	// showhide-v8: a LOCKED window (the handle's menu) keeps its sidebars as they are, so a narrow one does not fold them
+	const codeLocked = $derived(!!$paneLocks.code);
+	const narrow = $derived(!codeLocked && mainW > 0 && mainW < needW);
 	let narrowSide = $state(/** @type {'left' | 'right' | null} */ (null));
 	const leftShown = $derived(narrow ? narrowSide === 'left' : $codeLeftOpen);
 	const rightShown = $derived(narrow ? narrowSide === 'right' : $codeRightOpen);
 	/** @param {'left' | 'right'} side */
 	function toggleSide(side) {
+		if (codeLocked) return;
 		// closing the sidebar that holds the focus would drop it to <body>, where the workspace's
 		// own keys (Ctrl+Alt+B to bring it back) no longer reach — hand it to the editor first
 		const doc = hostDoc();
@@ -425,7 +431,7 @@
 		const g = get(objectsGroup);
 		return g?.getObjectByProperty?.('uuid', id)?.name || 'Object ' + id.slice(0, 6);
 	}
-	const MARK = { function: 'ƒ', method: 'ƒ', handler: '⚡', param: '◆', state: '▣', input: '→', output: '←', class: 'C', const: '·', node: '◇' };
+	const MARK = { function: 'ƒ', method: 'ƒ', handler: 'ϟ', param: '◆', state: '▣', input: '→', output: '←', class: 'C', const: '·', node: '◇' };
 	/** Ctrl+P: every project script · Ctrl+Shift+O: the symbols of the active file @param {'files' | 'symbols'} mode */
 	function openQuick(mode) {
 		if (mode === 'files') {
@@ -581,15 +587,6 @@
 	</div>
 {/snippet}
 
-{#snippet openGraph()}
-	<button
-		id="code-ws-open-graph"
-		class="ui-button-quiet"
-		title="Open the graph the Node editor shows as JSON — edit it and Ctrl+S applies it"
-		onclick={() => openCode({ source: 'graph', ref: { graphId: $activeGraphId } })}><Icon name="braces" size={16} aria-hidden="true" />Graph JSON</button
-	>
-{/snippet}
-
 {#snippet toolbar()}
 	{#if active}
 		<div id="code-ws-toolbar" class="flex shrink-0 flex-wrap items-center gap-1 px-1 pb-1 text-xs">
@@ -630,7 +627,7 @@
 				{#if active.stale || isDirty(active)}
 					<button id="code-ws-reload" class="ui-button-quiet" title={activeShared ? 'Throw away the unsaved edits — everyone\'s in this shared file — and show the source as it is now' : 'Throw away your edits and show the source as it is now'} onclick={() => reloadCodeTab(active.id)}><Icon name="rotate-ccw" size={16} aria-hidden="true" />Revert</button>
 				{/if}
-				<button id="code-ws-save" class="ui-button-quiet" class:code-save-armed={isDirty(active)} title={active.kind === 'graph' ? 'Apply the JSON to the graph (Ctrl+S)' : 'Save and reload what runs it (Ctrl+S)'} onclick={save}><Icon name="save" size={16} aria-hidden="true" />{active.kind === 'graph' ? 'Apply' : 'Save'}</button>
+				<button id="code-ws-save" class="ui-button-quiet" class:code-save-armed={isDirty(active)} title={active.kind === 'graph' ? (active.format === 'text' ? 'Apply the flow code to the graph (Ctrl+S)' : 'Apply the JSON to the graph (Ctrl+S)') : 'Save and reload what runs it (Ctrl+S)'} onclick={save}><Icon name="save" size={16} aria-hidden="true" />{active.kind === 'graph' ? 'Apply' : 'Save'}</button>
 			{/if}
 		</div>
 	{/if}
@@ -662,7 +659,7 @@
 	{/if}
 	{#if problems.length}
 		<div id="code-ws-error" class="code-banner code-banner-bad" role="alert">
-			<button class="code-banner-text" title={active?.error ? 'Go to the line' : ''} onclick={revealError}>⚠ {problems[0]}{problems.length > 1 ? ' (+' + (problems.length - 1) + ' more)' : ''}</button>
+			<button class="code-banner-text" title={active?.error ? 'Go to the line' : ''} onclick={revealError}><Icon name="triangle-alert" size={16} class="inline-block shrink-0 align-[-2px]" /> {problems[0]}{problems.length > 1 ? ' (+' + (problems.length - 1) + ' more)' : ''}</button>
 			{#if active?.error && bound.length}<span class="code-muted">not applied — the nodes keep the last good version</span>{/if}
 		</div>
 	{/if}
@@ -738,24 +735,6 @@
 	</div>
 {/snippet}
 
-{#snippet popOutButton()}
-	{#if $popOutSupported}
-		<button id="code-ws-popout" class="ui-button-quiet" title="Open the code editor in its own browser window (drag it to another monitor)" aria-label="Pop out" onclick={popOut}><Icon name="external-link" size={16} aria-hidden="true" /></button>
-	{/if}
-{/snippet}
-
-{#snippet sideToggle(/** @type {'left' | 'right'} */ side)}
-	<button
-		id="code-ws-toggle-{side}"
-		class="ui-button-quiet code-side-toggle"
-		aria-pressed={side === 'left' ? leftShown : rightShown}
-		title={side === 'left' ? 'Open editors and Project files (Ctrl+B)' : 'Outline, Problems, Bound nodes, Find in files (Ctrl+Alt+B)'}
-		aria-label={side === 'left' ? 'Toggle the files sidebar' : 'Toggle the tools sidebar'}
-		onclick={() => toggleSide(side)}
-	>
-		{#if side === 'left'}<Icon name="panel-left" size={16} aria-hidden="true" />{:else}<Icon name="panel-right" size={16} aria-hidden="true" />{/if}
-	</button>
-{/snippet}
 
 {#snippet main()}
 	<div class="code-main" class:code-narrow={narrow} bind:clientWidth={mainW}>
@@ -766,7 +745,8 @@
 				<div class="code-side-grip code-side-grip-l" title="Drag to resize" onpointerdown={(e) => startSide(e, 'left')} onpointermove={moveSide} onpointerup={endSide}></div>
 			</div>
 		{/if}
-		<div class="code-center">
+		<!-- uir-polish B4: the right handle owns the window's edge — the editor (and its scrollbar) ends where the handle's tab starts -->
+		<div class="code-center" style:padding-right={narrow ? null : rightShown ? '16px' : '8px'}>
 			{@render strip()}
 			{@render body()}
 		</div>
@@ -802,6 +782,27 @@
 				<CodeSidebarRight {runtimeOf} />
 			</div>
 		{/if}
+		<!-- showhide-v8 §2: the sidebar toggles are edge handles (no header buttons, no margin); Ctrl+B / Ctrl+Alt+B still work -->
+		<PaneHandle
+			id="code-ws-toggle-left"
+			edge="left"
+			open={leftShown}
+			label="the files sidebar"
+			windowKey="code"
+			role="folder-tree"
+			onclick={() => toggleSide('left')}
+			style="top: 40px; left: {leftShown ? leftW : 0}px"
+		/>
+		<PaneHandle
+			id="code-ws-toggle-right"
+			edge="right"
+			open={rightShown}
+			label="the tools sidebar"
+			windowKey="code"
+			role="list-tree"
+			onclick={() => toggleSide('right')}
+			style="top: 40px; right: {rightShown ? rightW : 0}px"
+		/>
 	</div>
 {/snippet}
 
@@ -816,11 +817,8 @@
 		use:keys
 	>
 		<div class="flex shrink-0 items-center gap-1 pb-1">
-			{@render sideToggle('left')}
 			<span class="tp-dock-title" data-wc-chrome>Code</span>
 			<span class="flex-1"></span>
-			{@render openGraph()}
-			{@render sideToggle('right')}
 			<button id="code-ws-dock-back" class="ui-button-quiet" title="Close this window and put the code editor back in the app" onclick={dockCodeBack}><Icon name="panel-bottom" size={16} aria-hidden="true" />Dock back</button>
 		</div>
 		{@render main()}
@@ -847,14 +845,8 @@
 			onpointerup={endResize}
 		></div>
 		<DockTabs />
-		<div class="flex shrink-0 items-center gap-1 pb-1">
-			{@render sideToggle('left')}
-			<span class="tp-dock-title">Code</span>
-			<span class="flex-1"></span>
-			{@render openGraph()}
-			{@render popOutButton()}
-			{@render sideToggle('right')}
-		</div>
+		<!-- uir-polish G1 (owner 2026-11-11): docked, Code has no header row of its own — the dock tab names it; it
+		     pops out from the tab's menu or by tearing the tab off -->
 		{@render main()}
 	</div>
 {:else}
@@ -875,24 +867,20 @@
 		<WindowChrome
 			size="tool"
 			bare
-			dockedHead="tools"
+			dockedHead="hide"
 			body={false}
 			title="Code"
 			headerClass="ui-panel-header move-handle cursor-move select-none"
 			onclose={requestCloseWorkspace}
-			onpopout={$popOutSupported ? popOut : null}
 			closeLabel="Close the code workspace"
 			closeAttrs={{ id: 'code-ws-close', title: 'Close the code workspace' }}
 		>
 			{#snippet heading()}
-				{@render sideToggle('left')}
 				<span class="wc-label">Code</span>
 				<span class="flex-1"></span>
 			{/snippet}
 			{#snippet actions()}
-				{@render openGraph()}
-				{@render sideToggle('right')}
-				<button data-wc-chrome class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={16} />Dock</button>
+				<HeadDockPop key="code" title="Code" ondock={() => setDocked(true)} onpopout={popOut} popId="code-ws-popout" />
 			{/snippet}
 		</WindowChrome>
 		<div class="flex min-h-0 flex-1 flex-col p-1">{@render main()}</div>
@@ -976,10 +964,6 @@
 	}
 	.code-side-grip-r {
 		left: -3px;
-	}
-	.code-side-toggle[aria-pressed='true'] {
-		color: var(--accent-soft-text);
-		background: var(--accent-soft);
 	}
 	/* 36-fb-code (F8): the strip scrolls — the wheel (stripWheel); 38 R11: no bar (tp-noscrollbar) */
 	.code-strip {

@@ -14,14 +14,14 @@ const h = require('./helpers.cjs');
 const manifestOf = (peer) =>
 	peer.page.evaluate(() => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (m = v))();
 		return m;
 	});
 
 const itemsOf = (peer) =>
 	peer.page.evaluate(() => {
 		let v;
-		window.__stores.explorer.explorerItems.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (v = x))();
 		return v.map((i) => ({
 			id: i.id,
 			name: i.name,
@@ -36,7 +36,7 @@ const itemsOf = (peer) =>
 const foldersOf = (peer) =>
 	peer.page.evaluate(() => {
 		let v;
-		window.__stores.explorer.explorerFolders.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.explorerFolders.subscribe((x) => (v = x))();
 		return v.map((f) => ({
 			id: f.id,
 			name: f.name,
@@ -51,7 +51,7 @@ const addFile = (peer, text, name, folderId = null) =>
 	peer.page.evaluate(
 		async ([text, name, folderId]) => {
 			const buf = new TextEncoder().encode(text).buffer;
-			const item = await window.__stores.explorer.addItemFromBytes(buf, name, folderId);
+			const item = await window.__tp.test.v1.explorer.addItemFromBytes(buf, name, folderId);
 			return { id: item.id, hash: item.hash, name: item.name };
 		},
 		[text, name, folderId]
@@ -62,11 +62,11 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
 	for (const p of [A, B]) {
-		await p.page.waitForFunction(() => !!window.__stores?.sharedLibrary && !!window.__stores?.explorer, {
+		await p.page.waitForFunction(() => !!window.__tp?.test.v1?.sharedLibrary && !!window.__tp?.test.v1?.explorer, {
 			timeout: 30000
 		});
 		// the Explorer index is idb-backed and lazily loaded; every share read walks it
-		await p.page.evaluate(() => window.__stores.explorer.loadExplorer());
+		await p.page.evaluate(() => window.__tp.test.v1.explorer.loadExplorer());
 		// R22 round 30 C2 — SILENCE THE ASK FOR THE BODY OF THIS SUITE. The shipped default
 		// is `ask`, so from the moment A and B connect every import below would arm the
 		// Explorer strip: a sticky row at the top of the grid that swallows clicks and moves
@@ -74,7 +74,7 @@ h.run(async () => {
 		// 52) never agreed to. `never` is a real user setting and it is exactly 'behave as
 		// before C2', so the 212 checks that follow measure what they always measured. The
 		// ask has its own sections at the end, where nothing runs after it.
-		await p.page.evaluate(() => window.__stores.sharedLibrary.shareNewFiles.set('never'));
+		await p.page.evaluate(() => window.__tp.test.v1.sharedLibrary.shareNewFiles.set('never'));
 	}
 
 	// ---- 1. the document: absent = local, and empty means ABSENT --------------------
@@ -84,7 +84,7 @@ h.run(async () => {
 	// never shared a thing no longer serializes as it did before R1, which is the whole
 	// claim that makes this batch a no-op until somebody presses Share.
 	const f1 = await addFile(A, 'private bytes', 'secret.txt');
-	await A.page.evaluate(() => window.__stores.projectManifest.setProjectName('R22'));
+	await A.page.evaluate(() => window.__tp.test.v1.projectManifest.setProjectName('R22'));
 	const m0 = await manifestOf(A);
 	h.check(!('items' in m0) && !('folders' in m0), 'a library nobody shared writes NO index keys');
 	const local0 = (await itemsOf(A)).find((i) => i.hash === f1.hash);
@@ -93,7 +93,7 @@ h.run(async () => {
 	// normalize is the one boundary: unknown per-row fields survive a round trip (the
 	// normalizeAnnotation rule, applied per row), and a row with no identity is dropped
 	const norm = await A.page.evaluate(() =>
-		window.__stores.projectManifest.normalizeManifest({
+		window.__tp.test.v1.projectManifest.normalizeManifest({
 			scenes: {},
 			assets: [],
 			changedAt: 1,
@@ -126,11 +126,11 @@ h.run(async () => {
 	// slot), which made auto-download fast enough to beat the observation on A as well —
 	// the derived card was gone before the check could look at it.
 	for (const peer of [A, B])
-		await peer.page.evaluate(() => window.__stores.sharedLibrary.autoDownload.set(false));
+		await peer.page.evaluate(() => window.__tp.test.v1.sharedLibrary.autoDownload.set(false));
 
 	// ---- 2. share one item: the row, the owner, the wire ---------------------------
-	await A.page.evaluate((id) => window.__stores.sharedLibrary.shareItem(id), f1.id);
-	await A.page.evaluate(() => window.__stores.sharedLibrary.publishMine(true));
+	await A.page.evaluate((id) => window.__tp.test.v1.sharedLibrary.shareItem(id), f1.id);
+	await A.page.evaluate(() => window.__tp.test.v1.sharedLibrary.publishMine(true));
 	const mA = await manifestOf(A);
 	h.check(mA.items?.length === 1 && mA.items[0].hash === f1.hash,
 		`sharing publishes one row keyed by content hash (${JSON.stringify(mA.items)})`);
@@ -155,17 +155,17 @@ h.run(async () => {
 		'a shared row we do not hold writes NO local record');
 	const remoteB = await B.page.evaluate(() => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
-		return window.__stores.sharedLibrary.remoteSharedRows(m).map((r) => r.name);
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (m = v))();
+		return window.__tp.test.v1.sharedLibrary.remoteSharedRows(m).map((r) => r.name);
 	});
 	h.check(JSON.stringify(remoteB) === '["secret.txt"]',
 		`it is offered as a remote row instead (${JSON.stringify(remoteB)})`);
 
 	// ---- 4. the PULL: bytes ride assetfile/getasset, no new transport ---------------
-	await B.page.evaluate((hash) => window.__stores.sharedLibrary.pullSharedItem(hash), f1.hash);
+	await B.page.evaluate((hash) => window.__tp.test.v1.sharedLibrary.pullSharedItem(hash), f1.hash);
 	const pending = await B.page.evaluate(() => {
 		let s;
-		window.__stores.sharedLibrary.pendingPulls.subscribe((v) => (s = v))();
+		window.__tp.test.v1.sharedLibrary.pendingPulls.subscribe((v) => (s = v))();
 		return [...s];
 	});
 	h.check(pending.includes(f1.hash), 'the pull is marked in flight so the card is not dead');
@@ -181,7 +181,7 @@ h.run(async () => {
 	);
 	const settled = await B.page.evaluate(() => {
 		let s;
-		window.__stores.sharedLibrary.pendingPulls.subscribe((v) => (s = v))();
+		window.__tp.test.v1.sharedLibrary.pendingPulls.subscribe((v) => (s = v))();
 		return [...s];
 	});
 	h.check(settled.length === 0, 'the in-flight mark clears when the bytes LAND, not on a timer');
@@ -195,7 +195,7 @@ h.run(async () => {
 	// made a shared folder look as though its contents had not arrived: they had, one
 	// level up from where the author was looking.
 	const tree = await A.page.evaluate(() => {
-		const e = window.__stores.explorer;
+		const e = window.__tp.test.v1.explorer;
 		const priv = e.createFolder('Private', null);
 		const tex = e.createFolder('Textures', priv.id);
 		const sub = e.createFolder('Wood', tex.id);
@@ -203,8 +203,8 @@ h.run(async () => {
 	});
 	const f2 = await addFile(A, 'texture bytes', 'bark.png', tree.tex);
 	const f3 = await addFile(A, 'deep bytes', 'grain.png', tree.sub);
-	await A.page.evaluate((id) => window.__stores.sharedLibrary.shareFolder(id), tree.tex);
-	await A.page.evaluate(() => window.__stores.sharedLibrary.publishMine(true));
+	await A.page.evaluate((id) => window.__tp.test.v1.sharedLibrary.shareFolder(id), tree.tex);
+	await A.page.evaluate(() => window.__tp.test.v1.sharedLibrary.publishMine(true));
 	const mA2 = await manifestOf(A);
 	const texRow = mA2.folders.find((r) => r.id === tree.tex);
 	const subRow = mA2.folders.find((r) => r.id === tree.sub);
@@ -250,7 +250,7 @@ h.run(async () => {
 	const f4A = await addFile(A, 'shared identical bytes', 'both.txt', tree.tex);
 	const f4B = await addFile(B, 'shared identical bytes', 'both.txt');
 	h.check(f4A.hash === f4B.hash, 'identical bytes are one content hash on both machines');
-	await A.page.evaluate(() => window.__stores.sharedLibrary.publishMine(true));
+	await A.page.evaluate(() => window.__tp.test.v1.sharedLibrary.publishMine(true));
 	await h.eventually(
 		() => itemsOf(B),
 		(items) => items.find((i) => i.hash === f4A.hash)?.share === 'peer',
@@ -289,7 +289,7 @@ h.run(async () => {
 	// the folder it happens to sit in. `share: 'no'` is the difference between "never
 	// decided" and "decided against", and only the second survives the sweep.
 	const f5Id = (await itemsOf(A)).find((i) => i.hash === f5.hash).id;
-	await A.page.evaluate((id) => window.__stores.sharedLibrary.unshareItem(id), f5Id);
+	await A.page.evaluate((id) => window.__tp.test.v1.sharedLibrary.unshareItem(id), f5Id);
 	await A.page.waitForTimeout(700);
 	const vetoed = (await itemsOf(A)).find((i) => i.hash === f5.hash);
 	h.check(vetoed?.share === 'no', `an unshared file inside a shared folder holds a VETO (${vetoed?.share})`);
@@ -302,8 +302,8 @@ h.run(async () => {
 	// free: the bytes a peer pulled are theirs. All that leaves the document is placement.
 	const beforeB = (await itemsOf(B)).length;
 	const secretId = (await itemsOf(A)).find((i) => i.hash === f1.hash).id;
-	await A.page.evaluate((id) => window.__stores.sharedLibrary.unshareItem(id), secretId);
-	await A.page.evaluate(() => window.__stores.sharedLibrary.publishMine(true));
+	await A.page.evaluate((id) => window.__tp.test.v1.sharedLibrary.unshareItem(id), secretId);
+	await A.page.evaluate(() => window.__tp.test.v1.sharedLibrary.publishMine(true));
 	await h.eventually(
 		() => manifestOf(B),
 		(m) => !m.items.some((r) => r.hash === f1.hash),
@@ -319,8 +319,8 @@ h.run(async () => {
 	h.check(afterB.find((i) => i.hash === f1.hash)?.share === null,
 		'and it is an ordinary local file again');
 	const blobStillThere = await B.page.evaluate(async (hash) => {
-		const item = window.__stores.explorer.itemByHash(hash);
-		const blob = item ? await window.__stores.explorer.itemBlob(item.id) : null;
+		const item = window.__tp.test.v1.explorer.itemByHash(hash);
+		const blob = item ? await window.__tp.test.v1.explorer.itemBlob(item.id) : null;
 		return blob ? blob.size : -1;
 	}, f1.hash);
 	h.check(blobStillThere > 0, `the BYTES are still on the peer's disk (${blobStillThere} bytes)`);
@@ -334,12 +334,12 @@ h.run(async () => {
 	// re-publish removed, A's row stays gone (measured below).
 	const f7 = await addFile(A, 'A concurrent', 'fromA.txt');
 	const f8 = await addFile(B, 'B concurrent', 'fromB.txt');
-	await A.page.evaluate((id) => window.__stores.sharedLibrary.shareItem(id), f7.id);
-	await B.page.evaluate((id) => window.__stores.sharedLibrary.shareItem(id), f8.id);
+	await A.page.evaluate((id) => window.__tp.test.v1.sharedLibrary.shareItem(id), f7.id);
+	await B.page.evaluate((id) => window.__tp.test.v1.sharedLibrary.shareItem(id), f8.id);
 	// force the collision: both publish from a view that cannot contain the other
 	await Promise.all([
-		A.page.evaluate(() => window.__stores.sharedLibrary.publishMine(true)),
-		B.page.evaluate(() => window.__stores.sharedLibrary.publishMine(true))
+		A.page.evaluate(() => window.__tp.test.v1.sharedLibrary.publishMine(true)),
+		B.page.evaluate(() => window.__tp.test.v1.sharedLibrary.publishMine(true))
 	]);
 	await h.eventually(
 		() => manifestOf(A),
@@ -366,25 +366,25 @@ h.run(async () => {
 	// Rule 1. The projection carries every foreign row verbatim, so the only peer that
 	// can remove a row is the one that published it.
 	const f9 = await addFile(A, 'A again', 'more.txt');
-	await A.page.evaluate((id) => window.__stores.sharedLibrary.shareItem(id), f9.id);
-	await A.page.evaluate(() => window.__stores.sharedLibrary.publishMine(true));
+	await A.page.evaluate((id) => window.__tp.test.v1.sharedLibrary.shareItem(id), f9.id);
+	await A.page.evaluate(() => window.__tp.test.v1.sharedLibrary.publishMine(true));
 	h.check((await manifestOf(A)).items.some((r) => r.hash === f8.hash),
 		"A's own publish still carries B's row — one writer per row, and A is not it");
 
 	// ---- 12. fork 3: a viewer publishes nothing ------------------------------------
 	const viewerRefused = await A.page.evaluate(async () => {
-		const ch = window.__stores.cloudHooks;
-		const sl = window.__stores.sharedLibrary;
+		const ch = window.__tp.test.v1.cloudHooks;
+		const sl = window.__tp.test.v1.sharedLibrary;
 		let before;
-		window.__stores.projectManifest.projectManifest.subscribe((v) => (before = v))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (before = v))();
 		const n = (before.items ?? []).length;
 		ch.rolesInfo.set({ myRole: 'viewer' });
 		const buf = new TextEncoder().encode('viewer bytes').buffer;
-		const item = await window.__stores.explorer.addItemFromBytes(buf, 'viewer.txt', null);
+		const item = await window.__tp.test.v1.explorer.addItemFromBytes(buf, 'viewer.txt', null);
 		sl.shareItem(item.id);
 		const wrote = sl.publishMine(true);
 		let after;
-		window.__stores.projectManifest.projectManifest.subscribe((v) => (after = v))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (after = v))();
 		ch.rolesInfo.set(null);
 		return { wrote, before: n, after: (after.items ?? []).length };
 	});
@@ -396,10 +396,10 @@ h.run(async () => {
 	// The shared index is keyed by FOLDER ID, and a .tp import mints fresh ids on
 	// purpose (a file must never collide with the library it lands in). Carrying them
 	// unremapped would adopt folders that exist nowhere and strand every item row.
-	const fmt = await A.page.evaluate(() => window.__stores.projectFile.PROJECT_FORMAT);
+	const fmt = await A.page.evaluate(() => window.__tp.test.v1.projectFile.PROJECT_FORMAT);
 	h.check(fmt === 3, `PROJECT_FORMAT is 3 (${fmt})`);
 	const remapped = await A.page.evaluate(() => {
-		const pf = window.__stores.projectFile;
+		const pf = window.__tp.test.v1.projectFile;
 		if (!pf.__remapSharedIndexForTest) return 'no seam';
 		const remap = new Map([['old-a', 'new-a']]);
 		return pf.__remapSharedIndexForTest(
@@ -435,8 +435,8 @@ h.run(async () => {
 	// a clean slate for the UI half — the sections above left a tangle of shares
 	// deliberately, and a menu check wants to know exactly what it is right-clicking
 	await A.page.evaluate(async () => {
-		await window.__stores.explorer.clearLibrary();
-		window.__stores.sharedLibrary.publishMine(true);
+		await window.__tp.test.v1.explorer.clearLibrary();
+		window.__tp.test.v1.sharedLibrary.publishMine(true);
 	});
 	await A.page.locator('#explorer-slot').click();
 	await A.page.waitForTimeout(600);
@@ -494,8 +494,8 @@ h.run(async () => {
 	// project's library belongs to the project: anyone may take a file out, the removal
 	// sticks (a tombstone, see section 24), and the owner-only rule survives as a setting.
 	const peerFile = await addFile(B, 'peer owned bytes', 'from-peer.txt');
-	await B.page.evaluate((id) => window.__stores.sharedLibrary.shareItem(id), peerFile.id);
-	await B.page.evaluate(() => window.__stores.sharedLibrary.publishMine(true));
+	await B.page.evaluate((id) => window.__tp.test.v1.sharedLibrary.shareItem(id), peerFile.id);
+	await B.page.evaluate(() => window.__tp.test.v1.sharedLibrary.publishMine(true));
 	await h.eventually(
 		() => manifestOf(A),
 		(m) => (m.items ?? []).some((r) => r.hash === peerFile.hash),
@@ -552,7 +552,7 @@ h.run(async () => {
 
 	// ---- 19. Share FOLDER from the folder card menu -------------------------------
 	const uiFolder = await A.page.evaluate(
-		() => window.__stores.explorer.createFolder('UI Textures', null).id
+		() => window.__tp.test.v1.explorer.createFolder('UI Textures', null).id
 	);
 	await A.page.waitForTimeout(400);
 	const folderCard = A.page.locator('[data-card-id="' + uiFolder + '"]');
@@ -600,7 +600,7 @@ h.run(async () => {
 
 	// ---- 21. the batch menu acts on the SET ---------------------------------------
 	const two = await A.page.evaluate(async () => {
-		const e = window.__stores.explorer;
+		const e = window.__tp.test.v1.explorer;
 		const a = await e.addItemFromBytes(new TextEncoder().encode('batch one').buffer, 'b1.txt', null);
 		const b = await e.addItemFromBytes(new TextEncoder().encode('batch two').buffer, 'b2.txt', null);
 		return [a.id, b.id, a.hash, b.hash];
@@ -630,11 +630,11 @@ h.run(async () => {
 	// nothing on the wire. Measured before the fix: the row still read folderId null after
 	// the file had visibly moved.
 	const mv = await A.page.evaluate(async () => {
-		const e = window.__stores.explorer;
+		const e = window.__tp.test.v1.explorer;
 		const f = e.createFolder('Moved Into', null);
 		const i = await e.addItemFromBytes(new TextEncoder().encode('move me').buffer, 'move.txt', null);
-		window.__stores.sharedLibrary.shareItem(i.id);
-		window.__stores.sharedLibrary.publishMine(true);
+		window.__tp.test.v1.sharedLibrary.shareItem(i.id);
+		window.__tp.test.v1.sharedLibrary.publishMine(true);
 		return { folderId: f.id, itemId: i.id, hash: i.hash };
 	});
 	await h.eventually(
@@ -642,7 +642,7 @@ h.run(async () => {
 		(m) => (m.items ?? []).some((r) => r.hash === mv.hash),
 		'the file is shared at the root'
 	);
-	await A.page.evaluate((x) => window.__stores.explorer.moveItem(x.itemId, x.folderId), mv);
+	await A.page.evaluate((x) => window.__tp.test.v1.explorer.moveItem(x.itemId, x.folderId), mv);
 	await h.eventually(
 		() => manifestOf(A),
 		(m) => (m.items ?? []).find((r) => r.hash === mv.hash)?.folderId === mv.folderId,
@@ -661,13 +661,13 @@ h.run(async () => {
 	// shared folder look like it had arrived without its contents — they were one level up
 	// from where the author was looking.
 	const casc = await A.page.evaluate(async () => {
-		const e = window.__stores.explorer;
+		const e = window.__tp.test.v1.explorer;
 		const outer = e.createFolder('Outer', null);
 		const inner = e.createFolder('Inner', outer.id);
 		const leaf = e.createFolder('Leaf', inner.id);
 		const i = await e.addItemFromBytes(new TextEncoder().encode('deep cascade').buffer, 'deep.txt', leaf.id);
-		window.__stores.sharedLibrary.shareFolder(leaf.id);
-		window.__stores.sharedLibrary.publishMine(true);
+		window.__tp.test.v1.sharedLibrary.shareFolder(leaf.id);
+		window.__tp.test.v1.sharedLibrary.publishMine(true);
 		return { outer: outer.id, inner: inner.id, leaf: leaf.id, hash: i.hash };
 	});
 	await h.eventually(
@@ -698,19 +698,19 @@ h.run(async () => {
 	// its own row missing and puts it straight back, and the two peers take turns forever.
 	const authority = await B.page.evaluate(() => {
 		let v;
-		window.__stores.sharedLibrary.unshareAuthority.subscribe((x) => (v = x))();
+		window.__tp.test.v1.sharedLibrary.unshareAuthority.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(authority === 'anyone', `the default is that anyone may unshare (${authority})`);
 
 	const victim = await A.page.evaluate(async () => {
-		const i = await window.__stores.explorer.addItemFromBytes(
+		const i = await window.__tp.test.v1.explorer.addItemFromBytes(
 			new TextEncoder().encode('unshared by the other peer').buffer,
 			'theirs.txt',
 			null
 		);
-		window.__stores.sharedLibrary.shareItem(i.id);
-		window.__stores.sharedLibrary.publishMine(true);
+		window.__tp.test.v1.sharedLibrary.shareItem(i.id);
+		window.__tp.test.v1.sharedLibrary.publishMine(true);
 		return { id: i.id, hash: i.hash };
 	});
 	await h.eventually(
@@ -720,7 +720,7 @@ h.run(async () => {
 	);
 	// B does not hold the bytes, so there is no local record — the tombstone is the whole
 	// of the removal
-	await B.page.evaluate((hash) => window.__stores.sharedLibrary.unshareHash(hash), victim.hash);
+	await B.page.evaluate((hash) => window.__tp.test.v1.sharedLibrary.unshareHash(hash), victim.hash);
 	await h.eventually(
 		() => manifestOf(A),
 		(m) => !(m.items ?? []).some((r) => r.hash === victim.hash),
@@ -740,15 +740,15 @@ h.run(async () => {
 	h.check(ownerSide?.share === 'no' && ownerSide?.wasShared === true,
 		`the owner's own record honours it and keeps the file (${JSON.stringify(ownerSide?.share)})`);
 	const blobKept = await A.page.evaluate(async (hash) => {
-		const item = window.__stores.explorer.itemByHash(hash);
-		const blob = item ? await window.__stores.explorer.itemBlob(item.id) : null;
+		const item = window.__tp.test.v1.explorer.itemByHash(hash);
+		const blob = item ? await window.__tp.test.v1.explorer.itemBlob(item.id) : null;
 		return blob ? blob.size : -1;
 	}, victim.hash);
 	h.check(blobKept > 0, `and the bytes are untouched (${blobKept} bytes)`);
 
 	// re-sharing LIFTS the tombstone — a removal must not be a one-way door
-	await A.page.evaluate((id) => window.__stores.sharedLibrary.shareItem(id), victim.id);
-	await A.page.evaluate(() => window.__stores.sharedLibrary.publishMine(true));
+	await A.page.evaluate((id) => window.__tp.test.v1.sharedLibrary.shareItem(id), victim.id);
+	await A.page.evaluate(() => window.__tp.test.v1.sharedLibrary.publishMine(true));
 	await h.eventually(
 		() => manifestOf(A),
 		(m) => (m.items ?? []).some((r) => r.hash === victim.hash) && !m.removed?.items?.[victim.hash],
@@ -757,7 +757,7 @@ h.run(async () => {
 
 	// ---- 25. the owner-only option still works ------------------------------------
 	const gated = await B.page.evaluate((hash) => {
-		const sl = window.__stores.sharedLibrary;
+		const sl = window.__tp.test.v1.sharedLibrary;
 		sl.unshareAuthority.set('owner');
 		const row = { hash, share: 'peer', owner: { id: 'somebody-else' } };
 		const refused = sl.canUnshare(row);
@@ -775,8 +775,8 @@ h.run(async () => {
 	const sharedFolders = (await foldersOf(B)).filter((f) => f.name === 'Shared');
 	const emptyShared = await B.page.evaluate(() => {
 		let folders, items;
-		window.__stores.explorer.explorerFolders.subscribe((v) => (folders = v))();
-		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
+		window.__tp.test.v1.explorer.explorerFolders.subscribe((v) => (folders = v))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
 		return folders
 			.filter((f) => f.name === 'Shared')
 			.map((f) => items.filter((i) => i.folderId === f.id).length);
@@ -793,19 +793,19 @@ h.run(async () => {
 		'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAKklEQVR4nGP8z8Dwn4EIwESMolGF+BUyMjAwMDIQBMQrJKgUvzt/EnIhAJTfBhFVsHRAAAAAAElFTkSuQmCC';
 	const pic = await A.page.evaluate(async (b64) => {
 		const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-		const item = await window.__stores.explorer.addItemFromBytes(bytes.buffer, 'shared-pic.png', null);
+		const item = await window.__tp.test.v1.explorer.addItemFromBytes(bytes.buffer, 'shared-pic.png', null);
 		return { id: item.id, hash: item.hash, thumb: !!item.thumbnail };
 	}, PNG);
 	h.check(pic.thumb, 'the sender rendered a thumbnail for its own image');
-	await A.page.evaluate((id) => window.__stores.sharedLibrary.shareItem(id), pic.id);
-	await A.page.evaluate(() => window.__stores.sharedLibrary.publishMine(true));
+	await A.page.evaluate((id) => window.__tp.test.v1.sharedLibrary.shareItem(id), pic.id);
+	await A.page.evaluate(() => window.__tp.test.v1.sharedLibrary.publishMine(true));
 	// B must NOT hold the bytes for this to prove anything
 	h.check((await itemsOf(B)).every((i) => i.hash !== pic.hash), 'the peer does not hold the image');
 	await h.eventually(
 		() =>
 			B.page.evaluate(() => {
 				let v;
-				window.__stores.assetShare.sharedThumbs.subscribe((x) => (v = x))();
+				window.__tp.test.v1.assetShare.sharedThumbs.subscribe((x) => (v = x))();
 				return Object.keys(v);
 			}),
 		(keys) => keys.includes(pic.hash),
@@ -813,7 +813,7 @@ h.run(async () => {
 	);
 	const thumbVal = await B.page.evaluate((hash) => {
 		let v;
-		window.__stores.assetShare.sharedThumbs.subscribe((x) => (v = x))();
+		window.__tp.test.v1.assetShare.sharedThumbs.subscribe((x) => (v = x))();
 		return (v[hash] ?? '').slice(0, 22);
 	}, pic.hash);
 	h.check(thumbVal.startsWith('data:image/'),
@@ -821,7 +821,7 @@ h.run(async () => {
 
 	// the REQUEST path too: a joiner that missed the push asks for it
 	const asked = await B.page.evaluate((hash) => {
-		const as = window.__stores.assetShare;
+		const as = window.__tp.test.v1.assetShare;
 		// clear the cache so the request path is the only way it can come back
 		as.forgetSharedThumb(hash);
 		as.requestAssetThumb(hash);
@@ -832,7 +832,7 @@ h.run(async () => {
 		() =>
 			B.page.evaluate(() => {
 				let v;
-				window.__stores.assetShare.sharedThumbs.subscribe((x) => (v = x))();
+				window.__tp.test.v1.assetShare.sharedThumbs.subscribe((x) => (v = x))();
 				return Object.keys(v);
 			}),
 		(keys) => keys.includes(pic.hash),
@@ -840,12 +840,12 @@ h.run(async () => {
 	);
 
 	// ---- 28. the bulk actions the connect prompt offers ---------------------------
-	const counts = await A.page.evaluate(() => window.__stores.sharedLibrary.bulkCounts());
+	const counts = await A.page.evaluate(() => window.__tp.test.v1.sharedLibrary.bulkCounts());
 	h.check(typeof counts.local === 'number' && typeof counts.missing === 'number',
 		`bulkCounts answers both halves of the union (${JSON.stringify(counts)})`);
 	const bulk = await B.page.evaluate(() => {
-		const before = window.__stores.sharedLibrary.bulkCounts();
-		const asked = window.__stores.sharedLibrary.pullAllShared();
+		const before = window.__tp.test.v1.sharedLibrary.bulkCounts();
+		const asked = window.__tp.test.v1.sharedLibrary.pullAllShared();
 		return { before, asked };
 	});
 	h.check(bulk.asked === bulk.before.missing,
@@ -877,9 +877,9 @@ h.run(async () => {
 	// them — and these checks are about the arithmetic, not about this run. Reading a
 	// percentage out of a shared ledger measured 63% where the maths says 13%, which is
 	// the assertion being wrong rather than the code.
-	await A.page.evaluate(() => window.__stores.transferLedger.transfers.set([]));
+	await A.page.evaluate(() => window.__tp.test.v1.transferLedger.transfers.set([]));
 	const ledger = await A.page.evaluate(() => {
-		const tl = window.__stores.transferLedger;
+		const tl = window.__tp.test.v1.transferLedger;
 		const read = () => {
 			let v;
 			tl.transferSummary.subscribe((x) => (v = x))();
@@ -919,16 +919,16 @@ h.run(async () => {
 	// progress and an integrity check are impossible without slicing it ourselves.
 	// back ON: from here it is the subject rather than a nuisance
 	for (const peer of [A, B])
-		await peer.page.evaluate(() => window.__stores.sharedLibrary.autoDownload.set(true));
+		await peer.page.evaluate(() => window.__tp.test.v1.sharedLibrary.autoDownload.set(true));
 	await B.page.waitForTimeout(300);
 	const bigHash = await A.page.evaluate(async () => {
 		// deterministic content well over the chunk size, so it MUST be sliced
 		const n = 700 * 1024;
 		const bytes = new Uint8Array(n);
 		for (let i = 0; i < n; i++) bytes[i] = (i * 31 + 7) & 0xff;
-		const item = await window.__stores.explorer.addItemFromBytes(bytes.buffer, 'big.bin', null);
-		window.__stores.sharedLibrary.shareItem(item.id);
-		window.__stores.sharedLibrary.publishMine(true);
+		const item = await window.__tp.test.v1.explorer.addItemFromBytes(bytes.buffer, 'big.bin', null);
+		window.__tp.test.v1.sharedLibrary.shareItem(item.id);
+		window.__tp.test.v1.sharedLibrary.publishMine(true);
 		return { hash: item.hash, size: n };
 	});
 	h.check(bigHash.size > 256 * 1024, `the fixture is bigger than one chunk (${bigHash.size} bytes)`);
@@ -939,8 +939,8 @@ h.run(async () => {
 		'AUTO-DOWNLOAD fetches a newly shared file with no gesture from the peer'
 	);
 	const bBlob = await B.page.evaluate(async (hash) => {
-		const item = window.__stores.explorer.itemByHash(hash);
-		const blob = item ? await window.__stores.explorer.itemBlob(item.id) : null;
+		const item = window.__tp.test.v1.explorer.itemByHash(hash);
+		const blob = item ? await window.__tp.test.v1.explorer.itemBlob(item.id) : null;
 		return blob ? blob.size : -1;
 	}, bigHash.hash);
 	h.check(bBlob === bigHash.size,
@@ -953,27 +953,27 @@ h.run(async () => {
 	);
 	const bLedger = await B.page.evaluate((hash) => {
 		let v;
-		window.__stores.transferLedger.transfers.subscribe((x) => (v = x))();
+		window.__tp.test.v1.transferLedger.transfers.subscribe((x) => (v = x))();
 		return v.filter((t) => t.hash === hash).map((t) => ({ dir: t.dir, state: t.state, size: t.size }));
 	}, bigHash.hash);
 	h.check(bLedger.some((t) => t.dir === 'in' && t.state === 'done' && t.size === bigHash.size),
 		`the receiver logged it as a finished incoming transfer of the right size (${JSON.stringify(bLedger)})`);
 	const aLedger = await A.page.evaluate((hash) => {
 		let v;
-		window.__stores.transferLedger.transfers.subscribe((x) => (v = x))();
+		window.__tp.test.v1.transferLedger.transfers.subscribe((x) => (v = x))();
 		return v.filter((t) => t.hash === hash).map((t) => ({ dir: t.dir, state: t.state }));
 	}, bigHash.hash);
 	h.check(aLedger.some((t) => t.dir === 'out' && t.state === 'done'),
 		`and the SENDER logged the outgoing side (${JSON.stringify(aLedger)})`);
 
 	// ---- 32. the share cap moved, because chunking is what pinned it --------------
-	const cap = await A.page.evaluate(() => window.__stores.assetShare.MAX_SHARED_BYTES);
+	const cap = await A.page.evaluate(() => window.__tp.test.v1.assetShare.MAX_SHARED_BYTES);
 	h.check(cap === 25 * 1024 * 1024,
 		`the share cap now matches the Explorer's own import limit (${Math.round(cap / 1048576)} MB)`);
 
 	// ---- 33. "download files manually" turns auto-download off -------------------
 	const manual = await B.page.evaluate(async () => {
-		const sl = window.__stores.sharedLibrary;
+		const sl = window.__tp.test.v1.sharedLibrary;
 		sl.autoDownload.set(false);
 		let v;
 		sl.autoDownload.subscribe((x) => (v = x))();
@@ -981,13 +981,13 @@ h.run(async () => {
 	});
 	h.check(manual === false, 'the peer can opt out of automatic downloads');
 	const manualHash = await A.page.evaluate(async () => {
-		const item = await window.__stores.explorer.addItemFromBytes(
+		const item = await window.__tp.test.v1.explorer.addItemFromBytes(
 			new TextEncoder().encode('not fetched automatically').buffer,
 			'manual.txt',
 			null
 		);
-		window.__stores.sharedLibrary.shareItem(item.id);
-		window.__stores.sharedLibrary.publishMine(true);
+		window.__tp.test.v1.sharedLibrary.shareItem(item.id);
+		window.__tp.test.v1.sharedLibrary.publishMine(true);
 		return item.hash;
 	});
 	await h.eventually(
@@ -999,13 +999,13 @@ h.run(async () => {
 	h.check((await itemsOf(B)).every((i) => i.hash !== manualHash),
 		'...and with auto-download OFF the bytes are NOT fetched — the card stays greyed');
 	// and the manual route still works
-	await B.page.evaluate((hash) => window.__stores.sharedLibrary.pullSharedItem(hash), manualHash);
+	await B.page.evaluate((hash) => window.__tp.test.v1.sharedLibrary.pullSharedItem(hash), manualHash);
 	await h.eventually(
 		() => itemsOf(B),
 		(items) => items.some((i) => i.hash === manualHash),
 		'opening it still downloads it'
 	);
-	await B.page.evaluate(() => window.__stores.sharedLibrary.autoDownload.set(true));
+	await B.page.evaluate(() => window.__tp.test.v1.sharedLibrary.autoDownload.set(true));
 
 	// ---- 34. `shareNewFiles: always` is the old "share everything" checkbox -------
 	//
@@ -1013,8 +1013,8 @@ h.run(async () => {
 	// `always` branch, which is the old behaviour VERBATIM — including the one thing that
 	// makes a blanket setting safe: a VETO beats it.
 	const autoShared = await A.page.evaluate(async () => {
-		const sl = window.__stores.sharedLibrary;
-		const e = window.__stores.explorer;
+		const sl = window.__tp.test.v1.sharedLibrary;
+		const e = window.__tp.test.v1.explorer;
 		// a file that is explicitly VETOED must survive the blanket setting
 		const vetoed = await e.addItemFromBytes(new TextEncoder().encode('never share me').buffer, 'veto.txt', null);
 		sl.shareItem(vetoed.id);
@@ -1030,11 +1030,11 @@ h.run(async () => {
 	);
 	h.check(!(await manifestOf(A)).items.some((r) => r.hash === autoShared.vetoed),
 		'but an explicitly UNSHARED file stays unshared — a decision beats a preference');
-	await A.page.evaluate(() => window.__stores.sharedLibrary.shareNewFiles.set('never'));
+	await A.page.evaluate(() => window.__tp.test.v1.sharedLibrary.shareNewFiles.set('never'));
 	// back to the suite-wide baseline set at the top, NOT to the shipped default: see there.
 
 	// ---- 35. "Local only" is a TOGGLE, and it reaches folders ---------------------
-	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await A.page.waitForTimeout(400);
 	await A.page.locator('#explorer-filter').click();
 	await A.page.waitForTimeout(300);
@@ -1068,12 +1068,12 @@ h.run(async () => {
 	// goes reflows the header and trains nobody where to look, so it stays and has to be
 	// honest in every state instead (section 49 covers the four). What is asserted here is
 	// the popover and the split pane.
-	await A.page.evaluate(() => window.__stores.transferLedger.transfers.set([]));
+	await A.page.evaluate(() => window.__tp.test.v1.transferLedger.transfers.set([]));
 	await A.page.waitForTimeout(300);
 	h.check((await A.page.locator('#explorer-transfers').count()) === 1,
 		'the transfer indicator is present even with nothing in flight');
 	await A.page.evaluate(() =>
-		window.__stores.transferLedger.beginTransfer({
+		window.__tp.test.v1.transferLedger.beginTransfer({
 			hash: 'ui-probe',
 			name: 'probe.bin',
 			dir: 'in',
@@ -1103,7 +1103,7 @@ h.run(async () => {
 		`it SPLITS the Explorer rather than covering it (${JSON.stringify(split)})`);
 	const logText = await A.page.locator('.tx-log').first().innerText();
 	h.check(/probe\.bin/.test(logText), 'and the pane lists the row');
-	await A.page.evaluate(() => window.__stores.transferLedger.clearFinished());
+	await A.page.evaluate(() => window.__tp.test.v1.transferLedger.clearFinished());
 
 	// ================================================================================
 	// ROUND 4 — the R8 starvation fix made structural, and delete-for-everyone.
@@ -1114,12 +1114,12 @@ h.run(async () => {
 	// unable to tell "nobody has this" from "the one peer who has it is slow". A peer that
 	// lacks a hash now says so, and when the LAST one says so the pull is over.
 	const t0 = Date.now();
-	await B.page.evaluate(() => window.__stores.sharedLibrary.pullSharedItem('deadbeef'.repeat(8)));
+	await B.page.evaluate(() => window.__tp.test.v1.sharedLibrary.pullSharedItem('deadbeef'.repeat(8)));
 	await h.eventually(
 		() =>
 			B.page.evaluate(() => {
 				let v;
-				window.__stores.transferLedger.transfers.subscribe((x) => (v = x))();
+				window.__tp.test.v1.transferLedger.transfers.subscribe((x) => (v = x))();
 				return v.filter((t) => t.hash === 'deadbeef'.repeat(8)).map((t) => t.state);
 			}),
 		(states) => states.includes('failed'),
@@ -1137,17 +1137,17 @@ h.run(async () => {
 	// thing. Ask for several files nobody has, then a real one, and the real one must not
 	// wait for them.
 	await B.page.evaluate(() => {
-		const sl = window.__stores.sharedLibrary;
+		const sl = window.__tp.test.v1.sharedLibrary;
 		for (let i = 0; i < 6; i++) sl.pullSharedItem(('face' + i).padEnd(64, '0'));
 	});
 	const realFile = await A.page.evaluate(async () => {
-		const item = await window.__stores.explorer.addItemFromBytes(
+		const item = await window.__tp.test.v1.explorer.addItemFromBytes(
 			new TextEncoder().encode('behind the dead ones').buffer,
 			'notblocked.txt',
 			null
 		);
-		window.__stores.sharedLibrary.shareItem(item.id);
-		window.__stores.sharedLibrary.publishMine(true);
+		window.__tp.test.v1.sharedLibrary.shareItem(item.id);
+		window.__tp.test.v1.sharedLibrary.publishMine(true);
 		return item.hash;
 	});
 	const t1 = Date.now();
@@ -1162,13 +1162,13 @@ h.run(async () => {
 
 	// ---- 39. DELETE reaches every peer, and never destroys their bytes ------------
 	const victimFile = await A.page.evaluate(async () => {
-		const item = await window.__stores.explorer.addItemFromBytes(
+		const item = await window.__tp.test.v1.explorer.addItemFromBytes(
 			new TextEncoder().encode('this one gets deleted').buffer,
 			'doomed.txt',
 			null
 		);
-		window.__stores.sharedLibrary.shareItem(item.id);
-		window.__stores.sharedLibrary.publishMine(true);
+		window.__tp.test.v1.sharedLibrary.shareItem(item.id);
+		window.__tp.test.v1.sharedLibrary.publishMine(true);
 		return { id: item.id, hash: item.hash };
 	});
 	await h.eventually(
@@ -1177,7 +1177,7 @@ h.run(async () => {
 		'the peer downloads it'
 	);
 
-	await A.page.evaluate((id) => window.__stores.sharedLibrary.deleteSharedItem(id), victimFile.id);
+	await A.page.evaluate((id) => window.__tp.test.v1.sharedLibrary.deleteSharedItem(id), victimFile.id);
 	await h.eventually(
 		() => manifestOf(B),
 		(m) => (m.deleted ?? []).some((r) => r.hash === victimFile.hash),
@@ -1190,14 +1190,14 @@ h.run(async () => {
 	);
 	// THE GUARANTEE: the bytes are still on the peer's disk, on the hidden shelf
 	const stillHeld = await B.page.evaluate(async (hash) => {
-		const item = window.__stores.explorer.itemByHash(hash);
-		const blob = item ? await window.__stores.explorer.itemBlob(item.id) : null;
+		const item = window.__tp.test.v1.explorer.itemByHash(hash);
+		const blob = item ? await window.__tp.test.v1.explorer.itemBlob(item.id) : null;
 		return { held: !!item, bytes: blob ? blob.size : -1 };
 	}, victimFile.hash);
 	h.check(stillHeld.held && stillHeld.bytes > 0,
 		`but the BYTES are untouched — a delete is a recycle bin, not a remote wipe (${JSON.stringify(stillHeld)})`);
 	h.check(
-		await B.page.evaluate((hash) => window.__stores.sharedLibrary.canRestoreDeleted(hash), victimFile.hash),
+		await B.page.evaluate((hash) => window.__tp.test.v1.sharedLibrary.canRestoreDeleted(hash), victimFile.hash),
 		'so the peer can restore it from its own disk, with nobody else involved'
 	);
 	const logRow = (await manifestOf(B)).deleted.find((r) => r.hash === victimFile.hash);
@@ -1205,7 +1205,7 @@ h.run(async () => {
 		`the log says what, who and when (${JSON.stringify(logRow)})`);
 
 	// ---- 40. RESTORE puts it back for everyone -----------------------------------
-	await B.page.evaluate((hash) => window.__stores.sharedLibrary.restoreDeletedItem(hash), victimFile.hash);
+	await B.page.evaluate((hash) => window.__tp.test.v1.sharedLibrary.restoreDeletedItem(hash), victimFile.hash);
 	await h.eventually(
 		() => manifestOf(A),
 		(m) =>
@@ -1226,12 +1226,12 @@ h.run(async () => {
 
 	// ---- 41. the Deleted view, driven through the real UI -------------------------
 	const gone = await A.page.evaluate(async () => {
-		const item = await window.__stores.explorer.addItemFromBytes(
+		const item = await window.__tp.test.v1.explorer.addItemFromBytes(
 			new TextEncoder().encode('for the recycle bin view').buffer,
 			'binview.txt',
 			null
 		);
-		const sl = window.__stores.sharedLibrary;
+		const sl = window.__tp.test.v1.sharedLibrary;
 		sl.shareItem(item.id);
 		sl.publishMine(true);
 		sl.deleteSharedItem(item.id);
@@ -1258,7 +1258,7 @@ h.run(async () => {
 		(m) => !(m.deleted ?? []).some((r) => r.hash === gone.hash),
 		'Restore from the menu empties it out of the bin'
 	);
-	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await A.page.waitForTimeout(300);
 
 	// ---- 42. a LOCAL file keeps the plain delete ---------------------------------
@@ -1270,7 +1270,7 @@ h.run(async () => {
 	// Controls HUD in the bottom-right, where playwright correctly refuses to click it
 	// (measured: a `Rotate (2)` toolbar button intercepting the press).
 	const localFile = await A.page.evaluate(async () => {
-		const e = window.__stores.explorer;
+		const e = window.__tp.test.v1.explorer;
 		const folder = e.createFolder('Local corner', null);
 		const item = await e.addItemFromBytes(
 			new TextEncoder().encode('mine alone').buffer,
@@ -1298,11 +1298,11 @@ h.run(async () => {
 	// 50%" with BOTH already downloaded and duplicate rows queued in the log. The pull
 	// opened a row and the transfer that answered it opened another, so every download
 	// left an unresolved 'queued' row behind — and the summary counted it forever.
-	await A.page.evaluate(() => window.__stores.transferLedger.transfers.set([]));
-	await B.page.evaluate(() => window.__stores.transferLedger.transfers.set([]));
+	await A.page.evaluate(() => window.__tp.test.v1.transferLedger.transfers.set([]));
+	await B.page.evaluate(() => window.__tp.test.v1.transferLedger.transfers.set([]));
 	const pair = await A.page.evaluate(async () => {
-		const e = window.__stores.explorer;
-		const sl = window.__stores.sharedLibrary;
+		const e = window.__tp.test.v1.explorer;
+		const sl = window.__tp.test.v1.sharedLibrary;
 		const a = await e.addItemFromBytes(new TextEncoder().encode('pair one').buffer, 'pair1.txt', null);
 		const b = await e.addItemFromBytes(new TextEncoder().encode('pair two').buffer, 'pair2.txt', null);
 		sl.shareItem(a.id);
@@ -1320,7 +1320,7 @@ h.run(async () => {
 		() =>
 			B.page.evaluate(() => {
 				let v;
-				window.__stores.transferLedger.transferSummary.subscribe((x) => (v = x))();
+				window.__tp.test.v1.transferLedger.transferSummary.subscribe((x) => (v = x))();
 				return v;
 			}),
 		(sum) => sum.left === 0,
@@ -1328,7 +1328,7 @@ h.run(async () => {
 	);
 	const rowsPerHash = await B.page.evaluate((hashes) => {
 		let v;
-		window.__stores.transferLedger.transfers.subscribe((x) => (v = x))();
+		window.__tp.test.v1.transferLedger.transfers.subscribe((x) => (v = x))();
 		return hashes.map((hash) => v.filter((t) => t.hash === hash && t.dir === 'in').map((t) => t.state));
 	}, pair);
 	h.check(
@@ -1342,10 +1342,10 @@ h.run(async () => {
 	// can see it. Drop more and they are. The distinction used to wait for something in
 	// the project to be shared; in a session the question exists from the first file.
 	await A.page.evaluate(async () => {
-		await window.__stores.explorer.clearLibrary();
-		window.__stores.sharedLibrary.publishMine(true);
+		await window.__tp.test.v1.explorer.clearLibrary();
+		window.__tp.test.v1.sharedLibrary.publishMine(true);
 	});
-	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await A.page.waitForTimeout(700);
 	const firstFile = await addFile(A, 'the very first one', 'first.txt');
 	await h.eventually(
@@ -1377,7 +1377,7 @@ h.run(async () => {
 	h.check(
 		await A.page.evaluate(() => {
 			let v;
-			window.__stores.peers.subscribe((x) => (v = x))();
+			window.__tp.test.v1.peers.subscribe((x) => (v = x))();
 			// a SET: `.length` on one is undefined, which is what this check caught
 			return (v?.openedPeers?.size ?? 0) > 0;
 		}),
@@ -1394,7 +1394,7 @@ h.run(async () => {
 	await B.page.evaluate(async (hash) => {
 		// forge an index row for bytes nobody has, which is exactly the state a departed
 		// peer leaves behind
-		const pm = window.__stores.projectManifest;
+		const pm = window.__tp.test.v1.projectManifest;
 		let m;
 		pm.projectManifest.subscribe((v) => (m = v))();
 		pm.publishSharedIndex(
@@ -1404,24 +1404,24 @@ h.run(async () => {
 			m.deleted
 		);
 	}, orphanHash);
-	await A.page.evaluate((hash) => window.__stores.sharedLibrary.pullSharedItem(hash), orphanHash);
+	await A.page.evaluate((hash) => window.__tp.test.v1.sharedLibrary.pullSharedItem(hash), orphanHash);
 	await h.eventually(
 		() =>
 			A.page.evaluate(() => {
 				let v;
-				window.__stores.assetShare.unavailableHashes.subscribe((x) => (v = x))();
+				window.__tp.test.v1.assetShare.unavailableHashes.subscribe((x) => (v = x))();
 				return [...v];
 			}),
 		(list) => list.includes(orphanHash),
 		'a hash no peer holds is recorded as UNAVAILABLE rather than pending forever'
 	);
 	// and a NEW PEER is new evidence: everything given up on is worth one more ask
-	const revived = await A.page.evaluate(() => window.__stores.assetShare.retryUnavailable());
+	const revived = await A.page.evaluate(() => window.__tp.test.v1.assetShare.retryUnavailable());
 	h.check(revived >= 1, `an arriving peer revives what we gave up on (${revived} hashes)`);
 	h.check(
 		(await A.page.evaluate(() => {
 			let v;
-			window.__stores.assetShare.unavailableHashes.subscribe((x) => (v = x))();
+			window.__tp.test.v1.assetShare.unavailableHashes.subscribe((x) => (v = x))();
 			return [...v];
 		})).length === 0,
 		'...and the unavailable list is cleared so the retry can actually happen'
@@ -1429,7 +1429,7 @@ h.run(async () => {
 
 	// ---- 46. the recycle bin's two settings --------------------------------------
 	const binPrefs = await A.page.evaluate(() => {
-		const sl = window.__stores.sharedLibrary;
+		const sl = window.__tp.test.v1.sharedLibrary;
 		let bin, keep;
 		sl.recycleBinEnabled.subscribe((v) => (bin = v))();
 		sl.keepRecycleBin.subscribe((v) => (keep = v))();
@@ -1440,8 +1440,8 @@ h.run(async () => {
 
 	// the bin OFF means a delete is immediate here
 	const immediate = await A.page.evaluate(async () => {
-		const sl = window.__stores.sharedLibrary;
-		const e = window.__stores.explorer;
+		const sl = window.__tp.test.v1.sharedLibrary;
+		const e = window.__tp.test.v1.explorer;
 		sl.recycleBinEnabled.set(false);
 		const item = await e.addItemFromBytes(new TextEncoder().encode('no second chance').buffer, 'nobin.txt', null);
 		sl.shareItem(item.id);
@@ -1450,7 +1450,7 @@ h.run(async () => {
 		return item.hash;
 	});
 	await h.eventually(
-		() => A.page.evaluate((hash) => !window.__stores.explorer.itemByHash(hash), immediate),
+		() => A.page.evaluate((hash) => !window.__tp.test.v1.explorer.itemByHash(hash), immediate),
 		(gone) => gone === true,
 		'with the bin off the bytes go straight away'
 	);
@@ -1458,18 +1458,18 @@ h.run(async () => {
 		await A.page.evaluate((hash) => (
 			(() => {
 				let m;
-				window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+				window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (m = v))();
 				return (m.deleted ?? []).some((r) => r.hash === hash);
 			})()
 		), immediate),
 		'...but the LOG entry still exists — "this was deleted" stays true whatever the setting'
 	);
-	await A.page.evaluate(() => window.__stores.sharedLibrary.recycleBinEnabled.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.sharedLibrary.recycleBinEnabled.set(true));
 
 	// emptying on load reclaims bytes and leaves the log alone
 	const reclaimed = await A.page.evaluate(async () => {
-		const sl = window.__stores.sharedLibrary;
-		const e = window.__stores.explorer;
+		const sl = window.__tp.test.v1.sharedLibrary;
+		const e = window.__tp.test.v1.explorer;
 		const item = await e.addItemFromBytes(new TextEncoder().encode('reclaim me').buffer, 'reclaim.txt', null);
 		sl.shareItem(item.id);
 		sl.publishMine(true);
@@ -1478,7 +1478,7 @@ h.run(async () => {
 		const beforeHeld = !!e.itemByHash(item.hash);
 		const n = await sl.emptyRecycleBinOnLoad();
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (m = v))();
 		return {
 			beforeHeld,
 			n,
@@ -1491,7 +1491,7 @@ h.run(async () => {
 	h.check(reclaimed.logKept, 'and leaves the deleted LOG alone — it is project data, not local bytes');
 
 	// ---- 47. Settings: the file rows live in their own Explorer section -----------
-	await A.page.evaluate(() => window.__stores.settingsOpen?.set?.(true));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen?.set?.(true));
 	await A.page.waitForTimeout(400);
 	const hasExplorerSection = await A.page.evaluate(() =>
 		[...document.querySelectorAll('h2')].some((h) => (h.textContent || '').trim() === 'Explorer')
@@ -1500,7 +1500,7 @@ h.run(async () => {
 	// CLOSE IT. A modal left open is a full-viewport click shield for everything after it
 	// — measured as a 30s timeout on the next press, with an Accordion header reported as
 	// the intercepting element.
-	await A.page.evaluate(() => window.__stores.settingsOpen?.set?.(null));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen?.set?.(null));
 	await A.page.waitForTimeout(400);
 
 	// ================================================================================
@@ -1513,7 +1513,7 @@ h.run(async () => {
 	// when work starts from rest, so a new run always begins at 0 — which is also why
 	// connecting to a new host needs no reset.
 	const batching = await A.page.evaluate(async () => {
-		const tl = window.__stores.transferLedger;
+		const tl = window.__tp.test.v1.transferLedger;
 		tl.transfers.set([]);
 		const read = () => {
 			let v;
@@ -1542,7 +1542,7 @@ h.run(async () => {
 
 	// ---- 49. the four states -------------------------------------------------------
 	const states = await A.page.evaluate(() => {
-		const tl = window.__stores.transferLedger;
+		const tl = window.__tp.test.v1.transferLedger;
 		const s = (summary, connected) => tl.indicatorState(summary, connected);
 		return {
 			offline: s({ left: 0, failed: 0 }, false),
@@ -1565,7 +1565,7 @@ h.run(async () => {
 		'work in progress outranks a past failure — the indicator reports what is happening now');
 
 	// ---- 50. always visible, no chevron, after the filter -------------------------
-	await A.page.evaluate(() => window.__stores.transferLedger.transfers.set([]));
+	await A.page.evaluate(() => window.__tp.test.v1.transferLedger.transfers.set([]));
 	await A.page.waitForTimeout(400);
 	const pill = A.page.locator('#explorer-transfers');
 	h.check((await pill.count()) === 1, 'the indicator is present with nothing in flight');
@@ -1597,7 +1597,7 @@ h.run(async () => {
 
 	// ---- 51. "+N more" is a CONTROL ------------------------------------------------
 	await A.page.evaluate(() => {
-		const tl = window.__stores.transferLedger;
+		const tl = window.__tp.test.v1.transferLedger;
 		tl.transfers.set([]);
 		for (let i = 0; i < 7; i++)
 			tl.activateTransfer(
@@ -1621,10 +1621,10 @@ h.run(async () => {
 	await A.page.waitForTimeout(200);
 
 	// ---- 52. per-row actions, and RETRY that actually retries ---------------------
-	await A.page.evaluate(() => window.__stores.transferLedger.transfers.set([]));
+	await A.page.evaluate(() => window.__tp.test.v1.transferLedger.transfers.set([]));
 	const retryHash = 'facade'.padEnd(64, '7');
 	await A.page.evaluate((hash) => {
-		const tl = window.__stores.transferLedger;
+		const tl = window.__tp.test.v1.transferLedger;
 		const id = tl.beginTransfer({ hash, name: 'retryme.bin', dir: 'in', size: 500 });
 		tl.failTransfer(id, 'no peer has this file');
 	}, retryHash);
@@ -1641,9 +1641,9 @@ h.run(async () => {
 	await A.page.waitForTimeout(200);
 
 	// ...and the per-row menu in the log
-	await A.page.evaluate(() => window.__stores.transferLedger.transfers.set([]));
+	await A.page.evaluate(() => window.__tp.test.v1.transferLedger.transfers.set([]));
 	await A.page.evaluate((hash) => {
-		const tl = window.__stores.transferLedger;
+		const tl = window.__tp.test.v1.transferLedger;
 		const id = tl.beginTransfer({ hash, name: 'rowmenu.bin', dir: 'in', size: 500 });
 		tl.failTransfer(id, 'nobody answered');
 	}, retryHash);
@@ -1670,7 +1670,7 @@ h.run(async () => {
 	// a QUEUED incoming row offers Cancel, and an OUTGOING one does not: cancelling
 	// somebody else's download from this side would hand them a failure they cannot act on
 	await A.page.evaluate(() => {
-		const tl = window.__stores.transferLedger;
+		const tl = window.__tp.test.v1.transferLedger;
 		tl.transfers.set([]);
 		tl.activateTransfer(tl.beginTransfer({ hash: 'out1', name: 'sending.bin', dir: 'out', size: 900 }), 900);
 	});
@@ -1682,7 +1682,7 @@ h.run(async () => {
 		`an OUTGOING transfer offers no Cancel (${JSON.stringify(outMenu.replace(/\n/g, ' | '))})`);
 	await A.page.keyboard.press('Escape');
 	await A.page.waitForTimeout(200);
-	await A.page.evaluate(() => window.__stores.transferLedger.transfers.set([]));
+	await A.page.evaluate(() => window.__tp.test.v1.transferLedger.transfers.set([]));
 
 	// ---- 53. the log pane closes from its OWN ✕ ----------------------------------
 	//
@@ -1719,16 +1719,16 @@ h.run(async () => {
 
 	const C = await h.setupPage(browser, 'C');
 	await C.page.waitForFunction(
-		() => !!window.__stores?.sharedLibrary && !!window.__stores?.explorer,
+		() => !!window.__tp?.test.v1?.sharedLibrary && !!window.__tp?.test.v1?.explorer,
 		{ timeout: 30000 }
 	);
-	await C.page.evaluate(() => window.__stores.explorer.loadExplorer());
+	await C.page.evaluate(() => window.__tp.test.v1.explorer.loadExplorer());
 	// ...and the same silence as A and B above (see the note there)
-	await C.page.evaluate(() => window.__stores.sharedLibrary.shareNewFiles.set('never'));
+	await C.page.evaluate(() => window.__tp.test.v1.sharedLibrary.shareNewFiles.set('never'));
 	h.check(
 		await C.page.evaluate(() => {
 			let v;
-			window.__stores.sharedLibrary.autoDownload.subscribe((x) => (v = x))();
+			window.__tp.test.v1.sharedLibrary.autoDownload.subscribe((x) => (v = x))();
 			return v;
 		}),
 		'a fresh peer has auto-download ON — the setting was never the thing that was broken'
@@ -1746,7 +1746,7 @@ h.run(async () => {
 	// neither persists nor fires the shared-index seam, so this asks the predicate five
 	// questions without touching the peer C is about to become.
 	const inUse = await C.page.evaluate(() => {
-		const pm = window.__stores.projectManifest;
+		const pm = window.__tp.test.v1.projectManifest;
 		let before;
 		pm.projectManifest.subscribe((v) => (before = v))();
 		const probe = (patch) => {
@@ -1783,7 +1783,7 @@ h.run(async () => {
 	// a re-publish cannot become a second route by which any of this could travel.
 	const riseFile = await addFile(A, 'the connect edge fetches this', 'riseedge.txt');
 	await A.page.evaluate((id) => {
-		const sl = window.__stores.sharedLibrary;
+		const sl = window.__tp.test.v1.sharedLibrary;
 		sl.shareItem(id);
 		sl.publishMine(true);
 	}, riseFile.id);
@@ -1795,14 +1795,14 @@ h.run(async () => {
 	const seedStamp = Date.now() + 600000;
 	await C.page.evaluate(
 		([base, stamp]) =>
-			window.__stores.projectManifest.applyRemoteManifest({
+			window.__tp.test.v1.projectManifest.applyRemoteManifest({
 				manifest: { ...base, name: '', scenes: {}, assets: [], changedAt: stamp }
 			}),
 		[mA12, seedStamp]
 	);
 	// offline publish: it writes the document and sends to nobody
 	await C.page.evaluate((id) => {
-		const sl = window.__stores.sharedLibrary;
+		const sl = window.__tp.test.v1.sharedLibrary;
 		sl.shareItem(id);
 		sl.publishMine(true);
 	}, onlyFile.id);
@@ -1816,7 +1816,7 @@ h.run(async () => {
 		'...and yet it carries a shared index, which is content by any honest reading'
 	);
 	h.check(
-		await C.page.evaluate(() => window.__stores.projectManifest.manifestInUse()),
+		await C.page.evaluate(() => window.__tp.test.v1.projectManifest.manifestInUse()),
 		'manifestInUse() agrees, which is the only reason the getproject reply below can happen at all'
 	);
 
@@ -1830,7 +1830,7 @@ h.run(async () => {
 	// early-return on `pendingRequests.has(hash)`.
 	const ghostHash = 'ab12cd34'.repeat(8);
 	const askedOffline = await C.page.evaluate(
-		(hash) => window.__stores.assetShare.requestAsset(hash),
+		(hash) => window.__tp.test.v1.assetShare.requestAsset(hash),
 		ghostHash
 	);
 	h.check(
@@ -1839,7 +1839,7 @@ h.run(async () => {
 	);
 	const ghostRowsOffline = await C.page.evaluate((hash) => {
 		let v;
-		window.__stores.transferLedger.transfers.subscribe((x) => (v = x))();
+		window.__tp.test.v1.transferLedger.transfers.subscribe((x) => (v = x))();
 		return v.filter((t) => t.hash === hash).length;
 	}, ghostHash);
 	h.check(
@@ -1926,8 +1926,8 @@ h.run(async () => {
 	// armed, by the ask that actually left. Both calls in ONE evaluate, because A answers
 	// `assetmissing` for a hash nobody holds and that clears the slot again.
 	const ghostPair = await C.page.evaluate((hash) => {
-		const first = window.__stores.assetShare.requestAsset(hash);
-		const second = window.__stores.assetShare.requestAsset(hash);
+		const first = window.__tp.test.v1.assetShare.requestAsset(hash);
+		const second = window.__tp.test.v1.assetShare.requestAsset(hash);
 		return [first, second];
 	}, ghostHash);
 	h.check(
@@ -1942,7 +1942,7 @@ h.run(async () => {
 		() =>
 			C.page.evaluate((hash) => {
 				let v;
-				window.__stores.transferLedger.transfers.subscribe((x) => (v = x))();
+				window.__tp.test.v1.transferLedger.transfers.subscribe((x) => (v = x))();
 				return v.filter((t) => t.hash === hash).map((t) => t.state);
 			}, ghostHash),
 		(states) => states.length > 0,
@@ -1982,14 +1982,14 @@ h.run(async () => {
 	const askOf = (peer) =>
 		peer.page.evaluate(() => {
 			let v;
-			window.__stores.sharedLibrary.pendingShareAsk.subscribe((x) => (v = x))();
+			window.__tp.test.v1.sharedLibrary.pendingShareAsk.subscribe((x) => (v = x))();
 			return v ? { kind: v.kind, names: v.items.map((i) => i.name) } : null;
 		});
 
 	const toastsOf = (peer) =>
 		peer.page.evaluate(() => {
 			let t;
-			window.__stores.toastStore.subscribe((v) => (t = v))();
+			window.__tp.test.v1.toastStore.subscribe((v) => (t = v))();
 			return (t ?? []).map((x) => String(typeof x === 'string' ? x : (x.text ?? x.message ?? '')));
 		});
 
@@ -1997,10 +1997,10 @@ h.run(async () => {
 	const resetAsk = async (peer, open = true) => {
 		await peer.page.evaluate(
 			([shouldOpen]) => {
-				window.__stores.explorerClose.set(!shouldOpen);
-				window.__stores.sharedLibrary.shareNewFiles.set('ask');
-				window.__stores.sharedLibrary.resolveShareAsk('keep');
-				window.__stores.toastStore.set([]);
+				window.__tp.test.v1.explorerClose.set(!shouldOpen);
+				window.__tp.test.v1.sharedLibrary.shareNewFiles.set('ask');
+				window.__tp.test.v1.sharedLibrary.resolveShareAsk('keep');
+				window.__tp.test.v1.toastStore.set([]);
 			},
 			[open]
 		);
@@ -2061,7 +2061,7 @@ h.run(async () => {
 	);
 	h.check((await askStripOf(A)) === null, 'and the question is gone');
 	// ...and the proof that absent is not vetoed: an ordinary Share still takes
-	await A.page.evaluate((id) => window.__stores.sharedLibrary.shareItem(id), askKeep.id);
+	await A.page.evaluate((id) => window.__tp.test.v1.sharedLibrary.shareItem(id), askKeep.id);
 	await h.eventually(
 		() => itemsOf(A),
 		(items) => items.find((i) => i.hash === askKeep.hash)?.share === 'mine',
@@ -2096,8 +2096,8 @@ h.run(async () => {
 	await A.page.waitForTimeout(900);
 	const settingsLanded = await A.page.evaluate(() => {
 		let open, section;
-		window.__stores.settingsOpen.subscribe((v) => (open = v))();
-		window.__stores.settingsSection.subscribe((v) => (section = v))();
+		window.__tp.test.v1.settingsOpen.subscribe((v) => (open = v))();
+		window.__tp.test.v1.settingsSection.subscribe((v) => (section = v))();
 		// the pref itself must be reachable once we are there
 		const hasRow = !!document.querySelector('#share-new-files');
 		return { open: !!open, section, hasRow };
@@ -2106,7 +2106,7 @@ h.run(async () => {
 		`the strip deep-links into the Explorer settings (${JSON.stringify(settingsLanded)})`);
 	h.check(settingsLanded.hasRow, 'and the three-way pref is the row you land on');
 	// CLOSE IT — a modal left open is a full-viewport click shield for everything after
-	await A.page.evaluate(() => window.__stores.settingsOpen?.set?.(null));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen?.set?.(null));
 	await A.page.waitForTimeout(500);
 
 	// ---- 64. with the Explorer SHUT, the ask waits and a toast points at it --------
@@ -2128,17 +2128,17 @@ h.run(async () => {
 	const pointer = (await toastsOf(A)).find((x) => /open the Explorer to share/.test(x));
 	h.check(/^1 file added/.test(pointer), `and it counts the batch (${JSON.stringify(pointer)})`);
 	// the ask SURVIVES the toast: opening the panel is what answers it
-	await A.page.evaluate(() => window.__stores.explorerClose.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.explorerClose.set(false));
 	await h.eventually(() => askStripOf(A), (v) => !!v, 'opening the Explorer shows the strip that was waiting');
 	h.check(
 		(await askStripOf(A)).title.includes('c2-shut.txt'),
 		'...for the file that arrived while it was shut — the toast decided nothing'
 	);
-	await A.page.evaluate(() => window.__stores.sharedLibrary.resolveShareAsk('keep'));
+	await A.page.evaluate(() => window.__tp.test.v1.sharedLibrary.resolveShareAsk('keep'));
 
 	// ---- 65. `never` is silence, not a deferred question --------------------------
 	await resetAsk(A);
-	await A.page.evaluate(() => window.__stores.sharedLibrary.shareNewFiles.set('never'));
+	await A.page.evaluate(() => window.__tp.test.v1.sharedLibrary.shareNewFiles.set('never'));
 	await addFile(A, 'nobody asks about this', 'c2-never.txt');
 	await A.page.waitForTimeout(1600);
 	h.check((await askOf(A)) === null, "`never` asks nothing — a standing answer, not a postponed question");
@@ -2154,18 +2154,18 @@ h.run(async () => {
 	// and a host sitting on a library nobody can see is the same problem from the other end.
 	const D = await h.setupPage(browser, 'D', { storage: { 'shared:autoShareAll': 'true' } });
 	await D.page.waitForFunction(
-		() => !!window.__stores?.sharedLibrary && !!window.__stores?.explorer,
+		() => !!window.__tp?.test.v1?.sharedLibrary && !!window.__tp?.test.v1?.explorer,
 		{ timeout: 30000 }
 	);
 	const migrated = await D.page.evaluate(() => {
 		let v;
-		window.__stores.sharedLibrary.shareNewFiles.subscribe((x) => (v = x))();
+		window.__tp.test.v1.sharedLibrary.shareNewFiles.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(migrated === 'always', `the old autoShareAll=true reads as 'always' (${migrated})`);
-	await D.page.evaluate(() => window.__stores.explorer.loadExplorer());
-	await D.page.evaluate(() => window.__stores.sharedLibrary.shareNewFiles.set('ask'));
-	await D.page.evaluate(() => window.__stores.explorerClose.set(false));
+	await D.page.evaluate(() => window.__tp.test.v1.explorer.loadExplorer());
+	await D.page.evaluate(() => window.__tp.test.v1.sharedLibrary.shareNewFiles.set('ask'));
+	await D.page.evaluate(() => window.__tp.test.v1.explorerClose.set(false));
 	await addFile(D, 'brought with me 1', 'd-one.txt');
 	await addFile(D, 'brought with me 2', 'd-two.txt');
 	await D.page.waitForTimeout(800);
@@ -2180,13 +2180,13 @@ h.run(async () => {
 	// C's id stays valid and the pill returns to idle.
 	await C.page.evaluate(() => {
 		let pc;
-		window.__stores.peers.subscribe((v) => (pc = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
 		pc.leaveSession();
 	});
 	await C.page.waitForTimeout(2500);
 	h.check(
-		await C.page.locator('input[placeholder="Enter peer ID to connect"]').count() === 1,
-		'premise: leaving the session gives C its dial input back'
+		(await C.page.locator('#connect-join').count()) === 1 || (await C.page.locator('input[placeholder="Enter peer ID to connect"]').count()) === 1,
+		'premise: leaving the session gives C its Join… (dial) back'
 	);
 	await h.connect(C, D);
 	// a generous window: the connect dance can close and reopen the conn (the documented
@@ -2280,7 +2280,7 @@ h.run(async () => {
 		(await askStripOf(A)).title.includes('c2-clash.txt'),
 		'...and it is the same question, about the same file'
 	);
-	await A.page.evaluate(() => window.__stores.sharedLibrary.resolveShareAsk('keep'));
+	await A.page.evaluate(() => window.__tp.test.v1.sharedLibrary.resolveShareAsk('keep'));
 
 	// ================================================================================
 	// ROUND 31 — REMEMBER MY CHOICE.
@@ -2310,7 +2310,7 @@ h.run(async () => {
 	const prefOf = (peer) =>
 		peer.page.evaluate(() => {
 			let v;
-			window.__stores.sharedLibrary.shareNewFiles.subscribe((x) => (v = x))();
+			window.__tp.test.v1.sharedLibrary.shareNewFiles.subscribe((x) => (v = x))();
 			return v;
 		});
 
@@ -2335,9 +2335,9 @@ h.run(async () => {
 	// here is that the box is not gated on `kind`.
 	await A.page.evaluate(() => {
 		let items;
-		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
 		const one = items[0];
-		window.__stores.sharedLibrary.pendingShareAsk.set({
+		window.__tp.test.v1.sharedLibrary.pendingShareAsk.set({
 			kind: 'connect',
 			items: [{ id: one.id, name: one.name, hash: one.hash }]
 		});
@@ -2455,16 +2455,16 @@ h.run(async () => {
 	// destructive path for real with the flag set.
 	await D.page.evaluate(() => {
 		let items;
-		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
-		window.__stores.sharedLibrary.shareNewFiles.set('ask');
-		window.__stores.sharedLibrary.pendingShareAsk.set({
+		window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
+		window.__tp.test.v1.sharedLibrary.shareNewFiles.set('ask');
+		window.__tp.test.v1.sharedLibrary.pendingShareAsk.set({
 			kind: 'connect',
 			items: items.slice(0, 1).map((i) => ({ id: i.id, name: i.name, hash: i.hash }))
 		});
 	});
 	await D.page.waitForTimeout(300);
 	h.check((await prefOf(D)) === 'ask', 'premise: D is on `ask`, so a rule would be visible if one were written');
-	await D.page.evaluate(() => window.__stores.sharedLibrary.resolveShareAsk('stash', true));
+	await D.page.evaluate(() => window.__tp.test.v1.sharedLibrary.resolveShareAsk('stash', true));
 	// the premise that makes "ignored" non-vacuous: the stash really ran
 	// read the SAVE rather than an empty library: `stashIntoSessions` clears and then
 	// immediately pulls every shared row back, so "no items" is a window, not a state
@@ -2480,7 +2480,7 @@ h.run(async () => {
 
 	// hand the suite back the silence it seeded itself with (line 77): nothing below reads
 	// A's library, but a sticky strip over the grid is not a state to leave a peer in
-	await A.page.evaluate(() => window.__stores.sharedLibrary.shareNewFiles.set('never'));
+	await A.page.evaluate(() => window.__tp.test.v1.sharedLibrary.shareNewFiles.set('never'));
 
 	// ---- 14. no render crash anywhere ---------------------------------------------
 	for (const [label, p] of [

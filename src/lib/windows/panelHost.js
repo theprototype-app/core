@@ -468,6 +468,7 @@ export const windowApi = {
 				if (!m.dockTab(key)) cameBack([key]);
 			} else if (key === 'inspector') {
 				sb.inspectorSide.set(where);
+				sb.sceneSide.set(where); // uir-polish E5: a popped Inspector held both tabs — both come back here
 				cameBack([key]);
 			} else if (m.moveToSidebar(key, where)) b.armDockMode(key, false); // a column member floats
 			else cameBack([key]);

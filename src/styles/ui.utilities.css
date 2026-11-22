@@ -84,6 +84,9 @@
 */
 @utility tp-seg {
   display: inline-flex;
+  /* dock-fixes C: wrap rather than clip when the row is narrower than the options */
+  flex-wrap: wrap;
+  max-width: 100%;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -96,6 +99,7 @@
   gap: 4px;
   padding: 2px 6px;
   font-size: 11px;
+  white-space: nowrap;
   /* 36 U1: the resting/hover ink follows the theme (the literals read 2.5:1 on light) and
      the armed half is the theme's accent FILL with the ink made for it — white on the
      plain accent was 3.3-3.7:1 everywhere and unreadable on High contrast's yellow */
@@ -236,4 +240,25 @@
 [data-key-scope='objects'][data-has-keys] {
   outline: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
   outline-offset: -1px;
+}
+
+/* dock-fixes: a hidden-scrollbar strip fades the edge that has more to scroll (lib/ui/edgeFade.js sets data-fade) */
+[data-fade='end'] {
+	mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); /* tokens-ok: mask alpha, not a colour */
+}
+[data-fade='start'] {
+	mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent); /* tokens-ok: mask alpha, not a colour */
+}
+[data-fade='both'] {
+	mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent); /* tokens-ok: mask alpha, not a colour */
+}
+/* 98-int (UI-6): the same cue on a vertical scroller (the main menu): edgeFade(node, 'y') sets data-fade-y */
+[data-fade-y='end'] {
+	mask-image: linear-gradient(to bottom, #000 calc(100% - 36px), transparent); /* tokens-ok: mask alpha, not a colour */
+}
+[data-fade-y='start'] {
+	mask-image: linear-gradient(to top, #000 calc(100% - 36px), transparent); /* tokens-ok: mask alpha, not a colour */
+}
+[data-fade-y='both'] {
+	mask-image: linear-gradient(to bottom, transparent, #000 36px, #000 calc(100% - 36px), transparent); /* tokens-ok: mask alpha, not a colour */
 }

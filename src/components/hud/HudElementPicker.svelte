@@ -121,7 +121,7 @@
 		const items = [];
 		// names the document being enumerated, which in an object graph is NOT this object
 		items.push({ section: docLabel });
-		if (choices.length > 6) items.push({ label: 'Search...', icon: 'search', revealFilter: true });
+		if (choices.length > 6) items.push({ label: 'Search…', icon: 'search', revealFilter: true });
 		if (mode === 'screen') {
 			for (const c of choices)
 				items.push({ label: c.name, checked: c.id === value, action: () => onpick?.(c.id) });
@@ -152,7 +152,7 @@
 		// or the editor where you would make one. Offered in BOTH modes: an element picker with
 		// nothing to pick needs the editor just as much.
 		if (mode === 'screen')
-			items.push({ label: 'New screen...', icon: 'plus', action: newScreen });
+			items.push({ label: 'New screen…', icon: 'plus', action: newScreen });
 		items.push({
 			label: 'Open HUD editor',
 			icon: 'layout-dashboard',
@@ -160,7 +160,7 @@
 				void openHudEditor();
 			}
 		});
-		items.push({ label: 'Enter id manually...', icon: 'pencil', action: () => (manual = true) });
+		items.push({ label: 'Enter id manually…', icon: 'pencil', action: () => (manual = true) });
 		menu = { x: r.left, y: r.bottom + 2, items };
 	}
 </script>

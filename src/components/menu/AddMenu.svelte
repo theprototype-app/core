@@ -10,6 +10,7 @@
 	import { rightDragMove, inputContextMenu } from '$lib/searchMenuUx';
 	import Icon from '../ui/Icon.svelte';
 	import { openAssetBrowser } from '$lib/cc0/assetBrowserState.js'; // 47-cc0
+	import { openWindowHere } from '$lib/dockMenu'; // dock-fixes D: opens where you work
 
 	// 38 NOTES-38 #24 (design page): "one menu style — 32px rows, icons, sections". Browsing
 	// (no query) shows the catalog under faint section labels with an icon per row; a search
@@ -213,7 +214,7 @@
 				<span class="add-label">Generate with AI…</span>
 			</button>
 			<!-- 47-cc0: the free CC0 models / skies / materials window -->
-			<button id="add-free-assets" class="add-row" onclick={() => { close(); openAssetBrowser(); }}>
+			<button id="add-free-assets" class="add-row" onclick={() => { close(); openWindowHere('assets', openAssetBrowser); }}>
 				<span class="add-ico" aria-hidden="true"><Icon name="package-open" size={16} /></span>
 				<span class="add-label">Free assets (CC0)…</span>
 			</button>

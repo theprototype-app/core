@@ -5,9 +5,10 @@ const boxState = (page, uuid) =>
 	page.evaluate(
 		(uuid) =>
 			new Promise((resolve) => {
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const o = g?.getObjectByProperty('uuid', uuid);
-					resolve(o ? { pos: o.position.toArray(), ry: o.rotation.y } : null);
+					// 78-int: + the shared effect clock, so two pages sampled a moment apart compare fairly
+					resolve(o ? { pos: o.position.toArray(), ry: o.rotation.y, t: window.__tp.test.v1.flowRuntime.effectClockNow() } : null);
 				})();
 			}),
 		uuid
@@ -17,7 +18,7 @@ const nodePoints = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.flowNodes.subscribe((nodes) => {
+				window.__tp.test.v1.flowNodes.subscribe((nodes) => {
 					resolve(nodes.find((n) => n.id === 'pp1')?.data.points ?? null);
 				})();
 			})
@@ -30,9 +31,9 @@ h.run(async () => {
 	await h.connect(B, A);
 
 	const uuid = await A.page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		return new Promise((resolve) => {
-			window.__stores.objectsGroup.subscribe((g) => {
+			window.__tp.test.v1.objectsGroup.subscribe((g) => {
 				const box = g.children[g.children.length - 1];
 				const nodes = [
 					{
@@ -51,9 +52,9 @@ h.run(async () => {
 					}
 				];
 				const edge = { id: 'e1', source: 'pp1', target: 'sel1' };
-				window.__stores.flowNodes.set(nodes);
-				window.__stores.flowEdges.set([edge]);
-				window.__stores.peers.subscribe((peer) => {
+				window.__tp.test.v1.flowNodes.set(nodes);
+				window.__tp.test.v1.flowEdges.set([edge]);
+				window.__tp.test.v1.peers.subscribe((peer) => {
 					nodes.forEach((node) => peer.send({ type: 'nodecreate', node }));
 					peer.send({ type: 'edgecreate', edge });
 					resolve(box.uuid);
@@ -63,12 +64,12 @@ h.run(async () => {
 	});
 	await A.page.waitForTimeout(2000);
 
-	await A.page.evaluate(() => window.__stores.pathCapture.togglePathCapture('pp1'));
+	await A.page.evaluate(() => window.__tp.test.v1.pathCapture.togglePathCapture('pp1'));
 	for (const [x, y] of [[420, 500], [700, 480], [600, 620]]) {
 		await A.page.mouse.click(x, y);
 		await A.page.waitForTimeout(250);
 	}
-	await A.page.evaluate(() => window.__stores.pathCapture.togglePathCapture('pp1'));
+	await A.page.evaluate(() => window.__tp.test.v1.pathCapture.togglePathCapture('pp1'));
 
 	h.check((await nodePoints(A.page))?.length === 3, '3 waypoints captured on A');
 	await h.eventually(() => nodePoints(B.page), (p) => p?.length === 3, 'waypoints replicated to B');
@@ -79,7 +80,10 @@ h.run(async () => {
 	h.check(a1 && a2 && (a1.pos[0] !== a2.pos[0] || a1.pos[2] !== a2.pos[2]), 'box patrols on A');
 	const [aNow, bNow] = await Promise.all([boxState(A.page, uuid), boxState(B.page, uuid)]);
 	const drift = Math.hypot(aNow.pos[0] - bNow.pos[0], aNow.pos[2] - bNow.pos[2]);
-	h.check(drift < 0.5, `identical patrol on both peers (drift ${drift.toFixed(3)})`);
+	// the two pages are read one after the other (pc/remote slots: up to ~0.3 s apart) and the box
+	// walks at 2 m/s, so the allowance is the distance it covers between the two reads + 0.5 m
+	const skew = Math.abs((aNow.t ?? 0) - (bNow.t ?? 0));
+	h.check(drift < 0.5 + 2 * skew, `identical patrol on both peers (drift ${drift.toFixed(3)} m, reads ${skew.toFixed(2)} s apart)`);
 	h.check(Math.abs(aNow.ry) > 0.0001 || Math.abs(bNow.ry) > 0.0001, 'object faces along the path');
 
 	await A.page.evaluate(async () => {

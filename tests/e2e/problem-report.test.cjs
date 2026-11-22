@@ -1,7 +1,9 @@
-// 37 R20: "Report a problem" — a screenshot, boxes drawn round what is wrong (as fractions of
-// the picture), a note, and an explicit consent box; Send only goes out through the cloud
-// plugin's reporter (stubbed here — the cloud repo's `npm test` covers the server rules), and
-// without one the report is kept on this device. The VR path is driven with a fake keyboard.
+// 37 R20 + uir-polish D1: "Report a bug", THE one report view (it was "Report a problem…" + "Report this moment") —
+// a screenshot, boxes drawn round what is wrong (as fractions of the picture), "Include the last 30 s" with the live
+// numbers, a note, "Send as <name>; staff may reply", and Cancel / Save on this device / Send. Send as the account
+// goes through the cloud plugin's reporter (stubbed here — the cloud repo's `npm test` covers the server rules);
+// without a channel the report is kept on this device (perf-moment covers the anonymous channel). The VR path is
+// driven with a fake keyboard.
 const h = require('./helpers.cjs');
 
 h.run(async () => {
@@ -12,31 +14,31 @@ h.run(async () => {
 		if (!dir) return;
 		const before = await page.evaluate(() => {
 			let v;
-			window.__stores.themes.theme.subscribe((x) => (v = x))();
+			window.__tp.test.v1.themes.theme.subscribe((x) => (v = x))();
 			return v;
 		});
 		for (const t of ['dark', 'light']) {
-			await page.evaluate((x) => window.__stores.themes.theme.set(x), t);
+			await page.evaluate((x) => window.__tp.test.v1.themes.theme.set(x), t);
 			await page.waitForTimeout(300);
 			await page.locator(sel).first().screenshot({ path: require('path').join(dir, `${name}-${t}.png`) }).catch((e) => console.log('screenshot failed: ' + e.message));
 		}
-		await page.evaluate((x) => window.__stores.themes.theme.set(x), before);
+		await page.evaluate((x) => window.__tp.test.v1.themes.theme.set(x), before);
 	}
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
-	const dbg = () => page.evaluate(() => ({ ...window.__stores.problemReport.problemDebug }));
+	const dbg = () => page.evaluate(() => ({ ...window.__tp.test.v1.problemReport.problemDebug }));
 	const open = async () => {
-		await page.evaluate(() => window.__stores.closeMenu.set(false));
+		await page.evaluate(() => window.__tp.test.v1.closeMenu.set(false));
 		await page.waitForTimeout(300);
-		await page.locator('#report-problem').click();
-		await h.eventually(() => page.locator('#problem-report').isVisible(), (v) => v, 'the Report a problem card opens', 15000);
+		await page.locator('#report-bug').click();
+		await h.eventually(() => page.locator('#problem-report').isVisible(), (v) => v, 'the Report a bug card opens', 15000);
 	};
 	/** install a stub reporter that records what it is handed */
 	const stub = (/** @type {any} */ opts) =>
 		page.evaluate((o) => {
 			window.__problems = [];
-			window.__stores.cloudHooks.problemReporter.set({
+			window.__tp.test.v1.cloudHooks.problemReporter.set({
 				account: () => (o.signedIn ? { signedIn: true, name: 'Tester' } : { signedIn: false }),
 				submit: async (r) => {
 					window.__problems.push({ note: r.note, marks: r.marks, meta: r.meta, perf: !!r.perf, shot: r.shot ? r.shot.size : 0, type: r.shot?.type });
@@ -63,7 +65,7 @@ h.run(async () => {
 	// ---- 2. a plugin but not signed in: Send stays off ----------------------------------
 	await stub({ signedIn: false });
 	await open();
-	h.check(await page.locator('#problem-consent').isDisabled(), '2.1 the consent box is off until signed in');
+	h.check(await page.locator('#problem-as-user').isDisabled(), '2.1 "Send as" is off until signed in');
 	h.check(await page.locator('#problem-send').isDisabled(), '2.2 Send is off');
 	h.check(/Sign in/.test((await page.locator('#problem-report').textContent()) ?? ''), '2.3 and it says where to sign in');
 	await page.locator('#problem-cancel').click();
@@ -87,11 +89,36 @@ h.run(async () => {
 	await page.locator('#problem-shot-wrap .problem-mark .mark-x').nth(1).click();
 	h.check((await page.locator('#problem-shot-wrap .problem-mark').count()) === 1, '3.3 × removes a box');
 	await page.locator('#problem-note').fill('The door does not open');
-	h.check(await page.locator('#problem-send').isDisabled(), '3.4 Send waits for the consent box');
-	await page.locator('#problem-send').click({ force: true });
-	await page.waitForTimeout(300);
-	h.check((await sent()).length === 0, '3.5 nothing leaves without consent (a forced click sends nothing)');
-	await page.locator('#problem-consent').check();
+	// D1: the owner's order, top to bottom: picture, Include the last 30 s (live numbers), What happened, Send as, buttons
+	const order = await page.evaluate(() =>
+		['#problem-shot-wrap', '#problem-perf', '#problem-note', '#problem-as-user', '#problem-cancel'].map((sel) => Math.round(document.querySelector(sel)?.getBoundingClientRect().top ?? -1))
+	);
+	h.check(order.every((t, i) => t >= 0 && (i === 0 || t > order[i - 1])), `3.4 D1 picture, frame data, note, send-as, buttons: top to bottom (${JSON.stringify(order)})`);
+	const statsText = (await page.locator('#problem-stats').innerText()).replace(/\s+/g, ' ');
+	h.check(/^Include the last \d+ s — \d+ frames, ([\d.]+|—) fps, \d+ stalls?$/.test(statsText) && !/ 0 frames/.test(statsText), `3.5 D1 "Include the last 30 s" with the live numbers (${statsText})`);
+	const asUser = await page.locator('#problem-as-user').isChecked();
+	const asText = (await page.locator('#problem-as-user').locator('xpath=..').innerText()).trim();
+	h.check(asUser && /^Send as Tester; staff may reply$/.test(asText), `3.6 D1 signed in: "Send as Tester; staff may reply", ticked (${asText})`);
+	const labels = await page.locator('#problem-report .actions button').allInnerTexts();
+	h.check(JSON.stringify(labels.map((t) => t.trim())) === JSON.stringify(['Cancel', 'Save on this device', 'Send']), `3.7 D1 the buttons: Cancel, Save on this device, Send (${JSON.stringify(labels)})`);
+	h.check(!/Send it to (the )?developers|Send this to the theprototype team/i.test((await page.locator('#problem-report').innerText()) ?? ''), '3.8 D1 no "send it to developers" box (Send always goes there)');
+	// D1: a note made taller than the screen scrolls the card, and the buttons are still reachable
+	const tall = await page.evaluate(async () => {
+		const card = document.querySelector('#problem-report');
+		const ta = document.querySelector('#problem-note');
+		ta.style.height = window.innerHeight + 400 + 'px';
+		await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+		const scrolls = card.scrollHeight > card.clientHeight + 100;
+		card.scrollTop = card.scrollHeight;
+		await new Promise((r) => requestAnimationFrame(r));
+		const b = document.querySelector('#problem-send').getBoundingClientRect();
+		const c = card.getBoundingClientRect();
+		const out = { scrolls, sendInView: b.bottom <= c.bottom + 1 && b.top >= c.top, cardBottom: Math.round(c.bottom), vh: innerHeight };
+		ta.style.height = '';
+		card.scrollTop = 0;
+		return out;
+	});
+	h.check(tall.scrolls && tall.sendInView && tall.cardBottom <= tall.vh, `3.9 D1 a note taller than the screen scrolls the card, Send stays reachable (${JSON.stringify(tall)})`);
 	await shots(page, '30-problem-report', '#problem-report');
 	await page.locator('#problem-send').click();
 	await h.eventually(sent, (l) => l.length === 1, '3.6 Send hands the report to the reporter');
@@ -107,7 +134,6 @@ h.run(async () => {
 	await stub({ signedIn: true, fail: true });
 	await open();
 	await page.locator('#problem-perf').uncheck();
-	await page.locator('#problem-consent').check();
 	await page.locator('#problem-send').click();
 	await h.eventually(sent, (l) => l.length === 1, '4.1 the reporter was asked');
 	h.check((await sent())[0].perf === false, '4.2 with the frame data left out');
@@ -121,7 +147,7 @@ h.run(async () => {
 	await stub({ signedIn: true });
 	const vr = await page.evaluate(async () => {
 		let title = '';
-		const res = await window.__stores.problemReport.vrReportProblem((o) => {
+		const res = await window.__tp.test.v1.problemReport.vrReportProblem((o) => {
 			title = o.title;
 			setTimeout(() => o.onCommit('seen in the headset'), 10);
 		});
@@ -129,7 +155,7 @@ h.run(async () => {
 	});
 	h.check(/Enter SENDS/.test(vr.title) && vr.sent === true, `5.1 VR: the keyboard says Enter sends, and it does (${vr.title})`);
 	h.check((await sent())[0]?.note === 'seen in the headset' && (await sent())[0].marks.length === 0, '5.2 the note arrives, no boxes');
-	const vrCancel = await page.evaluate(() => window.__stores.problemReport.vrReportProblem((o) => setTimeout(() => o.onCancel(), 10)));
+	const vrCancel = await page.evaluate(() => window.__tp.test.v1.problemReport.vrReportProblem((o) => setTimeout(() => o.onCancel(), 10)));
 	h.check(vrCancel === null && (await sent()).length === 1, '5.3 Cancel on the keyboard sends nothing');
 
 	await h.finish(browser);

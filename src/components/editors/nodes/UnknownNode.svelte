@@ -27,7 +27,7 @@
 	const WARN_ACCENT = '#facc15'; // tokens-ok: node accent hue (graph data, same in every theme)
 </script>
 
-<NodeWrapper type={data?.type ?? 'unknown'} label={'⚠ ' + (data?.type ?? 'unknown')} accent={WARN_ACCENT}>
+<NodeWrapper type={data?.type ?? 'unknown'} label={'Unknown: ' + (data?.type ?? 'unknown')} accent={WARN_ACCENT}>
 	<div class="flex w-full max-w-[190px] flex-col gap-1.5">
 		<span class="text-[10px] leading-snug text-ink-warn">
 			This node comes from a module that isn't installed.

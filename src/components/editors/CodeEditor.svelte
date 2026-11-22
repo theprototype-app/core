@@ -105,7 +105,9 @@
 				// 36: a module's source is read, never typed into
 				...more,
 				...((readonly || readOnly) && !shareKey ? [EditorView.editable.of(false)] : []),
-				EditorView.contentAttributes.of({ 'aria-label': label }),
+				// 73 AI10: tabbable even when read-only, so a keyboard can reach and scroll a long text (axe
+				// scrollable-region-focusable: CodeMirror's contenteditable carries no tabindex)
+				EditorView.contentAttributes.of({ 'aria-label': label, tabindex: '0' }),
 				EditorView.updateListener.of((update) => {
 					if (!update.docChanged) return;
 					lastEmitted = update.state.doc.toString();

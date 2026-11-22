@@ -16,22 +16,22 @@ h.run(async () => {
 
 	// ---- 1. ONE context, owned by the engine --------------------------------
 	const owner = await A.page.evaluate(() => {
-		const engine = window.__stores.audioEngine.ensureAudioContext();
-		const viaVoice = window.__stores.voiceChat.ensureAudioContext();
+		const engine = window.__tp.test.v1.audioEngine.ensureAudioContext();
+		const viaVoice = window.__tp.test.v1.voiceChat.ensureAudioContext();
 		return { same: engine === viaVoice, state: engine.state, rate: engine.sampleRate };
 	});
 	h.check(owner.same, "voiceChat's ensureAudioContext returns the ENGINE's context, not its own");
 	h.check(owner.state === 'running', 'premise: the context is running (' + owner.state + ')');
 
 	// ---- 2. the master bus exists and everything routes through it ----------
-	const graph = await A.page.evaluate(() => window.__stores.audioEngine.graphDebug());
+	const graph = await A.page.evaluate(() => window.__tp.test.v1.audioEngine.graphDebug());
 	h.check(graph.created && graph.buses.length === 4, 'four named buses exist (' + graph.buses.map((b) => b.name).join(', ') + ')');
 	h.check(graph.masterGain !== null, 'a master gain exists');
 	h.check(graph.limiterReduction !== null, 'a limiter sits between master and destination');
 
 	// the bus is a real routing point: pulling it to zero must silence its sources
 	const routed = await A.page.evaluate(async () => {
-		const eng = window.__stores.audioEngine;
+		const eng = window.__tp.test.v1.audioEngine;
 		const { playPing } = await import('/src/lib/pingAudio.js');
 		const sfx = eng.bus('sfx');
 		const read = async (label) => {
@@ -59,7 +59,7 @@ h.run(async () => {
 	// "a mixer has something to plug into" means, asserted rather than described.
 	const mutedMetrics = await (async () => {
 		await A.page.evaluate(() => {
-			window.__stores.audioEngine.bus('sfx').gain.value = 0;
+			window.__tp.test.v1.audioEngine.bus('sfx').gain.value = 0;
 		});
 		const play = A.page.evaluate(async () => {
 			const { playPing } = await import('/src/lib/pingAudio.js');
@@ -68,7 +68,7 @@ h.run(async () => {
 		const read = await h.audioMetrics(A, 800);
 		await play;
 		await A.page.evaluate(() => {
-			window.__stores.audioEngine.bus('sfx').gain.value = 1;
+			window.__tp.test.v1.audioEngine.bus('sfx').gain.value = 1;
 		});
 		return read;
 	})();
@@ -79,20 +79,20 @@ h.run(async () => {
 
 	// an unknown bus name is a routing decision, not an error
 	const unknown = await A.page.evaluate(() => {
-		const eng = window.__stores.audioEngine;
+		const eng = window.__tp.test.v1.audioEngine;
 		return eng.bus('nonsense') === eng.bus('instruments');
 	});
 	h.check(unknown, 'an unknown bus name falls back to instruments rather than throwing');
 
 	// ---- 3. the listener follows the camera REGARDLESS of spatialVoice ------
 	const listenerAt = () =>
-		A.page.evaluate(() => window.__stores.audioEngine.graphDebug().listener);
+		A.page.evaluate(() => window.__tp.test.v1.audioEngine.graphDebug().listener);
 	const flyTo = (pos) =>
 		A.page.evaluate(async (p) => {
-			await window.__stores.objectActions.flyTo(p, [0, 0, 0], 400);
+			await window.__tp.test.v1.objectActions.flyTo(p, [0, 0, 0], 400);
 		}, pos);
 
-	await A.page.evaluate(() => window.__stores.voiceChat.spatialVoice.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.voiceChat.spatialVoice.set(false));
 	await A.page.waitForTimeout(300);
 	await flyTo([12, 4, 12]);
 	await A.page.waitForTimeout(1200);
@@ -109,16 +109,16 @@ h.run(async () => {
 	const camera = await A.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.globalCamera.subscribe((c) => r(c ? [c.position.x, c.position.y, c.position.z] : null))()
+				window.__tp.test.v1.globalCamera.subscribe((c) => r(c ? [c.position.x, c.position.y, c.position.z] : null))()
 			)
 	);
 	const drift = camera && second ? Math.hypot(camera[0] - second.x, camera[1] - second.y, camera[2] - second.z) : -1;
 	h.check(drift >= 0 && drift < 1, 'and it sits ON the camera, not stranded behind it (drift ' + drift.toFixed(2) + ', was 35.3)');
-	await A.page.evaluate(() => window.__stores.voiceChat.spatialVoice.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.voiceChat.spatialVoice.set(true));
 
 	// ---- 4. audioTimeFor maps wall clock onto the audio clock ---------------
 	const clock = await A.page.evaluate(() => {
-		const eng = window.__stores.audioEngine;
+		const eng = window.__tp.test.v1.audioEngine;
 		const now = eng.audioTimeFor(Date.now());
 		const ahead = eng.audioTimeFor(Date.now() + 1000);
 		const past = eng.audioTimeFor(Date.now() - 500);
@@ -133,7 +133,7 @@ h.run(async () => {
 	// through the tap, so this is the real graph and not a unit test of the maths.
 	const voiced = await (async () => {
 		const start = A.page.evaluate(() => {
-			const eng = window.__stores.audioEngine;
+			const eng = window.__tp.test.v1.audioEngine;
 			const v = eng.oscVoice({ type: 'sine', freq: 660, gain: 0.4, attack: 0.02, sustain: 1, release: 0.1 });
 			v.start();
 			window.__voice = v;

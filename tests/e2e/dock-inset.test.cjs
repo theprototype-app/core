@@ -70,7 +70,7 @@ const bottomChrome = (page) =>
 
 /** flip the LOCAL floatingToolbar pref — the same store the Settings row binds to */
 const setFloating = async (page, on) => {
-	await page.evaluate((v) => window.__stores.floatingToolbar.set(v), on);
+	await page.evaluate((v) => window.__tp.test.v1.floatingToolbar.set(v), on);
 	await page.waitForTimeout(400);
 };
 
@@ -80,7 +80,7 @@ const setFloating = async (page, on) => {
  *  POSITIONAL click lands on whatever overlays that spot — click the control itself,
  *  which fires the native click+change svelte's bind listens for (dock-chrome's idiom). */
 const setFloatingViaSettings = async (page, on) => {
-	await page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await page.waitForTimeout(500);
 	await page.locator('#settings-nav .sn-row', { hasText: 'Interface' }).first().click();
 	await page.waitForTimeout(400);
@@ -92,7 +92,7 @@ const setFloatingViaSettings = async (page, on) => {
 	const found = { rows: await row.count(), toggles: await toggle.count(), was: (await toggle.getAttribute('aria-pressed')) === 'true' };
 	if (found.was !== on) await toggle.evaluate((el) => el.click());
 	await page.waitForTimeout(400);
-	await page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await page.waitForTimeout(500);
 	return found;
 };
@@ -162,10 +162,10 @@ h.run(async () => {
 	// final row. A 200ms slide would still be mid-flight at 120ms.
 	await setFloating(A.page, false);
 	await setFloating(A.page, true);
-	await A.page.evaluate(() => window.__stores.floatingToolbar.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.floatingToolbar.set(false));
 	await A.page.waitForTimeout(400);
 	const floorBottom = (await bottomChrome(A.page)).pillBottom;
-	await A.page.evaluate(() => window.__stores.floatingToolbar.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.floatingToolbar.set(true));
 	await A.page.waitForTimeout(120);
 	const early = (await bottomChrome(A.page)).pillBottom;
 	await A.page.waitForTimeout(700);
@@ -191,7 +191,7 @@ h.run(async () => {
 	// already the fully covered mode — no second store write needed, which is the point
 	const onTopDefault = await A.page.evaluate(() => {
 		let v;
-		window.__stores.toolbarAlwaysOnTop.subscribe((x) => (v = x))();
+		window.__tp.test.v1.toolbarAlwaysOnTop.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(onTopDefault === false, 'premise: "Toolbar always on top" reads OFF by default');
@@ -217,7 +217,7 @@ h.run(async () => {
 	// the OTHER half of the split: on-top ON with floating still OFF — the bar stays
 	// on the floor and the dock passes BEHIND it (the combination the two-pref design
 	// exists to make expressible)
-	await A.page.evaluate(() => window.__stores.toolbarAlwaysOnTop.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.toolbarAlwaysOnTop.set(true));
 	await A.page.waitForTimeout(400);
 	const floorOnTop = await bottomChrome(A.page);
 	h.check(
@@ -227,7 +227,7 @@ h.run(async () => {
 	h.check(floorOnTop.hitIsDock === false, '...so the dock passes behind the bar');
 	// back to the defaults for the rest of the suite, which drives the Controls toolbar
 	// with the dock open — the floating bar rides above the band, so nothing covers it
-	await A.page.evaluate(() => window.__stores.toolbarAlwaysOnTop.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.toolbarAlwaysOnTop.set(false));
 	await setFloating(A.page, true);
 
 	// 203: the sidebar now FLOATS ON TOP of the dock (z-hud) instead of ending
@@ -261,7 +261,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(400);
 	await A.page.evaluate(() => {
 		const node = document.querySelector('#object-list');
-		window.__stores; // hook warm
+		window.__tp?.test.v1; // hook warm
 		// drag it to the left edge via the docking API is UI-driven; emulate the
 		// drop by calling the action's path: pointer drag to x=2
 	});
@@ -312,16 +312,18 @@ h.run(async () => {
 	// palette tabs mirror when the palette moves right
 	await A.page.locator('p[title="Node editor (N)"]').click();
 	await A.page.waitForTimeout(600);
-	const before = await A.page.evaluate(() =>
-		document.querySelector('#palette-toggle')?.classList.contains('palette-tab-mirrored')
-	);
-	await A.page.locator('#palette-side').click();
-	await A.page.waitForTimeout(300);
-	const after = await A.page.evaluate(() =>
-		document.querySelector('#palette-toggle')?.classList.contains('palette-tab-mirrored')
-	);
+	// showhide-v8 (owner 2026-11-09, "Flow: remove the swap button"): the palette moves sides from its arrow handle's
+	// menu ("Move the palette to the other side"); the handle hangs from the right edge there (ph-right)
+	const paletteSwap = async () => {
+		await A.page.locator('#palette-toggle').click({ button: 'right' });
+		await A.page.locator('[role=menu] [role=menuitem]', { hasText: 'Move the palette to the other side' }).first().click();
+		await A.page.waitForTimeout(300);
+	};
+	const before = await A.page.evaluate(() => document.querySelector('#palette-toggle')?.classList.contains('ph-right'));
+	await paletteSwap();
+	const after = await A.page.evaluate(() => document.querySelector('#palette-toggle')?.classList.contains('ph-right'));
 	h.check(before === false && after === true, 'palette tabs mirror on the right side');
-	await A.page.locator('#palette-side').click();
+	await paletteSwap();
 
 	await h.finish(browser);
 });

@@ -9,8 +9,8 @@ h.run(async () => {
 
 	// --- moveFaceAlongNormal welds: no vertex left at the old +X corner ---
 	const welded = await A.page.evaluate(() => {
-		const f = window.__stores.faceEdit;
-		const THREE = window.__stores.THREE;
+		const f = window.__tp.test.v1.faceEdit;
+		const THREE = window.__tp.test.v1.THREE;
 		const K = (x, y, z) => `${Math.round(x * 1e4)},${Math.round(y * 1e4)},${Math.round(z * 1e4)}`;
 		const tris = f.readTriangles(new THREE.BoxGeometry(1, 1, 1));
 		const faces = f.groupFaces(tris);
@@ -29,17 +29,17 @@ h.run(async () => {
 
 	// --- grip-grab translation welds neighbours; rotate/scale stay face-local ---
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = group.children[group.children.length - 1];
 		window.__box = box;
-		window.__stores.objectActions.selectObject(box.uuid);
-		window.__stores.faceEdit.enterFaceEdit(box.uuid);
+		window.__tp.test.v1.objectActions.selectObject(box.uuid);
+		window.__tp.test.v1.faceEdit.enterFaceEdit(box.uuid);
 	});
 	await A.page.waitForTimeout(300);
 	const grab = await A.page.evaluate(() => {
-		const f = window.__stores.faceEdit;
-		const THREE = window.__stores.THREE;
+		const f = window.__tp.test.v1.faceEdit;
+		const THREE = window.__tp.test.v1.THREE;
 		const K = (x, y, z) => `${Math.round(x * 1e4)},${Math.round(y * 1e4)},${Math.round(z * 1e4)}`;
 		const faces = f.currentFaces();
 		const xi = faces.findIndex((fc) => fc.normal.x > 0.9);
@@ -55,6 +55,6 @@ h.run(async () => {
 	h.check(welded.before >= 3, 'sanity');
 	h.check(grab.leftBehind === 0, 'grab-translate carries welded neighbours (no vertex left at the old corner)');
 
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
 	await h.finish(browser);
 });

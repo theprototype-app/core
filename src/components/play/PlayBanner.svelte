@@ -12,6 +12,7 @@
 	// Not in a headset (DOM is invisible there), not on an embed/export (EmbedChrome owns
 	// that player's chrome), not while a HUD menu has the cursor.
 	import Badge from '../ui/Badge.svelte';
+	import MomentButton from '../moment/MomentButton.svelte'; // 95 SM2
 	import { isLocked, isVRMode, editorMode, playPointerFree } from '../../stores/sceneStore';
 	import { embedMode, exitPlay } from '$lib/playMode';
 	import { scenePlay } from '$lib/scenePhysics';
@@ -29,13 +30,14 @@
 </script>
 
 {#if shown}
-	<div id="play-banner" class="tp-ui hud-glass play-banner" data-game={game ? 'true' : 'false'} role="status">
+	<div id="play-banner" data-play-chrome class="tp-ui hud-glass play-banner" data-game={game ? 'true' : 'false'} role="status">
 		<Badge tone="live" text="Playing" />
 		{#if custom}
 			<span class="pb-hint" data-custom="true">{custom}</span>
 		{:else if !coarse}
 			<span class="pb-hint">Press <kbd>Esc</kbd> {game ? 'for the menu' : 'to stop'}</span>
 		{/if}
+		<MomentButton />
 		{#if !game && !coarse}
 			<button id="play-banner-stop" type="button" class="pb-stop" title="Stop playing (Esc)" aria-label="Stop playing" onclick={() => exitPlay()}>
 				<Icon name="square" size={16} fill="currentColor" aria-hidden="true" />

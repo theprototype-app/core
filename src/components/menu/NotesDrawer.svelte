@@ -376,6 +376,7 @@
 			height: min(var(--notes-h, 45vh), var(--ps-sheet-max, 100vh));
 			/* never rise above the Connect bar + top-right chrome (like the Flow/Explorer dock) */
 			max-height: calc(100vh - var(--connect-bottom, 54px) - 56px);
+			max-height: calc(100dvh - var(--connect-bottom, 54px) - 56px);
 			border-radius: var(--radius-window) var(--radius-window) 0 0;
 			/* below the Controls HUD in the bottom-sheet layout (not the wide cover-z) */
 			z-index: calc(var(--z-dock) - 1);

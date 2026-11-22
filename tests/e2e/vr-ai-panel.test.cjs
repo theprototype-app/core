@@ -27,7 +27,7 @@ h.run(async () => {
 
 	// --- 1. the radial entry: Tools ▸ AI with the sparkles icon ---
 	const entry = await read(A.page, () => {
-		const ring = window.__stores.vrRadialMenu.ringEntries('tools');
+		const ring = window.__tp.test.v1.vrRadialMenu.ringEntries('tools');
 		const ai = ring.find((e) => e.id === 'ai');
 		return { found: !!ai, icon: ai?.icon, label: typeof ai?.label === 'function' ? ai.label() : ai?.label, ids: ring.map((e) => e.id) };
 	});
@@ -35,7 +35,7 @@ h.run(async () => {
 
 	// --- 2. opening it: the ring closes, the panel opens, sibling panels give way (and the other way round) ---
 	const open = await read(A.page, () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const get = (st) => {
 			let v;
 			st.subscribe((x) => (v = x))();
@@ -59,7 +59,7 @@ h.run(async () => {
 	// --- 3. unconfigured: a hint, and the input row does NOT open the keyboard ---
 	await A.page.waitForTimeout(400);
 	const bare = await read(A.page, () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const get = (st) => {
 			let v;
 			st.subscribe((x) => (v = x))();
@@ -72,11 +72,11 @@ h.run(async () => {
 
 	// --- 4. configured: the keyboard commit runs the prompt; the thread is the desktop one ---
 	await read(A.page, (b) => {
-		window.__stores.aiProviders.addAiProvider({ preset: 'custom', label: 'Mock', baseUrl: b, apiKey: 'k', model: 'mock' });
-		window.__stores.aiProviders.setAiEnabled(true);
+		window.__tp.test.v1.aiProviders.addAiProvider({ preset: 'custom', label: 'Mock', baseUrl: b, apiKey: 'k', model: 'mock' });
+		window.__tp.test.v1.aiProviders.setAiEnabled(true);
 	}, base);
 	const typed = await read(A.page, () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const get = (st) => {
 			let v;
 			st.subscribe((x) => (v = x))();
@@ -91,11 +91,11 @@ h.run(async () => {
 	h.check(typed.ready && typed.title === 'Ask AI', `configured: the input row opens the keyboard titled Ask AI (${typed.title})`);
 	await A.page.waitForFunction(() => {
 		let v;
-		window.__stores.aiAssistant.aiMessages.subscribe((x) => (v = x))();
+		window.__tp.test.v1.aiAssistant.aiMessages.subscribe((x) => (v = x))();
 		return v.some((m) => m.role === 'assistant' && /mock/.test(m.content) && !m.streaming);
 	}, null, { timeout: 15000 });
 	const thread = await read(A.page, () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const get = (st) => {
 			let v;
 			st.subscribe((x) => (v = x))();
@@ -106,14 +106,14 @@ h.run(async () => {
 	h.check(thread.shared[0]?.role === 'user' && thread.shared[0]?.content === 'hi', 'the prompt typed in VR lands in the shared thread');
 	h.check(JSON.stringify(thread.mirror) === JSON.stringify(thread.shared), 'the panel shows exactly the shared thread');
 	// the desktop window renders the same turn
-	await read(A.page, () => window.__stores.aiAssistantHidden.set(''));
+	await read(A.page, () => window.__tp.test.v1.aiAssistantHidden.set(''));
 	await A.page.waitForTimeout(300);
 	h.check(await A.page.locator('#ai-assistant-window').getByText('Hello from the mock.').isVisible(), 'the desktop AI window shows the answer given in VR');
-	await read(A.page, () => window.__stores.aiAssistantHidden.set('hidden'));
+	await read(A.page, () => window.__tp.test.v1.aiAssistantHidden.set('hidden'));
 
 	// --- 5. the rendered controls, STOP while busy ---
 	const slow = await read(A.page, async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const get = (st) => {
 			let v;
 			st.subscribe((x) => (v = x))();
@@ -140,7 +140,7 @@ h.run(async () => {
 
 	// --- 6. the controller ray: raycast, the trigger hook, the beam ---
 	const ray = await read(A.page, () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const get = (st) => {
 			let v;
@@ -184,7 +184,7 @@ h.run(async () => {
 
 	// --- 7. leaving VR closes it ---
 	const session = await read(A.page, () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const get = (st) => {
 			let v;
 			st.subscribe((x) => (v = x))();

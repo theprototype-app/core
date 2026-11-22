@@ -26,7 +26,7 @@ h.run(async () => {
 	for (const game of ['towers', 'waves', 'stars-room']) {
 		const graph = Object.values(GAMES[game])[0];
 		measure[game] = await A.page.evaluate((graph) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.setActiveGraph(s.SCENE_GRAPH);
 			s.flowNodes.set(graph.nodes);
 			s.flowEdges.set(graph.edges);
@@ -67,7 +67,7 @@ h.run(async () => {
 
 	// ---- 1. the reference the model is handed ------------------------------------------
 	const view = await A.page.evaluate((towers) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowNodes.set(towers.nodes);
 		s.flowEdges.set(towers.edges);
 		const tools = s.aiTools.getAiTools();
@@ -105,7 +105,7 @@ h.run(async () => {
 
 	// ---- 2. create_flow_nodes from graph text ------------------------------------------
 	const built = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.setActiveGraph(s.SCENE_GRAPH);
 		s.flowNodes.set([]);
 		s.flowEdges.set([]);
@@ -126,12 +126,12 @@ h.run(async () => {
 	h.check(built.edges.length === 1 && built.edges[0].th === 'set' && /^e-.+-.+\.set$/.test(built.edges[0].id), 'the wire landed on latch.set with the canonical id');
 	const sc = built.nodes.find((n) => n.type === 'script');
 	h.check(JSON.stringify(sc?.data.inputs) === '[{"name":"a","type":"number"}]' && sc?.data.outputs?.[0]?.name === 'out', 'a script line carries its v2 sockets, reserved names dropped (time)');
-	const badText = await A.page.evaluate(() => window.__stores.aiTools.executeAiTool('create_flow_nodes', { graph: 'scene', text: 'x = spin {speed: }' }));
+	const badText = await A.page.evaluate(() => window.__tp.test.v1.aiTools.executeAiTool('create_flow_nodes', { graph: 'scene', text: 'x = spin {speed: }' }));
 	h.check(/line 1:/.test(badText.error ?? ''), 'a bad line comes back as an error naming the line: ' + badText.error);
 
 	// ---- 3. the behaviour host, feature-detected ----------------------------------------
 	const beh = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const store = {};
 		const off = s.aiExtensions.registerBehaviourHost({
 			format: 'behaviour/1',

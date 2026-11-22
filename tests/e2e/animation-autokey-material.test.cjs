@@ -17,7 +17,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	const uuid = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create box 1 1 1');
 		await new Promise((r) => setTimeout(r, 800));
 		let g;
@@ -34,7 +34,7 @@ h.run(async () => {
 	const channelsOf = () =>
 		A.page.evaluate((id) => {
 			let set;
-			window.__stores.animationPreview.animations.subscribe((v) => (set = v))();
+			window.__tp.test.v1.animationPreview.animations.subscribe((v) => (set = v))();
 			const s = set[id];
 			const clip = s ? s.clips[s.active] : null;
 			return (clip?.tracks ?? []).map((t) => t.channel).sort();
@@ -42,7 +42,7 @@ h.run(async () => {
 
 	// ---- 1. NOT armed: a colour change keys nothing ------------------------
 	const before = await A.page.evaluate((id) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let g;
 		w.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByProperty('uuid', id);
@@ -62,7 +62,7 @@ h.run(async () => {
 
 	// ---- 2. ARMED: the same edit keys the colour, with no click ------------
 	const armed = await A.page.evaluate((id) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const ap = w.animationPreview;
 		ap.setAutoKey(id); // REC
 		let g;
@@ -90,7 +90,7 @@ h.run(async () => {
 	// the keys hold the NEW colour, not the old one
 	const values = await A.page.evaluate((id) => {
 		let set;
-		window.__stores.animationPreview.animations.subscribe((v) => (set = v))();
+		window.__tp.test.v1.animationPreview.animations.subscribe((v) => (set = v))();
 		const s = set[id];
 		const clip = s.clips[s.active];
 		const out = {};
@@ -105,7 +105,7 @@ h.run(async () => {
 
 	// ---- 3. any OTHER tracked material option keys too ---------------------
 	const other = await A.page.evaluate(async (id) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.materialsHandler.setMaterialParam(id, 'roughness', 0.2);
 		await new Promise((r) => setTimeout(r, 300));
 		let set;
@@ -126,7 +126,7 @@ h.run(async () => {
 	// either, which is what used to happen. Blender's model: switching auto-keying on
 	// does nothing, and the first keyed change creates the Action.
 	const fresh = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const ap = w.animationPreview;
 		w.commandsHandler.sceneCommand('/create sphere');
 		await new Promise((r) => setTimeout(r, 700));

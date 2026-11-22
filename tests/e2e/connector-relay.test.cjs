@@ -17,7 +17,7 @@ const { installProvider, fakeRelay, connectorPhase } = require('./connectorFake.
 const objectThere = (peer, uuid) =>
 	peer.page.evaluate((u) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return !!g?.getObjectByProperty('uuid', u);
 	}, uuid);
 
@@ -32,7 +32,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
-	await A.page.evaluate(() => window.__stores.aiAssistantHidden.set(''));
+	await A.page.evaluate(() => window.__tp.test.v1.aiAssistantHidden.set(''));
 
 	// ---- B1: the OSS build (no provider) shows nothing, and nothing is loaded -------------------------
 	await A.page.waitForSelector('#ai-assistant-window', { state: 'visible', timeout: 20000 });
@@ -74,13 +74,13 @@ h.run(async () => {
 	h.check(/Claude \(connector\)/.test(who ?? ''), `the A8 line is labelled "Claude (connector)" (${who?.trim()})`);
 	const undoLabel = await A.page.evaluate(() => {
 		let st;
-		window.__stores.undoStack?.subscribe((v) => (st = v))();
+		window.__tp.test.v1.undoStack?.subscribe((v) => (st = v))();
 		return JSON.stringify(st?.at?.(-1) ?? null).slice(0, 300);
 	});
 	console.log('  undo top:', undoLabel);
 
 	// ---- B3: Undo from B (the cross-peer request) removes it everywhere ---------------------------------
-	await B.page.evaluate(() => window.__stores.aiAssistantHidden.set(''));
+	await B.page.evaluate(() => window.__tp.test.v1.aiAssistantHidden.set(''));
 	const lineB = B.page.locator('#agent-log .alog-line').filter({ hasText: 'created 1 object' }).first();
 	await lineB.waitFor({ state: 'visible', timeout: 15000 });
 	await lineB.locator('.alog-undo').click();
@@ -99,7 +99,7 @@ h.run(async () => {
 	// ---- B5: schema validation + the allow-list ----------------------------------------------------------
 	const countBefore = await A.page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g.children.length;
 	});
 	relay.call('bad1', 'create_objects', { objects: [{ kind: 'primitive', position: 'here' }] });
@@ -113,19 +113,19 @@ h.run(async () => {
 	h.check((await relay.answer('ro'))?.error?.code === 'refused', 'a read-scoped grant cannot edit');
 	const countAfter = await A.page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g.children.length;
 	});
 	h.check(countAfter === countBefore, `nothing ran (objects ${countBefore} → ${countAfter})`);
 
 	// ---- B3: a viewer's connector cannot edit ----------------------------------------------------------
-	await A.page.evaluate(() => window.__stores.cloudHooks.rolesInfo.set({ myId: 'x', myRole: 'viewer', amAdmin: false, order: [], roleOf: () => 'viewer', setRole() {}, synced: () => true }));
+	await A.page.evaluate(() => window.__tp.test.v1.cloudHooks.rolesInfo.set({ myId: 'x', myRole: 'viewer', amAdmin: false, order: [], roleOf: () => 'viewer', setRole() {}, synced: () => true }));
 	relay.call('v1', 'create_objects', { objects: [{ kind: 'primitive', primitive: 'Box', name: 'Viewer_Box' }] });
 	const v1 = await relay.answer('v1');
 	h.check(v1?.error?.code === 'refused' && /View-only/i.test(v1.error.message), `a viewer's relayed edit is refused (${v1?.error?.message?.slice(0, 80)})`);
 	relay.call('v2', 'list_scene', {});
 	h.check((await relay.answer('v2'))?.type === 'result', 'a viewer may still read');
-	await A.page.evaluate(() => window.__stores.cloudHooks.rolesInfo.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.cloudHooks.rolesInfo.set(null));
 
 	// ---- B4: no screenshot while hidden; one when visible ------------------------------------------------
 	await A.page.evaluate(() => {
@@ -174,8 +174,8 @@ h.run(async () => {
 
 	// ---- B5: Settings ▸ Connected apps lists the grants, Revoke calls the provider ---------------------
 	await A.page.evaluate(() => {
-		window.__stores.settingsSection.set('connectedapps');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('connectedapps');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	const appRow = A.page.locator('#connected-apps-settings [data-app="g_1"]');
 	await appRow.waitFor({ state: 'visible', timeout: 10000 });
@@ -185,7 +185,7 @@ h.run(async () => {
 	await A.page.getByRole('button', { name: 'Revoke', exact: true }).last().click();
 	await h.eventually(() => A.page.evaluate(() => window.__connectorFake.revoked), (r) => r.includes('g_1'), 'Revoke reaches the provider', 5000);
 	h.check((await A.page.evaluate(() => window.__connectorFake.revoked)).includes('g_1'), 'Revoke went to the connector service (the provider)');
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await axe(A.page, '#connect-claude', 'Connect Claude row');
 	h.check(h.pageErrors(A).length === 0, `no page errors on A (${h.pageErrors(A).slice(0, 2).join(' | ')})`);
 	await h.closePeer(B);
@@ -200,8 +200,8 @@ h.run(async () => {
 		await installProvider(P.page);
 		// the auto-quality toast lands over the top of a fresh page (it is not this feature's)
 		await P.page.evaluate(() => {
-			window.__stores.toastsInDrawerOnly.set(true);
-			window.__stores.aiAssistantHidden.set('');
+			window.__tp.test.v1.toastsInDrawerOnly.set(true);
+			window.__tp.test.v1.aiAssistantHidden.set('');
 		});
 		const b = P.page.locator('#connect-claude-button');
 		await b.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});

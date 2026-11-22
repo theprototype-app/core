@@ -407,7 +407,7 @@ behind a store's back.
 
 | Category | Keys (localStorage, via safeStorage) |
 |---|---|
-| Interface | `allowTextSelection` `avatars:peersClassic` `theme` `customThemes`* `game:soundVolume` `game:musicVolume` `showWelcomeOnStart` `showWhatsNewNotice` `toastsInDrawerOnly` `toursAutoStart` `xrOfferSession` `showRoomsButton` `floatingToolbar` `toolbarOnTop` `touchTools` `mobileUndockAllowed` `advancedMode` `showEnvInList` `objectSearchEnabled` `perfStats:show` `perfReports:send` `viewPrefs.dockPushesViewport` `ui:density` (NEW) `ui:projectActions` (NEW, 41b) |
+| Interface | `allowTextSelection` `avatars:peersClassic` `theme` `customThemes`* `game:soundVolume` `game:musicVolume` `showWelcomeOnStart` `showWhatsNewNotice` `toastsInDrawerOnly` `notifyPrefs` (NEW, profile-notify) `toursAutoStart` `xrOfferSession` `showRoomsButton` `floatingToolbar` `toolbarOnTop` `touchTools` `mobileUndockAllowed` `advancedMode` `showEnvInList` `objectSearchEnabled` `perfStats:show` `perfReports:send` `viewPrefs.dockPushesViewport` `ui:density` (NEW) `ui:projectActions` (NEW, 41b) |
 | Controls | `enableShiftAdd` `helpersInPlay` `noteDoubleClickToOpen` `trackpadMode` `trackpadPanEnabled` `trackpadReversePan` `trackpadPinchZoom` `allowBrowserZoom` |
 | Input | `gamepadPrefs` `flow:mouseBindings` `flow:opens` |
 | Touch controls | `touchControlsPrefs` `touchLookSpeed` `touchControlsTextures` `touchControlsLayouts` |

@@ -242,7 +242,9 @@ let current = null;
 /** @type {Set<() => void>} */
 const cancelHooks = new Set();
 
+let lastPublish = -Infinity;
 function publish() {
+	lastPublish = now();
 	sceneLoad.set(current ? { ...current } : null);
 }
 
@@ -283,9 +285,20 @@ export function beginLoad(name, total, opts = {}) {
 	return current;
 }
 
-/** Throttled progress publication: the bar is DOM, so ~10 updates a second is plenty. */
+/**
+ * Throttled progress publication: the bar is DOM, so ~10 updates a second is plenty. 93: due publishes go out
+ * SYNCHRONOUSLY from `progress` — a load loop yields with `scheduler.yield()`, whose continuation runs ahead of
+ * timers, so a publish that waited on setTimeout did not fire until the whole loop had ended (0 % for seconds,
+ * then 100 %). The timer only carries the tail (the last objects before the loop stops).
+ */
 let publishTimer = /** @type {any} */ (null);
 function publishSoon() {
+	if (now() - lastPublish >= 100) {
+		clearTimeout(publishTimer);
+		publishTimer = null;
+		publish();
+		return;
+	}
 	if (publishTimer) return;
 	publishTimer = setTimeout(() => {
 		publishTimer = null;

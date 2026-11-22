@@ -19,7 +19,7 @@ const TAP = () => {
 	const seen = new WeakSet();
 	setInterval(() => {
 		let p;
-		window.__stores?.peers?.subscribe((v) => (p = v))();
+		window.__tp?.test.v1?.peers?.subscribe((v) => (p = v))();
 		const lists = p?.peer?._connections ? [...p.peer._connections.values()] : Object.values(p?.peer?.connections ?? {});
 		for (const conn of [...lists.flat(), ...Object.values(p?.connections ?? {})]) {
 			if (!conn || seen.has(conn)) continue;
@@ -38,7 +38,7 @@ const TAP = () => {
 
 /** @param {any} page */
 const objectUuids = (page) =>
-	page.evaluate(() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g.children.map((c) => c.uuid)))()));
+	page.evaluate(() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g.children.map((c) => c.uuid)))()));
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -47,10 +47,10 @@ h.run(async () => {
 	await B.page.evaluate(TAP);
 
 	// B dials; A sees the request but does NOT approve through the card
-	await B.page.locator('input[placeholder="Enter peer ID to connect"]').fill(A.id);
+	await (await h.openDial(B.page)).fill(A.id);
 	await B.page.getByRole('button', { name: 'Connect', exact: true }).click();
 	await h.eventually(
-		() => A.page.evaluate((id) => new Promise((r) => window.__stores.pendingApprovals.subscribe((v) => r(v.some((p) => p.peerId === id)))()), B.id),
+		() => A.page.evaluate((id) => new Promise((r) => window.__tp.test.v1.pendingApprovals.subscribe((v) => r(v.some((p) => p.peerId === id)))()), B.id),
 		(v) => v,
 		'premise: A holds B\'s join request',
 		90000
@@ -58,7 +58,7 @@ h.run(async () => {
 
 	// approve AND create in one tick: the dial-back exists and cannot be open yet
 	const made = await A.page.evaluate((id) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.peerApproval.approvePeer(id);
 		let p;
 		s.peers.subscribe((v) => (p = v))();

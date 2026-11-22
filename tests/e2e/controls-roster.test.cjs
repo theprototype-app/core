@@ -386,7 +386,7 @@ h.run(async () => {
 		`the Node editor cell offers Open (${menu.length} rows)`
 	);
 	h.check(
-		!menu.some((r) => r.label.includes('＋')) && !menu.some((r) => r.label.includes('Flow Code')),
+		!menu.some((r) => r.label.includes('＋')) && !menu.some((r) => r.label.includes('Timeline')),
 		`and NO "Add a view" rows any more (${menu.map((r) => r.label).join(' | ')})`
 	);
 	h.check(
@@ -398,7 +398,7 @@ h.run(async () => {
 	// ...and the LIST itself is untouched: the dock tab strip's own ＋ still offers it.
 	// Removing a CONSUMER must not remove the feature, so both halves are asserted here.
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphClose.set(false);
 		s.bottomDock.activateDock('flow');
 	});
@@ -409,7 +409,7 @@ h.run(async () => {
 		[...document.querySelectorAll('[role="menu"] [role="menuitem"]')].map((el) => (el.textContent ?? '').trim())
 	);
 	h.check(
-		stripAdd.some((t) => t.includes('Flow Code')),
+		stripAdd.some((t) => t.includes('Timeline')),
 		`the dock strip's ＋ still offers the add list (${stripAdd.join(' | ') || 'none'})`
 	);
 	await closeMenus(A.page);
@@ -441,7 +441,7 @@ h.run(async () => {
 	// the play FAB (z 40+ over the pill's 30 — the behaviour the user asked for), so
 	// the next section's right-click on the FAB would be intercepted, exactly as a real
 	// pointer would be. The window was only ever this section's evidence.
-	await A.page.evaluate(() => window.__stores.explorerClose.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.explorerClose.set(true));
 	await A.page.waitForTimeout(300);
 
 	// ---- W1: the safety hatch — Settings' Reset window positions ---------------------
@@ -451,7 +451,7 @@ h.run(async () => {
 	await fabMenu(A.page);
 	await pick(A.page, 'Collapse toolbar');
 	h.check((await barTitles(A.page)).join(' | ') === '—', 'premise: the bar is collapsed to the well');
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await A.page.waitForTimeout(500);
 	// the button lives under INTERFACE ▸ Windows & chrome, and a collapsed
 	// AccordionItem renders no body at all in flowbite 1.x — so the section has to be
@@ -465,7 +465,7 @@ h.run(async () => {
 	// a DOM click, like reset-windows.test.cjs: the modal's own chrome is in the way
 	await A.page.evaluate(() => document.querySelector('#reset-windows')?.click());
 	await A.page.waitForTimeout(400);
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await A.page.waitForTimeout(300);
 	titles = await barTitles(A.page);
 	h.check(
@@ -540,7 +540,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(700);
 	const afterReload = await A.page.evaluate(() => {
 		let v;
-		window.__stores.toolbarAlwaysOnTop.subscribe((x) => (v = x))();
+		window.__tp.test.v1.toolbarAlwaysOnTop.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(
@@ -571,7 +571,7 @@ h.run(async () => {
 	const dockKey = () =>
 		A.page.evaluate(() => {
 			let k = null;
-			window.__stores.bottomDock.visibleDockKey.subscribe((v) => (k = v))();
+			window.__tp.test.v1.bottomDock.visibleDockKey.subscribe((v) => (k = v))();
 			return k;
 		});
 	const openCustomize = async (from = 'Move (1)') => {
@@ -596,7 +596,7 @@ h.run(async () => {
 	await openCustomize();
 	menu = await rows(A.page);
 	// 33 E1: Animation is a DEFAULT button now, so four views remain opt-in
-	const OPTIONAL = ['Flow Code', 'UV editor', 'Shader editor', 'HUD editor'];
+	const OPTIONAL = ['Timeline', 'UV editor', 'Shader editor', 'HUD editor'];
 	h.check(
 		OPTIONAL.every((t) => menu.some((r) => r.label === t)),
 		`the four remaining dock views are LISTED in Customize (${menu.map((r) => r.label).join(' | ')})`
@@ -611,7 +611,7 @@ h.run(async () => {
 	);
 	h.check(
 		await A.page.evaluate(() =>
-			['Flow Code', 'UV editor', 'Shader editor', 'HUD editor'].every(
+			['Timeline', 'UV editor', 'Shader editor', 'HUD editor'].every(
 				(t) => document.querySelector(`[role="menu"] button[aria-label="Move ${t} up"]`)?.disabled === true
 			)
 		),
@@ -740,37 +740,37 @@ h.run(async () => {
 
 	// ---- OPTIONAL VIEWS BECOME REAL BUTTONS -----------------------------------------
 	await openCustomize();
-	await pick(A.page, 'Flow Code');
+	await pick(A.page, 'Timeline');
 	titles = await barTitles(A.page);
 	h.check(
-		titles.includes('Flow Code') && titles.length === 11,
-		`enabling Flow Code put it on the bar (${titles.join(' | ')})`
+		titles.includes('Timeline') && titles.length === 11,
+		`enabling Timeline put it on the bar (${titles.join(' | ')})`
 	);
 	h.check(
-		titles.join(' | ') === [...DEFAULT, 'Flow Code'].join(' | '),
+		titles.join(' | ') === [...DEFAULT, 'Timeline'].join(' | '),
 		'...appended at the right end, every existing cell untouched'
 	);
 	await closeMenus(A.page);
 	await h.freshReload(A);
 	await A.page.waitForTimeout(700);
 	h.check(
-		(await barTitles(A.page)).includes('Flow Code'),
+		(await barTitles(A.page)).includes('Timeline'),
 		'the optional button SURVIVES a reload (loadLayout used to filter it straight back out)'
 	);
 	// and it is a real button: pressing it runs the same decision tree the Node editor
 	// button and the N key run, which is the whole reason it is worth having
-	await A.page.locator('#controls-pill p[title="Flow Code"]').click();
-	await h.eventually(dockKey, (k) => k === 'flowcode', 'pressing it opens the Flow Code dock tab');
-	await A.page.locator('#controls-pill p[title="Flow Code"]').click();
+	await A.page.locator('#controls-pill p[title="Timeline"]').click();
+	await h.eventually(dockKey, (k) => k === 'timeline', 'pressing it opens the Timeline dock tab');
+	await A.page.locator('#controls-pill p[title="Timeline"]').click();
 	await h.eventually(
-		() => A.page.evaluate(() => !!document.querySelector('#controls-pill p[title="Flow Code"] .text-accent')),
+		() => A.page.evaluate(() => !!document.querySelector('#controls-pill p[title="Timeline"] .text-accent')),
 		(v) => v === false,
 		'...and pressing it again hides the panel, which the "+" list can never do'
 	);
 	await openCustomize();
-	await pick(A.page, 'Flow Code');
+	await pick(A.page, 'Timeline');
 	h.check(
-		!(await barTitles(A.page)).includes('Flow Code'),
+		!(await barTitles(A.page)).includes('Timeline'),
 		'disabling it takes it off the bar again'
 	);
 	await closeMenus(A.page);
@@ -838,7 +838,7 @@ h.run(async () => {
 	h.check(
 		await A.page.evaluate(() => {
 			let occ = {};
-			window.__stores.bottomDock.dockOccupants.subscribe((v) => (occ = v))();
+			window.__tp.test.v1.bottomDock.dockOccupants.subscribe((v) => (occ = v))();
 			return !!occ.shader?.present;
 		}),
 		'...as a dock OCCUPANT, so the tree took its docked branch'
@@ -848,7 +848,7 @@ h.run(async () => {
 		() =>
 			A.page.evaluate(() => {
 				let v = true;
-				window.__stores.shaderEditorClose.subscribe((x) => (v = x))();
+				window.__tp.test.v1.shaderEditorClose.subscribe((x) => (v = x))();
 				return v;
 			}),
 		(v) => v === true,

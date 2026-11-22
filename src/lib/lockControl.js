@@ -12,7 +12,8 @@ import { createRequestLimiter, holdsLock, isHeld } from './lockTrust';
 export function nameOf(peerId) {
 	const users = get(userdata) ?? [];
 	const row = users.find((u) => u[0] === peerId);
-	return (row && row[1]) || peerId;
+	// 78 PL34: a roster row with no name is "Guest" (or "AI agent"), never a raw id
+	return (row && row[1]) || (row ? (row[6]?.kind === 'agent' ? 'AI agent' : 'Guest') : peerId);
 }
 
 /** Stable per-peer color (same scheme as pings/cursors) @param {string} peerId */

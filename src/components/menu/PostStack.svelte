@@ -1,4 +1,5 @@
 <script>
+	import { xrSupportOf } from '$lib/xrLookCore.js';
 	// L3 — Configure Scene ▸ Post-processing.
 	//
 	// The stack list: add / remove / reorder / per-entry enable, with each entry's
@@ -10,6 +11,7 @@
 	// TypeScript annotation breaks the build with a useless error.
 	import DragRow from '../ui/DragRow.svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
+	import PropRow from '../ui/PropRow.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import InsToggle from './inspector/InsToggle.svelte';
 	import { onMount } from 'svelte';
@@ -111,7 +113,7 @@
 	const addMenuItems = $derived.by(() => {
 		/** @type {Record<string, any[]>} */
 		const byGroup = {};
-		for (const def of postEffectKinds()) (byGroup[def.group] ??= []).push(def);
+		for (const def of postEffectKinds()) if (!def.legacy) (byGroup[def.group] ??= []).push(def);
 		// known families first, in a deliberate order; anything a module registers
 		// under a new group follows, alphabetically
 		const extra = Object.keys(byGroup)
@@ -285,8 +287,9 @@
 	 top of it while you are looking through that camera, so switching cameras
 	 switches the grade. Same picker shape as the HUD editor, because it is the same
 	 idea: the document is keyed 'scene' | cameraUuid. -->
-<div class="ui-row items-center gap-2">
-	<span class="w-20 shrink-0 text-xs text-text-2">Look for</span>
+<!-- 78 PL21 (device lab PC-8): a PropRow, so "Look for" sits in the panel's label column like every row below it -->
+<PropRow label="Look for" valueBox={false}>
+	{#snippet control()}
 	<ThemedSelect
 		id="post-doc-key"
 		class="min-w-0 flex-1"
@@ -300,10 +303,11 @@
 			openId = '';
 		}}
 	/>
-</div>
+	{/snippet}
+</PropRow>
 {#if onCamera}
-	<div class="ui-row items-center gap-2">
-		<span class="w-20 shrink-0 text-xs text-text-2">Combine</span>
+	<PropRow label="Combine" valueBox={false}>
+		{#snippet control()}
 		<ThemedSelect
 			id="post-doc-mode"
 			class="min-w-0 flex-1"
@@ -314,7 +318,8 @@
 			value={doc.mode === 'replace' ? 'replace' : 'append'}
 			onchange={(v) => setCameraLookMode(docKey, String(v))}
 		/>
-	</div>
+		{/snippet}
+	</PropRow>
 	<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 		This look applies while anyone is looking through that camera — switch camera (a Set
 		Active Camera node, or Control on the camera) and the grade switches with it.
@@ -400,6 +405,12 @@
 				</div>
 				{#if openId === entry.id}
 					<div id={'post-params-' + entry.id} class="flex flex-col gap-1 px-2 pb-1 pt-1">
+						<!-- 72 LK3: the composer does not run in a headset; say which effects come along -->
+						{#if !isUnknown(entry) && xrSupportOf(entry.kind) !== 'baked'}
+							<p class="post-xr-note text-[length:var(--fs-badge)] text-text-muted">
+								{xrSupportOf(entry.kind) === 'approx' ? 'Approximate in a headset.' : 'Not shown in a headset.'}
+							</p>
+						{/if}
 						{#if isUnknown(entry)}
 							<p class="text-[length:var(--fs-badge)] italic text-warn-text">
 								Saved and shared as-is. Open this scene in a build that has "{entry.kind}" to edit it.
@@ -455,6 +466,17 @@
 											onchange={(v) => assignAsset(entry.id, param.key, String(v ?? ''))}
 										/>
 									</div>
+								{:else if param.type === 'color'}
+									<label class="ui-row items-center gap-2">
+										<span class="w-20 shrink-0 text-xs text-text-2">{param.label}</span>
+										<input
+											type="color"
+											id={'post-param-' + entry.id + '-' + param.key}
+											class="h-5 w-7 cursor-pointer"
+											value={String(entry.params[param.key] ?? param.default ?? '#ffffff' /* tokens-ok: colour-picker fallback value (effect data) */)}
+											onchange={(e) => setPostEffectParams(entry.id, { [param.key]: e.currentTarget.value }, docKey)}
+										/>
+									</label>
 								{:else if param.type === 'bool'}
 									<InsToggle
 										id={'post-param-' + entry.id + '-' + param.key}
@@ -523,8 +545,8 @@
 	</p>
 {/if}
 <p class="text-[length:var(--fs-badge)] italic text-text-muted">
-	Post-processing does not run in VR — the effects are skipped in a headset, and objects still look
-	the same.
+	In a headset the tone curve, colour grade, LUT (approximate) and vignette still show; the other
+	effects are desktop-only, as each one says.
 </p>
 
 <style>

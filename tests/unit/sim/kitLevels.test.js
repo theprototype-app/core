@@ -28,8 +28,8 @@ describe('kit.levels — the table and the current level', () => {
 		expect([...sim.peers.values()].map((p) => p.kit.impls.levels.current())).toEqual(['1', '1', '1']);
 		expect(L(sim, 'a').currentLabel()).toBe('Stack');
 		expect(L(sim, 'a').index()).toBe(1);
-		expect(L(sim, 'a').select('2')).toEqual({ ok: false, reason: 'Level Planks is locked' });
-		expect(L(sim, 'a').select('9')).toEqual({ ok: false, reason: 'no level 9' });
+		expect(L(sim, 'a').select('2')).toEqual({ ok: false, refused: true, reason: 'Level Planks is locked' });
+		expect(L(sim, 'a').select('9')).toEqual({ ok: false, refused: true, reason: 'no level 9' });
 	});
 	it('a win unlocks the next level (the Towers chain: a star on the level before) and Next goes there', () => {
 		const sim = createSim({ peers: ['a', 'b'] });
@@ -53,7 +53,7 @@ describe('kit.levels — the table and the current level', () => {
 		L(sim, 'a').select('1');
 		expect(L(sim, 'a').complete(false, 999, 10)).toMatchObject({ ok: true, stars: 0 });
 		expect(L(sim, 'a').unlocked('2')).toBe(false);
-		expect(L(sim, 'a').next()).toEqual({ ok: false, reason: 'Level Planks is locked' });
+		expect(L(sim, 'a').next()).toEqual({ ok: false, refused: true, reason: 'Level Planks is locked' });
 	});
 	it("'all' unlocks every level; a custom rule decides when given", () => {
 		const sim = createSim({ peers: ['a'] });

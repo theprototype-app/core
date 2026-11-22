@@ -63,11 +63,14 @@ export function sdkSound(ctx) {
 		 * HUD and, in a headset, head-locked in front of the player. `sub` is a second,
 		 * smaller line; `ms` how long it stays (300..15000, default 1800); `color` the
 		 * title's colour. A new banner replaces the one showing. LOCAL. Returns its id.
+		 * 78 F14: the banner draws only in Play (and in a headset); in Edit the line goes to the
+		 * Debugger's Console, named as this module's.
 		 * @param {string} text @param {{sub?: string, ms?: number, color?: string}=} options
 		 * @returns {number}
 		 */
 		announce(text, options = {}) {
-			return announceBanner(text, options ?? {});
+			const { sub, ms, color } = options ?? {};
+			return announceBanner(text, { sub, ms, color, source: { kind: 'module', label: 'module ' + String(ctx?.moduleId ?? '') } });
 		},
 		/**
 		 * 53 (A6): CAPTIONS — a line of text for something the player hears (a voice, a sound

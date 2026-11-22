@@ -15,7 +15,7 @@ h.run(async () => {
 	const page = A.page;
 
 	await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		await s.moduleSDK.initModules([
 			{ id: 'fx30b', name: 'Effects test', version: '1.0.0', description: 'the 30b effect seams', register(api) { window.__api = api; } }
 		]);
@@ -32,7 +32,7 @@ h.run(async () => {
 
 	console.log('\n=== 1. a burst is local, scene-root, pooled ===');
 	const fired = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let scene, group;
 		s.globalScene.subscribe((v) => (scene = v))();
 		s.objectsGroup.subscribe((v) => (group = v))();
@@ -69,7 +69,7 @@ h.run(async () => {
 
 	console.log('\n=== 2. each kind moves the way it says ===');
 	const motion = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fx = s.gameKit.effectsBurst;
 		fx.clearBursts();
 		let scene;
@@ -103,7 +103,7 @@ h.run(async () => {
 
 	console.log('\n=== 3. a burst dies and leaves the frame loop ===');
 	const lifetime = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fx = s.gameKit.effectsBurst;
 		fx.clearBursts();
 		await new Promise((r) => setTimeout(r, 200)); // let the idle task leave
@@ -119,7 +119,7 @@ h.run(async () => {
 
 	console.log('\n=== 4. the pool is bounded and recycles ===');
 	const pool = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fx = s.gameKit.effectsBurst;
 		let scene;
 		s.globalScene.subscribe((v) => (scene = v))();
@@ -133,7 +133,7 @@ h.run(async () => {
 
 	console.log('\n=== 5. inputs are clamped and bad ones refused ===');
 	const inputs = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const fx = s.gameKit.effectsBurst;
 		fx.clearBursts();
 		let scene;
@@ -155,15 +155,15 @@ h.run(async () => {
 
 	console.log('\n=== 6. it reaches the pixels ===');
 	await page.evaluate(() => {
-		window.__stores.gameKit.effectsBurst.clearBursts();
-		window.__stores.objectActions.deselectObject?.();
+		window.__tp.test.v1.gameKit.effectsBurst.clearBursts();
+		window.__tp.test.v1.objectActions.deselectObject?.();
 	});
 	await page.waitForTimeout(400);
 	const quiet1 = await h.grabFrame(A);
 	await page.waitForTimeout(150);
 	const quiet2 = await h.grabFrame(A);
 	const fired6 = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let cam;
 		s.globalCamera.subscribe((c) => (cam = c))();
 		const THREE = s.THREE;
@@ -181,7 +181,7 @@ h.run(async () => {
 		burstDelta = await h.frameDelta(page, quiet2, frame);
 	}
 	const diag = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let rd, scene, cam;
 		s.globalRenderer.subscribe((v) => (rd = v))();
 		s.globalScene.subscribe((v) => (scene = v))();
@@ -201,6 +201,10 @@ h.run(async () => {
 	h.check(burstDelta.changed > idle.changed + 400, '6.1 a burst in view changes the frame (' + burstDelta.changed + ' px vs idle ' + idle.changed + ') ' + JSON.stringify({ fired6, diag }));
 
 	console.log('\n=== 7. announce ===');
+	// 78 F14: the banner draws in Play only (in Edit the line goes to the Debugger console —
+	// announce-console covers that), so the banner checks below run in Play
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
+	await page.waitForTimeout(300);
 	const ann = await page.evaluate(async () => {
 		const api = window.__api;
 		const empty = api.announce('   ');
@@ -227,7 +231,7 @@ h.run(async () => {
 	h.check(ann.color === 'rgb(34, 197, 94)' && ann.pe === 'none', '7.3 the title takes its colour and the banner never takes a click');
 	h.check(ann.gone, '7.4 it goes by itself after its ms');
 	const vr = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.isVRMode.set(true);
 		window.__api.announce('Level 3');
 		await new Promise((r) => setTimeout(r, 100));
@@ -239,7 +243,7 @@ h.run(async () => {
 
 	console.log('\n=== 8. a scene clear takes both ===');
 	const cleared = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		window.__api.effects.burst([0, 1, -2], { kind: 'smoke' });
 		window.__api.announce('Wave 2', { ms: 5000 });
 		await new Promise((r) => setTimeout(r, 50));
@@ -250,6 +254,7 @@ h.run(async () => {
 	});
 	h.check(cleared.before.live > 0 && cleared.before.banner, '8.1 premise: a burst and a banner are up');
 	h.check(cleared.live === 0 && !cleared.banner, '8.2 a scene clear removes both (' + JSON.stringify(cleared) + ')');
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(null));
 
 	await h.finish(browser);
 });

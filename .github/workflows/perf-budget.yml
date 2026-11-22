@@ -11,6 +11,11 @@
 # reproduce. The profile is pinned (governor off, shadows off, post off, fixed viewpoints).
 #
 # release.yml calls this workflow, so a tag cannot ship a scene that broke the budget.
+#
+# 54 X10: ALWAYS in three parallel parts (scripts/perf-games.cjs --part k/3, balanced by measured
+# cost). As one job it took 53-73 min on a runner against its 75 min limit, and a tag push (main +
+# release/next + release.yml's call, three at once) timed out release.yml's run for 1.45.0. deps.yml
+# calls it once per part (inputs.part); every other trigger runs the three-part matrix here.
 name: perf-budget
 
 on:
@@ -39,9 +44,14 @@ concurrency:
 
 jobs:
   budget:
-    name: perf-budget${{ inputs.part && format(' {0}/{1}', inputs.part, inputs.parts) || '' }}
+    name: perf-budget ${{ matrix.part }}/${{ inputs.part && inputs.parts || 3 }}
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    # one part measured 20-25 min (deps.yml); the limit leaves room for a slow runner
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        part: ${{ fromJSON(inputs.part && format('[{0}]', inputs.part) || '[1,2,3]') }}
     steps:
       - uses: actions/checkout@v7
 
@@ -99,14 +109,14 @@ jobs:
           APP_URL: https://localhost:5173/
           PERF_SCENES_DIR: ${{ runner.temp }}/perf-deps/scenes
           PERF_MODULES_DIR: ${{ runner.temp }}/perf-deps/modules
-          PART: ${{ inputs.part && format('{0}/{1}', inputs.part, inputs.parts) || '' }}
-        run: node scripts/perf-games.cjs --check --label ci${PART:+-${PART%/*}} --out perf/out ${PART:+--part $PART}
+          PART: ${{ format('{0}/{1}', matrix.part, inputs.part && inputs.parts || 3) }}
+        run: node scripts/perf-games.cjs --check --label ci-${PART%/*} --out perf/out --part $PART
 
       - name: the table
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: perf-budget${{ inputs.part && format('-{0}', inputs.part) || '' }}
+          name: perf-budget-${{ matrix.part }}
           path: perf/out/
           if-no-files-found: ignore
 

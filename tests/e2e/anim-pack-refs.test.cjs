@@ -18,7 +18,7 @@ h.run(async () => {
 	const page = peer.page;
 
 	const row = await page.evaluate(async () => {
-		const base = String(window.__stores.packs.PACKS_BASE).replace(/\/+$/, '');
+		const base = String(window.__tp.test.v1.packs.PACKS_BASE).replace(/\/+$/, '');
 		const res = await fetch(base + '/interactive-kit/default.json').catch(() => null);
 		if (!res?.ok) return null;
 		const r = (await res.json()).find((x) => x.name === 'DoorWood');
@@ -34,7 +34,7 @@ h.run(async () => {
 	const place = (x) =>
 		page.evaluate(
 			async ({ row, x }) => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				let g;
 				s.objectsGroup.subscribe((v) => (g = v))();
 				const before = new Set(g.children.map((c) => c.uuid));
@@ -50,7 +50,7 @@ h.run(async () => {
 			{ row, x }
 		);
 
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	await page.waitForTimeout(500);
 	const a = await place(-1);
 	const b = await place(1.5);
@@ -59,7 +59,7 @@ h.run(async () => {
 
 	// ---- 1. the save names the file ------------------------------------------------------
 	const saved = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = s.sessions.buildSessionPayload('doors');
 		const entries = payload.animated ?? [];
 		let g;
@@ -83,7 +83,7 @@ h.run(async () => {
 
 	// ---- 2/3. the restore fetches the pack file, once -------------------------------------
 	const restored = await page.evaluate(async (payload) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/clear all');
 		await new Promise((r) => setTimeout(r, 300));
 		const urls = [];
@@ -118,7 +118,7 @@ h.run(async () => {
 
 	// ---- 4. an entry with bytes restores as before ----------------------------------------
 	const legacy = await page.evaluate(async (url) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/clear all');
 		await new Promise((r) => setTimeout(r, 300));
 		const buf = new Uint8Array(await (await fetch(url)).arrayBuffer());

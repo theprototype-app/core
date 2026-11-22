@@ -8,6 +8,7 @@ import { S } from './state.js';
 import { renderer, previousButtons } from './core.js';
 import { grabs, endGrab, emptyAirSqueeze, gripHeld } from './grip.js';
 import { endWorldSnap } from './worldSnap.js';
+import { triggerClaimed } from './hooks.js';
 
 /** 194: resolve a controller slot by HANDEDNESS. three's getController(i) is a
  * persistent object; Scene stamps controller.userData.handedness from each
@@ -169,6 +170,10 @@ export function onHandPinchEnd(handedness) {
 	const held = Date.now() - (pinchStartAt[side] || 0);
 	pinchStartAt[side] = 0;
 	if (handedness !== get(vrMenuHand) || held < PINCH_HOLD_MS) return false;
+	// 82 P4: a pinch a feature TOOK (a sleeve take carried out and placed, a knob drag) is that
+	// feature's gesture, however long it was held — not a menu hold
+	const slot = controllerIndexFor(handedness);
+	if (slot >= 0 && triggerClaimed(slot)) return false;
 	vrMenuOpen.update((v) => !v);
 	pinchMenuToggledAt = Date.now();
 	return true;

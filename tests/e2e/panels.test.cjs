@@ -7,7 +7,7 @@ h.run(async () => {
 
 	// sidebar: flat rows render (203 dropped the Files/Scene/App section headers;
 	// Create moved to the Add menu in 77; 126 moved Library/Assets to the Explorer)
-	await A.page.evaluate(() => window.__stores.closeMenu.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.closeMenu.set(false));
 	await A.page.waitForTimeout(500);
 	for (const label of ['Import', 'Configure Scene', 'Modules', 'Sessions', 'Settings']) {
 		h.check(
@@ -22,13 +22,13 @@ h.run(async () => {
 	h.check(await A.page.getByRole('button', { name: /Import/ }).isVisible(), 'files row visible');
 
 	// groups now come from the Add menu / command path
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/group New'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/group New'));
 	await h.eventually(
 		() =>
 			A.page.evaluate(
 				() =>
 					new Promise((r) =>
-						window.__stores.objectsGroup.subscribe((g) =>
+						window.__tp.test.v1.objectsGroup.subscribe((g) =>
 							r(g?.children.some((c) => c.type === 'Group'))
 						)()
 					)
@@ -38,11 +38,11 @@ h.run(async () => {
 	);
 
 	// properties panel opens with the type chip header
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await A.page.evaluate(async () => {
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = g.children.find((c) => c.name === 'Box');
-		window.__stores.objectActions.selectObject(box.uuid, true);
+		window.__tp.test.v1.objectActions.selectObject(box.uuid, true);
 	});
 	await A.page.waitForTimeout(600);
 	h.check(
@@ -59,9 +59,11 @@ h.run(async () => {
 
 	// the save format picker still opens — Save options (the burger's Save ▾) since 41b replaced the
 	// old .json dropdown; GLTF is behind "Offer GLTF", so assert the two formats it always offers
-	await A.page.evaluate(() => window.__stores.closeMenu.set(false));
-	await A.page.waitForSelector('#save-options-open', { timeout: 5000 });
-	await A.page.locator('#save-options-open').click();
+	await A.page.evaluate(() => window.__tp.test.v1.closeMenu.set(false));
+	// showhide-v8 §6: Save options is the last item of the burger's Save as… menu
+	await A.page.waitForSelector('#project-save-as', { timeout: 5000 });
+	await A.page.locator('#project-save-as').click();
+	await A.page.locator('[role="menu"] [role="menuitem"]', { hasText: 'Save options…' }).click();
 	await A.page.waitForSelector('#save-options-modal', { state: 'visible', timeout: 5000 });
 	const formats = await A.page.evaluate(() => [...document.querySelectorAll('#save-format .seg-opt')].map((b) => b.textContent?.trim()));
 	h.check(formats.includes('Project') && formats.includes('Scene'), `save format picker opens (${JSON.stringify(formats)})`);

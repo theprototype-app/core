@@ -30,13 +30,13 @@ const h = require('./helpers.cjs');
 const at = (p) =>
 	p.page.evaluate(() => {
 		let v;
-		window.__stores.levels.currentLevel.subscribe((x) => (v = x))();
+		window.__tp.test.v1.levels.currentLevel.subscribe((x) => (v = x))();
 		return v;
 	});
 
 const itemNames = (p) =>
 	p.page.evaluate(() => {
-		const s = window.__stores.explorer;
+		const s = window.__tp.test.v1.explorer;
 		let v, hid;
 		s.explorerItems.subscribe((x) => (v = x))();
 		s.hiddenItems.subscribe((x) => (hid = x))();
@@ -46,7 +46,7 @@ const itemNames = (p) =>
 const historyOf = (p, name) =>
 	p.page.evaluate((n) => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((x) => (m = x))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((x) => (m = x))();
 		return m.scenes[n]?.history ?? [];
 	}, name);
 
@@ -62,13 +62,13 @@ const cardsOn = (p) =>
 const scenesOfPeers = (p) =>
 	p.page.evaluate(() => {
 		let m;
-		window.__stores.peerScenes.peerScenes.subscribe((x) => (m = x))();
+		window.__tp.test.v1.peerScenes.peerScenes.subscribe((x) => (m = x))();
 		return Object.fromEntries(Object.entries(m).map(([id, r]) => [id, r.scene]));
 	});
 
 const rooms = (p) =>
 	p.page.evaluate(() => {
-		const s = window.__stores.peerScenes;
+		const s = window.__tp.test.v1.peerScenes;
 		let m;
 		s.peerScenes.subscribe((x) => (m = x))();
 		return s
@@ -81,23 +81,23 @@ const answerGuard = async (p, value) => {
 	await p.page.waitForTimeout(700);
 	const open = await p.page.evaluate(() => {
 		let d;
-		window.__stores.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
+		window.__tp.test.v1.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
 		return !!d;
 	});
-	if (open) await p.page.evaluate((v) => window.__stores.confirmDialog.resolveConfirm(v), value);
+	if (open) await p.page.evaluate((v) => window.__tp.test.v1.confirmDialog.resolveConfirm(v), value);
 	return open;
 };
 
 const addBox = (p) =>
 	p.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1100));
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.objectActions.deselectObject();
 	});
 
 const wipe = async (p) => {
 	await p.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const uuids = (g?.children ?? []).map((c) => c.uuid);
@@ -112,17 +112,17 @@ const wipe = async (p) => {
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
-	await A.page.waitForFunction(() => !!window.__stores?.peerScenes, { timeout: 30000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.peerScenes, { timeout: 30000 });
 	await A.page.locator('#explorer-slot').click();
 	await A.page.waitForTimeout(700);
-	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 
 	// =====================================================================
 	// 1. SAVING A LOOSE SCENE ADOPTS THE FILE IT CAME FROM
 	// =====================================================================
 	await wipe(A);
 	const looseBytes = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1100));
 		s.objectActions.deselectObject();
@@ -147,17 +147,17 @@ h.run(async () => {
 	);
 	const sourceHash = await A.page.evaluate(() => {
 		let v;
-		window.__stores.explorer.explorerItems.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (v = x))();
 		return v.find((i) => i.name === 'cube.tpscene').hash;
 	});
-	await A.page.evaluate((hash) => window.__stores.levels.travelToLevel(hash), sourceHash);
+	await A.page.evaluate((hash) => window.__tp.test.v1.levels.travelToLevel(hash), sourceHash);
 	await h.eventually(
 		() => at(A),
 		(v) => v?.name === 'cube' && v?.unsaved === true,
 		'premise: it opens LOOSE — the project has never heard of it'
 	);
 	await addBox(A); // the reported "moved object"
-	await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('cube'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('cube'));
 	await h.eventually(
 		() => historyOf(A, 'cube'),
 		(hist) => hist.length >= 2,
@@ -179,14 +179,14 @@ h.run(async () => {
 		'…FOLDED rather than deleted — the bytes are still here'
 	);
 	h.check(
-		(await A.page.evaluate((hash) => !!window.__stores.explorer.itemByHash(hash), sourceHash)) === true,
+		(await A.page.evaluate((hash) => !!window.__tp.test.v1.explorer.itemByHash(hash), sourceHash)) === true,
 		'…and still resolvable by hash, so Version history can restore it'
 	);
 	h.check((await at(A))?.unsaved !== true, 'the scene is a project member now, no longer loose');
 
 	// a save from NOWHERE adopts nothing — the guard must not fire on every save
 	await addBox(A);
-	await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('cube'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('cube'));
 	await h.eventually(
 		() => historyOf(A, 'cube'),
 		(x) => x.length === 3,
@@ -196,7 +196,7 @@ h.run(async () => {
 	// =====================================================================
 	// 2. P2a — A PEER SEES THE PROJECT'S SCENES WITH NONE OF THE BYTES
 	// =====================================================================
-	await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Arena'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Arena'));
 	await h.eventually(
 		() => historyOf(A, 'Arena'),
 		(x) => x.length === 1,
@@ -204,16 +204,16 @@ h.run(async () => {
 	);
 
 	const B = await h.setupPage(browser, 'B');
-	await B.page.waitForFunction(() => !!window.__stores?.peerScenes, { timeout: 30000 });
+	await B.page.waitForFunction(() => !!window.__tp?.test.v1?.peerScenes, { timeout: 30000 });
 	await B.page.locator('#explorer-slot').click();
 	await B.page.waitForTimeout(600);
-	await B.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await B.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await h.connect(B, A);
 
 	h.check(
 		(await B.page.evaluate(() => {
 			let v;
-			window.__stores.explorer.explorerItems.subscribe((x) => (v = x))();
+			window.__tp.test.v1.explorer.explorerItems.subscribe((x) => (v = x))();
 			return v.length;
 		})) === 0,
 		'premise: the joiner holds NO library items of its own'
@@ -231,7 +231,7 @@ h.run(async () => {
 		() =>
 			B.page.evaluate(() => {
 				let m;
-				window.__stores.projectManifest.projectManifest.subscribe((x) => (m = x))();
+				window.__tp.test.v1.projectManifest.projectManifest.subscribe((x) => (m = x))();
 				return Object.keys(m.scenes).sort();
 			}),
 		(k) => k.includes('Arena') && k.includes('cube'),
@@ -299,7 +299,7 @@ h.run(async () => {
 	// =====================================================================
 	// saving Arena MOVED A into it (saveSceneAsLevel sets currentLevel), so put A back
 	// in cube deliberately — presence is only meaningful when the two peers differ
-	await A.page.evaluate(() => window.__stores.levels.travelToScene('cube'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.travelToScene('cube'));
 	await h.eventually(
 		() => at(A),
 		(v) => v?.name === 'cube',
@@ -320,7 +320,7 @@ h.run(async () => {
 		'…and B can see A is in cube — presence is symmetric'
 	);
 
-	await B.page.evaluate(() => window.__stores.levels.travelToScene('cube'));
+	await B.page.evaluate(() => window.__tp.test.v1.levels.travelToScene('cube'));
 	await h.eventually(
 		() => scenesOfPeers(A),
 		(m) => Object.values(m).includes('cube') && !Object.values(m).includes('Arena'),
@@ -342,7 +342,8 @@ h.run(async () => {
 	const headline = await A.page.evaluate(() => {
 		const box = document.querySelector('#peers-popover');
 		return {
-			header: box?.querySelector('.ui-section-label')?.textContent?.trim(),
+			// 78 PL31 (one count): the count is the trigger's; the header is the title alone
+			header: (document.querySelector('#peers-trigger .hud-tr-count')?.textContent?.trim() ?? '') === '2' && box?.querySelector('.wc-title')?.textContent?.trim() === 'Connected' ? 'Connected (2)' : box?.querySelector('.wc-title')?.textContent?.trim(),
 			flat: box?.querySelector('#peers-view-flat')?.getAttribute('aria-pressed'),
 			goto: box ? box.querySelectorAll('.peer-goto').length : -1
 		};
@@ -376,7 +377,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(300);
 
 	// now put them in different scenes and look again
-	await B.page.evaluate(() => window.__stores.levels.travelToScene('Arena'));
+	await B.page.evaluate(() => window.__tp.test.v1.levels.travelToScene('Arena'));
 	await h.eventually(
 		() => scenesOfPeers(A),
 		(m) => Object.values(m).includes('Arena'),
@@ -483,17 +484,17 @@ h.run(async () => {
 	h.check(
 		(await A.page.evaluate(() => {
 			let ps, cl;
-			window.__stores.peerScenes.peerScenes.subscribe((v) => (ps = v))();
-			window.__stores.levels.currentLevel.subscribe((v) => (cl = v))();
+			window.__tp.test.v1.peerScenes.peerScenes.subscribe((v) => (ps = v))();
+			window.__tp.test.v1.levels.currentLevel.subscribe((v) => (cl = v))();
 			const mine = cl?.name ?? '';
-			return Object.keys(ps).filter((id) => !!window.__stores.peerScenes.elsewhereThan(ps, mine, id)).length;
+			return Object.keys(ps).filter((id) => !!window.__tp.test.v1.peerScenes.elsewhereThan(ps, mine, id)).length;
 		})) === 0,
 		'…and the render/stream gate reads nobody as elsewhere, which is what arriving MEANS'
 	);
 	await A.page.evaluate(() => document.querySelector('#peers-trigger')?.click());
 	await A.page.waitForTimeout(300);
 	// put the premise back for the sections below, which reason from A-in-cube
-	await A.page.evaluate(() => window.__stores.levels.travelToScene('cube'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.travelToScene('cube'));
 	await h.eventually(
 		() => at(A),
 		(v) => v?.name === 'cube',
@@ -501,7 +502,7 @@ h.run(async () => {
 	);
 
 	// and the other half: a peer who travels away WHILE being watched
-	await B.page.evaluate(() => window.__stores.levels.travelToScene('cube'));
+	await B.page.evaluate(() => window.__tp.test.v1.levels.travelToScene('cube'));
 	await h.eventually(
 		() => scenesOfPeers(A),
 		(m) => Object.values(m).includes('cube'),
@@ -509,25 +510,25 @@ h.run(async () => {
 	);
 	const bId = await B.page.evaluate(() => {
 		let pr;
-		window.__stores.peers.subscribe((v) => (pr = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (pr = v))();
 		return pr?.peer?.id;
 	});
-	await A.page.evaluate((id) => window.__stores.specatorMode.set(id), bId);
+	await A.page.evaluate((id) => window.__tp.test.v1.specatorMode.set(id), bId);
 	await A.page.waitForTimeout(400);
 	h.check(
 		(await A.page.evaluate(() => {
 			let v;
-			window.__stores.specatorMode.subscribe((x) => (v = x))();
+			window.__tp.test.v1.specatorMode.subscribe((x) => (v = x))();
 			return v;
 		})) === bId,
 		'premise: A is watching B'
 	);
-	await B.page.evaluate(() => window.__stores.levels.travelToScene('Arena'));
+	await B.page.evaluate(() => window.__tp.test.v1.levels.travelToScene('Arena'));
 	await h.eventually(
 		() =>
 			A.page.evaluate(() => {
 				let v;
-				window.__stores.specatorMode.subscribe((x) => (v = x))();
+				window.__tp.test.v1.specatorMode.subscribe((x) => (v = x))();
 				return v;
 			}),
 		(v) => v === false,
@@ -539,13 +540,13 @@ h.run(async () => {
 	// B is currently in Arena, A in cube (set up just above)
 	const seenApart = await A.page.evaluate(() => {
 		let ud, ps, cl;
-		window.__stores.userdata.subscribe((v) => (ud = v))();
-		window.__stores.peerScenes.peerScenes.subscribe((v) => (ps = v))();
-		window.__stores.levels.currentLevel.subscribe((v) => (cl = v))();
+		window.__tp.test.v1.userdata.subscribe((v) => (ud = v))();
+		window.__tp.test.v1.peerScenes.peerScenes.subscribe((v) => (ps = v))();
+		window.__tp.test.v1.levels.currentLevel.subscribe((v) => (cl = v))();
 		const mine = cl?.name ?? '';
 		return (ud ?? [])
 			.map((u) => u[0])
-			.map((id) => ({ id: String(id).slice(0, 6), hidden: !!window.__stores.peerScenes.elsewhereThan(ps, mine, id) }));
+			.map((id) => ({ id: String(id).slice(0, 6), hidden: !!window.__tp.test.v1.peerScenes.elsewhereThan(ps, mine, id) }));
 	});
 	h.check(
 		seenApart.some((r) => r.hidden),
@@ -558,10 +559,10 @@ h.run(async () => {
 	// travels in while we stand still would never see us.
 	const withheld = await A.page.evaluate(() => {
 		let ps, cl;
-		window.__stores.peerScenes.peerScenes.subscribe((v) => (ps = v))();
-		window.__stores.levels.currentLevel.subscribe((v) => (cl = v))();
+		window.__tp.test.v1.peerScenes.peerScenes.subscribe((v) => (ps = v))();
+		window.__tp.test.v1.levels.currentLevel.subscribe((v) => (cl = v))();
 		const mine = cl?.name ?? '';
-		return Object.keys(ps).filter((id) => !!window.__stores.peerScenes.elsewhereThan(ps, mine, id));
+		return Object.keys(ps).filter((id) => !!window.__tp.test.v1.peerScenes.elsewhereThan(ps, mine, id));
 	});
 	h.check(
 		withheld.length === 1,
@@ -569,7 +570,7 @@ h.run(async () => {
 	);
 
 	// put them back together for §4, which counts rooms — and prove the arrival re-publish
-	await B.page.evaluate(() => window.__stores.levels.travelToScene('cube'));
+	await B.page.evaluate(() => window.__tp.test.v1.levels.travelToScene('cube'));
 	await h.eventually(
 		() => scenesOfPeers(A),
 		(m) => Object.values(m).includes('cube'),
@@ -578,10 +579,10 @@ h.run(async () => {
 	h.check(
 		(await A.page.evaluate(() => {
 			let ps, cl;
-			window.__stores.peerScenes.peerScenes.subscribe((v) => (ps = v))();
-			window.__stores.levels.currentLevel.subscribe((v) => (cl = v))();
+			window.__tp.test.v1.peerScenes.peerScenes.subscribe((v) => (ps = v))();
+			window.__tp.test.v1.levels.currentLevel.subscribe((v) => (cl = v))();
 			const mine = cl?.name ?? '';
-			return Object.keys(ps).filter((id) => !!window.__stores.peerScenes.elsewhereThan(ps, mine, id)).length;
+			return Object.keys(ps).filter((id) => !!window.__tp.test.v1.peerScenes.elsewhereThan(ps, mine, id)).length;
 		})) === 0,
 		'…and the gate lifts the moment they arrive, so streaming resumes'
 	);
@@ -594,7 +595,7 @@ h.run(async () => {
 		rmsA.length === 1 && rmsA[0].scene === 'cube' && rmsA[0].mine === true,
 		`both peers in one scene is ONE room (${JSON.stringify(rmsA)})`
 	);
-	await A.page.evaluate(() => window.__stores.levels.travelToScene('Arena'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.travelToScene('Arena'));
 	await h.eventually(
 		() => rooms(A),
 		(r) =>

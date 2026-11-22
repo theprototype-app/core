@@ -26,7 +26,7 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(3000);
 		await warm.ctx.close();
 	}
@@ -35,7 +35,7 @@ h.run(async () => {
 	const bytes = Array.from(fs.readFileSync(TPSCENE));
 	const load = async () => {
 		await page.evaluate(async (arr) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 			await s.sessions.applySession(payload, { backup: false });
 		}, bytes);
@@ -44,7 +44,7 @@ h.run(async () => {
 	await load();
 	const marker = await page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return !!g.getObjectByName('Towers game');
 	});
 	if (!marker) {
@@ -58,14 +58,14 @@ h.run(async () => {
 	const hud = async () => (await page.locator('#hud-layer').textContent()) ?? '';
 	const snap = () =>
 		page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let gs;
 			s.gameState.gameState.subscribe((v) => (gs = v))();
 			return { state: gs.state, round: gs.round, vars: window.__towers.vars(), pieces: window.__towers.pieces(), screen: s.hudDocs.visibleScreen('scene')?.id ?? null };
 		});
 	const clickBtn = (text) => page.locator('#hud-layer button', { hasText: text }).first().click();
 	const lastAnnounce = () => page.evaluate(() => {
-		const d = window.__stores.gameKit?.gameFeelActions?.gameFeelActionsDebug?.();
+		const d = window.__tp.test.v1.gameKit?.gameFeelActions?.gameFeelActionsDebug?.();
 		return (d?.last ?? []).filter((e) => e.type === 'announce').map((e) => e.text);
 	});
 	const bannerText = async () => (await page.locator('#game-announce').textContent().catch(() => '')) ?? '';
@@ -74,21 +74,21 @@ h.run(async () => {
 		page.evaluate(
 			({ uuid, pos, yaw }) => {
 				let g;
-				window.__stores.objectsGroup.subscribe((v) => (g = v))();
+				window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 				const o = g.getObjectByProperty('uuid', uuid);
 				o.position.set(...pos);
 				o.rotation.set(0, yaw, 0);
 				o.updateMatrix();
 				o.updateMatrixWorld(true);
-				window.__stores.objectsGroup.update((v) => v);
+				window.__tp.test.v1.objectsGroup.update((v) => v);
 			},
 			{ uuid, pos, yaw }
 		);
 	const byShape = (st, shape) => st.pieces.filter((p) => p.shape === shape);
 
 	// ---- 1. the level select: level 1 open, the rest locked ------------------------------------
-	await page.evaluate(() => window.__stores.isLocked.set(true));
-	await h.eventually(() => page.evaluate(() => window.__stores.physics.physicsWorldDebug().running), (ok) => ok, 'Play starts the simulation', 12000);
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
+	await h.eventually(() => page.evaluate(() => window.__tp.test.v1.physics.physicsWorldDebug().running), (ok) => ok, 'Play starts the simulation', 12000);
 	await h.eventually(() => snap(), (s) => s.state === 'menu' && s.screen === 'menu', 'the game opens on the level select', 6000);
 	let text = await hud();
 	h.check(/1 · Stack/.test(text) && /12 · Summit/.test(text), 'the level select lists all twelve levels (1 · Stack … 12 · Summit)');
@@ -116,7 +116,7 @@ h.run(async () => {
 	h.check(!/^0$/.test(String(holdText)) && !(Array.isArray(holdText) && holdText.includes('0')), `no stray "0" where the hold countdown waits (${JSON.stringify(holdText)})`);
 	const goal = await page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g.getObjectByName('Goal ring').position.toArray();
 	});
 	h.check(Math.abs(goal[1] - 1.8) < 0.01 && Math.hypot(goal[0], goal[2]) < 0.01, `the gold ring moved to the goal height over the pad (${goal.map((n) => n.toFixed(2))})`);
@@ -132,7 +132,7 @@ h.run(async () => {
 	st = await snap();
 	h.check(st.vars.twUsed === 3 && st.vars.twStars >= 2, `the result counts the tower: ${st.vars.twUsed} pieces, ${st.vars.twStars} stars`);
 	await h.eventually(hud, (t) => /Level complete!/.test(t) && /★/.test(t) && /Next level/.test(t) && /Retry/.test(t), 'the results panel: Level complete!, the stars, Next / Retry / Levels', 5000);
-	const feel = await page.evaluate(() => window.__stores.gameKit?.gameFeelActions?.gameFeelActionsDebug?.() ?? null);
+	const feel = await page.evaluate(() => window.__tp.test.v1.gameKit?.gameFeelActions?.gameFeelActionsDebug?.() ?? null);
 	h.check(!feel || true, 'premise: game-feel debug readable');
 	await h.eventually(
 		() => page.evaluate(() => {
@@ -147,10 +147,10 @@ h.run(async () => {
 
 	// ---- 4. the unlock PERSISTS across a reload ---------------------------------------------------
 	await page.reload();
-	await page.waitForFunction(() => window.__stores && !!window.__stores.sessions && !!window.__towers, null, { timeout: 40000 });
+	await page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.sessions && !!window.__towers, null, { timeout: 40000 });
 	await load();
-	await page.evaluate(() => window.__stores.isLocked.set(true));
-	await h.eventually(() => page.evaluate(() => window.__stores.physics.physicsWorldDebug().running), (ok) => ok, 'after a reload, Play starts the simulation again', 12000);
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
+	await h.eventually(() => page.evaluate(() => window.__tp.test.v1.physics.physicsWorldDebug().running), (ok) => ok, 'after a reload, Play starts the simulation again', 12000);
 	await h.eventually(() => page.evaluate(() => [1, 2, 3].map((i) => window.__towers.info({ read: 'levelStars', level: i }))), (v) => /★/.test(v[0]) && v[1] === '☆☆☆' && /locked/.test(v[2]), 'after a reload: level 1 keeps its stars, level 2 is open, level 3 still locked', 6000);
 
 	// ---- 5. level 2 (Planks): Retry and Next through the results, and a second scripted win ---------
@@ -183,7 +183,7 @@ h.run(async () => {
 	h.check(high.length === 3, `three of them wait on the HIGH ledge (${high.length})`);
 	// from the floor under the ledge, a ledge cube is out of reach
 	await page.evaluate((target) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let cam;
 		s.playerCam.subscribe((c) => (cam = c))();
 		// from the pad's north edge: the ledge itself would block the view from right under it
@@ -194,7 +194,7 @@ h.run(async () => {
 		cam.lookAt(new s.THREE.Vector3(target[0], target[1], target[2]));
 		cam.updateMatrixWorld(true);
 	}, high[0].pos);
-	await h.eventually(() => page.evaluate(() => { let v; window.__stores.playInteract.playInteractState.subscribe((x) => (v = x))(); return v.mode; }), (m) => m === 'toofar', 'a ledge cube is TOO FAR from the floor — the level needs steps or a jump', 4000);
+	await h.eventually(() => page.evaluate(() => { let v; window.__tp.test.v1.playInteract.playInteractState.subscribe((x) => (v = x))(); return v.mode; }), (m) => m === 'toofar', 'a ledge cube is TOO FAR from the floor — the level needs steps or a jump', 4000);
 
 	// ---- 6. a LOSS: pieces dropped outside the yard are lost, and too many ends the level -----------
 	const floorCubes = (await snap()).pieces.filter((p) => p.pos[1] < 2.5).slice(0, 3);
@@ -243,12 +243,12 @@ h.run(async () => {
 	}
 	await h.eventually(() => bannerText(), (t) => /Gust from the/.test(t), 'a gust is WARNED before it comes', 12000);
 	const topCube = tall[2].uuid;
-	const before = await page.evaluate((uuid) => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); return g.getObjectByProperty('uuid', uuid).position.toArray(); }, topCube);
+	const before = await page.evaluate((uuid) => { let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))(); return g.getObjectByProperty('uuid', uuid).position.toArray(); }, topCube);
 	await page.waitForTimeout(2500);
-	const pushed = await page.evaluate((uuid) => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); const o = g.getObjectByProperty('uuid', uuid); return o ? o.position.toArray() : null; }, topCube);
+	const pushed = await page.evaluate((uuid) => { let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))(); const o = g.getObjectByProperty('uuid', uuid); return o ? o.position.toArray() : null; }, topCube);
 	h.check(!pushed || Math.hypot(pushed[0] - before[0], pushed[2] - before[2]) > 0.05, `the gust PUSHED the top of the tower (${before.map((n) => n.toFixed(2))} -> ${pushed ? pushed.map((n) => n.toFixed(2)) : 'fell and was lost'})`);
 	// WOBBLE (level 10): the plate rocks only in its own level, as a KINEMATIC body
-	const plateTilt = () => page.evaluate(() => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); const o = g.getObjectByName('Wobble plate'); return Math.abs(o.rotation.x) + Math.abs(o.rotation.z); });
+	const plateTilt = () => page.evaluate(() => { let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))(); const o = g.getObjectByName('Wobble plate'); return Math.abs(o.rotation.x) + Math.abs(o.rotation.z); });
 	h.check((await plateTilt()) < 0.005, 'outside level 10 the wobble plate stands still');
 	await page.evaluate(() => window.__towers.startLevel(10));
 	await h.eventually(() => snap(), (s) => s.state === 'playing' && s.vars.twLevel === 10 && s.pieces.length === 7, 'level 10 (Wobble) deals a heavy base, cubes and planks', 9000);
@@ -258,12 +258,12 @@ h.run(async () => {
 		await page.waitForTimeout(300);
 	}
 	h.check(Math.max(...tilts) > 0.02, `in level 10 the plate ROCKS (tilts ${tilts.map((t) => t.toFixed(3)).join(' ')})`);
-	const plateBody = await page.evaluate(() => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); const uuid = g.getObjectByName('Wobble plate').uuid; return window.__stores.physics.physicsDebug().find((b) => b.uuid === uuid)?.mode ?? null; });
+	const plateBody = await page.evaluate(() => { let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))(); const uuid = g.getObjectByName('Wobble plate').uuid; return window.__tp.test.v1.physics.physicsDebug().find((b) => b.uuid === uuid)?.mode ?? null; });
 	h.check(plateBody === 'kinematic', `...as a kinematic body, so it carries what stands on it (${plateBody})`);
 	// OUTLINE (level 11): six cubes into the ghost wall's six cells
 	await page.evaluate(() => window.__towers.startLevel(11));
 	await h.eventually(() => snap(), (s) => s.state === 'playing' && s.vars.twLevel === 11 && byShape(s, 'cube').length === 6, 'level 11 (Outline) deals six cubes', 9000);
-	const ghost = await page.evaluate(() => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); return g.getObjectByName('Ghost wall').position.toArray(); });
+	const ghost = await page.evaluate(() => { let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))(); return g.getObjectByName('Ghost wall').position.toArray(); });
 	h.check(Math.abs(ghost[1] - 0.8) < 0.05, `the ghost wall stands on the pad (${ghost.map((n) => n.toFixed(2))})`);
 	st = await snap();
 	const cells = [[-0.6, 0.52], [0, 0.52], [0.6, 0.52], [-0.6, 1.13], [0, 1.13], [0.6, 1.13]];
@@ -298,7 +298,7 @@ h.run(async () => {
 	await placePiece(star.uuid, [0, y + 0.3, 0]);
 	await h.eventually(() => snap(), (s) => s.state === 'over' && s.vars.twLevel === 12 && s.vars.twStatus === 2, `the star set on top of a ${y.toFixed(2)} m tower WINS the summit`, 12000);
 
-	await page.evaluate(() => window.__stores.isLocked.set(false));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 	await page.waitForTimeout(400);
 	await h.finish(browser);
 });

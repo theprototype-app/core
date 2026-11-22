@@ -10,6 +10,7 @@
 	// a game's own Quality preset, the headset's entry floor and the person's own picks are not
 	// news. Never shown in Play or in a headset — a drop there waits until you are back.
 	import { onMount } from 'svelte';
+	import { notifyOn } from '$lib/notifyPrefs';
 	import { get } from 'svelte/store';
 	import { qualityOverrides, qualityState, keepFullQuality } from '$lib/qualityGovernor';
 	import { simplifiedWater } from '$lib/water/simplifiedNotice.js';
@@ -58,6 +59,7 @@
 			pending.clear();
 			if (!keys.length) return;
 			remember(keys);
+			if (!notifyOn('autoQuality')) return; // profile-notify: the quality still changes; only the pop-up is off
 			showToastById(CARD_ID, noticeText(keys), [{ label: KEEP_FULL_LABEL, action: () => keepFullQuality() }]);
 		}
 		function schedule() {

@@ -9,18 +9,18 @@ const h = require('./helpers.cjs');
 const childCount = (peer) =>
 	peer.page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g?.children.length ?? 0;
 	});
 const visibleOf = (peer, uuid) =>
 	peer.page.evaluate((id) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g?.getObjectByProperty('uuid', id)?.visible ?? null;
 	}, uuid);
 const makeBox = (peer) =>
 	peer.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1100));
 		let g;
@@ -29,13 +29,13 @@ const makeBox = (peer) =>
 		return g.children[g.children.length - 1].uuid;
 	});
 const collect = async (peer, uuid) => {
-	await peer.page.evaluate((id) => window.__stores.flowRuntime.fireObjectClick(id), uuid);
+	await peer.page.evaluate((id) => window.__tp.test.v1.flowRuntime.fireObjectClick(id), uuid);
 	await peer.page.waitForTimeout(900);
 };
 const myVar = (peer, name) =>
 	peer.page.evaluate((n) => {
 		let m;
-		window.__stores.peerVars.peerVarsMine.subscribe((v) => (m = v))();
+		window.__tp.test.v1.peerVars.peerVarsMine.subscribe((v) => (m = v))();
 		return m[n] ?? 0;
 	}, name);
 
@@ -45,7 +45,7 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B');
 	for (const p of [A, B])
 		await p.page.waitForFunction(
-			() => !!window.__stores?.projectManifest && !!window.__stores?.flowGraphsCtl && !!window.__stores?.nodesHandler,
+			() => !!window.__tp?.test.v1?.projectManifest && !!window.__tp?.test.v1?.flowGraphsCtl && !!window.__tp?.test.v1?.nodesHandler,
 			{ timeout: 30000 }
 		);
 	await h.connect(A, B); // B approves -> B is the session host / writer
@@ -60,13 +60,13 @@ h.run(async () => {
 	h.check(built.built.length === 2, 'two per-player collectibles built');
 	// B (the host/writer) saves the scene into the project
 	await B.page.waitForTimeout(1200);
-	const hunt = await B.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Hunt'));
+	const hunt = await B.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Hunt'));
 	h.check(!!hunt?.hash, 'the Hunt scene is in the project (published by the writer)');
 	await A.page.waitForTimeout(600);
 
 	// ---- 2. both play; each collects THEIR OWN gem -------------------------------------
-	for (const p of [A, B]) await p.page.evaluate(() => window.__stores.isLocked.set(true));
-	await A.page.evaluate(() => window.__stores.gameState.setGameState('playing'));
+	for (const p of [A, B]) await p.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.gameState.setGameState('playing'));
 	await A.page.waitForTimeout(900);
 	await collect(A, gem1);
 	h.check((await visibleOf(A, gem1)) === false, "A's gem hides for A");
@@ -76,29 +76,29 @@ h.run(async () => {
 	h.check((await visibleOf(A, gem2)) === true, '…and stays for A');
 	h.check((await myVar(A, 'gems')) === 1 && (await myVar(B, 'gems')) === 1, 'each banked their OWN row');
 	// the leaderboard derivation reads both rows on both screens
-	const rowsOnA = await A.page.evaluate(() => window.__stores.peerVars.leaderboardRows('gems'));
-	const rowsOnB = await B.page.evaluate(() => window.__stores.peerVars.leaderboardRows('gems'));
+	const rowsOnA = await A.page.evaluate(() => window.__tp.test.v1.peerVars.leaderboardRows('gems'));
+	const rowsOnB = await B.page.evaluate(() => window.__tp.test.v1.peerVars.leaderboardRows('gems'));
 	h.check(
 		rowsOnA.length === 2 && rowsOnB.length === 2 && JSON.stringify(rowsOnA.map((r) => r.value)) === JSON.stringify(rowsOnB.map((r) => r.value)),
 		`the leaderboard reads BOTH players identically on both screens (${JSON.stringify(rowsOnA.map((r) => r.value))})`
 	);
-	for (const p of [A, B]) await p.page.evaluate(() => window.__stores.isLocked.set(null));
+	for (const p of [A, B]) await p.page.evaluate(() => window.__tp.test.v1.isLocked.set(null));
 
 	// ---- 3. a LOBBY scene + travel BY NAME through the manifest ------------------------
-	await B.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await B.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	await B.page.waitForTimeout(900);
 	await makeBox(B);
-	const lobby = await B.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Lobby'));
+	const lobby = await B.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Lobby'));
 	h.check(!!lobby?.hash, 'the Lobby scene is in the project');
 	// test-health-1: saving the cleared world as Lobby MOVES B's room (R22 round 30/34: rooms are
 	// content partitions, a save names the room) while A still stands in Hunt — so B's node and
 	// edge below were withheld from A as "elsewhere" and the travel never reached it. A joins the
 	// Lobby by name first, the way a player would.
-	await A.page.evaluate(() => window.__stores.levels.travelToScene('Lobby'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.travelToScene('Lobby'));
 	await h.eventually(
 		() => A.page.evaluate(() => {
 			let c;
-			window.__stores.levels.currentLevel.subscribe((v) => (c = v))();
+			window.__tp.test.v1.levels.currentLevel.subscribe((v) => (c = v))();
 			return c?.name ?? '';
 		}),
 		(n) => n === 'Lobby',
@@ -107,7 +107,7 @@ h.run(async () => {
 	);
 	// the travel NODE in name mode, pulsed on B, moves BOTH peers to the CURRENT Hunt
 	const node = await B.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let p;
 		s.peers.subscribe((v) => (v ? (p = v) : null))();
 		const mk = (type, data, x) => ({ id: crypto.randomUUID(), type, position: { x, y: 40 }, data: { label: type, type, ...data }, class: 'w-[150px]' });
@@ -123,17 +123,17 @@ h.run(async () => {
 		return click.id;
 	});
 	await h.eventually(
-		() => A.page.evaluate((id) => window.__stores.allNodes().some((n) => n.id === id), node),
+		() => A.page.evaluate((id) => window.__tp.test.v1.allNodes().some((n) => n.id === id), node),
 		(v) => v === true,
 		'premise: A holds the travel binding'
 	);
 	await B.page.waitForTimeout(700); // the stale-stamp settle
-	await B.page.evaluate((id) => window.__stores.flowRuntime.applyNodeTrigger(id, (Date.now() % 86400000) / 1000, true), node);
+	await B.page.evaluate((id) => window.__tp.test.v1.flowRuntime.applyNodeTrigger(id, (Date.now() % 86400000) / 1000, true), node);
 	for (const p of [A, B])
 		await h.eventually(
 			() => p.page.evaluate(() => {
 				let c;
-				window.__stores.levels.currentLevel.subscribe((v) => (c = v))();
+				window.__tp.test.v1.levels.currentLevel.subscribe((v) => (c = v))();
 				return c?.name ?? '';
 			}),
 			(n) => n === 'Hunt',
@@ -146,21 +146,21 @@ h.run(async () => {
 	await makeBox(B);
 	const huntHist = await B.page.evaluate(() => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (m = v))();
 		return m.scenes.Hunt.history.length;
 	});
-	await B.page.evaluate(() => window.__stores.levels.travelToScene('Lobby'));
+	await B.page.evaluate(() => window.__tp.test.v1.levels.travelToScene('Lobby'));
 	await h.eventually(() => childCount(B), (n) => n === 1, 'B is in the Lobby');
 	await h.eventually(
 		() => B.page.evaluate(() => {
 			let m;
-			window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+			window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (m = v))();
 			return m.scenes.Hunt.history.length;
 		}),
 		(n) => n === huntHist + 1,
 		'leaving Hunt auto-published the edit as a new version'
 	);
-	await B.page.evaluate(() => window.__stores.levels.travelToScene('Hunt'));
+	await B.page.evaluate(() => window.__tp.test.v1.levels.travelToScene('Hunt'));
 	await h.eventually(() => childCount(B), (n) => n === 3, 'back in Hunt: the edit SURVIVED the round trip');
 
 	for (const p of [A, B]) {

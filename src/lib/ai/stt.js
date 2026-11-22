@@ -1,7 +1,7 @@
 import { writable, get } from 'svelte/store';
 import { safeStorage } from '../safeStorage';
 import { registerSecretSource } from '../diagnostics';
-import { AiHttpError, describeAiError } from './client.js';
+import { AiHttpError, describeAiError } from './aiErrors.js'; // sk3-int: the leaf, not the whole chat client (play boot)
 import { normalizeEndpointUrl, STT_TAILS } from './url.js'; // fix-batch-2 B1: a leaf
 
 // Speech to text (36-vr-ai, plan F2): voice typing for the AI assistant. ONE local per-device config,

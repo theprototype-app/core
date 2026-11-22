@@ -54,7 +54,7 @@
 	/** @type {{ id: string, title: string, key: string,
 	 *   defaultRect?: { left?: number, top?: number, right?: number, bottom?: number },
 	 *   minW?: number, width?: number, tabs?: any, actions?: any, status?: any, children: any,
-	 *   onclose?: () => void }} */
+	 *   onclose?: () => void, icon?: string }} */
 	let {
 		id,
 		title,
@@ -68,7 +68,9 @@
 		children,
 		// 40 F1: what a swipe-away does on the phone sheet; absent = the sheet only resizes (a
 		// toolbox that belongs to an edit session closes through its own Done)
-		onclose = undefined
+		onclose = undefined,
+		// showhide-v8 §3: a role icon before the title (Lucide name); the six-dot grip is gone (the whole header drags)
+		icon = ''
 	} = $props();
 
 	// 18-C3: the exact 640 breakpoint the Inspector and the notes drawer use for
@@ -124,7 +126,7 @@
 		</div>
 	{/if}
 	<div class="toolbox-header move-handle">
-		<Icon name="grip-vertical" size={16} aria-hidden="true" />
+		{#if icon}<Icon name={icon} size={16} aria-hidden="true" />{/if}
 		<span class="toolbox-title">{title}</span>
 		<span class="toolbox-spacer"></span>
 		{@render actions?.()}
@@ -145,6 +147,10 @@
 </div>
 
 <style>
+	/* showhide-v8 §3: on the phone sheet a swipe down closes the toolbox, so its own close button is redundant there */
+	.tbx-sheet :global([data-tbx-close]) {
+		display: none;
+	}
 	.toolbox {
 		/* alias tokens (the redesign tokens, defined in every theme) */
 		--tbx-hover: var(--surface-hover);
@@ -172,6 +178,7 @@
 		   dock when it pushes the viewport — so a toolbox parked low scrolls its body
 		   instead of hanging its status footer under the pill. */
 		max-height: calc(100vh - var(--dw-top, 24px) - 12px - var(--controls-inset, 0px) - var(--viewport-inset, 0px));
+		max-height: calc(100dvh - var(--dw-top, 24px) - 12px - var(--controls-inset, 0px) - var(--viewport-inset, 0px));
 		user-select: none;
 		font-size: 13px;
 		/* own the SURFACE from tokens: `ui-panel`'s background is compiled from
@@ -262,6 +269,7 @@
 			height: min(var(--tbx-sheet-h, 40vh), var(--ps-sheet-max, 100vh)) !important;
 			/* never rise above the Connect bar + the top-right chrome */
 			max-height: calc(100vh - var(--connect-bottom, 54px) - 56px) !important;
+			max-height: calc(100dvh - var(--connect-bottom, 54px) - 56px) !important;
 			border-radius: 0.75rem 0.75rem 0 0 !important;
 			/* The sheet's BACKGROUND runs to the very bottom, but its CONTENTS stop
 			   above the Controls HUD — the Inspector sheet's contract. The padding

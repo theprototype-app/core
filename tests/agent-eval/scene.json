@@ -1,0 +1,20 @@
+{
+	"$comment": "The ONE scene every eval request runs against (a room: floor, table, lamp, crate, ball, door). Fixed answers of the read tools.",
+	"list_scene": {
+		"objects": [
+			{ "uuid": "floor-1", "name": "Floor", "type": "Mesh", "geometry": { "type": "Box", "width": 10, "height": 0.1, "depth": 10 }, "position": [0, -0.05, 0], "color": "#8a8a8a" },
+			{ "uuid": "table-1", "name": "Table", "type": "Mesh", "geometry": { "type": "Box", "width": 1.6, "height": 0.75, "depth": 0.9 }, "position": [0, 0.375, 0], "color": "#7a5230" },
+			{ "uuid": "lamp-1", "name": "Lamp", "type": "Group", "position": [0.5, 0.75, 0], "children": ["lampbase-1", "shade-1", "bulb-1"] },
+			{ "uuid": "lampbase-1", "name": "Lamp base", "type": "Mesh", "geometry": { "type": "Cylinder", "radiusTop": 0.05, "radiusBottom": 0.1, "height": 0.4 }, "position": [0, 0.2, 0], "parent": "lamp-1", "color": "#333333" },
+			{ "uuid": "shade-1", "name": "Lamp shade", "type": "Mesh", "geometry": { "type": "Cone", "radius": 0.2, "height": 0.25 }, "position": [0, 0.5, 0], "parent": "lamp-1", "color": "#f2e6c9" },
+			{ "uuid": "bulb-1", "name": "Lamp light", "type": "PointLight", "position": [0, 0.45, 0], "parent": "lamp-1", "intensity": 2 },
+			{ "uuid": "crate-1", "name": "Crate", "type": "Mesh", "geometry": { "type": "Box", "width": 0.6, "height": 0.6, "depth": 0.6 }, "position": [-2, 0.3, 1], "color": "#a0703c" },
+			{ "uuid": "ball-1", "name": "Ball", "type": "Mesh", "geometry": { "type": "Sphere", "radius": 0.25 }, "position": [-1, 1.5, 0], "color": "#2a6fdb" },
+			{ "uuid": "door-1", "name": "Door", "type": "Mesh", "geometry": { "type": "Box", "width": 1, "height": 2.1, "depth": 0.08 }, "position": [0, 1.05, -5], "color": "#5b3a1e" },
+			{ "uuid": "sun-1", "name": "Sun", "type": "DirectionalLight", "position": [5, 10, 5], "intensity": 3 }
+		],
+		"count": 10
+	},
+	"status": { "joined": true, "you": { "peerId": "me-1", "name": "Alex", "role": "host", "you": true }, "role": "host", "canEdit": true, "users": [{ "peerId": "me-1", "name": "Alex", "you": true }] },
+	"where_are_users": { "users": [{ "peerId": "me-1", "name": "Alex", "you": true, "position": [0, 1.6, 4], "yaw": 3.14159, "forward": [0, 0, -1], "floor": 0, "ahead1_5m": [0, 0, 2.5], "ahead3m": [0, 0, 1] }] }
+}

@@ -1,6 +1,7 @@
 // VR controls — the VR panels: objects/props/prefabs/chat/approve/keyboard/palette raycasts and actions, window grab.
 // 34 R4 (A5): one concern of src/lib/vrControls.js, which re-exports the public names unchanged.
 import * as THREE from 'three';
+import { notifyOn } from '../notifyPrefs';
 import { get, writable } from 'svelte/store';
 import {
 	objectsGroup,
@@ -128,7 +129,7 @@ export const vrChatUnread = writable(0);
 let lastMessageCount = 0;
 messages.subscribe((list) => {
 	const count = Array.isArray(list) ? list.length : 0;
-	if (count > lastMessageCount && !get(vrChatPanelOpen)) vrChatUnread.update((n) => n + (count - lastMessageCount));
+	if (count > lastMessageCount && !get(vrChatPanelOpen) && notifyOn('chat')) vrChatUnread.update((n) => n + (count - lastMessageCount));
 	lastMessageCount = count;
 });
 vrChatPanelOpen.subscribe((open) => {

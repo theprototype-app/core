@@ -14,9 +14,15 @@ h.run(async () => {
 		(await A.page.locator('.connect-pill').getAttribute('data-state')) === 'idle',
 		'CN: pill starts in idle state'
 	);
+	// uir-people (Connect B): idle leads with Invite + Join…; the dial field shows after Join…
+	h.check(
+		(await A.page.locator('#connect-join').isVisible()) && (await A.page.locator('#connect-ready').innerText()).trim().length > 0,
+		'CN: idle shows Join… and the one-word status'
+	);
+	await h.openDial(A.page);
 	h.check(
 		await A.page.locator('input[placeholder="Enter peer ID to connect"]').first().isVisible(),
-		'CN: idle shows the dial input'
+		'CN: Join… shows the dial input'
 	);
 
 	// --- idle -> pending (dial a bogus id) --------------------------------------
@@ -25,7 +31,7 @@ h.run(async () => {
 	// so the dial flows through the real state machine.
 	await A.page.evaluate(() => {
 		let p;
-		window.__stores.peers.subscribe((x) => (p = x))();
+		window.__tp.test.v1.peers.subscribe((x) => (p = x))();
 		Object.defineProperty(p.peer, 'open', { value: true, configurable: true });
 		p.peer.connect = (id) => ({ peer: id, open: false, on() {}, close() {}, send() {} });
 	});
@@ -65,10 +71,10 @@ h.run(async () => {
 			return v;
 		};
 		return {
-			waiting: read(window.__stores.waitingForApproval).length,
-			roster: read(window.__stores.userdata).length,
-			conn: !!read(window.__stores.peers)?.connections?.['ffff1'],
-			host: read(window.__stores.connectionState.sessionHost)
+			waiting: read(window.__tp.test.v1.waitingForApproval).length,
+			roster: read(window.__tp.test.v1.userdata).length,
+			conn: !!read(window.__tp.test.v1.peers)?.connections?.['ffff1'],
+			host: read(window.__tp.test.v1.connectionState.sessionHost)
 		};
 	});
 	h.check(unwound.waiting === 0, 'CN: cancel cleared waitingForApproval');
@@ -80,7 +86,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(4500);
 	const resurrect = await A.page.evaluate(() => {
 		let p;
-		window.__stores.peers.subscribe((x) => (p = x))();
+		window.__tp.test.v1.peers.subscribe((x) => (p = x))();
 		return !!p?.connections?.['ffff1'];
 	});
 	h.check(resurrect === false, 'CN: the 4s restore retry does not resurrect a cancelled conn');
@@ -114,7 +120,7 @@ h.run(async () => {
 	);
 	const dialedByKey = await A.page.evaluate(() => {
 		let v;
-		window.__stores.waitingForApproval.subscribe((x) => (v = x))();
+		window.__tp.test.v1.waitingForApproval.subscribe((x) => (v = x))();
 		return v.map((w) => w[0]);
 	});
 	h.check(
@@ -124,7 +130,7 @@ h.run(async () => {
 	h.check(
 		(await A.page.evaluate(() => {
 			let d;
-			window.__stores.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
+			window.__tp.test.v1.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
 			return d;
 		})) === null,
 		'CN: an EMPTY scene raises no unnamed-scene question on the way out'
@@ -156,13 +162,13 @@ h.run(async () => {
 	const dialogNow = () =>
 		A.page.evaluate(() => {
 			let d;
-			window.__stores.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
+			window.__tp.test.v1.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
 			return d ? { title: d.title, message: d.message, choices: (d.choices ?? []).map((c) => c.value) } : null;
 		});
 	const waitingNow = () =>
 		A.page.evaluate(() => {
 			let w;
-			window.__stores.waitingForApproval.subscribe((x) => (w = x))();
+			window.__tp.test.v1.waitingForApproval.subscribe((x) => (w = x))();
 			return w.map((/** @type {any} */ e) => e[0]);
 		});
 	const pressConnect = async (id) => {
@@ -173,14 +179,14 @@ h.run(async () => {
 	// the scene is still empty here — that is the case the checks above already dialled
 	// through, so give it work and nothing else
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1200));
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.objectActions.deselectObject();
 	});
 	const sceneNow = await A.page.evaluate(() => {
 		let g, at;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
-		window.__stores.levels.currentLevel.subscribe((x) => (at = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.levels.currentLevel.subscribe((x) => (at = x))();
 		return { objects: g?.children.length ?? 0, name: at?.name ?? null };
 	});
 	h.check(
@@ -213,7 +219,7 @@ h.run(async () => {
 
 	// --- invite ~srv param: encode + parse round-trips ---------------------------
 	const param = await A.page.evaluate(() => {
-		const ps = window.__stores.peerServer;
+		const ps = window.__tp.test.v1.peerServer;
 		return {
 			selfHosted: ps.inviteServerParam({ kind: 'self-hosted', label: 'self-hosted', host: 'x', port: 443, path: '/peerjs', didFallback: false }),
 			local: ps.inviteServerParam({ kind: 'local', label: 'local dev', host: 'localhost', port: 9001, path: '/peerjs', didFallback: false }),
@@ -235,7 +241,7 @@ h.run(async () => {
 
 	// the copied invite link picks up the param when the status is non-default
 	await A.page.evaluate(() => {
-		window.__stores.peerServer.peerServerStatus.set({
+		window.__tp.test.v1.peerServer.peerServerStatus.set({
 			kind: 'public', label: 'public cloud', host: 'PeerJS public cloud', port: 443, path: '/', didFallback: true
 		});
 	});
@@ -244,7 +250,7 @@ h.run(async () => {
 		// no signaling server in the headless env — simulate the id arriving so the
 		// copy guard ("Generating...") passes, then stub the clipboard and click copy
 		let p;
-		window.__stores.peers.subscribe((x) => (p = x))();
+		window.__tp.test.v1.peers.subscribe((x) => (p = x))();
 		p?.updateIdFn?.('abc12');
 		await new Promise((r) => setTimeout(r, 50));
 		let captured = null;
@@ -270,7 +276,7 @@ h.run(async () => {
 		const hosts = await Promise.all([A, B].map((P) =>
 			P.page.evaluate(() => {
 				let v;
-				window.__stores.connectionState.sessionHost.subscribe((x) => (v = x))();
+				window.__tp.test.v1.connectionState.sessionHost.subscribe((x) => (v = x))();
 				return v;
 			})
 		));

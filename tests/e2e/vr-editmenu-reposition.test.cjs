@@ -11,8 +11,8 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	const res = await A.page.evaluate(() => {
-		const W = window.__stores.vrWindowPoses;
-		const THREE = window.__stores.THREE;
+		const W = window.__tp.test.v1.vrWindowPoses;
+		const THREE = window.__tp.test.v1.THREE;
 		const out = {};
 		for (const id of ['editmenu', 'snapmenu']) {
 			W.resetWindowPoses();

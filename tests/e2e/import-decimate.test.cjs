@@ -36,7 +36,7 @@ async function waitFor(fn, predicate, label, timeout = 10000) {
 /** In-page helpers, installed on every page. */
 const install = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		window.__glbOf = async (/** @type {any} */ object, /** @type {string} */ name) => {
 			const glb = await new Promise((resolve, reject) =>
@@ -79,7 +79,7 @@ h.run(async () => {
 
 	// ---- 1. off the main thread ----------------------------------------------
 	const off = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		// 1.2M triangles: the scan-sized case. Built BEFORE the clock starts — building it
 		// is the fixture's cost, not the reduction's.
@@ -129,7 +129,7 @@ h.run(async () => {
 
 	// ---- 2. what comes back is still the model ------------------------------
 	const shape = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const mesh = window.__sphere(200000);
 		mesh.geometry.userData.__topo = { counts: [1], tris: [0] };
@@ -165,7 +165,7 @@ h.run(async () => {
 	h.check(shape.topo === null, 'the stored face partition is dropped — it indexed triangles that no longer exist');
 
 	const soup = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const g = new THREE.SphereGeometry(1, 120, 60).toNonIndexed();
 		g.deleteAttribute('uv');
@@ -178,7 +178,7 @@ h.run(async () => {
 	h.check(soup.report.trianglesAfter <= 3000 && soup.normals, `a triangle SOUP is welded first and reduces (${soup.report.trianglesBefore} -> ${soup.report.trianglesAfter}), normals rebuilt`);
 
 	const skinned = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const geo = new THREE.SphereGeometry(1, 80, 40);
 		const n = geo.attributes.position.count;
@@ -196,7 +196,7 @@ h.run(async () => {
 	h.check(skinned.untouched && skinned.report.skipped.length === 1 && /skinned/.test(skinned.report.skipped[0].why), `a skinned mesh is left alone and SAYS so ("${skinned.report.skipped[0]?.why}")`);
 
 	const texture = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const canvas = document.createElement('canvas');
 		canvas.width = 5000;
@@ -220,7 +220,7 @@ h.run(async () => {
 	await h.connect(A, B);
 
 	const placed = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const file = await window.__glbOf(window.__sphere(30000), 'scan');
 		const before = window.__undoDepth();
 		const uuid = await s.fileHandler.importFile(file, 'scan', 'glb', [0, 1, 0], undefined, { reduce: { room: 6000 } });
@@ -240,7 +240,7 @@ h.run(async () => {
 
 	// a .tpscene round trip on A keeps the reduced geometry (sessions use toJSON)
 	const saved = await A.page.evaluate(async (uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = s.sessions.buildSessionPayload('reduced-roundtrip');
 		await s.sessions.applySession(payload, { backup: false, replicate: false });
 		await new Promise((r) => setTimeout(r, 800));
@@ -249,7 +249,7 @@ h.run(async () => {
 	h.check(saved?.triangles === placed.probe.triangles && !!saved?.reduced, `a saved scene reopens with the reduced geometry and its stamp (${saved?.triangles})`);
 
 	const restored = await A.page.evaluate(async (uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const before = window.__undoDepth();
 		const ok = await s.fileHandler.restoreOriginalImport(uuid);
 		s.selectedObjects.set([]);
@@ -267,7 +267,7 @@ h.run(async () => {
 	h.check(bRestored?.sameUuid === 1, `B holds the original, once (${bRestored?.triangles} triangles)`);
 
 	const undone = await A.page.evaluate(async (uuid) => {
-		window.__stores.history.undo();
+		window.__tp.test.v1.history.undo();
 		await new Promise((r) => setTimeout(r, 500));
 		return window.__probe(uuid);
 	}, placed.uuid);
@@ -283,7 +283,7 @@ h.run(async () => {
 		console.log('  B holds: ' + JSON.stringify(await B.page.evaluate(() => window.__group().children.map((/** @type {any} */ c) => [c.name, c.uuid.slice(0, 8), c.type]))));
 
 	const again = await A.page.evaluate(async (uuid) => {
-		const ok = await window.__stores.fileHandler.restoreOriginalImport(uuid);
+		const ok = await window.__tp.test.v1.fileHandler.restoreOriginalImport(uuid);
 		return { ok, probe: window.__probe(uuid) };
 	}, placed.uuid);
 	h.check(again.ok && again.probe.triangles === restored.probe.triangles, 'after an undo, Restore works again (the original is still held)');
@@ -291,7 +291,7 @@ h.run(async () => {
 	// a model past history's 5MB SNAPSHOT ceiling: the create/delete kinds could not hold
 	// it, the importswap kind holds the live objects, so the restore is undoable anyway
 	const big = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const file = await window.__glbOf(window.__sphere(80000), 'huge');
 		const uuid = await s.fileHandler.importFile(file, 'huge', 'glb', [4, 1, 0], undefined, { reduce: { room: 60000 } });
 		s.selectedObjects.set([]);
@@ -306,12 +306,12 @@ h.run(async () => {
 	h.check(big.tooBig, 'premise: the reduced model is past the create/delete snapshot ceiling');
 	h.check(big.ok && big.restored.triangles > big.back.triangles && big.back.sameUuid === 1, `…and its restore is STILL one undoable step (${big.back.triangles} -> ${big.restored.triangles} -> ${big.back.triangles})`);
 
-	const missing = await A.page.evaluate(() => window.__stores.fileHandler.restoreOriginalImport('no-such-uuid'));
+	const missing = await A.page.evaluate(() => window.__tp.test.v1.fileHandler.restoreOriginalImport('no-such-uuid'));
 	h.check(missing === false, 'a restore with no retained original refuses, and says so');
 
 	// the retention ceiling: the newest is kept, the oldest go
 	const lru = await A.page.evaluate(() => {
-		const f = window.__stores.decimate;
+		const f = window.__tp.test.v1.decimate;
 		const big = 100 * 1024 * 1024;
 		f.retainOriginal('lru-1', { file: null, extension: 'glb', name: '1', bytes: big });
 		f.retainOriginal('lru-2', { file: null, extension: 'glb', name: '2', bytes: big });

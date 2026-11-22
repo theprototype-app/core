@@ -10,27 +10,21 @@
 
 import { parseTextToolCalls, visiblePrefixLength } from './toolCallText.js';
 import { normalizeEndpointUrl, CHAT_TAILS, serverKind, corsHint } from './url.js'; // fix-batch-2: a leaf
+import { wireMessages } from './visionParts.js'; // 73 AI2: a leaf
+// sk3-int: the error half lives in a leaf so the boot paths that only NAME an AI error (stt.js, in the
+// play boot) stop pulling this whole client in; re-exported, so every import of client.js is unchanged
+import { AiHttpError, TEST_TIMEOUT_MS, describeAiError } from './aiErrors.js';
+export { AiHttpError, TEST_TIMEOUT_MS, serverErrorHint, describeAiError } from './aiErrors.js';
 
 /**
  * @typedef {import('./providers.js').AiProviderConfig} AiProviderConfig
- * @typedef {{role: string, content?: string|null, tool_calls?: any[], tool_call_id?: string, name?: string}} ChatMessage
+ * @typedef {{role: string, content?: string|any[]|null, tool_calls?: any[], tool_call_id?: string, name?: string}} ChatMessage
  * @typedef {{id: string, name: string, arguments: string, extra?: any}} ToolCall
  */
 // ToolCall.extra = provider extras that MUST be echoed back when the assistant turn is
 // replayed. Gemini's OpenAI-compat layer attaches `extra_content.google.thought_signature`
 // to each tool call and 400s ("missing thought_signature" / "function_response.name")
 // if the replayed tool_calls drop it.
-
-/** Raised when the API responds non-OK; carries status for describeAiError. */
-export class AiHttpError extends Error {
-	/** @param {number} status @param {string} body */
-	constructor(status, body) {
-		super('AI request failed (' + status + ')');
-		this.name = 'AiHttpError';
-		this.status = status;
-		this.body = body;
-	}
-}
 
 /** @param {AiProviderConfig} config @param {string} path */
 function endpoint(config, path) {
@@ -85,7 +79,7 @@ function authHeaders(config) {
  */
 export async function chatOnce({ config, messages, tools, onDelta, onReasoning, signal, stream = true }) {
 	/** @type {any} */
-	const body = { model: config.model, messages, stream };
+	const body = { model: config.model, messages: wireMessages(messages), stream };
 	if (typeof config.temperature === 'number') body.temperature = config.temperature;
 	if (tools && tools.length) {
 		body.tools = tools;
@@ -354,9 +348,6 @@ export async function runChat({
 	return { content: finalContent, iterations: i, toolRuns };
 }
 
-/** fix-batch-2 B3: every Test stage gives up after this long instead of "Testing…" forever */
-export const TEST_TIMEOUT_MS = 10000;
-
 /** The caller's signal plus a per-stage timeout. @param {AbortSignal} [signal] */
 function stageSignal(signal) {
 	const timeout = typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(TEST_TIMEOUT_MS) : null;
@@ -529,57 +520,4 @@ export async function testConnection(config, signal) {
 function isKeyError(error) {
 	if (error.status === 401 || error.status === 403) return true;
 	return /API_KEY_INVALID|API key not valid/i.test(error.body || '');
-}
-
-/**
- * fix-batch-2 B3/B4: known server error bodies -> one line that says what to change.
- * @param {number} status @param {string} body @returns {string | null}
- */
-export function serverErrorHint(status, body) {
-	const b = body || '';
-	if (/API_KEY_INVALID|API key not valid/i.test(b))
-		return 'Key rejected — check the API key (Gemini keys: aistudio.google.com/apikey)';
-	if (status === 403 && /PERMISSION_DENIED|SERVICE_DISABLED|has not been used|is disabled/i.test(b))
-		return 'Permission denied — this key’s project does not have the Generative Language API enabled, or the key is restricted';
-	if (/auto"? tool choice requires|enable-auto-tool-choice|tool-call-parser/i.test(b))
-		return 'The server is not set up for tool calls — start vLLM with --enable-auto-tool-choice --tool-call-parser <parser> (Qwen3: qwen3_xml; many others: hermes)';
-	if (/maximum context length|max_model_len|max-model-len|context_length_exceeded|context length/i.test(b))
-		return 'The conversation is longer than the model’s context — start a new chat, or raise --max-model-len on the server';
-	if (/model_not_found|model[^\n]{0,120}(does not exist|not found)|unknown model/i.test(b))
-		return 'Unknown model — use an id from the model list (on vLLM it is the --served-model-name value)';
-	return null;
-}
-
-/**
- * Normalize an error into a short human message.
- * @param {unknown} error
- * @param {AiProviderConfig} [config] when known, network hints name this server's setting
- * @returns {string}
- */
-export function describeAiError(error, config) {
-	if (error instanceof AiHttpError) {
-		const hint = serverErrorHint(error.status, error.body);
-		if (hint) return hint;
-		if (error.status === 401 || error.status === 403) return 'Invalid API key or unauthorized';
-		if (error.status === 429) return 'Rate limited — slow down or check your quota';
-		if (error.status === 404) return 'Endpoint not found — check the base URL';
-		if (error.status >= 500) return 'Provider server error (' + error.status + ')';
-		const snippet = (error.body || '').slice(0, 200);
-		return 'Request failed (' + error.status + ')' + (snippet ? ': ' + snippet : '');
-	}
-	if (error instanceof Error) {
-		if (error.name === 'AbortError') return 'Cancelled';
-		if (error.name === 'TimeoutError') return 'No answer within ' + TEST_TIMEOUT_MS / 1000 + ' s — the server is slow or unreachable';
-		if (error.name === 'TypeError') {
-			// B2: this TypeError is CORS, a certificate, DNS or a closed port alike — say so
-			const vllm = config?.baseUrl && serverKind(normalizeEndpointUrl(config.baseUrl)) === 'vllm';
-			return (
-				'Could not reach the server — a network, certificate or CORS problem' +
-				(vllm ? ' (vLLM needs --allowed-origins)' : '') +
-				'. Settings ▸ Tools & connections ▸ Test tells which.'
-			);
-		}
-		return error.message;
-	}
-	return String(error);
 }

@@ -40,7 +40,7 @@ const objectNames = (p) =>
 	p.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) =>
+				window.__tp.test.v1.objectsGroup.subscribe((g) =>
 					r((g?.children ?? []).map((c) => c.name))
 				)()
 			)
@@ -49,7 +49,7 @@ const objectNames = (p) =>
 const objectCount = (p) =>
 	p.page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		return g?.children.length ?? 0;
 	});
 
@@ -58,7 +58,7 @@ const objectCount = (p) =>
 const askOn = (p) =>
 	p.page.evaluate(() => {
 		let list;
-		window.__stores.toastStore.subscribe((v) => (list = v))();
+		window.__tp.test.v1.toastStore.subscribe((v) => (list = v))();
 		const entry = list.find((e) => e && e.id === 'share-or-stash');
 		if (!entry) return null;
 		return { text: entry.text, labels: (entry.actions ?? []).map((a) => a.label) };
@@ -66,17 +66,17 @@ const askOn = (p) =>
 
 const addBox = (p) =>
 	p.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1100));
 		// creation SELECTS, and a selection rides the handshake as a lock — deselect so a
 		// later section is reasoning about objects and not about locks
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.objectActions.deselectObject();
 	});
 
 /** Add/remove a type from THIS page's partition — the counterfactual lever. */
 const roomScoped = (p, op, type) =>
 	p.page.evaluate(([o, t]) => {
-		const set = window.__stores.peerScenes.ROOM_SCOPED;
+		const set = window.__tp.test.v1.peerScenes.ROOM_SCOPED;
 		if (o === 'delete') set.delete(t);
 		else set.add(t);
 		return set.has(t);
@@ -86,7 +86,7 @@ const roomScoped = (p, op, type) =>
 const envOf = (p) =>
 	p.page.evaluate(() => {
 		let e;
-		window.__stores.environment.environment.subscribe((v) => (e = v))();
+		window.__tp.test.v1.environment.environment.subscribe((v) => (e = v))();
 		return { preset: e?.preset ?? '', changedAt: e?.changedAt ?? 0 };
 	});
 
@@ -109,12 +109,12 @@ h.run(async () => {
 	// 1. BOTH SIDES HOLD WORK IN AN UNNAMED SCENE, AND BOTH ARE ASKED
 	// =====================================================================
 	await addBox(A);
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create sphere 1'));
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create sphere 1'));
 	await A.page.waitForTimeout(1100);
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
-	await B.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create Cylinder 1 1 2'));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
+	await B.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create Cylinder 1 1 2'));
 	await B.page.waitForTimeout(1100);
-	await B.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await B.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 
 	h.check((await objectCount(A)) === 2 && (await objectCount(B)) === 1, 'premise: A holds 2, B holds 1');
 
@@ -186,7 +186,7 @@ h.run(async () => {
 	// check below is about the change made mid-question and not about the handshake.
 	const envBefore = await envOf(B);
 	h.check(envBefore.preset !== 'sunset', `premise: B is not on the sunset look yet (${envBefore.preset})`);
-	await A.page.evaluate(() => window.__stores.environment.setEnvironment('sunset'));
+	await A.page.evaluate(() => window.__tp.test.v1.environment.setEnvironment('sunset'));
 	await A.page.waitForTimeout(3000);
 	h.check((await envOf(A)).preset === 'sunset', 'premise: A really switched its own look mid-question');
 	h.check(

@@ -19,7 +19,7 @@ const XR_SOURCE = path.join(__dirname, '..', '..', 'node_modules', 'three', 'src
 /** what each eye camera would see of the scene-root light helper and its pick proxy */
 const eyes = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const get = (store) => { let v; store.subscribe((x) => (v = x))(); return v; };
 		const THREE = s.THREE;
 		const cam = get(s.editorCam) || get(s.globalCamera);
@@ -61,8 +61,8 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 	await A.page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/light point');
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.commandsHandler.sceneCommand('/light point');
+		window.__tp.test.v1.objectActions.deselectObject();
 	});
 	await h.eventually(() => eyes(A.page), (e) => e.helper && e.proxy, 'a point light has its helper + pick proxy', 10000);
 
@@ -74,36 +74,36 @@ h.run(async () => {
 	h.check(e.leftProxy && e.rightProxy, `Edit: BOTH eyes draw its pick proxy (L ${e.leftProxy} R ${e.rightProxy})`);
 
 	// ---- 2. Edit in VR (the headset keeps the editor camera, so the same answer) -------
-	await A.page.evaluate(() => window.__stores.isVRMode.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.isVRMode.set(true));
 	await A.page.waitForTimeout(200);
 	e = await eyes(A.page);
 	h.check(e.vr && e.leftHelper && e.rightHelper, `VR Edit: both eyes draw the helper (L ${e.leftHelper} R ${e.rightHelper})`);
 
 	// ---- 3. Interact in VR: neither eye ---------------------------------------------------
-	await A.page.evaluate(() => window.__stores.objectActions.setEditorMode('interact'));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('interact'));
 	await A.page.waitForTimeout(200);
 	e = await eyes(A.page);
 	h.check(e.mode === 'interact' && !e.leftHelper && !e.rightHelper, `VR Interact: NEITHER eye draws the helper (L ${e.leftHelper} R ${e.rightHelper})`);
 	h.check(!e.leftProxy && !e.rightProxy, `VR Interact: neither eye draws the pick proxy (L ${e.leftProxy} R ${e.rightProxy})`);
 
 	// ---- 4. back to Edit in VR ------------------------------------------------------------
-	await A.page.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('edit'));
 	await A.page.waitForTimeout(200);
 	e = await eyes(A.page);
 	h.check(e.leftHelper && e.rightHelper, `VR back to Edit: both eyes again (L ${e.leftHelper} R ${e.rightHelper})`);
-	await A.page.evaluate(() => window.__stores.isVRMode.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.isVRMode.set(false));
 
 	// ---- 5. Interact on the desktop and desktop Play hide it too ---------------------------
-	await A.page.evaluate(() => window.__stores.objectActions.setEditorMode('interact'));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('interact'));
 	await A.page.waitForTimeout(200);
 	e = await eyes(A.page);
 	h.check(!e.desktop, 'desktop Interact: the editor camera no longer draws the helper');
-	await A.page.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
-	await A.page.evaluate(() => window.__stores.isLocked.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('edit'));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await A.page.waitForTimeout(200);
 	e = await eyes(A.page);
 	h.check(!e.leftHelper && !e.rightHelper, `Play: neither eye (L ${e.leftHelper} R ${e.rightHelper})`);
-	await A.page.evaluate(() => window.__stores.isLocked.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 	await A.page.waitForTimeout(400);
 	e = await eyes(A.page);
 	h.check(e.desktop && e.leftHelper && e.rightHelper, 'leaving Play: the helper is back for both eyes');

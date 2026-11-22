@@ -123,7 +123,8 @@ let pendingOwn = null;
  * A Save project press (the burger, format Project) or Ctrl+S. `saveOwn` is what the press does for
  * MY Library — byte-identical to before this existed whenever only one library is open.
  * @param {'burger' | 'ctrls'} trigger @param {() => any} saveOwn
- * @returns {Promise<{dialog: boolean, saved: string[]}>}
+ * @returns {Promise<{dialog: boolean, saved: string[], scene?: 'scene' | 'without' | 'cancel' | 'none'}>} `scene`:
+ *   the burger's dirty-scene answer (1.64: the burger's Save stays armed after a Cancel or "without these changes")
  */
 export async function saveProjectPressed(trigger, saveOwn) {
 	const libs = openLibraries();
@@ -140,13 +141,15 @@ export async function saveProjectPressed(trigger, saveOwn) {
 	// 56 C15: my Library's project file holds saved scenes only, so the burger never drops the open
 	// scene's edits without a word (the dialog above has its own line for this)
 	let sceneFirst = false;
+	/** @type {'scene' | 'without' | 'cancel' | 'none'} */
+	let scene = 'none';
 	if (trigger === 'burger' && verdict.save.includes('library')) {
-		const answer = await askDirtyScene();
-		if (answer === 'cancel') return { dialog: false, saved: [] };
-		sceneFirst = answer === 'scene';
+		scene = await askDirtyScene();
+		if (scene === 'cancel') return { dialog: false, saved: [], scene };
+		sceneFirst = scene === 'scene';
 	}
 	await saveLibraries(verdict.save, saveOwn, { sceneFirst });
-	return { dialog: false, saved: verdict.save };
+	return { dialog: false, saved: verdict.save, scene };
 }
 
 /**

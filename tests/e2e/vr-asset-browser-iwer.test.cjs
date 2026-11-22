@@ -32,7 +32,7 @@ const SHOTS = process.env.SHOTS_DIR || '';
 /** save the panel canvas as evidence (SHOTS_DIR=…) @param {any} page @param {string} name */
 async function shot(page, name) {
 	if (!SHOTS) return;
-	const url = await page.evaluate(() => window.__stores.vrAssetBrowser.assetPanelImage());
+	const url = await page.evaluate(() => window.__tp.test.v1.vrAssetBrowser.assetPanelImage());
 	if (url) fs.writeFileSync(path.join(SHOTS, name + '.png'), Buffer.from(url.split(',')[1], 'base64'));
 }
 
@@ -60,10 +60,10 @@ h.run(async () => {
 	const cc0 = makeCc0Network();
 	await cc0.routes(page);
 	const g = (fn, arg) => page.evaluate(fn, arg);
-	const read = (name) => g((n) => { let v; window.__stores[n].subscribe((x) => (v = x))(); return v; }, name);
+	const read = (name) => g((n) => { let v; window.__tp.test.v1[n].subscribe((x) => (v = x))(); return v; }, name);
 	const settle = (n = 6) => iwer.frames(page, n);
 	const near = (a, b, tol = 0.02) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= tol);
-	const count = () => g(() => new Promise((r) => window.__stores.objectsGroup.subscribe((grp) => r(grp.children.length))()));
+	const count = () => g(() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((grp) => r(grp.children.length))()));
 
 	console.log('\n=== 0. enter VR on IWER ===');
 	h.check(await iwer.installed(page), 'IWER owns navigator.xr before the app boots');
@@ -78,10 +78,10 @@ h.run(async () => {
 	/** where the pointer hand's laser meets the objectsGroup frame's ground (y = 0), in that frame */
 	const laserGround = () =>
 		g((hand) => {
-			const T = window.__stores.THREE;
+			const T = window.__tp.test.v1.THREE;
 			let r, grp;
-			window.__stores.globalRenderer.subscribe((v) => (r = v))();
-			window.__stores.objectsGroup.subscribe((v) => (grp = v))();
+			window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (grp = v))();
 			const c = [0, 1].map((i) => r.xr.getController(i)).find((x) => x.userData.handedness === hand);
 			c.updateMatrixWorld(true);
 			grp.updateWorldMatrix(true, false);
@@ -98,36 +98,36 @@ h.run(async () => {
 		console.log('\n=== G. the drag-to-place ghost on the laser ===');
 		// a prefab to place (Edit ▸ Save prefab), the scene emptied after so the laser meets the floor
 		await g(async () => {
-			window.__stores.commandsHandler.sceneCommand('/create box');
-			const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+			window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+			const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 			const box = group.children[group.children.length - 1];
 			box.name = 'GhostCrate';
-			window.__stores.objectActions.selectObject(box);
-			window.__stores.vrControls.executeVRMenuAction('obj:prefab');
+			window.__tp.test.v1.objectActions.selectObject(box);
+			window.__tp.test.v1.vrControls.executeVRMenuAction('obj:prefab');
 		});
-		await h.eventually(() => g(() => { let l; window.__stores.prefabs.prefabs.subscribe((x) => (l = x))(); return l.length; }), (n) => n >= 1, 'premise: a prefab in the library', 8000);
+		await h.eventually(() => g(() => { let l; window.__tp.test.v1.prefabs.prefabs.subscribe((x) => (l = x))(); return l.length; }), (n) => n >= 1, 'premise: a prefab in the library', 8000);
 		await g(async () => {
-			const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+			const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 			const box = group.children.find((c) => c.name === 'GhostCrate');
-			window.__stores.objectActions.selectObject(box);
-			window.__stores.objectActions.deleteSelection?.();
+			window.__tp.test.v1.objectActions.selectObject(box);
+			window.__tp.test.v1.objectActions.deleteSelection?.();
 		});
 		await settle();
 		const n0 = await count();
 		// open Add ▸ Prefabs and pick the tile (the panel's own action)
 		await g(() => {
-			window.__stores.vrMenuOpen.set(true);
-			window.__stores.vrControls.executeVRMenuAction('prefabs');
+			window.__tp.test.v1.vrMenuOpen.set(true);
+			window.__tp.test.v1.vrControls.executeVRMenuAction('prefabs');
 			let l;
-			window.__stores.prefabs.prefabs.subscribe((x) => (l = x))();
-			window.__stores.vrControls.executeVRMenuAction('prefabs:select:' + l[0].id);
+			window.__tp.test.v1.prefabs.prefabs.subscribe((x) => (l = x))();
+			window.__tp.test.v1.vrControls.executeVRMenuAction('prefabs:select:' + l[0].id);
 		});
 		// the pointer hand aims down at the floor ~1.4 m ahead
 		await iwer.pose(page, pointer, [pointer === 'left' ? -0.15 : 0.15, 1.2, -0.3], { pitch: -0.7 });
 		await settle(8);
 		const aim = await laserGround();
-		const gh = await g(() => window.__stores.placeGhost.ghostInfo());
-		const st = await g(() => window.__stores.placeDrag.state());
+		const gh = await g(() => window.__tp.test.v1.placeGhost.ghostInfo());
+		const st = await g(() => window.__tp.test.v1.placeDrag.state());
 		h.check(st?.mode === 'ray' && gh.visible, `a prefab tile arms the laser ghost (mode ${st?.mode}, visible ${gh.visible})`);
 		h.check(!!aim && near([gh.items[0].position[0], gh.items[0].position[2]], [aim[0], aim[2]], 0.03), `the ghost rides the laser to the floor (${gh.items[0]?.position.map((v) => v.toFixed(2))} vs ${aim?.map((v) => v.toFixed(2))})`);
 		const lift = -(st?.items?.[0]?.dims?.box?.[1] ?? NaN);
@@ -138,26 +138,26 @@ h.run(async () => {
 		await settle(4);
 		await iwer.stick(page, pointer, 0, 0);
 		await settle(4);
-		const rot = (await g(() => window.__stores.placeDrag.state()))?.rotation;
+		const rot = (await g(() => window.__tp.test.v1.placeDrag.state()))?.rotation;
 		h.check(rot === 345, `a stick flick right turns the ghost 15° clockwise (rotation ${rot})`);
-		const turnsDuring = await g(() => window.__stores.vrPlace.vrPlaceDebug().rotations);
+		const turnsDuring = await g(() => window.__tp.test.v1.vrPlace.vrPlaceDebug().rotations);
 		h.check(turnsDuring === 1, `one flick is one step (${turnsDuring})`);
 
 		// the TRIGGER places it (the session's own selectstart), ONE undo step, and it stays armed
-		const undo0 = await g(() => window.__stores.history.undoStack?.length ?? window.__stores.history.historyDepth?.() ?? null);
+		const undo0 = await g(() => window.__tp.test.v1.history.undoStack?.length ?? window.__tp.test.v1.history.historyDepth?.() ?? null);
 		await iwer.tap(page, pointer, 'trigger');
 		await h.eventually(count, (n) => n === n0 + 1, 'the trigger places the prefab through the replicated path', 6000);
 		const placed = await g(async () => {
-			const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+			const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 			const o = group.children[group.children.length - 1];
 			return { name: o.name, pos: o.position.toArray(), yaw: o.rotation.y };
 		});
 		h.check(placed.name === 'GhostCrate', `the placed object is the prefab (${placed.name})`);
 		h.check(near([placed.pos[0], placed.pos[2]], [gh.items[0].position[0], gh.items[0].position[2]], 0.05), `it lands at the ghost spot (${placed.pos.map((v) => v.toFixed(2))})`);
 		h.check(Math.abs(Math.abs(placed.yaw) - Math.PI / 12) < 0.01, `it lands turned as the ghost was (${((placed.yaw * 180) / Math.PI).toFixed(1)}°)`);
-		const still = await g(() => window.__stores.vrPlace.vrPlaceDebug());
+		const still = await g(() => window.__tp.test.v1.vrPlace.vrPlaceDebug());
 		h.check(still.active && still.placed === 1, `still armed for the next one (${JSON.stringify(still)})`);
-		await g(() => window.__stores.history.undo());
+		await g(() => window.__tp.test.v1.history.undo());
 		h.check((await count()) === n0, 'ONE undo removes the placement');
 		if (undo0 != null) console.log('undo depth before', undo0);
 
@@ -165,7 +165,7 @@ h.run(async () => {
 		// object lands at the scene-unit spot under the laser
 		await g(() => {
 			let rig;
-			window.__stores.worldRig.subscribe((v) => (rig = v))();
+			window.__tp.test.v1.worldRig.subscribe((v) => (rig = v))();
 			rig.scale.setScalar(0.1);
 			rig.position.set(0.1, 0.8, -0.6);
 			rig.updateMatrixWorld(true);
@@ -173,14 +173,14 @@ h.run(async () => {
 		await iwer.pose(page, pointer, [pointer === 'left' ? -0.15 : 0.15, 1.2, -0.3], { pitch: -0.9 });
 		await settle(8);
 		const aimMini = await laserGround();
-		const ghMini = await g(() => window.__stores.placeGhost.ghostInfo());
+		const ghMini = await g(() => window.__tp.test.v1.placeGhost.ghostInfo());
 		const frameScale = ghMini.frame ? Math.hypot(ghMini.frame[0], ghMini.frame[1], ghMini.frame[2]) : 1;
 		h.check(Math.abs(frameScale - 0.1) < 1e-3, `in miniature the ghost draws in the 1:10 frame (scale ${frameScale.toFixed(3)})`);
 		h.check(!!aimMini && near([ghMini.items[0].position[0], ghMini.items[0].position[2]], [aimMini[0], aimMini[2]], 0.3), `the ghost sits under the laser in scene units (${ghMini.items[0]?.position.map((v) => v.toFixed(2))} vs ${aimMini?.map((v) => v.toFixed(2))})`);
 		await iwer.tap(page, pointer, 'trigger');
 		await h.eventually(count, (n) => n === n0 + 1, 'the trigger places in miniature too', 6000);
 		const mini = await g(async () => {
-			const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+			const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 			const o = group.children[group.children.length - 1];
 			return { pos: o.position.toArray(), scale: o.scale.toArray() };
 		});
@@ -188,7 +188,7 @@ h.run(async () => {
 		h.check(near(mini.scale, [1, 1, 1], 1e-6), 'and at full scene size (the rig, not the object, is small)');
 		await g(() => {
 			let rig;
-			window.__stores.worldRig.subscribe((v) => (rig = v))();
+			window.__tp.test.v1.worldRig.subscribe((v) => (rig = v))();
 			rig.scale.setScalar(1);
 			rig.position.set(0, 0, 0);
 			rig.updateMatrixWorld(true);
@@ -198,20 +198,20 @@ h.run(async () => {
 		const before = await count();
 		await iwer.tap(page, menuHand, 'squeeze');
 		await settle(4);
-		const after = await g(() => ({ active: window.__stores.vrPlace.vrPlaceDebug().active, ghost: !!window.__stores.placeGhost.ghostRoot(), last: window.__stores.vrPlace.vrPlaceDebug().lastEnd }));
+		const after = await g(() => ({ active: window.__tp.test.v1.vrPlace.vrPlaceDebug().active, ghost: !!window.__tp.test.v1.placeGhost.ghostRoot(), last: window.__tp.test.v1.vrPlace.vrPlaceDebug().lastEnd }));
 		h.check(!after.active && !after.ghost && after.last === 'grip', `a grip cancels the ghost (${JSON.stringify(after)})`);
 		h.check((await count()) === before, 'and nothing spawned');
-		h.check((await g(() => { let v; window.__stores.vrControls.vrPrefabGhost.subscribe((x) => (v = x))(); return v; })) === null, 'the prefab window is no longer armed');
+		h.check((await g(() => { let v; window.__tp.test.v1.vrControls.vrPrefabGhost.subscribe((x) => (v = x))(); return v; })) === null, 'the prefab window is no longer armed');
 	}
 
 
 	// ---- B. the wrist Asset Browser ----------------------------------------------------------------
 	if (want('B')) {
 		console.log('\n=== B. the Asset Browser on the wrist ===');
-		const dbg = () => g(() => window.__stores.vrAssetBrowser.vrAssetBrowserDebug());
+		const dbg = () => g(() => window.__tp.test.v1.vrAssetBrowser.vrAssetBrowserDebug());
 		/** aim the pointer controller (from where it is) at a panel control, then let a few frames pass */
 		const aimAt = async (id, from = [pointer === 'left' ? -0.12 : 0.12, 1.3, -0.15]) => {
-			const pt = await g((cid) => window.__stores.vrAssetBrowser.assetControlPoint(cid), id);
+			const pt = await g((cid) => window.__tp.test.v1.vrAssetBrowser.assetControlPoint(cid), id);
 			if (!pt) throw new Error('no control ' + id + ' on the panel: ' + JSON.stringify(await dbg()));
 			const d = [pt[0] - from[0], pt[1] - from[1], pt[2] - from[2]];
 			const yaw = Math.atan2(-d[0], -d[2]);
@@ -229,19 +229,19 @@ h.run(async () => {
 		await iwer.pose(page, menuHand, [menuHand === 'left' ? -0.18 : 0.18, 1.25, -0.3], { pitch: 0.3 });
 		await iwer.pose(page, pointer, [pointer === 'left' ? -0.12 : 0.12, 1.3, -0.15]);
 		// Add ▸ Assets (the sector's own action)
-		await g(() => window.__stores.vrControls.executeVRMenuAction('assets'));
+		await g(() => window.__tp.test.v1.vrControls.executeVRMenuAction('assets'));
 		await settle(8);
 		let d = await dbg();
 		h.check(d.open && d.visible && d.mode === 'wrist' && d.wristHand === menuHand, `Add ▸ Assets opens the panel on the ${menuHand} wrist (${JSON.stringify({ open: d.open, visible: d.visible, mode: d.mode, wrist: d.wristHand })})`);
 		const geo = await g((hand) => {
 			let r;
-			window.__stores.globalRenderer.subscribe((v) => (r = v))();
-			const T = window.__stores.THREE;
+			window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
+			const T = window.__tp.test.v1.THREE;
 			const i = [0, 1].find((k) => r.xr.getController(k).userData.handedness === hand);
 			const grip = r.xr.getControllerGrip(i).getWorldPosition(new T.Vector3());
 			const head = r.xr.getCamera().getWorldPosition(new T.Vector3());
 			let mesh;
-			window.__stores.globalScene.subscribe((sc) => (mesh = sc.getObjectByName('vr-asset-browser')))();
+			window.__tp.test.v1.globalScene.subscribe((sc) => (mesh = sc.getObjectByName('vr-asset-browser')))();
 			const p = mesh.getWorldPosition(new T.Vector3());
 			const n = new T.Vector3(0, 0, 1).applyQuaternion(mesh.getWorldQuaternion(new T.Quaternion()));
 			const toHead = head.clone().sub(p).normalize();
@@ -258,26 +258,26 @@ h.run(async () => {
 
 		// hover + trigger: open the pack
 		await aimAt('card:pack:default');
-		await g(() => window.__stores.selectedObjects.set([]));
+		await g(() => window.__tp.test.v1.selectedObjects.set([]));
 		d = await dbg();
 		h.check(d.hover.includes('card:pack:default'), `the laser hovers the pack card (${d.hover})`);
 		await iwer.tap(page, pointer, 'trigger');
 		await h.eventually(async () => (await dbg()).cards, (c) => c.includes('item:default/Duck'), 'the trigger opens the pack: its items are cards', 10000);
 		await settle(10);
 		await shot(page, '02-panel-pack-items');
-		const nSel = await g(() => new Promise((r) => window.__stores.selectedObjects.subscribe((v) => r(v.length))()));
+		const nSel = await g(() => new Promise((r) => window.__tp.test.v1.selectedObjects.subscribe((v) => r(v.length))()));
 		h.check(nSel === 0, `a press on the panel selects nothing behind it (${nSel})`);
 
 		// search through the VR keyboard, filtering as you type
 		await press('search');
-		const kb = await g(() => { let v; window.__stores.vrKeyboard?.vrKeyboardTarget?.subscribe((x) => (v = x))(); return v ? v.title : null; });
+		const kb = await g(() => { let v; window.__tp.test.v1.vrKeyboard?.vrKeyboardTarget?.subscribe((x) => (v = x))(); return v ? v.title : null; });
 		h.check(!!kb, `the search box opens the VR keyboard (${kb})`);
-		await g(() => { for (const k of ['l', 'o', 'g']) window.__stores.vrControls.executeVRMenuAction('kbd:' + k); });
+		await g(() => { for (const k of ['l', 'o', 'g']) window.__tp.test.v1.vrControls.executeVRMenuAction('kbd:' + k); });
 		await settle(3);
 		d = await dbg();
 		h.check(d.query === 'log' && d.cards.length === 1 && d.cards[0] === 'item:default/ThePrototypeLogo', `typing filters the cards as you type (${d.query}: ${d.cards})`);
-		await g(() => window.__stores.vrControls.executeVRMenuAction('kbd:clear'));
-		await g(() => window.__stores.vrControls.executeVRMenuAction('kbd:enter'));
+		await g(() => window.__tp.test.v1.vrControls.executeVRMenuAction('kbd:clear'));
+		await g(() => window.__tp.test.v1.vrControls.executeVRMenuAction('kbd:enter'));
 		await settle(3);
 		d = await dbg();
 		h.check(d.query === '' && d.cards.includes('item:default/Duck'), `Enter commits (cleared: ${d.cards.length} cards)`);
@@ -287,27 +287,27 @@ h.run(async () => {
 		await aimAt('card:item:default/Duck');
 		await iwer.button(page, pointer, 'trigger', 1);
 		await settle(4);
-		const drag = await g(() => window.__stores.vrPlace.vrPlaceDebug());
+		const drag = await g(() => window.__tp.test.v1.vrPlace.vrPlaceDebug());
 		h.check(drag.active && drag.current?.dragging, `pressing a card puts it on the laser, the trigger still down (${JSON.stringify(drag.current)})`);
 		await iwer.pose(page, pointer, [pointer === 'left' ? -0.15 : 0.15, 1.2, -0.3], { pitch: -0.75 });
 		await settle(6);
-		const ghostAt = (await g(() => window.__stores.placeGhost.ghostInfo())).items[0]?.position;
+		const ghostAt = (await g(() => window.__tp.test.v1.placeGhost.ghostInfo())).items[0]?.position;
 		await iwer.button(page, pointer, 'trigger', 0);
 		await settle(4);
 		await h.eventually(count, (n) => n === nB + 1, 'letting go over the floor drops ONE Duck there', 8000);
 		const duck = await g(async () => {
-			const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+			const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 			const o = group.children[group.children.length - 1];
 			return { pos: o.position.toArray(), ref: o.userData?.packRef?.item ?? null };
 		});
 		h.check(duck.ref === 'Duck' && near([duck.pos[0], duck.pos[2]], [ghostAt[0], ghostAt[2]], 0.05), `the Duck is the pack item, at the ghost (${duck.ref} ${duck.pos.map((v) => v.toFixed(2))})`);
-		h.check(!(await g(() => window.__stores.vrPlace.vrPlaceDebug().active)), 'a drag places once (nothing still on the laser)');
-		await g(() => window.__stores.history.undo());
+		h.check(!(await g(() => window.__tp.test.v1.vrPlace.vrPlaceDebug().active)), 'a drag places once (nothing still on the laser)');
+		await g(() => window.__tp.test.v1.history.undo());
 		h.check((await count()) === nB, 'ONE undo takes the drop back');
 
 		// a trigger CLICK on a card arms it: the next trigger places, it stays armed, the grip stops
 		await press('card:item:default/Duck');
-		const armed = await g(() => window.__stores.vrPlace.vrPlaceDebug());
+		const armed = await g(() => window.__tp.test.v1.vrPlace.vrPlaceDebug());
 		h.check(armed.active && !armed.current?.dragging, 'a click on a card arms it on the laser');
 		d = await dbg();
 		h.check(/trigger places/.test(d.status), `the panel says what the trigger does now (${d.status})`);
@@ -316,10 +316,10 @@ h.run(async () => {
 		await settle(6);
 		await iwer.tap(page, pointer, 'trigger');
 		await h.eventually(count, (n) => n === nB + 1, 'the next trigger places it', 8000);
-		h.check((await g(() => window.__stores.vrPlace.vrPlaceDebug().active)), 'and it stays armed for another');
+		h.check((await g(() => window.__tp.test.v1.vrPlace.vrPlaceDebug().active)), 'and it stays armed for another');
 		await iwer.tap(page, menuHand, 'squeeze');
 		await settle(3);
-		h.check(!(await g(() => window.__stores.vrPlace.vrPlaceDebug().active)), 'a grip stops placing');
+		h.check(!(await g(() => window.__tp.test.v1.vrPlace.vrPlaceDebug().active)), 'a grip stops placing');
 
 		// the GRIP lifts the panel off the wrist; let go away from it = pinned, bigger
 		await aimAt('tab:packs');
@@ -342,8 +342,8 @@ h.run(async () => {
 		await settle(3);
 		const wristNow = await g((hand) => {
 			let r;
-			window.__stores.globalRenderer.subscribe((v) => (r = v))();
-			const T = window.__stores.THREE;
+			window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
+			const T = window.__tp.test.v1.THREE;
 			const i = [0, 1].find((k) => r.xr.getController(k).userData.handedness === hand);
 			return r.xr.getControllerGrip(i).localToWorld(new T.Vector3(0, 0.085, 0.05)).toArray();
 		}, menuHand);
@@ -375,7 +375,7 @@ h.run(async () => {
 		await press('card:' + freeKey);
 		await settle(10);
 		await shot(page, '04-panel-free');
-		await h.eventually(() => g(() => window.__stores.vrPlace.vrPlaceDebug().active), (v) => v === true, `a free model downloads into the Library and rides the laser (${freeKey})`, 20000);
+		await h.eventually(() => g(() => window.__tp.test.v1.vrPlace.vrPlaceDebug().active), (v) => v === true, `a free model downloads into the Library and rides the laser (${freeKey})`, 20000);
 		await iwer.pose(page, pointer, [pointer === 'left' ? -0.15 : 0.15, 1.2, -0.3], { pitch: -0.75 });
 		await settle(6);
 		await iwer.tap(page, pointer, 'trigger');
@@ -394,7 +394,7 @@ h.run(async () => {
 	// ---- H. light hand tracking ----------------------------------------------------------------------
 	if (want('H')) {
 		console.log('\n=== H. hands: pinch = trigger, pinch-drag = the ghost, precise tools ask for a controller ===');
-		const hdbg = () => g(() => window.__stores.vrHands.handInputDebug());
+		const hdbg = () => g(() => window.__tp.test.v1.vrHands.handInputDebug());
 		await g(() => (window.__iwer.device.primaryInputMode = 'hand'));
 		await settle(10);
 		await h.eventually(async () => (await hdbg()).sources.join(), (v) => /left:hand/.test(v) && /right:hand/.test(v), 'IWER switches to tracked hands (no controllers)', 8000);
@@ -411,8 +411,8 @@ h.run(async () => {
 		const appRay = (hand) =>
 			g((hand) => {
 				let r;
-				window.__stores.globalRenderer.subscribe((v) => (r = v))();
-				const T = window.__stores.THREE;
+				window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
+				const T = window.__tp.test.v1.THREE;
 				const c = [0, 1].map((i) => r.xr.getController(i)).find((x) => x.userData.handedness === hand);
 				c.updateMatrixWorld(true);
 				const o = new T.Vector3().setFromMatrixPosition(c.matrixWorld);
@@ -438,14 +438,14 @@ h.run(async () => {
 			await handPose(pointer, from, { yaw, pitch });
 			await settle(3);
 		};
-		const dbg = () => g(() => window.__stores.vrAssetBrowser.vrAssetBrowserDebug());
+		const dbg = () => g(() => window.__tp.test.v1.vrAssetBrowser.vrAssetBrowserDebug());
 		await handPose(menuHand, [menuHand === 'left' ? -0.18 : 0.18, 1.25, -0.3], { pitch: 0.3 });
 		const fromH = [pointer === 'left' ? -0.12 : 0.12, 1.3, -0.12];
 		await handPose(pointer, fromH);
-		await g(() => window.__stores.vrControls.executeVRMenuAction('assets'));
+		await g(() => window.__tp.test.v1.vrControls.executeVRMenuAction('assets'));
 		await settle(8);
 		const aimCtl = async (id) => {
-			const pt = await g((cid) => window.__stores.vrAssetBrowser.assetControlPoint(cid), id);
+			const pt = await g((cid) => window.__tp.test.v1.vrAssetBrowser.assetControlPoint(cid), id);
 			if (!pt) throw new Error('no control ' + id + ': ' + JSON.stringify(await dbg()));
 			await aimHandAt(pt, fromH);
 		};
@@ -471,7 +471,7 @@ h.run(async () => {
 		await aimCtl('card:item:default/Duck');
 		await pinch(pointer, 1);
 		await settle(4);
-		const held = await g(() => window.__stores.vrPlace.vrPlaceDebug());
+		const held = await g(() => window.__tp.test.v1.vrPlace.vrPlaceDebug());
 		h.check(held.active && held.current?.dragging, `a pinch on a card puts it on the hand's ray, the pinch still held (${JSON.stringify(held.current)})`);
 		d = await dbg();
 		h.check(/let go over the world/.test(d.status), `the panel speaks hands (${d.status})`);
@@ -480,40 +480,40 @@ h.run(async () => {
 		const side = pointer === 'left' ? -1 : 1;
 		await aimHandAt([0.9 * side, 0, -0.9], fromH);
 		await settle(4);
-		const ghostH = (await g(() => window.__stores.placeGhost.ghostInfo())).items[0]?.position;
+		const ghostH = (await g(() => window.__tp.test.v1.placeGhost.ghostInfo())).items[0]?.position;
 		await pinch(pointer, 0);
 		await settle(4);
 		await h.eventually(count, (n) => n === n0 + 1, 'releasing the pinch over the floor drops ONE Duck', 8000);
 		const where = await g(async () => {
-			const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+			const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 			return group.children[group.children.length - 1].position.toArray();
 		});
 		h.check(!!ghostH && near(where, ghostH, 0.02), `it lands at the ghost the hand's ray showed (${where.map((v) => v.toFixed(2))} vs ${ghostH?.map((v) => v.toFixed(2))})`);
 		// pinch-click arms; the next pinch places
 		await aimCtl('card:item:default/Duck');
 		await pinchTap();
-		h.check((await g(() => window.__stores.vrPlace.vrPlaceDebug())).active, 'a pinch-click arms the card');
+		h.check((await g(() => window.__tp.test.v1.vrPlace.vrPlaceDebug())).active, 'a pinch-click arms the card');
 		d = await dbg();
 		h.check(/pinch to place/.test(d.status), `and says so for a hand (${d.status})`);
 		await aimHandAt([0.6 * side, 0, -1.4], fromH);
 		await pinchTap();
 		await h.eventually(count, (n) => n === n0 + 2, 'the next pinch places it', 8000);
-		await g(() => window.__stores.vrPlace.cancelVRPlace('test'));
-		await g(() => window.__stores.vrAssetBrowser.closeVRAssetBrowser());
+		await g(() => window.__tp.test.v1.vrPlace.cancelVRPlace('test'));
+		await g(() => window.__tp.test.v1.vrAssetBrowser.closeVRAssetBrowser());
 
 		// a precise tool: the sculpt brush asks for a controller
-		const sc = () => g(() => window.__stores.vrSculpt.vrSculptDebug());
+		const sc = () => g(() => window.__tp.test.v1.vrSculpt.vrSculptDebug());
 		await g(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.vrMenuOpen.set(true);
 			s.vrControls.executeVRMenuAction('nav:add');
 			s.vrControls.executeVRMenuAction('terrain');
 		});
 		await h.eventually(sc, (x) => x.active && !!x.uuid, 'premise: Add ▸ Terrain starts a VR sculpt session', 8000);
-		await g(() => window.__stores.vrMenuOpen.set(false));
+		await g(() => window.__tp.test.v1.vrMenuOpen.set(false));
 		const terr = await g(() => {
 			let grp;
-			window.__stores.objectsGroup.subscribe((x) => (grp = x))();
+			window.__tp.test.v1.objectsGroup.subscribe((x) => (grp = x))();
 			const t = grp.children.find((c) => c.userData?.terrain);
 			t.updateMatrixWorld(true);
 			const e = t.matrixWorld.elements;
@@ -527,7 +527,7 @@ h.run(async () => {
 		h.check(note.note?.text === 'Pick up a controller to sculpt' && note.note?.hand === pointer, `a pinch on the brush says "Pick up a controller" at that hand (${JSON.stringify(note.note)})`);
 		h.check(note.chipVisible, 'the note is drawn by the hand');
 		h.check(strokes0 != null && strokes0 === strokes1, `and no stroke ran (${strokes0} -> ${strokes1})`);
-		await g(() => window.__stores.vrControls.executeVRMenuAction('sculpt:done'));
+		await g(() => window.__tp.test.v1.vrControls.executeVRMenuAction('sculpt:done'));
 		await g(() => (window.__iwer.device.primaryInputMode = 'controller'));
 		await settle(10);
 	}
@@ -541,51 +541,51 @@ h.run(async () => {
 		const from = [pointer === 'left' ? -0.12 : 0.12, 1.3, -0.15];
 		await iwer.pose(page, pointer, from);
 		await g(() => {
-			const ab = window.__stores.vrAssetBrowser;
+			const ab = window.__tp.test.v1.vrAssetBrowser;
 			if (!ab.vrAssetBrowserDebug().open) ab.openVRAssetBrowser();
 		});
 		await settle(6);
-		await g(() => window.__stores.vrAssetBrowser.pressAssetButton('tab:free'));
-		await h.eventually(() => g(() => window.__stores.vrAssetBrowser.vrAssetBrowserDebug().cards.length), (n) => n > 0, 'premise: the Free tab lists models', 10000);
+		await g(() => window.__tp.test.v1.vrAssetBrowser.pressAssetButton('tab:free'));
+		await h.eventually(() => g(() => window.__tp.test.v1.vrAssetBrowser.vrAssetBrowserDebug().cards.length), (n) => n > 0, 'premise: the Free tab lists models', 10000);
 		const aimAtCtl = async (id) => {
-			const pt = await g((cid) => window.__stores.vrAssetBrowser.assetControlPoint(cid), id);
+			const pt = await g((cid) => window.__tp.test.v1.vrAssetBrowser.assetControlPoint(cid), id);
 			const dd = [pt[0] - from[0], pt[1] - from[1], pt[2] - from[2]];
 			await iwer.pose(page, pointer, from, { yaw: Math.atan2(-dd[0], -dd[2]), pitch: Math.atan2(dd[1], Math.hypot(dd[0], dd[2])) });
 		};
-		const cards = (await g(() => window.__stores.vrAssetBrowser.vrAssetBrowserDebug())).cards;
+		const cards = (await g(() => window.__tp.test.v1.vrAssetBrowser.vrAssetBrowserDebug())).cards;
 		const cdp = await page.context().newCDPSession(page);
 		await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
-		const p0 = await g(() => window.__stores.vrAssetBrowser.vrAssetBrowserDebug().perf);
+		const p0 = await g(() => window.__tp.test.v1.vrAssetBrowser.vrAssetBrowserDebug().perf);
 		const t0 = Date.now();
-		const draws0 = (await g(() => window.__stores.vrAssetBrowser.vrAssetBrowserDebug())).draws;
+		const draws0 = (await g(() => window.__tp.test.v1.vrAssetBrowser.vrAssetBrowserDebug())).draws;
 		// the laser sweeps the cards: every hop is a hover change = a repaint + a texture upload
 		for (let k = 0; k < 12; k++) {
 			await aimAtCtl('card:' + cards[k % cards.length]);
 			await settle(5);
 		}
-		const p1 = await g(() => window.__stores.vrAssetBrowser.vrAssetBrowserDebug().perf);
-		const draws1 = (await g(() => window.__stores.vrAssetBrowser.vrAssetBrowserDebug())).draws;
+		const p1 = await g(() => window.__tp.test.v1.vrAssetBrowser.vrAssetBrowserDebug().perf);
+		const draws1 = (await g(() => window.__tp.test.v1.vrAssetBrowser.vrAssetBrowserDebug())).draws;
 		// the ghost on the laser (a library model armed), the laser on the floor
-		await g(() => window.__stores.vrAssetBrowser.pressAssetButton('tab:library'));
+		await g(() => window.__tp.test.v1.vrAssetBrowser.pressAssetButton('tab:library'));
 		await settle(4);
-		const lib = (await g(() => window.__stores.vrAssetBrowser.vrAssetBrowserDebug())).cards.find((k) => k.startsWith('lib:') || k.startsWith('prefab:'));
-		await g((k) => window.__stores.vrAssetBrowser.pressAssetButton('card:' + k), lib);
+		const lib = (await g(() => window.__tp.test.v1.vrAssetBrowser.vrAssetBrowserDebug())).cards.find((k) => k.startsWith('lib:') || k.startsWith('prefab:'));
+		await g((k) => window.__tp.test.v1.vrAssetBrowser.pressAssetButton('card:' + k), lib);
 		await iwer.pose(page, pointer, [from[0], 1.2, -0.3], { pitch: -0.75 });
-		const r0 = await g(() => window.__stores.vrPlace.vrPlaceDebug());
+		const r0 = await g(() => window.__tp.test.v1.vrPlace.vrPlaceDebug());
 		await settle(60);
-		const r1 = await g(() => window.__stores.vrPlace.vrPlaceDebug());
+		const r1 = await g(() => window.__tp.test.v1.vrPlace.vrPlaceDebug());
 		await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
 		const meshes = await g(() => {
 			let sc;
-			window.__stores.globalScene.subscribe((v) => (sc = v))();
+			window.__tp.test.v1.globalScene.subscribe((v) => (sc = v))();
 			const count = (o) => {
 				let n = 0;
 				o?.traverse((x) => ((x.isMesh || x.isLineSegments) && x.visible ? n++ : 0));
 				return n;
 			};
-			return { panel: count(sc.getObjectByName('vr-asset-browser')), ghost: count(window.__stores.placeGhost.ghostRoot()) };
+			return { panel: count(sc.getObjectByName('vr-asset-browser')), ghost: count(window.__tp.test.v1.placeGhost.ghostRoot()) };
 		});
-		await g(() => window.__stores.vrPlace.cancelVRPlace('test'));
+		await g(() => window.__tp.test.v1.vrPlace.cancelVRPlace('test'));
 		const panelMs = (p1.frameMs - p0.frameMs) / Math.max(1, p1.frames - p0.frames);
 		const paintMs = (p1.paintMs - p0.paintMs) / Math.max(1, draws1 - draws0);
 		const ghostMs = (r1.frameMs - r0.frameMs) / Math.max(1, r1.frames - r0.frames);

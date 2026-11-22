@@ -16,18 +16,18 @@
 const h = require('./helpers.cjs');
 
 const presses = (page, id) => page.evaluate((nid) => window.__press?.[nid] ?? 0, id);
-const fire = (page, id) => page.evaluate((nid) => window.__stores.flowRuntime.applyNodeTrigger(nid, (Date.now() % 86400000) / 1000, false), id);
+const fire = (page, id) => page.evaluate((nid) => window.__tp.test.v1.flowRuntime.applyNodeTrigger(nid, (Date.now() % 86400000) / 1000, false), id);
 
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
 	const p = A.page;
-	await p.waitForFunction(() => !!window.__stores?.moduleSDK && !!window.__stores?.flowRuntime, null, { timeout: 30000 });
+	await p.waitForFunction(() => !!window.__tp?.test.v1?.moduleSDK && !!window.__tp?.test.v1?.flowRuntime, null, { timeout: 30000 });
 
 	await p.evaluate(async () => {
 		window.__press = {};
 		window.__was = {};
-		await window.__stores.moduleSDK.initModules([
+		await window.__tp.test.v1.moduleSDK.initModules([
 			{
 				id: 'testpress',
 				name: 'Test press',
@@ -49,7 +49,7 @@ h.run(async () => {
 		]);
 	});
 	const box = await p.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1200));
 		let group;
@@ -61,7 +61,7 @@ h.run(async () => {
 	const E = (source, target, targetHandle) => ({ id: 'e-' + source + '-' + target + (targetHandle ? '.' + targetHandle : ''), source, target, ...(targetHandle ? { targetHandle } : {}) });
 	await p.evaluate(
 		([nodes, edges]) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.flowGraphs.update((g) => ({ ...g, scene: { nodes, edges } }));
 			s.flowNodes.set(nodes);
 			s.flowEdges.set(edges);

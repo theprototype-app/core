@@ -21,7 +21,7 @@ const read = (page, path) =>
 		(path) =>
 			new Promise((r) => {
 				const parts = path.split('.');
-				let obj = window.__stores;
+				let obj = window.__tp?.test.v1;
 				for (const p of parts) obj = obj[p];
 				obj.subscribe((v) => r(JSON.parse(JSON.stringify(v ?? null))))();
 			}),
@@ -32,7 +32,7 @@ const nodeData = (page, id) =>
 	page.evaluate(
 		(id) =>
 			new Promise((r) =>
-				window.__stores.flowGraphs.subscribe((all) => {
+				window.__tp.test.v1.flowGraphs.subscribe((all) => {
 					for (const g of Object.values(all)) {
 						const n = g.nodes.find((x) => x.id === id);
 						if (n) return r(JSON.parse(JSON.stringify(n.data)));
@@ -47,7 +47,7 @@ const objX = (page, uuid) =>
 	page.evaluate(
 		(uuid) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const o = g?.getObjectByProperty('uuid', uuid);
 					r(o ? o.position.x : null);
 				})()
@@ -90,15 +90,15 @@ h.run(async () => {
 
 	// ---------------------------------------------------------------- 1 Explorer round-trip
 	const itemId = await S(A.page, async () => {
-		const ex = window.__stores.explorer;
+		const ex = window.__tp.test.v1.explorer;
 		await ex.loadExplorer();
 		const bytes = new TextEncoder().encode('// a file\nreturn { out: inputs.a + 1 };\n').buffer;
 		const item = await ex.addItemFromBytes(bytes, 'adder.js', null);
 		return item.id;
 	});
 	await S(A.page, () => {
-		window.__stores.explorerClose.set(false);
-		window.__stores.bottomDock.bottomDockActive.set('explorer');
+		window.__tp.test.v1.explorerClose.set(false);
+		window.__tp.test.v1.bottomDock.bottomDockActive.set('explorer');
 	});
 	await A.page.waitForTimeout(1200);
 	await A.page.locator('.explorer-card', { hasText: 'adder.js' }).first().dblclick();
@@ -115,7 +115,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(1200);
 	tabs = await waitTabs(A.page, (t) => t[0] && t[0].code === t[0].saved, 15000);
 	const item1 = await S(A.page, async (id) => {
-		const ex = window.__stores.explorer;
+		const ex = window.__tp.test.v1.explorer;
 		const it = ex.itemById(id);
 		return { hash: it.hash, text: await (await ex.itemBlob(id)).text() };
 	}, itemId);
@@ -125,8 +125,8 @@ h.run(async () => {
 
 	// ---------------------------------------------------------------- 2 a Script node's tab
 	const uuid = await S(A.page, () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		return new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g.children[g.children.length - 1].uuid))());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		return new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g.children[g.children.length - 1].uuid))());
 	});
 	await A.page.waitForTimeout(800);
 	await S(A.page, async (uuid) => {
@@ -137,9 +137,9 @@ h.run(async () => {
 		];
 		const edge = { id: 'e-cw1-cwsel', source: 'cw1', target: 'cwsel' };
 		const { createFlowNode, createFlowEdge } = await import('/src/lib/nodesHandler.js');
-		window.__stores.flowNodes.update((n) => [...n, ...nodes]);
-		window.__stores.flowEdges.update((e) => [...e, edge]);
-		const peer = await new Promise((r) => window.__stores.peers.subscribe(r)());
+		window.__tp.test.v1.flowNodes.update((n) => [...n, ...nodes]);
+		window.__tp.test.v1.flowEdges.update((e) => [...e, edge]);
+		const peer = await new Promise((r) => window.__tp.test.v1.peers.subscribe(r)());
 		nodes.forEach((node) => peer.send({ type: 'nodecreate', node }));
 		peer.send({ type: 'edgecreate', edge });
 	}, uuid);
@@ -147,9 +147,9 @@ h.run(async () => {
 	h.check(Math.abs((await objX(B.page, uuid)) - 1) < 0.01, 'premise: the inline script runs on B (x = 1)');
 	await S(A.page, () => {
 		// the editor's scope follows the selection, and /create selects the box (21-E)
-		window.__stores.objectActions.deselectObject();
-		window.__stores.flowGraphClose.set(false);
-		window.__stores.bottomDock.bottomDockActive.set('flow');
+		window.__tp.test.v1.objectActions.deselectObject();
+		window.__tp.test.v1.flowGraphClose.set(false);
+		window.__tp.test.v1.bottomDock.bottomDockActive.set('flow');
 	});
 	await A.page.waitForTimeout(1200);
 	await A.page
@@ -157,7 +157,7 @@ h.run(async () => {
 		.click()
 		.catch(async (e) => {
 			if (SHOTS) await A.page.screenshot({ path: SHOTS + '/zz-edit-code.png' });
-			console.log('state', JSON.stringify(await S(A.page, () => ({ active: window.__stores.activeGraphId && null, sel: null }))));
+			console.log('state', JSON.stringify(await S(A.page, () => ({ active: window.__tp.test.v1.activeGraphId && null, sel: null }))));
 			throw e;
 		});
 	await waitTabs(A.page, (tabs) => tabs.some((t) => t.nodeId === 'cw1'));
@@ -187,7 +187,7 @@ h.run(async () => {
 	h.check(tab?.kind === 'file' && tab.hash === ref.hash, 'the tab became the FILE tab');
 	h.check((await nodeData(B.page, 'cw1')).src?.hash === ref.hash, 'B sees the binding');
 	await h.eventually(
-		() => S(B.page, (hash) => !!window.__stores.explorer.itemByHash(hash), ref.hash),
+		() => S(B.page, (hash) => !!window.__tp.test.v1.explorer.itemByHash(hash), ref.hash),
 		(v) => v === true,
 		"the file's bytes reach B's Explorer (assetShare push)",
 		15000
@@ -196,7 +196,7 @@ h.run(async () => {
 
 	// ---------------------------------------------------------------- 4 two nodes, one file
 	await S(A.page, async (hash) => {
-		await window.__stores.scriptAssets.bindScriptNode('cw2', undefined, { hash });
+		await window.__tp.test.v1.scriptAssets.bindScriptNode('cw2', undefined, { hash });
 	}, ref.hash);
 	await A.page.waitForTimeout(1500);
 	h.check((await nodeData(B.page, 'cw2')).code === 'object.position.x = 2.5;', 'binding a second node gives it the file text (on B too)');
@@ -220,16 +220,16 @@ h.run(async () => {
 	h.check(a1.src.hash !== ref.hash && b2.src.hash === a1.src.hash && b2.src.from === ref.hash, 'the hash bumped everywhere, with its lineage (from)');
 	await h.eventually(() => objX(B.page, uuid), (x) => Math.abs(x - 4) < 0.01, 'B runs the new file (x = 4)', 10000);
 	await h.eventually(
-		() => S(B.page, (hash) => !!window.__stores.explorer.itemByHash(hash), a1.src.hash),
+		() => S(B.page, (hash) => !!window.__tp.test.v1.explorer.itemByHash(hash), a1.src.hash),
 		(v) => v === true,
 		"B's copy of the file follows the bump",
 		8000
 	);
-	const undone = await S(A.page, () => (window.__stores.history.undo(), true));
+	const undone = await S(A.page, () => (window.__tp.test.v1.history.undo(), true));
 	await A.page.waitForTimeout(1500);
 	const [u1, u2] = await Promise.all([nodeData(B.page, 'cw1'), nodeData(B.page, 'cw2')]);
 	h.check(undone && u1.code === 'object.position.x = 2.5;' && u2.code === u1.code, 'ONE undo puts both nodes back (on B too)');
-	await S(A.page, () => window.__stores.history.redo());
+	await S(A.page, () => window.__tp.test.v1.history.redo());
 	await A.page.waitForTimeout(1200);
 	h.check((await nodeData(B.page, 'cw1')).code === 'object.position.x = 4;', 'redo re-applies it');
 
@@ -241,10 +241,10 @@ h.run(async () => {
 	h.check(await A.page.locator('#code-ws-error').isVisible(), 'and says why (the error banner)');
 	await shot(A.page, '02-parse-error.png');
 	if (SHOTS) {
-		await S(A.page, () => window.__stores.themes.theme.set('light'));
+		await S(A.page, () => window.__tp.test.v1.themes.theme.set('light'));
 		await A.page.waitForTimeout(500);
 		await shot(A.page, '03-parse-error-light.png');
-		await S(A.page, () => window.__stores.themes.theme.set('dark'));
+		await S(A.page, () => window.__tp.test.v1.themes.theme.set('dark'));
 	}
 	h.check((await A.page.locator('#code-ws-error').textContent()).includes('line 1'), 'naming the line');
 	h.check(await A.page.locator('.svelte-flow__node[data-id="cw1"] .script-pending').count() === 1 && (await A.page.locator('.svelte-flow__node[data-id="cw2"] .script-pending').count()) === 1, 'and badges every bound NODE');
@@ -264,7 +264,7 @@ h.run(async () => {
 	);
 
 	// ---------------------------------------------------------------- 6 go-to-node + the old seam
-	await S(A.page, () => window.__stores.flowGraphClose.set(true));
+	await S(A.page, () => window.__tp.test.v1.flowGraphClose.set(true));
 	await A.page.waitForTimeout(400);
 	await A.page.locator('#code-ws-goto').click();
 	await A.page.waitForTimeout(400);
@@ -274,7 +274,7 @@ h.run(async () => {
 	await h.eventually(() => read(A.page, 'flowGraphClose'), (v) => v === false, 'go-to-node opens the Node editor', 8000);
 	if (SHOTS && (await read(A.page, 'flowGraphClose')) !== false) await A.page.screenshot({ path: SHOTS + '/zz-goto.png' });
 	h.check((await read(A.page, 'activeGraphId')) === 'scene', 'on the node graph');
-	await S(A.page, () => window.__stores.scriptEditorOpen.set('cw2'));
+	await S(A.page, () => window.__tp.test.v1.scriptEditorOpen.set('cw2'));
 	await A.page.waitForTimeout(800);
 	active = await read(A.page, 'codeWorkspace.activeCodeTab');
 	tabs = await read(A.page, 'codeWorkspace.codeTabs');
@@ -296,7 +296,7 @@ h.run(async () => {
 
 	// ---------------------------------------------------------------- 8 module source, read-only + fork hook
 	await S(A.page, () =>
-		window.__stores.codeWorkspace.openCode({ source: 'module', ref: { moduleId: 'demo', name: 'spin.js', code: 'export default behaviour({});\n' } })
+		window.__tp.test.v1.codeWorkspace.openCode({ source: 'module', ref: { moduleId: 'demo', name: 'spin.js', code: 'export default behaviour({});\n' } })
 	);
 	await A.page.waitForTimeout(800);
 	active = await read(A.page, 'codeWorkspace.activeCodeTab');
@@ -307,13 +307,13 @@ h.run(async () => {
 	h.check(await A.page.locator('#code-ws-fork').isVisible(), '"Make editable copy" is offered without a hook too (the Library copy)');
 	await S(A.page, () => {
 		window.__forked = null;
-		window.__offFork = window.__stores.codeWorkspace.registerCodeSource('module', {
+		window.__offFork = window.__tp.test.v1.codeWorkspace.registerCodeSource('module', {
 			fork: async (ref, code) => {
 				window.__forked = { ref, code };
 				return { source: 'script', ref: { nodeId: 'cw2' } };
 			}
 		});
-		window.__stores.codeWorkspace.codeTabs.update((l) => l); // repaint
+		window.__tp.test.v1.codeWorkspace.codeTabs.update((l) => l); // repaint
 	});
 	await A.page.locator('.code-tab[data-kind="file"]').first().click();
 	await A.page.locator('.code-tab[data-kind="module"]').first().click();
@@ -328,7 +328,7 @@ h.run(async () => {
 	await S(A.page, () => window.__offFork());
 
 	// ---------------------------------------------------------------- 9 B6 graph JSON
-	await S(A.page, () => window.__stores.codeWorkspace.openCode({ source: 'graph', ref: { graphId: 'scene' } }));
+	await S(A.page, () => window.__tp.test.v1.codeWorkspace.openCode({ source: 'graph', ref: { graphId: 'scene' } }));
 	await A.page.waitForTimeout(800);
 	active = await read(A.page, 'codeWorkspace.activeCodeTab');
 	tab = (await read(A.page, 'codeWorkspace.codeTabs')).find((t) => t.id === active);
@@ -336,7 +336,7 @@ h.run(async () => {
 	h.check(tab.kind === 'graph' && doc.nodes.some((n) => n.id === 'cw1'), 'the scene graph opens as JSON');
 	await shot(A.page, '04-graph-json.png');
 	// invalid first
-	await S(A.page, (id) => window.__stores.codeWorkspace.setTabCode(id, '{"nodes": ['), active);
+	await S(A.page, (id) => window.__tp.test.v1.codeWorkspace.setTabCode(id, '{"nodes": ['), active);
 	await A.page.keyboard.press('Control+S');
 	await A.page.locator(`[data-pane="${active}"] .cm-content`).click();
 	await A.page.keyboard.press('Control+S');
@@ -347,7 +347,7 @@ h.run(async () => {
 	doc.nodes = doc.nodes.filter((n) => n.id !== 'cw2');
 	doc.nodes.find((n) => n.id === 'cw1').data.label = 'From JSON';
 	doc.nodes.find((n) => n.id === 'cwsel').position = { x: 512, y: 64 };
-	await S(A.page, ([id, text]) => window.__stores.codeWorkspace.setTabCode(id, text), [active, JSON.stringify(doc, null, 2)]);
+	await S(A.page, ([id, text]) => window.__tp.test.v1.codeWorkspace.setTabCode(id, text), [active, JSON.stringify(doc, null, 2)]);
 	await A.page.locator(`[data-pane="${active}"] .cm-content`).click();
 	await A.page.keyboard.press('Control+S');
 	await A.page.waitForTimeout(1500);
@@ -358,9 +358,9 @@ h.run(async () => {
 		10000
 	);
 	h.check((await nodeData(B.page, 'cw1')).label === 'From JSON', 'an edited field reaches B');
-	const pos = await S(B.page, () => new Promise((r) => window.__stores.flowGraphs.subscribe((g) => r(g.scene.nodes.find((n) => n.id === 'cwsel')?.position))()));
+	const pos = await S(B.page, () => new Promise((r) => window.__tp.test.v1.flowGraphs.subscribe((g) => r(g.scene.nodes.find((n) => n.id === 'cwsel')?.position))()));
 	h.check(pos?.x === 512 && pos?.y === 64, 'a moved node moves on B');
-	await S(A.page, () => window.__stores.history.undo());
+	await S(A.page, () => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(2000);
 	h.check(!!(await nodeData(B.page, 'cw2')) && (await nodeData(B.page, 'cw1')).label !== 'From JSON', 'ONE undo restores the graph on both peers');
 

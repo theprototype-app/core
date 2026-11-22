@@ -7,7 +7,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await A.page.waitForTimeout(500);
 	// 36 B14: Settings shows ONE section at a time (the sidebar picks it), so each label is
 	// checked while its own section is on screen. Theme lives in Interface since the reorg.
@@ -41,10 +41,10 @@ h.run(async () => {
 
 	// terse values still drive the store (37-settings: a segmented control, the checked option is the value)
 	const picked = () => A.page.locator('#shadow-quality [aria-checked="true"]').innerText();
-	await A.page.evaluate(() => window.__stores.lightParams.shadowQuality.set('low'));
+	await A.page.evaluate(() => window.__tp.test.v1.lightParams.shadowQuality.set('low'));
 	await A.page.waitForTimeout(150);
 	h.check((await picked()).trim() === 'Low', 'the shadow-quality control shows the terse value (Low)');
-	await A.page.evaluate(() => window.__stores.lightParams.shadowQuality.set('high'));
+	await A.page.evaluate(() => window.__tp.test.v1.lightParams.shadowQuality.set('high'));
 	await A.page.waitForTimeout(150);
 	h.check((await picked()).trim() === 'High', 'and updates with the store (High)');
 
@@ -97,7 +97,7 @@ h.run(async () => {
 	// pointer would raise the on-screen keyboard over the panel the user just
 	// opened, and THAT cannot be emulated headlessly — it stays an on-device check.
 	const device = await A.page.evaluate(() => {
-		const d = window.__stores.inputDevice;
+		const d = window.__tp.test.v1.inputDevice;
 		return {
 			coarse: d.coarsePointer(),
 			autofocus: d.autofocusOk(),
@@ -111,7 +111,7 @@ h.run(async () => {
 	);
 	// the physical-keyboard path: with nothing focused, one keystroke adopts the field
 	const adopted = await A.page.evaluate(async () => {
-		const d = window.__stores.inputDevice;
+		const d = window.__tp.test.v1.inputDevice;
 		const input = document.createElement('input');
 		document.body.appendChild(input);
 		const stop = d.typeToFocus(() => input);

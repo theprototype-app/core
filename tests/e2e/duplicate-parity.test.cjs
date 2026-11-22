@@ -18,7 +18,7 @@ const h = require('./helpers.cjs');
 
 /** Seed one box with all three carriers. Returns its uuid. */
 const SEED = async () => {
-	const w = window.__stores;
+	const w = window.__tp?.test.v1;
 	w.commandsHandler.sceneCommand('/create box 1 1 1');
 	await new Promise((r) => setTimeout(r, 900));
 	let g;
@@ -56,7 +56,7 @@ const SEED = async () => {
 
 /** Read all three carriers for a uuid. */
 const READ = (uuid) => {
-	const w = window.__stores;
+	const w = window.__tp?.test.v1;
 	let anims, graphs, shaders;
 	w.animationPreview.animations.subscribe((v) => (anims = v))();
 	w.flowGraphs.subscribe((v) => (graphs = v))();
@@ -90,7 +90,7 @@ h.run(async () => {
 
 	// ---- 2. duplicate carries all three ---------------------------------------
 	const dup = await A.page.evaluate(async (uuid) => {
-		const clone = window.__stores.objectActions.duplicateObject(uuid);
+		const clone = window.__tp.test.v1.objectActions.duplicateObject(uuid);
 		await new Promise((r) => setTimeout(r, 600));
 		return clone?.uuid ?? null;
 	}, src);
@@ -139,7 +139,7 @@ h.run(async () => {
 	// The carriers record NO history of their own, so the create entry is the only
 	// step: one Ctrl+Z must take the object away, not strip its clips and leave it.
 	const undone = await A.page.evaluate(async (ids) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.history.undo();
 		await new Promise((r) => setTimeout(r, 500));
 		let g;
@@ -151,7 +151,7 @@ h.run(async () => {
 	h.check(undone.gone && undone.sourceStillThere, 'one undo removes the clone and leaves the source');
 
 	const redone = await A.page.evaluate(async (ids) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.history.redo();
 		await new Promise((r) => setTimeout(r, 600));
 		let g;
@@ -169,7 +169,7 @@ h.run(async () => {
 
 	// ---- 5. each toggle suppresses exactly its own carrier ---------------------
 	const gated = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.duplicateCarriesAnimation.set(false);
 		w.duplicateCarriesFlow.set(true);
 		w.duplicateCarriesShader.set(false);
@@ -188,7 +188,7 @@ h.run(async () => {
 	// The carriers must be silent when there is nothing to carry, or every duplicate
 	// in a plain scene pays for a feature it is not using.
 	const wire = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create sphere');
 		await new Promise((r) => setTimeout(r, 900));
 		let g;
@@ -222,7 +222,7 @@ h.run(async () => {
 	// Copying an inherited graph would give the clone a private snapshot that stops
 	// following the scene default — so only an OWN graph is copied.
 	const inherited = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.shaderGraph.setShaderGraphFor('scene', {
 			nodes: [
 				{ id: 'surface', type: 'surface', position: { x: 380, y: 120 }, data: {} },
@@ -264,7 +264,7 @@ h.run(async () => {
 	await h.connect(B, A);
 
 	const remote = await A.page.evaluate(async (uuid) => {
-		const clone = window.__stores.objectActions.duplicateObject(uuid);
+		const clone = window.__tp.test.v1.objectActions.duplicateObject(uuid);
 		await new Promise((r) => setTimeout(r, 1200));
 		return clone?.uuid ?? null;
 	}, src);

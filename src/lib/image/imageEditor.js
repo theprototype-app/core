@@ -14,6 +14,7 @@
 // step for the whole save. A texture that was painted over or picked from disk carries no
 // source and is left alone: it is no longer that image.
 
+import { mapPreviewUrl } from '../loadGuard.js';
 import { get } from 'svelte/store';
 import {
 	itemById,
@@ -34,6 +35,7 @@ import { recordImageVersion, imageVersionBlob } from './imageVersions';
 import { makeRaster, fitSize, encodingFor } from './imageOps';
 
 import { imageEditorTarget } from './imageEditorState';
+import { openPreviewEditor } from '../fileWindows';
 // the open state lives in a leaf so the dock can address the editor (41 G24)
 export { imageEditorTarget, closeImageEditor, imageEditorClose } from './imageEditorState';
 
@@ -44,6 +46,9 @@ export function openImageEditor(itemId) {
 		showToast('Only an image can be edited here');
 		return false;
 	}
+	// uir-preview: the editor is the preview window's Edit face — open it there (with the name, so
+	// the header reads right at once), then point the editor at it
+	openPreviewEditor(item.id, item.name);
 	const now = get(imageEditorTarget);
 	imageEditorTarget.set({ itemId: item.id, raise: (now?.raise ?? 0) + 1 });
 	return true;
@@ -60,7 +65,7 @@ export function openImageEditor(itemId) {
 export async function editMaterialTexture(uuid, slot = 0) {
 	const object = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
 	const material = materialAt(object, slot);
-	const url = material?.userData?.mapDataUrl;
+	const url = mapPreviewUrl(material);
 	if (!material || !url) {
 		showToast('That material has no texture to edit');
 		return false;

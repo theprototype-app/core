@@ -10,16 +10,16 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box'); // MeshStandardMaterial
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box'); // MeshStandardMaterial
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		window.__box = group.children[group.children.length - 1];
-		window.__stores.objectActions.selectObject(window.__box.uuid, true);
+		window.__tp.test.v1.objectActions.selectObject(window.__box.uuid, true);
 	});
 	await A.page.waitForTimeout(500);
 
 	// --- material toggles apply + replicate via materialParam ---
 	const mat = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const box = window.__box;
 		const captured = [];
 		let original;
@@ -52,15 +52,15 @@ h.run(async () => {
 	const undo = await A.page.evaluate(() => {
 		const box = window.__box;
 		const after = '#' + box.material.emissive.getHexString();
-		window.__stores.history.undo(); // reverts wireframe (last)
-		window.__stores.history.undo(); // reverts emissive
+		window.__tp.test.v1.history.undo(); // reverts wireframe (last)
+		window.__tp.test.v1.history.undo(); // reverts emissive
 		return { after, reverted: '#' + box.material.emissive.getHexString() };
 	});
 	h.check(undo.after === '#ff0000' && undo.reverted === '#000000', `emissive undoes (${undo.after} -> ${undo.reverted})`);
 
 	// --- type-gating: a Basic material has no metalness/roughness slot ---
 	const gate = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const box = window.__box;
 		s.materialsHandler.switchMaterialType(box.uuid, 'MeshBasicMaterial', false);
 		const basic = { metalness: 'metalness' in box.material, roughness: 'roughness' in box.material };
@@ -74,8 +74,8 @@ h.run(async () => {
 	// --- object-level renderOrder/frustumCulled: receiver applies a peer update ---
 	const recv = await A.page.evaluate(() => {
 		const box = window.__box;
-		window.__stores.commandsHandler.objectParameters({ parameter: 'renderOrder', uuid: box.uuid, renderOrder: 7 });
-		window.__stores.commandsHandler.objectParameters({ parameter: 'frustumCulled', uuid: box.uuid, frustumCulled: false });
+		window.__tp.test.v1.commandsHandler.objectParameters({ parameter: 'renderOrder', uuid: box.uuid, renderOrder: 7 });
+		window.__tp.test.v1.commandsHandler.objectParameters({ parameter: 'frustumCulled', uuid: box.uuid, frustumCulled: false });
 		return { renderOrder: box.renderOrder, frustumCulled: box.frustumCulled };
 	});
 	h.check(recv.renderOrder === 7, 'a peer renderOrder update applies');
@@ -83,7 +83,7 @@ h.run(async () => {
 
 	// --- the Inspector renders the new Object section + sends renderOrder ---
 	const dom = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const box = window.__box;
 		const input = document.querySelector('#inspector-render-order');
 		if (!input) return { present: false };

@@ -1,4 +1,5 @@
 // 36-share (B13) — TOOLS ▸ RECORDING: a turntable / flythrough of the viewport as a webm.
+// 65 M4: run WITHOUT WebCodecs, so this is the live MediaRecorder fallback of the frame-exact export.
 //
 //   1. the viewport menu's Tools ▸ Recording… opens the dialog; a flythrough with < 2 saved views
 //      is refused with the reason, and Start is disabled
@@ -31,26 +32,35 @@ const camState = (page) =>
 	page.evaluate(() => {
 		let cam = /** @type {any} */ (null);
 		let ctl = /** @type {any} */ (null);
-		window.__stores.globalCamera.subscribe((/** @type {any} */ c) => (cam = c))();
-		window.__stores.orbitControls.subscribe((/** @type {any} */ c) => (ctl = c))();
+		window.__tp.test.v1.globalCamera.subscribe((/** @type {any} */ c) => (cam = c))();
+		window.__tp.test.v1.orbitControls.subscribe((/** @type {any} */ c) => (ctl = c))();
 		return { pos: cam.position.toArray(), target: ctl.target.toArray(), fov: cam.fov };
 	});
 
 const state = (/** @type {any} */ page) =>
 	page.evaluate(() => {
 		let s = /** @type {any} */ (null);
-		window.__stores.recordingStores.recordingState.subscribe((/** @type {any} */ v) => (s = v))();
+		window.__tp.test.v1.recordingStores.recordingState.subscribe((/** @type {any} */ v) => (s = v))();
 		return { status: s.status, progress: s.progress, error: s.error, result: s.result ? { name: s.result.name, bytes: s.result.bytes, durationMs: s.result.durationMs, w: s.result.width, h: s.result.height, itemId: s.result.itemId, mime: s.result.mime } : null };
 	});
 
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
-	const A = await h.setupPage(browser, 'A', { ...(THEME ? { storage: { theme: THEME } } : {}), context: { viewport: { width: 1280, height: 800 }, acceptDownloads: true } });
+	// 65 M4: the frame-exact export (video-export suite) is the default now; this suite is the LIVE
+	// MediaRecorder take, which is what a browser WITHOUT WebCodecs gets — so it removes WebCodecs
+	const A = await h.setupPage(browser, 'A', {
+		...(THEME ? { storage: { theme: THEME } } : {}),
+		context: { viewport: { width: 1280, height: 800 }, acceptDownloads: true },
+		init: () => {
+			delete (/** @type {any} */ (window).VideoEncoder);
+			delete (/** @type {any} */ (window).VideoFrame);
+		}
+	});
 	const { page } = A;
 
 	// a small scene to film
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.cameraBookmarks.clearBookmarks();
 		s.commandsHandler.sceneCommand('/create box');
 		s.commandsHandler.sceneCommand('/create sphere');
@@ -59,7 +69,7 @@ h.run(async () => {
 
 	// ---------- 1. the menu entry + the flythrough refusal ----------
 	// the viewport's right-click menu (opened the way its own suites do)
-	await page.evaluate(() => window.__stores.viewportMenu.set({ x: 200, y: 160, point: { x: 0, y: 0, z: 0 } }));
+	await page.evaluate(() => window.__tp.test.v1.viewportMenu.set({ x: 200, y: 160, point: { x: 0, y: 0, z: 0 } }));
 	await page.locator('[role="menuitem"]', { hasText: /^\s*Tools/ }).first().hover();
 	await page.locator('[role="menuitem"]', { hasText: /^\s*Recording…\s*$/ }).first().click();
 	await page.waitForSelector('#recording-dialog', { timeout: 10000 });
@@ -83,7 +93,7 @@ h.run(async () => {
 	await page.waitForTimeout(200);
 	await shot(page, '02-dialog-turntable.png');
 	const before = await camState(page);
-	const gridBefore = await page.evaluate(() => !!window.__stores.globalScene && (() => { let g = null; window.__stores.globalScene.subscribe((/** @type {any} */ s) => (g = s.getObjectByName('editor-grid')))(); return !!g; })());
+	const gridBefore = await page.evaluate(() => !!window.__tp.test.v1.globalScene && (() => { let g = null; window.__tp.test.v1.globalScene.subscribe((/** @type {any} */ s) => (g = s.getObjectByName('editor-grid')))(); return !!g; })());
 	await page.click('#recording-start');
 	await page.waitForSelector('#recording-bar', { timeout: 5000 });
 	h.check(true, 'starting shows the progress bar (the dialog steps aside)');
@@ -115,9 +125,9 @@ h.run(async () => {
 		if (!helpersHiddenDuring)
 			helpersHiddenDuring = await page.evaluate(() => {
 				let clean = false;
-				window.__stores.helperLayer.recordingClean.subscribe((/** @type {boolean} */ v) => (clean = v))();
+				window.__tp.test.v1.helperLayer.recordingClean.subscribe((/** @type {boolean} */ v) => (clean = v))();
 				let g = null;
-				window.__stores.globalScene.subscribe((/** @type {any} */ s) => (g = s.getObjectByName('editor-grid')))();
+				window.__tp.test.v1.globalScene.subscribe((/** @type {any} */ s) => (g = s.getObjectByName('editor-grid')))();
 				return clean && !g;
 			});
 		if (i === 5) await shot(page, '03-recording-bar.png');
@@ -143,7 +153,7 @@ h.run(async () => {
 	const after = await camState(page);
 	const back = Math.hypot(after.pos[0] - before.pos[0], after.pos[1] - before.pos[1], after.pos[2] - before.pos[2]);
 	h.check(back < 1e-3, `the camera is back where it was (${back.toFixed(5)})`);
-	const gridAfter = await page.evaluate(() => { let g = null; window.__stores.globalScene.subscribe((/** @type {any} */ s) => (g = s.getObjectByName('editor-grid')))(); return !!g; });
+	const gridAfter = await page.evaluate(() => { let g = null; window.__tp.test.v1.globalScene.subscribe((/** @type {any} */ s) => (g = s.getObjectByName('editor-grid')))(); return !!g; });
 	h.check(gridAfter === gridBefore, 'the editor grid is back afterwards');
 
 	// ---------- 3. the file plays, duration right ----------
@@ -169,14 +179,14 @@ h.run(async () => {
 	// ---------- 4. Duration in the bytes, the Explorer item, the download ----------
 	const fileFacts = await page.evaluate(async () => {
 		let s = /** @type {any} */ (null);
-		window.__stores.recordingStores.recordingState.subscribe((/** @type {any} */ v) => (s = v))();
+		window.__tp.test.v1.recordingStores.recordingState.subscribe((/** @type {any} */ v) => (s = v))();
 		const bytes = new Uint8Array(await s.result.blob.arrayBuffer());
-		return { declared: window.__stores.webmDuration.readWebmDuration(bytes), size: bytes.length, head: [...bytes.slice(0, 4)] };
+		return { declared: window.__tp.test.v1.webmDuration.readWebmDuration(bytes), size: bytes.length, head: [...bytes.slice(0, 4)] };
 	});
 	h.check(fileFacts.head.join(',') === '26,69,223,163', 'the file is EBML (webm)');
 	h.check(fileFacts.declared !== null && Math.abs(fileFacts.declared - 2000) <= 350, `the webm declares its Duration (${fileFacts.declared} ms)`);
 	const item = await page.evaluate(async (id) => {
-		const ex = window.__stores.explorer;
+		const ex = window.__tp.test.v1.explorer;
 		let folders = /** @type {any[]} */ ([]);
 		ex.explorerFolders.subscribe((/** @type {any} */ v) => (folders = v))();
 		const rec = ex.itemById(id);
@@ -196,7 +206,7 @@ h.run(async () => {
 	await page.fill('#recording-duration', '6');
 	await page.locator('#recording-duration').dispatchEvent('change');
 	const countBefore = await page.evaluate(async () => {
-		const ex = window.__stores.explorer;
+		const ex = window.__tp.test.v1.explorer;
 		let items = /** @type {any[]} */ ([]);
 		ex.explorerItems.subscribe((/** @type {any} */ v) => (items = v))();
 		return items.filter((i) => i.kind === 'video').length;
@@ -210,7 +220,7 @@ h.run(async () => {
 	const cancelled = await state(page);
 	const afterCancel = await camState(page);
 	const countAfter = await page.evaluate(async () => {
-		const ex = window.__stores.explorer;
+		const ex = window.__tp.test.v1.explorer;
 		let items = /** @type {any[]} */ ([]);
 		ex.explorerItems.subscribe((/** @type {any} */ v) => (items = v))();
 		return items.filter((i) => i.kind === 'video').length;
@@ -224,23 +234,23 @@ h.run(async () => {
 	await page.evaluate(() => {
 		let cam = /** @type {any} */ (null);
 		let ctl = /** @type {any} */ (null);
-		window.__stores.globalCamera.subscribe((/** @type {any} */ c) => (cam = c))();
-		window.__stores.orbitControls.subscribe((/** @type {any} */ c) => (ctl = c))();
+		window.__tp.test.v1.globalCamera.subscribe((/** @type {any} */ c) => (cam = c))();
+		window.__tp.test.v1.orbitControls.subscribe((/** @type {any} */ c) => (ctl = c))();
 		cam.position.set(8, 4, 8);
 		ctl.target.set(0, 0, 0);
 		ctl.update();
-		window.__stores.cameraBookmarks.saveBookmark('From');
+		window.__tp.test.v1.cameraBookmarks.saveBookmark('From');
 		cam.position.set(-6, 3, 2);
 		ctl.update();
-		window.__stores.cameraBookmarks.saveBookmark('To');
+		window.__tp.test.v1.cameraBookmarks.saveBookmark('To');
 	});
 	await page.waitForTimeout(300);
 	const views = await page.evaluate(() => {
 		let b = /** @type {any[]} */ ([]);
-		window.__stores.cameraBookmarks.bookmarks.subscribe((/** @type {any} */ v) => (b = v))();
+		window.__tp.test.v1.cameraBookmarks.bookmarks.subscribe((/** @type {any} */ v) => (b = v))();
 		return b.map((x) => x.position);
 	});
-	await page.evaluate(() => window.__stores.recordingStores.recordingOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.recordingStores.recordingOpen.set(true));
 	await page.waitForSelector('#recording-dialog', { timeout: 5000 });
 	await page.click('#recording-mode-flythrough');
 	await page.fill('#recording-duration', '2');

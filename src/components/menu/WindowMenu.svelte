@@ -4,10 +4,18 @@
 	import { onMount } from 'svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import { windowMenu, windowMenuItems, installWindowMenu } from '$lib/windowMenu';
+	import { hiddenChromeIds, showButtonsItems } from '$lib/chromeButtons';
 
 	onMount(() => installWindowMenu());
 </script>
 
 {#if $windowMenu}
-	<ContextMenu x={$windowMenu.x} y={$windowMenu.y} items={windowMenuItems($windowMenu)} sizeKey="window" onclose={() => windowMenu.set(null)} />
+	<!-- panel-gestures item 5: a GROUP's menu (a group tab, its strip) lists the strip buttons hidden there -->
+	<ContextMenu
+		x={$windowMenu.x}
+		y={$windowMenu.y}
+		items={[...windowMenuItems($windowMenu), ...($windowMenu.grouped ? showButtonsItems('group', $hiddenChromeIds) : [])]}
+		sizeKey="window"
+		onclose={() => windowMenu.set(null)}
+	/>
 {/if}

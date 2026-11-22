@@ -1,4 +1,6 @@
 <script>
+	import { backClose } from '$lib/backStack.js'; // phone-polish: Android Back closes it
+	import PaneHandle from '../ui/PaneHandle.svelte'; // showhide-v8: the one pane-handle pattern
 	import { onLayoutRestore, storedPanelLayout } from '$lib/uiLayoutsCore';
 	// The Shader editor dock tab (plan SH3).
 	//
@@ -16,6 +18,7 @@
 	import { untrack } from 'svelte';
 	import { get } from 'svelte/store';
 	import Icon from '../ui/Icon.svelte';
+	import HeadDockPop from '../ui/HeadDockPop.svelte'; // uir-polish G2/G3
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import {
 		SvelteFlow,
@@ -30,6 +33,7 @@
 	import '../../styles/flow.css';
 	import { selectedObjects, objectsGroup } from '../../stores/sceneStore';
 	import { shaderEditorClose, showToast, mobileUndockAllowed } from '../../stores/appStore.js';
+	import ShaderCodePane from './ShaderCodePane.svelte';
 	import {
 		shaderGraphs,
 		shaderErrors,
@@ -151,6 +155,9 @@
 	let propsOpen = $state(LS?.getItem('shaderPropsOpen') !== 'false');
 	let paletteOpen = $state(LS?.getItem('shaderPaletteOpen') !== 'false');
 	let propsTab = $state(LS?.getItem('shaderPropsTab') || 'settings');
+	// 73 AI3: the </> view. LOCAL, like the columns beside it
+	let codeOpen = $state(LS?.getItem('shaderCodeOpen') === 'true');
+	const codeDriven = $derived(doc?.code?.use === true && !isPost);
 	// #20 P7: the left column's own height, measured — the graph tree's resize ceiling
 	let paletteColH = $state(0);
 	// 38 NOTES-38 #36: below 640px of its OWN width (a docked phone panel, a narrowed window)
@@ -178,6 +185,7 @@
 	let showMinimap = $state(LS?.getItem('shaderMinimap') === 'true');
 	let snapToGrid = $state(LS?.getItem('shaderSnap') === 'true');
 	$effect(() => {
+		LS?.setItem('shaderCodeOpen', String(codeOpen));
 		LS?.setItem('shaderPropsOpen', String(propsOpen));
 		LS?.setItem('shaderPaletteOpen', String(paletteOpen));
 		LS?.setItem('shaderPropsTab', propsTab);
@@ -689,6 +697,16 @@
 {/snippet}
 
 {#snippet editorActions()}
+	<button
+		class="ui-button-quiet"
+		id="shader-code-btn"
+		title="Show the code: generated GLSL, graph JSON, your own GLSL"
+		aria-label="Toggle the shader code view"
+		aria-pressed={codeOpen}
+		onclick={() => (codeOpen = !codeOpen)}
+	>
+		<Icon name="braces" size={16} aria-hidden="true" />
+	</button>
 	{#if doc}
 		<button
 			class="ui-button-quiet"
@@ -735,6 +753,9 @@
 			</div>
 		{/if}
 
+		{#if codeDriven}
+			<div class="shader-code-banner" id="shader-code-banner">Your GLSL is driving this material. The graph is kept, and takes over again when you turn your GLSL off.</div>
+		{/if}
 		<div class="shader-body" bind:clientWidth={bodyW}>
 			{#if paletteOpen && !compact}
 				<div class="shader-side shader-side-left" bind:clientHeight={paletteColH}>
@@ -742,13 +763,18 @@
 				</div>
 			{/if}
 			{#if !compact}
-			<button
-				id="shader-palette-toggle"
-				class="shader-divider"
-				title={paletteOpen ? 'Hide the node palette' : 'Show the node palette'}
-				aria-label="Toggle the node palette"
-				onclick={() => (paletteOpen = !paletteOpen)}>{paletteOpen ? '‹' : '›'}</button
-			>
+			<!-- showhide-v8 (owner 2026-11-09): the one ARROW pattern — a pane handle on the divider, no 12 px column -->
+			<div class="shader-handle-hold">
+				<PaneHandle
+					id="shader-palette-toggle"
+					edge="left"
+					open={paletteOpen}
+					label="the node palette"
+					windowKey="shader"
+					style="top: 2.5rem; left: 0"
+					onclick={() => (paletteOpen = !paletteOpen)}
+				/>
+			</div>
 			{/if}
 
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -849,21 +875,35 @@
 			</div>
 
 			{#if !compact}
-			<button
-				id="shader-props-toggle"
-				class="shader-divider"
-				title={propsOpen ? 'Hide properties' : 'Show properties'}
-				aria-label="Toggle the properties panel"
-				onclick={() => (propsOpen = !propsOpen)}>{propsOpen ? '›' : '‹'}</button
-			>
+			<div class="shader-handle-hold">
+				<PaneHandle
+					id="shader-props-toggle"
+					edge="right"
+					open={propsOpen}
+					label="properties"
+					role="info"
+					windowKey="shader"
+					style="top: 2.5rem; right: 0"
+					onclick={() => (propsOpen = !propsOpen)}
+				/>
+			</div>
 			{/if}
 			{#if propsOpen && !compact}
 				<div class="shader-side shader-side-right" id="shader-props" use:minimalScroll>
 					{@render propsContent()}
 				</div>
 			{/if}
+			{#if codeOpen && !compact}
+				<div class="shader-code-side" id="shader-code-side">
+					<ShaderCodePane {scope} {doc} {isPost} ensureDoc={createGraph} />
+				</div>
+			{/if}
 		</div>
 		{#if compact}
+			<!-- a phone has no room for a split: the same pane, as a sheet -->
+			<Sheet bind:open={codeOpen} title="Code" detents={['full']} id="shader-code-sheet">
+				<div class="shader-sheet-body shader-code-sheet-body"><ShaderCodePane {scope} {doc} {isPost} ensureDoc={createGraph} /></div>
+			</Sheet>
 			<Sheet bind:open={paletteSheet} title="Nodes" detents={['half', 'full']} id="shader-palette-sheet">
 				<div class="shader-sheet-body">{@render paletteContent(320, pickFromSheet)}</div>
 			</Sheet>
@@ -1057,6 +1097,7 @@
 {:else if !$shaderEditorClose && !docked}
 	<div
 		id="shader-window"
+		use:backClose={() => shaderEditorClose.set(true)}
 		class="ui-panel tp-ui tp-window fixed flex flex-col overflow-hidden"
 		use:dragWindow={{ key: 'shader', defaultRect: { left: 240, top: 150 } }}
 		use:focusStack={'shader'}
@@ -1088,7 +1129,7 @@
 				<span class="flex-1"></span>
 			{/snippet}
 			{#snippet actions()}
-				<button data-wc-chrome class="wc-act-text" id="shader-dock" title="Dock to the bottom" aria-label="Dock the shader editor" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={16} />Dock</button>
+				<HeadDockPop key="shader" title="Shader editor" ondock={() => setDocked(true)} dockId="shader-dock" />
 				{@render editorActions()}
 			{/snippet}
 		</WindowChrome>
@@ -1182,15 +1223,12 @@
 		flex-basis: 172px;
 		border-left: 1px solid var(--border);
 	}
-	.shader-divider {
-		flex: 0 0 12px;
-		background: color-mix(in srgb, var(--text) 4%, transparent);
-		color: var(--text-muted);
-		font-size: 10px;
-	}
-	.shader-divider:hover {
-		background: var(--surface-hover);
-		color: var(--text);
+	/* showhide-v8: the pane handles hang from a zero-width holder on each divider (no margin) */
+	.shader-handle-hold {
+		position: relative;
+		flex: 0 0 0;
+		width: 0;
+		z-index: 6;
 	}
 	.shader-canvas {
 		position: relative;
@@ -1226,6 +1264,28 @@
 			position: absolute;
 			inset: -14px;
 		}
+	}
+	.shader-code-side {
+		flex: 0 0 min(46%, 440px);
+		min-width: 0;
+		border-left: 1px solid var(--border);
+		display: flex;
+		flex-direction: column;
+	}
+	/* above the phone bar, the DockViewsSheet way; the body fills what the detent leaves */
+	:global(#shader-code-sheet.sh) {
+		bottom: var(--ps-bar-h, 0px) !important;
+	}
+	.shader-code-sheet-body {
+		height: calc(100dvh - var(--ps-bar-h, 0px) - 120px);
+	}
+	.shader-code-banner {
+		flex: 0 0 auto;
+		font-size: 11px;
+		padding: 3px 8px;
+		color: var(--text-2);
+		background: var(--accent-soft);
+		border-bottom: 1px solid var(--border);
 	}
 	.shader-errors {
 		flex: 0 0 auto;

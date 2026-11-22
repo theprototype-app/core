@@ -62,6 +62,24 @@ describe('authority — one peer decides, everyone agrees who', () => {
 		expect(pickAuthority({ me: 'b', peers: ['c'], host: null })).toBe('b');
 		expect(pickAuthority({ me: 'z', peers: ['y', 'x'] })).toBe('x');
 	});
+	it('mcp-diorama2 20: a view-only guest is never the authority while an editor is here; the host (admin) first', () => {
+		/** @type {Record<string, string>} */
+		const roles = { '0guest': 'viewer', host9: 'admin', ed5: 'editor' };
+		const roleOf = (/** @type {string} */ id) => roles[id] ?? 'viewer';
+		// the report: a guest with the smallest id won the fallback and nothing it decided reached anyone
+		for (const me of ['0guest', 'host9', 'ed5']) {
+			const peers = ['0guest', 'host9', 'ed5'].filter((p) => p !== me);
+			expect(pickAuthority({ me, peers, roleOf }), me).toBe('host9');
+			expect(pickAuthority({ me, peers, roleOf, initiator: '0guest', incumbent: '0guest' }), me).toBe('host9');
+		}
+		// the host gone: the editor, never the guest, though the guest simulated and wrote last
+		expect(pickAuthority({ me: '0guest', peers: ['ed5'], roleOf, initiator: '0guest', incumbent: '0guest' })).toBe('ed5');
+		expect(isAuthorityFor({ me: '0guest', peers: ['ed5'], roleOf })).toBe(false);
+		// guests only: still somebody decides (a game of viewers does not stall)
+		expect(pickAuthority({ me: 'b', peers: ['a'], roleOf: () => 'viewer' })).toBe('a');
+		// no roles (no plugin): unchanged
+		expect(pickAuthority({ me: 'z', peers: ['y', 'x'], roleOf: null })).toBe('x');
+	});
 	it('55: an AI agent page is never the authority while a person is present (41\'s gem test)', () => {
 		// the report: agent '1e16b' < host 'ff637', so the lowest-id fallback chose the agent
 		const host = { me: 'ff637', peers: ['1e16b'], agents: ['1e16b'] };
@@ -136,7 +154,7 @@ describe('the one write — actions anywhere, applied once by the authority', ()
 	it('a refused action changes nothing and says why', () => {
 		const sim = createSim({ peers: ['a', 'b'], pieces: PIECES });
 		const r = sim.peer('a').kit.impls.tally.add(-1);
-		expect(r).toEqual({ ok: false, reason: 'bad amount' });
+		expect(r).toEqual({ ok: false, refused: true, reason: 'bad amount' });
 		sim.settle();
 		expect(sim.peer('b').kit.doc().rev).toBe(0);
 	});
@@ -348,5 +366,35 @@ describe('the fake clock', () => {
 		sim.advance(100);
 		expect(sim.peer('b').kit.impls.tally.total()).toBe(1);
 		expect(sim.now() - t0).toBe(FRAME_MS * 3 + 100);
+	});
+});
+
+describe('78 F16: a late joiner adopts the room\'s kit document', () => {
+	it('a joiner whose kit was reset before it joined (a scene load / boot restore) takes the authority document', () => {
+		const sim = createSim({ peers: ['a'], pieces: PIECES });
+		sim.peer('a').kit.impls.tally.add(3);
+		sim.settle();
+		sim.advance(5000);
+		// the joiner opened the app later and loaded a scene on its own (a local reset, stamped NOW)
+		const b = sim.add('b');
+		b.kit.reset({ local: true });
+		sim.advance(100);
+		sim.join('b');
+		sim.settle();
+		expect(b.kit.impls.tally.total()).toBe(3);
+		expect(agree(sim)).toBe(true);
+	});
+	it('a joiner that played on its own, then travelled in (reset while connected elsewhere), takes the author\'s document', () => {
+		const sim = createSim({ peers: ['a'], pieces: PIECES });
+		sim.peer('a').kit.impls.tally.add(2);
+		sim.settle();
+		const b = sim.add('b');
+		b.kit.impls.tally.add(7); // b alone: its own game
+		sim.advance(3000);
+		b.kit.reset({ local: true }); // b travels into a's room (a local reset)
+		sim.join('b');
+		sim.settle();
+		expect(b.kit.impls.tally.total()).toBe(2);
+		expect(sim.peer('a').kit.impls.tally.total()).toBe(2);
 	});
 });

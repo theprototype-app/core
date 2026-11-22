@@ -31,7 +31,7 @@ h.run(async () => {
 		!!placed.lod && placed.lod.levels.length === 3 && placed.lod.levels[0].source === 'self' && placed.lod.levels[1].ref === 'lodtest/Ball/glTF-Binary/ball.lod1.glb' && placed.lod.levels[2].ref === 'lodtest/Ball/glTF-Binary/ball.lod2.glb',
 		'1.2 the placed object carries its LOD GROUP (finest first, refs beside its file): ' + JSON.stringify(placed.lod)
 	);
-	await page.evaluate(() => window.__stores.lodGroup.scanLodGroups());
+	await page.evaluate(() => window.__tp.test.v1.lodGroup.scanLodGroups());
 	const near = await page.evaluate(() => window.__lg.drawnFrom('Ball', 4, [0, 1, 0]));
 	// the editor's own view may already have needed LOD1 (its camera sits ~10 m away); nothing
 	// has needed LOD2 yet, so it must not have been fetched
@@ -40,7 +40,7 @@ h.run(async () => {
 	// far: the first far render ASKS for the level; it draws LOD0 until the level has landed
 	await page.evaluate(() => window.__lg.renderFrom(400));
 	await h.eventually(
-		() => page.evaluate(() => window.__stores.lodGroup.lodGroupStats().find((g) => g.name === 'Ball')),
+		() => page.evaluate(() => window.__tp.test.v1.lodGroup.lodGroupStats().find((g) => g.name === 'Ball')),
 		(g) => !!g && g.levels[2].status === 'ready',
 		'1.5 the far render asked for LOD2 and it was built from the pack file',
 		15000
@@ -57,7 +57,7 @@ h.run(async () => {
 	});
 	h.check(mid.seen.every((d) => d.tris === fixture.lod1.tris), '1.10 a middle distance draws LOD1 (' + JSON.stringify(mid.seen) + ')');
 	const stub = await page.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const root = window.__lg.read(s.objectsGroup).getObjectByProperty('uuid', uuid);
 		window.__lg.renderFrom(400);
 		const el = s.packRefs.isPristinePackRef(root) ? s.packRefs.stubElementOf(root) : null;
@@ -69,12 +69,12 @@ h.run(async () => {
 	}, placed.uuid);
 	h.check(stub.pristine && stub.lod?.levels?.length === 3, '1.11 the piece still saves as a pack STUB, and the stub carries its group');
 	h.check(stub.levelsInTree === 1, '1.12 no level ever entered the tree (meshes under the root: ' + stub.levelsInTree + ')');
-	const autoLod = await page.evaluate(() => window.__stores.lod.lodStats().meshes.filter((m) => m.name === 'Body').length);
+	const autoLod = await page.evaluate(() => window.__tp.test.v1.lod.lodStats().meshes.filter((m) => m.name === 'Body').length);
 	h.check(autoLod === 0, '1.13 the group\'s mesh left 31-perf\'s auto LOD (one system draws it, not two)');
 
 	// ---- 2 the implicit group (a piece placed before its pack had lods) -----------------------------
 	const implicit = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const { uuid } = await window.__lg.placeBall('Old ball', [6, 1, 0], false);
 		await new Promise((r) => setTimeout(r, 1500));
 		s.lodGroup.scanLodGroups();
@@ -93,7 +93,7 @@ h.run(async () => {
 
 	// ---- 3 hysteresis on a camera path --------------------------------------------------------------
 	const path = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const info = s.lodGroup.lodGroupInfo(window.__lg.byName('Ball').uuid);
 		// the distance where LOD0 meets LOD1 at fov 50 for this radius
 		const g = s.lodGroup.lodGroupStats().find((x) => x.name === 'Ball');
@@ -118,7 +118,7 @@ h.run(async () => {
 
 	// ---- 4 forced + the opt-out ---------------------------------------------------------------------
 	const forced = await page.evaluate(async (uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.lodGroupActions.forceLodLevel(uuid, 2);
 		const near = window.__lg.drawnFrom('Ball', 4, [0, 1, 0]);
 		s.lodGroupActions.forceLodLevel(uuid, 'auto');

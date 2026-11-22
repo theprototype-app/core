@@ -19,7 +19,7 @@ import { phoneShell } from './ui/phoneShell.js';
 
 export const FLOW_FAMILY = ['flow', 'flowcode', 'animation', 'uv', 'shader', 'hud', 'timeline'];
 /** every panel that can be a dock tab, in strip order (Node editor first) */
-export const DOCK_FAMILY = [...FLOW_FAMILY, 'explorer', 'profiler', 'code', 'imageEditor'];
+export const DOCK_FAMILY = [...FLOW_FAMILY, 'explorer', 'profiler', 'code'];
 /**
  * 41b H1 — the PHONE's content tabs. On a phone the content panels that are side drawers or
  * floating windows on a wider screen (the Inspector as Properties / Configure Scene, the Objects
@@ -33,7 +33,10 @@ export const DOCK_FAMILY = [...FLOW_FAMILY, 'explorer', 'profiler', 'code', 'ima
 // 43 J1: Statistics too ("statistics also as tab in mobile view, not its floating window") — like the
 // Objects list it is a floating window on a wider screen and keeps that mode on a phone that allows
 // undocking (Settings ▸ Interface)
-export const PHONE_DOCK_TABS = ['properties', 'objects', 'notes', 'layouts', 'scene', 'stats'];
+// 78 PL23 (owner bug G19, option a): Chat, the AI assistant and Free assets too — on a fold they became floating
+// sheets piled over the bar (they were docked a moment before); they are phone dock tabs now, and take their
+// wider-screen place back on the unfold (bottom dock, a sidebar column or floating: their own mode, untouched)
+export const PHONE_DOCK_TABS = ['properties', 'objects', 'notes', 'layouts', 'scene', 'stats', 'chat', 'assets']; // uir-chat: the AI assistant is Chat's Assistant tab
 /**
  * 42 I6 — floating windows that have NO docked layout of their own (no `docked` flag, no
  * second render branch) and still dock as tabs on a wider screen: the dock frame HOSTS their
@@ -42,7 +45,8 @@ export const PHONE_DOCK_TABS = ['properties', 'objects', 'notes', 'layouts', 'sc
  * docks by dropping on the strip. These are the content/tool windows; the one-off viewers
  * (file/model previews, the text viewer), What's new and the tool palettes keep floating.
  */
-export const HOSTED_DOCK_TABS = ['objects', 'stats', 'profilerLive', 'chat', 'aiAssistant', 'assets'];
+// uir-timeline: 'meshGen' = the Generate window (prompt, jobs, history)
+export const HOSTED_DOCK_TABS = ['objects', 'stats', 'chat', 'assets', 'preview', 'meshGen']; // uir-chat: Chat + AI = one window
 /** every key the strip can hold (the tab order may name any of them) */
 export const DOCK_KEYS = [...new Set([...DOCK_FAMILY, ...PHONE_DOCK_TABS, ...HOSTED_DOCK_TABS])];
 /**
@@ -57,10 +61,10 @@ export function canDockFloating(key) {
 	return FLOAT_DOCKABLE.includes(key);
 }
 /** @type {Record<string, string>} */
-export const DOCK_TITLES = { flow: 'Node editor', flowcode: 'Flow Code', animation: 'Animation', uv: 'UV editor', shader: 'Shader editor', hud: 'HUD editor', timeline: 'Timeline', explorer: 'Explorer', profiler: 'Profiler', code: 'Code', imageEditor: 'Image editor', properties: 'Properties', objects: 'Objects', notes: 'Notes', layouts: 'Layouts', scene: 'Configure Scene', stats: 'Statistics', profilerLive: 'Live profiler', chat: 'Chat', aiAssistant: 'AI assistant', assets: 'Free assets' };
+export const DOCK_TITLES = { flow: 'Node editor', flowcode: 'Flow Code', animation: 'Animation', uv: 'UV editor', shader: 'Shader editor', hud: 'HUD editor', timeline: 'Timeline', explorer: 'Explorer', profiler: 'Profiler', code: 'Code', imageEditor: 'Image editor', properties: 'Properties', objects: 'Objects', notes: 'Notes', layouts: 'Layouts', scene: 'Configure Scene', stats: 'Statistics', chat: 'Chat', aiAssistant: 'AI assistant', assets: 'Free assets', preview: 'Preview', meshGen: 'Generate 3D' };
 /** 38 NOTES-38 #23: the view icon each dock tab shows before its name (ui/Icon names) */
 /** @type {Record<string, string>} */
-export const DOCK_ICONS = { flow: 'workflow', flowcode: 'code', animation: 'clapperboard', uv: 'grid-3x3', shader: 'sparkles', hud: 'app-window', timeline: 'video', explorer: 'folder-open', profiler: 'activity', code: 'code', imageEditor: 'image', properties: 'sliders-horizontal', objects: 'list', notes: 'sticky-note', layouts: 'panels-top-left', scene: 'sun', stats: 'gauge', profilerLive: 'activity', chat: 'message-square', aiAssistant: 'sparkles', assets: 'package-open' };
+export const DOCK_ICONS = { flow: 'workflow', flowcode: 'code', animation: 'clapperboard', uv: 'grid-3x3', shader: 'sparkles', hud: 'app-window', timeline: 'video', explorer: 'folder-open', profiler: 'activity', code: 'code', imageEditor: 'image', properties: 'sliders-horizontal', objects: 'list', notes: 'sticky-note', layouts: 'panels-top-left', scene: 'sun', stats: 'gauge', chat: 'message-square', aiAssistant: 'sparkles', assets: 'package-open', preview: 'eye', meshGen: 'wand-sparkles' };
 
 const ls = typeof localStorage !== 'undefined' ? localStorage : null;
 
@@ -74,7 +78,11 @@ bottomDockActive.subscribe((value) => {
 
 /** @param {number} h */
 function clampH(h) {
-	const max = typeof window !== 'undefined' ? Math.round(window.innerHeight * 0.8) : 800;
+	// phone-polish (HONOR, 718 x 587 at 130 % interface scale): 80 % of a short screen left the floating toolbar, which
+	// rides above the dock, inside the top row (logo, undo, bell). The dock also leaves TOP_RESERVE for that row + the
+	// tab strip + the bar (~200 px at 100 %, scaled) — on a tall desktop screen 80 % is still the tighter limit.
+	const vh = typeof window !== 'undefined' ? window.innerHeight : 1000;
+	const max = Math.max(scaledPx(160), Math.round(Math.min(vh * 0.8, vh - scaledPx(200))));
 	return Math.min(Math.max(h || scaledPx(320), scaledPx(160)), max);
 }
 /** shared height of the dock — ONE value for every tab, Explorer included */

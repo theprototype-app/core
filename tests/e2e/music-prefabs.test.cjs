@@ -6,15 +6,15 @@
 // boundary are dropped: half a cable is not a thing.
 const h = require('./helpers.cjs');
 const inPage = (page, body, arg) =>
-	page.evaluate(([src, a]) => Object.getPrototypeOf(async function () {}).constructor('s', 'ad', 'ap', 'pf', 'arg', src)(window.__stores, window.__stores.audioDevices, window.__stores.audioPatch, window.__stores.prefabs, a), [body, arg ?? null]);
+	page.evaluate(([src, a]) => Object.getPrototypeOf(async function () {}).constructor('s', 'ad', 'ap', 'pf', 'arg', src)(window.__tp?.test.v1, window.__tp.test.v1.audioDevices, window.__tp.test.v1.audioPatch, window.__tp.test.v1.prefabs, a), [body, arg ?? null]);
 const KINDS =
 	"ad.registerAudioDevice({ kind: 'pf-osc', label: 'PF osc', ports: { in: [], out: [{ id: 'out', kind: 'audio' }] }, params: [{ key: 'freq', kind: 'range', min: 100, max: 2000, step: 1, default: 330 }]," +
 	"  build(ctx, node, p) { const osc = ctx.createOscillator(); osc.frequency.value = p.freq; const amp = ctx.createGain(); amp.gain.value = 0.3; osc.connect(amp); osc.start(); return { output: amp, osc, dispose() { osc.stop(); osc.disconnect(); amp.disconnect(); } }; }," +
 	"  onParam(hd, k, v) { if (k === 'freq') hd.osc.frequency.value = v; } });" +
-	"ad.registerAudioDevice({ kind: 'pf-spk', label: 'PF speaker', ports: { in: [{ id: 'in', kind: 'audio' }], out: [] }, params: [], build(ctx) { const g = ctx.createGain(); g.connect(window.__stores.audioEngine.bus('instruments')); return { input: g, dispose() { g.disconnect(); } }; } });" +
+	"ad.registerAudioDevice({ kind: 'pf-spk', label: 'PF speaker', ports: { in: [{ id: 'in', kind: 'audio' }], out: [] }, params: [], build(ctx) { const g = ctx.createGain(); g.connect(window.__tp.test.v1.audioEngine.bus('instruments')); return { input: g, dispose() { g.disconnect(); } }; } });" +
 	'await pf.loadPrefabs(); return ad.devicesDebug().kinds';
 const cablesOn = (page) => inPage(page, 'let p; ap.patch.subscribe((v) => (p = v))(); return p.cables.map((c) => ({ id: c.id, from: c.from.uuid, to: c.to.uuid, port: c.from.port + ">" + c.to.port }))');
-const undoLen = (page) => page.evaluate(() => { let n = 0; window.__stores.history.undoStack.subscribe((v) => (n = v.length))(); return n; });
+const undoLen = (page) => page.evaluate(() => { let n = 0; window.__tp.test.v1.history.undoStack.subscribe((v) => (n = v.length))(); return n; });
 const SILENT = 0.001;
 
 h.run(async () => {
@@ -55,7 +55,7 @@ h.run(async () => {
 	h.check(undo1 === undo0 + 1, '2.4 objects + cable are ONE undo entry (' + undo0 + ' -> ' + undo1 + ')');
 	await h.eventually(() => cablesOn(B.page), (list) => list.some((c) => c.from === instOsc && c.to === instSpk), '2.5 B holds the instance\'s cable (the patch replicated)');
 	await h.eventually(() => inPage(B.page, "return ad.devicesDebug().built.filter((b) => b.builtAs === 'pf-osc' || b.builtAs === 'pf-spk').length"), (n) => n >= 4, '2.6 and built the instance\'s devices');
-	await page.evaluate(() => window.__stores.history.undo());
+	await page.evaluate(() => window.__tp.test.v1.history.undo());
 	await page.waitForTimeout(400);
 	const after = await inPage(page, 'let p; ap.patch.subscribe((v) => (p = v))(); return { cables: p.cables.length, obj: !!ad.findDeviceObject(arg) }', instOsc);
 	h.check(after.cables === 0 && after.obj === false, '2.7 one undo takes the whole rig back: no instance, no cable (' + JSON.stringify(after) + ')');

@@ -9,30 +9,30 @@
 const h = require('./helpers.cjs');
 
 const phys = (page, body) =>
-	page.evaluate((b) => new Function('p', b)(window.__stores.physics), body);
+	page.evaluate((b) => new Function('p', b)(window.__tp.test.v1.physics), body);
 
 const posOf = (page, uuid) =>
 	page.evaluate((uuid) => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		const o = group.getObjectByProperty('uuid', uuid);
 		return o ? o.position.toArray() : null;
 	}, uuid);
 
 const bodyOf = (page, uuid) =>
-	page.evaluate((uuid) => window.__stores.physics.physicsDebug().find((b) => b.uuid === uuid), uuid);
+	page.evaluate((uuid) => window.__tp.test.v1.physics.physicsDebug().find((b) => b.uuid === uuid), uuid);
 
 const counter = (page, id) =>
 	page.evaluate((id) => {
 		let map = {};
-		window.__stores.flowTriggers.subscribe((v) => (map = v))();
+		window.__tp.test.v1.flowTriggers.subscribe((v) => (map = v))();
 		return map[id]?.count ?? 0;
 	}, id);
 
 const valueOf = (page, id) =>
 	page.evaluate((id) => {
 		let values = {};
-		window.__stores.flowValues.subscribe((v) => (values = v))();
+		window.__tp.test.v1.flowValues.subscribe((v) => (values = v))();
 		return values[id];
 	}, id);
 
@@ -75,11 +75,11 @@ const setGraph = (page, nodes, edges) =>
 			// ways, so writing one leaves the other stale and the stale side can be
 			// pushed back over it. Measured: after writing only flowGraphs, opening the
 			// editor restored an EARLIER section's nodes while keeping the new edges.
-			window.__stores.flowGraphs.update((graphs) => ({ ...graphs, scene: { nodes, edges } }));
-			window.__stores.flowNodes.set(nodes);
-			window.__stores.flowEdges.set(edges);
+			window.__tp.test.v1.flowGraphs.update((graphs) => ({ ...graphs, scene: { nodes, edges } }));
+			window.__tp.test.v1.flowNodes.set(nodes);
+			window.__tp.test.v1.flowEdges.set(edges);
 			let peer = null;
-			window.__stores.peers.subscribe((p) => (peer = p))();
+			window.__tp.test.v1.peers.subscribe((p) => (peer = p))();
 			nodes.forEach((node) => peer?.send({ type: 'nodecreate', node }));
 			edges.forEach((edge) => peer?.send({ type: 'edgecreate', edge }));
 		},
@@ -109,7 +109,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(4000);
 		await warm.ctx.close();
 	}
@@ -117,17 +117,17 @@ h.run(async () => {
 	const page = A.page;
 
 	const box = await page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		let group = null;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		const b = group.children[group.children.length - 1];
 		b.name = 'Hopper';
 		b.position.set(0, 0.5, 0);
 		b.userData.physics = { mode: 'dynamic', mass: 1 };
-		window.__stores.objectsGroup.update((v) => v);
+		window.__tp.test.v1.objectsGroup.update((v) => v);
 		return b.uuid;
 	});
-	await page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 
 	// ---------------------------------------------------------------- section 1
 	console.log('\n=== 1. Impulse: the first node that can push anything ===');
@@ -142,7 +142,7 @@ h.run(async () => {
 		[edge('key1', 'imp1', 'trigger'), edge('imp1', 'sel1')]
 	);
 	await page.waitForTimeout(500);
-	await page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(
 		() => phys(page, 'return p.physicsDebug().length'),
 		(n) => n > 0,
@@ -174,7 +174,7 @@ h.run(async () => {
 		[edge('tog1', 'imp1', 'trigger'), edge('imp1', 'sel1')]
 	);
 	await page.waitForTimeout(600);
-	await page.evaluate(() => window.__stores.nodesHandler.setNodeData('tog1', { on: true }));
+	await page.evaluate(() => window.__tp.test.v1.nodesHandler.setNodeData('tog1', { on: true }));
 	/** @type {number[]} */
 	const trace = [];
 	for (let i = 0; i < 18; i++) {
@@ -191,7 +191,7 @@ h.run(async () => {
 			spikes +
 			' upward spikes across 1.6 s)'
 	);
-	await page.evaluate(() => window.__stores.nodesHandler.setNodeData('tog1', { on: false }));
+	await page.evaluate(() => window.__tp.test.v1.nodesHandler.setNodeData('tog1', { on: false }));
 
 	// torque mode spins it — put the KEY PRESS graph back first (1.3 swapped in a
 	// toggle to test the edge map with a trigger that never dips)
@@ -206,7 +206,7 @@ h.run(async () => {
 	);
 	await page.waitForTimeout(2500);
 	await page.evaluate(() =>
-		window.__stores.nodesHandler.setNodeData('imp1', { mode: 'torque', x: 0, y: 6, z: 0 })
+		window.__tp.test.v1.nodesHandler.setNodeData('imp1', { mode: 'torque', x: 0, y: 6, z: 0 })
 	);
 	await page.waitForTimeout(400);
 	await press(page, 'KeyR');
@@ -218,14 +218,14 @@ h.run(async () => {
 	await page.evaluate(
 		(uuid) => {
 			let group = null;
-			window.__stores.objectsGroup.subscribe((v) => (group = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 			const o = group.getObjectByProperty('uuid', uuid);
 			o.rotation.set(0, Math.PI / 2, 0);
 		},
 		box
 	);
 	await page.evaluate(() =>
-		window.__stores.nodesHandler.setNodeData('imp1', { mode: 'impulse', space: 'local', x: 6, y: 0, z: 0 })
+		window.__tp.test.v1.nodesHandler.setNodeData('imp1', { mode: 'impulse', space: 'local', x: 6, y: 0, z: 0 })
 	);
 	await page.waitForTimeout(2500);
 	await press(page, 'KeyR');
@@ -243,7 +243,7 @@ h.run(async () => {
 	// ---------------------------------------------------------------- section 2
 	console.log('\n=== 2. Set Velocity ===');
 
-	await page.evaluate(() => window.__stores.physics.stopSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	// test-health-1: a TOGGLE holds the trigger, as 1.4 does. A held Key Press is re-stamped AFTER
 	// the physics actions read it in runTick, so on a page slower than its 0.3 s pulse (~3 fps,
 	// software GL) the key read 0 every frame and this section measured -0.00 m/s; what 2.x is
@@ -260,7 +260,7 @@ h.run(async () => {
 	await page.evaluate(
 		(uuid) => {
 			let group = null;
-			window.__stores.objectsGroup.subscribe((v) => (group = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 			const o = group.getObjectByProperty('uuid', uuid);
 			o.position.set(0, 0.5, 0);
 			o.rotation.set(0, 0, 0);
@@ -268,15 +268,15 @@ h.run(async () => {
 		box
 	);
 	await page.waitForTimeout(400);
-	await page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await page.waitForTimeout(1200);
 
-	await page.evaluate(() => window.__stores.nodesHandler.setNodeData('tog2', { on: true }));
+	await page.evaluate(() => window.__tp.test.v1.nodesHandler.setNodeData('tog2', { on: true }));
 	await page.waitForTimeout(1400); // let it reach the speed before sampling it
 	const held1 = (await bodyOf(page, box))?.linvel?.x ?? 0;
 	await page.waitForTimeout(700);
 	const held2 = (await bodyOf(page, box))?.linvel?.x ?? 0;
-	await page.evaluate(() => window.__stores.nodesHandler.setNodeData('tog2', { on: false }));
+	await page.evaluate(() => window.__tp.test.v1.nodesHandler.setNodeData('tog2', { on: false }));
 	// the velocity is re-written once per FLOW TICK, and friction bleeds it between
 	// ticks, so the observable property is a STEADY speed rather than exactly the
 	// dialled number
@@ -309,7 +309,7 @@ h.run(async () => {
 	// ---------------------------------------------------------------- section 3
 	console.log('\n=== 3. On Rest ===');
 
-	await page.evaluate(() => window.__stores.physics.stopSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	await setGraph(
 		page,
 		[
@@ -322,13 +322,13 @@ h.run(async () => {
 	await page.evaluate(
 		(uuid) => {
 			let group = null;
-			window.__stores.objectsGroup.subscribe((v) => (group = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 			group.getObjectByProperty('uuid', uuid).position.set(0, 4, 0);
 		},
 		box
 	);
 	await page.waitForTimeout(400);
-	await page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await page.waitForTimeout(600);
 	const restedMidFall = await counter(page, 'cnt1');
 	h.check(restedMidFall === 0, '3.1 nothing fires while it is still falling');
@@ -360,9 +360,9 @@ h.run(async () => {
 	await page.waitForTimeout(900);
 	const top = await valueOf(page, 'mea1');
 	const aabbTop = await page.evaluate((uuid) => {
-		const THREE = window.__stores.THREE;
+		const THREE = window.__tp.test.v1.THREE;
 		let group = null;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		const o = group.getObjectByProperty('uuid', uuid);
 		return new THREE.Box3().setFromObject(o).max.y;
 	}, box);
@@ -375,12 +375,12 @@ h.run(async () => {
 			')'
 	);
 
-	await page.evaluate(() => window.__stores.nodesHandler.setNodeData('mea1', { read: 'height' }));
+	await page.evaluate(() => window.__tp.test.v1.nodesHandler.setNodeData('mea1', { read: 'height' }));
 	await page.waitForTimeout(700);
 	const height = await valueOf(page, 'mea1');
 	h.check(Math.abs(height - 1) < 1e-3, "4.2 read 'height' is the box's 1 m (" + height + ')');
 
-	await page.evaluate(() => window.__stores.nodesHandler.setNodeData('mea1', { read: 'speed' }));
+	await page.evaluate(() => window.__tp.test.v1.nodesHandler.setNodeData('mea1', { read: 'speed' }));
 	await phys(page, 'return p.applyImpulse("' + box + '", [4, 0, 0])');
 	await page.waitForTimeout(400);
 	const speed = await valueOf(page, 'mea1');
@@ -389,7 +389,7 @@ h.run(async () => {
 	// ---------------------------------------------------------------- section 5
 	console.log('\n=== 5. random: a wired seed, deterministic by construction ===');
 
-	await page.evaluate(() => window.__stores.physics.stopSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	await setGraph(
 		page,
 		[
@@ -406,7 +406,7 @@ h.run(async () => {
 	await page.waitForTimeout(900);
 	const seededAgain = await valueOf(page, 'rnd1');
 	h.check(seededAgain === seeded, '5.2 ...and it is STABLE — same seed, same value, every tick');
-	await page.evaluate(() => window.__stores.nodesHandler.setNodeData('num1', { value: 8 }));
+	await page.evaluate(() => window.__tp.test.v1.nodesHandler.setNodeData('num1', { value: 8 }));
 	await page.waitForTimeout(900);
 	const otherSeed = await valueOf(page, 'rnd1');
 	h.check(otherSeed !== seeded, '5.3 a different seed gives a different value (' + otherSeed + ')');
@@ -418,7 +418,7 @@ h.run(async () => {
 	// session is reconciled by nodesync from the other side, and the graph that
 	// comes back is not the one under test — measured: the key kept stamping while
 	// the impulse never fired, and a direct applyImpulse on the same body worked.
-	await page.evaluate(() => window.__stores.physics.stopSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	await setGraph(
 		page,
 		[
@@ -431,13 +431,13 @@ h.run(async () => {
 	await page.evaluate(
 		(uuid) => {
 			let group = null;
-			window.__stores.objectsGroup.subscribe((v) => (group = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 			group.getObjectByProperty('uuid', uuid).position.set(0, 0.5, 0);
 		},
 		box
 	);
 	await page.waitForTimeout(800);
-	await page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await settle(page, box, '6.1 (premise) the box is at rest on A');
 	await press(page, 'KeyR');
 	await h.eventually(
@@ -449,12 +449,12 @@ h.run(async () => {
 	// now the late joiner
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(A, B);
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await h.eventually(
 		() =>
 			B.page.evaluate(() => {
 				let graphs = {};
-				window.__stores.flowGraphs.subscribe((v) => (graphs = v))();
+				window.__tp.test.v1.flowGraphs.subscribe((v) => (graphs = v))();
 				const nodes = graphs.scene?.nodes ?? [];
 				const imp = nodes.find((n) => n.id === 'imp6');
 				return nodes.map((n) => n.id).sort().join(',') + '|' + (imp?.data?.y ?? 'none');
@@ -468,7 +468,7 @@ h.run(async () => {
 	await page.evaluate(() => {
 		window.__types = [];
 		let peer = null;
-		window.__stores.peers.subscribe((p) => (peer = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (peer = p))();
 		const original = peer.send.bind(peer);
 		peer.send = (message) => {
 			window.__types.push(message.type);
@@ -500,7 +500,7 @@ h.run(async () => {
 	// trigger log, which sets A's history epoch in session time, so a raw stamp behind it is refused
 	// as somebody else's history (and sits outside the pulse window) — 6.5 red, no hop.
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowRuntime.applyNodeTrigger('key6', (s.connectionState.sessionNow() % 86400000) / 1000, true);
 	});
 	let hopped = false;
@@ -515,7 +515,7 @@ h.run(async () => {
 			'  6.5 clocks: ' +
 				JSON.stringify(
 					await page.evaluate(() => {
-						const s = window.__stores;
+						const s = window.__tp?.test.v1;
 						let t = {};
 						s.flowTriggers?.subscribe?.((v) => (t = v))?.();
 						let sim = null;
@@ -566,7 +566,7 @@ h.run(async () => {
 	// rendered a target handle — so there was nothing to drag out of, and every one
 	// of those inputs was unreachable.
 	await B.ctx.close();
-	await page.evaluate(() => window.__stores.physics.stopSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	await setGraph(
 		page,
 		[
@@ -598,14 +598,14 @@ h.run(async () => {
 	await page.evaluate(
 		(uuid) => {
 			let group = null;
-			window.__stores.objectsGroup.subscribe((v) => (group = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 			group.getObjectByProperty('uuid', uuid).position.set(0, 0.5, 0);
 		},
 		box
 	);
-	await page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await settle(page, box, '7.2 (premise) the box is at rest');
-	await page.evaluate(() => window.__stores.nodesHandler.setNodeData('tog7', { on: true }));
+	await page.evaluate(() => window.__tp.test.v1.nodesHandler.setNodeData('tog7', { on: true }));
 	await h.eventually(
 		async () => (await posOf(page, box))[1],
 		(y) => y > 0.7,
@@ -613,16 +613,16 @@ h.run(async () => {
 	);
 
 	// ...and the same graph with nothing simulating says so instead of failing mute
-	await page.evaluate(() => window.__stores.physics.stopSimulation());
-	await page.evaluate(() => window.__stores.clearToast());
-	await page.evaluate(() => window.__stores.nodesHandler.setNodeData('tog7', { on: false }));
+	await page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
+	await page.evaluate(() => window.__tp.test.v1.clearToast());
+	await page.evaluate(() => window.__tp.test.v1.nodesHandler.setNodeData('tog7', { on: false }));
 	await page.waitForTimeout(400);
-	await page.evaluate(() => window.__stores.nodesHandler.setNodeData('tog7', { on: true }));
+	await page.evaluate(() => window.__tp.test.v1.nodesHandler.setNodeData('tog7', { on: true }));
 	await h.eventually(
 		() =>
 			page.evaluate(() => {
 				let list = [];
-				window.__stores.toastStore.subscribe((v) => (list = v))();
+				window.__tp.test.v1.toastStore.subscribe((v) => (list = v))();
 				return list.map((t) => (typeof t === 'string' ? t : t.text)).join(' | ');
 			}),
 		(text) => text.includes('no simulation is running'),
@@ -638,7 +638,7 @@ h.run(async () => {
 	// ago into a FRESH Impulse and the box jumps the instant the edge connects. BOTH
 	// directions are asserted, because a guard that only refuses is indistinguishable from
 	// one that refuses everything.
-	await page.evaluate(() => window.__stores.physics.stopSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	await page.waitForTimeout(500);
 	await setGraph(
 		page,
@@ -649,12 +649,12 @@ h.run(async () => {
 	// park the box, restart the sim, and let it settle so the height below means something
 	await page.evaluate((uuid) => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		const o = group.getObjectByProperty('uuid', uuid);
 		o.position.set(0, 0.5, 0);
-		window.__stores.objectsGroup.update((v) => v);
+		window.__tp.test.v1.objectsGroup.update((v) => v);
 	}, box);
-	await page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(
 		() => phys(page, 'return p.physicsDebug().length'),
 		(n) => n > 0,
@@ -665,14 +665,14 @@ h.run(async () => {
 	// a LONG pulse (3s) so it is still HIGH when the Impulse node appears — that window is
 	// precisely the exposure this family had
 	await page.evaluate(() =>
-		window.__stores.flowRuntime.applyNodeTrigger('press8', (Date.now() % 86400000) / 1000, false)
+		window.__tp.test.v1.flowRuntime.applyNodeTrigger('press8', (Date.now() % 86400000) / 1000, false)
 	);
 	await page.waitForTimeout(500);
 	const restY = (await posOf(page, box))[1];
 
 	// (1) the fresh Impulse is created and wired WHILE the pulse is high — it must not fire
 	await page.evaluate((b) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.flowGraphs.subscribe((v) => (g = v))();
 		const nodes = [
@@ -705,13 +705,13 @@ h.run(async () => {
 	await settle(page, box, '8.4 (premise) still at rest before the real press');
 	const beforePress = (await posOf(page, box))[1];
 	await page.evaluate(() =>
-		window.__stores.flowRuntime.applyNodeTrigger('press8', (Date.now() % 86400000) / 1000, false)
+		window.__tp.test.v1.flowRuntime.applyNodeTrigger('press8', (Date.now() % 86400000) / 1000, false)
 	);
 	await h.eventually(
 		async () => (await posOf(page, box))[1],
 		(y) => y > beforePress + 0.4,
 		'8.5 and the very NEXT press throws the box, so the guard refuses only what is stale'
 	);
-	await page.evaluate(() => window.__stores.physics.stopSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 	await h.finish(browser);
 });

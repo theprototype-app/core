@@ -41,7 +41,8 @@
 		normalizeBaseUrl,
 		chatEndpointFor
 	} from '$lib/ai/providers';
-	import { testConnection, listModels } from '$lib/ai/client';
+	// sk3-int: the chat client is loaded by the Test / model-list actions, not by the Settings boot
+	const aiClient = () => import('$lib/ai/client');
 	import {
 		meshProviders,
 		meshActiveProvider,
@@ -112,7 +113,9 @@
 		if (!baseUrl) return;
 		const seq = ++aiFetchSeq;
 		aiModelsFetching = true;
-		const list = await listModels({ id: 'probe', preset: aiFormPreset, label: '', baseUrl, apiKey: aiFormKey.trim(), model: '' });
+		const list = await aiClient()
+			.then((c) => c.listModels({ id: 'probe', preset: aiFormPreset, label: '', baseUrl, apiKey: aiFormKey.trim(), model: '' }))
+			.catch(() => null);
 		if (seq !== aiFetchSeq) return;
 		aiModelsFetching = false;
 		if (list && list.length) aiFormModels = list;
@@ -197,14 +200,18 @@
 		}
 		aiTesting = true;
 		aiTestResult = null;
-		const result = await testConnection({
+		const config = {
 			id: 'test',
 			preset: aiFormPreset,
 			label: aiFormLabel,
 			baseUrl: normalizeBaseUrl(aiFormBaseUrl),
 			apiKey: aiFormKey.trim(),
 			model: aiFormModel.trim()
-		});
+		};
+		/** @type {{ ok: boolean, detail: string, models?: string[] | null, modelOk?: boolean | null, modelDetail?: string }} */
+		const result = await aiClient()
+			.then((c) => c.testConnection(config))
+			.catch(() => ({ ok: false, detail: 'Could not load the connection test — check your network and try again', models: null, modelOk: null }));
 		if (result.models && result.models.length) aiFormModels = result.models;
 		// pin the tested model into the result so later typing can't mislabel it
 		aiTestResult = { ok: result.ok, detail: result.detail, modelOk: result.modelOk, modelDetail: result.modelDetail, model: aiFormModel.trim() };

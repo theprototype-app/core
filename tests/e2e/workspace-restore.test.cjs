@@ -18,7 +18,7 @@ h.run(async () => {
 	// The layout returns only on an explicit Restore, the auto-restore setting, or a file
 	// load — so it rides the SAVED PAYLOAD, with no localStorage copy and no boot apply.
 	const opened = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.flowGraphClose.set(false);
 		w.animationClose.set(false);
 		w.inspectorClose.set(false);
@@ -41,7 +41,7 @@ h.run(async () => {
 
 	await h.freshReload(A);
 	const afterReload = await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let flow, anim, inspector;
 		w.flowGraphClose.subscribe((v) => (flow = v))();
 		w.animationClose.subscribe((v) => (anim = v))();
@@ -57,7 +57,7 @@ h.run(async () => {
 	// A record from an older or newer build must only ever restore LESS — it must never
 	// close a panel it has never heard of.
 	const partial = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		// NOT the Explorer: bottomDock closes it whenever a Flow-family panel becomes the
 		// visible dock tab, so it could never stay open beside `flow` and the check would be
 		// measuring that rule instead of this one. The object list shares nothing with the dock.
@@ -82,7 +82,7 @@ h.run(async () => {
 
 	// ---- 3. a scene with nothing to resume carries NO workspace field ----------
 	const bare = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create box 1 1 1');
 		await new Promise((r) => setTimeout(r, 900));
 		w.objectActions.deselectObject();
@@ -100,7 +100,7 @@ h.run(async () => {
 
 	// ---- 4. the SELECTION rides the file ---------------------------------------
 	const withSelection = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		// section 3 closed everything to prove the empty case, so open something again —
 		// a layout is only recorded when there IS one
 		w.objectListClose.set(false);
@@ -129,7 +129,7 @@ h.run(async () => {
 
 	// ---- 5. the EDIT SESSION and its picks ride the file ----------------------
 	const withSession = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let g;
 		w.objectsGroup.subscribe((v) => (g = v))();
 		const object = g.children[g.children.length - 1];
@@ -158,7 +158,7 @@ h.run(async () => {
 	// ---- 6. loading that payload RESUMES the session ---------------------------
 	// The point of carrying picks at all: they come back.
 	const resumed = await A.page.evaluate(async (payload) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		// leave the session and clear everything first, so a resume cannot be confused
 		// with "it was never closed"
 		w.faceEdit.exitFaceEdit();
@@ -197,7 +197,7 @@ h.run(async () => {
 	// ---- 7. a resume naming a MISSING object is harmless ----------------------
 	// The commonest real case: the file outlives the object.
 	const missing = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.faceEdit.exitFaceEdit();
 		await new Promise((r) => setTimeout(r, 300));
 		let threw = null;

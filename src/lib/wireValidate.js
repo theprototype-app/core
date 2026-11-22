@@ -23,7 +23,11 @@
 
 // The one import: the material parameter rules, itself a zero-import leaf (shared with the setter and
 // the AI tools, so the three cannot disagree about what a material key takes).
-import { checkMaterialParam } from './materialParamRules.js';
+import { checkMaterialParam, isMapSlotKey, isMapSlotImage, normalizeTexTransform } from './materialParamRules.js';
+import { isPingMessage } from './pingCore.js';
+// 101 F2: the object schema's receive verdicts (a pure leaf; the cleaning runs in the appliers)
+import { objectJsonVerdict, materialSetVerdict } from './sceneSchema.js';
+import { validPhotoRequest, validPhotoResult } from './photo/photoCore.js';
 
 /** @param {unknown} v */
 export function isUuid(v) {
@@ -170,7 +174,13 @@ const shortStr = (v) => typeof v === 'string' && v.length > 0 && v.length <= 128
  * @type {Record<string, (data: any) => boolean>}
  */
 export const VALIDATORS = {
+	// 98 P2 (98-photo): Photo mode's hand-off — a view to render, its answer (PNG bytes capped), a stop
+	photoreq: (d) => validPhotoRequest(d),
+	photores: (d) => validPhotoResult(d),
+	photostop: (d) => typeof d.id === 'string' && d.id.length <= 64,
 	hosts: (d) => isArray(d.hosts),
+	// 85b S2: a ping — the 87 marker fields plus the optional object-local `on` (pingCore)
+	ping: (d) => isPingMessage(d),
 	// 37 R15: a chat history reply — a bounded list (each entry is checked again on merge)
 	chathistory: (d) => isArray(d.messages) && d.messages.length <= 500,
 	// 48 S2: a sequence document (normalized again on apply) / its delete / the full map
@@ -210,10 +220,28 @@ export const VALIDATORS = {
 	hit: (d) => isUuid(d.uuid) && isArray(d.linvel) && isArray(d.angvel) && typeof d.speed === 'number',
 	// P2: a peer's LOOK presence row. `overrides` and `look` are read as objects the moment
 	// this lands, so a malformed row is dropped here rather than breaking the watch chain.
+	// 68 V7: a filming peer's live camera pose (presence) — or `off`
+	filmpose: (d) =>
+		typeof d.peerId === 'string' &&
+		(d.off === true ||
+			(isUuid(d.uuid) &&
+				isVec3(d.pos) &&
+				isFiniteArray(d.q, 4) &&
+				(d.fov === undefined || (typeof d.fov === 'number' && Number.isFinite(d.fov))) &&
+				(d.roll === undefined || (typeof d.roll === 'number' && Number.isFinite(d.roll))))),
 	lookstate: (d) => typeof d.peerId === 'string' && (d.overrides === undefined || typeof d.overrides === 'object'),
 	simulate: (d) => typeof d.running === 'boolean' || typeof d.paused === 'boolean',
+	// 78 F25: a spectator's frame time, and the initiator handing the world over
+	simvote: (d) => typeof d.frameMs === 'number' && Number.isFinite(d.frameMs) && d.frameMs > 0,
+	simhandoff: (d) =>
+		typeof d.to === 'string' &&
+		(d.velocities === undefined ||
+			(!!d.velocities && typeof d.velocities === 'object' && Object.values(d.velocities).every((v) => isFiniteArray(v, 6)))),
 	loading: (d) => isArray(d.uuids),
-	object: (d) => d.element !== undefined,
+	// 101 F2: the ObjectLoader form (no `uuids` list) passes the schema's size and shape verdict here;
+	// the applier cleans it field by field (loadGuard.parseCheckedObject). The other form is checked
+	// by its own rule in the applier.
+	object: (d) => d.element !== undefined && (d.uuids != null || objectJsonVerdict(d.element)),
 	group: (d) => d.uuid !== undefined,
 	duplicate: (d) => isUuid(d.sourceUuid) && isArray(d.uuids),
 	nodes: (d) => isArray(d.nodes) && isArray(d.edges),
@@ -231,10 +259,12 @@ export const VALIDATORS = {
 		typeof d.id === 'string' &&
 		(d.at === undefined || d.at === null || isVec3(d.at)) &&
 		// 36 X6: a contact's OTHER body (a uuid, '' = the ground); older peers ignore it
-		(d.other === undefined || d.other === null || d.other === '' || isUuid(d.other)),
+		(d.other === undefined || d.other === null || d.other === '' || isUuid(d.other)) &&
+		// 2.0-int: a held-key re-stamp is marked; older peers ignore the field
+		(d.held === undefined || d.held === 1),
 	nodedefs: (d) => isArray(d.defs),
 	verts: (d) => isUuid(d.uuid) && isArray(d.indices),
-	meshgeo: (d) => isUuid(d.uuid) && d.positions !== undefined,
+	meshgeo: (d) => isUuid(d.uuid) && (Array.isArray(d.positions) || d.positions instanceof ArrayBuffer || ArrayBuffer.isView(d.positions)),
 	assetstart: (d) => typeof d.hash === 'string' && Number.isInteger(d.chunks) && d.chunks > 0 && d.chunks <= 4096 && typeof d.size === 'number',
 	assetchunk: (d) => typeof d.hash === 'string' && Number.isInteger(d.seq),
 	assetfile: (d) => typeof d.hash === 'string',
@@ -245,6 +275,8 @@ export const VALIDATORS = {
 	getmatpreset: (d) => typeof d.ref === 'string' && d.ref.length <= 32,
 	matpresetpart: (d) => typeof d.from === 'string' && typeof d.ref === 'string' && Number.isInteger(d.i) && Number.isInteger(d.n) && d.n >= 1 && d.n <= 256 && d.i >= 0 && d.i < d.n && typeof d.data === 'string' && d.data.length <= 300_000,
 	environment: (d) => !!d && typeof d === 'object',
+	// 98 P1: the scene's bake record (null = cleared) on a latest-wins stamp; the record itself is normalized by sceneBake
+	scenebake: (d) => Number.isFinite(Number(d.changedAt)) && (d.record === null || (!!d.record && typeof d.record === 'object' && !Array.isArray(d.record))),
 	atscene: (d) => typeof d.peerId === 'string',
 	// 55 A6: the agent mesh relay (agent/meshRelay.js) — the host re-checks everything that matters
 	meshgenask: () => true,
@@ -258,6 +290,9 @@ export const VALIDATORS = {
 	agentsimack: (d) =>
 		typeof d.id === 'string' && typeof d.ok === 'boolean' && (d.error == null || (typeof d.error === 'string' && d.error.length <= 300)) &&
 		(d.result == null || (typeof d.result === 'object' && !Array.isArray(d.result))),
+	// 85 rule 7: the Allow / Deny question for a scene-wide look change (agent/confirmGate.js)
+	agentconfirmreq: (d) => typeof d.id === 'string' && d.id.length <= 64 && typeof d.tool === 'string' && d.tool.length <= 40 && typeof d.summary === 'string' && d.summary.length <= 400,
+	agentconfirmans: (d) => typeof d.id === 'string' && d.id.length <= 64 && typeof d.allow === 'boolean' && (d.error == null || (typeof d.error === 'string' && d.error.length <= 300)),
 	// fix-agenttest 4: a page's hidden/visible notice (peerDrop.AWAY_GRACE_MS)
 	linkaway: (d) => typeof d.hidden === 'boolean',
 	// 56 C13: the session volume (sessionVolumes.js) — rows are re-normalised on arrival, the host
@@ -310,7 +345,9 @@ export const VALIDATORS = {
 		!!d.doc.slices &&
 		typeof d.doc.slices === 'object' &&
 		!Array.isArray(d.doc.slices) &&
-		(d.ev === undefined || isArray(d.ev)),
+		(d.ev === undefined || isArray(d.ev)) &&
+		// 78 F17: the refusals this change made, with their reasons (each read through the kit's own normalize)
+		(d.refused === undefined || (isArray(d.refused) && d.refused.length <= 32)),
 	// fix-agenttest 10: a shared Set Variable's event for the authority (gameState.applyGameVarOp)
 	gamevarop: (d) =>
 		typeof d.rid === 'string' &&
@@ -459,7 +496,23 @@ export const VALIDATORS = {
 			);
 		// a material parameter: a key the app knows, a value of that key's kind (a texture slot only ever
 		// null on the wire — images travel as `map`)
+		// 101 F2: a slot list + groups — the schema's verdict here, the field-by-field cleaning in applyMaterials
+		if (d.parameter === 'materials') return isUuid(d.uuid) && materialSetVerdict(d.payload);
 		if (d.parameter === 'materialParam') return isUuid(d.uuid) && checkMaterialParam(null, d.key, d.value).ok;
+		// 72 LK1: a texture map slot takes an inline image or null, never a URL a peer could make us fetch
+		if (d.parameter === 'mapSlot') return isUuid(d.uuid) && isMapSlotKey(d.key) && isMapSlotImage(d.map);
+		// the base-colour map: an embedded image or null, never an address a peer could make us fetch
+		if (d.parameter === 'map')
+			return isUuid(d.uuid) && (d.map === null || (typeof d.map === 'string' && /^data:image\//i.test(d.map)));
+		if (d.parameter === 'texTransform') return isUuid(d.uuid) && normalizeTexTransform(d.transform) !== null;
+		if (d.parameter === 'normalStrength') return isUuid(d.uuid) && Number.isFinite(d.value);
+		// 64 D2: a text-on-a-path record (normalizeTextPath clamps the rest) or null; a text
+		// longer than any record keeps is refused before it is copied anywhere
+		if (d.parameter === 'textPath') {
+			const v = d.textPath;
+			if (v === null) return isUuid(d.uuid);
+			return isUuid(d.uuid) && !!v && typeof v === 'object' && !isArray(v) && (v.text === undefined || (typeof v.text === 'string' && v.text.length <= 4000));
+		}
 		if (d.parameter === 'water' || d.parameter === 'bubbles' || d.parameter === 'pour') {
 			const v = d[d.parameter];
 			return isUuid(d.uuid) && (v === null || (!!v && typeof v === 'object' && !isArray(v)));

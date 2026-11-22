@@ -12,18 +12,18 @@ h.run(async () => {
 
 	// create an object, point the hover shell at it, read state synchronously
 	const hovered = await A.page.evaluate(() => {
-		const THREE = window.__stores.THREE;
-		window.__stores.commandsHandler.sceneCommand('/create Box 2 2 2');
+		const THREE = window.__tp.test.v1.THREE;
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create Box 2 2 2');
 		let box = null;
 		let scene = null;
-		window.__stores.objectsGroup.subscribe((g) => g?.children.forEach((c) => { if (c.name === 'Box') box = c; }))();
-		window.__stores.globalScene.subscribe((s) => (scene = s))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => g?.children.forEach((c) => { if (c.name === 'Box') box = c; }))();
+		window.__tp.test.v1.globalScene.subscribe((s) => (scene = s))();
 		box.updateMatrixWorld(true);
-		window.__stores.vrControls.updateHoverBox(box);
+		window.__tp.test.v1.vrControls.updateHoverBox(box);
 		const shell = scene.getObjectByName('vr-hover-box');
 		const size = shell.box.getSize(new THREE.Vector3());
 		let inObjects = false;
-		window.__stores.objectsGroup.subscribe((g) => g?.traverse((o) => { if (o.name === 'vr-hover-box') inObjects = true; }))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => g?.traverse((o) => { if (o.name === 'vr-hover-box') inObjects = true; }))();
 		return { visible: shell.visible, inScene: shell.parent === scene, sizeX: +size.x.toFixed(2), inObjects };
 	});
 	h.check(hovered.visible === true, 'hover shell appears around the pointed object');
@@ -33,9 +33,9 @@ h.run(async () => {
 
 	// clearing the hover hides the shell
 	const cleared = await A.page.evaluate(() => {
-		window.__stores.vrControls.updateHoverBox(null);
+		window.__tp.test.v1.vrControls.updateHoverBox(null);
 		let scene = null;
-		window.__stores.globalScene.subscribe((s) => (scene = s))();
+		window.__tp.test.v1.globalScene.subscribe((s) => (scene = s))();
 		return scene.getObjectByName('vr-hover-box').visible;
 	});
 	h.check(cleared === false, 'hover shell hides when nothing is pointed at');

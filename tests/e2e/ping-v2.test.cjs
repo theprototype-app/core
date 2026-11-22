@@ -11,20 +11,22 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A, 8000);
 
-	// A picks a custom ping color + chime, then Alt+clicks the floor
+	// A picks a custom ping color + chime, then Ctrl+Alt+clicks the floor
 	await A.page.evaluate(() => {
-		window.__stores.ping.pingColor.set('#ff2200');
-		window.__stores.ping.pingSound.set('bell');
+		window.__tp.test.v1.ping.pingColor.set('#ff2200');
+		window.__tp.test.v1.ping.pingSound.set('bell');
 	});
+	await A.page.keyboard.down('Control'); // ping = Ctrl+Alt+click since 36 F22 (Alt alone is the orbit modifier)
 	await A.page.keyboard.down('Alt');
 	await A.page.mouse.click(400, 550);
 	await A.page.keyboard.up('Alt');
+	await A.page.keyboard.up('Control');
 	await A.page.waitForTimeout(1200);
 
 	const bPing = await B.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.ping.pings.subscribe((list) =>
+				window.__tp.test.v1.ping.pings.subscribe((list) =>
 					resolve(list[0] ? { color: list[0].color, sound: list[0].sound } : null)
 				)();
 			})
@@ -38,7 +40,7 @@ h.run(async () => {
 	const marker = await B.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.globalScene.subscribe((scene) => {
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
 					const counts = { ring: 0, glow: 0, beam: 0, spark: 0 };
 					let ringColor = null;
 					scene?.traverse((o) => {
@@ -63,8 +65,8 @@ h.run(async () => {
 
 	// exact-point annotation: the pin lands where pointed, not at the bbox top
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = group.children[group.children.length - 1];
 		box.position.set(2, 0.5, 0);
 		box.updateMatrixWorld(true);
@@ -73,8 +75,8 @@ h.run(async () => {
 	const draft = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.annotationsHandler.addAnnotation(window.__box.uuid, [2.5, 0.75, 0.3]);
-				window.__stores.annotationsHandler.activeAnnotation.subscribe((a) =>
+				window.__tp.test.v1.annotationsHandler.addAnnotation(window.__box.uuid, [2.5, 0.75, 0.3]);
+				window.__tp.test.v1.annotationsHandler.activeAnnotation.subscribe((a) =>
 					resolve(a?.draft ? { offset: a.draft.offset } : null)
 				)();
 			})
@@ -89,15 +91,15 @@ h.run(async () => {
 	// finalize + replicate (read the draft first — never write a store from its own subscriber)
 	await A.page.evaluate(() => {
 		let current = null;
-		window.__stores.annotationsHandler.activeAnnotation.subscribe((a) => (current = a))();
-		window.__stores.annotationsHandler.setAnnotation({ ...current.draft, text: 'exact pin' });
-		window.__stores.annotationsHandler.activeAnnotation.set(null);
+		window.__tp.test.v1.annotationsHandler.activeAnnotation.subscribe((a) => (current = a))();
+		window.__tp.test.v1.annotationsHandler.setAnnotation({ ...current.draft, text: 'exact pin' });
+		window.__tp.test.v1.annotationsHandler.activeAnnotation.set(null);
 	});
 	await B.page.waitForTimeout(1000);
 	const bNote = await B.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.annotationsHandler.annotations.subscribe((list) =>
+				window.__tp.test.v1.annotationsHandler.annotations.subscribe((list) =>
 					resolve(list.find((a) => a.text === 'exact pin')?.offset ?? null)
 				)();
 			})
@@ -111,19 +113,19 @@ h.run(async () => {
 	const sys = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				const THREE = window.__stores.THREE;
-				window.__stores.globalScene.subscribe((scene) => {
+				const THREE = window.__tp.test.v1.THREE;
+				window.__tp.test.v1.globalScene.subscribe((scene) => {
 					const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial());
 					mesh.name = 'sys-test';
 					mesh.position.set(-3, 0.5, 0);
 					scene.add(mesh);
 					mesh.updateMatrixWorld(true);
-					window.__stores.annotationsHandler.addAnnotation(mesh.uuid, [-3, 1, 0.5]);
+					window.__tp.test.v1.annotationsHandler.addAnnotation(mesh.uuid, [-3, 1, 0.5]);
 					let current = null;
-					window.__stores.annotationsHandler.activeAnnotation.subscribe((a) => (current = a))();
+					window.__tp.test.v1.annotationsHandler.activeAnnotation.subscribe((a) => (current = a))();
 					if (current?.draft) {
-						window.__stores.annotationsHandler.setAnnotation({ ...current.draft, text: 'sys pin' });
-						window.__stores.annotationsHandler.activeAnnotation.set(null);
+						window.__tp.test.v1.annotationsHandler.setAnnotation({ ...current.draft, text: 'sys pin' });
+						window.__tp.test.v1.annotationsHandler.activeAnnotation.set(null);
 					}
 					resolve({ hasDraft: !!current?.draft, offset: current?.draft?.offset ?? null });
 				})();
@@ -135,15 +137,15 @@ h.run(async () => {
 	);
 	// churn objectsGroup so the debounced prune runs — the system pin must stay
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		group.children[group.children.length - 1].position.set(0, 0.5, -8);
 	});
 	await A.page.waitForTimeout(900);
 	const sysKept = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.annotationsHandler.annotations.subscribe((list) =>
+				window.__tp.test.v1.annotationsHandler.annotations.subscribe((list) =>
 					resolve(list.some((a) => a.text === 'sys pin'))
 				)();
 			})
@@ -154,14 +156,14 @@ h.run(async () => {
 	const vr = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				const THREE = window.__stores.THREE;
-				window.__stores.objectsGroup.subscribe((group) => {
+				const THREE = window.__tp.test.v1.THREE;
+				window.__tp.test.v1.objectsGroup.subscribe((group) => {
 					const pick = (origin, dir, g) => {
 						const ray = new THREE.Raycaster(
 							new THREE.Vector3(...origin),
 							new THREE.Vector3(...dir).normalize()
 						);
-						const p = window.__stores.vrControls.pingPointFromRay(ray, g);
+						const p = window.__tp.test.v1.vrControls.pingPointFromRay(ray, g);
 						return p ? [p.x, p.y, p.z] : null;
 					};
 					resolve({

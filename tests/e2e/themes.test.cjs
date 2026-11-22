@@ -12,7 +12,7 @@ h.run(async () => {
 		A.page.evaluate(
 			(themeId) =>
 				new Promise((resolve) => {
-					window.__stores.themes.theme.set(themeId);
+					window.__tp.test.v1.themes.theme.set(themeId);
 					// probe div exercises the remap layer without depending on any panel
 					let el = document.getElementById('theme-probe');
 					if (!el) {
@@ -39,7 +39,7 @@ h.run(async () => {
 	const envBefore = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.environment.environment.subscribe((e) => resolve(JSON.stringify(e)))();
+				window.__tp.test.v1.environment.environment.subscribe((e) => resolve(JSON.stringify(e)))();
 			})
 	);
 
@@ -84,7 +84,7 @@ h.run(async () => {
 	const envAfter = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
-				window.__stores.environment.environment.subscribe((e) => resolve(JSON.stringify(e)))();
+				window.__tp.test.v1.environment.environment.subscribe((e) => resolve(JSON.stringify(e)))();
 			})
 	);
 	h.check(envBefore === envAfter, 'environment state untouched by theme switches');

@@ -11,7 +11,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	const built = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create box 1 1 1');
 		await new Promise((r) => setTimeout(r, 400));
 		w.commandsHandler.sceneCommand('/create box 1 1 1');
@@ -41,14 +41,14 @@ h.run(async () => {
 	await A.page.waitForTimeout(300);
 	const all = await A.page.evaluate(() => {
 		let set = [];
-		window.__stores.selectedObjects.subscribe((v) => (set = v))();
+		window.__tp.test.v1.selectedObjects.subscribe((v) => (set = v))();
 		return set.length;
 	});
 	h.check(all === 3, `Ctrl+A selects every object (${all} of 3)`);
 
 	// it must NOT fire while a mesh session owns the key for its own elements
 	const inSession = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.objectActions.deselectObject();
 		w.faceEdit.enterFaceEdit(uuid);
 		await new Promise((r) => setTimeout(r, 300));
@@ -58,7 +58,7 @@ h.run(async () => {
 	await A.page.keyboard.press('Control+a');
 	await A.page.waitForTimeout(250);
 	const duringSession = await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let set = [];
 		w.selectedObjects.subscribe((v) => (set = v))();
 		let picked = [];
@@ -79,7 +79,7 @@ h.run(async () => {
 	const dblclick = async (uuid) => {
 		const position = await A.page.evaluate((id) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			const o = g.getObjectByProperty('uuid', id);
 			return [o.position.x, o.position.y, o.position.z];
 		}, uuid);
@@ -93,30 +93,30 @@ h.run(async () => {
 	// default: properties. (15-O's behaviour, and it stays the default.)
 	const asDefault = await A.page.evaluate(() => {
 		let value;
-		window.__stores.selectionPrefs.doubleClickAction.subscribe((v) => (value = v))();
+		window.__tp.test.v1.selectionPrefs.doubleClickAction.subscribe((v) => (value = v))();
 		return value;
 	});
 	h.check(asDefault === 'properties', `the default action is unchanged (${asDefault})`);
 
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await dblclick(built.uuids[0]);
 	const opened = await A.page.evaluate(() => {
 		let open = null;
-		window.__stores.inspectorOpen?.subscribe?.((v) => (open = v))();
+		window.__tp.test.v1.inspectorOpen?.subscribe?.((v) => (open = v))();
 		let set = [];
-		window.__stores.selectedObjects.subscribe((v) => (set = v))();
+		window.__tp.test.v1.selectedObjects.subscribe((v) => (set = v))();
 		return { open, selected: set.length };
 	});
 	h.check(opened.selected === 1, 'a double-click still selects the object it hit');
 
 	// 'meshedit' — the same gesture enters the mesh editor
 	await A.page.evaluate(() => {
-		window.__stores.selectionPrefs.doubleClickAction.set('meshedit');
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.selectionPrefs.doubleClickAction.set('meshedit');
+		window.__tp.test.v1.objectActions.deselectObject();
 	});
 	await dblclick(built.uuids[0]);
 	const editing = await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let value = null;
 		w.faceEdit.faceEditObject.subscribe((v) => (value = v))();
 		w.faceEdit.exitFaceEdit();
@@ -126,15 +126,15 @@ h.run(async () => {
 
 	// 'sametype' — both boxes, not the sphere
 	await A.page.evaluate(() => {
-		window.__stores.selectionPrefs.doubleClickAction.set('sametype');
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.selectionPrefs.doubleClickAction.set('sametype');
+		window.__tp.test.v1.objectActions.deselectObject();
 	});
 	await dblclick(built.uuids[0]);
 	const sameType = await A.page.evaluate(() => {
 		let set = [];
-		window.__stores.selectedObjects.subscribe((v) => (set = v))();
+		window.__tp.test.v1.selectedObjects.subscribe((v) => (set = v))();
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return set.map((id) => {
 			const o = g.getObjectByProperty('uuid', id);
 			return o.isMesh ? o.geometry.type : o.type;
@@ -147,16 +147,16 @@ h.run(async () => {
 
 	// 'isolate' — the others are hidden, Escape brings them back
 	await A.page.evaluate(() => {
-		window.__stores.selectionPrefs.doubleClickAction.set('isolate');
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.selectionPrefs.doubleClickAction.set('isolate');
+		window.__tp.test.v1.objectActions.deselectObject();
 	});
 	await dblclick(built.uuids[0]);
 	const isolated = await A.page.evaluate((keep) => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return {
 			visible: g.children.filter((c) => c.visible !== false).map((c) => c.uuid),
-			isolated: window.__stores.objectActions.isIsolated(),
+			isolated: window.__tp.test.v1.objectActions.isIsolated(),
 			keep
 		};
 	}, built.uuids[0]);
@@ -170,10 +170,10 @@ h.run(async () => {
 	await A.page.waitForTimeout(300);
 	const restored = await A.page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return {
 			visible: g.children.filter((c) => c.visible !== false).length,
-			isolated: window.__stores.objectActions.isIsolated()
+			isolated: window.__tp.test.v1.objectActions.isIsolated()
 		};
 	});
 	h.check(restored.visible === 3, `Escape brings the scene back (${restored.visible} visible)`);
@@ -182,7 +182,7 @@ h.run(async () => {
 	// an object the USER hid must stay hidden across an isolate/restore — the
 	// snapshot remembers each object's own visibility, it does not just show all
 	const respectsHidden = await A.page.evaluate((uuids) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		let g;
 		w.objectsGroup.subscribe((v) => (g = v))();
 		const hidden = g.getObjectByProperty('uuid', uuids[2]);
@@ -203,7 +203,7 @@ h.run(async () => {
 	// Escape must be left alone when nothing is isolated (the `when` guard) —
 	// otherwise the registry would swallow every Escape in the app
 	const escapeFree = await A.page.evaluate(() => {
-		const registry = window.__stores.shortcutsRegistry;
+		const registry = window.__tp.test.v1.shortcutsRegistry;
 		const entry = registry.shortcuts.find((s) => s.keys === 'Escape');
 		return { hasEntry: !!entry, declines: entry ? entry.when() === false : null };
 	});

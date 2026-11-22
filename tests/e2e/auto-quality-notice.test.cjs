@@ -30,7 +30,7 @@ const DESKTOP = { viewport: { width: 1440, height: 900 } };
 async function load(page, slug) {
 	const bytes = Array.from(fs.readFileSync(path.join(/** @type {string} */ (SC), slug, 'scene.tpscene')));
 	await page.evaluate(async (arr) => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		await s.sessions.applySession(payload, { backup: false });
 	}, bytes);
@@ -41,7 +41,7 @@ async function freeze(page, level) {
 	await page.evaluate((lv) => {
 		const w = /** @type {any} */ (window);
 		w.__f12 = { t: 1e9 };
-		w.__stores.qualityGovernor.governorForTest.setLevel(lv, w.__f12.t);
+		w.__tp.test.v1.qualityGovernor.governorForTest.setLevel(lv, w.__f12.t);
 		w.__f12.t += 1000;
 		/**
 		 * frames at `slow` ms on every third frame while the level is below `cheapFrom` (the
@@ -49,7 +49,7 @@ async function freeze(page, level) {
 		 * @param {number} dur @param {number} cheapFrom @param {{slow?: number, noLock?: boolean}} [o]
 		 */
 		w.__f12drive = (dur, cheapFrom, o = {}) => {
-			const Q = w.__stores.qualityGovernor;
+			const Q = w.__tp.test.v1.qualityGovernor;
 			const g = Q.governorForTest;
 			const slow = o.slow ?? 33.3;
 			/** @type {number[]} */ const moves = [];
@@ -76,7 +76,7 @@ async function freeze(page, level) {
 /** @param {any} page */
 const state = (page) =>
 	page.evaluate(() => {
-		const S = /** @type {any} */ (window).__stores;
+		const S = /** @type {any} */ (window).__tp?.test.v1;
 		let q;
 		S.qualityGovernor.qualityState.subscribe((/** @type {any} */ v) => (q = v))();
 		return {
@@ -90,7 +90,9 @@ const state = (page) =>
 	});
 
 /** the water tier a level gives on auto (waterRuntime.resolveTier) */
-const tierOf = (/** @type {number} */ lv) => (lv >= 6 ? 'quest' : lv >= 3 ? 'medium' : 'high');
+// 98-int: the post step's level comes from the governor (lookLite sits before it since 1.63, so it is 7, not 6)
+let POST = 6;
+const tierOf = (/** @type {number} */ lv) => (lv >= POST ? 'quest' : lv >= 3 ? 'medium' : 'high');
 /** refraction switches along a list of levels @param {number[]} levels @param {number} start */
 function switches(levels, start) {
 	let n = 0;
@@ -107,11 +109,11 @@ function switches(levels, start) {
 async function shots(page, name) {
 	if (!OUT) return;
 	for (const t of ['dark', 'light']) {
-		await page.evaluate((th) => /** @type {any} */ (window).__stores.themes.theme.set(th), t);
+		await page.evaluate((th) => /** @type {any} */ (window).__tp.test.v1.themes.theme.set(th), t);
 		await page.waitForTimeout(400);
 		await page.screenshot({ path: path.join(OUT, `${name}-${t}.png`) });
 	}
-	await page.evaluate(() => /** @type {any} */ (window).__stores.themes.theme.set('dark'));
+	await page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.themes.theme.set('dark'));
 }
 
 /** h.eventually, returning the state it accepted (null on timeout)
@@ -132,6 +134,13 @@ async function until(fn, pred, label, timeout = 10000) {
 	return null;
 }
 
+/** the level whose step turns the scene look (and the screen-space water) off; kept on the page for the driver @param {any} page */
+const postLevel = (page) =>
+	page.evaluate(() => {
+		const w = /** @type {any} */ (window);
+		return (w.__f12P = w.__tp.test.v1.qualityGovernor.governorForTest.levelOf('post'));
+	});
+
 /** @param {any} page @param {RegExp} re */
 const toastLike = (page, re) => page.evaluate((src) => [...document.querySelectorAll('.tp-toast-text')].some((e) => new RegExp(src).test(e.textContent ?? '')), re.source);
 
@@ -142,11 +151,12 @@ h.run(async () => {
 
 	// ── 1. the phone's lighter start, announced once ─────────────────────────────────────────────
 	const A = await h.setupPage(browser, 'f12-phone', { context: PHONE });
-	h.check(await A.page.evaluate(() => /** @type {any} */ (window).__stores.qualityGovernor.phoneQuality()), 'the app judges this device a phone');
+	h.check(await A.page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.qualityGovernor.phoneQuality()), 'the app judges this device a phone');
 	await until(() => state(A.page), (s) => s.toasts.some((t) => /^Lowered shadows, resolution and ambient occlusion to keep it smooth$/.test(t)), '1.1 the lighter start is announced: "Lowered shadows, resolution and ambient occlusion to keep it smooth"', 8000);
 	h.check(await A.page.evaluate(() => [...document.querySelectorAll('.tp-toast-action')].some((b) => b.textContent?.trim() === 'Keep full quality')), '1.2 …with a "Keep full quality" action');
 	h.check((await A.page.$('#simplified-water-notice')) === null, '1.3 the old "Simplified water" strip is gone (one notice for every toggle)');
 	await freeze(A.page, 4);
+	POST = await postLevel(A.page);
 	await A.page.evaluate(() => document.querySelectorAll('.tp-toast-x').forEach((b) => /** @type {HTMLElement} */ (b).click()));
 
 	// ── 2. Aquarium: off, one retry, then held ───────────────────────────────────────────────────
@@ -154,50 +164,50 @@ h.run(async () => {
 	await A.page.waitForTimeout(2500);
 	await A.page.evaluate(() => {
 		const w = /** @type {any} */ (window);
-		w.__stores.qualityGovernor.governorForTest.setLevel(5, w.__f12.t);
+		w.__tp.test.v1.qualityGovernor.governorForTest.setLevel(w.__f12P - 1, w.__f12.t);
 		w.__f12.t += 1000;
 	});
-	await h.eventually(() => state(A.page), (s) => s.water === 'medium', '2.0 (premise) level 5: Aquarium refracts on the half-res screen-space tier', 8000);
+	await h.eventually(() => state(A.page), (s) => s.water === 'medium', `2.0 (premise) level ${POST - 1}: Aquarium refracts on the half-res screen-space tier`, 8000);
 	if (OUT) await A.page.screenshot({ path: path.join(OUT, '20-after-phone-aquarium-L5-refraction-on.png') });
 
-	const drop = await A.page.evaluate(() => /** @type {any} */ (window).__f12drive(3000, 6));
-	h.check(drop.level === 6 && drop.moves.join() === '6', `2.1 the screen-space pass overloads: 5 -> 6 (${drop.moves.join(',')})`);
+	const drop = await A.page.evaluate(() => /** @type {any} */ (window).__f12drive(3000, /** @type {any} */ (window).__f12P));
+	h.check(drop.level === POST && drop.moves.join() === String(POST), `2.1 the screen-space pass overloads: ${POST - 1} -> ${POST} (${drop.moves.join(',')})`);
 	const off1 = await until(() => state(A.page), (s) => s.water === 'quest' && s.toasts.some((t) => /^Lowered water quality/.test(t)), '2.2 refraction OFF, and the toast says so', 8000);
 	const waterToast = off1?.toasts.find((/** @type {string} */ t) => /^Lowered water quality/.test(t));
 	h.check(waterToast === 'Lowered water quality and the scene look to keep it smooth', `2.3 the words ("${waterToast}")`);
 	await shots(A.page, '21-after-phone-water-lowered-toast');
 
-	const retry = await A.page.evaluate(() => /** @type {any} */ (window).__f12drive(10000, 6));
-	h.check(retry.moves.join() === '5', `2.4 cheap frames at level 6: ONE retry back to 5 (${retry.moves.join(',')})`);
+	const retry = await A.page.evaluate(() => /** @type {any} */ (window).__f12drive(10000, /** @type {any} */ (window).__f12P));
+	h.check(retry.moves.join() === String(POST - 1), `2.4 cheap frames at level ${POST}: ONE retry back to ${POST - 1} (${retry.moves.join(',')})`);
 	await h.eventually(() => state(A.page), (s) => s.water === 'medium', '2.5 the retry brings the refraction back', 8000);
-	const again = await A.page.evaluate(() => /** @type {any} */ (window).__f12drive(4000, 6));
-	h.check(again.moves.join() === '6' && again.lock === 6, `2.6 the retry overloads again: 5 -> 6 and the level is LOCKED (lock ${again.lock})`);
+	const again = await A.page.evaluate(() => /** @type {any} */ (window).__f12drive(4000, /** @type {any} */ (window).__f12P));
+	h.check(again.moves.join() === String(POST) && again.lock === POST, `2.6 the retry overloads again: ${POST - 1} -> ${POST} and the level is LOCKED (lock ${again.lock})`);
 	const held = await until(() => state(A.page), (s) => s.water === 'quest' && s.held === true, '2.7 refraction off, qualityState.held', 8000);
 	h.check(!!held && held.toasts.filter((/** @type {string} */ t) => /^Lowered water quality/.test(t)).length <= 1, '2.8 no second water toast (once per session)');
-	const ten = await A.page.evaluate(() => /** @type {any} */ (window).__f12drive(600000, 6));
-	h.check(ten.moves.length === 0 && ten.level === 6, `2.9 ten more minutes of steady frames: no switch at all (moves ${ten.moves.join(',') || 'none'})`);
+	const ten = await A.page.evaluate(() => /** @type {any} */ (window).__f12drive(600000, /** @type {any} */ (window).__f12P));
+	h.check(ten.moves.length === 0 && ten.level === POST, `2.9 ten more minutes of steady frames: no switch at all (moves ${ten.moves.join(',') || 'none'})`);
 	const all = [...drop.moves, ...retry.moves, ...again.moves, ...ten.moves];
-	h.check(switches(all, 5) === 3, `2.10 refraction switched ${switches(all, 5)} times in ~10.3 min: off, the one retry, off (was every 10-80 s)`);
+	h.check(switches(all, POST - 1) === 3, `2.10 refraction switched ${switches(all, POST - 1)} times in ~10.3 min: off, the one retry, off (was every 10-80 s)`);
 	if (OUT) await A.page.screenshot({ path: path.join(OUT, '22-after-phone-aquarium-held-refraction-off.png') });
 
 	// counterfactual: the 1.31 rule (no lock) on the same page and the same frames
 	await A.page.evaluate(() => {
 		const w = /** @type {any} */ (window);
-		w.__stores.qualityGovernor.governorForTest.clearFlapLock();
-		w.__stores.qualityGovernor.governorForTest.setLevel(5, w.__f12.t);
+		w.__tp.test.v1.qualityGovernor.governorForTest.clearFlapLock();
+		w.__tp.test.v1.qualityGovernor.governorForTest.setLevel(w.__f12P - 1, w.__f12.t);
 		w.__f12.t += 1000;
 	});
-	const old = await A.page.evaluate(() => /** @type {any} */ (window).__f12drive(600000, 6, { noLock: true }));
-	h.check(switches(old.moves, 5) > 8, `2.11 COUNTERFACTUAL — without the lock the refraction switches ${switches(old.moves, 5)} times in 10 min`);
+	const old = await A.page.evaluate(() => /** @type {any} */ (window).__f12drive(600000, /** @type {any} */ (window).__f12P, { noLock: true }));
+	h.check(switches(old.moves, POST - 1) > 8, `2.11 COUNTERFACTUAL — without the lock the refraction switches ${switches(old.moves, POST - 1)} times in 10 min`);
 
 	// a new scene clears the lock
 	await A.page.evaluate(() => {
 		const w = /** @type {any} */ (window);
-		w.__stores.qualityGovernor.governorForTest.setLevel(5, w.__f12.t);
+		w.__tp.test.v1.qualityGovernor.governorForTest.setLevel(w.__f12P - 1, w.__f12.t);
 		w.__f12.t += 1000;
 	});
-	await A.page.evaluate(() => /** @type {any} */ (window).__f12drive(20000, 6));
-	h.check((await state(A.page)).lock === 6, '2.12 (premise) locked again');
+	await A.page.evaluate(() => /** @type {any} */ (window).__f12drive(20000, /** @type {any} */ (window).__f12P));
+	h.check((await state(A.page)).lock === POST, '2.12 (premise) locked again');
 	await load(A.page, 'aquarium');
 	await h.eventually(() => state(A.page), (s) => s.lock === -1 && s.held === false, '2.12 a scene load clears the lock (new scene, new evidence)', 15000);
 	await A.ctx.close();
@@ -205,18 +215,19 @@ h.run(async () => {
 	// ── 3. Play defers the notice; "Keep full quality" (a tap) ───────────────────────────────────
 	const B = await h.setupPage(browser, 'f12-phone-keep', { context: PHONE });
 	await freeze(B.page, 4);
+	await postLevel(B.page);
 	await load(B.page, 'aquarium');
 	await B.page.waitForTimeout(2500);
 	await B.page.evaluate(() => {
 		const w = /** @type {any} */ (window);
-		w.__stores.qualityGovernor.governorForTest.setLevel(5, w.__f12.t);
+		w.__tp.test.v1.qualityGovernor.governorForTest.setLevel(w.__f12P - 1, w.__f12.t);
 		w.__f12.t += 1000;
-		w.__stores.isLocked.set(true);
+		w.__tp.test.v1.isLocked.set(true);
 	});
-	await B.page.evaluate(() => /** @type {any} */ (window).__f12drive(3000, 6));
+	await B.page.evaluate(() => /** @type {any} */ (window).__f12drive(3000, /** @type {any} */ (window).__f12P));
 	await B.page.waitForTimeout(1500);
 	h.check(!(await toastLike(B.page, /^Lowered water quality/)), '3.1 a drop while playing is not announced in Play');
-	await B.page.evaluate(() => /** @type {any} */ (window).__stores.isLocked.set(null));
+	await B.page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.isLocked.set(null));
 	await h.eventually(() => toastLike(B.page, /^Lowered water quality/), (v) => v, '3.2 …it is, once you are back in the editor', 8000);
 	if (OUT) await B.page.screenshot({ path: path.join(OUT, '23-after-phone-toast-before-tap.png') });
 	const keep = B.page.locator('.tp-toast', { hasText: 'Lowered water quality' }).locator('.tp-toast-action', { hasText: 'Keep full quality' });
@@ -231,13 +242,13 @@ h.run(async () => {
 
 	// ── 4. desktop: the same rule for every toggle (shadows) ─────────────────────────────────────
 	const D = await h.setupPage(browser, 'f12-desktop', { context: DESKTOP });
-	h.check(!(await D.page.evaluate(() => /** @type {any} */ (window).__stores.qualityGovernor.phoneQuality())), '4.0 (premise) a desktop');
+	h.check(!(await D.page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.qualityGovernor.phoneQuality())), '4.0 (premise) a desktop');
 	await freeze(D.page, 0);
 	await load(D.page, 'aquarium');
 	await D.page.waitForTimeout(2500);
 	await D.page.evaluate(() => {
 		// a heavy scene for the desktop budget (the governor only acts on one)
-		/** @type {any} */ (window).__stores.sceneBudget.qualityBaseline.set({ objects: 0, triangles: 0, calls: 5000 });
+		/** @type {any} */ (window).__tp.test.v1.sceneBudget.qualityBaseline.set({ objects: 0, triangles: 0, calls: 5000 });
 	});
 	const d1 = await D.page.evaluate(() => /** @type {any} */ (window).__f12drive(2500, 99, { slow: 60 }));
 	h.check(d1.moves.join() === '1', `4.1 missed frames on a heavy scene: shadows off (${d1.moves.join(',')})`);

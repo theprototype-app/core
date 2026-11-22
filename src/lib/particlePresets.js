@@ -21,6 +21,8 @@
 //  blending    'additive' | 'normal'
 //  spin        sprite rotation speed (rad/s)
 //  space       'local' (particles ride the object) | 'world' (trail behind)
+//  aim         world space only: 'emitter' (shape + directions turn with the object, a rocket's exhaust) |
+//              'world' (up is the world's up however the object is turned). Gravity is always world in world space
 //  36 B3 (weather): shape 'box' + area [w, d] (emit anywhere on the rectangle, falling
 //  down), wind [x, y, z] m/s, fall = metres to the ground below the emitter (0 = none),
 //  ground 'splash' (a growing, fading ring — rain) | 'settle' (lies there and fades — snow)
@@ -58,6 +60,7 @@ export const PARTICLE_DEFAULTS = {
 	blending: 'additive',
 	spin: 0,
 	space: 'local',
+	aim: 'emitter',
 	render: 'points',
 	inherit: 0,
 	stretch: 0.04,
@@ -180,6 +183,20 @@ export const PARTICLE_PRESETS = [
 			opacity: 0.9, fadeIn: 0.1, fadeOut: 0.5,
 			sprite: 'dot', blending: 'additive', spin: 0, space: 'world',
 			render: 'trails', trail: 0.5, trailSegments: 10, inherit: 0.3
+		}
+	},
+	{
+		// 85b W5b: slow glowing points that drift and blink over a meadow or a pond at night
+		key: 'fireflies',
+		name: 'Fireflies',
+		config: {
+			count: 36, lifetime: 3.6, lifeJitter: 0.5,
+			shape: 'sphere', radius: 2.5,
+			speed: 0.2, speedJitter: 1, gravity: 0.05, drag: 1, turbulence: 1,
+			sizeStart: 0.07, sizeEnd: 0.05,
+			colorStart: '#f6ff8a', colorEnd: '#9cff3a',
+			opacity: 1, fadeIn: 0.35, fadeOut: 0.45,
+			sprite: 'dot', blending: 'additive', spin: 0, space: 'world'
 		}
 	},
 	{

@@ -11,7 +11,7 @@ h.run(async () => {
 	// throwaway page warms the vite dep-optimizer for the lazy rapier import
 	{
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(4000);
 		await warm.ctx.close();
 	}
@@ -20,11 +20,11 @@ h.run(async () => {
 
 	// three boxes: b1 gets userData physics, b2 a flow Mass node, b3 stays bare
 	const uuids = await A.page.evaluate(async () => {
-		const cmd = window.__stores.commandsHandler.sceneCommand;
+		const cmd = window.__tp.test.v1.commandsHandler.sceneCommand;
 		cmd('/create box');
 		cmd('/create box');
 		cmd('/create box');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const [b1, b2, b3] = group.children;
 		b1.name = 'PropsBox';
 		b2.name = 'FlowBox';
@@ -39,39 +39,39 @@ h.run(async () => {
 	});
 
 	// fallback toast FIRST (while nothing has physics): select b3 and simulate
-	await A.page.evaluate((uuid) => window.__stores.objectActions.selectObject(uuid), uuids[2]);
-	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.evaluate((uuid) => window.__tp.test.v1.objectActions.selectObject(uuid), uuids[2]);
+	await A.page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await h.eventually(
 		() =>
 			A.page.evaluate(
-				() => new Promise((r) => window.__stores.toastStore.subscribe((t) => r(t.map((x) => x.message ?? x).join('|')))())
+				() => new Promise((r) => window.__tp.test.v1.toastStore.subscribe((t) => r(t.map((x) => x.message ?? x).join('|')))())
 			),
 		(msgs) => /No objects have physics yet/.test(msgs || '') && /Inspector/.test(msgs || ''),
 		'fallback toast explains WHY and points at the Inspector'
 	);
 	await h.eventually(
-		() => A.page.evaluate(() => new Promise((r) => window.__stores.physics.simulating.subscribe(r)())),
+		() => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.physics.simulating.subscribe(r)())),
 		(v) => v === true,
 		'fallback still simulates the selected object'
 	);
-	await A.page.evaluate(() => window.__stores.physics.stopSimulation());
+	await A.page.evaluate(() => window.__tp.test.v1.physics.stopSimulation());
 
 	// give b1 userData physics + wire a Mass node to b2
 	await A.page.evaluate(([b1, b2]) => {
 		let group;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		group.getObjectByProperty('uuid', b1).userData.physics = { mode: 'dynamic', mass: 3 };
 		const nodes = [
 			{ id: 'm1', type: 'mass', position: { x: 0, y: 0 }, data: { type: 'mass', kg: 2 }, class: 'w-[150px]' },
 			{ id: 'sel1', type: 'objectselector', position: { x: 300, y: 0 }, data: { type: 'objectselector', selected: b2 }, class: 'w-[150px]' }
 		];
-		window.__stores.flowNodes.set(nodes);
-		window.__stores.flowEdges.set([{ id: 'e1', source: 'm1', target: 'sel1' }]);
-		window.__stores.objectsGroup.update((v) => v);
+		window.__tp.test.v1.flowNodes.set(nodes);
+		window.__tp.test.v1.flowEdges.set([{ id: 'e1', source: 'm1', target: 'sel1' }]);
+		window.__tp.test.v1.objectsGroup.update((v) => v);
 	}, uuids);
 
 	// the list API sees both sources
-	const rows = await A.page.evaluate(() => window.__stores.physics.listPhysicsObjects());
+	const rows = await A.page.evaluate(() => window.__tp.test.v1.physics.listPhysicsObjects());
 	h.check(rows.length === 2, 'two physics objects listed (' + rows.length + ')');
 	const propsRow = rows.find((r) => r.name === 'PropsBox');
 	const flowRow = rows.find((r) => r.name === 'FlowBox');
@@ -79,24 +79,21 @@ h.run(async () => {
 	h.check(!!flowRow && flowRow.mode === 'dynamic' && flowRow.mass === 2 && flowRow.flow, 'flow row: dynamic mass 2, flagged flow');
 
 	// the Inspector scene-mode section renders the rows; row click selects
-	await A.page.evaluate(() => {
-		window.__stores.inspectorKind.set('scene');
-		window.__stores.inspectorClose.set(false);
-	});
+	await A.page.evaluate(() => window.__tp.test.v1.openSceneSection('Physics')); // 78-int PL17: Configure Scene opens with only Environment + Scene look expanded — deep-link the section
 	await A.page.waitForSelector('#physics-objects', { timeout: 10000 });
 	const rowCount = await A.page.locator('#physics-objects button').count();
 	h.check(rowCount === 2, 'Inspector Physics section renders 2 rows');
 	await A.page.locator('#physics-objects button', { hasText: 'PropsBox' }).click();
 	await h.eventually(
-		() => A.page.evaluate(() => new Promise((r) => window.__stores.selectedObject.subscribe((o) => r(o?.uuid))())),
+		() => A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.selectedObject.subscribe((o) => r(o?.uuid))())),
 		(v) => v === uuids[0],
 		'clicking a row selects the object'
 	);
 
 	// quick action on the bare box: capture the replicated objectParameters
-	await A.page.evaluate((uuid) => window.__stores.objectActions.selectObject(uuid), uuids[2]);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.objectActions.selectObject(uuid), uuids[2]);
 	const captured = await A.page.evaluate(async (bare) => {
-		const peer = await new Promise((r) => window.__stores.peers.subscribe(r)());
+		const peer = await new Promise((r) => window.__tp.test.v1.peers.subscribe(r)());
 		const sent = [];
 		const realSend = peer.send.bind(peer);
 		peer.send = (m) => {
@@ -106,7 +103,7 @@ h.run(async () => {
 		document.querySelector('#physics-enable-selection').click();
 		peer.send = realSend;
 		let group;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		const obj = group.getObjectByProperty('uuid', bare);
 		return { sent: sent.filter((m) => m.type === 'objectParameters' && m.parameter === 'physics'), physics: obj.userData.physics };
 	}, uuids[2]);
@@ -127,9 +124,9 @@ h.run(async () => {
 	);
 
 	// undo removes it again (props history entry recorded)
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(
-		() => A.page.evaluate(() => window.__stores.physics.listPhysicsObjects().length),
+		() => A.page.evaluate(() => window.__tp.test.v1.physics.listPhysicsObjects().length),
 		(n) => n === 2,
 		'undo reverts the quick action'
 	);

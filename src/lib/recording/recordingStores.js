@@ -16,7 +16,9 @@ export const recordingOpen = writable(false);
  * @typedef {{status: 'idle'|'preparing'|'recording'|'finishing'|'done'|'error', progress: number,
  *   elapsed: number, duration: number, frames: number, error: string, result: RecordingResult | null}} RecordingState
  * @typedef {{name: string, url: string, blob: Blob, bytes: number, durationMs: number, width: number,
- *   height: number, fps: number, mime: string, itemId: string | null, savedNote: string}} RecordingResult
+ *   height: number, fps: number, mime: string, itemId: string | null, savedNote: string,
+ *   format?: string, frames?: number, exact?: boolean, encoder?: string}} RecordingResult
+ * (65 M4: `format` mp4|webm|gif|webp|png, `frames` written, `exact` = rendered frame by frame)
  */
 
 /** @type {RecordingState} */
@@ -49,3 +51,13 @@ export function setRecordingPrefs(patch) {
 export function openRecording() {
 	recordingOpen.set(true);
 }
+
+/**
+ * fix-film: a Film export of CHOSEN SHOTS — never persisted (it belongs to the one export it was
+ * made for). `queue`: one entry per file, each a list of [t0, t1] ranges of `sequence` filmed back
+ * to back (joined = one entry of every range; per shot = one entry per shot). `done` counts the
+ * files finished. The dialog clears it when it closes.
+ * @typedef {{sequence: string, queue: number[][][], joined: boolean, total: number, done: number, label: string}} ExportJob
+ * @type {import('svelte/store').Writable<ExportJob | null>}
+ */
+export const exportJob = writable(null);

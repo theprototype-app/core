@@ -16,9 +16,9 @@ h.run(async () => {
 		localStorage.setItem('explorerDocked', 'true');
 	});
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.bottomDock, { timeout: 30000 });
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphClose.set(false);
 		s.explorerClose.set(false);
 		s.bottomDock.bottomDockActive.set('explorer');
@@ -26,7 +26,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(700);
 
 	const before = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let ec, k;
 		s.explorerClose.subscribe((v) => (ec = v))();
 		s.bottomDock.visibleDockKey.subscribe((v) => (k = v))();
@@ -50,7 +50,7 @@ h.run(async () => {
 	await A.page.evaluate(() => document.querySelector('p[title="Node editor (N)"]').click());
 	await A.page.waitForTimeout(300);
 	const afterClick = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let ec, fc;
 		s.explorerClose.subscribe((v) => (ec = v))();
 		s.flowGraphClose.subscribe((v) => (fc = v))();
@@ -61,12 +61,12 @@ h.run(async () => {
 
 	// re-open the Node editor and DOCK it -> both are docked now, and they COEXIST as
 	// tabs: the flow tab shows, the Explorer stays open one tab over
-	await A.page.evaluate(() => window.__stores.flowGraphClose.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.flowGraphClose.set(false));
 	await A.page.waitForTimeout(250);
 	await A.page.evaluate(() => document.getElementById('flow-dock')?.click());
 	await A.page.waitForTimeout(500);
 	const afterDock = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let ec, k, occ;
 		s.explorerClose.subscribe((v) => (ec = v))();
 		s.bottomDock.visibleDockKey.subscribe((v) => (k = v))();
@@ -93,7 +93,7 @@ h.run(async () => {
 	});
 	await A.page.waitForTimeout(300);
 	const back = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let k, fc;
 		s.bottomDock.visibleDockKey.subscribe((v) => (k = v))();
 		s.flowGraphClose.subscribe((v) => (fc = v))();

@@ -1,5 +1,5 @@
 // Roadmap 86 B1/B2 — what the UI knows about the Claude connector, as a LEAF (svelte/store + cloudHooks):
-// the AI window's button, the top-bar chip and Settings ▸ Connected apps read it without loading the
+// the AI window's button, the top-bar chip and Settings ▸ Account ▸ Connected apps read it without loading the
 // connector itself, which is a dynamic import (connector.js) pulled in only by a Connect Claude press.
 
 import { writable, derived } from 'svelte/store';

@@ -1,0 +1,68 @@
+{
+	"version": 1,
+	"comment": "94 SP3 — what a page makes the browser fetch before it runs (initial JS, gzip -9, static-import closure of the prerendered page's own preloads). Held by `node scripts/boot-size.cjs --check` after `npm run build` (CI: ci.yml build job). A red means new code landed on the boot path: make it a lazy chunk (`import()`), or raise the line IN THE SAME PR with a reason in `history`. See perf/README.md ▸ Boot size.",
+	"pages": {
+		"play": {
+			"html": "play.html",
+			"maxJsGzBytes": 2170880,
+			"maxFirstFrameMs": 20000
+		},
+		"editor": {
+			"html": "index.html",
+			"maxJsGzBytes": 3404800,
+			"maxFirstFrameMs": 32000
+		}
+	},
+	"history": [
+		{
+			"date": "2026-11-03",
+			"lane": "94-play",
+			"play": "1914.8 KB measured -> line 2048 KB",
+			"editor": "3042.2 KB measured (3133 KB at v1.56.0) -> line 3328 KB, the looser line",
+			"note": "first lines: the play entry's boot (SP1) and the editor's, gzip -9 initial JS",
+			"firstFrame": "throttled (slow 4G + 4x CPU, median of 5 on the Deck): play 14641 ms, editor 23647 ms -> loose lines 20000 / 32000 ms (x1.35: a shared runner is noisy; the byte lines are the precise gate)"
+		},
+		{
+			"date": "2026-11-11",
+			"lane": "uir-polish (1.66.0)",
+			"play": "1.63.0 1987.1 KB -> 1.64.0 2066.7 (+79.6, over) -> 1.65.0 2073.0 (+6.3) -> 1.65.1 2082.9 (+9.9) -> 1.66 2083.6 (+0.7) -> line 2112 KB",
+			"editor": "1.63.0 3229.4 KB -> 1.64.0 3383.8 (+154.4, over) -> 1.65.0 3410.0 (+26.2) -> 1.65.1 3421.9 (+11.9) -> 1.66 3424.2 (+2.3) -> line 3456 KB",
+			"note": "main CI was red on this step from 1.64.0 to 1.65.1 (numbers from each tag's ci.yml run). The line catches up with what shipped and leaves ~30 KB of room; it is NOT a new allowance: the 1.64/1.65 growth (levels, the new menus and panels, safer loading) belongs in lazy chunks, a master-plan card, and the lines come back down when that lands"
+		},
+		{
+			"date": "2026-11-20",
+			"lane": "100-view (roadmap 100 C1)",
+			"play": "v1.68.0 2105.5 KB -> 2108.7 KB (+3.2), line 2112 KB unchanged",
+			"editor": "v1.68.0 3452.3 KB -> 3456.4 KB (+4.1) -> line 3457.3 KB = v1.68.0 + 5 KB, the brief's own boot allowance for the Cinematic view (offer probe, store, the view seam, the Shift+Z row; everything else is a lazy chunk)",
+			"note": "the old line left 3.7 KB over v1.68.0, and renamed-chunk churn alone moves the editor by about 1 KB between builds of the same code (+3 bytes in each of ~300 chunks), so the lane read 3455.4 to 3457.0 across builds; QUESTIONS-100-view 9, the integrator may veto"
+		},
+		{
+			"date": "2026-11-20",
+			"lane": "sk3-int (SvelteKit 3, 1.70.0)",
+			"play": "v1.69.0 2108.0 KB -> 2111.0 KB (+3.0) -> line 2113.0 KB = v1.69.0 + 5 KB",
+			"editor": "v1.69.0 3456.6 KB -> 3459.5 KB (+2.9) -> line 3461.6 KB = v1.69.0 + 5 KB",
+			"note": "the orchestrator's line for the SvelteKit 3 release: the 1.69.0 measurement (same machine, same run) + 5 KB. Kit 3's client runtime is bigger (navigation 14.6 + client 8.7 + client.svelte 1.9 KB vs kit 2's index-client 24.9 KB); the AI chat client left both boots to pay for it (sk3-int Q1). On kit 3 the 100 C1 three.core group must be output.codeSplitting (kit 3 sets that option itself and an advancedChunks group is dropped: three split again, +2 KB per page)"
+		},
+		{
+			"date": "2026-11-21",
+			"lane": "2.0-int (code view, Convert to code, agents wire games, Cinematic labels)",
+			"play": "v1.70.0 2111.0 KB -> 2114.3 KB (+3.3: formatMinor 3 rules in sceneSchema, the n3b runtime fixes in flowRuntime, behaviour lint hints in analyze) -> line 2116.0 KB = v1.70.0 + 5 KB",
+			"editor": "v1.70.0 3459.5 KB -> 3314.1 KB (-145.4) -> line 3319.1 KB = measured + 5 KB (LOWERED from 3461.6)",
+			"note": "the agent tool set (ai/tools, lookTools, flowTools, pathTools, ~150 KB gz) rode the editor boot only because the chat window, the quick-prompt pill and Welcome imported their stores from ai/assistant.js; the stores and runPrompt/stopAi are now the ai/aiState.js leaf and the assistant loads on the first prompt. Convert to code's applier, planner and reference bodies load on the first Convert (nodes/convertState.js + nodes/referenceShape.js stay for the node menu). The editor line comes down with it so the win cannot slip back"
+		},
+		{
+			"date": "2026-11-21",
+			"lane": "61-int (Test with players, enemies that patrol, see and chase)",
+			"play": "v1.71.0 2114.3 KB -> 2117.6 KB (+3.3: 61-test ~0.5 bot-frame storage guard; 61-nav ~2.4 SDK gameWorld slice, pathCore split, moduleWorldItems, modules; 61-int ~0.4 presence in api.players) -> line 2120.0 KB (the INT BOOT RULE: merged tag + the union, rounded up to the next 5 KB)",
+			"editor": "v1.71.0 3314.1 KB -> 3320.3 KB (+6.2: 61-test ~1.6 storage guard + the Test with players menu leaf; 61-nav ~4.2 the same SDK slice, pathCore, moduleWorldItems, modules; 61-int ~0.4 presence) -> line 3325.0 KB (the INT BOOT RULE)",
+			"note": "what 61 keeps on the boots after its lazy splits (the enemy sheet entry and the collider reader load on first use): the bot-frame storage guard (safeStorage overlay + idb memory store, it must run before any store is read), the SDK gameWorld slice (paths.of/list, players, isAuthority and the two registries, kept sync so makeApi stays sync), moduleWorldItems + the Test with players menu leaf, a pathCore chunk split, and api.players()[].playing (the peerPlayModes store moved into stores/appStore so the SDK reads presence without gamePresence's graph). The recast navmesh WASM is a module asset only scenes with NPCs download. QUESTIONS-61-int 2, accepted by the orchestrator; lane split approximate (per-chunk diff; renamed-chunk churn ~1 KB)"
+		}
+	],
+	"throttle": {
+		"cpu": 4,
+		"downKbps": 1600,
+		"upKbps": 750,
+		"rttMs": 150,
+		"comment": "Lighthouse's mobile line (slow 4G + 4x CPU); scripts/boot-frame.cjs"
+	}
+}

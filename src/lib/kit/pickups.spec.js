@@ -8,16 +8,23 @@ export default {
 			name: 'collect',
 			kind: 'action',
 			label: 'Collect pickup',
-			doc: 'Takes a pickup ONCE for everybody (wire an On Click or On Enter into it, the pickup object into "pickup"): its points go to the shared score and to the player who took it, and it comes back after "respawn" seconds (0 = never). A second take before it is back is refused.',
+			doc: 'Takes a pickup ONCE for everybody: with "Collect on touch" on (the default) a player walking over the pickup takes it, no wiring needed; or wire an On Click / On Enter into it. The pickup is the object wired into "pickup", else the object whose graph holds the node. Its points go to the shared score and to the player who took it, and it comes back after "respawn" seconds (0 = never). A second take before it is back is refused. With "Hide when collected" on (the default for a new node) the pickup hides while it is taken and shows again when it comes back, for everybody.',
 			args: [
 				{ key: 'pickup', type: 'object' },
 				{ key: 'score', type: 'number', default: 1, min: 0, max: 1000, step: 1 },
 				{ key: 'respawn', type: 'number', default: 0, min: 0, max: 600, step: 1 }
 			],
+			// 78 F12: walking over the pickup takes it — no On Enter, no code (a node-only scene)
+			// 2.0-n3b (G27): a taken pickup hides — ON for every new node (editor and agent), while a node saved
+			// before this has no key and keeps showing (legacy false: no shipped scene changes)
+			nodeArgs: [
+				{ key: 'touch', type: 'boolean', default: true, label: 'Collect on touch' },
+				{ key: 'hide', type: 'boolean', default: true, legacy: false, label: 'Hide when collected' }
+			],
 			authority: true
 		},
 		{ name: 'resetPickups', kind: 'action', label: 'Reset pickups', doc: 'Puts every pickup back (a new round does this by itself).', args: [], authority: true },
-		{ name: 'available', kind: 'value', label: 'Pickup available?', vtype: 'boolean', doc: 'Is this pickup there to take (never taken, or back after its respawn)? Wire it into a Visibility node to hide a taken pickup.', args: [{ key: 'pickup', type: 'object' }] },
+		{ name: 'available', kind: 'value', label: 'Pickup available?', vtype: 'boolean', doc: 'Is this pickup there to take (never taken, or back after its respawn)? Collect\'s "Hide when collected" already hides it; wire this into a Visibility node only for a different look (or on a Collect saved before that setting).', args: [{ key: 'pickup', type: 'object' }] },
 		{ name: 'taken', kind: 'value', label: 'Pickups taken', vtype: 'number', doc: 'How many pickups are taken right now.', args: [] },
 		{ name: 'left', kind: 'value', label: 'Pickups left', vtype: 'number', doc: 'How many registered pickups are still there to take.', args: [] },
 		{ name: 'collected', kind: 'event', label: 'On pickup', doc: 'Pulses when any pickup is taken.', args: [] },

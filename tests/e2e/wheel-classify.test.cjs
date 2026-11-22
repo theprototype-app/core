@@ -16,8 +16,8 @@ const view = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) => {
-				window.__stores.globalCamera.subscribe((c) => {
-					window.__stores.orbitControls.subscribe((o) => r({ dist: c.position.distanceTo(o.target), target: o.target.toArray() }))();
+				window.__tp.test.v1.globalCamera.subscribe((c) => {
+					window.__tp.test.v1.orbitControls.subscribe((o) => r({ dist: c.position.distanceTo(o.target), target: o.target.toArray() }))();
 				})();
 			})
 	);
@@ -27,7 +27,7 @@ const moved = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
 const stream = (page, init, count, spacingMs) =>
 	page.evaluate(
 		async ({ init, count, spacingMs }) => {
-			const canvas = await new Promise((r) => window.__stores.globalRenderer.subscribe((x) => r(x?.domElement))());
+			const canvas = await new Promise((r) => window.__tp.test.v1.globalRenderer.subscribe((x) => r(x?.domElement))());
 			for (let i = 0; i < count; i++) {
 				canvas.dispatchEvent(
 					new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaMode: 0, clientX: 500, clientY: 350, ...init })
@@ -37,14 +37,14 @@ const stream = (page, init, count, spacingMs) =>
 		},
 		{ init, count, spacingMs }
 	);
-const mode = (page, value) => page.evaluate((v) => window.__stores.trackpadNav.trackpadMode.set(v), value);
+const mode = (page, value) => page.evaluate((v) => window.__tp.test.v1.trackpadNav.trackpadMode.set(v), value);
 const settle = (page) => page.waitForTimeout(600); // gesture window (250ms) + damping
 
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
 	// the viewport must be the only thing under the wheel; no panel, no selection
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await A.page.waitForTimeout(300);
 
 	// --- 1. a hi-res wheel: small vertical ticks, sparse -> DOLLY, target still --------
@@ -72,8 +72,8 @@ h.run(async () => {
 	const hint = await A.page.evaluate(
 		() =>
 			new Promise((r) => {
-				window.__stores.toastStore.subscribe((t) => {
-					window.__stores.notifications.subscribe((n) =>
+				window.__tp.test.v1.toastStore.subscribe((t) => {
+					window.__tp.test.v1.notifications.subscribe((n) =>
 						r({ toasts: t.map((x) => (typeof x === 'string' ? x : x.text)), history: n.slice(-5).map((x) => x.text) })
 					)();
 				})();
@@ -129,21 +129,21 @@ h.run(async () => {
 	await mode(A.page, 'auto');
 
 	// --- 7. two-finger pan OFF: everything zooms (unchanged) ---------------------------
-	await A.page.evaluate(() => window.__stores.trackpadNav.panEnabled.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.trackpadNav.panEnabled.set(false));
 	await settle(A.page);
 	before = await view(A.page);
 	await stream(A.page, { deltaY: 3.5, deltaX: 1.2 }, 10, 8);
 	await settle(A.page);
 	after = await view(A.page);
 	h.check(Math.abs(after.dist - before.dist) > 0.05, `pan disabled: a swipe zooms (distance Δ${(after.dist - before.dist).toFixed(3)})`);
-	await A.page.evaluate(() => window.__stores.trackpadNav.panEnabled.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.trackpadNav.panEnabled.set(true));
 
 	// --- 8. the readout: a ring of the last 8, with the verdicts -----------------------
-	const log = await A.page.evaluate(() => new Promise((r) => window.__stores.trackpadNav.lastWheelEvents.subscribe((l) => r(l))()));
+	const log = await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.trackpadNav.lastWheelEvents.subscribe((l) => r(l))()));
 	h.check(log.length === 8, `lastWheelEvents keeps 8 entries (${log.length})`);
 	h.check(log.every((s) => typeof s.dt === 'number' && typeof s.deltaY === 'number' && /^(wheel|trackpad|pinch)$/.test(s.kind) && s.why), 'every sample carries dt, deltas, a verdict and a reason');
 	const kinds = await A.page.evaluate(() => {
-		const { classifyWheelSignature } = window.__stores.trackpadNav;
+		const { classifyWheelSignature } = window.__tp.test.v1.trackpadNav;
 		const ev = (init) => new WheelEvent('wheel', { deltaMode: 0, ...init });
 		return {
 			lines: classifyWheelSignature(ev({ deltaMode: 1, deltaY: 3 }))?.kind,
@@ -156,8 +156,8 @@ h.run(async () => {
 	h.check(kinds.lines === 'wheel' && kinds.bigInt === 'wheel' && kinds.twoAxis === 'trackpad', `signature: lines/big-integer = wheel, two-axis = trackpad (${JSON.stringify(kinds)})`);
 	h.check(kinds.ambiguous === null && kinds.fractional === null, 'a small vertical-only sample is ambiguous by signature (cadence decides)');
 	await A.page.evaluate(() => {
-		window.__stores.settingsSection.set('controls');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('controls');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	// 37-settings: the readout is a collapsed Diagnostics block — Show opens it
 	await A.page.waitForSelector('#wheel-diagnostics-toggle', { timeout: 15000 });
@@ -167,11 +167,11 @@ h.run(async () => {
 	h.check(rows === 8, `Settings ▸ Controls ▸ Wheel diagnostics renders the ring (${rows} rows)`);
 	const head = await A.page.evaluate(() => document.querySelector('#wheel-diagnostics p')?.textContent?.trim());
 	h.check(/pointer: (fine|coarse)/.test(head || '') && /wheel mode: auto/.test(head || ''), `...with the platform line (${JSON.stringify(head)})`);
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await A.page.waitForTimeout(300);
 
 	// --- 9. Viewport menu ▸ View ▸ Mouse wheel writes the override ---------------------
-	await A.page.evaluate(() => window.__stores.viewportMenu.set({ x: 200, y: 160, point: { x: 0, y: 0, z: 0 } }));
+	await A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set({ x: 200, y: 160, point: { x: 0, y: 0, z: 0 } }));
 	await A.page.waitForTimeout(300);
 	await A.page.locator('[role="menuitem"]', { hasText: 'View' }).first().hover();
 	await A.page.waitForTimeout(400);
@@ -185,10 +185,10 @@ h.run(async () => {
 	h.check((await zoomRow.count()) === 1, '...with Zoom / Pan / Auto beneath it');
 	await zoomRow.click();
 	await A.page.waitForTimeout(200);
-	const picked = await A.page.evaluate(() => new Promise((r) => window.__stores.trackpadNav.trackpadMode.subscribe((m) => r(m))()));
+	const picked = await A.page.evaluate(() => new Promise((r) => window.__tp.test.v1.trackpadNav.trackpadMode.subscribe((m) => r(m))()));
 	h.check(picked === 'off', `picking Zoom sets trackpadMode 'off' (${picked})`);
 	await mode(A.page, 'auto');
-	await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set(null));
 
 	await h.finish(browser);
 });

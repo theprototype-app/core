@@ -60,7 +60,6 @@
 	aria-label={labelledby ? undefined : label || undefined}
 	aria-labelledby={labelledby}
 	aria-disabled={disabled || undefined}
-	style:--seg-cols={options.length}
 	{...rest}
 >
 	{#each options as o, i (o.value)}
@@ -86,8 +85,14 @@
 </div>
 
 <style>
+	/* dock-fixes C (owner 2026-11-08, shot 5: "Auto HighMediumLow"): an option never shrinks under its own label.
+	   Options keep their text + padding and the control WRAPS onto a second row when the row is too narrow (a
+	   phone, a sidebar column, a large UI scale) — equal columns squeezed each label past its slot into the next. */
 	.seg {
 		display: inline-flex;
+		flex-wrap: wrap;
+		max-width: 100%;
+		box-sizing: border-box;
 		align-self: flex-start;
 		gap: 2px;
 		padding: 3px;
@@ -96,20 +101,20 @@
 		border-radius: var(--radius-button);
 	}
 	.seg-full {
-		display: grid;
-		grid-template-columns: repeat(var(--seg-cols), minmax(0, 1fr));
+		display: flex;
 		align-self: stretch;
 		width: 100%;
 		box-sizing: border-box;
 	}
 	.seg-opt {
+		flex: 0 0 auto;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
 		gap: 6px;
 		/* NOTES-38 #26: an option never spills out of its slot — in equal columns (the phone's
 		   wide rows, `full`) a long label wraps to a second line instead of running past the track */
-		min-width: 0;
+		max-width: 100%;
 		min-height: calc(var(--control-h-sm) - 2px);
 		padding: 3px 14px;
 		line-height: 1.2;
@@ -126,6 +131,11 @@
 		white-space: normal;
 		cursor: pointer;
 	}
+	/* equal columns while they fit; a label only wraps inside its option when it is wider than the whole row */
+	.seg-full .seg-opt {
+		flex: 1 1 0;
+		min-width: fit-content;
+	}
 	.seg-opt:hover:not(:disabled):not([aria-checked='true']),
 	.seg-opt[data-kit-state='hover'] {
 		color: var(--text);
@@ -135,7 +145,7 @@
 	   label that still cannot fit breaks inside the word rather than spilling over its neighbour
 	   (break-word leaves an option's min-content whole). 100 % never sets data-ui-large. */
 	:global(:root[data-ui-large]) .seg-opt {
-		padding-inline: 4px;
+		padding-inline: 8px;
 		overflow-wrap: anywhere;
 	}
 	.seg-opt[aria-checked='true'] {

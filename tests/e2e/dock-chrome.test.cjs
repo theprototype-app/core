@@ -26,11 +26,11 @@ const h = require('./helpers.cjs');
 
 /** the visible docked panel — ids repeat across hidden panels, so every read scopes here */
 const VISIBLE_PANEL =
-	'#flow-list, #explorer-list, #flow-code-dock, #uv-dock, #shader-editor, #hud-dock, #animation-dock';
+	'#flow-list, #explorer-list, #timeline-dock, #uv-dock, #shader-editor, #hud-dock, #animation-dock';
 
 const dockState = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let tabs, occ, visible, min, inset, fc, ec;
 		s.bottomDock.dockTabs.subscribe((v) => (tabs = v))();
 		s.bottomDock.dockOccupants.subscribe((v) => (occ = v))();
@@ -42,7 +42,7 @@ const dockState = (page) =>
 		// a docked panel renders as #flow-list / #explorer-list etc. and hides itself
 		// with a `hidden` class rather than unmounting (the ShaderEditor is the one
 		// {#if}); "rendered" therefore means present AND not hidden
-		const boxes = ['#flow-list', '#explorer-list', '#flow-code-dock', '#uv-dock'];
+		const boxes = ['#flow-list', '#explorer-list', '#timeline-dock', '#uv-dock'];
 		const shown = boxes
 			.map((sel) => document.querySelector(sel))
 			.filter((el) => el && !el.classList.contains('hidden'));
@@ -77,7 +77,7 @@ const pillVsDock = (page) =>
 			(el) => !el.classList.contains('hidden')
 		);
 		let floating;
-		window.__stores.floatingToolbar.subscribe((v) => (floating = v))();
+		window.__tp.test.v1.floatingToolbar.subscribe((v) => (floating = v))();
 		return {
 			pillBottom: pill ? Math.round(pill.bottom) : 0,
 			dockTop: dock ? Math.round(dock.getBoundingClientRect().top) : 0,
@@ -138,9 +138,9 @@ h.run(async () => {
 		localStorage.setItem('explorerDocked', 'true');
 	});
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.bottomDock, { timeout: 30000 });
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphClose.set(false);
 		s.explorerClose.set(false);
 		s.bottomDock.activateDock('flow');
@@ -234,7 +234,7 @@ h.run(async () => {
 	);
 
 	// --- 4. the Floating toolbar setting, through the REAL Settings row ---
-	await A.page.evaluate(() => window.__stores.bottomDock.activateDock('flow'));
+	await A.page.evaluate(() => window.__tp.test.v1.bottomDock.activateDock('flow'));
 	await A.page.waitForTimeout(400);
 	// W8a reversed the default — the toolbar FLOATS out of the box now — so this
 	// section switches it OFF through the row and asserts the covered mode instead
@@ -243,7 +243,7 @@ h.run(async () => {
 		p.floating === true && p.pillBottom <= p.dockTop + 2,
 		`4.1 premise: by default the toolbar floats above the dock (${p.pillBottom} <= ${p.dockTop})`
 	);
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await A.page.waitForTimeout(500);
 	await A.page.locator('#settings-nav .sn-row', { hasText: 'Interface' }).first().click();
 	await A.page.waitForTimeout(400);
@@ -258,7 +258,7 @@ h.run(async () => {
 	// native click+change svelte's bind is listening for — reset-windows' idiom.
 	await toggle.evaluate((el) => el.click());
 	await A.page.waitForTimeout(500);
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await A.page.waitForTimeout(600);
 	p = await pillVsDock(A.page);
 	h.check(p.floating === false, '4.4 the row wrote the pref');
@@ -266,7 +266,7 @@ h.run(async () => {
 		p.pillBottom > p.dockTop,
 		`4.5 ...and the pill drops into the dock's band, where the dock covers it (${p.pillBottom} > ${p.dockTop})`
 	);
-	await A.page.evaluate(() => window.__stores.floatingToolbar.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.floatingToolbar.set(true));
 	await A.page.waitForTimeout(400);
 
 	// --- 5. closing the LAST tab empties the dock ---
@@ -304,7 +304,7 @@ h.run(async () => {
 	/** reopen a known state: flow + Explorer docked, the Node editor showing */
 	const openBoth = async () => {
 		await A.page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.flowGraphClose.set(false);
 			s.explorerClose.set(false);
 			s.bottomDock.activateDock('flow');
@@ -407,7 +407,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(400);
 	let rows = await menuRows();
 	// 42 I6: on a desktop the "+" also lists the floating windows the dock hosts (Objects, Statistics, …)
-	const reg = await A.page.evaluate(() => window.__stores.dockMenu.DOCK_WINDOWS.length + window.__stores.dockMenu.HOSTED_DOCK_WINDOWS.length);
+	const reg = await A.page.evaluate(() => window.__tp.test.v1.dockMenu.DOCK_WINDOWS.length + window.__tp.test.v1.dockMenu.HOSTED_DOCK_WINDOWS.length);
 	h.check(rows.length === reg, `7.1 the ＋ menu lists every registry window (${rows.length} of ${reg})`);
 	const marked = await A.page.evaluate(() =>
 		[...document.querySelectorAll('[role="menuitem"].ctx-checked')].map((el) => el.querySelector('.flex-1')?.textContent.trim())
@@ -420,8 +420,8 @@ h.run(async () => {
 
 	// add one more tab and it is marked too — the state is read per open, not a fixed list
 	await A.page.evaluate(() => {
-		window.__stores.flowCodeClose.set(false);
-		window.__stores.bottomDock.activateDock('flow');
+		window.__tp.test.v1.timelineClose.set(false);
+		window.__tp.test.v1.bottomDock.activateDock('flow');
 	});
 	await A.page.waitForTimeout(600);
 	await clickAdd();
@@ -429,9 +429,9 @@ h.run(async () => {
 	const marked2 = await A.page.evaluate(() =>
 		[...document.querySelectorAll('[role="menuitem"].ctx-checked')].map((el) => el.querySelector('.flex-1')?.textContent.trim())
 	);
-	h.check(marked2.includes('Flow Code') && marked2.length === 3, `7.3 docking Flow Code marks its row too (${marked2.join(' | ')})`);
+	h.check(marked2.includes('Timeline') && marked2.length === 3, `7.3 docking Timeline marks its row too (${marked2.join(' | ')})`);
 	await closeMenu();
-	await A.page.evaluate(() => window.__stores.flowCodeClose.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.timelineClose.set(true));
 	await A.page.waitForTimeout(500);
 
 	// --- 8. a TAB's own context menu ---
@@ -494,8 +494,8 @@ h.run(async () => {
 	// alike.) Its component IS mounted while hidden, like every other tab: only its
 	// MARKUP is {#if}-gated, which is how it reports itself as an occupant.
 	await A.page.evaluate(() => {
-		window.__stores.shaderEditorClose.set(false);
-		window.__stores.bottomDock.activateDock('flow');
+		window.__tp.test.v1.shaderEditorClose.set(false);
+		window.__tp.test.v1.bottomDock.activateDock('flow');
 	});
 	await A.page.waitForTimeout(700);
 	const gotShaderMenu = await rightClickTab('Shader editor');
@@ -506,7 +506,7 @@ h.run(async () => {
 		`8.4c ...and offers Undock like every other tab, the exception having gone with the missing floating mode (${rows.map((r) => r.label).join(' | ')})`
 	);
 	await closeMenu();
-	await A.page.evaluate(() => window.__stores.shaderEditorClose.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.shaderEditorClose.set(true));
 	await A.page.waitForTimeout(500);
 
 	// Undock the VISIBLE tab: the arm reaches the panel and its own setDocked runs
@@ -519,9 +519,9 @@ h.run(async () => {
 	await A.page.waitForTimeout(800);
 	const undocked = await A.page.evaluate(() => {
 		let occ;
-		window.__stores.bottomDock.dockOccupants.subscribe((v) => (occ = v))();
+		window.__tp.test.v1.bottomDock.dockOccupants.subscribe((v) => (occ = v))();
 		let closed;
-		window.__stores.flowGraphClose.subscribe((v) => (closed = v))();
+		window.__tp.test.v1.flowGraphClose.subscribe((v) => (closed = v))();
 		return {
 			floating: !!document.querySelector('#flow-window'),
 			present: !!occ.flow?.present,
@@ -538,7 +538,7 @@ h.run(async () => {
 	// leave the lane as we found it
 	await A.page.evaluate(() => {
 		localStorage.setItem('flowDocked', 'true');
-		window.__stores.bottomDock.armDockMode('flow', true);
+		window.__tp.test.v1.bottomDock.armDockMode('flow', true);
 	});
 	await A.page.waitForTimeout(500);
 
@@ -546,7 +546,7 @@ h.run(async () => {
 	// W6. The band's HEIGHT, and the dock resize that height had buried.
 	// =====================================================================
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphClose.set(false);
 		s.explorerClose.set(false);
 		s.bottomDock.activateDock('flow');
@@ -630,7 +630,7 @@ h.run(async () => {
 	const dockH = (page) =>
 		page.evaluate((sel) => {
 			let hgt;
-			window.__stores.bottomDock.dockHeight.subscribe((v) => (hgt = v))();
+			window.__tp.test.v1.bottomDock.dockHeight.subscribe((v) => (hgt = v))();
 			const panel = [...document.querySelectorAll(sel)].find((el) => !el.classList.contains('hidden'));
 			return {
 				hgt,
@@ -657,7 +657,7 @@ h.run(async () => {
 	// editor, the one panel that never carried a hot-zone at all until W6
 	for (const key of ['explorer', 'shader']) {
 		await A.page.evaluate((k) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			if (k === 'shader') s.shaderEditorClose.set(false);
 			s.bottomDock.activateDock(k);
 		}, key);
@@ -671,8 +671,8 @@ h.run(async () => {
 		);
 	}
 	await A.page.evaluate(() => {
-		window.__stores.shaderEditorClose.set(true);
-		window.__stores.bottomDock.activateDock('flow');
+		window.__tp.test.v1.shaderEditorClose.set(true);
+		window.__tp.test.v1.bottomDock.activateDock('flow');
 	});
 	await A.page.waitForTimeout(500);
 
@@ -685,11 +685,11 @@ h.run(async () => {
 	// dead button. It arms `armDockMode(key, true)` now, the same float -> dock seam the
 	// window's own "⇩ Dock" button and a drop on the bottom band use.
 	// LAST on purpose: it leaves the Animation view docked.
-	await A.page.evaluate(() => window.__stores.bottomDock.armDockMode('animation', false));
+	await A.page.evaluate(() => window.__tp.test.v1.bottomDock.armDockMode('animation', false));
 	await A.page.waitForTimeout(900);
 	const floatState = () =>
 		A.page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let occ, visible, ac;
 			s.bottomDock.dockOccupants.subscribe((v) => (occ = v))();
 			s.bottomDock.visibleDockKey.subscribe((v) => (visible = v))();
@@ -725,7 +725,8 @@ h.run(async () => {
 	// Statistics opened a second copy"); the row names where it is and leaves it there
 	const dockRow = rows.find((r) => /Animation/.test(r.label));
 	h.check(
-		!!dockRow && /Animation\s*Floating$/.test(dockRow.label) && !/＋/.test(dockRow.label),
+		// uir-polish F3: the row also carries its hover hint "Move here" (shown on hover instead of "Floating")
+		!!dockRow && /Animation\s*Floating(\s*Move here)?$/.test(dockRow.label) && !/＋/.test(dockRow.label),
 		`11.2 the ＋ menu's Animation row says Floating (44 M5 hint), not Open — the row never opens a second copy (${rows
 			.map((r) => r.label)
 			.join(' | ')})`
@@ -735,8 +736,10 @@ h.run(async () => {
 	);
 	await A.page.waitForTimeout(900);
 	f = await floatState();
-	h.check(!f.docked && f.window, `11.3 clicking it brings the floating window forward and does NOT dock it (docked=${f.docked}, window=${f.window})`);
-	h.check(f.visible === 'flow', `11.4 ...the dock keeps its own tab (${f.visible})`);
+	// showhide-v8 (owner 2026-11-09, supersedes 44 M5 here): "+" MOVES a window open elsewhere to where it was pressed,
+	// so the floating Animation window docks — the section's original report ("it should dock that window") again
+	h.check(f.docked && !f.window, `11.3 clicking it moves the floating window into the dock (v8 "+" moves) (docked=${f.docked}, window=${f.window})`);
+	h.check(f.visible === 'animation', `11.4 ...and its tab is the one shown (${f.visible})`);
 	h.check(f.open, '11.6 ...and it was never closed on the way');
 
 	await h.finish(browser);

@@ -144,7 +144,7 @@ describe('36 F2 — panels own the keyboard', () => {
 	});
 
 	it('every docked panel root is marked (a floating one is marked by dragWindow)', () => {
-		const files = ['src/components/Flow.svelte', 'src/components/editors/FlowCode.svelte', 'src/components/editors/UvEditor.svelte', 'src/components/editors/AnimationWindow.svelte', 'src/components/editors/Profiler.svelte', 'src/components/editors/Explorer.svelte', 'src/components/editors/HudEditor.svelte', 'src/components/editors/CodeWorkspace.svelte'];
+		const files = ['src/components/Flow.svelte', 'src/components/editors/UvEditor.svelte', 'src/components/editors/AnimationWindow.svelte', 'src/components/editors/Profiler.svelte', 'src/components/editors/Explorer.svelte', 'src/components/editors/HudEditor.svelte', 'src/components/editors/CodeWorkspace.svelte'];
 		for (const f of files) {
 			const src = fs.readFileSync(path.join(ROOT, f), 'utf8');
 			const at = src.indexOf('style="z-index: var(--z-dock); height: {$dockHeight}px');

@@ -41,7 +41,9 @@ const winners = (/** @type {string} */ sel) => {
 			[r.right - 3, r.bottom - 3]
 		];
 		const wins = pts.some(([x, y]) => {
-			if (x < area.left || y < area.top || x > area.right || y > area.bottom) return false;
+			// half-open, as hit-testing is: a point ON the right/bottom edge is outside the surface (a folded phone's What's
+			// new stops above the parked quality card, whose button sat exactly on that line)
+			if (x < area.left || y < area.top || x >= area.right || y >= area.bottom) return false;
 			if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return false;
 			const hit = document.elementFromPoint(x, y);
 			return !!hit && !surf.contains(hit) && (el === hit || el.contains(hit));
@@ -60,7 +62,7 @@ h.run(async () => {
 		await page.addStyleTag({ content: '*{transition:none!important;animation:none!important}' });
 		const closeAll = () =>
 			page.evaluate(() => {
-				const s = window.__stores;
+				const s = window.__tp?.test.v1;
 				s.settingsOpen.set(null);
 				s.modulesOpen.set(false);
 				s.sessionsOpen.set(false);
@@ -90,7 +92,7 @@ h.run(async () => {
 		for (const [label, store, value] of MODALS) {
 			await closeAll();
 			await page.waitForTimeout(300);
-			await page.evaluate(([st, v]) => window.__stores[st].set(v), [store, value]);
+			await page.evaluate(([st, v]) => window.__tp.test.v1[st].set(v), [store, value]);
 			await page.waitForSelector('dialog.tp-modal-frame[open]', { timeout: 10000 }).catch(() => {});
 			await page.waitForTimeout(500);
 			const above = await page.evaluate(winners, 'dialog.tp-modal-frame[open]');
@@ -102,13 +104,13 @@ h.run(async () => {
 		// ---- What's new above the burger and every top/bottom button ----------------------------
 		// Stretched over the whole viewport (a user can drag/resize it anywhere; on a phone it IS full
 		// screen), so every chrome control is under it.
-		await page.evaluate(() => window.__stores.whatsNew.openWhatsNew());
+		await page.evaluate(() => window.__tp.test.v1.whatsNew.openWhatsNew());
 		await page.waitForSelector('#whats-new-window');
 		await page.evaluate(() => {
 			const w = /** @type {HTMLElement} */ (document.querySelector('#whats-new-window'));
 			Object.assign(w.style, { left: '0px', top: '0px', width: innerWidth + 'px', height: innerHeight + 'px' });
 			// a passive toast is chrome too ("Lowered particles…" sat on the phone sheet)
-			window.__stores.toastStore?.update?.((t) => t);
+			window.__tp.test.v1.toastStore?.update?.((t) => t);
 		});
 		await page.waitForTimeout(400);
 		const wnAbove = await page.evaluate(winners, '#whats-new-window');
@@ -121,13 +123,14 @@ h.run(async () => {
 			const y = r.top + r.height / 2;
 			const w = /** @type {HTMLElement} */ (document.querySelector('#whats-new-window'));
 			const wr = w.getBoundingClientRect();
-			// a desktop window is clamped below the top bar (dragWindow), so it may simply not reach the logo
-			if (x < wr.left || x > wr.right || y < wr.top || y > wr.bottom) return 'not under the window';
+			// a window is clamped below the top chrome (dragWindow's topChromeFloor: desktop, and since 54 f a
+			// tablet-wide screen too), so it may simply not reach the logo -- only when it was HELD down (top > 0)
+			if (x < wr.left || x > wr.right || y < wr.top || y > wr.bottom) return wr.top > 0 ? 'not under the window' : 'missed the logo at top 0';
 			const hit = document.elementFromPoint(x, y);
 			return w.contains(hit) ? 'covered' : hit?.id || hit?.tagName;
 		});
 		h.check(
-			logoUnder === 'covered' || (dev === 'desktop' && logoUnder === 'not under the window'),
+			logoUnder === 'covered' || (dev !== 'folded' && logoUnder === 'not under the window'),
 			`${dev}: where What's new overlaps the logo, a press lands in What's new (${logoUnder})`
 		);
 		// and its own close still works by a real click

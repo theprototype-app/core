@@ -24,7 +24,7 @@ h.run(async () => {
 		for (const id of EXTERNAL[slug] ?? []) await h.installModule(A, id).catch(() => false);
 		const bytes = Array.from(fs.readFileSync(file));
 		await page.evaluate(async (arr) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 			await s.sessions.applySession(payload, { backup: false });
 		}, bytes);
@@ -33,7 +33,7 @@ h.run(async () => {
 		if (!open) await page.locator('p[title="Node editor (N)"]').click();
 		await page.waitForTimeout(1500);
 		// a tall dock (80% of the window is its clamp) so the graph is readable, then fit it
-		await page.evaluate(() => window.__stores.bottomDock?.dockHeight?.set(900));
+		await page.evaluate(() => window.__tp.test.v1.bottomDock?.dockHeight?.set(900));
 		await page.waitForTimeout(600);
 		await page.evaluate(() => window.__flowViewport?.fitView?.({ padding: 0.05 }));
 		await page.waitForTimeout(800);

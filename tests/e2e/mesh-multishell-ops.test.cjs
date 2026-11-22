@@ -19,7 +19,7 @@ const h = require('./helpers.cjs');
  * Returns { uuid, centres } — centres are MESH-LOCAL x of each cube. */
 const mergedRow = (page, n) =>
 	page.evaluate(async (n) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const uuids = [];
 		for (let i = 0; i < n; i++) {
 			w.commandsHandler.sceneCommand('/create Box 1 1 1');
@@ -36,7 +36,7 @@ const mergedRow = (page, n) =>
 /** enter face edit and multi-select every +Y face */
 const selectAllTops = (page, uuid) =>
 	page.evaluate((uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.faceEdit.enterFaceEdit(uuid);
 		const tops = w.faceEdit.currentFaces().filter((f) => f.normal.y > 0.99);
 		w.faceEdit.faceEditMulti.set(true);
@@ -47,7 +47,7 @@ const selectAllTops = (page, uuid) =>
 /** every triangle of a mesh as { c: centroid, n: normal, slot } */
 const trianglesOf = (page, uuid) =>
 	page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const T = w.THREE;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const mesh = g.getObjectByProperty('uuid', uuid);
@@ -75,7 +75,7 @@ const trianglesOf = (page, uuid) =>
 /** the +Y faces' centroids and X extents, per face */
 const topFaces = (page) =>
 	page.evaluate(() =>
-		window.__stores.faceEdit
+		window.__tp.test.v1.faceEdit
 			.currentFaces()
 			.filter((f) => f.normal.y > 0.99)
 			.map((f) => ({ x: +f.centroid.x.toFixed(3), z: +f.centroid.z.toFixed(3) }))
@@ -113,7 +113,7 @@ h.run(async () => {
 	const beforeTris = (await trianglesOf(A.page, two.uuid)).length;
 	h.check(beforeTris === 24, 'the merged pair starts at 24 triangles (premise)');
 
-	const extruded = await A.page.evaluate(() => window.__stores.faceEdit.commitFaceOp('extrude', 0.4));
+	const extruded = await A.page.evaluate(() => window.__tp.test.v1.faceEdit.commitFaceOp('extrude', 0.4));
 	h.check(extruded === true, 'extrude commits on the two-shell selection');
 
 	const after = await trianglesOf(A.page, two.uuid);
@@ -145,11 +145,11 @@ h.run(async () => {
 	);
 
 	// ---------------------------------- 2. a MIDDLE shell (walls on both sides)
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	const three = await mergedRow(A.page, 3);
 	h.check((await selectAllTops(A.page, three.uuid)) === 3, 'three cube tops multi-selected (premise)');
-	await A.page.evaluate(() => window.__stores.faceEdit.commitFaceOp('extrude', 0.4));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.commitFaceOp('extrude', 0.4));
 	const threeTris = await trianglesOf(A.page, three.uuid);
 	const badThree = inwardWalls(threeTris, three.centres, 0.5);
 	h.check(
@@ -159,8 +159,8 @@ h.run(async () => {
 	h.check(threeTris.length === 36 + 24, 'three cubes stitch twelve wall quads');
 
 	// ------------------------------------------------------------- 3. inset
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	const pair = await mergedRow(A.page, 2);
 	await selectAllTops(A.page, pair.uuid);
 	const insetBefore = await topFaces(A.page);
@@ -168,7 +168,7 @@ h.run(async () => {
 		insetBefore.length === 2 && insetBefore[0].x === 0 && insetBefore[1].x === 3,
 		'the two top faces start centred on their own cubes (premise)'
 	);
-	await A.page.evaluate(() => window.__stores.faceEdit.commitFaceOp('inset', 0.3));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.commitFaceOp('inset', 0.3));
 	const insetAfter = await topFaces(A.page);
 	h.check(
 		insetAfter.length === 2 &&
@@ -181,7 +181,7 @@ h.run(async () => {
 	// spans x -0.5..0.5, so a 0.3 inset must leave vertices at exactly +/-0.35.
 	// Shrinking toward the shared centroid instead put them at 0.1 and 0.8.
 	const insetXs = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const pos = g.getObjectByProperty('uuid', uuid).geometry.attributes.position;
 		let topY = -Infinity;
@@ -206,18 +206,18 @@ h.run(async () => {
 	// face — picking just the wall band used to bridge the whole side of the
 	// shell (the op-target rule: never expand a selection to faces[...]).
 	const scenario = async () => {
-		await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
-		await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+		await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
+		await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 		const row = await mergedRow(A.page, 2);
 		await selectAllTops(A.page, row.uuid);
-		await A.page.evaluate(() => window.__stores.faceEdit.commitFaceOp('extrude', 0.3));
+		await A.page.evaluate(() => window.__tp.test.v1.faceEdit.commitFaceOp('extrude', 0.3));
 		return row.uuid;
 	};
 
 	/** the +X / -X faces flanking the gap, as { minY, maxY, tris } */
 	const innerSides = (page, uuid) =>
 		page.evaluate(async (uuid) => {
-			const w = window.__stores;
+			const w = window.__tp?.test.v1;
 			const T = w.THREE;
 			const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 			const pos = g.getObjectByProperty('uuid', uuid).geometry.attributes.position;
@@ -237,7 +237,7 @@ h.run(async () => {
 	// (i) TRIANGLE granularity, only the two 2-triangle wall bands selected
 	const bandUuid = await scenario();
 	const bandPick = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const T = w.THREE;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const pos = g.getObjectByProperty('uuid', uuid).geometry.attributes.position;
@@ -256,7 +256,7 @@ h.run(async () => {
 	}, bandUuid);
 	h.check(bandPick === 4, 'the two extruded wall bands are 2 triangles each (premise, ' + bandPick + ')');
 
-	const bandOk = await A.page.evaluate(() => window.__stores.faceEdit.bridgeFaces());
+	const bandOk = await A.page.evaluate(() => window.__tp.test.v1.faceEdit.bridgeFaces());
 	h.check(bandOk === true, 'bridge commits on the two extruded bands');
 	const bandSides = await innerSides(A.page, bandUuid);
 	h.check(
@@ -266,7 +266,7 @@ h.run(async () => {
 	);
 	// the tunnel really spans the gap: an underside at y 0.5 between the cubes
 	const floor = await A.page.evaluate(() =>
-		window.__stores.faceEdit
+		window.__tp.test.v1.faceEdit
 			.currentFaces()
 			.filter((f) => f.normal.y < -0.99 && Math.abs(f.centroid.y - 0.5) < 0.01)
 			.map((f) => +f.centroid.x.toFixed(2))
@@ -281,7 +281,7 @@ h.run(async () => {
 	// from (i), which is the proof the selection is honoured
 	const faceUuid = await scenario();
 	await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		void g;
 		const fs = w.faceEdit.currentFaces();
@@ -292,7 +292,7 @@ h.run(async () => {
 		w.faceEdit.faceEditMulti.set(true);
 		w.faceEdit.faceEditSelectedTris.set(inner.flatMap((f) => f.triIndices));
 	}, faceUuid);
-	await A.page.evaluate(() => window.__stores.faceEdit.bridgeFaces());
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.bridgeFaces());
 	const faceSides = await innerSides(A.page, faceUuid);
 	h.check(
 		faceSides.length === 0,
@@ -302,7 +302,7 @@ h.run(async () => {
 	// (iii) two TOUCHING picks are refused with a clear message, not garbage
 	await scenario();
 	const touching = await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const fs = w.faceEdit.currentFaces();
 		// the +X and +Z sides of the same cube share an edge
 		const a = fs.find((f) => f.normal.x > 0.99 && f.centroid.x < 1.5);
@@ -314,10 +314,10 @@ h.run(async () => {
 	h.check(touching === false, 'two TOUCHING selections are refused rather than bridged into garbage');
 
 	// -------------------------- 4. a plain single-face extrude is unchanged
-	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
-	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.exitFaceEdit());
+	await A.page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	const plain = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.children[g.children.length - 1];

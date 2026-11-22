@@ -10,7 +10,7 @@
 //  G  grid snapping on: a raw floor point lands on the grid
 //  E  Selected ▸ Edit measurement: a press near a point (by angle) picks it up, the next puts it down
 //     snapped; ONE undo entry; B sees it; Undo puts it back on both peers
-//  H  hand tracking: a pinch while measuring says "pick up a controller" and adds nothing
+//  H  hand tracking: a pinch while measuring says "pick up a controller" (the shared chip, no toast) and adds nothing
 //  A  Selected ▸ Arrange ▸ Align X min (stick-driven) / X even gaps / Drop to ground: the alignCore
 //     answer, on A and B, ONE undo restores the whole set on both
 //  F  frame cost on the Quest profile: the hover search + the label posing per frame, against 13.9 ms
@@ -35,16 +35,16 @@ h.run(async () => {
 	await h.connect(B, A);
 	const page = A.page;
 	const g = (fn, arg) => page.evaluate(fn, arg);
-	const read = (name, p = page) => p.evaluate((n) => { let v; window.__stores[n].subscribe((x) => (v = x))(); return v; }, name);
+	const read = (name, p = page) => p.evaluate((n) => { let v; window.__tp.test.v1[n].subscribe((x) => (v = x))(); return v; }, name);
 	const settle = (n = 6) => iwer.frames(page, n);
-	const dbg = () => g(() => window.__stores.vrMeasure.vrMeasureDebug());
-	const depth = (p = page) => p.evaluate(() => { let d; window.__stores.history.undoStack.subscribe((v) => (d = v.length))(); return d; });
-	const items = (p) => p.evaluate(() => window.__stores.measureItems.measurementItems().map((o) => ({ uuid: o.uuid, points: window.__stores.measureItems.worldPointsOf(o) })));
+	const dbg = () => g(() => window.__tp.test.v1.vrMeasure.vrMeasureDebug());
+	const depth = (p = page) => p.evaluate(() => { let d; window.__tp.test.v1.history.undoStack.subscribe((v) => (d = v.length))(); return d; });
+	const items = (p) => p.evaluate(() => window.__tp.test.v1.measureItems.measurementItems().map((o) => ({ uuid: o.uuid, points: window.__tp.test.v1.measureItems.worldPointsOf(o) })));
 
 	/** create boxes on A (`/create Box w h d`), return their uuids */
 	const createBoxes = (dims) =>
 		g(async (list) => {
-			const w = window.__stores;
+			const w = window.__tp?.test.v1;
 			const out = [];
 			for (const d of list) {
 				w.commandsHandler.sceneCommand('/create Box ' + d);
@@ -57,7 +57,7 @@ h.run(async () => {
 	/** pose boxes on A and replicate them (the move path), the align-arrange suite's helper */
 	const place = (list) =>
 		g((items) => {
-			const w = window.__stores;
+			const w = window.__tp?.test.v1;
 			let gr; w.objectsGroup.subscribe((v) => (gr = v))();
 			let p; w.peers.subscribe((v) => (p = v))();
 			for (const it of items) {
@@ -72,7 +72,7 @@ h.run(async () => {
 	/** world boxes of uuids on a page */
 	const boxes = (p, uuids) =>
 		p.evaluate((ids) => {
-			let gr; window.__stores.objectsGroup.subscribe((v) => (gr = v))();
+			let gr; window.__tp.test.v1.objectsGroup.subscribe((v) => (gr = v))();
 			return ids.map((id) => {
 				const o = gr.getObjectByProperty('uuid', id);
 				if (!o) return null;
@@ -89,7 +89,7 @@ h.run(async () => {
 		if (!eyes) return;
 		await settle(4);
 		const head = await g(() => {
-			let r; window.__stores.globalRenderer.subscribe((v) => (r = v))();
+			let r; window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
 			const cam = r.xr.getCamera();
 			cam.updateMatrixWorld(true);
 			const e = cam.matrixWorld.elements;
@@ -117,7 +117,7 @@ h.run(async () => {
 	/** the pointer controller's world forward */
 	const forward = () =>
 		g(() => {
-			let r; window.__stores.globalRenderer.subscribe((v) => (r = v))();
+			let r; window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
 			for (const i of [0, 1]) {
 				const c = r.xr.getController(i);
 				if (c.userData.handedness !== window.__pointerHand) continue;
@@ -154,7 +154,7 @@ h.run(async () => {
 			return true;
 		}
 		const pick = await g((want) => {
-			const m = window.__stores.vrRadialMenu;
+			const m = window.__tp.test.v1.vrRadialMenu;
 			let ring; m.activeRing.subscribe((v) => (ring = v))();
 			const ents = m.ringEntries(ring);
 			const k = ents.findIndex((e) => e.id === want);
@@ -168,7 +168,7 @@ h.run(async () => {
 		}
 		await iwer.stick(page, menuHand, pick.x, pick.y);
 		await settle(8);
-		const hovered = await g(() => { let v; window.__stores.vrControls.vrHovered.subscribe((x) => (v = x))(); return v; });
+		const hovered = await g(() => { let v; window.__tp.test.v1.vrControls.vrHovered.subscribe((x) => (v = x))(); return v; });
 		await iwer.tap(page, menuHand, 'thumbstick');
 		await iwer.stick(page, menuHand, 0, 0);
 		await settle(4);
@@ -190,7 +190,7 @@ h.run(async () => {
 	const C = [head[0], 0.5, head[2] - 2];
 	await place([{ uuid: boxId, pos: C }]);
 	await h.eventually(() => boxes(B.page, [boxId]), (b) => b[0] && near(b[0].pos, C, 1e-6), 'premise: the box stands 2 m ahead of the head, on A and on B', 20000);
-	await g(() => window.__stores.objectActions.deselectObject?.());
+	await g(() => window.__tp.test.v1.objectActions.deselectObject?.());
 	const FL = [C[0] - 1, 1, C[2] + 0.5];
 	const FR = [C[0] + 1, 1, C[2] + 0.5];
 	const BR = [C[0] + 1, 1, C[2] - 0.5];
@@ -227,7 +227,7 @@ h.run(async () => {
 		await h.eventually(dbg, (x) => x.hover && near(x.hover.point, FL), `the HOVER sits on the corner while the laser is 3 cm inside it (${off.toFixed(2)}° off)`, 5000);
 		const hv = (await dbg()).hover;
 		h.check(hv?.snap === 'vertex', `…snapped as a vertex (${hv?.snap})`);
-		const marker = await g(() => { let s; window.__stores.globalScene.subscribe((v) => (s = v))(); let vis = false; s.traverse((o) => { if (/snap/i.test(o.name) && o.visible && o.isGroup) vis = true; }); let c; window.__stores.snapEngine.activeSnapCandidate.subscribe((v) => (c = v))(); return { vis, type: c?.type ?? null }; });
+		const marker = await g(() => { let s; window.__tp.test.v1.globalScene.subscribe((v) => (s = v))(); let vis = false; s.traverse((o) => { if (/snap/i.test(o.name) && o.visible && o.isGroup) vis = true; }); let c; window.__tp.test.v1.snapEngine.activeSnapCandidate.subscribe((v) => (c = v))(); return { vis, type: c?.type ?? null }; });
 		h.check(marker.type === 'vertex', `the snap marker shows the corner under the laser (${JSON.stringify(marker)})`);
 		await press();
 		let s = await dbg();
@@ -252,8 +252,8 @@ h.run(async () => {
 		console.log('\n=== L. labels in the headset ===');
 		const look = () =>
 			g(() => {
-				let r; window.__stores.globalRenderer.subscribe((v) => (r = v))();
-				let s; window.__stores.globalScene.subscribe((v) => (s = v))();
+				let r; window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
+				let s; window.__tp.test.v1.globalScene.subscribe((v) => (s = v))();
 				const cam = r.xr.getCamera();
 				const q = cam.getWorldQuaternion(cam.quaternion.clone());
 				const out = [];
@@ -296,7 +296,7 @@ h.run(async () => {
 		}
 		// the chain ends ON BR: take that point back (the ring's Undo point), then put it down with a DOUBLE TAP —
 		// the first tap places it, the second, on the same spot, keeps the chain (the desktop double click)
-		await g(() => window.__stores.vrControls.executeVRMenuAction('measure:undo'));
+		await g(() => window.__tp.test.v1.vrControls.executeVRMenuAction('measure:undo'));
 		await h.eventually(dbg, (x) => x.points.length === 2, 'the ring\'s Undo point takes the last point back', 5000);
 		const before = (await items(page)).length;
 		await aim(inside(BR));
@@ -315,7 +315,7 @@ h.run(async () => {
 		h.check(!!item && item.points.length === 3 && near(item.points[0], FL) && near(item.points[2], BR), `the item holds the three snapped corners (${item?.points.map(fmt).join(' → ')})`);
 		await h.eventually(() => items(B.page), (b) => b.some((x) => x.uuid === itemId && x.points.length === 3 && near(x.points[1], FR, 1e-4)), 'B holds the same measurement item (synced)', 15000);
 		if (SHOTS) {
-			await B.page.evaluate((c) => window.__stores.objectActions.flyTo([c[0] + 2.5, 3, c[2] + 3.5], c, 0), C);
+			await B.page.evaluate((c) => window.__tp.test.v1.objectActions.flyTo([c[0] + 2.5, 3, c[2] + 3.5], c, 0), C);
 			await B.page.waitForTimeout(1200);
 			await B.page.screenshot({ path: SHOTS + '/03-peer-sees-the-item.png' });
 		}
@@ -325,13 +325,13 @@ h.run(async () => {
 	if (want('N')) {
 		console.log('\n=== N. the Measure ring and snap off ===');
 		h.check(await openMenu(), 'the menu button opens the radial while measuring…');
-		const ring = await g(() => { let v; window.__stores.vrRadialMenu.activeRing.subscribe((x) => (v = x))(); return v; });
+		const ring = await g(() => { let v; window.__tp.test.v1.vrRadialMenu.activeRing.subscribe((x) => (v = x))(); return v; });
 		h.check(ring === 'measure', `…on the Measure ring (${ring})`);
 		if (SHOTS) await iwer.pose(page, 'head', [0, 1.6, 0], { pitch: -0.75, yaw: menuHand === 'right' ? -0.4 : 0.4 });
 		await shot('04-measure-ring');
 		if (SHOTS) await iwer.pose(page, 'head', [0, 1.6, 0]);
 		h.check(await stickRun('measure:snap'), 'the stick picks Snap');
-		const snapOn = await g(() => { let v; window.__stores.measure.measureSnap.subscribe((x) => (v = x))(); return v; });
+		const snapOn = await g(() => { let v; window.__tp.test.v1.measure.measureSnap.subscribe((x) => (v = x))(); return v; });
 		h.check(snapOn === false, 'Snap is off');
 		await closeMenu();
 		await aim(inside(FL));
@@ -339,15 +339,15 @@ h.run(async () => {
 		const s = await dbg();
 		const p = s.points[s.points.length - 1];
 		h.check(!!p && dist(p, FL) > 0.02 && Math.abs(p[1] - 1) < 1e-4, `with Snap off the same laser lands ON THE TOP FACE, ${p ? (dist(p, FL) * 100).toFixed(1) : '?'} cm from the corner — the snap is what put it there`);
-		await g(() => window.__stores.vrControls.executeVRMenuAction('measure:snap'));
-		await g(() => window.__stores.vrControls.executeVRMenuAction('measure:discard'));
+		await g(() => window.__tp.test.v1.vrControls.executeVRMenuAction('measure:snap'));
+		await g(() => window.__tp.test.v1.vrControls.executeVRMenuAction('measure:discard'));
 		await h.eventually(dbg, (x) => x.points.length === 0, 'Discard drops the chain being drawn', 5000);
 	}
 
 	// ---- G. grid: a raw floor point lands on the grid -------------------------------------------------------------
 	if (want('G')) {
 		console.log('\n=== G. grid snapping ===');
-		await g(() => { const s = window.__stores.snapping; s.snapSettings.set({ translate: 0.5, rotateDeg: 15, scale: 0.1 }); s.snapEnabled.set(true); });
+		await g(() => { const s = window.__tp.test.v1.snapping; s.snapSettings.set({ translate: 0.5, rotateDeg: 15, scale: 0.1 }); s.snapEnabled.set(true); });
 		const floor = [head[0] + 1.27, 0, head[2] - 1.12];
 		await aim(floor);
 		await press();
@@ -355,26 +355,26 @@ h.run(async () => {
 		const p = s.points[s.points.length - 1];
 		const expect = [Math.round(floor[0] / 0.5) * 0.5, 0, Math.round(floor[2] / 0.5) * 0.5];
 		h.check(!!p && near(p, expect, 1e-4) && s.snaps[s.snaps.length - 1] === 'grid', `a floor point lands on the 0.5 m grid: ${fmt(p)} = ${fmt(expect)} (${s.snaps[s.snaps.length - 1]})`);
-		await g(() => window.__stores.snapping.snapEnabled.set(false));
+		await g(() => window.__tp.test.v1.snapping.snapEnabled.set(false));
 		await aim(floor);
 		await press();
 		const s2 = await dbg();
 		const q = s2.points[s2.points.length - 1];
 		h.check(!!q && dist(q, floor) < 0.01 && !near(q, expect, 0.01), `grid off: the same laser lands where it points ${fmt(q)}`);
-		await g(() => window.__stores.vrControls.executeVRMenuAction('measure:discard'));
+		await g(() => window.__tp.test.v1.vrControls.executeVRMenuAction('measure:discard'));
 	}
 
 	// ---- E. Selected ▸ Edit measurement -------------------------------------------------------------------------------
 	if (want('E') && itemId) {
 		console.log('\n=== E. edit a kept measurement ===');
-		await g(() => window.__stores.vrControls.executeVRMenuAction('measure:done'));
+		await g(() => window.__tp.test.v1.vrControls.executeVRMenuAction('measure:done'));
 		await settle(3);
 		h.check(!(await dbg()).active, 'Done ends the tool (the trigger selects again)');
-		await g((u) => window.__stores.objectActions.applySelectionSet([u]), itemId);
+		await g((u) => window.__tp.test.v1.objectActions.applySelectionSet([u]), itemId);
 		await settle(3);
 		h.check(await openMenu(), 'the radial opens');
 		h.check(await stickRun(null), 'the centred stick press takes the hub (Selected)');
-		const offered = await g(() => window.__stores.vrRadialMenu.ringEntries('object').map((e) => e.id));
+		const offered = await g(() => window.__tp.test.v1.vrRadialMenu.ringEntries('object').map((e) => e.id));
 		h.check(offered.includes('obj:editmeasure') && !offered.includes('obj:editmesh'), `a measurement offers Edit measurement, not Edit mesh (${offered.join(', ')})`);
 		h.check(await stickRun('obj:editmeasure'), 'the stick picks Edit measurement');
 		let s = await dbg();
@@ -391,7 +391,7 @@ h.run(async () => {
 		h.check(s.editing?.active === -1 && near(a1.points[0], BL), `the next press puts it down ON the corner it snapped to ${fmt(a1.points[0])}`);
 		h.check((await depth()) === d0 + 1, `ONE undo entry for the edit (${d0} → ${await depth()})`);
 		await h.eventually(() => items(B.page), (b) => b.some((x) => x.uuid === itemId && near(x.points[0], BL, 1e-4)), 'B sees the edited point', 15000);
-		await g(() => window.__stores.vrControls.executeVRMenuAction('undo'));
+		await g(() => window.__tp.test.v1.vrControls.executeVRMenuAction('undo'));
 		await settle(3);
 		const a2 = (await items(page)).find((x) => x.uuid === itemId);
 		h.check(near(a2.points[0], FL), `Undo puts the point back on A ${fmt(a2.points[0])}`);
@@ -405,7 +405,7 @@ h.run(async () => {
 	// ---- H. hand tracking says "pick up a controller" --------------------------------------------------------------
 	if (want('H')) {
 		console.log('\n=== H. hands ===');
-		await g(() => window.__stores.vrBuildRings && window.__stores.vrMeasure.startVRMeasure());
+		await g(() => window.__tp.test.v1.vrBuildRings && window.__tp.test.v1.vrMeasure.startVRMeasure());
 		const switched = await g(async () => {
 			const d = window.__iwer.device;
 			try {
@@ -414,7 +414,7 @@ h.run(async () => {
 				return false;
 			}
 			await new Promise((r) => setTimeout(r, 500));
-			let r; window.__stores.globalRenderer.subscribe((v) => (r = v))();
+			let r; window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
 			return [...r.xr.getSession().inputSources].some((s) => !!s.hand);
 		});
 		if (!switched) console.log('SKIP H: this IWER build cannot switch to tracked hands');
@@ -427,12 +427,15 @@ h.run(async () => {
 			await settle(6);
 			const after = await dbg();
 			const toast = await page.evaluate(() => [...document.querySelectorAll('.tp-toast, [role=status]')].map((e) => e.textContent).join(' | '));
+			const note = await g(() => window.__tp.test.v1.vrHands.handInputDebug());
 			h.check(after.handRefusals > before.handRefusals && after.points.length === before.points.length, `a pinch while measuring adds no point (${before.points.length} → ${after.points.length}, refusals ${after.handRefusals})`);
-			h.check(/pick up a controller/i.test(toast), `…and says "pick up a controller" (${toast.slice(0, 120)})`);
+			h.check(note.note?.text === 'Pick up a controller to measure' && note.note?.hand === pointer, `…and says "Pick up a controller" on the shared chip at that hand (${JSON.stringify(note.note)})`);
+			// 54 X6: the chip is the one message — no toast says it a second time
+			h.check(!/pick up a controller/i.test(toast), `…and no toast doubles it (${toast.slice(0, 120)})`);
 			await g(async () => { window.__iwer.device.primaryInputMode = 'controller'; await new Promise((r) => setTimeout(r, 500)); });
 			await settle(10);
 		}
-		await g(() => window.__stores.vrMeasure.stopVRMeasure({ keep: false }));
+		await g(() => window.__tp.test.v1.vrMeasure.stopVRMeasure({ keep: false }));
 	}
 
 	// ---- A. Selected ▸ Arrange -------------------------------------------------------------------------------------
@@ -447,13 +450,13 @@ h.run(async () => {
 		];
 		await place(START);
 		await h.eventually(() => boxes(B.page, ids), (b) => b.every((q, i) => q && near(q.pos, START[i].pos, 1e-6)), 'premise: three boxes posed on A and B', 15000);
-		await g((u) => window.__stores.objectActions.applySelectionSet(u), ids.slice(0, 2));
+		await g((u) => window.__tp.test.v1.objectActions.applySelectionSet(u), ids.slice(0, 2));
 		await settle(3);
-		const dis = await g(() => window.__stores.vrRadialMenu.findMenuEntry('arrange:gaps').disabled());
+		const dis = await g(() => window.__tp.test.v1.vrRadialMenu.findMenuEntry('arrange:gaps').disabled());
 		h.check(dis === true, 'with two selected, Even gaps is greyed (it needs three)');
-		await g((u) => window.__stores.objectActions.applySelectionSet(u), ids);
+		await g((u) => window.__tp.test.v1.objectActions.applySelectionSet(u), ids);
 		await settle(3);
-		await g(() => window.__stores.vrBuildRings.vrArrangeAxis.set('x'));
+		await g(() => window.__tp.test.v1.vrBuildRings.vrArrangeAxis.set('x'));
 		const d0 = await depth();
 		const d0B = await depth(B.page);
 		h.check(await openMenu(), 'the radial opens');
@@ -469,7 +472,7 @@ h.run(async () => {
 		h.check(test(a), `Align X min: every box's left edge on the selection's (${a.map((q) => q.min[0].toFixed(3)).join(', ')} = ${minX.toFixed(3)})`);
 		h.check((await depth()) === d0 + 1, `ONE undo entry for the set (${d0} → ${await depth()})`);
 		await h.eventually(() => boxes(B.page, ids), test, 'B sees the aligned set', 15000);
-		await g(() => window.__stores.vrControls.executeVRMenuAction('undo'));
+		await g(() => window.__tp.test.v1.vrControls.executeVRMenuAction('undo'));
 		await settle(3);
 		const u = await boxes(page, ids);
 		h.check(u.every((q, i) => near(q.pos, START[i].pos, 1e-6)), 'ONE Undo puts all three back on A');
@@ -477,8 +480,8 @@ h.run(async () => {
 		h.check((await depth(B.page)) === d0B, 'B records no undo entry of its own (the move path)');
 		// distribute gaps on X through the radial entries (the stick path is proven above)
 		await g(() => {
-			const r = window.__stores.vrControls;
-			window.__stores.vrMenuOpen.set(true);
+			const r = window.__tp.test.v1.vrControls;
+			window.__tp.test.v1.vrMenuOpen.set(true);
 			['nav:object', 'nav:arrange', 'arrange:gaps'].forEach((id) => r.executeVRMenuAction(id));
 		});
 		await h.eventually(() => boxes(page, ids), (b) => {
@@ -490,8 +493,8 @@ h.run(async () => {
 			return Math.abs((s[1].min[0] - s[0].max[0]) - (s[2].min[0] - s[1].max[0])) < 1e-6;
 		}, '…on B', 15000);
 		await g(() => {
-			const r = window.__stores.vrControls;
-			window.__stores.vrMenuOpen.set(true);
+			const r = window.__tp.test.v1.vrControls;
+			window.__tp.test.v1.vrMenuOpen.set(true);
 			['nav:object', 'nav:arrange', 'arrange:drop'].forEach((id) => r.executeVRMenuAction(id));
 		});
 		const groundTest = (b) => b.every((q) => q && Math.abs(q.min[1]) < 1e-4);
@@ -502,7 +505,7 @@ h.run(async () => {
 	// ---- F. frame cost on the Quest profile ----------------------------------------------------------------------------
 	if (want('F')) {
 		console.log('\n=== F. frame cost ===');
-		await g(() => window.__stores.vrMeasure.startVRMeasure());
+		await g(() => window.__tp.test.v1.vrMeasure.startVRMeasure());
 		for (const c of [FL, FR, BR]) {
 			await aim(inside(c));
 			await press();
@@ -523,10 +526,10 @@ h.run(async () => {
 		console.log(`hover search ${hoverPerSearch.toFixed(3)} ms (${s1.hovers - s0.hovers} searches), labels ${labelsPerFrame.toFixed(3)} ms/frame (${lc.frames} frames) → ${perFrame.toFixed(3)} ms/frame`);
 		h.check(s1.hovers - s0.hovers >= 10 && lc.frames >= 60, 'premise: the sweep ran the hover search and the labels');
 		h.check(perFrame < 1.4, `the tool costs ${perFrame.toFixed(2)} ms per frame on this box — under 10 % of the 72 Hz budget (13.9 ms)`);
-		const calls = await g(() => { let r; window.__stores.globalRenderer.subscribe((v) => (r = v))(); let n = 0; let s; window.__stores.globalScene.subscribe((v) => (s = v))(); s.traverse((o) => { if (o.name === 'vr-measure-label' && o.visible) n += 2; }); return n; });
+		const calls = await g(() => { let r; window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))(); let n = 0; let s; window.__tp.test.v1.globalScene.subscribe((v) => (s = v))(); s.traverse((o) => { if (o.name === 'vr-measure-label' && o.visible) n += 2; }); return n; });
 		console.log(`labels add ${calls} draw calls (plate + text each)`);
 		h.check(calls <= 24, `the labels add ${calls} draw calls (≤ 24 for a 4-point chain)`);
-		await g(() => window.__stores.vrMeasure.stopVRMeasure({ keep: false }));
+		await g(() => window.__tp.test.v1.vrMeasure.stopVRMeasure({ keep: false }));
 	}
 
 	await iwer.exit(page);

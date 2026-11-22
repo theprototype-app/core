@@ -12,8 +12,8 @@ h.run(async () => {
 	await A.page.evaluate(() => localStorage.setItem('objectListRect', JSON.stringify({ left: 900, top: 80, width: 600, height: 400 })));
 	await A.page.setViewportSize({ width: 520, height: 420 });
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.objectActions, { timeout: 30000 });
-	await A.page.evaluate(() => window.__stores.objectListClose.set(false));
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.objectActions, { timeout: 30000 });
+	await A.page.evaluate(() => window.__tp.test.v1.objectListClose.set(false));
 	await A.page.waitForTimeout(500);
 	const r = await A.page.evaluate(() => {
 		const w = document.querySelector('#object-list').getBoundingClientRect();
@@ -25,7 +25,7 @@ h.run(async () => {
 	);
 
 	// #6: context menus portal to <body> (so the Flow menu isn't trapped below windows)
-	await A.page.evaluate(() => window.__stores.viewportMenu.set({ x: 60, y: 60, point: [0, 0, 0] }));
+	await A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set({ x: 60, y: 60, point: [0, 0, 0] }));
 	await A.page.waitForTimeout(200);
 	const portal = await A.page.evaluate(() => {
 		const m = document.querySelector('[role="menu"]');
@@ -33,7 +33,7 @@ h.run(async () => {
 	});
 	h.check(portal.inBody, 'context menu is portaled to <body>');
 	h.check(portal.z >= 1000, `context menu z is above the window tiers (z=${portal.z})`);
-	await A.page.evaluate(() => window.__stores.viewportMenu.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.viewportMenu.set(null));
 
 	// ---- object rows on TOUCH -------------------------------------------------
 	// The row's eye / properties / share / delete buttons were reachable only on
@@ -43,7 +43,7 @@ h.run(async () => {
 	// long-press logic.)
 	await A.page.setViewportSize({ width: 1280, height: 800 });
 	const uuid = await A.page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		w.showSidebar('objects');
 		let g;
@@ -87,7 +87,7 @@ h.run(async () => {
 		A.page.evaluate(
 			async ({ id, ms, move }) => {
 				const row = document.getElementById(id);
-				window.__stores.objectContextMenu.set(null);
+				window.__tp.test.v1.objectContextMenu.set(null);
 				const at = (/** @type {number} */ x, /** @type {string} */ type) =>
 					row?.dispatchEvent(
 						new PointerEvent(type, { pointerType: 'touch', clientX: x, clientY: 100, bubbles: true })
@@ -97,7 +97,7 @@ h.run(async () => {
 				await new Promise((r) => setTimeout(r, ms));
 				at(100 + move, 'pointerup');
 				return new Promise((r) =>
-					window.__stores.objectContextMenu.subscribe((/** @type {any} */ m) => r(m ? m.uuid : null))()
+					window.__tp.test.v1.objectContextMenu.subscribe((/** @type {any} */ m) => r(m ? m.uuid : null))()
 				);
 			},
 			{ id: uuid, ms, move }
@@ -107,12 +107,12 @@ h.run(async () => {
 	h.check((await hold(700, 40)) === null, 'a press that MOVES is a scroll or drag, not a menu');
 	const mousePress = await A.page.evaluate((id) => {
 		const row = document.getElementById(id);
-		window.__stores.objectContextMenu.set(null);
+		window.__tp.test.v1.objectContextMenu.set(null);
 		row?.dispatchEvent(
 			new PointerEvent('pointerdown', { pointerType: 'mouse', clientX: 10, clientY: 10, bubbles: true })
 		);
 		return new Promise((r) =>
-			setTimeout(() => window.__stores.objectContextMenu.subscribe((/** @type {any} */ m) => r(m))(), 700)
+			setTimeout(() => window.__tp.test.v1.objectContextMenu.subscribe((/** @type {any} */ m) => r(m))(), 700)
 		);
 	}, uuid);
 	h.check(mousePress === null, 'a MOUSE press never long-presses — right-click still owns that');
@@ -126,7 +126,7 @@ h.run(async () => {
 		A.page.evaluate(
 			() =>
 				new Promise((r) =>
-					window.__stores.objectContextMenu.subscribe((/** @type {any} */ m) => r(!!m))()
+					window.__tp.test.v1.objectContextMenu.subscribe((/** @type {any} */ m) => r(!!m))()
 				)
 		);
 	/** @param {boolean} withPress does the click get a matching pointerdown first? */
@@ -153,7 +153,7 @@ h.run(async () => {
 	// It is a floating window (z 40); at full screen the peers / notifications /
 	// notes / profile buttons (997-999) floated on top of it.
 	await A.page.setViewportSize({ width: 420, height: 780 });
-	await A.page.evaluate(() => window.__stores.whatsNew.openWhatsNew());
+	await A.page.evaluate(() => window.__tp.test.v1.whatsNew.openWhatsNew());
 	await A.page.waitForTimeout(800);
 	const layering = await A.page.evaluate(() => {
 		const z = (/** @type {any} */ sel) => {
@@ -166,7 +166,7 @@ h.run(async () => {
 		layering.win > layering.chrome && layering.chrome > 0,
 		`the full-screen changelog sits above the top-right chrome (${layering.win} > ${layering.chrome})`
 	);
-	await A.page.evaluate(() => window.__stores.whatsNew.closeWhatsNew());
+	await A.page.evaluate(() => window.__tp.test.v1.whatsNew.closeWhatsNew());
 	await A.page.setViewportSize({ width: 1280, height: 800 });
 
 	// ---- the profile circle stays on top of its own menu ----------------------
@@ -304,7 +304,7 @@ h.run(async () => {
 	// --z-chrome-top, so no class and no width rule are left.
 	for (const [w, label] of [[420, 'narrow'], [1280, 'wide']]) {
 		await A.page.setViewportSize({ width: w, height: 800 });
-		await A.page.evaluate(() => window.__stores.whatsNew.openWhatsNew());
+		await A.page.evaluate(() => window.__tp.test.v1.whatsNew.openWhatsNew());
 		await A.page.waitForTimeout(700);
 		const zs = await A.page.evaluate(() => {
 			const z = (/** @type {string} */ sel) => {
@@ -314,7 +314,7 @@ h.run(async () => {
 			return { sheet: z('#whats-new-window'), logo: z('.burger'), marked: document.documentElement.classList.contains('wn-sheet') };
 		});
 		h.check(zs.sheet > zs.logo && zs.logo > 0 && !zs.marked, `${label}: the changelog outranks the logo (${zs.sheet} > ${zs.logo}), no root class`);
-		await A.page.evaluate(() => window.__stores.whatsNew.closeWhatsNew());
+		await A.page.evaluate(() => window.__tp.test.v1.whatsNew.closeWhatsNew());
 		await A.page.waitForTimeout(300);
 	}
 	await A.page.setViewportSize({ width: 1280, height: 800 });
@@ -337,8 +337,8 @@ h.run(async () => {
 	// floating window to drag), so the floating-window rule is checked just above it
 	await A.page.setViewportSize({ width: 700, height: 800 });
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.objectActions, { timeout: 30000 });
-	await A.page.evaluate(() => window.__stores.objectListClose.set(false));
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.objectActions, { timeout: 30000 });
+	await A.page.evaluate(() => window.__tp.test.v1.objectListClose.set(false));
 	await A.page.waitForTimeout(700);
 	const pageSnap = () =>
 		A.page.evaluate(() => {
@@ -394,7 +394,7 @@ h.run(async () => {
 		`the Connect bar, profile and corner HUD stay put (${postDrag.chrome})`
 	);
 	await A.page.evaluate(() => {
-		window.__stores.objectListClose.set(true);
+		window.__tp.test.v1.objectListClose.set(true);
 		localStorage.removeItem('objectListRect');
 	});
 	await A.page.setViewportSize({ width: 1280, height: 800 });

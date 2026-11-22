@@ -82,6 +82,35 @@ describe('materialSignature', () => {
 	it('nothing in, nothing out', () => {
 		expect(materialSignature(null)).toBe('');
 	});
+	// 98-int T1b: a baked copy keeps its batch (the batch draws the bake itself)
+	it('a baked light is not an edit: the bake maps and their strengths leave it unchanged', () => {
+		const m = base();
+		const sig = materialSignature(m);
+		const light = new THREE.Texture();
+		light.userData.bake = true;
+		const ao = new THREE.Texture();
+		ao.userData.bake = true;
+		const c = m.clone();
+		c.lightMap = light;
+		c.lightMapIntensity = 2.5;
+		c.aoMap = ao;
+		c.aoMapIntensity = 0.4;
+		expect(materialSignature(c)).toBe(sig);
+	});
+	it('a texture the user put on is still an edit, and so is its AO strength', () => {
+		const m = base();
+		const sig = materialSignature(m);
+		const own = m.clone();
+		own.lightMap = new THREE.Texture();
+		expect(materialSignature(own)).not.toBe(sig);
+		const withAo = m.clone();
+		withAo.aoMap = new THREE.Texture();
+		const aoSig = materialSignature(withAo);
+		expect(aoSig).not.toBe(sig);
+		const stronger = withAo.clone();
+		stronger.aoMapIntensity = 0.3;
+		expect(materialSignature(stronger)).not.toBe(aoSig);
+	});
 });
 
 describe('ineligible', () => {

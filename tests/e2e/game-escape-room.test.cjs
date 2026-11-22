@@ -29,7 +29,7 @@ h.run(async () => {
 	const page = A.page;
 	const bytes = Array.from(fs.readFileSync(TPSCENE));
 	await page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		await s.sessions.applySession(payload, { backup: false });
 	}, bytes);
@@ -37,7 +37,7 @@ h.run(async () => {
 
 	const snap = () =>
 		page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const g = (st) => { let v; st.subscribe((x) => (v = x))(); return v; };
 			const group = g(s.objectsGroup);
 			return {
@@ -53,7 +53,7 @@ h.run(async () => {
 	/** a press on a puzzle object through the module's REAL click dispatch */
 	const press = (name, mode = 'play') =>
 		page.evaluate(([name, mode]) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let g; s.objectsGroup.subscribe((v) => (g = v))();
 			const o = g.getObjectByName(name);
 			if (!o) return 'missing';
@@ -61,7 +61,7 @@ h.run(async () => {
 			o.traverse((c) => { if (c.isMesh && mesh === o) mesh = c; });
 			return s.moduleSDK.runClickHandlers(mesh, mode, { source: 'click' }) ? 'ok' : 'unhandled';
 		}, [name, mode]);
-	const visible = (name) => page.evaluate((name) => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); return !!g.getObjectByName(name)?.visible; }, name);
+	const visible = (name) => page.evaluate((name) => { let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))(); return !!g.getObjectByName(name)?.visible; }, name);
 
 	// 1 — the scene: three rooms, every puzzle piece the module names, a play block
 	let st = await snap();
@@ -72,10 +72,10 @@ h.run(async () => {
 	h.check(!(await visible('Brass key')) && !(await visible('Crank')) && !(await visible('Exit portal')), 'hidden things are hidden at rest: the key, the crank, the exit');
 
 	// 2 — Play: the sim (walls collide), the menu, How to play
-	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await h.eventually(() => snap().then((v) => v.sim), (v) => v === true, 'entering play starts the sim (the walker collides with the walls)', 10000);
 	await h.eventually(hud, (t) => /ALCHEMIST/.test(t) && /Start/.test(t), 'the Start menu renders in Play', 6000);
-	const help = await page.evaluate(() => { const s = window.__stores; let v; s.gameKit?.gameShell?.shellState?.subscribe?.((x) => (v = x))?.(); return JSON.stringify(v ?? {}); }).catch(() => '');
+	const help = await page.evaluate(() => { const s = window.__tp?.test.v1; let v; s.gameKit?.gameShell?.shellState?.subscribe?.((x) => (v = x))?.(); return JSON.stringify(v ?? {}); }).catch(() => '');
 	h.check(true, 'How to play is registered through api.game.setHelp (' + (help.includes('gems') ? 'seen in shell state' : 'shell state not exposed') + ')');
 	h.check((await press('Desk drawer')) !== 'ok' || (await snap()).flags === 0, 'nothing acts before Start (the menu is not the game)');
 
@@ -100,14 +100,14 @@ h.run(async () => {
 	st = await snap();
 	h.check((st.flags & (2 | 4 | 8 | 16 | 32 | 64)) === (2 | 4 | 8 | 16 | 32 | 64), `stage 1 solved: key, chest, crank, note, sun gem, study door (flags ${st.flags})`);
 	await h.eventually(hud, (t) => /Crank/.test(t) && /Sun gem/.test(t) && /Gems 1 \/ 3/.test(t), 'the inventory lists the crank and the sun gem; 1 of 3 gems', 4000);
-	await h.eventually(() => page.evaluate(() => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); return g.getObjectByName('Study door').position.z; }), (z) => z > 1, 'the study door slides open', 4000);
+	await h.eventually(() => page.evaluate(() => { let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))(); return g.getObjectByName('Study door').position.z; }), (z) => z > 1, 'the study door slides open', 4000);
 
 	// 5 — the workshop: dials 3 7 1, levers right/left/middle (a wrong one resets), the crank x8
 	for (const [d, n] of [['Dial 1', 3], ['Dial 2', 7], ['Dial 3', 1]]) for (let i = 0; i < n; i++) await press(d);
 	await h.eventually(() => visible('Moon gem'), (v) => v === true, 'the code 3-7-1 opens the hatch: the moon gem', 4000);
 	await press('Moon gem');
 	await press('Lever left');
-	h.check(await page.evaluate(() => window.__stores.gameState.gameVar('esLev', 0)) === 0, 'a lever out of order springs back');
+	h.check(await page.evaluate(() => window.__tp.test.v1.gameState.gameVar('esLev', 0)) === 0, 'a lever out of order springs back');
 	for (const l of ['Lever right', 'Lever left', 'Lever middle']) await press(l);
 	await h.eventually(() => visible('Star gem'), (v) => v === true, 'right-left-middle rolls the star gem into the tray', 4000);
 	await press('Star gem');
@@ -115,7 +115,7 @@ h.run(async () => {
 	for (let i = 0; i < 8; i++) await press('Fitted crank');
 	await h.eventually(() => snap().then((v) => v.flags & 4096), (v) => v !== 0, 'eight turns of the crank raise the gate', 4000);
 	await page.waitForTimeout(900);
-	const gateY = await page.evaluate(() => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); return g.getObjectByName('Workshop gate').position.y; });
+	const gateY = await page.evaluate(() => { let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))(); return g.getObjectByName('Workshop gate').position.y; });
 	h.check(gateY > 2.5, `the gate is up (y ${gateY.toFixed(2)})`);
 
 	// 6 — the vault: three gems, the door, the exit -> the win screen and a best time
@@ -135,7 +135,7 @@ h.run(async () => {
 	await page.waitForTimeout(2600);
 	await page.screenshot({ path: process.env.ESCAPE_SHOTS ? path.join(process.env.ESCAPE_SHOTS, 'study.png') : '/tmp/claude-1000/escape-study.png' });
 	const helpers = await page.evaluate(() => {
-		let sc; window.__stores.globalScene.subscribe((v) => (sc = v))();
+		let sc; window.__tp.test.v1.globalScene.subscribe((v) => (sc = v))();
 		const seen = [];
 		sc.traverse((o) => { if (o.visible && /helper|grid/i.test(o.name ?? '') && o.parent === sc) seen.push(o.name); });
 		return seen;
@@ -152,48 +152,48 @@ h.run(async () => {
 	await press('Exit portal');
 	await h.eventually(() => snap().then((v) => v.state), (v) => v === 'over', 'the vault stage wins too', 6000);
 	h.check(await page.evaluate(() => window.__escape.best()) === bestBefore, 'a practice stage does not touch the best time');
-	await page.evaluate(() => window.__stores.isLocked.set(false));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 	await page.waitForTimeout(600);
 
 	// 8 — VR (a fake XR session): the menu is a VR board, Start works, a trigger press acts
 	await xr.install(page);
 	await xr.setOn(page, true);
-	await page.evaluate(() => window.__stores.gameState.setGameState('menu'));
+	await page.evaluate(() => window.__tp.test.v1.gameState.setGameState('menu'));
 	const board = await page.evaluate(() => {
-		const sc = window.__stores.hudDocs.visibleScreen('scene');
+		const sc = window.__tp.test.v1.hudDocs.visibleScreen('scene');
 		return { id: sc?.id, menuInput: sc?.input === 'menu' };
 	});
 	h.check(board.id === 'menu' && board.menuInput, `the Start menu is a menu-input screen, which a headset draws as the VR board (${JSON.stringify(board)})`);
-	await page.evaluate(() => window.__stores.isLocked.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 	await page.waitForTimeout(800);
-	await page.evaluate(() => window.__stores.gameState.setGameState('playing'));
+	await page.evaluate(() => window.__tp.test.v1.gameState.setGameState('playing'));
 	await h.eventually(() => snap().then((v) => v.state + ':' + v.flags), (v) => v === 'playing:0', 'a VR player starts a fresh round', 6000);
 	const vrPress = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g; s.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByName('Desk drawer');
 		return s.moduleSDK.runClickHandlers(o, 'play', { source: 'sweep' });
 	});
 	h.check(vrPress === true && ((await snap()).flags & 1) !== 0, 'a VR trigger/sweep press opens the drawer');
 	await xr.uninstall(page);
-	await page.evaluate(() => window.__stores.isLocked.set(false));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 	await page.waitForTimeout(400);
 
 	// 9 — THE U10 PROBE: the crank's turns from the GRAPH, the dial code from the CODE; both felt in
 	// Play, both kept by a save and a reload
 	const rid = await page.evaluate(() => window.__escape?.rulesNode?.() ?? null);
 	h.check(!!rid, `premise: the Main graph carries the Escape rules node (${rid})`);
-	await h.eventually(() => page.evaluate((id) => window.__stores.behaviours.behavioursDebug().status[id]?.status, rid), (st) => st === 'running', 'the Escape rules behaviour is running', 10000);
-	const codeNow = () => page.evaluate((id) => { let g; window.__stores.flowGraphs.subscribe((v) => (g = v))(); return g.scene.nodes.find((n) => n.id === id)?.data?.code ?? ''; }, rid);
+	await h.eventually(() => page.evaluate((id) => window.__tp.test.v1.behaviours.behavioursDebug().status[id]?.status, rid), (st) => st === 'running', 'the Escape rules behaviour is running', 10000);
+	const codeNow = () => page.evaluate((id) => { let g; window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))(); return g.scene.nodes.find((n) => n.id === id)?.data?.code ?? ''; }, rid);
 	// (a) the GRAPH: select the rules node, the ⓘ tab, Crank turns 8 → 3
-	await page.evaluate(() => window.__stores.isLocked.set(null));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(null));
 	await page.waitForTimeout(600);
 	if (!(await page.evaluate(() => !!document.querySelector('.svelte-flow__pane')))) await page.locator('p[title="Node editor (N)"]').click();
 	await page.waitForTimeout(1000);
-	await page.evaluate(() => window.__stores.bottomDock?.dockHeight?.set(600));
+	await page.evaluate(() => window.__tp.test.v1.bottomDock?.dockHeight?.set(600));
 	if (!(await page.locator('#flow-props').count())) await page.locator('#flow-props-toggle').click();
 	await page.locator('#flow-tab-info').click();
-	await page.evaluate((id) => window.__stores.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: n.id === id }))), rid);
+	await page.evaluate((id) => window.__tp.test.v1.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: n.id === id }))), rid);
 	await h.eventually(() => page.locator('#flow-prop-crankTurns').count(), (n) => n === 1, 'the rules node shows Crank turns in its properties panel', 6000);
 	await page.locator('#flow-prop-crankTurns').fill('3');
 	await page.locator('#flow-prop-crankTurns').press('Enter');
@@ -201,27 +201,27 @@ h.run(async () => {
 	// (b) the CODE: open the rules in the code workspace and change the dial code to 1 · 1 · 1
 	await page.evaluate((id) => {
 		let ns;
-		window.__stores.flowNodes.subscribe((v) => (ns = v))();
+		window.__tp.test.v1.flowNodes.subscribe((v) => (ns = v))();
 		const n = ns.find((x) => x.id === id);
 		window.__flowViewport?.setViewport({ x: -n.position.x + 300, y: -n.position.y + 60, zoom: 1 });
 	}, rid);
 	await page.waitForTimeout(600);
 	const box = await page.locator(`.svelte-flow__node[data-id="${rid}"]`).boundingBox().catch(() => null);
 	if (box) await page.mouse.dblclick(box.x + box.width / 2, box.y + 8);
-	else await page.evaluate((id) => window.__stores.codeWorkspace.openCode({ source: 'behaviour', ref: { nodeId: id } }), rid);
+	else await page.evaluate((id) => window.__tp.test.v1.codeWorkspace.openCode({ source: 'behaviour', ref: { nodeId: id } }), rid);
 	await h.eventually(() => page.locator('[data-pane] .cm-content').count(), (n) => n >= 1, 'double-click opens the rules in the code workspace', 15000);
 	const edited = (await codeNow()).replace('const CODE = [3, 7, 1];', 'const CODE = [1, 1, 1];');
-	const paneId = await page.evaluate(() => { let v; window.__stores.codeWorkspace.activeCodeTab.subscribe((x) => (v = x))(); return v; });
+	const paneId = await page.evaluate(() => { let v; window.__tp.test.v1.codeWorkspace.activeCodeTab.subscribe((x) => (v = x))(); return v; });
 	await page.locator(`[data-pane="${paneId}"] .cm-content`).click();
 	await page.keyboard.press('Control+A');
 	await page.keyboard.insertText(edited);
 	await page.keyboard.press('Control+S');
 	await h.eventually(codeNow, (c) => /const CODE = \[1, 1, 1\];/.test(c), 'Ctrl+S saved the code onto the node (the dial code is 1 · 1 · 1)', 6000);
 	await page.locator('#code-ws-close:visible, [data-dock-tab-close="code"]:visible').first().click().catch(() => {});
-	await h.eventually(() => page.evaluate((id) => window.__stores.behaviours.behavioursDebug().status[id]?.status, rid), (st) => st === 'running', 'the edited rules reloaded and run', 8000);
+	await h.eventually(() => page.evaluate((id) => window.__tp.test.v1.behaviours.behavioursDebug().status[id]?.status, rid), (st) => st === 'running', 'the edited rules reloaded and run', 8000);
 	/** the workshop practice room: dials once each (the code change), the crank fitted and turned (the graph change) */
 	const feel = async (when) => {
-		await page.evaluate(() => window.__stores.isLocked.set(true));
+		await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
 		await page.waitForTimeout(800);
 		await page.evaluate(() => window.__escape.startStage(1));
 		await h.eventually(() => snap().then((v) => v.state + ':' + ((v.flags & 16) !== 0) + ':' + ((v.flags & 256) !== 0)), (v) => v === 'playing:true:false', `${when}: the workshop practice room starts (study solved, hatch shut)`, 8000);
@@ -235,15 +235,15 @@ h.run(async () => {
 	await feel('Play');
 	// (c) both survive a save and a reload
 	const saved = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = s.sessions.buildSessionPayload('Escape probe');
 		const zip = await s.sessions.exportSessionZip(payload, { assets: true, packs: false, flow: true });
 		return Array.from(zip);
 	});
-	await page.evaluate(() => window.__stores.isLocked.set(null));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(null));
 	await page.waitForTimeout(600);
 	await page.evaluate(async (arr) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphs.set({ scene: { nodes: [], edges: [] } });
 		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 		await s.sessions.applySession(payload, { backup: false });
@@ -251,9 +251,9 @@ h.run(async () => {
 	await page.waitForTimeout(2500);
 	const reloaded = await codeNow();
 	h.check(/crankTurns:\s*\{\s*value:\s*3\b/.test(reloaded) && /const CODE = \[1, 1, 1\];/.test(reloaded), 'after a save and a reload the rules keep 3 crank turns and the code 1 · 1 · 1');
-	await h.eventually(() => page.evaluate(() => window.__stores.behaviours.behavioursDebug().status[window.__escape.rulesNode()]?.status), (st) => st === 'running', 'the reloaded rules run', 10000);
+	await h.eventually(() => page.evaluate(() => window.__tp.test.v1.behaviours.behavioursDebug().status[window.__escape.rulesNode()]?.status), (st) => st === 'running', 'the reloaded rules run', 10000);
 	await feel('Play after the reload');
-	await page.evaluate(() => window.__stores.isLocked.set(false));
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
 	await page.waitForTimeout(400);
 	await h.finish(browser);
 });

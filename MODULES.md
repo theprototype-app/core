@@ -178,6 +178,19 @@ sdkThing.surface = { registerThing: 'registers', onThing: 'registers', thingCoun
 
 ## API reference (v1)
 
+### Which api you have: `api.version` (101 F6)
+
+`api.version` is the module api's contract number: **2** since roadmap 101 (absent before,
+read it as 1). Feature-probe with `(api.version ?? 1) >= 2`. Version 2 adds nothing else to the api; it
+ships with one notice:
+
+> **The raw renderer is leaving the contract.** Today a module can still reach the `THREE.WebGLRenderer`
+> (the `renderer` handed to a shader backend or post effect hook, and through `api.camera()`'s
+> XR check). It stays for now, but roadmap 100 (Cinematic view) swaps the renderer at run time and
+> 2.0 renders through WebGPU, so a module that calls renderer methods will break then. Use the look
+> and post calls instead (`api.registerPostEffect`, the scene look, `api.quality`); a module that
+> truly needs a renderer feature should ask for an SDK call.
+
 ### Flow nodes
 
 ```js
@@ -1089,6 +1102,38 @@ and undoable like an Inspector edit; on a dry object it takes a whole blob. `que
 on the shared clock), so every peer's buoyancy agrees. `disturb` is visual only and NOT sent — drive it from shared
 physics on every peer. `burst(uuid)` fires the bubble burst for everyone (the moment rides the blob). Feature-detect
 it (`api.water`): 1.21 and older cores do not have it.
+
+### Game world: colliders, paths, players, menu rows (roadmap 61, the navigation module)
+
+```js
+if (api.colliderGeometry) {
+	// the STATIC colliders + terrain as WORLD triangles (a navmesh bake's input), plus the MOVING solids
+	const g = await api.colliderGeometry({ maxTriangles: 400000, exclude: [npcUuid] }); // async
+	// {positions: Float32Array, indices: Uint32Array, triangles, truncated, moving: [{uuid, min, max}], signature}
+	const sig = (await api.colliderGeometry({ signatureOnly: true })).signature; // cheap: rebake only when it changes
+	const p = api.paths.of(pathUuid);   // 78's Path: {uuid, name, points: [{pos: [x, y, z]}] (WORLD), closed, mode, speed, length, poseAt, …} | null
+	api.paths.list();                   // [{uuid, name}] for a picker
+	await api.paths.create({ points: [[0, 0, 0], [4, 0, 0], [4, 0, 4]], closed: true }); // replicated, one undo step
+	api.players();                      // [{id, pos (WORLD), me, playing}] — your camera + every open peer's avatar; playing = core presence says that peer is in Play (1.72; a viewer's api.send never reaches the others, its presence does)
+	api.isAuthority();                  // the kit authority (physics initiator, else the lowest peer id)
+	api.isExport();                     // an exported game: never draw debug views there
+	api.registerViewToggle({ id: 'overlay', label: 'Navmesh overlay', get: () => on, set: (v) => (on = v) });
+	api.registerObjectAction({
+		id: 'enemy', label: 'Make this an enemy…', when: (uuid) => true,
+		open: (uuid) => openSheet(uuid),           // the person's door
+		apply: (uuid, spec) => applyEnemy(uuid, spec) // the same recipe with no UI (game_setup {npc} calls it)
+	});
+	api.flow.removeNodes(ids, graphId);  // nodes + every edge touching them, replicated, ONE undo entry
+}
+```
+
+`colliderGeometry` reads the physics shapes as they would be built (the `colliderSpec` source of truth), so a
+navmesh matches what the player collides with; dynamic bodies and flow-animated objects come back as `moving`
+boxes, never as triangles. The view toggle is LOCAL (core never stores its state; keep it in `api.storage`). An
+object action's row sits in the object menu's Physics & effects group; core shows "Make this an enemy…" even
+when the navigation module is not installed and offers to install it from the gallery. `api.flow.addNodes` on an
+object uuid with no flow yet creates that object's flow first. Feature-detect each (`api.colliderGeometry`,
+`api.paths`, `api.registerObjectAction`): 1.70 and older cores do not have them.
 
 ### Physics (P-A)
 

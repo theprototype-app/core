@@ -8,7 +8,7 @@ import { get } from 'svelte/store';
 import { createInbox, HEARTBEAT_MS } from './agentInboxCore.js';
 import { peers, userdata } from '../../stores/appStore.js';
 import { sessionHost } from '$lib/connectionState';
-import { rolesInfo } from '$lib/cloudHooks';
+import { knownRoleOf, rolesInfo } from '$lib/cloudHooks';
 
 const chatStores = import.meta.glob('../chat/tpchatStore.js');
 
@@ -43,7 +43,8 @@ export function agentInbox() {
 	if (inbox) return inbox;
 	inbox = createInbox({
 		selfId: myId,
-		roleOf: (id) => /** @type {any} */ (get(rolesInfo))?.roleOf?.(id) ?? null,
+		// the host we joined is trusted when the plugin did not come, as the receive gate trusts it (null = no roles)
+		roleOf: (id) => (!get(rolesInfo) && id === get(sessionHost) ? null : knownRoleOf(id)),
 		host: () => get(sessionHost),
 		nameOf,
 		myName: () => nameOf(myId()),

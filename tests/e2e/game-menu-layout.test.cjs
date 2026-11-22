@@ -65,13 +65,13 @@ h.run(async () => {
 	const page = A.page;
 	const installed = new Set();
 	for (const id of [...new Set(GAMES.flatMap((g) => g.modules))]) if (await h.installModule(A, id)) installed.add(id);
-	await page.evaluate(() => window.__stores.modulesOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.modulesOpen.set(false));
 	await page.waitForTimeout(300);
 
 	/** the desktop HUD on show: pressables + the panels they sit on */
 	const hudRects = () =>
 		page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const rect = (el) => {
 				const r = el.getBoundingClientRect();
 				return { x: r.left, y: r.top, w: r.width, h: r.height };
@@ -105,7 +105,7 @@ h.run(async () => {
 	/** draw the VR surfaces once and read their hits (+ a PNG of the board) */
 	const vrFrame = (shot) =>
 		page.evaluate(async (shot) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const T = s.THREE;
 			const k = s.gameKit.vrGamePanel;
 			const head = { position: new T.Vector3(0, 1.6, 0), quaternion: new T.Quaternion() };
@@ -125,7 +125,7 @@ h.run(async () => {
 		if (!EVIDENCE || !dataUrl) return;
 		fs.writeFileSync(path.join(EVIDENCE, name), Buffer.from(dataUrl.split(',')[1], 'base64'));
 	};
-	const setState = (state) => page.evaluate((st) => window.__stores.gameState.setGameState(st), state);
+	const setState = (state) => page.evaluate((st) => window.__tp.test.v1.gameState.setGameState(st), state);
 
 	for (const game of GAMES) {
 		const file = sceneOf(game.slug);
@@ -137,7 +137,7 @@ h.run(async () => {
 		console.log('\n=== ' + game.slug + ' ===');
 		const bytes = Array.from(fs.readFileSync(file));
 		await page.evaluate(async (arr) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.templatesModalOpen.set(false);
 			const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 			await s.sessions.applySession(payload, { backup: false });
@@ -145,7 +145,7 @@ h.run(async () => {
 		await page.waitForTimeout(3000);
 
 		// ================================================= desktop: the game's own screens
-		await page.evaluate(() => window.__stores.playMode.requestPlay());
+		await page.evaluate(() => window.__tp.test.v1.playMode.requestPlay());
 		await page.waitForTimeout(800);
 		const desk = [];
 		for (const state of ['menu', 'playing', 'paused', 'over']) {
@@ -166,17 +166,17 @@ h.run(async () => {
 
 		// ================================================= desktop: the pause menu's pages
 		await setState('playing');
-		await page.evaluate(() => window.__stores.gameKit.gameShell.openShellMenu('main'));
+		await page.evaluate(() => window.__tp.test.v1.gameKit.gameShell.openShellMenu('main'));
 		await page.waitForTimeout(300);
 		const pages = await page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			let lv;
 			s.gameKit.gameShell.gameLevels.subscribe((v) => (lv = v))();
 			return ['main', 'settings', ...(lv?.list?.length ? ['levels'] : []), 'help'];
 		});
 		const shell = [];
 		for (const pg of pages) {
-			await page.evaluate((pg) => window.__stores.gameKit.gameShell.openShellMenu(pg), pg);
+			await page.evaluate((pg) => window.__tp.test.v1.gameKit.gameShell.openShellMenu(pg), pg);
 			await page.waitForTimeout(250);
 			const r = await shellRects();
 			if (!r) {
@@ -188,14 +188,14 @@ h.run(async () => {
 			if (EVIDENCE) await page.screenshot({ path: path.join(EVIDENCE, `shell-${game.slug}-${pg}.png`) });
 		}
 		h.check(shell.length === 0, `${game.slug} desktop pause menu (${pages.join(', ')}): every control inside the card, none overlapping${shell.length ? ' — ' + shell.slice(0, 4).join(' | ') : ''}`);
-		await page.evaluate(() => window.__stores.gameKit.gameShell.closeShellMenu());
+		await page.evaluate(() => window.__tp.test.v1.gameKit.gameShell.closeShellMenu());
 		await h.leavePlay(page);
 		await page.waitForTimeout(400);
 
 		// ================================================= VR: the board, the wrist
 		await page.evaluate(() => {
-			window.__stores.isVRMode.set(true);
-			window.__stores.objectActions.setEditorMode('interact');
+			window.__tp.test.v1.isVRMode.set(true);
+			window.__tp.test.v1.objectActions.setEditorMode('interact');
 		});
 		await xr.install(page);
 		await xr.setOn(page, true);
@@ -218,7 +218,7 @@ h.run(async () => {
 		h.check(boards > 0, `${game.slug} VR: the board showed at least one menu screen (${boards})`);
 		await setState('playing');
 		for (const pg of pages) {
-			await page.evaluate((pg) => window.__stores.gameKit.gameShell.openShellMenu(pg), pg);
+			await page.evaluate((pg) => window.__tp.test.v1.gameKit.gameShell.openShellMenu(pg), pg);
 			await page.waitForTimeout(150);
 			const f = await vrFrame(!!EVIDENCE);
 			if (!f.board) {
@@ -229,13 +229,13 @@ h.run(async () => {
 			for (const o of f.overflow) vr.push(`shell ${pg}: label wider than its button: ${o}`);
 			save(`vr-shell-${game.slug}-${pg}.png`, f.board.png);
 		}
-		await page.evaluate(() => window.__stores.gameKit.gameShell.closeShellMenu());
+		await page.evaluate(() => window.__tp.test.v1.gameKit.gameShell.closeShellMenu());
 		h.check(vr.length === 0, `${game.slug} VR: every pressable inside its board/wrist with a ${VR_MARGIN}px margin, ${VR_GAP}px apart, labels fit${vr.length ? ' — ' + vr.slice(0, 5).join(' | ') : ''}`);
 		await xr.uninstall(page);
 		await page.evaluate(() => {
-			window.__stores.isVRMode.set(false);
-			window.__stores.objectActions.setEditorMode('edit');
-			window.__stores.gameState.setGameState('menu');
+			window.__tp.test.v1.isVRMode.set(false);
+			window.__tp.test.v1.objectActions.setEditorMode('edit');
+			window.__tp.test.v1.gameState.setGameState('menu');
 		});
 		await page.waitForTimeout(300);
 	}

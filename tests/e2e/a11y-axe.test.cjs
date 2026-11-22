@@ -27,7 +27,7 @@ const GATED = new Set(['serious', 'critical']);
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'];
 
 /** @param {any} page @param {string} expr */
-const run = (page, expr) => page.evaluate((src) => (0, eval)(src)(window.__stores), expr);
+const run = (page, expr) => page.evaluate((src) => (0, eval)(src)(window.__tp?.test.v1), expr);
 
 /**
  * @param {any} page
@@ -105,12 +105,12 @@ h.run(async () => {
 	const page = A.page;
 	await net.routes(page);
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		s.commandsHandler.sceneCommand('/create sphere');
 	});
 	await page.waitForTimeout(1200);
-	await page.evaluate(() => window.__stores.objectActions.applySelectionSet([], false));
+	await page.evaluate(() => window.__tp.test.v1.objectActions.applySelectionSet([], false));
 	await page.waitForTimeout(400);
 
 	// 1. the editor shell at rest
@@ -124,7 +124,7 @@ h.run(async () => {
 
 	// 3. the Inspector (an object's properties)
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const box = g.children.find((c) => c.isMesh);
@@ -136,8 +136,8 @@ h.run(async () => {
 	await page.waitForTimeout(300);
 	await gate(page, 'Inspector', '#inspector', '#inspector');
 	await page.evaluate(() => {
-		window.__stores.inspectorClose?.set(true);
-		window.__stores.objectActions.applySelectionSet([], false);
+		window.__tp.test.v1.inspectorClose?.set(true);
+		window.__tp.test.v1.objectActions.applySelectionSet([], false);
 	});
 	await page.waitForTimeout(400);
 
@@ -149,7 +149,7 @@ h.run(async () => {
 	await page.waitForTimeout(400);
 
 	// 5. the Asset Browser (recorded CC0 fixtures)
-	await page.evaluate(() => window.__stores.cc0State.openAssetBrowser());
+	await page.evaluate(() => window.__tp.test.v1.cc0State.openAssetBrowser());
 	await page.waitForFunction(() => Number(document.querySelector('#asset-browser-grid')?.dataset.count) > 0, null, { timeout: 30000 }).catch(() => {});
 	await page.waitForTimeout(500);
 	await gate(page, 'Asset Browser', '#asset-browser-window', '#asset-browser-window');
@@ -198,7 +198,7 @@ h.run(async () => {
 	const D = await h.setupPage(browser, 'dock', { context: { viewport: { width: 1440, height: 900 } }, storage: { flowDocked: 'true', explorerDocked: 'true', animationDocked: 'true' } });
 	await h.answerRestore(D).catch(() => {});
 	await D.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		for (const st of [s.flowGraphClose, s.explorerClose, s.animationClose]) {
 			st.set(false);
 			await new Promise((r) => setTimeout(r, 500));

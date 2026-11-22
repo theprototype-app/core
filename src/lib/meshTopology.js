@@ -160,7 +160,9 @@ function toInts(data) {
 				/** @type {any} */ (data).byteOffset + /** @type {any} */ (data).byteLength
 			)
 		);
-	return new Int32Array(data ?? []);
+	// a list of numbers, never a bare number: `new Int32Array(n)` would allocate n ints
+	if (!Array.isArray(data) || data.length > MAX_FACE_TRIS) return new Int32Array(0);
+	return new Int32Array(data);
 }
 
 /** Corner budget, the integer sibling of MAX_SNAPSHOT — indices, not coordinates,

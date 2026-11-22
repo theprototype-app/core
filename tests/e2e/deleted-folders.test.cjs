@@ -28,7 +28,7 @@ const h = require('./helpers.cjs');
 
 /** Installed in every page: the stores, and the four readings every section takes. */
 const INSTALL = () => {
-	const S = window.__stores;
+	const S = window.__tp?.test.v1;
 	const val = (/** @type {any} */ s) => {
 		let v;
 		s.subscribe((/** @type {any} */ x) => (v = x))();
@@ -137,14 +137,14 @@ h.run(async () => {
 	});
 	const page = A.page;
 	await page.waitForFunction(
-		() => !!window.__stores?.sharedLibrary && !!window.__stores?.explorer && !!window.__stores?.explorerView,
+		() => !!window.__tp?.test.v1?.sharedLibrary && !!window.__tp?.test.v1?.explorer && !!window.__tp?.test.v1?.explorerView,
 		null,
 		{ timeout: 30000 }
 	);
 	await page.evaluate(INSTALL);
 	// the standing ask, silenced for the body of the suite: the shipped default is `ask`, and
 	// an armed share strip is a sticky row that swallows clicks over every card below.
-	await page.evaluate(() => window.__stores.sharedLibrary.shareNewFiles.set('never'));
+	await page.evaluate(() => window.__tp.test.v1.sharedLibrary.shareNewFiles.set('never'));
 	const ev = (fn, arg) => page.evaluate(fn, arg);
 
 	// ---- 1. THE LOG ROWS a folder delete writes ------------------------------------------
@@ -746,7 +746,7 @@ h.run(async () => {
 	);
 
 	// e) the background menu's Layout section, and what PLAIN means
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set('deleted'));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set('deleted'));
 	await page.waitForTimeout(500);
 	await page.locator('#explorer-grid').click({ button: 'right', position: { x: 1000, y: 170 } });
 	await page.waitForTimeout(450);
@@ -785,7 +785,7 @@ h.run(async () => {
 		`...and the file two folders deep is listed at the root instead (${JSON.stringify(plain.ids)})`
 	);
 	// the column is what carries the place once the folders are gone from the view
-	await page.evaluate(() => window.__stores.explorerView.explorerViewMode.set('list'));
+	await page.evaluate(() => window.__tp.test.v1.explorerView.explorerViewMode.set('list'));
 	await page.waitForTimeout(600);
 	const listed = await listRows(page);
 	const keepRow = listed.find((r) => r.id === 'deleted:' + ui.keep);
@@ -814,9 +814,9 @@ h.run(async () => {
 	);
 	// put the flat list back the way the rest of this section found it — the UI half of the
 	// switch is proven above, and the sections below read the flat root
-	await page.evaluate(() => window.__stores.explorerView.explorerBinLayout.set('plain'));
+	await page.evaluate(() => window.__tp.test.v1.explorerView.explorerBinLayout.set('plain'));
 	await page.waitForTimeout(500);
-	await page.evaluate(() => window.__stores.explorerView.explorerViewMode.set('thumbnails'));
+	await page.evaluate(() => window.__tp.test.v1.explorerView.explorerViewMode.set('thumbnails'));
 	await page.waitForTimeout(400);
 
 	// f) the breadcrumb toggle — a VIEW FLAG, not a place
@@ -850,7 +850,7 @@ h.run(async () => {
 	);
 
 	// g) a PURGED row: in the record, never in the bin
-	await page.evaluate(() => window.__stores.explorerView.explorerBinShowSpent.set(false));
+	await page.evaluate(() => window.__tp.test.v1.explorerView.explorerBinShowSpent.set(false));
 	await page.waitForTimeout(300);
 	await ev(async (u) => {
 		await window.__t.S.sharedLibrary.purgeDeletedItem(u.keep);
@@ -881,7 +881,7 @@ h.run(async () => {
 	// h) `deletedlog` survives as an ALIAS. `openFolder` is component-private, so what is
 	// driven here is the state a caller of it leaves behind: the view standing on the old id
 	// draws THE BIN — one trail, one toggle, one set of rows — rather than a second place.
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set('deletedlog'));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set('deletedlog'));
 	await page.waitForTimeout(700);
 	const alias = await page.evaluate(() => ({
 		crumbs: [...document.querySelectorAll('#explorer-crumbs button')]
@@ -1057,7 +1057,7 @@ h.run(async () => {
 	// this section runs in it sits UNDER the Vault ghost node, not at the bin root: walk in,
 	// and WAIT for the card rather than reading it in the same tick as the re-render (both
 	// measured: null at the root, then a timeout waiting there)
-	await page.evaluate((id) => window.__stores.explorer.activeFolder.set('deleted:' + id), dnd.vault);
+	await page.evaluate((id) => window.__tp.test.v1.explorer.activeFolder.set('deleted:' + id), dnd.vault);
 	await page.locator('[data-card-id="deleted:' + dnd.ghosted + '"]').first().waitFor({ timeout: 8000 });
 	const carried = await ev((d) => {
 		const dt = new DataTransfer();
@@ -1070,7 +1070,7 @@ h.run(async () => {
 		!!carried && JSON.parse(carried).id === 'deleted:' + dnd.ghosted,
 		`a bin card writes the ORDINARY item payload, keyed by its own id (${carried})`
 	);
-	await page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await page.waitForTimeout(600);
 	const ontoCard = await ev((a) => {
 		const dt = new DataTransfer();
@@ -1107,13 +1107,13 @@ h.run(async () => {
 
 	const B = await h.setupPage(browser, 'B', { storage });
 	await B.page.waitForFunction(
-		() => !!window.__stores?.sharedLibrary && !!window.__stores?.explorer,
+		() => !!window.__tp?.test.v1?.sharedLibrary && !!window.__tp?.test.v1?.explorer,
 		null,
 		{ timeout: 30000 }
 	);
 	await B.page.evaluate(INSTALL);
-	await B.page.evaluate(() => window.__stores.sharedLibrary.shareNewFiles.set('never'));
-	await B.page.evaluate(() => window.__stores.explorer.loadExplorer());
+	await B.page.evaluate(() => window.__tp.test.v1.sharedLibrary.shareNewFiles.set('never'));
+	await B.page.evaluate(() => window.__tp.test.v1.explorer.loadExplorer());
 
 	try {
 		await h.connect(A, B);
@@ -1381,11 +1381,11 @@ h.run(async () => {
 		20000
 	);
 	const verdicts = await A.page.evaluate(() => ({
-		shared: window.__stores.projectManifest.sceneNameShared('Arena'),
-		kept: window.__stores.projectManifest.sceneNameShared('Other'),
+		shared: window.__tp.test.v1.projectManifest.sceneNameShared('Arena'),
+		kept: window.__tp.test.v1.projectManifest.sceneNameShared('Other'),
 		// the name is matched with the extension stripped, because that is the form
 		// `currentLevel` holds and the form the ask is asked about
-		withExt: window.__stores.projectManifest.sceneNameShared('Arena.tpscene')
+		withExt: window.__tp.test.v1.projectManifest.sceneNameShared('Arena.tpscene')
 	}));
 	h.check(
 		verdicts.shared === true,

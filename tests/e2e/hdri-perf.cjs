@@ -16,7 +16,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1280, height: 720 } }, storage: { autoQuality: 'false' } });
 	const page = A.page;
 	await page.evaluate(async (slug) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const res = await fetch(new URL('templates/' + slug + '/scene.tpscene', document.baseURI));
 		const payload = await s.sessions.importSessionZip(await res.arrayBuffer());
 		if (payload) await s.sessions.requestLoadSession(payload.id);
@@ -25,7 +25,7 @@ h.run(async () => {
 	await fx.install(page);
 	await fx.installSpace(page, { head: [0, 1.6, 0] });
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.viewMode.set('shaded');
 		s.viewportOverrides.setRenderLayer('post', false);
 		s.lightParams.shadowQuality.set('off');
@@ -33,17 +33,17 @@ h.run(async () => {
 	});
 	const rows = [];
 	for (const key of ['studio', 'clearsky', 'meadow', 'sunrise', 'starlight', 'photostudio']) {
-		await page.evaluate((k) => window.__stores.environment.setEnvironment(k), key);
-		await page.evaluate(() => window.__stores.hdri.hdriDebug.settle());
+		await page.evaluate((k) => window.__tp.test.v1.environment.setEnvironment(k), key);
+		await page.evaluate(() => window.__tp.test.v1.hdri.hdriDebug.settle());
 		await page.waitForTimeout(800);
 		await page.evaluate(startRecorder);
 		await page.waitForTimeout(3000);
 		const m = await page.evaluate(readScene);
 		const st = await page.evaluate(() => {
 			let v;
-			window.__stores.hdriStores.hdriStatus.subscribe((x) => (v = x))();
+			window.__tp.test.v1.hdriStores.hdriStatus.subscribe((x) => (v = x))();
 			let scene;
-			window.__stores.globalScene.subscribe((x) => (scene = x))();
+			window.__tp.test.v1.globalScene.subscribe((x) => (scene = x))();
 			const img = scene.environment?.image;
 			return { ...v, realMB: img ? Math.round(((img.width * img.height * 8) / 1048576) * 100) / 100 : 0, w: img?.width ?? 0, h: img?.height ?? 0 };
 		});

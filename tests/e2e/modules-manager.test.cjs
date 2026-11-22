@@ -4,14 +4,14 @@ const h = require('./helpers.cjs');
 const fs = require('fs');
 
 const loadedIds = (page) =>
-	page.evaluate(() => window.__stores.moduleSDK.loadedModules.map((m) => m.id));
+	page.evaluate(() => window.__tp.test.v1.moduleSDK.loadedModules.map((m) => m.id));
 
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 
 	// open the manager through the single sidebar button (drawer first)
-	await A.page.evaluate(() => window.__stores.closeMenu.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.closeMenu.set(false));
 	await A.page.waitForTimeout(500);
 	await A.page.locator('#open-modules-manager').click();
 	await A.page.waitForTimeout(500);
@@ -19,7 +19,7 @@ h.run(async () => {
 
 	// opening the manager hides side panels like Settings (the sidebar drawer closes)
 	const menuClosed = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.closeMenu.subscribe(r)())
+		() => new Promise((r) => window.__tp.test.v1.closeMenu.subscribe(r)())
 	);
 	h.check(menuClosed === true, 'manager hides panels like Settings');
 
@@ -30,7 +30,7 @@ h.run(async () => {
 			A.page.evaluate(
 				() =>
 					new Promise((r) =>
-						window.__stores.objectsGroup.subscribe((g) =>
+						window.__tp.test.v1.objectsGroup.subscribe((g) =>
 							r(g?.children.some((c) => c.name === 'Button'))
 						)()
 					)
@@ -46,7 +46,7 @@ h.run(async () => {
 			A.page.evaluate(
 				() =>
 					new Promise((r) =>
-						window.__stores.globalScene.subscribe((s) => r(!!s?.getObjectByName('pong-module')))()
+						window.__tp.test.v1.globalScene.subscribe((s) => r(!!s?.getObjectByName('pong-module')))()
 					)
 			),
 		(v) => v === true,
@@ -76,7 +76,7 @@ h.run(async () => {
 	const primitiveGone = await A.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.moduleSDK.modulePrimitiveGroups.subscribe((groups) =>
+				window.__tp.test.v1.moduleSDK.modulePrimitiveGroups.subscribe((groups) =>
 					r(!groups.some((g) => g.items.some((i) => i.moduleId === 'button')))
 				)()
 			)
@@ -85,12 +85,13 @@ h.run(async () => {
 
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
 	await A.page.waitForTimeout(4000);
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, { timeout: 30000 });
+	await h.answerRestore(A);
 	let ids = await loadedIds(A.page);
 	h.check(!ids.includes('button') && ids.includes('hello'), `button gone after reload (${ids.join(',')})`);
 
 	// live re-enable (no reload needed)
-	await A.page.evaluate(() => window.__stores.modulesOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.modulesOpen.set(true));
 	await A.page.waitForTimeout(400);
 	await A.page.locator('#enable-module-button').click();
 	await A.page.waitForTimeout(500);
@@ -101,7 +102,7 @@ h.run(async () => {
 	const primitiveBack = await A.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.moduleSDK.modulePrimitiveGroups.subscribe((groups) =>
+				window.__tp.test.v1.moduleSDK.modulePrimitiveGroups.subscribe((groups) =>
 					r(groups.some((g) => g.items.some((i) => i.moduleId === 'button')))
 				)()
 			)

@@ -41,6 +41,10 @@ const EXACT = new Set([
 	'bottomDockSplits',
 	'windowTabGroups',
 	'objectListRect',
+	// panel-gestures item 5: the chrome buttons a person hid ($lib/chromeButtons), per layout
+	'chromeButtons',
+	// … and the Panels button's mode, which is the hidden state of that one bound button ($lib/panelsButton)
+	'panelsButton',
 	'profilerDockSized',
 	// 42 I6: which floating windows the dock hosts as tabs ($lib/dockHost)
 	'objectListDocked',
@@ -48,6 +52,8 @@ const EXACT = new Set([
 	'profilerLiveDocked',
 	'chatDocked',
 	'aiAssistantDocked',
+	// uir-chat: which tab the one Chat window shows (Session | Assistant)
+	'chat:tab',
 	...PANEL_PREFIXES.flatMap((p) => [p + 'Docked', p + 'WinW', p + 'WinH'])
 ]);
 /** key families that belong to the layout */

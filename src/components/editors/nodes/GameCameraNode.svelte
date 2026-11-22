@@ -45,7 +45,8 @@
 	$: willBeSilent = isLook && !activates && !!chosen && $cameraPreview?.uuid !== chosen;
 </script>
 
-<NodeWrapper type={data.type} label={data.label}>
+<!-- 78 F13: a node saved as "Game Start" reads with today's name (the label is in the saved data) -->
+<NodeWrapper type={data.type} label={isStart && (!data.label || data.label === 'Game Start') ? 'Start camera' : data.label}>
 	<Socket kind="source" nodeType={data.type} position={Position.Right} />
 	{#if isStart}
 		<Socket kind="target" nodeType={data.type} position={Position.Left} id="camera" style="top: 34px" />
@@ -88,7 +89,7 @@
 			</label>
 			<span class="gc-note">
 				Every peer looks here when the game reaches this state — including someone who
-				joins later.
+				joins later. A setting, not an event: it never pulses (use On Play start).
 			</span>
 		{:else if isLook}
 			<label class="flex flex-col">

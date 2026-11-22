@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Chat from './menu/Chat.svelte';
 	import AiAssistant from './menu/AiAssistant.svelte';
-	import MeshGenModal from './menu/MeshGenModal.svelte';
+	import MeshGenWindow from './menu/MeshGenWindow.svelte';
 	import MeshJobsCard from './menu/MeshJobsCard.svelte';
 	import Toasts from './menu/Toasts.svelte';
 	import SessionPrompts from './menu/SessionPrompts.svelte';
@@ -12,6 +12,8 @@
 	import BudgetChip from './menu/BudgetChip.svelte'; // 46 B1
 	import Inspector from './menu/Inspector.svelte';
 	import SidebarStrips from './menu/SidebarStrips.svelte'; // 42 I2/I3
+	import { inspectorDual } from '$lib/sidebars'; // uir-polish E5
+	import SidebarHandles from './menu/SidebarHandles.svelte'; // showhide-v8: the viewport sidebar handles
 	import MenuSidebar from './menu/Sidebar.svelte';
 	import TouchTools from './menu/TouchTools.svelte';
 	import MenuSettings from './menu/Settings.svelte';
@@ -26,6 +28,7 @@
 	import ObjectSearch from './menu/ObjectSearch.svelte';
 	import TabStrips from './menu/TabStrips.svelte';
 	import WindowMenu from './menu/WindowMenu.svelte';
+	import ChromeButtonMenu from './menu/ChromeButtonMenu.svelte'; // panel-gestures item 5
 	import VoiceChat from './menu/VoiceChat.svelte';
 	import AnnotationPopover from './menu/AnnotationPopover.svelte';
 	import AnnotationMarkers from './menu/AnnotationMarkers.svelte';
@@ -43,6 +46,7 @@
 	import WhatsNew from './menu/WhatsNew.svelte';
 	// 36 U3b/I5: the first-run tours' screen card (and the tours' install)
 	import TourCard from './tours/TourCard.svelte';
+	import FunnelConsentCard from './tours/FunnelConsentCard.svelte';
 
 	import { isLocked } from '../stores/sceneStore'
 	// 29-E: `?embed=1` (playMode.embedMode) hides the editor chrome for the page's life
@@ -63,7 +67,7 @@
 <FocusModeExit />
 <!-- 43 K5: the 3D view as a picture-in-picture while a docked window fills the whole window -->
 <ViewportPip />
-<MeshGenModal />
+<MeshGenWindow />
 <MeshJobsCard />
 
 <!-- the editor chrome: hidden while playing, and for good in an embed (29-E) -->
@@ -71,6 +75,7 @@
 <Welcome />
 <WhatsNew />
 <TourCard />
+<FunnelConsentCard />
 <!-- 53 A3: DOCUMENT ORDER IS TAB ORDER — the top bar reads left to right (logo menu, touch tools,
      Connect, the top-right group + profile) before the toolbar and the panels; every one of these
      is position:fixed on an explicit z tier, so the order moves no pixel -->
@@ -82,8 +87,9 @@
 <!-- 46 B1: the budget chip, placed beside the toolbar pill (hidden in Play with the rest of the chrome) -->
 <BudgetChip />
 <!-- 70 W2: in a pop-out window the Inspector is unmounted here (one panel, one place) -->
-{#if !$panelAway.inspector}<Inspector />{/if}
+{#if !$panelAway.inspector}<Inspector />{#if $inspectorDual}<Inspector pane="scene" />{/if}{/if}<!-- uir-polish E5: Configure Scene in its own column -->
 <SidebarStrips />
+<SidebarHandles />
 <MenuSettings />
 <SessionsManager />
 <CheckpointTimeline />
@@ -96,6 +102,7 @@
 <ObjectSearch />
 <TabStrips />
 <WindowMenu />
+<ChromeButtonMenu />
 <VoiceChat />
 <!-- screen-space note markers (badge + leader line); VR uses the in-scene pins -->
 <AnnotationMarkers />

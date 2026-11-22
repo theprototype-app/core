@@ -7,6 +7,7 @@ import { resolvePlaySettings, playPublishers } from '../playSettings';
 import { hudDocs, isGameHud } from '../hudDocs';
 import { setEditorMode, toggleEditorMode } from '../objectActions';
 import { S } from './state.js';
+import { vrUiStandsDown } from '../vrUiGate.js';
 import { renderer } from './core.js';
 import { grabs, syncGrabbedHand, endGrab, emptyAirSqueeze, resetWorldRig } from './grip.js';
 import { endWorldSnap } from './worldSnap.js';
@@ -192,7 +193,8 @@ function ensureModeLabel() {
 export function updateModeLabel() {
 	const label = ensureModeLabel();
 	if (!label || !renderer) return;
-	const presenting = !!renderer.xr.getSession?.();
+	// fix-film: no wrist label while Film is open (it would be filmed / drawn on the phone's AR view)
+	const presenting = !!renderer.xr.getSession?.() && !vrUiStandsDown();
 	const index = presenting ? controllerIndexFor(modeHand()) : -1;
 	label.visible = index >= 0;
 	if (index < 0) return;

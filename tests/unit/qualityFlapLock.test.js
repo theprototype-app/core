@@ -5,7 +5,7 @@
 // flipping for as long as the scene was open. The flap LOCK: once a recovery had to be undone,
 // it is not retried (until a new scene, "Keep full quality", or the auto switch).
 import { describe, it, expect } from 'vitest';
-import { createGovernor, phoneThresholds, overridesAt } from '../../src/lib/qualityGovernorCore.js';
+import { createGovernor, phoneThresholds, overridesAt, GOVERNOR_STEPS } from '../../src/lib/qualityGovernorCore.js';
 
 const ctx = { profile: /** @type {'desktop'} */ ('desktop'), heavy: true, calls: 60 };
 
@@ -53,16 +53,19 @@ function refractionFlips(moves, start) {
 	return flips;
 }
 
+/** the level that turns post off (98-int put "Scene look lighter" before it: 6 -> 7) */
+const POST = GOVERNOR_STEPS.findIndex((s) => s.key === 'post') + 1;
+
 describe('flap lock (F12)', () => {
 	it('the phone premise: level 5 refracts, level 6 does not', () => {
-		expect(waterTier(5)).toBe('medium');
-		expect(waterTier(6)).toBe('quest');
+		expect(waterTier(POST - 1)).toBe('medium');
+		expect(waterTier(POST)).toBe('quest');
 	});
 
 	it('COUNTERFACTUAL: without the lock the refraction keeps switching for the whole session', () => {
 		const g = createGovernor();
 		g.setThresholds(phoneThresholds(60));
-		g.setLevel(5, 0);
+		g.setLevel(POST - 1, 0);
 		// the lock disabled: clear it after every decision, which is the pre-F12 rule
 		const realDecide = g.decide;
 		g.decide = (t, c) => {
@@ -70,18 +73,18 @@ describe('flap lock (F12)', () => {
 			g.clearFlapLock();
 			return d;
 		};
-		const { moves } = phone(g, 1000, 600000, 6);
-		expect(refractionFlips(moves, 5)).toBeGreaterThan(8);
+		const { moves } = phone(g, 1000, 600000, POST);
+		expect(refractionFlips(moves, POST - 1)).toBeGreaterThan(8);
 	});
 
 	it('with the lock: off, one retry, off for good — at most 3 switches in 10 minutes', () => {
 		const g = createGovernor();
 		g.setThresholds(phoneThresholds(60));
-		g.setLevel(5, 0);
-		const { moves } = phone(g, 1000, 600000, 6);
-		expect(refractionFlips(moves, 5)).toBeLessThanOrEqual(3);
-		expect(g.level()).toBe(6);
-		expect(g.flapLock()).toBe(6);
+		g.setLevel(POST - 1, 0);
+		const { moves } = phone(g, 1000, 600000, POST);
+		expect(refractionFlips(moves, POST - 1)).toBeLessThanOrEqual(3);
+		expect(g.level()).toBe(POST);
+		expect(g.flapLock()).toBe(POST);
 		// and the last move happened within the first minute: nothing after that
 		expect(moves[moves.length - 1].t).toBeLessThan(61000);
 	});
@@ -89,11 +92,11 @@ describe('flap lock (F12)', () => {
 	it('a step up LONG after a walk down is a heavier scene, not a flap — no lock', () => {
 		const g = createGovernor();
 		g.setThresholds(phoneThresholds(60));
-		g.setLevel(6, 0);
-		let t = phone(g, 1000, 15000, 0).t; // cheap everywhere: recovers 6 -> 5
-		expect(g.level()).toBe(5);
+		g.setLevel(POST, 0);
+		let t = phone(g, 1000, 15000, 0).t; // cheap everywhere: recovers POST -> POST - 1
+		expect(g.level()).toBe(POST - 1);
 		// a long calm, then the scene gets heavy
-		const calm = phone(g, t, 60000, 0);
+		const calm = phone(g, t, 90000, 0); // 98-int: one more step to walk down (lookLite) -> a longer calm
 		t = calm.t;
 		const heavyCtx = { ...ctx };
 		for (let i = 0; i < 400; i++) {
@@ -110,9 +113,9 @@ describe('flap lock (F12)', () => {
 	it('a scene that becomes LIGHT still walks back through the lock (new evidence)', () => {
 		const g = createGovernor();
 		g.setThresholds(phoneThresholds(60));
-		g.setLevel(5, 0);
-		const { t } = phone(g, 1000, 120000, 6);
-		expect(g.flapLock()).toBe(6);
+		g.setLevel(POST - 1, 0);
+		const { t } = phone(g, 1000, 120000, POST);
+		expect(g.flapLock()).toBe(POST);
 		let tt = t;
 		for (let i = 0; i < 700; i++) {
 			tt += 16.7;
@@ -124,12 +127,12 @@ describe('flap lock (F12)', () => {
 	it('clearFlapLock (a new scene) gives recovery back', () => {
 		const g = createGovernor();
 		g.setThresholds(phoneThresholds(60));
-		g.setLevel(5, 0);
-		const { t } = phone(g, 1000, 120000, 6);
+		g.setLevel(POST - 1, 0);
+		const { t } = phone(g, 1000, 120000, POST);
 		g.clearFlapLock();
 		expect(g.flapLock()).toBe(-1);
 		// cheap at every level now (a lighter scene): recovery walks down again
 		const after = phone(g, t, 200000, 0);
-		expect(after.moves.some((m) => m.level < 6)).toBe(true);
+		expect(after.moves.some((m) => m.level < POST)).toBe(true);
 	});
 });

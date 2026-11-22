@@ -17,9 +17,9 @@ const co = (page, fn, arg) =>
 	page.evaluate(
 		([body, a]) =>
 			new Function('co', 'cal', 'S', 'arg', body)(
-				window.__stores.colocation,
-				window.__stores.colocationCalibrate,
-				window.__stores,
+				window.__tp.test.v1.colocation,
+				window.__tp.test.v1.colocationCalibrate,
+				window.__tp?.test.v1,
 				a
 			),
 		[fn, arg ?? null]
@@ -63,12 +63,12 @@ h.run(async () => {
 	// ---------------------------------------------------------------- section 0
 	console.log('\n=== 0. the debug-hook slot (the positional-destructure guard) ===');
 	const hook = await page.evaluate(() => ({
-		calibrate: typeof window.__stores.colocationCalibrate?.startCalibration,
-		grab: typeof window.__stores.colocationCalibrate?.colocatedWorldGrab,
+		calibrate: typeof window.__tp.test.v1.colocationCalibrate?.startCalibration,
+		grab: typeof window.__tp.test.v1.colocationCalibrate?.colocatedWorldGrab,
 		// the NEIGHBOUR slots must still be themselves — a positional mis-fold
 		// shifts every later binding onto the wrong module silently
-		colocation: typeof window.__stores.colocation?.applyRoomAlignment,
-		triggerSync: typeof window.__stores.triggerSync?.applyRemoteTriggers
+		colocation: typeof window.__tp.test.v1.colocation?.applyRoomAlignment,
+		triggerSync: typeof window.__tp.test.v1.triggerSync?.applyRemoteTriggers
 	}));
 	h.check(hook.calibrate === 'function', '0.1 colocationCalibrate sits at its hook slot');
 	h.check(hook.grab === 'function', '0.2 ...with the world-grab seam exported');

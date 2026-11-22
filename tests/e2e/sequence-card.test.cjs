@@ -14,7 +14,7 @@ h.run(async () => {
 	await p.locator('p[title="Node editor (N)"]').click();
 	await p.waitForTimeout(1500);
 	await p.evaluate(() =>
-		window.__stores.restoreGraphs({
+		window.__tp.test.v1.restoreGraphs({
 			scene: {
 				nodes: [
 					{
@@ -77,7 +77,7 @@ h.run(async () => {
 
 	// light a step: step1 fires 0.25 s after the pulse (the delays add up)
 	await p.evaluate(() =>
-		window.__stores.flowRuntime.applyNodeTrigger('src', (Date.now() % 86400000) / 1000, true)
+		window.__tp.test.v1.flowRuntime.applyNodeTrigger('src', (Date.now() % 86400000) / 1000, true)
 	);
 	await p.waitForTimeout(450);
 	const lit = await p.evaluate(() =>

@@ -1,5 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { checkMaterialParam, toHexColor, isMaterialParamKey } from '../../src/lib/materialParamRules.js';
+import {
+	checkMaterialParam,
+	toHexColor,
+	isMaterialParamKey,
+	MAP_SLOTS,
+	MAP_SLOT_MAX_URL,
+	isMapSlotKey,
+	isMapSlotImage,
+	normalizeTexTransform,
+	isIdentityTexTransform,
+	guessMapSlot
+} from '../../src/lib/materialParamRules.js';
 import { validateWireMessage } from '../../src/lib/wireValidate.js';
 
 // 55 (41's research, round 6): validate material parameters — a texture slot handed a string broke
@@ -45,5 +56,65 @@ describe('the receiving side', () => {
 		expect(validateWireMessage(msg('roughness', 0.4))).toBe(true);
 		expect(validateWireMessage(msg('emissive', '#112233'))).toBe(true);
 		expect(validateWireMessage(msg('map', null))).toBe(true);
+	});
+});
+
+// 72 LK1: map slots
+describe('map slot rules', () => {
+	it('knows the five slots, and only those', () => {
+		expect(MAP_SLOTS.map((slot) => slot.key)).toEqual(['normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap']);
+		expect(isMapSlotKey('map')).toBe(false);
+		expect(isMapSlotKey('__proto__')).toBe(false);
+		expect(MAP_SLOTS.filter((slot) => slot.srgb).map((slot) => slot.key)).toEqual(['emissiveMap']);
+	});
+	it('takes an inline image or null, never a URL', () => {
+		expect(isMapSlotImage(null)).toBe(true);
+		expect(isMapSlotImage('data:image/webp;base64,AAAA')).toBe(true);
+		expect(isMapSlotImage('https://example.com/a.png')).toBe(false);
+		expect(isMapSlotImage('data:image/svg+xml;base64,AAAA')).toBe(false);
+		expect(isMapSlotImage('data:text/html;base64,AAAA')).toBe(false);
+		expect(isMapSlotImage(undefined)).toBe(false);
+		expect(isMapSlotImage('data:image/png;base64,' + 'A'.repeat(MAP_SLOT_MAX_URL))).toBe(false);
+	});
+	it('normalizes a transform: fills gaps, refuses bad shapes, keeps tiling away from zero', () => {
+		expect(normalizeTexTransform({})).toEqual({ repeat: [1, 1], offset: [0, 0], rotation: 0 });
+		expect(normalizeTexTransform({ repeat: [2, 3], offset: [0.5, -1], rotation: 1 })).toEqual({ repeat: [2, 3], offset: [0.5, -1], rotation: 1 });
+		expect(normalizeTexTransform({ repeat: [0, -2] })?.repeat).toEqual([0.001, -2]);
+		expect(normalizeTexTransform({ repeat: [1e9, 1] })?.repeat[0]).toBe(1000);
+		for (const bad of [null, 5, [], { repeat: [1] }, { repeat: ['1', 1] }, { offset: [NaN, 0] }, { rotation: Infinity }]) {
+			expect(normalizeTexTransform(bad)).toBe(null);
+		}
+		expect(isIdentityTexTransform(normalizeTexTransform({}))).toBe(true);
+		expect(isIdentityTexTransform({ repeat: [2, 1], offset: [0, 0], rotation: 0 })).toBe(false);
+	});
+	it('reads the slot from a file name by the last word that names a map', () => {
+		const cases = {
+			'wood_normal.png': 'normalMap',
+			'metal_plate_nor_gl_1k.jpg': 'normalMap',
+			'metal_plate_diff_1k.jpg': 'map',
+			'metal_plate_rough_1k.jpg': 'roughnessMap',
+			'metal_plate_metal_1k.jpg': 'metalnessMap',
+			'Metal032_2K_Color.jpg': 'map',
+			'bricks-AmbientOcclusion.png': 'aoMap',
+			'bricksAO.png': 'aoMap',
+			'lamp_emissive.webp': 'emissiveMap',
+			'chaos_garden.png': null,
+			'photo.jpg': null,
+			'__proto__.png': null
+		};
+		for (const [name, slot] of Object.entries(cases)) expect([name, guessMapSlot(name)]).toEqual([name, slot]);
+		expect(guessMapSlot(undefined)).toBe(null);
+	});
+	it('the wire refuses a bad slot message and lets a good one through', () => {
+		const uuid = '11111111-1111-4111-8111-111111111111';
+		const check = (/** @type {any} */ m) => validateWireMessage({ type: 'objectParameters', uuid, ...m });
+		expect(check({ parameter: 'mapSlot', key: 'normalMap', map: 'data:image/png;base64,AA' })).toBe(true);
+		expect(check({ parameter: 'mapSlot', key: 'normalMap', map: null })).toBe(true);
+		expect(check({ parameter: 'mapSlot', key: 'normalMap', map: 'http://attacker.example/x.png' })).toBe(false);
+		expect(check({ parameter: 'mapSlot', key: 'onBeforeCompile', map: null })).toBe(false);
+		expect(check({ parameter: 'texTransform', transform: { repeat: [2, 2] } })).toBe(true);
+		expect(check({ parameter: 'texTransform', transform: { repeat: 'x' } })).toBe(false);
+		expect(check({ parameter: 'normalStrength', value: 1 })).toBe(true);
+		expect(check({ parameter: 'normalStrength', value: 'x' })).toBe(false);
 	});
 });

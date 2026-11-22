@@ -19,7 +19,7 @@ const RED_CUBE = ['TITLE "test-red"', 'LUT_3D_SIZE 2', ...Array(8).fill('1.0 0.0
 const readStack = (page) =>
 	page.evaluate(() => {
 		let state = null;
-		window.__stores.scenePost.scenePost.subscribe((s) => (state = s))();
+		window.__tp.test.v1.scenePost.scenePost.subscribe((s) => (state = s))();
 		return state.effects.map((e) => ({ id: e.id, kind: e.kind, params: e.params }));
 	});
 
@@ -27,11 +27,11 @@ const readStack = (page) =>
 async function onlyEffect(page, kind, params) {
 	return page.evaluate(
 		async ({ kind, params }) => {
-			const post = window.__stores.scenePost;
+			const post = window.__tp.test.v1.scenePost;
 			post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: Date.now() } });
 			const id = post.addPostEffect(kind);
 			if (params) post.setPostEffectParams(id, params);
-			window.__stores.viewMode.set('custom');
+			window.__tp.test.v1.viewMode.set('custom');
 			await new Promise((r) => setTimeout(r, 1300));
 			return id;
 		},
@@ -48,7 +48,7 @@ h.run(async () => {
 	console.log('\n=== 1. the library is registered ===');
 
 	const kinds = await page.evaluate(() =>
-		window.__stores.scenePost.postEffectKinds().map((def) => def.kind + ':' + def.group)
+		window.__tp.test.v1.scenePost.postEffectKinds().map((def) => def.kind + ':' + def.group)
 	);
 	const expected = [
 		'ao:ao',
@@ -56,6 +56,8 @@ h.run(async () => {
 		'huesaturation:grading',
 		'brightnesscontrast:grading',
 		'lut:grading',
+		// 68 V8: Film's focus pull and aperture render through it
+		'dof:camera',
 		'bloom:camera',
 		'vignette:camera',
 		'grain:camera',
@@ -67,7 +69,13 @@ h.run(async () => {
 		// P4: the post DOMAIN's bridge — an effect whose shader is a graph document rather
 		// than a built-in. It belongs in this list for the same reason it belongs in the add
 		// menu: it is a kind of the library, registered through the same seam.
-		'graph:graph'
+		'graph:graph',
+		// 98 P4: the lens and film finish (their own suite: post-finish)
+		'lensflare:camera',
+		'godrays:camera',
+		'volumetricfog:camera',
+		// 98 P3: the ONE anti-aliasing setting (TRAA | SMAA); 'smaa' above stays for saved scenes
+		'antialias:aa'
 	];
 	for (const want of expected)
 		h.check(kinds.includes(want), '1.x ' + want + ' is registered in the right group');
@@ -81,11 +89,11 @@ h.run(async () => {
 	console.log('\n=== 2. every effect reaches the screen ===');
 
 	await page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create sphere');
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create sphere');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		// nothing selected, so no outline pollutes a colour measurement
-		window.__stores.objectActions.deselectObject();
-		window.__stores.viewMode.set('shaded');
+		window.__tp.test.v1.objectActions.deselectObject();
+		window.__tp.test.v1.viewMode.set('shaded');
 		await new Promise((r) => setTimeout(r, 2500));
 	});
 	const clip = await h.centeredClip(A, [0, 0, 0], 360);
@@ -148,7 +156,7 @@ h.run(async () => {
 	console.log('\n=== 3. the merge over the real library ===');
 
 	const merged = await page.evaluate(async () => {
-		const post = window.__stores.scenePost;
+		const post = window.__tp.test.v1.scenePost;
 		post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: Date.now() } });
 		for (const kind of [
 			'huesaturation',
@@ -159,7 +167,7 @@ h.run(async () => {
 			'scanlines'
 		])
 			post.addPostEffect(kind);
-		window.__stores.viewMode.set('custom');
+		window.__tp.test.v1.viewMode.set('custom');
 		await new Promise((r) => setTimeout(r, 1600));
 		return window.__postDebug();
 	});
@@ -174,7 +182,7 @@ h.run(async () => {
 
 	// where the AO Pass sits decides how many groups there are
 	const split = await page.evaluate(async () => {
-		const post = window.__stores.scenePost;
+		const post = window.__tp.test.v1.scenePost;
 		post.addPostEffect('ao', 3);
 		await new Promise((r) => setTimeout(r, 1600));
 		return window.__postDebug();
@@ -187,7 +195,7 @@ h.run(async () => {
 	// SMAA is measured, not predicted: whether it merges is a property of the
 	// library's own effect attributes, so record what it actually does.
 	const withSmaa = await page.evaluate(async () => {
-		const post = window.__stores.scenePost;
+		const post = window.__tp.test.v1.scenePost;
 		post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: Date.now() } });
 		post.addPostEffect('huesaturation');
 		post.addPostEffect('smaa');
@@ -210,19 +218,19 @@ h.run(async () => {
 
 	const seeded = await page.evaluate(async (cube) => {
 		const bytes = new TextEncoder().encode(cube);
-		const item = await window.__stores.explorer.addItemFromBytes(bytes.buffer, 'test-red.cube', null);
+		const item = await window.__tp.test.v1.explorer.addItemFromBytes(bytes.buffer, 'test-red.cube', null);
 		return { hash: item?.hash ?? '', name: item?.name ?? '' };
 	}, RED_CUBE);
 	h.check(!!seeded.hash, '4.1 premise: a .cube landed in the Explorer (hash ' + seeded.hash.slice(0, 8) + ')');
 
 	// drive the real UI picker, which is also what PUSHES the bytes
 	await page.evaluate(async () => {
-		const post = window.__stores.scenePost;
+		const post = window.__tp.test.v1.scenePost;
 		post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: Date.now() } });
 		post.addPostEffect('lut');
-		window.__stores.viewMode.set('custom');
-		window.__stores.inspectorKind.set('scene');
-		window.__stores.inspectorClose.set(false);
+		window.__tp.test.v1.viewMode.set('custom');
+		window.__tp.test.v1.inspectorKind.set('scene');
+		window.__tp.test.v1.inspectorClose.set(false);
 		// P6 renamed the section; the collapse pref is keyed by the LABEL, so this seeds
 		// both names rather than silently opening nothing
 		localStorage.setItem('inspector:sec:Scene look', 'open');
@@ -244,7 +252,7 @@ h.run(async () => {
 	const pushed = await page.evaluate(
 		async ({ id, name }) => {
 			// spy the wire PASS-THROUGH style so delivery and loss are not identical
-			const peers = window.__stores.peers;
+			const peers = window.__tp.test.v1.peers;
 			let original = null;
 			peers.subscribe((p) => (original = p))();
 			const sent = [];
@@ -297,8 +305,8 @@ h.run(async () => {
 	// still passed. The real scenario is a peer already watching the scene when the
 	// look arrives, and nothing but the pull to prompt a second attempt.
 	await B.page.evaluate(async () => {
-		window.__stores.objectActions.deselectObject();
-		window.__stores.viewMode.set('custom');
+		window.__tp.test.v1.objectActions.deselectObject();
+		window.__tp.test.v1.viewMode.set('custom');
 		await new Promise((r) => setTimeout(r, 2000));
 	});
 	const clipB = await h.centeredClip(B, [0, 0, 0], 360);
@@ -311,7 +319,7 @@ h.run(async () => {
 		() =>
 			B.page.evaluate(() => {
 				let state = null;
-				window.__stores.scenePost.scenePost.subscribe((s) => (state = s))();
+				window.__tp.test.v1.scenePost.scenePost.subscribe((s) => (state = s))();
 				return state.effects.map((e) => e.kind).join(',');
 			}),
 		(kinds) => kinds === 'lut',
@@ -324,7 +332,7 @@ h.run(async () => {
 	await h.eventually(
 		() =>
 			B.page.evaluate(
-				(hash) => !!window.__stores.explorer.itemByHash(hash),
+				(hash) => !!window.__tp.test.v1.explorer.itemByHash(hash),
 				seeded.hash
 			),
 		(has) => has === true,
@@ -339,7 +347,7 @@ h.run(async () => {
 	// Explorer and its pass count all look perfectly correct.
 	const bPremise = await B.page.evaluate(() => {
 		const debug = window.__postDebug();
-		return { mode: (() => { let m = ''; window.__stores.viewMode.subscribe((v) => (m = v))(); return m; })(), kinds: debug.kinds };
+		return { mode: (() => { let m = ''; window.__tp.test.v1.viewMode.subscribe((v) => (m = v))(); return m; })(), kinds: debug.kinds };
 	});
 	h.check(
 		bPremise.mode === 'custom' && bPremise.kinds.includes('lut'),

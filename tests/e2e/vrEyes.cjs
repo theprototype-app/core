@@ -34,7 +34,7 @@ const fs = require('fs');
 
 /** In-page. Everything this needs lives inside it (it is passed to page.evaluate). */
 function inPageEyes(opts) {
-	const s = window.__stores;
+	const s = window.__tp?.test.v1;
 	const THREE = s.THREE;
 	const get = (store) => {
 		let v;
@@ -75,6 +75,9 @@ function inPageEyes(opts) {
 		format: THREE.RGBAFormat,
 		type: THREE.UnsignedByteType,
 		colorSpace: renderer.outputColorSpace,
+		// a plain RGBA8 buffer, as an XR layer's is: left to itself three allocates SRGB8_ALPHA8 for an sRGB
+		// target, the GPU encodes again on write, and every picture came out double-encoded (too bright)
+		internalFormat: 'RGBA8',
 		// no MSAA: a multisampled target reads back as zeros through readRenderTargetPixels here
 		samples: 0,
 		depthBuffer: true,

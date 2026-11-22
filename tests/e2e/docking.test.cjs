@@ -30,12 +30,12 @@ h.run(async () => {
 
 	// 42 I3: opening the scene inspector makes it the right sidebar's front TAB — the list is not
 	// pushed inward as a second column; closing it brings the list back in place
-	await A.page.evaluate(() => window.__stores.showSidebar('scene'));
+	await A.page.evaluate(() => window.__tp.test.v1.showSidebar('scene'));
 	await A.page.waitForTimeout(500);
 	const covered = await A.page.evaluate(() => getComputedStyle(document.querySelector('#object-list')).display);
 	const ins = await A.page.locator('#inspector').boundingBox();
 	h.check(covered === 'none' && Math.abs(ins.x + ins.width - vw) < 4, `the Inspector takes the column as a tab (list display ${covered})`);
-	await A.page.evaluate(() => window.__stores.showSidebar('scene')); // toggle closed
+	await A.page.evaluate(() => window.__tp.test.v1.showSidebar('scene')); // toggle closed
 	await A.page.waitForTimeout(500);
 	box = await A.page.locator('#object-list').boundingBox();
 	h.check(Math.abs(box.x + box.width - vw) < 4, 'panel returns when the inspector closes');

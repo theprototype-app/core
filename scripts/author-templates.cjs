@@ -52,7 +52,10 @@
 //   slug* title* description   identity + card text; author, license ('CC0-1.0'), tags []
 //   modules          [{id, version}] — the card's module list (games only; must match installModules)
 //   installModules   ['<id>'] — zips installed from MODULES_REPO before the build (the game shows)
-//   generate         a /command, {menu, moduleId?, waitMs?}, or a list of them — run after the build
+//   generate         a /command, {menu, moduleId?, waitMs?}, {recipe, on, waitMs?} (78 F27: a starter recipe on
+//                    the object named `on`), {path: {name, points, closed, mode?, speed?}} (61: 78's createPath),
+//                    {tool, on, args} (61: an agent tool on the object `on`; '$<name>' args = that object's
+//                    uuid), or a list of them — run after the build
 //   generateWaitMs   default wait after each generate step (2500)
 //   layout           [{kind, index?, pos, yaw?}] — place generated devices by userData.device.kind
 //   objects*         the scene: OBJECTS below
@@ -129,6 +132,9 @@
 //   flow?, density?} (36: a water volume, userData.water — pool aquarium ocean lake river lava swamp toxic
 //   ice; a static sensor unless `physics` says otherwise) · bubbles {…} (a standalone bubble emitter) ·
 //   scale [x,y,z] | n · fluid 'none'|'collide'|'float' (36-fb: how a Fluid emitter's water meets it)
+//   93 types: portal (portal: {level | scene, spawn?, transition fade|iris|card|none, show}) · checkpoint
+//   (checkpoint: {label, show}) — the app's own doorway / pad; its arrow points -Z (rot turns it). The
+//   game's Levels table rides `physics: {levels: {list, keep, unlock, loading}}`
 //   36-fb types: fluidemitter (fluidEmitter: settings over the defaults, area merged) · flowpath
 //   (flowPath: {kind river|pipe, points (object-local), width, depth, speed, strength, recycle, show,
 //   color, opacity}) — graphs may carry `rotor` (Rotate / Motor) and `flowfloat` nodes
@@ -318,7 +324,7 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 	// 36 F11: the in-page graphTidy report
 	page.on('console', (m) => m.text().startsWith('[graphTidy]') && console.log(m.text()));
 	await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-	await page.waitForFunction(() => window.__stores && !!window.__stores.sessions, { timeout: 40000 });
+	await page.waitForFunction(() => window.__stores && !!window.__stores.sessions, null, { timeout: 180000 }); // options are the 3rd arg
 	await page.waitForTimeout(2000);
 	// 30 author-kit: say which GPU the thumbnails are rendered on — a SwiftShader card is
 	// not the one a user's display would show, and nothing else in the run would tell
@@ -531,6 +537,10 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 			const simFluid = d.objects.some((/** @type {any} */ o) => o.type === 'fluidemitter' || o.type === 'flowpath')
 				? { ...(await import('/src/lib/sim/fluidEmitterObject.js')), ...(await import('/src/lib/sim/flowPathObject.js')), ...(await import('/src/lib/sim/fluidEmitterCore.js')) }
 				: null;
+			// 93: a Portal / a Checkpoint — the app's own geometry, stamp and record (gameLevels/objects.js)
+			const levelObjects = d.objects.some((/** @type {any} */ o) => o.type === 'portal' || o.type === 'checkpoint')
+				? await import('/src/lib/gameLevels/objects.js')
+				: null;
 			/** @param {any} o @param {{mirror?: boolean, prefix?: string, opacity?: number, shadow?: boolean}} [opts] */
 			const build = (o, opts = {}) => {
 				const mirror = !!opts.mirror;
@@ -644,6 +654,9 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 					// 36-fb: a spout / a flow path's ribbon (built again from its record below)
 					else if (o.type === 'fluidemitter') geo = simFluid.fluidEmitterGeometry();
 					else if (o.type === 'flowpath') geo = simFluid.flowPathGeometry(o.flowPath);
+					// 93: a portal's doorway / a checkpoint's pad (stamped with its record below)
+					else if (o.type === 'portal') geo = levelObjects.portalGeometry();
+					else if (o.type === 'checkpoint') geo = levelObjects.checkpointGeometry();
 					else throw new Error('object "' + o.name + '": unknown type "' + o.type + '"');
 					// 30 author-kit: MeshPhysicalMaterial when a def asks for `physical` or uses any
 					// field only it has; MeshToonMaterial for `toon`. Absent all of those it is the
@@ -715,6 +728,15 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 				if (o.type === 'flowpath') {
 					simFluid.stampFlowPath(object);
 					simFluid.applyFlowPathTo(object, { ...object.userData.flowPath, ...(o.flowPath ?? {}) });
+				}
+				// 93: the portal's / checkpoint's record (`portal` / `checkpoint` on the def, over the defaults)
+				if (o.type === 'portal') {
+					levelObjects.stampPortal(object);
+					object.userData.portal = levelObjects.normalizePortal({ ...object.userData.portal, ...(o.portal ?? {}) });
+				}
+				if (o.type === 'checkpoint') {
+					levelObjects.stampCheckpoint(object);
+					object.userData.checkpoint = levelObjects.normalizeCheckpoint({ ...object.userData.checkpoint, ...(o.checkpoint ?? {}) });
 				}
 				if (typeof o.fluid === 'string' && o.type !== 'fluidtank' && o.fluid !== 'auto') object.userData.fluidInteraction = o.fluid;
 				object.name = (opts.prefix ?? '') + o.name;
@@ -1134,6 +1156,39 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 					);
 					if (hit) hit.action();
 					else throw new Error('no module menu action named "' + step.menu + '"');
+				} else if (step.recipe) {
+					// 78 F27: a starter recipe on a named object (its own flow + whatever it adds: a zone, a path)
+					/** @type {any} */ let target = null;
+					group.traverse((/** @type {any} */ o) => { if (!target && o.name === step.on) target = o; });
+					if (!target) throw new Error('recipe "' + step.recipe + '": no object named "' + step.on + '"');
+					const res = s.starterRecipes.insertStarterRecipe(step.recipe, target.uuid);
+					if (!res.ok) throw new Error('recipe "' + step.recipe + '": ' + res.error);
+				} else if (step.path) {
+					// 61-int G9: a Path through 78's own createPath (WORLD points, one undo step), so the file holds
+					// exactly the Path a person draws
+					const res = s.pathActions.createPath({ ...step.path });
+					if (!res || 'error' in res) throw new Error('path "' + step.path.name + '": ' + (res?.error ?? 'not created'));
+				} else if (step.tool) {
+					// 61-int G9: an agent tool on the object named `on` (e.g. set_npc, the "Make this an enemy" recipe);
+					// an arg written '$<name>' becomes that object's uuid
+					/** @param {string} name */
+					const byName = (name) => {
+						/** @type {any} */ let hit = null;
+						group.traverse((/** @type {any} */ o) => { if (!hit && o.name === name) hit = o; });
+						return hit;
+					};
+					const target = byName(step.on);
+					if (!target) throw new Error('tool "' + step.tool + '": no object named "' + step.on + '"');
+					/** @type {Record<string, any>} */
+					const args = { object: target.uuid };
+					for (const [k, v] of Object.entries(step.args ?? {})) {
+						if (typeof v !== 'string' || !v.startsWith('$')) { args[k] = v; continue; }
+						const named = byName(v.slice(1));
+						if (!named) throw new Error('tool "' + step.tool + '": no object named "' + v.slice(1) + '"');
+						args[k] = named.uuid;
+					}
+					const res = await s.aiTools.executeAiTool(step.tool, args);
+					if (!res || res.error) throw new Error('tool "' + step.tool + '": ' + (res?.error ?? 'no result'));
 				}
 				await new Promise((r) => setTimeout(r, step.waitMs ?? d.generateWaitMs ?? 2500));
 				s.objectsGroup.update((v) => v);

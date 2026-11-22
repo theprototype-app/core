@@ -1,6 +1,6 @@
-// When the Node editor is docked but Flow Code / Animation are UNDOCKED (floating),
+// When the Node editor is docked but Timeline / Animation are UNDOCKED (floating),
 // the Node editor toolbar button hides only the docked tabs — it must NOT close the
-// separate floating Flow Code / Animation windows.
+// separate floating Timeline / Animation windows.
 const h = require('./helpers.cjs');
 
 h.run(async () => {
@@ -9,43 +9,43 @@ h.run(async () => {
 
 	await A.page.evaluate(() => {
 		localStorage.setItem('flowDocked', 'true'); // Node editor docked
-		localStorage.setItem('flowCodeDocked', 'false'); // Flow Code floating
+		localStorage.setItem('timelineDocked', 'false'); // Timeline floating
 	});
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.bottomDock, { timeout: 30000 });
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphClose.set(false);
-		s.flowCodeClose.set(false);
+		s.timelineClose.set(false);
 		s.bottomDock.activateDock('flow');
 	});
 	await A.page.waitForTimeout(600);
 	const setup = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let vis, occ;
 		s.bottomDock.visibleDockKey.subscribe((v) => (vis = v))();
 		s.bottomDock.dockOccupants.subscribe((v) => (occ = v))();
 		return {
 			vis,
 			flowDocked: !!occ.flow?.present,
-			flowcodeDocked: !!occ.flowcode?.present,
-			fcWin: !!document.getElementById('flow-code-window')
+			timelineDocked: !!occ.timeline?.present,
+			tlWin: !!document.getElementById('timeline-window')
 		};
 	});
-	h.check(setup.vis === 'flow' && setup.flowDocked && !setup.flowcodeDocked && setup.fcWin, `setup: Node editor docked+visible, Flow Code floating (vis=${setup.vis})`);
+	h.check(setup.vis === 'flow' && setup.flowDocked && !setup.timelineDocked && setup.tlWin, `setup: Node editor docked+visible, Timeline floating (vis=${setup.vis})`);
 
-	// click Node editor -> hide the docked Node editor; the floating Flow Code stays open
+	// click Node editor -> hide the docked Node editor; the floating Timeline stays open
 	await A.page.evaluate(() => document.querySelector('p[title="Node editor (N)"]').click());
 	await A.page.waitForTimeout(300);
 	const after = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let fc, cc;
 		s.flowGraphClose.subscribe((v) => (fc = v))();
-		s.flowCodeClose.subscribe((v) => (cc = v))();
-		return { flowClosed: fc, flowCodeClosed: cc, fcWin: !!document.getElementById('flow-code-window') };
+		s.timelineClose.subscribe((v) => (cc = v))();
+		return { flowClosed: fc, timelineClosed: cc, tlWin: !!document.getElementById('timeline-window') };
 	});
 	h.check(after.flowClosed === true, 'clicking Node editor hides the docked Node editor');
-	h.check(after.flowCodeClosed === false && after.fcWin, 'the undocked (floating) Flow Code window stays open');
+	h.check(after.timelineClosed === false && after.tlWin, 'the undocked (floating) Timeline window stays open');
 
 	await h.finish(browser);
 });

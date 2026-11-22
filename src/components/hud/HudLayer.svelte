@@ -11,9 +11,12 @@
 	// Not rendered in VR: DOM is invisible in a headset. The in-scene VR path is a later
 	// phase (the AnnotationPins / AnnotationMarkers split).
 	import { onMount } from 'svelte';
+	// 94 SP6: the top-anchored game HUD moves below the play chrome row when they would overlap
+	import { bottomFootprint, hudBottomLift, hudCenterFit, hudTopShift, playChromeRects, topFootprint } from '$lib/play/hudSafeArea.js';
 	import HudElement from './HudElement.svelte';
 	import { hudDocs, hudRuntime, hudScreenOverride, hudPreviewInViewport, hudIsGame, visibleScreen, activeHudKeys, setHudValue, hudValueOf } from '$lib/hudDocs';
-	import { isVRMode, isLocked, playPointerFree } from '../../stores/sceneStore';
+	import { isVRMode, isLocked, playPointerFree, editorMode } from '../../stores/sceneStore';
+	import { momentOpen } from '$lib/moment/momentStores.js'; // 95 SM2
 	import { arTable } from '$lib/arTableState.js'; // 50 R1: a phone playing a scene on a table
 	import { hudEditorClose } from '../../stores/appStore.js';
 	import { viewportOverrides, renderLayer } from '$lib/viewportOverrides';
@@ -76,6 +79,9 @@
 	// `arPortal`) instead of on the headset's VR board, and they count as played, not authored.
 	const arPlaying = $derived(($arTable.phase === 'placed' || $arTable.phase === 'room') && $arTable.playing); // VH2: a room plays too
 	const shown = $derived(playing || arPlaying);
+	// 78-int u1: the Announce banner also draws in Interact — it is IN the game (gameShell.shellPlaying; Untangle is
+	// played there). Only the banner: the rest of the layer keeps its Play-only `shown`
+	const bannerShown = $derived(shown || $editorMode === 'interact');
 
 	// 30 P1: THE EDITOR STOPS MASQUERADING AS THE GAME. Outside Play a GAME's screens (the
 	// `hudIsGame` rule: a screen bound to a game state) are not drawn at all — the menu of
@@ -129,6 +135,48 @@
 	// dropdowns, and under pointer lock the ring is the only hand a player has. A
 	// disabled control is skipped the way it ignores presses.
 	const focusables = $derived(elements.filter((el) => isInteractiveKind(el.kind) && el.enabled !== false));
+	// 94 SP6 — THE SAFE AREAS (top row + bottom row). While playing (never while authoring: the artboard is the author's
+	// own frame), measured twice a second like the badge's lift (MadeWithBadge): the play chrome
+	// changes as chips come and go, and a 500 ms check costs a few rect reads.
+	let topShift = $state(0);
+	let bottomLift = $state(0);
+	let centerFit = $state(1);
+	$effect(() => {
+		if (!shown) {
+			topShift = 0;
+			bottomLift = 0;
+			centerFit = 1;
+			return;
+		}
+		const list = elements;
+		const scale = textScale;
+		const measure = () => {
+			const vw = window.innerWidth;
+			const vh = window.innerHeight;
+			const tops = [];
+			const bottoms = [];
+			for (const el of list) {
+				const k = textScaled(el.kind) ? scale : 1;
+				const t = topFootprint(el, vw, k);
+				if (t) tops.push(t);
+				const b = bottomFootprint(el, vw, vh, k);
+				if (b) bottoms.push(b);
+			}
+			const chrome = playChromeRects();
+			// fix-play-link: a centred menu wider/taller than this screen shrinks to fit (folded N6)
+			centerFit = hudCenterFit(list, vw, vh, (el) => (textScaled(el.kind) ? scale : 1));
+			topShift = hudTopShift(tops, chrome, vh);
+			bottomLift = hudBottomLift(bottoms, chrome, vh);
+		};
+		measure();
+		const id = setInterval(measure, 500);
+		window.addEventListener('resize', measure);
+		return () => {
+			clearInterval(id);
+			window.removeEventListener('resize', measure);
+		};
+	});
+
 	const anyVisible = $derived(elements.length > 0 && (!$isVRMode || arPlaying) && layerAllowed && !authoringHidden && !gameHidden);
 
 	// ---- 21-E3: the MENU SUBSTATE - this component is the SINGLE WRITER ------------
@@ -142,8 +190,9 @@
 	// stays the one writer of playPointerFree (it frees the pointer while the menu is open,
 	// and closing it by any path gives the game its pointer back by construction)
 	// 48 D1: ...and so is a debugger pause (its panel needs the pointer for Step / Resume)
+	// 95 SM2: ...and so is the Share a moment preview (its trim and buttons need the pointer)
 	const menuWanted = $derived(
-		((screens.some((entry) => entry.screen?.input === 'menu') && anyVisible) || ($shellMenu.open && !$isVRMode) || ($debugStatus.mode === 'paused' && !$isVRMode)) && playing
+		((screens.some((entry) => entry.screen?.input === 'menu') && anyVisible) || ($shellMenu.open && !$isVRMode) || ($debugStatus.mode === 'paused' && !$isVRMode) || ($momentOpen && !$isVRMode)) && playing
 	);
 	$effect(() => {
 		playPointerFree.set(menuWanted);
@@ -351,12 +400,13 @@
 		const f = textScaled(el.kind) ? textScale : 1;
 		/** @type {string[]} */
 		const out = [`width: ${el.w * f}px`, `height: ${el.h * f}px`, `z-index: ${el.z}`, `--hud-text-scale: ${f}`];
-		if (v === 'top') out.push(`top: ${el.y}px`);
-		else if (v === 'bottom') out.push(`bottom: ${el.y}px`);
-		else out.push('top: 50%', `--hud-ty: ${el.y}px`);
+		// 94 SP6: below the play chrome row when they would overlap, and never under a notch
+		if (v === 'top') out.push(`top: calc(${el.y}px + var(--hud-top-shift, 0px))`);
+		else if (v === 'bottom') out.push(`bottom: calc(${el.y}px + var(--hud-bottom-lift, 0px))`);
+		else out.push('top: 50%', `--hud-ty: ${el.y * fitOf(el)}px`);
 		if (h === 'left') out.push(`left: ${el.x}px`);
 		else if (h === 'right') out.push(`right: ${el.x}px`);
-		else out.push('left: 50%', `--hud-tx: ${el.x}px`);
+		else out.push('left: 50%', `--hud-tx: ${el.x * fitOf(el)}px`);
 		return out.join('; ');
 	}
 	const textScale = $derived(shown ? hudTextScale($accessValues.hudText) : 1);
@@ -372,7 +422,12 @@
 		const cx = h === 'center';
 		const cy = v === 'middle';
 		if (!cx && !cy) return '';
-		return `transform: translate(${cx ? 'calc(-50% + var(--hud-tx, 0px))' : '0'}, ${cy ? 'calc(-50% + var(--hud-ty, 0px))' : '0'})`;
+		const k = fitOf(el);
+		return `transform: translate(${cx ? 'calc(-50% + var(--hud-tx, 0px))' : '0'}, ${cy ? 'calc(-50% + var(--hud-ty, 0px))' : '0'})${k < 1 ? ` scale(${k})` : ''}`;
+	}
+	/** fix-play-link: the fit scale of a CENTRE-anchored element (1 for every other anchor) @param {any} el */
+	function fitOf(el) {
+		return (el.anchor ?? 'top-left') === 'center' ? centerFit : 1;
 	}
 
 	/** 50 R1: while an AR table plays, the node lives in the AR overlay (the only DOM a phone's AR
@@ -400,7 +455,8 @@
 	}
 </script>
 
-{#if $gameAnnouncement && (!$isVRMode || arPlaying) && layerAllowed}
+<!-- 78 F14: full-screen only while playing — in Edit the line goes to the Debugger's Console -->
+{#if $gameAnnouncement && bannerShown && (!$isVRMode || arPlaying) && layerAllowed}
 	{#key $gameAnnouncement.id}
 		<div id="game-announce" class="game-announce" role="status" aria-live="polite" style="--announce-ms: {$gameAnnouncement.ms}ms" use:arPortal={arPlaying}>
 			<div class="game-announce-title" style:color={$gameAnnouncement.color}>{$gameAnnouncement.text}</div>
@@ -410,7 +466,7 @@
 {/if}
 
 {#if anyVisible}
-	<div id="hud-layer" class="hud-layer" class:hud-authoring={!shown} class:hud-inert={gameInEditor} data-authoring={!shown} data-inert={gameInEditor} use:arPortal={arPlaying}>
+	<div id="hud-layer" class="hud-layer" style:--hud-top-shift={shown ? `max(env(safe-area-inset-top, 0px), ${topShift}px)` : '0px'} data-top-shift={topShift} style:--hud-bottom-lift={shown ? `max(env(safe-area-inset-bottom, 0px), ${bottomLift}px)` : '0px'} data-bottom-lift={bottomLift} class:hud-authoring={!shown} class:hud-inert={gameInEditor} data-authoring={!shown} data-inert={gameInEditor} use:arPortal={arPlaying}>
 		{#each elements as el (el.__key + ':' + el.id)}
 			<div
 				class="hud-slot"

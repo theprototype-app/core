@@ -14,7 +14,7 @@
 
 import { get } from 'svelte/store';
 import { peers } from '../../stores/appStore.js';
-import { rolesInfo } from '$lib/cloudHooks';
+import { knownRoleOf } from '$lib/cloudHooks';
 import { isAgentPeer } from '$lib/inviteStore';
 // started as this module loads (lazily, and warmed when an agent first asks the host anything —
 // meshRelay's meshgenask), so the tool's module graph is ready before the first control_simulation;
@@ -80,9 +80,7 @@ export async function handleSimRelay(from, data) {
 		} else if (data.type === 'agentsimreq') {
 			const id = String(data.id ?? '');
 			const action = String(data.action ?? '').toLowerCase();
-			/** @type {any} */
-			const roles = get(rolesInfo);
-			const role = roles?.roleOf ? roles.roleOf(from) ?? null : null;
+			const role = knownRoleOf(from);
 			const refusal = simRefusal({ agent: isAgentPeer(from), role, action });
 			if (refusal) {
 				sendTo(from, { type: 'agentsimack', id, ok: false, error: refusal });

@@ -18,11 +18,11 @@ async function axeBad(page, include) {
 }
 /** @param {any} page */
 const tabsOf = (page) =>
-	page.evaluate(() => new Promise((r) => /** @type {any} */ (window).__stores.codeWorkspace.codeTabs.subscribe((/** @type {any} */ v) => r(JSON.parse(JSON.stringify(v))))()));
+	page.evaluate(() => new Promise((r) => /** @type {any} */ (window).__tp.test.v1.codeWorkspace.codeTabs.subscribe((/** @type {any} */ v) => r(JSON.parse(JSON.stringify(v))))()));
 /** @param {any} page @param {string} id */
 const tabCode = async (page, id) => (/** @type {any[]} */ (await tabsOf(page))).find((t) => t.nodeId === id)?.code ?? null;
 /** @param {any} page @param {string} nodeId */
-const openNodeTab = (page, nodeId) => page.evaluate((nodeId) => /** @type {any} */ (window).__stores.codeWorkspace.openCode({ source: 'script', ref: { nodeId } }), nodeId);
+const openNodeTab = (page, nodeId) => page.evaluate((nodeId) => /** @type {any} */ (window).__tp.test.v1.codeWorkspace.openCode({ source: 'script', ref: { nodeId } }), nodeId);
 /** the shared editor's pane for node `id` in `page` @param {any} page @param {string} id */
 async function pane(page, id) {
 	const t = (/** @type {any[]} */ (await tabsOf(page))).find((t) => t.nodeId === id);
@@ -43,6 +43,13 @@ const mainWorkspaceShown = (page) => page.locator('#code-ws-dock:visible, #code-
 
 const START = 'let speed = 1;\nreturn speed;';
 
+
+/** uir-polish G1: DOCKED, Code has no pop-out button (no header row at all) — float it first; its window header has one */
+async function floatCode(page) {
+	await page.evaluate(() => window.__tp.test.v1.bottomDock.armDockMode('code', false));
+	await page.locator('#code-ws-popout').first().waitFor({ state: 'visible', timeout: 15000 });
+}
+
 h.run(async () => {
 	const browser = await h.launch();
 	const storage = { 'shared:shareNewFiles': 'never' };
@@ -51,14 +58,14 @@ h.run(async () => {
 	await h.connect(B, A);
 
 	await A.page.evaluate(async (code) => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		const node = { id: 'u50', type: 'script', position: { x: 0, y: 0 }, data: { type: 'script', code }, class: 'w-[150px]' };
 		s.flowNodes.update((/** @type {any[]} */ n) => [...n, node]);
 		const peer = await new Promise((r) => s.peers.subscribe(r)());
 		/** @type {any} */ (peer).send({ type: 'nodecreate', node });
 	}, START);
 	await h.eventually(
-		() => B.page.evaluate(() => new Promise((r) => /** @type {any} */ (window).__stores.flowGraphs.subscribe((/** @type {any} */ all) => r(Object.values(all).some((g) => /** @type {any} */ (g).nodes.some((/** @type {any} */ n) => n.id === 'u50'))))())),
+		() => B.page.evaluate(() => new Promise((r) => /** @type {any} */ (window).__tp.test.v1.flowGraphs.subscribe((/** @type {any} */ all) => r(Object.values(all).some((g) => /** @type {any} */ (g).nodes.some((/** @type {any} */ n) => n.id === 'u50'))))())),
 		(v) => v === true,
 		'premise: the Script node reached B'
 	);
@@ -75,6 +82,7 @@ h.run(async () => {
 	h.check(badStrip.length === 0, `U3: the "Editing with you" strip has no serious/critical axe violation (${badStrip.join(', ') || 'none'})`);
 
 	// ---- U1: pop out while shared -------------------------------------------------------------------------------
+	await floatCode(A.page).catch(() => {});
 	const hasButton = (await A.page.locator('#code-ws-popout').count()) > 0;
 	h.check(hasButton, 'U1: the shared Code tab offers Pop out (COUNTERFACTUAL: v1.41.0 has none)');
 	if (!hasButton) return h.finish(browser);
@@ -96,7 +104,7 @@ h.run(async () => {
 
 	// ---- U2: High contrast + UI scale reach the popup; axe on the popup ---------------------------------------------
 	await A.page.evaluate(() => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		s.themes.theme.set('contrast');
 		s.uiScale.uiScale.set(150);
 	});
@@ -120,7 +128,7 @@ h.run(async () => {
 	const badPop = await axeBad(pop, '#code-ws-popped');
 	h.check(badPop.length === 0, `U2: the popped-out editor at 150 % in High contrast has no serious/critical axe violation (${badPop.join(', ') || 'none'})`);
 	await A.page.evaluate(() => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		s.themes.theme.set('dark');
 		s.uiScale.uiScale.set(100);
 	});

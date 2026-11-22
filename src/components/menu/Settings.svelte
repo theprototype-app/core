@@ -55,12 +55,14 @@
 	import SaveOptionsSettingsSection from './SaveOptionsSettingsSection.svelte'; // 56 C13
 	import ImportSettingsSection from './ImportSettingsSection.svelte'; // 46 P2
 	import PrivacySettings from './settings/PrivacySettings.svelte'; // 48 O1
+	import MomentSettings from './settings/MomentSettings.svelte'; // 95 SM3
 	import ConnectedAppsSettings from './settings/ConnectedAppsSettings.svelte'; // 86 B5
-	import { connectorProvider } from '$lib/cloudHooks';
+	import { connectorProvider, settingsSlots } from '$lib/cloudHooks';
+	import CloudSlot from '../CloudSlot.svelte';
 	import VRSettingsSection from './VRSettingsSection.svelte'; // the whole VR page
 	import AiSettings from './settings/AiSettings.svelte'; // 59 T4: the Tools & connections page (+ its provider forms)
 	import ConnectionSettings from './settings/ConnectionSettings.svelte';
-	import { settingsOpen, settingsSection, settingsSearchSeed, hidePanels, restorePanels, showToast } from '../../stores/appStore.js';
+	import { settingsOpen, settingsSection, settingsSearchSeed, settingsAnchor, hidePanels, restorePanels, showToast } from '../../stores/appStore.js';
 	import { cloudPluginInfo } from '$lib/cloudHooks';
 	import { phoneShellActive } from '$lib/ui/phoneShell.js';
 	import { versionString } from '$lib/version.js';
@@ -86,9 +88,11 @@
 	// 48 O1: Settings ▸ Privacy — the error-report switch (opened by a search or a deep link)
 	let privacyExpanded = false;
 	$: if ((settingsQuery || '').trim() || ($settingsOpen && $settingsSection === 'privacy')) privacyExpanded = true;
-	// 86 B5: Settings ▸ Connected apps — signed-in cloud builds only (a connector provider is installed)
-	let connectedAppsExpanded = false;
-	$: if ((settingsQuery || '').trim() || ($settingsOpen && $settingsSection === 'connectedapps')) connectedAppsExpanded = true;
+	// profile-notify: Settings ▸ Account — only while the cloud plugin has mounted into it (cloudApi.mountSettingsSection)
+	// uir-account: + Connected apps (86 B5, its own page before: 'connectedapps' is now an alias of this page), so the
+	// page also exists while only a connector provider is installed
+	let accountExpanded = false;
+	$: if ((settingsQuery || '').trim() || ($settingsOpen && ($settingsSection === 'account' || $settingsSection === 'connectedapps'))) accountExpanded = true;
 	let accessibilityExpanded = false; // 53: Settings ▸ Accessibility (AccessibilitySettings.svelte)
 	$: if ((settingsQuery || '').trim() || ($settingsOpen && $settingsSection === 'accessibility')) accessibilityExpanded = true;
 	let sceneExpanded = false;
@@ -399,6 +403,32 @@
 		control?.focus({ preventScroll: true });
 	}
 	(settingsNav as any).jumpTo = jumpTo;
+
+	/**
+	 * uir-account: a deep link may name an element of its page (`settingsAnchor`, set by openSettingsAt): bring it into
+	 * view once it exists — a plugin's rows arrive after an await, so this waits up to 4 s — flash it, then forget it.
+	 */
+	let anchorRun = 0;
+	$: if ($settingsOpen && $settingsAnchor) void revealAnchor($settingsAnchor);
+	async function revealAnchor(id: string) {
+		const run = ++anchorRun;
+		settingsAnchor.set(null);
+		const until = Date.now() + 4000;
+		while (run === anchorRun && Date.now() < until) {
+			await tick();
+			const named = document.getElementById(id);
+			// a `display: contents` wrapper (ConnectedAppsSettings' root) has no box: its first child is the place
+			const el = named && !named.getClientRects().length ? (named.firstElementChild as HTMLElement | null) : named;
+			if (el && el.closest('#settings-main') && el.getClientRects().length) {
+				await new Promise((r) => setTimeout(r, 50)); // after the nav's own scrollTop = 0 for the page switch
+				el.scrollIntoView({ block: 'start' });
+				el.classList.add('sr-flash');
+				setTimeout(() => el.classList.remove('sr-flash'), 1600);
+				return;
+			}
+			await new Promise((r) => setTimeout(r, 100));
+		}
+	}
 	// a page opens its sub-pages through the nav; while searching that is a jump first
 	const baseOpenSub = settingsNav.openSub;
 	settingsNav.openSub = (id: string, label: string, key?: string) => {
@@ -601,11 +631,17 @@
 				<AccordionItem bind:open={privacyExpanded}>
 					{#snippet header()}Privacy{/snippet}
 					<PrivacySettings />
+					<MomentSettings />
 				</AccordionItem>
-				{#if $connectorProvider}
-					<AccordionItem bind:open={connectedAppsExpanded}>
-						{#snippet header()}Connected apps{/snippet}
-						<ConnectedAppsSettings />
+				{#if $settingsSlots.account || $connectorProvider}
+					<!-- profile-notify: the cloud plugin draws its groups (Email, and since uir-account Sign-in methods + Devices);
+					     core gives the page and draws Connected apps (86 B5) under them. Each row carries its own keywords. -->
+					<AccordionItem bind:open={accountExpanded}>
+						{#snippet header()}Account{/snippet}
+						<div id="settings-account" class="settings-account" data-keywords="account">
+							{#if $settingsSlots.account}<CloudSlot mount={$settingsSlots.account} />{/if}
+							<ConnectedAppsSettings />
+						</div>
 					</AccordionItem>
 				{/if}
 				<AccordionItem bind:open={nodeTypesExpanded}>
@@ -787,6 +823,9 @@
 		display: flex;
 		flex-direction: column;
 		height: min(80vh, 760px);
+		/* ui-audit-honor: the visible viewport where supported, so the footer (Reset · Done) stays inside the
+		   ModalDialog's 88dvh cap on Android Chrome */
+		height: min(80dvh, 760px);
 		min-height: 0;
 	}
 	/* the header is the dialog's own: no second frame around it */
@@ -844,7 +883,8 @@
 	}
 	/* a search result we jumped to */
 	:global(.setting-row.sr-flash),
-	:global(.tp-ui.nr.sr-flash) {
+	:global(.tp-ui.nr.sr-flash),
+	:global(.sec-card-wrap.sr-flash) {
 		animation: settings-flash 1.6s ease-out;
 	}
 	@keyframes -global-settings-flash {
@@ -907,11 +947,15 @@
 		.settings-main :global(.seg-opt) {
 			min-height: 44px;
 		}
+		/* dock-fixes C: equal columns that WRAP instead of squeezing a label past its slot */
 		.settings-main :global(.sr-control > .seg) {
-			display: grid;
-			grid-template-columns: repeat(var(--seg-cols), minmax(0, 1fr));
+			display: flex;
 			width: 100%;
 			box-sizing: border-box;
+		}
+		.settings-main :global(.sr-control > .seg > .seg-opt) {
+			flex: 1 1 0;
+			min-width: fit-content;
 		}
 	}
 </style>

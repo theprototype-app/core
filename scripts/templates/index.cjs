@@ -17,6 +17,12 @@ const TEMPLATE_FILES = [
 	// 33-integrate: the ONLINE 'Architecture shell' is the kit room (architecture-shell.cjs); this
 	// greybox stays the OFFLINE seed's copy (remote: false — never written to --out)
 	'architecture-shell-greybox',
+	// 93: the starter for levels and progress (two levels, a portal, a checkpoint, a kept score)
+	'two-levels',
+	// 78 F27: the starter recipes at work (door, walk-up door, bell, guard)
+	'starter-recipes',
+	// 61-int G9: the starter for enemies (a guard on a Path that spots and chases; needs the navigation module)
+	'guard-patrol',
 	'lighthouse-island',
 	// 23-D3's Jam Room, a game since 30 visuals-core
 	'jam-room',
@@ -44,7 +50,17 @@ const TEMPLATE_FILES = [
 	// 36-backlog-21c (21-C8): Race (the core `race` module drives it)
 	'race',
 	// 36-fb F26: the Water works diorama (Fluid emitter, flow paths, Rotate / Motor, Float Along Flow)
-	'water-works'
+	'water-works',
+	// 73 AI6: the 1.55 starter — three objects in your own GLSL
+	'shader-garden',
+	// 85a-int: the 1.56 starter — a plain room for the agent's shape, look and undo tools
+	'agent-workshop',
+	// 94-int: the 1.57 starter — a tiny game set up for sharing (no module, no pack: its play link starts fast)
+	'topple-tower',
+	// 68-int: the 1.58 starter — a stage that keeps moving and a camera to film it with
+	'film-set',
+	// 85b-int: the 1.60 starter — an empty plot for the agent's world, HUD, sky and game-check tools
+	'game-plot'
 ];
 
 /** games whose def is OWNED BY ITS MODULE (modules/<id>/<id>.def.json, read by moduleDef) */

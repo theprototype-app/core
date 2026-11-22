@@ -81,7 +81,8 @@ export function showChoice(opts) {
  *
  * Resolves `{value, checked}` for a choice, `null` for cancel / Esc / outside-close.
  * @param {{title?: string, message: string, items?: string[], checkbox?: {label: string, checked?: boolean, hint?: string},
- *   choices: {value: string, label: string, checkedLabel?: string, color?: string}[], cancelLabel?: string, id?: string}} opts
+ *   choices: {value: string, label: string, checkedLabel?: string, color?: string}[], cancelLabel?: string, id?: string,
+ *   link?: {href: string, label?: string}}} opts
  * @returns {Promise<{value: string, checked: boolean} | null>}
  */
 export function showChoiceEx(opts) {
@@ -94,6 +95,8 @@ export function showChoiceEx(opts) {
 			items: Array.isArray(opts.items) ? opts.items.map(String) : [],
 			checkbox: opts.checkbox ? { label: String(opts.checkbox.label), hint: opts.checkbox.hint ? String(opts.checkbox.hint) : '' } : null,
 			checked: !!opts.checkbox?.checked,
+			// 73 AI7: one outbound link under the message (a privacy policy); https only
+			link: opts.link && /^https:\/\//.test(String(opts.link.href)) ? { href: String(opts.link.href), label: String(opts.link.label || opts.link.href) } : null,
 			choices: opts.choices ?? [],
 			cancelLabel: opts.cancelLabel || 'Cancel',
 			resolve: (/** @type {any} */ answer) =>

@@ -38,6 +38,6 @@ describe('contract', () => {
 		expect(new Set(TP_AGENT_METHODS).size).toBe(TP_AGENT_METHODS.length);
 		for (const m of ['tools', 'systemPrompt', 'exec', 'snapshot', 'status', 'waitForEdit', 'screenshot'])
 			expect(TP_AGENT_METHODS).toContain(m);
-		expect(SCREENSHOT_VIEWS).toEqual(['current', 'top', 'front', 'iso', 'focus']);
+		expect(SCREENSHOT_VIEWS).toEqual(['current', 'top', 'front', 'iso', 'focus', 'camera']);
 	});
 });

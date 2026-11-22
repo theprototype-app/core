@@ -12,9 +12,9 @@ const ad = (page, body, arg) =>
 	page.evaluate(
 		([src, a]) =>
 			Object.getPrototypeOf(async function () {}).constructor('ad', 'eng', 's', 'arg', src)(
-				window.__stores.audioDevices,
-				window.__stores.audioEngine,
-				window.__stores,
+				window.__tp.test.v1.audioDevices,
+				window.__tp.test.v1.audioEngine,
+				window.__tp?.test.v1,
 				a
 			),
 		[body, arg ?? null]
@@ -104,11 +104,11 @@ h.run(async () => {
 	h.check(fresh, '2.10 the returned snapshot is a copy, never the mutated userData object (a $derived on it would not propagate)');
 
 	// undo / redo through the props history kind
-	await page.evaluate(() => window.__stores.history.undo());
-	await page.evaluate(() => window.__stores.history.undo());
+	await page.evaluate(() => window.__tp.test.v1.history.undo());
+	await page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => docOn(page, uuid), (d) => d?.device?.params?.freq === 440, '2.11 two undos take the document back to 440');
 	await h.eventually(() => ad(page, 'return window.__devCalls.slice(-1)[0]'), (c) => c && c[0] === 'freq' && c[1] === 440, '2.12 the reconcile re-applied the undone param to the subgraph (onParam freq 440)');
-	await page.evaluate(() => window.__stores.history.redo());
+	await page.evaluate(() => window.__tp.test.v1.history.redo());
 	await h.eventually(() => docOn(page, uuid), (d) => d?.device?.params?.freq === 880, '2.13 redo brings 880 back');
 
 	// remove the device from the object, and undo that
@@ -116,7 +116,7 @@ h.run(async () => {
 	await h.eventually(() => builtOn(page), (b) => b.length === 0, '2.14 setDeviceFor(uuid, null) removes the device and the runtime disposes its subgraph');
 	const gone = await h.audioMetrics(A, 400);
 	h.check(gone.silent, '2.15 the drone stopped with it (peak ' + gone.peak.toFixed(4) + ')');
-	await page.evaluate(() => window.__stores.history.undo());
+	await page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => builtOn(page), (b) => b.length === 1 && b[0].params.freq === 880 && b[0].params.gain === 0.3, '2.16 undo restores the device AND rebuilds it with its params');
 	const back = await h.audioMetrics(A, 500);
 	h.check(!back.silent, '2.17 and it sounds again (peak ' + back.peak.toFixed(3) + ')');
@@ -130,7 +130,7 @@ h.run(async () => {
 	await h.eventually(() => builtOn(page), (b) => b.length === 2, '3.3 the runtime built the copy too');
 	await ad(page, 's.objectActions.deleteObjectsByUuid([arg])', cloneUuid);
 	await h.eventually(() => builtOn(page), (b) => b.length === 1, '3.4 deleting the copy disposes its subgraph');
-	await page.evaluate(() => window.__stores.history.undo());
+	await page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => builtOn(page), (b) => b.length === 2, '3.5 undoing the delete rebuilds it (the reconcile covers an undone delete)');
 	await ad(page, 's.objectActions.deleteObjectsByUuid([arg])', cloneUuid);
 	await h.eventually(() => builtOn(page), (b) => b.length === 1, '3.6 (cleanup) deleted again');
@@ -139,16 +139,16 @@ h.run(async () => {
 	console.log('\n=== 4. persistence: session and autosave round trips ===');
 	await ad(page, "ad.setDeviceParam(arg, 'freq', 660)", uuid);
 	const payloadHas = await page.evaluate(() => {
-		const p = window.__stores.sessions.buildSessionPayload('devices');
+		const p = window.__tp.test.v1.sessions.buildSessionPayload('devices');
 		const obj = p.objects.find((o) => o.object?.userData?.device);
 		window.__devPayload = p;
 		return obj ? obj.object.userData.device : null;
 	});
 	h.check(payloadHas && payloadHas.kind === 'test-osc' && payloadHas.params.freq === 660, '4.1 a session payload carries the device on its object (' + JSON.stringify(payloadHas) + ')');
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/clear all'));
 	await h.eventually(() => builtOn(page), (b) => b.length === 0, '4.2 (premise) the scene is cleared and nothing is built');
 	await page.evaluate(async () => {
-		await window.__stores.sessions.applySession(window.__devPayload);
+		await window.__tp.test.v1.sessions.applySession(window.__devPayload);
 	});
 	await h.eventually(() => builtOn(page), (b) => b.length === 1 && b[0].builtAs === 'test-osc' && b[0].params.freq === 660, '4.3 applying the session brings the device back, built with its params');
 	const afterSession = await h.audioMetrics(A, 500);
@@ -157,16 +157,16 @@ h.run(async () => {
 	const sessionUuid = (await builtOn(page))[0].uuid;
 
 	// the GLTF autosave: userData rides `extras`; after a reload the kind is NOT registered
-	await page.evaluate(() => window.__stores.autosave.saveNow());
+	await page.evaluate(() => window.__tp.test.v1.autosave.saveNow());
 	await h.freshReload(A);
 	// a reload is a NEW peer: re-read the id or the connect below dials a dead one
-	A.id = await page.evaluate(() => new Promise((r) => window.__stores.peers.subscribe((p) => r(p?.peer?.id))()));
+	A.id = await page.evaluate(() => new Promise((r) => window.__tp.test.v1.peers.subscribe((p) => r(p?.peer?.id))()));
 	await h.eventually(
-		() => page.evaluate(() => new Promise((r) => window.__stores.autosave.restoreAvailable.subscribe((v) => r(!!v))())),
+		() => page.evaluate(() => new Promise((r) => window.__tp.test.v1.autosave.restoreAvailable.subscribe((v) => r(!!v))())),
 		(v) => v === true,
 		'4.5 the restore offer appears after the reload'
 	);
-	await page.evaluate(() => window.__stores.autosave.restoreSnapshot());
+	await page.evaluate(() => window.__tp.test.v1.autosave.restoreSnapshot());
 	await h.eventually(() => builtOn(page), (b) => b.length === 1, '4.6 the restored object is picked up by the runtime', 8000);
 	const restored = await builtOn(page);
 	const restoredDoc = await docOn(page, restored[0].uuid);
@@ -220,7 +220,7 @@ h.run(async () => {
 
 	// two bugs C1's flight found on the late-joiner path, guarded here
 	const placed = await ad(page, "const o = ad.addDevice('test-osc', { position: [3, 4, 5], params: { gain: 0 } }); return o.uuid");
-	await h.eventually(() => docOn(B.page, placed).then(async (d) => (d ? await B.page.evaluate((u) => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); const o = g.getObjectByProperty('uuid', u); return o ? o.position.toArray() : null; }, placed) : null)), (p) => !!p && Math.abs(p[0] - 3) < 1e-6 && Math.abs(p[1] - 4) < 1e-6 && Math.abs(p[2] - 5) < 1e-6, '5.13 a device added at a position lands at that position on the peer (the matrix is updated before the broadcast)');
+	await h.eventually(() => docOn(B.page, placed).then(async (d) => (d ? await B.page.evaluate((u) => { let g; window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))(); const o = g.getObjectByProperty('uuid', u); return o ? o.position.toArray() : null; }, placed) : null)), (p) => !!p && Math.abs(p[0] - 3) < 1e-6 && Math.abs(p[1] - 4) < 1e-6 && Math.abs(p[2] - 5) < 1e-6, '5.13 a device added at a position lands at that position on the peer (the matrix is updated before the broadcast)');
 	// a device whose mesh() is a GROUP must survive the late-joiner path with its document
 	await ad(page, "window.__unregGroup = ad.registerAudioDevice({ kind: 'test-group', label: 'Group device', ports: { in: [], out: [] }, params: [], build() { return { dispose() {} }; }, mesh(THREE) { const g = new THREE.Group(); g.add(new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.3), new THREE.MeshStandardMaterial({ color: '#8f8' }))); return g; } });");
 	const grouped = await ad(page, "const o = ad.addDevice('test-group', { position: [1, 1, 1] }); return { uuid: o.uuid, type: o.type }");

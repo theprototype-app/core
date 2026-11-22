@@ -16,7 +16,7 @@ const poses = (page, uuids) =>
 			new Promise((resolve) =>
 				requestAnimationFrame(() => {
 					let g;
-					window.__stores.objectsGroup.subscribe((v) => (g = v))();
+					window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 					const read = () =>
 						Object.fromEntries(
 							uuids.map((u) => {
@@ -25,7 +25,7 @@ const poses = (page, uuids) =>
 							})
 						);
 					const live = read();
-					const restore = window.__stores.flowRuntime.parkAnimatedAtBase();
+					const restore = window.__tp.test.v1.flowRuntime.parkAnimatedAtBase();
 					const base = read();
 					restore();
 					resolve({ live, base, t: Date.now() });
@@ -42,7 +42,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	const uuids = await A.page.evaluate(() => {
-		const st = window.__stores;
+		const st = window.__tp?.test.v1;
 		let g;
 		st.objectsGroup.subscribe((v) => (g = v))();
 		const last = () => g.children[g.children.length - 1];
@@ -87,7 +87,7 @@ h.run(async () => {
 		() =>
 			B.page.evaluate((uuids) => {
 				let g;
-				window.__stores.objectsGroup.subscribe((v) => (g = v))();
+				window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 				return uuids.filter((u) => g.getObjectByProperty('uuid', u)).length;
 			}, uuids),
 		(n) => n === 3,
@@ -106,15 +106,15 @@ h.run(async () => {
 	// transform after the sender's park is restored — that race is what made the join above
 	// fail intermittently under load: Bounce base 0.235 m off.)
 	const landed = await B.page.evaluate(async () => {
-		const THREE = window.__stores.THREE;
+		const THREE = window.__tp.test.v1.THREE;
 		const { GLTFExporter } = await import('/node_modules/three/examples/jsm/exporters/GLTFExporter.js');
 		const box = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), new THREE.MeshStandardMaterial());
 		box.position.set(0, 5, 0); // the "mid-swing" pose inside the bytes
 		const element = await new Promise((r, j) => new GLTFExporter().parse(box, r, j, { onlyVisible: false }));
 		const uuid = box.uuid;
-		await window.__stores.commandsHandler.createObject({ element }, [uuid], false, undefined, [0, 1, 0], [0, 0, 0], [1, 1, 1]);
+		await window.__tp.test.v1.commandsHandler.createObject({ element }, [uuid], false, undefined, [0, 1, 0], [0, 0, 0], [1, 1, 1]);
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return g.getObjectByProperty('uuid', uuid)?.position.toArray() ?? null;
 	});
 	h.check(!!landed && Math.abs(landed[1] - 1) < 1e-6, `a joined GLTF object lands at the sender's parked pose, not the bytes' (y ${landed?.[1]})`);
@@ -122,9 +122,9 @@ h.run(async () => {
 	// GRAPH DRIFT HEALS (the nodesync path, dead since 27-A: graphHash() is a number and the
 	// validator wanted a string). B silently loses the Bounce node; within a nodesync round
 	// (10 s) + a resync it is back, so a joiner whose graph diverged does not stay diverged.
-	await B.page.evaluate((u) => window.__stores.flowGraphs.update((g) => ({ ...g, [u]: { nodes: [], edges: [] } })), uuids[1]);
+	await B.page.evaluate((u) => window.__tp.test.v1.flowGraphs.update((g) => ({ ...g, [u]: { nodes: [], edges: [] } })), uuids[1]);
 	await h.eventually(
-		() => B.page.evaluate((u) => (window.__stores.flowGraphs ? new Promise((r) => window.__stores.flowGraphs.subscribe((g) => r(g[u]?.nodes?.length ?? 0))()) : 0), uuids[1]),
+		() => B.page.evaluate((u) => (window.__tp.test.v1.flowGraphs ? new Promise((r) => window.__tp.test.v1.flowGraphs.subscribe((g) => r(g[u]?.nodes?.length ?? 0))()) : 0), uuids[1]),
 		(n) => n === 1,
 		'a drifted graph on B heals from A through nodesync',
 		45000

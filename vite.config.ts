@@ -1,6 +1,9 @@
 import { sveltekit } from '@sveltejs/kit/vite';
+import adapter from '@sveltejs/adapter-static';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import tailwindcss from '@tailwindcss/vite';
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig, loadEnv, runnerImport, type Plugin } from 'vite';
+import { cspDirectives } from './csp.config.js';
 import pkg from './package.json';
 // @ts-ignore -- no @types/node in this project (adding them shifts the svelte-check baseline)
 import { execSync } from 'node:child_process';
@@ -8,6 +11,16 @@ import { execSync } from 'node:child_process';
 import { writeFileSync, readFileSync, rmSync } from 'node:fs';
 // @ts-ignore -- same node-types caveat
 import { createRequire } from 'node:module';
+// @ts-ignore -- same node-types caveat
+import { fileURLToPath } from 'node:url';
+
+// sk3: SvelteKit 3 reads its options from the sveltekit() plugin below (svelte.config.js is gone).
+// 69 T3: a build ships a Content Security Policy (csp.config.js); `npm run dev` does not
+// @ts-ignore -- same node-types caveat
+const building = process.argv.includes('build');
+// @ts-ignore -- same node-types caveat
+const buildEnv = { ...loadEnv(process.env.MODE || 'production', process.cwd(), 'VITE_'), ...process.env };
+const directives = building ? cspDirectives(buildEnv) : null;
 
 // Version identity is baked at build time (V1): `npm version` in package.json is the
 // single source of truth, the sha comes from the checkout. vite `define` reaches dev,
@@ -25,6 +38,43 @@ function commitSha(): string {
 // @threlte/xr 1.0.0-next.15) was DELETED with the 1.6 stable upgrade: the package's
 // input handling was rewritten (setupInputSources keyed map) and the unguarded
 // handedness indexing no longer exists anywhere in the dist.
+
+// 54i (fix-batch-3 a): guardThrelteXr is BACK for a different crash — @threlte/xr 1.6's headset
+// (and hit-test) task reads `xr.getFrame().getViewerPose(...)` with no null check, and three's
+// getFrame() is null outside an XR animation frame (Quest error report: "Cannot read properties of
+// null (reading 'getViewerPose')" after the session ended). The rewrite lives in
+// scripts/guard-threlte-xr.cjs (unit-tested against the real dist file); @threlte/xr is served as
+// SOURCE (optimizeDeps.exclude) so the transform reaches it in dev as well as the build.
+function guardThrelteXr(): Plugin {
+	const { guardThrelteXrSource } = createRequire(import.meta.url)('./scripts/guard-threlte-xr.cjs');
+	return {
+		name: 'tp:guard-threlte-xr',
+		enforce: 'pre',
+		transform(code: string, id: string) {
+			const res = guardThrelteXrSource(code, id);
+			if (!res) return null;
+			for (const m of res.missing) console.warn('[guard-threlte-xr] anchor not found in ' + id + ': ' + m);
+			return res.code === code ? null : { code: res.code, map: null };
+		}
+	};
+}
+
+// 54i (fix-batch-3 aa): ONE retry for a lazy chunk that failed to load, spliced into vite's preload
+// helper (every lazy import goes through it). The splice + why: scripts/import-retry.cjs; the retry
+// and the "A new version is ready" notice: src/lib/chunkReload.js.
+function importRetry(): Plugin {
+	const { addImportRetry } = createRequire(import.meta.url)('./scripts/import-retry.cjs');
+	return {
+		name: 'tp:import-retry',
+		apply: 'build',
+		transform(code: string, id: string) {
+			const res = addImportRetry(code, id);
+			if (!res) return null;
+			if (!res.matched) console.warn('[import-retry] anchor not found in vite\'s preload helper — lazy chunks will not be retried');
+			return res.matched ? { code: res.code, map: null } : null;
+		}
+	};
+}
 
 // SH0 COSTING PROBE — @shaderfrog/core 3.2.0 drops the ARRAY DIMENSION when it
 // re-emits a varying. `dedupeQualifiedStatements` (graph/shader-sections.js) rebuilds
@@ -185,6 +235,30 @@ function thirdPartyNotices(): Plugin {
 	};
 }
 
+/**
+ * 2.0 N1 — A NODE TYPE MISSING A HALF FAILS THE BUILD. The core node definitions
+ * (src/lib/nodes/families) each carry their palette spec, sockets, card key and value; this loads
+ * the registry in node (vite's module runner, so extensionless imports resolve as in the app) and
+ * stops the build on the first `coreRegistryErrors()` line. Once per build (SvelteKit builds twice).
+ */
+function nodeRegistryCheck(): Plugin {
+	let checked = false;
+	return {
+		name: 'node-registry-check',
+		apply: 'build',
+		async buildStart() {
+			if (checked) return;
+			checked = true;
+			const { module } = await runnerImport<{ coreRegistryErrors: () => string[] }>('./src/lib/nodes/index.js', {
+				configFile: false,
+				logLevel: 'silent'
+			});
+			const errors = module.coreRegistryErrors();
+			if (errors.length) this.error('node registry: a definition is incomplete\n  ' + errors.join('\n  '));
+		}
+	};
+}
+
 export default defineConfig({
 	define: {
 		__APP_VERSION__: JSON.stringify(pkg.version),
@@ -195,20 +269,41 @@ export default defineConfig({
 	// as a file before the postcss plugin can claim it (build-time ENOENT).
 	plugins: [
 			fixShaderfrogArrayVaryings(),
+			guardThrelteXr(), // 54i: null XR frame guard (see the function)
+			importRetry(), // 54i aa: one retry for a failed lazy chunk (see the function)
 			tailwindcss(),
 			a11yCss(), // 53 A1/A5: after tailwindcss() — see the function
 			devAssetProxy(),
 			emitVersionJson(),
 			thirdPartyNotices(),
-			sveltekit()
+			nodeRegistryCheck(), // 2.0 N1: a node type missing a half fails the build
+			sveltekit({
+				preprocess: vitePreprocess(),
+				adapter: adapter(),
+				// sk3: SvelteKit 3 polls /_app/version.json hourly by default and flips `updated.current`. The
+				// "New version … — Reload" prompt already exists (V8, src/lib/updateCheck.js: our own
+				// version.json every 15 min + on focus, with the release number and the content-stale mark),
+				// so the kit poll would be a second timer nobody reads. Off. (Kit 3 still checks once on each
+				// focus / visibility change; that cannot be configured and fails silently offline.)
+				version: { pollInterval: 0 },
+				// hash mode: the pages are prerendered, so the policy goes into each page's <meta> with the
+				// hash of SvelteKit's own inline boot script
+				...(directives ? { csp: { mode: 'hash' as const, directives } } : {})
+			})
 		],
+	// sk3: `$lib` is OUR alias now (SvelteKit 3 stopped generating it and moved to `#lib` subpath
+	// imports). The same mapping is in tsconfig.json `paths` (svelte-check) and vitest.config.ts.
+	resolve: {
+		alias: { $lib: fileURLToPath(new URL('./src/lib', import.meta.url)) }
+	},
 		// the transform above only reaches @shaderfrog/core if it is served as SOURCE:
 		// vite pre-bundles deps with esbuild, which a Rollup-style transform hook never
 		// sees (the guardThrelteXr lesson).
 		optimizeDeps: {
 			// 46: ktx2-encoder fetches its Basis wasm from `new URL('../basis/…', import.meta.url)`, which a
 			// pre-bundle would move away from the wasm — so it is served as source
-			exclude: ['@shaderfrog/core', 'ktx2-encoder'],
+			// 54i: @threlte/xr as source too, so guardThrelteXr reaches it in dev
+			exclude: ['@shaderfrog/core', 'ktx2-encoder', '@threlte/xr'],
 			// ...but excluding it stops vite pre-bundling its CJS dep too, and
 			// `import groupBy from 'lodash.groupby'` then has no default export. Pre-bundle
 			// that one explicitly so the interop wrapper still exists.
@@ -225,7 +320,8 @@ export default defineConfig({
 			// opened — discovered then, it would reload the page with the tab half-bound
 			// 69: the script engine loads with the first scene that carries code — the same reload, with
 			// the scene that was just opened gone (its wasm comes in by ?url, so pre-bundling is safe)
-			include: ['quickjs-emscripten-core', '@jitl/quickjs-wasmfile-release-sync', 'lodash.groupby', 'meshoptimizer/simplifier', '@codemirror/state', '@codemirror/language', '@lezer/highlight', 'meshoptimizer', '@gltf-transform/core', '@gltf-transform/extensions', '@gltf-transform/functions', 'ktx-parse', 'libheif-js/libheif-wasm/libheif.js', 'yjs', 'y-protocols/awareness', 'y-codemirror.next']
+			// 68 V9 (from 65 M4): mediabunny + gifenc are reached only by the video export's lazy import — the same rule
+			include: ['quickjs-emscripten-core', '@jitl/quickjs-wasmfile-release-sync', 'lodash.groupby', 'meshoptimizer/simplifier', '@codemirror/state', '@codemirror/language', '@lezer/highlight', 'meshoptimizer', '@gltf-transform/core', '@gltf-transform/extensions', '@gltf-transform/functions', 'ktx-parse', 'libheif-js/libheif-wasm/libheif.js', 'yjs', 'y-protocols/awareness', 'y-codemirror.next', 'mediabunny', 'gifenc']
 		},
 	// dev https via the repo's local certs (vite-plugin-mkcert stayed on vite<=5;
 	// certs/ was already how CI-less https worked before mkcert)
@@ -239,6 +335,28 @@ export default defineConfig({
 		})()
 	},
 	ssr: {
-		noExternal: ['three']
+		// sk3: cookie too — SvelteKit 3 needs cookie 2 (its own nested copy) but the root node_modules/cookie is
+		// express's 0.7 (the `peer` dev server); left external, the prerender imported 0.7 and died on parseCookie
+		noExternal: ['three', 'cookie']
+	},
+	// 94 SP3: `TP_SOURCEMAP=1 npm run build` maps every chunk back to its sources, so
+	// `node scripts/boot-size.cjs --sources <page>` can say WHICH modules a page's boot carries
+	build: {
+		// @ts-ignore -- no @types/node in this project (see the top of this file)
+		sourcemap: typeof process !== 'undefined' && process.env.TP_SOURCEMAP === '1',
+		// 100 C1: `three` and `three/webgpu` (the Cinematic view's lazy chunk) both import three.core.js;
+		// left alone, the bundler splits that core into a chunk of its own, and the boot then fetches two
+		// chunks where it fetched one (+3 KB gzip of chunk overhead for every page). One group keeps the
+		// boot's three exactly as it was; the lazy WebGPU chunk imports its core from there.
+		// sk3-int: `codeSplitting`, not the deprecated `advancedChunks` alias -- SvelteKit 3 sets
+		// output.codeSplitting itself (its manifest group), which silently drops an advancedChunks group;
+		// Vite's config merge concatenates both group lists.
+		rolldownOptions: {
+			output: {
+				codeSplitting: {
+					groups: [{ name: 'three.module', test: /[\\/]node_modules[\\/]three[\\/]build[\\/]three\.(core|module)\.js$/ }]
+				}
+			}
+		}
 	}
 });

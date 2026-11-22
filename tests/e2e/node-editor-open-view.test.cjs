@@ -36,7 +36,7 @@ function row(prefix, n, x0, y0, gap = 260) {
 const payloadOf = (page, graphs, name) =>
 	page.evaluate(
 		({ graphs, name }) => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			s.restoreGraphs(JSON.parse(JSON.stringify(graphs)));
 			return JSON.parse(JSON.stringify(s.sessions.buildSessionPayload(name)));
 		},
@@ -44,7 +44,7 @@ const payloadOf = (page, graphs, name) =>
 	);
 const load = (page, payload) =>
 	page.evaluate(async (payload) => {
-		await window.__stores.sessions.applySession(payload, { backup: false });
+		await window.__tp.test.v1.sessions.applySession(payload, { backup: false });
 	}, payload);
 
 /** where the visible nodes sit relative to the pane */
@@ -116,21 +116,21 @@ h.run(async () => {
 	await settle(p, 600);
 	const panned = await placement(p);
 	h.check(Math.abs(panned.vp.x - pl.vp.x - 360) < 6 && Math.abs(panned.vp.y - pl.vp.y - 120) < 6, `a left drag on the pane pans it (moved ${Math.round(panned.vp.x - pl.vp.x)},${Math.round(panned.vp.y - pl.vp.y)})`);
-	const saved = await p.evaluate(() => window.__stores.flowView.savedView('scene'));
+	const saved = await p.evaluate(() => window.__tp.test.v1.flowView.savedView('scene'));
 	h.check(!!saved, 'the pan is remembered as the graph\'s view');
 	// another graph (selecting an object switches the editor to its flow) and back
 	const objUuid = await p.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		const g = await new Promise((r) => s.objectsGroup.subscribe(r)());
 		return g.children[g.children.length - 1].uuid;
 	});
 	await settle(p, 600);
-	await p.evaluate((id) => window.__stores.objectActions.selectObject(id), objUuid);
+	await p.evaluate((id) => window.__tp.test.v1.objectActions.selectObject(id), objUuid);
 	await settle(p, 600);
 	// the object's flow, written through BOTH mirrors (flowGraphs = document, flowNodes = view)
 	await p.evaluate((uuid) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const node = { id: 'o0', type: 'number', position: { x: -900, y: -900 }, data: { type: 'number', value: 1, label: 'o0' }, class: 'w-[150px]' };
 		s.flowGraphs.update((all) => ({ ...all, [uuid]: { nodes: [node], edges: [] } }));
 		s.flowNodes.set([node]);
@@ -138,12 +138,12 @@ h.run(async () => {
 	await settle(p, 1200);
 	pl = await placement(p);
 	if (!pl.count) {
-		console.log('DEBUG obj', JSON.stringify(await p.evaluate((id) => { let g; window.__stores.flowGraphs.subscribe((v) => (g = v))(); let fn; window.__stores.flowNodes.subscribe((v) => (fn = v))(); return { doc: g[id]?.nodes?.length, view: fn.length, empty: !!document.querySelector('#flow-empty-state'), dom: document.querySelectorAll('.svelteFlow .svelte-flow__node').length }; }, objUuid)));
+		console.log('DEBUG obj', JSON.stringify(await p.evaluate((id) => { let g; window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))(); let fn; window.__tp.test.v1.flowNodes.subscribe((v) => (fn = v))(); return { doc: g[id]?.nodes?.length, view: fn.length, empty: !!document.querySelector('#flow-empty-state'), dom: document.querySelectorAll('.svelteFlow .svelte-flow__node').length }; }, objUuid)));
 		await p.screenshot({ path: '/tmp/claude-1000/-home-deck--code-theprototype-app/2840b79f-dd47-4214-aff4-10a6d40d0f85/scratchpad/shots/dbg-obj.png' });
 	}
-	h.check((await p.evaluate(() => new Promise((r) => window.__stores.activeGraphId.subscribe(r)()))) === objUuid, 'selecting the object switches the editor to its flow');
+	h.check((await p.evaluate(() => new Promise((r) => window.__tp.test.v1.activeGraphId.subscribe(r)()))) === objUuid, 'selecting the object switches the editor to its flow');
 	h.check(pl.ids?.includes('o0') && framed(pl), `that graph opens framed (${pl.inside}/${pl.count}, off-centre ${Math.round(pl.dx)},${Math.round(pl.dy)})`);
-	await p.evaluate(() => window.__stores.objectActions.deselectObject());
+	await p.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await settle(p, 1200);
 	pl = await placement(p);
 	h.check(Math.abs(pl.vp.x - panned.vp.x) < 3 && Math.abs(pl.vp.y - panned.vp.y) < 3 && Math.abs(pl.vp.zoom - panned.vp.zoom) < 0.005, `switching back opens Main where it was left (${pl.vp.x},${pl.vp.y} vs ${panned.vp.x},${panned.vp.y})`);
@@ -154,18 +154,18 @@ h.run(async () => {
 	h.check(Math.abs(pl.vp.x - panned.vp.x) < 3 && Math.abs(pl.vp.y - panned.vp.y) < 3, `closing and reopening the editor keeps where it was left (${pl.vp.x},${pl.vp.y})`);
 
 	// --- 4. the view rides the scene file; a fresh page opens on it ----------------------------
-	const withView = await p.evaluate(() => JSON.parse(JSON.stringify(window.__stores.sessions.buildSessionPayload('Scene B (panned)'))));
+	const withView = await p.evaluate(() => JSON.parse(JSON.stringify(window.__tp.test.v1.sessions.buildSessionPayload('Scene B (panned)'))));
 	h.check(!!withView.flowViews?.scene && Object.keys(withView.flowViews).length === 1, `the saved scene carries flowViews for Main only (${JSON.stringify(withView.flowViews)})`);
 	const B2 = await h.setupPage(browser, 'B', { context: { viewport: { width: W, height: H } }, storage: { flowDockHeight: '860' } });
 	await load(B2.page, withView);
 	await ensureEditor(B2.page); // the file's workspace may already have opened it
 	const plB = await placement(B2.page);
 	if (!plB.vp) await B2.page.screenshot({ path: '/tmp/claude-1000/-home-deck--code-theprototype-app/2840b79f-dd47-4214-aff4-10a6d40d0f85/scratchpad/shots/dbg-b2.png' });
-	if (!plB.vp) console.log('DEBUG B2 placement', JSON.stringify(plB), await B2.page.evaluate(() => ({ open: !!document.querySelector('.svelteFlow'), active: document.querySelector('.svelteFlow') ? 1 : 0, n: window.__stores.allNodes().length })));
+	if (!plB.vp) console.log('DEBUG B2 placement', JSON.stringify(plB), await B2.page.evaluate(() => ({ open: !!document.querySelector('.svelteFlow'), active: document.querySelector('.svelteFlow') ? 1 : 0, n: window.__tp.test.v1.allNodes().length })));
 	h.check(Math.abs(plB.vp.x - panned.vp.x) < 3 && Math.abs(plB.vp.y - panned.vp.y) < 3 && Math.abs(plB.vp.zoom - panned.vp.zoom) < 0.005, `a fresh page opens the file on the creator's view (${plB.vp.x},${plB.vp.y} vs ${panned.vp.x},${panned.vp.y})`);
 	// a different pane size keeps the same flow point in the middle (the view is a centre)
 	await B2.page.setViewportSize({ width: 1280, height: 900 });
-	await B2.page.evaluate(() => window.__stores.flowView.loadFlowViews(window.__stores.flowView.flowViewsSnapshot()));
+	await B2.page.evaluate(() => window.__tp.test.v1.flowView.loadFlowViews(window.__tp.test.v1.flowView.flowViewsSnapshot()));
 	await settle(B2.page, 1200);
 	const centre = await B2.page.evaluate(() => {
 		const el = document.querySelector('.svelteFlow');
@@ -186,13 +186,13 @@ h.run(async () => {
 	await settle(p, 1500);
 	pl = await placement(p);
 	h.check(Math.abs(pl.vp.x - panned.vp.x) < 3, 'with the default setting the panned file opens where it was left');
-	await p.evaluate(() => window.__stores.flowView.nodeEditorOpens.set('framed'));
+	await p.evaluate(() => window.__tp.test.v1.flowView.nodeEditorOpens.set('framed'));
 	await load(p, withView);
 	await settle(p, 1500);
 	pl = await placement(p);
 	h.check(framed(pl), `with "Framed" the same file opens framed (${pl.inside}/${pl.count}, off-centre ${Math.round(pl.dx)},${Math.round(pl.dy)})`);
 	h.check((await p.evaluate(() => localStorage.getItem('flow:opens'))) === 'framed', 'the setting is persisted');
-	await p.evaluate(() => window.__stores.flowView.nodeEditorOpens.set('left'));
+	await p.evaluate(() => window.__tp.test.v1.flowView.nodeEditorOpens.set('left'));
 
 	// --- 6. a programmatic frame (A) is not "where it was left" --------------------------------
 	await load(p, sceneA);
@@ -200,10 +200,10 @@ h.run(async () => {
 	await p.locator('.svelteFlow .svelte-flow__pane').click({ position: { x: 40, y: 40 } });
 	await p.keyboard.press('a');
 	await settle(p, 800);
-	h.check((await p.evaluate(() => window.__stores.flowView.savedView('scene'))) === null, '§6 pressing A records nothing (a file saved now has no flowViews)');
+	h.check((await p.evaluate(() => window.__tp.test.v1.flowView.savedView('scene'))) === null, '§6 pressing A records nothing (a file saved now has no flowViews)');
 
 	// --- 7. the Settings row + its search keyword ----------------------------------------------
-	await p.evaluate(() => window.__stores.settingsOpen.set(true));
+	await p.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await p.waitForSelector('#settings-search', { timeout: 10000 });
 	await p.fill('#settings-search', 'framed');
 	await settle(p, 700);

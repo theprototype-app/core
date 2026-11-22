@@ -3,9 +3,10 @@
 	import { OrbitControls } from '@threlte/extras';
 	import * as THREE from 'three';
 	import { objectsGroup, TControls } from '../stores/sceneStore';
-	import { cameraPreview, writeBackPose, previewOrbit, seatOrbitBehind, previewPoseOverride } from '$lib/cameraPreview';
+	import { cameraPreview, writeBackPose, previewOrbit, seatOrbitBehind, previewPoseOverride, applyMarkerLens } from '$lib/cameraPreview';
 	import { cameraSpec, aspectRatio, syncCameraToObject } from '$lib/cameraObjects';
 	import { safeStorage } from '$lib/safeStorage';
+	import { filmCameraMount } from '$lib/film/filmState';
 
 	// 16-P5: while a camera OBJECT is previewed, THIS is the render camera — a real
 	// perspective/orthographic camera (`makeDefault`, so threlte's `camera.current`
@@ -53,6 +54,12 @@
 	const scale = new THREE.Vector3();
 	useTask(() => {
 		if (!cameraRef || !object) return;
+		// 72 LK4: a clip can drive the lens, and it writes the marker's settings in place (no store fires)
+		const fov = object.userData?.camera?.fov;
+		if (cameraRef.isPerspectiveCamera && typeof fov === 'number' && cameraRef.fov !== fov) {
+			cameraRef.fov = fov;
+			cameraRef.updateProjectionMatrix();
+		}
 		if ($cameraPreview?.controlling) {
 			// the nav/orbit already moved the camera this frame — push it to the marker
 			writeBackPose(cameraRef, object);
@@ -64,6 +71,8 @@
 		object.matrixWorld.decompose(pos, quat, scale);
 		cameraRef.position.copy(pos);
 		cameraRef.quaternion.copy(quat);
+		// 68: a marker's fov / dutch roll (prop tracks, Film takes) reach the lens here
+		applyMarkerLens(cameraRef, object);
 	});
 
 	// a previewed camera must not also be gizmo-attached (dragging the marker while
@@ -90,6 +99,8 @@
 </script>
 
 {#if $cameraPreview && spec}
+	<!-- 68 V3: the camera's own mount — identity, except during Film's AR walk (filmState.filmCameraMount) -->
+	<T.Group bind:ref={$filmCameraMount} name="preview-camera-mount">
 	{#if spec.kind === 'orthographic'}
 		<T.OrthographicCamera
 			makeDefault
@@ -121,4 +132,5 @@
 			{/if}
 		</T.PerspectiveCamera>
 	{/if}
+	</T.Group>
 {/if}

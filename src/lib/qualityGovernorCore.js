@@ -21,13 +21,14 @@
 // Every step is REVERSIBLE and LOCAL — nothing here writes a preference, a document or a
 // message. A level is a fact about this device right now.
 
-/** @typedef {{dprScale: number, shadowsOff: boolean, aoOff: boolean, postOff: boolean, particlesCapped: boolean, presenceSlow: boolean}} QualityOverrides */
+/** @typedef {{dprScale: number, shadowsOff: boolean, aoOff: boolean, lookLite: boolean, postOff: boolean, particlesCapped: boolean, presenceSlow: boolean}} QualityOverrides */
 
 /** @type {QualityOverrides} */
 export const FULL_QUALITY = Object.freeze({
 	dprScale: 1,
 	shadowsOff: false,
 	aoOff: false,
+	lookLite: false,
 	postOff: false,
 	particlesCapped: false,
 	presenceSlow: false
@@ -44,6 +45,9 @@ export const GOVERNOR_STEPS = [
 	{ key: 'res72', label: 'Resolution 72%', set: { dprScale: 0.72 } },
 	{ key: 'ao', label: 'Ambient occlusion off', set: { aoOff: true } },
 	{ key: 'res61', label: 'Resolution 61%', set: { dprScale: 0.61 } },
+	// 98-int (device-lab-3, HONOR at Auto): a lighter look BEFORE no look — the scene's heaviest passes (fog, god rays,
+	// lens flare, TRAA, AO) go and the grade / tone mapping / bloom / vignette stay, so a pro look is still visible on a phone
+	{ key: 'lookLite', label: 'Scene look lighter (fog, god rays, lens flare, TRAA off)', set: { lookLite: true } },
 	{ key: 'post', label: 'Scene look (post-processing) off', set: { postOff: true } },
 	{ key: 'res50', label: 'Resolution 50%', set: { dprScale: 0.5 } },
 	{ key: 'particles', label: 'Fewer particles', set: { particlesCapped: true } },
@@ -64,6 +68,17 @@ export function overridesAt(level) {
 /** The labels of every step in effect at `level`, for the chip's tooltip. @param {number} level */
 export function stepLabelsAt(level) {
 	return GOVERNOR_STEPS.slice(0, Math.max(0, Math.min(MAX_LEVEL, level))).map((s) => s.label);
+}
+
+/**
+ * 78 PL9: the steps that are HOLDING at a level, for a sentence. The resolution steps replace each other (85% -> 72% ->
+ * 61% -> 50%), so "Lowered for now" listed four resolutions; only the deepest one is in force. Keeps the order.
+ * @param {string[]} labels @returns {string[]}
+ */
+export function holdingLabels(labels) {
+	const res = labels.filter((l) => /^Resolution /.test(l));
+	const last = res[res.length - 1];
+	return labels.filter((l) => !/^Resolution /.test(l) || l === last);
 }
 
 /**
@@ -345,6 +360,10 @@ export function createGovernor(opts = {}) {
 			frames = [];
 			longTasks = [];
 			settleUntil = Math.max(settleUntil, now + ms);
+		},
+		/** for the suite: when the current settle ends (-Infinity = never settled) */
+		settleUntil() {
+			return settleUntil;
 		},
 		/**
 		 * @param {number} now

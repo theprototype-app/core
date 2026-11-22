@@ -17,7 +17,7 @@ h.run(async () => {
 
 	// ---------- O1: material slider readouts ----------
 	await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		window.__box = g.children[g.children.length - 1];
@@ -40,7 +40,7 @@ h.run(async () => {
 		});
 	h.check((await readRoughness()) === 0.85, `the Roughness readout shows the material (${await readRoughness()})`);
 	await A.page.evaluate(() =>
-		window.__stores.materialsHandler.setMaterialParam(window.__box.uuid, 'roughness', 0.2)
+		window.__tp.test.v1.materialsHandler.setMaterialParam(window.__box.uuid, 'roughness', 0.2)
 	);
 	await A.page.waitForTimeout(300);
 	const after = await readRoughness();
@@ -48,7 +48,7 @@ h.run(async () => {
 
 	// ---------- O3: a plain click selects but does NOT open properties ----------
 	const clickBehaviour = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.inspectorClose.set(true);
 		w.inspectorPinned.set(false);
 		await new Promise((r) => setTimeout(r, 100));
@@ -67,13 +67,13 @@ h.run(async () => {
 
 	// the context menu offers Properties
 	const menuLabels = await A.page.evaluate(() =>
-		window.__stores.objectMenu.buildObjectMenuItems(window.__box.uuid).map((i) => i.label)
+		window.__tp.test.v1.objectMenu.buildObjectMenuItems(window.__box.uuid).map((i) => i.label)
 	);
 	h.check(menuLabels.includes('Properties'), `context menu has Properties (${menuLabels.slice(0, 6)})`);
 
 	// ---------- O2/O4: pin follows the selection, deselect falls back to Scene ----------
 	const pinned = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.inspectorClose.set(true);
 		w.inspectorPinned.set(true);
 		await new Promise((r) => setTimeout(r, 100));
@@ -88,16 +88,17 @@ h.run(async () => {
 		return { openedOnSelect, stillOpen, kind };
 	});
 	h.check(pinned.openedOnSelect, 'pinned: selecting opens the properties panel');
-	h.check(pinned.stillOpen && pinned.kind === 'scene', `pinned: deselect falls back to Scene (${pinned.kind})`);
+	// uir-polish E3 (owner 2026-11-11): on a wide desktop a deselect KEEPS the last object (it used to fall back to Scene)
+	h.check(pinned.stillOpen && pinned.kind === 'selection', `deselect keeps the last object in Properties (${pinned.kind})`);
 
 	// the pin button renders in the header
 	await A.page.evaluate(() => {
-		window.__stores.objectActions.selectObject(window.__box.uuid, true);
+		window.__tp.test.v1.objectActions.selectObject(window.__box.uuid, true);
 	});
 	await A.page.waitForTimeout(400);
 	h.check(
-		await A.page.evaluate(() => !!document.querySelector('#inspector-pin')),
-		'the header renders a pin toggle'
+		await A.page.evaluate(() => !document.querySelector('#inspector-pin')),
+		'uir-polish E1: no pin toggle any more (the pinned posture stays a runtime switch)'
 	);
 
 	// ---------- L3: no duplicate hex textboxes under the pickers ----------
@@ -111,7 +112,7 @@ h.run(async () => {
 
 	// ---------- O4: the Configure Scene row has no "●" prefix ----------
 	const sceneRow = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.closeMenu.set(false);
 		w.showSidebar('scene');
 		await new Promise((r) => setTimeout(r, 400));
@@ -125,7 +126,7 @@ h.run(async () => {
 
 	// ---------- L1/L2: sticky INFO toasts ----------
 	const info = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.toastStore.set([]);
 		localStorage.removeItem('hasSeenDisclaimer');
 		w.appNotice.set({ text: 'You are running the local, open-source version.', ctaUrl: 'https://example.com', ctaLabel: 'Learn more' });
@@ -145,7 +146,7 @@ h.run(async () => {
 		await A.page.evaluate(
 			() =>
 				new Promise((r) =>
-					window.__stores.toastStore.subscribe((v) => r(v.some((e) => e && e.id === 'app-notice')))()
+					window.__tp.test.v1.toastStore.subscribe((v) => r(v.some((e) => e && e.id === 'app-notice')))()
 				)
 		),
 		'sticky info toasts are not auto-dismissed'
@@ -153,7 +154,7 @@ h.run(async () => {
 
 	// and it shows in the Connect drawer's Toasts tab (the old blocks never did)
 	const inDrawer = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.connectDrawerTab.set('toasts');
 		w.connectDrawerOpen.set(true);
 		await new Promise((r) => setTimeout(r, 400));
@@ -167,13 +168,13 @@ h.run(async () => {
 	h.check(inDrawer.infoStyled, 'the drawer row carries the info kind');
 
 	// clearing the source removes it (state-driven mirror)
-	await A.page.evaluate(() => window.__stores.appNotice.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.appNotice.set(null));
 	await A.page.waitForTimeout(300);
 	h.check(
 		await A.page.evaluate(
 			() =>
 				new Promise((r) =>
-					window.__stores.toastStore.subscribe((v) => r(!v.some((e) => e && e.id === 'app-notice')))()
+					window.__tp.test.v1.toastStore.subscribe((v) => r(!v.some((e) => e && e.id === 'app-notice')))()
 				)
 		),
 		'clearing the source store removes the toast'
@@ -181,7 +182,7 @@ h.run(async () => {
 
 	// ---------- L4: "+N more" opens the drawer on Toasts ----------
 	const overflow = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.connectDrawerOpen.set(false);
 		w.toastsInDrawerOnly.set(false);
 		w.toastStore.set(['a', 'b', 'c', 'd', 'e', 'f']);
@@ -201,7 +202,7 @@ h.run(async () => {
 
 	// a burst of ordinary toasts must never evict a STICKY prompt
 	const stickySurvives = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.toastStore.set([]);
 		w.appNotice.set({ text: 'You are running the local, open-source version.' });
 		await new Promise((r) => setTimeout(r, 250));
@@ -228,7 +229,7 @@ h.run(async () => {
 
 	// ---------- P: the toast tiers STACK instead of overlapping ----------
 	const stacked = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.toastStore.set(['an informational toast']);
 		w.pendingApprovals.set([{ peerId: 'peer-aaa', status: 'new' }]);
 		await new Promise((r) => setTimeout(r, 350));
@@ -246,7 +247,7 @@ h.run(async () => {
 
 	// a rush of joiners folds like any other burst
 	const folded = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.pendingApprovals.set(['a', 'b', 'c', 'd', 'e'].map((id) => ({ peerId: 'peer-' + id, status: 'new' })));
 		await new Promise((r) => setTimeout(r, 350));
 		const cards = document.querySelectorAll('.tp-toast--req').length;
@@ -266,7 +267,7 @@ h.run(async () => {
 
 	// ---------- P: spectating is a MODE BANNER, not a toast ----------
 	const spectator = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.specatorMode.set('peer-watch');
 		await new Promise((r) => setTimeout(r, 300));
 		const banner = document.querySelector('.spectator-banner');
@@ -307,7 +308,7 @@ h.run(async () => {
 	// The old machinery re-armed its "done" branch on every $objectsGroup poke,
 	// so a finished "Receiving objects: N/N" card kept re-showing forever.
 	const progress = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.loadingcount.set(3);
 		w.loading.set(['u1', 'u2']);
 		await new Promise((r) => setTimeout(r, 250));
@@ -332,7 +333,7 @@ h.run(async () => {
 
 	// ---------- P2: share-or-stash WAITS for the user ----------
 	const shareGate = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		// a fake requesting peer with a stubbed open connection (resolveGate replies to it)
 		const p = await new Promise((r) => w.peers.subscribe((v) => r(v))());
 		p.connections['fake-gate-peer'] = { open: true, send() {} };
@@ -375,29 +376,30 @@ h.run(async () => {
 	// what a real second visit hits, and keeps this suite offline-safe).
 	const githubText = async () =>
 		A.page.evaluate(async () => {
-			window.__stores.whatsNew.welcomeOpen.set(true);
+			window.__tp.test.v1.whatsNew.welcomeOpen.set(true);
 			await new Promise((r) => setTimeout(r, 500));
-			const btn = [...document.querySelectorAll('.welcome-btn')].find((b) =>
+			// 76 FW1: the GitHub link moved to the welcome card's foot (.welcome-link)
+			const btn = [...document.querySelectorAll('.welcome-btn, .welcome-link')].find((b) =>
 				b.textContent?.includes('GitHub')
 			);
-			const text = btn?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
-			window.__stores.whatsNew.welcomeOpen.set(false);
+			const text = btn ? btn.textContent?.replace(/\s+/g, ' ').trim() ?? '' : 'NO GITHUB LINK';
+			window.__tp.test.v1.whatsNew.welcomeOpen.set(false);
 			return text;
 		});
 	// GitHub unreachable AND no cache -> the link renders with NO count (never a 0)
 	await A.page.route('**/api.github.com/**', (route) => route.fulfill({ status: 403, body: '{}' }));
 	await A.page.evaluate(() => localStorage.removeItem('gh:stars:core'));
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => !!window.__stores?.whatsNew, { timeout: 20000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.whatsNew, { timeout: 20000 });
 	const noStars = await githubText();
-	h.check(!/★/.test(noStars), `rate-limited / offline hides the count ("${noStars}")`);
+	h.check(/GitHub/.test(noStars) && !/★/.test(noStars), `rate-limited / offline hides the count ("${noStars}")`);
 
 	// a cached count renders immediately, compacted
 	await A.page.evaluate(() =>
 		localStorage.setItem('gh:stars:core', JSON.stringify({ n: 4321, ts: Date.now() }))
 	);
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => !!window.__stores?.whatsNew, { timeout: 20000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.whatsNew, { timeout: 20000 });
 	const withStars = await githubText();
 	h.check(/★ 4\.3k/.test(withStars), `the GitHub button shows the star count ("${withStars}")`);
 

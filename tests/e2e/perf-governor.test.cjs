@@ -30,7 +30,7 @@ h.run(async () => {
 
 	// shared in-page helpers
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const read = (store) => {
 			let v;
 			store.subscribe((x) => (v = x))();
@@ -62,7 +62,7 @@ h.run(async () => {
 
 	const snap = () =>
 		A.page.evaluate(() => {
-			const s = window.__stores;
+			const s = window.__tp?.test.v1;
 			const { read } = window.__gov;
 			const r = read(s.globalRenderer);
 			return {
@@ -82,7 +82,7 @@ h.run(async () => {
 		});
 
 	const base = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.sceneBudget.stopSceneMetrics();
 		s.qualityGovernor.governorForTest.reset();
 		return { dpr: window.devicePixelRatio, stored: localStorage.getItem('shadowQuality') };
@@ -127,7 +127,7 @@ h.run(async () => {
 	// the SAME scene as the governor has made it: same objects, shadows off halved the calls
 	// to green — by its LIVE readings this scene is light
 	const guard = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const g = window.__gov;
 		g.metrics({ objects: 1000, meshes: 1000, triangles: 30000, calls: 1900 });
 		const liveOnly = s.sceneBudget.isHeavy(s.sceneBudget.sceneMetrics ? g.read(s.sceneBudget.sceneMetrics) : {}, 'desktop', null);
@@ -143,7 +143,7 @@ h.run(async () => {
 	h.check(!!guard.paused, `…so a frozen streak still pauses rendering (${JSON.stringify(guard.paused)})`);
 	// a scene that really shrank (under 70% of the baseline objects) is not held heavy
 	const shrunk = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		window.__gov.metrics({ objects: 400, meshes: 400, triangles: 5000, calls: 800 });
 		return s.overloadGuard.sceneIsHeavy();
 	});
@@ -153,7 +153,7 @@ h.run(async () => {
 
 	// ---- 4. every step reaches its consumer, and walking back restores it ---------------
 	const top = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.qualityGovernor.governorForTest.setLevel(s.qualityGovernor.governorForTest.level() + 100);
 		await new Promise((r) => setTimeout(r, 800));
 		return true;
@@ -181,7 +181,7 @@ h.run(async () => {
 		`the composer's buffer follows the resolution step, not just the canvas (${start.post?.composerBufferWidth} -> ${atTop.post?.composerBufferWidth}px)`
 	);
 	await A.page.evaluate(async () => {
-		window.__stores.qualityGovernor.governorForTest.setLevel(0);
+		window.__tp.test.v1.qualityGovernor.governorForTest.setLevel(0);
 		await new Promise((r) => setTimeout(r, 800));
 	});
 	const back = await snap();
@@ -236,7 +236,7 @@ h.run(async () => {
 	h.check(snoozed.level === 0, `…and it STICKS: no automatic step during the release snooze (${JSON.stringify(snoozed)})`);
 
 	const off = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.qualityGovernor.governorForTest.reset(); // clears the snooze
 		s.qualityGovernor.setAutoQuality(false);
 		const g = window.__gov;
@@ -249,7 +249,7 @@ h.run(async () => {
 	});
 	h.check(off.level === 0 && off.stored === 'false', `turning it off stops it and is remembered locally (${JSON.stringify(off)})`);
 	// the real entry point: Settings binds the same store
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await A.page.waitForTimeout(500);
 	await A.page.locator('#settings-search').fill('heavy');
 	await A.page.waitForTimeout(400);
@@ -259,15 +259,15 @@ h.run(async () => {
 	if (found) await box.click();
 	await A.page.waitForTimeout(250);
 	const afterSetting = await A.page.evaluate(() => ({
-		store: window.__gov.read(window.__stores.qualityGovernor.autoQuality),
+		store: window.__gov.read(window.__tp.test.v1.qualityGovernor.autoQuality),
 		stored: localStorage.getItem('autoQuality')
 	}));
 	if (found) await box.click();
 	await A.page.waitForTimeout(250);
 	const restoredSetting = await A.page.evaluate(() => {
-		const on = window.__gov.read(window.__stores.qualityGovernor.autoQuality);
+		const on = window.__gov.read(window.__tp.test.v1.qualityGovernor.autoQuality);
 		localStorage.removeItem('autoQuality');
-		window.__stores.settingsOpen.set(false);
+		window.__tp.test.v1.settingsOpen.set(false);
 		return on;
 	});
 	h.check(
@@ -278,7 +278,7 @@ h.run(async () => {
 
 	// ---- 6. the ingest draw gap ----------------------------------------------------------
 	const gap = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const g = window.__gov;
 		const r = g.read(s.globalRenderer);
 		s.qualityGovernor.governorForTest.reset();
@@ -308,7 +308,7 @@ h.run(async () => {
 			g.decide();
 		}
 	});
-	const gapAfter = await A.page.evaluate(() => window.__gov.read(window.__stores.qualityGovernor.ingestDrawGap));
+	const gapAfter = await A.page.evaluate(() => window.__gov.read(window.__tp.test.v1.qualityGovernor.ingestDrawGap));
 	h.check(gap.normal > 30, `premise: the renderer draws at display rate normally (${gap.normal} render() calls in 1s)`);
 	h.check(gap.engaged === 250, `a draining batch through slow frames engages the draw gap (${gap.engaged}ms)`);
 	h.check(
@@ -323,7 +323,7 @@ h.run(async () => {
 	// A headless page cannot present WebXR, so the session is driven through the same three
 	// entry points the sessionstart/end listeners and the session's own rAF call.
 	const vr = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const q = s.qualityGovernor;
 		const g = window.__gov;
 		q.governorForTest.reset();
@@ -370,7 +370,7 @@ h.run(async () => {
 
 	// ---- 6c. integrate: a game's pinned Quality (31-game-shell) outranks the entry floor ----
 	const pin = await A.page.evaluate(() => {
-		const q = window.__stores.qualityGovernor;
+		const q = window.__tp.test.v1.qualityGovernor;
 		q.governorForTest.reset();
 		q.setAutoQuality(true);
 		q.applyGameQuality(0, 'high');
@@ -394,7 +394,7 @@ h.run(async () => {
 
 	// ---- 7. end to end on real frames --------------------------------------------------
 	const real = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const read = window.__gov.read;
 		s.qualityGovernor.governorForTest.reset();
 		// OFF while the scene is built and measured at full quality, so "before" is clean
@@ -436,7 +436,7 @@ h.run(async () => {
 	h.check(real.heavyStill === true, '…while 26-G still judges the scene heavy');
 
 	await A.page.evaluate(() => {
-		window.__stores.qualityGovernor.governorForTest.reset();
+		window.__tp.test.v1.qualityGovernor.governorForTest.reset();
 	});
 	h.check(h.pageErrors(A).length === 0, `no page errors (${JSON.stringify(h.pageErrors(A))})`);
 	await h.finish(browser);

@@ -1,13 +1,15 @@
 <script lang="ts">
 	import { onLayoutRestore } from '$lib/uiLayoutsCore';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
+	import { edgeFade } from '$lib/ui/edgeFade.js';
 	import { objectsGroup, TControls, transformMode, editorMode, isLocked, lockedObjects, globalScene, vrPassthrough, selectedObject, selectedObjects } from '../../stores/sceneStore';
 	import { chatUnread, chatMentioned } from '../../stores/appStore.js'; // 37 R15: the chat button's badge
 	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, uvEditorClose, shaderEditorClose, hudEditorClose, timelineClose, explorerClose, profilerClose, codeWorkspaceClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, floatingToolbar, toolbarAlwaysOnTop, hudStackLift, showSimControls, expandedObjects } from '../../stores/appStore.js';
 	// 24-B2: keyboard navigation in the object list (the Explorer's gridKeydown shape)
 	import { visibleObjectRows, withExpanded, typeAheadIndex } from '$lib/objectListNav';
-	import { sceneMetrics, statsOpen, worstTier, budgetRows } from '$lib/sceneBudget';
-	import { qualityState, pinQuality, releaseQuality } from '$lib/qualityGovernor';
+	import { sceneMetrics, statsOpen, footerTier, budgetRows } from '$lib/sceneBudget';
+	import { qualityState, pinQuality, releaseQuality, isPhoneDevice } from '$lib/qualityGovernor';
+	import { holdingLabels } from '$lib/qualityGovernorCore';
 	import { showToast as showQualityToast } from '../../stores/appStore';
 	import { keyOf } from '$lib/keyOf';
 	import { setLastScope } from '$lib/keyScope';
@@ -43,9 +45,12 @@
 	import SearchField from '../ui/SearchField.svelte';
 	import Badge from '../ui/Badge.svelte';
 	import Icon from '../ui/Icon.svelte';
+	import HeadDockPop from '../ui/HeadDockPop.svelte'; // uir-polish G2
+	import { dockTab } from '$lib/dockMenu';
 	import { createAttachmentKey, fromAction } from 'svelte/attachments';
 	// 41 G1: MobileAddButton / AiHudButton (and VoiceChat's mic button) became roster entries
-	import { aiAssistantHidden, viewportMenuOpener } from '../../stores/appStore.js';
+	import { aiAssistantHidden, chatTab, viewportMenuOpener } from '../../stores/appStore.js';
+	import { toggleChatTab } from '$lib/chat/chatWindow.js'; // uir-chat
 	// 42 I9: the top-right group's and the touch tools' buttons join the roster
 	import { notesDrawerOpen, multiSelectMode, touchTools } from '../../stores/appStore.js';
 	import { undo, redo } from '$lib/history';
@@ -62,10 +67,13 @@
 	import { dockable } from '$lib/docking';
 	import { bottomDockable } from '$lib/bottomDockDrop';
 	import { dockShownKeys, dockOccupants, bottomInset, FLOW_FAMILY, armDockMode, DOCK_TITLES } from '$lib/bottomDock';
-	import { togglePanel } from '$lib/panelToggles';
+	import { togglePanel, toggleHostedWindow } from '$lib/panelToggles';
 	import { requestPlay, willEnterXR, willEnterAR, xrSessionFailed, playAsItems } from '$lib/playMode';
+	import { simpleUntilPlay, holdAdvanced } from '$lib/onboarding/onboardState.js'; // 76 FW1
 	// 60 Q1: Play here — a roster button (Customize), a row in Play's own menu, Ctrl+Shift+Enter
 	import { playHere, playHereItems, playingHere } from '$lib/playHere';
+	import { testPlayersItems } from '$lib/testPlayers/testPlayers.js'; // 61 G3
+	import { animateInEditor, toggleAnimateInEditor } from '$lib/editorMotion'; // 78 F6
 	import { arPlayItems } from '$lib/arTable';
 	// 30 P2: Test play — the play button's right-click row beside the game chip's button
 	import { testPlay } from '$lib/gamePresence';
@@ -418,38 +426,6 @@
 		chipPopup = false;
 	}
 
-	// 80.2: the chip row scrolls horizontally (wheel + drag), never overflows
-	function chipScroll(node: HTMLElement) {
-		const onWheel = (e: WheelEvent) => {
-			if (!e.deltaY) return;
-			node.scrollLeft += e.deltaY;
-			e.preventDefault();
-		};
-		let dragging = false;
-		let startX = 0;
-		let startScroll = 0;
-		const down = (e: PointerEvent) => {
-			dragging = true;
-			startX = e.clientX;
-			startScroll = node.scrollLeft;
-		};
-		const move = (e: PointerEvent) => {
-			if (dragging) node.scrollLeft = startScroll - (e.clientX - startX);
-		};
-		const up = () => (dragging = false);
-		node.addEventListener('wheel', onWheel, { passive: false });
-		node.addEventListener('pointerdown', down);
-		window.addEventListener('pointermove', move);
-		window.addEventListener('pointerup', up);
-		return {
-			destroy() {
-				node.removeEventListener('wheel', onWheel);
-				node.removeEventListener('pointerdown', down);
-				window.removeEventListener('pointermove', move);
-				window.removeEventListener('pointerup', up);
-			}
-		};
-	}
 
 	// Drop-to-share: dragging a LOCAL object anywhere over the shared object-list body
 	// shares it to the scene root (a shared object just moves to root). Uses an action
@@ -623,8 +599,10 @@
 	// 26-A: the meter's dot and its tooltip. The reading is the sampler's; this only
 	// picks the worst tier and spells out what is over budget, so the tooltip answers
 	// "over budget on WHAT" without opening anything.
-	const budgetProfileNow = $derived($sceneMetrics.profile === 'vr' ? 'vr' : 'desktop');
-	const budgetTier = $derived(worstTier($sceneMetrics, budgetProfileNow));
+	// 78 PL11: a phone is judged by phone frame limits, and frames the governor is already answering read as a note
+	const phoneNow = isPhoneDevice();
+	const budgetProfileNow = $derived(phoneNow ? 'phone' : $sceneMetrics.profile === 'vr' ? 'vr' : 'desktop');
+	const budgetTier = $derived(footerTier($sceneMetrics, budgetProfileNow, $qualityState.level > 0));
 	/** A DIRECT listener, not `on:click`/`onclick`: this file is written in the `on:`
 	 * style throughout, so an attribute handler here is a hard "mixing syntaxes" error,
 	 * and the `on:` form is deprecated in runes mode — the action is the way out of both,
@@ -637,7 +615,8 @@
 	}
 	const budgetTitle = $derived.by(() => {
 		const over = budgetRows($sceneMetrics, budgetProfileNow).filter((r) => r.tier === 'amber' || r.tier === 'red');
-		if (!over.length) return 'Scene budget — within the ' + (budgetProfileNow === 'vr' ? 'VR / mobile' : 'desktop') + ' budget. Click for statistics.';
+		if (!over.length) return 'Scene budget — within the ' + (budgetProfileNow === 'vr' ? 'VR' : budgetProfileNow === 'phone' ? 'phone' : 'desktop') + ' budget. Click for statistics.';
+		if (budgetTier === 'note') return 'Heavy for this device right now; quality is lowered to keep it smooth. Click for statistics.';
 		return 'Scene budget: over on ' + over.map((r) => r.label.toLowerCase()).join(', ') + '. Click for statistics.';
 	});
 
@@ -648,7 +627,10 @@
 	// same reason as openStats.
 	const qualityTitle = $derived.by(() => {
 		const q = $qualityState;
-		const what = q.labels.join(', ').toLowerCase();
+		const what = holdingLabels(q.labels).join(', ').toLowerCase();
+		// UI-9: a phone in Auto STARTS lighter (qualityGovernor's PHONE_START_LEVEL) before it has judged the scene
+		if (!q.pinned && String(q.reason).startsWith('phone'))
+			return 'Phones start with lighter drawing so the first seconds stay smooth: ' + what + '. Full quality comes back on its own when the frames allow. Click to keep it this way.';
 		return q.pinned
 			? 'Held at reduced quality (' + what + '). Click to restore full quality.'
 			: q.held
@@ -1044,6 +1026,8 @@
 			...arPlayItems(),
 			// 60 Q1: Play here (the phone's Play menu carries the same row)
 			...playHereItems(),
+			// 61 G3: Test with players (the phone's Play menu carries the same rows)
+			...testPlayersItems(),
 			// 30 P2: TEST PLAY — back to the menu, into Play, the Start screen. Offered only
 			// where it means something: a scene with no game shell has no menu to start from.
 			...($hudIsGame
@@ -1298,8 +1282,8 @@
 			label: 'Chat (C)',
 			slot: 'chat-button',
 			icon: 'message-square',
-			tint: () => ($chatHidden !== 'hidden' ? ICON_ON : ICON_OFF),
-			run: () => chatHidden.set($chatHidden === 'hidden' ? '' : 'hidden')
+			tint: () => ($chatHidden === '' && $chatTab === 'session' ? ICON_ON : ICON_OFF),
+			run: () => toggleChatTab('session') // uir-chat: the Session tab of the one Chat window
 		},
 		mic: {
 			get title() {
@@ -1365,6 +1349,24 @@
 			tint: () => ($playingHere ? ICON_ON : ICON_OFF),
 			run: () => playHere()
 		},
+		// 78 F6: ANIMATE IN EDITOR — an OPTIONAL roster button (Customize toolbar / the "+" list): off,
+		// every flow motion node rests at its authored pose while you edit; Play runs as always. The
+		// node editor's own controls carry the same switch. LOCAL (editorMotion.js).
+		animateedit: {
+			get title() {
+				return $animateInEditor
+					? 'Animate in editor: on — flow motion plays while you edit (click to rest every moving object)'
+					: 'Animate in editor: off — moving objects rest at their authored pose until Play (click to animate)';
+			},
+			label: 'Animate in editor',
+			slot: 'animate-edit-button',
+			get iconName() {
+				return $animateInEditor ? 'rotate-cw' : 'pause';
+			},
+			tint: () => ($animateInEditor ? ICON_ON : ICON_OFF),
+			pressed: () => $animateInEditor,
+			run: () => toggleAnimateInEditor()
+		},
 		multiselect: {
 			get title() {
 				return $multiSelectMode
@@ -1388,7 +1390,7 @@
 	 *  may only live in the top-right group (moved, removed, re-added there — never elsewhere) */
 	const HOME_ONLY: Record<string, Region> = { notifications: 'top', peers: 'top' };
 	/** 60 Q1: optional tool buttons (listed in Customize unchecked, like the optional views) */
-	const OPTIONAL_TOOLS = ['playhere'];
+	const OPTIONAL_TOOLS = ['playhere', 'animateedit'];
 	const ROSTER_IDS = [...DEFAULT_ORDER, ...OPTIONAL_VIEWS, ...OPTIONAL_TOOLS, ...CORNER_LEFT, ...CORNER_RIGHT, ...TOP_DEFAULT, ...TOUCH_DEFAULT];
 	/** 42 I7: the name a MENU prints for a button (its short label, else its title) */
 	function labelOf(id: string) {
@@ -1398,7 +1400,9 @@
 	/** the AI button press — AiHudButton's own path (I3). 86-fix N1: it always opens the window; with no
 	 *  provider set up the window itself offers Connect Claude or Settings ▸ Tools & connections */
 	function toggleAiAssistant() {
-		aiAssistantHidden.set($aiAssistantHidden === '' ? 'hidden' : '');
+		// dock-fixes: one tree for a floating, sidebar-docked or bottom-docked window ($lib/panelToggles);
+		// uir-chat: the AI assistant is the Assistant tab of the one Chat window
+		toggleChatTab('assistant');
 	}
 
 	/** the "+" press — MobileAddButton's own path: a new object lands in the middle of the
@@ -1566,15 +1570,19 @@
 	// positions runs (it shows every item, wrapping) and on a phone-width bar (its cells shrink instead).
 	const foldPlan = $derived.by(() => {
 		if (controlsLayout.collapsed) return { shown: [SPACER], folded: [] as string[] };
-		const row = visualIds().filter((id) => !(id === 'pivot' && viewportW < NARROW_BAR));
-		if (editing || viewportW <= FOLD_MIN_VW || !barRoom.ok) return { shown: row, folded: [] as string[] };
-		return foldToFit(row, {
+		const all = visualIds().filter((id) => !(id === 'pivot' && viewportW < NARROW_BAR));
+		if (editing) return { shown: all, folded: [] as string[] };
+		// 76 FW1: until a new user's first Play the advanced buttons wait in "»" (still one press away)
+		const { row, held } = holdAdvanced(all, $simpleUntilPlay);
+		if (viewportW <= FOLD_MIN_VW || !barRoom.ok) return { shown: row, folded: held };
+		const fit = foldToFit(row, {
 			...barMetrics,
 			// a px of slack: the arithmetic is in whole layout px, the browser's in fractions of one
 			budget: barRoom.right - barRoom.left - 1,
 			// the "…" is drawn only on a wide window (hud.css hides it below 720 px)
 			more: controlsLayout.more !== false && viewportW >= 720
 		});
+		return held.length ? { shown: fit.shown, folded: [...fit.folded, ...held] } : fit;
 	});
 	const visibleCells = $derived(foldPlan.shown.map((id) => ({ id })));
 	/** the cells folded into "»", in the bar's left → right order */
@@ -2066,15 +2074,18 @@
 		const r = el?.getBoundingClientRect();
 		return r && r.width > 0 && r.height > 0 ? boxOf(r) : null;
 	}
-	/** the room a cluster may take: the window less the pinned sidebars, the visible dock and a docked Connect bar */
+	/** the room a cluster may take: the window less the open sidebars, the visible dock and a docked Connect bar.
+	 *  dock-fixes (owner 2026-11-08): every OPEN column (the free viewport rect, $lib/sidebars), not only a pinned
+	 *  one — a placed cluster (the row beside the logo turned into a column, the stacks moved) drew over an
+	 *  unpinned sidebar */
 	function clusterArea(): Box {
 		const g = get(sidebarGeometry);
 		const vw = window.innerWidth;
 		const vh = window.innerHeight;
 		const inset = cssPx(getComputedStyle(document.documentElement).getPropertyValue('--bottom-inset')) || 0;
 		return {
-			left: g?.wide ? g.dockLeft : 0,
-			right: vw - (g?.wide ? g.dockRight : 0),
+			left: g?.wide ? g.freeLeft : 0,
+			right: vw - (g?.wide ? g.freeRight : 0),
 			top: get(connectDocked) ? get(connectBarHeight) : 0,
 			bottom: vh - inset
 		};
@@ -3286,11 +3297,18 @@
 		// a drag, Move toolbar and the overflow budget all stop at its edge; while Edit positions runs,
 		// EVERY open column does (the user's "next to the sidebar, not on top of it"). The geometry is
 		// 42 sidebars' store (`$lib/sidebars`), the same numbers its columns are drawn from.
+		// dock-fixes (owner 2026-11-08): EVERY open column, pinned or not, and all the time — the bar lives in the
+		// FREE viewport between the sidebars (centred there, shifting as a column opens / resizes, folding into
+		// its "»" before it would overlap one). An unpinned column used to let the bar slide under its bottom.
 		const sb = get(sidebarGeometry);
 		if (sb?.wide) {
-			if (sb.left.shown && (sb.left.full || editing)) left = Math.max(left, sb.leftX + sb.left.w + EDGE_MARGIN);
-			if (sb.right.shown && (sb.right.full || editing)) right = Math.min(right, vw - sb.right.w - EDGE_MARGIN);
+			if (sb.freeLeft) left = Math.max(left, sb.freeLeft + EDGE_MARGIN);
+			if (sb.freeRight) right = Math.min(right, vw - sb.freeRight - EDGE_MARGIN);
 		}
+		// phone-polish item 4: with a column OPEN the bar's home is the middle of the width that is
+		// left, not of the screen — on a tablet the screen's middle sits against (or under) the column
+		const pinned = left !== EDGE_MARGIN || right !== vw - EDGE_MARGIN;
+		const home = pinned ? (left + right) / 2 : vw / 2;
 		// the bar's ROW is its bottom bar-height: a wrapped edit bar is taller, and reading its whole box
 		// would let a corner button ABOVE the row narrow the band it wraps into (and so on)
 		const rowH = cssPx(getComputedStyle(document.documentElement).getPropertyValue('--hud-bar-h')) || pill.height;
@@ -3325,7 +3343,7 @@
 		const min = left + half;
 		const max = right - half;
 		const ok = max - min >= 1;
-		const next = { min, max, mid: ok ? Math.max(min, Math.min(max, vw / 2)) : vw / 2, ok };
+		const next = { min, max, mid: ok ? Math.max(min, Math.min(max, home)) : home, ok };
 		// REASSIGNED, never mutated: `$derived` compares with ===. Guarded on the values
 		// so a ResizeObserver callback can never write its way into a second callback.
 		if (next.min !== track.min || next.max !== track.max || next.mid !== track.mid || next.ok !== track.ok)
@@ -3648,7 +3666,13 @@
 		barPlaced
 			? 'left: var(--cl-bar-x, 50%); top: var(--cl-bar-y, auto); bottom: auto; translate: none; touch-action: none;' + (movingBar ? ' cursor: grabbing;' : '')
 			:
-		($floatingToolbar ? 'bottom: calc(var(--bottom-inset, 0px) + 16px);' : 'bottom: 16px;') +
+		// phone-polish: with a dock up the bar clears the dock's tab strip (DockTabs' -top-6 = 1.5rem above the dock's
+		// edge) by 4 px — at 16 px it covered the strip's own buttons (1 at 100 %, 6 at 130 % interface scale, measured
+		// on the unfolded phone). Inline px is not rewritten by a11y-css, so the 16 / 4 px scale by --ui-scale here.
+		// No dock (inset 0): max() picks the 16 px floor, as before.
+		($floatingToolbar
+			? 'bottom: calc(var(--bottom-inset, 0px) + max(16px * var(--ui-scale, 1), min(var(--bottom-inset, 0px), 1.5rem + 4px * var(--ui-scale, 1))));'
+			: 'bottom: 16px;') +
 			(editCentre != null
 				? ` left: ${Math.round(editCentre)}px; max-width: ${Math.max(0, Math.floor(editPlace!.right - editPlace!.left))}px;`
 				: track.mid > 0
@@ -3863,7 +3887,7 @@
 		<!-- 43 J10: the buttons that do not fit wait in "»" (right to left by the user's order, Play never);
 		     once anything folds it ends the bar in place of the "…", and its menu closes with Customize -->
 		<span class="hud-sep" aria-hidden="true"></span>
-		<button id="toolbar-overflow" type="button" class="hud-cell" class:on={overflowMenu !== null} data-folded={folded.join(',')} title="More buttons — {folded.length} {folded.length === 1 ? 'does' : 'do'} not fit" aria-label="More buttons ({folded.length})" aria-haspopup="menu" aria-expanded={overflowMenu !== null} use:onPress={openOverflow} use:cellMenu={BAR}
+		<button id="toolbar-overflow" type="button" class="hud-cell" class:on={overflowMenu !== null} data-folded={folded.join(',')} title={$simpleUntilPlay ? 'More buttons — the node editor, animation and more (the bar shows them all after your first Play)' : `More buttons — ${folded.length} ${folded.length === 1 ? 'does' : 'do'} not fit`} aria-label="More buttons ({folded.length})" aria-haspopup="menu" aria-expanded={overflowMenu !== null} use:onPress={openOverflow} use:cellMenu={BAR}
 			><Icon name="chevrons-right" size={20} aria-hidden="true" /></button
 		>
 	{:else if !controlsLayout.collapsed && controlsLayout.more !== false}
@@ -4147,11 +4171,15 @@
 			{/if}
 			<span class="flex-1"></span>
 		{/snippet}
+		{#snippet actions()}
+			<HeadDockPop key="objects" title="Objects" ondock={() => dockTab('objects')} />
+		{/snippet}
 	</WindowChrome>
 	<div class="obj-filters flex flex-col gap-1">
-		<div class="relative flex items-center gap-1">
-			<!-- 80.2: one scrollable chip row that never overflows the window -->
-			<div id="filter-chips" class="tp-noscrollbar flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap scrollbar-none" use:chipScroll>
+		<div class="relative flex items-start gap-1">
+			<!-- 80.2: a chip row that never overflows the window. 78 PL20 (device lab PC-4): it WRAPS — as one
+			     scrolling row the last chip was cut under the settings button ("St…") with no cue that it scrolled -->
+			<div id="filter-chips" class="tp-noscrollbar flex min-w-0 flex-1 flex-wrap items-center gap-1 whitespace-nowrap" use:edgeFade>
 				<button
 					class="obj-chip"
 					aria-pressed={!searchTypes.size && !viewMode}
@@ -4229,10 +4257,12 @@
 	</div>
 	<div class="obj-scroller flex min-h-0 flex-1 flex-col overflow-y-auto rounded-lg rounded-br rounded-bl bg-transparent text-text-muted" use:minimalScroll>
 		<!-- 24-B2: the tree is the keyboard surface — focusable, arrows/Enter/F2/type-ahead
-		     walk the VISIBLE rows (see listKeydown); a subtle ring says it has focus -->
+		     walk the VISIBLE rows (see listKeydown); a subtle ring says it has focus.
+		     showhide-v8 §5: w-full, not Tailwind's `container` — that one caps max-width per breakpoint
+		     (1280 px at xl), so the docked list stopped short of the dock's right edge on a wide screen -->
 		<div
 			id="object-tree"
-			class="container outline-none focus-visible:ring-1 focus-visible:ring-accent"
+			class="w-full outline-none focus-visible:ring-1 focus-visible:ring-accent"
 			role="tree"
 			tabindex="0"
 			aria-label="Objects"
@@ -4380,7 +4410,7 @@
 				title={qualityTitle}
 				use:qualityChipClick
 			>
-				<Badge tone="warn" text={'Reduced quality' + ($qualityState.pinned ? ' · held' : ' (scene is heavy)')} />
+				<Badge tone="warn" text={'Reduced quality' + ($qualityState.pinned ? ' · held' : String($qualityState.reason).startsWith('phone') ? ' (phone start)' : ' (scene is heavy)')} />
 			</button>
 		{/if}
 	</div>

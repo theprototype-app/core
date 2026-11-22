@@ -8,7 +8,7 @@ const h = require('./helpers.cjs');
 
 const openOnBox = async (page) => {
 	const uuid = await page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.children[g.children.length - 1];
@@ -37,7 +37,7 @@ const stroke = (page, { v, from, to, n, pointerType, p0, p1 }) =>
 			el.dispatchEvent(new PointerEvent('pointerdown', opt(at(0), p0)));
 			await new Promise((res) => setTimeout(res, 160)); // the stroke opens async
 			const dbg = window.__uvDebug?.();
-			window.__strokeState = { gesture: dbg?.gesture, tool: dbg?.tool, painting: window.__stores.uvEditor.painting(), hasEl: !!el };
+			window.__strokeState = { gesture: dbg?.gesture, tool: dbg?.tool, painting: window.__tp.test.v1.uvEditor.painting(), hasEl: !!el };
 			for (let i = 1; i <= n; i++) {
 				window.dispatchEvent(new PointerEvent('pointermove', opt(at(i), p0 + ((p1 - p0) * i) / n)));
 				await new Promise((res) => setTimeout(res, 60)); // slower than the wire throttle: peers see it live
@@ -60,10 +60,10 @@ const runAt = (page, uuid, u, v, tint = false) =>
 	page.evaluate(
 		({ uuid, u, v, tint }) => {
 			// the live paint canvas — on a peer it is the CanvasTexture installed as the map
-			let c = window.__stores.uvEditor.paintPreviewCanvas(uuid, 0);
+			let c = window.__tp.test.v1.uvEditor.paintPreviewCanvas(uuid, 0);
 			if (!c) {
 				let g;
-				window.__stores.objectsGroup.subscribe((x) => (g = x))();
+				window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 				const o = g?.getObjectByProperty('uuid', uuid);
 				const m = Array.isArray(o?.material) ? o.material[0] : o?.material;
 				const img = m?.map?.image;
@@ -115,7 +115,7 @@ h.run(async () => {
 	// spy on the wire: every uvpaint message A sends
 	await A.page.evaluate(() => {
 		let p;
-		window.__stores.peers.subscribe((x) => (p = x))();
+		window.__tp.test.v1.peers.subscribe((x) => (p = x))();
 		window.__sent = [];
 		const raw = p.send.bind(p);
 		p.send = (d) => { if (d?.type === 'uvpaint') window.__sent.push(JSON.parse(JSON.stringify(d))); return raw(d); };
@@ -134,7 +134,7 @@ h.run(async () => {
 			bStart = await runAt(B.page, uuid, 0.25, 0.7);
 			bEnd = await runAt(B.page, uuid, 0.75, 0.7);
 			const aSent = await A.page.evaluate(() => window.__sent.length);
-			const bbox = (page) => page.evaluate((u) => { const w = window.__stores; let g; w.objectsGroup.subscribe((x) => (g = x))(); const o = g.getObjectByProperty('uuid', u); const m = o && (Array.isArray(o.material) ? o.material[0] : o.material); let c = w.uvEditor.paintPreviewCanvas(u, 0); const img = m?.map?.image; if (!c && img && typeof img.getContext === 'function') c = img; if (!c) return { live: w.uvEditor.liveStrokeCount(), canvas: null }; const d = c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, c.width, c.height).data; let n = 0, x0 = 1e9, x1 = -1, y0 = 1e9, y1 = -1; for (let i = 0; i < d.length; i += 4) { if (d[i] > 150 && d[i + 1] < 140) { n++; const p = i / 4; const x = p % c.width; const y = (p - x) / c.width; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } } return { live: w.uvEditor.liveStrokeCount(), canvas: c.width + 'x' + c.height, red: n, box: n ? [x0, y0, x1, y1] : null, mapImg: img ? (img.tagName || img.constructor?.name) : null, previewNull: !w.uvEditor.paintPreviewCanvas(u, 0) }; }, uuid);
+			const bbox = (page) => page.evaluate((u) => { const w = window.__tp?.test.v1; let g; w.objectsGroup.subscribe((x) => (g = x))(); const o = g.getObjectByProperty('uuid', u); const m = o && (Array.isArray(o.material) ? o.material[0] : o.material); let c = w.uvEditor.paintPreviewCanvas(u, 0); const img = m?.map?.image; if (!c && img && typeof img.getContext === 'function') c = img; if (!c) return { live: w.uvEditor.liveStrokeCount(), canvas: null }; const d = c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, c.width, c.height).data; let n = 0, x0 = 1e9, x1 = -1, y0 = 1e9, y1 = -1; for (let i = 0; i < d.length; i += 4) { if (d[i] > 150 && d[i + 1] < 140) { n++; const p = i / 4; const x = p % c.width; const y = (p - x) / c.width; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } } return { live: w.uvEditor.liveStrokeCount(), canvas: c.width + 'x' + c.height, red: n, box: n ? [x0, y0, x1, y1] : null, mapImg: img ? (img.tagName || img.constructor?.name) : null, previewNull: !w.uvEditor.paintPreviewCanvas(u, 0) }; }, uuid);
 			const bState = await bbox(B.page);
 			const aState = await bbox(A.page);
 			return { s: bStart?.count ?? 0, e: bEnd?.count ?? 0, aSent, bState, aState };
@@ -166,7 +166,7 @@ h.run(async () => {
 	h.check(mouseWire.length > 0 && mouseWire.flatMap((m) => m.seg).every((pt) => pt.length === 2) && mouseWire.every((m) => m.pmode === undefined), 'a mouse stroke sends plain [u, v] points — byte-identical to before');
 
 	// ---- 3. opacity mode: the alpha varies instead, and the mode rides the wire --------
-	await A.page.evaluate(() => window.__stores.uvEditor.uvPenPressure.set('opacity'));
+	await A.page.evaluate(() => window.__tp.test.v1.uvEditor.uvPenPressure.set('opacity'));
 	await stroke(A.page, { v: 0.5, from: 0.15, to: 0.85, n: 12, pointerType: 'pen', p0: 0.25, p1: 0.25 });
 	await release(A.page, 0.85, 0.5);
 	await A.page.waitForTimeout(900);
@@ -178,7 +178,7 @@ h.run(async () => {
 	h.check(!!oStart && !!oEnd && Math.abs(oStart.count - 40) <= 8 && Math.abs(oStart.count - oEnd.count) <= Math.max(2, oStart.count * 0.15), `...at the full brush width (${oStart?.count}px / ${oEnd?.count}px ~ 40)`);
 
 	// ---- 4. off: a pen paints like a mouse ---------------------------------------------
-	await A.page.evaluate(() => window.__stores.uvEditor.uvPenPressure.set('off'));
+	await A.page.evaluate(() => window.__tp.test.v1.uvEditor.uvPenPressure.set('off'));
 	await stroke(A.page, { v: 0.9, from: 0.15, to: 0.85, n: 8, pointerType: 'pen', p0: 0.1, p1: 0.9 });
 	await release(A.page, 0.85, 0.9);
 	await A.page.waitForTimeout(700);
@@ -193,11 +193,11 @@ h.run(async () => {
 	h.check(!!panel && panel.includes('off✓') && panel.length === 3, `the Brush panel offers Size / Opacity / Off (${JSON.stringify(panel)})`);
 	await A.page.click('#uv-pen-pressure [data-value="size"]');
 	await A.page.waitForTimeout(150);
-	h.check((await A.page.evaluate(() => { let v; window.__stores.uvEditor.uvPenPressure.subscribe((x) => (v = x))(); return v; })) === 'size', 'clicking Size sets the pref back');
+	h.check((await A.page.evaluate(() => { let v; window.__tp.test.v1.uvEditor.uvPenPressure.subscribe((x) => (v = x))(); return v; })) === 'size', 'clicking Size sets the pref back');
 
 	// ---- 6. the committed texture matches on both peers (the uv-paint comparison) ------
 	await h.eventually(
-		() => Promise.all([A.page, B.page].map((page) => page.evaluate((u) => { let g; window.__stores.objectsGroup.subscribe((x) => (g = x))(); const o = g.getObjectByProperty('uuid', u); const m = Array.isArray(o.material) ? o.material[0] : o.material; return m?.userData?.mapDataUrl?.length ?? 0; }, uuid))),
+		() => Promise.all([A.page, B.page].map((page) => page.evaluate((u) => { let g; window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))(); const o = g.getObjectByProperty('uuid', u); const m = Array.isArray(o.material) ? o.material[0] : o.material; return m?.userData?.mapDataUrl?.length ?? 0; }, uuid))),
 		([a, b]) => a > 0 && a === b,
 		"peer B's committed texture is A's (same data URL length)",
 		15000

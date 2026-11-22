@@ -17,7 +17,7 @@ function wav() {
 }
 
 const musicOf = (page) =>
-	page.evaluate(() => new Promise((r) => window.__stores.sceneMusic.music.subscribe((m) => r(m))()));
+	page.evaluate(() => new Promise((r) => window.__tp.test.v1.sceneMusic.music.subscribe((m) => r(m))()));
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -28,8 +28,8 @@ h.run(async () => {
 	// A stores a track in its Explorer library and sets it as the scene music
 	const hash = await A.page.evaluate(async (bytes) => {
 		const buf = new Uint8Array(bytes).buffer;
-		const item = await window.__stores.explorer.addItemFromBytes(buf, 'loop.wav', null);
-		window.__stores.sceneMusic.setMusicTrack(item.hash, 'loop.wav');
+		const item = await window.__tp.test.v1.explorer.addItemFromBytes(buf, 'loop.wav', null);
+		window.__tp.test.v1.sceneMusic.setMusicTrack(item.hash, 'loop.wav');
 		return item.hash;
 	}, wav());
 	h.check(!!hash, 'A stored a track and set it as scene music');
@@ -45,22 +45,22 @@ h.run(async () => {
 	const bPulled = await B.page.evaluate(
 		(hash) =>
 			new Promise((r) =>
-				window.__stores.explorer.explorerItems.subscribe((list) => r(list.some((i) => i.hash === hash)))()
+				window.__tp.test.v1.explorer.explorerItems.subscribe((list) => r(list.some((i) => i.hash === hash)))()
 			),
 		hash
 	);
 	h.check(bPulled === true, 'B pulled the shared track by hash');
-	const bDebug = await B.page.evaluate(() => window.__stores.sceneMusic.musicDebug());
+	const bDebug = await B.page.evaluate(() => window.__tp.test.v1.sceneMusic.musicDebug());
 	h.check(bDebug.buffered === true, 'B decoded the track (playback graph built)');
 	h.check(bDebug.offset >= 0 && bDebug.offset < 1.001, `B computes a synced-clock loop offset (${bDebug.offset.toFixed(3)})`);
 
 	// local mute/volume are per-device and don't touch the shared state
-	await B.page.evaluate(() => window.__stores.sceneMusic.musicMuted.set(true));
+	await B.page.evaluate(() => window.__tp.test.v1.sceneMusic.musicMuted.set(true));
 	const afterMute = await musicOf(A.page);
 	h.check(afterMute.playing === true, "B's local mute does not stop A's shared playback");
 
 	// stop on A replicates to B
-	await A.page.evaluate(() => window.__stores.sceneMusic.setMusicPlaying(false));
+	await A.page.evaluate(() => window.__tp.test.v1.sceneMusic.setMusicPlaying(false));
 	await h.eventually(() => musicOf(B.page), (m) => m.playing === false, 'stop replicated to B');
 
 	await h.finish(browser);

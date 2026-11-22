@@ -14,7 +14,7 @@ const h = require('./helpers.cjs');
 /** run a body with `S` = the debug hook */
 const ev = (page, fn, arg) =>
 	page.evaluate(
-		([body, a]) => new Function('S', 'arg', body)(window.__stores, a),
+		([body, a]) => new Function('S', 'arg', body)(window.__tp?.test.v1, a),
 		[fn, arg ?? null]
 	);
 
@@ -47,11 +47,11 @@ h.run(async () => {
 	// ---------------------------------------------------------------- section 0
 	console.log('\n=== 0. the seams exist (hook slots + the exported derivation) ===');
 	const hook = await page.evaluate(() => ({
-		derive: typeof window.__stores.sessionCompositesOverRoom,
-		passthrough: typeof window.__stores.passthroughActive?.set,
+		derive: typeof window.__tp.test.v1.sessionCompositesOverRoom,
+		passthrough: typeof window.__tp.test.v1.passthroughActive?.set,
 		// neighbours of the colocation hook slots — the positional-destructure guard
-		calibrate: typeof window.__stores.colocationCalibrate?.startCalibration,
-		environment: typeof window.__stores.environment?.applyEnvironment
+		calibrate: typeof window.__tp.test.v1.colocationCalibrate?.startCalibration,
+		environment: typeof window.__tp.test.v1.environment?.applyEnvironment
 	}));
 	h.check(hook.derive === 'function', '0.1 sessionCompositesOverRoom is exported from sceneStore');
 	h.check(hook.passthrough === 'function', '0.2 passthroughActive is the writable signal');

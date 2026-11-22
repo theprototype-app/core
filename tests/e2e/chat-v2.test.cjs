@@ -12,15 +12,15 @@ h.run(async () => {
 		if (!dir) return;
 		const before = await page.evaluate(() => {
 			let v;
-			window.__stores.themes.theme.subscribe((x) => (v = x))();
+			window.__tp.test.v1.themes.theme.subscribe((x) => (v = x))();
 			return v;
 		});
 		for (const t of ['dark', 'light']) {
-			await page.evaluate((x) => window.__stores.themes.theme.set(x), t);
+			await page.evaluate((x) => window.__tp.test.v1.themes.theme.set(x), t);
 			await page.waitForTimeout(300);
 			await page.locator(sel).first().screenshot({ path: require('path').join(dir, `${name}-${t}.png`) }).catch((e) => console.log('screenshot failed: ' + e.message));
 		}
-		await page.evaluate((x) => window.__stores.themes.theme.set(x), before);
+		await page.evaluate((x) => window.__tp.test.v1.themes.theme.set(x), before);
 	}
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
@@ -30,24 +30,24 @@ h.run(async () => {
 	const msgs = (/** @type {any} */ page) =>
 		page.evaluate(() => {
 			let v;
-			window.__stores.messages.subscribe((x) => (v = x))();
+			window.__tp.test.v1.messages.subscribe((x) => (v = x))();
 			return v.filter((m) => m.type === 'sent' || m.type === 'received').map((m) => ({ id: m.id, text: m.text, type: m.type, sender: m.sender }));
 		});
 	const store = (/** @type {any} */ page, /** @type {string} */ name) =>
 		page.evaluate((n) => {
 			let v;
-			window.__stores[n].subscribe((x) => (v = x))();
+			window.__tp.test.v1[n].subscribe((x) => (v = x))();
 			return v;
 		}, name);
 	const say = (/** @type {any} */ page, /** @type {string} */ text) =>
 		page.evaluate((t) => {
 			let p;
-			window.__stores.peers.subscribe((x) => (p = x))();
+			window.__tp.test.v1.peers.subscribe((x) => (p = x))();
 			p.sendMessage(t);
 		}, text);
 
 	// ---- 1. shortcodes expand on SEND, so every peer sees the emoji ---------------------
-	await A.page.evaluate(() => window.__stores.chatHidden.set(''));
+	await A.page.evaluate(() => window.__tp.test.v1.chatHidden.set(''));
 	await A.page.locator('#message').fill('hello :tad');
 	await h.eventually(() => A.page.locator('#chat-suggestions .chat-suggestion').allTextContents(), (l) => l.some((t) => t.includes('🎉')), '1.1 typing :tad suggests 🎉');
 	await A.page.keyboard.press('Tab');
@@ -62,10 +62,10 @@ h.run(async () => {
 	h.check(!(await B.page.locator('#chat-unread').evaluate((el) => el.classList.contains('mention'))), '2.2 a plain line is not a mention');
 
 	// ---- 3. an @mention: coloured chip, highlight + mention badge for the mentioned -------
-	await A.page.evaluate(() => window.__stores.chatHidden.set('hidden'));
+	await A.page.evaluate(() => window.__tp.test.v1.chatHidden.set('hidden'));
 	await say(B.page, `@${A.id} look at this`);
 	await h.eventually(() => A.page.locator('#chat-unread.mention').count(), (n) => n === 1, '3.1 A\'s badge turns to the mention colour');
-	await A.page.evaluate(() => window.__stores.chatHidden.set(''));
+	await A.page.evaluate(() => window.__tp.test.v1.chatHidden.set(''));
 	h.check((await A.page.locator('#chat-unread').count()) === 0, '3.2 opening the chat reads it (badge gone)');
 	const chip = await A.page.evaluate((id) => {
 		const li = [...document.querySelectorAll('#messages li')].find((x) => x.textContent.includes('look at this'));
@@ -73,7 +73,7 @@ h.run(async () => {
 		return { text: span?.textContent, color: span ? getComputedStyle(span).borderBottomColor : null, ring: li?.classList.contains('chat-mentions-me'), want: (() => {
 			// the peer colour as the browser computes it
 			const probe = document.createElement('span');
-			probe.style.color = window.__stores.lockControl.peerColor(id);
+			probe.style.color = window.__tp.test.v1.lockControl.peerColor(id);
 			document.body.append(probe);
 			const c = getComputedStyle(probe).color;
 			probe.remove();
@@ -110,7 +110,7 @@ h.run(async () => {
 
 	// ---- 7. a saved session keeps the chat; an exported file does not --------------------
 	const saved = await A.page.evaluate(async () => {
-		const s = window.__stores.sessions;
+		const s = window.__tp.test.v1.sessions;
 		const payload = await s.saveSession('chat-r15');
 		const zip = await s.exportSessionZip(payload);
 		const back = await s.readSessionZip(zip);
@@ -118,9 +118,9 @@ h.run(async () => {
 	});
 	h.check(saved.chat === aList.length, `7.1 the saved session carries the chat (${saved.chat})`);
 	h.check(saved.exported === false, '7.2 the exported file does not');
-	await A.page.evaluate(() => window.__stores.messages.set([]));
+	await A.page.evaluate(() => window.__tp.test.v1.messages.set([]));
 	await A.page.evaluate(async (id) => {
-		const s = window.__stores.sessions;
+		const s = window.__tp.test.v1.sessions;
 		const payload = await s.getSession(id);
 		await s.applySession(payload, { backup: false, replicate: false, workspace: false, quiet: true });
 	}, saved.id);

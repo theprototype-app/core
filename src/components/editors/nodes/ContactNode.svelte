@@ -18,7 +18,8 @@
 	$: live = $flowValues[id] as any;
 	$: pulsing = (live && typeof live === 'object' ? live.__default : live) === 1;
 	$: other = live && typeof live === 'object' ? live.__handles?.other ?? '' : '';
-	$: otherName = other ? ($objectsGroup as any)?.getObjectByProperty?.('uuid', other)?.name ?? other.slice(0, 8) : '—';
+	// 78 F10: the player arrives as other = 'player' (every peer's own player, felt locally)
+	$: otherName = other === 'player' ? 'player' : other ? ($objectsGroup as any)?.getObjectByProperty?.('uuid', other)?.name ?? other.slice(0, 8) : '—';
 	$: impact = data.type === 'onimpact';
 	$: verb = impact ? 'impact!' : data.type === 'onexit' ? 'left' : 'entered';
 </script>
@@ -34,6 +35,23 @@
 			<span class="h-2.5 w-2.5 rounded-full" style="background: {pulsing ? 'var(--ink-good)' : 'var(--control-off)'}"></span>
 			<span>{pulsing ? verb : 'idle'}</span>
 		</div>
+		{#if !impact}
+			<!-- 78 F10: who can trigger it — missing = anything (objects AND the player) -->
+			<label class="flex items-center gap-1">
+				<span class="w-14 shrink-0 text-[10px] text-text-muted">who</span>
+				<select
+					class="nodrag nopan flex-1 text-[10px]"
+					data-contact-who
+					aria-label="Who triggers it"
+					value={data.who ?? 'any'}
+					on:change={(e) => setNodeData(id, { who: e.currentTarget.value })}
+				>
+					<option value="any">anything</option>
+					<option value="player">the player</option>
+					<option value="objects">objects only</option>
+				</select>
+			</label>
+		{/if}
 		{#if impact}
 			<label class="flex items-center gap-1">
 				<span class="w-14 shrink-0 text-[10px] text-text-muted">min m/s</span>

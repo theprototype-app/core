@@ -9,6 +9,7 @@ import { noteSimplified } from './simplifiedNotice.js';
 import { sessionNow } from '../sessionClock';
 import { waterVolumes, invertAffine, localBounds } from './volumes.js';
 import { waveComponents } from './waves.js';
+import { compileAsync } from '../render/compile.js';
 import { resolveLook, resolveBubbles, MAX_BUBBLES } from './presets.js';
 import { waterDetailTexture } from './waterTextures.js';
 import { waterQuality } from './waterPrefs.js';
@@ -26,6 +27,7 @@ import {
 	MAX_SHADER_WAVES,
 	MAX_SHADER_RIPPLES
 } from './waterShader.js';
+import { createRenderTarget } from '../render/renderTargets.js'; // 101 F3: the one factory
 
 // 36-water — the RENDERER. Every object carrying userData.water (W1, volumes.js) gets
 // LOCAL visuals under the scene-root 'water-root' group (golden rule 5: never inside
@@ -574,8 +576,8 @@ function compileEntry(entry) {
 	for (const mesh of [entry.surface, entry.body, entry.bubbles]) if (mesh) group.add(mesh.clone(false));
 	const timer = setTimeout(done, COMPILE_WAIT_MS);
 	try {
-		renderer
-			.compileAsync(group, lastCamera, sceneRef)
+		// 101 L1a: through the seam, which closes a scene render bracket the compile leaves open
+		compileAsync(renderer, group, lastCamera, sceneRef)
 			.catch(() => {})
 			.then(() => {
 				clearTimeout(timer);
@@ -953,7 +955,7 @@ function renderSelectionMask(renderer, scene, camera, w, h) {
 		selMaskTarget?.dispose();
 		// half size + linear filtering = a soft edge, so the un-refracted object blends into the
 		// refracted water around it instead of being cut out with a hard line
-		selMaskTarget = new THREE.WebGLRenderTarget(mw, mh, { depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
+		selMaskTarget = createRenderTarget(mw, mh, { depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
 	}
 	const masks = meshes.map((m) => m.layers.mask);
 	for (const m of meshes) m.layers.enable(SEL_LAYER);
@@ -1005,7 +1007,7 @@ function ensureTarget(w, h) {
 		return prepass.target;
 	prepass.target?.dispose();
 	prepass.target?.depthTexture?.dispose();
-	const t = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: 0 });
+	const t = createRenderTarget(w, h, { type: THREE.HalfFloatType, samples: 0 });
 	t.depthTexture = new THREE.DepthTexture(w, h);
 	t.depthTexture.type = THREE.UnsignedIntType;
 	t.texture.minFilter = THREE.LinearFilter;
@@ -1022,6 +1024,9 @@ function ensureTarget(w, h) {
  * the Reflector/Refractor pattern). @param {any} renderer @param {any} scene @param {any} camera
  */
 function runPrepass(renderer, scene, camera) {
+	// 100 C1 (W6): the Cinematic view's WebGPU renderer cannot run these GLSL passes — a nested render
+	// there threw and left its target bound, so every later frame drew off-screen (the view went empty)
+	if (renderer?.isWebGPURenderer) return;
 	if (!needsPrepass() || renderer.xr.isPresenting) return;
 	if (prepass.frame === frameNo && prepass.camera === camera) return;
 	const rt = renderer.getRenderTarget();
@@ -1119,7 +1124,7 @@ function renderReflection(renderer, scene, camera, entry) {
 	const h = Math.max(1, Math.round(_size.y * 0.5));
 	if (!prepass.refl || prepass.refl.width !== w || prepass.refl.height !== h) {
 		prepass.refl?.dispose();
-		prepass.refl = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType });
+		prepass.refl = createRenderTarget(w, h, { type: THREE.HalfFloatType });
 	}
 	const rc = (prepass.reflCamera ??= new THREE.PerspectiveCamera());
 	const v = entry.volume;
@@ -1171,6 +1176,13 @@ const fogColor = new THREE.Color();
 function beforeSceneRender(renderer, scene, camera, target) {
 	prevBefore?.(renderer, scene, camera, target);
 	if (renderDepth++ > 0) return;
+	// 100 C1 (W6): under the Cinematic view's WebGPU renderer the water draws as its plain stand-in
+	// (no hand-off to the invisible placeholder, no underwater fog swap); the depth stays counted
+	if (renderer?.isWebGPURenderer) {
+		swapped.length = 0;
+		underwater = null;
+		return;
+	}
 	swapped.length = 0;
 	if (camera?.isCamera) lastCamera = camera;
 	if (!entries.size) return;

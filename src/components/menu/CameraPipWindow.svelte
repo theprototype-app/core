@@ -36,7 +36,7 @@
 		// re-measure whenever the panel opens/closes or the window resizes
 		void $inspectorClose;
 		void vw;
-		const panel = document.querySelector('#drawer-label')?.closest('div[class*="fixed"], aside, dialog');
+		const panel = document.getElementById('inspector') ?? document.querySelector('#drawer-label')?.closest('div[class*="fixed"], aside, dialog'); // 78-int PL14: a File panel has no #drawer-label
 		const rect = panel?.getBoundingClientRect();
 		panelWidth = !$inspectorClose && rect && rect.width < vw * 0.6 ? rect.width : 0;
 	});

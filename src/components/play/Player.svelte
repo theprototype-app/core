@@ -109,7 +109,8 @@
     </T.PerspectiveCamera>
   </T.Group>
 
-  <T.Group bind:ref={peerFrame}>
+  <!-- mcp-diorama2 (26): named so an agent's clean screenshot can leave the people out -->
+  <T.Group bind:ref={peerFrame} name="peer-avatars">
   {#each $userdata as user, i}
     <!-- R22 round 36 (rooms): $sessionHost is PASSED so the session's unnamed world
          resolves to the host's room — an avatar in a scene we are not in is not drawn,

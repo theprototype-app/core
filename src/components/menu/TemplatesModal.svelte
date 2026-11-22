@@ -10,6 +10,8 @@
 	import Tabs from '../ui/Tabs.svelte';
 	import EmptyState from '../ui/EmptyState.svelte';
 	import Icon from '../ui/Icon.svelte';
+	import SearchField from '../ui/SearchField.svelte';
+	import ContextMenu from '../ContextMenu.svelte';
 	import { templatesModalOpen, templatesModalTab, hidePanels, restorePanels } from '../../stores/appStore.js';
 	import {
 		templates,
@@ -19,6 +21,9 @@
 		communityEntries,
 		communityState,
 		communityNotice,
+		communityQuery,
+		communitySearching,
+		setCommunityQuery,
 		loadingSlug,
 		loadTemplatesIndex,
 		loadCommunityGallery,
@@ -26,13 +31,15 @@
 		loadRemoteScene,
 		saveRemoteSceneToLibrary,
 		confirmClearScene,
-		tagUnion,
+		rankTags,
+		featuredFirst,
 		matchesTags,
 		SUBMIT_URL
 	} from '$lib/sceneTemplates';
 	// 28-A6: a cloud plugin's Community provider — null in the OSS build. Read for two
 	// things only: whether the GitHub copy applies, and the provider's own submit control.
 	import { communityProvider } from '$lib/cloudHooks';
+	import { matchesQuery, normQuery } from '$lib/communitySearch.js';
 	import { licenseLabel } from '$lib/packs';
 	import { classifyRequirements } from '$lib/moduleRequirements';
 	import HeartButton from '../ui/HeartButton.svelte';
@@ -54,13 +61,60 @@
 	);
 	// chips are DERIVED from the tab's own tags, so a new tag in the index appears
 	// without a core release, and a tab with no tags grows no chip row at all
-	const chips = $derived(tagUnion(tabEntries));
+	// showhide-v8 §5: only the few most relevant tags (the ones most entries carry) sit beside the search; the rest
+	// are under More, so a tag-rich tab no longer pushes the grid off the dialog
+	const CHIP_COUNT = 5;
+	const ranked = $derived(rankTags(tabEntries, CHIP_COUNT, activeTags));
+	const chips = $derived(ranked.shown);
+	let moreMenu = $state(/** @type {{x: number, y: number} | null} */ (null));
+	/** @param {MouseEvent} e */
+	function openMore(e) {
+		const r = /** @type {HTMLElement} */ (e.currentTarget).getBoundingClientRect();
+		moreMenu = { x: r.left, y: r.bottom + 4 };
+	}
 	// 36-community (C5): the "Mine" chip — a provider that knows who is signed in says so
 	// (`provider.mine`) and marks the viewer's own entries; a facet of its own, AND-ed with tags
 	let mineOnly = $state(false);
 	const mineChip = $derived(tab === 'community' && $communityProvider?.mine === true);
+	// 76 FW3: the search field — one query for every tab (it survives a tab switch, unlike the
+	// chips: a word means the same thing in each tab). Client-side over title, description,
+	// author and tags everywhere; a provider that declared `search: true` also gets it
+	// server-side (debounced), so Community finds scenes beyond the first page.
+	let query = $state('');
+	const q = $derived(normQuery(query));
+	// 76 FW3: the provider's sorts ({id, label}[], the first is its default) — Community only
+	const sorts = $derived(
+		tab === 'community' && Array.isArray($communityProvider?.sorts)
+			? $communityProvider.sorts
+					.filter((/** @type {any} */ s) => s && typeof s.id === 'string' && typeof s.label === 'string')
+					.slice(0, 5)
+			: []
+	);
+	const sortId = $derived(
+		sorts.some((/** @type {any} */ s) => s.id === $communityQuery.sort) ? $communityQuery.sort : (sorts[0]?.id ?? '')
+	);
+	/** @param {string} id */
+	function pickSort(id) {
+		setCommunityQuery({ q: $communityQuery.q, sort: id === sorts[0]?.id ? '' : id });
+	}
+	// the server half is debounced; the client filter above is immediate
+	$effect(() => {
+		const next = q;
+		const t = setTimeout(() => untrack(() => setCommunityQuery({ q: next, sort: $communityQuery.sort })), 300);
+		return () => clearTimeout(t);
+	});
+	/** @param {KeyboardEvent} e Escape clears a non-empty field before it closes the modal */
+	function searchKey(e) {
+		if (e.key === 'Escape' && query) {
+			e.preventDefault();
+			e.stopPropagation();
+			query = '';
+		}
+	}
 	const shown = $derived(
-		tabEntries.filter((/** @type {any} */ e) => matchesTags(e, activeTags) && (!mineOnly || !mineChip || e.mine === true))
+		(tab === 'community' ? featuredFirst(tabEntries) : tabEntries).filter(
+			(/** @type {any} */ e) => matchesTags(e, activeTags) && (!mineOnly || !mineChip || e.mine === true) && matchesQuery(e, q)
+		)
 	);
 	// 36-community (C6): a provider that can write a like puts a heart on its cards
 	const canLike = $derived(tab === 'community' && typeof $communityProvider?.toggleLike === 'function');
@@ -141,8 +195,10 @@
 			}
 		});
 	});
-	// the Community manifest fetches lazily, first time the tab is opened
+	// the Community manifest fetches lazily, first time the tab is opened — and again when the
+	// query/sort it answers changes (76 FW3; loadCommunityGallery memoizes per query)
 	$effect(() => {
+		void $communityQuery;
 		const wants = $templatesModalOpen && tab === 'community';
 		untrack(() => {
 			if (wants) loadCommunityGallery();
@@ -264,7 +320,7 @@
 				{#if entry.license}<span title={licenseLabel(entry.license)}>{entry.license}</span>{/if}
 				{#if entry.bytes}<span class="pl-1">{sizeLabel(entry.bytes)}</span>{/if}
 				<!-- 28-A6: provider-only facts, rendered ONLY when present (a GitHub row has none) -->
-				{#if entry.likeCount != null && !canLike}<span class="tpl-likes pl-1" title="Likes">♥ {entry.likeCount}</span>{/if}
+				{#if entry.likeCount != null && !canLike}<span class="tpl-likes pl-1" title="Likes"><Icon name="heart" size={16} class="inline-block shrink-0 align-[-2px]" /> {entry.likeCount}</span>{/if}
 				{#if entry.remixOf}<span class="tpl-remix pl-1" title="A remix of another published scene">remix{#if entry.remixOf.title}&nbsp;of {entry.remixOf.title}{/if}</span>{/if}
 			</p>
 		</div>
@@ -329,37 +385,76 @@
 	{/snippet}
 	<div class="tpl-body">
 
-		<!-- A7: tag chips, shared by all four tabs and derived from the ACTIVE tab's own
-		     tags. OR within the facet (see matchesTags) — an AND would empty the grid on
-		     the second click, which reads as a broken filter. VR is just a chip. -->
-		{#if chips.length || mineChip}
-			<div id="templates-chips" class="tpl-chips">
-				{#if mineChip}
-					<button
-						id="templates-chip-mine"
-						class="tpl-chip"
-						class:active={mineOnly}
-						data-chip="__mine"
-						aria-pressed={mineOnly}
-						title="Only what you published"
-						onclick={() => (mineOnly = !mineOnly)}>Mine</button
-					>
-				{/if}
-				{#each chips as tag (tag)}
-					<button
-						class="tpl-chip"
-						class:active={activeTags.includes(tag)}
-						data-chip={tag}
-						aria-pressed={activeTags.includes(tag)}
-						onclick={() => toggleTag(tag)}>{tag}</button
-					>
-				{/each}
-				{#if activeTags.length}
-					<button id="templates-chips-clear" class="tpl-chip tpl-chip-clear" onclick={() => (activeTags = [])}>
-						Clear
-					</button>
-				{/if}
-			</div>
+		<!-- 76 FW3: one search field for every tab, and the provider's sorts on Community -->
+		<div class="tpl-search-row">
+			<SearchField
+				id="templates-search"
+				clearId="templates-search-clear"
+				bind:value={query}
+				placeholder={tab === 'community' ? 'Search scenes, makers, tags…' : 'Search titles, tags…'}
+				label="Search templates"
+				size="sm"
+				onkeydown={searchKey}
+			/>
+			{#if sorts.length}
+				<div id="community-sorts" class="tpl-sorts" role="group" aria-label="Sort community scenes">
+					{#each sorts as s (s.id)}
+						<button
+							class="tpl-chip"
+							class:active={sortId === s.id}
+							data-sort={s.id}
+							aria-pressed={sortId === s.id}
+							onclick={() => pickSort(s.id)}>{s.label}</button
+						>
+					{/each}
+				</div>
+			{/if}
+			<!-- A7: tag chips, shared by all four tabs and derived from the ACTIVE tab's own
+			     tags. OR within the facet (see matchesTags) — an AND would empty the grid on
+			     the second click, which reads as a broken filter. VR is just a chip. -->
+			{#if chips.length || mineChip || ranked.more.length}
+				<div id="templates-chips" class="tpl-chips">
+					{#if mineChip}
+						<button
+							id="templates-chip-mine"
+							class="tpl-chip"
+							class:active={mineOnly}
+							data-chip="__mine"
+							aria-pressed={mineOnly}
+							title="Only what you published"
+							onclick={() => (mineOnly = !mineOnly)}>Mine</button
+						>
+					{/if}
+					{#each chips as tag (tag)}
+						<button
+							class="tpl-chip"
+							class:active={activeTags.includes(tag)}
+							data-chip={tag}
+							aria-pressed={activeTags.includes(tag)}
+							onclick={() => toggleTag(tag)}>{tag}</button
+						>
+					{/each}
+					{#if ranked.more.length}
+						<button
+							id="templates-chips-more"
+							class="tpl-chip tpl-chip-more"
+							aria-haspopup="menu"
+							aria-expanded={!!moreMenu}
+							title="Every other tag in this tab"
+							onclick={openMore}
+							>More<Icon name="chevron-down" size={16} aria-hidden="true" /></button
+						>
+					{/if}
+					{#if activeTags.length}
+						<button id="templates-chips-clear" class="tpl-chip tpl-chip-clear" onclick={() => (activeTags = [])}>
+							Clear
+						</button>
+					{/if}
+				</div>
+			{/if}
+		</div>
+		{#if tab === 'community' && $communitySearching}
+			<p id="community-searching" class="mb-2 text-xs italic text-text-faint" aria-live="polite">Searching…</p>
 		{/if}
 
 		{#if tab === 'general'}
@@ -480,6 +575,8 @@
 				</div>
 				{#if !shown.length && mineOnly}
 					<p id="community-mine-empty" class="mt-3 text-xs italic text-text-faint">Nothing published yet — publish a scene and it shows here.</p>
+				{:else if !shown.length && q && !$communitySearching}
+					<p id="community-search-empty" class="mt-3 text-xs italic text-text-faint">No scenes match “{q}”.</p>
 				{/if}
 				<p class="mt-3 text-xs text-text-faint">
 					{#if !provided}
@@ -492,7 +589,9 @@
 					<p class="text-sm text-text-muted">
 						{$communityState === 'error'
 							? "Couldn't reach the community gallery — check your connection."
-							: 'No community scenes yet — be the first!'}
+							: $communityQuery.q
+								? `No scenes match “${$communityQuery.q}”.`
+								: 'No community scenes yet — be the first!'}
 					</p>
 					{#if !provided}
 						<p class="text-xs text-text-faint">
@@ -516,9 +615,23 @@
 			and connected peers are asked before anything changes.
 		</p>
 	</div>
+	{#if moreMenu}
+		<ContextMenu
+			x={moreMenu.x}
+			y={moreMenu.y}
+			sizeKey="templates-tags"
+			items={ranked.more.map((tag) => ({ label: tag, checked: activeTags.includes(tag), action: () => toggleTag(tag) }))}
+			onclose={() => (moreMenu = null)}
+		/>
+	{/if}
 </ModalDialog>
 
 <style>
+	/* dock-fixes PC-5: one height for every tab — sized to its content, the centred dialog grew and shrank and
+	   jumped ~44 px between General and Examples; the body scrolls instead */
+	:global(dialog#templates-modal[open]) {
+		height: min(56rem, calc(88dvh - var(--kb-inset, 0px) - var(--kb-top, 0px)));
+	}
 	.tpl-body {
 		display: flex;
 		flex-direction: column;
@@ -529,7 +642,36 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 6px;
-		margin-bottom: var(--space-4);
+	}
+	.tpl-chip-more {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+	}
+	/* 76 FW3: the search field + the provider's sort chips share one row, wrapping on a phone */
+	.tpl-search-row {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-2);
+		margin-bottom: var(--space-3);
+	}
+	.tpl-search-row > :global(.sf) {
+		flex: 1 1 220px;
+	}
+	.tpl-sorts {
+		display: flex;
+		gap: 6px;
+	}
+	/* a touch screen wider than the phone breakpoint (Find N6 unfolded, a tablet) still needs
+	   44 px targets — SearchField's own 44 px rule is width-based */
+	@media (pointer: coarse) {
+		.tpl-search-row > :global(.sf) {
+			height: 44px;
+		}
+		.tpl-search-row .tpl-chip {
+			height: 44px;
+		}
 	}
 	.tpl-chip {
 		height: var(--control-h-sm);

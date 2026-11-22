@@ -47,8 +47,8 @@
 	function rowText(m: any) {
 		let text = String(m.content ?? '').replace(/\s+/g, ' ').trim()
 		if (text.length > ROW_CHARS) text = m.streaming ? '…' + text.slice(-ROW_CHARS) : text.slice(0, ROW_CHARS) + '…'
-		if (m.role === 'tool-status') return '⚙ ' + text
-		if (m.role === 'error') return '⚠ ' + text
+		if (m.role === 'tool-status') return '· ' + text
+		if (m.role === 'error') return '! ' + text
 		return text + (m.streaming ? ' ▋' : '')
 	}
 	// tokens-ok-begin: three.js material / troika Text colours of a WebXR headset panel (meshes cannot read CSS var())

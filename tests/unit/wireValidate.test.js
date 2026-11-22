@@ -68,6 +68,8 @@ describe('validateWireMessage', () => {
 
 	it('31: a nodetrigger may carry a finite place, and nothing else there', () => {
 		expect(validateWireMessage({ type: 'nodetrigger', id: 'n1', t: 12.5 })).toBe(true); // every pre-31 pulse
+		expect(validateWireMessage({ type: 'nodetrigger', id: 'n1', t: 12.5, held: 1 })).toBe(true); // 2.0-int: a held re-stamp
+		expect(validateWireMessage({ type: 'nodetrigger', id: 'n1', t: 12.5, held: 'yes' })).toBe(false);
 		expect(validateWireMessage({ type: 'nodetrigger', id: 'n1', t: 12.5, at: [0, 1.2, -0.4] })).toBe(true);
 		expect(validateWireMessage({ type: 'nodetrigger', id: 'n1', t: 12.5, at: [0, NaN, 1] })).toBe(false);
 		expect(validateWireMessage({ type: 'nodetrigger', id: 'n1', t: 12.5, at: [0, 1] })).toBe(false);
@@ -176,5 +178,16 @@ describe('57 M1: objectParameters clipRefs', () => {
 		expect(ok([{ hash: 'ab', name: 'n'.repeat(201) }])).toBe(false);
 		expect(ok(Array.from({ length: 65 }, () => ({ hash: 'ab', name: 'x' })))).toBe(false);
 		expect(validateWireMessage({ type: 'objectParameters', parameter: 'clipRefs', uuid: '', clipRefs: [] })).toBe(false);
+	});
+});
+
+describe('98 P1: scenebake', () => {
+	it('takes a record or a clear on a finite stamp, and nothing else', () => {
+		expect(validateWireMessage({ type: 'scenebake', record: { full: { hash: 'x' } }, changedAt: 5 })).toBe(true);
+		expect(validateWireMessage({ type: 'scenebake', record: null, changedAt: 6 })).toBe(true);
+		expect(validateWireMessage({ type: 'scenebake', record: [], changedAt: 6 })).toBe(false);
+		expect(validateWireMessage({ type: 'scenebake', record: 'x', changedAt: 6 })).toBe(false);
+		expect(validateWireMessage({ type: 'scenebake', record: null, changedAt: 'soon' })).toBe(false);
+		expect(validateWireMessage({ type: 'scenebake', changedAt: 6 })).toBe(false);
 	});
 });

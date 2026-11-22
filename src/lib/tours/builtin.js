@@ -5,9 +5,10 @@
 //   editor        the desktop first-run tour (mouse + keyboard), ≤ 6 steps
 //   editor-touch  the same tour for a touch screen (fingers, the + button, on-screen controls)
 //
-// FIRST RUN: the editor tour follows the first-visit Welcome card (when it closes — and not while
-// the Templates window it may have opened is still up); a visit that skipped the Welcome (an
-// invite or a scene link) is somebody who came for the session, so no tour either. The VR welcome
+// FIRST RUN (76 FW1): the first-visit Welcome card asks one question and its answer starts the
+// three-step first-win quest (onboarding/); the editor tour is OPTIONAL now — started from the logo
+// menu ▸ Tours or Settings. A visit that skipped the Welcome (an invite or a scene link) is somebody
+// who came for the session, so it gets neither. The VR welcome
 // starts a moment after the first session begins. Under test (the debug hook is on) nothing
 // starts by itself unless the suite opts in with `toursUnderTest` — the whatsNew precedent: the
 // whole e2e battery must not grow a card over the canvas.
@@ -17,10 +18,11 @@ import { tours, activeTour } from './index.js';
 import { safeStorage } from '../safeStorage';
 import { isVRMode, vrMenuOpen, editorMode } from '../../stores/sceneStore';
 import { bindingOf, bindingLabel, vrBindings } from '../vr/bindings.js';
-import { templatesModalOpen, showToast } from '../../stores/appStore.js';
-import { welcomeOpen } from '../whatsNew';
+import { showToast } from '../../stores/appStore.js';
 import { coarsePointer } from '../inputDevice';
-import { HDRI_TOUR, HDRI_STEPS } from '../hdri/hdriTour.js'; // 37-hdri
+import { installFirstWin } from '../onboarding/firstWin.js'; // 76 FW1
+import { arTableActive } from '../arTableState.js';
+import { vrUiStandsDown } from '../vrUiGate.js';
 
 export const VR_TOUR = 'vr-welcome';
 export const EDITOR_TOUR = 'editor';
@@ -251,7 +253,7 @@ export function installTours() {
 	teardown.push(tours.register(VR_TOUR, { title: 'Welcome to ThePrototype VR', surface: 'vr', steps: VR_STEPS }));
 	teardown.push(tours.register(EDITOR_TOUR, { title: 'Editor tour', surface: 'card', steps: EDITOR_STEPS }));
 	teardown.push(tours.register(TOUCH_TOUR, { title: 'Editor tour', surface: 'card', steps: TOUCH_STEPS }));
-	teardown.push(tours.register(HDRI_TOUR, { title: 'Sky images (HDRI)', surface: 'card', steps: HDRI_STEPS }));
+	// 78-int PL29: the 37-hdri "Sky images" tour is gone with the picture cards it pointed at
 
 	// ---- the VR welcome: the first session, a beat after it starts (controllers enumerate) ----
 	/** @type {any} */ let vrTimer = null;
@@ -265,8 +267,12 @@ export function installTours() {
 				// a screen tour is invisible in a headset: park it (it resumes later)
 				const now = get(activeTour);
 				if (now && now.surface !== 'vr') tours.close();
-				if (!autoStartAllowed()) return;
-				vrTimer = setTimeout(() => tours.maybeAutoStart(VR_TOUR), VR_START_DELAY);
+				// fix-film: a phone AR session (an AR table, Film's walk) is not a headset, and Film
+				// owns the whole screen in any session — the welcome waits for a real VR entry
+				if (!autoStartAllowed() || vrWelcomeStandsDown()) return;
+				vrTimer = setTimeout(() => {
+					if (!vrWelcomeStandsDown()) tours.maybeAutoStart(VR_TOUR);
+				}, VR_START_DELAY);
 			} else {
 				// leaving VR is the last step's action; anywhere else it PAUSES the tour
 				tours.signal('vr-exit');
@@ -288,40 +294,24 @@ export function installTours() {
 		})
 	);
 
-	// ---- the editor tour: after the first-visit Welcome card closes ----
-	let welcomeWasOpen = get(welcomeOpen);
-	let owed = false;
-	/** @type {any} */ let editorTimer = null;
-	const tryEditor = () => {
-		clearTimeout(editorTimer);
-		if (!owed || get(welcomeOpen) || get(templatesModalOpen) || get(isVRMode)) return;
-		editorTimer = setTimeout(() => {
-			if (!owed || get(welcomeOpen) || get(templatesModalOpen) || get(isVRMode)) return;
-			owed = false;
-			tours.maybeAutoStart(editorTourId());
-		}, EDITOR_START_DELAY);
-	};
-	teardown.push(
-		welcomeOpen.subscribe((open) => {
-			if (welcomeWasOpen && !open && autoStartAllowed()) owed = true;
-			welcomeWasOpen = open;
-			tryEditor();
-		})
-	);
-	teardown.push(templatesModalOpen.subscribe(() => tryEditor()));
-	teardown.push(() => {
-		clearTimeout(vrTimer);
-		clearTimeout(editorTimer);
-	});
+	// ---- 76 FW1: the first-win quest replaces the editor tour as what follows the Welcome ----
+	// The Welcome card's answer starts (or arms) the three-step quest itself (onboarding/firstWin.js);
+	// the six-step interface tour no longer starts by itself — it is "Tour the interface" in the logo
+	// menu ▸ Tours, Settings ▸ Tours and the quest's closing toast (user-started tours finish more often).
+	teardown.push(installFirstWin({ startEditorTour: () => startEditorTour() }));
+	teardown.push(() => clearTimeout(vrTimer));
 	return () => {
 		for (const fn of teardown.splice(0)) fn();
 	};
 }
 
+/** the VR welcome never auto-starts in a phone AR session or while Film is open */
+export function vrWelcomeStandsDown() {
+	return arTableActive() || vrUiStandsDown();
+}
+
 /** ms after the session starts before the welcome shows (controller profiles arrive late) */
 export const VR_START_DELAY = 1200;
-/** ms after the Welcome card closes before the editor tour's first card */
-export const EDITOR_START_DELAY = 500;
 
 /** the last controller family a session reported (the desktop preview draws the same pair) */
 export const FAMILY_KEY = 'tourControllerFamily';

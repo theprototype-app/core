@@ -15,6 +15,8 @@
 //   R. a desktop peer's edit (B renames a node) redraws the panel on A
 //   V. a VIEWER (cloud roles) gets the panel read-only: a pad press changes nothing and says why
 //   G. a grip on the panel carries it; letting go pins it there
+//   C. 2.0 N2: the read-only CODE sheet (flag codeView) — no Code button with the flag off; with it on, Code shows the
+//      graph's code over the graph area, pressing a node's line selects that node (the pad shows it), Code again closes
 //   K. the cost: the panel's frame hook per XR frame and its repaints while the laser sweeps the cards (CPU
 //      side; the Quest GPU is a device row)
 // Run: APP_URL=https://theprototype.app:5631/ node tests/e2e/vr-logic-iwer.test.cjs   (ONLY=O,M,… to pick rows; SHOTS_DIR=… for evidence)
@@ -34,18 +36,18 @@ h.run(async () => {
 	const page = A.page;
 	const g = (fn, arg) => page.evaluate(fn, arg);
 	const settle = (n = 6) => iwer.frames(page, n);
-	const dbg = () => g(() => window.__stores.vrLogic.vrLogicDebug());
+	const dbg = () => g(() => window.__tp.test.v1.vrLogic.vrLogicDebug());
 	/** a graph on a page: {nodes, edges} @param {any} p @param {string} id */
 	const graphOn = (p, id) =>
 		p.evaluate((gid) => {
 			let v;
-			window.__stores.flowGraphs.subscribe((x) => (v = x))();
+			window.__tp.test.v1.flowGraphs.subscribe((x) => (v = x))();
 			const gr = v[gid];
 			return gr ? { nodes: gr.nodes.map((n) => ({ id: n.id, type: n.type, pos: [n.position.x, n.position.y], data: n.data })), edges: gr.edges.map((e) => e.id) } : null;
 		}, id);
 	const shot = async (name) => {
 		if (!SHOTS) return;
-		const urls = await g(() => [window.__stores.vrLogic.logicPanelImage(), window.__stores.vrLogic.logicPadImage()]);
+		const urls = await g(() => [window.__tp.test.v1.vrLogic.logicPanelImage(), window.__tp.test.v1.vrLogic.logicPadImage()]);
 		if (urls[0]) fs.writeFileSync(path.join(SHOTS, name + '-panel.png'), Buffer.from(urls[0].split(',')[1], 'base64'));
 		if (urls[1]) fs.writeFileSync(path.join(SHOTS, name + '-pad.png'), Buffer.from(urls[1].split(',')[1], 'base64'));
 	};
@@ -54,7 +56,7 @@ h.run(async () => {
 	h.check(await iwer.installed(page), 'IWER owns navigator.xr before the app boots');
 	const st0 = await iwer.enter(page);
 	h.check(st0.presenting, `Play presents the IWER session (${JSON.stringify(st0)})`);
-	const menuHand = await g(() => { let v; window.__stores.vrMenuHand.subscribe((x) => (v = x))(); return v; });
+	const menuHand = await g(() => { let v; window.__tp.test.v1.vrMenuHand.subscribe((x) => (v = x))(); return v; });
 	const pointer = menuHand === 'right' ? 'left' : 'right';
 	const side = pointer === 'left' ? -1 : 1;
 	await iwer.pose(page, 'head', [0, 1.6, 0]);
@@ -62,11 +64,11 @@ h.run(async () => {
 	const FROM = [side * 0.12, 1.35, -0.1];
 	await iwer.pose(page, pointer, FROM);
 	const ids = await g(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = group.children[group.children.length - 1];
 		box.name = 'Spinner';
-		const res = await window.__stores.aiTools.executeAiTool('create_flow_nodes', {
+		const res = await window.__tp.test.v1.aiTools.executeAiTool('create_flow_nodes', {
 			graph: box.uuid,
 			nodes: [
 				{ ref: 'n', type: 'number', data: { value: 1, step: 1 } },
@@ -76,7 +78,7 @@ h.run(async () => {
 		});
 		const parsed = typeof res === 'string' ? JSON.parse(res) : res;
 		const byRef = Object.fromEntries((parsed.created ?? []).map((c) => [c.ref, c.id]));
-		window.__stores.objectActions.selectObject(box.uuid);
+		window.__tp.test.v1.objectActions.selectObject(box.uuid);
 		return { box: box.uuid, ...byRef };
 	});
 	h.check(!!ids.n && !!ids.s && !!ids.c, `premise: the box's flow holds number, spin, compare (${JSON.stringify(ids)})`);
@@ -89,7 +91,7 @@ h.run(async () => {
 		await settle(4);
 	};
 	const aimControl = async (id) => {
-		const pt = await g((cid) => window.__stores.vrLogic.logicControlPoint(cid), id);
+		const pt = await g((cid) => window.__tp.test.v1.vrLogic.logicControlPoint(cid), id);
 		if (!pt) throw new Error('no control ' + id + ': ' + JSON.stringify((await dbg()).buttons) + ' / ' + JSON.stringify((await dbg()).padButtons));
 		await aimAt(pt);
 	};
@@ -98,8 +100,8 @@ h.run(async () => {
 		await iwer.tap(page, pointer, 'trigger');
 		await settle(3);
 	};
-	const socketAt = (node, dir, handle = null) => g(([n, d, hd]) => window.__stores.vrLogic.logicSocketPoint(n, d, hd), [node, dir, handle]);
-	const graphPt = (x, y) => g(([gx, gy]) => window.__stores.vrLogic.logicGraphPoint(gx, gy), [x, y]);
+	const socketAt = (node, dir, handle = null) => g(([n, d, hd]) => window.__tp.test.v1.vrLogic.logicSocketPoint(n, d, hd), [node, dir, handle]);
+	const graphPt = (x, y) => g(([gx, gy]) => window.__tp.test.v1.vrLogic.logicGraphPoint(gx, gy), [x, y]);
 	/** trigger down at one world point, sweep to another, let go */
 	const dragFromTo = async (a, b, steps = 4) => {
 		await aimAt(a);
@@ -114,11 +116,11 @@ h.run(async () => {
 		await settle(4);
 		return during;
 	};
-	const undo = () => g(() => window.__stores.history.undo());
+	const undo = () => g(() => window.__tp.test.v1.history.undo());
 
 	// ---- O. open ---------------------------------------------------------------------------------------
 	console.log('\n=== O. Selected ▸ Edit logic ===');
-	await g(() => window.__stores.vrControls.executeVRMenuAction('obj:logic'));
+	await g(() => window.__tp.test.v1.vrControls.executeVRMenuAction('obj:logic'));
 	await settle(10);
 	let d = await dbg();
 	h.check(d.open && d.visible && d.graphId === ids.box, `the panel opens on the box's own flow (${JSON.stringify({ open: d.open, visible: d.visible, graph: d.graphId })})`);
@@ -131,9 +133,9 @@ h.run(async () => {
 	h.check(num && num.inputs.length === 0 && num.outputs.includes(null), 'the number card is a source: no inputs, one output');
 	const geo = await g(() => {
 		let r, sc;
-		window.__stores.globalRenderer.subscribe((v) => (r = v))();
-		window.__stores.globalScene.subscribe((v) => (sc = v))();
-		const T = window.__stores.THREE;
+		window.__tp.test.v1.globalRenderer.subscribe((v) => (r = v))();
+		window.__tp.test.v1.globalScene.subscribe((v) => (sc = v))();
+		const T = window.__tp.test.v1.THREE;
 		const head = r.xr.getCamera().getWorldPosition(new T.Vector3());
 		const out = {};
 		for (const name of ['vr-logic-panel', 'vr-logic-pad']) {
@@ -157,18 +159,18 @@ h.run(async () => {
 		const before = (await graphOn(page, ids.box)).nodes.find((n) => n.id === ids.c).pos;
 		const body = await socketAt(ids.c);
 		const to = await graphPt(cmp.x + cmp.w / 2 + 120, cmp.y + cmp.h - 6 + 90); // the body point logicSocketPoint aims at, moved
-		const depth0 = await g(() => { let s; window.__stores.history.undoStack.subscribe((v) => (s = v))(); return s.length; });
+		const depth0 = await g(() => { let s; window.__tp.test.v1.history.undoStack.subscribe((v) => (s = v))(); return s.length; });
 		const during = await dragFromTo(body, to, 5);
 		h.check(during.drag?.kind === 'node' && during.drag.moved, `pressing a card and moving the laser drags it (${JSON.stringify(during.drag)})`);
 		const after = (await graphOn(page, ids.box)).nodes.find((n) => n.id === ids.c).pos;
 		h.check(Math.abs(after[0] - before[0] - 120) < 12 && Math.abs(after[1] - before[1] - 90) < 12, `the card lands where the laser let go (${before} -> ${after})`);
 		await h.eventually(async () => (await graphOn(B.page, ids.box)).nodes.find((n) => n.id === ids.c).pos, (p) => p[0] === after[0] && p[1] === after[1], 'B sees the card at the same spot', 10000);
-		const depth1 = await g(() => { let s; window.__stores.history.undoStack.subscribe((v) => (s = v))(); return s.length; });
+		const depth1 = await g(() => { let s; window.__tp.test.v1.history.undoStack.subscribe((v) => (s = v))(); return s.length; });
 		h.check(depth1 === depth0 + 1, `the whole drag is ONE undo step (${depth0} -> ${depth1})`);
 		await undo();
 		h.check(JSON.stringify((await graphOn(page, ids.box)).nodes.find((n) => n.id === ids.c).pos) === JSON.stringify(before), 'undo puts it back');
 		await h.eventually(async () => (await graphOn(B.page, ids.box)).nodes.find((n) => n.id === ids.c).pos, (p) => p[0] === before[0] && p[1] === before[1], '…on B too', 10000);
-		const sel = await g(() => new Promise((r) => window.__stores.selectedObjects.subscribe((v) => r([...v]))()));
+		const sel = await g(() => new Promise((r) => window.__tp.test.v1.selectedObjects.subscribe((v) => r([...v]))()));
 		h.check(sel.length === 1 && sel[0] === ids.box, 'a press on the panel selects nothing behind it (the box stays the selection)');
 	}
 
@@ -217,15 +219,15 @@ h.run(async () => {
 		await h.eventually(async () => (await graphOn(page, ids.box)).nodes.find((n) => n.id === ids.n).data.value, (v) => v === 2, '+ steps the value 1 -> 2', 6000);
 		await h.eventually(async () => (await graphOn(B.page, ids.box)).nodes.find((n) => n.id === ids.n).data.value, (v) => v === 2, 'B reads 2', 10000);
 		await press('f:value:type');
-		const kb = await g(() => { let v; window.__stores.vrKeyboard.vrKeyboardTarget.subscribe((x) => (v = x))(); return v ? { title: v.title, buffer: v.buffer } : null; });
+		const kb = await g(() => { let v; window.__tp.test.v1.vrKeyboard.vrKeyboardTarget.subscribe((x) => (v = x))(); return v ? { title: v.title, buffer: v.buffer } : null; });
 		h.check(!!kb && kb.buffer === '2', `the value box opens the VR keyboard with the value (${JSON.stringify(kb)})`);
-		await g(() => { for (const k of ['clear', '7', '.', '5', 'enter']) window.__stores.vrControls.executeVRMenuAction('kbd:' + k); });
+		await g(() => { for (const k of ['clear', '7', '.', '5', 'enter']) window.__tp.test.v1.vrControls.executeVRMenuAction('kbd:' + k); });
 		await settle(3);
 		await h.eventually(async () => (await graphOn(B.page, ids.box)).nodes.find((n) => n.id === ids.n).data.value, (v) => v === 7.5, 'a typed 7.5 lands on both peers', 10000);
 		await undo();
 		h.check((await graphOn(page, ids.box)).nodes.find((n) => n.id === ids.n).data.value === 2, 'ONE undo takes the typed value back');
 		await press('rename');
-		await g(() => { for (const k of ['clear', 's', 'p', 'e', 'e', 'd', 'enter']) window.__stores.vrControls.executeVRMenuAction('kbd:' + k); });
+		await g(() => { for (const k of ['clear', 's', 'p', 'e', 'e', 'd', 'enter']) window.__tp.test.v1.vrControls.executeVRMenuAction('kbd:' + k); });
 		await h.eventually(async () => (await graphOn(B.page, ids.box)).nodes.find((n) => n.id === ids.n).data.label, (v) => v === 'speed', 'Rename renames it for B too', 10000);
 	}
 
@@ -261,7 +263,7 @@ h.run(async () => {
 	if (want('R')) {
 		console.log('\n=== R. B edits on the desktop ===');
 		const draws0 = (await dbg()).panelDraws;
-		await B.page.evaluate(([gid, nid]) => window.__stores.nodesHandler.setNodeData(nid, { label: 'Turn rate' }, gid), [ids.box, ids.s]);
+		await B.page.evaluate(([gid, nid]) => window.__tp.test.v1.nodesHandler.setNodeData(nid, { label: 'Turn rate' }, gid), [ids.box, ids.s]);
 		await h.eventually(async () => (await dbg()).cards.find((c) => c.id === ids.s)?.label, (l) => l === 'Turn rate', "B's rename shows on A's panel", 10000);
 		// the label is in the layout first; the canvas repaints on the next XR frame (deployed builds: a frame later)
 		await h.eventually(async () => (await dbg()).panelDraws, (n) => n > draws0, 'the panel repainted for it', 5000);
@@ -274,7 +276,7 @@ h.run(async () => {
 		await iwer.tap(page, pointer, 'trigger');
 		await settle(3);
 		const v0 = (await graphOn(page, ids.box)).nodes.find((n) => n.id === ids.n).data.value;
-		await g(() => window.__stores.cloudHooks.rolesInfo.set({ myId: 'a', myRole: 'viewer', amAdmin: false, order: [], roleOf: () => 'viewer', setRole() {} }));
+		await g(() => window.__tp.test.v1.cloudHooks.rolesInfo.set({ myId: 'a', myRole: 'viewer', amAdmin: false, order: [], roleOf: () => 'viewer', setRole() {} }));
 		await settle(4);
 		d = await dbg();
 		h.check(d.readOnly, 'with the viewer role the panel is read-only');
@@ -286,7 +288,7 @@ h.run(async () => {
 		h.check(!d.padButtons.includes('f:value:+'), 'the pad offers no value buttons');
 		h.check((await graphOn(page, ids.box)).nodes.find((n) => n.id === ids.n).data.value === v0, 'nothing changed');
 		await shot('05-viewer');
-		await g(() => window.__stores.cloudHooks.rolesInfo.set(null));
+		await g(() => window.__tp.test.v1.cloudHooks.rolesInfo.set(null));
 		await settle(3);
 	}
 
@@ -307,13 +309,40 @@ h.run(async () => {
 		h.check(d.mode === 'pinned' && moved > 0.2, `letting go pins it where it was carried (${moved.toFixed(2)} m)`);
 	}
 
+	// ---- C. the read-only code sheet (2.0 N2, flag codeView) --------------------------------------------------
+	if (want('C')) {
+		console.log('\n=== C. the code sheet ===');
+		await g(() => window.__tp.test.v1.codeView.codeViewFlag.set(false));
+		await settle(4);
+		h.check(!(await dbg()).buttons.includes('code'), 'flag off: the panel has no Code button');
+		await g(() => window.__tp.test.v1.codeView.codeViewFlag.set(true));
+		await settle(4);
+		h.check((await dbg()).buttons.includes('code'), 'flag on: the panel grows a Code button');
+		const graphKey = async () => {
+			const gr = await graphOn(page, ids.box);
+			return JSON.stringify({ n: gr.nodes.map((x) => [x.id, x.type, x.data]), e: gr.edges.map((x) => [x.source, x.sourceHandle, x.target, x.targetHandle]) });
+		};
+		const graphBefore = await graphKey();
+		await press('code');
+		d = await dbg();
+		h.check(!!d.codeSheet && d.buttons.includes('code:line:' + ids.n) && d.buttons.includes('code:line:' + ids.s), `Code shows the graph as code, one pressable line per node (${d.buttons.filter((b) => b.startsWith('code:')).join(' ')})`);
+		await shot('05-code-sheet');
+		await press('code:line:' + ids.s);
+		d = await dbg();
+		h.check(d.selected === ids.s && d.pad?.hasNode, "pressing a node's line selects that node, and the pad shows its values");
+		h.check((await graphKey()) === graphBefore, 'reading the code changed nothing in the graph (nodes, data and wires)');
+		await press('code');
+		h.check(!(await dbg()).codeSheet, 'Code again puts the graph back');
+		await g(() => window.__tp.test.v1.codeView.codeViewFlag.set(false));
+	}
+
 	// ---- K. the cost ----------------------------------------------------------------------------------------
 	if (want('K')) {
 		console.log('\n=== K. the cost per XR frame ===');
-		await g(() => window.__stores.vrControls.executeVRMenuAction('obj:logic'));
+		await g(() => window.__tp.test.v1.vrControls.executeVRMenuAction('obj:logic'));
 		await settle(8);
 		const c0 = await dbg();
-		await page.evaluate(() => window.__stores.vrLogic && true);
+		await page.evaluate(() => window.__tp.test.v1.vrLogic && true);
 		const frames0 = c0.perf.frames;
 		const ms0 = c0.perf.frameMs;
 		const paint0 = c0.perf.paintMs;

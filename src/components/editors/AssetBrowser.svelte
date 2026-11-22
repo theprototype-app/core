@@ -8,6 +8,8 @@
 	// every download lands through $lib/cc0/cc0Import — the Explorer's own import entry for files,
 	// the environment picker's write for a sky, the material preset library for a material.
 	import Icon from '../ui/Icon.svelte';
+	import HeadDockPop from '../ui/HeadDockPop.svelte'; // uir-polish G2
+	import { dockTab } from '$lib/dockMenu';
 	import Button from '../ui/Button.svelte';
 	import Segmented from '../ui/Segmented.svelte';
 	import Tabs from '../ui/Tabs.svelte';
@@ -390,8 +392,10 @@
 				aria-label="Refresh"
 				onclick={refresh}><Icon name="refresh-cw" size={16} aria-hidden="true" /></button
 			>
+			<HeadDockPop key="assets" title="Free assets" ondock={() => dockTab('assets')} btnClass="rounded-sm p-1 hover:brightness-150" />
 			<button
 				id="asset-browser-close"
+				data-wc-x
 				class="rounded-sm p-1 hover:brightness-150"
 				title="Close"
 				aria-label="Close the asset browser"
@@ -681,6 +685,17 @@
 {/if}
 
 <style>
+	/* 78 PL8 (device lab UI-7, the folded phone): the kind tabs WRAP onto a second row in a narrow window —
+	   as one scrolling row the last one was cut ("Ava…") at the window's edge. One row wherever they fit. */
+	.ab-top :global(.tabs-list) {
+		flex-wrap: wrap;
+		row-gap: 0;
+		column-gap: var(--space-4);
+		overflow-x: visible;
+	}
+	.ab-top :global(.tabs-list .tab) {
+		height: 34px;
+	}
 	.ab-filters {
 		display: flex;
 		flex-wrap: wrap;

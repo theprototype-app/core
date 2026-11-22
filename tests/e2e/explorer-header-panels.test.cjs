@@ -36,26 +36,26 @@ const LONG_PROJECT = 'An Extremely Long Project Name That Cannot Possibly Fit';
 const titleOf = (peer) => peer.page.evaluate(() => document.title);
 
 const manifestName = (peer) =>
-	peer.page.evaluate(() => window.__stores.projectManifest.projectName());
+	peer.page.evaluate(() => window.__tp.test.v1.projectManifest.projectName());
 
 const itemsOf = (peer) =>
 	peer.page.evaluate(() => {
 		let items;
-		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((v) => (items = v))();
 		return items.map((i) => ({ id: i.id, name: i.name, hash: i.hash, folderId: i.folderId ?? null }));
 	});
 
 const activeFolderOf = (peer) =>
 	peer.page.evaluate(() => {
 		let v;
-		window.__stores.explorer.activeFolder.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.activeFolder.subscribe((x) => (v = x))();
 		return v ?? null;
 	});
 
 const inspectedOf = (peer) =>
 	peer.page.evaluate(() => {
 		let v;
-		window.__stores.explorer.inspectedFile.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorer.inspectedFile.subscribe((x) => (v = x))();
 		return v ?? null;
 	});
 
@@ -151,7 +151,7 @@ const shellGeom = (peer) =>
  */
 const nudgeScene = (peer) =>
 	peer.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const child = g.children[0];
@@ -185,19 +185,19 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
 	await A.page.waitForFunction(
-		() => !!window.__stores?.levels && !!window.__stores?.projectManifest && !!window.__stores?.explorer,
+		() => !!window.__tp?.test.v1?.levels && !!window.__tp?.test.v1?.projectManifest && !!window.__tp?.test.v1?.explorer,
 		{ timeout: 30000 }
 	);
 
 	// =====================================================================
 	// 1. THE CHIP IS IN THE HEADER ROW, AFTER THE SEARCH BOX
 	// =====================================================================
-	await A.page.evaluate(() => window.__stores.projectManifest.setProjectName('Dungeon Crawl'));
+	await A.page.evaluate(() => window.__tp.test.v1.projectManifest.setProjectName('Dungeon Crawl'));
 	await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1100));
 	});
-	const arena = await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Arena'));
+	const arena = await A.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Arena'));
 	h.check(!!arena?.hash, `premise: a saved scene to be identified by (${arena?.name})`);
 
 	await openExplorer(A);
@@ -246,7 +246,7 @@ h.run(async () => {
 		(await titleOf(A)).startsWith('Arena* - '),
 		'it is the SAME signal the window title uses — the asterisk is up too'
 	);
-	await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Arena'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.saveSceneAsLevel('Arena'));
 	await h.eventually(
 		() => chipOf(A),
 		(v) => v.dirty === false,
@@ -297,11 +297,11 @@ h.run(async () => {
 	// =====================================================================
 	// save into a FOLDER, so the reveal has to navigate rather than luckily already be there
 	const folder = await A.page.evaluate(
-		() => window.__stores.explorer.createFolder('Levels here', null)?.id ?? null
+		() => window.__tp.test.v1.explorer.createFolder('Levels here', null)?.id ?? null
 	);
 	h.check(!!folder, 'premise: a folder to hide the scene in');
 	const bunker = await A.page.evaluate(
-		(id) => window.__stores.levels.saveSceneAsLevel('Bunker', id),
+		(id) => window.__tp.test.v1.levels.saveSceneAsLevel('Bunker', id),
 		folder
 	);
 	const bunkerItem = (await itemsOf(A)).find((i) => i.id === bunker.id);
@@ -310,7 +310,7 @@ h.run(async () => {
 		`premise: Bunker's file is in that folder (${bunkerItem?.name})`
 	);
 	// go somewhere else, and prove the card is genuinely not on screen
-	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await A.page.waitForTimeout(600);
 	const before = await A.page.evaluate(
 		(id) => !!document.querySelector(`[data-card-id="${id}"]`),
@@ -366,7 +366,7 @@ h.run(async () => {
 	// =====================================================================
 	// 5. A NARROW DOCK: THE CHIP TRUNCATES, THE SEARCH BOX STAYS
 	// =====================================================================
-	await A.page.evaluate((n) => window.__stores.projectManifest.setProjectName(n), LONG_PROJECT);
+	await A.page.evaluate((n) => window.__tp.test.v1.projectManifest.setProjectName(n), LONG_PROJECT);
 	await A.page.waitForTimeout(400);
 	const wide = await headerGeom(A);
 	h.check(
@@ -432,7 +432,7 @@ h.run(async () => {
 	// =====================================================================
 	// 6. THE PROPERTIES PANEL RESIZES (right-hand side) AND REMEMBERS
 	// =====================================================================
-	await A.page.locator('[data-ws-mode="props"]').click();
+	await h.openWsMode(A.page, ':is(#explorer-window, #explorer-list)', 'props');
 	await A.page.waitForTimeout(500);
 	let g = await shellGeom(A);
 	h.check(!!g.panel, 'the Properties panel is open');
@@ -489,7 +489,7 @@ h.run(async () => {
 	const chosen = (await shellGeom(A)).panel.width;
 	h.check(chosen > 260, `premise: a width worth remembering (${chosen | 0}px)`);
 	await h.freshReload(A);
-	await A.page.waitForFunction(() => !!window.__stores?.explorer, { timeout: 30000 });
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.explorer, { timeout: 30000 });
 	// 41 G16: "Restore previous session?" is a blocking modal after a reload of a page that
 	// autosaved objects — answer it (the snapshot stays saved) or every click lands on it
 	await h.answerRestore(A);
@@ -503,7 +503,10 @@ h.run(async () => {
 	// =====================================================================
 	// 7. THE OTHER SIDE — WHERE A COPIED DRAG SIGN GOES WRONG
 	// =====================================================================
-	await A.page.locator('[data-ws-switch-side]').click();
+	// uir-polish B6: "Switch sidebar side" is in the pane's context menu now (its header's button is gone)
+	h.check((await A.page.locator('#explorer-list [data-ws-switch-side], #explorer-window [data-ws-switch-side]').count()) === 0, 'B6 the pane header has no "Switch sidebar side" button');
+	await A.page.locator('[data-ws-panel-head]').first().click({ button: 'right' });
+	await A.page.getByRole('menuitem', { name: 'Switch sidebar side', exact: true }).click();
 	await A.page.waitForTimeout(600);
 	let left = await shellGeom(A);
 	h.check(
@@ -515,8 +518,9 @@ h.run(async () => {
 		`the width follows it across (${left.panel.width | 0}px)`
 	);
 	h.check(
-		left.grip.left >= left.panel.right - 2,
-		`the grip is on the panel's INNER edge again, not stranded on the far side (grip ${left.grip.left | 0}, panel right ${left.panel.right | 0})`
+		// showhide-v8: no chrome column any more — the grip straddles the panel's inner border (centred on it)
+		Math.abs((left.grip.left + left.grip.right) / 2 - left.panel.right) <= 4,
+		`the grip is on the panel's INNER edge again, not stranded on the far side (grip ${left.grip.left | 0}..${left.grip.right | 0}, panel right ${left.panel.right | 0})`
 	);
 	// mirrored: on the LEFT the grip is on the panel's RIGHT edge, so dragging RIGHT widens
 	await dragBy(A, left.grip, 70);
@@ -659,7 +663,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(500);
 	const closedIt = await A.page.evaluate(() => {
 		let v;
-		window.__stores.explorerClose.subscribe((x) => (v = x))();
+		window.__tp.test.v1.explorerClose.subscribe((x) => (v = x))();
 		return { closed: v, gone: !document.querySelector('#explorer-window') };
 	});
 	h.check(
@@ -667,7 +671,7 @@ h.run(async () => {
 		`W6.5 ...and clicking it closes the Explorer (${JSON.stringify(closedIt)})`
 	);
 	await A.page.evaluate(() => {
-		window.__stores.explorerClose.set(false);
+		window.__tp.test.v1.explorerClose.set(false);
 		const win = document.querySelector('#explorer-window');
 		if (win) win.style.width = '';
 	});

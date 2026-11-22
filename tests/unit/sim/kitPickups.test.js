@@ -49,7 +49,7 @@ describe('kit.pickups — respawn', () => {
 		P(sim, 'b').on('respawned', () => back++);
 		P(sim, 'b').collect('g');
 		sim.advance(3000);
-		expect(P(sim, 'a').collect('g')).toEqual({ ok: false, reason: 'already taken' });
+		expect(P(sim, 'a').collect('g')).toEqual({ ok: false, refused: true, reason: 'already taken' });
 		sim.advance(2500);
 		expect([P(sim, 'a').available('g'), P(sim, 'b').available('g')]).toEqual([true, true]);
 		expect(back).toBe(1);
@@ -65,7 +65,7 @@ describe('kit.pickups — respawn', () => {
 		sim.leave('a');
 		sim.advance(10_000);
 		expect(P(sim, 'b').available('g')).toBe(false);
-		expect(P(sim, 'b').collect('g')).toEqual({ ok: false, reason: 'already taken' });
+		expect(P(sim, 'b').collect('g')).toEqual({ ok: false, refused: true, reason: 'already taken' });
 	});
 });
 

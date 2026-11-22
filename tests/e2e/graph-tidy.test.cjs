@@ -30,7 +30,7 @@ const MESSY = {
 const positions = (page) =>
 	page.evaluate(() => {
 		let g;
-		window.__stores.flowGraphs.subscribe((v) => (g = v))();
+		window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))();
 		return Object.fromEntries(g.scene.nodes.map((n) => [n.id, [Math.round(n.position.x), Math.round(n.position.y)]]));
 	});
 const lint = (page) => page.evaluate(() => window.__flowTidy.lint());
@@ -43,8 +43,8 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B', ctx);
 	await h.connect(B, A);
 	const p = A.page;
-	await p.evaluate((doc) => window.__stores.restoreGraphs(JSON.parse(JSON.stringify(doc))), MESSY);
-	await p.evaluate((id) => window.__stores.nodesHandler.sendNodes(id), B.id);
+	await p.evaluate((doc) => window.__tp.test.v1.restoreGraphs(JSON.parse(JSON.stringify(doc))), MESSY);
+	await p.evaluate((id) => window.__tp.test.v1.nodesHandler.sendNodes(id), B.id);
 	await h.eventually(() => positions(B.page), (g) => Object.keys(g).length === 7, 'the peer holds the messy graph');
 	await p.locator('p[title="Node editor (N)"]').click();
 	await p.waitForTimeout(1500);

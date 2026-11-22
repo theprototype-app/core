@@ -62,7 +62,7 @@ describe('frames the tab sends', () => {
 		expect(PING_TEXT.length).toBe(15);
 	});
 	it('hello carries the token in the frame, never anywhere else', () => {
-		expect(JSON.parse(helloFrame('tpp_x', '1.48.0', ['status']))).toEqual({ type: 'hello', v: 1, token: 'tpp_x', app: { version: '1.48.0' }, tools: ['status'] });
+		expect(JSON.parse(helloFrame('tpp_x', '1.48.0', ['status']))).toEqual({ type: 'hello', v: 1, token: 'tpp_x', app: { version: '1.48.0' }, tools: ['status'], keepsCalls: true });
 	});
 	it('a result too large becomes too_large; an unknown error code becomes failed', () => {
 		expect(JSON.parse(answerFrame('a', { result: { ok: 1 } }))).toEqual({ type: 'result', id: 'a', result: { ok: 1 } });

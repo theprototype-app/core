@@ -1,5 +1,5 @@
 import { writable, get } from 'svelte/store';
-import { objectsGroup, globalRenderer } from '../stores/sceneStore';
+import { objectsGroup, globalRenderer, globalScene, globalCamera } from '../stores/sceneStore';
 import { coarsePointer } from './inputDevice';
 
 // 26-A (roadmap 26 sections 2 and 3) — WHAT THE SCENE COSTS, AND WHETHER THAT IS A LOT.
@@ -28,7 +28,7 @@ import { coarsePointer } from './inputDevice';
 
 /**
  * @typedef {'green'|'amber'|'red'|'unknown'} Tier
- * @typedef {{key: string, label: string, unit: string, desktop: [number, number], vr: [number, number], why: string}} Budget
+ * @typedef {{key: string, label: string, unit: string, desktop: [number, number], vr: [number, number], phone?: [number, number], why: string}} Budget
  */
 
 /**
@@ -94,6 +94,8 @@ export const BUDGETS = [
 		unit: 'ms',
 		desktop: [20, 33],
 		vr: [11, 13.9],
+		// 78 PL11: a phone held to the desktop's 33 ms read every phone scene as red; a phone at a steady 30 fps is fine
+		phone: [34, 50],
 		why: 'FPS averages a stutter away; p95 is the frame you actually feel'
 	},
 	{
@@ -102,6 +104,7 @@ export const BUDGETS = [
 		unit: '',
 		desktop: [2, 12],
 		vr: [1, 6],
+		phone: [6, 24],
 		why: 'the direct measure of "the window froze" — a task over 50ms blocks input'
 	}
 ];
@@ -169,16 +172,26 @@ export function profileFor(renderer) {
 	return coarsePointer() ? 'vr' : 'desktop';
 }
 
+/** 78 PL11: the limits a profile is judged by. A PHONE was judged as 'vr' (profileFor's coarse pointer), so its
+ * frames were held to a headset's 11-14 ms and every phone scene read red; it keeps the VR (mobile) limits for what a
+ * scene HOLDS and uses its own limits where a row has them (frames, long tasks).
+ * @param {Budget} budget @param {string} profile @returns {[number, number]} */
+function limitsOf(budget, profile) {
+	if (profile === 'vr') return budget.vr;
+	if (profile === 'phone') return budget.phone ?? budget.vr;
+	return budget.desktop;
+}
+
 /**
  * The tier one reading falls in. PURE — this is the part that has to be right, and it
  * is testable with no browser and no GPU.
- * @param {string} key @param {number | null | undefined} value @param {'desktop'|'vr'} profile
+ * @param {string} key @param {number | null | undefined} value @param {'desktop'|'vr'|'phone'} profile
  * @returns {Tier}
  */
 export function tierOf(key, value, profile) {
 	const budget = byKey.get(key);
 	if (!budget || value == null || !Number.isFinite(value)) return 'unknown';
-	const [green, amber] = profile === 'vr' ? budget.vr : budget.desktop;
+	const [green, amber] = limitsOf(budget, profile);
 	if (value <= green) return 'green';
 	if (value <= amber) return 'amber';
 	return 'red';
@@ -190,7 +203,7 @@ const ORDER = { unknown: 0, green: 1, amber: 2, red: 3 };
  * The meter's single dot: the worst tier across everything we can read. An UNKNOWN
  * never darkens the dot — "we have not measured it" is not "it is fine", but it is
  * certainly not a warning either.
- * @param {Record<string, any>} metrics @param {'desktop'|'vr'} profile @returns {Tier}
+ * @param {Record<string, any>} metrics @param {'desktop'|'vr'|'phone'} profile @returns {Tier}
  */
 export function worstTier(metrics, profile) {
 	/** @type {Tier} */
@@ -202,15 +215,34 @@ export function worstTier(metrics, profile) {
 	return worst;
 }
 
+/** the rows that measure FRAMES (what the quality governor answers by lowering quality) */
+const FRAME_KEYS = new Set(['frameP95', 'longTasks']);
+
+/**
+ * 78 PL11 + PL22: the footer dot. While the quality governor is already lowering quality, a scene that is over only
+ * on FRAME rows is being handled: the dot says so calmly ('note', grey) instead of a red cross or an amber triangle
+ * beside "Reduced quality". Anything over on what the scene HOLDS (calls, triangles, memory, lights) still shows.
+ * @param {Record<string, any>} metrics @param {'desktop'|'vr'|'phone'} profile @param {boolean} reducing @returns {Tier | 'note'}
+ */
+export function footerTier(metrics, profile, reducing) {
+	const worst = worstTier(metrics, profile);
+	if (!reducing || (worst !== 'amber' && worst !== 'red')) return worst;
+	const over = BUDGETS.filter((b) => {
+		const t = tierOf(b.key, metrics?.[b.key], profile);
+		return t === 'amber' || t === 'red';
+	});
+	return over.every((b) => FRAME_KEYS.has(b.key)) ? 'note' : worst;
+}
+
 /**
  * Every budget with its current reading and tier — what the overlay renders and what a
  * diagnostics bundle carries.
- * @param {Record<string, any>} metrics @param {'desktop'|'vr'} profile
+ * @param {Record<string, any>} metrics @param {'desktop'|'vr'|'phone'} profile
  */
 export function budgetRows(metrics, profile) {
 	return BUDGETS.map((budget) => {
 		const value = metrics?.[budget.key];
-		const [green, amber] = profile === 'vr' ? budget.vr : budget.desktop;
+		const [green, amber] = limitsOf(budget, profile);
 		return { ...budget, value: value ?? null, green, amber, tier: tierOf(budget.key, value, profile) };
 	});
 }
@@ -319,8 +351,76 @@ export function frameStats() {
 		n: sorted.length,
 		p50: percentile(sorted, 0.5),
 		p95: percentile(sorted, 0.95),
-		p99: percentile(sorted, 0.99)
+		p99: percentile(sorted, 0.99),
+		// diorama2: the FAST end says the display's refresh (the frames that were on time), additive
+		p05: percentile(sorted, 0.05)
 	};
+}
+
+/** display refresh rates a vsync-aligned frame interval is matched against */
+const REFRESH_HZ = [30, 48, 50, 60, 72, 75, 90, 100, 120, 144, 165, 240];
+
+/**
+ * diorama2 (item 14): does frameP95 sit ON the display's vsync? rAF timestamps are vsync-aligned, so the fastest
+ * frames (p05) are one refresh apart — that names the display rate. A p95 within ~6% of that interval is a frame
+ * on every refresh: the display caps the rate (a steady 16.7 ms = a 60 Hz panel), and the scene is not what limits
+ * it. A p95 of two or more refreshes means frames miss vsync. PURE.
+ * @param {{p05?: number | null, p50?: number | null, p95?: number | null, n?: number}} stats
+ * @returns {{onVsync: boolean, hz: number, say: string} | null} null when the frames name no refresh rate
+ */
+export function vsyncVerdict(stats) {
+	const fast = Number(stats?.p05);
+	const p95 = Number(stats?.p95);
+	if (!(fast > 0) || !(p95 > 0) || (stats?.n ?? 60) < 30) return null;
+	const hz = REFRESH_HZ.find((r) => Math.abs(fast - 1000 / r) <= (1000 / r) * 0.06);
+	if (!hz) return null;
+	const interval = 1000 / hz;
+	if (p95 <= interval * 1.06)
+		return {
+			onVsync: true,
+			hz,
+			say: 'frameP95 ' + Math.round(p95 * 10) / 10 + ' ms is one refresh of this ' + hz + ' Hz display: every frame lands on vsync, so the display caps the frame rate, not the scene (a steady 16.7 ms is a 60 Hz cap, not a slow scene)'
+		};
+	const refreshes = Math.round(p95 / interval);
+	return {
+		onVsync: false,
+		hz,
+		say: 'the display refreshes at ' + hz + ' Hz, and the slowest frames (p95 ' + Math.round(p95 * 10) / 10 + ' ms) take about ' + refreshes + ' refreshes: frames miss vsync — lighten the scene (see top) to make it smooth'
+	};
+}
+
+/**
+ * diorama2 (item 14): what costs the most — the scene's top-level objects ranked by the triangles their visible
+ * meshes draw (an instanced mesh counts every instance) and by draw calls (one per mesh per material slot). Per
+ * pass: the shadow pass draws a caster again. PURE given the tree.
+ * @param {any} root the objects group @param {number} [n]
+ * @returns {{byTriangles: {uuid: string, name: string, triangles: number, calls: number}[], byCalls: {uuid: string, name: string, triangles: number, calls: number}[]}}
+ */
+export function topContributors(root, n = 5) {
+	/** @type {{uuid: string, name: string, triangles: number, calls: number}[]} */
+	const rows = [];
+	for (const top of root?.children ?? []) {
+		if (top.visible === false) continue;
+		let triangles = 0;
+		let calls = 0;
+		/** @param {any} o */
+		const walk = (o) => {
+			if (o.visible === false) return;
+			const g = o.isMesh ? o.geometry : null;
+			if (g?.attributes?.position) {
+				const per = Math.floor((g.index ? g.index.count : g.attributes.position.count) / 3);
+				const copies = o.isInstancedMesh ? Math.max(0, Number(o.count) || 0) : 1;
+				triangles += per * copies;
+				const slots = Array.isArray(o.material) ? Math.max(1, g.groups?.length || o.material.length) : 1;
+				if (copies > 0) calls += slots;
+			}
+			for (const c of o.children ?? []) walk(c);
+		};
+		walk(top);
+		if (triangles > 0 || calls > 0) rows.push({ uuid: top.uuid, name: String(top.name || top.type).slice(0, 60), triangles, calls });
+	}
+	const by = (/** @type {'triangles' | 'calls'} */ k) => [...rows].sort((a, b) => b[k] - a[k] || (a.uuid < b.uuid ? -1 : 1)).slice(0, n);
+	return { byTriangles: by('triangles'), byCalls: by('calls') };
 }
 
 // --- long tasks -------------------------------------------------------------------
@@ -483,13 +583,24 @@ function walkScene() {
 	let objects = 0;
 	let meshes = 0;
 	let hidden = 0;
+	let lights = 0;
 	group?.traverse?.((/** @type {any} */ o) => {
 		if (o === group) return;
 		objects++;
 		if (o.isMesh) meshes++;
+		if (o.isLight) lights++; // mcp-shapes: the agent's status reports it
 		if (o.visible === false) hidden++;
 	});
-	return { objects, meshes, hidden };
+	// mcp-shapes: the scene's OWN triangles (visible meshes, instances counted) — the agent's status needs a number
+	// while the view is idle, and the render totals above are per DISPLAY frame, so a scene nobody is changing
+	// (render on demand) reads 0 there
+	let sceneTriangles = 0;
+	group?.traverseVisible?.((/** @type {any} */ o) => {
+		const g = o.isMesh ? o.geometry : null;
+		const n = g ? (g.index ? g.index.count : (g.attributes?.position?.count ?? 0)) : 0;
+		if (n) sceneTriangles += Math.floor(n / 3) * (o.isInstancedMesh ? o.count : 1);
+	});
+	return { objects, meshes, hidden, lights, sceneTriangles };
 }
 
 // --- per-frame render totals (26-E) -----------------------------------------------
@@ -510,6 +621,22 @@ function walkScene() {
 // on the instance leaves `info` byte-identical for everyone and works in XR too.
 
 const renderAcc = { calls: 0, triangles: 0, renders: 0 };
+/** mcp-diorama2 (27): the same draw calls split by WHERE they came from — the scene through the person's camera, the
+ * shadow maps, the post stack (full-screen passes, AO's normal pass), other views of the scene (a camera's picture
+ * in picture, a water reflection, an agent's screenshot) */
+const sourceAcc = { scene: 0, shadows: 0, post: 0, views: 0 };
+/** shadow-map calls drawn inside the render() now running (measured by the shadowMap.render wrap) */
+let shadowCallsInRender = 0;
+
+/**
+ * mcp-diorama2 (27): which source a render() call is. PURE.
+ * @param {any} scene @param {any} camera @param {any} mainScene @param {any} mainCamera
+ * @returns {'scene' | 'post' | 'views'}
+ */
+export function renderSource(scene, camera, mainScene, mainCamera) {
+	if (!scene || scene !== mainScene || scene.overrideMaterial) return 'post';
+	return !mainCamera || camera === mainCamera ? 'scene' : 'views';
+}
 /** 34 PF: the same totals PER FRAME, drained by the perf recorder at each frame end (one
  * reader; `takeFrameRender` resets it). Two numbers on a shared object: no allocation. */
 const frameAcc = { calls: 0, triangles: 0 };
@@ -525,20 +652,39 @@ export function countRenderCalls(renderer) {
 	if (!renderer || typeof renderer.render !== 'function' || renderer.__budgetRender) return false;
 	const original = renderer.render;
 	renderer.__budgetRender = original;
+	// mcp-diorama2 (27): the shadow maps draw INSIDE render(); time their share of the calls
+	const sm = renderer.shadowMap;
+	if (sm && typeof sm.render === 'function' && !sm.__budgetShadow) {
+		const shadowRender = sm.render;
+		sm.__budgetShadow = shadowRender;
+		sm.render = function (/** @type {any[]} */ ...a) {
+			const i = renderer.info?.render;
+			const before = i ? i.calls : 0;
+			const out = shadowRender.apply(this, a);
+			if (i) shadowCallsInRender += Math.max(0, i.calls - before);
+			return out;
+		};
+	}
 	renderer.render = function (/** @type {any[]} */ ...args) {
 		const info = this.info?.render;
 		// with autoReset ON (three's default) render() zeroes the counters itself, so the
 		// base is 0; with it OFF somebody is accumulating on purpose and we take the delta
 		const baseCalls = info && this.info.autoReset === false ? info.calls : 0;
 		const baseTris = info && this.info.autoReset === false ? info.triangles : 0;
+		shadowCallsInRender = 0;
 		const result = original.apply(this, args);
 		if (info) {
-			renderAcc.calls += info.calls - baseCalls;
+			const calls = info.calls - baseCalls;
+			renderAcc.calls += calls;
 			renderAcc.triangles += info.triangles - baseTris;
 			renderAcc.renders++;
-			frameAcc.calls += info.calls - baseCalls;
+			frameAcc.calls += calls;
 			frameAcc.triangles += info.triangles - baseTris;
+			const shadows = Math.min(calls, shadowCallsInRender);
+			sourceAcc.shadows += shadows;
+			sourceAcc[renderSource(args[0], args[1], get(globalScene), get(globalCamera))] += calls - shadows;
 		}
+		shadowCallsInRender = 0;
 		return result;
 	};
 	return true;
@@ -550,6 +696,11 @@ export function uncountRenderCalls(renderer) {
 	if (!renderer?.__budgetRender) return;
 	renderer.render = renderer.__budgetRender;
 	delete renderer.__budgetRender;
+	const sm = renderer.shadowMap;
+	if (sm?.__budgetShadow) {
+		sm.render = sm.__budgetShadow;
+		delete sm.__budgetShadow;
+	}
 }
 
 /** What every render() pass drew since the last call — one display frame when the caller
@@ -564,7 +715,7 @@ export function takeFrameRender() {
 	return frameOut;
 }
 
-/** @type {{calls: number, triangles: number, rendersPerFrame: number} | null} */
+/** @type {{calls: number, triangles: number, rendersPerFrame: number, bySource: Record<string, number>} | null} */
 let lastTotals = null;
 
 /** Per display frame since the last call, then start a new window. A window with no
@@ -576,8 +727,10 @@ function takeRenderTotals() {
 	const out = {
 		calls: Math.round(renderAcc.calls / frames),
 		triangles: Math.round(renderAcc.triangles / frames),
-		rendersPerFrame: Math.round((renderAcc.renders / frames) * 10) / 10
+		rendersPerFrame: Math.round((renderAcc.renders / frames) * 10) / 10,
+		bySource: Object.fromEntries(Object.entries(sourceAcc).map(([k, v]) => [k, Math.round(v / frames)]))
 	};
+	for (const k of /** @type {(keyof typeof sourceAcc)[]} */ (Object.keys(sourceAcc))) sourceAcc[k] = 0;
 	lastTotals = out;
 	renderAcc.calls = 0;
 	renderAcc.triangles = 0;
@@ -614,11 +767,14 @@ function sample() {
 		objects: scene.objects,
 		meshes: scene.meshes,
 		hidden: scene.hidden,
+		lights: scene.lights,
+		sceneTriangles: scene.sceneTriangles,
 		// per DISPLAY frame across every render() call; before the sampler has counted a
 		// frame (a forced reading straight after boot) fall back to the raw last pass
 		triangles: totals ? totals.triangles : (info?.render?.triangles ?? null),
 		calls: totals ? totals.calls : (info?.render?.calls ?? null),
 		rendersPerFrame: totals ? totals.rendersPerFrame : null,
+		callsBySource: totals ? totals.bySource : null,
 		geometries: info?.memory?.geometries ?? null,
 		textures: info?.memory?.textures ?? null,
 		frameP50: fps.p50,
@@ -734,6 +890,70 @@ export function stopSceneMetrics() {
 export function sampleSceneMetrics() {
 	sample();
 	return get(sceneMetrics);
+}
+
+/**
+ * mcp-shapes: the scene budget an agent's status carries — the numbers the Statistics overlay reads, compact: the
+ * worst tier (green | amber | red, or unknown before a frame was measured), the profile it is judged on (desktop | vr)
+ * and `over` = every budget past green, so an agent knows when to stop adding. Read-only, a fresh sample when the
+ * sampler has not run yet.
+ * @param {Record<string, any>} [given] a sample (tests); default the live one
+ * @param {any} [frames] frame stats for the vsync verdict (tests); default the live ones
+ */
+export function agentBudgetReport(given, frames) {
+	let metrics = given ?? get(sceneMetrics);
+	if (!given && !metrics?.at) metrics = sampleSceneMetrics();
+	// an idle view (render on demand) draws nothing per display frame: say the scene's own triangles and leave the
+	// draw calls out rather than report 0 for a scene full of meshes
+	const idle = !(metrics.triangles > 0) && metrics.sceneTriangles > 0;
+	if (idle) {
+		metrics = { ...metrics, triangles: metrics.sceneTriangles };
+		if (!(metrics.calls > 0)) metrics.calls = null;
+	}
+	const profile = metrics.profile === 'vr' ? 'vr' : 'desktop';
+	// mcp-diorama2 (27): a frame time that IS the display's refresh is the display's cap, not the scene: it never makes
+	// the scene amber or red (a 60 Hz panel draws a steady 16.7 ms whatever the scene)
+	const v = idle ? null : vsyncVerdict(frames ?? (given ? null : frameStats()));
+	const judged = v?.onVsync ? { ...metrics, frameP95: null } : metrics;
+	/** @type {Record<string, any>} */
+	const out = { tier: worstTier(judged, profile), profile };
+	for (const key of ['objects', 'meshes', 'triangles', 'calls', 'textures', 'lights', 'frameP95']) {
+		const v = metrics[key];
+		if (typeof v === 'number' && Number.isFinite(v)) out[key] = key === 'frameP95' ? Math.round(v * 10) / 10 : v;
+	}
+	const over = budgetRows(judged, profile)
+		.filter((r) => r.tier === 'amber' || r.tier === 'red')
+		.map((r) => r.key + ' ' + r.tier + ' (' + r.value + ', green up to ' + r.green + ')');
+	if (over.length) out.over = over;
+	// diorama2 (item 14): which objects to lighten first, and whether the frame time is the scene or the display
+	try {
+		const top = topContributors(get(objectsGroup), 5);
+		if (top.byTriangles.length) out.top = top;
+	} catch {
+		/* a reading, never a reason for the status to fail */
+	}
+	if (v) out.vsync = v;
+	// mcp-diorama2 (27): draw calls by source — the scene's own objects, what else the main view draws (people, the
+	// grid, the sky, helpers), shadow maps, the post stack, other views
+	const bySource = metrics.callsBySource;
+	if (!idle && bySource && typeof bySource === 'object' && out.calls > 0) {
+		let objectCalls = 0;
+		try {
+			for (const row of topContributors(get(objectsGroup), 1e6).byCalls) objectCalls += row.calls;
+		} catch {
+			/* a reading */
+		}
+		const scenePass = Math.max(0, Number(bySource.scene) || 0);
+		const objects = Math.min(scenePass, objectCalls);
+		out.callsBySource = {
+			objects,
+			otherInView: scenePass - objects,
+			shadows: Math.max(0, Number(bySource.shadows) || 0),
+			post: Math.max(0, Number(bySource.post) || 0),
+			otherViews: Math.max(0, Number(bySource.views) || 0)
+		};
+	}
+	return out;
 }
 
 /** One line per budget, for the diagnostics bundle (audit H4). */

@@ -88,7 +88,7 @@ function zOf(page, sel) {
 	}, sel);
 }
 const store = (page, name, key) =>
-	page.evaluate(([n, k]) => new Promise((r) => (k ? window.__stores[n][k] : window.__stores[n]).subscribe(r)()), [name, key]);
+	page.evaluate(([n, k]) => new Promise((r) => (k ? window.__tp.test.v1[n][k] : window.__tp.test.v1[n]).subscribe(r)()), [name, key]);
 
 async function tabCentre(page, side, key) {
 	return page.evaluate(
@@ -116,7 +116,7 @@ async function dockList(page, edgeX) {
 	// already a tab of that side (a reopened list keeps its side): nothing to drag
 	if (open?.shown && open.docked === (edgeX < VW / 2 ? 'left' : 'right')) return open;
 	if (open?.shown && open.docked) {
-		await page.evaluate(() => window.__stores.docking.undock('objects', 400, 300));
+		await page.evaluate(() => window.__tp.test.v1.docking.undock('objects', 400, 300));
 		await page.waitForTimeout(300);
 	}
 	if (!(await probe(page, '#object-list'))?.shown) {
@@ -169,15 +169,15 @@ h.run(async () => {
 	h.check(hosted?.objects === true && list?.host === 'shown' && !list.docked, `dropped there the list is a bottom-dock tab (${JSON.stringify({ hosted, list })})`);
 	h.check(!(await page.evaluate(() => !!document.querySelector('#sidebar-strip-right [data-sidebar-tab="objects"]'))), 'and it left the right sidebar');
 	// back out of the dock, closed — the next sections start clean
-	await page.evaluate(() => window.__stores.dockHost.setHostedDocked('objects', false));
+	await page.evaluate(() => window.__tp.test.v1.dockHost.setHostedDocked('objects', false));
 	await page.waitForTimeout(300);
 
 	// ---------- 3. onto the OTHER side's open column: "Add as tab", painted above that column ----------
 	// Configure Scene on the right, the list on the left
-	await page.evaluate(() => window.__stores.showSidebar?.('scene'));
+	await page.evaluate(() => window.__tp.test.v1.showSidebar?.('scene'));
 	await page.waitForTimeout(600);
 	let right = await strip(page, 'right');
-	if (!right?.tabs.includes('inspector')) {
+	if (!right?.tabs.includes('scene')) {
 		await page.locator('#logo-menu').click();
 		await page.waitForTimeout(300);
 		await page.locator('#sidebar70 .side-row', { hasText: 'Configure Scene' }).click();
@@ -186,7 +186,7 @@ h.run(async () => {
 		await page.waitForTimeout(300);
 		right = await strip(page, 'right');
 	}
-	h.check(right?.tabs.includes('inspector'), `premise: Configure Scene is the right sidebar (${JSON.stringify(right)})`);
+	h.check(right?.tabs.includes('scene'), `premise: Configure Scene is the right sidebar (${JSON.stringify(right)})`);
 	list = await dockList(page, 12);
 	h.check(list?.docked === 'left', `premise: the list is docked left (${JSON.stringify(list)})`);
 	const col = await probe(page, '#inspector');
@@ -200,18 +200,18 @@ h.run(async () => {
 	await page.mouse.up();
 	await page.waitForTimeout(500);
 	right = await strip(page, 'right');
-	h.check(right?.tabs.includes('objects') && right.tabs.includes('inspector') && right.front === 'objects', `dropped there the list is a tab of the right sidebar, in front (${JSON.stringify(right)})`);
+	h.check(right?.tabs.includes('objects') && right.tabs.includes('scene') && right.front === 'objects', `dropped there the list is a tab of the right sidebar, in front (${JSON.stringify(right)})`);
 
 	// ---------- 4. Configure Scene has no floating window: the viewport offers it nothing ----------
-	await page.locator('#sidebar-strip-right [data-sidebar-tab="inspector"]').click();
+	await page.locator('#sidebar-strip-right [data-sidebar-tab="scene"]').click();
 	await page.waitForTimeout(300);
-	await holdTabAt(page, 'right', 'inspector', 600, 420);
+	await holdTabAt(page, 'right', 'scene', 600, 420);
 	hl = await highlights(page);
 	h.check(!hl.some((x) => x.target === 'float' || x.target === 'dock'), `the Inspector is offered no float / dock target (${JSON.stringify(hl)})`);
 	await page.mouse.up();
 	await page.waitForTimeout(400);
 	right = await strip(page, 'right');
-	h.check(right?.tabs.includes('inspector'), `dropped on the viewport it stays in its sidebar (${JSON.stringify(right)})`);
+	h.check(right?.tabs.includes('scene'), `dropped on the viewport it stays in its sidebar (${JSON.stringify(right)})`);
 
 	// ---------- 5. the tab menu: right-click names every move ----------
 	let c = await tabCentre(page, 'right', 'objects');
@@ -226,7 +226,7 @@ h.run(async () => {
 	right = await strip(page, 'right');
 	h.check(list && !list.docked && list.shown && !right?.tabs.includes('objects'), `"Undock" floats the list out of the sidebar (${JSON.stringify({ list, right })})`);
 	// the Inspector's own menu: no float, no dock — said, not hidden
-	c = await tabCentre(page, 'right', 'inspector');
+	c = await tabCentre(page, 'right', 'scene');
 	await page.mouse.click(c[0], c[1], { button: 'right' });
 	await page.waitForTimeout(300);
 	const insRows = await page.evaluate(() => [...document.querySelectorAll('[role=menu] [role=menuitem]')].map((r) => ({ t: r.textContent.trim(), dis: r.getAttribute('aria-disabled') === 'true' || r.classList.contains('ctx-disabled') })));
@@ -238,20 +238,20 @@ h.run(async () => {
 	// ---------- 6. an × on each tab closes that panel ----------
 	list = await dockList(page, VW - 15);
 	right = await strip(page, 'right');
-	h.check(right?.tabs.includes('objects') && right.tabs.includes('inspector'), `premise: two tabs on the right (${JSON.stringify(right)})`);
+	h.check(right?.tabs.includes('objects') && right.tabs.includes('scene'), `premise: two tabs on the right (${JSON.stringify(right)})`);
 	const xs = await page.evaluate(() => [...document.querySelectorAll('#sidebar-strip-right [data-sidebar-tab-close]')].map((b) => b.getAttribute('data-sidebar-tab-close')));
-	h.check(xs.includes('objects') && xs.includes('inspector'), `every tab carries its own × (${JSON.stringify(xs)})`);
+	h.check(xs.includes('objects') && xs.includes('scene'), `every tab carries its own × (${JSON.stringify(xs)})`);
 	await page.locator('#sidebar-strip-right [data-sidebar-tab-close="objects"]').click();
 	await page.waitForTimeout(400);
 	right = await strip(page, 'right');
 	list = await probe(page, '#object-list');
-	h.check(!right?.tabs.includes('objects') && right?.tabs.includes('inspector') && !list?.shown, `the list's × closes the list, the other tab stays (${JSON.stringify({ right, list })})`);
+	h.check(!right?.tabs.includes('objects') && right?.tabs.includes('scene') && !list?.shown, `the list's × closes the list, the other tab stays (${JSON.stringify({ right, list })})`);
 
 	// ---------- 7. a strip with more tabs than room SCROLLS, like the dock's ----------
-	await page.evaluate(() => window.__stores.sidebars.setSidebarWidth('right', 250));
+	await page.evaluate(() => window.__tp.test.v1.sidebars.setSidebarWidth('right', 250));
 	await page.locator('p[title="Object list (O)"]').click();
 	await page.waitForTimeout(400);
-	await page.evaluate(() => window.__stores.statsOpen?.set?.(true) ?? window.__stores.sceneBudget.statsOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.statsOpen?.set?.(true) ?? window.__tp.test.v1.sceneBudget.statsOpen.set(true));
 	await page.waitForTimeout(400);
 	// both land on the right through the menu / the edge
 	list = await dockList(page, VW - 15);

@@ -12,33 +12,33 @@ h.run(async () => {
 	const toastTexts = () =>
 		page.evaluate(() => {
 			let t = [];
-			window.__stores.toastStore.subscribe((x) => (t = x))();
+			window.__tp.test.v1.toastStore.subscribe((x) => (t = x))();
 			return t.map((x) => (typeof x === "string" ? x : String(x?.text ?? x?.message ?? JSON.stringify(x))));
 		});
 	const dialogText = (/** @type {string} */ sel = 'dialog[open]') =>
 		page.evaluate((s) => document.querySelector(s)?.textContent?.replace(/\s+/g, ' ') ?? '', sel);
-	const clearToasts = () => page.evaluate(() => window.__stores.toastStore.set([]));
+	const clearToasts = () => page.evaluate(() => window.__tp.test.v1.toastStore.set([]));
 	const count = () =>
 		page.evaluate(() => {
 			let g;
-			window.__stores.objectsGroup.subscribe((x) => (g = x))();
+			window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 			return g.children.length;
 		});
 
 	// ---- 1. "Delete flow" ------------------------------------------------------------------
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await page.waitForTimeout(800);
 	const uuid = await page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
 		const id = g.children[g.children.length - 1].uuid;
-		const F = window.__stores.flowGraphsCtl;
+		const F = window.__tp.test.v1.flowGraphsCtl;
 		F.createObjectGraph(id);
 		return id;
 	});
-	await page.evaluate(() => window.__stores.flowNodes?.update?.((n) => n));
+	await page.evaluate(() => window.__tp.test.v1.flowNodes?.update?.((n) => n));
 	await clearToasts();
-	await page.evaluate((id) => { void window.__stores.flowGraphsCtl.requestDeleteObjectGraph(id, 'Box'); }, uuid); // never return the promise: it waits for the answer
+	await page.evaluate((id) => { void window.__tp.test.v1.flowGraphsCtl.requestDeleteObjectGraph(id, 'Box'); }, uuid); // never return the promise: it waits for the answer
 	await page.waitForTimeout(500);
 	const flowAsk = await dialogText();
 	h.check(/Delete this flow\?/.test(flowAsk) && /for everyone/.test(flowAsk), `Delete flow asks in a modal ("${flowAsk.slice(0, 120)}")`);
@@ -48,12 +48,12 @@ h.run(async () => {
 	const hasGraph = (/** @type {string} */ id) =>
 		page.evaluate((i) => {
 			let g = {};
-			window.__stores.flowGraphs.subscribe((x) => (g = x))();
+			window.__tp.test.v1.flowGraphs.subscribe((x) => (g = x))();
 			return i in g;
 		}, id);
 	h.check(await hasGraph(uuid), 'the premise: the object has a flow');
 	h.check(await hasGraph(uuid), 'Cancel keeps the flow');
-	await page.evaluate((id) => { void window.__stores.flowGraphsCtl.requestDeleteObjectGraph(id, 'Box'); }, uuid); // never return the promise: it waits for the answer
+	await page.evaluate((id) => { void window.__tp.test.v1.flowGraphsCtl.requestDeleteObjectGraph(id, 'Box'); }, uuid); // never return the promise: it waits for the answer
 	await page.waitForTimeout(400);
 	await page.locator('#confirm-dialog-ok').click({ timeout: 4000 }).catch(() => {});
 	await page.waitForTimeout(400);
@@ -61,7 +61,7 @@ h.run(async () => {
 
 	// ---- 2. "Restore previous session?" -----------------------------------------------------
 	await clearToasts();
-	await page.evaluate(() => window.__stores.autosave.restoreAvailable.set({ objects: 7, ts: Date.now() }));
+	await page.evaluate(() => window.__tp.test.v1.autosave.restoreAvailable.set({ objects: 7, ts: Date.now() }));
 	await page.waitForTimeout(500);
 	const restoreAsk = await dialogText('#restore-session-modal');
 	h.check(/Restore previous session\?/.test(restoreAsk) && /7 objects/.test(restoreAsk), `the restore question is a modal ("${restoreAsk.slice(0, 80)}")`);
@@ -78,25 +78,25 @@ h.run(async () => {
 	await page.waitForTimeout(400);
 	const offer = await page.evaluate(() => {
 		let v;
-		window.__stores.autosave.restoreAvailable.subscribe((x) => (v = x))();
+		window.__tp.test.v1.autosave.restoreAvailable.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(offer === null && (await page.locator('#restore-session-modal').count()) === 0, 'Dismiss withdraws the offer and closes the modal');
 	// Esc is the dismissive answer too
-	await page.evaluate(() => window.__stores.autosave.restoreAvailable.set({ objects: 3, ts: Date.now() }));
+	await page.evaluate(() => window.__tp.test.v1.autosave.restoreAvailable.set({ objects: 3, ts: Date.now() }));
 	await page.waitForTimeout(400);
 	await page.locator('#restore-session-modal').press('Escape', { timeout: 4000 }).catch(() => {});
 	await page.waitForTimeout(400);
 	const offer2 = await page.evaluate(() => {
 		let v;
-		window.__stores.autosave.restoreAvailable.subscribe((x) => (v = x))();
+		window.__tp.test.v1.autosave.restoreAvailable.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(offer2 === null, 'Esc on the restore modal dismisses the offer');
 
 	// ---- 3. a group delete -------------------------------------------------------------------
 	await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		s.commandsHandler.sceneCommand('/create sphere');
 		await new Promise((r) => setTimeout(r, 900));
@@ -110,7 +110,7 @@ h.run(async () => {
 	const beforeDelete = await count();
 	await clearToasts();
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let g;
 		s.objectsGroup.subscribe((x) => (g = x))();
 		const group = g.children.find((c) => c.type === 'Group' && c.children.length > 1);
@@ -128,7 +128,7 @@ h.run(async () => {
 	// ---- 4. GLTF export with nothing selected -------------------------------------------------
 	await clearToasts();
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.selectedObject.set([]);
 		s.selectedObjects.set([]);
 		s.fileHandler.save('gltf');
@@ -142,7 +142,7 @@ h.run(async () => {
 
 	// ---- 5. passive outcomes stay toasts ------------------------------------------------------
 	await clearToasts();
-	await page.evaluate(() => window.__stores.showToast('Saved'));
+	await page.evaluate(() => window.__tp.test.v1.showToast('Saved'));
 	await page.waitForTimeout(200);
 	const passive = await toastTexts();
 	const openDialogs = await page.evaluate(() =>

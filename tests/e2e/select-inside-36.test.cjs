@@ -35,16 +35,16 @@ const FLUID = path.join(SCENES_DIR, 'examples/fluid-tank-toy/scene.tpscene');
 const selection = (page) =>
 	page.evaluate(() => {
 		let v;
-		window.__stores.selectedObjects.subscribe((x) => (v = x))();
+		window.__tp.test.v1.selectedObjects.subscribe((x) => (v = x))();
 		let group;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		return (v ?? []).map((uuid) => group.getObjectByProperty('uuid', uuid)?.name ?? uuid);
 	});
 
 const pingCount = (page) =>
 	page.evaluate(() => {
 		let p;
-		window.__stores.ping.pings.subscribe((v) => (p = v))();
+		window.__tp.test.v1.ping.pings.subscribe((v) => (p = v))();
 		return (p ?? []).length;
 	});
 
@@ -52,12 +52,12 @@ async function loadScene(page, file) {
 	const b64 = fs.readFileSync(file).toString('base64');
 	await page.evaluate(async (b64) => {
 		const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-		const s = window.__stores.sessions;
+		const s = window.__tp.test.v1.sessions;
 		const payload = await s.readSessionZip(bytes.buffer);
 		await s.applySession(payload, { backup: false, quiet: true });
 	}, b64);
 	await h.eventually(
-		() => page.evaluate(() => { let v; window.__stores.sceneLoader.sceneLoad.subscribe((x) => (v = x))(); return v; }),
+		() => page.evaluate(() => { let v; window.__tp.test.v1.sceneLoader.sceneLoad.subscribe((x) => (v = x))(); return v; }),
 		(v) => v === null,
 		'the scene finished loading',
 		30000
@@ -65,19 +65,19 @@ async function loadScene(page, file) {
 	// the fish SWIM (Path Patrol nodes): a pixel aimed at one is empty a second later, so the
 	// suite stops the scene's logic — the fish rest at their base poses
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphs.set({ scene: { nodes: [], edges: [] } });
 		s.flowNodes.set([]);
 		s.flowEdges.set([]);
 	});
-	await page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	await page.waitForTimeout(1200);
 }
 
 /** the world centre of a named top-level object */
 const centreOf = (page, name) =>
 	page.evaluate((name) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let group;
 		s.objectsGroup.subscribe((g) => (group = g))();
 		const o = group.children.find((c) => c.name === name);
@@ -88,7 +88,7 @@ const centreOf = (page, name) =>
 /** what the app's own pick sees at a pixel, nearest first (no pass-through), + what is under the cursor */
 const stackAt = (page, px) =>
 	page.evaluate(({ x, y }) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let camera, renderer, group;
 		s.globalCamera.subscribe((v) => (camera = v))();
 		s.globalRenderer.subscribe((v) => (renderer = v))();
@@ -131,7 +131,7 @@ h.run(async () => {
 	// the fish the loaded Aquarium has: 1.32 (40 F14) swapped the primitive fish for reef fish
 	const fishName = await page.evaluate(() => {
 		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 		return ['Clownfish 1', 'Fish orange'].find((n) => g.getObjectByName(n)) ?? 'Fish orange';
 	});
 	const aim = await aimThrough(page, fishName, 'Aquarium water');
@@ -152,7 +152,7 @@ h.run(async () => {
 	await h.eventually(() => page.locator('#pick-cycle-hint').getAttribute('data-mode').catch(() => null), (v) => v === 'preview', 'holding Alt shows the preview chip', 3000);
 	const chip = (await page.locator('#pick-cycle-hint').innerText().catch(() => '')).replace(/\s+/g, ' ');
 	h.check(/^1 of \d+ Aquarium water/.test(chip), 'the preview names the FRONT of the stack ("' + chip + '")');
-	h.check((await page.evaluate(() => window.__stores.pickCycle.pickPreviewDebug())).visible, 'a preview box is drawn around it');
+	h.check((await page.evaluate(() => window.__tp.test.v1.pickCycle.pickPreviewDebug())).visible, 'a preview box is drawn around it');
 	if (SHOTS) await page.screenshot({ path: SHOTS + '-alt-preview.png' });
 	await page.keyboard.up('Alt');
 	await h.eventually(() => page.locator('#pick-cycle-hint').count(), (n) => n === 0, 'letting Alt go removes the preview', 2000);
@@ -189,8 +189,8 @@ h.run(async () => {
 	h.check((await pingCount(page)) === 0, 'a plain Alt+click no longer pings');
 
 	// ---- 4: the setting (S8) — the real checkbox in Configure Scene ▸ Advanced ----------------
-	await page.evaluate(() => window.__stores.objectActions.deselectObject());
-	await page.evaluate(() => window.__stores.openSceneSection('Advanced'));
+	await page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
+	await page.evaluate(() => window.__tp.test.v1.openSceneSection('Advanced'));
 	await h.eventually(() => page.locator('#pick-through-water').isVisible(), (v) => v, 'Configure Scene ▸ Advanced shows the setting', 5000);
 	// 38 R5: the switches are Toggles — their state is aria-pressed
 	const isOn = async (/** @type {string} */ sel) => (await page.locator(sel).getAttribute('aria-pressed')) === 'true';
@@ -199,9 +199,9 @@ h.run(async () => {
 	if (SHOTS) await page.locator('#pick-through-water').screenshot({ path: SHOTS + '-setting-row.png' }).catch(() => {});
 	if (SHOTS) await page.screenshot({ path: SHOTS + '-setting.png' });
 	await page.locator('#pick-through-water').click();
-	const saved = await page.evaluate(() => window.__stores.sessions.buildSessionPayload('probe').physics?.pick ?? null);
+	const saved = await page.evaluate(() => window.__tp.test.v1.sessions.buildSessionPayload('probe').physics?.pick ?? null);
 	h.check(saved && saved.water === false, 'the setting is saved with the scene (' + JSON.stringify(saved) + ')');
-	await page.evaluate(() => window.__stores.closeSelectionInspector?.());
+	await page.evaluate(() => window.__tp.test.v1.closeSelectionInspector?.());
 	await page.waitForTimeout(400);
 	const blocked = await aimThrough(page, fishName, 'Aquarium water');
 	if (blocked.px) {
@@ -209,12 +209,12 @@ h.run(async () => {
 		await page.waitForTimeout(500);
 		h.check((await selection(page)).join() === 'Aquarium water', 'with "Water" off the same click selects the water (' + (await selection(page)).join() + ')');
 	} else h.check(false, 'premise: the fish is still behind the water');
-	await page.evaluate(() => window.__stores.scenePhysics.setScenePhysics({ pick: { water: true, transparent: false, triggers: false } }));
-	h.check((await page.evaluate(() => window.__stores.sessions.buildSessionPayload('probe').physics?.pick ?? null)) === null, 'back at the defaults the scene writes no `pick` key');
+	await page.evaluate(() => window.__tp.test.v1.scenePhysics.setScenePhysics({ pick: { water: true, transparent: false, triggers: false } }));
+	h.check((await page.evaluate(() => window.__tp.test.v1.sessions.buildSessionPayload('probe').physics?.pick ?? null)) === null, 'back at the defaults the scene writes no `pick` key');
 
 	// ---- 6: game rays + the VR laser ----------------------------------------------------------
 	const rays = await page.evaluate(({ x, y }) => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let camera, renderer;
 		s.globalCamera.subscribe((v) => (camera = v))();
 		s.globalRenderer.subscribe((v) => (renderer = v))();
@@ -229,7 +229,7 @@ h.run(async () => {
 	// a GAME's click: the editor's Interact mode routes a real click through playInteract's
 	// interactClick — the same stack and pass a Play tap uses — to a module click handler
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		window.__f22Clicked = [];
 		window.__f22Handler = (object) => {
 			window.__f22Clicked.push(s.objectActions.topLevelObjectOf(object)?.name ?? null);
@@ -242,7 +242,7 @@ h.run(async () => {
 	await page.mouse.click(x, y);
 	await page.waitForTimeout(400);
 	const gameClicked = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const list = s.moduleSDK.moduleClickHandlers;
 		list.splice(list.indexOf(window.__f22Handler), 1);
 		s.objectActions.setEditorMode('edit');
@@ -265,7 +265,7 @@ h.run(async () => {
 		await loadScene(page, FLUID);
 		// the ducks are SAVED above the tank (y 1.6 / 1.7; the glass spans 0.6-1.5) and drop into
 		// the water when the simulation runs — run it until Duck 1 floats inside the glass
-		await page.evaluate(() => window.__stores.physics.toggleSimulation());
+		await page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 		await h.eventually(
 			() => centreOf(page, 'Duck 1'),
 			(c) => c[1] < 1.42,
@@ -279,7 +279,7 @@ h.run(async () => {
 			// straight on from the front, level with the duck (just below its centre — it floats
 			// near the top): only the tank's front wall is between the camera and the duck
 			const from = [duck[0], duck[1] - 0.04, tank[2] + 2.6];
-			window.__stores.objectActions.flyTo(from, [duck[0], duck[1] - 0.04, duck[2]], 0);
+			window.__tp.test.v1.objectActions.flyTo(from, [duck[0], duck[1] - 0.04, duck[2]], 0);
 		}, { duck, tank });
 		await page.waitForTimeout(900);
 		const duckAim = await aimThrough(page, 'Duck 1', 'Water tank');
@@ -299,7 +299,7 @@ h.run(async () => {
 			await page.keyboard.up('Alt');
 			h.check(first === 'Water tank' && second === 'Duck 1', 'Alt+click cycles tank → duck (' + first + ' → ' + second + ')');
 		}
-		await page.evaluate(() => window.__stores.physics.toggleSimulation());
+		await page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	} else console.log('SKIP 5: no ' + FLUID);
 
 	h.check(h.pageErrors(A).length === 0, 'no page errors (' + h.pageErrors(A).join(' | ') + ')');

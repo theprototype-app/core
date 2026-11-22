@@ -8,7 +8,7 @@ const meshesOf = (page, groupKey, prefix) =>
 	page.evaluate(
 		({ groupKey, prefix }) => {
 			let g;
-			window.__stores.vrControls[groupKey].subscribe((v) => (g = v))();
+			window.__tp.test.v1.vrControls[groupKey].subscribe((v) => (g = v))();
 			if (!g) return null;
 			const m = {};
 			g.traverse((o) => {
@@ -25,7 +25,7 @@ h.run(async () => {
 
 	// open the Edit-Mesh menu in vertices mode
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create box');
 		let grp;
 		s.objectsGroup.subscribe((v) => (grp = v))();
@@ -46,7 +46,7 @@ h.run(async () => {
 	h.check(edit['vredit-edit:close'].y > et[0].y, 'the close sits in the corner, above the tab bar');
 
 	// open the Snap menu
-	await A.page.evaluate(() => window.__stores.vrSnapMenuOpen.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.vrSnapMenuOpen.set(true));
 	await A.page.waitForTimeout(400);
 	const snap = await meshesOf(A.page, 'vrSnapGroup', 'vrsnap-');
 	h.check(!!snap, 'the VR snap menu group mounts');

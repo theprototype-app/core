@@ -11,7 +11,7 @@ const h = require('./helpers.cjs');
 /** a box wearing TWO materials, split down the middle by geometry.groups */
 const twoSlotBox = (page) =>
 	page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.children[g.children.length - 1];
@@ -60,7 +60,7 @@ const installPngMaker = (page) =>
 /** which slots carry a texture, and their dataURL prefixes */
 const slotMaps = (page, uuid) =>
 	page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const o = g.getObjectByProperty('uuid', uuid);
 		if (!o) return null;
@@ -79,7 +79,7 @@ const slotMaps = (page, uuid) =>
 const textureSlot = (page, uuid, slot, hex) =>
 	page.evaluate(
 		async ({ uuid, slot, hex }) => {
-			const w = window.__stores;
+			const w = window.__tp?.test.v1;
 			const file = await /** @type {any} */ (window).__mkPng(hex, 'slot' + slot + '.png');
 			try {
 				return { applied: await w.materialsHandler.setObjectsTexture([uuid], file, slot) };
@@ -91,7 +91,7 @@ const textureSlot = (page, uuid, slot, hex) =>
 	);
 
 const undoDepth = (page) =>
-	page.evaluate(() => new Promise((r) => window.__stores.history.undoStack.subscribe((v) => r(v.length))()));
+	page.evaluate(() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((v) => r(v.length))()));
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -100,8 +100,8 @@ h.run(async () => {
 
 	const uuid = await twoSlotBox(A.page);
 	await A.page.evaluate(() => {
-		window.__stores.uvEditorClose.set(false);
-		window.__stores.bottomDock.activateDock('uv');
+		window.__tp.test.v1.uvEditorClose.set(false);
+		window.__tp.test.v1.bottomDock.activateDock('uv');
 	});
 	await A.page.waitForTimeout(700);
 
@@ -122,7 +122,7 @@ h.run(async () => {
 
 	// the UV canvas shows only the ACTIVE slot's triangles (6 of 12 per half)
 	const perSlot = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.getObjectByProperty('uuid', uuid);
 		return { slot0: w.uvEditor.uvTriangles(box, 0).length, slot1: w.uvEditor.uvTriangles(box, 1).length };
@@ -131,11 +131,11 @@ h.run(async () => {
 		perSlot.slot0 === 6 && perSlot.slot1 === 6,
 		`uvTriangles splits the box per slot (${perSlot.slot0}/${perSlot.slot1})`
 	);
-	await A.page.evaluate(() => window.__stores.uvEditor.uvActiveSlot.set(1));
+	await A.page.evaluate(() => window.__tp.test.v1.uvEditor.uvActiveSlot.set(1));
 	await A.page.waitForTimeout(300);
 	const shown = await A.page.evaluate(() => window.__uvDebug().tris);
 	h.check(shown === 6, `switching the active slot redraws only its triangles (${shown})`);
-	await A.page.evaluate(() => window.__stores.uvEditor.uvActiveSlot.set(0));
+	await A.page.evaluate(() => window.__tp.test.v1.uvEditor.uvActiveSlot.set(0));
 
 	// ---------- texturing ONE slot leaves the other alone ----------
 	const before = await slotMaps(A.page, uuid);
@@ -155,7 +155,7 @@ h.run(async () => {
 	const entry = await A.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.history.undoStack.subscribe((v) => {
+				window.__tp.test.v1.history.undoStack.subscribe((v) => {
 					const e = v[v.length - 1];
 					r({ kind: e?.kind, param: e?.param, slot: e?.slot ?? null });
 				})()
@@ -173,18 +173,18 @@ h.run(async () => {
 	h.check(both[0].hasUrl && both[1].hasUrl, 'both slots can hold their own texture');
 
 	// ---------- undo / remove ----------
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(500);
 	const undone = await slotMaps(A.page, uuid);
 	h.check(
 		!undone[0].hasUrl && undone[1].hasUrl,
 		`undo removes only the LAST slot's texture (${undone.map((s) => s.hasUrl).join(',')})`
 	);
-	await A.page.evaluate((uuid) => window.__stores.materialsHandler.removeObjectTexture(uuid, 1), uuid);
+	await A.page.evaluate((uuid) => window.__tp.test.v1.materialsHandler.removeObjectTexture(uuid, 1), uuid);
 	await A.page.waitForTimeout(400);
 	const removed = await slotMaps(A.page, uuid);
 	h.check(!removed[1].hasUrl && !removed[1].hasMap, 'removeObjectTexture clears the addressed slot');
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(500);
 	const restored = await slotMaps(A.page, uuid);
 	h.check(restored[1].hasUrl, 'undoing the removal puts slot 1 back');
@@ -224,7 +224,7 @@ h.run(async () => {
 	const manifest = await A.page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.sceneAssets.sceneAssets.subscribe((list) =>
+				window.__tp.test.v1.sceneAssets.sceneAssets.subscribe((list) =>
 					r(list.filter((a) => a.group === 'textures').map((a) => a.id))
 				)()
 			)
@@ -261,7 +261,7 @@ h.run(async () => {
 	// slots: give B's copy a real material array, then send the slot-tagged
 	// message from A. This is the code UV2 actually changed.
 	await B.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const o = g.getObjectByProperty('uuid', uuid);
 		o.material = [
@@ -286,7 +286,7 @@ h.run(async () => {
 
 	// an OLDER peer's slot-less message must still land on slot 0
 	await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const peer = await new Promise((r) => w.peers.subscribe(r)());
 		const url = /** @type {any} */ (window).__mkDataUrl('#ffaa00');
 		peer.send({ type: 'objectParameters', parameter: 'map', uuid, map: url });

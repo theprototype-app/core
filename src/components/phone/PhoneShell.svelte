@@ -19,6 +19,7 @@
 	// (toolbar pill, round HUD buttons, touch-tools column, docked Connect bar) only under
 	// that class, so CSS and markup always agree about which shell is on screen.
 	import { onDestroy, tick, untrack } from 'svelte';
+	import { notifyPrefs } from '$lib/notifyPrefs';
 	import Icon from '../ui/Icon.svelte';
 	import { connectionStatus, connectionLabel } from '$lib/connectionStatus';
 	import SheetGrip from '../ui/SheetGrip.svelte';
@@ -28,6 +29,7 @@
 		phoneSheet,
 		phoneDetents,
 		detentOf,
+		phoneFirstDetents,
 		setPhoneDetent,
 		phoneDetentHeights,
 		phoneShellActive,
@@ -65,7 +67,7 @@
 		userdata,
 		messages,
 		chatHidden,
-		aiAssistantHidden,
+		chatTab,
 		notificationCenterOpen,
 		peersPanelOpen,
 		inspectorKind,
@@ -81,13 +83,15 @@
 	import { selectedObjects, transformMode, editorMode } from '../../stores/sceneStore';
 	import { undo, redo, canUndo, canRedo } from '$lib/history';
 	import { setTransformMode, toggleEditorMode } from '$lib/objectActions';
-	import { phoneBarTap, openPhoneTab, closePhoneTab, phoneDockShown, phoneTabsOpen } from '$lib/phoneDock';
+	import { phoneBarTap, phoneChatTap, openPhoneTab, closePhoneTab, phoneDockShown, phoneTabsOpen } from '$lib/phoneDock';
 	import { toggleViewportFocus } from '$lib/focusMode';
 	import { requestPlay, willEnterXR, willEnterAR, playAsItems } from '$lib/playMode';
 	// 50 R1: the AR table — a phone places the scene on a real table (Android Chrome, WebXR immersive-ar)
 	import { enterArTable, arTableEntry, arPlayItems } from '$lib/arTable';
+	import { openFilm } from '$lib/film/filmState';
 	import { AR_UNSUPPORTED_NOTE } from '$lib/arTableCore.js';
 	import { playHere, playHereItems } from '$lib/playHere'; // 60 Q1
+	import { testPlayersItems } from '$lib/testPlayers/testPlayers.js'; // 61 G3
 	import { visibleDockKey, DOCK_TITLES, dockMinimized, dockHeight } from '$lib/bottomDock';
 	import { micActive, pttActive, toggleMic } from '$lib/voiceChat';
 	import { canvasCenter } from '$lib/canvasRect';
@@ -160,8 +164,8 @@
 	 * @type {Record<string, [string|null, string|null, boolean]>} */
 	// 41b H1: Objects is a DOCK TAB now (PhoneDockHost), not a framed sheet
 	const HOSTS = {
+		// uir-chat: Chat and the AI assistant are one window (Session | Assistant tabs), one sheet
 		chat: ['#chat-window', null, false],
-		ai: ['#ai-assistant-window', null, false],
 		notif: ['#notif-panel', null, true],
 		// 41b H15: the connected-peers panel is a drawer like the notifications (it draws its own header)
 		peers: ['#peers-popover', null, true],
@@ -169,9 +173,9 @@
 		more: [null, 'More', true]
 	};
 
+	// 78 PL23: Chat and the AI assistant are phone DOCK tabs (PhoneDockHost) — a sheet only where undocking is allowed
 	const openNow = $derived(/** @type {Record<string, boolean>} */ ({
-		chat: $chatHidden === '',
-		ai: $aiAssistantHidden === '',
+		chat: $chatHidden === '' && !$phoneTabsOpen.chat, // 78 PL23 + uir-chat: one window, one phone dock tab
 		notif: $notificationCenterOpen,
 		peers: $peersPanelOpen,
 		conn: $phoneSheet === 'conn',
@@ -189,7 +193,7 @@
 	});
 	const top = $derived(order.length ? order[order.length - 1] : null);
 	// NOTES-38 #15: each window's sheet reopens at the height it was left at (half the first time)
-	const detent = $derived(detentOf($phoneDetents, top));
+	const detent = $derived(detentOf($phoneDetents, top, $phoneFirstDetents));
 	/** @param {string} d */
 	const setDetent = (d) => top && setPhoneDetent(top, d);
 
@@ -240,7 +244,6 @@
 	function closeKind(/** @type {string|null} */ k) {
 		dragH = null;
 		if (k === 'chat') chatHidden.set('hidden');
-		else if (k === 'ai') aiAssistantHidden.set('hidden');
 		else if (k === 'notif') notificationCenterOpen.set(false);
 		else if (k === 'peers') peersPanelOpen.set(false);
 		else if (k === 'conn') closeConn();
@@ -323,12 +326,23 @@
 			const next = base + CHIP_LABEL_GAP + meas.offsetWidth > room;
 			if (next !== compact) chipCompact = compact = next;
 		};
-		const ro = new ResizeObserver(fit);
+		// 68-int: fit in the NEXT frame, never inside the delivery pass: flipping chipCompact shows or hides the label
+		// INSIDE the observed chip, so the chip resized during its own delivery and Chromium raised "ResizeObserver
+		// loop completed with undelivered notifications" — the error toast on a phone as the peers connected
+		// (measured on the 1.58 preview: #hud-tr + .ps-chip + .ps-chip-measure in the failing pass)
+		let raf = 0;
+		const ro = new ResizeObserver(() => {
+			cancelAnimationFrame(raf);
+			raf = requestAnimationFrame(fit);
+		});
 		ro.observe(wrap);
 		ro.observe(chip);
 		ro.observe(meas);
 		fit();
-		return () => ro.disconnect();
+		return () => {
+			cancelAnimationFrame(raf);
+			ro.disconnect();
+		};
 	});
 
 	// ---- the strip -------------------------------------------------------------------
@@ -419,11 +433,17 @@
 
 	// unread chat: messages that arrived while the chat sheet was closed
 	let seenChat = $state(0);
-	const chatOpen = $derived($chatHidden === '');
+	// uir-chat: the Session tab of the one Chat window is what reads the chat; 78 PL23: as a dock tab it is
+	// SEEN only while its tab is in front (open behind another tab = unread counts)
+	const chatOpen = $derived($chatHidden === '' && $chatTab === 'session');
+	const chatSeen = $derived(chatOpen && (!$phoneTabsOpen.chat || ($visibleDockKey === 'chat' && !$dockMinimized)));
+	/** the one Chat window is on screen (its dock tab in front, or its sheet / window open) */
+	const chatShown = $derived(($visibleDockKey === 'chat' && !$dockMinimized) || ($chatHidden === '' && !$phoneTabsOpen.chat));
 	$effect(() => {
-		if (chatOpen) seenChat = $messages.length;
+		if (chatSeen) seenChat = $messages.length;
 	});
-	const chatUnread = $derived(chatOpen ? 0 : Math.max(0, $messages.length - seenChat));
+	// profile-notify: the Chat badge switch (Settings ▸ Interface ▸ Notifications) gates this badge too
+	const chatUnread = $derived(chatSeen || $notifyPrefs.chat === false ? 0 : Math.max(0, $messages.length - seenChat));
 	// 41b H6/H7: a long press (contextmenu) on Play opens PLAY'S OWN phone menu. It used to forward to
 	// the desktop toolbar's play button, whose menu is about that toolbar — Move left / Move right
 	// walked a bar that is not drawn on a phone, and "Always on top", "Move toolbar", "Collapse"
@@ -445,6 +465,7 @@
 			// 50 R1: only where it can work — elsewhere the More tile carries the note (VH2: + Join the room)
 			...arPlayItems(),
 			...playHereItems(), // 60 Q1
+			...testPlayersItems(), // 61 G3
 			...($hudIsGame
 				? [
 						{ section: 'Game' },
@@ -465,7 +486,7 @@
 	// 86-fix N1: always opens; with no provider the window offers Connect Claude or Settings ▸ AI
 	function openAi() {
 		phoneSheet.set(null);
-		aiAssistantHidden.set('');
+		phoneChatTap('assistant'); // uir-chat + 78 PL23: the Assistant tab of the one Chat window (a phone dock tab)
 	}
 	/** close the shell's own sheet, then run (a destination opened from More replaces it) */
 	const fromMore = (/** @type {() => void} */ fn) => () => {
@@ -503,15 +524,12 @@
 		objects: { label: 'Objects', icon: 'list', run: fromMore(() => phoneBarTap('objects')), pressed: () => $visibleDockKey === 'objects' && !$dockMinimized },
 		// 43 J1: Statistics is a dock tab too (a floating window only where undocking is allowed)
 		stats: { label: 'Statistics', short: 'Stats', icon: 'gauge', run: fromMore(() => phoneBarTap('stats')), pressed: () => ($visibleDockKey === 'stats' && !$dockMinimized) || ($statsOpen && !$phoneTabsOpen.stats) },
+		// 78 PL23: a dock tab — the bar shows / minimizes it like Objects (a sheet only where undocking is allowed)
 		chat: {
 			label: 'Chat',
 			icon: 'message-square',
-			run: () => {
-				const open = chatOpen;
-				phoneSheet.set(null);
-				chatHidden.set(open ? 'hidden' : '');
-			},
-			pressed: () => chatOpen,
+			run: fromMore(() => phoneChatTap('session')), // uir-chat + 78 PL23
+			pressed: () => chatShown && $chatTab === 'session',
 			badge: () => chatUnread
 		},
 		scene: {
@@ -520,7 +538,7 @@
 			run: fromMore(() => phoneBarTap('scene')),
 			pressed: () => $visibleDockKey === 'scene' && !$dockMinimized
 		},
-		ai: { label: 'AI assistant', short: 'AI', icon: 'sparkles', run: () => openAi(), pressed: () => $aiAssistantHidden === '' },
+		ai: { label: 'AI assistant', short: 'AI', icon: 'sparkles', run: () => openAi(), pressed: () => chatShown && $chatTab === 'assistant' },
 		notes: {
 			label: 'Notes',
 			icon: 'sticky-note',
@@ -584,6 +602,8 @@
 			note: () => ($arTableEntry === 'unsupported' ? AR_UNSUPPORTED_NOTE : $arTableEntry === 'checking' ? 'Checking…' : '')
 		},
 		focus: { label: 'Focus mode', short: 'Focus', icon: 'maximize-2', run: () => enterFocusMode() },
+		// 68 V1: film the scene with the phone (turn it to look, a stick to move, ● to record)
+		film: { label: 'Film with phone', short: 'Film', icon: 'video', hint: 'The phone becomes a scene camera: turn it to look around, record a shot into the Timeline', run: fromMore(() => openFilm()) },
 		// 46 B1: the scene budget for the chosen device (Statistics ▸ Budget picks the device); the dot is its tier
 		budget: {
 			get label() {
@@ -1427,8 +1447,10 @@
 	.ps-gi {
 		position: relative;
 	}
-	/* 46 B1: the budget item's tier — a dot on its icon (bottom-right in More, beside the glyph on the bar) */
-	.ps-dot {
+	/* 46 B1: the budget item's tier — a dot on its icon (bottom-right in More, beside the glyph on the bar).
+	   Scoped to `.budget-dot`: the connection chip's status dot is a `.ps-dot` too, and this rule used to
+	   pull it out of the chip's row onto the chevron (94 SP6, the 390 px status row). */
+	.ps-dot.budget-dot {
 		position: absolute;
 		right: 4px;
 		bottom: 4px;
@@ -1437,7 +1459,7 @@
 		border: 2px solid var(--surface-1);
 		box-sizing: content-box;
 	}
-	.ps-tab .ps-dot {
+	.ps-tab .ps-dot.budget-dot {
 		right: calc(50% - 17px);
 		bottom: auto;
 		top: 10px;

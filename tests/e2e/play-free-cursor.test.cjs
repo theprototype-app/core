@@ -12,18 +12,18 @@
 const h = require('./helpers.cjs');
 
 /** @param {any} page @param {string} body */
-const sp = (page, body) => page.evaluate((b) => new Function('sp', b)(window.__stores.scenePhysics), body);
+const sp = (page, body) => page.evaluate((b) => new Function('sp', b)(window.__tp.test.v1.scenePhysics), body);
 
 /** place an object in front of the ACTIVE camera, offset sideways (camera right) and up
  * @param {any} page @param {string} uuid @param {number} ahead @param {number} right @param {number} [up] */
 const placeInView = (page, uuid, ahead, right, up = 0) =>
 	page.evaluate(
 		([uuid, ahead, right, up]) => {
-			const THREE = window.__stores.THREE;
+			const THREE = window.__tp.test.v1.THREE;
 			let camera = null;
 			let group = null;
-			window.__stores.globalCamera.subscribe((v) => (camera = v))();
-			window.__stores.objectsGroup.subscribe((v) => (group = v))();
+			window.__tp.test.v1.globalCamera.subscribe((v) => (camera = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 			const pos = camera.getWorldPosition(new THREE.Vector3());
 			const dir = camera.getWorldDirection(new THREE.Vector3());
 			const side = new THREE.Vector3().crossVectors(dir, camera.up).normalize();
@@ -32,7 +32,7 @@ const placeInView = (page, uuid, ahead, right, up = 0) =>
 			const object = group.getObjectByProperty('uuid', uuid);
 			object.position.copy(at);
 			object.updateMatrixWorld();
-			window.__stores.objectsGroup.update((v) => v);
+			window.__tp.test.v1.objectsGroup.update((v) => v);
 			return at.toArray();
 		},
 		[uuid, ahead, right, up]
@@ -42,7 +42,7 @@ const placeInView = (page, uuid, ahead, right, up = 0) =>
 const posOf = (page, uuid) =>
 	page.evaluate((uuid) => {
 		let group = null;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		return group.getObjectByProperty('uuid', uuid)?.position.toArray() ?? null;
 	}, uuid);
 
@@ -50,14 +50,14 @@ const posOf = (page, uuid) =>
 const counter = (page) =>
 	page.evaluate(() => {
 		let map = {};
-		window.__stores.flowTriggers.subscribe((v) => (map = v))();
+		window.__tp.test.v1.flowTriggers.subscribe((v) => (map = v))();
 		return map.fcCount?.count ?? 0;
 	});
 
 /** @param {any} page */
 const status = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let locked;
 		let scene;
 		s.isLocked.subscribe((v) => (locked = v))();
@@ -81,7 +81,7 @@ h.run(async () => {
 	{
 		// rapier's wasm is lazy; warm the vite dep cache on a throwaway page first
 		const warm = await h.setupPage(browser, 'warm');
-		await warm.page.evaluate(() => window.__stores.physics.warmup().catch(() => {}));
+		await warm.page.evaluate(() => window.__tp.test.v1.physics.warmup().catch(() => {}));
 		await warm.page.waitForTimeout(3000);
 		await warm.ctx.close();
 	}
@@ -101,12 +101,12 @@ h.run(async () => {
 	});
 
 	const ids = await page.evaluate(() => {
-		const cmd = window.__stores.commandsHandler.sceneCommand;
+		const cmd = window.__tp.test.v1.commandsHandler.sceneCommand;
 		let group = null;
 		cmd('/create box');
 		cmd('/create box');
 		cmd('/create box');
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((v) => (group = v))();
 		const [target, crate, floor] = group.children.slice(-3);
 		target.name = 'Target';
 		target.userData.physics = { mode: 'static' };
@@ -116,14 +116,14 @@ h.run(async () => {
 		floor.scale.set(20, 0.2, 20);
 		floor.position.set(0, -0.1, 0);
 		floor.userData.physics = { mode: 'static' };
-		window.__stores.objectsGroup.update((v) => v);
+		window.__tp.test.v1.objectsGroup.update((v) => v);
 		return { target: target.uuid, crate: crate.uuid };
 	});
 	await page.waitForTimeout(1500);
 
 	// ===================================================================== 1. the field
 	const saved = await page.evaluate(() => {
-		const sp = window.__stores.scenePhysics;
+		const sp = window.__tp.test.v1.scenePhysics;
 		sp.setScenePhysics({ gravity: -9 }); // a non-default scene, so a snapshot exists
 		const plain = sp.scenePhysicsSnapshot();
 		sp.setScenePhysics({ play: { cursor: 'locked' } });
@@ -138,7 +138,7 @@ h.run(async () => {
 	h.check(!('cursor' in (saved.locked ?? {})), "'locked' is the default and is never written");
 	h.check(!('cursor' in (saved.junk ?? {})), 'an unknown value normalizes to the default (not written)');
 	h.check(saved.free?.cursor === 'free', `'free' is written (${JSON.stringify(saved.free)})`);
-	const resolved = await page.evaluate(() => window.__stores.playSettings.resolvePlaySettings(null).cursor);
+	const resolved = await page.evaluate(() => window.__tp.test.v1.playSettings.resolvePlaySettings(null).cursor);
 	h.check(resolved === 'free', `resolvePlaySettings carries it (${resolved})`);
 
 	// ===================================================================== 2. the grid, editor side
@@ -146,9 +146,9 @@ h.run(async () => {
 	h.check(st.grid, 'premise: the editor grid is drawn in the editor');
 
 	// ===================================================================== 3. enter play, free
-	await page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await page.evaluate(() => window.__tp.test.v1.physics.toggleSimulation());
 	await page.waitForTimeout(800);
-	await page.evaluate(() => window.__stores.playMode.requestPlay());
+	await page.evaluate(() => window.__tp.test.v1.playMode.requestPlay());
 	await h.eventually(() => status(page), (v) => v.locked === true, 'play mode is on', 5000);
 	await page.waitForTimeout(1200);
 	st = await status(page);
@@ -169,9 +169,9 @@ h.run(async () => {
 			{ id: 'e-fcClick-fcSel', source: 'fcClick', target: 'fcSel' },
 			{ id: 'e-fcClick-fcCount', source: 'fcClick', target: 'fcCount' }
 		];
-		window.__stores.flowGraphs.update((graphs) => ({ ...graphs, scene: { nodes, edges } }));
-		window.__stores.flowNodes.set(nodes);
-		window.__stores.flowEdges.set(edges);
+		window.__tp.test.v1.flowGraphs.update((graphs) => ({ ...graphs, scene: { nodes, edges } }));
+		window.__tp.test.v1.flowNodes.set(nodes);
+		window.__tp.test.v1.flowEdges.set(edges);
 	}, ids.target);
 	// off-centre: 1.6 m right of the view axis at 5 m, so the crosshair would miss it
 	const targetAt = await placeInView(page, ids.target, 5, 1.6);
@@ -186,12 +186,12 @@ h.run(async () => {
 	await page.waitForTimeout(90);
 	await page.mouse.up();
 	await h.eventually(() => counter(page), (n) => n > before, `a real click at the target's pixel fires its On Click (${before} -> ?)`, 3000);
-	const debugClick = await page.evaluate(() => window.__stores.playInteract.playInteractDebug().lastUp);
+	const debugClick = await page.evaluate(() => window.__tp.test.v1.playInteract.playInteractDebug().lastUp);
 	h.check(debugClick === 'click', `recorded as a click on an object (${debugClick})`);
 	// 30 integrate: api.pointerRay() in a free-cursor game is the CURSOR's ray (30-core-modes'
 	// P4 made it the crosshair under a lock; both lanes now ask the one playCursor leaf)
 	const aimAgree = await page.evaluate((at) => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		let cam = null;
 		S.globalCamera.subscribe((c) => { cam = c; })();
 		const ray = S.moduleSDK.pointerRayNow();
@@ -213,7 +213,7 @@ h.run(async () => {
 	await page.mouse.move(cp.x, cp.y);
 	await page.mouse.down();
 	await page.waitForTimeout(250);
-	const carrying = await page.evaluate(() => window.__stores.playInteract.playInteractDebug().carrying);
+	const carrying = await page.evaluate(() => window.__tp.test.v1.playInteract.playInteractDebug().carrying);
 	h.check(carrying === ids.crate, `a press on the crate's pixel grabs it (${carrying === ids.crate})`);
 	// drag the cursor 260px to the right; the carried crate follows the cursor ray
 	const startPos = await posOf(page, ids.crate);
@@ -229,12 +229,12 @@ h.run(async () => {
 	h.check(Math.abs(shown.x - (cp.x + 260)) < 90, `and sits under it on screen (${Math.round(shown.x)}px vs cursor ${Math.round(cp.x + 260)}px)`);
 	await page.mouse.up();
 	await page.waitForTimeout(300);
-	const released = await page.evaluate(() => window.__stores.playInteract.playInteractDebug().carrying);
+	const released = await page.evaluate(() => window.__tp.test.v1.playInteract.playInteractDebug().carrying);
 	h.check(released === null, 'releasing lets go');
 
 	// a click on page CHROME is not a world gesture in a free-cursor game
 	const chromeClick = await page.evaluate(() => {
-		const before = window.__stores.playInteract.playInteractDebug().lastUp;
+		const before = window.__tp.test.v1.playInteract.playInteractDebug().lastUp;
 		const b = document.createElement('button');
 		b.textContent = 'chrome';
 		b.style.cssText = 'position:fixed;left:4px;top:300px;z-index:99999';
@@ -258,14 +258,14 @@ h.run(async () => {
 		window.__lockCalls = 0;
 	});
 	await page.waitForTimeout(2200); // past the exit settle
-	await page.evaluate(() => window.__stores.playMode.requestPlay());
+	await page.evaluate(() => window.__tp.test.v1.playMode.requestPlay());
 	await h.eventually(() => status(page), (v) => v.locked === true, 'play mode again, cursor locked', 5000);
 	await page.waitForTimeout(800);
 	st = await status(page);
 	h.check(st.lockCalls > 0, `a LOCKED game still asks for the pointer lock (${st.lockCalls}) — the spy works`);
 	h.check(!st.free, 'and reads as not free');
 	h.check(!st.grid, 'the editor grid is hidden in play with a locked cursor too');
-	await page.evaluate(() => window.__stores.playMode.exitPlay());
+	await page.evaluate(() => window.__tp.test.v1.playMode.exitPlay());
 	await page.waitForTimeout(500);
 
 	await h.finish(browser);

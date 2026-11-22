@@ -107,7 +107,7 @@ function installProbe(peer) {
 	return peer.page.evaluate((myId) => {
 		const w = /** @type {any} */ (window);
 		let pc;
-		w.__stores.peers.subscribe((/** @type {any} */ p) => (pc = p))();
+		w.__tp.test.v1.peers.subscribe((/** @type {any} */ p) => (pc = p))();
 		/** @type {any} */
 		const ns = (w.__ns = w.__ns || {
 			myId,
@@ -140,7 +140,7 @@ function installProbe(peer) {
 		/** orbit the editor camera every frame until stopped — the presence stream's source */
 		ns.orbitStart = () => {
 			let controls;
-			w.__stores.orbitControls.subscribe((/** @type {any} */ c) => (controls = c))();
+			w.__tp.test.v1.orbitControls.subscribe((/** @type {any} */ c) => (controls = c))();
 			ns.orbitFrames = 0;
 			ns.orbiting = true;
 			const tick = () => {
@@ -308,7 +308,7 @@ const openCount = (peer) =>
 	peer.page.evaluate(() => {
 		const w = /** @type {any} */ (window);
 		let pc;
-		w.__stores.peers.subscribe((/** @type {any} */ p) => (pc = p))();
+		w.__tp.test.v1.peers.subscribe((/** @type {any} */ p) => (pc = p))();
 		return pc?.openedPeers?.size ?? 0;
 	});
 
@@ -317,10 +317,10 @@ const linkState = (peer) =>
 	peer.page.evaluate(() => {
 		const w = /** @type {any} */ (window);
 		let pc, roster, pending, waiting;
-		w.__stores.peers.subscribe((/** @type {any} */ p) => (pc = p))();
-		w.__stores.userdata.subscribe((/** @type {any} */ v) => (roster = v))();
-		w.__stores.pendingApprovals.subscribe((/** @type {any} */ v) => (pending = v))();
-		w.__stores.waitingForApproval.subscribe((/** @type {any} */ v) => (waiting = v))();
+		w.__tp.test.v1.peers.subscribe((/** @type {any} */ p) => (pc = p))();
+		w.__tp.test.v1.userdata.subscribe((/** @type {any} */ v) => (roster = v))();
+		w.__tp.test.v1.pendingApprovals.subscribe((/** @type {any} */ v) => (pending = v))();
+		w.__tp.test.v1.waitingForApproval.subscribe((/** @type {any} */ v) => (waiting = v))();
 		const open = [];
 		const stalled = [];
 		for (const id of Object.keys(pc.connections || {})) {
@@ -341,7 +341,7 @@ const sceneCount = (peer) =>
 	peer.page.evaluate(() => {
 		const w = /** @type {any} */ (window);
 		let g;
-		w.__stores.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
+		w.__tp.test.v1.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
 		return g?.children?.length ?? 0;
 	});
 
@@ -388,7 +388,7 @@ async function runSize(N) {
 		// seed a scene on the host so every join carries a real full-state sync
 		await A.page.evaluate((n) => {
 			const w = /** @type {any} */ (window);
-			for (let i = 0; i < n; i++) w.__stores.commandsHandler.sceneCommand('/create box');
+			for (let i = 0; i < n; i++) w.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		}, OBJECTS);
 		await sleep(1500);
 		const hostObjects = await sceneCount(A);
@@ -402,7 +402,7 @@ async function runSize(N) {
 		for (let k = 1; k < N; k++) {
 			const J = peers[k];
 			const t0 = Date.now();
-			await J.page.locator('input[placeholder="Enter peer ID to connect"]').fill(A.id);
+			await (await h.openDial(J.page)).fill(A.id);
 			await J.page.getByRole('button', { name: 'Connect', exact: true }).click();
 			await h.approveButton(A.page).click({ timeout: 45000 });
 			const meshed = await waitFor(() => openCount(J), (c) => c >= k, 60000);
@@ -488,7 +488,7 @@ async function runSize(N) {
 		const uuid = await A.page.evaluate(() => {
 			const w = /** @type {any} */ (window);
 			let g;
-			w.__stores.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
+			w.__tp.test.v1.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
 			return g.children[0].uuid;
 		});
 

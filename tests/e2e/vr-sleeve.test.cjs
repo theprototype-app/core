@@ -12,7 +12,7 @@ const h = require('./helpers.cjs');
 
 const count = (peer) =>
 	peer.page.evaluate(
-		() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g ? g.children.length : 0))())
+		() => new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g ? g.children.length : 0))())
 	);
 
 h.run(async () => {
@@ -23,7 +23,7 @@ h.run(async () => {
 	await A.page.evaluate(() => {
 		window.__sent = [];
 		let peerRef;
-		window.__stores.peers.subscribe((p) => (peerRef = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (peerRef = p))();
 		const orig = peerRef.send.bind(peerRef);
 		peerRef.send = (data) => {
 			window.__sent.push(data?.type);
@@ -33,7 +33,7 @@ h.run(async () => {
 
 	// idb slots persist across runs — start from a clean sleeve
 	await A.page.evaluate(async () => {
-		const lib = window.__stores.vrSleeve;
+		const lib = window.__tp.test.v1.vrSleeve;
 		await lib.loadSleeveSlots();
 		let slots;
 		lib.sleeveSlots.subscribe((s) => (slots = [...s]))();
@@ -42,7 +42,7 @@ h.run(async () => {
 
 	// ---- structure: 6 ghost primitives, wrist -> elbow spacing ----------------------
 	const structure = await A.page.evaluate(() => {
-		const lib = window.__stores.vrSleeve;
+		const lib = window.__tp.test.v1.vrSleeve;
 		const group = lib.ensureSleeveGroup();
 		const ghosts = group.children.filter((c) => c.name.startsWith('vrsleeve-') && c.userData.sleeveKind);
 		return {
@@ -63,8 +63,8 @@ h.run(async () => {
 
 	// ---- gating: default OFF refuses a hold ------------------------------------------
 	const refusedOff = await A.page.evaluate(() => {
-		const THREE = window.__stores.THREE;
-		return window.__stores.vrSleeve.beginHoldEntry(
+		const THREE = window.__tp.test.v1.THREE;
+		return window.__tp.test.v1.vrSleeve.beginHoldEntry(
 			{ kind: 'Box' },
 			{ position: new THREE.Vector3(), quaternion: new THREE.Quaternion() }
 		);
@@ -72,36 +72,49 @@ h.run(async () => {
 	h.check(refusedOff === false, 'hold refused while the sleeve toggle is OFF (default)');
 
 	await A.page.evaluate(() => {
-		window.__stores.vrSleeveEnabled.set(true);
+		window.__tp.test.v1.vrSleeveEnabled.set(true);
 		localStorage.setItem('vrSleeveEnabled', 'true'); // survives the reload below
 	});
 
 	// ---- K1: ghost -> create round-trip (grid snap + one undo batch) ------------------
 	await A.page.evaluate(() => {
-		window.__stores.snapping.snapEnabled.set(true);
-		window.__stores.snapping.snapSettings.update((s) => ({ ...s, translate: 0.5 }));
-		window.__stores.vrSnapMode.set('grid');
+		window.__tp.test.v1.snapping.snapEnabled.set(true);
+		window.__tp.test.v1.snapping.snapSettings.update((s) => ({ ...s, translate: 0.5 }));
+		window.__tp.test.v1.vrSnapMode.set('grid');
 	});
 	const base0 = await count(A);
 	const undoLen0 = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r(s.length))())
+		() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((s) => r(s.length))())
 	);
 	const placed = await A.page.evaluate(() => {
-		const THREE = window.__stores.THREE;
-		const lib = window.__stores.vrSleeve;
+		const THREE = window.__tp.test.v1.THREE;
+		const lib = window.__tp.test.v1.vrSleeve;
 		const pos = new THREE.Vector3(0.13, 1, 0);
 		const quat = new THREE.Quaternion();
 		if (!lib.beginHoldEntry({ kind: 'Box' }, { position: pos, quaternion: quat })) return { error: 'no hold' };
-		const suppressed = window.__stores.vrControls.vrNavigationSuppressed();
-		// 10 frames of stick-forward (-1) grows the preview ~1.219x
-		for (let i = 0; i < 10; i++) lib.updateHeldPose(pos, quat, -1);
+		const suppressed = window.__tp.test.v1.vrControls.vrNavigationSuppressed();
+		// 82 P1: the take starts at GHOST size; no wrist = grown straight out, latching in a few frames
+		const ghostFactor = lib.sleeveState().holding.factor;
+		let frames = 0;
+		while (!lib.sleeveState().holding.latched && frames < 20) {
+			lib.updateHeldPose(pos, quat, { dt: 0.1 });
+			frames++;
+		}
+		const latched = lib.sleeveState().holding;
+		// 82 P2: after the latch the grip-move sticks drive it — 10 frames of stick-right scale it 1.025^10
+		for (let i = 0; i < 10; i++) lib.updateHeldPose(pos, quat, { dt: 0.016, axes: [0, 0, 1, 0] });
 		const holding = lib.sleeveState().holding;
 		const object = lib.releaseSleeveHold(true);
 		return {
 			suppressed,
-			holdScale: holding?.scale,
+			ghostFactor,
+			latchedFactor: latched.factor,
+			latched: latched.latched,
+			frames,
+			userScale: holding?.userScale,
+			offset: holding?.offset,
 			swallow: lib.vrSleeveSwallowSelect(),
-			suppressedAfter: window.__stores.vrControls.vrNavigationSuppressed(),
+			suppressedAfter: window.__tp.test.v1.vrControls.vrNavigationSuppressed(),
 			uuid: object?.uuid ?? null,
 			position: object ? object.position.toArray() : null,
 			scale: object ? object.scale.toArray() : null
@@ -111,55 +124,73 @@ h.run(async () => {
 	h.check(placed.suppressed === true, 'stick navigation suppressed while holding');
 	h.check(placed.suppressedAfter === false, 'suppression released with the hold');
 	h.check(placed.swallow === true, 'trailing select click is swallowed after the place');
-	h.check(Math.abs((placed.holdScale ?? 0) - Math.pow(1.02, 10)) < 0.01, 'stick-Y scaled the preview (' + placed.holdScale + ')');
-	// preview spawned 0.9m along -Z from (0.13, 1, 0) -> (0.13, 1, -0.9); grid rounds x/z by 0.5
+	h.check(Math.abs(placed.ghostFactor - 0.016) < 1e-6, 'the take starts at ghost size (factor ' + placed.ghostFactor + ' = 3.2 cm of a 2 m box)');
+	h.check(placed.latched && Math.abs(placed.latchedFactor - 1) < 1e-6 && placed.frames > 1, 'it grows to TRUE size and latches (' + placed.frames + ' frames)');
+	h.check(Math.abs((placed.userScale ?? 0) - Math.pow(1.025, 10)) < 0.01, 'stick-X scaled the latched preview (' + placed.userScale + ')');
+	// the preview rides offset metres along -Z from (0.13, 1, 0); grid rounds x/z by 0.5
+	const wantZ = Math.round(-placed.offset / 0.5) * 0.5;
 	h.check(
-		placed.position && placed.position[0] === 0 && Math.abs(placed.position[1] - 1) < 1e-6 && placed.position[2] === -1,
-		'grid snap rounded the release position (' + JSON.stringify(placed.position) + ')'
+		placed.position && placed.position[0] === 0 && Math.abs(placed.position[1] - 1) < 1e-6 && Math.abs(placed.position[2] - wantZ) < 1e-9,
+		'grid snap rounded the release position (' + JSON.stringify(placed.position) + ', offset ' + placed.offset + ')'
 	);
-	h.check(Math.abs((placed.scale?.[0] ?? 0) - Math.pow(1.02, 10)) < 0.01, 'held scale applied to the created object');
+	h.check(Math.abs((placed.scale?.[0] ?? 0) - Math.pow(1.025, 10)) < 0.01, 'held scale applied to the created object');
 	await h.eventually(() => count(A), (n) => n === base0 + 1, 'objectsGroup gained the primitive');
 	const undoInfo = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.history.undoStack.subscribe((s) => r({ length: s.length, topKind: s[s.length - 1]?.kind }))())
+		() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((s) => r({ length: s.length, topKind: s[s.length - 1]?.kind }))())
 	);
 	h.check(undoInfo.length === undoLen0 + 1 && undoInfo.topKind === 'aibatch', 'create + transform committed as ONE undo batch');
 	let sent = await A.page.evaluate(() => window.__sent);
 	h.check(sent.includes('create') && sent.includes('move'), 'replicated create + final move broadcast');
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => count(A), (n) => n === base0, 'one undo reverted the placed primitive');
+
+	// ---- 82 P3: a release BEFORE the latch is a cancel — nothing is created ------------------
+	const early = await A.page.evaluate(() => {
+		const THREE = window.__tp.test.v1.THREE;
+		const lib = window.__tp.test.v1.vrSleeve;
+		const pos = new THREE.Vector3(0, 1, 0);
+		const quat = new THREE.Quaternion();
+		lib.beginHoldEntry({ kind: 'Box' }, { position: pos, quaternion: quat });
+		lib.updateHeldPose(pos, quat, { dt: 0.05 });
+		const t = lib.sleeveState().holding.t;
+		const consumed = lib.vrSleeveTriggerEnd(-1);
+		return { t, consumed, holding: lib.sleeveState().holding, flying: lib.sleeveState().flyingBack };
+	});
+	h.check(early.t > 0 && early.t < 1 && early.consumed && !early.holding && early.flying, 'an unlatched release cancels and flies back (' + JSON.stringify(early) + ')');
+	h.check((await count(A)) === base0, 'the cancelled take created nothing');
 
 	// ---- K1: surface snap rests the release on scenery --------------------------------
 	await A.page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create Box 4 0.2 4');
-		window.__stores.vrSnapMode.set('surface');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create Box 4 0.2 4');
+		window.__tp.test.v1.vrSnapMode.set('surface');
 	});
 	await h.eventually(() => count(A), (n) => n === base0 + 1, 'ground platform created');
 	const surfaced = await A.page.evaluate(() => {
-		const THREE = window.__stores.THREE;
-		const lib = window.__stores.vrSleeve;
+		const THREE = window.__tp.test.v1.THREE;
+		const lib = window.__tp.test.v1.vrSleeve;
 		const pos = new THREE.Vector3(0, 3.9, 0.9); // preview lands at (0, 3.9, 0) above the platform
 		const quat = new THREE.Quaternion();
 		lib.beginHoldEntry({ kind: 'Sphere' }, { position: pos, quaternion: quat });
-		lib.updateHeldPose(pos, quat, 0);
+		for (let i = 0; i < 5; i++) lib.updateHeldPose(pos, quat, { dt: 0.1 });
 		const object = lib.releaseSleeveHold(true);
 		return object ? { y: object.position.y } : null;
 	});
 	h.check(!!surfaced && surfaced.y < 3 && surfaced.y > 0, 'surface snap dropped the release onto the platform (y=' + (surfaced && surfaced.y) + ')');
 	await A.page.evaluate(() => {
-		window.__stores.vrSnapMode.set('off');
-		window.__stores.snapping.snapEnabled.set(false);
+		window.__tp.test.v1.vrSnapMode.set('off');
+		window.__tp.test.v1.snapping.snapEnabled.set(false);
 	});
 
 	// ---- K2: grip-drop capture (pose restored, slot persisted) ------------------------
 	const capture = await A.page.evaluate(() => {
-		const lib = window.__stores.vrSleeve;
+		const lib = window.__tp.test.v1.vrSleeve;
 		let scene, group;
-		window.__stores.globalScene.subscribe((s) => (scene = s))();
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.globalScene.subscribe((s) => (scene = s))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		// the strip normally rides the controller — anchor it at the scene root here
 		const strip = lib.ensureSleeveGroup();
 		scene.add(strip);
-		window.__stores.commandsHandler.sceneCommand('/create Box 1 1 1');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const object = group.children[group.children.length - 1];
 		// "dropped onto the strip": the carried object sits within capture range
 		object.position.set(0, 0.02, 0.2);
@@ -181,9 +212,9 @@ h.run(async () => {
 	);
 	// a grab NOT over the strip must fall through to the normal drop
 	const missed = await A.page.evaluate(() => {
-		const lib = window.__stores.vrSleeve;
+		const lib = window.__tp.test.v1.vrSleeve;
 		let group;
-		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		window.__tp.test.v1.objectsGroup.subscribe((g) => (group = g))();
 		const object = group.children[group.children.length - 1];
 		object.position.set(4, 1, 4);
 		return lib.sleeveGripDrop(object, { pos: [0, 0, 0], rot: [0, 0, 0, 'XYZ'], scale: [1, 1, 1] });
@@ -198,16 +229,16 @@ h.run(async () => {
 	// the debug hook can bind a SECOND module instance on an HMR-churned dev
 	// server (see freshReload docs) — loading explicitly is a no-op when the
 	// instance already loaded at module registration
-	await A.page.evaluate(() => window.__stores.vrSleeve.loadSleeveSlots());
+	await A.page.evaluate(() => window.__tp.test.v1.vrSleeve.loadSleeveSlots());
 	await h.eventually(
-		() => A.page.evaluate(() => (window.__stores.vrSleeve ? window.__stores.vrSleeve.sleeveState().slots.length : -1)),
+		() => A.page.evaluate(() => (window.__tp.test.v1.vrSleeve ? window.__tp.test.v1.vrSleeve.sleeveState().slots.length : -1)),
 		(n) => n === 1,
 		'custom slot persisted across a reload (idb)'
 	);
 	await A.page.evaluate(() => {
 		window.__sent = [];
 		let peerRef;
-		window.__stores.peers.subscribe((p) => (peerRef = p))();
+		window.__tp.test.v1.peers.subscribe((p) => (peerRef = p))();
 		const orig = peerRef.send.bind(peerRef);
 		peerRef.send = (data) => {
 			window.__sent.push(data?.type);
@@ -218,29 +249,30 @@ h.run(async () => {
 	// ---- K2: slot spawn = replicated prefab instantiate at the release pose -----------
 	const baseSpawn = await count(A);
 	const spawned = await A.page.evaluate(() => {
-		const THREE = window.__stores.THREE;
-		const lib = window.__stores.vrSleeve;
+		const THREE = window.__tp.test.v1.THREE;
+		const lib = window.__tp.test.v1.vrSleeve;
 		let slot;
 		lib.sleeveSlots.subscribe((s) => (slot = s[0]))();
 		const pos = new THREE.Vector3(2, 1.5, 2);
 		const quat = new THREE.Quaternion();
 		if (!lib.beginHoldEntry({ slot }, { position: pos, quaternion: quat })) return null;
-		lib.updateHeldPose(pos, quat, 0);
+		for (let i = 0; i < 5; i++) lib.updateHeldPose(pos, quat, { dt: 0.1 });
+		const offset = lib.sleeveState().holding.offset;
 		const object = lib.releaseSleeveHold(true);
-		return object ? { name: object.name, position: object.position.toArray() } : null;
+		return object ? { name: object.name, position: object.position.toArray(), offset } : null;
 	});
 	h.check(!!spawned, 'slot ghost spawned an instance');
 	await h.eventually(() => count(A), (n) => n === baseSpawn + 1, 'objectsGroup gained the prefab instance');
 	sent = await A.page.evaluate(() => window.__sent);
 	h.check(sent.includes('object'), 'prefab instance replicated (object message)');
 	h.check(
-		!!spawned && Math.abs(spawned.position[0] - 2) < 1e-6 && Math.abs(spawned.position[2] - (2 - 0.9)) < 1e-6,
+		!!spawned && Math.abs(spawned.position[0] - 2) < 1e-6 && Math.abs(spawned.position[2] - (2 - spawned.offset)) < 1e-6,
 		'instance landed at the release pose (' + JSON.stringify(spawned && spawned.position) + ')'
 	);
 
 	// ---- K2: clear chip + the 8-slot cap ----------------------------------------------
 	const cleared = await A.page.evaluate(() => {
-		const lib = window.__stores.vrSleeve;
+		const lib = window.__tp.test.v1.vrSleeve;
 		let slot;
 		lib.sleeveSlots.subscribe((s) => (slot = s[0]))();
 		lib.clearSlot(slot.id);
@@ -248,8 +280,8 @@ h.run(async () => {
 	});
 	h.check(cleared === 0, 'clear chip removes the slot');
 	const capped = await A.page.evaluate(() => {
-		const THREE = window.__stores.THREE;
-		const lib = window.__stores.vrSleeve;
+		const THREE = window.__tp.test.v1.THREE;
+		const lib = window.__tp.test.v1.vrSleeve;
 		const dummy = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), new THREE.MeshBasicMaterial());
 		dummy.name = 'CapTest';
 		let filled = 0;

@@ -25,20 +25,20 @@ h.run(async () => {
 	const openTo = (p, id) =>
 		p.page.evaluate((pid) => {
 			let pc;
-			window.__stores.peers.subscribe((v) => (pc = v))();
+			window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
 			return !!pc.connections[pid]?.open && pc.openedPeers.has(pid);
 		}, id);
 	const create = (p, shape) =>
 		p.page.evaluate((s) => {
-			window.__stores.commandsHandler.sceneCommand('/create ' + s);
+			window.__tp.test.v1.commandsHandler.sceneCommand('/create ' + s);
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			return g.children[g.children.length - 1].uuid;
 		}, shape);
 	const has = (p, uuid) =>
 		p.page.evaluate((u) => {
 			let g;
-			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 			return !!g?.getObjectByProperty('uuid', u);
 		}, uuid);
 
@@ -50,7 +50,7 @@ h.run(async () => {
 	// ---- Z's conn becomes a zombie: reads open, sends go nowhere, no close and no ICE watch reach it
 	await Z.page.evaluate((id) => {
 		let pc;
-		window.__stores.peers.subscribe((v) => (pc = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
 		const c = pc.connections[id];
 		c.__zombie = true;
 		c.removeAllListeners('close');
@@ -63,7 +63,7 @@ h.run(async () => {
 	// ---- L's end closes (as F-3's silence close does) -> L's reconnect window redials Z
 	await L.page.evaluate((id) => {
 		let pc;
-		window.__stores.peers.subscribe((v) => (pc = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
 		pc.connections[id].close();
 	}, Z.id);
 
@@ -71,7 +71,7 @@ h.run(async () => {
 	const swapped = () =>
 		Z.page.evaluate((id) => {
 			let pc;
-			window.__stores.peers.subscribe((v) => (pc = v))();
+			window.__tp.test.v1.peers.subscribe((v) => (pc = v))();
 			const c = pc.connections[id];
 			return !!c && !c.__zombie && c.open;
 		}, L.id);
@@ -81,7 +81,7 @@ h.run(async () => {
 	await h.eventually(() => has(L, after), (v) => v, "Z's edit after the heal reaches L", 10000);
 	const back = await create(L, 'cylinder');
 	await h.eventually(() => has(Z, back), (v) => v, "L's edit after the heal reaches Z", 10000);
-	const toasts = async (p) => (await p.page.evaluate(() => new Promise((r) => window.__stores.notifications.subscribe((v) => r(v))()))).filter((n) => /disconnected/.test(String(n.text))).length;
+	const toasts = async (p) => (await p.page.evaluate(() => new Promise((r) => window.__tp.test.v1.notifications.subscribe((v) => r(v))()))).filter((n) => /disconnected/.test(String(n.text))).length;
 	h.check((await toasts(L)) === 0 && (await toasts(Z)) === 0, 'no "disconnected" toast on either side');
 	await h.finish(browser);
 });

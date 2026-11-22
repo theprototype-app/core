@@ -20,7 +20,9 @@ const h = require('./helpers.cjs');
 const NEW_ROWS = [
 	{ id: 'panels.dock', keys: 'T', press: 't' },
 	{ id: 'panels.explorer', keys: 'Alt+E', press: 'Alt+e', store: 'explorerClose', dock: 'explorer' },
-	{ id: 'panels.flow-code', keys: 'Alt+F', press: 'Alt+f', store: 'flowCodeClose', dock: 'flowcode' },
+	// showhide-v8 §4: Flow code is a Code tab now, so Alt+F opens the Code window on it; a second press re-opens
+	// the same tab rather than hiding the window (`reopens`)
+	{ id: 'panels.flow-code', keys: 'Alt+F', press: 'Alt+f', store: 'codeWorkspaceClose', dock: 'code', reopens: true },
 	{ id: 'panels.animation', keys: 'Alt+A', press: 'Alt+a', store: 'animationClose', dock: 'animation' },
 	{ id: 'panels.uv-editor', keys: 'Alt+U', press: 'Alt+u', store: 'uvEditorClose', dock: 'uv' },
 	{ id: 'panels.shader-editor', keys: 'Alt+S', press: 'Alt+s', store: 'shaderEditorClose', dock: 'shader' },
@@ -37,13 +39,13 @@ async function press(page, key) {
 const storeVal = (page, name) =>
 	page.evaluate((n) => {
 		let v;
-		window.__stores[n].subscribe((x) => (v = x))();
+		window.__tp.test.v1[n].subscribe((x) => (v = x))();
 		return v;
 	}, name);
 
 const dockState = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let visible, occ, min, active;
 		s.bottomDock.visibleDockKey.subscribe((v) => (visible = v))();
 		s.bottomDock.dockOccupants.subscribe((v) => (occ = v))();
@@ -61,14 +63,14 @@ const dockState = (page) =>
 
 const regOf = (page, id) =>
 	page.evaluate((sid) => {
-		const s = window.__stores.shortcutsRegistry.shortcuts.find((x) => x.id === sid);
+		const s = window.__tp.test.v1.shortcutsRegistry.shortcuts.find((x) => x.id === sid);
 		return s
 			? {
 					keys: s.keys,
 					defaultKeys: s.defaultKeys,
 					group: s.group,
 					label: s.label,
-					rebindable: window.__stores.shortcutsRegistry.isRebindable(s)
+					rebindable: window.__tp.test.v1.shortcutsRegistry.isRebindable(s)
 				}
 			: null;
 	}, id);
@@ -76,8 +78,8 @@ const regOf = (page, id) =>
 /** close every dock view and un-minimize, so each section starts from one known state */
 async function clearDock(page) {
 	await page.evaluate(() => {
-		const s = window.__stores;
-		for (const k of ['flowGraphClose', 'flowCodeClose', 'animationClose', 'uvEditorClose', 'shaderEditorClose', 'hudEditorClose', 'explorerClose'])
+		const s = window.__tp?.test.v1;
+		for (const k of ['flowGraphClose', 'codeWorkspaceClose', 'animationClose', 'uvEditorClose', 'shaderEditorClose', 'hudEditorClose', 'explorerClose'])
 			s[k].set(true);
 		s.bottomDock.dockMinimized.set(false);
 	});
@@ -89,12 +91,12 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 	// every dock view starts DOCKED, so a press has one predictable destination
 	await A.page.evaluate(() => {
-		for (const k of ['flowDocked', 'flowCodeDocked', 'animationDocked', 'uvDocked', 'shaderDocked', 'hudDocked', 'explorerDocked'])
+		for (const k of ['flowDocked', 'codeDocked', 'animationDocked', 'uvDocked', 'shaderDocked', 'hudDocked', 'explorerDocked'])
 			localStorage.setItem(k, 'true');
 		localStorage.removeItem('shortcutOverrides');
 	});
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.bottomDock, { timeout: 30000 });
 	await A.page.waitForTimeout(600);
 
 	// ------------------------------------------------------ 1. the rows exist
@@ -118,7 +120,7 @@ h.run(async () => {
 	// bare MESH_EDIT_KEYS, so a bare letter here would silently do nothing for as long
 	// as a mesh session is open. `Alt+E` is a DIFFERENT combo string, so it is clear.
 	const conflicts = await A.page.evaluate((rows) => {
-		const R = window.__stores.shortcutsRegistry;
+		const R = window.__tp.test.v1.shortcutsRegistry;
 		const out = {};
 		for (const row of rows) {
 			const c = R.conflictOf(row.keys, row.id, null);
@@ -139,7 +141,7 @@ h.run(async () => {
 	// six take Alt" rather than "the ones that need it do" — a scheme a user has to
 	// remember the exceptions to is a worse scheme.
 	const bare = await A.page.evaluate(() => {
-		const R = window.__stores.shortcutsRegistry;
+		const R = window.__tp.test.v1.shortcutsRegistry;
 		/** @type {Record<string, boolean>} */
 		const out = {};
 		for (const k of ['E', 'F', 'A', 'U', 'S', 'H']) out[k] = R.conflictOf(k, undefined, null).meshEdit;
@@ -156,7 +158,7 @@ h.run(async () => {
 	// and prove the stand-down is real, not just a warning flag: a live mesh session
 	// swallows bare S, and never Alt+S
 	const swallowed = await A.page.evaluate(() => {
-		const R = window.__stores.shortcutsRegistry;
+		const R = window.__tp.test.v1.shortcutsRegistry;
 		return { bareS: R.conflictOf('S', undefined, null).meshEdit, altS: R.conflictOf('Alt+S', undefined, null).meshEdit };
 	});
 	h.check(
@@ -171,10 +173,18 @@ h.run(async () => {
 		h.check(closed === true, `3.${row.keys} premise: ${row.dock} starts closed`);
 		await press(A.page, row.press);
 		closed = await storeVal(A.page, row.store);
-		const st = await dockState(A.page);
+		// showhide-v8: Alt+F goes through flowCodeRedirect (a dynamic import, then the tab resolves) — slower than 400 ms cold
+		// (and openCode brings its dock tab forward through a second dynamic import of bottomDock)
+		let st = await dockState(A.page);
+		for (let i = 0; i < 25 && row.reopens && (closed !== false || st.visible !== row.dock); i++) {
+			await A.page.waitForTimeout(200);
+			closed = await storeVal(A.page, row.store);
+			st = await dockState(A.page);
+		}
 		h.check(closed === false, `3.${row.keys} opens the ${row.dock} view (${row.store}=${closed})`);
 		h.check(st.visible === row.dock, `3.${row.keys} ...as the visible dock tab (visible=${st.visible})`);
 		// a second press hides it again, per togglePanel's tree (step 4)
+		if (row.reopens) continue;
 		await press(A.page, row.press);
 		const after = await dockState(A.page);
 		const closedAgain = await storeVal(A.page, row.store);
@@ -185,7 +195,7 @@ h.run(async () => {
 	}
 
 	// ------------- 3b. THE BINDING NAMES THE TOOL, not a toolbar slot
-	// The optional dock views (Flow Code / UV / Shader / HUD) are in the roster but NOT on
+	// The optional dock views (UV / Shader / HUD) are in the roster but NOT on
 	// the bar of a fresh profile — they are listed in Customize unchecked. So this is the
 	// real case: their keys must work while their button does not exist. If the binding
 	// were an index into the button strip, it could not. (33 E1 promoted Animation to the
@@ -195,7 +205,7 @@ h.run(async () => {
 	const barTitles = await A.page.evaluate(() =>
 		[...document.querySelectorAll('nav p[title]')].map((p) => p.getAttribute('title'))
 	);
-	const optionalOnBar = ['UV editor', 'Shader editor', 'HUD editor', 'Flow Code'].filter((t) =>
+	const optionalOnBar = ['UV editor', 'Shader editor', 'HUD editor'].filter((t) =>
 		barTitles.some((b) => b === t || b.startsWith(t + ' ('))
 	);
 	h.check(
@@ -232,7 +242,7 @@ h.run(async () => {
 
 	// STATE C: NOTHING DOCKED -> 44 M5: open the dock EMPTY (only its "+"), not the last-active view
 	// (the user: '"T" only should show empty docked window view with "+" in tab'); T again closes it.
-	await A.page.evaluate(() => window.__stores.bottomDock.activateDock('uv'));
+	await A.page.evaluate(() => window.__tp.test.v1.bottomDock.activateDock('uv'));
 	await A.page.waitForTimeout(200);
 	await clearDock(A.page);
 	st = await dockState(A.page);
@@ -243,7 +253,7 @@ h.run(async () => {
 	const uvClosed = await storeVal(A.page, 'uvEditorClose');
 	const emptyShown = await A.page.evaluate(() => {
 		let v;
-		window.__stores.bottomDock.dockEmptyShown.subscribe((x) => (v = x))();
+		window.__tp.test.v1.bottomDock.dockEmptyShown.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(uvClosed === true && st.visible === null, `4.9 T on an empty dock opens NO view (uvEditorClose=${uvClosed}, visible=${st.visible})`);
@@ -251,13 +261,13 @@ h.run(async () => {
 	await press(A.page, 't');
 	const emptyAfter = await A.page.evaluate(() => {
 		let v;
-		window.__stores.bottomDock.dockEmptyShown.subscribe((x) => (v = x))();
+		window.__tp.test.v1.bottomDock.dockEmptyShown.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(emptyAfter === false, `4.11 T again closes the empty dock (emptyShown=${emptyAfter})`);
 	// a populated dock for the minimize round trip below
 	await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.bottomDock.armDockMode('flow', true);
 		s.flowGraphClose.set(false);
 		s.bottomDock.activateDock('flow');
@@ -267,12 +277,12 @@ h.run(async () => {
 	// minimize -> reload -> T. `dockMinimized` is deliberately NOT persisted (a
 	// minimized dock leaves NO trace on screen, so a reload must never hand somebody a
 	// lost panel), and T has to work from whatever state the reload lands in.
-	await A.page.evaluate(() => window.__stores.bottomDock.bottomDockActive.set('flow'));
+	await A.page.evaluate(() => window.__tp.test.v1.bottomDock.bottomDockActive.set('flow'));
 	await press(A.page, 't');
 	st = await dockState(A.page);
 	h.check(st.minimized === true, `4.12 premise: minimized before the reload (${st.minimized})`);
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.bottomDock, { timeout: 30000 });
 	await A.page.waitForTimeout(700);
 	st = await dockState(A.page);
 	h.check(st.minimized === false, `4.13 a reload restores the dock rather than a lost panel (minimized=${st.minimized})`);
@@ -351,7 +361,7 @@ h.run(async () => {
 	// ---------------------------------------- 7. a rebind moves one, and comes back
 	// The rows are ordinary registry entries, so the whole Phase-5 machine applies.
 	await clearDock(A.page);
-	const moved = await A.page.evaluate(() => window.__stores.shortcutsRegistry.rebindShortcut('panels.hud-editor', 'Alt+J'));
+	const moved = await A.page.evaluate(() => window.__tp.test.v1.shortcutsRegistry.rebindShortcut('panels.hud-editor', 'Alt+J'));
 	h.check(moved && moved.ok === true, `7.1 Alt+H can be rebound to Alt+J (${JSON.stringify(moved)})`);
 	await press(A.page, 'Alt+j');
 	let hudClosed = await storeVal(A.page, 'hudEditorClose');
@@ -360,7 +370,7 @@ h.run(async () => {
 	await press(A.page, 'Alt+h');
 	hudClosed = await storeVal(A.page, 'hudEditorClose');
 	h.check(hudClosed === true, `7.3 ...and the old one no longer does (hudEditorClose=${hudClosed})`);
-	await A.page.evaluate(() => window.__stores.shortcutsRegistry.resetShortcut('panels.hud-editor'));
+	await A.page.evaluate(() => window.__tp.test.v1.shortcutsRegistry.resetShortcut('panels.hud-editor'));
 	await clearDock(A.page);
 	await press(A.page, 'Alt+h');
 	hudClosed = await storeVal(A.page, 'hudEditorClose');
@@ -369,8 +379,8 @@ h.run(async () => {
 
 	// ---------------------------------------- 8. the rows render in Settings
 	await A.page.evaluate(() => {
-		window.__stores.settingsSection.set('shortcuts');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.settingsSection.set('shortcuts');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	await A.page.waitForSelector('#shortcut-grid', { timeout: 15000 });
 	await A.page.waitForTimeout(300);
@@ -392,133 +402,9 @@ h.run(async () => {
 		/Node editor|Explorer/i.test(dockRow),
 		`8.dock2 ...and says what it contains ("${dockRow.slice(0, 90)}")`
 	);
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 
-	// ------------------- 9. Alt+F reaches a GROUPED Flow Code (the key alignment)
-	// `togglePanel` step 2 — "open, but a sibling tab is showing" — asks windowTabs
-	// `groupOfKey(key)` with the DOCK key. Flow Code registered its `tabbable` under
-	// 'flowCode' while every caller passes 'flowcode', so that branch could never fire
-	// for it: Alt+F on a buried Flow Code tab fell through to the floating branch, which
-	// raised a node the group still held at display:none, and nothing on screen moved.
-	// Two more callers were reading the same miss — `bottomDockable`'s "a tab group drags
-	// as one" guard and the SELF-exclusion in `headerTargetAt` — so this section is the
-	// coverage that one capital had no chance of failing.
-	//
-	// It goes LAST because it undocks a panel and reloads twice.
-	await clearDock(A.page);
-	await A.page.evaluate(() => {
-		localStorage.setItem('flowCodeDocked', 'false');
-		localStorage.removeItem('windowTabGroups');
-	});
-	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
-	await A.page.evaluate(() => {
-		window.__stores.objectListClose.set(false);
-		window.__stores.flowCodeClose.set(false);
-	});
-	await A.page.waitForTimeout(800);
-
-	// the real drag-merge: Flow Code's header onto the object list's header
-	const grouped = await A.page.evaluate(async () => {
-		const ol = document.getElementById('object-list');
-		const fc = document.getElementById('flow-code-window');
-		if (!ol || !fc) return { ok: false };
-		const olr = ol.getBoundingClientRect();
-		const handle = fc.querySelector('.move-handle');
-		const fr = handle.getBoundingClientRect();
-		const ev = (t, type, x, y) =>
-			t.dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: x, clientY: y, pointerId: 11 }));
-		ev(handle, 'pointerdown', fr.left + 40, fr.top + 8);
-		ev(window, 'pointermove', olr.left + olr.width / 2, olr.top + 10);
-		ev(window, 'pointerup', olr.left + olr.width / 2, olr.top + 10);
-		await new Promise((r) => setTimeout(r, 350));
-		return { ok: true, strip: !!document.querySelector('.tab-strip') };
-	});
-	h.check(grouped.ok && grouped.strip, '9.1 premise: Flow Code and the object list merge into one tab group');
-
-	// windowTabs PERSISTS its member keys, so the spelling is readable rather than inferred
-	const savedKeys = await A.page.evaluate(() => {
-		try {
-			return JSON.parse(localStorage.getItem('windowTabGroups') ?? '[]')[0]?.members ?? [];
-		} catch {
-			return [];
-		}
-	});
-	h.check(
-		savedKeys.includes('flowcode') && !savedKeys.includes('flowCode'),
-		`9.2 Flow Code registers under the DOCK key, so every caller can address it (${JSON.stringify(savedKeys)})`
-	);
-
-	// Bury it: make the OTHER member the active tab, so Alt+F has real work to do. A REAL
-	// mouse press, because the strip switches on pointerdown+pointerup (it has to tell a
-	// click from a tear-off drag) — `.click()` fires neither and is silently inert here.
-	const tabAt = await A.page.evaluate(() => {
-		const strip = document.querySelector('.tab-strip');
-		const tab = [...(strip?.querySelectorAll('[role="tab"]') ?? [])].find((b) =>
-			/Objects/i.test(b.textContent ?? '')
-		);
-		if (!tab) return null;
-		const r = tab.getBoundingClientRect();
-		return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
-	});
-	h.check(!!tabAt, '9.3a premise: the strip draws a tab for the object list');
-	if (tabAt) await A.page.mouse.click(tabAt.x, tabAt.y);
-	await A.page.waitForTimeout(450);
-	const buried = await A.page.evaluate(() => {
-		const fc = document.getElementById('flow-code-window');
-		return { hidden: !!fc && getComputedStyle(fc).display === 'none' };
-	});
-	h.check(buried.hidden, '9.3 premise: Flow Code is the INACTIVE tab now (display:none)');
-
-	await press(A.page, 'Alt+f');
-	const called = await A.page.evaluate(() => {
-		const fc = document.getElementById('flow-code-window');
-		let saved = [];
-		try {
-			saved = JSON.parse(localStorage.getItem('windowTabGroups') ?? '[]');
-		} catch {}
-		return {
-			shown: !!fc && getComputedStyle(fc).display !== 'none' && fc.getBoundingClientRect().width > 0,
-			active: saved[0]?.active ?? null
-		};
-	});
-	h.check(called.shown, '9.4 Alt+F ACTIVATES the buried tab instead of raising a hidden node');
-	h.check(called.active === 'flowcode', `9.5 ...and the group records it as the active tab (${called.active})`);
-
-	// the migration: a group saved under the OLD spelling must still come back. Without
-	// it `tryRestore` waits for a member that can never register again, so the group sits
-	// in `pendingRestore` for ever and the user's tabs are silently gone.
-	await A.page.evaluate(() => {
-		const rect = { left: 200, top: 140, width: 520, height: 360 };
-		localStorage.setItem(
-			'windowTabGroups',
-			JSON.stringify([{ id: 'tg1', members: ['objects', 'flowCode'], active: 'flowCode', rect }])
-		);
-	});
-	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
-	await A.page.evaluate(() => {
-		window.__stores.objectListClose.set(false);
-		window.__stores.flowCodeClose.set(false);
-	});
-	await A.page.waitForTimeout(900);
-	const restored = await A.page.evaluate(() => {
-		let saved = [];
-		try {
-			saved = JSON.parse(localStorage.getItem('windowTabGroups') ?? '[]');
-		} catch {}
-		return {
-			strip: !!document.querySelector('.tab-strip'),
-			members: saved[0]?.members ?? [],
-			active: saved[0]?.active ?? null
-		};
-	});
-	h.check(restored.strip, '9.6 a group saved under the OLD key spelling still restores its tab strip');
-	h.check(
-		restored.members.includes('flowcode') && !restored.members.includes('flowCode'),
-		`9.7 ...migrated to the new spelling, so it can never strand again (${JSON.stringify(restored.members)})`
-	);
-	h.check(restored.active === 'flowcode', `9.8 ...and the saved ACTIVE member migrates too (${restored.active})`);
+	// showhide-v8 §4: Flow code is a Code tab now (its own suite: code-flow-text)
 
 	await h.finish(browser);
 });

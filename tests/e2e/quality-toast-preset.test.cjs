@@ -21,11 +21,11 @@ async function freeze(page) {
 	await page.evaluate(() => {
 		const w = /** @type {any} */ (window);
 		w.__q = { t: 1e9 };
-		w.__stores.qualityGovernor.governorForTest.setLevel(0, w.__q.t);
+		w.__tp.test.v1.qualityGovernor.governorForTest.setLevel(0, w.__q.t);
 		w.__q.t += 1000;
 		/** @param {number} dur @param {number} slow @param {boolean} [once] stop at the first step */
 		w.__qdrive = (dur, slow, once = false) => {
-			const Q = w.__stores.qualityGovernor;
+			const Q = w.__tp.test.v1.qualityGovernor;
 			const g = Q.governorForTest;
 			/** @type {number[]} */ const moves = [];
 			const end = w.__q.t + dur;
@@ -52,7 +52,7 @@ const cards = (page) =>
 const q = (page) =>
 	page.evaluate(() => {
 		let s;
-		window.__stores.qualityGovernor.qualityState.subscribe((/** @type {any} */ v) => (s = v))();
+		window.__tp.test.v1.qualityGovernor.qualityState.subscribe((/** @type {any} */ v) => (s = v))();
 		return /** @type {any} */ (s);
 	});
 
@@ -61,11 +61,11 @@ h.run(async () => {
 	// ── 1. two automatic steps in a row: ONE card ────────────────────────────────────────────────
 	const D = await h.setupPage(browser, 'desktop', { context: { viewport: { width: 1440, height: 900 } } });
 	let page = D.page;
-	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await page.waitForTimeout(800);
 	await freeze(page);
 	// a heavy scene for the desktop budget (the governor only acts on one)
-	await page.evaluate(() => /** @type {any} */ (window).__stores.sceneBudget.qualityBaseline.set({ objects: 0, triangles: 0, calls: 5000 }));
+	await page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.sceneBudget.qualityBaseline.set({ objects: 0, triangles: 0, calls: 5000 }));
 	// ONE step at a time (on a loaded box a long drive can take two steps before the notice batches)
 	const d1 = await page.evaluate(() => /** @type {any} */ (window).__qdrive(4000, 60, true));
 	h.check(d1.moves.length === 1, `1.0 (premise) missed frames take one automatic step (${d1.moves.join(',')})`);
@@ -93,13 +93,13 @@ h.run(async () => {
 	// back to a light scene and full quality; the heavy premise above can also trip 26-G's freeze
 	// pause on a loaded box (its overlay would take the clicks below) — stand it down
 	await page.evaluate(() => {
-		const w = /** @type {any} */ (window).__stores;
+		const w = /** @type {any} */ (window).__tp?.test.v1;
 		w.sceneBudget.qualityBaseline.set(null);
 		w.qualityGovernor.governorForTest.reset();
 		w.overloadGuard?.resumeRendering?.();
 	});
 	await page.waitForTimeout(300);
-	await page.evaluate(() => window.__stores.openSceneSection('Quality'));
+	await page.evaluate(() => window.__tp.test.v1.openSceneSection('Quality'));
 	await page.waitForSelector('#scene-quality-preset', { state: 'visible', timeout: 10000 });
 	await page.waitForTimeout(500);
 	const order = await page.evaluate(() => {
@@ -107,49 +107,51 @@ h.run(async () => {
 		const labels = [...ins.querySelectorAll('.sec-label, [data-section-label], .section-label, h3')].map((e) => e.textContent?.trim() ?? '').filter(Boolean);
 		const first = ins.querySelector('#scene-quality-preset')?.getBoundingClientRect().top ?? 1e9;
 		const env = ins.querySelector('#environment-presets')?.getBoundingClientRect().top ?? -1;
-		return { labels: labels.slice(0, 4), qualityAboveEnvironment: first < env };
+		const device = ins.querySelector('#scene-group-device')?.getBoundingClientRect().top ?? 1e9;
+		return { labels: labels.slice(0, 4), firstOfDevice: device < first && env < device };
 	});
-	h.check(order.qualityAboveEnvironment, `2.1 the Quality preset sits above Environment, the top of Configure Scene (${JSON.stringify(order)})`);
+	// 78-int PL17 (owner-approved order): Quality is the FIRST section of "This device", after the scene group
+	h.check(order.firstOfDevice, `2.1 the Quality preset heads the This device group, under the scene's Environment (${JSON.stringify(order)})`);
 	const opts = await page.evaluate(() => [...document.querySelectorAll('#scene-quality-preset [role="radio"]')].map((b) => b.textContent?.trim()));
 	h.check(opts.join() === 'Auto,High,Medium,Low', `2.2 Auto / High / Medium / Low (${opts.join(',')})`);
 	if (OUT) {
 		for (const t of ['dark', 'light']) {
-			await page.evaluate((th) => window.__stores.themes.theme.set(th), t);
+			await page.evaluate((th) => window.__tp.test.v1.themes.theme.set(th), t);
 			await page.waitForTimeout(350);
 			await page.screenshot({ path: path.join(OUT, `i12-configure-scene-quality-${t}.png`) });
 		}
-		await page.evaluate(() => window.__stores.themes.theme.set('dark'));
+		await page.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
 	}
 	await page.locator('#scene-quality-preset [role="radio"]', { hasText: 'Low' }).click();
 	await page.waitForTimeout(400);
 	let s = await q(page);
-	h.check(s.level === 7 && /quality preset: low/.test(s.reason), `2.3 Low holds level 7 (${s.level}, "${s.reason}")`);
+	h.check(s.level === 8 && /quality preset: low/.test(s.reason), `2.3 Low holds level 8 (${s.level}, "${s.reason}")`);
 	const stored = await page.evaluate(() => localStorage.getItem('quality:preset'));
 	h.check(stored === 'low', `2.4 saved on this device (${stored})`);
 	const drift = await page.evaluate(() => /** @type {any} */ (window).__qdrive(20000, 8));
-	h.check(drift.moves.length === 0 && drift.level === 7, `2.5 a pinned preset is never re-decided: twenty seconds of fast frames keep 7 (${drift.moves.join(',') || 'none'})`);
+	h.check(drift.moves.length === 0 && drift.level === 8, `2.5 a pinned preset is never re-decided: twenty seconds of fast frames keep 8 (${drift.moves.join(',') || 'none'})`);
 	// a game's own Quality setting outranks it while the game is played
-	await page.evaluate(() => window.__stores.qualityGovernor.applyGameQuality(0, 'high'));
+	await page.evaluate(() => window.__tp.test.v1.qualityGovernor.applyGameQuality(0, 'high'));
 	s = await q(page);
 	h.check(s.level === 0, `2.6 a game's High preset wins while played (${s.level})`);
 	const note = await page.evaluate(() => document.querySelector('#scene-quality-game-note')?.textContent?.trim() ?? '');
 	h.check(/holds its own Quality setting/.test(note), `2.7 …and the section says so ("${note}")`);
-	await page.evaluate(() => window.__stores.qualityGovernor.applyGameQuality(null, 'auto'));
+	await page.evaluate(() => window.__tp.test.v1.qualityGovernor.applyGameQuality(null, 'auto'));
 	s = await q(page);
-	h.check(s.level === 7, `2.8 leaving the game hands back the device preset (${s.level})`);
+	h.check(s.level === 8, `2.8 leaving the game hands back the device preset (${s.level})`);
 	// survives a reload
 	await h.freshReload(D);
 	await page.locator('#restore-session-dismiss').click({ timeout: 6000 }).catch(() => {});
 	s = await q(page);
-	h.check(s.level === 7 && /quality preset: low/.test(s.reason), `2.9 after a reload the preset holds again (${s.level}, "${s.reason}")`);
-	await page.evaluate(() => window.__stores.openSceneSection('Quality'));
+	h.check(s.level === 8 && /quality preset: low/.test(s.reason), `2.9 after a reload the preset holds again (${s.level}, "${s.reason}")`);
+	await page.evaluate(() => window.__tp.test.v1.openSceneSection('Quality'));
 	await page.waitForSelector('#scene-quality-preset', { state: 'visible', timeout: 10000 });
 	await page.locator('#scene-quality-preset [role="radio"]', { hasText: 'Auto' }).click();
 	await page.waitForTimeout(400);
 	s = await q(page);
 	h.check(s.level === 0 && (await page.evaluate(() => localStorage.getItem('quality:preset'))) === 'auto', `2.10 Auto gives the level back to the governor (${s.level})`);
 	// Settings ▸ Scene: the same row, found by searching
-	await page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	await page.waitForSelector('#settings-search', { timeout: 10000 });
 	await page.fill('#settings-search', 'quality');
 	await page.waitForTimeout(700);
@@ -163,7 +165,7 @@ h.run(async () => {
 	s = await q(page);
 	h.check(s.level === 3, `2.12 Medium from Settings holds level 3, the same store (${s.level})`);
 	await page.locator('#quality-preset [role="radio"]', { hasText: 'Auto' }).click();
-	await page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	h.check(h.pageErrors(D).length === 0, `no page errors (${JSON.stringify(h.pageErrors(D)).slice(0, 200)})`);
 	await h.finish(browser);
 });

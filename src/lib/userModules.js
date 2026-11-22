@@ -130,12 +130,6 @@ async function importBlob(source, scope) {
 	}
 }
 
-/** 34 R3: evaluate ES module TEXT through this loader (a behaviour file, behaviours/app.js) —
- * the same fresh-blob import an installed module's entry takes. @param {string} source */
-export function importModuleText(source) {
-	return importBlob(source, null);
-}
-
 /** Import a record's entry file as a module object and validate its shape.
  * A fresh blob URL per call, so re-imports always evaluate fresh code (A2).
  * 34 R6: evaluated inside a lifecycle SCOPE (sdk/moduleScope.js) — its bare timer names are
@@ -525,8 +519,24 @@ export async function removeUserModule(id) {
 	});
 }
 
+/** the boot restore in flight (null until `loadUserModules` first runs) @type {Promise<void> | null} */
+let bootRestore = null;
+
+/** fix-play-link: settles once the boot restore has activated the stored modules (at once when no
+ * restore was started). The scene-modules ask waits on it, or a module this player installed last
+ * visit reads as "Not installed" because the ask ran before the restore finished.
+ * @returns {Promise<void>} */
+export function userModulesRestored() {
+	return bootRestore ?? Promise.resolve();
+}
+
 /** Boot: load stored records and activate the enabled ones */
-export async function loadUserModules() {
+export function loadUserModules() {
+	bootRestore ??= restoreUserModules();
+	return bootRestore;
+}
+
+async function restoreUserModules() {
 	if (typeof indexedDB === 'undefined') return;
 	try {
 		const stored = (await idbGet(KEY)) ?? [];

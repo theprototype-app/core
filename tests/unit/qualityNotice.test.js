@@ -3,7 +3,10 @@
 // smooth · Keep full quality").
 import { describe, it, expect } from 'vitest';
 import { newlyLowered, toAnnounce, noticeText, isLowered, QUALITY_TOGGLES, KEEP_FULL_LABEL } from '../../src/lib/qualityNoticeCore.js';
-import { overridesAt } from '../../src/lib/qualityGovernorCore.js';
+import { overridesAt, GOVERNOR_STEPS } from '../../src/lib/qualityGovernorCore.js';
+
+/** the level that turns post off (98-int put "Scene look lighter" before it: 6 -> 7) */
+const POST = GOVERNOR_STEPS.findIndex((s) => s.key === 'post') + 1;
 
 /** @param {number} level @param {Record<string, boolean>} [extra] */
 const snap = (level, extra = {}) => ({ ...overridesAt(level), water: false, fluid: false, ...extra });
@@ -25,12 +28,12 @@ describe('quality notice (F12)', () => {
 	});
 
 	it('level 5 -> 6 with the water simplified names the water first', () => {
-		expect(newlyLowered(snap(5), snap(6, { water: true }))).toEqual(['water', 'post']);
+		expect(newlyLowered(snap(POST - 1), snap(POST, { water: true }))).toEqual(['water', 'post']);
 	});
 
 	it('a further resolution step is not a new drop; a recovery is not a drop', () => {
 		expect(newlyLowered(snap(2), snap(3))).toEqual([]); // 85 % -> 72 %
-		expect(newlyLowered(snap(6, { water: true }), snap(5))).toEqual([]);
+		expect(newlyLowered(snap(POST, { water: true }), snap(POST - 1))).toEqual([]);
 	});
 
 	it('once per session: an announced toggle is never announced again', () => {

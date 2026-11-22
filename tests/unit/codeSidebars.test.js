@@ -155,7 +155,8 @@ describe('projectTree (F6 Project)', () => {
 	});
 	it('Main lists its code nodes (incl. the Player) and the graph JSON', () => {
 		const main = tree[0].children?.[0].children ?? [];
-		expect(main.map((l) => l.label)).toEqual(['Bounce', 'Copy me', 'Golf rules', 'Player: walk', 'graph.json']);
+		expect(main.map((l) => l.label)).toEqual(['Bounce', 'Copy me', 'Golf rules', 'Player: walk', 'flow code', 'graph.json']);
+		expect(main.find((l) => l.label === 'flow code')).toMatchObject({ request: { source: 'flowtext', ref: { graphId: 'scene' } } });
 		expect(main.find((l) => l.label === 'Player: walk')).toMatchObject({ icon: 'builtin', request: { source: 'script', ref: { nodeId: 'p1', graphId: 'scene' } } });
 		expect(main.find((l) => l.label === 'Copy me')).toMatchObject({ readOnly: true, fork: 'node' });
 	});
@@ -256,6 +257,7 @@ describe('quick picks (S7: Ctrl+P / Ctrl+Shift+O)', () => {
 		const q = quickItems(tree);
 		expect(q.map((i) => [i.label, i.detail])).toEqual([
 			['Player: walk', 'Main graph'],
+			['flow code', 'Main graph'],
 			['graph.json', 'Main graph'],
 			['score.js', 'kit']
 		]);

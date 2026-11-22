@@ -75,6 +75,18 @@ function headerOf(node) {
 
 /** @type {Set<HTMLElement>} */
 const moving = new Set();
+/** each wired window's live "may it move by its body right now?" @type {WeakMap<HTMLElement, () => boolean>} */
+const liveWindows = new WeakMap();
+
+/**
+ * hitslop-fix: would a press-and-move at `el` drag a floating window by its body right now? The touch tap areas
+ * ($lib/ui/hitSlop) must not cover such a point, or a window loses the free body it moves by.
+ * @param {Element} el
+ */
+export function isBodyDragGround(el) {
+	const node = /** @type {HTMLElement | null} */ (el.closest('[data-body-drag]'));
+	return !!node && !!liveWindows.get(node)?.() && isBodyDragStart(el, node);
+}
 /** Is a body drag moving a window right now? (tests, and the debug hook) */
 export function bodyDragActive() {
 	return moving.size > 0;
@@ -185,6 +197,7 @@ export function bodyDrag(node, { enabled } = {}) {
 	// finger itself (windows.css, wider than a phone), and a list inside it still scrolls — touch-action is
 	// cut off at the nearest scroll container
 	node.setAttribute('data-body-drag', '');
+	liveWindows.set(node, on);
 	return {
 		destroy() {
 			release();
@@ -192,6 +205,7 @@ export function bodyDrag(node, { enabled } = {}) {
 			node.removeEventListener('pointerdown', down);
 			node.removeEventListener('touchmove', touchMove);
 			node.removeAttribute('data-body-drag');
+			liveWindows.delete(node);
 		}
 	};
 }

@@ -11,7 +11,7 @@ h.run(async () => {
 
 	const compute = (start, now, rig0) =>
 		A.page.evaluate(
-			({ start, now, rig0 }) => window.__stores.vrControls.computeWorldGrabTransform(start, now, rig0),
+			({ start, now, rig0 }) => window.__tp.test.v1.vrControls.computeWorldGrabTransform(start, now, rig0),
 			{ start, now, rig0 }
 		);
 	const identity = { pos: [0, 0, 0], quat: [0, 0, 0, 1], scale: 1 };
@@ -61,11 +61,11 @@ h.run(async () => {
 
 	// ---- rig application + replication invariance (71.4) ----
 	const uuid = await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = g.children.find((c) => c.name === 'Box');
 		box.position.set(2, 0, 0);
-		window.__stores.peers.subscribe((p) =>
+		window.__tp.test.v1.peers.subscribe((p) =>
 			p.send({ type: 'move', uuid: box.uuid, pos: [2, 0, 0], rot: [0, 0, 0, 'XYZ'], scale: [1, 1, 1] })
 		)();
 		return box.uuid;
@@ -75,7 +75,7 @@ h.run(async () => {
 			B.page.evaluate(
 				(uuid) =>
 					new Promise((r) =>
-						window.__stores.objectsGroup.subscribe((g) =>
+						window.__tp.test.v1.objectsGroup.subscribe((g) =>
 							r(g?.getObjectByProperty('uuid', uuid)?.position.toArray() ?? null)
 						)()
 					),
@@ -87,8 +87,8 @@ h.run(async () => {
 
 	// A grabs the world down to 0.5x around (0,1,0): locals must NOT change
 	const [localA, worldA] = await A.page.evaluate(async (uuid) => {
-		const rig = await new Promise((r) => window.__stores.worldRig.subscribe(r)());
-		const next = window.__stores.vrControls.computeWorldGrabTransform(
+		const rig = await new Promise((r) => window.__tp.test.v1.worldRig.subscribe(r)());
+		const next = window.__tp.test.v1.vrControls.computeWorldGrabTransform(
 			{ a: [-1, 1, 0], b: [1, 1, 0] },
 			{ a: [-0.5, 1, 0], b: [0.5, 1, 0] },
 			{ pos: rig.position.toArray(), quat: rig.quaternion.toArray(), scale: rig.scale.x }
@@ -97,9 +97,9 @@ h.run(async () => {
 		rig.quaternion.fromArray(next.quat);
 		rig.scale.setScalar(next.scale);
 		rig.updateMatrixWorld(true);
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		const box = g.getObjectByProperty('uuid', uuid);
-		const world = box.getWorldPosition(new window.__stores.THREE.Vector3());
+		const world = box.getWorldPosition(new window.__tp.test.v1.THREE.Vector3());
 		return [box.position.toArray(), world.toArray()];
 	}, uuid);
 	h.check(Math.abs(localA[0] - 2) < 1e-6, 'grabbed world leaves local coords untouched');
@@ -111,7 +111,7 @@ h.run(async () => {
 	const localB = await B.page.evaluate(
 		(uuid) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) =>
+				window.__tp.test.v1.objectsGroup.subscribe((g) =>
 					r(g?.getObjectByProperty('uuid', uuid)?.position.toArray())
 				)()
 			),
@@ -120,9 +120,9 @@ h.run(async () => {
 	h.check(Math.abs(localB[0] - 2) < 0.01, 'B (unscaled) still sees the box at (2,0,0)');
 
 	// reset restores 1:1
-	await A.page.evaluate(() => window.__stores.vrControls.resetWorldRig());
+	await A.page.evaluate(() => window.__tp.test.v1.vrControls.resetWorldRig());
 	const rigState = await A.page.evaluate(async () => {
-		const rig = await new Promise((r) => window.__stores.worldRig.subscribe(r)());
+		const rig = await new Promise((r) => window.__tp.test.v1.worldRig.subscribe(r)());
 		return { scale: rig.scale.x, pos: rig.position.toArray() };
 	});
 	h.check(

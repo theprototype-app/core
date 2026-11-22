@@ -134,6 +134,8 @@
 	padding: 0 8px 12px !important;
 	border-radius: 18px 18px 0 0 !important;
 	font-size: var(--fs-body);
+	/* uir-polish C3: the sticky Settings footer covers this bottom padding (no see-through strip under it) */
+	--side-foot-pad: 12px;
 }
 :root.phone-shell #sidebar70 .side-grip {
 	margin: 0 -8px 2px;
@@ -464,6 +466,11 @@
    closes it — the desktop click-catcher would cover the bar, Play and the sheet's grab bar */
 :root.phone-shell .notif-backdrop,
 :root.phone-shell .peers-backdrop {
+	display: none !important;
+}
+/* showhide-v8 §3: ONE model for the folded notification centre — the DRAWER (its grab bar swipes it away, its scrim
+   closes it on a tap). Its window close button was a second way out of the same sheet, so it goes there */
+:root.phone-shell #notif-panel .wc-close {
 	display: none !important;
 }
 /* 41b H15: the connected-peers panel is a framed drawer too — it scrolls as one list there, where the

@@ -37,15 +37,20 @@ function probe(page, sel) {
 	}, sel);
 }
 /** the tabs of a side's strip, in order, and which one is in front */
+// showhide-v8 (fork 1): the Inspector is TWO tabs now, Properties ('inspector') and Configure Scene ('scene'), that
+// share a side and move together. This suite is about the column model, so `strip` reads them as ONE Inspector
+// (`raw` keeps what the strip really shows; section 2 checks the pair once).
 function strip(page, side) {
 	return page.evaluate((side) => {
+		const ins = (k) => (k === 'scene' ? 'inspector' : k);
 		const el = document.querySelector('#sidebar-strip-' + side);
 		if (!el) return null;
 		const tabs = [...el.querySelectorAll('[data-sidebar-tab]')];
 		const r = el.getBoundingClientRect();
 		return {
-			tabs: tabs.map((t) => t.getAttribute('data-sidebar-tab')),
-			front: tabs.find((t) => t.getAttribute('aria-selected') === 'true')?.getAttribute('data-sidebar-tab') ?? null,
+			raw: tabs.map((t) => t.getAttribute('data-sidebar-tab')),
+			tabs: tabs.map((t) => ins(t.getAttribute('data-sidebar-tab'))).filter((k, i, a) => a.indexOf(k) === i),
+			front: ins(tabs.find((t) => t.getAttribute('aria-selected') === 'true')?.getAttribute('data-sidebar-tab') ?? null),
 			x: Math.round(r.x),
 			y: Math.round(r.y),
 			w: Math.round(r.width),
@@ -53,7 +58,7 @@ function strip(page, side) {
 		};
 	}, side);
 }
-const store = (page, name) => page.evaluate((n) => new Promise((r) => window.__stores[n].subscribe(r)()), name);
+const store = (page, name) => page.evaluate((n) => new Promise((r) => window.__tp.test.v1[n].subscribe(r)()), name);
 
 /** real-pointer drag from a to b */
 async function drag(page, a, b, steps = 14) {
@@ -66,6 +71,9 @@ async function tabCentre(page, side, key) {
 	const r = await page.evaluate(
 		([side, key]) => {
 			const t = document.querySelector(`#sidebar-strip-${side} [data-sidebar-tab="${key}"]`);
+			// uir-polish F1/F2: tabs keep their whole name, so two can already overflow a 320 px column; the strip
+			// scrolls (wheel / "...") — bring the tab into view the way the wheel would before pressing it
+			t?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 			const b = t?.getBoundingClientRect();
 			return b ? [b.x + b.width / 2, b.y + b.height / 2] : null;
 		},
@@ -107,8 +115,8 @@ h.run(async () => {
 	h.check(right && right.tabs.join() === 'objects,inspector' && right.front === 'inspector', `Configure Scene joins the right sidebar as a tab, in front (${JSON.stringify(right)})`);
 	h.check(ins?.shown && Math.abs(ins.right - VW) < 3, `the Inspector fills the right column (${JSON.stringify(ins)})`);
 	h.check(list && !list.shown, `the list is behind its tab — not pushed inward as a second column (${JSON.stringify(list)})`);
-	const insLabel = await page.evaluate(() => document.querySelector('#sidebar-strip-right [data-sidebar-tab="inspector"]')?.textContent?.trim());
-	h.check(insLabel === 'Configure Scene', `the Inspector's tab is named after what it shows (${insLabel})`);
+	const insLabel = await page.evaluate(() => document.querySelector('#sidebar-strip-right [data-sidebar-tab="scene"]')?.textContent?.trim());
+	h.check(insLabel === 'Configure Scene' && right?.raw.includes('scene'), `Configure Scene is its own tab, named for what it shows (${insLabel}; ${JSON.stringify(right?.raw)})`);
 
 	// ---------- 3. a tab press switches, instantly, in the same column ----------
 	const sample = async (sel, run) => {
@@ -145,7 +153,7 @@ h.run(async () => {
 	h.check(insOpen === false, 'the covered Inspector stays OPEN (a tab, not a close)');
 
 	// ---------- 4. asking for a covered panel brings its tab forward (never closes it) ----------
-	await page.evaluate(() => window.__stores.showSidebar('scene')); // Configure Scene TOGGLES when in front
+	await page.evaluate(() => window.__tp.test.v1.showSidebar('scene')); // Configure Scene TOGGLES when in front
 	await page.waitForTimeout(400);
 	right = await strip(page, 'right');
 	h.check(right?.front === 'inspector' && (await store(page, 'inspectorClose')) === false, `Configure Scene on a covered tab reveals it rather than closing it (${right?.front})`);
@@ -155,27 +163,30 @@ h.run(async () => {
 	right = await strip(page, 'right');
 	h.check(right?.front === 'objects' && (await store(page, 'objectListClose')) === false, `the Object list button on a covered tab brings it forward (${right?.front})`);
 
-	// ---------- 5. a pinned panel following the selection does not steal the list's place ----------
+	// ---------- 5. Properties following the selection does not steal the list's place (uir-polish E4: no pin needed) ----------
 	await page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		await new Promise((r) => setTimeout(r, 400));
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		window.__box = g.children[g.children.length - 1];
 		w.objectActions.deselectObject();
-		w.inspectorPinned.set(true);
 	});
 	await page.waitForTimeout(300);
-	await page.evaluate(() => window.__stores.objectActions.selectObject(window.__box.uuid)); // a list click
+	await page.evaluate(() => window.__tp.test.v1.objectActions.selectObject(window.__box.uuid)); // a list click
 	await page.waitForTimeout(400);
 	right = await strip(page, 'right');
 	const kind = await store(page, 'inspectorKind');
-	h.check(right?.front === 'objects' && kind === 'selection', `pinned: a plain select keeps the list in front, Properties follows behind it (${right?.front}, ${kind})`);
-	await page.evaluate(() => window.__stores.objectActions.selectObject(window.__box.uuid, true)); // double-click / menu
+	// uir-polish E1/E4: no pin — a plain select neither pulls a tab forward nor turns Configure Scene into Properties
+	h.check(right?.front === 'objects' && kind === 'scene', `a plain select keeps the list in front and Configure Scene as it was (${right?.front}, ${kind})`);
+	await page.evaluate(() => window.__tp.test.v1.objectActions.selectObject(window.__box.uuid, true)); // double-click / menu
 	await page.waitForTimeout(400);
 	right = await strip(page, 'right');
 	h.check(right?.front === 'inspector', `an explicit Properties request brings its tab forward (${right?.front})`);
-	await page.evaluate(() => window.__stores.inspectorPinned.set(false));
+	// uir-polish E5: Properties and Configure Scene move separately now — close Configure Scene so this section drags
+	// the one Inspector tab (sticky-panel-header covers the two moving apart)
+	await page.evaluate(() => window.__tp.test.v1.sidebars.closeInspectorTab('scene'));
+	await page.waitForTimeout(300);
 
 	// ---------- 6. drag the Inspector's tab to the LEFT half: it docks there, with a highlight ----------
 	c = await tabCentre(page, 'right', 'inspector');
@@ -263,7 +274,7 @@ h.run(async () => {
 	await page.locator('#restore-session-dismiss').click({ timeout: 6000 }).catch(() => {});
 	await page.waitForTimeout(800);
 	await page.evaluate(() => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.objectListClose.set(false);
 		w.flowGraphClose.set(false);
 		w.showSidebar('scene');
@@ -271,7 +282,9 @@ h.run(async () => {
 	await page.waitForTimeout(1200);
 	const back = await strip(page, 'left');
 	ins = await probe(page, '#inspector');
-	h.check(back?.tabs.join() === 'inspector,objects,flow', `after a reload the left sidebar has the same three tabs (${JSON.stringify(back)})`);
+	// uir-polish E5: the column held Properties; the reload opens Configure Scene, its own tab now, which joins at the
+	// end on the side Properties left it — the SET of tabs is what persists
+	h.check([...(back?.tabs ?? [])].sort().join() === 'flow,inspector,objects', `after a reload the left sidebar has the same three tabs (${JSON.stringify(back)})`);
 	h.check(ins?.shown && ins.x < 3 && Math.abs(ins.w - flowWide.w) < 3, `...the Inspector still docks left at the dragged width (${JSON.stringify(ins)})`);
 	const empty2 = await strip(page, 'right');
 	h.check(!empty2 || empty2.tabs.length === 0, `...and no tab came back on the right (44 M7: the emptied column is remembered open) (${JSON.stringify(empty2)})`);
@@ -282,6 +295,9 @@ h.run(async () => {
 	c = await tabCentre(page, 'left', 'flow');
 	await page.mouse.click(c[0], c[1]);
 	await page.waitForTimeout(300);
+	// 78-int PL14: the strip also carries the Inspector's pin now, so three tabs can outgrow the column and the
+	// strip scrolls its front tab into view — the drag starts where the Flow tab IS after the click
+	c = await tabCentre(page, 'left', 'flow');
 	const flowD = await probe(page, '#flow-window');
 	await drag(page, c, [flowD.x + flowD.w + 300, flowD.y + 220], 12);
 	await page.mouse.up();
@@ -289,7 +305,7 @@ h.run(async () => {
 	const flowF = await probe(page, '#flow-window');
 	const left4 = await strip(page, 'left');
 	h.check(flowF?.docked === null && flowF.shown && flowF.h < VH * 0.8, `dragging a docked header away floats it (${JSON.stringify(flowF)})`);
-	h.check(left4?.tabs.join() === 'inspector,objects' && !!left4.front, `the other tabs keep the column (${JSON.stringify(left4)})`);
+	h.check([...(left4?.tabs ?? [])].sort().join() === 'inspector,objects' && !!left4.front, `the other tabs keep the column (${JSON.stringify(left4)})`);
 
 	// ---------- 12. a stored 81.4 SPLIT pair comes back as two tabs, not stacked ----------
 	await page.evaluate(() => {
@@ -301,8 +317,8 @@ h.run(async () => {
 	await page.locator('#restore-session-dismiss').click({ timeout: 6000 }).catch(() => {});
 	await page.waitForTimeout(800);
 	await page.evaluate(() => {
-		window.__stores.objectListClose.set(false);
-		window.__stores.flowGraphClose.set(false);
+		window.__tp.test.v1.objectListClose.set(false);
+		window.__tp.test.v1.flowGraphClose.set(false);
 	});
 	await page.waitForTimeout(1200);
 	const l = await probe(page, '#object-list');

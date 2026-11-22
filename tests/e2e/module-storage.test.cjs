@@ -15,7 +15,7 @@ const h = require('./helpers.cjs');
 /** register two inline modules that park their api.storage on window @param {any} page */
 const registerModules = (page) =>
 	page.evaluate(async () => {
-		const sdk = window.__stores.moduleSDK;
+		const sdk = window.__tp.test.v1.moduleSDK;
 		/** @param {string} id */
 		const make = (id) => ({
 			id,
@@ -34,7 +34,7 @@ const registerModules = (page) =>
 const toastsMatching = (page, re) =>
 	page.evaluate((src) => {
 		let list = [];
-		window.__stores.toastStore.subscribe((v) => (list = v ?? []))();
+		window.__tp.test.v1.toastStore.subscribe((v) => (list = v ?? []))();
 		const r = new RegExp(src);
 		return list.filter((t) => r.test(String(t?.message ?? t?.text ?? t ?? ''))).length;
 	}, re.source);
@@ -95,7 +95,7 @@ h.run(async () => {
 		const big = 'x'.repeat(300 * 1024);
 		const first = a.set('huge', big);
 		const second = a.set('huge2', big);
-		return { first, second, has: a.get('huge', null) !== null, cap: window.__stores.gameStorage.MODULE_STORAGE_CAP };
+		return { first, second, has: a.get('huge', null) !== null, cap: window.__tp.test.v1.gameStorage.MODULE_STORAGE_CAP };
 	});
 	h.check(cap.first === false && cap.second === false, 'a write over 256 KB returns false');
 	h.check(!cap.has, 'and writes nothing');
@@ -132,7 +132,7 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);
 	const built = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.levels.currentLevel.set({ hash: '', name: 'Arcade', unsaved: true });
 		const nodes = [
 			{ id: 'svKey', type: 'keypress', position: { x: 0, y: 0 }, data: { type: 'keypress', code: 'KeyK', edge: 'down' }, class: 'w-[150px]' },
@@ -155,7 +155,7 @@ h.run(async () => {
 	// count the wire while the node writes: Store Value must send NOTHING of its own
 	await page.evaluate(() => {
 		let peer;
-		window.__stores.peers.subscribe((v) => (peer = v))();
+		window.__tp.test.v1.peers.subscribe((v) => (peer = v))();
 		window.__sentTypes = [];
 		const send = peer.send.bind(peer);
 		peer.send = (msg) => {
@@ -165,7 +165,7 @@ h.run(async () => {
 	});
 	for (let i = 0; i < 3; i++) {
 		// a LOCAL pulse (this player's own key press): the counter and the store both act
-		await page.evaluate(() => window.__stores.flowRuntime.applyNodeTrigger('svKey', (Date.now() % 86400000) / 1000, false));
+		await page.evaluate(() => window.__tp.test.v1.flowRuntime.applyNodeTrigger('svKey', (Date.now() % 86400000) / 1000, false));
 		await page.waitForTimeout(700);
 	}
 	const flow = await page.evaluate(() => ({
@@ -176,18 +176,18 @@ h.run(async () => {
 	h.check(!flow.sent.some((t) => /stor/i.test(String(t))), `Store Value put nothing on the wire (${JSON.stringify([...new Set(flow.sent)])})`);
 	// a LOWER value must not overwrite the max
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowGraphs.update((g) => ({
 			...g,
 			scene: { ...g.scene, nodes: g.scene.nodes.map((n) => (n.id === 'svCount' ? { ...n, data: { ...n.data, step: -5 } } : n)) }
 		}));
 	});
-	await page.evaluate(() => window.__stores.flowRuntime.applyNodeTrigger('svKey', (Date.now() % 86400000) / 1000, false));
+	await page.evaluate(() => window.__tp.test.v1.flowRuntime.applyNodeTrigger('svKey', (Date.now() % 86400000) / 1000, false));
 	await page.waitForTimeout(700);
 	h.check((await page.evaluate(() => localStorage.getItem('tp:scene:Arcade:best'))) === '3', 'max mode never lowers the best');
 	const readNow = await page.evaluate(() => {
 		let v = {};
-		window.__stores.flowValues.subscribe((x) => (v = x))();
+		window.__tp.test.v1.flowValues.subscribe((x) => (v = x))();
 		return v.svRead;
 	});
 	h.check(readNow === 3, `Stored Value reads it back (${readNow})`);
@@ -196,10 +196,10 @@ h.run(async () => {
 
 	// ===================================================================== 6. a reload keeps both halves
 	await h.freshReload(A);
-	await page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, { timeout: 30000 });
+	await page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, { timeout: 30000 });
 	await registerModules(page);
 	const after = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.levels.currentLevel.set({ hash: '', name: 'Arcade', unsaved: true });
 		const nodes = [
 			{ id: 'svRead2', type: 'storedvalue', position: { x: 0, y: 0 }, data: { type: 'storedvalue', key: 'best', output: 'number', fallback: -1 }, class: 'w-[150px]' },
@@ -217,7 +217,7 @@ h.run(async () => {
 	h.check(after.num === 3, `Stored Value reads the saved best after a reload (${after.num})`);
 	h.check(after.text === '3', `and as text (${JSON.stringify(after.text)})`);
 	const otherScene = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.levels.currentLevel.set({ hash: '', name: 'Other game', unsaved: true });
 		await new Promise((r) => setTimeout(r, 500));
 		let v = {};
@@ -228,7 +228,7 @@ h.run(async () => {
 
 	// ===================================================================== 7. "Save best score" on a HUD button
 	const bind = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudDocs.setHudDocFor('scene', {
 			active: 'main',
 			screens: [{ id: 'main', name: 'Main', elements: [{ id: 'saveBtn', kind: 'button', text: 'Save', anchor: 'center', x: 0, y: 0, w: 120, h: 40 }] }]
@@ -260,8 +260,8 @@ h.run(async () => {
 	h.check(bind.trig, 'and pressed by the button on its trigger socket');
 	h.check(bind.labels.some((l) => /Save .best. on this device/.test(l)), `the Actions pane says what it does (${JSON.stringify(bind.labels)})`);
 	await page.evaluate(() => {
-		window.__stores.gameState.setGameVar('score', 12);
-		window.__stores.flowRuntime.fireHudButton('saveBtn');
+		window.__tp.test.v1.gameState.setGameVar('score', 12);
+		window.__tp.test.v1.flowRuntime.fireHudButton('saveBtn');
 	});
 	await h.eventually(
 		() => page.evaluate(() => localStorage.getItem('tp:scene:Other game:best')),

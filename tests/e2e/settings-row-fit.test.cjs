@@ -50,7 +50,7 @@ BESIDE.desktop = [...BESIDE.folded, ...BESIDE.unfolded, ['scene', '#row-double-c
 /** @param {any} page @param {string} key */
 async function open(page, key) {
 	await page.evaluate((k) => {
-		const s = /** @type {any} */ (window).__stores;
+		const s = /** @type {any} */ (window).__tp?.test.v1;
 		s.settingsOpen.set(false);
 		s.settingsSection.set(k);
 		s.settingsOpen.set(true);

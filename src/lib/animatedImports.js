@@ -1,6 +1,6 @@
+import { embeddedOnlyManager, checkFbx, refusal } from './loadGuard.js';
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { createGltfLoader } from './gltfLoader';
 import { parseGltfSceneSafe } from './ktx2Twins';
 import { objectsGroup, pokeScene } from '../stores/sceneStore';
@@ -456,7 +456,10 @@ async function parseAnimatedBytes(bytes, kind) {
 		return { root, animations };
 	}
 	if (kind === 'fbx') {
-		const root = new FBXLoader().parse(bytes, '');
+		// 94 SP1: a lazy chunk, loaded only for a scene that carries an FBX (the VRM rule above)
+		const { FBXLoader } = await import('three/addons/loaders/FBXLoader.js');
+		if (!checkFbx(bytes, 'peer', 'objectfile')) throw refusal('model');
+		const root = new FBXLoader(embeddedOnlyManager('peer', 'objectfile')).parse(bytes, '');
 		return { root, animations: root.animations ?? [] };
 	}
 	// 46: KTX2-aware, scene-safe (a KTX2 texture becomes an ordinary one + its twin)
@@ -1436,9 +1439,10 @@ export function animatedImportUuids(group) {
 
 /**
  * Snapshot every animated import for a save file.
- * @param {any} group @returns {any[]} entries for the payload's `animated` array
+ * @param {any} group @param {{refsOnly?: boolean}} [opts] refsOnly: what the entries refer to, without file bytes or a toast
+ * @returns {any[]} entries for the payload's `animated` array
  */
-export function animatedImportsSnapshot(group) {
+export function animatedImportsSnapshot(group, opts = {}) {
 	/** @type {any[]} */
 	const out = [];
 	const states = get(animatedObjects);
@@ -1455,7 +1459,7 @@ export function animatedImportsSnapshot(group) {
 		const bytes = fileBytes.get(child.uuid);
 		if (!bytes) continue;
 		const ref = animRefOf(child);
-		if (!ref && bytes.byteLength > MAX_SAVED_BYTES) {
+		if (!ref && !opts.refsOnly && bytes.byteLength > MAX_SAVED_BYTES) {
 			showToast('"' + (child.name || 'Model') + '" is too large to save with its animation');
 			continue;
 		}
@@ -1476,7 +1480,7 @@ export function animatedImportsSnapshot(group) {
 			...userDataFields(child),
 			// 33-scenes: a pack piece names its file (fetched back on restore, once per url);
 			// anything else carries its bytes, as always
-			...(ref ? { animRef: ref } : { bytes: bytesToBase64(bytes) })
+			...(ref ? { animRef: ref } : opts.refsOnly ? {} : { bytes: bytesToBase64(bytes) })
 		});
 	}
 	return out;

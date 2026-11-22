@@ -70,6 +70,8 @@
 		Archive,
 		Bot,
 		ArrowDownToLine,
+		ArrowLeft, // dock-fixes: the dock tab menu's Move left / Swap sides
+		ArrowLeftRight,
 		ArrowRight,
 		Atom, // 38 NOTES-38 #24: Physics & effects ▸
 		AudioLines,
@@ -182,6 +184,7 @@
 		Minus,
 		Monitor,
 		Smartphone,
+		Footprints,
 		Mountain,
 		MousePointer2,
 		Move,
@@ -195,6 +198,11 @@
 		PanelBottom,
 		PanelLeft,
 		PanelLeftClose,
+		PanelLeftOpen, // showhide-v8: the pane handles' menus
+		PanelRightOpen,
+		MoveVertical, // showhide-v8: the sidebar handle's Move up / down
+		SunDim, // showhide-v8: the sidebar handle's Dim at rest
+		Fullscreen, // showhide-v8: Windows ▸ Full screen
 		PanelRight,
 		PanelRightClose,
 		Pause,
@@ -209,6 +217,7 @@
 		Plus,
 		Proportions,
 		Puzzle,
+		QrCode, // 78 PL37: the invite sheet's QR tab
 		Radar,
 		RectangleGoggles,
 		Redo2,
@@ -276,7 +285,16 @@
 		ZoomOut,
 		// 60 Q1 + Q5: Play here, reference image
 		MapPin,
-		ImageUp
+		ImageUp,
+		// 78 F27: the starter recipes (door, guard)
+		DoorOpen,
+		Shield,
+		// 61-nav G10: Make this an enemy
+		Swords,
+		// uir-people: the presence statuses (Busy / Away) and the pill's Join…
+		CircleMinus,
+		Clock,
+		LogIn
 	} from '@lucide/svelte';
 	import ToolIcon from './ToolIcon.svelte';
 	import { iconSize, ICON_STROKE } from '$lib/ui/icons.js';
@@ -299,10 +317,14 @@
 		'app-window': AppWindow,
 		archive: Archive,
 		'arrow-down-to-line': ArrowDownToLine,
+		'arrow-left': ArrowLeft,
+		'arrow-left-right': ArrowLeftRight,
 		'arrow-right': ArrowRight,
 		atom: Atom,
 		'audio-lines': AudioLines,
 		bell: Bell,
+		'door-open': DoorOpen, // 78 F27
+		shield: Shield, // 78 F27
 		'book-open': BookOpen,
 		bone: Bone, // 57 M6: Character ▸ Skeleton…
 		bookmark: Bookmark,
@@ -324,6 +346,9 @@
 		circle: Circle,
 		'circle-alert': CircleAlert,
 		'circle-check': CircleCheck,
+		'circle-minus': CircleMinus, // uir-people
+		clock: Clock, // uir-people
+		'log-in': LogIn, // uir-people
 		'circle-dashed': CircleDashed,
 		'circle-x': CircleX,
 		'circle-help': CircleHelp,
@@ -414,6 +439,7 @@
 		minus: Minus,
 		monitor: Monitor,
 		smartphone: Smartphone,
+		footprints: Footprints,
 		mountain: Mountain,
 		'mouse-pointer-2': MousePointer2,
 		move: Move,
@@ -427,6 +453,11 @@
 		'panel-bottom': PanelBottom,
 		'panel-left': PanelLeft,
 		'panel-left-close': PanelLeftClose,
+		'panel-left-open': PanelLeftOpen,
+		'panel-right-open': PanelRightOpen,
+		'move-vertical': MoveVertical,
+		'sun-dim': SunDim,
+		fullscreen: Fullscreen,
 		'panel-right': PanelRight,
 		'panel-right-close': PanelRightClose,
 		pause: Pause,
@@ -441,6 +472,7 @@
 		plus: Plus,
 		proportions: Proportions,
 		puzzle: Puzzle,
+		'qr-code': QrCode,
 		radar: Radar,
 		'rectangle-goggles': RectangleGoggles,
 		'redo-2': Redo2,
@@ -497,6 +529,7 @@
 		'volume-x': VolumeX,
 		'wand-sparkles': WandSparkles,
 		waypoints: Waypoints,
+		swords: Swords,
 		'whole-word': WholeWord,
 		wifi: Wifi,
 		'wifi-off': WifiOff,

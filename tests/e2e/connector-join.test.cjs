@@ -15,16 +15,16 @@ const { installProvider, fakeRelay, connectorPhase } = require('./connectorFake.
 const OUT = process.env.E2E_OUT || 'test-results/86-fix';
 const CARD = '#confirm-connector-join';
 
-const sessionHostOf = (peer) => peer.page.evaluate(() => new Promise((r) => window.__stores.connectionState.sessionHost.subscribe((v) => r(v))()));
-const waitingOf = (peer) => peer.page.evaluate(() => new Promise((r) => window.__stores.waitingForApproval.subscribe((v) => r(JSON.parse(JSON.stringify(v ?? []))))()));
+const sessionHostOf = (peer) => peer.page.evaluate(() => new Promise((r) => window.__tp.test.v1.connectionState.sessionHost.subscribe((v) => r(v))()));
+const waitingOf = (peer) => peer.page.evaluate(() => new Promise((r) => window.__tp.test.v1.waitingForApproval.subscribe((v) => r(JSON.parse(JSON.stringify(v ?? []))))()));
 
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
 	await B.page.evaluate(() => {
-		window.__stores.toastsInDrawerOnly.set(true);
-		window.__stores.aiAssistantHidden.set('');
+		window.__tp.test.v1.toastsInDrawerOnly.set(true);
+		window.__tp.test.v1.aiAssistantHidden.set('');
 	});
 	const relay = await fakeRelay(B.page);
 	await installProvider(B.page);
@@ -33,8 +33,8 @@ h.run(async () => {
 	const hello = relay.frames.find((x) => x.f.type === 'hello')?.f;
 	h.check(hello?.tools?.includes('join_session') && !hello.tools.includes('connect'), `the tab answers join_session, not the CLI connect (${hello?.tools?.length} tools)`);
 	// A's id as the page holds it once its signaling link is open
-	await A.page.waitForFunction(() => { let p; window.__stores.peers.subscribe((v) => (p = v))(); return !!p?.peer?.open; }, undefined, { timeout: 30000 });
-	const aId = await A.page.evaluate(() => { let p; window.__stores.peers.subscribe((v) => (p = v))(); return p.peer.id; });
+	await A.page.waitForFunction(() => { let p; window.__tp.test.v1.peers.subscribe((v) => (p = v))(); return !!p?.peer?.open; }, undefined, { timeout: 30000 });
+	const aId = await A.page.evaluate(() => { let p; window.__tp.test.v1.peers.subscribe((v) => (p = v))(); return p.peer.id; });
 	const origin = new URL(B.page.url()).origin;
 	const link = origin + '/#' + aId.toUpperCase();
 
@@ -54,14 +54,14 @@ h.run(async () => {
 	h.check((await B.page.locator(CARD).count()) === 0, 'no card was shown for any of them');
 
 	// ---- another question already open → busy, and the person's dialog stays -----------------------------
-	await B.page.evaluate(() => window.__stores.confirmDialog?.confirmDialog?.set?.({ title: 'Mine', message: 'the person’s own question', resolve() {} }) ?? null);
-	const mineUp = await B.page.evaluate(() => { let d; window.__stores.confirmDialog?.confirmDialog?.subscribe((v) => (d = v))(); return d?.title ?? null; });
+	await B.page.evaluate(() => window.__tp.test.v1.confirmDialog?.confirmDialog?.set?.({ title: 'Mine', message: 'the person’s own question', resolve() {} }) ?? null);
+	const mineUp = await B.page.evaluate(() => { let d; window.__tp.test.v1.confirmDialog?.confirmDialog?.subscribe((v) => (d = v))(); return d?.title ?? null; });
 	if (mineUp === 'Mine') {
 		relay.call('b1', 'join_session', { link });
 		const b1 = await relay.answer('b1');
-		const still = await B.page.evaluate(() => { let d; window.__stores.confirmDialog.confirmDialog.subscribe((v) => (d = v))(); return d?.title ?? null; });
+		const still = await B.page.evaluate(() => { let d; window.__tp.test.v1.confirmDialog.confirmDialog.subscribe((v) => (d = v))(); return d?.title ?? null; });
 		h.check(b1?.error?.code === 'busy' && still === 'Mine', `another open question → busy; the person's dialog stays (${b1?.error?.code}, ${still})`);
-		await B.page.evaluate(() => window.__stores.confirmDialog.confirmDialog.set(null));
+		await B.page.evaluate(() => window.__tp.test.v1.confirmDialog.confirmDialog.set(null));
 	} else console.log('  (confirmDialog not on the debug hooks: busy case covered by the unit tests)');
 
 	// ---- Cancel → nothing dialled -------------------------------------------------------------------------
@@ -103,7 +103,7 @@ h.run(async () => {
 	h.check(ids[0] === B.id + '*' && ids.includes(aId), `the users list holds the person (you: true) and A (${ids})`);
 
 	// ---- where_are_users: the person from this tab's camera, A from the avatar A's camera stream poses -------
-	const camOf = (peer) => peer.page.evaluate(() => new Promise((r) => window.__stores.globalCamera.subscribe((c) => { c.updateWorldMatrix(true, false); r(Array.from(c.matrixWorld.elements)); })()));
+	const camOf = (peer) => peer.page.evaluate(() => new Promise((r) => window.__tp.test.v1.globalCamera.subscribe((c) => { c.updateWorldMatrix(true, false); r(Array.from(c.matrixWorld.elements)); })()));
 	let w = null, n = 0;
 	await h.eventually(async () => {
 		const id = 'w' + n++;

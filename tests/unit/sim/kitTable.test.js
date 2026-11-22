@@ -14,9 +14,10 @@ describe('KIT_PIECES', () => {
 		}
 	});
 	it('every action call has a reducer of the same name (an action IS an authority op)', () => {
+		// 93 LP3: a `local` action (this player's respawn) changes no shared state, so it has no op
 		for (const row of KIT_PIECES)
 			for (const call of row.piece.spec.calls)
-				if (call.kind === 'action') expect(typeof row.piece.ops?.[call.name], row.name + '.' + call.name).toBe('function');
+				if (call.kind === 'action' && !call.local) expect(typeof row.piece.ops?.[call.name], row.name + '.' + call.name).toBe('function');
 	});
 	it('node types are unique across the kit, and every node has a doc line', () => {
 		const types = KIT_PIECES.flatMap((row) => kitNodeItems(row.piece.spec).map((i) => i.type));

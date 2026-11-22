@@ -6,8 +6,9 @@
 //    Y → Interact, leaving VR → done) and the panel's own buttons press with the trigger;
 //    re-entering (and a reload) shows nothing; Skip persists; an interrupted tour resumes;
 //    the radial's Settings ▸ Welcome tour and Settings ▸ Tours ▸ Reset bring it back.
-//  Screen: the editor tour follows the first-visit Welcome card (and NOT under test without
-//    the opt-in — the guard that keeps the battery clean), its card never covers its target,
+//  Screen: the first-visit Welcome card's answer starts the first-win quest (76 FW1; NOT under test
+//    without the opt-in — the guard that keeps the battery clean); the editor tour is started from
+//    the logo menu, its card never covers its target,
 //    Settings / the logo menu start it, "Don't show again" turns auto-start off, the VR
 //    welcome previews on a screen without being marked seen, the touch variant on a phone.
 //  A2: with a fake headset browser, the page offers immersive-VR (not threlte's AR default)
@@ -25,22 +26,22 @@ const PART = process.env.TOURS_PART || 'all'; // vr | screen | offer | all
 
 async function shotCanvas(page, name) {
 	if (!SHOTS) return;
-	const url = await page.evaluate(() => window.__stores.tourVR.tourVRDebug().canvas.toDataURL('image/png'));
+	const url = await page.evaluate(() => window.__tp.test.v1.tourVR.tourVRDebug().canvas.toDataURL('image/png'));
 	fs.writeFileSync(path.join(SHOTS, name + '.png'), Buffer.from(url.split(',')[1], 'base64'));
 }
 async function shotPage(page, name) {
 	if (SHOTS) await page.screenshot({ path: path.join(SHOTS, name + '.png') });
 }
-const active = (page) => page.evaluate(() => window.__stores.tours.toursDebug().active);
+const active = (page) => page.evaluate(() => window.__tp.test.v1.tours.toursDebug().active);
 const stepId = async (page) => (await active(page))?.step.id ?? null;
 const vrDebug = (page) =>
 	page.evaluate(() => {
-		const d = window.__stores.tourVR.tourVRDebug();
+		const d = window.__tp.test.v1.tourVR.tourVRDebug();
 		return { ...d, canvas: undefined };
 	});
 /** open Settings on the Tours rows (the search expands the collapsed sections) */
 async function openTourSettings(page) {
-	await page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(true));
 	const search = page.locator('#settings-search');
 	await search.waitFor({ state: 'visible', timeout: 5000 });
 	// a query left from the last time would not re-run the expansion: clear it first
@@ -52,13 +53,13 @@ async function openTourSettings(page) {
 		throw e;
 	});
 }
-const setVR = (page, on) => page.evaluate((on) => window.__stores.isVRMode.set(on), on);
+const setVR = (page, on) => page.evaluate((on) => window.__tp.test.v1.isVRMode.set(on), on);
 
 /** point a controller from `from` at world point `to` (the controller's ray is its -Z) */
 async function aim(page, hand, from, to) {
 	await page.evaluate(
 		({ hand, from, to }) => {
-			const THREE = window.__stores.THREE;
+			const THREE = window.__tp.test.v1.THREE;
 			const c = window.__fakeXR.renderer.xr.getController(hand === 'left' ? 0 : 1);
 			const f = new THREE.Vector3(...from);
 			const m = new THREE.Matrix4().lookAt(f, new THREE.Vector3(...to), new THREE.Vector3(0, 1, 0));
@@ -99,7 +100,7 @@ async function vrPage(browser, storage = {}) {
 	await xr.install(page);
 	await page.evaluate(() => {
 		for (const s of window.__fakeXR.sources) s.profiles = ['meta-quest-touch-plus', 'generic-trigger-squeeze-thumbstick'];
-		window.__stores.tourVR.setTourHead({ position: [0, 1.6, 0], yaw: 0 });
+		window.__tp.test.v1.tourVR.setTourHead({ position: [0, 1.6, 0], yaw: 0 });
 	});
 	await aimAway(page, 'left');
 	await aimAway(page, 'right');
@@ -154,7 +155,7 @@ async function vrPart(browser) {
 	// 36-vr plan 55: the buttons are remappable — the step names and lights what the action is bound to NOW
 	let menuStep = await active(page);
 	h.check(menuStep.step.body.includes('B on your right hand') && menuStep.step.hint === 'Press B', 'U3b+55: the menu step names the bound button (default: B, right)');
-	const remap = await page.evaluate(() => window.__stores.vrBindings.setBinding('menu', { hand: 'left', control: 'stickClick' }));
+	const remap = await page.evaluate(() => window.__tp.test.v1.vrBindings.setBinding('menu', { hand: 'left', control: 'stickClick' }));
 	h.check(remap.ok, 'U3b+55: remap the radial menu to the left stick press');
 	await page.waitForTimeout(300);
 	menuStep = await active(page);
@@ -166,15 +167,15 @@ async function vrPart(browser) {
 	await click(page, 'left', 3); // the REMAPPED control opens the radial
 	await waitStep(page, 'play', 'U3b+55: opening the radial with the remapped control completes "your menu"');
 	await click(page, 'left', 3); // close it again
-	await page.evaluate(() => window.__stores.vrBindings.resetBindings());
+	await page.evaluate(() => window.__tp.test.v1.vrBindings.resetBindings());
 	await shotCanvas(page, '07-vr-play');
 	await click(page, 'left', 5); // Y = Edit ↔ Interact
 	await waitStep(page, 'exit', 'U3b: switching to Interact (Y) completes "play a game"');
 	await shotCanvas(page, '08-vr-exit');
-	await page.evaluate(() => window.__stores.editorMode.set('edit'));
+	await page.evaluate(() => window.__tp.test.v1.editorMode.set('edit'));
 	await setVR(page, false);
 	await h.eventually(() => stepId(page), (id) => id === null, 'U3b: leaving VR completes the last step');
-	h.check(await page.evaluate(() => window.__stores.tours.tours.seen('vr-welcome')), 'U3b: the welcome is recorded as seen');
+	h.check(await page.evaluate(() => window.__tp.test.v1.tours.tours.seen('vr-welcome')), 'U3b: the welcome is recorded as seen');
 
 	// ---- once: not again on re-entry, nor after a reload ------------------------------
 	await setVR(page, true);
@@ -185,11 +186,11 @@ async function vrPart(browser) {
 	// ---- the radial's Settings ▸ Welcome tour replays it from the top -------------------
 	await setVR(page, true);
 	const entry = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		return s.vrRadialMenu.ringEntries('settings').map((e) => e.id);
 	});
 	h.check(entry.includes('tour:vr'), 'U3b: the radial Settings ring carries "Welcome tour" (36-vr layout)');
-	await page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('tour:vr'));
+	await page.evaluate(() => window.__tp.test.v1.vrControls.executeVRMenuAction('tour:vr'));
 	await waitStep(page, 'welcome', 'U3b: radial ▸ Welcome tour restarts it in VR');
 	// ---- Skip persists ----------------------------------------------------------------
 	await pressPanel(page, 'skip');
@@ -197,7 +198,7 @@ async function vrPart(browser) {
 	await setVR(page, false);
 	await h.freshReload(A);
 	await xr.install(page);
-	await page.evaluate(() => window.__stores.tourVR.setTourHead({ position: [0, 1.6, 0], yaw: 0 }));
+	await page.evaluate(() => window.__tp.test.v1.tourVR.setTourHead({ position: [0, 1.6, 0], yaw: 0 }));
 	await setVR(page, true);
 	await page.waitForTimeout(2200);
 	h.check((await stepId(page)) === null, 'U3b: after a reload a seen/skipped welcome stays away');
@@ -206,7 +207,7 @@ async function vrPart(browser) {
 	// ---- Settings ▸ Tours ▸ Reset all brings it back; an interrupted tour RESUMES -------
 	await openTourSettings(page);
 	await page.locator('#setting-tours-reset').click();
-	await page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await setVR(page, true);
 	await waitStep(page, 'welcome', 'U3b: after Settings ▸ Reset all, the next VR entry shows it again', 5000);
 	await pressPanel(page, 'next');
@@ -214,7 +215,7 @@ async function vrPart(browser) {
 	await waitStep(page, 'move', 'U3b: two Nexts');
 	await setVR(page, false); // the headset comes off mid-tour
 	await h.eventually(() => stepId(page), (id) => id === null, 'U3b: leaving VR mid-tour pauses it');
-	h.check((await page.evaluate(() => window.__stores.tours.tours.status('vr-welcome'))) === 'progress', 'U3b: …and keeps its place');
+	h.check((await page.evaluate(() => window.__tp.test.v1.tours.tours.status('vr-welcome'))) === 'progress', 'U3b: …and keeps its place');
 	await setVR(page, true);
 	await waitStep(page, 'move', 'U3b: the next VR entry RESUMES on the step it stopped at', 5000);
 	// Don't show again: no tour auto-starts any more
@@ -237,7 +238,7 @@ async function firstVisit(browser, storage, context) {
 	page.__errors = [];
 	page.on('pageerror', (e) => page.__errors.push(e.message));
 	await page.goto(h.URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-	await page.waitForFunction(() => window.__stores && !!window.__stores.tours && !!window.__stores.moduleSDK, { timeout: 30000 });
+	await page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.tours && !!window.__tp.test.v1.moduleSDK, { timeout: 30000 });
 	await page.waitForTimeout(800);
 	return { ctx, page };
 }
@@ -262,7 +263,15 @@ async function screenPart(browser) {
 	h.check((await page.locator('#tour-card').count()) === 0, 'I5: …and no tour on top of it');
 	await page.locator('#welcome-start').click();
 	await page.locator('#tour-card').waitFor({ state: 'visible', timeout: 5000 });
-	h.check((await page.locator('#tour-card').getAttribute('data-tour-id')) === 'editor', 'I5: closing the Welcome starts the desktop editor tour');
+	// 76 FW1: the Welcome's answer starts the first-win QUEST now; the editor tour is optional
+	h.check((await page.locator('#tour-card').getAttribute('data-tour-id')) === 'first-win', 'FW1: closing the Welcome (Empty scene) starts the first-win quest, not the editor tour');
+	await page.locator('#tour-skip').click();
+	await page.waitForTimeout(300);
+	h.check((await page.locator('#tour-card').count()) === 0, 'FW1: Skip closes the quest');
+	await page.locator('#logo-menu').click();
+	await page.locator('#open-tour').click();
+	await page.locator('#tour-card').waitFor({ state: 'visible', timeout: 5000 });
+	h.check((await page.locator('#tour-card').getAttribute('data-tour-id')) === 'editor', 'I5: logo menu ▸ Tour the interface starts the desktop editor tour');
 	const STEPS = ['add', 'navigate', 'tools', 'play', 'connect', 'menu'];
 	const TARGET = { add: '#mobile-add-button', tools: '#controls-pill', play: '#play-button', connect: '.connect-pill', menu: '#logo-menu' };
 	for (let i = 0; i < STEPS.length; i++) {
@@ -281,9 +290,9 @@ async function screenPart(browser) {
 	}
 	await page.waitForTimeout(300);
 	h.check((await page.locator('#tour-card').count()) === 0, 'I5: Done closes the tour');
-	h.check(await page.evaluate(() => window.__stores.tours.tours.seen('editor')), 'I5: …and records it seen');
+	h.check(await page.evaluate(() => window.__tp.test.v1.tours.tours.seen('editor')), 'I5: …and records it seen');
 	await page.reload({ waitUntil: 'domcontentloaded' });
-	await page.waitForFunction(() => window.__stores && !!window.__stores.tours, { timeout: 30000 });
+	await page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.tours, { timeout: 30000 });
 	await page.waitForTimeout(1500);
 	h.check((await page.locator('#tour-card').count()) === 0, 'I5: a returning visit shows no tour');
 
@@ -302,7 +311,7 @@ async function screenPart(browser) {
 	await page.locator('#tour-next').click();
 	await page.locator('#tour-next').click();
 	await page.waitForTimeout(400);
-	await page.evaluate(() => window.__stores.themes.theme.set('light'));
+	await page.evaluate(() => window.__tp.test.v1.themes.theme.set('light'));
 	await page.waitForTimeout(400);
 	await shotPage(page, '16-desktop-tools-light');
 	h.check((await page.locator('#tour-back').count()) === 1, 'I5: Back appears after the first step');
@@ -316,7 +325,7 @@ async function screenPart(browser) {
 	await shotPage(page, '21-settings-tours-light');
 
 	// ---- the VR welcome on a screen: armed + previewed, never marked seen ---------------
-	await page.evaluate(() => window.__stores.tours.tours.reset('vr-welcome'));
+	await page.evaluate(() => window.__tp.test.v1.tours.tours.reset('vr-welcome'));
 	await page.locator('#setting-tour-vr').click();
 	await page.waitForTimeout(400);
 	const preview = page.locator('.tp-toast .tp-toast-action', { hasText: 'Preview it here' }).first();
@@ -326,7 +335,7 @@ async function screenPart(browser) {
 	await page.locator('#tour-next').click();
 	await page.waitForTimeout(300);
 	h.check((await page.locator('#tour-card .tour-art svg').count()) === 1, 'U3b: the preview draws the controller diagram');
-	await page.evaluate(() => window.__stores.themes.theme.set('dark'));
+	await page.evaluate(() => window.__tp.test.v1.themes.theme.set('dark'));
 	await page.waitForTimeout(300);
 	await shotPage(page, '17-vr-preview-quest3-dark');
 	await page.locator('.tour-family button', { hasText: 'Quest 2' }).click();
@@ -334,7 +343,7 @@ async function screenPart(browser) {
 	await shotPage(page, '18-vr-preview-quest2-dark');
 	for (let i = 0; i < 7; i++) await page.locator('#tour-next').click();
 	await page.waitForTimeout(300);
-	h.check(!(await page.evaluate(() => window.__stores.tours.tours.seen('vr-welcome'))), 'U3b: a preview on a screen leaves the VR welcome owed');
+	h.check(!(await page.evaluate(() => window.__tp.test.v1.tours.tours.seen('vr-welcome'))), 'U3b: a preview on a screen leaves the VR welcome owed');
 	await B.ctx.close();
 
 	// ---- the touch variant on a phone (folded Find N6-ish width) -------------------------
@@ -345,7 +354,9 @@ async function screenPart(browser) {
 	);
 	await T.page.locator('#welcome-start').click();
 	await T.page.locator('#tour-card').waitFor({ state: 'visible', timeout: 5000 });
-	h.check((await T.page.locator('#tour-card').getAttribute('data-tour-id')) === 'editor-touch', 'I5: a touch screen gets the touch tour');
+	h.check((await T.page.locator('#tour-card').getAttribute('data-tour-id')) === 'first-win', 'FW1: a phone gets the first-win quest after the Welcome');
+	await T.page.evaluate(() => window.__tp.test.v1.toursBuiltin.startEditorTour());
+	await h.eventually(() => T.page.locator('#tour-card').getAttribute('data-tour-id'), (id) => id === 'editor-touch', 'I5: a touch screen gets the touch tour');
 	h.check(/sheet/.test(await T.page.locator('#tour-card').getAttribute('data-side')), 'I5: on a phone the card is a sheet');
 	const tcard = await rectOf(T.page, '#tour-card');
 	h.check(tcard.x >= 0 && tcard.x + tcard.w <= 412 && tcard.y + tcard.h <= 915, 'I5: the sheet fits the phone');
@@ -382,7 +393,7 @@ async function offerPart(browser) {
 	});
 	const page = await ctx.newPage();
 	const boot = async () => {
-		await page.waitForFunction(() => window.__stores && !!window.__stores.xrOffer, { timeout: 30000 });
+		await page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.xrOffer, { timeout: 30000 });
 		await page.waitForTimeout(1500);
 	};
 	await page.goto(h.URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
@@ -392,24 +403,24 @@ async function offerPart(browser) {
 	// decline → remembered → a reload offers nothing
 	await page.evaluate(() => window.__offers[0].reject(Object.assign(new Error('declined'), { name: 'NotAllowedError' })));
 	await page.waitForTimeout(500);
-	h.check((await page.evaluate(() => window.__stores.xrOffer.xrOfferDebug().outcome)) === 'declined', 'A2: the decline is seen');
+	h.check((await page.evaluate(() => window.__tp.test.v1.xrOffer.xrOfferDebug().outcome)) === 'declined', 'A2: the decline is seen');
 	await page.reload({ waitUntil: 'domcontentloaded' });
 	await boot();
 	h.check((await offers()).length === 0, 'A2: after a decline a reload offers nothing');
 	// the setting off → on asks again; passthrough on → AR
-	await page.evaluate(() => window.__stores.vrPassthrough.set(true));
-	await page.evaluate(() => window.__stores.xrOffer.xrOfferEnabled.set(false));
+	await page.evaluate(() => window.__tp.test.v1.vrPassthrough.set(true));
+	await page.evaluate(() => window.__tp.test.v1.xrOffer.xrOfferEnabled.set(false));
 	await page.waitForTimeout(200);
-	await page.evaluate(() => window.__stores.xrOffer.xrOfferEnabled.set(true));
+	await page.evaluate(() => window.__tp.test.v1.xrOffer.xrOfferEnabled.set(true));
 	await h.eventually(offers, (list) => list.length === 1, 'A2: switching the setting off and on offers again');
 	h.check((await offers())[0] === 'immersive-ar', 'A2: with passthrough on the offer is AR, like Play');
 	// a session starting settles the page: no second offer when it ends
-	await page.evaluate(() => window.__stores.isVRMode.set(true));
+	await page.evaluate(() => window.__tp.test.v1.isVRMode.set(true));
 	await page.waitForTimeout(300);
-	await page.evaluate(() => window.__stores.isVRMode.set(false));
+	await page.evaluate(() => window.__tp.test.v1.isVRMode.set(false));
 	await page.waitForTimeout(800);
-	h.check((await page.evaluate(() => window.__stores.xrOffer.xrOfferDebug().mode)) === false, 'A2: once per page — after a session nothing is offered again');
-	await page.evaluate(() => window.__stores.vrPassthrough.set(false));
+	h.check((await page.evaluate(() => window.__tp.test.v1.xrOffer.xrOfferDebug().mode)) === false, 'A2: once per page — after a session nothing is offered again');
+	await page.evaluate(() => window.__tp.test.v1.vrPassthrough.set(false));
 	await ctx.close();
 }
 

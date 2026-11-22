@@ -7,13 +7,13 @@
 // Counterfactual on v1.47.0: 1.1 is red (the joiner asks for the snapshot it is already getting).
 const h = require('./helpers.cjs');
 
-const hashOf = (p) => p.page.evaluate(() => window.__stores.nodesHandler.graphHash());
+const hashOf = (p) => p.page.evaluate(() => window.__tp.test.v1.nodesHandler.graphHash());
 
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 	await A.page.evaluate(() => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		S.commandsHandler.sceneCommand('/create box');
 		let g;
 		S.objectsGroup.subscribe((v) => (g = v))();
@@ -34,7 +34,7 @@ h.run(async () => {
 
 	// drift is still caught: change the host's graph WITHOUT telling anyone, the joiner pulls it
 	await A.page.evaluate(() => {
-		const S = window.__stores;
+		const S = window.__tp?.test.v1;
 		S.flowGraphs.update((all) => {
 			const scene = all.scene;
 			return { ...all, scene: { ...scene, nodes: [...scene.nodes, { id: 'k2', type: 'keypress', position: { x: 80, y: 0 }, data: { key: 'KeyT' } }] } };

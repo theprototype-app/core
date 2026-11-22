@@ -70,20 +70,20 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
-	await page.waitForFunction(() => !!window.__stores?.gamepadPrefs, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.gamepadPrefs, { timeout: 30000 });
 
 	// gamepadPrefs is a MODULE in the debug hook, so the STORE is one level in
 	// (__stores.viewPrefs.viewPrefs is the same shape) — the documented naming trap
 	const prefs = () =>
 		page.evaluate(() => {
 			let v;
-			window.__stores.gamepadPrefs.gamepadPrefs.subscribe((x) => (v = x))();
+			window.__tp.test.v1.gamepadPrefs.gamepadPrefs.subscribe((x) => (v = x))();
 			return v;
 		});
 	const toasts = () =>
 		page.evaluate(() => {
 			let t;
-			window.__stores.toastStore.subscribe((v) => (t = v))();
+			window.__tp.test.v1.toastStore.subscribe((v) => (t = v))();
 			return t.map((x) => (typeof x === 'string' ? x : x.text));
 		});
 
@@ -105,7 +105,7 @@ h.run(async () => {
 
 	await stubPad(page);
 	await page.waitForTimeout(700);
-	const seen = await page.evaluate(() => window.__stores.inputRuntime.gamepadName());
+	const seen = await page.evaluate(() => window.__tp.test.v1.inputRuntime.gamepadName());
 	h.check(!!seen && seen.startsWith('Fake Pad'), `the per-frame poll picked the pad up (${seen})`);
 	const connectToasts = await toasts();
 	h.check(
@@ -117,20 +117,20 @@ h.run(async () => {
 	// deselect FIRST: the node editor's scope follows the selection, so creating nodes
 	// with something selected writes them into that object's own (empty) graph
 	await page.evaluate(() => {
-		window.__stores.objectActions.deselectObject();
-		window.__stores.flowGraphClose.set(false);
-		window.__stores.bottomDock.activateDock('flow');
+		window.__tp.test.v1.objectActions.deselectObject();
+		window.__tp.test.v1.flowGraphClose.set(false);
+		window.__tp.test.v1.bottomDock.activateDock('flow');
 	});
 	await page.waitForTimeout(1300);
 	const scope = await page.evaluate(() => {
 		let v;
-		window.__stores.activeGraphId.subscribe((x) => (v = x))();
+		window.__tp.test.v1.activeGraphId.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(scope === 'scene', `premise: nodes land in the SCENE graph (${scope})`);
 
 	await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const mk = (id, type, data) =>
 			s.nodesHandler.createFlowNode({ id, type, position: { x: 40, y: 40 }, data: { type, ...data } });
 		mk('gp-down', 'gamepadbutton', { button: 'GamepadA', edge: 'down', pulse: 0.3 });
@@ -143,7 +143,7 @@ h.run(async () => {
 	await page.waitForTimeout(600);
 	const built = await page.evaluate(() => {
 		let g;
-		window.__stores.flowGraphs.subscribe((x) => (g = x))();
+		window.__tp.test.v1.flowGraphs.subscribe((x) => (g = x))();
 		return (g.scene?.nodes ?? []).filter((n) => n.id.startsWith('gp-')).length;
 	});
 	h.check(built === 6, `premise: six fixture nodes exist (${built})`);
@@ -152,7 +152,7 @@ h.run(async () => {
 	// the keypress model verbatim, so the same three readings must hold
 	const edges = await page.evaluate(async () => {
 		const w = /** @type {any} */ (window);
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const stamp = (id) => {
 			let t;
 			s.flowTriggers.subscribe((v) => (t = v))();
@@ -196,7 +196,7 @@ h.run(async () => {
 	// ---- 3. the axis: deadzone, invert, scale, and the node's own gate ---------
 	const axis = await page.evaluate(async () => {
 		const w = /** @type {any} */ (window);
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const read = () => {
 			let v;
 			s.flowValues.subscribe((x) => (v = x))();
@@ -263,7 +263,7 @@ h.run(async () => {
 
 	// ---- 4. the HUD fixture: a game screen and a MENU screen ------------------
 	const hud = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudDocs.setHudDocFor('scene', {
 			screens: [
 				{
@@ -299,7 +299,7 @@ h.run(async () => {
 	// ---- 5. the DEFAULT MAPPING moves the play camera -------------------------
 	const moved = await page.evaluate(async () => {
 		const w = /** @type {any} */ (window);
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.isLocked.set(true);
 		await new Promise((r) => setTimeout(r, 600));
 		let cam;
@@ -338,11 +338,11 @@ h.run(async () => {
 	// the LOOK stick turns the view, and invertY flips the pitch
 	const looked = await page.evaluate(async () => {
 		const w = /** @type {any} */ (window);
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let cam;
 		s.playerCam.subscribe((v) => (cam = v))();
 		const pitch = () => {
-			const e = new window.__stores.THREE.Euler(0, 0, 0, 'YXZ');
+			const e = new window.__tp.test.v1.THREE.Euler(0, 0, 0, 'YXZ');
 			e.setFromQuaternion(cam.quaternion);
 			return { x: e.x, y: e.y };
 		};
@@ -375,7 +375,7 @@ h.run(async () => {
 	// their own menu
 	const inMenu = await page.evaluate(async () => {
 		const w = /** @type {any} */ (window);
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.hudDocs.showHudScreen('scene', 'menu');
 		await new Promise((r) => setTimeout(r, 700));
 		let free;
@@ -396,7 +396,7 @@ h.run(async () => {
 	const counts = () =>
 		page.evaluate(() => {
 			let t;
-			window.__stores.flowTriggers.subscribe((v) => (t = v))();
+			window.__tp.test.v1.flowTriggers.subscribe((v) => (t = v))();
 			return { one: t?.['c-one']?.count ?? 0, three: t?.['c-three']?.count ?? 0 };
 		});
 	const focusedLabel = () =>
@@ -451,7 +451,7 @@ h.run(async () => {
 	// ---- 8. enabled = false kills every pad path ----------------------------
 	const off = await page.evaluate(async () => {
 		const w = /** @type {any} */ (window);
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.gamepadPrefs.gamepadPrefs.update((p) => ({ ...p, enabled: false }));
 		await new Promise((r) => setTimeout(r, 300));
 		const ringBefore = document.querySelector('#hud-layer .hud-focused .hud-el')?.textContent ?? null;
@@ -490,7 +490,7 @@ h.run(async () => {
 	// ---- 9. disconnect: released, zeroed, and announced ---------------------
 	const gone = await page.evaluate(async () => {
 		const w = /** @type {any} */ (window);
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		w.__padAxes([0.9, 0, 0, 0]);
 		w.__padPress(0);
 		await new Promise((r) => setTimeout(r, 500));
@@ -526,10 +526,10 @@ h.run(async () => {
 
 	// ---- 10. Settings ▸ Input, through the real modal ------------------------
 	await page.evaluate(() => {
-		window.__stores.isLocked.set(null);
-		window.__stores.hudDocs.showHudScreen('scene', 'play');
-		window.__stores.settingsSection.set('input');
-		window.__stores.settingsOpen.set(true);
+		window.__tp.test.v1.isLocked.set(null);
+		window.__tp.test.v1.hudDocs.showHudScreen('scene', 'play');
+		window.__tp.test.v1.settingsSection.set('input');
+		window.__tp.test.v1.settingsOpen.set(true);
 	});
 	await page.waitForTimeout(900);
 	const rows = await page.evaluate(() => ({
@@ -567,9 +567,9 @@ h.run(async () => {
 	// Close the modal FIRST: a number input can fire a change on BLUR, and a stray
 	// commit here would make "the pref did not persist" and "the pref was never
 	// written" look identical (measured: the first version read 0.4 back).
-	await page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
 	await page.waitForTimeout(400);
-	await page.evaluate(() => window.__stores.gamepadPrefs.setGamepadPrefs({ deadzone: 0.35 }));
+	await page.evaluate(() => window.__tp.test.v1.gamepadPrefs.setGamepadPrefs({ deadzone: 0.35 }));
 	await page.waitForTimeout(300);
 	const beforeReload = await prefs();
 	h.check(beforeReload.deadzone === 0.35, `premise: the pref reads 0.35 before the reload (${beforeReload.deadzone})`);
@@ -577,30 +577,30 @@ h.run(async () => {
 	h.check(stored === 0.35, `and localStorage carries it — a LOCAL pref, never a scene field (${stored})`);
 
 	await h.freshReload(A);
-	await page.waitForFunction(() => !!window.__stores?.gamepadPrefs, { timeout: 30000 });
+	await page.waitForFunction(() => !!window.__tp?.test.v1?.gamepadPrefs, { timeout: 30000 });
 	// 41 G16: "Restore previous session?" is a blocking modal after a reload of a page that
 	// autosaved objects — answer it (the snapshot stays saved) or every click lands on it
 	await h.answerRestore(A);
 	// a reload gives the page a NEW peer id — re-read it before the connect below
 	A.id = await page.evaluate(
-		() => new Promise((r) => window.__stores.peers.subscribe((x) => r(x?.peer?.id))())
+		() => new Promise((r) => window.__tp.test.v1.peers.subscribe((x) => r(x?.peer?.id))())
 	);
 	const persisted = await prefs();
 	h.check(persisted.deadzone === 0.35, `the deadzone survives a reload (${persisted.deadzone})`);
 	h.check(persisted.enabled === true, 'and so does the master switch');
-	await page.evaluate(() => window.__stores.gamepadPrefs.setGamepadPrefs({ deadzone: 0.15 }));
+	await page.evaluate(() => window.__tp.test.v1.gamepadPrefs.setGamepadPrefs({ deadzone: 0.15 }));
 
 	// ---- 12. an AXIS IS LOCAL, and that is the design ----------------------
 	// The one judgement in this phase worth a two-peer guard: a stick reading is derived
 	// from hardware only this peer has, so a peer holding the SAME graph must read its
 	// own (absent) pad rather than mine. A shared axis is E6's controller authority.
 	const B = await h.setupPage(browser, 'B');
-	await B.page.waitForFunction(() => !!window.__stores?.gamepadPrefs, { timeout: 30000 });
+	await B.page.waitForFunction(() => !!window.__tp?.test.v1?.gamepadPrefs, { timeout: 30000 });
 	await h.connect(B, A);
 	await stubPad(page); // the reload dropped the stub
 	await page.evaluate(() => {
-		window.__stores.objectActions.deselectObject();
-		const s = window.__stores;
+		window.__tp.test.v1.objectActions.deselectObject();
+		const s = window.__tp?.test.v1;
 		s.nodesHandler.createFlowNode({
 			id: 'gp-local',
 			type: 'gamepadaxis',
@@ -611,12 +611,12 @@ h.run(async () => {
 	await page.waitForTimeout(600);
 	// createFlowNode is the APPLIER and does not broadcast (the flowNodes.set trap), so
 	// PUSH the graph rather than waiting on nodesync's periodic hash compare
-	await page.evaluate((peerId) => window.__stores.nodesHandler.sendNodes(peerId), B.id);
+	await page.evaluate((peerId) => window.__tp.test.v1.nodesHandler.sendNodes(peerId), B.id);
 	let heldByPeer = false;
 	for (let i = 0; i < 24 && !heldByPeer; i++) {
 		heldByPeer = await B.page.evaluate(() => {
 			let g;
-			window.__stores.flowGraphs.subscribe((x) => (g = x))();
+			window.__tp.test.v1.flowGraphs.subscribe((x) => (g = x))();
 			return (g.scene?.nodes ?? []).some((n) => n.id === 'gp-local');
 		});
 		if (!heldByPeer) await B.page.waitForTimeout(300);
@@ -627,12 +627,12 @@ h.run(async () => {
 	await page.waitForTimeout(800);
 	const mine = await page.evaluate(() => {
 		let v;
-		window.__stores.flowValues.subscribe((x) => (v = x))();
+		window.__tp.test.v1.flowValues.subscribe((x) => (v = x))();
 		return v['gp-local'];
 	});
 	const theirs = await B.page.evaluate(() => {
 		let v;
-		window.__stores.flowValues.subscribe((x) => (v = x))();
+		window.__tp.test.v1.flowValues.subscribe((x) => (v = x))();
 		return v['gp-local'];
 	});
 	h.check(Math.abs(mine - 1) < 1e-6, `premise: my stick is at full deflection (${mine})`);
@@ -644,7 +644,7 @@ h.run(async () => {
 	// a BUTTON, by contrast, is meant to replicate — it rides the trigger-stamp channel
 	await page.evaluate(() => {
 		window.__padAxes([0, 0, 0, 0]);
-		window.__stores.nodesHandler.createFlowNode({
+		window.__tp.test.v1.nodesHandler.createFlowNode({
 			id: 'gp-shared',
 			type: 'gamepadbutton',
 			position: { x: 40, y: 320 },
@@ -652,13 +652,13 @@ h.run(async () => {
 		});
 	});
 	await page.waitForTimeout(400);
-	await page.evaluate((peerId) => window.__stores.nodesHandler.sendNodes(peerId), B.id);
+	await page.evaluate((peerId) => window.__tp.test.v1.nodesHandler.sendNodes(peerId), B.id);
 	await B.page.waitForTimeout(1200);
 	await page.evaluate(() => window.__padPress(2)); // X
 	await page.waitForTimeout(800);
 	const stampB = await B.page.evaluate(() => {
 		let t;
-		window.__stores.flowTriggers.subscribe((v) => (t = v))();
+		window.__tp.test.v1.flowTriggers.subscribe((v) => (t = v))();
 		return t['gp-shared']?.lastT ?? null;
 	});
 	await page.evaluate(() => window.__padRelease(2));

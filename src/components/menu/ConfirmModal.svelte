@@ -42,6 +42,10 @@
 	<ModalDialog bind:open modal frame={false} width="sm" title={$confirmDialog.title}>
 		<div class="cf" id={$confirmDialog.id ? 'confirm-' + $confirmDialog.id : undefined}>
 			{#if $confirmDialog.message}<p class="cf-msg">{$confirmDialog.message}</p>{/if}
+			<!-- 73 AI7: one outbound link (a provider's privacy policy) -->
+			{#if $confirmDialog.link}
+				<a id="confirm-dialog-link" class="cf-link" href={$confirmDialog.link.href} target="_blank" rel="noopener noreferrer">{$confirmDialog.link.label}</a>
+			{/if}
 			<!-- 33 (L2): what the message is about, one per line (the modules a switch would unload) -->
 			{#if $confirmDialog.items?.length}
 				<ul id="confirm-dialog-items" class="cf-items">
@@ -101,6 +105,12 @@
 		font-size: var(--fs-body);
 		line-height: 1.5;
 		color: var(--text-2);
+	}
+	.cf-link {
+		align-self: flex-start;
+		font-size: var(--fs-body);
+		color: var(--accent-text);
+		text-decoration: underline;
 	}
 	.cf-items {
 		display: flex;

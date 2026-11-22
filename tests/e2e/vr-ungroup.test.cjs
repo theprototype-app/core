@@ -10,10 +10,10 @@ h.run(async () => {
 
 	// build a group (with its own transform) holding two boxes at distinct spots
 	const setup = await A.page.evaluate(() => {
-		const { commandsHandler, objectActions, THREE } = window.__stores;
+		const { commandsHandler, objectActions, THREE } = window.__tp?.test.v1;
 		const root = () => {
 			let v;
-			window.__stores.objectsGroup.subscribe((x) => (v = x))();
+			window.__tp.test.v1.objectsGroup.subscribe((x) => (v = x))();
 			return v;
 		};
 		commandsHandler.sceneCommand('/create box');
@@ -46,8 +46,8 @@ h.run(async () => {
 
 	// GROUP selected: radial shows Ungroup, hides Edit Mesh
 	const groupRing = await A.page.evaluate((uuid) => {
-		window.__stores.objectActions.selectObject(uuid);
-		return window.__stores.vrRadialMenu.ringEntries('object').map((e) => e.id);
+		window.__tp.test.v1.objectActions.selectObject(uuid);
+		return window.__tp.test.v1.vrRadialMenu.ringEntries('object').map((e) => e.id);
 	}, setup.groupUuid);
 	h.check(
 		groupRing.includes('obj:ungroup') && !groupRing.includes('obj:editmesh'),
@@ -56,12 +56,12 @@ h.run(async () => {
 
 	// MESH selected: radial shows Edit Mesh, hides Ungroup
 	const meshRing = await A.page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		let r;
-		window.__stores.objectsGroup.subscribe((x) => (r = x))();
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (r = x))();
 		const mesh = r.children[r.children.length - 1];
-		window.__stores.objectActions.selectObject(mesh.uuid);
-		return window.__stores.vrRadialMenu.ringEntries('object').map((e) => e.id);
+		window.__tp.test.v1.objectActions.selectObject(mesh.uuid);
+		return window.__tp.test.v1.vrRadialMenu.ringEntries('object').map((e) => e.id);
 	});
 	h.check(
 		meshRing.includes('obj:editmesh') && !meshRing.includes('obj:ungroup'),
@@ -70,14 +70,14 @@ h.run(async () => {
 
 	// dispatch obj:ungroup through the VR menu action dispatcher
 	const after = await A.page.evaluate((s) => {
-		const { objectActions, vrControls, THREE } = window.__stores;
+		const { objectActions, vrControls, THREE } = window.__tp?.test.v1;
 		const root = () => {
 			let v;
-			window.__stores.objectsGroup.subscribe((x) => (v = x))();
+			window.__tp.test.v1.objectsGroup.subscribe((x) => (v = x))();
 			return v;
 		};
 		objectActions.selectObject(s.groupUuid);
-		window.__stores.vrMenuOpen.set(true);
+		window.__tp.test.v1.vrMenuOpen.set(true);
 		vrControls.executeVRMenuAction('obj:ungroup');
 		const r = root();
 		r.updateMatrixWorld(true);

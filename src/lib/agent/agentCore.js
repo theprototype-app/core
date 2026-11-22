@@ -15,7 +15,7 @@
 import { TP_AGENT_VERSION } from './contract.js';
 
 /** Tools that change nothing in the shared scene, so a viewer may run them. */
-export const READ_ONLY_TOOLS = new Set(['list_scene', 'describe_node_types', 'what_can_you_do']);
+export const READ_ONLY_TOOLS = new Set(['list_scene', 'describe_node_types', 'what_can_you_do', 'list_materials', 'get_material', 'describe_shader_nodes', 'get_post', 'list_hud', 'get_environment', 'search_assets', 'inspect_runtime', 'validate_scene', 'logs']);
 
 /** Longest waitForEdit (ms). */
 export const MAX_WAIT_MS = 10 * 60 * 1000;
@@ -44,7 +44,7 @@ export function viewerRefusal(peerId) {
  * @param {string|null} host @param {boolean} waiting
  */
 export function notJoinedRefusal(host, waiting) {
-	if (waiting) return 'This agent is still waiting for the host to let it in — wait for status().joined, then try again.';
+	if (waiting) return 'This tab is still waiting for a host to let it in — wait for status().joined, then try again.';
 	if (!host) return 'This agent is not in a session yet — join with an invite link first (status().joined is false).';
 	return 'This agent is not connected to the host right now (status().joined is false), so an edit would not reach the session. It reconnects on its own — wait for status().joined.';
 }
@@ -98,7 +98,10 @@ export function toolName(tool) {
  * @property {() => string|null} role 'admin'|'editor'|'viewer' or null (no roles in this build)
  * @property {() => boolean} [rolesSettled] false while a roles plugin still waits for the host's map (absent = settled)
  * @property {() => string|null} host
+ * @property {() => {node: string, message: string}[]} [scriptErrors] mcp-fix: Script nodes that are failing now
  * @property {() => {name: string, where: string, message: string}[]} [behaviourErrors] 1.2: the scene's failing behaviours
+ * @property {() => any} [sceneBudget] 1.6.0 (mcp-shapes): the compact scene budget status carries
+ * @property {() => any[]} [recentLogs] (roadmap 85, R3) the newest errors / warnings / toasts status carries as `logs`
  * @property {() => {arrived: number, total: number} | null} [loading] 1.2: a scene still arriving (null = none)
  * @property {() => {host: string, since: number, until: number, expired: boolean} | null} [hostAway] 1.2: the host left
  *   and no person is here: paused (null = a host is here)
@@ -112,7 +115,10 @@ export function toolName(tool) {
  * @property {() => {name: string, reason: string}[]} missingTools
  * @property {() => any[]} missingModules
  * @property {(cb: () => void) => () => void} onSceneChange
+ * @property {(cb: (ping: any) => void) => () => void} [onPing] mcp-diorama2 (19): a person's NEW ping (as where_are_users
+ *   reads one) — wait_for_edit wakes on it, because "build here" starts with a ping and changes nothing
  * @property {(opts: any) => Promise<string|null>} screenshot
+ * @property {() => any} [lastShot] what the last screenshot used
  * @property {() => Promise<void>} leave
  * @property {Record<string, {schema: any, run: (args: any) => Promise<any>|any}>} [extraTools]
  *   agent-only tools (run locally, never batched — they change no shared scene state)
@@ -224,7 +230,7 @@ export function createAgentCore(deps) {
 
 	/** admitted, the host's link open, roles settled — status().joined, and the gate on every edit */
 	function isJoined() {
-		if (deps.inSession) return deps.inSession() && deps.rolesSettled?.() !== false;
+		if (deps.inSession) return deps.inSession() && !deps.waiting() && deps.rolesSettled?.() !== false;
 		const host = deps.host();
 		return !!host && deps.openPeers().some((p) => p.id === host) && !deps.waiting() && deps.rolesSettled?.() !== false;
 	}
@@ -263,19 +269,22 @@ export function createAgentCore(deps) {
 		if (!READ_ONLY_TOOLS.has(real) && room && !room.withHost)
 			return { error: leftBehindRefusal(room.hostScene, room.following), refused: true, withHost: false };
 		const readOnly = READ_ONLY_TOOLS.has(real);
-		if (!readOnly) {
-			selfEditing++;
-			deps.beginBatch();
-		}
+		// 85 R6: undo_last takes steps back and makes none, and an open batch would keep the line of the
+		// call just before it from settling (agentLogRecorder waits for "no batch open")
+		const batched = !readOnly && real !== 'undo_last';
+		if (!readOnly) selfEditing++;
+		if (batched) deps.beginBatch();
 		try {
 			return await deps.runTool(String(name ?? ''), args ?? {});
 		} catch (e) {
 			return { error: e instanceof Error ? e.message : String(e) };
 		} finally {
 			if (!readOnly) {
-				try {
-					deps.endBatch('Agent: ' + real);
-				} catch {}
+				if (batched) {
+					try {
+						deps.endBatch('Agent: ' + real);
+					} catch {}
+				}
 				// the scene-change signal can land a beat after the call (a store poke, a debounced
 				// subscriber); hold the self-edit window open one more turn of the loop
 				setTimer(() => selfEditing--, 0);
@@ -307,11 +316,41 @@ export function createAgentCore(deps) {
 		return now ? { loading: true, objects: { arrived: now.arrived, total: now.total } } : { loading: false };
 	}
 
+	/** mcp-fix: `{scriptErrors}` when a Script node is failing, else nothing */
+	function scriptErrors() {
+		try {
+			const rows = deps.scriptErrors?.() ?? [];
+			return rows.length ? { scriptErrors: rows.slice(0, 10) } : {};
+		} catch {
+			return {};
+		}
+	}
+
 	/** 1.2: `{behaviourErrors}` when a behaviour is failing, else nothing */
 	function behaviourErrors() {
 		try {
 			const rows = deps.behaviourErrors?.() ?? [];
 			return rows.length ? { behaviourErrors: rows.slice(0, 10) } : {};
+		} catch {
+			return {};
+		}
+	}
+
+	/** 85b R3: `{logs}` — the newest errors, warnings and toasts on this page (the `logs` tool has the rest) */
+	function recentLogs() {
+		try {
+			const rows = deps.recentLogs?.() ?? [];
+			return rows.length ? { logs: rows.slice(-5) } : {};
+		} catch {
+			return {};
+		}
+	}
+
+	/** mcp-shapes: `{sceneBudget}` — how heavy the scene is (the Statistics overlay's numbers), else nothing */
+	function sceneBudget() {
+		try {
+			const b = deps.sceneBudget?.();
+			return b ? { sceneBudget: b } : {};
 		} catch {
 			return {};
 		}
@@ -348,6 +387,9 @@ export function createAgentCore(deps) {
 			...(hostAwayNow() ? { hostAway: hostAwayNow(), withHost: false } : {}),
 			// 55 (41's gem test): a behaviour that throws says so here, not only in the runtime's instance list
 			...behaviourErrors(),
+			...scriptErrors(),
+			...sceneBudget(),
+			...recentLogs(),
 			notices: notices.slice()
 		};
 	}
@@ -371,12 +413,17 @@ export function createAgentCore(deps) {
 				resolve(result);
 			}
 			let primed = false;
-			off = deps.onSceneChange(() => {
+			const offScene = deps.onSceneChange(() => {
 				// a store subscription calls back once on subscribe — that is not a change
 				if (!primed) return;
 				if (selfEditing > 0) return;
 				finish({ changed: true, at: now() });
 			});
+			const offPing = deps.onPing?.((ping) => finish({ changed: true, at: now(), ping })) ?? (() => {});
+			off = () => {
+				offScene();
+				offPing();
+			};
 			primed = true;
 		});
 	}
@@ -398,6 +445,7 @@ export function createAgentCore(deps) {
 			if (deps.inVR()) return Promise.resolve(null);
 			return deps.screenshot(opts ?? {}).catch(() => null);
 		},
+		lastShot: () => deps.lastShot?.() ?? null,
 		pendingOffers: () => offers.list(),
 		accept: (/** @type {string} */ id, /** @type {string|number|undefined} */ which = undefined) => offers.accept(id, which),
 		leave: () => deps.leave()

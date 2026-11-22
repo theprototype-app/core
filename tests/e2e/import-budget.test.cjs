@@ -22,7 +22,7 @@ const objectCount = (page) =>
 	page.evaluate(() => {
 		let n = 0;
 		let group;
-		window.__stores.objectsGroup.subscribe((/** @type {any} */ v) => (group = v))();
+		window.__tp.test.v1.objectsGroup.subscribe((/** @type {any} */ v) => (group = v))();
 		group?.traverse?.((/** @type {any} */ o) => {
 			if (o !== group) n++;
 		});
@@ -32,7 +32,7 @@ const objectCount = (page) =>
 /** Install the in-page fixture builders once. */
 const installFixtures = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		/** a GLB File from a THREE object — the exact bytes a user would drop */
 		window.__glbOf = async (/** @type {any} */ object, /** @type {string} */ name) => {
@@ -92,7 +92,7 @@ h.run(async () => {
 
 	// ---- 1. the verdict ------------------------------------------------------
 	const v = await A.page.evaluate(() => {
-		const { importVerdict, emptyCost, RENDER_PASSES } = window.__stores.importBudget;
+		const { importVerdict, emptyCost, RENDER_PASSES } = window.__tp.test.v1.importBudget;
 		/** @param {any} over */
 		const c = (over) => ({ ...emptyCost(), ...over });
 		// 26-E's measured case: a 200k-triangle sphere GLB, 100,806 vertices, one mesh
@@ -142,7 +142,7 @@ h.run(async () => {
 
 	// ---- 1b. the cost walk on a real tree --------------------------------------
 	const walk = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const THREE = s.THREE;
 		const { modelCost } = s.importBudget;
 		const canvas = document.createElement('canvas');
@@ -169,7 +169,7 @@ h.run(async () => {
 	// ---- 2. the prediction is in the meter's unit ------------------------------
 	const measureTris = () =>
 		A.page.evaluate(async () => {
-			const b = window.__stores.sceneBudget;
+			const b = window.__tp.test.v1.sceneBudget;
 			await new Promise((r) => setTimeout(r, 1300));
 			b.sampleSceneMetrics();
 			await new Promise((r) => setTimeout(r, 700));
@@ -177,7 +177,7 @@ h.run(async () => {
 		});
 	const before = await measureTris();
 	const placed = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const file = await window.__glbOf(window.__sphere(200000), 'dense');
 		const uuid = await s.fileHandler.importFile(file, 'dense', 'glb', [0, 1, 0]);
 		s.selectedObjects.set([]);
@@ -206,7 +206,7 @@ h.run(async () => {
 	const undoBefore = await A.page.evaluate(() => window.__undoDepth());
 	await A.page.evaluate(async () => {
 		window.__pending = window.__glbOf(window.__sphere(20000), 'crossing').then((file) =>
-			window.__stores.fileHandler.importFile(file, 'crossing', 'glb', [3, 1, 0])
+			window.__tp.test.v1.fileHandler.importFile(file, 'crossing', 'glb', [3, 1, 0])
 		);
 	});
 	await h.eventually(() => A.page.evaluate(() => window.__dialog()), (d) => !!d, 'the crossing import opens the dialog', 15000);
@@ -224,7 +224,7 @@ h.run(async () => {
 
 	await A.page.evaluate(async () => {
 		window.__pending = window.__glbOf(window.__sphere(20000), 'crossing').then((file) =>
-			window.__stores.fileHandler.importFile(file, 'crossing', 'glb', [3, 1, 0])
+			window.__tp.test.v1.fileHandler.importFile(file, 'crossing', 'glb', [3, 1, 0])
 		);
 	});
 	await h.eventually(() => A.page.evaluate(() => window.__dialog()), (d) => !!d, 'the second crossing import asks again', 15000);
@@ -237,9 +237,9 @@ h.run(async () => {
 
 	// a cube into the same (now red) scene: no ask — the already-heavy rule, end to end
 	const cube = await A.page.evaluate(async () => {
-		const THREE = window.__stores.THREE;
+		const THREE = window.__tp.test.v1.THREE;
 		const file = await window.__glbOf(new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial()), 'cube');
-		const uuid = await window.__stores.fileHandler.importFile(file, 'cube', 'glb', [5, 1, 0]);
+		const uuid = await window.__tp.test.v1.fileHandler.importFile(file, 'cube', 'glb', [5, 1, 0]);
 		return { uuid, dialog: window.__dialog() };
 	});
 	h.check(!!cube.uuid && !cube.dialog, 'a cube dropped into an already-red scene is placed without asking');
@@ -250,7 +250,7 @@ h.run(async () => {
 		window.__removeNamed('crossing');
 	});
 	await A.page.evaluate(async () => {
-		const THREE = window.__stores.THREE;
+		const THREE = window.__tp.test.v1.THREE;
 		const canvas = document.createElement('canvas');
 		canvas.width = 5000;
 		canvas.height = 8;
@@ -259,7 +259,7 @@ h.run(async () => {
 		ctx.fillRect(0, 0, 5000, 8);
 		const mesh = new THREE.Mesh(new THREE.PlaneGeometry(), new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(canvas) }));
 		const file = await window.__glbOf(mesh, 'banner');
-		window.__pending = window.__stores.fileHandler.importFile(file, 'banner', 'glb', [0, 1, 3]);
+		window.__pending = window.__tp.test.v1.fileHandler.importFile(file, 'banner', 'glb', [0, 1, 3]);
 	});
 	await h.eventually(() => A.page.evaluate(() => window.__dialog()), (d) => !!d, 'the wide-texture import asks', 15000);
 	const tex = await A.page.evaluate(() => window.__dialog());

@@ -10,7 +10,7 @@ const h = require('./helpers.cjs');
 
 const texturedBox = (page) =>
 	page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const box = g.children[g.children.length - 1];
@@ -34,7 +34,7 @@ const texturedBox = (page) =>
 
 const texState = (page, uuid) =>
 	page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const o = g.getObjectByProperty('uuid', uuid);
 		const info = w.uvEditor.textureInfo(o, 0);
@@ -46,7 +46,7 @@ const texState = (page, uuid) =>
 	}, uuid);
 
 const undoDepth = (page) =>
-	page.evaluate(() => new Promise((r) => window.__stores.history.undoStack.subscribe((v) => r(v.length))()));
+	page.evaluate(() => new Promise((r) => window.__tp.test.v1.history.undoStack.subscribe((v) => r(v.length))()));
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -84,7 +84,7 @@ h.run(async () => {
 	);
 	const depth1 = await undoDepth(A.page);
 	h.check(depth1 === depth0 + 1, `a resize records ONE undo entry (${depth0}->${depth1})`);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(800);
 	const restored = await texState(A.page, uuid);
 	h.check(
@@ -101,12 +101,12 @@ h.run(async () => {
 		upsized.info?.w === 512 && upsized.info?.h === 256,
 		`resizing to 512 scales the LONGEST side and carries the other (${upsized.info?.w}x${upsized.info?.h})`
 	);
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await A.page.waitForTimeout(700);
 
 	// ---------- the UV test grid ----------
 	const gridOn = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		document.getElementById('uv-checker').click();
 		await new Promise((r) => setTimeout(r, 400));
 		const scene = await new Promise((r) => w.globalScene.subscribe(r)());
@@ -132,7 +132,7 @@ h.run(async () => {
 	// THE LEAK CHECK: with the grid on, what a save or a peer would receive must
 	// still be the REAL texture, never the grid.
 	const leak = await A.page.evaluate(async (uuid) => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		const g = await new Promise((r) => w.objectsGroup.subscribe(r)());
 		const o = g.getObjectByProperty('uuid', uuid);
 		const json = o.toJSON();
@@ -159,7 +159,7 @@ h.run(async () => {
 
 	// closing the editor must not leave the whole scene wearing the grid
 	const cleared = await A.page.evaluate(async () => {
-		const w = window.__stores;
+		const w = window.__tp?.test.v1;
 		w.uvEditorClose.set(true);
 		await new Promise((r) => setTimeout(r, 500));
 		const scene = await new Promise((r) => w.globalScene.subscribe(r)());

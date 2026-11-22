@@ -67,15 +67,15 @@ const sha256 = (view) =>
 
 const makeBox = (peer) =>
 	peer.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 1100));
-		window.__stores.objectActions.deselectObject();
+		window.__tp.test.v1.objectActions.deselectObject();
 	});
 
 const manifestOf = (peer) =>
 	peer.page.evaluate(() => {
 		let m;
-		window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+		window.__tp.test.v1.projectManifest.projectManifest.subscribe((v) => (m = v))();
 		return m;
 	});
 
@@ -83,8 +83,8 @@ const libraryCount = (peer) =>
 	peer.page.evaluate(() => {
 		let v = 0;
 		let hid = 0;
-		window.__stores.explorer.explorerItems.subscribe((l) => (v = l.length))();
-		window.__stores.explorer.hiddenItems.subscribe((l) => (hid = l.length))();
+		window.__tp.test.v1.explorer.explorerItems.subscribe((l) => (v = l.length))();
+		window.__tp.test.v1.explorer.hiddenItems.subscribe((l) => (hid = l.length))();
 		return v + hid;
 	});
 
@@ -93,11 +93,11 @@ const libraryCount = (peer) =>
 const toastTexts = (peer) =>
 	peer.page.evaluate(() => {
 		let list;
-		window.__stores.toastStore.subscribe((t) => (list = t))();
+		window.__tp.test.v1.toastStore.subscribe((t) => (list = t))();
 		return (list ?? []).map((t) => (typeof t === 'string' ? t : (t.text ?? '')));
 	});
 
-const clearToasts = (peer) => peer.page.evaluate(() => window.__stores.toastStore.set([]));
+const clearToasts = (peer) => peer.page.evaluate(() => window.__tp.test.v1.toastStore.set([]));
 
 const menuRows = (peer) =>
 	peer.page.evaluate(() =>
@@ -111,7 +111,7 @@ const menuRows = (peer) =>
  * overflows the argument stack, which reads as a mysteriously empty export. */
 const exportScene = (peer, opts) =>
 	peer.page.evaluate(async (opts) => {
-		const s = window.__stores.sessions;
+		const s = window.__tp.test.v1.sessions;
 		const payload = s.buildSessionPayload('Scene export');
 		const zip = await s.exportSessionZip(payload, opts);
 		let str = '';
@@ -223,14 +223,14 @@ h.run(async () => {
 	// =====================================================================
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A', { storage: { 'ui:projectActions': 'list' } }); // 41b H14: the List layout's cog
-	await A.page.waitForFunction(() => !!window.__stores?.saveName && !!window.__stores?.levels, {
+	await A.page.waitForFunction(() => !!window.__tp?.test.v1?.saveName && !!window.__tp?.test.v1?.levels, {
 		timeout: 30000
 	});
 
 	h.check(
 		(await A.page.evaluate(() => {
-			const a = window.__stores.projectFile.projectFileBase('a/b:c  d');
-			const b = window.__stores.saveName.fileNameBase('a/b:c  d');
+			const a = window.__tp.test.v1.projectFile.projectFileBase('a/b:c  d');
+			const b = window.__tp.test.v1.saveName.fileNameBase('a/b:c  d');
 			return a === b && a === 'a-b-c d';
 		})) === true,
 		'projectFileBase and fileNameBase are ONE sanitiser (21-I5 moved the body, kept the name)'
@@ -240,19 +240,19 @@ h.run(async () => {
 	// 21-H1: a save invents no folder, so both land at the library root
 	await makeBox(A);
 	const v1 = await A.page.evaluate(async () => {
-		const item = await window.__stores.levels.saveSceneAsLevel('Arena');
+		const item = await window.__tp.test.v1.levels.saveSceneAsLevel('Arena');
 		return item?.hash ?? null;
 	});
 	await makeBox(A); // the scene is now different from what v1 holds
 	const v2 = await A.page.evaluate(async () => {
-		const item = await window.__stores.levels.saveSceneAsLevel('Arena');
+		const item = await window.__tp.test.v1.levels.saveSceneAsLevel('Arena');
 		return item?.hash ?? null;
 	});
 	// hideOldVersions is what a real save does — one card per scene name
-	await A.page.evaluate(() => window.__stores.levels.hideOldVersions('Arena'));
+	await A.page.evaluate(() => window.__tp.test.v1.levels.hideOldVersions('Arena'));
 	await makeBox(A);
 	const solo = await A.page.evaluate(async () => {
-		const item = await window.__stores.levels.saveSceneAsLevel('Solo');
+		const item = await window.__tp.test.v1.levels.saveSceneAsLevel('Solo');
 		return item?.hash ?? null;
 	});
 
@@ -267,7 +267,7 @@ h.run(async () => {
 	);
 	h.check(
 		(await A.page.evaluate(
-			([a, b]) => !!window.__stores.explorer.itemByHash(a) && !!window.__stores.explorer.itemByHash(b),
+			([a, b]) => !!window.__tp.test.v1.explorer.itemByHash(a) && !!window.__tp.test.v1.explorer.itemByHash(b),
 			[v1, v2]
 		)) === true,
 		'premise: this machine still HOLDS the bytes of both (itemByHash searches the hidden shelf)'
@@ -278,7 +278,7 @@ h.run(async () => {
 	const backdated = Date.UTC(2026, 0, 2, 3, 4, 5, 678);
 	await A.page.evaluate(
 		([hash, when]) => {
-			const e = window.__stores.explorer;
+			const e = window.__tp.test.v1.explorer;
 			const fix = (list) => list.map((it) => (it.hash === hash ? { ...it, createdAt: when } : it));
 			e.explorerItems.update(fix);
 			e.hiddenItems.update(fix);
@@ -290,7 +290,7 @@ h.run(async () => {
 	// 2. THE WRITE SIDE IS GONE
 	// =====================================================================
 	// the cog, through the real opener (the Sidebar menu has to be open for it to exist)
-	await A.page.evaluate(() => window.__stores.closeMenu.set(false));
+	await A.page.evaluate(() => window.__tp.test.v1.closeMenu.set(false));
 	await A.page.waitForTimeout(400);
 	await A.page.locator('#export-settings-cog').click();
 	await A.page.waitForSelector('#save-options-modal', { state: 'visible', timeout: 5000 });
@@ -310,11 +310,11 @@ h.run(async () => {
 		'…and the PROJECT (.tp) one remains — it gates machinery with its own proper import'
 	);
 	await A.page.locator('#save-options-cancel').click();
-	await A.page.evaluate(() => window.__stores.closeMenu.set(true));
+	await A.page.evaluate(() => window.__tp.test.v1.closeMenu.set(true));
 	await A.page.waitForTimeout(250);
 
 	h.check(
-		(await A.page.evaluate(() => 'versions' in window.__stores.fileHandler.tpsceneOptions())) === false,
+		(await A.page.evaluate(() => 'versions' in window.__tp.test.v1.fileHandler.tpsceneOptions())) === false,
 		'`tpsceneOptions()` no longer carries a `versions` key at all'
 	);
 
@@ -325,7 +325,7 @@ h.run(async () => {
 	// hashes the zip does not contain is the dead-pointer shape 21-G3 forbids.
 	const gateProbe = async (versions) =>
 		A.page.evaluate(async (v) => {
-			const r = await window.__stores.projectFile.exportProject({ versions: v });
+			const r = await window.__tp.test.v1.projectFile.exportProject({ versions: v });
 			let s = '';
 			for (let i = 0; i < r.bytes.length; i += 8192)
 				s += String.fromCharCode.apply(null, r.bytes.subarray(i, i + 8192));
@@ -364,7 +364,7 @@ h.run(async () => {
 	h.check(
 		(await A.page.evaluate(() => {
 			localStorage.setItem('tpsceneVersions', 'true'); // a stale preference from the interim build
-			return 'versions' in window.__stores.fileHandler.tpsceneOptions();
+			return 'versions' in window.__tp.test.v1.fileHandler.tpsceneOptions();
 		})) === false,
 		'…and a LEFTOVER localStorage flag from the interim build is inert'
 	);
@@ -421,7 +421,7 @@ h.run(async () => {
 		const bin = atob(b64);
 		const bytes = new Uint8Array(bin.length);
 		for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-		const payload = await window.__stores.sessions.readSessionZip(bytes.buffer);
+		const payload = await window.__tp.test.v1.sessions.readSessionZip(bytes.buffer);
 		return payload?.name ?? null;
 	}, craftedB64);
 	const noted = await toastTexts(A);
@@ -440,7 +440,7 @@ h.run(async () => {
 	// =====================================================================
 	await A.page.locator('#explorer-slot').click();
 	await A.page.waitForTimeout(700);
-	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
 	await A.page.waitForTimeout(500);
 	const cards = await A.page.evaluate(() =>
 		[...document.querySelectorAll('.explorer-card')].map((el) => el.getAttribute('title'))
@@ -568,11 +568,11 @@ h.run(async () => {
 	// =====================================================================
 	// deleting the item is exactly what pruneSceneVersions does, so this is the real state
 	await A.page.evaluate(async (hash) => {
-		const item = window.__stores.explorer.itemByHash(hash);
-		if (item) await window.__stores.explorer.deleteItem(item.id);
+		const item = window.__tp.test.v1.explorer.itemByHash(hash);
+		if (item) await window.__tp.test.v1.explorer.deleteItem(item.id);
 	}, v1);
 	h.check(
-		(await A.page.evaluate((hash) => !window.__stores.explorer.itemByHash(hash), v1)) === true &&
+		(await A.page.evaluate((hash) => !window.__tp.test.v1.explorer.itemByHash(hash), v1)) === true &&
 			(await manifestOf(A)).scenes.Arena.history.length === 2,
 		'v1 bytes pruned locally — and its hash is STILL in the manifest history (fork 4)'
 	);
@@ -649,7 +649,7 @@ h.run(async () => {
 	// the expected filename is DERIVED from the version's own stored createdAt, so this
 	// cannot pass by matching a loose shape that a "now" stamp would also satisfy
 	const heldCreated = await A.page.evaluate(
-		(hash) => window.__stores.explorer.itemByHash(hash)?.createdAt ?? 0,
+		(hash) => window.__tp.test.v1.explorer.itemByHash(hash)?.createdAt ?? 0,
 		heldRow.hash
 	);
 	const one = await grabDownload(A, () =>
@@ -672,18 +672,18 @@ h.run(async () => {
 	// =====================================================================
 	// 8. THE TEMPLATE AT A REAL SAVE PATH (unchanged by this revision)
 	// =====================================================================
-	const nameOf = async () => (await grabDownload(A, () => A.page.evaluate(() => window.__stores.fileHandler.save('tpscene')))).name;
+	const nameOf = async () => (await grabDownload(A, () => A.page.evaluate(() => window.__tp.test.v1.fileHandler.save('tpscene')))).name;
 	// the open scene is whatever the last save/travel left us on — pin it so the
 	// expectation is derivable rather than "whatever ran"
 	await A.page.evaluate(() =>
-		window.__stores.levels.currentLevel.set({ name: 'Arena', hash: 'x', at: Date.now() })
+		window.__tp.test.v1.levels.currentLevel.set({ name: 'Arena', hash: 'x', at: Date.now() })
 	);
 	const defaultName = await nameOf();
 	h.check(
 		defaultName === 'Arena.tpscene',
 		`a scene save is named after the scene under the default template (${defaultName})`
 	);
-	await A.page.evaluate(() => window.__stores.saveName.saveNameTemplate.set('[name]-[DD]-[MM]-[YY]'));
+	await A.page.evaluate(() => window.__tp.test.v1.saveName.saveNameTemplate.set('[name]-[DD]-[MM]-[YY]'));
 	const stamped = await nameOf();
 	h.check(
 		/^Arena-\d\d-\d\d-\d\d\.tpscene$/.test(stamped),
@@ -691,8 +691,8 @@ h.run(async () => {
 	);
 	// no name = the old shape, at the same save path
 	await A.page.evaluate(() => {
-		window.__stores.saveName.saveNameTemplate.set('[name]');
-		window.__stores.levels.currentLevel.set(null);
+		window.__tp.test.v1.saveName.saveNameTemplate.set('[name]');
+		window.__tp.test.v1.levels.currentLevel.set(null);
 	});
 	const unnamed = await nameOf();
 	h.check(

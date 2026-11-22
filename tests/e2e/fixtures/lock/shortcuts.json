@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-10-25T14:42:25.133Z",
+	"recordedAt": "2026-11-20T11:31:42.481Z",
 	"registry": [
 		{
 			"id": "transform.move",
@@ -492,6 +492,16 @@
 			"when": false
 		},
 		{
+			"id": "view.cinematic",
+			"keys": "Shift+Z",
+			"defaultKeys": "Shift+Z",
+			"group": "View",
+			"scope": "viewport",
+			"label": "Cinematic view on / off (bounced light and reflections)",
+			"kind": "action",
+			"when": false
+		},
+		{
 			"id": "view.focus",
 			"keys": "Ctrl+Space",
 			"defaultKeys": "Ctrl+Space",
@@ -917,7 +927,7 @@
 			"defaultKeys": "Tab",
 			"group": "Node editor",
 			"scope": "nodes",
-			"label": "Enter the selected group / leave the one you are in",
+			"label": "Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)",
 			"kind": "action",
 			"when": true
 		},
@@ -1239,6 +1249,7 @@
 			"Shift+N": null,
 			"Shift+Q": null,
 			"Shift+Tab": null,
+			"Shift+Z": "view.cinematic",
 			"Space": null,
 			"T": "panels.dock",
 			"Tab": null,
@@ -1323,6 +1334,7 @@
 			"Shift+N": "nodes.note-around",
 			"Shift+Q": "nodes.distribute-v",
 			"Shift+Tab": null,
+			"Shift+Z": null,
 			"Space": "nodes.add-search-space",
 			"T": null,
 			"Tab": null,
@@ -1407,6 +1419,7 @@
 			"Shift+N": null,
 			"Shift+Q": null,
 			"Shift+Tab": null,
+			"Shift+Z": null,
 			"Space": null,
 			"T": null,
 			"Tab": null,
@@ -1491,6 +1504,7 @@
 			"Shift+N": null,
 			"Shift+Q": null,
 			"Shift+Tab": null,
+			"Shift+Z": null,
 			"Space": null,
 			"T": null,
 			"Tab": null,
@@ -1575,6 +1589,7 @@
 			"Shift+N": null,
 			"Shift+Q": null,
 			"Shift+Tab": null,
+			"Shift+Z": null,
 			"Space": null,
 			"T": null,
 			"Tab": null,
@@ -1659,6 +1674,7 @@
 			"Shift+N": null,
 			"Shift+Q": null,
 			"Shift+Tab": null,
+			"Shift+Z": null,
 			"Space": null,
 			"T": null,
 			"Tab": null,
@@ -1743,6 +1759,7 @@
 			"Shift+N": null,
 			"Shift+Q": null,
 			"Shift+Tab": null,
+			"Shift+Z": null,
 			"Space": null,
 			"T": null,
 			"Tab": null,
@@ -1827,6 +1844,7 @@
 			"Shift+N": null,
 			"Shift+Q": null,
 			"Shift+Tab": null,
+			"Shift+Z": null,
 			"Space": null,
 			"T": null,
 			"Tab": null,

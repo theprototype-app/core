@@ -8,7 +8,7 @@ const h = require('./helpers.cjs');
 const read = (A, path) =>
 	A.page.evaluate((p) => {
 		let v;
-		p.split('.').reduce((o, k) => o[k], window.__stores).subscribe((x) => (v = x))();
+		p.split('.').reduce((o, k) => o[k], window.__tp?.test.v1).subscribe((x) => (v = x))();
 		return v;
 	}, path);
 
@@ -18,7 +18,7 @@ h.run(async () => {
 
 	// the base ring's Draw sector became a Tools submenu
 	const ring = await A.page.evaluate(() => {
-		const m = window.__stores.vrRadialMenu;
+		const m = window.__tp.test.v1.vrRadialMenu;
 		return { root: m.ringEntries('root').map((e) => e.id), tools: m.ringEntries('tools').map((e) => e.id) };
 	});
 	h.check(ring.root.includes('nav:tools') && !ring.root.includes('draw'), 'the Draw sector became a Tools submenu');
@@ -27,7 +27,7 @@ h.run(async () => {
 
 	// picking a tool sets the mode, closes the ring, and Draw drives draw mode
 	const modes = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const rdr = (st) => {
 			let v;
 			st.subscribe((x) => (v = x))();
@@ -52,7 +52,7 @@ h.run(async () => {
 
 	// box-select math: origin-inside-AABB selects, and it replicates via the set
 	const box = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const root = () => {
 			let v;
 			s.objectsGroup.subscribe((x) => (v = x))();
@@ -83,7 +83,7 @@ h.run(async () => {
 
 	// the gesture start is gated: no XR session / not in box mode -> no-op
 	const gated = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.vrToolMode.set('select');
 		const started = s.vrControls.boxSelectStart(0); // not box mode + not presenting
 		return { started, active: s.vrControls.boxSelectActive() };

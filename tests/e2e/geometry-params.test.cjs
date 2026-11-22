@@ -6,7 +6,7 @@ const geoOf = (page, uuid) =>
 	page.evaluate(
 		(uuid) =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => {
+				window.__tp.test.v1.objectsGroup.subscribe((g) => {
 					const o = g?.getObjectByProperty('uuid', uuid);
 					if (!o) return r(null);
 					o.geometry.computeBoundingSphere();
@@ -27,8 +27,8 @@ h.run(async () => {
 	await h.connect(B, A);
 
 	const uuid = await A.page.evaluate(async () => {
-		window.__stores.commandsHandler.sceneCommand('/create Sphere 1');
-		const g = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create Sphere 1');
+		const g = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe(r)());
 		return g.children.find((c) => c.name === 'Sphere')?.uuid;
 	});
 	await h.eventually(
@@ -43,7 +43,7 @@ h.run(async () => {
 
 	// edit radius + segments -> rebuild replicates exactly
 	await A.page.evaluate(
-		(uuid) => window.__stores.geometryEdit.applyGeometry(uuid, { radius: 2, widthSegments: 12, heightSegments: 8 }),
+		(uuid) => window.__tp.test.v1.geometryEdit.applyGeometry(uuid, { radius: 2, widthSegments: 12, heightSegments: 8 }),
 		uuid
 	);
 	await h.eventually(
@@ -56,13 +56,13 @@ h.run(async () => {
 	);
 
 	// one undo restores the old geometry on both peers
-	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(
 		() => Promise.all([geoOf(A.page, uuid), geoOf(B.page, uuid)]),
 		([ga, gb]) => Math.abs(ga.radius - 1) < 0.05 && Math.abs(gb.radius - 1) < 0.05,
 		'undo restored radius 1 on both peers'
 	);
-	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.evaluate(() => window.__tp.test.v1.history.redo());
 	await h.eventually(
 		() => geoOf(B.page, uuid),
 		(g) => Math.abs(g.radius - 2) < 0.05,
@@ -79,7 +79,7 @@ h.run(async () => {
 		15000
 	);
 	await C.page.evaluate(
-		(uuid) => window.__stores.geometryEdit.applyGeometry(uuid, { radius: 0.5 }),
+		(uuid) => window.__tp.test.v1.geometryEdit.applyGeometry(uuid, { radius: 0.5 }),
 		uuid
 	);
 	await h.eventually(

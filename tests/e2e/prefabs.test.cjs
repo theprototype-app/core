@@ -6,7 +6,7 @@ const prefabList = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.prefabs.prefabs.subscribe((list) =>
+				window.__tp.test.v1.prefabs.prefabs.subscribe((list) =>
 					r(list.map((p) => ({ id: p.id, name: p.name, hasThumb: !!p.thumbnail })))
 				)()
 			)
@@ -16,7 +16,7 @@ const childNames = (page) =>
 	page.evaluate(
 		() =>
 			new Promise((r) =>
-				window.__stores.objectsGroup.subscribe((g) => r(g?.children.map((c) => c.name) ?? []))()
+				window.__tp.test.v1.objectsGroup.subscribe((g) => r(g?.children.map((c) => c.name) ?? []))()
 			)
 	);
 
@@ -28,14 +28,14 @@ h.run(async () => {
 
 	// save a box as a prefab
 	const uuid = await A.page.evaluate(() => {
-		window.__stores.commandsHandler.sceneCommand('/create box');
+		window.__tp.test.v1.commandsHandler.sceneCommand('/create box');
 		return new Promise((resolve) =>
-			window.__stores.objectsGroup.subscribe((g) => resolve(g.children[g.children.length - 1].uuid))()
+			window.__tp.test.v1.objectsGroup.subscribe((g) => resolve(g.children[g.children.length - 1].uuid))()
 		);
 	});
 	await A.page.evaluate(async (uuid) => {
-		await window.__stores.prefabs.loadPrefabs();
-		await window.__stores.prefabs.savePrefab(uuid, 'TestFab');
+		await window.__tp.test.v1.prefabs.loadPrefabs();
+		await window.__tp.test.v1.prefabs.savePrefab(uuid, 'TestFab');
 	}, uuid);
 	let list = await prefabList(A.page);
 	h.check(list.length === 1 && list[0].name === 'TestFab', 'prefab saved');
@@ -44,15 +44,16 @@ h.run(async () => {
 	// survives a reload (IndexedDB)
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
 	await A.page.waitForTimeout(4000);
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.prefabs, { timeout: 30000 });
-	await A.page.evaluate(() => window.__stores.prefabs.loadPrefabs());
+	await A.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.prefabs, { timeout: 30000 });
+	await h.answerRestore(A);
+	await A.page.evaluate(() => window.__tp.test.v1.prefabs.loadPrefabs());
 	list = await prefabList(A.page);
 	h.check(list.length === 1, 'prefab persisted across reload');
 
 	// reconnect after reload, then instantiate twice -> appears on B too
 	await h.connect(A, B, 9000);
 	await A.page.evaluate(async () => {
-		const lib = window.__stores.prefabs;
+		const lib = window.__tp.test.v1.prefabs;
 		const prefab = await new Promise((r) => lib.prefabs.subscribe((l) => r(l[0]))());
 		lib.instantiatePrefab(prefab);
 		lib.instantiatePrefab(prefab);
@@ -70,7 +71,7 @@ h.run(async () => {
 
 	// export/import round-trip creates a second library entry
 	const roundTrip = await A.page.evaluate(async () => {
-		const lib = window.__stores.prefabs;
+		const lib = window.__tp.test.v1.prefabs;
 		const prefab = await new Promise((r) => lib.prefabs.subscribe((l) => r(l[0]))());
 		const json = lib.exportPrefab(prefab);
 		await lib.importPrefab(json);
@@ -84,12 +85,12 @@ h.run(async () => {
 	// with fresh uuids (the export TRAVERSES it, and a uuid colliding with a live object
 	// is a trap waiting for the first thing that looks one up).
 	const parsed = await A.page.evaluate(async () => {
-		const lib = window.__stores.prefabs;
+		const lib = window.__tp.test.v1.prefabs;
 		const prefab = await new Promise((r) => lib.prefabs.subscribe((l) => r(l[0]))());
 		const object = lib.prefabObject(prefab.id);
 		const uuids = [];
 		object?.traverse((n) => uuids.push(n.uuid));
-		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g))());
+		const group = await new Promise((r) => window.__tp.test.v1.objectsGroup.subscribe((g) => r(g))());
 		return {
 			ok: !!object,
 			name: object?.name,
@@ -113,7 +114,7 @@ h.run(async () => {
 
 	// prefabFacts describes THAT tree (a box: 12 triangles), for the Properties pane
 	const boxFacts = await A.page.evaluate(async () => {
-		const lib = window.__stores.prefabs;
+		const lib = window.__tp.test.v1.prefabs;
 		const prefab = await new Promise((r) => lib.prefabs.subscribe((l) => r(l[0]))());
 		return lib.prefabFacts(prefab.id);
 	});
@@ -123,7 +124,7 @@ h.run(async () => {
 
 	// updatePrefab writes IN PLACE — same id, same name, new bytes, no second entry
 	const updated = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create sphere');
 		const uuid = await new Promise((r) =>
 			s.objectsGroup.subscribe((g) => r(g.children[g.children.length - 1].uuid))()
@@ -147,7 +148,7 @@ h.run(async () => {
 
 	// an update REPLICATES like any other instantiation afterwards: B gets the new shape
 	await A.page.evaluate(async () => {
-		const lib = window.__stores.prefabs;
+		const lib = window.__tp.test.v1.prefabs;
 		const prefab = await new Promise((r) => lib.prefabs.subscribe((l) => r(l[0]))());
 		lib.instantiatePrefab(prefab);
 	});
@@ -156,7 +157,7 @@ h.run(async () => {
 			B.page.evaluate(
 				() =>
 					new Promise((r) =>
-						window.__stores.objectsGroup.subscribe((g) =>
+						window.__tp.test.v1.objectsGroup.subscribe((g) =>
 							r(g?.children.filter((c) => c.name === 'TestFab').length ?? 0)
 						)()
 					)

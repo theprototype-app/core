@@ -13,7 +13,7 @@
 
 import { graphOf } from '../../stores/flowStore';
 import { findNodeSpec } from '$lib/nodeCatalog';
-import { inputHandles, outputHandleNames, behaviourSockets } from '$lib/flowSockets';
+import { inputHandles, outputHandleNames, behaviourSockets, sourceSocketType, resolvedInputType } from '$lib/flowSockets';
 import { scriptInputs, scriptOutputs } from '$lib/scriptIO';
 import { isVariadic, variadicInputs, switcherItems, switcherHandle } from '$lib/variadicNodes.js';
 
@@ -97,4 +97,38 @@ export function edgeHandleProblems(source, target, sourceHandle, targetHandle) {
 	const to = handleProblem(target?.type, targetHandle, 'input', targetHandle ? knownInputs(target) : null);
 	if (to) out.push(to);
 	return out;
+}
+
+/** 2.0-n3b: value nodes that DO keep a trigger-log entry (applyNodeTrigger's push consumers): wired into an
+ * event input they fire on every change of their state — on AND off, up AND down — not when they turn on */
+const LOGGED_VALUE_SOURCES = new Set(['latch', 'counter', 'random']);
+
+/**
+ * 2.0-n3b (N3a pause-p 0/3): a VALUE wired into an EVENT input. The editor refuses that drag
+ * (flowSockets.canConnect: an event input takes events only) but the agent tools only checked handle NAMES, so
+ * `gate NOT -> setgamestate.trigger` was accepted and never fired (a pure value has no pulse), and
+ * `latch -> setgamestate.trigger` fired on every toggle — P paused, and P again paused again.
+ * `refuse` = it can never fire; `warn` = it fires, but on every change. Pure (types in, sentence out).
+ * @param {any} source @param {any} target @param {string | undefined} sourceHandle @param {string | undefined} targetHandle
+ * @returns {{refuse?: string, warn?: string} | null}
+ */
+export function edgeTypeProblem(source, target, sourceHandle, targetHandle) {
+	if (!source || !target) return null;
+	const to = resolvedInputType(target, targetHandle ?? null);
+	if (to !== 'event') return null;
+	const from = sourceSocketType(source, sourceHandle ?? null);
+	if (from === 'event' || from === 'effect' || from === 'any') return null;
+	const where = target.type + (targetHandle ? '.' + targetHandle : '');
+	const what = source.type + (sourceHandle ? '.' + sourceHandle : '');
+	if (LOGGED_VALUE_SOURCES.has(source.type))
+		return {
+			warn:
+				what + ' -> ' + where + ' fires on EVERY change of the ' + source.type + ' (on and off alike), not when it turns on. ' +
+				'For two different actions (pause / resume, open / close) write a behaviour that this.emit()s one event per case, or wire the event that changed it straight in.'
+		};
+	return {
+		refuse:
+			what + ' is a ' + from + ' value and ' + where + ' needs an event (a pulse): a value never fires it. ' +
+			'Wire an event (On Key, On Click, On Enter, a behaviour output it this.emit()s) into ' + where + ', or feed the value into a value input (visibility.on, a Gate, HUD Text).'
+	};
 }

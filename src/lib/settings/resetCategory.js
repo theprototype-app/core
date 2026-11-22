@@ -63,6 +63,8 @@ import { motionPref, DEFAULT_MOTION } from '../motion';
 import { editorCaptions } from '../captionsPref';
 import { gameMusicVolume } from '../gameMusic';
 import { showWelcomeOnStart, showWhatsNewNotice } from '../whatsNew';
+import { resetNotifyPrefs } from '../notifyPrefs';
+import { simpleUntilPlay } from '../onboarding/onboardState.js';
 import { tours } from '../tours/index.js';
 import { xrOfferEnabled } from '../xrOffer';
 import { perfStatsShown } from '../fpsMeter';
@@ -143,8 +145,10 @@ const RESETS = {
 		gameSoundVolume.set(0.8);
 		gameMusicVolume.set(0.6);
 		showWelcomeOnStart.set(false);
+		simpleUntilPlay.set(false); // 76 FW1: Show everything
 		showWhatsNewNotice.set(true);
 		toastsInDrawerOnly.set(false);
+		resetNotifyPrefs(); // profile-notify: every Notifications switch back on
 		tours.setAutoStart(true);
 		xrOfferEnabled.set(true);
 		showRoomsButton.set(true);

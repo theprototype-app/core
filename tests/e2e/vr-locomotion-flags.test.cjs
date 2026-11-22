@@ -16,7 +16,7 @@ const xr = require('./fakeXR.cjs');
 
 const state = (page) =>
 	page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const get = (store) => { let v; store.subscribe((x) => (v = x))(); return v; };
 		const rig = get(s.worldRig);
 		return { ...s.vrControls.vrGripDebug(), rigScale: rig.scale.x, rigPos: rig.position.toArray(), mode: get(s.editorMode) };
@@ -27,7 +27,7 @@ const grip = async (page, hand, down) => {
 };
 const setPlay = (page, play) =>
 	page.evaluate((play) => {
-		window.__stores.scenePhysics.setScenePhysics({ play });
+		window.__tp.test.v1.scenePhysics.setScenePhysics({ play });
 	}, play);
 
 h.run(async () => {
@@ -37,7 +37,7 @@ h.run(async () => {
 
 	// ---- 1 the normaliser --------------------------------------------------------------------
 	const norm = await page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const n = s.scenePhysics.normalizeScenePhysics({
 			play: { locomotion: { worldGrab: true, teleport: true, fly: false, walkOnWater: true, jet: 'yes' }, bounds: { min: [4, 0, -4], max: [-4, 3, 4] } }
 		});
@@ -52,7 +52,7 @@ h.run(async () => {
 
 	// ---- the fixture: a floor, a wall ahead, a dynamic cube -----------------------------------
 	const ids = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const get = (store) => { let v; store.subscribe((x) => (v = x))(); return v; };
 		for (let i = 0; i < 3; i++) s.commandsHandler.sceneCommand('/create box');
 		await new Promise((r) => setTimeout(r, 600));
@@ -83,7 +83,7 @@ h.run(async () => {
 		await xr.pose(page, 'right', [0.6, 1.6, 0]);
 		await page.waitForTimeout(300);
 	};
-	await page.evaluate(() => window.__stores.objectActions.setEditorMode('interact'));
+	await page.evaluate(() => window.__tp.test.v1.objectActions.setEditorMode('interact'));
 
 	// ---- 2 without the flag: the world stays put (the counterfactual) -------------------------
 	await aimWall();
@@ -109,7 +109,7 @@ h.run(async () => {
 	h.check(s.rigScale > 1.8, `worldGrab: spreading the hands scales the world (x${s.rigScale.toFixed(2)})`);
 	await grip(page, 'left', false);
 	await grip(page, 'right', false);
-	await page.evaluate(() => window.__stores.vrControls.resetWorldRig());
+	await page.evaluate(() => window.__tp.test.v1.vrControls.resetWorldRig());
 	await xr.pose(page, 'right', [0.3, 1.2, 0], { pitch: -Math.PI / 2 });
 	await grip(page, 'right', true);
 	s = await state(page);
@@ -126,7 +126,7 @@ h.run(async () => {
 	// ---- 5 a module publisher turns it on; the SDK says it can ------------------------------
 	await setPlay(page, { locomotion: {} });
 	const probe = await page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let api;
 		await s.moduleSDK.initModules([{ id: 'loco31', name: 'Loco', version: '1.0.0', description: '31 K1', register(a) { api = a; } }]);
 		const g = new api.THREE.Group();

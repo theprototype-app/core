@@ -15,7 +15,7 @@ const h = require('./helpers.cjs');
 const state = (peer) =>
 	peer.page.evaluate(() => {
 		let g;
-		window.__stores.gameState.gameState.subscribe((v) => (g = v))();
+		window.__tp.test.v1.gameState.gameState.subscribe((v) => (g = v))();
 		return g;
 	});
 
@@ -23,14 +23,14 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
-	for (const p of [A, B]) await p.page.waitForFunction(() => !!window.__stores?.gameState, { timeout: 30000 });
+	for (const p of [A, B]) await p.page.waitForFunction(() => !!window.__tp?.test.v1?.gameState, { timeout: 30000 });
 	await h.connect(A, B);
 
 	// ---- 1. the default is pristine, and saves as NOTHING -------------------
 	const fresh = await page0(A);
 	async function page0(peer) {
 		return peer.page.evaluate(() => {
-			const G = window.__stores.gameState;
+			const G = window.__tp.test.v1.gameState;
 			G.clearGameState();
 			return { snapshot: G.gameStateSnapshot(), state: G.gameStateSnapshot() };
 		});
@@ -39,7 +39,7 @@ h.run(async () => {
 
 	// ---- 2. the state replicates, latest-wins -------------------------------
 	const started = await A.page.evaluate(() => {
-		const G = window.__stores.gameState;
+		const G = window.__tp.test.v1.gameState;
 		const before = G.gameStateSnapshot();
 		G.setGameState('playing');
 		let g;
@@ -60,7 +60,7 @@ h.run(async () => {
 
 	// a receiver must not echo, or two peers ping-pong forever
 	const echo = await B.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		window.__bSent = [];
 		const peer = await new Promise((r) => s.peers.subscribe((p) => r(p))());
 		const real = peer.send.bind(peer);
@@ -72,7 +72,7 @@ h.run(async () => {
 		return true;
 	});
 	h.check(echo, 'premise: the peer`s send is wrapped');
-	await A.page.evaluate(() => window.__stores.gameState.setGameState('paused'));
+	await A.page.evaluate(() => window.__tp.test.v1.gameState.setGameState('paused'));
 	await A.page.waitForTimeout(1200);
 	const echoed = await B.page.evaluate(() => ({ sent: window.__bSent.slice(), restored: (window.__restore(), true) }));
 	h.check((await state(B)).state === 'paused', 'a second change also arrives');
@@ -81,8 +81,8 @@ h.run(async () => {
 	// STRICTLY older is refused; an EQUAL stamp is accepted (an ordered channel means it
 	// arrived later) — the rule a fast burst depends on
 	const stamps = await B.page.evaluate(() => {
-		const G = window.__stores.gameState;
-		const S = window.__stores.gameSync;
+		const G = window.__tp.test.v1.gameState;
+		const S = window.__tp.test.v1.gameSync;
 		let mine;
 		G.gameState.subscribe((v) => (mine = v))();
 		S.applyRemoteGameState({ ...mine, state: 'menu', changedAt: mine.changedAt - 5000 });
@@ -101,7 +101,7 @@ h.run(async () => {
 
 	// ---- 3. MONOTONIC stamps: a burst must not collapse ---------------------
 	const burst = await A.page.evaluate(() => {
-		const G = window.__stores.gameState;
+		const G = window.__tp.test.v1.gameState;
 		const out = [];
 		for (let i = 0; i < 20; i++) {
 			G.setGameVar('score', i);
@@ -119,7 +119,7 @@ h.run(async () => {
 	// setgamestate acts on the trigger's STAMP EDGE, not per frame — acting every frame
 	// would re-enter `playing` and re-stamp startedAt sixty times a second.
 	const nodes = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		// pin the score explicitly THROUGH the write path, so it replicates and both peers
 		// agree. clearGameState() is a local-only test seam: on a connected pair the peer
 		// still holds the old value and hands it straight back.
@@ -142,11 +142,11 @@ h.run(async () => {
 		return true;
 	});
 	h.check(nodes, 'premise: the game graph is placed');
-	await A.page.evaluate((id) => window.__stores.nodesHandler.sendNodes(id), B.id);
+	await A.page.evaluate((id) => window.__tp.test.v1.nodesHandler.sendNodes(id), B.id);
 	await A.page.waitForTimeout(1500);
 
 	const pulsed = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.flowRuntime.applyNodeTrigger('go', (Date.now() % 86400000) / 1000, true);
 		await new Promise((r) => setTimeout(r, 1400));
 		let g, t;
@@ -162,8 +162,8 @@ h.run(async () => {
 	await A.page.waitForTimeout(900);
 	const stable = await A.page.evaluate(() => {
 		let g, t;
-		window.__stores.gameState.gameState.subscribe((v) => (g = v))();
-		window.__stores.flowTriggers.subscribe((v) => (t = v))();
+		window.__tp.test.v1.gameState.gameState.subscribe((v) => (g = v))();
+		window.__tp.test.v1.flowTriggers.subscribe((v) => (t = v))();
 		return { startedAt: g.startedAt, score: g.vars?.score, tally: t?.tally?.count ?? 0 };
 	});
 	h.check(
@@ -174,7 +174,7 @@ h.run(async () => {
 
 	// the readable half, derived not sent
 	const readable = await A.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let nodes, edges;
 		s.flowNodes.subscribe((v) => (nodes = v))();
 		s.flowEdges.subscribe((v) => (edges = v))();
@@ -186,7 +186,7 @@ h.run(async () => {
 
 	// the peer computes the SAME numbers with no message of its own
 	const peerRead = await B.page.evaluate(() => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let nodes, edges, g;
 		s.flowNodes.subscribe((v) => (nodes = v))();
 		s.flowEdges.subscribe((v) => (edges = v))();
@@ -202,7 +202,7 @@ h.run(async () => {
 
 	// ---- 5. THE CAMERA: replicated STATE, local decision -------------------
 	const camera = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.commandsHandler.sceneCommand('/create Camera');
 		await new Promise((r) => setTimeout(r, 1800));
 		const list = s.cameraObjects.listCameraObjects();
@@ -218,12 +218,12 @@ h.run(async () => {
 		return uuid;
 	});
 	h.check(!!camera, 'premise: a camera object and a Game Start node naming it');
-	await A.page.evaluate((id) => window.__stores.nodesHandler.sendNodes(id), B.id);
+	await A.page.evaluate((id) => window.__tp.test.v1.nodesHandler.sendNodes(id), B.id);
 	await A.page.waitForTimeout(1800);
 
 	// leave and re-enter play, so the TRANSITION fires with the Game Start node in place
 	const looking = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.gameState.setGameState('menu');
 		await new Promise((r) => setTimeout(r, 900));
 		s.gameState.setGameState('playing');
@@ -237,7 +237,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(1600);
 	const peerLooking = await B.page.evaluate(() => {
 		let p;
-		window.__stores.cameraPreview.cameraPreview.subscribe((v) => (p = v))();
+		window.__tp.test.v1.cameraPreview.cameraPreview.subscribe((v) => (p = v))();
 		return p?.uuid ?? null;
 	});
 	h.check(
@@ -247,7 +247,7 @@ h.run(async () => {
 
 	// the camera is NOT on the wire: only the state was sent
 	const wire = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const seen = [];
 		const peer = await new Promise((r) => s.peers.subscribe((p) => r(p))());
 		const real = peer.send.bind(peer);
@@ -275,7 +275,7 @@ h.run(async () => {
 		'and NO camera-command message was invented for this'
 	);
 	const presenceInert = await B.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.cameraPreview.stopCameraPreview();
 		await new Promise((r) => setTimeout(r, 500));
 		const before = (() => {
@@ -297,7 +297,7 @@ h.run(async () => {
 
 	// ---- 6. a LATE JOINER gets the state and catches up ---------------------
 	const C = await h.setupPage(browser, 'C');
-	await C.page.waitForFunction(() => !!window.__stores?.gameState, { timeout: 30000 });
+	await C.page.waitForFunction(() => !!window.__tp?.test.v1?.gameState, { timeout: 30000 });
 	await h.connect(C, A);
 	await C.page.waitForTimeout(2600);
 	const onC = await state(C);
@@ -311,7 +311,7 @@ h.run(async () => {
 
 	// ---- 7. undo, and the save paths ---------------------------------------
 	const undone = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.gameState.setGameState('over', { outcome: 'lost' });
 		await new Promise((r) => setTimeout(r, 400));
 		let before;
@@ -331,7 +331,7 @@ h.run(async () => {
 	h.check(undone.again === 'over', `and REDO restores it - the identity idiom, not a present flag (${undone.again})`);
 
 	const saved = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		const payload = s.sessions.buildSessionPayload('game-test');
 		const had = !!payload.game;
 		const savedScore = payload.game?.vars?.score;
@@ -371,28 +371,28 @@ h.run(async () => {
 	const clearAll = async () => {
 		for (const peer of PEERS)
 			await peer.page.evaluate(() => {
-				window.__stores.setActiveGraph(window.__stores.SCENE_GRAPH);
-				window.__stores.flowNodes.set([]);
-				window.__stores.flowEdges.set([]);
+				window.__tp.test.v1.setActiveGraph(window.__tp.test.v1.SCENE_GRAPH);
+				window.__tp.test.v1.flowNodes.set([]);
+				window.__tp.test.v1.flowEdges.set([]);
 			});
 		await A.page.waitForTimeout(1000);
 	};
 	/** keep every peer's graph identical to A's, so nodesync has nothing to restore */
 	const pushAll = async () => {
 		for (const peer of PEERS.slice(1))
-			await A.page.evaluate((id) => window.__stores.nodesHandler.sendNodes(id), peer.id);
+			await A.page.evaluate((id) => window.__tp.test.v1.nodesHandler.sendNodes(id), peer.id);
 		await A.page.waitForTimeout(1000);
 	};
 	const sceneTypes = (peer) =>
 		peer.page.evaluate(() => {
 			let g;
-			window.__stores.flowGraphs.subscribe((v) => (g = v))();
+			window.__tp.test.v1.flowGraphs.subscribe((v) => (g = v))();
 			return (g.scene?.nodes ?? []).map((n) => n.type + ':' + n.id).sort();
 		});
 
 	await clearAll();
 	const stale = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.gameState.setGameState('menu');
 		// ONE old node, pulsed, then left alone long enough for the pulse to expire
 		s.flowNodes.set([
@@ -421,7 +421,7 @@ h.run(async () => {
 
 	// (1) a FRESH action node wired to that STALE stamp must NOT fire
 	const wired = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let nodes;
 		s.flowNodes.subscribe((v) => (nodes = v))();
 		s.flowNodes.set([
@@ -449,7 +449,7 @@ h.run(async () => {
 
 	// (2) ...and the very next GENUINE press does, so the guard is not simply a mute
 	const genuine = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		let before;
 		s.gameState.gameState.subscribe((v) => (before = v))();
 		s.flowRuntime.applyNodeTrigger('oldpress', (Date.now() % 86400000) / 1000, false);
@@ -467,7 +467,7 @@ h.run(async () => {
 	// (3) a node id that comes BACK takes a NEW cutoff - which is what makes an undo, or a
 	// peer's graph arriving, safe rather than re-firing whatever is in the log
 	const readopted = await A.page.evaluate(async () => {
-		const s = window.__stores;
+		const s = window.__tp?.test.v1;
 		s.gameState.setGameState('menu');
 		let nodes;
 		s.flowNodes.subscribe((v) => (nodes = v))();

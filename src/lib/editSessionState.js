@@ -10,10 +10,9 @@
  * (`openSession` / `closeSession` below): the entry arrays, whether anything was edited, the
  * kernel and the selection as element IDs.
  *
- * `face.workingTris` / `face.faces` / `face.quadPartner` are ADAPTERS — views of the session the face
- * mode rebuilds from the live geometry (`rebuildFaces`). K4 moved families 1-6 onto the kernel; the
- * operators K4 did not reach (flip, loop cut, grab, duplicate/separate, normals, triangulate, quads)
- * and the selection/overlay readers still read them.
+ * `face.frame` / `face.faces` / `face.quadPartner` are VIEWS of the live geometry the face mode rebuilds on a
+ * geometry swap (`rebuildFaces`); 99 K5 removed the triangle soup: every reader runs on the frame, and a live
+ * edit (grab, adjust scrub) writes into the geometry the frame reads in place.
  */
 export const session = {
 	/** @type {string|null} the uuid the shared part belongs to */
@@ -46,11 +45,12 @@ export const session = {
 	face: {
 		/** @type {any} the face-mode object (null outside face mode) */
 		object: null,
-		/** @type {any[]} adapter (K4 input): the triangle soup the operators read */
-		workingTris: [],
+		/** @type {import('./triFrame').TriFrame} 99 K5: the live geometry's triangles as flat arrays (triFrame.js), what
+		 * every session reader runs on; rebuilt on a geometry swap, read in place during a live edit */
+		frame: { count: 0, P: new Float32Array(0), M: null, UV: null, V: new Int32Array(0), nV: 0, geometry: null, live: false },
 		/** @type {any[]} adapter (K4 input): coplanar+adjacent face groups */
 		faces: [],
-		/** adapter (K4 input): quad pairing over workingTris — quadPartner[i] is i's mate, or -1
+		/** adapter (K4 input): quad pairing over the frame — quadPartner[i] is i's mate, or -1
 		 * @type {Int32Array} */
 		quadPartner: new Int32Array(0),
 		/** @type {any} highlighted-face tint at the scene root (= overlayParts.sel) */

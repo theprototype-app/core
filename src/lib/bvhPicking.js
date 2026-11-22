@@ -26,10 +26,13 @@ import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-
 //    IN-PLACE edit (a sculpt stroke, a vertex drag) invalidates the tree instead
 //    of silently picking against stale triangles. Whole-geometry swaps
 //    (applyMeshGeo) are safe for free: the new geometry simply has no tree yet.
-//  * The object of an ACTIVE edit/sculpt session never gets a tree — its
+//  * The object of an ACTIVE vertex/sculpt session never gets a tree — its
 //    geometry changes every frame, so a rebuild per stroke would cost more than
-//    the brute-force ray it replaces, and the edit tools' own raycasts keep
-//    exactly the stock code path they were written against.
+//    the brute-force ray it replaces.
+//  * 99 K5: the object of a FACE session (`liveUuids`) keeps one: its live edits
+//    write the position attribute in place (a grab, an adjust scrub), so a pick
+//    after one REFITS the tree (the triangles are the same, only their bounds
+//    moved) instead of dropping it; a commit swaps the geometry and builds anew.
 //
 // Trees are only worth building past a triangle count; below it the build costs
 // more than the walk it saves.
@@ -45,6 +48,7 @@ const stamps = new WeakMap();
 
 let built = 0;
 let rebuilt = 0;
+let refitted = 0;
 
 /** @param {any} geometry */
 function triangleCount(geometry) {
@@ -64,9 +68,10 @@ export function dropBoundsTree(geometry) {
  * Cheap to call before a pick: geometries that already have a valid tree are a
  * WeakMap lookup each.
  * @param {any} root
- * @param {string[]} [skipUuids] objects in a live edit/sculpt session
+ * @param {string[]} [skipUuids] objects in a live vertex/sculpt session
+ * @param {string[]} [liveUuids] 99 K5: objects edited IN PLACE (a face session): refit, never dropped
  */
-export function ensureBoundsTrees(root, skipUuids = []) {
+export function ensureBoundsTrees(root, skipUuids = [], liveUuids = []) {
 	if (!root) return;
 	root.traverse((/** @type {any} */ object) => {
 		if (!object?.isMesh || !object.geometry) return;
@@ -85,6 +90,12 @@ export function ensureBoundsTrees(root, skipUuids = []) {
 			stamp.version === position.version
 		)
 			return;
+		if (geometry.boundsTree && stamp && stamp.attribute === position && liveUuids.includes(object.uuid)) {
+			geometry.boundsTree.refit();
+			stamps.set(geometry, { attribute: position, version: position.version });
+			refitted++;
+			return;
+		}
 		if (geometry.boundsTree) {
 			geometry.disposeBoundsTree();
 			rebuilt++;
@@ -104,5 +115,5 @@ export function ensureBoundsTrees(root, skipUuids = []) {
 
 /** debugStores probe (opt-in, like colliderHelpersDebug) */
 export function bvhDebug() {
-	return { built, rebuilt, minTriangles: MIN_TRIANGLES };
+	return { built, rebuilt, refitted, minTriangles: MIN_TRIANGLES };
 }

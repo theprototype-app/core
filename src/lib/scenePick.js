@@ -33,10 +33,10 @@ export function sceneHits(raycaster, options = {}) {
 	/** @type {any} */
 	const group = get(objectsGroup);
 	if (!group) return [];
-	const busy = /** @type {string[]} */ (
-		[get(editingObject), get(faceEditObject), get(sculptObject)].filter(Boolean)
-	);
-	ensureBoundsTrees(group, busy);
+	const busy = /** @type {string[]} */ ([get(editingObject), get(sculptObject)].filter(Boolean));
+	// 99 K5: the face session edits its geometry in place: its tree is refitted, not dropped
+	const live = /** @type {string[]} */ ([get(faceEditObject)].filter(Boolean));
+	ensureBoundsTrees(group, busy, live);
 	const excludeUuids = options.excludeUuids;
 	// `getObjectByProperty` matches the child itself too, so this one test covers
 	// both "is the excluded object" and "contains it" (the dropToSurface idiom).

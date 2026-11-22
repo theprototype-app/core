@@ -132,6 +132,14 @@ h.run(async () => {
 	// a claim lost with a link is dated back at most LOCK_RACE_MS before the last message heard over it,
 	// so E's claim on X is older than that (the old-stamp re-lock below then has nothing to win against)
 	await E.page.waitForTimeout(3000);
+	// ...and E has heard H since then: the floor is the last message heard, and on a quick box the last one
+	// was H's own lock on Y, a moment after E's claim (red on the PC). Any message will do; this one changes nothing.
+	await H.page.evaluate((eid) => {
+		/** @type {any} */ let p;
+		window.__tp.test.v1.peers.subscribe((v) => (p = v))();
+		p.connections[eid].send({ type: 'getmodulestate' });
+	}, E.id);
+	await E.page.waitForTimeout(500);
 	h.check((await read(H.page, 'selectedObjects')).includes(Y) && (await read(E.page, 'selectedObjects')).includes(X), 'premise: right before the heal both still have their box selected');
 	const toastsBefore = new Set([...(await toasts(E.page)), ...(await toasts(H.page))]);
 	// the heal handshake, as reconnectDial / the inbound adoption / adoptRelink send it
@@ -161,6 +169,10 @@ h.run(async () => {
 		const now = s.sessionClock.sessionNow();
 		return { mine: s.lockHeld.myClaim(x)?.at ?? null, floor: s.lockHeld.raceFloor(hid, now), now };
 	}, { x: X, hid: H.id });
+	h.check(
+		floorDiag.mine != null && floorDiag.floor > floorDiag.mine,
+		`premise: a claim from H may be dated no earlier than E's claim on X (floor ${floorDiag.mine != null ? Math.round(floorDiag.floor - floorDiag.mine) : '?'} ms after it)`
+	);
 	await H.page.evaluate(({ x, eid }) => {
 		/** @type {any} */ let p;
 		window.__tp.test.v1.peers.subscribe((v) => (p = v))();

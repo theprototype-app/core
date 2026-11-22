@@ -81,6 +81,8 @@ h.run(async () => {
 	// ---- 4. a late joiner reads the host's time --------------------------------------------------
 	// the joiner dials; the host stays IN PLAY and approves through the same store the card calls
 	// (a join card answerable in Play is 92-menus' GC8)
+	const B = await h.setupPage(browser, 'B');
+	await B.page.waitForFunction(() => !!(/** @type {any} */ (window).__tp?.test.v1?.hudDocs), { timeout: 30000 });
 	await E(B, (id) => /** @type {any} */ (window).__tp.test.v1.peerApproval.requestConnect(id), A.id);
 	await h.eventually(
 		() =>

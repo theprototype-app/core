@@ -2881,6 +2881,24 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   shortcut table stands down in Play), pad `GamepadSelect` via inputRuntime.onInput, the Play bar's `#moment-share`
   (PlayBanner) / `#embed-moment` (EmbedChrome). Debug: `momentStores` row + `momentBuffer` registered at runtime
   (`state()` carries the cost numbers). Suites: unit `moment`; e2e `moment-share`.
+- **103 H14 + rows 7-10 — THE MAIN MENU, Ctrl+K AND YOUR KEYMAPS** (lane 103-menu-palette). The main menu's rows scroll in
+  `#sidebar70-scroll` BETWEEN the locked Ctrl+K row and the Settings footer, and `use:edgeFade` sits on that scroller, so
+  the pinned rows never dim and a side fades only while rows hide there (suites reading the menu's scroll read the inner
+  scroller now). `lib/ui/dragScroll.js`: a mouse drag scrolls with momentum, < 6 px is still a click, a drag never
+  activates a row (capture-phase click swallow), no cursor change. **Ctrl+K is a LAZY chunk** (App mounts it while open,
+  warmed on idle): on the phone shell it is the main menu's sheet (SheetGrip, `paletteSheetH`, above `--kb-inset`); a
+  HANDHELD (`inputDevice.handheldDevice`, not `any-pointer: fine` — the HONOR reports a fine pointer) shows no key column
+  and no editing. Desktop rows edit their shortcut in place (chip / Add shortcut / right-click / F2; Enter saves, Esc
+  cancels, Backspace = a stored `''`) through the SAME write paths as Settings: `takeConflictingKeys` (Settings Swap,
+  Ctrl+K Replace), `clearShortcut`, `resetShortcut`. `components/ui/KeyChips.svelte` is the one key chip (textContent =
+  the combo) for the palette, Settings and the menu; `--key-row-h` / `--key-col-w` give one row height and one
+  right-aligned key column (the height sits on the border-box Settings ROW: the card's 1 px divider made 33 px).
+  `lib/keymaps.js` (lazy with the Keymap card): a SAVED keymap = base preset + changes (`keymapsSaved`, `keymapActive`;
+  the working state stays `keymapPreset` + `shortcutOverrides`, so nothing new runs at boot); "changed since you saved
+  it" counts against the SAVED copy (`changedSinceSavedCount`), "Reset this keymap" against the base
+  (`changedFromBaseCount`); `shortcutsChanged` (shortcuts.js) bumps on every change in force so a derived view follows a
+  rebind made anywhere. Settings do not sync between devices: keymaps move by export / import. Suites: unit
+  `dragScroll`, `keymaps`; e2e `menu-palette-103`; device lab row `m103-palette` (lane evidence, not in cloud).
 
 ## UI design system (redesign epic)
 

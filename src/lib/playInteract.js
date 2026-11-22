@@ -284,6 +284,12 @@ export function cursorGrabEnd(throwIt = true) {
 	return true;
 }
 
+/** the kit entity id a hit belongs to (kit/entityApp's drawn copy carries it), or null @param {any} object */
+function kitEntityOf(object) {
+	for (let o = object; o; o = o.parent) if (o.userData?.kitEntity) return String(o.userData.kitEntity);
+	return null;
+}
+
 /**
  * A short click in Interact: play's tap, aimed by the cursor. Module scene-root groups
  * first (as the editor pick always did), then the first scene hit offered to the module
@@ -292,12 +298,6 @@ export function cursorGrabEnd(throwIt = true) {
  * @param {any} ray a THREE.Raycaster aimed through the cursor
  * @returns {'module-group' | 'module-handler' | 'click' | 'miss'}
  */
-/** the kit entity id a hit belongs to (kit/entityApp's drawn copy carries it), or null @param {any} object */
-function kitEntityOf(object) {
-	for (let o = object; o; o = o.parent) if (o.userData?.kitEntity) return String(o.userData.kitEntity);
-	return null;
-}
-
 export function interactClick(ray) {
 	const scene = /** @type {any} */ (get(globalScene));
 	for (const name of moduleInteractiveGroups) {

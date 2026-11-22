@@ -26,8 +26,12 @@ export function eventPart(graphNodes, graphEdges) {
 	/** @type {Map<string, string[]>} */ const out = new Map();
 	/** @type {Map<string, string[]>} */ const inn = new Map();
 	for (const e of graphEdges) {
-		(out.get(e.source) ?? out.set(e.source, []).get(e.source)).push(e.target);
-		(inn.get(e.target) ?? inn.set(e.target, []).get(e.target)).push(e.source);
+		const o = out.get(e.source);
+		if (o) o.push(e.target);
+		else out.set(e.source, [e.target]);
+		const i = inn.get(e.target);
+		if (i) i.push(e.source);
+		else inn.set(e.target, [e.source]);
 	}
 	/** @type {Set<string>} */ const down = new Set();
 	const stack = graphNodes.filter((n) => COPY_EVENT_TYPES.has(n.type)).map((n) => n.id);

@@ -114,7 +114,8 @@ const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)
  *   findObjects?: (pattern: string) => {uuid: string, name: string, pos: number[], tags: string[]}[],
  *   warn?: (msg: string, detail?: any) => void,
  *   emit?: (id: string, name: string, payload?: any) => void,
- *   pausedSince?: () => number
+ *   pausedSince?: () => number,
+ *   players?: () => string[]
  * }} BehaviourHost
  * `emit` (36 U10): `this.emit(name)` on the authority — the app pulses the node's event output
  * `name` (a replicated nodetrigger), so a flow wired to it acts on every peer.

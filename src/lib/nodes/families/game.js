@@ -637,11 +637,6 @@ export default {
 
 
 /**
- * One Game Value read: `{value, max}` (max null = the node's own setting).
- * @param {string} read @param {string} name @param {(h: string, f: any) => any} input @param {any} rt
- * @returns {{ value: any, max: number | null }}
- */
-/**
  * 92-correct row 3: this player's entry of a per-player value — an object keyed by peer id (a JSON
  * text of one too: a wire or a variable may carry it as text). Anything else is shown as it is.
  * @param {any} value @param {string} me
@@ -660,6 +655,11 @@ export function entryFor(value, me) {
 	return mine === undefined || mine === null ? '' : mine;
 }
 
+/**
+ * One Game Value read: `{value, max}` (max null = the node's own setting).
+ * @param {string} read @param {string} name @param {(h: string, f: any) => any} input @param {any} rt
+ * @returns {{ value: any, max: number | null }}
+ */
 function readGameValue(read, name, input, rt) {
 	const kit = (/** @type {string} */ type, /** @type {any} */ data = {}) => {
 		try {

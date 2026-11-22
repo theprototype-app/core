@@ -18,6 +18,7 @@
 import * as THREE from 'three';
 import { GlbBuilder, unpackGlb, readAccessor, isGlb } from './glb.js';
 import { VRM_HUMAN_BONES, humanParentIn, isVrmHumanBone } from './humanoidBones.js';
+import { hermiteInto, splitCubic, joinCubic } from '../curveEdit.js';
 
 export const TPANIM_FORMAT = 1;
 export const TPANIM_EXT = 'tpanim';
@@ -27,7 +28,10 @@ const GENERATOR = 'theprototype .tpanim ' + TPANIM_FORMAT;
 /**
  * @typedef {{name: string, parent: number, t: number[], r: number[], s: number[]}} TpNode
  *   a node of the file's skeleton in its REST pose (local TRS); parent -1 = a scene root
- * @typedef {{node: number, path: 'translation'|'rotation'|'scale', times: Float32Array, values: Float32Array, interp: 'LINEAR'|'STEP'}} TpTrack
+ * @typedef {{node: number, path: 'translation'|'rotation'|'scale', times: Float32Array, values: Float32Array, interp: 'LINEAR'|'STEP'|'CUBICSPLINE', inT?: Float32Array, outT?: Float32Array}} TpTrack
+ *   102 M8: a CUBICSPLINE track (glTF's Hermite) keeps `values` = the key values like every other
+ *   track — so every reader that ignores `interp` sees the keys, as before — plus `inT` / `outT`, the
+ *   tangents per key in units / second. Absent tangents = LINEAR (the old reader's behaviour).
  * @typedef {{tool?: string, model?: string, version?: string, licence?: string, prompt?: string, date?: string, source?: string}} TpProvenance
  * @typedef {{
  *   name: string, duration: number, fps: number, frames: number, loop: boolean,
@@ -125,8 +129,10 @@ export function encodeTpanim(tp) {
 	for (const tr of tp.tracks) {
 		if (humanoid && tr.path === 'scale') continue; // VRMA allows rotation + hips translation only
 		const input = b.addFloats(tr.times, 'SCALAR', true);
-		const output = b.addFloats(tr.values, tr.path === 'rotation' ? 'VEC4' : 'VEC3');
-		samplers.push({ input, output, interpolation: tr.interp === 'STEP' ? 'STEP' : 'LINEAR' });
+		const cubic = isCubic(tr);
+		const w = tr.path === 'rotation' ? 4 : 3;
+		const output = b.addFloats(cubic ? joinCubic(/** @type {Float32Array} */ (tr.inT), tr.values, /** @type {Float32Array} */ (tr.outT), w) : tr.values, tr.path === 'rotation' ? 'VEC4' : 'VEC3');
+		samplers.push({ input, output, interpolation: cubic ? 'CUBICSPLINE' : tr.interp === 'STEP' ? 'STEP' : 'LINEAR' });
 		channels.push({ sampler: samplers.length - 1, target: { node: tr.node, path: tr.path } });
 	}
 	/** @type {any} */
@@ -212,7 +218,13 @@ export function decodeTpanim(bytes, opts = {}) {
 		const times = readAccessor(json, bin, sampler.input);
 		let values = readAccessor(json, bin, sampler.output);
 		const n = path === 'rotation' ? 4 : 3;
-		if (sampler.interpolation === 'CUBICSPLINE') values = cubicValues(values, n);
+		if (sampler.interpolation === 'CUBICSPLINE') {
+			// 102 M8: keep the tangents (they used to be dropped: a cubic clip played as straight lines)
+			if (values.length !== times.length * 3 * n) continue;
+			const { inT, values: v, outT } = splitCubic(values, n);
+			tracks.push({ node, path, times, values: v, interp: 'CUBICSPLINE', inT, outT });
+			continue;
+		}
 		if (values.length !== times.length * n) continue;
 		tracks.push({ node, path, times, values, interp: sampler.interpolation === 'STEP' ? 'STEP' : 'LINEAR' });
 	}
@@ -264,12 +276,64 @@ export function glbHasMeshes(bytes) {
 	}
 }
 
-/** CUBICSPLINE stores [inTangent, value, outTangent] per key: keep the values @param {Float32Array} v @param {number} n */
-function cubicValues(v, n) {
-	const keys = v.length / (3 * n);
-	const out = new Float32Array(keys * n);
-	for (let k = 0; k < keys; k++) for (let c = 0; c < n; c++) out[k * n + c] = v[k * 3 * n + n + c];
-	return out;
+/** a CUBICSPLINE track with both tangent arrays the size of its values @param {TpTrack} tr */
+export function isCubic(tr) {
+	return tr.interp === 'CUBICSPLINE' && !!tr.inT && !!tr.outT && tr.inT.length === tr.values.length && tr.outT.length === tr.values.length;
+}
+
+/**
+ * 102 M8: glTF's CUBICSPLINE as a three Interpolant (values in glTF's [in, v, out] layout), the
+ * GLTFLoader shape; the segment maths is curveEdit.hermiteInto. A rotation is renormalized.
+ */
+class TpCubicInterpolant extends THREE.Interpolant {
+	/** @param {any} times @param {any} values @param {number} size @param {any} [result] @param {boolean} [quat] */
+	constructor(times, values, size, result, quat = false) {
+		super(times, values, size, result);
+		this.quat = quat;
+	}
+	/** @param {number} index */
+	copySampleValue_(index) {
+		const r = this.resultBuffer;
+		const w = this.valueSize;
+		const off = index * w * 3 + w;
+		for (let i = 0; i < w; i++) r[i] = this.sampleValues[off + i];
+		return r;
+	}
+	/** @param {number} i1 @param {number} t0 @param {number} t @param {number} t1 */
+	interpolate_(i1, t0, t, t1) {
+		const td = t1 - t0;
+		hermiteInto(this.sampleValues, this.valueSize, i1 - 1, td, td > 0 ? (t - t0) / td : 0, this.resultBuffer);
+		if (this.quat) {
+			const r = this.resultBuffer;
+			const len = Math.hypot(r[0], r[1], r[2], r[3]) || 1;
+			for (let i = 0; i < 4; i++) r[i] /= len;
+		}
+		return this.resultBuffer;
+	}
+}
+
+/**
+ * A three KeyframeTrack for a TpTrack. A CUBICSPLINE one carries glTF's layout and a factory flagged
+ * the way GLTFLoader flags it, which AnimationUtils already understands.
+ * @param {string} name @param {TpTrack} tr
+ */
+export function threeTrackOf(name, tr) {
+	const T = tr.path === 'rotation' ? THREE.QuaternionKeyframeTrack : THREE.VectorKeyframeTrack;
+	if (!isCubic(tr))
+		return new T(name, Array.from(tr.times), Array.from(tr.values), tr.interp === 'STEP' ? THREE.InterpolateDiscrete : THREE.InterpolateLinear);
+	const w = tr.path === 'rotation' ? 4 : 3;
+	const track = /** @type {any} */ (new T(name, Array.from(tr.times), Array.from(joinCubic(/** @type {any} */ (tr.inT), tr.values, /** @type {any} */ (tr.outT), w))));
+	const quat = tr.path === 'rotation';
+	track.createInterpolant = function (/** @type {any} */ result) {
+		return new TpCubicInterpolant(this.times, this.values, this.getValueSize() / 3, result, quat);
+	};
+	track.createInterpolant.isInterpolantFactoryMethodGLTFCubicSpline = true;
+	return track;
+}
+
+/** An interpolant for a TpTrack (STEP / LINEAR / CUBICSPLINE): `evaluate(t)` gives the value. @param {TpTrack} tr */
+export function tpInterpolant(tr) {
+	return /** @type {any} */ (threeTrackOf('n.' + PROPS[tr.path], tr)).createInterpolant();
 }
 
 /**
@@ -336,13 +400,23 @@ export function tpFromThreeClip(root, clip, opts = {}) {
 		};
 	});
 	/** @type {TpTrack[]} */
-	const tracks = bound.map(({ obj, path, track }) => ({
-		node: /** @type {number} */ (index.get(obj)),
-		path,
-		times: Float32Array.from(track.times),
-		values: Float32Array.from(track.values),
-		interp: /** @type {'LINEAR'|'STEP'} */ (track.getInterpolation() === THREE.InterpolateDiscrete ? 'STEP' : 'LINEAR')
-	}));
+	const tracks = bound.map(({ obj, path, track }) => {
+		const node = /** @type {number} */ (index.get(obj));
+		const times = Float32Array.from(track.times);
+		// 102 M8: a GLTFLoader cubic track holds [in, v, out] per key; keep its tangents
+		if (/** @type {any} */ (track).createInterpolant?.isInterpolantFactoryMethodGLTFCubicSpline) {
+			const w = path === 'rotation' ? 4 : 3;
+			const { inT, values, outT } = splitCubic(track.values, w);
+			return /** @type {TpTrack} */ ({ node, path, times, values, interp: 'CUBICSPLINE', inT, outT });
+		}
+		return /** @type {TpTrack} */ ({
+			node,
+			path,
+			times,
+			values: Float32Array.from(track.values),
+			interp: /** @type {'LINEAR'|'STEP'} */ (track.getInterpolation() === THREE.InterpolateDiscrete ? 'STEP' : 'LINEAR')
+		});
+	});
 	const duration = clip.duration > 0 ? clip.duration : tracks.reduce((m, tr) => Math.max(m, tr.times[tr.times.length - 1] ?? 0), 0);
 	const fps = opts.fps ?? detectFps(tracks);
 	const bones = skeletonNodesOf(root);
@@ -387,8 +461,7 @@ export function tpToThreeClip(tp, root) {
 
 /** @param {string} name @param {TpTrack} tr */
 function makeTrack(name, tr) {
-	const T = tr.path === 'rotation' ? THREE.QuaternionKeyframeTrack : THREE.VectorKeyframeTrack;
-	return new T(name, Array.from(tr.times), Array.from(tr.values), tr.interp === 'STEP' ? THREE.InterpolateDiscrete : THREE.InterpolateLinear);
+	return threeTrackOf(name, tr);
 }
 
 // ---- sampling -------------------------------------------------------------------------

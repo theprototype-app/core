@@ -75,3 +75,59 @@ export function maxDiff(a, b) {
 	for (let i = 0; i < a.length; i++) d = Math.max(d, Math.abs(a[i] - b[i]));
 	return d;
 }
+
+/** faceEdit keyOf / edgeKey (the op weld's grid) */
+export const keyOfV = (v) => `${Math.round(v.x * 1e4)},${Math.round(v.y * 1e4)},${Math.round(v.z * 1e4)}`;
+const edgeKeyOf = (a, b) => (a < b ? a + '|' + b : b + '|' + a);
+
+/**
+ * faceEdit `faceLoopRing` without a session (family 3's parity input): buildQuadTopology + the walk, over
+ * `tris` and the quad pairing `partner`. @returns {{ quad: number, cross: string[] }[]}
+ */
+export function ringOf(tris, partner, tri, axis = 0) {
+	const edges = new Map();
+	const byEdge = new Map();
+	for (let ti = 0; ti < tris.length; ti++) {
+		const mate = partner[ti] ?? -1;
+		if (mate < 0 || mate < ti) continue;
+		const ka = tris[ti].map(keyOfV);
+		const kb = tris[mate].map(keyOfV);
+		const shared = ka.filter((k) => kb.includes(k));
+		if (shared.length !== 2) continue;
+		const ra = ka.find((k) => !shared.includes(k));
+		const rb = kb.find((k) => !shared.includes(k));
+		if (!ra || !rb) continue;
+		const ring = [shared[0], ra, shared[1], rb];
+		const quadEdges = [0, 1, 2, 3].map((i) => edgeKeyOf(ring[i], ring[(i + 1) % 4]));
+		edges.set(ti, quadEdges);
+		for (const ek of quadEdges) {
+			if (!byEdge.has(ek)) byEdge.set(ek, []);
+			byEdge.get(ek).push(ti);
+		}
+	}
+	const mate = partner[tri] ?? -1;
+	const start = mate < 0 ? -1 : Math.min(tri, mate);
+	const startEdges = edges.get(start);
+	if (!startEdges) return [];
+	const a = axis % 2;
+	const out = [{ quad: start, cross: [startEdges[a], startEdges[a + 2]] }];
+	const seen = new Set([start]);
+	for (const first of [startEdges[a], startEdges[a + 2]]) {
+		let quad = start;
+		let edge = first;
+		for (let guard = 0; guard < tris.length; guard++) {
+			const others = (byEdge.get(edge) ?? []).filter((q) => q !== quad);
+			const next = others.length === 1 ? others[0] : undefined;
+			if (next === undefined || seen.has(next)) break;
+			const e = edges.get(next);
+			const at = e ? e.indexOf(edge) : -1;
+			if (!e || at < 0) break;
+			seen.add(next);
+			const o = e[(at + 2) % 4];
+			out.push({ quad: next, cross: [edge, o] });
+			edge = o;
+			quad = next;
+		}
+	}
+	return out;
+}

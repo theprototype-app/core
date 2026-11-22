@@ -9,6 +9,7 @@
 //      the state before each step, on both peers; redo restores step 3's bytes exactly
 //   5. the old peer undoes its own inset; the branch follows
 //   5g-5j. (99 K4 family 2) face bevel each way, then a branch vertex + edge bevel and an undo
+//   5k-5o. (99 K4 family 3) loop cut each way, then a branch knife + connect and an undo
 //   5b-5f. (99 K4 family 1) the branch insets and moves on the kernel, the old peer extrudes the result,
 //      the branch extrudes that and undoes it: same bytes + partition after each step
 //   6. the old peer (the joiner) reloads and rejoins: its mesh comes back equal (two-peer + reload)
@@ -163,6 +164,62 @@ const elementBevel = (peer, uuid, kind) =>
 		},
 		{ uuid, kind }
 	);
+
+/**
+ * a cut (99 K4 family 3): a loop cut through the first face whose ring takes it, a knife line through the
+ * mesh's middle on screen, or a connect of the first non-neighbour corner pair of one face that takes it
+ */
+const cutOp = (peer, uuid, kind) =>
+	peer.page.evaluate(
+		({ uuid, kind }) => {
+			const s = window.__tp.test.v1;
+			const fe = s.faceEdit;
+			fe.enterFaceEdit(uuid);
+			fe.setFaceSubmode('faces');
+			try {
+				if (kind === 'loopcut') {
+					for (const f of fe.currentFaces()) {
+						fe.highlightFaceByTriangle(f.triIndices[0]);
+						if (fe.commitLoopCut(1, 0.4) !== false) return { ok: true };
+					}
+					return { ok: false, why: 'no face took a loop cut' };
+				}
+				if (kind === 'knife') {
+					let camera;
+					s.globalCamera.subscribe((c) => (camera = c))();
+					let object;
+					s.objectsGroup.subscribe((g) => (object = g.getObjectByProperty('uuid', uuid)))();
+					const v = object.getWorldPosition(new s.THREE.Vector3()).project(camera);
+					const c = [((v.x + 1) / 2) * window.innerWidth, ((1 - v.y) / 2) * window.innerHeight];
+					return { ok: fe.knifePolyline([[c[0] - 700, c[1] + 9], [c[0] + 700, c[1] - 6]]) !== false };
+				}
+				return { ok: false, why: 'unknown cut ' + kind };
+			} finally {
+				fe.exitFaceEdit();
+			}
+		},
+		{ uuid, kind }
+	);
+
+/** a connect on the branch: two corners of one face that are not neighbours, tried until one is accepted */
+const connectOp = (peer, uuid) =>
+	peer.page.evaluate((uuid) => {
+		const s = window.__tp.test.v1;
+		const fe = s.faceEdit;
+		let object;
+		s.objectsGroup.subscribe((g) => (object = g.getObjectByProperty('uuid', uuid)))();
+		const keyOf = (v) => [v.x, v.y, v.z].map((n) => Math.round(n * 1e4)).join(',');
+		fe.enterFaceEdit(uuid);
+		const tris = fe.readTriangles(object.geometry);
+		const faces = fe.currentFaces().map((f) => [...new Set(f.triIndices.flatMap((t) => tris[t].map(keyOf)))]);
+		fe.exitFaceEdit();
+		for (const keys of faces) {
+			if (keys.length < 4) continue;
+			for (let i = 0; i < keys.length; i++)
+				for (let j = i + 1; j < keys.length; j++) if (fe.connectVertices(uuid, [keys[i], keys[j]])) return { ok: true };
+		}
+		return { ok: false, why: 'no corner pair took a connect' };
+	}, uuid);
 
 /** the peer lets go of the mesh (its selection lock): the other peer may edit it next */
 const release = (peer, uuid) =>
@@ -366,7 +423,30 @@ h.run(async () => {
 	h.check(eb.ok, `5j. branch: edge bevel ran (premise${eb.why ? ': ' + eb.why : ''})`);
 	await agree('5j. branch edge bevel (kernel) -> the release peer holds the same bytes + partition');
 	await undo(L);
-	await agree('5j. branch undo (kernel edge bevel) -> both peers agree');
+	const u5j = await agree('5j. branch undo (kernel edge bevel) -> both peers agree');
+
+	// 5k-5o. roadmap 99 K4 family 3 (the cuts on the kernel): the branch loop cuts, the release peer loop cuts the
+	// branch's output with its soup code, then the branch knifes and connects; both peers agree after each, and undo
+	const lc = await cutOp(L, uuid, 'loopcut');
+	h.check(lc.ok, `5k. branch: loop cut ran (premise${lc.why ? ': ' + lc.why : ''})`);
+	const s5k = await agree('5k. branch loop cut (kernel) -> the release peer holds the same bytes + partition');
+	h.check(s5k.facts.tris > u5j.facts.tris, '5k. ...and the cut added its band');
+	await release(L, uuid);
+	await unlocked(O, uuid);
+	const lc2 = await cutOp(O, uuid, 'loopcut');
+	h.check(lc2.ok, `5l. release: loop cut ran on the branch output (premise${lc2.why ? ': ' + lc2.why : ''})`);
+	await agree('5l. release loop cut (soup) on the kernel output -> the branch holds the same bytes + partition');
+	await release(O, uuid);
+	await unlocked(L, uuid);
+	const kn = await cutOp(L, uuid, 'knife');
+	h.check(kn.ok, `5m. branch: knife ran (premise${kn.why ? ': ' + kn.why : ''})`);
+	const s5m = await agree('5m. branch knife (kernel) -> the release peer holds the same bytes + partition');
+	const cn = await connectOp(L, uuid);
+	h.check(cn.ok, `5n. branch: connect ran (premise${cn.why ? ': ' + cn.why : ''})`);
+	const s5n = await agree('5n. branch connect (kernel) -> the release peer holds the same bytes + partition');
+	h.check(s5n.facts.tris === s5m.facts.tris, '5n. ...and the connect kept the triangle count (a face re-split)');
+	await undo(L);
+	await agree('5o. branch undo (kernel connect) -> both peers agree');
 
 	// 6. two-peer + reload: the joiner reloads and rejoins
 	const beforeReload = await facts(L, uuid);

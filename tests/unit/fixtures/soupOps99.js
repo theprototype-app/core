@@ -1292,3 +1292,618 @@ export function bevelEdgesCore(tris, edgeKeys, options = {}) {
 	return { tris: out, done, refusedValence, refusedBorder };
 }
 
+// ---- 99 K4 family 3 (frozen from d00d1462): loop cut ----
+/** the quad's 4 ring keys in order (p, ra, q, rb — the shared edge p-q is the
+ * diagonal), or null when the two tris do not actually share an edge.
+ * P1 (19-A): parameterized on `tris` so the pure op cores (and subdivideLevels'
+ * later passes) can run outside the live session — a helper that indexes
+ * SESSION state cannot be reused outside it (the diagonalEdgeKeys precedent).
+ * @param {any[]} tris @param {number} a @param {number} b
+ * @returns {string[] | null} */
+function quadRingKeysIn(tris, a, b) {
+	const ka = tris[a]?.map((/** @type {any} */ v) => keyOf(v.x, v.y, v.z));
+	const kb = tris[b]?.map((/** @type {any} */ v) => keyOf(v.x, v.y, v.z));
+	if (!ka || !kb) return null;
+	const shared = ka.filter((/** @type {string} */ k) => kb.includes(k));
+	if (shared.length !== 2) return null;
+	const ra = ka.find((/** @type {string} */ k) => !shared.includes(k));
+	const rb = kb.find((/** @type {string} */ k) => !shared.includes(k));
+	if (!ra || !rb) return null;
+	return [shared[0], ra, shared[1], rb];
+}
+
+/** the quad's corners resolved to {pos, uv}, keyed by welded position key —
+ * a loop cut interpolates BOTH, so it needs them together.
+ * P1 (19-A): parameterized on `tris`/`partner` for the pure loopCutCore.
+ * @param {any[]} tris @param {Int32Array | number[]} partner @param {number} quad
+ * @returns {Map<string, {pos: any, uv: number[]}>} */
+function quadCornersIn(tris, partner, quad) {
+	/** @type {Map<string, {pos: any, uv: number[]}>} */
+	const map = new Map();
+	for (const ti of [quad, partner[quad]]) {
+		const t = tris[ti];
+		if (!t) continue;
+		t.forEach((/** @type {any} */ v, /** @type {number} */ c) => {
+			const k = keyOf(v.x, v.y, v.z);
+			if (!map.has(k)) map.set(k, { pos: v, uv: uvAt(t, c) });
+		});
+	}
+	return map;
+}
+
+/**
+ * P1 (19-A): the PURE core of the loop cut — triangles in, triangles out, no
+ * session reads, so the adjust engine can re-run it from a snapshot. The
+ * wrapper (and later the engine) owns validation, clamps, stores, commit and
+ * selection housekeeping.
+ * @param {any[]} tris @param {{quad: number, cross: string[]}[]} ring the walk
+ *   from `loopCutRing`/`faceLoopRing`, indices into `tris`
+ * @param {Int32Array | number[]} quadPartnerArr quad pairing for `tris`
+ * @param {{cuts?: number, position?: number}} [options] cuts = loops to insert
+ *   (already clamped). P3: `position` places a SINGLE cut along the ring
+ *   segment (0..1, default 0.5 = the previous hardwired midpoint); with
+ *   cuts > 1 the schedule stays evenly spaced — the Blender rule.
+ * @returns {{tris: any[], origin: number[], authored: number[][], firstNew: number}}
+ */
+export function loopCutCore(tris, ring, quadPartnerArr, options = {}) {
+	const n = options.cuts ?? 1;
+	// clamped short of 0/1: a cut AT the boundary would emit a zero-width band
+	// of degenerate quads
+	const position = Math.min(Math.max(options.position ?? 0.5, 0.01), 0.99);
+	// the cut parameters, then the band boundaries they induce
+	const cutsAt =
+		n === 1 ? [position] : Array.from({ length: n }, (_, i) => (i + 1) / (n + 1));
+	const bounds = [0, ...cutsAt, 1];
+	/** every triangle the ring consumes */
+	const consumed = new Set();
+	for (const { quad } of ring) {
+		consumed.add(quad);
+		const mate = quadPartnerArr[quad] ?? -1;
+		if (mate >= 0) consumed.add(mate);
+	}
+	/** P10: new index -> the input triangle it is, for the survivors. The filter
+	 * REINDEXES everything, so the partition cannot be carried by index alone. */
+	const origin = [];
+	tris.forEach((/** @type {any} */ _, /** @type {number} */ ti) => {
+		if (!consumed.has(ti)) origin.push(ti);
+	});
+	const next = cloneTris(
+		tris.filter((/** @type {any} */ _, /** @type {number} */ ti) => !consumed.has(ti))
+	);
+	// everything emitted below is NEW geometry appended after the survivors, and
+	// trisToPositions -> readTriangles preserves order, so this range is still
+	// the new band after the snapshot round trip (the E6 cap-selection trick)
+	const firstNew = next.length;
+
+	for (const { quad, cross } of ring) {
+		const keys = quadRingKeysIn(tris, quad, quadPartnerArr[quad]);
+		if (!keys) continue;
+		// the quad's 4 boundary edges in ring order — what buildQuadTopology stores
+		// per quad, computed here from the passed triangles so the core stays pure
+		const edges = [0, 1, 2, 3].map((i) => edgeKey(keys[i], keys[(i + 1) % 4]));
+		const at = edges.indexOf(cross[0]);
+		if (at < 0) continue;
+		// relabel so the loop crosses A-B and C-D; the cut then runs from a point
+		// on B-C to a point on D-A
+		const corner = quadCornersIn(tris, quadPartnerArr, quad);
+		const [A, B, C, D] = [0, 1, 2, 3].map((o) => corner.get(keys[(at + o) % 4]));
+		if (!A || !B || !C || !D) continue;
+		const mi = tris[quad]?.mi;
+		const textured = !!tris[quad]?.uv;
+		const wantDir = triNormal(tris[quad]);
+		// t across the quad: 0 at the A-B edge, 1 at the C-D edge
+		const at1 = (/** @type {number} */ t) => A.pos.clone().lerp(D.pos, t);
+		const at2 = (/** @type {number} */ t) => B.pos.clone().lerp(C.pos, t);
+		const uv1 = (/** @type {number} */ t) => uvLerp(A.uv, D.uv, t);
+		const uv2 = (/** @type {number} */ t) => uvLerp(B.uv, C.uv, t);
+		for (let k = 0; k < bounds.length - 1; k++) {
+			const t0 = bounds[k];
+			const t1 = bounds[k + 1];
+			pushQuad(
+				next,
+				at1(t0),
+				at2(t0),
+				at2(t1),
+				at1(t1),
+				wantDir,
+				mi,
+				textured ? [uv1(t0), uv2(t0), uv2(t1), uv1(t1)] : undefined
+			);
+		}
+	}
+	// every sub-quad the cut emitted is authored: this is the op the whole topology
+	// channel exists for, since a cut band is the thing users rotate next
+	while (origin.length < next.length) origin.push(-1); // the appended band
+	return { tris: next, origin, authored: appendedQuads(firstNew, next.length), firstNew };
+}
+
+// ---- 99 K4 family 3 (frozen from d00d1462): connect ----
+/** a face's boundary as welded keys + positions + per-corner uv, or null when it
+ * is not ONE closed loop (a face with a hole) @param {any[]} tris @param {number[]} face */
+function faceRing(tris, face) {
+	const loop = boundaryLoop(tris, face);
+	if (!loop) return null;
+	const corners = cornerData(tris, face);
+	const keys = loop.map((p) => keyOf(p.x, p.y, p.z));
+	return {
+		keys,
+		ring: loop.map((p, i) => ({ pos: p.clone(), uv: corners.get(keys[i])?.uv ?? [0, 0] }))
+	};
+}
+
+/**
+ * Rebuild a soup with some FACES dropped and new triangles appended, carrying the
+ * partition: survivors keep their face (reindexed), the added polygons become
+ * the faces `addedFaces` names (indices relative to `added`). The vertex
+ * operators run several keys in a row, and each step must see the previous
+ * step's n-gon as ONE face — so the partition has to travel with the triangles.
+ * @param {any[]} tris @param {number[][]} faces @param {Set<number>} drop
+ * @param {any[]} added @param {number[][]} addedFaces
+ * @returns {{tris: any[], faces: number[][]}}
+ */
+function replaceFaces(tris, faces, drop, added, addedFaces) {
+	const newIndex = new Int32Array(tris.length).fill(-1);
+	/** @type {any[]} */
+	const kept = [];
+	tris.forEach((t, ti) => {
+		if (drop.has(ti)) return;
+		newIndex[ti] = kept.length;
+		kept.push(t);
+	});
+	const base = kept.length;
+	const outFaces = faces
+		.map((face) => face.map((ti) => newIndex[ti]).filter((ti) => ti >= 0))
+		.filter((face) => face.length);
+	for (const face of addedFaces) outFaces.push(face.map((i) => base + i));
+	return { tris: [...kept, ...added], faces: outFaces };
+}
+
+/**
+ * P6 VERTEX CONNECT (J-cut) — the pure core. Exactly two vertices on ONE logical
+ * face's boundary, not already neighbours: the face is split along the line
+ * between them into TWO faces. No vertex is created, so nothing outside the face
+ * changes and no seam can open; each half is fanned FROM a cut vertex, which is
+ * what guarantees the cut itself is an edge of both halves.
+ * @param {any[]} tris @param {number[][]} faces the partition
+ * @param {string} keyA @param {string} keyB welded keys
+ * @returns {{tris: any[], faces: number[][]} | {error: string}}
+ */
+export function connectVerticesCore(tris, faces, keyA, keyB) {
+	if (keyA === keyB) return { error: 'Connect needs two DIFFERENT vertices' };
+	let sharedEdge = false;
+	for (let fi = 0; fi < faces.length; fi++) {
+		const face = faces[fi];
+		const keysIn = new Set();
+		for (const ti of face) for (const v of tris[ti]) keysIn.add(keyOf(v.x, v.y, v.z));
+		if (!keysIn.has(keyA) || !keysIn.has(keyB)) continue;
+		const fr = faceRing(tris, face);
+		if (!fr) continue;
+		const n = fr.keys.length;
+		const i = fr.keys.indexOf(keyA);
+		const j = fr.keys.indexOf(keyB);
+		if (i < 0 || j < 0) continue; // an interior vertex of the face, not a corner
+		if ((i + 1) % n === j || (j + 1) % n === i) {
+			sharedEdge = true;
+			continue;
+		}
+		const half = (/** @type {number} */ from, /** @type {number} */ to) => {
+			const ring = [];
+			for (let k = from; ; k = (k + 1) % n) {
+				ring.push(fr.ring[k]);
+				if (k === to) break;
+			}
+			return ring;
+		};
+		const mi = tris[face[0]].mi;
+		const textured = !!tris[face[0]].uv;
+		/** @type {any[]} */
+		const added = [];
+		// the cut is a BORDER edge of both halves, so any start keeps it an edge
+		const avoid = survivingEdges(tris, new Set(face));
+		const first = fanBest(added, half(i, j), mi, textured, avoid);
+		const second = fanBest(added, half(j, i), mi, textured, avoid);
+		const next = replaceFaces(tris, faces, new Set(face), added, [first, second]);
+		return { tris: cloneTris(next.tris), faces: next.faces };
+	}
+	return {
+		error: sharedEdge
+			? 'Those two vertices already share an edge — pick two corners of one face that are NOT neighbours'
+			: 'Connect needs both vertices on the SAME face (its corners, not across a fold)'
+	};
+}
+
+// ---- 99 K4 family 3 (frozen from d00d1462): knife ----
+/** the canonical welded key of the edge between two points, for internalEdgeSet lookups
+ * @param {any} a @param {any} b @returns {string} */
+function edgeKeyOf(a, b) {
+	return edgeKey(keyOf(a.x, a.y, a.z), keyOf(b.x, b.y, b.z));
+}
+
+const KNIFE_SNAP_VERTEX = 6;
+const KNIFE_SNAP_EDGE = 3;
+/** after snapping, "on" a corner or an edge means within this many pixels */
+const KNIFE_ON = 0.05;
+
+/**
+ * Convert a screen-space parameter along a projected edge into the 3D parameter.
+ * s(t) = lerp(ndc0, ndc1, t) and ndc = clip/w, so u = t*w0 / (w1 + t*(w0 - w1)).
+ * @param {number} t @param {number} w0 @param {number} w1 @returns {number}
+ */
+function perspectiveParam(t, w0, w1) {
+	const denominator = w1 + t * (w0 - w1);
+	if (Math.abs(denominator) < 1e-12) return t;
+	return (t * w0) / denominator;
+}
+
+/** 2D segment intersection parameters, or null when they do not cross
+ * @param {number[]} a @param {number[]} b the cut, screen space
+ * @param {number[]} c @param {number[]} d the edge, screen space
+ * @returns {{onCut: number, onEdge: number}|null} */
+function segmentCross(a, b, c, d) {
+	const rx = b[0] - a[0];
+	const ry = b[1] - a[1];
+	const sx = d[0] - c[0];
+	const sy = d[1] - c[1];
+	const denominator = rx * sy - ry * sx;
+	if (Math.abs(denominator) < 1e-9) return null; // parallel, or a degenerate edge
+	const onCut = ((c[0] - a[0]) * sy - (c[1] - a[1]) * sx) / denominator;
+	const onEdge = ((c[0] - a[0]) * ry - (c[1] - a[1]) * rx) / denominator;
+	if (onCut < 0 || onCut > 1) return null; // the cut line stops short
+	// leave a margin at the ends: a crossing ON a corner splits nothing and produces
+	// degenerate slivers, so it is treated as a miss and that triangle stays whole
+	if (onEdge < 1e-4 || onEdge > 1 - 1e-4) return null;
+	return { onCut, onEdge };
+}
+
+/** 2D barycentric coordinates of p in the screen triangle a, b, c (null when it has no area)
+ * @param {number[]} p @param {number[]} a @param {number[]} b @param {number[]} c
+ * @returns {number[]|null} */
+function screenBary(p, a, b, c) {
+	const area = (b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1]);
+	if (Math.abs(area) < 1e-9) return null;
+	const l1 = ((c[0] - b[0]) * (p[1] - b[1]) - (p[0] - b[0]) * (c[1] - b[1])) / area;
+	const l2 = ((a[0] - c[0]) * (p[1] - c[1]) - (p[0] - c[0]) * (a[1] - c[1])) / area;
+	return [l1, l2, 1 - l1 - l2];
+}
+
+/** the parameter of p's foot on segment a-b and its distance from it, in pixels
+ * @param {number[]} p @param {number[]} a @param {number[]} b */
+function screenFoot(p, a, b) {
+	const dx = b[0] - a[0];
+	const dy = b[1] - a[1];
+	const length2 = dx * dx + dy * dy;
+	const t = length2 > 1e-12 ? ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / length2 : 0;
+	const clamped = Math.min(Math.max(t, 0), 1);
+	const x = a[0] + dx * clamped;
+	const y = a[1] + dy * clamped;
+	return { t, distance: Math.hypot(p[0] - x, p[1] - y), at: [x, y] };
+}
+
+/**
+ * Pull a knife point onto a corner or an edge of the FRONT-MOST triangle under it — snapping is
+ * about what the user sees, so the nearest layer decides.
+ * @param {any[]} tris @param {number[]} p
+ * @param {(v: any) => {px: number[], w: number}} screenOf @returns {number[]}
+ */
+function snapKnifePoint(tris, p, screenOf) {
+	/** @type {{px: number[], w: number}[]|null} */
+	let front = null;
+	let frontDepth = Infinity;
+	for (const tri of tris) {
+		const s = tri.map(screenOf);
+		const bary = screenBary(p, s[0].px, s[1].px, s[2].px);
+		if (!bary) continue;
+		let near = Math.min(...bary) >= 0;
+		if (!near)
+			for (let e = 0; e < 3 && !near; e++)
+				near = screenFoot(p, s[e].px, s[(e + 1) % 3].px).distance < KNIFE_SNAP_EDGE;
+		if (!near) continue;
+		// the view depth AT the point, interpolated perspective-correctly (1/w is linear on screen)
+		const inverse = bary.reduce((sum, l, i) => sum + Math.max(l, 0) / s[i].w, 0);
+		const depth = inverse > 0 ? 1 / inverse : Infinity;
+		if (depth < frontDepth) {
+			frontDepth = depth;
+			front = s;
+		}
+	}
+	if (!front) return p;
+	let best = null;
+	let bestDistance = KNIFE_SNAP_VERTEX;
+	for (const corner of front) {
+		const distance = Math.hypot(p[0] - corner.px[0], p[1] - corner.px[1]);
+		if (distance < bestDistance) {
+			bestDistance = distance;
+			best = corner.px;
+		}
+	}
+	if (best) return [best[0], best[1]];
+	bestDistance = KNIFE_SNAP_EDGE;
+	for (let e = 0; e < 3; e++) {
+		const foot = screenFoot(p, front[e].px, front[(e + 1) % 3].px);
+		if (foot.distance < bestDistance) {
+			bestDistance = foot.distance;
+			best = foot.at;
+		}
+	}
+	return best ? [best[0], best[1]] : p;
+}
+
+/**
+ * Make a knife CORNER a real vertex of every triangle it falls in — every layer, like the cut.
+ *
+ * Classified per WELDED EDGE first: a point lying on an edge is the SAME 3D point for both
+ * triangles sharing it (computed once, with the perspective parameter), so the insert cannot
+ * open a crack; a point strictly inside a triangle splits just that triangle three ways.
+ * New corners keep the parent's winding because they keep its cyclic order.
+ * @param {any[]} tris @param {number[]} p
+ * @param {(v: any) => {px: number[], w: number}} screenOf
+ * @returns {any[]|null} the new triangles, or null when the point is on no triangle
+ */
+function insertKnifeCorner(tris, p, screenOf) {
+	/** @type {Map<string, any>} welded edge key -> the 3D point on it */
+	const onEdge = new Map();
+	/** @type {Map<number, any>} triangle index -> the 3D point inside it */
+	const inside = new Map();
+	tris.forEach((/** @type {any[]} */ tri, /** @type {number} */ ti) => {
+		const s = tri.map(screenOf);
+		if (s.some((corner) => Math.hypot(p[0] - corner.px[0], p[1] - corner.px[1]) < KNIFE_ON)) return;
+		let edgeHit = false;
+		for (let e = 0; e < 3; e++) {
+			const foot = screenFoot(p, s[e].px, s[(e + 1) % 3].px);
+			if (foot.distance >= KNIFE_ON || foot.t <= 1e-4 || foot.t >= 1 - 1e-4) continue;
+			edgeHit = true;
+			const key = edgeKeyOf(tri[e], tri[(e + 1) % 3]);
+			if (onEdge.has(key)) continue;
+			const u = perspectiveParam(foot.t, s[e].w, s[(e + 1) % 3].w);
+			onEdge.set(key, tri[e].clone().lerp(tri[(e + 1) % 3], u));
+		}
+		if (edgeHit) return;
+		const bary = screenBary(p, s[0].px, s[1].px, s[2].px);
+		if (!bary || Math.min(...bary) <= 0) return;
+		// screen barycentrics -> SPACE barycentrics: each weight divided by its corner's w
+		const weights = bary.map((l, i) => l / s[i].w);
+		const total = weights[0] + weights[1] + weights[2];
+		const point = tri[0].clone().multiplyScalar(weights[0] / total);
+		point.addScaledVector(tri[1], weights[1] / total).addScaledVector(tri[2], weights[2] / total);
+		inside.set(ti, point);
+	});
+	if (!onEdge.size && !inside.size) return null;
+	/** @type {any[]} */
+	const out = [];
+	tris.forEach((/** @type {any} */ tri, /** @type {number} */ ti) => {
+		const uvOf = (/** @type {any} */ point) => {
+			if (!tri.uv) return undefined;
+			const bary = barycentricOf(point, tri);
+			return [
+				tri.uv[0][0] * bary[0] + tri.uv[1][0] * bary[1] + tri.uv[2][0] * bary[2],
+				tri.uv[0][1] * bary[0] + tri.uv[1][1] * bary[1] + tri.uv[2][1] * bary[2]
+			];
+		};
+		/** the polygon round the triangle's boundary, with any edge points in their places */
+		/** @type {{pos: any, uv: number[]|undefined, added: boolean}[]} */
+		const ring = [];
+		for (let e = 0; e < 3; e++) {
+			ring.push({ pos: tri[e], uv: tri.uv?.[e], added: false });
+			const mid = onEdge.get(edgeKeyOf(tri[e], tri[(e + 1) % 3]));
+			if (mid) ring.push({ pos: mid, uv: uvOf(mid), added: true });
+		}
+		const centre = inside.get(ti);
+		if (ring.length === 3 && !centre) {
+			out.push(withSlot([tri[0].clone(), tri[1].clone(), tri[2].clone()], tri.mi, tri.uv));
+			return;
+		}
+		if (centre) {
+			// strictly inside: three triangles round the new vertex
+			const uv = uvOf(centre);
+			for (let e = 0; e < 3; e++) {
+				const n = (e + 1) % 3;
+				out.push(
+					withSlot([centre.clone(), tri[e].clone(), tri[n].clone()], tri.mi, tri.uv && [uv, tri.uv[e], tri.uv[n]])
+				);
+			}
+			return;
+		}
+		// on an edge: fan the (convex) boundary polygon from the first added point. Its two ring
+		// neighbours are collinear with it, so they are exactly the pair the fan skips.
+		const start = ring.findIndex((entry) => entry.added);
+		const apex = ring[start];
+		for (let i = 1; i < ring.length - 1; i++) {
+			const b = ring[(start + i) % ring.length];
+			const c = ring[(start + i + 1) % ring.length];
+			out.push(
+				withSlot([apex.pos.clone(), b.pos.clone(), c.pos.clone()], tri.mi, tri.uv && [apex.uv, b.uv, c.uv])
+			);
+		}
+	});
+	return out;
+}
+
+/** barycentric coordinates of a point assumed to lie in the triangle's plane
+ * @param {any} point @param {any[]} tri @returns {number[]} */
+function barycentricOf(point, tri) {
+	const v0 = tri[1].clone().sub(tri[0]);
+	const v1 = tri[2].clone().sub(tri[0]);
+	const v2 = point.clone().sub(tri[0]);
+	const d00 = v0.dot(v0);
+	const d01 = v0.dot(v1);
+	const d11 = v1.dot(v1);
+	const d20 = v2.dot(v0);
+	const d21 = v2.dot(v1);
+	const denominator = d00 * d11 - d01 * d01;
+	if (Math.abs(denominator) < 1e-12) return [1, 0, 0];
+	const v = (d11 * d20 - d01 * d21) / denominator;
+	const w = (d00 * d21 - d01 * d20) / denominator;
+	return [1 - v - w, v, w];
+}
+
+/**
+ * One STRAIGHT knife segment across the triangles — the M9b cut: crossings once per welded
+ * edge, the perspective parameter, one-crossing triangles fanned to the opposite corner, and
+ * two-crossing ones split by walking the boundary.
+ * @param {any[]} tris @param {number[]} from @param {number[]} to
+ * @param {(v: any) => {px: number[], w: number}} screenOf
+ * @returns {{tris: any[], cut: number}|null} null = the segment crossed no edge
+ */
+function knifeSegment(tris, from, to, screenOf) {
+	// crossings are computed ONCE PER WELDED EDGE, so the two triangles sharing one get the
+	// SAME 3D point and the cut cannot open a crack along a crease
+	/** @type {Map<string, any>} */
+	const crossings = new Map();
+	for (const tri of tris)
+		for (let e = 0; e < 3; e++) {
+			const key = edgeKeyOf(tri[e], tri[(e + 1) % 3]);
+			if (crossings.has(key)) continue;
+			const a = screenOf(tri[e]);
+			const b = screenOf(tri[(e + 1) % 3]);
+			const hit = segmentCross(from, to, a.px, b.px);
+			if (!hit) continue;
+			const u = perspectiveParam(hit.onEdge, a.w, b.w);
+			crossings.set(key, { point: tri[e].clone().lerp(tri[(e + 1) % 3], u) });
+		}
+	if (!crossings.size) return null;
+	/** @type {any[]} */
+	const out = [];
+	let cut = 0;
+	for (const tri of tris) {
+		/** which of the triangle's edges the cut crosses */
+		const hits = [];
+		for (let e = 0; e < 3; e++) {
+			const key = edgeKeyOf(tri[e], tri[(e + 1) % 3]);
+			const crossing = crossings.get(key);
+			if (crossing) hits.push({ e, crossing });
+		}
+		/** the uv of a point INSIDE this triangle, barycentrically */
+		const uvOf = (/** @type {any} */ point) => {
+			if (!tri.uv) return undefined;
+			const bary = barycentricOf(point, tri);
+			return [
+				tri.uv[0][0] * bary[0] + tri.uv[1][0] * bary[1] + tri.uv[2][0] * bary[2],
+				tri.uv[0][1] * bary[0] + tri.uv[1][1] * bary[1] + tri.uv[2][1] * bary[2]
+			];
+		};
+		const faceNormal = triNormal(tri);
+		/** append one triangle wound like the original @param {any[]} points @param {any[]|undefined} uvs */
+		const push = (points, uvs) => {
+			const flip = triNormal(points).dot(faceNormal) < 0;
+			const wound = flip ? [points[0], points[2], points[1]] : points;
+			const uv = uvs && (flip ? [uvs[0], uvs[2], uvs[1]] : uvs);
+			out.push(
+				withSlot(
+					wound.map((/** @type {any} */ v) => v.clone()),
+					tri.mi,
+					uv
+				)
+			);
+		};
+		if (hits.length === 1) {
+			// ONE crossing means the cut ends inside this triangle, leaves through a corner, or
+			// starts at a corner the polyline inserted (37 R11). It still has to be split: its
+			// neighbour across that edge has the same crossing as a real vertex, and leaving this
+			// side whole is a T-JUNCTION — the mesh reads as non-manifold there (measured: 10 odd
+			// edges from a single cut across a box). A fan to the opposite corner is the minimal
+			// honest split — and when the cut ends at an inserted corner, that corner IS the
+			// opposite one, so the fan edge lies exactly on the cut.
+			const e = hits[0].e;
+			const point = hits[0].crossing.point;
+			const pointUv = uvOf(point);
+			const near = tri[e];
+			const far = tri[(e + 1) % 3];
+			const opposite = tri[(e + 2) % 3];
+			push([point, far, opposite], tri.uv && [pointUv, tri.uv[(e + 1) % 3], tri.uv[(e + 2) % 3]]);
+			push([point, opposite, near], tri.uv && [pointUv, tri.uv[(e + 2) % 3], tri.uv[e]]);
+			cut++;
+			continue;
+		}
+		if (hits.length !== 2) {
+			out.push(withSlot([tri[0].clone(), tri[1].clone(), tri[2].clone()], tri.mi, tri.uv));
+			continue;
+		}
+		// the two crossings sit on edges (i, i+1) and (j, j+1); the corner they SHARE is cut
+		// off on its own, and the other two corners keep a quad
+		const [first, second] = hits.sort((x, y) => x.e - y.e);
+		const shared = first.e + 1 === second.e ? second.e : 0; // edges 0,1 -> 1; 1,2 -> 2; 0,2 -> 0
+		const cornerIndex = shared % 3;
+		const p = first.e === (cornerIndex + 2) % 3 ? first : second; // the crossing BEFORE it
+		const q = p === first ? second : first;
+		const corner = tri[cornerIndex];
+		const other0 = tri[(cornerIndex + 1) % 3];
+		const other1 = tri[(cornerIndex + 2) % 3];
+
+		const pUv = uvOf(p.crossing.point);
+		const qUv = uvOf(q.crossing.point);
+
+		// the sliver holding the cut-off corner, then the remaining quad as two triangles
+		// Walk the boundary to get the remaining polygon RIGHT. Going round the triangle
+		// corner -> other0 -> other1, the cut leaves at q (on corner-other0) and re-enters at p
+		// (on other1-corner), so the polygon is q, other0, other1, p — fanned from q. Pairing
+		// them any other way (p, q, other1, other0 was the first attempt) covers a DIFFERENT
+		// quad: the two halves then overlap, and the mesh reads non-manifold where they meet.
+		const uvCorner = tri.uv && tri.uv[cornerIndex];
+		const uv0 = tri.uv && tri.uv[(cornerIndex + 1) % 3];
+		const uv1 = tri.uv && tri.uv[(cornerIndex + 2) % 3];
+		push([p.crossing.point, corner, q.crossing.point], tri.uv && [pUv, uvCorner, qUv]);
+		push([q.crossing.point, other0, other1], tri.uv && [qUv, uv0, uv1]);
+		push([q.crossing.point, other1, p.crossing.point], tri.uv && [qUv, uv1, pUv]);
+		cut++;
+	}
+	return { tris: out, cut };
+}
+
+/**
+ * 37 R11: the knife's PURE core — triangles in, triangles out, so the polyline cases run in
+ * node (tests/unit/meshKnife.test.js). `project(local)` puts a LOCAL point on screen and
+ * returns its view depth `w` for the perspective correction (1 for an orthographic camera).
+ *
+ * A polyline needs what the straight cut never did: a triangle can hold a CORNER of the cut and
+ * be crossed by 3+ cut pieces from different segments. Rather than solving a cut graph per
+ * triangle (a constrained triangulation of each one), the cut is BUILT UP:
+ *   1. every point that lands on the mesh becomes a real VERTEX first — snapped onto the corner
+ *      or edge of the face under it when it is that close, then inserted into every triangle it
+ *      falls in (all layers, like the cut itself) or onto the welded EDGE it sits on;
+ *   2. then each segment is a straight cut on the result of the previous one. A segment that
+ *      starts or ends at an inserted vertex leaves the triangles round it through ONE crossing,
+ *      and the one-crossing split fans to the opposite corner — which IS that vertex. Where a
+ *      later segment crosses an earlier one it crosses that cut's EDGE and splits it like any
+ *      other, so the many-crossings triangle resolves one segment at a time, and every step
+ *      keeps the per-welded-edge crossing rule: watertight by construction.
+ * The ends become vertices too, so a two-point cut that stops inside the mesh now ends exactly
+ * where it was clicked instead of fanning to the far corner.
+ * @param {any[]} tris @param {number[][]} points the polyline in pixels, at least two
+ * @param {(local: any) => {px: number[], w: number}} project
+ * @returns {{tris: any[], cut: number, corners: number}|null} null = it touched nothing
+ */
+export function knifeCutCore(tris, points, project) {
+	/** @type {Map<string, {px: number[], w: number}>} */
+	const screen = new Map();
+	const screenOf = (/** @type {any} */ v) => {
+		const key = keyOf(v.x, v.y, v.z);
+		let hit = screen.get(key);
+		if (!hit) screen.set(key, (hit = project(v)));
+		return hit;
+	};
+	let work = tris;
+	let corners = 0;
+	/** @type {number[][]} */
+	const placed = [];
+	for (const point of points) {
+		const snapped = snapKnifePoint(work, point, screenOf);
+		placed.push(snapped);
+		const inserted = insertKnifeCorner(work, snapped, screenOf);
+		if (inserted) {
+			work = inserted;
+			corners++;
+		}
+	}
+	let cut = 0;
+	for (let i = 0; i + 1 < placed.length; i++) {
+		const a = placed[i];
+		const b = placed[i + 1];
+		if (Math.hypot(b[0] - a[0], b[1] - a[1]) < 1) continue;
+		const result = knifeSegment(work, a, b, screenOf);
+		if (!result) continue;
+		work = result.tris;
+		cut += result.cut;
+	}
+	if (!cut && !corners) return null;
+	return { tris: work, cut, corners };
+}

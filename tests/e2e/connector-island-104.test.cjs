@@ -9,6 +9,7 @@
 //   4. A4 the default iso shot frames the content (the ocean is left out and named); subject "scene" frames it all
 //   5. A5 the Ocean row is water {preset, colours, level, surface, waves}, not its box colour; a screenshot answers
 //      frame: the picture in words
+//   6. the saved side: a fresh island's rim survives a reload (autosave), params and shape
 // Run: e2e-slot --dev <tree> 7172 -- node tests/e2e/connector-island-104.test.cjs
 const h = require('./helpers.cjs');
 const { installProvider, fakeRelay, connectorPhase } = require('./connectorFake.cjs');
@@ -104,7 +105,7 @@ h.run(async () => {
 		const a = await relay.answer(id, timeout);
 		return a ? (a.type === 'result' ? a.result : { error: a.error }) : { error: 'no answer' };
 	};
-	const short = (/** @type {any} */ v) => JSON.stringify(v, (k, x) => (typeof x === 'string' && x.length > 300 ? '<' + x.length + ' chars>' : x)).slice(0, 700);
+	const short = (/** @type {any} */ v) => String(JSON.stringify(v, (k, x) => (typeof x === 'string' && x.length > 300 ? '<' + x.length + ' chars>' : x))).slice(0, 700);
 
 	// ---- 1. A2: the island and the sea --------------------------------------------------------------------------
 	const terr = await call('terrain', { size: 24, height: 2.5, edges: 'island', name: 'Island' });
@@ -135,12 +136,26 @@ h.run(async () => {
 		]
 	});
 	const grp = await call('group_objects', { name: 'Campfire', memberUuids: (logs?.created ?? []).map((c) => c.uuid) });
-	const G = grp?.uuid ?? grp?.group?.uuid ?? grp?.created?.[0]?.uuid;
+	const G = grp?.groupUuid;
+	h.check(!!G && grp.members?.length === 2, '2. premise: the two parts are grouped as Campfire: ' + short(grp));
 	const gs = await call('update_objects', { updates: [{ uuid: G, snap: 'floor' }] });
-	const gPlaced = gs?.updated?.[0]?.placed ?? gs?.placed ?? {};
+	/** the first `placed` anywhere in an answer @param {any} o @returns {any} */
+	const placedIn = (o) => {
+		if (!o || typeof o !== 'object') return null;
+		if (o.placed) return o.placed;
+		for (const v of Object.values(o)) {
+			const p = placedIn(v);
+			if (p) return p;
+		}
+		return null;
+	};
+	const gPlaced = placedIn(gs) ?? {};
 	h.check(gPlaced.on === 'Island' && gPlaced.surface === 'terrain', '2. A1 the Campfire group stands on the Island: ' + short(gs));
 	const sea = await mk('buoy', [30, 1, 30], { snap: 'floor' });
 	h.check(sea.r?.created?.[0]?.placed?.surface === 'ground', '2. A1 out at sea it passes through the water to the ground: ' + short(sea.r?.created?.[0]?.placed));
+	// the buoy is content too: 30 m out it widens what an iso shot must hold to 42 m, and the 80 m sea is no longer
+	// four times bigger than that — it leaves, so section 4 measures the island scene the owner had
+	await call('delete_objects', { uuids: [sea.uuid] });
 
 	// ---- 3. A3: flatten -----------------------------------------------------------------------------------------
 	const before = await terrainOf(A.page, T);
@@ -154,7 +169,8 @@ h.run(async () => {
 	const top = await call('screenshot', { view: 'top', uuid: T, size: 512 });
 	const topImg = imageOf(top);
 	const cover = topImg ? await coverOf(A.page, topImg) : 0;
-	h.check(cover > 0.5, '3. A3 pixels: the island still fills a top-view picture framed on it (' + Math.round(cover * 100) + ' % of it is not sky)');
+	// the land above the sea (the rim is under it now) is about a third of the framed square; the broken soup is a few %
+	h.check(cover > 0.15, '3. A3 pixels: the island still shows in a top-view picture framed on it (' + Math.round(cover * 100) + ' % of it differs from the corner colour)');
 	const back = await call('undo_last', {});
 	const undone = await terrainOf(A.page, T);
 	h.check(!back?.error && undone?.tris === 4608 && undone.up === 4608, '3. A3 undo_last brings back a whole island: ' + short(undone));
@@ -170,7 +186,7 @@ h.run(async () => {
 	const isoCover = isoImg ? await coverOf(A.page, isoImg) : 0;
 	const wholeImg = imageOf(whole);
 	const wholeCover = wholeImg ? await coverOf(A.page, wholeImg) : 0;
-	h.check(isoCover > 0.2, '4. A4 pixels: the content shot is mostly scene, not sky (' + Math.round(isoCover * 100) + ' %; the whole-scene shot ' + Math.round(wholeCover * 100) + ' %)');
+	h.check(isoCover > wholeCover, '4. A4 pixels: the content shot holds more scene than the whole-scene one (' + Math.round(isoCover * 100) + ' % vs ' + Math.round(wholeCover * 100) + ' % off the corner colour)');
 	const bad = await call('screenshot', { subject: 'sea' });
 	h.check(!!bad?.error && /subject/.test(JSON.stringify(bad.error)), '4. A4 a wrong subject is refused with the choices: ' + short(bad.error));
 
@@ -184,6 +200,24 @@ h.run(async () => {
 	h.check(!!trow && trow.water === undefined && typeof trow.color === 'string', '5. the Island row keeps its colour and has no water: ' + short({ color: trow?.color, water: trow?.water }));
 	h.check(typeof iso?.frame === 'string' && /Island/.test(iso.frame) && /Left out of the framing: Ocean \(water\)/.test(iso.frame), '5. A5 a screenshot answers frame, the picture in words: ' + (iso?.frame ?? 'none'));
 	h.check(/Under the camera: /.test(whole?.frame ?? '') && /Ocean/.test(whole?.frame ?? ''), '5. A5 the whole-scene frame names the Ocean: ' + (whole?.frame ?? 'none'));
+
+	// ---- 6. the saved side: a fresh island's rim rides its params through a reload (autosave) ----------------------
+	const isle2 = await call('terrain', { size: 12, height: 1.5, edges: 'island', name: 'Islet', position: [60, 0, 0] });
+	const I2 = isle2?.created?.[0]?.uuid;
+	const paramsOf = (u) =>
+		A.page.evaluate((id) => {
+			/** @type {any} */ let g;
+			window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
+			return g?.getObjectByProperty('uuid', id)?.userData?.geometryParams?.params ?? null;
+		}, u);
+	h.check((await paramsOf(I2))?.rim === -2, '6. premise: the islet carries rim -2 in its params');
+	await A.page.waitForTimeout(1500);
+	await A.page.evaluate(() => window.__tp.test.v1.autosave.saveNow());
+	await A.page.waitForTimeout(1500);
+	await h.freshReload(A);
+	h.check(await h.answerRestore(A, 'restore', 60000), '6. the page offered its session back and restored it');
+	await h.eventually(() => terrainOf(A.page, I2), (t) => !!t && t.minY < -1.9, '6. after a reload the islet still has its sunk rim', 30000);
+	h.check((await paramsOf(I2))?.rim === -2, '6. and its params still say rim -2 (what a peer or the Inspector rebuilds from)');
 
 	await browser.close();
 });

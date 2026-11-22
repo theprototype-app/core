@@ -76,6 +76,7 @@ const terrainInfo = (page) =>
 						params: mesh.userData.geometryParams?.params ?? null,
 						gtype: mesh.userData.geometryParams?.gtype ?? null,
 						spread: maxY - minY,
+						minY,
 						faceEdited: !!mesh.userData.faceEdited
 					});
 				})();
@@ -290,6 +291,18 @@ h.run(async () => {
 		(t) => t?.hash === reseeded.hash,
 		'B follows the seed change, still bit-identical'
 	);
+
+	// ---- 104 A2: the island RIM, a new param — rides the same message, and absent = 0 = every terrain before it ----
+	await A.page.evaluate((uuid) => window.__tp.test.v1.geometryEdit.applyGeometry(uuid, { rim: -2 }), flat.uuid);
+	await A.page.waitForTimeout(500);
+	const rimmed = await terrainInfo(A.page);
+	h.check(rimmed.params?.rim === -2 && Math.abs(rimmed.minY + 2) < 0.01, `104 A2 rim -2 sinks the island's edge to -2 m (min ${rimmed.minY.toFixed(3)})`);
+	await h.eventually(() => terrainInfo(B.page), (t) => t?.hash === rimmed.hash, '104 A2 B rebuilds the sunk rim bit for bit from the params');
+	await A.page.evaluate((uuid) => window.__tp.test.v1.geometryEdit.applyGeometry(uuid, { rim: 0 }), flat.uuid);
+	await A.page.waitForTimeout(500);
+	const unrimmed = await terrainInfo(A.page);
+	h.check(unrimmed.hash === reseeded.hash, '104 A2 rim 0 is bit-identical to a terrain with no rim at all (old scenes rebuild unchanged)');
+	await h.eventually(() => terrainInfo(B.page), (t) => t?.hash === reseeded.hash, '104 A2 and B follows it back');
 
 	// ---- the counterfactual: the build hook IS the fix ---------------------
 	// Without it, buildGeometry can only make what three has a constructor for,

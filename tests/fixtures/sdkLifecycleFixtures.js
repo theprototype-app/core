@@ -464,6 +464,12 @@
 					return t.data.calls > before;
 				}
 			},
+			// 102b-hud: a published value is cleared with its module
+			'values.set': {
+				needs: ['gameValues'],
+				call: (api, t) => api.values.set('lc-' + t.id, 3, { max: 5 }),
+				present: (t) => M.gameValues.gameValueNames().includes('lc-' + t.id)
+			},
 			'peerVars.onChange': listenerFixture(
 				['peerVars'],
 				(api, fn) => api.peerVars.onChange(fn),

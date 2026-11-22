@@ -155,13 +155,21 @@ h.run(async () => {
 	const fresh = [...(await toasts(E.page)), ...(await toasts(H.page))].filter((x) => !toastsBefore.has(x));
 	h.check(!fresh.some((x) => /came back|select again|let go/.test(x)), 'nobody is told they let go: ' + JSON.stringify(fresh));
 	// a re-lock with an old stamp loses: H claims X as if it had taken it at the start of the clock
+	// (on a red: E's stamp for X against how far back E lets a claim from H be dated right now)
+	const floorDiag = await E.page.evaluate(({ x, hid }) => {
+		const s = window.__tp.test.v1;
+		const now = s.sessionClock.sessionNow();
+		return { mine: s.lockHeld.myClaim(x)?.at ?? null, floor: s.lockHeld.raceFloor(hid, now), now };
+	}, { x: X, hid: H.id });
 	await H.page.evaluate(({ x, eid }) => {
 		/** @type {any} */ let p;
 		window.__tp.test.v1.peers.subscribe((v) => (p = v))();
 		p.connections[eid].send({ type: 'lock', uuid: x, uuids: [x], ats: [1], peerId: p.peer.id });
 	}, { x: X, eid: E.id });
 	await E.page.waitForTimeout(1500);
-	h.check((await holderOn(E.page, X)) === E.id, 'an old-stamped claim after the heal does not take X from E');
+	const keptX = (await holderOn(E.page, X)) === E.id;
+	if (!keptX) console.log(`  [diag floor] E's claim on X at ${floorDiag.mine}, floor for H ${floorDiag.floor} (${floorDiag.mine != null ? Math.round(floorDiag.floor - floorDiag.mine) : '?'} ms after it), now ${floorDiag.now}`);
+	h.check(keptX, 'an old-stamped claim after the heal does not take X from E');
 	h.check((await read(E.page, 'selectedObjects')).includes(X), 'and E keeps editing it');
 
 	await h.finish(browser);

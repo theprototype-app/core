@@ -40,6 +40,8 @@ export const DEBUG_HOOKS = [
 	['errorReports', () => import('./errorReports')],
 	// 54i aa: the lazy-chunk retry + new-version notice (chunkReloadDebug)
 	['chunkReload', () => import('./chunkReload.js')],
+	['hideMyIp', () => import('./hideMyIp')],
+	['peerRateGate', () => import('./peerRateGate')],
 	['staleModules', () => import('./staleModules')],
 	['perfMoment', () => import('./perf/moment')],
 	// 95 SM1-SM3: Share a moment — the stores (setting, status, open); the buffer itself publishes

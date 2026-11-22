@@ -763,6 +763,17 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   store OFF by default + toggle under the object-list filter cog + auto-on via
   `markLocalOnly`; Share/Share-all broadcast toJSON + clear the flag; drop-to-local =
   viewer local COPY / editor delete-for-peers. `Objects.svelte` gained a local badge + Share.
+- `src/lib/hideMyIp.js` + `peerRateLimit.js` + `peerRateGate.js` (71 TR4, TR7) — the session's own protections,
+  both per device. HIDE MY IP: `iceTransportPolicy: 'relay'` on the LIVE Peer's `options.config`, because PeerJS
+  builds every RTCPeerConnection (dialled, answered, data, voice) from that object at that moment; never in
+  `resolvePeerOptions`, where `undefined` means PeerJS's own defaults and a `config` would replace them. FAIL
+  CLOSED: no relay server = the dial fails with a sentence, never a direct try. A link already up keeps its route
+  (no renegotiation), and a Settings reset does not switch it off. Suite `hide-my-ip` needs a LOCAL slot: the
+  browser must reach `tests/e2e/lib/miniTurn.cjs`, a real TURN server small enough to read that counts the bytes it
+  carried. RATE LIMITS: per-peer token buckets for discrete edits and chat (`rateKind`, null for streams and state
+  replies, which keep flowing), checked right after `canApply`; the session host is exempt. A refused sender hears
+  one `ratelimited` every 30 s (on the ALWAYS_ALLOWED floor) and the host/admin gets a notice with Remove.
+  cloudApi `removePeer(peerId, {block})` is the seam the cloud's account block list enforces through.
 - `src/lib/connectionState.js` (store-only) — `sessionHost` (peer that approved OUR
   outbound request; null = we host), `peerJoinedAt`, `resetSession`. Connect state
   derives from `$peers.openedPeers`, **NEVER `userdata.length`** (the roster is

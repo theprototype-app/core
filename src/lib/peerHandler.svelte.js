@@ -20,6 +20,8 @@ import { applyUvPaint, applyUvPaintEnd } from '$lib/uvEditor';
 import { applySplineEdit } from '$lib/splineTool';
 import { initVoiceChat, attachVoiceToPeer, voicePeerConnected, releaseMic } from '$lib/voiceChat';
 import { resolvePeerOptions, describePeerServer, peerServerStatus, parseInviteHash, decodeInviteServer, applyInviteServerOverride, inviteServerOverride } from '$lib/peerServer';
+import { admitRate, applyRateNotice } from '$lib/peerRateGate';
+import { hideMyIp, applyHideMyIp, whenRelayReady, relayDialWait, RELAY_DIAL_FAILED } from '$lib/hideMyIp';
 // 27-B/27-G integration: the RECOVERY story belongs in the copyable bundle, not in a
 // console nobody reads. diagnostics.js is a zero-dependency leaf, so this closes no cycle.
 import { log } from '$lib/diagnostics';
@@ -574,6 +576,8 @@ export class PeerConnection {
 					? /** @type {Peer} */ (this.botPeerFactory ? this.botPeerFactory(this.myId) : offlinePeer(this.myId))
 					: keepPeerId(new Peer(this.myId, { ...(options ?? {}), serializers: peerSerializers() }), this.myId);
 			if (testSeams.peerWrap && !exportMode && !botFrame) testSeams.peerWrap(this.peer);
+			// 71 TR4: on the live Peer, so every rebuild (fallback, server switch) keeps it
+			applyHideMyIp(this.peer);
 		};
 
 		// 27-F (audit H2): THE recreate ritual, in one place. Four callers had their own
@@ -780,7 +784,9 @@ export class PeerConnection {
 			waitingForApproval.set(waiting);
 			waitingForApproval.update((value) => value);
 			// // Initiate connection request to peer and await approval
-			this.connectToPeer(connect, true);
+			// 71 TR4: with Hide my IP on, this first dial waits for the plugin's relay credential
+			if (get(hideMyIp)) whenRelayReady(p).then(() => this.connectToPeer(connect, true));
+			else this.connectToPeer(connect, true);
 			// 55: the invite key in the hash is consumed whatever was dialled (a rejoin leaves an empty hash alone)
 			if (!rejoinHost || window.location.hash.slice(1)) window.location.hash = '';
 		});
@@ -899,6 +905,8 @@ export class PeerConnection {
 		/** 61 G3: set once localLink.js has loaded in a bot frame @type {((id: string) => any) | null} */
 		this.botPeerFactory = null;
 		createPeerForMode(false);
+		// 71 TR4: the Settings switch reaches the Peer at once; later connections use it
+		hideMyIp.subscribe((on) => applyHideMyIp(this.peer, on));
 		initVoiceChat(this);
 		wire();
 		// 61 G3: a bot frame swaps its offline boot Peer for the local link's once the transport is here;
@@ -1356,6 +1364,8 @@ export class PeerConnection {
 				if (data && !canApply(conn.peer, data.type)) return;
 				// a peer speaks for itself: presence and chat are read as the sender's own (rosterTrust.js)
 				data = asSendersOwn(data, conn.peer);
+				// 71 TR7: per-peer edit and chat limits (peerRateLimit.js)
+				if (data && !admitRate(conn, data.type)) return;
 				// A2: the ROOM gate. A message describing the content of a scene is not
 				// applied when its sender is demonstrably standing in a different one.
 				//
@@ -1461,6 +1471,8 @@ export class PeerConnection {
 						this.connectToPeer(id, false);
 					}
 					);
+				} else if(data.type == 'ratelimited') {
+					applyRateNotice(data); // 71 TR7: a receiver dropped some of ours
 				} else if(data.type == 'sent') {
 					// 37 R15: `id` + `at` are additive (an older peer sends neither; addMessage mints)
 					addMessage({message: data.message, type: 'received', sender: data.sender, id: data.id, at: data.at});
@@ -2674,6 +2686,21 @@ export class PeerConnection {
 		return true;
 	}
 
+	/**
+	 * 71 TR4: a relay-only dial that cannot get through fails without any error of its own (with no
+	 * candidates ICE just waits), so say why instead of leaving "Requesting" up.
+	 * @param {any} conn @param {string} peerId
+	 */
+	watchRelayDial(conn, peerId) {
+		const wait = relayDialWait(this.peer);
+		if (wait == null) return;
+		setTimeout(() => {
+			if (conn.open || this.connections[peerId] !== conn) return;
+			log('warn', 'net', 'relay-only dial did not open', { peer: peerId, wait });
+			showToast(RELAY_DIAL_FAILED);
+		}, wait);
+	}
+
 	connectToPeer(peerId, getobjects = true, id = this.peer.id) {
 		// 101 F1: a peer refused for its protocol is never redialled by mesh fill; a join you ask for
 		// (or an approval dial-back) tries again, and its far side checks again
@@ -2699,6 +2726,7 @@ export class PeerConnection {
             }
             /** @type {any} */ (conn).__dialedAt = Date.now();
             this.connections[peerId] = conn;
+			this.watchRelayDial(conn, peerId);
 
 			conn.on('close', () => this.onConnClose(peerId, conn));
 

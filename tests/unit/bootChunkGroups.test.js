@@ -40,11 +40,12 @@ describe('classifyBootModules', () => {
 			'/r/src/lazy.js': [['/r/src/lazydep.js']],
 			'/r/src/lazydep.js': []
 		}, [0, 1, 2, 3]);
-		const { names } = classifyBootModules(g);
-		expect(names.get('/r/src/editor.js')).toBe('tp-b2');
-		expect(names.get('/r/src/play.js')).toBe('tp-b3');
-		expect(names.get('/r/src/shared.js')).toBe('tp-b2-3');
-		expect(names.get('/r/src/util.js')).toBe('tp-b2-3');
+		const { names, sigs } = classifyBootModules(g);
+		expect(sigs.get('/r/src/editor.js')).toBe('b2');
+		expect(sigs.get('/r/src/play.js')).toBe('b3');
+		expect(sigs.get('/r/src/shared.js')).toBe('b2-3');
+		expect(names.get('/r/src/shared.js')).toBe(names.get('/r/src/util.js'));
+		expect(new Set([names.get('/r/src/editor.js'), names.get('/r/src/play.js'), names.get('/r/src/shared.js')]).size).toBe(3);
 		expect(names.has('/r/src/lazy.js')).toBe(false);
 		expect(names.has('/r/src/lazydep.js')).toBe(false);
 		// entries and kit's own files are never grouped
@@ -64,7 +65,7 @@ describe('classifyBootModules', () => {
 		// both boot on the editor; on the play page one comes with la, the other with lb
 		expect(sigs.get('/r/src/a.js')).not.toBe(sigs.get('/r/src/b.js'));
 		expect(names.get('/r/src/a.js')).not.toBe(names.get('/r/src/b.js'));
-		expect(names.get('/r/src/a.js')).toMatch(/^tp-b2-/);
+		expect(sigs.get('/r/src/a.js')).toMatch(/^b2\|3:/);
 	});
 
 	it('a module importing kit runtime code is not grouped, and neither is what imports it', () => {
@@ -77,11 +78,12 @@ describe('classifyBootModules', () => {
 			'/r/src/leaf.js': [],
 			[kit]: []
 		});
-		const { names } = classifyBootModules(g);
+		const { names, sigs } = classifyBootModules(g);
 		expect(names.has(kit)).toBe(false);
 		expect(names.has('/r/src/nav.js')).toBe(false);
 		expect(names.has('/r/src/top.js')).toBe(false);
-		expect(names.get('/r/src/leaf.js')).toBe('tp-b2');
+		expect(sigs.get('/r/src/leaf.js')).toBe('b2');
+		expect(names.has('/r/src/leaf.js')).toBe(true);
 	});
 
 	it('orders groups dependencies first (rolldown captures in that order)', () => {
@@ -91,8 +93,8 @@ describe('classifyBootModules', () => {
 			'/r/src/editor.js': [['/r/src/common.js']],
 			'/r/src/common.js': []
 		}, [0, 1, 2, 3]);
-		const { order } = classifyBootModules(g);
-		expect(order.indexOf('tp-b2-3')).toBeLessThan(order.indexOf('tp-b2'));
+		const { order, names } = classifyBootModules(g);
+		expect(order.indexOf(names.get('/r/src/common.js'))).toBeLessThan(order.indexOf(names.get('/r/src/editor.js')));
 	});
 
 	describe('merging small groups', () => {
@@ -130,8 +132,7 @@ describe('classifyBootModules', () => {
 				'/r/src/y.js': [[], [], 10]
 			}, [0, 1, 2, 3]);
 			const { names } = classifyBootModules(g, { mergeBelow: 1000 });
-			expect(names.get('/r/src/x.js')).toBe('tp-b2');
-			expect(names.get('/r/src/y.js')).toBe('tp-b2-3');
+			expect(names.get('/r/src/x.js')).not.toBe(names.get('/r/src/y.js'));
 		});
 		it('the closure rule: no merge that makes a lazy load pull in a group it did not load before', () => {
 			// p (editor boot, play fetches it via lp) imports q (boot on BOTH pages: free on play). r (editor
@@ -150,5 +151,40 @@ describe('classifyBootModules', () => {
 			const { names } = classifyBootModules(g, { mergeBelow: 1000 });
 			expect(names.get('/r/src/p.js')).not.toBe(names.get('/r/src/r.js'));
 		});
+		it('the play page is protected: no merge changes what it fetches lazily', () => {
+			// a and b are editor boot code; the play page (routes/play) fetches them through different lazy
+			// entries — merging them would make one of its lazy loads fetch the other editor module
+			const PLAY = '/r/src/routes/play/+page.svelte';
+			const mk = (protectPlay) => graph({
+				[N(2)]: [['/r/src/a.js', '/r/src/b.js']],
+				[N(3)]: [[protectPlay ? PLAY : '/r/src/routes/other/+page.svelte'], ['/r/src/la.js', '/r/src/lb.js']],
+				[PLAY]: [],
+				'/r/src/routes/other/+page.svelte': [],
+				'/r/src/a.js': [[], [], 10],
+				'/r/src/b.js': [[], [], 10],
+				'/r/src/la.js': [['/r/src/a.js']],
+				'/r/src/lb.js': [['/r/src/b.js']]
+			}, [0, 1, 2, 3]);
+			const off = classifyBootModules(mk(false), { mergeBelow: 1000 }).names;
+			expect(off.get('/r/src/a.js')).toBe(off.get('/r/src/b.js'));
+			const on = classifyBootModules(mk(true), { mergeBelow: 1000 }).names;
+			expect(on.get('/r/src/a.js')).not.toBe(on.get('/r/src/b.js'));
+		});
+	});
+
+	it('names a group after its largest module, the way rolldown names a chunk', () => {
+		const g = graph({
+			[N(2)]: [['/r/src/addObjects.js', '/r/src/tiny.js']],
+			[N(3)]: [['/r/src/other/addObjects.js']],
+			'/r/src/addObjects.js': [['/r/src/tiny.js'], [], 900],
+			'/r/src/tiny.js': [[], [], 10],
+			'/r/src/other/addObjects.js': [[], [], 50]
+		}, [0, 1, 2, 3]);
+		const { names } = classifyBootModules(g);
+		const a = names.get('/r/src/addObjects.js');
+		const b = names.get('/r/src/other/addObjects.js');
+		expect([a, b]).toContain('addObjects');
+		expect(a).not.toBe(b); // a clash takes the group's hash
+		expect(b.startsWith('addObjects')).toBe(true);
 	});
 });

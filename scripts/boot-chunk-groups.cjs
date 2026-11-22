@@ -21,20 +21,30 @@
 // capture the groups in that order (see bootChunkGroups), or its dependency recursion drags shared
 // code into whichever importer's group it builds first.
 // Then SMALL groups merge (mergeSmallGroups) within one set of boot pages, under a cost rule and the
-// closure rule — the only place a page can fetch more than before, and only lazily, off the editor.
+// closure rule — the only place a page can fetch more than before, and only lazily, never on the
+// editor or the play entry: /play is PROTECTED (a merge must leave its lazy triggers identical),
+// because a player must fetch no editor surface (e2e play-entry §2 — a first version merged the
+// runtime primes addObjects/waterActions/hdriPrefs/catalog with editor modules and it went red).
 // Never grouped: SvelteKit's own runtime + generated files (kit keeps its own chunk group and finds
 // its runtime chunk by its own rules), and so nothing that imports them. Lazy-only code (B empty)
 // keeps rolldown's default split.
 // KNOWN AND LEFT: rolldown's graph lists static imports of code it later tree-shakes (an unused
 // @threlte/extras component imports RGBELoader -> HDRLoader), so a few modules that are also
 // import() targets count as boot code and ride a boot chunk (measured on 1.74: HDRLoader, Pass and
-// two three-mesh-bvh files — pure class definitions, a few KB).
+// two three-mesh-bvh files — pure class definitions, a few KB). The same graph lists every re-export
+// of a barrel (`@xyflow/svelte`), so a lazy entry importing ONE of them (a module's node card takes
+// Handle) shares a signature with the whole barrel: on /play, ButtonTriggerNode's first load fetches
+// xyflow's canvas components too (+47 modules, ~53 KB raw) — measured, rare (the node card is not
+// fetched in a played scene), and a cost in bytes only; grouping can never break an import.
 //
 //   bootChunkGroups() -> rolldown `codeSplitting.groups[]` entries (vite.config.ts)
 //   classifyBootModules(graph, {mergeBelow}) -> {names: Map<id, group>, order, sigs} (unit-tested)
 //   TP_BOOT_CHUNKS=0 (vite.config.ts) builds the old split for an A/B; TP_BOOT_CHUNKS_MERGE=<bytes>
 //   sets the merge threshold (0 = exact signatures only); TP_BOOT_CHUNKS_DUMP=<file> writes the
 //   classification (+ the module graph with TP_BOOT_CHUNKS_GRAPH=1) for a post-build check.
+
+/** the play entry's page component — its page is protected from merges */
+const PROTECTED_ROUTE = /[\\/]routes[\\/]play[\\/]\+page\.svelte$/;
 
 const NODE_RE = /[\\/]\.svelte-kit[\\/]generated[\\/](?:build[\\/])?client-optimized[\\/]nodes[\\/](\d+)\.js$/;
 
@@ -52,7 +62,7 @@ function kitOwned(id) {
  * @returns {{names: Map<string, string>, order: string[], sigs?: Map<string, string>}} names = module ->
  *   group; order = the groups, dependencies first; sigs = module -> exact signature (before merging)
  */
-function classifyBootModules(graph, { mergeBelow = 0 } = {}) {
+function classifyBootModules(graph, { mergeBelow = 0, protect = PROTECTED_ROUTE } = {}) {
 	const mods = graph.modules;
 	const entries = [...mods.keys()].filter((id) => mods.get(id).isEntry);
 	const nodeOf = new Map();
@@ -66,6 +76,9 @@ function classifyBootModules(graph, { mergeBelow = 0 } = {}) {
 	const out = new Map();
 	if (!layout || !pageNodes.length) return { names: out, order: [] }; // not a kit client build (the SSR pass): change nothing
 	const shared = entries.filter((id) => !nodeOf.has(id));
+	// the pages whose lazy loads a merge may never change: the play entry (94: a player fetches no
+	// editor surface — e2e play-entry §2 checks it chunk by chunk)
+	const protectedPages = new Set(pageNodes.filter(([nodeId]) => (mods.get(nodeId)?.imports || []).some((d) => protect.test(d))).map(([, page]) => String(page)));
 
 	const walk = (roots, dynamic) => {
 		const seen = new Set();
@@ -155,10 +168,16 @@ function classifyBootModules(graph, { mergeBelow = 0 } = {}) {
 		g.size += mods.get(id).size || 0;
 		g.members.push(id);
 	}
-	if (mergeBelow > 0) mergeSmallGroups(groups, mods, sig, mergeBelow);
-	// readable group names: the boot pages + a short stable hash of the lazy triggers
-	for (const g of groups.values()) {
-		const name = 'tp-b' + g.boot.slice(1) + (g.trig.size ? '-' + shortHash([...g.trig].sort().join('|')) : '');
+	if (mergeBelow > 0) mergeSmallGroups(groups, mods, sig, mergeBelow, protectedPages);
+	// GROUP NAMES follow rolldown's own convention — the chunk is named after its largest module —
+	// because suites name chunks (play-entry's runtime allowlist: addObjects, waterActions, …); a name
+	// two groups would share gets the group's hash. Names are labels only: files are content-hashed.
+	const taken = new Set();
+	for (const [k, g] of [...groups].sort((x, y) => (x[0] < y[0] ? -1 : 1))) {
+		const big = [...g.members].sort((x, y) => (mods.get(y).size || 0) - (mods.get(x).size || 0) || (x < y ? -1 : 1))[0];
+		let name = baseName(big);
+		if (!name || taken.has(name)) name = (name || 'boot') + '-' + shortHash(k);
+		taken.add(name);
 		for (const id of g.members) out.set(id, name);
 	}
 	// THE ORDER rolldown must capture the groups in: a group's dependencies' groups FIRST. Rolldown
@@ -194,7 +213,7 @@ function classifyBootModules(graph, { mergeBelow = 0 } = {}) {
  * then the more similar, then the name. Never a merge that closes a cycle in the group graph.
  * Mutates `groups`.
  */
-function mergeSmallGroups(groups, mods, sig, below) {
+function mergeSmallGroups(groups, mods, sig, below, protectedPages = new Set()) {
 	const keyOf = new Map(); // module -> current group key
 	for (const [k, g] of groups) for (const id of g.members) keyOf.set(id, k);
 	const depsOf = (k) => {
@@ -230,7 +249,9 @@ function mergeSmallGroups(groups, mods, sig, below) {
 				.map(([bk, b]) => {
 					const aOnly = [...a.trig].filter((t) => !b.trig.has(t)).length;
 					const bOnly = [...b.trig].filter((t) => !a.trig.has(t)).length;
-					return { bk, b, ok: aOnly === 0 || b.size < below, cost: aOnly * b.size + bOnly * a.size, sim: jaccard(a.trig, b.trig) };
+					// a protected page's lazy loads stay exactly as they were: same triggers there, or no merge
+					const same = [...protectedPages].every((p) => sameOnPage(a.trig, b.trig, p));
+					return { bk, b, ok: same && (aOnly === 0 || b.size < below), cost: aOnly * b.size + bOnly * a.size, sim: jaccard(a.trig, b.trig) };
 				})
 				.filter((o) => o.ok)
 				.sort((x, y) => x.cost - y.cost || y.sim - x.sim || (x.bk < y.bk ? -1 : 1));
@@ -265,6 +286,18 @@ function mergeSmallGroups(groups, mods, sig, below) {
 		}
 		if (!merged) return;
 	}
+}
+
+/** do two trigger sets agree on one page @param {Set<string>} a @param {Set<string>} b @param {string} page */
+function sameOnPage(a, b, page) {
+	const on = (s) => [...s].filter((t) => t.slice(0, t.indexOf(':')) === page).sort().join('|');
+	return on(a) === on(b);
+}
+
+/** a module id's file name without extension or query (`/x/addObjects.js?v` -> `addObjects`) @param {string} id */
+function baseName(id) {
+	const file = String(id).split('?')[0].split(/[\\/]/).pop() || '';
+	return file.replace(/\.[^.]*$/, '').replace(/[^\w$-]/g, '_');
 }
 
 /** FNV-1a, base 36 @param {string} s */

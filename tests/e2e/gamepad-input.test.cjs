@@ -341,9 +341,9 @@ h.run(async () => {
 	);
 	// the poll rides flowRuntime's rAF and the movement threlte's task loop, so one frame
 	// can act on the previous snapshot: at most ONE frame's step (92-correct row 4: per second, so
-	// moveSpeed 0.1 x 60 x the longest frame, capped at 0.5 s). Bounded, and what "continuous input
+	// moveSpeed 0.1 x 60 x the longest frame, capped at 1 s). Bounded, and what "continuous input
 	// read once per frame" means.
-	const oneFrame = 0.1 * 60 * Math.min(0.5, moved.longest) * 1.1 + 0.01;
+	const oneFrame = 0.1 * 60 * Math.min(1, moved.longest) * 1.1 + 0.01;
 	h.check(
 		moved.coast <= oneFrame,
 		`releasing costs at most ONE frame of latency, not a slide (${moved.coast.toFixed(3)} <= ${oneFrame.toFixed(3)}, longest frame ${(moved.longest * 1000).toFixed(0)} ms)`

@@ -324,8 +324,9 @@ export function stepMovers(ents, dt, t, world = {}) {
 	if (!(dt > 0)) return 0;
 	// 92-correct row 4: NPCs move per SECOND at any frame rate. A long frame (a throttled tab: 2-4 fps)
 	// used to count 0.1 s, so movers fell behind real time; now it is cut into <= 0.1 s parts, each the
-	// step a mover always took (so a stalled frame still cannot teleport through a wall), up to 0.5 s.
-	const total = Math.min(dt, 0.5);
+	// step a mover always took (so a stalled frame still cannot teleport through a wall), up to 1 s
+	// (realStep.js STEP_CAP_S; this file imports nothing).
+	const total = Math.min(dt, 1);
 	const parts = Math.max(1, Math.ceil(total / 0.1 - 1e-6));
 	const sub = total / parts;
 	let moved = 0;

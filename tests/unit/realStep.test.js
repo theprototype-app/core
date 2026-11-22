@@ -26,6 +26,7 @@ describe('the real clock and the per-frame speed', () => {
 		const clock = makeRealClock();
 		clock(0);
 		expect(clock(10_000)).toBe(STEP_CAP_S);
+		expect(STEP_CAP_S).toBe(1);
 		expect(clock(9_000)).toBe(0); // a clock that went back moves nothing
 	});
 });

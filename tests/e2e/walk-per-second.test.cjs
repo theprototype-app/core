@@ -83,7 +83,8 @@ h.run(async () => {
 		await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
 		const want = 6 * normal.held; // 0.1 per 60 Hz frame = 6 units a second
 		console.log(`  ${mode}: ${normal.d.toFixed(2)} m at ${normal.fps.toFixed(1)} fps, ${slow.d.toFixed(2)} m at ${slow.fps.toFixed(1)} fps (want ~${want.toFixed(1)})`);
-		h.check(normal.d > want * 0.8 && normal.d < want * 1.15, `${mode}: 5 s of W covers ~6 units a second at the page's rate (${normal.d.toFixed(2)} of ${want.toFixed(1)}; red on v1.74.0 for fly: frames x 0.1)`);
+		// 0.7: at the Deck's 1.5-2 fps headless rate the key's first and last frame cost up to a second of the window
+		h.check(normal.d > want * 0.7 && normal.d < want * 1.15, `${mode}: 5 s of W covers ~6 units a second at the page's rate (${normal.d.toFixed(2)} of ${want.toFixed(1)}; red on v1.74.0 for fly: frames x 0.1)`);
 		h.check(Math.abs(slow.d - normal.d) / normal.d < 0.2, `${mode}: the same distance under a throttled tab (${slow.d.toFixed(2)} vs ${normal.d.toFixed(2)} at ${slow.fps.toFixed(1)} fps)`);
 	}
 

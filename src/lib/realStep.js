@@ -12,8 +12,9 @@
 // comes back on must not teleport the player across the level. Collision code sub-steps a long
 // frame (charController KCC_MAX_DT), so a 0.5 s frame is eight short sweeps, not one long one.
 
-/** the longest frame counted in full (s) */
-export const STEP_CAP_S = 0.5;
+/** the longest frame counted in full (s): a 1 fps tab still covers its ground (measured: the Deck's headless
+ * page draws at 1.4-2 fps, and a 0.5 s cap lost a quarter of the distance there) */
+export const STEP_CAP_S = 1;
 /** the frame rate the stored per-frame speeds were authored at */
 export const AUTHORED_HZ = 60;
 

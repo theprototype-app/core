@@ -159,7 +159,21 @@ h.run(async () => {
 				}, 250);
 			})
 	);
-	await h.connect(B, A);
+	// the host is in Play, where the join card is not answerable (92-menus' GC8): approve through the store it calls
+	await E(B, (id) => /** @type {any} */ (window).__tp.test.v1.peerApproval.requestConnect(id), A.id);
+	await h.eventually(
+		() =>
+			E(A, (id) => {
+				/** @type {any} */
+				let w;
+				/** @type {any} */ (window).__tp.test.v1.pendingApprovals.subscribe((/** @type {any} */ x) => (w = x))();
+				return (w ?? []).some((/** @type {any} */ c) => (c?.peerId ?? c?.[0]) === id);
+			}, B.id),
+		(v) => v === true,
+		'the rejoin knocks on the host',
+		30000
+	);
+	await E(A, (id) => /** @type {any} */ (window).__tp.test.v1.peerApproval.approvePeer(id), B.id);
 	await play(B);
 	await h.eventually(
 		async () => [await hud(A), await hud(B)],

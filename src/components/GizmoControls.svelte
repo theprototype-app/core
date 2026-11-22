@@ -26,6 +26,8 @@
 	const tc: any = new TransformControls(camera.current, dom);
 	// 103 H7: three's own gizmo; the faces chunk makes it face-capable when a style B / C / D loads
 	tc.isGizmoControls = true;
+	// the face driver's own redraw event (styles / show only / attach), never three's 'change'
+	tc.addEventListener('facechange', () => invalidate());
 	// D's box around a multi-selection: the members the pivot moves
 	tc.boxMembers = () => {
 		const group: any = get(objectsGroup);

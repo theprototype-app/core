@@ -53,7 +53,9 @@ const driver = {
 		const on = this.faceActive();
 		/** @type {any} */ (this)._gizmo.visible = !on;
 		if (this._face) this._face.root.visible = on;
-		this.dispatchEvent({ type: 'change' });
+		// NOT three's 'change': Scene's onchange is the drag / move-broadcast handler, and this runs inside
+		// the wrapper's effects (style, size, show only). The wrapper redraws on this one.
+		this.dispatchEvent({ type: 'facechange' });
 	},
 
 	/** @param {any} object */
@@ -103,7 +105,8 @@ const driver = {
 			this.mode = /** @type {any} */ (mode);
 		}
 		this.axis = axis;
-		if (hit.own && this._face.begin) {
+		this._ptr = pointer;
+		if (hit.own && this._face.begin && !(hit.shiftMode && this.shiftKey)) {
 			const ray = this.getRaycaster();
 			if (pointer !== null) ray.setFromCamera(pointer, this.camera);
 			this.object.updateMatrixWorld();
@@ -121,6 +124,7 @@ const driver = {
 	pointerMove(pointer) {
 		if (this._own) {
 			if (pointer !== null && pointer.button !== -1) return;
+			if (pointer !== null) this._ptr = pointer;
 			const ray = this.getRaycaster();
 			if (pointer !== null) ray.setFromCamera(pointer, this.camera);
 			if (this._face.drag(ray.ray, this)) {

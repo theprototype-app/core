@@ -198,6 +198,7 @@ function bHandles(o = {}) {
 		cube('cubes', 'scale', 'scale', 'Z', Z, 'z', 0.31 * k, 0.024 * k)
 	];
 	const centre = knob('knob', 'scale', 'scale', 'XYZ', 'n', new THREE.Vector3(), 0.042 * k);
+	centre.own = 'even';
 	centre.shiftMode = 'translate';
 	centre.shiftAxis = 'XYZ';
 	hs.push(centre);
@@ -235,7 +236,9 @@ function scoreHandle(/** @type {Handle} */ h, /** @type {THREE.Ray} */ ray, /** 
 		_p.copy(hit.p).applyMatrix4(mw);
 		const d = Math.sqrt(ray.distanceSqToPoint(_p));
 		const wpp = worldPerPx(tc, _p);
-		return Math.max(0, d / wpp - (hit.r * scale) / wpp);
+		// not clamped: a press deep inside a cube / knob beats an arrow shaft that runs through it (both
+		// would score 0 and the first listed, the arrow, took every cube press)
+		return d / wpp - (hit.r * scale) / wpp;
 	}
 	if (hit.type === 'poly') {
 		let best = Infinity;
@@ -301,6 +304,8 @@ class Face {
 		/** @type {any} */
 		this.tc = null;
 		this.expanded = false;
+		/** the drag a handle owns (the even knob; D's face / corner) @type {any} */
+		this.drag0 = null;
 		this.root.updateMatrixWorld = (force) => {
 			if (this.tc && this.root.visible) this.update(this.tc);
 			THREE.Group.prototype.updateMatrixWorld.call(this.root, force);
@@ -315,6 +320,37 @@ class Face {
 	/** @param {any} object @param {any} tc */
 	attached(object, tc) {
 		this.tc = tc;
+	}
+
+	/**
+	 * the even-resize knob owns its drag: three's XYZ scale divides by the press's distance from the
+	 * centre, and a press ON the centre knob is ~0 away (measured: x4.4 million). Here right / up grows,
+	 * down / left shrinks, smoothly, and the Settings snap steps it.
+	 * @param {any} hit @param {THREE.Ray} ray @param {any} tc
+	 */
+	begin(hit, ray, tc) {
+		if (hit.own !== 'even' || !tc.object) return false;
+		this.drag0 = { kind: 'even', scale: tc.object.scale.clone(), p: { x: tc._ptr?.x ?? 0, y: tc._ptr?.y ?? 0 } };
+		return true;
+	}
+
+	/** @param {THREE.Ray} ray @param {any} tc */
+	drag(ray, tc) {
+		const d = this.drag0;
+		if (d?.kind !== 'even' || !tc.object) return false;
+		const el = tc.domElement;
+		const px = ((tc._ptr?.x ?? 0) - d.p.x) * (el?.clientWidth ?? 800) / 2 + ((tc._ptr?.y ?? 0) - d.p.y) * (el?.clientHeight ?? 600) / 2;
+		let k = Math.exp(px / 150);
+		const scale = d.scale.clone().multiplyScalar(k);
+		if (tc.scaleSnap) scale.set(...scale.toArray().map((/** @type {number} */ v) => Math.max(tc.scaleSnap, Math.round(v / tc.scaleSnap) * tc.scaleSnap)));
+		tc.object.scale.copy(scale);
+		tc.object.updateMatrixWorld(true);
+		return true;
+	}
+
+	/** @param {any} tc */
+	end(tc) {
+		this.drag0 = null;
 	}
 
 	/** is this handle on show right now? @param {Handle} h @param {any} tc */
@@ -430,6 +466,7 @@ function puckHandles() {
 	hs.push(lift);
 	hs.push(ring('ring', 'Y', Y, Z, X, 'y', 0.4, 0.018, 0, Math.PI * 2));
 	const k = knob('knob', 'scale', 'scale', 'XYZ', 'n', new THREE.Vector3(0.4 * Math.SQRT1_2, 0, 0.4 * Math.SQRT1_2), 0.055);
+	k.own = 'even';
 	hs.push(k);
 	return hs.concat(bHandles({ extra: true, scale: 1.25 }));
 }
@@ -617,6 +654,7 @@ class BoxFace extends Face {
 
 	/** D owns the corner and face drags: absolute from the press @param {any} hit @param {THREE.Ray} ray @param {any} tc */
 	begin(hit, ray, tc) {
+		if (hit.own === 'even') return super.begin(hit, ray, tc);
 		const h = /** @type {any} */ (hit.handle);
 		const obj = tc.object;
 		obj.updateMatrixWorld(true);
@@ -652,6 +690,7 @@ class BoxFace extends Face {
 	drag(ray, tc) {
 		const d = this.drag0;
 		if (!d) return false;
+		if (d.kind === 'even') return super.drag(ray, tc);
 		const obj = tc.object;
 		const st = d.start;
 		const scale = st.scale.clone();

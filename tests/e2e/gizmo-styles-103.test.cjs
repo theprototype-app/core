@@ -100,6 +100,8 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1440, height: 900 } } });
 	const page = A.page;
+	// the helper prints err.stack, which a remote browser can hand over empty: say what it was
+	page.on('pageerror', (e) => console.log(`[A pageerror detail] ${e?.name}: ${e?.message} | ${String(e).slice(0, 300)}`));
 
 	// ---- 1. style A: three's gizmo, no face loaded ------------------------------------------------
 	const faceAtBoot = await page.evaluate(() => performance.getEntriesByType('resource').some((e) => /gizmo\/faces/.test(e.name)));
@@ -270,7 +272,7 @@ h.run(async () => {
 	h.check(Math.abs(p1.rot[1] - p0.rot[1]) > 0.05, `4.4 the turn ring turns it about up (${fx(p1.rot)})`);
 	await undo(page);
 	at = await handleAt(page, 'knob');
-	await drag(page, at, 60, 60);
+	await drag(page, at, 60, -60);
 	p1 = await pose(page, boxId);
 	h.check(Math.abs(p1.scale[0] - p0.scale[0]) > 0.02 && near(p1.scale[0], p1.scale[2], 1e-4), `4.5 the knob resizes evenly (${fx(p1.scale)})`);
 	await undo(page);

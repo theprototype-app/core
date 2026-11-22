@@ -56,12 +56,27 @@ h.run(async () => {
 	const target = 'aaaa0000-0000-4000-8000-000000000000';
 	const rename = `(i) => ({ type: 'name', uuid: '${target}', name: 'flood-' + i })`;
 	const nameOn = (peer) => inPage(peer, `let g; s.objectsGroup.subscribe((v) => (g = v))(); return g.getObjectByProperty('uuid', arg)?.name ?? null;`, target);
+	const diag = async (label) => {
+		const d = await B.page.evaluate(() => {
+			const t = window.__tp?.test?.v1 ?? window.__stores;
+			const errs = t?.wireErrors?.wireErrors?.() ?? null;
+			const name = (t?.sceneBudget?.wireStats?.()?.rows ?? t?.sceneBudget?.wireStats?.() ?? []);
+			return { errs, name: Array.isArray(name) ? name.filter((r) => r.type === 'name' || r.type === 'batch') : name };
+		}).catch((e) => String(e));
+		const a = await A.page.evaluate(() => {
+			const t = window.__tp?.test?.v1 ?? window.__stores;
+			const rows = t?.sceneBudget?.wireStats?.()?.rows ?? t?.sceneBudget?.wireStats?.() ?? [];
+			return Array.isArray(rows) ? rows.filter((r) => r.type === 'name' || r.type === 'batch') : rows;
+		}).catch((e) => String(e));
+		console.log('DIAG ' + label + ' B=' + JSON.stringify(d).slice(0, 1500) + ' A=' + JSON.stringify(a).slice(0, 600));
+	};
 	await inPage(B, `s.peerRateGate.peerRateLimits.set('strict');`);
 	await sendN(A, rename, 1000);
 	await h.eventually(() => toast(B, 'is sending too many edits'), (v) => v === true, '4.1 the receiver is told', 15000);
 	await B.page.waitForTimeout(1500);
 	const landed = Number(String(await nameOn(B)).replace('flood-', ''));
 	h.check(landed >= 119 && landed < 999, `4.2 the flood stopped short on Strict: the last of 1000 to land was #${landed}`);
+	await diag('after-strict');
 
 	// ---- 5 Off passes everything
 	await inPage(B, `s.peerRateGate.peerRateLimits.set('off');`);
@@ -69,6 +84,7 @@ h.run(async () => {
 	await sendN(A, chat('free-'), 60);
 	await sendN(A, rename, 1000);
 	await h.eventually(() => nameOn(B), (n) => n === 'flood-999', '5.0 with limits off the whole flood of edits lands', 30000);
+	await diag('after-off');
 	await h.eventually(() => chatCount(B, 'free-'), (n) => n === 60, '5.1 with limits off all 60 arrive', 15000);
 	await inPage(B, `s.peerRateGate.peerRateLimits.set('normal');`);
 

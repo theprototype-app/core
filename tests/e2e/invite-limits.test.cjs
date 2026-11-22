@@ -76,8 +76,8 @@ h.run(async () => {
 	// invites made 11 minutes ago (their mints are outside the 10-minute window; 24 h links stay live)
 	const longAgo = Date.now() - 11 * 60_000;
 	const old = [];
-	for (let i = 0; i < 9; i++) old.push(await mint({ kind: 'person', expiry: '24h', maxUses: i === 0 ? 25 : 1, now: longAgo }));
-	h.check(old.every((m) => m.id && !m.refused), '0.2 nine older invites minted');
+	for (let i = 0; i < 11; i++) old.push(await mint({ kind: 'person', expiry: '24h', maxUses: i === 0 ? 25 : 1, now: longAgo }));
+	h.check(old.every((m) => m.id && !m.refused), '0.2 eleven older invites minted');
 	await dial('aaaa0', { invite: core.dialInvite(tokOf(old[1].link), 'aaaa0', H.id) });
 	await until(() => roster(H).then((r) => r.some((u) => u[0] === 'aaaa0')), (v) => v === true, '0.3 a working invite admits as before');
 
@@ -87,10 +87,9 @@ h.run(async () => {
 	h.check(!!jInv.id, "1.1 J's invite");
 	const now10 = [];
 	for (let i = 0; i < 9; i++) now10.push(await mint({ kind: 'agent' }));
-	// live: 8 older (one was used by aaaa0) + J's + 9 = 18 → two more fit
+	// live: 10 older (one was used by aaaa0) + J's + 9 = 20
 	h.check(now10.every((m) => m.id), '1.2 nine more now (ten minted in this window)');
 	const live = () => inPage(H, "return s.inviteStore.listInvites().filter((r) => r.state === 'active').length");
-	for (let i = 0; (await live()) < 20 && i < 3; i++) await mint({ kind: 'person', expiry: '24h', now: longAgo });
 	h.check((await live()) === 20, `1.3 twenty live invites (${await live()})`);
 	const no21 = await mint({ kind: 'person' });
 	h.check(!no21.id && no21.refused?.reason === 'live', `1.4 the 21st live invite is refused (${JSON.stringify(no21.refused)})`);
@@ -108,6 +107,8 @@ h.run(async () => {
 	// ==================================================================== 2
 	console.log('\n=== 2. the flood ===');
 	const R = await h.setupPageQuiet(browser, 'R', [H]);
+	// J boots NOW (a third page boots slowly on a loaded box, and the pause lasts 60 s); it opens its link later
+	const J = await h.setupPageQuiet(browser, 'J', [H, R]);
 	await (await h.openDial(R.page)).fill(H.id);
 	await R.page.getByRole('button', { name: 'Connect', exact: true }).click();
 	await until(() => cards(H).then((c) => c.some((x) => x.peerId === R.id)), (v) => v === true, "2.1 R's request is a card", 30000);
@@ -123,15 +124,17 @@ h.run(async () => {
 	h.check(rowText === '30 failed invite joins', `2.5 ONE collapsed row reads "30 failed invite joins" (${rowText})`);
 	h.check((await H.page.locator('#failed-invite-joins').count()) === 1, '2.6 exactly one row');
 	h.check((await H.page.locator('.tp-toast--req', { hasText: R.id.slice(0, 6).toUpperCase() }).count()) === 1, "2.7 R's card is on screen");
-	h.check((await toastCount(H, 'Invite joins are paused')) === 1, '2.8 the pause toast, once');
+	const pauseNotes = await inPage(H, 'let n; s.notifications.subscribe((v) => (n = v.map((x) => x.text)))(); return n.filter((t) => /Invite joins are paused/.test(t)).length;');
+	h.check(pauseNotes === 1, `2.8 the pause toast, once (${pauseNotes} in the notification history, ${await toastCount(H, 'Invite joins are paused')} on screen)`);
 	const told = await inPage(H, "return window.__dials.filter((d) => d.md && d.md.why === 'invite-paused').length");
 	h.check(told >= 1, `2.9 paused dials are told why (${told} refusal dials carry invite-paused)`);
 	h.check((await H.page.locator('#failed-invite-joins[data-paused="yes"]').count()) === 1, '2.10 the row says invite joins are paused');
 
 	// ==================================================================== 3
 	console.log('\n=== 3. a real invite during the pause ===');
-	const J = await h.setupPage(browser, 'J', { hash: new URL(jInv.link).hash });
-	await until(() => toastCount(J, 'paused invite joins'), (n) => n >= 1, '3.1 J is told invite joins are paused', 45000);
+	// what opening the link does in a tab that is already up: the hash is read, then the dial
+	await inPage(J, 's.inviteStore.captureInviteHash(arg.hash); s.peerApproval.requestConnect(arg.host);', { hash: new URL(jInv.link).hash, host: H.id });
+	await until(() => toastCount(J, 'paused invite joins'), (n) => n >= 1, '3.1 J is told invite joins are paused', 30000);
 	h.check((await toastCount(J, 'declined your connection request')) === 0, '3.2 …not "declined"');
 	h.check(!(await roster(H)).some((u) => u[0] === J.id), '3.3 J is not in');
 	await H.page.locator('#failed-invite-joins .fij-resume').click({ timeout: 5000 });

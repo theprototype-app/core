@@ -81,7 +81,7 @@ h.run(async () => {
 	const C = await h.setupPageQuiet(browser, 'C', [H, B]);
 	await h.connect(B, H, 3000);
 	await h.connect(C, H, 3000);
-	await until(() => read(C, 'peers').then(() => inPage(C, 'return pc.openedPeers.size')), (n) => n >= 2, 'setup: C is linked to H and B');
+	await until(() => inPage(C, 'return pc.openedPeers.size'), (n) => n >= 2, 'setup: C is linked to H and B', 30000);
 	h.check((await toastWith(H, 'new id')) === null, 'no block toast before anything is blocked');
 
 	await inPage(H, 's.peerModeration.removePeer(arg, { block: true })', C.id);
@@ -97,7 +97,9 @@ h.run(async () => {
 	await until(() => toastWith(H, 'needs your approval to join'), (t) => !!t && t.buttons.includes('Undo'), '2.3 the host is told, with Undo');
 	const inv = await inPage(H, "const r = s.inviteStore.createInvite({ hostId: pc.peer.id, kind: 'person', maxUses: 5 }); return { link: r.link, id: r.record?.id, refused: r.refused };");
 	h.check(!!inv?.link && !inv.refused, 'a working five-use invite link');
+	// C and B are done: close them so the fourth page boots on a box with two fewer renderers
 	await C.ctx.close();
+	await B.ctx.close();
 	const C2 = await h.setupPage(browser, 'C2', { hash: new URL(inv.link).hash });
 	const card = await until(() => cards(H).then((c) => c.find((x) => x.peerId === C2.id)), (c) => !!c, "2.4 C's new id, with a working invite, is an approval card on H", 30000);
 	h.check(/working invite link/.test(card?.label ?? ''), `2.5 the card says why it is not automatic (${card?.label})`);

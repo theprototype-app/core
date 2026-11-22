@@ -160,15 +160,16 @@ export function createInvite(opts) {
 	const token = newToken();
 	const record = makeRecord(token, opts, now);
 	tokens.set(record.id, token);
-	writeMints([...readMints(now), now]);
+	writeMints([...readMints(), now]);
 	updateRecords((list) => [...list, record]);
 	return { refused: null, record, ...handover(opts.hostId, token, record.kind, opts.srvTail) };
 }
 
-/** @param {number} now @returns {number[]} */
-function readMints(now) {
+/** the mint log, pruned on the REAL clock: a caller's back-dated `now` must never drop the recent mints
+ * (it did: minting at an earlier `now` rewrote the log without everything after it) @returns {number[]} */
+function readMints() {
 	try {
-		return pruneMints(JSON.parse(safeStorage.getItem(MINTS_KEY) || '[]'), now);
+		return pruneMints(JSON.parse(safeStorage.getItem(MINTS_KEY) || '[]'), Date.now());
 	} catch {
 		return [];
 	}
@@ -184,7 +185,7 @@ function writeMints(list) {
 
 /** 71 AS4: may this device mint one more invite now? (the sheet asks before it offers Create) @param {number} [now] */
 export function mayCreateInvite(now = Date.now()) {
-	return mintVerdict(get(invites), readMints(now), now);
+	return mintVerdict(get(invites), readMints(), now);
 }
 
 /** the token of an invite minted in this tab (null after a reload) @param {string} id */

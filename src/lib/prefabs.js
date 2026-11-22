@@ -13,6 +13,7 @@ import { idbGet, idbPut, idbDelete } from './idb';
 import { stampElementKeys, linkNode, linkRoot, elementKey } from './prefabSync';
 import { graphOf } from '../stores/flowStore';
 import { serializeNode, serializeEdge } from './nodesHandler';
+import { objectToJSON } from './slotGroups.js'; // 105: one serializer for slot groups
 
 // Personal prefab library: save any object/group as a reusable asset
 // (ObjectLoader snapshot + rendered thumbnail) in IndexedDB. The library is
@@ -218,7 +219,7 @@ function buildPrefabElementInner(uuids, name, opts = {}) {
 			// toJSON reads the matrix the last render composed — compose it now, or a move
 			// made since the last frame never reaches the prefab
 			object.updateMatrixWorld(true);
-			element = object.toJSON();
+			element = objectToJSON(object);
 		} finally {
 			unpark();
 		}
@@ -270,7 +271,7 @@ function buildPrefabElementInner(uuids, name, opts = {}) {
 	}
 	if (!holder.children.length) return null;
 	holder.updateMatrixWorld(true);
-	const element = holder.toJSON();
+	const element = objectToJSON(holder);
 	stampCables(element, cablesWithin(remap));
 	if (JSON.stringify(element).length > PREFAB_LIMIT) {
 		showToast('Selection is too large for a prefab (>5 MB)');

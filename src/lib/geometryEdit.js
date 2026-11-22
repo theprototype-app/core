@@ -5,6 +5,7 @@ import { peers } from '../stores/appStore';
 import { recordEntry, registerHistoryKind } from './history';
 import { GEOMETRY_PARAMS, geometrySpec, boundGeometryParams } from './geometryParams';
 import { loadRoundedBox } from './roundedBoxGate.js';
+import { healSlotGroups } from './slotGroups.js';
 
 // Live geometry parameter editing (phase 78). Params live in
 // object.userData.geometryParams = { gtype, params } — userData survives the
@@ -131,6 +132,7 @@ export function applyGeometry(uuid, patch, options = {}) {
 	object.geometry.dispose();
 	object.geometry = fresh;
 	object.userData.geometryParams = { gtype, params };
+	healSlotGroups(object); // 105: a rebuilt primitive with a slot list keeps every face drawn (slot 0)
 	// a rebuild discards any recorded vertex edits — the flag resets. faceEdited
 	// (which every meshgeo commit stamps, so every sculpt stroke too) goes with
 	// it: it is the same lock, and leaving it set means the parametric rows stay
@@ -172,6 +174,7 @@ export function applyRemoteGeometry(data) {
 	object.geometry.dispose();
 	object.geometry = fresh;
 	object.userData.geometryParams = { gtype: data.gtype, params: cleanFor(data.gtype, { ...data.params }) };
+	healSlotGroups(object); // 105: as applyGeometry
 	delete object.userData.vertexEdited;
 	delete object.userData.faceEdited; // same lock, same reset as the local path
 	pokeScene();

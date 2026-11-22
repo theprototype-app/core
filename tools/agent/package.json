@@ -47,7 +47,8 @@
 		"eval:results": "node eval/results.mjs",
 		"eval:shapes": "node eval/results.mjs --runs 1 --label shapes --script eval/controls-agent-shapes.json --only star-once,health-respawn,late-joiner,pickup-own --expect 1",
 		"eval:smoke": "node eval/results.mjs --runs 1 --label smoke --script eval/controls.json --only door-near,star-once,hit-sound,health-respawn,pickup-own,pause-p --expect 1",
-		"eval:recipes": "node eval/results.mjs --runs 1 --label recipes --script eval/controls-recipes.json --only pause-p,toggle-shared,pickup-own,star-once,health-respawn,late-joiner --expect 1"
+		"eval:recipes": "node eval/results.mjs --runs 1 --label recipes --script eval/controls-recipes.json --only pause-p,toggle-shared,pickup-own,star-once,health-respawn,late-joiner --expect 1",
+		"eval:controls2": "node eval/results.mjs --runs 1 --label controls2 --script eval/controls-eval2.json --only round-timer,late-joiner,key-door,lap-counter,spawner-cap,dialogue-own,inventory-respawn,day-night,two-plates --expect 1"
 	},
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "^1.32.1",

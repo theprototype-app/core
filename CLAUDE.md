@@ -887,9 +887,12 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   Two traps live here. The LIVE PREVIEW (`liveGeometryUpdate`) swaps geometry every
   frame, so topology has to survive the preview or there is nothing left for the
   commit to carry — that was the real reason a rotated band still lost its quads after
-  the commit path already carried them. And GLTF-based autosave does NOT round-trip
-  geometry.userData (toJSON/ObjectLoader does), so a restored autosave re-derives:
-  acceptable degradation, never a wrong result.
+  the commit path already carried them. GLTF autosave DOES carry `__topo` for a
+  single-material mesh (99 K1 measured it, `meshKernelGltfTopo.test.js`: GLTFExporter writes
+  geometry.userData as the primitive's `extras`, GLTFLoader reads them back, triangle order
+  kept); a multi-slot mesh is split into per-group primitives whose copies fail
+  `facesValidFor` and are DROPPED, and its toJSON multiMaterial sidecar keeps the partition.
+  Either way a missing or invalid partition re-derives: never a wrong result.
   Still true of the soup: an extrusion wall is coplanar+adjacent with the flat side
   beneath it so `groupFaces` MERGES them (Face granularity can't isolate the band —
   that is why Quad exists), and a quad's internal DIAGONAL is a triangulation
@@ -1750,6 +1753,30 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   operators author through. Imports NOTHING, deliberately: it stays a pure unit outside
   the history-cycle family, and derivation stays in faceEdit where the operators live.
   Full contract in the faceEdit entry below),
+  **99 K2 — ONE COMMIT, ONE SENDER.** `meshCommit.js` (pure) is the only `meshgeo` builder (`meshGeoMessage`/
+  `sendMeshGeo`; the wire is byte-identical, proved across two trees by `mesh-commit-two-tree`) and `compactMeshState`
+  (what history keeps: Float32 positions/uvs, the partition packed Int32, so `entryBytes` counts what is HELD).
+  `faceEdit.commitMesh(c)` = snapshot -> apply ('session' | 'object') -> broadcast -> record ('op' | 'entry' | false),
+  the one path every mesh commit takes (session ops, commitMeshGeoTriple/Snapshot, the UV editor, adjust, live mirror).
+  **99 K3 — ONE EDIT SESSION.** `editSessionState.js` (a leaf) holds it: `session.face` (`FS` in faceEdit: object,
+  workingTris, faces, quadPartner, overlay(s), grab, adjust, proxy) and `session.vertex` (`VS` in meshEdit: object,
+  handles, handleMesh, overlay, proxy, selectedHandle, selection, proxyGesture) replace the module globals; the shared
+  part (uuid, entry, edited, kernel, ID selection) opens and closes in `editSession.js` on the 15-F moments. ENTRY IS
+  LOSSLESS: the entry geometry is kept by reference and a leave with nothing edited re-emits it (never the welded
+  kernel). The kernel is built after entry in `meshSession.worker.js` (lazy `meshSession.js`, skipped above the commit
+  ceiling); stashed picks are stored as IDs (faces, vertices, edges = vertex-ID pairs). K4 runs bevel, extrude/inset/move,
+  bridge/fill/solidify, merge/dissolve/delete, subdivide/symmetrize on the session's op mesh (`heldOpMesh` ->
+  `sessionKernelCommit`/`objectKernelCommit`, IDs carried; the K3 adapter module had no caller left and went). History counts a typed
+  array shared by several steps once (`meshBudget.historyBytes`; `meshCommit.shareIds` shares equal ID channels).
+  `meshKernel/` (99 K1; the app reaches it only lazily, through meshSession.js — K4 moves the operators onto it): a
+  headless face-vertex mesh in flat typed arrays (BMesh disk + radial cycles), no three.js in
+  the core (`three.js` is the one adapter that imports it), stable vertex/edge/face IDs = slots
+  never reused until `compact()` (returns old -> new maps), n-gons, per-corner attributes,
+  material per face, a CSR `SpatialHash`, triangulation only as OUTPUT (a per-face cache with
+  order keys, so geometry -> kernel -> geometry is value-identical; every mesh of every scene
+  is held to that). Import welds by EXACT equality (lossless; a sphere's uv seam stays open —
+  `weld: 1e-4` is the editor's tolerance). Adapters speak today's CSR packing and `meshgeo`
+  fields, plus optional ID channels. One-page API: `src/lib/meshKernel/API.md`,
   `uvEditor` (UV1-UV5 + UV4, PRs #106/#107/#108/#109: the UV editor's whole core.
   Editing UVs IS a geometry edit — there is no standalone uv channel — so every UV
   write REUSES faceEdit's exported `readTriangles`/`trisToPositions`/`trisToGroups`/

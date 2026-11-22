@@ -97,32 +97,57 @@ export function tooLargeMessage(floats, noun = 'edit') {
 	return `That ${noun} is too large to sync — ${verts} vertices, and the limit is ${max}`;
 }
 
-/** Rough byte cost of one history entry's geometry payload — what `HISTORY_BYTES`
- * counts. Arrays are float64 in JS but travel/store as float32, so 4 bytes per
- * element is the honest wire-shaped figure; anything unrecognised counts as 0
- * (a transform or a selection entry is noise next to a geometry one).
- * @param {any} entry */
-export function entryBytes(entry) {
+/** Byte cost of one history entry's geometry payload — what `HISTORY_BYTES` counts.
+ * 99 K2: the bytes history really HOLDS. Every `meshgeo` producer records through the commit
+ * service (faceEdit `commitMesh` / `recordMeshGeo`), which keeps typed arrays (`meshCommit.
+ * compactMeshState`: Float32 positions / uvs / colours, the face partition as packed Int32, the
+ * kernel's Int32 ID channels), so a typed array counts its `byteLength`. A plain number array is
+ * counted as the Float32 it is stored as (4 bytes per element) — before K2 history kept such
+ * arrays as they came, at 8 bytes per number in V8, and counted them at 4. Anything
+ * unrecognised counts as 0 (a transform or a selection entry is noise next to a geometry one).
+ * @param {any} entry @param {WeakSet<object>} [seen] typed arrays already counted (historyBytes) */
+export function entryBytes(entry, seen) {
 	if (!entry) return 0;
 	let total = 0;
-	for (const side of [entry.before, entry.after]) total += stateBytes(side);
+	for (const side of [entry.before, entry.after]) total += stateBytes(side, seen);
 	// an aibatch/composite holds its own children
-	if (Array.isArray(entry.entries)) for (const child of entry.entries) total += entryBytes(child);
+	if (Array.isArray(entry.entries)) for (const child of entry.entries) total += entryBytes(child, seen);
 	return total;
 }
 
-/** @param {any} state */
-function stateBytes(state) {
+/**
+ * 99 K3: what a whole undo stack holds. A typed array two states share BY REFERENCE is held once,
+ * so it is counted once — the kernel's ID channels are shared between steps that do not change
+ * the topology (meshCommit `shareIds`), and a positions-only edit then costs its positions alone.
+ * @param {any[]} entries @returns {number}
+ */
+export function historyBytes(entries) {
+	const seen = new WeakSet();
+	let total = 0;
+	for (const entry of entries) total += entryBytes(entry, seen);
+	return total;
+}
+
+/** @param {any} value @param {WeakSet<object>} [seen] typed arrays already counted */
+function arrayBytes(value, seen) {
+	if (Array.isArray(value)) return value.length * 4;
+	if (!value?.byteLength) return 0;
+	if (seen && ArrayBuffer.isView(value)) {
+		if (seen.has(value)) return 0;
+		seen.add(value);
+	}
+	return value.byteLength;
+}
+
+/** @param {any} state @param {WeakSet<object>} [seen] */
+function stateBytes(state, seen) {
 	if (!state) return 0;
-	if (Array.isArray(state)) return state.length * 4; // a bare positions array
+	if (Array.isArray(state) || ArrayBuffer.isView(state)) return arrayBytes(state, seen); // a bare positions array
 	if (typeof state !== 'object') return 0;
 	let total = 0;
-	for (const key of ['positions', 'uvs', 'faceTris', 'faceCounts']) {
-		const value = state[key];
-		if (Array.isArray(value)) total += value.length * 4;
-		else if (value?.byteLength) total += value.byteLength;
-	}
+	for (const key of ['positions', 'uvs', 'colors', 'faceTris', 'faceCounts']) total += arrayBytes(state[key], seen);
 	if (Array.isArray(state.faces))
 		for (const face of state.faces) total += (face?.length ?? 0) * 4;
+	if (state.ids) total += arrayBytes(state.ids.cornerVertex, seen) + arrayBytes(state.ids.triFace, seen);
 	return total;
 }

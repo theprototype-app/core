@@ -74,6 +74,13 @@
 				"80a-int (gates hardening, heal keeps locks) + the v1.71.0 merge": "+0.5 / -0.2",
 				"the v1.72.0 merge (on v1.72.0, same machine)": "+0.7 / +1.1"
 			}
+		},
+		{
+			"date": "2026-11-22",
+			"lane": "99-edit-core (roadmap 99 K2 + K3)",
+			"play": "feat/99-kernel 32bc25f8 2117.5 KB -> 2120.1 KB (+2.6: faceEdit +1.1 the one commit service commitMesh + meshGeoEntry with the ID-channel share and the session-state reads; editSession +0.9 the one session's sync half (entry capture, edited check, open/close, lossless leave); meshEdit +0.3, history +0.1 the shared-array stack count, meshBudget +0.1) -> line 2122.0 KB",
+			"editor": "3321.0 KB -> 3323.8 KB (+2.8), line 3325.0 KB unchanged",
+			"note": "the brief's boot allowance is about 3 KB; the 61-int line left 2.5 KB over the base, so the lane tips play by 0.1 KB. Everything kernel-side is lazy (meshSession.js + its worker load on the first edit-mode entry, meshSessionAdapters.js is K4's and unused by the app, meshCommitKernel.js only where the kernel is). +2 KB on the line covers renamed-chunk churn (~1 KB between builds of the same code). QUESTIONS-99-edit-core 7; the integrator re-lines by the INT BOOT RULE and may veto"
 		}
 	],
 	"throttle": {

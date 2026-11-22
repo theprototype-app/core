@@ -284,6 +284,15 @@ export const shortcuts = [
 		['uv.tool-paint', 'Paint tool (in the UV editor)']
 	].map(([id, label]) => ({ id, keys: '', group: 'UV editor', label, external: true, scope: 'uv' })),
 	{
+		id: 'uv.space-pan',
+		keys: 'Space (hold)',
+		group: 'UV editor',
+		scope: 'uv',
+		label: 'Hold and drag to pan, whatever the tool (no middle button needed)',
+		fixed: true,
+		fixedReason: 'held while dragging, handled by the UV editor'
+	},
+	{
 		id: 'animation.grab',
 		keys: 'G',
 		group: 'Animation',

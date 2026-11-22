@@ -5,6 +5,7 @@
 //   4  G + a right click cancels: the UVs go back, no menu opens
 //   5  S + Y resizes V alone; Enter keeps it
 //   6  the tool keys W / B / C / P pick Select / Box / Lasso / Paint
+//   7  Space held + a left drag pans in any tool (Box here); released, the drag is a marquee again
 const h = require('./helpers.cjs');
 
 const texturedBox = (page) =>
@@ -167,6 +168,49 @@ h.run(async () => {
 	}
 	h.check(JSON.stringify(tools) === JSON.stringify(['box', 'lasso', 'paint', 'select']), `6.1 B / C / P / W pick Box / Lasso / Paint / Select (${tools.join(', ')})`);
 	await page.evaluate(() => window.__tp.test.v1.shortcutsRegistry.setKeymapPreset('theprototype'));
+
+	// ---- 7. Space-drag pans in any tool (no middle button) ---------------------------------------
+	// default preset, the Box tool armed: a plain drag would marquee, Space + drag pans and selects nothing
+	await page.click('#uv-tool-box');
+	await focusUv(page);
+	await page.keyboard.press('Escape');
+	await page.waitForTimeout(200);
+	const d70 = await dbg(page);
+	h.check(d70.tool === 'box' && d70.selected === 0, `7.0 premise: the Box tool, nothing selected (${d70.tool}, ${d70.selected})`);
+	const p0 = { x: d70.panX, y: d70.panY };
+	await page.mouse.move(c.x - 40, c.y - 30);
+	await page.keyboard.down('Space');
+	await page.waitForTimeout(100);
+	const held = await page.evaluate(() => document.getElementById('uv-canvas').dataset.spacePan === '1');
+	await page.mouse.down();
+	await page.mouse.move(c.x, c.y, { steps: 4 });
+	await page.mouse.move(c.x + 40, c.y + 30, { steps: 4 });
+	const mid = await dbg(page);
+	await page.mouse.up();
+	await page.keyboard.up('Space');
+	await page.waitForTimeout(200);
+	const d71 = await dbg(page);
+	h.check(held && mid.gesture === 'pan' && !mid.marquee, `7.1 Space held: a left drag is a pan, not a marquee (gesture ${mid.gesture}, marquee ${!!mid.marquee})`);
+	h.check(Math.abs(d71.panX - p0.x - 80) < 2 && Math.abs(d71.panY - p0.y - 60) < 2 && d71.selected === 0, `7.2 the view moved with the pointer and nothing was selected (pan ${(d71.panX - p0.x).toFixed(1)}, ${(d71.panY - p0.y).toFixed(1)}; selected ${d71.selected})`);
+	const released = await page.evaluate(() => document.getElementById('uv-canvas').dataset.spacePan !== '1');
+	// an empty spot again (the view moved): outside the 0..1 square, on the canvas itself
+	const e73 = await page.evaluate(() => {
+		const el = document.getElementById('uv-canvas');
+		const r = el.getBoundingClientRect();
+		for (const [u, v] of [[-0.2, 1.2], [-0.1, 1.1], [-0.05, 1.05], [1.1, -0.1]]) {
+			const p = window.__uvDebug().project(u, v);
+			if (document.elementFromPoint(r.left + p.x, r.top + p.y) === el) return { x: r.left + p.x, y: r.top + p.y };
+		}
+		return { x: r.left + 12, y: r.top + 12 };
+	});
+	await page.mouse.move(e73.x, e73.y);
+	await page.mouse.down();
+	await page.mouse.move(e73.x + 30, e73.y + 20, { steps: 4 });
+	const d73 = await dbg(page);
+	await page.mouse.up();
+	await page.waitForTimeout(200);
+	h.check(released && d73.gesture === 'box', `7.3 Space released: the same drag is the Box marquee again (gesture ${d73.gesture})`);
+	await page.click('#uv-tool-select');
 
 	await h.finish(browser);
 });

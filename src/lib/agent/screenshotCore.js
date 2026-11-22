@@ -97,7 +97,7 @@ const isPoint = (v) => Array.isArray(v) && v.length === 3 && v.every((x) => Numb
  * What a screenshot's options ask for, with no scene and no renderer. Precedence: a free `camera`, then `from`, then `view`.
  * @param {any} opts @param {number} canvasAspect the person's canvas
  * @returns {{problem: string} | {problem: null, view: string, current: boolean, free: {position: number[], target: number[]} | null, dir: number[] | null,
- *   uuids: string[], aspect: number, w: number, h: number, zoom: number, margin: number}}
+ *   uuids: string[], aspect: number, w: number, h: number, zoom: number, margin: number, subject: string | null}}
  */
 export function planShot(opts, canvasAspect) {
 	const o = opts ?? {};

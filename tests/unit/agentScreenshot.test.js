@@ -164,7 +164,9 @@ describe('17: shape, angles and the camera a shot asks for', () => {
 });
 
 describe('104 A4 subject content + A5 frame text', async () => {
+	/** @type {any} */
 	const core = await import('../../src/lib/agent/screenshotCore.js');
+	/** @param {number} cx @param {number} cz @param {number} sx @param {number} sz @param {number} [y0] @param {number} [y1] */
 	const box = (cx, cz, sx, sz, y0 = 0, y1 = 1) => ({ min: [cx - sx / 2, y0, cz - sz / 2], max: [cx + sx / 2, y1, cz + sz / 2] });
 	it('the 80 m ocean round a 24 m island is left out; the island (a terrain) and its campfire stay', () => {
 		const items = [

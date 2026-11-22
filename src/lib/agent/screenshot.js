@@ -238,7 +238,7 @@ export async function takeScreenshot(opts = {}) {
 	const camera = new THREE.PerspectiveCamera(fov, w / h, 0.05, 2000);
 	/** @type {number[] | null} */
 	let aimedAt = null;
-	/** @type {{kind: string, uuids?: string[], names?: string[]}} */
+	/** @type {{kind: string, uuids?: string[], names?: string[], leftOut?: {uuid: string, name: string, kind: string}[]}} */
 	let subject = { kind: 'none' };
 	if (through) {
 		through.updateWorldMatrix(true, false);

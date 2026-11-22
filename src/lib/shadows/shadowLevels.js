@@ -24,6 +24,11 @@ import { levelParams, cascadeReach, contactShadowsOn } from './shadowLevelCore.j
 const radiusBack = new WeakMap();
 /** the rig sun -> its own DirectionalLightShadow, while Far gives it cascades */
 const cascadeBack = new WeakMap();
+/** the own shadow -> its mapSize as it was. WebGLLights caches shadow uniforms PER LIGHT: the directional branch
+ * stores a REFERENCE to shadow.mapSize, and the sun branch then writes `copy(mapSize).multiply(extents)` into the
+ * same cached object, i.e. into the own shadow's mapSize (measured: 2048 -> 4096 x 2048 after one Far frame).
+ * Going back puts the number back, so Basic after Far is today's Basic again. */
+const mapSizeBack = new WeakMap();
 
 const state = { drawn: 'basic', tier: 'pc', contact: false, sweep: /** @type {any} */ (null), sun: /** @type {any} */ (null), applies: 0 };
 
@@ -70,6 +75,7 @@ function cascadeOn(sun, reach, radius) {
 		s.normalBias = own.normalBias;
 		s.intensity = own.intensity;
 		cascadeBack.set(sun, own);
+		mapSizeBack.set(own, [own.mapSize.x, own.mapSize.y]);
 		sun.shadow = s;
 		sun.isSunLight = true;
 	}
@@ -94,6 +100,13 @@ function cascadeOff(sun) {
 	sun.shadow = own;
 	delete sun.isSunLight;
 	cascadeBack.delete(sun);
+	const size = mapSizeBack.get(own);
+	mapSizeBack.delete(own);
+	if (size && (own.mapSize.x !== size[0] || own.mapSize.y !== size[1])) {
+		own.mapSize.set(size[0], size[1]);
+		own.map?.dispose();
+		own.map = null;
+	}
 }
 
 /** Every authored shadow-casting light (objectsGroup). @param {(l: any) => void} fn */

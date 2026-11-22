@@ -82,6 +82,8 @@
 					type: o.isSunLight ? 'Sun(cascaded)' : o.type,
 					name: o.name || '',
 					map: sh ? sh.mapSize.x : null,
+					mapSize: sh ? [sh.mapSize.x, sh.mapSize.y] : null,
+					shadowClass: sh ? sh.constructor.name : null,
 					radius: sh ? sh.radius : null,
 					frustum: c && c.isOrthographicCamera ? +(c.right - c.left).toFixed(1) : c ? 'persp' : null,
 					far: c ? +c.far.toFixed(1) : null,
@@ -181,6 +183,8 @@
 		if (opts.tier !== undefined && env.setShadowTierOverride) env.setShadowTierOverride(opts.tier || null);
 		env.setSceneShadowLevel(level);
 		await sleep(opts.waitMs ?? 3500);
+		// S0 only: price a level WITHOUT the contact pass (what a tier that gets Soft but not contact would draw)
+		if (opts.noContact && s.lightParams.contactShadowsWanted) s.lightParams.contactShadowsWanted.set(false);
 		if (opts.pose) pin(opts.pose);
 		await sleep(800);
 		const f = await rafSample(sampleMs);

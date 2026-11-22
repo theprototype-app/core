@@ -69,7 +69,7 @@ const save = () => fs.writeFileSync(path.join(OUT, `frames-${DEVICE}.json`), JSO
 			log(slug, 'inventory', JSON.stringify(S.inventory).slice(0, 900));
 			save();
 			for (const level of LEVELS) {
-				const row = await page.evaluate(([level, pose, sampleMs, tier]) => window.__s0.measure(level, { pose, sampleMs, tier }), [level, S.load.pose, SAMPLE_MS, TIER]);
+				const row = await page.evaluate(([level, pose, sampleMs, tier, noContact]) => window.__s0.measure(level, { pose, sampleMs, tier, noContact }), [level, S.load.pose, SAMPLE_MS, TIER, process.env.NOCONTACT === '1']);
 				row.shot = `${DEVICE}-${slug}-${level}-${S.rows.length}.png`;
 				await page.screenshot({ path: path.join(OUT, row.shot) });
 				S.rows.push(row);

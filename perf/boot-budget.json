@@ -4,12 +4,12 @@
 	"pages": {
 		"play": {
 			"html": "play.html",
-			"maxJsGzBytes": 2201600,
+			"maxJsGzBytes": 2211840,
 			"maxFirstFrameMs": 20000
 		},
 		"editor": {
 			"html": "index.html",
-			"maxJsGzBytes": 3450880,
+			"maxJsGzBytes": 3466240,
 			"maxFirstFrameMs": 32000
 		}
 	},
@@ -97,6 +97,23 @@
 				"102b-play #589": "+1.0 / +2.1",
 				"102b-papercuts #595": "+3.6 / +5.4",
 				"build-to-build churn (two builds of ce7ec23b)": "+0.1 / +0.3"
+			}
+		},
+		{
+			"date": "2026-11-22",
+			"lane": "102-int-2 (Look, assets and animation: 102-decals, 102-paint, 102-splats, 102-simplify-export, 102-ik)",
+			"play": "v1.74.0 2147.7 KB -> 2155.1 KB (+7.4) -> line 2160.0 KB (the int boot rule: merged tag + the union, rounded up to the next 5 KB)",
+			"editor": "v1.74.0 3366.5 KB -> 3380.2 KB (+13.7) -> line 3385.0 KB (the same rule)",
+			"note": "measured on the Deck after merging v1.74.0. Under the ~15 KB tell rule. Decals, splats, Paint, the simplify/export dialogs and the constraint solver are lazy chunks; what rides the boot is the record appliers, wire validators, the Inspector rows and the node specs",
+			"perLane": {
+				"basis": "each first-parent merge of the union chain built on v1.73.0 in one worktree with one node_modules (play/editor KB gz vs v1.73.0 2131.3/3342.0)",
+				"102-decals": "+2.6 / +4.3",
+				"102-paint": "+1.7 / +3.5",
+				"102-splats": "+1.0 / +1.7",
+				"102-simplify-export": "+0.6 / +1.7",
+				"102-ik": "+0.7 / +1.1",
+				"102-int-2 seam fixes": "+0.3 / +0.1",
+				"with 102-int-1": "+0.5 / +1.3 (the union's rows meeting int-1's Inspector and node registry)"
 			}
 		}
 	],

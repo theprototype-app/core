@@ -113,7 +113,7 @@ export async function scanMyRoom() {
 	}
 	const features = session.enabledFeatures;
 	if (Array.isArray(features) && !features.includes('plane-detection')) {
-		say('Scan my room needs passthrough with room data: leave VR, then choose Scan my room from the Play button menu.');
+		say('This session has no room data. Leave VR, then choose Scan my room (passthrough) from the Play button menu.');
 		return (last = { status: 'no-planes-feature', features: [...features] });
 	}
 	const space = renderer.xr.getReferenceSpace();

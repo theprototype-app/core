@@ -10,7 +10,8 @@
 //   3. the desktop peer has the same group, names and poses (ordinary synced objects)
 //   4. again, after a wall moved 10 cm and with a chair the person added: the same objects update in place, the
 //      chair stays, nothing is duplicated; one undo takes the re-scan back
-//   5. a VR (not passthrough) session: the row says how to get room data and creates nothing
+//   5. a VR session (threlte asks for plane-detection too) scans the same room; one without plane-detection
+//      says how to get room data and creates nothing
 // What stays OWED on the real Quest (device lab): a real room's numbers against a tape measure (3 cm), Space
 // Setup really opening from initiateRoomCapture, the passthrough look of the 45 % boxes.
 // Run: APP_URL=https://theprototype.app:7180/ node tests/e2e/room-scan-iwer.test.cjs
@@ -238,12 +239,20 @@ h.run(async () => {
 	await page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => myRoom(page), (r) => near(by(r, 'Wall 1')?.pos ?? [9, 9, 9], [0, 1.25, -1.51]), 'one undo takes the re-scan back', 10000);
 
-	// ---- 5. a VR session has no room data ----
+	// ---- 5. a VR session: threlte's VR button asks for plane-detection too, so it scans the same room (no
+	// duplicate); a session WITHOUT plane-detection says how to get room data and creates nothing ----
 	await iwer.exit(page);
 	await page.evaluate(() => window.__tp.test.v1.playMode.choosePlayAs('vr'));
 	await iwer.enter(page);
 	const r5 = await page.evaluate(() => window.__tp.test.v1.roomScan.scanMyRoom());
-	h.check(r5.status === 'no-planes-feature', `immersive-vr: told to use passthrough (${r5.status})`);
+	h.check(r5.status === 'ok' && r5.created === 0 && r5.updated === 9, `immersive-vr with plane-detection: the same room, updated (${JSON.stringify({ s: r5.status, c: r5.created, u: r5.updated })})`);
+	const r5b = await page.evaluate(() => {
+		const s = window.__iwer.sessions.at(-1).session;
+		Object.defineProperty(s, 'enabledFeatures', { value: ['local-floor'], configurable: true });
+		return window.__tp.test.v1.roomScan.scanMyRoom();
+	});
+	h.check(r5b.status === 'no-planes-feature', `a session without plane-detection is told how (${r5b.status})`);
+	h.check((await toasts(page)).some((t) => /no room data/.test(t)), 'the toast says so');
 	h.check((await myRoom(page)).kids.length === 10, 'and nothing changed');
 	await iwer.exit(page);
 

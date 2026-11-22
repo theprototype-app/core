@@ -75,6 +75,7 @@
 	import { testPlayersItems } from '$lib/testPlayers/testPlayers.js'; // 61 G3
 	import { animateInEditor, toggleAnimateInEditor } from '$lib/editorMotion'; // 78 F6
 	import { arPlayItems } from '$lib/arTable';
+	import { roomScanPlayItems } from '$lib/vr/roomScanEntry.js';
 	// 30 P2: Test play — the play button's right-click row beside the game chip's button
 	import { testPlay } from '$lib/gamePresence';
 	import { hudIsGame } from '$lib/hudDocs';
@@ -1024,6 +1025,8 @@
 			// 50 R1 / VH2: the AR table and Join the room, where the browser has immersive-ar (an
 			// unfolded phone gets this toolbar, not the phone bar)
 			...arPlayItems(),
+			// 104 D1: Scan my room, on a headset browser only
+			...roomScanPlayItems(),
 			// 60 Q1: Play here (the phone's Play menu carries the same row)
 			...playHereItems(),
 			// 61 G3: Test with players (the phone's Play menu carries the same rows)

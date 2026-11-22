@@ -14,6 +14,9 @@
 // 4K frame took to draw or the encoder to swallow it. A hidden tab simply pauses the export (no frames
 // are drawn, none are lost). World motion that runs on its own clock (flow spins, physics) is not
 // frame-exact — the timeline and the camera are.
+// 102b-sound (row 2): the SOUND is rendered offline first (exportAudio.js) to the same clock — the
+// timeline's audio clips where each frame shows them, and the scene's music bed — and muxed beside the
+// frames; sounds a flow plays on its own clock are not in a frame-exact file.
 //
 // Loaded LAZILY (the dialog's Start): the encoders never reach the boot graph. Everything is LOCAL:
 // the camera, the scrub and the file are this viewer's; nothing is sent, nothing is undone.
@@ -54,7 +57,7 @@ const PREP_FRAMES = 4;
  *   sink: import('./exportSinks.js').Sink, canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D,
  *   seq: any, ranges?: number[][] | null, pose: ((t: number) => any) | null, loop: boolean, phase: 'preparing'|'rendering'|'finishing',
  *   prep: number, i: number, posed: number, settle: number, poseRender: number, thumbnail: string | null,
- *   restore: () => void, shotsWere: boolean, lastPublish: number, startedAt: number
+ *   restore: () => void, shotsWere: boolean, lastPublish: number, startedAt: number, soundNote: string
  * }}
  */
 let session = null;
@@ -120,10 +123,22 @@ export async function startExport(override) {
 	const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d', { alpha: plan.alpha, willReadFrequently: plan.path === 'gif' }));
 	const name = recordingFileName(prefs.mode, new Date(), plan.ext);
 	recordingState.set({ ...IDLE_RECORDING, status: 'preparing', duration: plan.duration });
+	// 102b-sound: the take's sound, rendered offline to the file's own clock before the first frame
+	/** @type {import('./exportSinks.js').SinkAudio | null} */
+	let audio = null;
+	let soundNote = '';
+	if (plan.path === 'webcodecs' && prefs.sound) {
+		try {
+			audio = await (await import('./exportAudio.js')).renderExportAudio({ mode: prefs.mode, seq, ranges, seconds: plan.frames / plan.fps });
+		} catch (e) {
+			soundNote = 'No sound: ' + (e instanceof Error ? e.message : String(e));
+		}
+	}
 	/** @type {import('./exportSinks.js').Sink} */
 	let sink;
 	try {
 		sink = await createSink(plan.path, canvas, {
+			audio,
 			format: plan.format,
 			size: plan.size,
 			fps: plan.fps,
@@ -169,7 +184,8 @@ export async function startExport(override) {
 		restore,
 		shotsWere,
 		lastPublish: 0,
-		startedAt: performance.now()
+		startedAt: performance.now(),
+		soundNote
 	};
 	setFrameHooks({ before, after, cancel: cancelExport });
 	recordingDriver()?.invalidate?.();
@@ -297,7 +313,8 @@ async function finish() {
 				fps: s.plan.fps,
 				mime: out.mime,
 				itemId: saved.itemId,
-				savedNote: saved.note,
+				savedNote: [s.soundNote || out.extra?.soundNote, saved.note].filter(Boolean).join(' '),
+				sound: out.extra?.sound ?? null,
 				format: s.plan.format,
 				frames: s.plan.frames,
 				exact: true,

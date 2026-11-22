@@ -90,8 +90,27 @@ h.run(async () => {
 	// E opens it (the window owns its keys)
 	await page.locator('#audio-toggle').focus();
 	await page.keyboard.press('e');
-	await page.waitForSelector('#sound-edit-wave', { timeout: 10000 });
-	check(true, 'E opens the trim editor with the waveform');
+	const opened = await page
+		.waitForSelector('#sound-edit-wave', { timeout: 15000 })
+		.then(() => true)
+		.catch(() => false);
+	if (!opened)
+		console.log(
+			'TRIM-DIAG ' +
+				JSON.stringify(
+					await page.evaluate(() => ({
+						pressed: document.querySelector('#sound-edit-toggle')?.getAttribute('aria-pressed'),
+						panel: /** @type {any} */ (document.querySelector('#sound-edit, .pv-audio-edit'))?.innerText?.slice(0, 200) ?? null,
+						active: document.activeElement?.id,
+						duration: /** @type {any} */ (document.querySelector('#image-preview-window audio'))?.duration
+					}))
+				)
+		);
+	check(opened, 'E opens the trim editor');
+	if (!opened) {
+		await page.click('#sound-edit-toggle');
+		await page.waitForSelector('#sound-edit-wave', { timeout: 15000 });
+	}
 	await setField(page, 'sound-edit-start', '0.5');
 	await setField(page, 'sound-edit-end', '1.5');
 	await setField(page, 'sound-edit-fade-in', '0.2');

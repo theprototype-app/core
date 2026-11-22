@@ -324,8 +324,15 @@ const op4 = (peer, uuid, kind) =>
 					fe.toggleFaceSelection(b);
 					ok = fe.bridgeFaces(1, 0, false) !== false;
 				}
-			} else if (kind === 'flip') {
-				const t = along('x', 1);
+			} else if (kind === 'flip' || kind === 'unflip') {
+				// 'unflip' = the face a flip turned inside out: it still sits at +X but faces -X
+				let t = -1;
+				if (kind === 'flip') t = along('x', 1);
+				else {
+					let far = -Infinity;
+					for (const f of fe.currentFaces())
+						if (f.normal.x < -0.9 && f.centroid.x > far) (far = f.centroid.x), (t = f.triIndices[0]);
+				}
 				if (t >= 0) {
 					fe.highlightFaceByTriangle(t);
 					fe.pickFaceUnit(t);
@@ -678,7 +685,7 @@ h.run(async () => {
 	const s5f7pre = await facts(L, uuid);
 	const s5f7a = await f4(L, 'flip', '5f7a');
 	h.check(s5f7a.facts.positions !== s5f7pre.positions, '5f7a. ...and the branch flip (triangle frame) rewound the face');
-	const s5f7b = await f4(O, 'flip', '5f7b');
+	const s5f7b = await f4(O, 'unflip', '5f7b');
 	h.check(s5f7b.facts.positions === s5f7pre.positions, '5f7b. ...the release flip of the same face restores the bytes');
 	const s5f8a = await f4(L, 'grab', '5f8a');
 	h.check(s5f8a.facts.positions !== s5f7b.facts.positions, '5f8a. ...and the branch grab (in place) moved the face');

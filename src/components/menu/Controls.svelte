@@ -3,6 +3,7 @@
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { edgeFade } from '$lib/ui/edgeFade.js';
 	import { objectsGroup, TControls, transformMode, editorMode, isLocked, lockedObjects, globalScene, selectedObject, selectedObjects } from '../../stores/sceneStore';
+	import { handleSet } from '$lib/gizmo/gizmoPrefs';
 	import { chatUnread, chatMentioned } from '../../stores/appStore.js'; // 37 R15: the chat button's badge
 	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, uvEditorClose, shaderEditorClose, hudEditorClose, timelineClose, explorerClose, profilerClose, codeWorkspaceClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, floatingToolbar, toolbarAlwaysOnTop, hudStackLift, showSimControls, expandedObjects } from '../../stores/appStore.js';
 	// 24-B2: keyboard navigation in the object list (the Explorer's gridKeydown shape)
@@ -1098,7 +1099,7 @@
 	// 42 I7: `label` is the SHORT name the menus print (Customize toolbar…, Edit positions, the "+"
 	// popup, Swap with) — `title` stays the cell's tooltip, which may carry state and a hint
 	// ("Pivot: Median point (click to change)") and which suites select the bar's cells by
-	type CellButton = { title: string; label?: string; slot?: string; icon?: any; iconName?: string; tint: () => string; run: () => void; pressed?: () => boolean };
+	type CellButton = { title: string; label?: string; slot?: string; icon?: any; iconName?: string; tint: () => string; run: () => void; pressed?: () => boolean; tool?: string; mark?: () => boolean };
 
 	/** the one PSEUDO-cell: the transparent well the play FAB sits in. It is not a
 	 *  roster entry (play is never hideable) but it IS a cell of the row, which is
@@ -1204,18 +1205,27 @@
 			title: 'Move (1)',
 			icon: 'move',
 			tint: () => (hasSel && $transformMode === 'translate' ? ICON_ON : ICON_OFF),
+			// 103 H7 row 8: the "all" mark while the tool's repeat press shows all in one
+			tool: 'translate',
+			mark: () => hasSel && $transformMode === 'translate' && $handleSet === 'all',
 			run: () => setTransformMode('translate')
 		},
 		rotate: {
 			title: 'Rotate (2)',
 			icon: 'rotate-ccw',
 			tint: () => (hasSel && $transformMode === 'rotate' ? ICON_ON : ICON_OFF),
+			// 103 H7 row 8: the "all" mark while the tool's repeat press shows all in one
+			tool: 'rotate',
+			mark: () => hasSel && $transformMode === 'rotate' && $handleSet === 'all',
 			run: () => setTransformMode('rotate')
 		},
 		scale: {
 			title: 'Scale (3)',
 			icon: 'maximize-2',
 			tint: () => (hasSel && $transformMode === 'scale' ? ICON_ON : ICON_OFF),
+			// 103 H7 row 8: the "all" mark while the tool's repeat press shows all in one
+			tool: 'scale',
+			mark: () => hasSel && $transformMode === 'scale' && $handleSet === 'all',
 			run: () => setTransformMode('scale')
 		},
 		objects: {
@@ -3454,6 +3464,12 @@
 	 *  that would clear the flag, and clearing it any later would eat the user's next
 	 *  real press. The timer is the release valve for a gesture that produces no click
 	 *  at all (Enter, or a pointer that left the window). */
+	/** an Edit Mesh session's element gizmo is seated (the bar's press-and-drag drives it too) */
+	function meshProxyAttached() {
+		const ud = ($TControls as any)?.object?.userData;
+		return !!(ud?.isVertexProxy || ud?.isFaceProxy);
+	}
+
 	function swallowNextClick() {
 		if (typeof window === 'undefined') return;
 		let timer = 0;
@@ -3565,9 +3581,11 @@
 	function toolbarDrag(node: HTMLElement) {
 		let from: { x: number; y: number } | null = null;
 		let press: PointerEvent | null = null;
+		let toolPress = '';
 		const done = () => {
 			from = null;
 			press = null;
+			toolPress = '';
 			window.removeEventListener('pointermove', onMove);
 			window.removeEventListener('pointerup', done);
 			window.removeEventListener('pointercancel', done);
@@ -3576,6 +3594,18 @@
 			if (!from || !press) return;
 			if (Math.abs(e.clientX - from.x) + Math.abs(e.clientY - from.y) < DRAG_SLOP) return;
 			e.preventDefault();
+			// 103 H7 row 4: a press that starts on Move / Rotate / Resize with something selected is that
+			// transform at once, anywhere on screen (the touch twin of the keys) — not a toolbar move
+			if (toolPress) {
+				const mode = toolPress;
+				const origin = press;
+				done();
+				swallowNextClick();
+				void import('$lib/modalTransform').then((m) => {
+					if (m.startDragTransform(mode as any, origin)) window.dispatchEvent(new PointerEvent('pointermove', { clientX: e.clientX, clientY: e.clientY, pointerType: e.pointerType }));
+				});
+				return;
+			}
 			// hand over with the ORIGINAL press as the origin, so the bar does not jump
 			// by the slop it took to decide. 44 M12b: a PLACED bar moves as a cluster (anywhere, snapping)
 			if (barPlaced) grabId = 'bar';
@@ -3593,6 +3623,8 @@
 			if (toolbarGrab.active() || clusterGrab.active()) return; // an armed move already owns the bar
 			from = { x: e.clientX, y: e.clientY };
 			press = e;
+			const tool = (e.target as Element)?.closest?.('[data-tool]')?.getAttribute('data-tool') ?? '';
+			toolPress = tool && (hasSel || meshProxyAttached()) ? tool : '';
 			window.addEventListener('pointermove', onMove);
 			window.addEventListener('pointerup', done);
 			window.addEventListener('pointercancel', done);
@@ -3841,6 +3873,8 @@
 						id={btn.slot}
 						class="hud-cell relative"
 						class:on={tint === ICON_ON}
+						data-tool={btn.tool}
+						data-handles={btn.tool ? (btn.mark?.() ? 'all' : tint === ICON_ON ? 'tool' : 'off') : undefined}
 						title={btn.title}
 						role="button"
 						tabindex="-1"
@@ -3849,6 +3883,9 @@
 						use:cellMenu={cell.id}
 					>
 						<Icon name={glyph} size={20} class={tint} aria-hidden="true" />
+						{#if btn.mark?.()}
+							<span class="gizmo-all-mark" aria-hidden="true"></span>
+						{/if}
 						{#if cell.id === 'chat' && $chatUnread > 0}
 							<span id="chat-unread" class="chat-unread-badge" class:mention={$chatMentioned}>{$chatUnread > 99 ? '99+' : $chatUnread}</span>
 						{/if}
@@ -4419,6 +4456,23 @@
 {/if}
 
 <style>
+	/* 103 H7 row 8: the "all in one" mark on the active tool's button — four small corner ticks
+	   around the icon (the handles of every tool at once), in the accent */
+	.gizmo-all-mark {
+		position: absolute;
+		inset: 5px;
+		pointer-events: none;
+		border-radius: 3px;
+		background:
+			linear-gradient(var(--accent), var(--accent)) top left / 5px 2px no-repeat,
+			linear-gradient(var(--accent), var(--accent)) top left / 2px 5px no-repeat,
+			linear-gradient(var(--accent), var(--accent)) top right / 5px 2px no-repeat,
+			linear-gradient(var(--accent), var(--accent)) top right / 2px 5px no-repeat,
+			linear-gradient(var(--accent), var(--accent)) bottom left / 5px 2px no-repeat,
+			linear-gradient(var(--accent), var(--accent)) bottom left / 2px 5px no-repeat,
+			linear-gradient(var(--accent), var(--accent)) bottom right / 5px 2px no-repeat,
+			linear-gradient(var(--accent), var(--accent)) bottom right / 2px 5px no-repeat;
+	}
 	/* 38 R6: the object list's filter row, footer and chip popover in the tokens — chips are
 	   the kit's Chips look (pill, border-strong, the accent-soft fill when on); the row logic
 	   (All restores the previous set, Environment / System are exclusive views) is unchanged */

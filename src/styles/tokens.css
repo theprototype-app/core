@@ -71,6 +71,8 @@
 	--axis-x: #f0625a; /* X / Y / Z axis labels on transform rows (both themes) */
 	--axis-y: #74c655;
 	--axis-z: #5b97f5;
+	--gizmo-hover: #ffd166; /* 103 H7: the hovered / dragged gizmo handle (styles B, C, D) */
+	--gizmo-neutral: #e8e4d8; /* the gizmo's knobs, puck disc and box outline */
 	--knob: #ffffff; /* toggle knob */
 	--surface-hover: rgb(255 255 255 / 0.06); /* ghost / icon button / row hover */
 	--surface-active: rgb(255 255 255 / 0.1);
@@ -279,6 +281,8 @@
 	--axis-x: #ff6b5b;
 	--axis-y: #8cff4d;
 	--axis-z: #4daaff;
+	--gizmo-hover: #ffd400;
+	--gizmo-neutral: #ffffff;
 }
 
 /* personalities that are TYPE, not colour: the redesign scope keeps them */

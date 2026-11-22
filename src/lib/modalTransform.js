@@ -277,6 +277,41 @@ export function startMeshModal(mode) {
 	return ok;
 }
 
+/**
+ * 103 H7 row 4 — the TOUCH TWIN of the keys: a press that starts on the bar's Move / Rotate / Resize
+ * button and travels becomes that transform at once, anywhere on screen, following the finger (or
+ * the mouse) and kept on the lift. The same gesture as the keys (one undo step, the `move` wire, the
+ * status line), only held: no button-up commit is needed and Escape still cancels a mouse drag. In
+ * an Edit Mesh session it drives the session's own gizmo proxy, like the mesh keys.
+ * @param {Mode} mode @param {PointerEvent} press the press that started on the button
+ * @returns {boolean} did it start
+ */
+export function startDragTransform(mode, press) {
+	if (gesture.active()) return false;
+	if (get(isLocked) || get(isVRMode) || get(anyModalOpen)) return false;
+	if (!get(globalCamera) || !get(globalRenderer)) return false;
+	/** @type {any} */
+	const controls = get(TControls);
+	const proxy = controls?.object;
+	const mesh = !!(proxy?.userData?.isVertexProxy || proxy?.userData?.isFaceProxy);
+	if (!mesh && !get(selectedObjects).length) return false;
+	st.mode = mode;
+	st.locks = new Set();
+	st.typed = '';
+	st.shift = false;
+	st.ctrl = false;
+	st.proxy = mesh ? proxy : null;
+	st.meshObject = null;
+	if (mesh) {
+		const edited = proxy.userData?.isFaceProxy ? get(faceEditObject) : get(editingObject);
+		const uuid = typeof edited === 'string' ? edited : /** @type {any} */ (edited)?.uuid;
+		st.meshObject = uuid ? (get(objectsGroup)?.getObjectByProperty('uuid', uuid) ?? null) : null;
+	}
+	const ok = gesture.begin(press, { modal: false });
+	if (!ok) st.proxy = null;
+	return ok;
+}
+
 /** for tests and the debug hook */
 export function modalTransformState() {
 	return { active: gesture.active(), mode: st.mode, locks: [...st.locks].sort(), typed: st.typed, value: st.value, local: st.local, mesh: !!st.proxy };

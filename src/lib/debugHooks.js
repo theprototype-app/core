@@ -232,6 +232,9 @@ export const DEBUG_HOOKS = [
 	// 103 H4/H5/H10: the fly prefs and the start-at-once engine (modalTransformState)
 	['flyPrefs', () => import('./flyPrefs')],
 	['modalTransform', () => import('./modalTransform')],
+	// 103 H7: the gizmo styles (prefs, the row 8 cycle) and the faces' test seam (describeFace)
+	['gizmoPrefs', () => import('./gizmo/gizmoPrefs')],
+	['gizmoFaces', () => import('./gizmo/faces')],
 	['keyScope', () => import('./keyScope')],
 	// 36 F3/F4: the window-chrome rules (isHeaderDrag, windowDragActive)
 	['windowGrip', () => import('./windowGrip')],

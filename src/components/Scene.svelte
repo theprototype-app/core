@@ -5,7 +5,8 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { qualityOverrides } from '$lib/qualityGovernor';
 	import { T, useTask, useThrelte } from '@threlte/core';
-	import { Environment, interactivity, OrbitControls, TransformControls } from '@threlte/extras';
+	import { Environment, interactivity, OrbitControls } from '@threlte/extras';
+	import GizmoControls from './GizmoControls.svelte';
 	import { XR, Controller, Hand, useHand } from '@threlte/xr'
 	import { spring } from 'svelte/motion';
 	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu, viewportMenuOpener, addMenu, addMenuOpener, showToast, multiSelectMode } from '../stores/appStore';
@@ -1967,7 +1968,7 @@
 </T.Group>
 
 {#if !$isLocked && !$isVRMode}
-<TransformControls bind:controls={$TControls} {onchange} {oncreate} />
+<GizmoControls bind:controls={$TControls} {onchange} {oncreate} />
 {/if}
 
 <!-- 21-A A8: the composer renders in PLAY mode too. A game's authored look is

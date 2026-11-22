@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { handleSet, noteHiddenByTool } from './gizmo/gizmoPrefs';
 import { showConfirm } from './confirmDialog.js';
 import { get } from 'svelte/store';
 import { motionMs } from './motion'; // 53 A5
@@ -453,7 +454,18 @@ export function setTransformMode(mode) {
 	}
 	const same = get(transformMode) === mode;
 	const isEditProxy = !!(object?.userData?.isFaceProxy || object?.userData?.isVertexProxy);
+	// 103 H7 row 8 — THE TRIPLE SWITCH: a repeat press on the active tool steps that tool's handles ->
+	// all in one -> hidden (the hide below, as before) -> that tool's handles. A different tool always
+	// lands on its own handles. Targets whose tools restrict the gizmo (scatter, spline, LOD) have no
+	// all-in-one and keep the old two-step.
+	const allInOne = !!object && !object.userData?.isScatterProxy && !object.userData?.isSplineProxy && !object.userData?.isLodLevelProxy;
+	if (!same) handleSet.set('tool');
+	else if (object && !vr && allInOne && get(handleSet) === 'tool') {
+		handleSet.set('all');
+		return;
+	}
 	if (same && object && !vr) {
+		noteHiddenByTool();
 		if (isEditProxy) {
 			// the element selection goes with the gizmo, remembered in the session
 			if (get(faceEditObject) && object.userData.isFaceProxy && hideElementSelection()) return;
@@ -468,6 +480,7 @@ export function setTransformMode(mode) {
 		}
 	}
 	if (!object && !vr) {
+		noteHiddenByTool(); // row 8: what a tool press brings back shows that tool's handles
 		// restore: an edit session's hidden elements first, then the object memory
 		if (get(faceEditObject) && restoreElementSelection()) {
 			controls?.setMode(mode);

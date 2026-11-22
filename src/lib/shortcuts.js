@@ -271,18 +271,21 @@ export const shortcuts = [
 		scope: 'uv'
 	},
 	// 103 H4: the UV editor's start-at-once keys, its U / V locks and its tool keys — run by the
-	// editor's own capture handler (external), no key by default; the Blender preset binds them
+	// editor's own capture handler (external); the Blender preset binds the start-at-once and tool
+	// keys. The U / V locks default to X / Y in every preset (claude:9, 22 Nov, like the X / Y / Z
+	// locks): the gesture's own key hook reads them, so they act only while one runs. They stay in
+	// the UV scope: 'modal' would make them collide with the viewport's X / Y locks in Settings.
 	...[
 		['uv.now-move', 'Move now (in the UV editor) — the selection follows the pointer'],
 		['uv.now-rotate', 'Rotate now (in the UV editor)'],
 		['uv.now-scale', 'Resize now (in the UV editor)'],
-		['uv.lock-u', 'Lock to U while a UV move / resize runs'],
-		['uv.lock-v', 'Lock to V while a UV move / resize runs'],
+		['uv.lock-u', 'Lock to U while a UV move / resize runs', 'X'],
+		['uv.lock-v', 'Lock to V while a UV move / resize runs', 'Y'],
 		['uv.tool-select', 'Select tool (in the UV editor)'],
 		['uv.tool-box', 'Box select tool (in the UV editor)'],
 		['uv.tool-lasso', 'Lasso select tool (in the UV editor)'],
 		['uv.tool-paint', 'Paint tool (in the UV editor)']
-	].map(([id, label]) => ({ id, keys: '', group: 'UV editor', label, external: true, scope: 'uv' })),
+	].map(([id, label, keys = '']) => ({ id, keys, group: 'UV editor', label, external: true, scope: 'uv' })),
 	{
 		id: 'uv.space-pan',
 		keys: 'Space (hold)',

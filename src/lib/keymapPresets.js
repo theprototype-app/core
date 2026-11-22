@@ -44,8 +44,7 @@ export function presetKeys(preset) {
 			'uv.grab': '',
 			'uv.now-rotate': 'R',
 			'uv.now-scale': 'S',
-			'uv.lock-u': 'X',
-			'uv.lock-v': 'Y',
+			// U / V lock on X / Y in every preset (the registry's own default)
 			'uv.tool-select': 'W',
 			'uv.tool-box': 'B',
 			'uv.tool-lasso': 'C',

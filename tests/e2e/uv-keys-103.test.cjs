@@ -1,5 +1,6 @@
 // 103-keys row 3: the UV editor's start-at-once keys, U / V locks, tool keys and Shift-drag box select.
-//   1  default keys unchanged: G still ARMS Move (no grab starts), the tool keys are unbound
+//   1  default keys unchanged: G still ARMS Move (no grab starts), the tool keys are unbound; the U / V
+//      locks are X / Y in every preset and do nothing outside a gesture
 //   2  Shift-drag on empty space with the Select tool box-selects
 //   3  Blender preset: G starts the grab at once, X locks U, a click keeps it (one undo entry)
 //   4  G + a right click cancels: the UVs go back, no menu opens
@@ -71,8 +72,29 @@ h.run(async () => {
 	await page.keyboard.press('KeyG');
 	await page.waitForTimeout(300);
 	const d1 = await dbg(page);
-	const unbound = await page.evaluate(() => ['uv.now-move', 'uv.tool-box', 'uv.lock-u'].map((id) => window.__tp.test.v1.shortcutsRegistry.bindingOf(id)));
+	const unbound = await page.evaluate(() => ['uv.now-move', 'uv.tool-box'].map((id) => window.__tp.test.v1.shortcutsRegistry.bindingOf(id)));
 	h.check(!d1.grabbing && d1.xform === 'move' && unbound.every((k) => k === ''), `1.1 default: G arms Move and starts no grab; the new rows are unbound (${JSON.stringify(unbound)}, grabbing ${d1.grabbing})`);
+	// follow-up 2 (claude:9, 22 Nov): the U / V locks are X / Y in every preset, and act only inside a gesture
+	const uvLocks = await page.evaluate(async () => {
+		const r = window.__tp.test.v1.shortcutsRegistry;
+		const out = [];
+		for (const preset of ['theprototype', 'blender', 'unity']) {
+			await r.setKeymapPreset(preset);
+			out.push(r.bindingOf('uv.lock-u') + r.bindingOf('uv.lock-v'));
+		}
+		await r.setKeymapPreset('theprototype');
+		return out;
+	});
+	h.check(uvLocks.every((l) => l === 'XY'), `1.1b the U / V locks are X / Y in every preset (${JSON.stringify(uvLocks)})`);
+	await focusUv(page);
+	const sel1 = (await dbg(page)).selected;
+	const uvs1 = JSON.stringify(await uvs(page, uuid));
+	await page.keyboard.press('KeyX');
+	await page.keyboard.press('KeyY');
+	await page.mouse.move(c.x + 40, c.y + 30, { steps: 3 });
+	await page.waitForTimeout(200);
+	const d1c = await dbg(page);
+	h.check(!d1c.grabbing && d1c.selected === sel1 && JSON.stringify(await uvs(page, uuid)) === uvs1, `1.1c outside a gesture X / Y do nothing in the UV editor (grabbing ${d1c.grabbing}, selected ${sel1} -> ${d1c.selected}, UVs unchanged)`);
 
 	// ---- 2. Shift-drag box select ----------------------------------------------------------------
 	await page.keyboard.press('Escape'); // drop the selection

@@ -10,6 +10,7 @@
 	// a labelled list and a labelled card.
 	import { tick } from 'svelte';
 	import Icon from '../ui/Icon.svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { annotations, activeAnnotation, focusAnnotation } from '$lib/annotationsHandler';
 	import { visitorNotes, infoTitle } from '$lib/infoPoints.js';
 	import { isLocked } from '../../stores/sceneStore';
@@ -110,13 +111,13 @@
 				<Icon name="x" size={16} aria-hidden="true" />
 			</button>
 		</div>
-		<ul class="ip-list">
+		<ul class="ip-list" use:minimalScroll>
 			{#each notes as n, i (n.id)}
 				<li>
 					<button type="button" class="ip-item" data-info-point={n.id} onclick={() => openNote(n.id)}>
 						<span class="ip-dot" style:background={n.color} aria-hidden="true"></span>
 						<span class="ip-item-title">{infoTitle(n, i)}</span>
-						{#if n.picture}<Icon name="image" size={14} aria-hidden="true" />{/if}
+						{#if n.picture}<Icon name="image" size={16} aria-hidden="true" />{/if}
 					</button>
 				</li>
 			{/each}
@@ -141,7 +142,7 @@
 				<Icon name="x" size={16} aria-hidden="true" />
 			</button>
 		</div>
-		<div class="ip-body">
+		<div class="ip-body" use:minimalScroll>
 			{#if note.picture}<img class="ip-picture" src={note.picture} alt="" />{/if}
 			{#if note.text?.trim() && (note.name?.trim() || note.text.trim().includes('\n'))}<p class="ip-text">{note.text}</p>{/if}
 		</div>

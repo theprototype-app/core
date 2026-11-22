@@ -235,8 +235,9 @@ export async function runPrompt(text, images = []) {
 		const result = await runChat({
 			config,
 			messages: apiHistory,
-			tools: getAiTools(),
-			executeTool: executeAiTool,
+			// 104: the person's own assistant also works their Explorer, interface and scenes
+			tools: getAiTools({ person: true }),
+			executeTool: (name, args) => executeAiTool(name, args, { person: true }),
 			onDelta: (t) => {
 				aiStatus.set('');
 				streamInto(t);

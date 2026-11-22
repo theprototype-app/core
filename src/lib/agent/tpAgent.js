@@ -13,6 +13,7 @@ import { IMPORT_MODEL_TOOL } from '$lib/ai/importModel.js'; // 56 C9
 import { IMPORT_SHAPE_TOOL } from '$lib/ai/importShape.js'; // diorama2 item 9
 import { UPLOAD_ASSET_TOOL } from '$lib/ai/uploadAsset.js'; // diorama2 items 16 + 24
 import { IMPORT_FILE_TOOL } from '$lib/ai/importFile.js'; // 66 S4b
+import { PERSON_AI_TOOLS, runPersonTool } from '$lib/ai/personTools.js'; // 104 C1-C3
 import { physicsToolsEnabled, forcePhysicsTools } from '$lib/ai/flowTools.js';
 import { meshGenReady } from '$lib/ai/meshProviders.js';
 import { behaviourHost } from '$lib/ai/aiExtensions.js';
@@ -431,6 +432,19 @@ export function createTpAgent(extra = {}) {
 	let core;
 	const inbox = agentInbox();
 	let unsettledSince = 0;
+	/** 104 C1-C3: the person's own tools (their Explorer, interface, scenes) — a person's tab only, so a
+	 * headless agent page never lists them. They gate themselves (a viewer may list and read files)
+	 * @returns {Record<string, any>} */
+	const personTools = () =>
+		Object.fromEntries(
+			PERSON_AI_TOOLS.map((t) => [
+				t.function.name,
+				{
+					schema: { description: t.function.description, parameters: t.function.parameters },
+					run: (/** @type {any} */ args) => runPersonTool(t.function.name, args, { by: 'Claude' })
+				}
+			])
+		);
 	/** the tools only an agent page has @returns {Record<string, any>} */
 	const agentPageTools = () => ({
 			install_modules: {
@@ -548,7 +562,7 @@ export function createTpAgent(extra = {}) {
 			} catch {}
 		},
 		extraTools: {
-			...(extra.connector ? {} : agentPageTools()),
+			...(extra.connector ? personTools() : agentPageTools()),
 			// 86 T3: "what can you do here?" for a voice conversation (the connector, serve)
 			what_can_you_do: {
 				schema: WHAT_CAN_YOU_DO_SCHEMA,

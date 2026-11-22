@@ -512,6 +512,11 @@ export const DEBUG_HOOKS = [
 	['importDuplicates', () => import('./importDuplicates')],
 	['peerScenes', () => import('./peerScenes')],
 	['sharedLibrary', () => import('./sharedLibrary')],
+	// 104 C1-C3: the person's tools (files counters, the in-tab questions)
+	['filesTool', () => import('./ai/filesTool.js')],
+	['personAsk', () => import('./ai/personAsk.js')],
+	['showTool', () => import('./ai/showTool.js')],
+	['sceneTool', () => import('./ai/sceneTool.js')],
 	['transferLedger', () => import('./transferLedger')],
 	['explorerView', () => import('./explorerView')],
 	['filePreview', () => import('./filePreview')],

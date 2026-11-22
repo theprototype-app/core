@@ -467,6 +467,8 @@
 		"connect-overlay": 15,
 		"connector-voice": 60,
 		"connector-fixes": 215,
+		"connector-files": 120,
+		"connector-show-scene": 180,
 		"connect-states": 131,
 		"console-hygiene": 22,
 		"context-menu-overflow": 15,

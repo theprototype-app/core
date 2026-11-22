@@ -88,13 +88,15 @@ function folderLabel(id) {
 	return f ? '"' + f.name + '"' : 'a folder';
 }
 
-/** record a done op: onto the stack, and offered as the toast's Undo @param {FileOp} op */
-function record(op) {
+/** record a done op: onto the stack, and offered as the toast's Undo. 104 C1: `by` names an assistant that
+ * acted for the person ("Claude created \"door.js\"") @param {FileOp} op @param {string} [by] */
+function record(op, by) {
 	stack = [...stack, op].slice(-STACK_MAX);
 	debug.done++;
 	debug.last = op;
 	lastFileOp.set(describe(op));
-	offerUndo({ id: 'codefiles', text: describe(op), undo: () => undoOp(op) });
+	const text = by ? by + ' ' + describe(op).replace(/^\w/, (c) => c.toLowerCase()) : describe(op);
+	offerUndo({ id: 'codefiles', text, undo: () => undoOp(op) });
 }
 
 /** @param {string} reason @param {boolean} [quiet] the caller shows the reason itself (an inline name field) */
@@ -120,7 +122,8 @@ function liveFolder(id) {
  * template's default, numbered when taken; a typed name that is taken is REFUSED with the holder
  * named (a silent rename would leave the person looking for the name they typed). Opens in a
  * Code tab unless `open: false`.
- * @param {{template?: string, name?: string, folderId?: string | null, open?: boolean, quiet?: boolean}} [opts]
+ * 104 C1: `text` = the file's text instead of the template's; `by` = who made it, for the Undo line.
+ * @param {{template?: string, name?: string, folderId?: string | null, open?: boolean, quiet?: boolean, text?: string, by?: string}} [opts]
  * @returns {Promise<{ok: boolean, reason?: string, item?: any, tabId?: string | null}>}
  */
 export async function createCodeFile(opts = {}) {
@@ -136,18 +139,19 @@ export async function createCodeFile(opts = {}) {
 	const holder = nameTakenBy(name, get(explorerItems));
 	if (holder) return refuse(takenReason(holder.name), q);
 	const folderId = liveFolder(opts.folderId);
-	const bytes = /** @type {ArrayBuffer} */ (new TextEncoder().encode(templateText(tpl.key, name)).buffer);
+	const body = typeof opts.text === 'string' ? opts.text : templateText(tpl.key, name);
+	const bytes = /** @type {ArrayBuffer} */ (new TextEncoder().encode(body).buffer);
 	// a NEW record even when the bytes match one we hold (two empty JSON files are two files)
 	const item = await addItemFromBytes(bytes, name, folderId, { allowDuplicate: true });
 	if (!item) return refuse('Could not create "' + name + '"', q);
-	record({ op: 'create', kind: 'file', id: item.id, name: item.name });
+	record({ op: 'create', kind: 'file', id: item.id, name: item.name }, opts.by);
 	const tabId = opts.open === false ? null : await openCode({ source: tpl.key === 'script' ? 'script' : 'text', ref: { itemId: item.id } });
 	return { ok: true, item, tabId };
 }
 
 /**
  * New folder in `parentId` (null = the root). An empty name is "New folder", numbered.
- * @param {{name?: string, parentId?: string | null, quiet?: boolean}} [opts]
+ * @param {{name?: string, parentId?: string | null, quiet?: boolean, by?: string}} [opts]
  * @returns {{ok: boolean, reason?: string, folder?: any}}
  */
 export function createCodeFolder(opts = {}) {
@@ -163,14 +167,14 @@ export function createCodeFolder(opts = {}) {
 	if (folderNameTaken(name, parentId, get(explorerFolders))) return refuse('There is already a folder called "' + name + '" here', q);
 	const folder = createFolder(name, parentId);
 	if (!folder) return refuse('Could not create the folder "' + name + '"', q);
-	record({ op: 'create', kind: 'folder', id: folder.id, name: folder.name });
+	record({ op: 'create', kind: 'folder', id: folder.id, name: folder.name }, opts.by);
 	return { ok: true, folder };
 }
 
 /**
  * Rename a file or a folder. Open tabs follow (codeWorkspace.followNames).
  * @param {{kind: 'file' | 'folder', id: string, name: string}} opts
- * @param {{undoing?: boolean, quiet?: boolean}} [how]
+ * @param {{undoing?: boolean, quiet?: boolean, by?: string}} [how]
  * @returns {{ok: boolean, reason?: string}}
  */
 export function renameCodeEntry(opts, how = {}) {
@@ -186,7 +190,7 @@ export function renameCodeEntry(opts, how = {}) {
 		if (bad) return refuse(bad, q);
 		if (folderNameTaken(to, folder.parentId ?? null, get(explorerFolders), folder.id)) return refuse('There is already a folder called "' + to + '" here', q);
 		renameFolder(folder.id, to);
-		if (!how.undoing) record({ op: 'rename', kind: 'folder', id: folder.id, from: folder.name, to });
+		if (!how.undoing) record({ op: 'rename', kind: 'folder', id: folder.id, from: folder.name, to }, how.by);
 		return { ok: true };
 	}
 	const item = get(explorerItems).find((i) => i.id === opts.id);
@@ -198,7 +202,7 @@ export function renameCodeEntry(opts, how = {}) {
 	const holder = nameTakenBy(to, get(explorerItems), item.id);
 	if (holder) return refuse(takenReason(holder.name), q);
 	renameItem(item.id, to);
-	if (!how.undoing) record({ op: 'rename', kind: 'file', id: item.id, from: item.name, to });
+	if (!how.undoing) record({ op: 'rename', kind: 'file', id: item.id, from: item.name, to }, how.by);
 	return { ok: true };
 }
 
@@ -206,30 +210,30 @@ export function renameCodeEntry(opts, how = {}) {
  * Move a file or a folder into `to` (a folder id, null = the root). Open tabs keep pointing at
  * the file: a tab is addressed by the item's id, which a move does not touch.
  * @param {{kind: 'file' | 'folder', id: string, to: string | null}} opts
- * @param {{undoing?: boolean}} [how]
+ * @param {{undoing?: boolean, quiet?: boolean, by?: string}} [how]
  * @returns {{ok: boolean, reason?: string}}
  */
 export function moveCodeEntry(opts, how = {}) {
 	const no = refusal();
-	if (no) return refuse(no);
+	if (no) return refuse(no, !!how.quiet);
 	const folders = get(explorerFolders);
 	const to = opts.to ?? null;
 	if (opts.kind === 'folder') {
 		const folder = folders.find((f) => f.id === opts.id);
-		if (!folder) return refuse('That folder is gone');
+		if (!folder) return refuse('That folder is gone', !!how.quiet);
 		const bad = moveProblem({ kind: 'folder', id: folder.id, parentId: folder.parentId ?? null }, to, folders);
-		if (bad) return refuse(bad);
-		if (folderNameTaken(folder.name, to, folders, folder.id)) return refuse('There is already a folder called "' + folder.name + '" there');
-		if (!moveFolder(folder.id, to)) return refuse('A folder cannot move into itself');
-		if (!how.undoing) record({ op: 'move', kind: 'folder', id: folder.id, from: folder.parentId ?? null, to, name: folder.name });
+		if (bad) return refuse(bad, !!how.quiet);
+		if (folderNameTaken(folder.name, to, folders, folder.id)) return refuse('There is already a folder called "' + folder.name + '" there', !!how.quiet);
+		if (!moveFolder(folder.id, to)) return refuse('A folder cannot move into itself', !!how.quiet);
+		if (!how.undoing) record({ op: 'move', kind: 'folder', id: folder.id, from: folder.parentId ?? null, to, name: folder.name }, how.by);
 		return { ok: true };
 	}
 	const item = get(explorerItems).find((i) => i.id === opts.id);
-	if (!item) return refuse('That file is gone');
+	if (!item) return refuse('That file is gone', !!how.quiet);
 	const bad = moveProblem({ kind: 'file', id: item.id, parentId: item.folderId ?? null }, to, folders);
-	if (bad) return refuse(bad);
+	if (bad) return refuse(bad, !!how.quiet);
 	moveItem(item.id, to);
-	if (!how.undoing) record({ op: 'move', kind: 'file', id: item.id, from: item.folderId ?? null, to, name: item.name });
+	if (!how.undoing) record({ op: 'move', kind: 'file', id: item.id, from: item.folderId ?? null, to, name: item.name }, how.by);
 	return { ok: true };
 }
 
@@ -257,28 +261,28 @@ function closeTabsOf(itemIds) {
  * Restore puts it back). With the recycle bin off the Explorer deletes for good; there is then
  * nothing to restore and no Undo is offered.
  * @param {{kind: 'file' | 'folder', id: string}} entry
- * @param {{undoing?: boolean}} [how]
+ * @param {{undoing?: boolean, quiet?: boolean, by?: string}} [how]
  * @returns {{ok: boolean, reason?: string}}
  */
 export function deleteCodeEntry(entry, how = {}) {
 	const no = refusal();
-	if (no) return refuse(no);
+	if (no) return refuse(no, !!how.quiet);
 	const undoable = get(recycleBinEnabled);
 	if (entry.kind === 'folder') {
 		const folder = get(explorerFolders).find((f) => f.id === entry.id);
-		if (!folder) return refuse('That folder is gone');
+		if (!folder) return refuse('That folder is gone', !!how.quiet);
 		const ids = new Set(subtreeOf(folder.id, get(explorerFolders)));
 		const inside = new Set(get(explorerItems).filter((i) => ids.has(i.folderId ?? '')).map((i) => i.id));
 		deleteFolderToBin(folder.id);
 		closeTabsOf(inside);
-		if (!how.undoing && undoable) record({ op: 'delete', kind: 'folder', id: folder.id, name: folder.name });
+		if (!how.undoing && undoable) record({ op: 'delete', kind: 'folder', id: folder.id, name: folder.name }, how.by);
 		return { ok: true };
 	}
 	const item = get(explorerItems).find((i) => i.id === entry.id);
-	if (!item) return refuse('That file is gone');
+	if (!item) return refuse('That file is gone', !!how.quiet);
 	deleteItemsToBin([item.id]);
 	closeTabsOf(new Set([item.id]));
-	if (!how.undoing && undoable) record({ op: 'delete', kind: 'file', id: item.id, name: item.name });
+	if (!how.undoing && undoable) record({ op: 'delete', kind: 'file', id: item.id, name: item.name }, how.by);
 	return { ok: true };
 }
 

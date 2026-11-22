@@ -108,7 +108,11 @@ export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?:
 	logs: { title: 'Read the recent log', read: true },
 	playtest: { title: 'Play the game as a test player', destructive: false },
 	// 98 P2
-	take_photo: { title: 'Take a path-traced photo of the view', destructive: false }
+	take_photo: { title: 'Take a path-traced photo of the view', destructive: false },
+	// 104 C1-C3: the person's own Explorer, interface and scenes (a person's tab only)
+	files: { title: "Work with the person's files", destructive: true },
+	show: { title: "Show the person something on their screen", destructive: false },
+	scene: { title: "Open the person's scenes", destructive: true }
 });
 
 /** a title from a tool name: `create_objects` → `Create objects` @param {string} name */
@@ -365,6 +369,10 @@ export const CONNECTOR_STANDALONE = Object.freeze([
 	'join_session',
 	'where_are_users',
 	'undo_last',
+	// 104 C1-C3 (roadmap 104, owner rows C1-C3; the 85 budget table's slots for files / show and scene)
+	'files',
+	'show',
+	'scene',
 	// left out by the Worker's own policy (generate_mesh), kept listed so the Worker's EXCLUDED_TOOLS stays the scope call
 	'generate_mesh'
 ]);

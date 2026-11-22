@@ -28,6 +28,8 @@ import { isPingMessage } from './pingCore.js';
 // 101 F2: the object schema's receive verdicts (a pure leaf; the cleaning runs in the appliers)
 import { objectJsonVerdict, materialSetVerdict } from './sceneSchema.js';
 import { validPhotoRequest, validPhotoResult } from './photo/photoCore.js';
+// 102 M6: the live mesh-paint stroke's shape (a zero-import leaf)
+import { validMeshPaint } from './meshPaintWire.js';
 
 /** @param {unknown} v */
 export function isUuid(v) {
@@ -177,6 +179,9 @@ const shortStr = (v) => typeof v === 'string' && v.length > 0 && v.length <= 128
  * @type {Record<string, (data: any) => boolean>}
  */
 export const VALIDATORS = {
+	// 102 M6: a live mesh-paint stroke (a preview; the committed map / meshgeo is the truth)
+	meshpaint: (d) => validMeshPaint(d),
+	meshpaintend: (d) => typeof d.id === 'string' && d.id.length <= 64,
 	// 98 P2 (98-photo): Photo mode's hand-off — a view to render, its answer (PNG bytes capped), a stop
 	photoreq: (d) => validPhotoRequest(d),
 	photores: (d) => validPhotoResult(d),
@@ -510,6 +515,8 @@ export const VALIDATORS = {
 		// 101 F2: a slot list + groups — the schema's verdict here, the field-by-field cleaning in applyMaterials
 		if (d.parameter === 'materials') return isUuid(d.uuid) && materialSetVerdict(d.payload);
 		if (d.parameter === 'materialParam') return isUuid(d.uuid) && checkMaterialParam(null, d.key, d.value).ok;
+		// 102 M6: "this object only" on a shared material — the peer clones it too
+		if (d.parameter === 'materialUnlink') return isUuid(d.uuid);
 		// 72 LK1: a texture map slot takes an inline image or null, never a URL a peer could make us fetch
 		if (d.parameter === 'mapSlot') return isUuid(d.uuid) && isMapSlotKey(d.key) && isMapSlotImage(d.map);
 		// the base-colour map: an embedded image or null, never an address a peer could make us fetch

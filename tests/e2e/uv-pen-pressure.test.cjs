@@ -118,7 +118,7 @@ h.run(async () => {
 		window.__tp.test.v1.peers.subscribe((x) => (p = x))();
 		window.__sent = [];
 		const raw = p.send.bind(p);
-		p.send = (d) => { if (d?.type === 'uvpaint') window.__sent.push(JSON.parse(JSON.stringify(d))); return raw(d); };
+		p.send = (d) => { if (d?.type === 'uvpaint' || d?.type === 'meshpaint') window.__sent.push(JSON.parse(JSON.stringify(d))); return raw(d); };
 	});
 	const sent = () => A.page.evaluate(() => { const s = window.__sent; window.__sent = []; return s; });
 
@@ -173,7 +173,8 @@ h.run(async () => {
 	const oStart = await runAt(A.page, uuid, 0.25, 0.5, true);
 	const oEnd = await runAt(A.page, uuid, 0.75, 0.5, true);
 	const opacityWire = await sent();
-	h.check(opacityWire.length > 0 && opacityWire.every((m) => m.pmode === 'opacity'), 'opacity mode sends pmode: "opacity"');
+	// 103 H1: a pen stroke in opacity mode paints through meshPaint's stroke layer, so its mode rides `pm`
+	h.check(opacityWire.length > 0 && opacityWire.every((m) => m.type === 'meshpaint' && m.pm === 'opacity'), 'opacity mode sends the stroke-layer wire with pm: "opacity" (103 H1)');
 	h.check(!!oStart && oStart.px[1] > 110 && oStart.px[0] > oStart.px[1], `a light touch in opacity mode paints a TINT, not the full colour (rgb ${oStart?.px.join(',')})`);
 	h.check(!!oStart && !!oEnd && Math.abs(oStart.count - 40) <= 8 && Math.abs(oStart.count - oEnd.count) <= Math.max(2, oStart.count * 0.15), `...at the full brush width (${oStart?.count}px / ${oEnd?.count}px ~ 40)`);
 
@@ -190,7 +191,7 @@ h.run(async () => {
 		const group = document.querySelector('#uv-pen-pressure');
 		return group ? [...group.querySelectorAll('[role="radio"]')].map((b) => b.dataset.value + (b.getAttribute('aria-checked') === 'true' ? '✓' : '')) : null;
 	});
-	h.check(!!panel && panel.includes('off✓') && panel.length === 3, `the Brush panel offers Size / Opacity / Off (${JSON.stringify(panel)})`);
+	h.check(!!panel && panel.includes('off✓') && panel.length === 4, `the Brush panel offers Size / Opacity / Size + opacity / Off (${JSON.stringify(panel)})`);
 	await A.page.click('#uv-pen-pressure [data-value="size"]');
 	await A.page.waitForTimeout(150);
 	h.check((await A.page.evaluate(() => { let v; window.__tp.test.v1.uvEditor.uvPenPressure.subscribe((x) => (v = x))(); return v; })) === 'size', 'clicking Size sets the pref back');

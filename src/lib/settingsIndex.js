@@ -65,6 +65,7 @@ export const SETTINGS_ROWS = [
 	["Controls", "Two-finger pan", "Two-finger swipes pan the camera."],
 	["Controls", "Reverse trackpad pan", "Flip the two-finger pan direction (default: the scene follows your fingers, like touch scrolling)"],
 	["Controls", "Pinch zoom", "Pinching in/out on the viewport zooms the camera."],
+	["Controls", "Pen only draws", "Once a pen touches the screen, fingers pan and pinch-zoom instead of painting (UV editor and painting on the model)."],
 	["Controls", "Allow browser pinch zoom", "Accessibility: let pinch / Ctrl+scroll zoom the whole PAGE again (off keeps pinch as an app gesture and sto…"],
 	["Controls", "Wheel diagnostics", "Linux · Chromium · pointer: fine · wheel mode: auto\n\nScroll over the viewport — the last 8 wheel events lan…"],
 	["Input", "Gamepad", "A connected controller drives the game with no setup: the left stick walks, the right stick looks, and the…"],

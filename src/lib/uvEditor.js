@@ -57,12 +57,14 @@ export const uvBrushColor = writable('#ff3b30');
 /** UV3 brush @type {import('svelte/store').Writable<number>} */
 export const uvBrushSize = writable(24);
 /** 24-F1: what pen PRESSURE does to a stroke — 'size' (width, default) · 'opacity'
- * (alpha) · 'off'. LOCAL pref; the sender's mode rides the stroke as an optional
- * `pmode` (absent = size) so a receiver draws the same picture.
- * @type {import('svelte/store').Writable<'size'|'opacity'|'off'>} */
+ * (alpha) · 'both' (103 H1: Size + opacity) · 'off'. LOCAL pref; the sender's mode rides
+ * the stroke as an optional `pmode` / `pm` (absent = size) so a receiver draws the same
+ * picture. A pen stroke in 'opacity' or 'both' paints through meshPaint's stroke layer
+ * (one layer per stroke, per-point alpha by max), never this module's segment painter.
+ * @type {import('svelte/store').Writable<'size'|'opacity'|'both'|'off'>} */
 export const uvPenPressure = writable(
 	/** @type {any} */ (
-		typeof localStorage !== 'undefined' && ['size', 'opacity', 'off'].includes(safeStorage.getItem('uvPenPressure') || '')
+		typeof localStorage !== 'undefined' && ['size', 'opacity', 'both', 'off'].includes(safeStorage.getItem('uvPenPressure') || '')
 			? safeStorage.getItem('uvPenPressure')
 			: 'size'
 	)
@@ -970,9 +972,11 @@ const STROKE_STALE_MS = 5000;
 
 /** @type {Map<string, {canvas: any, texture: any, uuid: string, slot: number, seededFrom: string|null, flipY: boolean, previousMap: any}>} */
 const paintCanvases = new Map();
-/** @type {Map<string, {ts: number}>} */
+/** @type {Map<string, {ts: number, uuid?: string, slot?: number}>} */
 const liveUvStrokes = new Map();
-/** @type {{id: string, uuid: string, slot: number, before: string|null, sent: number, points: number[][], pmode: 'size'|'opacity'|'off'} | null} */
+/** 103 H2: live strokes a peer cancelled (a second finger landed), so a segment still decoding draws nothing */
+const cancelledUvStrokes = new Set();
+/** @type {{id: string, uuid: string, slot: number, before: string|null, sent: number, points: number[][], pmode: 'size'|'opacity'|'both'|'off'} | null} */
 let paintStroke = null;
 let strokeSeq = 0;
 
@@ -1143,7 +1147,7 @@ function canvasY(entry, v) {
  * before and an older peer indexing [0]/[1] ignores it. The segment takes its
  * factor from its END point: width for `pmode` 'size' (default), alpha for 'opacity'.
  * @param {any} entry @param {number[]} from @param {number[]} to @param {string} color
- * @param {number} size @param {'size'|'opacity'|'off'} [pmode]
+ * @param {number} size @param {'size'|'opacity'|'both'|'off'} [pmode]
  */
 function strokeSegment(entry, from, to, color, size, pmode = 'size') {
 	const ctx = entry.canvas.getContext('2d');
@@ -1188,6 +1192,23 @@ export async function beginPaintStroke(uuid, slot = 0) {
 	};
 	return true;
 }
+
+/**
+ * 102 M6: the base-colour paint surface for meshPaint.js — the SAME canvas this module paints, so a brush stroke
+ * from either painter, the UV editor's live backdrop and the next stroke all see one image. Async for the reason
+ * paintSurface is. @param {string} uuid @param {number} [slot] @returns {Promise<any>}
+ */
+export function openColorSurface(uuid, slot = 0) {
+	return paintSurface(uuid, slot);
+}
+
+/** 102 M6: forget a colour surface (meshPaint cancelled a stroke on it) @param {string} uuid @param {number} [slot] */
+export function dropColorSurface(uuid, slot = 0) {
+	paintCanvases.delete(paintKey(uuid, slot));
+}
+
+/** 102 M6: the shared encoder and pressure curve, so both painters commit and taper alike */
+export { canvasToDataUrl as encodePaintCanvas, pressureFactor as paintPressureFactor };
 
 /** is a stroke open? */
 export function painting() {
@@ -1289,6 +1310,13 @@ export function cancelPaintStroke() {
 	const stroke = paintStroke;
 	paintStroke = null;
 	if (!stroke) return;
+	// 103 H2: peers already drawing it put their map back too (an older peer keeps the preview until the slot's
+	// next commit, which replaces the whole image)
+	if (stroke.sent > 0) {
+		/** @type {any} */
+		const peer = get(peers);
+		peer?.send({ type: 'uvpaintend', id: stroke.id, cancel: 1 });
+	}
 	const entry = paintCanvases.get(paintKey(stroke.uuid, stroke.slot));
 	const object = get(objectsGroup)?.getObjectByProperty('uuid', stroke.uuid);
 	const material = materialAt(object, stroke.slot);
@@ -1323,15 +1351,36 @@ export async function applyUvPaint(data) {
 	// 24-F1: a point may carry a third number (pen pressure); the sender's mode rides
 	// `pmode` when it is not the default
 	const pmode = data.pmode === 'opacity' ? 'opacity' : 'size';
+	if (cancelledUvStrokes.has(data.id)) return;
 	for (let i = 1; i < seg.length; i++)
 		strokeSegment(entry, seg[i - 1], seg[i], data.color ?? '#000000', data.size ?? 16, pmode);
-	liveUvStrokes.set(data.id, { ts: Date.now() });
+	liveUvStrokes.set(data.id, { ts: Date.now(), uuid: data.uuid, slot });
 	pokeScene();
 }
 
-/** Receive side: a peer finished a stroke. @param {any} data */
+/** Receive side: a peer finished a stroke — or CANCELLED it (103 H2: `cancel`), which puts the map back.
+ * @param {any} data */
 export function applyUvPaintEnd(data) {
+	const live = liveUvStrokes.get(data?.id);
 	liveUvStrokes.delete(data?.id);
+	if (!data?.cancel) return;
+	cancelledUvStrokes.add(data.id);
+	if (cancelledUvStrokes.size > 64) cancelledUvStrokes.delete(cancelledUvStrokes.values().next().value);
+	if (!live?.uuid) return;
+	const slot = live.slot ?? 0;
+	// our own open stroke on that slot keeps the canvas: the peer's marks go when either side commits
+	if (paintStroke && paintStroke.uuid === live.uuid && paintStroke.slot === slot) return;
+	const key = paintKey(live.uuid, slot);
+	const entry = paintCanvases.get(key);
+	const material = materialAt(get(objectsGroup)?.getObjectByProperty('uuid', live.uuid), slot);
+	if (!entry || !material) return;
+	if (material.map === entry.texture) {
+		material.map = entry.previousMap ?? null;
+		material.needsUpdate = true;
+		pokeScene();
+	}
+	paintCanvases.delete(key);
+	uvPaintTick.update((n) => n + 1);
 }
 
 /** how many live remote strokes we are tracking (test hook) */

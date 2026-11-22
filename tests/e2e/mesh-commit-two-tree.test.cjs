@@ -562,6 +562,24 @@ h.run(async () => {
 	await undo(L);
 	await agree('5o. branch undo (kernel connect) -> both peers agree');
 
+	// 5f0. back to the mesh after 5j for families 4-6: the loop cuts leave T-junctions on the box, and a hole through
+	// one is no loop the fill (kernel or release soup alike) can close — so each peer undoes its own cut, newest
+	// first (the knife, the release loop cut, the branch loop cut), and both peers must hold 5j's bytes again
+	await undo(L);
+	await agree('5f0a. branch undo (kernel knife) -> both peers agree');
+	await release(L, uuid);
+	await unlocked(O, uuid);
+	await undo(O);
+	await agree('5f0b. release undo (soup loop cut) -> both peers agree');
+	await release(O, uuid);
+	await unlocked(L, uuid);
+	await undo(L);
+	const u5f0 = await agree('5f0c. branch undo (kernel loop cut) -> both peers agree');
+	h.check(
+		u5f0.facts.positions === u5j.facts.positions && u5f0.facts.faces === u5j.facts.faces,
+		'5f0c. ...and hold EXACTLY the bytes + partition after 5j'
+	);
+
 	// 5f4a-5f4h. lane 99-ops-b family 4 (bridge / fill / solidify on the kernel), alternating with the release peer
 	const f4 = async (peer, kind, label) => {
 		const other = peer === L ? O : L;

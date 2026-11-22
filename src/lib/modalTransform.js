@@ -16,7 +16,7 @@
 //    cover the touch bars (row 6)
 import * as THREE from 'three';
 import { get } from 'svelte/store';
-import { objectsGroup, selectedObjects, globalCamera, globalRenderer, TControls, lockedObjects, isLocked, isVRMode, pokeScene } from '../stores/sceneStore';
+import { objectsGroup, selectedObjects, globalCamera, globalRenderer, TControls, lockedObjects, isLocked, isVRMode, pokeScene, transformMode } from '../stores/sceneStore';
 import { peers, showToast, anyModalOpen } from '../stores/appStore';
 import { createGesture } from './modalGrab';
 import { recordTransformSet } from './history';
@@ -29,11 +29,14 @@ import { captureAutoKey, playheadOf } from './animationPreview';
 import { reseatPivot } from './multiTransform';
 import { bindingOf, comboOf } from './shortcuts';
 import { pointerAt } from './pointerAt';
+import { cancelFaceGrab, faceEditObject } from './faceEdit';
+import { editingObject } from './meshEdit';
 
 /** @typedef {'translate'|'rotate'|'scale'} Mode */
 
 const MODE_WORD = { translate: 'Move', rotate: 'Rotate', scale: 'Resize' };
 const NOW_ROW = { translate: 'transform.now-move', rotate: 'transform.now-rotate', scale: 'transform.now-scale' };
+const MESH_NOW_ROW = { translate: 'mesh.now-move', rotate: 'mesh.now-rotate', scale: 'mesh.now-scale' };
 const AXES = ['x', 'y', 'z'];
 const LIVE_MS = 100;
 
@@ -54,11 +57,48 @@ const st = {
 	/** @type {THREE.Quaternion} */ basis: new THREE.Quaternion(),
 	local: false,
 	pivot: new THREE.Vector3(),
-	/** @type {HTMLElement|null} */ line: null
+	/** @type {HTMLElement|null} */ line: null,
+	/** 103 H4 row 5: a MESH session — the gesture drives the session's own gizmo proxy */
+	/** @type {any} */ proxy: null,
+	/** the object a mesh gesture edits (its axes are the Local locks) @type {any} */ meshObject: null,
+	/** the gizmo mode to put back after a mesh gesture */
+	prevMode: 'translate'
 };
+
+/**
+ * Row 5 — MESH EDIT MODE. The vertex / edge / face tools already turn a gizmo drag of their proxy
+ * into a kernel-session commit (meshEdit.onProxyDragChanged, faceEdit.onFaceGizmoDragChanged), so
+ * the modal gesture BECOMES that drag: it raises the gizmo's own `dragging-changed`, writes the
+ * proxy's pose and raises `change` / `objectChange` per move, exactly the events TransformControls
+ * would. One undo step, the session's own wire — nothing here talks to the mesh.
+ * @param {boolean} dragging */
+function proxyDrag(dragging) {
+	/** @type {any} */
+	const controls = get(TControls);
+	if (!controls) return;
+	controls.dispatchEvent({ type: 'dragging-changed', value: dragging });
+}
+function proxyMoved() {
+	/** @type {any} */
+	const controls = get(TControls);
+	controls?.dispatchEvent({ type: 'change' });
+	controls?.dispatchEvent({ type: 'objectChange' });
+}
+/** the tools read the gizmo MODE when the drag starts (rotate / scale about the pivot) @param {Mode} mode */
+function proxyMode(mode) {
+	/** @type {any} */
+	const controls = get(TControls);
+	transformMode.set(mode);
+	controls?.setMode?.(mode);
+}
 
 const gesture = createGesture({
 	snapshot: () => {
+		if (st.proxy) {
+			st.proxy.updateMatrixWorld(true);
+			const p = st.proxy;
+			return [{ object: p, startWorld: p.matrixWorld.clone(), before: { pos: p.position.toArray(), rot: p.rotation.toArray(), scale: p.scale.toArray() } }];
+		}
 		const group = get(objectsGroup);
 		/** @type {any[]} */
 		const locks = get(lockedObjects) || [];
@@ -97,8 +137,17 @@ const gesture = createGesture({
 		const controls = get(TControls);
 		st.local = controls?.space === 'local' && members.length === 1;
 		st.basis.identity();
-		if (st.local) members[0].object.getWorldQuaternion(st.basis);
-		for (const m of members) {
+		// Edit Mesh: the locks are the OBJECT's axes in Local (Blender's edit-mode local), never the face
+		// proxy's own frame, and the world's in Global
+		if (st.proxy) st.local = controls?.space === 'local' && !!st.meshObject;
+		if (st.local) (st.proxy ? st.meshObject : members[0].object).getWorldQuaternion(st.basis);
+		if (st.proxy) {
+			// the proxy seats where the tools put it (pivot / centroid): turn and resize about it
+			st.prevMode = /** @type {Mode} */ (get(transformMode) || 'translate');
+			proxyMode(st.mode);
+			proxyDrag(true);
+		}
+		for (const m of st.proxy ? [] : members) {
 			suspendAnimation(m.object.uuid);
 			void import('./physics').then((p) => p.holdBody(m.object.uuid));
 		}
@@ -136,10 +185,22 @@ const gesture = createGesture({
 			m.object.scale.fromArray(m.before.scale);
 			m.object.updateMatrixWorld(true);
 		}
-		sendMoves(ctx.snapshot);
+		if (st.proxy) proxyMoved();
+		else sendMoves(ctx.snapshot);
 	},
 	end: (ctx, kept) => {
 		hideLine();
+		if (st.proxy) {
+			// the release commits through the session; a cancel drops the face grab first so the release
+			// finds nothing to commit (the vertex tool already skips an unchanged drag)
+			if (!kept && st.proxy.userData?.isFaceProxy) cancelFaceGrab();
+			proxyDrag(false);
+			proxyMode(/** @type {Mode} */ (st.prevMode));
+			st.proxy = null;
+			st.meshObject = null;
+			pokeScene();
+			return;
+		}
 		/** @type {any[]} */
 		const set = [];
 		for (const m of ctx.snapshot) {
@@ -167,6 +228,7 @@ const gesture = createGesture({
  */
 export function startModalTransform(mode) {
 	if (gesture.active()) return false;
+	st.proxy = null;
 	if (get(isLocked) || get(isVRMode) || get(anyModalOpen)) return false;
 	if (!get(globalCamera) || !get(globalRenderer)) return false;
 	if (!get(selectedObjects).length) {
@@ -185,9 +247,39 @@ export function startModalTransform(mode) {
 	return gesture.begin(/** @type {any} */ ({ clientX: at[0], clientY: at[1] }), { modal: true });
 }
 
+/**
+ * Row 5: Move / Rotate / Resize now inside an Edit Mesh session, on the picked vertices / edges /
+ * faces (the mesh.now-* rows, run by MeshEditPopup's keydown). @param {Mode} mode
+ */
+export function startMeshModal(mode) {
+	if (gesture.active()) return false;
+	if (get(isVRMode) || !get(globalCamera) || !get(globalRenderer)) return false;
+	/** @type {any} */
+	const controls = get(TControls);
+	const proxy = controls?.object;
+	if (!proxy?.userData?.isVertexProxy && !proxy?.userData?.isFaceProxy) {
+		showToast('Pick vertices, edges or faces to ' + MODE_WORD[mode].toLowerCase() + ' first.');
+		return false;
+	}
+	st.mode = mode;
+	st.locks = new Set();
+	st.typed = '';
+	st.shift = false;
+	st.ctrl = false;
+	st.proxy = proxy;
+	const edited = proxy.userData?.isFaceProxy ? get(faceEditObject) : get(editingObject);
+	const uuid = typeof edited === 'string' ? edited : /** @type {any} */ (edited)?.uuid;
+	st.meshObject = uuid ? (get(objectsGroup)?.getObjectByProperty('uuid', uuid) ?? null) : null;
+	const rect = canvasRect();
+	const at = pointerAt() ?? [rect.left + rect.width / 2, rect.top + rect.height / 2];
+	const ok = gesture.begin(/** @type {any} */ ({ clientX: at[0], clientY: at[1] }), { modal: true });
+	if (!ok) st.proxy = null;
+	return ok;
+}
+
 /** for tests and the debug hook */
 export function modalTransformState() {
-	return { active: gesture.active(), mode: st.mode, locks: [...st.locks].sort(), typed: st.typed, value: st.value, local: st.local };
+	return { active: gesture.active(), mode: st.mode, locks: [...st.locks].sort(), typed: st.typed, value: st.value, local: st.local, mesh: !!st.proxy };
 }
 
 /** @param {import('./modalGrab').GestureContext} ctx @param {KeyboardEvent} e */
@@ -214,7 +306,7 @@ function onKey(ctx, e) {
 	}
 	// another start-at-once key switches the mode in place (G then R)
 	for (const mode of /** @type {Mode[]} */ (['translate', 'rotate', 'scale'])) {
-		const bound = bindingOf(NOW_ROW[mode]);
+		const bound = bindingOf((st.proxy ? MESH_NOW_ROW : NOW_ROW)[mode]);
 		if (bound && combo === bound) {
 			if (mode !== st.mode) switchMode(ctx, mode);
 			return true;
@@ -251,6 +343,13 @@ function switchMode(ctx, mode) {
 		m.object.rotation.fromArray(m.before.rot);
 		m.object.scale.fromArray(m.before.scale);
 		m.object.updateMatrixWorld(true);
+	}
+	if (st.proxy) {
+		proxyMoved();
+		proxyDrag(false);
+		proxyMode(mode);
+		ctx.snapshot[0].startWorld = st.proxy.matrixWorld.clone();
+		proxyDrag(true);
 	}
 	st.mode = mode;
 	st.typed = '';
@@ -433,7 +532,8 @@ function applyNow(members) {
 		}
 	}
 	updateLine();
-	liveSend(members);
+	if (st.proxy) proxyMoved();
+	else liveSend(members);
 	pokeScene();
 }
 

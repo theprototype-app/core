@@ -13,8 +13,8 @@
 	import SettingRow from '../../ui/SettingRow.svelte';
 	import Icon from '../../ui/Icon.svelte';
 	import { showToast } from '../../../stores/appStore.js';
-	import { shortcuts, comboOf, isRebindable, rebindShortcut, resetShortcut, setOverride, setShortcutCapture, nonLatinLayoutSeen, KEYMAP_PRESETS, keymapPreset, setKeymapPreset, presetDefaultOf } from '$lib/shortcuts';
-	import { flyWithWasd, flyDirection } from '$lib/flyPrefs'; // 103 H5 / H10
+	import { shortcuts, comboOf, isRebindable, rebindShortcut, resetShortcut, setOverride, setShortcutCapture, nonLatinLayoutSeen, keymapPreset, presetDefaultOf } from '$lib/shortcuts';
+	import { flyWithWasd } from '$lib/flyPrefs'; // 103 H5: the grid re-keys on it
 	import { scopeLabel } from '$lib/keyScope';
 	import { settingsResetTick } from '$lib/settings/resetCategory.js';
 
@@ -125,45 +125,12 @@
 		     non-Latin layout — say how letters resolve -->
 		<p id="shortcut-layout-note" class="sc-note">Letter shortcuts use the physical key position on this layout — the key where the letter sits on a QWERTY keyboard.</p>
 	{/if}
-	<!-- 103 H5: the keymap preset (a set of default bindings; your own rebinds win) and the two fly
-	     prefs the presets lean on -->
-	<Section variant="card" label="Keymap">
-		<SettingRow label="Keymap preset" description={KEYMAP_PRESETS.find((p) => p.id === $keymapPreset)?.hint ?? ''}>
-			<select
-				id="keymap-preset"
-				class="settings-text"
-				value={$keymapPreset}
-				onchange={(e) => {
-					setKeymapPreset(/** @type {HTMLSelectElement} */ (e.currentTarget).value);
-					version++;
-				}}
-			>
-				{#each KEYMAP_PRESETS as preset (preset.id)}
-					<option value={preset.id}>{preset.label}</option>
-				{/each}
-			</select>
-		</SettingRow>
-		<SettingRow label="Fly with WASD" description="Only while holding the right mouse button frees W A S D Q E for commands (Blender's bare S, Unity's W / E / R).">
-			<select
-				id="fly-with-wasd"
-				class="settings-text"
-				value={$flyWithWasd}
-				onchange={(e) => {
-					flyWithWasd.set(/** @type {HTMLSelectElement} */ (e.currentTarget).value);
-					version++;
-				}}
-			>
-				<option value="always">Always</option>
-				<option value="rmb">Only while holding the right mouse button</option>
-			</select>
-		</SettingRow>
-		<SettingRow label="Fly direction" description="Where I look: W / S follow the view, so looking up and pressing W climbs. Q / E always move straight down / up.">
-			<select id="fly-direction" class="settings-text" bind:value={$flyDirection}>
-				<option value="level">Level</option>
-				<option value="look">Where I look</option>
-			</select>
-		</SettingRow>
-	</Section>
+	<!-- 103 H5: the keymap preset + the two fly prefs, a LAZY card (the boot rule: the preset tables
+	     load only when this page or a stored preset needs them) -->
+	{#await import('./KeymapSettings.svelte') then mod}
+		{@const KeymapCard = mod.default}
+		<KeymapCard onchange={() => version++} />
+	{/await}
 	{#key `${version}:${$settingsResetTick}:${$keymapPreset}:${$flyWithWasd}`}
 		<div id="shortcut-grid" class="sc-groups">
 			{#each groups as group (group)}

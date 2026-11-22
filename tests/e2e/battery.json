@@ -309,6 +309,8 @@
 		"import-file": "agent"
 	},
 	"suites": {
+		"keys-103": 450,
+		"mesh-keys-103": 200,
 		"render-seam": 180,
 		"load-check": 240,
 		"schema-two-peers": 360,
@@ -319,6 +321,7 @@
 		"profile-notify": 180,
 		"player-sensors": 300,
 		"static-level-play": 240,
+		"uv-keys-103": 160,
 		"walker-step-off": 180,
 		"touch-collect-nodes": 240,
 		"play-start-nodes": 200,

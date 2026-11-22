@@ -245,7 +245,7 @@ export const shortcuts = [
 		scope: 'viewport',
 		label,
 		when: () => !keySessionOpen(),
-		action: () => void import('./modalTransform').then((m) => m.startModalTransform(mode))
+		action: () => void import('./modalTransform').then((m) => m.startModalTransform(/** @type {'translate'|'rotate'|'scale'} */ (mode)))
 	})),
 	// the lock keys are read by the running gesture itself (capture phase), so they are `external`
 	// rows in their own scope: they never collide with Z (view mode) or anything else outside one
@@ -919,7 +919,12 @@ export const shortcuts = [
 		['mesh.delete', 'X', 'Delete the selection (faces; Delete too)'],
 		['mesh.loop', 'L', 'Loop select (faces: again = perpendicular; edges: the chain)'],
 		['mesh.weld', 'W', 'Weld the selected vertices (vertices)'],
-		['mesh.connect', 'J', 'Connect two corners of a face (vertices)']
+		['mesh.connect', 'J', 'Connect two corners of a face (vertices)'],
+		// 103 H4 row 5: start at once on the picked vertices / edges / faces (no key by default; the
+		// Blender preset binds G / R / S — WASD never flies inside a session that holds its keys)
+		['mesh.now-move', '', 'Move now — the picked vertices / edges / faces follow the pointer'],
+		['mesh.now-rotate', '', 'Rotate now (vertices / edges / faces)'],
+		['mesh.now-scale', '', 'Resize now (vertices / edges / faces)']
 	]),
 	/*
 	 * 36 U11 — THE NODE EDITOR'S KEYMAP (scope 'nodes'). These fire only while the node
@@ -1072,7 +1077,7 @@ function seedDefaults() {
  */
 export function applyOverrides() {
 	seedDefaults();
-	const preset = presetKeys(activePreset);
+	const preset = presetTable;
 	for (const s of shortcuts) {
 		if (s.fixed) continue;
 		s.keys = overrides[s.id] ?? preset[s.id] ?? /** @type {string} */ (s.defaultKeys);
@@ -1086,7 +1091,7 @@ export function applyOverrides() {
 	}
 	// 103 H4: once a start-at-once key is bound, fetch its lazy engine while the page is idle, so the
 	// FIRST press starts the gesture at once (a cold chunk took over a second on a loaded machine)
-	if (typeof window !== 'undefined' && !warmed && shortcuts.some((s) => s.id.startsWith('transform.now-') && s.keys)) {
+	if (typeof window !== 'undefined' && !warmed && shortcuts.some((s) => /^(transform|mesh)\.now-/.test(s.id) && s.keys)) {
 		warmed = true;
 		const warm = () => void import('./modalTransform').catch(() => (warmed = false));
 		if (typeof requestIdleCallback === 'function') requestIdleCallback(warm, { timeout: 3000 });
@@ -1097,87 +1102,60 @@ let warmed = false;
 
 /* ------------------------------------------------------- 103 H5: keymap presets -- */
 
-/**
- * A PRESET is a set of default bindings; the user's own rebinds (`overrides`) win over any of them.
- * 'theprototype' is today's keys and the default, so a person who never opens Settings sees nothing
- * change. 1 / 2 / 3 stay the tool keys in every preset (owner, 22 Nov), and Mesh edit + the UV
- * editor keep their own keys unless a preset adds the ones they were missing.
- */
-export const KEYMAP_PRESETS = [
-	{ id: 'theprototype', label: 'ThePrototype (default)', hint: "Today's keys: 1 / 2 / 3 pick the tool, W A S D fly, G picks Move." },
-	{
-		id: 'blender',
-		label: 'Blender style',
-		hint: 'G / R start moving / rotating at once, Alt+S resizes (bare S when the fly keys wait for the right mouse button), X / Y / Z lock an axis.'
-	},
-	{
-		id: 'unity',
-		label: 'Unity / Maya style',
-		hint: 'W / E / R pick Move / Rotate / Scale — with "Fly with WASD" set to the right mouse button, where those letters are free.'
-	}
-];
+// A PRESET is a set of default bindings; the user's own rebinds win over it. The tables and their
+// labels live in the LAZY ./keymapPresets (the boot rule): the default preset is an empty table, so a
+// person who never picks one never loads it. A stored non-default preset loads it at boot.
+const PRESET_IDS = ['theprototype', 'blender', 'unity'];
 const PRESET_KEY = 'keymapPreset';
 
 /** @returns {string} */
 function loadPreset() {
 	try {
 		const raw = typeof localStorage !== 'undefined' ? safeStorage.getItem(PRESET_KEY) : null;
-		return KEYMAP_PRESETS.some((p) => p.id === raw) ? /** @type {string} */ (raw) : 'theprototype';
+		return raw && PRESET_IDS.includes(raw) ? raw : 'theprototype';
 	} catch {
 		return 'theprototype';
 	}
 }
 let activePreset = 'theprototype';
+/** the active preset's bindings ('' = unbound); empty for the default @type {Record<string, string>} */
+let presetTable = {};
 /** the chosen preset, for Settings @type {import('svelte/store').Writable<string>} */
 export const keymapPreset = writable(activePreset);
 
-/**
- * The preset's bindings, `{ id: combo }` ('' = unbound). Every key a preset TAKES from another row
- * says where that row went (listed in the shortcut sheet and the changelog too).
- * @param {string} preset @returns {Record<string, string>}
- */
-export function presetKeys(preset) {
-	const freeS = get(flyWithWasd) === 'rmb';
-	if (preset === 'blender')
-		return {
-			'transform.now-move': 'G',
-			'transform.grab': '', // G starts the move now; 1 still picks the Move tool
-			'transform.now-rotate': 'R',
-			'transform.now-scale': freeS ? 'S' : 'Alt+S',
-			// Alt+S was the Shader editor's; it moves to Alt+Shift+S (only while Alt+S resizes)
-			...(freeS ? {} : { 'panels.shader-editor': 'Alt+Shift+S' }),
-			'transform.lock-x': 'X',
-			'transform.lock-y': 'Y',
-			'transform.lock-z': 'Z',
-			// the UV editor (WASD never flies there, so bare S is free): G takes uv.grab's G, which
-			// stays on 1 (arm Move); the tool keys follow Blender's W (select), B (box), C (circle)
-			'uv.now-move': 'G',
-			'uv.grab': '',
-			'uv.now-rotate': 'R',
-			'uv.now-scale': 'S',
-			'uv.lock-u': 'X',
-			'uv.lock-v': 'Y',
-			'uv.tool-select': 'W',
-			'uv.tool-box': 'B',
-			'uv.tool-lasso': 'C',
-			'uv.tool-paint': 'P',
-			...PRESET_EXTRA.blender
-		};
-	if (preset === 'unity')
-		// W / E fly while the fly keys are always on, so the tool letters only arrive with 'rmb'
-		return freeS ? { 'transform.move': 'W', 'transform.rotate': 'E', 'transform.scale': 'R', ...PRESET_EXTRA.unity } : { ...PRESET_EXTRA.unity };
-	return {};
+/** @type {Promise<typeof import('./keymapPresets')> | null} */
+let presetsModule = null;
+/** @type {typeof import('./keymapPresets') | null} */
+let presetsLoaded = null;
+/** the lazy preset tables (Settings' Keymap card reads its labels from the same module) */
+export function loadKeymapPresets() {
+	presetsModule ??= import('./keymapPresets').then((m) => (presetsLoaded = m));
+	return presetsModule;
 }
 
-/** editors registered later (the UV editor, mesh edit) add their own preset rows here
- * @type {Record<string, Record<string, string>>} */
-const PRESET_EXTRA = { blender: {}, unity: {} };
-
-/** @param {string} preset @param {Record<string, string>} keys */
-export function registerPresetKeys(preset, keys) {
-	if (!PRESET_EXTRA[preset]) PRESET_EXTRA[preset] = {};
-	Object.assign(PRESET_EXTRA[preset], keys);
+/** keymapPresets.applyPreset calls back here with the table. @param {string} id
+ * @param {Record<string, string>} table @param {boolean} switching the user picked it */
+export function usePresetTable(id, table, switching) {
+	activePreset = id;
+	presetTable = table;
+	if (switching) {
+		try {
+			if (typeof localStorage !== 'undefined') {
+				if (id === 'theprototype') safeStorage.removeItem(PRESET_KEY);
+				else safeStorage.setItem(PRESET_KEY, id);
+			}
+		} catch {
+			/* private mode: this session only */
+		}
+		// an override that now equals the preset's own binding is no override at all
+		for (const [rowId, keys] of Object.entries(overrides)) {
+			const row = shortcuts.find((s) => s.id === rowId);
+			if (row && keys === (table[rowId] ?? row.defaultKeys)) delete overrides[rowId];
+		}
+		saveOverrides();
+	}
 	applyOverrides();
+	keymapPreset.set(id);
 }
 
 /** What a row answers to in the active preset with no rebind of the user's ('' = no key).
@@ -1185,31 +1163,18 @@ export function registerPresetKeys(preset, keys) {
 export function presetDefaultOf(id) {
 	const s = shortcuts.find((row) => row.id === id);
 	if (!s) return '';
-	const preset = presetKeys(activePreset);
-	return preset[id] ?? s.defaultKeys ?? '';
+	return presetTable[id] ?? s.defaultKeys ?? '';
 }
 
-/** Switch the keymap preset; the user's rebinds are kept and still win. @param {string} id */
+/** Switch the keymap preset; the user's rebinds are kept and still win. Synchronous once the lazy
+ * tables are loaded (the returned promise settles when the switch is in force). @param {string} id */
 export function setKeymapPreset(id) {
-	if (!KEYMAP_PRESETS.some((p) => p.id === id)) return;
-	activePreset = id;
-	try {
-		if (typeof localStorage !== 'undefined') {
-			if (id === 'theprototype') safeStorage.removeItem(PRESET_KEY);
-			else safeStorage.setItem(PRESET_KEY, id);
-		}
-	} catch {
-		/* private mode: this session only */
+	if (!PRESET_IDS.includes(id)) return Promise.resolve();
+	if (presetsLoaded) {
+		presetsLoaded.applyPreset(id, true);
+		return Promise.resolve();
 	}
-	// an override that now equals the preset's own binding is no override at all
-	const preset = presetKeys(id);
-	for (const [rowId, keys] of Object.entries(overrides)) {
-		const row = shortcuts.find((s) => s.id === rowId);
-		if (row && keys === (preset[rowId] ?? row.defaultKeys)) delete overrides[rowId];
-	}
-	saveOverrides();
-	applyOverrides();
-	keymapPreset.set(id);
+	return loadKeymapPresets().then((m) => m.applyPreset(id, true));
 }
 
 seedDefaults();
@@ -1217,8 +1182,14 @@ overrides = loadOverrides();
 activePreset = loadPreset();
 keymapPreset.set(activePreset);
 applyOverrides();
-// the Blender preset's resize key follows 'Fly with WASD' (bare S only when it is free)
-flyWithWasd.subscribe(() => applyOverrides());
+// a stored preset loads its table at boot, and the Blender resize key follows 'Fly with WASD' (bare S
+// only when it is free) — both through the lazy tables, never for the default preset
+flyWithWasd.subscribe(() => {
+	if (activePreset === 'theprototype') return;
+	const id = activePreset;
+	if (presetsLoaded) presetsLoaded.applyPreset(id, false);
+	else void loadKeymapPresets().then((m) => activePreset === id && m.applyPreset(id, false));
+});
 
 /** @param {string} text */
 function slug(text) {

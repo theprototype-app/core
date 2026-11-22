@@ -51,6 +51,10 @@ h.run(async () => {
 	const page = A.page;
 
 	// ---- 1. presets ---------------------------------------------------------------------------
+	// the default preset never loads the preset tables (the boot rule); after this the switch is sync
+	const lazyAtBoot = await page.evaluate(() => performance.getEntriesByType('resource').some((e) => /keymapPresets/.test(e.name)));
+	h.check(!lazyAtBoot, `1.0 the default keymap never fetches the preset tables at boot`);
+	await page.evaluate(() => window.__tp.test.v1.shortcutsRegistry.loadKeymapPresets().then(() => true));
 	const presets = await page.evaluate(() => {
 		const r = window.__tp.test.v1.shortcutsRegistry;
 		const fly = window.__tp.test.v1.flyPrefs;

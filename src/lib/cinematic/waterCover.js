@@ -164,9 +164,9 @@ export function createWaterCover(o) {
 			const o3 = vec3(ox, oy, oz);
 			return { o: o3, n: normalize(vec3(nx, ny.add(1), nz)), crest: clamp(ny.negate(), 0, 1).mul(step(float(0), oy.add(amp.mul(0.2)))) };
 		}
-		const rippleHeight = Fn(([/** @type {any} */ p]) => {
+		const rippleHeight = Fn((/** @type {any[]} */ [p]) => {
 			const h = float(0).toVar();
-			Loop(16, ({ i }) => {
+			Loop(16, (/** @type {{ i: any }} */ { i }) => {
 				If(float(i).greaterThanEqual(U.uRippleCount), () => {
 					Break();
 				});

@@ -18,8 +18,8 @@
 //     (so sparks glow). Kept out of the scene pass because its normal / velocity / diffuse targets are written
 //     unblended: a sprite there replaced the surface normals behind it and the AO went black under it.
 //   · C2-3: water (waterCover.js twins, layer WATER_LAYER) in a pass of its own BEFORE the fx pass, for the same reason;
-//     its twins read the scene pass's colour + depth as the standard view's refraction pre-pass. Under water, a fog
-//     node before it and the tint / caustics after the fx pass (the runtime's fog swap and full-screen overlay).
+//     its twins read the scene pass's colour + depth as the standard view's refraction pre-pass. Under water, the fog,
+//     tint and caustics go over the finished linear image (the runtime's fog swap and full-screen overlay).
 //   · the selection outline (W14) is TSL's OutlineNode over the objects Outline.svelte outlines,
 //     composited LAST, after the bloom (an editor helper, never graded).
 import { QUALITY } from './cinematicCore.js';
@@ -51,6 +51,10 @@ export async function buildPipeline(o) {
 	if (gi) scenePass.getTexture('diffuseColor').type = W.UnsignedByteType;
 	const color = scenePass.getTextureNode('output');
 	const depth = scenePass.getTextureNode('depth');
+	// a post node runs on the full-screen quad's own camera: the scene camera's matrices go in as uniforms (the same
+	// objects three updates in place), as GTAO and SSR take the camera explicitly
+	const projInv = uniform(camera.projectionMatrixInverse);
+	const camWorld = uniform(camera.matrixWorld);
 	const normalTex = scenePass.getTextureNode('normal');
 	const vel = scenePass.getTextureNode('velocity');
 	const sceneNormal = sample((/** @type {any} */ uv) => colorToDirection(normalTex.sample(uv).rgb));
@@ -108,12 +112,18 @@ export async function buildPipeline(o) {
 	nodes.traa = aa;
 	/** @type {any} */
 	let shown = aa;
+	/** @type {any} where the water / fx passes drew (their alpha): not the scene's pixels */
+	let drawn = null;
 	if (o.water) {
-		shown = underFog(o.water.under, shown);
-		shown = waterOver(o.water, shown);
+		const w = waterOver(o.water, shown);
+		shown = w.img;
+		drawn = w.a;
 	}
-	if (o.fx) shown = fxOver(o.fx, shown);
-	if (o.water) shown = underTint(o.water.under, shown);
+	if (o.fx) {
+		const f = fxOver(o.fx, shown);
+		shown = f.img;
+		drawn = drawn ? max(drawn, f.a) : f.a;
+	}
 	const glow = bloom(shown, 0.25, 0.4, 0.85);
 	nodes.bloom = glow;
 	let final = shown.add(glow);
@@ -138,6 +148,11 @@ export async function buildPipeline(o) {
 		// the FUNCTION form: TSL's chained `x.mix(a, b)` is mix(a, b, x) (x is the factor), which blended the
 		// colours BY THE IMAGE and drew one flat grey over the whole view
 		final = vec4(T.mix(T.mix(rgb, lockColor, e2), selColor, e1), final.a);
+	}
+	if (o.water) {
+		// under water the look is laid over the finished LINEAR image, before the output transform (tone mapping +
+		// sRGB): the standard view draws the scene into a render target, so its fog and overlay mix in linear too
+		final = underwater(o.water.under, final, drawn ?? T.float(0));
 	}
 	pipeline.outputNode = final;
 
@@ -184,7 +199,7 @@ export async function buildPipeline(o) {
 	function fxOver(fx, under) {
 		fx.setSceneDepth(scenePass.getTexture('depth'));
 		const c = ownPass(fx.layer, () => fx.count, 'fxPass');
-		return vec4(under.rgb.mul(c.a.oneMinus()).add(c.rgb), under.a);
+		return { img: vec4(under.rgb.mul(c.a.oneMinus()).add(c.rgb), under.a), a: c.a };
 	}
 
 	/**
@@ -194,37 +209,34 @@ export async function buildPipeline(o) {
 	function waterOver(water, under) {
 		water.setSceneTextures(scenePass.getTexture('output'), scenePass.getTexture('depth'));
 		const c = ownPass(water.layer, () => water.count, 'waterPass');
-		return vec4(under.rgb.mul(c.a.oneMinus()).add(c.rgb), under.a);
+		return { img: vec4(under.rgb.mul(c.a.oneMinus()).add(c.rgb), under.a), a: c.a };
 	}
 
 	/** what the scene pass saw at `uv` in view space (water and fx twins are not in it) @param {any} uv */
 	function viewAt(uv) {
-		return T.getViewPosition(uv, depth.sample(uv).x, T.cameraProjectionMatrixInverse);
+		return T.getViewPosition(uv, depth.sample(uv).x, projInv);
 	}
 
 	/**
-	 * Under water (the camera inside a volume), 1 of 2: the scene fades into the water's fog colour with distance, the
-	 * linear fog the runtime swaps into the scene under WebGL (near 0.05 m, far = the water's Visibility); the sky is
-	 * the fog colour. Before the water pass, which fades its own walls and surface itself (as under WebGL).
-	 * @param {Record<string, any>} u waterCover's `under` uniforms @param {any} img */
-	function underFog(u, img) {
-		const d = depth.sample(T.screenUV).x;
-		const dist = viewAt(T.screenUV).negate().z;
-		const f = T.select(d.greaterThanEqual(0.99999), T.float(1), T.smoothstep(T.float(0.05), u.fogFar, dist)).mul(u.on);
-		return vec4(T.mix(img.rgb, u.fogColor, f), img.a);
-	}
-
-	/**
-	 * Under water, 2 of 2 (waterShader.js overlayFragment): a vignetted tint over everything and the caustic net on what
-	 * lies below the surface, last before the bloom.
-	 * @param {Record<string, any>} u @param {any} img */
-	function underTint(u, img) {
+	 * Under water (the camera inside a volume): the standard view swaps the scene's fog for the water's (three's linear
+	 * fog, near 0.05 m, far = the water's Visibility), paints the sky in the fog colour, and draws a full-screen tint +
+	 * caustic net over the frame (waterShader.js overlayFragment, blended One / OneMinusSrcAlpha). It draws into a
+	 * render target, so all of that mixes in LINEAR, before the output pass tone-maps it (measured: the fog colour
+	 * reaches the screen lighter and greyer than its hex). The same here, last before the output transform; the water
+	 * and fx twins are not fogged (the water fades its own walls; bubbles skip fog). Not under water every term is 0.
+	 * @param {Record<string, any>} u waterCover's `under` uniforms @param {any} img @param {any} drawn the twins' alpha */
+	function underwater(u, img, drawn) {
+		const out = img;
 		const uv = T.screenUV;
-		const vgn = T.length(uv.sub(0.5)).mul(1.4);
-		const a = u.strength.mul(vgn.mul(0.4).add(0.6)).mul(u.on);
 		const d = depth.sample(uv).x;
 		const vp = viewAt(uv);
-		const w = T.cameraWorldMatrix.mul(vec4(vp, 1)).xyz;
+		const sky = d.greaterThanEqual(0.99999);
+		const f = T.select(sky, T.float(1), T.smoothstep(T.float(0.05), u.fogFar, vp.z.negate())).mul(u.on).mul(T.float(1).sub(drawn));
+		/** @type {any} */
+		let rgb = T.mix(out.rgb, u.fogColor, f);
+		const vgn = T.length(uv.sub(0.5)).mul(1.4);
+		const a = u.strength.mul(vgn.mul(0.4).add(0.6)).mul(u.on);
+		const w = camWorld.mul(vec4(vp, 1)).xyz;
 		/** @type {any} */
 		let c = T.float(0);
 		/** @type {any} */
@@ -236,10 +248,12 @@ export async function buildPipeline(o) {
 			c = c.add(T.pow(max(T.float(1).sub(T.length(g).mul(2.2)), 0), 3));
 		}
 		c = T.clamp(c.mul(0.8), 0, 2);
-		const below = T.step(w.y, u.surfaceY).mul(T.step(d, T.float(0.9999))).mul(T.step(T.float(1e-6), u.caustics));
+		const below = T.step(w.y, u.surfaceY).mul(T.float(1).sub(T.select(d.greaterThanEqual(0.9999), T.float(1), T.float(0)))).mul(T.step(T.float(1e-6), u.caustics));
 		const add = vec3(c.mul(u.caustics).mul(0.18).mul(u.sun)).mul(T.exp(u.surfaceY.sub(w.y).mul(-0.25))).mul(T.exp(T.length(vp).mul(-0.08))).mul(below).mul(u.on);
-		return vec4(img.rgb.mul(a.oneMinus()).add(u.tint.mul(a)).add(add), img.a);
+		rgb = T.max(u.tint.mul(a).add(add), vec3(0, 0, 0)).add(rgb.mul(a.oneMinus()));
+		return vec4(rgb, out.a);
 	}
+
 	return {
 		pipeline,
 		nodes,

@@ -61,7 +61,7 @@ function waterMaterial(body, shared = {}) {
 	return new THREE.ShaderMaterial({ name: body ? 'water-body' : 'water-surface', uniforms });
 }
 
-/** a water entry as waterRuntime.createEntry makes it, under a scene-root group */
+/** a water entry as waterRuntime.createEntry makes it, under a scene-root group @returns {any} */
 function entry(withBody = true) {
 	const object = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 2), new THREE.MeshStandardMaterial({ color: '#3399ff' }));
 	object.userData.water = { shape: 'box' };
@@ -171,7 +171,7 @@ describe('createWaterCover', () => {
 		expect(st.surfaces).toBe(1);
 		expect(st.bodies).toBe(1);
 		expect(cover.count).toBe(2);
-		const twin = e.surface.children.find((c) => c.name === 'cinematic-water');
+		const twin = /** @type {any} */ (e.surface.children.find((/** @type {any} */ c) => c.name === 'cinematic-water'));
 		expect(twin).toBeTruthy();
 		expect(twin.layers.mask).toBe(1 << WATER_LAYER);
 		expect(twin.material.isNodeMaterial && !!twin.material.positionNode && !!twin.material.colorNode).toBe(true);
@@ -185,7 +185,7 @@ describe('createWaterCover', () => {
 		expect(cover.covered(e.object, e.object.material)).toBe(false);
 		// a second scan builds nothing new
 		cover.scan();
-		expect(e.surface.children.filter((c) => c.name === 'cinematic-water').length).toBe(1);
+		expect(e.surface.children.filter((/** @type {any} */ c) => c.name === 'cinematic-water').length).toBe(1);
 	});
 
 	it('the placeholder is hidden for one view frame only (beforeRender / afterRender), never left swapped', () => {
@@ -207,12 +207,12 @@ describe('createWaterCover', () => {
 	it('a new runtime material (a tier change) is twinned again; a gone entry loses its twin', () => {
 		const { e, cover } = setup(false);
 		cover.scan();
-		const first = e.surface.children.find((c) => c.name === 'cinematic-water');
+		const first = /** @type {any} */ (e.surface.children.find((/** @type {any} */ c) => c.name === 'cinematic-water'));
 		const old = e.surface.material;
 		e.surface.material = waterMaterial(0, old.uniforms);
 		cover.scan();
 		expect(old.visible).toBe(true);
-		const second = e.surface.children.find((c) => c.name === 'cinematic-water');
+		const second = /** @type {any} */ (e.surface.children.find((/** @type {any} */ c) => c.name === 'cinematic-water'));
 		expect(second).toBeTruthy();
 		expect(second).not.toBe(first);
 		expect(e.surface.material.visible).toBe(false);
@@ -222,7 +222,7 @@ describe('createWaterCover', () => {
 		const { e, cover, setUnder } = setup();
 		setUnder({ entry: e, look: { fogColor: '#204060', fogDistance: 6, caustics: 0.5, causticScale: 1.2, causticSpeed: 0.6 }, surfaceY: 1 });
 		cover.scan();
-		const body = e.body.children.find((c) => c.name === 'cinematic-water');
+		const body = /** @type {any} */ (e.body.children.find((/** @type {any} */ c) => c.name === 'cinematic-water'));
 		expect(body.material.side).toBe(W.BackSide);
 		expect(cover.under.on.value).toBe(1);
 		expect(cover.under.fogFar.value).toBe(6);

@@ -329,6 +329,7 @@ async function oneScene(browser, slug, first) {
 			for (let i = 0; i < 10; i++) await page.evaluate(() => new Promise((r) => requestAnimationFrame(r)));
 			const du = await debug(page);
 			sheet.viewUnder = await grab(page, 'view:under', true);
+			fs.writeFileSync(path.join(out, '05-cinematic-under-full.png'), png(await page.evaluate(async () => (await window.__tp.test.v1.cinematicState.cinematicView()).grabCinematic())));
 			h.check(!!placed && du.water?.underwater === true && du.errors.length === 0, `${slug}: 4. camera under the surface at ${JSON.stringify(placed)}: the view knows (${JSON.stringify(du.water)})`);
 			row.underwater = { at: placed, view: du.water };
 		}
@@ -409,6 +410,18 @@ async function oneScene(browser, slug, first) {
 				return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(s.waterRuntime.waterDebug().underwater))));
 			});
 			sheet.glUnder = await grab(page, 'gl:under', false);
+			fs.writeFileSync(
+				path.join(out, '05-standard-under-full.png'),
+				png(await page.evaluate(() => {
+					const s = window.__tp.test.v1;
+					let r, sc, cam;
+					s.globalRenderer.subscribe((v) => (r = v))();
+					s.globalScene.subscribe((v) => (sc = v))();
+					s.globalCamera.subscribe((v) => (cam = v))();
+					r.render(sc, cam);
+					return r.domElement.toDataURL('image/png');
+				}))
+			);
 			const tone = await page.evaluate(({ W, H }) => {
 				const mean = (d) => {
 					const m = [0, 0, 0];

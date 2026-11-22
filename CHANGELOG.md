@@ -6,6 +6,35 @@
      rendering, so maintainer notes stay out of the user-facing window. No emoji from
      1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
 
+## 1.73.0 — Locks that hold
+
+### Locks that hold
+- **See who is editing**: the Properties of an object someone else is editing say **<name> is editing this**, read-only, with a **Request** button; a small avatar of that person floats over the object. Its flow opens view-only. The same on a phone. <!-- 80a-locks K1 K4 -->
+- **One holder, agreed by everyone**: when two people take the same object at the same moment, everyone agrees who has it and the other person is told. An edit of an object someone else holds is not applied, and the sender's copy is put back. Someone who joins late sees everything each person is holding. <!-- 80a-locks K3 -->
+- **Release**: Object list rows say **Held by me** or **Held by <name>**; the row menu has **Release** and **Keep holding**. An object you hold for 5 minutes without an edit is let go (you are asked first), and your locks survive a short network drop. <!-- 80a-locks K6 -->
+- **Lock mode**: a new room setting, **Settings ▸ Connection ▸ Editing together ▸ Locks**: **While selected** (the default) or **Only while editing** (an object is taken on its first change and free 3 s after the last). The host sets it and everyone follows. <!-- 80a-locks K15 -->
+- **Selecting is not an edit**: selecting an object no longer sends a move to everyone; the move handle sends a position only when it moved. <!-- 80a-locks -->
+- **Requests are answered on the connection they came on, and roster changes are tied to the connection that made them.** <!-- 80a-locks K12 R -->
+
+### Drafts stay yours
+- **Drafts stay private**: nothing about an object in **Local objects** reaches other people, including its edits, flows, animation and joints. Scene saves, prefabs and **Save as** leave drafts out, with their clips and joints, and say **N drafts not included — share first?**. A copy of a draft is a draft too. Older scenes that still hold drafts open with them as drafts. <!-- 80a-drafts D1 D2 -->
+
+### Cinematic view
+- **Particles, bursts, bubbles and swaying show in the Cinematic view**: particle emitters, bursts, bubbles, and jiggle, body wave, wind sway and water flow are drawn there now, the way the standard view draws them. Turning the view on in a scene with bubbles (such as the aquarium) no longer gives a blank frame and an error. <!-- 100-cover-fx C2-2 C2-4 -->
+
+### Fixes
+- **Sessions heal**: a connection that drops while your own signaling server is briefly unreachable (up to about a minute) now heals instead of ending the session. <!-- 80a-fix4-net X1 -->
+- **Accepting a proposed session starts at once**: the backup of your current scene no longer re-reads every saved session first (a long Sessions list made it wait 30 s or more), and the bar says **saving a backup of this scene…**. <!-- 80a-fix4-net B1 -->
+- **Undoing the delete of an object flow reaches everyone** in the session. <!-- 80a-fix4-net G24 -->
+- **Round buttons are round again** on the live site (a build step had squared them). The profile button matches the menu button, and opening the profile menu no longer nudges the picture. <!-- 80a-fix4-ui O4 O5 -->
+- **Sidebars**: on every layout a sidebar's edge handle shows only while that sidebar is closed; right-click (long-press) an open sidebar's header for **Hide**, **Switch sidebar side** and **Lock**. On an unfolded foldable the sidebar button is there in every tab. <!-- 80a-fix4-ui O1 O2 -->
+- **On a wide phone the Connect bar is one compact row again**: your id, **Invite**, and a field to join. <!-- 80a-fix4-ui O3 -->
+- **Switching the sky to High or Max no longer freezes the app for a moment**, and the sky's **Max** label names the size Max actually loads. <!-- 80a-fix4-ui G11 G3 -->
+- **After the site updates, an open tab shows one "A new version is ready — Reload" prompt** (it could show two). <!-- 80a-fix4-ui aa -->
+- **Nodes and HUD**: HUD node sockets sit beside their rows and are named; behaviour card buttons and long node titles stay whole. <!-- 80a-fix4-ui D2 D3 -->
+- **Smaller fixes**: the Asset Browser finds an ambientCG asset by its id; Film view keeps the view where it was when you switch between phone tilt and touch, even looking straight down; one XR entry block, not two; see-through materials load see-through; a text bake that fails on someone else's screen no longer leaves a half-baked text behind. <!-- 80a-fix4-ui E2 G4 G9 G16; fix4-net G5 -->
+- **Play statistics**: **Your games & stats** now shows anonymous play statistics for each published game: plays per day, time played, where players stop and which devices they use (no ids; Do Not Track, Global Privacy Control and the **Count my visits** switch are honoured). <!-- 102-stats M4 -->
+
 ## 1.72.0 — Make real games
 
 - **Test with players**: right-click **Play** (long-press on a phone) ▸ **Test with players…** adds 1 to 3 simulated players to your session: real copies of the app in this tab, each a Player, Viewer or Editor. Watch them in small views, **Drive** one to play as it, and **Stop test** removes them all with no rows, saves or settings left behind. Phones and headsets run one; they start one after another, and one that does not start says **Did not start**. Simulated players start with the modules you have installed. <!-- 61-test G3, 61-int -->

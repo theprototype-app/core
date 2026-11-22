@@ -9,7 +9,7 @@ import { audioCodecCandidates, NO_AUDIO_ENCODER } from '../../src/lib/recording/
 
 const RATE = 1000; // 1 frame = 1 ms, so the arithmetic reads in the test
 
-/** a chunk of `n` frames at `t` filled with `v` */
+/** a chunk of `n` frames at `t` filled with `v` @param {number} t @param {number} n @param {number} v */
 const chunk = (t, n, v) => ({ t, l: new Float32Array(n).fill(v), r: new Float32Array(n).fill(-v) });
 
 describe('slicePcm', () => {

@@ -1,3 +1,4 @@
+// @ts-nocheck -- runs in AudioWorkletGlobalScope (AudioWorkletProcessor, currentFrame, sampleRate, registerProcessor), which the app tsconfig does not type
 // 102b-sound — the moment buffer's audio tap, on the audio thread. It copies what reaches its input
 // (the scene's own mix, never voices or a microphone: sceneAudio.js wires it) into blocks of BLOCK
 // frames and posts each block with the context time of its first frame. Self-contained: a worklet

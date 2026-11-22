@@ -283,6 +283,7 @@
 		"window-dock-menu": "red on the GitHub runner (SwiftShader, no retry) with unchanged code: deps-auto run 5, 2026-10-24",
 		"window-header-ranking": "flaky on the GitHub runner (SwiftShader): red or green-on-retry in deps-auto run 5 or 6 with unchanged code, 2026-10-24",
 		"window-size-clamp": "red on the GitHub runner (SwiftShader, no retry) with unchanged code: deps-auto run 5, 2026-10-24",
+		"mesh-paint": "102-paint: new, not yet measured on a GitHub runner, so it reports and does not gate until a deps run has seen it green",
 		"windows-polish": "78 pl-windows (1.64): new, not yet measured on a GitHub runner, so it reports and does not gate until a deps run has seen it green",
 		"workspace-restore": "joined from the 1.43 desk battery (pipeline-1): not yet measured on a GitHub runner, so it reports and does not gate until a deps run has seen it green"
 	},
@@ -650,6 +651,7 @@
 		"menu-mobile-scroll": 98,
 		"mesh-boolean": 174,
 		"mesh-knife": 138,
+		"mesh-paint": 240,
 		"mesh-sculpt": 17,
 		"mesh-toolbox-redesign": 242,
 		"mobile-editors": 75,

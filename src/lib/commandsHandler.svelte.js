@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { notifyOn } from './notifyPrefs';
 import { globalScene, objectsGroup, showGrid, TControls, lockedObjects, selectedObject, globalCamera, peerHands, pokeScene, beginSceneBatch, endSceneBatch } from '../stores/sceneStore.js';
 import { receiveMapSlot, receiveTexTransform, receiveNormalStrength } from '$lib/materialMaps';
+import { unlinkMaterial } from '$lib/materialSharing';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createGeometry, createLight, createGroup } from '$lib/geometries.svelte'
@@ -612,6 +613,9 @@ export async function objectParameters(data, from = 'peer') {
         if (mesh) applyMap(mesh, data.map, data.slot ?? 0, typeof data.source === 'string' ? data.source : null);
     } else if (data.parameter == 'materialParam') {
         setMaterialParam(data.uuid, data.key, data.value, false);
+    } else if (data.parameter == 'materialUnlink') {
+        // 102 M6: "this object only" on a shared material — this object gets its own copy here too
+        unlinkMaterial(data.uuid);
     } else if (data.parameter == 'mapSlot') {
         receiveMapSlot(data); // 72 LK1: normal, roughness, metalness, emissive, AO
     } else if (data.parameter == 'texTransform') {

@@ -162,3 +162,48 @@ describe('17: shape, angles and the camera a shot asks for', () => {
 		expect(planShot({}, 1)).toMatchObject({ zoom: 1, margin: 1.15 });
 	});
 });
+
+describe('104 A4 subject content + A5 frame text', async () => {
+	const core = await import('../../src/lib/agent/screenshotCore.js');
+	const box = (cx, cz, sx, sz, y0 = 0, y1 = 1) => ({ min: [cx - sx / 2, y0, cz - sz / 2], max: [cx + sx / 2, y1, cz + sz / 2] });
+	it('the 80 m ocean round a 24 m island is left out; the island (a terrain) and its campfire stay', () => {
+		const items = [
+			{ uuid: 'sea', name: 'Ocean', kind: 'water', box: box(0, 0, 80, 80, -1.6, 0.4) },
+			{ uuid: 'land', name: 'Island', kind: 'object', box: box(0, 0, 24, 24, -2, 2.5) },
+			{ uuid: 'fire', name: 'Campfire', kind: 'object', box: box(0.4, 0.4, 1, 1, 2.2, 3) }
+		];
+		expect(core.contentSplit(items)).toEqual({ keep: ['land', 'fire'], left: [{ uuid: 'sea', name: 'Ocean', kind: 'water' }] });
+	});
+	it('a pool in a garden stays; a 100 m ground plane under a house goes; only backdrops = frame them all', () => {
+		expect(core.contentSplit([
+			{ uuid: 'pool', name: 'Pool', kind: 'water', box: box(0, 0, 6, 4) },
+			{ uuid: 'house', name: 'House', kind: 'object', box: box(5, 0, 10, 10) }
+		]).left).toEqual([]);
+		expect(core.contentSplit([
+			{ uuid: 'g', name: 'Ground', kind: 'ground', box: box(0, 0, 100, 100, 0, 0.1) },
+			{ uuid: 'house', name: 'House', kind: 'object', box: box(0, 0, 10, 10) }
+		]).keep).toEqual(['house']);
+		expect(core.contentSplit([
+			{ uuid: 'sea', name: 'Ocean', kind: 'water', box: box(0, 0, 80, 80) },
+			{ uuid: 'g', name: 'Ground', kind: 'ground', box: box(0, 0, 10, 10, 0, 0.1) }
+		])).toEqual({ keep: ['sea', 'g'], left: [] });
+	});
+	it('planShot: subject is content or scene, anything else is a problem', () => {
+		expect(core.planShot({ subject: 'content' }, 1).subject).toBe('content');
+		expect(core.planShot({}, 1).subject).toBe(null);
+		expect(core.planShot({ subject: 'sea' }, 1).problem).toMatch(/subject is "content"/);
+	});
+	it('frame text: the side, the shares, the background, what is under the camera, what was left out', () => {
+		const t = core.frameText({
+			from: [17, 14, 17],
+			target: [0, 1, 0],
+			inView: [{ name: 'Island', share: 0.42 }, { name: 'Ocean', share: 0.38 }, { name: 'Pebble', share: 0.001 }],
+			sky: 'a plain colour #8db8dd',
+			under: 'Ocean (water), 13.6 m below',
+			left: [{ name: 'Ocean', kind: 'water' }]
+		});
+		expect(t).toBe('Seen from the south-east, 13 m above what it looks at. In the picture: Island (42 %), Ocean (38 %). Background: a plain colour #8db8dd. Under the camera: Ocean (water), 13.6 m below. Left out of the framing: Ocean (water).');
+		expect(core.compassSide([0, 30, 0.01], [0, 0, 0])).toBe('straight above');
+		expect(core.compassSide([-5, 0, 0], [0, 0, 0])).toBe('the west');
+	});
+});

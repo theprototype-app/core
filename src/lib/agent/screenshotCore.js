@@ -113,6 +113,9 @@ export function planShot(opts, canvasAspect) {
 	// mcp-diorama2 (26): through a scene camera — its own pose, so from / camera do not apply
 	if (view === 'camera' && uuids.length !== 1) return { problem: 'view camera needs uuid: one camera object in the scene (list_scene shows them)' };
 	if (view === 'camera' && (free || dir)) return { problem: 'view camera looks through that camera: leave camera and from out' };
+	// 104 A4: what a scene-wide shot frames — 'content' leaves big water and ground planes out, 'scene' everything
+	const subject = o.subject === undefined || o.subject === null ? null : String(o.subject).toLowerCase();
+	if (subject !== null && subject !== 'content' && subject !== 'scene') return { problem: 'subject is "content" (leave a big sea or ground plane out of the framing) or "scene" (frame everything)' };
 	const current = !free && !dir && view === 'current';
 	const aspect = parseAspect(o.aspect) ?? (current ? canvasAspect : FRAMED_ASPECT);
 	const { w, h } = frameSize(clampSize(o.size), aspect);
@@ -128,7 +131,8 @@ export function planShot(opts, canvasAspect) {
 		w,
 		h,
 		zoom: clampTo(o.zoom, 0.1, 10, 1),
-		margin: clampTo(o.margin, 0.5, 4, 1.15)
+		margin: clampTo(o.margin, 0.5, 4, 1.15),
+		subject
 	};
 }
 
@@ -244,4 +248,74 @@ export function linearFrameToSrgb(src, w, h, opts = {}) {
 		}
 	}
 	return out;
+}
+
+// ---------------------------------------------------------------- 104 A4 + A5: what a scene-wide shot frames, in words
+
+/** a backdrop is left out of a `content` shot when its ground footprint is more than this many times the rest's */
+export const CONTENT_RATIO = 4;
+/** views whose framing defaults to `content` when a backdrop dwarfs the rest */
+export const CONTENT_VIEWS = Object.freeze(['iso', 'top', 'front']);
+
+/** @param {{min: number[], max: number[]}} b the ground footprint, at least 1 m² */
+const footprint = (b) => Math.max(1, (b.max[0] - b.min[0]) * (b.max[2] - b.min[2]));
+
+/**
+ * 104 A4: which top-level objects a `content` shot frames. Backdrops (water bodies and flat ground planes) are left
+ * out, the biggest first, while one's footprint is more than CONTENT_RATIO times the footprint of everything still
+ * framed — so the 80 m ocean round a 24 m island goes, the pool in a garden stays. A terrain is LAND (the owner's
+ * island is the content), never a backdrop. Nothing but backdrops = frame them all (today's framing).
+ * @param {{uuid: string, name: string, kind: 'water' | 'ground' | 'object', box: {min: number[], max: number[]}}[]} items
+ * @returns {{keep: string[], left: {uuid: string, name: string, kind: string}[]}}
+ */
+export function contentSplit(items) {
+	let rest = items.slice();
+	/** @type {{uuid: string, name: string, kind: string}[]} */
+	const left = [];
+	const backdrops = items.filter((i) => i.kind !== 'object').sort((a, b) => footprint(b.box) - footprint(a.box));
+	for (const c of backdrops) {
+		const others = rest.filter((i) => i !== c);
+		if (!others.some((i) => i.kind === 'object')) break;
+		const u = { min: [0, 1, 2].map((k) => Math.min(...others.map((o) => o.box.min[k]))), max: [0, 1, 2].map((k) => Math.max(...others.map((o) => o.box.max[k]))) };
+		if (footprint(c.box) <= CONTENT_RATIO * footprint(u)) break;
+		left.push({ uuid: c.uuid, name: c.name, kind: c.kind });
+		rest = others;
+	}
+	return { keep: rest.map((i) => i.uuid), left };
+}
+
+/** the compass side a camera looks from, relative to what it looks at @param {number[]} from @param {number[]} to */
+export function compassSide(from, to) {
+	const dx = from[0] - to[0];
+	const dz = from[2] - to[2];
+	const flat = Math.hypot(dx, dz);
+	const dy = from[1] - to[1];
+	if (flat < 1e-6 || Math.abs(dy) > flat * 4) return dy >= 0 ? 'straight above' : 'straight below';
+	// +Z is south (the picture's "up" from the top view is -Z, north)
+	const names = ['south', 'south-east', 'east', 'north-east', 'north', 'north-west', 'west', 'south-west'];
+	const deg = (Math.atan2(dx, dz) * 180) / Math.PI;
+	return 'the ' + names[((Math.round(deg / 45) % 8) + 8) % 8];
+}
+
+/**
+ * 104 A5: a short text of a frame, built from the scene (not from a vision model), for clients that cannot see
+ * the picture (voice). `inView` = objects by their share of the picture, biggest first.
+ * @param {{from: number[], target: number[], inView: {name: string, share: number}[], sky?: string | null, under?: string | null, left?: {name: string, kind: string}[], through?: string | null}} f
+ * @returns {string}
+ */
+export function frameText(f) {
+	const parts = [];
+	const lift = Math.round((f.from[1] - f.target[1]) * 10) / 10;
+	parts.push(
+		f.through
+			? 'Through the camera ' + f.through + '.'
+			: 'Seen from ' + compassSide(f.from, f.target) + (Math.abs(lift) >= 0.5 ? ', ' + Math.abs(lift) + ' m ' + (lift > 0 ? 'above' : 'below') + ' what it looks at' : '') + '.'
+	);
+	const shown = f.inView.filter((o) => o.share >= 0.01).slice(0, 6);
+	if (shown.length) parts.push('In the picture: ' + shown.map((o) => o.name + ' (' + Math.round(o.share * 100) + ' %)').join(', ') + '.');
+	else parts.push('Nothing of the scene is in the picture.');
+	if (f.sky) parts.push('Background: ' + f.sky + '.');
+	if (f.under) parts.push('Under the camera: ' + f.under + '.');
+	if (f.left?.length) parts.push('Left out of the framing: ' + f.left.map((l) => l.name + ' (' + l.kind + ')').join(', ') + '.');
+	return parts.join(' ');
 }

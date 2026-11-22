@@ -3,6 +3,7 @@
 	import { edgeFade } from '$lib/ui/edgeFade.js'; // 98-int UI-6: the edge with more rows fades (the scroll cue)
 	import { dragScroll } from '$lib/ui/dragScroll.js'; // 103 H14 row 1: a mouse drag scrolls the rows
 	import Icon from '../ui/Icon.svelte';
+	import KeyChips from '../ui/KeyChips.svelte'; // 103 row 8: one key-chip style with Ctrl+K and Settings
 	import SheetGrip from '../ui/SheetGrip.svelte';
 	import { readSheetH, saveSheetH } from '$lib/ui/sheetDrag.js';
 	import { phoneShellActive, phoneSheetMaxH } from '$lib/ui/phoneShell.js';
@@ -296,7 +297,7 @@
 		     words move ("Load" -> "Open…", "Clear scene…" last in Scene behind a divider). No Undo / Redo row (owner). -->
 		<button id="open-command-palette" class="side-row side-search" onclick={() => { closeMenu.set(true); commandPaletteOpen.set(true); }}>
 			<span class="side-ico"><Icon name="search" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Search commands…</span>
-			<span class="side-hint">Ctrl+K</span>
+			<span class="side-hint"><KeyChips keys={bindingOf('help.palette') || 'Ctrl+K'} /></span>
 		</button>
 		<!-- 103 H14 rows 1, 2, 7: the Ctrl+K row above and Settings below are LOCKED; only the rows between them scroll, in
 		     this inner scroller. Its top / bottom edge fades only while rows are hidden on that side (edgeFade 'y', the mask
@@ -428,7 +429,7 @@
 				>
 					<span class="side-ico"><Icon name="wrench" size={16} aria-hidden="true" /></span>
 					<span class="flex-1 whitespace-nowrap">{box.label}</span>
-					{#if box.shortcut}<span class="side-hint">{box.shortcut}</span>{/if}
+					{#if box.shortcut}<span class="side-hint"><KeyChips keys={box.shortcut} /></span>{/if}
 				</button>
 			{/each}
 		{:else}
@@ -446,7 +447,7 @@
 		<!-- 36 B14: named checkpoints + the timeline they live in -->
 		<button id="save-checkpoint" class="side-row" onclick={() => { checkpointSaveOpen.set(true); closeMenu.set(true); }}>
 			<span class="side-ico"><Icon name="bookmark" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Save checkpoint…</span>
-			<span class="side-hint">Ctrl+Shift+S</span>
+			<span class="side-hint"><KeyChips keys="Ctrl+Shift+S" /></span>
 		</button>
 		<button id="open-checkpoints" class="side-row" onclick={() => { checkpointsOpen.set(true); closeMenu.set(true); }}>
 			<span class="side-ico"><Icon name="history" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Checkpoints</span>
@@ -485,7 +486,7 @@
 			<!-- showhide-v8 §6: the "?" cheat sheet had no menu row -->
 			<button id="open-shortcuts" class="side-row help-btn" title="Keyboard shortcuts ({bindingOf('help.cheatsheet') ?? '?'})" onclick={() => { closeMenu.set(true); cheatSheetOpen.set(true); }}>
 				<span class="side-ico"><Icon name="keyboard" size={16} aria-hidden="true" /></span><span class="help-label">{$phoneShellActive ? 'Keyboard shortcuts' : 'Shortcuts'}</span>
-				{#if $phoneShellActive}<span class="side-hint">{bindingOf('help.cheatsheet') ?? '?'}</span>{/if}
+				{#if $phoneShellActive}<span class="side-hint"><KeyChips keys={bindingOf('help.cheatsheet') ?? '?'} /></span>{/if}
 			</button>
 			<!-- 36 I5: the editor tour (Settings ▸ Tours has the VR welcome + reset). 76 FW1: it no longer starts by
 			     itself after the Welcome — the first-win quest does — so this row is where it lives -->
@@ -667,6 +668,7 @@
 		font-size: var(--fs-desc);
 	}
 	.side-hint {
+		display: inline-flex;
 		margin-left: auto;
 		padding-left: 12px;
 		color: var(--text-faint);

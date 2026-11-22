@@ -6,7 +6,9 @@
 // with the query beats a word inside it, which beats a match only in the detail line. Ties keep
 // the order the sources were listed in (Array.sort is stable), so tools stay above settings rows.
 
-/** @typedef {{id: string, kind: string, label: string, detail?: string, keys?: string, words?: string, run: () => void}} Command */
+// 103 H14: `shortcutId` = the registry row whose key the palette shows and can change in place (absent = a command with
+// no shortcut of its own); `locked` = why that key cannot be changed (a fixed row), shown greyed with the reason.
+/** @typedef {{id: string, kind: string, label: string, detail?: string, keys?: string, words?: string, shortcutId?: string, locked?: string, run: () => void}} Command */
 
 /** lower-case, accents folded, punctuation as spaces @param {string} s */
 export function normalize(s) {

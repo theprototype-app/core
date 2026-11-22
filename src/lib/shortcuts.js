@@ -1068,7 +1068,8 @@ function loadOverrides() {
 		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
 		/** @type {Record<string, string>} */
 		const clean = {};
-		for (const [id, keys] of Object.entries(parsed)) if (typeof keys === 'string' && keys) clean[id] = keys;
+		// 103 H14: '' is a stored "no key" (Backspace in the Ctrl+K capture unbinds a row)
+		for (const [id, keys] of Object.entries(parsed)) if (typeof keys === 'string' && keys.length <= 40) clean[id] = keys;
 		return clean;
 	} catch {
 		return {};
@@ -1394,6 +1395,31 @@ export function setOverride(id, keys) {
 	applyOverrides();
 }
 
+/** 103 H14: leave a row with no key (a stored '' override; nothing when the row has no default either).
+ * @param {string} id */
+export function clearShortcut(id) {
+	const entry = shortcuts.find((s) => s.id === id);
+	if (!entry || !isRebindable(entry)) return false;
+	setOverride(id, '');
+	return true;
+}
+
+/** Take `keys` for `id` although `otherId` holds it — the two answers to a refused rebind, ONE write path for
+ * Settings (Swap: the other row gets this row's previous keys) and Ctrl+K (Replace: the other row is left with no key).
+ * The other row is freed FIRST. @param {string} id @param {string} keys @param {string} otherId
+ * @param {'swap' | 'replace'} mode */
+export function takeConflictingKeys(id, keys, otherId, mode) {
+	const mine = shortcuts.find((s) => s.id === id);
+	if (!mine) return;
+	setOverride(otherId, mode === 'swap' ? mine.keys : '');
+	setOverride(id, keys);
+}
+
+/** 103 row 10: how many rows a reset of everything to ThePrototype defaults would change (the confirm says it) */
+export function changedFromDefaultsCount() {
+	return shortcuts.filter((s) => !s.fixed && s.keys !== (s.defaultKeys ?? s.keys)).length;
+}
+
 /** @param {string} id */
 export function resetShortcut(id) {
 	delete overrides[id];
@@ -1401,10 +1427,47 @@ export function resetShortcut(id) {
 	applyOverrides();
 }
 
+/** 103 row 10 (the third level): EVERYTHING back to ThePrototype defaults — no rebinds, the default preset, no saved
+ * keymap active (the saved keymaps themselves stay). The default preset's table is empty, so nothing lazy loads. */
 export function resetAllShortcuts() {
 	overrides = {};
 	saveOverrides();
+	if (activePreset !== 'theprototype') usePresetTable('theprototype', {}, true);
+	else applyOverrides();
+	setActiveKeymapId(null);
+}
+
+/** 103 row 9: replace the working rebinds wholesale (switching to / discarding into a saved keymap — keymaps.js, lazy).
+ * @param {Record<string, string>} map */
+export function replaceOverrides(map) {
+	/** @type {Record<string, string>} */
+	const clean = {};
+	for (const [id, keys] of Object.entries(map || {})) if (typeof keys === 'string' && keys.length <= 40) clean[id] = keys;
+	overrides = clean;
+	saveOverrides();
 	applyOverrides();
+}
+
+/* 103 row 9: which SAVED keymap (keymaps.js, lazy) the working rebinds belong to; null = a built-in preset. Only the id
+   lives at boot: the working state itself is always `keymapPreset` + `shortcutOverrides`, so a saved keymap needs no boot
+   code to be in force after a reload. */
+const ACTIVE_KEYMAP_KEY = 'keymapActive';
+/** @type {import('svelte/store').Writable<string | null>} */
+export const activeKeymapId = writable(/** @type {string | null} */ (null));
+/** @param {string | null} id */
+export function setActiveKeymapId(id) {
+	activeKeymapId.set(id || null);
+	try {
+		if (typeof localStorage === 'undefined') return;
+		if (id) safeStorage.setItem(ACTIVE_KEYMAP_KEY, id);
+		else safeStorage.removeItem(ACTIVE_KEYMAP_KEY);
+	} catch {
+		/* private mode: this session only */
+	}
+}
+/** the active preset's id (the base a saved keymap is stored against) */
+export function activePresetId() {
+	return activePreset;
 }
 
 /** The stored overrides, for the UI's "is this row customised" test.
@@ -1563,6 +1626,11 @@ export function startShortcuts() {
 	// no localStorage to read from
 	overrides = loadOverrides();
 	applyOverrides();
+	try {
+		activeKeymapId.set(safeStorage.getItem(ACTIVE_KEYMAP_KEY) || null);
+	} catch {
+		/* private mode */
+	}
 	startKeyScope();
 	trackViewClaim(); // 53 A3
 	setVrScopeProbe(() => !!get(isVRMode));

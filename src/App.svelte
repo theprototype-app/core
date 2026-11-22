@@ -68,7 +68,15 @@
   import PlayReticle from './components/play/PlayReticle.svelte'
   import PlayBanner from './components/play/PlayBanner.svelte'
   import MomentHost from './components/moment/MomentHost.svelte' // 95 SM1/SM2: Share a moment (buffer + preview load lazily)
-  import CommandPalette from './components/menu/CommandPalette.svelte'
+  // 103 H14: the Ctrl+K palette is a LAZY chunk, mounted while it is open (and warmed while the page is idle, so the
+  // first Ctrl+K opens at once) — its in-place shortcut editing and phone sheet never reach the boot
+  import { commandPaletteOpen } from './stores/appStore'
+  const loadCommandPalette = () => import('./components/menu/CommandPalette.svelte')
+  if (typeof window !== 'undefined') {
+    const warmPalette = () => void loadCommandPalette().catch(() => {})
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(warmPalette, { timeout: 8000 })
+    else setTimeout(warmPalette, 4000)
+  }
   import TouchPlayControls from './components/play/TouchPlayControls.svelte'
   import DrawToolbar from './components/menu/DrawToolbar.svelte'
   import SculptToolbar from './components/menu/SculptToolbar.svelte'
@@ -600,8 +608,8 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <GameChip />
 <AutoQualityNotice />
 <ShortcutSheet />
-<!-- 38 R8 (NOTES-38 #14): Ctrl+K -->
-<CommandPalette />
+<!-- 38 R8 (NOTES-38 #14): Ctrl+K (103 H14: a lazy chunk while open) -->
+{#if $commandPaletteOpen}{#await loadCommandPalette() then m}<m.default />{/await}{/if}
 <!-- 31 K3: the pause menu every game shares (Esc / the corner Menu button) -->
 <GameShellMenu />
 <CaptionOverlay />

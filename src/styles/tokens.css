@@ -112,6 +112,8 @@
 	--prop-label-w: 96px;
 	--setting-row-pad-y: var(--space-4); /* SettingRow top/bottom */
 	--nav-row-h: 48px; /* NavRow minimum */
+	--key-row-h: 32px; /* 103 row 8: one row height for Ctrl+K, the main menu and Settings ▸ Shortcuts */
+	--key-col-w: 112px; /* 103 row 8: the right-aligned key-chip column (Ctrl+K, Settings ▸ Shortcuts) */
 	--nav-row-pad-y: var(--space-3);
 }
 

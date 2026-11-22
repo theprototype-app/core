@@ -52,7 +52,7 @@ import { showChoiceEx } from './confirmDialog';
 // size jump, a Z-up export or unapplied transforms get a warning with a one-click fix.
 
 /** userData rows that describe the old FILE, not the object — the new file brings its own */
-const MODEL_BOUND = ['animatedClips', 'reduced', 'optimized', 'lod', 'packRef', 'packStub', 'animRef', 'aiGen', 'source', 'theprototype', 'vrmLicence'];
+const MODEL_BOUND = ['animatedClips', 'reduced', 'simplified', 'optimized', 'lod', 'packRef', 'packStub', 'animRef', 'aiGen', 'source', 'theprototype', 'vrmLicence'];
 
 /** material.userData stamps that say "a person changed this in the app" */
 const OVERRIDE_STAMPS = ['materialPreset', 'mapSource', 'mapDataUrl', 'cc0Source', 'tpEdited'];
@@ -82,7 +82,8 @@ function modelRows(userData) {
 
 /**
  * @typedef {{bytes: ArrayBuffer, kind: 'gltf'|'fbx'|'vrm', animations: any[], state: any}} AnimPart
- * @typedef {{root: any, anim: AnimPart | null, refs: any[], provenance: any}} ModelVersion
+ * @typedef {{root: any, anim: AnimPart | null, refs: any[], provenance: any, stamp?: any}} ModelVersion
+ *   `stamp` (102): userData rows written last, over the identity rows (a Simplify's bake lock)
  */
 
 /** What `live` IS right now, so it can come back exactly (the undo side of a replace).
@@ -260,6 +261,7 @@ function installVersion(live, version) {
 		root.scale.copy(live.scale);
 		root.userData = { ...modelRows(root.userData), ...identityRows(live.userData) };
 	}
+	if (version.stamp && root !== live) Object.assign(root.userData, version.stamp);
 	if (version.refs.length) root.userData.clipRefs = version.refs;
 	else delete root.userData.clipRefs;
 	if (version.provenance) root.userData.provenance = version.provenance;
@@ -547,6 +549,39 @@ export async function replaceModelFromFile(uuid, file, opts = {}) {
 	lastReplace = { uuid, kept, dropped, issues, fixed: fix, animated, materials, at: Date.now() };
 	return lastReplace;
 }
+
+/**
+ * 102 M1: install an in-app rebuild of the object at `uuid` (Simplify) through the SAME swap a
+ * replace from a file uses — one `modelreplace` undo entry holding both trees, replicated as one
+ * geometry replace (`delete replacing` + the object's own sync). `root` must already carry the
+ * live tree's uuids; `anim` is the new file part for an animated import (null for a static one).
+ * The `.tpanim` refs and the provenance stay the object's.
+ * @param {string} uuid @param {any} root @param {{label?: string, anim?: AnimPart | null, provenance?: any, stamp?: any}} [opts]
+ * @returns {any} the history entry, or null when the object is gone
+ */
+export function installRebuild(uuid, root, opts = {}) {
+	const current = objectOf(uuid);
+	if (!current) return null;
+	const before = captureVersion(current);
+	// the rows that describe the FILE stay: it is the same model, rebuilt (a fresh parse lacks them)
+	root.userData = { ...modelRows(current.userData), ...(root.userData ?? {}) };
+	/** @type {ModelVersion} */
+	const next = { root, anim: opts.anim ?? null, refs: before.refs, provenance: opts.provenance ?? before.provenance, stamp: opts.stamp };
+	installVersion(current, next);
+	const entry = {
+		kind: 'modelreplace',
+		label: opts.label ?? 'Replace model',
+		uuid,
+		versions: { before, after: next },
+		before: { which: 'before', positions: { byteLength: versionBytes(before) } },
+		after: { which: 'after', positions: { byteLength: versionBytes(next) } }
+	};
+	recordEntry(entry);
+	return entry;
+}
+
+/** who other than me holds a lock on `uuid` (null = nobody) — the replace's own guard, shared */
+export { lockedByOther as modelLockedByOther, liveClips as modelFileClips };
 
 /** the model formats a replace accepts (the import's own list) */
 const ACCEPT = '.glb,.gltf,.vrm,.fbx,.obj,.stl,.mtl,.png,.jpg,.jpeg,.webp';

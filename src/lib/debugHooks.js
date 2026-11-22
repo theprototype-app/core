@@ -604,6 +604,12 @@ export const DEBUG_HOOKS = [
 	['replaceModel', () => import('./replaceModel')],
 	// 59 T1/T2/T7: Replace from file, Edit in Blender, the drop router, the file watch
 	['modelReplace', () => import('./modelReplace')],
+	// 102 M1/M2: Simplify (scene half + pure core) and Export for 3D print / AR (writers, dialogs)
+	['meshSimplify', () => import('./meshSimplify')],
+	['meshSimplifyAction', () => import('./meshSimplifyAction')],
+	['print3dCore', () => import('./export3d/print3dCore')],
+	['export3dAction', () => import('./export3d/export3dAction')],
+	['makerDialogs', () => import('./makerDialogs')],
 	['editInBlender', () => import('./editInBlender')],
 	['modelDrop', () => import('./modelDrop')],
 	['modelWatch', () => import('./modelWatch')],

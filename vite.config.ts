@@ -45,6 +45,23 @@ function commitSha(): string {
 // null (reading 'getViewerPose')" after the session ended). The rewrite lives in
 // scripts/guard-threlte-xr.cjs (unit-tested against the real dist file); @threlte/xr is served as
 // SOURCE (optimizeDeps.exclude) so the transform reaches it in dev as well as the build.
+// 102 M2: three's USDZExporter imports zipSync from three's OWN vendored fflate
+// (examples/jsm/libs/fflate.module.js), a module the boot chunk already holds a sliver of (a
+// boot loader uses its inflate). A lazy chunk's static import of more of it grows that shared
+// boot chunk (measured +3.3 KB gz on both pages). npm `fflate` (the same library, one minor
+// apart) already carries zipSync for the app's own lazy zip writers, so the exporter is pointed
+// there: the export stays lazy and the boot is unchanged.
+function usdzUsesAppFflate(): Plugin {
+	return {
+		name: 'usdz-uses-app-fflate',
+		enforce: 'pre',
+		async resolveId(source, importer) {
+			if (!importer || !/[\\/]USDZExporter\.js$/.test(importer) || !/libs[\\/]fflate\.module\.js$/.test(source)) return null;
+			return this.resolve('fflate', importer, { skipSelf: true });
+		}
+	};
+}
+
 function guardThrelteXr(): Plugin {
 	const { guardThrelteXrSource } = createRequire(import.meta.url)('./scripts/guard-threlte-xr.cjs');
 	return {
@@ -270,6 +287,7 @@ export default defineConfig({
 	plugins: [
 			fixShaderfrogArrayVaryings(),
 			guardThrelteXr(), // 54i: null XR frame guard (see the function)
+			usdzUsesAppFflate(), // 102 M2: keeps the USDZ export's zip out of the boot (see the function)
 			importRetry(), // 54i aa: one retry for a failed lazy chunk (see the function)
 			tailwindcss(),
 			a11yCss(), // 53 A1/A5: after tailwindcss() — see the function

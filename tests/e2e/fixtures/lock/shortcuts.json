@@ -192,6 +192,26 @@
 			"when": true
 		},
 		{
+			"id": "objects.simplify",
+			"keys": "Ctrl+Alt+D",
+			"defaultKeys": "Ctrl+Alt+D",
+			"group": "Objects",
+			"scope": "viewport",
+			"label": "Simplify mesh… (fewer triangles, one undo step)",
+			"kind": "action",
+			"when": true
+		},
+		{
+			"id": "objects.export-3d",
+			"keys": "Ctrl+Alt+E",
+			"defaultKeys": "Ctrl+Alt+E",
+			"group": "Objects",
+			"scope": "viewport",
+			"label": "Export for 3D print or AR… (STL, 3MF, USDZ)",
+			"kind": "action",
+			"when": true
+		},
+		{
 			"id": "editor.interact-mode",
 			"keys": "I",
 			"defaultKeys": "I",

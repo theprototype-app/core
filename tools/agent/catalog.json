@@ -2036,6 +2036,41 @@
 			}
 		},
 		{
+			"name": "simplify_mesh",
+			"title": "Simplify a mesh",
+			"description": "Reduce the triangle count of a mesh or an imported model, keeping its look: UVs, normals, vertex colours, skin weights and material slots survive. Give percent (1-100, how much to KEEP) or triangles (a target count). A still-parametric primitive (box, sphere … whose Geometry settings drive it) is refused unless bake: true (its Geometry settings then lock). Instanced scatter, VRM avatars and meshes with morph targets are refused. One undo step; everyone in the session sees it. Returns the triangle counts before and after.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"uuid": {
+						"type": "string",
+						"description": "the object to simplify"
+					},
+					"percent": {
+						"type": "number",
+						"description": "how much to keep, 1-100 (25 = a quarter of the triangles)"
+					},
+					"triangles": {
+						"type": "number",
+						"description": "or: the triangle count to aim for"
+					},
+					"bake": {
+						"type": "boolean",
+						"description": "a parametric primitive: bake it to a mesh first (default false = refuse)"
+					}
+				},
+				"required": [
+					"uuid"
+				]
+			},
+			"annotations": {
+				"title": "Simplify a mesh",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
 			"name": "set_material",
 			"title": "Change materials and textures",
 			"description": "Make objects look finished: colour, roughness, metalness, emissive, opacity and texture maps, on many objects in one call. Maps take a library image hash or an https URL (https only, CORS-enabled, 16 MB, PNG/JPEG/WebP/GIF/AVIF; it becomes a library item first and is re-encoded like an upload; returned in assets). cc0 fetches a free CC0 material by id or name from Poly Haven (its texture names) or ambientCG (ids like \"Wood051\", \"Bricks076\", \"Metal032\", \"Ground037\"), or by words (\"brown planks\"); preset applies a named preset: one of Wood, Metal, Plastic, Glass, Stone, Rubber, Fish scales, Neon, Water, or one the person saved (list_materials lists them all). faces gives just those faces their own new material slot. One undo step.\nTake a screenshot after each change to check your work.",
@@ -6228,7 +6263,8 @@
 				"update": "update_mesh",
 				"duplicate": "duplicate",
 				"pivot": "set_pivot",
-				"pivot_group": "create_pivot"
+				"pivot_group": "create_pivot",
+				"simplify": "simplify_mesh"
 			},
 			"set_look": {
 				"material": "set_material",
@@ -7868,7 +7904,7 @@
 			{
 				"name": "edit_shape",
 				"title": "Reshape or model objects",
-				"description": "Change the shape of objects that exist: params = new size / segments / type in place (on a 3D text: its words, font, size, depth, bevel, align, wrap width, anchor, colours), mesh = model faces and vertices (extrude, inset, bevel, subdivide, weld, smooth, dissolve, make a face), update = new vertices / faces for a mesh made from data (replace it, or patch a range), duplicate = copies of an object in a row, or its mirror image (a left arm → the right one), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together.\nCall it as {\"action\": \"params\", \"params\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
+				"description": "Change the shape of objects that exist: params = new size / segments / type in place (on a 3D text: its words, font, size, depth, bevel, align, wrap width, anchor, colours), mesh = model faces and vertices (extrude, inset, bevel, subdivide, weld, smooth, dissolve, make a face), update = new vertices / faces for a mesh made from data (replace it, or patch a range), duplicate = copies of an object in a row, or its mirror image (a left arm → the right one), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together, simplify = fewer triangles on a mesh or model (a percentage or a count; UVs, colours, skin weights and material slots kept; one undo step).\nCall it as {\"action\": \"params\", \"params\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -7880,7 +7916,8 @@
 								"update",
 								"duplicate",
 								"pivot",
-								"pivot_group"
+								"pivot_group",
+								"simplify"
 							],
 							"description": "What to do. Put its fields in the object named after the action."
 						},
@@ -8386,6 +8423,31 @@
 								"objects"
 							],
 							"description": "Make a group at a point and put objects in it, so turning the group swings them about that point: arm parts about a shoulder, several parts of a lamp about one joint. The objects stay where they are. Give the point as at (world) or local (in the group the objects are already in — the numbers list_scene shows inside it). For one object, edit_shape {action: 'pivot'} needs no extra group. Returns groupUuid."
+						},
+						"simplify": {
+							"type": "object",
+							"properties": {
+								"uuid": {
+									"type": "string",
+									"description": "the object to simplify"
+								},
+								"percent": {
+									"type": "number",
+									"description": "how much to keep, 1-100 (25 = a quarter of the triangles)"
+								},
+								"triangles": {
+									"type": "number",
+									"description": "or: the triangle count to aim for"
+								},
+								"bake": {
+									"type": "boolean",
+									"description": "a parametric primitive: bake it to a mesh first (default false = refuse)"
+								}
+							},
+							"required": [
+								"uuid"
+							],
+							"description": "Reduce the triangle count of a mesh or an imported model, keeping its look: UVs, normals, vertex colours, skin weights and material slots survive. Give percent (1-100, how much to KEEP) or triangles (a target count). A still-parametric primitive (box, sphere … whose Geometry settings drive it) is refused unless bake: true (its Geometry settings then lock). Instanced scatter, VRM avatars and meshes with morph targets are refused. One undo step; everyone in the session sees it. Returns the triangle counts before and after."
 						}
 					},
 					"required": [

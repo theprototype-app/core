@@ -721,6 +721,18 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 	// mesh): a lone primitive would gain a top-level row past the budget, so it gets both rows from
 	// Properties ▸ Model (and the drop onto it) instead
 	if (mesh.length || isGroup) mesh.unshift(...model);
+	// 102 M1: Simplify — fewer triangles, attributes kept, one undo step — inside Mesh ▸ wherever
+	// Mesh ▸ is there anyway (an imported model, a group, a reduced import). A lone primitive gets
+	// no Mesh ▸ for it (the top-level row budget, NOTES-38 #22): Ctrl+Alt+D and the palette reach
+	// it, and the action asks to bake it first. Why something cannot be simplified is said when picked.
+	if (!multi && !loadingStub && (mesh.length || isGroup) && hasMesh(object))
+		mesh.push(/** @type {any} */ ({
+			label: 'Simplify…',
+			icon: 'shrink',
+			disabled: locked,
+			tooltip: locked ? lockedTooltip : 'Fewer triangles, same look — pick a percentage or a count, preview, apply (Ctrl+Alt+D)',
+			action: () => import('./meshSimplifyAction').then((m) => m.openSimplify(uuid))
+		}));
 
 
 	/** @type {any[]} Physics & effects ▸ — joints, particles, the object's flow, Use as scatter source */
@@ -908,7 +920,7 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 			children: SAVE_AS_FORMATS.map((format) => ({
 				label: format.label,
 				tooltip: format.tooltip,
-				icon: format.kind === 'download' ? 'arrow-down-to-line' : 'package',
+				icon: format.kind === 'download' ? 'arrow-down-to-line' : format.kind === 'export3d' ? (format.ext === 'usdz' ? 'smartphone' : 'box') : 'package',
 				action: () =>
 					void saveSelectionAs(format.id, targets, multi ? undefined : object?.name || object?.type || undefined)
 			}))

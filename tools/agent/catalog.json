@@ -552,6 +552,20 @@
 								"visible": {
 									"type": "boolean"
 								},
+								"array": {
+									"description": "102b: repeat this object as a live ARRAY (drawn copies that follow every change to it; one undo, one message): {mode: line|grid|circle|path, count (2-500, the object included), step [x,y,z] (line), grid [nx,ny,nz] + gridStep [x,y,z] (grid), radius + arc degrees + faceOut (circle, centre radius m on -X), path (a Path uuid) + spacing (0 = even) + follow (path), rotStep [x,y,z] degrees per copy, scaleStep per copy}. Fields merge over the current array. null removes it. Copies have no physics or logic until makeReal"
+								},
+								"layer": {
+									"type": [
+										"string",
+										"null"
+									],
+									"description": "102b: put it on the layer with this NAME (made when new; Configure Scene > Layers hides and locks layers), or null for no layer"
+								},
+								"makeReal": {
+									"type": "boolean",
+									"description": "102b: true = turn the object's array copies into ordinary objects (one undo); the result lists their uuids"
+								},
 								"parentUuid": {
 									"type": "string",
 									"description": "group uuid (or any object, not a light or camera) to nest under, or \"root\" to un-nest. The object keeps its world pose; a position given in the same update is LOCAL to the new parent. A uuid not in the scene is an error"
@@ -2776,7 +2790,7 @@
 		{
 			"name": "create_hud",
 			"title": "Add a HUD",
-			"description": "Give the game a HUD (2D screen overlay): screens of elements — a timer, a score text, a health bar, buttons, an image. A screen named like an existing one gets the elements added. Returns every element id: bind live values with create_flow_nodes (a hudtext / hudbar / hudtimer node with data.element = the id, e.g. counter -> hudtext). A new screen becomes the one that shows unless active: false. One undo step.\nTake a screenshot after each change to check your work.",
+			"description": "Give the game a HUD (2D screen overlay): screens of elements — a timer, a score text, a health bar, buttons, an image. A screen named like an existing one gets the elements added. Returns every element id: bind live values with create_flow_nodes (a hudtext / hudbar / hudtimer node with data.element = the id, e.g. counter -> hudtext; for a game value — score, clock, best, level, stars, lives, a variable, a stored or published value — use gamevalue -> hudtext with data.read and data.format: number, time, fraction, percent, stars, text). A new screen becomes the one that shows unless active: false. One undo step.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -6883,6 +6897,20 @@
 									"visible": {
 										"type": "boolean"
 									},
+									"array": {
+										"description": "102b: repeat this object as a live ARRAY (drawn copies that follow every change to it; one undo, one message): {mode: line|grid|circle|path, count (2-500, the object included), step [x,y,z] (line), grid [nx,ny,nz] + gridStep [x,y,z] (grid), radius + arc degrees + faceOut (circle, centre radius m on -X), path (a Path uuid) + spacing (0 = even) + follow (path), rotStep [x,y,z] degrees per copy, scaleStep per copy}. Fields merge over the current array. null removes it. Copies have no physics or logic until makeReal"
+									},
+									"layer": {
+										"type": [
+											"string",
+											"null"
+										],
+										"description": "102b: put it on the layer with this NAME (made when new; Configure Scene > Layers hides and locks layers), or null for no layer"
+									},
+									"makeReal": {
+										"type": "boolean",
+										"description": "102b: true = turn the object's array copies into ordinary objects (one undo); the result lists their uuids"
+									},
 									"parentUuid": {
 										"type": "string",
 										"description": "group uuid (or any object, not a light or camera) to nest under, or \"root\" to un-nest. The object keeps its world pose; a position given in the same update is LOCAL to the new parent. A uuid not in the scene is an error"
@@ -10309,7 +10337,7 @@
 							"required": [
 								"screens"
 							],
-							"description": "Give the game a HUD (2D screen overlay): screens of elements — a timer, a score text, a health bar, buttons, an image. A screen named like an existing one gets the elements added. Returns every element id: bind live values with create_flow_nodes (a hudtext / hudbar / hudtimer node with data.element = the id, e.g. counter -> hudtext). A new screen becomes the one that shows unless active: false. One undo step."
+							"description": "Give the game a HUD (2D screen overlay): screens of elements — a timer, a score text, a health bar, buttons, an image. A screen named like an existing one gets the elements added. Returns every element id: bind live values with create_flow_nodes (a hudtext / hudbar / hudtimer node with data.element = the id, e.g. counter -> hudtext; for a game value — score, clock, best, level, stars, lives, a variable, a stored or published value — use gamevalue -> hudtext with data.read and data.format: number, time, fraction, percent, stars, text). A new screen becomes the one that shows unless active: false. One undo step."
 						},
 						"list": {
 							"type": "object",

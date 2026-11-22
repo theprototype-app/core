@@ -2699,68 +2699,12 @@ function invertEdgeSelectionInner() {
  * @returns {{tris: any[], authored: number[][], capTriIndices: number[]}}
  */
 export function bevelFacesCore(tris, face, options = {}) {
-	const n = options.segments ?? 1;
-	const total = options.width ?? 0.15;
-	const profile = Math.min(Math.max(options.profile ?? 1, -1), 1);
-	// P7a: the sign picks WHICH curve the schedule blends toward, the magnitude
-	// how far from the straight ramp it goes
-	const concave = profile < 0;
-	const curve = Math.abs(profile);
-	const depth = (options.direction === 'in' ? -1 : 1) * total;
-	// the cap keeps its triangle INDICES through inset (it shrinks in place) and through
-	// the welded move, so one descriptor drives every step
-	const cap = {
-		triIndices: [...face.triIndices],
-		normal: face.normal.clone(),
-		centroid: face.centroid.clone()
-	};
-	let out = cloneTris(tris);
-	/** @type {number[][]} */
-	const authored = [];
-	for (let k = 1; k <= n; k++) {
-		const from = ((k - 1) / n) * (Math.PI / 2);
-		const to = (k / n) * (Math.PI / 2);
-		// THE STEP SCHEDULE. Linear = equal shares, a straight ramp. The CONVEX
-		// quarter circle (profile > 0) tracks sin with the insets and cos with the
-		// pushes: the border runs inward first and the cap rises late, so the
-		// chamfer leaves the surrounding surface tangentially and turns up into
-		// the cap. The CONCAVE quarter circle (P7a, profile < 0) is the same arc
-		// with the two trig roles SWAPPED — cos drives the insets and sin the
-		// pushes — so it rises first and runs inward late, curving the other side
-		// of the ramp. `curve` = |profile| blends linear -> the chosen curve.
-		//
-		// EVERY column here sums to exactly 1 over the n steps, which is what keeps
-		// the total reach profile-independent (the suite asserts it): the linear
-		// column is n copies of 1/n; sin(to)-sin(from) telescopes to
-		// sin(pi/2) - sin(0) = 1; cos(from)-cos(to) telescopes to
-		// cos(0) - cos(pi/2) = 1. A blend of columns that each sum to 1 sums to 1.
-		const arcSin = Math.sin(to) - Math.sin(from);
-		const arcCos = Math.cos(from) - Math.cos(to);
-		const curveInset = concave ? arcCos : arcSin;
-		const curvePush = concave ? arcSin : arcCos;
-		const insetShare = ((1 - curve) * 1) / n + curve * curveInset;
-		const pushShare = ((1 - curve) * 1) / n + curve * curvePush;
-		const worldStep = insetShare * total;
-		if (worldStep > 1e-9) {
-			// convert per component: a multi-piece cap insets each piece toward its
-			// OWN centre by the SAME world distance
-			for (const component of componentsOfTris(out, cap.triIndices)) {
-				const t = insetDistanceToFraction(out, component, worldStep);
-				const startLength = out.length;
-				out = insetFace(out, { triIndices: component }, t);
-				// the appended ring is consecutive pushQuad pairs — the same authoring
-				// shape every append-only op uses
-				for (const quad of appendedQuads(startLength, out.length)) authored.push(quad);
-			}
-		}
-		const pushStep = pushShare * depth;
-		if (pushStep) {
-			// re-read the cap's live centroid: it moved with the previous step
-			cap.centroid = centroidOfTris(out, cap.triIndices);
-			out = moveFaceAlongNormal(out, cap, pushStep);
-		}
-	}
-	return { tris: out, authored, capTriIndices: cap.triIndices };
+	// 99 K4 family 2: the kernel face bevel (meshOps/bevel.js) on an op mesh of these triangles
+	const ops = kernelOps();
+	const om = soupOpMesh(tris);
+	ops.bevelRegion(om, face.triIndices, vec(face.normal), options);
+	const authored = ops.authoredFaces(om);
+	return { tris: opMeshTris(om), authored, capTriIndices: [...face.triIndices] };
 }
 
 /** @param {number} width WORLD distance the border travels (P3 — was an inset fraction)
@@ -2786,34 +2730,8 @@ export function bevelFaces(width = 0.15, segments = 1, profile = 1, direction = 
 	// saturates at 0.95 per component, so an oversized width collapses inward
 	// instead of overshooting past the centre
 	const total = Math.max(width, 0.001);
-	const before = trisToPositions(FS.workingTris);
-	const beforeGroups = trisToGroups(FS.workingTris);
-	const beforeUVs = trisToUVs(FS.workingTris);
-	const beforeFaces = readStoredFaces(FS.object?.geometry);
-	let priorFaces = currentPartition();
-	const result = bevelFacesCore(FS.workingTris, face, { width: total, segments: n, profile, direction });
-	const tris = result.tris;
-	const positions = trisToPositions(tris);
-	if (positions.length > MAX_SNAPSHOT) {
-		showToast(tooLargeMessage(positions.length, 'bevel'));
-		return false;
-	}
-	const groups = trisToGroups(tris);
-	const uvs = trisToUVs(tris);
-	faceEditHoverTri.set(-1);
-	commitMesh({
-		apply: 'session',
-		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
-		after: { positions, groups, uvs },
-		faces: composeFaces(priorFaces, appendOrigin(FS.workingTris.length, tris.length), result.authored),
-		stampFaces: true,
-		record: 'op',
-		cap: false
-	});
-	// the cap stays selected: scaling or moving it is the usual next move
-	faceEditSelectedTris.set([...result.capTriIndices]);
-	faceEditHighlight.set(faceIndexForTriangle(result.capTriIndices[0]));
-	refreshFaceOverlay();
+	// 99 K4 family 2: on the kernel (the cap stays selected: scaling or moving it is the usual next move)
+	if (!commitKernelFaceOp('bevel', face, { width: total, segments: n, profile, direction })) return false;
 	showToast('Bevelled the border in ' + n + ' segment' + (n === 1 ? '' : 's'));
 	return true;
 }
@@ -2832,13 +2750,10 @@ export function bevelFaces(width = 0.15, segments = 1, profile = 1, direction = 
 // never appears in a boundary), the offset points are keyed by EDGE so the two faces
 // sharing one land on the SAME point, and each face is re-fanned from its new polygon. The
 // hole left behind is capped, and that cap is the new bevel surface.
-
-/** Clamp so two bevels on one edge can never cross and no bevel can swallow a whole edge —
- * Blender calls this "clamp overlap" and has it on by default for the same reason.
- * @param {number} width @param {number} edgeLength @returns {number} */
-function clampedBevelWidth(width, edgeLength) {
-	return Math.min(Math.max(width, 1e-4), edgeLength * 0.45);
-}
+//
+// 99 K4 family 2: the vertex and edge bevels run on the kernel now (src/lib/meshOps/bevel.js +
+// rebuild.js, the same rules — QUESTIONS 9 kept the soup's coplanar regions); what stays here
+// is their session / object glue and the soup-shaped exports (adapters).
 
 /** corner key -> {pos, uv} for one face's triangles, so a rebuilt polygon keeps its mapping
  * @param {any[]} tris @param {number[]} triIndices */
@@ -2853,204 +2768,7 @@ function cornerData(tris, triIndices) {
 	return map;
 }
 
-/**
- * Fan a polygon into triangles wound to `normal`, starting the fan at `startAt`.
- * @param {any[]} out appended to @param {{pos: any, uv: number[]}[]} ring ordered corners
- * @param {any} normal @param {any} mi @param {boolean} textured @param {number} startAt
- * @returns {number[]} the out indices appended
- */
-function fanPolygon(out, ring, normal, mi, textured, startAt = 0) {
-	/** @type {number[]} */
-	const added = [];
-	const n = ring.length;
-	if (n < 3) return added;
-	const at = (/** @type {number} */ i) => ring[(startAt + i) % n];
-	for (let i = 1; i < n - 1; i++) {
-		const a = at(0);
-		const b = at(i);
-		const c = at(i + 1);
-		const tri = [a.pos.clone(), b.pos.clone(), c.pos.clone()];
-		const uv = textured ? [a.uv, b.uv, c.uv] : undefined;
-		added.push(out.length);
-		if (triNormal(tri).dot(normal) < 0)
-			out.push(withSlot([tri[0], tri[2], tri[1]], mi, uv && [uv[0], uv[2], uv[1]]));
-		else out.push(withSlot(tri, mi, uv));
-	}
-	return added;
-}
 
-/**
- * Bevel ONE vertex: cut the corner off, rebuild every face around it, cap the hole.
- * @param {any[]} tris @param {string} vertexKey @param {number} width
- * @param {number} profile -1 dished .. 0 flat .. +1 domed
- * @param {number} [segments] 19-A P7c: concentric rings in the cap (1 = the single fan /
- *   cone it always was, byte for byte)
- * @returns {{tris: any[], capKeys: string[]}|null} null when the corner cannot be bevelled
- */
-function bevelOneVertex(tris, vertexKey, width, profile, segments = 1) {
-	const atVertex = groupFaces(tris).filter((face) =>
-		face.triIndices.some((/** @type {number} */ ti) =>
-			tris[ti].some((/** @type {any} */ v) => keyOf(v.x, v.y, v.z) === vertexKey)
-		)
-	);
-	// a corner needs three faces to have anything to cut off; fewer means an open border,
-	// where the right answer is a different operation
-	if (atVertex.length < 3) return null;
-	/** @type {Map<string, any>} neighbour key -> the offset point ON THAT EDGE, shared by
-	 * the two faces meeting there, which is what keeps the result watertight */
-	const offsets = new Map();
-	/** @type {any[]} */
-	const plan = [];
-	for (const face of atVertex) {
-		const loop = boundaryLoop(tris, face.triIndices);
-		if (!loop) return null; // a face with a hole or a split boundary is not this case
-		const corners = cornerData(tris, face.triIndices);
-		const index = loop.findIndex((/** @type {any} */ p) => keyOf(p.x, p.y, p.z) === vertexKey);
-		if (index < 0) return null;
-		const n = loop.length;
-		const vertex = loop[index];
-		const vertexUv = corners.get(vertexKey)?.uv ?? [0, 0];
-		/** @param {any} neighbour */
-		const offsetTo = (neighbour) => {
-			const key = keyOf(neighbour.x, neighbour.y, neighbour.z);
-			const span = neighbour.clone().sub(vertex);
-			const length = span.length();
-			const w = clampedBevelWidth(width, length);
-			if (!offsets.has(key))
-				offsets.set(key, vertex.clone().addScaledVector(span.clone().normalize(), w));
-			// the uv travels the same fraction along the edge, so the mapping does not shear
-			return {
-				key,
-				uv: uvLerp(vertexUv, corners.get(key)?.uv ?? vertexUv, length > 1e-9 ? w / length : 0)
-			};
-		};
-		plan.push({
-			face,
-			loop,
-			corners,
-			index,
-			a: offsetTo(loop[(index - 1 + n) % n]),
-			b: offsetTo(loop[(index + 1) % n])
-		});
-	}
-	if (offsets.size < 3) return null;
-	/** @type {any[]} */
-	const out = [];
-	/** @type {Set<number>} */
-	const replaced = new Set();
-	for (const entry of plan) for (const ti of entry.face.triIndices) replaced.add(ti);
-	// every untouched triangle carries through unchanged
-	tris.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
-		if (!replaced.has(ti))
-			out.push(withSlot([t[0].clone(), t[1].clone(), t[2].clone()], t.mi, t.uv));
-	});
-	// rebuild each face: its boundary with the corner replaced by the two offset points
-	for (const entry of plan) {
-		const { face, loop, corners, index, a, b } = entry;
-		const n = loop.length;
-		const mi = tris[face.triIndices[0]].mi;
-		const textured = !!tris[face.triIndices[0]].uv;
-		/** @type {{pos: any, uv: number[]}[]} */
-		const ring = [];
-		for (let i = 1; i < n; i++) {
-			const point = loop[(index + i) % n];
-			const key = keyOf(point.x, point.y, point.z);
-			ring.push({ pos: point.clone(), uv: corners.get(key)?.uv ?? [0, 0] });
-		}
-		// boundary order is ... previous, VERTEX, next ...; the two new corners take its
-		// place, so the ring reads Pnext, next, ..., previous, Pprevious
-		ring.unshift({ pos: offsets.get(b.key).clone(), uv: b.uv });
-		ring.push({ pos: offsets.get(a.key).clone(), uv: a.uv });
-		fanPolygon(out, ring, face.normal, mi, textured, 1);
-	}
-	// CAP the hole. Order the offset points by angle around the corner's average normal: a
-	// corner this op accepts is convex, so the angular order IS the ring order.
-	const normal = new THREE.Vector3();
-	for (const entry of plan) normal.add(entry.face.normal);
-	if (normal.lengthSq() < 1e-12) return null;
-	normal.normalize();
-	const points = [...offsets.values()];
-	const centre = new THREE.Vector3();
-	for (const point of points) centre.add(point);
-	centre.multiplyScalar(1 / points.length);
-	const uAxis = new THREE.Vector3().crossVectors(axisLeastAlignedWith(normal), normal).normalize();
-	const vAxis = new THREE.Vector3().crossVectors(normal, uAxis).normalize();
-	const ordered = points
-		.map((point) => {
-			const d = point.clone().sub(centre);
-			return { point, angle: Math.atan2(d.dot(vAxis), d.dot(uAxis)) };
-		})
-		.sort((x, y) => x.angle - y.angle)
-		.map((entry) => entry.point);
-	const capMi = tris[plan[0].face.triIndices[0]].mi;
-	const capTextured = !!tris[plan[0].face.triIndices[0]].uv;
-	// the cap is new surface with no mapping to inherit; the offset points' own uvs come
-	// from different faces and would tear, so it takes one small patch value
-	const capUv = plan[0].a.uv;
-	const ring = ordered.map((point) => ({ pos: point, uv: capUv }));
-	const capStart = out.length;
-	if (segments > 1) {
-		// 19-A P7c SEGMENTS: the cap becomes concentric rings between its border and its
-		// centre. Ring j sits at u = j/segments of the way in, lifted along the corner
-		// normal by profile * width * sin(u * PI/2) — the SAME apex height the one-segment
-		// dome reaches (u = 1), but on a curve that leaves the border at an angle and
-		// flattens toward the top: a rounded corner instead of a cone. Profile 0 gives a
-		// flat cap, just subdivided. The border ring is untouched, so the faces around
-		// the corner meet it exactly as before (watertight by construction).
-		const lift = (/** @type {number} */ u) => profile * width * Math.sin((u * Math.PI) / 2);
-		/** @type {any[][]} */
-		const rings = [ordered.map((p) => p.clone())];
-		for (let j = 1; j < segments; j++) {
-			const u = j / segments;
-			rings.push(ordered.map((p) => p.clone().lerp(centre, u).addScaledVector(normal, lift(u))));
-		}
-		const top = centre.clone().addScaledVector(normal, lift(1));
-		const n = ordered.length;
-		for (let j = 0; j + 1 < rings.length; j++)
-			for (let i = 0; i < n; i++)
-				pushQuad(
-					out,
-					rings[j][i].clone(),
-					rings[j][(i + 1) % n].clone(),
-					rings[j + 1][(i + 1) % n].clone(),
-					rings[j + 1][i].clone(),
-					normal,
-					capMi,
-					capTextured ? [capUv, capUv, capUv, capUv] : undefined
-				);
-		const last = rings[rings.length - 1];
-		for (let i = 0; i < n; i++)
-			fanPolygon(
-				out,
-				[
-					{ pos: top, uv: capUv },
-					{ pos: last[i], uv: capUv },
-					{ pos: last[(i + 1) % n], uv: capUv }
-				],
-				normal,
-				capMi,
-				capTextured,
-				0
-			);
-	} else if (Math.abs(profile) < 1e-3) {
-		fanPolygon(out, ring, normal, capMi, capTextured, 0);
-	} else {
-		// DOMED (+) or DISHED (-): fan from an apex pushed along the corner normal. Flat is
-		// only one of the three looks a chamfer is asked for, and this is the in/out control.
-		const apex = { pos: centre.clone().addScaledVector(normal, profile * width), uv: capUv };
-		for (let i = 0; i < ring.length; i++)
-			fanPolygon(out, [apex, ring[i], ring[(i + 1) % ring.length]], normal, capMi, capTextured, 0);
-	}
-	// the cap's keys = its border + (P7c) every inner ring point and the top, so the
-	// authoring pass claims ALL of the cap's triangles as one face
-	/** @type {Set<string>} */
-	const capKeys = new Set(ordered.map((p) => keyOf(p.x, p.y, p.z)));
-	// (one segment keeps its pre-P7c authoring exactly: border keys only)
-	if (segments > 1)
-		for (let ti = capStart; ti < out.length; ti++)
-			for (const v of out[ti]) capKeys.add(keyOf(v.x, v.y, v.z));
-	return { tris: out, capKeys: [...capKeys] };
-}
 
 /**
  * P1 (19-A): the PURE core of the VERTEX bevel — the per-key corner surgery
@@ -3065,25 +2783,14 @@ function bevelOneVertex(tris, vertexKey, width, profile, segments = 1) {
  *   caps = each bevelled corner's cap ring keys, for the wrapper's authoring
  */
 export function bevelVerticesCore(tris, vertexKeys, options = {}) {
-	const width = options.width ?? 0.2;
-	const profile = options.profile ?? 0;
-	const segments = Math.max(1, Math.min(Math.round(options.segments ?? 1) || 1, 8));
-	let out = tris;
-	/** @type {string[][]} each bevelled corner's cap ring, to author its face */
-	const caps = [];
-	let done = 0;
-	let skipped = 0;
-	for (const key of vertexKeys) {
-		const result = bevelOneVertex(out, key, width, profile, segments);
-		if (!result) {
-			skipped++;
-			continue;
-		}
-		out = result.tris;
-		caps.push(result.capKeys);
-		done++;
-	}
-	return { tris: out, caps, done, skipped };
+	// 99 K4 family 2: the kernel vertex bevel (meshOps/bevel.js) on an op mesh of these triangles
+	const ops = kernelOps();
+	const om = soupOpMesh(tris);
+	const r = ops.bevelVertices(om, vertexKeys, options);
+	if (!r.done) return { tris, caps: [], done: 0, skipped: r.skipped };
+	const p = om.mesh.vPos;
+	const caps = r.caps.map((/** @type {number[]} */ cap) => cap.map((/** @type {number} */ v) => keyOf(p[v * 3], p[v * 3 + 1], p[v * 3 + 2])));
+	return { tris: opMeshTris(om), caps, done: r.done, skipped: r.skipped };
 }
 
 /**
@@ -3107,42 +2814,43 @@ export function bevelVertices(uuid, vertexKeys, options = {}) {
 	}
 	const width = Math.max(options.width ?? 0.2, 1e-4);
 	const profile = Math.min(Math.max(options.profile ?? 0, -1), 1);
-	const inputTris = readTriangles(object.geometry);
+	const ops = editSession.ops;
+	if (!ops) {
+		showToast(KERNEL_LOADING);
+		return false;
+	}
+	const geometry = object.geometry;
+	const inputTris = readTriangles(geometry);
+	const pick = captureSelection(uuid);
+	// 99 K4 family 2: on the kernel (the held op mesh of this geometry, IDs carried)
+	const om = heldOpMesh(ops, geometry, () => partitionOfGeometry(geometry, inputTris), OBJECT_PARTNER);
 	const before = {
 		positions: trisToPositions(inputTris),
 		groups: trisToGroups(inputTris),
 		uvs: trisToUVs(inputTris),
-		faces: readStoredFaces(object.geometry)
+		faces: readStoredFaces(geometry),
+		ids: ops.idChannels(om)
 	};
-	const result = bevelVerticesCore(inputTris, vertexKeys, { width, profile, segments: options.segments });
-	const { caps, done, skipped } = result;
-	const tris = result.tris;
+	/** @type {any} */
+	let out = null;
+	let done = 0;
+	let skipped = 0;
+	try {
+		({ done, skipped } = ops.bevelVertices(om, vertexKeys, { width, profile, segments: options.segments }));
+		// each cap is ONE face, every other triangle its own (the soup wrapper's composeFaces(null, ...))
+		if (done) out = ops.opOutput(om, { order: 'appearance' });
+	} finally {
+		editSession.opMesh = null; // edited in place: re-kept only by a commit
+	}
 	if (!done) {
 		showToast(
 			'Nothing to bevel there: a vertex needs at least three faces around it (an open border needs a different tool)'
 		);
 		return false;
 	}
-	// author each cap as ONE face — it is a polygon by construction, and the topology
-	// channel can hold that now (derivation would only see loose coplanar triangles)
-	/** @type {number[][]} */
-	const authored = [];
-	for (const cap of caps) {
-		const keys = new Set(cap);
-		/** @type {number[]} */
-		const capFace = [];
-		tris.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
-			if (t.every((/** @type {any} */ v) => keys.has(keyOf(v.x, v.y, v.z)))) capFace.push(ti);
-		});
-		if (capFace.length) authored.push(capFace);
-	}
-	const after = {
-		positions: trisToPositions(tris),
-		groups: trisToGroups(tris),
-		uvs: trisToUVs(tris),
-		faces: composeFaces(null, appendOrigin(0, tris.length), authored)
-	};
-	if (!commitMeshGeoTriple(uuid, before, after, true)) return false;
+	const after = { positions: out.positions, groups: out.groups, uvs: out.uvs, faces: out.faces, ids: out.ids };
+	if (!commitMeshGeoTriple(uuid, before, after, true, pick)) return false;
+	keepOpMesh(uuid, om, out, OBJECT_PARTNER);
 	showToast(
 		'Bevelled ' +
 			done +
@@ -3159,9 +2867,10 @@ export function bevelVertices(uuid, vertexKeys, options = {}) {
  * carry-over cannot save the groups and uvs — a textured or multi-material mesh lost them.
  * @param {string} uuid @param {any} before @param {any} after
  * @param {boolean} [op] an OPERATOR's commit — the live-symmetry boundary (37 R11)
+ * @param {any} [selectionBefore] the operator's starting pick (`captureSelection`), restored by its undo (99 K4)
  * @returns {boolean}
  */
-export function commitMeshGeoTriple(uuid, before, after, op = false) {
+export function commitMeshGeoTriple(uuid, before, after, op = false, selectionBefore = null) {
 	// 99 K2: the one commit. `faces` = the partition the caller authored (applied packed); the
 	// colours ride both sides (mcp-shapes); the topology on the wire is read off the object.
 	// 37 R11: `op` = an operator's commit (vertex mode) — the live-symmetry boundary
@@ -3173,7 +2882,8 @@ export function commitMeshGeoTriple(uuid, before, after, op = false) {
 		faces: after.faces,
 		carryColors: true,
 		record: op ? 'op' : 'entry',
-		cap: 'edit'
+		cap: 'edit',
+		selectionBefore
 	});
 }
 
@@ -3351,27 +3061,11 @@ export function smoothVertices(uuid, vertexKeys, options = {}) {
  * @returns {{tris: any[], done: number, refusedValence: number, refusedBorder: number}}
  */
 export function bevelEdgesCore(tris, edgeKeys, options = {}) {
-	const width = options.width ?? 0.1;
-	const segments = options.segments ?? 1;
-	const profile = options.profile ?? 0;
-	let out = cloneTris(tris);
-	let done = 0;
-	let refusedValence = 0;
-	let refusedBorder = 0;
-	for (const key of edgeKeys) {
-		const result = bevelOneEdge(out, key, width, segments, profile);
-		if (result === 'valence') {
-			refusedValence++;
-			continue;
-		}
-		if (!result) {
-			refusedBorder++;
-			continue;
-		}
-		out = result.tris;
-		done++;
-	}
-	return { tris: out, done, refusedValence, refusedBorder };
+	// 99 K4 family 2: the kernel edge bevel (meshOps/bevel.js) on an op mesh of these triangles
+	const ops = kernelOps();
+	const om = soupOpMesh(tris);
+	const r = ops.bevelEdges(om, edgeKeys, options);
+	return { tris: opMeshTris(om), done: r.done, refusedValence: r.refusedValence, refusedBorder: r.refusedBorder };
 }
 
 /** @param {number} width @param {number} segments @param {number} profile
@@ -3387,15 +3081,31 @@ export function bevelEdges(width = 0.1, segments = 1, profile = 0) {
 	const wanted = Math.min(Math.max(Math.round(segments) || 1, 1), 8);
 	// a bulge needs an interior ring to displace; a single flat segment has none
 	const n = Math.abs(profile) > 1e-3 ? Math.max(wanted, 2) : wanted;
+	// 99 K4 family 2: on the session's op mesh, IDs carried (the partition is derived by the commit, as before)
+	const om = sessionOpMesh();
+	if (!om) {
+		showToast(KERNEL_LOADING);
+		return false;
+	}
+	const ops = editSession.ops;
+	const pick = captureSelection(FS.object.uuid);
 	const before = {
 		positions: trisToPositions(FS.workingTris),
 		groups: trisToGroups(FS.workingTris),
 		uvs: trisToUVs(FS.workingTris),
-		faces: readStoredFaces(FS.object?.geometry)
+		faces: readStoredFaces(FS.object?.geometry),
+		ids: ops.idChannels(om)
 	};
-	const result = bevelEdgesCore(FS.workingTris, selected, { width, segments: n, profile });
+	/** @type {any} */
+	let out = null;
+	let result;
+	try {
+		result = ops.bevelEdges(om, selected, { width, segments: n, profile });
+		if (result.done) out = ops.opOutput(om, { order: 'appearance' });
+	} finally {
+		editSession.opMesh = null; // edited in place; its faces are not the derived partition, so never re-kept
+	}
 	const { done, refusedValence, refusedBorder } = result;
-	const tris = result.tris;
 	if (!done) {
 		showToast(
 			refusedValence
@@ -3404,7 +3114,7 @@ export function bevelEdges(width = 0.1, segments = 1, profile = 0) {
 		);
 		return false;
 	}
-	const positions = trisToPositions(tris);
+	const positions = out.positions;
 	if (positions.length > MAX_SNAPSHOT) {
 		showToast(tooLargeMessage(positions.length, 'bevel'));
 		return false;
@@ -3416,10 +3126,11 @@ export function bevelEdges(width = 0.1, segments = 1, profile = 0) {
 	commitMesh({
 		apply: 'session',
 		before,
-		after: { positions, groups: trisToGroups(tris), uvs: trisToUVs(tris) },
+		after: { positions, groups: out.groups, uvs: out.uvs, ids: out.ids },
 		stampFaces: true,
 		record: 'op',
-		cap: false
+		cap: false,
+		selectionBefore: pick
 	});
 	showToast(
 		'Bevelled ' +
@@ -3434,354 +3145,6 @@ export function bevelEdges(width = 0.1, segments = 1, profile = 0) {
 	return true;
 }
 
-/**
- * One edge. Returns the new triangles + the strip's vertex keys, `'valence'` when an
- * endpoint has too many faces for an unambiguous answer, or null when it cannot be done.
- * @param {any[]} tris @param {string} edgeKeyString @param {number} width
- * @param {number} segments @param {number} profile
- * @returns {{tris: any[]}|'valence'|null}
- */
-function bevelOneEdge(tris, edgeKeyString, width, segments, profile) {
-	const [ka, kb] = edgeKeyString.split('|');
-	const faces = groupFaces(tris);
-	const hasEdge = (/** @type {any} */ face) => {
-		const loop = boundaryLoop(tris, face.triIndices);
-		if (!loop) return null;
-		const keys = loop.map((/** @type {any} */ p) => keyOf(p.x, p.y, p.z));
-		const ia = keys.indexOf(ka);
-		const ib = keys.indexOf(kb);
-		if (ia < 0 || ib < 0) return null;
-		const adjacent = Math.abs(ia - ib) === 1 || Math.abs(ia - ib) === keys.length - 1;
-		return adjacent ? { loop, keys } : null;
-	};
-	/** the two faces the bevelled edge belongs to, each gaining its own offset endpoints
-	 * @type {{face: any, loop: any[], keys: string[], a?: any, b?: any}[]} */
-	const sides = [];
-	for (const face of faces) {
-		const hit = hasEdge(face);
-		if (hit) sides.push({ face, ...hit });
-	}
-	if (sides.length !== 2) return null;
-	const pointOf = (/** @type {string} */ key) => {
-		for (const t of tris) for (const v of t) if (keyOf(v.x, v.y, v.z) === key) return v;
-		return null;
-	};
-	const pa = pointOf(ka);
-	const pb = pointOf(kb);
-	if (!pa || !pb) return null;
-	const along = pb.clone().sub(pa);
-	if (along.lengthSq() < 1e-12) return null;
-	const w = clampedBevelWidth(width, along.length());
-	along.normalize();
-	// each side folds INTO its own face: perpendicular to the edge, in the face plane
-	for (const side of sides) {
-		const inward = side.face.centroid.clone().sub(pa);
-		inward.addScaledVector(along, -inward.dot(along));
-		if (inward.lengthSq() < 1e-12) return null;
-		inward.normalize().multiplyScalar(w);
-		side.a = pa.clone().add(inward);
-		side.b = pb.clone().add(inward);
-	}
-	/** every face at an endpoint that is NOT one of the two sides */
-	const others = (/** @type {string} */ key) =>
-		faces.filter(
-			(face) =>
-				!sides.some((side) => side.face === face) &&
-				face.triIndices.some((/** @type {number} */ ti) =>
-					tris[ti].some((/** @type {any} */ v) => keyOf(v.x, v.y, v.z) === key)
-				)
-		);
-	const otherAtA = others(ka);
-	const otherAtB = others(kb);
-	// exactly one other face per endpoint = valence 3, the case with an exact answer
-	// (the chain rule below). 19-A P7c: two or more = the MITERED corner. None = the
-	// edge just continues straight into a flat region, which has nothing to fold.
-	if (!otherAtA.length || !otherAtB.length) return 'valence';
-	// 19-A P7c: at a VALENCE-3 end the side point slides ALONG the side face's other edge
-	// there (Blender's offset rule) instead of sitting at the perpendicular offset: the
-	// third face is bounded by exactly that edge, so it stays planar and the chamfer
-	// stays inside the solid. On a box the two points coincide (the edges meet at 90°);
-	// at a pyramid's base corner the perpendicular one dipped BELOW the base. The
-	// distance keeps the strip's perpendicular width (w / sin of the corner angle),
-	// clamped like every bevel width so two bevels on one edge can never cross.
-	for (const side of sides)
-		for (const [endKey, farKey, others, pick] of /** @type {const} */ ([
-			[ka, kb, otherAtA, 'a'],
-			[kb, ka, otherAtB, 'b']
-		])) {
-			if (others.length !== 1) continue;
-			const n = side.keys.length;
-			const i = side.keys.indexOf(endKey);
-			const prev = side.keys[(i - 1 + n) % n];
-			const j = prev === farKey ? (i + 1) % n : (i - 1 + n) % n;
-			const end = side.loop[i];
-			const span = side.loop[j].clone().sub(end);
-			const length = span.length();
-			if (length < 1e-9) continue;
-			span.multiplyScalar(1 / length);
-			const sin = new THREE.Vector3().crossVectors(along, span).length();
-			if (sin < 1e-3) continue; // a near-straight corner: keep the perpendicular point
-			side[pick] = end.clone().addScaledVector(span, Math.min(w / sin, length * 0.45));
-		}
-
-	// The CHAMFER STRIP's rings first: both kinds of endpoint have to meet its side chain.
-	// `profile` bulges the interior rings along the average normal — out for a round, in
-	// for a hollow.
-	const outward = sides[0].face.normal.clone().add(sides[1].face.normal);
-	if (outward.lengthSq() < 1e-12) return null;
-	outward.normalize();
-	/** ring k of the strip: the pair of points at t = k / segments
-	 * @type {{a: any, b: any}[]} */
-	const rings = [];
-	for (let k = 0; k <= segments; k++) {
-		const t = k / segments;
-		const bulge = Math.sin(Math.PI * t) * profile * width;
-		rings.push({
-			a: sides[0].a.clone().lerp(sides[1].a, t).addScaledVector(outward, bulge),
-			b: sides[0].b.clone().lerp(sides[1].b, t).addScaledVector(outward, bulge)
-		});
-	}
-
-	/**
-	 * 19-A P7c THE MITERED CORNER — the vertex-bevel cap at the junction. At an endpoint
-	 * with 2+ other faces no single face can take the strip's side chain, so the endpoint
-	 * is bevelled like a vertex: every OTHER edge at it gets ONE offset point at the
-	 * bevel width (keyed by the far vertex, so the two faces sharing that edge use the
-	 * identical point — the vertex bevel's watertightness rule), every face around it
-	 * swaps the vertex for its two replacements (a side face: its strip side point and
-	 * the offset on its other edge), and a CAP closes the hole. The cap is walked from
-	 * the faces' own new edges, each taken the other way round, which runs from one
-	 * strip side point to the other; the strip's WHOLE side chain closes it back (the
-	 * multi-segment endpoint rule — every chain point, or a T-junction at 2+ segments).
-	 * @param {string} vk the endpoint @param {string} wk the edge's other end
-	 * @param {any[]} otherFaces @param {boolean} atA
-	 */
-	const miterPlan = (vk, wk, otherFaces, atA) => {
-		const V = pointOf(vk);
-		if (!V) return null;
-		/** @type {Map<string, any>} far-vertex key -> the edge's offset point */
-		const offsetOn = new Map();
-		const plan = [];
-		for (const face of [...sides.map((side) => side.face), ...otherFaces]) {
-			const loop = boundaryLoop(tris, face.triIndices);
-			if (!loop) return null;
-			const keys = loop.map((/** @type {any} */ p) => keyOf(p.x, p.y, p.z));
-			const i = keys.indexOf(vk);
-			if (i < 0) return null;
-			const n = keys.length;
-			const corners = cornerData(tris, face.triIndices);
-			const vUv = corners.get(vk)?.uv ?? [0, 0];
-			const side = sides.find((sd) => sd.face === face);
-			/** @param {number} j loop index of the neighbour */
-			const replacement = (j) => {
-				const x = keys[j];
-				if (x === wk) return side ? { pos: atA ? side.a : side.b, uv: vUv } : null;
-				const span = loop[j].clone().sub(V);
-				const length = span.length();
-				if (length < 1e-9) return null;
-				const w = clampedBevelWidth(width, length);
-				let q = offsetOn.get(x);
-				if (!q) offsetOn.set(x, (q = V.clone().addScaledVector(span.normalize(), w)));
-				return { pos: q, uv: uvLerp(vUv, corners.get(x)?.uv ?? vUv, w / length) };
-			};
-			const before = replacement((i - 1 + n) % n);
-			const after = replacement((i + 1) % n);
-			if (!before || !after) return null;
-			plan.push({ face, loop, keys, i, before, after, corners });
-		}
-		// the cap: each face's new edge before -> after, taken after -> before
-		/** @type {Map<string, any>} */
-		const next = new Map();
-		/** @type {Set<string>} */
-		const incoming = new Set();
-		for (const entry of plan) {
-			const from = keyOf(entry.after.pos.x, entry.after.pos.y, entry.after.pos.z);
-			const to = keyOf(entry.before.pos.x, entry.before.pos.y, entry.before.pos.z);
-			if (next.has(from)) return null; // two faces leave one point: not a disc
-			next.set(from, entry.before.pos);
-			incoming.add(to);
-		}
-		const startKey = [...next.keys()].find((k) => !incoming.has(k));
-		if (!startKey) return null;
-		const chainKey = (/** @type {number} */ k) => {
-			const p = atA ? rings[k].a : rings[k].b;
-			return keyOf(p.x, p.y, p.z);
-		};
-		/** @type {any[]} */
-		const path = [];
-		let at = startKey;
-		let guard = 0;
-		/** @type {any} */
-		let atPos = plan.find((e) => keyOf(e.after.pos.x, e.after.pos.y, e.after.pos.z) === startKey)?.after.pos;
-		while (atPos && guard++ <= plan.length) {
-			path.push(atPos);
-			const to = next.get(at);
-			if (!to) break;
-			atPos = to;
-			at = keyOf(to.x, to.y, to.z);
-		}
-		if (path.length !== plan.length + 1) return null; // every face's edge, one chain
-		const first = keyOf(path[0].x, path[0].y, path[0].z);
-		const last = keyOf(path[path.length - 1].x, path[path.length - 1].y, path[path.length - 1].z);
-		/** @type {number[]} chain indices back from `last` to `first`, exclusive */
-		let chain;
-		if (last === chainKey(segments) && first === chainKey(0)) {
-			chain = [];
-			for (let k = segments - 1; k >= 1; k--) chain.push(k);
-		} else if (last === chainKey(0) && first === chainKey(segments)) {
-			chain = [];
-			for (let k = 1; k <= segments - 1; k++) chain.push(k);
-		} else return null;
-		const capRing = [...path, ...chain.map((k) => (atA ? rings[k].a : rings[k].b))];
-		return { plan, capRing };
-	};
-	const miterA = otherAtA.length >= 2 ? miterPlan(ka, kb, otherAtA, true) : null;
-	const miterB = otherAtB.length >= 2 ? miterPlan(kb, ka, otherAtB, false) : null;
-	if ((otherAtA.length >= 2 && !miterA) || (otherAtB.length >= 2 && !miterB)) return null;
-
-	/** @type {any[]} */
-	const out = [];
-	/** @type {Set<number>} */
-	const replaced = new Set();
-	for (const face of [...sides.map((s) => s.face), ...otherAtA, ...otherAtB])
-		for (const ti of face.triIndices) replaced.add(ti);
-	tris.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
-		if (!replaced.has(ti))
-			out.push(withSlot([t[0].clone(), t[1].clone(), t[2].clone()], t.mi, t.uv));
-	});
-	const avoid = survivingEdges(tris, replaced);
-	/** a mitered endpoint's replacement pair for `face`, or null when it is not one
-	 * @param {any} miter @param {any} face */
-	const miterPair = (miter, face) => miter?.plan.find((/** @type {any} */ e) => e.face === face) ?? null;
-	// the two side faces keep their corner COUNT at a valence-3 end (the corner just moves
-	// to its own offset); at a mitered end it becomes two corners, the side point and the
-	// offset on the face's other edge there
-	for (const side of sides) {
-		const corners = cornerData(tris, side.face.triIndices);
-		const mi = tris[side.face.triIndices[0]].mi;
-		const textured = !!tris[side.face.triIndices[0]].uv;
-		const pairA = miterPair(miterA, side.face);
-		const pairB = miterPair(miterB, side.face);
-		const ring = side.loop.flatMap((/** @type {any} */ point) => {
-			const key = keyOf(point.x, point.y, point.z);
-			const uv = corners.get(key)?.uv ?? [0, 0];
-			const pair = key === ka ? pairA : key === kb ? pairB : null;
-			if (pair)
-				return [
-					{ pos: pair.before.pos.clone(), uv: pair.before.uv },
-					{ pos: pair.after.pos.clone(), uv: pair.after.uv }
-				];
-			if (key === ka) return [{ pos: side.a.clone(), uv }];
-			if (key === kb) return [{ pos: side.b.clone(), uv }];
-			return [{ pos: point.clone(), uv }];
-		});
-		if (pairA || pairB) fanBest(out, ring, mi, textured, avoid);
-		else fanPolygon(out, ring, side.face.normal, mi, textured, 0);
-	}
-	const stripMi = tris[sides[0].face.triIndices[0]].mi;
-	const stripTextured = !!tris[sides[0].face.triIndices[0]].uv;
-	for (let k = 0; k < segments; k++) {
-		pushQuad(
-			out,
-			rings[k].a,
-			rings[k].b,
-			rings[k + 1].b,
-			rings[k + 1].a,
-			outward,
-			stripMi,
-			stripTextured
-				? [
-						[k / segments, 0],
-						[k / segments, 1],
-						[(k + 1) / segments, 1],
-						[(k + 1) / segments, 0]
-					]
-				: undefined
-		);
-	}
-
-	// MITERED ends: every other face swaps the vertex for its two offsets, then the cap
-	for (const miter of [miterA, miterB]) {
-		if (!miter) continue;
-		for (const entry of miter.plan) {
-			if (sides.some((side) => side.face === entry.face)) continue; // rebuilt above
-			const n = entry.keys.length;
-			/** @type {any[]} */
-			const ring = [];
-			for (let k = 0; k < n; k++) {
-				if (k === entry.i) {
-					ring.push({ pos: entry.before.pos.clone(), uv: entry.before.uv });
-					ring.push({ pos: entry.after.pos.clone(), uv: entry.after.uv });
-				} else
-					ring.push({
-						pos: entry.loop[k].clone(),
-						uv: entry.corners.get(entry.keys[k])?.uv ?? [0, 0]
-					});
-			}
-			const mi = tris[entry.face.triIndices[0]].mi;
-			fanBest(out, ring, mi, !!tris[entry.face.triIndices[0]].uv, avoid);
-		}
-		// the cap is new surface: one small patch of mapping, the vertex bevel's rule
-		const capUv = miter.plan[0].before.uv;
-		fanBest(
-			out,
-			miter.capRing.map((/** @type {any} */ p) => ({ pos: p.clone(), uv: capUv })),
-			stripMi,
-			stripTextured,
-			avoid
-		);
-	}
-
-	// VALENCE-3 ends: the third face at the endpoint gains corners: its vertex is
-	// replaced by the WHOLE chain of strip side points, not just the two ends. With one
-	// segment that is the two offsets; with more, the chain has interior points too —
-	// feeding only the ends left a T-junction against the strip and the mesh was
-	// non-manifold at 2+ segments (measured: 6 odd edges at 2 segments, 8 at 3, exactly
-	// two per extra segment).
-	/** @type {{key: string, face: any}[]} */
-	const endpoints = [
-		...(miterA ? [] : [{ key: ka, face: otherAtA[0] }]),
-		...(miterB ? [] : [{ key: kb, face: otherAtB[0] }])
-	];
-	for (const { key, face } of endpoints) {
-		const loop = boundaryLoop(tris, face.triIndices);
-		if (!loop) return null;
-		const corners = cornerData(tris, face.triIndices);
-		const keys = loop.map((/** @type {any} */ p) => keyOf(p.x, p.y, p.z));
-		const index = keys.indexOf(key);
-		if (index < 0) return null;
-		const count = keys.length;
-		const previousKey = keys[(index - 1 + count) % count];
-		// which side does the PREVIOUS boundary edge belong to? that side ends the chain
-		const previousSide =
-			sides.find((side) => side.keys.includes(previousKey) && side.keys.includes(key)) ?? sides[0];
-		const forward = previousSide === sides[0]; // the chain runs t: 0 -> 1
-		const mi = tris[face.triIndices[0]].mi;
-		const textured = !!tris[face.triIndices[0]].uv;
-		const uv = corners.get(key)?.uv ?? [0, 0];
-		const sidePoint = (/** @type {number} */ k) => (key === ka ? rings[k].a : rings[k].b);
-		/** @type {any[]} */
-		const ring = [];
-		for (let i = 1; i < count; i++) {
-			const pointKey = keys[(index + i) % count];
-			ring.push({ pos: loop[(index + i) % count].clone(), uv: corners.get(pointKey)?.uv ?? [0, 0] });
-		}
-		// the boundary reads: Pnext, next, ..., previous, Pprevious, <chain back to Pnext>
-		ring.unshift({ pos: sidePoint(forward ? segments : 0).clone(), uv });
-		for (let k = 0; k <= segments; k++) {
-			const at = forward ? k : segments - k;
-			if (at === (forward ? segments : 0)) continue; // Pnext is already at the front
-			ring.push({ pos: sidePoint(at).clone(), uv });
-		}
-		// in RING order (the face's own winding), never by a per-triangle normal test: a
-		// bulged chain leaves the face plane, and the normal test flipped fan triangles
-		// there (measured: 6 reversed edges at 5 segments, profile 0.5). Same start, so
-		// wherever the old test did not flip, the triangles are identical.
-		fanLoop(out, ring, mi, textured, 1);
-	}
-
-	return { tris: out };
-}
 
 
 // ---- M9b: KNIFE ------------------------------------------------------------
@@ -6818,6 +6181,22 @@ function noteGeometryIds(uuid, ids) {
 	if (geometry && ids?.cornerVertex && ids?.triFace) editSession.geometryIds.set(geometry, { ids, stamp: captureEntry(geometry) });
 }
 
+/**
+ * 99 K4: one family-1/2 face operator on an op mesh (the commit, the agent path and the soup adapters
+ * share it). `arg` = the distance / inset fraction, or the bevel's options.
+ * @param {any} ops @param {any} om @param {'extrude'|'inset'|'move'|'bevel'} op @param {any} face @param {any} arg
+ */
+function runKernelFaceOp(ops, om, op, face, arg) {
+	if (op === 'extrude') ops.extrudeRegion(om, face.triIndices, vec(face.normal), arg);
+	else if (op === 'inset') ops.insetRegion(om, face.triIndices, arg);
+	else if (op === 'move') ops.moveRegion(om, face.triIndices, vec(face.normal), arg);
+	else ops.bevelRegion(om, face.triIndices, vec(face.normal), arg);
+}
+
+/** the closed-region refusal for the bevel (no border to fold) */
+const CLOSED_BEVEL =
+	'Nothing to bevel: that selection is a CLOSED surface, so it has no border to fold. Select fewer faces.';
+
 /** the closed-region refusal (extrude has no border to build walls from) */
 const CLOSED_EXTRUDE =
 	'Nothing to extrude from: the selection is a CLOSED surface, so it has no border. Select fewer faces, or use Move/Scale to reposition it.';
@@ -6826,7 +6205,7 @@ const CLOSED_EXTRUDE =
  * 99 K4 family 1: extrude / inset / move on the session's op mesh, committed straight from the kernel
  * (no triangle soup): the same positions, partition, uvs and slots as the soup ops, plus the ID channels
  * in both history states, so an undo / redo rebuilds the same element IDs.
- * @param {'extrude'|'inset'|'move'} op @param {any} face the op target @param {number} amount
+ * @param {'extrude'|'inset'|'move'|'bevel'} op @param {any} face the op target @param {any} amount the distance / inset fraction, or the bevel's options
  * @returns {boolean}
  */
 function commitKernelFaceOp(op, face, amount) {
@@ -6836,8 +6215,9 @@ function commitKernelFaceOp(op, face, amount) {
 		return false;
 	}
 	const ops = editSession.ops;
-	if (op === 'extrude' && !ops.regionHasBorder(om, face.triIndices)) {
-		showToast(CLOSED_EXTRUDE);
+	const pick = captureSelection(FS.object.uuid);
+	if ((op === 'extrude' || op === 'bevel') && !ops.regionHasBorder(om, face.triIndices)) {
+		showToast(op === 'bevel' ? CLOSED_BEVEL : CLOSED_EXTRUDE);
 		return false;
 	}
 	const before = {
@@ -6850,9 +6230,7 @@ function commitKernelFaceOp(op, face, amount) {
 	/** @type {any} */
 	let out;
 	try {
-		if (op === 'extrude') ops.extrudeRegion(om, face.triIndices, vec(face.normal), amount);
-		else if (op === 'inset') ops.insetRegion(om, face.triIndices, amount);
-		else ops.moveRegion(om, face.triIndices, vec(face.normal), amount);
+		runKernelFaceOp(ops, om, op, face, amount);
 		out = ops.opOutput(om, { order: op === 'move' ? 'stored' : 'appearance' });
 	} finally {
 		// the op mesh was edited in place: nothing may reuse it until the commit re-keeps it
@@ -6872,14 +6250,16 @@ function commitKernelFaceOp(op, face, amount) {
 		faces: out.faces,
 		stampFaces: true,
 		record: 'op',
-		cap: false
+		cap: false,
+		selectionBefore: pick
 	});
 	keepOpMesh(FS.object.uuid, om, out, FS.quadPartner);
 	// E6: keep the CAP selected (its triangle indices survive the op); E7: the gizmo comes back seated on it
 	faceEditSelectedTris.set([...face.triIndices]);
 	faceEditHighlight.set(faceIndexForTriangle(face.triIndices[0]));
 	refreshFaceOverlay();
-	if (typeof window !== 'undefined') attachFaceGizmo();
+	// (the bevel never seated the gizmo: Bevel stays the armed op)
+	if (op !== 'bevel' && typeof window !== 'undefined') attachFaceGizmo();
 	return true;
 }
 
@@ -6900,6 +6280,8 @@ function sessionKernelCommit(run, beforeSwap, options = {}) {
 		return null;
 	}
 	const ops = editSession.ops;
+	// the op's starting pick: its undo puts it back (ops-a family 2's rule)
+	const pick = captureSelection(FS.object.uuid);
 	const before = {
 		positions: trisToPositions(FS.workingTris),
 		groups: trisToGroups(FS.workingTris),
@@ -6934,7 +6316,8 @@ function sessionKernelCommit(run, beforeSwap, options = {}) {
 		faces: out.faces,
 		stampFaces: true,
 		record: options.record ?? 'op',
-		cap: false
+		cap: false,
+		selectionBefore: pick
 	});
 	keepOpMesh(FS.object.uuid, om, out, FS.quadPartner);
 	return result;
@@ -7163,6 +6546,47 @@ function broadcastMeshGeo(uuid, positions, groups, uvs, colors) {
 }
 
 /**
+ * 99 K4: the pick an operator starts from — faces, highlight and edges of the face session on `uuid`, the
+ * vertex picks of a vertex session on it. An operator's history entry carries it so its UNDO brings that pick
+ * back (the geometry the undo restores is byte-identical to pre-op, so the indices and keys are valid again).
+ * @param {string} uuid
+ */
+function captureSelection(uuid) {
+	const face = FS.object?.uuid === uuid;
+	const vertex = vertexSelectionHistory?.snapshot();
+	return {
+		uuid,
+		faces: face ? [...get(faceEditSelectedTris)] : null,
+		highlight: face ? get(faceEditHighlight) : -1,
+		edges: face ? [...get(edgeEditSelected)] : null,
+		verts: vertex?.uuid === uuid ? vertex.sel : null
+	};
+}
+
+/**
+ * Put a captured pick back on the session it was taken in (no selection history: the undo / redo is the step).
+ * @param {any} sel a `captureSelection` result (or the adjust engine's selectionBefore)
+ * @param {string} uuid
+ */
+function restoreCapturedSelection(sel, uuid) {
+	if (!sel) return;
+	if (sel.faces && FS.object?.uuid === uuid) {
+		faceEditSelectedTris.set(sel.faces.filter((/** @type {number} */ ti) => FS.workingTris[ti]));
+		faceEditHighlight.set(sel.highlight);
+		edgeEditSelected.set((sel.edges ?? []).filter((/** @type {string} */ k) => !!edgeEndpoints(k)));
+		faceEditHoverTri.set(-1);
+		refreshFaceOverlay();
+		refreshEdgeOverlay();
+		if (typeof window !== 'undefined') {
+			if (get(faceEditOp) === 'move') attachFaceGizmo();
+			else detachFaceGizmo();
+		}
+	} else if (sel.verts && vertexSelectionHistory?.snapshot()?.uuid === uuid) {
+		vertexSelectionHistory.apply(sel.verts);
+	}
+}
+
+/**
  * 99 K2: THE mesh commit — snapshot -> apply -> broadcast -> record, in one place. Every
  * operator, the vertex tools, sculpt, the UV editor, the agent tools and the history replay's
  * sender used to run their own copy of these four steps (about twenty-five of them); they all
@@ -7189,12 +6613,14 @@ function broadcastMeshGeo(uuid, positions, groups, uvs, colors) {
  *   cap?: string | false,
  *   stampFaces?: boolean,
  *   carryColors?: boolean,
+ *   selectionBefore?: any,
  *   wireFaces?: 'object' | 'none'
  * }} c `after` = `{positions, groups?, uvs?, colors?}` or a bare positions array; `faces` = the
  *   partition the operator AUTHORED (applied as stored topology; absent = carry or derive);
  *   `cap` = the noun of the size refusal (false: the caller already refused); `stampFaces` =
  *   record the stored partition the apply left (withFaces, A5); `carryColors` = keep a
- *   coloured mesh's colours in both sides (commitMeshGeoTriple's rule).
+ *   coloured mesh's colours in both sides (commitMeshGeoTriple's rule); `selectionBefore` = the operator's
+ *   starting pick (`captureSelection`), restored by the entry's undo (99 K4).
  * @returns {{ kind: 'meshgeo', uuid: string, before: any, after: any } | null} the entry
  *   (recorded unless `record` is false), or null when the size cap refused the commit
  */
@@ -7241,6 +6667,7 @@ export function commitMesh(c) {
 	// 99 K4: the IDs this geometry now has, for the next operator's rebuild
 	if (!bare && c.after.ids) noteGeometryIds(uuid, c.after.ids);
 	const entry = meshGeoEntry(uuid, before, after);
+	if (c.selectionBefore) /** @type {any} */ (entry).selection = { before: c.selectionBefore, after: null };
 	if (c.record === 'op') recordOp(entry);
 	else if (c.record === 'entry') recordEntry(entry);
 	return entry;
@@ -8194,16 +7621,20 @@ function runAdjustCore(a) {
 		// world units since P3 — no upper clamp, the per-step fraction conversion
 		// saturates at 0.95 per component (the wrapper's rule)
 		const total = Math.max(p.width, 0.001);
-		const r = bevelFacesCore(a.originalTris, a.target, {
+		// 99 K4 family 2: re-run on a copy of the op mesh captured at begin (the extrude/inset rule)
+		const ops = kernelOps();
+		const om = ops.beginOp(ops.cloneOpMesh(a.opBase));
+		ops.bevelRegion(om, a.target.triIndices, vec(a.target.normal), {
 			width: total,
 			segments: n,
 			profile: p.profile,
 			direction: p.direction
 		});
 		return {
-			tris: r.tris,
-			faces: composeFaces(a.priorFaces, appendOrigin(origLen, r.tris.length), r.authored),
-			select: { kind: 'cap', tris: [...r.capTriIndices] },
+			tris: opMeshTris(om),
+			faces: ops.opPartition(om, 'appearance'),
+			ids: ops.idChannels(om),
+			select: { kind: 'cap', tris: [...a.target.triIndices] },
 			info: { segments: n }
 		};
 	}
@@ -8211,7 +7642,10 @@ function runAdjustCore(a) {
 		const wanted = Math.min(Math.max(Math.round(p.segments) || 1, 1), 8);
 		// a bulge needs an interior ring to displace; a single flat segment has none
 		const n = Math.abs(p.profile) > 1e-3 ? Math.max(wanted, 2) : wanted;
-		const r = bevelEdgesCore(a.originalTris, a.target, {
+		// 99 K4 family 2: re-run on a copy of the op mesh captured at begin
+		const ops = kernelOps();
+		const om = ops.beginOp(ops.cloneOpMesh(a.opBase));
+		const r = ops.bevelEdges(om, a.target, {
 			width: p.width,
 			segments: n,
 			profile: p.profile
@@ -8223,8 +7657,9 @@ function runAdjustCore(a) {
 					: 'Bevel needs an edge with a face on BOTH sides — a border edge has nothing to fold into'
 			};
 		return {
-			tris: r.tris,
+			tris: opMeshTris(om),
 			faces: null, // the edge bevel derives (the wrapper's rule)
+			ids: ops.idChannels(om),
 			select: { kind: 'edgesCleared' },
 			info: { done: r.done, refusedValence: r.refusedValence, refusedBorder: r.refusedBorder, segments: n }
 		};
@@ -8232,27 +7667,19 @@ function runAdjustCore(a) {
 	if (a.op === 'bevel' && a.kind === 'vertices') {
 		const width = Math.max(p.width ?? 0.2, 1e-4);
 		const profile = Math.min(Math.max(p.profile ?? 0, -1), 1);
-		const r = bevelVerticesCore(a.originalTris, a.target, { width, profile, segments: p.segments });
+		// 99 K4 family 2: re-run on a copy of the op mesh captured at begin; caps authored, the rest alone
+		const ops = kernelOps();
+		const om = ops.beginOp(ops.cloneOpMesh(a.opBase));
+		const r = ops.bevelVertices(om, a.target, { width, profile, segments: p.segments });
 		if (!r.done)
 			return {
 				error:
 					'Nothing to bevel there: a vertex needs at least three faces around it (an open border needs a different tool)'
 			};
-		// author each cap as ONE face — a polygon by construction (bevelVertices' rule)
-		/** @type {number[][]} */
-		const authored = [];
-		for (const cap of r.caps) {
-			const keys = new Set(cap);
-			/** @type {number[]} */
-			const capFace = [];
-			r.tris.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
-				if (t.every((/** @type {any} */ v) => keys.has(keyOf(v.x, v.y, v.z)))) capFace.push(ti);
-			});
-			if (capFace.length) authored.push(capFace);
-		}
 		return {
-			tris: r.tris,
-			faces: composeFaces(null, appendOrigin(0, r.tris.length), authored),
+			tris: opMeshTris(om),
+			faces: ops.opPartition(om, 'appearance'),
+			ids: ops.idChannels(om),
 			select: { kind: 'vertsCleared' },
 			info: { done: r.done, skipped: r.skipped }
 		};
@@ -8568,10 +7995,15 @@ export function beginOpAdjust(op, params, opts = {}) {
 			showToast('Select a face first, then Bevel');
 			return false;
 		}
-		if (!boundaryEdges(FS.workingTris, face).length) {
-			showToast(
-				'Nothing to bevel: that selection is a CLOSED surface, so it has no border to fold. Select fewer faces.'
-			);
+		// 99 K4 family 2: the op mesh every re-run copies
+		const base = sessionOpMesh();
+		if (!base) {
+			showToast(KERNEL_LOADING);
+			return false;
+		}
+		a.opBase = base;
+		if (!editSession.ops.regionHasBorder(base, face.triIndices)) {
+			showToast(CLOSED_BEVEL);
 			return false;
 		}
 		a.target = {
@@ -8585,9 +8017,24 @@ export function beginOpAdjust(op, params, opts = {}) {
 			showToast('Pick an edge first, then Bevel');
 			return false;
 		}
+		// 99 K4 family 2: the op mesh every re-run copies
+		const base = sessionOpMesh();
+		if (!base) {
+			showToast(KERNEL_LOADING);
+			return false;
+		}
+		a.opBase = base;
 		a.target = [...selected];
 	} else if (op === 'bevel' && kind === 'vertices') {
 		if (!opts.vertexKeys?.length) return false;
+		const ops = editSession.ops;
+		const geometry = lookupEditable(a.uuid)?.geometry;
+		if (!ops || !geometry) {
+			if (!ops) showToast(KERNEL_LOADING);
+			return false;
+		}
+		// 99 K4 family 2: the held op mesh of the object's geometry (the vertex bevel's own path)
+		a.opBase = heldOpMesh(ops, geometry, () => partitionOfGeometry(geometry, a.originalTris), OBJECT_PARTNER);
 		a.target = [...opts.vertexKeys];
 	} else if (op === 'loopcut') {
 		// P7b: capture BOTH rings — the axis toggle re-runs across the other one,
@@ -8702,6 +8149,8 @@ export function beginOpAdjust(op, params, opts = {}) {
 	// special cases; a 'deferred' (VR) begin records on its explicit commit
 	if (opts.record !== 'deferred') {
 		a.entry = recordMeshGeo(a.uuid, a.before, a.after);
+		// 99 K4: the entry's undo brings back the pick the adjust started from
+		/** @type {any} */ (a.entry).selection = { before: { uuid: a.uuid, ...a.selectionBefore }, after: null };
 	}
 	a.installedGeometry = liveObjectOf(a)?.geometry ?? null;
 	FS.adjust = a;
@@ -8805,20 +8254,7 @@ function restoreAdjustBefore() {
 	// the restored geometry is byte-identical to pre-op, so the captured
 	// selection indices/keys are valid again
 	const sel = a.selectionBefore;
-	if (a.session) {
-		faceEditSelectedTris.set(sel.faces.filter((/** @type {number} */ ti) => FS.workingTris[ti]));
-		faceEditHighlight.set(sel.highlight);
-		edgeEditSelected.set(sel.edges.filter((/** @type {string} */ k) => !!edgeEndpoints(k)));
-		faceEditHoverTri.set(-1);
-		refreshFaceOverlay();
-		refreshEdgeOverlay();
-		if (typeof window !== 'undefined') {
-			if (get(faceEditOp) === 'move') attachFaceGizmo();
-			else detachFaceGizmo();
-		}
-	} else if (sel.verts) {
-		vertexSelectionHistory?.apply(sel.verts);
-	}
+	restoreCapturedSelection({ ...sel, faces: a.session ? sel.faces : null }, a.uuid);
 	return true;
 }
 
@@ -8898,7 +8334,10 @@ export function commitFaceAdjust() {
 	if (!a || !FS.object) return false;
 	if (!settleOpAdjust()) return false;
 	if (a.record === 'deferred')
-		recordMeshGeo(a.uuid, a.before, a.after);
+		/** @type {any} */ (recordMeshGeo(a.uuid, a.before, a.after)).selection = {
+			before: { uuid: a.uuid, ...a.selectionBefore },
+			after: null
+		};
 	endOpAdjust();
 	return true;
 }
@@ -8924,9 +8363,15 @@ registerHistoryKind('meshgeo', (entry, state) => {
 	// authored one. Packed here so the replay and the re-broadcast agree byte for byte
 	// (99 K2: history keeps it packed already — `faceCounts`/`faceTris` — or as `faces`).
 	const packed = stateFaceFields(state);
+	// 99 K4: an operator's entry carries the pick it started from: its undo puts that pick back, and keeps
+	// the pick live at that moment (the op's own, or what the user made of it) for the redo
+	const sel = entry.selection;
+	const undoing = state === entry.before;
+	if (sel && undoing) sel.after = captureSelection(entry.uuid);
 	applyMeshGeo(entry.uuid, positions, groups, uvs, packed?.faceCounts, packed?.faceTris, colors);
 	// 99 K4: an undo / redo of a kernel op's step brings its element IDs back with it
 	if (state?.ids) noteGeometryIds(entry.uuid, state.ids);
+	if (sel) restoreCapturedSelection(undoing ? sel.before : sel.after, entry.uuid);
 	// the one meshgeo sender; the topology is the STATE's, never the object's carry-over
 	sendMeshGeo(entry.uuid, positions, { groups, uvs, colors, faceFields: packed });
 	return true;
@@ -8982,23 +8427,19 @@ export function faceOpOnObject(uuid, op, triIndices, options = {}) {
 	const amount = Number.isFinite(options.amount) ? Number(options.amount) : 0.3;
 	// 99 K4 family 1: extrude / inset / move on the kernel, IDs carried
 	if (op === 'extrude' || op === 'inset' || op === 'move') return kernelOpOnObject(uuid, object, op, face, partition, tris, amount);
-	const open = boundaryEdges(tris, face).length > 0;
-	if (op === 'bevel' && !open)
-		return { ok: false, error: op + ': the selection is a CLOSED surface (no border) — select fewer faces' };
-	/** @type {any[]} */
-	let next;
-	/** @type {number[][] | null} */
-	let nextFaces;
-	if (op === 'bevel') {
-		const result = bevelFacesCore(tris, face, {
+	// 99 K4 family 2: the face bevel too (the cap keeps its indices)
+	if (op === 'bevel')
+		return kernelOpOnObject(uuid, object, op, face, partition, tris, {
 			width: Math.max(Number(options.width ?? 0.15) || 0.15, 0.001),
 			segments: Math.max(1, Math.min(Math.round(Number(options.segments ?? 1)) || 1, 8)),
 			profile: Math.min(Math.max(Number(options.profile ?? 1), -1), 1),
 			direction: options.direction === 'in' ? 'in' : 'out'
 		});
-		next = result.tris;
-		nextFaces = composeFaces(partition, appendOrigin(tris.length, next.length), result.authored);
-	} else if (op === 'subdivide') {
+	/** @type {any[]} */
+	let next;
+	/** @type {number[][] | null} */
+	let nextFaces;
+	if (op === 'subdivide') {
 		// 99 K4 family 6: on the kernel, IDs carried
 		const partner = storedPartner(object.geometry, tris.length) ?? pairQuads(tris);
 		const r = objectKernelCommit(uuid, object, () => partition, tris, (ops, om) => ops.subdivideUnits(om, picked, partner));
@@ -9020,17 +8461,17 @@ export function faceOpOnObject(uuid, op, triIndices, options = {}) {
 }
 
 /**
- * 99 K4: faceOpOnObject's extrude / inset / move — the session's kernel operators on an op mesh of the
+ * 99 K4: faceOpOnObject's extrude / inset / move / bevel — the session's kernel operators on an op mesh of the
  * object's own geometry (built with the IDs it was applied with when known), committed with its IDs.
- * @param {string} uuid @param {any} object @param {'extrude'|'inset'|'move'} op @param {any} face
- * @param {number[][]} partition @param {any[]} tris @param {number} amount @returns {any}
+ * @param {string} uuid @param {any} object @param {'extrude'|'inset'|'move'|'bevel'} op @param {any} face
+ * @param {number[][]} partition @param {any[]} tris @param {any} amount the distance / inset fraction, or the bevel's options @returns {any}
  */
 function kernelOpOnObject(uuid, object, op, face, partition, tris, amount) {
 	const ops = editSession.ops;
 	if (!ops) return { ok: false, error: KERNEL_LOADING };
 	const geometry = object.geometry;
 	const om = heldOpMesh(ops, geometry, () => partition, OBJECT_PARTNER);
-	if (op === 'extrude' && !ops.regionHasBorder(om, face.triIndices))
+	if ((op === 'extrude' || op === 'bevel') && !ops.regionHasBorder(om, face.triIndices))
 		return { ok: false, error: op + ': the selection is a CLOSED surface (no border) — select fewer faces' };
 	const before = {
 		positions: trisToPositions(tris),
@@ -9042,9 +8483,7 @@ function kernelOpOnObject(uuid, object, op, face, partition, tris, amount) {
 	/** @type {any} */
 	let out;
 	try {
-		if (op === 'extrude') ops.extrudeRegion(om, face.triIndices, vec(face.normal), amount);
-		else if (op === 'inset') ops.insetRegion(om, face.triIndices, Math.min(Math.max(amount, 0.01), 0.95));
-		else ops.moveRegion(om, face.triIndices, vec(face.normal), amount);
+		runKernelFaceOp(ops, om, op, face, op === 'inset' ? Math.min(Math.max(amount, 0.01), 0.95) : amount);
 		out = ops.opOutput(om, { order: op === 'move' ? 'stored' : 'appearance' });
 	} finally {
 		editSession.opMesh = null; // edited in place: re-kept only by a commit
@@ -9073,6 +8512,7 @@ function objectKernelCommit(uuid, object, partition, tris, run, options = {}) {
 	const ops = editSession.ops;
 	if (!ops) return { error: KERNEL_LOADING };
 	const geometry = object.geometry;
+	const pick = captureSelection(uuid);
 	const om = heldOpMesh(ops, geometry, partition, OBJECT_PARTNER);
 	const before = {
 		positions: trisToPositions(tris),
@@ -9095,7 +8535,7 @@ function objectKernelCommit(uuid, object, partition, tris, run, options = {}) {
 	if (out.positions.length > MAX_SNAPSHOT) return { error: tooLargeMessage(out.positions.length, 'edit') };
 	const faces = options.faces ? options.faces(out.positions.length / 9) : out.faces;
 	const after = { positions: out.positions, groups: out.groups, uvs: out.uvs, faces, ids: out.ids };
-	if (!commitMeshGeoTriple(uuid, before, after, !!options.op)) return { error: 'the edit could not be committed' };
+	if (!commitMeshGeoTriple(uuid, before, after, !!options.op, pick)) return { error: 'the edit could not be committed' };
 	if (faces === out.faces) keepOpMesh(uuid, om, out, OBJECT_PARTNER);
 	return result;
 }

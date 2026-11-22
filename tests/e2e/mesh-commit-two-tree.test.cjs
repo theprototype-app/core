@@ -8,6 +8,7 @@
 //   4. branch undoes 3 and 1 (the compact history replays through the one sender): the bytes equal
 //      the state before each step, on both peers; redo restores step 3's bytes exactly
 //   5. the old peer undoes its own inset; the branch follows
+//   5g-5j. (99 K4 family 2) face bevel each way, then a branch vertex + edge bevel and an undo
 //   5b-5f. (99 K4 family 1) the branch insets and moves on the kernel, the old peer extrudes the result,
 //      the branch extrudes that and undoes it: same bytes + partition after each step
 //   5k-5r. (99 K4 family 4, lane 99-ops-b) the two peers alternate: the old peer opens a hole, the branch
@@ -87,13 +88,88 @@ const faceOp = (peer, uuid, axis, op) =>
 			const k = faces.findIndex((f) => f.normal[axis[1]] * (axis[0] === '-' ? -1 : 1) > 0.9);
 			if (k < 0) return { ok: false, why: 'no face along ' + axis };
 			fe.highlightFaceByTriangle(faces[k].triIndices[0]);
-			fe.setFaceOp(op);
-			// a click auto-applies extrude / inset (the adjust path); Move is the toolbox's Apply (no click op)
-			const ok = op === 'move' ? fe.commitFaceOp('move', 0.25) !== false : fe.autoApplyFaceOp() !== false;
+			if (op !== 'bevel') fe.setFaceOp(op);
+			// a click auto-applies extrude / inset (the adjust path); Move is the toolbox's Apply (no click op);
+			// Bevel is its own command (two segments)
+			const ok =
+				op === 'bevel'
+					? fe.bevelFaces(0.1, 2) !== false
+					: op === 'move'
+						? fe.commitFaceOp('move', 0.25) !== false
+						: fe.autoApplyFaceOp() !== false;
 			fe.exitFaceEdit();
 			return { ok };
 		},
 		{ uuid, axis, op }
+	);
+
+/**
+ * an element bevel on the branch (99 K4 family 2): an edge of a -z triangle (edge mode) or a vertex on the
+ * -z side (vertex mode), trying candidates until the bevel accepts one — a refusal leaves the mesh untouched
+ */
+const elementBevel = (peer, uuid, kind) =>
+	peer.page.evaluate(
+		({ uuid, kind }) => {
+			const s = window.__tp.test.v1;
+			const fe = s.faceEdit;
+			const me = s.meshEdit;
+			let object;
+			s.objectsGroup.subscribe((g) => (object = g.getObjectByProperty('uuid', uuid)))();
+			if (kind === 'edge') {
+				fe.enterFaceEdit(uuid);
+				fe.setFaceSubmode('edges');
+				const tris = fe.readTriangles(object.geometry);
+				for (let ti = 0; ti < tris.length; ti++) {
+					const t = tris[ti];
+					const n = t[1].clone().sub(t[0]).cross(t[2].clone().sub(t[0])).normalize();
+					if (n.z > -0.9) continue;
+					const c = t[0].clone().add(t[1]).add(t[2]).multiplyScalar(1 / 3);
+					for (let e = 0; e < 3; e++) {
+						const mid = t[e].clone().add(t[(e + 1) % 3]).multiplyScalar(0.5);
+						const key = fe.pickEdgeAt(ti, c.clone().lerp(mid, 0.95));
+						if (!key) continue;
+						fe.pickEdge(key, false);
+						if (fe.edgeSelectionSize() !== 1) continue;
+						if (fe.bevelEdges(0.05, 1, 0) !== false) {
+							fe.setFaceSubmode('faces');
+							fe.exitFaceEdit();
+							return { ok: true, key };
+						}
+					}
+				}
+				fe.setFaceSubmode('faces');
+				fe.exitFaceEdit();
+				return { ok: false, why: 'no -z edge took the bevel' };
+			}
+			me.enterEditMode(uuid);
+			let controls;
+			s.TControls.subscribe((c) => (controls = c))();
+			let minZ = Infinity;
+			const at = [];
+			// one handle per welded position
+			const pos = object.geometry.attributes.position;
+			const keys = new Set();
+			for (let v = 0; v < pos.count; v++) keys.add([pos.getX(v), pos.getY(v), pos.getZ(v)].map((n) => Math.round(n * 1e4)).join(','));
+			for (let i = 0; i < keys.size; i++) {
+				me.selectHandle(i);
+				const p = controls.object?.position;
+				if (!p) continue;
+				at.push({ i, p: p.clone() });
+				minZ = Math.min(minZ, p.z);
+			}
+			for (const { i, p } of at) {
+				if (Math.abs(p.z - minZ) > 1e-4) continue;
+				me.clearVertexSelection();
+				me.selectHandle(i);
+				if (me.bevelSelectedVerts(0.05, 0) !== false) {
+					me.exitEditMode();
+					return { ok: true, handle: i };
+				}
+			}
+			me.exitEditMode();
+			return { ok: false, why: 'no -z vertex took the bevel' };
+		},
+		{ uuid, kind }
 	);
 
 /**
@@ -375,6 +451,28 @@ h.run(async () => {
 	await undo(L);
 	const u5 = await agree('5f. branch undo (kernel extrude) -> both peers agree');
 	h.check(u5.facts.tris < s5e.facts.tris, '5f. ...and the extrude is gone');
+
+	// 5g-5j. roadmap 99 K4 family 2 (bevel on the kernel): the branch bevels a face, the release peer bevels
+	// the branch's output with its soup code, then the branch bevels a vertex and an edge; both peers agree
+	const fb = await faceOp(L, uuid, '+x', 'bevel');
+	h.check(fb.ok, '5g. branch: face bevel ran (premise)');
+	const s5g = await agree('5g. branch face bevel (kernel) -> the release peer holds the same bytes + partition');
+	h.check(s5g.facts.tris > u5.facts.tris, '5g. ...and the bevel added its rings');
+	await release(L, uuid);
+	await unlocked(O, uuid);
+	const fb2 = await faceOp(O, uuid, '-x', 'bevel');
+	h.check(fb2.ok, '5h. release: face bevel ran on the branch output (premise)');
+	await agree('5h. release face bevel (soup) on the kernel output -> the branch holds the same bytes + partition');
+	await release(O, uuid);
+	await unlocked(L, uuid);
+	const vb = await elementBevel(L, uuid, 'vertex');
+	h.check(vb.ok, `5i. branch: vertex bevel ran (premise${vb.why ? ': ' + vb.why : ''})`);
+	await agree('5i. branch vertex bevel (kernel) -> the release peer holds the same bytes + partition');
+	const eb = await elementBevel(L, uuid, 'edge');
+	h.check(eb.ok, `5j. branch: edge bevel ran (premise${eb.why ? ': ' + eb.why : ''})`);
+	await agree('5j. branch edge bevel (kernel) -> the release peer holds the same bytes + partition');
+	await undo(L);
+	await agree('5j. branch undo (kernel edge bevel) -> both peers agree');
 
 	// 5k-5r. lane 99-ops-b family 4 (bridge / fill / solidify on the kernel), alternating with the release peer
 	const f4 = async (peer, kind, label) => {

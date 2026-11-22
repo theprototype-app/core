@@ -3,7 +3,8 @@
 // the headless path the agent's edit_mesh takes — the same op mesh, opOutput and commitMesh the session
 // path uses). ELEMENT IDS SURVIVE: the op keeps every pre-op vertex / face ID, the history entry holds
 // both sides' channels, an undo / redo brings them back with the geometry, and the next operator
-// rebuilds with exactly those IDs (no re-weld renumbering).
+// rebuilds with exactly those IDs (no re-weld renumbering). Family 2 adds the face and vertex bevels (the edge
+// bevel reads the live face session, so tests/e2e/mesh-kernel-ops.test.cjs holds it to the same rules).
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as THREE from 'three';
 import { get } from 'svelte/store';
@@ -147,5 +148,58 @@ describe('99 K4 family 1: element IDs through commit, undo and redo', () => {
 		expect(out.length).toBe(tris.length + 8);
 		expect(out.every((t) => Number.isInteger(t.mi) && Array.isArray(t.uv))).toBe(true);
 		for (const ti of face.triIndices) expect(out[ti].every((v) => Math.abs(v.y - 1) < 1e-6)).toBe(true);
+	});
+});
+
+describe('99 K4 family 2: element IDs through the bevels', () => {
+	const keyOf = (v) => `${Math.round(v.x * 1e4)},${Math.round(v.y * 1e4)},${Math.round(v.z * 1e4)}`;
+
+	it('face bevel: pre-op IDs survive, undo/redo restore both sides, the next op rebuilds with them', () => {
+		const m = box();
+		const cap = topTris(m.geometry);
+		const r = fe.faceOpOnObject(m.uuid, 'bevel', cap, { width: 0.1, segments: 2 });
+		expect(r.ok).toBe(true);
+		const e = lastEntry();
+		const before = e.before.ids;
+		const after = e.after.ids;
+		expect(before && after).toBeTruthy();
+		// the rings APPEND: every pre-op triangle keeps its face ID, every one off the cap its corner vertices
+		const n = before.triFace.length;
+		same(after.triFace.subarray(0, n), before.triFace);
+		const capSet = new Set(cap);
+		for (let t = 0; t < n; t++) {
+			if (capSet.has(t)) continue;
+			for (let k = 0; k < 3; k++) expect(after.cornerVertex[t * 3 + k]).toBe(before.cornerVertex[t * 3 + k]);
+		}
+		history.undo();
+		same(rebuildIds(live(m.uuid).geometry).cornerVertex, before.cornerVertex);
+		history.redo();
+		same(rebuildIds(live(m.uuid).geometry).cornerVertex, after.cornerVertex);
+		const r2 = fe.faceOpOnObject(m.uuid, 'move', topTris(live(m.uuid).geometry), { amount: 0.1 });
+		expect(r2.ok).toBe(true);
+		same(lastEntry().before.ids.cornerVertex, after.cornerVertex);
+	});
+
+	it('vertex bevel: every vertex ID but the bevelled corner survives, undo/redo restore both sides', () => {
+		const m = box();
+		const corner = fe.readTriangles(m.geometry).flat().find((v) => v.x > 0.49 && v.y > 0.49 && v.z > 0.49);
+		expect(fe.bevelVertices(m.uuid, [keyOf(corner)], { width: 0.2 })).toBe(true);
+		const e = lastEntry();
+		const before = e.before.ids;
+		const after = e.after.ids;
+		expect(before && after).toBeTruthy();
+		const kept = new Set(Array.from(after.cornerVertex));
+		const gone = [...new Set(Array.from(before.cornerVertex))].filter((v) => !kept.has(v));
+		expect(gone.length).toBe(1); // the corner, replaced by its cap
+		history.undo();
+		same(rebuildIds(live(m.uuid).geometry).cornerVertex, before.cornerVertex);
+		same(rebuildIds(live(m.uuid).geometry).triFace, before.triFace);
+		history.redo();
+		same(rebuildIds(live(m.uuid).geometry).cornerVertex, after.cornerVertex);
+		same(rebuildIds(live(m.uuid).geometry).triFace, after.triFace);
+		// the next op starts from the redone IDs
+		const r2 = fe.faceOpOnObject(m.uuid, 'move', fe.readTriangles(live(m.uuid).geometry).map((t, i) => [t, i]).filter(([t]) => t.every((v) => v.y < -0.49)).map(([, i]) => i), { amount: 0.1 });
+		expect(r2.ok).toBe(true);
+		same(lastEntry().before.ids.cornerVertex, after.cornerVertex);
 	});
 });

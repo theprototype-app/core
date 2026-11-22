@@ -198,6 +198,29 @@ export function isolateTriangles(om, tris) {
 	return faces;
 }
 
+/**
+ * Split every face of several triangles that `tris` touch into one face per triangle (corners, corner
+ * order, order keys and logical group kept; the first piece keeps the face ID), so a partition finer than
+ * the faces can be stored. @param {OpMesh} om @param {number[]} tris output triangle indices
+ */
+export function explodeFaces(om, tris) {
+	const { mesh, view } = om;
+	/** @type {Set<number>} */
+	const faces = new Set();
+	for (const t of tris) if (mesh.fTriLen[view.tFace[t]] > 1) faces.add(view.tFace[t]);
+	if (!faces.size) return;
+	/** @type {Map<number, number[]>} */
+	const trisOf = new Map();
+	for (let t = 0; t < view.count; t++) {
+		const f = view.tFace[t];
+		if (!faces.has(f)) continue;
+		let list = trisOf.get(f);
+		if (!list) trisOf.set(f, (list = []));
+		list.push(t);
+	}
+	for (const f of faces) explodeFace(om, f, trisOf.get(f) ?? []);
+}
+
 /** @param {OpMesh} om @param {number} f @param {number[]} outTris the face's output triangles */
 function explodeFace(om, f, outTris) {
 	const { mesh, view } = om;
@@ -348,6 +371,22 @@ export function opOutput(om, options = {}) {
 		ids: { cornerVertex: out.cornerVertex, triFace: out.triFace },
 		faces: partitionOf(om, out.triFace, options.order)
 	};
+}
+
+/**
+ * The operator's AUTHORED faces as output triangle indices, in authoring order — the `authored` list a soup
+ * operator hands composeFaces (the leading entries of the appearance partition). Renumbers like opPartition.
+ * @param {OpMesh} om @returns {number[][]}
+ */
+export function authoredFaces(om) {
+	const base = om.baseGroup;
+	/** @type {Set<number>} */
+	const groups = new Set();
+	for (let t = 0; t < om.view.count; t++) {
+		const g = /** @type {number} */ (om.logical[om.view.tFace[t]]);
+		if (g >= base) groups.add(g);
+	}
+	return partitionOf(om, om.view.tFace, 'appearance').slice(0, groups.size);
 }
 
 /** a deep copy (the adjust engine re-runs from one) @param {OpMesh} om @returns {OpMesh} */

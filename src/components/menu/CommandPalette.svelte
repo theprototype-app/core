@@ -30,6 +30,7 @@
 	import { shortcuts, comboOf, rebindShortcut, takeConflictingKeys, clearShortcut, resetShortcut, presetDefaultOf, setShortcutCapture } from '$lib/shortcuts';
 	import SheetGrip from '../ui/SheetGrip.svelte';
 	import KeyChips from '../ui/KeyChips.svelte';
+	import { handheldDevice } from '$lib/inputDevice.js';
 	import Icon from '../ui/Icon.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 
@@ -48,10 +49,11 @@
 	const results = $derived(rankCommands(commands, query, 60));
 	const KIND = { tool: 'Tool', window: 'Window', menu: 'Menu', setting: 'Setting' };
 	const phone = $derived($phoneShellActive);
-	// a touch-only device wider than the phone shell (the unfolded N6) keeps the centred window, but it is still a phone:
-	// no key column and no shortcut editing without a fine pointer
-	const touchOnly = typeof window !== 'undefined' && window.matchMedia?.('(any-pointer: fine)')?.matches === false;
-	const noKeys = $derived(phone || touchOnly);
+	// a phone wider than the phone shell (the unfolded N6 / HONOR) keeps the centred window, but it is still a phone: no
+	// key column and no shortcut editing on a handheld. The app's one rule for that (a touch-FIRST pointer, not a
+	// headset); `any-pointer: fine` was not it — the HONOR reports a fine pointer (its stylus digitizer), measured
+	const handheld = handheldDevice();
+	const noKeys = $derived(phone || handheld);
 
 	/** the row listening for keys: `pending` null = nothing pressed yet, '' = Backspace (no key)
 	 * @type {{ cmdId: string, shortcutId: string, pending: string | null } | null} */

@@ -36,6 +36,8 @@ import { reloadToUpdate } from '$lib/updateCheck';
 // 55 A7/A8: the agent action log + where an agent looked (store-only)
 import { applyAgentLog, applyAgentUndo, applyAgentView, dropAgentView, sendAgentLogTo } from '$lib/agentLog';
 import { applyAgentChatMessage, sendAgentChatBacklogTo, agentChatPeerGone } from '$lib/agentChat'; // 56 C1
+import { pauseToastText } from '$lib/inviteLimits';
+import { resumeInviteJoins, resetInviteJoinGate } from '$lib/inviteStore';
 import { captureInviteHash, verifyInviteDial, joinerInviteMeta, dialingWithInvite, myKind, noteDialKind, noteJoinedVia, agentsAsGuests, isAgentSession, isAgentPeer } from '$lib/inviteStore';
 import { applyKick, isBlocked, isHeldOut, resetModeration, blockReplay } from '$lib/peerModeration'; // 55 A9
 import { notePeerFacts, notePeerActivity, dropPeerFacts, myDevice } from '$lib/peerFacts'; // 55 A9
@@ -314,24 +316,13 @@ function dialOptions(result, cloud, extra) {
 	if (extra?.invite && !result) metadata.invite = extra.invite;
 	if (extra?.kind && !result) metadata.kind = extra.kind;
 	if (extra?.invited && result === 'approved') metadata.invited = extra.invited;
+	// 71 AS4: why an invite dial was refused ('invite-paused' | 'invite-slow'), additive — an older
+	// joiner reads the plain 'denied'
+	if (extra?.why && result === 'denied') metadata.why = String(extra.why).slice(0, 24);
 	return { metadata };
 }
 
 
-/**
- * 55 A4: the approval card's line for a dial whose invite did not check out. The joiner is
- * told nothing more than any other knock; the host sees why it was not automatic.
- * @param {string} reason @param {string} [kind]
- */
-function inviteRefusalLabel(reason, kind) {
-	const who = kind === 'agent' ? 'An AI agent' : 'Someone';
-	const why =
-		reason === 'expired' ? 'an expired invite'
-		: reason === 'revoked' ? 'a revoked invite'
-		: reason === 'used' ? 'an invite that was already used'
-		: 'an invite this device cannot confirm';
-	return who + ' came with ' + why + ' — approve to let them in';
-}
 
 /** How long a refusal dial may hang before it is closed regardless. The answer is in its
  * metadata, which the joiner has at its `connection` event — the conn never needs to
@@ -978,7 +969,7 @@ export class PeerConnection {
 			// anything below can treat an incoming conn from the host as the approval it
 			// used to mean. Never whitelisted, never adopted, never wired — closed at once.
 			if (isRefusal(conn?.metadata?.joinresult)) {
-				const ended = applyJoinRefusal(conn.peer, conn.metadata.joinresult);
+				const ended = applyJoinRefusal(conn.peer, conn.metadata.joinresult, conn.metadata.why);
 				log('info', 'net', 'join refused', { peer: conn.peer, result: conn.metadata.joinresult, ended });
 				try { conn.close(); } catch {}
 				return;
@@ -1093,7 +1084,6 @@ export class PeerConnection {
 					if (inviteMeta !== undefined && !agentPage) {
 						invite = verifyInviteDial(conn.peer, inviteMeta, this.peer.id, { kind: dialKind });
 						log('info', 'net', 'invite dial', { peer: conn.peer, ok: invite.ok, reason: invite.ok ? undefined : invite.reason });
-						if (!invite.ok) knockLabel = inviteRefusalLabel(invite.reason, dialKind);
 					}
 					// 29 (rooms access): a provider with `decide(peerId, cloudMeta)` answers
 					// 'admit' | 'deny' | {label} (knock). 'deny' refuses with no card — told to a
@@ -1126,6 +1116,19 @@ export class PeerConnection {
 					}
 					// 61 G3: a bot this tab started, over its local link — admitted with no card and no toast
 					const testBot = !found && !!testSeams.botAdmit?.(conn);
+					// 71 AS4: an invite that did not check out is NEVER a card any more — it is counted in the
+					// collapsed "N failed invite joins" row (the 12-card cap is for real requests). Paused or
+					// re-joining too fast: the joiner is told why. The joiner of a failed proof keeps waiting,
+					// and the host may still let them in from the row's Review.
+					if (!found && !testBot && invite && !invite.ok) {
+						const hears = !!conn?.metadata?.jr;
+						if (invite.reason === 'paused' || invite.reason === 'slow') {
+							if (hears) this.sendJoinResult(conn.peer, 'denied', { why: 'invite-' + invite.reason }, 'auto');
+						}
+						if (invite.justPaused) showToast(pauseToastText(invite.inWindow), [{ label: 'Resume now', action: resumeInviteJoins }]);
+						conn.close();
+						return;
+					}
 					const verdict = found
 						? undefined
 						: testBot
@@ -3216,6 +3219,7 @@ export class PeerConnection {
 		releaseMic();
 		resetSession();
 		resetModeration(); // 55 A9: a block list belongs to the session it was made in
+		resetInviteJoinGate(); // 71 AS4: so do the invite-join counters
 		sessionVolumesMod?.then((m) => m.dropAllSessionVolumes()).catch(() => {}); // 56 C13: leaving unmounts every session volume
 		checkLocks();
 		peers.update((value) => value);

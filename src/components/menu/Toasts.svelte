@@ -18,6 +18,7 @@ import { coarsePointer } from '$lib/inputDevice'; // phone-polish item 5: the pa
     // open the Explorer BEFORE arming: the save card is drawn by the Explorer's own effect,
     // so arming a panel that is not mounted arms nothing
     import { armExplorerSceneSave, explorerClose } from '../../stores/appStore'
+    import { failedInviteJoins } from '$lib/inviteStore'
     import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode, restorePanels, appNotice, connectDrawerOpen, connectDrawerTab, toastsInDrawerOnly, showInfoToast, dismissToastById } from '../../stores/appStore'
     // P2: the watch banner says when the watched peer's look CANNOT be adopted (the
     // P1 rule: a scoped feature must say on its own surface when it takes no effect)
@@ -559,6 +560,8 @@ style="z-index: var(--z-toast); pointer-events: none;"
     </div>
 </div>
 {/each}
+<!-- 71 AS4: invite dials whose proof failed — ONE row, never a card (lazy) -->
+{#if $failedInviteJoins.count > 0 || $failedInviteJoins.pausedUntil > 0}{#await import('./FailedInviteJoins.svelte') then m}<m.default />{/await}{/if}
 <!-- 15-P: a rush of joiners folds like any other burst — the drawer lists them all -->
 {#if $pendingApprovals.length > MAX_REQUESTS}
 <div class="my-1 text-center">

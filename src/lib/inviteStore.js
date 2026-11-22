@@ -30,8 +30,12 @@ import {
 	chatSentence,
 	useLabel
 } from './inviteCore.js';
+// 71 AS4: the limits (pure)
+import { mintVerdict, pruneMints, createJoinGate } from './inviteLimits.js';
 
 const STORE_KEY = 'tp:invites';
+/** 71 AS4: when each invite was minted, for the per-window limit (pruned to the window) */
+const MINTS_KEY = 'tp:inviteMints';
 const AGENTS_AS_GUESTS_KEY = 'connect:agentsAsGuests';
 
 /** @typedef {import('./inviteCore.js').InviteRecord} InviteRecord */
@@ -148,11 +152,39 @@ export function handover(hostId, token, kind, srvTail = '', base) {
  * @param {{ hostId: string, kind?: 'person'|'agent', role?: 'view'|'edit', expiry?: string, maxUses?: number, srvTail?: string, now?: number }} opts
  */
 export function createInvite(opts) {
+	const now = opts.now ?? Date.now();
+	// 71 AS4: refused past 20 live invites or 10 minted in 10 minutes — `refused` says why, and
+	// nothing is minted (no record, no token)
+	const verdict = mayCreateInvite(now);
+	if (!verdict.ok) return { refused: verdict, record: null, link: '', mcp: '', sentence: '' };
 	const token = newToken();
-	const record = makeRecord(token, opts, opts.now ?? Date.now());
+	const record = makeRecord(token, opts, now);
 	tokens.set(record.id, token);
+	writeMints([...readMints(now), now]);
 	updateRecords((list) => [...list, record]);
-	return { record, ...handover(opts.hostId, token, record.kind, opts.srvTail) };
+	return { refused: null, record, ...handover(opts.hostId, token, record.kind, opts.srvTail) };
+}
+
+/** @param {number} now @returns {number[]} */
+function readMints(now) {
+	try {
+		return pruneMints(JSON.parse(safeStorage.getItem(MINTS_KEY) || '[]'), now);
+	} catch {
+		return [];
+	}
+}
+/** @param {number[]} list */
+function writeMints(list) {
+	try {
+		safeStorage.setItem(MINTS_KEY, JSON.stringify(list));
+	} catch {
+		/* safeStorage already degrades per key */
+	}
+}
+
+/** 71 AS4: may this device mint one more invite now? (the sheet asks before it offers Create) @param {number} [now] */
+export function mayCreateInvite(now = Date.now()) {
+	return mintVerdict(get(invites), readMints(now), now);
 }
 
 /** the token of an invite minted in this tab (null after a reload) @param {string} id */
@@ -208,19 +240,60 @@ export const joinedVia = (peerId) => joinedHow.get(String(peerId || '').toLowerC
  * @param {any} meta the dial's `invite` metadata (untrusted)
  * @param {string} hostId our own peer id
  * @param {{ kind?: string, name?: string }} [who]
- * @returns {{ ok: true, role: 'view'|'edit', kind: string, again: boolean, inviteId: string } | { ok: false, reason: string }}
+ * @returns {{ ok: true, role: 'view'|'edit', kind: string, again: boolean, inviteId: string } | { ok: false, reason: string, failed?: boolean, justPaused?: boolean, inWindow?: number }}
+ * 71 AS4: `reason` may also be 'paused' (invite joins are paused) or 'slow' (re-joining too fast);
+ * `failed` = the proof itself did not check out (counted in the collapsed row)
  */
 export function verifyInviteDial(peerId, meta, hostId, who = {}) {
 	const id = String(peerId || '').toLowerCase();
 	if (who.kind === 'agent') dialKinds.set(id, 'agent');
 	const res = checkInvite(get(invites), meta, id, hostId);
-	if (!res.ok) return { ok: false, reason: res.reason };
+	// 71 AS4: a failed proof is COUNTED and goes to the collapsed row (never a card); past the
+	// limit invite joins pause, and every invite dial meanwhile — good or bad — hears 'paused'
+	if (!res.ok) {
+		const f = joinGate.fail(id, res.reason, { kind: who.kind });
+		publishFailed();
+		return { ok: false, reason: f.paused && !f.justPaused ? 'paused' : res.reason, failed: true, justPaused: f.justPaused, inWindow: f.inWindow };
+	}
+	if (joinGate.paused()) return { ok: false, reason: 'paused' };
 	const { record, again } = res;
+	// 71 AS4: one invite letting the same peer back in again and again is slowed
+	if (again && !joinGate.rejoin(record.id, id).ok) return { ok: false, reason: 'slow' };
 	if (!again) updateRecords((list) => list.map((r) => (r.id === record.id ? spendUse(r, id, { name: who.name, kind: who.kind }) : r)));
 	grants.set(id, { inviteId: record.id, role: record.role, kind: who.kind === 'agent' ? 'agent' : 'person', meta, at: Date.now() });
 	noteJoinedVia(id, 'invite');
 	if (again) notify();
 	return { ok: true, role: record.role, kind: record.kind, again, inviteId: record.id };
+}
+
+// ---------------------------------------------------------------- host: 71 AS4 join gate
+
+const joinGate = createJoinGate();
+/** the collapsed "N failed invite joins" row (Toasts, the Connect drawer, the VR panel)
+ * @type {import('svelte/store').Writable<import('./inviteLimits.js').FailedSummary>} */
+export const failedInviteJoins = writable(joinGate.summary());
+const publishFailed = () => failedInviteJoins.set(joinGate.summary());
+/** are invite joins paused right now? */
+export const inviteJoinsPaused = () => joinGate.paused();
+/** the host's "Resume now" on the pause toast */
+export function resumeInviteJoins() {
+	joinGate.resume();
+	publishFailed();
+}
+/** Dismiss on the collapsed row (a running pause stays) */
+export function dismissFailedInviteJoins() {
+	joinGate.dismiss();
+	publishFailed();
+}
+/** one row approved or dismissed from Review @param {string} peerId */
+export function forgetFailedInviteJoin(peerId) {
+	joinGate.forget(peerId);
+	publishFailed();
+}
+/** leaving the session forgets its counters */
+export function resetInviteJoinGate() {
+	joinGate.reset();
+	publishFailed();
 }
 
 /** remember a dial's declared kind without an invite (the plain-link card) @param {string} peerId @param {any} kind */

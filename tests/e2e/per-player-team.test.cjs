@@ -146,8 +146,8 @@ h.run(async () => {
 	);
 
 	// a reload: B comes back on the SAME team (the map is the authority's, the reloaded peer is announced again)
-	await B.page.reload();
-	await B.page.waitForFunction(() => !!(/** @type {any} */ (window).__tp?.test.v1?.hudDocs), { timeout: 60000 });
+	await h.freshReload(B);
+	await h.answerRestore(B);
 	B.id = await B.page.evaluate(
 		() =>
 			new Promise((r) => {

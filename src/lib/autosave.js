@@ -17,6 +17,7 @@ import { parkAnimatedAtBase } from './flowRuntime';
 import { shaderGraphsSnapshot, shaderGraphsRestore } from './shaderGraph';
 import { stripEditOverlays } from './editOverlays';
 import { withTwins, attachTwinsFromGltf } from './ktx2Twins';
+import { restoreGltfNames } from './gltfNames';
 // B7: a spawner's copies must never reach a snapshot — a crash mid-run would otherwise
 // restore them as permanent scene content
 import { isTransient, parkTransientObjects } from './transientObjects';
@@ -728,6 +729,7 @@ async function applyRestore(snapshot, offer = null) {
 				loader.parse(snapshot.scene, '', resolve, reject)
 			);
 			void attachTwinsFromGltf(result, snapshot.scene);
+			restoreGltfNames(result, snapshot.scene); // fix-late-joiners: names as saved, not as sanitized
 			// cancelled or superseded (another scene opened) while the snapshot parsed
 			if (!isLive(job)) {
 				releaseFrames();

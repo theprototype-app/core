@@ -25,6 +25,7 @@ import { parkAnimatedAtBase } from '$lib/flowRuntime'
 import { stripEditOverlays } from '$lib/editOverlays'
 import { isPristinePackRef, stubElementOf } from '$lib/packRefs'
 import { withTwins, attachTwinsFromGltf } from '$lib/ktx2Twins'
+import { restoreGltfNames } from '$lib/gltfNames'
 import { normalizeLodGroup } from '$lib/lodGroupCore'
 import { normalizeFluid } from '$lib/sim/fluidCore.js'; // 36-sim
 import { normalizeEmitter, normalizeInteraction } from '$lib/sim/fluidEmitterCore.js'; // 36-fb F23
@@ -1095,10 +1096,14 @@ async function applyCreateObject(object, uuid, override, groupuuid, pos, rot, sc
         // 46: a texture the sender drew from a KTX2 twin arrives with the twin beside its
         // plain image (KHR_texture_basisu + fallback): re-form the twin here
         void attachTwinsFromGltf(result, object.element);
+        // fix-late-joiners: the loader sanitized every name ("Gate zone" -> "Gate_zone"); the JSON has the real one
+        restoreGltfNames(result, object.element);
+        const hiddenOnSender = object?.visible === false;
         result.scene.uuid = uuid
         result.scene.children.forEach((object, index) => {
           let mesh = object.clone()
           clearInboundDraftFlags(mesh);
+          if (hiddenOnSender) mesh.visible = false;
           mesh.uuid = uuid[index]
           object.uuid = uuid[index]
           const existing = sceneObjects.getObjectByProperty('uuid', mesh.uuid)
@@ -1178,6 +1183,7 @@ export function sendObjects(peerId, element, opts = {}) {
             // nested group did (sendObject's 23-C1 branch). Same additive field, same
             // receiver merge; absent when there is nothing to carry.
             ...(element.userData && Object.keys(element.userData).length ? { userData: element.userData } : {}),
+            ...(element.visible === false ? { visible: false } : {}),
             ...(opts.override ? { override: true } : {})
         });
     }
@@ -1328,6 +1334,8 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
                 // its whole document in userData.device) — additive, absent on the /group
                 // command path and ignored by an older receiver
                 ...(element.userData && Object.keys(element.userData).length ? { userData: element.userData } : {}),
+                // fix-late-joiners: a hidden group stays hidden on the joiner (additive; absent when visible)
+                ...(element.visible === false ? { visible: false } : {}),
                 ...heal
             });
             // the 4th argument used to be a stray `groupuuid` that the 3-parameter
@@ -1406,6 +1414,10 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
             const pos = element.position.toArray();
             const rot = element.rotation.toArray();
             const scale = element.scale.toArray();
+            // fix-late-joiners: glTF has no visibility, so a HIDDEN object (a spawner's template, a trigger zone,
+            // a hidden original) reached every late joiner VISIBLE. Read now, while the flow runtime is parked at
+            // its base, so this is the authored state; additive, absent for a visible object.
+            const hidden = element.visible === false;
             // 46: KTX2 twins ride the wire beside the plain image (ktx2Twins.js)
             const exporter = withTwins(new GLTFExporter());
             exporter.parse(
@@ -1419,6 +1431,7 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
                         pos: pos,
                         rot: rot,
                         scale: scale,
+                        ...(hidden ? { visible: false } : {}),
                         ...heal
                     });
                 },

@@ -939,8 +939,17 @@ export function setSceneShadowLevel(level) {
 	commit({ shadowLevel: v === 'basic' ? undefined : v });
 }
 
+/** S0 measurement only (debug hook): draw as another tier would, to price Soft / Far on a capped device. */
+let shadowTierOverride = /** @type {null | 'pc' | 'phone' | 'quest'} */ (null);
+/** @param {null | 'pc' | 'phone' | 'quest'} tier */
+export function setShadowTierOverride(tier) {
+	shadowTierOverride = tier;
+	applyEnvironment();
+}
+
 /** This device's shadow tier (the 98 finish tier facts; read per apply). @param {any} [renderer] */
 export function shadowTier(renderer) {
+	if (shadowTierOverride) return shadowTierOverride;
 	const nav = typeof navigator !== 'undefined' ? navigator : null;
 	return shadowTierOf({
 		presenting: !!renderer?.xr?.isPresenting,

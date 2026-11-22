@@ -52,9 +52,11 @@ async function readMenu(page) {
 	await page.waitForTimeout(350); // the fade-in
 	return page.evaluate(() => {
 		const nav = /** @type {HTMLElement} */ (document.getElementById('sidebar70'));
-		nav.scrollTop = 0;
+		// 103 H14: the rows scroll in the inner #sidebar70-scroll (the Ctrl+K row and Settings are locked)
+		const scr = /** @type {HTMLElement} */ (document.getElementById('sidebar70-scroll') || nav);
+		scr.scrollTop = 0;
 		const r = nav.getBoundingClientRect();
-		const cs = getComputedStyle(nav);
+		const cs = getComputedStyle(scr);
 		const borders = parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
 		const rows = [...nav.querySelectorAll('.side-row')];
 		const last = /** @type {HTMLElement} */ (nav.querySelector('#report-bug'));
@@ -63,9 +65,9 @@ async function readMenu(page) {
 			vw: window.innerWidth,
 			top: Math.round(r.top),
 			bottom: Math.round(r.bottom),
-			scrollH: nav.scrollHeight,
-			clientH: nav.clientHeight,
-			barW: nav.offsetWidth - nav.clientWidth - borders,
+			scrollH: scr.scrollHeight,
+			clientH: scr.clientHeight,
+			barW: scr.offsetWidth - scr.clientWidth - borders,
 			overscroll: cs.overscrollBehaviorY,
 			rows: rows.length,
 			liveRow: !!document.getElementById('open-profiler-live'),
@@ -88,7 +90,7 @@ async function swipeMenu(page, m) {
 	// landscape phone it is ~160 px tall and three swipes no longer reach the end — swipe until it stops moving (max 8)
 	for (let pass = 0, prev = -1; pass < 8; pass++) {
 		const at = await page.evaluate(() => {
-			const n = /** @type {HTMLElement} */ (document.getElementById('sidebar70'));
+			const n = /** @type {HTMLElement} */ (document.getElementById('sidebar70-scroll') || document.getElementById('sidebar70'));
 			return n.scrollTop + n.clientHeight >= n.scrollHeight - 1 ? -2 : Math.round(n.scrollTop);
 		});
 		if (at === -2 || at === prev) break;
@@ -108,7 +110,7 @@ async function swipeMenu(page, m) {
 		const nr = nav.getBoundingClientRect();
 		const lr = last.getBoundingClientRect();
 		return {
-			scrollTop: Math.round(nav.scrollTop),
+			scrollTop: Math.round((document.getElementById('sidebar70-scroll') || nav).scrollTop),
 			lastTop: Math.round(lr.top),
 			lastBottom: Math.round(lr.bottom),
 			visBottom: Math.round(Math.min(nr.bottom, window.innerHeight)),

@@ -455,8 +455,6 @@ export function recordingBeforeRender() {
 	if (frameHooks) return frameHooks.before();
 	const s = session;
 	if (!s) return;
-	// a live take films every frame it can: keep the on-demand loop drawing while it runs
-	driver?.invalidate?.();
 	if (get(isVRMode)) return abort('Recording stopped: VR started.');
 	if (get(isLocked) === true) return abort('Recording stopped: Play started.');
 	if (s.prefs.hideHelpers) setGizmoHidden(true);

@@ -6,7 +6,6 @@ import { get } from 'svelte/store';
 import {
 	normalizeSoundEdit,
 	normalizeSoundEdits,
-	applySoundEdit,
 	soundEdits,
 	setSoundEdit,
 	applyRemoteSoundEdits,
@@ -14,9 +13,11 @@ import {
 	soundEditsRestore,
 	soundEditOf,
 	soundEditKey,
+	soundEditDsp,
 	NORMALIZE_PEAK
 } from '../../src/lib/soundEdits.js';
 import { encodeWav } from '../../src/lib/soundEditSync.js';
+import { applySoundEdit } from '../../src/lib/soundEditDsp.js';
 
 const RATE = 100; // 1 sample = 10 ms
 
@@ -68,8 +69,9 @@ describe('applySoundEdit', () => {
 });
 
 describe('the scene singleton', () => {
-	it('set, reset, and the key a playing loop restarts on', () => {
+	it('set, reset, and the key a playing loop restarts on (once the DSP chunk is in)', async () => {
 		setSoundEdit('h', { start: 1 }, { silent: true });
+		await soundEditDsp();
 		expect(soundEditOf('h')?.start).toBe(1);
 		expect(soundEditKey('h')).toBe('1,0,0,0,0');
 		setSoundEdit('h', { fadeIn: 0.5 }, { silent: true });

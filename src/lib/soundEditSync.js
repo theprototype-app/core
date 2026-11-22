@@ -4,7 +4,8 @@
 // the leaf every player reads.
 import { get } from 'svelte/store';
 import { registerHistoryKind, recordEntry } from './history';
-import { soundEdits, setSoundEdit, normalizeSoundEdit, applySoundEdit } from './soundEdits';
+import { soundEdits, setSoundEdit, normalizeSoundEdit } from './soundEdits';
+import { applySoundEdit } from './soundEditDsp.js';
 
 registerHistoryKind('soundedit', (/** @type {any} */ entry, /** @type {any} */ state) => {
 	setSoundEdit(entry.hash, state ?? null);

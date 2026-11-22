@@ -62,10 +62,44 @@ export function soundEditOf(hash) {
 	return (hash && get(soundEdits).edits[hash]) || null;
 }
 
-/** a short key for the edit a sound plays with ('' = none): a playing loop restarts when it changes @param {string} hash */
+/** a short key for the edit a sound plays with ('' = none, or not applied yet): a playing loop restarts when it
+ * changes — including when the DSP arrives and the edit starts to apply @param {string} hash */
 export function soundEditKey(hash) {
-	const e = soundEditOf(hash);
+	const e = dsp && soundEditOf(hash);
 	return e ? [e.start, e.end, e.fadeIn, e.fadeOut, e.normalize ? 1 : 0].join(',') : '';
+}
+
+/* ------------------------------------------------------------------- the DSP ---- */
+
+/** the DSP half (soundEditDsp.js), loaded with the scene's first edit @type {any} */
+let dsp = null;
+let dspLoading = false;
+soundEdits.subscribe((s) => {
+	if (dsp || dspLoading || !Object.keys(s.edits).length) return;
+	dspLoading = true;
+	import('./soundEditDsp.js')
+		.then((m) => {
+			dsp = m;
+			// re-announce, so a player keyed on soundEditKey restarts with the edit applied
+			soundEdits.update((v) => ({ ...v }));
+		})
+		.catch(() => (dspLoading = false));
+});
+
+/**
+ * The buffer to PLAY for a sound: the decoded original with this scene's edit applied (cached), or the
+ * original itself when the sound has no edit (or the DSP is still arriving — a few ms after the first edit).
+ * @param {string | null | undefined} hash @param {AudioBuffer} buffer @param {BaseAudioContext} [ctx]
+ * @returns {AudioBuffer}
+ */
+export function editedBuffer(hash, buffer, ctx) {
+	return dsp && buffer ? dsp.editedBuffer(hash, buffer, ctx) : buffer;
+}
+
+/** the DSP module, loaded now (the export and the editor, which need it whatever the scene holds) */
+export async function soundEditDsp() {
+	dsp ??= await import('./soundEditDsp.js');
+	return dsp;
 }
 
 let lastStamp = 0;
@@ -125,67 +159,3 @@ export function soundEditsRestore(payload, replicate = false) {
 	if (peer) peer.send({ type: 'soundedits', ...state });
 }
 
-/* ------------------------------------------------------------------- the DSP ---- */
-
-/**
- * Pure: an edit applied to planar PCM — the [start, end) window, then normalise, then the fades
- * (linear). New arrays; the input is never written.
- * @param {Float32Array[]} channels @param {number} rate @param {SoundEdit} e @returns {Float32Array[]}
- */
-export function applySoundEdit(channels, rate, e) {
-	const total = channels[0]?.length ?? 0;
-	const a = Math.min(total, Math.round(e.start * rate));
-	const b = e.end ? Math.min(total, Math.max(a, Math.round(e.end * rate))) : total;
-	const n = Math.max(1, b - a);
-	const out = channels.map((ch) => {
-		const c = new Float32Array(n);
-		c.set(ch.subarray(a, Math.max(a, b)));
-		return c;
-	});
-	if (e.normalize) {
-		let peak = 0;
-		for (const c of out) for (let i = 0; i < c.length; i++) peak = Math.max(peak, Math.abs(c[i]));
-		if (peak > 1e-6) {
-			const g = NORMALIZE_PEAK / peak;
-			for (const c of out) for (let i = 0; i < c.length; i++) c[i] *= g;
-		}
-	}
-	const fin = Math.min(n, Math.round(e.fadeIn * rate));
-	const fout = Math.min(n, Math.round(e.fadeOut * rate));
-	for (const c of out) {
-		for (let i = 0; i < fin; i++) c[i] *= i / fin;
-		for (let i = 0; i < fout; i++) c[n - 1 - i] *= i / fout;
-	}
-	return out;
-}
-
-/** edited buffers, by hash: the edit they were made for and the source they came from */
-const cache = new Map();
-
-/**
- * The buffer to PLAY for a sound: the decoded original with this scene's edit applied (cached), or the
- * original itself when the sound has no edit.
- * @param {string | null | undefined} hash @param {AudioBuffer} buffer @param {BaseAudioContext} [ctx] the one to build the
- *   copy with (any context's buffer plays in any context)
- * @returns {AudioBuffer}
- */
-export function editedBuffer(hash, buffer, ctx) {
-	const e = soundEditOf(hash);
-	if (!e || !buffer) return buffer;
-	const key = JSON.stringify(e);
-	const hit = cache.get(hash);
-	if (hit && hit.key === key && hit.src === buffer) return hit.out;
-	const src = [];
-	for (let c = 0; c < buffer.numberOfChannels; c++) src.push(buffer.getChannelData(c));
-	const chans = applySoundEdit(src, buffer.sampleRate, e);
-	/** @type {AudioBuffer} */
-	let out;
-	try {
-		out = ctx ? ctx.createBuffer(chans.length, chans[0].length, buffer.sampleRate) : new AudioBuffer({ numberOfChannels: chans.length, length: chans[0].length, sampleRate: buffer.sampleRate });
-	} catch {
-		return buffer;
-	}
-	chans.forEach((c, i) => out.copyToChannel(/** @type {Float32Array<ArrayBuffer>} */ (c), i));
-	cache.set(hash, { key, src: buffer, out });
-	return out;
-}

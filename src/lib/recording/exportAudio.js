@@ -99,5 +99,5 @@ export async function renderExportAudio(o) {
  * @returns {Promise<((hash: string, buffer: AudioBuffer, ctx: BaseAudioContext) => AudioBuffer) | null>}
  */
 async function soundEditor() {
-	return (await import('../soundEdits')).editedBuffer;
+	return (await (await import('../soundEdits')).soundEditDsp()).editedBuffer;
 }

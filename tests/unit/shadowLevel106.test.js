@@ -4,12 +4,9 @@ import {
 	SHADOW_LEVELS,
 	shadowLevelOf,
 	shadowTierOf,
-	drawnShadowLevel,
-	contactShadowsOn,
-	levelParams,
-	cascadeReach,
-	cappedNote
+	drawnShadowLevel
 } from '../../src/lib/shadows/shadowLevelCore.js';
+import { contactShadowsOn, levelParams, cascadeReach, cappedNote } from '../../src/lib/shadows/shadowLevelParams.js';
 
 describe('106 shadow level core', () => {
 	it('absent or unknown is Basic (old scenes, old peers)', () => {

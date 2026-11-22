@@ -1,4 +1,6 @@
-// 106 S1 — SHADOW QUALITY AS A SCENE SETTING, the pure half (imports NOTHING).
+// 106 S1 — SHADOW QUALITY AS A SCENE SETTING, the pure BOOT half (imports NOTHING): only what environment.js
+// needs to decide whether a scene asks for more than Basic. The knobs a level turns live in shadowLevelParams.js,
+// which only the lazy Soft / Far chunk and the setting row load (every byte here is paid by every boot).
 //
 // Configure Scene ▸ Lights ▸ Shadow quality: Off · Basic · Soft · Far. The level is SCENE data (it rides the
 // environment state like lodBias: saved, sent, latest change wins) and every device DRAWS it capped by its tier,
@@ -40,9 +42,6 @@ const RANK = { off: 0, basic: 1, soft: 2, far: 3 };
  */
 export const TIER_SHADOW_CAP = Object.freeze({ pc: 'far', phone: 'basic', quest: 'basic' });
 
-/** Contact shadows (S2) per tier: only where S0 measured they fit. */
-export const TIER_CONTACT = Object.freeze({ pc: true, phone: false, quest: false });
-
 /**
  * What THIS device draws for a scene's ask.
  * @param {any} asked the scene's stored level @param {ShadowTier} tier @returns {ShadowLevel}
@@ -51,50 +50,6 @@ export function drawnShadowLevel(asked, tier) {
 	const want = shadowLevelOf(asked);
 	const cap = /** @type {ShadowLevel} */ (TIER_SHADOW_CAP[tier] ?? 'basic');
 	return RANK[want] <= RANK[cap] ? want : cap;
-}
-
-/** Does this device draw contact shadows for the drawn level? @param {ShadowLevel} drawn @param {ShadowTier} tier */
-export function contactShadowsOn(drawn, tier) {
-	return (drawn === 'soft' || drawn === 'far') && !!TIER_CONTACT[tier];
-}
-
-/**
- * The knobs a drawn level turns. Basic is the identity (nothing written), so Basic stays byte-for-byte today's.
- *  · radius       PCF kernel radius in texels (three's default 1)
- *  · cascades     the sun draws SunLightShadow's two cascades
- *  · reach        how far (m) the cascades reach from the camera (the sun shadow camera's far)
- *  · cascadeMap   per-cascade map size before the device's own size cap
- */
-export const LEVEL_PARAMS = Object.freeze({
-	off: Object.freeze({ radius: 1, cascades: false, reach: 0, cascadeMap: 0 }),
-	basic: Object.freeze({ radius: 1, cascades: false, reach: 0, cascadeMap: 0 }),
-	soft: Object.freeze({ radius: 3, cascades: false, reach: 0, cascadeMap: 0 }),
-	far: Object.freeze({ radius: 2, cascades: true, reach: 200, cascadeMap: 2048 })
-});
-
-/** @param {ShadowLevel} level */
-export function levelParams(level) {
-	return LEVEL_PARAMS[level] ?? LEVEL_PARAMS.basic;
-}
-
-/**
- * The cascades' reach for a scene: Far's 200 m, but never past twice the scene's size (a small scene keeps
- * its near cascade sharp) and never under 40 m.
- * @param {number} sceneRadius @param {number} [reach]
- */
-export function cascadeReach(sceneRadius, reach = LEVEL_PARAMS.far.reach) {
-	const r = Number(sceneRadius);
-	const fit = Number.isFinite(r) && r > 0 ? r * 2.5 : reach;
-	return Math.max(40, Math.min(reach, fit));
-}
-
-/** The setting row's line when the device draws less than the scene asks.
- * @param {any} asked @param {ShadowTier} tier @returns {string} */
-export function cappedNote(asked, tier) {
-	const want = shadowLevelOf(asked);
-	const drawn = drawnShadowLevel(want, tier);
-	if (drawn === want) return '';
-	return 'This device draws ' + drawn[0].toUpperCase() + drawn.slice(1);
 }
 
 /**

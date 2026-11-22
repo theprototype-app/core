@@ -18,7 +18,7 @@ import { get } from 'svelte/store';
 import { objectsGroup } from '../../stores/sceneStore';
 import { cappedShadowSize, contactShadowsWanted } from '../lightParams';
 import { registerContactShadows } from './contactShadows.js';
-import { levelParams, cascadeReach, contactShadowsOn } from './shadowLevelCore.js';
+import { levelParams, cascadeReach, contactShadowsOn } from './shadowLevelParams.js';
 
 /** shadow -> its authored radius, while a level overrides it */
 const radiusBack = new WeakMap();

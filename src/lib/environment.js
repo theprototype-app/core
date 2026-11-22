@@ -995,6 +995,11 @@ export function drawnSceneShadowLevel(renderer) {
 /** @type {any} */
 let shadowLevelsMod = null;
 let shadowLevelsLoading = false;
+/** For the suites: has THIS module loaded the Soft / Far chunk (a scene that never asks never does). The debug hook
+ * row loads the chunk for the console, which does not count: only environment's own import arms it. */
+export function shadowLevelsLoadedForTest() {
+	return !!shadowLevelsMod;
+}
 /** @param {any} scene @param {any} renderer @param {any} sun */
 function applySceneShadowLevel(scene, renderer, sun) {
 	const drawn = drawnSceneShadowLevel(renderer);

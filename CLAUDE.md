@@ -774,6 +774,20 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   replies, which keep flowing), checked right after `canApply`; the session host is exempt. A refused sender hears
   one `ratelimited` every 30 s (on the ALWAYS_ALLOWED floor) and the host/admin gets a notice with Remove.
   cloudApi `removePeer(peerId, {block})` is the seam the cloud's account block list enforces through.
+- `src/lib/inviteLimits.js` (71 AS4, PURE: imports only inviteCore) + `peerModeration.blockToast` /
+  `requireApproval` (71 AS3) — ROOMS YOU CAN TRUST. INVITES: <= 20 live per host device and <= 10 minted per 10 min
+  (`mintVerdict`; the window counts MINTS in `tp:inviteMints`, never records, or mint-forget-mint walks past it);
+  `createInvite` returns `{refused}` and mints nothing. A FAILED PROOF IS NEVER A CARD: `verifyInviteDial` counts it in
+  `createJoinGate` and it lands in ONE `failedInviteJoins` row (`FailedInviteJoins.svelte`, lazy, in Toasts + the
+  drawer; a line on `VRPeerApprove`) with Review / Let in / Dismiss — the 12-card cap (`boundApprovals`) drops the OLDEST
+  card, so a flood used to push a real joiner out. > 10 failures / min PAUSE invite joins 60 s (one host toast, Resume
+  now); a paused or too-fast re-join (`again`, a token bucket: 2 free, then 1 / 30 s) is refused with additive dial
+  metadata `why: 'invite-paused' | 'invite-slow'` on the 'denied' result (`joinWhyText`; an older joiner reads
+  "declined"). BLOCK TOAST: a session block holds a PEER ID and a guest returns with a new one, so blocking a guest (we
+  host; `roomAccess.isGuest() !== false`) offers Require approval to join — a SESSION flag on the host (`requireApproval`,
+  reset with the block list; Settings ▸ Connection row) that turns every automatic admit, a working invite included, into
+  the card — and the plugin's Signed-in people only (`cloudApi.setRoomAccess`, OPEN-CORE.md). Suites `invite-limits`,
+  `block-guest-fix`; `invite-links`' counterfactuals assert the collapsed row now.
 - `src/lib/connectionState.js` (store-only) — `sessionHost` (peer that approved OUR
   outbound request; null = we host), `peerJoinedAt`, `resetSession`. Connect state
   derives from `$peers.openedPeers`, **NEVER `userdata.length`** (the roster is

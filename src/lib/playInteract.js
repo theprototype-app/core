@@ -196,6 +196,9 @@ function moduleTap() {
 		if (!root) continue;
 		const hits = raycaster.intersectObject(root, true);
 		if (hits.length > 0 && moduleHitTest(hits[0].object)) return true;
+		// 92-correct row 2: a kit entity's tap reaches its template's On Click (see interactClick)
+		const entity = hits.length > 0 ? kitEntityOf(hits[0].object) : null;
+		if (entity && fireObjectClick(entity) > 0) return true;
 	}
 	return false;
 }
@@ -289,6 +292,12 @@ export function cursorGrabEnd(throwIt = true) {
  * @param {any} ray a THREE.Raycaster aimed through the cursor
  * @returns {'module-group' | 'module-handler' | 'click' | 'miss'}
  */
+/** the kit entity id a hit belongs to (kit/entityApp's drawn copy carries it), or null @param {any} object */
+function kitEntityOf(object) {
+	for (let o = object; o; o = o.parent) if (o.userData?.kitEntity) return String(o.userData.kitEntity);
+	return null;
+}
+
 export function interactClick(ray) {
 	const scene = /** @type {any} */ (get(globalScene));
 	for (const name of moduleInteractiveGroups) {
@@ -296,6 +305,10 @@ export function interactClick(ray) {
 		if (!root) continue;
 		const hits = ray.intersectObject(root, true);
 		if (hits.length > 0 && runClickHandlers(hits[0].object, 'interact')) return 'module-group';
+		// 92-correct row 2: a kit entity is a drawn copy of its template — its click reaches the template's
+		// On Click with "this object" = the entity (copyGraphs.js)
+		const entity = hits.length > 0 ? kitEntityOf(hits[0].object) : null;
+		if (entity && fireObjectClick(entity) > 0) return 'click';
 	}
 	// 30 P2: the same see-through rule as the editor's pick — a 0.12-opacity wall in
 	// front of a star must not take the star's click here either

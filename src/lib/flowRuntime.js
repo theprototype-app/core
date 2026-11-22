@@ -107,7 +107,8 @@ let behavioursRef = null;
 // 31 (Stars Room): a scene's own settings rows (31-game-shell's leaf), and the pointing switch
 import { registerGameSetting, gameSettingValue } from './gameSettings';
 import { setPointGrabEnabled } from './pointGrab';
-import { spawnedFromOf } from './transientObjects'; // 31: a copy answers to its template (a leaf)
+import { spawnedFromOf, transientObjects } from './transientObjects';
+import { instanceGraphs, instanceKey, extraCopyList, extraCopyFrom, onCopiesChanged } from './copyGraphs.js'; // 92-correct row 2: a leaf // 31: a copy answers to its template (a leaf)
 import { pathCaptureNode } from './pathCaptureState'; // fix-batch-2: a leaf
 import { animateInEditor, EDITOR_MOTION_TYPES } from './editorMotion'; // 78 F6: a leaf
 import { publishLiveStates, liveStatesWanted } from './nodeLiveState'; // 78 F7: a leaf
@@ -535,11 +536,40 @@ function rebuildRuntimeGraph() {
 	dormant = orphanGraphIds();
 	if (!dormant.size) {
 		({ nodes, edges } = runtimeGraph(allNodes(), allEdges()));
-		return;
+	} else {
+		const live = allNodes().filter((n) => !dormant.has(n.__graph));
+		const ids = new Set(live.map((n) => n.id));
+		({ nodes, edges } = runtimeGraph(live, allEdges().filter((e) => ids.has(e.source) && ids.has(e.target))));
 	}
-	const live = allNodes().filter((n) => !dormant.has(n.__graph));
-	const ids = new Set(live.map((n) => n.id));
-	({ nodes, edges } = runtimeGraph(live, allEdges().filter((e) => ids.has(e.source) && ids.has(e.target))));
+	addCopyInstances();
+}
+
+/** 92-correct row 2: the copies that run an instance of their template's flow, and the key of that set */
+let copyInstanceKey = '';
+/** @returns {{uuid: string, from: string}[]} */
+function spawnedCopies() {
+	/** @type {{uuid: string, from: string}[]} */
+	const out = [];
+	for (const object of transientObjects(sceneObjects ?? undefined)) {
+		const from = object.userData?.spawnedFrom;
+		if (typeof from === 'string' && from) out.push({ uuid: object.uuid, from });
+	}
+	for (const c of extraCopyList()) out.push(c); // kit entities (copyGraphs.registerCopy)
+	return out;
+}
+/** the object graphs a copy could instance (every live, non-scene graph) */
+function instanceableGraphs() {
+	return new Set(nodes.filter((n) => n.__graph && n.__graph !== SCENE_GRAPH && !n.__instanceOf).map((n) => n.__graph));
+}
+/** 92-correct row 2: append each spawned copy's instance of its template's object graph (copyGraphs.js) */
+function addCopyInstances() {
+	const copies = spawnedCopies();
+	copyInstanceKey = instanceKey(copies, instanceableGraphs());
+	if (!copyInstanceKey) return;
+	const extra = instanceGraphs(copies, nodes, edges);
+	if (!extra.nodes.length) return;
+	nodes = [...nodes, ...extra.nodes];
+	edges = [...edges, ...extra.edges];
 }
 
 /** the debug hook / e2e: what the runtime evaluates right now, and which object graphs sleep */
@@ -2849,6 +2879,7 @@ function implicitOwnerOf(node) {
 	const graph = node.__graph;
 	if (!graph || graph === SCENE_GRAPH) return null;
 	if (muted.includes(graph)) return null;
+	if (node.__instanceFrom && muted.includes(node.__instanceFrom)) return null; // 92-correct: a muted template mutes its copies
 	const wired = edges.some(
 		(e) => e.source === node.id && nodeById(nodes, e.target)?.type === 'objectselector'
 	);
@@ -3653,7 +3684,10 @@ function reachesObjectSelector(startId, uuid) {
 	// 31 (Stars Room S4): a spawned COPY answers to its template's selectors — a Spawn's
 	// copies are the template's kind of thing, so a graph written for it (an On Hit that
 	// counts, a chime) reaches every copy with no node per copy. Only for transient copies.
-	const from = spawnedFromOf(uuid);
+	let from = spawnedFromOf(uuid) ?? extraCopyFrom(uuid);
+	// 92-correct row 2: a node in the template's OWN flow reaches the copy through the copy's instance
+	// of it (copyGraphs.js) — matching here too would run the template's chain for a copy's event
+	if (from && nodeById(nodes, startId)?.__graph === from) from = null;
 	const seen = new Set([startId]);
 	const stack = [startId];
 	while (stack.length) {
@@ -6076,9 +6110,14 @@ export function startFlowRuntime() {
 		sceneObjects = value;
 		rebuildRuntimeGraph();
 	});
+	// 92-correct row 2: a kit entity drawn or gone changes the copy instances
+	onCopiesChanged(() => {
+		if (instanceKey(spawnedCopies(), instanceableGraphs()) !== copyInstanceKey) rebuildRuntimeGraph();
+	});
 	// 55 Q1: an object added or removed (a delete, its undo, a joiner's objects landing after its graphs)
 	sceneRevision.subscribe(() => {
-		if (!sceneObjects || sameSet(orphanGraphIds(), dormant)) return;
+		// 92-correct row 2: a copy spawned or removed changes the instances, not the dormant set
+		if (!sceneObjects || (sameSet(orphanGraphIds(), dormant) && instanceKey(spawnedCopies(), instanceableGraphs()) === copyInstanceKey)) return;
 		rebuildRuntimeGraph();
 		applyColors();
 	});

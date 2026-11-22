@@ -79,10 +79,23 @@ h.run(async () => {
 	h.check(z0 !== null && z2 !== null && z0 - z2 >= 1 && z0 - z2 <= 3.5, `and resume carries on from where it held (${z0} -> ${z2} 2 s after resume)`);
 
 	// ---- 4. a late joiner reads the host's time --------------------------------------------------
-	const B = await h.setupPage(browser, 'B');
-	await B.page.waitForFunction(() => !!(/** @type {any} */ (window).__tp?.test.v1?.hudDocs), { timeout: 30000 });
-	// the JOINER dials the host (the host is in Play, where the dial field is hidden)
-	await h.connect(B, A);
+	// the joiner dials; the host stays IN PLAY and approves through the same store the card calls
+	// (a join card answerable in Play is 92-menus' GC8)
+	await E(B, (id) => /** @type {any} */ (window).__tp.test.v1.peerApproval.requestConnect(id), A.id);
+	await h.eventually(
+		() =>
+			E(A, (id) => {
+				/** @type {any} */
+				let w;
+				/** @type {any} */ (window).__tp.test.v1.pendingApprovals.subscribe((/** @type {any} */ x) => (w = x))();
+				return (w ?? []).some((/** @type {any} */ c) => (c?.peerId ?? c?.[0]) === id);
+			}, B.id),
+		(v) => v === true,
+		'the join card reaches the host',
+		30000
+	);
+	await E(A, (id) => /** @type {any} */ (window).__tp.test.v1.peerApproval.approvePeer(id), B.id);
+	h.check(await playing(A), 'the host is still in Play while the joiner arrives');
 	await h.eventually(() => clock(B), (v) => v !== null, 'the joiner has the timer', 30000);
 	await h.eventually(
 		async () => {

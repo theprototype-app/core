@@ -313,6 +313,7 @@
 	},
 	"suites": {
 		"hud-timer-play": 90,
+		"spawn-copy-click": 150,
 		"papercuts-102b": 300,
 		"render-seam": 180,
 		"array-tool": 300,

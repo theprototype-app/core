@@ -85,10 +85,10 @@ const KEY = (/** @type {number} */ x, /** @type {number} */ z) =>
 // The class is loaded LAZILY (enterSculpt / the first dab): this module is in the boot graph and the hash is not
 // needed to draw a frame. Until it lands a dab scans every vertex as before (same result, slower), so no dab is lost.
 
-/** @typedef {{ hash: any, pos: Float64Array, cell: number, drift: number, cx: number, cy: number, cz: number, half: number }} BrushHash */
+/** @typedef {import('./sculptHash.js').BrushHash} BrushHash */
 
-/** @type {any} the SpatialHash class once loaded */
-let SpatialHashCtor = null;
+/** @type {any} the lazy helpers (sculptHash.js, with the kernel's SpatialHash) once loaded */
+let H = null;
 /** @type {Promise<boolean> | null} */
 let hashLoading = null;
 /** 'adaptive' (the measured default) | 'stroke' (never re-index for drift) | 'dab' (rebuild every dab) | 'scan' (no hash) */
@@ -98,9 +98,10 @@ const hashStats = { builds: 0, hashed: 0, scanned: 0 };
 /** Load the SpatialHash (idempotent; resolves true once the brush can use it). */
 export function sculptHashReady() {
 	if (!hashLoading)
-		hashLoading = import('./meshKernel/spatialHash.js').then(
+		hashLoading = import('./sculptHash.js').then(
 			(m) => {
-				SpatialHashCtor = m.SpatialHash;
+				m.setup(hashStats, () => hashPolicy);
+				H = m;
 				return true;
 			},
 			() => {
@@ -115,106 +116,7 @@ export function sculptHashReady() {
  * @param {'adaptive'|'stroke'|'dab'|'scan'} [policy] */
 export function sculptHashDebug(policy) {
 	if (policy) hashPolicy = policy;
-	return { ready: !!SpatialHashCtor, policy: hashPolicy, ...hashStats };
-}
-
-/** a hash over `n` points of `pos` (x,y,z), with its bounding sphere-ish extent for the nearest search
- * @param {Float64Array} pos @param {number} n @param {number} cell @returns {BrushHash} */
-function buildBrushHash(pos, n, cell) {
-	let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
-	for (let i = 0; i < n * 3; i += 3) {
-		const x = pos[i], y = pos[i + 1], z = pos[i + 2];
-		if (x < x0) x0 = x;
-		if (x > x1) x1 = x;
-		if (y < y0) y0 = y;
-		if (y > y1) y1 = y;
-		if (z < z0) z0 = z;
-		if (z > z1) z1 = z;
-	}
-	hashStats.builds++;
-	return {
-		hash: new SpatialHashCtor(pos, { cellSize: cell, count: n }),
-		pos,
-		cell,
-		drift: 0,
-		cx: (x0 + x1) / 2,
-		cy: (y0 + y1) / 2,
-		cz: (z0 + z1) / 2,
-		half: Math.hypot(x1 - x0, y1 - y0, z1 - z0) / 2
-	};
-}
-
-/** may a hash built at `cell` serve a dab of `radius`? (a query window stays within the dedupe scratch)
- * @param {BrushHash | null} h @param {number} radius */
-function hashFits(h, radius) {
-	return !!h && hashPolicy !== 'dab' && radius <= h.cell * 2 && radius >= h.cell / 4 && (hashPolicy === 'stroke' || h.drift <= h.cell / 2);
-}
-
-/** the query pad: a float sum may land a hair off the exact distance test the brush then applies */
-const pad = (/** @type {number} */ r) => r * (1 + 1e-9) + 1e-12;
-
-/** candidate scratch, reused across dabs */
-let cand = new Int32Array(4096);
-let mark = new Uint8Array(0);
-
-/** Every index the hash finds within `r` of (x,y,z) into `cand`, ASCENDING (the linear scan's visiting order).
- * Returns the count. @param {BrushHash} h @param {number} n @param {number} x @param {number} y @param {number} z @param {number} r */
-function ascendingWithin(h, n, x, y, z, r) {
-	let count = 0;
-	h.hash.query(x, y, z, r, (/** @type {number} */ i) => {
-		if (count === cand.length) {
-			const grown = new Int32Array(cand.length * 2);
-			grown.set(cand);
-			cand = grown;
-		}
-		cand[count++] = i;
-	});
-	if (count * 8 > n) {
-		// a dense window: one flag sweep beats a sort
-		if (mark.length < n) mark = new Uint8Array(n);
-		for (let k = 0; k < count; k++) mark[cand[k]] = 1;
-		let w = 0;
-		for (let i = 0; i < n; i++)
-			if (mark[i]) {
-				mark[i] = 0;
-				cand[w++] = i;
-			}
-	} else cand.subarray(0, count).sort();
-	return count;
-}
-
-/** The index nearest (x,y,z) by the caller's exact `dist`, ties to the LOWEST index — the linear scan's answer —
- * through widening hash queries padded by the drift; -1 when there is none.
- * @param {BrushHash} h @param {number} x @param {number} y @param {number} z @param {number} start
- * @param {(i: number) => number} dist */
-function nearestVia(h, x, y, z, start, dist) {
-	const bound = Math.hypot(x - h.cx, y - h.cy, z - h.cz) + h.half + h.drift;
-	if (!Number.isFinite(bound)) {
-		// a non-finite point or centre: no window is safe to widen — the linear scan's own answer
-		let best = -1;
-		let bestD = Infinity;
-		for (let i = 0; i < h.hash.size; i++) {
-			const d = dist(i);
-			if (d < bestD) {
-				bestD = d;
-				best = i;
-			}
-		}
-		return best;
-	}
-	for (let r = Math.max(start, h.cell / 4, 1e-9); ; r *= 4) {
-		let best = -1;
-		let bestD = Infinity;
-		h.hash.query(x, y, z, pad(r) + h.drift, (/** @type {number} */ i) => {
-			const d = dist(i);
-			if (d < bestD || (d === bestD && i < best)) {
-				bestD = d;
-				best = i;
-			}
-		});
-		// any point nearer than the best has a distance <= r too, so this window held it
-		if ((best >= 0 && bestD <= r) || r > bound) return best;
-	}
+	return { ready: !!H, policy: hashPolicy, ...hashStats };
 }
 
 /** @param {string} uuid */
@@ -259,16 +161,16 @@ export function rebuildWeldMap(object) {
 	/** @type {Map<string, string[]>} */
 	const neighbors = new Map();
 	const reach = cell * 1.55;
-	if (SpatialHashCtor && hashPolicy !== 'scan' && colPos.length) {
+	if (H && hashPolicy !== 'scan' && colPos.length) {
 		// 99 K6: the same box test over the hash's candidates (the box sits inside its circumcircle), in colPos order
-		const xz = columnXZ(colPos);
-		const h = buildBrushHash(xz, colPos.length, reach);
+		const xz = H.columnXZ(colPos);
+		const h = H.buildBrushHash(xz, colPos.length, reach);
 		for (let ai = 0; ai < colPos.length; ai++) {
 			const a = colPos[ai];
-			const count = ascendingWithin(h, colPos.length, a.x, 0, a.z, pad(reach * Math.SQRT2));
+			const count = H.ascendingWithin(h, colPos.length, a.x, 0, a.z, H.pad(reach * Math.SQRT2));
 			const list = [];
 			for (let k = 0; k < count; k++) {
-				const b = colPos[cand[k]];
+				const b = colPos[H.cand[k]];
 				if (a === b) continue;
 				if (Math.abs(a.x - b.x) <= reach && Math.abs(a.z - b.z) <= reach) list.push(b.key);
 			}
@@ -287,22 +189,12 @@ export function rebuildWeldMap(object) {
 	return weld;
 }
 
-/** the columns as hash points (x, 0, z) @param {{x: number, z: number}[]} colPos */
-function columnXZ(colPos) {
-	const xz = new Float64Array(colPos.length * 3);
-	for (let i = 0; i < colPos.length; i++) {
-		xz[i * 3] = colPos[i].x;
-		xz[i * 3 + 2] = colPos[i].z;
-	}
-	return xz;
-}
-
 /** the terrain brush hash: columns never move in x/z, so only a radius change rebuilds it
  * @param {NonNullable<typeof weld>} map @param {number} radius */
 function terrainHashFor(map, radius) {
 	void sculptHashReady();
-	if (!SpatialHashCtor || hashPolicy === 'scan' || !map.colPos.length || !(radius > 0 && radius < Infinity)) return null;
-	if (!hashFits(map.hash, radius)) map.hash = buildBrushHash(columnXZ(map.colPos), map.colPos.length, radius);
+	if (!H || hashPolicy === 'scan' || !map.colPos.length || !(radius > 0 && radius < Infinity)) return null;
+	if (!H.hashFits(map.hash, radius)) map.hash = H.buildBrushHash(H.columnXZ(map.colPos), map.colPos.length, radius);
 	return map.hash;
 }
 
@@ -320,8 +212,8 @@ let meshWeld = null;
 function meshHashFor(map, radius) {
 	void sculptHashReady();
 	const n = map.groups.length;
-	if (!SpatialHashCtor || hashPolicy === 'scan' || !n || !(radius > 0 && radius < Infinity)) return null;
-	if (hashFits(map.hash, radius)) return map.hash;
+	if (!H || hashPolicy === 'scan' || !n || !(radius > 0 && radius < Infinity)) return null;
+	if (H.hashFits(map.hash, radius)) return map.hash;
 	const pos = new Float64Array(n * 3);
 	for (let i = 0; i < n; i++) {
 		const p = map.groups[i].pos;
@@ -329,7 +221,7 @@ function meshHashFor(map, radius) {
 		pos[i * 3 + 1] = p.y;
 		pos[i * 3 + 2] = p.z;
 	}
-	return (map.hash = buildBrushHash(pos, n, radius));
+	return (map.hash = H.buildBrushHash(pos, n, radius));
 }
 
 const KEY3 = (/** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ z) =>
@@ -418,7 +310,7 @@ export function applyMeshBrushAt(uuid, x, y, z, op, radius, strength, dt = 0.016
 	let hit = null;
 	if (op === 'flatten') {
 		if (h) {
-			const gi = nearestVia(h, x, y, z, radius, (i) => groups[i].pos.distanceTo(center));
+			const gi = H.nearestVia(h, x, y, z, radius, (i) => groups[i].pos.distanceTo(center));
 			hit = gi >= 0 ? groups[gi] : null;
 		} else {
 			let hitDist = Infinity;
@@ -435,10 +327,10 @@ export function applyMeshBrushAt(uuid, x, y, z, op, radius, strength, dt = 0.016
 	const hitPos = hit ? hit.pos.clone() : center;
 	let touched = false;
 	const next = new THREE.Vector3();
-	const count = h ? ascendingWithin(h, groups.length, x, y, z, pad(radius) + h.drift) : groups.length;
+	const count = h ? H.ascendingWithin(h, groups.length, x, y, z, H.pad(radius) + h.drift) : groups.length;
 	hashStats[h ? 'hashed' : 'scanned']++;
 	for (let k = 0; k < count; k++) {
-		const gi = h ? cand[k] : k;
+		const gi = h ? H.cand[k] : k;
 		const g = groups[gi];
 		const d = g.pos.distanceTo(center);
 		if (d > radius) continue;
@@ -622,7 +514,7 @@ export function applyBrushAt(uuid, x, z, op, radius, strength, dt = 0.016) {
 	let hitKey = null;
 	if (op === 'flatten') {
 		if (h) {
-			const ci = nearestVia(h, x, 0, z, radius, (i) => Math.hypot(colPos[i].x - x, colPos[i].z - z));
+			const ci = H.nearestVia(h, x, 0, z, radius, (i) => Math.hypot(colPos[i].x - x, colPos[i].z - z));
 			hitKey = ci >= 0 ? colPos[ci].key : null;
 		} else {
 			let hitDist = Infinity;
@@ -638,10 +530,10 @@ export function applyBrushAt(uuid, x, z, op, radius, strength, dt = 0.016) {
 	const targetHeight = hitKey ? heightOf(hitKey) : 0;
 
 	let touched = false;
-	const count = h ? ascendingWithin(h, colPos.length, x, 0, z, pad(radius)) : colPos.length;
+	const count = h ? H.ascendingWithin(h, colPos.length, x, 0, z, H.pad(radius)) : colPos.length;
 	hashStats[h ? 'hashed' : 'scanned']++;
 	for (let k = 0; k < count; k++) {
-		const col = colPos[h ? cand[k] : k];
+		const col = colPos[h ? H.cand[k] : k];
 		const d = Math.hypot(col.x - x, col.z - z);
 		if (d > radius) continue;
 		// smoothstep falloff 1 -> 0 across the radius

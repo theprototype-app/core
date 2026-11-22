@@ -51,12 +51,25 @@ h.run(async () => {
 	const locked = (P) => P.page.evaluate(() => { let v; /** @type {any} */ (window).__tp.test.v1.isLocked.subscribe((x) => (v = x))(); return v; });
 	const play = (P) => P.page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.playMode.requestPlay({ flat: true }));
 
+	const linked = (P, id) =>
+		P.page.evaluate((peerId) => new Promise((r) => /** @type {any} */ (window).__tp.test.v1.peers.subscribe((p) => r(!!p?.connections?.[peerId]?.open))()), id).catch(() => false);
+	/** h.connect, and when its click raced the pill (the request already went out: the pill says Cancel), approve it */
+	const join = async (J) => {
+		try {
+			await h.connect(J, A, 3000);
+		} catch (e) {
+			console.log(`  connect ${J.id}: ${String(e?.message ?? e).split('\n')[0]} -- approving on the host instead`);
+			await h.approveButton(A.page).click({ timeout: 30000 });
+		}
+		await h.eventually(async () => (await linked(J, A.id)) && (await linked(A, J.id)), (v) => v === true, `${J.id} and the host are linked`, 45000);
+	};
+
 	let joiners = [];
 	for (const n of SIZES) {
 		console.log(`\n=== ${n} joiners at once ===`);
 		while (joiners.length < n) {
 			const J = await h.setupPageQuiet(browser, 'J' + joiners.length, [A, ...joiners], opts);
-			await h.connect(J, A, 3000);
+			await join(J);
 			joiners.push(J);
 		}
 		// everybody back in the editor, then Play in the same instant
@@ -86,7 +99,7 @@ h.run(async () => {
 			back = await J.page
 				.evaluate((hid) => new Promise((r) => /** @type {any} */ (window).__tp.test.v1.peers.subscribe((p) => r(!!p?.connections?.[hid]?.open))()), A.id)
 				.catch(() => false);
-		if (!back) await h.connect(J, A, 3000);
+		if (!back) await join(J);
 		// the others' avatars must be on its page before it plays (a joiner into a game under way)
 		await J.page.waitForTimeout(4000);
 		await play(J);

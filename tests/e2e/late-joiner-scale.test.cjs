@@ -231,6 +231,15 @@ h.run(async () => {
 					if (n > 0 && r.first < 0) r.first = t;
 					if (n >= wanted.size) r.all = t;
 					if (n !== r.have) (r.curve ??= []).push([t, n]);
+					// the drain's own state: parked objects and the draw gap the governor set
+					try {
+						const v1 = w.__tp.test.v1;
+						const backlog = v1.commandsHandler?.ingestBacklog?.() ?? -1;
+						let gap = -1;
+						v1.qualityGovernor?.ingestDrawGap?.subscribe?.((x) => (gap = x))();
+						r.maxBacklog = Math.max(r.maxBacklog ?? 0, backlog);
+						r.maxGap = Math.max(r.maxGap ?? 0, gap);
+					} catch {}
 					r.have = n;
 				}
 				requestAnimationFrame(tick);
@@ -273,6 +282,8 @@ h.run(async () => {
 			// programs linked during the join, and when (0.5 s buckets)
 			// objects held at each second after the approval (the arrival curve)
 			curve: (() => { const out = {}; for (const [t, n] of r.curve ?? []) out[Math.floor(t / 1000)] = n; return Object.entries(out).map(([k, v]) => k + 's:' + v).join(' '); })(),
+			maxBacklog: r.maxBacklog ?? -1,
+			maxDrawGap: r.maxGap ?? -1,
 			programs: r.links.length,
 			programBuckets: Object.entries(r.links.reduce((m, t) => ((m[Math.floor(t / 500) * 500] = (m[Math.floor(t / 500) * 500] ?? 0) + 1), m), {})).map(([k, v]) => k + ':' + v).join(' '),
 			url: h.URL

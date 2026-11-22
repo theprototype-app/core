@@ -451,17 +451,28 @@ export function createGovernor(opts = {}) {
  * re-judging on them would switch the throttle off, which makes them slow, which switches
  * it on — a flicker at the period of the frame window. It is engaged once per drain and
  * released when the drain ends. Not a level: it ends by itself, so it stays off the chip.
- * @param {{engaged: boolean, draining: boolean, backlog: number, p95: number|null, profile?: 'desktop'|'vr'}} ctx
+ *
+ * fix-late-joiners row 1: THE GAP FOLLOWS THE FRAME'S COST. A flat 250 ms was written when a frame cost a few
+ * tens of ms; a 500-object scene on a throttled joiner draws in ~200 ms, so four of those a second left the
+ * drain a fifth of the thread (measured: ~30 objects/s). The gap is INGEST_DRAW_GAP_FRAMES slow frames, kept
+ * between 250 ms and INGEST_DRAW_GAP_MAX_MS, decided ONCE when it engages (`engagedGap` comes back while
+ * engaged: throttled frames would measure the gap, not the cost). A 50 ms frame still gets the old 250 ms.
+ * @param {{engaged: boolean, engagedGap?: number, draining: boolean, backlog: number, p95: number|null, profile?: 'desktop'|'vr'}} ctx
  */
 export function drawGapFor(ctx) {
 	if (!ctx.draining) return 0;
-	if (ctx.engaged) return INGEST_DRAW_GAP_MS;
+	if (ctx.engaged) return ctx.engagedGap && ctx.engagedGap > 0 ? ctx.engagedGap : INGEST_DRAW_GAP_MS;
 	if (!(ctx.backlog > INGEST_MIN_BACKLOG)) return 0;
 	const t = THRESHOLDS[ctx.profile === 'vr' ? 'vr' : 'desktop'];
 	// a fast frame costs the drain nothing worth saving — only a slow one is throttled
 	if (ctx.p95 == null || ctx.p95 <= t.underMs) return 0;
-	return INGEST_DRAW_GAP_MS;
+	return Math.min(INGEST_DRAW_GAP_MAX_MS, Math.max(INGEST_DRAW_GAP_MS, Math.round(ctx.p95 * INGEST_DRAW_GAP_FRAMES)));
 }
+
+/** fix-late-joiners: the drain's draw gap in slow frames (a frame drawn per this many frames' worth of time) */
+export const INGEST_DRAW_GAP_FRAMES = 4;
+/** …and its ceiling: a big scene still visibly fills in, once a second at worst */
+export const INGEST_DRAW_GAP_MAX_MS = 1000;
 
 /** Below this many parked objects a drain finishes in well under a second anyway. */
 export const INGEST_MIN_BACKLOG = 50;

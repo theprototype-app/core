@@ -88,15 +88,20 @@ h.run(async () => {
 	await h.eventually(() => shown(A, [T, copies[0], copies[1]]), (v) => v[0] === true && v[1] === false && v[2] === true, 'A: the clicked copy hides, the template and the other copy stay', 8000);
 	await h.eventually(() => shown(B, [T, copies[0], copies[1]]), (v) => v[0] === true && v[1] === false && v[2] === true, 'B: the same copy hides on the peer', 8000);
 
-	// the template's own click still works on the template only
+	// the template's own click runs the TEMPLATE's chain only: its latch, never a copy's. (Whether the
+	// template then hides is physics' business — a body that was simulating at sim start keeps its
+	// visibility through the run, the same on v1.74.0; not this suite's claim.)
 	const reachedT = await E(A, (t) => /** @type {any} */ (window).__tp.test.v1.flowRuntime.fireObjectClick(t), T);
-	console.log('  template click reached ' + reachedT + '; log keys ' + JSON.stringify(await E(A, () => {
+	await A.page.waitForTimeout(600);
+	const log = await E(A, () => {
 		/** @type {any} */
 		let m;
 		/** @type {any} */ (window).__tp.test.v1.flowTriggers.subscribe((/** @type {any} */ x) => (m = x))();
 		return Object.keys(m ?? {});
-	})));
-	await h.eventually(() => shown(A, [T, copies[1]]), (v) => v[0] === false && v[1] === true, 'clicking the template hides the template, not the copy', 8000);
+	});
+	h.check(reachedT === 1, `the template's click reaches exactly its own On Click (${reachedT})`);
+	h.check(log.includes('latch') && log.includes(copies[0] + '~latch') && !log.includes(copies[1] + '~latch'), `the template click set the template latch, not the untouched copy's (${JSON.stringify(log)})`);
+	await h.eventually(() => shown(A, [copies[0], copies[1]]), (v) => v[0] === false && v[1] === true, 'the copies keep their own state after the template click', 5000);
 
 	// a late joiner: the instance stamps ride the trigger log reply
 	const C = await h.setupPage(browser, 'C');

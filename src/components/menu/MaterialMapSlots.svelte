@@ -10,12 +10,13 @@
 	import { hasAnyMap, mapSlotFilled, mapSlotThumb, normalStrengthOf, texTransformOf } from '$lib/materialMapTextures.js';
 	import { removeObjectsMapSlot, setNormalStrength, setObjectsMapSet, setObjectsMapSlot, setTexTransform } from '$lib/materialMaps';
 	import { applyExplorerImageToMapSlot } from '$lib/explorerDrop';
+	import { explorerDropTarget } from '$lib/explorerDropTarget.js';
+	import { pickFromExplorer } from '$lib/explorerPick.js';
 	import { setMaterialParam } from '$lib/materialsHandler';
 	import { beginHistoryBatch, endHistoryBatch } from '$lib/history';
 	import { withWireBatch, withWireBatchAsync } from '$lib/wireBatch';
 
 	const ACCEPT = 'image/png, image/jpeg, image/webp, image/heic, image/heif, .heic, .heif';
-	const EXPLORER_ITEM = 'application/x-explorer-item';
 	const DEG = 180 / Math.PI;
 
 	/** @type {{ material: any, targets: any[], matMixed: (read: (object: any) => any) => boolean, refresh: () => void }} */
@@ -63,18 +64,13 @@
 		else showToast(result.placed.length + (result.placed.length === 1 ? ' map set' : ' maps set'));
 	}
 
-	/** @param {DragEvent} event @param {string} key */
-	async function drop(event, key) {
-		dropKey = null;
-		event.preventDefault();
-		event.stopPropagation();
-		const raw = event.dataTransfer?.getData(EXPLORER_ITEM);
-		if (raw) {
-			await run(() => applyExplorerImageToMapSlot(uuids, JSON.parse(raw), key));
-			return;
-		}
-		const file = event.dataTransfer?.files?.[0];
-		if (file) await setFile(key, file);
+	/** an Explorer card (desktop drag or touch long-press drag) @param {any} payload @param {string} key */
+	const dropItem = (payload, key) => run(() => applyExplorerImageToMapSlot(uuids, payload, key));
+
+	/** 105 T1: "From Explorer" — the shared picker, stored exactly like an upload @param {any} slot */
+	async function pickExplorer(slot) {
+		const item = await pickFromExplorer({ title: 'Pick the ' + slot.label + ' map' });
+		if (item) await dropItem({ id: item.id }, slot.key);
 	}
 
 	/** one write per object as ONE undo step and ONE wire batch @param {string} label @param {(uuid: string) => void} write */
@@ -111,15 +107,11 @@
 				id={'map-slot-' + slot.key}
 				class="map-row rounded-sm border border-dashed {dropKey === slot.key ? 'ins-drop-on' : 'border-transparent'}"
 				title={slot.hint}
-				ondragover={(event) => {
-					if (event.dataTransfer?.types.includes(EXPLORER_ITEM) || event.dataTransfer?.types.includes('Files')) {
-						event.preventDefault();
-						event.stopPropagation();
-						dropKey = slot.key;
-					}
+				use:explorerDropTarget={{
+					ondrop: (payload) => dropItem(payload, slot.key),
+					onfile: (file) => setFile(slot.key, file),
+					onhover: (on) => (dropKey = on ? slot.key : dropKey === slot.key ? null : dropKey)
 				}}
-				ondragleave={() => (dropKey = null)}
-				ondrop={(event) => drop(event, slot.key)}
 			>
 				<input
 					type="file"
@@ -145,6 +137,15 @@
 				{:else}
 					<UiButton id={'map-set-' + slot.key} size="sm" variant="outline" aria-label={'Set the ' + slot.label + ' map'} onclick={() => pick(slot.key)}>Set...</UiButton>
 				{/if}
+				<UiButton
+					id={'map-explorer-' + slot.key}
+					size="sm"
+					variant="outline"
+					icon="folder-open"
+					title={'Pick the ' + slot.label + ' map from the Explorer'}
+					aria-label={'Pick the ' + slot.label + ' map from the Explorer'}
+					onclick={() => pickExplorer(slot)}>Explorer</UiButton
+				>
 			</div>
 			{#if slot.key === 'normalMap' && slot.filled}
 				<SliderRow

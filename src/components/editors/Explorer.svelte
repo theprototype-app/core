@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { explorerTouchDrop, explorerTouchHover, explorerTouchEnd } from '$lib/explorerDropTarget.js';
 	import { parseCheckedObject } from '$lib/loadGuard.js';
 	import { onLayoutRestore, storedPanelLayout } from '$lib/uiLayoutsCore';
 	import { showChoice, showConfirm } from '$lib/confirmDialog.js';
@@ -6352,6 +6353,7 @@
 		e.preventDefault();
 		tGhostX = e.clientX;
 		tGhostY = e.clientY;
+		explorerTouchHover(e.clientX, e.clientY); // 105 T1: arm the drop target under the finger
 	}
 	function onCardPointerUp(e: PointerEvent) {
 		clearTimeout(tPressTimer);
@@ -6375,8 +6377,9 @@
 				const payload = tDrag.payload;
 				const x = e.clientX;
 				const y = e.clientY;
-				import('$lib/explorerDrop').then((m) => m.dropExplorerItem(payload, x, y));
-			}
+				// 105 T1: a drop target under the finger (a map slot, the UV editor) takes it first
+				if (!explorerTouchDrop(x, y, payload)) import('$lib/explorerDrop').then((m) => m.dropExplorerItem(payload, x, y));
+			} else explorerTouchEnd();
 			tSuppressClick = true; // the drag must not also fire the tap-select
 		}
 		tDragging = false;
@@ -7172,7 +7175,7 @@
 		onpointerdown={(e) => !isFolder && onCardPointerDown(e, item)}
 		onpointermove={(e) => !isFolder && onCardPointerMove(e)}
 		onpointerup={(e) => !isFolder && onCardPointerUp(e)}
-		onpointercancel={() => clearTimeout(tPressTimer)}
+		onpointercancel={() => (clearTimeout(tPressTimer), explorerTouchEnd())}
 		use:touchHold={{ onhold: isFolder ? (x, y) => folderMenu(holdEvent(x, y), folder, false) : undefined }}
 		oncontextmenu={(e) => (isFolder ? folderMenu(e, folder, false) : itemMenu(e, item))}
 		onclick={(e) => (isFolder ? onFolderCardClick(e, folder) : onCardClick(e, item))}
@@ -8335,7 +8338,7 @@
 							onpointerdown={(e) => onCardPointerDown(e, item)}
 							onpointermove={onCardPointerMove}
 							onpointerup={onCardPointerUp}
-							onpointercancel={() => clearTimeout(tPressTimer)}
+							onpointercancel={() => (clearTimeout(tPressTimer), explorerTouchEnd())}
 							use:touchHold
 							data-cut={!!$explorerClipboard && isCutPending(item.id) ? '1' : undefined}
 							class:opacity-50={!!$explorerClipboard && isCutPending(item.id)}

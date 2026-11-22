@@ -67,6 +67,8 @@
 	import { sineIn } from 'svelte/easing';
 	import { applyExplorerImage } from '$lib/explorerDrop';
 	import MaterialMapSlots from './MaterialMapSlots.svelte';
+	import { explorerDropTarget } from '$lib/explorerDropTarget.js';
+	import { pickFromExplorer } from '$lib/explorerPick.js';
 	import { explorerItems, explorerFolders, inspectedFile, itemBlob, renameItem, deleteItem, updateItemBytes } from '$lib/explorer';
 	import { decodeMeta } from '$lib/audioEngine';
 	import { openTextEditor, openImagePreview } from '$lib/fileWindows';
@@ -4392,21 +4394,9 @@
 						<div
 							id="texture-drop"
 							class="rounded-sm border border-dashed {textureDropActive ? 'ins-drop-on' : 'border-transparent'}"
-							ondragover={(e) => {
-								if (e.dataTransfer?.types.includes('application/x-explorer-item')) {
-									e.preventDefault();
-									textureDropActive = true;
-								}
-							}}
-							ondragleave={() => (textureDropActive = false)}
-							ondrop={async (e) => {
-								const raw = e.dataTransfer?.getData('application/x-explorer-item');
-								textureDropActive = false;
-								if (!raw) return;
-								e.preventDefault();
-								e.stopPropagation();
-								const payload = JSON.parse(raw);
-								await fanTexture((uuid) => applyExplorerImage(uuid, payload), 'Texture');
+							use:explorerDropTarget={{
+								ondrop: (payload) => fanTexture((uuid) => applyExplorerImage(uuid, payload), 'Texture'),
+								onhover: (on) => (textureDropActive = on)
 							}}
 						>
 						<input
@@ -4457,8 +4447,20 @@
 								>
 									Set texture...
 								</UiButton>
-								<span class="text-[length:var(--fs-badge)] text-text-faint">or drop an Explorer image</span>
 							{/if}
+							<!-- 105 T1: the shared Explorer picker beside upload, stored like an upload -->
+							<UiButton
+								id="texture-explorer"
+								size="sm"
+								variant="outline"
+								icon="folder-open"
+								title="Pick the colour map from the Explorer (or drop an Explorer image here)"
+								aria-label="Pick the colour map from the Explorer"
+								onclick={async () => {
+									const item = await pickFromExplorer({ title: 'Pick the colour map' });
+									if (item) await fanTexture((uuid) => applyExplorerImage(uuid, { id: item.id }), 'Texture');
+								}}>Explorer</UiButton
+							>
 						</div>
 						</div>
 					{/if}

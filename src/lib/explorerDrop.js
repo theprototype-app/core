@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { globalCamera, selectedObject } from '../stores/sceneStore';
 import { peers, showToast, toastStore, stackOnDrop, openSceneSection } from '../stores/appStore';
-import { explorerItems, itemBlob, importFiles } from './explorer';
+import { explorerItems, itemBlob, importFiles, MAX_ITEM_BYTES } from './explorer';
 import { prefabs, instantiatePrefab } from './prefabs';
 import { importFile, addImported } from './fileHandler.svelte';
 import { packRefFromUrl, peekPackTemplate, loadPackTemplate } from './packRefs';
@@ -12,7 +12,7 @@ import { holdPendingGhost } from './placeGhost';
 import { wouldAskFor } from './importGate';
 import { beginHistoryBatch, endHistoryBatch } from './history';
 import { selectedObjects } from '../stores/sceneStore';
-import { setObjectTexture } from './materialsHandler';
+import { setObjectTexture, materialAt } from './materialsHandler';
 import { topLevelObjectOf } from './objectActions';
 import { sceneHits, hitWorldNormal } from './scenePick';
 import { snapTargets } from './snapping';
@@ -39,7 +39,8 @@ import('./moduleSDK').then((m) => (sdkRef = m));
  * the sky or when the hit carries no face data.
  * @param {number} clientX @param {number} clientY
  * `hit` is the EXACT mesh under the drop (23-C2, for module drop handlers), null when nothing.
- * @returns {{point: number[] | null, object: any, normal: number[] | null, hit?: any}}
+ * `slot` (105 T1) is the material slot of the face hit.
+ * @returns {{point: number[] | null, object: any, normal: number[] | null, hit?: any, slot?: number}}
  */
 export function dropTarget(clientX, clientY) {
 	/** @type {any} */
@@ -56,7 +57,9 @@ export function dropTarget(clientX, clientY) {
 			point: hits[0].point.toArray(),
 			object: topLevelObjectOf(hits[0].object),
 			normal: hitWorldNormal(hits[0])?.toArray() ?? null,
-			hit: hits[0].object
+			hit: hits[0].object,
+			// 105 T1: the material slot of the face under the pointer (a multi-slot mesh's group index)
+			slot: hits[0].face?.materialIndex ?? 0
 		};
 	const planePoint = new THREE.Vector3();
 	const onGround = raycaster.ray.intersectPlane(
@@ -131,6 +134,30 @@ function placeAt(object, point, normal = null) {
 }
 
 /**
+ * 105 T1: a library IMAGE as a File, the way an upload hands one over — or null with the reason said.
+ * The Explorer's own import cap (25 MB) holds here too, so a peer's shared file is no bigger than a
+ * file picked from disk could be.
+ * @param {string} id @returns {Promise<File | null>}
+ */
+export async function explorerImageFile(id) {
+	const item = get(explorerItems).find((entry) => entry.id === id);
+	if (!item || item.kind !== 'image') {
+		showToast('That Explorer item is not an image');
+		return null;
+	}
+	if ((item.size ?? 0) > MAX_ITEM_BYTES) {
+		showToast('That image is over ' + Math.round(MAX_ITEM_BYTES / 1048576) + ' MB');
+		return null;
+	}
+	const blob = await itemBlob(item.id);
+	if (!blob) {
+		showToast('That file is not on this device yet');
+		return null;
+	}
+	return new File([blob], item.name, { type: blob.type || 'image/png' });
+}
+
+/**
  * Apply an Explorer image item as the texture of an object (Inspector drop
  * target + viewport mesh drop share this). Replicates via setObjectTexture.
  * @param {string} uuid @param {any} payload
@@ -140,11 +167,11 @@ function placeAt(object, point, normal = null) {
  * @returns {Promise<boolean>}
  */
 export async function applyExplorerImage(uuid, payload, slot = 0) {
-	const item = get(explorerItems).find((entry) => entry.id === payload.id);
+	const item = get(explorerItems).find((entry) => entry.id === payload?.id);
 	if (!item || item.kind !== 'image') return false;
-	const blob = await itemBlob(item.id);
-	if (!blob) return false;
-	await setObjectTexture(uuid, new File([blob], item.name, { type: blob.type || 'image/png' }), slot, { source: item.hash });
+	const file = await explorerImageFile(item.id);
+	if (!file) return false;
+	await setObjectTexture(uuid, file, slot, { source: item.hash });
 	return true;
 }
 
@@ -154,12 +181,37 @@ export async function applyExplorerImage(uuid, payload, slot = 0) {
  * @returns {Promise<boolean>}
  */
 export async function applyExplorerImageToMapSlot(uuids, payload, key) {
-	const item = get(explorerItems).find((entry) => entry.id === payload.id);
+	const item = get(explorerItems).find((entry) => entry.id === payload?.id);
 	if (!item || item.kind !== 'image') return false;
-	const blob = await itemBlob(item.id);
-	if (!blob) return false;
+	const file = await explorerImageFile(item.id);
+	if (!file) return false;
 	const { setObjectsMapSlot } = await import('./materialMaps');
-	return (await setObjectsMapSlot(uuids, key, new File([blob], item.name, { type: blob.type || 'image/png' }))) > 0;
+	return (await setObjectsMapSlot(uuids, key, file)) > 0;
+}
+
+/**
+ * 105 T1: does this slot's colour map hold pixels that are in no library file — painted, or picked from
+ * disk? (A texture made from an Explorer image keeps that image's hash on `mapSource`; a paint stroke or a
+ * file upload drops it.) Replacing those is the one replace worth asking about.
+ * @param {any} material
+ */
+export function holdsUnsavedPixels(material) {
+	return !!material?.userData?.mapDataUrl && !material.userData.mapSource;
+}
+
+/**
+ * 105 T1: the mesh and slot a viewport image drop textures: the exact mesh under the pointer and the
+ * material slot of the face hit, or the top-level object's slot 0 when the hit carries no colour map.
+ * @param {{object: any, hit?: any, slot?: number}} target @returns {{uuid: string, slot: number} | null}
+ */
+export function imageDropSlot(target) {
+	const hit = target.hit;
+	const slot = Array.isArray(hit?.material) ? (target.slot ?? 0) : 0;
+	const material = hit ? materialAt(hit, slot) : null;
+	if (material && 'map' in material) return { uuid: hit.uuid, slot };
+	const top = target.object;
+	const topMaterial = top ? materialAt(top, 0) : null;
+	return topMaterial && 'map' in topMaterial ? { uuid: top.uuid, slot: 0 } : null;
 }
 
 /**
@@ -248,7 +300,7 @@ export async function dropExplorerItem(payload, clientX, clientY) {
  * Place ONE payload at an already-resolved drop target (21-H3 split this out of
  * `dropExplorerItem` unchanged so the multi path could reuse the single one verbatim).
  * @param {any} payload
- * @param {{point: number[] | null, object: any, normal: number[] | null, hit?: any, noPlay?: boolean}} target
+ * @param {{point: number[] | null, object: any, normal: number[] | null, hit?: any, slot?: number, noPlay?: boolean}} target
  */
 async function placeExplorerPayload(payload, target) {
 	if (payload.prefabId) {
@@ -317,7 +369,13 @@ async function placeExplorerPayload(payload, target) {
 			showToast('Drop the image ON an object to texture it');
 			return;
 		}
-		await applyExplorerImage(target.object.uuid, { id: item.id });
+		// 105 T1: the slot under the pointer of the mesh under the pointer (a group's child, a multi-slot face)
+		const at = imageDropSlot(target);
+		if (!at) {
+			showToast('That object has no material that takes a texture');
+			return;
+		}
+		await applyExplorerImage(at.uuid, { id: item.id }, at.slot);
 	} else {
 		// 23-C2: a module object may TAKE an audio/text item (a sampler pad takes a sample) -
 		// the handler gets the exact mesh under the drop; the first to return true owns it

@@ -19,7 +19,10 @@
 	import { selectedObject, selectedObjects, objectsGroup, globalScene } from '../../stores/sceneStore';
 	import { uvEditorClose, showToast } from '../../stores/appStore.js';
 	import { setObjectTexture, removeObjectTexture, addMaterialSlot } from '$lib/materialsHandler';
-	import { applyExplorerImage } from '$lib/explorerDrop';
+	import { applyExplorerImage, holdsUnsavedPixels } from '$lib/explorerDrop';
+	import { explorerDropTarget } from '$lib/explorerDropTarget.js';
+	import { pickFromExplorer } from '$lib/explorerPick.js';
+	import { showConfirm } from '$lib/confirmDialog';
 	import { notePointer, mayDraw } from '$lib/penInput';
 	import { unwrapBackends } from '$lib/uvUnwrap';
 	import {
@@ -1631,33 +1634,56 @@
 	// often reports no MIME type for one
 	const IMAGE_TYPES = 'image/png,image/jpeg,image/webp,image/heic,image/heif,.heic,.heif';
 
-	/** @param {DragEvent} e @param {number} index */
-	function onSlotDragOver(e, index) {
-		const kinds = [...(e.dataTransfer?.types ?? [])];
-		if (!kinds.includes('application/x-explorer-item') && !kinds.includes('Files')) return;
-		e.preventDefault();
-		if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
-		dropSlot = index;
+	/** an Explorer card on a slot row (desktop drag or touch long-press drag) @param {any} payload @param {number} index */
+	async function slotDropItem(payload, index) {
+		if (!target) return;
+		await applyExplorerImage(target.uuid, payload, index);
 	}
 
-	/** @param {DragEvent} e @param {number} index */
-	async function onSlotDrop(e, index) {
-		e.preventDefault();
-		e.stopPropagation(); // the window-level import drop would place a MODEL
-		dropSlot = -1;
+	/** an OS file on a slot row @param {File} file @param {number} index */
+	async function slotDropFile(file, index) {
 		if (!target) return;
-		const raw = e.dataTransfer?.getData('application/x-explorer-item');
-		if (raw) {
-			const ok = await applyExplorerImage(target.uuid, JSON.parse(raw), index);
-			if (!ok) showToast('That Explorer item is not an image');
-			return;
-		}
-		const file = [...(e.dataTransfer?.files ?? [])].find((f) => f.type.startsWith('image/') || isHeicFileLike(f));
-		if (!file) {
+		if (!(file.type.startsWith('image/') || isHeicFileLike(file))) {
 			showToast('Drop an image to texture this material');
 			return;
 		}
 		await setObjectTexture(target.uuid, file, index);
+	}
+
+	/** 105 T1: "From Explorer" on a slot row — the shared picker @param {number} index */
+	async function pickExplorerFor(index) {
+		const item = await pickFromExplorer({ title: 'Pick an image for this material' });
+		if (item) await slotDropItem({ id: item.id }, index);
+	}
+
+	// 105 T1: an image dropped on the UV CANVAS becomes the active slot's colour map (the paint base).
+	// Pixels that live in no library file (painted here, or picked from disk) are asked about first.
+	let canvasDrop = $state(false);
+	/** @returns {Promise<boolean>} */
+	async function mayReplaceActive() {
+		if (!target) return false;
+		const material = materialsOf(target)[slot];
+		if (!material || !('map' in material)) {
+			showToast('This material cannot take a texture');
+			return false;
+		}
+		if (!holdsUnsavedPixels(material)) return true;
+		return showConfirm({
+			title: 'Replace the painted image?',
+			message: 'This material shows an image that is in no Explorer file (painted here or picked from disk). The new image replaces it; Undo brings it back.',
+			confirmLabel: 'Replace'
+		});
+	}
+	/** @param {any} payload */
+	async function canvasDropItem(payload) {
+		if (!(await mayReplaceActive())) return;
+		await slotDropItem(payload, slot);
+	}
+	/** @param {File} file */
+	async function canvasDropFile(file) {
+		if (!(file.type.startsWith('image/') || isHeicFileLike(file))) return showToast('Drop an image to texture this material');
+		if (!(await mayReplaceActive())) return;
+		await slotDropFile(file, slot);
 	}
 
 	// --- selection ops + unwrap ---------------------------------------------
@@ -1852,9 +1878,11 @@
 	<div
 		class="uv-slot group/slot {index === slot ? 'uv-slot-active' : ''} {dropSlot === index ? 'uv-slot-drop' : ''}"
 		data-uv-slot={index}
-		ondragover={(e) => onSlotDragOver(e, index)}
-		ondragleave={() => (dropSlot = dropSlot === index ? -1 : dropSlot)}
-		ondrop={(e) => onSlotDrop(e, index)}
+		use:explorerDropTarget={{
+			ondrop: (payload) => slotDropItem(payload, index),
+			onfile: (file) => slotDropFile(file, index),
+			onhover: (on) => (dropSlot = on ? index : dropSlot === index ? -1 : dropSlot)
+		}}
 	>
 		<button
 			class="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-xs {index === slot ? 'text-accent-soft-text' : 'text-text-2'}"
@@ -1878,6 +1906,15 @@
 			onclick={() => assignSelectionTo(index)}
 		>
 			<Icon name="target" size={16} aria-hidden="true" />
+		</button>
+		<button
+			class="uv-slot-btn"
+			id="uv-slot-explorer-{index}"
+			title="Pick an image from the Explorer"
+			aria-label="Pick an image from the Explorer"
+			onclick={() => pickExplorerFor(index)}
+		>
+			<Icon name="folder-open" size={16} aria-hidden="true" />
 		</button>
 		<button
 			class="uv-slot-btn"
@@ -2098,10 +2135,11 @@
 			<div
 				bind:this={wrapEl}
 				id="uv-canvas-wrap"
-				class="relative h-full w-full overflow-hidden bg-app outline-none"
+				class="relative h-full w-full overflow-hidden bg-app outline-none {canvasDrop ? 'uv-canvas-drop' : ''}"
 				data-key-scope="uv"
 				tabindex="-1"
 				use:uvSurface
+				use:explorerDropTarget={{ ondrop: canvasDropItem, onfile: canvasDropFile, onhover: (on) => (canvasDrop = on), disabled: !target || !viewable.ok }}
 			>
 				{#if !target}
 					<div class="flex h-full items-center justify-center p-6 text-center text-sm text-text-muted">
@@ -2368,6 +2406,11 @@
 		outline: 1px dashed var(--accent);
 		outline-offset: -1px;
 		background: var(--accent-soft);
+	}
+	/* 105 T1: an image held over the canvas — it will become this slot's colour map */
+	.uv-canvas-drop {
+		outline: 2px dashed var(--accent);
+		outline-offset: -2px;
 	}
 	.uv-slot-btn {
 		display: inline-flex;

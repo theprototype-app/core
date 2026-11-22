@@ -51,6 +51,29 @@ async function openPalette(page, query = '') {
 	await page.fill('#command-palette-input', query);
 	await page.waitForTimeout(250);
 }
+/** Settings ▸ Shortcuts by deep link, with no search left over: a query from an earlier "Open in Settings" stays
+ *  in the box across a close, and clearing it hands back the pre-search expansion, which beats the deep link.
+ *  @param {any} page */
+async function openShortcuts(page) {
+	await S(page, () => window.__tp.test.v1.settingsOpen.set(false));
+	await page.waitForTimeout(250);
+	await S(page, () => window.__tp.test.v1.settingsOpen.set(true));
+	const search = page.locator('#settings-search').first();
+	await search.waitFor({ state: 'visible', timeout: 15000 });
+	if ((await search.inputValue()) !== '') {
+		await search.fill('');
+		await page.waitForTimeout(300);
+		await S(page, () => window.__tp.test.v1.settingsOpen.set(false));
+		await page.waitForTimeout(250);
+	}
+	await S(page, () => {
+		window.__tp.test.v1.settingsSection.set('shortcuts');
+		window.__tp.test.v1.settingsOpen.set(true);
+	});
+	await page.waitForSelector('#shortcut-grid .setting-row', { timeout: 15000 });
+	await S(page, () => document.getElementById('shortcut-grid')?.scrollIntoView({ block: 'start' }));
+	await page.waitForTimeout(400);
+}
 /** @param {any} page */
 async function closePalette(page) {
 	await S(page, () => window.__tp.test.v1.commandPaletteOpen.set(false));
@@ -97,7 +120,17 @@ function readMenu(page) {
 h.run(async () => {
 	fs.mkdirSync(SHOTS, { recursive: true });
 	const browser = await h.launch({ args: h.GPU_ARGS });
-	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1280, height: 560 } } });
+	// a remote / pc slot's FIRST boot of a cold dev server can pass setupPage's 90 s wait (vite transforms every
+	// module for the first time over the tunnel); the second load is warm, so one retry, never more
+	/** @type {any} */
+	let A;
+	try {
+		A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1280, height: 560 } } });
+	} catch (e) {
+		console.log(`[A] cold boot did not finish (${String(e).split('\n')[0]}); retrying once on the warm server`);
+		for (const c of browser.contexts()) await c.close().catch(() => {});
+		A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1280, height: 560 } } });
+	}
 	const page = A.page;
 
 	if (SHOTS_ONLY) {
@@ -168,12 +201,12 @@ h.run(async () => {
 	await S(page, () => ((/** @type {HTMLElement} */ (document.getElementById('sidebar70-scroll'))).scrollTop = 0));
 	await page.waitForTimeout(150);
 	const target = await S(page, () => {
-		const b = document.getElementById('open-checkpoints')?.getBoundingClientRect();
+		const b = [...document.querySelectorAll('#sidebar70-scroll #open-templates')].find((e) => /** @type {HTMLElement} */ (e).offsetParent !== null)?.getBoundingClientRect();
 		const sc = document.getElementById('sidebar70-scroll')?.getBoundingClientRect();
 		return b && sc ? { x: Math.round(b.left + 40), y: Math.round(b.top + b.height / 2), scTop: Math.round(sc.top), scBottom: Math.round(sc.bottom) } : null;
 	});
-	h.check(!!target && target.y > target.scTop && target.y < target.scBottom, `1.7 (premise) the Checkpoints row is in view at the top (${JSON.stringify(target)})`);
-	if (!target) throw new Error('no row');
+	h.check(!!target && target.y > target.scTop && target.y < target.scBottom, `1.7 (premise) the Templates row is in view at the top (${JSON.stringify(target)})`);
+	if (!target || target.y >= target.scBottom) throw new Error('no row in view');
 	const cursorAt = (/** @type {number} */ x, /** @type {number} */ y) => S(page, ([px, py]) => getComputedStyle(/** @type {Element} */ (document.elementFromPoint(px, py))).cursor, [x, y]);
 	const cursor0 = await cursorAt(target.x, target.y);
 	// a press that travels 4 px is still a click
@@ -182,33 +215,38 @@ h.run(async () => {
 	await page.mouse.move(target.x + 1, target.y + 4, { steps: 3 });
 	await page.mouse.up();
 	await page.waitForTimeout(500);
-	const clicked = await S(page, () => new Promise((r) => window.__tp.test.v1.checkpointsOpen.subscribe(r)()));
-	h.check(clicked === true, `1.8 row 1: a press that travels 4 px (< 6) is still a click on the row (Checkpoints opened: ${clicked})`);
-	await S(page, () => window.__tp.test.v1.checkpointsOpen.set(false));
+	const clicked = await S(page, () => new Promise((r) => window.__tp.test.v1.templatesModalOpen.subscribe(r)()));
+	h.check(clicked === true, `1.8 row 1: a press that travels 4 px (< 6) is still a click on the row (Templates opened: ${clicked})`);
+	await S(page, () => window.__tp.test.v1.templatesModalOpen.set(false));
 	await page.waitForTimeout(300);
 	await openMenu(page);
 	await S(page, () => ((/** @type {HTMLElement} */ (document.getElementById('sidebar70-scroll'))).scrollTop = 0));
 	await page.waitForTimeout(150);
+	// the release position is read IN the page at pointerup: a round trip between the last move and the release
+	// (slow on a remote slot) is a held pointer, which correctly gets no fling
+	await S(page, () => {
+		const w = /** @type {any} */ (window);
+		w.__mp103Release = null;
+		window.addEventListener('pointerup', () => (w.__mp103Release = Math.round((/** @type {HTMLElement} */ (document.getElementById('sidebar70-scroll'))).scrollTop)), { capture: true, once: true });
+	});
 	await page.mouse.move(target.x, target.y);
 	await page.mouse.down();
 	const during = [];
-	for (let i = 1; i <= 8; i++) {
-		await page.mouse.move(target.x, target.y - i * 12);
-		if (i === 4) during.push(await cursorAt(target.x, target.y - i * 12));
-	}
-	const atRelease = await S(page, () => Math.round((/** @type {HTMLElement} */ (document.getElementById('sidebar70-scroll'))).scrollTop));
+	for (let i = 1; i <= 4; i++) await page.mouse.move(target.x, target.y - i * 12);
+	during.push(await cursorAt(target.x, target.y - 48));
+	for (let i = 5; i <= 8; i++) await page.mouse.move(target.x, target.y - i * 12, { steps: 2 });
 	await page.mouse.up();
-	await page.waitForTimeout(450);
+	await page.waitForTimeout(600);
+	const atRelease = await S(page, () => /** @type {any} */ (window).__mp103Release ?? -1);
 	const after = await S(page, () => ({
 		top: Math.round((/** @type {HTMLElement} */ (document.getElementById('sidebar70-scroll'))).scrollTop),
 		open: !!document.getElementById('sidebar70'),
-		checkpoints: !!document.querySelector('#checkpoints-window, #checkpoints-panel'),
 		bodyCursor: document.body.style.cursor || '',
 		htmlCursor: document.documentElement.style.cursor || ''
 	}));
-	const cpOpen = await S(page, () => new Promise((r) => window.__tp.test.v1.checkpointsOpen.subscribe(r)()));
+	const cpOpen = await S(page, () => new Promise((r) => window.__tp.test.v1.templatesModalOpen.subscribe(r)()));
 	h.check(atRelease >= 60, `1.9 row 1: a 96 px mouse drag scrolls the rows (${atRelease} px)`);
-	h.check(after.open && cpOpen === false, `1.10 row 1: the drag activated no row (menu still open: ${after.open}, Checkpoints: ${cpOpen})`);
+	h.check(after.open && cpOpen === false, `1.10 row 1: the drag activated no row (menu still open: ${after.open}, Templates: ${cpOpen})`);
 	h.check(after.top > atRelease, `1.11 row 1: a little momentum after the release (${atRelease} -> ${after.top} px)`);
 	h.check(during[0] === cursor0 && !/grab|move|scroll/.test(String(during[0])) && !after.bodyCursor && !after.htmlCursor, `1.12 row 1: the pointer never changes (${cursor0} -> ${during[0]})`);
 	const beforeWheel = after.top;
@@ -277,7 +315,7 @@ h.run(async () => {
 	h.check((await row(page, 'transform.move').locator('.cp-capture').count()) === 1, '2.6 row 4: clicking the chip turns it into a capture');
 	await page.keyboard.press('Alt+Shift+M');
 	await page.waitForTimeout(100);
-	const pending = await row(page, 'transform.move').locator('.cp-capture').textContent();
+	const pending = String(await row(page, 'transform.move').locator('.cp-capture').textContent()).trim();
 	h.check(pending === 'Alt+Shift+M' && (await binding(page, 'transform.move')) === '1', `2.7 the pressed keys wait for Enter (${pending}, still ${await binding(page, 'transform.move')})`);
 	await page.keyboard.press('Enter');
 	await page.waitForTimeout(250);
@@ -323,7 +361,7 @@ h.run(async () => {
 	await row(page, 'transform.rotate').locator('.cp-chip-btn').click();
 	await page.keyboard.press('Backspace');
 	await page.waitForTimeout(80);
-	const none = await row(page, 'transform.rotate').locator('.cp-capture').textContent();
+	const none = String(await row(page, 'transform.rotate').locator('.cp-capture').textContent()).trim();
 	await page.keyboard.press('Enter');
 	await page.waitForTimeout(200);
 	const storedEmpty = await S(page, () => JSON.parse(localStorage.getItem('shortcutOverrides') || '{}')['transform.rotate']);
@@ -384,14 +422,9 @@ h.run(async () => {
 	await S(page, () => window.__tp.test.v1.focusMode.exitFocus());
 	await page.waitForTimeout(300);
 	// Settings ▸ Shortcuts at 1280: one key column, one row height (row 8)
-	await S(page, () => {
-		window.__tp.test.v1.settingsSection.set('shortcuts');
-		window.__tp.test.v1.settingsOpen.set(true);
-	});
-	await page.waitForSelector('#shortcut-grid', { timeout: 10000 });
-	await page.waitForTimeout(800);
+	await openShortcuts(page);
 	const sAlign = await S(page, () => {
-		const rows = [...document.querySelectorAll('#shortcut-grid .setting-row')].slice(0, 16);
+		const rows = [...document.querySelectorAll('#shortcut-grid .setting-row')].filter((r) => /** @type {HTMLElement} */ (r).offsetParent !== null).slice(0, 16);
 		const cells = rows.map((r) => r.querySelector('.sc-keycell')?.getBoundingClientRect()).filter(Boolean);
 		return {
 			rights: [...new Set(cells.map((c) => Math.round(/** @type {DOMRect} */ (c).right)))],
@@ -399,8 +432,8 @@ h.run(async () => {
 			chip: !!document.querySelector('#shortcut-grid .shortcut-keys .kc-key')
 		};
 	});
-	h.check(sAlign.rights.length <= 2 && sAlign.chip, `2.26 row 8: Settings ▸ Shortcuts keys sit in one right-aligned column of the shared chips (${JSON.stringify(sAlign)})`);
-	h.check(sAlign.heights.includes(32) && sAlign.heights.every((x) => x === 32 || x === 33), `2.27 row 8: Settings rows are the palette's height (${sAlign.heights})`);
+	h.check(sAlign.rights.length === 1 && sAlign.chip, `2.26 row 8: Settings ▸ Shortcuts keys sit in one right-aligned column of the shared chips (${JSON.stringify(sAlign)})`);
+	h.check(sAlign.heights.length === 1 && sAlign.heights[0] === 32, `2.27 row 8: Settings rows are the palette's height (${sAlign.heights})`);
 	await shot(page, 'settings-shortcuts-1280');
 	await S(page, () => window.__tp.test.v1.settingsOpen.set(false));
 	await page.waitForTimeout(400);
@@ -416,21 +449,13 @@ h.run(async () => {
 	// ---------------------------------------------------------------- §4 your keymaps + the resets --
 	await page.setViewportSize({ width: 1280, height: 900 });
 	await S(page, () => window.__tp.test.v1.shortcutsRegistry.resetAllShortcuts());
-	await S(page, () => {
-		window.__tp.test.v1.settingsSection.set('shortcuts');
-		window.__tp.test.v1.settingsOpen.set(true);
-	});
+	await openShortcuts(page);
 	await page.waitForSelector('#keymap-save-as', { timeout: 15000 });
 	await page.waitForTimeout(500);
 	h.check((await page.locator('#keymap-dirty').count()) === 0, '4.1 (premise) after Reset everything ThePrototype shows no changed dot');
 	await S(page, () => window.__tp.test.v1.shortcutsRegistry.setOverride('transform.move', 'Alt+Shift+M'));
-	await page.locator('#keymap-preset').dispatchEvent('change').catch(() => {});
-	// the card redraws on its own signal: nudge it through the grid's version by a no-op click on the card
-	await S(page, () => window.__tp.test.v1.settingsOpen.set(false));
-	await page.waitForTimeout(300);
-	await S(page, () => window.__tp.test.v1.settingsOpen.set(true));
-	await page.waitForSelector('#keymap-save-as', { timeout: 10000 });
-	await page.waitForTimeout(500);
+	// no reopen: the card follows a rebind made anywhere (shortcutsChanged)
+	await page.waitForSelector('#keymap-dirty', { timeout: 5000 });
 	h.check((await page.locator('#keymap-dirty').count()) === 1 && /1 shortcut changed/.test(String(await page.locator('#keymap-changed').textContent())), '4.2 row 9: a rebind on a built-in preset shows the changed dot + "Save as… / Discard"');
 	await page.click('#keymap-save-as');
 	await page.fill('#keymap-name', 'Lane keys');
@@ -441,13 +466,11 @@ h.run(async () => {
 	h.check((await page.locator('#keymap-dirty').count()) === 0, '4.4 ...and it is clean');
 	// change it, then switch away: asked first
 	await S(page, () => window.__tp.test.v1.shortcutsRegistry.setOverride('transform.scale', 'Alt+Shift+K'));
-	await S(page, () => window.__tp.test.v1.settingsOpen.set(false));
-	await page.waitForTimeout(300);
-	await S(page, () => window.__tp.test.v1.settingsOpen.set(true));
+	await openShortcuts(page);
 	await page.waitForSelector('#keymap-dirty', { timeout: 10000 });
 	await page.selectOption('#keymap-preset', 'preset:blender');
 	await page.waitForSelector('#confirm-dialog-discard', { timeout: 5000 });
-	const askText = await S(page, () => document.querySelector('.cf')?.textContent || '');
+	const askText = await S(page, () => (() => { let d; window.__tp.test.v1.confirmDialog?.confirmDialog?.subscribe((v) => (d = v))(); return `${d?.title ?? ''} ${document.querySelector('.cf')?.textContent || ''}`; })());
 	h.check(/Save changes to Lane keys/.test(askText) && /1 shortcut/.test(askText), `4.5 row 9: switching away from a changed keymap asks first: Save changes / Discard / Cancel ("${askText.replace(/\s+/g, ' ').slice(0, 120)}")`);
 	await page.click('#confirm-dialog-cancel');
 	await page.waitForTimeout(300);
@@ -490,7 +513,7 @@ h.run(async () => {
 	// row 10: reset this keymap (counted confirm)
 	await page.click('#keymap-reset-keymap');
 	await page.waitForSelector('#confirm-dialog-ok', { timeout: 5000 });
-	const resetMsg = await S(page, () => document.querySelector('.cf')?.textContent || '');
+	const resetMsg = await S(page, () => (() => { let d; window.__tp.test.v1.confirmDialog?.confirmDialog?.subscribe((v) => (d = v))(); return `${d?.title ?? ''} ${document.querySelector('.cf')?.textContent || ''}`; })());
 	h.check(/Reset Imported to Unity/.test(resetMsg) && /1 shortcut goes back/.test(resetMsg), `4.13 row 10: "Reset this keymap" says what changes ("${resetMsg.replace(/\s+/g, ' ').slice(0, 110)}")`);
 	await page.click('#confirm-dialog-ok');
 	await page.waitForTimeout(400);
@@ -502,13 +525,11 @@ h.run(async () => {
 	h.check((await S(page, () => JSON.parse(localStorage.getItem('keymapsSaved') || '[]').length)) === 2 && !(await S(page, () => localStorage.getItem('keymapActive'))), '4.15 row 9: Delete removes it; the keys stay in force on its base');
 	// row 10, level one: a row's reset asks
 	await S(page, () => window.__tp.test.v1.shortcutsRegistry.setOverride('transform.move', 'Alt+Shift+M'));
-	await S(page, () => window.__tp.test.v1.settingsOpen.set(false));
-	await page.waitForTimeout(300);
-	await S(page, () => window.__tp.test.v1.settingsOpen.set(true));
+	await openShortcuts(page);
 	await page.waitForSelector('#shortcut-grid [data-shortcut="transform.move"] .shortcut-reset', { timeout: 10000 });
 	await page.click('#shortcut-grid [data-shortcut="transform.move"] .shortcut-reset');
 	await page.waitForSelector('#confirm-dialog-ok', { timeout: 5000 });
-	const oneMsg = await S(page, () => document.querySelector('.cf')?.textContent || '');
+	const oneMsg = await S(page, () => (() => { let d; window.__tp.test.v1.confirmDialog?.confirmDialog?.subscribe((v) => (d = v))(); return `${d?.title ?? ''} ${document.querySelector('.cf')?.textContent || ''}`; })());
 	h.check(/Alt\+Shift\+M back to 1/.test(oneMsg), `4.16 row 10: one shortcut's reset says what changes ("${oneMsg.replace(/\s+/g, ' ').slice(0, 110)}")`);
 	await page.click('#confirm-dialog-ok');
 	await page.waitForTimeout(300);
@@ -522,7 +543,7 @@ h.run(async () => {
 	const expectN = await S(page, () => window.__tp.test.v1.shortcutsRegistry.changedFromDefaultsCount());
 	await page.click('#keymap-reset-all');
 	await page.waitForSelector('#confirm-dialog-ok', { timeout: 5000 });
-	const allMsg = await S(page, () => document.querySelector('.cf')?.textContent || '');
+	const allMsg = await S(page, () => (() => { let d; window.__tp.test.v1.confirmDialog?.confirmDialog?.subscribe((v) => (d = v))(); return `${d?.title ?? ''} ${document.querySelector('.cf')?.textContent || ''}`; })());
 	h.check(new RegExp(`${expectN} shortcuts go back to the ThePrototype defaults`).test(allMsg) && /keymap goes back to ThePrototype/.test(allMsg) && /saved keymaps stay/.test(allMsg), `4.18 row 10: "Reset everything" says how many bindings change (${expectN}: "${allMsg.replace(/\s+/g, ' ').slice(0, 150)}")`);
 	await page.click('#confirm-dialog-ok');
 	await page.waitForTimeout(500);
@@ -561,11 +582,16 @@ h.run(async () => {
 				foot: !!cp.querySelector('.cp-foot')
 			};
 		});
-		h.check(shell, `3.0 (premise) ${label} runs the phone shell`);
+		h.check(true, `3.0 ${label}: phone shell ${shell} (the unfolded N6, 749 px, is above the 640 px shell line)`);
+		h.check(sheet.keys === 0 && !sheet.foot, `3.3 ${label}: no shortcut column and no shortcut editing on a phone (${sheet.keys} key elements)`);
+		await shot(pp, `palette-${label}`);
+		if (!shell) {
+			h.check(sheet.layout === 'window' && sheet.searchFirst, `3.1 ${label}: wider than the phone shell, Ctrl+K keeps the centred window (${JSON.stringify(sheet)})`);
+			await P.ctx.close();
+			continue;
+		}
 		h.check(sheet.layout === 'sheet' && sheet.grip && sheet.searchFirst, `3.1 row 3 ${label}: Ctrl+K is a sheet with the grip and the search on top (${JSON.stringify(sheet)})`);
 		h.check(sheet.left === menuBox.left && sheet.right === menuBox.right && Math.abs(sheet.bottom - menuBox.bottom) <= 1 && sheet.radius === menuBox.radius, `3.2 ${label}: ...the main menu's sheet: same edges, bottom and corners (${JSON.stringify(menuBox)})`);
-		h.check(sheet.keys === 0 && !sheet.foot, `3.3 ${label}: no shortcut column and no shortcut editing on a phone`);
-		await shot(pp, `palette-${label}`);
 		// the on-screen keyboard: the sheet sits above it
 		const kb = await S(pp, () => {
 			document.documentElement.style.setProperty('--kb-inset', '300px');

@@ -149,6 +149,18 @@ export function changedFromBaseCount() {
 	return Object.keys(workingChanges()).length;
 }
 
+/** How many shortcuts differ from what the active SAVED keymap stored ("N changed since you saved it"); on a built-in
+ *  preset it is the rebinds on it. A base that moved counts as one change more (the whole preset differs). */
+export function changedSinceSavedCount() {
+	const k = activeKeymap();
+	const changes = workingChanges();
+	if (!k) return Object.keys(changes).length;
+	const ids = new Set([...Object.keys(k.changes), ...Object.keys(changes)]);
+	let n = 0;
+	for (const id of ids) if (k.changes[id] !== changes[id]) n++;
+	return n + (k.base !== get(keymapPreset) ? 1 : 0);
+}
+
 /** @param {string} wanted @param {string} [exceptId] */
 export function uniqueName(wanted, exceptId) {
 	const base = cleanName(wanted) || 'My keymap';

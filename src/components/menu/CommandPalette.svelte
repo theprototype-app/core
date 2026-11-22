@@ -48,6 +48,10 @@
 	const results = $derived(rankCommands(commands, query, 60));
 	const KIND = { tool: 'Tool', window: 'Window', menu: 'Menu', setting: 'Setting' };
 	const phone = $derived($phoneShellActive);
+	// a touch-only device wider than the phone shell (the unfolded N6) keeps the centred window, but it is still a phone:
+	// no key column and no shortcut editing without a fine pointer
+	const touchOnly = typeof window !== 'undefined' && window.matchMedia?.('(any-pointer: fine)')?.matches === false;
+	const noKeys = $derived(phone || touchOnly);
 
 	/** the row listening for keys: `pending` null = nothing pressed yet, '' = Backspace (no key)
 	 * @type {{ cmdId: string, shortcutId: string, pending: string | null } | null} */
@@ -85,7 +89,7 @@
 	/** @param {string} id */
 	const rowOf = (id) => shortcuts.find((s) => s.id === id);
 	/** @param {import('$lib/commandRank').Command | undefined} cmd */
-	const editable = (cmd) => !phone && !!cmd?.shortcutId && !cmd.locked && !!rowOf(cmd.shortcutId);
+	const editable = (cmd) => !noKeys && !!cmd?.shortcutId && !cmd.locked && !!rowOf(cmd.shortcutId);
 
 	function close() {
 		stopCapture();
@@ -210,7 +214,7 @@
 
 	/** @param {MouseEvent} e @param {import('$lib/commandRank').Command} cmd @param {number} i */
 	function openMenu(e, cmd, i) {
-		if (phone) return;
+		if (noKeys) return;
 		e.preventDefault();
 		active = i;
 		menu = { x: e.clientX, y: e.clientY, cmd };
@@ -319,7 +323,7 @@
 							<span class="cp-label">{cmd.label}</span>
 							{#if cmd.detail}<span class="cp-detail">{cmd.detail}</span>{/if}
 						</span>
-						{#if !phone}
+						{#if !noKeys}
 							<span class="cp-keycol">
 								{#if capturing}
 									<span class="cp-capture" role="status">
@@ -349,7 +353,7 @@
 				<div class="cp-empty">Nothing matches “{query}”.</div>
 			{/each}
 		</div>
-		{#if !phone}
+		{#if !noKeys}
 			<div class="cp-foot">
 				<span class="cp-status" role="status" aria-live="polite">{status}</span>
 				{#if capture}

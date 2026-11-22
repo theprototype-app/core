@@ -144,6 +144,9 @@ function toggleAiPrompt() {
 
 /** I3: the `?` cheat sheet overlay (ShortcutSheet.svelte renders it from `shortcuts`). */
 export const cheatSheetOpen = writable(false);
+/** 103 row 9: bumps whenever the bindings in force change (a rebind, a reset, a preset or keymap switch), so a view
+ *  that shows a derived fact — the Keymap card's changed dot — follows a rebind made anywhere (the grid, Ctrl+K). */
+export const shortcutsChanged = writable(0);
 
 /**
  * 36 B8: the mesh-edit commands — real combos, run by the mesh session's own handler.
@@ -1122,6 +1125,7 @@ export function applyOverrides() {
 		if (typeof requestIdleCallback === 'function') requestIdleCallback(warm, { timeout: 3000 });
 		else setTimeout(warm, 500);
 	}
+	shortcutsChanged.update((n) => n + 1);
 }
 let warmed = false;
 

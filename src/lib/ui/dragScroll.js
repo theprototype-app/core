@@ -97,9 +97,12 @@ export function dragScroll(node, enabled = true) {
 		setTimeout(() => (swallowClick = false), 0);
 		// the release speed from the last ~100 ms of samples (px/ms, scroll direction)
 		const end = p.samples[p.samples.length - 1];
-		const start = p.samples.find((s) => end.t - s.t <= 100) ?? p.samples[0];
+		// (a device whose moves arrive further apart than that falls back to the one before, within 200 ms, or the
+		// release speed would read 0 on every slow pointer)
+		const prev = p.samples[p.samples.length - 2];
+		const start = p.samples.find((s) => s !== end && end.t - s.t <= 100) ?? (prev && end.t - prev.t <= 200 ? prev : end);
 		const dt = end.t - start.t;
-		const v = dt > 0 && e.timeStamp - end.t < 80 ? -(end.y - start.y) / dt : 0;
+		const v = dt > 0 && e.timeStamp - end.t < 120 ? -(end.y - start.y) / dt : 0;
 		coast(v);
 	};
 

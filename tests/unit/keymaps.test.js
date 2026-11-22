@@ -45,6 +45,17 @@ describe('saved keymaps', () => {
 		await km.discardChanges();
 		expect(state.overrides).toEqual({ 'transform.move': 'G' });
 	});
+	it('"changed since you saved it" counts against the saved copy, not the base preset', () => {
+		state.overrides = { 'transform.move': 'G' };
+		expect(km.changedSinceSavedCount()).toBe(1);
+		km.saveCurrentAs('Mine');
+		expect(km.changedSinceSavedCount()).toBe(0);
+		state.overrides = { 'transform.move': 'G', 'transform.rotate': 'R' };
+		expect(km.changedSinceSavedCount()).toBe(1);
+		expect(km.changedFromBaseCount()).toBe(2);
+		state.overrides = { 'transform.rotate': 'R' };
+		expect(km.changedSinceSavedCount()).toBe(2);
+	});
 	it('switching between two saved keymaps puts each one`s base and changes in force', async () => {
 		state.overrides = { 'transform.move': 'G' };
 		const a = km.saveCurrentAs('A');

@@ -210,11 +210,15 @@
 	}
 	/* 103 row 8: the keys sit in ONE right-aligned column (the Ctrl+K width), the reset / lock to its left, every row
 	   the palette's and the main menu's height; the key button is a frame around the shared chips */
+	/* the height sits on the border-box ROW, not its body: the card draws a 1 px divider above every row after the
+	   first, and a 32 px body under it made a 33 px pitch beside the palette's 32 */
 	#shortcut-grid :global(.setting-row) {
 		--setting-row-pad-y: 0px;
-	}
-	#shortcut-grid :global(.setting-row .sr-body) {
+		box-sizing: border-box;
 		min-height: var(--key-row-h, 32px);
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
 	}
 	#shortcut-grid :global(.setting-row .sr-name) {
 		display: block;

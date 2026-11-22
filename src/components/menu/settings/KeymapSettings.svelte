@@ -13,7 +13,7 @@
 	import Section from '../../ui/Section.svelte';
 	import SettingRow from '../../ui/SettingRow.svelte';
 	import Button from '../../ui/Button.svelte';
-	import { keymapPreset, activeKeymapId } from '$lib/shortcuts';
+	import { keymapPreset, activeKeymapId, shortcutsChanged } from '$lib/shortcuts';
 	import { KEYMAP_PRESETS } from '$lib/keymapPresets';
 	import { flyWithWasd, flyDirection } from '$lib/flyPrefs';
 	import {
@@ -32,6 +32,7 @@
 		importKeymap,
 		uniqueName,
 		changedFromBaseCount,
+		changedSinceSavedCount,
 		resetKeymapToBase
 	} from '$lib/keymaps';
 	import { showChoice, showConfirm } from '$lib/confirmDialog';
@@ -52,11 +53,12 @@
 	const plural = (/** @type {number} */ n, /** @type {string} */ word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 	const go = (/** @type {number} */ n) => (n === 1 ? 'goes' : 'go');
 
-	const current = $derived((void tickN, void $savedKeymaps, void $activeKeymapId, void $keymapPreset, activeKeymap()));
-	const dirty = $derived((void tickN, void $savedKeymaps, void $activeKeymapId, void $keymapPreset, keymapDirty()));
+	const current = $derived((void tickN, void $shortcutsChanged, void $savedKeymaps, void $activeKeymapId, void $keymapPreset, activeKeymap()));
+	const dirty = $derived((void tickN, void $shortcutsChanged, void $savedKeymaps, void $activeKeymapId, void $keymapPreset, keymapDirty()));
 	const selected = $derived(current ? current.id : 'preset:' + $keymapPreset);
 	const currentName = $derived(current ? current.name : presetLabel($keymapPreset));
-	const changedCount = $derived((void tickN, void $activeKeymapId, void $keymapPreset, changedFromBaseCount()));
+	const changedCount = $derived((void tickN, void $shortcutsChanged, void $activeKeymapId, void $keymapPreset, changedFromBaseCount()));
+	const unsavedCount = $derived((void tickN, void $shortcutsChanged, void $savedKeymaps, void $activeKeymapId, void $keymapPreset, changedSinceSavedCount()));
 
 	/** the inline name field (Save current as… / Rename) @type {{ mode: 'save' | 'rename', value: string } | null} */
 	let naming = $state(null);
@@ -73,7 +75,7 @@
 		const target = el.value;
 		if (target === selected) return;
 		if (switchDropsChanges(target)) {
-			const n = changedCount;
+			const n = unsavedCount;
 			const choice = await showChoice({
 				title: `Save changes to ${currentName}?`,
 				message: current
@@ -138,8 +140,8 @@
 		const ok = await showConfirm({
 			title: `Discard changes to ${currentName}?`,
 			message: current
-				? `${plural(changedCount, 'shortcut')} ${go(changedCount)} back to what ${currentName} has saved.`
-				: `${plural(changedCount, 'shortcut')} ${go(changedCount)} back to the ${currentName} keys.`,
+				? `${plural(unsavedCount, 'shortcut')} ${go(unsavedCount)} back to what ${currentName} has saved.`
+				: `${plural(unsavedCount, 'shortcut')} ${go(unsavedCount)} back to the ${currentName} keys.`,
 			confirmLabel: 'Discard',
 			cancelLabel: 'Cancel'
 		});
@@ -232,7 +234,7 @@
 		{#snippet extra()}
 			{#if dirty}
 				<div id="keymap-changed" class="km-line" role="status">
-					<span class="km-note">{plural(changedCount, 'shortcut')} changed{current ? ' since you saved it' : ` on ${currentName}`}</span>
+					<span class="km-note">{plural(unsavedCount, 'shortcut')} changed{current ? ' since you saved it' : ` on ${currentName}`}</span>
 					<Button size="sm" variant="primary" id="keymap-save-changes" onclick={onSaveChanges}>{current ? 'Save changes' : 'Save as…'}</Button>
 					<Button size="sm" variant="ghost" id="keymap-discard" onclick={onDiscard}>Discard</Button>
 				</div>

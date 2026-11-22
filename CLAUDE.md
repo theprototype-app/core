@@ -2866,6 +2866,30 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   shortcut table stands down in Play), pad `GamepadSelect` via inputRuntime.onInput, the Play bar's `#moment-share`
   (PlayBanner) / `#embed-moment` (EmbedChrome). Debug: `momentStores` row + `momentBuffer` registered at runtime
   (`state()` carries the cost numbers). Suites: unit `moment`; e2e `moment-share`.
+- **102b-SOUND — SOUND IN VIDEOS AND MOMENTS; TRIM AND FADE A SOUND.** WHAT IS RECORDED is the engine's non-voice
+  buses (music, sfx, instruments), tapped after each bus level by the LAZY `recording/sceneAudio.js` (`tapSceneMix` sums
+  `bus(name)` into its own limiter copy, so audioEngine.js is unchanged); the `voice` bus is never connected and the mic
+  reaches no bus, so voices cannot get into a file BY CONSTRUCTION; previews (`<audio>` elements) are not the scene.
+  Live: `openSceneAudioTrack` (MediaStreamAudioDestination) for the MediaRecorder take (`pickAvMimeType`: webm+opus,
+  mp4+aac) and `createSceneAudioRing` (AudioWorklet `sceneAudioTap.worklet.js`, ScriptProcessor fallback; a silent gain
+  to the destination keeps it pulled) stamped on the PERFORMANCE clock via `getOutputTimestamp`, beside the moment
+  frames. **Play makes an audio context even in a silent scene**, so a moment carries sound only when its slice is
+  audible (> -80 dBFS) — the zero-change rule. Offline (frame-exact export): `exportAudioCore.js` (PURE) places the
+  timeline's audio clips on the FILE clock with the frames' own mapping (timelineTime / rangeTime, loops, Film's
+  ranges) plus the music bed from the phase heard at Start; `exportAudio.js` renders it in an OfflineAudioContext
+  before the first frame; flow / module sounds on their own clock are not in a frame-exact file. `exportSinks.videoSink`
+  takes `audio` (planar PCM from t=0) and adds a Mediabunny `AudioSampleSource` (aac, else opus; webm opus, else
+  vorbis), fed a little ahead of each video frame; no encoder = silent + `NO_AUDIO_ENCODER`. Prefs `sound` (default
+  on); results carry `sound` (codec) and a note. TRIM / FADE: `soundEdits.js` (LEAF) = a latest-wins scene SINGLETON
+  `{edits: {hash: {start, end, fadeIn, fadeOut, normalize}}, changedAt}` — wire `soundedits` (ROOM_SCOPED, handshake
+  push only when stamped), save field `soundEdits` only when non-empty, an absent field CLEARS on load (a scene load is
+  a whole-world replace), `editedBuffer(hash, buffer)` is what every player plays (soundRuntime — its loop key holds
+  `soundEditKey`, so an edit restarts a playing loop — sequencePlayer, sceneMusic, exportAudio); the library bytes are
+  never touched. `soundEditSync.js` (LAZY, outside history's import tree) = the `soundedit` undo kind, the preview WAV
+  and the waveform peaks; `SoundEditPanel.svelte` (lazy, in FilePreviewWindow for a LIBRARY sound): E opens, I / O mark
+  in FILE time (while the edit plays the player's clock starts at the edit's start). Agent tools place_sound /
+  set_music take `trim`. Suites: unit `sceneSound`, `exportAudio`, `soundEdits`; e2e `scene-sound-102b`,
+  `sound-trim-102b`.
 
 ## UI design system (redesign epic)
 

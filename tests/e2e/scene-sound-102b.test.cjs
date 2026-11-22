@@ -193,6 +193,8 @@ async function makeMoment(page, format, sound) {
 	await page.keyboard.press('F8');
 	await page.waitForSelector('#moment-dialog[data-frames]', { timeout: 15000 });
 	await page.waitForFunction(() => Number(document.querySelector('#moment-dialog')?.getAttribute('data-frames')) > 0, null, { timeout: 15000 });
+	const held = await page.evaluate(() => ({ frames: document.querySelector('#moment-dialog')?.getAttribute('data-frames'), total: document.querySelector('#moment-dialog')?.getAttribute('data-total'), state: /** @type {any} */ (window).__tp.test.v1.momentBuffer?.state() }));
+	console.log('MOMENT-HELD ' + JSON.stringify({ frames: held.frames, total: held.total, slow: held.state?.slow, cost: held.state?.cost?.mean }));
 	await page.locator('#moment-trim-start').fill('2');
 	await page.locator('#moment-trim-end').fill('5');
 	await page.locator(`#moment-format [data-value="${format}"]`).first().click();

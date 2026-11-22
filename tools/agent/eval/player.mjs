@@ -591,3 +591,253 @@ export function frameMs(page) {
 			})
 	);
 }
+
+// ------------------------------------------------------------------------------------------------ 2.0-eval2
+// THE TWO NOISE SHAPES (2026-11-20: late-joiner 0.60 -> 0.20 and round-timer 0.5 were test load, not the app):
+//   1. a FIXED SLEEP before a read: the read happens whether or not the thing it reads has had time to happen
+//      on a page drawing 3 frames a second. Fix: wait FOR the condition (`until`), never for a time.
+//   2. a WALL-CLOCK FLOOR: "within 3 s" measured on the runner's clock, while the page runs 3-10x slower than a
+//      person's machine. Fix: a time box stretches with the page's own frame time (`loadScale`), and a clock on
+//      screen is compared with the scene's own round start (`roundRef`), not with when the harness pressed Play.
+
+/** frame time (ms) per page, re-measured every 15 s @type {WeakMap<any, {at: number, ms: number}>} */
+const frameCache = new WeakMap();
+
+/**
+ * How much slower than a person's machine this page runs: 1 at >= 5 fps (the speed every time box was written
+ * for), 200 ms / frame time below it (3 fps -> 1.67, 1 fps -> 5), at most 6. A time box x loadScale = the same
+ * number of FRAMES the box was written for. @param {any} page @returns {Promise<number>}
+ */
+export async function loadScale(page) {
+	const c = frameCache.get(page);
+	let ms = c && Date.now() - c.at < 15000 ? c.ms : 0;
+	if (!ms) {
+		ms = await frameMsShort(page).catch(() => 200);
+		frameCache.set(page, { at: Date.now(), ms });
+	}
+	return Math.min(6, Math.max(1, ms / 200));
+}
+
+/** a short frame-time sample (5 frames, at most 2.5 s) @param {any} page @returns {Promise<number>} */
+function frameMsShort(page) {
+	return page.evaluate(
+		() =>
+			new Promise((done) => {
+				const t0 = performance.now();
+				let n = 0;
+				const step = () => {
+					n++;
+					const dt = performance.now() - t0;
+					if (n >= 5 || dt >= 2500) done(dt / n);
+					else requestAnimationFrame(step);
+				};
+				requestAnimationFrame(step);
+			})
+	);
+}
+
+/**
+ * wait until `fn` says yes; the box is `ms` at >= 5 fps and stretches with the page's frame time (loadScale)
+ * @param {any} page @param {() => Promise<boolean>} fn @param {number} ms @param {number} [step]
+ * @returns {Promise<number>} ms it took, -1 = never
+ */
+export async function until(page, fn, ms, step = 200) {
+	const box = ms * (await loadScale(page));
+	const t0 = Date.now();
+	for (;;) {
+		if (await fn()) return Date.now() - t0;
+		if (Date.now() - t0 >= box) return -1;
+		await sleep(page, step);
+	}
+}
+
+/**
+ * true when `fn` holds for the WHOLE of `ms` (stretched like `until`): "the door stays shut", "the other screen
+ * does not show it". @param {any} page @param {() => Promise<boolean>} fn @param {number} ms
+ * @returns {Promise<boolean>}
+ */
+export async function holds(page, fn, ms, step = 250) {
+	const box = ms * (await loadScale(page));
+	const t0 = Date.now();
+	for (;;) {
+		if (!(await fn())) return false;
+		if (Date.now() - t0 >= box) return true;
+		await sleep(page, step);
+	}
+}
+
+/**
+ * A JOINER'S LOAD is done: the object batch its host announced has landed (the `loading` list is empty), no
+ * scene load is running, no full-state request is still unanswered, and every object a check means exists
+ * on this page — the same reads the agent's own status `loading` answers from (tpAgent.js). Held for two
+ * reads a second apart, so a batch that has not been announced yet is not read as "done".
+ * @param {any} page @param {{uuid?: string, name?: string}[]} refs
+ * @param {number} [ms] give up after this (the app's own stall timer is 60 s)
+ * @returns {Promise<{ms: number, state: any}>} ms = -1 when it never finished
+ */
+export async function joinLoaded(page, refs, ms = 120000) {
+	const t0 = Date.now();
+	let ok = 0;
+	/** @type {any} */
+	let state = null;
+	while (Date.now() - t0 < ms) {
+		state = await page.evaluate((refs) => {
+			const w = /** @type {any} */ (window);
+			const t = w.__tp.test.v1;
+			const read = (/** @type {any} */ s) => {
+				let v;
+				s?.subscribe?.((/** @type {any} */ x) => (v = x))();
+				return v;
+			};
+			const left = (read(t.loading) ?? []).length;
+			const job = read(t.sceneLoader?.sceneLoad) ?? null;
+			const asked = !!t.connectionState?.snapshotPending?.();
+			const missing = refs.filter((/** @type {any} */ r) => !w.__n3aFind(r)).map((/** @type {any} */ r) => r.name);
+			return { left, job: job ? { done: job.done, total: job.total } : null, asked, missing };
+		}, refs);
+		const done = !state.left && !state.job && !state.asked && !state.missing.length;
+		ok = done ? ok + 1 : 0;
+		if (ok >= 2) return { ms: Date.now() - t0, state };
+		await sleep(page, done ? 1000 : 300);
+	}
+	return { ms: -1, state };
+}
+
+/**
+ * THE ROUND THE SCENE IS IN, on this page's clock: `start` = performance.now() when the current round began
+ * (the game shell's own gameElapsed, which leaves out paused time), `round` = its number. A clock on screen is
+ * judged against this, never against when the harness pressed Play. @param {any} page
+ * @returns {Promise<{start: number, round: number, state: string} | null>}
+ */
+export function roundRef(page) {
+	return page.evaluate(() => {
+		const gs = /** @type {any} */ (window).__tp.test.v1.gameState;
+		let g;
+		gs?.gameState?.subscribe?.((/** @type {any} */ x) => (g = x))();
+		if (!g || !g.startedAt) return null;
+		const e = Number(gs.gameElapsed?.() ?? 0);
+		return { start: performance.now() - e * 1000, round: g.round, state: g.state };
+	});
+}
+
+/** the HUD and the page clock read together (one evaluate, so the reading and its moment agree) @param {any} page */
+export async function hudAt(page) {
+	const now = await pageNow(page);
+	const h = await hud(page);
+	return { h, now: (now + (await pageNow(page))) / 2 };
+}
+
+/**
+ * How bright the WORLD is for this viewer (day / night): every visible light in the whole scene (the
+ * environment rig too, not only scene objects) as intensity x colour luminance, plus the background's
+ * luminance when it is a colour, plus the renderer's exposure. @param {any} page
+ * @returns {Promise<{light: number, bg: number | null, exposure: number, fog: number | null}>}
+ */
+export function skyLook(page) {
+	return page.evaluate(() => {
+		const t = /** @type {any} */ (window).__tp.test.v1;
+		/** @type {any} */
+		let scene;
+		t.globalScene.subscribe((/** @type {any} */ s) => (scene = s))();
+		/** @type {any} */
+		let renderer;
+		t.globalRenderer?.subscribe?.((/** @type {any} */ r) => (renderer = r))();
+		const lum = (/** @type {any} */ c) => (c ? 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b : 0);
+		let light = 0;
+		scene?.traverse((/** @type {any} */ o) => {
+			if (!o.isLight) return;
+			for (let x = o; x; x = x.parent) if (x.visible === false) return;
+			const c = o.isHemisphereLight ? (lum(o.color) + lum(o.groundColor)) / 2 : lum(o.color);
+			light += (o.intensity ?? 0) * c;
+		});
+		const bg = scene?.background?.isColor ? lum(scene.background) : null;
+		const fog = scene?.fog?.color ? lum(scene.fog.color) : null;
+		return {
+			light: +light.toFixed(3),
+			bg: bg === null ? null : +bg.toFixed(3),
+			exposure: Number(renderer?.toneMappingExposure ?? 1),
+			fog: fog === null ? null : +fog.toFixed(3),
+			envIntensity: Number(scene?.environmentIntensity ?? 1),
+			bgIntensity: Number(scene?.backgroundIntensity ?? 1)
+		};
+	});
+}
+
+/**
+ * every VISIBLE object a person would call by this name (a spawned copy keeps its template's name), inside the
+ * play area: uuid + position. @param {any} page @param {string} re name pattern (source)
+ * @returns {Promise<{uuid: string, name: string, pos: number[]}[]>}
+ */
+export function visibleNamed(page, re) {
+	return page.evaluate((src) => {
+		const rx = new RegExp(src, 'i');
+		const t = /** @type {any} */ (window).__tp.test.v1;
+		/** @type {any} */
+		let g;
+		t.objectsGroup.subscribe((/** @type {any} */ x) => (g = x))();
+		const T = t.THREE;
+		const p = new T.Vector3();
+		/** @type {any[]} */
+		const out = [];
+		g?.traverse((/** @type {any} */ o) => {
+			if (o === g || !rx.test(String(o.name ?? ''))) return;
+			// the outermost match only (a group named Enemy holding a mesh named Enemy is one enemy)
+			for (let x = o.parent; x && x !== g; x = x.parent) if (rx.test(String(x.name ?? ''))) return;
+			for (let x = o; x; x = x.parent) if (x.visible === false) return;
+			o.getWorldPosition(p);
+			if (Math.abs(p.x) > 40 || Math.abs(p.z) > 40 || p.y < -5 || p.y > 40) return;
+			out.push({ uuid: o.uuid, name: o.name, pos: p.toArray().map((/** @type {number} */ n) => +n.toFixed(2)) });
+		});
+		return out;
+	}, re);
+}
+
+/**
+ * keep the player standing at `p` (re-asserting the pose every 0.1 s, like `stay`) until the returned stop()
+ * is called — for "A stands on the plate while B walks up". @param {any} page @param {number[]} p
+ * @returns {Promise<() => Promise<void>>}
+ */
+export async function standAt(page, p) {
+	const token = Math.random().toString(36).slice(2);
+	await page.evaluate(
+		({ p, eye, token }) => {
+			const w = /** @type {any} */ (window);
+			w.__n3aStand = token;
+			/** @type {any} */
+			let cam;
+			w.__tp.test.v1.globalCamera.subscribe((/** @type {any} */ c) => (cam = c))();
+			const tick = () => {
+				if (w.__n3aStand !== token) return;
+				cam?.position.set(p[0], p[1] + eye, p[2]);
+				cam?.updateMatrixWorld?.();
+				setTimeout(tick, 100);
+			};
+			tick();
+		},
+		{ p, eye: EYE, token }
+	);
+	return async () => {
+		await page
+			.evaluate((token) => {
+				const w = /** @type {any} */ (window);
+				if (w.__n3aStand === token) w.__n3aStand = null;
+			}, token)
+			.catch(() => {});
+	};
+}
+
+/**
+ * the kit entities alive now (a behaviour's or a kit node's `spawn`): drawn in the `kit-entities` system group, which
+ * visibleNamed's play-area scan never sees. ids only. @param {any} page @returns {Promise<string[]>}
+ */
+export function kitAlive(page) {
+	return page.evaluate(() => {
+		try {
+			const k = /** @type {any} */ (window).__tp.test.v1.kit?.kit?.impls?.spawner;
+			const list = k?.extra?.list?.({ alive: true }) ?? [];
+			return list.map((/** @type {any} */ e) => String(e.id));
+		} catch {
+			return [];
+		}
+	});
+}

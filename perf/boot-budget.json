@@ -4,12 +4,12 @@
 	"pages": {
 		"play": {
 			"html": "play.html",
-			"maxJsGzBytes": 2183373,
+			"maxJsGzBytes": 2201600,
 			"maxFirstFrameMs": 20000
 		},
 		"editor": {
 			"html": "index.html",
-			"maxJsGzBytes": 3425792,
+			"maxJsGzBytes": 3450880,
 			"maxFirstFrameMs": 32000
 		}
 	},
@@ -81,6 +81,23 @@
 			"play": "v1.70.0 2110.8 KB -> 2112.2 KB (+1.4), line unchanged",
 			"editor": "v1.70.0 3459.0 KB -> 3461.2..3461.8 KB across builds of the same code (+2.2..+2.8) -> line 3462.5 KB",
 			"note": "inside the ~3 KB boot rule (claude:9, 21 Nov): the scene touch-layout validator, the info-point field normalizer and the note pin filter. The info points card, the picture downscaler, wake lock and the colour dropper are lazy chunks. Chunk-hash churn moves the editor ~0.6 KB between builds; the integrator may veto"
+		},
+		{
+			"date": "2026-11-22",
+			"lane": "102-int-1 (Games and play: 99-kernel, 102b-hud, 102b-physics, 102b-arrange, 102b-play, 102b-papercuts)",
+			"play": "v1.73.0 2131.3 KB -> 2147.7 KB (+16.4) -> line 2150.0 KB (the int boot rule: merged tag + the union, rounded up to the next 5 KB)",
+			"editor": "v1.73.0 3342.0 KB -> 3366.5 KB (+24.5) -> line 3370.0 KB (the same rule)",
+			"note": "measured on the Deck, v1.73.0 and each union step built in one worktree with one node_modules. Growth by module (gzip, union vs v1.73.0): flowRuntime +2.5 (Game Value, game feel, Show / Hide, toggle/text ops), colliderHelpers +2.0 (gravity scale, drag), nodes +1.9 (new node specs), joints +1.2 (four kinds, reload), modules +1.1; editor only: Inspector +3.7 (Array, Tidy, Joints, corner radius rows). Over the ~15 KB tell rule: claude:9 told before the release",
+			"perLane": {
+				"basis": "each first-parent merge of the union chain built on v1.73.0 (play / editor KB, gzip -9)",
+				"99-kernel #588": "+0.1 / +0.0 (not wired in)",
+				"102b-hud #580": "+5.8 / +7.1",
+				"102b-physics #582": "+3.5 / +6.4",
+				"102b-arrange #587": "+2.3 / +3.2",
+				"102b-play #589": "+1.0 / +2.1",
+				"102b-papercuts #595": "+3.6 / +5.4",
+				"build-to-build churn (two builds of ce7ec23b)": "+0.1 / +0.3"
+			}
 		}
 	],
 	"throttle": {

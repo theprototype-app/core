@@ -20,7 +20,8 @@ import { nameOf } from '../lockControl.js';
 import { APP_ORIGIN } from '../playOrigin.js';
 import { peers, pendingApprovals, waitingForApproval } from '../../stores/appStore.js';
 import { sessionHost } from '../connectionState.js';
-import { CONNECTOR_LABEL } from '../agent/tpAgent.js';
+import { connectorState } from './connectorStore.js';
+import { connectorLabelFor } from './appName.js';
 import { parseJoinLink } from './joinLink.js';
 import { JOIN_DIAL_WAIT_MS, joinSettled, nextJoinState } from './joinWatch.js';
 
@@ -121,6 +122,7 @@ export async function joinSession(args, ctx = {}) {
 	if (get(confirmDialog)) return fail('busy', 'The person has another question open in the tab. Try again once they have answered it.');
 
 	const who = hostLabel(parsed.id);
+	const app = get(connectorState).who || 'Claude'; // 89: the app that asks (the Worker's trusted name)
 	const extras = [parsed.invite ? 'The link carries an invite, so you may be let in without the host approving.' : '', parsed.server ? 'The link names another signaling server; the app asks about that next.' : '']
 		.filter(Boolean)
 		.join(' ');
@@ -131,9 +133,9 @@ export async function joinSession(args, ctx = {}) {
 			id: JOIN_DIALOG_ID,
 			title: 'Join a session?',
 			message:
-				CONNECTOR_LABEL + ' asks this tab to join the session hosted by ' + who + '.' +
+				connectorLabelFor(app) + ' asks this tab to join the session hosted by ' + who + '.' +
 				(extras ? '\n\n' + extras : '') +
-				'\n\nJoin only if you asked Claude to. If you have work open, the app asks what to do with it first.',
+				'\n\nJoin only if you asked ' + app + ' to. If you have work open, the app asks what to do with it first.',
 			choices: [{ value: 'join', label: 'Join' }],
 			cancelLabel: 'Cancel',
 			focusCancel: true,

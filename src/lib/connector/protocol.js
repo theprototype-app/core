@@ -93,7 +93,7 @@ export const ERROR_CODES = /** @type {const} */ ([
 	'failed'
 ]);
 
-/** @param {any} c @returns {{id: string, client: string, scopes: string[], lastUsed: number}[]} */
+/** @param {any} c @returns {{id: string, client: string, app?: string, scopes: string[], lastUsed: number}[]} */
 function grants(c) {
 	if (!Array.isArray(c)) return [];
 	return c
@@ -102,6 +102,8 @@ function grants(c) {
 		.map((g) => ({
 			id: g.id,
 			client: String(g.client ?? 'Claude').slice(0, 40),
+			// 89: the Worker's trusted app name (absent from a Worker before 89 — appName.js reads that as Claude)
+			...(typeof g.app === 'string' ? { app: g.app.slice(0, 40) } : {}),
 			scopes: Array.isArray(g.scopes) ? g.scopes.filter((/** @type {any} */ x) => typeof x === 'string').slice(0, 8) : [],
 			lastUsed: Number.isFinite(Number(g.lastUsed)) ? Number(g.lastUsed) : 0
 		}));
@@ -118,7 +120,7 @@ const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
  * One frame from the relay, or null when it is not one we speak. Never throws.
  * @param {unknown} text
  * @returns {null
- *  | {type: 'ready', connection: {id: string, client: string, account: string}, connections: {id: string, client: string, scopes: string[], lastUsed: number}[]}
+ *  | {type: 'ready', connection: {id: string, client: string, app?: string, account: string}, connections: {id: string, client: string, app?: string, scopes: string[], lastUsed: number}[]}
  *  | {type: 'refused', reason: string}
  *  | {type: 'call', id: string, tool: string, args: Record<string, any>, timeoutMs: number|null, scope: 'read'|'edit', connection: string, malformed?: 'tool'|'args'}
  *  | {type: 'cancel', id: string}
@@ -142,7 +144,7 @@ export function parseFrame(text) {
 			if (!isPlainObject(c) || !isId(c.id)) return null;
 			return {
 				type: 'ready',
-				connection: { id: c.id, client: String(c.client ?? 'Claude').slice(0, 40) || 'Claude', account: typeof c.account === 'string' ? c.account.slice(0, 80) : '' },
+				connection: { id: c.id, client: String(c.client ?? 'Claude').slice(0, 40) || 'Claude', ...(typeof c.app === 'string' ? { app: c.app.slice(0, 40) } : {}), account: typeof c.account === 'string' ? c.account.slice(0, 80) : '' },
 				connections: grants(f.connections)
 			};
 		}

@@ -77,12 +77,15 @@ const sample = (page, uuid, u, v) =>
 			if (!c) return null;
 			const ctx = c.getContext('2d', { willReadFrequently: true });
 			const x = Math.round(u * c.width);
-			const y = Math.round((1 - v) * c.height); // a Box map is flipY: v = 1 is the image top
+			// a flipY map (the Box's own) has v = 1 at the image top; a map that arrived through the glTF sync (a peer's
+			// reload) is flipY = false, v = 0 at the top. The live paint canvas follows the map it paints.
+			const flip = m?.map ? m.map.flipY !== false : true;
+			const y = Math.min(c.height - 1, Math.round((flip ? 1 - v : v) * c.height));
 			const col = ctx.getImageData(x, 0, 1, c.height).data;
 			let run = 0;
 			for (let yy = Math.max(0, y - 70); yy < Math.min(c.height, y + 70); yy++) if (col[yy * 4 + 1] < 245) run++;
 			const px = ctx.getImageData(x, y, 1, 1).data;
-			return { px: [px[0], px[1], px[2]], run, w: c.width, h: c.height };
+			return { px: [px[0], px[1], px[2]], run, w: c.width, h: c.height, flip };
 		},
 		{ uuid, u, v }
 	);
@@ -170,7 +173,7 @@ h.run(async () => {
 	await h.freshReload(B);
 	await h.eventually(() => urlLen(B.page), (b) => b === aLen, `after B reloads and rejoins it has A's painted texture (${aLen} chars)`, 60000);
 	const afterReload = await sample(B.page, uuid, 0.5, 0.75);
-	h.check(!!afterReload && afterReload.px[1] < 120, `...with the strokes in it (rgb ${afterReload?.px.join(',')} where the heavy stroke went)`);
+	h.check(!!afterReload && afterReload.px[1] < 120, `...with the strokes in it (rgb ${afterReload?.px.join(',')} where the heavy stroke went, flipY ${afterReload?.flip})`);
 
 	// ---- docs shots (SHOTS_DIR set): the brush panel dark + light, and the UV canvas with the strokes -------------
 	if (process.env.SHOTS_DIR) {

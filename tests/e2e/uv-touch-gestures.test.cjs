@@ -289,5 +289,37 @@ h.run(async () => {
 	const g1 = await frac(pc.x, pc.y);
 	h.check(Math.abs(g1.w / g0.w - 2) < 0.05 && Math.abs(g1.fx - g0.fx) < 0.01 && Math.abs(g1.fy - g0.fy) < 0.01, `image preview: a pinch to twice the spread doubles the zoom about the fingers' centre (x${(g1.w / g0.w).toFixed(3)}, point ${g0.fx.toFixed(3)} -> ${g1.fx.toFixed(3)})`);
 
+	// ---- 8. TRUSTED touches (CDP), the HONOR finding: a floating window moves by its body (44 M1, windowBodyDrag),
+	// which ignores untrusted events, so section 7's DOM events could not see it. A finger held 150 ms and moved was
+	// handed to the window header and the pinch followed only the second finger (x1.55 on the HONOR, unfolded).
+	await page.evaluate(() => window.__tp.test.v1.fileWindows.openFilePreview({ title: 'touch2.png', kind: 'image', url: document.querySelector('#preview-body img')?.src }));
+	await wait(page, 600);
+	// a fresh zoom: double-click goes home; then the window's position and the image point under the centre
+	await page.locator('#preview-body').dblclick().catch(() => {});
+	await wait(page, 300);
+	const cdp = await page.context().newCDPSession(page);
+	await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }).catch(() => {});
+	const pt = (id, x, y) => ({ x, y, radiusX: 4, radiusY: 4, force: 1, id });
+	const winAt = () => page.evaluate(() => { const r = document.getElementById('image-preview-window').getBoundingClientRect(); return { x: r.left, y: r.top }; });
+	const q = await page.evaluate(() => { const r = document.querySelector('#preview-body').getBoundingClientRect(); return { x: r.left + r.width / 2 + 30, y: r.top + r.height / 2 + 30 }; });
+	const w0 = await winAt();
+	const k0 = await frac(q.x, q.y);
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [pt(1, q.x - 30, q.y)] });
+	await wait(page, 220); // past the body drag's 150 ms touch hold
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [pt(1, q.x - 31, q.y)] });
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [pt(1, q.x - 31, q.y), pt(2, q.x + 29, q.y)] });
+	for (let k = 1; k <= 10; k++) {
+		const half = 30 * (1 + k / 10);
+		await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [pt(1, q.x - 1 - half, q.y), pt(2, q.x - 1 + half, q.y)] });
+		await wait(page, 20);
+	}
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+	await wait(page, 300);
+	const w1 = await winAt();
+	const k1 = await frac(q.x - 1, q.y);
+	await cdp.detach().catch(() => {});
+	h.check(Math.hypot(w1.x - w0.x, w1.y - w0.y) < 1, `trusted touch: a pinch on the image does not move the preview window (moved ${Math.hypot(w1.x - w0.x, w1.y - w0.y).toFixed(1)} px)`);
+	h.check(Math.abs(k1.w / k0.w - 2) < 0.1, `trusted touch: ...and both fingers drive it: x2 for twice the spread (x${(k1.w / k0.w).toFixed(3)})`);
+
 	await h.finish(browser);
 });

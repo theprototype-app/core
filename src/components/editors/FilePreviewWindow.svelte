@@ -528,6 +528,21 @@
 		panY += e.clientY - last.y;
 		last = { x: e.clientX, y: e.clientY };
 	}
+	/**
+	 * 103 H2 (found on the HONOR, unfolded): fingers on an image belong to the IMAGE. A floating window moves by its
+	 * body (44 M1, windowBodyDrag): a touch held 150 ms and moved is handed to the header, so the first finger of
+	 * a pinch started dragging the window and the zoom followed only the second (x1.55 for x2). The body says so
+	 * the way that module asks, `preventDefault` on the press — NATIVELY, because Svelte delegates `onpointerdown`
+	 * to the root, after the window's own listener. A mouse still moves the window by an empty body; a finger moves
+	 * it by its header. Folded (a bottom sheet) body drag is off anyway.
+	 */
+	function claimFingers(node: HTMLElement) {
+		const claim = (e: PointerEvent) => {
+			if (e.pointerType === 'touch' && face === 'image' && !editing) e.preventDefault();
+		};
+		node.addEventListener('pointerdown', claim);
+		return { destroy: () => node.removeEventListener('pointerdown', claim) };
+	}
 	function bodyUp(e: PointerEvent) {
 		fingers.delete(e.pointerId);
 		if (fingers.size < 2) pinch = null;
@@ -1071,6 +1086,7 @@
 			onpointermove={bodyMove}
 			onpointerup={bodyUp}
 			onpointercancel={bodyUp}
+			use:claimFingers
 		>
 			{#if editing}
 				<!-- uir-preview: the Edit face — the image editor, with the images filmstrip on its left -->

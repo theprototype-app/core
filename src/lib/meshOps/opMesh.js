@@ -311,9 +311,10 @@ export function appendToView(om, added) {
  * The stored partition of the op mesh as it stands, grouped by `logical`. Order (the soup's two rules):
  * `'appearance'` (composeFaces, every topology operator) = the faces AUTHORED since beginOp in creation
  * order, then the carried ones by their first triangle; `'stored'` (an operator that kept the partition,
- * a move) = the carried faces in their stored order. Afterwards each face's logical group IS its index in
+ * a move) = the carried faces in their stored order; `'replace'` (99 K4 family 3: the soup's replaceFaces —
+ * connect, dissolve-like ops) = the carried faces in stored order, THEN the authored ones in creation order. Afterwards each face's logical group IS its index in
  * the returned partition (what the commit stores), so the next operator starts from the stored order.
- * @param {OpMesh} om @param {Int32Array} triFace face per output triangle @param {'appearance' | 'stored'} [order]
+ * @param {OpMesh} om @param {Int32Array} triFace face per output triangle @param {Order} [order]
  * @returns {number[][]}
  */
 function partitionOf(om, triFace, order = 'appearance') {
@@ -332,9 +333,10 @@ function partitionOf(om, triFace, order = 'appearance') {
 		if (count[g]++ === 0 && g < om.baseGroup) carried.push(g);
 	}
 	let next = 0;
+	if (order !== 'appearance') carried.sort((x, y) => x - y);
+	if (order === 'replace') for (const g of carried) rank[g] = next++;
 	for (let g = om.baseGroup; g < top; g++) if (count[g]) rank[g] = next++;
-	if (order === 'stored') carried.sort((x, y) => x - y);
-	for (const g of carried) rank[g] = next++;
+	if (order !== 'replace') for (const g of carried) rank[g] = next++;
 	/** @type {number[][]} */
 	const faces = new Array(next);
 	for (let g = 0; g < top; g++) if (rank[g] >= 0) faces[rank[g]] = new Array(count[g]);
@@ -349,8 +351,10 @@ function partitionOf(om, triFace, order = 'appearance') {
 	return faces;
 }
 
+/** @typedef {'appearance' | 'stored' | 'replace'} Order */
+
 /** the stored partition over the VIEW (no output pass; the adjust engine's per-scrub read)
- * @param {OpMesh} om @param {'appearance' | 'stored'} [order] */
+ * @param {OpMesh} om @param {Order} [order] */
 export function opPartition(om, order) {
 	return partitionOf(om, om.view.tFace, order);
 }
@@ -358,7 +362,7 @@ export function opPartition(om, order) {
 /**
  * The op mesh as the state commitMesh records: Float32 positions / uvs (null when untextured),
  * material groups (null when every slot is 0), the ID channels and the stored partition (partitionOf).
- * @param {OpMesh} om @param {{ order?: 'appearance' | 'stored' }} [options]
+ * @param {OpMesh} om @param {{ order?: Order }} [options]
  * @returns {{ positions: Float32Array, uvs: Float32Array | null, groups: any[] | null, ids: IdChannels, faces: number[][] }}
  */
 export function opOutput(om, options = {}) {

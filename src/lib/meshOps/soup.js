@@ -8,10 +8,11 @@ import { plainAttribute } from '../meshKernel/geometry.js';
 import { opMeshFromArrays, opTriangles, beginOp } from './opMesh.js';
 
 /**
- * A triangle soup as an op mesh, begun (no stored partition: each triangle its own face, the soup ops'
- * own view of their input). @param {any[]} tris
+ * A triangle soup as an op mesh, begun. No `partition`: each triangle its own face, the soup ops' own view of
+ * their input; with one (99 K4 family 3: the cores that read the stored faces, connect), those faces.
+ * @param {any[]} tris @param {number[][] | null} [partition]
  */
-export function fromSoup(tris) {
+export function fromSoup(tris, partition = null) {
 	const positions = new Float64Array(tris.length * 9);
 	const textured = tris.some((t) => !!t.uv);
 	const uv = textured ? new Float64Array(tris.length * 6) : null;
@@ -34,7 +35,14 @@ export function fromSoup(tris) {
 		else groups.push({ start: ti * 3, count: 3, materialIndex: slot });
 	});
 	const multi = groups.some((g) => g.materialIndex > 0);
-	return beginOp(opMeshFromArrays({ positions, uv, groups: multi ? groups : null }));
+	return beginOp(
+		opMeshFromArrays({
+			positions,
+			uv,
+			groups: multi ? groups : null,
+			...(partition ? { partition } : {})
+		})
+	);
 }
 
 /** An op mesh as a triangle soup (`mi` always, `uv` when textured: withSlot's shape) @param {any} om

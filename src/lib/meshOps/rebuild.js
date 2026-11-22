@@ -226,15 +226,33 @@ export function cornerUvs(step, tris) {
 export const materialOf = (om, t) => om.mesh.fMat[om.view.tFace[t]];
 
 /**
+ * Key cell -> its first live vertex (the rebuilder's reuse map), `gone` left out.
+ * @param {OpMesh} om @param {Set<number>} [gone] @returns {Map<string, number>}
+ */
+export function cellMap(om, gone = new Set()) {
+	const m = om.mesh;
+	/** @type {Map<string, number>} */
+	const cells = new Map();
+	for (let v = 0; v < m.vTop; v++) {
+		if (!m.hasVertex(v) || gone.has(v)) continue;
+		const k = keyOfPos(pos(om, v));
+		if (!cells.has(k)) cells.set(k, v);
+	}
+	return cells;
+}
+
+/**
  * A rebuild in progress: vertices by position (key cell), new TRIANGLES in emission order (each its own kernel
  * face, wound exactly as the soup pushed it), committed by `finish` — drop the replaced triangles from
  * the view, append the new ones.
  * @param {OpMesh} om @param {Set<number>} [gone] vertices the rebuild removes (never reused by `vertex`)
+ * @param {Map<string, number> | null} [base] `cellMap` of an op mesh this one is an UNCHANGED copy of (the
+ * adjust engine's per-scrub clone): read under this rebuild's own cells instead of re-keying every vertex
  */
-export function rebuilder(om, gone = /** @type {Set<number>} */ (new Set())) {
+export function rebuilder(om, gone = /** @type {Set<number>} */ (new Set()), base = null) {
 	const m = om.mesh;
 	const hasUv = !!m.attrs.uv;
-	/** @type {{ v: number[], uv: number[][], material: number }[]} */
+	/** @type {{ v: number[], uv: number[][], material: number, triangles: number[], join?: boolean }[]} */
 	const tris = [];
 	/** @type {Map<string, number> | null} key cell -> vertex (live ones, built on first use, then the new ones) */
 	let cells = null;
@@ -246,22 +264,35 @@ export function rebuilder(om, gone = /** @type {Set<number>} */ (new Set())) {
 		 * removes, never reused. @param {number[]} p
 		 */
 		vertex(p) {
-			if (!cells) {
-				cells = new Map();
-				for (let v = 0; v < m.vTop; v++) {
-					if (!m.hasVertex(v) || gone.has(v)) continue;
-					const k = keyOfPos(pos(om, v));
-					if (!cells.has(k)) cells.set(k, v);
-				}
-			}
+			if (!cells) cells = base ? new Map() : cellMap(om, gone);
 			const k = keyOfPos(p);
 			let v = cells.get(k);
+			if (v === undefined && base) {
+				const b = base.get(k);
+				if (b !== undefined && !gone.has(b)) v = b;
+			}
 			if (v === undefined) cells.set(k, (v = m.addVertex(p[0], p[1], p[2])));
 			return v;
 		},
 		/** @param {number[]} v 3 vertex IDs @param {number[][]} uv 3 uvs @param {number} material */
 		tri(v, uv, material) {
-			tris.push({ v, uv, material });
+			tris.push({ v, uv, material, triangles: [0, 1, 2] });
+		},
+		/**
+		 * 99 K4 family 3: a whole new face (a loop cut's sub-quad), triangulated as given
+		 * @param {number[]} v vertex IDs @param {number[][]} uv one uv per vertex @param {number} material
+		 * @param {number[]} triangles local corner triples
+		 */
+		face(v, uv, material, triangles) {
+			tris.push({ v, uv, material, triangles });
+		},
+		/**
+		 * A triangle that belongs to the PREVIOUS queued item's face (one stored face held by several kernel
+		 * faces: a fan around a new hub point, which is no polygon loop of its own)
+		 * @param {number[]} v @param {number[][]} uv @param {number} material
+		 */
+		joinTri(v, uv, material) {
+			tris.push({ v, uv, material, triangles: [0, 1, 2], join: true });
 		},
 		get count() {
 			return tris.length;
@@ -284,14 +315,17 @@ export function rebuilder(om, gone = /** @type {Set<number>} */ (new Set())) {
 			om.view = { tFace, tLoc, count: keep.length };
 			for (const f of drop) m.removeFace(f);
 			for (const v of orphans) if (m.hasVertex(v) && !m.vertexCorners(v).length) m.removeVertex(v);
-			const added = tris.map((t) => {
+			/** @type {number[]} */
+			const added = [];
+			for (const t of tris) {
 				/** @type {Record<string, number[]>} */
 				const attrs = {};
 				if (hasUv) attrs.uv = t.uv.flatMap((q) => [q[0], q[1]]);
-				const f = m.addFace(t.v, { material: t.material, attrs, triangles: [0, 1, 2] });
-				newGroup(om, f);
-				return f;
-			});
+				const f = m.addFace(t.v, { material: t.material, attrs, triangles: t.triangles });
+				if (t.join && added.length) om.logical[f] = om.logical[added[added.length - 1]];
+				else newGroup(om, f);
+				added.push(f);
+			}
 			appendToView(om, added);
 			return added;
 		}
@@ -347,6 +381,21 @@ export function pushQuad(rb, om, q, want, material, uvs) {
 		rb.tri([a, b, c], [uvs[0], uvs[1], uvs[2]], material);
 		rb.tri([a, c, d], [uvs[0], uvs[2], uvs[3]], material);
 	}
+}
+
+/**
+ * faceEdit `pushQuad` as ONE quad face (an authored sub-quad): a-b-c / a-c-d, or the soup's flipped pair
+ * a-c-b / a-d-c (= the quad a-d-c-b's [0,2,3] [0,1,2]). The flip test reads `at`, the soup's own (unwelded)
+ * corner points, so the winding is decided exactly as the soup decided it.
+ * @param {Rebuild} rb @param {number[]} q 4 vertex IDs @param {number[][]} at their 4 points @param {number[]} want
+ * @param {number} material @param {number[][] | null} uvs 4 uvs, or null (untextured)
+ */
+export function pushQuadFace(rb, q, at, want, material, uvs) {
+	const [a, b, c, d] = q;
+	const flip = dot(triNormal(at[0], at[1], at[2]), want) < 0;
+	const uv = uvs ?? [[0, 0], [0, 0], [0, 0], [0, 0]];
+	if (flip) rb.face([a, d, c, b], [uv[0], uv[3], uv[2], uv[1]], material, [0, 2, 3, 0, 1, 2]);
+	else rb.face([a, b, c, d], uv, material, [0, 1, 2, 0, 2, 3]);
 }
 
 /** the op weld's key of a position (faceEdit keyOf) @param {number[]} p */

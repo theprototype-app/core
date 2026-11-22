@@ -9,15 +9,16 @@
 //      the state before each step, on both peers; redo restores step 3's bytes exactly
 //   5. the old peer undoes its own inset; the branch follows
 //   5g-5j. (99 K4 family 2) face bevel each way, then a branch vertex + edge bevel and an undo
+//   5k-5o. (99 K4 family 3) loop cut each way, then a branch knife + connect and an undo
 //   5b-5f. (99 K4 family 1) the branch insets and moves on the kernel, the old peer extrudes the result,
 //      the branch extrudes that and undoes it: same bytes + partition after each step
-//   5k-5r. (99 K4 family 4, lane 99-ops-b) the two peers alternate: the old peer opens a hole, the branch
+//   5f4a-5f4h. (99 K4 family 4, lane 99-ops-b) the two peers alternate: the old peer opens a hole, the branch
 //      fills it on the kernel, the branch reopens it and the old peer fills it (soup) on the kernel output,
 //      the branch bridges +x/-x and solidifies the opened mesh on the kernel, then undoes: same bytes +
 //      partition after each step
-//   5s-5x. (99 K4 family 5) the branch deletes a face, the old peer deletes a rim edge's faces on the kernel output,
+//   5f5a-5f5f. (99 K4 family 5) the branch deletes a face, the old peer deletes a rim edge's faces on the kernel output,
 //      the branch merges by distance and undoes it, the old peer merges the same mesh and undoes it
-//   5y-5zc. (99 K4 family 6) the branch subdivides a face, the old peer subdivides a rim edge of the kernel output,
+//   5f6a-5f6e. (99 K4 family 6) the branch subdivides a face, the old peer subdivides a rim edge of the kernel output,
 //      both symmetrize in turn, the branch undoes one
 //   6. the old peer (the joiner) reloads and rejoins: its mesh comes back equal (two-peer + reload)
 // Run: OLD_APP_URL=https://theprototype.app:<old port>/ APP_URL=https://theprototype.app:<branch port>/ npm run -s e2e mesh-commit-two-tree
@@ -171,6 +172,67 @@ const elementBevel = (peer, uuid, kind) =>
 		},
 		{ uuid, kind }
 	);
+
+/**
+ * a cut (99 K4 family 3): a loop cut through the first face whose ring takes it, a knife line through the
+ * mesh's middle on screen, or a connect of the first non-neighbour corner pair of one face that takes it
+ */
+const cutOp = (peer, uuid, kind) =>
+	peer.page.evaluate(
+		({ uuid, kind }) => {
+			const s = window.__tp.test.v1;
+			const fe = s.faceEdit;
+			fe.enterFaceEdit(uuid);
+			fe.setFaceSubmode('faces');
+			try {
+				if (kind === 'loopcut') {
+					// any paired triangle (a quad) anchors a ring: try them in order until one takes the cut
+					let object;
+					s.objectsGroup.subscribe((g) => (object = g.getObjectByProperty('uuid', uuid)))();
+					const n = fe.readTriangles(object.geometry).length;
+					for (let t = 0; t < n; t++) {
+						fe.highlightFaceByTriangle(t);
+						if (!fe.loopCutReady()) continue;
+						if (fe.commitLoopCut(1, 0.4) !== false) return { ok: true, anchor: t };
+					}
+					return { ok: false, why: 'no quad took a loop cut' };
+				}
+				if (kind === 'knife') {
+					let camera;
+					s.globalCamera.subscribe((c) => (camera = c))();
+					let object;
+					s.objectsGroup.subscribe((g) => (object = g.getObjectByProperty('uuid', uuid)))();
+					const v = object.getWorldPosition(new s.THREE.Vector3()).project(camera);
+					const c = [((v.x + 1) / 2) * window.innerWidth, ((1 - v.y) / 2) * window.innerHeight];
+					return { ok: fe.knifePolyline([[c[0] - 700, c[1] + 9], [c[0] + 700, c[1] - 6]]) !== false };
+				}
+				return { ok: false, why: 'unknown cut ' + kind };
+			} finally {
+				fe.exitFaceEdit();
+			}
+		},
+		{ uuid, kind }
+	);
+
+/** a connect on the branch: two corners of one face that are not neighbours, tried until one is accepted */
+const connectOp = (peer, uuid) =>
+	peer.page.evaluate((uuid) => {
+		const s = window.__tp.test.v1;
+		const fe = s.faceEdit;
+		let object;
+		s.objectsGroup.subscribe((g) => (object = g.getObjectByProperty('uuid', uuid)))();
+		const keyOf = (v) => [v.x, v.y, v.z].map((n) => Math.round(n * 1e4)).join(',');
+		fe.enterFaceEdit(uuid);
+		const tris = fe.readTriangles(object.geometry);
+		const faces = fe.currentFaces().map((f) => [...new Set(f.triIndices.flatMap((t) => tris[t].map(keyOf)))]);
+		fe.exitFaceEdit();
+		for (const keys of faces) {
+			if (keys.length < 4) continue;
+			for (let i = 0; i < keys.length; i++)
+				for (let j = i + 1; j < keys.length; j++) if (fe.connectVertices(uuid, [keys[i], keys[j]])) return { ok: true };
+		}
+		return { ok: false, why: 'no corner pair took a connect' };
+	}, uuid);
 
 /**
  * 99-ops-b families 4-5 in a face session on `peer`: 'delete' the +Y face, 'fill' the hole through one +Y rim edge,
@@ -473,8 +535,34 @@ h.run(async () => {
 	await agree('5j. branch edge bevel (kernel) -> the release peer holds the same bytes + partition');
 	await undo(L);
 	await agree('5j. branch undo (kernel edge bevel) -> both peers agree');
+	// the vertex bevel leaves every triangle its own face (no quads for a ring): undo it too
+	await undo(L);
+	const u5j = await agree('5j. branch undo (kernel vertex bevel) -> both peers agree');
 
-	// 5k-5r. lane 99-ops-b family 4 (bridge / fill / solidify on the kernel), alternating with the release peer
+	// 5k-5o. roadmap 99 K4 family 3 (the cuts on the kernel): the branch loop cuts, the release peer loop cuts the
+	// branch's output with its soup code, then the branch knifes and connects; both peers agree after each, and undo
+	const lc = await cutOp(L, uuid, 'loopcut');
+	h.check(lc.ok, `5k. branch: loop cut ran (premise${lc.why ? ': ' + lc.why : ''})`);
+	const s5k = await agree('5k. branch loop cut (kernel) -> the release peer holds the same bytes + partition');
+	h.check(s5k.facts.tris > u5j.facts.tris, '5k. ...and the cut added its band');
+	await release(L, uuid);
+	await unlocked(O, uuid);
+	const lc2 = await cutOp(O, uuid, 'loopcut');
+	h.check(lc2.ok, `5l. release: loop cut ran on the branch output (premise${lc2.why ? ': ' + lc2.why : ''})`);
+	await agree('5l. release loop cut (soup) on the kernel output -> the branch holds the same bytes + partition');
+	await release(O, uuid);
+	await unlocked(L, uuid);
+	const kn = await cutOp(L, uuid, 'knife');
+	h.check(kn.ok, `5m. branch: knife ran (premise${kn.why ? ': ' + kn.why : ''})`);
+	const s5m = await agree('5m. branch knife (kernel) -> the release peer holds the same bytes + partition');
+	const cn = await connectOp(L, uuid);
+	h.check(cn.ok, `5n. branch: connect ran (premise${cn.why ? ': ' + cn.why : ''})`);
+	const s5n = await agree('5n. branch connect (kernel) -> the release peer holds the same bytes + partition');
+	h.check(s5n.facts.tris === s5m.facts.tris, '5n. ...and the connect kept the triangle count (a face re-split)');
+	await undo(L);
+	await agree('5o. branch undo (kernel connect) -> both peers agree');
+
+	// 5f4a-5f4h. lane 99-ops-b family 4 (bridge / fill / solidify on the kernel), alternating with the release peer
 	const f4 = async (peer, kind, label) => {
 		const other = peer === L ? O : L;
 		await release(other, uuid);
@@ -483,48 +571,48 @@ h.run(async () => {
 		h.check(r.ok, `${label}: ${kind} ran (premise)`);
 		return agree(`${label}: ${peer === L ? 'branch (kernel)' : 'release (soup)'} ${kind} -> both peers hold the same bytes + partition`);
 	};
-	const s5j = await facts(L, uuid);
-	const s5k = await f4(O, 'delete', '5k');
-	h.check(s5k.facts.tris < s5j.tris, '5k. ...and the release opened a hole');
-	const s5l = await f4(L, 'fill', '5l');
-	h.check(s5l.facts.tris > s5k.facts.tris, '5l. ...and the branch capped it');
-	await f4(L, 'delete', '5m');
-	const s5n = await f4(O, 'fill', '5n');
-	h.check(s5n.facts.tris === s5l.facts.tris, '5n. ...the release fill on the kernel output caps it the same size');
-	const s5o = await f4(L, 'bridge', '5o');
-	h.check(s5o.facts.tris !== s5n.facts.tris, '5o. ...and the branch tunnel changed the mesh');
-	await f4(O, 'delete', '5p');
-	const s5q = await f4(L, 'solidify', '5q');
-	h.check(s5q.facts.tris > s5o.facts.tris, '5q. ...and the branch solidify added a back and a rim');
+	const s5f4pre = await facts(L, uuid);
+	const s5f4a = await f4(O, 'delete', '5f4a');
+	h.check(s5f4a.facts.tris < s5f4pre.tris, '5f4a. ...and the release opened a hole');
+	const s5f4b = await f4(L, 'fill', '5f4b');
+	h.check(s5f4b.facts.tris > s5f4a.facts.tris, '5f4b. ...and the branch capped it');
+	await f4(L, 'delete', '5f4c');
+	const s5f4d = await f4(O, 'fill', '5f4d');
+	h.check(s5f4d.facts.tris === s5f4b.facts.tris, '5f4d. ...the release fill on the kernel output caps it the same size');
+	const s5f4e = await f4(L, 'bridge', '5f4e');
+	h.check(s5f4e.facts.tris !== s5f4d.facts.tris, '5f4e. ...and the branch tunnel changed the mesh');
+	await f4(O, 'delete', '5f4f');
+	const s5f4g = await f4(L, 'solidify', '5f4g');
+	h.check(s5f4g.facts.tris > s5f4e.facts.tris, '5f4g. ...and the branch solidify added a back and a rim');
 	await undo(L);
-	const s5r = await agree('5r. branch undo (kernel solidify) -> both peers agree');
-	h.check(s5r.facts.tris < s5q.facts.tris, '5r. ...and the solidify is gone');
+	const s5f4h = await agree('5f4h. branch undo (kernel solidify) -> both peers agree');
+	h.check(s5f4h.facts.tris < s5f4g.facts.tris, '5f4h. ...and the solidify is gone');
 
-	// 5s-5x. lane 99-ops-b family 5 (merge / dissolve / delete on the kernel)
-	const s5s = await f4(L, 'fdelete', '5s');
-	h.check(s5s.facts.tris < s5r.facts.tris, '5s. ...and the branch deleted the -Z face');
-	const s5t = await f4(O, 'edelete', '5t');
-	h.check(s5t.facts.tris < s5s.facts.tris, '5t. ...and the release deleted the faces on a rim edge of the kernel output');
-	const s5u = await f4(L, 'merge', '5u');
-	h.check(s5u.facts.tris < s5t.facts.tris, '5u. ...and the branch merge dropped the collapsed triangles');
+	// 5f5a-5f5f. lane 99-ops-b family 5 (merge / dissolve / delete on the kernel)
+	const s5f5a = await f4(L, 'fdelete', '5f5a');
+	h.check(s5f5a.facts.tris < s5f4h.facts.tris, '5f5a. ...and the branch deleted the -Z face');
+	const s5f5b = await f4(O, 'edelete', '5f5b');
+	h.check(s5f5b.facts.tris < s5f5a.facts.tris, '5f5b. ...and the release deleted the faces on a rim edge of the kernel output');
+	const s5f5c = await f4(L, 'merge', '5f5c');
+	h.check(s5f5c.facts.tris < s5f5b.facts.tris, '5f5c. ...and the branch merge dropped the collapsed triangles');
 	await undo(L);
-	const s5v = await agree('5v. branch undo (kernel merge) -> both peers agree');
-	h.check(s5v.facts.positions === s5t.facts.positions, '5v. ...and hold EXACTLY the bytes before the merge');
-	const s5w = await f4(O, 'merge', '5w');
-	h.check(s5w.facts.tris === s5u.facts.tris, '5w. ...the release merge (soup) on the kernel output drops as many triangles');
+	const s5f5d = await agree('5f5d. branch undo (kernel merge) -> both peers agree');
+	h.check(s5f5d.facts.positions === s5f5b.facts.positions, '5f5d. ...and hold EXACTLY the bytes before the merge');
+	const s5f5e = await f4(O, 'merge', '5f5e');
+	h.check(s5f5e.facts.tris === s5f5c.facts.tris, '5f5e. ...the release merge (soup) on the kernel output drops as many triangles');
 	await undo(O);
-	await agree('5x. release undo (soup merge) -> both peers agree');
+	await agree('5f5f. release undo (soup merge) -> both peers agree');
 
-	// 5y-5zc. lane 99-ops-b family 6 (subdivide / symmetrize on the kernel)
-	const s5y = await f4(L, 'subdivide', '5y');
-	h.check(s5y.facts.tris > s5t.facts.tris, '5y. ...and the branch subdivided the -Y face');
-	const s5z = await f4(O, 'esub', '5z');
-	h.check(s5z.facts.tris > s5y.facts.tris, '5z. ...and the release split a rim edge of the kernel output');
-	const s5za = await f4(L, 'symmetrize', '5za');
-	h.check(s5za.facts.positions !== s5z.facts.positions, '5za. ...and the branch symmetrize changed the mesh');
-	await f4(O, 'symmetrize', '5zb');
+	// 5f6a-5f6e. lane 99-ops-b family 6 (subdivide / symmetrize on the kernel)
+	const s5f6a = await f4(L, 'subdivide', '5f6a');
+	h.check(s5f6a.facts.tris > s5f5b.facts.tris, '5f6a. ...and the branch subdivided the -Y face');
+	const s5f6b = await f4(O, 'esub', '5f6b');
+	h.check(s5f6b.facts.tris > s5f6a.facts.tris, '5f6b. ...and the release split a rim edge of the kernel output');
+	const s5f6c = await f4(L, 'symmetrize', '5f6c');
+	h.check(s5f6c.facts.positions !== s5f6b.facts.positions, '5f6c. ...and the branch symmetrize changed the mesh');
+	await f4(O, 'symmetrize', '5f6d');
 	await undo(L);
-	await agree('5zc. branch undo (kernel symmetrize) -> both peers agree');
+	await agree('5f6e. branch undo (kernel symmetrize) -> both peers agree');
 
 	// 6. two-peer + reload: the joiner reloads and rejoins
 	const beforeReload = await facts(L, uuid);

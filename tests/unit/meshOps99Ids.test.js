@@ -203,3 +203,61 @@ describe('99 K4 family 2: element IDs through the bevels', () => {
 		same(lastEntry().before.ids.cornerVertex, after.cornerVertex);
 	});
 });
+
+describe('99 K4 family 3: element IDs through connect', () => {
+	const keyOf = (v) => `${Math.round(v.x * 1e4)},${Math.round(v.y * 1e4)},${Math.round(v.z * 1e4)}`;
+
+	it('connect: no vertex is made or lost, the untouched faces keep their IDs, undo/redo restore both sides', () => {
+		const m = box();
+		const top = fe.readTriangles(m.geometry).flat().filter((v) => v.y > 0.49);
+		const a = top.find((v) => v.x > 0.49 && v.z > 0.49);
+		const b = top.find((v) => v.x < -0.49 && v.z < -0.49);
+		const cap = topTris(m.geometry);
+		// the box's own top diagonal may already run a-b: then the other two corners are the pick
+		const r = fe.connectVertices(m.uuid, [keyOf(a), keyOf(b)]) || fe.connectVertices(m.uuid, [
+			keyOf(top.find((v) => v.x > 0.49 && v.z < -0.49)),
+			keyOf(top.find((v) => v.x < -0.49 && v.z > 0.49))
+		]);
+		expect(r).toBe(true);
+		const e = lastEntry();
+		expect(e.kind).toBe('meshgeo');
+		const before = e.before.ids;
+		const after = e.after.ids;
+		expect(before && after).toBeTruthy();
+		expect([...new Set(Array.from(after.cornerVertex))].sort()).toEqual([...new Set(Array.from(before.cornerVertex))].sort());
+		// the survivors keep their place and their face IDs (the split face's halves are appended)
+		const capSet = new Set(cap);
+		const survivors = Array.from(before.triFace).filter((_, t) => !capSet.has(t));
+		same(after.triFace.subarray(0, survivors.length), survivors);
+		expect(readStoredFaces(live(m.uuid).geometry).flat().length).toBe(after.triFace.length);
+		history.undo();
+		same(rebuildIds(live(m.uuid).geometry).cornerVertex, before.cornerVertex);
+		same(rebuildIds(live(m.uuid).geometry).triFace, before.triFace);
+		history.redo();
+		same(rebuildIds(live(m.uuid).geometry).cornerVertex, after.cornerVertex);
+		same(rebuildIds(live(m.uuid).geometry).triFace, after.triFace);
+		const r2 = fe.faceOpOnObject(m.uuid, 'move', topTris(live(m.uuid).geometry), { amount: 0.1 });
+		expect(r2.ok).toBe(true);
+		same(lastEntry().before.ids.cornerVertex, after.cornerVertex);
+	});
+
+	it('connect refuses with the soup\'s words, and while the kernel is loading', () => {
+		const m = box();
+		const v = fe.readTriangles(m.geometry)[0];
+		const depth = () => get(history.undoStack).length;
+		expect(fe.connectVertices(m.uuid, [keyOf(v[0]), keyOf(v[1])])).toBe(false); // neighbours
+		const top = fe.readTriangles(m.geometry).flat().filter((p) => p.y > 0.49);
+		const corner = (sx, sz) => keyOf(top.find((p) => p.x * sx > 0.49 && p.z * sz > 0.49));
+		const pairs = [[corner(1, 1), corner(-1, -1)], [corner(1, -1), corner(-1, 1)]];
+		const ops0 = session.ops;
+		session.ops = null;
+		try {
+			for (const pair of pairs) expect(fe.connectVertices(m.uuid, pair)).toBe(false);
+		} finally {
+			session.ops = ops0;
+		}
+		expect(depth()).toBe(0);
+		// and with the kernel back, one of the two diagonals connects (premise: the refusal above was the loading one)
+		expect(pairs.some((pair) => fe.connectVertices(m.uuid, pair))).toBe(true);
+	});
+});

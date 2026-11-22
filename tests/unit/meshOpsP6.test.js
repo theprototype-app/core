@@ -21,7 +21,7 @@ import {
 	loadKernelOps
 } from '$lib/faceEdit.js';
 
-// 99 K4 family 4: fill + solidify run on the kernel, a lazy chunk an edit session loads
+// 99 K4: connect (family 3), fill + solidify (family 4) run on the lazy kernel chunk an edit session loads
 beforeAll(() => loadKernelOps());
 
 const keyOf = (v) => `${Math.round(v.x * 1e4)},${Math.round(v.y * 1e4)},${Math.round(v.z * 1e4)}`;

@@ -178,11 +178,16 @@ const cutOp = (peer, uuid, kind) =>
 			fe.setFaceSubmode('faces');
 			try {
 				if (kind === 'loopcut') {
-					for (const f of fe.currentFaces()) {
-						fe.highlightFaceByTriangle(f.triIndices[0]);
-						if (fe.commitLoopCut(1, 0.4) !== false) return { ok: true };
+					// any paired triangle (a quad) anchors a ring: try them in order until one takes the cut
+					let object;
+					s.objectsGroup.subscribe((g) => (object = g.getObjectByProperty('uuid', uuid)))();
+					const n = fe.readTriangles(object.geometry).length;
+					for (let t = 0; t < n; t++) {
+						fe.highlightFaceByTriangle(t);
+						if (!fe.loopCutReady()) continue;
+						if (fe.commitLoopCut(1, 0.4) !== false) return { ok: true, anchor: t };
 					}
-					return { ok: false, why: 'no face took a loop cut' };
+					return { ok: false, why: 'no quad took a loop cut' };
 				}
 				if (kind === 'knife') {
 					let camera;
@@ -423,7 +428,10 @@ h.run(async () => {
 	h.check(eb.ok, `5j. branch: edge bevel ran (premise${eb.why ? ': ' + eb.why : ''})`);
 	await agree('5j. branch edge bevel (kernel) -> the release peer holds the same bytes + partition');
 	await undo(L);
-	const u5j = await agree('5j. branch undo (kernel edge bevel) -> both peers agree');
+	await agree('5j. branch undo (kernel edge bevel) -> both peers agree');
+	// the vertex bevel leaves every triangle its own face (no quads for a ring): undo it too
+	await undo(L);
+	const u5j = await agree('5j. branch undo (kernel vertex bevel) -> both peers agree');
 
 	// 5k-5o. roadmap 99 K4 family 3 (the cuts on the kernel): the branch loop cuts, the release peer loop cuts the
 	// branch's output with its soup code, then the branch knifes and connects; both peers agree after each, and undo

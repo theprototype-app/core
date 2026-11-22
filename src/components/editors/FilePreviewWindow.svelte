@@ -492,7 +492,7 @@
 		const body = e.currentTarget as HTMLElement;
 		if (e.pointerType === 'touch' && face === 'image' && !editing) {
 			fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-			body.setPointerCapture(e.pointerId);
+			capture(body, e.pointerId);
 			if (fingers.size === 2) {
 				const st = pinchState(body);
 				// the image point under the fingers' centre, in unscaled image px
@@ -504,7 +504,15 @@
 		if (!canPan || pinch) return;
 		panning = true;
 		last = { x: e.clientX, y: e.clientY };
-		body.setPointerCapture(e.pointerId);
+		capture(body, e.pointerId);
+	}
+	/** capture the pointer; a pointer the browser no longer tracks throws, and that must not cost the gesture */
+	function capture(body: HTMLElement, id: number) {
+		try {
+			body.setPointerCapture(id);
+		} catch {
+			/* not an active pointer */
+		}
 	}
 	function bodyMove(e: PointerEvent) {
 		if (fingers.has(e.pointerId)) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });

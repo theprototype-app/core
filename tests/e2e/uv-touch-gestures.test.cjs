@@ -58,6 +58,16 @@ const evXY = (page, type, x, y, o) =>
 	);
 const dbg = (page) => page.evaluate(() => { const d = window.__uvDebug(); return { zoom: d.zoom, panX: d.panX, panY: d.panY, gesture: d.gesture, viewW: d.viewW, viewH: d.viewH, p: d.project(0.5, 0.5) }; });
 const wait = (page, ms) => page.waitForTimeout(ms);
+/** a DOM click on the brush panel's toggle (it sits low in a scrolled sidebar); true when the store followed */
+const togglePenOnly = (page) =>
+	page.evaluate(() => {
+		const el = document.getElementById('uv-pen-only');
+		const read = () => { let v; window.__tp.test.v1.penInput?.penOnlyDraws.subscribe((x) => (v = x))(); return v; };
+		if (!el) return false;
+		const was = read();
+		el.click();
+		return read() === !was;
+	});
 
 /** how many pixels in a UV box are the brush blue: the live canvas, else the committed map */
 const blueIn = (page, uuid, u0, u1, v0, v1) =>
@@ -215,7 +225,7 @@ h.run(async () => {
 	h.check(fingerPaint === 0 && fingerPanned.gesture === 'pan' && fingerPanned.panX !== p0.panX, `with a pen seen a finger pans (gesture ${fingerPanned.gesture}, pan ${p0.panX} -> ${fingerPanned.panX}) and paints nothing (${fingerPaint} px)`);
 
 	// ---- 5. the setting off: fingers paint again ----------------------------------------------------------------
-	await page.click('#uv-pen-only', { timeout: 5000 }).catch(() => console.log('FAIL no #uv-pen-only toggle'));
+	h.check(await togglePenOnly(page), 'the brush panel\'s "Pen only draws" toggle flips the setting');
 	await wait(page, 150);
 	await ev(page, 'pointerdown', 0.6, 0.6, F1);
 	await wait(page, 200);
@@ -227,7 +237,7 @@ h.run(async () => {
 	await wait(page, 700);
 	const fingerAgain = await blueIn(page, uuid, 0.55, 0.85, 0.5, 0.7);
 	h.check(fingerAgain > 300, `with "Pen only draws" off a finger paints again (${fingerAgain} blue px)`);
-	await page.click('#uv-pen-only', { timeout: 5000 }).catch(() => console.log('FAIL no #uv-pen-only toggle'));
+	h.check(await togglePenOnly(page), 'the brush panel\'s "Pen only draws" toggle flips the setting');
 
 	// ---- 6. a palm while the pen paints: ignored, the pen's stroke runs to its end -------------------------------
 	const PALM = { id: 41, type: 'touch' };

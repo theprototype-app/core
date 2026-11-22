@@ -25,8 +25,8 @@ const REPLACED = {
 	uCamWorld: 'cameraWorldMatrix',
 	uSelMask: 'not drawn: the editor selection un-refract mask (the view outlines the selection itself)',
 	uSelActive: 'not drawn: see uSelMask',
-	uReflTex: 'not drawn: WATER_PLANAR (a second scene render)',
-	uReflMatrix: 'not drawn: WATER_PLANAR',
+	uReflTex: 'replaced: TSL reflector() node (its own mirrored-camera texture)',
+	uReflMatrix: 'replaced: the reflector node projects itself',
 	uEnvMap: 'scene.environment through pmremTexture (the view holds a CPU copy of the HDRI)',
 	uEnvTexel: 'pmremTexture sizes the atlas itself',
 	uEnvMaxMip: 'pmremTexture sizes the atlas itself',
@@ -250,6 +250,21 @@ describe('createWaterCover', () => {
 		expect(e.object.material).toBe(own);
 	});
 
+	it('a volume asking for the planar reflection gets one mirror on its surface, at its water level, facing up', () => {
+		const { e, cover } = setup();
+		e.object.position.set(3, 0.5, -2);
+		e.object.updateMatrixWorld(true);
+		e.volume = { level: 0.4, bounds: { minX: -1, maxX: 1, minZ: -1, maxZ: 1 } };
+		e.wantsPlanar = true;
+		cover.scan();
+		expect(cover.stats().planar).toBe(1);
+		expect(cover.stats().errors).toEqual([]);
+		// the look changes back: the twin is rebuilt without the mirror
+		e.wantsPlanar = false;
+		cover.scan();
+		expect(cover.stats().planar).toBe(0);
+		expect(cover.stats().surfaces).toBe(1);
+	});
 	it('no detail map yet (the runtime sets it on its first tick): no twin, no error, the stand-in stays', () => {
 		const { e, cover } = setup(false);
 		e.surface.material.uniforms.uNormalMap.value = null;

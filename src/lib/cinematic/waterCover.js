@@ -12,8 +12,9 @@
 //             highlight, refraction + chromatic split + depth absorption + shoreline foam + caustics read from the
 //             SCENE PASS (its colour and depth already are "the scene with the water hidden": the water is on a layer
 //             the scene pass does not draw), opacity / visibility / opaque liquids / glow / crest + rim foam, and the
-//             underwater fade of its own walls. Everything the GLSL has except the Quest tier, the editor's
-//             selection un-refract mask and the planar reflection (WATER_PLANAR: a second scene render; not drawn).
+//             underwater fade of its own walls, and WATER_PLANAR's mirror (TSL's reflector node: the same mirrored
+//             camera, for the nearest volume that asks). Everything the GLSL has except the Quest tier and the editor's
+//             selection un-refract mask.
 //
 // THE SAME LIFECYCLE AS fxCover.js: each water mesh (surface, tank body) keeps its runtime material, hidden while the
 // view is on, and gets a CHILD twin on WATER_LAYER drawn in a pass of its own after TRAA (pipeline.js), so it never
@@ -41,7 +42,7 @@ export function createWaterCover(o) {
 		uniform, uniformArray, attribute, texture, pmremTexture, varying, select, screenUV, positionGeometry, positionWorld, positionView,
 		cameraPosition, cameraProjectionMatrixInverse, cameraWorldMatrix, modelWorldMatrix, modelWorldMatrixInverse, frontFacing,
 		getViewPosition, Fn, Loop, If, Break, vec2, vec3, vec4, float, mix, clamp, pow, exp, sin, cos, abs, sign, fract, length,
-		distance, dot, normalize, reflect, refract, min, max, smoothstep, step
+		distance, dot, normalize, reflect, refract, min, max, smoothstep, step, reflector
 	} = T;
 
 	/** the scene pass's colour + depth (each pipeline build hands its own over: setSceneTextures) */
@@ -51,6 +52,8 @@ export function createWaterCover(o) {
 	const sceneDepth = texture(placeholderDepth);
 	/** an invisible material for the placeholder meshes, inside a view frame only */
 	const invisible = new W.MeshBasicNodeMaterial({ visible: false });
+	const _camPos = new W.Vector3();
+	const _objPos = new W.Vector3();
 	invisible.name = 'cinematic-water-hidden';
 
 	/** the underwater post look (pipeline.js reads these nodes) */
@@ -76,7 +79,7 @@ export function createWaterCover(o) {
 	const swapped = [];
 	/** @type {any[]} */
 	const list = [];
-	const stats = { surfaces: 0, bodies: 0, underwater: false, scanMs: 0, errors: /** @type {string[]} */ ([]) };
+	const stats = { surfaces: 0, bodies: 0, planar: 0, underwater: false, scanMs: 0, errors: /** @type {string[]} */ ([]) };
 	/** @type {WeakSet<any>} materials whose twin could not be built (they keep the stand-in and the chip) */
 	const refused = new WeakSet();
 	let frame = 0;
@@ -116,7 +119,7 @@ export function createWaterCover(o) {
 	 * The surface / body twin material: waterShader.js surfaceVertex + surfaceFragment (WATER_SS), line for line.
 	 * @param {any} sm the runtime ShaderMaterial (its uniforms are the entry's) @param {boolean} body @param {any} env the scene's environment (a texture the WebGPU renderer can sample) or null
 	 */
-	function waterMaterial(sm, body, env) {
+	function waterMaterial(sm, body, env, mirror = null) {
 		const S = sm.uniforms;
 		const U = bridgeAll(S);
 		const uUnder = uniform(0);
@@ -250,9 +253,15 @@ export function createWaterCover(o) {
 			return select(U.uEnvOn.greaterThan(0.5), hdri, analytic);
 		};
 
-		// reflection: the sky / environment (the planar mirror is a standard-view-only tier)
+		// reflection: the sky / environment; WATER_PLANAR's mirrored-camera texture (TSL's reflector, the same maths)
+		// on the one surface that gets it, seen from above
 		const R = reflect(V.negate(), N);
-		const refl = sky(R, U.uRoughness.mul(0.8));
+		/** @type {any} */
+		let refl = sky(R, U.uRoughness.mul(0.8));
+		if (mirror) {
+			mirror.uvNode = mirror.uvNode.add(vec2(N.x, N.z).mul(0.04));
+			refl = select(front, mix(mirror.rgb, refl, U.uRoughness.mul(0.5)), refl);
+		}
 		const L = normalize(U.uSunDir);
 		const H = normalize(L.add(V));
 		const shin = clamp(float(2).div(max(pow(U.uRoughness, 4), 1e-4)).sub(2), 8, 2048);
@@ -381,10 +390,11 @@ export function createWaterCover(o) {
 	}
 
 	/** @param {any} mesh a water-surface / water-body mesh @param {boolean} body */
-	function addTwin(mesh, body) {
+	function addTwin(mesh, body, planar = false) {
 		const sm = mesh.material;
 		const env = scene.environment && scene.environment.isTexture ? scene.environment : null;
-		const { m, uUnder } = waterMaterial(sm, body, env);
+		const mirror = planar && !body ? reflector({ resolutionScale: 0.5, bounces: false }) : null;
+		const { m, uUnder } = waterMaterial(sm, body, env, mirror);
 		const twin = new W.Mesh(mesh.geometry, m);
 		twin.name = TWIN;
 		twin.userData.localOnly = true;
@@ -397,7 +407,7 @@ export function createWaterCover(o) {
 		mesh.add(twin);
 		sm.visible = false;
 		hidden.add(sm);
-		const rec = { mesh, sm, twin, m, uUnder, body, env, geometry: mesh.geometry, seen: frame };
+		const rec = { mesh, sm, twin, m, uUnder, body, env, mirror, planar: !!mirror, geometry: mesh.geometry, seen: frame };
 		twins.set(mesh, rec);
 		return rec;
 	}
@@ -406,25 +416,26 @@ export function createWaterCover(o) {
 	function dropTwin(rec) {
 		rec.twin.removeFromParent();
 		rec.m.dispose();
+		rec.mirror?.dispose?.();
 		if (hidden.delete(rec.sm)) rec.sm.visible = true;
 		twins.delete(rec.mesh);
 	}
 
-	/** @param {any} mesh @param {boolean} body @param {boolean} inside */
-	function follow(mesh, body, inside) {
+	/** @param {any} mesh @param {boolean} body @param {boolean} inside @param {any} [entry] the planar one, if this is it */
+	function follow(mesh, body, inside, entry = null) {
 		const m = mesh.material;
 		const kind = waterCoverKind(mesh, m);
 		let rec = twins.get(mesh);
 		const env = scene.environment && scene.environment.isTexture ? scene.environment : null;
 		// a new runtime material (a tier change), new geometry (a resize) or another HDRI: build it again
-		if (rec && (m !== rec.sm || mesh.geometry !== rec.geometry || env !== rec.env)) {
+		if (rec && (m !== rec.sm || mesh.geometry !== rec.geometry || env !== rec.env || (!body && !!entry !== rec.planar))) {
 			dropTwin(rec);
 			rec = null;
 		}
 		if (!rec) {
 			if (!kind || refused.has(m) || !m.uniforms?.uNormalMap?.value) return;
 			try {
-				rec = addTwin(mesh, body);
+				rec = addTwin(mesh, body, !!entry);
 			} catch (e) {
 				stats.errors.push(String(/** @type {any} */ (e)?.message ?? e).slice(0, 200));
 				if (stats.errors.length > 10) stats.errors.shift();
@@ -434,6 +445,15 @@ export function createWaterCover(o) {
 		}
 		rec.seen = frame;
 		rec.uUnder.value = inside ? 1 : 0;
+		// the mirror plane: the surface's middle at the water level, facing up (the runtime's renderReflection)
+		if (rec.mirror && entry) {
+			const v = entry.volume;
+			const b = v.bounds;
+			const t = rec.mirror.target;
+			t.position.set((b.minX + b.maxX) / 2, v.level, (b.minZ + b.maxZ) / 2).applyMatrix4(entry.object.matrixWorld);
+			t.rotation.set(-Math.PI / 2, 0, 0);
+			t.updateMatrixWorld(true);
+		}
 		// the tank shows its OUTER faces from outside and its INNER ones from inside (the runtime's own rule)
 		if (body) {
 			const side = inside ? W.BackSide : W.FrontSide;
@@ -452,9 +472,24 @@ export function createWaterCover(o) {
 		const st = viewState(cam, list);
 		lastState = st;
 		const inEntry = st.under?.entry ?? null;
+		// one planar mirror, for the nearest visible volume that asks for it (the runtime's planarCandidate)
+		/** @type {any} */
+		let mirrorFor = null;
+		if (cam?.matrixWorld) {
+			let best = Infinity;
+			_camPos.setFromMatrixPosition(cam.matrixWorld);
+			for (const e of st.entries) {
+				if (!e.wantsPlanar || !e.visible || !e.object) continue;
+				const d = _objPos.setFromMatrixPosition(e.object.matrixWorld).distanceToSquared(_camPos);
+				if (d < best) {
+					best = d;
+					mirrorFor = e;
+				}
+			}
+		}
 		for (const e of st.entries) {
 			const inside = inEntry === e;
-			if (e.surface) follow(e.surface, false, inside);
+			if (e.surface) follow(e.surface, false, inside, e === mirrorFor ? e : null);
 			if (e.body) follow(e.body, true, inside);
 		}
 		for (const r of [...twins.values()]) if (r.seen !== frame) dropTwin(r);
@@ -484,10 +519,11 @@ export function createWaterCover(o) {
 			const tw = st.under.entry.uniforms?.uTime?.value;
 			if (typeof tw === 'number') under.time.value = tw;
 		}
-		stats.surfaces = stats.bodies = 0;
+		stats.surfaces = stats.bodies = stats.planar = 0;
 		for (const r of twins.values()) {
 			if (r.body) stats.bodies++;
 			else stats.surfaces++;
+			if (r.mirror) stats.planar++;
 		}
 		stats.underwater = !!st.under;
 		stats.scanMs = performance.now() - t0;

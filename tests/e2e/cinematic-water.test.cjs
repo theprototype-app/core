@@ -22,6 +22,9 @@ const ARGS = [...(process.env.E2E_GPU === '1' ? h.GPU_ARGS : []), '--enable-unsa
 const STORAGE = { debugCinematicSoftware: '1' };
 const OUT = process.env.WATER_OUT || path.join(__dirname, '..', '..', 'test-results', '100-cover-water');
 const SCENES = (process.env.WATER_SCENES || 'aquarium,pool-party,island-ocean,water-works').split(',').filter(Boolean);
+// no template asks for the planar mirror (every preset reflects the sky / env), so on this scene the suite turns it on
+// in the page — the flag the runtime sets from a look with Reflection: Planar — after the shots that compare the views
+const PLANAR_ON = process.env.WATER_PLANAR_SCENE || 'pool-party';
 const QUALITY = process.env.WATER_QUALITY || 'standard';
 const SCENE_MS = Number(process.env.WATER_SCENE_MS || 420000);
 const W = 480;
@@ -184,10 +187,25 @@ const cost = async (page) => {
 	return { n: d.frames.n, median: +d.frames.median.toFixed(2), p95: +d.frames.p95.toFixed(2), bound: +bound.toFixed(2), scanMs: +(d.water?.scanMs ?? 0).toFixed(3), quality: d.quality };
 };
 
-/** @param {any} page */
+/** @type {any[]} */
+const entries = [];
+/** turn the view on / off; ON is timed (a slow first compile — FXC on a Windows host — shows as a number, not a hang)
+ * @param {any} page @param {string} want */
 const toggle = async (page, want) => {
+	const t0 = Date.now();
 	await page.click('#cinematic-toggle');
-	await waitMode(page, want, `the view went ${want}`);
+	if (want !== 'on') return waitMode(page, want, `the view went ${want}`);
+	let mode = '';
+	while (Date.now() - t0 < 600000) {
+		mode = (await state(page)).mode;
+		if (mode === 'on' || mode === 'off' || mode === 'unavailable') break;
+		await page.waitForTimeout(1000);
+	}
+	const s = Math.round((Date.now() - t0) / 1000);
+	const d = await debug(page).catch(() => null);
+	const last = d?.switches?.filter((/** @type {any} */ x) => x.dir === 'on').pop();
+	entries.push({ s, mode, ms: last?.ms });
+	h.check(mode === 'on' && s <= 120, `the view went on in ${s} s (${mode}; steps ${JSON.stringify(last?.ms ?? null)})`);
 };
 
 const png = (url) => Buffer.from(url.split(',')[1], 'base64');
@@ -279,6 +297,7 @@ async function oneScene(browser, slug, first) {
 		const bodies = wd.entries.filter((e) => e.visible && e.body).length;
 		h.check(d0.errors.length === 0, `${slug}: 2. the view is on (${d0.quality}), no errors (${JSON.stringify(d0.errors).slice(0, 400)})`);
 		h.check(!!d0.water && d0.water.surfaces === surfaces && d0.water.bodies === bodies && !d0.water.errors.length, `   ${slug}: every surface and tank body drawn through TSL (${JSON.stringify(d0.water)}; want ${surfaces} surfaces, ${bodies} bodies)`);
+		h.check(d0.water?.planar === 0, `   ${slug}: no planar mirror asked, none drawn (${d0.water?.planar})`);
 		const chip = (await state(page)).notShown;
 		row.chip = chip;
 		h.check(!/Water/.test(chip), `   ${slug}: "Water" is not in the "Not shown" chip ("${chip}")`);
@@ -300,6 +319,40 @@ async function oneScene(browser, slug, first) {
 		// view everywhere; the water must not differ by more than that plus WATER_TOL (mean |delta| per channel, 0-255)
 		const tol = Number(process.env.WATER_TOL || 18);
 		h.check(r.waterDelta != null && r.waterDelta <= (r.restDelta ?? 0) + tol, `   ${slug}: the water's colour matches as well as the rest of the image (mean |delta| water ${r.waterDelta}, rest ${r.restDelta}, tolerance rest + ${tol}; water luma ${JSON.stringify(r.waterLuma)} standard / Cinematic)`);
+
+		// ---- 3b. the planar mirror (Reflection: Planar) -----------------------------------------------------------
+		if (slug === PLANAR_ON) {
+			const set = (on) =>
+				page.evaluate((on) => {
+					const s = window.__tp.test.v1;
+					let cam;
+					s.globalCamera.subscribe((x) => (cam = x))();
+					const es = s.waterRuntime.waterViewState(cam).entries;
+					for (const e of es) e.wantsPlanar = on;
+					return es.length;
+				}, on);
+			await set(true);
+			await page.evaluate(() => new Promise((r) => setTimeout(r, 800)));
+			const dp = await debug(page);
+			sheet.viewPlanar = await grab(page, 'view:planar', true);
+			const moved = await page.evaluate(({ W, H }) => {
+				const a = window.__wShots['view:all'], b = window.__wShots['view:planar'], g = window.__wShots['view:-water'];
+				let n = 0, inW = 0;
+				for (let i = 0; i < a.length; i += 4) {
+					const w = Math.abs(a[i] - g[i]) + Math.abs(a[i + 1] - g[i + 1]) + Math.abs(a[i + 2] - g[i + 2]) > 36;
+					if (!w) continue;
+					inW++;
+					if (Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]) > 24) n++;
+				}
+				return { changed: n, water: inW };
+			}, { W, H });
+			await set(false);
+			await page.evaluate(() => new Promise((r) => setTimeout(r, 800)));
+			const dq = await debug(page);
+			row.planar = { on: dp.water, off: dq.water, moved };
+			h.check(dp.water?.planar === 1 && dp.errors.length === 0 && moved.changed > 0 && dq.water?.planar === 0, `${slug}: 3b. Reflection: Planar draws one mirror (TSL reflector) and changes the water (${moved.changed} of ${moved.water} water px), off again after (${JSON.stringify({ on: dp.water?.planar, off: dq.water?.planar, errors: dp.errors.length })})`);
+			fs.writeFileSync(path.join(out, '07-sheet-planar.png'), png(await sideBySide(page, [sheet.view, sheet.viewPlanar])));
+		}
 
 		// ---- 4. under the surface (first scene) -------------------------------------------------------------------
 		if (first) {
@@ -457,7 +510,7 @@ h.run(async () => {
 		const res = await Promise.race([oneScene(browser, slug, i === 0).then(() => 'done'), timer]);
 		if (res === 'timeout') h.check(false, `${slug}: did not finish within ${SCENE_MS / 1000} s`);
 	}
-	fs.writeFileSync(path.join(OUT, 'summary.json'), JSON.stringify(summary, null, 2));
+	fs.writeFileSync(path.join(OUT, 'summary.json'), JSON.stringify({ ...summary, entries }, null, 2));
 	console.log('  evidence: ' + OUT);
 	await h.finish(browser);
 });

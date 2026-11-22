@@ -665,6 +665,11 @@ export const DEBUG_HOOKS = [
 	['decal', () => import('./decalRuntime.js')],
 	['decalTick', () => import('./decalTick.js')],
 	['decalEdit', () => import('./decalEdit.js')],
+	// 102: Gaussian splats (splatTick.splatDebug reads the runtime without loading Spark)
+	['splatTick', () => import('./splat/splatTick.js')],
+	['splatCore', () => import('./splat/splatCore.js')],
+	['splatEdit', () => import('./splat/splatEdit.js')],
+	['splatImport', () => import('./splat/splatImport.js')],
 	// 64-text: fonts (bundled + Library + Google), the solid build, the export licence walk
 	['textFonts', () => import('./textFonts.js')],
 	['text3dBuild', () => import('./text3dBuild.js')],

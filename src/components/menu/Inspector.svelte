@@ -4208,7 +4208,8 @@
 
 			<!-- 64 D2: a text's carrier draws nothing — its look is the Text section's -->
 			<!-- 102 M3: nor does a decal's — its look is the Decal section's -->
-			{#if material && !$selectedObject.userData?.textPath && !$selectedObject.userData?.decal}
+			<!-- 102: a splat's material is its invisible hit box -->
+			{#if material && !$selectedObject.userData?.textPath && !$selectedObject.userData?.decal && !$selectedObject.userData?.splat}
 				<Section variant="panel" label="Material" clip={{ count: () => matTargets.length, fans: true }}>
 					{#if matCount}
 						<p id="material-multi-note" class="text-[length:var(--fs-badge)] italic text-text-muted">
@@ -4567,7 +4568,8 @@
 			{#if $selectedObject.userData?.flowPath}<FlowPathSection object={$selectedObject} />{/if}<!-- 36-fb F24 -->
 			{#if $selectedObject.userData?.portal || $selectedObject.userData?.checkpoint}<LevelObjectSection object={$selectedObject} />{/if}<!-- 93 LP1/LP3 -->
 			{#if $selectedObject.userData?.textPath}<TextPathSection object={$selectedObject} />{/if}<!-- 64 D2 -->
-			{#if !$selectedObject.isLight}
+			{#if $selectedObject.userData?.splat}{#await import('./SplatSection.svelte') then m}<m.default object={$selectedObject} />{/await}{/if}<!-- 102: a lazy chunk (off the boot path) -->
+			{#if !$selectedObject.isLight && !$selectedObject.userData?.splat}
 				<Section variant="panel" label="Physics" clip={{ count: () => insTargets.length, fans: true }}>
 					{#if multiCount}
 						<p id="physics-multi-note" class="text-[length:var(--fs-badge)] italic text-text-muted">

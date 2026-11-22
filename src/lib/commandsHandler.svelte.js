@@ -752,6 +752,17 @@ export async function objectParameters(data, from = 'peer') {
                 pokeScene();
             });
         }
+    } else if (data.parameter == 'splat') {
+        // 102: a Gaussian splat's record (crop, opacity, the file); the proxy box follows it and every
+        // peer's runtime redraws from it
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            // the record only (wireValidate checked its shape): the splat runtime normalizes it and rebuilds
+            // the proxy box on its next frame, so none of the splat code rides the boot
+            if (data.splat) mesh.userData.splat = { ...data.splat };
+            else delete mesh.userData.splat;
+            pokeScene();
+        }
     } else if (data.parameter == 'fluidInteraction') {
         // 36-fb F23: how a mesh meets particle fluid (absent = auto)
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
@@ -1162,6 +1173,12 @@ export function sendObjects(peerId, element, opts = {}) {
         peer.send({ type: 'object', element: stubElementOf(element), groupuuid: element.parent?.uuid, ...(opts.override ? { override: true } : {}) });
         return;
     }
+    if (peerId === null && element?.isMesh && element.userData?.splat) {
+        // 102: a placed SPLAT carrier is ONE mesh, not an import root — the root path below sends a
+        // 'group' (the record without the mesh) and then only its children, so a peer got an empty node
+        peer.send({ type: 'object', element: element.toJSON(), groupuuid: element.parent?.uuid, pos: element.position.toArray(), rot: element.rotation.toArray(), scale: element.scale.toArray(), ...(opts.override ? { override: true } : {}) });
+        return;
+    }
     if (peerId === null) {
         groupid = element.uuid;
         // 59 T1: `groupparent` (additive) — a replaced model keeps its parent on every peer
@@ -1365,7 +1382,8 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
                 ...heal
             });
             sendObject(conn, element, element.uuid, opts);
-        } else if (element.userData?.textPath || element.userData?.decal) {
+        } else if (element.userData?.textPath || element.userData?.decal || element.userData?.splat) {
+            // 102: a SPLAT carrier too — a box proxy + its record; toJSON keeps the proxy's draw-nothing flags
             // 64 TX1: a TEXT carrier travels as its RECORD — toJSON read NOW, while the park hook holds
             // the placeholder (~3 KB). The GLTF branch below exported it in a later callback, after the
             // park was restored: the solid's [face, side] array split into a GROUP of primitives and a

@@ -263,7 +263,7 @@ export const USERDATA_KINDS = /** @type {Record<'object'|'material'|'geometry'|'
 		bubbles: 'object', camera: 'object', checkpoint: 'object', device: 'object', drumPad: 'number', drumStep: 'number', flowPath: 'object',
 		fluid: 'object', fluidEmitter: 'object', fluidInteraction: 'string', geometryParams: 'object', lod: 'object', midi: 'number',
 		packRef: 'object', packStub: 'boolean', particles: 'object', physics: 'object', pick: 'string', portal: 'object', samplerPad: 'number',
-		shadow: 'boolean', shadowMapSize: 'number', spline: 'object', terrain: 'boolean', textPath: 'object', transport: 'string', water: 'object',
+		shadow: 'boolean', shadowMapSize: 'number', splat: 'object', spline: 'object', terrain: 'boolean', textPath: 'object', transport: 'string', water: 'object',
 		origin: 'array', measure: 'object', character: 'object', attachTo: 'object', clipRefs: 'array', animGraph: 'object', __uuid: 'string', __localOnly: 'boolean'
 	},
 	material: { mapDataUrl: 'string', mapSource: 'string', fbLit: 'boolean', fbTeam: 'string', tpEdited: 'boolean', wvCore: 'number', __jiggleClone: 'boolean' },

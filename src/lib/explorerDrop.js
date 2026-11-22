@@ -298,6 +298,10 @@ async function placeExplorerPayload(payload, target) {
 			undefined,
 			target.point ?? undefined
 		);
+	} else if (item.kind === 'splat') {
+		// 102: a Gaussian splat lands with its box's bottom centre on the drop point
+		const { placeSplatItem } = await import('./splat/splatImport.js');
+		await placeSplatItem(item, target.point);
 	} else if (item.kind === 'anim') {
 		// 57 M1: a clip dropped ON a rigged model is assigned to it and plays (one ref change,
 		// one undo step, the bytes pushed once); anywhere else it says where it goes

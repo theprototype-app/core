@@ -55,6 +55,7 @@
 	import { tickSim } from '$lib/sim/runtime.js'; // 36-sim: jiggle, splashes, fluid tanks
 	import { tickTextPathsLazy } from '$lib/textPathTick.js'; // 64 D2: text on a path
 	import { tickDecalsLazy } from '$lib/decalTick.js'; // 102 M3: decals
+	import { tickSplatsLazy } from '$lib/splat/splatTick.js'; // 102: Gaussian splats (Spark loads with the first one)
 	import { startPackBehaviors, tickPackBehaviors } from '$lib/packBehavior';
 	import { startArchParts } from '$lib/arch/archParts.js';
 	import { tickAnimationPreview, captureAutoKey, playheadOf } from '$lib/animationPreview';
@@ -464,6 +465,7 @@
 		tickDecalsLazy($objectsGroup, performance.now()); // 102 M3: decal surfaces follow their targets
 		tickAnimationPreview(); // Animation window: local transform preview (not synced)
 		tickSequences(); // 48 S2: shots / clips / audio / events of running sequences
+		tickSplatsLazy($objectsGroup, performance.now()); // 102: splat meshes follow their carriers (after anything that poses them)
 		tickMeshEdit(); // vertex handles follow the object if it moves (119)
 		tickEditWireframe(); // ...and the edit wireframe stays parented to it (faceEdit)
 		tickMeshPivotMarker(); // ...and the placed transform pivot's marker (meshPivot)

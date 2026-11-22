@@ -464,16 +464,21 @@ import { startMusicToolbox } from './lib/musicToolbox'
     // or dropped onto the selected object) — modelDrop asks; several are always new objects
     const models = files.filter((file) => modelExt.test(file.name.toLowerCase()))
     const { clientX, clientY } = event
+    // 102: Gaussian splats (.ply / .spz / .splat) go to the Explorer through the splat gate, then into the scene
+    const splatExt = /\.(ply|spz|splat)$/i
+    const splatFiles = files.filter((file) => splatExt.test(file.name))
+    if (splatFiles.length)
+      Promise.all([import('./lib/splat/splatImport.js'), import('./lib/explorerDrop')]).then(([s, d]) => s.importSplatFiles(splatFiles, d.dropTarget(clientX, clientY).point))
     files.forEach((file) => {
       const name = file.name.toLowerCase()
-      if (clipFiles.includes(file)) return
+      if (clipFiles.includes(file) || splatFiles.includes(file)) return
       if (modelExt.test(name) && models.length === 1) import('./lib/modelDrop').then((m) => m.dropModelFile(file, { companions, clientX, clientY }))
       else if (modelExt.test(name)) importFile(file, file.name.replace(modelExt, ''), undefined, undefined, companions)
       else if (name.endsWith('.json')) load(file)
       else if (!companions.includes(file)) skipped.push(file.name)
     })
     if (skipped.length > 0)
-      showToast('Unsupported: ' + skipped.join(', ') + '. Supported formats: .glb, .gltf, .obj, .stl, .fbx (models), .json (scene)')
+      showToast('Unsupported: ' + skipped.join(', ') + '. Supported formats: .glb, .gltf, .obj, .stl, .fbx (models), .ply, .spz, .splat (Gaussian splats), .json (scene)')
   }
 </script>
 

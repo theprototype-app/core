@@ -979,6 +979,13 @@ registerHistoryKind('props', (entry, state) => {
 			if (peer) peer.send({ type: 'objectParameters', parameter: 'decal', uuid: entry.uuid, decal: state.decal });
 		}
 	}
+	if ('splat' in state) {
+		// 102: a Gaussian splat's record — the proxy box is rebuilt from it, the splats redraw from it
+		// the record only: the splat runtime normalizes it and rebuilds the proxy box next frame (off the boot path)
+		if (state.splat) object.userData.splat = { ...state.splat };
+		else delete object.userData.splat;
+		if (peer) peer.send({ type: 'objectParameters', parameter: 'splat', uuid: entry.uuid, splat: state.splat ?? null });
+	}
 	if ('fluidInteraction' in state) {
 		// 36-fb F23: how a mesh meets particle fluid (none / collide / float; absent = auto)
 		if (state.fluidInteraction) object.userData.fluidInteraction = state.fluidInteraction;

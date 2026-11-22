@@ -535,6 +535,13 @@ export const VALIDATORS = {
 		}
 		// 102 M3: a decal record (normalizeDecal clamps every field)
 		if (d.parameter === 'decal') return isUuid(d.uuid) && !!d.decal && typeof d.decal === 'object' && !isArray(d.decal);
+		// 102: a Gaussian splat's record (normalizeSplat clamps the rest) or null; the hash is a content
+		// address, never a URL
+		if (d.parameter === 'splat') {
+			const v = d.splat;
+			if (v === null) return isUuid(d.uuid);
+			return isUuid(d.uuid) && !!v && typeof v === 'object' && !isArray(v) && (v.hash === undefined || (typeof v.hash === 'string' && /^[0-9a-f]{0,128}$/i.test(v.hash)));
+		}
 		if (d.parameter === 'water' || d.parameter === 'bubbles' || d.parameter === 'pour') {
 			const v = d[d.parameter];
 			return isUuid(d.uuid) && (v === null || (!!v && typeof v === 'object' && !isArray(v)));

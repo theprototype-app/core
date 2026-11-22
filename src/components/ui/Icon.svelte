@@ -131,6 +131,7 @@
 		FlipHorizontal,
 		FlipVertical,
 		Focus,
+		ScanBox,
 		Folder,
 		FolderDown,
 		FolderInput,
@@ -386,6 +387,7 @@
 		'flip-horizontal': FlipHorizontal,
 		'flip-vertical': FlipVertical,
 		focus: Focus,
+		'scan-box': ScanBox, // 102: a Gaussian splat (a captured scene)
 		folder: Folder,
 		'folder-down': FolderDown,
 		'folder-input': FolderInput,

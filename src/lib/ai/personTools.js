@@ -39,7 +39,7 @@ const SCENE_DESCRIPTION =
 	"The person's scenes, in their own tab: list the scenes in their Library (and which one is open, and whether it has unsaved changes), " +
 	'open one of them, or make a new empty scene and open it. Opening replaces what is on the person\'s screen. ' +
 	'UNSAVED CHANGES: when the person said what to do with them, pass unsaved: "save" (saved through their normal save first; the answer names it) ' +
-	'or "discard" — use "discard" ONLY when the person\'s own words in this turn said to drop or not keep the changes, never on your own. ' +
+	'or "discard" — "save this and open X" is ONE call, scene {action: "open", name: X, unsaved: "save"}, not save_scene first. Use "discard" ONLY when the person\'s own words in this turn said to drop or not keep the changes, never on your own. ' +
 	'When they said nothing, leave unsaved out: they are asked on their screen (Save and open / Open without saving / Cancel) and you call again with the confirmId. ' +
 	'When others are in their session the person is always asked. A guest in someone else\'s session cannot change the scene (only the host). ' +
 	'After a switch call list_scene again: every uuid from before is gone, and undo_last and checkpoints end at the switch. ' +

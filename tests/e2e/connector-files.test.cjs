@@ -15,6 +15,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
+	await page.evaluate(() => window.__tp.test.v1.aiAssistantHidden.set(''));
 	const relay = await fakeRelay(page);
 	await installProvider(page);
 	await page.locator('#connect-claude-button').click();

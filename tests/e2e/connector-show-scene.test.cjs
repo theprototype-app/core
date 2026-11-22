@@ -20,6 +20,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
+	await page.evaluate(() => window.__tp.test.v1.aiAssistantHidden.set(''));
 	const relay = await fakeRelay(page);
 	await installProvider(page);
 	await page.locator('#connect-claude-button').click();
@@ -80,8 +81,9 @@ h.run(async () => {
 	}
 
 	// ---- 3 ----------------------------------------------------------------------------------------------------
-	const made = await call('create_objects', { objects: [{ type: 'box', name: 'Far box', position: [30, 0, -30] }] });
-	const boxId = made?.result?.created?.[0]?.uuid ?? made?.result?.objects?.[0]?.uuid ?? made?.result?.uuids?.[0];
+	await reset();
+	const made = await call('create_objects', { objects: [{ kind: 'primitive', primitive: 'box', name: 'Far box', position: [30, 0, -30] }] });
+	const boxId = made?.result?.created?.[0]?.uuid;
 	h.check(!!boxId, `a box to look at (${short(made)})`);
 	const before = await camPos();
 	const c1 = await asked('show', { action: 'camera', frame: [boxId] }, 'Always');
@@ -106,6 +108,7 @@ h.run(async () => {
 	h.check(c3?.result?.moved === true, `counterfactual: with nobody typing and 2 s passed, the same move runs (${short(c3)})`);
 
 	// ---- 4 ----------------------------------------------------------------------------------------------------
+	await reset();
 	await call('files', { action: 'create', path: 'Scripts/door.js', text: 'let a = 1;\nfunction open() {\n  door.open();\n}' });
 	const k1 = await asked('show', { action: 'code', path: 'Scripts/door.js', line: 2, to: 3 }, 'This time');
 	h.check(k1.final?.result?.opened === 'door.js' && k1.final.result.line === 2, `code: door.js opens at line 2 (${short(k1.final)})`);
@@ -146,7 +149,7 @@ h.run(async () => {
 	h.check(roOpen?.type === 'error' && roOpen.error?.code === 'refused', 'a look-only grant cannot open a scene');
 
 	// ---- 7 ----------------------------------------------------------------------------------------------------
-	await call('create_objects', { objects: [{ type: 'sphere', name: 'Unsaved ball', position: [0, 1, 0] }] });
+	await call('create_objects', { objects: [{ kind: 'primitive', primitive: 'sphere', name: 'Unsaved ball', position: [0, 1, 0] }] });
 	h.check((await call('scene', { action: 'list' }))?.result?.current?.unsaved === true, 'Island has unsaved changes now');
 	const o1 = await call('scene', { action: 'open', name: 'Harbour' });
 	h.check(o1?.result?.needsConfirm === true && /Save and open \/ Open without saving \/ Cancel/.test(o1.result.note ?? ''), `nothing said: the person is asked (${short(o1)})`);
@@ -171,7 +174,8 @@ h.run(async () => {
 	h.check(isl.includes('Island'), `Island was saved into the project (${JSON.stringify(isl)})`);
 
 	// ---- 9 ----------------------------------------------------------------------------------------------------
-	const n1 = await call('scene', { action: 'new', name: 'Cove' });
+	// (a scene made by New scene is a loose file until its first save, and reads as unsaved: say what to do)
+	const n1 = await call('scene', { action: 'new', name: 'Cove', unsaved: 'discard' });
 	h.check(n1?.result?.created === 'Cove' && n1.result.opened === 'Cove', `new makes and opens Cove (${short(n1)})`);
 	const n2 = await call('scene', { action: 'new', name: 'Harbour' });
 	h.check(n2?.type === 'error' && /already a scene called/.test(n2.error?.message ?? ''), `a taken name is refused (${short(n2)})`);
@@ -194,7 +198,7 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);
 	await page.waitForTimeout(1500);
-	await call('create_objects', { objects: [{ type: 'box', name: 'Cove rock', position: [2, 0, 2] }] });
+	await call('create_objects', { objects: [{ kind: 'primitive', primitive: 'box', name: 'Cove rock', position: [2, 0, 2] }] });
 	const crowd = await call('scene', { action: 'open', name: 'Harbour', unsaved: 'discard' });
 	h.check(crowd?.result?.needsConfirm === true, `hosting with someone here: the dialog shows even with unsaved: "discard" (${short(crowd)})`);
 	h.check((await toasts()).some((t) => /1 other person is in this session/.test(t)), 'the question says who else is here');

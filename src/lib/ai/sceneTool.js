@@ -59,7 +59,7 @@ async function current() {
 	const { currentLevel } = await import('../levels');
 	const { sceneAtRisk } = await import('../sceneOpenGuard');
 	const at = /** @type {any} */ (get(currentLevel));
-	return { name: at?.name || null, unsaved: sceneAtRisk(), ...(at?.private ? { private: true } : {}), ...(at?.unsaved ? { looseFile: true } : {}) };
+	return { name: at?.name || null, hash: at?.hash || null, unsaved: sceneAtRisk(), ...(at?.private ? { private: true } : {}), ...(at?.unsaved ? { looseFile: true } : {}) };
 }
 
 /** the refusals every switch shares @returns {string | null} */
@@ -162,7 +162,7 @@ async function guardedOpen(args, by, target, label) {
 	if (!crowd && (!now.unsaved || wantUnsaved)) {
 		const t = await target();
 		if ('error' in t) return fail(t.error);
-		if (now.name && t.name === now.name && !now.looseFile) return { opened: t.name, already: true, note: 'That scene is already open.' };
+		if (now.hash && t.hash === now.hash) return { opened: t.name, already: true, note: 'That scene is already open.' };
 		return doSwitch(t, now.unsaved ? /** @type {'save' | 'discard'} */ (wantUnsaved) : 'none', by);
 	}
 	// the person's own dialog. With others here it always shows, and the choice about unsaved work is theirs
@@ -184,7 +184,7 @@ async function guardedOpen(args, by, target, label) {
 		// resolve the target before asking, so a wrong name never reaches the person's screen
 		const probe = await target();
 		if ('error' in probe) return fail(probe.error);
-		if (now.name && probe.name === now.name && !now.looseFile) return { opened: probe.name, already: true, note: 'That scene is already open.' };
+		if (now.hash && probe.hash === now.hash) return { opened: probe.name, already: true, note: 'That scene is already open.' };
 	}
 	return askPerson('scene', args, {
 		summary: 'open ' + label,

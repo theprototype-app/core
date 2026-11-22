@@ -31,7 +31,7 @@
 
 import { get } from 'svelte/store';
 import { explorerItems, explorerFolders, itemBlob, itemById, loadExplorer, updateItemBytes } from '../explorer';
-import { recycleBinEnabled, deletedLog, isFolderRow, folderRowId, canRestoreDeleted, restoreDeletedItem, restoreDeletedFolder } from '../sharedLibrary';
+import { recycleBinEnabled, deletedLog, isFolderRow, folderRowId, canRestoreDeleted, restoreDeletedItem, restoreDeletedFolder, buildDeletedTree } from '../sharedLibrary';
 import { createCodeFile, createCodeFolder, renameCodeEntry, moveCodeEntry, deleteCodeEntry, deleteCounts, refusal } from '../codeFiles';
 import { nodesBoundTo } from '../scriptAssets';
 import { codeTabs } from '../codeWorkspace';
@@ -182,7 +182,7 @@ const byName = (a, b) => String(a.name).localeCompare(String(b.name));
 
 /** what Deleted holds that can come back @param {any} args */
 function listDeleted(args) {
-	const rows = deletedLog().filter((r) => canRestoreDeleted(isFolderRow(r) ? r.hash : r.id ?? r.hash));
+	const rows = restorableRows();
 	const all = rows.map((r) => ({
 		type: isFolderRow(r) ? 'folder' : 'file',
 		name: r.name,
@@ -428,13 +428,28 @@ async function deleteAction(args, by) {
 	});
 }
 
+/**
+ * What restore can bring back: a file whose bytes this device holds (canRestoreDeleted), and a deleted
+ * FOLDER the bin's own tree shows as a real row. A folder row has no bytes, so canRestoreDeleted alone
+ * reads every deleted folder as gone (found by the e2e: "the folder comes back").
+ */
+function restorableRows() {
+	const log = deletedLog();
+	const live = /** @type {any[]} */ (get(explorerFolders));
+	const tree = buildDeletedTree(log, live);
+	return log.filter((r) => {
+		if (!isFolderRow(r)) return canRestoreDeleted(r.id ?? r.hash);
+		const fid = String(folderRowId(r));
+		return !!tree.nodes.get(fid)?.row && !live.some((f) => f.id === fid);
+	});
+}
+
 /** @param {any} args @param {string} by */
 function restoreAction(args, by) {
-	const rows = deletedLog();
 	const want = String(args.id ?? '').trim();
 	const { folders: names, name } = splitPath(String(args.path ?? args.name ?? ''));
 	const leaf = name || names[names.length - 1] || '';
-	const restorable = rows.filter((r) => canRestoreDeleted(isFolderRow(r) ? r.hash : r.id ?? r.hash));
+	const restorable = restorableRows();
 	const hits = want
 		? restorable.filter((r) => (isFolderRow(r) ? folderRowId(r) === want : (r.id ?? r.hash) === want || r.hash === want))
 		: restorable.filter((r) => String(r.name).toLowerCase() === leaf.toLowerCase());

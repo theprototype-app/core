@@ -388,6 +388,12 @@ export async function showTool(args, ctx = {}) {
 		return { back: true, did: said, left: stack.length };
 	}
 	if (!['panel', 'camera', 'code'].includes(action)) return fail('action: panel, camera, code or back');
+	// rule 2 first: a denied or unknown panel is refused without asking and without spending the minute's calls
+	if (action === 'panel') {
+		const asked = String(a.name ?? a.panel ?? '');
+		if (asked && deniedPanel(asked)) return panelAction(a, by);
+		if (asked && !panelOf(asked)) return panelAction(a, by);
+	}
 	const busy = busyReason();
 	if (busy) return fail(busy + ': show waits until they stop (try again in a moment)', { busy: true, retryAfter: 3 });
 	if (answers.get(action) === 'no') return fail('the person said no to letting you ' + KIND_WORDS[action] + ' in this session: describe where to look instead', { refused: true, denied: true });

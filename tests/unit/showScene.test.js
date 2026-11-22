@@ -5,6 +5,7 @@ import { PERSON_AI_TOOLS, PERSON_TOOL_NAMES, personToolReads } from '../../src/l
 // 104 C2/C3: the pure rules of `show` (the panel allow-list, the deny-list, framing, find) and the
 // schemas of `show` / `scene` the agents read.
 
+/** @param {string} name */
 const tool = (name) => PERSON_AI_TOOLS.find((t) => t.function.name === name)?.function;
 
 describe('show: panels', () => {

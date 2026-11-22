@@ -191,6 +191,7 @@ export function overlayLines(elements, runtime) {
 	for (const el of sorted) {
 		if (!isRenderableKind(el.kind)) continue;
 		const rt = runtime?.[el.id] ?? null;
+		if (rt?.hidden) continue; // 102b-hud: Show / Hide Element
 		const text = rt?.text !== undefined && rt?.text !== null ? String(rt.text) : String(el.label ?? '');
 		if (el.kind === 'text' || el.kind === 'timer' || el.kind === 'richtext' || el.kind === 'panel') {
 			const clean = text.replace(/\[[^\]]*\]/g, '').replace(/\s+/g, ' ').trim();
@@ -246,6 +247,7 @@ export function drawPanel(g, entry, runtime, opts = {}) {
 	g.rect(0, 0, W, crop.h * k);
 	g.clip();
 	for (const el of sorted) {
+		if (runtime?.[el.id]?.hidden) continue; // 102b-hud: Show / Hide Element
 		const r = rectInFrame(el, STAGE_W, STAGE_H);
 		const x = (r.left - crop.x) * k;
 		const y = (r.top - crop.y) * k;

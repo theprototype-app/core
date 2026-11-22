@@ -64,6 +64,23 @@ function printProfile(profile) {
 		m.set(key, (m.get(key) ?? 0) + (dt[i] ?? 0) / 1000);
 		windows.set(w, m);
 	}
+	// …and by TASK: every busy sample charged to the outermost app frame of its stack (a frame's render, a
+	// message handler, svelte's flush, a timer), plus the frame under it, so the kinds of work add up
+	const roots = new Map();
+	for (let i = 0; i < profile.samples.length; i++) {
+		const n = byId.get(profile.samples[i]);
+		const name = n.callFrame.functionName || '(anon)';
+		if (name === '(idle)' || name === '(program)' || name === '(garbage collector)') continue;
+		const chain = [];
+		for (let cur = n.id, d = 0; cur !== undefined && d < 80; cur = parent.get(cur), d++) {
+			const f = byId.get(cur).callFrame;
+			if (f.url) chain.push(`${f.functionName || '(anon)'}@${String(f.url).split('/').pop()}:${f.lineNumber + 1}`);
+		}
+		const key = chain.length ? chain.slice(-2).reverse().join(' > ') : '(native) ' + name;
+		roots.set(key, (roots.get(key) ?? 0) + (dt[i] ?? 0) / 1000);
+	}
+	console.log('PROFILE by task:');
+	for (const [k, ms] of [...roots.entries()].sort((a, b) => b[1] - a[1]).slice(0, 25)) console.log(`  ${String(Math.round(ms)).padStart(6)} ms  ${k.slice(0, 220)}`);
 	for (const [w, m] of [...windows.entries()].sort((a, b) => a[0] - b[0])) {
 		const busy = [...m.values()].reduce((a, b) => a + b, 0);
 		console.log(`PROFILE ${w}-${w + 2} s: busy ${Math.round(busy)} ms`);

@@ -56,14 +56,27 @@ h.run(async () => {
 
 	const linked = (P, id) =>
 		P.page.evaluate((peerId) => new Promise((r) => /** @type {any} */ (window).__tp.test.v1.peers.subscribe((p) => r(!!p?.connections?.[peerId]?.open))()), id).catch(() => false);
-	/** h.connect, and when its click raced the pill (the request already went out: the pill says Cancel), approve it */
+	/**
+	 * Join through the functions the Connect pill and the approval card call (peerApproval.requestConnect /
+	 * approvePeer). With nine pages rendering in one browser the host's main thread is too busy for a stable
+	 * click (measured: "element is not stable" until the 30 s timeout), and connecting is not what this suite
+	 * measures — every other two-peer suite covers the UI path.
+	 */
 	const join = async (J) => {
-		try {
-			await h.connect(J, A, 3000);
-		} catch (e) {
-			console.log(`  connect ${J.id}: ${String(e?.message ?? e).split('\n')[0]} -- approving on the host instead`);
-			await h.approveButton(A.page).click({ timeout: 30000 });
-		}
+		const live = await J.page.waitForFunction(() => {
+			let p;
+			/** @type {any} */ (window).__tp.test.v1.peers.subscribe((v) => (p = v))();
+			return p?.peer?.open && p.peer.id ? p.peer.id : false;
+		}, null, { timeout: 30000 }).then((r) => r.jsonValue());
+		J.id = live;
+		await J.page.evaluate((host) => /** @type {any} */ (window).__tp.test.v1.peerApproval.requestConnect(host), A.id);
+		await h.eventually(
+			() => A.page.evaluate(() => { let pa; /** @type {any} */ (window).__stores.pendingApprovals.subscribe((v) => (pa = v))(); return (pa ?? []).map((a) => a.peerId); }),
+			(ids) => ids.includes(J.id),
+			`the host holds ${J.id}'s request`,
+			30000
+		);
+		await A.page.evaluate((id) => /** @type {any} */ (window).__tp.test.v1.peerApproval.approvePeer(id), J.id);
 		await h.eventually(async () => (await linked(J, A.id)) && (await linked(A, J.id)), (v) => v === true, `${J.id} and the host are linked`, 45000);
 	};
 

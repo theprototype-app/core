@@ -514,8 +514,26 @@ export function lastSyncStats() {
 // Subscribing here sees both without touching either writer.
 /** outstanding count at the last notification, so only PROGRESS re-arms the stall */
 let loadingLastLeft = 0;
+// fix-late-joiners row 1 — ONE SCENE BATCH FOR THE WHOLE ANNOUNCED TRANSFER. A join's objects come one wire
+// message at a time, so the drainer emptied its queue every few objects, and each drain's END closed the scene
+// batch with an immediate full poke: the object list and every tree consumer re-rendered every few objects
+// (measured: svelte's flushes 6.1 s of a 15 s join, the drain's endSceneBatch 1.2 s more). The batch is held
+// from the `loading` announcement until the last announced uuid is here (or the batch is closed by a stall,
+// a cancel, a departed sender: every one of them empties `loading`), so pokes stay paced the whole way.
+let announcedBatchOpen = false;
+function holdAnnouncedBatch() {
+    if (announcedBatchOpen) return;
+    announcedBatchOpen = true;
+    beginSceneBatch();
+}
+function releaseAnnouncedBatch() {
+    if (!announcedBatchOpen) return;
+    announcedBatchOpen = false;
+    endSceneBatch();
+}
 loading.subscribe((/** @type {any} */ left) => {
     const count = Array.isArray(left) ? left.length : 0;
+    if (!count) releaseAnnouncedBatch();
     // progress on an open batch: re-arm — but only a timer that is running, never one the
     // ingest fork parked on purpose while its question is open
     if (loadingStartedAt && count > 0 && count < loadingLastLeft && loadingStallTimer) armLoadingStall();
@@ -563,6 +581,7 @@ export async function createLoader(count, uuids, senderId) {
     loadingSender = senderId ?? null;
     // an empty announcement opens nothing to finish, so it starts no clock
     loadingStartedAt = Array.isArray(uuids) && uuids.length ? performance.now() : 0;
+    if (loadingStartedAt) holdAnnouncedBatch();
     loadingAnnounced = Number(count) || 0;
     // 26-C: THE ONE MOMENT the size is known and nothing has been applied. Past it a
     // 4,000-object scene is simply happening to you.

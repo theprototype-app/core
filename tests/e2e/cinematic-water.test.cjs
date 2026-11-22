@@ -13,6 +13,8 @@
 // debugCinematicSoftware=1 (slow, same code). Evidence: test-results/100-cover-water/<scene>/ (sheets + numbers).
 //
 //   APP_URL=https://theprototype.app:7042/ E2E_PC= e2e-slot --local --dev $PWD 7042 -- env E2E_GPU=1 node tests/e2e/cinematic-water.test.cjs
+//   PC real Chrome: cd ~/.code/lanes-30/100-light/lab && TREE=<tree with build/> PORT=7044 node run-pc.mjs --name water-pc \
+//     --driver tests/e2e/cinematic-water.test.cjs --minutes 40
 //   WATER_SCENES=aquarium  (a subset)   WATER_QUALITY=basic|standard|high (default standard)
 const fs = require('fs');
 const path = require('path');
@@ -20,7 +22,10 @@ const h = require('./helpers.cjs');
 
 const ARGS = [...(process.env.E2E_GPU === '1' ? h.GPU_ARGS : []), '--enable-unsafe-webgpu', '--enable-features=Vulkan'];
 const STORAGE = { debugCinematicSoftware: '1' };
-const OUT = process.env.WATER_OUT || path.join(__dirname, '..', '..', 'test-results', '100-cover-water');
+const OUT = process.env.WATER_OUT || process.env.OUT || path.join(__dirname, '..', '..', 'test-results', '100-cover-water');
+// CDP=<port>: drive an already running Chrome (the device lab's real Chrome on the PC, run-pc.mjs --driver this file):
+// the remote slots compile WebGPU shaders with FXC (no DXC in Playwright's Windows build), where the GI does not compile
+const CDP = process.env.CDP || '';
 const SCENES = (process.env.WATER_SCENES || 'aquarium,pool-party,island-ocean,water-works').split(',').filter(Boolean);
 // no template asks for the planar mirror (every preset reflects the sky / env), so on this scene the suite turns it on
 // in the page — the flag the runtime sets from a look with Reflection: Planar — after the shots that compare the views
@@ -196,16 +201,20 @@ const toggle = async (page, want) => {
 	await page.click('#cinematic-toggle');
 	if (want !== 'on') return waitMode(page, want, `the view went ${want}`);
 	let mode = '';
+	let started = false;
+	const seen = [];
 	while (Date.now() - t0 < 600000) {
 		mode = (await state(page)).mode;
-		if (mode === 'on' || mode === 'off' || mode === 'unavailable') break;
-		await page.waitForTimeout(1000);
+		if (seen[seen.length - 1] !== mode) seen.push(mode);
+		if (mode !== 'off') started = true;
+		if (mode === 'on' || mode === 'unavailable' || (started && mode === 'off') || (!started && Date.now() - t0 > 10000)) break;
+		await page.waitForTimeout(500);
 	}
 	const s = Math.round((Date.now() - t0) / 1000);
 	const d = await debug(page).catch(() => null);
 	const last = d?.switches?.filter((/** @type {any} */ x) => x.dir === 'on').pop();
 	entries.push({ s, mode, ms: last?.ms });
-	h.check(mode === 'on' && s <= 120, `the view went on in ${s} s (${mode}; steps ${JSON.stringify(last?.ms ?? null)})`);
+	h.check(mode === 'on' && s <= 120, `the view went on in ${s} s (${seen.join(' -> ')}; steps ${JSON.stringify(last?.ms ?? null)}${mode === 'on' ? '' : '; errors ' + JSON.stringify(d?.errors ?? null).slice(0, 400)})`);
 };
 
 const png = (url) => Buffer.from(url.split(',')[1], 'base64');
@@ -504,7 +513,7 @@ async function oneScene(browser, slug, first) {
 
 h.run(async () => {
 	fs.mkdirSync(OUT, { recursive: true });
-	const browser = await h.launch({ args: ARGS });
+	const browser = CDP ? await require('playwright').chromium.connectOverCDP(`http://127.0.0.1:${CDP}`) : await h.launch({ args: ARGS });
 	for (const [i, slug] of SCENES.entries()) {
 		const timer = new Promise((resolve) => setTimeout(() => resolve('timeout'), SCENE_MS));
 		const res = await Promise.race([oneScene(browser, slug, i === 0).then(() => 'done'), timer]);

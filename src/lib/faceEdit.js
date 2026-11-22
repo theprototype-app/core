@@ -6526,7 +6526,9 @@ export function beginFaceGrab(faceOrIndex) {
 		grabbed,
 		grabPoints,
 		coincident: coincidentPatch,
-		replaced: live.replaced
+		replaced: live.replaced,
+		// 99 K4 rule: the grab's undo brings back the pick it started from
+		selectionBefore: captureSelection(FS.object.uuid)
 	};
 	// P7b: the edge overlay is keyed by POSITION, so a live grab strands it at the
 	// pre-drag place (and the lookups fail outright once the endpoints move).
@@ -6754,6 +6756,7 @@ export function commitFaceGrab() {
 	endProportionalWheel(); // P7b: the wheel belongs to the live drag only
 	const before = FS.grab.before;
 	const moved = FS.grab.corners;
+	const selectionBefore = FS.grab.selectionBefore;
 	settleReplaced(FS.grab, false);
 	FS.grab = null;
 	// carry groups + uvs explicitly rather than leaning on preserveUVs' carry-over (commitFaceAdjust's shape):
@@ -6771,7 +6774,8 @@ export function commitFaceGrab() {
 		after: { positions: after.positions, groups: after.groups, uvs: after.uvs, ...(ids ? { ids } : {}) },
 		stampFaces: true,
 		record: 'op',
-		cap: false
+		cap: false,
+		selectionBefore
 	});
 	return true;
 }

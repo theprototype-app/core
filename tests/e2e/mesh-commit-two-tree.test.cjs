@@ -20,6 +20,9 @@
 //      the branch merges by distance and undoes it, the old peer merges the same mesh and undoes it
 //   5f6a-5f6e. (99 K4 family 6) the branch subdivides a face, the old peer subdivides a rim edge of the kernel output,
 //      both symmetrize in turn, the branch undoes one
+//   5f7a-5f9b. (99 K5/K6, lane 99-live) the branch flips a face on the triangle frame and the old peer flips it back;
+//      the branch grabs the +X face (written in place, touched normals only), the old peer's normals match its own
+//      full recompute, the branch undoes it, the old peer grabs (soup); the branch sculpts (spatial hash) and undoes
 //   6. the old peer (the joiner) reloads and rejoins: its mesh comes back equal (two-peer + reload)
 // Run: OLD_APP_URL=https://theprototype.app:<old port>/ APP_URL=https://theprototype.app:<branch port>/ npm run -s e2e mesh-commit-two-tree
 const path = require('path');
@@ -63,7 +66,9 @@ const FACTS = (uuid) => {
 		faces: faces ? JSON.stringify(faces) : null,
 		groups: JSON.stringify(
 			(geometry.groups ?? []).map((x) => [x.start, x.count, x.materialIndex ?? 0])
-		)
+		),
+		// not part of `same` (each peer derives its normals); the K5 steps compare them explicitly
+		normals: flat.attributes.normal ? fnv(flat.attributes.normal.array) : null
 	};
 };
 const facts = (peer, uuid) => peer.page.evaluate(FACTS, uuid);
@@ -319,6 +324,41 @@ const op4 = (peer, uuid, kind) =>
 					fe.toggleFaceSelection(b);
 					ok = fe.bridgeFaces(1, 0, false) !== false;
 				}
+			} else if (kind === 'flip') {
+				const t = along('x', 1);
+				if (t >= 0) {
+					fe.highlightFaceByTriangle(t);
+					fe.pickFaceUnit(t);
+					ok = fe.commitFaceOp('flip', 0) !== false;
+				}
+			} else if (kind === 'grab') {
+				// 99 K5: the +X face moved 0.1 out in a live drag of 5 frames, then committed
+				const t = along('x', 1);
+				const fi = t >= 0 ? fe.currentFaces().findIndex((f) => f.triIndices.includes(t)) : -1;
+				if (fi >= 0) {
+					fe.highlightFaceByTriangle(t);
+					fe.pickFaceUnit(t);
+					if (fe.beginFaceGrab(fi) !== false) {
+						const V3 = fe.currentFaces()[fi].centroid.constructor;
+						for (let i = 1; i <= 5; i++) fe.applyFaceGrab({ dPos: new V3(0.02 * i, 0, 0) });
+						ok = fe.commitFaceGrab() !== false;
+					}
+				}
+			} else if (kind === 'sculpt') {
+				// 99 K6: one raise stroke in mesh mode (the brush finds its vertices through the spatial hash)
+				fe.exitFaceEdit();
+				const ts = s.terrainSculpt;
+				if (ts.enterSculpt(uuid) !== false) {
+					ts.sculptRadius.set(0.6);
+					ts.sculptStrength.set(0.5);
+					ts.sculptOp.set('raise');
+					ts.beginStroke(uuid);
+					for (let i = 0; i < 6; i++) ts.strokeMove(uuid, 0, 0.1 * i - 0.25, 0.016, 0.5);
+					ts.endStroke();
+					ts.exitSculpt();
+					ok = true;
+				}
+				return { ok };
 			} else if (kind === 'solidify') {
 				fe.setFaceGranularity('object');
 				fe.selectAllFaces();
@@ -617,7 +657,9 @@ h.run(async () => {
 	const s5f5d = await agree('5f5d. branch undo (kernel merge) -> both peers agree');
 	h.check(s5f5d.facts.positions === s5f5b.facts.positions, '5f5d. ...and hold EXACTLY the bytes before the merge');
 	const s5f5e = await f4(O, 'merge', '5f5e');
-	h.check(s5f5e.facts.tris === s5f5c.facts.tris, '5f5e. ...the release merge (soup) on the kernel output drops as many triangles');
+	// 99 K6: the branch merge clusters by distance (greedy targets through the spatial hash), the release by grid
+	// cell, so at a big threshold the two may drop different counts; both must drop some
+	h.check(s5f5e.facts.tris < s5f5b.facts.tris, '5f5e. ...the release merge (soup) on the kernel output drops triangles too');
 	await undo(O);
 	await agree('5f5f. release undo (soup merge) -> both peers agree');
 
@@ -631,6 +673,29 @@ h.run(async () => {
 	await f4(O, 'symmetrize', '5f6d');
 	await undo(L);
 	await agree('5f6e. branch undo (kernel symmetrize) -> both peers agree');
+
+	// 5f7a-5f9b. lane 99-live (K5 live edits, K6 sculpt on the hash)
+	const s5f7pre = await facts(L, uuid);
+	const s5f7a = await f4(L, 'flip', '5f7a');
+	h.check(s5f7a.facts.positions !== s5f7pre.positions, '5f7a. ...and the branch flip (triangle frame) rewound the face');
+	const s5f7b = await f4(O, 'flip', '5f7b');
+	h.check(s5f7b.facts.positions === s5f7pre.positions, '5f7b. ...the release flip of the same face restores the bytes');
+	const s5f8a = await f4(L, 'grab', '5f8a');
+	h.check(s5f8a.facts.positions !== s5f7b.facts.positions, '5f8a. ...and the branch grab (in place) moved the face');
+	h.check(
+		!!s5f8a.facts.normals && s5f8a.facts.normals === (await facts(O, uuid)).normals,
+		'5f8a. ...the release peer (full recompute) holds the same normals as the branch (touched only)'
+	);
+	await undo(L);
+	const s5f8b = await agree('5f8b. branch undo (live grab) -> both peers agree');
+	h.check(s5f8b.facts.positions === s5f7b.facts.positions, '5f8b. ...and hold EXACTLY the bytes before the grab');
+	const s5f8c = await f4(O, 'grab', '5f8c');
+	h.check(s5f8c.facts.positions === s5f8a.facts.positions, '5f8c. ...the release grab (soup) lands the same bytes as the branch grab');
+	const s5f9a = await f4(L, 'sculpt', '5f9a');
+	h.check(s5f9a.facts.positions !== s5f8c.facts.positions, '5f9a. ...and the branch sculpt stroke (spatial hash) changed the mesh');
+	await undo(L);
+	const s5f9b = await agree('5f9b. branch undo (sculpt stroke) -> both peers agree');
+	h.check(s5f9b.facts.positions === s5f8c.facts.positions, '5f9b. ...and hold EXACTLY the bytes before the stroke');
 
 	// 6. two-peer + reload: the joiner reloads and rejoins
 	const beforeReload = await facts(L, uuid);

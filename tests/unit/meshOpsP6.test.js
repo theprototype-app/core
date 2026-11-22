@@ -8,7 +8,7 @@
 // twice must be exactly the ones that were open before (0 on a closed box) — plus
 // consistent WINDING: on a closed result every welded edge is walked once each way.
 // Every expected number is derived from the fixture, never pasted from a run.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import * as THREE from 'three';
 import {
 	readTriangles,
@@ -17,8 +17,12 @@ import {
 	connectVerticesCore,
 	dissolveVerticesCore,
 	fillHoleCore,
-	solidifyCore
+	solidifyCore,
+	loadKernelOps
 } from '$lib/faceEdit.js';
+
+// 99 K4 family 4: fill + solidify run on the kernel, a lazy chunk an edit session loads
+beforeAll(() => loadKernelOps());
 
 const keyOf = (v) => `${Math.round(v.x * 1e4)},${Math.round(v.y * 1e4)},${Math.round(v.z * 1e4)}`;
 const ek = (a, b) => (a < b ? a + '|' + b : b + '|' + a);

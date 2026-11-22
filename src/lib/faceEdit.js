@@ -584,6 +584,11 @@ function kernelOps() {
 	return ops;
 }
 const KERNEL_LOADING = 'Mesh tools are still loading — try again in a moment';
+/** the refusal while the kernel chunk loads (a toast, false) */
+function kernelLoadingRefusal() {
+	showToast(KERNEL_LOADING);
+	return false;
+}
 export { loadKernelOps };
 
 /** a triangle soup as an op mesh, begun @param {any[]} tris */
@@ -631,10 +636,11 @@ function faceVertexKeys(tris, face) {
 	return keys;
 }
 
-/** Remove a face's triangles @param {any[]} tris @param {any} face */
+/** Remove a face's triangles (kernel: deleteTriangles) @param {any[]} tris @param {any} face */
 export function deleteFaceTris(tris, face) {
-	const faceSet = new Set(face.triIndices);
-	return cloneTris(tris.filter((_, ti) => !faceSet.has(ti)));
+	const om = soupOpMesh(tris);
+	kernelOps().deleteTriangles(om, face.triIndices);
+	return opMeshTris(om);
 }
 
 /**
@@ -698,200 +704,9 @@ export function insetFaceEx(tris, face, options = {}) {
 	return opMeshTris(om);
 }
 
-/** B4: subdivide each target tri into 4 via edge midpoints. Midpoints of an
- * edge shared by two SELECTED tris coincide numerically, so the selection
- * stays stitched (an unselected neighbor keeps its full edge — a T-junction,
- * visually seamless on a plane). @param {any[]} tris @param {number[]} targetTris */
-export function subdivideFaceTris(tris, targetTris) {
-	const targets = new Set(targetTris);
-	/** @type {any[]} */
-	const out = [];
-	tris.forEach((t, ti) => {
-		if (!targets.has(ti)) {
-			out.push(withSlot([t[0].clone(), t[1].clone(), t[2].clone()], t.mi, t.uv));
-			return;
-		}
-		const [a, b, c] = t;
-		const ab = a.clone().add(b).multiplyScalar(0.5);
-		const bc = b.clone().add(c).multiplyScalar(0.5);
-		const ca = c.clone().add(a).multiplyScalar(0.5);
-		// M1: uv midpoints are the EXACT analogue of the position midpoints, so a
-		// subdivided face keeps its mapping pixel-for-pixel
-		const uA = uvAt(t, 0);
-		const uB = uvAt(t, 1);
-		const uC = uvAt(t, 2);
-		const uAB = uvLerp(uA, uB, 0.5);
-		const uBC = uvLerp(uB, uC, 0.5);
-		const uCA = uvLerp(uC, uA, 0.5);
-		out.push(
-			withSlot([a.clone(), ab.clone(), ca.clone()], t.mi, t.uv && [uA, uAB, uCA]),
-			withSlot([ab.clone(), b.clone(), bc.clone()], t.mi, t.uv && [uAB, uB, uBC]),
-			withSlot([ca.clone(), bc.clone(), c.clone()], t.mi, t.uv && [uCA, uBC, uC]),
-			withSlot([ab, bc, ca], t.mi, t.uv && [uAB, uBC, uCA])
-		);
-	});
-	return out;
-}
-
-/**
- * Subdivide the target as QUADS where it can: each paired quad becomes a 2x2
- * grid of sub-quads, and only genuinely unpaired triangles take the 4-way
- * triangle split above.
- *
- * This matters far beyond tidiness. The triangle split turns one quad (2 tris)
- * into 8 triangles that have NO grid pairing: pairQuads scores every candidate
- * by rectangularity, the corner-and-centre "kite" pairings are all legal, and
- * the greedy match produces a pinwheel. The quad graph the loop tools walk was
- * then meaningless — which is why "subdivide a face, then Loop" behaved
- * randomly. Bilinear children of a rectangle are rectangles, so the grid scores
- * 0 and pairQuads recovers exactly the topology this emitted.
- *
- * Unselected neighbours keep their full edge, the same T-junction tradeoff the
- * triangle split and loop cut already document.
- * P10: it also reports the TOPOLOGY it built — `origin` maps each output triangle back
- * to the input one it descends from, and `authored` lists the faces this op knows it
- * created (one entry per sub-quad, singletons for a 4-way triangle split). A carry-over
- * alone cannot express that, because all eight children of a split quad descend from the
- * same old face and would collapse into one eight-triangle face.
- * @param {any[]} tris @param {number[]} targetTris
- * @param {Int32Array | number[] | null} partner quad pairing for `tris` (the body
- *   already tolerates null — `partner?.[ti]`)
- * @returns {{tris: any[], newIndices: number[], origin: number[], authored: number[][]}}
- */
-export function subdivideFaceUnits(tris, targetTris, partner) {
-	const targets = new Set(targetTris);
-	/** @type {any[]} */
-	const out = [];
-	/** @type {number[]} */
-	const newIndices = [];
-	/** @type {number[]} out index -> the input index it came from (-1 = brand new) */
-	const origin = [];
-	/** @type {number[][]} */
-	const authored = [];
-	/** every push into `out` goes through here so `origin` cannot drift out of step
-	 * @param {any} tri @param {number} from */
-	const keep = (tri, from) => {
-		origin[out.length] = from;
-		out.push(tri);
-	};
-	const done = new Set();
-	const mid = (/** @type {any} */ p, /** @type {any} */ q) => p.clone().add(q).multiplyScalar(0.5);
-	tris.forEach((t, ti) => {
-		if (done.has(ti)) return;
-		if (!targets.has(ti)) {
-			keep(withSlot([t[0].clone(), t[1].clone(), t[2].clone()], t.mi, t.uv), ti);
-			return;
-		}
-		const mate = partner?.[ti] ?? -1;
-		// both halves must be in the selection, or the quad is only half-targeted
-		// and splitting it as a quad would edit geometry the user did not pick
-		const keys = mate >= 0 && targets.has(mate) ? quadRingKeysIn(tris, ti, mate) : null;
-		if (!keys) {
-			// unpaired (or half-picked): the classic 4-way split, unchanged
-			const sub = subdivideFaceTris([t], [0]);
-			for (const s of sub) {
-				newIndices.push(out.length);
-				// four separate triangular faces, NOT one face of four: they descend
-				// from the same input tri, so only an authored entry can say so
-				authored.push([out.length]);
-				keep(s, ti);
-			}
-			return;
-		}
-		done.add(ti);
-		done.add(mate);
-		// corners in ring order — quadRingKeys returns [p, ra, q, rb] with the
-		// shared p-q as the diagonal, so ring order is p, ra, q, rb
-		const corner = new Map();
-		for (const idx of [ti, mate]) {
-			const tri = tris[idx];
-			tri.forEach((/** @type {any} */ v, /** @type {number} */ c) => {
-				const k = keyOf(v.x, v.y, v.z);
-				if (!corner.has(k)) corner.set(k, { pos: v, uv: uvAt(tri, c) });
-			});
-		}
-		const ring = keys.map((/** @type {string} */ k) => corner.get(k));
-		if (ring.some((/** @type {any} */ r) => !r)) {
-			keep(withSlot([t[0].clone(), t[1].clone(), t[2].clone()], t.mi, t.uv), ti);
-			return;
-		}
-		const [A, B, C, D] = ring;
-		const mAB = mid(A.pos, B.pos);
-		const mBC = mid(B.pos, C.pos);
-		const mCD = mid(C.pos, D.pos);
-		const mDA = mid(D.pos, A.pos);
-		// the bilinear centre is the midpoint of either diagonal
-		const ctr = mid(A.pos, C.pos);
-		const uAB = uvLerp(A.uv, B.uv, 0.5);
-		const uBC = uvLerp(B.uv, C.uv, 0.5);
-		const uCD = uvLerp(C.uv, D.uv, 0.5);
-		const uDA = uvLerp(D.uv, A.uv, 0.5);
-		const uCtr = uvLerp(A.uv, C.uv, 0.5);
-		const mi = t.mi;
-		const textured = !!t.uv;
-		const wantDir = triNormal(t);
-		/** @param {any[]} pos @param {any[]} uv */
-		const emit = (pos, uv) => {
-			const at = out.length;
-			pushQuad(out, pos[0], pos[1], pos[2], pos[3], wantDir, mi, textured ? uv : undefined);
-			/** @type {number[]} */
-			const cell = [];
-			for (let i = at; i < out.length; i++) {
-				newIndices.push(i);
-				origin[i] = ti; // the grid cell descends from the quad's first half
-				cell.push(i);
-			}
-			// ONE sub-quad, authored: this is the pinwheel fix made explicit. Bilinear
-			// children of a rectangle score as rectangles so pairQuads would recover
-			// the same pairing here, but a later twist would lose it again.
-			authored.push(cell);
-		};
-		emit([A.pos.clone(), mAB, ctr.clone(), mDA], [A.uv, uAB, uCtr, uDA]);
-		emit([mAB.clone(), B.pos.clone(), mBC, ctr.clone()], [uAB, B.uv, uBC, uCtr]);
-		emit([ctr.clone(), mBC.clone(), C.pos.clone(), mCD], [uCtr, uBC, C.uv, uCD]);
-		emit([mDA.clone(), ctr.clone(), mCD.clone(), D.pos.clone()], [uDA, uCtr, uCD, D.uv]);
-	});
-	return { tris: out, newIndices, origin, authored };
-}
-
-/**
- * P1 (19-A): iterate `subdivideFaceUnits` `levels` times as ONE pure step, for the
- * adjust engine's Levels parameter (P3). Unused until then — reviewed here so P3
- * does not re-derive it.
- *
- * Between passes the quad pairing CANNOT be re-derived (`pairQuads` can disagree
- * with the split on any non-planar quad — the P9 lesson), so the next pass's
- * `partner` is rebuilt from the previous pass's AUTHORED faces: exactly the 2-tri
- * sub-quads it emitted pair, the 4-way singletons stay unpaired. Each pass
- * re-targets the previous pass's `newIndices` (subdividing again subdivides the
- * area the first pass produced), and the origin maps COMPOSE back to the ORIGINAL
- * input — `origin[i] = prev.origin[step.origin[i]]`, with -1 sticking — so
- * `composeFaces` sees ancestors in the caller's index space, never a middle pass's.
- * The final `authored` needs no merging: a later pass re-targets EVERY face the
- * previous one authored, so only the last pass's faces exist to author.
- * @param {any[]} tris @param {number[]} targetTris @param {Int32Array | number[] | null} partner
- * @param {number} levels
- * @returns {{tris: any[], newIndices: number[], origin: number[], authored: number[][]}}
- */
-export function subdivideLevels(tris, targetTris, partner, levels) {
-	const passes = Math.max(1, Math.round(levels) || 1);
-	let result = subdivideFaceUnits(tris, targetTris, partner);
-	for (let pass = 1; pass < passes; pass++) {
-		const nextPartner = new Int32Array(result.tris.length).fill(-1);
-		for (const face of result.authored) {
-			if (face.length !== 2) continue;
-			nextPartner[face[0]] = face[1];
-			nextPartner[face[1]] = face[0];
-		}
-		const step = subdivideFaceUnits(result.tris, result.newIndices, nextPartner);
-		const prevOrigin = result.origin;
-		const origin = step.origin.map((/** @type {number} */ o) =>
-			o < 0 ? -1 : (prevOrigin[o] ?? -1)
-		);
-		result = { tris: step.tris, newIndices: step.newIndices, origin, authored: step.authored };
-	}
-	return result;
-}
+// B4 / P1 / P10 SUBDIVIDE (quad-aware: a paired quad becomes a 2x2 grid of authored sub-quads, an unpaired triangle
+// a 4-way split; unselected neighbours keep their full edge, a T-junction) and its `levels` iteration live on the
+// kernel since 99 K4 family 6: meshOps/subdivide.js `subdivideUnits` / `subdivideLevels`.
 
 /** B4: reverse the winding (swap b/c) of the target tris — flips their
  * normals. @param {any[]} tris @param {number[]} targetTris */
@@ -932,146 +747,22 @@ export function boundaryLoop(tris, triIndices) {
 }
 
 /**
- * P1 (19-A): the PURE core of the bridge — triangles + the two pieces in,
- * triangles out, no session reads. The loop resolution lives HERE (the loops
- * must be walked on whatever triangles the core is given), returning the exact
- * wrapper toast text as `{error}` when they cannot bridge; the selection-side
- * preconditions (a selection exists, exactly two pieces) stay in the wrapper.
- * @param {any[]} tris @param {number[]} setA @param {number[]} setB the two
- *   connected components (indices into `tris`)
- * @param {{cuts?: number, twist?: number, invert?: boolean}} [options] cuts =
- *   intermediate loops along the tunnel. P3: `twist` rotates the loop PAIRING
- *   by N steps (the angle ordering is deterministic but blind to which vertex
- *   should meet which — a skewed tunnel is one twist step away from a straight
- *   one). P7a: `invert` flips every wall AFTER the shell test has had its say —
- *   the shell test is a heuristic GUESS about which surface of the tunnel you
- *   are meant to see, and this is the user's correction when the guess is wrong
- *   on an unusual shape. Both default to the pre-existing behaviour exactly.
+ * P1 (19-A): the PURE core of the bridge — triangles + the two pieces in, triangles out, no session reads;
+ * `{error}` carries the wrapper's exact toast text when the loops cannot bridge. P3 `twist` rotates the loop
+ * pairing by N steps, P7a `invert` flips every wall after the shell test's guess. 99 K4 family 4: an adapter
+ * over the kernel operator (meshOps/bridgeFill.js `bridgeRegions`, where the recipe lives now).
+ * @param {any[]} tris @param {number[]} setA @param {number[]} setB the two connected components
+ * @param {{cuts?: number, twist?: number, invert?: boolean}} [options]
  * @returns {{tris: any[], origin: number[], authored: number[][]} | {error: string}}
  */
 export function bridgeFacesCore(tris, setA, setB, options = {}) {
-	const cuts = options.cuts ?? 0;
-	const twist = Math.round(options.twist ?? 0) || 0;
-	const invert = !!options.invert;
-	const loopA = boundaryLoop(tris, setA);
-	const loopB = boundaryLoop(tris, setB);
-	if (!loopA || !loopB) {
-		return { error: 'Bridge pieces need one closed boundary each' };
-	}
-	if (loopA.length !== loopB.length) {
-		return {
-			error: 'Bridge needs matching edge counts (' + loopA.length + ' vs ' + loopB.length + ')'
-		};
-	}
-	const remove = new Set([...setA, ...setB]);
-	// WHICH WAY DO THE TUNNEL WALLS FACE? It depends on what the tunnel IS, and the first
-	// pass got one of the two cases backwards (reported: bridging two parallel quads of a
-	// subdivided cube needed a manual Flip Normals, while bridging two separate shells was
-	// fine). Deleting both caps from ONE shell punches a HOLE THROUGH a solid, and you
-	// look at a hole's INNER surface — so those walls face the axis. Two SEPARATE shells
-	// get an exterior connection, a tube you see from outside, facing away from the axis.
-	/** @type {Map<number, number>} tri -> shell id, built once (a scan per lookup would
-	 * be quadratic on a dense mesh) */
-	const shellOf = new Map();
-	shellsOfTris(tris).forEach((shell, id) => shell.forEach((ti) => shellOf.set(ti, id)));
-	const sameShell = shellOf.get(setA[0]) === shellOf.get(setB[0]);
-	const next = cloneTris(tris.filter((/** @type {any} */ _, /** @type {number} */ ti) => !remove.has(ti)));
-	const survivorCount = next.length;
-	const n = loopA.length;
-	const centA = new THREE.Vector3();
-	loopA.forEach((/** @type {any} */ p) => centA.add(p));
-	centA.multiplyScalar(1 / n);
-	const centB = new THREE.Vector3();
-	loopB.forEach((/** @type {any} */ p) => centB.add(p));
-	centB.multiplyScalar(1 / n);
-	const axis = centB.clone().sub(centA);
-	// PAIRING: order both loops by their ANGLE around their own centre, measured
-	// in ONE basis perpendicular to the tunnel axis, then pair by index. The old
-	// closest-vertex anchor plus a forward/backward cost vote is tie-sensitive —
-	// between two aligned square caps several vertex pairs are exactly
-	// equidistant, so which one won depended on loop order, and a one-step
-	// rotation there shows up as a SKEWED tunnel. Angles cannot tie like that.
-	const axisN =
-		axis.lengthSq() > 1e-9 ? axis.clone().normalize() : new THREE.Vector3(0, 1, 0);
-	const uAxis = Math.abs(axisN.x) > 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
-	uAxis.addScaledVector(axisN, -uAxis.dot(axisN));
-	if (uAxis.lengthSq() < 1e-9) uAxis.set(0, 0, 1);
-	uAxis.normalize();
-	const vAxis = new THREE.Vector3().crossVectors(axisN, uAxis).normalize();
-	/** @param {any} p @param {any} centre */
-	const angleOf = (p, centre) => {
-		const d = p.clone().sub(centre);
-		return Math.atan2(d.dot(vAxis), d.dot(uAxis));
-	};
-	/** @param {any[]} loop @param {any} centre */
-	const byAngle = (loop, centre) =>
-		loop
-			.map((/** @type {any} */ p, /** @type {number} */ i) => ({ i, a: angleOf(p, centre) }))
-			.sort((x, y) => x.a - y.a || x.i - y.i)
-			.map((x) => x.i);
-	const orderA = byAngle(loopA, centA);
-	const orderB = byAngle(loopB, centB);
-	// the twist as a non-negative offset into orderB (JS % keeps the sign)
-	const tw = ((twist % n) + n) % n;
-	// the tunnel walls take the FIRST piece's material slot (15-G) — a merged
-	// multi-material mesh must stay fully grouped or it renders as nothing
-	const mi = tris[setA[0]]?.mi || 0;
-	// M1: a tunnel is brand-new surface with no uv to inherit from either cap —
-	// give it the standard strip parametrization (u runs around the loop, v goes
-	// 0 at A to 1 at B). Only when the mesh is textured at all: a uv attribute
-	// must cover EVERY vertex or three throws.
-	const textured = tris.some((/** @type {any} */ t) => !!t.uv);
-	// SEGMENTS along the tunnel: `cuts` intermediate rings, so cuts=0 is the one
-	// band this always built. Each ring is a straight lerp between the paired
-	// loop points — the pairing is already settled above, so a cut cannot
-	// introduce a twist the single-band version did not have.
-	const segs = Math.max(1, Math.round(cuts) + 1);
-	for (let s = 0; s < segs; s++) {
-		const t0 = s / segs;
-		const t1 = (s + 1) / segs;
-		for (let k = 0; k < n; k++) {
-			const a0 = loopA[orderA[k]];
-			const a1 = loopA[orderA[(k + 1) % n]];
-			const b0 = loopB[orderB[(k + tw) % n]];
-			const b1 = loopB[orderB[(k + 1 + tw) % n]];
-			const p00 = a0.clone().lerp(b0, t0);
-			const p10 = a1.clone().lerp(b1, t0);
-			const p11 = a1.clone().lerp(b1, t1);
-			const p01 = a0.clone().lerp(b0, t1);
-			const mid = p00.clone().add(p10).add(p11).add(p01).multiplyScalar(0.25);
-			// radial OUT from the tunnel axis at this quad = the visible side
-			let wantDir;
-			if (axis.lengthSq() > 1e-9) {
-				const t = Math.min(Math.max(mid.clone().sub(centA).dot(axis) / axis.lengthSq(), 0), 1);
-				wantDir = mid.clone().sub(centA.clone().addScaledVector(axis, t));
-			} else wantDir = mid.clone().sub(centA);
-			if (wantDir.lengthSq() < 1e-9) wantDir = new THREE.Vector3(0, 1, 0);
-			if (sameShell) wantDir.negate(); // a hole through a solid shows its INNER surface
-			// P7a: the user's override, applied AFTER the heuristic — whichever way
-			// the shell test guessed, this is the other one
-			if (invert) wantDir.negate();
-			pushQuad(
-				next,
-				p00,
-				p10,
-				p11,
-				p01,
-				wantDir.normalize(),
-				mi,
-				textured
-					? [
-							[k / n, t0],
-							[(k + 1) / n, t0],
-							[(k + 1) / n, t1],
-							[k / n, t1]
-						]
-					: undefined
-			);
-		}
-	}
-	// both caps go, the survivors reindex, and every tunnel wall is a quad the op
-	// knows it built (pushQuad pairs, so the appended range reads as quads)
-	const origin = survivorOrigin(tris.length, remove);
+	const om = soupOpMesh(tris);
+	const r = kernelOps().bridgeRegions(om, setA, setB, options);
+	if ('error' in r) return { error: r.error };
+	const next = opMeshTris(om);
+	// both caps go, the survivors reindex, and every tunnel wall is a quad the op built
+	const origin = survivorOrigin(tris.length, new Set([...setA, ...setB]));
+	const survivorCount = origin.length;
 	while (origin.length < next.length) origin.push(-1);
 	return { tris: next, origin, authored: appendedQuads(survivorCount, next.length) };
 }
@@ -1119,33 +810,9 @@ export function bridgeFaces(cuts = 0, twist = 0, invert = false) {
 		return false;
 	}
 	const [setA, setB] = parts;
-	const before = trisToPositions(FS.workingTris);
-	const beforeGroups = trisToGroups(FS.workingTris);
-	const beforeUVs = trisToUVs(FS.workingTris);
-	const beforeFaces = readStoredFaces(FS.object?.geometry);
-	const priorFaces = currentPartition();
-	const result = bridgeFacesCore(FS.workingTris, setA, setB, { cuts, twist, invert });
-	if ('error' in result) {
-		showToast(result.error);
-		return false;
-	}
-	const next = result.tris;
-	const positions = trisToPositions(next);
-	if (positions.length > MAX_SNAPSHOT) {
-		showToast(tooLargeMessage(positions.length, 'edit'));
-		return false;
-	}
-	const groups = trisToGroups(next);
-	const uvs = trisToUVs(next);
-	commitMesh({
-		apply: 'session',
-		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
-		after: { positions, groups, uvs },
-		faces: composeFaces(priorFaces, result.origin, result.authored),
-		stampFaces: true,
-		record: 'op',
-		cap: false
-	});
+	// 99 K4 family 4: on the session's op mesh, committed with its element IDs
+	const r = sessionKernelCommit((ops, om) => ops.bridgeRegions(om, setA, setB, { cuts, twist, invert }));
+	if (!r) return false;
 	faceEditSelectedTris.set([]);
 	faceEditHighlight.set(-1);
 	return true;
@@ -2189,7 +1856,7 @@ function quadCornersIn(tris, partner, quad) {
  * PERPENDICULAR to the walk direction into cuts+1 sub-quads, interpolating
  * positions and UVs, keeping the material slot, as ONE undoable meshgeo.
  *
- * Like `subdivideFaceTris`, the quads FLANKING the ring keep their full edge —
+ * Like subdivide (meshOps/subdivide.js), the quads FLANKING the ring keep their full edge —
  * a T-junction, and visually seamless because the new vertices sit exactly on
  * that edge. (Blender turns those into n-gons; a triangle soup has no n-gons.)
  * @param {number} cuts @returns {boolean}
@@ -3530,44 +3197,32 @@ export function deleteVertices(uuid, vertexKeys) {
 		showToast('Select a vertex first, then Delete');
 		return false;
 	}
-	const keys = new Set(vertexKeys);
-	const inputTris = readTriangles(object.geometry);
-	/** @type {Set<number>} */
-	const drop = new Set();
-	inputTris.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
-		if (t.some((/** @type {any} */ v) => keys.has(keyOf(v.x, v.y, v.z)))) drop.add(ti);
-	});
-	if (!drop.size) {
-		showToast('Nothing to delete — no face uses those vertices');
-		return false;
-	}
-	if (drop.size >= inputTris.length) {
-		showToast('That would delete every face of the mesh — pick fewer vertices');
-		return false;
-	}
-	const priorFaces = readStoredFaces(object.geometry);
-	const before = {
-		positions: trisToPositions(inputTris),
-		groups: trisToGroups(inputTris),
-		uvs: trisToUVs(inputTris),
-		faces: priorFaces
-	};
-	const kept = cloneTris(
-		inputTris.filter((/** @type {any} */ _, /** @type {number} */ ti) => !drop.has(ti))
+	const geometry = object.geometry;
+	const inputTris = readTriangles(geometry);
+	const stored = readStoredFaces(geometry);
+	// 99 K4 family 5: on the kernel. Every survivor keeps the face it was in (the mergeByDistance shape); a mesh
+	// with NO stored partition commits every survivor as its own face, as the soup operator did (composeFaces(null))
+	const r = objectKernelCommit(
+		uuid,
+		object,
+		() => partitionOfGeometry(geometry, inputTris),
+		inputTris,
+		(ops, om) => {
+			const drop = ops.trianglesTouching(om, ops.verticesOfKeys(om, vertexKeys));
+			if (!drop.length) return { error: 'Nothing to delete — no face uses those vertices' };
+			if (drop.length >= om.view.count) return { error: 'That would delete every face of the mesh — pick fewer vertices' };
+			return ops.deleteTriangles(om, drop);
+		},
+		{ op: true, faces: stored ? undefined : (count) => Array.from({ length: count }, (_, t) => [t]) }
 	);
-	const after = {
-		positions: trisToPositions(kept),
-		groups: trisToGroups(kept),
-		uvs: trisToUVs(kept),
-		// every survivor keeps the face it was in; a face whose triangles all went simply
-		// goes away with them — the mergeByDistance shape
-		faces: composeFaces(priorFaces, survivorOrigin(inputTris.length, drop), [])
-	};
-	if (!commitMeshGeoTriple(uuid, before, after, true)) return false;
+	if ('error' in r) {
+		showToast(r.error);
+		return false;
+	}
 	showToast(
 		'Deleted ' +
-			drop.size +
-			(drop.size === 1 ? ' face' : ' faces') +
+			r.dropped +
+			(r.dropped === 1 ? ' face' : ' faces') +
 			' around ' +
 			vertexKeys.length +
 			(vertexKeys.length === 1 ? ' vertex' : ' vertices')
@@ -4763,33 +4418,10 @@ function barycentricOf(point, tri) {
 // instead of landing a hair away and leaving a crack.
 
 /**
- * Append the MIRROR of one kept triangle. A reflection flips handedness, so the winding is
- * reversed — copying the order verbatim turns every mirrored face inside out, which is
- * invisible from outside until you notice you can see through the model.
- * @param {any[]} out @param {any[]} pairs @param {number} kept the source index in `out`
- * @param {any} tri the kept triangle (carries mi/uv like every tri array) @param {any} uv
- */
-function mirrorInto(out, pairs, kept, tri, uv) {
-	const mirrored = tri.map((/** @type {any} */ v) => {
-		const point = v.clone();
-		mirrorComponent(point);
-		return point;
-	});
-	// a triangle sitting ON the plane maps to itself: mirroring it would double it up
-	if (mirrored.every((/** @type {any} */ v, /** @type {number} */ i) => v.equals(tri[i]))) return;
-	pairs.push({ source: kept, mirrored: out.length });
-	out.push(withSlot([mirrored[0], mirrored[2], mirrored[1]], tri.mi ?? out[kept]?.mi, uv && [uv[0], uv[2], uv[1]]));
-}
-
-/** the axis negation for the mirror in progress — set by symmetrizeMesh, which is the only
- * caller and runs to completion synchronously @type {(v: any) => void} */
-let mirrorComponent = () => {};
-
-/**
- * The PURE half of symmetrize (37 R11: shared by the one-shot command and LIVE symmetry):
- * keep one side of a triangle soup, clip what straddles the plane, and append the mirror of
- * everything kept. Triangles in, triangles out — no session, no scene.
- * @param {any[]} tris @param {number[][]|null} prior the partition to carry (null = derive)
+ * The soup form of symmetrize (37 R11: the adjust engine's live mirror and the unit tests read it): keep one side of
+ * a triangle soup, clip what straddles the plane, and append the mirror of everything kept. Triangles in,
+ * triangles out. 99 K4 family 6: the kernel operator (meshOps/subdivide.js `symmetrize`) on the soup as an op mesh.
+ * @param {any[]} tris @param {number[][]|null} prior the partition to carry (null = every triangle its own face)
  * @param {'x'|'y'|'z'} axis @param {number} keep +1 keeps the positive side, -1 the negative
  * @param {number} tolerance vertices this close to the plane are pinned ONTO it
  * @returns {{tris: any[], faces: number[][]|null, kept: Map<number, number>, pairs: number,
@@ -4798,115 +4430,21 @@ let mirrorComponent = () => {};
  *   survives through it).
  */
 export function mirrorTrisCore(tris, prior, axis, keep, tolerance) {
-	const index = axis === 'y' ? 1 : axis === 'z' ? 2 : 0;
-	const component = (/** @type {any} */ v) => (index === 0 ? v.x : index === 1 ? v.y : v.z);
-	const setComponent = (/** @type {any} */ v, /** @type {number} */ value) => {
-		if (index === 0) v.x = value;
-		else if (index === 1) v.y = value;
-		else v.z = value;
-	};
-	mirrorComponent = (v) => setComponent(v, -component(v));
-	const working = cloneTris(tris);
-	for (const tri of working)
-		for (const v of tri) if (Math.abs(component(v)) < tolerance) setComponent(v, 0);
-	/** @type {any[]} */
-	const out = [];
-	/** @type {number[]} out index -> source index, for the kept half */
-	const origin = [];
-	/** @type {{source: number, mirrored: number}[]} */
-	const pairs = [];
-	/** @type {Map<number, number>} */
-	const kept = new Map();
-	let dropped = 0;
-	let clipped = 0;
-	working.forEach((/** @type {any} */ tri, /** @type {number} */ ti) => {
-		// SIGNED distance to the plane, oriented so positive means "the half we keep"
-		const d = tri.map((/** @type {any} */ v) => component(v) * keep);
-		const positives = d.filter((/** @type {number} */ x) => x > 0).length;
-		const negatives = d.filter((/** @type {number} */ x) => x < 0).length;
-		if (!positives && !negatives) return; // a sliver lying IN the plane has no area to keep
-		if (!negatives) {
-			// wholly on the keep side
-			origin[out.length] = ti;
-			kept.set(ti, out.length);
-			const keptAt = out.length;
-			out.push(withSlot([tri[0].clone(), tri[1].clone(), tri[2].clone()], tri.mi, tri.uv));
-			mirrorInto(out, pairs, keptAt, tri, tri.uv);
-			return;
-		}
-		if (!positives) {
-			dropped++;
-			return;
-		}
-		// STRADDLING: clip it. Classifying by centroid instead (the first pass) leaves a
-		// jagged half whose boundary the mirror cannot meet — 8 odd edges on a plain box,
-		// because a box has no vertices on the plane at all and every side face straddles.
-		// Sutherland-Hodgman against one plane: keep the inside corners, add the crossings.
-		/** @type {{pos: any, uv: number[]|undefined}[]} */
-		const polygon = [];
-		for (let i = 0; i < 3; i++) {
-			const j = (i + 1) % 3;
-			const uvI = tri.uv ? tri.uv[i] : undefined;
-			const uvJ = tri.uv ? tri.uv[j] : undefined;
-			if (d[i] >= 0) polygon.push({ pos: tri[i].clone(), uv: uvI });
-			if ((d[i] > 0 && d[j] < 0) || (d[i] < 0 && d[j] > 0)) {
-				const t = d[i] / (d[i] - d[j]);
-				const point = tri[i].clone().lerp(tri[j], t);
-				// force the crossing EXACTLY onto the plane: both triangles sharing this edge
-				// compute the same t, and pinning the component kills the last float wobble, so
-				// the seam welds and the mirror lands on it precisely
-				setComponent(point, 0);
-				polygon.push({ pos: point, uv: uvI && uvJ ? uvLerp(uvI, uvJ, t) : undefined });
-			}
-		}
-		if (polygon.length < 3) {
-			dropped++;
-			return;
-		}
-		clipped++;
-		const normal = triNormal(tri);
-		for (let i = 1; i < polygon.length - 1; i++) {
-			const piece = [polygon[0], polygon[i], polygon[i + 1]];
-			const points = piece.map((entry) => entry.pos.clone());
-			const uvs = tri.uv ? piece.map((entry) => entry.uv ?? tri.uv[0]) : undefined;
-			const flip = triNormal(points).dot(normal) < 0;
-			const wound = flip ? [points[0], points[2], points[1]] : points;
-			const woundUv = uvs && (flip ? [uvs[0], uvs[2], uvs[1]] : uvs);
-			origin[out.length] = ti;
-			const keptAt = out.length;
-			out.push(withSlot(wound, tri.mi, woundUv));
-			mirrorInto(out, pairs, keptAt, wound, woundUv);
-		}
-	});
-	if (!pairs.length) return null;
-	// the partition: a kept triangle keeps its face, and each mirrored triangle joins the
-	// MIRROR of that face — so a quad stays a quad on both sides instead of becoming loose
-	// triangles that coplanarity has to re-guess
-	/** @type {Map<number, number[]>} source face index -> mirrored out indices */
-	const mirroredFaces = new Map();
+	const ops = kernelOps();
+	const om = soupOpMesh(tris);
 	if (prior) {
-		/** @type {Map<number, number>} source tri -> its face */
-		const faceOf = new Map();
-		prior.forEach((face, fi) => face.forEach((ti) => faceOf.set(ti, fi)));
-		for (const pair of pairs) {
-			const fi = faceOf.get(origin[pair.source]);
-			if (fi === undefined) continue;
-			let list = mirroredFaces.get(fi);
-			if (!list) mirroredFaces.set(fi, (list = []));
-			list.push(pair.mirrored);
-		}
+		// the soup op mesh is one face per triangle: group them by the partition (a triangle it misses alone)
+		const faceOf = new Int32Array(tris.length).fill(-1);
+		prior.forEach((face, fi) => face.forEach((ti) => (faceOf[ti] = fi)));
+		for (let t = 0; t < om.view.count; t++) om.logical[om.view.tFace[t]] = faceOf[t] >= 0 ? faceOf[t] : prior.length + t;
+		om.baseGroup = om.nextGroup = prior.length + tris.length;
 	}
-	const authored = [...mirroredFaces.values()].filter((list) => list.length);
-	const fullOrigin = [];
-	for (let i = 0; i < out.length; i++) fullOrigin[i] = origin[i] ?? -1;
-	return {
-		tris: out,
-		faces: composeFaces(prior, fullOrigin, authored),
-		kept,
-		pairs: pairs.length,
-		clipped,
-		dropped
-	};
+	const r = ops.symmetrize(om, axis, keep, tolerance);
+	if (!r) return null;
+	const out = opMeshTris(om);
+	// no partition: the soup made every triangle its own face, in output order
+	const faces = prior ? ops.opPartition(om, 'appearance') : out.map((/** @type {any} */ _, /** @type {number} */ t) => [t]);
+	return { tris: out, faces, kept: r.kept, pairs: r.pairs, clipped: r.clipped, dropped: r.dropped };
 }
 
 /** the snap tolerance scales with the object, so it means the same thing on a chair and on
@@ -4926,53 +4464,35 @@ function mirrorTolerance(object) {
 export function symmetrizeMesh(axis = 'x', keep = 1) {
 	interruptOpAdjust(); // 19-A P2: a one-shot commit ends any live adjust first
 	if (!FS.object) return false;
-	const tris = readTriangles(FS.object.geometry);
-	if (!tris.length) return false;
-	const before = {
-		positions: trisToPositions(tris),
-		groups: trisToGroups(tris),
-		uvs: trisToUVs(tris),
-		faces: readStoredFaces(FS.object.geometry)
-	};
-	const result = mirrorTrisCore(tris, currentPartition(), axis, keep, mirrorTolerance(FS.object));
-	if (!result) {
-		showToast(
-			'Nothing to mirror: no geometry on the ' +
-				(keep > 0 ? 'positive' : 'negative') +
-				' side of the ' +
-				axis.toUpperCase() +
-				' plane'
-		);
-		return false;
-	}
-	const positions = trisToPositions(result.tris);
-	if (positions.length > MAX_SNAPSHOT) {
-		showToast(tooLargeMessage(positions.length, 'mirror'));
-		return false;
-	}
-	faceEditSelectedTris.set([]);
-	faceEditHighlight.set(-1);
-	faceEditHoverTri.set(-1);
-	clearEdgeSelectionInner();
-	const groups = trisToGroups(result.tris);
-	const uvs = trisToUVs(result.tris);
-	commitMesh({
-		apply: 'session',
-		before,
-		after: { positions, groups, uvs },
-		faces: result.faces,
-		stampFaces: true,
-		record: 'entry',
-		cap: false
-	});
+	if (!FS.workingTris.length) return false;
+	const tolerance = mirrorTolerance(FS.object);
+	// 99 K4 family 6: on the session's op mesh; recorded as an ENTRY (it is the mirror: live symmetry leaves it be)
+	const r = sessionKernelCommit(
+		(ops, om) =>
+			ops.symmetrize(om, axis, keep, tolerance) ?? {
+				error:
+					'Nothing to mirror: no geometry on the ' +
+					(keep > 0 ? 'positive' : 'negative') +
+					' side of the ' +
+					axis.toUpperCase() +
+					' plane'
+			},
+		() => {
+			faceEditSelectedTris.set([]);
+			faceEditHighlight.set(-1);
+			clearEdgeSelectionInner();
+		},
+		{ record: 'entry', tooLarge: 'mirror' }
+	);
+	if (!r) return false;
 	showToast(
 		'Symmetrized across ' +
 			axis.toUpperCase() +
 			': mirrored ' +
-			result.pairs +
-			(result.pairs === 1 ? ' triangle' : ' triangles') +
-			(result.clipped ? ', clipped ' + result.clipped : '') +
-			(result.dropped ? ', dropped ' + result.dropped : '')
+			r.pairs +
+			(r.pairs === 1 ? ' triangle' : ' triangles') +
+			(r.clipped ? ', clipped ' + r.clipped : '') +
+			(r.dropped ? ', dropped ' + r.dropped : '')
 	);
 	return true;
 }
@@ -5087,16 +4607,25 @@ export function liveMirrorEntry(entry) {
 	const axis = /** @type {'x'|'y'|'z'} */ (get(symAxis));
 	const side = editSide(trisOfState(entry.before), tris, axis) ?? get(symKeep);
 	const prior = session ? currentPartition() : readStoredFaces(object.geometry);
-	const result = mirrorTrisCore(tris, prior, axis, side, mirrorTolerance(object));
-	if (!result) return false;
-	const positions = trisToPositions(result.tris);
+	// 99 K4 family 6: the kernel operator on the op mesh the op just kept (its IDs ride into the rewritten entry)
+	const ops = editSession.ops;
+	if (!ops) return false;
+	const partner = session ? FS.quadPartner : OBJECT_PARTNER;
+	const om = heldOpMesh(ops, object.geometry, () => prior, partner);
+	const result = ops.symmetrize(om, axis, side, mirrorTolerance(object));
+	if (!result) return false; // nothing changed: the held op mesh still describes the geometry
+	editSession.opMesh = null; // edited in place: re-kept below
+	const out = ops.opOutput(om, { order: 'appearance' });
+	const positions = out.positions;
 	if (sameFloats(positions, current)) return false; // already symmetric: nothing to send
 	if (positions.length > MAX_SNAPSHOT) {
 		showToast(tooLargeMessage(positions.length, 'mirror'));
 		return false;
 	}
-	const groups = trisToGroups(result.tris);
-	const uvs = trisToUVs(result.tris);
+	const groups = out.groups;
+	const uvs = out.uvs;
+	// no stored partition (a vertex session on a never-edited mesh): the soup made every triangle its own face
+	const faces = prior ? out.faces : Array.from({ length: positions.length / 9 }, (_, t) => [t]);
 	/** @type {any} */
 	let mirrored = null;
 	liveMirroring = true;
@@ -5111,7 +4640,7 @@ export function liveMirrorEntry(entry) {
 			faceEditSelectedTris.set(/** @type {number[]} */ (picked));
 			faceEditHighlight.set(-1);
 			faceEditHoverTri.set(-1);
-			mirrored = mirrorCommit(entry.uuid, true, positions, groups, uvs, result.faces);
+			mirrored = mirrorCommit(entry.uuid, true, positions, groups, uvs, faces, out.ids);
 			if (hadHighlight && picked.length) {
 				faceEditHighlight.set(faceIndexForTriangle(/** @type {number} */ (picked[0])));
 				refreshFaceOverlay();
@@ -5124,11 +4653,12 @@ export function liveMirrorEntry(entry) {
 			// the vertex session rebuilds its handles in triangle order on the swap, so the
 			// picks are carried as POSITIONS (the commitFalloffSnapshot rule)
 			const picks = vertexSelectionHistory?.positions?.() ?? null;
-			mirrored = mirrorCommit(entry.uuid, false, positions, groups, uvs, result.faces);
+			mirrored = mirrorCommit(entry.uuid, false, positions, groups, uvs, faces, out.ids);
 			if (picks) vertexSelectionHistory?.reselect?.(picks);
 		}
 		// the op's ONE entry now holds the mirrored state (99 K2: compact, like every entry)
 		entry.after = mirrored.after;
+		if (faces === out.faces) keepOpMesh(entry.uuid, om, out, partner);
 	} finally {
 		liveMirroring = false;
 	}
@@ -5138,14 +4668,15 @@ export function liveMirrorEntry(entry) {
 /**
  * 99 K2: the live mirror's apply + broadcast through the one commit; it records nothing (the
  * op's own entry is rewritten instead). @param {string} uuid @param {boolean} session
- * @param {number[]} positions @param {any} groups @param {any} uvs @param {number[][] | null} faces
+ * @param {ArrayLike<number>} positions @param {any} groups @param {any} uvs @param {number[][] | null} faces
+ * @param {any} [ids] the op mesh's ID channels (99 K4)
  */
-function mirrorCommit(uuid, session, positions, groups, uvs, faces) {
+function mirrorCommit(uuid, session, positions, groups, uvs, faces, ids) {
 	return /** @type {any} */ (
 		commitMesh({
 			uuid,
 			apply: session ? 'session' : 'object',
-			after: { positions, groups, uvs },
+			after: { positions, groups, uvs, ...(ids ? { ids } : {}) },
 			faces,
 			stampFaces: true,
 			record: false,
@@ -5207,136 +4738,16 @@ export function dissolveEdges() {
 		showToast('Pick an edge to dissolve');
 		return false;
 	}
-	/** @type {Map<string, number[]>} edge key -> triangles */
-	const byEdge = new Map();
-	FS.workingTris.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
-		for (let e = 0; e < 3; e++) {
-			const k = edgeKey(
-				keyOf(t[e].x, t[e].y, t[e].z),
-				keyOf(t[(e + 1) % 3].x, t[(e + 1) % 3].y, t[(e + 1) % 3].z)
-			);
-			let list = byEdge.get(k);
-			if (!list) byEdge.set(k, (list = []));
-			list.push(ti);
-		}
-	});
-	const normals = FS.workingTris.map(triNormal);
-	const drop = new Set();
-	/** @type {any[]} */
-	const added = [];
-	/** P11: the fan each dissolved region emits is ONE polygon — an n-gon, the thing
-	 * dissolve is FOR. `[start, end)` in `added` per region, so the partition can say
-	 * so instead of leaving n-2 loose triangles for coplanarity to re-guess. */
-	const fans = [];
-	let dissolved = 0;
-	let skipped = 0;
-
-	for (const key of sel) {
-		const pair = byEdge.get(key);
-		if (!pair || pair.length !== 2 || pair.some((ti) => drop.has(ti))) {
-			skipped++;
-			continue;
-		}
-		// grow each side to its WHOLE quad, so the merged polygon is the two
-		// quads and the fan can avoid re-creating the dissolved edge
-		const patch = new Set();
-		for (const ti of pair) {
-			patch.add(ti);
-			const mate = FS.quadPartner[ti] ?? -1;
-			if (mate >= 0) patch.add(mate);
-		}
-		const tris = [...patch];
-		if (tris.some((ti) => normals[ti].dot(normals[tris[0]]) < FACE_COPLANAR)) {
-			skipped++; // dissolving a non-flat join would change the silhouette
-			continue;
-		}
-		const loop = boundaryLoop(FS.workingTris, tris);
-		if (!loop || loop.length < 3) {
-			skipped++;
-			continue;
-		}
-		// uv/pos per boundary corner
-		/** @type {Map<string, {pos: any, uv: number[]}>} */
-		const corner = new Map();
-		for (const ti of tris)
-			FS.workingTris[ti].forEach((/** @type {any} */ v, /** @type {number} */ c) => {
-				const k = keyOf(v.x, v.y, v.z);
-				if (!corner.has(k)) corner.set(k, { pos: v, uv: uvAt(FS.workingTris[ti], c) });
-			});
-		// start the fan at a corner that is NOT an endpoint of the dissolved edge,
-		// or the fan's first spoke would BE that edge again
-		const ends = key.split('|');
-		const startAt = loop.findIndex((/** @type {any} */ p) => !ends.includes(keyOf(p.x, p.y, p.z)));
-		if (startAt < 0) {
-			skipped++;
-			continue;
-		}
-		const n = loop.length;
-		const at = (/** @type {number} */ i) => {
-			const p = loop[(startAt + i) % n];
-			return corner.get(keyOf(p.x, p.y, p.z)) ?? { pos: p, uv: [0, 0] };
-		};
-		const mi = FS.workingTris[tris[0]].mi;
-		const textured = !!FS.workingTris[tris[0]].uv;
-		const normal = normals[tris[0]];
-		const fanStart = added.length;
-		for (let i = 1; i < n - 1; i++) {
-			const a = at(0);
-			const b = at(i);
-			const c = at(i + 1);
-			// wound to match the source face
-			const tri = [a.pos.clone(), b.pos.clone(), c.pos.clone()];
-			const uv = textured ? [a.uv, b.uv, c.uv] : undefined;
-			if (triNormal(tri).dot(normal) < 0) {
-				added.push(withSlot([tri[0], tri[2], tri[1]], mi, uv && [uv[0], uv[2], uv[1]]));
-			} else {
-				added.push(withSlot(tri, mi, uv));
-			}
-		}
-		fans.push([fanStart, added.length]);
-		tris.forEach((ti) => drop.add(ti));
-		dissolved++;
-	}
-
-	if (!dissolved) {
-		showToast(
-			'Nothing to dissolve — an edge must join TWO COPLANAR faces (a model corner cannot be dissolved without changing the shape)'
-		);
-		return false;
-	}
-	const before = trisToPositions(FS.workingTris);
-	const beforeGroups = trisToGroups(FS.workingTris);
-	const beforeUVs = trisToUVs(FS.workingTris);
-	const beforeFaces = readStoredFaces(FS.object?.geometry);
-	const survivors = cloneTris(
-		FS.workingTris.filter((/** @type {any} */ _, /** @type {number} */ ti) => !drop.has(ti))
+	// 99 K4 family 5: on the session's op mesh (the quads either side, by the session's quad pairing)
+	const partner = FS.quadPartner;
+	const r = sessionKernelCommit(
+		(ops, om) => ops.dissolveEdges(om, ops.edgesOfKeys(om, sel), partner),
+		() => clearEdgeSelection()
 	);
-	const next = [...survivors, ...added];
-	const positions = trisToPositions(next);
-	const groups = trisToGroups(next);
-	const uvs = trisToUVs(next);
-	// each fan becomes ONE face: the n-gon the user just made by removing an edge
-	const origin = survivorOrigin(FS.workingTris.length, drop);
-	while (origin.length < next.length) origin.push(-1);
-	const fanFaces = fans.map(([from, to]) => {
-		/** @type {number[]} */
-		const face = [];
-		for (let i = from; i < to; i++) face.push(survivors.length + i);
-		return face;
-	});
-	commitMesh({
-		apply: 'session',
-		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
-		after: { positions, groups, uvs },
-		faces: composeFaces(currentPartition(), origin, fanFaces),
-		stampFaces: true,
-		record: 'op',
-		cap: false
-	});
-	clearEdgeSelection();
+	if (!r) return false;
 	showToast(
-		'Dissolved ' + dissolved + ' edge' + (dissolved === 1 ? '' : 's') +
-			(skipped ? ' (' + skipped + ' skipped — not a coplanar pair)' : '')
+		'Dissolved ' + r.dissolved + ' edge' + (r.dissolved === 1 ? '' : 's') +
+			(r.skipped ? ' (' + r.skipped + ' skipped — not a coplanar pair)' : '')
 	);
 	return true;
 }
@@ -5359,61 +4770,27 @@ export function deleteSelectedEdges() {
 		showToast('Pick an edge to delete');
 		return false;
 	}
-	const keys = new Set(sel);
-	/** @type {Set<number>} */
-	const drop = new Set();
-	FS.workingTris.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
-		for (let e = 0; e < 3; e++) {
-			const k = edgeKey(
-				keyOf(t[e].x, t[e].y, t[e].z),
-				keyOf(t[(e + 1) % 3].x, t[(e + 1) % 3].y, t[(e + 1) % 3].z)
-			);
-			if (keys.has(k)) {
-				drop.add(ti);
-				return;
-			}
+	// 99 K4 family 5: on the session's op mesh — every triangle with a side on a picked edge goes
+	const r = sessionKernelCommit(
+		(ops, om) => {
+			const drop = ops.trianglesOnSides(om, ops.edgesOfKeys(om, sel));
+			if (!drop.length) return { error: 'Nothing to delete — no face uses those edges' };
+			if (drop.length >= om.view.count) return { error: 'That would delete every face of the mesh — pick fewer edges' };
+			return ops.deleteTriangles(om, drop);
+		},
+		() => {
+			// clear the picks BEFORE the swap: applyGeometrySnapshot rebuilds both overlays from them, and every
+			// index past a dropped triangle has moved
+			clearEdgeSelectionInner(); // the op tidying up after itself, not a user pick
+			faceEditSelectedTris.set([]);
+			faceEditHighlight.set(-1);
 		}
-	});
-	if (!drop.size) {
-		showToast('Nothing to delete — no face uses those edges');
-		return false;
-	}
-	if (drop.size >= FS.workingTris.length) {
-		showToast('That would delete every face of the mesh — pick fewer edges');
-		return false;
-	}
-	const before = trisToPositions(FS.workingTris);
-	const beforeGroups = trisToGroups(FS.workingTris);
-	const beforeUVs = trisToUVs(FS.workingTris);
-	const beforeFaces = readStoredFaces(FS.object?.geometry);
-	const priorFaces = currentPartition();
-	const kept = cloneTris(
-		FS.workingTris.filter((/** @type {any} */ _, /** @type {number} */ ti) => !drop.has(ti))
 	);
-	const positions = trisToPositions(kept);
-	const groups = trisToGroups(kept);
-	const uvs = trisToUVs(kept);
-	const origin = survivorOrigin(FS.workingTris.length, drop);
-	// clear the picks BEFORE the swap: applyGeometrySnapshot rebuilds both overlays from
-	// them, and every index past a dropped triangle has moved. The hover goes too —
-	// desktop has no pointermove path here, so it would hold a pre-op triangle forever.
-	clearEdgeSelectionInner(); // the op tidying up after itself, not a user pick
-	faceEditSelectedTris.set([]);
-	faceEditHighlight.set(-1);
-	faceEditHoverTri.set(-1);
-	commitMesh({
-		apply: 'session',
-		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
-		after: { positions, groups, uvs },
-		faces: composeFaces(priorFaces, origin, []),
-		stampFaces: true,
-		record: 'op',
-		cap: false
-	});
+	if (!r) return false;
 	showToast(
 		'Deleted ' +
-			drop.size +
-			(drop.size === 1 ? ' face' : ' faces') +
+			r.dropped +
+			(r.dropped === 1 ? ' face' : ' faces') +
 			' along ' +
 			sel.length +
 			(sel.length === 1 ? ' edge' : ' edges')
@@ -5453,155 +4830,32 @@ export function subdivideSelectedEdges() {
 		showToast('Pick an edge to subdivide');
 		return false;
 	}
-	const wanted = new Set(sel);
-	// ONE midpoint per welded edge key — the crack rule (the knife's crossings map)
-	/** @type {Map<string, any>} */
-	const midpoints = new Map();
-	FS.workingTris.forEach((/** @type {any} */ t) => {
-		for (let e = 0; e < 3; e++) {
-			const key = edgeKey(
-				keyOf(t[e].x, t[e].y, t[e].z),
-				keyOf(t[(e + 1) % 3].x, t[(e + 1) % 3].y, t[(e + 1) % 3].z)
-			);
-			if (!wanted.has(key) || midpoints.has(key)) continue;
-			midpoints.set(key, t[e].clone().add(t[(e + 1) % 3]).multiplyScalar(0.5));
+	// 99 K4 family 6: on the session's op mesh (one midpoint vertex per picked edge, the crack rule by construction)
+	const r = sessionKernelCommit(
+		(ops, om) => ops.subdivideEdges(om, ops.edgesOfKeys(om, sel)),
+		() => {
+			// clear the picks BEFORE the swap (applyGeometrySnapshot rebuilds both overlays from them)
+			clearEdgeSelectionInner(); // op housekeeping, not a user pick
+			faceEditSelectedTris.set([]);
+			faceEditHighlight.set(-1);
 		}
-	});
-	if (!midpoints.size) {
-		showToast('Nothing to subdivide — no face uses those edges');
-		return false;
-	}
-	const priorFaces = currentPartition();
-	const before = {
-		positions: trisToPositions(FS.workingTris),
-		groups: trisToGroups(FS.workingTris),
-		uvs: trisToUVs(FS.workingTris),
-		faces: readStoredFaces(FS.object?.geometry)
-	};
-	/** @type {any[]} */
-	const out = [];
-	/** new tri -> the input triangle it came from: EVERY piece maps to its parent, so
-	 * composeFaces folds the split back into the parent's face
-	 * @type {number[]} */
-	const origin = [];
-	let split = 0;
-	FS.workingTris.forEach((/** @type {any} */ tri, /** @type {number} */ ti) => {
-		/** the triangle's edges that carry a midpoint */
-		const hits = [];
-		for (let e = 0; e < 3; e++) {
-			const key = edgeKey(
-				keyOf(tri[e].x, tri[e].y, tri[e].z),
-				keyOf(tri[(e + 1) % 3].x, tri[(e + 1) % 3].y, tri[(e + 1) % 3].z)
-			);
-			const m = midpoints.get(key);
-			if (m)
-				hits.push({
-					e,
-					m,
-					uv: tri.uv ? uvLerp(tri.uv[e], tri.uv[(e + 1) % 3], 0.5) : undefined
-				});
-		}
-		const faceNormal = triNormal(tri);
-		/** append one triangle wound like the parent (the knife's push)
-		 * @param {any[]} points @param {any[]|undefined} uvs */
-		const emit = (points, uvs) => {
-			const flip = triNormal(points).dot(faceNormal) < 0;
-			const wound = flip ? [points[0], points[2], points[1]] : points;
-			const uv = uvs && (flip ? [uvs[0], uvs[2], uvs[1]] : uvs);
-			out.push(
-				withSlot(
-					wound.map((/** @type {any} */ v) => v.clone()),
-					tri.mi,
-					uv
-				)
-			);
-			origin.push(ti);
-		};
-		if (!hits.length) {
-			out.push(withSlot([tri[0].clone(), tri[1].clone(), tri[2].clone()], tri.mi, tri.uv));
-			origin.push(ti);
-			return;
-		}
-		if (hits.length === 1) {
-			// fan to the opposite corner — the knife's single-crossing split
-			const { e, m, uv } = hits[0];
-			const near = tri[e];
-			const far = tri[(e + 1) % 3];
-			const opposite = tri[(e + 2) % 3];
-			emit([m, far, opposite], tri.uv && [uv, tri.uv[(e + 1) % 3], tri.uv[(e + 2) % 3]]);
-			emit([m, opposite, near], tri.uv && [uv, tri.uv[(e + 2) % 3], tri.uv[e]]);
-		} else if (hits.length === 2) {
-			// two midpoints: the corner they share comes off as a sliver and the rest is
-			// a quad — paired by WALKING THE BOUNDARY, the knife's rule (any other
-			// pairing covers a different quad and the halves overlap)
-			const [first, second] = hits.sort((x, y) => x.e - y.e);
-			const shared = first.e + 1 === second.e ? second.e : 0; // edges 0,1 -> 1; 1,2 -> 2; 0,2 -> 0
-			const cornerIndex = shared % 3;
-			const p = first.e === (cornerIndex + 2) % 3 ? first : second; // the midpoint BEFORE the corner
-			const q = p === first ? second : first;
-			const corner = tri[cornerIndex];
-			const other0 = tri[(cornerIndex + 1) % 3];
-			const other1 = tri[(cornerIndex + 2) % 3];
-			const uvCorner = tri.uv && tri.uv[cornerIndex];
-			const uv0 = tri.uv && tri.uv[(cornerIndex + 1) % 3];
-			const uv1 = tri.uv && tri.uv[(cornerIndex + 2) % 3];
-			emit([p.m, corner, q.m], tri.uv && [p.uv, uvCorner, q.uv]);
-			emit([q.m, other0, other1], tri.uv && [q.uv, uv0, uv1]);
-			emit([q.m, other1, p.m], tri.uv && [q.uv, uv1, p.uv]);
-		} else {
-			// all three edges picked: the standard 4-way — three corner triangles plus
-			// the middle one spanning the midpoints. Three hits on three edges sort
-			// to exactly e = 0, 1, 2.
-			const [m01, m12, m20] = [...hits].sort((x, y) => x.e - y.e);
-			emit([tri[0], m01.m, m20.m], tri.uv && [tri.uv[0], m01.uv, m20.uv]);
-			emit([m01.m, tri[1], m12.m], tri.uv && [m01.uv, tri.uv[1], m12.uv]);
-			emit([m20.m, m12.m, tri[2]], tri.uv && [m20.uv, m12.uv, tri.uv[2]]);
-			emit([m01.m, m12.m, m20.m], tri.uv && [m01.uv, m12.uv, m20.uv]);
-		}
-		split++;
-	});
-	const positions = trisToPositions(out);
-	if (positions.length > MAX_SNAPSHOT) {
-		showToast(tooLargeMessage(positions.length, 'edit'));
-		return false;
-	}
-	const groups = trisToGroups(out);
-	const uvs = trisToUVs(out);
-	// the two halves of each pick — what stays selected for the next step
+	);
+	if (!r) return false;
+	// select the two halves of each pick (direct store write — withSelectionHistory would put a selection entry
+	// ON TOP of the meshgeo and Ctrl+Z would undo the housekeeping)
 	/** @type {string[]} */
 	const halves = [];
-	for (const [key, m] of midpoints) {
-		const [ka, kb] = key.split('|');
-		const km = keyOf(m.x, m.y, m.z);
-		halves.push(edgeKey(ka, km), edgeKey(km, kb));
-	}
-	// clear the picks BEFORE the swap (applyGeometrySnapshot rebuilds both overlays
-	// from them) + the hover always — desktop has no pointermove path here
-	clearEdgeSelectionInner(); // op housekeeping, not a user pick
-	faceEditSelectedTris.set([]);
-	faceEditHighlight.set(-1);
-	faceEditHoverTri.set(-1);
-	commitMesh({
-		apply: 'session',
-		before,
-		after: { positions, groups, uvs },
-		faces: composeFaces(priorFaces, origin, []),
-		stampFaces: true,
-		record: 'op',
-		cap: false
-	});
-	// select the half-edges (direct store write — withSelectionHistory would put a
-	// selection entry ON TOP of the meshgeo and Ctrl+Z would undo the housekeeping)
+	for (const { ka, kb, km } of r.midpoints) halves.push(edgeKey(ka, km), edgeKey(km, kb));
 	edgeEditSelected.set(halves.filter((key) => !!edgeEndpoints(key)));
 	refreshEdgeOverlay();
 	if (typeof window !== 'undefined' && get(faceEditOp) === 'move') attachFaceGizmo();
 	showToast(
 		'Subdivided ' +
-			midpoints.size +
-			(midpoints.size === 1 ? ' edge' : ' edges') +
+			r.midpoints.length +
+			(r.midpoints.length === 1 ? ' edge' : ' edges') +
 			' (' +
-			split +
-			(split === 1 ? ' triangle' : ' triangles') +
+			r.split +
+			(r.split === 1 ? ' triangle' : ' triangles') +
 			' split)'
 	);
 	return true;
@@ -6245,352 +5499,56 @@ export function connectVerticesCore(tris, faces, keyA, keyB) {
  * @returns {{tris: any[], faces: number[][], done: number, skipped: number}}
  */
 export function dissolveVerticesCore(tris, faces, vertexKeys) {
-	let cur = { tris: cloneTris(tris), faces: faces.map((f) => [...f]) };
-	let done = 0;
-	let skipped = 0;
-	for (const vk of [...new Set(vertexKeys)]) {
-		const at = [];
-		for (let fi = 0; fi < cur.faces.length; fi++)
-			if (
-				cur.faces[fi].some((ti) =>
-					cur.tris[ti].some((/** @type {any} */ v) => keyOf(v.x, v.y, v.z) === vk)
-				)
-			)
-				at.push(fi);
-		if (!at.length) {
-			skipped++;
-			continue;
-		}
-		const rings = at.map((fi) => faceRing(cur.tris, cur.faces[fi]));
-		if (rings.some((r) => !r)) {
-			skipped++;
-			continue;
-		}
-		/** @type {Set<string>} */
-		const neighbours = new Set();
-		for (const fr of /** @type {any[]} */ (rings)) {
-			const n = fr.keys.length;
-			const i = fr.keys.indexOf(vk);
-			if (i < 0) continue;
-			neighbours.add(fr.keys[(i - 1 + n) % n]);
-			neighbours.add(fr.keys[(i + 1) % n]);
-		}
-		/** @type {any[]} */
-		const added = [];
-		/** @type {number[][]} */
-		const addedFaces = [];
-		const drop = new Set(at.flatMap((fi) => cur.faces[fi]));
-		const mi = cur.tris[cur.faces[at[0]][0]].mi;
-		const textured = !!cur.tris[cur.faces[at[0]][0]].uv;
-		let ok = true;
-		const avoid = survivingEdges(cur.tris, drop);
-		if (neighbours.size === 2) {
-			// JOIN the two edges: drop the vertex from every face it is a corner of
-			for (let f = 0; f < at.length; f++) {
-				const fr = /** @type {any} */ (rings[f]);
-				const keep = fr.ring.filter((/** @type {any} */ _, /** @type {number} */ i) => fr.keys[i] !== vk);
-				if (keep.length < 3) {
-					ok = false;
-					break;
-				}
-				const fmi = cur.tris[cur.faces[at[f]][0]].mi;
-				addedFaces.push(fanBest(added, keep, fmi, textured, avoid));
-			}
-		} else {
-			const union = [...drop];
-			const loop = boundaryLoop(cur.tris, union);
-			if (!loop) ok = false;
-			else {
-				const corners = cornerData(cur.tris, union);
-				const ring = [];
-				for (const p of loop) {
-					const k = keyOf(p.x, p.y, p.z);
-					if (k === vk) continue; // a BORDER vertex leaves the border loop
-					ring.push({ key: k, pos: p.clone(), uv: corners.get(k)?.uv ?? [0, 0] });
-				}
-				if (ring.length < 3) ok = false;
-				else {
-					addedFaces.push(fanBest(added, ring, mi, textured, avoid, neighbours));
-				}
-			}
-		}
-		if (!ok) {
-			skipped++;
-			continue;
-		}
-		cur = replaceFaces(cur.tris, cur.faces, drop, added, addedFaces);
-		done++;
-	}
-	return { tris: cur.tris, faces: cur.faces, done, skipped };
+	// 99 K4 family 5: the kernel operator (meshOps/dissolve.js) on an op mesh of these triangles + this partition
+	const ops = kernelOps();
+	const om = soupOpMesh(tris);
+	const faceOf = new Int32Array(tris.length).fill(-1);
+	faces.forEach((face, i) => face.forEach((ti) => (faceOf[ti] = i)));
+	// the soup's op mesh is one face per triangle: each takes its stored face as its group
+	for (let t = 0; t < om.view.count; t++) om.logical[om.view.tFace[t]] = faceOf[t] >= 0 ? faceOf[t] : faces.length + t;
+	om.baseGroup = om.nextGroup = faces.length + tris.length;
+	const r = ops.dissolveVertices(om, ops.verticesOfKeys(om, vertexKeys));
+	if (!r.done) return { tris: cloneTris(tris), faces: faces.map((f) => [...f]), done: 0, skipped: r.skipped };
+	return { tris: opMeshTris(om), faces: ops.opPartition(om, 'stored'), done: r.done, skipped: r.skipped };
 }
 
 /**
- * P6 FILL HOLE — the pure core. The picked BORDER edges (or the whole border
- * loop of a single picked border edge) must close ONE loop; the cap goes in as
- * ONE face. Winding comes from the neighbours, not from a centre heuristic:
- * every border edge is used by exactly one triangle, in one direction, so the
- * cap takes each edge the OTHER way round — the manifold rule, right for a
- * concave mesh where "away from the centre" is not. A convex planar loop is
- * fanned from a corner (no new vertex: a four-edge hole becomes a real quad);
- * anything else is fanned from the loop CENTROID, the robust star-shaped case.
+ * P6 FILL HOLE — the pure core. The picked BORDER edges (or the whole border loop of a single picked border
+ * edge) must close ONE loop; the cap goes in as ONE face wound against its neighbours (the manifold rule): a
+ * convex planar loop fanned from its best corner, anything else from the loop CENTROID. 99 K4 family 4: an
+ * adapter over the kernel operator (meshOps/bridgeFill.js `fillHole`).
  * @param {any[]} tris @param {string[]} edgeKeys
  * @returns {{tris: any[], cap: number[], loopKeys: string[], centroid: boolean} | {error: string}}
  */
 export function fillHoleCore(tris, edgeKeys) {
-	/** @type {Map<string, {ti: number, e: number}[]>} */
-	const uses = new Map();
-	tris.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
-		for (let e = 0; e < 3; e++) {
-			const k = edgeKey(
-				keyOf(t[e].x, t[e].y, t[e].z),
-				keyOf(t[(e + 1) % 3].x, t[(e + 1) % 3].y, t[(e + 1) % 3].z)
-			);
-			let list = uses.get(k);
-			if (!list) uses.set(k, (list = []));
-			list.push({ ti, e });
-		}
-	});
-	let picked = [...new Set(edgeKeys)];
-	if (!picked.length) return { error: 'Pick the border edges of the hole first' };
-	if (picked.some((k) => uses.get(k)?.length !== 1))
-		return {
-			error:
-				'Fill needs BORDER edges — a picked edge has faces on both sides (or none). Pick the rim of a hole.'
-		};
-	/** the existing directed border edge: from -> to, as the one triangle using it winds it
-	 * @param {string} k */
-	const directed = (k) => {
-		const { ti, e } = /** @type {any} */ (uses.get(k))[0];
-		const t = tris[ti];
-		const a = t[e];
-		const b = t[(e + 1) % 3];
-		return {
-			from: keyOf(a.x, a.y, a.z),
-			to: keyOf(b.x, b.y, b.z),
-			a,
-			b,
-			uvA: uvAt(t, e),
-			uvB: uvAt(t, (e + 1) % 3),
-			mi: t.mi,
-			textured: !!t.uv
-		};
-	};
-	if (picked.length === 1) {
-		// ONE border edge picked = "fill the hole this edge is on": walk its whole border
-		// loop (every border edge, followed head to tail)
-		/** @type {Map<string, string>} border from -> its edge key */
-		const byFrom = new Map();
-		for (const [k, list] of uses) if (list.length === 1) byFrom.set(directed(k).from, k);
-		const loop = [picked[0]];
-		let at = directed(picked[0]).to;
-		const start = directed(picked[0]).from;
-		while (at !== start && loop.length <= byFrom.size) {
-			const k = byFrom.get(at);
-			if (!k) return { error: 'That border edge does not close a loop — pick the whole rim' };
-			loop.push(k);
-			at = directed(k).to;
-		}
-		if (at !== start) return { error: 'That border edge does not close a loop — pick the whole rim' };
-		picked = loop;
-	}
-	// the cap walks each border edge backwards: capNext(to) = from
-	/** @type {Map<string, any>} */
-	const capNext = new Map();
-	/** @type {Map<string, {pos: any, uv: number[]}>} */
-	const corner = new Map();
-	let mi = 0;
-	let textured = false;
-	for (const k of picked) {
-		const d = directed(k);
-		if (capNext.has(d.to))
-			return { error: 'The picked edges branch at a vertex — they must form ONE simple loop' };
-		capNext.set(d.to, d.from);
-		if (!corner.has(d.from)) corner.set(d.from, { pos: d.a, uv: d.uvA });
-		if (!corner.has(d.to)) corner.set(d.to, { pos: d.b, uv: d.uvB });
-		mi = d.mi;
-		textured = textured || d.textured;
-	}
-	const startKey = /** @type {string} */ (capNext.keys().next().value);
-	/** @type {string[]} */
-	const loopKeys = [];
-	let at = startKey;
-	do {
-		loopKeys.push(at);
-		at = capNext.get(at);
-		if (at === undefined) return { error: 'The picked edges do not close — they must form ONE loop' };
-	} while (at !== startKey && loopKeys.length <= picked.length);
-	if (at !== startKey || loopKeys.length !== picked.length)
-		return {
-			error: 'The picked edges are not ONE closed loop (' + picked.length + ' edges, ' + loopKeys.length + ' in the first loop)'
-		};
-	if (loopKeys.length < 3) return { error: 'A hole needs at least three edges' };
-	const ring = loopKeys.map((k) => {
-		const c = /** @type {any} */ (corner.get(k));
-		return { pos: c.pos.clone(), uv: c.uv };
-	});
-	// Newell normal of the cap ring, in cap winding
-	const normal = new THREE.Vector3();
-	for (let i = 0; i < ring.length; i++) {
-		const p = ring[i].pos;
-		const q = ring[(i + 1) % ring.length].pos;
-		normal.x += (p.y - q.y) * (p.z + q.z);
-		normal.y += (p.z - q.z) * (p.x + q.x);
-		normal.z += (p.x - q.x) * (p.y + q.y);
-	}
-	const centre = new THREE.Vector3();
-	for (const c of ring) centre.add(c.pos);
-	centre.multiplyScalar(1 / ring.length);
-	let convex = normal.lengthSq() > 1e-16;
-	if (convex) {
-		normal.normalize();
-		let size = 0;
-		for (const c of ring) size = Math.max(size, c.pos.distanceTo(centre));
-		for (let i = 0; i < ring.length && convex; i++) {
-			const p = ring[(i - 1 + ring.length) % ring.length].pos;
-			const q = ring[i].pos;
-			const r = ring[(i + 1) % ring.length].pos;
-			const turn = new THREE.Vector3().subVectors(q, p).cross(new THREE.Vector3().subVectors(r, q));
-			if (turn.dot(normal) <= 1e-12) convex = false;
-			if (Math.abs(new THREE.Vector3().subVectors(q, centre).dot(normal)) > size * 1e-3) convex = false;
-		}
-	}
-	const out = cloneTris(tris);
+	const om = soupOpMesh(tris);
+	const ops = kernelOps();
+	const r = ops.fillHole(om, ops.edgesOfKeys(om, edgeKeys));
+	if ('error' in r) return { error: r.error };
+	const next = opMeshTris(om);
 	/** @type {number[]} */
-	let cap;
-	if (convex) cap = fanBest(out, ring, mi, textured, survivingEdges(tris, new Set()));
-	else {
-		let u = 0;
-		let v = 0;
-		for (const c of ring) {
-			u += c.uv[0];
-			v += c.uv[1];
-		}
-		const hub = { pos: centre, uv: [u / ring.length, v / ring.length] };
-		cap = [];
-		for (let i = 0; i < ring.length; i++)
-			cap.push(...fanLoop(out, [hub, ring[i], ring[(i + 1) % ring.length]], mi, textured, 0));
-	}
-	return { tris: out, cap, loopKeys, centroid: !convex };
+	const cap = [];
+	for (let i = tris.length; i < next.length; i++) cap.push(i);
+	return { tris: next, cap, loopKeys: r.loopKeys, centroid: r.centroid };
 }
 
 /**
- * P6 SOLIDIFY / SHELL — the pure core. The selected surface gains a back: a copy
- * offset by `thickness` along each welded vertex's averaged (area-weighted)
- * normal — positive = INTO the surface — wound the other way, and a rim of quads
- * along the selection's border edges joining the two. Each rim quad takes the
- * border edge the opposite way to the triangle that owns it and the back copy's
- * edge the opposite way to the back triangle, so the result is closed AND
- * consistently wound by construction (no per-quad normal guess). A closed
- * selection has no border, so it gets no rim: a hollow shell.
- * @param {any[]} tris @param {number[]} triIndices the selection
- * @param {{thickness?: number}} [options]
- *
- * REFUSED when the selection's border is shared with UNSELECTED faces (a patch of
- * a closed box): the rim would make every such edge carry three faces. Thicken
- * an open surface, the whole piece, or open the mesh first.
+ * P6 SOLIDIFY / SHELL — the pure core. The selected surface gains a back (a copy offset by `thickness` along
+ * each welded vertex's area-weighted normal, positive = INTO the surface, wound the other way) and a rim of
+ * quads along the border joining the two; a closed selection gets no rim (a hollow shell). REFUSED when the
+ * border is shared with UNSELECTED faces. 99 K4 family 4: an adapter over the kernel operator
+ * (meshOps/bridgeFill.js `solidifyRegion`).
+ * @param {any[]} tris @param {number[]} triIndices the selection @param {{thickness?: number}} [options]
  * @returns {{tris: any[], copyOf: Map<number, number>, rimFrom: number} | {error: string}}
  *   copyOf = source tri -> its back copy's index; rim quads are pairs from rimFrom
  */
 export function solidifyCore(tris, triIndices, options = {}) {
-	let thickness = options.thickness ?? 0.1;
-	if (Math.abs(thickness) < 1e-4) thickness = thickness < 0 ? -1e-4 : 1e-4;
-	const sel = [...new Set(triIndices)].filter((ti) => tris[ti]).sort((a, b) => a - b);
-	if (!sel.length) return { error: 'Select a face first, then Solidify' };
-	const border = boundaryEdges(tris, { triIndices: sel });
-	if (border.length) {
-		const selSet = new Set(sel);
-		/** @type {Set<string>} */
-		const outside = new Set();
-		tris.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
-			if (selSet.has(ti)) return;
-			for (let e = 0; e < 3; e++)
-				outside.add(
-					edgeKey(keyOf(t[e].x, t[e].y, t[e].z), keyOf(t[(e + 1) % 3].x, t[(e + 1) % 3].y, t[(e + 1) % 3].z))
-				);
-		});
-		if (border.some((d) => outside.has(d.ek)))
-			return {
-				error:
-					'Solidify thickens an OPEN surface — this selection’s border is shared with faces you did not pick. Select the whole piece (Shell), or delete a face to open the mesh first.'
-			};
-	}
-	/** @type {Map<string, any>} */
-	const normalAt = new Map();
-	for (const ti of sel) {
-		const t = tris[ti];
-		// un-normalised cross = 2x area along the normal: an area-weighted sum
-		const n = new THREE.Vector3().subVectors(t[1], t[0]).cross(new THREE.Vector3().subVectors(t[2], t[0]));
-		for (const v of t) {
-			const k = keyOf(v.x, v.y, v.z);
-			const sum = normalAt.get(k) ?? new THREE.Vector3();
-			sum.add(n);
-			normalAt.set(k, sum);
-		}
-	}
-	for (const sum of normalAt.values()) {
-		if (sum.lengthSq() < 1e-20) sum.set(0, 1, 0);
-		sum.normalize();
-	}
-	/** @type {Map<string, any>} one offset point per welded key — the weld */
-	const back = new Map();
-	const backOf = (/** @type {any} */ v) => {
-		const k = keyOf(v.x, v.y, v.z);
-		let p = back.get(k);
-		if (!p) back.set(k, (p = v.clone().addScaledVector(normalAt.get(k), -thickness)));
-		return p;
-	};
-	const out = cloneTris(tris);
-	/** @type {Map<number, number>} */
-	const copyOf = new Map();
-	for (const ti of sel) {
-		const t = tris[ti];
-		copyOf.set(ti, out.length);
-		out.push(
-			withSlot(
-				[backOf(t[0]).clone(), backOf(t[2]).clone(), backOf(t[1]).clone()],
-				t.mi,
-				t.uv && [t.uv[0], t.uv[2], t.uv[1]].map((/** @type {number[]} */ q) => [q[0], q[1]])
-			)
-		);
-	}
-	const rimFrom = out.length;
-	for (const d of border) {
-		const t = tris[d.ti];
-		const p0 = d.p0;
-		const p1 = d.p1;
-		const q0 = backOf(p0);
-		const q1 = backOf(p1);
-		const uv0 = uvAt(t, d.c0);
-		const uv1 = uvAt(t, d.c1);
-		const textured = !!t.uv;
-		// p1 -> p0 (the owner has p0 -> p1), p0 -> q0, q0 -> q1 (the back copy has
-		// q1 -> q0), q1 -> p1: every rim edge meets its neighbour the other way round
-		out.push(
-			withSlot([p1.clone(), p0.clone(), q0.clone()], t.mi, textured ? [uv1, uv0, uv0] : undefined),
-			withSlot([p1.clone(), q0.clone(), q1.clone()], t.mi, textured ? [uv1, uv0, uv1] : undefined)
-		);
-	}
-	return { tris: out, copyOf, rimFrom };
+	const om = soupOpMesh(tris);
+	const r = kernelOps().solidifyRegion(om, triIndices, options);
+	if ('error' in r) return { error: r.error };
+	return { tris: opMeshTris(om), copyOf: r.back, rimFrom: r.rimFrom };
 }
 
-/**
- * The partition after a solidify: the originals keep theirs, every back copy
- * joins a face mirroring its source's, each rim pair is a quad.
- * @param {number[][]|null} priorFaces @param {number} origLen
- * @param {{tris: any[], copyOf: Map<number, number>, rimFrom: number}} r
- */
-function solidifyFaces(priorFaces, origLen, r) {
-	/** @type {number[][]} */
-	const authored = [];
-	for (const group of priorFaces ?? []) {
-		const members = group
-			.filter((ti) => r.copyOf.has(ti))
-			.map((ti) => /** @type {number} */ (r.copyOf.get(ti)));
-		if (members.length) authored.push(members);
-	}
-	for (let i = r.rimFrom; i + 1 < r.tris.length; i += 2) authored.push([i, i + 1]);
-	return composeFaces(priorFaces, appendOrigin(origLen, r.tris.length), authored);
-}
 
 /** a vertex-mode one-shot's commit: the before/after triple + the composed
  * partition, through `commitMeshGeoTriple` (one replicated meshgeo entry).
@@ -6660,16 +5618,29 @@ export function dissolveVertices(uuid, vertexKeys) {
 		showToast('Select a vertex first, then Dissolve');
 		return false;
 	}
-	const inputTris = readTriangles(object.geometry);
-	const partition = partitionOfGeometry(object.geometry, inputTris);
-	const r = dissolveVerticesCore(inputTris, partition, vertexKeys);
-	if (!r.done) {
-		showToast(
-			'Nothing to dissolve — the faces around that vertex do not form one closed outline (a vertex where two separate pieces only touch, or a face with a hole)'
-		);
+	const geometry = object.geometry;
+	const inputTris = readTriangles(geometry);
+	// 99 K4 family 5: on the kernel (the partition keeps the soup's order: the stored faces, then the new ones)
+	const r = objectKernelCommit(
+		uuid,
+		object,
+		() => partitionOfGeometry(geometry, inputTris),
+		inputTris,
+		(ops, om) => {
+			const d = ops.dissolveVertices(om, ops.verticesOfKeys(om, vertexKeys));
+			return d.done
+				? d
+				: {
+						error:
+							'Nothing to dissolve — the faces around that vertex do not form one closed outline (a vertex where two separate pieces only touch, or a face with a hole)'
+					};
+		},
+		{ op: true, order: 'stored', explicitBefore: true }
+	);
+	if ('error' in r) {
+		showToast(r.error);
 		return false;
 	}
-	if (!commitVertexOp(uuid, object, inputTris, r.tris, r.faces, partition)) return false;
 	showToast(
 		'Dissolved ' +
 			r.done +
@@ -6692,37 +5663,12 @@ export function fillHole() {
 		showToast('Pick the border edges of a hole first (one border edge fills its whole rim)');
 		return false;
 	}
-	const r = fillHoleCore(FS.workingTris, sel);
-	if ('error' in r) {
-		showToast(r.error);
-		return false;
-	}
-	const positions = trisToPositions(r.tris);
-	if (positions.length > MAX_SNAPSHOT) {
-		showToast(tooLargeMessage(positions.length, 'edit'));
-		return false;
-	}
-	const before = {
-		positions: trisToPositions(FS.workingTris),
-		groups: trisToGroups(FS.workingTris),
-		uvs: trisToUVs(FS.workingTris),
-		faces: readStoredFaces(FS.object.geometry)
-	};
-	const priorFaces = currentPartition();
-	const origLen = FS.workingTris.length;
-	const groups = trisToGroups(r.tris);
-	const uvs = trisToUVs(r.tris);
-	clearEdgeSelectionInner(); // the rim is interior now — op housekeeping, not a pick
-	faceEditHoverTri.set(-1);
-	commitMesh({
-		apply: 'session',
-		before,
-		after: { positions, groups, uvs },
-		faces: composeFaces(priorFaces, appendOrigin(origLen, r.tris.length), [r.cap]),
-		stampFaces: true,
-		record: 'op',
-		cap: false
-	});
+	// 99 K4 family 4: on the session's op mesh, committed with its element IDs
+	const r = sessionKernelCommit(
+		(ops, om) => ops.fillHole(om, ops.edgesOfKeys(om, sel)),
+		() => clearEdgeSelectionInner() // the rim is interior now — op housekeeping, not a pick
+	);
+	if (!r) return false;
 	showToast(
 		'Filled a ' + r.loopKeys.length + '-edge hole' + (r.centroid ? ' (fanned from its centre — the outline is not a flat convex polygon)' : '')
 	);
@@ -6983,82 +5929,18 @@ export function recalculateNormals() {
 export function mergeByDistance(threshold = 0.001) {
 	interruptOpAdjust(); // 19-A P2: a one-shot commit ends any live adjust first
 	if (!FS.object) return false;
-	const eps = Math.max(1e-5, threshold);
-	const before = trisToPositions(FS.workingTris);
-	const beforeGroups = trisToGroups(FS.workingTris);
-	const beforeUVs = trisToUVs(FS.workingTris);
-	const beforeFaces = readStoredFaces(FS.object?.geometry);
-	/** @type {Map<string, {sum: any, n: number}>} */
-	const cluster = new Map();
-	const cellOf = (/** @type {any} */ v) =>
-		Math.round(v.x / eps) + ',' + Math.round(v.y / eps) + ',' + Math.round(v.z / eps);
-	for (const t of FS.workingTris)
-		for (const v of t) {
-			const k = cellOf(v);
-			const hit = cluster.get(k);
-			if (hit) {
-				hit.sum.add(v);
-				hit.n++;
-			} else cluster.set(k, { sum: v.clone(), n: 1 });
+	// 99 K4 family 5: on the session's op mesh — the soup's grid clusters, then the kernel's own vertex merge
+	// (a weld only MOVES vertices and drops degenerate triangles, so every survivor keeps the face it was in)
+	const r = sessionKernelCommit(
+		(ops, om) => ops.mergeByDistance(om, threshold),
+		() => {
+			// welding drops triangles, so the old indices point somewhere else after the swap
+			faceEditSelectedTris.set([]);
+			faceEditHighlight.set(-1);
 		}
-	const priorFaces = currentPartition();
-	const next = cloneTris(FS.workingTris);
-	let moved = 0;
-	for (const t of next)
-		for (const v of t) {
-			const hit = cluster.get(cellOf(v));
-			if (!hit || hit.n < 2) continue;
-			const target = hit.sum.clone().divideScalar(hit.n);
-			if (v.distanceToSquared(target) > 1e-14) moved++;
-			v.copy(target);
-		}
-	// a triangle whose corners collapsed onto each other has no area left
-	/** which input triangles survived the collapse — the origin map for the partition
-	 * @type {number[]} */
-	const survived = [];
-	next.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
-		if (
-			triNormal(t).lengthSq() > 1e-12 &&
-			keyOf(t[0].x, t[0].y, t[0].z) !== keyOf(t[1].x, t[1].y, t[1].z) &&
-			keyOf(t[1].x, t[1].y, t[1].z) !== keyOf(t[2].x, t[2].y, t[2].z) &&
-			keyOf(t[2].x, t[2].y, t[2].z) !== keyOf(t[0].x, t[0].y, t[0].z)
-		)
-			survived.push(ti);
-	});
-	const kept = next.filter(
-		(/** @type {any} */ t) =>
-			triNormal(t).lengthSq() > 1e-12 &&
-			keyOf(t[0].x, t[0].y, t[0].z) !== keyOf(t[1].x, t[1].y, t[1].z) &&
-			keyOf(t[1].x, t[1].y, t[1].z) !== keyOf(t[2].x, t[2].y, t[2].z) &&
-			keyOf(t[2].x, t[2].y, t[2].z) !== keyOf(t[0].x, t[0].y, t[0].z)
 	);
-	const dropped = next.length - kept.length;
-	if (!moved && !dropped) {
-		showToast('No vertices closer than ' + eps + ' to merge');
-		return false;
-	}
-	const positions = trisToPositions(kept);
-	const groups = trisToGroups(kept);
-	const uvs = trisToUVs(kept);
-	// clear before the swap — welding drops triangles, so the old indices point
-	// somewhere else once applyGeometrySnapshot rebuilds the overlay
-	faceEditSelectedTris.set([]);
-	faceEditHighlight.set(-1);
-	faceEditHoverTri.set(-1);
-	// a weld only MOVES vertices and drops degenerate triangles, so every survivor
-	// keeps the face it was in; a face whose triangles all collapsed simply goes away
-	commitMesh({
-		apply: 'session',
-		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
-		after: { positions, groups, uvs },
-		faces: composeFaces(priorFaces, survived, []),
-		stampFaces: true,
-		record: 'op',
-		cap: false
-	});
-	showToast(
-		'Merged ' + moved + ' vertices' + (dropped ? ', removed ' + dropped + ' degenerate faces' : '')
-	);
+	if (!r) return false;
+	showToast('Merged ' + r.moved + ' vertices' + (r.dropped ? ', removed ' + r.dropped + ' degenerate faces' : ''));
 	return true;
 }
 
@@ -8002,6 +6884,63 @@ function commitKernelFaceOp(op, face, amount) {
 }
 
 /**
+ * 99 K4 (99-ops-b): run a kernel operator on the live session's op mesh and commit its output with the ID
+ * channels (both history states), keeping the op mesh for the next operator. `run(ops, om)` edits the op
+ * mesh and returns its result, or `{error}` to refuse with that toast (nothing committed); `beforeSwap` is
+ * the op's own housekeeping just before the geometry swap. `options.record` = how history takes it ('op', the
+ * default: live symmetry mirrors it; 'entry' for an op that IS the mirror); `options.tooLarge` = the size
+ * refusal's verb. @param {(ops: any, om: any) => any} run @param {() => void} [beforeSwap]
+ * @param {{ record?: 'op' | 'entry', tooLarge?: string }} [options]
+ * @returns {any} the operator's result, or null when refused
+ */
+function sessionKernelCommit(run, beforeSwap, options = {}) {
+	const om = sessionOpMesh();
+	if (!om) {
+		showToast(KERNEL_LOADING);
+		return null;
+	}
+	const ops = editSession.ops;
+	const before = {
+		positions: trisToPositions(FS.workingTris),
+		groups: trisToGroups(FS.workingTris),
+		uvs: trisToUVs(FS.workingTris),
+		faces: readStoredFaces(FS.object?.geometry),
+		ids: ops.idChannels(om)
+	};
+	/** @type {any} */
+	let result;
+	/** @type {any} */
+	let out;
+	try {
+		result = run(ops, om);
+		if (result && 'error' in result) {
+			showToast(result.error);
+			return null;
+		}
+		out = ops.opOutput(om, { order: 'appearance' });
+	} finally {
+		editSession.opMesh = null; // edited in place: re-kept only by the commit below
+	}
+	if (out.positions.length > MAX_SNAPSHOT) {
+		showToast(tooLargeMessage(out.positions.length, options.tooLarge ?? 'edit'));
+		return null;
+	}
+	beforeSwap?.();
+	faceEditHoverTri.set(-1); // desktop has no pointermove path: the hover would hold a pre-op triangle
+	commitMesh({
+		apply: 'session',
+		before,
+		after: { positions: out.positions, groups: out.groups, uvs: out.uvs, ids: out.ids },
+		faces: out.faces,
+		stampFaces: true,
+		record: options.record ?? 'op',
+		cap: false
+	});
+	keepOpMesh(FS.object.uuid, om, out, FS.quadPartner);
+	return result;
+}
+
+/**
  * Run an op on the highlighted face and commit: rebuild geometry, replicate
  * the snapshot, record history. subdivide/flip take no amount (B4); for M3's
  * loopcut and 18-C5's bridge `amount` is the CUT COUNT, not a distance.
@@ -8019,31 +6958,46 @@ export function commitFaceOp(op, amount) {
 	if (!FS.object || !face) return false;
 	// 99 K4 family 1: on the kernel
 	if (op === 'extrude' || op === 'inset' || op === 'move') return commitKernelFaceOp(op, face, amount);
+	// 99 K4 family 5: delete on the session's op mesh (the face only partly picked keeps the rest of itself)
+	if (op === 'delete')
+		return !!sessionKernelCommit(
+			(ops, om) => ops.deleteTriangles(om, face.triIndices),
+			() => {
+				// the picks address the pre-op triangles (212)
+				if (get(faceEditSelectedTris).length) faceEditSelectedTris.set([]);
+				faceEditHighlight.set(-1);
+			}
+		);
+	// 99 K4 family 6: subdivide on the session's op mesh — quad-aware (a paired quad becomes a 2x2 grid, so the
+	// quad topology and with it every loop tool survives the split), the new pieces stay selected
+	if (op === 'subdivide') {
+		const partner = FS.quadPartner;
+		const r = sessionKernelCommit(
+			(ops, om) => ops.subdivideUnits(om, face.triIndices, partner),
+			() => {
+				// subdivide rebuilds the topology: the picks address the pre-op triangles (212)
+				if (get(faceEditSelectedTris).length) faceEditSelectedTris.set([]);
+			}
+		);
+		if (!r) return false;
+		if (r.newTris.length) {
+			// keep the subdivided AREA selected (its new pieces): "subdivide, then loop through one of the new
+			// quads" is the point of the op, and an empty selection there reads as a failed edit
+			faceEditSelectedTris.set(r.newTris);
+			refreshFaceOverlay();
+		}
+		return true;
+	}
 	const before = trisToPositions(FS.workingTris);
 	const beforeGroups = trisToGroups(FS.workingTris);
 	const beforeUVs = trisToUVs(FS.workingTris);
 	const beforeFaces = readStoredFaces(FS.object?.geometry);
 	let next;
-	/** @type {number[] | null} subdivide keeps its OWN output selected */
-	let subdivided = null;
 	/** @type {number[][] | null} P10: the partition the OP authored, when it can
 	 * describe its own output. Null falls back to derive-and-store. */
 	let nextFaces = null;
 	const priorFaces = currentPartition();
-	if (op === 'delete') {
-		next = deleteFaceTris(FS.workingTris, face);
-		// the survivors are REINDEXED by the filter, so the partition has to be
-		// re-keyed rather than carried; the deleted face simply disappears from it
-		const gone = new Set(face.triIndices);
-		nextFaces = composeFaces(priorFaces, survivorOrigin(FS.workingTris.length, gone), []);
-	} else if (op === 'subdivide') {
-		// quad-aware: a paired quad becomes a 2x2 grid, so the quad topology (and
-		// with it every loop tool) survives the split
-		const split = subdivideFaceUnits(FS.workingTris, face.triIndices, FS.quadPartner);
-		next = split.tris;
-		subdivided = split.newIndices;
-		nextFaces = composeFaces(priorFaces, split.origin, split.authored);
-	} else if (op === 'flip') {
+	if (op === 'flip') {
 		next = flipFaceNormals(FS.workingTris, face.triIndices);
 		// winding only — the grouping is untouched
 		nextFaces = priorFaces;
@@ -8064,9 +7018,8 @@ export function commitFaceOp(op, amount) {
 	// up an unrelated scattering. The hover is the worse half: desktop has no
 	// pointermove path, so faceEditHoverTri keeps the pre-op triangle forever.
 	faceEditHoverTri.set(-1);
-	// subdivide/flip/delete rebuild the topology: indices are stale (212)
+	// flip rebuilds the triangles: indices are stale (212)
 	if (get(faceEditSelectedTris).length) faceEditSelectedTris.set([]);
-	if (op === 'delete') faceEditHighlight.set(-1);
 	commitMesh({
 		apply: 'session',
 		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
@@ -8076,13 +7029,6 @@ export function commitFaceOp(op, amount) {
 		record: 'op',
 		cap: false
 	});
-	if (subdivided?.length) {
-		// keep the subdivided AREA selected (its new pieces) rather than dropping
-		// to nothing: "subdivide, then loop through one of the new quads" is the
-		// point of the op, and an empty selection there reads as a failed edit
-		faceEditSelectedTris.set(subdivided);
-		refreshFaceOverlay();
-	}
 	return true;
 }
 
@@ -9327,28 +8273,25 @@ function runAdjustCore(a) {
 		};
 	}
 	if (a.op === 'bridge') {
-		const r = bridgeFacesCore(a.originalTris, a.target.setA, a.target.setB, {
-			cuts: p.cuts,
-			twist: p.twist,
-			invert: p.invert
-		});
+		// 99 K4 family 4: every scrub re-runs the kernel operator on a COPY of the op mesh captured at begin
+		const ops = kernelOps();
+		const om = ops.beginOp(ops.cloneOpMesh(a.opBase));
+		const r = ops.bridgeRegions(om, a.target.setA, a.target.setB, { cuts: p.cuts, twist: p.twist, invert: p.invert });
 		if ('error' in r) return { error: r.error };
-		return {
-			tris: r.tris,
-			faces: composeFaces(a.priorFaces, r.origin, r.authored),
-			select: { kind: 'cleared' }
-		};
+		return { tris: opMeshTris(om), faces: ops.opPartition(om, 'appearance'), ids: ops.idChannels(om), select: { kind: 'cleared' } };
 	}
 	if (a.op === 'subdivide') {
-		// P3: the P1 helper — iterate the quad-aware split `levels` times, origin
-		// maps composed back to originalTris so composeFaces sees real ancestors
-		const r = subdivideLevels(a.originalTris, a.target.triIndices, a.quadPartner, p.levels);
+		// P3 / 99 K4 family 6: the quad-aware split `levels` times on a COPY of the op mesh captured at begin
+		const ops = kernelOps();
+		const om = ops.beginOp(ops.cloneOpMesh(a.opBase));
+		const r = ops.subdivideLevels(om, a.target.triIndices, a.quadPartner, p.levels);
 		return {
-			tris: r.tris,
-			faces: composeFaces(a.priorFaces, r.origin, r.authored),
-			// newIndices are NOT one contiguous range (untouched survivors
-			// interleave), so the band rule cannot describe them
-			select: { kind: 'set', tris: r.newIndices }
+			tris: opMeshTris(om),
+			faces: ops.opPartition(om, 'appearance'),
+			ids: ops.idChannels(om),
+			// the new triangles are NOT one contiguous range (untouched survivors interleave), so the band rule
+			// cannot describe them
+			select: { kind: 'set', tris: r.newTris }
 		};
 	}
 	if (a.op === 'edge-extrude') {
@@ -9386,14 +8329,17 @@ function runAdjustCore(a) {
 		};
 	}
 	if (a.op === 'solidify') {
-		const r = solidifyCore(a.originalTris, a.target.triIndices, { thickness: p.thickness });
+		const ops = kernelOps();
+		const om = ops.beginOp(ops.cloneOpMesh(a.opBase));
+		const r = ops.solidifyRegion(om, a.target.triIndices, { thickness: p.thickness });
 		if ('error' in r) return { error: r.error };
 		return {
-			tris: r.tris,
-			faces: solidifyFaces(a.priorFaces, origLen, r),
+			tris: opMeshTris(om),
+			faces: ops.opPartition(om, 'appearance'),
+			ids: ops.idChannels(om),
 			// append-only: the source selection's indices are untouched
 			select: { kind: 'set', tris: [...a.target.triIndices] },
-			info: { rim: (r.tris.length - r.rimFrom) / 2 }
+			info: { rim: r.rim }
 		};
 	}
 	return { error: 'Unknown adjust operation' };
@@ -9660,6 +8606,7 @@ export function beginOpAdjust(op, params, opts = {}) {
 		if (!face?.triIndices?.length) return false;
 		a.target = { triIndices: [...face.triIndices] };
 		a.quadPartner = FS.quadPartner;
+		if (!(a.opBase = sessionOpMesh())) return kernelLoadingRefusal();
 	} else if (op === 'bridge') {
 		const sel = get(faceEditSelectedTris).filter((/** @type {number} */ ti) => FS.workingTris[ti]);
 		if (!sel.length) {
@@ -9676,6 +8623,7 @@ export function beginOpAdjust(op, params, opts = {}) {
 			return false;
 		}
 		a.target = { setA: parts[0], setB: parts[1] };
+		if (!(a.opBase = sessionOpMesh())) return kernelLoadingRefusal();
 	} else if (op === 'edge-extrude') {
 		// P5b: the picked edge KEYS are the target; the core sorts border from
 		// interior itself (and the run refuses when nothing extrudable remains)
@@ -9700,6 +8648,7 @@ export function beginOpAdjust(op, params, opts = {}) {
 			return false;
 		}
 		a.target = { triIndices: [...face.triIndices] };
+		if (!(a.opBase = sessionOpMesh())) return kernelLoadingRefusal();
 	} else return false;
 	mergeAdjustParams(a, params ?? {});
 	// the before-triple + stored topology + the selection ✕ restores
@@ -10050,13 +8999,15 @@ export function faceOpOnObject(uuid, op, triIndices, options = {}) {
 		next = result.tris;
 		nextFaces = composeFaces(partition, appendOrigin(tris.length, next.length), result.authored);
 	} else if (op === 'subdivide') {
-		const split = subdivideFaceUnits(tris, picked, storedPartner(object.geometry, tris.length) ?? pairQuads(tris));
-		next = split.tris;
-		nextFaces = composeFaces(partition, split.origin, split.authored);
+		// 99 K4 family 6: on the kernel, IDs carried
+		const partner = storedPartner(object.geometry, tris.length) ?? pairQuads(tris);
+		const r = objectKernelCommit(uuid, object, () => partition, tris, (ops, om) => ops.subdivideUnits(om, picked, partner));
+		return r && !('error' in r) ? { ok: true, triangles: r.count, kept: null } : { ok: false, error: r?.error ?? 'the edit could not be committed' };
 	} else if (op === 'delete') {
 		if (picked.length >= tris.length) return { ok: false, error: 'delete: that would remove every face of the mesh' };
-		next = deleteFaceTris(tris, face);
-		nextFaces = composeFaces(partition, survivorOrigin(tris.length, new Set(picked)), []);
+		// 99 K4 family 5: on the kernel, IDs carried
+		const r = objectKernelCommit(uuid, object, () => partition, tris, (ops, om) => ops.deleteTriangles(om, picked));
+		return r && !('error' in r) ? { ok: true, triangles: tris.length - picked.length, kept: null } : { ok: false, error: r?.error ?? 'the edit could not be committed' };
 	} else if (op === 'flip') {
 		next = flipFaceNormals(tris, picked);
 		nextFaces = partition;
@@ -10103,6 +9054,50 @@ function kernelOpOnObject(uuid, object, op, face, partition, tris, amount) {
 	if (!commitMeshGeoTriple(uuid, before, after)) return { ok: false, error: 'the edit could not be committed' };
 	keepOpMesh(uuid, om, out, OBJECT_PARTNER);
 	return { ok: true, triangles: out.positions.length / 9, kept: face.triIndices };
+}
+
+/**
+ * 99 K4 (99-ops-b): run a kernel operator on an object's own geometry — no face session: the vertex-mode operators
+ * and the agent's face ops — and commit it through commitMeshGeoTriple with its ID channels, keeping the op mesh for
+ * the next operator. `run(ops, om)` edits the op mesh and returns its result, or `{error}` to refuse (nothing
+ * committed). `faces` replaces the stored partition the op mesh grouped (the op mesh is then not kept).
+ * @param {string} uuid @param {any} object @param {() => number[][] | null} partition the editor's partition
+ * @param {any[]} tris the object's triangles @param {(ops: any, om: any) => any} run
+ * @param {{ order?: 'appearance' | 'stored', op?: boolean, faces?: (count: number) => number[][], explicitBefore?: boolean }} [options]
+ *   op = an operator's commit (the live-symmetry boundary, commitMeshGeoTriple); explicitBefore = the before state
+ *   names the partition the op READ when none is stored (commitVertexOp's rule: an absent `faces` would let the
+ *   undo carry the op's own partition whenever the triangle count matches)
+ * @returns {any} the operator's result, or `{error}` (refused / still loading / not committed)
+ */
+function objectKernelCommit(uuid, object, partition, tris, run, options = {}) {
+	const ops = editSession.ops;
+	if (!ops) return { error: KERNEL_LOADING };
+	const geometry = object.geometry;
+	const om = heldOpMesh(ops, geometry, partition, OBJECT_PARTNER);
+	const before = {
+		positions: trisToPositions(tris),
+		groups: trisToGroups(tris),
+		uvs: trisToUVs(tris),
+		faces: readStoredFaces(geometry) ?? (options.explicitBefore ? partition() : null),
+		ids: ops.idChannels(om)
+	};
+	/** @type {any} */
+	let result;
+	/** @type {any} */
+	let out;
+	try {
+		result = run(ops, om);
+		if (result && 'error' in result) return result;
+		out = ops.opOutput(om, { order: options.order ?? 'appearance' });
+	} finally {
+		editSession.opMesh = null; // edited in place: re-kept only by the commit below
+	}
+	if (out.positions.length > MAX_SNAPSHOT) return { error: tooLargeMessage(out.positions.length, 'edit') };
+	const faces = options.faces ? options.faces(out.positions.length / 9) : out.faces;
+	const after = { positions: out.positions, groups: out.groups, uvs: out.uvs, faces, ids: out.ids };
+	if (!commitMeshGeoTriple(uuid, before, after, !!options.op)) return { error: 'the edit could not be committed' };
+	if (faces === out.faces) keepOpMesh(uuid, om, out, OBJECT_PARTNER);
+	return result;
 }
 
 /** the face ops whose picked triangles survive at the same indices (moved in place; new ones appended) */

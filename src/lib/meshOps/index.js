@@ -37,3 +37,5 @@ export {
 	dissolveEdges,
 	dissolveVertices
 } from './dissolve.js';
+// 99-ops-b family 6
+export { subdivideUnits, subdivideLevels, subdivideEdges, symmetrize } from './subdivide.js';

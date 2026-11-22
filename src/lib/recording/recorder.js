@@ -384,6 +384,9 @@ export async function startRecording(override) {
 	};
 	document.addEventListener('visibilitychange', onVisibility);
 	recordingState.set({ ...IDLE_RECORDING, status: 'preparing', duration: prefs.duration });
+	// 102b-sound: the session now starts after an await (the sound), so the renders the Start click caused may
+	// have run before it existed: ask for the next frame, as the frame-exact export does
+	driver?.invalidate?.();
 	return true;
 }
 
@@ -452,6 +455,8 @@ export function recordingBeforeRender() {
 	if (frameHooks) return frameHooks.before();
 	const s = session;
 	if (!s) return;
+	// a live take films every frame it can: keep the on-demand loop drawing while it runs
+	driver?.invalidate?.();
 	if (get(isVRMode)) return abort('Recording stopped: VR started.');
 	if (get(isLocked) === true) return abort('Recording stopped: Play started.');
 	if (s.prefs.hideHelpers) setGizmoHidden(true);

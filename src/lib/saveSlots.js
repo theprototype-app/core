@@ -22,6 +22,8 @@ import { activeSlot } from './gameMenus';
 import { exportConfig } from './export/exportBoot.js';
 import { currentGameId } from './gameSettings';
 import { sceneLevelsTable } from './gameLevels/runtime.js';
+import { hasKeepList } from './gameLevels/keep.js';
+import { gameState } from './gameState';
 import { APP_VERSION } from './version.js';
 import { globalRenderer, globalScene, globalCamera } from '../stores/sceneStore';
 
@@ -150,6 +152,9 @@ export async function writeSlot(n, opts = {}) {
 	const game = slotGameId();
 	const cp = await import('./gameLevels/checkpoints.js');
 	const record = opts.record ?? (await cp.buildSave());
+	// a game with no keep list keeps EVERYTHING (keep.js's own rule: no list = the whole game state carries),
+	// so a slot of such a game holds all its variables — a manual Save game means "save my game"
+	if (!opts.record && !hasKeepList(sceneLevelsTable())) record.kept = { ...(record.kept ?? {}), vars: { ...(get(gameState)?.vars ?? {}) } };
 	const before = readJson(slotKey(slot, game));
 	const prevMeta = before?.slot && typeof before.slot === 'object' ? before.slot : {};
 	const thumb = opts.thumb ?? (opts.auto && prevMeta.thumb ? prevMeta.thumb : captureSlotThumb());
@@ -215,7 +220,12 @@ export async function newGameInSlot(n) {
 	const slot = clampSlot(n);
 	const cp = await import('./gameLevels/checkpoints.js');
 	activeSlot.set(slot);
-	await cp.newGame();
+	try {
+		await cp.newGame();
+	} catch (error) {
+		// a game whose reset fails still gets its slot (the player chose to start here)
+		console.warn('save slots: new game', error);
+	}
 	return writeSlot(slot, { name: 'Slot ' + slot });
 }
 

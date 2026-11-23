@@ -44,6 +44,24 @@ async function poll(fn, ms) {
 }
 const openTo = (peer, id) => peer.page.evaluate((x) => new Promise((r) => window.__tp.test.v1.peers.subscribe((p) => r(!!p?.connections?.[x]?.open))()), id);
 
+/** what the menus think, for a red's line */
+const diag = (page) =>
+	page.evaluate(() => {
+		const s = window.__tp.test.v1;
+		const one = (st) => { let v; st.subscribe((x) => (v = x))(); return v; };
+		const k = s.gameMenusKit;
+		return {
+			isLocked: one(s.isLocked),
+			pointerFree: one(s.playPointerFree),
+			title: one(k.gameMenus.titleScreen),
+			shell: one(s.gameKit.gameShell.shellMenu),
+			pending: (one(s.pendingApprovals) ?? []).length,
+			host: one(s.connectionState.sessionHost),
+			editorMode: one(s.editorMode),
+			dom: { title: !!document.querySelector('#game-title-screen'), card: !!document.querySelector('#play-join-card'), menu: !!document.querySelector('#game-shell-menu') }
+		};
+	});
+
 async function enterPlay(page) {
 	await page.evaluate(() => window.__tp.test.v1.playMode.requestPlay());
 	for (let i = 0; i < 30 && (await val(page, 'isLocked')) !== true; i++) await page.waitForTimeout(100);
@@ -94,10 +112,13 @@ h.run(async () => {
 	await page.locator('[data-title-item="play"]').click();
 	await page.waitForTimeout(800);
 	h.check(!(await page.locator('#game-title-screen').isVisible()), '2.6 Play closed the title');
-	const d2 = await page.evaluate(() => window.__tp.test.v1.gameMenusKit.saveSlots.saveSlotsDebug());
+	const d2 = await poll(() => page.evaluate(() => { const d = window.__tp.test.v1.gameMenusKit.saveSlots.saveSlotsDebug(); return d.writes.includes(1) ? d : null; }), 10000) ?? (await page.evaluate(() => window.__tp.test.v1.gameMenusKit.saveSlots.saveSlotsDebug()));
 	h.check(d2.active === 1 && d2.writes.includes(1) && !d2.slots[0].empty, '2.7 a new game in slot 1, written at the start (' + JSON.stringify({ active: d2.active, writes: d2.writes }) + ')');
 
 	console.log('\n=== 3. the pause menu pauses (alone) ===');
+	// the round may have been reset by the abandon watch while nobody was in Play (section 1's exit): start it
+	await page.evaluate(() => window.__tp.test.v1.gameState.setGameState('playing'));
+	await page.waitForTimeout(200);
 	h.check((await gameStateOf(page)).state === 'playing', '3.0 premise: the round is playing');
 	await page.keyboard.press('Escape');
 	await page.waitForTimeout(400);
@@ -176,7 +197,9 @@ h.run(async () => {
 	await page.waitForTimeout(300);
 	await page.locator('[data-shell-item="title"]').click();
 	await page.waitForTimeout(300);
-	h.check(await page.locator('#game-title-screen').isVisible(), '7.1 Quit to title opened the title screen');
+	const vis7 = await page.locator('#game-title-screen').isVisible();
+	if (!vis7) console.log('  7.1 state: ' + JSON.stringify(await diag(page)));
+	h.check(vis7, '7.1 Quit to title opened the title screen');
 	await page.locator('[data-title-item="quit"]').click();
 	await page.waitForTimeout(500);
 	h.check((await val(page, 'isLocked')) !== true, '7.2 Quit to editor left Play');
@@ -186,15 +209,21 @@ h.run(async () => {
 	await h.connect(B, A);
 	await page.evaluate(() => window.__tp.test.v1.gameState.setGameVar('coins', 99));
 	await enterPlay(page);
+	// the title opens on entering Play (a lazy chunk): wait for it, then play
+	await page.locator('[data-title-item="play"]').waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
 	if (await page.locator('[data-title-item="play"]').isVisible().catch(() => false)) await page.locator('[data-title-item="play"]').click();
 	await page.waitForTimeout(400);
+	// section 7 left Play, so the abandon watch may have reset the round: start it again
+	await page.evaluate(() => window.__tp.test.v1.gameState.setGameState('playing'));
 	await B.page.evaluate(() => window.__tp.test.v1.playMode.requestPlay());
 	await page.waitForTimeout(1200);
 	const C = await h.setupPage(browser, 'C');
 	await (await h.openDial(C.page)).fill(A.id);
 	await C.page.getByRole('button', { name: 'Connect', exact: true }).click();
 	await page.locator('#play-join-card').waitFor({ state: 'visible', timeout: 30000 }).catch(() => {});
-	h.check(await page.locator('#play-join-card').isVisible(), '8.1 the in-game join card shows over the game');
+	const vis8 = await page.locator('#play-join-card').isVisible();
+	if (!vis8) console.log('  8.1 state: ' + JSON.stringify(await diag(page)));
+	h.check(vis8, '8.1 the in-game join card shows over the game');
 	h.check((await val(page, 'isLocked')) === true, '8.2 the host is still playing');
 	await page.keyboard.press('Escape');
 	await page.waitForTimeout(400);

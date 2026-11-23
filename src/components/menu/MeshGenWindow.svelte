@@ -265,7 +265,7 @@
 							onclick={() => {
 								close();
 								openToolRow('mesh');
-							}}>Set one up in Tools &amp; connections</button
+							}}>Set one up in Settings ▸ AI</button
 						>
 					</p>
 				{/if}

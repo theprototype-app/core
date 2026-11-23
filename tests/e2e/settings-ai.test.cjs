@@ -70,6 +70,14 @@ h.run(async () => {
 	h.check((await P.locator('#connected-apps-settings').count()) === 0 && (await P.locator('#settings-account').count()) === 0, 'no provider (OSS): no Connected apps and no Account page');
 	const docs = await P.locator('#ai-card-in-scene .ai-card-link').getAttribute('href');
 	h.check(docs === 'https://docs.theprototype.app/ai/use-any-ai/', `card 2 links the "Use any AI" page (${docs})`);
+	await P.locator('#ai-jump-in-scene').click();
+	await P.waitForTimeout(500);
+	h.check(await inView('#ai-card-in-scene'), 'the "On this page" line brings card 2 to the top (the page is long: find-it)');
+	await search('gemini');
+	await P.waitForTimeout(600);
+	h.check(!(await shown('#ai-jump')), 'the jump line stands down while searching');
+	await search('');
+	await P.waitForTimeout(300);
 	h.check((await P.locator('#ai-card-in-app .settings-footnote').count()) === 1 && (await P.locator('#settings-main .settings-footnote').count()) === 1, 'the API-key footnote sits once, in the key card');
 	await closeSettings();
 
@@ -154,6 +162,14 @@ h.run(async () => {
 	// ---- 6. the tab's words -------------------------------------------------------------------------------------------
 	// 6a ZERO CHANGE: a Worker before 89 (no `app` anywhere) — the words are Claude's, exactly as before
 	const old = await fakeRelay(P);
+	await S('S.aiAssistantHidden.set("");');
+	await P.waitForSelector('#connect-claude-button', { state: 'visible', timeout: 20000 });
+	// the AI window's Connect card points other AI apps at card 2 (find-it: the window said only "Claude")
+	await P.locator('#connect-claude-other button').click();
+	await P.waitForSelector('#ai-card-in-scene', { timeout: 15000 });
+	await P.waitForTimeout(700);
+	h.check((await pageTitle()) === 'AI' && (await inView('#ai-card-in-scene')), 'the Connect card\'s "ChatGPT, Gemini CLI or another AI app?" link lands on card 2');
+	await closeSettings();
 	await S('S.aiAssistantHidden.set("");');
 	await P.waitForSelector('#connect-claude-button', { state: 'visible', timeout: 20000 });
 	await P.locator('#connect-claude-button').click();

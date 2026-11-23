@@ -52,6 +52,11 @@
 		}
 	}
 
+	/** 89 I2: an AI app that is not Claude connects through the same server — its steps sit on Settings ▸ AI's card 2 */
+	function openOtherApps() {
+		openSettingsAt('ai', 'ai-card-in-scene');
+	}
+
 	function openConnectedApps() {
 		// uir-account: Connected apps lives in Settings ▸ Account now
 		openSettingsAt('ai', 'connected-apps-settings'); // 89 I2: Connected apps lives on Settings ▸ AI
@@ -113,6 +118,10 @@
 					{#if signIn}Then press Sign in to connect above. Once you are signed in, the same button reads Connect Claude: press it and keep this tab open.{:else}Then press Connect Claude here and keep this tab open.{/if}
 				</li>
 			</ol>
+			<p class="cc-other" id="connect-claude-other">
+				ChatGPT, Gemini CLI or another AI app? It connects the same way.
+				<button type="button" class="cc-link" onclick={openOtherApps}>AI apps in Settings ▸ AI</button>
+			</p>
 		{/if}
 		{#if s.phase === 'connected' && s.throttled}
 			<p class="cc-hint cc-warn" id="connect-claude-throttled">
@@ -273,6 +282,11 @@
 	}
 	.cc-warn {
 		color: var(--warn-text);
+	}
+	.cc-other {
+		margin: var(--space-2) 0 0;
+		font-size: var(--fs-desc);
+		color: var(--text-muted);
 	}
 	.cc-link {
 		padding: 0 2px;

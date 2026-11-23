@@ -318,7 +318,7 @@
 				     row in Settings › AI, the same place the provider toast opens -->
 				<span class="ai-hint flex-1"
 					>No chat provider yet. <button type="button" id="ai-hint-setup" class="ai-hint-link" onclick={() => openToolRow('chat')}
-						>Set one up in Tools &amp; connections</button
+						>Set one up in Settings ▸ AI</button
 					></span
 				>
 			{/if}

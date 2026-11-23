@@ -252,10 +252,10 @@ async function cameraAction(args, by) {
 	if (get(isLocked) === true) return fail('the person is playing (Play mode): their camera belongs to the game. Ask them to press Esc first.', { refused: true });
 	if (get(specatorMode)) return fail('the person is watching someone else\'s view: ask them to press Exit first.', { refused: true });
 	// 104-int (104-world x 104-show): a recording, Film on the phone or a sequence shot owns the view; moving it would cut the take
-	const through = await busyCamera();
-	if (through) return fail(through, { refused: true, busy: true });
 	const wait = CAMERA_GAP_MS - (Date.now() - lastCameraAt);
 	if (wait > 0) return fail('one camera move at a time: wait ' + Math.ceil(wait / 1000) + ' s', { retryAfter: Math.ceil(wait / 1000) });
+	const through = await busyCamera();
+	if (through) return fail(through, { refused: true, busy: true });
 	const { cameraPreview, startCameraPreview, stopCameraPreview } = await import('../cameraPreview');
 	/** @type {any} */
 	const preview = get(cameraPreview);
@@ -426,6 +426,11 @@ export async function showTool(args, ctx = {}) {
 	}
 	const busy = busyReason();
 	if (busy) return fail(busy + ': show waits until they stop (try again in a moment)', { busy: true, retryAfter: 3 });
+	// the camera's own pacing first (it is synchronous): the checks below await
+	if (action === 'camera' && answers.get(answerKey(action, by)) !== 'no') {
+		const gap = CAMERA_GAP_MS - (Date.now() - lastCameraAt);
+		if (gap > 0 && lastCameraAt) return fail('one camera move at a time: wait ' + Math.ceil(gap / 1000) + ' s', { retryAfter: Math.ceil(gap / 1000) });
+	}
 	// 104-int: refused before the person is asked, so nobody says Always to a move that cannot happen now
 	const filming = action === 'camera' ? await busyCamera() : '';
 	if (filming) return fail(filming, { refused: true, busy: true });

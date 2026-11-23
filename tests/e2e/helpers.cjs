@@ -417,8 +417,12 @@ async function connect(from, to, settleMs = 9000) {
 	// and the dial input shows only after a tap on it — press it first when it is what is there
 	// …and on the Invite-first pill (uir-people) the field shows after Join…
 	await step(from, 'fill the peer id', async () => (await openDial(from.page)).fill(to.id));
+	// PATIENT: a GitHub runner (SwiftShader, two or three rendering pages) keeps the dialler's main thread in native
+	// render/GL work, so Playwright's input waits 16-31 s for it to be taken (measured by the #643 CPU profile:
+	// ~97% `(program)`, green tries 16-18 s, red ones crossed the 30 s default with the click still queued).
+	// Every actionability check still runs; only the wait is longer.
 	await step(from, 'press Connect', () =>
-		from.page.getByRole('button', { name: 'Connect', exact: true }).click()
+		from.page.getByRole('button', { name: 'Connect', exact: true }).click({ timeout: PATIENT_CLICK_MS })
 	);
 	// R22 round 33 REMOVED the dial-time ask (round 31's "Save & connect / Connect anyway /
 	// Cancel"), and with it the block that used to answer it here. A dialer holding work in
@@ -431,7 +435,7 @@ async function connect(from, to, settleMs = 9000) {
 	// `h.setupPage(browser, 'X', { storage: { 'connect:mergeOnConnect': 'true' } })`.
 	// a cloud build (Pages deploys) asks the host for a ROLE instead — "View only" / "Editor access" /
 	// "Reject" (cloudHooks roles); "Editor access" is the plain build's Approve
-	await step(to, 'approve the request', () => approveButton(to.page).click({ timeout: 30000 }));
+	await step(to, 'approve the request', () => approveButton(to.page).click({ timeout: PATIENT_CLICK_MS }));
 	await from.page.waitForTimeout(settleMs);
 	// scatter-sync: the settle is a MINIMUM now — on a slow runner (GitHub, SwiftShader) the approval
 	// dial-back took 15 s to open, so a suite's first edit raced a conn that was still negotiating.

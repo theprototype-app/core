@@ -202,6 +202,10 @@ h.run(async () => {
 	h.check(afterSearch === afterOpen, `a search on the open page asks nothing more (${afterSearch - afterOpen} more)`);
 
 	// ---- 7. axe + shots ----------------------------------------------------------------------------------------------
+	await closeSettings();
+	await openSettings('account'); // 89 I2: section 6 ends on Settings ▸ AI
+	await P.waitForSelector('#settings-account #row-account-connected-apps', { timeout: 15000 });
+	await P.waitForTimeout(400);
 	await axe(P, '#settings-account', 'Settings ▸ Account');
 	for (const [w, hgt] of [[1280, 800], [1920, 1080]]) {
 		for (const theme of ['dark', 'light']) {

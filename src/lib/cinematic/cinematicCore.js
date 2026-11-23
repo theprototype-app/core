@@ -7,12 +7,15 @@
 //   standInKind       what a material the WebGPU renderer cannot draw is, in the words the chip uses
 //   notShownText      the one chip line: "Not shown in Cinematic view: Water"
 //   (troika text is not a stand-in since C2-1: it draws as canvas-texture quads, labelQuads.js)
+//   lightingPlan      106 S3: the step + the two passes the view draws (Reflections = SSR, Global light = SSGI), each
+//                     On / Off / Auto, Auto = what the step decides; the drop lowers the step first, then a switch set
+//                     to On; stepText / costText are the chip's and the menu's words; createCostMeter measures a pass
 //   fxCoverKind       which effects the view draws itself through TSL (C2-2 / C2-4: particles, bursts, bubbles,
 //                     vertex deformers), so they get no stand-in and the chip does not list them
 
 /** @typedef {import('./cinematicOffer.js').Quality} Quality */
-import { asQuality, DEFAULT_QUALITY } from './cinematicOffer.js';
-export { asQuality, DEFAULT_QUALITY, offerVerdict } from './cinematicOffer.js';
+import { asQuality, asLightMode, DEFAULT_QUALITY } from './cinematicOffer.js';
+export { asQuality, asLightMode, DEFAULT_QUALITY, offerVerdict } from './cinematicOffer.js';
 
 /** the three steps, lowest first (the drop walks this list down) @type {Quality[]} */
 export const QUALITY_STEPS = ['basic', 'standard', 'high'];
@@ -209,4 +212,142 @@ export function fxCoverKind(o, m, deformKinds) {
 		if (kinds.length && kinds.every((k) => DEFORM_COVERED.includes(k))) return 'deform';
 	}
 	return null;
+}
+
+// ---- 106 S3: Reflections and Global light, this device's switches ---------------------------------------------------
+
+/** @typedef {import('./cinematicOffer.js').LightMode} LightMode */
+/** @typedef {'reflections' | 'globalLight'} LightSwitch */
+
+/** the two switches, in menu order @type {LightSwitch[]} */
+export const LIGHT_SWITCHES = ['reflections', 'globalLight'];
+export const LIGHT_LABEL = Object.freeze({ reflections: 'Reflections', globalLight: 'Global light' });
+export const LIGHT_HINT = Object.freeze({
+	reflections: 'Screen-space reflections on shiny and smooth surfaces',
+	globalLight: 'Bounced light between surfaces (objects with baked light keep theirs)'
+});
+/** the order the drop turns a switch set to On off: the dearer pass first */
+const DROP_ORDER = /** @type {LightSwitch[]} */ (['globalLight', 'reflections']);
+/** a pass forced On at Basic draws at the Standard step's resolution (half), not Basic's full one */
+const FORCED_SCALE = 0.5;
+
+/**
+ * What the view draws: the asked step (capped by the window's size), the drop's steps, and the two switches.
+ * The drop takes the quality steps first (Auto passes follow the step down), then switches a pass set to On
+ * off, Global light first. `steps` = how many drops this plan can still take.
+ * @param {{ asked: Quality, pixels: number, drops?: number, reflections?: LightMode, globalLight?: LightMode }} o
+ * @returns {{ quality: Quality, gi: boolean, ssr: boolean, scale: number, off: LightSwitch[], qualityDrops: number, steps: number }}
+ */
+export function lightingPlan(o) {
+	const capped = effectiveQuality(o.asked, o.pixels, 0);
+	const top = QUALITY_STEPS.indexOf(capped);
+	const drops = Math.max(0, o.drops ?? 0) | 0;
+	const qualityDrops = Math.min(drops, top);
+	const quality = QUALITY_STEPS[top - qualityDrops];
+	const q = QUALITY[quality];
+	const modes = { reflections: asLightMode(o.reflections), globalLight: asLightMode(o.globalLight) };
+	const on = { globalLight: modes.globalLight === 'auto' ? q.gi : modes.globalLight === 'on', reflections: modes.reflections === 'auto' ? q.ssr : modes.reflections === 'on' };
+	/** @type {LightSwitch[]} */
+	const off = [];
+	let rest = drops - qualityDrops;
+	for (const k of DROP_ORDER) {
+		if (rest <= 0) break;
+		if (modes[k] === 'on' && on[k]) {
+			on[k] = false;
+			off.push(k);
+			rest--;
+		}
+	}
+	const forcedLeft = DROP_ORDER.filter((k) => modes[k] === 'on' && on[k]).length;
+	const gi = on.globalLight;
+	const ssr = on.reflections;
+	return { quality, gi, ssr, scale: q.gi || q.ssr || !(gi || ssr) ? q.scale : FORCED_SCALE, off, qualityDrops, steps: top - qualityDrops + forcedLeft };
+}
+
+/** one plan's identity (a pipeline is rebuilt when it changes) @param {{ quality: string, gi: boolean, ssr: boolean, scale: number }} p @param {boolean} [baked] */
+export function planKey(p, baked = false) {
+	return `${p.quality}|${p.gi ? 'g' : '-'}${p.ssr ? 'r' : '-'}|${p.scale}|${baked ? 'b' : '-'}`;
+}
+
+/**
+ * The step-down chip's words ('' = the drop took nothing).
+ * @param {{ quality: Quality, off: LightSwitch[], qualityDrops: number }} p
+ */
+export function stepText(p) {
+	const parts = [];
+	if (p.qualityDrops > 0) parts.push('Lowered to ' + QUALITY[p.quality].label);
+	if (p.off.length) parts.push(p.off.map((k) => LIGHT_LABEL[k]).join(' and ') + ' off');
+	if (!parts.length) return '';
+	const s = parts.join(', ') + ' to keep it smooth';
+	return s[0].toUpperCase() + s.slice(1);
+}
+
+/**
+ * A measured cost in the menu's words, scaled to the window's drawn pixels now (the passes cost per pixel).
+ * @param {{ ms: number, pixels: number } | undefined} c @param {number} pixels @returns {string} '' = not known yet
+ */
+export function costText(c, pixels) {
+	if (!c || !(c.ms >= 0) || !(c.pixels > 0)) return '';
+	const ms = pixels > 0 ? (c.ms * pixels) / c.pixels : c.ms;
+	if (ms < 0.5) return 'under 1 ms';
+	return 'about ' + Math.round(ms) + ' ms';
+}
+
+/** a frame-work sample's configuration key: the passes and their resolution (none = any resolution) */
+export function costKey(/** @type {{ gi: boolean, ssr: boolean, scale: number }} */ p) {
+	return (p.gi || p.ssr ? p.scale : 'x') + '|' + (p.gi ? 1 : 0) + (p.ssr ? 1 : 0);
+}
+
+/**
+ * Measures what each pass costs on this device: every drawn frame's WORK (the render call until the GPU finished
+ * it, which a 60 Hz display does not hide the way a frame interval does) is filed under its configuration; a
+ * pass's cost = the median with it minus the median without it, the other pass and the resolution the same.
+ * Known once both sides have MIN samples (a switch flipped, a step dropped).
+ * @param {{ min?: number, keep?: number }} [o]
+ */
+export function createCostMeter(o = {}) {
+	const min = o.min ?? 20;
+	const keep = o.keep ?? 90;
+	/** @type {Map<string, number[]>} */
+	const samples = new Map();
+	/** @param {string} k */
+	const median = (k) => {
+		const xs = samples.get(k);
+		return xs && xs.length >= min ? quantile(xs, 0.5) : null;
+	};
+	return {
+		/** @param {{ gi: boolean, ssr: boolean, scale: number }} p @param {number} ms */
+		feed(p, ms) {
+			if (!(ms > 0) || ms > 1000) return;
+			const k = costKey(p);
+			let xs = samples.get(k);
+			if (!xs) samples.set(k, (xs = []));
+			xs.push(ms);
+			if (xs.length > keep) xs.shift();
+		},
+		/**
+		 * the pass's cost in ms near the plan `p` (null = not known yet)
+		 * @param {LightSwitch} which @param {{ gi: boolean, ssr: boolean, scale: number }} p
+		 */
+		cost(which, p) {
+			const scales = [p.scale, ...[0.5, 1].filter((s) => s !== p.scale)];
+			for (const scale of scales) {
+				for (const other of [which === 'reflections' ? p.gi : p.ssr, !(which === 'reflections' ? p.gi : p.ssr)]) {
+					const withIt = which === 'reflections' ? { gi: other, ssr: true, scale } : { gi: true, ssr: other, scale };
+					const without = which === 'reflections' ? { gi: other, ssr: false, scale } : { gi: false, ssr: other, scale };
+					const a = median(costKey(withIt));
+					const b = median(costKey(without));
+					if (a != null && b != null) return Math.max(0, a - b);
+				}
+			}
+			return null;
+		},
+		reset() {
+			samples.clear();
+		},
+		/** @returns {Record<string, number>} the sample counts (e2e / debug) */
+		counts() {
+			return Object.fromEntries([...samples].map(([k, v]) => [k, v.length]));
+		}
+	};
 }

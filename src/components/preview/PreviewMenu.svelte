@@ -1,7 +1,8 @@
 <script>
 	// 103 H11 — THE PREVIEW MENU's body: the one place for HOW THIS DEVICE DRAWS THE SCENE. Shared by the
 	// desktop pill's dropdown (all groups) and the phone drawer (no Judge for). Groups, in order:
-	//   Cinematic view   Off / the quality levels (only where the view is offered; 100 C1's own rules)
+	//   Cinematic view   Off / the quality levels (only where the view is offered; 100 C1's own rules), then
+	//                    106 S3's Reflections and Global light: Auto / On / Off each, with what it measured here
 	//   Draw as          viewMode's three + the Draw as modes ($lib/drawAs)
 	//   Quality          the device quality preset (Auto / High / Medium / Low, 42 I12)
 	//   Judge for        This device / Phone / Quest / PC, independent toggles ($lib/judgeFor) — desktop only
@@ -13,8 +14,8 @@
 	import Segmented from '../ui/Segmented.svelte';
 	import { viewMode, objectsGroup } from '../../stores/sceneStore';
 	import { openSceneSection } from '../../stores/appStore';
-	import { cinematicState, cinematicPrefs, setCinematic, setCinematicQuality } from '$lib/cinematic/cinematicState.js';
-	import { QUALITY, QUALITY_HINT, QUALITY_STEPS, HIGH_MAX_PIXELS } from '$lib/cinematic/cinematicCore.js';
+	import { cinematicState, cinematicPrefs, cinematicCosts, setCinematic, setCinematicQuality, setCinematicLight } from '$lib/cinematic/cinematicState.js';
+	import { QUALITY, QUALITY_HINT, QUALITY_STEPS, HIGH_MAX_PIXELS, LIGHT_SWITCHES, LIGHT_LABEL, LIGHT_HINT, costText } from '$lib/cinematic/cinematicCore.js';
 	import { drawAs, DRAW_ROWS, DRAW_AS_LABEL, DRAW_AS_HINT, drawRowOf, pickDrawRow } from '$lib/drawAs.js';
 	import { qualityPreset, gameQualityState } from '$lib/qualityGovernor';
 	import { scenePost, sceneProvidesAo } from '$lib/scenePost';
@@ -46,6 +47,24 @@
 		if (q === 'off') return void setCinematic(false);
 		await setCinematicQuality(q);
 		if (!cineOn) void setCinematic(true);
+	}
+
+	// ---- 106 S3: Reflections / Global light (this device; enabled while the view is on) ----
+	const LIGHT_MODES = [
+		{ value: 'auto', label: 'Auto', title: 'What the quality level decides' },
+		{ value: 'on', label: 'On', title: 'On at every quality level' },
+		{ value: 'off', label: 'Off', title: 'Off at every quality level' }
+	];
+	const lightOk = $derived($cinematicState.mode === 'on');
+	/** @param {'reflections' | 'globalLight'} k */
+	const lightNow = (k) => (k === 'reflections' ? $cinematicState.lighting?.ssr : $cinematicState.lighting?.gi);
+	/** @param {'reflections' | 'globalLight'} k */
+	function lightNote(k) {
+		if (!lightOk) return 'Turn the Cinematic view on to change it';
+		if ($cinematicState.off?.includes(k)) return 'Off for now to keep it smooth';
+		const cost = costText($cinematicCosts[k], pixels);
+		const state = lightNow(k) ? 'On' : 'Off';
+		return cost ? `${state} · costs ${cost}` : state;
 	}
 
 	// ---- Draw as ----
@@ -103,8 +122,17 @@
 			{/each}
 		</div>
 		{#if cineOn && $cinematicState.dropped > 0}
-			<p class="pm-note" id="preview-cine-dropped">Lowered to {QUALITY[$cinematicState.quality].label} to keep it smooth</p>
+			<p class="pm-note" id="preview-cine-dropped">{$cinematicState.stepped || 'Lowered to ' + QUALITY[$cinematicState.quality].label + ' to keep it smooth'}</p>
 		{/if}
+		{#each LIGHT_SWITCHES as k (k)}
+			<div class="pm-light" id={'preview-light-' + k} data-on={lightOk && lightNow(k) ? '1' : '0'} title={LIGHT_HINT[k]}>
+				<div class="pm-light-head">
+					<span class="pm-grow" id={'pm-light-' + k}>{LIGHT_LABEL[k]}</span>
+					<span class="pm-light-note" id={'preview-light-' + k + '-note'}>{lightNote(k)}</span>
+				</div>
+				<Segmented id={'preview-light-' + k + '-mode'} labelledby={'pm-light-' + k} full disabled={!lightOk} options={LIGHT_MODES} value={$cinematicPrefs[k]} onchange={(/** @type {any} */ v) => setCinematicLight(k, v)} />
+			</div>
+		{/each}
 	{/if}
 
 	<p class="pm-g" id="pm-g-draw">Draw as</p>
@@ -239,6 +267,22 @@
 		margin: 2px 8px;
 		font-size: var(--fs-badge);
 		color: var(--text-muted);
+	}
+	.pm-light {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		padding: 4px 8px;
+	}
+	.pm-light-head {
+		display: flex;
+		align-items: baseline;
+		gap: 8px;
+	}
+	.pm-light-note {
+		font-size: var(--fs-badge);
+		color: var(--text-muted);
+		font-variant-numeric: tabular-nums;
 	}
 	.pm-sep {
 		height: 1px;

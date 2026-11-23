@@ -13,6 +13,12 @@
 //     space apply at the end (RenderPipeline.outputColorTransform).
 //   · Basic = tone mapping + GTAO + TRAA + bloom. Standard = SSGI + SSR at half resolution (r186's SSGI
 //     has no resolution scale: its targets are scaled here). High = full resolution.
+//   · 106 S3: the two passes are this device's switches (Reflections = SSR, Global light = SSGI), each
+//     On / Off / Auto (cinematicCore.lightingPlan decides; Auto = the step's choice above). Without Global
+//     light the AO comes from GTAO as at Basic, and Reflections sample that image instead.
+//   · 106 (no double light): an object with baked light from Pro look (98) gets neither Global light nor the
+//     screen-space AO: its light and AO are in its maps already. Its material flags its pixels through the
+//     velocity target's spare z (cinematicView marks them: `bakedMrt`), read here only when the scene has a bake.
 //   · C2-2: particles, bursts and bubbles (fxCover.js twins, layer FX_LAYER) are drawn in a pass of their own, cleared
 //     to transparent with no background, and laid over the anti-aliased image as premultiplied colour before the bloom
 //     (so sparks glow). Kept out of the scene pass because its normal / velocity / diffuse targets are written
@@ -25,11 +31,13 @@ import { QUALITY } from './cinematicCore.js';
 const LIGHT = { slices: 2, steps: 8, giIntensity: 10, aoIntensity: 1, radius: 12, thickness: 1, ssrMaxDistance: 6, ssrIntensity: 1, dielectric: 0.25 };
 
 /**
- * @param {{ W: any, T: any, renderer: any, scene: any, camera: any, quality: import('./cinematicCore.js').Quality, outline?: () => { selected: any[], locked: any[], colors?: { selected?: any, locked?: any } }, fx?: { layer: number, count: number, setSceneDepth: (tex: any) => void } | null }} o
+ * @param {{ W: any, T: any, renderer: any, scene: any, camera: any, quality: import('./cinematicCore.js').Quality, lighting?: { gi: boolean, ssr: boolean, scale: number }, baked?: boolean, outline?: () => { selected: any[], locked: any[], colors?: { selected?: any, locked?: any } }, fx?: { layer: number, count: number, setSceneDepth: (tex: any) => void } | null }} o
  */
 export async function buildPipeline(o) {
 	const { W, T, renderer, scene, camera } = o;
-	const q = QUALITY[o.quality] ?? QUALITY.standard;
+	const step = QUALITY[o.quality] ?? QUALITY.standard;
+	/** what draws: the plan's passes, else the step's (the pre-106 rule) */
+	const q = o.lighting ?? { gi: step.gi, ssr: step.ssr, scale: step.scale };
 	const { pass, mrt, output, normalView, velocity, diffuseColor, directionToColor, colorToDirection, sample, vec3, vec4, max, metalness, roughness, convertToTexture, uniform } = T;
 	const [{ ao }, { traa }, { bloom }, { outline }] = await Promise.all([
 		import('three/examples/jsm/tsl/display/GTAONode.js'),
@@ -50,6 +58,10 @@ export async function buildPipeline(o) {
 	const depth = scenePass.getTextureNode('depth');
 	const normalTex = scenePass.getTextureNode('normal');
 	const vel = scenePass.getTextureNode('velocity');
+	/** 1 where an object with baked light was drawn (null = no bake in the scene: the graph is the pre-106 one) */
+	const baked = o.baked ? T.step(0.5, vel.z) : null;
+	/** an AO factor that leaves baked pixels alone @param {any} a */
+	const aoOf = (a) => (baked ? T.mix(a, T.float(1), baked) : a);
 	const sceneNormal = sample((/** @type {any} */ uv) => colorToDirection(normalTex.sample(uv).rgb));
 	/** @type {Record<string, any>} */
 	const nodes = { scenePass };
@@ -79,27 +91,30 @@ export async function buildPipeline(o) {
 		ssgi.radius.value = LIGHT.radius;
 		ssgi.thickness.value = LIGHT.thickness;
 		nodes.ssgi = ssgi;
-		lit = vec4(color.rgb.mul(ssgi.getAONode().r).add(diffuse.rgb.mul(ssgi.getGINode().rgb)), color.a);
-		if (q.ssr) {
-			const { ssr } = await import('three/examples/jsm/tsl/display/SSRNode.js');
-			const litTex = convertToTexture(lit);
-			nodes.litTex = litTex;
-			const rough = normalTex.a;
-			// the node weights a hit by "metalness": a smooth non-metal (a polished floor) gets a share too
-			const reflectivity = max(diffuse.a, rough.oneMinus().mul(rough.oneMinus()).mul(LIGHT.dielectric));
-			/** @type {any} */
-			const refl = ssr(litTex, depth, sceneNormal, { metalnessNode: reflectivity, roughnessNode: rough, camera, reflectNonMetals: true });
-			refl.resolutionScale = scale;
-			refl.maxDistance.value = LIGHT.ssrMaxDistance;
-			refl.quality.value = scale < 1 ? 0.4 : 0.5;
-			refl.intensity.value = LIGHT.ssrIntensity;
-			nodes.ssr = refl;
-			lit = vec4(litTex.rgb.add(refl.rgb), litTex.a);
-		}
+		const bounce = baked ? ssgi.getGINode().rgb.mul(baked.oneMinus()) : ssgi.getGINode().rgb;
+		lit = vec4(color.rgb.mul(aoOf(ssgi.getAONode().r)).add(diffuse.rgb.mul(bounce)), color.a);
 	} else {
 		const gtao = ao(depth, sceneNormal, camera);
 		nodes.gtao = gtao;
-		lit = vec4(color.rgb.mul(gtao.getTextureNode().r), color.a);
+		lit = vec4(color.rgb.mul(aoOf(gtao.getTextureNode().r)), color.a);
+	}
+	if (q.ssr) {
+		const diffuse = scenePass.getTextureNode('diffuseColor');
+		const scale = q.scale;
+		const { ssr } = await import('three/examples/jsm/tsl/display/SSRNode.js');
+		const litTex = convertToTexture(lit);
+		nodes.litTex = litTex;
+		const rough = normalTex.a;
+		// the node weights a hit by "metalness": a smooth non-metal (a polished floor) gets a share too
+		const reflectivity = max(diffuse.a, rough.oneMinus().mul(rough.oneMinus()).mul(LIGHT.dielectric));
+		/** @type {any} */
+		const refl = ssr(litTex, depth, sceneNormal, { metalnessNode: reflectivity, roughnessNode: rough, camera, reflectNonMetals: true });
+		refl.resolutionScale = scale;
+		refl.maxDistance.value = LIGHT.ssrMaxDistance;
+		refl.quality.value = scale < 1 ? 0.4 : 0.5;
+		refl.intensity.value = LIGHT.ssrIntensity;
+		nodes.ssr = refl;
+		lit = vec4(litTex.rgb.add(refl.rgb), litTex.a);
 	}
 	const aa = traa(lit, depth, vel, camera);
 	nodes.traa = aa;
@@ -176,6 +191,9 @@ export async function buildPipeline(o) {
 		pipeline,
 		nodes,
 		quality: o.quality,
+		/** 106 S3: what this pipeline draws */
+		lighting: { gi: !!q.gi, ssr: !!q.ssr, scale: q.scale },
+		baked: !!o.baked,
 		/** the camera the passes were built for (another camera = the view rebuilds the pipeline) */
 		camera,
 		/** one frame of the view */
@@ -204,4 +222,13 @@ export async function buildPipeline(o) {
 			}
 		}
 	};
+}
+
+/**
+ * 106: the per-material MRT override that flags a baked object's pixels (velocity.z = 1; every other object
+ * writes 0 there: three pads the vec2 velocity as (x, y, 0, 1)). One node, shared by every baked material.
+ * @param {any} T three/tsl
+ */
+export function bakedMrt(T) {
+	return T.mrt({ velocity: T.vec4(T.velocity, T.float(1), T.float(1)) });
 }

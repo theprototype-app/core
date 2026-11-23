@@ -8,10 +8,10 @@ import { deviceClass, browserSaysMobile } from '../deviceClass.js';
 import { isVRMode, globalRenderer, globalScene, globalCamera } from '../../stores/sceneStore';
 import { showToast } from '../../stores/appStore';
 import { safeStorage } from '../safeStorage';
-import { offerVerdict, asQuality, HEADSET_UA } from './cinematicOffer.js';
+import { offerVerdict, asQuality, asLightMode, HEADSET_UA } from './cinematicOffer.js';
 import { cinematicPrefs, cinematicState, cinematicDisabled } from './cinematicStore.js';
 
-export { cinematicPrefs, cinematicState, disableCinematic } from './cinematicStore.js';
+export { cinematicPrefs, cinematicState, cinematicCosts, disableCinematic } from './cinematicStore.js';
 
 /** @type {Promise<boolean> | null} */
 let probing = null;
@@ -98,6 +98,16 @@ export function toggleCinematic() {
 /** pick the quality step (applies live when the view is on) @param {any} q */
 export async function setCinematicQuality(q) {
 	cinematicPrefs.update((p) => ({ ...p, quality: asQuality(q) }));
+	if (get(cinematicState).mode === 'on') (await cinematicView()).requalify();
+}
+
+/**
+ * 106 S3: Reflections / Global light on this device (On / Off / Auto; applies live while the view is on)
+ * @param {'reflections' | 'globalLight'} which @param {'auto' | 'on' | 'off'} mode
+ */
+export async function setCinematicLight(which, mode) {
+	if (which !== 'reflections' && which !== 'globalLight') return;
+	cinematicPrefs.update((p) => ({ ...p, [which]: asLightMode(mode) }));
 	if (get(cinematicState).mode === 'on') (await cinematicView()).requalify();
 }
 

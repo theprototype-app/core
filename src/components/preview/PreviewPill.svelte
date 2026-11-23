@@ -54,7 +54,8 @@
 					? 'Cinematic view is on: back to the standard view (Shift+Z)'
 					: 'Cinematic view: bounced light and reflections, on this computer only (Shift+Z)'
 	);
-	const dropText = $derived(cineOn && $cinematicState.dropped > 0 ? 'Lowered to ' + QUALITY[$cinematicState.quality].label + ' to keep it smooth' : '');
+	// 106 S3: the drop lowers the step first, then a Reflections / Global light switch set to On (cinematicCore.stepText)
+	const dropText = $derived(cineOn && $cinematicState.dropped > 0 ? $cinematicState.stepped || 'Lowered to ' + QUALITY[$cinematicState.quality].label + ' to keep it smooth' : '');
 
 	const HINT_KEY = 'cinematic:hintSeen';
 	let hint = $state(false);

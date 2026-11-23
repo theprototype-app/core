@@ -6071,7 +6071,13 @@ export function commitMesh(c) {
 	if (c.apply === 'session') {
 		applyGeometrySnapshot(positions, groups, uvs, c.faces);
 	} else if (c.apply === 'inplace') {
-		// 99 K5: the session geometry already holds `after` (a live edit wrote it in place)
+		// 99 K5: the session geometry already holds `after` (a live edit wrote it in place).
+		// 99-int: a mesh's FIRST edit stores its partition, as the swap path does (applyGeometrySnapshot ->
+		// carryOrDeriveFaces): the pairing the edit was made on (FS.quadPartner still holds the pre-move one until
+		// the rebuild), so later swaps carry these faces instead of re-guessing them from the moved mesh
+		const live = FS.object?.geometry;
+		if (live && !readStoredFaces(live) && FS.frame.count && FS.quadPartner?.length === FS.frame.count)
+			storeFaces(live, derivePartition(FS.frame.count, FS.quadPartner));
 		afterInPlaceCommit();
 	} else if (bare) {
 		applyMeshGeo(uuid, positions);

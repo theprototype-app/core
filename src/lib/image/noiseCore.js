@@ -90,7 +90,7 @@ export function parseNoiseSpec(spec, key = 'map') {
 	if (spec.kind !== undefined && !NOISE_KINDS.includes(spec.kind)) return { error: 'noise.kind: one of ' + NOISE_KINDS.join(', ') + ' (worley = cells)' };
 	if (spec.output !== undefined && !NOISE_OUTPUTS.includes(spec.output)) return { error: 'noise.output: color or normal' };
 	if (spec.colors !== undefined) {
-		const ok = Array.isArray(spec.colors) && spec.colors.length >= 2 && spec.colors.length <= MAX_NOISE_COLORS && spec.colors.every((c) => hexColor(c));
+		const ok = Array.isArray(spec.colors) && spec.colors.length >= 2 && spec.colors.length <= MAX_NOISE_COLORS && spec.colors.every((/** @type {any} */ c) => hexColor(c));
 		if (!ok) return { error: 'noise.colors: 2 to ' + MAX_NOISE_COLORS + ' hex colours, low to high, e.g. ["#202020", "#e0e0e0"]' };
 	}
 	for (const k of /** @type {const} */ (['scale', 'octaves', 'roughness', 'seed', 'contrast', 'strength'])) {

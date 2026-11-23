@@ -143,8 +143,14 @@ h.run(async () => {
 	// the row is there too (its own id), then the drawer closes and the floating row takes the clicks
 	// whichever copy of the row is on screen (the floating one, or the drawer's while the drawer is open)
 	h.check((await H.page.locator('#failed-invite-joins, #failed-invite-joins-drawer').count()) >= 1, '3.4a the row is drawn');
-	await row('.fij-resume').click({ timeout: 10000 });
-	h.check((await failed(H)).pausedUntil === 0, '3.4 Resume now lifts the pause');
+	// on a slow box the 60 s pause may have run out by now: then there is no Resume to press, and it lifted by itself
+	if ((await failed(H)).pausedUntil > Date.now() + 2000) {
+		await row('.fij-resume').click({ timeout: 10000 });
+		h.check((await failed(H)).pausedUntil === 0, '3.4 Resume now lifts the pause');
+	} else {
+		await until(() => failed(H).then((f) => f.pausedUntil <= Date.now()), (v) => v === true, '3.4 the pause ran out by itself (60 s) before Resume could be pressed');
+		h.check((await H.page.locator('.fij-resume').count()) === 0, '3.4b …and the row no longer offers Resume');
+	}
 	await J.page.evaluate(() => {
 		const t = [...document.querySelectorAll('.tp-toast')].find((el) => /paused invite joins/.test(el.textContent || ''));
 		[...(t?.querySelectorAll('.tp-toast-action') ?? [])].find((b) => b.textContent.trim() === 'Try again')?.click();

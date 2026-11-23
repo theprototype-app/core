@@ -33,8 +33,8 @@ describe('106 shadow level core', () => {
 		expect(drawnShadowLevel('far', 'tv')).toBe('basic');
 	});
 	it('contact shadows only in Soft / Far on tiers that fit', () => {
-		expect(contactShadowsOn('soft', 'pc')).toBe(true);
-		expect(contactShadowsOn('far', 'pc')).toBe(true);
+		expect(contactShadowsOn('soft', 'pc')).toBe(false); // Q6: no tier fits it yet
+		expect(contactShadowsOn('far', 'pc')).toBe(false);
 		expect(contactShadowsOn('basic', 'pc')).toBe(false);
 		expect(contactShadowsOn('far', 'phone')).toBe(false);
 		expect(contactShadowsOn('soft', 'phone')).toBe(false);

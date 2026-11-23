@@ -181,10 +181,13 @@
 		// false keeps today's governor, which is the "what is drawn today" reading)
 		if (opts.full !== false && s.qualityGovernor) s.qualityGovernor.keepFullQuality();
 		if (opts.tier !== undefined && env.setShadowTierOverride) env.setShadowTierOverride(opts.tier || null);
+		// contact: true prices a lifted level WITH the contact pass (no tier draws it since Q6), noContact without it,
+		// neither = the tier table
+		if (s.shadowLevels?.contactForTest) s.shadowLevels.contactForTest(opts.contact ? true : opts.noContact ? false : null);
 		env.setSceneShadowLevel(level);
 		await sleep(opts.waitMs ?? 3500);
-		// S0 only: price a level WITHOUT the contact pass (what a tier that gets Soft but not contact would draw)
-		if (opts.noContact && s.lightParams.contactShadowsWanted) s.lightParams.contactShadowsWanted.set(false);
+		// a build before contactForTest (S0's first runs): price WITHOUT the pass by clearing the store
+		if (opts.noContact && !s.shadowLevels?.contactForTest && s.lightParams.contactShadowsWanted) s.lightParams.contactShadowsWanted.set(false);
 		if (opts.pose) pin(opts.pose);
 		await sleep(800);
 		const f = await rafSample(sampleMs);

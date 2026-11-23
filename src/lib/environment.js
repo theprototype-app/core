@@ -545,6 +545,7 @@ export function applyEnvironment() {
 			// tracks scene growth for free
 			if (sun.castShadow && sun.shadow) {
 				const r = Math.min(Math.max(sceneRadius() * 1.2, 15), 120);
+				sunFitDepth = r * 4 - 0.5;
 				const cam = sun.shadow.camera;
 				cam.left = -r;
 				cam.right = r;
@@ -972,6 +973,8 @@ export function drawnSceneShadowLevel(renderer) {
 
 // 106 S1: Soft / Far are a lazy chunk; Basic and Off never load it. Once loaded it stays (it restores
 // Basic itself when the level goes back), so a scene that never asks pays one comparison per apply.
+/** Basic's fitted sun shadow depth (m), for Far's cascades to keep its bias in metres */
+let sunFitDepth = 60;
 /** @type {any} */
 let shadowLevelsMod = null;
 let shadowLevelsLoading = false;
@@ -984,7 +987,7 @@ export function shadowLevelsLoadedForTest() {
 function applySceneShadowLevel(scene, renderer, sun) {
 	const drawn = drawnSceneShadowLevel(renderer);
 	if (shadowLevelsMod)
-		return shadowLevelsMod.applyShadowLevel({ scene, renderer, sun, drawn, tier: shadowTier(renderer), radius: sceneRadius(), asked: shadowLevelOf(get(environment).shadowLevel), reapply: applyEnvironment });
+		return shadowLevelsMod.applyShadowLevel({ scene, renderer, sun, drawn, tier: shadowTier(renderer), radius: sceneRadius(), asked: shadowLevelOf(get(environment).shadowLevel), reapply: applyEnvironment, fitDepth: sunFitDepth });
 	if (drawn !== 'soft' && drawn !== 'far') return;
 	if (shadowLevelsLoading) return;
 	shadowLevelsLoading = true;

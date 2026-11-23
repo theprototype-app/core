@@ -8,7 +8,7 @@
 //       env DEVICE=deck node tests/e2e/shadow-frames-106.cjs
 //   PC (real Chrome through the device lab): ~/.code/lanes-30/after-106/106-shadows/lab/run-pc.mjs --driver this
 //
-// env: SCENES (product-shot,castle-courtyard,race), LEVELS (basic,soft,far,off,basic), SAMPLE_MS (6000),
+// env: SCENES (product-shot,castle-courtyard,race), LEVELS (basic,soft,far,off,basic), SAMPLE_MS (6000), CONTACT=1 (force the contact pass on Soft / Far), NOCONTACT=1,
 //      OUT (test-results/106-shadows/frames), DEVICE, W x H (1920 x 1080 on a local launch), CDP (port)
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -69,7 +69,7 @@ const save = () => fs.writeFileSync(path.join(OUT, `frames-${DEVICE}.json`), JSO
 			log(slug, 'inventory', JSON.stringify(S.inventory).slice(0, 900));
 			save();
 			for (const level of LEVELS) {
-				const row = await page.evaluate(([level, pose, sampleMs, tier, noContact]) => window.__s0.measure(level, { pose, sampleMs, tier, noContact }), [level, S.load.pose, SAMPLE_MS, TIER, process.env.NOCONTACT === '1']);
+				const row = await page.evaluate(([level, pose, sampleMs, tier, noContact, contact]) => window.__s0.measure(level, { pose, sampleMs, tier, noContact, contact }), [level, S.load.pose, SAMPLE_MS, TIER, process.env.NOCONTACT === '1', process.env.CONTACT === '1']);
 				row.shot = `${DEVICE}-${slug}-${level}-${S.rows.length}.png`;
 				await page.screenshot({ path: path.join(OUT, row.shot) });
 				S.rows.push(row);

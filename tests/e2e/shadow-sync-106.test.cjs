@@ -62,7 +62,12 @@ h.run(async () => {
 	await h.eventually(() => state(B.page), (s) => s.stored === 'far' && s.drawn === 'far' && s.sun?.cascaded, '1. B follows Far (stored, drawn, the sun cascaded)', 15000);
 	const farA = await state(A.page);
 	h.check(farA.sun?.cascaded && farA.sun.cls === 'SunLightShadow', `2. Far: the rig sun draws SunLightShadow cascades (${JSON.stringify(farA.sun)})`);
-	h.check(farA.contact === true, '2. Far: the contact pass is on (pc tier)');
+	h.check(farA.contact === false, '2. Far: no contact pass (no tier draws it in this release, Q6)');
+	// the pass itself still works where a tier turns it on (forced here: the suites' switch)
+	await A.page.evaluate(() => window.__stores.shadowLevels.contactForTest(true));
+	await h.eventually(() => state(A.page), (s) => s.contact === true, '2. Far with the contact switch on: the pass is in the post stack', 10000);
+	await A.page.evaluate(() => window.__stores.shadowLevels.contactForTest(null));
+	await h.eventually(() => state(A.page), (s) => s.contact === false, '2. the switch back to the tier table: no pass', 10000);
 
 	// 3: the save carries it; a reload rejoins at the same level
 	const payload = await B.page.evaluate(() => window.__stores.sessions.buildSessionPayload('shadow-sync-106'));

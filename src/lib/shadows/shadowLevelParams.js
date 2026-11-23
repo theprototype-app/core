@@ -6,8 +6,13 @@
 /** @typedef {import('./shadowLevelCore.js').ShadowLevel} ShadowLevel */
 /** @typedef {import('./shadowLevelCore.js').ShadowTier} ShadowTier */
 
-/** Contact shadows (S2) per tier: only where S0 measured they fit. */
-export const TIER_CONTACT = Object.freeze({ pc: true, phone: false, quest: false });
+/**
+ * Contact shadows (S2) per tier: only where S0 measured they fit. None does in this release (Q6, 2026-11-23): on
+ * the Deck's iGPU (a pc-tier device) the pass doubles the frames over 20 ms on product-shot and castle (Soft 41 vs
+ * 20 without it, Far 55 vs 10), on the HONOR it adds frames on every scene, and the Quest is Basic. The pass stays
+ * in the code, measured and tested, for the tier that fits it first.
+ */
+export const TIER_CONTACT = Object.freeze({ pc: false, phone: false, quest: false });
 
 /** Does this device draw contact shadows for the drawn level? @param {ShadowLevel} drawn @param {ShadowTier} tier */
 export function contactShadowsOn(drawn, tier) {

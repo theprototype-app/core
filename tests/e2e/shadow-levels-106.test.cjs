@@ -47,7 +47,9 @@ const SETUP = () => {
 	ground.receiveShadow = true;
 	const cubes = {};
 	for (const d of [1, 20, 200]) {
-		const size = d * 0.12;
+		// a 40 cm box at 1 m (Far's near cascade spans the first ~78 m of view depth, ~8 cm texels: a 12 cm box is
+		// below what any shadow map resolves; the contact pass is for that), 2.4 m at 20 m, 24 m at 200 m
+		const size = Math.max(0.4, d * 0.12);
 		const c = add(new T.Mesh(new T.BoxGeometry(size, size, size), mat(0x6c7a89)), 't106-cube-' + d);
 		c.position.set(0, size / 2, -d);
 		c.castShadow = c.receiveShadow = true;
@@ -121,7 +123,38 @@ const SETUP = () => {
 		});
 		return { lum: out, mean };
 	};
-	window.__t106 = { cubes, sunDir, pose, sample, T };
+	/** full-frame snapshot (lines hidden) kept page-side; cmp = share of pixels differing by > 2/255 in any channel */
+	const snaps = {};
+	const snap = (name) => {
+		sample([]);
+		const W = r.domElement.width;
+		const H = r.domElement.height;
+		const k = document.createElement('canvas');
+		k.width = W;
+		k.height = H;
+		const x = k.getContext('2d', { willReadFrequently: true });
+		const hidden = [];
+		scene.traverse((o) => {
+			if ((o.isLine || o.isLineSegments || o.isSprite || o.isPoints) && o.visible) {
+				o.visible = false;
+				hidden.push(o);
+			}
+		});
+		r.render(scene, cam);
+		x.drawImage(r.domElement, 0, 0);
+		for (const o of hidden) o.visible = true;
+		snaps[name] = x.getImageData(0, 0, W, H).data;
+		return true;
+	};
+	const cmp = (a, b) => {
+		const A = snaps[a];
+		const B = snaps[b];
+		if (!A || !B || A.length !== B.length) return 1;
+		let n = 0;
+		for (let i = 0; i < A.length; i += 4) if (Math.abs(A[i] - B[i]) > 2 || Math.abs(A[i + 1] - B[i + 1]) > 2 || Math.abs(A[i + 2] - B[i + 2]) > 2) n++;
+		return n / (A.length / 4);
+	};
+	window.__t106 = { cubes, sunDir, pose, sample, snap, cmp, T };
 	return true;
 };
 
@@ -185,8 +218,7 @@ const MEASURE = ({ distances, seams }) => {
 /** both page sides: the renderer's canvas as a PNG of the whole app frame (post included) */
 async function shot(page, name) {
 	fs.mkdirSync(OUT, { recursive: true });
-	const canvas = page.locator('canvas').first();
-	await canvas.screenshot({ path: path.join(OUT, name + '.png') }).catch(() => {});
+	await page.screenshot({ path: path.join(OUT, name + '.png') }).catch((e) => console.log('shot ' + name + ': ' + e.message));
 }
 
 h.run(async () => {
@@ -231,9 +263,12 @@ h.run(async () => {
 			const m = by[level].at[d];
 			h.check(m.mean > 0.03, `${level} ${d} m: the frame is drawn (mean ${m.mean})`);
 			h.check(m.acne !== null && m.acne <= 0.05, `${level} ${d} m: no acne on open lit ground (${(m.acne * 100).toFixed(1)} % of samples dark)`);
-			// Basic and Soft share the scene-fitted map: a 12 cm cube at 1 m is below its texel, so its shadow is not
-			// asked of them (that is what Far is for); 20 m and 200 m are
-			if (level === 'far' || d > 1) {
+			// Basic and Soft share today's scene-fitted map (its half-size is capped at 120 m): a 200 m caster is past
+			// it, so there Soft must draw what Basic draws (nothing new, no artefact); reaching 200 m is Far's job
+			if (level === 'soft' && d === 200) {
+				const b = by.basic.at[d];
+				h.check(Math.abs(m.shadowRatio - b.shadowRatio) <= 0.03 && Math.abs(m.baseRatio - b.baseRatio) <= 0.03, `soft 200 m: past the scene map's reach, the same as Basic (shadow ${m.shadowRatio} vs ${b.shadowRatio}, base ${m.baseRatio} vs ${b.baseRatio})`);
+			} else {
 				h.check(m.shadowRatio !== null && m.shadowRatio < 0.75, `${level} ${d} m: the cube casts a shadow (shadow / lit ${m.shadowRatio})`);
 				h.check(m.baseRatio !== null && m.baseRatio < 0.8, `${level} ${d} m: the shadow starts at the cube's base, no peter-panning (base / lit ${m.baseRatio})`);
 			}
@@ -243,7 +278,10 @@ h.run(async () => {
 	const seam = by.far.seams;
 	const okR = seam.ratios.filter((v) => v !== null);
 	const jumps = okR.slice(1).map((v, i) => Math.abs(v - okR[i]));
-	h.check(okR.length >= seam.z.length - 2 && okR.every((v) => v < 0.75), `far: the bar's shadow is unbroken from 10 m to 185 m across the cascade split (max ratio ${Math.max(...okR)})`);
+	// the camera stands 10 m behind the bar's start: its nearest points (10-30 m) are below the frame; what is on
+	// screen must reach from 40 m (inside the near cascade, which ends ~78 m of view depth) to 185 m
+	const seen = seam.z.filter((_, i) => seam.ratios[i] !== null);
+	h.check(seen.length > 0 && Math.max(...seen) >= -40 && Math.min(...seen) <= -185 && okR.every((v) => v < 0.75), `far: the bar's shadow is unbroken from ${-Math.max(...seen)} m to ${-Math.min(...seen)} m across the cascade split (max ratio ${Math.max(...okR)}, ${okR.length}/${seam.z.length} points on screen)`);
 	h.check(jumps.length > 0 && Math.max(...jumps) < 0.25, `far: no seam along the strip (largest step between 5 m neighbours ${Math.max(...jumps).toFixed(3)})`);
 
 	// 3. a moving sun (Far)
@@ -260,13 +298,19 @@ h.run(async () => {
 	// 4. the levels differ on screen; Basic after Far is Basic
 	const diff = (a, b) => a.filter((v, i) => v !== null && b[i] !== null && Math.abs(v - b[i]) > 0.02).length / a.length;
 	const farFrame = await frame();
+	const snap = (name) => page.evaluate((n) => (window.__t106.pose([0, 9, 18], [0, 0, -20]), window.__t106.snap(n)), name);
 	await setLevel('soft');
 	const softFrame = await frame();
+	await snap('soft');
 	await setLevel('basic');
 	const basic1 = await frame();
 	const basic2 = await frame();
+	await snap('basic1');
+	await snap('basic2');
 	const floor = diff(basic1, basic2);
-	h.check(diff(basic1, softFrame) > floor + 0.01, `Soft draws differently from Basic (${(diff(basic1, softFrame) * 100).toFixed(1)} % of samples, floor ${(floor * 100).toFixed(1)} %)`);
+	// Soft changes only the shadow edges (a band a few pixels wide): compared over every pixel, not the grid
+	const [pxSoft, pxFloor] = await page.evaluate(() => [window.__t106.cmp('basic1', 'soft'), window.__t106.cmp('basic1', 'basic2')]);
+	h.check(pxSoft > pxFloor * 2 + 0.0005, `Soft draws differently from Basic: softer edges on ${(pxSoft * 100).toFixed(2)} % of pixels (floor ${(pxFloor * 100).toFixed(2)} %; grid samples ${(diff(basic1, softFrame) * 100).toFixed(1)} %)`);
 	h.check(diff(basic1, farFrame) > floor + 0.01, `Far draws differently from Basic (${(diff(basic1, farFrame) * 100).toFixed(1)} %)`);
 	h.check(diff(basic0, basic1) <= floor + 0.005, `Basic after Soft and Far draws today's Basic again (${(diff(basic0, basic1) * 100).toFixed(1)} % of samples, floor ${(floor * 100).toFixed(1)} %)`);
 	const back = await page.evaluate(() => window.__stores.environment.drawnSceneShadowLevel());

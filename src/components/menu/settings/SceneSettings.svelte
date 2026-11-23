@@ -7,7 +7,7 @@
 		'show the simulation controls': ['simulation controls', 'physics', 'transport', 'sim'],
 		'quality preset': ['quality', 'performance', 'low', 'medium', 'high', 'graphics', 'fps'],
 		'shadow quality': ['shadows', 'performance'],
-		'scene shadow quality': ['shadows', 'soft shadows', 'far shadows', 'contact shadows', 'lights'],
+		'scene shadow quality': ['shadows', 'soft shadows', 'far shadows', 'lights'],
 		'reduce quality when the scene is heavy': ['performance', 'fps', 'lag', 'slow', 'governor'],
 		'simplify distant models': ['lod', 'performance'],
 		'draw repeated kit pieces together': ['instancing', 'performance', 'kit'],

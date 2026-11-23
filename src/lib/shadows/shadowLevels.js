@@ -42,6 +42,10 @@ const state = { asked: 'basic', drawn: 'basic', tier: 'pc', contact: false, swee
 //     not isVRMode: that store flips BEFORE the session presents.
 let cinematicLive = false;
 let wired = false;
+/** the suites' and S0 driver's contact override (null = the tier table) @type {boolean | null} */
+let contactForce = null;
+/** @type {(() => void) | null} */
+let lastReapply = null;
 /** @param {() => void} reapply */
 function wire(reapply) {
 	if (wired) return;
@@ -99,11 +103,28 @@ function restoreRadius(shadow) {
 	radiusBack.delete(shadow);
 }
 
-/** Give the rig sun its two cascades. @param {any} sun @param {number} reach @param {number} radius */
-function cascadeOn(sun, reach, radius) {
+/**
+ * three's shadow bias is in DEPTH units of the shadow camera: Basic's -0.0002 over its fitted depth (4x the frustum's
+ * half size: 60-480 m) is 1-10 cm. A cascade's depth runs from the caster ceiling to the far end of 300 m of view
+ * (~500 m), so the same number pushed the shadow ~10 cm off a box's base at 1 m (peter-panning, measured by
+ * shadow-levels-106). Each update re-scales the bias so the near cascade keeps Basic's bias IN METRES.
+ * @param {any} s
+ */
+function keepWorldBias(s) {
+	/** @this {any} @param {any} light @param {any} viewCamera */
+	s.updateMatrices = function (light, viewCamera) {
+		SunLightShadow.prototype.updateMatrices.call(this, light, viewCamera);
+		const c = this._cameras?.[0];
+		if (c && this._worldBias) this.bias = this._worldBias / Math.max(1, c.far - c.near);
+	};
+}
+
+/** Give the rig sun its two cascades. @param {any} sun @param {number} reach @param {number} radius @param {number} [fitDepth] Basic's fitted shadow depth (m) */
+function cascadeOn(sun, reach, radius, fitDepth) {
 	if (!cascadeBack.has(sun)) {
 		const own = sun.shadow;
 		const s = new SunLightShadow();
+		keepWorldBias(s);
 		s.bias = own.bias;
 		s.normalBias = own.normalBias;
 		s.intensity = own.intensity;
@@ -122,6 +143,8 @@ function cascadeOn(sun, reach, radius) {
 	// the cascades span the camera's near plane to this reach (the view camera's far when that is nearer)
 	s.camera.far = reach;
 	s.radius = radius;
+	const own = cascadeBack.get(sun);
+	s._worldBias = (own?.bias ?? -0.0002) * (fitDepth || 60);
 }
 
 /** @param {any} sun */
@@ -161,17 +184,20 @@ function sweepAuthored() {
 
 /**
  * Apply the drawn level. Called at the tail of every applyEnvironment once this module is loaded.
- * @param {{scene: any, renderer: any, sun: any, drawn: 'off'|'basic'|'soft'|'far', tier: 'pc'|'phone'|'quest', radius: number, asked?: string, reapply?: () => void}} input
+ * @param {{scene: any, renderer: any, sun: any, drawn: 'off'|'basic'|'soft'|'far', tier: 'pc'|'phone'|'quest', radius: number, asked?: string, reapply?: () => void, fitDepth?: number}} input
  */
-export function applyShadowLevel({ sun, drawn: tierDrawn, tier, radius, asked, reapply }) {
-	if (reapply) wire(reapply);
+export function applyShadowLevel({ sun, drawn: tierDrawn, tier, radius, asked, reapply, fitDepth }) {
+	if (reapply) {
+		wire(reapply);
+		lastReapply = reapply;
+	}
 	state.asked = asked ?? tierDrawn;
 	const drawn = cinematicShadowLevel(tierDrawn, cinematicLive);
 	state.applies++;
 	state.tier = tier;
 	const lifted = drawn === 'soft' || drawn === 'far';
 	state.drawn = drawn;
-	state.contact = contactShadowsOn(drawn, tier);
+	state.contact = contactForce === null ? contactShadowsOn(drawn, tier) : contactForce && lifted;
 	if (state.contact) registerContactShadows();
 	if (get(contactShadowsWanted) !== state.contact) contactShadowsWanted.set(state.contact);
 	if (!lifted) {
@@ -191,7 +217,7 @@ export function applyShadowLevel({ sun, drawn: tierDrawn, tier, radius, asked, r
 		if (p.cascades) {
 			// Soft -> Far: the directional shadow goes back to its own radius before it is set aside
 			if (!cascadeBack.has(sun)) restoreRadius(sun.shadow);
-			cascadeOn(sun, cascadeReach(radius, p.reach), p.radius);
+			cascadeOn(sun, cascadeReach(radius, p.reach), p.radius, fitDepth);
 		} else {
 			cascadeOff(sun);
 			setRadius(sun.shadow, p.radius);
@@ -200,6 +226,12 @@ export function applyShadowLevel({ sun, drawn: tierDrawn, tier, radius, asked, r
 	}
 	sweepAuthored();
 	if (!state.sweep && typeof setInterval === 'function') state.sweep = setInterval(sweepAuthored, 1000);
+}
+
+/** The suites' and the S0 driver's contact switch: true / false forces it on a lifted level, null = the tier table. @param {boolean | null} on */
+export function contactForTest(on) {
+	contactForce = on;
+	lastReapply?.();
 }
 
 /** For the suites and the S0 driver. */
@@ -220,7 +252,9 @@ export function shadowLevelDebug() {
 					mapSize: s?.mapSize?.x,
 					reach: s?.camera?.far,
 					atlas: s?.map ? [s.map.width, s.map.height] : null,
-					splits: s?._cascadeSplits ? [...s._cascadeSplits].map((v) => +v.toFixed(2)) : null
+					splits: s?._cascadeSplits ? [...s._cascadeSplits].map((v) => +v.toFixed(2)) : null,
+					bias: s?.bias,
+					depth: s?._cameras?.[0] ? +(s._cameras[0].far - s._cameras[0].near).toFixed(1) : null
 				}
 			: null
 	};

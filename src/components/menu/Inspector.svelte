@@ -2295,7 +2295,7 @@
 			</Section>
 
 			<!-- 106 S1: Lights ▸ Shadow quality (scene data, lazy row) -->
-			<Section variant="panel" label="Lights" aliases={['Shadow quality', 'Shadows', 'Soft shadows', 'Far shadows', 'Contact shadows']}>{#await import('./inspector/SceneShadowSection.svelte') then m}<m.default />{/await}</Section>
+			<Section variant="panel" label="Lights" aliases={['Shadow quality', 'Shadows', 'Soft shadows', 'Far shadows']}>{#await import('./inspector/SceneShadowSection.svelte') then m}<m.default />{/await}</Section>
 
 			<!-- P6 — ONE STORY, not three. The post stack, the scene default material and
 				 per-object shaders are three LAYERS of one authored look (the look plan's own

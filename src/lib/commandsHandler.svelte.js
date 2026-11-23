@@ -52,7 +52,7 @@ import { globalRenderer } from '../stores/sceneStore.js';
 import { yieldToEventLoop } from './sceneLoader';
 // 33 (L4): the scene going away is when its modules may be left behind (a leaf)
 import { noteSceneLeaving } from './sceneScope';
-import { objectToJSON } from './slotGroups.js'; // 105: one serializer for slot groups
+import { objectToJSON, slotLayoutOf, rejoinSlotPrimitives } from './slotGroups.js'; // 105: one serializer for slot groups (+ row 6: the glTF send)
 
 //Access scene Store
 let scene = $state();
@@ -1149,6 +1149,15 @@ async function applyCreateObject(object, uuid, override, groupuuid, pos, rot, sc
         // fix-late-joiners: the loader sanitized every name ("Gate zone" -> "Gate_zone"); the JSON has the real one
         restoreGltfNames(result, object.element);
         const hiddenOnSender = object?.visible === false;
+        // fix-late-joiners row 6: one primitive per slot group came back as a Group of meshes: fold it into one mesh
+        if (object?.slots && result.scene.children.length === 1) {
+            const node = result.scene.children[0];
+            const whole = rejoinSlotPrimitives(node, object.slots);
+            if (whole) {
+                result.scene.remove(node);
+                result.scene.add(whole);
+            }
+        }
         result.scene.uuid = uuid
         result.scene.children.forEach((object, index) => {
           let mesh = object.clone()
@@ -1309,7 +1318,8 @@ function multiMaterialSyncable(element) {
     // while this path sends toJSON's PLAIN NUMBER ARRAYS, whose limit is binarypack's
     // per-element recursion — an unrelated constraint that did not move.
     if (position && position.count * 3 > 45000) {
-        showToast('"' + (element.name || element.type) + '" is too large to share its material slots');
+        // fix-late-joiners row 6: it goes by glTF, and its slot LAYOUT rides beside it (slotGroups.slotLayoutOf):
+        // the joiner folds the per-slot primitives back into this mesh, so nothing is lost and nothing is said
         return false;
     }
     return true;
@@ -1508,6 +1518,8 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
             // a hidden original) reached every late joiner VISIBLE. Read now, while the flow runtime is parked at
             // its base, so this is the authored state; additive, absent for a visible object.
             const hidden = element.visible === false;
+            // fix-late-joiners row 6: a multi-slot mesh too big for toJSON — its slots, for the joiner to rejoin
+            const slots = slotLayoutOf(element);
             // 46: KTX2 twins ride the wire beside the plain image (ktx2Twins.js)
             const exporter = withTwins(new GLTFExporter());
             exporter.parse(
@@ -1522,6 +1534,7 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
                         rot: rot,
                         scale: scale,
                         ...(hidden ? { visible: false } : {}),
+                        ...(slots ? { slots } : {}),
                         ...heal
                     });
                 },

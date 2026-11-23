@@ -160,3 +160,97 @@ export function healSlotGroups(root) {
 	});
 	return n;
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// fix-late-joiners row 6 — A BIG MULTI-SLOT MESH REACHES A LATE JOINER WHOLE. Above the toJSON cap (45,000 position
+// floats: toJSON writes plain number arrays, which the wire's packer cannot take at that size) a slot-list mesh
+// travels by glTF, and GLTFExporter writes ONE PRIMITIVE PER GROUP: the joiner got a Group of single-material
+// meshes (fresh uuids, no slots, the slot rows of the Inspector gone). The glTF stays the transport (its buffers
+// pack as base64); the message carries the slot LAYOUT beside it (additive: an older receiver ignores it and keeps
+// what it always built), and the joiner folds the primitives back into the one mesh: the primitives share the
+// attribute accessors, each holds its group's index range, in group order.
+
+/** caps on a layout that came from a peer (untrusted): it sizes typed arrays */
+const MAX_LAYOUT_SLOTS = 256;
+const MAX_LAYOUT_GROUPS = 4096;
+const MAX_LAYOUT_INDEX = 48_000_000;
+
+/**
+ * The slot layout of a multi-slot mesh, for the glTF send. Null for anything else.
+ * @param {any} mesh @returns {{slots: number, groups: {start: number, count: number, materialIndex: number}[], indexed: boolean, count: number} | null}
+ */
+export function slotLayoutOf(mesh) {
+	const geometry = mesh?.geometry;
+	if (!mesh?.isMesh || !Array.isArray(mesh.material) || !geometry?.groups?.length) return null;
+	const count = geometry.index ? geometry.index.count : geometry.attributes?.position?.count ?? 0;
+	return {
+		slots: mesh.material.length,
+		groups: geometry.groups.map((/** @type {any} */ g) => ({ start: g.start, count: g.count, materialIndex: g.materialIndex || 0 })),
+		indexed: !!geometry.index,
+		count
+	};
+}
+
+/** @param {any} layout @returns {boolean} */
+function layoutOk(layout) {
+	if (!layout || typeof layout !== 'object' || !Array.isArray(layout.groups)) return false;
+	const { slots, count, groups } = layout;
+	if (!Number.isInteger(slots) || slots < 1 || slots > MAX_LAYOUT_SLOTS) return false;
+	if (!Number.isInteger(count) || count < 0 || count > MAX_LAYOUT_INDEX) return false;
+	if (!groups.length || groups.length > MAX_LAYOUT_GROUPS) return false;
+	return groups.every(
+		(/** @type {any} */ g) =>
+			g && Number.isInteger(g.start) && Number.isInteger(g.count) && Number.isInteger(g.materialIndex) &&
+			g.start >= 0 && g.count >= 0 && g.start + g.count <= count && g.materialIndex >= 0 && g.materialIndex < slots
+	);
+}
+
+/**
+ * One mesh again from the primitives GLTFLoader built for a multi-slot mesh: `node` is the loaded node (a Group of
+ * one mesh per group, in group order, or the Mesh itself for a single group). Same attributes, the original index
+ * (each primitive's range written back at its group's start), the groups, and the materials on their slots (a slot
+ * no group uses never reached the glTF: it gets a plain stand-in, and draws nothing either way). Null when the
+ * shape does not match the layout (the caller keeps what the loader built: what every build before this did).
+ * @param {any} node @param {any} layout from `slotLayoutOf` on the sender
+ * @returns {any | null}
+ */
+export function rejoinSlotPrimitives(node, layout) {
+	if (!node || !layoutOk(layout)) return null;
+	const prims = node.isMesh ? [node] : (node.children ?? []).filter((/** @type {any} */ c) => c.isMesh);
+	if (prims.length !== layout.groups.length) return null;
+	const first = prims[0].geometry;
+	if (!first?.attributes?.position) return null;
+	if (prims.some((/** @type {any} */ p) => p.geometry?.attributes?.position !== first.attributes.position)) return null;
+	const geometry = new THREE.BufferGeometry();
+	for (const [name, attribute] of Object.entries(first.attributes)) geometry.setAttribute(name, /** @type {any} */ (attribute));
+	geometry.userData = { ...(first.userData ?? {}) };
+	const vertices = first.attributes.position.count;
+	if (layout.indexed) {
+		const index = vertices > 65535 ? new Uint32Array(layout.count) : new Uint16Array(layout.count);
+		for (let i = 0; i < prims.length; i++) {
+			const g = layout.groups[i];
+			const src = prims[i].geometry.index;
+			if (!g.count) continue;
+			if (!src || src.count < g.count) return null;
+			for (let k = 0; k < g.count; k++) index[g.start + k] = src.getX(k);
+		}
+		geometry.setIndex(new THREE.BufferAttribute(index, 1));
+	} else if (layout.count !== vertices) return null;
+	for (const g of layout.groups) geometry.addGroup(g.start, g.count, g.materialIndex);
+	/** @type {any[]} */
+	const materials = new Array(layout.slots).fill(null);
+	layout.groups.forEach((/** @type {any} */ g, /** @type {number} */ i) => {
+		if (!materials[g.materialIndex]) materials[g.materialIndex] = prims[i].material;
+	});
+	for (let s = 0; s < materials.length; s++) if (!materials[s]) materials[s] = new THREE.MeshStandardMaterial();
+	const mesh = new THREE.Mesh(geometry, materials);
+	mesh.name = node.name;
+	mesh.position.copy(node.position);
+	mesh.quaternion.copy(node.quaternion);
+	mesh.scale.copy(node.scale);
+	mesh.visible = node.visible;
+	mesh.castShadow = prims[0].castShadow;
+	mesh.receiveShadow = prims[0].receiveShadow;
+	mesh.userData = { ...(node.userData ?? {}) };
+	return mesh;
+}

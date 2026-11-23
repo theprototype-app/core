@@ -1779,7 +1779,9 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   smoothing groups -> summed normal, untouched corners byte-identical; `applyMeshGeo` applies the same plan for a
   move so peers and undo match), the quad wire in place (`fromCorners`), the pick BVH refitted
   (`ensureBoundsTrees(root, skip, live)`). The adjust engine's kernel ops return a flat `state` (soup lazy), and a
-  scrub with an unchanged layout writes in place. Suite `mesh-live-edit`.
+  scrub with an unchanged layout writes in place. The edit wire reuses `FS.frame` + the DERIVED `FS.quadPartner`
+  while `rebuildFaces`' stamp still matches (same frame, same position attribute + version: `wireReuse`), so a
+  commit welds and pairs the mesh once, not twice. Suite `mesh-live-edit`.
   `meshKernel/` (99 K1; the app reaches it only lazily, through meshSession.js — K4 moves the operators onto it): a
   headless face-vertex mesh in flat typed arrays (BMesh disk + radial cycles), no three.js in
   the core (`three.js` is the one adapter that imports it), stable vertex/edge/face IDs = slots

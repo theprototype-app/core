@@ -7,7 +7,7 @@ import {
 	drawnShadowLevel
 } from '../../src/lib/shadows/shadowLevelCore.js';
 import { planLight, SHADOW_QUALITIES } from '../../src/lib/ai/sceneSetupCore.js';
-import { contactShadowsOn, levelParams, cascadeReach, cappedNote, cinematicShadowLevel } from '../../src/lib/shadows/shadowLevelParams.js';
+import { contactShadowsOn, levelParams, cascadeReach, cappedNote, cinematicShadowLevel, kernelRadiusFor } from '../../src/lib/shadows/shadowLevelParams.js';
 
 describe('106 shadow level core', () => {
 	it('absent or unknown is Basic (old scenes, old peers)', () => {
@@ -75,5 +75,24 @@ describe('106 the Cinematic view', () => {
 		expect('shadowLevel' in basic.state && basic.state.shadowLevel === undefined).toBe(true);
 		expect('shadowLevel' in planLight({ ambient: { intensity: 1 } }, now).state).toBe(false);
 		expect(planLight({ shadowQuality: 'ultra' }, now).error).toMatch(/shadowQuality/);
+	});
+});
+
+describe('106 Soft kernel in metres', () => {
+	const ortho = (w, px) => ({ camera: { isOrthographicCamera: true, left: -w / 2, right: w / 2 }, mapSize: { x: px } });
+	it('keeps radius 3 on a small scene map (30 m over 2048)', () => {
+		expect(kernelRadiusFor(ortho(30, 2048), 3)).toBe(3);
+	});
+	it('falls to Basic radius 1 on the 240 m cap (12 cm texels)', () => {
+		expect(kernelRadiusFor(ortho(240, 2048), 3)).toBe(1);
+	});
+	it('sits between on a 75 m castle map', () => {
+		const r = kernelRadiusFor(ortho(75, 2048), 3);
+		expect(r).toBeGreaterThan(1);
+		expect(r).toBeLessThan(3);
+	});
+	it('leaves a perspective (spot / point) map at the level radius', () => {
+		expect(kernelRadiusFor({ camera: { isPerspectiveCamera: true }, mapSize: { x: 1024 } }, 3)).toBe(3);
+		expect(kernelRadiusFor(null, 3)).toBe(3);
 	});
 });

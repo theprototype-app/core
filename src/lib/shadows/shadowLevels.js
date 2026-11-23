@@ -19,7 +19,7 @@ import { objectsGroup, globalRenderer } from '../../stores/sceneStore';
 import { cinematicState } from '../cinematic/cinematicStore.js';
 import { cappedShadowSize, contactShadowsWanted } from '../lightParams';
 import { registerContactShadows } from './contactShadows.js';
-import { levelParams, cascadeReach, contactShadowsOn, cinematicShadowLevel } from './shadowLevelParams.js';
+import { levelParams, cascadeReach, contactShadowsOn, cinematicShadowLevel, kernelRadiusFor } from './shadowLevelParams.js';
 
 /** shadow -> its authored radius, while a level overrides it */
 const radiusBack = new WeakMap();
@@ -104,10 +104,11 @@ function restoreRadius(shadow) {
 }
 
 /**
- * three's shadow bias is in DEPTH units of the shadow camera: Basic's -0.0002 over its fitted depth (4x the frustum's
- * half size: 60-480 m) is 1-10 cm. A cascade's depth runs from the caster ceiling to the far end of 300 m of view
- * (~500 m), so the same number pushed the shadow ~10 cm off a box's base at 1 m (peter-panning, measured by
- * shadow-levels-106). Each update re-scales the bias so the near cascade keeps Basic's bias IN METRES.
+ * three's shadow bias is in DEPTH units of the shadow camera. A cascade's depth runs from the caster ceiling to the
+ * far end of 300 m of view (~400-650 m), so Basic's -0.0002 there was ~10 cm: the shadow started ~15 cm off a box's
+ * base at 1 m (peter-panning, measured by shadow-levels-106). Each update re-scales the bias so the cascades keep a
+ * fixed bias IN METRES: Basic's -0.0002 over 100 m = 2 cm (a sweep from 5 mm to 5 cm: no acne at 1 / 20 / 200 m,
+ * the shadow reaches the base at 3 cm or less).
  * @param {any} s
  */
 function keepWorldBias(s) {
@@ -119,8 +120,8 @@ function keepWorldBias(s) {
 	};
 }
 
-/** Give the rig sun its two cascades. @param {any} sun @param {number} reach @param {number} radius @param {number} [fitDepth] Basic's fitted shadow depth (m) */
-function cascadeOn(sun, reach, radius, fitDepth) {
+/** Give the rig sun its two cascades. @param {any} sun @param {number} reach @param {number} radius */
+function cascadeOn(sun, reach, radius) {
 	if (!cascadeBack.has(sun)) {
 		const own = sun.shadow;
 		const s = new SunLightShadow();
@@ -144,7 +145,7 @@ function cascadeOn(sun, reach, radius, fitDepth) {
 	s.camera.far = reach;
 	s.radius = radius;
 	const own = cascadeBack.get(sun);
-	s._worldBias = (own?.bias ?? -0.0002) * (fitDepth || 60);
+	s._worldBias = (own?.bias ?? -0.0002) * 100;
 }
 
 /** @param {any} sun */
@@ -178,15 +179,16 @@ function eachAuthoredLight(fn) {
 function sweepAuthored() {
 	const radius = levelParams('soft').radius;
 	eachAuthoredLight((l) => {
-		if (l.shadow.radius !== radius) setRadius(l.shadow, radius);
+		const r = kernelRadiusFor(l.shadow, radius);
+		if (l.shadow.radius !== r) setRadius(l.shadow, r);
 	});
 }
 
 /**
  * Apply the drawn level. Called at the tail of every applyEnvironment once this module is loaded.
- * @param {{scene: any, renderer: any, sun: any, drawn: 'off'|'basic'|'soft'|'far', tier: 'pc'|'phone'|'quest', radius: number, asked?: string, reapply?: () => void, fitDepth?: number}} input
+ * @param {{scene: any, renderer: any, sun: any, drawn: 'off'|'basic'|'soft'|'far', tier: 'pc'|'phone'|'quest', radius: number, asked?: string, reapply?: () => void}} input
  */
-export function applyShadowLevel({ sun, drawn: tierDrawn, tier, radius, asked, reapply, fitDepth }) {
+export function applyShadowLevel({ sun, drawn: tierDrawn, tier, radius, asked, reapply }) {
 	if (reapply) {
 		wire(reapply);
 		lastReapply = reapply;
@@ -217,10 +219,10 @@ export function applyShadowLevel({ sun, drawn: tierDrawn, tier, radius, asked, r
 		if (p.cascades) {
 			// Soft -> Far: the directional shadow goes back to its own radius before it is set aside
 			if (!cascadeBack.has(sun)) restoreRadius(sun.shadow);
-			cascadeOn(sun, cascadeReach(radius, p.reach), p.radius, fitDepth);
+			cascadeOn(sun, cascadeReach(radius, p.reach), p.radius);
 		} else {
 			cascadeOff(sun);
-			setRadius(sun.shadow, p.radius);
+			setRadius(sun.shadow, kernelRadiusFor(sun.shadow, p.radius));
 		}
 		state.sun = sun;
 	}

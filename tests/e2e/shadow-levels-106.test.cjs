@@ -154,7 +154,30 @@ const SETUP = () => {
 		for (let i = 0; i < A.length; i += 4) if (Math.abs(A[i] - B[i]) > 2 || Math.abs(A[i + 1] - B[i + 1]) > 2 || Math.abs(A[i + 2] - B[i + 2]) > 2) n++;
 		return n / (A.length / 4);
 	};
-	window.__t106 = { cubes, sunDir, pose, sample, snap, cmp, T };
+	/** the rig sun's map: its fitted width (m) while it is one map, and the kernel radius it draws */
+	const fit = () => {
+		const sh = scene.getObjectByName('env-rig-sun')?.shadow;
+		const c = sh?.camera;
+		return { width: c && !sh.isSunLightShadow && c.isOrthographicCamera ? +(c.right - c.left).toFixed(1) : null, radius: sh?.radius ?? null, cls: sh?.constructor?.name };
+	};
+	/** a SMALL scene (a 20 m ground and the 1 m box only): its fitted map is 30 m, where Soft's kernel is radius 3 */
+	const big = [...g.children].filter((o) => o.name.startsWith('t106-'));
+	let smallGround = null;
+	const small = (on) => {
+		if (on) {
+			for (const o of big) if (o.name !== 't106-cube-1') g.remove(o);
+			smallGround = new T.Mesh(new T.PlaneGeometry(20, 20), mat(0x9a9a9a));
+			smallGround.name = 't106-small-ground';
+			smallGround.rotation.x = -Math.PI / 2;
+			smallGround.receiveShadow = true;
+			g.add(smallGround);
+		} else {
+			if (smallGround) g.remove(smallGround);
+			for (const o of big) if (!o.parent) g.add(o);
+		}
+		g.updateMatrixWorld(true);
+	};
+	window.__t106 = { cubes, sunDir, pose, sample, snap, cmp, fit, small, T };
 	return true;
 };
 
@@ -229,6 +252,22 @@ h.run(async () => {
 	await page.evaluate(SETUP);
 	await page.evaluate((sun) => window.__stores.environment.editRigComponent('sun', { position: sun }), SUN);
 	await sleep(1500);
+	// the sun refits its map to the scene's radius a few seconds after the objects land (30 m -> 240 m here): every
+	// level is measured on the settled map, or Basic and Soft are read on two different maps
+	const settleFit = async (label, want = () => true) => {
+		let last = null;
+		let same = 0;
+		let f = null;
+		for (let i = 0; i < 40 && same < 3; i++) {
+			f = await page.evaluate(() => window.__t106.fit());
+			same = f.width !== null && f.width === last && want(f.width) ? same + 1 : 0;
+			last = f.width;
+			await sleep(1000);
+		}
+		console.log(`FIT ${label} ${JSON.stringify(f)}`);
+		return f;
+	};
+	const bigFit = await settleFit('big scene, Basic', (w) => w > 60);
 
 	const frame = () =>
 		page.evaluate(() => {
@@ -248,6 +287,7 @@ h.run(async () => {
 	for (const level of ['basic', 'soft', 'far']) {
 		await setLevel(level);
 		by[level] = await page.evaluate(MEASURE, { distances: DISTANCES, seams: level === 'far' });
+		by[level].fit = await page.evaluate(() => window.__t106.fit());
 		console.log(`LEVEL ${level} ${JSON.stringify(by[level])}`);
 		await page.evaluate(() => window.__t106.pose([0, 9, 18], [0, 0, -20]));
 		await sleep(600);
@@ -310,11 +350,31 @@ h.run(async () => {
 	const floor = diff(basic1, basic2);
 	// Soft changes only the shadow edges (a band a few pixels wide): compared over every pixel, not the grid
 	const [pxSoft, pxFloor] = await page.evaluate(() => [window.__t106.cmp('basic1', 'soft'), window.__t106.cmp('basic1', 'basic2')]);
-	h.check(pxSoft > pxFloor * 2 + 0.0005, `Soft draws differently from Basic: softer edges on ${(pxSoft * 100).toFixed(2)} % of pixels (floor ${(pxFloor * 100).toFixed(2)} %; grid samples ${(diff(basic1, softFrame) * 100).toFixed(1)} %)`);
+	// on this 240 m map Soft's kernel is capped at 6 cm of blur = Basic's radius 1 (a wider kernel washed a 40 cm
+	// box's shadow out): Soft here may equal Basic; it must differ on a small scene (below)
+	h.check(by.soft.fit.radius >= 1 && by.soft.fit.radius <= 3, `big scene (${bigFit.width} m map): Soft draws radius ${by.soft.fit.radius} (capped to 6 cm of blur; ${(pxSoft * 100).toFixed(2)} % of pixels differ from Basic, floor ${(pxFloor * 100).toFixed(2)} %; grid ${(diff(basic1, softFrame) * 100).toFixed(1)} %)`);
 	h.check(diff(basic1, farFrame) > floor + 0.01, `Far draws differently from Basic (${(diff(basic1, farFrame) * 100).toFixed(1)} %)`);
 	h.check(diff(basic0, basic1) <= floor + 0.005, `Basic after Soft and Far draws today's Basic again (${(diff(basic0, basic1) * 100).toFixed(1)} % of samples, floor ${(floor * 100).toFixed(1)} %)`);
 	const back = await page.evaluate(() => window.__stores.environment.drawnSceneShadowLevel());
 	h.check(back === 'basic', 'back to Basic');
+
+	// 5. a small scene: Soft draws its full kernel and softer edges than Basic
+	await page.evaluate(() => window.__t106.small(true));
+	const smallFit = await settleFit('small scene, Basic', (w) => w <= 60);
+	const spose = () => page.evaluate(() => window.__t106.pose([0, 2.2, 3], [0, 0, -1]));
+	await spose();
+	await page.evaluate(() => window.__t106.snap('s-basic1'));
+	await page.evaluate(() => window.__t106.snap('s-basic2'));
+	await setLevel('soft');
+	await spose();
+	const softSmall = await page.evaluate(() => window.__t106.fit());
+	await page.evaluate(() => window.__t106.snap('s-soft'));
+	const [sSoft, sFloor] = await page.evaluate(() => [window.__t106.cmp('s-basic1', 's-soft'), window.__t106.cmp('s-basic1', 's-basic2')]);
+	await shot(page, 'small-soft');
+	h.check(smallFit.width !== null && smallFit.width <= 60 && softSmall.radius === 3, `small scene (${smallFit.width} m map): Soft draws radius ${softSmall.radius}`);
+	h.check(sSoft > sFloor * 2 + 0.0005, `small scene: Soft draws softer edges than Basic on ${(sSoft * 100).toFixed(2)} % of pixels (floor ${(sFloor * 100).toFixed(2)} %)`);
+	await setLevel('basic');
+	await page.evaluate(() => window.__t106.small(false));
 
 	fs.mkdirSync(OUT, { recursive: true });
 	fs.writeFileSync(path.join(OUT, 'levels.json'), JSON.stringify(by, null, 1));

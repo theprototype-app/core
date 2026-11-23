@@ -33,6 +33,26 @@ export const LEVEL_PARAMS = Object.freeze({
 	far: Object.freeze({ radius: 2, cascades: true, reach: 300, cascadeMap: 2048 })
 });
 
+/** Soft's widest blur in metres (6 cm). A kernel is counted in TEXELS, and a scene-fitted map's texel grows with the
+ * scene: Basic's 2048 map over a 240 m frustum (r = 120) is 12 cm a texel, where radius 3 blurred ~35 cm and a 40 cm
+ * box's shadow washed out to 0.8 of lit (shadow-levels-106 on the PC GPU). */
+export const SOFT_BLUR_M = 0.06;
+
+/**
+ * The kernel radius a light draws at a lifted level: the level's radius, but never wider than SOFT_BLUR_M on an
+ * orthographic (directional) map and never under 1 (Basic's). A perspective map (spot / point) keeps the radius.
+ * @param {{camera?: any, mapSize?: {x: number}} | null | undefined} shadow @param {number} radius
+ * @returns {number}
+ */
+export function kernelRadiusFor(shadow, radius) {
+	const c = shadow?.camera;
+	const w = c?.isOrthographicCamera ? Math.abs(c.right - c.left) : 0;
+	const px = shadow?.mapSize?.x || 0;
+	if (!(w > 0) || !(px > 0) || radius <= 1) return radius;
+	const fit = SOFT_BLUR_M / (w / px);
+	return Math.max(1, Math.min(radius, Math.round(fit * 10) / 10));
+}
+
 /** @param {ShadowLevel} level */
 export function levelParams(level) {
 	return LEVEL_PARAMS[level] ?? LEVEL_PARAMS.basic;

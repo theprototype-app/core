@@ -82,6 +82,20 @@ const loadScene = (page, slug) =>
 		return { ok, objects: lastCount, settled: last, pose: { p: cam.position.toArray(), q: cam.quaternion.toArray() } };
 	}, slug);
 
+/** page side: auto LOD off. Its coarse levels are built in a worker on each page's own clock, so the two pages drew
+ * different levels of one mesh (castle: 128 vs 88 calls, 0.76 vs 0.96 M triangles, 7 % of pixels) for a reason
+ * that is not this lane's. Off on both, each draws the full meshes. Dev servers serve the app's own module. */
+const autoLodOff = (page) =>
+	page.evaluate(async () => {
+		try {
+			const m = await import(/* @vite-ignore */ '/src/lib/lod.js');
+			m.lodEnabled.set(false);
+			return true;
+		} catch (e) {
+			return String(e && e.message);
+		}
+	});
+
 /** page side: wait again until A holds still (it kept streaming while B loaded) */
 const loadSettleOnly = (page) =>
 	page.evaluate(async () => {
@@ -127,13 +141,18 @@ const frame = (page, pose) =>
 		const t0 = performance.now();
 		r.render(scene, cam);
 		const info = { calls: r.info.render.calls, tris: r.info.render.triangles, programs: r.info.programs?.length ?? null };
-		// every program this page has compiled, by its cache key (hashed): a set, compared A minus B
-		const hash = (str) => {
-			let x = 5381;
-			for (let i = 0; i < str.length; i++) x = ((x << 5) + x + str.charCodeAt(i)) | 0;
-			return (x >>> 0).toString(36);
-		};
-		const progs = (r.info.programs || []).map((p) => p.name + ':' + hash(String(p.cacheKey)));
+		// the programs THIS frame draws the scene with (material -> its current program), by full cache key. Not
+		// r.info.programs: that is every program still alive, and when a page frees the last scene's ones is its own
+		// timing (chain 5: the same names, "A only" on every scene)
+		const used = new Map();
+		scene.traverse((o) => {
+			if (!o.visible || !o.material) return;
+			for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+				const pr = r.properties.get(m)?.currentProgram;
+				if (pr) used.set(String(pr.cacheKey), pr.name || m.type);
+			}
+		});
+		const progs = [...used].map(([key, name]) => [name, key]);
 		const w = 320,
 			hh = 180;
 		const k = document.createElement('canvas');
@@ -202,6 +221,9 @@ h.run(async () => {
 	await B.page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
 	await B.page.waitForFunction(() => !!window.__stores?.environment && !!window.__stores?.sceneTemplates, null, { timeout: 240000 });
 	await sleep(4000);
+	const lodA = await autoLodOff(A.page);
+	const lodB = await autoLodOff(B.page);
+	h.check(lodA === true && lodB === true, `auto LOD off on both pages (A ${lodA}, B ${lodB})`);
 	const table = [];
 	for (const slug of SCENES) {
 		const la = await loadScene(A.page, slug);
@@ -224,8 +246,22 @@ h.run(async () => {
 		// what the scene itself varies between two frames of one page
 		const varCalls = Math.max(Math.abs(a1.info.calls - a2.info.calls), Math.abs(b1.info.calls - b2.info.calls));
 		const varTris = Math.max(Math.abs(a1.info.tris - a2.info.tris), Math.abs(b1.info.tris - b2.info.tris));
-		const bSet = new Set(b2.progs);
-		const extra = [...new Set(a2.progs)].filter((k) => !bSet.has(k));
+		const bKeys = new Set(b2.progs.map((x) => x[1]));
+		const extra = a2.progs
+			.filter((x) => !bKeys.has(x[1]))
+			.map(([name, key]) => {
+				// why: the tokens that differ from B's closest program of the same name
+				const ta = key.split(',');
+				let best = null;
+				for (const [bn, bk] of b2.progs) {
+					if (bn !== name) continue;
+					const tb = bk.split(',');
+					const d = [];
+					for (let i = 0; i < Math.max(ta.length, tb.length); i++) if (ta[i] !== tb[i]) d.push(`#${i} ${String(ta[i]).slice(0, 60)} / ${String(tb[i]).slice(0, 60)}`);
+					if (!best || d.length < best.length) best = d;
+				}
+				return `${name} [${best ? best.slice(0, 3).join('; ') : 'no same-name program on B'}]`;
+			});
 		h.check(a1.shadowLevel === null && a1.drawn === 'basic', `${slug}: reads as Basic (stored ${a1.shadowLevel}, drawn ${a1.drawn})`);
 		h.check(a1.loaded === false, `${slug}: the Soft / Far chunk is never loaded (${a1.loaded})`);
 		h.check(!a1.contactInPost, `${slug}: no contact-shadow pass in the post stack`);
@@ -235,7 +271,7 @@ h.run(async () => {
 			Math.abs(a1.info.calls - b1.info.calls) <= varCalls && Math.abs(a1.info.tris - b1.info.tris) <= varTris,
 			`${slug}: the same cost, draw calls ${a1.info.calls}/${b1.info.calls}, triangles ${a1.info.tris}/${b1.info.tris} (the scene's own frame-to-frame spread ${varCalls} calls / ${varTris} triangles; frame ${a1.ms} / ${b1.ms} ms, printed only)`
 		);
-		h.check(extra.length === 0, `${slug}: no shader program on A that B lacks (${a2.info.programs}/${b2.info.programs} compiled so far${extra.length ? '; A only: ' + extra.join(', ') : ''})`);
+		h.check(extra.length === 0, `${slug}: the frame draws with no shader program B lacks (${a2.progs.length}/${b2.progs.length} in use${extra.length ? '; A only: ' + extra.join(', ') : ''})`);
 		h.check(sd.still >= 0.2 && sd.share <= TOL, `${slug}: pixel-identical where the frame holds still (${(sd.still * 100).toFixed(1)} % of it): A vs B ${(sd.share * 100).toFixed(3)} % of those > 2/255 (moving pixels: A vs B ${(ab * 100).toFixed(3)} % of the frame, frame-to-frame floor ${(floor * 100).toFixed(3)} %)`);
 	}
 	console.log('TABLE ' + JSON.stringify(table));

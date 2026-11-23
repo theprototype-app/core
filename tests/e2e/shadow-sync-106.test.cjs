@@ -60,8 +60,14 @@ h.run(async () => {
 	// 1 + 2: Far
 	await setLevel(A.page, 'far');
 	await h.eventually(() => state(B.page), (s) => s.stored === 'far' && s.drawn === 'far' && s.sun?.cascaded, '1. B follows Far (stored, drawn, the sun cascaded)', 15000);
-	const farA = await state(A.page);
-	h.check(farA.sun?.cascaded && farA.sun.cls === 'SunLightShadow', `2. Far: the rig sun draws SunLightShadow cascades (${JSON.stringify(farA.sun)})`);
+	// A loads the same lazy chunk as B: wait for its own sun too (a single read raced it in chain 5)
+	let farA = await state(A.page);
+	const tA = Date.now();
+	while (!(farA.sun?.cascaded && farA.sun.cls === 'SunLightShadow') && Date.now() - tA < 15000) {
+		await new Promise((r) => setTimeout(r, 500));
+		farA = await state(A.page);
+	}
+	h.check(farA.sun?.cascaded && farA.sun.cls === 'SunLightShadow', `2. Far: the rig sun draws SunLightShadow cascades (${JSON.stringify(farA.sun)}, after ${Date.now() - tA} ms)`);
 	h.check(farA.contact === false, '2. Far: no contact pass (no tier draws it in this release, Q6)');
 	// the pass itself still works where a tier turns it on (forced here: the suites' switch)
 	await A.page.evaluate(() => window.__stores.shadowLevels.contactForTest(true));

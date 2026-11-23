@@ -436,14 +436,40 @@ async function oneScene(browser, slug, first) {
 		row.volumes = wd.volumes;
 		row.shapes = wd.entries.map((e) => e.shape);
 		row.tier = wd.tier;
+		// the template's pack pieces arrive as stubs and refill when their files land (1.75: the aquarium's plants
+		// and arch refilled between the "before" and "after" shots of the trip, 10474 px): wait for the refills
+		// to settle and the mesh count to hold still for 3 s before anything is compared
+		let lastMeshes = -1;
+		let stillSince = 0;
+		await h.eventually(
+			() =>
+				page.evaluate(async () => {
+					const s = window.__tp.test.v1;
+					await Promise.race([s.packRefs?.packRefsSettled?.(), new Promise((r) => setTimeout(r, 5000))]);
+					let g;
+					s.objectsGroup.subscribe((v) => (g = v))();
+					let n = 0;
+					g?.traverse((o) => o.isMesh && n++);
+					return { n, held: !!s.sceneLoader?.framesHeld?.() };
+				}),
+			(r) => {
+				if (r.n !== lastMeshes || r.held) stillSince = Date.now();
+				lastMeshes = r.n;
+				return Date.now() - stillSince >= 3000;
+			},
+			`${slug}: the pack pieces have refilled (mesh count still for 3 s)`,
+			90000
+		);
 		await page.waitForTimeout(4000);
-		const held = await page.evaluate(() => {
+		// the waves are held where the clock stands; WATER_T=<s> holds them at one fixed moment instead (opt-in, under
+		// test: the view blooms sun glints, so island-ocean's colour gap moved with the wave phase, 9.6 / 20.7 / 27.3)
+		const held = await page.evaluate((waterT) => {
 			const s = window.__tp.test.v1;
 			window.__parkedTasks = s.moduleSDK.moduleFrameTasks.splice(0);
 			s.flowPaused.set({ paused: true, reason: 'cinematic-water: time held' });
 			// a running sim keeps motors turning (water-works' scoop wheel): paused too
 			s.physics?.simPaused?.set(true);
-			s.waterRuntime.freezeWaterClock(s.waterRuntime.waterClock());
+			s.waterRuntime.freezeWaterClock(waterT ?? s.waterRuntime.waterClock());
 			// fluid tanks are a stand-in in the view by design (roadmap 100: "fluid tanks stay a stand-in"), and their
 			// particles fill water-works' mill pond: out of both views, so the comparison is water against water
 			let sc;
@@ -457,7 +483,7 @@ async function oneScene(browser, slug, first) {
 				}
 			});
 			return { drawn: s.waterRuntime.waterDebug().entries.filter((e) => e.visible).length, fluid };
-		});
+		}, process.env.WATER_T ? Number(process.env.WATER_T) : null);
 		row.fluidHidden = held.fluid;
 		h.check(held.drawn > 0, `   ${slug}: time held, ${held.drawn} of ${wd.volumes} water volume(s) drawn (${row.shapes.join(', ')}; tier ${wd.tier}${held.fluid ? `; ${held.fluid} fluid object(s) hidden in both views` : ''})`);
 

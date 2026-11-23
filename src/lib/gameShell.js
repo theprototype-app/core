@@ -39,29 +39,48 @@ import { touchControlsVisible, openTouchLayoutEditor } from './touchActions';
 // 53 (A6): the player's Accessibility page (a leaf: per-game LOCAL prefs)
 import { accessValues, stepAccessSetting } from './playerAccess';
 import { ACCESS_ROWS, accessDisplay } from './playerAccessCore';
+// 92 (GC1/GC2/GC5/GC8): the authored menus (a leaf), the pending join cards (a store), the app's motion setting
+import { gameMenus, titleScreen, openTitleScreen } from './gameMenus';
+import { pendingApprovals } from '../stores/appStore';
+import { sessionHost } from './connectionState';
+import { motionPref, MOTION_PREFS, normalizeMotion } from './motion';
 
-/** @typedef {'main' | 'levels' | 'settings' | 'help' | 'access'} ShellPage */
+/** @typedef {'main' | 'levels' | 'settings' | 'help' | 'access' | 'saves' | 'joins'} ShellPage */
 
 /** The menu: open, which page, and (33) the headset's page of the level grid — null = the page
  * holding the current level. 53 (A6): `standalone` = the Accessibility page opened on its own from
  * a play link's / export's start card, before play (no game menu around it; Back closes it).
- * LOCAL. @type {import('svelte/store').Writable<{open: boolean, page: ShellPage, levelPage?: number | null, standalone?: boolean}>} */
-export const shellMenu = writable({ open: false, page: /** @type {ShellPage} */ ('main'), levelPage: /** @type {number | null} */ (null), standalone: false });
+ * LOCAL. @type {import('svelte/store').Writable<{open: boolean, page: ShellPage, levelPage?: number | null, standalone?: boolean, slotMode?: 'save' | 'load'}>} */
+export const shellMenu = writable({
+	open: false,
+	page: /** @type {ShellPage} */ ('main'),
+	levelPage: /** @type {number | null} */ (null),
+	standalone: false,
+	// 92 (GC5): the save-slot page is Save or Load
+	slotMode: /** @type {'save' | 'load'} */ ('save')
+});
 
 /** @param {ShellPage} [page] */
 export function openShellMenu(page = 'main') {
 	if (!shellMenuAvailable()) return false;
-	shellMenu.set({ open: true, page: normalizePage(page), levelPage: null, standalone: false });
+	shellMenu.set({ open: true, page: normalizePage(page), levelPage: null, standalone: false, slotMode: 'save' });
 	debug.opens++;
 	perfMark('menu', { page: normalizePage(page) }); // 34 PF: a profiler marker
 	return true;
 }
 export function closeShellMenu() {
-	if (get(shellMenu).open) shellMenu.set({ open: false, page: 'main', levelPage: null, standalone: false });
+	if (get(shellMenu).open) shellMenu.set({ open: false, page: 'main', levelPage: null, standalone: false, slotMode: 'save' });
 }
 /** 53 (A6): the Accessibility page on its own — the start card's button, before play. */
 export function openAccessCard() {
-	shellMenu.set({ open: true, page: 'access', levelPage: null, standalone: true });
+	shellMenu.set({ open: true, page: 'access', levelPage: null, standalone: true, slotMode: 'save' });
+	debug.opens++;
+	return true;
+}
+/** 92 (GC1): the Settings page on its own — the title screen's Settings button (Back closes it, the
+ * title is still there underneath). */
+export function openSettingsCard() {
+	shellMenu.set({ open: true, page: 'settings', levelPage: null, standalone: true, slotMode: 'save' });
 	debug.opens++;
 	return true;
 }
@@ -73,16 +92,98 @@ export function toggleShellMenu() {
 	}
 	return openShellMenu('main');
 }
-/** @param {ShellPage} page */
-export function showShellPage(page) {
+/** @param {ShellPage} page @param {{slotMode?: 'save' | 'load'}} [opts] */
+export function showShellPage(page, opts = {}) {
 	// the standalone Accessibility card has no main page to go back to: Back closes it
 	if (get(shellMenu).standalone && page !== 'access') return closeShellMenu();
-	shellMenu.update((m) => ({ ...m, page: normalizePage(page), levelPage: null }));
+	shellMenu.update((m) => ({ ...m, page: normalizePage(page), levelPage: null, ...(opts.slotMode ? { slotMode: opts.slotMode } : {}) }));
 }
 /** @param {any} page @returns {ShellPage} */
 function normalizePage(page) {
 	if (page === 'levels' && !get(gameLevels)) return 'main';
-	return page === 'levels' || page === 'settings' || page === 'help' || page === 'access' ? page : 'main';
+	if (page === 'saves' && !get(gameMenus).saves) return 'main';
+	return page === 'levels' || page === 'settings' || page === 'help' || page === 'access' || page === 'saves' || page === 'joins' ? page : 'main';
+}
+
+/** 92 (GC5): the slots as the headset's page draws them (the slots are a lazy chunk: primed on open)
+ * @type {import('svelte/store').Writable<any[]>} */
+export const shellSlotViews = writable(/** @type {any[]} */ ([]));
+/** the headset's two-press confirm: the slot whose overwrite / load is armed (null = none) */
+let armedSlot = /** @type {number | null} */ (null);
+export function refreshShellSlots() {
+	armedSlot = null;
+	// through a seam: a dynamic import here would give this boot chunk its own preload table
+	return Promise.resolve(seams.listSlots?.() ?? [])
+		.then((list) => {
+			shellSlotViews.set(list);
+			return true;
+		})
+		.catch(() => false);
+}
+
+/**
+ * 92 (GC5/GC8): the headset's list pages — rows with a press id each (the desktop draws richer cards
+ * from the same data). @returns {{id: string, label: string, sub?: string, disabled?: boolean}[] | null}
+ */
+export function shellListRows() {
+	const m = get(shellMenu);
+	if (m.page === 'saves') {
+		const load = m.slotMode === 'load';
+		return get(shellSlotViews).map((slot) => ({
+			id: 'shell:slot:' + slot.n,
+			label: slot.name + (slot.empty ? '' : ' · ' + [slot.levelLabel, slot.at ? new Date(slot.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''].filter(Boolean).join(' · ')),
+			sub: armedSlot === slot.n ? 'Press again to ' + (load ? 'load' : 'overwrite') : slot.newer ? 'Made with a newer version' : slot.empty ? (load ? 'Empty' : 'Save here') : load ? 'Load' : 'Overwrite',
+			disabled: load && (slot.empty || !!slot.newer || !!slot.broken)
+		}));
+	}
+	if (m.page === 'joins') {
+		return shellJoinCards().flatMap((card) => {
+			const who = String(card.peerId).slice(0, 6).toUpperCase();
+			return [
+				{ id: 'shell:join:admit:' + card.peerId, label: 'Admit ' + who },
+				{ id: 'shell:join:decline:' + card.peerId, label: 'Decline ' + who }
+			];
+		});
+	}
+	return null;
+}
+
+/** a headset press on a list row @param {string[]} parts the hit id split on ':' */
+function pressListHit(parts) {
+	if (parts[1] === 'slot') {
+		const n = Number(parts[2]);
+		const m = get(shellMenu);
+		const slot = get(shellSlotViews).find((s) => s.n === n);
+		if (!slot) return false;
+		const load = m.slotMode === 'load';
+		if (load && (slot.empty || slot.newer || slot.broken)) return false;
+		// a press on a full slot (or a load) arms it; the second press does it
+		if ((load || !slot.empty) && armedSlot !== n) {
+			armedSlot = n;
+			shellSlotViews.set([...get(shellSlotViews)]);
+			return true;
+		}
+		armedSlot = null;
+		void Promise.resolve(seams.slotAction?.(load ? 'load' : 'save', n) ?? { ok: false }).then((res) => {
+			if (!res.ok) seams.toast?.(res.reason ?? 'That did not work.');
+			else seams.toast?.(load ? 'Loaded ' + slot.name + '.' : 'Saved to ' + slot.name + '.');
+			if (load && res.ok) closeShellMenu();
+			else void refreshShellSlots();
+		});
+		return true;
+	}
+	if (parts[1] === 'join') {
+		const peerId = parts.slice(3).join(':');
+		seams.answerJoin?.(parts[2] === 'admit', peerId);
+		return true;
+	}
+	return false;
+}
+
+/** 92 (GC8): the join cards THIS peer may answer (the host's; a joiner never holds cards) */
+export function shellJoinCards() {
+	if (get(sessionHost) !== null) return [];
+	return /** @type {any[]} */ (get(pendingApprovals)).filter((c) => c && c.peerId);
 }
 
 /* ---------------------------------------------------------------- is it a game? --- */
@@ -268,7 +369,10 @@ export function onGameRestart(fn, owner = '') {
  * the spawn, the XR session, the Games tab). REGISTERED by `startGameShell` (gameShellWire)
  * rather than imported, which keeps this module a leaf. @type {{
  *   reset?: () => {ok: boolean, reason?: string}, respawn?: () => void, exitPlay?: () => void, stopMusic?: () => void,
- *   endXR?: () => boolean, openGames?: () => void, toEditor?: () => void, toast?: (m: string) => void}}
+ *   endXR?: () => boolean, openGames?: () => void, toEditor?: () => void, toast?: (m: string) => void,
+ *   restartLevel?: () => boolean, hasLevelTable?: () => boolean,
+ *   listSlots?: () => Promise<any[]>, slotAction?: (what: 'save' | 'load', n: number) => Promise<{ok: boolean, reason?: string}>,
+ *   answerJoin?: (admit: boolean, peerId: string) => void}}
  */
 const seams = {};
 /** @param {typeof seams} fns */
@@ -333,9 +437,19 @@ export function shellMenuItems(opts = {}) {
 		{ id: 'resume', label: 'Resume' },
 		{ id: 'restart', label: 'Restart' }
 	];
+	const menus = get(gameMenus);
+	// 92 (GC2): the current level again, when the game has a Levels table
+	if (seams.hasLevelTable?.()) items.push({ id: 'restartlevel', label: 'Restart level' });
 	if (get(gameLevels)) items.push({ id: 'levels', label: 'Levels' });
+	// 92 (GC5): the three save slots
+	if (menus.saves) items.push({ id: 'save', label: 'Save game' }, { id: 'load', label: 'Load game' });
 	items.push({ id: 'settings', label: 'Settings' }, { id: 'access', label: 'Accessibility' }, { id: 'help', label: 'How to play' });
+	// 92 (GC8): pending join cards, answerable without leaving Play
+	const joins = shellJoinCards().length;
+	if (joins) items.push({ id: 'joins', label: 'Join requests (' + joins + ')' });
 	if (!opts.vr && get(touchControlsVisible)) items.push({ id: 'touchlayout', label: 'Touch controls' });
+	// 92 (GC1): back to the game's own title screen
+	if (menus.title) items.push({ id: 'title', label: 'Quit to title' });
 	items.push({ id: 'mainmenu', label: 'Main menu' });
 	if (!opts.vr) items.push({ id: 'editor', label: 'Back to editor' });
 	return items;
@@ -355,7 +469,22 @@ export function runShellItem(id) {
 		case 'settings':
 		case 'access':
 		case 'help':
+		case 'joins':
 			showShellPage(/** @type {ShellPage} */ (id));
+			return true;
+		case 'save':
+		case 'load':
+			showShellPage('saves', { slotMode: id });
+			void refreshShellSlots();
+			return true;
+		case 'restartlevel':
+			if (!seams.restartLevel?.()) seams.toast?.('This game has no level to restart.');
+			closeShellMenu();
+			return true;
+		case 'title':
+			// the game's own title screen, over play (its Play / Continue pick up from there)
+			closeShellMenu();
+			openTitleScreen(get(titleScreen).mode === 'start' ? 'start' : 'play');
 			return true;
 		case 'back':
 			showShellPage('main');
@@ -381,7 +510,7 @@ export const gameDescription = writable(null);
 
 /**
  * @typedef {{id: string, label: string, type: string, value: any, options?: string[], optionLabels?: string[],
- *   min?: number, max?: number, step?: number, vrOnly?: boolean, game?: boolean, access?: boolean, display: string}} ShellSettingView
+ *   min?: number, max?: number, step?: number, vrOnly?: boolean, game?: boolean, access?: boolean, device?: boolean, help?: string, display: string}} ShellSettingView
  */
 
 /** A row's value as the menu shows it. @param {any} row @param {any} value */
@@ -408,6 +537,9 @@ export function shellSettingViews(opts = {}) {
 		if (row.vrOnly && opts.vr === false) continue;
 		out.push({ ...row, value: values[row.id], display: settingDisplay(row, values[row.id]) });
 	}
+	// 92 (GC2): the player settings that already live elsewhere, SHOWN here (QUESTIONS-92-menus Q3):
+	// subtitles = the Accessibility page's Captions (per game), reduced motion = this device's setting
+	out.push(...playerSettingViews());
 	for (const row of get(gameSettingRows)) {
 		const { onChange: _cb, owner: _o, ...plain } = row;
 		out.push({ ...plain, game: true, value: values[row.id], display: settingDisplay(row, values[row.id]) });
@@ -454,6 +586,29 @@ export function showLevelPage(n) {
 	shellMenu.update((m) => ({ ...m, levelPage: Math.max(0, Math.floor(Number(n) || 0)) }));
 }
 
+/** 92 (GC2): Reduced motion as the menu shows it — the app's one device setting (motion.js) */
+const MOTION_ROW = {
+	id: 'motion',
+	label: 'Reduced motion',
+	type: 'choice',
+	options: MOTION_PREFS.map((m) => m.value),
+	optionLabels: ['Follow device', 'On', 'Off'],
+	default: 'system',
+	help: 'For this device, every game and the editor.'
+};
+
+/** 92 (GC2): the rows shown on the Settings page that are stored elsewhere @returns {ShellSettingView[]} */
+export function playerSettingViews() {
+	const access = get(accessValues);
+	const captions = ACCESS_ROWS.find((r) => r.id === 'captions');
+	/** @type {ShellSettingView[]} */
+	const out = [];
+	if (captions) out.push({ ...captions, label: 'Subtitles', access: true, value: access.captions, display: accessDisplay(captions, access.captions) });
+	const motion = normalizeMotion(get(motionPref));
+	out.push({ ...MOTION_ROW, device: true, value: motion, display: settingDisplay(MOTION_ROW, motion) });
+	return out;
+}
+
 /**
  * Step a setting the way a controller does: a toggle flips, a choice walks (dir ±1,
  * wrapping), a range moves by its step (clamped). Returns the new value.
@@ -461,6 +616,15 @@ export function showLevelPage(n) {
  */
 export function stepGameSetting(id, dir = 1) {
 	const row = settingRow(id);
+	// 92 (GC2): the two shown-here rows (a headset press reaches them as shell:set:<id>)
+	if (!row && id === 'captions') return stepAccessSetting('captions', dir);
+	if (!row && id === 'motion') {
+		const options = MOTION_ROW.options;
+		const i = Math.max(0, options.indexOf(normalizeMotion(get(motionPref))));
+		const next = options[(i + (dir < 0 ? -1 : 1) + options.length) % options.length];
+		motionPref.set(normalizeMotion(next));
+		return next;
+	}
 	if (!row) return undefined;
 	const value = get(gameSettingValues)[id] ?? row.default;
 	if (row.type === 'toggle') return setGameSetting(id, !value);
@@ -474,6 +638,8 @@ export function stepGameSetting(id, dir = 1) {
 
 /** The title a page wears. @param {ShellPage} page */
 export function shellPageTitle(page) {
+	if (page === 'saves') return get(shellMenu).slotMode === 'load' ? 'Load game' : 'Save game';
+	if (page === 'joins') return 'Join requests';
 	return page === 'levels' ? 'Levels' : page === 'settings' ? 'Settings' : page === 'access' ? 'Accessibility' : page === 'help' ? 'How to play' : 'Paused';
 }
 
@@ -504,6 +670,7 @@ export function shellHelpLines(opts = {}) {
 export function pressShellHit(hitId) {
 	const parts = String(hitId).split(':');
 	if (parts[0] !== 'shell') return false;
+	if (parts[1] === 'slot' || parts[1] === 'join') return pressListHit(parts);
 	if (parts[1] === 'item') return runShellItem(parts.slice(2).join(':'));
 	if (parts[1] === 'back') return runShellItem('back');
 	if (parts[1] === 'level') return pickGameLevel(parts.slice(2).join(':'));

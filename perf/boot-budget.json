@@ -9,7 +9,7 @@
 		},
 		"editor": {
 			"html": "index.html",
-			"maxJsGzBytes": 3456000,
+			"maxJsGzBytes": 3459072,
 			"maxFirstFrameMs": 32000
 		}
 	},
@@ -105,6 +105,13 @@
 			"play": "v1.74.0 2148.6 KB -> 2150.5 KB (+1.9) -> line 2155.0 KB (rounded up to the next 5 KB)",
 			"editor": "v1.74.0 3369.2 KB -> 3371.2 KB (+2.0) -> line 3375.0 KB (the same rule)",
 			"note": "measured on the Deck, v1.74.0 and the lane built in one worktree with one node_modules. Inside the ~3 KB boot-wiring rule (claude:9, 21 Nov). The copy instancing (copyGraphs.js, 0.9 KB) is a lazy chunk loaded with the first spawned copy; what stays on boot: modules +0.6 (behaviour player events, Game Value for: me, node docs), flowRuntime +0.5 (timer clock, copy registry, myPeerId), nodes +0.2, playInteract +0.1. The int recomputes the line from its union."
+		},
+		{
+			"date": "2026-11-23",
+			"lane": "92-menus (roadmap 92 GC1/GC2/GC5/GC8)",
+			"play": "base (v1.74.0 + 92-correct) 2150.4 KB -> 2154.9 KB (+4.5), line 2155 KB unchanged",
+			"editor": "base 3371.1 KB -> 3376.4 KB (+5.3) -> line 3378 KB",
+			"note": "boot wiring only: the menus config normalize (scene play block), the leaf stores, the pause-menu rows (Save / Load / Join requests / Quit to title / Restart level, the Subtitles + Reduced motion rows, the headset's list page), Look speed / Invert look, the master-gain duck. The title screen, save slots, join requests, in-game join card, the menus runtime (pause hold, auto-admit) and the Configure Scene section are lazy chunks; a first cut was +11 KB because a dynamic import() in the gameShell boot chunk gave it its own preload table — they now go through gameShellWire's seams"
 		}
 	],
 	"throttle": {

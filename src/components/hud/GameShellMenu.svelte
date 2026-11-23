@@ -44,6 +44,10 @@
 	// 36-community (C6): a PUBLISHED game's heart (null without a cloud plugin / for a local scene)
 	import { sceneHeart } from '$lib/cloudHooks';
 	import HeartButton from '../ui/HeartButton.svelte';
+	// 92 (GC1/GC2/GC5/GC8): the title screen, the save slots, the join requests — each a LAZY chunk
+	import { titleScreen, gameMenus, pauseRefused, menuPause } from '$lib/gameMenus';
+	import { pendingApprovals } from '../../stores/appStore';
+	import { sessionHost } from '$lib/connectionState';
 
 	const playing = $derived($isLocked === true);
 	// the dependencies are passed as unused arguments: shellMenuAvailable reads its stores
@@ -54,7 +58,9 @@
 	const open = $derived($shellMenu.open && (offered || (!!$shellMenu.standalone && !$isVRMode)));
 	const page = $derived($shellMenu.page);
 	const itemsFor = (/** @type {any[]} */ ..._deps) => shellMenuItems({ vr: false });
-	const items = $derived(itemsFor($gameLevels, $touchControlsVisible));
+	const items = $derived(itemsFor($gameLevels, $touchControlsVisible, $gameMenus, $pendingApprovals, $sessionHost));
+	// 92 (GC8): a join card waiting while I play (and host): the small in-game card says how to answer
+	const joinWaiting = $derived(playing && !$isVRMode && $sessionHost === null && /** @type {any[]} */ ($pendingApprovals).length > 0);
 	const viewsFor = (/** @type {any[]} */ ..._deps) => shellSettingViews({ vr: false });
 	const settings = $derived(viewsFor($gameSettingValues, $gameSettingRows));
 	// 33 (G3): a game's level-picking choice (Untangle's Board) as tabs above the grid
@@ -170,7 +176,15 @@
 
 <svelte:window onkeydown={onKeyDown} onkeydowncapture={onCaptureKey} />
 
-{#if offered && !open}
+{#if $titleScreen.open && !$isVRMode && playing}
+	{#await import('./GameMenusParts.svelte') then m}<m.default part="title" mode="play" />{/await}
+{/if}
+
+{#if joinWaiting && !open && !$titleScreen.open}
+	{#await import('./GameMenusParts.svelte') then m}<m.default part="joincard" />{/await}
+{/if}
+
+{#if offered && !open && !$titleScreen.open}
 	<button
 		id="game-shell-menu-button"
 		data-play-chrome
@@ -199,6 +213,12 @@
 				<div class="gs-titles">
 					<h2 class="gs-title">{shellPageTitle(page)}</h2>
 					<p class="gs-sub">{page === 'access' ? gameName + ' · saved on this device for this game' : gameName}</p>
+					{#if page === 'main' && $pauseRefused}
+						<!-- 92 (GC2): with someone else in the game, the menu does not pause it -->
+						<p class="gs-sub gs-running" id="game-shell-running">Others are playing — the game keeps running.</p>
+					{:else if page === 'main' && $menuPause}
+						<p class="gs-sub" id="game-shell-paused">The game is paused.</p>
+					{/if}
 				</div>
 				{#if page === 'main' && $sceneHeart}
 					<span class="gs-heart">
@@ -274,6 +294,12 @@
 						{/each}
 					{/if}
 				</div>
+			{:else if page === 'saves'}
+				{#await import('./GameMenusParts.svelte') then m}
+					<m.default part="saves" mode={$shellMenu.slotMode === 'load' ? 'load' : 'save'} ondone={() => closeShellMenu()} />
+				{/await}
+			{:else if page === 'joins'}
+				{#await import('./GameMenusParts.svelte') then m}<m.default part="joins" />{/await}
 			{:else if page === 'access'}
 				<div class="gs-settings" id="game-access-page">
 					{#each accessRows as row (row.id)}
@@ -457,6 +483,10 @@
 		font-size: 13px;
 		opacity: 0.7;
 		margin-top: 2px;
+	}
+	.gs-running {
+		color: var(--ink-warn);
+		opacity: 1;
 	}
 	.gs-back {
 		display: inline-flex;

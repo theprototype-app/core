@@ -434,10 +434,19 @@ export function requestPlay(/** @type {{flat?: boolean}} */ opts = {}) {
 export async function autoPlay() {
 	await Promise.race([vrProbe, new Promise((r) => setTimeout(r, AUTOPLAY_PROBE_WAIT))]);
 	if (get(vrSupported)) return false;
+	// 92 (GC1): a game with a title screen opens on it — the start card draws the title, whose Play /
+	// Continue is the gesture (the gate is registered by gameShellWire: playMode stays a leaf)
+	if (autoPlayGate()) return false;
 	requestPlay({ flat: true });
 	return true;
 }
 const AUTOPLAY_PROBE_WAIT = 2000;
+/** 92 (GC1): true = autoPlay stands down (the game opens on its title screen) */
+let autoPlayGate = () => false;
+/** @param {() => boolean} fn */
+export function registerAutoPlayGate(fn) {
+	autoPlayGate = typeof fn === 'function' ? fn : () => false;
+}
 
 /* ------------------------------------------------------------- play as… ---- */
 

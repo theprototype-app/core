@@ -97,10 +97,13 @@ export async function startExportRuntime() {
 
 		exportRuntimeState.phase = 'settings';
 		await applyGameDefaults(cfg);
-		// 93 LP5: a returning player resumes where they saved (level, kept state, checkpoint)
+		// 93 LP5: a returning player resumes where they saved (level, kept state, checkpoint). 92 (GC1/GC5):
+		// a game with a title screen AND save slots opens on its title instead — Continue resumes there
+		const { gameMenus } = await import('../gameMenus');
+		const menus = get(gameMenus);
 		try {
 			const { resumeSavedGame } = await import('../gameLevels/checkpoints.js');
-			const resumed = await resumeSavedGame();
+			const resumed = menus.title && menus.saves ? { notes: [] } : await resumeSavedGame();
 			if (resumed.notes.length) console.info('levels: saved progress — ' + resumed.notes.join('; '));
 		} catch (error) {
 			console.warn('levels: the saved progress was not resumed', error);
@@ -108,7 +111,8 @@ export async function startExportRuntime() {
 
 		coverDone();
 		exportRuntimeState.phase = 'play';
-		// fix-play-link: flat on a screen; on an XR-capable device the start card (Enter VR) stays
+		// fix-play-link: flat on a screen; on an XR-capable device the start card (Enter VR) stays.
+		// 92 (GC1): a game with a title screen opens ON it (autoPlay stands down; its Play is the gesture)
 		await autoPlay();
 		exportRuntimeState.phase = 'playing';
 	} catch (error) {

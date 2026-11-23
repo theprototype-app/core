@@ -11,12 +11,16 @@ import { globalRenderer, isLocked, isVRMode, editorMode } from '../stores/sceneS
 import { registerShellSeams, closeShellMenu, gameDescription, shellMenu } from './gameShell';
 import { gameSettingValues, gameId, sfxLevel, musicLevel, noteSceneLevelName, slugGameId } from './gameSettings';
 import { gameFeelOn } from './gameFeel';
-import { setBusLevel } from './audioEngine';
-import { exitPlay, embedMode } from './playMode';
+import { setBusLevel, setMenuDuck } from './audioEngine';
+import { exitPlay, embedMode, registerAutoPlayGate } from './playMode';
 import { stopGameMusic } from './gameMusic';
 import { spawnDesktopPlayer, desktopSpawn, spawnEyePose } from './playSpawn';
 import { games } from './sceneTemplates';
 import { applyGameQuality, QUALITY_PRESET_LEVELS } from './qualityGovernor';
+// 92: the game's authored menus (a leaf). Their runtime — the pause hold, the title on Play, Auto-admit —
+// is a LAZY chunk (gameMenusRuntime.js), loaded the first time a scene carries a menus block
+import { menuDuck, gameMenus } from './gameMenus';
+import { scenePhysicsState_ } from './scenePhysics';
 
 /** @type {(() => void)[]} */
 let disposers = [];
@@ -64,8 +68,21 @@ export function startGameShell() {
 			templatesModalTab.set('games');
 			templatesModalOpen.set(true);
 		},
-		toast: (m) => showToast(m)
+		toast: (m) => showToast(m),
+		// 92 (GC2): Restart level — the level in play again from its start (gameMenusRuntime)
+		hasLevelTable: () => (get(scenePhysicsState_)?.levels?.list?.length ?? 0) > 0,
+		restartLevel: () => {
+			if (!((get(scenePhysicsState_)?.levels?.list?.length ?? 0) > 0)) return false;
+			void import('./gameMenusRuntime.js').then((m) => m.restartCurrentLevel());
+			return true;
+		},
+		// 92 (GC5/GC8): the headset's Save / Load and Join requests pages (both lazy chunks)
+		listSlots: () => import('./saveSlots.js').then((m) => m.listSlots()),
+		slotAction: (what, n) => import('./saveSlots.js').then((m) => (what === 'load' ? m.loadSlot(n) : m.writeSlot(n))),
+		answerJoin: (admit, peerId) => void import('./playJoins').then((m) => (admit ? m.admitFromPlay(peerId) : m.declineFromPlay(peerId)))
 	});
+	// 92 (GC1): a game with a title screen opens ON it — autoPlay (a play link, an export) stands down
+	registerAutoPlayGate(() => !!get(gameMenus).title);
 	// primed dynamic imports — history-family modules, never a static edge from here
 	import('./gamePresence').then((m) => (gamePresenceRef = m)).catch(() => {});
 	import('./vrControls').then((m) => (vrControlsRef = m)).catch(() => {});
@@ -84,6 +101,15 @@ export function startGameShell() {
 		gameSettingValues.subscribe(() => {
 			setBusLevel('sfx', sfxLevel());
 			setBusLevel('music', musicLevel());
+		})
+	);
+	// 92 (GC2): the pause menu's audio dip, on the master (the bus levels keep the player's setting)
+	disposers.push(menuDuck.subscribe((level) => setMenuDuck(level)));
+	disposers.push(
+		scenePhysicsState_.subscribe((s) => {
+			if (s?.play?.menus && !menusRuntime) {
+				menusRuntime = import('./gameMenusRuntime.js').then((m) => (disposers.length ? m.startMenusRuntime() : null)).catch(() => null);
+			}
 		})
 	);
 	// the Quality preset: pinned while PLAYING this game, released otherwise
@@ -118,8 +144,12 @@ export function startGameShell() {
 /** @type {any} */ let vrControlsRef = null;
 /** @type {any} */ let objectActionsRef = null;
 
+/** @type {Promise<any> | null} */ let menusRuntime = null;
+
 /** Test seam. */
 export function stopGameShell() {
 	for (const d of disposers) d();
 	disposers = [];
+	void menusRuntime?.then((m) => m?.());
+	menusRuntime = null;
 }

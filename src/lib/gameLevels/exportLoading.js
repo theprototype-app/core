@@ -37,3 +37,29 @@ export async function exportLoadingScreen(out, payload, warnings) {
 export function bundledLoadingPath(ref) {
 	return typeof ref === 'string' && ref.startsWith('assets/loading/') && !ref.split('/').includes('..');
 }
+
+/**
+ * 92 (GC1): the title screen's library image, copied into the bundle the same way (the export has no
+ * library to draw it from). Returns the bundle path for play.js (`titleImage`), '' for none / a URL the
+ * page can fetch as it is, null when it could not be copied (the title shows its colour instead).
+ * @param {Record<string, Uint8Array>} out @param {any} payload @param {string[]} warnings
+ * @returns {Promise<string | null>}
+ */
+export async function exportTitleImage(out, payload, warnings) {
+	const title = payload?.physics?.play?.menus?.title;
+	const ref = title && title.background === 'image' && typeof title.image === 'string' ? title.image.trim() : '';
+	if (!ref || /^(https?:|data:)/.test(ref)) return '';
+	try {
+		const { itemByHash, itemBlob } = await import('../explorer');
+		const item = itemByHash(ref);
+		const blob = item ? await itemBlob(item.id) : null;
+		if (!blob) throw new Error('not in the library');
+		const ext = (String(blob.type).split('/')[1] || 'png').replace(/[^a-z0-9]/g, '').slice(0, 5) || 'png';
+		const path = 'assets/loading/title-' + String(ref).replace(/[^\w-]/g, '').slice(0, 24) + '.' + ext;
+		out[path] = new Uint8Array(await blob.arrayBuffer());
+		return path;
+	} catch {
+		warnings.push('The title screen’s image could not be copied — the export shows the title without it.');
+		return null;
+	}
+}

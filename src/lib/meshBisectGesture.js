@@ -1,6 +1,7 @@
 // @ts-check
-// Roadmap 99 K8 (lane 99-newops): the BISECT tool's gesture — the LAZY half (meshBisectTool.js is the boot shim
-// that holds the stores and loads this when Bisect is armed). Armed from the toolbox (faceEditOp 'bisect'):
+// Roadmap 99 K8 (lane 99-newops): the BISECT tool's plane — the LAZY half. meshBisectTool.js (boot) owns
+// everything that must answer at once: the rubber band, Esc / Enter, cancelling; this chunk (loaded when Bisect is
+// armed) places the plane, drives it with the gizmo and applies the cut. Armed from the toolbox (faceEditOp 'bisect'):
 //   1. two clicks on the viewport draw the cut LINE (the first starts a rubber band, the second ends it — two
 //      clicks and not a held drag, because a left drag orbits the camera; touch taps the same two points);
 //   2. the line becomes a PLANE through it and the eye (perspective) or the view direction (orthographic), shown
@@ -17,10 +18,10 @@ import { get } from 'svelte/store';
 import { globalCamera, globalScene, TControls, transformMode } from '../stores/sceneStore';
 import { showToast } from '../stores/appStore';
 import { canvasRect } from './canvasRect';
-import { faceEditObject, faceEditOp, setFaceOp, commitBisect, lookupEditable } from './faceEdit';
+import { faceEditObject, setFaceOp, commitBisect, lookupEditable } from './faceEdit';
 import { bisectFill, bisectClear } from './meshToolParams';
 
-import { bisectPreview, bisectPlaced } from './meshBisectTool';
+import { bisectPlaced } from './meshBisectTool';
 
 /** @type {any} */ let proxy = null;
 /** @type {string | null} */ let proxyFor = null;
@@ -39,31 +40,13 @@ function edited() {
 }
 
 /**
- * One click of the armed tool. @param {number[]} point client pixels
- * @returns {'started' | 'placed' | 'refused'}
+ * The second click: the line from..to becomes the plane (the shim drew the band and handles the keys).
+ * @param {number[]} from @param {number[]} to client pixels @returns {boolean}
  */
-export function bisectClick(point) {
+export function finishLine(from, to) {
 	const object = edited();
-	if (!object) return 'refused';
-	const pending = get(bisectPreview);
-	if (!pending) {
-		dropPlane();
-		bisectPreview.set({ from: point, to: point });
-		showToast('Bisect: click the other end of the cut line — Esc cancels');
-		return 'started';
-	}
-	bisectPreview.set(null);
-	if (Math.hypot(point[0] - pending.from[0], point[1] - pending.from[1]) < 6) {
-		showToast('Bisect: draw a longer line across the mesh');
-		return 'refused';
-	}
-	return placePlane(object, pending.from, point) ? 'placed' : 'refused';
-}
-
-/** the band follows the pointer @param {number[]} point */
-export function bisectHover(point) {
-	const pending = get(bisectPreview);
-	if (pending) bisectPreview.set({ ...pending, to: point });
+	if (!object) return false;
+	return placePlane(object, from, to);
 }
 
 /**
@@ -176,8 +159,8 @@ export function applyBisect() {
 	return ok;
 }
 
-/** forget the line and the plane (the gizmo leaves it) */
-function dropPlane() {
+/** forget the plane (the gizmo leaves it); the shim calls it on cancel */
+export function dropPlane() {
 	/** @type {any} */
 	const controls = get(TControls);
 	if (proxy && controls?.object === proxy) controls.detach();
@@ -189,51 +172,3 @@ function dropPlane() {
 	if (get(bisectPlaced)) bisectPlaced.set(false);
 }
 
-/** Cancel everything pending (Esc, another tool, the session ending). @returns {boolean} whether anything was */
-export function cancelBisect() {
-	const had = !!get(bisectPreview) || get(bisectPlaced);
-	bisectPreview.set(null);
-	dropPlane();
-	return had;
-}
-
-/**
- * Esc belongs to a pending bisect before it belongs to the session (the knife's event-verdict rule).
- * @param {any} [event] @returns {boolean}
- */
-export function escapeConsumedByBisect(event) {
-	if (event?.defaultPrevented) return true;
-	if (!cancelBisect()) return false;
-	event?.preventDefault?.();
-	return true;
-}
-
-/** Enter applies a placed plane. @param {KeyboardEvent} event @returns {boolean} consumed */
-export function bisectKeyConsumed(event) {
-	const marked = /** @type {any} */ (event);
-	if (marked.__bisectKey || event.key !== 'Enter' || !get(bisectPlaced)) return false;
-	marked.__bisectKey = true;
-	event.preventDefault();
-	applyBisect();
-	return true;
-}
-
-/** Esc and Enter for a pending bisect, in the CAPTURE phase: it runs before the session's own Escape handlers
- * (faceEdit's window listener, the toolbox's), which already stand down on a `defaultPrevented` event (the
- * knife's rule) — so a pending cut eats one Escape and the next leaves the session. @param {KeyboardEvent} event */
-function onKey(event) {
-	const t = /** @type {any} */ (event.target);
-	if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
-	if (event.key === 'Escape') escapeConsumedByBisect(event);
-	else bisectKeyConsumed(event);
-}
-if (typeof window !== 'undefined') window.addEventListener('keydown', onKey, true);
-
-// the tool lives only while it is armed in a session (registered when this chunk first loads: before that
-// nothing can be pending)
-faceEditOp.subscribe((op) => {
-	if (op !== 'bisect') cancelBisect();
-});
-faceEditObject.subscribe((uuid) => {
-	if (!uuid) cancelBisect();
-});

@@ -149,16 +149,22 @@ h.run(async () => {
 	h.check(vList?.type === 'result' && vMake?.type === 'error' && /View only/.test(vMake.error?.message ?? ''), `a viewer lists, and cannot create (${short(vMake)})`);
 	const ro = await files({ action: 'create', path: 'r.md', text: 'r' }, 'read');
 	h.check(ro?.type === 'error' && ro.error?.code === 'refused', `a look-only grant cannot create (${short(ro)})`);
-	await page.evaluate(() => window.__tp.test.v1.filesTool.filesToolResetForTest());
+	// a file of the agent's own (gate.js was marked someone else's above, so its renames are refused first)
+	await files({ action: 'create', path: 'pace.txt', text: 'p' });
+	// 19 writes already spent this minute (21 real calls take longer than a minute on a slow slot)
+	await page.evaluate(() => window.__tp.test.v1.filesTool.filesToolResetForTest({ used: 19 }));
 	let refusedAt = 0;
-	for (let i = 0; i < 21; i++) {
-		const r = await files({ action: 'rename', path: i % 2 ? 'gate2.js' : 'gate.js', to: i % 2 ? 'gate.js' : 'gate2.js' });
+	let lastWrite;
+	// write 20 renames pace.txt -> pace2.txt, write 21 would rename it back
+	for (let i = 0; i < 2; i++) {
+		const r = await files({ action: 'rename', path: i % 2 ? 'pace2.txt' : 'pace.txt', to: i % 2 ? 'pace.txt' : 'pace2.txt' });
+		lastWrite = r;
 		if (r?.type === 'error' && /20 a minute/.test(r.error?.message ?? '')) {
-			refusedAt = i + 1;
+			refusedAt = 20 + i;
 			break;
 		}
 	}
-	h.check(refusedAt === 21, `the 21st write in a minute waits (${refusedAt})`);
+	h.check(refusedAt === 21, `the 21st write in a minute waits (${refusedAt}${refusedAt ? '' : ', last: ' + short(lastWrite)})`);
 
 	await h.finish(browser);
 });

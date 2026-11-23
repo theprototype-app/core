@@ -69,6 +69,14 @@ function inVR() {
 	return !!r?.xr?.isPresenting || !!get(isVRMode);
 }
 
+/** a key pressed in a text field this recently is typing; focus alone is not (show code itself focuses the
+ * editor it opens, and a person reading code has it focused too) */
+const TYPING_QUIET_MS = 3000;
+let lastKeyAt = -Infinity;
+if (typeof window !== 'undefined') {
+	window.addEventListener('keydown', () => (lastKeyAt = performance.now()), { capture: true, passive: true });
+}
+
 /** why the person's hands are busy, or null (rule 7) */
 function busyReason() {
 	/** @type {any} */
@@ -80,7 +88,7 @@ function busyReason() {
 		// the person's own assistant chat is where they just typed to us: that is not "typing elsewhere"
 		const inChat = !!el?.closest?.('#chat-window');
 		const typing = !!el && (el.isContentEditable || el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && /^(text|search|email|url|number|password|)$/i.test(el.type ?? '')));
-		if (typing && !inChat) return 'the person is typing';
+		if (typing && !inChat && performance.now() - lastKeyAt < TYPING_QUIET_MS) return 'the person is typing';
 	}
 	return null;
 }

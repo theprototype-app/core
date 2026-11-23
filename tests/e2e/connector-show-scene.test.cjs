@@ -82,18 +82,19 @@ h.run(async () => {
 
 	// ---- 3 ----------------------------------------------------------------------------------------------------
 	await reset();
-	const made = await call('create_objects', { objects: [{ kind: 'primitive', primitive: 'box', name: 'Far box', position: [30, 0, -30] }] });
+	const made = await call('create_objects', { objects: [{ kind: 'primitive', primitive: 'Box', name: 'Far box', position: [30, 0, -30] }] });
 	const boxId = made?.result?.created?.[0]?.uuid;
 	h.check(!!boxId, `a box to look at (${short(made)})`);
 	const before = await camPos();
 	const c1 = await asked('show', { action: 'camera', frame: [boxId] }, 'Always');
 	h.check(c1.first?.result?.needsConfirm === true, 'the first camera call asks');
 	h.check(c1.final?.result?.moved === true, `Always: the view frames the box (${short(c1.final)})`);
+	// straight after the first move (any check in between can pass 2 s on a slow slot)
+	const c2 = await call('show', { action: 'camera', position: [5, 5, 5], target: [0, 0, 0] });
 	await page.waitForTimeout(900);
 	const after = await camPos();
 	h.check(before && after && Math.hypot(after[0] - before[0], after[2] - before[2]) > 5, `the camera moved (${before} -> ${after})`);
 	h.check((await page.evaluate(() => window.__tp.test.v1.safeStorage.getItem('show:allow:camera'))) === 'always', 'Always is stored on this device');
-	const c2 = await call('show', { action: 'camera', position: [5, 5, 5], target: [0, 0, 0] });
 	h.check(c2?.type === 'error' && /one camera move at a time/.test(c2.error?.message ?? ''), `a second move inside 2 s waits (${short(c2)})`);
 	await page.waitForTimeout(2100);
 	await page.evaluate(() => window.__tp.test.v1.isVRMode.set(true));
@@ -101,9 +102,11 @@ h.run(async () => {
 	await page.evaluate(() => window.__tp.test.v1.isVRMode.set(false));
 	h.check(vr?.type === 'error' && /VR headset/.test(vr.error?.message ?? ''), `no camera move in a headset (${short(vr)})`);
 	await page.evaluate(() => { const i = document.createElement('input'); i.id = 'show-e2e-typing'; i.type = 'text'; document.body.appendChild(i); i.focus(); });
+	await page.keyboard.type('ab');
 	const typing = await call('show', { action: 'camera', position: [5, 5, 5], target: [0, 0, 0] });
 	await page.evaluate(() => document.getElementById('show-e2e-typing')?.remove());
 	h.check(typing?.type === 'error' && /typing/.test(typing.error?.message ?? ''), `refused while the person types (${short(typing)})`);
+	await page.waitForTimeout(3100);
 	const c3 = await call('show', { action: 'camera', position: [6, 4, 6], target: [0, 0, 0] });
 	h.check(c3?.result?.moved === true, `counterfactual: with nobody typing and 2 s passed, the same move runs (${short(c3)})`);
 
@@ -112,13 +115,18 @@ h.run(async () => {
 	await call('files', { action: 'create', path: 'Scripts/door.js', text: 'let a = 1;\nfunction open() {\n  door.open();\n}' });
 	const k1 = await asked('show', { action: 'code', path: 'Scripts/door.js', line: 2, to: 3 }, 'This time');
 	h.check(k1.final?.result?.opened === 'door.js' && k1.final.result.line === 2, `code: door.js opens at line 2 (${short(k1.final)})`);
-	h.check(JSON.stringify(k1.final?.result?.selected) === JSON.stringify({ from: [2, 0], to: [3, 15] }), 'lines 2..3 are selected');
+	h.check(JSON.stringify(k1.final?.result?.selected) === JSON.stringify({ from: [2, 0], to: [3, 14] }), `lines 2..3 are selected (${JSON.stringify(k1.final?.result?.selected)})`);
 	const rev = await page.evaluate(() => { let r; window.__tp.test.v1.codeWorkspace.codeRevealLine.subscribe((v) => (r = v))(); return r; });
 	h.check(rev?.line === 2 && rev?.select?.to?.[0] === 3, `the editor got the range (${JSON.stringify(rev)})`);
 	const k2 = await call('show', { action: 'code', path: 'door.js', find: 'door.open' });
 	h.check(JSON.stringify(k2?.result?.selected) === JSON.stringify({ from: [3, 2], to: [3, 11] }), `find selects the match (${short(k2)})`);
 	const k3 = await call('show', { action: 'code', path: 'door.js', text: 'x' });
-	h.check(k3?.type === 'result' && !k3.result?.written, 'show has no way to write text (an extra argument does nothing)');
+	h.check(k3?.type === 'result' && !k3.result?.written, `show has no way to write text (an extra argument does nothing) (${short(k3)})`);
+	const focused = await page.evaluate(() => !!document.activeElement?.closest?.('.cm-editor'));
+	await page.evaluate(() => window.__tp.test.v1.safeStorage.setItem('show:allow:panel', 'always'));
+	const k4 = await call('show', { action: 'panel', name: 'Explorer', state: 'open' });
+	await page.evaluate(() => window.__tp.test.v1.safeStorage.removeItem('show:allow:panel'));
+	h.check(k4?.type === 'result' && !k4.result?.needsConfirm, `an editor show opened is not typing: the next show runs (focused ${focused}, ${short(k4)})`);
 
 	// ---- 5 ----------------------------------------------------------------------------------------------------
 	await reset();
@@ -130,11 +138,13 @@ h.run(async () => {
 	await reset();
 	await page.evaluate(() => window.__tp.test.v1.safeStorage.setItem('show:allow:panel', 'always'));
 	let paced = 0;
+	let lastPaced;
 	for (let i = 0; i < 7; i++) {
 		const r = await call('show', { action: 'panel', name: 'Objects', state: i % 2 ? 'close' : 'open' });
+		lastPaced = r;
 		if (r?.type === 'error' && /6 a minute/.test(r.error?.message ?? '')) paced = i + 1;
 	}
-	h.check(paced === 7, `rule 7: the 7th call in a minute waits (${paced})`);
+	h.check(paced === 7, `rule 7: the 7th call in a minute waits (${paced}${paced ? '' : ', last: ' + short(lastPaced)})`);
 	await page.evaluate(() => window.__tp.test.v1.safeStorage.removeItem('show:allow:panel'));
 
 	// ---- 6 ----------------------------------------------------------------------------------------------------
@@ -149,7 +159,7 @@ h.run(async () => {
 	h.check(roOpen?.type === 'error' && roOpen.error?.code === 'refused', 'a look-only grant cannot open a scene');
 
 	// ---- 7 ----------------------------------------------------------------------------------------------------
-	await call('create_objects', { objects: [{ kind: 'primitive', primitive: 'sphere', name: 'Unsaved ball', position: [0, 1, 0] }] });
+	await call('create_objects', { objects: [{ kind: 'primitive', primitive: 'Sphere', name: 'Unsaved ball', position: [0, 1, 0] }] });
 	h.check((await call('scene', { action: 'list' }))?.result?.current?.unsaved === true, 'Island has unsaved changes now');
 	const o1 = await call('scene', { action: 'open', name: 'Harbour' });
 	h.check(o1?.result?.needsConfirm === true && /Save and open \/ Open without saving \/ Cancel/.test(o1.result.note ?? ''), `nothing said: the person is asked (${short(o1)})`);
@@ -198,7 +208,7 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);
 	await page.waitForTimeout(1500);
-	await call('create_objects', { objects: [{ kind: 'primitive', primitive: 'box', name: 'Cove rock', position: [2, 0, 2] }] });
+	await call('create_objects', { objects: [{ kind: 'primitive', primitive: 'Box', name: 'Cove rock', position: [2, 0, 2] }] });
 	const crowd = await call('scene', { action: 'open', name: 'Harbour', unsaved: 'discard' });
 	h.check(crowd?.result?.needsConfirm === true, `hosting with someone here: the dialog shows even with unsaved: "discard" (${short(crowd)})`);
 	h.check((await toasts()).some((t) => /1 other person is in this session/.test(t)), 'the question says who else is here');

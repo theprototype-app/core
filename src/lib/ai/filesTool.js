@@ -511,7 +511,9 @@ export async function filesTool(args, ctx = {}) {
 }
 
 /** unit / e2e: reset the per-page counters */
-export function filesToolResetForTest() {
+/** @param {{used?: number}} [opts] used: writes already spent this minute (a slow runner cannot make 21 calls inside one) */
+export function filesToolResetForTest(opts) {
 	writes.reset();
+	for (let i = 0; i < (opts?.used ?? 0); i++) writes.note();
 	made = 0;
 }

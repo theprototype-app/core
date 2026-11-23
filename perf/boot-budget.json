@@ -4,12 +4,12 @@
 	"pages": {
 		"play": {
 			"html": "play.html",
-			"maxJsGzBytes": 2206720,
+			"maxJsGzBytes": 2211840,
 			"maxFirstFrameMs": 20000
 		},
 		"editor": {
 			"html": "index.html",
-			"maxJsGzBytes": 3458560,
+			"maxJsGzBytes": 3461120,
 			"maxFirstFrameMs": 32000
 		}
 	},
@@ -112,6 +112,20 @@
 			"play": "v1.74.0 2148.6 KB -> 2151.7 KB (+3.1: #609 +1.6, this lane +1.5) -> line 2152.5 KB",
 			"editor": "v1.74.0 3369.3 KB -> 3372.8 KB (+3.6: #609 +1.9, this lane +1.7) -> line 3374.0 KB",
 			"note": "inside the ~3 KB boot rule per lane. Measured on the pc host (tp-lanes), v1.74.0, #609's head and this branch built in one worktree with one node_modules; the per-lane split is from sourcemap builds of the three. This lane by module (gzip, editor): commandsHandler +0.5 (late-joiner ingest look-ahead, the primitive recipe path, the announced batch hold, the visible/slots fields), playSpawn +0.4 (the lazy loader and v1.74.0's fallback), flowStore graph tombstones, sceneStore poke pacing, qualityGovernor, autosave/gltfNames ~0.1 each. Lazy chunks (paid only when used): spawnPick + spawnSlots (load with the first peer link), slotRejoin (only a message carrying slots). Chunk-hash churn moves the editor ~0.6 KB between builds; the integrator may veto or fold it into the int line."
+		},
+		{
+			"date": "2026-11-23",
+			"lane": "71-int (Accounts and safety: #506 71-privacy, #618 71-rooms, #619 fix-late-joiners with #609)",
+			"play": "v1.74.0 2148.6 KB -> 2155.5 KB (+6.9) -> line 2160.0 KB (the int boot rule: merged tag + the union, rounded up to the next 5 KB)",
+			"editor": "v1.74.0 3369.2 KB -> 3377.9 KB (+8.7) -> line 3380.0 KB (the same rule)",
+			"note": "measured on the pc host (tp-lanes): v1.74.0 and each union step built in one worktree with one node_modules. Under the ~15 KB tell rule. The two lane entries above are kept as their lanes wrote them; this line replaces theirs. If v1.75.0 (102-int-2, lines reset to 1900 / 3020 KB) is merged before the release, the line is set again ONCE from the measured merged tag + this union's sum",
+			"perLane": {
+				"basis": "each first-parent merge of the union chain built on v1.74.0 (play / editor KB, gzip -9)",
+				"71-privacy #506": "+1.4 / +1.9",
+				"71-rooms #618": "+2.5 / +3.2",
+				"fix-late-joiners #619 (with #609)": "+3.0 / +3.6",
+				"71-int fixes e3e8e7af, f1dcd3e3": "measured with the union at the release candidate (gates rc)"
+			}
 		}
 	],
 	"throttle": {

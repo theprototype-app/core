@@ -6,6 +6,37 @@
      rendering, so maintainer notes stay out of the user-facing window. No emoji from
      1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
 
+## 1.76.0 — Accounts and safety
+
+### Your account and data (theprototype.app)
+- **Download my data**: one zip with your saves (every version), profile, published templates, comments, likes and contest entries. The size and count show before it starts. In the profile menu, and as step 1 of deleting your account. <!-- 71-account -->
+- **Delete your account, with 30 days to change your mind**: your profile and templates are hidden at once and you are signed out everywhere. Sign in within 30 days and press **Keep my account** to undo it. <!-- 71-account -->
+- **See where you are signed in** (Settings ▸ Account ▸ Devices) and **sign out everywhere** in one press. <!-- 71-account -->
+- **An email when someone signs in from a new device**, once per device, never for a refresh. You can turn it off. <!-- 71-account -->
+- **Block an account**: someone you block cannot join sessions you host, on any device, until you unblock them (profile menu ▸ Blocked people). <!-- 71-account -->
+- The privacy page says what is kept and for how long. <!-- 71-account -->
+
+### Rooms you can trust
+- **Blocking a guest offers the real fix**: a guest can come back with a new id, so the toast offers **Require approval to join** for this session (Undo; a row in Settings ▸ Connection). <!-- 71-rooms -->
+- **Invite links have limits**: up to 20 links that still work, up to 10 made in 10 minutes. The Invite sheet says why and when to try again. <!-- 71-rooms -->
+- **Failed invite joins are one row**, with Review, Let in and Dismiss, so they never push a real request off the list. Many in a minute pause invite joins for 60 seconds, with **Resume now**. <!-- 71-rooms -->
+- **Hide my IP**: connect through the relay server only (Settings ▸ Connection). <!-- 71-privacy -->
+- **Edit and chat limits per person**, so one peer cannot flood a session (Settings ▸ Connection). <!-- 71-privacy -->
+
+### Joining a session
+- **Joining a big scene is much faster**: 500 objects arrive in seconds instead of about 40. <!-- fix-late-joiners -->
+- **Hidden objects stay hidden and names arrive as written** for someone who joins late. <!-- fix-late-joiners -->
+- **People who open a play link spawn apart**, never inside each other or inside a wall. <!-- fix-late-joiners -->
+- **A mesh with several materials keeps them** for someone who joins late. <!-- fix-late-joiners -->
+- **A deleted node graph stays deleted** when peers merge. <!-- fix-late-joiners -->
+
+### Fixes
+<!-- 71-int: drop this line if 1.75.0 (102-int-2, which also carries #609) is merged first and already lists it -->
+- **A saved scene keeps every face of a primitive with an added material slot.** <!-- 105-slot-save -->
+
+### For module authors and developers
+- **Plugins**: `cloudApi.setRoomAccess` (the block toast's room fixes) and `removePeer(peerId, {block})` (OPEN-CORE.md). The join dial's `denied` result may carry a `why` (`invite-paused`, `invite-slow`); an older joiner reads it as declined. Object messages gain the additive `visible` and `slots` fields. <!-- 71-int -->
+
 ## 1.74.0 — Games and play
 
 ### Game values and game feel

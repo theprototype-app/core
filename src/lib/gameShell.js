@@ -164,7 +164,9 @@ function pressListHit(parts) {
 			return true;
 		}
 		armedSlot = null;
-		void Promise.resolve(seams.slotAction?.(load ? 'load' : 'save', n) ?? { ok: false }).then((res) => {
+		/** @type {Promise<{ok: boolean, reason?: string}>} */
+		const done = Promise.resolve(seams.slotAction?.(load ? 'load' : 'save', n) ?? { ok: false });
+		void done.then((res) => {
 			if (!res.ok) seams.toast?.(res.reason ?? 'That did not work.');
 			else seams.toast?.(load ? 'Loaded ' + slot.name + '.' : 'Saved to ' + slot.name + '.');
 			if (load && res.ok) closeShellMenu();

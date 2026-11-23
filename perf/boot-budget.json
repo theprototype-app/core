@@ -4,12 +4,12 @@
 	"pages": {
 		"play": {
 			"html": "play.html",
-			"maxJsGzBytes": 2206720,
+			"maxJsGzBytes": 2208768,
 			"maxFirstFrameMs": 20000
 		},
 		"editor": {
 			"html": "index.html",
-			"maxJsGzBytes": 3459072,
+			"maxJsGzBytes": 3461120,
 			"maxFirstFrameMs": 32000
 		}
 	},
@@ -109,9 +109,9 @@
 		{
 			"date": "2026-11-23",
 			"lane": "92-menus (roadmap 92 GC1/GC2/GC5/GC8)",
-			"play": "base (v1.74.0 + 92-correct) 2150.4 KB -> 2154.9 KB (+4.5), line 2155 KB unchanged",
-			"editor": "base 3371.1 KB -> 3376.4 KB (+5.3) -> line 3378 KB",
-			"note": "boot wiring only: the menus config normalize (scene play block), the leaf stores, the pause-menu rows (Save / Load / Join requests / Quit to title / Restart level, the Subtitles + Reduced motion rows, the headset's list page), Look speed / Invert look, the master-gain duck. The title screen, save slots, join requests, in-game join card, the menus runtime (pause hold, auto-admit) and the Configure Scene section are lazy chunks; a first cut was +11 KB because a dynamic import() in the gameShell boot chunk gave it its own preload table — they now go through gameShellWire's seams"
+			"play": "base (v1.74.0 + 92-correct) 2150.5 KB -> 2155.9 KB (+5.4) -> line 2157 KB",
+			"editor": "base 3371.2 KB -> 3378.1 KB (+6.9) -> line 3380 KB",
+			"note": "boot wiring only: the menus config normalize (scene play block), the leaf stores, the pause-menu rows (Save / Load / Join requests / Quit to title / Restart level, the Subtitles + Reduced motion rows, the headset's list page), Look speed / Invert look, the master-gain duck. The title screen, save slots, join requests, in-game join card, the menus runtime (pause hold, auto-admit) and the Configure Scene section are lazy chunks; a first cut was +11 KB because a dynamic import() in the gameShell boot chunk gave it its own preload table — they now go through gameShellWire's seams. The last +1 KB is fixes the e2e found: the viewport join card stepping aside under the pause menu (Toasts), one retrying loader for the lazy menu parts, the late-runtime title, exports without autosave"
 		}
 	],
 	"throttle": {

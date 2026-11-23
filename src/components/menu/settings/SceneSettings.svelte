@@ -7,6 +7,7 @@
 		'show the simulation controls': ['simulation controls', 'physics', 'transport', 'sim'],
 		'quality preset': ['quality', 'performance', 'low', 'medium', 'high', 'graphics', 'fps'],
 		'shadow quality': ['shadows', 'performance'],
+		'scene shadow quality': ['shadows', 'soft shadows', 'far shadows', 'contact shadows', 'lights'],
 		'reduce quality when the scene is heavy': ['performance', 'fps', 'lag', 'slow', 'governor'],
 		'simplify distant models': ['lod', 'performance'],
 		'draw repeated kit pieces together': ['instancing', 'performance', 'kit'],
@@ -52,7 +53,7 @@
 	import ScatterDetailSetting from './ScatterDetailSetting.svelte'; // 51
 	import GpuFluidSetting from '../../sim/GpuFluidSetting.svelte'; // 49-fluid W2
 	import HdriSettings from '../../hdri/HdriSettings.svelte'; // 37-hdri
-	import { showSimControls, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader, showToast } from '../../../stores/appStore.js';
+	import { showSimControls, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader, showToast, settingsOpen, openSceneSection } from '../../../stores/appStore.js';
 	import { showGrid } from '../../../stores/sceneStore.js';
 	import { syncedAnimations } from '../../../stores/flowStore';
 	import { safeStorage } from '$lib/safeStorage';
@@ -142,8 +143,12 @@
 		<SettingRow id="row-quality-preset" label="Quality preset" description="Auto lowers quality on its own when the scene is heavy; High, Medium and Low hold one level. A game’s own Quality setting wins while you play it." wide>
 			<Segmented id="quality-preset" label="Quality preset" options={PRESETS} value={$qualityPreset} onchange={(v) => qualityPreset.set(/** @type {any} */ (v))} />
 		</SettingRow>
-		<SettingRow id="row-shadow-quality" label="Shadow quality" description="Caps every light’s shadow map size here; per-light sizes still travel with the scene." wide>
+		<SettingRow id="row-shadow-quality" label="Shadow quality" description="Caps every light’s shadow map size here, and so caps what the scene asks for (Configure Scene ▸ Lights); per-light sizes still travel with the scene." wide>
 			<Segmented id="shadow-quality" label="Shadow quality" options={SHADOWS} value={$shadowQuality} onchange={(v) => shadowQuality.set(/** @type {any} */ (v))} />
+		</SettingRow>
+		<!-- 106 S1: the scene's own Shadow quality is scene data (Configure Scene ▸ Lights); this row only finds it -->
+		<SettingRow id="row-scene-shadow-quality" label="Scene shadow quality" description="What the open scene asks for, for everyone: Off, Basic, Soft or Far. Set in Configure Scene ▸ Lights; this device draws it within the cap above.">
+			<Button id="open-scene-shadow-quality" size="sm" variant="outline" text="Open" title="Configure Scene ▸ Lights ▸ Shadow quality" onclick={() => { settingsOpen.set(false); openSceneSection('Lights'); }} />
 		</SettingRow>
 		<SettingRow id="row-auto-quality" label="Reduce quality when the scene is heavy" description="Below 30 frames a second, drops shadows, then resolution, then effects — and gives them back.">
 			<Toggle id="auto-quality" label="Reduce quality when the scene is heavy" bind:checked={$autoQuality} />

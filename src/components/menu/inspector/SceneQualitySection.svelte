@@ -59,7 +59,7 @@
 			<Segmented id="scene-shadow-quality" label="Shadow detail on this device" full options={SHADOWS} value={$shadowQuality} onchange={(v) => shadowQuality.set(/** @type {any} */ (v))} />
 		{/snippet}
 	</PropRow>
-	<p id="scene-shadow-quality-help" class="text-[length:var(--fs-badge)] text-text-muted">The shadow map size this device may use: it caps what Lights ▸ Shadow quality can draw here.</p>
+	<p id="scene-shadow-quality-help" class="text-[length:var(--fs-badge)] text-text-muted">The shadow map size this device may use: it caps what the scene asks for (Lights ▸ Shadow quality) on this device.</p>
 	<InsToggle id="scene-lod-enabled" bind:checked={$lodEnabled} title="Draws a lighter version of a dense model when it is far away">Simplify distant models</InsToggle>
 	<InsToggle id="scene-kit-instancing" bind:checked={$kitInstancingEnabled} title="Every untouched copy of a kit piece draws in one go">Draw repeated kit pieces together</InsToggle>
 </Section>

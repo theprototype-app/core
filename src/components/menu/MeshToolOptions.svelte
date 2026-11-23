@@ -46,6 +46,7 @@
 		insetDepth,
 		insetIndividual,
 		subdivideLevelCount,
+		subdivideSmooth,
 		edgeExtrudeDistance,
 		smoothFactor,
 		smoothIterations,
@@ -523,6 +524,23 @@
 			onscrubstart={scrubStart}
 			onscrubend={scrubEnd}
 		/>
+		<label
+			class="flex items-center gap-1"
+			title="Smooth: Catmull-Clark — corners round off, an open border keeps its line, uvs stay put. With nothing picked it smooths the whole mesh (Shift+S)."
+		>
+			<input
+				id="subdivide-smooth"
+				class="tbx-check"
+				type="checkbox"
+				checked={$subdivideSmooth}
+				onchange={(e) => {
+					const on = e.currentTarget.checked;
+					subdivideSmooth.set(on);
+					if (adjusting) adjustChanged({ smooth: on });
+				}}
+			/>
+			smooth
+		</label>
 		{#if adjusting}
 			{@render revertBtn()}
 		{:else}

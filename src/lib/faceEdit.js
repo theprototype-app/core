@@ -7216,6 +7216,8 @@ function mergeAdjustParams(a, patch) {
 	} else if (a.op === 'subdivide') {
 		// P3: 4^levels growth — MAX_SNAPSHOT backstops the big-face case
 		p.levels = Math.max(1, Math.min(Math.round(p.levels ?? 1) || 1, 3));
+		// 99 K8: smooth = Catmull-Clark (the kernel's, shared with the agent); off = the quad-aware split
+		p.smooth = !!p.smooth;
 	} else if (a.op === 'edge-extrude') {
 		// P5b: world units, signed — negative pulls the strip the other way
 		p.distance = Math.min(Math.max(p.distance ?? 0.5, -5), 5);
@@ -7463,7 +7465,12 @@ function runAdjustCore(a) {
 		// P3 / 99 K4 family 6: the quad-aware split `levels` times on a COPY of the op mesh captured at begin
 		const ops = kernelOps();
 		const om = ops.beginOp(ops.cloneOpMesh(a.opBase));
-		const r = ops.subdivideLevels(om, a.target.triIndices, a.quadPartner, p.levels);
+		// 99 K8: smooth = Catmull-Clark on the pick (null = the whole mesh); the plain split needs a pick
+		if (!p.smooth && !a.target.triIndices) return { error: 'Click a face first' };
+		const r = p.smooth
+			? ops.smoothSubdivide(om, a.target.triIndices, p.levels)
+			: ops.subdivideLevels(om, a.target.triIndices, a.quadPartner, p.levels);
+		if ('error' in r) return { error: r.error };
 		return {
 			...opResult(om),
 			faces: ops.opPartition(om, 'appearance'),
@@ -7820,8 +7827,9 @@ export function beginOpAdjust(op, params, opts = {}) {
 		// P3: the target is the picked tri set; the pairing rides along exactly
 		// like loopcut's (subdivideLevels is quad-aware through it)
 		const face = opts.target ?? opTargetFace();
-		if (!face?.triIndices?.length) return false;
-		a.target = { triIndices: [...face.triIndices] };
+		// 99 K8: a smooth subdivide with nothing picked smooths the whole mesh (Catmull-Clark's usual use)
+		if (!face?.triIndices?.length && !params?.smooth) return false;
+		a.target = { triIndices: face?.triIndices?.length ? [...face.triIndices] : null };
 		a.quadPartner = FS.quadPartner;
 		if (!(a.opBase = sessionOpMesh())) return kernelLoadingRefusal();
 	} else if (op === 'bridge') {
@@ -8164,14 +8172,15 @@ export function facePartitionOf(geometry) {
 }
 
 /** the face ops faceOpOnObject runs */
-export const OBJECT_FACE_OPS = /** @type {const} */ (['extrude', 'inset', 'move', 'bevel', 'subdivide', 'delete', 'flip']);
+export const OBJECT_FACE_OPS = /** @type {const} */ (['extrude', 'inset', 'move', 'bevel', 'subdivide', 'subdivide_smooth', 'delete', 'flip']);
 
 /**
  * Run one face operator on an object's triangles `triIndices` (one region, like a multi-select).
  * @param {string} uuid
  * @param {string} op one of OBJECT_FACE_OPS
  * @param {number[]} triIndices
- * @param {{amount?: number, width?: number, segments?: number, profile?: number, direction?: 'out'|'in'}} [options]
+ * @param {{amount?: number, width?: number, segments?: number, profile?: number, direction?: 'out'|'in', levels?: number}} [options]
+ *   `levels` = subdivide_smooth's Catmull-Clark levels (1-3)
  * @returns {{ok: true, triangles: number, kept: number[] | null} | {ok: false, error: string}}
  *   `kept` = the triangles still selected afterwards (the extruded cap, the inset's inner face — the
  *   ops that move the picked triangles in place and APPEND the rest), null where the op reshapes them
@@ -8210,6 +8219,13 @@ export function faceOpOnObject(uuid, op, triIndices, options = {}) {
 		// 99 K4 family 6: on the kernel, IDs carried
 		const partner = storedPartner(object.geometry, tris.length) ?? pairQuads(tris);
 		const r = objectKernelCommit(uuid, object, () => partition, tris, (ops, om) => ops.subdivideUnits(om, picked, partner));
+		return r && !('error' in r) ? { ok: true, triangles: r.count, kept: null } : { ok: false, error: r?.error ?? 'the edit could not be committed' };
+	} else if (op === 'subdivide_smooth') {
+		// 99 K8: Catmull-Clark on the kernel (the one implementation create_shape's `subdivide` uses too), IDs carried
+		const levels = Math.max(1, Math.min(Math.round(Number(options.levels ?? 1)) || 1, 3));
+		const r = objectKernelCommit(uuid, object, () => partition, tris, (ops, om) =>
+			ops.smoothSubdivide(om, picked.length >= tris.length ? null : picked, levels)
+		);
 		return r && !('error' in r) ? { ok: true, triangles: r.count, kept: null } : { ok: false, error: r?.error ?? 'the edit could not be committed' };
 	} else if (op === 'delete') {
 		if (picked.length >= tris.length) return { ok: false, error: 'delete: that would remove every face of the mesh' };

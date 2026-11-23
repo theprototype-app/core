@@ -44,3 +44,5 @@ export {
 } from './dissolve.js';
 // 99-ops-b family 6
 export { subdivideUnits, subdivideLevels, subdivideEdges, symmetrize } from './subdivide.js';
+// 99 K8 (99-newops): Catmull-Clark in the editor, bisect, shortest-path select — the kernel's cores on the op mesh
+export { smoothSubdivide } from './smooth.js';

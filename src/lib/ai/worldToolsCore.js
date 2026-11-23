@@ -1,15 +1,18 @@
-// Roadmap 85b lane 85-world — the PURE half of the world tools (imports nothing; the unit layer runs it).
+// Roadmap 85b lane 85-world — the PURE half of the world tools (imports only the pure mesh kernel; the unit layer runs it).
 //
 //   patternCanvas      L7: a procedural texture BY NAME (wood, brick, marble, tiles …) as a canvas spec for
 //                      85-assist's generators (imageToolCore parseCanvas / drawCanvas): nothing new is drawn
 //                      here, a preset is only a recipe of the ops add_image already takes
 //   catmullClark       G9: create_shape {mesh, subdivide: 1-2} — real smoothing, on the polygon mesh the call
-//                      gives (vertices + faces), before meshFromData splits it into triangles
+//                      gives (vertices + faces), before meshFromData splits it into triangles (99 K8: the kernel's)
 //   scoreAsset         W1: search_assets ranking over library / pack / prefab / CC0 rows
 //   parseSculptOps     W2: terrain {ops: [{op: raise|lower|smooth|flatten|paint, at, radius, strength}]}
 //   scatterSetOf       W3: scatter's rules → one 51 seeded set (gen + masks)
 //   sniffAudio         W6: a sound's bytes are believed, not its header
 //   placementPoints    W1 / W7: count + spacing → a row of points
+
+import { MeshKernel } from '../meshKernel/kernel.js';
+import { catmullClarkArrays } from '../meshKernel/catmullClark.js';
 
 // ---------------------------------------------------------------- L7 procedural textures
 
@@ -217,100 +220,14 @@ export function patternCanvas(pattern) {
  * shape (the crease rule: an edge point is the midpoint, a border vertex (6v + its two border neighbours) / 8).
  * uvs and colors (per vertex) are carried by the SAME averages as the positions use for face and edge points and
  * kept at the old vertices (a texture does not slide); faceMaterials go to every child of a face.
+ * 99 K8: ONE implementation with the editor's Subdivide (smooth) — the kernel's (`meshKernel/catmullClark.js`)
+ * through its polygon-array adapter; order and values are 85b G9's (parity: meshKernelCatmullClark.test.js).
  * @param {{vertices: number[][], faces: number[][], uvs?: number[][], colors?: number[][], faceMaterials?: number[]}} mesh
  * @param {number} levels 1 or 2
  * @returns {{vertices: number[][], faces: number[][], uvs?: number[][], colors?: number[][], faceMaterials?: number[]}}
  */
 export function catmullClark(mesh, levels) {
-	let cur = mesh;
-	for (let l = 0; l < levels; l++) cur = ccOnce(cur);
-	return cur;
-}
-
-/** @param {{vertices: number[][], faces: number[][], uvs?: number[][], colors?: number[][], faceMaterials?: number[]}} m */
-function ccOnce(m) {
-	const V = m.vertices;
-	const attrs = /** @type {('uvs'|'colors')[]} */ (['uvs', 'colors']).filter((k) => Array.isArray(m[k]));
-	/** @param {number[][]} list @returns {number[]} */
-	const avg = (list) => list[0].map((_, i) => list.reduce((s, p) => s + p[i], 0) / list.length);
-	/** per vertex: positions + each carried attribute, as one row of arrays */
-	const row = (/** @type {number} */ i) => [V[i], ...attrs.map((k) => /** @type {number[][]} */ (m[k])[i])];
-	/** @param {number[][][]} rows */
-	const avgRows = (rows) => rows[0].map((_, a) => avg(rows.map((r) => r[a])));
-	const facePts = m.faces.map((f) => avgRows(f.map(row)));
-	/** edge key → {a, b, faces[]} */
-	const edges = new Map();
-	const key = (/** @type {number} */ a, /** @type {number} */ b) => (a < b ? a + '_' + b : b + '_' + a);
-	m.faces.forEach((f, fi) => {
-		for (let k = 0; k < f.length; k++) {
-			const a = f[k];
-			const b = f[(k + 1) % f.length];
-			const id = key(a, b);
-			const e = edges.get(id) ?? { a: Math.min(a, b), b: Math.max(a, b), faces: [] };
-			e.faces.push(fi);
-			edges.set(id, e);
-		}
-	});
-	/** @type {number[][][]} the new points, as rows (position + attributes) */
-	const out = [];
-	/** vertex i → new index */
-	const vIndex = new Map();
-	/** edge key → new index */
-	const eIndex = new Map();
-	/** face index → new index */
-	const fIndex = facePts.map((p) => out.push(p) - 1);
-	for (const [id, e] of edges) {
-		const ends = [row(e.a), row(e.b)];
-		// the position takes the faces' points too (smoothing); attributes stay on the edge (no sliding)
-		const mid = avgRows(ends);
-		if (e.faces.length === 2) mid[0] = avg([V[e.a], V[e.b], facePts[e.faces[0]][0], facePts[e.faces[1]][0]]);
-		eIndex.set(id, out.push(mid) - 1);
-	}
-	/** per vertex: its faces and edges */
-	const vFaces = V.map(() => /** @type {number[]} */ ([]));
-	const vEdges = V.map(() => /** @type {any[]} */ ([]));
-	m.faces.forEach((f, fi) => f.forEach((v) => vFaces[v].push(fi)));
-	for (const e of edges.values()) {
-		vEdges[e.a].push(e);
-		vEdges[e.b].push(e);
-	}
-	for (let i = 0; i < V.length; i++) {
-		if (!vFaces[i].length) continue; // a vertex no face uses is dropped
-		const r = row(i);
-		const border = vEdges[i].filter((e) => e.faces.length === 1);
-		/** @type {number[]} */
-		let p;
-		if (border.length >= 2) {
-			// the crease rule: a border vertex follows its two border neighbours only
-			const nb = border.slice(0, 2).map((e) => V[e.a === i ? e.b : e.a]);
-			p = V[i].map((x, k) => (6 * x + nb[0][k] + nb[1][k]) / 8);
-		} else {
-			const n = vFaces[i].length;
-			const F = avg(vFaces[i].map((fi) => facePts[fi][0]));
-			const R = avg(vEdges[i].map((e) => avg([V[e.a], V[e.b]])));
-			p = V[i].map((x, k) => (F[k] + 2 * R[k] + (n - 3) * x) / n);
-		}
-		vIndex.set(i, out.push([p, ...r.slice(1)]) - 1);
-	}
-	/** @type {number[][]} */
-	const faces = [];
-	/** @type {number[]} */
-	const faceMaterials = [];
-	m.faces.forEach((f, fi) => {
-		for (let k = 0; k < f.length; k++) {
-			const v = f[k];
-			const next = f[(k + 1) % f.length];
-			const prev = f[(k - 1 + f.length) % f.length];
-			// the same winding as the source face: corner, edge to next, centre, edge from prev
-			faces.push([vIndex.get(v), eIndex.get(key(v, next)), fIndex[fi], eIndex.get(key(prev, v))]);
-			if (m.faceMaterials) faceMaterials.push(m.faceMaterials[fi]);
-		}
-	});
-	/** @type {any} */
-	const res = { vertices: out.map((p) => p[0]), faces };
-	attrs.forEach((k, a) => (res[k] = out.map((p) => p[a + 1])));
-	if (m.faceMaterials) res.faceMaterials = faceMaterials;
-	return res;
+	return catmullClarkArrays(mesh, levels, MeshKernel);
 }
 
 /** how many vertices / faces a subdivision makes, BEFORE doing it (the cap is checked first) @param {{vertices: any[], faces: number[][]}} m @param {number} levels */

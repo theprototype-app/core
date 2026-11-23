@@ -158,6 +158,7 @@ function meshRows(table) {
  * @param {string} combo @returns {string | null}
  */
 export function meshCommandFor(combo) {
+	if (!combo) return null; // 99 K8: an unbound row's keys are ''
 	const row = shortcuts.find((s) => s.scope === 'mesh' && s.keys === combo);
 	if (row) return row.id;
 	if (combo === 'Ctrl++' && bindingOf('mesh.grow') === 'Ctrl+=') return 'mesh.grow';
@@ -853,6 +854,7 @@ export const shortcuts = [
 		['mesh.extrude', 'E', 'Arm Extrude (faces)'],
 		['mesh.inset', 'I', 'Arm Inset (faces)'],
 		['mesh.subdivide', 'S', 'Subdivide (faces)'],
+		['mesh.subdivide-smooth', 'Shift+S', 'Smooth subdivide, Catmull-Clark (faces; nothing picked = the whole mesh)'],
 		['mesh.loopcut', 'C', 'Loop cut (faces)'],
 		['mesh.bridge', 'B', 'Bridge (faces)'],
 		['mesh.flip', 'F', 'Flip normals (faces); fill the hole (edges)'],

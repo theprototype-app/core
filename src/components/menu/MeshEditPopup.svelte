@@ -30,6 +30,7 @@
 		insetDepth,
 		insetIndividual,
 		subdivideLevelCount,
+		subdivideSmooth,
 		edgeExtrudeDistance,
 		smoothFactor,
 		smoothIterations,
@@ -394,7 +395,7 @@
 			return '';
 		}
 		if (focus === 'loopcut') return loopCutReady() ? '' : 'Click a quad to choose the ring';
-		if (focus === 'subdivide') return hasTarget() ? '' : 'Click a face first';
+		if (focus === 'subdivide') return hasTarget() || $subdivideSmooth ? '' : 'Click a face first';
 		if (focus === 'solidify') return hasTarget() ? '' : 'Select the surface to thicken first';
 		if (focus === 'bridge') {
 			if (selInfo.pieces !== 2) return 'Select two separate pieces (Ctrl+click both)';
@@ -474,11 +475,12 @@
 				invert: $bridgeInvert
 			});
 		} else if (op === 'subdivide') {
-			if (!hasTarget()) {
+			// 99 K8: Smooth (Catmull-Clark) with nothing picked smooths the whole mesh
+			if (!hasTarget() && !$subdivideSmooth) {
 				showToast('Click a face first');
 				return false;
 			}
-			ok = beginOpAdjust('subdivide', { levels: $subdivideLevelCount });
+			ok = beginOpAdjust('subdivide', { levels: $subdivideLevelCount, smooth: $subdivideSmooth });
 		} else if (op === 'edge-extrude') {
 			// P5b: an adjust-engine op — the engine validates the edge pick and the
 			// border rule, and toasts its own refusals
@@ -734,6 +736,13 @@
 				'mesh.loopcut': 'loopcut',
 				'mesh.bridge': 'bridge'
 			};
+			// 99 K8: Shift+S = Subdivide with the Smooth method on (the pane shows it checked)
+			if (cmd === 'mesh.subdivide-smooth') {
+				subdivideSmooth.set(true);
+				runOp('subdivide');
+				event.preventDefault();
+				return;
+			}
 			const op = ops[cmd];
 			if (!op) return;
 			runOp(op);

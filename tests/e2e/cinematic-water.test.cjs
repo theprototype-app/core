@@ -53,6 +53,7 @@ async function underKnobs(page, view) {
 		const keys = ['uReflectivity', 'uFogDistance', 'uEnvOn', 'uOpacity', 'uClarity', 'uFresnel', 'uRefraction'];
 		const saved = Object.fromEntries(keys.map((k) => [k, U[k]?.value]));
 		const info = { ...saved, colours: ['uSkyTop', 'uSkyHorizon', 'uSkyBottom', 'uFogColor', 'uDeep', 'uShallow'].map((k) => U[k]?.value?.toArray?.().map((v) => +v.toFixed(3))) };
+		const ss = [];
 		const pts = [[1300, 120], [200, 150], [870, 230], [720, 60], [1100, 450]];
 		const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
 		const sample = async () => {
@@ -66,6 +67,7 @@ async function underKnobs(page, view) {
 				s.globalCamera.subscribe((v) => (cam = v))();
 				r.render(sc, cam);
 				url = r.domElement.toDataURL('image/png');
+				ss.push(U.uSSActive?.value);
 			}
 			const img = new Image();
 			img.src = url;
@@ -85,7 +87,79 @@ async function underKnobs(page, view) {
 		out.noFog = await sample();
 		U.uFogDistance.value = saved.uFogDistance;
 		out.after = await sample();
+		let sc;
+		s.globalScene.subscribe((v) => (sc = v))();
+		const f = sc.fog;
+		out.ssActive = ss;
+		out.sceneFog = f ? { near: f.near, far: f.far, density: f.density, color: f.color?.getHexString?.() } : null;
+		if (view) {
+			// the twins with three's fog off (the standard view skips fog on its water under the surface)
+			const tw = [];
+			sc.traverse((o) => o.name === 'cinematic-water' && tw.push(o.material));
+			out.twinFog = tw.map((m) => m.fog);
+			for (const m of tw) { m.fog = false; m.needsUpdate = true; }
+			out.noTwinFog = await sample();
+			for (const m of tw) { m.fog = true; m.needsUpdate = true; }
+			// each term drawn as the colour (through the output transform: read them as an ordering, not values)
+			const T = (await s.cinematicState.cinematicView()).cinematicLiveForTest().T;
+			out.sides = tw.map((m) => m.side);
+			out.terms = {};
+			for (const k of ['F', 'NdV', 'front', 'tir', 'refl', 'refr', 'trans', 'N', 'V']) {
+				const saved = tw.map((m) => m.colorNode);
+				for (const m of tw) {
+					const n = m.userData.terms?.[k];
+					if (!n) continue;
+					m.colorNode = ['F', 'NdV', 'front', 'tir'].includes(k) ? T.vec3(n, n, n) : n;
+					m.needsUpdate = true;
+				}
+				out.terms[k] = await sample();
+				tw.forEach((m, i) => { m.colorNode = saved[i]; m.needsUpdate = true; });
+			}
+		}
 		return out;
+	}, view);
+}
+
+// WATER_KNOBS: the LINEAR scene colour the water refracts at those points (view: the scene pass; standard: the
+// pre-pass, rendered the same way: no water, no hooks, into a float target)
+async function sceneBehind(page, view) {
+	return page.evaluate(async (view) => {
+		const s = window.__tp.test.v1;
+		const THREE = s.THREE;
+		const pts = [[1300, 120], [200, 150], [870, 230], [720, 60], [1100, 450]];
+		const rd = (a) => Array.from(a.slice(0, 3)).map((v) => +(a instanceof Uint16Array ? THREE.DataUtils.fromHalfFloat(v) : v).toFixed(3));
+		if (view) {
+			const lv = (await s.cinematicState.cinematicView()).cinematicLiveForTest();
+			const rt = lv.built.nodes.scenePass.renderTarget;
+			const out = [];
+			for (const [a, b] of pts) out.push(rd(await lv.r.readRenderTargetPixelsAsync(rt, Math.floor((a * rt.width) / 1440), Math.floor((b * rt.height) / 900), 1, 1, 0)));
+			return { size: [rt.width, rt.height], px: out };
+		}
+		let r, sc, cam;
+		s.globalRenderer.subscribe((v) => (r = v))();
+		s.globalScene.subscribe((v) => (sc = v))();
+		s.globalCamera.subscribe((v) => (cam = v))();
+		const sz = r.getDrawingBufferSize(new THREE.Vector2());
+		const rt = new THREE.WebGLRenderTarget(sz.x, sz.y, { type: THREE.FloatType });
+		const hid = [];
+		sc.traverse((o) => (o.userData?.water || o.userData?.__waterVisual) && o.visible && hid.push(o));
+		for (const o of hid) o.visible = false;
+		const hooks = [sc.onBeforeRender, sc.onAfterRender];
+		sc.onBeforeRender = sc.onAfterRender = () => {};
+		const prev = r.getRenderTarget();
+		r.setRenderTarget(rt);
+		r.render(sc, cam);
+		const out = [];
+		for (const [a, b] of pts) {
+			const buf = new Float32Array(4);
+			r.readRenderTargetPixels(rt, Math.floor((a * sz.x) / 1440), sz.y - 1 - Math.floor((b * sz.y) / 900), 1, 1, buf);
+			out.push(rd(buf));
+		}
+		r.setRenderTarget(prev);
+		[sc.onBeforeRender, sc.onAfterRender] = hooks;
+		for (const o of hid) o.visible = true;
+		rt.dispose();
+		return { size: [sz.x, sz.y], fog: !!sc.fog, bg: sc.background?.isColor ? sc.background.getHexString() : typeof sc.background, px: out };
 	}, view);
 }
 
@@ -498,7 +572,7 @@ async function oneScene(browser, slug, first) {
 			for (let i = 0; i < 10; i++) await page.evaluate(() => new Promise((r) => requestAnimationFrame(r)));
 			const du = await debug(page);
 			sheet.viewUnder = await grab(page, 'view:under', true);
-			if (process.env.WATER_KNOBS) console.log('KNOBS view ' + JSON.stringify(await underKnobs(page, true)));
+			if (process.env.WATER_KNOBS) console.log('KNOBS view ' + JSON.stringify(await underKnobs(page, true)) + '\nBEHIND view ' + JSON.stringify(await sceneBehind(page, true)));
 			fs.writeFileSync(path.join(out, '05-cinematic-under-full.png'), png(await page.evaluate(async () => (await window.__tp.test.v1.cinematicState.cinematicView()).grabCinematic())));
 			h.check(!!placed && du.water?.underwater === true && du.errors.length === 0, `${slug}: 4. camera under the surface at ${JSON.stringify(placed)}: the view knows (${JSON.stringify(du.water)})`);
 			row.underwater = { at: placed, view: du.water };
@@ -583,7 +657,7 @@ async function oneScene(browser, slug, first) {
 				return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(s.waterRuntime.waterDebug().underwater))));
 			});
 			sheet.glUnder = await grab(page, 'gl:under', false);
-			if (process.env.WATER_KNOBS) console.log('KNOBS gl ' + JSON.stringify(await underKnobs(page, false)));
+			if (process.env.WATER_KNOBS) console.log('KNOBS gl ' + JSON.stringify(await underKnobs(page, false)) + '\nBEHIND gl ' + JSON.stringify(await sceneBehind(page, false)));
 			fs.writeFileSync(
 				path.join(out, '05-standard-under-full.png'),
 				png(await page.evaluate(() => {

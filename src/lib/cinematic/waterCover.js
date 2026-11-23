@@ -216,7 +216,11 @@ export function createWaterCover(o) {
 		// ---- fragment ----
 		const P = positionWorld;
 		const V = normalize(cameraPosition.sub(P));
-		const front = frontFacing;
+		// the standard view's gl_FrontFacing: three's WebGL draws a BackSide material by flipping the winding
+		// (WebGLState.setFlipSided), so every face the tank body draws reads as FRONT there, from inside too (its walls
+		// never take the from-below TIR branch). TSL's frontFacing is constant false on BackSide: the body takes true,
+		// the DoubleSide surface the real facing
+		const front = body ? T.bool(true) : frontFacing;
 		const t = U.uTime;
 		const flowOff = U.uFlow.mul(t).mul(0.25);
 		const sp = U.uDetailSpeed.mul(float(1).sub(U.uFrozen));
@@ -378,6 +382,8 @@ export function createWaterCover(o) {
 		col = select(camInside, mix(col, U.uFogColor, clamp(thickness.sub(0.05).div(max(U.uFogDistance.sub(0.05), 0.01)), 0, 1)), col);
 
 		m.colorNode = col;
+		// e2e (WATER_KNOBS): the program's intermediate terms, to draw one as the colour when the views disagree
+		m.userData.terms = { F, NdV, front: select(front, float(1), float(0)), tir: select(tir, float(1), float(0)), refl, refr, trans, N: N.mul(0.5).add(0.5), V: V.mul(0.5).add(0.5), col };
 		// the scene pass's geometry in front of the water hides it (the pass draws against a depth buffer of its own)
 		const occluded = viewZAt(uv, dRaw).lessThan(fragZ.sub(fragZ.mul(0.002).add(0.005)));
 		m.opacityNode = select(occluded, float(0), float(1));

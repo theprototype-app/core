@@ -150,13 +150,17 @@ h.run(async () => {
 	const [SA, SB] = s0?.ids ?? ['', ''];
 	const U = s0?.uuid;
 	const hue0 = await huesOf(A);
-	h.check(hue0.red > 200 && hue0.green > 200 && hue0.blue < 50, '0 pixels: red faces + green faces, no blue: ' + JSON.stringify(hue0));
+	h.check(hue0.red > 200 && hue0.green > 200, '0 pixels: red faces + green faces (blue = the backdrop): ' + JSON.stringify(hue0));
 
 	// ---- 1. a shader on ONE slot: slot B draws it, slot A keeps its own material ----------------------------------
 	await call(A, `w.shaderGraph.setShaderGraphFor(uuid + '/${SB}', ${JSON.stringify(GRAPH('#0000ff', 'cB'))});`);
 	await h.eventually(() => snap(A), (x) => same(x?.kinds, ['material', 'shader']) && x?.by[1] === 'cB', '1a the slot key draws on slot B only', 15000);
 	const hue1 = await huesOf(A);
-	h.check(hue1.blue > 200 && hue1.red > 200 && hue1.green < hue0.green / 4, '1b pixels: the B faces turn blue, the A faces stay red: ' + JSON.stringify(hue1));
+	// a blue glow over the green slot reads cyan, so the measure is: the B faces stop being green, A's stay red
+	h.check(
+		hue1.green < hue0.green / 3 && hue1.red > hue0.red * 0.8 && hue1.blue > hue0.blue,
+		'1b pixels: the B faces change (green ' + hue0.green + ' -> ' + hue1.green + '), the A faces stay red (' + hue0.red + ' -> ' + hue1.red + '): ' + JSON.stringify(hue1)
+	);
 	const driven1 = await call(A, `return [w.shaderGraph.isShaderDriven(uuid, '${SB}'), w.shaderGraph.isShaderDriven(uuid, '${SA}')];`);
 	h.check(same(driven1, [true, false]), '1c isShaderDriven per slot: ' + JSON.stringify(driven1));
 	const saved1 = await call(A, `const p = w.sessions.buildSessionPayload('slot-shaders', { thumbnail: false }); return { keys: Object.keys(p.shaderGraphs ?? {}), json: JSON.stringify(p.objects).includes('shaderUniforms') };`);
@@ -312,7 +316,7 @@ h.run(async () => {
 		const P = await h.setupPageQuiet(browser, 'P', [A], { url: BASE, context: { viewport: { width: 900, height: 640 } } });
 		await h.answerRestore(P);
 		await h.connect(P, A);
-		await h.eventually(() => call(P, `if (!o) return null; const all = await new Promise((r) => w.shaderGraph.shaderGraphs.subscribe(r)()); return { keys: Object.keys(all).filter((k) => k.startsWith(uuid + '/')).length, drawsOwn: !(Array.isArray(o.material) ? o.material : [o.material]).some((m) => m?.userData?.shaderUniforms && m.userData.shaderUniforms.u_cB2_value) };`), (x) => x?.keys === 1 && x?.drawsOwn === true, '11a the older peer keeps the slot document and draws the slot\'s own material', 40000);
+		await h.eventually(() => call(P, `if (!o) return null; const all = await new Promise((r) => w.shaderGraph.shaderGraphs.subscribe(r)()); return { keys: Object.keys(all).filter((k) => k.startsWith(uuid + '/')).length, drawsOwn: !(Array.isArray(o.material) ? o.material : [o.material]).some((m) => m?.userData?.shaderUniforms && m.userData.shaderUniforms.u_cB2_value) };`), (x) => x?.keys === 2 && x?.drawsOwn === true, '11a the older peer keeps both slot documents and draws the slots\' own materials', 40000);
 		const theirs = await call(P, `const p = w.sessions.buildSessionPayload('older', { thumbnail: false }); return Object.keys(p.shaderGraphs ?? {}).filter((k) => k.includes('/')).length;`);
 		h.check(theirs === 0, '11b ... and its own save drops it (its prune reads the key as an object id): ' + theirs);
 		const opened = await P.page.evaluate(async (payload) => {

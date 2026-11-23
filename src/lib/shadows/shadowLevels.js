@@ -116,11 +116,13 @@ function eachAuthoredLight(fn) {
 	});
 }
 
-/** Soft's kernel on authored lights added after the apply (cheap: one traverse a second, only while Soft / Far). */
+/** Soft's kernel on authored lights, in Soft AND Far (Q1: Far's cascades are the rig sun's alone; an authored
+ * directional light keeps its own fitted map and draws Soft's kernel), including lights added after the apply
+ * (cheap: one traverse a second, only while Soft / Far). */
 function sweepAuthored() {
-	const p = levelParams(/** @type {any} */ (state.drawn));
+	const radius = levelParams('soft').radius;
 	eachAuthoredLight((l) => {
-		if (l.shadow.radius !== p.radius) setRadius(l.shadow, p.radius);
+		if (l.shadow.radius !== radius) setRadius(l.shadow, radius);
 	});
 }
 

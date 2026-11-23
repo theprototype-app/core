@@ -124,6 +124,17 @@ h.run(async () => {
 		for (let i = 1; i <= 4; i++) fe.applyFaceGrab({ dPos: new V3(0, 0.03 * i, 0) });
 		out.committed = fe.commitFaceGrab();
 		out.commitMoved = bytes() !== bytesBefore;
+		// 5b. the commit's quad wire (built from the session's own frame + pairing) equals one built from scratch: a
+		// clone with no stored partition derives everything again
+		{
+			const w = obj.children.find((c) => c.isLineSegments);
+			const fresh = obj.geometry.clone();
+			delete fresh.userData.__topo;
+			const ref = fe.editWireGeometry(fresh).attributes.position.array;
+			const got = w?.geometry?.attributes?.position?.array;
+			out.wireN = got ? got.length : -1;
+			out.wireSame = !!got && got.length === ref.length && got.every((x, i) => x === ref[i]);
+		}
 		fe.faceEditSelectedTris.set([]);
 		s.history.undo();
 		await raf();
@@ -192,6 +203,7 @@ h.run(async () => {
 	h.check(r.cancelRestoresObject === true, '4. a cancelled grab puts the original geometry object back');
 	h.check(r.cancelRestoresBytes === true, '4. ...with its bytes unchanged');
 	h.check(r.committed === true && r.commitMoved === true, '5. a committed grab moved the face');
+	h.check(r.wireSame === true && r.wireN > 0, '5b. ...the commit\'s quad wire equals one derived from scratch (' + r.wireN + ' floats)');
 	h.check(r.undoBytes === true, '5. ...its undo brings back the exact pre-grab bytes');
 	h.check(r.undoPick === true, '5. ...and the pick the grab started from');
 	h.check(r.scrubBegan === true, '6. a loop cut adjust begins (premise)');

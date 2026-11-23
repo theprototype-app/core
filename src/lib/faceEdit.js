@@ -1115,13 +1115,30 @@ export function edgeKeyOf(a, b) {
 	return edgeKey(keyOf(a.x, a.y, a.z), keyOf(b.x, b.y, b.z));
 }
 
+/**
+ * 99 K5: the face session's own frame and DERIVED quad pairing, when they still describe `geometry` exactly (the
+ * frame `rebuildFaces` built is still the session's, over the same position attribute, unwritten since). The wire
+ * then reuses them instead of welding and pairing the mesh a second time (at 67k that was ~180 ms of a grab's
+ * commit); pairing reads positions only, so the result is the same by construction. Anything else rebuilds.
+ * @type {{ frame: any, partner: Int32Array, geometry: any, pos: any, version: number } | null}
+ */
+let wireReuse = null;
+/** @param {any} geometry */
+function wireReuseFor(geometry) {
+	const r = wireReuse;
+	if (!r || r.geometry !== geometry || r.frame !== FS.frame || FS.object?.geometry !== geometry) return null;
+	const pos = geometry.attributes.position;
+	return pos === r.pos && pos.version === r.version ? r : null;
+}
+
 /** Quad-structure line geometry: every welded edge of the mesh EXCEPT the ones
  * internal to a face. Unpaired triangles keep all three edges, so a genuine
  * tri-only mesh looks exactly as it did. @param {any} geometry */
 function quadWireGeometry(geometry) {
-	const f = frameOfGeometry(geometry);
+	const reuse = wireReuseFor(geometry);
+	const f = reuse ? reuse.frame : frameOfGeometry(geometry);
 	const faces = readStoredFaces(geometry);
-	const skip = internalEdgeKeysOf(f, faces, faces ? new Int32Array(0) : pairQuadsOf(f, QUAD_COPLANAR, quadScore));
+	const skip = internalEdgeKeysOf(f, faces, faces ? new Int32Array(0) : reuse ? reuse.partner : pairQuadsOf(f, QUAD_COPLANAR, quadScore));
 	const seen = new Set();
 	/** @type {number[]} the corner each wire point is read from (99 K5: a live edit rewrites the wire from them) */
 	const from = [];
@@ -5075,8 +5092,11 @@ function rebuildFaces() {
 	// quad's two triangles ~9 degrees apart, which no threshold separates from a real
 	// crease, so every derived quad in a rotated band silently vanished and the loop
 	// tools declined. When a partition was authored we trust it instead.
-	FS.quadPartner = storedPartner(FS.object.geometry, FS.frame.count) ?? pairQuadsOf(FS.frame, QUAD_COPLANAR, quadScore);
+	const stored = storedPartner(FS.object.geometry, FS.frame.count);
+	FS.quadPartner = stored ?? pairQuadsOf(FS.frame, QUAD_COPLANAR, quadScore);
 	quadTopology = null; // M2: the loop-walk adjacency is rebuilt on demand
+	const pos = FS.object.geometry.attributes.position;
+	wireReuse = stored ? null : { frame: FS.frame, partner: FS.quadPartner, geometry: FS.object.geometry, pos, version: pos.version };
 }
 
 /**
@@ -5330,6 +5350,7 @@ export function exitFaceEdit() {
 	}
 	FS.object = null;
 	FS.frame = EMPTY_FRAME;
+	wireReuse = null;
 	FS.faces = [];
 	resetLoopAxis();
 	faceEditHighlight.set(-1);

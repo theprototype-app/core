@@ -26,6 +26,7 @@
 		if (status.state === 'loading') return 'Loading the splats...';
 		if (status.state === 'waiting') return 'Waiting for the file from a peer...';
 		if (status.state === 'error') return 'Could not draw it here: ' + (status.error || 'unknown error');
+		if (status.state === 'off') return 'Not drawn on Meta Quest for now: splats slow the headset down too much. A desktop or phone shows it.';
 		if (!status.shown) return 'Not drawn right now (hidden, in Cinematic view, or over this device’s splat budget).';
 		return '';
 	});

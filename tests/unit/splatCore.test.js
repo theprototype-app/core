@@ -11,6 +11,8 @@ import {
 	decimateOrder,
 	splatBudget,
 	withinBudget,
+	budgetNotice,
+	QUEST_SPLAT_BUDGET,
 	splatCountText,
 	SPLAT_CAP_BYTES,
 	SPLAT_EXT
@@ -95,9 +97,21 @@ describe('reduce to fit', () => {
 
 describe('device budget', () => {
 	it('quest and phone have budgets, the PC none', () => {
-		expect(splatBudget('quest')).toBe(1_000_000);
+		expect(splatBudget('quest')).toBe(QUEST_SPLAT_BUDGET);
+		expect(QUEST_SPLAT_BUDGET).toBe(0); // 1.75.1: off on Meta Quest (72 -> 6 fps with a 150k scan)
 		expect(splatBudget('phone')).toBe(2_000_000);
 		expect(splatBudget('pc')).toBe(Infinity);
+	});
+	it('the notice says why and where a hidden splat draws', () => {
+		expect(budgetNotice('quest', 0, ['Room'])).toBe('Gaussian splats are off on Meta Quest for now: they slow the headset down too much. Not drawn here: Room. A desktop or phone shows it as usual.');
+		expect(budgetNotice('quest', 0, ['A', 'B'])).toMatch(/Not drawn here: A, B\. A desktop or phone shows them as usual\.$/);
+		expect(budgetNotice('quest', 50_000, ['Room'])).toBe('Hidden on this headset: Room. A Quest draws up to 50 k splats at once before it slows down; a desktop or phone shows the whole scan.');
+		expect(budgetNotice('phone', 2_000_000, ['Room'])).toBe('Hidden on this device: Room. It can draw 2 M splats at once.');
+	});
+	it('a budget of 0 shows nothing', () => {
+		const r = withinBudget([{ uuid: 'a', count: 1 }], 0);
+		expect([...r.shown]).toEqual([]);
+		expect(r.hidden).toEqual(['a']);
 	});
 	it('whole objects stand down in scene order', () => {
 		const r = withinBudget(

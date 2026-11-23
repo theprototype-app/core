@@ -11,7 +11,8 @@ import { SIDES, sidebarsWide, sidebarVisible, toggleSidebar } from './sidebars';
 //   desktop (a mouse)  on by default, and drawn ONLY while its column is CLOSED (Blender's collapsed-region arrow):
 //                      an open column closes by its border (drag it narrower), its shortcut or the command palette
 //   unfolded phone     off by default (the side-panels button is the way there)
-//   tablet             on by default, drawn open or closed (the handles replace the button)
+//   tablet             on by default (the handles replace the button), drawn only while CLOSED too since 80a-fix4-ui
+//                      O2: an open column hides from the hide button in its tab strip
 //
 // Settings ▸ Interface ▸ "Show viewport sidebar handles" (Auto / On / Off, LOCAL to this device). A handle never
 // covers the logo or the profile button: it sits BELOW them (SidebarHandles measures the chrome), plus the offset
@@ -117,8 +118,9 @@ export function noteProfileMenuBottom(px) {
 /** are the handles on here: the person's choice, else the device's default (off on the unfolded phone) */
 export const sidebarHandlesOn = derived([sidebarHandlesMode, deviceClass], ([$mode, $class]) => ($mode === 'auto' ? $class !== 'phone' : $mode === 'on'));
 
-/** only while the column is closed (a mouse: the column's border closes it) or always (touch: the handle closes it too) */
-export const handlesClosedOnly = derived(coarsePointer, ($coarse) => !$coarse);
+/** only while the column is closed. 80a-fix4-ui O2 (owner 2026-11-20): on touch too (it used to stay on an open
+ *  column's inner edge there) — an open column hides from its strip's hide button, the panels button or its keys */
+export const handlesClosedOnly = derived(coarsePointer, () => true);
 
 /** is each side's handle drawn */
 export const sidebarHandleShown = derived(

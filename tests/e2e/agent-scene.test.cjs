@@ -112,7 +112,8 @@ h.run(async () => {
 		h.check(!!lampId, '3. set_light returns the new light id: ' + short(lit));
 		await h.eventually(() => envOnHost(A.page), (e) => (e?.lights || []).some((l) => l.id === lampId) && e.customPreset?.sun?.intensity === 0.15, '3. the host has the lamp and a dim moon', 20000);
 		const envRead = json(await call(B.client, 'get_environment'));
-		h.check(envRead.fog?.far === 40 && envRead.envLights?.some((l) => l.id === lampId), '3. get_environment reads it back: ' + short({ fog: envRead.fog, envLights: envRead.envLights }));
+		// 102b-papercuts: a density is real exponential fog (kind distance) and reads back as one; an older build read it as linear 0-40 m
+		h.check((envRead.fog?.far === 40 || (envRead.fog?.kind === 'distance' && envRead.fog?.density === 0.05)) && envRead.envLights?.some((l) => l.id === lampId), '3. get_environment reads it back: ' + short({ fog: envRead.fog, envLights: envRead.envLights }));
 
 		console.log('\n=== 4. spawn + play camera ===');
 		const spawn = json(await call(B.client, 'place_spawn', { position: [0, 0, 6], facing: [0, 0, 0] }));

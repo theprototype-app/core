@@ -61,13 +61,29 @@ export default {
 		// Counter fan-in and triggerStampFor all work on it unchanged.
 		{
 			type: 'hudbutton', label: 'HUD Button', defaults: { element: '' },
+			// 102b-hud (row 14): leave the element empty and name a SCREEN, and ONE node answers every
+			// button on it (a level grid); `value` is the pressed button's own value field
+			params: [{ key: 'screen', kind: 'text', placeholder: 'any button on this screen', maxLength: 64 }],
 			// A3 HUD: only the button and the timer produce anything. hudtext/hudbar/
 			// hudscreen/hudlist are SINKS — they write into an element, so their output stays
 			// the effect channel.
-			sockets: { out: 'event' },
+			sockets: { out: 'event', outHandles: { value: 'any' } },
 			card: 'HudNode',
-			// 36 / DEVX #22: the press is the onclick pulse window — a wire
-			eval: shared.evalPulseWindow
+			// 36 / DEVX #22: the press is the onclick pulse window — a wire; 102b-hud: + its value
+			eval(node, x, rt) {
+				return { __default: shared.evalPulseWindow(node, x, rt), __handles: { value: rt.hudButtonValue(node) } };
+			}
+		},
+		// 102b-hud (row 14, DEVX #26): show, hide or toggle ONE element on a trigger, or follow a
+		// wired `visible` (above 0 = shown). Per peer, like a screen: each player's own HUD.
+		{
+			type: 'hudvisible',
+			label: 'Show / Hide Element',
+			defaults: { element: '', action: 'hide' },
+			params: [{ key: 'action', kind: 'select', options: ['show', 'hide', 'toggle'] }],
+			note: 'Per player: each peer shows or hides it on its own HUD.',
+			sockets: { out: 'effect', in: { trigger: 'event', visible: 'number' } },
+			card: 'HudNode'
 		},
 		// counts DOWN from `duration` off the shared trigger stamp, so every peer
 		// reads the same remaining time with no clock of its own

@@ -114,6 +114,8 @@ h.run(async () => {
 	// ---- 2. a program material in a materials message --------------------------------------
 	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await settle(800);
+	// 80a: the new box is selected, so we hold it and would refuse the peer's message about it: let go
+	await page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	const two = await page.evaluate(() => {
 		const { T, program, deliver, group } = window.__lc;
 		const g = group();
@@ -223,6 +225,8 @@ h.run(async () => {
 	// its own box: section 3 opened a scene file, which replaced everything made before it
 	await page.evaluate(() => window.__tp.test.v1.commandsHandler.sceneCommand('/create box'));
 	await settle(800);
+	// 80a: the new box is selected, so we hold it and would refuse the peer's message about it: let go
+	await page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 	const embedded = await page.evaluate(
 		async ({ png }) => {
 			const { T, deliver, probe, group } = window.__lc;

@@ -3,7 +3,7 @@
 	"format": 2,
 	"generator": {
 		"source": "tpAgent.tools() via core scripts/agent-tool-catalog.cjs, mapped by tools/agent/src/catalog.js",
-		"hostTools": 84,
+		"hostTools": 85,
 		"dropped": []
 	},
 	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
@@ -21,7 +21,7 @@
 		{
 			"name": "list_scene",
 			"title": "Read the scene",
-			"description": "List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. Every mesh also has mesh {vertexCount, faceCount (triangles), bounds {local, world}} — each box [[minX, minY, minZ], [maxX, maxY, maxZ]], local in the mesh's own space (its vertices), world in the scene. The transform is the AUTHORED pose: an object an effect is moving also has animated: true, and live {position, rotation, scale, visible} when this frame differs; update_objects writes the authored pose, so never copy live back into it. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: \"scene\" | object uuid, page} to read one page of one graph.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall list_scene before editing so you use real uuids; batch many objects into one call.",
+			"description": "List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. A body of water has water {preset, shallowColor, deepColor, level (how full 0-1), surface (world height of the still water), waves {height}} in place of color. Every mesh also has mesh {vertexCount, faceCount (triangles), bounds {local, world}} — each box [[minX, minY, minZ], [maxX, maxY, maxZ]], local in the mesh's own space (its vertices), world in the scene. The transform is the AUTHORED pose: an object an effect is moving also has animated: true, and live {position, rotation, scale, visible} when this frame differs; update_objects writes the authored pose, so never copy live back into it. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: \"scene\" | object uuid, page} to read one page of one graph.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall list_scene before editing so you use real uuids; batch many objects into one call.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -124,7 +124,7 @@
 		{
 			"name": "create_objects",
 			"title": "Add objects",
-			"description": "Create one or more primitives, lights or empty groups in a single call. Ground is the y=0 plane; place objects so they rest ON it (a box of height h sits at y=h/2). Returns the new uuids. To copy an existing object instead (a row of fence posts, a ring of chairs), pass from: its uuid, count, offset [x,y,z] between one copy and the next, and optionally randomRot / randomScale with a seed: deep copies (children, materials, flows), one undo step, uuids in order, in the source's own group. lookAt turns an object so its local +Z axis (its front) faces a point or another object, +Y kept up.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.\nTake a screenshot after each change to check your work.",
+			"description": "Create one or more primitives, lights, empty groups or decals in a single call. A decal (kind decal) is an image projected onto the surface of the object `on`: give point + normal (world) or just normal (aimed at that object's middle from that side; default from above). Ground is the y=0 plane; place objects so they rest ON it (a box of height h sits at y=h/2). Returns the new uuids. To copy an existing object instead (a row of fence posts, a ring of chairs), pass from: its uuid, count, offset [x,y,z] between one copy and the next, and optionally randomRot / randomScale with a seed: deep copies (children, materials, flows), one undo step, uuids in order, in the source's own group. lookAt turns an object so its local +Z axis (its front) faces a point or another object, +Y kept up.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -167,8 +167,46 @@
 									"enum": [
 										"primitive",
 										"light",
-										"group"
+										"group",
+										"decal"
 									]
+								},
+								"on": {
+									"type": "string",
+									"description": "kind=decal: uuid of the object to put it on (not a skinned character or scattered copies)"
+								},
+								"point": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"description": "kind=decal: world [x,y,z] on that object's surface"
+								},
+								"normal": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"description": "kind=decal: the surface direction [x,y,z] there (with no point: the side it is aimed from)"
+								},
+								"image": {
+									"type": "string",
+									"description": "kind=decal: a library image hash or file name (omit = a placeholder frame until one is set)"
+								},
+								"size": {
+									"description": "kind=decal: metres, a number (square) or [width, height]"
+								},
+								"depth": {
+									"type": "number",
+									"description": "kind=decal: how far into and out of the surface it reaches (default 0.25 m)"
+								},
+								"opacity": {
+									"type": "number",
+									"description": "kind=decal: 0-1"
+								},
+								"tint": {
+									"type": "string",
+									"description": "kind=decal: #rrggbb multiplying the image"
 								},
 								"primitive": {
 									"type": "string",
@@ -213,7 +251,7 @@
 									"items": {
 										"type": "number"
 									},
-									"description": "up to 4 constructor args. Box=[w,h,d], Sphere=[radius], Cylinder=[rTop,rBottom,height], Cone=[radius,height], Plane=[w,h], Torus=[radius,tube]. Omit for sensible defaults. Sizes go down to 0.001 m."
+									"description": "up to 4 constructor args. Box=[w,h,d], Sphere=[radius], Cylinder=[rTop,rBottom,height], Cone=[radius,height], Plane=[w,h], Torus=[radius,tube]. Omit for sensible defaults. For a rounded box, create a Box and then set_geometry {radius}. Sizes go down to 0.001 m."
 								},
 								"name": {
 									"type": "string"
@@ -335,7 +373,7 @@
 									"enum": [
 										"floor"
 									],
-									"description": "stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground"
+									"description": "stand it on whatever is straight under it: a terrain at any height, a floor or table at most 2 m above its base, else the ground; water and trigger volumes are passed through. The answer says placed {on, uuid, y, surface: terrain|mesh|ground}"
 								},
 								"face_user": {
 									"description": "turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users"
@@ -532,7 +570,7 @@
 									"enum": [
 										"floor"
 									],
-									"description": "stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground"
+									"description": "stand it on whatever is straight under it: a terrain at any height, a floor or table at most 2 m above its base, else the ground; water and trigger volumes are passed through. The answer says placed {on, uuid, y, surface: terrain|mesh|ground}"
 								},
 								"face_user": {
 									"description": "turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users"
@@ -551,6 +589,20 @@
 								},
 								"visible": {
 									"type": "boolean"
+								},
+								"array": {
+									"description": "102b: repeat this object as a live ARRAY (drawn copies that follow every change to it; one undo, one message): {mode: line|grid|circle|path, count (2-500, the object included), step [x,y,z] (line), grid [nx,ny,nz] + gridStep [x,y,z] (grid), radius + arc degrees + faceOut (circle, centre radius m on -X), path (a Path uuid) + spacing (0 = even) + follow (path), rotStep [x,y,z] degrees per copy, scaleStep per copy}. Fields merge over the current array. null removes it. Copies have no physics or logic until makeReal"
+								},
+								"layer": {
+									"type": [
+										"string",
+										"null"
+									],
+									"description": "102b: put it on the layer with this NAME (made when new; Configure Scene > Layers hides and locks layers), or null for no layer"
+								},
+								"makeReal": {
+									"type": "boolean",
+									"description": "102b: true = turn the object's array copies into ordinary objects (one undo); the result lists their uuids"
 								},
 								"parentUuid": {
 									"type": "string",
@@ -746,7 +798,7 @@
 		{
 			"name": "set_geometry",
 			"title": "Reshape objects",
-			"description": "Reshape existing objects in place (they keep uuid, transform, material and flows): change a primitive's params (the keys list_scene shows under geometry, e.g. {width, height, depth} for a Box, {radiusTop, radiusBottom, height, radialSegments} for a Cylinder, {segments, phiLength} for a Lathe, {depth, bevel} for an extrusion), or its TYPE (box → Cylinder) with params on top of the new type's defaults. A tube (create_tube) takes path, radius / radii, closed. A 3D text (create_text) takes its text fields as params (text, font, size, depth, bevel, align, maxWidth, anchor, color …). An object whose vertices were hand-edited refuses unless force: true (the rebuild replaces those edits). Up to 100 objects per call, one undo step.\nTake a screenshot after each change to check your work.",
+			"description": "Reshape existing objects in place (they keep uuid, transform, material and flows): change a primitive's params (the keys list_scene shows under geometry, e.g. {width, height, depth} for a Box (plus {radius, radiusSegments} to round its edges and corners: a rounded box, saved as two numbers), {radiusTop, radiusBottom, height, radialSegments} for a Cylinder, {segments, phiLength} for a Lathe, {depth, bevel} for an extrusion), or its TYPE (box → Cylinder) with params on top of the new type's defaults. A tube (create_tube) takes path, radius / radii, closed. A 3D text (create_text) takes its text fields as params (text, font, size, depth, bevel, align, maxWidth, anchor, color …). An object whose vertices were hand-edited refuses unless force: true (the rebuild replaces those edits). Up to 100 objects per call, one undo step.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -2036,6 +2088,41 @@
 			}
 		},
 		{
+			"name": "simplify_mesh",
+			"title": "Simplify a mesh",
+			"description": "Lower a mesh or imported model's triangle count; UVs, normals, colours, skin weights and materials are kept. percent = how much to KEEP (1-100), or triangles = a target. Parametric primitives need bake: true; scatter, VRM and morph targets are refused. One undo step.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"uuid": {
+						"type": "string",
+						"description": "the object to simplify"
+					},
+					"percent": {
+						"type": "number",
+						"description": "1-100 to keep"
+					},
+					"triangles": {
+						"type": "number",
+						"description": "target count"
+					},
+					"bake": {
+						"type": "boolean",
+						"description": "bake a primitive first"
+					}
+				},
+				"required": [
+					"uuid"
+				]
+			},
+			"annotations": {
+				"title": "Simplify a mesh",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
 			"name": "set_material",
 			"title": "Change materials and textures",
 			"description": "Make objects look finished: colour, roughness, metalness, emissive, opacity and texture maps, on many objects in one call. Maps take a library image hash or an https URL (https only, CORS-enabled, 16 MB, PNG/JPEG/WebP/GIF/AVIF; it becomes a library item first and is re-encoded like an upload; returned in assets). cc0 fetches a free CC0 material by id or name from Poly Haven (its texture names) or ambientCG (ids like \"Wood051\", \"Bricks076\", \"Metal032\", \"Ground037\"), or by words (\"brown planks\"); preset applies a named preset: one of Wood, Metal, Plastic, Glass, Stone, Rubber, Fish scales, Neon, Water, or one the person saved (list_materials lists them all). faces gives just those faces their own new material slot. One undo step.\nTake a screenshot after each change to check your work.",
@@ -2243,7 +2330,7 @@
 		{
 			"name": "create_shader",
 			"title": "Give objects a shader",
-			"description": "Give objects a node shader, written as text like flow graphs: one line per node (id = type {param: value}), one per edge (source[.output] -> target.input), ending at a \"surface\" node. Example: c = color {value: \"#ff8800\"}\\nout = surface\\nc -> out.emissive. Call describe_shader_nodes for the types. Each object gets its own copy. Compiler errors come back in the result and nothing is written. Returns the graph key and its uniforms: a float one (u_<nodeId>_<param>) can be driven by a flow \"setuniform\" node on that object. scene: true makes the default for every object, which asks the host first.\nTake a screenshot after each change to check your work.",
+			"description": "Give objects a node shader, written as text like flow graphs: one line per node (id = type {param: value}), one per edge (source[.output] -> target.input), ending at a \"surface\" node. Example: c = color {value: \"#ff8800\"}\\nout = surface\\nc -> out.emissive. Call describe_shader_nodes for the types. Each object gets its own copy. Compiler errors come back in the result and nothing is written. Returns the graph key and its uniforms (u_<nodeId>_<param>): a flow \"setuniform\" node on that object drives a float, colour or vector one. scene: true makes the default for every object, which asks the host first.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -2776,7 +2863,7 @@
 		{
 			"name": "create_hud",
 			"title": "Add a HUD",
-			"description": "Give the game a HUD (2D screen overlay): screens of elements — a timer, a score text, a health bar, buttons, an image. A screen named like an existing one gets the elements added. Returns every element id: bind live values with create_flow_nodes (a hudtext / hudbar / hudtimer node with data.element = the id, e.g. counter -> hudtext). A new screen becomes the one that shows unless active: false. One undo step.\nTake a screenshot after each change to check your work.",
+			"description": "Give the game a HUD (2D screen overlay): screens of elements — a timer, a score text, a health bar, buttons, an image. A screen named like an existing one gets the elements added. Returns every element id: bind live values with create_flow_nodes (a hudtext / hudbar / hudtimer node with data.element = the id, e.g. counter -> hudtext; for a game value — score, clock, best, level, stars, lives, a variable, a stored or published value — use gamevalue -> hudtext with data.read and data.format: number, time, fraction, percent, stars, text). A new screen becomes the one that shows unless active: false. One undo step.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -3155,7 +3242,7 @@
 		{
 			"name": "set_sky",
 			"title": "Change the sky and fog",
-			"description": "The sky and the air: a look preset (studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio, product, cinematic, stylised), a sky image by name (clearsky, meadow, sunrise, starlight, photostudio; a search_assets HDRI id \"cc0:polyhaven/<id>\" (fetched into the library once) or \"lib:<hash>\"; or {hash} of an HDR in the library — upload your own .hdr / .exr with assets upload; never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres, or {color, density}; null = none) and exposure. \"Make it night\": preset night or hdri starlight + a dark fog. Changes the whole scene's look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step.\nTake a screenshot after each change to check your work.",
+			"description": "The sky and the air: a look preset (studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio, product, cinematic, stylised), a sky image by name (clearsky, meadow, sunrise, starlight, photostudio; a search_assets HDRI id \"cc0:polyhaven/<id>\" (fetched into the library once) or \"lib:<hash>\"; or {hash} of an HDR in the library — upload your own .hdr / .exr with assets upload; never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres; {color, density} for distance fog; {color, density, base, thickness} for ground fog lying from base up over thickness metres; null = none) and exposure. \"Make it night\": preset night or hdri starlight + a dark fog. Changes the whole scene's look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -3236,6 +3323,15 @@
 							"null"
 						],
 						"properties": {
+							"kind": {
+								"type": "string",
+								"enum": [
+									"linear",
+									"distance",
+									"height"
+								],
+								"description": "linear = near to far; distance = thickens with distance (density); height = ground fog (density, base, thickness)"
+							},
 							"color": {
 								"type": "string"
 							},
@@ -3250,6 +3346,15 @@
 							"density": {
 								"type": "number",
 								"exclusiveMinimum": 0
+							},
+							"base": {
+								"type": "number",
+								"description": "ground fog: the height (m) where it is thickest"
+							},
+							"thickness": {
+								"type": "number",
+								"exclusiveMinimum": 0,
+								"description": "ground fog: how far up (m) it thins out"
 							}
 						}
 					},
@@ -4325,7 +4430,7 @@
 		{
 			"name": "terrain",
 			"title": "Make or shape terrain",
-			"description": "Make or change a terrain. Without uuid it makes one (size metres, at position); with uuid it changes that one. Shape by noise: height (the highest peak, metres — the answer says the peak it got), detail (0.005-0.6), octaves, ridged, warp, edges (flat|island|bowl: island sinks the rim to 0 so it rises out of water; bowl raises the rim), seed; amplitude is the raw noise scale if you want it. Sculpt with ops [{op: raise|lower|smooth|flatten, at: [x, z] from the terrain's centre, radius, strength 0-1, height (metres, raise/lower), passes}] and paint with {op: \"paint\", at, radius, layer 0-3, strength}. layers: up to 4 {color, texture (a library hash or a pattern name like grass, sand, stone), tiling} — layer 0 covers the ground until you paint the others; paintBy: \"height\" paints them for you, layer 0 in the low ground up to the last on the peaks. One undo step.\nTake a screenshot after each change to check your work.",
+			"description": "Make or change a terrain. Without uuid it makes one (size metres, at position); with uuid it changes that one. Shape by noise: height (the highest peak, metres — the answer says the peak it got), detail (0.005-0.6), octaves, ridged, warp, edges (flat|island|bowl: island sinks the rim below the water so it rises out of a sea — rim metres, default -2 on a new island; bowl raises the rim), seed; amplitude is the raw noise scale if you want it. Sculpt with ops [{op: raise|lower|smooth|flatten, at: [x, z] from the terrain's centre, radius, strength 0-1, height (metres, raise/lower), passes}] and paint with {op: \"paint\", at, radius, layer 0-3, strength}; a flatten answers pad {y (world height of the flat ground), radius, at} to build on. layers: up to 4 {color, texture (a library hash or a pattern name like grass, sand, stone), tiling} — layer 0 covers the ground until you paint the others; paintBy: \"height\" paints them for you, layer 0 in the low ground up to the last on the peaks. One undo step.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -4389,6 +4494,12 @@
 							"bowl"
 						]
 					},
+					"rim": {
+						"type": "number",
+						"maximum": 0,
+						"minimum": -20,
+						"description": "island only: how far the edge sinks (metres, default -2 on a new island)"
+					},
 					"seed": {
 						"type": "integer"
 					},
@@ -4436,7 +4547,7 @@
 		{
 			"name": "water",
 			"title": "Add or change water",
-			"description": "Water: without uuid it makes a body of water — kind tank, pool, round, lake or ocean, size [w, h, d] (round: [diameter, depth, diameter]), at position (its bottom centre). With uuid it changes one (or makes an object water with a preset). preset: pool, aquarium, ocean, lake, river, lava, swamp, toxic, ice. level 0-1 (how full), color (tints the whole body, shallow to deep), look {shallowColor, deepColor, clarity, foam, …}, waves {count, amplitude, wavelength, speed, direction}, flow. Things float in it in Play. remove: true makes it a plain object again. One undo step.\nTake a screenshot after each change to check your work.",
+			"description": "Water: without uuid it makes a body of water — kind tank, pool, round, lake or ocean, size [w, h, d] (round: [diameter, depth, diameter]), at position (its bottom centre). With uuid it changes one (or makes an object water with a preset). preset: pool, aquarium, ocean, lake, river, lava, swamp, toxic, ice. level 0-1 (how full; 1 = to the top), color (tints the whole body, shallow to deep), look {shallowColor, deepColor, clarity, foam, …}, waves {count, amplitude, wavelength, speed, direction}, flow. Things float in it in Play. remove: true makes it a plain object again. The answer gives surface (world height of the still water) and waves {height} (how far they rise and fall), and warns when a terrain lies inside that band. One undo step.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -4897,7 +5008,7 @@
 		{
 			"name": "validate_scene",
 			"title": "Check the game for problems",
-			"description": "Check the scene for what would not work when someone presses Play: actions nothing fires, an Object Selector wired the wrong way round, a scene-graph On Click that reaches no object, Game Start wired as an event, HUD nodes pointing at elements that do not exist, walk mode with no spawn, a scene with no light, behaviour code problems. Each issue says what to fix. Run it after building a game, then playtest.",
+			"description": "Check the scene for what would not work when someone presses Play: actions nothing fires, effects that act on no object, an Object Selector wired the wrong way round, a scene-graph On Click that reaches no object, Game Start wired as an event, HUD nodes pointing at elements that do not exist, walk mode with no spawn, a scene with no light, behaviour code problems. Each issue says what to fix. Run it after building a game, then playtest.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {}
@@ -5371,6 +5482,18 @@
 										]
 									},
 									"description": "groups this object collides with (omit = all); leave out player for a ghost wall the player walks through"
+								},
+								"gravityScale": {
+									"type": "number",
+									"description": "dynamic bodies: how strongly gravity pulls this one, -5..5 (1 normal, 0 floats in place, below 0 rises — a balloon, a jump pad feel)"
+								},
+								"linearDamping": {
+									"type": "number",
+									"description": "dynamic bodies: air drag on movement 0..5 (a feather, a parachute); omit = the scene's value"
+								},
+								"angularDamping": {
+									"type": "number",
+									"description": "dynamic bodies: drag on spinning 0..5; omit = the scene's value"
 								}
 							},
 							"required": [
@@ -5393,7 +5516,7 @@
 		{
 			"name": "create_joints",
 			"title": "Add physics joints",
-			"description": "Attach object pairs with physics joints: \"fixed\" welds them rigidly, \"revolute\" hinges around an axis (optional motor spins it). Move parts to their final pose WORLD-ALIGNED (no rotation) before jointing. Without anchor a hinge sits at b's origin (its centre) and a weld midway: pass anchor [x,y,z] (world) for the real pivot, e.g. the top of a pendulum rod or a door's edge. Jointed bodies that touch (a door in its frame, a wheel in its arch) also need contacts:false, or the solver pushes them apart.\nTake a screenshot after each change to check your work.",
+			"description": "Attach object pairs with physics joints: \"fixed\" welds them rigidly, \"revolute\" hinges around an axis (optional motor spins it), \"ball\" lets b swing and twist freely about one point (a ragdoll shoulder, a wrecking ball on a rod), \"slider\" lets b move only along a's axis (a piston, a drawer, an elevator; limits in metres), \"spring\" pulls the two toward rest metres apart (a bouncy seat, a car suspension), \"rope\" lets them get no further than length metres apart and never pushes (a hanging lamp, a rope bridge plank). Move parts to their final pose WORLD-ALIGNED (no rotation) before jointing. Without anchor a hinge sits at b's origin (its centre) and a weld midway: pass anchor [x,y,z] (world) for the real pivot, e.g. the top of a pendulum rod or a door's edge. Jointed bodies that touch (a door in its frame, a wheel in its arch) also need contacts:false, or the solver pushes them apart.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -5406,7 +5529,11 @@
 									"type": "string",
 									"enum": [
 										"fixed",
-										"revolute"
+										"revolute",
+										"ball",
+										"slider",
+										"spring",
+										"rope"
 									]
 								},
 								"a": {
@@ -5415,7 +5542,7 @@
 								},
 								"b": {
 									"type": "string",
-									"description": "uuid of the attached object (hinge anchors at its origin)"
+									"description": "uuid of the attached object (hinge, ball and slider anchor at its origin)"
 								},
 								"axis": {
 									"type": "string",
@@ -5424,7 +5551,7 @@
 										"y",
 										"z"
 									],
-									"description": "hinge axis (revolute only, default y)"
+									"description": "hinge or slider axis, a's local axis (revolute and slider only, default y)"
 								},
 								"anchor": {
 									"type": "array",
@@ -5442,7 +5569,33 @@
 									"items": {
 										"type": "number"
 									},
-									"description": "revolute only: [min, max] radians the hinge may turn"
+									"description": "revolute: [min, max] radians the hinge may turn; slider: [min, max] metres b may move along the axis"
+								},
+								"anchors": {
+									"type": "array",
+									"items": {
+										"type": "array",
+										"items": {
+											"type": "number"
+										}
+									},
+									"description": "spring and rope only: [[x,y,z] on a, [x,y,z] on b] world points the spring or rope ties (default: the two origins)"
+								},
+								"rest": {
+									"type": "number",
+									"description": "spring only: rest length in metres (default: the current distance)"
+								},
+								"stiffness": {
+									"type": "number",
+									"description": "spring only: how hard it pulls (default 50; 10 soft, 500 stiff)"
+								},
+								"damping": {
+									"type": "number",
+									"description": "spring only: how fast the bounce dies (default 2)"
+								},
+								"length": {
+									"type": "number",
+									"description": "rope only: maximum distance in metres (default: the current distance)"
 								},
 								"motor": {
 									"type": "object",
@@ -5708,7 +5861,7 @@
 		{
 			"name": "upload_asset",
 			"title": "Upload a sound or an HDR sky",
-			"description": "Put a SOUND or an HDR SKY you hold as bytes into the library and get its hash: your own generated music or ambience, or a file you fetched yourself (any site — the bytes come from you, so nothing needs the site to allow cross-origin reads). data = base64; a big file goes as chunk: {id, index, total} parts (each a multiple of 4 base64 characters). Sounds: WAV, OGG, MP3, FLAC, M4A or WebM up to 16 MB (decoded once to prove it is audio) → place it with effects sound {asset: hash} or music {asset: hash}. Skies: Radiance .hdr or OpenEXR up to 25 MB → set_look sky {hdri: {hash}}. The type comes from the bytes, never the name. Images go through image instead. Everyone in the session can pull it by hash.\nTake a screenshot after each change to check your work.",
+			"description": "Put a SOUND or an HDR SKY you hold as bytes into the library and get its hash: your own generated music or ambience, or a file you fetched yourself (any site — the bytes come from you, so nothing needs the site to allow cross-origin reads). data = base64; a big file goes as chunk: {id, index, total} parts (each a multiple of 4 base64 characters). Sounds: WAV, OGG, MP3, FLAC, M4A or WebM up to 16 MB (decoded once to prove it is audio) → place it with effects sound {asset: hash} or music {asset: hash}. Skies: Radiance .hdr or OpenEXR up to 25 MB, equirectangular (2:1) or a cube map as a cross (4:3, 3:4) or a strip of six faces (6:1, 1:6), which is converted → set_look sky {hdri: {hash}}. The type comes from the bytes, never the name. Images go through image instead. Everyone in the session can pull it by hash.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -6018,7 +6171,7 @@
 		{
 			"name": "screenshot",
 			"title": "Take a picture of the scene",
-			"description": "See the scene: a PNG of a clean frame (no gizmos, no people) from a temporary camera, never moving anyone's view. view: current | top | front | iso | focus | camera (focus needs uuid or uuids; camera looks through the scene camera uuid, its lens and framing); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person's window). Answers with the camera it used. postEffects: true draws the scene's post effects too; hud: true the game HUD on top; avatars: true keeps the people in (current keeps them unless false).",
+			"description": "See the scene: a PNG of a clean frame (no gizmos, no people) from a temporary camera, never moving anyone's view. view: current | top | front | iso | focus | camera (focus needs uuid or uuids; camera looks through the scene camera uuid, its lens and framing); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person's window). Answers with the camera it used and frame: the picture in words (what is in it by share, the background, what is under the camera, what was left out) for a client that cannot see images. A scene-wide iso / top / front shot frames the content, leaving out a sea or ground plane far bigger than the rest (subject: \"scene\" frames everything). postEffects: true draws the scene's post effects too; hud: true the game HUD on top; avatars: true keeps the people in (current keeps them unless false).",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -6122,6 +6275,14 @@
 					"margin": {
 						"type": "number",
 						"description": "room around the subject: 1 touches the frame, default 1.15"
+					},
+					"subject": {
+						"type": "string",
+						"enum": [
+							"content",
+							"scene"
+						],
+						"description": "what a scene-wide shot frames: content leaves a sea or ground plane far bigger than the rest out (the default for iso, top and front when one is there; camera.subject.leftOut names it), scene frames everything"
 					},
 					"size": {
 						"type": "number",
@@ -6228,7 +6389,8 @@
 				"update": "update_mesh",
 				"duplicate": "duplicate",
 				"pivot": "set_pivot",
-				"pivot_group": "create_pivot"
+				"pivot_group": "create_pivot",
+				"simplify": "simplify_mesh"
 			},
 			"set_look": {
 				"material": "set_material",
@@ -6292,7 +6454,7 @@
 			{
 				"name": "list_scene",
 				"title": "Read the scene",
-				"description": "List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. Every mesh also has mesh {vertexCount, faceCount (triangles), bounds {local, world}} — each box [[minX, minY, minZ], [maxX, maxY, maxZ]], local in the mesh's own space (its vertices), world in the scene. The transform is the AUTHORED pose: an object an effect is moving also has animated: true, and live {position, rotation, scale, visible} when this frame differs; update_objects writes the authored pose, so never copy live back into it. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: \"scene\" | object uuid, page} to read one page of one graph.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall list_scene before editing so you use real uuids; batch many objects into one call.",
+				"description": "List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. A body of water has water {preset, shallowColor, deepColor, level (how full 0-1), surface (world height of the still water), waves {height}} in place of color. Every mesh also has mesh {vertexCount, faceCount (triangles), bounds {local, world}} — each box [[minX, minY, minZ], [maxX, maxY, maxZ]], local in the mesh's own space (its vertices), world in the scene. The transform is the AUTHORED pose: an object an effect is moving also has animated: true, and live {position, rotation, scale, visible} when this frame differs; update_objects writes the authored pose, so never copy live back into it. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: \"scene\" | object uuid, page} to read one page of one graph.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall list_scene before editing so you use real uuids; batch many objects into one call.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -6395,7 +6557,7 @@
 			{
 				"name": "create_objects",
 				"title": "Add objects",
-				"description": "Create one or more primitives, lights or empty groups in a single call. Ground is the y=0 plane; place objects so they rest ON it (a box of height h sits at y=h/2). Returns the new uuids. To copy an existing object instead (a row of fence posts, a ring of chairs), pass from: its uuid, count, offset [x,y,z] between one copy and the next, and optionally randomRot / randomScale with a seed: deep copies (children, materials, flows), one undo step, uuids in order, in the source's own group. lookAt turns an object so its local +Z axis (its front) faces a point or another object, +Y kept up.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.\nTake a screenshot after each change to check your work.",
+				"description": "Create one or more primitives, lights, empty groups or decals in a single call. A decal (kind decal) is an image projected onto the surface of the object `on`: give point + normal (world) or just normal (aimed at that object's middle from that side; default from above). Ground is the y=0 plane; place objects so they rest ON it (a box of height h sits at y=h/2). Returns the new uuids. To copy an existing object instead (a row of fence posts, a ring of chairs), pass from: its uuid, count, offset [x,y,z] between one copy and the next, and optionally randomRot / randomScale with a seed: deep copies (children, materials, flows), one undo step, uuids in order, in the source's own group. lookAt turns an object so its local +Z axis (its front) faces a point or another object, +Y kept up.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -6438,8 +6600,46 @@
 										"enum": [
 											"primitive",
 											"light",
-											"group"
+											"group",
+											"decal"
 										]
+									},
+									"on": {
+										"type": "string",
+										"description": "kind=decal: uuid of the object to put it on (not a skinned character or scattered copies)"
+									},
+									"point": {
+										"type": "array",
+										"items": {
+											"type": "number"
+										},
+										"description": "kind=decal: world [x,y,z] on that object's surface"
+									},
+									"normal": {
+										"type": "array",
+										"items": {
+											"type": "number"
+										},
+										"description": "kind=decal: the surface direction [x,y,z] there (with no point: the side it is aimed from)"
+									},
+									"image": {
+										"type": "string",
+										"description": "kind=decal: a library image hash or file name (omit = a placeholder frame until one is set)"
+									},
+									"size": {
+										"description": "kind=decal: metres, a number (square) or [width, height]"
+									},
+									"depth": {
+										"type": "number",
+										"description": "kind=decal: how far into and out of the surface it reaches (default 0.25 m)"
+									},
+									"opacity": {
+										"type": "number",
+										"description": "kind=decal: 0-1"
+									},
+									"tint": {
+										"type": "string",
+										"description": "kind=decal: #rrggbb multiplying the image"
 									},
 									"primitive": {
 										"type": "string",
@@ -6484,7 +6684,7 @@
 										"items": {
 											"type": "number"
 										},
-										"description": "up to 4 constructor args. Box=[w,h,d], Sphere=[radius], Cylinder=[rTop,rBottom,height], Cone=[radius,height], Plane=[w,h], Torus=[radius,tube]. Omit for sensible defaults. Sizes go down to 0.001 m."
+										"description": "up to 4 constructor args. Box=[w,h,d], Sphere=[radius], Cylinder=[rTop,rBottom,height], Cone=[radius,height], Plane=[w,h], Torus=[radius,tube]. Omit for sensible defaults. For a rounded box, create a Box and then set_geometry {radius}. Sizes go down to 0.001 m."
 									},
 									"name": {
 										"type": "string"
@@ -6606,7 +6806,7 @@
 										"enum": [
 											"floor"
 										],
-										"description": "stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground"
+										"description": "stand it on whatever is straight under it: a terrain at any height, a floor or table at most 2 m above its base, else the ground; water and trigger volumes are passed through. The answer says placed {on, uuid, y, surface: terrain|mesh|ground}"
 									},
 									"face_user": {
 										"description": "turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users"
@@ -6803,7 +7003,7 @@
 										"enum": [
 											"floor"
 										],
-										"description": "stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground"
+										"description": "stand it on whatever is straight under it: a terrain at any height, a floor or table at most 2 m above its base, else the ground; water and trigger volumes are passed through. The answer says placed {on, uuid, y, surface: terrain|mesh|ground}"
 									},
 									"face_user": {
 										"description": "turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users"
@@ -6822,6 +7022,20 @@
 									},
 									"visible": {
 										"type": "boolean"
+									},
+									"array": {
+										"description": "102b: repeat this object as a live ARRAY (drawn copies that follow every change to it; one undo, one message): {mode: line|grid|circle|path, count (2-500, the object included), step [x,y,z] (line), grid [nx,ny,nz] + gridStep [x,y,z] (grid), radius + arc degrees + faceOut (circle, centre radius m on -X), path (a Path uuid) + spacing (0 = even) + follow (path), rotStep [x,y,z] degrees per copy, scaleStep per copy}. Fields merge over the current array. null removes it. Copies have no physics or logic until makeReal"
+									},
+									"layer": {
+										"type": [
+											"string",
+											"null"
+										],
+										"description": "102b: put it on the layer with this NAME (made when new; Configure Scene > Layers hides and locks layers), or null for no layer"
+									},
+									"makeReal": {
+										"type": "boolean",
+										"description": "102b: true = turn the object's array copies into ordinary objects (one undo); the result lists their uuids"
 									},
 									"parentUuid": {
 										"type": "string",
@@ -7868,7 +8082,7 @@
 			{
 				"name": "edit_shape",
 				"title": "Reshape or model objects",
-				"description": "Change the shape of objects that exist: params = new size / segments / type in place (on a 3D text: its words, font, size, depth, bevel, align, wrap width, anchor, colours), mesh = model faces and vertices (extrude, inset, bevel, subdivide, weld, smooth, dissolve, make a face), update = new vertices / faces for a mesh made from data (replace it, or patch a range), duplicate = copies of an object in a row, or its mirror image (a left arm → the right one), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together.\nCall it as {\"action\": \"params\", \"params\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
+				"description": "Change the shape of objects that exist: params = new size / segments / type in place (on a 3D text: its words, font, size, depth, bevel, align, wrap width, anchor, colours), mesh = model faces and vertices (extrude, inset, bevel, subdivide, weld, smooth, dissolve, make a face), update = new vertices / faces for a mesh made from data (replace it, or patch a range), duplicate = copies of an object in a row, or its mirror image (a left arm → the right one), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together, simplify = fewer triangles on a mesh or model (a percentage or a count; UVs, colours, skin weights and material slots kept; one undo step).\nCall it as {\"action\": \"params\", \"params\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -7880,7 +8094,8 @@
 								"update",
 								"duplicate",
 								"pivot",
-								"pivot_group"
+								"pivot_group",
+								"simplify"
 							],
 							"description": "What to do. Put its fields in the object named after the action."
 						},
@@ -7972,7 +8187,7 @@
 							"required": [
 								"updates"
 							],
-							"description": "Reshape existing objects in place (they keep uuid, transform, material and flows): change a primitive's params (the keys list_scene shows under geometry, e.g. {width, height, depth} for a Box, {radiusTop, radiusBottom, height, radialSegments} for a Cylinder, {segments, phiLength} for a Lathe, {depth, bevel} for an extrusion), or its TYPE (box → Cylinder) with params on top of the new type's defaults. A tube (create_shape {action: 'tube'}) takes path, radius / radii, closed. A 3D text (create_shape {action: 'text'}) takes its text fields as params (text, font, size, depth, bevel, align, maxWidth, anchor, color …). An object whose vertices were hand-edited refuses unless force: true (the rebuild replaces those edits). Up to 100 objects per call, one undo step."
+							"description": "Reshape existing objects in place (they keep uuid, transform, material and flows): change a primitive's params (the keys list_scene shows under geometry, e.g. {width, height, depth} for a Box (plus {radius, radiusSegments} to round its edges and corners: a rounded box, saved as two numbers), {radiusTop, radiusBottom, height, radialSegments} for a Cylinder, {segments, phiLength} for a Lathe, {depth, bevel} for an extrusion), or its TYPE (box → Cylinder) with params on top of the new type's defaults. A tube (create_shape {action: 'tube'}) takes path, radius / radii, closed. A 3D text (create_shape {action: 'text'}) takes its text fields as params (text, font, size, depth, bevel, align, maxWidth, anchor, color …). An object whose vertices were hand-edited refuses unless force: true (the rebuild replaces those edits). Up to 100 objects per call, one undo step."
 						},
 						"mesh": {
 							"type": "object",
@@ -8386,6 +8601,31 @@
 								"objects"
 							],
 							"description": "Make a group at a point and put objects in it, so turning the group swings them about that point: arm parts about a shoulder, several parts of a lamp about one joint. The objects stay where they are. Give the point as at (world) or local (in the group the objects are already in — the numbers list_scene shows inside it). For one object, edit_shape {action: 'pivot'} needs no extra group. Returns groupUuid."
+						},
+						"simplify": {
+							"type": "object",
+							"properties": {
+								"uuid": {
+									"type": "string",
+									"description": "the object to simplify"
+								},
+								"percent": {
+									"type": "number",
+									"description": "1-100 to keep"
+								},
+								"triangles": {
+									"type": "number",
+									"description": "target count"
+								},
+								"bake": {
+									"type": "boolean",
+									"description": "bake a primitive first"
+								}
+							},
+							"required": [
+								"uuid"
+							],
+							"description": "Lower a mesh or imported model's triangle count; UVs, normals, colours, skin weights and materials are kept. percent = how much to KEEP (1-100), or triangles = a target. Parametric primitives need bake: true; scatter, VRM and morph targets are refused. One undo step."
 						}
 					},
 					"required": [
@@ -8642,7 +8882,7 @@
 									"description": "with confirmId: seconds to wait for the answer (up to 60)"
 								}
 							},
-							"description": "Give objects a node shader, written as text like flow graphs: one line per node (id = type {param: value}), one per edge (source[.output] -> target.input), ending at a \"surface\" node. Example: c = color {value: \"#ff8800\"}\\nout = surface\\nc -> out.emissive. Call set_look {action: 'shader_nodes'} for the types. Each object gets its own copy. Compiler errors come back in the result and nothing is written. Returns the graph key and its uniforms: a float one (u_<nodeId>_<param>) can be driven by a flow \"setuniform\" node on that object. scene: true makes the default for every object, which asks the host first."
+							"description": "Give objects a node shader, written as text like flow graphs: one line per node (id = type {param: value}), one per edge (source[.output] -> target.input), ending at a \"surface\" node. Example: c = color {value: \"#ff8800\"}\\nout = surface\\nc -> out.emissive. Call set_look {action: 'shader_nodes'} for the types. Each object gets its own copy. Compiler errors come back in the result and nothing is written. Returns the graph key and its uniforms (u_<nodeId>_<param>): a flow \"setuniform\" node on that object drives a float, colour or vector one. scene: true makes the default for every object, which asks the host first."
 						},
 						"edit_shader": {
 							"type": "object",
@@ -9006,6 +9246,15 @@
 										"null"
 									],
 									"properties": {
+										"kind": {
+											"type": "string",
+											"enum": [
+												"linear",
+												"distance",
+												"height"
+											],
+											"description": "linear = near to far; distance = thickens with distance (density); height = ground fog (density, base, thickness)"
+										},
 										"color": {
 											"type": "string"
 										},
@@ -9020,6 +9269,15 @@
 										"density": {
 											"type": "number",
 											"exclusiveMinimum": 0
+										},
+										"base": {
+											"type": "number",
+											"description": "ground fog: the height (m) where it is thickest"
+										},
+										"thickness": {
+											"type": "number",
+											"exclusiveMinimum": 0,
+											"description": "ground fog: how far up (m) it thins out"
 										}
 									}
 								},
@@ -9037,7 +9295,7 @@
 									"description": "with confirmId: seconds to wait for the answer (up to 60)"
 								}
 							},
-							"description": "The sky and the air: a look preset (studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio, product, cinematic, stylised), a sky image by name (clearsky, meadow, sunrise, starlight, photostudio; a assets {action: 'search'} HDRI id \"cc0:polyhaven/<id>\" (fetched into the library once) or \"lib:<hash>\"; or {hash} of an HDR in the library — upload your own .hdr / .exr with assets upload; never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres, or {color, density}; null = none) and exposure. \"Make it night\": preset night or hdri starlight + a dark fog. Changes the whole scene's look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step."
+							"description": "The sky and the air: a look preset (studio, daylight, sunset, night, classic, clearsky, meadow, sunrise, starlight, photostudio, product, cinematic, stylised), a sky image by name (clearsky, meadow, sunrise, starlight, photostudio; a assets {action: 'search'} HDRI id \"cc0:polyhaven/<id>\" (fetched into the library once) or \"lib:<hash>\"; or {hash} of an HDR in the library — upload your own .hdr / .exr with assets upload; never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres; {color, density} for distance fog; {color, density, base, thickness} for ground fog lying from base up over thickness metres; null = none) and exposure. \"Make it night\": preset night or hdri starlight + a dark fog. Changes the whole scene's look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step."
 						},
 						"light": {
 							"type": "object",
@@ -9322,7 +9580,7 @@
 						"validate": {
 							"type": "object",
 							"properties": {},
-							"description": "Check the scene for what would not work when someone presses Play: actions nothing fires, an Object Selector wired the wrong way round, a scene-graph On Click that reaches no object, Game Start wired as an event, HUD nodes pointing at elements that do not exist, walk mode with no spawn, a scene with no light, behaviour code problems. Each issue says what to fix. Run it after building a game, then playtest."
+							"description": "Check the scene for what would not work when someone presses Play: actions nothing fires, effects that act on no object, an Object Selector wired the wrong way round, a scene-graph On Click that reaches no object, Game Start wired as an event, HUD nodes pointing at elements that do not exist, walk mode with no spawn, a scene with no light, behaviour code problems. Each issue says what to fix. Run it after building a game, then playtest."
 						},
 						"logs": {
 							"type": "object",
@@ -9688,7 +9946,7 @@
 							"required": [
 								"data"
 							],
-							"description": "Put a SOUND or an HDR SKY you hold as bytes into the library and get its hash: your own generated music or ambience, or a file you fetched yourself (any site — the bytes come from you, so nothing needs the site to allow cross-origin reads). data = base64; a big file goes as chunk: {id, index, total} parts (each a multiple of 4 base64 characters). Sounds: WAV, OGG, MP3, FLAC, M4A or WebM up to 16 MB (decoded once to prove it is audio) → place it with effects sound {asset: hash} or music {asset: hash}. Skies: Radiance .hdr or OpenEXR up to 25 MB → set_look sky {hdri: {hash}}. The type comes from the bytes, never the name. Images go through image instead. Everyone in the session can pull it by hash."
+							"description": "Put a SOUND or an HDR SKY you hold as bytes into the library and get its hash: your own generated music or ambience, or a file you fetched yourself (any site — the bytes come from you, so nothing needs the site to allow cross-origin reads). data = base64; a big file goes as chunk: {id, index, total} parts (each a multiple of 4 base64 characters). Sounds: WAV, OGG, MP3, FLAC, M4A or WebM up to 16 MB (decoded once to prove it is audio) → place it with effects sound {asset: hash} or music {asset: hash}. Skies: Radiance .hdr or OpenEXR up to 25 MB, equirectangular (2:1) or a cube map as a cross (4:3, 3:4) or a strip of six faces (6:1, 1:6), which is converted → set_look sky {hdri: {hash}}. The type comes from the bytes, never the name. Images go through image instead. Everyone in the session can pull it by hash."
 						},
 						"fonts": {
 							"type": "object",
@@ -9789,6 +10047,12 @@
 										"bowl"
 									]
 								},
+								"rim": {
+									"type": "number",
+									"maximum": 0,
+									"minimum": -20,
+									"description": "island only: how far the edge sinks (metres, default -2 on a new island)"
+								},
 								"seed": {
 									"type": "integer"
 								},
@@ -9825,7 +10089,7 @@
 									"description": "reshape even though it was hand-sculpted (the sculpting is lost)"
 								}
 							},
-							"description": "Make or change a terrain. Without uuid it makes one (size metres, at position); with uuid it changes that one. Shape by noise: height (the highest peak, metres — the answer says the peak it got), detail (0.005-0.6), octaves, ridged, warp, edges (flat|island|bowl: island sinks the rim to 0 so it rises out of water; bowl raises the rim), seed; amplitude is the raw noise scale if you want it. Sculpt with ops [{op: raise|lower|smooth|flatten, at: [x, z] from the terrain's centre, radius, strength 0-1, height (metres, raise/lower), passes}] and paint with {op: \"paint\", at, radius, layer 0-3, strength}. layers: up to 4 {color, texture (a library hash or a pattern name like grass, sand, stone), tiling} — layer 0 covers the ground until you paint the others; paintBy: \"height\" paints them for you, layer 0 in the low ground up to the last on the peaks. One undo step."
+							"description": "Make or change a terrain. Without uuid it makes one (size metres, at position); with uuid it changes that one. Shape by noise: height (the highest peak, metres — the answer says the peak it got), detail (0.005-0.6), octaves, ridged, warp, edges (flat|island|bowl: island sinks the rim below the water so it rises out of a sea — rim metres, default -2 on a new island; bowl raises the rim), seed; amplitude is the raw noise scale if you want it. Sculpt with ops [{op: raise|lower|smooth|flatten, at: [x, z] from the terrain's centre, radius, strength 0-1, height (metres, raise/lower), passes}] and paint with {op: \"paint\", at, radius, layer 0-3, strength}; a flatten answers pad {y (world height of the flat ground), radius, at} to build on. layers: up to 4 {color, texture (a library hash or a pattern name like grass, sand, stone), tiling} — layer 0 covers the ground until you paint the others; paintBy: \"height\" paints them for you, layer 0 in the low ground up to the last on the peaks. One undo step."
 						},
 						"scatter": {
 							"type": "object",
@@ -9993,7 +10257,7 @@
 									"type": "boolean"
 								}
 							},
-							"description": "Water: without uuid it makes a body of water — kind tank, pool, round, lake or ocean, size [w, h, d] (round: [diameter, depth, diameter]), at position (its bottom centre). With uuid it changes one (or makes an object water with a preset). preset: pool, aquarium, ocean, lake, river, lava, swamp, toxic, ice. level 0-1 (how full), color (tints the whole body, shallow to deep), look {shallowColor, deepColor, clarity, foam, …}, waves {count, amplitude, wavelength, speed, direction}, flow. Things float in it in Play. remove: true makes it a plain object again. One undo step."
+							"description": "Water: without uuid it makes a body of water — kind tank, pool, round, lake or ocean, size [w, h, d] (round: [diameter, depth, diameter]), at position (its bottom centre). With uuid it changes one (or makes an object water with a preset). preset: pool, aquarium, ocean, lake, river, lava, swamp, toxic, ice. level 0-1 (how full; 1 = to the top), color (tints the whole body, shallow to deep), look {shallowColor, deepColor, clarity, foam, …}, waves {count, amplitude, wavelength, speed, direction}, flow. Things float in it in Play. remove: true makes it a plain object again. The answer gives surface (world height of the still water) and waves {height} (how far they rise and fall), and warns when a terrain lies inside that band. One undo step."
 						},
 						"particles": {
 							"type": "object",
@@ -10231,7 +10495,7 @@
 							"required": [
 								"screens"
 							],
-							"description": "Give the game a HUD (2D screen overlay): screens of elements — a timer, a score text, a health bar, buttons, an image. A screen named like an existing one gets the elements added. Returns every element id: bind live values with create_flow_nodes (a hudtext / hudbar / hudtimer node with data.element = the id, e.g. counter -> hudtext). A new screen becomes the one that shows unless active: false. One undo step."
+							"description": "Give the game a HUD (2D screen overlay): screens of elements — a timer, a score text, a health bar, buttons, an image. A screen named like an existing one gets the elements added. Returns every element id: bind live values with create_flow_nodes (a hudtext / hudbar / hudtimer node with data.element = the id, e.g. counter -> hudtext; for a game value — score, clock, best, level, stars, lives, a variable, a stored or published value — use gamevalue -> hudtext with data.read and data.format: number, time, fraction, percent, stars, text). A new screen becomes the one that shows unless active: false. One undo step."
 						},
 						"list": {
 							"type": "object",
@@ -11445,6 +11709,18 @@
 											]
 										},
 										"description": "groups this object collides with (omit = all); leave out player for a ghost wall the player walks through"
+									},
+									"gravityScale": {
+										"type": "number",
+										"description": "dynamic bodies: how strongly gravity pulls this one, -5..5 (1 normal, 0 floats in place, below 0 rises — a balloon, a jump pad feel)"
+									},
+									"linearDamping": {
+										"type": "number",
+										"description": "dynamic bodies: air drag on movement 0..5 (a feather, a parachute); omit = the scene's value"
+									},
+									"angularDamping": {
+										"type": "number",
+										"description": "dynamic bodies: drag on spinning 0..5; omit = the scene's value"
 									}
 								},
 								"required": [
@@ -11467,7 +11743,7 @@
 			{
 				"name": "create_joints",
 				"title": "Add physics joints",
-				"description": "Attach object pairs with physics joints: \"fixed\" welds them rigidly, \"revolute\" hinges around an axis (optional motor spins it). Move parts to their final pose WORLD-ALIGNED (no rotation) before jointing. Without anchor a hinge sits at b's origin (its centre) and a weld midway: pass anchor [x,y,z] (world) for the real pivot, e.g. the top of a pendulum rod or a door's edge. Jointed bodies that touch (a door in its frame, a wheel in its arch) also need contacts:false, or the solver pushes them apart.\nTake a screenshot after each change to check your work.",
+				"description": "Attach object pairs with physics joints: \"fixed\" welds them rigidly, \"revolute\" hinges around an axis (optional motor spins it), \"ball\" lets b swing and twist freely about one point (a ragdoll shoulder, a wrecking ball on a rod), \"slider\" lets b move only along a's axis (a piston, a drawer, an elevator; limits in metres), \"spring\" pulls the two toward rest metres apart (a bouncy seat, a car suspension), \"rope\" lets them get no further than length metres apart and never pushes (a hanging lamp, a rope bridge plank). Move parts to their final pose WORLD-ALIGNED (no rotation) before jointing. Without anchor a hinge sits at b's origin (its centre) and a weld midway: pass anchor [x,y,z] (world) for the real pivot, e.g. the top of a pendulum rod or a door's edge. Jointed bodies that touch (a door in its frame, a wheel in its arch) also need contacts:false, or the solver pushes them apart.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -11480,7 +11756,11 @@
 										"type": "string",
 										"enum": [
 											"fixed",
-											"revolute"
+											"revolute",
+											"ball",
+											"slider",
+											"spring",
+											"rope"
 										]
 									},
 									"a": {
@@ -11489,7 +11769,7 @@
 									},
 									"b": {
 										"type": "string",
-										"description": "uuid of the attached object (hinge anchors at its origin)"
+										"description": "uuid of the attached object (hinge, ball and slider anchor at its origin)"
 									},
 									"axis": {
 										"type": "string",
@@ -11498,7 +11778,7 @@
 											"y",
 											"z"
 										],
-										"description": "hinge axis (revolute only, default y)"
+										"description": "hinge or slider axis, a's local axis (revolute and slider only, default y)"
 									},
 									"anchor": {
 										"type": "array",
@@ -11516,7 +11796,33 @@
 										"items": {
 											"type": "number"
 										},
-										"description": "revolute only: [min, max] radians the hinge may turn"
+										"description": "revolute: [min, max] radians the hinge may turn; slider: [min, max] metres b may move along the axis"
+									},
+									"anchors": {
+										"type": "array",
+										"items": {
+											"type": "array",
+											"items": {
+												"type": "number"
+											}
+										},
+										"description": "spring and rope only: [[x,y,z] on a, [x,y,z] on b] world points the spring or rope ties (default: the two origins)"
+									},
+									"rest": {
+										"type": "number",
+										"description": "spring only: rest length in metres (default: the current distance)"
+									},
+									"stiffness": {
+										"type": "number",
+										"description": "spring only: how hard it pulls (default 50; 10 soft, 500 stiff)"
+									},
+									"damping": {
+										"type": "number",
+										"description": "spring only: how fast the bounce dies (default 2)"
+									},
+									"length": {
+										"type": "number",
+										"description": "rope only: maximum distance in metres (default: the current distance)"
 									},
 									"motor": {
 										"type": "object",
@@ -11957,7 +12263,7 @@
 			{
 				"name": "screenshot",
 				"title": "Take a picture of the scene",
-				"description": "See the scene: a PNG of a clean frame (no gizmos, no people) from a temporary camera, never moving anyone's view. view: current | top | front | iso | focus | camera (focus needs uuid or uuids; camera looks through the scene camera uuid, its lens and framing); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person's window). Answers with the camera it used. postEffects: true draws the scene's post effects too; hud: true the game HUD on top; avatars: true keeps the people in (current keeps them unless false).",
+				"description": "See the scene: a PNG of a clean frame (no gizmos, no people) from a temporary camera, never moving anyone's view. view: current | top | front | iso | focus | camera (focus needs uuid or uuids; camera looks through the scene camera uuid, its lens and framing); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person's window). Answers with the camera it used and frame: the picture in words (what is in it by share, the background, what is under the camera, what was left out) for a client that cannot see images. A scene-wide iso / top / front shot frames the content, leaving out a sea or ground plane far bigger than the rest (subject: \"scene\" frames everything). postEffects: true draws the scene's post effects too; hud: true the game HUD on top; avatars: true keeps the people in (current keeps them unless false).",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -12061,6 +12367,14 @@
 						"margin": {
 							"type": "number",
 							"description": "room around the subject: 1 touches the frame, default 1.15"
+						},
+						"subject": {
+							"type": "string",
+							"enum": [
+								"content",
+								"scene"
+							],
+							"description": "what a scene-wide shot frames: content leaves a sea or ground plane far bigger than the rest out (the default for iso, top and front when one is there; camera.subject.leftOut names it), scene frames everything"
 						},
 						"size": {
 							"type": "number",

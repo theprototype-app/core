@@ -25,6 +25,10 @@ import { compileAsync } from '../render/compile.js';
 import { captureEnvironment, useCopies, restoreEnvironment } from './envHandover.js';
 import { buildPipeline } from './pipeline.js';
 import { classifyMaterial, notShownText, effectiveQuality, createDropWatch, quantile } from './cinematicCore.js';
+import { HEIGHT_FOG } from '../fogModes.js';
+
+/** 102b-papercuts: what the chip names — the stand-ins, plus a height fog (WebGL-only shader chunk) @param {any} swap */
+const shownKinds = (swap) => (HEIGHT_FOG[2] > 0.5 ? [...swap.kinds, 'heightfog'] : swap.kinds);
 // the STORE leaf, never ./cinematicState.js (that one reaches the app's stores: this chunk's preload list)
 import { cinematicState, cinematicPrefs, disableCinematic, cinematicDisabled } from './cinematicStore.js';
 import { deformersOf } from '../vertexDeform.js';
@@ -130,6 +134,13 @@ function createSwapper(W, scene, fx = null) {
 				if (o.visible && !grids.some((x) => x.g === o)) gridTwin(o);
 				return;
 			}
+			// 102: Spark's splat meshes are never swapped (a stand-in material on its quads draws garbage, and
+			// its GLSL is a fatal compile here) — splatRuntime hides them for the view; the chip names them
+			if (o.userData?.splatVisual) {
+				o.visible = false;
+				return;
+			}
+			if (o.userData?.splat && o.visible !== false) now.add('splats');
 			const list = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
 			list.forEach((/** @type {any} */ m, /** @type {number} */ i) => {
 				if (stands.has(m)) {
@@ -371,7 +382,7 @@ async function enterSteps() {
 	const water = live.water;
 	live.swap = createSwapper(W, scene, { covered: (/** @type {any} */ ob, /** @type {any} */ m) => fx.covered(ob, m) || !!water?.covered(ob, m) });
 	live.swap.scan();
-	patchState({ notShown: notShownText(live.swap.kinds) });
+	patchState({ notShown: notShownText(shownKinds(live.swap)) });
 	try {
 		live.built = await build(targetQuality());
 		await compileAsync(r, scene, cam);
@@ -495,10 +506,10 @@ function draw(_delta) {
 
 /** @param {any} g */
 function rescan(g) {
-	const before = notShownText(g.swap.kinds);
+	const before = notShownText(shownKinds(g.swap));
 	g.swap.scan();
 	g.labels?.scan(g.scene);
-	const after = notShownText(g.swap.kinds);
+	const after = notShownText(shownKinds(g.swap));
 	if (after !== before) patchState({ notShown: after });
 }
 

@@ -39,7 +39,13 @@
 const postcss = require('postcss');
 
 const PRAGMA = /ui-scale:\s*off/;
-const NUM_PX = /(-?(?:\d+\.?\d*|\.\d+))px\b/g;
+// one whole number, exponent included: a minifier writes Tailwind's `rounded-full` (`calc(infinity * 1px)`) as
+// `3.40282e38px`, and a pattern without the exponent rewrote its `38px` alone into `3.40282ecalc(38px * …)`, an
+// invalid value, so every `rounded-full` drew SQUARE on built pages (80a-fix4-ui O4). The lookbehind keeps a match
+// from starting inside a number or a name.
+const NUM_PX = /(?<![\w.])(-?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)px\b/gi;
+/** a sentinel length (`infinity`, a huge radius) is not a size: scaling it means nothing, so it stays as written */
+const HUGE = 1e6;
 
 /**
  * Rewrite the px lengths of ONE declaration value (outside url() and strings).
@@ -52,7 +58,7 @@ function scaleValue(value) {
 	let plain = '';
 	let i = 0;
 	const flush = () => {
-		out += plain.replace(NUM_PX, (m, n) => (Math.abs(Number(n)) > 1 ? `calc(${n}px * var(--ui-scale, 1))` : m));
+		out += plain.replace(NUM_PX, (m, n) => (Math.abs(Number(n)) > 1 && Math.abs(Number(n)) < HUGE ? `calc(${n}px * var(--ui-scale, 1))` : m));
 		plain = '';
 	};
 	while (i < value.length) {

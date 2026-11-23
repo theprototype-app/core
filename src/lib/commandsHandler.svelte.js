@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { notifyOn } from './notifyPrefs';
 import { globalScene, objectsGroup, showGrid, TControls, lockedObjects, selectedObject, globalCamera, peerHands, pokeScene, beginSceneBatch, endSceneBatch } from '../stores/sceneStore.js';
 import { receiveMapSlot, receiveTexTransform, receiveNormalStrength } from '$lib/materialMaps';
+import { unlinkMaterial } from '$lib/materialSharing';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createGeometry, createLight, createGroup } from '$lib/geometries.svelte'
@@ -15,7 +16,9 @@ import { dropPeerQuality } from '$lib/networkQuality'
 import { dropPeerClock } from '$lib/musicClock'
 import { applyRemoteDevice } from '$lib/audioDevices'
 import { sessionHost, dropPeerJoined, noteSnapshotAnswered } from '$lib/connectionState'
-import { acceptedLockRows, mergeLockRows } from '$lib/lockTrust'
+import { acceptedLockRows, mergeLockRows, sortLockTable, stampRestoredRows } from '$lib/lockTrust'
+import { lockMessage, myClaim, raceFloor } from '$lib/lockHeld'
+import { sessionNow } from '$lib/sessionClock'
 import { environment, editEnvSky } from '$lib/environment'
 import { hasAnimatedImport, sendAnimatedImport, setAnimationState, setClipRefs, setAnimGraph, attachToSocket, dropAllAnimatedImports, setVrmExpression } from '$lib/animatedImports'
 import { dropAllAnimations } from '$lib/animationPreview'
@@ -31,7 +34,7 @@ import { normalizePortal, normalizeCheckpoint } from '$lib/gameLevels/objects.js
 import { applyTextPathTo, bumpTextTurn } from '$lib/textPathObject.js'; // 64 D2
 import { runSceneClearHandlers } from '$lib/moduleSDK'
 import { annotations } from '$lib/annotationsHandler'
-import { isViewer, warnViewerReadOnly } from '$lib/objectPermissions'
+import { isViewer, warnViewerReadOnly, clearInboundDraftFlags } from '$lib/objectPermissions'
 import { isHeldOut } from '$lib/peerModeration' // 55 A9
 import { get, writable } from 'svelte/store'
 import { addMessage, loading, loadingcount, showToast, fixLight, specatorMode } from '../stores/appStore';
@@ -46,8 +49,11 @@ import { safeStorage } from './safeStorage';
 // reach — it REGISTERS rather than importing us, the registerDiagnosticsSection shape.
 import { registerMetricSource, ingestVerdict, profileFor } from './sceneBudget';
 import { globalRenderer } from '../stores/sceneStore.js';
+import { yieldToEventLoop } from './sceneLoader';
 // 33 (L4): the scene going away is when its modules may be left behind (a leaf)
 import { noteSceneLeaving } from './sceneScope';
+import { markConstraintsDirty } from './rig/constraintHub.js'; // 102 M7 (the solver loads on first use)
+import { objectToJSON } from './slotGroups.js'; // 105: one serializer for slot groups
 
 //Access scene Store
 let scene = $state();
@@ -209,7 +215,7 @@ export function sceneCommand(command) {
                 peer.send({type: 'create', command: command, uuid: uuid});
                 recordObjectPresence('create', sceneObjects.getObjectByProperty('uuid', uuid));
                 }
-                peer.send({type: 'lock', uuid: uuid, peerId: peer.peer.id});
+                if (uuid != null) peer.send(lockMessage([uuid], peer.peer.id));
 
                 // the environment rig lights every preset except Classic —
                 // only nag about missing lights in Classic
@@ -229,7 +235,7 @@ export function sceneCommand(command) {
                 peer.send({type: 'light', command: command, uuid: uuid});
                 recordObjectPresence('create', sceneObjects.getObjectByProperty('uuid', uuid));
                 }
-                peer.send({type: 'lock', uuid: uuid, peerId: peer.peer.id});
+                if (uuid != null) peer.send(lockMessage([uuid], peer.peer.id));
         }
         else if (command.startsWith('/group')) {
                 let uuid = createGroup(command);
@@ -238,7 +244,7 @@ export function sceneCommand(command) {
                 peer.send({type: 'group', command: command, uuid: uuid});
                 recordObjectPresence('create', sceneObjects.getObjectByProperty('uuid', uuid));
                 }
-                peer.send({type: 'lock', uuid: uuid, peerId: peer.peer.id});
+                if (uuid != null) peer.send(lockMessage([uuid], peer.peer.id));
         }
         else if (command.startsWith('/transform')) {
             const regex = /(\translate|\.rotate|\.scale)/i;
@@ -255,13 +261,13 @@ export function sceneCommand(command) {
                     console.log(locked)
                     if(!locked.filter(lockedUuid => lockedUuid[1] === uuid)) {
                         controls.attach(sceneObjects.getObjectByProperty( 'uuid' , uuid));
-                        peer.send({type: 'lock', uuid: command.split(' ')[1], peerId: peer.peer.id});
+                        peer.send(lockMessage([command.split(' ')[1]], peer.peer.id));
                     } else {
                         console.log('Object ' + uuid + ' already locked by ' + locked.find(lockedUuid => lockedUuid[1] === uuid)[0]);
                     }
                 } else {
                     controls.attach(sceneObjects.getObjectByProperty( 'uuid' , uuid));
-                    peer.send({type: 'lock', uuid: command.split(' ')[1], peerId: peer.peer.id});
+                    peer.send(lockMessage([command.split(' ')[1]], peer.peer.id));
                 }
             }
             else
@@ -335,9 +341,15 @@ export function applyClearScene(peerId) {
 export function lockRestore(lockeditems, from, fromHost, mayLock) {
     // 27-A: same trust, same fix — a non-array here threw inside the handshake.
     if (!Array.isArray(lockeditems)) return;
-    const rows = acceptedLockRows(lockeditems, { from, selfId: peer?.peer?.id, fromHost, mayLock });
-    if (!rows.length) return;
-    locked = mergeLockRows(locked, rows);
+    const accepted = acceptedLockRows(lockeditems, { from, selfId: peer?.peer?.id, fromHost, mayLock });
+    // 80a K3: the same stamp rule as a `lock` set (geometries.lockGeometry)
+    const now = sessionNow();
+    const rows = stampRestoredRows(accepted, locked, myClaim, now, { from, fromHost, floor: raceFloor(from, now) });
+    // 80a K6: the sender's own rows are its whole held set (sendHandshake sends myLockRows), like a `lock`
+    // set: what it let go of while a link was down goes, what it still holds keeps the stamp stored before
+    const rest = locked.filter((/** @type {any} */ l) => l[0] !== from);
+    if (!rows.length && rest.length === locked.length) return;
+    locked = sortLockTable(mergeLockRows(rest, rows, { replace: !!fromHost }));
     lockedObjects.set(locked);
 }
 
@@ -612,6 +624,9 @@ export async function objectParameters(data, from = 'peer') {
         if (mesh) applyMap(mesh, data.map, data.slot ?? 0, typeof data.source === 'string' ? data.source : null);
     } else if (data.parameter == 'materialParam') {
         setMaterialParam(data.uuid, data.key, data.value, false);
+    } else if (data.parameter == 'materialUnlink') {
+        // 102 M6: "this object only" on a shared material — this object gets its own copy here too
+        unlinkMaterial(data.uuid);
     } else if (data.parameter == 'mapSlot') {
         receiveMapSlot(data); // 72 LK1: normal, roughness, metalness, emissive, AO
     } else if (data.parameter == 'texTransform') {
@@ -676,6 +691,19 @@ export async function objectParameters(data, from = 'peer') {
             pokeScene(); // collider viz re-syncs
             physicsShapeChanged(data.uuid); // CL-A A2: live mid-sim rebuild
         }
+    } else if (data.parameter == 'constraints') {
+        // 102 M7: an object's constraint stack, normalized at the boundary; every peer
+        // evaluates it locally from the synced targets (no pose travels)
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            // stored as validated (wireValidate: <= 16 plain objects with an id); the runtime and the
+            // Inspector normalize on read, so the boot path carries no solver code
+            const list = Array.isArray(data.constraints) ? data.constraints.slice(0, 16).map((/** @type {any} */ c) => ({ ...c })) : [];
+            if (list.length) mesh.userData.constraints = list;
+            else delete mesh.userData.constraints;
+            markConstraintsDirty();
+            pokeScene();
+        }
     } else if (data.parameter == 'fluid') {
         // 36-sim U2b: a fluid tank's settings (the particles are each peer's own).
         // Normalized here — the one boundary a peer's bytes go through.
@@ -720,8 +748,51 @@ export async function objectParameters(data, from = 'peer') {
             const turn = bumpTextTurn(data.uuid);
             if (data.textPath) applyTextPathTo(mesh, data.textPath);
             // 64-text TX5: Bake — this peer bakes its own build of the record (the mesh never travels)
-            else if (data.bake === true && mesh.userData.textPath) void import('$lib/textPathEdit.js').then((m) => m.applyRemoteBake(mesh, turn));
+            // (fix-batch-4 G5: the bake probe notes every arrival, before the bake's own steps)
+            else if (data.bake === true && mesh.userData.textPath)
+                void import('$lib/textPathEdit.js').then((m) => {
+                    m.bakeNote(data.uuid, 'arrived', { turn });
+                    return m.applyRemoteBake(mesh, turn);
+                });
             else delete mesh.userData.textPath;
+            pokeScene();
+        }
+    } else if (data.parameter == 'decal') {
+        // 102 M3: a decal's record, normalized at the boundary; every peer rebuilds the surface
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh && mesh.userData?.decal && data.decal) {
+            // a lazy chunk (the boot never loads decals); one module promise keeps messages in order
+            void import('$lib/decalObject.js').then((m) => {
+                m.applyDecalTo(mesh, data.decal);
+                pokeScene();
+            });
+        }
+    } else if (data.parameter == 'splat') {
+        // 102: a Gaussian splat's record (crop, opacity, the file); the proxy box follows it and every
+        // peer's runtime redraws from it
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            // the record only (wireValidate checked its shape): the splat runtime normalizes it and rebuilds
+            // the proxy box on its next frame, so none of the splat code rides the boot
+            if (data.splat) mesh.userData.splat = { ...data.splat };
+            else delete mesh.userData.splat;
+            pokeScene();
+        }
+    } else if (data.parameter == 'layer') {
+        // 102b-arrange: which layer an object is on (an id from the scene's layer table) or null
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            if (typeof data.layer === 'string' && data.layer) mesh.userData.layer = data.layer;
+            else delete mesh.userData.layer;
+            pokeScene();
+        }
+    } else if (data.parameter == 'array') {
+        // 102b-arrange: an array record (wireValidate checked the shape; the runtime normalizes on
+        // read) or null = the array is gone. Every peer draws the copies itself.
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            if (data.array) mesh.userData.array = JSON.parse(JSON.stringify(data.array));
+            else delete mesh.userData.array;
             pokeScene();
         }
     } else if (data.parameter == 'fluidInteraction') {
@@ -861,8 +932,11 @@ export async function createObject(object, uuid, override, groupuuid, pos, rot, 
 // rendering and the poke flush all get a turn while a big scene lands. A batch is open
 // for the whole drain, which is what puts `pokeScene` into its one-per-frame mode.
 //
-// A macrotask (setTimeout 0) is the yield, not a microtask: a microtask chain never
-// returns to the browser, so it would slice the work without ever letting a frame run.
+// A task is the yield, not a microtask: a microtask chain never returns to the browser, so
+// it would slice the work without ever letting a frame run. 54-net: and not setTimeout(0) —
+// a throttled page stretches every chained timeout to ~1 s (measured: 10 in 10.9 s on a busy
+// e2e box), so the full-state reply after a heal landed one object per second and an edit
+// made during the drop showed up after the check had given up. sceneLoader's yield has neither.
 // ---------------------------------------------------------------------------
 
 /** How long the drainer may hold the thread before yielding. 8ms leaves half a 60Hz
@@ -988,7 +1062,7 @@ async function drainIngest() {
                     else job.reject(error);
                 }
             }
-            if (ingestQueue.length && !ingestHeld) await new Promise((r) => setTimeout(r, 0));
+            if (ingestQueue.length && !ingestHeld) await yieldToEventLoop();
         }
     } finally {
         ingestDraining = false;
@@ -1030,6 +1104,7 @@ async function applyCreateObject(object, uuid, override, groupuuid, pos, rot, sc
     // an incoming object can only carry a STALE edit wireframe (a peer on an
     // older build, or a scene saved with a session open) — never a live one
     stripEditOverlays(mesh);
+    clearInboundDraftFlags(mesh);
     let existing = override ? sceneObjects.getObjectByProperty('uuid', mesh.uuid) : null;
     if (existing) {
         // replace IN PLACE, under the same parent. The gizmo has to let go first or it
@@ -1063,6 +1138,7 @@ async function applyCreateObject(object, uuid, override, groupuuid, pos, rot, sc
         result.scene.uuid = uuid
         result.scene.children.forEach((object, index) => {
           let mesh = object.clone()
+          clearInboundDraftFlags(mesh);
           mesh.uuid = uuid[index]
           object.uuid = uuid[index]
           const existing = sceneObjects.getObjectByProperty('uuid', mesh.uuid)
@@ -1127,6 +1203,12 @@ export function sendObjects(peerId, element, opts = {}) {
         // 30c: a placed KIT PIECE reaches every peer as its stub; each refills it from
         // the pack (no GLTF of a 1 MB piece per placement — see packRefs.js)
         peer.send({ type: 'object', element: stubElementOf(element), groupuuid: element.parent?.uuid, ...(opts.override ? { override: true } : {}) });
+        return;
+    }
+    if (peerId === null && element?.isMesh && element.userData?.splat) {
+        // 102: a placed SPLAT carrier is ONE mesh, not an import root — the root path below sends a
+        // 'group' (the record without the mesh) and then only its children, so a peer got an empty node
+        peer.send({ type: 'object', element: element.toJSON(), groupuuid: element.parent?.uuid, pos: element.position.toArray(), rot: element.rotation.toArray(), scale: element.scale.toArray(), ...(opts.override ? { override: true } : {}) });
         return;
     }
     if (peerId === null) {
@@ -1221,6 +1303,24 @@ function multiMaterialSyncable(element) {
 }
 
 /**
+ * 80a K3: one object, as it is here, to one peer as an arrival heal (`override`: the receiver
+ * replaces its copy in place). The answer to an edit the lock gate refused. Its subtree goes too.
+ * @param {any} conn @param {string} uuid @returns {boolean} sent
+ */
+export function healObjectTo(conn, uuid) {
+    const target = sceneObjects?.getObjectByProperty('uuid', uuid);
+    if (!target || !conn?.open) return false;
+    // the same ritual as every serializer: animated objects at their base pose while we read them
+    const restore = parkAnimatedAtBase();
+    try {
+        sendObject(conn, { children: [target] }, target.parent && target.parent !== sceneObjects ? target.parent.uuid : undefined, { override: true });
+    } finally {
+        restore();
+    }
+    return true;
+}
+
+/**
  * @param {any} conn @param {any} element @param {string|undefined} groupuuid
  * @param {{override?: boolean}} [opts] see `sendObjects` — threaded through EVERY
  *   recursive call, because a subtree of an arrival heal is still an arrival heal.
@@ -1306,7 +1406,7 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
             elementClone.children = [];
             conn.send({
                 type: 'object',
-                element: elementClone.toJSON(),
+                element: objectToJSON(elementClone),
                 groupuuid: groupuuid,
                 pos: test.toArray(),
                 rot: element.rotation.toArray(),
@@ -1314,7 +1414,8 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
                 ...heal
             });
             sendObject(conn, element, element.uuid, opts);
-        } else if (element.userData?.textPath) {
+        } else if (element.userData?.textPath || element.userData?.decal || element.userData?.splat) {
+            // 102: a SPLAT carrier too — a box proxy + its record; toJSON keeps the proxy's draw-nothing flags
             // 64 TX1: a TEXT carrier travels as its RECORD — toJSON read NOW, while the park hook holds
             // the placeholder (~3 KB). The GLTF branch below exported it in a later callback, after the
             // park was restored: the solid's [face, side] array split into a GROUP of primitives and a

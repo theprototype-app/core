@@ -136,6 +136,9 @@ export const SCREENSHOT_DEFAULT_SIZE = 768;
  * @property {string|number} [aspect] width to height, default 4:3 ('current' defaults to the person's canvas)
  * @property {number} [zoom] above 1 is closer, 0.1 to 10
  * @property {number} [margin] room around the subject: 1 touches the frame, default 1.15
+ * @property {'content'|'scene'} [subject] what a scene-wide shot frames (104 A4): 'content' leaves water bodies and flat ground
+ *   planes far bigger than the rest out (the default for iso / top / front when one exists), 'scene' frames everything;
+ *   lastShot().subject.leftOut names what was left out, lastShot().frame is the picture in words (104 A5)
  * @property {number} [size] longest side in px (default 768, max 2048)
  * @property {boolean} [grid] draw the grid (default false)
  * @property {boolean} [postEffects] draw the frame through the post stack this tab draws (bloom, vignette, grade …);

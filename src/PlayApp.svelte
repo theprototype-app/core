@@ -53,6 +53,7 @@
   import { startDiagnostics } from '$lib/diagnostics';
   import { startWireErrors } from '$lib/wireErrors';
   import { startErrorReports } from '$lib/errorReports';
+  import { embedSceneId } from '$lib/playMode';
   import { startSceneMetrics } from './lib/sceneBudget';
   import { startPerfRecorder } from './lib/perf/recorder';
   import { startPerfBeacon } from './lib/perf/beacon';
@@ -92,6 +93,7 @@
   import { startGamePresence } from '$lib/gamePresence';
   import { startGameShell } from '$lib/gameShellWire';
   import { startPlayEntry } from '$lib/play/playBoot.js';
+  import { notePinFilter } from '$lib/annotationsHandler';
   // the peer layer: the editor's Connect bar creates it on mount, before the Canvas mounts <Scene>
   // (whose self row and camera sends need a peer id); the play entry has no Connect bar, so it
   // creates the same PeerConnection here, during its own init. An invite hash is read by the
@@ -111,6 +113,8 @@
     startDiagnostics();
     startWireErrors();
     startErrorReports();
+    // 102 M4: anonymous play statistics for the published scene (?s=<id>) — lazy, sent by the cloud plugin
+    if (embedSceneId) void import('$lib/play/playStats').then((m) => m.startPlayStats(embedSceneId));
     if (!webglOk) reportNoWebGL();
     startSceneMetrics();
     startPerfRecorder();
@@ -158,6 +162,10 @@
     startGameShell();
     // `?scene=<url>`, `window.tpPlay`, the frame's postMessage events (src/lib/play/playBoot.js)
     startPlayEntry();
+    // 102b-play: the play app pins only notes shown to visitors (a review note is not for players)
+    notePinFilter.set((/** @type {any} */ n) => n?.visitors === true);
+    // 102b-play: the screen stays awake while playing or watching (lazy, only where Wake Lock exists)
+    if ('wakeLock' in navigator) void import('$lib/wakeLockWiring.js').then((m) => m.startAppWakeLock());
     // the hook table is ~300 lazy loaders: a play link pays for it only when a test asks
     if (safeStorage.getItem('debugStores')) import('$lib/debugHooks').then((m) => m.installDebugHooks());
   });

@@ -18,6 +18,7 @@
 		deselectObject,
 		applySelectionSet,
 		topLevelObjectOf,
+		editorTargetOf,
 		focusObject,
 		selectSameType,
 		isolateObjects,
@@ -33,10 +34,10 @@
 	import { noteXRSessionStarted } from '$lib/playMode';
 	import { recordTransform } from '$lib/history';
 	import { suspendAnimation, resumeAnimation, pumpFlowTick } from '$lib/flowRuntime';
-	import { holdBody, releaseBody } from '$lib/physics';
+	import { holdBody, releaseBody, simulating as physicsSimulating, remoteSimulating as physicsRemoteSimulating } from '$lib/physics';
 	import { sculptObject, enterSculpt, beginStroke, strokeMove, endStroke as sculptEndStroke, showCursorAt, hideCursor } from '$lib/terrainSculpt';
 	import { scatterSelectArmed, scatterSelectDown, scatterSelectMove, scatterSelectUp, onScatterProxyMoved, onScatterProxyDragChanged } from '$lib/scatterEdit';
-	import { sceneHits } from '$lib/scenePick';
+	import { sceneHits, hitWorldNormal } from '$lib/scenePick';
 	import { pickStack, chooseInStack, altCycleIndex, primaryIndex } from '$lib/selectThrough';
 	import { editorPass } from '$lib/pickPass'; // 36 F22
 	import { showPickPreview, hidePickPreview, notePickCycled } from '$lib/pickCycle'; // 36 F22 / S6
@@ -53,10 +54,14 @@
 	import { tickAnimatedMixers } from '$lib/animatedImports';
 	import { tickSim } from '$lib/sim/runtime.js'; // 36-sim: jiggle, splashes, fluid tanks
 	import { tickTextPathsLazy } from '$lib/textPathTick.js'; // 64 D2: text on a path
+	import { tickDecalsLazy } from '$lib/decalTick.js'; // 102 M3: decals
+	import { tickSplatsLazy } from '$lib/splat/splatTick.js'; // 102: Gaussian splats (Spark loads with the first one)
+	import { tickArraysLazy } from '$lib/arrayTick.js'; // 102b-arrange: array copies (lazy runtime)
 	import { startPackBehaviors, tickPackBehaviors } from '$lib/packBehavior';
 	import { startArchParts } from '$lib/arch/archParts.js';
 	import { tickAnimationPreview, captureAutoKey, playheadOf } from '$lib/animationPreview';
 	import { tickSequences } from '$lib/sequencePlayer'; // 48 S2: the Timeline's runs
+	import { tickConstraints, holdConstraints, releaseConstraints, updateConstraintHelpers } from '$lib/rig/constraintHub.js'; // 102 M7 (the solver loads on first use)
 	import { drawMode, drawTool, strokePointFromRay, endStroke, setDrawScene } from '$lib/drawMode';
 	import { splinePlaceFromRay, splineToolActive, finishSpline } from '$lib/splineTool';
 	import { flattenPicking, flattenPickClick } from '$lib/flattenActions';
@@ -91,6 +96,7 @@
 	import { startLightHelpers, updateLightHelpers, lightProxiesGroup } from '$lib/lightHelpers';
 	import { HELPER_LAYER } from '$lib/helperLayer';
 	import { startColliderHelpers, updateColliderHelpers } from '$lib/colliderHelpers';
+	import { updateJointHelpers } from '$lib/jointHelpers'; // 102b joint gizmos
 	import { startCameraHelpers, updateCameraHelpers } from '$lib/cameraHelpers';
 	import { updateOnionSkin } from '$lib/onionSkin';
 	import { startCables, updateCables } from '$lib/audioPatch';
@@ -461,6 +467,12 @@
 		tickTextPathsLazy($objectsGroup, performance.now()); // 64 D2: letters follow their carriers (and linked paths)
 		tickAnimationPreview(); // Animation window: local transform preview (not synced)
 		tickSequences(); // 48 S2: shots / clips / audio / events of running sequences
+		// 102 M7: constraints + IK, after every animation runtime above (mixers, clips, the sequencer's
+		// keyed weights) and before physics reads the poses; a no-op when no object has constraints
+		tickConstraints({ physicsRunning: $physicsSimulating || !!$physicsRemoteSimulating });
+		tickDecalsLazy($objectsGroup, performance.now()); // 102 M3: decal surfaces follow their targets (after constraints pose them)
+		tickSplatsLazy($objectsGroup, performance.now()); // 102: splat meshes follow their carriers (after anything that poses them)
+		tickArraysLazy($objectsGroup, performance.now()); // 102b-arrange: every peer draws its arrays' copies (102-int-2: after constraints, decals and splats pose the originals)
 		tickMeshEdit(); // vertex handles follow the object if it moves (119)
 		tickEditWireframe(); // ...and the edit wireframe stays parented to it (faceEdit)
 		tickMeshPivotMarker(); // ...and the placed transform pivot's marker (meshPivot)
@@ -468,6 +480,8 @@
 		tickPathObjects(scene, $objectsGroup, { playing: $isLocked === true, selected: $selectedObjects ?? [] }); // 78 F4: hide in Play, numbers, scrub ghost
 		updateLightHelpers();
 		updateColliderHelpers(); // CL-A A7: collider proxies follow their objects
+		updateConstraintHelpers(scene, $objectsGroup, $selectedObjects ?? []); // 102 M7
+		updateJointHelpers(); // 102b: joint anchors, axes and limits
 		updateSnapAnchor(); // 19-B P3: the picked snap-anchor marker follows its object
 		updateCameraHelpers(); // 16-P5: camera-object frustums follow their markers
 		updateCables(); // 23-A4: patch cables follow their plugs; the routing diff runs here too
@@ -531,6 +545,7 @@
 			if (event.value) {
 				// animated objects: park at their base so the gizmo edits the base transform
 				suspendAnimation(object.uuid);
+				holdConstraints(object.uuid); // 102 M7: the gizmo edits the authored pose, not the constrained one
 				// P-A: mid-sim, a grabbed dynamic body follows the gizmo kinematically
 				holdBody(object.uuid);
 				dragStartState = {
@@ -541,6 +556,7 @@
 				};
 			} else if (dragStartState && dragStartState.uuid === object.uuid) {
 				resumeAnimation(object.uuid);
+				releaseConstraints(object.uuid);
 				releaseBody(object.uuid); // back to dynamic + throw velocity
 				const after = {
 					pos: object.position.toArray(),
@@ -638,7 +654,7 @@
 		// node no longer wins the click); a plain repeat on the same spot walks down it.
 		// 36 F22: water (and, by the scene's setting, transparent surfaces and triggers) stands
 		// aside too; Alt+click walks the whole stack front to back instead
-		const stack = pickStack(hits, topLevelObjectOf, editorPass());
+		const stack = pickStack(hits, editorTargetOf, editorPass());
 		const altPick = cycle && click ? altCycleIndex(stack, click, lastAltClick) : null;
 		// 41 G14: on a finger, a repeat tap on a SELECTED front object lets go of it rather than
 		// walking to what is behind (on a phone the Objects list reaches that) — in most scenes
@@ -998,7 +1014,7 @@
 			const at = document.elementFromPoint(x, y);
 			if (at !== element) return hidePickPreview();
 			selectionRaycaster.setFromCamera(new THREE.Vector2(((x - rect.left) / rect.width) * 2 - 1, -((y - rect.top) / rect.height) * 2 + 1), camera.current);
-			const stack = pickStack(pickSceneObjects(), topLevelObjectOf, editorPass());
+			const stack = pickStack(pickSceneObjects(), editorTargetOf, editorPass());
 			const next = altCycleIndex(stack, { x, y }, lastAltClick);
 			if (next.index < 0) return hidePickPreview();
 			showPickPreview($globalScene, stack[next.index].target, x, y, next.index, next.of);
@@ -1112,7 +1128,11 @@
 			const area = $marqueeRect;
 			const picked = [];
 			const center = new THREE.Vector3();
+			// 102b-arrange: a box skips objects on a LOCKED layer and on a layer hidden here
+			const locked: Set<string> | undefined = (editorPass() as any).lockedLayers;
 			for (const object of $objectsGroup?.children ?? []) {
+				const layer = object.userData?.layer;
+				if (layer && (locked?.has(layer) || object.visible === false)) continue;
 				const box = new THREE.Box3().setFromObject(object);
 				if (!isFinite(box.min.x)) continue;
 				box.getCenter(center).project(camera.current);
@@ -1439,7 +1459,7 @@
 			}
 			setRayFromEvent({ clientX, clientY });
 			const hits = pickSceneObjects();
-			const top = !forceEmpty && hits.length ? topLevelObjectOf(hits[0].object) : null;
+			const top = !forceEmpty && hits.length ? editorTargetOf(hits[0].object) : null;
 			if (top) {
 				// an object under the cursor gets its regular context menu; the
 				// hit point rides along so Add note pins exactly there (87)
@@ -1448,6 +1468,9 @@
 					y: menuY,
 					uuid: top.uuid,
 					point: hits[0].point.toArray(),
+					// 102 M3: the surface direction + the mesh hit, for "Add decal here"
+					normal: hitWorldNormal(hits[0])?.toArray() ?? null,
+					hitUuid: hits[0].object.uuid,
 					locked: !!$lockedObjects.find((lock) => lock[1] === top.uuid)
 				};
 				return;
@@ -1760,6 +1783,17 @@
 	});
 
 	function oncreate() { $TControls.visible = false; }
+	// 80a K15: the gizmo fires `change` on attach, hover and axis changes too; only a pose that moved
+	// is an edit (a `move` sent on select would take the object in "Lock only while editing")
+	let gizmoPose = { uuid: '', key: '' };
+	/** true = the pose moved since the last one we sent */
+	function gizmoPoseMoved(o: any): boolean {
+		const key = o.position.toArray().join() + '|' + o.rotation.toArray().slice(0, 3).join() + '|' + o.scale.toArray().join();
+		const fresh = gizmoPose.uuid !== o.uuid;
+		const moved = fresh ? !!$TControls.dragging : gizmoPose.key !== key;
+		gizmoPose = { uuid: o.uuid, key };
+		return moved;
+	}
 	function onchange() {
 		// vertex-edit proxy: write through to the geometry, never broadcast a move
 		if ($TControls.object?.userData?.isVertexProxy) {
@@ -1821,6 +1855,7 @@
 						dropToSurface($TControls.object, $objectsGroup);
 					}
 					$TControls.visible = true;
+					if (!gizmoPoseMoved($TControls.object)) return;
 					// 60 Q2: the gizmo drag is a stream (fast); its keyframe lands the last pose
 					$peers.send({
 						type: 'move',

@@ -18,29 +18,25 @@ h.run(async () => {
 	const C = await h.setupPage(browser, 'C');
 
 	// count get* requests arriving at each peer, by sender — hooked from the
-	// start so the join dance is fully covered (conns appear over time, so keep
-	// rescanning; peerjs conns are EventEmitters, a second listener is free)
+	// start so the join dance is fully covered
 	for (const p of [A, B, C]) {
 		await p.page.evaluate(() => {
 			const w = window;
 			let pc;
 			w.__tp.test.v1.peers.subscribe((v) => (pc = v))();
-			const seen = new WeakSet();
 			w.__rx = {};
-			const hook = (c) => {
-				if (!c || c.type !== 'data' || seen.has(c)) return;
-				seen.add(c);
-				c.on('data', (d) => {
-					if (!d || !String(d.type ?? '').startsWith('get')) return;
-					const from = d.sender ?? c.peer;
+			// 80a-int: counted where peerjs emits, not by attaching a listener to each conn as it shows
+			// up — a 150 ms poll for new conns missed the handshake's first get* (they leave on open)
+			let proto = Object.getPrototypeOf(pc.peer);
+			while (proto && !Object.prototype.hasOwnProperty.call(proto, 'emit')) proto = Object.getPrototypeOf(proto);
+			const emit = proto.emit;
+			proto.emit = function (ev, d, ...rest) {
+				if (ev === 'data' && this && this.type === 'data' && d && String(d.type ?? '').startsWith('get')) {
+					const from = d.sender ?? this.peer;
 					(w.__rx[from] = w.__rx[from] || []).push(d.type);
-				});
+				}
+				return emit.call(this, ev, d, ...rest);
 			};
-			setInterval(() => {
-				for (const k of Object.keys(pc.connections)) hook(pc.connections[k]);
-				const raw = pc.peer.connections || {};
-				for (const k of Object.keys(raw)) (raw[k] || []).forEach(hook);
-			}, 150);
 		});
 	}
 

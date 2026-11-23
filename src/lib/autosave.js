@@ -6,6 +6,7 @@ import { get, writable } from 'svelte/store';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { objectsGroup, globalCamera, globalScene, orbitControls, pokeScene, beginSceneBatch, endSceneBatch } from '../stores/sceneStore';
+import { adoptLoadedDrafts } from './objectPermissions'; // 80a migration
 import { flowGraphs, restoreGraphs, SCENE_GRAPH, customNodeDefs } from '../stores/flowStore';
 import { serializeGraphs } from './flowGraphs';
 import { customNodeDefsSnapshot, customNodeDefsRestore } from './customNodes'; // 2.0-n3c
@@ -34,6 +35,7 @@ import { transport, transportSnapshot, transportRestore } from './musicClock';
 import { patch, patchSnapshot, patchRestore } from './audioPatch';
 import { hudDocs, hudDocsSnapshot, hudDocsRestore } from './hudDocs';
 import { sequences, sequencesSnapshot, sequencesRestore } from './sequences'; // 48 S2
+import { sceneJoints, jointsSnapshot, jointsRestore } from './joints'; // 102b: joints survive a reload
 import { chats, chatRefs, chatsSnapshot, chatRefsSnapshot, chatsRestore } from './chat/tpchatStore.js'; // 56 C10
 import { gameState, gameStateSnapshot, gameStateRestore } from './gameState';
 import { peers, showToast, showInfoToast, dismissToastById } from '../stores/appStore';
@@ -48,6 +50,7 @@ import { captureEditResume, applyEditResume } from './editResume';
 import { disposeTree, keepSet } from './disposeTree';
 import { safeStorage, storageIsolated } from './safeStorage';
 import { registerMetricSource } from './sceneBudget';
+import { objectToJSON } from './slotGroups.js'; // 105: one serializer for slot groups
 
 // Crash safety: snapshots of the scene (GLTF json), the node graph and the
 // camera go to IndexedDB — debounced 30s after any change plus a 3-minute
@@ -242,6 +245,9 @@ function exportScene() {
 		exporter.parse(
 			group,
 			(result) => {
+				// 102 M7: GLTFExporter keeps a REFERENCE to each node's live `matrix.elements`; copy them
+				// before anything unparks, or the snapshot stores the re-posed (animated/constrained) pose
+				for (const n of /** @type {any} */ (result)?.nodes ?? []) if (n.matrix) n.matrix = Array.from(n.matrix);
 				putPiecesBack();
 				unpark(); // before unstamp, so the parked objects lose their __uuid too
 				unstamp();
@@ -396,6 +402,13 @@ async function writeSnapshot() {
 		// 48 S2: the Timeline's sequences — scene data with nowhere in a GLTF to live; the
 		// object uuids their tracks name survive through the __uuid stamp above
 		sequences: sequencesSnapshot(),
+		// 102b: the JOINTS too. They were never here, so a reload brought every object back and
+		// silently dropped every weld, hinge and rope between them (sessions/.tpscene always had
+		// them). Keyed by the object uuids the __uuid stamp restores; only joints whose both ends
+		// still exist are written (a joint to a deleted object would never build anyway).
+		joints: jointsSnapshot().filter(
+			(/** @type {any} */ j) => !!group?.getObjectByProperty?.('uuid', j.a) && !!group?.getObjectByProperty?.('uuid', j.b)
+		),
 		// 56 C10/C8: the scene's AI chats and the pictures kept from them (null when none)
 		chats: chatsSnapshot('all'),
 		chatRefs: chatRefsSnapshot(),
@@ -768,8 +781,10 @@ async function applyRestore(snapshot, offer = null) {
 				for (const child of children) {
 					await slice(job);
 					group.add(child);
-					if (connected)
-						peer.send({ type: 'object', element: isPristinePackRef(child) ? stubElementOf(child) : child.toJSON() });
+					// 80a: the autosave keeps drafts; restoring them makes them drafts here and sends none
+					const draft = adoptLoadedDrafts(child);
+					if (connected && !draft)
+						peer.send({ type: 'object', element: isPristinePackRef(child) ? stubElementOf(child) : objectToJSON(child) });
 					if (child.userData?.packStub) refills.push(fillPackRef(child).finally(() => progress(job)));
 					else progress(job);
 					poke();
@@ -818,6 +833,13 @@ async function applyRestore(snapshot, offer = null) {
 		// same reasoning: replicate, so a restore into a live room brings the HUD too
 		hudDocsRestore(snapshot.hud, true, true);
 		sequencesRestore(snapshot.sequences ?? null, true, true); // 48 S2
+		// 102b: joints come back and replicate like every block above (an older snapshot has no
+		// key: leave the list alone). The sessions.js restore shape: local set, then one jointcreate each.
+		if (Array.isArray(snapshot.joints)) {
+			jointsRestore(snapshot.joints);
+			const jointPeer = /** @type {any} */ (get(peers));
+			if (jointPeer) for (const joint of snapshot.joints) jointPeer.send({ type: 'jointcreate', joint });
+		}
 		chatsRestore(snapshot.chats ?? null, snapshot.chatRefs ?? null, true, true); // 56 C10
 		gameStateRestore(snapshot.game, true);
 		// #20 P5: windows, selection and edit mode — the EXPLICIT-restore path. A plain
@@ -934,6 +956,7 @@ export function startAutosave() {
 	chatRefs.subscribe(() => markDirty());
 	// and once more: a game's state changes touch no object either
 	gameState.subscribe(() => markDirty());
+	sceneJoints.subscribe(() => markDirty()); // 102b: adding or tuning a joint touches no object
 	setInterval(() => {
 		// M5: the safety-net interval has to respect the adaptive cadence as well, or a
 		// scene that backed off to 5 minutes still pays for a full export every 3

@@ -148,6 +148,25 @@
 								<option value={option}>{option}</option>
 							{/each}
 						</select>
+					{:else if param.kind === 'number'}
+						<!-- 102b-hud: a plain number (Game Value's max), committed on change like text -->
+						<input
+							class="nodrag nopan w-full rounded-sm bg-surface-inset px-1.5 py-0.5 font-mono text-[11px]"
+							type="number"
+							min={param.min ?? null}
+							max={param.max ?? null}
+							step={param.step ?? 'any'}
+							value={data[param.key] ?? spec.defaults[param.key] ?? 0}
+							on:change={(e) => setNodeData(id, { [param.key]: +e.currentTarget.value })}
+						/>
+					{:else if param.kind === 'color'}
+						<!-- 102b-hud: Screen Flash's colour -->
+						<input
+							class="nodrag nopan h-6 w-full cursor-pointer rounded-sm bg-surface-inset"
+							type="color"
+							value={data[param.key] ?? spec.defaults[param.key]}
+							on:change={(e) => setNodeData(id, { [param.key]: e.currentTarget.value })}
+						/>
 					{/if}
 				</label>
 			{/each}

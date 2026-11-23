@@ -54,6 +54,7 @@ export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?:
 	create_mesh: { title: 'Make a mesh from data', destructive: false },
 	set_geometry: { title: 'Reshape objects', destructive: true },
 	edit_mesh: { title: 'Edit a mesh', destructive: true },
+	simplify_mesh: { title: 'Simplify a mesh', destructive: true }, // 102 M1
 	set_material: { title: 'Change materials and textures', destructive: true, openWorld: true },
 	list_materials: { title: 'Read materials', read: true },
 	get_material: { title: 'Read one material', read: true },
@@ -273,8 +274,8 @@ export const CONNECTOR_FAMILIES = Object.freeze({
 	edit_shape: {
 		title: 'Reshape or model objects',
 		summary:
-			'Change the shape of objects that exist: params = new size / segments / type in place (on a 3D text: its words, font, size, depth, bevel, align, wrap width, anchor, colours), mesh = model faces and vertices (extrude, inset, bevel, subdivide, weld, smooth, dissolve, make a face), update = new vertices / faces for a mesh made from data (replace it, or patch a range), duplicate = copies of an object in a row, or its mirror image (a left arm → the right one), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together.',
-		actions: { params: 'set_geometry', mesh: 'edit_mesh', update: 'update_mesh', duplicate: 'duplicate', pivot: 'set_pivot', pivot_group: 'create_pivot' }
+			'Change the shape of objects that exist: params = new size / segments / type in place (on a 3D text: its words, font, size, depth, bevel, align, wrap width, anchor, colours), mesh = model faces and vertices (extrude, inset, bevel, subdivide, weld, smooth, dissolve, make a face), update = new vertices / faces for a mesh made from data (replace it, or patch a range), duplicate = copies of an object in a row, or its mirror image (a left arm → the right one), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together, simplify = fewer triangles on a mesh or model (a percentage or a count; UVs, colours, skin weights and material slots kept; one undo step).',
+		actions: { params: 'set_geometry', mesh: 'edit_mesh', update: 'update_mesh', duplicate: 'duplicate', pivot: 'set_pivot', pivot_group: 'create_pivot', simplify: 'simplify_mesh' } // 102 M1: simplify
 	},
 	set_look: {
 		title: 'Materials, shaders, sky, light and post effects',

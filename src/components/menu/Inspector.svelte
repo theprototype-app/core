@@ -21,6 +21,7 @@
 	import LoadStatePanel from './LoadStatePanel.svelte';
 	import WaterPanel from '../water/WaterPanel.svelte';
 	import SliderRow from '../ui/SliderRow.svelte';
+	import { fogKindOf } from '$lib/fogModes.js';
 	import SceneLodSection from './SceneLodSection.svelte'; // 46 P2
 	import PropRow from '../ui/PropRow.svelte';
 	import Chips from '../ui/Chips.svelte';
@@ -41,6 +42,8 @@
 	import HdriSection from './scene/HdriSection.svelte'; // 37-hdri
 	import BakeLightSection from './scene/BakeLightSection.svelte'; // 98 P1
 	import PhysicsFloats from '../sim/PhysicsFloats.svelte'; // 36-sim I1
+	import PhysicsTuningRows from '../sim/PhysicsTuningRows.svelte'; // 102b row 1
+	import JointsSection from '../sim/JointsSection.svelte'; // 102b row 2
 	import FluidEmitterSection from '../sim/FluidEmitterSection.svelte'; // 36-fb F23
 	import FluidInteractionRow from '../sim/FluidInteractionRow.svelte'; // 36-fb F23
 	import FlowPathSection from '../sim/FlowPathSection.svelte'; // 36-fb F24
@@ -104,6 +107,7 @@
 	} from '$lib/meshEdit';
 	import { bottomInset } from '$lib/bottomDock';
 	import { geometryParamsOf, applyGeometry } from '$lib/geometryEdit';
+	import { roundedBoxOffer } from '$lib/roundedBoxGate.js'; // 102b-papercuts
 	import { nameOf } from '$lib/lockControl';
 	import { geometrySpec } from '$lib/geometryParams';
 	import { LIGHT_PARAMS, SHADOW_TYPES, SHADOW_SIZES, setShadowMapSize, cappedShadowSize } from '$lib/lightParams';
@@ -234,7 +238,11 @@
 		globalCamera,
 		orbitControls,
 		viewMode,
-		showGrid, pokeScene } from '../../stores/sceneStore';
+		showGrid, pokeScene, lockedObjects } from '../../stores/sceneStore';
+	// 80a K1: an object another peer holds shows read-only, with who and Request control
+	import { myLocks, holderNow } from '$lib/lockHeld';
+	import { heldReadOnly } from '$lib/ui/heldReadOnly';
+	import HeldBanner from './HeldBanner.svelte';
 	// 16-P3: grid + snapping prefs (LOCAL, like the clip planes)
 	import { gridSettings, setGrid, resetGrid, effectiveCell } from '$lib/gridSettings';
 	import { snapEnabled, snapSettings, surfaceSnap, snapTargets } from '$lib/snapping';
@@ -268,6 +276,7 @@
 		saveSnapAnchorAsOrigin
 	} from '$lib/snapEngine';
 	import { peers, inspectorClose, inspectorKind, showToast, inspectorFilter, userdata, closeSelectionInspector } from '../../stores/appStore.js';
+	import { get as getStore } from 'svelte/store'; // 102 M6: the unlink send reads the peer once
 	// 78-int PL13: "changed by <peer / agent> · time" under the shared Configure Scene sections
 	import { sceneSectionEdits } from '$lib/sceneEditBy.js';
 	import { editLine } from '$lib/sceneEditByCore.js';
@@ -431,6 +440,18 @@
 		const kept = /** @type {any} */ ($selectedObject);
 		if (pane === 'scene' || $inspectorClose || $inspectorKind !== 'selection' || ($selectedObjects ?? []).length || !kept?.uuid || !group) return;
 		if (group.getObjectByProperty('uuid', kept.uuid) !== kept) closeSelectionInspector();
+	});
+
+	// 80a K1 (fixes L1): the object on screen is held by ANOTHER peer -> read-only + banner. Live: it
+	// follows the lock table, so the kept object (uir-polish E3) turns read-only the moment a peer takes it.
+	const heldBy = $derived.by(() => {
+		$lockedObjects;
+		$myLocks;
+		const me = /** @type {any} */ ($peers)?.peer?.id;
+		const uuid = /** @type {any} */ ($selectedObject)?.uuid;
+		if (pane === 'scene' || !uuid) return null;
+		const h = holderNow(uuid);
+		return h && h !== me ? h : null;
 	});
 
 	// C1 (roadmap #13): scene-mode physics-objects list. Recomputes on scene/graph
@@ -615,6 +636,11 @@
 		if (!uuid) return;
 		const count = sharedWith.length;
 		if (!unlinkMaterial(uuid)) return;
+		// 102 M6 (found on the way): the unlink used to stay on this machine, so a peer kept the objects linked
+		// and the next edit of this one changed both over there. An older peer ignores the parameter.
+		/** @type {any} */
+		const peer = getStore(peers);
+		peer?.send({ type: 'objectParameters', parameter: 'materialUnlink', uuid });
 		showToast(
 			'This object has its own material now — the other ' +
 				count +
@@ -906,6 +932,12 @@
 		return !isLight && !isGroup && $selectedObject ? geometryParamsOf($selectedObject) : null;
 	});
 	const geoSpec = $derived(geoParams ? geometrySpec(geoParams.gtype) : null);
+	// 102b-papercuts: a baked rounded box the Geometry section can offer to convert (never converts by itself)
+	const roundOffer = $derived.by(() => {
+		geoTick;
+		$objectsGroup;
+		return !geoParams && !isLight && !isGroup && $selectedObject ? roundedBoxOffer($selectedObject) : null;
+	});
 
 	// 21-C1: the parametric LOCK has to notice a poke. Every meshgeo commit stamps
 	// userData.faceEdited (so every sculpt stroke does), and a THREE tree is not
@@ -2252,10 +2284,15 @@
 					}}
 				/>
 				</FieldClip>
+				<!-- 102b-papercuts: Linear / Distance / Height fog (Near and Far are the linear fog's rows) -->
+				<!-- 102b-papercuts: a lazy chunk (the boot carries no fog-kind rows) -->
+				{#await import('./scene/FogKindRows.svelte') then m}<m.default fog={envFog} />{/await}
+				{#if fogKindOf(envFog) === 'linear'}
 				<SliderRow id="fog-near" label="Near" min={0} max={Math.max(10, Math.ceil(envFog?.near ?? 0))} step={0.1} decimals={1} value={envFog?.near ?? 0}
 					onchange={(v) => editEnvSky({ fog: { near: v } })} />
 				<SliderRow id="fog-far" label="Far" min={0} max={Math.max(100, Math.ceil(envFog?.far ?? 0))} step={0.1} decimals={1} value={envFog?.far ?? 0}
 					onchange={(v) => editEnvSky({ fog: { far: v } })} />
+				{/if}
 				<UiButton
 					size="sm"
 					variant="outline"
@@ -2410,6 +2447,9 @@
 					{/if}
 				</div>
 			</Section>
+
+			<!-- 102b-arrange row 2: the scene's layers (a lazy chunk) -->
+			<Section variant="panel" label="Layers" closed aliases={['Layer', 'Hide layer', 'Lock layer']}>{#await import('./inspector/LayersSection.svelte') then m}<m.default />{/await}</Section>
 
 			<Section variant="panel" label="Levels" closed aliases={['Level', 'Portals', 'Checkpoints', 'Loading screen', 'Keep across levels']} note={sectionNote('Levels')}><LevelsSection /></Section>
 
@@ -3339,7 +3379,10 @@
 			{popped}
 		/>
 
-		<div class="flex flex-col gap-3">
+		{#if heldBy}
+			<HeldBanner uuid={$selectedObject.uuid} holder={heldBy} />
+		{/if}
+		<div class="flex flex-col gap-3" class:ins-held={!!heldBy} use:heldReadOnly={!!heldBy}>
 			{#if multiCount}
 				<!-- 17-D1 follow-up: the panel edits the whole SET, so say so — and drop
 				     the single-object identity fields entirely rather than let the
@@ -3393,7 +3436,12 @@
 			</div>
 			{/if}
 
-			{#if !multiCount && isReplaceableModel($selectedObject)}
+			<!-- 102 M3: a decal's look is its own section, first (where a model's source sits) -->
+			{#if !multiCount && $selectedObject.userData?.decal}
+				<!-- a lazy chunk: the boot never pays for decals -->
+				{#await import('./DecalSection.svelte') then m}<m.default object={$selectedObject} />{/await}
+			{/if}
+			{#if !multiCount && isReplaceableModel($selectedObject) && !$selectedObject.userData?.decal}
 				<!-- 59 T1/T2/T7a: Replace model… / Edit in Blender… / the watched file -->
 				<ModelSourceSection object={$selectedObject} />
 			{/if}
@@ -3437,6 +3485,10 @@
 			<!-- 57: a rigged model's humanoid map, applied clips, licence -->
 			{#if $animatedObjects[$selectedObject.uuid] && restRowsOf($selectedObject.uuid).length}
 				<CharacterSection object={$selectedObject} />
+			{/if}
+			<!-- 102 M7: constraints + IK on any object or bone (lazy: its own chunk) -->
+			{#if $selectedObject?.uuid && !multiCount && !$selectedObject.userData?.isHelper}
+				{#await import('./inspector/ConstraintsSection.svelte') then m}<m.default object={$selectedObject} />{/await}
 			{/if}
 
 			<!-- 16-P5: a camera OBJECT is a marker mesh carrying userData.camera. All
@@ -3781,6 +3833,11 @@
 				<ArrangeSection count={multiCount} />
 			{/if}
 
+			<!-- 102b-arrange row 2: Tidy (layer, select similar, rename many, randomise) — a lazy chunk -->
+			{#if $selectedObjects?.length}
+				{#await import('./inspector/TidySection.svelte') then m}<m.default />{/await}
+			{/if}
+
 			{#if !isLight}
 				<Section variant="panel" label="Object" clip={{ count: () => insTargets.length, fans: true }}>
 					<PropRow label="Render order" labelFor="inspector-render-order" valueBox={false}>
@@ -3844,6 +3901,11 @@
 				     pour emitter rows; instances live in the object's own frame (a Terrain keeps its
 				     Scatter section beside Terrain paint) -->
 				<ScatterSection object={$selectedObject} />
+			{/if}
+
+			{#if !isLight && !multiCount && $selectedObject?.uuid && $selectedObject?.isObject3D && !$selectedObject.userData?.decal && !$selectedObject.userData?.splat}
+				<!-- 102b-arrange row 1: Array (102-int-2: not on a decal or splat carrier, which has no mesh of its own) (a lazy chunk — nothing here is paid at boot) -->
+				{#await import('./inspector/ArraySection.svelte') then m}<m.default object={$selectedObject} />{/await}
 			{/if}
 
 			{#if devPrimary}
@@ -3939,6 +4001,19 @@
 							>
 						{/if}
 					{:else}
+						{#snippet geoSlider(/** @type {any} */ spec, /** @type {string | undefined} */ rowId)}
+							<SliderRow
+								id={rowId}
+								label={spec.label}
+								min={spec.min ?? 0}
+								max={spec.max ?? 10}
+								step={spec.kind === 'int' ? 1 : spec.step ?? 0.05}
+								decimals={spec.kind === 'int' ? 0 : 2}
+								value={Number(geoParams.params[spec.key] ?? spec.def)}
+								mixed={geoMixed(spec.key, spec.def)}
+								onchange={(v) => editGeometry(spec.key, spec.kind === 'int' ? Math.round(v) : v)}
+							/>
+						{/snippet}
 						<div id="inspector-geometry" class="flex flex-col gap-1">
 							<!-- 37 R3: a row whose `show` says it does not apply (a door width on a wall
 							     with no doors) is hidden, not disabled -->
@@ -3969,22 +4044,21 @@
 											{/each}
 										</div>
 									</div>
+								{:else if spec.optional}
+									<!-- 102b-papercuts: an optional row (a Box's corner radius) carries its own id and tooltip -->
+									<div title={spec.title ?? spec.label}>{@render geoSlider(spec, 'geo-' + spec.key)}</div>
 								{:else}
-									<SliderRow
-										label={spec.label}
-										min={spec.min ?? 0}
-										max={spec.max ?? 10}
-										step={spec.kind === 'int' ? 1 : spec.step ?? 0.05}
-										decimals={spec.kind === 'int' ? 0 : 2}
-										value={Number(geoParams.params[spec.key] ?? spec.def)}
-										mixed={geoMixed(spec.key, spec.def)}
-										onchange={(v) => editGeometry(spec.key, spec.kind === 'int' ? Math.round(v) : v)}
-									/>
+									{@render geoSlider(spec, undefined)}
 								{/if}
 							{/each}
 						</div>
 					{/if}
 				</Section>
+			{:else if roundOffer && !multiCount}
+				<!-- 102b-papercuts: a BAKED rounded box (a mesh of vertices that is exactly one) is OFFERED as a Box
+				     with a corner radius. Never automatic: the shape stays the same, the file gets smaller and the
+				     Geometry rows come back. One undo step. -->
+				{#await import('./RoundedBoxOffer.svelte') then m}<m.default offer={roundOffer} uuid={$selectedObject.uuid} onconverted={() => geoTick++} />{/await}
 			{/if}
 
 			{#if $selectedObject?.userData?.terrain && !multiCount}
@@ -4177,7 +4251,9 @@
 			{/if}
 
 			<!-- 64 D2: a text's carrier draws nothing — its look is the Text section's -->
-			{#if material && !$selectedObject.userData?.textPath}
+			<!-- 102 M3: nor does a decal's — its look is the Decal section's -->
+			<!-- 102: a splat's material is its invisible hit box -->
+			{#if material && !$selectedObject.userData?.textPath && !$selectedObject.userData?.decal && !$selectedObject.userData?.splat}
 				<Section variant="panel" label="Material" clip={{ count: () => matTargets.length, fans: true }}>
 					{#if matCount}
 						<p id="material-multi-note" class="text-[length:var(--fs-badge)] italic text-text-muted">
@@ -4536,7 +4612,8 @@
 			{#if $selectedObject.userData?.flowPath}<FlowPathSection object={$selectedObject} />{/if}<!-- 36-fb F24 -->
 			{#if $selectedObject.userData?.portal || $selectedObject.userData?.checkpoint}<LevelObjectSection object={$selectedObject} />{/if}<!-- 93 LP1/LP3 -->
 			{#if $selectedObject.userData?.textPath}<TextPathSection object={$selectedObject} />{/if}<!-- 64 D2 -->
-			{#if !$selectedObject.isLight}
+			{#if $selectedObject.userData?.splat}{#await import('./SplatSection.svelte') then m}<m.default object={$selectedObject} />{/await}{/if}<!-- 102: a lazy chunk (off the boot path) -->
+			{#if !$selectedObject.isLight && !$selectedObject.userData?.splat}
 				<Section variant="panel" label="Physics" clip={{ count: () => insTargets.length, fans: true }}>
 					{#if multiCount}
 						<p id="physics-multi-note" class="text-[length:var(--fs-badge)] italic text-text-muted">
@@ -4671,9 +4748,11 @@
 								onchange={(/** @type {any} */ v) => setPhysics({ ccd: v === 'on' ? true : v === 'off' ? false : null })}
 							/>
 						</div>
+						<PhysicsTuningRows object={$selectedObject} {setPhysics} {mixed} /><!-- 102b row 1 -->
 						<PhysicsFloats object={$selectedObject} {setPhysics} /><!-- 36-sim I1 -->
 					{/if}
 					<FluidInteractionRow targets={insTargets} /><!-- 36-fb F23 -->
+					<JointsSection targets={insTargets.map((/** @type {any} */ o) => o.uuid)} /><!-- 102b row 2 -->
 					<!-- CL-A A7: per-object collider preview (local, this device) -->
 					<InsToggle
 						id="physics-show-collider"
@@ -5323,6 +5402,14 @@
 		border: 1px solid var(--accent);
 		border-radius: var(--radius-input);
 		background: var(--accent-soft);
+	}
+	/* 80a K1: held by another peer: the controls read as disabled; values stay live and readable */
+	.ins-shell :global(.ins-held) {
+		margin-top: 8px;
+	}
+	.ins-shell :global([data-held-ro] [aria-disabled='true']:not(.sec-panel-head)) {
+		opacity: 0.55;
+		cursor: not-allowed;
 	}
 	.ins-shell :global(.ins-accent-text) {
 		color: var(--accent-soft-text);

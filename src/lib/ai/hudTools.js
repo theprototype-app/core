@@ -366,7 +366,7 @@ export const HUD_AI_TOOLS = [
 		function: {
 			name: 'create_hud',
 			description:
-				'Give the game a HUD (2D screen overlay): screens of elements — a timer, a score text, a health bar, buttons, an image. A screen named like an existing one gets the elements added. Returns every element id: bind live values with create_flow_nodes (a hudtext / hudbar / hudtimer node with data.element = the id, e.g. counter -> hudtext). A new screen becomes the one that shows unless active: false. One undo step.',
+				'Give the game a HUD (2D screen overlay): screens of elements — a timer, a score text, a health bar, buttons, an image. A screen named like an existing one gets the elements added. Returns every element id: bind live values with create_flow_nodes (a hudtext / hudbar / hudtimer node with data.element = the id, e.g. counter -> hudtext; for a game value — score, clock, best, level, stars, lives, a variable, a stored or published value — use gamevalue -> hudtext with data.read and data.format: number, time, fraction, percent, stars, text). A new screen becomes the one that shows unless active: false. One undo step.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -442,4 +442,4 @@ export const HUD_AI_TOOLS = [
 ];
 
 export const HUD_PROMPT =
-	'\n\nHUD: create_hud adds screens of 2D elements (timer, score text, bars, buttons) and returns their ids; bind live values with hudtext / hudbar / hudtimer flow nodes whose element is that id. hud_panel lays out a menu or scoreboard; list_hud / edit_hud read and change what is there.';
+	'\n\nHUD: create_hud adds screens of 2D elements (timer, score text, bars, buttons) and returns their ids; bind live values with hudtext / hudbar / hudtimer flow nodes whose element is that id; a gamevalue node (read score / clock / best / level / stars / lives / variable / stored / published, format time / fraction / stars) feeds hudtext without code. hud_panel lays out a menu or scoreboard; list_hud / edit_hud read and change what is there.';

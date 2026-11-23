@@ -11,7 +11,8 @@ const highlightCount = (page) =>
 		() =>
 			new Promise((resolve) => {
 				window.__tp.test.v1.globalScene.subscribe((scene) => {
-					resolve(scene?.getObjectByName('lock-highlights')?.children.length ?? 0);
+					// 80a K1: count the BOXES; each held object also carries a holder avatar sprite
+					resolve(scene?.getObjectByName('lock-highlights')?.children.filter((c) => c.name !== 'lock-avatar').length ?? 0);
 				})();
 			})
 	);

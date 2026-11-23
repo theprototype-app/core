@@ -23,6 +23,9 @@ export const DEBUG_HOOKS = [
 	['*', () => import('../stores/sceneStore')],
 	['*', () => import('../stores/appStore')],
 	['*', () => import('../stores/flowStore')],
+	// 102 M7: constraints + IK (the runtime's state + the write path)
+	['constraints', () => import('./rig/constraintRuntime.js')],
+	['constraintEdit', () => import('./rig/constraintEdit.js')],
 	// 34 R2: the game kit (kit, kitDebug, kitAuthorityId)
 	['kit', () => import('./kit/runtime.js')],
 	// 55: the pure authority pick, so a suite can re-run it on a page's live facts
@@ -153,6 +156,11 @@ export const DEBUG_HOOKS = [
 	['nodeLiveState', () => import('./nodeLiveState')],
 	['flowLint', () => import('./flowLint.js')],
 	['lockControl', () => import('./lockControl')],
+	['lockHeld', () => import('./lockHeld')],
+	['lockIdle', () => import('./lockIdle')],
+	['lockMode', () => import('./lockMode')],
+	['rosterOrigin', () => import('./rosterOrigin')],
+	['sessionClock', () => import('./sessionClock')],
 	['prefabs', () => import('./prefabs')],
 	['prefabLinks', () => import('./prefabLinks')],
 	['prefabSync', () => import('./prefabSync')],
@@ -319,6 +327,8 @@ export const DEBUG_HOOKS = [
 	['peerServer', () => import('./peerServer')],
 	['cloudHooks', () => import('./cloudHooks')],
 	['cloudPlugin', () => import('./cloudPlugin')],
+	// 102 M4: anonymous play statistics (the tracker's view + a flush as a hide would do)
+	['playStats', () => import('./play/playStats')],
 	['connectionState', () => import('./connectionState')],
 	['peerApproval', () => import('./peerApproval')],
 	['inviteStore', () => import('./inviteStore')],
@@ -356,6 +366,7 @@ export const DEBUG_HOOKS = [
 	['playSettings', () => import('./playSettings')],
 	['colliderSpec', () => import('./colliderSpec')],
 	['colliderHelpers', () => import('./colliderHelpers')],
+	['jointHelpers', () => import('./jointHelpers')],
 	['colliderDecompose', () => import('./colliderDecompose')],
 	['colliderEdit', () => import('./colliderEdit')],
 	['editSession', () => import('./editSession')],
@@ -383,6 +394,9 @@ export const DEBUG_HOOKS = [
 	['moduleGallery', () => import('./moduleGallery')],
 	['moduleInstallJobs', () => import('./moduleInstallJobs')],
 	['uvEditor', () => import('./uvEditor')],
+	// 102 M6: paint on meshes (the lazy painter + its prefs leaf)
+	['meshPaint', () => import('./meshPaint')],
+	['meshPaintPrefs', () => import('./meshPaintPrefs')],
 	['uvUnwrap', () => import('./uvUnwrap')],
 	['meshTopology', () => import('./meshTopology')],
 	['meshBoolean', () => import('./meshBoolean')],
@@ -525,6 +539,9 @@ export const DEBUG_HOOKS = [
 	['scenePrivacy', () => import('./scenePrivacy')],
 	['touchControls', () => import('./touchControls')],
 	['touchActions', () => import('./touchActions')],
+	// 102b-play: wakeLock, infoPoints
+	['wakeLock', () => import('./wakeLock.js')],
+	['infoPoints', () => import('./infoPoints.js')],
 	['touchSpec', () => import('./touchSpec')],
 	['playMode', () => import('./playMode')],
 	// phone-polish: Android Back closes the top surface
@@ -594,6 +611,12 @@ export const DEBUG_HOOKS = [
 	['replaceModel', () => import('./replaceModel')],
 	// 59 T1/T2/T7: Replace from file, Edit in Blender, the drop router, the file watch
 	['modelReplace', () => import('./modelReplace')],
+	// 102 M1/M2: Simplify (scene half + pure core) and Export for 3D print / AR (writers, dialogs)
+	['meshSimplify', () => import('./meshSimplify')],
+	['meshSimplifyAction', () => import('./meshSimplifyAction')],
+	['print3dCore', () => import('./export3d/print3dCore')],
+	['export3dAction', () => import('./export3d/export3dAction')],
+	['makerDialogs', () => import('./makerDialogs')],
 	['editInBlender', () => import('./editInBlender')],
 	['modelDrop', () => import('./modelDrop')],
 	['modelWatch', () => import('./modelWatch')],
@@ -651,6 +674,20 @@ export const DEBUG_HOOKS = [
 	// 64 D2: text on a path (textPathDebug, setLetterOverrides)
 	['textPath', () => import('./textPathRuntime.js')],
 	['textPathEdit', () => import('./textPathEdit.js')],
+	// 102 M3: decals (decalDebug, placeDecalOn, setDecalFor)
+	['decal', () => import('./decalRuntime.js')],
+	['decalTick', () => import('./decalTick.js')],
+	['decalEdit', () => import('./decalEdit.js')],
+	// 102: Gaussian splats (splatTick.splatDebug reads the runtime without loading Spark)
+	['splatTick', () => import('./splat/splatTick.js')],
+	['splatCore', () => import('./splat/splatCore.js')],
+	['splatEdit', () => import('./splat/splatEdit.js')],
+	['splatImport', () => import('./splat/splatImport.js')],
+	// 102b-arrange: arrays (runtime debug + actions), tidy, vertex snap
+	['arrayRuntime', () => import('./arrayRuntime.js')],
+	['arrayActions', () => import('./arrayActions.js')],
+	['tidyActions', () => import('./tidyActions.js')],
+	['layersRuntime', () => import('./layersRuntime.js')],
 	// 64-text: fonts (bundled + Library + Google), the solid build, the export licence walk
 	['textFonts', () => import('./textFonts.js')],
 	['text3dBuild', () => import('./text3dBuild.js')],

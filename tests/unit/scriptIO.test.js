@@ -42,8 +42,14 @@ describe('declarations', () => {
 			{ name: 'reach', type: 'number', value: 1.2 }
 		]);
 	});
-	it('outputs cannot be events (a pure function cannot mint a stamp)', () => {
-		expect(scriptOutputs({ outputs: [{ name: 'fire', type: 'event' }] })).toEqual([{ name: 'fire', type: 'number' }]);
+	it('102b-papercuts: an output may be an event (fired on the rising edge by the runtime)', () => {
+		expect(scriptOutputs({ outputs: [{ name: 'fire', type: 'event' }] })).toEqual([{ name: 'fire', type: 'event' }]);
+	});
+	it('102b-papercuts: an event output left out of the return is quiet, not a problem', () => {
+		const out = harvestOutputs({ n: 1 }, [{ name: 'n', type: 'number' }, { name: 'fire', type: 'event' }]);
+		expect(out.problems).toEqual([]);
+		expect(out.value.__handles.fire).toBe(undefined);
+		expect(harvestOutputs({ fire: 1 }, [{ name: 'fire', type: 'event' }]).value.__handles.fire).toBe(true);
 	});
 	it('only outputs make it a value node', () => {
 		expect(isScriptValue({ inputs: [{ name: 'a', type: 'number' }] })).toBe(false);

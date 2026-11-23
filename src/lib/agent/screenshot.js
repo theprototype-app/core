@@ -21,7 +21,7 @@ import { get } from 'svelte/store';
 import { globalRenderer, globalScene, globalCamera, objectsGroup, TControls } from '../../stores/sceneStore';
 import { peers } from '../../stores/appStore';
 import { isEditorHelper } from '$lib/water/waterRuntime.js';
-import { planShot, viewPose, boundsOf, linearFrameToSrgb } from './screenshotCore.js';
+import { planShot, viewPose, boundsOf, linearFrameToSrgb, contentSplit, CONTENT_VIEWS, frameText } from './screenshotCore.js';
 import { postState, renderWithPost } from './postShot.js';
 // 55 A7 (union): every peer draws the "AI" camera marker where this shot looked (agentLog is store-only)
 import { noteAgentView } from '$lib/agentLog';
@@ -43,6 +43,79 @@ function boxOfAll(objects) {
 		min: [0, 1, 2].map((i) => Math.min(...boxes.map((b) => /** @type {any} */ (b).min[i]))),
 		max: [0, 1, 2].map((i) => Math.max(...boxes.map((b) => /** @type {any} */ (b).max[i])))
 	};
+}
+
+/** 104 A4: the scene's top-level objects as framing items — water bodies and flat ground planes are backdrops
+ * @param {any} group */
+function topLevelItems(group) {
+	/** @type {any[]} */
+	const items = [];
+	for (const o of group.children) {
+		if (!o.visible) continue;
+		const b = boxOf(o);
+		if (!b) continue;
+		const sx = b.max[0] - b.min[0];
+		const sz = b.max[2] - b.min[2];
+		const sy = b.max[1] - b.min[1];
+		const water = !!o.userData?.water && typeof o.userData.water === 'object';
+		const ground = !water && !o.userData?.terrain && o.isMesh && !o.children?.length && Math.max(sx, sz) >= 8 && sy <= 0.02 * Math.max(sx, sz);
+		items.push({ uuid: o.uuid, name: String(o.name || o.type), kind: water ? 'water' : ground ? 'ground' : 'object', box: b });
+	}
+	return items;
+}
+
+/** 104 A5: each top-level object's share of the picture (its projected box, clipped to the frame), biggest first
+ * @param {any} group @param {THREE.PerspectiveCamera} camera @returns {{name: string, share: number}[]} */
+function sharesInView(group, camera) {
+	const out = [];
+	const v = new THREE.Vector3();
+	const view = new THREE.Vector3();
+	for (const o of group.children) {
+		if (!o.visible) continue;
+		const b = boxOf(o);
+		if (!b) continue;
+		let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, front = 0;
+		for (let k = 0; k < 8; k++) {
+			v.set(k & 1 ? b.max[0] : b.min[0], k & 2 ? b.max[1] : b.min[1], k & 4 ? b.max[2] : b.min[2]);
+			view.copy(v).applyMatrix4(camera.matrixWorldInverse);
+			if (view.z > -camera.near) continue; // behind the camera
+			front++;
+			v.project(camera);
+			x0 = Math.min(x0, v.x); x1 = Math.max(x1, v.x); y0 = Math.min(y0, v.y); y1 = Math.max(y1, v.y);
+		}
+		// a box the camera stands inside or beside fills what it can see of it: count the whole frame
+		if (front < 8 && front > 0) { x0 = Math.min(x0, -1); x1 = Math.max(x1, 1); y0 = Math.min(y0, -1); y1 = Math.max(y1, 1); }
+		if (!front) continue;
+		const w = Math.max(0, Math.min(1, x1) - Math.max(-1, x0));
+		const h = Math.max(0, Math.min(1, y1) - Math.max(-1, y0));
+		const share = (w * h) / 4;
+		if (share > 0) out.push({ name: String(o.name || o.type), share });
+	}
+	return out.sort((a, b) => b.share - a.share);
+}
+
+/** 104 A5: the background in words @param {any} scene */
+function skyOf(scene) {
+	const bg = scene?.background;
+	if (!bg) return null;
+	if (bg.isColor) return 'a plain colour #' + bg.getHexString();
+	return 'a sky picture';
+}
+
+/** 104 A5: the first thing straight under a point (water included), in words @param {any} group @param {THREE.Vector3} at */
+function underCamera(group, at) {
+	const hits = new THREE.Raycaster(at.clone(), new THREE.Vector3(0, -1, 0)).intersectObjects(group.children, true);
+	for (const h of hits) {
+		/** @type {any} */
+		let root = h.object;
+		let hidden = false;
+		for (let o = root; o && o !== group; o = o.parent) if (!o.visible) hidden = true;
+		if (hidden || !root.isMesh) continue;
+		while (root.parent && root.parent !== group) root = root.parent;
+		const water = !!root.userData?.water;
+		return String(root.name || root.type) + (water ? ' (water)' : root.userData?.terrain ? ' (terrain)' : '') + ', ' + Math.round(h.distance * 10) / 10 + ' m below';
+	}
+	return 'nothing (open air)';
 }
 
 /** @param {string} why @returns {never} */
@@ -165,7 +238,7 @@ export async function takeScreenshot(opts = {}) {
 	const camera = new THREE.PerspectiveCamera(fov, w / h, 0.05, 2000);
 	/** @type {number[] | null} */
 	let aimedAt = null;
-	/** @type {{kind: string, uuids?: string[], names?: string[]}} */
+	/** @type {{kind: string, uuids?: string[], names?: string[], leftOut?: {uuid: string, name: string, kind: string}[]}} */
 	let subject = { kind: 'none' };
 	if (through) {
 		through.updateWorldMatrix(true, false);
@@ -205,6 +278,13 @@ export async function takeScreenshot(opts = {}) {
 			const gone = plan.uuids.filter((_, i) => !objects[i]);
 			if (gone.length) return refuse('not in the scene: ' + gone.join(', '));
 			subject = { kind: 'objects', uuids: plan.uuids, names: objects.map((o) => String(o.name ?? '')) };
+		} else if (group && (plan.subject === 'content' || (plan.subject === null && CONTENT_VIEWS.includes(view)))) {
+			// 104 A4: the content, not the 80 m ocean round it — the answer names what it left out
+			const split = contentSplit(topLevelItems(group));
+			if (split.left.length) {
+				objects = split.keep.map((uuid) => group.getObjectByProperty('uuid', uuid)).filter(Boolean);
+				subject = { kind: 'content', leftOut: split.left };
+			} else if (plan.subject === 'content') subject = { kind: 'content', leftOut: [] };
 		}
 		const pose = viewPose(/** @type {any} */ (view), boundsOf(boxOfAll(objects)), fov, w / h, plan.margin, plan.dir, plan.zoom);
 		camera.position.fromArray(pose.position);
@@ -295,6 +375,22 @@ export async function takeScreenshot(opts = {}) {
 			hud = { error: String(/** @type {any} */ (e)?.message ?? e).slice(0, 80) };
 		}
 	}
+	// 104 A5: the frame in words, for a client that cannot see the picture (voice)
+	/** @type {string | null} */
+	let frame = null;
+	try {
+		frame = frameText({
+			from: camera.position.toArray(),
+			target: aimedAt ?? camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(5).add(camera.position).toArray(),
+			inView: group ? sharesInView(group, camera) : [],
+			sky: skyOf(scene),
+			under: group ? underCamera(group, camera.position) : null,
+			left: /** @type {any} */ (subject).leftOut,
+			through: through ? String(through.name || 'camera') : null
+		});
+	} catch {
+		frame = null;
+	}
 	lastShot = {
 		position: camera.position.toArray(),
 		target: aimedAt ?? camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(5).add(camera.position).toArray(),
@@ -307,6 +403,7 @@ export async function takeScreenshot(opts = {}) {
 		...(post ?? {}),
 		avatars: !people,
 		...(hud ? { hud } : {}),
+		...(frame ? { frame } : {}),
 		at: Date.now()
 	};
 	// 56 C8: a PERSON's "ask about this selection" picture is not where an agent looked

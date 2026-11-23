@@ -238,32 +238,64 @@ const build3dModule = async () => (build3d ??= await import('./text3dBuild.js'))
  */
 export async function applyRemoteBake(object, turn) {
 	const uuid = object?.uuid;
-	if (!uuid || !object.userData?.textPath) return;
+	if (!uuid || !object.userData?.textPath) return bakeNote(uuid, 'no-record');
 	const mine = turn ?? bumpTextTurn(uuid);
-	const rec = normalizeTextPath(object.userData.textPath);
-	const m = build3d ?? (await build3dModule());
-	/** @type {any} */
-	let geo = m.ownsGeometry(object.geometry) ? object.geometry : null;
-	if (!geo && rec.mode === 'extruded' && isBlockText(rec)) {
-		try {
-			const rt = await import('./textPathRuntime.js');
-			geo = (await m.buildExtruded(rec, await rt.solidFontUrl(rec), 'desktop')).geometry;
-		} catch (error) {
-			console.log('bake: could not build the text here', error);
+	bakeNote(uuid, 'enter', { turn: mine, owns: !!build3d?.ownsGeometry(object.geometry) });
+	try {
+		const rec = normalizeTextPath(object.userData.textPath);
+		const m = build3d ?? (await build3dModule());
+		/** @type {any} */
+		let geo = m.ownsGeometry(object.geometry) ? object.geometry : null;
+		if (!geo && rec.mode === 'extruded' && isBlockText(rec)) {
+			try {
+				const rt = await import('./textPathRuntime.js');
+				geo = (await m.buildExtruded(rec, await rt.solidFontUrl(rec), 'desktop')).geometry;
+				bakeNote(uuid, 'built', { verts: geo?.getAttribute?.('position')?.count ?? 0 });
+			} catch (error) {
+				bakeNote(uuid, 'build-failed', { error: String(/** @type {any} */ (error)?.message ?? error).slice(0, 120) });
+				console.log('bake: could not build the text here', error);
+			}
+		}
+		// a newer state of the record came after this bake (an undo raced it, an edit): leave the text alone
+		if (textTurn(uuid) !== mine) return bakeNote(uuid, 'superseded', { turn: mine, now: textTurn(uuid) });
+		const target = objectOf(uuid) ?? object;
+		if (!target.userData?.textPath) return bakeNote(uuid, 'already-mesh', { replaced: target !== object });
+		if (m.ownsGeometry(target.geometry)) geo = target.geometry;
+		const recNow = normalizeTextPath(target.userData.textPath);
+		if (geo) {
+			target.geometry = m.bakeCopy(geo);
+			target.material =
+				Array.isArray(target.material) && target.material.length === 2 ? target.material.map((/** @type {any} */ mt) => mt.clone()) : m.extrudedMaterials(recNow);
+		}
+		delete target.userData.textPath;
+		if (target.name === 'Text') target.name = 'Text mesh';
+		bakeNote(uuid, 'baked', { geo: !!geo, replaced: target !== object, verts: target.geometry?.getAttribute?.('position')?.count ?? 0 });
+		pokeScene();
+	} catch (error) {
+		// fix-batch-4 G5: a bake that THREW left this peer's record standing while the writer held a mesh
+		// (an unhandled rejection from the dispatcher's `void import().then()`); the record goes either way —
+		// the writer's state is "no record" — and the trace says what threw
+		bakeNote(uuid, 'threw', { error: String(/** @type {any} */ (error)?.message ?? error).slice(0, 160) });
+		if (textTurn(uuid) !== mine) return;
+		const target = objectOf(uuid) ?? object;
+		if (target?.userData?.textPath) {
+			delete target.userData.textPath;
+			if (target.name === 'Text') target.name = 'Text mesh';
+			pokeScene();
 		}
 	}
-	// a newer state of the record came after this bake (an undo raced it, an edit): leave the text alone
-	if (textTurn(uuid) !== mine) return;
-	const target = objectOf(uuid) ?? object;
-	if (!target.userData?.textPath) return; // a mesh already
-	if (m.ownsGeometry(target.geometry)) geo = target.geometry;
-	const recNow = normalizeTextPath(target.userData.textPath);
-	if (geo) {
-		target.geometry = m.bakeCopy(geo);
-		target.material =
-			Array.isArray(target.material) && target.material.length === 2 ? target.material.map((/** @type {any} */ mt) => mt.clone()) : m.extrudedMaterials(recNow);
-	}
-	delete target.userData.textPath;
-	if (target.name === 'Text') target.name = 'Text mesh';
-	pokeScene();
 }
+
+/**
+ * fix-batch-4 G5: the STACK PROBE of the receiving half of Bake — every arrival and every exit of
+ * applyRemoteBake, newest last (64 rows). Local, read by the suites (`textPathEdit.bakeTrace()`).
+ * @type {{at: number, uuid: string, step: string, [k: string]: any}[]}
+ */
+const bakeRows = [];
+/** @param {string | undefined} uuid @param {string} step @param {Record<string, any>} [extra] @returns {void} */
+export function bakeNote(uuid, step, extra = {}) {
+	bakeRows.push({ at: Date.now(), uuid: String(uuid ?? ''), step, ...extra });
+	if (bakeRows.length > 64) bakeRows.splice(0, bakeRows.length - 64);
+}
+/** @returns {any[]} */
+export const bakeTrace = () => bakeRows.slice();

@@ -1,9 +1,9 @@
 <script>
-	// fix-play-link — THE HIDDEN XR BUTTONS ON THE PLAY PAGE. `playMode.requestPlay` enters a headset
-	// session by CLICKING threlte's own (hidden) VRButton / XRButton inside the player's gesture; the
-	// editor mounts them in Controls.svelte (the twin of this block — keep the two alike), and the play
-	// entry (PlayApp.svelte) mounted no Controls, so the start card's Enter VR found no button and fell
-	// through to FLAT play: Enter VR on a play link never opened a session. Same ids, same session init.
+	// fix-play-link — THE HIDDEN XR BUTTONS. `playMode.requestPlay` enters a headset session by CLICKING threlte's own
+	// (hidden) VRButton / XRButton inside the player's gesture. The play entry (PlayApp.svelte) mounted no Controls, so
+	// the start card's Enter VR found no button and fell through to FLAT play.
+	// 80a-fix4-ui G9: this is the ONE copy — the editor's Controls.svelte mounts it too (it had its own twin, kept alike
+	// by hand). Both buttons mount permanently (4a, the note in Controls.svelte): same ids, same session init.
 	import { VRButton, XRButton } from '@threlte/xr';
 	import { vrPassthrough } from '../../stores/sceneStore';
 	import { xrSessionFailed } from '$lib/playMode';

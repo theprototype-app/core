@@ -5,7 +5,7 @@
 //   qualityChoices    which of them this window may pick (High hides above 1440p-equivalent pixel counts)
 //   createDropWatch   the dynamic step down: frame p95 over budget for 2 s → one step lower, once per step
 //   standInKind       what a material the WebGPU renderer cannot draw is, in the words the chip uses
-//   notShownText      the one chip line: "Not shown in Cinematic view: Water, Particles"
+//   notShownText      the one chip line: "Not shown in Cinematic view: Fluid tanks"
 //   (troika text is not a stand-in since C2-1: it draws as canvas-texture quads, labelQuads.js)
 //   waterCoverKind    which water meshes the view draws itself through TSL (C2-3: surface, tank body, underwater tint)
 //   fxCoverKind       which effects the view draws itself through TSL (C2-2 / C2-4: particles, bursts, bubbles,
@@ -120,7 +120,9 @@ export const STAND_IN_LABELS = Object.freeze({
 	shader: 'Shader graph and code materials',
 	terrain: 'Terrain paint layers',
 	deform: 'Jiggle and sway',
-	custom: 'Custom materials'
+	custom: 'Custom materials',
+	splats: 'Gaussian splats', // 102: Spark's GLSL cannot run on the WebGPU renderer; the splats stand down
+	heightfog: 'Height fog' // 102b-papercuts: the WebGPU view draws distance fog, not the ground layer
 });
 
 /** @typedef {keyof typeof STAND_IN_LABELS} StandInKind */

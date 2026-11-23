@@ -42,6 +42,7 @@
 	import { studioIsolating } from '$lib/avatars/avatarState';
 	import { shadowQuality } from '$lib/lightParams';
 	import { useTask, useThrelte } from '@threlte/core';
+	import { applyShake, frameHeldByHitPause } from '$lib/gameFeelFx';
 	import { framesHeld, registerComposerWarm, schedule } from '$lib/sceneLoader';
 	import { tick } from 'svelte';
 	import {
@@ -501,6 +502,8 @@
 			if (renderIsPaused && !renderer.xr.isPresenting) return;
 			// 33 L1: a scene load holds the last frame while its programs link off-frame (bounded)
 			if (framesHeld() && !renderer.xr.isPresenting) return;
+			// 102b-hud: a Hit Pause node holds the last frame for a moment (never in a headset)
+			if (frameHeldByHitPause() && !renderer.xr.isPresenting) return;
 			if (drawGapMs > 0 && !renderer.xr.isPresenting) {
 				const drawNow = performance.now();
 				if (drawNow - lastDrawAt < drawGapMs) return;
@@ -541,9 +544,12 @@
 			if (!renderer.xr.isPresenting) renderPipViews(renderer, scene);
 			// ...and while a maximized docked window covers the whole 3D view, the main frame is not
 			// drawn at all (nothing could see it)
+			// 102b-hud: a Camera Shake node sways the PLAY camera for this one draw (null = nothing)
+			const unshake = applyShake(camera.current, renderer.xr.isPresenting);
 			if (!renderer.xr.isPresenting && mainViewCovered()) noteMainSkipped();
 			else if (renderer.xr.isPresenting || nothingToCompose) renderer.render(scene, camera.current);
 			else composer.render(delta);
+			unshake?.();
 		},
 		{ stage: renderStage, autoInvalidate: false }
 	);

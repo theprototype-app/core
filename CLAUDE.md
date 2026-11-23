@@ -887,9 +887,12 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   Two traps live here. The LIVE PREVIEW (`liveGeometryUpdate`) swaps geometry every
   frame, so topology has to survive the preview or there is nothing left for the
   commit to carry — that was the real reason a rotated band still lost its quads after
-  the commit path already carried them. And GLTF-based autosave does NOT round-trip
-  geometry.userData (toJSON/ObjectLoader does), so a restored autosave re-derives:
-  acceptable degradation, never a wrong result.
+  the commit path already carried them. GLTF autosave DOES carry `__topo` for a
+  single-material mesh (99 K1 measured it, `meshKernelGltfTopo.test.js`: GLTFExporter writes
+  geometry.userData as the primitive's `extras`, GLTFLoader reads them back, triangle order
+  kept); a multi-slot mesh is split into per-group primitives whose copies fail
+  `facesValidFor` and are DROPPED, and its toJSON multiMaterial sidecar keeps the partition.
+  Either way a missing or invalid partition re-derives: never a wrong result.
   Still true of the soup: an extrusion wall is coplanar+adjacent with the flat side
   beneath it so `groupFaces` MERGES them (Face granularity can't isolate the band —
   that is why Quad exists), and a quad's internal DIAGONAL is a triangulation
@@ -1750,6 +1753,15 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   operators author through. Imports NOTHING, deliberately: it stays a pure unit outside
   the history-cycle family, and derivation stays in faceEdit where the operators live.
   Full contract in the faceEdit entry below),
+  `meshKernel/` (99 K1, NOT imported by the app yet — K2-K4 move the editor onto it): a
+  headless face-vertex mesh in flat typed arrays (BMesh disk + radial cycles), no three.js in
+  the core (`three.js` is the one adapter that imports it), stable vertex/edge/face IDs = slots
+  never reused until `compact()` (returns old -> new maps), n-gons, per-corner attributes,
+  material per face, a CSR `SpatialHash`, triangulation only as OUTPUT (a per-face cache with
+  order keys, so geometry -> kernel -> geometry is value-identical; every mesh of every scene
+  is held to that). Import welds by EXACT equality (lossless; a sphere's uv seam stays open —
+  `weld: 1e-4` is the editor's tolerance). Adapters speak today's CSR packing and `meshgeo`
+  fields, plus optional ID channels. One-page API: `src/lib/meshKernel/API.md`,
   `uvEditor` (UV1-UV5 + UV4, PRs #106/#107/#108/#109: the UV editor's whole core.
   Editing UVs IS a geometry edit — there is no standalone uv channel — so every UV
   write REUSES faceEdit's exported `readTriangles`/`trisToPositions`/`trisToGroups`/
@@ -2972,6 +2984,26 @@ sub-entry with its line: grep the index for a word, then read this file from tha
 
 ## Hard-won gotchas (do not rediscover)
 
+- **THE BUILD'S FILE COUNT IS A PRODUCT LIMIT, AND ROLLDOWN'S DEFAULT SPLIT BLOWS IT (fix-export-files,
+  1.74 hotfix).** An exported game copies every file `build/export-manifest.json` lists and itch.io refuses
+  a zip of more than 1,000; 1.74.0 listed 1,056 (the count crept ~+30 a release) and EVERY export failed its
+  own check. Rolldown splits shared code by which entries reach it, and ~230 `import()` targets count as
+  entries, so the editor boot alone fetched ~570 chunks. `scripts/boot-chunk-groups.cjs` (rolldown
+  `codeSplitting.groups`, wired in vite.config.ts) regroups BOOT code only, by its load signature (the
+  pages that boot it + the lazy entries that fetch it on the other pages), then merges small groups within
+  one set of boot pages: 684 files, and boot JS SHRANK (play -277 KB gz, editor -390 KB gz — the default
+  split had folded lazy-only code into a 470 KB boot chunk). /play is PROTECTED from merges (a player
+  fetches no editor code: play-entry §2 names chunks, so groups are named after their largest module the
+  way rolldown names one; a merge that changed what /play fetches lazily went red there). Three traps it
+  rests on: rolldown's group
+  `includeDependenciesRecursively` (forced ON by kit's `preserveEntrySignatures: 'strict'`) drags a
+  member's dependencies into whichever group is built FIRST, so groups get one entry each with priorities
+  in dependency order; a style module left ungrouped rides into the first group importing it (app.css
+  tied every page to the kit page's chunk); and a merge inherits BOTH sides' dependencies, so the closure
+  rule refuses one whose dependency is not already loaded by every trigger of the merged group (without
+  it the kit page's first lazy load pulled 4 MB of editor boot code). `export-manifest.cjs` now FAILS the
+  build above 850 files — the fix for that red is fewer files, never a higher number. `TP_BOOT_CHUNKS=0`
+  builds the old split for an A/B; the file's header lists its other debug env vars.
 - **SVELTEKIT 3 SHALLOW ENTRIES ARE ASYNC, AND THEIR STATE IS A STRING (sk3).** Both history markers
   (play's `tpPlay`, the Back stack's `tpBack`) go through `src/lib/shallowHistory.js` and nowhere else.
   `goto(url, {shallow, state})` (and the deprecated `pushState`) push the entry only after an awaited route
@@ -5111,8 +5143,23 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   (`createFaceFromVerts` — else it faces away and you see nothing, 191). VR Stretch =
   per-axis infinite sliders in the Edit▸Stretch menu (grab a `vrstretch-<axis>` handle,
   horizontal controller motion scales that axis), NOT a spatial gesture (193).
-- Locks: `lockedObjects` holds REMOTE locks only — "we hold X" = X is our selection;
-  one lock per peer (a new lock replaces the old one); `unlock` message exists.
+- Locks: `lockedObjects` holds REMOTE rows only (`[peerId, uuid, at]`, holder-first); what
+  WE hold is `lockHeld.myLocks` (a `lock` carries our whole held set, `unlock` lets go).
+  80a: the RECEIVER gates (`gateLockedEdit`: an edit of an object held by someone else is
+  dropped and answered `lockreject`, which heals the sender's copy), a tie on the same object
+  goes to the earlier `at` then the lower id, and the handshake carries the whole held set
+  (caps flag `lk`, OPEN-CORE.md). A held object is read-only in Properties (`HeldBanner`,
+  `heldReadOnly.js`), its flow opens view-only, and the viewport shows the holder's avatar
+  (`lock-avatar` child of the highlight; suites counting highlight boxes skip it). Letting go:
+  Release / Keep holding in the row menu, Object list chips, 5 min idle expiry asked 30 s
+  before (`lockIdle.js`, never while alone), and a healed link lets go on BOTH sides at the top
+  of `sendHandshake(..., {heal:true})` (the hook every fix4-net heal path ends in). ROOM LOCK
+  MODE (`lockMode.js`): `select` (default) or `edit` = the first SENT edit takes the object
+  (the claim goes out ahead of the edit on the same ordered conns) and it frees 3 s after the
+  last; host-only writer (an admin under roles), `lockmode {mode, at}` latest-wins, the host's
+  handshake carries it only once it was ever set. Roster changes are tied to the connection
+  that made them (`rosterOrigin.js`). Suites lock-gate / lock-held-ui / lock-release /
+  lock-mode / roster-origin.
 - vite re-optimizes new deps on first page load (one reload) — rerun once; lazy wasm
   (rapier) needs a throwaway prewarm page in tests.
 - Postprocessing composers (Outline) do NOT render in WebXR — VR indicators are

@@ -32,6 +32,16 @@ export function sdkPhysics(ctx) {
 			 * world of the module's OWN — local, never synced; free it in api.onUnload.
 			 * @returns {Promise<any>} */
 			rapier: () => physicsApi()?.rapierModule?.() ?? Promise.resolve(null),
+			/** 102b-hud (DEVX #39): PUT A DYNAMIC BODY BACK — reseat it at `pos` (rotation `rot`, Euler
+			 * radians) with a velocity (default at rest). The initiator's own throw path (applyThrow):
+			 * the pose then travels on the ordinary move stream. Initiator only, like applyImpulse;
+			 * false when no simulation runs here or the uuid is not a dynamic body.
+			 * @param {string} uuid @param {number[]} pos @param {{rot?: number[], linvel?: number[], angvel?: number[]}=} opts */
+			placeBody: (uuid, pos, opts = {}) => {
+				const api = physicsApi();
+				if (!api?.isInitiator?.() || !Array.isArray(pos) || pos.length !== 3 || !pos.every(Number.isFinite)) return false;
+				return !!api.applyThrow?.({ uuid, pos, rot: opts.rot, linvel: opts.linvel ?? [0, 0, 0], angvel: opts.angvel ?? [0, 0, 0] });
+			},
 			/** the replicated joint defs @returns {Promise<any[]>} */
 			joints: () => import('../joints').then((m) => m.jointsSnapshot()),
 			/** Is a simulation running anywhere in the session (ours or a peer's)?
@@ -42,7 +52,8 @@ export function sdkPhysics(ctx) {
 			 * (history entry + objectParameters + live collider rebuild).
 			 * @param {string} uuid @param {any} patch */
 			set: (uuid, patch) => physicsApi()?.setPhysicsFor(uuid, patch),
-			/** Replicated joint (P-B): 'weld' | 'revolute', anchored in OBJECT-local
+			/** Replicated joint (P-B): 'weld' | 'revolute' (102b: + 'ball' | 'slider' | 'spring' | 'rope',
+			 * opts `{limits, anchors, rest, stiffness, damping, length}`), anchored in OBJECT-local
 			 * space. 37-fx: `motor` may be `{pos, stiffness, damping}` (an angle motor), and
 			 * `opts` `{limits: [min, max] radians, contacts: false, sparks: false}`.
 			 * @param {string} kind @param {string} a @param {string} b
@@ -57,6 +68,7 @@ export function sdkPhysics(ctx) {
  * sdk/lifecycle.js. tests/unit/moduleLifecycle.test.js holds every 'registers' member to a
  * teardown path; a member missing here fails it. */
 sdkPhysics.surface = {
+	'physics.placeBody': 'action',
 	'physics.simulating': 'read',
 	'physics.isInitiator': 'read',
 	'physics.applyImpulse': 'action',

@@ -138,7 +138,13 @@ function describeEnvironment() {
 					minQuality: hdri.minQuality
 				}
 			: null,
-		fog: p.fog ? { color: p.fog.color, near: p.fog.near, far: p.fog.far } : null,
+		fog: p.fog
+			? p.fog.kind === 'height'
+				? { kind: 'height', color: p.fog.color, density: p.fog.density, base: p.fog.base, thickness: p.fog.thickness }
+				: p.fog.kind === 'distance'
+					? { kind: 'distance', color: p.fog.color, density: p.fog.density }
+					: { color: p.fog.color, near: p.fog.near, far: p.fog.far }
+			: null,
 		sun: p.sun ? { color: p.sun.color, intensity: p.sun.intensity, position: p.sun.position } : null,
 		ambient: p.hemi ? { sky: p.hemi.sky, ground: p.hemi.ground, intensity: p.hemi.intensity } : null,
 		envLights: (s.lights ?? []).map((/** @type {any} */ l) => ({ id: l.id, kind: l.kind, color: l.color, intensity: l.intensity, position: l.position, ...(l.groundColor ? { groundColor: l.groundColor } : {}) }))
@@ -315,7 +321,7 @@ export const SCENE_SETUP_AI_TOOLS = [
 				PRESET_NAMES +
 				'), a sky image by name (' +
 				SKY_NAMES +
-				'; a search_assets HDRI id "cc0:polyhaven/<id>" (fetched into the library once) or "lib:<hash>"; or {hash} of an HDR in the library — upload your own .hdr / .exr with assets upload; never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres, or {color, density}; null = none) and exposure. "Make it night": preset night or hdri starlight + a dark fog. Changes the whole scene\'s look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step.',
+				'; a search_assets HDRI id "cc0:polyhaven/<id>" (fetched into the library once) or "lib:<hash>"; or {hash} of an HDR in the library — upload your own .hdr / .exr with assets upload; never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres; {color, density} for distance fog; {color, density, base, thickness} for ground fog lying from base up over thickness metres; null = none) and exposure. "Make it night": preset night or hdri starlight + a dark fog. Changes the whole scene\'s look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -338,7 +344,15 @@ export const SCENE_SETUP_AI_TOOLS = [
 					gradient: { type: ['object', 'null'], properties: { top: { type: 'string' }, bottom: { type: 'string' } } },
 					fog: {
 						type: ['object', 'null'],
-						properties: { color: { type: 'string' }, near: { type: 'number', minimum: 0 }, far: { type: 'number', minimum: 0 }, density: { type: 'number', exclusiveMinimum: 0 } }
+						properties: {
+							kind: { type: 'string', enum: ['linear', 'distance', 'height'], description: 'linear = near to far; distance = thickens with distance (density); height = ground fog (density, base, thickness)' },
+							color: { type: 'string' },
+							near: { type: 'number', minimum: 0 },
+							far: { type: 'number', minimum: 0 },
+							density: { type: 'number', exclusiveMinimum: 0 },
+							base: { type: 'number', description: 'ground fog: the height (m) where it is thickest' },
+							thickness: { type: 'number', exclusiveMinimum: 0, description: 'ground fog: how far up (m) it thins out' }
+						}
 					},
 					exposure: { type: 'number', minimum: 0.1, maximum: 4 },
 					...CONFIRM

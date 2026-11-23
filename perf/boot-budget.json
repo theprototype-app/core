@@ -4,12 +4,12 @@
 	"pages": {
 		"play": {
 			"html": "play.html",
-			"maxJsGzBytes": 1954816,
+			"maxJsGzBytes": 1935360,
 			"maxFirstFrameMs": 20000
 		},
 		"editor": {
 			"html": "index.html",
-			"maxJsGzBytes": 3101696,
+			"maxJsGzBytes": 3082240,
 			"maxFirstFrameMs": 32000
 		}
 	},
@@ -177,6 +177,21 @@
 			"play": "base (v1.74.0 + 92-correct) 2150.5 KB -> 2155.9 KB (+5.4) -> line 2157 KB",
 			"editor": "base 3371.2 KB -> 3378.1 KB (+6.9) -> line 3380 KB",
 			"note": "boot wiring only: the menus config normalize (scene play block), the leaf stores, the pause-menu rows (Save / Load / Join requests / Quit to title / Restart level, the Subtitles + Reduced motion rows, the headset's list page), Look speed / Invert look, the master-gain duck. The title screen, save slots, join requests, in-game join card, the menus runtime (pause hold, auto-admit) and the Configure Scene section are lazy chunks; a first cut was +11 KB because a dynamic import() in the gameShell boot chunk gave it its own preload table — they now go through gameShellWire's seams. The last +1 KB is fixes the e2e found: the viewport join card stepping aside under the pause menu (Toasts), one retrying loader for the lazy menu parts, the late-runtime title, exports without autosave"
+		},
+		{
+			"date": "2026-11-23",
+			"lane": "92-int (1.77 Games feel complete on v1.76.0: #620 92-correct, #629 92-input, #630 92-dialogue, #634 92-menus + int glue)",
+			"play": "v1.76.0 1883.4 KB -> union on v1.76.0 1887.8 KB (+4.4) -> line 1890 KB (the int rule: the merged tag + the union sum +5.5, rounded up to the next 5 KB)",
+			"editor": "v1.76.0 2999.0 KB -> union on v1.76.0 3005.3 KB (+6.3) -> line 3010 KB (the same rule, sum +7.1)",
+			"note": "set ONCE. Measured on the Deck: v1.76.0 and the union (73047265) built one after the other with one node_modules. The sum is the per-lane split measured on v1.75.0 as each first-parent merge of the union chain: 92-correct +2.2 / +2.2, 92-input +2.5 / +2.9, 92-dialogue +1.4 / +1.7, 92-menus +4.3 / +5.1, int glue -4.9 / -4.8 (the pause, settings and save panels load lazily: claude:9's boot ruling). The lane entries above are kept as their lanes wrote them; this line replaces theirs and 71-int-rel's 1909 / 3029.",
+			"perLane": {
+				"basis": "each first-parent merge of the union chain built on v1.75.0 (play / editor KB, gzip -9)",
+				"92-correct #620": "+2.2 / +2.2",
+				"92-input #629": "+2.5 / +2.9",
+				"92-dialogue #630": "+1.4 / +1.7",
+				"92-menus #634": "+4.3 / +5.1",
+				"92-int glue (lazy pause / settings / save panels)": "-4.9 / -4.8"
+			}
 		}
 	],
 	"throttle": {

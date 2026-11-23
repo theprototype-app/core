@@ -30,6 +30,7 @@ import { peers, loading as syncBatch } from '../../stores/appStore';
 import { objectsGroup } from '../../stores/sceneStore';
 import { sessionNow } from '../sessionClock';
 import { sessionHost } from '../connectionState';
+import { joinSyncedHost, onJoinArrivalChange } from './joinArrival.js'; // 102-boot-diet: watched since boot
 import { sceneLoad } from '../sceneLoader';
 import { log } from '../diagnostics';
 import { kit, kitAuthorityId } from '../kit/runtime.js';
@@ -190,10 +191,8 @@ function releaseLoadRegs(entry) {
 // safe because the previous run's registrations are released first (item 8). The joiner wait
 // is bounded: a host that withholds its objects (another room, an open connect decision) sends
 // none, and after JOIN_SYNC_WAIT_MS the behaviours run on what is here.
-const JOIN_SYNC_WAIT_MS = 8000;
-/** the host whose first object batch we have had (null = not yet, or we host) */
-let syncedHost = /** @type {string | null} */ (null);
-/** @type {any} */ let joinWaitTimer = null;
+// The host-batch half (JOIN_SYNC_WAIT_MS, the host whose first batch we have had) is watched from
+// boot in joinArrival.js, because this module now loads on demand (102-boot-diet).
 
 /** is the scene still arriving on this peer? */
 function sceneSettling() {
@@ -201,7 +200,7 @@ function sceneSettling() {
 	const batch = get(syncBatch);
 	if (Array.isArray(batch) && batch.length) return true;
 	const host = get(sessionHost);
-	return !!host && host !== syncedHost;
+	return !!host && host !== joinSyncedHost();
 }
 
 /** run on.load now, or hold it until the scene has landed @param {string} id @param {any} entry */
@@ -234,32 +233,7 @@ function sceneSettled() {
 
 function watchSceneArrival() {
 	let primed = false;
-	sessionHost.subscribe((host) => {
-		clearTimeout(joinWaitTimer);
-		joinWaitTimer = null;
-		if (!host) syncedHost = null;
-		else if (host !== syncedHost) {
-			joinWaitTimer = setTimeout(() => {
-				syncedHost = host;
-				sceneSettled();
-			}, JOIN_SYNC_WAIT_MS);
-		}
-		if (primed) sceneSettled();
-	});
-	syncBatch.subscribe((batch) => {
-		// any batch from the host CLOSING (the last object landed, a stall clear, or an empty
-		// announcement for an empty scene) is the joiner's scene having arrived; the subscribe
-		// call itself is not
-		if (primed && (!Array.isArray(batch) || !batch.length)) {
-			const host = get(sessionHost);
-			if (host && host !== syncedHost) {
-				syncedHost = host;
-				clearTimeout(joinWaitTimer);
-				joinWaitTimer = null;
-			}
-		}
-		if (primed) sceneSettled();
-	});
+	onJoinArrivalChange(() => primed && sceneSettled());
 	sceneLoad.subscribe(() => primed && sceneSettled());
 	primed = true;
 	wasSettling = sceneSettling();

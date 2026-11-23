@@ -6,11 +6,10 @@ import {
 	reconcileExternal,
 	reloadTab,
 	nextActiveAfterClose,
-	parseCheck,
-	parseGraphJson,
 	graphJson,
 	scriptFileName
 } from '../../src/lib/codeTabs.js';
+import { parseCheck, parseGraphJson } from '../../src/lib/codeParse.js';
 
 // 36-code: the code workspace's tab model, parse check and B6 graph-JSON validation — the
 // parts that are easy to get subtly wrong, with no store, DOM or peer.

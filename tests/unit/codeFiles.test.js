@@ -17,7 +17,7 @@ import {
 	stemOf
 } from '../../src/lib/codeFilesCore.js';
 import { projectTree, leavesOf, keyOfTab, filterTree } from '../../src/lib/codeProject.js';
-import { parseCheck } from '../../src/lib/codeTabs.js';
+import { parseCheck } from '../../src/lib/codeParse.js';
 import { analyze } from '../../src/lib/behaviours/analyze.js';
 import { KIT_PIECES } from '../../src/lib/kit/index.js';
 

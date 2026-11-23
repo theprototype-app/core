@@ -33,7 +33,9 @@ export const DEBUG_HOOKS = [
 	// 34 R2 (kit-entities): entities drawn / world / api (kitEntitiesDebug, kitEntitiesApi, entityOfObject)
 	['kitEntities', () => import('./kit/entityApp.js')],
 	// 34 R3 (D1/D2): behaviours (runtime, behaviourStatus, behavioursDebug)
-	['behaviours', () => import('./behaviours/app.js')],
+	// 102-boot-diet: app.js's exports, and a test page's behaviours START as they did at boot before the
+	// lane (app.js now loads on demand: behaviours/load.js)
+	['behaviours', () => import('./behaviours/debugHook.js')],
 	// 69: the sandbox engine (sandboxReady / loadSandbox / sandboxLoadError) — probes on built apps
 	['sandbox', () => import('./sandbox/engine.js')],
 	['meshEdit', () => import('./meshEdit')],

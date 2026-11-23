@@ -7,7 +7,7 @@
 // every conversation): the format, `this`, the events, the lint.
 //
 // The editor modules (nodesHandler, flowGraphs → history) are imported lazily inside the writes:
-// this file is reached from behaviours/app.js, which peerHandler imports statically.
+// this file is reached from behaviours/app.js, which loads on demand (behaviours/load.js, 102-boot-diet).
 
 import { get } from 'svelte/store';
 import { allNodes } from '../../stores/flowStore';

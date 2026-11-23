@@ -256,7 +256,10 @@ export default {
 				{ key: 'scope', kind: 'select', options: ['shared', 'player'], label: 'choices set', doc: 'shared = the game variable; player = this player\'s own row' }
 			],
 			note: 'Lines as Speaker: text. "> choice [set x = 1] -> label" picks; "# label" starts a part. Only the player who started it sees it. Pulses when the talk ends.',
-			sockets: { out: 'event', in: { trigger: 'event', stop: 'event' } },
+			// `trigger` is an event (On Click, a key) OR a value that turns on (Proximity near the player): a
+			// value opens it on its rising edge, on this device only — so it is `any`, not `event`
+			inputLabels: { trigger: 'start — a pulse, or Proximity turning on', stop: 'stop — closes it' },
+			sockets: { out: 'event', in: { trigger: 'any', stop: 'event' } },
 			card: 'AnimationNode',
 			eval: null
 		}

@@ -24,7 +24,7 @@ describe('parseScript', () => {
 		const top = s.sections[''];
 		expect(top[0]).toEqual({ kind: 'line', speaker: 'Old Man', text: 'Welcome, traveller!', choices: [] });
 		expect(top[1].kind).toBe('line');
-		expect(top[1].choices).toEqual([
+		expect(/** @type {any} */ (top[1]).choices).toEqual([
 			{ text: 'Yes, I will.', set: [{ name: 'helping', op: 'set', value: 1 }], goto: 'yes' },
 			{ text: 'Not today.', set: [], goto: 'no' }
 		]);
@@ -56,14 +56,14 @@ describe('parseScript', () => {
 		expect(s.errors.join(' ')).toMatch(/no line above/);
 		expect(s.errors.join(' ')).toMatch(/no section "# nowhere"/);
 		expect(() => parseScript(/** @type {any} */ (null))).not.toThrow();
-		expect(parseScript('x'.repeat(SCRIPT_MAX * 2)).sections[''][0].text.length).toBeLessThanOrEqual(300);
+		expect(/** @type {any} */ (parseScript('x'.repeat(SCRIPT_MAX * 2)).sections[''][0]).text.length).toBeLessThanOrEqual(300);
 	});
 
 	test('labels match however they are typed', () => {
 		expect(labelKey('  The Cat  Is Found ')).toBe('the-cat-is-found');
 		const s = parseScript('Hi\n> go -> Cat Found\n# cat found\nYay');
 		expect(s.errors).toEqual([]);
-		expect(s.sections[''][0].choices[0].goto).toBe('cat-found');
+		expect(/** @type {any} */ (s.sections[''][0]).choices[0].goto).toBe('cat-found');
 	});
 });
 

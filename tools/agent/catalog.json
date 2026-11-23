@@ -3,7 +3,7 @@
 	"format": 2,
 	"generator": {
 		"source": "tpAgent.tools() via core scripts/agent-tool-catalog.cjs, mapped by tools/agent/src/catalog.js",
-		"hostTools": 84,
+		"hostTools": 85,
 		"dropped": []
 	},
 	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
@@ -4017,6 +4017,155 @@
 			}
 		},
 		{
+			"name": "set_dialogue",
+			"title": "Give an object a talk",
+			"description": "Give an object a TALK (an NPC, a sign, a door that speaks): its lines show in a box at the bottom of the screen (a world-locked panel in VR), ONLY for the player who walked up to it or clicked it (who: \"everyone\" shows each player their own copy). lines = [{speaker?, text, choices?: [{text, set?: {name, value, op?}, goto?}], label?, goto?, set?}] — a missing speaker is the object's name; a choice can set a game variable (scope \"shared\", or \"player\" = each player's own) and/or jump to the line with that label (\"end\" finishes). Or script = the same as text: \"Speaker: line\", \"> choice [set x = 1] -> label\", \"# label\", \"-> end\". start: \"near\" (default: within radius m) | \"click\" | \"none\" (wire your own trigger into the node). The node pulses when the talk ends. Call with only object to read it; remove: true takes it away. A second call changes the same talk. One undo step.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"object": {
+						"type": "string",
+						"description": "the uuid of the object that talks"
+					},
+					"lines": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"speaker": {
+									"type": "string"
+								},
+								"text": {
+									"type": "string"
+								},
+								"label": {
+									"type": "string",
+									"description": "a name a choice or goto can jump to"
+								},
+								"choices": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"text": {
+												"type": "string"
+											},
+											"set": {
+												"type": "object",
+												"properties": {
+													"name": {
+														"type": "string"
+													},
+													"value": {
+														"type": [
+															"number",
+															"string"
+														]
+													},
+													"op": {
+														"type": "string",
+														"enum": [
+															"set",
+															"add",
+															"subtract",
+															"toggle"
+														]
+													}
+												},
+												"description": "a variable the choice changes"
+											},
+											"goto": {
+												"type": "string"
+											}
+										}
+									}
+								},
+								"set": {
+									"type": "object",
+									"properties": {
+										"name": {
+											"type": "string"
+										},
+										"value": {
+											"type": [
+												"number",
+												"string"
+											]
+										},
+										"op": {
+											"type": "string",
+											"enum": [
+												"set",
+												"add",
+												"subtract",
+												"toggle"
+											]
+										}
+									},
+									"description": "a variable the choice changes"
+								},
+								"goto": {
+									"type": "string",
+									"description": "after this line, jump to the line with this label (\"end\" finishes)"
+								},
+								"portrait": {
+									"type": "string",
+									"description": "the speaker's picture: an image name or hash in the library"
+								}
+							}
+						}
+					},
+					"script": {
+						"type": "string",
+						"description": "the talk as script text (instead of lines)"
+					},
+					"start": {
+						"type": "string",
+						"enum": [
+							"near",
+							"click",
+							"none"
+						]
+					},
+					"radius": {
+						"type": "number",
+						"description": "m, for start \"near\" (default 2.5)"
+					},
+					"who": {
+						"type": "string",
+						"enum": [
+							"me",
+							"everyone"
+						]
+					},
+					"scope": {
+						"type": "string",
+						"enum": [
+							"shared",
+							"player"
+						],
+						"description": "what a choice's set writes (default shared)"
+					},
+					"portraits": {
+						"type": "object",
+						"description": "{speaker: image name or hash}"
+					},
+					"remove": {
+						"type": "boolean"
+					}
+				},
+				"required": [
+					"object"
+				]
+			},
+			"annotations": {
+				"title": "Give an object a talk",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
 			"name": "search_assets",
 			"title": "Find assets",
 			"description": "Find assets to build with, by words and kind: models and prefabs to place, sounds, images, CC0 materials and HDRIs. Searches the shared library, the packs (models, and the sounds of the sound packs: pack:<name>/<file>), your prefabs and Poly Haven. Each result has an id, name, kind, source, licence, size when known, and how to use it. Read-only.",
@@ -6359,7 +6508,8 @@
 				"portal": "set_portal",
 				"checkpoint": "set_checkpoint",
 				"loading": "set_loading",
-				"npc": "set_npc"
+				"npc": "set_npc",
+				"dialogue": "set_dialogue"
 			}
 		},
 		"tools": [
@@ -10600,8 +10750,8 @@
 			},
 			{
 				"name": "game_setup",
-				"title": "Game setup: spawn, play camera, levels, portals, checkpoints, loading, enemies",
-				"description": "How the game starts: spawn = where Play starts and which way the player faces; play_camera = first person walking or flying (speed, jump, eye height) and openingView = where the editor camera starts when the scene opens; levels = the game's one Levels table (order, scene or spawn point, goals) and what carries from level to level (score, inventory, health, named variables); portal = a doorway to a level, scene or spot (one player at a time, with a fade / iris / card); checkpoint = a pad that saves the player's progress; loading = the loading screen a level change shows; npc = make an object an enemy that patrols a Path, sees and hears the player, chases, attacks, gives up and returns (the object menu's \"Make this an enemy\" sheet).\nCall it as {\"action\": \"spawn\", \"spawn\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
+				"title": "Game setup: spawn, play camera, levels, portals, checkpoints, loading, enemies, dialogue",
+				"description": "How the game starts: spawn = where Play starts and which way the player faces; play_camera = first person walking or flying (speed, jump, eye height) and openingView = where the editor camera starts when the scene opens; levels = the game's one Levels table (order, scene or spawn point, goals) and what carries from level to level (score, inventory, health, named variables); portal = a doorway to a level, scene or spot (one player at a time, with a fade / iris / card); checkpoint = a pad that saves the player's progress; loading = the loading screen a level change shows; npc = make an object an enemy that patrols a Path, sees and hears the player, chases, attacks, gives up and returns (the object menu's \"Make this an enemy\" sheet); dialogue = give an object a talk: lines in a box for the player who walks up or clicks it, choices that set a variable or jump.\nCall it as {\"action\": \"spawn\", \"spawn\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -10614,7 +10764,8 @@
 								"portal",
 								"checkpoint",
 								"loading",
-								"npc"
+								"npc",
+								"dialogue"
 							],
 							"description": "What to do. Put its fields in the object named after the action."
 						},
@@ -11102,6 +11253,145 @@
 								"object"
 							],
 							"description": "Make an object an ENEMY (an NPC): it walks the navmesh (baked from the scene, round walls), patrols a Path, sees the player in a cone (sight angle + range, blocked by walls), hears noises (hearing radius; louder noises reach further), chases, attacks in attack range (an \"attack\" event every attack.every s), gives up after giveUp s without the player and walks back to its path or home spot. A target it cannot reach stops it at the closest point with an \"unreachable\" event. path = a Path object uuid, \"new\" (a loop path around it) or \"none\" (guard the spot). Fields you leave out keep their value (the defaults on a new enemy). remove: true makes it an ordinary object again. Same as the object menu's \"Make this an enemy\" sheet. One undo step (two with path \"new\": the path, then the enemy)."
+						},
+						"dialogue": {
+							"type": "object",
+							"properties": {
+								"object": {
+									"type": "string",
+									"description": "the uuid of the object that talks"
+								},
+								"lines": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"speaker": {
+												"type": "string"
+											},
+											"text": {
+												"type": "string"
+											},
+											"label": {
+												"type": "string",
+												"description": "a name a choice or goto can jump to"
+											},
+											"choices": {
+												"type": "array",
+												"items": {
+													"type": "object",
+													"properties": {
+														"text": {
+															"type": "string"
+														},
+														"set": {
+															"type": "object",
+															"properties": {
+																"name": {
+																	"type": "string"
+																},
+																"value": {
+																	"type": [
+																		"number",
+																		"string"
+																	]
+																},
+																"op": {
+																	"type": "string",
+																	"enum": [
+																		"set",
+																		"add",
+																		"subtract",
+																		"toggle"
+																	]
+																}
+															},
+															"description": "a variable the choice changes"
+														},
+														"goto": {
+															"type": "string"
+														}
+													}
+												}
+											},
+											"set": {
+												"type": "object",
+												"properties": {
+													"name": {
+														"type": "string"
+													},
+													"value": {
+														"type": [
+															"number",
+															"string"
+														]
+													},
+													"op": {
+														"type": "string",
+														"enum": [
+															"set",
+															"add",
+															"subtract",
+															"toggle"
+														]
+													}
+												},
+												"description": "a variable the choice changes"
+											},
+											"goto": {
+												"type": "string",
+												"description": "after this line, jump to the line with this label (\"end\" finishes)"
+											},
+											"portrait": {
+												"type": "string",
+												"description": "the speaker's picture: an image name or hash in the library"
+											}
+										}
+									}
+								},
+								"script": {
+									"type": "string",
+									"description": "the talk as script text (instead of lines)"
+								},
+								"start": {
+									"type": "string",
+									"enum": [
+										"near",
+										"click",
+										"none"
+									]
+								},
+								"radius": {
+									"type": "number",
+									"description": "m, for start \"near\" (default 2.5)"
+								},
+								"who": {
+									"type": "string",
+									"enum": [
+										"me",
+										"everyone"
+									]
+								},
+								"scope": {
+									"type": "string",
+									"enum": [
+										"shared",
+										"player"
+									],
+									"description": "what a choice's set writes (default shared)"
+								},
+								"portraits": {
+									"type": "object",
+									"description": "{speaker: image name or hash}"
+								},
+								"remove": {
+									"type": "boolean"
+								}
+							},
+							"required": [
+								"object"
+							],
+							"description": "Give an object a TALK (an NPC, a sign, a door that speaks): its lines show in a box at the bottom of the screen (a world-locked panel in VR), ONLY for the player who walked up to it or clicked it (who: \"everyone\" shows each player their own copy). lines = [{speaker?, text, choices?: [{text, set?: {name, value, op?}, goto?}], label?, goto?, set?}] — a missing speaker is the object's name; a choice can set a game variable (scope \"shared\", or \"player\" = each player's own) and/or jump to the line with that label (\"end\" finishes). Or script = the same as text: \"Speaker: line\", \"> choice [set x = 1] -> label\", \"# label\", \"-> end\". start: \"near\" (default: within radius m) | \"click\" | \"none\" (wire your own trigger into the node). The node pulses when the talk ends. Call with only object to read it; remove: true takes it away. A second call changes the same talk. One undo step."
 						}
 					},
 					"required": [
@@ -11109,7 +11399,7 @@
 					]
 				},
 				"annotations": {
-					"title": "Game setup: spawn, play camera, levels, portals, checkpoints, loading, enemies",
+					"title": "Game setup: spawn, play camera, levels, portals, checkpoints, loading, enemies, dialogue",
 					"readOnlyHint": false,
 					"destructiveHint": true,
 					"openWorldHint": false

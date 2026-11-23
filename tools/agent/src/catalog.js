@@ -90,6 +90,8 @@ export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?:
 	set_play_camera: { title: 'Set the play camera and opening view', destructive: true },
 	// 61-nav G10: game_setup {npc}
 	set_npc: { title: 'Make an object an enemy', destructive: true },
+	// 92-dialogue GC6: game_setup {dialogue}
+	set_dialogue: { title: 'Give an object a talk', destructive: true },
 	// 85b 85-world
 	search_assets: { title: 'Find assets', read: true, openWorld: true },
 	place_asset: { title: 'Place an asset', destructive: false, openWorld: true },
@@ -332,10 +334,10 @@ export const CONNECTOR_FAMILIES = Object.freeze({
 	},
 	// 85-scene (85b): 85 H3 + H6; levels / portal / loading / checkpoint join with 91 / 93
 	game_setup: {
-		title: 'Game setup: spawn, play camera, levels, portals, checkpoints, loading, enemies',
+		title: 'Game setup: spawn, play camera, levels, portals, checkpoints, loading, enemies, dialogue',
 		summary:
-			'How the game starts: spawn = where Play starts and which way the player faces; play_camera = first person walking or flying (speed, jump, eye height) and openingView = where the editor camera starts when the scene opens; levels = the game\'s one Levels table (order, scene or spawn point, goals) and what carries from level to level (score, inventory, health, named variables); portal = a doorway to a level, scene or spot (one player at a time, with a fade / iris / card); checkpoint = a pad that saves the player\'s progress; loading = the loading screen a level change shows; npc = make an object an enemy that patrols a Path, sees and hears the player, chases, attacks, gives up and returns (the object menu\'s "Make this an enemy" sheet).',
-		actions: { spawn: 'place_spawn', play_camera: 'set_play_camera', levels: 'set_levels', portal: 'set_portal', checkpoint: 'set_checkpoint', loading: 'set_loading', npc: 'set_npc' }
+			'How the game starts: spawn = where Play starts and which way the player faces; play_camera = first person walking or flying (speed, jump, eye height) and openingView = where the editor camera starts when the scene opens; levels = the game\'s one Levels table (order, scene or spawn point, goals) and what carries from level to level (score, inventory, health, named variables); portal = a doorway to a level, scene or spot (one player at a time, with a fade / iris / card); checkpoint = a pad that saves the player\'s progress; loading = the loading screen a level change shows; npc = make an object an enemy that patrols a Path, sees and hears the player, chases, attacks, gives up and returns (the object menu\'s "Make this an enemy" sheet); dialogue = give an object a talk: lines in a box for the player who walks up or clicks it, choices that set a variable or jump.',
+		actions: { spawn: 'place_spawn', play_camera: 'set_play_camera', levels: 'set_levels', portal: 'set_portal', checkpoint: 'set_checkpoint', loading: 'set_loading', npc: 'set_npc', dialogue: 'set_dialogue' }
 	}
 });
 

@@ -60,6 +60,7 @@ export const NODE_DOCS = {
 	hudvisible: "Shows, hides or toggles ONE HUD element on a trigger, or follows a wired visible value (above 0 = shown) - per player, like a screen.",
 	camerashake: "Shakes the Play camera on a trigger (strength, seconds, frequency) - on this device only, never in VR; who: me = the player who made the pulse, everyone = every player. Reduced motion turns it down.",
 	screenflash: "Flashes a colour over the screen that fades out (a hit, a pickup) - on this device; who: me or everyone. Reduced motion keeps it faint.",
+	dialogue: "A conversation in a box at the bottom of the player's screen (a panel in VR): lines as 'Speaker: text', choices as '> text [set name = 1] -> part', parts as '# part'. Only the player who started it sees it; it pulses when the talk ends.",
 	hitpause: "Holds this device's picture for a few milliseconds on a trigger (a hit-stop). The game, the clock and physics keep running.",
 	gametime: "Seconds since the game (or the round) started, the same on every peer - a clock that pauses with the game.",
 	peervariable: "A value kept PER PLAYER (score, lives, team) - each peer reads its own row, or a named player's.",

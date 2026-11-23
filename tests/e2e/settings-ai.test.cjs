@@ -175,10 +175,10 @@ h.run(async () => {
 	await S('S.aiAssistantHidden.set("");');
 	await P.waitForSelector('#connect-claude-button', { state: 'visible', timeout: 20000 });
 	// the AI window's Connect card points other AI apps at card 2 (find-it: the window said only "Claude")
-	await P.locator('#connect-claude-other button').click();
+	await P.locator('#connect-claude-other').click();
 	await P.waitForSelector('#ai-card-in-scene', { timeout: 15000 });
 	await P.waitForTimeout(700);
-	h.check((await pageTitle()) === 'AI' && (await inView('#ai-card-in-scene')), 'the Connect card\'s "ChatGPT, Gemini CLI or another AI app?" link lands on card 2');
+	h.check((await pageTitle()) === 'AI' && (await inView('#ai-card-in-scene')), 'the Connect card\'s "ChatGPT or another AI app?" link lands on card 2');
 	await closeSettings();
 	await S('S.aiAssistantHidden.set("");');
 	await P.waitForSelector('#connect-claude-button', { state: 'visible', timeout: 20000 });

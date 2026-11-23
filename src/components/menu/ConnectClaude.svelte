@@ -113,15 +113,13 @@
 					</div>
 					<span class="sr-only" role="status" aria-live="polite">{copied ? 'Copied' : ''}</span>
 					<a id="connect-claude-how" class="cc-link cc-how" href={CONNECTOR_DOCS_URL} target="_blank" rel="noopener noreferrer"><Icon name="circle-help" size={16} aria-hidden="true" />How it works</a>
+					<!-- 89 I2 (find-it): beside How it works, so the card keeps its height (the N6 unfolded welcome fits with no inner scroll) -->
+					<button type="button" id="connect-claude-other" class="cc-link cc-how cc-other" title="ChatGPT, Gemini CLI, VS Code, Cursor: they connect the same way, in Settings ▸ AI" onclick={openOtherApps}>ChatGPT or another AI app?</button>
 				</li>
 				<li id="connect-claude-step-2">
 					{#if signIn}Then press Sign in to connect above. Once you are signed in, the same button reads Connect Claude: press it and keep this tab open.{:else}Then press Connect Claude here and keep this tab open.{/if}
 				</li>
 			</ol>
-			<p class="cc-other" id="connect-claude-other">
-				ChatGPT, Gemini CLI or another AI app? It connects the same way.
-				<button type="button" class="cc-link" onclick={openOtherApps}>AI apps in Settings ▸ AI</button>
-			</p>
 		{/if}
 		{#if s.phase === 'connected' && s.throttled}
 			<p class="cc-hint cc-warn" id="connect-claude-throttled">
@@ -284,9 +282,7 @@
 		color: var(--warn-text);
 	}
 	.cc-other {
-		margin: var(--space-2) 0 0;
-		font-size: var(--fs-desc);
-		color: var(--text-muted);
+		margin-left: var(--space-3);
 	}
 	.cc-link {
 		padding: 0 2px;

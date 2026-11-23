@@ -236,6 +236,8 @@ h.run(async () => {
 
 	await openSettings(A.page);
 	await A.page.click('[data-shortcut="panels.node-editor"] .shortcut-reset');
+	// 103 row 10: the per-row reset asks first, naming the keys it goes from and to
+	await A.page.locator('#confirm-dialog-ok').click();
 	await A.page.waitForTimeout(400);
 	const oneReset = await A.page.evaluate(() => {
 		const r = window.__tp.test.v1.shortcutsRegistry.shortcuts;

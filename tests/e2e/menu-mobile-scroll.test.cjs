@@ -84,11 +84,17 @@ async function readMenu(page) {
 async function swipeMenu(page, m) {
 	const cdp = await page.context().newCDPSession(page);
 	const x = 60;
-	const y0 = Math.round(Math.min(m.bottom, m.vh) - 12);
-	const dist = Math.round((Math.min(m.bottom, m.vh) - Math.max(m.top, 0)) * 0.8);
+	// 103 H14: the swipe starts on the scrolling rows, above the locked Settings row (a press on a locked row is not a scroll)
+	const sr = await page.evaluate(() => {
+		const r = (document.getElementById('sidebar70-scroll') || document.getElementById('sidebar70')).getBoundingClientRect();
+		return { top: Math.round(r.top), bottom: Math.round(r.bottom) };
+	});
+	const y0 = Math.round(Math.min(sr.bottom, m.vh) - 12);
+	const dist = Math.round((Math.min(sr.bottom, m.vh) - Math.max(sr.top, 0)) * 0.8);
 	// 98-int (dock-fixes A', owner 2026-11-08): an UNPINNED docked menu ends above the Controls band, so on the 360 px
 	// landscape phone it is ~160 px tall and three swipes no longer reach the end — swipe until it stops moving (max 8)
-	for (let pass = 0, prev = -1; pass < 8; pass++) {
+	// (103 H14: the rows scroll between the locked search row and Settings — ~78 px on that phone — so allow 20)
+	for (let pass = 0, prev = -1; pass < 20; pass++) {
 		const at = await page.evaluate(() => {
 			const n = /** @type {HTMLElement} */ (document.getElementById('sidebar70-scroll') || document.getElementById('sidebar70'));
 			return n.scrollTop + n.clientHeight >= n.scrollHeight - 1 ? -2 : Math.round(n.scrollTop);

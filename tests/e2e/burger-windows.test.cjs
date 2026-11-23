@@ -69,7 +69,8 @@ h.run(async () => {
 	const want = ['#open-command-palette', 'L:File', 'L:Scene', '#clear-scene', 'L:Versions', '#open-sessions-manager', 'L:Window', '#open-layouts', '#open-windows-menu', 'L:Help', '#report-bug', '#open-settings', '#open-version'];
 	h.check(JSON.stringify(order) === JSON.stringify(want), `0.1 search, File, Scene (Clear scene… last), Versions, Window (Layouts above Windows, uir-polish C1), Help, footer (${JSON.stringify(order)})`);
 	const lastScene = await page.evaluate(() => {
-		const rows = [...document.querySelectorAll('#sidebar70 > *')];
+		// 103 H14: the rows live in the inner #sidebar70-scroll (the search row and Settings are locked outside it)
+		const rows = [...document.querySelectorAll(document.getElementById('sidebar70-scroll') ? '#sidebar70-scroll > *' : '#sidebar70 > *')];
 		const i = rows.findIndex((e) => e.id === 'clear-scene');
 		return { prev: rows[i - 1]?.className ?? '', next: rows[i + 1]?.className ?? '', text: rows[i]?.textContent.trim() };
 	});

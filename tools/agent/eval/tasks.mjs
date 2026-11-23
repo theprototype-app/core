@@ -42,15 +42,8 @@ async function room(S, objects, spawn = {}) {
 	});
 }
 
-/** wait until `fn` says yes (polling) @param {any} page @param {() => Promise<boolean>} fn @param {number} ms @param {number} [step] */
-async function until(page, fn, ms, step = 200) {
-	const t0 = Date.now();
-	while (Date.now() - t0 < ms) {
-		if (await fn()) return Date.now() - t0;
-		await P.sleep(page, step);
-	}
-	return -1;
-}
+// 2.0-eval2: every wait is FOR a condition, and its time box stretches with the page's frame time (P.until)
+const until = P.until;
 
 /** @param {number} score @param {string} why @returns {Verdict} */
 const v = (score, why) => ({ score, why });
@@ -58,6 +51,21 @@ const v = (score, why) => ({ score, why });
 /** some number in `after` is `k` more than a number in `before` (and new) @param {number[]} before @param {number[]} after @param {number} k */
 export const rose = (before, after, k) =>
 	after.some((b) => !before.includes(b) && before.some((a) => Math.abs(b - a - k) < 1e-6));
+
+/** a team's score in HUD text: the first number right after the team's name, inside one HUD element (the
+ * reader joins elements with " | ") @param {string} text @param {string} team @returns {number | null} */
+export function teamScore(text, team) {
+	const m = new RegExp('\\b' + team + '\\b[^\\d|]{0,10}(\\d+)', 'i').exec(text);
+	return m ? Number(m[1]) : null;
+}
+
+/** the HUD tells this person THEIR team: the team's name is on it outside the score lines, the other team's is
+ * not @param {string} text @param {string} team 'red' | 'blue' */
+export function showsOwnTeam(text, team) {
+	const rest = text.replace(/\b(red|blue)\b[^\d|]{0,10}\d+/gi, ' ');
+	const other = team === 'red' ? 'blue' : 'red';
+	return new RegExp('\\b' + team + '\\b', 'i').test(rest) && !new RegExp('\\b' + other + '\\b', 'i').test(rest);
+}
 
 const STARS = [-4, -2, 0, 2, 4].map((x, i) => ({
 	kind: 'primitive',
@@ -220,8 +228,7 @@ export const TASKS = [
 			if (P.lit(C.base['Star 2'], await P.look(A, s2)))
 				return v(0, 'clicking one star lit another');
 			await P.click(A, s1);
-			await P.sleep(A, 1200);
-			if (!P.lit(C.base['Star 1'], await P.look(A, s1)))
+			if (!(await P.holds(A, async () => P.lit(C.base['Star 1'], await P.look(A, s1)), 1200)))
 				return v(0, 'clicking a lit star again turned it off');
 			await P.click(A, s3);
 			if ((await until(A, async () => P.lit(C.base['Star 3'], await P.look(A, s3)), 2500)) < 0)
@@ -254,14 +261,22 @@ export const TASKS = [
 			if (!(await P.enterPlay(A))) return v(0, 'Play did not start');
 			for (const s of stars.slice(0, 4)) {
 				await P.click(A, s);
-				await P.sleep(A, 500);
+				await P.sleep(A, 300);
 			}
-			await P.sleep(A, 1200);
 			let litN = 0;
-			for (let i = 0; i < 4; i++)
-				if (P.lit(C.base['Star ' + (i + 1)], await P.look(A, stars[i]))) litN++;
+			await until(
+				A,
+				async () => {
+					litN = 0;
+					for (let i = 0; i < 4; i++)
+						if (P.lit(C.base['Star ' + (i + 1)], await P.look(A, stars[i]))) litN++;
+					return litN === 4;
+				},
+				3000
+			);
 			if (litN < 4) return v(0, 'only ' + litN + ' of 4 clicked stars lit up');
-			if (await winShowing(A)) return v(0, 'the win shows with only four stars lit');
+			if (!(await P.holds(A, async () => !(await winShowing(A)), 1200)))
+				return v(0, 'the win shows with only four stars lit');
 			await P.click(A, stars[4]);
 			if ((await until(A, () => winShowing(A), 4000)) < 0)
 				return v(0, 'no win after all five stars were lit');
@@ -289,14 +304,16 @@ export const TASKS = [
 		check: async (C) => {
 			const A = C.A;
 			if (!(await P.enterPlay(A))) return v(0, 'Play did not start');
-			await P.sleep(A, 800);
+			// the HUD is drawn by the page's frames: wait for a number to be on it (a score of 0) before counting
+			await until(A, async () => P.numbersIn(await P.hud(A)).length > 0, 2500);
 			const n0 = P.numbersIn(await P.hud(A));
 			for (let i = 0; i < 3; i++) {
 				await P.click(A, C.refs.Target);
 				await P.sleep(A, 500);
 			}
-			await P.sleep(A, 800);
-			const h1 = await P.hud(A);
+			/** @type {any} */
+			let h1 = null;
+			await until(A, async () => rose(n0, P.numbersIn((h1 = await P.hud(A))), 3), 2500);
 			const n1 = P.numbersIn(h1);
 			C.note(
 				'hud before ' +
@@ -318,8 +335,7 @@ export const TASKS = [
 			if (zeroed < 0) return v(0, 'the score did not go back to zero in the new round');
 			const n2 = P.numbersIn(await P.hud(A));
 			await P.click(A, C.refs.Target);
-			await P.sleep(A, 900);
-			if (!rose(n2, P.numbersIn(await P.hud(A)), 1))
+			if ((await until(A, async () => rose(n2, P.numbersIn(await P.hud(A)), 1), 2500)) < 0)
 				return v(0, 'clicking after the reset did not count');
 			return v(1, 'counts clicks, shows the score, resets per round');
 		}
@@ -330,28 +346,58 @@ export const TASKS = [
 		setup: (S) => room(S, []),
 		check: async (C) => {
 			const A = C.A;
+			// the scene sits in the editor a few seconds before Play, as it does while a person reads the answer.
+			// It makes the verdict on a timer that counts from when the page first SAW it (an autostart HUD Timer
+			// counts in the editor too: probe 2026-11-21, 120 -> 114 s in 6 s of editing) the same at any load:
+			// that clock is >= 6 s off every round start, so it is not "a two-minute timer while we play"
+			await P.sleep(A, 6000);
 			if (!(await P.enterPlay(A))) return v(0, 'Play did not start');
+			// 2.0-eval2: the clock is judged against the ROUND START THE SCENE EMITS (the game shell's own round
+			// clock), never against when the harness pressed Play: on a page drawing 3 frames a second the time
+			// between "Play pressed" and "HUD read" is 25 s, which is the harness, not the timer. A timer that
+			// starts with the first Play round or with a restarted round both count — each is a round start.
+			const r0 = await P.roundRef(A);
 			await P.newRound(A);
-			/** @type {number[]} */
-			let c1 = [];
+			const r1 = await P.roundRef(A);
+			const starts = [r0, r1].filter((x) => !!x);
+			if (!starts.length) return v(0, 'no round started when Play was pressed (the game shell has no round)');
+			const want = (/** @type {any} */ s, /** @type {number} */ now) => 120 - (now - s.start) / 1000;
+			/** the clock on screen that reads 2:00 counted from one of the round starts, within 5 s */
+			const match = (/** @type {number[]} */ clocks, /** @type {number} */ now) => {
+				for (const c of clocks)
+					for (const s of starts) if (Math.abs(c - want(s, now)) <= 5) return { c, s };
+				return null;
+			};
+			/** @type {any} */
+			let first = null;
+			/** @type {any} */
+			let seen = null;
 			await until(
 				A,
-				async () =>
-					(c1 = P.clocksIn(await P.hud(A)).filter((s) => s >= 100 && s <= 120)).length > 0,
+				async () => {
+					seen = await P.hudAt(A);
+					first = match(P.clocksIn(seen.h), seen.now);
+					return !!first;
+				},
 				3000
 			);
-			if (!c1.length)
+			const shown = seen ? P.clocksIn(seen.h) : [];
+			const wants = starts.map((s) => Math.round(want(s, seen?.now ?? 0)));
+			C.note('round starts ' + starts.map((s) => 'r' + s.round).join(',') + '; clock ' + JSON.stringify(shown) + ', 2:00 from the round start = ' + JSON.stringify(wants));
+			if (!first)
 				return v(
 					0,
-					'no clock near 2:00 on the screen at the start of a round (' +
-						(await P.hud(A)).text.slice(0, 100) +
-						')'
+					shown.length
+						? 'the clock on screen (' + shown.join(', ') + ' s) is not a 2:00 count from the round start (' + wants.join(' or ') + ' s now)'
+						: 'no clock on the screen (' + seen?.h?.text?.slice(0, 100) + ')'
 				);
+			// it counts DOWN, at the round's pace: a reading 5 s later is again 2:00 from the same start, and lower
 			await P.sleep(A, 5000);
-			const c2 = P.clocksIn(await P.hud(A));
-			const fell = c2.some((x) => c1[0] - x >= 3 && c1[0] - x <= 8);
-			C.note('clock ' + c1[0] + ' then ' + JSON.stringify(c2));
-			if (!fell) return v(0, 'the clock did not count down over 5 s');
+			const later = await P.hudAt(A);
+			const c2 = P.clocksIn(later.h);
+			const ok = c2.some((x) => Math.abs(x - want(first.s, later.now)) <= 5 && first.c - x >= 3);
+			C.note('then ' + JSON.stringify(c2) + ' (want ' + Math.round(want(first.s, later.now)) + ')');
+			if (!ok) return v(0, 'the clock did not count down with the round (' + first.c + ' then ' + JSON.stringify(c2) + ')');
 			return v(1, 'a 2:00 clock counts down');
 		}
 	},
@@ -394,8 +440,9 @@ export const TASKS = [
 				.focus()
 				.catch(() => {});
 			await P.press(A, 'p');
-			await P.sleep(A, 600);
-			const t1 = await turning(1500);
+			// wait FOR the fan to stand still (a 1 s window with no turn), not 600 ms
+			let t1 = 99;
+			await until(A, async () => (t1 = await turning(1000)) <= 2, 3000, 0);
 			const g1 = await P.game(A);
 			C.note('after P: fan ' + t1.toFixed(1) + '° in 1.5 s, game ' + g1?.state);
 			// 2.0-int: where a press stops (the behaviour input pass, the behaviour runtime, its state)
@@ -418,8 +465,8 @@ export const TASKS = [
 			})));
 			if (t1 > 2) return v(0, 'P did not pause: the fan kept turning');
 			await P.press(A, 'p');
-			await P.sleep(A, 600);
-			const t2 = await turning(1000);
+			let t2 = 0;
+			await until(A, async () => (t2 = await turning(1000)) >= 5, 3000, 0);
 			if (t2 < 5) return v(0, 'P again did not carry on: the fan stayed still');
 			return v(1, 'P pauses, P resumes');
 		}
@@ -451,14 +498,34 @@ export const TASKS = [
 			const A = C.A;
 			if (!(await P.enterPlay(A))) return v(0, 'Play did not start');
 			await P.newRound(A);
+			const round = await P.roundRef(A);
 			await P.stay(A, [0, 0, 8], 1000);
+			const left = await P.pageNow(A);
 			await P.walk(A, [[0, 0, -7.6]], 3);
-			await P.stay(A, [0, 0, -7.6], 2500);
-			const h1 = await P.hud(A);
-			const times = [...P.numbersIn(h1), ...P.clocksIn(h1)].filter((x) => x >= 4 && x <= 14);
+			const arrived = await P.pageNow(A);
+			// 2.0-eval2: a time is right when it lies between the WALK itself (start line left -> flag) and the
+			// round start -> flag, as this page measured them (+-1.5 s), not inside a fixed 4-14 s window
+			const lo = (arrived - left) / 1000 - 1.5;
+			const hi = (arrived - (round?.start ?? left)) / 1000 + 1.5;
+			C.note('walk ' + ((arrived - left) / 1000).toFixed(1) + ' s, round start to flag ' + ((arrived - (round?.start ?? left)) / 1000).toFixed(1) + ' s');
+			/** @type {number[]} */
+			let times = [];
+			/** @type {any} */
+			let h1 = null;
+			const standing = P.stay(A, [0, 0, -7.6], 2500 * (await P.loadScale(A)));
+			await until(
+				A,
+				async () => {
+					h1 = await P.hud(A);
+					times = [...P.numbersIn(h1), ...P.clocksIn(h1)].filter((x) => x >= lo && x <= hi);
+					return times.length > 0;
+				},
+				2500
+			);
+			await standing;
 			C.note('after the run: ' + JSON.stringify(h1.text).slice(0, 160));
 			if (!times.length)
-				return v(0, 'no time of about 6-7 s on the screen after reaching the flag');
+				return v(0, 'no time of ' + lo.toFixed(1) + '-' + hi.toFixed(1) + ' s on the screen after reaching the flag');
 			await P.leavePlay(A);
 			await A.evaluate(() => window.__tp.test.v1.autosave.saveNow?.());
 			await P.sleep(A, 2500);
@@ -505,23 +572,29 @@ export const TASKS = [
 			const coin = C.refs.Coin;
 			if (!(await P.enterPlay(A)) || !(await P.enterPlay(B)))
 				return v(0, 'Play did not start on both');
-			await P.sleep(A, 1000);
+			// the count is drawn by each page's frames: wait for a number on both screens before anyone walks
+			await until(A, async () => P.numbersIn(await P.hud(A)).length > 0, 2500);
+			await until(B, async () => P.numbersIn(await P.hud(B)).length > 0, 2500);
 			const [a0, b0] = [P.numbersIn(await P.hud(A)), P.numbersIn(await P.hud(B))];
 			await P.walk(B, [[0, 0, 0]]);
 			await P.stay(B, [0, 0, 0], 1500);
 			await P.walk(B, [[0, 0, -4]]);
-			await P.sleep(A, 1500);
 			const gone = async (/** @type {any} */ page) => {
 				const l = await P.look(page, coin);
 				return !l || !l.shown || l.opacity < 0.2;
 			};
-			const [goneA, goneB] = [await gone(A), await gone(B)];
-			const [a1, b1] = [P.numbersIn(await P.hud(A)), P.numbersIn(await P.hud(B))];
-			const upB = rose(b0, b1, 1);
-			const upA = rose(a0, a1, 1);
-			C.note(`B walked through: gone A=${goneA} B=${goneB}; count up A=${upA} B=${upB}`);
-			if (goneA && goneB && upB && !upA)
+			const read = async () => {
+				const [goneA, goneB] = [await gone(A), await gone(B)];
+				const [a1, b1] = [P.numbersIn(await P.hud(A)), P.numbersIn(await P.hud(B))];
+				return { goneA, goneB, upA: rose(a0, a1, 1), upB: rose(b0, b1, 1) };
+			};
+			// wait FOR the whole outcome (gone on both, B's count up), then A's count must STAY where it was
+			let st = await read();
+			await until(A, async () => ((st = await read()), st.goneA && st.goneB && st.upB), 3000);
+			if (st.goneA && st.goneB && st.upB && (await P.holds(A, async () => !(st = await read()).upA, 1500)))
 				return v(1, 'the toucher collects it, gone for everyone, only their count rises');
+			const { goneA, goneB, upA, upB } = st;
+			C.note(`B walked through: gone A=${goneA} B=${goneB}; count up A=${upA} B=${upB}`);
 			if (goneB && upB)
 				return v(
 					0.5,
@@ -532,8 +605,7 @@ export const TASKS = [
 			if (!goneA) {
 				await P.walk(A, [[0, 0, 0]]);
 				await P.stay(A, [0, 0, 0], 1500);
-				await P.sleep(A, 1000);
-				if ((await gone(A)) && rose(a0, P.numbersIn(await P.hud(A)), 1))
+				if ((await until(A, async () => (await gone(A)) && rose(a0, P.numbersIn(await P.hud(A)), 1), 3000)) >= 0)
 					return v(0.5, 'works for the host only, not for a joined player');
 			}
 			return v(0, 'walking into the coin did not collect it');
@@ -603,7 +675,10 @@ export const TASKS = [
 						')'
 				);
 			await Promise.all([P.click(A, btn), P.click(B, btn)]);
-			await P.sleep(A, 2500);
+			// the two screens must END UP agreeing (and stay so): wait for it, then hold it
+			await P.sleep(A, 500);
+			await until(A, async () => (await on(A)) === (await on(B)), 2500);
+			await P.holds(A, async () => (await on(A)) === (await on(B)), 1000);
 			const [sa, sb] = [await on(A), await on(B)];
 			C.note('both pressed together: A ' + (sa ? 'on' : 'off') + ', B ' + (sb ? 'on' : 'off'));
 			if (sa !== sb)
@@ -692,7 +767,9 @@ export const TASKS = [
 			const gate = C.refs.Gate;
 			const base = C.base.Gate;
 			if (!(await P.enterPlay(A))) return v(0, 'Play did not start');
-			await P.sleep(A, 7000); // whatever the first entry started has run out
+			// whatever the first entry started has run out: the gate is open (or 7 s of the page's frames passed)
+			await until(A, async () => P.opened(base, await P.look(A, gate)), 7000);
+			await P.sleep(A, 500);
 			// the pause menu's Restart, sampled from the press on (a countdown is over in 3 s)
 			await P.restartRound(A, 0);
 			const t0 = Date.now();
@@ -700,7 +777,8 @@ export const TASKS = [
 			const seen = [];
 			let openAt = -1;
 			let closedAgainAfterRestart = false;
-			while (Date.now() - t0 < 8000) {
+			const box = 8000 * (await P.loadScale(A));
+			while (Date.now() - t0 < box) {
 				const h = await P.hud(A);
 				const words =
 					(h.text + ' ' + Object.values(h.values).join(' ')).match(/\b[123]\b|\bgo\b/gi) ?? [];
@@ -753,7 +831,7 @@ export const TASKS = [
 			const background = (await P.soundsSince(A, t)).length;
 			t = await P.pageNow(A);
 			await P.click(A, bell);
-			await P.sleep(A, 1000);
+			await until(A, async () => (await P.soundsSince(A, t)).length > 0, 1000);
 			const one = (await P.soundsSince(A, t)).length;
 			if (one < 1) return v(0, 'no sound when the bell was hit');
 			await P.sleep(A, 800);
@@ -811,7 +889,8 @@ export const TASKS = [
 			if (!(await P.enterPlay(A))) return v(0, 'Play did not start');
 			// the start is where Play puts you (the agent may have moved the spawn)
 			const start = await P.playerPos(A);
-			await P.sleep(A, 1000);
+			// wait FOR a health reading on screen
+			await until(A, async () => (healthOf(await P.hud(A)) ?? 0) > 0, 2500);
 			const h0 = healthOf(await P.hud(A));
 			if (h0 === null || !(h0 > 0))
 				return v(0, 'no health shown on the screen (' + (await P.hud(A)).text.slice(0, 100) + ')');
@@ -937,7 +1016,12 @@ export const TASKS = [
 			await P.leavePlay(A);
 			const B = await C.joinB();
 			if (!B) return v(0, 'the late joiner could not join');
-			await P.sleep(B, 4000);
+			// 2.0-eval2: the window starts when the joiner has LOADED (its object batch landed, nothing still asked,
+			// every lantern there), not after a fixed 4 s: on a 3 fps page each incoming object takes ~3 s to apply,
+			// so 7 objects outlasted the old 4 + 8 s and the check read a scene still arriving (n3b Q9)
+			const load = await P.joinLoaded(B, Object.values(C.refs), 120000);
+			C.note('joiner loaded in ' + load.ms + ' ms ' + JSON.stringify(load.state));
+			if (load.ms < 0) return v(0, 'the late joiner never finished loading the scene (' + JSON.stringify(load.state) + ')');
 			await P.enterPlay(B);
 			let state = '';
 			const same = await until(
@@ -954,6 +1038,347 @@ export const TASKS = [
 			C.note('the late joiner sees ' + state);
 			if (same < 0) return v(0, 'the late joiner does not see the lit lanterns (' + state + ')');
 			return v(1, 'a late joiner sees exactly the lit lanterns');
+		}
+	},
+	// ---------------------------------------------------------------------------------------- 2.0-eval2: 8 more
+	// From what the 39 scenes do and the first 15 did not cover (cloud task-2.0-eval2.md step 5). Same rules: the
+	// check reads OUTCOMES a person sees, waits FOR conditions (P.until / P.holds stretch with the page's frame
+	// time) and never reads after a fixed sleep.
+	{
+		id: 'key-door',
+		say: 'The door is locked. Put a key on the floor: when I walk over the key I pick it up, and only once I have the key does the door open when I walk up to it.',
+		setup: (S) =>
+			room(S, [
+				{ kind: 'primitive', primitive: 'Box', name: 'Wall Left', params: [4, 3, 0.3], position: [-2.6, 1.5, -4], color: '#c8c0b0' },
+				{ kind: 'primitive', primitive: 'Box', name: 'Wall Right', params: [4, 3, 0.3], position: [2.6, 1.5, -4], color: '#c8c0b0' },
+				{ kind: 'primitive', primitive: 'Box', name: 'Door', params: [1.2, 2.2, 0.15], position: [0, 1.1, -4], color: '#7a4a2a' },
+				{ kind: 'primitive', primitive: 'Box', name: 'Key', params: [0.5, 0.15, 0.2], position: [5, 0.4, 4], color: '#f0c020' }
+			]),
+		check: async (C) => {
+			const A = C.A;
+			const door = C.refs.Door;
+			const base = C.base.Door;
+			if (!(await P.enterPlay(A))) return v(0, 'Play did not start');
+			await P.walk(A, [[0, 0, -2.5]]);
+			const shut = await P.holds(A, async () => !P.opened(base, await P.look(A, door)), 3000);
+			if (!shut) return v(0, 'the door opened without the key');
+			await P.walk(A, [[0, 0, 4], [5, 0, 4]]);
+			await P.stay(A, [5, 0, 4], 1500);
+			const k = await P.look(A, C.refs.Key);
+			C.note('key after walking over it: ' + (!k || !k.shown ? 'gone' : 'still there'));
+			await P.walk(A, [[0, 0, 4], [0, 0, -2.5]]);
+			const stand = P.stay(A, [0, 0, -2.5], 4000 * (await P.loadScale(A)));
+			const openedIn = await until(A, async () => P.opened(base, await P.look(A, door)), 4000);
+			await stand;
+			if (openedIn < 0) return v(0, 'with the key, the door still did not open at it');
+			return v(1, 'shut without the key, opens with it');
+		}
+	},
+	{
+		id: 'lap-counter',
+		say: 'This is a race track around the block. Count my laps — one lap each time I come back round across the finish line — and show my lap count and my best lap time on the screen.',
+		setup: (S) =>
+			room(
+				S,
+				[
+					{ kind: 'primitive', primitive: 'Box', name: 'Finish Line', params: [4, 0.05, 1], position: [0, 0.025, 0], color: '#f4f4f4' },
+					{ kind: 'primitive', primitive: 'Box', name: 'Infield', params: [6, 1, 10], position: [4, 0.5, 0], color: '#3a7a3a' }
+				],
+				{ at: [0, 0, 3], facing: [0, 0, -6] }
+			),
+		check: async (C) => {
+			const A = C.A;
+			if (!(await P.enterPlay(A))) return v(0, 'Play did not start');
+			// THE LINE IS CROSSED SLOWLY (1 m/s over 2 m): at a loaded page's 2-3 fps a fast walk moves 1-2 m a frame and
+			// can step over a 1 m sensor without ever touching it. A crossing's moment = the middle of that slow stretch,
+			// by the wall clock; a lap is judged against the measured gap between two crossings, not a nominal speed.
+			const crossings = /** @type {number[]} */ ([]);
+			const cross = async () => {
+				const t0 = Date.now();
+				await P.walk(A, [[0, 0, -1]], 1);
+				crossings.push((t0 + Date.now()) / 2);
+			};
+			// one loop from just past the line round the infield and back over it: 38 m at 2 m/s + the slow 2 m.
+			// 2.0-eval2: both laps walk at 2 m/s (1 m a frame at 2 fps) and the first one is made SLOWER by a stop at
+			// the far corner: a 5 m/s lap moved 2.5 m a frame on a loaded page and stepped over a build's own halfway
+			// checkpoint (arms A/B: lap 2 missed at random, |A-B| 0.40)
+			// `slow`: stop at the corner for as long as the whole walk takes (the 25 m so far x 40/25), so lap 1 is
+			// about twice lap 2 at any load (a fixed stop was only 4 s of a 32 s lap on a 2 fps page)
+			const loop = async (/** @type {boolean} */ slow) => {
+				const t0 = Date.now();
+				await P.walk(A, [[0, 0, -6], [8, 0, -6], [8, 0, 6]], 2);
+				if (slow) await P.stay(A, [8, 0, 6], Math.max(12000, ((Date.now() - t0) * 40) / 25));
+				await P.walk(A, [[0, 0, 6], [0, 0, 1]], 2);
+				await cross();
+				return (crossings[crossings.length - 1] - crossings[crossings.length - 2]) / 1000;
+			};
+			await P.stay(A, [0, 0, 3], 800);
+			await until(A, async () => P.numbersIn(await P.hud(A)).length > 0, 2500);
+			const n0 = P.numbersIn(await P.hud(A));
+			// a lap time on screen near the measured one (1.5 s + 20 %: a build may time laps on the sim clock, which a
+			// loaded page runs a little slow)
+			// `not`: and nearer this lap than that one (a best that stayed at lap 1 is not lap 2's time)
+			const numsNear = (/** @type {any} */ h, /** @type {number} */ want, /** @type {number} */ not = Infinity) =>
+				[...P.numbersIn(h), ...P.clocksIn(h)].some((x) => Math.abs(x - want) <= 1.5 + 0.2 * want && Math.abs(x - want) < Math.abs(x - not));
+			await P.walk(A, [[0, 0, 1]], 2);
+			await cross(); // crossing 1: the race starts
+			const lap1 = await loop(true); // ~2x lap 2
+			/** @type {any} */
+			let h1 = null;
+			const after1 = await until(A, async () => ((h1 = await P.hud(A)), rose(n0, P.numbersIn(h1), 1) && numsNear(h1, lap1)), 4000);
+			const lap2 = await loop(false); // ~20-32 s
+			/** @type {any} */
+			let h2 = null;
+			const after2 = await until(A, async () => ((h2 = await P.hud(A)), !!h1 && rose(P.numbersIn(h1), P.numbersIn(h2), 1) && numsNear(h2, lap2, lap1)), 4000);
+			C.note('laps ' + lap1.toFixed(1) + ' s, ' + lap2.toFixed(1) + ' s; start ' + JSON.stringify(n0) + '; after lap 1 ' + JSON.stringify(h1?.text?.slice(0, 120)) + '; after lap 2 ' + JSON.stringify(h2?.text?.slice(0, 120)));
+			if (after1 < 0) {
+				if (h1 && rose(n0, P.numbersIn(h1), 1)) return v(0, 'a lap counted, but no lap time near ' + lap1.toFixed(0) + ' s on the screen');
+				return v(0, 'no lap counted after one lap round the track');
+			}
+			if (after2 < 0) {
+				if (h2 && numsNear(h2, lap2, lap1)) return v(0, 'the best lap updated, but the lap count did not go up on the second lap');
+				return v(0, 'after a faster second lap (' + lap2.toFixed(0) + ' s) the best lap did not become about that');
+			}
+			return v(1, 'counts laps, keeps the best lap time');
+		}
+	},
+	{
+		id: 'spawner-cap',
+		say: 'Spawn a new enemy like this one every second, but never have more than 5 alive at once. Each enemy only lives 8 seconds, and new ones keep coming so there are always up to 5.',
+		setup: (S) =>
+			room(
+				S,
+				[{ kind: 'primitive', primitive: 'Box', name: 'Enemy', params: [0.8, 0.8, 0.8], position: [0, 0.4, -6], color: '#c02020' }],
+				{ facing: [0, 0.4, -6] }
+			),
+		check: async (C) => {
+			const A = C.A;
+			const template = C.refs.Enemy.uuid;
+			if (!(await P.enterPlay(A))) return v(0, 'Play did not start');
+			// the enemies a person sees, in either form: visible scene objects called "enemy…" (core Spawn copies; the
+			// start scene's own one left out) and kit entities (a behaviour's spawn, drawn in a system group). The two
+			// can describe one enemy, so the COUNT is the larger of the two and identity is the union.
+			// (1.72: a click on a spawned copy never reaches the template's On Click, so the request asks for a
+			// lifetime, not a click kill.)
+			const alive = async () => {
+				const scene = (await P.visibleNamed(A, 'enem')).filter((e) => e.uuid !== template).map((e) => 's:' + e.uuid);
+				const kit = (await P.kitAlive(A)).map((id) => 'k:' + id);
+				return { n: Math.max(scene.length, kit.length), ids: [...scene, ...kit] };
+			};
+			let most = 0;
+			let now = { n: 0, ids: /** @type {string[]} */ ([]) };
+			const full = await until(A, async () => {
+				now = await alive();
+				most = Math.max(most, now.n);
+				return now.n >= 5 || most > 5;
+			}, 9000);
+			if (most > 5) return v(0, 'more than 5 enemies alive at once (' + most + ')');
+			if (full < 0) return v(0, now.n ? 'only ' + now.n + ' enemies came in 9 s (one a second, up to 5)' : 'no enemies spawned');
+			// while it churns: never above 5, the first five go away, and new ones keep it near full
+			const first = new Set(now.ids);
+			let turned = false;
+			const capped = await P.holds(A, async () => {
+				now = await alive();
+				most = Math.max(most, now.n);
+				if (now.n >= 4 && [...first].some((id) => !now.ids.includes(id))) turned = true;
+				return now.n <= 5;
+			}, 12000);
+			C.note('most ' + most + ', turned over ' + turned + ', last ' + now.n);
+			if (!capped) return v(0, 'more than 5 enemies alive at once (' + most + ')');
+			if (!turned) return v(0.5, 'capped at 5, but the enemies never go away and get replaced');
+			return v(1, 'one a second, never more than 5, old ones leave and new ones fill up');
+		}
+	},
+	{
+		id: 'team-score',
+		sync: 'pair',
+		say: "Make it a two-team game, Red against Blue: put each player on a team so the teams stay even, and show each person which team they are on. Clicking the ball scores a point for the clicker's team. Show both team scores on everyone's screen.",
+		setup: (S) =>
+			room(
+				S,
+				[{ kind: 'primitive', primitive: 'Sphere', name: 'Ball', params: [0.5], position: [0, 1.5, -3], color: '#f0f0f0' }],
+				{ facing: [0, 1.5, -3] }
+			),
+		check: async (C) => {
+			const { A, B } = C;
+			const ball = C.refs.Ball;
+			if (!(await P.enterPlay(A)) || !(await P.enterPlay(B))) return v(0, 'Play did not start on both');
+			const read = async (/** @type {any} */ page) => {
+				const h = await P.hud(page);
+				const text = h.text + ' | ' + Object.values(h.values).join(' | ');
+				return { text, red: teamScore(text, 'red'), blue: teamScore(text, 'blue') };
+			};
+			const both = async () => [await read(A), await read(B)];
+			let [ra, rb] = await both();
+			await until(A, async () => (([ra, rb] = await both()), ra.red !== null && ra.blue !== null && rb.red !== null && rb.blue !== null), 3000);
+			if (ra.red === null || ra.blue === null) return v(0, 'no Red and Blue scores on the screen (' + ra.text.slice(0, 100) + ')');
+			if (rb.red === null || rb.blue === null) return v(0.5, "the joined player does not see the team scores (" + rb.text.slice(0, 100) + ')');
+			const s0 = { red: ra.red, blue: ra.blue };
+			/** which team's score rose by `k` on BOTH screens, from `from` */
+			const roseBy = (/** @type {any} */ from, /** @type {any} */ a, /** @type {any} */ b, /** @type {number} */ k) =>
+				['red', 'blue'].find((t) => a[t] === from[t] + k && b[t] === from[t] + k && a[t === 'red' ? 'blue' : 'red'] === from[t === 'red' ? 'blue' : 'red']) ?? null;
+			await P.click(A, ball);
+			let teamA = null;
+			await until(A, async () => (([ra, rb] = await both()), (teamA = roseBy(s0, ra, rb, 1)) !== null), 3000);
+			if (!teamA) {
+				const one = ra.red !== s0.red || ra.blue !== s0.blue || rb.red !== s0.red || rb.blue !== s0.blue;
+				return v(one ? 0.5 : 0, one ? 'a click scored, but the two screens disagree (A ' + ra.red + '/' + ra.blue + ', B ' + rb.red + '/' + rb.blue + ')' : "the host's click scored nothing");
+			}
+			const s1 = { red: ra.red, blue: ra.blue };
+			await P.click(B, ball);
+			await P.sleep(B, 400);
+			await P.click(B, ball);
+			let teamB = null;
+			await until(A, async () => (([ra, rb] = await both()), (teamB = roseBy(s1, ra, rb, 2)) !== null), 3000);
+			C.note('A on ' + teamA + ', B on ' + teamB + '; scores now red ' + ra.red + ' blue ' + ra.blue);
+			if (!teamB) return v(0.5, "the joined player's clicks did not score 2 for one team on both screens (A " + ra.red + '/' + ra.blue + ', B ' + rb.red + '/' + rb.blue + ')');
+			if (teamA === teamB) return v(0.5, 'both players are on the same team (' + teamA + ')');
+			if (!showsOwnTeam(ra.text, teamA) || !showsOwnTeam(rb.text, teamB)) return v(0.5, 'scores work, but a player is not shown which team they are on');
+			return v(1, 'two even teams, own team shown, clicks score for the clicker\'s team everywhere');
+		}
+	},
+	{
+		id: 'dialogue-own',
+		sync: 'pair',
+		say: 'When someone walks up to the old man, show the line "Welcome, traveller!" on that person\'s screen. Only the person standing next to him sees it, not everyone else.',
+		setup: (S) =>
+			room(S, [{ kind: 'primitive', primitive: 'Cylinder', name: 'Old Man', params: [0.35, 0.35, 1.8], position: [0, 0.9, -4], color: '#806040' }]),
+		check: async (C) => {
+			const { A, B } = C;
+			if (!(await P.enterPlay(A)) || !(await P.enterPlay(B))) return v(0, 'Play did not start on both');
+			const says = async (/** @type {any} */ page) => {
+				const h = await P.hud(page);
+				if (/welcome/i.test(h.text + ' ' + Object.values(h.values).join(' '))) return true;
+				return (await P.sceneSays(page, '\\bwelcome')).length > 0;
+			};
+			if (!(await P.holds(A, async () => !(await says(A)) && !(await says(B)), 1500)))
+				return v(0, 'the line shows with nobody near the old man');
+			await P.walk(A, [[0, 0, -2]]);
+			const standA = await P.standAt(A, [0, 0, -2]);
+			const seenA = await until(A, () => says(A), 4000);
+			const onlyA = seenA >= 0 && (await P.holds(B, async () => !(await says(B)), 2000));
+			await standA();
+			if (seenA < 0) return v(0, 'walking up to the old man showed no line');
+			await P.walk(A, [[0, 0, 8]]);
+			await P.walk(B, [[0, 0, -2]]);
+			const standB = await P.standAt(B, [0, 0, -2]);
+			const seenB = await until(B, () => says(B), 4000);
+			await standB();
+			C.note('A saw it ' + seenA + ' ms after arriving; B saw it while A stood there: ' + !onlyA + '; B on its own: ' + seenB + ' ms');
+			if (!onlyA) return v(0.5, 'the line showed for everyone, not only for the person at the old man');
+			if (seenB < 0) return v(0.5, 'works for the host only: the joined player never saw the line');
+			return v(1, 'the line shows only for whoever walks up');
+		}
+	},
+	{
+		id: 'inventory-respawn',
+		say: 'Make the gems pickups: walking into one collects it, and my gem count is on the screen. The lava sends me back to the start — but I keep the gems I already have.',
+		setup: (S) =>
+			room(S, [
+				{ kind: 'primitive', primitive: 'Octahedron', name: 'Gem 1', params: [0.35], position: [-3, 0.8, 3], color: '#30a0f0' },
+				{ kind: 'primitive', primitive: 'Octahedron', name: 'Gem 2', params: [0.35], position: [3, 0.8, 3], color: '#30a0f0' },
+				{ kind: 'primitive', primitive: 'Octahedron', name: 'Gem 3', params: [0.35], position: [6, 0.8, -6], color: '#30a0f0' },
+				{ kind: 'primitive', primitive: 'Box', name: 'Lava', params: [4, 0.2, 3], position: [0, 0.1, -4], color: '#ff4010' }
+			]),
+		check: async (C) => {
+			const A = C.A;
+			if (!(await P.enterPlay(A))) return v(0, 'Play did not start');
+			const start = await P.playerPos(A);
+			await until(A, async () => P.numbersIn(await P.hud(A)).length > 0, 2500);
+			const n0 = P.numbersIn(await P.hud(A));
+			await P.walk(A, [[-3, 0, 3]]);
+			await P.stay(A, [-3, 0, 3], 1000);
+			await P.walk(A, [[3, 0, 3]]);
+			await P.stay(A, [3, 0, 3], 1000);
+			if ((await until(A, async () => rose(n0, P.numbersIn(await P.hud(A)), 2), 2500)) < 0)
+				return v(0, 'the gem count on screen did not go up by 2 after two gems (' + (await P.hud(A)).text.slice(0, 100) + ')');
+			await P.walk(A, [[0, 0, -4]]);
+			const moved = await standUntilMoved(A, [0, 0, -4], 6000);
+			if (!moved) return v(0, 'touching the lava did nothing');
+			if (Math.hypot(moved[0] - start[0], moved[2] - start[2]) > 2.5) return v(0, 'the lava moved the player, but not back to the start');
+			const kept = await P.holds(A, async () => rose(n0, P.numbersIn(await P.hud(A)), 2), 2000);
+			C.note('after the respawn: ' + JSON.stringify((await P.hud(A)).text.slice(0, 100)));
+			if (!kept) return v(0, 'the gems were lost on the respawn');
+			await P.walk(A, [[6, 0, 4], [6, 0, -6]]);
+			await P.stay(A, [6, 0, -6], 1000);
+			if ((await until(A, async () => rose(n0, P.numbersIn(await P.hud(A)), 3), 2500)) < 0)
+				return v(0.5, 'the gems were kept, but a gem picked up after the respawn did not count');
+			return v(1, 'collects, keeps the count through a lava respawn');
+		}
+	},
+	{
+		id: 'day-night',
+		sync: 'pair',
+		say: 'Add a day and night switch: clicking the lever turns day into night, and clicking it again turns it back into day, for everyone in the session at once.',
+		setup: (S) =>
+			room(
+				S,
+				[{ kind: 'primitive', primitive: 'Box', name: 'Lever', params: [0.3, 1.2, 0.3], position: [0, 0.6, -2], color: '#a06030' }],
+				{ facing: [0, 0.8, -2] }
+			),
+		check: async (C) => {
+			const { A, B } = C;
+			const lever = C.refs.Lever;
+			if (!(await P.enterPlay(A)) || !(await P.enterPlay(B))) return v(0, 'Play did not start on both');
+			const [dayA, dayB] = [await P.skyLook(A), await P.skyLook(B)];
+			/** night = clearly darker than the day it started from */
+			const dark = (/** @type {any} */ base, /** @type {any} */ now) =>
+				now.light < base.light * 0.6 ||
+				(base.bg !== null && now.bg !== null && base.bg - now.bg >= 0.25) ||
+				now.exposure < base.exposure * 0.6 ||
+				now.envIntensity < base.envIntensity * 0.6;
+			const back = (/** @type {any} */ base, /** @type {any} */ now) => !dark(base, now) && now.light >= base.light * 0.8;
+			C.note('day A ' + JSON.stringify(dayA));
+			await P.click(A, lever);
+			const nA = await until(A, async () => dark(dayA, await P.skyLook(A)), 4000);
+			const nB = await until(B, async () => dark(dayB, await P.skyLook(B)), 3000);
+			C.note('night A ' + JSON.stringify(await P.skyLook(A)));
+			if (nA < 0 && nB < 0) return v(0, 'clicking the lever did not make it night');
+			if (nA < 0 || nB < 0) return v(0.5, 'night came only on ' + (nA >= 0 ? "the presser's" : "the other player's") + ' screen');
+			await P.click(B, lever);
+			const dA = await until(A, async () => back(dayA, await P.skyLook(A)), 4000);
+			const dB = await until(B, async () => back(dayB, await P.skyLook(B)), 3000);
+			if (dA < 0 || dB < 0) return v(0.5, "the joined player's click did not bring the day back for everyone (A " + (dA >= 0) + ', B ' + (dB >= 0) + ')');
+			return v(1, 'the lever switches day and night for everyone, both ways');
+		}
+	},
+	{
+		id: 'two-plates',
+		sync: 'pair',
+		say: 'The gate only opens while two people are standing on the two pressure plates at the same time. If either of them steps off, the gate closes again.',
+		setup: (S) =>
+			room(S, [
+				{ kind: 'primitive', primitive: 'Box', name: 'Plate Left', params: [2, 0.1, 2], position: [-4, 0.05, 0], color: '#a0a0b0' },
+				{ kind: 'primitive', primitive: 'Box', name: 'Plate Right', params: [2, 0.1, 2], position: [4, 0.05, 0], color: '#a0a0b0' },
+				{ kind: 'primitive', primitive: 'Box', name: 'Gate', params: [4, 3, 0.3], position: [0, 1.5, -6], color: '#606060' }
+			]),
+		check: async (C) => {
+			const { A, B } = C;
+			const gate = C.refs.Gate;
+			const base = C.base.Gate;
+			if (!(await P.enterPlay(A)) || !(await P.enterPlay(B))) return v(0, 'Play did not start on both');
+			const openOn = async (/** @type {any} */ page) => P.opened(base, await P.look(page, gate));
+			await P.walk(A, [[-4, 0, 0]]);
+			const standA = await P.standAt(A, [-4, 0, 0]);
+			try {
+				if (!(await P.holds(A, async () => !(await openOn(A)) && !(await openOn(B)), 3000)))
+					return v(0, 'the gate opened with only one person on a plate');
+				await P.walk(B, [[4, 0, 0]]);
+				const standB = await P.standAt(B, [4, 0, 0]);
+				const oA = await until(A, () => openOn(A), 4000);
+				const oB = await until(B, () => openOn(B), 3000);
+				await standB();
+				if (oA < 0 && oB < 0) return v(0, 'two people on the plates did not open the gate');
+				if (oA < 0 || oB < 0) return v(0.5, 'the gate opened only on ' + (oA >= 0 ? "the host's" : "the joined player's") + ' screen');
+				await P.walk(B, [[4, 0, 6]]);
+				const cA = await until(A, async () => !(await openOn(A)), 4000);
+				const cB = await until(B, async () => !(await openOn(B)), 3000);
+				C.note('opened A ' + oA + ' B ' + oB + ' ms; closed A ' + cA + ' B ' + cB + ' ms after one stepped off');
+				if (cA < 0 || cB < 0) return v(0.5, 'the gate stayed open after one person stepped off (A ' + (cA >= 0) + ', B ' + (cB >= 0) + ')');
+				return v(1, 'opens only with both plates held, closes when one steps off');
+			} finally {
+				await standA();
+			}
 		}
 	}
 ];

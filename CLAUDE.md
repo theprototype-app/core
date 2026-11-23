@@ -2873,14 +2873,17 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   Soft, Quest Basic until a preview measures it; `environment.shadowTier` = XR presenting / headset
   UA / coarse pointer) and the row says "This device draws <cap>"; Quality ▸ Shadow detail (the old per-device map
   cap, `shadowQuality`) caps further, and the governor's shadows-off under load is untouched. BOOT carries only
-  `shadowLevelCore`, inlined into environment's chunk (+0.5 KB); `shadowLevels.js` (+ `contactShadows.js`, `shadowLevelParams.js`) load the first time
+  `shadowLevelCore`, inlined into environment's chunk (boot +39 B play, -78 B editor vs v1.74.0); `shadowLevels.js` (+ `contactShadows.js`, `shadowLevelParams.js`) load the first time
   a scene's drawn level is Soft or Far, and going back to Basic restores every original (Basic after Far = today's
-  Basic, asserted in pixels). Soft = PCF radius 3 on the rig sun AND authored lights (an authored shadow's radius is
+  Basic, asserted in pixels). Soft = PCF radius 3 on the rig sun AND authored lights, CAPPED to 6 cm of world blur on
+  an ortho map (`kernelRadiusFor`: the rig sun's map spans the fitted scene, 12 cm texels at 240 m, where radius 3
+  washed a small box's shadow out; a perspective map keeps the radius) (an authored shadow's radius is
   serialized, so `LightShadow.toJSON` is guarded to write the AUTHORED radius); Far = the rig sun alone becomes
   three r186's `SunLightShadow` (two cascades in one atlas, `isSunLight` flag, reach 300 m: three draws NO sun shadow
   past the last cascade and fades its last 10 %, so 200 m needs > 200; three's bias is in DEPTH units and a
-  cascade's depth spans ~500 m, so `keepWorldBias` re-scales it each update to Basic's bias in metres, else the
-  shadow leaves a box's base at 1 m) and authored lights draw Soft's kernel (Q1:
+  cascade's depth spans ~500 m, so `keepWorldBias` re-scales it each update to a FIXED 2 cm world bias — NOT
+  Basic's bias times the fitted sun depth: Far refits the rig sun to r=120, which made that 9.6 cm and lifted a 1 m
+  box's shadow off its base; a 5 mm-5 cm sweep showed no acne at 1/20/200 m) and authored lights draw Soft's kernel (Q1:
   swapping an authored shadow would put a SunLightShadow on the wire). Contact shadows (S2) are a LOCAL post entry
   (`lightParams.contactShadowsWanted` → Outline prepends it; never in a look document) on tiers in `TIER_CONTACT` — NONE in
   this release (Q6: on the Deck's iGPU it doubled frames over 20 ms; `shadowLevels.contactForTest(true)` forces it

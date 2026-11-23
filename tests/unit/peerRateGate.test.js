@@ -3,7 +3,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('../../src/stores/appStore', () => ({ showToast: vi.fn() }));
-vi.mock('../../src/lib/peerModeration', () => ({ canModerate: () => false, peerLabel: (id) => id, removePeer: vi.fn() }));
+vi.mock('../../src/lib/peerModeration', () => ({ canModerate: () => false, peerLabel: (/** @type {string} */ id) => id, removePeer: vi.fn() }));
 
 const { admitRate, rateGateStats } = await import('../../src/lib/peerRateGate.js');
 

@@ -98,20 +98,75 @@ export async function patternImage(pattern, seen = new Map()) {
 	return out;
 }
 
+/** set_material's map names -> the material's map keys (105-noise: the noise defaults are per row) */
+const MAP_ROW_KEYS = { albedo: 'map', normal: 'normalMap', roughness: 'roughnessMap', metalness: 'metalnessMap', emissive: 'emissiveMap', ao: 'aoMap' };
+
+/**
+ * 105-noise: a generated noise texture → a library image (the same add_image path as a pattern: encoded, hashed,
+ * shared with every peer), once per call per identical spec. `slot` = set_material's map name (albedo, normal, …).
+ * @param {any} spec @param {string} slot @param {Map<string, any>} [seen]
+ * @returns {Promise<{hash: string, name: string, wrote: any} | {error: string}>}
+ */
+export async function noiseImage(spec, slot, seen = new Map()) {
+	const { parseNoiseSpec } = await import('$lib/image/noiseCore.js');
+	const key = /** @type {Record<string, string>} */ (MAP_ROW_KEYS)[slot] ?? 'map';
+	const parsed = parseNoiseSpec(spec, key);
+	if ('error' in parsed) return parsed;
+	const memo = JSON.stringify(parsed);
+	if (seen.has(memo)) return seen.get(memo);
+	const [{ renderNoise }, { encodeImage }, { addImageTool }, { toBase64 }] = await Promise.all([
+		import('$lib/image/noiseRun'),
+		import('$lib/image/imageEditor'),
+		import('./imageTool.js'),
+		import('../chat/attachCore.js')
+	]);
+	const o = parsed.options;
+	const raster = await renderNoise(o, { width: parsed.size, height: parsed.size });
+	const blob = await encodeImage(raster, { type: 'image/png' });
+	const name = 'noise ' + o.kind + (o.output === 'normal' ? ' normal' : '');
+	const done = /** @type {any} */ (await addImageTool({ data: toBase64(new Uint8Array(await blob.arrayBuffer())), name, source: 'procedural noise ' + o.kind }));
+	const wrote = {
+		map: slot,
+		kind: o.kind,
+		output: o.output,
+		scale: o.scale,
+		octaves: o.octaves,
+		roughness: o.roughness,
+		seed: o.seed,
+		tileable: o.tileable,
+		size: parsed.size,
+		...(o.output === 'normal' ? { strength: o.strength } : { colors: o.colors }),
+		...(o.contrast ? { contrast: o.contrast } : {}),
+		...(o.invert ? { invert: true } : {})
+	};
+	const out = done.error ? { error: 'noise: ' + done.error } : { hash: String(done.hash), name: String(done.name), wrote: { ...wrote, hash: String(done.hash) } };
+	seen.set(memo, out);
+	return out;
+}
+
 /**
  * set_material's `pattern` (L7) and `maps.<slot>: {pattern}` → library hashes, before the look tool reads the call.
- * `pattern` alone is the albedo; `patternScale` tiles it (the caller runs set_uv with `tiling`). @param {any} args
- * @returns {Promise<{args: any, patterns?: string[], tiling?: number[]} | {error: string}>}
+ * `pattern` alone is the albedo; `patternScale` tiles it (the caller runs set_uv with `tiling`).
+ * 105-noise: `noise` (the albedo) and `maps.<slot>: {noise}` the same way, generated noise instead of a named
+ * pattern; `noise` lists what was written (kind, scale, octaves, seed, size, hash per map) for the answer.
+ * @param {any} args
+ * @returns {Promise<{args: any, patterns?: string[], noise?: any[], tiling?: number[]} | {error: string}>}
  */
 export async function resolvePatterns(args) {
 	const hasTop = args?.pattern !== undefined;
+	const hasNoise = args?.noise !== undefined;
 	const maps = args?.maps && typeof args.maps === 'object' && !Array.isArray(args.maps) ? args.maps : null;
-	const inMaps = maps ? Object.entries(maps).filter(([, v]) => v && typeof v === 'object' && !Array.isArray(v) && v.pattern !== undefined) : [];
-	if (!hasTop && !inMaps.length) return { args };
+	const isObj = (/** @type {any} */ v) => v && typeof v === 'object' && !Array.isArray(v);
+	const inMaps = maps ? Object.entries(maps).filter(([, v]) => isObj(v) && v.pattern !== undefined) : [];
+	const noiseMaps = maps ? Object.entries(maps).filter(([, v]) => isObj(v) && v.noise !== undefined) : [];
+	if (!hasTop && !hasNoise && !inMaps.length && !noiseMaps.length) return { args };
 	const seen = new Map();
 	const next = { ...args, maps: { ...(maps ?? {}) } };
 	/** @type {string[]} */
 	const patterns = [];
+	/** @type {any[]} */
+	const noise = [];
+	if (hasTop && hasNoise) return { error: 'give pattern or noise, not both' };
 	if (hasTop) {
 		if (maps?.albedo !== undefined) return { error: 'give pattern or maps.albedo, not both' };
 		const got = await patternImage(args.pattern, seen);
@@ -120,19 +175,36 @@ export async function resolvePatterns(args) {
 		patterns.push(typeof args.pattern === 'string' ? args.pattern : String(args.pattern?.name ?? ''));
 		delete next.pattern;
 	}
+	if (hasNoise) {
+		if (maps?.albedo !== undefined) return { error: 'give noise or maps.albedo, not both' };
+		const got = await noiseImage(args.noise, 'albedo', seen);
+		if ('error' in got) return got;
+		next.maps.albedo = got.hash;
+		noise.push(got.wrote);
+		delete next.noise;
+	}
 	for (const [slot, v] of inMaps) {
+		if (/** @type {any} */ (v).noise !== undefined) return { error: 'maps.' + slot + ': pattern or noise, not both' };
 		const got = await patternImage(/** @type {any} */ (v).pattern, seen);
 		if ('error' in got) return { error: 'maps.' + slot + ': ' + got.error };
 		next.maps[slot] = got.hash;
 		patterns.push(String(/** @type {any} */ (v).pattern?.name ?? /** @type {any} */ (v).pattern));
 	}
+	for (const [slot, v] of noiseMaps) {
+		if (!(slot in MAP_ROW_KEYS)) return { error: 'maps.' + slot + ': not a map (' + Object.keys(MAP_ROW_KEYS).join(', ') + ')' };
+		const got = await noiseImage(/** @type {any} */ (v).noise, slot, seen);
+		if ('error' in got) return { error: 'maps.' + slot + '.' + got.error };
+		next.maps[slot] = got.hash;
+		noise.push(got.wrote);
+	}
+	const extra = noise.length ? { noise } : {};
 	if (args.patternScale !== undefined) {
 		const s = args.patternScale;
 		if (typeof s !== 'number' || !(s > 0) || s > 1000) return { error: 'patternScale: how many times the pattern repeats across each face, above 0 (e.g. 4)' };
 		delete next.patternScale;
-		return { args: next, patterns, tiling: [s, s] };
+		return { args: next, patterns, ...extra, tiling: [s, s] };
 	}
-	return { args: next, patterns };
+	return { args: next, patterns, ...extra };
 }
 
 // ---------------------------------------------------------------- W1 search_assets

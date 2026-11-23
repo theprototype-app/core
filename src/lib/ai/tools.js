@@ -1359,10 +1359,17 @@ async function runAiTool(rawName, rawArgs, opts) {
 				const resolved = await resolvePatterns(args);
 				if ('error' in resolved) return { error: resolved.error };
 				const done = await lookTool(name, resolved.args);
-				if (!done || typeof done !== 'object' || done.error || !resolved.patterns?.length) return done;
+				const noise = 'noise' in resolved ? resolved.noise : undefined;
+				if (!done || typeof done !== 'object' || done.error || (!resolved.patterns?.length && !noise?.length)) return done;
 				// patternScale: the texture repeats that many times (set_uv's tiling, in the same call's undo step)
 				const tiled = resolved.tiling ? await lookTool('set_uv', { objects: resolved.args.objects, tiling: resolved.tiling }) : null;
-				return { ...done, patterns: resolved.patterns, ...(tiled?.error ? { warnings: ['patternScale: ' + tiled.error] } : {}) };
+				return {
+					...done,
+					...(resolved.patterns?.length ? { patterns: resolved.patterns } : {}),
+					// 105-noise: what each generated noise map is (kind, scale, octaves, seed, size, its library hash)
+					...(noise?.length ? { noise } : {}),
+					...(tiled?.error ? { warnings: ['patternScale: ' + tiled.error] } : {})
+				};
 			}
 			case 'list_materials':
 			case 'get_material':

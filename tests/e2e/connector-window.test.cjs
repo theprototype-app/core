@@ -124,10 +124,26 @@ h.run(async () => {
 	h.check((await A.page.locator('#connect-claude-copy-link, #connect-claude-step-1 button:has-text("Copy link")').count()) === 0, 'the old Copy link text button is gone');
 	const copyIcon = () => copy.locator('svg').getAttribute('class');
 	const iconBefore = await copyIcon();
+	// 104-int: the copied state resets after 2 s, so a single read after other awaits raced it under load (red 2 of 3
+	// on 89-apps, green on base). Record what the live region and the icon show from the click on, in the page.
+	await A.page.evaluate(() => {
+		const w = /** @type {any} */ (window);
+		const seen = (w.__ccCopySeen = { status: /** @type {string[]} */ ([]), icon: /** @type {string[]} */ ([]) });
+		const root = document.querySelector('#connect-claude-step-1');
+		const note = () => {
+			seen.status.push(root?.querySelector('[role="status"]')?.textContent ?? '');
+			seen.icon.push(document.querySelector('#connect-claude-copy svg')?.getAttribute('class') ?? '');
+		};
+		w.__ccCopyObs?.disconnect();
+		w.__ccCopyObs = new MutationObserver(note);
+		if (root) w.__ccCopyObs.observe(root, { subtree: true, childList: true, characterData: true, attributes: true });
+	});
 	await copy.click();
 	h.check((await A.page.evaluate(() => navigator.clipboard.readText().catch(() => ''))) === 'https://theprototype.app/mcp', 'copy puts the address on the clipboard');
-	h.check((await copyIcon()) !== iconBefore, 'the icon turns to a check');
-	h.check((await A.page.locator('#connect-claude-step-1 [role="status"]').textContent()) === 'Copied', 'a polite live region says Copied');
+	await A.page.waitForFunction(() => /** @type {any} */ (window).__ccCopySeen?.status.includes('Copied'), null, { timeout: 3000 }).catch(() => {});
+	const copySeen = await A.page.evaluate(() => { const w = /** @type {any} */ (window); w.__ccCopyObs?.disconnect(); return w.__ccCopySeen; });
+	h.check(copySeen.icon.some((/** @type {string} */ c) => c && c !== iconBefore), 'the icon turns to a check');
+	h.check(copySeen.status.includes('Copied'), `a polite live region says Copied (${[...new Set(copySeen.status)].join(' / ')})`);
 	await A.page.waitForFunction((b) => document.querySelector('#connect-claude-copy svg')?.getAttribute('class') === b, iconBefore, { timeout: 4000 }).catch(() => {});
 	h.check((await copyIcon()) === iconBefore && !(await A.page.locator('#connect-claude-step-1 [role="status"]').textContent()), 'after 2 s it turns back');
 	h.check(/press Connect Claude here/.test((await A.page.locator('#connect-claude-step-2').textContent()) ?? ''), 'step 2 says to press Connect Claude here');

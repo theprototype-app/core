@@ -110,16 +110,48 @@ export function refreshActiveView() {
  */
 export function updateGraph(graphId, fn) {
 	flowGraphs.update((all) => {
+		// fix-late-joiners: a graph made again (graphcreate, an undo, a copy) is no longer gone
+		if (!all[graphId]) graphTombstones.delete(graphId);
 		const graph = all[graphId] ?? { nodes: [], edges: [] };
 		return { ...all, [graphId]: fn(graph) };
 	});
 	if (get(activeGraphId) === graphId) pushViewFromGraph(graphId);
 }
 
+// fix-late-joiners (102b-flows' note: "a snapshot MERGE never deletes") — GRAPH TOMBSTONES.
+// A `nodes` snapshot is merged, never authoritative about absence, so a snapshot pulled from a peer
+// that had not yet applied a `graphdelete` (it is in flight, or that peer's own drift resync answered
+// first) put the deleted object graph straight back. A deleted graph id is remembered for
+// GRAPH_TOMBSTONE_MS; the snapshot merge skips a graph we do not hold while it is remembered, and
+// any ordinary creation (updateGraph on a missing document: graphcreate, an undo, a copy) lifts it.
+// Bounded in time AND size: a peer that really re-made the graph sends graphcreate first, and one
+// that missed it heals on the next resync after the window. A new world (restore / clear) forgets all.
+const GRAPH_TOMBSTONE_MS = 60000;
+const GRAPH_TOMBSTONES_MAX = 512;
+/** @type {Map<string, number>} */
+const graphTombstones = new Map();
+/** @param {string} graphId */
+function noteGraphGone(graphId) {
+	graphTombstones.delete(graphId);
+	graphTombstones.set(graphId, Date.now());
+	while (graphTombstones.size > GRAPH_TOMBSTONES_MAX) graphTombstones.delete(/** @type {string} */ (graphTombstones.keys().next().value));
+}
+/** was this graph deleted here within the window (and not made again since)? @param {string} graphId */
+export function graphTombstoned(graphId) {
+	const at = graphTombstones.get(graphId);
+	if (at === undefined) return false;
+	if (Date.now() - at > GRAPH_TOMBSTONE_MS) {
+		graphTombstones.delete(graphId);
+		return false;
+	}
+	return true;
+}
+
 /** Remove a graph document (lifecycle wrappers in flowGraphs.js replicate/record).
  * @param {string} graphId */
 export function removeGraphDocument(graphId) {
 	if (graphId === SCENE_GRAPH) return;
+	noteGraphGone(graphId);
 	flowGraphs.update((all) => {
 		if (!all[graphId]) return all;
 		const next = { ...all };
@@ -231,6 +263,7 @@ export function withDataType(node) {
  * @param {{views?: any}} [opts]
  */
 export function restoreGraphs(graphs, opts = {}) {
+	graphTombstones.clear();
 	/** @type {Record<string, {nodes: any[], edges: any[]}>} */
 	const next = { [SCENE_GRAPH]: { nodes: [], edges: [] } };
 	for (const [graphId, graph] of Object.entries(graphs ?? {})) {
@@ -245,6 +278,7 @@ export function restoreGraphs(graphs, opts = {}) {
 
 /** Empty every graph (clear scene). */
 export function clearGraphs() {
+	graphTombstones.clear();
 	flowGraphs.set({ [SCENE_GRAPH]: { nodes: [], edges: [] } });
 	activeGraphId.set(SCENE_GRAPH);
 	pushViewFromGraph(SCENE_GRAPH);

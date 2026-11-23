@@ -105,6 +105,13 @@
 			"play": "v1.74.0 2147.7 KB -> + #506 2150.0 KB (+2.3) -> + 71-rooms 2152.2 KB (+2.2) -> line 2155.0 KB",
 			"editor": "v1.74.0 3366.5 KB -> + #506 3371.2 KB (+4.7, already over 3370) -> + 71-rooms 3373.9 KB (+2.7) -> line 3377.5 KB",
 			"note": "inside the ~3 KB boot rule (claude:9, 21 Nov): the invite join gate has to answer a dial synchronously (inviteStore +1.4: failed-proof counter, pause, re-join pacing, mint limits), plus the block-toast fix and the Require approval flag in peerModeration. The collapsed failed-invite row (FailedInviteJoins.svelte) is a lazy chunk. Base and lane built on the Deck with one node_modules; 71-int re-measures the union and may veto"
+		},
+		{
+			"date": "2026-11-23",
+			"lane": "fix-late-joiners (with #609 105-slot-save merged in)",
+			"play": "v1.74.0 2148.6 KB -> 2151.7 KB (+3.1: #609 +1.6, this lane +1.5) -> line 2152.5 KB",
+			"editor": "v1.74.0 3369.3 KB -> 3372.8 KB (+3.6: #609 +1.9, this lane +1.7) -> line 3374.0 KB",
+			"note": "inside the ~3 KB boot rule per lane. Measured on the pc host (tp-lanes), v1.74.0, #609's head and this branch built in one worktree with one node_modules; the per-lane split is from sourcemap builds of the three. This lane by module (gzip, editor): commandsHandler +0.5 (late-joiner ingest look-ahead, the primitive recipe path, the announced batch hold, the visible/slots fields), playSpawn +0.4 (the lazy loader and v1.74.0's fallback), flowStore graph tombstones, sceneStore poke pacing, qualityGovernor, autosave/gltfNames ~0.1 each. Lazy chunks (paid only when used): spawnPick + spawnSlots (load with the first peer link), slotRejoin (only a message carrying slots). Chunk-hash churn moves the editor ~0.6 KB between builds; the integrator may veto or fold it into the int line."
 		}
 	],
 	"throttle": {

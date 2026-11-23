@@ -1507,6 +1507,12 @@ export class PeerConnection {
 					createGroup(data.command, data.uuid, data.group, data.name, data.groupparent, data.pos, data.rot, data.scale, data.override);
 					// 23-C1 fix: the late-joiner group message may carry userData (a device's
 					// document rides there); merge it onto the group just made
+					// fix-late-joiners: a HIDDEN group (a prefab original parked out of sight) arrives hidden — additive,
+					// absent for every visible group, so an older sender's message is read as before
+					if (data.visible === false && data.uuid) {
+						const made = get(objectsGroup)?.getObjectByProperty('uuid', data.uuid);
+						if (made) made.visible = false;
+					}
 					if (data.userData && typeof data.userData === 'object' && data.uuid) {
 						const made = get(objectsGroup)?.getObjectByProperty('uuid', data.uuid);
 						if (made) {

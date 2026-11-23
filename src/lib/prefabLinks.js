@@ -11,6 +11,7 @@ import { parkEditOverlays, stripEditOverlays } from './editOverlays';
 import { keepSet, disposeTree } from './disposeTree';
 import { prefabs, prefabById, prefabRevision, updatePrefab } from './prefabs';
 import { linkOf, mergeInstance, overridesOf, unlinkPatch, instanceKey, elementKey, same } from './prefabSync';
+import { objectToJSON } from './slotGroups.js'; // 105: one serializer for slot groups
 
 // 37 R4 — PREFAB UPDATE PROPAGATION, the runtime half (prefabSync.js is the merge).
 //
@@ -61,7 +62,7 @@ function elementOf(object) {
 	const unpark = parkEditOverlays(object);
 	try {
 		object.updateMatrixWorld(true);
-		return JSON.parse(JSON.stringify(object.toJSON()));
+		return JSON.parse(JSON.stringify(objectToJSON(object)));
 	} finally {
 		unpark();
 	}

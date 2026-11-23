@@ -16,7 +16,7 @@ import { teleportVerdictPure, shrinkBox, BOUNDS_INSET, PROBE_HEIGHT } from '../t
 import { walkable as dungeonWalkable } from '../dungeonPlay';
 import { resolvePlaySettings, playPublishers } from '../playSettings';
 // 60 Q1: the spawn read every spawn path shares (a Play here override first, else the scene's)
-import { currentSpawn } from '../playSpawn';
+import { mySpawn } from '../playSpawn';
 import { locomotionPolicy, vrSpawnOffsets, yawForward } from '../locomotionPolicy';
 import { resolveWalk, charControl } from '../charController';
 import { kitPlayRules } from '../kit/runtime.js';
@@ -792,8 +792,9 @@ export function vrJumpHeight() {
  * no move. @returns {boolean} whether the player was moved
  */
 export function spawnPlayer() {
-	const spawn = currentSpawn();
-	if (!spawn || !renderer?.xr?.getSession?.()) return false;
+	// fix-late-joiners row 3: this player's own spot, as on desktop (the feet land on it; the head height is the headset's)
+	const spawn = renderer?.xr?.getSession?.() ? mySpawn() : null;
+	if (!spawn) return false;
 	const viewer = viewerNow();
 	if (!viewer) return false;
 	const { turn, move } = vrSpawnOffsets(viewer.head, viewer.yaw, viewer.headHeight, spawn);

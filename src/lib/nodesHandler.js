@@ -8,7 +8,9 @@ import {
 	updateGraph,
 	graphTotals,
 	orphanGraphIds,
-	activeGraphId
+	activeGraphId,
+	graphExists,
+	graphTombstoned
 } from '../stores/flowStore';
 import { peers } from '../stores/appStore';
 import { cleanFlowNode, cleanFlowEdge } from './flowClean.js';
@@ -170,6 +172,8 @@ function mergeGraphSnapshot(graphId, nodes, edges) {
 export function applyNodesSnapshot(nodes, edges, graphs) {
 	if (graphs && typeof graphs === 'object') {
 		for (const [graphId, graph] of Object.entries(graphs)) {
+			// fix-late-joiners: a graph deleted here moments ago is not brought back by a stale snapshot
+			if (graphId !== SCENE_GRAPH && !graphExists(graphId) && graphTombstoned(graphId)) continue;
 			mergeGraphSnapshot(graphId, graph?.nodes ?? [], graph?.edges ?? []);
 		}
 	} else if (Array.isArray(nodes) || Array.isArray(edges)) {

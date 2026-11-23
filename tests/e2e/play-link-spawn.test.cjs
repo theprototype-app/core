@@ -116,7 +116,9 @@ h.run(async () => {
 	{
 		console.log('\n=== a joiner reloads and plays again ===');
 		const J = joiners[0];
-		await h.freshReload(J);
+		// nine pages render in this browser: a reload takes longer than the helper's 30 s
+		await J.page.reload({ waitUntil: 'domcontentloaded', timeout: 120000 });
+		await J.page.waitForFunction(() => window.__tp?.test.v1 && !!window.__tp.test.v1.moduleSDK, null, { timeout: 120000 });
 		await h.answerRestore(J).catch(() => {});
 		let back = false;
 		for (const until = Date.now() + 45000; Date.now() < until && !back; await J.page.waitForTimeout(500))

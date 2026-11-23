@@ -7,11 +7,13 @@ import { fanTargets } from './materialSharing';
 import { peers, showToast } from '../stores/appStore';
 import { heicToJpegFile } from './heic.js';
 import { checkMaterialParam } from './materialParamRules.js'; // 55: one check for every material parameter
-import { recordEntry, registerHistoryKind } from '$lib/history';
+import { recordEntry, registerHistoryKind, beginHistoryBatch, endHistoryBatch, historyBatchOpen } from '$lib/history';
 import { TEXTURE_PARAMS, copyTextureParams, adoptTexTransform, carryMapSlots } from './materialMapTextures.js'; // 72 LK1
 import { objectToJSON, settleSlotGroups } from './slotGroups.js'; // 105: one serializer for slot groups
 // 105-slots: what a slot draws (off, a seated shader) vs what it IS — every read here goes through the own material
 import { ownMaterialsOf, syncSlotDraw, slotIdOf } from './slotDraw.js';
+// 105-slots LINK: a look edit on a linked slot runs on every holder of the link (slotLinks.js)
+import { linkedEdit, linkedOthers } from './slotLinks.js';
 
 // Custom materials and image textures for scene objects, replicated to peers
 // through the existing objectParameters message. Textures travel as dataURLs
@@ -505,25 +507,40 @@ export async function setObjectsTexture(uuids, file, slot = 0, opts = {}) {
 	if (!dataURL) return 0;
 	let applied = 0;
 	let missingSlot = 0;
-	for (const uuid of uuids) {
-		const object = objectOf(uuid);
-		const material = materialAt(object, slot);
-		if (!material) {
-			if (object?.material) missingSlot++;
-			continue;
+	// 105-slots LINK: a linked slot's other holders take the same image, as ONE undo step with these
+	/** @type {[string, number][]} */
+	const linked = [];
+	const seen = new Set(uuids.map((u) => u + ':' + slot));
+	for (const uuid of uuids)
+		for (const h of linkedOthers(objectOf(uuid), slot)) {
+			const key = h.object.uuid + ':' + h.index;
+			if (!seen.has(key)) seen.add(key), linked.push([h.object.uuid, h.index]);
 		}
-		recordMaterialChange(uuid, 'map', null, material.userData?.mapDataUrl ?? null, dataURL, slot);
-		applyMap(object, dataURL, slot, source);
-		broadcast({
-			type: 'objectParameters',
-			parameter: 'map',
-			uuid: uuid,
-			map: dataURL,
-			...(slot ? { slot } : {}),
-			// additive: an older peer ignores it, and a message without it drops the link
-			...(source ? { source } : {})
-		});
-		applied++;
+	const batch = linked.length > 0 && !historyBatchOpen();
+	if (batch) beginHistoryBatch();
+	try {
+		for (const [uuid, at, mine] of [...uuids.map((u) => [u, slot, true]), ...linked.map(([u, s]) => [u, s, false])]) {
+			const object = objectOf(/** @type {string} */ (uuid));
+			const material = materialAt(object, /** @type {number} */ (at));
+			if (!material) {
+				if (mine && object?.material) missingSlot++;
+				continue;
+			}
+			recordMaterialChange(/** @type {string} */ (uuid), 'map', null, material.userData?.mapDataUrl ?? null, dataURL, /** @type {number} */ (at));
+			applyMap(object, dataURL, /** @type {number} */ (at), source);
+			broadcast({
+				type: 'objectParameters',
+				parameter: 'map',
+				uuid: uuid,
+				map: dataURL,
+				...(at ? { slot: at } : {}),
+				// additive: an older peer ignores it, and a message without it drops the link
+				...(source ? { source } : {})
+			});
+			if (mine) applied++;
+		}
+	} finally {
+		if (batch) endHistoryBatch('Texture (shared material)');
 	}
 	if (missingSlot) showToast('That object has no material slot ' + slot);
 	return applied;
@@ -578,6 +595,17 @@ export function linkTextureSource(uuid, slot, hash) {
 
 /** @param {string} uuid @param {number} [slot] */
 export function removeObjectTexture(uuid, slot = 0) {
+	linkedEdit(
+		objectOf(uuid),
+		slot,
+		() => removeObjectTextureOne(uuid, slot),
+		(other, otherSlot) => removeObjectTextureOne(other, otherSlot),
+		'Remove texture'
+	);
+}
+
+/** @param {string} uuid @param {number} slot */
+function removeObjectTextureOne(uuid, slot) {
 	const object = objectOf(uuid);
 	if (!object) return;
 	const material = materialAt(object, slot);
@@ -640,6 +668,18 @@ export function keepSlotIdentity(old, fresh) {
  * @param {string} uuid @param {string} type @param {boolean} replicate @param {number} [slot]
  */
 export function switchMaterialType(uuid, type, replicate = true, slot = 0) {
+	if (!replicate) return switchMaterialTypeOne(uuid, type, false, slot);
+	linkedEdit(
+		objectOf(uuid),
+		slot,
+		() => switchMaterialTypeOne(uuid, type, true, slot),
+		(other, otherSlot) => switchMaterialTypeOne(other, type, true, otherSlot),
+		'Material type'
+	);
+}
+
+/** @param {string} uuid @param {string} type @param {boolean} replicate @param {number} slot */
+function switchMaterialTypeOne(uuid, type, replicate, slot) {
 	const object = objectOf(uuid);
 	if (!object || !MATERIAL_TYPES.includes(type)) return;
 	if (isMultiMaterial(object)) {
@@ -667,6 +707,8 @@ export function switchMaterialType(uuid, type, replicate = true, slot = 0) {
 	const old = object.material;
 	if (replicate && old && !Array.isArray(old)) recordMaterialChange(uuid, 'type', null, old.type, type);
 	const fresh = rebuildAsType(old, type, object);
+	// 105-slots: a one-material object's slot data (its link) survives the new instance
+	if (old && !Array.isArray(old) && old.userData?.slot) fresh.userData.slot = { ...old.userData.slot };
 	object.material = fresh;
 	fresh.needsUpdate = true;
 	// 59 T1: a material changed in the app survives a Replace model (modelReplace's override rule)
@@ -699,8 +741,23 @@ export function setObjectColor(uuid, hex, replicate = true, slot = 0) {
 		setMaterialParam(uuid, 'color', hex, replicate, slot);
 		return;
 	}
+	if (slot) return; // a slot that does not exist on a single-material object
+	if (replicate)
+		return linkedEdit(
+			object,
+			0,
+			() => setObjectColorOne(uuid, hex, true),
+			(other, otherSlot) => setMaterialParam(other, 'color', hex, true, otherSlot),
+			'Colour'
+		);
+	if (!slot) setObjectColorOne(uuid, hex, false);
+}
+
+/** the one-material colour write @param {string} uuid @param {string} hex @param {boolean} replicate */
+function setObjectColorOne(uuid, hex, replicate) {
+	const object = objectOf(uuid);
 	const material = object?.material;
-	if (slot || !material || Array.isArray(material) || !material.color) return;
+	if (!material || Array.isArray(material) || !material.color) return;
 	const before = '#' + material.color.getHexString();
 	material.color.set(hex);
 	material.needsUpdate = true;
@@ -720,6 +777,18 @@ export function setObjectColor(uuid, hex, replicate = true, slot = 0) {
  * @param {string} uuid @param {string} key @param {any} value @param {boolean} replicate @param {number} [slot]
  */
 export function setMaterialParam(uuid, key, value, replicate = true, slot = 0) {
+	if (!replicate) return setMaterialParamOne(uuid, key, value, false, slot);
+	return linkedEdit(
+		objectOf(uuid),
+		slot,
+		() => setMaterialParamOne(uuid, key, value, true, slot),
+		(other, otherSlot) => setMaterialParamOne(other, key, value, true, otherSlot),
+		'Material: ' + key
+	);
+}
+
+/** @param {string} uuid @param {string} key @param {any} value @param {boolean} replicate @param {number} slot */
+function setMaterialParamOne(uuid, key, value, replicate, slot) {
 	const object = objectOf(uuid);
 	const material = materialAt(object, slot);
 	if (!material || !(key in material)) return false;

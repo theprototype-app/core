@@ -19,7 +19,8 @@
 		moveSlot,
 		renameSlot,
 		duplicateSlot,
-		setSlotOff
+		setSlotOff,
+		makeSlotUnique
 	} from '$lib/materialSlots.js';
 	import { materialsOf } from '$lib/materialsHandler';
 
@@ -111,6 +112,16 @@
 								testid: idPrefix + '-menu-assign',
 								disabled: !canAssign,
 								action: () => onassign?.(i)
+							}
+						]
+					: []),
+				// 105-slots LINK: a shared slot can take its own copy back
+				...(row.shared > 1
+					? [
+							{
+								label: 'Make unique',
+								testid: idPrefix + '-menu-unique',
+								action: () => makeSlotUnique(object.uuid, i)
 							}
 						]
 					: []),
@@ -243,6 +254,8 @@
 					aria-pressed={row.index === active}
 					aria-label="{label(row.index)}{row.off ? ', off' : ''}{row.kind === 'shader'
 						? ', shader'
+						: ''}{row.shared > 1
+						? ', shared by ' + row.shared + ' slots'
 						: ''}, {row.faces} {row.faces === 1 ? 'face' : 'faces'}"
 					title="{label(
 						row.index
@@ -262,6 +275,11 @@
 							: ''}"
 					></span>
 					<span class="slot-name">{label(row.index)}</span>
+					{#if row.shared > 1}<span
+							class="slot-badge slot-badge-shared"
+							title="This slot shares its material: editing it changes all {row.shared}"
+							>Shared · used by {row.shared}</span
+						>{/if}
 					{#if row.kind === 'shader'}<span class="slot-badge">Shader</span>{/if}
 					{#if row.off}<span class="slot-badge slot-badge-off">Off</span>{/if}
 				</button>

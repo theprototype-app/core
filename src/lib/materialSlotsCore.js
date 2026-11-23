@@ -96,3 +96,15 @@ export function swapMap(n, a, b) {
 export function insertAfterMap(n, index) {
 	return Array.from({ length: n }, (_, i) => (i <= index ? i : i + 1));
 }
+
+/** 105-slots LINK: the shared-material id a slot's material carries ('' = not linked). @param {any} material */
+export function slotLinkOf(material) {
+	const link = material?.userData?.slot?.link;
+	return typeof link === 'string' && link ? link : '';
+}
+
+let linkCounter = 0;
+/** A new link id: unique within a session, stable once written (it rides the material). */
+export function newLinkId() {
+	return 'lnk' + Date.now().toString(36) + (linkCounter++).toString(36);
+}

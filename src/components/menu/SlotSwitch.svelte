@@ -2,8 +2,8 @@
 	// 105-slots: "Switch material…" for ONE slot — one popover, three sources. Presets (the starters, yours, peers')
 	// and the CC0 library COPY a template into the slot (applyMaterialPreset with the slot: one `materials` commit,
 	// the slot keeps its id, name and off flag). "In this scene" lists every distinct slot look in the scene by object
-	// and slot name. Lazy (the Inspector imports it on the first Switch material…). On a narrow touch screen it is a
-	// bottom sheet.
+	// and slot name and LINKS to it (owner choice 22 Nov: one shared material, slotLinks.js). Lazy (the Inspector
+	// imports it on the first Switch material…). On a narrow touch screen it is a bottom sheet.
 	import { get } from 'svelte/store';
 	import { objectsGroup } from '../../stores/sceneStore';
 	import { showToast } from '../../stores/appStore';
@@ -18,7 +18,7 @@
 		lookOfMaterial
 	} from '$lib/materialPresets';
 	import { swatchLayers, LOOK_DEFAULTS } from '$lib/materialPresetsCore';
-	import { slotsOf, replaceSlotMaterial } from '$lib/materialSlots.js';
+	import { slotsOf, linkSlotTo } from '$lib/materialSlots.js';
 	import { openAssetBrowserForSlot } from '$lib/cc0/assetBrowserState.js';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
@@ -54,7 +54,7 @@
 	/** every distinct slot look in the scene (by look, not by instance), with where it is */
 	const inScene = $derived.by(() => {
 		$objectsGroup;
-		/** @type {{key: string, label: string, where: string, material: any, look: any}[]} */
+		/** @type {{key: string, label: string, where: string, uuid: string, index: number, material: any, look: any}[]} */
 		const out = [];
 		const seen = new Set();
 		get(objectsGroup)?.traverse?.((/** @type {any} */ node) => {
@@ -74,6 +74,8 @@
 					key,
 					label: slot ? objectName + ' · ' + slot : objectName,
 					where: node.uuid + ':' + i,
+					uuid: node.uuid,
+					index: i,
 					material: m,
 					look
 				});
@@ -105,9 +107,10 @@
 	}
 	/** @param {any} entry */
 	function useSceneLook(entry) {
-		// a COPY of that look (the slot keeps its id, name and off flag)
-		if (replaceSlotMaterial(object.uuid, index, entry.material.clone()))
-			showToast(entry.label + ' copied to ' + slotName);
+		// 105-slots LINK (owner choice): the slot SHARES that material — editing either changes both; the slot keeps its
+		// id, name and off flag, and Make unique gives it its own copy back
+		if (linkSlotTo(object.uuid, index, entry.uuid, entry.index))
+			showToast(slotName + ' now shares ' + entry.label + "'s material");
 		onclose();
 	}
 	function openLibrary() {
@@ -218,7 +221,7 @@
 		>Browse materials… (Apply to {slotName})</button
 	>
 
-	<p class="ss-label">In this scene</p>
+	<p class="ss-label">In this scene <span class="ss-hint">— shared: an edit changes both</span></p>
 	{#if inScene.length}
 		<ul class="ss-list" aria-label="Materials in this scene">
 			{#each inScene as entry (entry.where)}
@@ -285,6 +288,10 @@
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 		color: var(--text-faint);
+	}
+	.ss-hint {
+		text-transform: none;
+		letter-spacing: 0;
 	}
 	.ss-sub {
 		margin: 6px 0 2px;

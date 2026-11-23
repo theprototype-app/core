@@ -22,6 +22,7 @@ import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
 import { recordEntry } from './history';
 import { applyMaterials, materialsPayload, materialAt, isMultiMaterial } from './materialsHandler';
 import { slotIdOf } from './slotDraw.js'; // 105-slots
+import { linkedEdit } from './slotLinks.js'; // 105-slots LINK: a preset on a linked slot reaches every holder
 import { fanTargets } from './materialSharing';
 import {
 	EXTRA_MAP_FIELDS,
@@ -197,6 +198,17 @@ export function presetWirePayload(preset, current) {
  * @returns {boolean}
  */
 export function applyMaterialPreset(uuid, preset, slot = 0) {
+	return linkedEdit(
+		objectOf(uuid),
+		slot,
+		() => applyMaterialPresetOne(uuid, preset, slot),
+		(other, at) => applyMaterialPresetOne(other, preset, at),
+		'Material preset'
+	);
+}
+
+/** @param {string} uuid @param {any} preset @param {number} slot */
+function applyMaterialPresetOne(uuid, preset, slot) {
 	const object = objectOf(uuid);
 	const resolved = resolvePreset(preset);
 	if (!object?.material || !resolved) return false;
@@ -218,7 +230,13 @@ export function applyMaterialPreset(uuid, preset, slot = 0) {
 		});
 	}
 	if (slot || Array.isArray(object.material)) return false;
-	return replaceMaterials(uuid, () => presetWirePayload(resolved, object.material));
+	const slotData = object.material.userData?.slot;
+	return replaceMaterials(uuid, () => {
+		const payload = presetWirePayload(resolved, object.material);
+		// 105-slots: a one-material object keeps its slot data (its link) under the new look
+		if (slotData) payload.materials[0].userData = { ...(payload.materials[0].userData ?? {}), slot: { ...slotData } };
+		return payload;
+	});
 }
 
 /**

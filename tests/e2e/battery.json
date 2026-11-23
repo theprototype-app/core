@@ -880,6 +880,7 @@
 		"slot-save": 300,
 		"material-slots-manage": 210,
 		"material-slots-ui": 200,
+		"material-slots-link": 240,
 		"sound-node": 120,
 		"sticky-panel-header": 173,
 		"storage-hardening": 238,

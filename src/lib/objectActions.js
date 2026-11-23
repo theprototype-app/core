@@ -632,6 +632,16 @@ function detachMaterials(clone) {
 			node.material = Array.isArray(node.material)
 				? node.material.map((/** @type {any} */ m) => m.clone())
 				: node.material.clone();
+		// 105-slots LINK: a copy is a working copy — its slots leave any shared-material link (both sides of a duplicate
+		// run this, so every peer agrees)
+		for (const m of Array.isArray(node.material) ? node.material : node.material ? [node.material] : []) {
+			if (m?.userData?.slot?.link) {
+				const slot = { ...m.userData.slot };
+				delete slot.link;
+				if (Object.keys(slot).length) m.userData.slot = slot;
+				else delete m.userData.slot;
+			}
+		}
 		// own geometry so vertex edits on the copy don't deform the original
 		if (node.geometry) node.geometry = node.geometry.clone();
 	});

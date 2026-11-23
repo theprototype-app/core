@@ -26,8 +26,13 @@ import {
 	slotIndexOf,
 	removalMap,
 	swapMap,
-	insertAfterMap
+	insertAfterMap,
+	slotLinkOf,
+	newLinkId
 } from './materialSlotsCore.js';
+import { linkCounts } from './slotLinks.js'; // 105-slots LINK
+import { beginHistoryBatch, endHistoryBatch, historyBatchOpen } from './history';
+import { materialIdOf } from './materialSharing';
 
 export { slotDrawn, activeMaterialSlot };
 export * from './materialSlotsCore.js';
@@ -44,7 +49,7 @@ function objectOf(uuid) {
 /**
  * The slots of an object, in order.
  * @param {any} object
- * @returns {{index: number, id: string, name: string, off: boolean, faces: number, type: string, kind: 'material' | 'off' | 'shader'}[]}
+ * @returns {{index: number, id: string, name: string, off: boolean, faces: number, type: string, kind: 'material' | 'off' | 'shader', link: string, shared: number}[]}
  */
 export function slotsOf(object) {
 	const own = materialsOf(object);
@@ -61,6 +66,8 @@ export function slotsOf(object) {
 	);
 	// a single material draws every face, whatever groups a primitive ships
 	const faces = own.length === 1 ? [total] : facesPerSlot(groups, own.length);
+	// 105-slots LINK: how many slots share each link (one scene walk, only when this object holds one)
+	const counts = own.some((m) => slotLinkOf(m)) ? linkCounts() : null;
 	return own.map((m, i) => ({
 		index: i,
 		id: ids[i],
@@ -68,7 +75,9 @@ export function slotsOf(object) {
 		off: own.length > 1 && slotOffOf(m),
 		faces: faces[i] ?? 0,
 		type: m?.type ?? '',
-		kind: slotDrawn(object, i)?.kind ?? 'material'
+		kind: slotDrawn(object, i)?.kind ?? 'material',
+		link: slotLinkOf(m),
+		shared: counts ? (counts.get(slotLinkOf(m)) ?? 1) : 1
 	}));
 }
 
@@ -163,6 +172,7 @@ export function duplicateSlot(uuid, ref) {
 		copy.name = (materials[index].name || 'Slot ' + (index + 1)) + ' copy';
 		if (copy.userData?.slot) {
 			delete copy.userData.slot.id;
+			delete copy.userData.slot.link; // 105-slots LINK: a duplicate is a working copy, not another holder
 			if (!Object.keys(copy.userData.slot).length) delete copy.userData.slot;
 		}
 		if (materials.length === 1) {
@@ -208,6 +218,76 @@ export function replaceSlotMaterial(uuid, ref, material) {
 	return commitMaterialList(uuid, (materials) => {
 		materials[index] = keepSlotIdentity(materials[index], material);
 		material.userData.tpEdited = true; // 59 T1
+		return { materials };
+	});
+}
+
+// ---- 105-slots LINK: one shared material across slots (QUESTIONS-105-slots 4) --------------------------------
+
+export const D2_REFUSAL = 'This object already shares its whole material with a copy; Unlink it first';
+
+/** @param {any} material @param {string} link */
+function withLink(material, link) {
+	material.userData.slot = { ...(material.userData.slot ?? {}), link };
+	material.userData.tpEdited = true; // 59 T1
+	return material;
+}
+
+/**
+ * Point slot `targetRef` of `targetUuid` at the material slot `sourceRef` of `sourceUuid` already uses: the target gets
+ * a copy of that material (keeping its own name, id and off flag) and both carry the source's link id (minted when it
+ * has none). From then on a look edit on either reaches both. ONE undo step; on the wire one `materials` message per
+ * object that changed (a peer on the previous release applies it as an ordinary material copy).
+ * @param {string} targetUuid @param {number | string} targetRef @param {string} sourceUuid @param {number | string} sourceRef
+ */
+export function linkSlotTo(targetUuid, targetRef, sourceUuid, sourceRef) {
+	const target = resolve(targetUuid, targetRef);
+	const source = resolve(sourceUuid, sourceRef);
+	if (!target.object || !source.object || target.index < 0 || source.index < 0) return false;
+	if (target.object === source.object && target.index === source.index) return false;
+	// D2 (an object-level `materialId` share) and a slot link must never claim one instance
+	if (materialIdOf(target.object) || materialIdOf(source.object)) {
+		showToast(D2_REFUSAL);
+		return false;
+	}
+	const sourceMaterial = source.own[source.index];
+	const link = slotLinkOf(sourceMaterial) || newLinkId();
+	if (slotLinkOf(target.own[target.index]) === link) return true;
+	const own = !historyBatchOpen();
+	if (own) beginHistoryBatch();
+	try {
+		if (target.object === source.object)
+			return commitMaterialList(targetUuid, (materials) => {
+				withLink(materials[source.index], link);
+				materials[target.index] = withLink(keepSlotIdentity(materials[target.index], sourceMaterial.clone()), link);
+				return { materials };
+			});
+		if (!slotLinkOf(sourceMaterial))
+			commitMaterialList(sourceUuid, (materials) => {
+				withLink(materials[source.index], link);
+				return { materials };
+			});
+		return commitMaterialList(targetUuid, (materials) => {
+			materials[target.index] = withLink(keepSlotIdentity(materials[target.index], sourceMaterial.clone()), link);
+			return { materials };
+		});
+	} finally {
+		if (own) endHistoryBatch('Link material');
+	}
+}
+
+/**
+ * Make unique: this slot keeps its copy of the shared material and leaves the link (the others stay linked).
+ * @param {string} uuid @param {number | string} ref
+ */
+export function makeSlotUnique(uuid, ref) {
+	const { object, own, index } = resolve(uuid, ref);
+	if (!object || index < 0 || !slotLinkOf(own[index])) return false;
+	return commitMaterialList(uuid, (materials) => {
+		const slot = { ...(materials[index].userData.slot ?? {}) };
+		delete slot.link;
+		if (Object.keys(slot).length) materials[index].userData.slot = slot;
+		else delete materials[index].userData.slot;
 		return { materials };
 	});
 }

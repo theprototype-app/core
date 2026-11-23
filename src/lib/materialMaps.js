@@ -15,6 +15,24 @@ import {
 import { recordEntry, registerHistoryKind, registerHistoryMerge, beginHistoryBatch, endHistoryBatch, historyBatchOpen, sameJson } from '$lib/history';
 import { isMapSlotKey, isMapSlotImage, normalizeTexTransform, guessMapSlot, MAP_SLOTS, NORMAL_STRENGTH_MAX } from './materialParamRules.js';
 import { applyMapSlotTo, applyTexTransform, applyNormalStrength, mapSlotFilled, mapSlotUrl, normalStrengthOf, texTransformOf } from './materialMapTextures.js';
+import { linkedEdit, linkedOthers } from './slotLinks.js'; // 105-slots LINK
+
+/**
+ * 105-slots LINK: the (uuid, slot) pairs a write reaches — the ones asked for, then every other holder of a linked
+ * slot among them (once each). An unlinked selection is exactly `uuids` at `slot`.
+ * @param {string[]} uuids @param {number} slot @returns {[string, number][]}
+ */
+function withLinked(uuids, slot) {
+	/** @type {[string, number][]} */
+	const out = uuids.map((u) => [u, slot]);
+	const seen = new Set(out.map(([u, s]) => u + ':' + s));
+	for (const uuid of uuids)
+		for (const h of linkedOthers(objectOf(uuid), slot)) {
+			const key = h.object.uuid + ':' + h.index;
+			if (!seen.has(key)) seen.add(key), out.push([h.object.uuid, h.index]);
+		}
+	return out;
+}
 
 /** @param {string} uuid */
 function objectOf(uuid) {
@@ -94,17 +112,18 @@ async function asOneStep(label, fn) {
 /** @param {string[]} uuids @param {string} key @param {string} url @param {number} slot @returns {number} */
 function applyUrlToSlot(uuids, key, url, slot) {
 	let applied = 0;
-	for (const uuid of uuids) {
+	const asked = new Set(uuids);
+	for (const [uuid, at] of withLinked(uuids, slot)) {
 		const object = objectOf(uuid);
-		const material = object && materialAt(object, slot);
+		const material = object && materialAt(object, at);
 		if (!material || !(key in material)) continue;
 		const before = mapSlotUrl(material, key);
-		recordEntry({ kind: 'materialmaps', uuid, param: 'slot', key, ...(slot ? { slot } : {}), before: { value: before }, after: { value: url } });
+		recordEntry({ kind: 'materialmaps', uuid, param: 'slot', key, ...(at ? { slot: at } : {}), before: { value: before }, after: { value: url } });
 		applyMapSlotTo(material, key, url, object);
 		material.userData.tpEdited = true; // 59 T1: a material changed in the app survives a Replace model
-		sendSlot(uuid, key, url, slot);
-		liftValueFor(object, key, slot);
-		applied++;
+		sendSlot(uuid, key, url, at);
+		liftValueFor(object, key, at);
+		if (asked.has(uuid)) applied++;
 	}
 	return applied;
 }
@@ -132,6 +151,21 @@ export async function setObjectsMapSlot(uuids, key, file, slot = 0) {
  * @param {string} uuid @param {string} key @param {string | null} before @param {string} url @param {number} [slot]
  */
 export function commitPaintedMapSlot(uuid, key, before, url, slot = 0) {
+	// a painted map on a linked slot becomes every holder's map (each records its own before)
+	return linkedEdit(
+		objectOf(uuid),
+		slot,
+		() => commitPaintedMapSlotOne(uuid, key, before, url, slot),
+		(other, at) => {
+			const m = materialAt(objectOf(other), at);
+			commitPaintedMapSlotOne(other, key, m ? mapSlotUrl(m, key) : null, url, at);
+		},
+		'Paint'
+	);
+}
+
+/** @param {string} uuid @param {string} key @param {string | null} before @param {string} url @param {number} slot */
+function commitPaintedMapSlotOne(uuid, key, before, url, slot) {
 	const object = objectOf(uuid);
 	const material = object && materialAt(object, slot);
 	if (!material || !isMapSlotKey(key) || !(key in material) || !isMapSlotImage(url)) return false;
@@ -150,14 +184,14 @@ export function commitPaintedMapSlot(uuid, key, before, url, slot = 0) {
 export async function removeObjectsMapSlot(uuids, key, slot = 0) {
 	if (!isMapSlotKey(key)) return;
 	await asOneStep('Remove map', async () => {
-		for (const uuid of uuids) {
+		for (const [uuid, at] of withLinked(uuids, slot)) {
 			const object = objectOf(uuid);
-			const material = object && materialAt(object, slot);
+			const material = object && materialAt(object, at);
 			// an image still loading counts as set: the Remove has to beat it
 			if (!mapSlotFilled(material, key)) continue;
-			recordEntry({ kind: 'materialmaps', uuid, param: 'slot', key, ...(slot ? { slot } : {}), before: { value: mapSlotUrl(material, key) }, after: { value: null } });
+			recordEntry({ kind: 'materialmaps', uuid, param: 'slot', key, ...(at ? { slot: at } : {}), before: { value: mapSlotUrl(material, key) }, after: { value: null } });
 			applyMapSlotTo(material, key, null, object);
-			sendSlot(uuid, key, null, slot);
+			sendSlot(uuid, key, null, at);
 		}
 	});
 }
@@ -167,6 +201,11 @@ export async function removeObjectsMapSlot(uuids, key, slot = 0) {
  * @param {string} uuid @param {{repeat?: number[], offset?: number[], rotation?: number}} patch @param {number} [slot]
  */
 export function setTexTransform(uuid, patch, slot = 0) {
+	return linkedEdit(objectOf(uuid), slot, () => setTexTransformOne(uuid, patch, slot), (other, at) => setTexTransformOne(other, patch, at), 'Tiling');
+}
+
+/** @param {string} uuid @param {any} patch @param {number} slot */
+function setTexTransformOne(uuid, patch, slot) {
 	const material = materialAt(objectOf(uuid), slot);
 	if (!material) return false;
 	const before = texTransformOf(material);
@@ -180,6 +219,11 @@ export function setTexTransform(uuid, patch, slot = 0) {
 
 /** @param {string} uuid @param {number} value @param {number} [slot] */
 export function setNormalStrength(uuid, value, slot = 0) {
+	return linkedEdit(objectOf(uuid), slot, () => setNormalStrengthOne(uuid, value, slot), (other, at) => setNormalStrengthOne(other, value, at), 'Normal strength');
+}
+
+/** @param {string} uuid @param {number} value @param {number} slot */
+function setNormalStrengthOne(uuid, value, slot) {
 	const object = objectOf(uuid);
 	const material = materialAt(object, slot);
 	if (!material?.normalScale || !Number.isFinite(value)) return false;

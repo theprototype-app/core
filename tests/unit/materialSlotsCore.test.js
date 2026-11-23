@@ -8,7 +8,9 @@ import {
 	slotIndexOf,
 	removalMap,
 	swapMap,
-	insertAfterMap
+	insertAfterMap,
+	slotLinkOf,
+	newLinkId
 } from '../../src/lib/materialSlotsCore.js';
 
 // 105-slots: the pure half of material slots — the id rules every peer must agree on and the group remapping
@@ -135,5 +137,22 @@ describe('group remapping', () => {
 				2
 			)
 		).toEqual([2, 0]);
+	});
+});
+
+describe('links (105-slots phase 3)', () => {
+	it('a link id rides userData.slot.link; anything else is no link', () => {
+		expect(slotLinkOf(mat('a', { link: 'lnk1' }))).toBe('lnk1');
+		expect(slotLinkOf(mat('a', { link: '' }))).toBe('');
+		expect(slotLinkOf(mat('a', { link: 3 }))).toBe('');
+		expect(slotLinkOf(mat('a'))).toBe('');
+	});
+	it('new link ids are unique and short', () => {
+		const ids = new Set(Array.from({ length: 200 }, () => newLinkId()));
+		expect(ids.size).toBe(200);
+		for (const id of ids) expect(id.length).toBeLessThanOrEqual(24);
+	});
+	it('a link does not change the slot id rules', () => {
+		expect(slotIdsOf([mat('a', { link: 'L' }), mat('b', { link: 'L' })])).toEqual(['a', 'b']);
 	});
 });

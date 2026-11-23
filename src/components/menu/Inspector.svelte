@@ -83,6 +83,7 @@
 	} from '$lib/materialsHandler';
 	// 105-slots: the ONE active material slot (shared with the UV editor); the slot list itself is lazy (SlotList.svelte)
 	import { activeMaterialSlot } from '$lib/slotDraw.js';
+	import { linkedOthers, sharedCount } from '$lib/slotLinks.js'; // 105-slots LINK: the colour drag reaches every holder
 	// 105-slots: "Select its faces" / "Assign selected faces" read the Edit Mesh face session (already in the boot)
 	import { faceEditObject, faceEditSelectedTris } from '$lib/faceEdit';
 	import { recordEntry, beginHistoryBatch, endHistoryBatch, recordTransformSet, registerPendingSeal } from '$lib/history';
@@ -537,6 +538,18 @@
 	const matOf = (object) => materialAt(object, slotFor(object)) ?? {};
 	/** 105-slots: other selected objects the slot-list edits do not reach */
 	const slotOthers = $derived(primaryMulti ? insTargets.length - 1 : 0);
+	/** 105-slots LINK: a ONE-material object whose material is linked to other slots (a slot list shows it per row) */
+	const singleShared = $derived.by(() => {
+		$objectsGroup;
+		const m = !primaryMulti && $selectedObject?.material && !Array.isArray($selectedObject.material) ? $selectedObject.material : null;
+		return m ? sharedCount(m) - 1 : 0;
+	});
+	async function makeSingleUnique() {
+		const uuid = $selectedObject?.uuid;
+		if (!uuid) return;
+		const { makeSlotUnique } = await import('$lib/materialSlots.js');
+		if (makeSlotUnique(uuid, 0)) showToast('This object has its own copy of the material now');
+	}
 	/** 105-slots: faces picked in Edit Mesh on THIS object (what "Assign selected faces" would move) */
 	const pickedFaces = $derived($faceEditObject && $faceEditObject === $selectedObject?.uuid ? $faceEditSelectedTris.length : 0);
 
@@ -1245,33 +1258,49 @@
 	// record 600ms after the last input. 17-D1: with a multi-selection the
 	// gesture remembers EVERY target's own starting colour (they may differ) and
 	// seals them into one batch, so undo restores each object's original.
-	/** @type {Map<string,string>|null} */
+	/** 105-slots: keyed `uuid:slot`, with the slot and whether the object is a slot list
+	 * @type {Map<string, {uuid: string, slot: number, multi: boolean, before: string}>|null} */
 	let colorGestureStart = null;
 	/** @type {any} */
 	let colorGestureTimer;
+	/** 105-slots: every (object, slot) one colour drag writes — the targets at their slot, plus every other holder of a
+	 * linked slot among them (a shared material changes everywhere it is used, live) */
+	function colorTargets() {
+		/** @type {{object: any, slot: number}[]} */
+		const out = matTargets.map((/** @type {any} */ object) => ({ object, slot: slotFor(object) }));
+		const seen = new Set(out.map((t) => t.object.uuid + ':' + t.slot));
+		for (const t of [...out])
+			for (const h of linkedOthers(t.object, t.slot)) {
+				const key = h.object.uuid + ':' + h.index;
+				if (!seen.has(key)) seen.add(key), out.push({ object: h.object, slot: h.index });
+			}
+		return out;
+	}
+
 	/** @param {any} hex */
 	function trackColorGesture(hex) {
 		if (colorGestureStart == null) {
 			colorGestureStart = new Map();
-			for (const object of matTargets)
-				colorGestureStart.set(object.uuid, '#' + matOf(object).color.getHexString());
+			for (const t of colorTargets()) {
+				const m = materialAt(t.object, t.slot);
+				if (m?.color) colorGestureStart.set(t.object.uuid + ':' + t.slot, { uuid: t.object.uuid, slot: t.slot, multi: isMultiMaterial(t.object), before: '#' + m.color.getHexString() });
+			}
 		}
 		clearTimeout(colorGestureTimer);
 		colorGestureTimer = setTimeout(() => {
 			const befores = colorGestureStart;
 			colorGestureStart = null;
 			if (!befores?.size) return;
+			// 105-slots: a slot list's colour is a per-slot materialParam (never the one-material `color` entry)
+			const record = (/** @type {any} */ b) =>
+				b.multi ? recordMaterialChange(b.uuid, 'materialParam', 'color', b.before, hex, b.slot) : recordMaterialChange(b.uuid, 'color', null, b.before, hex);
 			if (befores.size === 1) {
-				const [uuid, before] = [...befores][0];
-				// 105-slots: a slot list's colour is a per-slot materialParam (never the one-material `color` entry)
-				if (primaryMulti && uuid === $selectedObject?.uuid) recordMaterialChange(uuid, 'materialParam', 'color', before, hex, activeSlot);
-				else recordMaterialChange(uuid, 'color', null, before, hex);
+				record([...befores.values()][0]);
 				return;
 			}
 			beginHistoryBatch();
 			try {
-				for (const [uuid, before] of befores)
-					recordMaterialChange(uuid, 'color', null, before, hex);
+				for (const b of befores.values()) record(b);
 			} finally {
 				endHistoryBatch(`Colour (${befores.size})`);
 			}
@@ -1280,6 +1309,7 @@
 		// recordMaterialChange, and materialsHandler keys off that single funnel — so
 		// every material edit, present or future, behaves the same way.)
 	}
+
 
 	// ---- replication (identical messages to the retired panels) -------------
 	/** @param {any} object */
@@ -4406,6 +4436,19 @@
 					     changes all of them — for everyone. Said here rather than left to be
 					     discovered, and with the way out beside it (the `shader-driven` notice's
 					     shape, one concern over). -->
+					{#if singleShared}
+						<div id="material-slot-shared-note" class="shader-driven">
+							<p class="shader-driven-text">
+								This material is shared with {singleShared} other slot{singleShared === 1 ? '' : 's'} — editing it here
+								changes {singleShared === 1 ? 'that one' : 'them'} too, for everyone.
+							</p>
+							<div class="shader-driven-actions">
+								<button id="material-make-unique" class="ui-button-quiet" title="Give this object its own copy of the material" onclick={makeSingleUnique}>
+									Make unique
+								</button>
+							</div>
+						</div>
+					{/if}
 					{#if sharedWith.length}
 						<div id="material-shared-note" class="shader-driven">
 							<p class="shader-driven-text">
@@ -4476,13 +4519,14 @@
 								trackColorGesture(c.hex);
 								// 37 R1: the whole set's colour leaves as ONE replicated batch
 								withWireBatch(() => {
-									for (const object of matTargets) {
-										const m = matOf(object);
+									// 105-slots: the targets at their slot + every holder of a linked slot (colorTargets)
+									for (const { object, slot } of colorTargets()) {
+										const m = materialAt(object, slot);
+										if (!m?.color) continue;
 										m.color.set(c.hex);
 										m.needsUpdate = true;
-										// 105-slots: a slot's colour is a per-slot materialParam (the `color` receiver assumes one material)
+										// a slot's colour is a per-slot materialParam (the `color` receiver assumes one material)
 										if (isMultiMaterial(object)) {
-											const slot = slotFor(object);
 											$peers.send({ type: 'objectParameters', parameter: 'materialParam', uuid: object.uuid, key: 'color', value: c.hex, ...(slot ? { slot } : {}) });
 										} else $peers.send({ type: 'color', uuid: object.uuid, color: c.hex });
 									}

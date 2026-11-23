@@ -2,7 +2,7 @@
 
 Moved by `battery.cjs refresh --red` from two runs on unchanged code: deps.yml dispatched on `deps` 26b995ec (v1.72.0, run 45088358423) and #519, a CI-script-only change on the same base (run 45071918356). **82 of the 85 are green in the integrators desk battery at the v1.72.0 tag** (`battery-t172-full`, 61-int, 652 suites), so their reds belong to the runner, not the app. The three red on the desk too are agent-mcp (env), connector-join (flaky on the desk, green on the tag rerun) and session-volume-limits (real).
 
-**+3 on 2026-11-23** from #628's own run (45110064000, after the 85 moved): roster-rows, session-volume and wire-proto were green in both base runs but red in every attempt there (required + confirm), all at the third page's Connect, all green on the desk at v1.72.0. Timing, same as roster-merge / toggle-peers. 88 in all.
+**+3 on 2026-11-23** from #628's own run (45110064000, after the 85 moved): roster-rows, session-volume and wire-proto were green in both base runs but red in every attempt there (required + confirm), all at the third page's Connect, all green on the desk at v1.72.0. Timing, same as roster-merge / toggle-peers. **+1** from run 45132432893: dock-strip-drop, a test race in its 6.3 check that is flaky on the desk too. 89 in all.
 
 Bringing a suite back to required: fix the cause, see it green in a deps.yml run, then delete its `optional` line in battery.json and its row here. Classes: env (the runner lacks something), timing (a wait or frame-rate check on a slow runner), real (the app is wrong).
 
@@ -56,7 +56,7 @@ Bringing a suite back to required: fix the cause, see it green in a deps.yml run
 |---|---|---|---|
 | `agent-mcp` | 2/2 | also red on the desk at 1.72 ("signaling came from the link": needs peerjs.theprototype.app); click timeout on the runner | SCRIPT FAILED: locator.click: Timeout 90000ms exceeded. |
 
-## timing: green on the desk at v1.72.0; on the runner a wait/click timeout or a frame-rate/heartbeat check, or red in one run only (63)
+## timing: green on the desk at v1.72.0; on the runner a wait/click timeout or a frame-rate/heartbeat check, or red in one run only (64)
 
 | suite | runner runs red | why | first red line |
 |---|---|---|---|
@@ -74,6 +74,7 @@ Bringing a suite back to required: fix the cause, see it green in a deps.yml run
 | `code-files` | 1/2 | red in one of the two runs only (flaky on a loaded runner) | FAIL the new script opens in a Code tab |
 | `connector-join` | 1/2 | red in one of the two runs only (flaky on a loaded runner) | FAIL B connected to Claude |
 | `connector-relay` | 1/2 | red in one of the two runs only (flaky on a loaded runner) | FAIL the tab is connected |
+| `dock-strip-drop` | 3/3 #628 runs (0/2 in the base runs) | a test race: 6.3 reads the Preview size before the image has loaded; FLAKY on the desk at v1.72.0 too (same check, green on retry), fix the wait | FAIL 6.3 Edit image… brings the docked Preview forward, in Edit (size " · PNG", wants 64 × 48) |
 | `drafts-leak` | 2/2 | a wait/click timeout in both runs on a loaded runner | SCRIPT FAILED: connect: could not press Connect on 18de3 |
 | `explorer-views` | 1/2 | red in one of the two runs only (flaky on a loaded runner) | FAIL the purge freed the record and the blob |
 | `film-mode` | 1/2 | red in one of the two runs only (flaky on a loaded runner) | FAIL the live take committed |

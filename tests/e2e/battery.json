@@ -84,6 +84,7 @@
 		"dock-chrome": "red on the GitHub runner (SwiftShader, no retry) with unchanged code: deps-auto run 5, 2026-10-24",
 		"dock-chrome-40": "flaky on the GitHub runner (SwiftShader): red or green-on-retry in deps-auto run 5 or 6 with unchanged code, 2026-10-24",
 		"dock-empty-focus": "red on the GitHub runner (SwiftShader, no retry) with unchanged code: deps-auto run 5, 2026-10-24",
+		"dock-strip-drop": "red on the GitHub runner (SwiftShader) with unchanged code, 2026-11-23 (green in deps runs 45088358423 + 45071918356, red in all three #628 runs 45110064000 / 45132432893; FLAKY on the desk at v1.72.0 too, same check): timing, test race — 6.3 reads the image size before the image loads — tests/e2e/battery-optional-2026-11.md",
 		"dock-tab-drag": "red on the GitHub runner (SwiftShader, no retry) with unchanged code: deps-auto run 5, 2026-10-24",
 		"docking": "red on the GitHub runner (SwiftShader, no retry) with unchanged code: deps-auto run 5, 2026-10-24",
 		"drafts-leak": "red on the GitHub runner (SwiftShader) with unchanged code, 2026-11-23 (deps runs 45088358423 + 45071918356; green on the desk at v1.72.0 unless noted): timing — tests/e2e/battery-optional-2026-11.md",

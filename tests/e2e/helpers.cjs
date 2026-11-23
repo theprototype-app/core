@@ -420,10 +420,17 @@ async function connect(from, to, settleMs = 9000) {
 	// PATIENT: a GitHub runner (SwiftShader, two or three rendering pages) keeps the dialler's main thread in native
 	// render/GL work, so Playwright's input waits 16-31 s for it to be taken (measured by the #643 CPU profile:
 	// ~97% `(program)`, green tries 16-18 s, red ones crossed the 30 s default with the click still queued).
-	// Every actionability check still runs; only the wait is longer.
+	// Every actionability check still runs; only the wait is longer. A slow one is LOGGED, so the margin left
+	// under PATIENT_CLICK_MS is visible in every battery log (grep "[helpers] slow click").
+	const slow = (what, t0) => {
+		const s = (Date.now() - t0) / 1000;
+		if (s > 5) console.log(`[helpers] slow click: ${what} took ${s.toFixed(1)} s (limit ${PATIENT_CLICK_MS / 1000} s)`);
+	};
+	const tConnect = Date.now();
 	await step(from, 'press Connect', () =>
 		from.page.getByRole('button', { name: 'Connect', exact: true }).click({ timeout: PATIENT_CLICK_MS })
 	);
+	slow('press Connect', tConnect);
 	// R22 round 33 REMOVED the dial-time ask (round 31's "Save & connect / Connect anyway /
 	// Cancel"), and with it the block that used to answer it here. A dialer holding work in
 	// an UNNAMED scene now dials immediately; the question is put at the HOST's APPROVAL
@@ -435,7 +442,9 @@ async function connect(from, to, settleMs = 9000) {
 	// `h.setupPage(browser, 'X', { storage: { 'connect:mergeOnConnect': 'true' } })`.
 	// a cloud build (Pages deploys) asks the host for a ROLE instead — "View only" / "Editor access" /
 	// "Reject" (cloudHooks roles); "Editor access" is the plain build's Approve
+	const tApprove = Date.now();
 	await step(to, 'approve the request', () => approveButton(to.page).click({ timeout: PATIENT_CLICK_MS }));
+	slow('approve the request', tApprove);
 	await from.page.waitForTimeout(settleMs);
 	// scatter-sync: the settle is a MINIMUM now — on a slow runner (GitHub, SwiftShader) the approval
 	// dial-back took 15 s to open, so a suite's first edit raced a conn that was still negotiating.

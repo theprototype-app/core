@@ -21,6 +21,7 @@ import { writable, get } from 'svelte/store';
 import { safeStorage } from './safeStorage';
 import { APP_VERSION, COMMIT_SHA, IS_DEV } from './version.js';
 import { buildReport, describeReason, browserOf, deviceClassOf, envOf, releaseLabel, MAX_PER_SESSION } from './errorReportCore.js';
+import { exportMode } from './export/exportBoot.js';
 
 const SEND_KEY = 'errorReports:send';
 const URL_OVERRIDE_KEY = 'errorReports:url';
@@ -37,6 +38,8 @@ export function errorReportsUrl() {
 	// 54 X7: the literal key, never the whole env object (vite inlines that object, every VITE_
 	// key, into the chunk — and an exported game zip carries it)
 	const url = import.meta.env.VITE_ERROR_REPORTS_URL;
+	// 63 PG1: an exported game reports to nobody — its page is the author's, its host is not ours
+	if (exportMode) return null;
 	if (safeStorage.getItem('debugStores') === 'true') {
 		const o = safeStorage.getItem(URL_OVERRIDE_KEY);
 		if (o) return o === 'off' ? null : o;

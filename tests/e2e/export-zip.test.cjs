@@ -338,7 +338,8 @@ h.run(async () => {
 	h.check(gState.phase === 'playing', `the game is playing (${gState.phase}${gState.error ? ' — ' + gState.error : ''})`);
 	h.check(gState.path === '/html/4201/index.html', `served from a SUBPATH (${gState.path})`);
 	h.check(gState.locked === true && gState.objects > 10 && gState.module, `autoplay: Play mode, the course loaded, the minigolf module awake (${gState.objects} objects)`);
-	h.check(gState.chromeHidden === true && !gState.openLink, 'no editor chrome, no "open in app" link in an export');
+	// 63 PG1: the export boots the play entry, which has no editor chrome at all (null = absent)
+	h.check(gState.chromeHidden !== false && !gState.openLink, `no editor chrome, no "open in app" link in an export (chrome ${gState.chromeHidden === null ? 'absent' : 'hidden'})`);
 	h.check(gState.peerOpen === false, 'the Peer is the offline stub (no signaling)');
 	const bh = gState.badge;
 	h.check(!!bh, 'the Made with ThePrototype badge is drawn');

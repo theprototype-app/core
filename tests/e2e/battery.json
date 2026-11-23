@@ -535,6 +535,7 @@
 		"explorer-views": 305,
 		"export-presets": 288,
 		"export-zip": 2,
+		"export-offline": 2,
 		"text-export": 240,
 		"external-font-cdn": 19,
 		"fb-water": 80,

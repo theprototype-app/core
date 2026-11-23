@@ -19,7 +19,22 @@ let asking = false;
 let listening = false;
 
 export function wakeLockSupported() {
-	return typeof navigator !== 'undefined' && !!(/** @type {any} */ (navigator).wakeLock?.request);
+	return typeof navigator !== 'undefined' && !!(/** @type {any} */ (navigator).wakeLock?.request) && policyAllows();
+}
+
+/**
+ * 63 PG1: a game framed by a portal (itch.io, CrazyGames) runs in an iframe whose `allow` list has
+ * no screen-wake-lock, and asking there is not just refused: Chromium logs a "Permissions policy
+ * violation" console error every time. Ask the frame's policy first (absent API = allowed).
+ */
+function policyAllows() {
+	try {
+		const d = /** @type {any} */ (typeof document !== 'undefined' ? document : null);
+		const policy = d?.permissionsPolicy || d?.featurePolicy;
+		return typeof policy?.allowsFeature !== 'function' || policy.allowsFeature('screen-wake-lock') !== false;
+	} catch {
+		return true;
+	}
 }
 
 /** pure: is the lock wanted for these reasons on a page in this state @param {Set<string>|string[]} held @param {boolean} visible */

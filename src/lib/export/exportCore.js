@@ -13,6 +13,21 @@ export function slugify(s) {
 	);
 }
 
+/**
+ * 63 PG1 — THE OUTSIDE HOSTS AN EXPORTED GAME MAY CALL, per preset: none. An itch.io / static-host
+ * zip carries every file it loads (the engine, the scene, packs, modules, the sky, fonts) and the
+ * features that would reach a server (accounts, sessions, the community gallery, module / template
+ * galleries, error and perf reports) are off in export mode. The one exception is a portal's own SDK
+ * in that portal's preset (63 PG3). `export-offline` measures the itch list; `export-crazygames` the
+ * CrazyGames one. ("Use CDN for packs" is the author's opt-in to the internet: it is reported, not
+ * allowed here.)
+ */
+export const EXPORT_ALLOWED_HOSTS = Object.freeze({
+	itch: Object.freeze(/** @type {string[]} */ ([])),
+	static: Object.freeze(/** @type {string[]} */ ([])),
+	crazygames: Object.freeze(['sdk.crazygames.com'])
+});
+
 /** @param {string} s */
 export function escapeHtml(s) {
 	return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] || c);

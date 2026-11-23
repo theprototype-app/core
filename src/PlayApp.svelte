@@ -54,6 +54,8 @@
   import { startWireErrors } from '$lib/wireErrors';
   import { startErrorReports } from '$lib/errorReports';
   import { embedSceneId } from '$lib/playMode';
+  // 63 PG1: an exported game (play.js beside index.html) boots THIS entry, never the editor's
+  import { exportMode } from '$lib/export/exportBoot.js';
   import { startSceneMetrics } from './lib/sceneBudget';
   import { startPerfRecorder } from './lib/perf/recorder';
   import { startPerfBeacon } from './lib/perf/beacon';
@@ -162,6 +164,9 @@
     startGameShell();
     // `?scene=<url>`, `window.tpPlay`, the frame's postMessage events (src/lib/play/playBoot.js)
     startPlayEntry();
+    // 63 PG1: the exported game's own boot (its modules, scene.tpscene, defaults, play) — lazy, so a
+    // shared play link pays nothing for it
+    if (exportMode) void import('$lib/export/exportRuntime.js').then((m) => m.startExportRuntime());
     // 102b-play: the play app pins only notes shown to visitors (a review note is not for players)
     notePinFilter.set((/** @type {any} */ n) => n?.visitors === true);
     // 102b-play: the screen stays awake while playing or watching (lazy, only where Wake Lock exists)

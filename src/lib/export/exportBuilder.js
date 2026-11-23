@@ -24,6 +24,7 @@ import { get } from 'svelte/store';
 import { objectsGroup, globalRenderer, globalScene, globalCamera } from '../../stores/sceneStore';
 import { pageUrl } from './exportBoot.js';
 import { validateExport, ITCH_LIMITS } from './exportValidate.js';
+import { packLodsOf } from '../lodGroupCore.js';
 import { APP_VERSION } from '../version.js';
 import { slugify, rewriteIndexHtml, stripHostInjected, hostRemovalNotes, makePlayJs, embedSnippet, collectPackRefs, fmtBytes } from './exportCore.js';
 
@@ -65,7 +66,7 @@ export class ExportUnavailable extends Error {
 	}
 }
 
-/** @returns {Promise<{format: number, version: string, files: {path: string, bytes: number}[], bytes: number}>} */
+/** @returns {Promise<{format: number, version: string, files: {path: string, bytes: number, editorOnly?: boolean}[], bytes: number}>} */
 export async function loadExportManifest() {
 	let res;
 	try {
@@ -117,14 +118,24 @@ async function captureCover() {
 /**
  * Fetch many files with a small worker pool. @param {string[]} urls
  * @param {(i: number, bytes: Uint8Array) => void} onFile @param {number} [concurrency]
+ * @param {((i: number) => void) | null} [onMissing] 63: report a file that is not there instead of failing the export
  */
-async function fetchAll(urls, onFile, concurrency = 6) {
+async function fetchAll(urls, onFile, concurrency = 6, onMissing = null) {
 	let next = 0;
 	const worker = async () => {
 		while (next < urls.length) {
 			const i = next++;
-			const res = await fetch(urls[i]);
-			if (!res.ok) throw new Error(`${urls[i]} — HTTP ${res.status}`);
+			const res = await fetch(urls[i]).catch((e) => {
+				if (onMissing) return null;
+				throw e;
+			});
+			if (!res || !res.ok) {
+				if (onMissing) {
+					onMissing(i);
+					continue;
+				}
+				throw new Error(`${urls[i]} — HTTP ${res?.status}`);
+			}
 			onFile(i, new Uint8Array(await res.arrayBuffer()));
 		}
 	};
@@ -269,18 +280,37 @@ export async function buildExport(opts, onProgress = () => {}) {
 		// a trimmed packs index: the pack rows the scene uses, each with only the items it uses,
 		// so a piece's implicit LOD lookup (lodGroup.packRowFor) resolves offline too
 		try {
-			const extra = await packIndexFor(base, list);
+			const { files: extra, lodPaths } = await packIndexFor(base, list);
 			for (const [path, bytes] of Object.entries(extra)) {
 				out[`${PACKS_DIR}/${path}`] = bytes;
 				breakdown.packs += bytes.byteLength;
 			}
+			// 63 PG1: the index above makes each piece's implicit LOD group resolve offline, and that
+			// group names the row's `lods` files beside the model — they ride in the zip too (they
+			// were 404s in a played export: ~1 per placed pack piece)
+			const lods = lodPaths.filter((p) => !out[`${PACKS_DIR}/${p}`]);
+			/** @type {string[]} */
+			const lost = [];
+			await fetchAll(
+				lods.map((p) => base + '/' + p),
+				(i, bytes) => {
+					out[`${PACKS_DIR}/${lods[i]}`] = bytes;
+					breakdown.packs += bytes.byteLength;
+				},
+				6,
+				(i) => lost.push(lods[i])
+			);
+			if (lost.length) details.push(`${lost.length} LOD file${lost.length === 1 ? '' : 's'} could not be copied — those pieces draw at full detail (${lost[0]}${lost.length > 1 ? ', …' : ''}).`);
 		} catch {
 			warnings.push('The packs index could not be read — pieces fall back to automatic LOD in the export.');
 		}
 	}
 
-	// 4. the engine runtime, straight from this deployment
-	const runtime = manifest.files.filter((f) => f.path !== 'index.html');
+	// 4. the engine runtime, straight from this deployment. 63 PG1: the game boots the slim PLAY
+	// entry (94 SP1, build/play.html) — the editor's page and the files only the editor or the UI kit
+	// page can reach (export-manifest.cjs marks them `editorOnly`) stay out of the zip
+	const entryPage = playEntryOf(manifest);
+	const runtime = runtimeFiles(manifest);
 	const runtimeBytes = runtime.reduce((n, f) => n + f.bytes, 0);
 	let fetched = 0;
 	onProgress({ phase: 'Copying the engine', done: 0, total: runtimeBytes });
@@ -335,8 +365,8 @@ export async function buildExport(opts, onProgress = () => {}) {
 			}
 		}
 	}
-	const indexRes = await fetch(pageUrl('index.html'));
-	if (!indexRes.ok) throw new Error('index.html — HTTP ' + indexRes.status);
+	const indexRes = await fetch(pageUrl(entryPage));
+	if (!indexRes.ok) throw new Error(entryPage + ' — HTTP ' + indexRes.status);
 	const indexHtml = rewriteIndexHtml(fromHost('index.html', await indexRes.text()), { title });
 	out['index.html'] = enc.encode(indexHtml);
 
@@ -408,10 +438,34 @@ export async function buildExport(opts, onProgress = () => {}) {
 	return { blob, fileName: `${slugify(title)}-${opts.preset === 'itch' ? 'itch' : 'web'}.zip`, id, gameId, report, breakdown, warnings, details };
 }
 
+/** the pages a build has that an export never carries as such (the play entry BECOMES index.html) */
+const ENTRY_PAGES = new Set(['index.html', 'play.html', 'kit.html']);
+
+/**
+ * 63 PG1: the page an exported game boots — the slim play entry when the build has one (every build
+ * since 1.57), else the editor's index.html (an older deployment exporting).
+ * @param {{files: {path: string}[]}} manifest @returns {string}
+ */
+export function playEntryOf(manifest) {
+	return manifest.files.some((f) => f.path === 'play.html') ? 'play.html' : 'index.html';
+}
+
+/**
+ * 63 PG1: the runtime files an export copies: the manifest minus the entry pages, and — when the
+ * game boots the play entry — minus what only the editor / kit page reach (`editorOnly`).
+ * @template {{path: string, bytes: number, editorOnly?: boolean}} F
+ * @param {{files: F[]}} manifest @returns {F[]}
+ */
+export function runtimeFiles(manifest) {
+	const slim = playEntryOf(manifest) === 'play.html';
+	return manifest.files.filter((f) => !ENTRY_PAGES.has(f.path) && !(slim && f.editorOnly));
+}
+
 /**
  * The trimmed packs index for the files an export carries: `index.json` keeping only the packs
  * used (their `value` pointing at a trimmed list beside it) and each list keeping only the item
- * folders used. Returns `{relativePath: bytes}` under the packs dir.
+ * folders used. Returns `{files: {relativePath: bytes}, lodPaths}` under the packs dir — 63: `lodPaths`
+ * = the kept rows' `lods` files beside the models the scene uses (the runtime asks for them).
  * @param {string} base the remote PACKS_BASE @param {string[]} paths PACKS_BASE-relative files
  */
 async function packIndexFor(base, paths) {
@@ -424,12 +478,14 @@ async function packIndexFor(base, paths) {
 		if (!used.has(pack)) used.set(pack, new Set());
 		used.get(pack)?.add(folder);
 	}
-	if (!used.size) return {};
+	if (!used.size) return { files: {}, lodPaths: [] };
 	const indexRes = await fetch(base + '/index.json', { cache: 'no-cache' });
 	if (!indexRes.ok) throw new Error('index ' + indexRes.status);
 	const index = await indexRes.json();
 	/** @type {Record<string, Uint8Array>} */
 	const files = {};
+	/** @type {Set<string>} */
+	const lodPaths = new Set();
 	const rows = [];
 	for (const row of Array.isArray(index) ? index : []) {
 		if (!row?.name || !used.has(row.name) || !row.value || /^https?:\/\//.test(row.value)) continue;
@@ -440,9 +496,19 @@ async function packIndexFor(base, paths) {
 		const keep = Array.isArray(list) ? list.filter((/** @type {any} */ o) => used.get(row.name)?.has(o?.name)) : [];
 		files[listPath] = enc.encode(JSON.stringify(keep));
 		rows.push(row);
+		// each kept row's `lods` sit beside the model file(s) the scene uses from that folder
+		for (const item of keep) {
+			const lods = packLodsOf(item);
+			if (!lods.length) continue;
+			for (const p of paths) {
+				if (!p.startsWith(row.name + '/' + item.name + '/') || !/\.(glb|gltf)$/i.test(p) || /\.lod\d+\./i.test(p)) continue;
+				const dir = p.slice(0, p.lastIndexOf('/') + 1);
+				for (const l of lods) lodPaths.add(dir + l.file);
+			}
+		}
 	}
 	files['index.json'] = enc.encode(JSON.stringify(rows));
-	return files;
+	return { files, lodPaths: [...lodPaths] };
 }
 
 /**
@@ -452,11 +518,12 @@ async function packIndexFor(base, paths) {
  */
 export async function estimateExport() {
 	const manifest = await loadExportManifest();
+	const files = runtimeFiles(manifest);
 	let raw = 0;
 	let zipped = 0;
-	for (const f of manifest.files) {
+	for (const f of files) {
 		raw += f.bytes;
 		zipped += DEFLATE.test(f.path) ? f.bytes * 0.32 : f.bytes;
 	}
-	return { runtime: raw, estimateZip: Math.round(zipped), files: manifest.files.length };
+	return { runtime: raw, estimateZip: Math.round(zipped), files: files.length + 1 };
 }

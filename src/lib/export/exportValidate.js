@@ -28,6 +28,10 @@ export const ITCH_LIMITS = Object.freeze({
 export const CONFIG_KEYS = Object.freeze([
 	'version',
 	'id',
+	// 36-community: the game's permanent id; 93 LP2: the author's loading screen (63: both were
+	// written by the builder and then warned about as unknown keys in every export)
+	'gameId',
+	'loading',
 	'title',
 	'scene',
 	'packsBase',

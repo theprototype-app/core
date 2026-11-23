@@ -554,6 +554,8 @@ export const DEBUG_HOOKS = [
 	// 36-export: the export builder, its stores, the export boot + runtime state
 	['exportBuilder', () => import('./export/exportBuilder.js')],
 	['exportStores', () => import('./export/exportStores.js')],
+	// 63: the pure export core (EXPORT_ALLOWED_HOSTS, the preset limits) + the export check rules
+	['exportCore', () => import('./export/exportCore.js')],
 	// 41b: the burger's Project actions setting + Save options (H14), the settings-row fit (H12)
 	['projectActions', () => import('./projectActions.js')],
 	['saveOptions', () => import('./saveOptions.js')],

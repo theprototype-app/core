@@ -153,7 +153,13 @@
 		el.__captureGuarded = true;
 		el.setPointerCapture = function (this: any, pointerId: number) {
 			if (this.ownerDocument?.pointerLockElement) return; // the lock already owns the pointer
-			return Element.prototype.setPointerCapture.call(this, pointerId);
+			// 63 PG1: a framed export's first click requests the lock and presses in the same moment;
+			// the lock is not granted yet and Chromium still refuses the capture (a page error there)
+			try {
+				return Element.prototype.setPointerCapture.call(this, pointerId);
+			} catch (e: any) {
+				if (e?.name !== 'InvalidStateError') throw e;
+			}
 		};
 		return () => {
 			delete el.setPointerCapture;

@@ -9,6 +9,8 @@ import * as THREE from 'three';
 
 vi.mock('$lib/objectActions', () => ({ selectObject: () => {}, deselectObject: () => {}, moveObjectToGroup: () => {}, duplicateObject: () => null }));
 vi.mock('$lib/physics', () => ({ setPhysicsFor: () => {}, physicsShapeChanged: () => {} }));
+// 99-int: v1.75 terrainSculpt imports lockControl (80a), which reaches geometries.svelte.js (runes): the shared stub
+vi.mock('$lib/geometries.svelte', async () => (await import('./helpers/geometriesStub.js')).geometriesStub());
 
 const { objectsGroup } = await import('../../src/stores/sceneStore');
 const ops = await import('../../src/lib/meshOps/index.js');

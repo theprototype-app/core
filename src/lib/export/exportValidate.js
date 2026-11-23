@@ -87,7 +87,9 @@ function normalizeRel(p) {
 /**
  * Validate an export's file list.
  * @param {ExportFile[]} files
- * @param {{preset?: string, limits?: typeof ITCH_LIMITS}} [opts]
+ * @param {{preset?: string, limits?: typeof ITCH_LIMITS, allowHosts?: readonly string[]}} [opts]
+ *   63 PG3: `allowHosts` — the outside hosts this preset's index.html may load a script from (the
+ *   CrazyGames SDK); every other absolute URL stays an error
  * @returns {ExportReport}
  */
 export function validateExport(files, opts = {}) {
@@ -128,7 +130,11 @@ export function validateExport(files, opts = {}) {
 		for (const ref of htmlRefs(html)) {
 			if (/^(data:|mailto:|#)/i.test(ref)) continue;
 			if (/^(https?:)?\/\//i.test(ref)) {
-				errors.push(`index.html loads an absolute URL: ${ref}`);
+				let host = '';
+				try {
+					host = new URL(ref, 'https://x.invalid/').host;
+				} catch {}
+				if (!(opts.allowHosts || []).includes(host)) errors.push(`index.html loads an absolute URL: ${ref}`);
 				continue;
 			}
 			if (ref.startsWith('/')) {

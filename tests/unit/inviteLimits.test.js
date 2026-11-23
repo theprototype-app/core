@@ -80,6 +80,18 @@ describe('71 AS4 failed proofs and the pause', () => {
 		expect(more.paused).toBe(true);
 		expect(g.summary().count).toBe(12);
 	});
+	it('failures during a pause do not re-arm it once it ends; a flood that goes on pauses again', () => {
+		const g = createJoinGate();
+		for (let i = 0; i <= L.failMax; i++) g.fail('p' + i, 'unknown', {}, T0);
+		for (let i = 0; i < 30; i++) g.fail('q' + i, 'unknown', {}, T0 + 1000 + i * 100); // during the pause
+		const after = T0 + L.pauseMs + 1;
+		expect(g.paused(after)).toBe(false);
+		expect(g.fail('x1', 'unknown', {}, after).paused).toBe(false);
+		expect(g.fail('x2', 'unknown', {}, after + 1).paused).toBe(false);
+		for (let i = 3; i <= L.failMax; i++) expect(g.fail('x' + i, 'unknown', {}, after + i).paused).toBe(false);
+		expect(g.fail('x-tip', 'unknown', {}, after + 100).justPaused).toBe(true);
+		expect(g.summary().count).toBe(L.failMax + 1 + 30 + L.failMax + 1);
+	});
 	it('failures spread over more than a minute never pause', () => {
 		const g = createJoinGate();
 		for (let i = 0; i < 40; i++) expect(g.fail('p' + i, 'unknown', {}, T0 + i * 7000).paused).toBe(false);

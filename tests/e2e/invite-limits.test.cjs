@@ -70,7 +70,15 @@ h.run(async () => {
 	const tokOf = (link) => core.parseHashParams(new URL(link).hash).invite;
 	const dial = (peer, metadata) => inPage(H, EMIT, { peer, metadata: { jr: 1, ...metadata } });
 	/** a control of the failed-invite row, in whichever copy is visible */
-	const row = (sel) => H.page.locator(`#failed-invite-joins ${sel}, #failed-invite-joins-drawer ${sel}`).filter({ visible: true }).first();
+	/** press a control of the failed-invite row (whichever copy holds it; the toast stack re-lays itself out under
+	 * Playwright's "stable" wait, so the press is the button's own click) — false when there is no such button */
+	const press = (sel) =>
+		H.page.evaluate((q) => {
+			const all = [...document.querySelectorAll('#failed-invite-joins ' + q + ', #failed-invite-joins-drawer ' + q)];
+			const b = all.find((x) => x.offsetParent !== null) ?? all[0];
+			b?.click();
+			return !!b;
+		}, sel);
 
 	// ==================================================================== 0
 	console.log('\n=== 0. feature unused ===');
@@ -145,7 +153,7 @@ h.run(async () => {
 	h.check((await H.page.locator('#failed-invite-joins, #failed-invite-joins-drawer').count()) >= 1, '3.4a the row is drawn');
 	// on a slow box the 60 s pause may have run out by now: then there is no Resume to press, and it lifted by itself
 	if ((await failed(H)).pausedUntil > Date.now() + 2000) {
-		await row('.fij-resume').click({ timeout: 10000 });
+		h.check(await press('.fij-resume'), '3.4c the row offers Resume now');
 		h.check((await failed(H)).pausedUntil === 0, '3.4 Resume now lifts the pause');
 	} else {
 		await until(() => failed(H).then((f) => f.pausedUntil <= Date.now()), (v) => v === true, '3.4 the pause ran out by itself (60 s) before Resume could be pressed');
@@ -168,13 +176,13 @@ h.run(async () => {
 	await inPage(H, "s.connectDrawerTab.set('toasts'); s.connectDrawerOpen.set(true);");
 	await H.page.locator('#failed-invite-joins-drawer').waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
 	h.check(await H.page.locator('#failed-invite-joins-drawer').isVisible().catch(() => false), '4.0b the Connect drawer shows the row too');
-	await row('.fij-review').click({ timeout: 5000 });
-	const firstRow = row('.fij-row');
-	const pid = await firstRow.getAttribute('data-peer', { timeout: 5000 }).catch(() => null);
-	await firstRow.locator('.fij-letin').click({ timeout: 5000 }).catch(() => {});
+	h.check(await press('.fij-review'), '4.0c Review');
+	await H.page.waitForTimeout(300);
+	const pid = await H.page.evaluate(() => document.querySelector('#failed-invite-joins-drawer .fij-row, #failed-invite-joins .fij-row')?.getAttribute('data-peer') ?? null);
+	h.check(!!pid && (await press('.fij-row[data-peer="' + pid + '"] .fij-letin')), `4.0d Let in on ${pid}`);
 	await until(() => roster(H).then((r) => r.some((u) => u[0] === pid)), (v) => v === true, `4.1 Let in admits ${pid}`);
 	h.check(!(await failed(H)).rows.some((r) => r.peerId === pid), '4.2 …and its row goes');
-	await row('.fij-dismiss').click({ timeout: 5000 });
+	h.check(await press('.fij-dismiss'), '4.2b Dismiss');
 	await until(() => H.page.locator('#failed-invite-joins, #failed-invite-joins-drawer').count(), (n) => n === 0, '4.3 Dismiss clears the row');
 
 	// ==================================================================== 5

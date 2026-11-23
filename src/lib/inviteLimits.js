@@ -111,22 +111,29 @@ export function createJoinGate() {
 		 * @returns {{ justPaused: boolean, paused: boolean, inWindow: number }}
 		 */
 		fail(peerId, reason, who = {}, now = Date.now()) {
-			fails = fails.filter((t) => now - t < L.failWindowMs);
-			fails.push(now);
+			const wasPaused = paused(now);
+			// a dial during a pause was already answered by the pause: it shows in the row but does not count
+			// toward the NEXT window (measured: counting it re-armed the pause the moment it ended, on the first
+			// two ordinary failures after it)
+			if (!wasPaused) {
+				fails = fails.filter((t) => now - t < L.failWindowMs);
+				fails.push(now);
+			}
 			const id = String(peerId || '').toLowerCase();
 			// one row per peer: a re-dial refreshes its row instead of taking another slot
 			const rows = summary.rows.filter((r) => r.peerId !== id);
 			rows.push({ peerId: id, reason: String(reason || 'unknown'), at: now, ...(who.kind === 'agent' ? { kind: 'agent' } : {}) });
 			while (rows.length > L.failedKeep) rows.shift();
-			const wasPaused = paused(now);
 			const tip = !wasPaused && fails.length > L.failMax;
+			const inWindow = fails.length;
+			if (tip) fails = []; // a pause starts a fresh window
 			summary = {
 				count: summary.count + 1,
 				rows,
 				since: summary.since || now,
 				pausedUntil: tip ? now + L.pauseMs : summary.pausedUntil
 			};
-			return { justPaused: tip, paused: tip || wasPaused, inWindow: fails.length };
+			return { justPaused: tip, paused: tip || wasPaused, inWindow };
 		},
 
 		/**

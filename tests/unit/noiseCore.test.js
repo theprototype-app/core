@@ -11,13 +11,15 @@ import {
 	noiseRaster,
 	gradientLut,
 	blendInto,
-	hexColor
+	hexColor,
+	parseNoiseSpec,
+	NOISE_ROW_DEFAULTS
 } from '../../src/lib/image/noiseCore.js';
 
 /** the biggest 8-bit step across the wrap (last column -> first, last row -> first) and the typical step inside */
 function seamSteps(/** @type {{width: number, height: number, data: Uint8ClampedArray}} */ r) {
 	const { width: W, height: H, data: d } = r;
-	const at = (x, y, c) => d[(y * W + x) * 4 + c];
+	const at = (/** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ c) => d[(y * W + x) * 4 + c];
 	let wrapMax = 0;
 	let innerMax = 0;
 	for (let y = 0; y < H; y++)
@@ -212,4 +214,22 @@ describe('bands (the worker pool splits a fill by rows)', () => {
 				}
 				expect(Buffer.from(out).equals(Buffer.from(whole.data))).toBe(true);
 			});
+});
+
+describe('the agent spec (set_material noise)', () => {
+	it('true or {} = the row defaults; the normal row makes a normal map', () => {
+		const a = /** @type {any} */ (parseNoiseSpec(true, 'roughnessMap'));
+		expect(a.size).toBe(1024);
+		expect(a.options.colors).toEqual(NOISE_ROW_DEFAULTS.roughnessMap.colors);
+		expect(/** @type {any} */ (parseNoiseSpec({}, 'normalMap')).options.output).toBe('normal');
+		expect(/** @type {any} */ (parseNoiseSpec({ kind: 'worley', seed: 9, size: 512 })).options).toMatchObject({ kind: 'worley', seed: 9 });
+	});
+	it('refuses what it cannot do, saying what it can', () => {
+		expect(/** @type {any} */ (parseNoiseSpec({ kind: 'fractal' })).error).toMatch(/perlin, simplex, worley, value/);
+		expect(/** @type {any} */ (parseNoiseSpec({ colours: ['#000', '#fff'] })).error).toMatch(/unknown field colours/);
+		expect(/** @type {any} */ (parseNoiseSpec({ colors: ['#000'] })).error).toMatch(/2 to 5 hex/);
+		expect(/** @type {any} */ (parseNoiseSpec({ scale: 0 })).error).toMatch(/noise.scale: a number from 1 to 64/);
+		expect(/** @type {any} */ (parseNoiseSpec({ size: 4096 })).error).toMatch(/2048/);
+		expect(/** @type {any} */ (parseNoiseSpec('perlin')).error).toMatch(/an object/);
+	});
 });

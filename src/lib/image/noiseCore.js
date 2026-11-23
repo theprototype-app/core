@@ -36,7 +36,7 @@ export const NOISE_LIMITS = Object.freeze({
 	strength: [0, 10]
 });
 
-/** @type {Readonly<NoiseOptions>} */
+/** the starting options (`colors` frozen too) */
 export const NOISE_DEFAULTS = Object.freeze({
 	kind: 'perlin',
 	scale: 4,
@@ -55,6 +55,60 @@ export const NOISE_DEFAULTS = Object.freeze({
 
 /** @param {number} v @param {number} lo @param {number} hi */
 const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+
+/**
+ * What a fresh fill looks like on each material map row ('map' = the colour texture): the colour and roughness rows
+ * read the noise as values, the normal row turns it into a normal map. Shared by the Inspector's "Fill with noise…"
+ * and the agent's `noise` param, so both make the same picture for the same row.
+ * @type {Readonly<Record<string, any>>}
+ */
+export const NOISE_ROW_DEFAULTS = Object.freeze({
+	map: Object.freeze({ kind: 'perlin', scale: 4, octaves: 4, colors: ['#3a3a3a', '#ffffff'] }),
+	normalMap: Object.freeze({ kind: 'perlin', scale: 8, octaves: 5, roughness: 0.5, output: 'normal', strength: 1.5 }),
+	roughnessMap: Object.freeze({ kind: 'perlin', scale: 6, octaves: 5, roughness: 0.55, colors: ['#4d4d4d', '#e6e6e6'] }),
+	metalnessMap: Object.freeze({ kind: 'worley', scale: 6, octaves: 2, colors: ['#000000', '#ffffff'] }),
+	aoMap: Object.freeze({ kind: 'worley', scale: 6, octaves: 3, colors: ['#7a7a7a', '#ffffff'], invert: true }),
+	emissiveMap: Object.freeze({ kind: 'simplex', scale: 4, octaves: 3, contrast: 40, colors: ['#000000', '#ffffff'] })
+});
+
+/** the agent's `noise` fields */
+const SPEC_FIELDS = ['kind', 'scale', 'octaves', 'roughness', 'seed', 'contrast', 'invert', 'tileable', 'colors', 'output', 'strength', 'size'];
+/** the sizes an agent may ask for */
+export const NOISE_SIZE_LIMITS = Object.freeze([16, 2048]);
+
+/**
+ * The agent's `noise: {kind, scale, octaves, seed, …}` for one map row, checked: a wrong kind, colour list or field
+ * is an error that says what is allowed (a model fixes its call from the words), the rest is the row's defaults.
+ * `true` = the row's defaults. @param {any} spec @param {string} [key] the map row ('map' = colour)
+ * @returns {{options: NoiseOptions, size: number} | {error: string}}
+ */
+export function parseNoiseSpec(spec, key = 'map') {
+	if (spec === true) spec = {};
+	if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return { error: 'noise: an object like {"kind": "perlin", "scale": 4, "octaves": 4, "seed": 1}' };
+	const unknown = Object.keys(spec).filter((k) => !SPEC_FIELDS.includes(k));
+	if (unknown.length) return { error: 'noise: unknown field ' + unknown.slice(0, 3).join(', ') + '; fields: ' + SPEC_FIELDS.join(', ') };
+	if (spec.kind !== undefined && !NOISE_KINDS.includes(spec.kind)) return { error: 'noise.kind: one of ' + NOISE_KINDS.join(', ') + ' (worley = cells)' };
+	if (spec.output !== undefined && !NOISE_OUTPUTS.includes(spec.output)) return { error: 'noise.output: color or normal' };
+	if (spec.colors !== undefined) {
+		const ok = Array.isArray(spec.colors) && spec.colors.length >= 2 && spec.colors.length <= MAX_NOISE_COLORS && spec.colors.every((c) => hexColor(c));
+		if (!ok) return { error: 'noise.colors: 2 to ' + MAX_NOISE_COLORS + ' hex colours, low to high, e.g. ["#202020", "#e0e0e0"]' };
+	}
+	for (const k of /** @type {const} */ (['scale', 'octaves', 'roughness', 'seed', 'contrast', 'strength'])) {
+		if (spec[k] === undefined) continue;
+		const v = spec[k];
+		const [lo, hi] = NOISE_LIMITS[k];
+		if (typeof v !== 'number' || !Number.isFinite(v) || v < lo || v > hi) return { error: 'noise.' + k + ': a number from ' + lo + ' to ' + hi };
+	}
+	let size = 1024;
+	if (spec.size !== undefined) {
+		const [lo, hi] = NOISE_SIZE_LIMITS;
+		if (!Number.isInteger(spec.size) || spec.size < lo || spec.size > hi) return { error: 'noise.size: whole pixels from ' + lo + ' to ' + hi + ' (512, 1024 or 2048)' };
+		size = spec.size;
+	}
+	const { size: _size, ...rest } = spec;
+	void _size;
+	return { options: normalizeNoise({ ...(NOISE_ROW_DEFAULTS[key] ?? NOISE_ROW_DEFAULTS.map), ...rest }), size };
+}
 
 /** '#rgb' or '#rrggbb' (any case) to '#rrggbb', else null @param {any} c */
 export function hexColor(c) {
@@ -79,7 +133,7 @@ export function normalizeNoise(o = {}) {
 		return Number.isFinite(v) ? clamp(v, NOISE_LIMITS[key][0], NOISE_LIMITS[key][1]) : /** @type {number} */ (D[key]);
 	};
 	const tileable = src.tileable === undefined ? D.tileable : !!src.tileable;
-	let colors = Array.isArray(src.colors) ? src.colors.map(hexColor).filter((c) => c !== null) : [];
+	let colors = Array.isArray(src.colors) ? src.colors.map(hexColor).filter((/** @type {string | null} */ c) => c !== null) : [];
 	if (colors.length < 2) colors = [...D.colors];
 	return {
 		kind: NOISE_KINDS.includes(src.kind) ? src.kind : D.kind,
@@ -459,7 +513,7 @@ function heightToNormal(h, rows, width, H, strength, tile, out) {
  * BANDS: with `y0` / `y1` the result is only rows y0..y1-1 of the width x height image (and `base`, if given, is
  * that band) — the worker pool splits a big fill this way, and a band is byte-identical to the same rows of the
  * whole. Without them, `base` fixes the size.
- * @param {Partial<NoiseOptions>} options
+ * @param {any} options anything `normalizeNoise` takes
  * @param {{width: number, height: number, base?: Raster | null, y0?: number, y1?: number}} size
  * @returns {Raster}
  */

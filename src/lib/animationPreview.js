@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { writable, get } from 'svelte/store';
+import { easeSegment, sampleLegacyKeys } from './curveCore.js'; // 102 M8: one evaluation
 import { objectsGroup } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { syncedAnimations } from '../stores/flowStore';
@@ -420,56 +421,22 @@ export function isRotChannel(channel) {
 // --- evaluation --------------------------------------------------------------
 
 /**
- * Evaluate a cubic-bezier easing at normalized time x in [0,1]: solve for the
- * curve parameter t where the x-component equals x, then return the y-component.
+ * Evaluate a cubic-bezier easing at normalized time x in [0,1]. 102 M8: the ONE
+ * implementation lives in curveCore (easeSegment), shared with the Timeline.
  * @param {number[]} bezier [x1,y1,x2,y2] @param {number} x
  */
 export function cubicBezierEase(bezier, x) {
-	const [x1, y1, x2, y2] = bezier;
-	if (x <= 0) return 0;
-	if (x >= 1) return 1;
-	const cx = 3 * x1;
-	const bx = 3 * (x2 - x1) - cx;
-	const ax = 1 - cx - bx;
-	const cy = 3 * y1;
-	const by = 3 * (y2 - y1) - cy;
-	const ay = 1 - cy - by;
-	const bezX = (/** @type {number} */ t) => ((ax * t + bx) * t + cx) * t;
-	const bezY = (/** @type {number} */ t) => ((ay * t + by) * t + cy) * t;
-	let lo = 0;
-	let hi = 1;
-	let t = x;
-	for (let i = 0; i < 24; i++) {
-		const xEst = bezX(t);
-		if (Math.abs(xEst - x) < 1e-4) break;
-		if (xEst < x) lo = t;
-		else hi = t;
-		t = (lo + hi) / 2;
-	}
-	return bezY(t);
+	return easeSegment(bezier, x);
 }
 
 /**
  * The track's value at `seconds` of clip time: hold before the first key and
  * after the last, otherwise ease across the bracketing pair. A stepped channel
- * holds the left key's value for the whole segment.
+ * holds the left key's value for the whole segment. 102 M8: curveCore.sampleLegacyKeys.
  * @param {Track} track @param {number} seconds @returns {number|null}
  */
 export function sampleTrack(track, seconds) {
-	const keys = track?.keys;
-	if (!keys?.length) return null;
-	if (seconds <= keys[0].t) return keys[0].v;
-	const last = keys[keys.length - 1];
-	if (seconds >= last.t) return last.v;
-	let i = 0;
-	while (i < keys.length - 1 && keys[i + 1].t <= seconds) i++;
-	const a = keys[i];
-	const b = keys[i + 1];
-	if (STEPPED.has(track.channel)) return a.v;
-	const span = b.t - a.t;
-	const x = span > 1e-6 ? (seconds - a.t) / span : 1;
-	const eased = a.ease ? cubicBezierEase(a.ease, x) : x;
-	return a.v + (b.v - a.v) * eased;
+	return sampleLegacyKeys(track?.keys, seconds, STEPPED.has(track?.channel));
 }
 
 /** Every channel the clip drives at `seconds`. @param {Clip} clip @param {number} seconds

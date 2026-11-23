@@ -175,6 +175,20 @@ export function addTrack(id, kind, name) {
 	return done ? track.id : null;
 }
 
+/**
+ * 102 M8: "Animate a property" — a prop track on `target` for an allowlisted `path`, its first
+ * key = `value` at `t` (the object's value now). `type` is the path's curve type (the caller
+ * reads it from propTracks, which this leaf does not import). @returns {string|null} the track id
+ * @param {string} id @param {{target: string, path: string, type: string, name?: string, t?: number, value?: any}} spec
+ */
+export function addPropTrack(id, spec) {
+	if (!spec?.target || !spec.path || !spec.type) return null;
+	const keys = spec.value === undefined || spec.value === null ? [] : [{ t: Math.max(0, Number(spec.t) || 0), v: spec.value, src: 'user' }];
+	const track = normalizeTrack({ kind: 'prop', name: spec.name || '', target: spec.target, path: spec.path, type: spec.type, keys });
+	const done = editSequence(id, (s) => ({ ...s, tracks: [...s.tracks, track] }));
+	return done ? track.id : null;
+}
+
 /** @param {string} id @param {string} trackId @param {any} patch */
 export function updateTrack(id, trackId, patch) {
 	return editSequence(id, (s) => ({

@@ -182,6 +182,10 @@ describe('92 Auto-admit while playing', () => {
 		expect(autoAdmitVerdict({ peerId: 'p' }, { ...on, heldOut: true })).toBe('held-out');
 		expect(autoAdmitVerdict({ peerId: 'p' }, { ...on, full: true })).toBe('full');
 	});
+	it('never while the host has Require approval to join on (1.76 AS3: nothing joins by itself)', () => {
+		expect(autoAdmitVerdict({ peerId: 'p' }, { ...on, approvalRequired: true })).toBe('approval-required');
+		expect(autoAdmitVerdict({ peerId: 'p' }, { ...on, approvalRequired: false })).toBe('admit');
+	});
 });
 
 import { titleHintOnce, TITLE_HINT_KEY } from '../../src/lib/gameMenusHint.js';

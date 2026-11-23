@@ -99,7 +99,7 @@
 	<InsToggle id="game-menus-auto-admit" checked={autoAdmit} {disabled} onchange={(e) => setGameMenus({ autoAdmit: e.currentTarget.checked })}>
 		Auto-admit while playing
 	</InsToggle>
-	<p class="text-[length:var(--fs-desc)] text-text-muted">While you host and play, people who ask to join are let in. AI agents and blocked people still ask.</p>
+	<p class="text-[length:var(--fs-desc)] text-text-muted">While you host and play, people who ask to join are let in. AI agents and blocked people still ask, and so does everyone while Require approval to join is on.</p>
 
 	{#if raw && !newer}
 		<UiButton id="game-menus-reset" size="sm" variant="ghost" {disabled} onclick={() => setGameMenus({ title: null, pause: null, saves: null, autoAdmit: false })}>Remove the game menus</UiButton>

@@ -7,7 +7,8 @@
 //             VR panel — nothing here pauses anybody (the menu's own pause rule is "alone only")
 //   auto      while THIS peer hosts (sessionHost null) AND plays, a new card is admitted at once — never an
 //             AI agent (55 A4: agents always ask), never a blocked or just-removed peer (isHeldOut: bans
-//             still apply), never past the room's cap; every automatic admission is ANNOUNCED (a toast,
+//             still apply), never while the host has "Require approval to join" on (71 AS3: that switch
+//             turns every automatic admit into the card), never past the room's cap; every automatic admission is ANNOUNCED (a toast,
 //             the F-5 rule: an automatic admission is never silent)
 //   snapshot  what a late joiner receives is lane fix-late-joiners' (the ordinary approval path); this
 //             module only decides WHEN the approval happens
@@ -15,7 +16,7 @@ import { get } from 'svelte/store';
 import { pendingApprovals, showToast, peers } from '../stores/appStore';
 import { sessionHost, roomIsFull } from './connectionState';
 import { approvePeer, denyPeer } from './peerApproval';
-import { isHeldOut } from './peerModeration';
+import { isHeldOut, requireApproval } from './peerModeration';
 import { gameMenus } from './gameMenus';
 import { isLocked, editorMode } from '../stores/sceneStore';
 import { shortPeer } from './admitNotice';
@@ -27,7 +28,7 @@ function inPlay() {
 
 /**
  * Pure: may this card be admitted automatically? @param {any} card
- * @param {{autoAdmit: boolean, hosting: boolean, playing: boolean, heldOut: boolean, full: boolean}} s
+ * @param {{autoAdmit: boolean, hosting: boolean, playing: boolean, heldOut: boolean, full: boolean, approvalRequired?: boolean}} s
  */
 export function autoAdmitVerdict(card, s) {
 	if (!card?.peerId) return 'no-card';
@@ -36,6 +37,7 @@ export function autoAdmitVerdict(card, s) {
 	if (!s.playing) return 'not-playing';
 	if (card.kind === 'agent') return 'agent';
 	if (s.heldOut) return 'held-out';
+	if (s.approvalRequired) return 'approval-required';
 	if (s.full) return 'full';
 	return 'admit';
 }
@@ -53,6 +55,7 @@ function sweep(cards) {
 			hosting: get(sessionHost) === null,
 			playing: inPlay(),
 			heldOut: isHeldOut(card.peerId),
+			approvalRequired: get(requireApproval) === true,
 			full: roomIsFull(/** @type {any} */ (get(peers)))
 		});
 		if (why !== 'admit') {

@@ -2246,37 +2246,6 @@
 					]
 				},
 				{
-					"name": "Haptic tick",
-					"controls": [
-						{
-							"kind": "toggle",
-							"id": "touch-haptics",
-							"label": "Haptic tick",
-							"where": "control",
-							"default": true,
-							"disabled": false,
-							"state": false,
-							"effects": {
-								"storage": {
-									"touchControlsPrefs": "{\"visibility\":\"auto\",\"showInEdit\":false,\"haptics\":false,\"scope\":\"game\"}"
-								},
-								"stores": {
-									"touchActions.touchPrefs": "<object>"
-								},
-								"html": [],
-								"body": [],
-								"dialogs": [],
-								"broadcasts": [],
-								"events": []
-							},
-							"scope": "device",
-							"restored": true,
-							"storageAfterRestore": {},
-							"exercise": "done"
-						}
-					]
-				},
-				{
 					"name": "Look speed",
 					"controls": [
 						{

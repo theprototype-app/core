@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-11-20T11:34:27.020Z",
+	"recordedAt": "2026-11-23T04:42:26.864Z",
 	"settings": {
 		"Theme": {
 			"rows": [
@@ -409,19 +409,6 @@
 				"Shortcuts"
 			]
 		},
-		"Haptic tick": {
-			"rows": [
-				"Button looks",
-				"Haptic tick",
-				"Layout",
-				"Look speed",
-				"Show in edit",
-				"Show touch controls"
-			],
-			"sections": [
-				"Touch controls"
-			]
-		},
 		"Look speed": {
 			"rows": [
 				"Look sensitivity",
@@ -435,14 +422,19 @@
 		"Layout": {
 			"rows": [
 				"Button looks",
+				"Buttons and switches",
 				"Fix overlaps and crossings, keeping the layout",
-				"Haptic tick",
+				"Gestures",
 				"Layout",
 				"Look speed",
 				"Project actions",
 				"Remember windows per screen setup",
 				"Show in edit",
 				"Show touch controls",
+				"Sliders and values",
+				"Snapping",
+				"Touch feedback",
+				"Try it",
 				"UI scale",
 				"Workspace layouts"
 			],
@@ -451,6 +443,82 @@
 				"Accessibility",
 				"Touch controls",
 				"Shortcuts"
+			]
+		},
+		"Touch feedback": {
+			"rows": [
+				"Button looks",
+				"Buttons and switches",
+				"Gestures",
+				"Layout",
+				"Look speed",
+				"Show in edit",
+				"Show touch controls",
+				"Sliders and values",
+				"Snapping",
+				"Touch feedback",
+				"Try it"
+			],
+			"sections": [
+				"Touch controls"
+			]
+		},
+		"Buttons and switches": {
+			"rows": [
+				"Buttons and switches"
+			],
+			"sections": [
+				"Touch controls"
+			]
+		},
+		"Sliders and values": {
+			"rows": [
+				"Sliders and values"
+			],
+			"sections": [
+				"Touch controls"
+			]
+		},
+		"Snapping": {
+			"rows": [
+				"Angle",
+				"Snapping",
+				"Toggle element snapping (vertex/face/surface targets)",
+				"World grab snapping"
+			],
+			"sections": [
+				"Touch controls",
+				"Shortcuts",
+				"Scene",
+				"VR"
+			]
+		},
+		"Gestures": {
+			"rows": [
+				"Gestures",
+				"Trackpad gestures"
+			],
+			"sections": [
+				"Controls",
+				"Touch controls"
+			]
+		},
+		"Try it": {
+			"rows": [
+				"Animation speed",
+				"Grid colour",
+				"Grid opacity",
+				"Grid size",
+				"Passthrough",
+				"Placeholder grid texture",
+				"Placeholder style",
+				"Stuck after",
+				"Try it"
+			],
+			"sections": [
+				"Touch controls",
+				"Scene",
+				"VR"
 			]
 		},
 		"Button looks": {
@@ -2442,12 +2510,14 @@
 				"Show others as classic heads",
 				"Simplify distant models",
 				"Sky image quality",
-				"Theme"
+				"Theme",
+				"Touch feedback"
 			],
 			"sections": [
 				"Interface",
 				"Controls",
 				"Input",
+				"Touch controls",
 				"Shortcuts",
 				"Scene",
 				"Import",
@@ -2756,7 +2826,8 @@
 		"joystick": {
 			"rows": [
 				"Button looks",
-				"Haptic tick",
+				"Buttons and switches",
+				"Gestures",
 				"Invert look Y",
 				"Layout",
 				"Look sensitivity",
@@ -2765,8 +2836,12 @@
 				"Node editor opens",
 				"Show in edit",
 				"Show touch controls",
+				"Sliders and values",
+				"Snapping",
 				"Stick deadzone",
 				"Swap sticks",
+				"Touch feedback",
+				"Try it",
 				"Use a connected gamepad"
 			],
 			"sections": [
@@ -3571,11 +3646,13 @@
 				"Keep automatic checkpoints",
 				"Mirror turn",
 				"Snap angle",
+				"Snapping",
 				"Toggle element snapping (vertex/face/surface targets)",
 				"Turning",
 				"World grab snapping"
 			],
 			"sections": [
+				"Touch controls",
 				"Shortcuts",
 				"Scene",
 				"VR"

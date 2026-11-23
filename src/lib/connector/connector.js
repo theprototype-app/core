@@ -110,7 +110,7 @@ export function youOf(st) {
 
 function setup() {
 	if (client) return client;
-	core = createConnectorAgent(label);
+	core = createConnectorAgent(label, who);
 	const agent = core.agent;
 	/** answers that finished during a blip @type {string[]} */
 	const unsent = [];

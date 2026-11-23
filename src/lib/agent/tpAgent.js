@@ -420,14 +420,19 @@ async function agentRun(name, args, opts) {
 /**
  * Build the wired agent.
  * @param {{screenshot?: (opts: any) => Promise<string|null>, missingTools?: () => {name: string, reason: string}[],
- *   deps?: Partial<import('./agentCore.js').AgentDeps>, physics?: boolean, localSim?: boolean, connector?: boolean, saveLabel?: string | (() => string)}} [extra] `deps` override
+ *   deps?: Partial<import('./agentCore.js').AgentDeps>, physics?: boolean, localSim?: boolean, connector?: boolean, saveLabel?: string | (() => string),
+ *   who?: () => string}} [extra] `deps` override
  *   the agent-page wiring (86: the connector); `physics` offers + runs the physics tools for THIS agent only (86-fix B1:
  *   never the page-wide forcePhysicsTools, which would flip the person's own assistant); `localSim` runs
  *   control_simulation on this page instead of relaying it to the host (86-fix B2); `connector` = a person's own tab:
  *   no agent-page tools (the person keeps those buttons), and it counts its own session as one
  */
 export function createTpAgent(extra = {}) {
-	const toolOpts = { physics: !!extra.physics, localSim: !!extra.localSim, ...(extra.connector ? { by: 'Claude' } : {}) };
+	/** @type {{physics: boolean, localSim: boolean, by?: string}} */
+	const toolOpts = { physics: !!extra.physics, localSim: !!extra.localSim };
+	// 89 x 104: the connector names the AI app at work ("ChatGPT moved your view · Back"), read per call; 'Claude' before 89's Worker
+	const by = () => (typeof extra.who === 'function' && extra.who()) || 'Claude';
+	if (extra.connector) Object.defineProperty(toolOpts, 'by', { get: by, enumerable: true });
 	/** @type {ReturnType<typeof createAgentCore>} */
 	let core;
 	const inbox = agentInbox();
@@ -441,7 +446,7 @@ export function createTpAgent(extra = {}) {
 				t.function.name,
 				{
 					schema: { description: t.function.description, parameters: t.function.parameters },
-					run: (/** @type {any} */ args) => runPersonTool(t.function.name, args, { by: 'Claude' })
+					run: (/** @type {any} */ args) => runPersonTool(t.function.name, args, { by: by() })
 				}
 			])
 		);
@@ -596,10 +601,12 @@ export const CONNECTOR_LABEL = 'Claude (connector)';
  *   · no agent-page tools (install_modules, pending/accept offers): the person keeps those buttons.
  * Never installed on `window`: the connector (src/lib/connector/) holds it.
  */
-/** 89: `label` names the app on the other end per call ("ChatGPT (connector)"); it defaults to the fixed words
- * @param {() => string} [label] */
-export function createConnectorAgent(label = () => CONNECTOR_LABEL) {
+/** 89: `label` names the app on the other end per call ("ChatGPT (connector)"); it defaults to the fixed words.
+ * `who` is the bare name ("ChatGPT") the person's own lines use (104 files / show / scene, the scene panel's edit mark)
+ * @param {() => string} [label] @param {() => string} [who] */
+export function createConnectorAgent(label = () => CONNECTOR_LABEL, who = () => 'Claude') {
 	return createTpAgent({
+		who,
 		// 86-fix B1/B2: physics tools on for the connector's own list (the person's "Physics tools" checkbox is
 		// for their assistant), and the simulation runs in this full-speed tab
 		physics: true,

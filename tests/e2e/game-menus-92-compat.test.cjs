@@ -68,6 +68,7 @@ h.run(async () => {
 		else check(JSON.stringify(r.physicsBefore?.play?.menus) === JSON.stringify(MENUS_NORMALIZED()), 'B: the file carries the lane\'s menus');
 		const types = r.nodesBefore.map((n) => n.type);
 		console.log('B nodes', JSON.stringify(types));
+		if (process.env.EXPECT_NODE) check(types.includes(process.env.EXPECT_NODE), `B: the file has a ${process.env.EXPECT_NODE} node`);
 		// every node the file has rides a re-save with its data; loading may ADD only the main graph's Object flow
 		// containers for objects that carry their own flow (1.75.0 does the same with this file: A/B in 92-int ss2)
 		const seen = r.nodesBefore.map((n) => JSON.stringify(n));

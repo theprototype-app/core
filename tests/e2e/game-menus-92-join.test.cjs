@@ -59,8 +59,8 @@ h.run(async () => {
 	h.check(!!bOpen, '2.1 let in with no card while the host plays');
 	const j = await page.evaluate(() => window.__tp.test.v1.gameMenusKit.playJoins.playJoinsDebug());
 	h.check(j.admitted.includes(B.id), '2.2 counted as an automatic admission (' + JSON.stringify(j.admitted) + ')');
-	const toasts = await page.evaluate(() => { let v; window.__tp.test.v1.toastStore.subscribe((x) => (v = x))(); return (v ?? []).map((t) => t.text); });
-	h.check(toasts.some((t) => /joined the game — Auto-admit while playing is on/.test(t)), '2.3 the admission is announced (' + JSON.stringify(toasts.slice(-3)) + ')');
+	// a toast is gone again long before the dial finished: the runtime keeps what it announced
+	h.check(j.announced.some((t) => /joined the game — Auto-admit while playing is on/.test(t)), '2.3 the admission is announced (' + JSON.stringify(j.announced) + ')');
 	h.check((await val(page, 'isLocked')) === true, '2.4 the host never left Play');
 
 	console.log('\n=== 3. the joiner has the game ===');

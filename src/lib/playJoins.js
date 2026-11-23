@@ -40,8 +40,8 @@ export function autoAdmitVerdict(card, s) {
 	return 'admit';
 }
 
-/** @type {{admitted: string[], skipped: {peer: string, why: string}[], answered: string[]}} */
-const debug = { admitted: [], skipped: [], answered: [] };
+/** @type {{admitted: string[], skipped: {peer: string, why: string}[], answered: string[], announced: string[]}} */
+const debug = { admitted: [], skipped: [], answered: [], announced: [] };
 
 /** @param {any[]} cards */
 function sweep(cards) {
@@ -63,7 +63,9 @@ function sweep(cards) {
 		// off the store's own notification: approvePeer writes pendingApprovals
 		queueMicrotask(() => {
 			approvePeer(card.peerId);
-			showToast(shortPeer(card.peerId) + ' joined the game — Auto-admit while playing is on.');
+			const line = shortPeer(card.peerId) + ' joined the game — Auto-admit while playing is on.';
+			showToast(line);
+			debug.announced.push(line);
 		});
 	}
 }
@@ -99,5 +101,5 @@ export function declineFromPlay(peerId) {
 
 /** the suites' view */
 export function playJoinsDebug() {
-	return { admitted: [...debug.admitted], skipped: debug.skipped.map((x) => ({ ...x })), answered: [...debug.answered], watching: offs.length > 0 };
+	return { admitted: [...debug.admitted], skipped: debug.skipped.map((x) => ({ ...x })), answered: [...debug.answered], announced: [...debug.announced], watching: offs.length > 0 };
 }

@@ -11,6 +11,9 @@ import { get } from 'svelte/store';
 
 vi.mock('$lib/objectActions', () => ({ moveObjectToGroup: () => {}, duplicateObject: () => null }));
 vi.mock('$lib/physics', () => ({ setPhysicsFor: () => {}, physicsShapeChanged: () => {} }));
+// faceEdit's geometry swap looks up a live sculpt session (dynamic import of terrainSculpt, whose geometries.svelte.js
+// needs the runes compiler): no sculpt session here
+vi.mock('$lib/terrainSculpt', () => ({ sculptObject: { subscribe: (/** @type {any} */ f) => (f(null), () => {}) }, rebuildSculptCaches: () => {} }));
 
 const { objectsGroup } = await import('../../src/stores/sceneStore');
 const { peers } = await import('../../src/stores/appStore');

@@ -604,6 +604,13 @@
 									"type": "boolean",
 									"description": "102b: true = turn the object's array copies into ordinary objects (one undo); the result lists their uuids"
 								},
+								"tags": {
+									"type": "array",
+									"items": {
+										"type": "string"
+									},
+									"description": "replace the object's tags (short words; [] clears). One flow then drives every object with a tag: an objectselector {pick: \"tag\", match: \"<tag>\"}"
+								},
 								"parentUuid": {
 									"type": "string",
 									"description": "group uuid (or any object, not a light or camera) to nest under, or \"root\" to un-nest. The object keeps its world pose; a position given in the same update is LOCAL to the new parent. A uuid not in the scene is an error"
@@ -4657,6 +4664,30 @@
 							"grab",
 							"hit"
 						]
+					},
+					"trim": {
+						"type": [
+							"object",
+							"null"
+						],
+						"description": "how this scene plays the file, without changing it: start / end (seconds into the file; end 0 = its end), fadeIn / fadeOut (seconds), normalize (true = the loudest moment at -1 dB). Every player of this file in the scene uses it (sound nodes, timeline clips, the music, videos). null = the original. Its own undo step.",
+						"properties": {
+							"start": {
+								"type": "number"
+							},
+							"end": {
+								"type": "number"
+							},
+							"fadeIn": {
+								"type": "number"
+							},
+							"fadeOut": {
+								"type": "number"
+							},
+							"normalize": {
+								"type": "boolean"
+							}
+						}
 					}
 				},
 				"required": [
@@ -4693,6 +4724,30 @@
 					},
 					"stop": {
 						"type": "boolean"
+					},
+					"trim": {
+						"type": [
+							"object",
+							"null"
+						],
+						"description": "how this scene plays the file, without changing it: start / end (seconds into the file; end 0 = its end), fadeIn / fadeOut (seconds), normalize (true = the loudest moment at -1 dB). Every player of this file in the scene uses it (sound nodes, timeline clips, the music, videos). null = the original. Its own undo step.",
+						"properties": {
+							"start": {
+								"type": "number"
+							},
+							"end": {
+								"type": "number"
+							},
+							"fadeIn": {
+								"type": "number"
+							},
+							"fadeOut": {
+								"type": "number"
+							},
+							"normalize": {
+								"type": "boolean"
+							}
+						}
 					}
 				}
 			},
@@ -7036,6 +7091,13 @@
 									"makeReal": {
 										"type": "boolean",
 										"description": "102b: true = turn the object's array copies into ordinary objects (one undo); the result lists their uuids"
+									},
+									"tags": {
+										"type": "array",
+										"items": {
+											"type": "string"
+										},
+										"description": "replace the object's tags (short words; [] clears). One flow then drives every object with a tag: an objectselector {pick: \"tag\", match: \"<tag>\"}"
 									},
 									"parentUuid": {
 										"type": "string",
@@ -10345,6 +10407,30 @@
 										"grab",
 										"hit"
 									]
+								},
+								"trim": {
+									"type": [
+										"object",
+										"null"
+									],
+									"description": "how this scene plays the file, without changing it: start / end (seconds into the file; end 0 = its end), fadeIn / fadeOut (seconds), normalize (true = the loudest moment at -1 dB). Every player of this file in the scene uses it (sound nodes, timeline clips, the music, videos). null = the original. Its own undo step.",
+									"properties": {
+										"start": {
+											"type": "number"
+										},
+										"end": {
+											"type": "number"
+										},
+										"fadeIn": {
+											"type": "number"
+										},
+										"fadeOut": {
+											"type": "number"
+										},
+										"normalize": {
+											"type": "boolean"
+										}
+									}
 								}
 							},
 							"required": [
@@ -10371,6 +10457,30 @@
 								},
 								"stop": {
 									"type": "boolean"
+								},
+								"trim": {
+									"type": [
+										"object",
+										"null"
+									],
+									"description": "how this scene plays the file, without changing it: start / end (seconds into the file; end 0 = its end), fadeIn / fadeOut (seconds), normalize (true = the loudest moment at -1 dB). Every player of this file in the scene uses it (sound nodes, timeline clips, the music, videos). null = the original. Its own undo step.",
+									"properties": {
+										"start": {
+											"type": "number"
+										},
+										"end": {
+											"type": "number"
+										},
+										"fadeIn": {
+											"type": "number"
+										},
+										"fadeOut": {
+											"type": "number"
+										},
+										"normalize": {
+											"type": "boolean"
+										}
+									}
 								}
 							},
 							"description": "The scene's background music, heard by everyone in sync: asset = a library sound (hash / lib:), a pack sound pack:<name>/<file>, an https URL, or the hash assets upload gave you for your own music (null clears it), volume 0-1, play / stop. One undo step."

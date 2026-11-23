@@ -4,12 +4,12 @@
 	"pages": {
 		"play": {
 			"html": "play.html",
-			"maxJsGzBytes": 2211840,
+			"maxJsGzBytes": 1945600,
 			"maxFirstFrameMs": 20000
 		},
 		"editor": {
 			"html": "index.html",
-			"maxJsGzBytes": 3466240,
+			"maxJsGzBytes": 3092480,
 			"maxFirstFrameMs": 32000
 		}
 	},
@@ -115,6 +115,13 @@
 				"102-int-2 seam fixes": "+0.3 / +0.1",
 				"with 102-int-1": "+0.5 / +1.3 (the union's rows meeting int-1's Inspector and node registry)"
 			}
+		},
+		{
+			"date": "2026-11-23",
+			"lane": "102-int-2 (1.75.0) + fix-export-files #608",
+			"play": "2155.1 KB (102-int-2 union on v1.74.0) -> 1877.4 measured with #608 (-277.7: boot code regrouped by when it runs) -> line 1900 KB (+1.2 %)",
+			"editor": "3380.2 KB -> 2988.5 measured with #608 (-391.7) -> line 3020 KB (+1.1 %)",
+			"note": "claude:9 ruling: reset the lines to the measured union + about 1 % so the #608 win cannot be eaten silently (the 2160 / 3385 lines set earlier for this union are retired). Union = decals, paint, splats, simplify-export, ik, #608, #609, #612; build 717 files (budget 850)."
 		}
 	],
 	"throttle": {

@@ -2991,8 +2991,11 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   entries, so the editor boot alone fetched ~570 chunks. `scripts/boot-chunk-groups.cjs` (rolldown
   `codeSplitting.groups`, wired in vite.config.ts) regroups BOOT code only, by its load signature (the
   pages that boot it + the lazy entries that fetch it on the other pages), then merges small groups within
-  one set of boot pages: 593 files, and boot JS SHRANK (play -278 KB gz, editor -408 KB gz — the default
-  split had folded lazy-only code into a 470 KB boot chunk). Three traps it rests on: rolldown's group
+  one set of boot pages: 684 files, and boot JS SHRANK (play -277 KB gz, editor -390 KB gz — the default
+  split had folded lazy-only code into a 470 KB boot chunk). /play is PROTECTED from merges (a player
+  fetches no editor code: play-entry §2 names chunks, so groups are named after their largest module the
+  way rolldown names one; a merge that changed what /play fetches lazily went red there). Three traps it
+  rests on: rolldown's group
   `includeDependenciesRecursively` (forced ON by kit's `preserveEntrySignatures: 'strict'`) drags a
   member's dependencies into whichever group is built FIRST, so groups get one entry each with priorities
   in dependency order; a style module left ungrouped rides into the first group importing it (app.css

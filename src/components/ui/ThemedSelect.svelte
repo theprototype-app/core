@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { uiHaptic } from '$lib/uiHaptics'; // 103 (H13): touch feedback
 	// Phase 146: a themed replacement for the white/OS-styled native <select>.
 	// A button + a custom popup list painted from the --dropdown-* theme tokens
 	// (feeds 148). The popup is PORTALED to <body> so it never gets clipped by a
@@ -106,6 +107,7 @@
 		open = false
 		if (mixed || !eq(item.value, value)) {
 			value = item.value
+			uiHaptic('select')
 			onchange(item.value)
 		}
 	}

@@ -1,5 +1,6 @@
 <script>
 	import { withHistoryGesture } from '$lib/historyGesture';
+	import { feelValue } from '$lib/uiHaptics'; // 103 (H13): touch feedback on the range
 	// 38 R3 — the Inspector / panel property row (SPEC §2 PropRow):
 	//     label | slider or control | value box
 	// with a FIXED label column (--prop-label-w); long labels WRAP, never ellipsis.
@@ -127,8 +128,13 @@
 	/** @param {Event & {currentTarget: HTMLInputElement}} e */
 	function onRange(e) {
 		const next = parseFloat(e.currentTarget.value);
-		if (!Number.isNaN(next) && !disabled) withHistoryGesture(rangeGesture, () => onchange(next));
+		if (Number.isNaN(next) || disabled) return;
+		feelValue(felt ?? value, next, { min: sMin, max: sMax, detents: resetValue === undefined ? [0] : [0, resetValue] });
+		felt = next;
+		withHistoryGesture(rangeGesture, () => onchange(next));
 	}
+	/** @type {number | null} */
+	let felt = null;
 </script>
 
 <div class="tp-ui pr" class:pr-no-middle={!hasMiddle} class:pr-no-value={!valueBox} class:pr-disabled={disabled} {...rest} use:fieldClip={clipSpec}>
@@ -150,7 +156,7 @@
 			{value}
 			{disabled}
 			aria-label={fieldLabel}
-			onpointerdown={() => (rangeGesture = {})}
+			onpointerdown={() => ((rangeGesture = {}), (felt = null))}
 			oninput={onRange}
 			onchange={() => (rangeGesture = null)}
 		/>
@@ -176,6 +182,7 @@
 				{onchange}
 				{onscrubstart}
 				{onscrubend}
+				detents={resetValue === undefined ? [] : [resetValue]}
 			/>
 		</div>
 	{/if}

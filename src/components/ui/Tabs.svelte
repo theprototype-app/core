@@ -1,4 +1,5 @@
 <script>
+	import { uiHaptic } from '$lib/uiHaptics'; // 103 (H13): touch feedback
 	import { edgeFade } from '$lib/ui/edgeFade.js';
 	// 38 R3 — switch views of the same window (SPEC §2 Tabs): ONE style for Modules, Templates,
 	// Connect (Info / Toasts), Explorer views. Underline tabs with an optional count. A
@@ -39,6 +40,7 @@
 		if (!t || t.disabled) return;
 		if (t.id !== value) {
 			value = t.id;
+			uiHaptic('select');
 			onchange(t.id);
 		}
 	}

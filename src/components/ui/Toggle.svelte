@@ -1,4 +1,5 @@
 <script>
+	import { uiHaptic } from '$lib/uiHaptics'; // 103 (H13): touch feedback
 	// 38 R3 — THE on/off control (SPEC §2 Toggle). Every on/off is a Toggle; a checkbox is only
 	// for picking items in a list. A real <button aria-pressed> (SPEC §8), so Space/Enter work
 	// natively and a screen reader says "toggle button, pressed". 40x24 on desktop, 51x31
@@ -23,6 +24,7 @@
 	function flip() {
 		if (disabled) return;
 		checked = mixed ? true : !checked;
+		uiHaptic(checked ? 'on' : 'off');
 		onchange(checked);
 	}
 </script>

@@ -9,6 +9,7 @@
 	} from '$lib/units';
 	import { autoFieldScope, fieldClip, nameNear } from '$lib/fieldMenu';
 	import { withHistoryGesture } from '$lib/historyGesture';
+	import { feelValue, wholeDetents } from '$lib/uiHaptics'; // 103 (H13): touch feedback on a scrub
 	import { leftByKeyboard } from '$lib/keyboardNav'; // 53 A3: a field left by Enter/Esc keeps Tab navigating
 
 	// THE numeric field (phase 64.2, rebuilt in 16-Q3). One control everywhere:
@@ -44,7 +45,7 @@
 	// (measured: the card jumped from (60,40) to (125,50) while the value scrubbed).
 	// node-drag-fields section 7 is that case; a suite that only drags a cold field
 	// passes with the class removed.
-	/** @type {{label?: string, value?: number, step?: number, snap?: number, decimals?: number, min?: number, max?: number, accent?: string, id?: string, title?: string, ariaLabel?: string, mixed?: boolean, disabled?: boolean, nodrag?: boolean, unit?: 'length'|'angle'|'angleDeg'|'', onchange?: (next: number) => void, onscrubstart?: () => void, onscrubend?: () => void}} */
+	/** @type {{label?: string, value?: number, step?: number, snap?: number, decimals?: number, min?: number, max?: number, accent?: string, id?: string, title?: string, ariaLabel?: string, mixed?: boolean, disabled?: boolean, nodrag?: boolean, unit?: 'length'|'angle'|'angleDeg'|'', onchange?: (next: number) => void, onscrubstart?: () => void, onscrubend?: () => void, detents?: number[]}} */
 	let {
 		label = '',
 		value = 0,
@@ -72,7 +73,10 @@
 		unit = '',
 		onchange = () => {},
 		onscrubstart = () => {},
-		onscrubend = () => {}
+		onscrubend = () => {},
+		// 103 (H13): values a scrub stops on with a firmer pulse (the row's default); 0 and, on a
+		// fractional field, every whole number (in the DISPLAYED unit) are detents already
+		detents = []
 	} = $props();
 
 	/** @param {number} n */
@@ -252,6 +256,7 @@
 		if (event.button !== 0) return;
 		startValue = Number(value) || 0;
 		startX = event.clientX;
+		felt = null;
 		scrubbing = false;
 		// 16-Q6: block the default so a scrub never places or drags the CARET (you could
 		// watch it skate left and right through the digits). Focus is granted on release
@@ -282,8 +287,21 @@
 		// precision converted back — otherwise a metres field displayed in mm rounds
 		// the scrub to whole millimetres' worth of metres and stutters
 		next = quantize(clamp(next));
+		feelScrub(next);
 		typed = fmt(next);
 		commit(next);
+	}
+
+	/** the value the last scrub feedback measured from @type {number | null} */
+	let felt = null;
+	/** 103 (H13): tick / detent / limit for one scrub step, measured in the displayed unit @param {number} next */
+	function feelScrub(next) {
+		const prev = felt ?? startValue;
+		felt = next;
+		const a = prev / uFactor;
+		const b = next / uFactor;
+		const marks = [0, ...detents.map((d) => d / uFactor), ...(dispDecimals > 0 ? wholeDetents(a, b) : [])];
+		feelValue(a, b, { min: min / uFactor, max: max / uFactor, detents: marks });
 	}
 
 	/** @param {any} event */

@@ -616,6 +616,11 @@ export function makeCloudApi() {
 		 *  `{ok: true, blob, fileName, slug, entry, row, rowText, uploadUrl, …} | {ok: false, errors}`.
 		 *  It sends nothing; `uploadUrl` is GitHub's upload page for the person to open. */
 		buildGallerySubmission: async (/** @type {any} */ meta) => (await import('./export/gallerySubmit.js')).buildGallerySubmission(meta),
+		/** 63-publish (row 13) — ADDITIVE, typeof-probed: the publish check as DATA, the same rows the
+		 *  Publish tab lists (`{target, summary, problems: [{id, severity, title, detail?, items?, fix?,
+		 *  fixLabel?}], fixes, note}`). Warnings never block: `summary.blocking` is 0 for 'publish'.
+		 *  `{bundle: true}` also measures the bundle against the publish limit (slower). Reads only. */
+		publishCheck: async (/** @type {any} */ opts) => (await import('./export/publishCheckData.js')).publishCheckData({ ...(opts && typeof opts === 'object' ? opts : {}) }),
 		/** What the plugin just published from this scene — `{id, title, playUrl, pageUrl}` — so
 		 *  the Export tab's Embed preset can point its iframe at the play link. Null clears. */
 		setPublishedLink: (/** @type {any} */ info) =>

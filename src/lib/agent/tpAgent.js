@@ -346,7 +346,18 @@ async function saveSceneTool(args, role, by) {
 	// the gap counts from the END of a save: a big scene's own save can take longer than the gap
 	const hold = setInterval(() => (lastAgentSaveAt = Date.now()), 1000);
 	try {
-		return await runSaveScene(args, by);
+		const r = await runSaveScene(args, by);
+		// 63-publish: the publish check rides a successful save as data (the same rows as the Publish
+		// tab), so an agent can tell the person what a visitor would hit; it never publishes itself
+		if (r?.saved) {
+			try {
+				const { publishCheckData } = await import('../export/publishCheckData.js');
+				return { ...r, publishCheck: await publishCheckData() };
+			} catch {
+				/* a check that cannot run leaves the save's answer as it was */
+			}
+		}
+		return r;
 	} finally {
 		clearInterval(hold);
 		lastAgentSaveAt = Date.now();

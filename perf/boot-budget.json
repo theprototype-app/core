@@ -122,6 +122,14 @@
 			"play": "2155.1 KB (102-int-2 union on v1.74.0) -> 1877.4 measured with #608 (-277.7: boot code regrouped by when it runs) -> line 1900 KB (+1.2 %)",
 			"editor": "3380.2 KB -> 2988.5 measured with #608 (-391.7) -> line 3020 KB (+1.1 %)",
 			"note": "claude:9 ruling: reset the lines to the measured union + about 1 % so the #608 win cannot be eaten silently (the 2160 / 3385 lines set earlier for this union are retired). Union = decals, paint, splats, simplify-export, ik, #608, #609, #612; build 717 files (budget 850)."
+		},
+		{
+			"date": "2026-11-23",
+			"lane": "104-int (roadmap 104 + 89-apps, on v1.75.0)",
+			"play": "1.75.0 1877.3 KB -> union 1875.0 KB (-2.3) -> line kept 1900 KB",
+			"editor": "1.75.0 2988.4 KB -> union 2991.4 KB (+3.0) -> line kept 3020 KB",
+			"perLane": "editor / play gz, each lane on its own base: 104-world +1.4 / +0.4; 104-show +0.3 / 0; 104-room-scan +0.5 wiring (scan code lazy) / 0; 104-wall-names 0 / 0; 89-apps +1.6 / 0; int fixes ~0",
+			"note": "the lines 1.75.0 set (union + ~1 %) stand: the union is +3.0 KB on the editor for five lanes, inside 3 KB per lane, so no raise"
 		}
 	],
 	"throttle": {

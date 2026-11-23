@@ -190,6 +190,10 @@ async function exportFile(page, prefs) {
 
 /** open Share a moment, trim to [2, 5], make `format`, wait for the result @param {any} page @param {'gif'|'mp4'} format @param {boolean} [sound] */
 async function makeMoment(page, format, sound) {
+	// closing a moment clears the buffer: let it hold the [2, 5] trim again first (slow on a loaded host)
+	await page
+		.waitForFunction(() => /** @type {any} */ (window).__tp.test.v1.momentBuffer?.state()?.span >= 5.5, null, { timeout: 40000 })
+		.catch(() => {});
 	await page.keyboard.press('F8');
 	await page.waitForSelector('#moment-dialog[data-frames]', { timeout: 15000 });
 	await page.waitForFunction(() => Number(document.querySelector('#moment-dialog')?.getAttribute('data-frames')) > 0, null, { timeout: 15000 });

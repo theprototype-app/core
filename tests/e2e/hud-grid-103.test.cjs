@@ -65,7 +65,7 @@ const read = (page) =>
 		probe.remove();
 		const wrap = document.querySelector('.connect-wrap');
 		return {
-			W: innerWidth,
+			W: root.getBoundingClientRect().width, // the REAL layout width: innerWidth rounds (718.67 on the HONOR)
 			H: innerHeight,
 			grid,
 			shell: root.classList.contains('phone-shell'),

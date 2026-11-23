@@ -114,6 +114,15 @@ const refit = (page) =>
 			b.refreshSceneBounds();
 			const e = await import(/* @vite-ignore */ '/src/lib/environment.js');
 			e.applyEnvironment();
+			// an ocean moves most of its frame (island-ocean: ~59 % frame to frame), and two pages never sample its
+			// clock at one instant, so A vs B differed on the few "still" pixels by more than v1.74.0 differs from
+			// ITSELF (measured 0.38 %). Hold the water clock at one time on both pages: test/evidence hook, both builds.
+			try {
+				const w = await import(/* @vite-ignore */ '/src/lib/water/waterRuntime.js');
+				w.freezeWaterClock?.(120);
+			} catch {
+				/* no water module: nothing to hold */
+			}
 			const sun =
 				window.__stores &&
 				(() => {
@@ -389,9 +398,50 @@ h.run(async () => {
 			extra.length === 0,
 			`${slug}: the frame draws with no shader program B lacks (${a2.progs.length}/${b2.progs.length} in use${extra.length ? '; A only: ' + extra.join(', ') : ''}${progNote})`
 		);
+		// CONTROL, only when the plain check misses: a third page of the SAME release as B (C) draws the scene, and
+		// B vs C is how far v1.74.0 differs from ITSELF on still pixels. island-ocean measured 0.27-0.38 % base vs base
+		// (water clock held: 0.27 %) — over the 0.1 % tolerance with no 106 code in either page. The lane then passes
+		// only if it differs from B by no more than B differs from C, plus the tolerance.
+		let ctrlNote = '';
+		let ctrlOk = false;
+		if (sd.still >= 0.2 && sd.share > TOL) {
+			const C = await h.setupPage(browser, 'C', { context: { viewport: VIEW } });
+			try {
+				await C.page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
+				await C.page.waitForFunction(
+					() => !!window.__stores?.environment && !!window.__stores?.sceneTemplates,
+					null,
+					{ timeout: 240000 }
+				);
+				await sleep(4000);
+				await autoLodOff(C.page);
+				const lc = await loadScene(C.page, slug);
+				if (lc.ok === true) {
+					await loadSettleOnly(C.page);
+					await refit(C.page);
+					await sleep(600);
+					const c1 = await frame(C.page, pose);
+					const b3 = await frame(B.page, pose);
+					await sleep(600);
+					const c2 = await frame(C.page, pose);
+					const b4 = await frame(B.page, pose);
+					const ctrl = stillDiff(b3.px, b4.px, c1.px, c2.px);
+					ctrlOk = ctrl.still >= 0.2 && sd.share <= ctrl.share + TOL;
+					ctrlNote = `; CONTROL base vs base ${(ctrl.share * 100).toFixed(3)} % of ${(ctrl.still * 100).toFixed(1)} % still, the lane may differ by that + ${(TOL * 100).toFixed(1)} %`;
+					table[table.length - 1].ctrl = +(ctrl.share * 100).toFixed(3);
+				} else ctrlNote = `; CONTROL page did not load the scene (${lc.ok})`;
+			} catch (err) {
+				ctrlNote = `; CONTROL failed: ${String(err && err.message).slice(0, 120)}`;
+			} finally {
+				await C.page
+					.context()
+					.close()
+					.catch(() => {});
+			}
+		}
 		h.check(
-			sd.still >= 0.2 && sd.share <= TOL,
-			`${slug}: pixel-identical where the frame holds still (${(sd.still * 100).toFixed(1)} % of it): A vs B ${(sd.share * 100).toFixed(3)} % of those > 2/255 (moving pixels: A vs B ${(ab * 100).toFixed(3)} % of the frame, frame-to-frame floor ${(floor * 100).toFixed(3)} %)`
+			sd.still >= 0.2 && (sd.share <= TOL || ctrlOk),
+			`${slug}: pixel-identical where the frame holds still (${(sd.still * 100).toFixed(1)} % of it): A vs B ${(sd.share * 100).toFixed(3)} % of those > 2/255 (moving pixels: A vs B ${(ab * 100).toFixed(3)} % of the frame, frame-to-frame floor ${(floor * 100).toFixed(3)} %)${ctrlNote}`
 		);
 	}
 	console.log('TABLE ' + JSON.stringify(table));

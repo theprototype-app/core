@@ -39,6 +39,8 @@
 	let role = $state(/** @type {'view'|'edit'} */ (get(inviteSheet) === 'agent' ? 'edit' : 'view'));
 	let expiry = $state('30m');
 	let uses = $state('1');
+	/** 71 AS4: why the last Create was refused ('' = it was not) */
+	let refused = $state('');
 	/** the invite minted in this sheet, per tab @type {Record<string, string>} */
 	let minted = $state({});
 
@@ -69,7 +71,7 @@
 			showToast('Not connected to the signaling server yet — try again in a moment.');
 			return;
 		}
-		const { record } = createInvite({
+		const { record, refused: no } = createInvite({
 			hostId: myId,
 			kind: tab,
 			// the OSS build has no roles: an invite simply admits (everyone edits)
@@ -78,6 +80,9 @@
 			maxUses: Number(uses),
 			srvTail: inviteServerParam($peerServerStatus)
 		});
+		// 71 AS4: past 20 live links or 10 made in 10 minutes nothing is minted, and the sheet says why
+		refused = no ? no.message : '';
+		if (no || !record) return;
 		minted = { ...minted, [tab]: record.id };
 		// the Create button is gone now: hand the keyboard to Copy, so Escape and Tab stay in the sheet
 		tick().then(() => /** @type {HTMLElement | null} */ (document.querySelector('#invite-copy-link'))?.focus());
@@ -189,6 +194,7 @@
 			<div class="inv-actions">
 				<Button variant="primary" id="invite-create" icon="link" onclick={create}>Create invite link</Button>
 			</div>
+			{#if refused}<p id="invite-refused" class="invite-refused" role="alert">{refused}</p>{/if}
 		{:else}
 			<p id="invite-state" class="inv-state" data-state={current.state}>{stateText}</p>
 			{#if strings && current.state === 'active'}
@@ -254,6 +260,11 @@
 </ModalDialog>
 
 <style>
+	.invite-refused {
+		margin: 6px 0 0;
+		font-size: var(--fs-desc);
+		color: var(--warn-text);
+	}
 	.inv {
 		display: flex;
 		flex-direction: column;

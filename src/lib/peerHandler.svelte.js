@@ -20,6 +20,8 @@ import { applyUvPaint, applyUvPaintEnd } from '$lib/uvEditor';
 import { applySplineEdit } from '$lib/splineTool';
 import { initVoiceChat, attachVoiceToPeer, voicePeerConnected, releaseMic } from '$lib/voiceChat';
 import { resolvePeerOptions, describePeerServer, peerServerStatus, parseInviteHash, decodeInviteServer, applyInviteServerOverride, inviteServerOverride } from '$lib/peerServer';
+import { admitRate, applyRateNotice } from '$lib/peerRateGate';
+import { hideMyIp, applyHideMyIp, whenRelayReady, relayDialWait, RELAY_DIAL_FAILED } from '$lib/hideMyIp';
 // 27-B/27-G integration: the RECOVERY story belongs in the copyable bundle, not in a
 // console nobody reads. diagnostics.js is a zero-dependency leaf, so this closes no cycle.
 import { log } from '$lib/diagnostics';
@@ -34,8 +36,10 @@ import { reloadToUpdate } from '$lib/updateCheck';
 // 55 A7/A8: the agent action log + where an agent looked (store-only)
 import { applyAgentLog, applyAgentUndo, applyAgentView, dropAgentView, sendAgentLogTo } from '$lib/agentLog';
 import { applyAgentChatMessage, sendAgentChatBacklogTo, agentChatPeerGone } from '$lib/agentChat'; // 56 C1
+import { pauseToastText } from '$lib/inviteLimits';
+import { resumeInviteJoins, resetInviteJoinGate } from '$lib/inviteStore';
 import { captureInviteHash, verifyInviteDial, joinerInviteMeta, dialingWithInvite, myKind, noteDialKind, noteJoinedVia, agentsAsGuests, isAgentSession, isAgentPeer } from '$lib/inviteStore';
-import { applyKick, isBlocked, isHeldOut, resetModeration, blockReplay } from '$lib/peerModeration'; // 55 A9
+import { applyKick, isBlocked, isHeldOut, resetModeration, blockReplay, requireApproval } from '$lib/peerModeration'; // 55 A9, 71 AS3
 import { notePeerFacts, notePeerActivity, dropPeerFacts, myDevice } from '$lib/peerFacts'; // 55 A9
 import { sessionHost, pendingConnectDecision, markPeerJoined, resetSession, signalingRetry, noteSignalingRetry, clearSignalingRetry, noteApprovalStarted, clearApprovalStarted, approvalStartedAt, APPROVAL_WINDOW_MS, MAX_PENDING_APPROVALS, HARD_PEER_CAP, roomIsFull } from '$lib/connectionState';
 import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo, rolesPending, isFloorMessage, holdUntilRoles } from '$lib/cloudHooks';
@@ -312,24 +316,13 @@ function dialOptions(result, cloud, extra) {
 	if (extra?.invite && !result) metadata.invite = extra.invite;
 	if (extra?.kind && !result) metadata.kind = extra.kind;
 	if (extra?.invited && result === 'approved') metadata.invited = extra.invited;
+	// 71 AS4: why an invite dial was refused ('invite-paused' | 'invite-slow'), additive — an older
+	// joiner reads the plain 'denied'
+	if (extra?.why && result === 'denied') metadata.why = String(extra.why).slice(0, 24);
 	return { metadata };
 }
 
 
-/**
- * 55 A4: the approval card's line for a dial whose invite did not check out. The joiner is
- * told nothing more than any other knock; the host sees why it was not automatic.
- * @param {string} reason @param {string} [kind]
- */
-function inviteRefusalLabel(reason, kind) {
-	const who = kind === 'agent' ? 'An AI agent' : 'Someone';
-	const why =
-		reason === 'expired' ? 'an expired invite'
-		: reason === 'revoked' ? 'a revoked invite'
-		: reason === 'used' ? 'an invite that was already used'
-		: 'an invite this device cannot confirm';
-	return who + ' came with ' + why + ' — approve to let them in';
-}
 
 /** How long a refusal dial may hang before it is closed regardless. The answer is in its
  * metadata, which the joiner has at its `connection` event — the conn never needs to
@@ -574,6 +567,8 @@ export class PeerConnection {
 					? /** @type {Peer} */ (this.botPeerFactory ? this.botPeerFactory(this.myId) : offlinePeer(this.myId))
 					: keepPeerId(new Peer(this.myId, { ...(options ?? {}), serializers: peerSerializers() }), this.myId);
 			if (testSeams.peerWrap && !exportMode && !botFrame) testSeams.peerWrap(this.peer);
+			// 71 TR4: on the live Peer, so every rebuild (fallback, server switch) keeps it
+			applyHideMyIp(this.peer);
 		};
 
 		// 27-F (audit H2): THE recreate ritual, in one place. Four callers had their own
@@ -780,7 +775,9 @@ export class PeerConnection {
 			waitingForApproval.set(waiting);
 			waitingForApproval.update((value) => value);
 			// // Initiate connection request to peer and await approval
-			this.connectToPeer(connect, true);
+			// 71 TR4: with Hide my IP on, this first dial waits for the plugin's relay credential
+			if (get(hideMyIp)) whenRelayReady(p).then(() => this.connectToPeer(connect, true));
+			else this.connectToPeer(connect, true);
 			// 55: the invite key in the hash is consumed whatever was dialled (a rejoin leaves an empty hash alone)
 			if (!rejoinHost || window.location.hash.slice(1)) window.location.hash = '';
 		});
@@ -899,6 +896,8 @@ export class PeerConnection {
 		/** 61 G3: set once localLink.js has loaded in a bot frame @type {((id: string) => any) | null} */
 		this.botPeerFactory = null;
 		createPeerForMode(false);
+		// 71 TR4: the Settings switch reaches the Peer at once; later connections use it
+		hideMyIp.subscribe((on) => applyHideMyIp(this.peer, on));
 		initVoiceChat(this);
 		wire();
 		// 61 G3: a bot frame swaps its offline boot Peer for the local link's once the transport is here;
@@ -970,7 +969,7 @@ export class PeerConnection {
 			// anything below can treat an incoming conn from the host as the approval it
 			// used to mean. Never whitelisted, never adopted, never wired — closed at once.
 			if (isRefusal(conn?.metadata?.joinresult)) {
-				const ended = applyJoinRefusal(conn.peer, conn.metadata.joinresult);
+				const ended = applyJoinRefusal(conn.peer, conn.metadata.joinresult, conn.metadata.why);
 				log('info', 'net', 'join refused', { peer: conn.peer, result: conn.metadata.joinresult, ended });
 				try { conn.close(); } catch {}
 				return;
@@ -1085,7 +1084,6 @@ export class PeerConnection {
 					if (inviteMeta !== undefined && !agentPage) {
 						invite = verifyInviteDial(conn.peer, inviteMeta, this.peer.id, { kind: dialKind });
 						log('info', 'net', 'invite dial', { peer: conn.peer, ok: invite.ok, reason: invite.ok ? undefined : invite.reason });
-						if (!invite.ok) knockLabel = inviteRefusalLabel(invite.reason, dialKind);
 					}
 					// 29 (rooms access): a provider with `decide(peerId, cloudMeta)` answers
 					// 'admit' | 'deny' | {label} (knock). 'deny' refuses with no card — told to a
@@ -1118,6 +1116,19 @@ export class PeerConnection {
 					}
 					// 61 G3: a bot this tab started, over its local link — admitted with no card and no toast
 					const testBot = !found && !!testSeams.botAdmit?.(conn);
+					// 71 AS4: an invite that did not check out is NEVER a card any more — it is counted in the
+					// collapsed "N failed invite joins" row (the 12-card cap is for real requests). Paused or
+					// re-joining too fast: the joiner is told why. The joiner of a failed proof keeps waiting,
+					// and the host may still let them in from the row's Review.
+					if (!found && !testBot && invite && !invite.ok) {
+						const hears = !!conn?.metadata?.jr;
+						if (invite.reason === 'paused' || invite.reason === 'slow') {
+							if (hears) this.sendJoinResult(conn.peer, 'denied', { why: 'invite-' + invite.reason }, 'auto');
+						}
+						if (invite.justPaused) showToast(pauseToastText(invite.inWindow), [{ label: 'Resume now', action: resumeInviteJoins }]);
+						conn.close();
+						return;
+					}
 					const verdict = found
 						? undefined
 						: testBot
@@ -1142,6 +1153,12 @@ export class PeerConnection {
 					if (authorized && !invite && dialKind === 'agent' && !get(agentsAsGuests)) {
 						authorized = false;
 						knockLabel = knockLabel || 'An AI agent wants to join (guests join automatically, but AI agents ask first)';
+					}
+					// 71 AS3: "Require approval to join" (this session) — nothing joins by itself, a working invite
+					// included: the card, saying why. A bot this tab started is the tab's own and still admits.
+					if (authorized && !testBot && get(requireApproval)) {
+						authorized = false;
+						knockLabel = invite?.ok ? 'Has a working invite link — you asked to approve everyone who joins' : knockLabel || 'You asked to approve everyone who joins';
 					}
 					if (authorized) {
 						// the OSS build has no roles: an invite simply admits, and everyone edits
@@ -1356,6 +1373,8 @@ export class PeerConnection {
 				if (data && !canApply(conn.peer, data.type)) return;
 				// a peer speaks for itself: presence and chat are read as the sender's own (rosterTrust.js)
 				data = asSendersOwn(data, conn.peer);
+				// 71 TR7: per-peer edit and chat limits (peerRateLimit.js)
+				if (data && !admitRate(conn, data.type)) return;
 				// A2: the ROOM gate. A message describing the content of a scene is not
 				// applied when its sender is demonstrably standing in a different one.
 				//
@@ -1461,6 +1480,8 @@ export class PeerConnection {
 						this.connectToPeer(id, false);
 					}
 					);
+				} else if(data.type == 'ratelimited') {
+					applyRateNotice(data); // 71 TR7: a receiver dropped some of ours
 				} else if(data.type == 'sent') {
 					// 37 R15: `id` + `at` are additive (an older peer sends neither; addMessage mints)
 					addMessage({message: data.message, type: 'received', sender: data.sender, id: data.id, at: data.at});
@@ -2674,6 +2695,21 @@ export class PeerConnection {
 		return true;
 	}
 
+	/**
+	 * 71 TR4: a relay-only dial that cannot get through fails without any error of its own (with no
+	 * candidates ICE just waits), so say why instead of leaving "Requesting" up.
+	 * @param {any} conn @param {string} peerId
+	 */
+	watchRelayDial(conn, peerId) {
+		const wait = relayDialWait(this.peer);
+		if (wait == null) return;
+		setTimeout(() => {
+			if (conn.open || this.connections[peerId] !== conn) return;
+			log('warn', 'net', 'relay-only dial did not open', { peer: peerId, wait });
+			showToast(RELAY_DIAL_FAILED);
+		}, wait);
+	}
+
 	connectToPeer(peerId, getobjects = true, id = this.peer.id) {
 		// 101 F1: a peer refused for its protocol is never redialled by mesh fill; a join you ask for
 		// (or an approval dial-back) tries again, and its far side checks again
@@ -2699,6 +2735,7 @@ export class PeerConnection {
             }
             /** @type {any} */ (conn).__dialedAt = Date.now();
             this.connections[peerId] = conn;
+			this.watchRelayDial(conn, peerId);
 
 			conn.on('close', () => this.onConnClose(peerId, conn));
 
@@ -3188,6 +3225,7 @@ export class PeerConnection {
 		releaseMic();
 		resetSession();
 		resetModeration(); // 55 A9: a block list belongs to the session it was made in
+		resetInviteJoinGate(); // 71 AS4: so do the invite-join counters
 		sessionVolumesMod?.then((m) => m.dropAllSessionVolumes()).catch(() => {}); // 56 C13: leaving unmounts every session volume
 		checkLocks();
 		peers.update((value) => value);

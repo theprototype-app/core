@@ -2,7 +2,7 @@ import { writable, get } from 'svelte/store';
 import { notifyOn } from './notifyPrefs';
 import { peers, userdata, pendingApprovals, waitingForApproval, showToast } from '../stores/appStore';
 import { sessionHost, noteJoinRefusal, clearApprovalStarted } from './connectionState';
-import { rolesInfo } from './cloudHooks';
+import { rolesInfo, roomAccess } from './cloudHooks';
 import { createModerationState, kickDecision, canModerateWith, isKickMessage } from './peerModerationCore';
 
 // Roadmap 55 A9 — remove / remove-and-block / allow back, the store half. Store-only like
@@ -10,6 +10,73 @@ import { createModerationState, kickDecision, canModerateWith, isKickMessage } f
 // would close a module cycle). The rules live in peerModerationCore.js; read its header.
 
 const state = createModerationState();
+
+/**
+ * 71 AS3: "Require approval to join" FOR THIS SESSION, on the host's device. On, nothing joins by
+ * itself: a working invite link, a plugin's automatic admit (guests, a room code) — each becomes
+ * the ordinary approval card. A guest's re-dial after a block carries a NEW peer id, which the
+ * session block list cannot know; this is what makes that re-dial a card instead of a way back in.
+ * Leaving the session turns it off (resetModeration), like the block list it backs up.
+ * @type {import('svelte/store').Writable<boolean>} */
+export const requireApproval = writable(false);
+
+/** @param {boolean} on @param {{quiet?: boolean}} [opt] */
+export function setRequireApproval(on, opt = {}) {
+	requireApproval.set(!!on);
+	if (opt.quiet) return;
+	showToast(on ? 'Everyone now needs your approval to join this session, invite links included.' : 'Joins work as before: invite links and automatic joins let people in.', on ? [{ label: 'Undo', action: () => setRequireApproval(false) }] : undefined);
+}
+
+/** what a plugin's room-access provider says, never trusted to be well-formed @param {string} name @param {...any} args */
+function access(name, ...args) {
+	const p = get(roomAccess);
+	if (!p || typeof p[name] !== 'function') return undefined;
+	try {
+		return p[name](...args);
+	} catch (e) {
+		console.error('roomAccess.' + name + ' threw', e);
+		return undefined;
+	}
+}
+
+/**
+ * 71 AS3: the block toast. A signed-in person (the plugin says so) is held by the account block
+ * list across sessions, so their toast is the plain one. A GUEST rejoins with a fresh id — the
+ * toast says so and offers the fix: Require approval to join (core; the plugin also makes the room
+ * ask), and Signed-in people only where the plugin can do it. Only the HOST is offered a fix: the
+ * host is who decides a join (an admin elsewhere in the mesh would set a flag nobody reads).
+ * @param {string} peerId @param {string} name
+ * @returns {{text: string, actions: {label: string, action: () => void}[]}}
+ */
+export function blockToast(peerId, name) {
+	/** @type {{label: string, action: () => void}[]} */
+	const actions = [{ label: 'Allow back', action: () => allowBack(peerId) }];
+	const plain = { text: name + ' was removed and blocked for this session.', actions };
+	if (access('isGuest', peerId) === false || get(sessionHost)) return plain;
+	const st = access('state') ?? {};
+	const gated = get(requireApproval);
+	if (!gated)
+		actions.push({
+			label: 'Require approval to join',
+			action: () => {
+				setRequireApproval(true);
+				void Promise.resolve(access('requireApproval')).catch((e) => showToast('Could not change the room: ' + (e?.message || e)));
+			}
+		});
+	const p = get(roomAccess);
+	if (p && typeof p.signedInOnly === 'function' && !st.signedInOnly)
+		actions.push({
+			label: 'Signed-in people only',
+			action: () =>
+				void Promise.resolve(access('signedInOnly'))
+					.then(() => showToast('Only signed-in people can join your room now.'))
+					.catch((e) => showToast('Could not change the room: ' + (e?.message || e)))
+		});
+	return {
+		text: name + ' was removed and blocked for this session. As a guest they can come back with a new id' + (gated ? ', and that lands on an approval card.' : ': to stop that, choose who may join.'),
+		actions
+	};
+}
 
 /** The session's block list for the Users panel's "Blocked" section.
  * @type {import('svelte/store').Writable<{peerId: string, name: string, at: number, by: string}[]>} */
@@ -109,7 +176,11 @@ export function removePeer(peerId, opts = {}) {
 	userdata.set(/** @type {any} */ (get(userdata)).filter((/** @type {any} */ u) => u[0] !== peerId));
 	setTimeout(() => dropLocally(get(peers), peerId), 400);
 	void useUpInvite(peerId);
-	showToast(block ? name + ' was removed and blocked for this session.' : name + ' was removed from the session.', block ? [{ label: 'Allow back', action: () => allowBack(peerId) }] : undefined);
+	if (block) {
+		const t = blockToast(peerId, name);
+		// a decision stays on its notification-history entry until one is pressed (fix-live F-2)
+		showToast(t.text, t.actions, { keep: t.actions.length > 1 });
+	} else showToast(name + ' was removed from the session.');
 	return true;
 }
 
@@ -175,6 +246,7 @@ export function blockReplay() {
 /** Leaving the session forgets its moderation. */
 export function resetModeration() {
 	state.reset();
+	requireApproval.set(false); // 71 AS3
 	publish();
 }
 

@@ -4,12 +4,12 @@
 	"pages": {
 		"play": {
 			"html": "play.html",
-			"maxJsGzBytes": 2201600,
+			"maxJsGzBytes": 2206720,
 			"maxFirstFrameMs": 20000
 		},
 		"editor": {
 			"html": "index.html",
-			"maxJsGzBytes": 3450880,
+			"maxJsGzBytes": 3458560,
 			"maxFirstFrameMs": 32000
 		}
 	},
@@ -98,6 +98,13 @@
 				"102b-papercuts #595": "+3.6 / +5.4",
 				"build-to-build churn (two builds of ce7ec23b)": "+0.1 / +0.3"
 			}
+		},
+		{
+			"date": "2026-11-23",
+			"lane": "71-rooms (on v1.74.0 + core #506 feat/71-privacy)",
+			"play": "v1.74.0 2147.7 KB -> + #506 2150.0 KB (+2.3) -> + 71-rooms 2152.2 KB (+2.2) -> line 2155.0 KB",
+			"editor": "v1.74.0 3366.5 KB -> + #506 3371.2 KB (+4.7, already over 3370) -> + 71-rooms 3373.9 KB (+2.7) -> line 3377.5 KB",
+			"note": "inside the ~3 KB boot rule (claude:9, 21 Nov): the invite join gate has to answer a dial synchronously (inviteStore +1.4: failed-proof counter, pause, re-join pacing, mint limits), plus the block-toast fix and the Require approval flag in peerModeration. The collapsed failed-invite row (FailedInviteJoins.svelte) is a lazy chunk. Base and lane built on the Deck with one node_modules; 71-int re-measures the union and may veto"
 		}
 	],
 	"throttle": {

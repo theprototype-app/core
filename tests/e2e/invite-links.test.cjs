@@ -107,28 +107,31 @@ h.run(async () => {
 	const used = await inPage(H, 'return s.inviteStore.listInvites().find((r) => r.id === arg)', agent.id);
 	h.check(used?.state === 'used' && used.uses.length === 1, `the use is counted (${used?.state}, ${used?.uses?.length})`);
 
+	// 71 AS4: a failed proof is no longer an approval card — it lands in the ONE collapsed "failed invite
+	// joins" row (Review lets the host in), so a flood of them cannot push a real request out of the card cap
 	const refused = async (peerId, metadata, reasonRe, label) => {
 		await dial(peerId, metadata);
 		await H.page.waitForTimeout(120);
 		const card = (await cards(H)).find((c) => c.peerId === peerId);
+		const row = (await read(H, 'inviteStore.failedInviteJoins')).rows.find((r) => r.peerId === peerId);
 		const inRoster = (await roster(H)).some((u) => u[0] === peerId);
-		h.check(!!card && !inRoster && reasonRe.test(card.label ?? ''), `COUNTERFACTUAL ${label} → the card, nobody admitted (${card?.label ?? 'no card'}${inRoster ? ', ADMITTED' : ''})`);
+		h.check(!card && !!row && !inRoster && reasonRe.test(row.reason), `COUNTERFACTUAL ${label} → the failed-invite row, no card, nobody admitted (${row?.reason ?? 'no row'}${card ? ', A CARD' : ''}${inRoster ? ', ADMITTED' : ''})`);
 	};
-	await refused('aaaa2', { kind: 'agent', invite: core.dialInvite(tok, 'aaaa2', H.id) }, /already used/, 'a reused single-use token');
-	await refused('aaaa3', { kind: 'agent', invite: core.dialInvite(tok, 'aaaa1', H.id) }, /cannot confirm/, "a proof replayed from another peer id");
-	await refused('aaaa4', { invite: core.dialInvite(core.newToken(), 'aaaa4', H.id) }, /cannot confirm/, 'a wrong token');
+	await refused('aaaa2', { kind: 'agent', invite: core.dialInvite(tok, 'aaaa2', H.id) }, /^used$/, 'a reused single-use token');
+	await refused('aaaa3', { kind: 'agent', invite: core.dialInvite(tok, 'aaaa1', H.id) }, /^bad-proof$/, "a proof replayed from another peer id");
+	await refused('aaaa4', { invite: core.dialInvite(core.newToken(), 'aaaa4', H.id) }, /^unknown$/, 'a wrong token');
 	const old = await mint({ kind: 'person', now: Date.now() - 31 * 60_000 });
-	await refused('aaaa5', { invite: core.dialInvite(tokenOfLink(old.link), 'aaaa5', H.id) }, /expired/, 'an expired invite');
+	await refused('aaaa5', { invite: core.dialInvite(tokenOfLink(old.link), 'aaaa5', H.id) }, /^expired$/, 'an expired invite');
 	const rv = await mint({ kind: 'agent' });
 	await inPage(H, 's.inviteStore.revokeInvite(arg)', rv.id);
-	await refused('aaaa6', { kind: 'agent', invite: core.dialInvite(tokenOfLink(rv.link), 'aaaa6', H.id) }, /revoked/, 'a revoked invite');
+	await refused('aaaa6', { kind: 'agent', invite: core.dialInvite(tokenOfLink(rv.link), 'aaaa6', H.id) }, /^revoked$/, 'a revoked invite');
 	const five = await mint({ kind: 'person', maxUses: 5 });
 	const t5 = tokenOfLink(five.link);
 	for (const id of ['bbbb1', 'bbbb2', 'bbbb3', 'bbbb4', 'bbbb5']) await dial(id, { invite: core.dialInvite(t5, id, H.id) });
 	await H.page.waitForTimeout(150);
 	const r5 = await roster(H);
 	h.check(['bbbb1', 'bbbb2', 'bbbb3', 'bbbb4', 'bbbb5'].every((id) => r5.some((u) => u[0] === id)), 'a five-use link admits five people');
-	await refused('bbbb6', { invite: core.dialInvite(t5, 'bbbb6', H.id) }, /already used/, 'a multi-use link past its count');
+	await refused('bbbb6', { invite: core.dialInvite(t5, 'bbbb6', H.id) }, /^used$/, 'a multi-use link past its count');
 	h.check((await inPage(H, "return s.cloudPlugin.makeCloudApi().invites.grantFor('bbbb1')"))?.role === 'view', 'a Person link carries View, never Edit');
 	// a re-dial by a peer that already used it costs nothing and still works (a reload, a drop)
 	await inPage(H, "let u; s.userdata.subscribe((x) => (u = x))(); s.userdata.set(u.filter((r) => r[0] !== 'bbbb1'));");

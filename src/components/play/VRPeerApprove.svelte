@@ -6,6 +6,9 @@
 	import { Text } from '@threlte/extras'
 	import { vrApprovePanelOpen, vrMenuHand, isVRMode } from '../../stores/sceneStore'
 	import { pendingApprovals } from '../../stores/appStore'
+	// 71 AS4: the collapsed failed-invite row reads here too (a line under the real request)
+	import { failedInviteJoins } from '$lib/inviteStore'
+	import { failedRowText } from '$lib/inviteLimits'
 	import { vrHovered, vrApproveGroup, controllerIndexFor } from '$lib/vrControls'
 	import { applyWindowPose } from '$lib/vrWindowPoses'
 	import { menuPoseFromController } from '$lib/vrRadialMenu'
@@ -88,6 +91,18 @@
 				anchorX="center"
 				anchorY="middle"
 				position={[0, HEIGHT / 2 - 0.064, 0.002]}
+			/>
+		{/if}
+
+		{#if $failedInviteJoins.count > 0}
+			<Text
+				text={failedRowText($failedInviteJoins.count) + ($failedInviteJoins.pausedUntil > Date.now() ? ' · invite joins paused' : '')}
+				color="#d9a441"
+				fontSize={0.0065}
+				anchorX="center"
+				anchorY="middle"
+				maxWidth={WIDTH - 0.03}
+				position={[0, HEIGHT / 2 - 0.078, 0.002]}
 			/>
 		{/if}
 

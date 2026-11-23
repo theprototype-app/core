@@ -26,6 +26,7 @@
 	import { peerQuality, qColor, qGlyph } from '$lib/networkQuality';
 	import { peerServerStatus, peerServerPingUrl, peerServerPeersUrl } from '$lib/peerServer';
 	import { cancelOutboundRequest } from '$lib/peerApproval';
+	import { failedInviteJoins } from '$lib/inviteStore'; // 71 AS4
 	import { connectionStatus } from '$lib/connectionStatus';
 	import { drawerSlot, rolesInfo } from '$lib/cloudHooks';
 	import CloudSlot from '../CloudSlot.svelte';
@@ -258,7 +259,7 @@
 		     connection requests you can act on, plus current messages. The full HISTORY
 		     lives in the top-right notification bell. -->
 		<div class="cxd-body" use:minimalScroll>
-			{#if !$pendingApprovals.length && !$toastStore.length && !pendingOut.length}
+			{#if !$pendingApprovals.length && !$toastStore.length && !pendingOut.length && !$failedInviteJoins.count}
 				<p class="cxd-empty">No active toasts. New requests and messages appear here while the drawer is open.</p>
 			{:else}
 				<ul class="cxd-toast-list">
@@ -276,6 +277,10 @@
 							</div>
 						</li>
 					{/each}
+					<!-- 71 AS4: the collapsed failed-invite row (lazy) -->
+					{#if $failedInviteJoins.count > 0 || $failedInviteJoins.pausedUntil > 0}
+						<li class="cxd-toast cxd-live" data-kind="request">{#await import('./FailedInviteJoins.svelte') then m}<m.default inDrawer />{/await}</li>
+					{/if}
 					{#each pendingOut as w (w[0])}
 						<li class="cxd-toast cxd-live" data-kind="waiting">
 							<div class="cxd-toast-text">Waiting for <span class="cxd-mono">{String(w[0]).toUpperCase()}</span> to accept…</div>

@@ -36,6 +36,8 @@
 	import { nameOf } from '$lib/lockHeld';
 	import { agentsAsGuests } from '$lib/inviteStore'; // 55 A4
 	import { showAgentMarkers } from '$lib/agentLog'; // 55 A7
+	import { peerRateLimits } from '$lib/peerRateGate'; // 71 TR7
+	import { requireApproval, setRequireApproval } from '$lib/peerModeration'; // 71 AS3
 	import { peerServerConfig, HAS_SELF_HOSTED, SELF_HOSTED_HOST, peerServerStatus } from '$lib/peerServer';
 
 	const nav = /** @type {any} */ (getContext(NAV_CONTEXT));
@@ -161,6 +163,14 @@
 						softPeerCap.set(Number.isFinite(n) ? Math.min(HARD_PEER_CAP, Math.max(2, Math.round(n))) : SOFT_PEER_CAP_DEFAULT);
 					}}
 				/>
+			</SettingRow>
+			<!-- 71 TR7: per-peer limits, applied on this device -->
+			<SettingRow id="row-peer-rate-limits" label="Limit floods from peers" description="Ignores edits and chat from someone sending far more than a person would. The session host is never limited." wide>
+				<Segmented id="peer-rate-limits" label="Limit floods from peers" bind:value={$peerRateLimits} options={[{ value: 'off', label: 'Off' }, { value: 'normal', label: 'Normal' }, { value: 'strict', label: 'Strict' }]} />
+			</SettingRow>
+			<!-- 71 AS3: this session only — every automatic join (invite links too) becomes the approval card -->
+			<SettingRow id="row-require-approval" label="Require approval to join" description="This session: nobody joins by themselves, not even with an invite link. Each person waits for your approval. Off again when you leave." keywords="block guest invite approve">
+				<Toggle id="require-approval" label="Require approval to join" checked={$requireApproval} onchange={(on) => setRequireApproval(on, { quiet: true })} />
 			</SettingRow>
 			<!-- 55 A4: an AI agent's dial gets the approval card even where guests join automatically -->
 			<SettingRow id="row-agents-as-guests" label="Let AI agents join as guests" description="Off: an AI agent asks first even when your room lets guests join automatically. An invite link always lets it in.">

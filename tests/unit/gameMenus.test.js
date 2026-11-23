@@ -172,3 +172,19 @@ describe('92 Auto-admit while playing', () => {
 		expect(autoAdmitVerdict({ peerId: 'p' }, { ...on, full: true })).toBe('full');
 	});
 });
+
+import { titleHintOnce, TITLE_HINT_KEY } from '../../src/lib/gameMenusHint.js';
+import { safeStorage } from '../../src/lib/safeStorage.js';
+describe('92 the title screen first-use hint', () => {
+	it('shows once per device, with Try it when play is offered', () => {
+		safeStorage.removeItem(TITLE_HINT_KEY);
+		/** @type {any[]} */
+		const shown = [];
+		const ui = { show: (/** @type {string} */ id, /** @type {string} */ msg, /** @type {any[]} */ actions) => shown.push({ id, msg, labels: actions.map((a) => a.label) }), play: () => {} };
+		expect(titleHintOnce(ui)).toBe(true);
+		expect(titleHintOnce(ui)).toBe(false);
+		expect(shown).toHaveLength(1);
+		expect(shown[0].labels).toEqual(['Try it', 'Got it']);
+		expect(shown[0].msg).toMatch(/exported games open on it/);
+	});
+});

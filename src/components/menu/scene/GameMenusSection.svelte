@@ -12,6 +12,9 @@
 	import { setGameMenus } from '$lib/gameMenusPlan.js';
 	import { menusNewer, normalizeTitle } from '$lib/gameMenusCore.js';
 	import { isViewer } from '$lib/objectPermissions';
+	import { titleHintOnce } from '$lib/gameMenusHint.js';
+	import { showToastById } from '../../../stores/appStore';
+	import { requestPlay } from '$lib/playMode';
 
 	const raw = $derived($scenePhysicsState_.play?.menus ?? null);
 	const newer = $derived(menusNewer(raw));
@@ -43,7 +46,12 @@
 		<p class="text-[length:var(--fs-desc)] text-ink-warn" id="game-menus-newer">These menus were made with a newer version of theprototype.app. Update to change them here.</p>
 	{/if}
 
-	<InsToggle id="game-menus-title" checked={titleOn} {disabled} onchange={(e) => setGameMenus({ title: e.currentTarget.checked ? { ...(raw?.title ?? {}), on: true } : null })}>
+	<InsToggle id="game-menus-title" checked={titleOn} {disabled} onchange={(e) => {
+		const on = e.currentTarget.checked;
+		setGameMenus({ title: on ? { ...(raw?.title ?? {}), on: true } : null });
+		// the release's first-use hint: once per device, the first time a title screen is turned on
+		if (on) titleHintOnce({ show: showToastById, play: () => requestPlay({ flat: true }) });
+	}}>
 		Title screen
 	</InsToggle>
 	{#if titleOn}

@@ -245,7 +245,18 @@ h.run(async () => {
 	h.check(await page.locator('#game-shell-running').isVisible(), '8.4 …and says so');
 	await page.locator('[data-shell-item="joins"]').click();
 	let clickError = '';
-	const admitted = await page.locator('[data-join-admit]').first().click({ timeout: 8000 }).then(() => true, (e) => ((clickError = String(e?.message ?? e).split('\n').filter((l) => !/waiting \d+ms|retrying click/.test(l)).slice(0, 40).join(' | ')), false));
+	await page.locator('[data-join-admit]').first().waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
+	// on this busy four-page run Playwright's stability probe never answers (it stalls in "waiting for … stable" with
+	// no reason); the hit test below proves Admit is the TOP element at its centre, so a real mouse click there is
+	// exactly what a person does — force skips only the probe
+	const top = await page.evaluate(() => {
+		const b = document.querySelector('[data-join-admit]');
+		if (!b) return false;
+		const r = b.getBoundingClientRect();
+		return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) === b;
+	});
+	h.check(top, '8.4a the Admit button is the top element under the pointer (nothing covers it)');
+	const admitted = await page.locator('[data-join-admit]').first().click({ timeout: 8000, force: true }).then(() => true, (e) => ((clickError = String(e?.message ?? e).split('\n').filter((l) => !/waiting \d+ms|retrying click/.test(l)).slice(0, 40).join(' | ')), false));
 	const under = await page.evaluate(() => {
 		const b = document.querySelector('[data-join-admit]');
 		if (!b) return null;

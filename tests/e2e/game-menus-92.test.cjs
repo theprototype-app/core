@@ -164,8 +164,7 @@ h.run(async () => {
 	await page.locator('[data-shell-item="save"]').click();
 	await page.locator('[data-slot-mode="save"]').waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
 	await page.locator('[data-slot="2"] .ss-main').click();
-	await page.waitForTimeout(600);
-	const s5 = await page.evaluate(() => window.__tp.test.v1.gameMenusKit.saveSlots.listSlots());
+	const s5 = (await poll(() => page.evaluate(() => { const l = window.__tp.test.v1.gameMenusKit.saveSlots.listSlots(); return l[1].empty ? null : l; }), 10000)) ?? (await page.evaluate(() => window.__tp.test.v1.gameMenusKit.saveSlots.listSlots()));
 	h.check(!s5[1].empty && s5[1].thumb.startsWith('data:image/'), '5.1 slot 2 saved, with a picture');
 	await page.locator('[data-slot="2"] .ss-main').click();
 	await page.waitForTimeout(200);
@@ -275,7 +274,9 @@ h.run(async () => {
 
 	console.log('\n=== 9. Auto-admit while playing ===');
 	await page.evaluate(() => window.__tp.test.v1.gameMenusKit.gameMenusPlan.setGameMenus({ autoAdmit: true }));
-	await C.page.close();
+	// a fourth page on the loaded Deck took the whole browser down: C leaves entirely (its context too) first
+	await h.closePeer(C);
+	await page.waitForTimeout(1500);
 	const D = await h.setupPage(browser, 'D');
 	await (await h.openDial(D.page)).fill(A.id);
 	await D.page.getByRole('button', { name: 'Connect', exact: true }).click();

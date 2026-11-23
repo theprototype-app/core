@@ -71,7 +71,7 @@ h.run(async () => {
 		const ai = await P.locator('#ai-hud-button').boundingBox();
 		const add = await P.locator('#mobile-add-button').boundingBox();
 		// 103 H15: the left inset is the HUD grid's (--hud-inset), the bottom keeps its 16
-		const inset = await P.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--hud-inset')) || 16);
+		const inset = await P.evaluate((() => { const d = document.createElement('div'); d.style.cssText = 'position:absolute;visibility:hidden;width:var(--hud-inset, 16px)'; document.body.appendChild(d); const v = parseFloat(getComputedStyle(d).width); d.remove(); return v; }));
 		h.check(Math.abs(ai.x - inset) < 2 && add.y < ai.y && Math.round(P.viewportSize().height - (ai.y + ai.height)) === 16, T + `premise: the left stack sits in the corner, bottom 16 (${JSON.stringify({ ai, add })})`);
 
 		// ---- enter: a right-click on a cell offers "Edit positions" first in the Toolbar section ----

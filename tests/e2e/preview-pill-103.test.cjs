@@ -90,7 +90,7 @@ h.run(async () => {
 	const unused = await T(P, () => ({ override: (() => { let s; window.__tp.test.v1.globalScene.subscribe((x) => (s = x))(); return s?.overrideMaterial ?? null; })(), drawAs: localStorage.getItem('drawAs') }));
 	h.check(unused.override === null && unused.drawAs === null, '1. feature unused = zero change: no override material, nothing stored');
 	// 103 H15: at the HUD grid's right inset (styles/hud.css --hud-inset), the profile button's and the right stack's
-	const inset = await T(P, () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--hud-inset')) || 16);
+	const inset = await T(P, (() => { const d = document.createElement('div'); d.style.cssText = 'position:absolute;visibility:hidden;width:var(--hud-inset, 16px)'; document.body.appendChild(d); const v = parseFloat(getComputedStyle(d).width); d.remove(); return v; }));
 	h.check(Math.abs(p.rect.right - (1920 - inset)) < 3, `1. home = the top right of the 3D view (right edge ${Math.round(p.rect.right)}, inset ${inset})`);
 	const offered = await read(P, 'cinematicState.cinematicState');
 	if (!offered?.offered) {

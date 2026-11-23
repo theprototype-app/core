@@ -36,11 +36,14 @@ export function shadowTierOf(facts) {
 const RANK = { off: 0, basic: 1, soft: 2, far: 3 };
 
 /**
- * THE TIER TABLE (S0 decides it; ~/.code/lanes-30/after-106/106-shadows/s0/): the highest level each tier draws.
+ * THE TIER TABLE (S0 measured it, STATUS-106-shadows + the lane's s0/ evidence): the highest level each tier draws.
  * A scene that asks for more is drawn at the cap, and the setting says "This device draws <cap>". Off is never
  * capped up: a scene that asks for no shadows has none anywhere.
+ *  · phone  Soft (HONOR Adreno 750, dpr 3: Soft's wide kernel cost the same frames as Basic on four scenes; Far's
+ *           second cascade pass and the contact pass both added frames over 20 ms, so neither is given)
+ *  · quest  Basic until the headset is measured on a preview (Basic = today's code path, so no frame can be lost)
  */
-export const TIER_SHADOW_CAP = Object.freeze({ pc: 'far', phone: 'basic', quest: 'basic' });
+export const TIER_SHADOW_CAP = Object.freeze({ pc: 'far', phone: 'soft', quest: 'basic' });
 
 /**
  * What THIS device draws for a scene's ask.

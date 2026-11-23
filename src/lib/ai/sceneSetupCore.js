@@ -242,16 +242,22 @@ function lightPatch(spec, where, named) {
 	return { patch };
 }
 
+/** 106: the scene Shadow quality levels set_light takes (shadowLevelCore's SHADOW_LEVELS, kept here as data so this
+ * core stays import-free) */
+export const SHADOW_QUALITIES = ['off', 'basic', 'soft', 'far'];
+
 /**
  * Plan a set_light call.
  * @param {any} args {sun?: {color, intensity, direction | position} | null, ambient?: {sky, ground, intensity} | null,
- *   add?: [{kind, color, intensity, position, groundColor}], update?: [{id, ...}], remove?: [ids]}
+ *   add?: [{kind, color, intensity, position, groundColor}], update?: [{id, ...}], remove?: [ids], shadowQuality?: off|basic|soft|far}
  * @param {{payload: any, preset: string, lights: any[], exposure: number, newId: () => string, named?: (name: string) => string | null}} now
- * @returns {{state: {preset: string, exposure: number, customPreset: any, lights: any[]}, added: string[], words: string[]} | {error: string}}
+ * @returns {{state: {preset: string, exposure: number, customPreset: any, lights: any[], shadowLevel?: string}, added: string[], words: string[]} | {error: string}}
  */
 export function planLight(args, now) {
 	const a = args ?? {};
-	if (!['sun', 'ambient', 'add', 'update', 'remove'].some((k) => a[k] !== undefined)) return { error: 'nothing to set: give sun, ambient, add, update or remove' };
+	if (!['sun', 'ambient', 'add', 'update', 'remove', 'shadowQuality'].some((k) => a[k] !== undefined)) return { error: 'nothing to set: give sun, ambient, add, update, remove or shadowQuality' };
+	// 106: the scene's Shadow quality (Configure Scene ▸ Lights); basic = stored as absent, like the row
+	if (a.shadowQuality !== undefined && !SHADOW_QUALITIES.includes(a.shadowQuality)) return { error: 'shadowQuality: one of ' + SHADOW_QUALITIES.join(', ') };
 	const payload = JSON.parse(JSON.stringify(now.payload ?? {}));
 	let lights = JSON.parse(JSON.stringify(now.lights ?? []));
 	/** @type {string[]} */
@@ -331,8 +337,10 @@ export function planLight(args, now) {
 	}
 	if (lights.length > MAX_ENV_LIGHTS) return { error: 'at most ' + MAX_ENV_LIGHTS + ' environment lights (more lights = objects: create_objects kind light)' };
 	if (custom) payload.label = 'Custom';
+	if (a.shadowQuality !== undefined) words.push(a.shadowQuality + ' shadows');
+	const shadow = a.shadowQuality !== undefined ? { shadowLevel: a.shadowQuality === 'basic' ? undefined : a.shadowQuality } : {};
 	return {
-		state: custom ? { preset: 'custom', exposure: now.exposure, customPreset: payload, lights } : { preset: now.preset, exposure: now.exposure, customPreset: now.preset === 'custom' ? payload : null, lights },
+		state: custom ? { preset: 'custom', exposure: now.exposure, customPreset: payload, lights, ...shadow } : { preset: now.preset, exposure: now.exposure, customPreset: now.preset === 'custom' ? payload : null, lights, ...shadow },
 		added,
 		words
 	};

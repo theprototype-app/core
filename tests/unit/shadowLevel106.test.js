@@ -6,6 +6,7 @@ import {
 	shadowTierOf,
 	drawnShadowLevel
 } from '../../src/lib/shadows/shadowLevelCore.js';
+import { planLight, SHADOW_QUALITIES } from '../../src/lib/ai/sceneSetupCore.js';
 import { contactShadowsOn, levelParams, cascadeReach, cappedNote } from '../../src/lib/shadows/shadowLevelParams.js';
 
 describe('106 shadow level core', () => {
@@ -24,7 +25,8 @@ describe('106 shadow level core', () => {
 	it('caps per tier and never lifts Off', () => {
 		expect(drawnShadowLevel('far', 'pc')).toBe('far');
 		expect(drawnShadowLevel('soft', 'pc')).toBe('soft');
-		expect(drawnShadowLevel('far', 'phone')).toBe('basic');
+		expect(drawnShadowLevel('far', 'phone')).toBe('soft');
+		expect(drawnShadowLevel('soft', 'phone')).toBe('soft');
 		expect(drawnShadowLevel('far', 'quest')).toBe('basic');
 		expect(drawnShadowLevel('off', 'quest')).toBe('off');
 		expect(drawnShadowLevel(undefined, 'pc')).toBe('basic');
@@ -35,6 +37,7 @@ describe('106 shadow level core', () => {
 		expect(contactShadowsOn('far', 'pc')).toBe(true);
 		expect(contactShadowsOn('basic', 'pc')).toBe(false);
 		expect(contactShadowsOn('far', 'phone')).toBe(false);
+		expect(contactShadowsOn('soft', 'phone')).toBe(false);
 		expect(contactShadowsOn('far', 'quest')).toBe(false);
 	});
 	it('Basic is the identity (today: radius 1, no cascades)', () => {
@@ -49,7 +52,8 @@ describe('106 shadow level core', () => {
 		expect(cascadeReach(NaN)).toBe(200);
 	});
 	it('says when the device draws less', () => {
-		expect(cappedNote('far', 'phone')).toBe('This device draws Basic');
+		expect(cappedNote('far', 'phone')).toBe('This device draws Soft');
+		expect(cappedNote('far', 'quest')).toBe('This device draws Basic');
 		expect(cappedNote('far', 'pc')).toBe('');
 		expect(cappedNote('basic', 'quest')).toBe('');
 	});
@@ -61,5 +65,16 @@ describe('106 the Cinematic view', () => {
 		expect(cinematicShadowLevel('far', true)).toBe('soft');
 		expect(cinematicShadowLevel('far', false)).toBe('far');
 		for (const l of ['off', 'basic', 'soft']) expect(cinematicShadowLevel(l, true)).toBe(l);
+	});
+	it('set_light takes shadowQuality (the same levels; basic is stored as absent; absent leaves it alone)', () => {
+		expect(SHADOW_QUALITIES).toEqual([...SHADOW_LEVELS]);
+		const now = { payload: {}, lights: [], preset: 'studio', exposure: 1, named: {}, newId: () => 'x' };
+		const far = planLight({ shadowQuality: 'far' }, now);
+		expect(far.state.shadowLevel).toBe('far');
+		expect(far.words).toContain('far shadows');
+		const basic = planLight({ shadowQuality: 'basic' }, now);
+		expect('shadowLevel' in basic.state && basic.state.shadowLevel === undefined).toBe(true);
+		expect('shadowLevel' in planLight({ ambient: { intensity: 1 } }, now).state).toBe(false);
+		expect(planLight({ shadowQuality: 'ultra' }, now).error).toMatch(/shadowQuality/);
 	});
 });

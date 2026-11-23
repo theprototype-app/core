@@ -54,11 +54,12 @@
 			{#if $autoQuality}Auto: full quality, steps down by itself while the scene is too heavy for this device.{:else}Auto is not stepping down: turned off in Settings ▸ Scene ▸ Performance.{/if}
 		</p>
 	{/if}
-	<PropRow label="Shadows" valueBox={false} id="scene-shadow-quality-row">
+	<PropRow label="Shadow detail" valueBox={false} id="scene-shadow-quality-row">
 		{#snippet control()}
-			<Segmented id="scene-shadow-quality" label="Shadow quality" full options={SHADOWS} value={$shadowQuality} onchange={(v) => shadowQuality.set(/** @type {any} */ (v))} />
+			<Segmented id="scene-shadow-quality" label="Shadow detail on this device" full options={SHADOWS} value={$shadowQuality} onchange={(v) => shadowQuality.set(/** @type {any} */ (v))} />
 		{/snippet}
 	</PropRow>
+	<p id="scene-shadow-quality-help" class="text-[length:var(--fs-badge)] text-text-muted">The shadow map size this device may use: it caps what Lights ▸ Shadow quality can draw here.</p>
 	<InsToggle id="scene-lod-enabled" bind:checked={$lodEnabled} title="Draws a lighter version of a dense model when it is far away">Simplify distant models</InsToggle>
 	<InsToggle id="scene-kit-instancing" bind:checked={$kitInstancingEnabled} title="Every untouched copy of a kit piece draws in one go">Draw repeated kit pieces together</InsToggle>
 </Section>

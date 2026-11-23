@@ -13,11 +13,11 @@
 import { get } from 'svelte/store';
 import * as THREE from 'three';
 import { objectsGroup } from '../../stores/sceneStore.js';
-import { ENVIRONMENT_PRESETS, environment, presetPayload } from '$lib/environment';
+import { ENVIRONMENT_PRESETS, environment, presetPayload, drawnSceneShadowLevel } from '$lib/environment';
 import { BUNDLED_HDRIS } from '$lib/hdri/catalog.js';
 import { hdriOf } from '$lib/hdri/hdriCore.js';
 import { scenePhysicsState_ } from '$lib/scenePhysics';
-import { planSky, planLight, planSpawn, planOpeningView, planPlayCamera, SKY_QUALITY_WORDS, ENV_LIGHT_KINDS, MAX_ENV_LIGHTS, PLAY_CAMERA_MODES } from './sceneSetupCore.js';
+import { planSky, planLight, planSpawn, planOpeningView, planPlayCamera, SKY_QUALITY_WORDS, ENV_LIGHT_KINDS, MAX_ENV_LIGHTS, PLAY_CAMERA_MODES, SHADOW_QUALITIES } from './sceneSetupCore.js';
 
 export const SCENE_SETUP_TOOL_NAMES = ['set_sky', 'set_light', 'get_environment', 'place_spawn', 'set_play_camera'];
 export const SCENE_SETUP_READ_TOOLS = ['get_environment'];
@@ -147,6 +147,9 @@ function describeEnvironment() {
 			: null,
 		sun: p.sun ? { color: p.sun.color, intensity: p.sun.intensity, position: p.sun.position } : null,
 		ambient: p.hemi ? { sky: p.hemi.sky, ground: p.hemi.ground, intensity: p.hemi.intensity } : null,
+		// 106: what the scene asks (everyone) and what this tab draws (its device tier may draw less)
+		shadowQuality: s.shadowLevel ?? 'basic',
+		shadowQualityDrawnHere: drawnSceneShadowLevel(),
 		envLights: (s.lights ?? []).map((/** @type {any} */ l) => ({ id: l.id, kind: l.kind, color: l.color, intensity: l.intensity, position: l.position, ...(l.groundColor ? { groundColor: l.groundColor } : {}) }))
 	};
 }
@@ -365,11 +368,11 @@ export const SCENE_SETUP_AI_TOOLS = [
 		function: {
 			name: 'set_light',
 			description:
-				'The scene\'s own lighting: sun {color, intensity, direction [x,y,z] the light shines (y below 0)} or null for none, ambient {sky, ground, intensity} or null, and environment lights (' +
+				'The scene\'s own lighting: sun {color, intensity, direction [x,y,z] the light shines (y below 0)} or null for none, ambient {sky, ground, intensity} or null, environment lights (' +
 				ENV_LIGHT_KINDS.join(' / ') +
 				', at most ' +
 				MAX_ENV_LIGHTS +
-				'): add [{kind, color, intensity, position}], update [{id, …}], remove [ids] (get_environment lists their ids). Lamps, spots and area lights in the scene are objects: create_objects kind light. Changes the whole scene\'s look, so the host is asked first (needsConfirm, then repeat with confirmId). One undo step.',
+				'): add [{kind, color, intensity, position}], update [{id, …}], remove [ids] (get_environment lists their ids), and shadowQuality (off / basic / soft / far). Lamps, spots and area lights in the scene are objects: create_objects kind light. Changes the whole scene\'s look, so the host is asked first (needsConfirm, then repeat with confirmId). One undo step.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -378,6 +381,7 @@ export const SCENE_SETUP_AI_TOOLS = [
 					add: { type: 'array', maxItems: MAX_ENV_LIGHTS, items: { type: 'object', properties: { kind: { type: 'string', enum: ENV_LIGHT_KINDS }, groundColor: { type: 'string' }, ...LIGHT_FIELDS } } },
 					update: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, groundColor: { type: 'string' }, ...LIGHT_FIELDS } } },
 					remove: { type: 'array', items: { type: 'string' } },
+					shadowQuality: { type: 'string', enum: SHADOW_QUALITIES, description: 'the scene\'s shadows for everyone: off, basic (the default), soft (softer edges + contact shadows), far (soft + the sky sun casts near and far, up to 200 m); a phone or headset may draw less (get_environment says shadowQualityDrawnHere)' },
 					...CONFIRM
 				}
 			}

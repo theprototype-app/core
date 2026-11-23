@@ -3310,7 +3310,7 @@
 		{
 			"name": "set_light",
 			"title": "Change the scene light",
-			"description": "The scene's own lighting: sun {color, intensity, direction [x,y,z] the light shines (y below 0)} or null for none, ambient {sky, ground, intensity} or null, and environment lights (directional / point / hemisphere, at most 8): add [{kind, color, intensity, position}], update [{id, …}], remove [ids] (get_environment lists their ids). Lamps, spots and area lights in the scene are objects: create_objects kind light. Changes the whole scene's look, so the host is asked first (needsConfirm, then repeat with confirmId). One undo step.\nTake a screenshot after each change to check your work.",
+			"description": "The scene's own lighting: sun {color, intensity, direction [x,y,z] the light shines (y below 0)} or null for none, ambient {sky, ground, intensity} or null, environment lights (directional / point / hemisphere, at most 8): add [{kind, color, intensity, position}], update [{id, …}], remove [ids] (get_environment lists their ids), and shadowQuality (off / basic / soft / far). Lamps, spots and area lights in the scene are objects: create_objects kind light. Changes the whole scene's look, so the host is asked first (needsConfirm, then repeat with confirmId). One undo step.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -3424,6 +3424,16 @@
 						"items": {
 							"type": "string"
 						}
+					},
+					"shadowQuality": {
+						"type": "string",
+						"enum": [
+							"off",
+							"basic",
+							"soft",
+							"far"
+						],
+						"description": "the scene's shadows for everyone: off, basic (the default), soft (softer edges + contact shadows), far (soft + the sky sun casts near and far, up to 200 m); a phone or headset may draw less (get_environment says shadowQualityDrawnHere)"
 					},
 					"confirmId": {
 						"type": "string",
@@ -9259,6 +9269,16 @@
 										"type": "string"
 									}
 								},
+								"shadowQuality": {
+									"type": "string",
+									"enum": [
+										"off",
+										"basic",
+										"soft",
+										"far"
+									],
+									"description": "the scene's shadows for everyone: off, basic (the default), soft (softer edges + contact shadows), far (soft + the sky sun casts near and far, up to 200 m); a phone or headset may draw less (get_environment says shadowQualityDrawnHere)"
+								},
 								"confirmId": {
 									"type": "string",
 									"description": "the id a needsConfirm answer gave: repeat the call with it to get the host's answer and apply"
@@ -9268,7 +9288,7 @@
 									"description": "with confirmId: seconds to wait for the answer (up to 60)"
 								}
 							},
-							"description": "The scene's own lighting: sun {color, intensity, direction [x,y,z] the light shines (y below 0)} or null for none, ambient {sky, ground, intensity} or null, and environment lights (directional / point / hemisphere, at most 8): add [{kind, color, intensity, position}], update [{id, …}], remove [ids] (set_look {action: 'environment'} lists their ids). Lamps, spots and area lights in the scene are objects: create_objects kind light. Changes the whole scene's look, so the host is asked first (needsConfirm, then repeat with confirmId). One undo step."
+							"description": "The scene's own lighting: sun {color, intensity, direction [x,y,z] the light shines (y below 0)} or null for none, ambient {sky, ground, intensity} or null, environment lights (directional / point / hemisphere, at most 8): add [{kind, color, intensity, position}], update [{id, …}], remove [ids] (set_look {action: 'environment'} lists their ids), and shadowQuality (off / basic / soft / far). Lamps, spots and area lights in the scene are objects: create_objects kind light. Changes the whole scene's look, so the host is asked first (needsConfirm, then repeat with confirmId). One undo step."
 						},
 						"environment": {
 							"type": "object",

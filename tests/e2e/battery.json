@@ -891,6 +891,8 @@
 		"slot-save": 300,
 		"material-slots-manage": 210,
 		"shader-slots": 240,
+		"image-noise": 240,
+		"image-noise-touch": 120,
 		"material-slots-ui": 200,
 		"material-slots-link": 240,
 		"sound-node": 120,

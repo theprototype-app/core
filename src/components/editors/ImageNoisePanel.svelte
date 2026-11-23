@@ -78,6 +78,8 @@
 		if (!w || w === baseFor) return;
 		baseFor = w;
 		previewBase = null;
+		// another working image (an Apply elsewhere, a walk to the next image): the old preview is not of it
+		untrack(() => onpreview(null));
 		shrinkForPreview(w, PREVIEW_SIDE)
 			.then((r) => {
 				if (baseFor === w) previewBase = r;

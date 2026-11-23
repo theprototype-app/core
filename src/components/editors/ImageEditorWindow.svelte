@@ -281,7 +281,8 @@
 				noiseOpen = false;
 				showToast('Could not load the noise panel');
 			});
-		tick().then(() => document.getElementById('image-editor-noise-section')?.scrollIntoView({ block: 'nearest' }));
+		// the panel is taller than most windows: bring its top into view, not just its last line
+		tick().then(() => document.getElementById('image-editor-noise-section')?.scrollIntoView({ block: 'start' }));
 	}
 	function closeNoise() {
 		noiseOpen = false;

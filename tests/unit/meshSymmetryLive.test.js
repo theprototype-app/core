@@ -5,9 +5,12 @@
 //
 // The gate is the mesh gate (watertight + consistently wound) plus SYMMETRY: every vertex
 // of the result has a twin at its mirror position.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import * as THREE from 'three';
-import { readTriangles, mirrorTrisCore, editSide, trisToUVs } from '$lib/faceEdit.js';
+import { readTriangles, mirrorTrisCore, editSide, trisToUVs, loadKernelOps } from '$lib/faceEdit.js';
+
+// 99 K4 family 6: mirrorTrisCore runs on the kernel (a lazy chunk)
+beforeAll(() => loadKernelOps());
 
 const keyOf = (v) => `${Math.round(v.x * 1e4)},${Math.round(v.y * 1e4)},${Math.round(v.z * 1e4)}`;
 const ek = (a, b) => (a < b ? a + '|' + b : b + '|' + a);

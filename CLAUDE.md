@@ -1753,7 +1753,22 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   operators author through. Imports NOTHING, deliberately: it stays a pure unit outside
   the history-cycle family, and derivation stays in faceEdit where the operators live.
   Full contract in the faceEdit entry below),
-  `meshKernel/` (99 K1, NOT imported by the app yet — K2-K4 move the editor onto it): a
+  **99 K2 — ONE COMMIT, ONE SENDER.** `meshCommit.js` (pure) is the only `meshgeo` builder (`meshGeoMessage`/
+  `sendMeshGeo`; the wire is byte-identical, proved across two trees by `mesh-commit-two-tree`) and `compactMeshState`
+  (what history keeps: Float32 positions/uvs, the partition packed Int32, so `entryBytes` counts what is HELD).
+  `faceEdit.commitMesh(c)` = snapshot -> apply ('session' | 'object') -> broadcast -> record ('op' | 'entry' | false),
+  the one path every mesh commit takes (session ops, commitMeshGeoTriple/Snapshot, the UV editor, adjust, live mirror).
+  **99 K3 — ONE EDIT SESSION.** `editSessionState.js` (a leaf) holds it: `session.face` (`FS` in faceEdit: object,
+  workingTris, faces, quadPartner, overlay(s), grab, adjust, proxy) and `session.vertex` (`VS` in meshEdit: object,
+  handles, handleMesh, overlay, proxy, selectedHandle, selection, proxyGesture) replace the module globals; the shared
+  part (uuid, entry, edited, kernel, ID selection) opens and closes in `editSession.js` on the 15-F moments. ENTRY IS
+  LOSSLESS: the entry geometry is kept by reference and a leave with nothing edited re-emits it (never the welded
+  kernel). The kernel is built after entry in `meshSession.worker.js` (lazy `meshSession.js`, skipped above the commit
+  ceiling); stashed picks are stored as IDs (faces, vertices, edges = vertex-ID pairs). K4 runs bevel, extrude/inset/move,
+  bridge/fill/solidify, merge/dissolve/delete, subdivide/symmetrize on the session's op mesh (`heldOpMesh` ->
+  `sessionKernelCommit`/`objectKernelCommit`, IDs carried; the K3 adapter module had no caller left and went). History counts a typed
+  array shared by several steps once (`meshBudget.historyBytes`; `meshCommit.shareIds` shares equal ID channels).
+  `meshKernel/` (99 K1; the app reaches it only lazily, through meshSession.js — K4 moves the operators onto it): a
   headless face-vertex mesh in flat typed arrays (BMesh disk + radial cycles), no three.js in
   the core (`three.js` is the one adapter that imports it), stable vertex/edge/face IDs = slots
   never reused until `compact()` (returns old -> new maps), n-gons, per-corner attributes,

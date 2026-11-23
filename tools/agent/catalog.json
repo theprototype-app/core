@@ -2176,9 +2176,31 @@
 						"description": "a CC0 material by Poly Haven name, ambientCG id (\"Wood051\", \"Bricks076\", \"Metal032\") or words (\"brown planks\")"
 					},
 					"slot": {
-						"type": "integer",
-						"minimum": 0,
-						"description": "which material slot of a multi-material object (default 0)"
+						"type": [
+							"integer",
+							"string"
+						],
+						"description": "which material slot of a multi-material object: its index (0 = first), or its id or name from list_materials (default 0)"
+					},
+					"slotName": {
+						"type": "string",
+						"description": "rename that slot"
+					},
+					"slotOff": {
+						"type": "boolean",
+						"description": "true: that slot draws the plain default material (its own material is kept); false: its material again"
+					},
+					"removeSlot": {
+						"type": "object",
+						"description": "remove that slot; its faces go to slot `to` (index, id or name; default the first other slot). Give nothing else in the call.",
+						"properties": {
+							"to": {
+								"type": [
+									"integer",
+									"string"
+								]
+							}
+						}
 					},
 					"faces": {
 						"type": "object",
@@ -8641,9 +8663,31 @@
 									"description": "a CC0 material by Poly Haven name, ambientCG id (\"Wood051\", \"Bricks076\", \"Metal032\") or words (\"brown planks\")"
 								},
 								"slot": {
-									"type": "integer",
-									"minimum": 0,
-									"description": "which material slot of a multi-material object (default 0)"
+									"type": [
+										"integer",
+										"string"
+									],
+									"description": "which material slot of a multi-material object: its index (0 = first), or its id or name from list_materials (default 0)"
+								},
+								"slotName": {
+									"type": "string",
+									"description": "rename that slot"
+								},
+								"slotOff": {
+									"type": "boolean",
+									"description": "true: that slot draws the plain default material (its own material is kept); false: its material again"
+								},
+								"removeSlot": {
+									"type": "object",
+									"description": "remove that slot; its faces go to slot `to` (index, id or name; default the first other slot). Give nothing else in the call.",
+									"properties": {
+										"to": {
+											"type": [
+												"integer",
+												"string"
+											]
+										}
+									}
 								},
 								"faces": {
 									"type": "object",

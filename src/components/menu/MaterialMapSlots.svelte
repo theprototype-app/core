@@ -18,8 +18,10 @@
 	const EXPLORER_ITEM = 'application/x-explorer-item';
 	const DEG = 180 / Math.PI;
 
-	/** @type {{ material: any, targets: any[], matMixed: (read: (object: any) => any) => boolean, refresh: () => void }} */
-	let { material, targets, matMixed, refresh } = $props();
+	/** 105-slots: `materialSlot` = which slot of a slot list every write goes to (the Inspector's active slot; the
+	 * targets are then that one object). Absent = 0 = as before.
+	 * @type {{ material: any, targets: any[], matMixed: (read: (object: any) => any) => boolean, refresh: () => void, materialSlot?: number }} */
+	let { material, targets, matMixed, refresh, materialSlot = 0 } = $props();
 
 	// `live` keeps one identity while its maps change. `material` is the Inspector's fresh snapshot, made on
 	// every scene poke, so everything read off the live material below goes through it.
@@ -51,13 +53,13 @@
 	}
 
 	/** @param {string} key @param {File} file */
-	const setFile = (key, file) => run(() => setObjectsMapSlot(uuids, key, file));
+	const setFile = (key, file) => run(() => setObjectsMapSlot(uuids, key, file, materialSlot));
 
 	/** @param {FileList | null} list */
 	async function setFromFiles(list) {
 		const files = [...(list ?? [])].map((file) => ({ file, name: file.name }));
 		if (!files.length) return;
-		const result = await withWireBatchAsync(() => setObjectsMapSet(uuids, files));
+		const result = await withWireBatchAsync(() => setObjectsMapSet(uuids, files, materialSlot));
 		refresh();
 		if (result.unknown.length) showToast('Could not tell which map these are: ' + result.unknown.join(', ') + '. Set them on their own row.');
 		else showToast(result.placed.length + (result.placed.length === 1 ? ' map set' : ' maps set'));
@@ -70,7 +72,7 @@
 		event.stopPropagation();
 		const raw = event.dataTransfer?.getData(EXPLORER_ITEM);
 		if (raw) {
-			await run(() => applyExplorerImageToMapSlot(uuids, JSON.parse(raw), key));
+			await run(() => applyExplorerImageToMapSlot(uuids, JSON.parse(raw), key, materialSlot));
 			return;
 		}
 		const file = event.dataTransfer?.files?.[0];
@@ -93,7 +95,7 @@
 	}
 
 	/** @param {any} patch */
-	const patchTransform = (patch) => fan('Tiling', (uuid) => setTexTransform(uuid, patch));
+	const patchTransform = (patch) => fan('Tiling', (uuid) => setTexTransform(uuid, patch, materialSlot));
 	/** @param {number} index @param {number} value */
 	const setTiling = (index, value) => patchTransform({ repeat: index === 0 ? [value, transform.repeat[1]] : [transform.repeat[0], value] });
 	/** @param {number} index @param {number} value */
@@ -141,7 +143,7 @@
 					{:else}
 						<span class="text-[length:var(--fs-badge)] text-text-faint">From the model</span>
 					{/if}
-					<UiButton id={'map-remove-' + slot.key} size="sm" variant="outline" onclick={() => run(() => removeObjectsMapSlot(uuids, slot.key))}>Remove</UiButton>
+					<UiButton id={'map-remove-' + slot.key} size="sm" variant="outline" onclick={() => run(() => removeObjectsMapSlot(uuids, slot.key, materialSlot))}>Remove</UiButton>
 				{:else}
 					<UiButton id={'map-set-' + slot.key} size="sm" variant="outline" aria-label={'Set the ' + slot.label + ' map'} onclick={() => pick(slot.key)}>Set...</UiButton>
 				{/if}
@@ -156,7 +158,7 @@
 					step={0.05}
 					value={normalStrength}
 					mixed={matMixed((object) => normalStrengthOf(object.material))}
-					onchange={(value) => fan('Normal strength', (uuid) => setNormalStrength(uuid, value))}
+					onchange={(value) => fan('Normal strength', (uuid) => setNormalStrength(uuid, value, materialSlot))}
 				/>
 			{/if}
 			{#if slot.key === 'aoMap' && slot.filled}
@@ -169,7 +171,7 @@
 					step={0.05}
 					value={aoStrength}
 					mixed={matMixed((object) => object.material.aoMapIntensity)}
-					onchange={(value) => fan('AO strength', (uuid) => setMaterialParam(uuid, 'aoMapIntensity', value))}
+					onchange={(value) => fan('AO strength', (uuid) => setMaterialParam(uuid, 'aoMapIntensity', value, true, materialSlot))}
 				/>
 			{/if}
 		{/each}

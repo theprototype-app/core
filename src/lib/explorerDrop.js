@@ -153,13 +153,13 @@ export async function applyExplorerImage(uuid, payload, slot = 0) {
  * @param {string[]} uuids @param {any} payload @param {string} key
  * @returns {Promise<boolean>}
  */
-export async function applyExplorerImageToMapSlot(uuids, payload, key) {
+export async function applyExplorerImageToMapSlot(uuids, payload, key, slot = 0) {
 	const item = get(explorerItems).find((entry) => entry.id === payload.id);
 	if (!item || item.kind !== 'image') return false;
 	const blob = await itemBlob(item.id);
 	if (!blob) return false;
 	const { setObjectsMapSlot } = await import('./materialMaps');
-	return (await setObjectsMapSlot(uuids, key, new File([blob], item.name, { type: blob.type || 'image/png' }))) > 0;
+	return (await setObjectsMapSlot(uuids, key, new File([blob], item.name, { type: blob.type || 'image/png' }), slot)) > 0; // 105-slots: `slot`
 }
 
 /**

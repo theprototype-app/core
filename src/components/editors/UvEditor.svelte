@@ -14,6 +14,7 @@
 	// DOWN in canvas space, so every mapping flips Y.
 	import { onMount, untrack } from 'svelte';
 	import Icon from '../ui/Icon.svelte';
+	import SlotList from '../menu/SlotList.svelte'; // 105-slots: the one slot list (also the Inspector's)
 	import HeadDockPop from '../ui/HeadDockPop.svelte'; // uir-polish G2/G3
 	import ScrollStrip from '../ui/ScrollStrip.svelte';
 	import { selectedObject, selectedObjects, objectsGroup, globalScene } from '../../stores/sceneStore';
@@ -1844,60 +1845,39 @@
 
 <svelte:window onresize={fitToViewport} />
 
-{#snippet slotRow(/** @type {{slot:number,name:string,type:string,mapUrl:string|null}} */ material, /** @type {number} */ index)}
-	<!-- The row is a DROP TARGET for an Explorer image or an OS file, the
-	     Inspector #texture-drop recipe. svelte-ignore: the drag handlers live on
-	     the wrapper so the whole row (not just the button) accepts a drop. -->
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div
-		class="uv-slot group/slot {index === slot ? 'uv-slot-active' : ''} {dropSlot === index ? 'uv-slot-drop' : ''}"
-		data-uv-slot={index}
-		ondragover={(e) => onSlotDragOver(e, index)}
-		ondragleave={() => (dropSlot = dropSlot === index ? -1 : dropSlot)}
-		ondrop={(e) => onSlotDrop(e, index)}
+{#snippet slotButtons(/** @type {number} */ index)}
+	<!-- 105-slots: the shared slot list (SlotList.svelte) draws the row; these are the UV editor's own buttons -->
+	{@const material = slots[index] ?? { slot: index, name: '', type: '', mapUrl: null }}
+	<button
+		class="uv-slot-btn"
+		id="uv-slot-assign-{index}"
+		title={pickedTris
+			? `Assign the ${pickedTris} selected face triangles to this slot`
+			: 'Select faces in Edit Mesh first, then assign them to a slot'}
+		aria-label="Assign the selected faces to this slot"
+		disabled={!pickedTris}
+		onclick={() => assignSelectionTo(index)}
 	>
+		<Icon name="target" size={16} aria-hidden="true" />
+	</button>
+	<button
+		class="uv-slot-btn"
+		id="uv-slot-image-{index}"
+		title={material.mapUrl ? 'Replace this image' : 'Add an image'}
+		aria-label={material.mapUrl ? 'Replace this image' : 'Add an image'}
+		onclick={() => pickImageFor(index)}
+	>
+		<Icon name="image-plus" size={16} aria-hidden="true" />
+	</button>
+	{#if material.mapUrl}
 		<button
-			class="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-xs {index === slot ? 'text-accent-soft-text' : 'text-text-2'}"
-			title={material?.name || `Material slot ${index}`}
-			onclick={() => uvActiveSlot.set(index)}
-		>
-			<span
-				class="h-7 w-7 shrink-0 rounded-sm border border-border bg-surface-inset bg-cover bg-center"
-				style={material.mapUrl ? `background-image:url("${material.mapUrl}")` : ''}
-			></span>
-			<span class="min-w-0 flex-1 truncate">{material?.name || material?.type || `Slot ${index}`}</span>
-		</button>
-		<button
-			class="uv-slot-btn"
-			id="uv-slot-assign-{index}"
-			title={pickedTris
-				? `Assign the ${pickedTris} selected face triangles to this slot`
-				: 'Select faces in Edit Mesh first, then assign them to a slot'}
-			aria-label="Assign the selected faces to this slot"
-			disabled={!pickedTris}
-			onclick={() => assignSelectionTo(index)}
-		>
-			<Icon name="target" size={16} aria-hidden="true" />
-		</button>
-		<button
-			class="uv-slot-btn"
-			id="uv-slot-image-{index}"
-			title={material.mapUrl ? 'Replace this image' : 'Add an image'}
-			aria-label={material.mapUrl ? 'Replace this image' : 'Add an image'}
-			onclick={() => pickImageFor(index)}
-		>
-			<Icon name="image-plus" size={16} aria-hidden="true" />
-		</button>
-		{#if material.mapUrl}
-			<button
-				class="uv-slot-btn text-ink-bad"
-				id="uv-slot-remove-{index}"
-				title="Remove this image"
-				aria-label="Remove this image"
-				onclick={() => target && removeObjectTexture(target.uuid, index)}
-			>✕</button>
-		{/if}
-	</div>
+			class="uv-slot-btn text-ink-bad"
+			id="uv-slot-remove-{index}"
+			title="Remove this image"
+			aria-label="Remove this image"
+			onclick={() => target && removeObjectTexture(target.uuid, index)}
+		>✕</button>
+	{/if}
 {/snippet}
 
 {#snippet body()}
@@ -2060,9 +2040,18 @@
 			{#if !slots.length}
 				<p class="p-2 text-[11px] text-text-faint">No material on this object.</p>
 			{:else}
-				{#each slots as material, index (index)}
-					{@render slotRow(material, index)}
-				{/each}
+				<SlotList
+					object={target}
+					idPrefix="uv-slot"
+					extra={slotButtons}
+					rowAttrs={(/** @type {number} */ i) => ({ 'data-uv-slot': i })}
+					rowClass={(/** @type {number} */ i) => 'uv-slot' + (i === slot ? ' uv-slot-active' : '') + (dropSlot === i ? ' uv-slot-drop' : '')}
+					ondragover={onSlotDragOver}
+					ondragleave={(/** @type {number} */ i) => (dropSlot = dropSlot === i ? -1 : dropSlot)}
+					ondrop={onSlotDrop}
+					onassign={assignSelectionTo}
+					canAssign={!!pickedTris}
+				/>
 				<button
 					id="uv-add-slot"
 					class="mt-1 flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-[11px] text-text-2 hover:bg-surface-hover"
@@ -2350,21 +2339,15 @@
 	.uv-chip:hover {
 		background: var(--surface-hover);
 	}
-	.uv-slot {
-		display: flex;
-		width: 100%;
-		align-items: center;
-		gap: 0.125rem;
+	/* 105-slots: the rows are drawn by SlotList.svelte now (these classes reach them through rowClass), hence :global */
+	:global(.uv-slot) {
 		padding-right: 0.25rem;
 	}
-	.uv-slot:hover {
+	:global(.uv-slot:hover) {
 		background: var(--surface-hover);
 	}
-	.uv-slot-active {
-		background: var(--accent-soft);
-	}
 	/* dashed ring while an image hovers the row (the Inspector drop-zone cue) */
-	.uv-slot-drop {
+	:global(.uv-slot-drop) {
 		outline: 1px dashed var(--accent);
 		outline-offset: -1px;
 		background: var(--accent-soft);
@@ -2384,7 +2367,14 @@
 		background: var(--surface-active);
 	}
 	/* keyboard users need the row buttons without a hover */
-	.uv-slot:focus-within .uv-slot-btn {
+	:global(.uv-slot:focus-within) .uv-slot-btn {
 		opacity: 1;
+	}
+	/* 105-slots touch (Find N6): the row's own buttons are 44 px targets too (they were 20 px) */
+	@media (pointer: coarse) {
+		.uv-slot-btn {
+			height: 44px;
+			width: 44px;
+		}
 	}
 </style>

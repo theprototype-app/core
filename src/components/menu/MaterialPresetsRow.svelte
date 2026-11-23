@@ -29,14 +29,16 @@
 	import { sameLook, swatchLayers, NAME_MAX, LOOK_DEFAULTS } from '$lib/materialPresetsCore';
 	import { creditLine } from '$lib/cc0/cc0Core.js'; // 47-cc0: a CC0 preset names its source
 
-	/** @type {{ material: any, count?: number, fan: (label: string, fn: (object: any) => void) => void, primaryUuid?: string }} */
-	let { material, count = 0, fan, primaryUuid = '' } = $props();
+	/** 105-slots: `slot` = the slot a swatch goes to (a slot list's active slot; the Inspector then edits that one
+	 * object only). Absent = 0 = as before.
+	 * @type {{ material: any, count?: number, fan: (label: string, fn: (object: any) => void) => void, primaryUuid?: string, slot?: number }} */
+	let { material, count = 0, fan, primaryUuid = '', slot = 0 } = $props();
 
 	const starters = starterPresets();
 
 	/** the primary object's look now, selection tint removed (re-read on every Inspector poke:
 	 * `material` is a fresh snapshot, so reading it here is the dependency) */
-	const look = $derived(material?.ref && primaryUuid ? lookOfObject(primaryUuid) : null);
+	const look = $derived(material?.ref && primaryUuid ? lookOfObject(primaryUuid, 'Material', slot) : null);
 
 	/** resolved starters, once (their procedural maps are generated on first use) */
 	const resolvedStarters = starters.map((s) => ({ ...s, resolved: resolvePreset(s.preset) }));
@@ -61,7 +63,7 @@
 
 	/** @param {any} preset @param {string} label */
 	function apply(preset, label) {
-		fan('Material preset: ' + label, (object) => applyMaterialPreset(object.uuid, preset));
+		fan('Material preset: ' + label, (object) => applyMaterialPreset(object.uuid, preset, slot));
 		selectedObject.update((s) => s); // the colour picker re-reads the new colour
 	}
 
@@ -100,7 +102,7 @@
 		}
 		if (naming.mode === 'save') {
 			if (!primaryUuid) return;
-			const saved = await saveObjectMaterialAsPreset(primaryUuid, name);
+			const saved = await saveObjectMaterialAsPreset(primaryUuid, name, slot);
 			if (!saved) return;
 			if (saved !== name) showToast(`Saved as “${saved}” — “${name}” was taken`);
 			naming = null;

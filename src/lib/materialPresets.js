@@ -280,10 +280,12 @@ export function lookOfMaterial(material, label = 'Material') {
 /**
  * The look an OBJECT wears — its material's look with the selection tint taken back out (a
  * multi-select member's emissive is the highlight, not the author's).
- * @param {string} uuid @param {string} [label]
+ * 105-slots: `slot` = which slot of a slot list (the selection tint never sits on one).
+ * @param {string} uuid @param {string} [label] @param {number} [slot]
  */
-export function lookOfObject(uuid, label = 'Material') {
+export function lookOfObject(uuid, label = 'Material', slot = 0) {
 	const object = objectOf(uuid);
+	if (isMultiMaterial(object)) return lookOfMaterial(materialAt(object, slot), label);
 	const look = lookOfMaterial(object?.material, label);
 	if (!look) return null;
 	const original = actionsRef?.selectionTintOriginals?.(uuid)?.[object.uuid];
@@ -364,8 +366,8 @@ function putInStore(name, payload, dropName) {
 }
 
 /** Snapshot an object's material and save it. @param {string} uuid @param {string} name */
-export async function saveObjectMaterialAsPreset(uuid, name) {
-	const look = lookOfObject(uuid, name);
+export async function saveObjectMaterialAsPreset(uuid, name, slot = 0) {
+	const look = lookOfObject(uuid, name, slot);
 	if (!look) {
 		showToast('This object has no single material to save');
 		return null;

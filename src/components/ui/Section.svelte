@@ -16,7 +16,7 @@
 	import { inspectorFilter, inspectorScrollTo } from '../../stores/appStore';
 	import Icon from './Icon.svelte';
 	import Badge from './Badge.svelte';
-	import { fieldClip, openSectionScope, settle } from '$lib/fieldMenu';
+	import { fieldClip, fieldMenu, openSectionScope, settle } from '$lib/fieldMenu';
 
 	/**
 	 * P6: `aliases` are OLD deep-link names this section still answers to. A section's
@@ -35,7 +35,10 @@
 	 * look open). The person's own choice, once made, is what the stored key says from then on.
 	 * An ALIAS that names a `data-anchor` inside the section lands on that sub-heading (Background and
 	 * Fog live inside Environment now; `openSceneSection('Fog')` still lands on the fog rows).
-	 * @type {{label?: string, aliases?: string[], collapsible?: boolean, open?: boolean, closed?: boolean, variant?: 'legacy'|'card'|'panel', badge?: string, note?: string, children?: any, clip?: any}}
+	 *
+	 * 105-slots: `menu` = a function returning the section's own ⋯ menu items (the shared ContextMenu shape) — a panel
+	 * section then shows a ⋯ button at the end of its header. Absent (every other section): the header is unchanged.
+	 * @type {{label?: string, aliases?: string[], collapsible?: boolean, open?: boolean, closed?: boolean, variant?: 'legacy'|'card'|'panel', badge?: string, note?: string, children?: any, clip?: any, menu?: (() => any[]) | null}}
 	 */
 	let {
 		label = '',
@@ -47,8 +50,17 @@
 		badge = '',
 		note = '',
 		children = null,
-		clip = undefined
+		clip = undefined,
+		menu = null
 	} = $props();
+
+	/** 105-slots: open the section's own ⋯ menu under its button @param {MouseEvent} e */
+	function openSectionMenu(e) {
+		const items = menu?.() ?? [];
+		if (!items.length) return;
+		const r = /** @type {HTMLElement} */ (e.currentTarget).getBoundingClientRect();
+		fieldMenu.set({ x: r.right, y: r.bottom, items });
+	}
 	const isCard = $derived(variant === 'card');
 
 	// 43 J3: rows inside join this section's clipboard registry (a Settings card stays out)
@@ -181,7 +193,18 @@
 	</section>
 {:else if variant === 'panel'}
 	<section class="tp-ui sec-panel" class:hidden={filtering && !match} bind:this={root}>
-		{#if collapsible && !filtering}
+		{#if collapsible && !filtering && menu}
+			<div class="sec-panel-headrow">
+				<button type="button" class="sec-panel-head" aria-expanded={showContent} onclick={toggle} use:fieldClip={sectionClip}>
+					<span class="sec-chev" class:sec-chev-open={showContent} aria-hidden="true"><Icon name="chevron-right" size={16} /></span>
+					<span class="sec-title ui-section-label">{label}</span>
+					{#if badge}<Badge tone="scope" text={badge} />{/if}
+				</button>
+				<button type="button" class="sec-menu-btn" data-section-menu={label} aria-haspopup="menu" aria-label="{label} options" title="{label} options" onclick={openSectionMenu}>
+					<Icon name="ellipsis" size={16} aria-hidden="true" />
+				</button>
+			</div>
+		{:else if collapsible && !filtering}
 			<button type="button" class="sec-panel-head" aria-expanded={showContent} onclick={toggle} use:fieldClip={sectionClip}>
 				<span class="sec-chev" class:sec-chev-open={showContent} aria-hidden="true"><Icon name="chevron-right" size={16} /></span>
 				<span class="sec-title ui-section-label">{label}</span>
@@ -295,6 +318,38 @@
 	}
 	.sec-static {
 		cursor: default;
+	}
+	/* 105-slots: a panel header with its own ⋯ menu */
+	.sec-panel-headrow {
+		display: flex;
+		align-items: center;
+	}
+	.sec-panel-headrow .sec-panel-head {
+		flex: 1;
+		min-width: 0;
+	}
+	.sec-menu-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: var(--row-h);
+		height: var(--row-h);
+		flex-shrink: 0;
+		border: 0;
+		border-radius: var(--radius-button);
+		background: transparent;
+		color: var(--text-faint);
+		cursor: pointer;
+	}
+	.sec-menu-btn:hover {
+		color: var(--text-2);
+		background: var(--surface-hover);
+	}
+	@media (pointer: coarse) {
+		.sec-menu-btn {
+			width: 44px;
+			height: 44px;
+		}
 	}
 	.sec-chev {
 		display: inline-flex;

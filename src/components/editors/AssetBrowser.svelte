@@ -22,6 +22,7 @@
 	import {
 		assetBrowserOpen,
 		assetBrowserKind,
+		assetBrowserTarget,
 		assetBrowserRes
 	} from '$lib/cc0/assetBrowserState.js';
 	import {
@@ -338,7 +339,8 @@
 
 	/** @param {any} row @param {any} preset */
 	async function applyMaterial(row, preset) {
-		if (!selectionCount) {
+		// 105-slots: a slot target (the slot list's Switch material…) needs no selection
+		if (!selectionCount && !$assetBrowserTarget) {
 			showToast('Select an object first, then apply the material');
 			return;
 		}
@@ -644,11 +646,13 @@
 										size="sm"
 										icon="palette"
 										data-act="apply"
-										disabled={!selectionCount}
-										title={selectionCount
-											? 'Put it on the selected object' + (selectionCount > 1 ? 's' : '')
-											: 'Select an object first'}
-										onclick={() => applyMaterial(row, preset)}>Apply</Button
+										disabled={!selectionCount && !$assetBrowserTarget}
+										title={$assetBrowserTarget
+											? 'Put it on ' + $assetBrowserTarget.label
+											: selectionCount
+												? 'Put it on the selected object' + (selectionCount > 1 ? 's' : '')
+												: 'Select an object first'}
+										onclick={() => applyMaterial(row, preset)}>{$assetBrowserTarget ? 'Apply to ' + $assetBrowserTarget.label : 'Apply'}</Button
 									>
 								{/if}
 							</div>

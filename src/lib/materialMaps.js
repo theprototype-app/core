@@ -196,9 +196,10 @@ export function setNormalStrength(uuid, value, slot = 0) {
  * given, or by its file name. One undo step for the lot.
  * @param {string[]} uuids
  * @param {{file: File | Blob, name?: string, slot?: string | null}[]} files `slot` = 'map' or a slot key
+ * @param {number} [materialSlot] 105-slots: which MATERIAL slot of a slot list (here `slot` names a map)
  * @returns {Promise<{placed: {name: string, slot: string}[], unknown: string[]}>}
  */
-export async function setObjectsMapSet(uuids, files) {
+export async function setObjectsMapSet(uuids, files, materialSlot = 0) {
 	/** @type {{name: string, slot: string}[]} */
 	const placed = [];
 	/** @type {string[]} */
@@ -208,9 +209,9 @@ export async function setObjectsMapSet(uuids, files) {
 			const name = entry.name ?? /** @type {any} */ (entry.file).name ?? 'image';
 			const slot = entry.slot ?? guessMapSlot(name);
 			if (slot === 'map') {
-				if (await setObjectsTexture(uuids, entry.file)) placed.push({ name, slot });
+				if (await setObjectsTexture(uuids, entry.file, materialSlot)) placed.push({ name, slot });
 			} else if (slot && isMapSlotKey(slot)) {
-				if (await setObjectsMapSlot(uuids, slot, entry.file)) placed.push({ name, slot });
+				if (await setObjectsMapSlot(uuids, slot, entry.file, materialSlot)) placed.push({ name, slot });
 			} else unknown.push(name);
 		}
 	});

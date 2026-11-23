@@ -40,6 +40,7 @@ import {
 } from './lookToolsCore.js';
 import { FETCH_TIMEOUT_MS } from './imageToolCore.js';
 import { STARTER_PRESETS } from '$lib/materialPresetsCore.js';
+import { slotIdsOf, slotOffOf, slotIndexOf } from '$lib/materialSlotsCore.js'; // 105-slots: ids, off, slot references
 
 /** mcp-shapes: the starter presets every scene has, said in the tool text so an agent does not have to guess */
 const STARTER_NAMES = STARTER_PRESETS.map((p) => p.label).join(', ');
@@ -381,14 +382,23 @@ async function setMaterialTool(args) {
 		if (!wantType) errors.push('type: one of ' + MATERIAL_TYPES.join(', '));
 	}
 	const baseSlot = args.slot === undefined ? 0 : args.slot;
-	if (!Number.isInteger(baseSlot) || baseSlot < 0) errors.push('slot: a whole number from 0');
+	// 105-slots: a slot is named by its index, its id or its name (list_materials gives all three)
+	if (!(Number.isInteger(baseSlot) && baseSlot >= 0) && !(typeof baseSlot === 'string' && baseSlot.trim()))
+		errors.push('slot: an index from 0, or a slot id or name from list_materials');
+	if (args.slotName !== undefined && typeof args.slotName !== 'string') errors.push('slotName: a name');
+	if (args.slotOff !== undefined && typeof args.slotOff !== 'boolean') errors.push('slotOff: true (it draws the plain default) or false');
+	const removing = args.removeSlot !== undefined && args.removeSlot !== null && args.removeSlot !== false;
+	if (removing && (typeof args.removeSlot !== 'object' && args.removeSlot !== true)) errors.push('removeSlot: {} or {"to": a slot}');
 	if (args.faces !== undefined && args.slot !== undefined) errors.push('faces and slot: give one (faces makes a new slot)');
 	if (args.cc0 !== undefined && (typeof args.cc0 !== 'string' || !args.cc0.trim())) errors.push('cc0: a material name, e.g. "Wood051"');
 	if (args.preset !== undefined && (typeof args.preset !== 'string' || !args.preset.trim())) errors.push('preset: a preset name');
 	if (args.cc0 && args.preset) errors.push('cc0 and preset: give one');
 	if (args.cc0 && uuids.length > MAX_CC0_OBJECTS) errors.push('cc0: at most ' + MAX_CC0_OBJECTS + ' objects in one call (each one carries the images)');
-	if (!Object.keys(fields).length && !Object.keys(maps.slots).length && !wantType && !args.cc0 && !args.preset && args.faces === undefined)
-		errors.push('nothing to set: give color, roughness, metalness, emissive, opacity, params, maps, type, preset or cc0');
+	const listChange = args.slotName !== undefined || args.slotOff !== undefined;
+	if (removing && (Object.keys(fields).length || Object.keys(maps.slots).length || wantType || args.cc0 || args.preset || args.faces !== undefined || listChange))
+		errors.push('removeSlot: give it alone (the slot and everything on it goes)');
+	if (!Object.keys(fields).length && !Object.keys(maps.slots).length && !wantType && !args.cc0 && !args.preset && args.faces === undefined && !listChange && !removing)
+		errors.push('nothing to set: give color, roughness, metalness, emissive, opacity, params, maps, type, preset, cc0, slotName, slotOff or removeSlot');
 	if (errors.length) return { error: errors.join('; ') };
 
 	// sources first: a bad URL changes nothing
@@ -450,14 +460,24 @@ async function setMaterialTool(args) {
 			skipped.push({ uuid, reason: 'it wears a shader graph, which decides its look; remove it first: assign_shader {"objects": ["' + uuid + '"], "shader": null}' });
 			continue;
 		}
-		let slot = baseSlot;
+		// 105-slots: the slot reference, per object (an id or a name means something different on each one)
+		let slot = typeof baseSlot === 'number' ? baseSlot : slotIndexOf(mh.materialsOf(object), String(baseSlot).trim());
+		if (slot < 0) {
+			skipped.push({ uuid, reason: 'it has no slot "' + String(baseSlot).slice(0, 40) + '" (list_materials names its slots)' });
+			continue;
+		}
+		if (removing) {
+			const ms = await import('$lib/materialSlots.js');
+			const to = typeof args.removeSlot === 'object' ? args.removeSlot.to : undefined;
+			if (mh.materialsOf(object).length < 2) skipped.push({ uuid, reason: 'it has one material slot: there is nothing to remove' });
+			else if (!ms.removeSlot(uuid, slot, to)) skipped.push({ uuid, reason: 'the slot could not be removed (is it open in Edit Mesh?)' });
+			else updated.push({ uuid, ok: true, removedSlot: slot });
+			continue;
+		}
 		if (preset || wantType) {
-			if (Array.isArray(object.material)) {
-				skipped.push({ uuid, reason: 'it has ' + object.material.length + ' material slots: a preset or a type change takes one' });
-				continue;
-			}
-			if (wantType && object.material.type !== wantType) mh.switchMaterialType(uuid, wantType, true);
-			if (preset && !mp.applyMaterialPreset(uuid, preset)) {
+			// 105-slots: a preset or a type change now goes to ONE slot of a slot list (it used to refuse)
+			if (wantType && mh.materialAt(object, slot)?.type !== wantType) mh.switchMaterialType(uuid, wantType, true, slot);
+			if (preset && !mp.applyMaterialPreset(uuid, preset, slot)) {
 				skipped.push({ uuid, reason: 'the preset could not be applied' });
 				continue;
 			}
@@ -502,20 +522,17 @@ async function setMaterialTool(args) {
 			skipped.push({ uuid, reason: fieldErrors.join('; ') });
 			continue;
 		}
-		const single = !Array.isArray(object.material) && slot === 0;
-		if (single) {
-			for (const [key, value] of Object.entries(checked)) {
-				if (key === 'color') mh.setObjectColor(uuid, value);
-				else if (!mh.setMaterialParam(uuid, key, value, true)) fieldErrors.push(key + ': not applied');
-			}
-		} else if (Object.keys(checked).length) {
-			mp.replaceMaterials(uuid, (payload) => {
-				const m = payload.materials[slot];
-				for (const [key, value] of Object.entries(checked))
-					m[key] = typeof value === 'string' && value.startsWith('#') ? parseInt(value.slice(1), 16) : value;
-				return payload;
-			});
+		// 105-slots: one path for a single material and a slot list: the per-slot messages (light, and healed for a peer
+		// on the previous release), not a whole-list rewrite
+		for (const [key, value] of Object.entries(checked)) {
+			if (key === 'color') mh.setObjectColor(uuid, value, true, slot);
+			else if (!mh.setMaterialParam(uuid, key, value, true, slot)) fieldErrors.push(key + ': not applied');
 		}
+		if (listChange && mh.materialsOf(object).length > 1) {
+			const ms = await import('$lib/materialSlots.js');
+			if (args.slotName !== undefined) ms.renameSlot(uuid, slot, args.slotName);
+			if (args.slotOff !== undefined) ms.setSlotOff(uuid, slot, args.slotOff);
+		} else if (listChange) fieldErrors.push('slotName / slotOff: it has one material slot (add one with faces first)');
 		const row = { uuid, slot, object, material: null, errors: fieldErrors };
 		rows.push(row);
 		if (maps.slots.map?.clear) mh.removeObjectTexture(uuid, slot);
@@ -592,6 +609,23 @@ function textureFacts(tex, source) {
 	return out;
 }
 
+/**
+ * 105-slots: rows of a slot list carry the slot's `id` (stable across reorder / remove; what `slot` also accepts) and
+ * `off` when it is switched off. A single material is described as before.
+ * @param {any[]} list @param {(m: any, slot: number) => any} describe
+ */
+function withSlotFacts(list, describe) {
+	const ids = list.length > 1 ? slotIdsOf(list) : null;
+	return list.map((m, slot) => {
+		const row = describe(m, slot);
+		if (ids) {
+			row.id = ids[slot];
+			if (slotOffOf(m)) row.off = true;
+		}
+		return row;
+	});
+}
+
 /** a material as a person would describe it @param {any} m @param {number} slot @param {boolean} [full] */
 function describeMaterial(m, slot, full = false) {
 	/** @type {any} */
@@ -650,7 +684,7 @@ async function listMaterialsTool(args) {
 		return {
 			uuid: node.uuid,
 			name: node.name || node.type,
-			slots: (base ? [base] : materialsOf(node)).map((m, slot) => describeMaterial(m, slot)),
+			slots: withSlotFacts(base ? [base] : materialsOf(node), (m, slot) => describeMaterial(m, slot)),
 			...(key ? { shader: key } : {})
 		};
 	});
@@ -692,7 +726,7 @@ async function getMaterialTool(args) {
 	const base = sg.isShaderDriven(uuid) ? sg.baseMaterialOf(uuid) : null;
 	const groups = object.geometry?.groups ?? [];
 	const list = base ? [base] : materialsOf(object);
-	const slots = list.map((m, slot) => {
+	const slots = withSlotFacts(list, (m, slot) => {
 		const row = describeMaterial(m, slot, true);
 		if (list.length > 1) row.triangles = groups.filter((/** @type {any} */ g) => (g.materialIndex || 0) === slot).reduce((/** @type {number} */ n, /** @type {any} */ g) => n + g.count / 3, 0);
 		return row;
@@ -1435,7 +1469,17 @@ export const LOOK_AI_TOOLS = [
 					type: { type: 'string', enum: MATERIAL_TYPES, description: 'swap the material class first' },
 					preset: { type: 'string', description: 'a preset: ' + STARTER_NAMES + ', or a saved one list_materials names' },
 					cc0: { type: 'string', description: 'a CC0 material by Poly Haven name, ambientCG id ("Wood051", "Bricks076", "Metal032") or words ("brown planks")' },
-					slot: { type: 'integer', minimum: 0, description: 'which material slot of a multi-material object (default 0)' },
+					slot: {
+						type: ['integer', 'string'],
+						description: 'which material slot of a multi-material object: its index (0 = first), or its id or name from list_materials (default 0)'
+					},
+					slotName: { type: 'string', description: 'rename that slot' },
+					slotOff: { type: 'boolean', description: 'true: that slot draws the plain default material (its own material is kept); false: its material again' },
+					removeSlot: {
+						type: 'object',
+						description: 'remove that slot; its faces go to slot `to` (index, id or name; default the first other slot). Give nothing else in the call.',
+						properties: { to: { type: ['integer', 'string'] } }
+					},
 					faces: FACES_SCHEMA
 				},
 				required: ['objects']

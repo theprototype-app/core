@@ -2831,6 +2831,15 @@ export function shrinkSelection() {
 export function selectAllFaces() {
 	return withSelectionHistory('faces', () => selectAllFacesInner());
 }
+/** 105-slots: select every triangle of one material SLOT (the slot list's "Select its faces"). @param {number} slot */
+export function selectFacesOfSlot(slot) {
+	return withSelectionHistory('faces', () => {
+		if (!faceEdited) return false;
+		faceEditSelectedTris.set(workingTris.flatMap((/** @type {any} */ t, /** @type {number} */ i) => ((t.mi ?? 0) === slot ? [i] : [])));
+		refreshFaceOverlay();
+		return true;
+	});
+}
 /** M6: invert the selection (by pick UNIT, so quads stay whole). @returns {boolean} */
 export function invertFaceSelection() {
 	return withSelectionHistory('faces', () => invertFaceSelectionInner());

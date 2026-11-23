@@ -13,12 +13,17 @@
 //
 // The honest cost (the D2 one, per slot): a peer on the previous release that edits a linked slot fans nothing, so
 // only that object changes; the copies then differ until somebody on a current build edits that property again or
-// presses Make unique. A LEAF: the scene store, history and the pure core (materialsHandler imports it).
+// presses Make unique. A LEAF: the scene store, the pure core and the slotDraw gate (history arrives through it).
 import { get } from 'svelte/store';
 import { objectsGroup } from '../stores/sceneStore';
-import { beginHistoryBatch, endHistoryBatch, historyBatchOpen, historyApplying } from './history';
-import { slotLinkOf } from './materialSlotsCore.js';
-import { ownMaterialsOf } from './slotDraw.js';
+import { slotLinkOf } from './slotIds.js';
+import { ownMaterialsOf, registerSlotLinks, linkHistory } from './slotDraw.js';
+
+// history through the gate (materialsHandler fills it): see slotDraw.linkHistory
+const beginHistoryBatch = () => linkHistory.begin?.();
+const endHistoryBatch = (/** @type {string} */ label) => linkHistory.end?.(label);
+const historyBatchOpen = () => !!linkHistory.open?.();
+const historyApplying = () => !!linkHistory.applying?.();
 
 /**
  * Every slot in the scene that holds `link`, in a deterministic order (object uuid, then slot index).
@@ -142,3 +147,6 @@ export function linkCounts() {
 	});
 	return out;
 }
+
+// the boot gate (slotDraw.js) routes every look edit here from now on
+registerSlotLinks({ linkedEdit, linkedOthers, sharedCount });

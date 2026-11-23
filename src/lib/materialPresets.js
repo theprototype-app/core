@@ -22,7 +22,7 @@ import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
 import { recordEntry } from './history';
 import { applyMaterials, materialsPayload, materialAt, isMultiMaterial } from './materialsHandler';
 import { slotIdOf } from './slotDraw.js'; // 105-slots
-import { linkedEdit } from './slotLinks.js'; // 105-slots LINK: a preset on a linked slot reaches every holder
+import { linkedEdit } from './slotDraw.js'; // 105-slots LINK: a preset on a linked slot reaches every holder (boot gate)
 import { fanTargets } from './materialSharing';
 import {
 	EXTRA_MAP_FIELDS,

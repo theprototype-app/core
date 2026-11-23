@@ -14,7 +14,6 @@
 	// DOWN in canvas space, so every mapping flips Y.
 	import { onMount, untrack } from 'svelte';
 	import Icon from '../ui/Icon.svelte';
-	import SlotList from '../menu/SlotList.svelte'; // 105-slots: the one slot list (also the Inspector's)
 	import HeadDockPop from '../ui/HeadDockPop.svelte'; // uir-polish G2/G3
 	import ScrollStrip from '../ui/ScrollStrip.svelte';
 	import { selectedObject, selectedObjects, objectsGroup, globalScene } from '../../stores/sceneStore';
@@ -2040,7 +2039,9 @@
 			{#if !slots.length}
 				<p class="p-2 text-[11px] text-text-faint">No material on this object.</p>
 			{:else}
-				<SlotList
+				<!-- 105-slots: the one slot list (also the Inspector's), lazy: it is not boot weight -->
+				{#await import('../menu/SlotList.svelte') then SlotListModule}
+				<SlotListModule.default
 					object={target}
 					idPrefix="uv-slot"
 					extra={slotButtons}
@@ -2052,6 +2053,7 @@
 					onassign={assignSelectionTo}
 					canAssign={!!pickedTris}
 				/>
+				{/await}
 				<button
 					id="uv-add-slot"
 					class="mt-1 flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-[11px] text-text-2 hover:bg-surface-hover"

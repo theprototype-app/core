@@ -24,7 +24,7 @@
 // draws (stand-ins, delegation, products, park hook, reconcile) lives there. A LEAF: svelte/store + the scene store.
 import { writable, get } from 'svelte/store';
 import { objectsGroup } from '../stores/sceneStore';
-import { slotIdOf, slotIdsOf, slotOffOf } from './materialSlotsCore.js';
+import { slotIdOf, slotIdsOf, slotOffOf } from './slotIds.js';
 
 export { slotIdOf, slotIdsOf, slotOffOf };
 
@@ -75,6 +75,39 @@ export function syncSlotDraw(object) {
 	return false;
 }
 
+// ---- 105-slots LINK: the boot GATE of slotLinks.js (the fan of a look edit across every holder of a shared material).
+// Every edit path calls these; until slotLinks.js has loaded no slot can be linked here (nothing created one, and the
+// scan below loads it the moment a link arrives from a file, a peer or an undo), so they run the edit alone.
+/** @type {any} */
+let links = null;
+/**
+ * The history calls the fan needs, handed in by materialsHandler (which imports history anyway): slotLinks.js must
+ * not import history itself, or the boot chunk carries a preload list of history's whole graph for its lazy import.
+ * @type {{begin?: () => void, end?: (label: string) => void, open?: () => boolean, applying?: () => boolean}}
+ */
+export const linkHistory = {};
+/** slotLinks.js registers itself when it loads (materialSlots.js imports it; so does the scan) @param {any} m */
+export function registerSlotLinks(m) {
+	links = m;
+}
+/** @template T @param {any} object @param {number} slot @param {() => T} self @param {(uuid: string, slot: number) => void} other @param {string} [label] @returns {T} */
+export function linkedEdit(object, slot, self, other, label) {
+	return links ? links.linkedEdit(object, slot, self, other, label) : self();
+}
+/** @param {any} object @param {number} slot @returns {{object: any, index: number}[]} */
+export function linkedOthers(object, slot) {
+	return links ? links.linkedOthers(object, slot) : [];
+}
+/** @param {any} material @returns {number} */
+export function sharedCount(material) {
+	return links ? links.sharedCount(material) : 1;
+}
+/** does any material of this mesh carry a link? @param {any} node */
+const holdsLink = (/** @type {any} */ node) =>
+	(Array.isArray(node.material) ? node.material : [node.material]).some(
+		(/** @type {any} */ m) => ownOf(m)?.userData?.slot?.link
+	);
+
 // the reconcile: a load, a peer's object or an undo rebuilds materials without passing through a commit; until the
 // scene has held a slot list, only a cheap walk looking for one
 /** @type {any} */
@@ -82,11 +115,17 @@ let reconcileTimer = null;
 objectsGroup.subscribe(() => {
 	clearTimeout(reconcileTimer);
 	reconcileTimer = setTimeout(() => {
-		if (layer) return layer.reconcileSlotDraw();
 		let found = false;
-		get(objectsGroup)?.traverse?.(
-			(/** @type {any} */ node) => (found ||= !!node.isMesh && isSlotList(node))
-		);
+		let linked = false;
+		if (!layer || !links)
+			get(objectsGroup)?.traverse?.((/** @type {any} */ node) => {
+				if (!node.isMesh || !node.material) return;
+				found ||= isSlotList(node);
+				linked ||= !links && holdsLink(node);
+			});
+		// 105-slots LINK: a link arrived (a file, a peer, an undo): the fan must be there before the next edit
+		if (linked) import('./slotLinks.js').catch(() => {});
+		if (layer) return layer.reconcileSlotDraw();
 		if (found) loadSlotDrawLayer().then((m) => m.reconcileSlotDraw());
 	}, 150);
 });

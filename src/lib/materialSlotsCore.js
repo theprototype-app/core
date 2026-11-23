@@ -1,31 +1,7 @@
 // 105-slots: the pure half of material slots — ids, the duplicate-id rule, group remapping, slot references.
-// Imports NOTHING (the unit layer's entry rule); slotDraw.js and materialSlots.js build on it.
-
-/** The raw id a slot's material carries: `userData.slot.id`, else its uuid. @param {any} material @returns {string} */
-export function slotIdOf(material) {
-	const id = material?.userData?.slot?.id;
-	return typeof id === 'string' && id ? id : String(material?.uuid ?? '');
-}
-
-/**
- * The ids of a slot list, in order. Two slots with one id (an older peer's "add slot" clones the last material,
- * userData included): the later one answers `id~index`, the same on every peer.
- * @param {any[]} materials @returns {string[]}
- */
-export function slotIdsOf(materials) {
-	const seen = new Set();
-	return materials.map((m, i) => {
-		let id = slotIdOf(m);
-		if (seen.has(id)) id = id + '~' + i;
-		seen.add(id);
-		return id;
-	});
-}
-
-/** Is this slot's own material switched off? @param {any} material */
-export function slotOffOf(material) {
-	return material?.userData?.slot?.off === true;
-}
+// Imports only slotIds.js (the boot half, itself import-free); slotDraw.js and materialSlots.js build on them.
+import { slotIdsOf } from './slotIds.js';
+export { slotIdOf, slotIdsOf, slotOffOf, slotLinkOf, newLinkId } from './slotIds.js';
 
 /** @typedef {{start: number, count: number, materialIndex: number}} Group */
 
@@ -95,16 +71,4 @@ export function swapMap(n, a, b) {
 /** The index map for inserting a new slot right after `index`. @param {number} n @param {number} index */
 export function insertAfterMap(n, index) {
 	return Array.from({ length: n }, (_, i) => (i <= index ? i : i + 1));
-}
-
-/** 105-slots LINK: the shared-material id a slot's material carries ('' = not linked). @param {any} material */
-export function slotLinkOf(material) {
-	const link = material?.userData?.slot?.link;
-	return typeof link === 'string' && link ? link : '';
-}
-
-let linkCounter = 0;
-/** A new link id: unique within a session, stable once written (it rides the material). */
-export function newLinkId() {
-	return 'lnk' + Date.now().toString(36) + (linkCounter++).toString(36);
 }

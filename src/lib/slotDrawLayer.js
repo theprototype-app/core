@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { objectsGroup, pokeScene } from '../stores/sceneStore';
 import { registerParkHook } from './parkHooks.js';
-import { slotIdsOf, slotOffOf } from './materialSlotsCore.js';
+import { slotIdsOf, slotOffOf } from './slotIds.js';
 import { seated, ownOf } from './slotDraw.js';
 
 /** own material -> its off stand-in (reused across syncs) @type {WeakMap<any, any>} */

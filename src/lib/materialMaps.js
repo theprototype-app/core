@@ -15,7 +15,7 @@ import {
 import { recordEntry, registerHistoryKind, registerHistoryMerge, beginHistoryBatch, endHistoryBatch, historyBatchOpen, sameJson } from '$lib/history';
 import { isMapSlotKey, isMapSlotImage, normalizeTexTransform, guessMapSlot, MAP_SLOTS, NORMAL_STRENGTH_MAX } from './materialParamRules.js';
 import { applyMapSlotTo, applyTexTransform, applyNormalStrength, mapSlotFilled, mapSlotUrl, normalStrengthOf, texTransformOf } from './materialMapTextures.js';
-import { linkedEdit, linkedOthers } from './slotLinks.js'; // 105-slots LINK
+import { linkedEdit, linkedOthers } from './slotDraw.js'; // 105-slots LINK (the boot gate of slotLinks.js)
 
 /**
  * 105-slots LINK: the (uuid, slot) pairs a write reaches — the ones asked for, then every other holder of a linked

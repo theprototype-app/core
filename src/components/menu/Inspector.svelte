@@ -83,7 +83,7 @@
 	} from '$lib/materialsHandler';
 	// 105-slots: the ONE active material slot (shared with the UV editor); the slot list itself is lazy (SlotList.svelte)
 	import { activeMaterialSlot } from '$lib/slotDraw.js';
-	import { linkedOthers, sharedCount } from '$lib/slotLinks.js'; // 105-slots LINK: the colour drag reaches every holder
+	import { linkedOthers, sharedCount } from '$lib/slotDraw.js'; // 105-slots LINK (the boot gate): the colour drag reaches every holder
 	// 105-slots: "Select its faces" / "Assign selected faces" read the Edit Mesh face session (already in the boot)
 	import { faceEditObject, faceEditSelectedTris } from '$lib/faceEdit';
 	import { recordEntry, beginHistoryBatch, endHistoryBatch, recordTransformSet, registerPendingSeal } from '$lib/history';

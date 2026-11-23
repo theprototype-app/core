@@ -7,13 +7,32 @@ import { fanTargets } from './materialSharing';
 import { peers, showToast } from '../stores/appStore';
 import { heicToJpegFile } from './heic.js';
 import { checkMaterialParam } from './materialParamRules.js'; // 55: one check for every material parameter
-import { recordEntry, registerHistoryKind, beginHistoryBatch, endHistoryBatch, historyBatchOpen } from '$lib/history';
-import { TEXTURE_PARAMS, copyTextureParams, adoptTexTransform, carryMapSlots } from './materialMapTextures.js'; // 72 LK1
+import {
+	recordEntry,
+	registerHistoryKind,
+	beginHistoryBatch,
+	endHistoryBatch,
+	historyBatchOpen,
+	historyApplying
+} from '$lib/history';
+import {
+	TEXTURE_PARAMS,
+	copyTextureParams,
+	adoptTexTransform,
+	carryMapSlots
+} from './materialMapTextures.js'; // 72 LK1
 import { objectToJSON, settleSlotGroups } from './slotGroups.js'; // 105: one serializer for slot groups
 // 105-slots: what a slot draws (off, a seated shader) vs what it IS — every read here goes through the own material
 import { ownMaterialsOf, syncSlotDraw, slotIdOf } from './slotDraw.js';
 // 105-slots LINK: a look edit on a linked slot runs on every holder of the link (slotLinks.js)
-import { linkedEdit, linkedOthers } from './slotLinks.js';
+import { linkedEdit, linkedOthers, linkHistory } from './slotDraw.js'; // the boot gate of slotLinks.js
+// the fan's history calls (slotLinks.js may not import history: see slotDraw.linkHistory)
+Object.assign(linkHistory, {
+	begin: beginHistoryBatch,
+	end: endHistoryBatch,
+	open: historyBatchOpen,
+	applying: historyApplying
+});
 
 // Custom materials and image textures for scene objects, replicated to peers
 // through the existing objectParameters message. Textures travel as dataURLs
@@ -153,7 +172,11 @@ function serializeMaterials(materials) {
 	/** @type {any} */
 	const meta = { textures: {}, images: {} };
 	const list = materials.map((material) => material.toJSON(meta));
-	return { materials: list, textures: Object.values(meta.textures), images: Object.values(meta.images) };
+	return {
+		materials: list,
+		textures: Object.values(meta.textures),
+		images: Object.values(meta.images)
+	};
 }
 
 /**
@@ -169,7 +192,9 @@ export function applyMaterials(object, payload, replicate = false, from = 'devic
 	// checked in place before three's loaders see it (loadGuard.js: sceneSchema + loadGuardCore)
 	const materials = parseCheckedMaterials(payload, from, 'materials');
 	if (!materials) return;
-	const next = payload.materials.map((/** @type {any} */ entry) => materials[entry.uuid]).filter(Boolean);
+	const next = payload.materials
+		.map((/** @type {any} */ entry) => materials[entry.uuid])
+		.filter(Boolean);
 	if (!next.length) return;
 	// carry the thumbnail dataURL the UI reads (material.toJSON does not keep it)
 	next.forEach((/** @type {any} */ material, /** @type {number} */ i) => {
@@ -267,13 +292,18 @@ export function commitMaterialList(uuid, build) {
 	const before = structuredClone(materialsPayload(object));
 	const next = build(
 		[...own],
-		(object.geometry?.groups ?? []).map((/** @type {any} */ g) => ({ start: g.start, count: g.count, materialIndex: g.materialIndex || 0 }))
+		(object.geometry?.groups ?? []).map((/** @type {any} */ g) => ({
+			start: g.start,
+			count: g.count,
+			materialIndex: g.materialIndex || 0
+		}))
 	);
 	if (!next?.materials?.length) return false;
 	object.material = next.materials.length === 1 ? next.materials[0] : next.materials;
 	if (next.groups && object.geometry) {
 		object.geometry.clearGroups();
-		for (const group of next.groups) object.geometry.addGroup(group.start, group.count, group.materialIndex);
+		for (const group of next.groups)
+			object.geometry.addGroup(group.start, group.count, group.materialIndex);
 	}
 	settleSlotGroups(object); // 105: as applyMaterials
 	syncSlotDraw(object);
@@ -317,8 +347,7 @@ export function addMaterialSlot(uuid) {
 	// those faces would render nothing. Before the add every face showed the one
 	// material; after it, every face must still show slot 0.
 	// With an array already present the groups are real and are left alone.
-	const groups =
-		current.length > 1 ? undefined : [{ start: 0, count, materialIndex: 0 }];
+	const groups = current.length > 1 ? undefined : [{ start: 0, count, materialIndex: 0 }];
 	return setObjectMaterials(uuid, materials, groups) ? materials.length - 1 : -1;
 }
 
@@ -359,9 +388,7 @@ export function recordMaterialChange(uuid, param, key, before, after, slot = 0) 
 // through history -> flowRuntime (the moduleSDK pattern).
 /** @type {any} */
 let animRef = null;
-import('./animationPreview')
-	.then((module) => (animRef = module))
-	.catch(() => {});
+import('./animationPreview').then((module) => (animRef = module)).catch(() => {});
 
 /**
  * @param {string} uuid
@@ -472,7 +499,11 @@ export const TEXTURE_MAX_SIDE = 1024;
  */
 export async function decodeTextureFile(file, quality = 0.8) {
 	if (file.size > MAX_TEXTURE_SOURCE_BYTES) {
-		showToast('That image is too big to read (' + Math.round(file.size / 1048576) + ' MB) — save it smaller first');
+		showToast(
+			'That image is too big to read (' +
+				Math.round(file.size / 1048576) +
+				' MB) — save it smaller first'
+		);
 		return null;
 	}
 	// 46-media H1: a HEIC photo picked straight into a texture slot is decoded first (heic.js) —
@@ -514,19 +545,29 @@ export async function setObjectsTexture(uuids, file, slot = 0, opts = {}) {
 	for (const uuid of uuids)
 		for (const h of linkedOthers(objectOf(uuid), slot)) {
 			const key = h.object.uuid + ':' + h.index;
-			if (!seen.has(key)) seen.add(key), linked.push([h.object.uuid, h.index]);
+			if (!seen.has(key)) (seen.add(key), linked.push([h.object.uuid, h.index]));
 		}
 	const batch = linked.length > 0 && !historyBatchOpen();
 	if (batch) beginHistoryBatch();
 	try {
-		for (const [uuid, at, mine] of [...uuids.map((u) => [u, slot, true]), ...linked.map(([u, s]) => [u, s, false])]) {
+		for (const [uuid, at, mine] of [
+			...uuids.map((u) => [u, slot, true]),
+			...linked.map(([u, s]) => [u, s, false])
+		]) {
 			const object = objectOf(/** @type {string} */ (uuid));
 			const material = materialAt(object, /** @type {number} */ (at));
 			if (!material) {
 				if (mine && object?.material) missingSlot++;
 				continue;
 			}
-			recordMaterialChange(/** @type {string} */ (uuid), 'map', null, material.userData?.mapDataUrl ?? null, dataURL, /** @type {number} */ (at));
+			recordMaterialChange(
+				/** @type {string} */ (uuid),
+				'map',
+				null,
+				material.userData?.mapDataUrl ?? null,
+				dataURL,
+				/** @type {number} */ (at)
+			);
 			applyMap(object, dataURL, /** @type {number} */ (at), source);
 			broadcast({
 				type: 'objectParameters',
@@ -564,7 +605,8 @@ export function texturesFromSource(hash) {
 	if (!want) return out;
 	get(objectsGroup)?.traverse?.((/** @type {any} */ node) => {
 		materialsOf(node).forEach((/** @type {any} */ m, /** @type {number} */ slot) => {
-			if (m?.userData?.mapSource === want && m.userData.mapDataUrl) out.push({ uuid: node.uuid, slot });
+			if (m?.userData?.mapSource === want && m.userData.mapDataUrl)
+				out.push({ uuid: node.uuid, slot });
 		});
 	});
 	return out;
@@ -629,7 +671,7 @@ function removeObjectTextureOne(uuid, slot) {
  */
 function rebuildAsType(old, type, object) {
 	/** @type {any} */
-	const fresh = new (/** @type {any} */ (THREE))[type]();
+	const fresh = new /** @type {any} */ (THREE)[type]();
 	if (old && !Array.isArray(old)) {
 		if (old.color && fresh.color) fresh.color.copy(old.color);
 		if (old.emissive && fresh.emissive) fresh.emissive.copy(old.emissive);
@@ -705,10 +747,12 @@ function switchMaterialTypeOne(uuid, type, replicate, slot) {
 	}
 	if (slot) return; // a slot that does not exist on a single-material object
 	const old = object.material;
-	if (replicate && old && !Array.isArray(old)) recordMaterialChange(uuid, 'type', null, old.type, type);
+	if (replicate && old && !Array.isArray(old))
+		recordMaterialChange(uuid, 'type', null, old.type, type);
 	const fresh = rebuildAsType(old, type, object);
 	// 105-slots: a one-material object's slot data (its link) survives the new instance
-	if (old && !Array.isArray(old) && old.userData?.slot) fresh.userData.slot = { ...old.userData.slot };
+	if (old && !Array.isArray(old) && old.userData?.slot)
+		fresh.userData.slot = { ...old.userData.slot };
 	object.material = fresh;
 	fresh.needsUpdate = true;
 	// 59 T1: a material changed in the app survives a Replace model (modelReplace's override rule)
@@ -794,7 +838,9 @@ function setMaterialParamOne(uuid, key, value, replicate, slot) {
 	if (!material || !(key in material)) return false;
 	// 55: one check for every way in (a local edit, undo, a replicated message): a key this app knows,
 	// with a value of the right kind — never a texture slot handed a string
-	const checked = checkMaterialParam(material, key, value, { texture: !replicate || value?.isTexture === true });
+	const checked = checkMaterialParam(material, key, value, {
+		texture: !replicate || value?.isTexture === true
+	});
 	if (!checked.ok) {
 		console.warn('material parameter refused: ' + checked.error);
 		return false;
@@ -814,7 +860,14 @@ function setMaterialParamOne(uuid, key, value, replicate, slot) {
 	material.userData.tpEdited = true; // 59 T1 (see switchMaterialType)
 	pokeScene();
 	if (replicate) {
-		broadcast({ type: 'objectParameters', parameter: 'materialParam', uuid: uuid, key: key, value: value, ...(slot ? { slot } : {}) });
+		broadcast({
+			type: 'objectParameters',
+			parameter: 'materialParam',
+			uuid: uuid,
+			key: key,
+			value: value,
+			...(slot ? { slot } : {})
+		});
 		if (isMultiMaterial(object)) healOlderPeers(uuid);
 	}
 	return true;
@@ -848,7 +901,12 @@ export function healOlderPeers(uuid) {
 			const object = objectOf(uuid);
 			const older = peersWithoutSlots2(peer);
 			if (!object || !isMultiMaterial(object) || !older.length) return;
-			const message = { type: 'objectParameters', parameter: 'materials', uuid, payload: materialsPayload(object) };
+			const message = {
+				type: 'objectParameters',
+				parameter: 'materials',
+				uuid,
+				payload: materialsPayload(object)
+			};
 			peer.sendReliableTo(message, older);
 			for (const other of fanTargets(uuid)) peer.sendReliableTo({ ...message, uuid: other }, older);
 		}, 400)

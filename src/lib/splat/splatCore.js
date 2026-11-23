@@ -147,12 +147,19 @@ export function decimateOrder(opacities, keep) {
 }
 
 /**
+ * The headset's splat budget, and the Quest OFF-SWITCH: 0 = splats are off on a headset (no Spark load, no
+ * build, a notice instead). 1.75.1: measured on a Quest 3 against 1.75.0 production, a 150,000-splat scan in
+ * view took the 2D page from 72 fps (the empty scene, same tab) to 6 fps; the 1.75.0 budget was 1,000,000.
+ */
+export const QUEST_SPLAT_BUDGET = 0;
+
+/**
  * How many splats a device draws before the splat objects stand down with a notice. A headset
  * renders two eyes at 72-90 Hz on a phone GPU; the PC is limited by memory, not a budget.
  * @param {'pc'|'phone'|'quest'} tier
  */
 export function splatBudget(tier) {
-	if (tier === 'quest') return 1_000_000;
+	if (tier === 'quest') return QUEST_SPLAT_BUDGET;
 	if (tier === 'phone') return 2_000_000;
 	return Infinity;
 }
@@ -175,6 +182,19 @@ export function withinBudget(objs, budget) {
 		} else hidden.push(o.uuid);
 	}
 	return { shown, hidden, total };
+}
+
+/**
+ * The notice for splat objects this device does not draw: why, and where they do draw.
+ * @param {'pc'|'phone'|'quest'} tier @param {number} budget @param {string[]} names
+ */
+export function budgetNotice(tier, budget, names) {
+	const list = names.join(', ');
+	if (tier === 'quest' && budget <= 0)
+		return `Gaussian splats are off on Meta Quest for now: they slow the headset down too much. Not drawn here: ${list}. A desktop or phone shows ${names.length === 1 ? 'it' : 'them'} as usual.`;
+	if (tier === 'quest')
+		return `Hidden on this headset: ${list}. A Quest draws up to ${splatCountText(budget)} at once before it slows down; a desktop or phone shows the whole scan.`;
+	return `Hidden on this device: ${list}. It can draw ${splatCountText(budget)} at once.`;
 }
 
 /** "1.2 M splats" / "840 k splats" / "12 splats" @param {number} n */

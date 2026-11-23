@@ -178,7 +178,16 @@ h.run(async () => {
 		await P.screenshot({ path: path.join(OUT, `${L.name}.png`) });
 		const { inset, tile, gap, radius } = g.grid;
 		h.check(inset > 0 && tile >= 44 && gap > 0 && radius > 0, T + `premise: the grid tokens resolve (${JSON.stringify(g.grid)})`);
-		if (L.name.startsWith('n6-unfolded')) h.check((await P.evaluate(() => matchMedia('(pointer: coarse)').matches)) && !g.shell, T + 'premise: a touch screen in the unfolded (sidebar) layout, not the phone shell');
+		if (L.name.startsWith('n6-unfolded')) {
+			h.check((await P.evaluate(() => matchMedia('(pointer: coarse)').matches)) && !g.shell, T + 'premise: a touch screen in the unfolded (sidebar) layout, not the phone shell');
+			// the N6's REAL inner width (692, not the 906 the brief guessed) is a PHONE to 103-viewbar too: no Preview pill
+			const phone = await P.evaluate(() => {
+				let v;
+				window.__tp?.test.v1?.deviceClass?.unfoldedPhone?.subscribe((x) => (v = x))();
+				return { unfolded: v, pill: !!document.getElementById('preview-pill') };
+			});
+			h.check(phone.unfolded === true && !phone.pill, T + `the real unfolded width reads as a phone (unfoldedPhone ${phone.unfolded}, Preview pill ${phone.pill})`);
+		}
 
 		if (L.shell) {
 			// the phone shell owns its own top bar (phone.css): only its one centre line is held here

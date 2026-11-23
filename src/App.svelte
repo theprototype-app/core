@@ -184,7 +184,8 @@ import { startMusicToolbox } from './lib/musicToolbox'
   import PickCycleHint from './components/menu/PickCycleHint.svelte' // 36 F22 / S6 / S12
   import LiveRegions from './components/ui/LiveRegions.svelte' // 53-reader: toasts, errors, selection read aloud
   // 31 K3: the game shell — the pause menu + its wiring
-  import GameShellMenu from './components/hud/GameShellMenu.svelte'
+  // 92-int (claude:9 boot ruling): loaded the first time Play / Interact / the menu / a title wants it
+  import GameShellMenu from './components/hud/GameShellMenuLazy.svelte'
   import CaptionOverlay from './components/play/CaptionOverlay.svelte' // 53 (A6): captions over a game
   import PlayerColorFilter from './components/play/PlayerColorFilter.svelte' // 53 (A6): the colour-blind filter
   import FpsCounter from './components/hud/FpsCounter.svelte'

@@ -10,12 +10,11 @@
 	// arrows come from the HUD ring's D-pad + A.
 	import { tick } from 'svelte';
 	import { titleScreen, showTitlePage, gameMenus } from '$lib/gameMenus';
-	import { titleButtons, titleWords, runTitleItem, pickTitleSlot } from '$lib/titleActions.js';
+	import { titleButtons, titleWords, runTitleItem, pickTitleSlot, startWithoutTitle } from '$lib/titleActions.js';
 	import { hudImageFor, resolveHudImage } from '$lib/hudImages';
 	import { requestPlay, vrSupported } from '$lib/playMode';
 	import { exportConfig } from '$lib/export/exportBoot.js';
 	import { bundledLoadingPath } from '$lib/gameLevels/exportLoading.js';
-	import { markTitlePassed, closeTitleScreen } from '$lib/gameMenus';
 	import SaveSlotList from './SaveSlotList.svelte';
 	import { shellMenu } from '$lib/gameShell';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
@@ -93,9 +92,10 @@
 	}
 
 	function enterVr() {
-		markTitlePassed(true);
-		closeTitleScreen();
+		// the press IS the gesture the headset session wants: ask first, then the slot work (a new game in an
+		// empty slot, as Play would; claude:9 — the title is DOM-only, so VR starts the game past it)
 		requestPlay();
+		startWithoutTitle();
 	}
 </script>
 

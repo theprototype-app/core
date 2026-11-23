@@ -5,7 +5,7 @@
 // card — are reached through dynamic imports or are their own lazy chunks.
 import { writable, derived, get } from 'svelte/store';
 import { scenePhysicsState_ } from './scenePhysics';
-import { isLocked } from '../stores/sceneStore';
+import { isLocked, isVRMode } from '../stores/sceneStore';
 import { menusRules } from './gameMenusCore.js';
 // the edit half (setGameMenus) and the newer-version notice live in gameMenusPlan / gameMenusRuntime (lazy)
 
@@ -46,9 +46,17 @@ export function markTitlePassed(on) {
 	titlePassed = !!on;
 }
 
+/**
+ * A headset draws no title yet (the title screen is DOM-only; follow-up card "title + pause as a VR
+ * panel"): VR Play never waits behind an invisible title, it starts the game (gameMenusRuntime).
+ */
+export function titleDrawable() {
+	return !get(isVRMode);
+}
+
 /** @param {'start' | 'play'} [mode] */
 export function openTitleScreen(mode = 'play') {
-	if (!get(gameMenus).title) return false;
+	if (!get(gameMenus).title || !titleDrawable()) return false;
 	titleScreen.set({ open: true, mode, page: '' });
 	return true;
 }

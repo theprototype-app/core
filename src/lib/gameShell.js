@@ -451,8 +451,8 @@ export function shellMenuItems(opts = {}) {
 	const joins = shellJoinCards().length;
 	if (joins) items.push({ id: 'joins', label: 'Join requests (' + joins + ')' });
 	if (!opts.vr && get(touchControlsVisible)) items.push({ id: 'touchlayout', label: 'Touch controls' });
-	// 92 (GC1): back to the game's own title screen
-	if (menus.title) items.push({ id: 'title', label: 'Quit to title' });
+	// 92 (GC1): back to the game's own title screen (not in a headset: the title is DOM-only for now)
+	if (menus.title && !opts.vr) items.push({ id: 'title', label: 'Quit to title' });
 	items.push({ id: 'mainmenu', label: 'Main menu' });
 	if (!opts.vr) items.push({ id: 'editor', label: 'Back to editor' });
 	return items;

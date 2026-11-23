@@ -12,7 +12,7 @@
 //   late joiners   Auto-admit while playing (playJoins.js) is watched from here
 import { get } from 'svelte/store';
 import { peers, peerPlayModes, showToast } from '../stores/appStore.js';
-import { isLocked, editorMode } from '../stores/sceneStore';
+import { isLocked, editorMode, isVRMode } from '../stores/sceneStore';
 import { gameState, setGameState } from './gameState';
 import { gameMenus, titleScreen, menuPause, menuDuck, DUCK_LEVEL, pauseRefused, openTitleScreen, closeTitleScreen, titleWasPassed, markTitlePassed, sincePlayEntered } from './gameMenus';
 import { pauseWanted } from './gameMenusPlan.js';
@@ -103,6 +103,18 @@ function menuUp() {
 	return playing && ((m.open && !m.standalone) || get(titleScreen).open);
 }
 
+/** VR (claude:9): no title in a headset yet (DOM-only) — pass it and start the game instead */
+function skipTitleInVR() {
+	markTitlePassed(true);
+	closeTitleScreen();
+	void import('./titleActions.js').then((m) => m.startWithoutTitle()).catch(() => {});
+}
+/** the title would open over editor Play now (the author's setting, not passed yet, not an export) */
+function titleDue() {
+	const t = get(gameMenus).title;
+	return !!t && t.editor !== false && !get(embedMode) && !titleWasPassed();
+}
+
 /** a Play entered at most this long before the runtime started still opens on the title */
 const LATE_TITLE_MS = 10000;
 /** @type {(() => void)[]} */
@@ -130,20 +142,44 @@ export function startMenusRuntime() {
 	};
 	let wasPlaying = get(isLocked) === true;
 	// Play was pressed while this chunk was still loading: open on the title all the same
-	const t0 = get(gameMenus).title;
-	if (wasPlaying && t0 && t0.editor !== false && !get(embedMode) && !titleWasPassed() && sincePlayEntered() < LATE_TITLE_MS) openTitleScreen('play');
+	if (wasPlaying && titleDue() && sincePlayEntered() < LATE_TITLE_MS) {
+		if (get(isVRMode)) skipTitleInVR();
+		else openTitleScreen('play');
+	}
 	offs.push(
 		isLocked.subscribe((v) => {
 			const now = v === true;
-			if (now && !wasPlaying && !get(embedMode) && !titleWasPassed()) {
-				const t = get(gameMenus).title;
-				if (t && t.editor !== false) openTitleScreen('play');
+			if (now && !wasPlaying && titleDue()) {
+				if (get(isVRMode)) skipTitleInVR();
+				else openTitleScreen('play');
 			}
 			if (!now && wasPlaying) {
 				markTitlePassed(false);
 				if (!get(embedMode)) closeTitleScreen();
 			}
 			wasPlaying = now;
+		})
+	);
+	// a headset session starting while the title is up (Enter VR from editor Play): nobody could see it
+	let wasVR = get(isVRMode);
+	offs.push(
+		isVRMode.subscribe((vr) => {
+			if (vr && get(titleScreen).open) skipTitleInVR();
+			// the session ended: a later Play on a screen opens on the title again
+			if (!vr && wasVR && get(isLocked) !== true) markTitlePassed(false);
+			wasVR = vr;
+		})
+	);
+	// a headset plays in Interact (no pointer lock): its Play passes the title and starts the game the way
+	// the title's Play would (a new game in an empty slot); back in Edit the next Play does it again
+	let wasInteract = get(editorMode) === 'interact';
+	offs.push(
+		editorMode.subscribe((m) => {
+			const now = m === 'interact';
+			if (now && !wasInteract && get(isVRMode) && titleDue()) skipTitleInVR();
+			// leaving Interact ends a headset's Play (the session may already be over: no VR test here)
+			if (!now && wasInteract && get(isLocked) !== true) markTitlePassed(false);
+			wasInteract = now;
 		})
 	);
 	offs.push(startPlayJoins());

@@ -14,8 +14,12 @@
 	import { explorerItems } from '$lib/explorer';
 	import { accessValues } from '$lib/playerAccess';
 	import { hudTextScale } from '$lib/playerAccessCore';
+	// 92-int: the hint names the player's own device (92-input): E on a keyboard, A / Cross / B on a pad, a tap
+	import { activeInput } from '$lib/activeDevice.js';
+	import { padButtonName } from '$lib/playActions.js';
 
 	const view = $derived($dialogueView);
+	const hintKey = $derived($activeInput.kind === 'pad' ? padButtonName('GamepadA', $activeInput.family) : $activeInput.kind === 'touch' ? 'Tap' : 'E');
 	const CHARS_PER_S = 60;
 	let shown = $state(0);
 	let sel = $state(0);
@@ -154,7 +158,7 @@
 				{/each}
 			</ol>
 		{:else if !typing}
-			<div class="dialogue-hint" aria-hidden="true">{view.last ? 'E · close' : 'E · continue'}</div>
+			<div class="dialogue-hint" aria-hidden="true">{hintKey} · {view.last ? 'close' : 'continue'}</div>
 		{/if}
 	</div>
 {/if}

@@ -6,7 +6,8 @@ import { get } from 'svelte/store';
 import { normalizeGameMenus, menusRules, menusNewer, MENUS_VERSION } from '../../src/lib/gameMenusCore.js';
 import { patchGameMenus, titleItems, pauseWanted, setGameMenus } from '../../src/lib/gameMenusPlan.js';
 import { normalizeScenePhysics, scenePhysicsState_ } from '../../src/lib/scenePhysics.js';
-import { gameMenus } from '../../src/lib/gameMenus.js';
+import { gameMenus, openTitleScreen, closeTitleScreen, titleScreen } from '../../src/lib/gameMenus.js';
+import { isVRMode } from '../../src/stores/sceneStore';
 import { shellMenuItems, resetGameShell, pressShellHit, shellMenu, showShellPage, shellListRows, playerSettingViews, stepGameSetting } from '../../src/lib/gameShell.js';
 import { autoAdmitVerdict } from '../../src/lib/playJoins.js';
 import { slotViewOf } from '../../src/lib/saveSlots.js';
@@ -113,6 +114,16 @@ describe('92 the pause menu rows', () => {
 		const ids = shellMenuItems().map((i) => i.id);
 		expect(ids).toEqual(['resume', 'restart', 'save', 'load', 'settings', 'access', 'help', 'joins', 'title', 'mainmenu', 'editor']);
 		expect(shellMenuItems().find((i) => i.id === 'joins')?.label).toBe('Join requests (1)');
+	});
+	it('VR (92-int): the headset menu has no Quit to title and the title does not open in a headset', () => {
+		setGameMenus({ title: { title: 'G' }, saves: true });
+		expect(shellMenuItems({ vr: true }).map((i) => i.id)).toEqual(['resume', 'restart', 'save', 'load', 'settings', 'access', 'help', 'mainmenu']);
+		isVRMode.set(true);
+		expect(openTitleScreen('play')).toBe(false);
+		expect(get(titleScreen).open).toBe(false);
+		isVRMode.set(false);
+		expect(openTitleScreen('play')).toBe(true);
+		closeTitleScreen();
 	});
 	it('the headset list page carries one Admit and one Decline per card', () => {
 		pendingApprovals.set(/** @type {any} */ ([{ peerId: 'abcdef123' }]));

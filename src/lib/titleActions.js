@@ -53,6 +53,20 @@ function enterGame() {
 	}
 }
 
+/**
+ * VR (claude:9, 92-int): the title is skipped and the game starts the way the title's Play would — a new
+ * game in the first EMPTY slot when the game keeps saves; with all three full nothing is overwritten (the
+ * headset's game panel has Save / Load). Never opens a page: a headset cannot see one.
+ */
+export function startWithoutTitle() {
+	debug.items.push('vr-skip');
+	markTitlePassed(true);
+	closeTitleScreen();
+	if (!get(gameMenus).saves) return;
+	const n = firstEmptySlot();
+	if (n != null) void newGameInSlot(n).then(sayIfFailed);
+}
+
 /** @param {{ok: boolean, reason?: string}} res */
 function sayIfFailed(res) {
 	if (!res.ok && res.reason) showToast(res.reason);

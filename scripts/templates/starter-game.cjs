@@ -7,14 +7,15 @@
 //   - the talking NPC: the Guide's own flow below (Proximity near the player -> Dialogue -> Announce) — 92-dialogue;
 //   - the third-person camera: the Character Controller's `camera: 'third'` (92-input GC4); an older build ignores
 //     the key and plays first person;
-//   - the title screen, the pause menu and two save slots: `MENU_STEPS` below, game_setup actions of 92-menus
-//     (GC1 / GC2 / GC5). 92-int fills in their final names and fields from 92-menus' STATUS before authoring.
+//   - the title screen, the pause menu and the save slots: `MENUS` below, the scene play block's `menus` (92-menus
+//     GC1 / GC2 / GC5; the agent's game_setup {title} / {pause} / {saves} write the same block). The game ships
+//     with three save slots (92-menus' fixed count); the roadmap's "two" was the sketch.
 const { gray, graphBuilder } = require('./_builders.cjs');
 const { walkGraph } = require('./_level-kit.cjs');
 
 const GUIDE_SCRIPT = [
 	'Guide: Welcome to the village, traveller!',
-	'Guide: Press Esc any time for the pause menu. It saves your game in one of two slots.',
+	'Guide: Press Esc (or Start on a gamepad) any time for the pause menu. Save game keeps your progress in a slot.',
 	'Guide: Will you light the beacon on the hill for me?',
 	"> I'll do it. [set quest = 1] -> yes",
 	'> Not yet. -> later',
@@ -58,19 +59,20 @@ function beaconGraph() {
 	return g.done();
 }
 
-/** 92-menus (GC1 / GC2 / GC5): the title screen, the pause menu and two save slots, as game_setup steps.
- * 92-int: set the names / fields to 92-menus' shipped ones (its STATUS "For the orchestrator") before authoring. */
-const MENU_STEPS = [
-	{ tool: 'set_title', on: 'Well', args: { title: 'The Beacon', subtitle: 'A starter game', buttons: ['play', 'continue', 'settings'] }, waitMs: 800 },
-	{ tool: 'set_pause', on: 'Well', args: { enabled: true }, waitMs: 500 },
-	{ tool: 'set_saves', on: 'Well', args: { slots: 2 }, waitMs: 500 }
-];
+/** 92-menus (GC1 / GC2 / GC5): the title screen (also over editor Play), a pause menu that pauses when you play
+ * alone, and the save slots (Continue on the title, Save / Load in the menu) */
+const MENUS = {
+	v: 1,
+	title: { title: 'The Beacon', subtitle: 'A starter game', background: 'scene', editor: true },
+	pause: { on: true },
+	saves: { on: true }
+};
 
 module.exports = {
 	kind: 'template',
 	slug: 'starter-game',
 	title: 'Starter game',
-	description: 'A game that feels finished: a title screen, a pause menu, a gamepad-ready third-person camera, two save slots and a character who talks',
+	description: 'A game that feels finished: a title screen, a pause menu, a gamepad-ready third-person camera, save slots and a character who talks',
 	license: 'CC0-1.0',
 	author: 'theprototype',
 	tags: ['game', 'starter', 'dialogue', 'menus'],
@@ -88,11 +90,10 @@ module.exports = {
 		{ type: 'sphere', name: 'Beacon flame', color: 0xffa040, r: 0.45, pos: [0, 3.6, -14] }
 	],
 	graphs: { scene: sceneGraph(), Guide: guideGraph(), Beacon: beaconGraph() },
-	generate: MENU_STEPS,
 	physics: {
 		ground: { enabled: true, height: 0, friction: 0.8, restitution: 0 },
 		bounds: { limit: -20, action: 'respawn' },
-		play: { interaction: 'grab', grounded: false, simOnPlay: true, spawn: { position: [0, 0, 12], yaw: 0 } }
+		play: { interaction: 'grab', grounded: false, simOnPlay: true, spawn: { position: [0, 0, 12], yaw: 0 }, menus: MENUS }
 	},
 	view: { pos: [0, 14, 22], target: [0, 0, -2] }
 };

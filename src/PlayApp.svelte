@@ -37,7 +37,7 @@
   import DungeonMinimap from './components/play/DungeonMinimap.svelte';
   import HudLayer from './components/hud/HudLayer.svelte';
   import LevelTransition from './components/hud/LevelTransition.svelte'; // 93 LP1/LP2
-  import GameShellMenu from './components/hud/GameShellMenu.svelte';
+  import GameShellMenu from './components/hud/GameShellMenuLazy.svelte'; // 92-int: loaded on first need
   import CaptionOverlay from './components/play/CaptionOverlay.svelte';
   import PlayerColorFilter from './components/play/PlayerColorFilter.svelte';
   import FpsCounter from './components/hud/FpsCounter.svelte';

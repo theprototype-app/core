@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-11-04T09:12:10.045Z",
+	"recordedAt": "2026-11-23T18:37:51.089Z",
 	"viewport": {
 		"width": 1440,
 		"height": 900
@@ -199,7 +199,7 @@
 									"avatars.avatarPreview": "<object>",
 									"avatars.studioIsolating": true,
 									"avatars.studioOpen": true,
-									"cameraClaim": 2,
+									"cameraClaim": "<varies>",
 									"characterModalOpen": true,
 									"settingsOpen": false
 								},
@@ -212,6 +212,40 @@
 								"events": []
 							},
 							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Show my status",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "setting-presence",
+							"label": "Show my status",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"people:presence": "1"
+								},
+								"stores": {
+									"peoplePresence.presenceEnabled": true,
+									"userdata": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {
+								"people:presence": "0"
+							},
 							"exercise": "done"
 						}
 					]
@@ -495,6 +529,159 @@
 							},
 							"scope": "device",
 							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "People leaving",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "notify-peerLeft",
+							"label": "People leaving",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"notifyPrefs": "{\"peerLeft\":false}"
+								},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Chat badge",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "notify-chat",
+							"label": "Chat badge",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"notifyPrefs": "{\"chat\":false}"
+								},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Ping sounds",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "notify-pingSound",
+							"label": "Ping sounds",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"notifyPrefs": "{\"pingSound\":false}"
+								},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						},
+						{
+							"kind": "button",
+							"id": "notify-ping-character",
+							"label": "Customize character",
+							"where": "body",
+							"default": "Customize character",
+							"disabled": false
+						}
+					]
+				},
+				{
+					"name": "AI assistant",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "notify-agent",
+							"label": "AI assistant",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"notifyPrefs": "{\"agent\":false}"
+								},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Auto quality",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "notify-autoQuality",
+							"label": "Auto quality",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"notifyPrefs": "{\"autoQuality\":false}"
+								},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
 							"storageAfterRestore": {},
 							"exercise": "done"
 						}
@@ -964,6 +1151,173 @@
 					]
 				},
 				{
+					"name": "Panels button",
+					"controls": [
+						{
+							"kind": "segment",
+							"id": "panels-button-mode-auto",
+							"label": "Auto",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "segment",
+							"id": "panels-button-mode-on",
+							"label": "On",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"panelsButton": "on"
+								},
+								"stores": {
+									"panelsButton.panelsButtonMode": "on",
+									"panelsButton.panelsButtonShown": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						},
+						{
+							"kind": "segment",
+							"id": "panels-button-mode-off",
+							"label": "Off",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"panelsButton": "off"
+								},
+								"stores": {
+									"chromeButtons.hiddenChromeIds": "<object>",
+									"panelsButton.panelsButtonMode": "off"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Show viewport sidebar handles",
+					"controls": [
+						{
+							"kind": "segment",
+							"id": "sidebar-handles-mode-auto",
+							"label": "Auto",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "segment",
+							"id": "sidebar-handles-mode-on",
+							"label": "On",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"sidebarHandles": "on"
+								},
+								"stores": {
+									"sidebarHandles.sidebarHandlesMode": "on"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						},
+						{
+							"kind": "segment",
+							"id": "sidebar-handles-mode-off",
+							"label": "Off",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"sidebarHandles": "off"
+								},
+								"stores": {
+									"sidebarHandles.sidebarHandleShown": "<object>",
+									"sidebarHandles.sidebarHandlesMode": "off",
+									"sidebarHandles.sidebarHandlesOn": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Dim the handles at rest",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "sidebar-handles-dim",
+							"label": "Dim the handles at rest",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"sidebarHandles:dim": "false"
+								},
+								"stores": {
+									"sidebarHandles.sidebarHandlesDim": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
 					"name": "Always show tab strip in windows",
 					"controls": [
 						{
@@ -1018,6 +1372,91 @@
 							"restored": false,
 							"storageAfterRestore": {},
 							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Customize buttons",
+					"controls": [
+						{
+							"kind": "segment",
+							"id": "cb-toggle-sidebar-toggle",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "segment",
+							"id": "cb-toggle-sidebar-full",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "segment",
+							"id": "cb-toggle-dock-split",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "segment",
+							"id": "cb-toggle-dock-undock",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "segment",
+							"id": "cb-toggle-dock-minimize",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "segment",
+							"id": "cb-toggle-group-dock",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "segment",
+							"id": "cb-toggle-group-close",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "segment",
+							"id": "cb-toggle-top-panels",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "button",
+							"id": "chrome-buttons-show-all",
+							"label": "Show all",
+							"where": "control",
+							"default": "Show all",
+							"disabled": true
 						}
 					]
 				},
@@ -2947,6 +3386,56 @@
 					]
 				},
 				{
+					"name": "Simplify mesh… (fewer triangles, one undo step)",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Simplify mesh… (fewer triangles, one undo step)",
+							"where": "control",
+							"default": "Ctrl+Alt+D",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Export for 3D print or AR… (STL, 3MF, USDZ)",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Export for 3D print or AR… (STL, 3MF, USDZ)",
+							"where": "control",
+							"default": "Ctrl+Alt+E",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
 					"name": "Edit / Interact mode (Interact: clicks play with the scene instead of selecting)",
 					"controls": [
 						{
@@ -3130,6 +3619,31 @@
 							"label": "Rebind Explorer: show / bring to front / hide",
 							"where": "control",
 							"default": "Alt+E",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Flow code: open it in the Code window",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Flow code: open it in the Code window",
+							"where": "control",
+							"default": "Alt+F",
 							"disabled": false,
 							"state": "Press keys… Esc cancels",
 							"effects": {
@@ -3447,6 +3961,10 @@
 					]
 				},
 				{
+					"name": "Hold while moving: snap the nearest corner onto a corner or edge middle",
+					"controls": []
+				},
+				{
 					"name": "Save checkpoint…",
 					"controls": [
 						{
@@ -3555,6 +4073,31 @@
 							"label": "Rebind Cycle view mode (Shaded / Shaded + AO / Wireframe)",
 							"where": "control",
 							"default": "Z",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Cinematic view on / off (bounced light and reflections)",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Cinematic view on / off (bounced light and reflection",
+							"where": "control",
+							"default": "Shift+Z",
 							"disabled": false,
 							"state": "Press keys… Esc cancels",
 							"effects": {
@@ -4585,7 +5128,7 @@
 						{
 							"kind": "button",
 							"id": "",
-							"label": "Rebind Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)",
+							"label": "Rebind Enter the selected group / leave the one you are in /",
 							"where": "control",
 							"default": "Tab",
 							"disabled": false,
@@ -7745,6 +8288,7 @@
 							"restored": false,
 							"storageAfterRestore": {
 								"exportPreset": "full",
+								"gltfBakeConstraints": "false",
 								"saveFormat": "tp",
 								"saveManyLibraries": "ask",
 								"showGltfFormat": "false",
@@ -9816,7 +10360,7 @@
 							"scope": "device",
 							"restored": false,
 							"storageAfterRestore": {
-								"notifications": "[{\"id\":\"n1793782171767_1\",\"text\":\"The VR welcome will play the next time you enter VR.\",\"ts\":1793782171767,\"kind\":\"action\"},{\"id\":\"n1793782182266_2\",\"text\":\"Tours reset — each one shows again the first time it applies.\",\"ts\":1793782182266,\"kind\":\"info\"},{\"id\":\"n1793782188850_3\",\"text\":\"Window positions reset\",\"ts\":1793782188850,\"kind\":\"info\"},{\"id\":\"n1793782257363_4\",\"text\":\"Touch layout reset to the default arrangement\",\"ts\":1793782257363,\"kind\":\"info\"},{\"id\":\"n1793782629898_5\",\"text\":\"Line colors reset\",\"ts\":1793782629898,\"kind\":\"info\"},{\"id\":\"n1793782756293_6\",\"text\":\"Passthrough on — takes effect on the next VR entry\",\"ts\":1793782756293,\"kind\":\"info\"},{\"id\":\"n1793782756842_7\",\"text\":\"Passthrough off — takes effect on the next VR entry\",\"ts\":1793782756842,\"kind\":\"info\"}]",
+								"notifications": "[{\"id\":\"n1795456677056_1\",\"text\":\"The VR welcome will play the next time you enter VR.\",\"ts\":1795456677056,\"kind\":\"action\"},{\"id\":\"n1795456689475_2\",\"text\":\"Tours reset — each one shows again the first time it applies.\",\"ts\":1795456689475,\"kind\":\"info\"},{\"id\":\"n1795456697830_3\",\"text\":\"Window positions reset\",\"ts\":1795456697830,\"kind\":\"info\"},{\"id\":\"n1795456798905_4\",\"text\":\"Touch layout reset to the default arrangement\",\"ts\":1795456798905,\"kind\":\"info\"},{\"id\":\"n1795457275487_5\",\"text\":\"Line colors reset\",\"ts\":1795457275487,\"kind\":\"info\"},{\"id\":\"n1795457446612_6\",\"text\":\"Passthrough on — takes effect on the next VR entry\",\"ts\":1795457446612,\"kind\":\"info\"},{\"id\":\"n1795457447525_7\",\"text\":\"Passthrough off — takes effect on the next VR entry\",\"ts\":1795457447525,\"kind\":\"info\"}]",
 								"vrPassthrough": "false"
 							},
 							"exercise": "done"
@@ -10475,32 +11019,13 @@
 							"exercise": "done"
 						},
 						{
-							"kind": "toggle",
+							"kind": "segment",
 							"id": "tool-chat-voice-enable",
 							"label": "Enable Voice typing",
 							"where": "control",
 							"default": true,
 							"disabled": false,
-							"state": false,
-							"effects": {
-								"storage": {
-									"aiStt": "{\"preset\":\"openai\",\"baseUrl\":\"https://api.openai.com/v1\",\"apiKey\":\"\",\"model\":\"whisper-1\",\"language\":\"\",\"enabled\":false}"
-								},
-								"stores": {
-									"aiStt.sttConfig": "<object>"
-								},
-								"html": [],
-								"body": [],
-								"dialogs": [],
-								"broadcasts": [],
-								"events": []
-							},
-							"scope": "device",
-							"restored": true,
-							"storageAfterRestore": {
-								"aiStt": "{\"preset\":\"openai\",\"baseUrl\":\"https://api.openai.com/v1\",\"apiKey\":\"\",\"model\":\"whisper-1\",\"language\":\"\"}"
-							},
-							"exercise": "done"
+							"exercise": "skip"
 						},
 						{
 							"kind": "button",
@@ -10530,7 +11055,7 @@
 					"name": "Keep sent pictures in Explorer",
 					"controls": [
 						{
-							"kind": "toggle",
+							"kind": "segment",
 							"id": "chat-keep-pictures",
 							"label": "Keep sent pictures in Explorer",
 							"where": "control",
@@ -10551,8 +11076,10 @@
 								"events": []
 							},
 							"scope": "device",
-							"restored": false,
-							"storageAfterRestore": {},
+							"restored": true,
+							"storageAfterRestore": {
+								"chat:keepSentPictures": "true"
+							},
 							"exercise": "done"
 						}
 					]
@@ -10646,30 +11173,13 @@
 							"exercise": "done"
 						},
 						{
-							"kind": "toggle",
+							"kind": "segment",
 							"id": "tool-desktop-blender-enable",
 							"label": "Enable Blender and other 3D tools",
 							"where": "control",
 							"default": true,
 							"disabled": false,
-							"state": false,
-							"effects": {
-								"storage": {
-									"tools:blender": "false"
-								},
-								"stores": {
-									"toolStatus.featureStatuses": "<object>"
-								},
-								"html": [],
-								"body": [],
-								"dialogs": [],
-								"broadcasts": [],
-								"events": []
-							},
-							"scope": "device",
-							"restored": true,
-							"storageAfterRestore": {},
-							"exercise": "done"
+							"exercise": "skip"
 						}
 					]
 				}
@@ -10677,6 +11187,53 @@
 		},
 		"Connection": {
 			"rows": [
+				{
+					"name": "Locks",
+					"controls": [
+						{
+							"kind": "segment",
+							"id": "lock-mode-select",
+							"label": "While selected",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "segment",
+							"id": "lock-mode-edit",
+							"label": "Only while editing",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"notifications": "notified: [\"This room locks an object only while someone is editing it\"]"
+								},
+								"stores": {
+									"a11yAnnounce.politeAnnouncement": "This room locks an object only while someone is editing it",
+									"lockMode.lockMode": "<object>",
+									"notifications": "<object>",
+									"notificationsUnread": "<changed>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [
+									"lockmode"
+								],
+								"events": []
+							},
+							"scope": "shared",
+							"restored": false,
+							"storageAfterRestore": {
+								"notifications": "[{\"id\":\"n1795456677056_1\",\"text\":\"The VR welcome will play the next time you enter VR.\",\"ts\":1795456677056,\"kind\":\"action\"},{\"id\":\"n1795456689475_2\",\"text\":\"Tours reset — each one shows again the first time it applies.\",\"ts\":1795456689475,\"kind\":\"info\"},{\"id\":\"n1795456697830_3\",\"text\":\"Window positions reset\",\"ts\":1795456697830,\"kind\":\"info\"},{\"id\":\"n1795456798905_4\",\"text\":\"Touch layout reset to the default arrangement\",\"ts\":1795456798905,\"kind\":\"info\"},{\"id\":\"n1795457275487_5\",\"text\":\"Line colors reset\",\"ts\":1795457275487,\"kind\":\"info\"},{\"id\":\"n1795457446612_6\",\"text\":\"Passthrough on — takes effect on the next VR entry\",\"ts\":1795457446612,\"kind\":\"info\"},{\"id\":\"n1795457447525_7\",\"text\":\"Passthrough off — takes effect on the next VR entry\",\"ts\":1795457447525,\"kind\":\"info\"},{\"id\":\"n1795457452910_8\",\"text\":\"VR panel positions reset\",\"ts\":1795457452910,\"kind\":\"info\"},{\"id\":\"n1795457491260_9\",\"text\":\"Colocated — room room-25622\",\"ts\":1795457491260,\"kind\":\"info\"},{\"id\":\"n1795457536366_10\",\"text\":\"This room locks an object only while someone is editing it\",\"ts\":1795457536366,\"kind\":\"info\"},{\"id\":\"n1795457537206_11\",\"text\":\"This room locks an object while someone has it selected\",\"ts\":1795457537206,\"kind\":\"info\"}]"
+							},
+							"exercise": "done"
+						}
+					]
+				},
 				{
 					"name": "Session size",
 					"controls": [
@@ -10914,6 +11471,124 @@
 				{
 					"name": "Usage counts",
 					"controls": []
+				},
+				{
+					"name": "Recording the last 10 s",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "moment-recording",
+							"label": "Recording the last 10 s",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"moment:record": "0"
+								},
+								"stores": {
+									"momentStores.momentRecording": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Open and close my panels",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "show-allow-panel",
+							"label": "Open and close my panels",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"show:allow:panel": "always"
+								},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Move my view",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "show-allow-camera",
+							"label": "Move my view",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"show:allow:camera": "always"
+								},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Open code for me",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "show-allow-code",
+							"label": "Open code for me",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"show:allow:code": "always"
+								},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
 				}
 			]
 		},
@@ -11083,6 +11758,16 @@
 				]
 			},
 			{
+				"name": "Show my status",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "setting-presence",
+						"default": false
+					}
+				]
+			},
+			{
 				"name": "Show others as classic heads",
 				"controls": [
 					{
@@ -11164,6 +11849,56 @@
 						"kind": "toggle",
 						"id": "toasts-in-drawer",
 						"default": false
+					}
+				]
+			},
+			{
+				"name": "People leaving",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "notify-peerLeft",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Chat badge",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "notify-chat",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Ping sounds",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "notify-pingSound",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "AI assistant",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "notify-agent",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Auto quality",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "notify-autoQuality",
+						"default": true
 					}
 				]
 			},
@@ -11314,6 +12049,106 @@
 						"kind": "segment",
 						"id": "undock-button-mode-group",
 						"default": false
+					}
+				]
+			},
+			{
+				"name": "Panels button",
+				"controls": [
+					{
+						"kind": "segment",
+						"id": "panels-button-mode-auto",
+						"default": true
+					},
+					{
+						"kind": "segment",
+						"id": "panels-button-mode-on",
+						"default": false
+					},
+					{
+						"kind": "segment",
+						"id": "panels-button-mode-off",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Show viewport sidebar handles",
+				"controls": [
+					{
+						"kind": "segment",
+						"id": "sidebar-handles-mode-auto",
+						"default": true
+					},
+					{
+						"kind": "segment",
+						"id": "sidebar-handles-mode-on",
+						"default": false
+					},
+					{
+						"kind": "segment",
+						"id": "sidebar-handles-mode-off",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Dim the handles at rest",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "sidebar-handles-dim",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Customize buttons",
+				"controls": [
+					{
+						"kind": "segment",
+						"id": "cb-toggle-sidebar-toggle",
+						"default": true
+					},
+					{
+						"kind": "segment",
+						"id": "cb-toggle-sidebar-full",
+						"default": true
+					},
+					{
+						"kind": "segment",
+						"id": "cb-toggle-dock-split",
+						"default": true
+					},
+					{
+						"kind": "segment",
+						"id": "cb-toggle-dock-undock",
+						"default": true
+					},
+					{
+						"kind": "segment",
+						"id": "cb-toggle-dock-minimize",
+						"default": true
+					},
+					{
+						"kind": "segment",
+						"id": "cb-toggle-group-dock",
+						"default": true
+					},
+					{
+						"kind": "segment",
+						"id": "cb-toggle-group-close",
+						"default": true
+					},
+					{
+						"kind": "segment",
+						"id": "cb-toggle-top-panels",
+						"default": true
+					},
+					{
+						"kind": "button",
+						"id": "chrome-buttons-show-all",
+						"default": "Show all"
 					}
 				]
 			},
@@ -11835,6 +12670,26 @@
 				]
 			},
 			{
+				"name": "Simplify mesh… (fewer triangles, one undo step)",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Ctrl+Alt+D"
+					}
+				]
+			},
+			{
+				"name": "Export for 3D print or AR… (STL, 3MF, USDZ)",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Ctrl+Alt+E"
+					}
+				]
+			},
+			{
 				"name": "Edit / Interact mode (Interact: clicks play with the scene instead of selecting)",
 				"controls": [
 					{
@@ -11911,6 +12766,16 @@
 						"kind": "button",
 						"id": "",
 						"default": "Alt+E"
+					}
+				]
+			},
+			{
+				"name": "Flow code: open it in the Code window",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Alt+F"
 					}
 				]
 			},
@@ -12035,6 +12900,10 @@
 				]
 			},
 			{
+				"name": "Hold while moving: snap the nearest corner onto a corner or edge middle",
+				"controls": []
+			},
+			{
 				"name": "Save checkpoint…",
 				"controls": [
 					{
@@ -12081,6 +12950,16 @@
 						"kind": "button",
 						"id": "",
 						"default": "Z"
+					}
+				]
+			},
+			{
+				"name": "Cinematic view on / off (bounced light and reflections)",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Shift+Z"
 					}
 				]
 			},
@@ -14246,7 +15125,7 @@
 						"default": "Test"
 					},
 					{
-						"kind": "toggle",
+						"kind": "segment",
 						"id": "tool-chat-voice-enable",
 						"default": true
 					},
@@ -14261,7 +15140,7 @@
 				"name": "Keep sent pictures in Explorer",
 				"controls": [
 					{
-						"kind": "toggle",
+						"kind": "segment",
 						"id": "chat-keep-pictures",
 						"default": false
 					}
@@ -14299,7 +15178,7 @@
 						"default": "Test"
 					},
 					{
-						"kind": "toggle",
+						"kind": "segment",
 						"id": "tool-desktop-blender-enable",
 						"default": true
 					}
@@ -14307,6 +15186,21 @@
 			}
 		],
 		"Connection": [
+			{
+				"name": "Locks",
+				"controls": [
+					{
+						"kind": "segment",
+						"id": "lock-mode-select",
+						"default": true
+					},
+					{
+						"kind": "segment",
+						"id": "lock-mode-edit",
+						"default": false
+					}
+				]
+			},
 			{
 				"name": "Session size",
 				"controls": [

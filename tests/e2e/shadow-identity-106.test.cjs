@@ -96,6 +96,29 @@ const autoLodOff = (page) =>
 		}
 	});
 
+/** page side: measure the scene bounds now and re-apply the environment. The rig sun refits only when the bounds
+ * sweep (every 2.5 s) sees the radius move by more than 1 m, so where it ends up depends on when each page's
+ * meshes streamed in (castle: A fitted 75 m, B still 30 m; wizards-tower 61.96 vs 61.21). That is v1.74.0's code
+ * on both pages, so both refit from the same settled scene before anything is compared. */
+const refit = (page) =>
+	page.evaluate(async () => {
+		try {
+			const b = await import(/* @vite-ignore */ '/src/lib/sceneBounds.js');
+			b.refreshSceneBounds();
+			const e = await import(/* @vite-ignore */ '/src/lib/environment.js');
+			e.applyEnvironment();
+			const sun = window.__stores && (() => {
+				let v;
+				window.__stores.globalScene.subscribe((x) => (v = x))();
+				return v;
+			})()?.getObjectByName('env-rig-sun');
+			const c = sun?.shadow?.camera;
+			return { radius: +b.sceneRadius().toFixed(2), fit: c ? +(c.right - c.left).toFixed(2) : 0 };
+		} catch (err) {
+			return { error: String(err && err.message) };
+		}
+	});
+
 /** page side: wait again until A holds still (it kept streaming while B loaded) */
 const loadSettleOnly = (page) =>
 	page.evaluate(async () => {
@@ -233,6 +256,10 @@ h.run(async () => {
 			continue;
 		}
 		await loadSettleOnly(A.page);
+		const ra = await refit(A.page);
+		const rb = await refit(B.page);
+		console.log(`REFIT ${slug} A ${JSON.stringify(ra)} B ${JSON.stringify(rb)}`);
+		await sleep(600);
 		const pose = la.pose;
 		const a1 = await frame(A.page, pose);
 		const b1 = await frame(B.page, pose);

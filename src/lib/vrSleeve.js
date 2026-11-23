@@ -33,6 +33,7 @@ import { instantiatePrefab } from './prefabs';
 import { idbGet, idbPut } from './idb';
 import { disposeTree } from './disposeTree.js';
 import { motionMs } from './motion';
+import { objectToJSON } from './slotGroups.js'; // 105: one serializer for slot groups
 import {
 	GROW_FAR,
 	CONTACT_RANGE,
@@ -691,7 +692,7 @@ export function captureSlotFromObject(object) {
 	// copy for everyone (editOverlays.js)
 	const unpark = parkEditOverlays(object);
 	try {
-		element = object.toJSON();
+		element = objectToJSON(object);
 	} catch {
 		return false;
 	} finally {

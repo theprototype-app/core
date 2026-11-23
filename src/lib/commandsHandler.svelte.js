@@ -52,6 +52,7 @@ import { globalRenderer } from '../stores/sceneStore.js';
 import { yieldToEventLoop } from './sceneLoader';
 // 33 (L4): the scene going away is when its modules may be left behind (a leaf)
 import { noteSceneLeaving } from './sceneScope';
+import { objectToJSON } from './slotGroups.js'; // 105: one serializer for slot groups
 
 //Access scene Store
 let scene = $state();
@@ -1364,7 +1365,7 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
             elementClone.children = [];
             conn.send({
                 type: 'object',
-                element: elementClone.toJSON(),
+                element: objectToJSON(elementClone),
                 groupuuid: groupuuid,
                 pos: test.toArray(),
                 rot: element.rotation.toArray(),

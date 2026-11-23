@@ -12,6 +12,7 @@ import { parkEditOverlays } from './editOverlays';
 import { showToast, showLocalObjects, peers } from '../stores/appStore';
 import { objectsGroup, pokeScene } from '../stores/sceneStore';
 import { scrubDrafts } from './draftGateCore.js';
+import { objectToJSON } from './slotGroups.js'; // 105: one serializer for slot groups
 
 /** broadcast message `type`s that CREATE a scene object (peerHandler send-gate) */
 const CREATE_TYPES = new Set(['create', 'light', 'group', 'object', 'objectfile', 'duplicate']);
@@ -69,7 +70,7 @@ export function shareObject(object, groupUuid = null) {
 	const unpark = parkEditOverlays(object);
 	try {
 		/** @type {any} */
-		const msg = { type: 'object', element: object.toJSON() };
+		const msg = { type: 'object', element: objectToJSON(object) };
 		if (groupUuid) msg.groupuuid = groupUuid;
 		peer?.send(msg);
 	} catch (e) {

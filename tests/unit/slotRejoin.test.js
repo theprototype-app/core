@@ -98,6 +98,21 @@ describe('rejoinSlotPrimitives', () => {
 		expect(rejoinSlotPrimitives(node, { ...layout, slots: 1e9 })).toBe(null);
 		expect(rejoinSlotPrimitives(node, { ...layout, groups: [{ start: -1, count: 3, materialIndex: 0 }, ...layout.groups.slice(1)] })).toBe(null);
 		expect(rejoinSlotPrimitives(node, null)).toBe(null);
+		// 71-int: a count far beyond the index the glTF holds is refused BEFORE the index array is allocated
+		const realloc = globalThis.Uint32Array;
+		let biggest = 0;
+		globalThis.Uint32Array = class extends realloc {
+			constructor(n, ...rest) {
+				super(n, ...rest);
+				if (typeof n === 'number') biggest = Math.max(biggest, n);
+			}
+		};
+		try {
+			expect(rejoinSlotPrimitives(node, { ...layout, count: 48_000_000 })).toBe(null);
+		} finally {
+			globalThis.Uint32Array = realloc;
+		}
+		expect(biggest).toBeLessThan(48_000_000);
 	});
 
 	it('a single-material mesh has no layout (its message is byte-identical)', () => {

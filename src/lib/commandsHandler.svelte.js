@@ -53,8 +53,8 @@ import { globalRenderer } from '../stores/sceneStore.js';
 import { yieldToEventLoop } from './sceneLoader';
 // 33 (L4): the scene going away is when its modules may be left behind (a leaf)
 import { noteSceneLeaving } from './sceneScope';
-import { markConstraintsDirty } from './rig/constraintHub.js'; // 102 M7 (the solver loads on first use)
 import { objectToJSON, slotLayoutOf } from './slotGroups.js'; // 105: one serializer for slot groups (+ row 6: the glTF send)
+import { markConstraintsDirty } from './rig/constraintHub.js'; // 102 M7 (the solver loads on first use)
 
 //Access scene Store
 let scene = $state();

@@ -153,8 +153,38 @@ h.run(async () => {
 		// play it: the starter to its win screen, the others for a while with real input
 		await G.p.mouse.click(640, 360);
 		if (s.key === 'starter' && STARTER) {
-			const won = await G.frame.evaluate(() => /** @type {any} */ (window).__starterDash?.autoplay?.());
-			h.check(won === true, `[starter] the starter game is played to its win screen`);
+			// Start → walk onto each of the five coins → "You win!" → Play again (a fresh round)
+			const hudText = () => G.frame.evaluate(() => [...document.querySelectorAll('#hud-layer *')].filter((e) => e.children.length === 0 && /** @type {HTMLElement} */ (e).offsetParent !== null).map((e) => (e.textContent || '').trim()).filter(Boolean).join(' | '));
+			await G.frame.locator('#hud-layer button', { hasText: 'Start' }).click();
+			await h.eventually(hudText, (t) => /Coins 0 \/ 5/.test(t), '[starter] Start: the round runs, the score reads Coins 0 / 5', 15000);
+			const coins = await G.frame.evaluate(() => {
+				const t = /** @type {any} */ (window).__tp.test.v1;
+				let g;
+				t.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
+				return g.children.filter((/** @type {any} */ o) => /^Coin /.test(o.name)).map((/** @type {any} */ o) => o.position.toArray());
+			});
+			h.check(coins.length === 5, `[starter] five coins on the course (${coins.length})`);
+			for (const [x, , z] of coins) {
+				await G.frame.evaluate(({ x, z }) => {
+					const t = /** @type {any} */ (window).__tp.test.v1;
+					let cam;
+					t.globalCamera.subscribe((/** @type {any} */ v) => (cam = v))();
+					cam.position.set(x, 1.6, z + 0.2);
+				}, { x, z });
+				await G.p.waitForTimeout(700);
+			}
+			await h.eventually(hudText, (t) => /You win!/.test(t), '[starter] the last coin wins the round: "You win!"', 15000);
+			if (EVIDENCE) await G.p.screenshot({ path: path.join(EVIDENCE, 'starter-won.png') });
+			// back to the start point first: a fresh round puts the coins back, and one under the player's
+			// feet would be taken at once
+			await G.frame.evaluate(() => {
+				let cam;
+				/** @type {any} */ (window).__tp.test.v1.globalCamera.subscribe((/** @type {any} */ v) => (cam = v))();
+				cam.position.set(0, 1.6, 7.5);
+			});
+			await G.p.waitForTimeout(400);
+			await G.frame.locator('#hud-layer button', { hasText: 'Play again' }).click();
+			await h.eventually(hudText, (t) => /Coins 0 \/ 5/.test(t), '[starter] Play again: a fresh round, the score back to 0', 15000);
 		} else {
 			await hold(G.p, 'KeyW', 1500);
 			await G.p.mouse.move(700, 360, { steps: 6 });

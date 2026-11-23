@@ -407,7 +407,18 @@ function write(b) {
 	if (b.desk) body.push(`\t"desk": ${obj(b.desk, '\t')}`);
 	if (b.exclude) body.push(`\t"exclude": ${obj(Object.fromEntries(Object.entries(b.exclude).map(([k, v]) => [k, [...v].sort()])), '\t')}`);
 	// battery-tiers (battery-desk.cjs tiers): the tier-1 always-set, shared-core files and caps, kept as written
-	for (const k of /** @type {const} */ (['tiers', 'tier1_always', 'tier1_always_files', 'tier1_cap', 'tier1_shared_suites'])) if (b[k] !== undefined) body.push(`\t${JSON.stringify(k)}: ${JSON.stringify(b[k])}`);
+	/** @type {Record<string, any>} */
+	const any = b;
+	const tierKeys = ['tiers', 'tier1_always', 'tier1_always_files', 'tier1_cap', 'tier1_shared_suites'];
+	for (const k of tierKeys) if (any[k] !== undefined) body.push(`\t${JSON.stringify(k)}: ${JSON.stringify(any[k])}`);
+	// any key this writer does not know (61-int's `gpu`, from gpu-neutral-suites.cjs) is kept, never dropped:
+	// a refresh that silently lost 342 gpu rows is how deps-2026-11 found this
+	const known = new Set(['comment', 'refs', 'shards', 'pc', 'skip', 'optional', 'setup', 'suites', 'modules', 'desk', 'exclude', ...tierKeys]);
+	for (const k of Object.keys(any)) {
+		const v = any[k];
+		if (known.has(k) || v === undefined) continue;
+		body.push(`\t${JSON.stringify(k)}: ${v && typeof v === 'object' && !Array.isArray(v) ? obj(v, '\t') : JSON.stringify(v)}`);
+	}
 	fs.writeFileSync(BATTERY, `{\n${body.join(',\n')}\n}\n`);
 }
 

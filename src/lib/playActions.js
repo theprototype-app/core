@@ -1,12 +1,13 @@
-// 92-input GC3 — THE PLAY ACTIONS ON A PAD, and the device a prompt should show. A LEAF (imports nothing):
-// the pad bridge (padActions.js, lazy), the remap rows (playerBindings), the glyphs (InputGlyph.svelte),
-// the help lines and the suites all read it.
+// 92-input GC3 — THE PLAY ACTIONS ON A PAD, the lazy half: how each pad family prints a button, its glyph,
+// the help lines. Loaded with the first pad (padActions.js) or the first glyph (InputGlyph.svelte); the device
+// itself is activeDevice.js (boot). Leaves only.
 //
 // A pad press of a built-in action does what that action's TOUCH button does (touchActions: the same
 // synthetic key, or the same press at the crosshair), so the walker's jump, Key Press nodes, Player
 // code, playInteract and modules all hear it with no second input path. The pad codes are GAME codes:
 // the player's pad remap (53 A6, inputRuntime.pollGamepads) has already turned the physical button
 // into the code the game listens for, so remapping Jump to B is one row like any other.
+import { setPadLines, setPadFamilyOf } from './activeDevice.js';
 
 /**
  * The built-in actions on a standard-mapping pad, in the order the remap rows list them.
@@ -28,14 +29,6 @@ export const PAD_ACTIONS = [
 	{ id: 'menu', label: 'Menu', pad: 'GamepadStart', keys: ['Escape'] }
 ];
 
-/** the stick halves, for the help lines and the rows a player reads (not remappable buttons) */
-export const PAD_STICKS = { move: 'left stick', look: 'right stick' };
-
-/** game key code -> the pad button the same action sits on (Space -> GamepadA …) */
-export const PAD_FOR_KEY = /** @type {Record<string, string>} */ (
-	Object.fromEntries(PAD_ACTIONS.flatMap((a) => (a.keys ?? []).map((k) => [k, a.pad])))
-);
-
 /**
  * Which pad family a Gamepad `id` belongs to — it decides the face-button glyphs. Pure.
  * USB vendor ids: 045e Microsoft, 054c Sony, 057e Nintendo; names as a fallback (the id string is
@@ -49,6 +42,34 @@ export function padFamily(id) {
 	if (/045e|xbox|xinput|microsoft/.test(s)) return 'xbox';
 	return 'generic';
 }
+
+
+/**
+ * The game code a HUD key hint stands for: its `code` field, else its typed key name when that names a
+ * key (E -> KeyE, Space, Esc, Shift, 1 -> Digit1, A pad button by name: "Gamepad A" / "GamepadA"), else
+ * null (the hint shows its text as typed, as before). Pure. @param {any} code @param {any} keyName
+ * @returns {string | null}
+ */
+export function hintCodeOf(code, keyName) {
+	const c = String(code ?? '').trim();
+	if (/^(Key[A-Z]|Digit\d|Gamepad[A-Za-z0-9]+|Space|Escape|Enter|Tab|Shift(Left|Right)|Control(Left|Right)|Arrow(Up|Down|Left|Right))$/.test(c)) return c;
+	const n = String(keyName ?? '').trim();
+	if (/^[A-Za-z]$/.test(n)) return 'Key' + n.toUpperCase();
+	if (/^\d$/.test(n)) return 'Digit' + n;
+	const named = /** @type {Record<string, string>} */ ({ space: 'Space', esc: 'Escape', escape: 'Escape', enter: 'Enter', shift: 'ShiftLeft', ctrl: 'ControlLeft', tab: 'Tab' });
+	if (named[n.toLowerCase()]) return named[n.toLowerCase()];
+	const pad = n.replace(/\s+/g, '');
+	if (/^Gamepad[A-Za-z0-9]+$/.test(pad)) return pad;
+	return null;
+}
+
+/** the stick halves, for the help lines and the rows a player reads (not remappable buttons) */
+export const PAD_STICKS = { move: 'left stick', look: 'right stick' };
+
+/** game key code -> the pad button the same action sits on (Space -> GamepadA …) */
+export const PAD_FOR_KEY = /** @type {Record<string, string>} */ (
+	Object.fromEntries(PAD_ACTIONS.flatMap((a) => (a.keys ?? []).map((k) => [k, a.pad])))
+);
 
 /** face / shoulder / menu buttons as each family prints them (generic = the Xbox letters, the
  * standard mapping's own names). Nintendo swaps the letters: the BOTTOM button is B. */
@@ -99,21 +120,6 @@ export function padControlLines(family = 'generic') {
 	];
 }
 
-/**
- * The game code a HUD key hint stands for: its `code` field, else its typed key name when that names a
- * key (E -> KeyE, Space, Esc, Shift, 1 -> Digit1, A pad button by name: "Gamepad A" / "GamepadA"), else
- * null (the hint shows its text as typed, as before). Pure. @param {any} code @param {any} keyName
- * @returns {string | null}
- */
-export function hintCodeOf(code, keyName) {
-	const c = String(code ?? '').trim();
-	if (/^(Key[A-Z]|Digit\d|Gamepad[A-Za-z0-9]+|Space|Escape|Enter|Tab|Shift(Left|Right)|Control(Left|Right)|Arrow(Up|Down|Left|Right))$/.test(c)) return c;
-	const n = String(keyName ?? '').trim();
-	if (/^[A-Za-z]$/.test(n)) return 'Key' + n.toUpperCase();
-	if (/^\d$/.test(n)) return 'Digit' + n;
-	const named = /** @type {Record<string, string>} */ ({ space: 'Space', esc: 'Escape', escape: 'Escape', enter: 'Enter', shift: 'ShiftLeft', ctrl: 'ControlLeft', tab: 'Tab' });
-	if (named[n.toLowerCase()]) return named[n.toLowerCase()];
-	const pad = n.replace(/\s+/g, '');
-	if (/^Gamepad[A-Za-z0-9]+$/.test(pad)) return pad;
-	return null;
-}
+// the pause menu's How to play reads the pad lines through activeDevice (gameShell stays free of this chunk)
+setPadLines(padControlLines);
+setPadFamilyOf(padFamily);

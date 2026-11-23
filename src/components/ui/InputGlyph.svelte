@@ -8,11 +8,13 @@
 	import { activeInput } from '$lib/activeDevice.js';
 	import { accessRemap } from '$lib/playerAccess';
 	import { codeLabel, playerCodeFor } from '$lib/playerAccessCore';
-	import { PAD_ACTIONS, PAD_FOR_KEY, padGlyph } from '$lib/playActions.js';
+	import { PAD_ACTIONS, PAD_FOR_KEY, padGlyph, hintCodeOf } from '$lib/playActions.js'; // this component is lazy: so is its half
 
-	/** `raw`: the code is already the player's own key / button (a remap row), so no remap is applied
-	 * @type {{code: string, as?: 'auto' | 'keys' | 'pad', raw?: boolean, class?: string}} */
-	let { code, as = 'auto', raw = false, class: cls = '' } = $props();
+	/** `raw`: the code is already the player's own key / button (a remap row), so no remap is applied.
+	 * `name`: a typed key name (a HUD key hint's "E") the code is read from when `code` is empty; one that
+	 * names no key is drawn as typed. @type {{code?: string, name?: string, as?: 'auto' | 'keys' | 'pad', raw?: boolean, class?: string}} */
+	let { code: given = '', name = '', as = 'auto', raw = false, class: cls = '' } = $props();
+	const code = $derived(hintCodeOf(given, name) ?? '');
 
 	const isPad = $derived(String(code).startsWith('Gamepad'));
 	// the pad button this game code is on, and the key a pad action is on (for a keyboard prompt of a pad code)
@@ -57,7 +59,7 @@
 		{#if glyph.shape === 'shoulder' || glyph.shape === 'menu'}<span class="ig-label">{glyph.text}</span>{/if}
 	</span>
 {:else}
-	<kbd class="ig ig-key {cls}" data-glyph="key">{keyText}</kbd>
+	<kbd class="ig ig-key {cls}" data-glyph="key">{code ? keyText : name || given}</kbd>
 {/if}
 
 <style>

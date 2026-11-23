@@ -6,8 +6,7 @@ import { touchMove } from './touchControls';
 // 53 (A6): the player's remap (Accessibility ▸ Controls) — a leaf
 import { playCode, playPadCode, remapActive } from './playerAccess';
 // 92-input GC3: which device the player is on (prompts follow it) + the pad family its glyphs come from
-import { notePadInput, watchActiveDevice } from './activeDevice.js';
-import { padFamily } from './playActions.js';
+import { notePadInput } from './activeDevice.js';
 
 // Module SDK input layer (K-C). STORE-ONLY module (the peerApproval.js pattern):
 // imports nothing from peerHandler/vrControls, so vrControls can feed it VR
@@ -40,8 +39,6 @@ const padAxes = { lx: 0, ly: 0, rx: 0, ry: 0 };
 /** which pad we are reading (`pad.id`), or null — drives connect/disconnect toasts */
 /** @type {string | null} */
 let padId = null;
-/** 92-input GC3: the connected pad's family (its glyphs) */
-let padKind = 'generic';
 /** @type {Promise<any> | null} the lazy pad bridge, once requested */
 let padBridge = null;
 
@@ -251,7 +248,6 @@ export function pollGamepads() {
 	const id = pad ? String(pad.id ?? 'gamepad') : null;
 	if (id !== padId) {
 		padId = id;
-		padKind = padFamily(id);
 		// 92-input GC3: the play actions on a pad (A jump, X use …) — loaded the first time a pad is seen
 		if (id && !padBridge) padBridge = import('./padActions.js').then((m) => m.startPadActions()).catch(() => (padBridge = null));
 		if (prefs.enabled)
@@ -280,7 +276,7 @@ export function pollGamepads() {
 		// 53 (A6): edges per PHYSICAL button, published as the game code the press meant
 		if (down === padDownAs.has(physical)) continue;
 		if (down) {
-			notePadInput(padKind); // 92-input GC3: the player is on the pad now
+			notePadInput(padId ?? ''); // 92-input GC3: the player is on the pad now
 			const code = remapActive() ? playPadCode(physical) : physical;
 			if (code === null) continue; // remapped away
 			padDownAs.set(physical, code);
@@ -302,7 +298,7 @@ export function pollGamepads() {
 	padAxes.ly = applyDeadzone(Number(axes[1] ?? 0), dz);
 	padAxes.rx = applyDeadzone(Number(axes[2] ?? 0), dz);
 	padAxes.ry = applyDeadzone(Number(axes[3] ?? 0), dz);
-	if (padAxes.lx || padAxes.ly || padAxes.rx || padAxes.ry) notePadInput(padKind);
+	if (padAxes.lx || padAxes.ly || padAxes.rx || padAxes.ry) notePadInput(padId ?? '');
 }
 
 /** The deadzoned stick snapshot — {lx, ly, rx, ry}, each -1..1. */
@@ -372,5 +368,4 @@ export function startInputRuntime() {
 	window.addEventListener('keydown', onKeyDown);
 	window.addEventListener('keyup', onKeyUp);
 	window.addEventListener('blur', onBlur);
-	watchActiveDevice(); // 92-input GC3
 }

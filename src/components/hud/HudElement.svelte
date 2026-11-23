@@ -36,9 +36,10 @@
 	import { peerVarsAll, peerVarNames } from '$lib/peerVars';
 	import { userdata, peers } from '../../stores/appStore';
 	import Icon from '../ui/Icon.svelte';
-	// 92-input GC3: a key hint follows the player's remap and shows the pad's own button on a pad
-	import InputGlyph from '../ui/InputGlyph.svelte';
-	import { hintCodeOf } from '$lib/playActions.js';
+	// 92-input GC3: a key hint follows the player's remap, and on a pad shows the pad's own button (the
+	// glyph component is lazy: a keyboard player's hint is the plain keycap it always was)
+	import { activeInput } from '$lib/activeDevice.js';
+	import { accessRemap } from '$lib/playerAccess';
 	import { onDestroy } from 'svelte';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
@@ -670,8 +671,8 @@
 	</div>
 {:else if kind === 'keyhint'}
 	<div class="hud-el hud-keyhint" style={boxStyle}>
-		{#if hintCodeOf(element?.code, element?.keyName)}
-			<span class="hud-kbd hud-kbd-glyph"><InputGlyph code={hintCodeOf(element?.code, element?.keyName) ?? ''} /></span>
+		{#if $activeInput.kind === 'pad' || element?.code || Object.keys($accessRemap.keys ?? {}).length}
+			<span class="hud-kbd hud-kbd-glyph">{#await import('../ui/InputGlyph.svelte')}{element?.keyName ?? ''}{:then G}<G.default code={element?.code ?? ''} name={element?.keyName ?? ''} />{/await}</span>
 		{:else}
 			<kbd class="hud-kbd">{element?.keyName ?? ''}</kbd>
 		{/if}

@@ -11,7 +11,8 @@ import { get } from 'svelte/store';
 import { onInput } from './inputRuntime';
 import { isLocked, isVRMode, playPointerFree, globalRenderer } from '../stores/sceneStore';
 import { allNodes } from '../stores/flowStore';
-import { PAD_ACTIONS } from './playActions.js';
+import { PAD_ACTIONS } from './playActions.js'; // the lazy half: loading it registers the pad help lines
+import { noteDeviceInput, activeInputNow } from './activeDevice.js';
 import { normalizeAction, pressTouchAction } from './touchActions';
 
 /** pad code -> the touch-action shape it presses (ids namespaced so a finger and a pad never share a hold) */
@@ -44,10 +45,27 @@ function releaseAll() {
 	}
 }
 
+/** back on the keyboard / mouse or a finger (capture phase: a handler that stops the event must not hide the
+ * device; synthetic events are not the player's) */
+function watchDevices() {
+	if (typeof window === 'undefined') return;
+	window.addEventListener('keydown', (e) => e.isTrusted && noteDeviceInput('keyboard'), true);
+	window.addEventListener('pointerdown', (e) => e.isTrusted && noteDeviceInput(e.pointerType === 'touch' ? 'touch' : 'keyboard'), true);
+	window.addEventListener(
+		'pointermove',
+		(e) => {
+			if (!e.isTrusted || e.pointerType === 'touch' || activeInputNow().kind === 'keyboard') return;
+			if (Math.abs(e.movementX) + Math.abs(e.movementY) > 6) noteDeviceInput('keyboard');
+		},
+		true
+	);
+}
+
 let started = false;
 export function startPadActions() {
 	if (started) return;
 	started = true;
+	watchDevices();
 	onInput((kind, code) => {
 		const entry = BY_PAD.get(code);
 		if (!entry?.action) return;
@@ -73,6 +91,9 @@ export function startPadActions() {
 	playPointerFree.subscribe((v) => v && releaseAll());
 	isVRMode.subscribe((v) => v && releaseAll());
 }
+
+/** suites: the device the prompts follow, through this hook (one debug row) */
+export { activeInput } from './activeDevice.js';
 
 /** suites */
 export function padActionsDebug() {

@@ -119,7 +119,7 @@ h.run(async () => {
 	await graph(page);
 
 	console.log('\n=== 4. the device prompts follow ===');
-	let input = await read(page, 'activeDevice.activeInput');
+	let input = await read(page, 'padActions.activeInput');
 	h.check(input.kind === 'pad' && input.family === 'playstation', '4.1 a pad press makes the pad the device, PlayStation family (' + JSON.stringify(input) + ')');
 	await page.waitForTimeout(300);
 	const banner = await page.locator('#play-banner .pb-hint [data-glyph]').first().getAttribute('data-glyph-text').catch(() => null);

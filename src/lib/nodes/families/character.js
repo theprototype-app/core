@@ -5,6 +5,8 @@
 // A LEAF: nothing here imports the runtime. Adding a node = one entry in this file.
 
 import { PLAY_VIEWS, PLAY_VIEW_DEFAULTS } from '../../playViewSettings.js'; // 92-input GC4 (a leaf)
+/** the rows every non-first view shows */
+const TSZ = { camera: ['third', 'side', 'top'] };
 
 /** @type {import('../registry.js').NodeFamily} */
 export default {
@@ -37,14 +39,14 @@ export default {
 				// so every saved node is unchanged); third / side / top draw from behind / beside / above the
 				// player, who stays exactly where it was for every game rule. Each view's rows show only for it,
 				// and an unset row reads its view's own default (`defaultsBy`).
-				{ key: 'camera', kind: 'select', options: [...PLAY_VIEWS], doc: 'first = through the eyes; third = behind you (walls pull it in); side = a side-scroller (a locked plane, the view ahead); top = top-down (a fixed angle). The wheel zooms the last three.' },
-				{ key: 'distance', kind: 'range', min: 0.5, max: 60, step: 0.5, showIf: { camera: ['third', 'side', 'top'] }, doc: 'metres from the player (the zoom it starts at)' },
-				{ key: 'height', kind: 'range', min: -2, max: 10, step: 0.1, showIf: { camera: ['third', 'side'] }, doc: 'metres the view is raised above the head (third) or the body (side)' },
-				{ key: 'lookAhead', kind: 'range', min: 0, max: 10, step: 0.1, showIf: { camera: ['side'] }, doc: 'metres the view leads the way you face' },
-				{ key: 'angle', kind: 'range', min: 15, max: 90, step: 1, showIf: { camera: ['top'] }, doc: 'degrees above the horizon (90 = straight down)' },
-				{ key: 'minZoom', kind: 'range', min: 0.5, max: 60, step: 0.5, showIf: { camera: ['third', 'side', 'top'] }, doc: 'the closest the wheel zooms in' },
-				{ key: 'maxZoom', kind: 'range', min: 0.5, max: 120, step: 0.5, showIf: { camera: ['third', 'side', 'top'] }, doc: 'the farthest the wheel zooms out' },
-				{ key: 'collide', kind: 'toggle', showIf: { camera: ['third'] }, doc: 'walls between you and the camera pull it in' }
+				{ key: 'camera', kind: 'select', options: [...PLAY_VIEWS], doc: 'first = your eyes; third = behind you; side = side-scroller; top = top-down' },
+				{ key: 'distance', kind: 'range', min: 0.5, max: 60, step: 0.5, showIf: TSZ },
+				{ key: 'height', kind: 'range', min: -2, max: 10, step: 0.1, showIf: { camera: ['third', 'side'] } },
+				{ key: 'lookAhead', kind: 'range', min: 0, max: 10, step: 0.1, showIf: { camera: ['side'] } },
+				{ key: 'angle', kind: 'range', min: 15, max: 90, step: 1, showIf: { camera: ['top'] } },
+				{ key: 'minZoom', kind: 'range', min: 0.5, max: 60, step: 0.5, showIf: TSZ },
+				{ key: 'maxZoom', kind: 'range', min: 0.5, max: 120, step: 0.5, showIf: TSZ },
+				{ key: 'collide', kind: 'toggle', showIf: { camera: ['third'] } }
 			],
 			// 92-input GC4: the number an unset view row shows IS the one in force (playViewSettings)
 			defaultsBy: { camera: PLAY_VIEW_DEFAULTS },

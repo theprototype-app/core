@@ -12,7 +12,10 @@
 //   · a reserved key is refused with a reason (`reserved` map or set) and the capture keeps waiting
 //   · a pad button counts on its DOWN EDGE only: the button that pressed the row (A on the HUD ring)
 //     is still held when the capture starts and must not bind itself
-// A LEAF (no imports): the pad's button list is passed in.
+// A LEAF: the pad's button list and the remap helpers are passed in. LAZY: loaded by the press that
+// starts a capture.
+import { padButtonName } from './playActions.js';
+import { activeInputNow } from './activeDevice.js';
 
 const MODIFIERS = new Set(['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight']);
 
@@ -117,4 +120,47 @@ export function captureConflict(table, game, player, bound = []) {
 	for (const g in table) if (table[g] === player && g !== game) return g;
 	if (!(player in table) && player !== game && new Set(bound).has(player)) return player;
 	return null;
+}
+
+/**
+ * The pause menu's Controls row capture: wait for the key / button, bind it, and FLAG a conflict — the swap
+ * moves the other binding to this one's old key, and the note says so ("Jump took B; Crouch moved to A").
+ * @param {{kind: 'keys' | 'pad', code: string, rows: {code: string, label: string}[], table: Record<string, string>,
+ *   padButtons: string[], reserved: Set<string>, codeLabel: (c: string) => string, playerCodeFor: (t: Record<string, string>, g: string) => string, remap: (kind: 'keys' | 'pad', game: string, player: string, bound: string[]) => any,
+ *   note: (text: string) => void, done: () => void}} o
+ * @returns {{cancel: () => void}}
+ */
+export function remapCapture(o) {
+	const { codeLabel, playerCodeFor } = o;
+	const c = captureInput({
+		keys: o.kind === 'keys',
+		pad: o.kind === 'pad',
+		padButtons: o.padButtons,
+		// a game may bind Shift (sprint) or Ctrl (crouch) on its own
+		bareModifiers: true,
+		reserved: o.kind === 'keys' ? o.reserved : undefined,
+		onRefuse: (key) => o.note(codeLabel(key) + ' is kept for the menu and the browser — pick another key')
+	});
+	let live = true;
+	c.done.then((r) => {
+		if (!live) return;
+		live = false;
+		o.done();
+		const player = r.code ?? r.pad;
+		if (!player) return;
+		const bound = o.rows.map((row) => row.code);
+		const other = captureConflict(o.table, o.code, player, bound);
+		const old = playerCodeFor(o.table, o.code);
+		o.remap(o.kind, o.code, player, bound);
+		const label = (/** @type {string} */ g) => o.rows.find((row) => row.code === g)?.label ?? codeLabel(g);
+		// a pad button in the player's own pad's names (Circle, not B, on a PlayStation pad)
+		const name = (/** @type {string} */ c) => (o.kind === 'pad' ? padButtonName(c, activeInputNow().family) : codeLabel(c));
+		o.note(other ? label(o.code) + ' took ' + name(player) + '; ' + label(other) + ' moved to ' + name(old) + '.' : '');
+	});
+	return {
+		cancel: () => {
+			live = false;
+			c.cancel();
+		}
+	};
 }

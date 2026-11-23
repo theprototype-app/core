@@ -202,7 +202,7 @@ h.run(async () => {
 	h.check(t6[0] === 'continue' && t6.includes('load'), '6.2 the title offers Continue first (' + t6 + ')');
 	await page.locator('[data-title-item="continue"]').click();
 	await page.waitForTimeout(800);
-	const d6 = await page.evaluate(() => window.__tp.test.v1.gameMenusKit.saveSlots.saveSlotsDebug());
+	const d6 = (await poll(() => page.evaluate(() => { const d = window.__tp.test.v1.gameMenusKit.saveSlots.saveSlotsDebug(); return d.loads.includes(1) ? d : null; }), 10000)) ?? (await page.evaluate(() => window.__tp.test.v1.gameMenusKit.saveSlots.saveSlotsDebug()));
 	h.check(d6.loads.includes(1) && d6.active === 1, '6.3 Continue loaded slot 1 (' + JSON.stringify(d6.loads) + ')');
 	h.check(!!(await page.evaluate(() => localStorage.getItem('tp:levels-save:menus-92'))), '6.4 the old save is kept until slot 1 is written');
 
@@ -245,7 +245,14 @@ h.run(async () => {
 	h.check(await page.locator('#game-shell-running').isVisible(), '8.4 …and says so');
 	await page.locator('[data-shell-item="joins"]').click();
 	let clickError = '';
-	const admitted = await page.locator('[data-join-admit]').first().click({ timeout: 8000 }).then(() => true, (e) => ((clickError = String(e?.message ?? e).split('\n').slice(0, 12).join(' | ')), false));
+	const admitted = await page.locator('[data-join-admit]').first().click({ timeout: 8000 }).then(() => true, (e) => ((clickError = String(e?.message ?? e).split('\n').filter((l) => !/waiting \d+ms|retrying click/.test(l)).slice(0, 40).join(' | ')), false));
+	const under = await page.evaluate(() => {
+		const b = document.querySelector('[data-join-admit]');
+		if (!b) return null;
+		const r = b.getBoundingClientRect();
+		return { rect: [r.x, r.y, r.width, r.height], stack: document.elementsFromPoint(r.x + r.width / 2, r.y + r.height / 2).slice(0, 5).map((e) => e.tagName + (e.id ? '#' + e.id : '') + '.' + String(e.className).slice(0, 40)) };
+	});
+	if (!admitted) console.log('  8.x under Admit: ' + JSON.stringify(under));
 	if (!admitted) console.log('  8.x the Admit button: ' + clickError + ' || ' + JSON.stringify(await diag(page)) + ' || list: ' + (await page.locator('#game-join-requests').innerHTML().catch(() => '?')).slice(0, 600));
 	h.check(admitted, '8.4b the Join requests page lists the card with Admit');
 	const cOpen = await poll(() => openTo(C, A.id), 45000);

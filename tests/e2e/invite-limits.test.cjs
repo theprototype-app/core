@@ -164,6 +164,10 @@ h.run(async () => {
 	// now, so two fresh failed dials go in first
 	for (const id of ['e0001', 'e0002']) await dial(id, { invite: core.dialInvite(core.newToken(), id, H.id) });
 	await until(() => failed(H).then((f) => f.rows.filter((r) => Date.now() - r.at < 60_000).length), (n) => n >= 2, '4.0 two fresh failed dials');
+	// the drawer's copy, on purpose: open the Connect drawer on its Toasts tab (a join may have moved it)
+	await inPage(H, "s.connectDrawerTab.set('toasts'); s.connectDrawerOpen.set(true);");
+	await H.page.locator('#failed-invite-joins-drawer').waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+	h.check(await H.page.locator('#failed-invite-joins-drawer').isVisible().catch(() => false), '4.0b the Connect drawer shows the row too');
 	await row('.fij-review').click({ timeout: 5000 });
 	const firstRow = row('.fij-row');
 	const pid = await firstRow.getAttribute('data-peer', { timeout: 5000 }).catch(() => null);

@@ -133,10 +133,25 @@ h.run(async () => {
 	console.log('\n=== 3. a reload: Continue ===');
 	await p.reload({ waitUntil: 'domcontentloaded' });
 	await p.waitForFunction(() => window.__tp?.test.v1?.exportRuntime?.exportRuntimeState, null, { timeout: 90000 });
+	// as on the first boot: the export finished booting before anything is pressed
+	await poll(() => p.evaluate(() => ['playing', 'failed'].includes(window.__tp.test.v1.exportRuntime.exportRuntimeState.phase)), 90000);
 	await p.locator('#game-title-screen').waitFor({ state: 'visible', timeout: 30000 }).catch(() => {});
 	const items3 = await p.locator('#game-title-screen [data-title-item]').evaluateAll((els) => els.map((e) => e.getAttribute('data-title-item')));
 	h.check(items3[0] === 'continue', '3.1 the title offers Continue first (' + items3 + ')');
-	await p.locator('[data-title-item="continue"]').click();
+	const pressed = await p.locator('[data-title-item="continue"]').click({ timeout: 15000 }).then(() => true, () => false);
+	if (!pressed) {
+		// what sits under the button (a red's line), then press it through the DOM so section 3.2 still says something
+		console.log('  3.x under the button: ' + JSON.stringify(await p.evaluate(() => {
+			const b = document.querySelector('[data-title-item="continue"]');
+			const r = b.getBoundingClientRect();
+			const at = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+			const chain = [];
+			for (let e = b; e; e = e.parentElement) chain.push(e.tagName + (e.id ? '#' + e.id : '') + ':' + getComputedStyle(e).pointerEvents);
+			return { at: at ? at.tagName + (at.id ? '#' + at.id : '') : null, rect: [r.x, r.y, r.width, r.height], chain, phase: window.__tp.test.v1.exportRuntime.exportRuntimeState.phase };
+		})));
+		await p.evaluate(() => /** @type {HTMLElement} */ (document.querySelector('[data-title-item="continue"]')).click());
+	}
+	h.check(pressed, '3.1b Continue takes a real click');
 	const d3 = await poll(() => p.evaluate(() => { const d = window.__tp.test.v1.gameMenusKit.saveSlots.saveSlotsDebug(); return d.loads.includes(1) ? d : null; }), 10000);
 	h.check(!!d3, '3.2 Continue loaded slot 1');
 	await ctx.close();

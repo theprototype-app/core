@@ -74,11 +74,7 @@ export function captureInput(opts = {}) {
 	if (typeof window !== 'undefined') window.addEventListener('keydown', onKey, true);
 	if (wantPad && typeof requestAnimationFrame === 'function') {
 		const names = opts.padButtons ?? [];
-		/** buttons already down when the capture began (the press that opened it) @type {Set<number>} */
-		let wasDown = new Set();
-		let first = true;
-		const poll = () => {
-			if (over) return;
+		const downNow = () => {
 			const pads = typeof navigator !== 'undefined' && navigator.getGamepads ? [...navigator.getGamepads()] : [];
 			const pad = pads.find((p) => p && p.connected !== false);
 			/** @type {Set<number>} */
@@ -86,22 +82,25 @@ export function captureInput(opts = {}) {
 			pad?.buttons?.forEach((b, i) => {
 				if (b && (b.pressed || (typeof b.value === 'number' && b.value > 0.5))) down.add(i);
 			});
-			if (first) {
-				wasDown = down;
-				first = false;
-			} else {
-				for (const i of down) {
-					if (wasDown.has(i) || !names[i]) continue;
-					const why = refusal(opts.reserved, names[i]);
-					if (why) {
-						opts.onRefuse?.(names[i], why);
-						continue;
-					}
-					return finish({ pad: names[i] });
+			return down;
+		};
+		// buttons already down when the capture began (the press that opened it), read NOW: on a slow page the
+		// first animation frame can come after the player has already pressed the answer
+		const wasDown = downNow();
+		const poll = () => {
+			if (over) return;
+			const down = downNow();
+			for (const i of down) {
+				if (wasDown.has(i) || !names[i]) continue;
+				const why = refusal(opts.reserved, names[i]);
+				if (why) {
+					opts.onRefuse?.(names[i], why);
+					continue;
 				}
-				// a button let go may be pressed again as the answer
-				for (const i of [...wasDown]) if (!down.has(i)) wasDown.delete(i);
+				return finish({ pad: names[i] });
 			}
+			// a button let go may be pressed again as the answer
+			for (const i of [...wasDown]) if (!down.has(i)) wasDown.delete(i);
 			raf = requestAnimationFrame(poll);
 		};
 		raf = requestAnimationFrame(poll);

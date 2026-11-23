@@ -410,7 +410,10 @@ function targetQuality() {
 
 /** @param {import('./cinematicCore.js').Quality} quality */
 function build(quality) {
-	return buildPipeline({ W: live.W, T: live.T, renderer: live.r, scene: live.scene, camera: live.camera, quality, outline: viewSelection, fx: live.fx, water: live.water });
+	// the water pass and the underwater look exist only while there is water to draw: a scene with none gets the
+	// pipeline it had before C2-3, unchanged (draw() rebuilds when water appears or goes)
+	const withWater = !!live.water && live.water.count > 0;
+	return buildPipeline({ W: live.W, T: live.T, renderer: live.r, scene: live.scene, camera: live.camera, quality, outline: viewSelection, fx: live.fx, water: withWater ? live.water : null }).then((b) => Object.assign(b, { withWater }));
 }
 
 /** a new pipeline beside the old one (the old keeps drawing until the new one is ready) */
@@ -457,6 +460,8 @@ function draw(_delta) {
 	g.fx?.scan();
 	try {
 		g.water?.scan();
+		// water added to (or the last of it removed from) the scene: the pipeline with (or without) the water pass
+		if (g.water && g.built && !g.rebuilding && (g.water.count > 0) !== !!g.built.withWater) void rebuild();
 	} catch (e) {
 		if (log.errors.length < 200) log.errors.push({ at: Math.round(a), water: String(/** @type {any} */ (e)?.message ?? e).slice(0, 300) });
 	}

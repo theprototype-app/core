@@ -52,7 +52,7 @@ import { globalRenderer } from '../stores/sceneStore.js';
 import { yieldToEventLoop } from './sceneLoader';
 // 33 (L4): the scene going away is when its modules may be left behind (a leaf)
 import { noteSceneLeaving } from './sceneScope';
-import { objectToJSON, slotLayoutOf, rejoinSlotPrimitives } from './slotGroups.js'; // 105: one serializer for slot groups (+ row 6: the glTF send)
+import { objectToJSON, slotLayoutOf } from './slotGroups.js'; // 105: one serializer for slot groups (+ row 6: the glTF send)
 
 //Access scene Store
 let scene = $state();
@@ -1152,6 +1152,7 @@ async function applyCreateObject(object, uuid, override, groupuuid, pos, rot, sc
         // fix-late-joiners row 6: one primitive per slot group came back as a Group of meshes: fold it into one mesh
         if (object?.slots && result.scene.children.length === 1) {
             const node = result.scene.children[0];
+            const { rejoinSlotPrimitives } = await import('./slotRejoin.js'); // lazy: only a `slots` message pays
             const whole = rejoinSlotPrimitives(node, object.slots);
             if (whole) {
                 result.scene.remove(node);

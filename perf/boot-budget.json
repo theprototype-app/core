@@ -4,12 +4,12 @@
 	"pages": {
 		"play": {
 			"html": "play.html",
-			"maxJsGzBytes": 2201600,
+			"maxJsGzBytes": 2204160,
 			"maxFirstFrameMs": 20000
 		},
 		"editor": {
 			"html": "index.html",
-			"maxJsGzBytes": 3450880,
+			"maxJsGzBytes": 3454976,
 			"maxFirstFrameMs": 32000
 		}
 	},
@@ -98,6 +98,13 @@
 				"102b-papercuts #595": "+3.6 / +5.4",
 				"build-to-build churn (two builds of ce7ec23b)": "+0.1 / +0.3"
 			}
+		},
+		{
+			"date": "2026-11-23",
+			"lane": "fix-late-joiners (with #609 105-slot-save merged in)",
+			"play": "v1.74.0 2148.6 KB -> 2151.7 KB (+3.1: #609 +1.6, this lane +1.5) -> line 2152.5 KB",
+			"editor": "v1.74.0 3369.3 KB -> 3372.8 KB (+3.6: #609 +1.9, this lane +1.7) -> line 3374.0 KB",
+			"note": "inside the ~3 KB boot rule per lane. Measured on the pc host (tp-lanes), v1.74.0, #609's head and this branch built in one worktree with one node_modules; the per-lane split is from sourcemap builds of the three. This lane by module (gzip, editor): commandsHandler +0.5 (late-joiner ingest look-ahead, the primitive recipe path, the announced batch hold, the visible/slots fields), playSpawn +0.4 (the lazy loader and v1.74.0's fallback), flowStore graph tombstones, sceneStore poke pacing, qualityGovernor, autosave/gltfNames ~0.1 each. Lazy chunks (paid only when used): spawnPick + spawnSlots (load with the first peer link), slotRejoin (only a message carrying slots). Chunk-hash churn moves the editor ~0.6 KB between builds; the integrator may veto or fold it into the int line."
 		}
 	],
 	"throttle": {

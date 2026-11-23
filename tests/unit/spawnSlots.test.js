@@ -1,3 +1,4 @@
+// @ts-nocheck
 // fix-late-joiners row 3: play-link joiners spawn apart (spawn points first, a deterministic ring, a probe).
 import { describe, it, expect } from 'vitest';
 import { spawnCandidates, arrivingSlot, pickSpawn, SPAWN_CLEARANCE } from '../../src/lib/spawnSlots.js';

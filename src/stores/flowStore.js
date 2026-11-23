@@ -134,7 +134,7 @@ const graphTombstones = new Map();
 function noteGraphGone(graphId) {
 	graphTombstones.delete(graphId);
 	graphTombstones.set(graphId, Date.now());
-	while (graphTombstones.size > GRAPH_TOMBSTONES_MAX) graphTombstones.delete(graphTombstones.keys().next().value);
+	while (graphTombstones.size > GRAPH_TOMBSTONES_MAX) graphTombstones.delete(/** @type {string} */ (graphTombstones.keys().next().value));
 }
 /** was this graph deleted here within the window (and not made again since)? @param {string} graphId */
 export function graphTombstoned(graphId) {

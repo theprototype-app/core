@@ -6,7 +6,8 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import * as THREE from 'three';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { slotLayoutOf, rejoinSlotPrimitives } from '../../src/lib/slotGroups.js';
+import { slotLayoutOf } from '../../src/lib/slotGroups.js';
+import { rejoinSlotPrimitives } from '../../src/lib/slotRejoin.js';
 import { restoreGltfNames } from '../../src/lib/gltfNames.js';
 
 beforeAll(() => {

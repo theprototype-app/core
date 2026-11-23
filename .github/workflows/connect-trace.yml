@@ -23,12 +23,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [click, nowait]
+        # click = the app's moving CDN content refs (packs@format-1, scenes@format-2) as production reads them now;
+        # pinned = the same app against the content as it was BEFORE the 1.75.0 retag (theprototype-41's A/B)
+        variant: [click, pinned]
     env:
       E2E_NO_PERF_OFFER: '1'
       MODE: quick
       E2E_CONNECT_TRACE: '1'
-      E2E_CONNECT_NOWAIT: ${{ matrix.variant == 'nowait' && '1' || '' }}
+      E2E_CONNECT_NOWAIT: ''
+      # vite exposes VITE_* from the process env; contentBase takes a full base URL (HDRI falls back to packs)
+      VITE_PACKS_BASE: ${{ matrix.variant == 'pinned' && 'https://cdn.jsdelivr.net/gh/theprototype-app/packs@41d86129b6d6eb7e666078fb6193ffa118113a33' || '' }}
+      VITE_SCENES_BASE: ${{ matrix.variant == 'pinned' && 'https://cdn.jsdelivr.net/gh/theprototype-app/scenes@6fac63c0d5b060b0f0e1316f188cc6d6520dcb80' || '' }}
     steps:
       - uses: actions/checkout@v7
         with:

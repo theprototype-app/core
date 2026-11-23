@@ -391,6 +391,8 @@ async function openDial(page) {
 
 /** Connect `from` to `to` (approve on `to`), then let the mesh settle. */
 async function connect(from, to, settleMs = 9000) {
+	// DRAFT connect-trace: a V8 CPU profile of the DIALLER's page from here to after the click
+	const prof = process.env.E2E_CONNECT_TRACE ? await profileStart(from.page) : null;
 	// test-health-1: dial the id the page holds NOW. setupPage reads it before the signaling link
 	// has opened, and a page whose first id the server reports as taken re-rolls it
 	// (peerHandler 'unavailable-id') — behaviours dialled the stale id and waited 30 s for an
@@ -417,7 +419,7 @@ async function connect(from, to, settleMs = 9000) {
 	// and the dial input shows only after a tap on it — press it first when it is what is there
 	// …and on the Invite-first pill (uir-people) the field shows after Join…
 	await step(from, 'fill the peer id', async () => (await openDial(from.page)).fill(to.id));
-	if (process.env.E2E_CONNECT_TRACE) await connectTraced(from);
+	if (process.env.E2E_CONNECT_TRACE) await connectTraced(from, prof);
 	else
 		await step(from, 'press Connect', () =>
 			from.page.getByRole('button', { name: 'Connect', exact: true }).click()
@@ -464,7 +466,59 @@ async function connect(from, to, settleMs = 9000) {
  * E2E_CONNECT_TRACE_DIR. E2E_CONNECT_NOWAIT=1 clicks with noWaitAfter (tests the "waits for a
  * navigation the click scheduled" theory).
  */
-async function connectTraced(from) {
+async function profileStart(page) {
+	try {
+		const cdp = await page.context().newCDPSession(page);
+		await cdp.send('Profiler.enable');
+		await cdp.send('Profiler.setSamplingInterval', { interval: 1000 });
+		await cdp.send('Profiler.start');
+		return { cdp, t0: Date.now() };
+	} catch (e) {
+		console.log('[ct] profiler start failed: ' + String(/** @type {any} */ (e)?.message).split('\n')[0]);
+		return null;
+	}
+}
+
+/** stop the profile, save it, and print where the main thread spent its time (self time, top 15) */
+async function profileStop(prof, tag, dir, log) {
+	if (!prof) return;
+	const res = await Promise.race([
+		prof.cdp.send('Profiler.stop'),
+		new Promise((r) => setTimeout(() => r(null), 20000))
+	]).catch(() => null);
+	if (!res) return log('profile: Profiler.stop did not answer in 20 s');
+	const p = /** @type {any} */ (res).profile;
+	if (dir) require('fs').writeFileSync(require('path').join(dir, `connect-${tag}-${Date.now()}.cpuprofile`), JSON.stringify(p));
+	const byId = new Map(p.nodes.map((n) => [n.id, n]));
+	const self = new Map();
+	const dts = p.timeDeltas || [];
+	p.samples.forEach((id, i) => {
+		const n = byId.get(id);
+		const f = n.callFrame;
+		const key = `${f.functionName || '(anon)'} ${String(f.url).replace(/^.*\/\/[^/]+/, '').replace(/\?.*$/, '')}:${f.lineNumber + 1}`;
+		self.set(key, (self.get(key) || 0) + (dts[i + 1] ?? 1000));
+	});
+	const total = [...self.values()].reduce((a, b) => a + b, 0);
+	log(`profile: ${Math.round(total / 1000)} ms sampled over ${Math.round((Date.now() - prof.t0) / 1000)} s`);
+	for (const [k, us] of [...self.entries()].sort((a, b) => b[1] - a[1]).slice(0, 15))
+		log(`profile self ${String(Math.round(us / 1000)).padStart(6)} ms  ${k}`);
+	// the same by call STACK root-to-leaf (top 8 heaviest leaves with their 6 nearest callers)
+	const parent = new Map();
+	for (const n of p.nodes) for (const c of n.children || []) parent.set(c, n.id);
+	const leafTime = new Map();
+	p.samples.forEach((id, i) => leafTime.set(id, (leafTime.get(id) || 0) + (dts[i + 1] ?? 1000)));
+	for (const [id, us] of [...leafTime.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8)) {
+		const chain = [];
+		for (let cur = id; cur != null && chain.length < 7; cur = parent.get(cur)) {
+			const f = byId.get(cur).callFrame;
+			if (f.functionName === '(root)') break;
+			chain.push(`${f.functionName || '(anon)'}@${String(f.url).replace(/^.*\/\/[^/]+/, '').replace(/\?.*$/, '')}:${f.lineNumber + 1}`);
+		}
+		log(`profile stack ${Math.round(us / 1000)} ms: ${chain.join(' < ')}`);
+	}
+}
+
+async function connectTraced(from, prof) {
 	const page = from.page;
 	const t0 = Date.now();
 	const log = (m) => console.log(`[ct ${from.id}] +${Date.now() - t0}ms ${m}`);
@@ -522,6 +576,18 @@ async function connectTraced(from) {
 		} catch (e) {
 			log('trace start failed: ' + String(/** @type {any} */ (e)?.message).split('\n')[0]);
 		}
+	// every off-origin fetch since boot (packs/scenes/modules/HDRI over jsDelivr): which content this page read
+	const ext = await page
+		.evaluate(() =>
+			performance
+				.getEntriesByType('resource')
+				.map((r) => /** @type {PerformanceResourceTiming} */ (r))
+				.filter((r) => !r.name.startsWith(location.origin) && !r.name.startsWith('blob:') && !r.name.startsWith('data:'))
+				.map((r) => ({ u: r.name.replace(/\?.*$/, ''), kb: Math.round((r.encodedBodySize || r.transferSize) / 1024), at: Math.round(r.startTime), ms: Math.round(r.duration) }))
+		)
+		.catch(() => []);
+	log(`external fetches since boot: ${ext.length}, ${ext.reduce((a, r) => a + r.kb, 0)} KB`);
+	for (const r of ext.sort((a, b) => b.kb - a.kb).slice(0, 25)) log(`ext ${String(r.kb).padStart(6)} KB at ${r.at} ms (${r.ms} ms) ${r.u}`);
 	const noWait = !!process.env.E2E_CONNECT_NOWAIT;
 	log('click start noWaitAfter=' + noWait + ' url=' + page.url());
 	try {
@@ -538,6 +604,7 @@ async function connectTraced(from) {
 			new Promise((r) => setTimeout(() => r('page.evaluate did not answer in 5 s (main thread blocked?)'), 5000))
 		]).catch((e) => 'evaluate failed: ' + String(e?.message).split('\n')[0]);
 		log('after click: ' + probe);
+		await profileStop(prof, from.id, dir, log);
 		if (tracing && dir)
 			await page
 				.context()

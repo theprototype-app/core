@@ -15,15 +15,23 @@ export const RATE_PRESETS = {
 };
 export const DEFAULT_RATE_PRESET = 'normal';
 
+// `graphcreate` is not here: its pair on an undo is a `nodes` message (full state, not counted), and a
+// refused create whose `nodes` then lands on a deleted graph's tombstone kept the graph away for a minute.
 const EDIT_TYPES = new Set([
 	'create', 'light', 'group', 'duplicate', 'delete', 'clearscene', 'name', 'color', 'geometry', 'meshgeo',
-	'nodecreate', 'nodedelete', 'edgecreate', 'edgedelete', 'graphcreate', 'graphdelete',
+	'nodecreate', 'nodedelete', 'edgecreate', 'edgedelete', 'graphdelete',
 	'jointcreate', 'jointdelete', 'annotation', 'map', 'materials'
 ]);
 
-/** @param {any} type @returns {'edit'|'chat'|null} */
-export function rateKind(type) {
+/**
+ * @param {any} type @param {any} [msg] the message, when the type alone cannot tell
+ * @returns {'edit'|'chat'|null}
+ */
+export function rateKind(type, msg) {
 	if (type === 'sent') return 'chat';
+	// a `group` carrying a pose is a scene transfer's group (full state, one per Group of a shared or joined
+	// scene, like `object`); a person's grouping edit carries `command` / `group` and no pose
+	if (type === 'group' && Array.isArray(msg?.pos)) return null;
 	return EDIT_TYPES.has(type) ? 'edit' : null;
 }
 
@@ -34,12 +42,12 @@ export function createRateLimiter(now = Date.now) {
 	return {
 		/**
 		 * May this message through? Spends one token when it may.
-		 * @param {string} peerId @param {any} type @param {string} preset
+		 * @param {string} peerId @param {any} type @param {string} preset @param {any} [msg]
 		 * @returns {'ok'|'edit'|'chat'} 'ok', or the kind that ran out
 		 */
-		take(peerId, type, preset) {
+		take(peerId, type, preset, msg) {
 			const limits = RATE_PRESETS[preset];
-			const kind = limits ? rateKind(type) : null;
+			const kind = limits ? rateKind(type, msg) : null;
 			if (!limits || !kind) return 'ok';
 			const { burst, perSec } = limits[kind];
 			let row = peers.get(peerId);

@@ -92,6 +92,16 @@ h.run(async () => {
 	const inOrder = offApplied.every((n, k) => n === 'flood-' + k);
 	h.check(inOrder, `5.0b …in the order they were sent (${inOrder ? 'yes' : 'first out of order at #' + offApplied.findIndex((n, k) => n !== 'flood-' + k)})`);
 	await h.eventually(() => chatCount(B, 'free-'), (n) => n === 60, '5.1 with limits off all 60 arrive', 15000);
+	// ---- 5b 71-int: a scene transfer's groups are full state. A joiner sharing a scene sends one `group` (with a pose)
+	// per Group; on Strict they used to be refused past 120, so children landed at the root and hidden ones reappeared.
+	await inPage(B, `s.peerRateGate.peerRateLimits.set('strict');`);
+	await A.page.waitForTimeout(100);
+	const groupsBefore = await objects(B);
+	const groupGateBefore = await inPage(B, `return s.peerRateGate.rateGateStats().byType.group ?? { ok: 0, refused: 0 };`);
+	await sendN(A, `(i) => ({ type: 'group', name: 'xfer-' + i, uuid: 'abcd' + String(i).padStart(4, '0') + '-0000-4000-8000-000000000000', groupparent: null, pos: [i * 0.01, 0, 0], rot: [0, 0, 0, 'XYZ'], scale: [1, 1, 1] })`, 300);
+	await h.eventually(() => objects(B), (n) => n === groupsBefore + 300, '5b.1 on Strict, 300 groups of a shared scene all land', 60000);
+	const groupGate = await inPage(B, `return s.peerRateGate.rateGateStats().byType.group ?? { ok: 0, refused: 0 };`);
+	h.check(groupGate.refused === groupGateBefore.refused, `5b.2 …and the gate refused none of them (${groupGate.refused - groupGateBefore.refused} refused)`);
 	await inPage(B, `s.peerRateGate.peerRateLimits.set('normal');`);
 
 	// ---- 6 the host is exempt

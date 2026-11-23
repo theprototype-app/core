@@ -31,16 +31,16 @@ function sayNow(key) {
 
 /**
  * The receive gate. False = drop it: this peer is over its limit.
- * @param {any} conn @param {any} type @returns {boolean}
+ * @param {any} conn @param {any} type @param {any} [msg] @returns {boolean}
  */
-export function admitRate(conn, type) {
+export function admitRate(conn, type, msg) {
 	const peerId = conn.peer;
 	if (get(sessionHost) === peerId) {
 		stats.exempt++;
 		return true;
 	}
 	const preset = get(peerRateLimits);
-	const over = limiter.take(peerId, type, preset);
+	const over = limiter.take(peerId, type, preset, msg);
 	stats.last = { peerId, type, preset };
 	const row = typeof type === 'string' && (stats.byType[type] ??= { ok: 0, refused: 0, first: Date.now(), last: 0 });
 	if (row) row.last = Date.now();

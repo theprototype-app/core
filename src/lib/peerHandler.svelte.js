@@ -1374,7 +1374,7 @@ export class PeerConnection {
 				// a peer speaks for itself: presence and chat are read as the sender's own (rosterTrust.js)
 				data = asSendersOwn(data, conn.peer);
 				// 71 TR7: per-peer edit and chat limits (peerRateLimit.js)
-				if (data && !admitRate(conn, data.type)) return;
+				if (data && !admitRate(conn, data.type, data)) return;
 				// A2: the ROOM gate. A message describing the content of a scene is not
 				// applied when its sender is demonstrably standing in a different one.
 				//

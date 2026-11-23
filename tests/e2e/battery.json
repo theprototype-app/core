@@ -312,6 +312,7 @@
 		"import-file": "agent"
 	},
 	"suites": {
+		"publish-check": 40,
 		"papercuts-102b": 300,
 		"render-seam": 180,
 		"array-tool": 300,

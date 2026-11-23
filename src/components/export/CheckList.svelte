@@ -24,7 +24,7 @@
 <div {id} class="cl" data-count={rows.length} data-busy={busy ? 'true' : 'false'} aria-busy={busy}>
 	{#if !rows.length}
 		<p class="cl-empty" data-empty="true">
-			{#if busy}<Icon name="loader-circle" size={14} class="cl-spin" aria-hidden="true" /> Checking…{:else}<Icon name="circle-check" size={14} aria-hidden="true" /> {emptyText}{/if}
+			{#if busy}<Icon name="loader-circle" size={16} class="cl-spin" aria-hidden="true" /> Checking…{:else}<Icon name="circle-check" size={16} aria-hidden="true" /> {emptyText}{/if}
 		</p>
 	{:else}
 		<ul class="cl-list" aria-label="Checks">
@@ -40,7 +40,7 @@
 									<li>
 										{#if item.where}
 											<button type="button" class="cl-item" title="Select it in the scene" data-where={item.where} onclick={() => onselect(String(item.where))}>
-												<Icon name="crosshair" size={12} aria-hidden="true" />{item.label}
+												<Icon name="crosshair" size={16} aria-hidden="true" />{item.label}
 											</button>
 										{:else}
 											<span class="cl-item cl-item-plain">{item.label}</span>

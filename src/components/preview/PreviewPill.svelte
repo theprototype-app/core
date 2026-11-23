@@ -309,7 +309,8 @@
 		position: fixed;
 		/* the old Cinematic switch's band, inside the FREE viewport rect: beside an open right column, never on it */
 		top: calc(var(--connect-bottom, 0px) + 68px);
-		right: calc(16px + var(--sb-free-right, 0px));
+		/* 103 H15: the HUD grid's right inset (styles/hud.css), the profile button's and the right corner stack's */
+		right: calc(var(--hud-inset) + var(--sb-free-right, 0px));
 		z-index: var(--z-chrome);
 		display: flex;
 		align-items: stretch;

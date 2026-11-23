@@ -132,7 +132,7 @@ input.tp-check:disabled {
 @media (max-width: 600px) {
 	/* 41 G1: the corner buttons are two STACKS now (Controls.svelte); the stack lifts as one */
 	.hud-stack {
-		bottom: calc(var(--hud-stack-lift, 0px) + 74px);
+		bottom: calc(var(--hud-stack-lift, 0px) + var(--hud-stack-over-bar));
 	}
 }
 /* A4: on narrow screens the top-right chrome (avatar/peers) drops to its own row

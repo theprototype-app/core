@@ -22,6 +22,7 @@
 	import { SIDE_MAX } from '$lib/toolbarLayout';
 	// 44 M13: the row slides with the left sidebar, like the logo beside it
 	import { geometry as sidebarGeometry } from '$lib/sidebars';
+	import { hudGrid } from '$lib/hudGrid';
 	const ttOrder = (/** @type {string} */ id) => slotOrder($toolbarSlots.touch, id);
 	const ttShown = (/** @type {string} */ id) => !$toolbarSlots.editing && ttOrder(id) != null;
 	/** how many buttons the row holds (edit mode adds a "+" while there is room) */
@@ -34,11 +35,16 @@
 	// of room beside the logo and still stacked. So the question is asked directly: does a
 	// row of three buttons fit between the logo and whatever is next along that row?
 	// Connect's own `measureDock()` decides its docking the same way, for the same reason.
-	const BTN = 48;
-	const GAP = 6;
-	/** where the row starts — the same 78px the CSS uses. Measuring from the LOGO's right
-	 *  edge instead was optimistic by 22px and let the row claim space it never occupies. */
-	const ROW_LEFT = 78;
+	// 103 H15: the row's numbers are the HUD grid's (styles/hud.css, read through $lib/hudGrid): its buttons are
+	// --hud-tile tiles --hud-gap apart, and the row starts one tile + one gap right of the logo's inset — the same
+	// place the CSS below puts it. (They were a 48 px round button and a 78 px start of their own.)
+	const grid = () => hudGrid();
+	/** where the row starts, as the CSS places it (never the logo's measured right edge: the row claims what it
+	 *  occupies, not what the logo leaves) */
+	const rowLeft = () => {
+		const g = grid();
+		return g.inset + g.tile + g.gap;
+	};
 	/** breathing room, not just collision avoidance. At 420px the row cleared the notes
 	 *  button by 14px — technically fitting, visually touching it, which is what the user
 	 *  reported. 24px is the gap at which the two read as separate clusters. */
@@ -46,7 +52,10 @@
 	/** the row's own width, from CONSTANTS and the COUNT of buttons the layout puts in it — never
 	 *  from the element's own rect, or the measurement would feed the layout that produced it
 	 *  (the frozen-span rule). 42 I9: the count is no longer always three. */
-	const rowRight = (/** @type {number} */ n) => ROW_LEFT + pinnedSlide() + BTN * n + GAP * Math.max(0, n - 1) + GUTTER;
+	const rowRight = (/** @type {number} */ n) => {
+		const g = grid();
+		return rowLeft() + pinnedSlide() + g.tile * n + g.gap * Math.max(0, n - 1) + GUTTER;
+	};
 	/** the part of the slide that moves the ROW (a pinned column) — never the stacked-only part, or deciding to
 	 *  stack would move the row that decided it */
 	function pinnedSlide() {
@@ -65,9 +74,10 @@
 		const g = $sidebarGeometry;
 		if (!g?.wide || !g.left.shown) return 0;
 		if (g.left.full) return g.left.w;
-		// the row's band is its anchor .. +48; the column's tab strip may tuck under its round buttons' lower edge
-		const anchor = $connectDocked ? $connectBarHeight + 8 : 20;
-		const overRow = g.left.top < anchor + BTN - 8;
+		// the row's band is its anchor .. + one tile; the column's tab strip may tuck under its lower edge
+		const { inset, tile } = grid();
+		const anchor = $connectDocked ? $connectBarHeight + inset : inset;
+		const overRow = g.left.top < anchor + tile - 8;
 		return stacked || overRow || $toolbarSlots.editing ? g.leftX + g.left.w : 0;
 	});
 	/** Everything that can sit on the logo's row and must not be run into: the centred
@@ -173,7 +183,7 @@
 		data-key-scope="keep"
 		class="touch-tools"
 		class:tt-stacked={stacked}
-		style="--tt-anchor: {$connectDocked ? $connectBarHeight + 8 : 20}px; --tt-slide: {slide}px"
+		style="--tt-anchor: {$connectDocked ? `calc(${$connectBarHeight}px + var(--hud-inset))` : 'var(--hud-inset)'}; --tt-slide: {slide}px"
 		role="toolbar"
 		aria-label="Touch tools"
 		use:roving={{ item: $toolbarSlots.editing ? ':not(*)' : '.tt-btn', axis: 'both' }}
@@ -227,15 +237,16 @@
 	/* Beside the logo when there is room: same top, one 48px button's width clear of it.
 	   Fixed, never absolute — an absolute element off an edge grows the document and drags
 	   the centred Connect pill sideways. */
+	/* 103 H15: on the HUD grid — the logo's row (its top), one tile + one gap right of the logo's inset */
 	.touch-tools {
 		position: fixed;
-		top: var(--tt-anchor, 20px);
-		left: calc(78px + var(--tt-slide, 0px));
+		top: var(--tt-anchor, var(--hud-inset));
+		left: calc(var(--hud-inset) + var(--hud-tile) + var(--hud-gap) + var(--tt-slide, 0px));
 		/* 45 N3: no slide — the row moves with a sidebar in one frame, like the logo beside it */
 		z-index: var(--z-hud);
 		display: flex;
 		flex-direction: row;
-		gap: 6px;
+		gap: var(--hud-gap);
 	}
 	/* No room for a row beside the logo: stack VERTICALLY BELOW it instead of over it.
 	   Driven by the MEASUREMENT above, not a breakpoint — a width guess stacked on an
@@ -244,9 +255,11 @@
 	   The left inset aligns these buttons' CENTRES with the bottom-left HUD cluster, which
 	   is 44px wide at a 16px inset while these are 48px: 16 + (44 - 48) / 2 = 14px. Using
 	   the same 20px the logo uses left them looking 6px out. */
+	/* 103 H15: stacked, the column is the LEFT EDGE of the grid: under the logo at the logo's own inset, tiles of the
+	   same size as the logo and the corner stack below (was 14 px, centred against 44 px buttons from 48 px ones) */
 	.touch-tools.tt-stacked {
-		top: calc(var(--tt-anchor, 20px) + 56px);
-		left: calc(16px + (44px - 48px) / 2 + var(--tt-slide, 0px));
+		top: calc(var(--tt-anchor, var(--hud-inset)) + var(--hud-tile) + var(--hud-gap));
+		left: calc(var(--hud-inset) + var(--tt-slide, 0px));
 		flex-direction: column;
 	}
 	/* 44 M12b / 45 N2: the row as a CLUSTER (Controls' layoutClusters sets the root classes and the px). HERE, not in
@@ -269,22 +282,26 @@
 	}
 	/* 42 I9: GLOBAL — Controls portals placeholders and other roster buttons into this row, and a
 	   scoped class would never match them */
+	/* 103 H15 row 2: a TILE of the grid — the shape and size of the logo above and Add / AI below (--hud-tile square,
+	   --hud-radius corners, the HUD glass), never a round button of its own size */
 	:global(.tt-btn) {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		height: 48px;
-		width: 48px;
-		border-radius: 9999px;
+		box-sizing: border-box;
+		height: var(--hud-tile);
+		width: var(--hud-tile);
+		border-radius: var(--hud-radius);
 		border: 1px solid var(--border);
-		background: var(--surface-1);
+		background: var(--hud-glass);
 		color: var(--text);
-		box-shadow: var(--shadow-window);
-		backdrop-filter: blur(4px);
-		transition: transform 0.12s ease;
+		box-shadow: var(--hud-shadow);
+		backdrop-filter: blur(12px);
+		-webkit-backdrop-filter: blur(12px);
+		transition: background-color 0.12s, color 0.12s;
 	}
 	:global(.tt-btn:hover:not(:disabled)) {
-		transform: scale(1.05);
+		background: color-mix(in srgb, var(--surface-1) 96%, var(--text));
 	}
 	:global(.tt-btn:disabled) {
 		opacity: 0.4;

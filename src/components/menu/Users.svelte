@@ -142,6 +142,7 @@
 	import { safeStorage } from '$lib/safeStorage';
 	// 45 N4: a pinned / closed right sidebar moves the profile circle while its menu may be open
 	import { geometry as sidebarGeometry } from '$lib/sidebars';
+	import { hudGrid } from '$lib/hudGrid'; // 103 H15: the stack decision reads the grid's numbers
 
 	// N3: latency-band dot color for a peer's network-quality indicator
 	const qColor = (level: string) =>
@@ -850,6 +851,15 @@
 		// still the CIRCLE's right edge, read from its rect (never floating-ui's drifting maths, the mobile-
 		// viewport trap below), so the notch's circle sits exactly over the trigger wherever it is.
 		dropdownEl.style.setProperty('--pm-right', `${Math.max(0, Math.round(window.innerWidth - r.right))}px`);
+		// 103 H15 row 9 (owner 2026-11-22: "the avatar shifts a few pixels when the menu opens"): the seated circle is
+		// drawn at the trigger's OWN rect, `position: fixed` (.pm-seat). It used to sit at top/right -1px inside the
+		// panel, and the panel scrolls (overflow-y: auto, the cap below), so its padding box CLIPPED the circle's top
+		// and right border: the picture lost a CSS px on two sides and read as a jump down-left (3 device px on the N6).
+		// A fixed child is not clipped by a scrolling ancestor, and it stays on the trigger if the menu scrolls.
+		// anchored from the RIGHT like the trigger (the corner chrome is right-anchored): at a fractional DPR a box placed
+		// from the left rasterises up to half a device px off one placed from the right
+		dropdownEl.style.setProperty('--pm-seat-top', `${r.top}px`);
+		dropdownEl.style.setProperty('--pm-seat-right', `${document.documentElement.clientWidth - r.right}px`);
 		// phone-polish item 6: the menu grew tall (account, sign-in methods, community, sponsor …) and on a
 		// short screen — a phone in landscape, a browser with its bars showing — it ran off the bottom with no
 		// way to reach its last rows. It stops at the visible bottom and SCROLLS (wheel and a finger's drag);
@@ -1003,8 +1013,10 @@
 		if (!trStacked) trRowW = trEl.offsetWidth;
 		const g = $sidebarGeometry;
 		const free = window.innerWidth - (g?.freeTopLeft ?? 0) - (g?.freeTopRight ?? 0);
-		// the group sits 76 px in from the corner (the profile's place) and wants 8 px clear of the left column
-		trStacked = !!trRowW && free < trRowW + 76 + 8;
+		// the group sits one tile + one gap in from the corner's inset (the profile's place, 103 H15's grid) and wants
+		// the grid's inset clear of the left column
+		const { inset, tile, gap } = hudGrid();
+		trStacked = !!trRowW && free < trRowW + inset + tile + gap + inset;
 	}
 	$effect(() => {
 		void $sidebarGeometry;
@@ -1265,7 +1277,7 @@
 <div class="top-right-chrome" style="position: fixed; right: var(--sb-free-top-right, 0px); z-index: var(--z-chrome-top); top: {$connectDocked ? $connectBarHeight + 'px' : '0px'};">
 	<!-- 38 R8: one glass group (styles/hud.css) — notes, notifications, peers — sitting just
 	     left of the profile circle, which keeps its own place (its dropdown is anchored to it) -->
-	<div id="hud-tr" bind:this={trEl} class="tp-ui hud-glass hud-tr" class:tr-stacked={trStacked} style="position: absolute; top: 10px; right: 60px; z-index: 2;" role="toolbar" aria-label="Notes, notifications and people" use:roving={{ item: '.hud-cell:not(.hud-edit-item):not(.hud-edit-add)', axis: 'x' }}>
+	<div id="hud-tr" bind:this={trEl} class="tp-ui hud-glass hud-tr" class:tr-stacked={trStacked} style="position: absolute; top: var(--hud-inset); right: calc(var(--hud-inset) + var(--hud-tile) + var(--hud-gap)); z-index: 2;" role="toolbar" aria-label="Notes, notifications and people" use:roving={{ item: '.hud-cell:not(.hud-edit-item):not(.hud-edit-add)', axis: 'x' }}>
 	<!-- E2: scene-notes drawer toggle -->
 	{#if trShown('notes')}
 	<button
@@ -1613,12 +1625,12 @@
 				aria-label="Profile and account"
 				aria-haspopup="true"
 				aria-expanded={openDropdown}
-				style="position: absolute; top: 8px; right: 8px; cursor: pointer; z-index: 4; line-height: 0;"
+				style="position: absolute; top: var(--hud-inset); right: var(--hud-inset); cursor: pointer; z-index: 4; line-height: 0;"
 				onmousedown={() => (openDropdown = !openDropdown)}
 				onkeydown={triggerKey}
 				onfocusout={dropdownFocusOut}
 			>
-				{@render avatarImg(effAvatar || undefined, 'bg-surface-2 h-[var(--hud-fab)] w-[var(--hud-fab)] border-2 border-border-strong')}
+				{@render avatarImg(effAvatar || undefined, 'bg-surface-2 h-[var(--hud-tile)] w-[var(--hud-tile)] border-2 border-border-strong')}
 			</div>
 		</div>
 	</div>
@@ -1654,11 +1666,11 @@
 		{#if !$phoneShellActive}
 			<button
 				type="button"
-				class="pm-seat absolute z-10 cursor-pointer rounded-xl leading-none"
+				class="pm-seat z-10 cursor-pointer rounded-xl leading-none"
 				aria-label="Close profile menu"
 				onclick={() => (openDropdown = false)}
 			>
-				{@render avatarImg(effAvatar || undefined, 'bg-surface-2 h-[var(--hud-fab)] w-[var(--hud-fab)] border-2 border-border-strong')}
+				{@render avatarImg(effAvatar || undefined, 'bg-surface-2 h-[var(--hud-tile)] w-[var(--hud-tile)] border-2 border-border-strong')}
 			</button>
 		{/if}
 		<!-- PM (roadmap #14): identity header — name, then the cloud email (or "You") under it.
@@ -1798,12 +1810,13 @@
 	/* dock-fixes item 4: too narrow a top row between two columns — the group stands in a column under the profile
 	   (inline `top / right` place the row, so only !important moves it; the cluster's own placement — Edit positions,
 	   `cl-top-placed` in hud.css — is untouched: a placed group never stacks, its area is already the free rect) */
+	/* 103 H15: on the grid — one gap under the profile tile, centred on its column */
 	:global(:root:not(.cl-top-placed)) .hud-tr.tr-stacked {
 		flex-direction: column;
 		height: auto;
 		padding: 5px 0;
-		top: 56px !important;
-		right: 22px !important;
+		top: calc(var(--hud-inset) + var(--hud-tile) + var(--hud-gap)) !important;
+		right: calc(var(--hud-inset) + (var(--hud-tile) - var(--hud-icon-button) - 2px) / 2) !important;
 	}
 	/* Role pill + change-role dropdown (cloud-roles bridge). These MUST live outside
 	   any media query — they previously sat inside @media(max-width:640px) so on a
@@ -1909,9 +1922,14 @@
 	:global(:root:not(.phone-shell) #avatar-dropdown) {
 		border-top-right-radius: var(--radius-xl, 0.75rem);
 	}
+	/* 103 H15 row 9: fixed at the trigger's rect (placeDropdown) — never clipped by the scrolling panel */
 	.pm-seat {
-		top: -1px;
-		right: -1px;
+		position: fixed;
+		top: var(--pm-seat-top, 0px);
+		right: var(--pm-seat-right, 0px);
+		padding: 0;
+		border: 0;
+		background: none;
 	}
 	:global(#avatar-dropdown) {
 		left: auto !important;

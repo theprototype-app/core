@@ -113,6 +113,7 @@
 	import type { ToolbarLayout, LayoutConfig, Placements, Region } from '$lib/toolbarLayout';
 	import { pivotMode, pivotParentAvailable } from '$lib/multiTransform'; // 37 R1: the toolbar Pivot cell
 	import { cssPx, scaledPx, uiScale } from '$lib/uiScale'; // 53 A1: hud.css px tokens read back as calc(...)
+	import { hudGrid } from '$lib/hudGrid'; // 103 H15: the toolbar's band edges are the HUD grid's
 	import XrButtons from '../play/XrButtons.svelte';
 
 	// A panel is "shown" when it is open AND either the visible dock tab OR floating
@@ -3234,7 +3235,9 @@
 	// (each BUTTON is measured, not the stack box: a stack is as tall as what it holds, so its
 	// box would read the upper buttons as sharing the bar's row)
 	const TOOLBAR_NEIGHBOURS = ['#hud-stack-left > *', '#hud-stack-right > *', '#sim-controls'];
-	const EDGE_MARGIN = 8; // breathing room against a neighbour and against the viewport
+	// 103 H15: the bar's band edges are the HUD grid's (styles/hud.css via $lib/hudGrid): --hud-inset from the free
+	// viewport's edges (so a bar that fills its row starts where the logo and the corner stacks do) and --hud-gap from
+	// a corner button beside it — read per measurement, never a copy of the CSS number
 	const SNAP_PX = 24; // how near the middle still counts as the middle
 	const DRAG_SLOP = 6; // travel that turns a press into a move
 	const EDIT_APPLY_OVERHANG = 18; // 43 J8: how far Edit positions' ✓ reaches past the bar's right edge (hud.css)
@@ -3292,6 +3295,7 @@
 		const pill = nav.getBoundingClientRect();
 		if (!pill.width) return;
 		const vw = window.innerWidth;
+		const { inset: EDGE_MARGIN, gap: NEAR_MARGIN } = hudGrid();
 		if (barPlaced) {
 			// 44 M12b: a placed bar has no bottom track; its room is the area's length along the bar (the folded
 			// "»" budget) — across the area when horizontal, down it when vertical
@@ -3335,8 +3339,8 @@
 			// here: at that width chat / AI / mic / "+" have moved ABOVE this row, so
 			// they stop clamping and the bar gets the full width — measured, not coded.
 			if (r.bottom <= rowTop || r.top >= pill.bottom) continue;
-			if ((r.left + r.right) / 2 < vw / 2) left = Math.max(left, r.right + EDGE_MARGIN);
-			else right = Math.min(right, r.left - EDGE_MARGIN);
+			if ((r.left + r.right) / 2 < vw / 2) left = Math.max(left, r.right + NEAR_MARGIN);
+			else right = Math.min(right, r.left - NEAR_MARGIN);
 		}
 		observeNeighbours(nav, found);
 		if (editing) {
@@ -3387,7 +3391,7 @@
 		const cs = getComputedStyle(nav);
 		const row = nav.querySelector('.hud-bar-row');
 		const cell = cssPx(root.getPropertyValue('--hud-cell')) || 38;
-		const fab = cssPx(root.getPropertyValue('--hud-fab')) || 44;
+		const fab = cssPx(root.getPropertyValue('--hud-play')) || 44; // 103 H15: Play's own size (the corner tiles grow on touch)
 		const gap = row ? px(getComputedStyle(row).columnGap) : 2;
 		const navGap = px(cs.columnGap);
 		const sep = nav.querySelector('.hud-sep');
@@ -3673,6 +3677,9 @@
 		const hi = editPlace.right - half;
 		return lo > hi ? (editPlace.left + editPlace.right) / 2 : Math.max(lo, Math.min(hi, pillCentre));
 	});
+	/** 103 H15: the bar fills its band exactly when it is FULL — something folded into "»" (it cannot be wider than
+	 *  the band, and a full bar narrower than it only by a fraction of a cell read as a third left edge on the N6) */
+	const fillsBand = $derived(!barPlaced && !movingBar && dragCentre == null && folded.length > 0 && barRoom.ok && barRoom.right - barRoom.left > 0);
 	const pillStyle = $derived(
 		// 44 M12b: a PLACED bar is drawn where the cluster engine put it (the --cl-bar-* pair, layoutClusters)
 		barPlaced
@@ -3687,6 +3694,10 @@
 			: 'bottom: 16px;') +
 			(editCentre != null
 				? ` left: ${Math.round(editCentre)}px; max-width: ${Math.max(0, Math.floor(editPlace!.right - editPlace!.left))}px;`
+				: fillsBand
+					? // 103 H15: a bar that folded ("»") is as wide as its band — its edges ARE the grid's inset (or a gap from
+						// the corner button beside it), not wherever the last whole cell happened to end
+						` left: ${Math.round((barRoom.left + barRoom.right) / 2)}px; width: ${Math.floor(barRoom.right - barRoom.left)}px; justify-content: center;`
 				: track.mid > 0
 					? ` left: ${Math.round(pillCentre)}px;`
 					: '') +

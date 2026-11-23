@@ -617,7 +617,7 @@ export const ROOM_SCOPED = new Set([
 	// object lifecycle & geometry
 	'create', 'light', 'group', 'object', 'objectfile', 'duplicate', 'delete', 'name',
 	'move', 'throw', 'hit', 'behavior', 'simulate', 'simvote', 'simhandoff', 'color', 'objectParameters', 'geometry', 'lighttarget',
-	'verts', 'meshgeo', 'uvpaint', 'uvpaintend', 'splineedit', 'drawlive', 'drawend',
+	'verts', 'meshgeo', 'uvpaint', 'uvpaintend', 'meshpaint', 'meshpaintend', 'splineedit', 'drawlive', 'drawend',
 	'clearscene', 'loading',
 	// flow
 	'nodes', 'nodesync', 'graphcreate', 'graphdelete', 'nodecreate', 'nodemove',

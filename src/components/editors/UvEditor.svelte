@@ -20,6 +20,7 @@
 	import { uvEditorClose, showToast } from '../../stores/appStore.js';
 	import { setObjectTexture, removeObjectTexture, addMaterialSlot } from '$lib/materialsHandler';
 	import { applyExplorerImage } from '$lib/explorerDrop';
+	import { notePointer, mayDraw } from '$lib/penInput';
 	import { unwrapBackends } from '$lib/uvUnwrap';
 	import {
 		uvActiveSlot, uvTool, uvBrushColor, uvBrushSize, uvPenPressure, uvFaceFilter, uvPaintTick, uvEditable, uvViewable, UV_WIRE_LIMIT, uvTriangles, materialsOf, slotCount,
@@ -232,7 +233,74 @@
 		$objectsGroup;
 		return textureImageOf(target, slot);
 	});
-	const backdrop = $derived(paintCanvas ?? mapImage ?? liveImage);
+	// 102 M6: the painter, loaded on first use (Paint armed). `paintMod` is the loaded module or null.
+	// Its brush panel and settings ride the same lazy load, so none of it is in the boot bundle (boot rule).
+	let paintMod = $state(/** @type {any} */ (null));
+	let PaintPanel = $state(/** @type {any} */ (null));
+	/** @type {Promise<any> | null} */ let paintLoading = null;
+	function loadPaint() {
+		// the panel chunk imports the painter: a dynamic import's preload list (the painter's whole static graph,
+		// ~400 chunk names) is written into the IMPORTING chunk, so it must not be this boot one (5 KB gz measured)
+		paintLoading ??= import('./MeshPaintPanel.svelte').then(async (panel) => {
+			// the panel shows as soon as its own small chunk lands; the painter follows (the old brush paints meanwhile)
+			PaintPanel = panel.default;
+			paintMod = await panel.loadPainter();
+		});
+		return paintLoading;
+	}
+	$effect(() => {
+		if ($uvTool === 'paint') untrack(() => void loadPaint());
+	});
+	/** the brush state the editor needs (channel, channel view, and whether meshPaint owns the stroke) */
+	let paintUi = $state({ channel: 'color', showChannel: false, newBrush: false, smoothPx: 0 });
+	$effect(() => {
+		const mod = paintMod;
+		if (!mod) return;
+		return mod.paintUi.subscribe((/** @type {any} */ v) => (paintUi = v));
+	});
+	const usesNewBrush = $derived(paintUi.newBrush);
+	/** which painter owns the stroke in flight: the shipped one (`uv`) or meshPaint (`mesh`) */
+	let paintEngine = /** @type {'uv'|'mesh'} */ ('uv');
+	// a roughness / metalness / emission channel shows ITS map behind the wire (none yet: the first stroke makes one)
+	const channelImage = $derived.by(() => {
+		$uvPaintTick;
+		$objectsGroup;
+		if ($uvTool !== 'paint' || paintUi.channel === 'color' || !paintMod) return undefined;
+		return paintMod.channelBackdrop(target, slot, paintUi.channel) ?? null;
+	});
+	const backdrop = $derived(channelImage !== undefined ? channelImage : paintCanvas ?? mapImage ?? liveImage);
+	// the brush on the MODEL: with Paint armed and the editor open, a drag on the selected object paints it
+	$effect(() => {
+		const on = $uvTool === 'paint' && !$uvEditorClose && !!target && !!paintMod;
+		if (!on) return;
+		const mod = paintMod;
+		const detach = untrack(() =>
+			mod.attachViewportPainting({ target: () => untrack(() => target), slot: () => untrack(() => slot) })
+		);
+		return detach;
+	});
+	// what a stroke on this object paints (map, or vertex colours and why), for the panel
+	$effect(() => {
+		$objectsGroup;
+		const mesh = target;
+		const s = slot;
+		if ($uvTool !== 'paint' || !paintMod) return;
+		untrack(() => (mesh ? paintMod.targetFor(mesh, s) : paintMod.clearTargetInfo()));
+	});
+	// LOCAL view: the painted channel alone on the model
+	$effect(() => {
+		const on = paintUi.showChannel && $uvTool === 'paint' && !$uvEditorClose && !!target && !!paintMod;
+		const mod = paintMod;
+		if (!on) {
+			untrack(() => mod?.hideChannelView());
+			return;
+		}
+		const mesh = target;
+		const s = slot;
+		const ch = paintUi.channel;
+		untrack(() => mod.showChannelView(mesh, s, ch));
+		return () => mod.hideChannelView();
+	});
 	// An imported (glTF) texture samples v=0 from the image TOP, while the editor
 	// draws v UP — so its backdrop has to be blitted vertically flipped or the view
 	// disagrees with the model about which end is which.
@@ -331,6 +399,8 @@
 			grab.cancel();
 			cancelUvDrag();
 			cancelPaintStroke();
+			paintMod?.cancelStroke();
+			meshHeld = null;
 			selCluster = [];
 			hoverIndex = -1;
 			pivotPlaced = null; // an origin belongs to the map you placed it on
@@ -481,7 +551,15 @@
 	// delegated handler, and a drag whose pointerdown never arrived then jumps by
 	// the pointer's ABSOLUTE position (the DragRow trap, 16-Q3). pointermove/up
 	// live on WINDOW so a drag survives leaving the canvas box.
-	let gesture = $state(/** @type {'idle'|'pan'|'drag'|'box'|'lasso'|'paint'|'pivot'} */ ('idle'));
+	let gesture = $state(/** @type {'idle'|'pan'|'drag'|'box'|'lasso'|'paint'|'pivot'|'pinch'} */ ('idle'));
+	// 103 H2: which pointer owns the gesture. A pen's or a finger's gesture listens to ITS pointer only, so a palm
+	// resting on the screen (or a second finger) cannot end the pen's stroke; a mouse gesture is as before.
+	let gestureId = -1;
+	let gestureType = '';
+	/** the fingers on the canvas: pointerId -> client point (tracked by window listeners while any is down) */
+	const touches = new Map();
+	/** a two-finger pinch: the UV point under the fingers' centre, their distance and the zoom when it began */
+	/** @type {{u: number, v: number, d: number, zoom: number} | null} */ let pinch = null;
 	let lastX = 0;
 	let lastY = 0;
 	/** did this gesture actually move? a press with no movement is a CLICK */
@@ -516,7 +594,7 @@
 	let navMode = $state(false);
 	let navCursor = $state(-1);
 
-	function localPoint(/** @type {PointerEvent | WheelEvent} */ e) {
+	function localPoint(/** @type {PointerEvent | WheelEvent | {clientX: number, clientY: number}} */ e) {
 		const rect = canvasEl?.getBoundingClientRect();
 		return { x: e.clientX - (rect?.left ?? 0), y: e.clientY - (rect?.top ?? 0) };
 	}
@@ -807,12 +885,23 @@
 	const extendKey = (e) => e.shiftKey || e.ctrlKey || e.metaKey;
 
 	function onPointerDown(/** @type {PointerEvent} */ e) {
+		notePointer(e);
+		if (e.pointerType === 'touch') touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+		// 103 H2: a second FINGER pinch-zooms and pans, and abandons whatever the first one started (no stray dot);
+		// any other second pointer (a palm under a pen's stroke) is ignored
+		if (gesture !== 'idle' && gesture !== 'pinch' && strictGesture() && e.pointerId !== gestureId) {
+			if (e.pointerType === 'touch' && gestureType === 'touch' && touches.size >= 2) startPinch();
+			return;
+		}
+		if (gesture === 'pinch') return;
 		if (!target || !viewable.ok) return;
 		// a modal grab is running: its own capture handler commits on this press
 		if (grab.isModal()) return;
 		// RIGHT is the context menu (`onContextMenu`). It used to fall through to the
 		// drag/marquee/pan code AND show the browser's menu on top of everything.
 		if (e.button === 2) return;
+		gestureId = e.pointerId;
+		gestureType = e.pointerType || 'mouse';
 		const { x, y } = localPoint(e);
 		lastX = e.clientX;
 		lastY = e.clientY;
@@ -851,8 +940,47 @@
 		// The stroke opens ASYNChronously (the canvas has to carry the existing
 		// texture before the first dab), so claim the gesture NOW and let the
 		// pending moves queue behind the seed.
+		// 103 H2: once a pen is seen, a finger in Paint pans instead of drawing ("Pen only draws")
+		if ($uvTool === 'paint' && !mayDraw(e)) {
+			gesture = 'pan';
+			attachDragListeners();
+			return;
+		}
+		if ($uvTool === 'paint' && ((usesNewBrush && paintMod) || layerStroke(e))) {
+			// 102 M6: a new channel or brush paints through meshPaint (the same canvas for colour). 103 H1: so does a
+			// pen stroke whose pressure drives OPACITY — the shipped painter strokes each segment at its own alpha,
+			// so the overlaps stacked to opaque; meshPaint draws one layer per stroke and composites it once.
+			gesture = 'paint';
+			paintEngine = 'mesh';
+			brushAt = [x, y];
+			lastRaw = null;
+			attachDragListeners();
+			const begin = { uuid: target.uuid, slot, sp: 'uv', at: [toU(x), toV(y)], w: pressureOf(e) };
+			const open = () =>
+				void paintMod.beginStroke(begin).then((/** @type {boolean} */ ok) => {
+					if (!ok && gesture === 'paint') gesture = 'idle';
+				});
+			if (paintMod) {
+				open();
+				return;
+			}
+			// the painter is still loading (Paint was armed a moment ago): hold the samples, then replay them
+			const held = { moves: /** @type {any[]} */ ([]), ended: false };
+			meshHeld = held;
+			void loadPaint().then(() => {
+				if (meshHeld !== held || !paintMod) return;
+				meshHeld = null;
+				open();
+				for (const m of held.moves) paintMod.strokeTo(m.at, m.w);
+				if (held.ended) paintMod.endStroke();
+			});
+			return;
+		}
 		if ($uvTool === 'paint') {
 			gesture = 'paint';
+			paintEngine = 'uv';
+			brushAt = [x, y];
+			lastRaw = null;
 			// 24-F1 (found on the way): this branch returned WITHOUT the window move/up
 			// pair, so a pointer stroke got its first dab and nothing else — no moves
 			// painted and no pointerup ever committed it (the uv-paint suite asserted only
@@ -915,6 +1043,44 @@
 		if (!extendKey(e)) pendingClear = true; // a plain marquee/click replaces
 	}
 
+	/** a pen's or a finger's gesture answers to its own pointer only */
+	const strictGesture = () => gestureType === 'pen' || gestureType === 'touch';
+
+	/** 103 H2: two fingers are down — drop the first finger's gesture (a stroke is CANCELLED, so it leaves no dot
+	 * here or on a peer) and pinch */
+	function startPinch() {
+		if (gesture === 'paint') {
+			cancelPaintStroke();
+			paintMod?.cancelStroke();
+			meshHeld = null;
+			lastRaw = null;
+		}
+		if (grab.active()) grab.cancel();
+		marquee = null;
+		lasso = [];
+		pendingClear = false;
+		endGesture();
+		const [a, b] = [...touches.values()];
+		const c = localPoint({ clientX: (a.x + b.x) / 2, clientY: (a.y + b.y) / 2 });
+		pinch = { u: toU(c.x), v: toV(c.y), d: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), zoom };
+		gesture = 'pinch';
+		gestureId = -1;
+		gestureType = 'touch';
+		attachDragListeners();
+	}
+	/** zoom by the fingers' spread, about the UV point that was under their centre, which follows the centre (so
+	 * moving both fingers pans) */
+	function pinchMove() {
+		const pts = [...touches.values()];
+		if (pts.length < 2 || !pinch) return;
+		const [a, b] = pts;
+		const c = localPoint({ clientX: (a.x + b.x) / 2, clientY: (a.y + b.y) / 2 });
+		const d = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
+		zoom = Math.min(Math.max((pinch.zoom * d) / pinch.d, 0.1), 32);
+		panX += c.x - toScreenX(pinch.u);
+		panY += c.y - toScreenY(pinch.v);
+	}
+
 	/** pan / marquee / lasso / paint keep their own window pair; a TRANSFORM does
 	 *  not — `createGesture` attaches (and removes) its own */
 	function attachDragListeners() {
@@ -926,6 +1092,11 @@
 	let pendingClear = false;
 
 	function onPointerMove(/** @type {PointerEvent} */ e) {
+		if (gesture === 'pinch') {
+			pinchMove();
+			return;
+		}
+		if (strictGesture() && e.pointerId !== gestureId) return;
 		const dx = e.clientX - lastX;
 		const dy = e.clientY - lastY;
 		if (Math.abs(dx) > 0 || Math.abs(dy) > 0) moved = true;
@@ -956,7 +1127,16 @@
 			}
 			for (const sample of samples.length ? samples : [e]) {
 				const { x, y } = localPoint(sample);
-				paintMove(toU(x), toV(y), $uvBrushColor, brushUv(), pressureOf(sample));
+				const w = pressureOf(sample);
+				// 103 H1: the stabiliser (Smoothing in the brush panel) trails the pen on a string, in screen px
+				const R = paintMod ? paintUi.smoothPx : 0;
+				if (R > 0) {
+					lastRaw = { x, y, w };
+					const next = paintMod.pullString(brushAt, [x, y], R);
+					if (!next) continue;
+					brushAt = next;
+					paintAt(next[0], next[1], w);
+				} else paintAt(x, y, w);
 			}
 		}
 	}
@@ -970,14 +1150,50 @@
 		return Number.isFinite(p) ? Math.max(0, Math.min(1, p)) : undefined;
 	}
 
+	/** one stroke point at view px (x, y) to whichever painter owns the stroke @param {number} x @param {number} y
+	 * @param {number | undefined} w */
+	function paintAt(x, y, w) {
+		if (paintEngine === 'mesh') {
+			if (meshHeld) meshHeld.moves.push({ at: [toU(x), toV(y)], w });
+			else paintMod?.strokeTo([toU(x), toV(y)], w);
+		} else paintMove(toU(x), toV(y), $uvBrushColor, brushUv(), w);
+	}
+	/** 103 H1 smoothing: where the brush is (view px) and the last raw sample, which the stroke ends on */
+	/** @type {number[] | null} */ let brushAt = null;
+	/** @type {{x: number, y: number, w: number | undefined} | null} */ let lastRaw = null;
+
+	/** 103 H1: does this press paint through meshPaint's stroke layer? A PEN, with its pressure on opacity.
+	 * @param {PointerEvent} e */
+	const layerStroke = (e) => e.pointerType === 'pen' && ($uvPenPressure === 'opacity' || $uvPenPressure === 'both');
+	/** a layer stroke that started before the painter chunk landed: its samples, replayed on load */
+	/** @type {{moves: any[], ended: boolean} | null} */ let meshHeld = null;
+
 	/** The brush is set in TEXTURE pixels, so it paints the same width whatever
 	 * the view zoom — a brush measured in screen px would get finer as you zoom
 	 * in, which is the opposite of what a painter expects. */
 	const brushUv = () => $uvBrushSize;
 
 	function onPointerUp(/** @type {PointerEvent} */ e) {
+		if (gesture === 'pinch') {
+			touches.delete(e.pointerId);
+			// the pinch ends when a finger lifts; the one left on the glass does nothing until it lifts too
+			if (touches.size < 2) {
+				pinch = null;
+				endGesture();
+			}
+			return;
+		}
+		if (strictGesture() && e.pointerId !== gestureId) return;
+		if (gesture === 'paint' && lastRaw) {
+			// a smoothed stroke catches up and ends where the pen lifted
+			paintAt(lastRaw.x, lastRaw.y, lastRaw.w);
+			lastRaw = null;
+		}
 		if (gesture === 'paint') {
-			endPaintStroke($uvBrushColor, brushUv());
+			if (paintEngine === 'mesh') {
+				if (meshHeld) meshHeld.ended = true;
+				else paintMod?.endStroke();
+			} else endPaintStroke($uvBrushColor, brushUv());
 		} else if (gesture === 'box' && marquee && target) {
 			const hits = uvIndicesInRect(target, slot, {
 				u0: toU(marquee.x0), v0: toV(marquee.y0), u1: toU(marquee.x1), v1: toV(marquee.y1)
@@ -1375,8 +1591,27 @@
 		node.addEventListener('pointerdown', /** @type {any} */ (onPointerDown));
 		node.addEventListener('wheel', /** @type {any} */ (onWheel), { passive: false });
 		node.addEventListener('pointermove', /** @type {any} */ (onHover));
+		// 103 H2: where each finger is, whatever the gesture (a pinch starts from the fingers' CURRENT points)
+		const track = (/** @type {PointerEvent} */ e) => {
+			if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+		};
+		const lift = (/** @type {PointerEvent} */ e) => {
+			if (gesture !== 'pinch') touches.delete(e.pointerId);
+		};
+		const cancel = (/** @type {PointerEvent} */ e) => {
+			// the browser took the pointer (a system gesture): treat it as lifted
+			if (gesture === 'drag' && e.pointerId === gestureId) grab.cancel();
+			else if (gesture === 'pinch' || e.pointerId === gestureId) onPointerUp(e);
+			touches.delete(e.pointerId);
+		};
+		window.addEventListener('pointermove', track, true);
+		window.addEventListener('pointerup', lift);
+		window.addEventListener('pointercancel', cancel);
 		return {
 			destroy: () => {
+				window.removeEventListener('pointermove', track, true);
+				window.removeEventListener('pointerup', lift);
+				window.removeEventListener('pointercancel', cancel);
 				node.removeEventListener('pointerdown', /** @type {any} */ (onPointerDown));
 				node.removeEventListener('wheel', /** @type {any} */ (onWheel));
 				node.removeEventListener('pointermove', /** @type {any} */ (onHover));
@@ -1929,24 +2164,13 @@
 								oninput={(e) => uvBrushSize.set(parseInt(e.currentTarget.value) || 1)}
 							/>
 						</label>
-						<!-- 24-F1: pen pressure — size (default) · opacity · off -->
-						<div class="mt-2 text-[11px] text-text-muted">Pen pressure</div>
-						<div id="uv-pen-pressure" class="mt-1 flex gap-1" role="radiogroup" aria-label="Pen pressure">
-							{#each [['size', 'Size'], ['opacity', 'Opacity'], ['off', 'Off']] as [value, label] (value)}
-								<button
-									type="button"
-									role="radio"
-									aria-checked={$uvPenPressure === value}
-									data-value={value}
-									class={'flex-1 rounded-sm px-2 py-0.5 text-[11px] ' + ($uvPenPressure === value ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 text-text-2 hover:bg-surface-active')}
-									onclick={() => uvPenPressure.set(/** @type {any} */ (value))}>{label}</button>
-							{/each}
-						</div>
 						<p class="mt-1 text-[10px] leading-relaxed text-text-faint">
-							Size is in texture pixels, so it paints the same width at any zoom.
+							Size is in texture pixels, so it paints the same width at any zoom. Two fingers pinch-zoom and pan.
 							Each stroke is one undo step; peers watch it live. A pen's pressure varies the
-							width (or the opacity); a mouse stroke is unchanged.
+							width, the opacity, or both; a mouse stroke is unchanged.
 						</p>
+						<!-- 102 M6: what the brush paints, and how (a lazy chunk, with the painter) -->
+						{#if PaintPanel}<PaintPanel {uvPenPressure} />{/if}
 					</div>
 				{/if}
 				<div class="p-2 text-[11px] leading-relaxed text-text-muted">

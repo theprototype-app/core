@@ -10,6 +10,7 @@ import { canModerate, peerLabel, removePeer } from './peerModeration';
 
 const KEY = 'connect:rateLimits';
 const NOTICE_MS = 30000;
+const STAT_TYPES = new Set(['name', 'sent', 'create', 'group']);
 
 const stored = safeStorage.getItem(KEY);
 /** @type {import('svelte/store').Writable<string>} */
@@ -42,7 +43,8 @@ export function admitRate(conn, type, msg) {
 	const preset = get(peerRateLimits);
 	const over = limiter.take(peerId, type, preset, msg);
 	stats.last = { peerId, type, preset };
-	const row = typeof type === 'string' && (stats.byType[type] ??= { ok: 0, refused: 0, first: Date.now(), last: 0 });
+	// only the few types the seam reports: the type is whatever a peer sent (never a key on a plain object)
+	const row = typeof type === 'string' && STAT_TYPES.has(type) && (stats.byType[type] ??= { ok: 0, refused: 0, first: Date.now(), last: 0 });
 	if (row) row.last = Date.now();
 	if (over === 'ok') {
 		stats.ok++;
@@ -66,8 +68,8 @@ export function admitRate(conn, type, msg) {
 /** what the gate decided since the page loaded — a test seam (the suite reads it to tell "the gate refused"
  * from "the gate was never asked") */
 /** @type {{ok: number, refused: number, exempt: number, last: any, byType: Record<string, {ok: number, refused: number, first: number, last: number}>}} */
-const stats = { ok: 0, refused: 0, exempt: 0, last: null, byType: {} };
-export const rateGateStats = () => ({ ...stats, byType: Object.fromEntries(Object.entries(stats.byType).filter(([t]) => t === 'name' || t === 'sent' || t === 'create')) });
+const stats = { ok: 0, refused: 0, exempt: 0, last: null, byType: Object.create(null) };
+export const rateGateStats = () => ({ ...stats, byType: { ...stats.byType } });
 
 /** the receiver told us @param {any} data */
 export function applyRateNotice(data) {

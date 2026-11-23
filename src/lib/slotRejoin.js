@@ -43,6 +43,14 @@ export function rejoinSlotPrimitives(node, layout) {
 	geometry.userData = { ...(first.userData ?? {}) };
 	const vertices = first.attributes.position.count;
 	if (layout.indexed) {
+		// size the index from what the glTF really holds, before allocating: a layout's count alone is a peer's number
+		let supplied = 0;
+		for (let i = 0; i < prims.length; i++) {
+			const src = prims[i].geometry.index;
+			if (layout.groups[i].count && (!src || src.count < layout.groups[i].count)) return null;
+			supplied += src?.count ?? 0;
+		}
+		if (layout.count > supplied) return null;
 		const index = vertices > 65535 ? new Uint32Array(layout.count) : new Uint16Array(layout.count);
 		for (let i = 0; i < prims.length; i++) {
 			const g = layout.groups[i];

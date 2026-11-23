@@ -127,7 +127,7 @@ h.run(async () => {
 	// a HUD key hint naming Space shows the pad's jump button
 	await V(page, () => {
 		const s = /** @type {any} */ (window).__tp.test.v1;
-		s.hudDocs.setHudDocFor('scene', { screens: [{ id: 'sc', name: 'Play', elements: [{ id: 'kh', kind: 'keyhint', anchor: 'mc', x: 0, y: 0, w: 160, h: 30, keyName: 'Space', label: 'Jump' }] }], active: 'sc' });
+		s.hudDocs.setHudDocFor('scene', { screens: [{ id: 'sc', name: 'Play', elements: [{ id: 'kh', kind: 'keyhint', anchor: 'center', x: 0, y: 0, w: 160, h: 30, keyName: 'Space', label: 'Jump' }] }], active: 'sc' });
 	});
 	await h.eventually(() => page.locator('[data-hud-id="kh"] [data-glyph]').first().getAttribute('data-glyph').catch(() => null), (g) => g === 'cross', '4.3 a key hint for Space shows the Cross glyph on a PlayStation pad', 10000);
 	await page.keyboard.press('KeyK');

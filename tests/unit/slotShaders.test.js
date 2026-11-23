@@ -22,10 +22,12 @@ import {
 	SCENE_GRAPH_KEY
 } from '../../src/lib/shaderGraph.js';
 import { slotDrawn } from '../../src/lib/slotDrawLayer.js';
+import { classifyMaterial } from '../../src/lib/cinematic/cinematicCore.js';
 
 // 105-slot-shaders: a shader document per material slot (`<uuid>/<slotId>`), the object key = every slot without
 // its own, the scene default reaching material lists, and the save prune reading a slot key.
 
+/** @returns {any} */
 const GRAPH = (/** @type {string} */ hex) => ({
 	nodes: [
 		{ id: 'c1', type: 'color', position: { x: 60, y: 80 }, data: { value: hex } },
@@ -56,6 +58,9 @@ function scene() {
 
 beforeEach(() => clearShaderGraphs());
 
+/** the store with test documents (any shape: the resolution reads only the keys) @param {Record<string, any>} map */
+const setDocs = (map) => shaderGraphs.set(/** @type {any} */ (map));
+
 describe('the key', () => {
 	it('shaderKeyParts is the one reader', () => {
 		expect(shaderKeyParts('u1')).toEqual({ uuid: 'u1', slot: null });
@@ -69,11 +74,11 @@ describe('the key', () => {
 	});
 	it('resolution: slot key -> object key -> scene default -> none', () => {
 		expect(graphKeyForSlot('u1', 'B')).toBe(null);
-		shaderGraphs.set({ scene: {} });
+		setDocs({ scene: {} });
 		expect(graphKeyForSlot('u1', 'B')).toBe('scene');
-		shaderGraphs.set({ scene: {}, u1: {} });
+		setDocs({ scene: {}, u1: {} });
 		expect(graphKeyForSlot('u1', 'B')).toBe('u1');
-		shaderGraphs.set({ scene: {}, u1: {}, 'u1/B': {} });
+		setDocs({ scene: {}, u1: {}, 'u1/B': {} });
 		expect(graphKeyForSlot('u1', 'B')).toBe('u1/B');
 		expect(graphKeyForSlot('u1', 'A')).toBe('u1');
 		expect(graphKeyForSlot('u1')).toBe('u1');
@@ -99,7 +104,7 @@ describe('the save prune', () => {
 	it('a slot key is an orphan when the object OR the slot is gone', () => {
 		const { box } = scene();
 		const u = box.uuid;
-		shaderGraphs.set({ [u + '/B']: GRAPH('#000000'), [u + '/Z']: GRAPH('#000000'), ['gone/A']: GRAPH('#000000'), [u]: GRAPH('#000000') });
+		setDocs({ [u + '/B']: GRAPH('#000000'), [u + '/Z']: GRAPH('#000000'), ['gone/A']: GRAPH('#000000'), [u]: GRAPH('#000000') });
 		const asked = /** @type {string[]} */ ([]);
 		const out = shaderGraphsSnapshot({
 			pruneMissing: (id) => (asked.push(id), !get(objectsGroup)?.getObjectByProperty('uuid', id))
@@ -111,7 +116,7 @@ describe('the save prune', () => {
 	it('a single-material object keeps a slot key naming its one slot (a list that lost the others)', () => {
 		const { plain } = scene();
 		const id = plain.material.uuid;
-		shaderGraphs.set({ [plain.uuid + '/' + id]: GRAPH('#000000'), [plain.uuid + '/other']: GRAPH('#000000') });
+		setDocs({ [plain.uuid + '/' + id]: GRAPH('#000000'), [plain.uuid + '/other']: GRAPH('#000000') });
 		expect(Object.keys(shaderGraphsSnapshot({ pruneMissing: () => false }))).toEqual([plain.uuid + '/' + id]);
 	});
 });
@@ -187,6 +192,16 @@ describe('compile per slot', () => {
 		const name = Object.keys(box.material[0].userData.shaderUniforms ?? {}).find((n) => n.includes('c1'));
 		expect(name).toBeTruthy();
 		expect(shaderUniformsOf(box.uuid, /** @type {string} */ (name)).length).toBe(2);
+	});
+});
+
+describe('Cinematic view (100: already walks a material list per entry)', () => {
+	it('the driven slot is named a shader (its stand-in), the other slot draws its own material', async () => {
+		const { box } = scene();
+		setShaderGraphFor(box.uuid + '/B', GRAPH('#0000ff'), { silent: true });
+		await compileAndApply(box.uuid + '/B');
+		expect(classifyMaterial(box, box.material[1]).kind).toBe('shader');
+		expect(classifyMaterial(box, box.material[0])).toEqual({ swap: false, kind: null });
 	});
 });
 

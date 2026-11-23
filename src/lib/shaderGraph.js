@@ -1141,7 +1141,8 @@ export function copyShaderGraphFrom(doc, toUuid) {
  * Does this object have (or inherit) a graph AT ALL? `isShaderDriven` answers "is a
  * compiled material installed right now", which is false for a graph whose compile has
  * not run yet — so the Inspector needs this one to decide what to OFFER.
- * @param {string} uuid @returns {boolean}
+ * 105-slot-shaders: `slotId` = that slot's resolution (its own key -> the object's -> the scene's).
+ * @param {string} uuid @param {string | null} [slotId] @returns {boolean}
  */
 export function hasShaderGraph(uuid, slotId) {
 	return !!(slotId ? graphKeyForSlot(uuid, slotId) : graphKeyFor(uuid));

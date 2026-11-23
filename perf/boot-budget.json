@@ -4,12 +4,12 @@
 	"pages": {
 		"play": {
 			"html": "play.html",
-			"maxJsGzBytes": 1945600,
+			"maxJsGzBytes": 1954816,
 			"maxFirstFrameMs": 20000
 		},
 		"editor": {
 			"html": "index.html",
-			"maxJsGzBytes": 3092480,
+			"maxJsGzBytes": 3101696,
 			"maxFirstFrameMs": 32000
 		}
 	},
@@ -150,6 +150,13 @@
 				"fix-late-joiners #619 (with #609)": "+3.0 / +3.6",
 				"71-int fixes e3e8e7af, f1dcd3e3": "measured with the union at the release candidate (gates rc)"
 			}
+		},
+		{
+			"date": "2026-11-23",
+			"lane": "71-int-rel (1.76 Accounts and safety on v1.75.0: #506 71-privacy, #618 71-rooms, #619 fix-late-joiners)",
+			"play": "v1.75.0 1877.3 KB -> union on v1.75.0 1883.4 KB (+6.1) -> line 1909 KB (the 1.75.0 line 1900 + 3 KB per core lane x 3)",
+			"editor": "v1.75.0 2988.4 KB -> union on v1.75.0 2998.8 KB (+10.4) -> line 3029 KB (the 1.75.0 line 3020 + 3 KB per core lane x 3)",
+			"note": "orchestrator rule for this release (theprototype-41, 23 Nov): the 71-int candidate's 2160 / 3380 lines were set under the old rules and are retired; the new line is the 1.75.0 line + 3 KB per lane. Measured on the Deck after merging v1.75.0 (build 9a4cefaa). Per-lane split from the pc host on v1.74.0 (71-int entry above): #506 +1.4 / +1.9, #618 +2.5 / +3.2, #619 +3.0 / +3.6"
 		}
 	],
 	"throttle": {

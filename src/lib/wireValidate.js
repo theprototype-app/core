@@ -193,6 +193,9 @@ export const VALIDATORS = {
 	chathistory: (d) => isArray(d.messages) && d.messages.length <= 500,
 	// 48 S2: a sequence document (normalized again on apply) / its delete / the full map
 	seq: (d) => typeof d.id === 'string' && d.id.length <= 64 && !!d.doc && typeof d.doc === 'object' && !Array.isArray(d.doc),
+	// 102 M3: a stamped mark (applyDecalStamp re-checks and clamps every field)
+	decalstamp: (d) =>
+		typeof d.id === 'string' && d.id.length <= 64 && isUuid(d.target) && isNumberArray(d.pose) && d.pose.length === 16 && (d.image === undefined || (typeof d.image === 'string' && d.image.length <= 128)),
 	seqdelete: (d) => typeof d.id === 'string' && d.id.length <= 64,
 	seqs: (d) => !!d.seqs && typeof d.seqs === 'object' && !Array.isArray(d.seqs),
 	// 50 Y1: shared text — a document key (`n:<graph>:<node>` / `f:<name>`) and Yjs's own binary
@@ -483,6 +486,13 @@ export const VALIDATORS = {
 		if (d.parameter === 'terrainLayers') return isUuid(d.uuid) && (d.terrainLayers === null || isArray(d.terrainLayers));
 		if (d.parameter === 'terrainScatter')
 			return isUuid(d.uuid) && (d.terrainScatter === null || (!!d.terrainScatter && typeof d.terrainScatter === 'object' && isArray(d.terrainScatter.sets)));
+		// 102 M7: a constraint stack is a short array of plain objects (normalized again by the applier), or null
+		if (d.parameter === 'constraints')
+			return (
+				isUuid(d.uuid) &&
+				(d.constraints === null ||
+					(isArray(d.constraints) && d.constraints.length <= 16 && d.constraints.every((/** @type {any} */ c) => !!c && typeof c === 'object' && !isArray(c) && typeof c.id === 'string' && c.id.length <= 24)))
+			);
 		// 48 B2: a measurement's record — null is not a record (an item is deleted, never emptied)
 		if (d.parameter === 'measure')
 			return isUuid(d.uuid) && !!d.measure && typeof d.measure === 'object' && isArray(d.measure.points) && d.measure.points.length <= 64;
@@ -532,6 +542,15 @@ export const VALIDATORS = {
 			const v = d.textPath;
 			if (v === null) return isUuid(d.uuid);
 			return isUuid(d.uuid) && !!v && typeof v === 'object' && !isArray(v) && (v.text === undefined || (typeof v.text === 'string' && v.text.length <= 4000));
+		}
+		// 102 M3: a decal record (normalizeDecal clamps every field)
+		if (d.parameter === 'decal') return isUuid(d.uuid) && !!d.decal && typeof d.decal === 'object' && !isArray(d.decal);
+		// 102: a Gaussian splat's record (normalizeSplat clamps the rest) or null; the hash is a content
+		// address, never a URL
+		if (d.parameter === 'splat') {
+			const v = d.splat;
+			if (v === null) return isUuid(d.uuid);
+			return isUuid(d.uuid) && !!v && typeof v === 'object' && !isArray(v) && (v.hash === undefined || (typeof v.hash === 'string' && /^[0-9a-f]{0,128}$/i.test(v.hash)));
 		}
 		// 102b-arrange: an object's layer id (from the scene's layer table) or null
 		if (d.parameter === 'layer') return isUuid(d.uuid) && (d.layer === null || (typeof d.layer === 'string' && d.layer.length <= 64));

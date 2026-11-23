@@ -114,6 +114,7 @@
 		Crop,
 		CornerLeftUp,
 		Crosshair,
+		Diamond,
 		Download,
 		Droplet,
 		Droplets,
@@ -131,6 +132,7 @@
 		FlipHorizontal,
 		FlipVertical,
 		Focus,
+		ScanBox,
 		Folder,
 		FolderDown,
 		FolderInput,
@@ -251,6 +253,7 @@
 		StepBack,
 		StepForward,
 		StickyNote,
+		Sticker,
 		Sun,
 		Tag, // 37 R4: prefab rows
 		Target,
@@ -385,6 +388,7 @@
 		'flip-horizontal': FlipHorizontal,
 		'flip-vertical': FlipVertical,
 		focus: Focus,
+		'scan-box': ScanBox, // 102: a Gaussian splat (a captured scene)
 		folder: Folder,
 		'folder-down': FolderDown,
 		'folder-input': FolderInput,
@@ -414,6 +418,8 @@
 		inbox: Inbox,
 		info: Info,
 		keyboard: Keyboard,
+		// 102-ik: a keyframe mark (Timeline key buttons)
+		keyframe: Diamond,
 		lasso: Lasso,
 		layers: Layers,
 		'layout-dashboard': LayoutDashboard,
@@ -507,6 +513,7 @@
 		'step-back': StepBack,
 		'step-forward': StepForward,
 		'sticky-note': StickyNote,
+		sticker: Sticker,
 		sun: Sun,
 		tag: Tag,
 		target: Target,

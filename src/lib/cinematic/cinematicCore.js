@@ -120,6 +120,7 @@ export const STAND_IN_LABELS = Object.freeze({
 	terrain: 'Terrain paint layers',
 	deform: 'Jiggle and sway',
 	custom: 'Custom materials',
+	splats: 'Gaussian splats', // 102: Spark's GLSL cannot run on the WebGPU renderer; the splats stand down
 	heightfog: 'Height fog' // 102b-papercuts: the WebGPU view draws distance fog, not the ground layer
 });
 

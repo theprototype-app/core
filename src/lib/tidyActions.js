@@ -10,6 +10,7 @@ import { normalizeLayers, LAYER_COLORS, LAYERS_MAX } from './layersCore.js';
 import { similarKey, matchesSimilar, renamePlan, randomisePlan } from './tidyCore.js';
 import { linkOf } from './prefabSync';
 import { materialIdOf } from './materialSharing';
+import { carrierKindOf } from './proxyCarrier.js'; // 102-int-2
 
 // 102b-arrange row 2 — TIDY BIG SCENES, the write path (a lazy chunk: the Inspector's Layers and Tidy
 // sections, the object menu and the agent reach it). Layers: the table rides the scenePhysics
@@ -137,6 +138,12 @@ export async function setLayerHidden(id, hide) {
 
 /** the plain descriptor tidyCore matches on @param {any} o */
 export function describeForSimilar(o) {
+	// 102-int-2: a decal / splat carrier's mesh is an invisible proxy: match it as what it shows
+	const kind = carrierKindOf(o);
+	if (kind) {
+		const id = kind === 'decal' ? o.userData.decal.image || 'none' : o.userData.splat.hash || 'none';
+		return { gtype: kind, geomType: null, verts: 0, materialId: kind + ':' + id, matType: null, color: null, mapped: false, prefab: linkOf(o)?.id ?? null, tags: Array.isArray(o?.userData?.tags) ? o.userData.tags : null, layer: o?.userData?.layer ?? null };
+	}
 	let mesh = o?.isMesh ? o : null;
 	if (!mesh) o?.traverse?.((/** @type {any} */ n) => (mesh ??= n.isMesh ? n : null));
 	const material = mesh && !Array.isArray(mesh.material) ? mesh.material : null;

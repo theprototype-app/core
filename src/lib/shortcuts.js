@@ -389,6 +389,35 @@ export const shortcuts = [
 		}
 	},
 	{
+		// 102 M1: Simplify (also Mesh ▸ Simplify… in the object menu). DYNAMIC: the simplifier,
+		// its worker and the model-replace path stay out of the boot chunk
+		id: 'objects.simplify',
+		keys: 'Ctrl+Alt+D',
+		group: 'Objects',
+		scope: 'viewport',
+		label: 'Simplify mesh… (fewer triangles, one undo step)',
+		when: () => !get(editingObject) && !get(faceEditObject) && get(selectedObjects).length === 1,
+		action: () => {
+			const uuid = get(selectedObjects)[0];
+			if (uuid) void import('./meshSimplifyAction').then((m) => m.openSimplify(uuid));
+		}
+	},
+	{
+		// 102 M2: Export for 3D print / AR — the selection when there is one, else the scene (the
+		// dialog switches). Also Save as… ▸ in the object menu. DYNAMIC, like every export
+		id: 'objects.export-3d',
+		keys: 'Ctrl+Alt+E',
+		group: 'Objects',
+		scope: 'viewport',
+		label: 'Export for 3D print or AR… (STL, 3MF, USDZ)',
+		when: () => !get(editingObject) && !get(faceEditObject),
+		action: () => {
+			const uuids = get(selectedObjects);
+			const name = uuids.length === 1 ? get(selectedObject)?.name : undefined;
+			void import('./makerDialogs').then((m) => m.openExport3d('stl', uuids, name));
+		}
+	},
+	{
 		// 30 P1: Edit / Interact. Free outside a mesh session (I is MESH_EDIT_KEYS' inset
 		// there, which is why the registry already stands down for it); `when` also stands
 		// it down while sculpt, spline or draw own the letter keys (their probes), so a

@@ -3,7 +3,7 @@
 	"format": 2,
 	"generator": {
 		"source": "tpAgent.tools() via core scripts/agent-tool-catalog.cjs, mapped by tools/agent/src/catalog.js",
-		"hostTools": 84,
+		"hostTools": 85,
 		"dropped": []
 	},
 	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
@@ -21,7 +21,7 @@
 		{
 			"name": "list_scene",
 			"title": "Read the scene",
-			"description": "List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. Every mesh also has mesh {vertexCount, faceCount (triangles), bounds {local, world}} — each box [[minX, minY, minZ], [maxX, maxY, maxZ]], local in the mesh's own space (its vertices), world in the scene. The transform is the AUTHORED pose: an object an effect is moving also has animated: true, and live {position, rotation, scale, visible} when this frame differs; update_objects writes the authored pose, so never copy live back into it. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: \"scene\" | object uuid, page} to read one page of one graph.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall list_scene before editing so you use real uuids; batch many objects into one call.",
+			"description": "List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. A body of water has water {preset, shallowColor, deepColor, level (how full 0-1), surface (world height of the still water), waves {height}} in place of color. Every mesh also has mesh {vertexCount, faceCount (triangles), bounds {local, world}} — each box [[minX, minY, minZ], [maxX, maxY, maxZ]], local in the mesh's own space (its vertices), world in the scene. The transform is the AUTHORED pose: an object an effect is moving also has animated: true, and live {position, rotation, scale, visible} when this frame differs; update_objects writes the authored pose, so never copy live back into it. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: \"scene\" | object uuid, page} to read one page of one graph.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall list_scene before editing so you use real uuids; batch many objects into one call.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -124,7 +124,7 @@
 		{
 			"name": "create_objects",
 			"title": "Add objects",
-			"description": "Create one or more primitives, lights or empty groups in a single call. Ground is the y=0 plane; place objects so they rest ON it (a box of height h sits at y=h/2). Returns the new uuids. To copy an existing object instead (a row of fence posts, a ring of chairs), pass from: its uuid, count, offset [x,y,z] between one copy and the next, and optionally randomRot / randomScale with a seed: deep copies (children, materials, flows), one undo step, uuids in order, in the source's own group. lookAt turns an object so its local +Z axis (its front) faces a point or another object, +Y kept up.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.\nTake a screenshot after each change to check your work.",
+			"description": "Create one or more primitives, lights, empty groups or decals in a single call. A decal (kind decal) is an image projected onto the surface of the object `on`: give point + normal (world) or just normal (aimed at that object's middle from that side; default from above). Ground is the y=0 plane; place objects so they rest ON it (a box of height h sits at y=h/2). Returns the new uuids. To copy an existing object instead (a row of fence posts, a ring of chairs), pass from: its uuid, count, offset [x,y,z] between one copy and the next, and optionally randomRot / randomScale with a seed: deep copies (children, materials, flows), one undo step, uuids in order, in the source's own group. lookAt turns an object so its local +Z axis (its front) faces a point or another object, +Y kept up.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -167,8 +167,46 @@
 									"enum": [
 										"primitive",
 										"light",
-										"group"
+										"group",
+										"decal"
 									]
+								},
+								"on": {
+									"type": "string",
+									"description": "kind=decal: uuid of the object to put it on (not a skinned character or scattered copies)"
+								},
+								"point": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"description": "kind=decal: world [x,y,z] on that object's surface"
+								},
+								"normal": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"description": "kind=decal: the surface direction [x,y,z] there (with no point: the side it is aimed from)"
+								},
+								"image": {
+									"type": "string",
+									"description": "kind=decal: a library image hash or file name (omit = a placeholder frame until one is set)"
+								},
+								"size": {
+									"description": "kind=decal: metres, a number (square) or [width, height]"
+								},
+								"depth": {
+									"type": "number",
+									"description": "kind=decal: how far into and out of the surface it reaches (default 0.25 m)"
+								},
+								"opacity": {
+									"type": "number",
+									"description": "kind=decal: 0-1"
+								},
+								"tint": {
+									"type": "string",
+									"description": "kind=decal: #rrggbb multiplying the image"
 								},
 								"primitive": {
 									"type": "string",
@@ -335,7 +373,7 @@
 									"enum": [
 										"floor"
 									],
-									"description": "stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground"
+									"description": "stand it on whatever is straight under it: a terrain at any height, a floor or table at most 2 m above its base, else the ground; water and trigger volumes are passed through. The answer says placed {on, uuid, y, surface: terrain|mesh|ground}"
 								},
 								"face_user": {
 									"description": "turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users"
@@ -532,7 +570,7 @@
 									"enum": [
 										"floor"
 									],
-									"description": "stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground"
+									"description": "stand it on whatever is straight under it: a terrain at any height, a floor or table at most 2 m above its base, else the ground; water and trigger volumes are passed through. The answer says placed {on, uuid, y, surface: terrain|mesh|ground}"
 								},
 								"face_user": {
 									"description": "turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users"
@@ -2046,6 +2084,41 @@
 				"title": "Add a path to walk along",
 				"readOnlyHint": false,
 				"destructiveHint": false,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "simplify_mesh",
+			"title": "Simplify a mesh",
+			"description": "Lower a mesh or imported model's triangle count; UVs, normals, colours, skin weights and materials are kept. percent = how much to KEEP (1-100), or triangles = a target. Parametric primitives need bake: true; scatter, VRM and morph targets are refused. One undo step.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"uuid": {
+						"type": "string",
+						"description": "the object to simplify"
+					},
+					"percent": {
+						"type": "number",
+						"description": "1-100 to keep"
+					},
+					"triangles": {
+						"type": "number",
+						"description": "target count"
+					},
+					"bake": {
+						"type": "boolean",
+						"description": "bake a primitive first"
+					}
+				},
+				"required": [
+					"uuid"
+				]
+			},
+			"annotations": {
+				"title": "Simplify a mesh",
+				"readOnlyHint": false,
+				"destructiveHint": true,
 				"openWorldHint": false
 			}
 		},
@@ -4379,7 +4452,7 @@
 		{
 			"name": "terrain",
 			"title": "Make or shape terrain",
-			"description": "Make or change a terrain. Without uuid it makes one (size metres, at position); with uuid it changes that one. Shape by noise: height (the highest peak, metres — the answer says the peak it got), detail (0.005-0.6), octaves, ridged, warp, edges (flat|island|bowl: island sinks the rim to 0 so it rises out of water; bowl raises the rim), seed; amplitude is the raw noise scale if you want it. Sculpt with ops [{op: raise|lower|smooth|flatten, at: [x, z] from the terrain's centre, radius, strength 0-1, height (metres, raise/lower), passes}] and paint with {op: \"paint\", at, radius, layer 0-3, strength}. layers: up to 4 {color, texture (a library hash or a pattern name like grass, sand, stone), tiling} — layer 0 covers the ground until you paint the others; paintBy: \"height\" paints them for you, layer 0 in the low ground up to the last on the peaks. One undo step.\nTake a screenshot after each change to check your work.",
+			"description": "Make or change a terrain. Without uuid it makes one (size metres, at position); with uuid it changes that one. Shape by noise: height (the highest peak, metres — the answer says the peak it got), detail (0.005-0.6), octaves, ridged, warp, edges (flat|island|bowl: island sinks the rim below the water so it rises out of a sea — rim metres, default -2 on a new island; bowl raises the rim), seed; amplitude is the raw noise scale if you want it. Sculpt with ops [{op: raise|lower|smooth|flatten, at: [x, z] from the terrain's centre, radius, strength 0-1, height (metres, raise/lower), passes}] and paint with {op: \"paint\", at, radius, layer 0-3, strength}; a flatten answers pad {y (world height of the flat ground), radius, at} to build on. layers: up to 4 {color, texture (a library hash or a pattern name like grass, sand, stone), tiling} — layer 0 covers the ground until you paint the others; paintBy: \"height\" paints them for you, layer 0 in the low ground up to the last on the peaks. One undo step.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -4443,6 +4516,12 @@
 							"bowl"
 						]
 					},
+					"rim": {
+						"type": "number",
+						"maximum": 0,
+						"minimum": -20,
+						"description": "island only: how far the edge sinks (metres, default -2 on a new island)"
+					},
 					"seed": {
 						"type": "integer"
 					},
@@ -4490,7 +4569,7 @@
 		{
 			"name": "water",
 			"title": "Add or change water",
-			"description": "Water: without uuid it makes a body of water — kind tank, pool, round, lake or ocean, size [w, h, d] (round: [diameter, depth, diameter]), at position (its bottom centre). With uuid it changes one (or makes an object water with a preset). preset: pool, aquarium, ocean, lake, river, lava, swamp, toxic, ice. level 0-1 (how full), color (tints the whole body, shallow to deep), look {shallowColor, deepColor, clarity, foam, …}, waves {count, amplitude, wavelength, speed, direction}, flow. Things float in it in Play. remove: true makes it a plain object again. One undo step.\nTake a screenshot after each change to check your work.",
+			"description": "Water: without uuid it makes a body of water — kind tank, pool, round, lake or ocean, size [w, h, d] (round: [diameter, depth, diameter]), at position (its bottom centre). With uuid it changes one (or makes an object water with a preset). preset: pool, aquarium, ocean, lake, river, lava, swamp, toxic, ice. level 0-1 (how full; 1 = to the top), color (tints the whole body, shallow to deep), look {shallowColor, deepColor, clarity, foam, …}, waves {count, amplitude, wavelength, speed, direction}, flow. Things float in it in Play. remove: true makes it a plain object again. The answer gives surface (world height of the still water) and waves {height} (how far they rise and fall), and warns when a terrain lies inside that band. One undo step.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -6114,7 +6193,7 @@
 		{
 			"name": "screenshot",
 			"title": "Take a picture of the scene",
-			"description": "See the scene: a PNG of a clean frame (no gizmos, no people) from a temporary camera, never moving anyone's view. view: current | top | front | iso | focus | camera (focus needs uuid or uuids; camera looks through the scene camera uuid, its lens and framing); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person's window). Answers with the camera it used. postEffects: true draws the scene's post effects too; hud: true the game HUD on top; avatars: true keeps the people in (current keeps them unless false).",
+			"description": "See the scene: a PNG of a clean frame (no gizmos, no people) from a temporary camera, never moving anyone's view. view: current | top | front | iso | focus | camera (focus needs uuid or uuids; camera looks through the scene camera uuid, its lens and framing); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person's window). Answers with the camera it used and frame: the picture in words (what is in it by share, the background, what is under the camera, what was left out) for a client that cannot see images. A scene-wide iso / top / front shot frames the content, leaving out a sea or ground plane far bigger than the rest (subject: \"scene\" frames everything). postEffects: true draws the scene's post effects too; hud: true the game HUD on top; avatars: true keeps the people in (current keeps them unless false).",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -6218,6 +6297,14 @@
 					"margin": {
 						"type": "number",
 						"description": "room around the subject: 1 touches the frame, default 1.15"
+					},
+					"subject": {
+						"type": "string",
+						"enum": [
+							"content",
+							"scene"
+						],
+						"description": "what a scene-wide shot frames: content leaves a sea or ground plane far bigger than the rest out (the default for iso, top and front when one is there; camera.subject.leftOut names it), scene frames everything"
 					},
 					"size": {
 						"type": "number",
@@ -6324,7 +6411,8 @@
 				"update": "update_mesh",
 				"duplicate": "duplicate",
 				"pivot": "set_pivot",
-				"pivot_group": "create_pivot"
+				"pivot_group": "create_pivot",
+				"simplify": "simplify_mesh"
 			},
 			"set_look": {
 				"material": "set_material",
@@ -6388,7 +6476,7 @@
 			{
 				"name": "list_scene",
 				"title": "Read the scene",
-				"description": "List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. Every mesh also has mesh {vertexCount, faceCount (triangles), bounds {local, world}} — each box [[minX, minY, minZ], [maxX, maxY, maxZ]], local in the mesh's own space (its vertices), world in the scene. The transform is the AUTHORED pose: an object an effect is moving also has animated: true, and live {position, rotation, scale, visible} when this frame differs; update_objects writes the authored pose, so never copy live back into it. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: \"scene\" | object uuid, page} to read one page of one graph.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall list_scene before editing so you use real uuids; batch many objects into one call.",
+				"description": "List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. A body of water has water {preset, shallowColor, deepColor, level (how full 0-1), surface (world height of the still water), waves {height}} in place of color. Every mesh also has mesh {vertexCount, faceCount (triangles), bounds {local, world}} — each box [[minX, minY, minZ], [maxX, maxY, maxZ]], local in the mesh's own space (its vertices), world in the scene. The transform is the AUTHORED pose: an object an effect is moving also has animated: true, and live {position, rotation, scale, visible} when this frame differs; update_objects writes the authored pose, so never copy live back into it. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: \"scene\" | object uuid, page} to read one page of one graph.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall list_scene before editing so you use real uuids; batch many objects into one call.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -6491,7 +6579,7 @@
 			{
 				"name": "create_objects",
 				"title": "Add objects",
-				"description": "Create one or more primitives, lights or empty groups in a single call. Ground is the y=0 plane; place objects so they rest ON it (a box of height h sits at y=h/2). Returns the new uuids. To copy an existing object instead (a row of fence posts, a ring of chairs), pass from: its uuid, count, offset [x,y,z] between one copy and the next, and optionally randomRot / randomScale with a seed: deep copies (children, materials, flows), one undo step, uuids in order, in the source's own group. lookAt turns an object so its local +Z axis (its front) faces a point or another object, +Y kept up.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.\nTake a screenshot after each change to check your work.",
+				"description": "Create one or more primitives, lights, empty groups or decals in a single call. A decal (kind decal) is an image projected onto the surface of the object `on`: give point + normal (world) or just normal (aimed at that object's middle from that side; default from above). Ground is the y=0 plane; place objects so they rest ON it (a box of height h sits at y=h/2). Returns the new uuids. To copy an existing object instead (a row of fence posts, a ring of chairs), pass from: its uuid, count, offset [x,y,z] between one copy and the next, and optionally randomRot / randomScale with a seed: deep copies (children, materials, flows), one undo step, uuids in order, in the source's own group. lookAt turns an object so its local +Z axis (its front) faces a point or another object, +Y kept up.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -6534,8 +6622,46 @@
 										"enum": [
 											"primitive",
 											"light",
-											"group"
+											"group",
+											"decal"
 										]
+									},
+									"on": {
+										"type": "string",
+										"description": "kind=decal: uuid of the object to put it on (not a skinned character or scattered copies)"
+									},
+									"point": {
+										"type": "array",
+										"items": {
+											"type": "number"
+										},
+										"description": "kind=decal: world [x,y,z] on that object's surface"
+									},
+									"normal": {
+										"type": "array",
+										"items": {
+											"type": "number"
+										},
+										"description": "kind=decal: the surface direction [x,y,z] there (with no point: the side it is aimed from)"
+									},
+									"image": {
+										"type": "string",
+										"description": "kind=decal: a library image hash or file name (omit = a placeholder frame until one is set)"
+									},
+									"size": {
+										"description": "kind=decal: metres, a number (square) or [width, height]"
+									},
+									"depth": {
+										"type": "number",
+										"description": "kind=decal: how far into and out of the surface it reaches (default 0.25 m)"
+									},
+									"opacity": {
+										"type": "number",
+										"description": "kind=decal: 0-1"
+									},
+									"tint": {
+										"type": "string",
+										"description": "kind=decal: #rrggbb multiplying the image"
 									},
 									"primitive": {
 										"type": "string",
@@ -6702,7 +6828,7 @@
 										"enum": [
 											"floor"
 										],
-										"description": "stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground"
+										"description": "stand it on whatever is straight under it: a terrain at any height, a floor or table at most 2 m above its base, else the ground; water and trigger volumes are passed through. The answer says placed {on, uuid, y, surface: terrain|mesh|ground}"
 									},
 									"face_user": {
 										"description": "turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users"
@@ -6899,7 +7025,7 @@
 										"enum": [
 											"floor"
 										],
-										"description": "stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground"
+										"description": "stand it on whatever is straight under it: a terrain at any height, a floor or table at most 2 m above its base, else the ground; water and trigger volumes are passed through. The answer says placed {on, uuid, y, surface: terrain|mesh|ground}"
 									},
 									"face_user": {
 										"description": "turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users"
@@ -7978,7 +8104,7 @@
 			{
 				"name": "edit_shape",
 				"title": "Reshape or model objects",
-				"description": "Change the shape of objects that exist: params = new size / segments / type in place (on a 3D text: its words, font, size, depth, bevel, align, wrap width, anchor, colours), mesh = model faces and vertices (extrude, inset, bevel, subdivide, weld, smooth, dissolve, make a face), update = new vertices / faces for a mesh made from data (replace it, or patch a range), duplicate = copies of an object in a row, or its mirror image (a left arm → the right one), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together.\nCall it as {\"action\": \"params\", \"params\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
+				"description": "Change the shape of objects that exist: params = new size / segments / type in place (on a 3D text: its words, font, size, depth, bevel, align, wrap width, anchor, colours), mesh = model faces and vertices (extrude, inset, bevel, subdivide, weld, smooth, dissolve, make a face), update = new vertices / faces for a mesh made from data (replace it, or patch a range), duplicate = copies of an object in a row, or its mirror image (a left arm → the right one), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together, simplify = fewer triangles on a mesh or model (a percentage or a count; UVs, colours, skin weights and material slots kept; one undo step).\nCall it as {\"action\": \"params\", \"params\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -7990,7 +8116,8 @@
 								"update",
 								"duplicate",
 								"pivot",
-								"pivot_group"
+								"pivot_group",
+								"simplify"
 							],
 							"description": "What to do. Put its fields in the object named after the action."
 						},
@@ -8496,6 +8623,31 @@
 								"objects"
 							],
 							"description": "Make a group at a point and put objects in it, so turning the group swings them about that point: arm parts about a shoulder, several parts of a lamp about one joint. The objects stay where they are. Give the point as at (world) or local (in the group the objects are already in — the numbers list_scene shows inside it). For one object, edit_shape {action: 'pivot'} needs no extra group. Returns groupUuid."
+						},
+						"simplify": {
+							"type": "object",
+							"properties": {
+								"uuid": {
+									"type": "string",
+									"description": "the object to simplify"
+								},
+								"percent": {
+									"type": "number",
+									"description": "1-100 to keep"
+								},
+								"triangles": {
+									"type": "number",
+									"description": "target count"
+								},
+								"bake": {
+									"type": "boolean",
+									"description": "bake a primitive first"
+								}
+							},
+							"required": [
+								"uuid"
+							],
+							"description": "Lower a mesh or imported model's triangle count; UVs, normals, colours, skin weights and materials are kept. percent = how much to KEEP (1-100), or triangles = a target. Parametric primitives need bake: true; scatter, VRM and morph targets are refused. One undo step."
 						}
 					},
 					"required": [
@@ -9939,6 +10091,12 @@
 										"bowl"
 									]
 								},
+								"rim": {
+									"type": "number",
+									"maximum": 0,
+									"minimum": -20,
+									"description": "island only: how far the edge sinks (metres, default -2 on a new island)"
+								},
 								"seed": {
 									"type": "integer"
 								},
@@ -9975,7 +10133,7 @@
 									"description": "reshape even though it was hand-sculpted (the sculpting is lost)"
 								}
 							},
-							"description": "Make or change a terrain. Without uuid it makes one (size metres, at position); with uuid it changes that one. Shape by noise: height (the highest peak, metres — the answer says the peak it got), detail (0.005-0.6), octaves, ridged, warp, edges (flat|island|bowl: island sinks the rim to 0 so it rises out of water; bowl raises the rim), seed; amplitude is the raw noise scale if you want it. Sculpt with ops [{op: raise|lower|smooth|flatten, at: [x, z] from the terrain's centre, radius, strength 0-1, height (metres, raise/lower), passes}] and paint with {op: \"paint\", at, radius, layer 0-3, strength}. layers: up to 4 {color, texture (a library hash or a pattern name like grass, sand, stone), tiling} — layer 0 covers the ground until you paint the others; paintBy: \"height\" paints them for you, layer 0 in the low ground up to the last on the peaks. One undo step."
+							"description": "Make or change a terrain. Without uuid it makes one (size metres, at position); with uuid it changes that one. Shape by noise: height (the highest peak, metres — the answer says the peak it got), detail (0.005-0.6), octaves, ridged, warp, edges (flat|island|bowl: island sinks the rim below the water so it rises out of a sea — rim metres, default -2 on a new island; bowl raises the rim), seed; amplitude is the raw noise scale if you want it. Sculpt with ops [{op: raise|lower|smooth|flatten, at: [x, z] from the terrain's centre, radius, strength 0-1, height (metres, raise/lower), passes}] and paint with {op: \"paint\", at, radius, layer 0-3, strength}; a flatten answers pad {y (world height of the flat ground), radius, at} to build on. layers: up to 4 {color, texture (a library hash or a pattern name like grass, sand, stone), tiling} — layer 0 covers the ground until you paint the others; paintBy: \"height\" paints them for you, layer 0 in the low ground up to the last on the peaks. One undo step."
 						},
 						"scatter": {
 							"type": "object",
@@ -10143,7 +10301,7 @@
 									"type": "boolean"
 								}
 							},
-							"description": "Water: without uuid it makes a body of water — kind tank, pool, round, lake or ocean, size [w, h, d] (round: [diameter, depth, diameter]), at position (its bottom centre). With uuid it changes one (or makes an object water with a preset). preset: pool, aquarium, ocean, lake, river, lava, swamp, toxic, ice. level 0-1 (how full), color (tints the whole body, shallow to deep), look {shallowColor, deepColor, clarity, foam, …}, waves {count, amplitude, wavelength, speed, direction}, flow. Things float in it in Play. remove: true makes it a plain object again. One undo step."
+							"description": "Water: without uuid it makes a body of water — kind tank, pool, round, lake or ocean, size [w, h, d] (round: [diameter, depth, diameter]), at position (its bottom centre). With uuid it changes one (or makes an object water with a preset). preset: pool, aquarium, ocean, lake, river, lava, swamp, toxic, ice. level 0-1 (how full; 1 = to the top), color (tints the whole body, shallow to deep), look {shallowColor, deepColor, clarity, foam, …}, waves {count, amplitude, wavelength, speed, direction}, flow. Things float in it in Play. remove: true makes it a plain object again. The answer gives surface (world height of the still water) and waves {height} (how far they rise and fall), and warns when a terrain lies inside that band. One undo step."
 						},
 						"particles": {
 							"type": "object",
@@ -12149,7 +12307,7 @@
 			{
 				"name": "screenshot",
 				"title": "Take a picture of the scene",
-				"description": "See the scene: a PNG of a clean frame (no gizmos, no people) from a temporary camera, never moving anyone's view. view: current | top | front | iso | focus | camera (focus needs uuid or uuids; camera looks through the scene camera uuid, its lens and framing); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person's window). Answers with the camera it used. postEffects: true draws the scene's post effects too; hud: true the game HUD on top; avatars: true keeps the people in (current keeps them unless false).",
+				"description": "See the scene: a PNG of a clean frame (no gizmos, no people) from a temporary camera, never moving anyone's view. view: current | top | front | iso | focus | camera (focus needs uuid or uuids; camera looks through the scene camera uuid, its lens and framing); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person's window). Answers with the camera it used and frame: the picture in words (what is in it by share, the background, what is under the camera, what was left out) for a client that cannot see images. A scene-wide iso / top / front shot frames the content, leaving out a sea or ground plane far bigger than the rest (subject: \"scene\" frames everything). postEffects: true draws the scene's post effects too; hud: true the game HUD on top; avatars: true keeps the people in (current keeps them unless false).",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -12253,6 +12411,14 @@
 						"margin": {
 							"type": "number",
 							"description": "room around the subject: 1 touches the frame, default 1.15"
+						},
+						"subject": {
+							"type": "string",
+							"enum": [
+								"content",
+								"scene"
+							],
+							"description": "what a scene-wide shot frames: content leaves a sea or ground plane far bigger than the rest out (the default for iso, top and front when one is there; camera.subject.leftOut names it), scene frames everything"
 						},
 						"size": {
 							"type": "number",

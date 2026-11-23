@@ -23,6 +23,9 @@ export const DEBUG_HOOKS = [
 	['*', () => import('../stores/sceneStore')],
 	['*', () => import('../stores/appStore')],
 	['*', () => import('../stores/flowStore')],
+	// 102 M7: constraints + IK (the runtime's state + the write path)
+	['constraints', () => import('./rig/constraintRuntime.js')],
+	['constraintEdit', () => import('./rig/constraintEdit.js')],
 	// 34 R2: the game kit (kit, kitDebug, kitAuthorityId)
 	['kit', () => import('./kit/runtime.js')],
 	// 55: the pure authority pick, so a suite can re-run it on a page's live facts
@@ -614,6 +617,12 @@ export const DEBUG_HOOKS = [
 	['replaceModel', () => import('./replaceModel')],
 	// 59 T1/T2/T7: Replace from file, Edit in Blender, the drop router, the file watch
 	['modelReplace', () => import('./modelReplace')],
+	// 102 M1/M2: Simplify (scene half + pure core) and Export for 3D print / AR (writers, dialogs)
+	['meshSimplify', () => import('./meshSimplify')],
+	['meshSimplifyAction', () => import('./meshSimplifyAction')],
+	['print3dCore', () => import('./export3d/print3dCore')],
+	['export3dAction', () => import('./export3d/export3dAction')],
+	['makerDialogs', () => import('./makerDialogs')],
 	['editInBlender', () => import('./editInBlender')],
 	['modelDrop', () => import('./modelDrop')],
 	['modelWatch', () => import('./modelWatch')],
@@ -671,6 +680,15 @@ export const DEBUG_HOOKS = [
 	// 64 D2: text on a path (textPathDebug, setLetterOverrides)
 	['textPath', () => import('./textPathRuntime.js')],
 	['textPathEdit', () => import('./textPathEdit.js')],
+	// 102 M3: decals (decalDebug, placeDecalOn, setDecalFor)
+	['decal', () => import('./decalRuntime.js')],
+	['decalTick', () => import('./decalTick.js')],
+	['decalEdit', () => import('./decalEdit.js')],
+	// 102: Gaussian splats (splatTick.splatDebug reads the runtime without loading Spark)
+	['splatTick', () => import('./splat/splatTick.js')],
+	['splatCore', () => import('./splat/splatCore.js')],
+	['splatEdit', () => import('./splat/splatEdit.js')],
+	['splatImport', () => import('./splat/splatImport.js')],
 	// 102b-arrange: arrays (runtime debug + actions), tidy, vertex snap
 	['arrayRuntime', () => import('./arrayRuntime.js')],
 	['arrayActions', () => import('./arrayActions.js')],

@@ -92,6 +92,14 @@ describe('pickStack + primaryIndex', () => {
 	it('skips hits that resolve to no top-level object', () => {
 		expect(pickStack([hit(node('x'), 1)], () => null)).toEqual([]);
 	});
+	it('102-int-2: a decal on a wall of a locked layer is locked too (the layer is read up the tree)', () => {
+		const wall = node('wall', undefined, { userData: { layer: 'L1' } });
+		const decal = node('decal', undefined, { parent: wall, userData: { decal: { image: 'h' } } });
+		const self = (/** @type {any} */ o) => o; // decals are picked as themselves
+		const pass = { lockedLayers: new Set(['L1']) };
+		expect(pickStack([hit(decal, 1), hit(wall, 1.001)], self, /** @type {any} */ (pass))).toEqual([]);
+		expect(pickStack([hit(decal, 1)], self, /** @type {any} */ ({ lockedLayers: new Set(['L2']) })).map((e) => e.uuid)).toEqual(['decal']);
+	});
 });
 
 describe('isRepeatClick', () => {

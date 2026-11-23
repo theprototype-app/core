@@ -118,9 +118,13 @@ export const TERRAIN_FALLOFFS = ['flat', 'island', 'bowl'];
  * @param {number} x @param {number} z @param {number} half @param {string} kind */
 function falloffWeight(x, z, half, kind) {
 	if (kind !== 'island' && kind !== 'bowl') return 1;
+	return kind === 'bowl' ? edgeRamp(x, z, half) : 1 - edgeRamp(x, z, half);
+}
+
+/** 0 at the centre, 1 at (and past) the edge, smoothstep between @param {number} x @param {number} z @param {number} half */
+function edgeRamp(x, z, half) {
 	const d = Math.min(Math.sqrt(x * x + z * z) / half, 1);
-	const s = d * d * (3 - 2 * d);
-	return kind === 'bowl' ? s : 1 - s;
+	return d * d * (3 - 2 * d);
 }
 
 /**
@@ -142,7 +146,7 @@ function falloffWeight(x, z, half, kind) {
  * noise in its own frame and seam at the join.
  *
  * @param {any=} params {size, segments, seed, amplitude, frequency, octaves,
- *   ridged, warp, falloff, offsetX, offsetZ}
+ *   ridged, warp, falloff, offsetX, offsetZ, rim (104 A2: island rim depth, metres <= 0)}
  */
 export function terrainGeometry(params = {}) {
 	const size = num(params.size, 24);
@@ -162,6 +166,8 @@ export function terrainGeometry(params = {}) {
 	const falloff = TERRAIN_FALLOFFS.includes(params.falloff) ? params.falloff : 'flat';
 	const offsetX = anyNum(params.offsetX, 0);
 	const offsetZ = anyNum(params.offsetZ, 0);
+	// 104 A2: an island's rim sinks to `rim` metres (negative) along the same ramp, so the skirt stays under a sea
+	const rim = falloff === 'island' ? Math.min(0, anyNum(params.rim, 0)) : 0;
 	const half = size / 2;
 
 	const position = geometry.attributes.position;
@@ -179,7 +185,7 @@ export function terrainGeometry(params = {}) {
 			sz += (valueNoise2(sx * 0.5 - 17.1, sz * 0.5 + 5.9, seed + 3313) * 2 - 1) * warp;
 		}
 		const h = fbm2(sx, sz, { seed, octaves, ridged, frequency: 1 });
-		position.setY(i, position.getY(i) + h * amplitude * falloffWeight(lx, lz, half, falloff));
+		position.setY(i, position.getY(i) + h * amplitude * falloffWeight(lx, lz, half, falloff) + (rim ? rim * edgeRamp(lx, lz, half) : 0));
 	}
 	geometry.computeVertexNormals();
 	return geometry;

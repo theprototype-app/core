@@ -1,6 +1,6 @@
 // 2.0 N1 + N2 — THE NODE REGISTRY IN THE APP, AND THE READ-ONLY CODE VIEW (flag codeView).
 //
-//   1. registry parity: the palette the app built IS the definitions (148 core types, in family order),
+//   1. registry parity: the palette the app built IS the definitions (151 core types, in family order),
 //      and every core type renders its own card (never the "module that isn't installed" card)
 //   2. the flag is ON by default (1.71); switched OFF: no Code tab, and the agent's answers carry no `code`
 //   3. flag ON: the Code tab opens on each bundled template's scene graph — one line per node, the same
@@ -66,7 +66,7 @@ h.run(async () => {
 				same: JSON.stringify(cat.slice(0, core.length).map((g) => ({ group: g.group, types: g.items.map((i) => i.type) }))) === JSON.stringify(core)
 			};
 		});
-		h.check(reg.types.length === 148 && reg.errors.length === 0, `148 core node types, one whole definition each (${reg.types.length}, errors ${JSON.stringify(reg.errors)})`);
+		h.check(reg.types.length === 151 && reg.errors.length === 0, `151 core node types (148 on int-102-1 + 102 Stamp Decal + 102 M7 constraint weight/target), one whole definition each (${reg.types.length}, errors ${JSON.stringify(reg.errors)})`);
 		h.check(reg.same, 'the palette the app built is the definitions, in family order');
 		await openEditor(A.page);
 		const nodes = reg.types.map((type, i) => ({ id: 'p' + i, type, position: { x: (i % 12) * 260, y: Math.floor(i / 12) * 260 }, data: { type } }));

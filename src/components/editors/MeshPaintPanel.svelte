@@ -101,11 +101,11 @@
 	<button id="paint-erase" type="button" aria-pressed={$paintErase}
 		title="Eraser: paints back to the material's own colour or value (white for colour, roughness and metalness, black for glow)"
 		class={'flex flex-1 items-center justify-center gap-1 rounded-sm px-2 py-0.5 text-[11px] ' + ($paintErase ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 text-text-2 hover:bg-surface-active')}
-		onclick={() => paintErase.update((v) => !v)}><Icon name="eraser" size={12} aria-hidden="true" />Eraser</button>
+		onclick={() => paintErase.update((v) => !v)}><Icon name="eraser" size={16} aria-hidden="true" />Eraser</button>
 	<button id="paint-mirror" type="button" aria-pressed={$paintMirror}
 		title="Mirror X: a stroke on the model also paints its mirror across the object's own X axis (not in this 2D view)"
 		class={'flex flex-1 items-center justify-center gap-1 rounded-sm px-2 py-0.5 text-[11px] ' + ($paintMirror ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 text-text-2 hover:bg-surface-active')}
-		onclick={() => paintMirror.update((v) => !v)}><Icon name="flip-horizontal" size={12} aria-hidden="true" />Mirror X</button>
+		onclick={() => paintMirror.update((v) => !v)}><Icon name="flip-horizontal" size={16} aria-hidden="true" />Mirror X</button>
 </div>
 <div class="mt-2 text-[11px] text-text-muted" title="Use an image as the brush tip: its transparency (or its dark parts) is where it paints">Stamp</div>
 <div id="paint-stamp" class="mt-1 flex">

@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-11-22T15:22:48.707Z",
+	"recordedAt": "2026-11-22T23:26:18.670Z",
 	"settings": {
 		"Theme": {
 			"rows": [
@@ -805,6 +805,7 @@
 			"rows": [
 				"Allow undocking on touch screens",
 				"Customize buttons",
+				"Simplify mesh… (fewer triangles, one undo step)",
 				"Touch tools",
 				"Undo",
 				"Undock button"
@@ -1535,11 +1536,13 @@
 				"Placement preview",
 				"Preview triangle budget",
 				"Show dimensions",
+				"Simplify mesh… (fewer triangles, one undo step)",
 				"Snap angle",
 				"Texture threshold",
 				"Triangle threshold"
 			],
 			"sections": [
+				"Shortcuts",
 				"Scene",
 				"Import",
 				"VR"
@@ -3400,6 +3403,7 @@
 				"Enter mesh edit mode (inside it Tab cycles Vertices/Edges/Faces; Esc exits) — on a measurement, edit its points",
 				"Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)",
 				"Explorer: show / bring to front / hide",
+				"Export for 3D print or AR… (STL, 3MF, USDZ)",
 				"Fix overlaps and crossings, keeping the layout",
 				"Flip normals (faces); fill the hole (edges)",
 				"Flow code: open it in the Code window",
@@ -3473,6 +3477,7 @@
 				"Show helpers in Play",
 				"Show this shortcut list",
 				"Shrink the selection (faces)",
+				"Simplify mesh… (fewer triangles, one undo step)",
 				"Simulate physics (toggle)",
 				"Subdivide (faces)",
 				"Tidy the graph: lay it out left to right, nothing overlapping, no wire across a card",
@@ -3851,6 +3856,7 @@
 				"Enter mesh edit mode (inside it Tab cycles Vertices/Edges/Faces; Esc exits) — on a measurement, edit its points",
 				"Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)",
 				"Explorer: show / bring to front / hide",
+				"Export for 3D print or AR… (STL, 3MF, USDZ)",
 				"Fix overlaps and crossings, keeping the layout",
 				"Flip normals (faces); fill the hole (edges)",
 				"Flow code: open it in the Code window",
@@ -3920,6 +3926,7 @@
 				"Shader editor: show / bring to front / hide",
 				"Show this shortcut list",
 				"Shrink the selection (faces)",
+				"Simplify mesh… (fewer triangles, one undo step)",
 				"Simulate physics (toggle)",
 				"Subdivide (faces)",
 				"Tidy the graph: lay it out left to right, nothing overlapping, no wire across a card",
@@ -3976,6 +3983,7 @@
 				"Enter mesh edit mode (inside it Tab cycles Vertices/Edges/Faces; Esc exits) — on a measurement, edit its points",
 				"Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)",
 				"Explorer: show / bring to front / hide",
+				"Export for 3D print or AR… (STL, 3MF, USDZ)",
 				"Fix overlaps and crossings, keeping the layout",
 				"Flip normals (faces); fill the hole (edges)",
 				"Flow code: open it in the Code window",
@@ -4045,6 +4053,7 @@
 				"Shader editor: show / bring to front / hide",
 				"Show this shortcut list",
 				"Shrink the selection (faces)",
+				"Simplify mesh… (fewer triangles, one undo step)",
 				"Simulate physics (toggle)",
 				"Subdivide (faces)",
 				"Tidy the graph: lay it out left to right, nothing overlapping, no wire across a card",
@@ -4101,6 +4110,7 @@
 				"Enter mesh edit mode (inside it Tab cycles Vertices/Edges/Faces; Esc exits) — on a measurement, edit its points",
 				"Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)",
 				"Explorer: show / bring to front / hide",
+				"Export for 3D print or AR… (STL, 3MF, USDZ)",
 				"Fix overlaps and crossings, keeping the layout",
 				"Flip normals (faces); fill the hole (edges)",
 				"Flow code: open it in the Code window",
@@ -4171,6 +4181,7 @@
 				"Shader editor: show / bring to front / hide",
 				"Show this shortcut list",
 				"Shrink the selection (faces)",
+				"Simplify mesh… (fewer triangles, one undo step)",
 				"Simulate physics (toggle)",
 				"Subdivide (faces)",
 				"Tidy the graph: lay it out left to right, nothing overlapping, no wire across a card",
@@ -4380,6 +4391,7 @@
 		"export": {
 			"rows": [
 				"Custom theme",
+				"Export for 3D print or AR… (STL, 3MF, USDZ)",
 				"Include VR button",
 				"Optimize for",
 				"Project actions",
@@ -4391,6 +4403,7 @@
 			],
 			"sections": [
 				"Interface",
+				"Shortcuts",
 				"Export"
 			]
 		},
@@ -4665,6 +4678,7 @@
 		"object": {
 			"": [
 				"Array",
+				"Constraints",
 				"Emission",
 				"Geometry",
 				"LOD",
@@ -4685,6 +4699,9 @@
 				"Model",
 				"Scatter"
 			],
+			"constraints": [
+				"Constraints"
+			],
 			"transform": [
 				"Transform"
 			],
@@ -4693,6 +4710,7 @@
 			],
 			"object": [
 				"Array",
+				"Constraints",
 				"LOD",
 				"Object",
 				"Physics",
@@ -4820,10 +4838,14 @@
 		"light": {
 			"": [
 				"Aim at",
+				"Constraints",
 				"Light",
 				"Shadow",
 				"Tidy",
 				"Transform"
+			],
+			"constraints": [
+				"Constraints"
 			],
 			"transform": [
 				"Transform"

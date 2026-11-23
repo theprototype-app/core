@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { normalizeArray, arrayCopyPoses } from './arrayCore.js';
 import { textPathPolylineOf, textPathSourceKey } from './textPathSources.js';
 import { isEditOverlay } from './editOverlays.js';
+import { isProxyCarrier } from './proxyCarrier.js'; // 102-int-2
 
 // 102b-arrange row 1 — THE ARRAY RUNTIME (a lazy chunk; arrayTick.js loads it once a scene holds
 // an array). LOCAL per peer and never saved or sent: only `userData.array` travels, and every peer
@@ -57,6 +58,7 @@ function meshesOf(carrier) {
 	carrier.traverse((/** @type {any} */ n) => {
 		if (!n.isMesh || n.isInstancedMesh || n.isSkinnedMesh || isEditOverlay(n)) return;
 		if (n.userData?.textPath) return; // a text's mesh is a hit proxy that draws nothing
+		if (isProxyCarrier(n)) return; // 102-int-2: nor does a decal's or a splat's (their visuals live at the scene root)
 		out.push(n);
 	});
 	return out;

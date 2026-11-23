@@ -245,6 +245,9 @@ function exportScene() {
 		exporter.parse(
 			group,
 			(result) => {
+				// 102 M7: GLTFExporter keeps a REFERENCE to each node's live `matrix.elements`; copy them
+				// before anything unparks, or the snapshot stores the re-posed (animated/constrained) pose
+				for (const n of /** @type {any} */ (result)?.nodes ?? []) if (n.matrix) n.matrix = Array.from(n.matrix);
 				putPiecesBack();
 				unpark(); // before unstamp, so the parked objects lose their __uuid too
 				unstamp();

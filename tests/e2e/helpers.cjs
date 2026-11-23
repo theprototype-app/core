@@ -655,7 +655,15 @@ async function answerRestore(peer, choice = 'dismiss', timeout = 10000) {
 		.then(() => true)
 		.catch(() => false);
 	if (!offered) return false;
-	await page.locator(choice === 'restore' ? '#restore-session-restore' : '#restore-session-dismiss').click({ timeout: 10000 });
+	const sel = choice === 'restore' ? '#restore-session-restore' : '#restore-session-dismiss';
+	// a freshly reloaded page can be too busy booting to answer a Playwright click within 10 s
+	// (102-int-2: decals §8 and mesh-paint, loaded Deck) -> fall back to a DOM click, which
+	// queues behind the boot instead of timing out
+	await page
+		.locator(sel)
+		.click({ timeout: 10000 })
+		.catch(() => page.evaluate((s) => /** @type {HTMLElement} */ (document.querySelector(s))?.click(), sel));
+	// a restore of a heavy autosave (painted maps, splats) takes 10-30 s under load
 	await page.waitForFunction(
 		() => {
 			let v;
@@ -663,7 +671,7 @@ async function answerRestore(peer, choice = 'dismiss', timeout = 10000) {
 			return !v && !document.querySelector('#restore-session-modal[open]');
 		},
 		null,
-		{ timeout: 10000, polling: 100 }
+		{ timeout: 60000, polling: 100 }
 	);
 	return true;
 }

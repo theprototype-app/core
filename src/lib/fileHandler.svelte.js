@@ -31,6 +31,7 @@ import { createGltfLoader, registerAnimatedImport, recordAnimatedImport, sendAni
 import { parseGltfSceneSafe, withTwins } from '$lib/ktx2Twins';
 import { environment } from './environment';
 import { parkAnimatedAtBase } from '$lib/flowRuntime';
+import { withConstraintsPosed } from '$lib/rig/constraintHub.js'; // 102 M7: GLTF "Bake constraints"
 import { stripEditOverlays } from '$lib/editOverlays';
 import { stampPackRef } from '$lib/packRefs';
 import { hashBytes, explorerItems, hiddenItems } from '$lib/explorer';
@@ -185,7 +186,8 @@ function exportGltf(format, input, opts = {}) {
 	const lift = opts.excludeLocal ? liftLocalObjects() : null;
 	noteLocalObjectsExcluded(lift?.excluded ?? 0);
 	// saves store animation BASE poses, not the current swing (88)
-	const unpark = parkAnimatedAtBase();
+	// 102 M7: "Bake constraints" keeps the constrained pose (everything else still parks)
+	const unpark = get(saveOptions).bakeConstraints ? withConstraintsPosed(parkAnimatedAtBase) : parkAnimatedAtBase();
 	const restore = () => {
 		unpark();
 		lift?.restore();
@@ -217,8 +219,10 @@ function exportGltf(format, input, opts = {}) {
 	exporter.parse(
 		payload,
 		function (result) {
-			restore();
+			// 102 M7: serialize BEFORE the unpark — GLTFExporter keeps a REFERENCE to each node's live
+			// `matrix.elements`, so restoring first wrote the posed pose into the file
 			const blob = new Blob([JSON.stringify(result)], { type: 'application/json' });
+			restore();
 			const a = document.createElement('a');
 			document.body.appendChild(a);
 			a.style.display = 'none';
@@ -265,7 +269,7 @@ function exportGltf(format, input, opts = {}) {
  * it, and dropping it silently is the documented GLTFExporter trap (options are parse()'s
  * FOURTH argument, and onlyVisible defaults to TRUE).
  * @param {any} roots one root or an array of them
- * @param {{binary?: boolean, excludeLocal?: boolean, lookAnimation?: boolean}} [opts] `excludeLocal` (fix-batch-2) = a
+ * @param {{binary?: boolean, excludeLocal?: boolean, lookAnimation?: boolean, bakeConstraints?: boolean}} [opts] `excludeLocal` (fix-batch-2) = a
  *   whole-scene export: local objects stay out; `lookAnimation: false` (72 LK4) = no pointer channels or cameras
  * @returns {Promise<ArrayBuffer|null>}
  */
@@ -275,7 +279,9 @@ export function gltfBytesFor(roots, opts = {}) {
 	// fix-batch-2 (1.45.1): the whole-scene export leaves local objects out (see exportGltf)
 	const lift = opts.excludeLocal ? liftLocalObjects() : null;
 	noteLocalObjectsExcluded(lift?.excluded ?? 0);
-	const unpark = parkAnimatedAtBase();
+	// 102 M7: "Bake constraints" (opts.bakeConstraints, else the save option) keeps the constrained pose
+	const bake = opts.bakeConstraints ?? get(saveOptions).bakeConstraints;
+	const unpark = bake ? withConstraintsPosed(parkAnimatedAtBase) : parkAnimatedAtBase();
 	const restore = () => {
 		unpark();
 		lift?.restore();
@@ -300,13 +306,11 @@ export function gltfBytesFor(roots, opts = {}) {
 			exporter.parse(
 				payload,
 				(/** @type {any} */ result) => {
+					// binary hands back an ArrayBuffer; JSON hands back an object. Serialize BEFORE the
+					// unpark (102 M7): the JSON keeps references to each node's live `matrix.elements`
+					const bytes = result instanceof ArrayBuffer ? result : new TextEncoder().encode(JSON.stringify(result)).buffer;
 					restore();
-					// binary hands back an ArrayBuffer; JSON hands back an object
-					resolve(
-						result instanceof ArrayBuffer
-							? result
-							: new TextEncoder().encode(JSON.stringify(result)).buffer
-					);
+					resolve(bytes);
 				},
 				(/** @type {any} */ error) => {
 					restore();
@@ -748,13 +752,16 @@ export function importModelFiles(list) {
 	const files = [...(list ?? [])];
 	const models = files.filter((file) => MODEL_EXT.test(file.name ?? ''));
 	const companions = files.filter((file) => COMPANION_EXT.test(file.name ?? ''));
+	// 102: Gaussian splats go through the Explorer's splat gate, then into the scene at the origin
+	const splats = files.filter((file) => /\.(ply|spz|splat)$/i.test(file.name ?? ''));
+	if (splats.length) import('./splat/splatImport.js').then((m) => m.importSplatFiles(splats, null));
 	const skipped = files
-		.filter((file) => !models.includes(file) && !companions.includes(file))
+		.filter((file) => !models.includes(file) && !companions.includes(file) && !splats.includes(file))
 		.map((file) => file.name);
 	models.forEach((file) =>
 		importFile(file, file.name.replace(MODEL_EXT, ''), undefined, undefined, companions)
 	);
-	if (!models.length && companions.length)
+	if (!models.length && !splats.length && companions.length)
 		showToast('Select the model file too — a .mtl or texture cannot be imported on its own');
 	if (skipped.length) showToast('Unsupported: ' + skipped.join(', '));
 	return { models: models.length, companions: companions.length, skipped };

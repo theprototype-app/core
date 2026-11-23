@@ -1058,7 +1058,7 @@
 				     the space above it is left empty rather than stretched (the user's words). -->
 				<div class="pv-audio">
 					{#if soundEditOpen && editHash}
-						<div class="pv-audio-edit">
+						<div class="pv-audio-edit" use:minimalScroll>
 							{#await import('./SoundEditPanel.svelte') then m}
 								<m.default bind:this={soundEdit} itemId={target.itemId} hash={editHash} playhead={() => player?.currentTime?.() ?? 0} onpreview={(url: string) => (soundEditUrl = url)} />
 							{/await}

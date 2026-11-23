@@ -47,7 +47,6 @@
 		"avatar-knocked": "red on the GitHub runner (SwiftShader, no retry) with unchanged code: deps-auto run 5, 2026-10-24",
 		"avatars-rigged": "red on the GitHub runner (SwiftShader, no retry) with unchanged code: deps-auto run 5, 2026-10-24",
 		"bake-light": "red on the GitHub runner (SwiftShader) with unchanged code, 2026-11-23 (deps runs 45088358423 + 45071918356; green on the desk at v1.72.0 unless noted): env-gpu — tests/e2e/battery-optional-2026-11.md",
-		"behaviour-load-joiner": "red on the GitHub runner (SwiftShader) with unchanged code, 2026-11-23 (green in deps runs 45088358423 + 45071918356, red at the first try in all four #628 runs, twice in 45145353855; the guest misses the join premise): timing — tests/e2e/battery-optional-2026-11.md",
 		"behaviours": "fixed on the desk or quarantined per check by test-health-1 (2026-10-24, tests/e2e/quarantine.json); not yet seen green on a GitHub runner, so it reports and does not gate until a deps run has",
 		"burger-project-actions": "flaky on the GitHub runner (SwiftShader): red or green-on-retry in deps-auto run 5 or 6 with unchanged code, 2026-10-24",
 		"burger-windows": "new in showhide-v8 (burger Windows menu, no fetch on open): not yet measured on a GitHub runner, so it reports and does not gate until a deps run has seen it green",

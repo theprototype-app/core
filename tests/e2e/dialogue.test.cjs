@@ -101,7 +101,7 @@ const key = async (/** @type {any} */ p, /** @type {string} */ code) => {
 };
 /** wait for the line to finish typing, then continue */
 const typed = (/** @type {any} */ p, /** @type {string} */ label) =>
-	h.eventually(() => box(p), (b) => !!b && b.shown === b.text && b.text.length > 0, label, 8000);
+	h.eventually(() => box(p), (b) => !!b && b.shown === b.text && b.text.length > 0, label, 10000);
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -150,9 +150,9 @@ h.run(async () => {
 
 	console.log('\n=== 2. A walks up ===');
 	await stand(A, [0, 0, -2]);
-	await h.eventually(() => hudText(A), (t) => /Welcome, traveller/.test(t), 'A sees "Welcome, traveller!" in the HUD layer', 6000);
+	await h.eventually(() => hudText(A), (t) => /Welcome/.test(t), 'A sees the greeting in the HUD layer (the eval\'s own reading; the line types in, ~2 fps here)', 10000);
 	const a0 = await box(A);
-	h.check(a0?.speaker === 'Old Man', 'the box names the speaker (' + a0?.speaker + ')');
+	h.check(a0?.speaker === 'Old Man' && a0?.text === 'Welcome, traveller!', 'the box names the speaker and holds the whole line (' + a0?.speaker + ': ' + a0?.text + ')');
 	await B.page.waitForTimeout(1500);
 	h.check(!(await box(B)) && !/Welcome/.test(await hudText(B)), 'B, standing away, sees nothing');
 

@@ -16,6 +16,7 @@
 	import { hudTextScale } from '$lib/playerAccessCore';
 
 	const view = $derived($dialogueView);
+	const CHARS_PER_S = 60;
 	let shown = $state(0);
 	let sel = $state(0);
 	let portraitUrl = $state(/** @type {string | null} */ (null));
@@ -34,9 +35,12 @@
 			shown = v.text.length;
 			return;
 		}
+		// by the CLOCK, not by ticks: a busy or slow device runs this timer late, and the line must still
+		// be whole in about a second and a half, however few times it fired
 		shown = 0;
+		const t0 = performance.now();
 		const id = setInterval(() => {
-			shown = Math.min(v.text.length, shown + 2);
+			shown = Math.min(v.text.length, Math.ceil(((performance.now() - t0) / 1000) * CHARS_PER_S));
 			if (shown >= v.text.length) clearInterval(id);
 		}, 30);
 		return () => clearInterval(id);

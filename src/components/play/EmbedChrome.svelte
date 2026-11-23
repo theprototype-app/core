@@ -34,7 +34,8 @@
 	const remixHref = embedSceneId && !exportMode ? appUrl(`/?s=${encodeURIComponent(embedSceneId)}&remix=1`) : '';
 	const title = exportConfig?.title || '';
 	let fullscreen = $state(typeof document !== 'undefined' && !!document.fullscreenElement);
-	const canFullscreen = typeof document !== 'undefined' && !!document.fullscreenEnabled;
+	// 63 PG3: CrazyGames provides fullscreen and prohibits a game's own button
+	const canFullscreen = typeof document !== 'undefined' && !!document.fullscreenEnabled && exportConfig?.preset !== 'crazygames';
 
 	function toggleFullscreen() {
 		try {

@@ -97,7 +97,8 @@ async function buildZip(page, opts) {
  * `refused` (with the frame's console errors in `errors`); `allowHosts` lets named hosts through
  * (the CrazyGames SDK in its own suite). `har` records the session.
  * @param {any} browser @param {string} url
- * @param {{allowOrigins: string[], allowHosts?: string[], har?: string, viewport?: {width: number, height: number}, init?: () => void}} o
+ * @param {{allowOrigins: string[], allowHosts?: string[], mocks?: Record<string, {body: string, contentType?: string}>, har?: string, viewport?: {width: number, height: number}, init?: () => void}} o
+ *   `mocks`: exact URLs answered with a body instead of the network (listed in `mocked`)
  */
 async function openFramed(browser, url, o) {
 	const ctx = await browser.newContext({ viewport: o.viewport || { width: 1280, height: 720 }, ...(o.har ? { recordHar: { path: o.har, mode: 'full' } } : {}) });
@@ -124,8 +125,15 @@ async function openFramed(browser, url, o) {
 			return false;
 		}
 	};
+	/** requests answered by a mock (e.g. a portal SDK) — listed in `mocked`, never refused @type {string[]} */
+	const mocked = [];
 	await ctx.route('**/*', (/** @type {any} */ route) => {
 		const u = route.request().url();
+		const mock = (o.mocks || {})[u.split('?')[0]];
+		if (mock) {
+			mocked.push(u);
+			return route.fulfill({ status: 200, contentType: mock.contentType || 'text/javascript', body: mock.body, headers: { 'access-control-allow-origin': '*' } });
+		}
 		if (ok(u)) return route.continue();
 		refused.push(route.request().method() + ' ' + u);
 		return route.abort('blockedbyclient');
@@ -152,7 +160,7 @@ async function openFramed(browser, url, o) {
 		throw new Error('no game frame');
 	})();
 	await frame.waitForFunction(() => /** @type {any} */ (window).__tp?.test.v1?.exportRuntime?.exportRuntimeState, null, { timeout: 90000 });
-	return { ctx, p, frame, refused, errors, missing };
+	return { ctx, p, frame, refused, errors, missing, mocked };
 }
 
 /** the exported game's boot phase @param {any} frame */

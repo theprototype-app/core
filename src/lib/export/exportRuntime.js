@@ -66,6 +66,15 @@ export async function startExportRuntime() {
 	const cfg = exportConfig;
 	/** 93 LP2: ends the first-load cover @type {(v?: any) => void} */
 	let coverDone = () => {};
+	// 63 PG3: a portal preset's adapter starts FIRST, so its loading phase covers the whole boot
+	if (cfg.preset) {
+		const { PORTALS } = await import('./portals/index.js');
+		const load = /** @type {Record<string, any>} */ (PORTALS)[cfg.preset];
+		if (load)
+			void load()
+				.then((/** @type {any} */ start) => start({ getRuntimePhase: () => exportRuntimeState.phase }))
+				.catch((/** @type {any} */ e) => console.warn('export: the portal adapter did not start', e));
+	}
 	try {
 		exportRuntimeState.phase = 'engine';
 		await waitFor(() => get(objectsGroup) && get(globalRenderer));

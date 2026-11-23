@@ -35,6 +35,10 @@
 		{ "id": "nice-photo", "say": "Take a really nice high-quality photo of what I'm looking at.", "pass": [{ "tool": "run", "action": "photo" }], "partial": [{ "tool": "screenshot" }] },
 		{ "id": "crate-guard", "say": "Make the crate a guard that walks around and chases me when it sees me.", "pass": [{ "tool": "game_setup", "action": "npc" }], "partial": [{ "tool": "create_flow_nodes" }] },
 		{ "id": "ground-height", "say": "How high is the ground right under the door? I want to put a doormat there.", "pass": [{ "tool": "probe" }], "partial": [{ "tool": "create_objects" }] },
-		{ "id": "float-crate", "say": "If the crate falls in water, make it float high like a cork.", "pass": [{ "tool": "set_physics" }], "partial": [{ "tool": "update_objects" }] }
+		{ "id": "float-crate", "say": "If the crate falls in water, make it float high like a cork.", "pass": [{ "tool": "set_physics" }], "partial": [{ "tool": "update_objects" }] },
+		{ "id": "island-campfire", "say": "Go to my Island scene and put a campfire on the beach there.", "pass": [{ "tool": "scene", "action": "open" }], "partial": [] },
+		{ "id": "file-roundtrip", "say": "Make me a notes file called todo.md that says buy rope, then read it back to me.", "pass": [{ "tool": "files", "action": "create" }], "partial": [{ "tool": "files", "action": "write" }] },
+		{ "id": "script-line", "say": "Open the door script at line 12 so I can see it.", "pass": [{ "tool": "show", "action": "code" }], "partial": [{ "tool": "files", "action": "read" }] },
+		{ "id": "other-scene", "say": "Save this and open my other scene, Harbour.", "pass": [{ "tool": "scene", "action": "open" }], "partial": [{ "tool": "save_scene" }] }
 	]
 }

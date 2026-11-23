@@ -18,6 +18,7 @@
 import { BRIDGE_TOOLS, CONNECTOR_BLOCKED_TOOLS, MAX_IN_FLIGHT, MAX_WAIT_MS, answerFrame } from './protocol.js';
 import { validateArgs } from './argsSchema.js';
 import { READ_ONLY_TOOLS } from '../agent/agentCore.js';
+import { personToolReads } from '../ai/personToolNames.js';
 
 /** screenshot sizes a connector may ask for (the Worker refuses images over 2 MB of base64) */
 export const SHOT_DEFAULT = 768;
@@ -313,7 +314,8 @@ export function createDispatcher(deps) {
 				deps.send(answerFrame(id, fail('invalid_args', 'Invalid arguments for ' + tool + ' — nothing ran. ' + check.problems.join('; '))));
 				return;
 			}
-			if (frame.scope !== 'edit' && !READ_TOOLS.has(tool)) {
+			// 104: files {list, read} only read (a look-only grant may call them)
+			if (frame.scope !== 'edit' && !READ_TOOLS.has(tool) && !personToolReads(tool, args)) {
 				deps.send(answerFrame(id, fail('refused', 'This connection has read-only access (session:read), so ' + tool + ' was not run.')));
 				return;
 			}

@@ -110,7 +110,11 @@ export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?:
 	// 98 P2
 	take_photo: { title: 'Take a path-traced photo of the view', destructive: false },
 	// 104 B1
-	probe: { title: 'Read the ground and water under a point', read: true }
+	probe: { title: 'Read the ground and water under a point', read: true },
+	// 104 C1-C3: the person's own Explorer, interface and scenes (a person's tab only)
+	files: { title: "Work with the person's files", destructive: true },
+	show: { title: "Show the person something on their screen", destructive: false },
+	scene: { title: "Open the person's scenes", destructive: true }
 });
 
 /** a title from a tool name: `create_objects` → `Create objects` @param {string} name */
@@ -369,6 +373,10 @@ export const CONNECTOR_STANDALONE = Object.freeze([
 	'undo_last',
 	// 104 B1 (roadmap 104 row B1, owner-approved name): the ground / water / ray read
 	'probe',
+	// 104 C1-C3 (roadmap 104, owner rows C1-C3; the 85 budget table's slots for files / show and scene)
+	'files',
+	'show',
+	'scene',
 	// left out by the Worker's own policy (generate_mesh), kept listed so the Worker's EXCLUDED_TOOLS stays the scope call
 	'generate_mesh'
 ]);

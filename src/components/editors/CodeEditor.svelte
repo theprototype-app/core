@@ -35,7 +35,7 @@
 	export let readOnly = false;
 	/** @type {null | (() => void)} */
 	export let onSave = null;
-	/** @type {null | {line: number, token: number}} */
+	/** @type {null | {line: number, token: number, select?: {from: number[], to?: number[]}}} */
 	export let reveal = null;
 	/** @type {null | {line: number, message: string}} */
 	export let diagnostic = null;
@@ -266,11 +266,19 @@
 		const doc = view.state.doc;
 		return doc.line(Math.min(Math.max(1, Math.floor(n) || 1), doc.lines));
 	}
-	// 36-code: reveal a line (go-to from an error banner / openCode({line}))
+	/** a [line, col] point (1-based line, 0-based col) as a document position, clamped @param {any} p */
+	function posAt(p) {
+		const l = lineAt(Array.isArray(p) ? p[0] : 1);
+		const col = Math.max(0, Math.floor(Array.isArray(p) ? Number(p[1]) || 0 : 0));
+		return Math.min(l.to, l.from + col);
+	}
+	// 36-code: reveal a line (go-to from an error banner / openCode({line})); 104 C2: or select a
+	// range ({select: {from: [line, col], to: [line, col]}}, the assistant's show {code})
 	$: if (view && reveal && reveal.token !== revealed) {
 		revealed = reveal.token;
 		const l = lineAt(reveal.line);
-		view.dispatch({ selection: { anchor: l.from }, scrollIntoView: true });
+		const sel = reveal.select && Array.isArray(reveal.select.from) ? { anchor: posAt(reveal.select.from), head: posAt(reveal.select.to ?? reveal.select.from) } : { anchor: l.from };
+		view.dispatch({ selection: sel, scrollIntoView: true });
 		view.focus();
 	}
 	// 36-code: the parse error the last save hit, underlined on its line

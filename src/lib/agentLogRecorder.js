@@ -258,6 +258,15 @@ function undoLine(line) {
 	return true;
 }
 
+/**
+ * 104 C3: the scene was replaced (the person's `scene` tool): every recorded step addresses objects that are
+ * gone, so undo_last and checkpoints end here. The lines stay in the log as a record.
+ */
+export function sceneSwitched() {
+	historyOf.clear();
+	checkpoints.clear();
+}
+
 /** test seam: forget the recorder's state */
 export function resetAgentRecorder() {
 	historyOf.clear();

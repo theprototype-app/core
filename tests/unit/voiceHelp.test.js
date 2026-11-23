@@ -46,4 +46,14 @@ describe('diorama2 (item 12): the look and the opening view are mentioned when t
 		expect(r.can).toContain('choose the opening view players start the game with');
 		expect(r.tryAsking).toContain('Make it a sunset with a little fog');
 	});
+	it('104: files / scene / show are offered when listed, and "open files" leaves the cannot line', () => {
+		const r = whatCanYouDo({ status: { role: 'editor' }, tools: ['create_objects', 'files', 'scene', 'show'] });
+		expect(r.can.join(' | ')).toMatch(/text files in your Explorer/);
+		expect(r.can.join(' | ')).toMatch(/other scenes/);
+		expect(r.can.join(' | ')).toMatch(/show you things on your screen/);
+		expect(r.cannot).not.toMatch(/open files/);
+		expect(r.tryAsking).toContain('Open my other scene');
+		const old = whatCanYouDo({ status: { role: 'editor' }, tools: ['create_objects'] });
+		expect(old.cannot).toMatch(/open files/);
+	});
 });

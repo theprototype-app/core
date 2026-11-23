@@ -67,6 +67,7 @@ import { WORLD_TOOL_NAMES, WORLD_AI_TOOLS, WORLD_PROMPT, worldTool, resolvePatte
 import { RUNTIME_TOOL_NAMES, RUNTIME_AI_TOOLS, RUNTIME_PROMPT, runtimeTool } from './runtimeTools.js';
 import { PROBE_TOOL_NAMES, PROBE_AI_TOOLS, PROBE_PROMPT, probeTool } from './probeTools.js'; // 104 B1
 import { beginAiEdit, endAiEdit } from '../sceneEditBy.js'; // 78-int PL13: "changed by Claude (AI)"
+import { PERSON_TOOL_NAMES, PERSON_AI_TOOLS, runPersonTool } from './personTools.js'; // 104 C1-C3: files, show, scene
 
 // AI tool layer (roadmap #10, A4). Maps OpenAI-style function calls onto the
 // existing REPLICATED mutation surface — every tool applies locally AND broadcasts
@@ -1086,9 +1087,10 @@ export function repairToolCall(rawName, rawArgs) {
 const PHYSICS_DISABLED =
 	'physics tools are disabled — enable "Physics tools" for this provider in Settings → AI';
 
-/** @typedef {{physics?: boolean, by?: string}} ToolOpts `physics`: offer + run the physics tools for THIS caller whatever the
+/** @typedef {{physics?: boolean, by?: string, person?: boolean}} ToolOpts `physics`: offer + run the physics tools for THIS caller whatever the
  * provider's checkbox says (86-fix B1: the Claude connector; the person's own assistant keeps its setting).
- * `by` (78-int PL13): who the scene panel says made the edit ("Claude" for the connector; absent = "AI assistant") */
+ * `by` (78-int PL13): who the scene panel says made the edit ("Claude" for the connector; absent = "AI assistant").
+ * `person` (104): the caller sits in the person's own tab (the in-app assistant), so it gets files / show / scene */
 
 /** 55 A8: one observer of every tool call — `(name, args) => (result) => void`, set by the agent
  * page's action-log recorder. Null everywhere else (the call path is unchanged). @type {any} */
@@ -1138,6 +1140,11 @@ async function observedAiTool(rawName, rawArgs, opts) {
 /** @param {string} rawName @param {any} rawArgs @param {ToolOpts} [opts] @returns {Promise<any>} */
 async function runAiTool(rawName, rawArgs, opts) {
 	const { name, args } = repairToolCall(rawName, rawArgs);
+	// 104: the person's own tools gate themselves (a viewer may still list and read files, and look around)
+	if (/** @type {readonly string[]} */ (PERSON_TOOL_NAMES).includes(name)) {
+		if (!opts?.person) return { error: name + ' works only in the person\'s own tab (the in-app assistant or the Claude connector)' };
+		return runPersonTool(name, args, opts);
+	}
 	// 86-fix B1: a caller that forces the physics tools on (the connector) does so for ITS calls only
 	const physics = !!opts?.physics || physicsToolsEnabled();
 	// F-1: a viewer's edits never reach anyone, so refuse instead of reporting success
@@ -1998,6 +2005,7 @@ export function getAiTools(opts) {
 	const tools = [...AI_TOOLS, ...GEOMETRY_AI_TOOLS, ...TEXT_AI_TOOLS, ...PATH_AI_TOOLS, ...LOOK_AI_TOOLS, ...HUD_AI_TOOLS, ...SCENE_SETUP_AI_TOOLS, ...LEVELS_AI_TOOLS, ...NPC_AI_TOOLS, ...WORLD_AI_TOOLS, ...ASSIST_AI_TOOLS, ...RUNTIME_AI_TOOLS, ...PROBE_AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
 	if (physics) tools.push(...PHYSICS_AI_TOOLS);
 	if (meshGenReady()) tools.push(MESH_TOOL);
+	if (opts?.person) tools.push(...PERSON_AI_TOOLS);
 	return tools;
 }
 

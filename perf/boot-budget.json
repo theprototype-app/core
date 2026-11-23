@@ -136,6 +136,13 @@
 			"play": "v1.74.0 2148.6 KB -> 2151.7 KB (+3.1: #609 +1.6, this lane +1.5) -> line 2152.5 KB",
 			"editor": "v1.74.0 3369.3 KB -> 3372.8 KB (+3.6: #609 +1.9, this lane +1.7) -> line 3374.0 KB",
 			"note": "inside the ~3 KB boot rule per lane. Measured on the pc host (tp-lanes), v1.74.0, #609's head and this branch built in one worktree with one node_modules; the per-lane split is from sourcemap builds of the three. This lane by module (gzip, editor): commandsHandler +0.5 (late-joiner ingest look-ahead, the primitive recipe path, the announced batch hold, the visible/slots fields), playSpawn +0.4 (the lazy loader and v1.74.0's fallback), flowStore graph tombstones, sceneStore poke pacing, qualityGovernor, autosave/gltfNames ~0.1 each. Lazy chunks (paid only when used): spawnPick + spawnSlots (load with the first peer link), slotRejoin (only a message carrying slots). Chunk-hash churn moves the editor ~0.6 KB between builds; the integrator may veto or fold it into the int line."
+		},
+		{
+			"date": "2026-11-23",
+			"lane": "92-correct (rows 1-4: HUD Timer from Play, spawned copies run the template's event flow, per-player Game Value + behaviour player events, per-second movement)",
+			"play": "v1.74.0 2148.6 KB -> 2150.5 KB (+1.9) -> line 2155.0 KB (rounded up to the next 5 KB)",
+			"editor": "v1.74.0 3369.2 KB -> 3371.2 KB (+2.0) -> line 3375.0 KB (the same rule)",
+			"note": "measured on the Deck, v1.74.0 and the lane built in one worktree with one node_modules. Inside the ~3 KB boot-wiring rule (claude:9, 21 Nov). The copy instancing (copyGraphs.js, 0.9 KB) is a lazy chunk loaded with the first spawned copy; what stays on boot: modules +0.6 (behaviour player events, Game Value for: me, node docs), flowRuntime +0.5 (timer clock, copy registry, myPeerId), nodes +0.2, playInteract +0.1. The int recomputes the line from its union."
 		}
 	],
 	"throttle": {

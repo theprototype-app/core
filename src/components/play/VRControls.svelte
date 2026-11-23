@@ -9,6 +9,7 @@
 	import { vrFlying, vrMenuOpen, vrObjectsPanelOpen, vrSettingsPanelOpen, vrGrabbedHand } from '../../stores/sceneStore';
 	import { computeMoveOffset, worldScale, twoGripStretchActive, controllerIndexFor, vrNavigationSuppressed, tickVRInteractLocomotion, stickOwned } from '$lib/vrControls';
 	import { inputClaims } from '$lib/inputRuntime';
+	import { frameDistance } from '$lib/realStep'; // 92-correct row 4
 	import { handOf, oneHandedHand } from '$lib/vr/bindings.js';
 
 	const { renderer, camera, scene } = useThrelte();
@@ -71,8 +72,9 @@
 				flying: $vrFlying,
 				aimDir: { x: aimDir.x, y: aimDir.y, z: aimDir.z },
 				cameraDir: { x: cameraDir.x, y: cameraDir.y, z: cameraDir.z },
-				// grabbed-world scale (71): body-relative speed stays constant
-				speed: 0.05 * worldScale()
+				// grabbed-world scale (71): body-relative speed stays constant. 92-correct row 4: 0.05 was per
+				// FRAME (3 m/s at 60 Hz, 6 m/s on a 120 Hz headset); now 3 m/s at any refresh rate
+				speed: frameDistance(0.05, delta) * worldScale()
 			});
 			// 30b P3: EDIT flies through walls (the dungeon raster clamp that stood here is the
 			// Interact walker's job now — the user's ask: "go through walls ... only in edit")

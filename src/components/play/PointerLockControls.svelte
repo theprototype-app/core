@@ -15,6 +15,8 @@
     import { playCode } from '$lib/playerAccess' // 53 (A6): the player's key remap
     import { inputClaims, getGamepadAxes } from '$lib/inputRuntime'
     import { gamepadPrefs } from '$lib/gamepadPrefs'
+    // 92-correct row 4: every built-in move is per SECOND (real time, not threlte's 0.1 s-clamped delta)
+    import { makeRealClock, frameDistance } from '$lib/realStep'
     import { coarsePointer } from '$lib/inputDevice'
     // W4: the touch play controls. A phone had no input path here at all — no pointer
     // lock, no keyboard, no Escape — so the overlay publishes a virtual stick and a look
@@ -230,8 +232,11 @@
       }
     })
 
+    /** 92-correct row 4: real seconds since the last frame (capped, see realStep.js) */
+    const realClock = makeRealClock()
     useTask(
     (delta) => {
+      const realDt = realClock(performance.now(), delta)
 
       // K-C: a module claimed the keys (possession) — WASD drives IT, not the camera
       if ($inputClaims.includes('keys')) return
@@ -285,7 +290,10 @@
             left: moveState.left || (mX < -0.01 ? 1 : 0),
             right: moveState.right || (mX > 0.01 ? 1 : 0)
           }
-          tickWalker(walker, ctrl, delta, walkStep(walker, padWalkInput, speed, delta))
+          // 92-correct row 4: a long frame (a throttled tab, a busy phone) is cut into <= 0.1 s parts, each the
+          // step the walker always took, so the distance is per second at any frame rate and a wall still stops it
+          const parts = Math.max(1, Math.ceil(realDt / 0.1 - 1e-6))
+          for (let i = 0; i < parts; i++) tickWalker(walker, ctrl, realDt / parts, walkStep(walker, padWalkInput, speed, realDt / parts))
           // 37 R23: the walker's floor, for the body peers draw (eyeHeight is world metres here)
           setLocalFeet(walker.getWorldPosition(feetProbe).y - Math.max(0.1, Number(ctrl.eyeHeight ?? 1.7) || 1.7))
           const lX = prefs.swapSticks ? pad.lx : pad.rx
@@ -304,20 +312,22 @@
       // 30b P3: the rig's WORLD pose before this frame's built-in step, for the collision pass
       const beforeWorld: any = $isLocked === true && $cameraParent ? $cameraParent.getWorldPosition(new Vector3()) : null
 
+      // 92-correct row 4: `speed` is per 60 Hz frame (what every saved scene stores); the step is per SECOND
+      const step = frameDistance(speed, realDt)
       if (moveState.forward === 1) {
-        $cameraParent.translateZ(-speed);
+        $cameraParent.translateZ(-step);
       }
 
       if (moveState.backward === 1) {
-        $cameraParent.translateZ(speed);
+        $cameraParent.translateZ(step);
       }
 
       if (moveState.left === 1) {
-        $cameraParent.translateX(-speed);
+        $cameraParent.translateX(-step);
       }
 
       if (moveState.right === 1) {
-        $cameraParent.translateX(speed);
+        $cameraParent.translateX(step);
       }
 
       // 21-E5: THE DEFAULT PAD MAPPING - left stick moves, right stick looks. On with NO
@@ -348,11 +358,11 @@
         const lookY = padPrefs.swapSticks ? pad.ly : pad.ry
         if (moveX || moveY) {
           // stick forward reads NEGATIVE on the standard mapping and forward is -Z, so the
-          // vertical axis feeds translateZ directly. Scaled by moveSpeed PER FRAME exactly
-          // like the WASD steps above: delta-scaling the stick but not the keys would make
-          // the same scene move at two different speeds depending on the device.
-          $cameraParent.translateX(moveX * moveSpeed)
-          $cameraParent.translateZ(moveY * moveSpeed)
+          // vertical axis feeds translateZ directly. The SAME step as the WASD keys above (92-correct
+          // row 4: per second, and the speed in force — it read the raw moveSpeed before, so the wheel,
+          // a Character Controller and Move Speed never reached a stick)
+          $cameraParent.translateX(moveX * step)
+          $cameraParent.translateZ(moveY * step)
         }
         if (lookX || lookY) {
           const rate = PAD_LOOK_RATE * pointerSpeed * padPrefs.lookSensitivity * delta
@@ -367,11 +377,11 @@
       const play = resolvePlaySettings($globalScene)
 
       if (!play.grounded && moveState.up === 1) {
-        $cameraParent.translateY(-speed);
+        $cameraParent.translateY(-step);
       }
 
       if (!play.grounded && moveState.down === 1) {
-        $cameraParent.translateY(speed);
+        $cameraParent.translateY(step);
       }
 
       if (play.grounded && $isLocked && $cameraParent) {

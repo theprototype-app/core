@@ -261,6 +261,7 @@
 		"roles-wait": "red on the GitHub runner (SwiftShader) with unchanged code, 2026-11-23 (deps runs 45088358423 + 45071918356; green on the desk at v1.72.0 unless noted): timing — tests/e2e/battery-optional-2026-11.md",
 		"roster-guest-admit": "red on the GitHub runner (SwiftShader) with unchanged code, 2026-11-23 (deps runs 45088358423 + 45071918356; green on the desk at v1.72.0 unless noted): timing — tests/e2e/battery-optional-2026-11.md",
 		"roster-merge": "red on the GitHub runner (SwiftShader) with unchanged code, 2026-11-23 (deps runs 45088358423 + 45071918356; green on the desk at v1.72.0 unless noted): timing — tests/e2e/battery-optional-2026-11.md",
+		"roster-rows": "red on the GitHub runner (SwiftShader) with unchanged code, 2026-11-23 (green in deps runs 45088358423 + 45071918356, red in every attempt of deps-fix/battery run 45110064000, the third page cannot press Connect; green on the desk at v1.72.0): timing — tests/e2e/battery-optional-2026-11.md",
 		"roster-sender": "red on the GitHub runner (SwiftShader) with unchanged code, 2026-11-23 (deps runs 45088358423 + 45071918356; green on the desk at v1.72.0 unless noted): timing, unproven — tests/e2e/battery-optional-2026-11.md",
 		"save-open-fixes": "red on the GitHub runner (SwiftShader) with unchanged code, 2026-11-23 (deps runs 45088358423 + 45071918356; green on the desk at v1.72.0 unless noted): timing — tests/e2e/battery-optional-2026-11.md",
 		"save-project-libraries": "red on the GitHub runner (SwiftShader) with unchanged code, 2026-11-23 (deps runs 45088358423 + 45071918356; green on the desk at v1.72.0 unless noted): timing, unproven — tests/e2e/battery-optional-2026-11.md",
@@ -284,6 +285,7 @@
 		"select-inside-36": "red on the GitHub runner (SwiftShader, no retry) with unchanged code: deps-auto run 5, 2026-10-24",
 		"sequence-card": "red on the GitHub runner (SwiftShader) with unchanged code, 2026-11-23 (deps runs 45088358423 + 45071918356; green on the desk at v1.72.0 unless noted): timing, unproven — tests/e2e/battery-optional-2026-11.md",
 		"session-scenes": "joined from the 1.43 desk battery (pipeline-1): not yet measured on a GitHub runner, so it reports and does not gate until a deps run has seen it green",
+		"session-volume": "red on the GitHub runner (SwiftShader) with unchanged code, 2026-11-23 (green in deps runs 45088358423 + 45071918356, red in every attempt of deps-fix/battery run 45110064000, the third page cannot press Connect; green on the desk at v1.72.0): timing — tests/e2e/battery-optional-2026-11.md",
 		"session-volume-limits": "red on the GitHub runner (SwiftShader) with unchanged code, 2026-11-23 (deps runs 45088358423 + 45071918356; ALSO red on the desk at v1.72.0): real — tests/e2e/battery-optional-2026-11.md",
 		"session-volume-phone": "red on the GitHub runner (SwiftShader) with unchanged code, 2026-11-23 (deps runs 45088358423 + 45071918356; green on the desk at v1.72.0 unless noted): timing — tests/e2e/battery-optional-2026-11.md",
 		"sessions": "joined from the 1.43 desk battery (pipeline-1): not yet measured on a GitHub runner, so it reports and does not gate until a deps run has seen it green",
@@ -369,6 +371,7 @@
 		"window-header-ranking": "flaky on the GitHub runner (SwiftShader): red or green-on-retry in deps-auto run 5 or 6 with unchanged code, 2026-10-24",
 		"window-size-clamp": "red on the GitHub runner (SwiftShader, no retry) with unchanged code: deps-auto run 5, 2026-10-24",
 		"windows-polish": "78 pl-windows (1.64): new, not yet measured on a GitHub runner, so it reports and does not gate until a deps run has seen it green",
+		"wire-proto": "red on the GitHub runner (SwiftShader) with unchanged code, 2026-11-23 (green in deps runs 45088358423 + 45071918356, red in every attempt of deps-fix/battery run 45110064000, the third page cannot press Connect; green on the desk at v1.72.0): timing — tests/e2e/battery-optional-2026-11.md",
 		"workspace-restore": "joined from the 1.43 desk battery (pipeline-1): not yet measured on a GitHub runner, so it reports and does not gate until a deps run has seen it green"
 	},
 	"setup": {

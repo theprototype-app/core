@@ -2,6 +2,8 @@
 
 Moved by `battery.cjs refresh --red` from two runs on unchanged code: deps.yml dispatched on `deps` 26b995ec (v1.72.0, run 45088358423) and #519, a CI-script-only change on the same base (run 45071918356). **82 of the 85 are green in the integrators desk battery at the v1.72.0 tag** (`battery-t172-full`, 61-int, 652 suites), so their reds belong to the runner, not the app. The three red on the desk too are agent-mcp (env), connector-join (flaky on the desk, green on the tag rerun) and session-volume-limits (real).
 
+**+3 on 2026-11-23** from #628's own run (45110064000, after the 85 moved): roster-rows, session-volume and wire-proto were green in both base runs but red in every attempt there (required + confirm), all at the third page's Connect, all green on the desk at v1.72.0. Timing, same as roster-merge / toggle-peers. 88 in all.
+
 Bringing a suite back to required: fix the cause, see it green in a deps.yml run, then delete its `optional` line in battery.json and its row here. Classes: env (the runner lacks something), timing (a wait or frame-rate check on a slow runner), real (the app is wrong).
 
 ## real: red on the desk battery at the v1.72.0 tag as well, a product question (own card) (1)
@@ -54,7 +56,7 @@ Bringing a suite back to required: fix the cause, see it green in a deps.yml run
 |---|---|---|---|
 | `agent-mcp` | 2/2 | also red on the desk at 1.72 ("signaling came from the link": needs peerjs.theprototype.app); click timeout on the runner | SCRIPT FAILED: locator.click: Timeout 90000ms exceeded. |
 
-## timing: green on the desk at v1.72.0; on the runner a wait/click timeout or a frame-rate/heartbeat check, or red in one run only (60)
+## timing: green on the desk at v1.72.0; on the runner a wait/click timeout or a frame-rate/heartbeat check, or red in one run only (63)
 
 | suite | runner runs red | why | first red line |
 |---|---|---|---|
@@ -103,8 +105,10 @@ Bringing a suite back to required: fix the cause, see it green in a deps.yml run
 | `roles-wait` | 1/2 | red in one of the two runs only (flaky on a loaded runner) | FAIL the plugin arrives: the host's world lands, nothing was lost |
 | `roster-guest-admit` | 1/2 | red in one of the two runs only (flaky on a loaded runner) | SCRIPT FAILED: locator.fill: Timeout 30000ms exceeded. |
 | `roster-merge` | 2/2 | a wait/click timeout in both runs on a loaded runner | SCRIPT FAILED: connect: could not press Connect on 2ded2 |
+| `roster-rows` | 3/3 of run 45110064000 (0/2 in the base runs) | the third page cannot press Connect on a loaded runner, every attempt (required + confirm); the same red as roster-merge / toggle-peers | SCRIPT FAILED: connect: could not press Connect on 13536 |
 | `save-open-fixes` | 1/2 | red in one of the two runs only (flaky on a loaded runner) | SCRIPT FAILED: page.waitForEvent: Timeout 60000ms exceeded while waiting for event "download" |
 | `scatter-surface` | 1/2 | red in one of the two runs only (flaky on a loaded runner) | [battery] TIMEOUT after 714s |
+| `session-volume` | 2/2 of run 45110064000 (0/2 in the base runs) | the joiner never mounts the host session and the suite hits its 720 s timeout, every attempt (required + confirm); the same multi-peer class as roster-merge / toggle-peers | FAIL joining mounts "H's session" on G with the open scene's file in it |
 | `session-volume-phone` | 1/2 | red in one of the two runs only (flaky on a loaded runner) | FAIL premise: the volume arrived |
 | `shader-own-glsl` | 2/2 | a wait/click timeout in both runs on a loaded runner | SCRIPT FAILED: locator.click: Timeout 10000ms exceeded. |
 | `text-object` | 2/2 | a wait/click timeout in both runs on a loaded runner | SCRIPT FAILED: page.waitForFunction: Timeout 30000ms exceeded. |
@@ -118,4 +122,5 @@ Bringing a suite back to required: fix the cause, see it green in a deps.yml run
 | `vr-settings-36` | 1/2 | red in one of the two runs only (flaky on a loaded runner) | FAIL in the headset the RIGHT stick now walks (z -0.22) |
 | `vr-universal-world-grab` | 2/2 | a frame-rate/heartbeat dependent check (physics, walking, peer timeouts) on a ~4 fps SwiftShader runner | FAIL 7.7 the vignette closes in while the world scales (peak 0.05) |
 | `walker-step-off` | 1/2 | red in one of the two runs only (flaky on a loaded runner) | FAIL 1.1 the walker stands on the 0.4 m platform (rapier tier, grounded) |
+| `wire-proto` | 2/2 of run 45110064000 (0/2 in the base runs) | the third page cannot press Connect on a loaded runner, every attempt (required + confirm); the same red as roster-merge / toggle-peers | SCRIPT FAILED: connect: could not press Connect on aae93 |
 

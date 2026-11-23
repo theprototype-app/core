@@ -163,11 +163,16 @@ describe('third-person spawn', () => {
 		history.undo();
 		expect(get(sp.scenePhysicsState_).play?.spawn ?? null).toBe(null);
 	});
-	it('third person is said to be unavailable, with the way that works', async () => {
-		const r = await setupCall('set_play_camera', { mode: 'third' });
-		expect(r.unavailable).toBe(true);
-		expect(r.error).toMatch(/Possess Object/);
-		expect(stack().length).toBe(0);
+	// 92-input GC4a: third person is a Play camera now; orbit / fixed still say what works instead
+	it('third person is a Character Controller camera; orbit is said to be unavailable, with the way that works', async () => {
+		const r = await setupCall('set_play_camera', { mode: 'third', distance: 6 });
+		expect(r.error).toBeUndefined();
+		expect(r.playCamera).toMatchObject({ mode: 'third', movement: 'walk', distance: 6 });
+		const before = stack().length;
+		const o = await setupCall('set_play_camera', { mode: 'orbit' });
+		expect(o.unavailable).toBe(true);
+		expect(o.error).toMatch(/Possess Object/);
+		expect(stack().length).toBe(before);
 	});
 });
 

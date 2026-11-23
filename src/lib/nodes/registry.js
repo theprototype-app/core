@@ -28,8 +28,8 @@
  * not see it", "my copies vanished when I stopped the sim". HudNode had hand-rolled
  * exactly this for `hudscreen`; a spec field means the next such node needs no card of
  * its own to say its one important thing.
- * @typedef {{ key: string, kind: 'range' | 'select' | 'toggle' | 'text' | 'number' | 'color' | 'vector3' | 'code', label?: string, doc?: string, group?: string, socket?: boolean, min?: number, max?: number, step?: number, options?: string[], placeholder?: string, maxLength?: number, legacy?: any }} NodeParam
- * @typedef {{ type: string, label: string, defaults: Record<string, any>, params?: NodeParam[], inputs?: string[], inputLabels?: Record<string, string>, note?: string }} NodeSpec
+ * @typedef {{ key: string, kind: 'range' | 'select' | 'toggle' | 'text' | 'number' | 'color' | 'vector3' | 'code', label?: string, doc?: string, group?: string, socket?: boolean, min?: number, max?: number, step?: number, options?: string[], placeholder?: string, maxLength?: number, legacy?: any, showIf?: Record<string, string[]> }} NodeParam
+ * @typedef {{ type: string, label: string, defaults: Record<string, any>, params?: NodeParam[], inputs?: string[], inputLabels?: Record<string, string>, note?: string, defaultsBy?: Record<string, Record<string, Record<string, any>>> }} NodeSpec
  */
 
 /**

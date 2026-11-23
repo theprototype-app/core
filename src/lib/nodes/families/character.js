@@ -4,6 +4,8 @@
 // Nodes.svelte component key) and `eval` (evalNodeBody's case; runtime helpers come in as `rt`).
 // A LEAF: nothing here imports the runtime. Adding a node = one entry in this file.
 
+import { PLAY_VIEWS, PLAY_VIEW_DEFAULTS } from '../../playViewSettings.js'; // 92-input GC4 (a leaf)
+
 /** @type {import('../registry.js').NodeFamily} */
 export default {
 	group: 'Character',
@@ -15,7 +17,7 @@ export default {
 		{
 			type: 'charcontroller',
 			label: 'Character Controller',
-			defaults: { mode: 'fly', speed: 0.1, jumpHeight: 1.2, eyeHeight: 1.7, gravity: true },
+			defaults: { mode: 'fly', speed: 0.1, jumpHeight: 1.2, eyeHeight: 1.7, gravity: true, camera: 'first' },
 			// `inputs: []` is not an oversight: an EMPTY list still opts this card into
 			// the B6 labelled-row socket layout, so each range param owns the handle in
 			// its own row. With `inputs` absent the sockets are placed by pixel offset
@@ -30,8 +32,22 @@ export default {
 				// metres — jump and eye height describe the WORLD, not the input
 				{ key: 'jumpHeight', kind: 'range', min: 0, max: 5, step: 0.1 },
 				{ key: 'eyeHeight', kind: 'range', min: 0.2, max: 3, step: 0.05 },
-				{ key: 'gravity', kind: 'toggle' }
+				{ key: 'gravity', kind: 'toggle' },
+				// 92-input GC4a + GC4: how Play LOOKS (playViewSeam.js). first = through the eyes (absent = first,
+				// so every saved node is unchanged); third / side / top draw from behind / beside / above the
+				// player, who stays exactly where it was for every game rule. Each view's rows show only for it,
+				// and an unset row reads its view's own default (`defaultsBy`).
+				{ key: 'camera', kind: 'select', options: [...PLAY_VIEWS], doc: 'first = through the eyes; third = behind you (walls pull it in); side = a side-scroller (a locked plane, the view ahead); top = top-down (a fixed angle). The wheel zooms the last three.' },
+				{ key: 'distance', kind: 'range', min: 0.5, max: 60, step: 0.5, showIf: { camera: ['third', 'side', 'top'] }, doc: 'metres from the player (the zoom it starts at)' },
+				{ key: 'height', kind: 'range', min: -2, max: 10, step: 0.1, showIf: { camera: ['third', 'side'] }, doc: 'metres the view is raised above the head (third) or the body (side)' },
+				{ key: 'lookAhead', kind: 'range', min: 0, max: 10, step: 0.1, showIf: { camera: ['side'] }, doc: 'metres the view leads the way you face' },
+				{ key: 'angle', kind: 'range', min: 15, max: 90, step: 1, showIf: { camera: ['top'] }, doc: 'degrees above the horizon (90 = straight down)' },
+				{ key: 'minZoom', kind: 'range', min: 0.5, max: 60, step: 0.5, showIf: { camera: ['third', 'side', 'top'] }, doc: 'the closest the wheel zooms in' },
+				{ key: 'maxZoom', kind: 'range', min: 0.5, max: 120, step: 0.5, showIf: { camera: ['third', 'side', 'top'] }, doc: 'the farthest the wheel zooms out' },
+				{ key: 'collide', kind: 'toggle', showIf: { camera: ['third'] }, doc: 'walls between you and the camera pull it in' }
 			],
+			// 92-input GC4: the number an unset view row shows IS the one in force (playViewSettings)
+			defaultsBy: { camera: PLAY_VIEW_DEFAULTS },
 			// 21-E6 the character controller. `target` is the alternative to wiring the node
 			// into an Object Selector (velocity's precedent), and every range param keeps the
 			// numeric fallback, so only the EVENT and OBJECT handles need declaring here — an

@@ -82,6 +82,7 @@ import {
 	DEFAULT_FLY_SPEED,
 	localPlayerBody
 } from './charController';
+import { playViewSettings } from './playViewSettings.js'; // 92-input GC4 (a leaf)
 import { gameFeelActive } from './gameFeel'; // 78 F10: a leaf (sceneStore + svelte/store)
 // 78 F2/F3/F8: the pure halves of On Hover, Hover Animate and Toggle Animation (a leaf)
 import { hoverEnvelope, ringLength, OVER_WINDOW, doorApply, doorPoseAt, poseIndexOf } from './hoverCore.js';
@@ -2554,7 +2555,9 @@ function updateCharNodes(time, ctx) {
 		// keys are local by nature — the moveinput rule). No code = the 21-E6 path, untouched.
 		if (builtinCodeActive(winner)) settings = playerCodeSettings(winner, settings, time);
 		else clearScriptError(winner.id);
-		setCharControl({ ...settings, sourceNodeId: winner.id });
+		// 92-input GC4: the camera this controller asks for (null = first person, every scene before it)
+		const view = playViewSettings(d);
+		setCharControl({ ...settings, sourceNodeId: winner.id, ...(view ? { view } : {}) });
 	}
 
 	// 2. THE ACTIONS, each on a fresh stamp for its OWN handle

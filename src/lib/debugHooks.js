@@ -490,6 +490,8 @@ export const DEBUG_HOOKS = [
 	['hudViewportDrag', () => import('./hudViewportDrag')],
 	['gamepadPrefs', () => import('./gamepadPrefs')],
 	['charController', () => import('./charController')],
+	// 92-input GC4: the play views (playViewDebug / playViewKind / PLAY_VIEW_DEFAULTS)
+	['playView', () => import('./playViewSeam.js')],
 	['hudRichText', () => import('./hudRichText')],
 	['moduleHudKinds', () => import('./moduleHudKinds')],
 	['hudMinimap', () => import('./hudMinimap')],

@@ -18,7 +18,7 @@ import { get } from 'svelte/store';
 import { peers, showToastById } from '../../stores/appStore';
 import { sessionHost } from '../connectionState';
 import { isViewer } from '../objectPermissions';
-import { askPerson } from './personAsk.js';
+import { askPerson, askKnown } from './personAsk.js';
 import { createRateLimit, pathOfItem } from './filesCore.js';
 
 /** switches a minute: a scene replace is the heaviest thing the tool can do */
@@ -69,6 +69,13 @@ function switchRefusal() {
 	return null;
 }
 
+/** 104-int: a recording, Film on the phone or a sequence shot would be cut by a scene switch */
+async function viewBusy() {
+	const { busyCamera } = await import('./showTool.js');
+	const why = await busyCamera();
+	return why ? why.replace(/: wait/, ', so the scene is not switched: wait') : '';
+}
+
 /** @param {any} args */
 async function list(args) {
 	const rows = await sceneRows();
@@ -105,6 +112,18 @@ async function doSwitch(target, unsaved, by) {
 			saved = levelSceneName(/** @type {any} */ (item).name);
 		}
 	}
+	// 104-int (O5 review): "discard" is never a silent loss. The scene on screen goes into Sessions first, as the
+	// "Backup before" stash an ordinary load writes, so the person can bring it back from Sessions.
+	/** @type {string | null} */
+	let kept = null;
+	if (unsaved === 'discard') {
+		try {
+			const { saveSession } = await import('../sessions');
+			const name = 'Backup before "' + target.name + '"';
+			if (await saveSession(name, { listOnly: true })) kept = name;
+		} catch {}
+		if (!kept) return fail('the unsaved changes could not be kept in Sessions, so nothing was opened (the scene on screen is as it was)');
+	}
 	switches.note();
 	const ok = await travelToLevel(target.hash, '', { private: false, askModules: false, freshGame: true });
 	if (!ok) return fail('"' + target.name + '" could not be opened (its file may not be on this device yet)', saved ? { saved } : undefined);
@@ -116,12 +135,12 @@ async function doSwitch(target, unsaved, by) {
 	} catch {}
 	// Back = the person's own guarded open of the scene left behind (its saved version), when it has a name
 	const backName = saved || (before?.name && !before?.unsaved ? String(before.name) : null);
-	const words = (saved ? by + ' saved ' + saved + ' and opened ' + target.name : by + ' opened ' + target.name) + '.';
+	const words = (saved ? by + ' saved ' + saved + ' and opened ' + target.name : by + ' opened ' + target.name) + '.' + (kept ? ' Your unsaved changes are in Sessions as ' + kept + '.' : '');
 	showToastById('scene-line', words, backName ? [{ label: 'Back', action: () => void backTo(backName) }] : []);
 	return {
 		opened: target.name,
 		...(saved ? { saved } : {}),
-		...(unsaved === 'discard' ? { discarded: here } : {}),
+		...(unsaved === 'discard' ? { discarded: here, keptInSessions: kept } : {}),
 		note: 'The scene changed: call list_scene before editing (every uuid from before is gone). undo_last and checkpoints from before the switch end here.'
 	};
 }
@@ -153,9 +172,11 @@ async function resolveTarget(args) {
 async function guardedOpen(args, by, target, label) {
 	const refused = switchRefusal();
 	if (refused) return fail(refused, { refused: true });
+	const busy = await viewBusy();
+	if (busy) return fail(busy, { refused: true, busy: true });
 	const wantUnsaved = args.unsaved === 'save' || args.unsaved === 'discard' ? args.unsaved : null;
 	if (args.unsaved !== undefined && args.unsaved !== null && !wantUnsaved) return fail('unsaved: "save" or "discard" (or leave it out and the person is asked)');
-	const wait = args.confirmId ? 0 : switches.check();
+	const wait = askKnown('scene', args.confirmId) ? 0 : switches.check();
 	if (wait) return fail('a scene switch at a time: wait ' + wait + ' s', { retryAfter: wait });
 	const now = await current();
 	const crowd = others();
@@ -223,6 +244,8 @@ export async function sceneTool(args, ctx = {}) {
 			if (made) return made;
 			const refused = switchRefusal();
 			if (refused) return { error: refused };
+			// checked again right before the file is made: a name taken while the person was being asked is refused
+			if (sceneNameTaken(name)) return { error: 'there is already a scene called "' + name + '" (' + freeSceneName(name) + ' is free)' };
 			const { activeFolder } = await import('../explorer');
 			const item = await newLevel(name, get(activeFolder) ?? null);
 			made = item ? { hash: /** @type {any} */ (item).hash, name: levelSceneName(/** @type {any} */ (item).name) } : { error: 'the new scene could not be made' };
@@ -231,6 +254,8 @@ export async function sceneTool(args, ctx = {}) {
 		// the file is made only once the person said yes (or nothing needed asking): a No leaves no empty scene behind
 		const refused = switchRefusal();
 		if (refused) return fail(refused, { refused: true });
+		const busy = await viewBusy();
+		if (busy) return fail(busy, { refused: true, busy: true });
 		const now = await current();
 		const asks = others() > 0 || (now.unsaved && !(a.unsaved === 'save' || a.unsaved === 'discard'));
 		if (asks)

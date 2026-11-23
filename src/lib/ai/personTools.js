@@ -132,7 +132,8 @@ export const PERSON_AI_TOOLS = [
 ];
 
 /** how the person's lines name the assistant @param {{by?: string}} [opts] */
-const byOf = (opts) => (opts?.by && opts.by !== 'AI assistant' ? opts.by : 'The assistant');
+// 104-int: an app the Worker cannot name reads "An AI app opened Explorer.", not "AI app opened Explorer."
+const byOf = (opts) => (opts?.by && opts.by !== 'AI assistant' ? (opts.by === 'AI app' ? 'An AI app' : opts.by) : 'The assistant');
 
 /**
  * Run one. @param {string} name @param {any} args @param {{by?: string}} [opts]

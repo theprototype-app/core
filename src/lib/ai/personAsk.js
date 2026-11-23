@@ -136,6 +136,17 @@ export async function askPerson(tool, args, q) {
 	return pending(ask);
 }
 
+/**
+ * Is `confirmId` a question this page really asked for `tool` (open or answered, not yet past its life)? The pacing
+ * of files / scene steps aside only for the call that reads an answer, never for any confirmId an app makes up.
+ * @param {string} tool @param {unknown} confirmId
+ */
+export function askKnown(tool, confirmId) {
+	if (confirmId === undefined || confirmId === null || confirmId === '') return false;
+	const ask = asks.get(String(confirmId));
+	return !!ask && ask.tool === tool && statusOf(ask) !== 'expired';
+}
+
 /** e2e / unit: press a choice of the newest open question (the debug hook) @param {string} label */
 export function answerNewestAsk(label) {
 	const open = [...asks.values()].filter((a) => a.status === 'pending');

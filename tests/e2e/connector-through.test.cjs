@@ -122,6 +122,11 @@ h.run(async () => {
 	await page.evaluate((u) => window.__tp.test.v1.filmState.openFilm(u), cam);
 	await page.waitForSelector('#film-exit', { timeout: 20000 }).catch(() => {});
 	await expectThrough('phone', 'phone (Film)');
+	// 104-int (104-world x 104-show): Film owns the view, so show cannot move it and scene cannot switch away
+	const busyShow = await ex('show', { action: 'camera', position: [0, 2, 5], target: [0, 0, 0] }, 'edit');
+	h.check(/filming with their phone/.test(busyShow?.error?.message ?? busyShow?.error ?? '') && !busyShow?.needsConfirm, `show camera is refused while Film is on, without asking (${JSON.stringify(busyShow).slice(0, 140)})`);
+	const busyScene = await ex('scene', { action: 'new', name: 'Busy test' }, 'edit');
+	h.check(/filming with their phone/.test(busyScene?.error?.message ?? busyScene?.error ?? ''), `scene new is refused while Film is on (${JSON.stringify(busyScene).slice(0, 140)})`);
 	await page.evaluate(() => window.__tp.test.v1.filmState.closeFilm());
 	await expectOwn('Film closed');
 

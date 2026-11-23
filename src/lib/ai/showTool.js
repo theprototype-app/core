@@ -11,8 +11,9 @@
 //   back    undo what the newest `show` changed (a stack of 10)
 //
 // Each kind asks the person once (Always / This time / No): Always is stored on this device
-// (safeStorage `show:allow:<kind>`, revocable in Settings ▸ Connected apps), This time and No last
-// until the page reloads.
+// (safeStorage `show:allow:<kind>`, the switches in Settings ▸ Privacy), This time and No last
+// until the page reloads, per app. An app the Worker cannot name ("an AI app") is never offered Always
+// and never uses a stored one (104-int: 89's app names x 104's show).
 
 import { get } from 'svelte/store';
 import { safeStorage } from '../safeStorage';
@@ -52,14 +53,32 @@ const fail = (msg, extra) => {
 /** @param {string} kind */
 export const allowKey = (kind) => 'show:allow:' + kind;
 
-/** is this kind allowed without asking @param {string} kind */
-function allowed(kind) {
-	if (answers.get(kind) === 'session') return true;
+/** an app with a trusted name (Claude, ChatGPT, the in-app assistant), not one the Worker could not name @param {string} by */
+const trustedApp = (by) => !/^(an )?ai app$/i.test(by.trim());
+/** this page's answer for one kind, per app @param {string} kind @param {string} by */
+const answerKey = (kind, by) => kind + '\n' + by;
+
+/** is this kind allowed without asking @param {string} kind @param {string} by */
+function allowed(kind, by) {
+	if (answers.get(answerKey(kind, by)) === 'session') return true;
+	if (!trustedApp(by)) return false;
 	try {
 		return safeStorage.getItem(allowKey(kind)) === 'always';
 	} catch {
 		return false;
 	}
+}
+
+/** why the view is not free to move (a recording, Film on the phone, a sequence shot), or '' */
+export async function busyCamera() {
+	try {
+		const { lookingThrough } = await import('../connector/throughCamera.js');
+		const kind = lookingThrough()?.kind;
+		if (kind === 'recording') return 'the person is recording a video: wait until the recording stops (where_are_users says when)';
+		if (kind === 'phone') return 'the person is filming with their phone (Film): wait until they close Film';
+		if (kind === 'sequence') return 'a sequence is playing its shots: wait until it ends';
+	} catch {}
+	return '';
 }
 
 /** the person is in a headset */
@@ -232,6 +251,9 @@ async function cameraAction(args, by) {
 	if (inVR()) return fail('the person is in a VR headset: show does not move a headset\'s view in this release (it would be uncomfortable). Ask them where to look, or use where_are_users.', { refused: true, vr: true });
 	if (get(isLocked) === true) return fail('the person is playing (Play mode): their camera belongs to the game. Ask them to press Esc first.', { refused: true });
 	if (get(specatorMode)) return fail('the person is watching someone else\'s view: ask them to press Exit first.', { refused: true });
+	// 104-int (104-world x 104-show): a recording, Film on the phone or a sequence shot owns the view; moving it would cut the take
+	const through = await busyCamera();
+	if (through) return fail(through, { refused: true, busy: true });
 	const wait = CAMERA_GAP_MS - (Date.now() - lastCameraAt);
 	if (wait > 0) return fail('one camera move at a time: wait ' + Math.ceil(wait / 1000) + ' s', { retryAfter: Math.ceil(wait / 1000) });
 	const { cameraPreview, startCameraPreview, stopCameraPreview } = await import('../cameraPreview');
@@ -404,7 +426,10 @@ export async function showTool(args, ctx = {}) {
 	}
 	const busy = busyReason();
 	if (busy) return fail(busy + ': show waits until they stop (try again in a moment)', { busy: true, retryAfter: 3 });
-	if (answers.get(action) === 'no') return fail('the person said no to letting you ' + KIND_WORDS[action] + ' in this session: describe where to look instead', { refused: true, denied: true });
+	// 104-int: refused before the person is asked, so nobody says Always to a move that cannot happen now
+	const filming = action === 'camera' ? await busyCamera() : '';
+	if (filming) return fail(filming, { refused: true, busy: true });
+	if (answers.get(answerKey(action, by)) === 'no') return fail('the person said no to letting you ' + KIND_WORDS[action] + ' in this session: describe where to look instead', { refused: true, denied: true });
 	const wait = calls.check();
 	if (wait) return fail('show is paced (6 a minute): wait ' + wait + ' s', { retryAfter: wait });
 	const run = async () => {
@@ -415,13 +440,13 @@ export async function showTool(args, ctx = {}) {
 		if (action === 'camera') return cameraAction(a, by);
 		return codeAction(a, by);
 	};
-	if (allowed(action)) return run();
+	if (allowed(action, by)) return run();
 	// rule 3: the first time, the person says whether (Always / This time / No)
 	return askPerson('show', a, {
 		summary: KIND_WORDS[action],
-		prompt: 'Let ' + by + ' ' + KIND_WORDS[action] + '?',
+		prompt: 'Let ' + by.replace(/^An /, 'an ') + ' ' + KIND_WORDS[action] + '?',
 		choices: [
-			{ label: 'Always', value: 'always' },
+			...(trustedApp(by) ? [{ label: 'Always', value: 'always' }] : []),
 			{ label: 'This time', value: 'session' },
 			{ label: 'No', value: 'no', cancel: true }
 		],
@@ -430,11 +455,11 @@ export async function showTool(args, ctx = {}) {
 				try {
 					safeStorage.setItem(allowKey(action), 'always');
 				} catch {}
-			} else answers.set(action, 'session');
+			} else answers.set(answerKey(action, by), 'session');
 			return run();
 		}
 	}).then((r) => {
-		if (r?.cancelled) answers.set(action, 'no');
+		if (r?.cancelled) answers.set(answerKey(action, by), 'no');
 		return r;
 	});
 }

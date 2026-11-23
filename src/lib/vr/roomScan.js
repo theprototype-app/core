@@ -17,7 +17,7 @@ import { get } from 'svelte/store';
 import { objectsGroup, globalRenderer, lockedObjects, pokeScene } from '../../stores/sceneStore';
 import { peers, showToast } from '../../stores/appStore';
 import { createGeometry, createGroup } from '../geometries.svelte.js';
-import { recordObjectPresence, recordTransform, beginHistoryBatch, endHistoryBatch } from '../history';
+import { recordObjectPresence, recordTransform, beginHistoryBatch, endHistoryBatch, historyBatchOpen } from '../history';
 import { renameObject, moveObjectToGroup, deleteObjectsByUuid } from '../objectActions';
 import { setObjectColor, setMaterialParam } from '../materialsHandler';
 import { applyGeometry } from '../geometryEdit';
@@ -234,7 +234,9 @@ export function applyRoom(pieces) {
 	/** @type {any} */
 	const root = get(objectsGroup);
 	if (!root) return { group: '', created: 0, updated: 0, removed: 0, skipped: [], missing: [], pieces };
-	beginHistoryBatch();
+	// the 37 R25 rule: inside a batch already open (an AI app's call in this tab) the scan joins it, never closes it
+	const own = !historyBatchOpen();
+	if (own) beginHistoryBatch();
 	try {
 		let group = findRoomGroup();
 		if (!group) {
@@ -296,7 +298,7 @@ export function applyRoom(pieces) {
 		pokeScene();
 		return { group: group.uuid, created, updated, removed: Number(removed) || 0, skipped, missing: walls.missing, pieces };
 	} finally {
-		endHistoryBatch('Scan my room');
+		if (own) endHistoryBatch('Scan my room');
 	}
 }
 

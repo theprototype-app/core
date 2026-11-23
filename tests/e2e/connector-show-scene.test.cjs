@@ -187,6 +187,8 @@ h.run(async () => {
 	// (a scene made by New scene is a loose file until its first save, and reads as unsaved: say what to do)
 	const n1 = await call('scene', { action: 'new', name: 'Cove', unsaved: 'discard' });
 	h.check(n1?.result?.created === 'Cove' && n1.result.opened === 'Cove', `new makes and opens Cove (${short(n1)})`);
+	// 104-int (O5 review): a discard keeps the scene on screen in Sessions first
+	h.check(!n1?.result?.discarded || n1.result.keptInSessions === 'Backup before "Cove"', `discard keeps a copy in Sessions (${short(n1)})`);
 	const n2 = await call('scene', { action: 'new', name: 'Harbour' });
 	h.check(n2?.type === 'error' && /already a scene called/.test(n2.error?.message ?? ''), `a taken name is refused (${short(n2)})`);
 	const already = await call('scene', { action: 'open', name: 'Cove' });

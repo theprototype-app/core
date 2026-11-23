@@ -38,7 +38,7 @@ import { codeTabs } from '../codeWorkspace';
 import { isDirty } from '../codeTabs';
 import { offerUndo } from '../undoToast';
 import { showToast } from '../../stores/appStore';
-import { askPerson } from './personAsk.js';
+import { askPerson, askKnown } from './personAsk.js';
 import {
 	MAX_FILE_BYTES,
 	MAX_AGENT_FILES,
@@ -481,7 +481,7 @@ export async function filesTool(args, ctx = {}) {
 	const action = String(a.action ?? '');
 	const by = String(ctx.by || 'The assistant');
 	await loadExplorer();
-	if (WRITE_ACTIONS.includes(action) && a.confirmId === undefined) {
+	if (WRITE_ACTIONS.includes(action) && !askKnown('files', a.confirmId)) {
 		const no = gateWrite(by);
 		if (no) return no;
 	} else if (WRITE_ACTIONS.includes(action)) {

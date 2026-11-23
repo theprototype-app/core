@@ -69,11 +69,14 @@ export default {
 				// OWN keys, so a peer pressing nothing reads 0 and always will. Streaming a
 				// movement axis would be a 60Hz message AND wrong — two players are meant to
 				// move independently. Two number handles, the Sequence handle-map shape.
-				const codes = rt.inputRuntimeRef ? rt.inputRuntimeRef.getInput().codes : new Set();
-				// E5 owns the gamepad and the VR stick; when it lands it feeds these two axes
-				// here, so a graph wired to Move Input keeps working with a controller in hand.
-				const x = (codes.has('KeyD') ? 1 : 0) - (codes.has('KeyA') ? 1 : 0);
-				const y = (codes.has('KeyW') ? 1 : 0) - (codes.has('KeyS') ? 1 : 0);
+				const input = rt.inputRuntimeRef ? rt.inputRuntimeRef.getInput() : null;
+				const codes = input?.codes ?? new Set();
+				// 92-input GC3: the pad's left stick feeds the same two axes (forward is NEGATIVE on the
+				// standard mapping), so a graph wired to Move Input works with a controller in hand
+				const pad = input?.pad ?? null;
+				const clamp1 = (/** @type {number} */ v) => Math.max(-1, Math.min(1, v));
+				const x = clamp1((codes.has('KeyD') ? 1 : 0) - (codes.has('KeyA') ? 1 : 0) + Number(pad?.lx ?? 0));
+				const y = clamp1((codes.has('KeyW') ? 1 : 0) - (codes.has('KeyS') ? 1 : 0) - Number(pad?.ly ?? 0));
 				return { __handles: { x, y } };
 			}
 		},

@@ -38,6 +38,10 @@
 	import { codeLabel, playerCodeFor, RESERVED_KEYS } from '$lib/playerAccessCore';
 	import { gameKeyBindings, gamePadBindings } from '$lib/playerBindings';
 	import { GAMEPAD_BUTTONS } from '$lib/gamepadPrefs';
+	// 92-input GC3: the ONE capture (Q6), the conflict note, and the glyph a row's pad button is drawn with
+	import { captureInput, captureConflict } from '$lib/keyCapture.js';
+	import InputGlyph from '../ui/InputGlyph.svelte';
+	import { activeInput } from '$lib/activeDevice.js';
 	import { flowGraphs } from '../../stores/flowStore';
 	import { touchControlsVisible } from '$lib/touchActions'; // 36 U8: the Touch controls row
 	import { gameSettingValues, gameSettingRows, setGameSetting } from '$lib/gameSettings';
@@ -63,7 +67,7 @@
 	const vrViewsFor = (/** @type {any[]} */ ..._deps) => shellSettingViews({ vr: true }).filter((/** @type {any} */ r) => r.vrOnly);
 	const vrSettings = $derived(vrViewsFor($gameSettingValues));
 	const helpFor = (/** @type {any[]} */ ..._deps) => shellHelpLines({ vr: false });
-	const help = $derived(helpFor($gameHelp, $gameDescription));
+	const help = $derived(helpFor($gameHelp, $gameDescription, $activeInput));
 	const accessFor = (/** @type {any[]} */ ..._deps) => shellAccessViews();
 	const accessRows = $derived(accessFor($accessValues));
 	const keysFor = (/** @type {any[]} */ ..._deps) => gameKeyBindings();
@@ -74,44 +78,47 @@
 	/** the binding waiting for the player's key / button @type {{kind: 'keys' | 'pad', code: string} | null} */
 	let capturing = $state(null);
 	let captureNote = $state('');
+	/** the live capture (keyCapture.js), so a second press of the row or leaving the page cancels it @type {{cancel: () => void} | null} */
+	let capture = null;
 	$effect(() => {
-		if (!open || page !== 'access') capturing = null;
+		if (!open || page !== 'access') stopCapture();
 	});
+	function stopCapture() {
+		capture?.cancel();
+		capture = null;
+		capturing = null;
+	}
 	/** @param {'keys' | 'pad'} kind @param {string} code */
 	function startCapture(kind, code) {
+		stopCapture();
 		capturing = { kind, code };
 		captureNote = '';
-		if (kind === 'pad') pollPad();
-	}
-	/** a pad has no key event: poll until a button goes down (or the capture ends) */
-	function pollPad() {
-		const want = capturing;
-		if (!want || want.kind !== 'pad') return;
-		const pads = typeof navigator !== 'undefined' && navigator.getGamepads ? [...navigator.getGamepads()] : [];
-		const pad = pads.find((p) => p && p.connected !== false);
-		const i = pad ? pad.buttons.findIndex((b) => b.pressed) : -1;
-		if (i >= 0 && GAMEPAD_BUTTONS[i]) {
-			remapControl('pad', want.code, GAMEPAD_BUTTONS[i], padRows.map((r) => r.code));
+		const rows = kind === 'pad' ? padRows : keyRows;
+		const c = captureInput({
+			keys: kind === 'keys',
+			pad: kind === 'pad',
+			padButtons: GAMEPAD_BUTTONS,
+			// a game may bind Shift (sprint) or Ctrl (crouch) on its own
+			bareModifiers: true,
+			reserved: kind === 'keys' ? RESERVED_KEYS : undefined,
+			onRefuse: (key) => (captureNote = codeLabel(key) + ' is kept for the menu and the browser — pick another key')
+		});
+		capture = c;
+		c.done.then((r) => {
+			if (capture !== c) return;
+			capture = null;
 			capturing = null;
-			return;
-		}
-		requestAnimationFrame(pollPad);
-	}
-	/** capture phase: the pressed key belongs to the remap, not to the game or the menu @param {KeyboardEvent} event */
-	function onCaptureKey(event) {
-		if (!capturing || capturing.kind !== 'keys' || !open) return;
-		event.preventDefault();
-		event.stopPropagation();
-		if (event.code === 'Escape') {
-			capturing = null;
-			return;
-		}
-		if (RESERVED_KEYS.has(event.code)) {
-			captureNote = codeLabel(event.code) + ' is kept for the menu and the browser — pick another key';
-			return;
-		}
-		remapControl('keys', capturing.code, event.code, keyRows.map((r) => r.code));
-		capturing = null;
+			const player = r.code ?? r.pad;
+			if (!player) return;
+			const table = kind === 'pad' ? $accessRemap.pad : $accessRemap.keys;
+			const bound = rows.map((row) => row.code);
+			// conflicts are FLAGGED: the swap moves the other binding to this one's old key, and says so
+			const other = captureConflict(table, code, player, bound);
+			const old = playerCodeFor(table, code);
+			remapControl(kind, code, player, bound);
+			const label = (/** @type {string} */ c) => rows.find((row) => row.code === c)?.label ?? codeLabel(c);
+			captureNote = other ? label(code) + ' took ' + codeLabel(player) + '; ' + label(other) + ' moved to ' + codeLabel(old) + '.' : '';
+		});
 	}
 	const nameFor = (/** @type {any[]} */ ..._deps) => shellGameName();
 	const gameName = $derived(nameFor($gameDescription, $gameSettingValues));
@@ -168,7 +175,7 @@
 	}
 </script>
 
-<svelte:window onkeydown={onKeyDown} onkeydowncapture={onCaptureKey} />
+<svelte:window onkeydown={onKeyDown} />
 
 {#if offered && !open}
 	<button
@@ -284,7 +291,7 @@
 					</div>
 					{#if !coarse || padRows.length}
 						<h3 class="gs-group">Controls</h3>
-						<p class="gs-note">{capturing ? captureNote || (capturing.kind === 'pad' ? 'Press a gamepad button… (Esc cancels)' : 'Press a key… (Esc cancels)') : 'Pick a control, then press the key or button you want for it.'}</p>
+						<p class="gs-note" data-remap-note aria-live="polite">{capturing ? captureNote || (capturing.kind === 'pad' ? 'Press a gamepad button… (Esc cancels)' : 'Press a key… (Esc cancels)') : captureNote || 'Pick a control, then press the key or button you want for it.'}</p>
 					{/if}
 					{#if !coarse}
 						{#each keyRows as row (row.code)}
@@ -323,7 +330,8 @@
 			class:gs-key-wait={waiting}
 			aria-label={row.label + ': ' + codeLabel(now) + (waiting ? ', waiting for a press' : '. Press to change')}
 			aria-pressed={waiting}
-			onclick={() => (waiting ? (capturing = null) : startCapture(kind, row.code))}>{waiting ? '…' : codeLabel(now)}</button
+			onclick={() => (waiting ? stopCapture() : startCapture(kind, row.code))}
+			>{#if waiting}…{:else if kind === 'pad'}<InputGlyph code={now} as="pad" raw />{:else}{codeLabel(now)}{/if}</button
 		>
 	</div>
 {/snippet}

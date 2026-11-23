@@ -11,6 +11,7 @@
 // A LEAF: the flow store + the pure core.
 import { allNodes } from '../stores/flowStore';
 import { codeLabel } from './playerAccessCore';
+import { PAD_ACTIONS } from './playActions.js'; // 92-input GC3 (a leaf)
 
 /** @typedef {{code: string, label: string}} PlayerBinding */
 
@@ -54,5 +55,10 @@ export function gamePadBindings() {
 	const pairs = allNodes()
 		.filter((n) => n?.type === 'gamepadbutton' && typeof n.data?.button === 'string')
 		.map((n) => ({ code: String(n.data.button), action: n.data?.action }));
-	return mergeBindings(pairs).map((b) => (b.label.startsWith('Key ') ? { ...b, label: 'Button ' + codeLabel(b.code) } : b));
+	// 92-input GC3: the built-in pad actions are bindings too (Jump on A …); a Gamepad Button node on the same
+	// button shares the row (the bridge stands down for it, so the row says what the game made of it)
+	const base = PAD_ACTIONS.map((a) => ({ code: a.pad, label: a.label }));
+	const nodeCodes = new Set(pairs.map((p) => p.code));
+	const merged = mergeBindings(pairs, base.filter((b) => !nodeCodes.has(b.code)));
+	return merged.map((b) => (b.label.startsWith('Key ') ? { ...b, label: 'Button ' + codeLabel(b.code) } : b));
 }

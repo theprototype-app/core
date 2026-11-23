@@ -34,6 +34,8 @@ import { CORE_SETTINGS, gameSettingRows, gameSettingValues, setGameSetting, sett
 // belongs to the scene on screen (a leaf)
 import { leftBehindModules, ownerInScope } from './sceneScope';
 import { perfMark } from './perf/perfMarks.js';
+import { activeInputNow } from './activeDevice.js'; // 92-input GC3 (a leaf)
+import { padControlLines } from './playActions.js'; // 92-input GC3 (a leaf)
 // 36 U8: the touch layout editor is a leaf too (svelte/store + safeStorage)
 import { touchControlsVisible, openTouchLayoutEditor } from './touchActions';
 // 53 (A6): the player's Accessibility page (a leaf: per-game LOCAL prefs)
@@ -492,7 +494,9 @@ export function shellHelpLines(opts = {}) {
 	const own = get(gameHelp)?.lines ?? [];
 	if (own.length) lines.push(...own);
 	else if (get(gameDescription)?.description) lines.push(String(get(gameDescription)?.description));
-	lines.push('', ...(opts.vr ? COMMON_CONTROLS.vr : COMMON_CONTROLS.desktop));
+	// 92-input GC3: a pad player reads the pad's own buttons (named for its family)
+	const input = activeInputNow();
+	lines.push('', ...(opts.vr ? COMMON_CONTROLS.vr : input.kind === 'pad' ? padControlLines(input.family) : COMMON_CONTROLS.desktop));
 	return lines;
 }
 

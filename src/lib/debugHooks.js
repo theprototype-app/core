@@ -492,6 +492,10 @@ export const DEBUG_HOOKS = [
 	['charController', () => import('./charController')],
 	// 92-input GC4: the play views (playViewDebug / playViewKind / PLAY_VIEW_DEFAULTS)
 	['playView', () => import('./playViewSeam.js')],
+	// 92-input GC3: the pad bridge (padActionsDebug), the device prompts follow, the pad catalog
+	['padActions', () => import('./padActions.js')],
+	['activeDevice', () => import('./activeDevice.js')],
+	['playActions', () => import('./playActions.js')],
 	['hudRichText', () => import('./hudRichText')],
 	['moduleHudKinds', () => import('./moduleHudKinds')],
 	['hudMinimap', () => import('./hudMinimap')],

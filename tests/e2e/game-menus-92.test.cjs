@@ -179,10 +179,11 @@ h.run(async () => {
 	await page.locator('[data-slot-mode="load"]').waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
 	h.check(await page.locator('[data-slot="3"][data-slot-newer] .ss-main').isDisabled(), '5.3 a slot made with a newer version is shown, not loadable');
 	h.check(((await page.locator('[data-slot="3"]').textContent()) ?? '').includes('newer version'), '5.4 …and it says so');
-	await page.locator('[data-slot="2"] .ss-main').click();
-	await page.waitForTimeout(800);
+	let loadClick = '';
+	await page.locator('[data-slot="2"] .ss-main').click({ timeout: 8000 }).catch((e) => (loadClick = String(e?.message ?? e).split('\n').slice(0, 12).join(' | ')));
+	await poll(async () => (await gameStateOf(page)).vars.coins === 42, 6000);
 	const c5 = (await gameStateOf(page)).vars.coins;
-	if (c5 !== 42) console.log('  5.5 state: ' + JSON.stringify(await diag(page)) + ' errors: ' + JSON.stringify(pageErrors.slice(-5)));
+	if (c5 !== 42) console.log('  5.5 state: ' + loadClick + ' || ' + JSON.stringify(await diag(page)) + ' || list: ' + (await page.locator('[data-slot-mode]').innerHTML().catch(() => '?')).slice(0, 500));
 	h.check(c5 === 42, '5.5 Load game put the saved variable back (coins ' + c5 + ')');
 	h.check(!(await page.locator('#game-shell-menu').isVisible()), '5.6 loading closed the menu');
 
@@ -243,8 +244,9 @@ h.run(async () => {
 	h.check((await gameStateOf(page)).state === 'playing', '8.3 another player is in Play: the menu did NOT pause the game');
 	h.check(await page.locator('#game-shell-running').isVisible(), '8.4 …and says so');
 	await page.locator('[data-shell-item="joins"]').click();
-	const admitted = await page.locator('[data-join-admit]').first().click({ timeout: 8000 }).then(() => true, () => false);
-	if (!admitted) console.log('  8.x the Admit button: ' + JSON.stringify(await diag(page)) + ' errors: ' + JSON.stringify(pageErrors.slice(-5)));
+	let clickError = '';
+	const admitted = await page.locator('[data-join-admit]').first().click({ timeout: 8000 }).then(() => true, (e) => ((clickError = String(e?.message ?? e).split('\n').slice(0, 12).join(' | ')), false));
+	if (!admitted) console.log('  8.x the Admit button: ' + clickError + ' || ' + JSON.stringify(await diag(page)) + ' || list: ' + (await page.locator('#game-join-requests').innerHTML().catch(() => '?')).slice(0, 600));
 	h.check(admitted, '8.4b the Join requests page lists the card with Admit');
 	const cOpen = await poll(() => openTo(C, A.id), 45000);
 	h.check(!!cOpen, '8.5 the third peer is in');

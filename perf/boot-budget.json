@@ -165,6 +165,13 @@
 			"editor": "1.75.0 2988.4 KB -> union 2991.4 KB (+3.0) -> line kept 3020 KB",
 			"perLane": "editor / play gz, each lane on its own base: 104-world +1.4 / +0.4; 104-show +0.3 / 0; 104-room-scan +0.5 wiring (scan code lazy) / 0; 104-wall-names 0 / 0; 89-apps +1.6 / 0; int fixes ~0",
 			"note": "the lines 1.75.0 set (union + ~1 %) stand: the union is +3.0 KB on the editor for five lanes, inside 3 KB per lane, so no raise"
+		},
+		{
+			"date": "2026-11-23",
+			"lane": "104-int-rel (the 104-int union with v1.76.0 merged, ac5bbe78)",
+			"play": "v1.76.0 line 1909 KB -> union on v1.76.0 1880.6 KB -> line kept",
+			"editor": "v1.76.0 line 3029 KB -> union on v1.76.0 2999.4 KB -> line kept",
+			"note": "measured on the Deck; the five 104 lanes fit inside the 1.76.0 lines, so no raise"
 		}
 	],
 	"throttle": {

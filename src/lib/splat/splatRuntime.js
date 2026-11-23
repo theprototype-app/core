@@ -19,7 +19,7 @@ import { cinematicState } from '../cinematic/cinematicStore.js';
 import { finishTier } from '../post/finishCore.js';
 import { isHeadsetUA } from '../hdri/hdriCore.js';
 import { isSplatObject, applySplatProxyLook, applySplatTo } from './splatObject.js';
-import { normalizeSplat, splatBudget, withinBudget, splatCountText } from './splatCore.js';
+import { normalizeSplat, splatBudget, withinBudget, budgetNotice } from './splatCore.js';
 import { splatStatus } from './splatStatus.js';
 import { setTriangleDiscount } from '../sceneBudget.js';
 
@@ -34,7 +34,7 @@ let sparkLoading = null;
 let sparkRenderer = null;
 
 /**
- * @typedef {{ carrier: any, hash: string, mesh: any, edit: any, sdf: any, cropKey: string, state: 'loading'|'waiting'|'ready'|'error', error?: string }} Entry
+ * @typedef {{ carrier: any, hash: string, mesh: any, edit: any, sdf: any, cropKey: string, state: 'loading'|'waiting'|'ready'|'error'|'off', error?: string }} Entry
  * @type {Map<string, Entry>}
  */
 const entries = new Map();
@@ -197,6 +197,9 @@ let tierOverride = '';
  */
 export function tickSplats(carriers) {
 	const live = new Set();
+	const t = /** @type {'pc'|'phone'|'quest'} */ (tierOverride || tier());
+	const cap = splatBudget(t);
+	let changed = false;
 	for (const c of carriers) {
 		if (!isSplatObject(c)) continue;
 		live.add(c.uuid);
@@ -214,23 +217,25 @@ export function tickSplats(carriers) {
 		}
 		if (!e) {
 			applySplatProxyLook(c);
-			e = { carrier: c, hash, mesh: null, edit: null, sdf: null, cropKey: '', state: 'loading' };
+			// a budget of 0 = splats are off on this device: no Spark load and no build, only the notice
+			e = { carrier: c, hash, mesh: null, edit: null, sdf: null, cropKey: '', state: cap > 0 ? 'loading' : 'off' };
 			entries.set(c.uuid, e);
-			void build(e);
+			if (cap > 0) void build(e);
+			else changed = true;
 		}
 	}
-	let changed = false;
 	for (const e of [...entries.values()]) {
+		if (cap > 0 && e.state === 'off') void build(e); // the tier changed (a test override): load it now
 		if (!live.has(e.carrier.uuid)) {
 			dispose(e);
 			changed = true;
 		}
 	}
-	const t = /** @type {'pc'|'phone'|'quest'} */ (tierOverride || tier());
 	const budget = withinBudget(
 		[...entries.values()].filter((e) => e.state === 'ready' && shownInScene(e.carrier)).map((e) => ({ uuid: e.carrier.uuid, count: normalizeSplat(e.carrier.userData.splat).count })),
-		splatBudget(t)
+		cap
 	);
+	const hidden = [...budget.hidden, ...[...entries.values()].filter((e) => e.state === 'off' && shownInScene(e.carrier)).map((e) => e.carrier.uuid)];
 	const cinematic = get(cinematicState).mode !== 'off';
 	for (const e of entries.values()) {
 		if (!e.mesh) continue;
@@ -247,12 +252,11 @@ export function tickSplats(carriers) {
 		}
 	}
 	if (sparkRenderer) sparkRenderer.visible = !cinematic;
-	if (budget.hidden.length) {
-		const key = budget.hidden.join(',');
+	if (hidden.length) {
+		const key = hidden.join(',');
 		if (key !== budgetNoted) {
 			budgetNoted = key;
-			const names = budget.hidden.map((u) => entries.get(u)?.carrier.name || 'Splat').join(', ');
-			showToast(`Hidden on this ${t === 'quest' ? 'headset' : 'device'}: ${names}. It can draw ${splatCountText(splatBudget(t))} at once.`);
+			showToast(budgetNotice(t, cap, hidden.map((u) => entries.get(u)?.carrier.name || 'Splat')));
 		}
 	} else budgetNoted = '';
 	if (changed) publishStatus();

@@ -15,6 +15,7 @@ import {
 // 55 A4: how a peer got in + the dial's kind on its roster row (store-only, no cycle)
 import { noteJoinedVia, isAgentPeer, myKind } from './inviteStore';
 import { forgetRemoved } from './peerModeration';
+import { joinWhyText } from './inviteLimits.js';
 // 78 PL34: a join asks for a name (once it is remembered, never again)
 import { maybeAskJoinName } from './guestName';
 
@@ -86,9 +87,10 @@ export function denyPeer(peerId, result = 'denied') {
  * never-open conn) and say which it was. A refusal from a peer we are NOT waiting on —
  * a second approver after we joined, or an answer that outlived our own 90 s expiry — is
  * ignored: nothing is pending, so there is nothing to end and nobody to tell.
- * @param {string} peerId @param {any} result @returns {boolean} whether it ended a request
+ * @param {string} peerId @param {any} result @param {any} [why] 71 AS4: the refusal dial's `why`
+ * @returns {boolean} whether it ended a request
  */
-export function applyJoinRefusal(peerId, result) {
+export function applyJoinRefusal(peerId, result, why) {
 	if (!isRefusal(result)) return false;
 	const waiting = /** @type {any[]} */ (get(waitingForApproval));
 	if (!waiting.some((/** @type {any} */ w) => w[0] === peerId && w[1] === 'pending')) return false;
@@ -101,6 +103,9 @@ export function applyJoinRefusal(peerId, result) {
 	} else if (result === 'removed') {
 		// 55 A9: a blocked peer's re-dial
 		showToast('You were removed from this session.');
+	} else if (joinWhyText(why, label(peerId))) {
+		// 71 AS4: an invite dial refused for the host's pause or for re-joining too fast
+		showToast(/** @type {string} */ (joinWhyText(why, label(peerId))), [{ label: 'Try again', action: () => requestConnect(peerId) }]);
 	} else {
 		showToast(label(peerId) + ' declined your connection request.');
 	}

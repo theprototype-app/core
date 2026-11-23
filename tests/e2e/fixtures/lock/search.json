@@ -2357,10 +2357,12 @@
 		"Signaling server": {
 			"rows": [
 				"Apply changes",
+				"Hide my IP",
 				"Signaling server"
 			],
 			"sections": [
-				"Connection"
+				"Connection",
+				"Privacy"
 			]
 		},
 		"Apply changes": {
@@ -2396,6 +2398,7 @@
 			"rows": [
 				"Diagnostics",
 				"Error reports",
+				"Hide my IP",
 				"Usage counts",
 				"Wheel diagnostics"
 			],
@@ -2686,6 +2689,7 @@
 		"telemetry": {
 			"rows": [
 				"Error reports",
+				"Hide my IP",
 				"Usage counts"
 			],
 			"sections": [
@@ -2879,6 +2883,7 @@
 				"Auto-restore on load",
 				"Autosave",
 				"Error reports",
+				"Hide my IP",
 				"Usage counts"
 			],
 			"sections": [
@@ -3042,7 +3047,9 @@
 				"Apply changes",
 				"Cached downloads",
 				"Let AI agents join as guests",
+				"Limit floods from peers",
 				"Locks",
+				"Require approval to join",
 				"Session size",
 				"Show where AI agents look",
 				"Signaling server",
@@ -3055,8 +3062,14 @@
 			]
 		},
 		"relay": {
-			"rows": [],
-			"sections": []
+			"rows": [
+				"Error reports",
+				"Hide my IP",
+				"Usage counts"
+			],
+			"sections": [
+				"Privacy"
+			]
 		},
 		"nat": {
 			"rows": [
@@ -3090,6 +3103,7 @@
 			"rows": [
 				"Diagnostics",
 				"Error reports",
+				"Hide my IP",
 				"Show helpers in Play",
 				"Toggle a debugger breakpoint on the selected nodes (Play pauses when an event reaches them)",
 				"Usage counts",
@@ -3736,10 +3750,12 @@
 				"Diagnostics",
 				"Keep a recycle bin",
 				"Let AI agents join as guests",
+				"Limit floods from peers",
 				"Locks",
 				"Peer hands",
 				"People leaving",
 				"Ping colour",
+				"Require approval to join",
 				"Selection outline colour",
 				"Session size",
 				"Show my status",
@@ -3762,14 +3778,18 @@
 		"server": {
 			"rows": [
 				"Apply changes",
+				"Hide my IP",
 				"Let AI agents join as guests",
+				"Limit floods from peers",
 				"Locks",
+				"Require approval to join",
 				"Session size",
 				"Show where AI agents look",
 				"Signaling server"
 			],
 			"sections": [
-				"Connection"
+				"Connection",
+				"Privacy"
 			]
 		},
 		"invite": {
@@ -3778,7 +3798,9 @@
 				"Coding agents",
 				"First-game quest",
 				"Let AI agents join as guests",
+				"Limit floods from peers",
 				"Locks",
+				"Require approval to join",
 				"Session size",
 				"Show where AI agents look",
 				"Signaling server"
@@ -3795,7 +3817,9 @@
 				"Colocation",
 				"Ghost hands",
 				"Let AI agents join as guests",
+				"Limit floods from peers",
 				"Locks",
+				"Require approval to join",
 				"Session size",
 				"Show others as classic heads",
 				"Show where AI agents look",
@@ -3812,9 +3836,12 @@
 				"Apply changes",
 				"Clear saved session",
 				"Diagnostics",
+				"Hide my IP",
 				"Let AI agents join as guests",
+				"Limit floods from peers",
 				"Locks",
 				"People leaving",
+				"Require approval to join",
 				"Session size",
 				"Show where AI agents look",
 				"Signaling server",
@@ -3827,6 +3854,7 @@
 				"Explorer",
 				"Save options",
 				"Connection",
+				"Privacy",
 				"About & what’s new"
 			]
 		},
@@ -4238,6 +4266,7 @@
 		"privacy": {
 			"rows": [
 				"Error reports",
+				"Hide my IP",
 				"Move my view",
 				"Open and close my panels",
 				"Open code for me",
@@ -4662,6 +4691,7 @@
 				"Optimize for",
 				"Placeholder style",
 				"Project actions",
+				"Require approval to join",
 				"Reset tips",
 				"Reverse trackpad pan",
 				"Rigging and animation services",

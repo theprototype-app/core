@@ -72,18 +72,59 @@ export function spawnDesktopPlayer(spawn = desktopSpawn()) {
 	if (!spawn || !cam?.isObject3D) return false;
 	// fix-play-link: every spawn path (entering play, the game shell's restart, a module's
 	// respawnPlayer) lands clear of a player already standing on the spawn
-	const ids = otherPlayerIds();
-	const eye = clearOfAvatars(spawnEyePose(spawn).eye, avatarPositions(ids), spawn.yaw, AVATAR_CLEARANCE, mySlot(ids));
+	// fix-late-joiners row 3: …and on THIS player's own spot (spawn points, then the ring, never in geometry)
+	const mine = mySpawn(spawn) ?? spawn;
+	const eye = spawnEyePose(mine).eye;
 	const target = new THREE.Vector3(eye[0], eye[1], eye[2]);
 	if (cam.parent) {
 		cam.parent.updateWorldMatrix(true, false);
 		cam.parent.worldToLocal(target);
 	}
 	cam.position.copy(target);
-	cam.quaternion.setFromEuler(new THREE.Euler(0, spawn.yaw, 0, 'YXZ'));
+	cam.quaternion.setFromEuler(new THREE.Euler(0, mine.yaw, 0, 'YXZ'));
 	cam.updateMatrixWorld(true);
 	return true;
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// fix-late-joiners row 3 — THIS PLAYER'S OWN SPAWN: the rule is spawnSlots.js, the facts it reads are spawnPick.js.
+// Both are a LAZY chunk (boot rule): the pick only differs from the bare spawn when other players exist (alone,
+// this player's slot is 0 of 1 and the first candidate IS the spawn), so it loads as the first peer link appears;
+// until it is here the rule is v1.74.0's (the spawn, stepped clear of avatars).
+/** @type {any} */
+let pick = null;
+let picking = false;
+function loadPick() {
+	if (pick || picking) return;
+	picking = true;
+	import('./spawnPick.js').then(
+		(m) => (pick = m),
+		() => (picking = false)
+	);
+}
+peers.subscribe((/** @type {any} */ p) => {
+	if (!pick && p?.connections && Object.keys(p.connections).length) loadPick();
+});
+
+/**
+ * Where THIS player spawns (spawnPick.mySpawn): `spawn` (default the one in force), this player's slot among the
+ * players arriving now, clear of every avatar, never inside geometry. Read by desktop Play (spawnDesktopPlayer) and
+ * VR (vr/locomotion.spawnPlayer). Null without a spawn.
+ * @param {{position: number[], yaw: number} | null} [spawn]
+ * @returns {{position: [number, number, number], yaw: number} | null}
+ */
+export function mySpawn(spawn) {
+	if (pick) return pick.mySpawn(spawn);
+	loadPick();
+	// not loaded yet: v1.74.0's rule (fix-play-link: clear of the avatars standing there)
+	const s = spawn === undefined ? currentSpawn() : spawn;
+	if (!s) return null;
+	const ids = otherPlayerIds();
+	const eye = clearOfAvatars(spawnEyePose(s).eye, avatarPositions(ids), s.yaw, AVATAR_CLEARANCE, mySlot(ids));
+	return { position: [eye[0], eye[1] - SPAWN_EYE, eye[2]], yaw: s.yaw };
+}
+/** the last spawn this page chose (the e2e reads it) */
+export const lastSpawnPick = () => pick?.lastSpawnPick() ?? null;
 
 /** fix-play-link: the other players' peer ids (the roster, minus me) @returns {string[]} */
 export function otherPlayerIds() {

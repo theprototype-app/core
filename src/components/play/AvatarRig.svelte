@@ -177,7 +177,10 @@
 		<!-- name label ABOVE the head (129): hi-res, camera-facing, toggleable -->
 		{#if config.showLabel}
 			<T.Group bind:ref={labelGroup} position={[0, 1.05, 0]} name={`${user[0]}-label`}>
+				<!-- fix-late-joiners: the glyph SDFs in troika's worker, not on a main-thread WebGL context the first
+				     name tag of a join creates (measured 1.9 s at CPU x4 inside the join) -->
 				<Text
+					gpuAccelerateSDF={false}
 					color="#ffffff"
 					outlineColor="#0b0e14"
 					outlineWidth={0.02}
@@ -268,6 +271,7 @@
 		{#if config.showLabel}
 			<T.Group bind:ref={labelGroup} position={[0, feetBelowHead() + 0.95, 0]} name={`${user[0]}-label`}>
 				<Text
+					gpuAccelerateSDF={false}
 					color="#ffffff"
 					outlineColor="#0b0e14"
 					outlineWidth={0.02}

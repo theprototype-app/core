@@ -153,6 +153,15 @@
 							value={data[param.key] ?? dflt(param.key, data) ?? ''}
 							on:change={(e) => setNodeData(id, { [param.key]: e.currentTarget.value })}
 						/>
+					{:else if param.kind === 'code'}
+						<!-- 92-dialogue: several lines of text (a Dialogue script), committed on change like text -->
+						<textarea
+							class="nodrag nopan nowheel w-full rounded-sm bg-surface-inset px-1.5 py-0.5 font-mono text-[11px]"
+							rows="6"
+							spellcheck="false"
+							value={data[param.key] ?? spec.defaults[param.key] ?? ''}
+							on:change={(e) => setNodeData(id, { [param.key]: e.currentTarget.value })}
+						></textarea>
 					{:else if param.kind === 'select'}
 						<select
 							class="nodrag nopan"

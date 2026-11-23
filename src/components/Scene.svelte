@@ -113,6 +113,7 @@
 	import { playEntry } from '$lib/play/playEntry.js';
 	import VRSettingsPanel from './play/VRSettingsPanel.svelte';
 	import VRPeerApprove from './play/VRPeerApprove.svelte';
+	import { dialogueView } from '$lib/dialogue/view.js'; // 92-dialogue
 	import VRSelectionShell from './play/VRSelectionShell.svelte';
 	// 36 U3b: the VR welcome tour's world-space panel
 	import TourVRPanel from './tours/TourVRPanel.svelte';
@@ -2010,6 +2011,8 @@ position={[0, 2, 3]}
 {#if $vrSnapMenuOpen}{#await import('./play/VRSnapMenu.svelte') then m}<m.default />{/await}{/if}
 <VRSettingsPanel />
 <VRPeerApprove />
+<!-- 92-dialogue (GC6): an open talk in a headset is a world-locked panel (lazy) -->
+{#if $isVRMode && $dialogueView}{#await import('./play/VRDialoguePanel.svelte') then m}<m.default />{/await}{/if}
 <VRKeyboard />
 <VRSelectionShell />
 <TourVRPanel />

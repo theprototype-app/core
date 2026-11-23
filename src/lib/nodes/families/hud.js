@@ -240,6 +240,28 @@ export default {
 			// string type, and additive, so no saved edge moves.
 			sockets: { out: 'effect', in: { trigger: 'event', value: 'number', options: 'number' } },
 			card: 'HudNode'
+		},
+		// 92-dialogue (GC6): a TALK in a box at the bottom of the screen (a world-locked panel in VR). Per
+		// person: whoever starts it reads it, advances it and picks for themselves; a choice's [set ...]
+		// writes a game variable, and the output pulses when the talk ends. The script syntax and the
+		// runtime are a lazy chunk (dialogue/script.js, dialogue/runtime.js).
+		{
+			type: 'dialogue',
+			label: 'Dialogue',
+			defaults: { script: 'Guide: Hello there!', who: 'me', scope: 'shared' },
+			inputs: ['trigger', 'stop'],
+			params: [
+				{ key: 'script', kind: 'code', doc: 'Speaker: line / > choice [set x = 1] -> label / # label / -> end' },
+				{ key: 'who', kind: 'select', options: ['me', 'everyone'], doc: 'me = only the player who started it; everyone = every player gets their own copy' },
+				{ key: 'scope', kind: 'select', options: ['shared', 'player'], label: 'choices set', doc: 'shared = the game variable; player = this player\'s own row' }
+			],
+			note: 'Lines as Speaker: text. "> choice [set x = 1] -> label" picks; "# label" starts a part. Only the player who started it sees it. Pulses when the talk ends.',
+			// `trigger` is an event (On Click, a key) OR a value that turns on (Proximity near the player): a
+			// value opens it on its rising edge, on this device only — so it is `any`, not `event`
+			inputLabels: { trigger: 'start — a pulse, or Proximity turning on', stop: 'stop — closes it' },
+			sockets: { out: 'event', in: { trigger: 'any', stop: 'event' } },
+			card: 'AnimationNode',
+			eval: null
 		}
 	]
 };

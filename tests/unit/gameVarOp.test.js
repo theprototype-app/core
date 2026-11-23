@@ -47,7 +47,9 @@ describe('applyGameVarOp', () => {
 
 	it('the Set Variable node routes its shared write through the authority, keyed by node + stamp', () => {
 		const src = readFileSync(new URL('../../src/lib/flowRuntime.js', import.meta.url), 'utf8');
-		expect(src).toMatch(/shareGameVarOp\(\{ rid: 'var:' \+ node\.id \+ ':' \+ stamp, name, op, value: v \}\)/);
+		// 92-dialogue: the write is one helper (Set Variable and a Dialogue choice); Set Variable keys it by node + stamp
+		expect(src).toMatch(/writeGameVar\(name, op, v, data\.scope, 'var:' \+ node\.id \+ ':' \+ stamp, stamp\)/);
+		expect(src).toMatch(/if \(!sandboxedWrite\(stamp\)\) shareGameVarOp\(\{ rid, name, op, value: v \}\);/);
 		expect(src).not.toMatch(/if \(!sandboxedWrite\(stamp\)\) setGameVar\(name, value\);/);
 	});
 });

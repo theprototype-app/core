@@ -65,6 +65,7 @@ import { HUD_TOOL_NAMES, HUD_AI_TOOLS, HUD_PROMPT, hudTool } from './hudTools.js
 import { SCENE_SETUP_TOOL_NAMES, SCENE_SETUP_AI_TOOLS, SCENE_SETUP_PROMPT, sceneSetupTool } from './sceneSetupTools.js';
 import { LEVELS_TOOL_NAMES, LEVELS_AI_TOOLS, LEVELS_PROMPT, levelsTool } from './levelsTools.js'; // 93
 import { NPC_TOOL_NAMES, NPC_AI_TOOLS, NPC_PROMPT, npcTool } from './npcTools.js'; // 61-nav G10
+import { DIALOGUE_TOOL_NAMES, DIALOGUE_AI_TOOLS, DIALOGUE_PROMPT, dialogueTool } from './dialogueTools.js'; // 92-dialogue GC6
 import { WORLD_TOOL_NAMES, WORLD_AI_TOOLS, WORLD_PROMPT, worldTool, resolvePatterns } from './worldTools.js';
 import { RUNTIME_TOOL_NAMES, RUNTIME_AI_TOOLS, RUNTIME_PROMPT, runtimeTool } from './runtimeTools.js';
 import { beginAiEdit, endAiEdit } from '../sceneEditBy.js'; // 78-int PL13: "changed by Claude (AI)"
@@ -872,6 +873,7 @@ const TOOL_NAMES = [
 	...SCENE_SETUP_TOOL_NAMES, // 85 H3-H7: sky, light, spawn, play camera, opening view (sceneSetupTools.js)
 	...LEVELS_TOOL_NAMES, // 93: the Levels table, portals, loading screens, checkpoints (levelsTools.js)
 	...NPC_TOOL_NAMES, // 61-nav G10: set_npc = game_setup {npc} (npcTools.js)
+	...DIALOGUE_TOOL_NAMES, // 92-dialogue GC6: set_dialogue = game_setup {dialogue} (dialogueTools.js)
 	...WORLD_TOOL_NAMES, // 85b W1-W7 (worldTools.js)
 	...ASSIST_TOOL_NAMES, // 85 undo_last, pivots, images (assistTools.js): unlisted, their arguments read as create_objects / update_objects
 	...RUNTIME_TOOL_NAMES // 85b R1-R4 (runtimeTools.js): inspect, validate, logs, playtest
@@ -1406,6 +1408,10 @@ async function runAiTool(rawName, rawArgs, opts) {
 			case 'set_npc':
 				// 61-nav G10 (npcTools.js): the navigation module's enemy recipe
 				return await npcTool(name, args);
+
+			case 'set_dialogue':
+				// 92-dialogue GC6 (dialogueTools.js): a talk on an object
+				return await dialogueTool(name, args);
 
 			case 'inspect_runtime':
 			case 'validate_scene':
@@ -2005,7 +2011,7 @@ const PHYSICS_AI_TOOLS = [
  * Call this per turn (readiness can change). @param {ToolOpts} [opts] @returns {any[]} */
 export function getAiTools(opts) {
 	const physics = !!opts?.physics || physicsToolsEnabled();
-	const tools = [...AI_TOOLS, ...GEOMETRY_AI_TOOLS, ...TEXT_AI_TOOLS, ...PATH_AI_TOOLS, ...SIMPLIFY_AI_TOOLS, ...LOOK_AI_TOOLS, ...HUD_AI_TOOLS, ...SCENE_SETUP_AI_TOOLS, ...LEVELS_AI_TOOLS, ...NPC_AI_TOOLS, ...WORLD_AI_TOOLS, ...ASSIST_AI_TOOLS, ...RUNTIME_AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
+	const tools = [...AI_TOOLS, ...GEOMETRY_AI_TOOLS, ...TEXT_AI_TOOLS, ...PATH_AI_TOOLS, ...SIMPLIFY_AI_TOOLS, ...LOOK_AI_TOOLS, ...HUD_AI_TOOLS, ...SCENE_SETUP_AI_TOOLS, ...LEVELS_AI_TOOLS, ...NPC_AI_TOOLS, ...DIALOGUE_AI_TOOLS, ...WORLD_AI_TOOLS, ...ASSIST_AI_TOOLS, ...RUNTIME_AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
 	if (physics) tools.push(...PHYSICS_AI_TOOLS);
 	if (meshGenReady()) tools.push(MESH_TOOL);
 	return tools;
@@ -2111,6 +2117,6 @@ export function buildSystemPrompt(opts) {
 		"an object's name as the tool name — the name of a thing you create belongs in that object's",
 		'`name` field inside create_objects. Every call takes effect immediately, so never repeat a',
 		'call that already came back without an error — once the scene matches the request, stop',
-		'calling tools and write the summary.' + meshLine + toolsLine + GEOMETRY_PROMPT + TEXT_PROMPT + PATH_PROMPT + SIMPLIFY_PROMPT + LOOK_PROMPT + HUD_PROMPT + SCENE_SETUP_PROMPT + LEVELS_PROMPT + NPC_PROMPT + WORLD_PROMPT + ASSIST_PROMPT + RUNTIME_PROMPT + flowBlock + extraBlock + physicsBlock
+		'calling tools and write the summary.' + meshLine + toolsLine + GEOMETRY_PROMPT + TEXT_PROMPT + PATH_PROMPT + SIMPLIFY_PROMPT + LOOK_PROMPT + HUD_PROMPT + SCENE_SETUP_PROMPT + LEVELS_PROMPT + NPC_PROMPT + DIALOGUE_PROMPT + WORLD_PROMPT + ASSIST_PROMPT + RUNTIME_PROMPT + flowBlock + extraBlock + physicsBlock
 	].join('\n');
 }

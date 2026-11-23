@@ -39,6 +39,8 @@
 	// 53 (A6): the player's HUD text size (per game, LOCAL) — boxes and type grow together
 	import { accessValues } from '$lib/playerAccess';
 	import { hudTextScale } from '$lib/playerAccessCore';
+	import { dialogueView } from '$lib/dialogue/view.js'; // 92-dialogue GC6 (the box itself is lazy)
+	import { gameFeelOn } from '$lib/gameFeel';
 
 	// 21-D5: WHICH documents are on screen — the scene HUD, plus the one keyed by the
 	// camera being looked through (attaching a HUD to a camera IS keying it by that
@@ -178,6 +180,14 @@
 	});
 
 	const anyVisible = $derived(elements.length > 0 && (!$isVRMode || arPlaying) && layerAllowed && !authoringHidden && !gameHidden);
+	// 92-dialogue (GC6): an open talk on THIS device draws in the layer even with no HUD authored
+	// (Play or Interact; the headset has its own panel, Scene's VRDialoguePanel)
+	const talking = $derived(!!$dialogueView && $gameFeelOn && (!$isVRMode || arPlaying));
+	/** @type {Promise<any> | null} */
+	let dialogueBox = $state(null);
+	$effect(() => {
+		if (talking && !dialogueBox) dialogueBox = import('./DialogueBox.svelte');
+	});
 
 	// ---- 21-E3: the MENU SUBSTATE - this component is the SINGLE WRITER ------------
 	// Visibility IS the state: any visible screen marked input:'menu' while playing
@@ -192,7 +202,7 @@
 	// 48 D1: ...and so is a debugger pause (its panel needs the pointer for Step / Resume)
 	// 95 SM2: ...and so is the Share a moment preview (its trim and buttons need the pointer)
 	const menuWanted = $derived(
-		((screens.some((entry) => entry.screen?.input === 'menu') && anyVisible) || ($shellMenu.open && !$isVRMode) || ($debugStatus.mode === 'paused' && !$isVRMode) || ($momentOpen && !$isVRMode)) && playing
+		((screens.some((entry) => entry.screen?.input === 'menu') && anyVisible) || ($shellMenu.open && !$isVRMode) || ($debugStatus.mode === 'paused' && !$isVRMode) || ($momentOpen && !$isVRMode) || (talking && ($dialogueView?.choices.length ?? 0) > 0)) && playing
 	);
 	$effect(() => {
 		playPointerFree.set(menuWanted);
@@ -465,8 +475,11 @@
 	{/key}
 {/if}
 
-{#if anyVisible}
+{#if anyVisible || talking}
 	<div id="hud-layer" class="hud-layer" style:--hud-top-shift={shown ? `max(env(safe-area-inset-top, 0px), ${topShift}px)` : '0px'} data-top-shift={topShift} style:--hud-bottom-lift={shown ? `max(env(safe-area-inset-bottom, 0px), ${bottomLift}px)` : '0px'} data-bottom-lift={bottomLift} class:hud-authoring={!shown} class:hud-inert={gameInEditor} data-authoring={!shown} data-inert={gameInEditor} use:arPortal={arPlaying}>
+		{#if talking && dialogueBox}
+			{#await dialogueBox then m}<m.default />{/await}
+		{/if}
 		{#each elements as el (el.__key + ':' + el.id)}
 			<!-- 102b-hud: a Show / Hide Element node hides one element (per peer); the slot stays so
 			     focus order and the box are kept, it just draws nothing and takes no press -->
@@ -560,6 +573,11 @@
 	   one, so the override has to reach them) */
 	.hud-inert :global(*) {
 		pointer-events: none !important;
+	}
+	/* 92-dialogue: a talk opened in Interact is the player's, not a preview: it takes its clicks */
+	.hud-inert :global(#dialogue-box),
+	.hud-inert :global(#dialogue-box *) {
+		pointer-events: auto !important;
 	}
 	/* the keyboard ring, so a player under pointer lock can see where they are */
 	.hud-focused {

@@ -2216,6 +2216,66 @@ function stampOrigin(nodeId, stamp, ctx, handle = 'trigger') {
 	return '';
 }
 
+/**
+ * ONE write of a game variable (Set Variable, a Dialogue choice). `scope: 'player'` writes MY OWN
+ * peervars row (numbers only: text is refused there, the card says so); anything else is the shared
+ * game variable, written by the AUTHORITY once per `rid` (fix-agenttest 10, gameState.applyGameVarOp).
+ * @param {string} name @param {string} op @param {any} v @param {any} scope @param {string} rid @param {number} stamp
+ */
+function writeGameVar(name, op, v, scope, rid, stamp) {
+	if (scope === 'player') {
+		const held = num(myPeerVar(name, 0));
+		if (op !== 'text') setPeerVar(name, op === 'toggle' ? (held ? 0 : 1) : op === 'add' ? held + num(v) : op === 'subtract' ? held - num(v) : num(v));
+		return;
+	}
+	const current = num(viewGameVar(name, 0));
+	const value = op === 'text' ? v : op === 'toggle' ? (current ? 0 : 1) : op === 'add' ? current + num(v) : op === 'subtract' ? current - num(v) : v;
+	// 48 D1: the paused view's copy first (the watch list reads it), the shared one unless sandboxed
+	if (sharedOverlay) sharedOverlay.game = { ...sharedOverlay.game, vars: { ...sharedOverlay.game.vars, [name]: value } };
+	if (!sandboxedWrite(stamp)) shareGameVarOp({ rid, name, op, value: v });
+}
+
+// 92-dialogue (GC6): the Dialogue node's runtime is a LAZY chunk (dialogue/runtime.js), loaded the first
+// time one is in the world; this is only the seam it reads the graph through. Per person, nothing sent.
+/** @type {any} */ let dialogueRef = null;
+let dialogueLoading = false;
+/** @type {any} */ let dialogueSeam = null;
+/** @param {number} time @param {any} ctx */
+function updateDialogueNodes(time, ctx) {
+	const list = nodes.filter((/** @type {any} */ n) => n.type === 'dialogue');
+	if (!dialogueRef) {
+		if (list.length && !dialogueLoading) {
+			dialogueLoading = true;
+			import('./dialogue/runtime.js').then((m) => (dialogueRef = m), () => (dialogueLoading = false));
+		}
+		return;
+	}
+	dialogueSeam ??= {
+		stamp: (/** @type {any} */ n, /** @type {any} */ c) => triggerStampFor(n.id, c),
+		stopStamp: (/** @type {any} */ n, /** @type {any} */ c) => handleStamp(n, 'stop', c),
+		live: (/** @type {any} */ n, /** @type {number} */ t, /** @type {any} */ c) =>
+			edgesInto(edges, n.id).some((/** @type {any} */ e) => {
+				const src = (!e.targetHandle || e.targetHandle === 'trigger') && nodeById(nodes, e.source);
+				const v = src ? unwrapHandle(evalNode(src, nodes, edges, t, new Set(), c), e) : 0;
+				return v === true || (typeof v === 'number' && v > 0);
+			}),
+		seen: seeActionNode,
+		stale: staleTrigger,
+		mine: (/** @type {any} */ n, /** @type {number} */ s, /** @type {any} */ c) => localStamps.has(s) || stampOrigin(n.id, s, c) === RT.myPeerId(),
+		fire: (/** @type {any} */ n) => applyNodeTrigger(n.id, syncedNow(), replicatesPulse(n)),
+		setVar: (/** @type {string} */ name, /** @type {string} */ op, /** @type {any} */ v, /** @type {string} */ scope, /** @type {string} */ rid) => writeGameVar(name, op, v, scope, rid, syncedNow()),
+		getVar: (/** @type {string} */ name) => viewGameVar(name, undefined) ?? myPeerVar(name, undefined),
+		active: gameFeelActive,
+		anchor: (/** @type {any} */ n) => {
+			const owner = n.__graph && n.__graph !== 'scene' ? sceneObjects?.getObjectByProperty('uuid', n.__graph) : null;
+			if (!owner) return null;
+			const box = new THREE.Box3().setFromObject(owner);
+			return box.isEmpty() ? owner.getWorldPosition(new THREE.Vector3()).toArray() : [(box.min.x + box.max.x) / 2, box.max.y, (box.min.z + box.max.z) / 2];
+		}
+	};
+	dialogueRef.tickDialogues(list, dialogueSeam, time, ctx);
+}
+
 /** @param {number} time @param {any} ctx */
 function updateGameNodes(time, ctx) {
 	const game = viewGame(); // 48 D1: the paused view's own state while it holds a sandbox
@@ -2352,18 +2412,7 @@ function updateGameNodes(time, ctx) {
 			// when the boss dies"), while a LOCAL one — a perPlayer On Click, whose stamp
 			// never left this machine — increments only mine. The trigger decides WHO acts,
 			// the scope decides WHOSE row.
-			if (data.scope === 'player') {
-				const held = num(myPeerVar(name, 0));
-				// a player row holds numbers only: text is refused there (the card says so)
-				if (op !== 'text') setPeerVar(name, op === 'toggle' ? (held ? 0 : 1) : op === 'add' ? held + num(v) : op === 'subtract' ? held - num(v) : num(v));
-			} else {
-				const current = num(viewGameVar(name, 0));
-				const value = op === 'text' ? v : op === 'toggle' ? (current ? 0 : 1) : op === 'add' ? current + num(v) : op === 'subtract' ? current - num(v) : v;
-				// 48 D1: the paused view's copy first (the watch list reads it), the shared one unless sandboxed
-				if (sharedOverlay) sharedOverlay.game = { ...sharedOverlay.game, vars: { ...sharedOverlay.game.vars, [name]: value } };
-				// fix-agenttest 10: the AUTHORITY writes, once per event (gameState.applyGameVarOp)
-				if (!sandboxedWrite(stamp)) shareGameVarOp({ rid: 'var:' + node.id + ':' + stamp, name, op, value: v });
-			}
+			writeGameVar(name, op, v, data.scope, 'var:' + node.id + ':' + stamp, stamp);
 		}
 	}
 	for (const id of [...gameActed.keys()])
@@ -5850,6 +5899,7 @@ function runTick(now) {
 	// the same replicated trigger stamps, so every peer takes the same decisions.
 	updateGameNodes(time, ctx);
 	updatePlayEdgeNodes(time, ctx); // 78 F13: On Play start / stop
+	updateDialogueNodes(time, ctx); // 92-dialogue GC6 (lazy)
 	hoverTargetUuids(); // 78 F2: cached on the graph; starts the hover input the first time one is watched
 	// 48 D1: the kit and the behaviours keep their own (live) clocks through a debugger pause, and
 	// behaviour inputs run on the authority — live with other players connected (ownCtx)

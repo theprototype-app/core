@@ -15,9 +15,9 @@ describe('2.0 N1: every core node type has exactly one definition', () => {
 	test('the core families are whole (the build check reads the same list)', () => {
 		expect(coreRegistryErrors()).toEqual([]);
 	});
-	test('151 core types, each defined once, in palette order', () => {
+	test('152 core types, each defined once, in palette order', () => {
 		const all = NODE_FAMILIES.flatMap((f) => f.nodes.map((n) => n.type));
-		expect(all.length).toBe(151); // int-102-1 148 + 102 M3 decalstamp + 102 M7 constraintweight, constrainttarget
+		expect(all.length).toBe(152); // int-102-1 148 + 102 M3 decalstamp + 102 M7 constraintweight, constrainttarget + 92 dialogue
 		expect(new Set(all).size).toBe(all.length);
 		expect(coreNodeTypes()).toEqual(all);
 	});

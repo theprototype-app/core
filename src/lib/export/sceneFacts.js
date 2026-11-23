@@ -81,7 +81,24 @@ export async function gatherSceneFacts(opts = {}) {
 	// referenced files whose bytes are not here (the bundler skips them silently)
 	try {
 		const { sceneAssets, refreshSceneAssets } = await import('../sceneAssets');
-		refreshSceneAssets?.();
+		// the asset view recomputes on a 400 ms debounce: ask for a fresh one and wait for it (a second
+		// at most), or a just-made change (a music track set a moment ago) is not in the list yet
+		await new Promise((resolve) => {
+			let first = true;
+			const t = setTimeout(done, 1000);
+			/** @type {() => void} */
+			let unsub = () => {};
+			function done() {
+				clearTimeout(t);
+				unsub();
+				resolve(null);
+			}
+			unsub = sceneAssets.subscribe(() => {
+				if (first) first = false;
+				else queueMicrotask(done);
+			});
+			refreshSceneAssets?.();
+		});
 		for (const a of /** @type {any[]} */ (get(sceneAssets))) {
 			if (!a?.hash) continue;
 			facts.assets?.push({ name: String(a.name || a.hash.slice(0, 8)), kind: String(a.kind || a.group || 'file'), hash: a.hash, missing: !a.itemId, ...(a.uuid ? { uuid: a.uuid } : {}), ...(a.nodeId ? { nodeId: a.nodeId } : {}) });

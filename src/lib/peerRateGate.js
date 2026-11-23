@@ -42,11 +42,15 @@ export function admitRate(conn, type) {
 	const preset = get(peerRateLimits);
 	const over = limiter.take(peerId, type, preset);
 	stats.last = { peerId, type, preset };
+	const row = typeof type === 'string' && (stats.byType[type] ??= { ok: 0, refused: 0, first: Date.now(), last: 0 });
+	if (row) row.last = Date.now();
 	if (over === 'ok') {
 		stats.ok++;
+		if (row) row.ok++;
 		return true;
 	}
 	stats.refused++;
+	if (row) row.refused++;
 	if (sayNow(peerId + '|' + over)) {
 		const what = over === 'chat' ? 'chat messages' : 'edits';
 		showToast(`${peerLabel(peerId)} is sending too many ${what}, so some were ignored.`, canModerate() ? [{ label: 'Remove', action: () => removePeer(peerId) }] : undefined);
@@ -60,9 +64,10 @@ export function admitRate(conn, type) {
 }
 
 /** what the gate decided since the page loaded — a test seam (the suite reads it to tell "the gate refused"
- * from "the gate was never asked") @type {{ok: number, refused: number, exempt: number, last: any}} */
-const stats = { ok: 0, refused: 0, exempt: 0, last: null };
-export const rateGateStats = () => ({ ...stats });
+ * from "the gate was never asked") */
+/** @type {{ok: number, refused: number, exempt: number, last: any, byType: Record<string, {ok: number, refused: number, first: number, last: number}>}} */
+const stats = { ok: 0, refused: 0, exempt: 0, last: null, byType: {} };
+export const rateGateStats = () => ({ ...stats, byType: Object.fromEntries(Object.entries(stats.byType).filter(([t]) => t === 'name' || t === 'sent' || t === 'create')) });
 
 /** the receiver told us @param {any} data */
 export function applyRateNotice(data) {

@@ -146,6 +146,16 @@ h.run(async () => {
 	await P.waitForTimeout(400);
 	await closeSettings();
 
+	// ---- 4b. the invite sheet's AI agent tab points an AI app in its own window at card 2 (find-it round 2) -------------
+	await P.getByRole('button', { name: 'Invite a person or an AI agent' }).first().click();
+	await P.getByRole('tab', { name: 'AI agent' }).first().click();
+	await P.waitForSelector('#invite-ai-apps button', { timeout: 10000 });
+	await P.locator('#invite-ai-apps button').click();
+	await P.waitForSelector('#ai-card-in-scene', { timeout: 15000 });
+	await P.waitForTimeout(700);
+	h.check((await pageTitle()) === 'AI' && (await inView('#ai-card-in-scene')) && !(await shown('#invite-sheet')), 'Invite ▸ AI agent: "connect it in Settings ▸ AI" closes the sheet and lands on card 2');
+	await closeSettings();
+
 	// ---- 5. the command palette's card row -------------------------------------------------------------------------------
 	await P.keyboard.press('Control+k');
 	const input = P.locator('#command-palette-input');

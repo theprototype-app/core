@@ -21,6 +21,14 @@
 	// 94 SP4: a person invite also comes as a PLAY link (the play-only entry joins the session)
 	import { playInviteLink } from '$lib/inviteCore';
 	import { playUrl } from '$lib/playOrigin.js';
+	import { connectorAvailable } from '$lib/connector/connectorStore';
+	import { openSettingsAt } from '$lib/settings/openSettingsAt.js';
+
+	/** 89 I2 (find-it): an AI app in its own window (ChatGPT, claude.ai) needs no invite — it connects in Settings ▸ AI */
+	function openAiApps() {
+		inviteSheet.set(null);
+		openSettingsAt('ai', 'ai-card-in-scene');
+	}
 
 	/** @type {'agent'|'person'} */
 	let tab = $state(get(inviteSheet) === 'agent' ? 'agent' : 'person');
@@ -143,6 +151,12 @@
 				A link a friend opens to join straight away — no approval card.
 			{/if}
 		</p>
+		{#if tab === 'agent' && $connectorAvailable}
+			<p class="inv-ai-apps" id="invite-ai-apps">
+				ChatGPT, claude.ai or another AI app in its own window? It needs no invite:
+				<button type="button" class="inv-ai-apps-link" onclick={openAiApps}>connect it in Settings ▸ AI</button>
+			</p>
+		{/if}
 
 		{#if !current}
 			{#if rolesOn}
@@ -334,5 +348,19 @@
 		margin: 0;
 		padding-left: 18px;
 		color: var(--text-muted);
+	}
+	.inv-ai-apps {
+		margin: 0;
+		font-size: var(--fs-desc);
+		color: var(--text-muted);
+	}
+	.inv-ai-apps-link {
+		padding: 0;
+		border: 0;
+		background: none;
+		font: inherit;
+		color: var(--accent-text);
+		text-decoration: underline;
+		cursor: pointer;
 	}
 </style>

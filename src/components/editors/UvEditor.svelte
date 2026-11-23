@@ -1,4 +1,5 @@
 <script>
+	import { feelSnap } from '$lib/uiHaptics'; // 103 (H13): snapping touch feedback
 	import { mapPreviewUrl } from '$lib/loadGuard.js';
 	import { onLayoutRestore, storedPanelLayout } from '$lib/uiLayoutsCore';
 	import { isHeicFileLike } from '$lib/heicCore.js';
@@ -679,6 +680,8 @@
 	// PLACED — and once placed it is a handle you drag, which snaps onto a uv point
 	// when you come near one (hold Alt to place it freely).
 
+	/** 103 (H13): the origin drag's touch-feedback token */
+	const pivotFelt = {};
 	/** put the origin under the pointer, snapped to a nearby point unless Alt is held
 	 * @param {PointerEvent} e */
 	function movePivotTo(e) {
@@ -692,6 +695,8 @@
 				u = uv.getX(near);
 				v = uv.getY(near);
 			}
+			// 103 (H13): the origin snapping onto a uv point is a detent (each new point, once)
+			feelSnap(pivotFelt, near >= 0 ? near : null);
 		}
 		pivotPlaced = { cu: u, cv: v };
 	}

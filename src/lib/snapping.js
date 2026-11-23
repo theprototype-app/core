@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { TControls } from '../stores/sceneStore';
 import { safeStorage } from './safeStorage';
+import { feelSnap } from './uiHaptics';
 
 // Grid snapping for the transform gizmo: translate, rotate AND scale.
 // Persisted in localStorage. "Snap to surface" is a future improvement.
@@ -36,10 +37,42 @@ function apply() {
 
 let started = false;
 
+/** 103 (H13): touch feedback when a gizmo drag with grid snap on lands on the next step (the snapped
+ * transform changed). TransformControls fires objectChange on every move; with snap on, the pose only
+ * changes at a step. @type {any} */
+let feltControls = null;
+/** @type {object | null} */
+let gizmoDrag = null;
+/** @param {any} c */
+function poseKey(c) {
+	const o = c?.object;
+	return o ? [...o.position.toArray(), ...o.quaternion.toArray(), ...o.scale.toArray()].map((n) => n.toFixed(5)).join(',') : '';
+}
+const onGizmoDown = () => {
+	gizmoDrag = {};
+	feelSnap(gizmoDrag, poseKey(feltControls));
+};
+const onGizmoUp = () => (gizmoDrag = null);
+const onGizmoChange = () => {
+	if (gizmoDrag && get(snapEnabled)) feelSnap(gizmoDrag, poseKey(feltControls));
+};
+/** @param {any} controls */
+function feelGizmoSnaps(controls) {
+	if (feltControls === controls) return;
+	feltControls?.removeEventListener?.('mouseDown', onGizmoDown);
+	feltControls?.removeEventListener?.('mouseUp', onGizmoUp);
+	feltControls?.removeEventListener?.('objectChange', onGizmoChange);
+	feltControls = controls;
+	controls?.addEventListener?.('mouseDown', onGizmoDown);
+	controls?.addEventListener?.('mouseUp', onGizmoUp);
+	controls?.addEventListener?.('objectChange', onGizmoChange);
+}
+
 export function startSnapping() {
 	if (started || typeof window === 'undefined') return;
 	started = true;
 	TControls.subscribe(apply);
+	TControls.subscribe(feelGizmoSnaps);
 	snapEnabled.subscribe((value) => {
 		safeStorage.setItem('snapEnabled', String(value));
 		apply();

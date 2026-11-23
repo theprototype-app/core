@@ -309,6 +309,8 @@
 		"import-file": "agent"
 	},
 	"suites": {
+		"ui-haptics-103": 240,
+		"vibrate-103": 300,
 		"render-seam": 180,
 		"load-check": 240,
 		"schema-two-peers": 360,

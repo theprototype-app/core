@@ -58,7 +58,7 @@ async function underKnobs(page, view) {
 		const sample = async () => {
 			await frames();
 			let url;
-			if (view) url = (await s.cinematicState.cinematicView()).grabCinematic();
+			if (view) url = await (await s.cinematicState.cinematicView()).grabCinematic();
 			else {
 				let r, sc, cam;
 				s.globalRenderer.subscribe((v) => (r = v))();

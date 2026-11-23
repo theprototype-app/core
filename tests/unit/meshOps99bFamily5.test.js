@@ -172,7 +172,10 @@ function cases() {
 	add('grid 3x3', () => fx.grid(3), deletes);
 	add('ngon prism: half the cap n-gon', fx.ngonPrism, (g) => [{ op: 'deleteFaces', arg: fx.facing(g, [0, 1, 0]).slice(0, 3) }]);
 	if (BIG) {
-		add('scan67k: merge 0.004', fx.scan67k, () => [{ op: 'merge', arg: 0.004 }]);
+		// 99-int: the same K6 rule change on the scan (99-live re-pinned the grid case only; this case runs under MESHOPS_BIG).
+		// Greedy distance clusters also merge pairs on either side of a grid cell, so at 4 mm the kernel drops 1424 triangles
+		// (10914 corners moved) where the soup's cells dropped 494 (4412): the soup no longer describes it, its own expectation.
+		add('scan67k: merge 0.004', fx.scan67k, () => [{ op: 'merge', arg: 0.004, opts: { clusterRule: { dropped: 1424, triangles: 65656 } } }]);
 		add('scan67k: dissolve 40 edges', fx.scan67k, (g) => [{ op: 'dissolveEdges', arg: fx.interiorEdgeKeys(g).filter((_, i) => i % 997 === 0).slice(0, 40) }]);
 		add('scan67k: dissolve 20 vertices', fx.scan67k, (g) => [{ op: 'dissolveVertices', arg: fx.vertexKeys(g).filter((_, i) => i % 1601 === 0).slice(0, 20) }]);
 		add('scan67k: delete a patch by vertices', fx.scan67k, (g) => [{ op: 'deleteVertices', arg: fx.vertexKeys(g).slice(5000, 5400) }]);

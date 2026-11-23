@@ -106,7 +106,7 @@ const frame = (page, pose) =>
 			);
 		});
 		lights.sort();
-		const env = read(s.environment);
+		const env = read(s.environment.environment);
 		return {
 			info,
 			ms: +ms.toFixed(1),

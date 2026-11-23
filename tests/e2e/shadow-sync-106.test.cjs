@@ -23,7 +23,7 @@ const state = (page) =>
 			st.subscribe((x) => (v = x))();
 			return v;
 		};
-		const env = read(s.environment);
+		const env = read(s.environment.environment);
 		const scene = read(s.globalScene);
 		const r = read(s.globalRenderer);
 		const sun = scene.getObjectByName('env-rig-sun');

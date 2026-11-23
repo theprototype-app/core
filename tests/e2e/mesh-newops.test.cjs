@@ -357,7 +357,8 @@ h.run(async () => {
 	);
 	await A.page.mouse.click(line.a[0], line.a[1]);
 	await A.page.mouse.click(line.b[0], line.b[1]);
-	await A.page.waitForSelector('#bisect-apply', { timeout: 5000 }).catch(() => null);
+	// the plane chunk loads when Bisect is armed; a cold dev server compiles it on that first request
+	await A.page.waitForSelector('#bisect-apply', { timeout: 30000 }).catch(() => null);
 	h.check(!!(await A.page.$('#bisect-apply')), 'two clicks place the plane: Apply shows');
 	h.check((await A.page.evaluate(() => window.__sent)) === sent1, 'placing the plane sends nothing');
 	const beforeCut = await A.page.evaluate(

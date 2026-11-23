@@ -1027,21 +1027,6 @@
 				>
 			{/each}
 		</div>
-		<!-- 99 K8: shortest-path select. Ctrl+click does it on desktop; the toggle is the touch way in (a tap then
-		     adds the path from the last pick). Steps = count steps instead of length. -->
-		<div class="tbx-row text-xs text-text-2">
-			<button
-				id="mesh-path-select"
-				class="tbx-cmd {$meshPathSelect ? 'tbx-on bg-accent-fill text-on-accent' : ''}"
-				aria-pressed={$meshPathSelect}
-				title={`Path — a click adds the shortest path from the last pick to the one you click (Ctrl+click does it without this${hintOf({ key: 'mesh.path-toggle' }) ? '; ' + hintOf({ key: 'mesh.path-toggle' }) : ''})`}
-				onclick={() => meshPathSelect.update((on) => !on)}>Path</button
-			>
-			<label class="flex items-center gap-1" title="Count steps (faces, edges or vertices crossed) instead of length">
-				<input id="mesh-path-steps" class="tbx-check" type="checkbox" bind:checked={$meshPathTopological} />
-				steps
-			</label>
-		</div>
 
 		{#if mode === 'edges'}
 			<!-- M4: edge tools — the pick is a set of EDGES, not faces.
@@ -1261,6 +1246,24 @@
 			onSettle={() => settleOpAdjust()}
 			onRevert={() => cancelOpAdjust()}
 		/>
+
+		<!-- 99 K8: shortest-path select. Ctrl+click does it on desktop; the toggle is the touch way in (a tap then
+		     adds the path from the last pick). Steps = count steps instead of length. It sits UNDER the tool options,
+		     not in the Select rows above the grid: a row there pushed the grid and the options pane down (the knife's
+		     touch Cut button moved 23 px down onto a spot something covers: mesh-knife went 3/3 red against 1/2 on base). -->
+		<div class="tbx-row text-xs text-text-2">
+			<button
+				id="mesh-path-select"
+				class="tbx-cmd {$meshPathSelect ? 'tbx-on bg-accent-fill text-on-accent' : ''}"
+				aria-pressed={$meshPathSelect}
+				title={`Path — a click adds the shortest path from the last pick to the one you click (Ctrl+click does it without this${hintOf({ key: 'mesh.path-toggle' }) ? '; ' + hintOf({ key: 'mesh.path-toggle' }) : ''})`}
+				onclick={() => meshPathSelect.update((on) => !on)}>Path</button
+			>
+			<label class="flex items-center gap-1" title="Count steps (faces, edges or vertices crossed) instead of length">
+				<input id="mesh-path-steps" class="tbx-check" type="checkbox" bind:checked={$meshPathTopological} />
+				steps
+			</label>
+		</div>
 
 		<!-- GIZMO & PIVOT: ONE collapsible section, offered in EVERY element mode.
 		     The switch and the orientation used to live inside the faces-only

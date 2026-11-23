@@ -148,6 +148,16 @@ export function captureSlotThumb() {
  * @param {number} n @param {{auto?: boolean, name?: string, record?: any, thumb?: string}} [opts]
  */
 export async function writeSlot(n, opts = {}) {
+	try {
+		return await writeSlotNow(n, opts);
+	} catch (error) {
+		console.warn('save slots: write', error);
+		return { ok: false, reason: 'The game could not be saved (' + String(/** @type {any} */ (error)?.message ?? error).slice(0, 120) + ').' };
+	}
+}
+
+/** @param {number} n @param {{auto?: boolean, name?: string, record?: any, thumb?: string}} opts */
+async function writeSlotNow(n, opts) {
 	const slot = clampSlot(n);
 	const game = slotGameId();
 	const cp = await import('./gameLevels/checkpoints.js');
@@ -198,6 +208,16 @@ export function deleteSlot(n) {
  * @returns {Promise<{ok: boolean, reason?: string, notes?: string[]}>}
  */
 export async function loadSlot(n) {
+	try {
+		return await loadSlotNow(n);
+	} catch (error) {
+		console.warn('save slots: load', error);
+		return { ok: false, reason: 'That save could not be loaded (' + String(/** @type {any} */ (error)?.message ?? error).slice(0, 120) + ').' };
+	}
+}
+
+/** @param {number} n @returns {Promise<{ok: boolean, reason?: string, notes?: string[]}>} */
+async function loadSlotNow(n) {
 	const slot = clampSlot(n);
 	const game = slotGameId();
 	let raw = readJson(slotKey(slot, game));

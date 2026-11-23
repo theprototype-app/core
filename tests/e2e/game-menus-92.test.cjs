@@ -58,6 +58,7 @@ const diag = (page) =>
 			pending: (one(s.pendingApprovals) ?? []).length,
 			host: one(s.connectionState.sessionHost),
 			editorMode: one(s.editorMode),
+			toasts: (one(s.toastStore) ?? []).slice(-3).map((t) => t.text),
 			dom: { title: !!document.querySelector('#game-title-screen'), card: !!document.querySelector('#play-join-card'), menu: !!document.querySelector('#game-shell-menu') }
 		};
 	});
@@ -68,10 +69,20 @@ async function enterPlay(page) {
 	await page.waitForTimeout(250);
 }
 
+/** page errors and console errors, shown beside a red */
+const pageErrors = [];
+function watchErrors(page, who) {
+	page.on('pageerror', (e) => pageErrors.push(who + ' pageerror: ' + String(e?.message ?? e).slice(0, 300)));
+	page.on('console', (m) => {
+		if (m.type() === 'error' || /save slots|keep:|levels:/.test(m.text())) pageErrors.push(who + ' ' + m.type() + ': ' + m.text().slice(0, 300));
+	});
+}
+
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
+	watchErrors(page, 'A');
 	await page.evaluate(async (doc) => {
 		const s = window.__tp.test.v1;
 		s.gameKit.gameSettings.forceGameId('menus-92');
@@ -170,7 +181,9 @@ h.run(async () => {
 	h.check(((await page.locator('[data-slot="3"]').textContent()) ?? '').includes('newer version'), '5.4 …and it says so');
 	await page.locator('[data-slot="2"] .ss-main').click();
 	await page.waitForTimeout(800);
-	h.check((await gameStateOf(page)).vars.coins === 42, '5.5 Load game put the saved variable back (coins ' + (await gameStateOf(page)).vars.coins + ')');
+	const c5 = (await gameStateOf(page)).vars.coins;
+	if (c5 !== 42) console.log('  5.5 state: ' + JSON.stringify(await diag(page)) + ' errors: ' + JSON.stringify(pageErrors.slice(-5)));
+	h.check(c5 === 42, '5.5 Load game put the saved variable back (coins ' + c5 + ')');
 	h.check(!(await page.locator('#game-shell-menu').isVisible()), '5.6 loading closed the menu');
 
 	console.log('\n=== 6. the old single save shows as slot 1 and Continue loads it ===');
@@ -198,7 +211,7 @@ h.run(async () => {
 	await page.locator('[data-shell-item="title"]').click();
 	await page.waitForTimeout(300);
 	const vis7 = await page.locator('#game-title-screen').isVisible();
-	if (!vis7) console.log('  7.1 state: ' + JSON.stringify(await diag(page)));
+	if (!vis7) console.log('  7.1 state: ' + JSON.stringify(await diag(page)) + ' errors: ' + JSON.stringify(pageErrors.slice(-5)));
 	h.check(vis7, '7.1 Quit to title opened the title screen');
 	await page.locator('[data-title-item="quit"]').click();
 	await page.waitForTimeout(500);
@@ -260,5 +273,6 @@ h.run(async () => {
 	const menusB = await B.page.evaluate(() => { let v; window.__tp.test.v1.scenePhysics.scenePhysicsState_.subscribe((x) => (v = x))(); return v.play?.menus ?? null; });
 	h.check(menusB?.title?.title === 'Menu Test' && menusB?.autoAdmit === true, '10.3 the authored menus replicated to the joiner');
 
+	if (pageErrors.length) console.log('page errors:\n  ' + pageErrors.slice(-20).join('\n  '));
 	await h.finish(browser);
 });

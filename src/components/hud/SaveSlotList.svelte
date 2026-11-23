@@ -40,12 +40,13 @@
 			// the title screen loads through its own path (play first: the press is the pointer-lock gesture)
 			if (onpick) return onpick(slot.n);
 			busy = true;
-			void loadSlot(slot.n).then((res) => {
-				busy = false;
-				if (!res.ok) return showToast(res.reason ?? 'That save could not be loaded.');
-				showToast('Loaded ' + slot.name + '.');
-				ondone?.();
-			});
+			void loadSlot(slot.n)
+				.then((res) => {
+					if (!res.ok) return showToast(res.reason ?? 'That save could not be loaded.');
+					showToast('Loaded ' + slot.name + '.');
+					ondone?.();
+				})
+				.finally(() => (busy = false));
 			return;
 		}
 		if (!slot.empty) {
@@ -61,12 +62,13 @@
 		asking = null;
 		if (mode === 'new') return onpick?.(n);
 		busy = true;
-		void writeSlot(n).then((res) => {
-			busy = false;
-			if (!res.ok) return showToast(res.reason ?? 'The game could not be saved.');
-			showToast('Saved to ' + (listSlots().find((s) => s.n === n)?.name ?? 'slot ' + n) + '.');
-			refresh();
-		});
+		void writeSlot(n)
+			.then((res) => {
+				if (!res.ok) return showToast(res.reason ?? 'The game could not be saved.');
+				showToast('Saved to ' + (listSlots().find((s) => s.n === n)?.name ?? 'slot ' + n) + '.');
+				refresh();
+			})
+			.finally(() => (busy = false));
 	}
 
 	/** @param {number} n */

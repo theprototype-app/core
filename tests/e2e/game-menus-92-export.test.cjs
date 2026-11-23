@@ -49,6 +49,15 @@ async function poll(fn, ms) {
 	return last;
 }
 
+/** page errors and console errors, shown beside a red */
+const pageErrors = [];
+function watchErrors(page, who) {
+	page.on('pageerror', (e) => pageErrors.push(who + ' pageerror: ' + String(e?.message ?? e).slice(0, 300)));
+	page.on('console', (m) => {
+		if (m.type() === 'error' || /save slots|keep:|levels:/.test(m.text())) pageErrors.push(who + ' ' + m.type() + ': ' + m.text().slice(0, 300));
+	});
+}
+
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
@@ -102,6 +111,7 @@ h.run(async () => {
 			} catch {}
 		});
 		const p = await ctx.newPage();
+		watchErrors(p, ua ? 'phone' : 'desk');
 		await p.goto(gameUrl, { waitUntil: 'domcontentloaded' });
 		await p.waitForFunction(() => window.__tp?.test.v1?.exportRuntime?.exportRuntimeState, null, { timeout: 90000 });
 		await poll(() => p.evaluate(() => ['playing', 'failed'].includes(window.__tp.test.v1.exportRuntime.exportRuntimeState.phase)), 90000);
@@ -147,7 +157,20 @@ h.run(async () => {
 			const at = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
 			const chain = [];
 			for (let e = b; e; e = e.parentElement) chain.push(e.tagName + (e.id ? '#' + e.id : '') + ':' + getComputedStyle(e).pointerEvents);
-			return { at: at ? at.tagName + (at.id ? '#' + at.id : '') : null, rect: [r.x, r.y, r.width, r.height], chain, phase: window.__tp.test.v1.exportRuntime.exportRuntimeState.phase };
+			const stack = document.elementsFromPoint(r.x + r.width / 2, r.y + r.height / 2).slice(0, 6).map((e) => e.tagName + (e.id ? '#' + e.id : ''));
+			const root = getComputedStyle(document.documentElement);
+			return {
+				at: at ? at.tagName + (at.id ? '#' + at.id : '') : null,
+				stack,
+				rect: [r.x, r.y, r.width, r.height],
+				chain,
+				zoom: root.zoom,
+				vv: window.visualViewport ? [visualViewport.scale, visualViewport.width, visualViewport.height] : null,
+				inner: [innerWidth, innerHeight],
+				lock: document.pointerLockElement ? document.pointerLockElement.tagName : null,
+				fullscreen: !!document.fullscreenElement,
+				phase: window.__tp.test.v1.exportRuntime.exportRuntimeState.phase
+			};
 		})));
 		await p.evaluate(() => /** @type {HTMLElement} */ (document.querySelector('[data-title-item="continue"]')).click());
 	}
@@ -170,5 +193,6 @@ h.run(async () => {
 	await phone.p.screenshot({ path: path.resolve(__dirname, '../../test-results/92-menus/03-title-phone.png') }).catch(() => {});
 	await phone.ctx.close();
 	server.close();
+	if (pageErrors.length) console.log('page errors:\n  ' + pageErrors.slice(-20).join('\n  '));
 	await h.finish(browser);
 });

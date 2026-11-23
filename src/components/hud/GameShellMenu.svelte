@@ -48,6 +48,12 @@
 	import { titleScreen, gameMenus, pauseRefused, menuPause } from '$lib/gameMenus';
 	import { pendingApprovals } from '../../stores/appStore';
 	import { sessionHost } from '$lib/connectionState';
+	import { retryImport } from '$lib/chunkReload';
+	// the lazy half (title, slots, join requests, the in-game card): one chunk, retried once like every lazy chunk,
+	// and a failure is SAID (an {#await} with no catch would draw nothing and say nothing)
+	const loadParts = () => import('./GameMenusParts.svelte').catch((e) => retryImport(() => import('./GameMenusParts.svelte'), e));
+	/** @param {any} error */
+	const lazyFailed = (error) => (console.error('game menus: a part did not load', error), '');
 
 	const playing = $derived($isLocked === true);
 	// the dependencies are passed as unused arguments: shellMenuAvailable reads its stores
@@ -177,11 +183,11 @@
 <svelte:window onkeydown={onKeyDown} onkeydowncapture={onCaptureKey} />
 
 {#if $titleScreen.open && !$isVRMode && playing}
-	{#await import('./GameMenusParts.svelte') then m}<m.default part="title" mode="play" />{/await}
+	{#await loadParts() then m}<m.default part="title" mode="play" />{:catch error}{lazyFailed(error)}{/await}
 {/if}
 
 {#if joinWaiting && !open && !$titleScreen.open}
-	{#await import('./GameMenusParts.svelte') then m}<m.default part="joincard" />{/await}
+	{#await loadParts() then m}<m.default part="joincard" />{:catch error}{lazyFailed(error)}{/await}
 {/if}
 
 {#if offered && !open && !$titleScreen.open}
@@ -295,11 +301,11 @@
 					{/if}
 				</div>
 			{:else if page === 'saves'}
-				{#await import('./GameMenusParts.svelte') then m}
+				{#await loadParts() then m}
 					<m.default part="saves" mode={$shellMenu.slotMode === 'load' ? 'load' : 'save'} ondone={() => closeShellMenu()} />
-				{/await}
+				{:catch error}{lazyFailed(error)}{/await}
 			{:else if page === 'joins'}
-				{#await import('./GameMenusParts.svelte') then m}<m.default part="joins" />{/await}
+				{#await loadParts() then m}<m.default part="joins" />{:catch error}{lazyFailed(error)}{/await}
 			{:else if page === 'access'}
 				<div class="gs-settings" id="game-access-page">
 					{#each accessRows as row (row.id)}

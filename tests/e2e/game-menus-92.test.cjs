@@ -59,7 +59,7 @@ const diag = (page) =>
 			host: one(s.connectionState.sessionHost),
 			editorMode: one(s.editorMode),
 			toasts: (one(s.toastStore) ?? []).slice(-3).map((t) => t.text),
-			dom: { title: !!document.querySelector('#game-title-screen'), card: !!document.querySelector('#play-join-card'), menu: !!document.querySelector('#game-shell-menu') }
+			dom: { items: document.querySelectorAll('[data-title-item]').length, joins: !!document.querySelector('#game-join-requests'), dialogs: document.querySelectorAll('dialog[open]').length, title: !!document.querySelector('#game-title-screen'), card: !!document.querySelector('#play-join-card'), menu: !!document.querySelector('#game-shell-menu') }
 		};
 	});
 
@@ -210,7 +210,7 @@ h.run(async () => {
 	await page.waitForTimeout(300);
 	await page.locator('[data-shell-item="title"]').click();
 	await page.waitForTimeout(300);
-	const vis7 = await page.locator('#game-title-screen').isVisible();
+	const vis7 = await page.locator('#game-title-screen').waitFor({ state: 'visible', timeout: 5000 }).then(() => true, () => false);
 	if (!vis7) console.log('  7.1 state: ' + JSON.stringify(await diag(page)) + ' errors: ' + JSON.stringify(pageErrors.slice(-5)));
 	h.check(vis7, '7.1 Quit to title opened the title screen');
 	await page.locator('[data-title-item="quit"]').click();
@@ -243,7 +243,9 @@ h.run(async () => {
 	h.check((await gameStateOf(page)).state === 'playing', '8.3 another player is in Play: the menu did NOT pause the game');
 	h.check(await page.locator('#game-shell-running').isVisible(), '8.4 …and says so');
 	await page.locator('[data-shell-item="joins"]').click();
-	await page.locator('[data-join-admit]').first().click({ timeout: 8000 }).catch(() => {});
+	const admitted = await page.locator('[data-join-admit]').first().click({ timeout: 8000 }).then(() => true, () => false);
+	if (!admitted) console.log('  8.x the Admit button: ' + JSON.stringify(await diag(page)) + ' errors: ' + JSON.stringify(pageErrors.slice(-5)));
+	h.check(admitted, '8.4b the Join requests page lists the card with Admit');
 	const cOpen = await poll(() => openTo(C, A.id), 45000);
 	h.check(!!cOpen, '8.5 the third peer is in');
 	h.check((await val(page, 'isLocked')) === true, '8.6 the host never left Play');

@@ -350,7 +350,10 @@ import { startMusicToolbox } from './lib/musicToolbox'
     startSceneBounds()
     startShortcuts()
     startSnapping()
-    startAutosave()
+    // 92 (GC1): an EXPORTED game keeps its progress in its save slots / the levels save, never in the editor's
+    // autosave — whose "Restore previous session?" (a true modal) covered the title screen on every return visit:
+    // the export's world is empty at boot (its scene loads after), so autosave always found something to offer
+    if (!exportMode) startAutosave()
     // 60 Q4: files shared into the app (share_target → sw.js inbox) or opened from the OS
     // (file_handlers → launchQueue); they wait for the restore question (launchInbox.js)
     if (!exportMode) import('$lib/launchInbox').then((m) => m.startLaunchInbox()).catch(() => {})

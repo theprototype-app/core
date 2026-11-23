@@ -30,6 +30,10 @@
 	import { openAccessCard } from '$lib/gameShell';
 	// 92 (GC1): the game's title screen replaces this start card when the game has one
 	import { gameMenus } from '$lib/gameMenus';
+	import { retryImport } from '$lib/chunkReload';
+	const loadTitle = () => import('../hud/GameMenusParts.svelte').catch((e) => retryImport(() => import('../hud/GameMenusParts.svelte'), e));
+	/** @param {any} error */
+	const lazyFailed = (error) => (console.error('game menus: the title screen did not load', error), '');
 
 	const vrAllowed = exportConfig ? exportConfig.vrButton : true;
 	/** the same scene opened in the editor as a remix ('' without a scene id; an export has none) */
@@ -94,7 +98,7 @@
 	</div>
 	{#if $isLocked !== true && $gameMenus.title}
 		<!-- 92 (GC1): a game with a title screen opens ON it — its Play / Continue are the gesture -->
-		{#await import('../hud/GameMenusParts.svelte') then m}<m.default part="title" mode="start" />{/await}
+		{#await loadTitle() then m}<m.default part="title" mode="start" />{:catch error}{lazyFailed(error)}{/await}
 	{:else if $isLocked !== true}
 		<div id="embed-start" class="embed-start">
 			{#if title}<div class="embed-title">{title}</div>{/if}

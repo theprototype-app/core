@@ -169,12 +169,14 @@ h.run(async () => {
 				inner: [innerWidth, innerHeight],
 				lock: document.pointerLockElement ? document.pointerLockElement.tagName : null,
 				fullscreen: !!document.fullscreenElement,
+				dialogs: [...document.querySelectorAll('dialog[open]')].map((d) => (d.id || d.className || 'dialog') + ': ' + (d.textContent || '').trim().slice(0, 80)),
 				phase: window.__tp.test.v1.exportRuntime.exportRuntimeState.phase
 			};
 		})));
 		await p.evaluate(() => /** @type {HTMLElement} */ (document.querySelector('[data-title-item="continue"]')).click());
 	}
-	h.check(pressed, '3.1b Continue takes a real click');
+	h.check(pressed, '3.1b Continue takes a real click (no restore prompt over the title)');
+	h.check((await p.locator('dialog[open]').count()) === 0, '3.1c no "Restore previous session?" in an exported game');
 	const d3 = await poll(() => p.evaluate(() => { const d = window.__tp.test.v1.gameMenusKit.saveSlots.saveSlotsDebug(); return d.loads.includes(1) ? d : null; }), 10000);
 	h.check(!!d3, '3.2 Continue loaded slot 1');
 	await ctx.close();

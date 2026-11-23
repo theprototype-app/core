@@ -54,7 +54,8 @@
 	// 42 I9: the top-right group's and the touch tools' buttons join the roster
 	import { notesDrawerOpen, multiSelectMode, touchTools } from '../../stores/appStore.js';
 	import { undo, redo } from '$lib/history';
-	import { toolbarSlots, TOP_DEFAULT, TOUCH_DEFAULT, TOP_NATIVE, TOUCH_NATIVE } from '$lib/toolbarSlots';
+	import { toolbarSlots, TOP_DEFAULT, TOUCH_DEFAULT, TOP_NATIVE, TOUCH_NATIVE, registerClusterSetter } from '$lib/toolbarSlots';
+	import { previewDrawerOpen } from '$lib/previewPill.js'; // 103 H11: the optional Preview toolbar item
 	import { canvasCenter } from '$lib/canvasRect';
 	import { micActive, pttActive, toggleMic } from '$lib/voiceChat';
 	import { phoneShell } from '$lib/ui/phoneShell.js';
@@ -1367,6 +1368,17 @@
 			pressed: () => $animateInEditor,
 			run: () => toggleAnimateInEditor()
 		},
+		// 103 H11: PREVIEW — an OPTIONAL roster button (Customize toolbar / the "+" list): the drawer with Draw as,
+		// Quality and the Cinematic view where offered. The unfolded phone's way in (it has no Preview pill).
+		preview: {
+			title: 'Preview: how this device draws the scene (never saved, never shared)',
+			label: 'Preview',
+			slot: 'preview-button',
+			icon: 'eye',
+			tint: () => ($previewDrawerOpen ? ICON_ON : ICON_OFF),
+			pressed: () => $previewDrawerOpen,
+			run: () => previewDrawerOpen.update((v) => !v)
+		},
 		multiselect: {
 			get title() {
 				return $multiSelectMode
@@ -1390,7 +1402,7 @@
 	 *  may only live in the top-right group (moved, removed, re-added there — never elsewhere) */
 	const HOME_ONLY: Record<string, Region> = { notifications: 'top', peers: 'top' };
 	/** 60 Q1: optional tool buttons (listed in Customize unchecked, like the optional views) */
-	const OPTIONAL_TOOLS = ['playhere', 'animateedit'];
+	const OPTIONAL_TOOLS = ['playhere', 'animateedit', 'preview'];
 	const ROSTER_IDS = [...DEFAULT_ORDER, ...OPTIONAL_VIEWS, ...OPTIONAL_TOOLS, ...CORNER_LEFT, ...CORNER_RIGHT, ...TOP_DEFAULT, ...TOUCH_DEFAULT];
 	/** 42 I7: the name a MENU prints for a button (its short label, else its title) */
 	function labelOf(id: string) {
@@ -1536,6 +1548,8 @@
 	// the live resetters, which is exactly this job one domain over; `resetWindowLayout`
 	// clears `controlsLayout` and this brings the live bar back with no reload.
 	onMount(() => registerWindowReset(() => resetLayout()));
+	// 103 H11: the Preview pill's chrome-button menu hides its cluster through the one writer
+	onMount(() => registerClusterSetter((id, patch) => setCluster(id, patch)));
 
 	/** THE VISUAL ROW — the bar exactly as the user reads it: the shown buttons with
 	 *  the FAB's well spliced in at `spacerIndex` (`$lib/toolbarLayout`'s `visualRow`). Every
@@ -1791,7 +1805,7 @@
 	function onEditOutside(e: PointerEvent) {
 		if (!editing || editAddMenu || clusterMenu || clusterGrab.active()) return;
 		const t = e.target as Element | null;
-		if (t?.closest?.('#controls-pill, .hud-stack, #hud-tr, #touch-tools, #toolbar-edit-ghost, #connect-edit, [role="menu"], [data-cluster-grip], #cluster-move-hint, .connect-wrap, #budget-edit, #budget-chip-wrap')) return;
+		if (t?.closest?.('#controls-pill, .hud-stack, #hud-tr, #touch-tools, #toolbar-edit-ghost, #connect-edit, [role="menu"], [data-cluster-grip], #cluster-move-hint, .connect-wrap, #budget-edit, #preview-pill, #preview-menu')) return;
 		cancelEditPositions();
 	}
 
@@ -2011,7 +2025,7 @@
 		touch: '#touch-tools',
 		top: '#hud-tr',
 		connect: '.connect-pill',
-		budget: '#budget-chip-wrap'
+		budget: '#preview-pill'
 	};
 	const CLUSTER_LABEL: Record<string, string> = {
 		bar: 'Toolbar',
@@ -2020,7 +2034,7 @@
 		touch: 'Buttons beside the logo',
 		top: 'Top-right buttons',
 		connect: 'Connect bar',
-		budget: 'Budget chip'
+		budget: 'Preview and budget'
 	};
 	/** a cluster's home orientation (rotation turns it 90° from this) */
 	const HOME_VERTICAL: Record<string, boolean> = { bar: false, left: true, right: true, touch: false, top: false };
@@ -2065,8 +2079,6 @@
 	function clusterEl(id: string) {
 		if (typeof document === 'undefined') return null;
 		const el = document.querySelector(CLUSTER_SEL[id]) as HTMLElement | null;
-		// 48 F1: the budget chip keeps a box while it waits for a spot (it is measured invisible) — not drawn = not there
-		if (id === 'budget' && el?.classList.contains('bc-hidden')) return null;
 		return el;
 	}
 	const boxOf = (r: DOMRect): Box => ({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
@@ -2418,7 +2430,7 @@
 					? { label: 'Show cluster', tooltip: id === 'touch' ? 'Show these buttons beside the logo (Touch tools on)' : undefined, action: () => showCluster(id) }
 					: {
 							label: 'Hide cluster',
-							tooltip: id === 'bar' ? 'The toolbar holds Play — it cannot be hidden' : id === 'budget' ? 'Hide the budget chip (Customize toolbar… or Show all brings it back)' : 'Hide these buttons (Show all brings them back)',
+							tooltip: id === 'bar' ? 'The toolbar holds Play — it cannot be hidden' : id === 'budget' ? 'Hide the Preview pill (Customize toolbar… or Show all brings it back)' : 'Hide these buttons (Show all brings them back)',
 							disabled: id === 'bar',
 							action: () => hideCluster(id)
 						},
@@ -3150,13 +3162,13 @@
 				tooltip: controlsLayout.connect !== false ? 'Hide the Connect bar at the top of the screen' : 'Show the Connect bar at the top of the screen',
 				action: () => setLayout({ connect: controlsLayout.connect === false })
 			},
-			// 48 F1: the budget chip beside the toolbar — shown or hidden (moved in Edit positions)
+			// 48 F1 / 103 H11: the Preview pill (Preview + the judged devices' budget) — shown or hidden (moved in Edit positions)
 			{
 				key: BUDGET,
-				label: 'Budget chip',
+				label: 'Preview and budget',
 				checked: !controlsLayout.clusters?.budget?.hidden,
 				keepOpen: true,
-				tooltip: controlsLayout.clusters?.budget?.hidden ? 'Show the scene budget chip beside the toolbar' : 'Hide the scene budget chip beside the toolbar',
+				tooltip: controlsLayout.clusters?.budget?.hidden ? 'Show the Preview pill at the top right of the 3D view' : 'Hide the Preview pill at the top right of the 3D view',
 				action: () => setCluster('budget', { hidden: !controlsLayout.clusters?.budget?.hidden })
 			},
 			...(offBar.length || controlsLayout.more === false
@@ -4013,9 +4025,9 @@
 		use:clusterGrip={'budget'}
 	>
 		{#if off}
-			<button type="button" id="budget-edit-add" class="hud-edit-remove hud-edit-add" tabindex="-1" title="Show the budget chip" aria-label="Show the budget chip" use:onPress={() => setCluster('budget', { hidden: false })}><Icon name="plus" size={16} aria-hidden="true" /></button>
+			<button type="button" id="budget-edit-add" class="hud-edit-remove hud-edit-add" tabindex="-1" title="Show the Preview pill" aria-label="Show the Preview pill" use:onPress={() => setCluster('budget', { hidden: false })}><Icon name="plus" size={16} aria-hidden="true" /></button>
 		{:else}
-			<button type="button" id="budget-edit-remove" class="hud-edit-remove" tabindex="-1" title="Hide the budget chip" aria-label="Hide the budget chip" use:onPress={() => setCluster('budget', { hidden: true })}><Icon name="minus" size={16} aria-hidden="true" /></button>
+			<button type="button" id="budget-edit-remove" class="hud-edit-remove" tabindex="-1" title="Hide the Preview pill" aria-label="Hide the Preview pill" use:onPress={() => setCluster('budget', { hidden: true })}><Icon name="minus" size={16} aria-hidden="true" /></button>
 		{/if}
 	</div>
 {/if}

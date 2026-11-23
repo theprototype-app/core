@@ -44,3 +44,20 @@ export function slotOrder(list, id) {
 	const at = list.indexOf(id);
 	return at < 0 ? null : at;
 }
+
+// 103 H11: a cluster's placement written from OUTSIDE Controls (the Preview pill's chrome-button menu:
+// "Hide this button" sets the `budget` cluster's `hidden`). Controls registers its own setCluster here,
+// so the record keeps ONE writer; before it mounts a patch is dropped (nothing is drawn to hide).
+/** @type {((id: string, patch: Record<string, any> | null) => void) | null} */
+let clusterSetter = null;
+/** @param {(id: string, patch: Record<string, any> | null) => void} fn */
+export function registerClusterSetter(fn) {
+	clusterSetter = fn;
+	return () => {
+		if (clusterSetter === fn) clusterSetter = null;
+	};
+}
+/** @param {string} id @param {Record<string, any> | null} patch */
+export function patchCluster(id, patch) {
+	clusterSetter?.(id, patch);
+}

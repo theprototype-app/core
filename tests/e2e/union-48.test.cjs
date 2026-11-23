@@ -127,7 +127,7 @@ h.run(async () => {
 
 	// ---------- U3: the budget chip's drag + a quick ✓ ----------
 	console.log('\n=== U3 budget chip drag + quick ✓ ===');
-	await h.eventually(() => P.evaluate(() => !!document.getElementById('budget-chip-wrap')), (v) => v, 'premise: the budget chip is drawn');
+	await h.eventually(() => P.evaluate(() => !!document.getElementById('preview-pill')), (v) => v, 'premise: the Preview pill (the budget cluster) is drawn');
 	await P.locator('#controls-pill [title="Explorer"]').first().click({ button: 'right' });
 	await P.waitForTimeout(350);
 	await P.getByRole('menuitem', { name: 'Edit positions', exact: true }).click();
@@ -137,8 +137,8 @@ h.run(async () => {
 	const from = { x: g.x + g.width / 2, y: g.y + g.height / 2 };
 	await P.mouse.move(from.x, from.y);
 	await P.mouse.down();
-	await P.mouse.move(from.x - 150, from.y - 200, { steps: 6 });
-	await P.mouse.move(from.x - 300, from.y - 400, { steps: 6 });
+	await P.mouse.move(from.x - 150, from.y + 200, { steps: 6 });
+	await P.mouse.move(from.x - 300, from.y + 400, { steps: 6 });
 	await P.waitForTimeout(150);
 	await P.mouse.up();
 	await P.waitForTimeout(100);

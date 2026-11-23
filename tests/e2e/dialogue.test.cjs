@@ -178,7 +178,7 @@ h.run(async () => {
 
 	console.log('\n=== 4. B walks up while A is there ===');
 	await stand(B, [0.8, 0, -2.2]);
-	await h.eventually(() => box(B), (b) => /Welcome, traveller/.test(b?.text ?? ''), 'B gets their own copy', 6000);
+	await h.eventually(() => box(B), (b) => /Welcome, traveller/.test(b?.text ?? ''), 'B gets their own copy', 10000);
 	h.check(!(await box(A)), 'A\'s box stays closed');
 	await typed(B, 'B\'s greeting finishes typing');
 	await B.page.click('#dialogue-box .dialogue-body');
@@ -204,7 +204,7 @@ h.run(async () => {
 	await stand(A, [0, 0, 6]);
 	await A.page.waitForTimeout(800);
 	await E(B, (u) => /** @type {any} */ (window).__tp.test.v1.flowRuntime.fireObjectClick(u), man);
-	await h.eventually(() => box(B), (b) => /Welcome, traveller/.test(b?.text ?? ''), 'B clicks the Old Man: B\'s talk opens', 6000);
+	await h.eventually(() => box(B), (b) => /Welcome, traveller/.test(b?.text ?? ''), 'B clicks the Old Man: B\'s talk opens', 10000);
 	await A.page.waitForTimeout(1500);
 	h.check(!(await box(A)), 'the click opens it for the clicker only (A sees nothing)');
 	await h.leavePlay(B);

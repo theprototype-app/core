@@ -416,6 +416,13 @@ h.run(async () => {
 	// the badge on hover: the words, 85%
 	await G.p.mouse.move(1270 - 12, 720 - 26);
 	await G.p.waitForTimeout(400);
+	// 63: what is under the pointer at the badge (diagnostic for the hover row)
+	console.log('  under the badge: ' + (await G.frame.evaluate(() => {
+		const b = /** @type {HTMLElement} */ (document.querySelector('#made-with-tp'));
+		const r = b.getBoundingClientRect();
+		const el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+		return (el?.tagName || '') + '#' + (el?.id || '') + '.' + String(el?.className?.baseVal ?? el?.className ?? '').slice(0, 60) + ' lock=' + !!document.pointerLockElement + ' rect=' + JSON.stringify(r);
+	})));
 	const hover = await G.frame.evaluate(() => {
 		const b = /** @type {HTMLElement} */ (document.querySelector('#made-with-tp'));
 		return { opacity: getComputedStyle(b).opacity, width: b.getBoundingClientRect().width };

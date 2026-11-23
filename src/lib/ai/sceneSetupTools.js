@@ -381,7 +381,7 @@ export const SCENE_SETUP_AI_TOOLS = [
 					add: { type: 'array', maxItems: MAX_ENV_LIGHTS, items: { type: 'object', properties: { kind: { type: 'string', enum: ENV_LIGHT_KINDS }, groundColor: { type: 'string' }, ...LIGHT_FIELDS } } },
 					update: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, groundColor: { type: 'string' }, ...LIGHT_FIELDS } } },
 					remove: { type: 'array', items: { type: 'string' } },
-					shadowQuality: { type: 'string', enum: SHADOW_QUALITIES, description: 'the scene\'s shadows for everyone: off, basic (the default), soft (softer edges + contact shadows), far (soft + the sky sun casts near and far, up to 200 m); a phone or headset may draw less (get_environment says shadowQualityDrawnHere)' },
+					shadowQuality: { type: 'string', enum: SHADOW_QUALITIES, description: 'the scene\'s shadows for everyone: off, basic (the default), soft (softer edges + contact shadows), far (soft + the sky sun casts sharp near and far, out to 300 m; none past that); a phone or headset may draw less (get_environment says shadowQualityDrawnHere)' },
 					...CONFIRM
 				}
 			}

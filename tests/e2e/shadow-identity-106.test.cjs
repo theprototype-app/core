@@ -7,7 +7,7 @@
 //   · be pixel-identical within the run-to-run floor: the share of pixels differing by more than 2/255 in any channel
 //     between A and B is at most the larger of A-vs-A and B-vs-B (the same page drawn twice 600 ms apart: water,
 //     particles and clocks move) plus 0.1 % of the frame. The scene is drawn by renderer.render (shadows, no post: the
-//     post stack is checked as data instead — no contact-shadow entry is in it).
+//     contact pass is checked as data instead — the drawn level never asks for it).
 //
 //   BASE_URL=https://localhost:7200/ (a v1.74.0 tree)
 //   APP_URL=https://theprototype.app:7201/ e2e-slot --dev $PWD 7201 -- env BASE_URL=... node tests/e2e/shadow-identity-106.test.cjs
@@ -107,7 +107,6 @@ const frame = (page, pose) =>
 		});
 		lights.sort();
 		const env = read(s.environment);
-		const post = s.scenePost?.effectivePostStack ? JSON.stringify(s.scenePost.effectivePostStack?.() ?? null) : '';
 		return {
 			info,
 			ms: +ms.toFixed(1),
@@ -116,7 +115,8 @@ const frame = (page, pose) =>
 			shadowLevel: env.shadowLevel ?? null,
 			drawn: s.environment.drawnSceneShadowLevel ? s.environment.drawnSceneShadowLevel() : 'n/a (base)',
 			loaded: s.environment.shadowLevelsLoadedForTest ? s.environment.shadowLevelsLoadedForTest() : 'n/a (base)',
-			contactInPost: /contactshadows/.test(post),
+			// the contact pass is added by the drawn level only (absent on the base release)
+			contactInPost: s.lightParams?.contactShadowsWanted ? read(s.lightParams.contactShadowsWanted) : false,
 			shadowMapOn: r.shadowMap.enabled
 		};
 	}, pose);

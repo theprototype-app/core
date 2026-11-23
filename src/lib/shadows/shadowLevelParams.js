@@ -24,7 +24,7 @@ export const LEVEL_PARAMS = Object.freeze({
 	off: Object.freeze({ radius: 1, cascades: false, reach: 0, cascadeMap: 0 }),
 	basic: Object.freeze({ radius: 1, cascades: false, reach: 0, cascadeMap: 0 }),
 	soft: Object.freeze({ radius: 3, cascades: false, reach: 0, cascadeMap: 0 }),
-	far: Object.freeze({ radius: 2, cascades: true, reach: 200, cascadeMap: 2048 })
+	far: Object.freeze({ radius: 2, cascades: true, reach: 300, cascadeMap: 2048 })
 });
 
 /** @param {ShadowLevel} level */
@@ -33,8 +33,12 @@ export function levelParams(level) {
 }
 
 /**
- * The cascades' reach for a scene: Far's 200 m, but never past twice the scene's size (a small scene keeps
- * its near cascade sharp) and never under 40 m.
+ * The cascades' reach for a scene: Far's 300 m, but never past 2.5x the scene's radius (a small scene keeps
+ * its near cascade sharp) and never under 40 m. WHY 300 and not the 200 the brief names: three's sun shader draws
+ * NO shadow past the last cascade's end and fades the last 10 % of the second cascade out, so a reach of 200
+ * left an object at 200 m view depth unshadowed (Basic's one fitted map still shadows it, blurred). At 300 the
+ * practical split puts the near cascade at ~0-78 m and 200 m sits in the solid part of the far one. Past the
+ * reach Far draws no rig-sun shadow: the row and the docs say so.
  * @param {number} sceneRadius @param {number} [reach]
  */
 export function cascadeReach(sceneRadius, reach = LEVEL_PARAMS.far.reach) {

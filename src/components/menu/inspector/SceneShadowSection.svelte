@@ -17,7 +17,7 @@
 		{ value: 'off', label: 'Off', title: 'No shadows in this scene' },
 		{ value: 'basic', label: 'Basic', title: 'One shadow map per light that casts: the look every scene has had so far' },
 		{ value: 'soft', label: 'Soft', title: 'Softer shadow edges, plus contact shadows where objects touch on devices that can afford them' },
-		{ value: 'far', label: 'Far', title: "Soft, and the sky's sun casts sharp shadows near you and shadows far away (up to 200 m)" }
+		{ value: 'far', label: 'Far', title: "Soft, and the sky's sun casts sharp shadows near you and shadows out to 300 m (none past that)" }
 	];
 
 	const asked = $derived(shadowLevelOf($environment.shadowLevel));

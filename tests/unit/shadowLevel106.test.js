@@ -45,11 +45,11 @@ describe('106 shadow level core', () => {
 		expect(levelParams('far').cascades).toBe(true);
 		expect(levelParams('nope')).toBe(levelParams('basic'));
 	});
-	it('cascade reach follows the scene size within 40..200 m', () => {
+	it('cascade reach follows the scene size within 40..300 m', () => {
 		expect(cascadeReach(5)).toBe(40);
 		expect(cascadeReach(50)).toBe(125);
-		expect(cascadeReach(500)).toBe(200);
-		expect(cascadeReach(NaN)).toBe(200);
+		expect(cascadeReach(500)).toBe(300);
+		expect(cascadeReach(NaN)).toBe(300);
 	});
 	it('says when the device draws less', () => {
 		expect(cappedNote('far', 'phone')).toBe('This device draws Soft');

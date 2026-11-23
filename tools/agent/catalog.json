@@ -3433,7 +3433,7 @@
 							"soft",
 							"far"
 						],
-						"description": "the scene's shadows for everyone: off, basic (the default), soft (softer edges + contact shadows), far (soft + the sky sun casts near and far, up to 200 m); a phone or headset may draw less (get_environment says shadowQualityDrawnHere)"
+						"description": "the scene's shadows for everyone: off, basic (the default), soft (softer edges + contact shadows), far (soft + the sky sun casts sharp near and far, out to 300 m; none past that); a phone or headset may draw less (get_environment says shadowQualityDrawnHere)"
 					},
 					"confirmId": {
 						"type": "string",
@@ -9277,7 +9277,7 @@
 										"soft",
 										"far"
 									],
-									"description": "the scene's shadows for everyone: off, basic (the default), soft (softer edges + contact shadows), far (soft + the sky sun casts near and far, up to 200 m); a phone or headset may draw less (get_environment says shadowQualityDrawnHere)"
+									"description": "the scene's shadows for everyone: off, basic (the default), soft (softer edges + contact shadows), far (soft + the sky sun casts sharp near and far, out to 300 m; none past that); a phone or headset may draw less (get_environment says shadowQualityDrawnHere)"
 								},
 								"confirmId": {
 									"type": "string",

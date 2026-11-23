@@ -26,6 +26,7 @@ import { aimLight, setShadowMapSize } from '$lib/lightParams';
 import { itemByHash, itemBlob } from '$lib/explorer';
 import { animatedBaseOf, writingBasePose } from '$lib/flowRuntime';
 import { reportedPose } from './poseReport.js';
+import { waterFacts } from './waterReport.js';
 import { meshGenReady, meshTakesImage, activeMeshConfig } from './meshProviders.js';
 import { featureStatus, toolSummary } from '../tools/toolStatus.js';
 import '../tools/builtinTools.js'; // 59 T5: the registry the prompt's tool lines read
@@ -164,7 +165,10 @@ function describeObject(object) {
 		...reportedPose(object, animatedBaseOf(object.uuid))
 	};
 	const material = object.material;
-	if (material && !Array.isArray(material)) {
+	// 104 A5: a body of water reports the water the person sees (its preset and colours), not its box's own material
+	const water = waterFacts(object);
+	if (water) out.water = water;
+	else if (material && !Array.isArray(material)) {
 		out.materialType = material.type;
 		if (material.color) out.color = '#' + material.color.getHexString();
 	}
@@ -1447,7 +1451,7 @@ export const AI_TOOLS = [
 		function: {
 			name: 'list_scene',
 			description:
-				'List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. Every mesh also has mesh {vertexCount, faceCount (triangles), bounds {local, world}} — each box [[minX, minY, minZ], [maxX, maxY, maxZ]], local in the mesh\'s own space (its vertices), world in the scene. The transform is the AUTHORED pose: an object an effect is moving also has animated: true, and live {position, rotation, scale, visible} when this frame differs; update_objects writes the authored pose, so never copy live back into it. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: "scene" | object uuid, page} to read one page of one graph.',
+				'List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. A body of water has water {preset, shallowColor, deepColor, level (how full 0-1), surface (world height of the still water), waves {height}} in place of color. Every mesh also has mesh {vertexCount, faceCount (triangles), bounds {local, world}} — each box [[minX, minY, minZ], [maxX, maxY, maxZ]], local in the mesh\'s own space (its vertices), world in the scene. The transform is the AUTHORED pose: an object an effect is moving also has animated: true, and live {position, rotation, scale, visible} when this frame differs; update_objects writes the authored pose, so never copy live back into it. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: "scene" | object uuid, page} to read one page of one graph.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1544,7 +1548,7 @@ export const AI_TOOLS = [
 									}
 								},
 								align: { type: 'string', enum: ['surface'], description: 'with at: back it onto the pinged surface (its +Z along the surface normal, upright on a wall) — a painting on a wall' },
-								snap: { type: 'string', enum: ['floor'], description: 'stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground' },
+								snap: { type: 'string', enum: ['floor'], description: 'stand it on whatever is straight under it: a terrain at any height, a floor or table at most 2 m above its base, else the ground; water and trigger volumes are passed through. The answer says placed {on, uuid, y, surface: terrain|mesh|ground}' },
 								face_user: { description: 'turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users' },
 								front: { type: 'string', enum: ['+z', '-z', '+x', '-x', '+y', '-y'], description: 'which local axis is its front for lookAt and face_user (default +z; many models face +x or -z — look at a screenshot)' },
 								parentUuid: { type: 'string', description: 'uuid of an existing group (or any object, not a light or camera) to nest under — position/rotation/scale are then LOCAL to it. A uuid that is not in the scene is an error and that object is not made' },
@@ -1608,7 +1612,7 @@ export const AI_TOOLS = [
 									}
 								},
 								align: { type: 'string', enum: ['surface'], description: 'with at: back it onto the pinged surface (its +Z along the surface normal, upright on a wall) — a painting on a wall' },
-								snap: { type: 'string', enum: ['floor'], description: 'stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground' },
+								snap: { type: 'string', enum: ['floor'], description: 'stand it on whatever is straight under it: a terrain at any height, a floor or table at most 2 m above its base, else the ground; water and trigger volumes are passed through. The answer says placed {on, uuid, y, surface: terrain|mesh|ground}' },
 								face_user: { description: 'turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users' },
 								front: { type: 'string', enum: ['+z', '-z', '+x', '-x', '+y', '-y'], description: 'which local axis is its front for lookAt and face_user (default +z; many models face +x or -z — look at a screenshot)' },
 								visible: { type: 'boolean' },

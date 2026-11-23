@@ -38,6 +38,14 @@ export function both5(geometry, op, arg, opts = {}) {
 	let r;
 	let k;
 	let order = 'appearance';
+	if (op === 'merge' && opts.clusterRule) {
+		// 99 K6: a case where the greedy distance clusters and the soup's grid cells part ways — its own expectation
+		k = ops.mergeByDistance(om, arg);
+		expect(k.error).toBeUndefined();
+		expect(k.dropped).toBe(opts.clusterRule.dropped);
+		expect(ops.opOutput(om, { order: 'appearance' }).positions.length / 9).toBe(opts.clusterRule.triangles);
+		return { checked: true };
+	}
 	if (op === 'merge') {
 		r = soup.mergeByDistanceSoup(tris, partition, arg);
 		k = ops.mergeByDistance(om, arg);
@@ -95,7 +103,11 @@ function cases() {
 	add('cracked grid (0.001)', fx.crackedGrid, () => [{ op: 'merge', arg: 0.001 }]);
 	add('cracked grid (1e-5 floor: refusal)', fx.crackedGrid, () => [{ op: 'merge', arg: 0 }]);
 	add('sliver cube (an edge collapses)', fx.sliverCube, () => [{ op: 'merge', arg: 0.001 }]);
-	add('grid collapsed by a big threshold', () => fx.grid(4), () => [{ op: 'merge', arg: 0.8 }]);
+	// 99 K6: merge clusters by DISTANCE now (greedy targets through the SpatialHash — meshOps/dissolve.js
+	// mergeByDistance). On the grid's 0.5 spacing under 0.8 the targets claim the same number of corners as the soup's
+	// round(p / 0.8) cells (24 triangles drop, 8 stay) but the clusters' members, so their means, differ: the soup no
+	// longer describes this case, so it carries its own expectation.
+	add('grid collapsed by a big threshold', () => fx.grid(4), () => [{ op: 'merge', arg: 0.8, opts: { clusterRule: { dropped: 24, triangles: 8 } } }]);
 	add('cube: nothing to merge (refusal)', fx.cube, () => [{ op: 'merge', arg: 0.001 }]);
 	add('split-normals uv seams: nothing moves (refusal)', fx.splitNormalsUv, () => [{ op: 'merge', arg: 0.001 }]);
 	add('two prisms pushed together', () => fx.merged(fx.ngonPrism(), fx.ngonPrism(), [0, 1.0004, 0]), () => [{ op: 'merge', arg: 0.001 }]);
@@ -177,7 +189,7 @@ describe('99 K4 family 5: merge / dissolve / delete on the kernel = the soup ope
 				const run = both5(g, c.op, c.arg, c.opts);
 				// the 67k cases are there to do work, not to agree on a refusal
 				if (name.startsWith('scan67k')) expect(!!(run.refused || run.error)).toBe(false);
-				if (run.refused) return;
+				if (run.refused || run.checked) return;
 				if (run.error) {
 					if ('kernelError' in run) expect(run.kernelError).toBe(run.error);
 					// a delete's refusals are the caller's (nothing picked / everything picked): same counts

@@ -2866,6 +2866,26 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   shortcut table stands down in Play), pad `GamepadSelect` via inputRuntime.onInput, the Play bar's `#moment-share`
   (PlayBanner) / `#embed-moment` (EmbedChrome). Debug: `momentStores` row + `momentBuffer` registered at runtime
   (`state()` carries the cost numbers). Suites: unit `moment`; e2e `moment-share`.
+- **SHADOW QUALITY AS SCENE DATA (106)** — `src/lib/shadows/`: Configure Scene ▸ Lights ▸ Shadow quality = Off · Basic ·
+  Soft · Far, stored as `environment.shadowLevel` (ABSENT = Basic: an old scene and an old release read Basic; the
+  setter and `set_light {shadowQuality}` store `basic` as absent), so it saves, syncs, undoes and snapshots with the
+  sky. Every device DRAWS it capped by its tier (`shadowLevelCore.TIER_SHADOW_CAP`, measured in S0: pc Far, phone
+  Soft without contact, Quest Basic until a preview measures it; `environment.shadowTier` = XR presenting / headset
+  UA / coarse pointer) and the row says "This device draws <cap>"; Quality ▸ Shadow detail (the old per-device map
+  cap, `shadowQuality`) caps further, and the governor's shadows-off under load is untouched. BOOT carries only
+  `shadowLevelCore` (+~2 KB); `shadowLevels.js` (+ `contactShadows.js`, `shadowLevelParams.js`) load the first time
+  a scene's drawn level is Soft or Far, and going back to Basic restores every original (Basic after Far = today's
+  Basic, asserted in pixels). Soft = PCF radius 3 on the rig sun AND authored lights (an authored shadow's radius is
+  serialized, so `LightShadow.toJSON` is guarded to write the AUTHORED radius); Far = the rig sun alone becomes
+  three r186's `SunLightShadow` (two cascades in one atlas, `isSunLight` flag, reach 300 m: three draws NO sun shadow
+  past the last cascade and fades its last 10 %, so 200 m needs > 200) and authored lights draw Soft's kernel (Q1:
+  swapping an authored shadow would put a SunLightShadow on the wire). Contact shadows (S2) are a LOCAL post entry
+  (`lightParams.contactShadowsWanted` → Outline prepends it; never in a look document) on tiers in `TIER_CONTACT`; the
+  march starts off the surface's depth-rebuilt normal and skips surfaces turned from the sun. The Cinematic view
+  (WebGPU picks a light's shadow node by CLASS) draws Far as Soft (`cinematicShadowLevel`); an XR session start/end
+  re-applies the cap. Suites: unit `shadowLevel106`; e2e `shadow-sync-106`, `shadow-levels-106`,
+  `shadow-identity-106` (release gate vs BASE_URL); S0 driver `shadow-frames-106.cjs` + page half
+  `shadow-s0-106.page.js` (also evaluated on the HONOR over raw CDP).
 
 ## UI design system (redesign epic)
 
@@ -5353,6 +5373,12 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   had edited the same statement), `onState` renamed on one side (two `const`s in one block), and
   `roomsAccess()`'s closing brace put back (the boundary fell between the return and the `}`).
   `node --check` after every union; a brace-depth scan counts braces inside strings and lies.
+- **SWAPPING A LIGHT'S SHADOW CLASS CORRUPTS THE OLD SHADOW'S mapSize (three r186 WebGLLights, 106).** The uniforms
+  cache is keyed by LIGHT id: the directional branch stores `shadowUniforms.shadowMapSize = shadow.mapSize` (a
+  REFERENCE), and when the same light later renders as a sun light the sun branch does
+  `shadowUniforms.shadowMapSize.copy(mapSize).multiply(extents)` on that cached object — i.e. INTO the own shadow's
+  mapSize (measured 2048 -> 4096x2048 after one Far frame, which then cost the next Basic frame double). Whoever
+  swaps `light.shadow` must remember the own shadow's mapSize and put it back (`shadowLevels.js mapSizeBack`).
 
 ## Verification (mandatory before commit)
 

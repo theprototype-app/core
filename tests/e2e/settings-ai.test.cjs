@@ -223,12 +223,9 @@ h.run(async () => {
 	gpt.call('n2', 'show', { action: 'panel', name: 'Explorer' }, 'edit', 'g_2');
 	const r2 = await gpt.answer('n2');
 	h.check(r2?.type === 'result' && r2.result?.panel === 'Explorer', `show from ChatGPT answered (${JSON.stringify(r2?.result ?? r2).slice(0, 120)})`);
-	const showLines = await h.eventually(
-		() => S('let t = []; S.toastStore.subscribe((v) => (t = v))(); return t.map((e) => (typeof e === "string" ? e : e.text)).join(" | ");'),
-		(t) => /ChatGPT opened Explorer/.test(t),
-		'ChatGPT show line',
-		10000
-	);
+	const toastLines = () => S('let t = []; S.toastStore.subscribe((v) => (t = v))(); return t.map((e) => (typeof e === "string" ? e : e.text)).join(" | ");');
+	await h.eventually(toastLines, (t) => /ChatGPT opened Explorer/.test(t), 'ChatGPT show line', 10000);
+	const showLines = await toastLines(); // h.eventually returns nothing
 	h.check(/ChatGPT opened Explorer/.test(showLines ?? '') && !/Claude opened Explorer/.test(showLines ?? ''), `the show line names ChatGPT, not Claude (${showLines})`);
 	await S('S.safeStorage.removeItem("show:allow:panel"); S.showTool?.showToolResetForTest?.();');
 	await P.locator('#connect-claude-disconnect').click().catch(() => {});

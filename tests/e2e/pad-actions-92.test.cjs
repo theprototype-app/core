@@ -35,12 +35,16 @@ async function stubPad(page) {
 		};
 	});
 }
-/** press and release a pad button (held long enough for a few polls) @param {any} page @param {number} i */
-async function tap(page, i, ms = 250) {
+/** press a pad button, HOLD it until the app has seen it (`seen`, or ~4 frames of the page's own rate: a
+ * headless Deck page draws at 2-7 fps and the poll rides that tick, so a fixed short tap can fall between
+ * two polls), then release it @param {any} page @param {number} i @param {() => Promise<boolean>} [seen] */
+async function tap(page, i, seen) {
 	await page.evaluate((i) => /** @type {any} */ (window).__padSet(i, true), i);
-	await page.waitForTimeout(ms);
+	if (seen) await h.eventually(seen, (v) => !!v, 'the pad press was seen', 8000).catch(() => {});
+	else await page.evaluate(() => new Promise((r) => { let n = 0; const f = () => (++n >= 4 ? r(null) : requestAnimationFrame(f)); requestAnimationFrame(f); }));
+	await page.waitForTimeout(150);
 	await page.evaluate((i) => /** @type {any} */ (window).__padSet(i, false), i);
-	await page.waitForTimeout(250);
+	await page.evaluate(() => new Promise((r) => { let n = 0; const f = () => (++n >= 3 ? r(null) : requestAnimationFrame(f)); requestAnimationFrame(f); }));
 }
 const V = (/** @type {any} */ page, /** @type {Function} */ fn, /** @type {any} */ arg) => page.evaluate(fn, arg);
 /** read a store off the facade @param {any} page @param {string} path */
@@ -89,7 +93,7 @@ async function jumpPeak(page, i) {
 		requestAnimationFrame(step);
 	});
 	await tap(page, i);
-	await page.waitForTimeout(900);
+	await page.waitForTimeout(1500);
 	const peak = await V(page, () => {
 		const w = /** @type {any} */ (window);
 		w.__peakOn = false;
@@ -152,7 +156,7 @@ h.run(async () => {
 	// Jump -> B (Crouch's button): the swap is flagged
 	await page.click('[data-remap="pad:GamepadA"] button');
 	await page.waitForTimeout(150);
-	await tap(page, B_BTN);
+	await tap(page, B_BTN, async () => !!(await read(page, 'gameKit.playerAccess.accessRemap')).pad?.GamepadA);
 	remap = await read(page, 'gameKit.playerAccess.accessRemap');
 	const note = ((await page.textContent('[data-remap-note]')) ?? '').trim();
 	h.check(remap.pad.GamepadA === 'GamepadB' && remap.pad.GamepadB === 'GamepadA', '5.4 Jump moves to B and Crouch takes A (' + JSON.stringify(remap.pad) + ')');

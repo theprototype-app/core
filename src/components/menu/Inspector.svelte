@@ -82,7 +82,7 @@
 		addMaterialSlot
 	} from '$lib/materialsHandler';
 	// 105-slots: the ONE active material slot (shared with the UV editor); the slot list itself is lazy (SlotList.svelte)
-	import { activeMaterialSlot } from '$lib/slotDraw.js';
+	import { activeMaterialSlot, slotIdsOf, ownMaterialsOf } from '$lib/slotDraw.js';
 	import { linkedOthers, sharedCount } from '$lib/slotDraw.js'; // 105-slots LINK (the boot gate): the colour drag reaches every holder
 	// 105-slots: "Select its faces" / "Assign selected faces" read the Edit Mesh face session (already in the boot)
 	import { faceEditObject, faceEditSelectedTris } from '$lib/faceEdit';
@@ -298,7 +298,9 @@
 		// P6: the look's THIRD layer, summarised where the other two live
 		shaderGraphs,
 		SCENE_GRAPH_KEY,
-		shaderDrivenCount
+		shaderDrivenCount,
+		graphKeyForSlot,
+		shaderKeyParts
 	} from '$lib/shaderGraph';
 
 	/**
@@ -732,15 +734,35 @@
 		);
 	}
 
+	/** 105-slot-shaders: the ACTIVE slot's id on a slot-list primary (the notice and the skip are per slot) */
+	const activeSlotId = $derived.by(() => {
+		$objectsGroup;
+		return primaryMulti ? (slotIdsOf(ownMaterialsOf($selectedObject))[activeSlot] ?? null) : null;
+	});
+	/** is the part of `o` the Material rows edit drawn by a shader? (a slot list: its active slot) @param {any} o */
+	const drivenHere = (o) => (activeSlotId && o?.uuid === $selectedObject?.uuid ? isShaderDriven(o.uuid, activeSlotId) : isShaderDriven(o.uuid));
+	/** the document Detach removes for `o`: the active slot's driver (its own key or the object's), else the
+	 * object's own; null = inherited from the scene default @param {any} o @returns {string | null} */
+	const ownShaderKeyOf = (o) => {
+		if (activeSlotId && o?.uuid === $selectedObject?.uuid) {
+			const key = graphKeyForSlot(o.uuid, activeSlotId);
+			return key && key !== SCENE_GRAPH_KEY ? key : null;
+		}
+		return shaderGraphOf(o.uuid) ? o.uuid : null;
+	};
 	const shaderDriven = $derived.by(() => {
 		$objectsGroup;
-		return matTargets.filter((/** @type {any} */ o) => isShaderDriven(o.uuid));
+		$shaderGraphs;
+		return matTargets.filter((/** @type {any} */ o) => drivenHere(o));
 	});
 	/** the members a material write may still touch */
 	const shaderFree = $derived.by(() => {
 		$objectsGroup;
-		return matTargets.filter((/** @type {any} */ o) => !isShaderDriven(o.uuid));
+		$shaderGraphs;
+		return matTargets.filter((/** @type {any} */ o) => !drivenHere(o));
 	});
+	/** 105-slot-shaders: the active slot is driven by the shader of ALL its slots (Detach then removes that one) */
+	const drivenByAllSlots = $derived(!!activeSlotId && shaderDriven.length === 1 && ownShaderKeyOf(shaderDriven[0]) === $selectedObject?.uuid);
 	const allShaderDriven = $derived(matTargets.length > 0 && shaderFree.length === 0);
 	/**
 	 * Driven members that own their graph — the only ones Detach can honestly act on.
@@ -751,7 +773,7 @@
 	 */
 	const shaderOwn = $derived.by(() => {
 		$objectsGroup;
-		return shaderDriven.filter((/** @type {any} */ o) => !!shaderGraphOf(o.uuid));
+		return shaderDriven.filter((/** @type {any} */ o) => !!ownShaderKeyOf(o));
 	});
 
 	/** Remove the graph these objects own, which is what actually detaches them. */
@@ -762,8 +784,12 @@
 			// deleting the document IS the detach: compileAndApply's no-doc path restores
 			// each target's own material. If a SCENE graph exists it then takes over, which
 			// is the documented own -> scene -> material resolution order.
-			setShaderGraphFor(object.uuid, null);
-			detachFrom(object);
+			// 105-slot-shaders: on a slot list, the ACTIVE slot's driver (its own key, or the all-slots one)
+			const key = ownShaderKeyOf(object) ?? object.uuid;
+			setShaderGraphFor(key, null);
+			const { slot } = shaderKeyParts(key);
+			if (slot) detachFrom(object, slot);
+			else if (!Array.isArray(object.material)) detachFrom(object);
 		}
 		pokeScene();
 		showToast(own.length === 1 ? 'Shader removed from this object' : 'Shader removed from ' + own.length + ' objects');
@@ -4414,7 +4440,11 @@
 								{allShaderDriven
 									? shaderDriven.length > 1
 										? `A shader graph drives all ${shaderDriven.length} selected materials.`
-										: 'A shader graph drives this material.'
+										: activeSlotId
+											? drivenByAllSlots
+												? 'The shader of all slots drives this slot.'
+												: 'A shader graph drives this slot.'
+											: 'A shader graph drives this material.'
 									: `A shader graph drives ${shaderDriven.length} of ${matTargets.length} selected materials — edits below skip those.`}
 							</p>
 							<div class="shader-driven-actions">
@@ -4429,10 +4459,14 @@
 									<button
 										id="material-detach-shader"
 										class="ui-button-quiet"
-										title="Remove the graph and put these objects back on their own material"
+										title={activeSlotId
+											? drivenByAllSlots
+												? 'Remove the shader of all slots and put every slot back on its own material'
+												: 'Remove this slot’s shader and put it back on its own material'
+											: 'Remove the graph and put these objects back on their own material'}
 										onclick={detachShader}
 									>
-										Detach
+										{drivenByAllSlots ? 'Detach all slots' : 'Detach'}
 									</button>
 								{:else}
 									<!-- driven by the SCENE default: there is no per-object graph to

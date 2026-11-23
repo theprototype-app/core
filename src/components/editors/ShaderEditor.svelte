@@ -44,8 +44,12 @@
 		setShaderGraphFor,
 		detachFrom,
 		shaderTargetSupported,
-		shaderRefusalReason
+		shaderRefusalReason,
+		shaderKeyParts,
+		moveShaderGraph
 	} from '$lib/shaderGraph';
+	// 105-slot-shaders: the active material slot is ONE store, shared with the Inspector and the UV editor
+	import { activeMaterialSlot, slotIdsOf, ownOf } from '$lib/slotDraw.js';
 	import { beginShaderGesture, endShaderGesture } from '$lib/shaderSync';
 	import { shaderNodeDefs, shaderNodeDef, SURFACE_NODE, POST_OUTPUT_NODE } from '$lib/shaderCatalog';
 	// P4: the POST domain. The editor is one surface for two domains — same cards, same
@@ -128,7 +132,30 @@
 			? $activePostGraph
 			: (postGraphs[0]?.key ?? '')
 	);
-	const scope = $derived(isPost ? postScope : (selectedUuid ?? SCENE_GRAPH_KEY));
+	// 105-slot-shaders: an object with a material LIST scopes to its active slot or to all of its slots (the chip).
+	// A key is `<uuid>/<slotId>` for one slot; `<uuid>` stays the whole object = every slot without its own.
+	const selectedObject = $derived(selectedUuid ? ($objectsGroup?.getObjectByProperty('uuid', selectedUuid) ?? null) : null);
+	/** @param {any} object @returns {{id: string, name: string}[]} */
+	function slotsOf(object) {
+		const list = Array.isArray(object?.material) ? object.material.map(ownOf) : [];
+		const ids = slotIdsOf(list);
+		return list.map((/** @type {any} */ m, /** @type {number} */ i) => ({ id: ids[i], name: m?.name || 'Slot ' + (i + 1) }));
+	}
+	const slotList = $derived(slotsOf(selectedObject));
+	const activeSlot = $derived(slotList.length > 1 ? (slotList[Math.min(Math.max(0, $activeMaterialSlot), slotList.length - 1)] ?? null) : null);
+	const slotKey = $derived(activeSlot && selectedUuid ? selectedUuid + '/' + activeSlot.id : null);
+	/** what the chip was set to by hand, for THIS object + slot (null = follow what exists) */
+	let chipPick = $state(/** @type {'all' | 'slot' | null} */ (null));
+	$effect(() => {
+		void selectedUuid;
+		void $activeMaterialSlot;
+		chipPick = null;
+	});
+	// follow what exists: the slot's own document, else the object's, else the slot (scope = object + active slot)
+	const chip = $derived(
+		!slotKey ? 'all' : (chipPick ?? ($shaderGraphs[slotKey] ? 'slot' : selectedUuid && $shaderGraphs[selectedUuid] ? 'all' : 'slot'))
+	);
+	const scope = $derived(isPost ? postScope : selectedUuid ? (chip === 'slot' && slotKey ? slotKey : selectedUuid) : SCENE_GRAPH_KEY);
 	/** the navigator's list, split by domain (see its markup below) */
 	const treeDocuments = $derived(
 		Object.fromEntries(
@@ -144,15 +171,32 @@
 				: 'No post effect'
 			: scope === SCENE_GRAPH_KEY
 				? 'The scene'
-				: $objectsGroup?.getObjectByProperty('uuid', scope)?.name || 'This object'
+				: $objectsGroup?.getObjectByProperty('uuid', shaderKeyParts(scope).uuid ?? scope)?.name || 'This object'
 	);
 	const scopeLabel = $derived(
 		isPost
 			? ownerName + ' — post effect'
 			: scope === SCENE_GRAPH_KEY
 				? 'Scene default material'
-				: ownerName + ' — own material'
+				: activeSlot
+					? ownerName + (chip === 'slot' ? ' — slot ' + activeSlot.name : ' — all slots')
+					: ownerName + ' — own material'
 	);
+	/** 105-slot-shaders: "Only this slot" / "All slots" moves the document between the two keys (one undo step) */
+	const moveTarget = $derived(
+		!slotKey || !selectedUuid || !doc
+			? null
+			: chip === 'all' && !$shaderGraphs[slotKey]
+				? { to: slotKey, label: 'Only this slot', title: 'Move this shader onto slot ' + activeSlot?.name + ' only; the other slots go back to their own materials' }
+				: chip === 'slot' && !$shaderGraphs[selectedUuid]
+					? { to: selectedUuid, label: 'All slots', title: 'Move this shader onto every slot of the object that has no shader of its own' }
+					: null
+	);
+	function moveScope() {
+		if (!moveTarget) return;
+		const to = moveTarget.to;
+		if (moveShaderGraph(scope, to)) chipPick = to === slotKey ? 'slot' : 'all';
+	}
 
 	// ---- graph settings (LOCAL prefs, the node editor's set) -------------------
 	let propsOpen = $state(LS?.getItem('shaderPropsOpen') !== 'false');
@@ -298,7 +342,7 @@
 			return;
 		}
 		if (scope !== SCENE_GRAPH_KEY) {
-			const object = $objectsGroup?.getObjectByProperty('uuid', scope);
+			const object = $objectsGroup?.getObjectByProperty('uuid', shaderKeyParts(scope).uuid ?? scope);
 			if (object && !shaderTargetSupported(object)) {
 				showToast(shaderRefusalReason(object));
 				return;
@@ -328,8 +372,12 @@
 			return;
 		}
 		if (scope !== SCENE_GRAPH_KEY) {
-			const object = $objectsGroup?.getObjectByProperty('uuid', scope);
-			if (object) detachFrom(object);
+			// 105-slot-shaders: a slot key detaches that slot; an object key on a material list leaves the slots with
+			// their own keys alone (the compile of the deleted key detaches exactly what it drove)
+			const { uuid, slot } = shaderKeyParts(scope);
+			const object = $objectsGroup?.getObjectByProperty('uuid', uuid ?? scope);
+			if (object && slot) detachFrom(object, slot);
+			else if (object && !Array.isArray(object.material)) detachFrom(object);
 		}
 		setShaderGraphFor(scope, null);
 	}
@@ -697,6 +745,31 @@
 			{/each}
 		</select>
 	{/if}
+	{#if !isPost && activeSlot}
+		<!-- 105-slot-shaders: the scope chip of an object with material slots (the active slot is the Inspector's) -->
+		<div class="tp-seg shader-slot-chip" id="shader-slot-chip" role="group" aria-label="Which material slots this shader is for">
+			<button
+				class="tp-seg-btn"
+				id="shader-slot-all"
+				aria-pressed={chip === 'all'}
+				title="One shader for every slot that has none of its own"
+				onclick={() => (chipPick = 'all')}>All slots</button
+			>
+			<button
+				class="tp-seg-btn shader-slot-one"
+				id="shader-slot-one"
+				aria-pressed={chip === 'slot'}
+				title={'A shader for slot ' + activeSlot.name + ' only (pick another slot in the Inspector)'}
+				onclick={() => (chipPick = 'slot')}>{activeSlot.name}</button
+			>
+		</div>
+		{#if moveTarget}
+			<button class="ui-button-quiet shader-slot-move" id="shader-slot-move" title={moveTarget.title} onclick={moveScope}>
+				<Icon name="arrow-left-right" size={16} aria-hidden="true" />
+				<span>{moveTarget.label}</span>
+			</button>
+		{/if}
+	{/if}
 {/snippet}
 
 {#snippet editorActions()}
@@ -739,6 +812,8 @@
 					     listing both halves together would offer rows that can go nowhere -->
 					<GraphTree
 						kind="shader"
+						keyParts={shaderKeyParts}
+						{slotsOf}
 						documents={treeDocuments}
 						sceneKey={SCENE_GRAPH_KEY}
 						label={isPost ? 'Post effects' : 'Shaders'}
@@ -1304,6 +1379,19 @@
 	}
 	.shader-domain {
 		flex-shrink: 0;
+	}
+	.shader-slot-one {
+		max-width: 9rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.shader-slot-move {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		font-size: 0.7rem;
+		white-space: nowrap;
 	}
 	.shader-post-pick {
 		max-width: 11rem;

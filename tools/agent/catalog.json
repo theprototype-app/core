@@ -2294,7 +2294,7 @@
 		{
 			"name": "list_materials",
 			"title": "Read materials",
-			"description": "What objects wear: per object its material slots (type, colour, numbers, which maps) and shader, plus the preset names (the starters Wood, Metal, Plastic, Glass, Stone, Rubber, Fish scales, Neon, Water, and any the person saved) and shader keys. Read this before editing.",
+			"description": "What objects wear: per object its material slots (type, colour, numbers, which maps; on a slot list each slot's id and the shader that draws it) and shader, plus the preset names (the starters Wood, Metal, Plastic, Glass, Stone, Rubber, Fish scales, Neon, Water, and any the person saved) and shader keys. Read this before editing.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -2371,6 +2371,13 @@
 					"name": {
 						"type": "string"
 					},
+					"slot": {
+						"type": [
+							"integer",
+							"string"
+						],
+						"description": "one material slot of a multi-material object (index, id or name from list_materials): that slot gets its own shader; absent = the whole object (every slot without its own)"
+					},
 					"replace": {
 						"type": "boolean",
 						"description": "replace a graph the object already has"
@@ -2405,7 +2412,14 @@
 				"properties": {
 					"shader": {
 						"type": "string",
-						"description": "the key from create_shader or list_materials"
+						"description": "the key from create_shader or list_materials (a slot's is \"<uuid>/<slot id>\")"
+					},
+					"slot": {
+						"type": [
+							"integer",
+							"string"
+						],
+						"description": "with an object uuid as shader: that material slot's own shader (index, id or name)"
 					},
 					"params": {
 						"type": "array",
@@ -2474,6 +2488,13 @@
 							"null"
 						],
 						"description": "the key of the graph to copy, or null to remove"
+					},
+					"slot": {
+						"type": [
+							"integer",
+							"string"
+						],
+						"description": "one material slot of a multi-material object (index, id or name from list_materials): that slot gets its own shader; absent = the whole object (every slot without its own)"
 					}
 				},
 				"required": [
@@ -8876,7 +8897,7 @@
 									"maximum": 200
 								}
 							},
-							"description": "What objects wear: per object its material slots (type, colour, numbers, which maps) and shader, plus the preset names (the starters Wood, Metal, Plastic, Glass, Stone, Rubber, Fish scales, Neon, Water, and any the person saved) and shader keys. Read this before editing."
+							"description": "What objects wear: per object its material slots (type, colour, numbers, which maps; on a slot list each slot's id and the shader that draws it) and shader, plus the preset names (the starters Wood, Metal, Plastic, Glass, Stone, Rubber, Fish scales, Neon, Water, and any the person saved) and shader keys. Read this before editing."
 						},
 						"get_material": {
 							"type": "object",
@@ -8909,6 +8930,13 @@
 								"name": {
 									"type": "string"
 								},
+								"slot": {
+									"type": [
+										"integer",
+										"string"
+									],
+									"description": "one material slot of a multi-material object (index, id or name from list_materials): that slot gets its own shader; absent = the whole object (every slot without its own)"
+								},
 								"replace": {
 									"type": "boolean",
 									"description": "replace a graph the object already has"
@@ -8933,7 +8961,14 @@
 							"properties": {
 								"shader": {
 									"type": "string",
-									"description": "the key from create_shader or list_materials"
+									"description": "the key from create_shader or list_materials (a slot's is \"<uuid>/<slot id>\")"
+								},
+								"slot": {
+									"type": [
+										"integer",
+										"string"
+									],
+									"description": "with an object uuid as shader: that material slot's own shader (index, id or name)"
 								},
 								"params": {
 									"type": "array",
@@ -8992,6 +9027,13 @@
 										"null"
 									],
 									"description": "the key of the graph to copy, or null to remove"
+								},
+								"slot": {
+									"type": [
+										"integer",
+										"string"
+									],
+									"description": "one material slot of a multi-material object (index, id or name from list_materials): that slot gets its own shader; absent = the whole object (every slot without its own)"
 								}
 							},
 							"required": [

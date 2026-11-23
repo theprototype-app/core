@@ -554,6 +554,8 @@ export const DEBUG_HOOKS = [
 	// 36-export: the export builder, its stores, the export boot + runtime state
 	['exportBuilder', () => import('./export/exportBuilder.js')],
 	['exportStores', () => import('./export/exportStores.js')],
+	// 63-publish: the publish check's data door (save_scene, cloudApi.publishCheck)
+	['publishCheckData', () => import('./export/publishCheckData.js')],
 	// 41b: the burger's Project actions setting + Save options (H14), the settings-row fit (H12)
 	['projectActions', () => import('./projectActions.js')],
 	['saveOptions', () => import('./saveOptions.js')],

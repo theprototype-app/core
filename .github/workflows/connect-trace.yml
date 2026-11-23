@@ -1,0 +1,86 @@
+# DRAFT deps-fix/connect-trace (never merged): why Playwright's click on Connect never returns on GitHub
+# runners. The battery's own machine (battery.yml's container, refs, installs, dev server + local signaling),
+# but only post-finish + timeline-panes, each with its second try, twice: once with the plain click (traced)
+# and once with noWaitAfter. helpers.connectTraced prints the [ct] lines; the traces upload with the logs.
+name: connect-trace
+
+on:
+  push:
+    branches: [deps-fix/connect-trace]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  trace:
+    name: connect-trace ${{ matrix.variant }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      options: --ipc=host
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [click, nowait]
+    env:
+      E2E_NO_PERF_OFFER: '1'
+      MODE: quick
+      E2E_CONNECT_TRACE: '1'
+      E2E_CONNECT_NOWAIT: ${{ matrix.variant == 'nowait' && '1' || '' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: core
+      - name: refs
+        id: refs
+        run: echo "refs=$(node -p "JSON.stringify(require('./core/tests/e2e/battery.json').refs)")" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ fromJSON(steps.refs.outputs.refs).scenes.repo }}
+          ref: ${{ fromJSON(steps.refs.outputs.refs).scenes.ref }}
+          path: scenes
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ fromJSON(steps.refs.outputs.refs).modules.repo }}
+          ref: ${{ fromJSON(steps.refs.outputs.refs).modules.ref }}
+          path: modules
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ fromJSON(steps.refs.outputs.refs).packs.repo }}
+          ref: ${{ fromJSON(steps.refs.outputs.refs).packs.ref }}
+          path: packs
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: core/.nvmrc
+          cache: npm
+          cache-dependency-path: |
+            core/package-lock.json
+            modules/package-lock.json
+      - name: install
+        run: |
+          command -v openssl > /dev/null || (apt-get update -qq && apt-get install -y -qq --no-install-recommends openssl > /dev/null)
+          (cd core && npm ci --no-audit --no-fund && npm run certs)
+          (cd modules && npm ci --no-audit --no-fund && node scripts/pack.cjs --all --force)
+      - name: post-finish + timeline-panes (${{ matrix.variant }})
+        working-directory: core
+        run: |
+          W=$GITHUB_WORKSPACE; S=$W/scenes; G=$S/games
+          export SCENES_DIR=$S SCENES_REPO=$S SHELL_SCENES_DIR=$G GAMES_DIR=$G FBW_SCENES=$S/examples
+          export MODULES_REPO=$W/modules MODULES_DIR=$W/modules PACKS_DIR=$W/packs
+          export E2E_CONNECT_TRACE_DIR=$W/connect-trace; mkdir -p "$E2E_CONNECT_TRACE_DIR"
+          node scripts/ci/battery.cjs run --set required --only post-finish,timeline-panes --retry --shard 1 --of 1 \
+            --serve --port 5173 --deadline 45 --out "$W/battery-out"
+      - name: the [ct] lines
+        if: always()
+        run: grep -h '^\[ct ' "$GITHUB_WORKSPACE"/battery-out/logs/*.log || echo "no [ct] lines"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: connect-trace-${{ matrix.variant }}
+          path: |
+            battery-out
+            connect-trace
+          retention-days: 14
+          if-no-files-found: ignore

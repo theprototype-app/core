@@ -27,6 +27,12 @@ name: deps
 on:
   pull_request:
     branches: [deps, main]
+    # DRAFT deps-fix/connect-trace only (never merged): this PR changes nothing but these three files, so
+    # it does not spend a full battery; connect-trace.yml runs the two suites it is about
+    paths-ignore:
+      - tests/e2e/helpers.cjs
+      - .github/workflows/connect-trace.yml
+      - .github/workflows/deps.yml
   workflow_dispatch:
 
 permissions:

@@ -417,9 +417,11 @@ async function connect(from, to, settleMs = 9000) {
 	// and the dial input shows only after a tap on it — press it first when it is what is there
 	// …and on the Invite-first pill (uir-people) the field shows after Join…
 	await step(from, 'fill the peer id', async () => (await openDial(from.page)).fill(to.id));
-	await step(from, 'press Connect', () =>
-		from.page.getByRole('button', { name: 'Connect', exact: true }).click()
-	);
+	if (process.env.E2E_CONNECT_TRACE) await connectTraced(from);
+	else
+		await step(from, 'press Connect', () =>
+			from.page.getByRole('button', { name: 'Connect', exact: true }).click()
+		);
 	// R22 round 33 REMOVED the dial-time ask (round 31's "Save & connect / Connect anyway /
 	// Cancel"), and with it the block that used to answer it here. A dialer holding work in
 	// an UNNAMED scene now dials immediately; the question is put at the HOST's APPROVAL
@@ -453,6 +455,97 @@ async function connect(from, to, settleMs = 9000) {
  * rethrown unchanged, with the page's collected errors and whether the connect
  * chrome rendered at all attached to it.
  */
+/**
+ * DRAFT deps-fix/connect-trace (never merged): why Playwright's click on Connect never returns on
+ * GitHub runners ("performing click action" → 30 s). Logs, with times: the click reaching the page
+ * (capture listener = "handler entered"), the click event finishing its dispatch (window bubble =
+ * "handler returned"), every history/location/navigation write around it, the main thread's
+ * longest stall, and Playwright's own "click returned". A Playwright trace of the context goes to
+ * E2E_CONNECT_TRACE_DIR. E2E_CONNECT_NOWAIT=1 clicks with noWaitAfter (tests the "waits for a
+ * navigation the click scheduled" theory).
+ */
+async function connectTraced(from) {
+	const page = from.page;
+	const t0 = Date.now();
+	const log = (m) => console.log(`[ct ${from.id}] +${Date.now() - t0}ms ${m}`);
+	page.on('console', (m) => {
+		const s = m.text();
+		if (s.startsWith('[ct]')) log('page ' + s.slice(5));
+	});
+	page.on('framenavigated', (f) => {
+		if (f === page.mainFrame()) log('framenavigated ' + f.url());
+	});
+	await page.evaluate(() => {
+		if (/** @type {any} */ (window).__ct) return;
+		/** @type {any} */ (window).__ct = 1;
+		const say = (m) => console.log('[ct] t=' + Math.round(performance.now()) + ' ' + m);
+		const where = () => (new Error().stack || '').split('\n').slice(3, 7).map((l) => l.trim()).join(' | ');
+		for (const k of ['pushState', 'replaceState']) {
+			const o = history[k].bind(history);
+			history[k] = (s, u, url) => {
+				say(`${k} url=${url} state=${JSON.stringify(s)} len=${history.length} @ ${where()}`);
+				return o(s, u, url);
+			};
+		}
+		for (const k of ['back', 'forward', 'go']) {
+			const o = history[k].bind(history);
+			history[k] = (...a) => {
+				say(`history.${k}(${a.join(',')}) len=${history.length} @ ${where()}`);
+				return o(...a);
+			};
+		}
+		addEventListener('popstate', (e) => say('popstate state=' + JSON.stringify(e.state) + ' ' + location.href));
+		addEventListener('hashchange', () => say('hashchange ' + location.href));
+		addEventListener('beforeunload', () => say('beforeunload'));
+		const nav = /** @type {any} */ (window).navigation;
+		if (nav) nav.addEventListener('navigate', (e) => say(`navigate ${e.navigationType} ${e.destination.url} sameDocument=${e.destination.sameDocument}`));
+		const isConnect = (e) => /** @type {any} */ (e.target)?.textContent?.trim() === 'Connect';
+		for (const t of ['pointerdown', 'mousedown', 'pointerup', 'mouseup'])
+			addEventListener(t, (e) => isConnect(e) && say(t + ' reached Connect'), true);
+		addEventListener('click', (e) => isConnect(e) && say('Connect handler entered (click, capture)'), true);
+		addEventListener('click', (e) => isConnect(e) && say('Connect handler returned (click dispatch done)'), false);
+		let last = performance.now();
+		let gap = 0;
+		setInterval(() => {
+			const n = performance.now();
+			gap = Math.max(gap, n - last - 100);
+			last = n;
+		}, 100);
+		/** @type {any} */ (window).__ctGap = () => Math.round(gap);
+	});
+	const dir = process.env.E2E_CONNECT_TRACE_DIR;
+	let tracing = false;
+	if (dir)
+		try {
+			await page.context().tracing.start({ screenshots: true, snapshots: true, title: 'connect ' + from.id });
+			tracing = true;
+		} catch (e) {
+			log('trace start failed: ' + String(/** @type {any} */ (e)?.message).split('\n')[0]);
+		}
+	const noWait = !!process.env.E2E_CONNECT_NOWAIT;
+	log('click start noWaitAfter=' + noWait + ' url=' + page.url());
+	try {
+		await step(from, 'press Connect', () =>
+			page.getByRole('button', { name: 'Connect', exact: true }).click(noWait ? { noWaitAfter: true } : {})
+		);
+		log('click returned');
+	} catch (e) {
+		log('click threw: ' + String(/** @type {any} */ (e)?.message).split('\n')[0]);
+		throw e;
+	} finally {
+		const probe = await Promise.race([
+			page.evaluate(() => `gap=${/** @type {any} */ (window).__ctGap()}ms len=${history.length} url=${location.href}`),
+			new Promise((r) => setTimeout(() => r('page.evaluate did not answer in 5 s (main thread blocked?)'), 5000))
+		]).catch((e) => 'evaluate failed: ' + String(e?.message).split('\n')[0]);
+		log('after click: ' + probe);
+		if (tracing && dir)
+			await page
+				.context()
+				.tracing.stop({ path: require('path').join(dir, `connect-${from.id}-${Date.now()}.zip`) })
+				.catch((e) => log('trace stop failed: ' + String(e?.message).split('\n')[0]));
+	}
+}
+
 async function step(peer, what, run) {
 	try {
 		return await run();

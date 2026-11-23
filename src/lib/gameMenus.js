@@ -5,6 +5,7 @@
 // card — are reached through dynamic imports or are their own lazy chunks.
 import { writable, derived, get } from 'svelte/store';
 import { scenePhysicsState_ } from './scenePhysics';
+import { isLocked } from '../stores/sceneStore';
 import { menusRules } from './gameMenusCore.js';
 // the edit half (setGameMenus) and the newer-version notice live in gameMenusPlan / gameMenusRuntime (lazy)
 
@@ -20,6 +21,20 @@ export const gameMenus = derived(scenePhysicsState_, ($s) => menusRules($s?.play
  * @type {import('svelte/store').Writable<{open: boolean, mode: 'start' | 'play', page: string}>}
  */
 export const titleScreen = writable({ open: false, mode: /** @type {'start' | 'play'} */ ('play'), page: '' });
+
+// when Play was entered last: the menus runtime is a lazy chunk, and a Play pressed while it was still
+// loading must still open on the title (the runtime looks at this when it starts)
+let enteredAt = 0;
+let wasLocked = false;
+isLocked.subscribe((v) => {
+	const now = v === true;
+	if (now && !wasLocked) enteredAt = Date.now();
+	wasLocked = now;
+});
+/** ms since Play was last entered (Infinity when not playing) */
+export function sincePlayEntered() {
+	return wasLocked ? Date.now() - enteredAt : Infinity;
+}
 
 /** this play session already went past the title (a re-lock, a menu Resume must not show it again) */
 let titlePassed = false;

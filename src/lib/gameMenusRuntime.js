@@ -14,7 +14,7 @@ import { get } from 'svelte/store';
 import { peers, peerPlayModes, showToast } from '../stores/appStore.js';
 import { isLocked, editorMode } from '../stores/sceneStore';
 import { gameState, setGameState } from './gameState';
-import { gameMenus, titleScreen, menuPause, menuDuck, DUCK_LEVEL, pauseRefused, openTitleScreen, closeTitleScreen, titleWasPassed, markTitlePassed } from './gameMenus';
+import { gameMenus, titleScreen, menuPause, menuDuck, DUCK_LEVEL, pauseRefused, openTitleScreen, closeTitleScreen, titleWasPassed, markTitlePassed, sincePlayEntered } from './gameMenus';
 import { pauseWanted } from './gameMenusPlan.js';
 import { menusNewer } from './gameMenusCore.js';
 import { shellMenu } from './gameShell';
@@ -103,6 +103,8 @@ function menuUp() {
 	return playing && ((m.open && !m.standalone) || get(titleScreen).open);
 }
 
+/** a Play entered at most this long before the runtime started still opens on the title */
+const LATE_TITLE_MS = 10000;
 /** @type {(() => void)[]} */
 let offs = [];
 let warnedFor = '';
@@ -127,6 +129,9 @@ export function startMenusRuntime() {
 		else void dropMenuPause();
 	};
 	let wasPlaying = get(isLocked) === true;
+	// Play was pressed while this chunk was still loading: open on the title all the same
+	const t0 = get(gameMenus).title;
+	if (wasPlaying && t0 && t0.editor !== false && !get(embedMode) && !titleWasPassed() && sincePlayEntered() < LATE_TITLE_MS) openTitleScreen('play');
 	offs.push(
 		isLocked.subscribe((v) => {
 			const now = v === true;

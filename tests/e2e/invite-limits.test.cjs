@@ -160,6 +160,10 @@ h.run(async () => {
 
 	// ==================================================================== 4
 	console.log('\n=== 4. Review lets one in by hand ===');
+	// Review lists only dials still inside the 90 s a joiner waits; on a slow box the flood is older than that by
+	// now, so two fresh failed dials go in first
+	for (const id of ['e0001', 'e0002']) await dial(id, { invite: core.dialInvite(core.newToken(), id, H.id) });
+	await until(() => failed(H).then((f) => f.rows.filter((r) => Date.now() - r.at < 60_000).length), (n) => n >= 2, '4.0 two fresh failed dials');
 	await row('.fij-review').click({ timeout: 5000 });
 	const firstRow = row('.fij-row');
 	const pid = await firstRow.getAttribute('data-peer', { timeout: 5000 }).catch(() => null);

@@ -63,12 +63,14 @@ h.run(async () => {
 	const applied = () => B.page.evaluate(() => window.__renames ?? []);
 	h.check(await inPage(B, COUNT, target), '4.0 B counts the renames it applies');
 	await inPage(B, `s.peerRateGate.peerRateLimits.set('strict');`);
+	const gate0 = await inPage(B, `return s.peerRateGate.rateGateStats();`);
 	const tSend = Date.now();
 	await sendN(A, rename, 1000);
 	const sendMs = Date.now() - tSend;
 	await h.eventually(() => toast(B, 'is sending too many edits'), (v) => v === true, '4.1 the receiver is told', 15000);
 	await B.page.waitForTimeout(1500);
 	const strictApplied = await applied();
+	console.log('DIAG gate ' + JSON.stringify(await inPage(B, `return { before: arg, after: s.peerRateGate.rateGateStats() };`, gate0)));
 	// the burst (120) plus the refill (20/s) over however long the flood took to be applied — measured 146..323 of
 	// 1000 on the Deck — so the bound is "most of it stopped", not an exact number
 	h.check(strictApplied.length >= 119 && strictApplied.length <= 500, `4.2 Strict stops most of the flood: ${strictApplied.length} of 1000 applied (sent in ${sendMs} ms)`);
@@ -81,6 +83,7 @@ h.run(async () => {
 	await sendN(A, rename, 1000);
 	await h.eventually(() => applied().then((a) => a.length), (n) => n === 1000, '5.0 with limits off all 1000 renames are applied', 30000);
 	const offApplied = await applied();
+	console.log('DIAG gate-off ' + JSON.stringify(await inPage(B, `return s.peerRateGate.rateGateStats();`)) + ' applied ' + offApplied.length);
 	const inOrder = offApplied.every((n, k) => n === 'flood-' + k);
 	h.check(inOrder, `5.0b …in the order they were sent (${inOrder ? 'yes' : 'first out of order at #' + offApplied.findIndex((n, k) => n !== 'flood-' + k)})`);
 	await h.eventually(() => chatCount(B, 'free-'), (n) => n === 60, '5.1 with limits off all 60 arrive', 15000);

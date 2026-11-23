@@ -35,9 +35,18 @@ function sayNow(key) {
  */
 export function admitRate(conn, type) {
 	const peerId = conn.peer;
-	if (get(sessionHost) === peerId) return true;
-	const over = limiter.take(peerId, type, get(peerRateLimits));
-	if (over === 'ok') return true;
+	if (get(sessionHost) === peerId) {
+		stats.exempt++;
+		return true;
+	}
+	const preset = get(peerRateLimits);
+	const over = limiter.take(peerId, type, preset);
+	stats.last = { peerId, type, preset };
+	if (over === 'ok') {
+		stats.ok++;
+		return true;
+	}
+	stats.refused++;
 	if (sayNow(peerId + '|' + over)) {
 		const what = over === 'chat' ? 'chat messages' : 'edits';
 		showToast(`${peerLabel(peerId)} is sending too many ${what}, so some were ignored.`, canModerate() ? [{ label: 'Remove', action: () => removePeer(peerId) }] : undefined);
@@ -49,6 +58,11 @@ export function admitRate(conn, type) {
 	}
 	return false;
 }
+
+/** what the gate decided since the page loaded — a test seam (the suite reads it to tell "the gate refused"
+ * from "the gate was never asked") @type {{ok: number, refused: number, exempt: number, last: any}} */
+const stats = { ok: 0, refused: 0, exempt: 0, last: null };
+export const rateGateStats = () => ({ ...stats });
 
 /** the receiver told us @param {any} data */
 export function applyRateNotice(data) {

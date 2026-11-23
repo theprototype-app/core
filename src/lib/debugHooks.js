@@ -582,6 +582,11 @@ export const DEBUG_HOOKS = [
 	// 46 B1/B2: the budget chip + Statistics ▸ Budget (budgetTarget, sceneCost, sampleBudget, openBudget, TARGETS)
 	['budgetMeter', () => import('./budgetMeter')],
 	['budgetMeterCore', () => import('./budgetMeterCore')],
+	// 103 H11: the Preview pill — Draw as (+ its lazy renderer's drawAsDebug), Judge for, the drawer store
+	['drawAs', () => import('./drawAs.js')],
+	['drawAsRender', () => import('./drawAsRender.js')],
+	['judgeFor', () => import('./judgeFor.js')],
+	['previewPill', () => import('./previewPill.js')],
 	['overloadGuard', () => import('./overloadGuard')],
 	['qualityGovernor', () => import('./qualityGovernor')],
 	['importBudget', () => import('./importBudget')],

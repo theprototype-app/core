@@ -265,7 +265,7 @@ h.run(async () => {
 			await page.waitForTimeout(500);
 			// the budget chip never sits on a HUD button
 			const chip = await S(page, () => {
-				const c = document.querySelector('#budget-chip-wrap:not(.bc-hidden)')?.getBoundingClientRect();
+				const c = document.querySelector('#preview-pill')?.getBoundingClientRect();
 				if (!c?.width) return { shown: false, hits: [] };
 				const hits = [];
 				for (const el of document.querySelectorAll('.hud-stack > *, #hud-tr > *, #sim-controls')) {

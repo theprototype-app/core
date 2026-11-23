@@ -9,7 +9,10 @@
 	import CameraPipWindow from './menu/CameraPipWindow.svelte';
 	import Connect from './menu/Connect.svelte';
 	import Controls from './menu/Controls.svelte';
-	import BudgetChip from './menu/BudgetChip.svelte'; // 46 B1
+	// 103 H11: the Preview pill (it replaced 46 B1's budget chip and 100 C1's Cinematic switch) and the phone
+	// drawer are LAZY; the boot half is the store + the chrome-button entry
+	import { previewDrawerOpen } from '$lib/previewPill.js';
+	import { unfoldedPhone } from '$lib/deviceClass.js';
 	import Inspector from './menu/Inspector.svelte';
 	import SidebarStrips from './menu/SidebarStrips.svelte'; // 42 I2/I3
 	import { inspectorDual } from '$lib/sidebars'; // uir-polish E5
@@ -84,8 +87,14 @@
 <Connect />
 <Users />
 <Controls />
-<!-- 46 B1: the budget chip, placed beside the toolbar pill (hidden in Play with the rest of the chrome) -->
-<BudgetChip />
+<!-- 103 H11: the Preview pill (Preview + the judged devices' budget + the menu) at the top right of the free
+     viewport; never on a phone (folded: the phone shell; unfolded: its own toolbar) — they get the drawer -->
+{#if !$phoneShell && !$unfoldedPhone}
+	{#await import('./preview/PreviewPill.svelte') then m}<m.default />{/await}
+{/if}
+{#if $previewDrawerOpen}
+	{#await import('./preview/PreviewDrawer.svelte') then m}<m.default />{/await}
+{/if}
 <!-- 70 W2: in a pop-out window the Inspector is unmounted here (one panel, one place) -->
 {#if !$panelAway.inspector}<Inspector />{#if $inspectorDual}<Inspector pane="scene" />{/if}{/if}<!-- uir-polish E5: Configure Scene in its own column -->
 <SidebarStrips />

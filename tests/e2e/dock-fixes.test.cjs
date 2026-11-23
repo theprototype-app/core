@@ -103,7 +103,7 @@ const overlays = (page) =>
 			if (!strip || !strip.width) continue;
 			cols.push({ side: s, left: strip.left, right: strip.right, top: strip.top, bottom: grip?.bottom ?? innerHeight });
 		}
-		const SEL = ['#hud-stack-left > *', '#hud-stack-right > *', '#controls-pill', '#hud-tr > *', '#avatar-trigger', '#budget-chip-wrap:not(.bc-hidden)', '#touch-tools > *', '#sim-controls'];
+		const SEL = ['#hud-stack-left > *', '#hud-stack-right > *', '#controls-pill', '#hud-tr > *', '#avatar-trigger', '#preview-pill', '#touch-tools > *', '#sim-controls'];
 		const hits = [];
 		for (const sel of SEL)
 			for (const el of document.querySelectorAll(sel)) {

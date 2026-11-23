@@ -97,7 +97,8 @@
 	import { canvasCenter } from '$lib/canvasRect';
 	import { statsOpen } from '$lib/sceneBudget';
 	// 46 B1: the budget chip's phone form (an item of the bar catalog — in More ▸ Tools & View by default)
-	import { budgetTarget, sceneCost, TARGETS, verdictFor, openBudget } from '$lib/budgetMeter';
+	import { budgetTarget, sceneCost, TARGETS, verdictFor, openBudget, startBudgetMeter } from '$lib/budgetMeter';
+	import { previewDrawerOpen } from '$lib/previewPill.js'; // 103 H11
 	import { uiScale } from '$lib/uiScale'; // 53 A1: the shell's script geometry follows the UI scale
 	const moreTipShown = tipShown(TIP_PHONE_MORE);
 
@@ -488,6 +489,9 @@
 		phoneSheet.set(null);
 		phoneChatTap('assistant'); // uir-chat + 78 PL23: the Assistant tab of the one Chat window (a phone dock tab)
 	}
+	// 103 H11: the budget chip that kept the meter sampling on a phone is gone (the pill is desktop-only); the
+	// `budget` item reads the same reading, so the shell keeps it fresh while it is mounted
+	$effect(() => startBudgetMeter());
 	/** close the shell's own sheet, then run (a destination opened from More replaces it) */
 	const fromMore = (/** @type {() => void} */ fn) => () => {
 		phoneSheet.set(null);
@@ -604,6 +608,15 @@
 		focus: { label: 'Focus mode', short: 'Focus', icon: 'maximize-2', run: () => enterFocusMode() },
 		// 68 V1: film the scene with the phone (turn it to look, a stick to move, ● to record)
 		film: { label: 'Film with phone', short: 'Film', icon: 'video', hint: 'The phone becomes a scene camera: turn it to look around, record a shot into the Timeline', run: fromMore(() => openFilm()) },
+		// 103 H11: PREVIEW — how this phone draws the scene (Draw as, Quality); no pill at the top right on a phone
+		preview: {
+			label: 'Preview',
+			short: 'Preview',
+			icon: 'eye',
+			hint: 'How this device draws the scene: Draw as and Quality. Never saved, never shared',
+			pressed: () => $previewDrawerOpen,
+			run: fromMore(() => previewDrawerOpen.update((v) => !v))
+		},
 		// 46 B1: the scene budget for the chosen device (Statistics ▸ Budget picks the device); the dot is its tier
 		budget: {
 			get label() {

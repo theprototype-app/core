@@ -130,3 +130,124 @@ describe('99 K8 smooth subdivide (Catmull-Clark) on the agent path', () => {
 		expect(r.error).toMatch(/too large/);
 	});
 });
+
+describe('99 K8 shortest-path select in the editor currency (pathBetween)', () => {
+	const grid = () => {
+		const m = new THREE.Mesh(new THREE.PlaneGeometry(4, 4, 4, 4), new THREE.MeshStandardMaterial());
+		group.add(m);
+		return m;
+	};
+	const k = (x, y) => `${Math.round(x * 1e4)},${Math.round(y * 1e4)},0`;
+
+	it('vertices: corner to corner along the border is 5 vertices by steps, a straight row by length', () => {
+		const m = grid();
+		const r = fe.pathBetween(m.geometry, 'vertex', k(-2, -2), k(2, -2));
+		expect(r.keys).toEqual([k(-2, -2), k(-1, -2), k(0, -2), k(1, -2), k(2, -2)]);
+	});
+
+	it('edges: the chain between two border edges walks the border; keys are sorted pairs', () => {
+		const m = grid();
+		const e = (a, b) => (a < b ? a + '|' + b : b + '|' + a);
+		const r = fe.pathBetween(m.geometry, 'edge', e(k(-2, -2), k(-1, -2)), e(k(1, -2), k(2, -2)));
+		expect(r.keys[0]).toBe(e(k(-2, -2), k(-1, -2)));
+		expect(r.keys.at(-1)).toBe(e(k(1, -2), k(2, -2)));
+		expect(r.keys.length).toBe(4);
+		for (const key of r.keys) expect(key.split('|')[0] < key.split('|')[1]).toBe(true);
+	});
+
+	it('faces: a whole quad per step (both its triangles), a row of four quads', () => {
+		const m = grid();
+		const tris = fe.readTriangles(m.geometry);
+		const centre = (t) => t.reduce((a, v) => [a[0] + v.x / 3, a[1] + v.y / 3], [0, 0]);
+		const at = (x, y) => tris.findIndex((t) => Math.hypot(centre(t)[0] - x, centre(t)[1] - y) < 0.4);
+		const from = at(-1.5 - 0.17, 1.5 + 0.17);
+		const to = at(1.5 - 0.17, 1.5 + 0.17);
+		expect(from).toBeGreaterThanOrEqual(0);
+		const r = fe.pathBetween(m.geometry, 'face', from, to);
+		expect(r.tris.length).toBe(8);
+		for (const t of r.tris) expect(centre(tris[t])[1]).toBeGreaterThan(1);
+	});
+
+	it('steps vs length: a far-pulled vertex is skipped by length, crossed by steps', async () => {
+		const { meshPathTopological } = await import('../../src/lib/meshToolParams.js');
+		const m = grid();
+		// pull the vertex (0, 1) far out of the plane: the 2-step path through it is long, the 4-step detour short
+		const p = m.geometry.attributes.position;
+		for (let i = 0; i < p.count; i++) if (Math.abs(p.getX(i)) < 1e-6 && Math.abs(p.getY(i) - 1) < 1e-6) p.setZ(i, 40);
+		p.needsUpdate = true;
+		const byLen = fe.pathBetween(m.geometry, 'vertex', k(-1, 1), k(1, 1));
+		meshPathTopological.set(true);
+		const bySteps = fe.pathBetween(m.geometry, 'vertex', k(-1, 1), k(1, 1));
+		meshPathTopological.set(false);
+		// (the pulled vertex unpairs its quads, so a diagonal may shorten the detour: 4 or 5 vertices)
+		expect(byLen.keys.length).toBeGreaterThan(3);
+		expect(byLen.keys).not.toContain('0,10000,400000');
+		expect(bySteps.keys).toEqual([k(-1, 1), '0,10000,400000', k(1, 1)]);
+	});
+
+	it('nothing connects two shells: null', () => {
+		const g = new THREE.PlaneGeometry(1, 1);
+		const h = new THREE.PlaneGeometry(1, 1).translate(5, 0, 0);
+		const pos = new Float32Array([...g.toNonIndexed().attributes.position.array, ...h.toNonIndexed().attributes.position.array]);
+		const geo = new THREE.BufferGeometry();
+		geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+		const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial());
+		group.add(m);
+		expect(fe.pathBetween(m.geometry, 'vertex', k(-0.5, -0.5), k(5.5, 0.5))).toBeNull();
+	});
+});
+
+describe('99 K8 bisect on the agent path', () => {
+	const all = (m) => fe.readTriangles(live(m.uuid).geometry).map((_, i) => i);
+	it('the whole box at y = 0.1: four walls split, every vertex keeps its ID, the cut lies on the plane', () => {
+		const m = box1();
+		const r = fe.faceOpOnObject(m.uuid, 'bisect', all(m), { point: [0, 0.1, 0], normal: [0, 1, 0] });
+		expect(r.ok).toBe(true);
+		const g = live(m.uuid).geometry;
+		const faces = readStoredFaces(g);
+		expect(faces.length).toBe(10);
+		const ys = new Set(fe.readTriangles(g).flat().map((v) => Math.round(v.y * 1e4)));
+		expect([...ys].sort((a, b) => a - b)).toEqual([-5000, 1000, 5000]);
+		checkIds(m.uuid, { consumed: 0 });
+	});
+
+	it('clear outer + fill: a closed lower half under the plane', () => {
+		const m = box1();
+		const r = fe.faceOpOnObject(m.uuid, 'bisect', all(m), { point: [0, 0.1, 0], normal: [0, 1, 0], clear: 'outer', fill: true });
+		expect(r.ok).toBe(true);
+		const tris = fe.readTriangles(live(m.uuid).geometry);
+		expect(Math.max(...tris.flat().map((v) => v.y))).toBeCloseTo(0.1, 5);
+		// closed: every welded edge is used exactly twice
+		const count = new Map();
+		for (const t of tris)
+			for (let i = 0; i < 3; i++) {
+				const a = key(t[i]);
+				const b = key(t[(i + 1) % 3]);
+				const e = a < b ? a + '|' + b : b + '|' + a;
+				count.set(e, (count.get(e) ?? 0) + 1);
+			}
+		expect([...count.values()].every((n) => n === 2)).toBe(true);
+		// the top's four corners went with the cleared side
+		checkIds(m.uuid, { consumed: 4 });
+	});
+
+	it('a plane missing the mesh is refused with nothing committed; no normal is refused', () => {
+		const m = box1();
+		const n = get(history.undoStack).length;
+		const r = fe.faceOpOnObject(m.uuid, 'bisect', all(m), { point: [0, 3, 0], normal: [0, 1, 0] });
+		expect(r.ok).toBe(false);
+		expect(r.error).toMatch(/does not cross/);
+		expect(fe.faceOpOnObject(m.uuid, 'bisect', all(m), { point: [0, 0, 0] }).ok).toBe(false);
+		expect(get(history.undoStack).length).toBe(n);
+	});
+
+	it('a picked face only: its neighbours gain the crossing, the rest is untouched', () => {
+		const m = box();
+		const quad = topTris(m.geometry).slice(0, 2);
+		const tris = fe.readTriangles(m.geometry);
+		const c = quad.flatMap((t) => tris[t]).reduce((a, v) => [a[0] + v.x / 6, a[1] + v.y / 6, a[2] + v.z / 6], [0, 0, 0]);
+		const r = fe.faceOpOnObject(m.uuid, 'bisect', quad, { point: c, normal: [1, 0, 0.3] });
+		expect(r.ok).toBe(true);
+		checkIds(m.uuid, { consumed: 0 });
+	});
+});

@@ -46,3 +46,5 @@ export {
 export { subdivideUnits, subdivideLevels, subdivideEdges, symmetrize } from './subdivide.js';
 // 99 K8 (99-newops): Catmull-Clark in the editor, bisect, shortest-path select — the kernel's cores on the op mesh
 export { smoothSubdivide } from './smooth.js';
+export { pathSelect } from './select.js';
+export { bisectRegion } from './bisectOp.js';

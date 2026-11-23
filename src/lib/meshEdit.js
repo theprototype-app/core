@@ -25,6 +25,7 @@ import {
 	registerVertexSessionRefresher,
 	registerVertexSelectionHistory,
 	withSelectionHistory,
+	pathBetween,
 	editWireGeometry,
 	registerVertexWireRebuild,
 	meshGizmoEnabled,
@@ -645,12 +646,15 @@ function onKeydown(event) {
  * Raycast the vertex handles; select the hit one and attach the gizmo.
  * @param {THREE.Raycaster} raycaster @returns {boolean} whether a handle was hit
  */
-/** @param {any} raycaster @param {boolean} [additive] ctrl/shift adds to the create-face multi-selection */
-export function raycastHandles(raycaster, additive = false) {
+/** @param {any} raycaster @param {boolean} [additive] ctrl/shift adds to the create-face multi-selection
+ * @param {boolean} [path] 99 K8: a path gesture (Ctrl alone, or the Path toggle) — adds the shortest path from the
+ *   anchor when there is one, else falls back to the click it would have been */
+export function raycastHandles(raycaster, additive = false, path = false) {
 	if (!VS.handleMesh) return false;
 	const hits = raycaster.intersectObject(VS.handleMesh);
 	if (hits.length === 0) return false;
 	const idx = /** @type {number} */ (hits[0].instanceId);
+	if (path && pathSelectVertex(idx)) return true;
 	if (additive) {
 		toggleVertexSelection(idx);
 		return true;
@@ -803,6 +807,39 @@ function toggleVertexSelectionInner(index) {
 		setAnchor(index);
 	}
 	syncVertexSelection();
+}
+
+/** the welded key of handle i (buildHandles' key) @param {number} i */
+function handleKey(i) {
+	const p = VS.handles[i].position;
+	return `${Math.round(p.x * 1e4)},${Math.round(p.y * 1e4)},${Math.round(p.z * 1e4)}`;
+}
+
+/** 99 K8: add the shortest path (along edges) from the anchor to handle `index`; it becomes the anchor.
+ * @param {number} index @returns {boolean} false = no anchor / the anchor itself / no path (plain click instead) */
+function pathSelectVertexInner(index) {
+	const from = VS.selectedHandle;
+	if (!VS.object || from < 0 || from === index || !VS.handles[index] || !VS.handles[from]) return false;
+	const r = pathBetween(VS.object.geometry, 'vertex', handleKey(from), handleKey(index));
+	if (!r?.keys) return false;
+	/** @type {Map<string, number>} */
+	const byKey = new Map();
+	for (let i = 0; i < VS.handles.length; i++) byKey.set(handleKey(i), i);
+	for (const k of r.keys) {
+		const i = byKey.get(k);
+		if (i !== undefined) VS.selection.add(i);
+	}
+	VS.selection.delete(index);
+	VS.selection.add(index);
+	setAnchor(index);
+	syncVertexSelection();
+	return true;
+}
+
+/** 99 K8: vertices — Ctrl+click / the Path toggle (desktop, touch) and the VR trigger under the toggle.
+ * @param {number} index @returns {boolean} */
+export function pathSelectVertex(index) {
+	return withSelectionHistory('vertices', () => pathSelectVertexInner(index));
 }
 
 /** 177: deselect all vertices (also parks the gizmo) */

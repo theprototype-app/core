@@ -574,7 +574,7 @@ async function createMeshTool(args) {
 // ---- G5 edit_mesh ----------------------------------------------------------------------------------
 
 // 99 K8: subdivide_smooth = Catmull-Clark (the kernel's, as create_shape's subdivide)
-const FACE_OPS = ['extrude', 'inset', 'move', 'bevel', 'subdivide', 'subdivide_smooth', 'delete', 'flip'];
+const FACE_OPS = ['extrude', 'inset', 'move', 'bevel', 'subdivide', 'subdivide_smooth', 'bisect', 'delete', 'flip'];
 const VERTEX_OPS = ['weld', 'smooth', 'dissolve', 'bevel', 'delete', 'connect', 'create_face', 'move'];
 
 /**
@@ -613,7 +613,11 @@ function runOp(fe, uuid, object, mode, op, picked, tris) {
 			segments: op.segments,
 			profile: op.profile,
 			direction: op.direction,
-			levels: op.levels
+			levels: op.levels,
+			point: op.point,
+			normal: op.normal,
+			clear: op.clear,
+			fill: op.fill
 		});
 		return r.ok ? { kept: r.kept } : r.error;
 	}
@@ -1213,7 +1217,7 @@ export const GEOMETRY_AI_TOOLS = [
 		function: {
 			name: 'edit_mesh',
 			description:
-				'Model an existing mesh like Edit Mesh does: run ops on a selection of its faces or vertices. Face ops: extrude {distance}, inset {amount 0-1}, move {distance} along the normal, bevel {width, segments, profile}, subdivide (each quad into four, flat), subdivide_smooth {levels 1-3} (Catmull-Clark: rounds the picked faces off, an open border keeps its line; select all to smooth the whole mesh), delete, flip. Vertex ops: weld (to their centre), move {offset [x,y,z]}, smooth {factor, iterations}, dissolve, bevel {width}, delete, connect (2 vertices), create_face (3-4 vertices). An op without its own select goes on with what the previous face op left selected (after extrude / inset / move / flip: the cap, the inset\'s inner face), like Edit Mesh; otherwise the select is read again on the mesh as it is at that op (indices too). Call with ops: [] first to preview faces / vertices (index, normal, centre). Afterwards the object counts as hand-edited (set_geometry then needs force). One undo step per call.',
+				'Model an existing mesh like Edit Mesh does: run ops on a selection of its faces or vertices. Face ops: extrude {distance}, inset {amount 0-1}, move {distance} along the normal, bevel {width, segments, profile}, subdivide (each quad into four, flat), subdivide_smooth {levels 1-3} (Catmull-Clark: rounds the picked faces off, an open border keeps its line; select all to smooth the whole mesh), bisect {point, normal, clear: inner|outer, fill} (cut the picked faces, or all of them, with a plane in the object\'s local coordinates (as the preview reports them); clear removes the side behind the normal (inner) or in front (outer), fill closes the cut), delete, flip. Vertex ops: weld (to their centre), move {offset [x,y,z]}, smooth {factor, iterations}, dissolve, bevel {width}, delete, connect (2 vertices), create_face (3-4 vertices). An op without its own select goes on with what the previous face op left selected (after extrude / inset / move / flip: the cap, the inset\'s inner face), like Edit Mesh; otherwise the select is read again on the mesh as it is at that op (indices too). Call with ops: [] first to preview faces / vertices (index, normal, centre). Afterwards the object counts as hand-edited (set_geometry then needs force). One undo step per call.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1236,7 +1240,11 @@ export const GEOMETRY_AI_TOOLS = [
 								offset: V3,
 								factor: { type: 'number' },
 								iterations: { type: 'integer' },
-								levels: { type: 'integer', minimum: 1, maximum: 3, description: 'subdivide_smooth: Catmull-Clark levels' }
+								levels: { type: 'integer', minimum: 1, maximum: 3, description: 'subdivide_smooth: Catmull-Clark levels' },
+								point: { ...V3, description: 'bisect: a point on the plane (object-local)' },
+								normal: { ...V3, description: 'bisect: the plane normal (object-local)' },
+								clear: { type: 'string', enum: ['inner', 'outer'], description: 'bisect: remove the side behind (inner) or in front of (outer) the normal' },
+								fill: { type: 'boolean', description: 'bisect: close the cut with a face (with clear)' }
 							},
 							required: ['op']
 						}

@@ -11,6 +11,7 @@
 	import { applyWindowPose } from '$lib/vrWindowPoses'
 	import { menuPoseFromController } from '$lib/vrRadialMenu'
 	import { colliderEditObject } from '$lib/colliderEdit' // 36 X4
+	import { meshPathSelect } from '$lib/meshToolParams' // 99 K8
 
 	// VR Edit Mesh side-menu (137, reworked into tabs in 181): a horizontal
 	// Vertices | Faces | Stretch TAB bar with the active tab lit, an ✕ close in
@@ -63,6 +64,8 @@
 			list.push(
 				{ action: 'edit:granularity', label: `Select: ${GRAN_LABELS[$faceEditGranularity] ?? 'Quad'}`, active: $faceEditGranularity !== 'quad' },
 				{ action: 'edit:multi', label: `Multi: ${$faceEditMulti ? 'On' : 'Off'}${$faceEditMulti && nSel ? ` (${nSel})` : ''}`, active: $faceEditMulti },
+				// 99 K8: the trigger adds the shortest path from the last pick
+				{ action: 'edit:path', label: `Path: ${$meshPathSelect ? 'On' : 'Off'}`, active: $meshPathSelect },
 				{ action: 'face:extrude', label: 'Extrude', active: op === 'extrude' },
 				{ action: 'face:inset', label: 'Inset', active: op === 'inset' },
 				{ action: 'face:move', label: 'Move', active: op === 'move' },
@@ -74,6 +77,7 @@
 			const creating = $vrFaceCreateMode
 			const label = creating ? (n >= 3 && n <= 4 ? `Build face (${n})` : `Select verts (${n})`) : 'Create face'
 			list.push({ action: 'edit:createface', label, active: creating })
+			list.push({ action: 'edit:path', label: `Path: ${$meshPathSelect ? 'On' : 'Off'}`, active: $meshPathSelect })
 		}
 		// 36 X4: the desktop collider toolbar's buttons, as rows
 		if (colliderMode)

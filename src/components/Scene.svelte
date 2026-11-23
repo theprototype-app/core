@@ -69,7 +69,8 @@
 	import { startSnapEngine, setSnapPointer, beginSnapDrag, endSnapDrag, maybeSnapGizmo, snapAnchorPicking, snapAnchorClick, updateSnapAnchor } from '$lib/snapEngine';
 	import { meshPivotPicking, meshPivotClick, tickMeshPivotMarker } from '$lib/meshPivot';
 	import { editingObject, enterEditMode, exitEditMode, raycastHandles, clearVertexSelection, onProxyMoved, onProxyDragChanged, tickMeshEdit, selectVerticesInRect } from '$lib/meshEdit';
-	import { faceEditObject, enterFaceEdit, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, clearFaceSelection, pickFaceUnit, lookupEditable, faceEditSubmode, faceEditSelectedTris, setFaceSubmode, selectElementsInRect, pickEdge, pickEdgeAt, clearEdgeSelection, knifeClick, knifeHover, knifePreview, tickEditWireframe } from '$lib/faceEdit';
+	import { bisectClick, bisectHover, bisectPreview, onBisectPlaneMoved } from '$lib/meshBisectTool'; // 99 K8
+	import { faceEditObject, enterFaceEdit, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, clearFaceSelection, pickFaceUnit, lookupEditable, faceEditSubmode, faceEditSelectedTris, setFaceSubmode, selectElementsInRect, pickEdge, pickEdgeAt, clearEdgeSelection, knifeClick, knifeHover, knifePreview, tickEditWireframe, pathGesture, pathSelectFaces, pathSelectEdges } from '$lib/faceEdit';
 	import { fireObjectClick } from '$lib/flowRuntime';
 	import { peerScenes } from '$lib/peerScenes';
 	// 37 R23/R22: presence extras on the camera stream (a walker's feet, the knocked-off idle)
@@ -499,7 +500,7 @@
 			// multi-select pivot excludes EVERY member (P3: its drags snap too).
 			if (!event.value) endSnapDrag();
 			else if (object.userData?.isMultiPivot) beginSnapDrag([...$selectedObjects]);
-			else if (!object.userData?.isVertexProxy && !object.userData?.isFaceProxy && !object.userData?.isLodLevelProxy)
+			else if (!object.userData?.isVertexProxy && !object.userData?.isFaceProxy && !object.userData?.isLodLevelProxy && !object.userData?.isBisectProxy)
 				beginSnapDrag([object.uuid]);
 			// vertex handles record their own history entries
 			if (object.userData?.isVertexProxy) {
@@ -511,6 +512,8 @@
 				onFaceGizmoDragChanged(event.value);
 				return;
 			}
+			// 99 K8: the bisect plane is a helper: a drag records and sends nothing
+			if (object.userData?.isBisectProxy) return;
 			// 57.3: a spline control point — ONE spline undo entry per drag
 			if (object.userData?.isSplineProxy) {
 				onSplineProxyDragChanged(event.value);
@@ -1062,6 +1065,7 @@
 			if ($TControls?.dragging) setSnapPointer(event.clientX, event.clientY);
 			// M9b: the knife's rubber band follows the pointer while a cut is pending
 			if ($knifePreview) knifeHover([event.clientX, event.clientY]);
+			if ($bisectPreview) bisectHover([event.clientX, event.clientY]);
 			// 47 M1: where the next measure click would land (the snap marker + rubber band) — a
 			// mouse that is not pressing; a finger has no hover
 			if ($measureMode && captureOwns('measure') && !event.buttons && event.pointerType !== 'touch')
@@ -1306,7 +1310,8 @@
 			if ($editingObject) {
 				// D2: a miss deselects all vertices (parking the gizmo, D5) — the
 				// session and the object selection stay (deliberate)
-				if (!raycastHandles(selectionRaycaster, event.ctrlKey || event.shiftKey || event.metaKey || $multiSelectMode))
+				// 99 K8: Ctrl alone (or the Path toggle) adds the shortest path from the anchor
+				if (!raycastHandles(selectionRaycaster, event.ctrlKey || event.shiftKey || event.metaKey || $multiSelectMode, pathGesture(event)))
 					clearVertexSelection();
 				return;
 			}
@@ -1321,6 +1326,11 @@
 					knifeClick([event.clientX, event.clientY], event.ctrlKey || event.shiftKey || event.metaKey || $multiSelectMode);
 					return;
 				}
+				// 99 K8 BISECT: two clicks draw the cut line (a screen line, like the knife's)
+				if ($faceEditOp === 'bisect') {
+					bisectClick([event.clientX, event.clientY]);
+					return;
+				}
 				// A8: lookupEditable also finds the scene-root collider-edit proxy
 				const edited = lookupEditable($faceEditObject);
 				const hit = edited ? selectionRaycaster.intersectObject(edited, false)[0] : null;
@@ -1333,7 +1343,10 @@
 						return;
 					}
 					const local = edited.worldToLocal(hit.point.clone());
-					pickEdge(pickEdgeAt(tri, local), event.ctrlKey || event.shiftKey || event.metaKey || $multiSelectMode);
+					const edgeKey = pickEdgeAt(tri, local);
+					// 99 K8: Ctrl alone (or the Path toggle) adds the shortest edge chain from the active edge
+					if (pathGesture(event) && pathSelectEdges(edgeKey)) return;
+					pickEdge(edgeKey, event.ctrlKey || event.shiftKey || event.metaKey || $multiSelectMode);
 					return;
 				}
 				// E10: ctrl/shift-click ADDS to the selection (never auto-applies); a
@@ -1341,6 +1354,13 @@
 				// flag is off for additive clicks — the heal would wipe the very
 				// selection they are adding to.
 				const additive = event.ctrlKey || event.shiftKey || event.metaKey || $multiSelectMode || $faceEditMulti;
+				// 99 K8: Ctrl alone (or the Path toggle) adds the shortest path of faces from the active one
+				if (tri >= 0 && pathGesture(event) && pathSelectFaces(tri)) {
+					highlightFaceByTriangle(tri, false);
+					if ($faceEditOp === 'move') attachFaceGizmo();
+					else detachFaceGizmo();
+					return;
+				}
 				highlightFaceByTriangle(tri, !additive);
 				if (tri >= 0) {
 					if (additive) {
@@ -1771,6 +1791,12 @@
 		if ($TControls.object?.userData?.isFaceProxy) {
 			$TControls.visible = true;
 			onFaceGizmoMoved();
+			return;
+		}
+		// 99 K8: the bisect plane follows the gizmo; nothing is cut until Apply
+		if ($TControls.object?.userData?.isBisectProxy) {
+			$TControls.visible = true;
+			onBisectPlaneMoved();
 			return;
 		}
 		// 57.3: spline control-point proxy — the move rebuilds the tube from the

@@ -149,7 +149,7 @@
 									class:sc-capturing={capturingId === shortcut.id}
 									title="Click to rebind"
 									aria-label={'Rebind ' + shortcut.label}
-									onclick={() => startCapture(shortcut.id)}>{capturingId === shortcut.id ? 'Press keys… Esc cancels' : shortcut.keys}</button
+									onclick={() => startCapture(shortcut.id)}>{capturingId === shortcut.id ? 'Press keys… Esc cancels' : shortcut.keys || 'Set key'}</button
 								>
 							{:else}
 								<span class="sc-locked" title={shortcut.fixedReason || 'listed for reference'}>

@@ -285,7 +285,10 @@ function ccArraysOnce(m, Kernel) {
 	for (let v = 0; v < m.vertices.length; v++) if (used[v]) outIndex.set(v, next++);
 	/** @type {number[][]} */
 	const vertices = new Array(next);
-	for (const [v, i] of outIndex) vertices[i] = mesh.position(v);
+	for (const [v, i] of outIndex) {
+		const p = mesh.position(v);
+		vertices[i] = [p[0], p[1], p[2]];
+	}
 	/** @type {Record<string, number[][]>} */
 	const rows = {};
 	for (const k of carried) rows[k] = new Array(next);

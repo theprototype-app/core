@@ -27,7 +27,8 @@ import {
 	vrRaycastHandle,
 	vrBeginHandleDrag,
 	vrEndHandleDrag,
-	toggleVertexSelection
+	toggleVertexSelection,
+	pathSelectVertex
 } from '../meshEdit';
 import {
 	faceEditObject,
@@ -44,6 +45,7 @@ import {
 	faceEditMulti,
 	faceEditHoverTri,
 	toggleFaceSelection,
+	pathSelectFaces,
 	currentTargetFace,
 	lookupEditable
 } from '../faceEdit';
@@ -58,6 +60,7 @@ import { selectObject, topLevelObjectOf } from '../objectActions';
 import { suspendAnimation, resumeAnimation, fireObjectGrab, kinematicGrab } from '../flowRuntime';
 import { grabRule, startGlide, cancelGlide, homeFor } from '../grabReturn.js'; // 85 I1: Grabbable 'return' in VR
 import { safeStorage } from '../safeStorage';
+import { meshPathSelect } from '../meshToolParams'; // 99 K8
 import { S } from './state.js';
 import { renderer, tempVector } from './core.js';
 import { hapticPulse, hapticPattern } from './haptics.js';
@@ -392,6 +395,13 @@ export let faceAdjustHand = null;
 export function vrFaceTrigger() {
 	// 52 (H): editing faces is a precise tool — a tracked hand is asked to pick up a controller
 	if (controllerRequired('edit faces', controllerIndexFor(pointerHand()))) return;
+	// 99 K8: Path on — the trigger adds the shortest path from the last pick (the first one just picks)
+	if (get(meshPathSelect)) {
+		const tri = get(faceEditHoverTri);
+		if (tri >= 0 && !pathSelectFaces(tri)) toggleFaceSelection(tri);
+		hapticPulse(0.2, 25);
+		return;
+	}
 	// 212: Multi mode — the trigger ACCUMULATES the pointed unit; the op button
 	// applies to the whole set (no live adjust while multi-selecting)
 	if (get(faceEditMulti)) {
@@ -459,6 +469,12 @@ export function vrVertexTrigger(index) {
 		if (h >= 0) toggleVertexSelection(h);
 		return;
 	}
+	// 99 K8: Path on — a trigger click picks (the first) or adds the shortest path from the anchor; no carry
+	if (get(meshPathSelect)) {
+		const h = vrRaycastHandle(controllerRay(index ?? 0));
+		if (h >= 0 && !pathSelectVertex(h)) toggleVertexSelection(h);
+		return;
+	}
 	if (get(vrVertexHold)) return;
 	if (S.vertexTriggerGrab) return endVertexCarry();
 	beginVertexCarry(index);
@@ -469,7 +485,7 @@ export function vrVertexTrigger(index) {
 /** @param {number} index */
 export function vrVertexGrabStart(index) {
 	// create-face selection is driven by the 'select' click, not the press
-	if (!get(editingObject) || get(vrFaceCreateMode) || !get(vrVertexHold) || S.vertexTriggerGrab) return;
+	if (!get(editingObject) || get(vrFaceCreateMode) || get(meshPathSelect) || !get(vrVertexHold) || S.vertexTriggerGrab) return;
 	if (controllerRequired('edit vertices', index)) return; // 52 (H)
 	beginVertexCarry(index);
 }

@@ -74,8 +74,12 @@
 	// 92-input GC3: the built-in pad actions are rows too; their catalog is lazy, fetched as the page opens
 	/** @type {{pad: string, label: string}[]} */
 	let padActions = $state([]);
+	/** the capture core, fetched as the page opens so the press that starts a capture is never early @type {any} */
+	let captureMod = null;
 	$effect(() => {
-		if (page === 'access' && !padActions.length) import('$lib/playActions.js').then((m) => (padActions = m.PAD_ACTIONS));
+		if (page !== 'access') return;
+		if (!padActions.length) import('$lib/playActions.js').then((m) => (padActions = m.PAD_ACTIONS));
+		if (!captureMod) import('$lib/keyCapture.js').then((m) => (captureMod = m));
 	});
 	const padsFor = (/** @type {any[]} */ actions, /** @type {any[]} */ ..._deps) => gamePadBindings(actions);
 	const padRows = $derived(page === 'access' ? padsFor(padActions, $flowGraphs) : []);
@@ -99,7 +103,8 @@
 		capturing = { kind, code };
 		captureNote = '';
 		const want = capturing;
-		const { remapCapture } = await import('$lib/keyCapture.js');
+		// normally already loaded with the page (synchronous: a key pressed straight after the click is ours)
+		const { remapCapture } = captureMod ?? (captureMod = await import('$lib/keyCapture.js'));
 		if (capturing !== want) return; // cancelled while the capture loaded
 		capture = remapCapture({
 			kind,

@@ -674,7 +674,7 @@
 		{#if $activeInput.kind === 'pad' || element?.code || Object.keys($accessRemap.keys ?? {}).length}
 			<span class="hud-kbd hud-kbd-glyph">{#await import('../ui/InputGlyph.svelte')}{element?.keyName ?? ''}{:then G}<G.default code={element?.code ?? ''} name={element?.keyName ?? ''} />{/await}</span>
 		{:else}
-			<kbd class="hud-kbd">{element?.keyName ?? ''}</kbd>
+			<kbd class="hud-kbd" data-glyph="key">{element?.keyName ?? ''}</kbd>
 		{/if}
 		<span class="hud-in-label">{text}</span>
 	</div>

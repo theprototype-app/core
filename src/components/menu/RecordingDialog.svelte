@@ -55,6 +55,8 @@
 	const blocker = $derived((void views.length, void seqList.length, void p, busy ? '' : live ? recordingBlocker(p) : exportBlocker(p)));
 	const estimate = $derived(estimateExportBytes(plan, p.quality));
 	const alphaOk = $derived(ALPHA_FORMATS.includes(p.format));
+	// 102b-sound: only a video file carries sound
+	const soundOk = $derived(p.format === 'mp4' || p.format === 'webm');
 	/** what the progress pill counts while an exact export runs: frames, not seconds */
 	let exportTotal = $state(0);
 	/** 68 V9: the pill shrinks to a chip so the render goes on in the background, out of the way */
@@ -156,7 +158,7 @@
 		<div id="recording-dialog" class="rec-wrap" data-mode={p.mode}>
 			{#if st.status === 'done' && st.result}
 				{@const r = st.result}
-				<div id="recording-result" class="rec-result" data-bytes={r.bytes} data-duration-ms={r.durationMs} data-item={r.itemId ?? ''} data-format={r.format ?? 'webm'} data-frames={r.frames ?? ''} data-mime={r.mime}>
+				<div id="recording-result" class="rec-result" data-bytes={r.bytes} data-duration-ms={r.durationMs} data-item={r.itemId ?? ''} data-format={r.format ?? 'webm'} data-frames={r.frames ?? ''} data-mime={r.mime} data-sound={r.sound ?? ''}>
 					{#if r.mime.startsWith('video/')}
 						<!-- svelte-ignore a11y_media_has_caption -->
 						<video id="recording-video" class="rec-video" src={r.url} controls loop muted playsinline></video>
@@ -165,7 +167,7 @@
 					{/if}
 					<div class="rec-name"><strong>{r.name}</strong></div>
 					<div class="rec-dim">
-						{(r.durationMs / 1000).toFixed(1)} s · {r.width} × {r.height} · {r.fps} fps{#if r.frames} · {r.frames} frames{/if} · {fmt(r.bytes)}{#if r.encoder} · {r.encoder}{/if}
+						{(r.durationMs / 1000).toFixed(1)} s · {r.width} × {r.height} · {r.fps} fps{#if r.frames} · {r.frames} frames{/if} · {fmt(r.bytes)}{#if r.encoder} · {r.encoder}{/if}{#if r.sound} · with sound{/if}
 					</div>
 					<div class="rec-dim">{r.savedNote}</div>
 					{#if job && job.queue.length > 1}
@@ -260,6 +262,9 @@
 				<label class="rec-check"><input id="recording-hide-helpers" class="tp-check" type="checkbox" checked={p.hideHelpers} onchange={(e) => setRecordingPrefs({ hideHelpers: /** @type {any} */ (e.currentTarget).checked })} /> Hide editor helpers (grid, gizmo, outlines, light and camera helpers)</label>
 				<label class="rec-check" class:rec-off={!alphaOk} title={alphaOk ? '' : 'Only WebP and PNG keep transparency'}
 					><input id="recording-transparent" class="tp-check" type="checkbox" disabled={!alphaOk} checked={p.transparent && alphaOk} onchange={(e) => setRecordingPrefs({ transparent: /** @type {any} */ (e.currentTarget).checked })} /> Transparent background (no sky){alphaOk ? '' : ' — WebP and PNG only'}</label
+				>
+				<label class="rec-check" class:rec-off={!soundOk} title={soundOk ? "Put the scene's music and sound effects in the video (never voices or a microphone). A scene that plays no sound makes a silent file." : 'GIF, WebP and PNG have no sound'}
+					><input id="recording-sound" class="tp-check" type="checkbox" disabled={!soundOk} checked={p.sound && soundOk} onchange={(e) => setRecordingPrefs({ sound: /** @type {any} */ (e.currentTarget).checked })} /> Scene sound (music and sound effects){soundOk ? '' : ' — MP4 and WebM only'}</label
 				>
 				<div id="recording-estimate" class="rec-dim" data-frames={plan.frames} data-path={plan.path}>
 					{plan.size.w} × {plan.size.h} · {plan.frames} frames at {plan.fps} fps · about {fmt(estimate)} as .{plan.ext}{live ? ' (live recording)' : ''}

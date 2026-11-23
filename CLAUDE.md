@@ -763,6 +763,31 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   store OFF by default + toggle under the object-list filter cog + auto-on via
   `markLocalOnly`; Share/Share-all broadcast toJSON + clear the flag; drop-to-local =
   viewer local COPY / editor delete-for-peers. `Objects.svelte` gained a local badge + Share.
+- `src/lib/hideMyIp.js` + `peerRateLimit.js` + `peerRateGate.js` (71 TR4, TR7) — the session's own protections,
+  both per device. HIDE MY IP: `iceTransportPolicy: 'relay'` on the LIVE Peer's `options.config`, because PeerJS
+  builds every RTCPeerConnection (dialled, answered, data, voice) from that object at that moment; never in
+  `resolvePeerOptions`, where `undefined` means PeerJS's own defaults and a `config` would replace them. FAIL
+  CLOSED: no relay server = the dial fails with a sentence, never a direct try. A link already up keeps its route
+  (no renegotiation), and a Settings reset does not switch it off. Suite `hide-my-ip` needs a LOCAL slot: the
+  browser must reach `tests/e2e/lib/miniTurn.cjs`, a real TURN server small enough to read that counts the bytes it
+  carried. RATE LIMITS: per-peer token buckets for discrete edits and chat (`rateKind`, null for streams and state
+  replies, which keep flowing), checked right after `canApply`; the session host is exempt. A refused sender hears
+  one `ratelimited` every 30 s (on the ALWAYS_ALLOWED floor) and the host/admin gets a notice with Remove.
+  cloudApi `removePeer(peerId, {block})` is the seam the cloud's account block list enforces through.
+- `src/lib/inviteLimits.js` (71 AS4, PURE: imports only inviteCore) + `peerModeration.blockToast` /
+  `requireApproval` (71 AS3) — ROOMS YOU CAN TRUST. INVITES: <= 20 live per host device and <= 10 minted per 10 min
+  (`mintVerdict`; the window counts MINTS in `tp:inviteMints`, never records, or mint-forget-mint walks past it);
+  `createInvite` returns `{refused}` and mints nothing. A FAILED PROOF IS NEVER A CARD: `verifyInviteDial` counts it in
+  `createJoinGate` and it lands in ONE `failedInviteJoins` row (`FailedInviteJoins.svelte`, lazy, in Toasts + the
+  drawer; a line on `VRPeerApprove`) with Review / Let in / Dismiss — the 12-card cap (`boundApprovals`) drops the OLDEST
+  card, so a flood used to push a real joiner out. > 10 failures / min PAUSE invite joins 60 s (one host toast, Resume
+  now); a paused or too-fast re-join (`again`, a token bucket: 2 free, then 1 / 30 s) is refused with additive dial
+  metadata `why: 'invite-paused' | 'invite-slow'` on the 'denied' result (`joinWhyText`; an older joiner reads
+  "declined"). BLOCK TOAST: a session block holds a PEER ID and a guest returns with a new one, so blocking a guest (we
+  host; `roomAccess.isGuest() !== false`) offers Require approval to join — a SESSION flag on the host (`requireApproval`,
+  reset with the block list; Settings ▸ Connection row) that turns every automatic admit, a working invite included, into
+  the card — and the plugin's Signed-in people only (`cloudApi.setRoomAccess`, OPEN-CORE.md). Suites `invite-limits`,
+  `block-guest-fix`; `invite-links`' counterfactuals assert the collapsed row now.
 - `src/lib/connectionState.js` (store-only) — `sessionHost` (peer that approved OUR
   outbound request; null = we host), `peerJoinedAt`, `resetSession`. Connect state
   derives from `$peers.openedPeers`, **NEVER `userdata.length`** (the roster is

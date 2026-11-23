@@ -4,12 +4,12 @@
 	"pages": {
 		"play": {
 			"html": "play.html",
-			"maxJsGzBytes": 1945600,
+			"maxJsGzBytes": 1954816,
 			"maxFirstFrameMs": 20000
 		},
 		"editor": {
 			"html": "index.html",
-			"maxJsGzBytes": 3092480,
+			"maxJsGzBytes": 3101696,
 			"maxFirstFrameMs": 32000
 		}
 	},
@@ -122,6 +122,41 @@
 			"play": "2155.1 KB (102-int-2 union on v1.74.0) -> 1877.4 measured with #608 (-277.7: boot code regrouped by when it runs) -> line 1900 KB (+1.2 %)",
 			"editor": "3380.2 KB -> 2988.5 measured with #608 (-391.7) -> line 3020 KB (+1.1 %)",
 			"note": "claude:9 ruling: reset the lines to the measured union + about 1 % so the #608 win cannot be eaten silently (the 2160 / 3385 lines set earlier for this union are retired). Union = decals, paint, splats, simplify-export, ik, #608, #609, #612; build 717 files (budget 850)."
+		},
+		{
+			"date": "2026-11-23",
+			"lane": "71-rooms (on v1.74.0 + core #506 feat/71-privacy)",
+			"play": "v1.74.0 2147.7 KB -> + #506 2150.0 KB (+2.3) -> + 71-rooms 2152.2 KB (+2.2) -> line 2155.0 KB",
+			"editor": "v1.74.0 3366.5 KB -> + #506 3371.2 KB (+4.7, already over 3370) -> + 71-rooms 3373.9 KB (+2.7) -> line 3377.5 KB",
+			"note": "inside the ~3 KB boot rule (claude:9, 21 Nov): the invite join gate has to answer a dial synchronously (inviteStore +1.4: failed-proof counter, pause, re-join pacing, mint limits), plus the block-toast fix and the Require approval flag in peerModeration. The collapsed failed-invite row (FailedInviteJoins.svelte) is a lazy chunk. Base and lane built on the Deck with one node_modules; 71-int re-measures the union and may veto"
+		},
+		{
+			"date": "2026-11-23",
+			"lane": "fix-late-joiners (with #609 105-slot-save merged in)",
+			"play": "v1.74.0 2148.6 KB -> 2151.7 KB (+3.1: #609 +1.6, this lane +1.5) -> line 2152.5 KB",
+			"editor": "v1.74.0 3369.3 KB -> 3372.8 KB (+3.6: #609 +1.9, this lane +1.7) -> line 3374.0 KB",
+			"note": "inside the ~3 KB boot rule per lane. Measured on the pc host (tp-lanes), v1.74.0, #609's head and this branch built in one worktree with one node_modules; the per-lane split is from sourcemap builds of the three. This lane by module (gzip, editor): commandsHandler +0.5 (late-joiner ingest look-ahead, the primitive recipe path, the announced batch hold, the visible/slots fields), playSpawn +0.4 (the lazy loader and v1.74.0's fallback), flowStore graph tombstones, sceneStore poke pacing, qualityGovernor, autosave/gltfNames ~0.1 each. Lazy chunks (paid only when used): spawnPick + spawnSlots (load with the first peer link), slotRejoin (only a message carrying slots). Chunk-hash churn moves the editor ~0.6 KB between builds; the integrator may veto or fold it into the int line."
+		},
+		{
+			"date": "2026-11-23",
+			"lane": "71-int (Accounts and safety: #506 71-privacy, #618 71-rooms, #619 fix-late-joiners with #609)",
+			"play": "v1.74.0 2148.6 KB -> 2155.5 KB (+6.9) -> line 2160.0 KB (the int boot rule: merged tag + the union, rounded up to the next 5 KB)",
+			"editor": "v1.74.0 3369.2 KB -> 3377.9 KB (+8.7) -> line 3380.0 KB (the same rule)",
+			"note": "measured on the pc host (tp-lanes): v1.74.0 and each union step built in one worktree with one node_modules. Under the ~15 KB tell rule. The two lane entries above are kept as their lanes wrote them; this line replaces theirs. If v1.75.0 (102-int-2, lines reset to 1900 / 3020 KB) is merged before the release, the line is set again ONCE from the measured merged tag + this union's sum",
+			"perLane": {
+				"basis": "each first-parent merge of the union chain built on v1.74.0 (play / editor KB, gzip -9)",
+				"71-privacy #506": "+1.4 / +1.9",
+				"71-rooms #618": "+2.5 / +3.2",
+				"fix-late-joiners #619 (with #609)": "+3.0 / +3.6",
+				"71-int fixes e3e8e7af, f1dcd3e3": "measured with the union at the release candidate (gates rc)"
+			}
+		},
+		{
+			"date": "2026-11-23",
+			"lane": "71-int-rel (1.76 Accounts and safety on v1.75.0: #506 71-privacy, #618 71-rooms, #619 fix-late-joiners)",
+			"play": "v1.75.0 1877.3 KB -> union on v1.75.0 1883.4 KB (+6.1) -> line 1909 KB (the 1.75.0 line 1900 + 3 KB per core lane x 3)",
+			"editor": "v1.75.0 2988.4 KB -> union on v1.75.0 2998.8 KB (+10.4) -> line 3029 KB (the 1.75.0 line 3020 + 3 KB per core lane x 3)",
+			"note": "orchestrator rule for this release (theprototype-41, 23 Nov): the 71-int candidate's 2160 / 3380 lines were set under the old rules and are retired; the new line is the 1.75.0 line + 3 KB per lane. Measured on the Deck after merging v1.75.0 (build 9a4cefaa). Per-lane split from the pc host on v1.74.0 (71-int entry above): #506 +1.4 / +1.9, #618 +2.5 / +3.2, #619 +3.0 / +3.6"
 		}
 	],
 	"throttle": {

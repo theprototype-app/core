@@ -2,7 +2,7 @@
 
 Moved by `battery.cjs refresh --red` from two runs on unchanged code: deps.yml dispatched on `deps` 26b995ec (v1.72.0, run 45088358423) and #519, a CI-script-only change on the same base (run 45071918356). **82 of the 85 are green in the integrators desk battery at the v1.72.0 tag** (`battery-t172-full`, 61-int, 652 suites), so their reds belong to the runner, not the app. The three red on the desk too are agent-mcp (env), connector-join (flaky on the desk, green on the tag rerun) and session-volume-limits (real).
 
-**+3 on 2026-11-23** from #628's own run (45110064000, after the 85 moved): roster-rows, session-volume and wire-proto were green in both base runs but red in every attempt there (required + confirm), all at the third page's Connect, all green on the desk at v1.72.0. Timing, same as roster-merge / toggle-peers. **+1** from run 45132432893: dock-strip-drop, a test race in its 6.3 check that is flaky on the desk too. 89 in all.
+**+3 on 2026-11-23** from #628's own run (45110064000, after the 85 moved): roster-rows, session-volume and wire-proto were green in both base runs but red in every attempt there (required + confirm), all at the third page's Connect, all green on the desk at v1.72.0. Timing, same as roster-merge / toggle-peers. **+1** from run 45132432893: dock-strip-drop, a test race in its 6.3 check that is flaky on the desk too. **+1** from the same run: behaviour-load-joiner (the join premise). 90 in all. The same commit makes the confirm step split its reds by suite time over five parts at 35 min (was three parts dealt alphabetically at 20 min), so a flake gets its retry instead of a `notrun`.
 
 Bringing a suite back to required: fix the cause, see it green in a deps.yml run, then delete its `optional` line in battery.json and its row here. Classes: env (the runner lacks something), timing (a wait or frame-rate check on a slow runner), real (the app is wrong).
 
@@ -56,7 +56,7 @@ Bringing a suite back to required: fix the cause, see it green in a deps.yml run
 |---|---|---|---|
 | `agent-mcp` | 2/2 | also red on the desk at 1.72 ("signaling came from the link": needs peerjs.theprototype.app); click timeout on the runner | SCRIPT FAILED: locator.click: Timeout 90000ms exceeded. |
 
-## timing: green on the desk at v1.72.0; on the runner a wait/click timeout or a frame-rate/heartbeat check, or red in one run only (64)
+## timing: green on the desk at v1.72.0; on the runner a wait/click timeout or a frame-rate/heartbeat check, or red in one run only (65)
 
 | suite | runner runs red | why | first red line |
 |---|---|---|---|
@@ -65,6 +65,7 @@ Bringing a suite back to required: fix the cause, see it green in a deps.yml run
 | `ai-connection` | 2/2 | a frame-rate/heartbeat dependent check (physics, walking, peer timeouts) on a ~4 fps SwiftShader runner | FAIL §6 ... within the stage timeout (18198 ms) |
 | `ai-vision` | 2/2 | a wait/click timeout in both runs on a loaded runner | SCRIPT FAILED: page.waitForSelector: Timeout 5000ms exceeded. |
 | `asset-ask-scope` | 1/2 | red in one of the two runs only (flaky on a loaded runner) | FAIL None: a file the scene references still travels, read from the scene itself |
+| `behaviour-load-joiner` | 4/4 #628 runs at the first try, both tries in one (0/2 in the base runs) | the two-peer join premise misses on a loaded runner; 3 of 4 confirm retries green | FAIL 1.1 premise: the guest has the two gems |
 | `character-apply` | 2/2 | a wait/click timeout in both runs on a loaded runner | SCRIPT FAILED: page.waitForSelector: Timeout 15000ms exceeded. |
 | `character-skeleton` | 2/2 | a wait/click timeout in both runs on a loaded runner | SCRIPT FAILED: page.waitForSelector: Timeout 15000ms exceeded. |
 | `characters-proof` | 2/2 | a wait/click timeout in both runs on a loaded runner | SCRIPT FAILED: locator.click: Timeout 10000ms exceeded. |

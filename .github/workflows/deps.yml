@@ -142,10 +142,12 @@ jobs:
     uses: ./.github/workflows/battery.yml
     with:
       set: confirm
-      matrix: '{"include":[{"shard":1,"of":3,"suites":0,"est":0},{"shard":2,"of":3,"suites":0,"est":0},{"shard":3,"of":3,"suites":0,"est":0}]}'
+      # five parts split by suite TIME (battery.cjs confirm), 35 min each: three parts dealt alphabetically at 20 min
+      # left reds `notrun` behind two long retries, so a flake counted red without its second chance (#628)
+      matrix: '{"include":[{"shard":1,"of":5,"suites":0,"est":0},{"shard":2,"of":5,"suites":0,"est":0},{"shard":3,"of":5,"suites":0,"est":0},{"shard":4,"of":5,"suites":0,"est":0},{"shard":5,"of":5,"suites":0,"est":0}]}'
       playwright: ${{ needs.plan.outputs.playwright }}
       refs: ${{ needs.plan.outputs.refs }}
-      deadline: 20
+      deadline: 35
 
   # red or flaky on SwiftShader with the same red on unchanged code: reported, never waited for, and only on a run
   # started by hand (refreshing battery.json's classification); ~750 runner-min a time is too much for every PR.

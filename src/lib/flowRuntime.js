@@ -4908,7 +4908,15 @@ function applyAnimation(object, base, anim, time, ctx) {
 		const name = typeof data.uniform === 'string' ? data.uniform.trim() : '';
 		if (name && shaderRef?.shaderUniform) {
 			// 102b-papercuts: a vecN slot now takes a vector or a colour too (uniformWrite.js)
-			writeUniformSlot(shaderRef.shaderUniform(object.uuid, name), data);
+			// 105-slot-shaders: `slot` (index, id or name) = that material slot's shader; empty = every slot of
+			// the object that has the uniform (a single-material object: its one shader, as before)
+			const slot = typeof data.slot === 'string' ? data.slot.trim() : data.slot;
+			if (slot !== undefined && slot !== null && slot !== '' && shaderRef.slotIdFor) {
+				const id = shaderRef.slotIdFor(object, slot);
+				if (id) writeUniformSlot(shaderRef.shaderUniform(object.uuid, name, id), data);
+			} else if (shaderRef.shaderUniformsOf) {
+				for (const record of shaderRef.shaderUniformsOf(object.uuid, name)) writeUniformSlot(record, data);
+			} else writeUniformSlot(shaderRef.shaderUniform(object.uuid, name), data);
 		}
 	}
 }

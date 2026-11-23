@@ -72,10 +72,10 @@ function standInFor(own) {
 
 /**
  * What slot `index` should draw: off -> the plain default; a seated product -> it; else its own material.
- * @param {any} object @param {any} own @param {string} id
+ * @param {any} object @param {any} own @param {string} id @param {boolean} [list] the object has 2+ slots
  */
-function wantedFor(object, own, id) {
-	if (slotOffOf(own)) return standInFor(own);
+function wantedFor(object, own, id, list = true) {
+	if (list && slotOffOf(own)) return standInFor(own);
 	const product = products.get(object)?.get(id);
 	return product ?? own;
 }
@@ -100,7 +100,8 @@ export function syncSlotDraw(object) {
 	let changed = false;
 	let any = false;
 	for (let i = 0; i < list.length; i++) {
-		const want = list.length > 1 ? wantedFor(object, own[i], ids[i]) : own[i];
+		// off needs a list (2+); a product (105-slot-shaders) also draws in a one-entry array
+		const want = wantedFor(object, own[i], ids[i], list.length > 1);
 		if (want !== own[i]) {
 			any = true;
 			if (seated.get(want) !== own[i]) seat(want, own[i]);

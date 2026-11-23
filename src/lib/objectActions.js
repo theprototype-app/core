@@ -50,6 +50,7 @@ import { phoneShell } from './ui/phoneShell.js';
 import { desktopSpawn, spawnEyePose } from './playSpawn'; // 30b P4 (+ vrOnly: core-games)
 // D2: a LEAF (svelte stores + THREE), so a static import here closes no cycle
 import { shareDuplicatedMaterials, linkMaterials } from './materialSharing';
+import { slotIdsOf, ownOf } from './slotDraw.js'; // 105-slot-shaders: a copy keeps its slot ids (a leaf)
 import { applyFlowPathTo } from './sim/flowPathObject.js'; // 36-fb F24 (a three leaf)
 import { applyTextPathTo, bumpTextTurn } from './textPathObject.js'; // 64 D2 (a three leaf)
 import { markConstraintsDirty } from './rig/constraintHub.js'; // 102 M7 (the solver loads on first use)
@@ -640,10 +641,18 @@ function collectTree(object, list = []) {
  */
 function detachMaterials(clone) {
 	collectTree(clone).forEach((node) => {
+		// 105-slot-shaders: a slot list's copy keeps its slot IDS (a clone mints a new material uuid, which IS a
+		// slot's id unless one is written): each peer clones on its own, so only a written id agrees across the
+		// session — and the copy's slot shaders (`<uuid>/<slotId>`) need that
+		const ids = Array.isArray(node.material) && node.material.length > 1 ? slotIdsOf(node.material.map(ownOf)) : null;
 		if (node.material)
 			node.material = Array.isArray(node.material)
 				? node.material.map((/** @type {any} */ m) => m.clone())
 				: node.material.clone();
+		if (ids)
+			node.material.forEach((/** @type {any} */ m, /** @type {number} */ i) => {
+				m.userData.slot = { ...(m.userData.slot ?? {}), id: ids[i] };
+			});
 		// 105-slots LINK: a copy is a working copy — its slots leave any shared-material link (both sides of a duplicate
 		// run this, so every peer agrees)
 		for (const m of Array.isArray(node.material) ? node.material : node.material ? [node.material] : []) {

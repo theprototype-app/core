@@ -115,6 +115,7 @@
 	import { buildPeerMenuItems } from '$lib/peerMenu';
 	import { removePeer, allowBack, blockedPeers, inviteStoreModule } from '$lib/peerModeration';
 	import { olderPeers } from '$lib/wireProto'; // 101 F1: peers on an older protocol, refused here
+	import { shaderGraphs, shaderKeyParts } from '$lib/shaderGraph'; // 105-slot-shaders: the older-peer note
 	import { copyLookOf } from '$lib/peerActions';
 	import { canModerateWith } from '$lib/peerModerationCore';
 	import { hiddenPeers, setPeerHidden } from '$lib/peerHide';
@@ -460,6 +461,15 @@
 	/** cloud roles bridge (null without the cloud plugin) */
 	const ri = $derived($rolesInfo);
 	/** may WE moderate — the menu's Moderation group (peerModerationCore.canModerateWith) */
+	// 105-slot-shaders: connected peers whose build has no per-slot shaders (no `slotShaders` cap) — counted only
+	// while this scene holds a slot shader, since that is the one thing they would not see
+	const noSlotShaderPeers = $derived.by(() => {
+		const pc: any = $peers;
+		void $userdata;
+		if (!Object.keys($shaderGraphs).some((k) => shaderKeyParts(k).slot)) return 0;
+		const links = pc?.connections ?? {};
+		return Object.keys(links).filter((id) => links[id]?.open && !pc?.peerCaps?.get?.(id)?.slotShaders).length;
+	});
 	const mayModerate = $derived(canModerateWith({ host: $sessionHost, amAdmin: ri?.amAdmin, hasRoles: !!ri, connected: !!($peers as any)?.openedPeers?.size }));
 	// 21-G5 (F7): the project's OTHER rooms — mine is excluded, and a room with no
 	// members to show is skipped rather than rendering an empty header
@@ -1466,8 +1476,16 @@
 					{/if}
 					<!-- 101 F1: a peer on an OLDER session protocol was refused before any scene data moved;
 					     this is the one place it shows on this side (it sees "Reload to update"). -->
-					{#if $olderPeers.length}
+					{#if $olderPeers.length || noSlotShaderPeers}
 						<div id="peers-older" class="mt-1 border-t border-border pt-1">
+							{#if noSlotShaderPeers}
+								<div id="peers-older-slots" class="peers-row peers-older-row rounded">
+									<Icon name="refresh-cw" size={16} aria-hidden="true" />
+									<div class="peer-info">
+										<div class="peer-meta"><span class="truncate">{noSlotShaderPeers + (noSlotShaderPeers === 1 ? ' person here uses' : ' people here use') + ' an older version — they do not see per-slot shaders'}</span></div>
+									</div>
+								</div>
+							{/if}
 							{#each $olderPeers as o (o.peerId)}
 								<div class="peers-row peers-older-row rounded" data-peer-id={o.peerId}>
 									<Icon name="refresh-cw" size={16} aria-hidden="true" />

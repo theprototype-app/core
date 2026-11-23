@@ -22,6 +22,8 @@
  * @property {any} renderer
  * @property {any} [baseMaterial] the object's ORIGINAL material, when the caller holds
  *   it (the inject backend derives from it; absent = take `object.material`)
+ * @property {string | null} [slot] 105-slot-shaders: the slot id the material is for (null / absent = the whole
+ *   object); `baseMaterial` is then that slot's own material
  */
 
 /**
@@ -340,7 +342,7 @@ export function ensureShaderfrogBackend() {
 // `runtime.cache`, and its cache key includes the scene's LIGHT SET, background and
 // environment — so reusing the context is what makes a param recompile cheap, while
 // a light change still correctly invalidates. WeakMap: no leak when a mesh dies.
-/** @type {WeakMap<object, any>} */
+/** mesh -> (slot id | '' for the whole object) -> context @type {WeakMap<object, Map<string, any>>} */
 const contexts = new WeakMap();
 
 /**
@@ -353,7 +355,11 @@ function makeShaderfrogCompile(core, threePlugin) {
 		const { object, scene, camera, renderer } = ctx;
 		if (!object || !scene || !camera || !renderer)
 			throw new Error('shaderfrog backend needs object + scene + camera + renderer');
-		let engineContext = contexts.get(object);
+		// 105-slot-shaders: one context per (object, slot) — two slots are two programs
+		let perSlot = contexts.get(object);
+		if (!perSlot) contexts.set(object, (perSlot = new Map()));
+		const slotKey = ctx.slot ?? '';
+		let engineContext = perSlot.get(slotKey);
 		if (!engineContext) {
 			engineContext = {
 				engine: 'three',
@@ -372,7 +378,7 @@ function makeShaderfrogCompile(core, threePlugin) {
 				},
 				debuggingNonsense: {}
 			};
-			contexts.set(object, engineContext);
+			perSlot.set(slotKey, engineContext);
 		} else {
 			// the mesh survives but the scene graph may have been rebuilt around it
 			engineContext.runtime.scene = scene;
@@ -395,7 +401,12 @@ function shaderfrogErrorText(result) {
 	return 'Shader compile failed';
 }
 
-/** Drop a mesh's cached compile context (detach / dispose). @param {any} object */
-export function forgetShaderContext(object) {
-	if (object) contexts.delete(object);
+/**
+ * Drop a mesh's cached compile context (detach / dispose): one slot's, or (no slot) the whole object's.
+ * @param {any} object @param {string | null} [slot]
+ */
+export function forgetShaderContext(object, slot) {
+	if (!object) return;
+	if (slot) contexts.get(object)?.delete(slot);
+	else contexts.delete(object);
 }

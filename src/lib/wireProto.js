@@ -72,7 +72,9 @@ export function myCaps(opts = {}) {
 	// gate and its `lockreject`, the whole held set in the handshake
 	// 105-slots `slots2`: per-slot material values (`slot` on materialParam / material), the slot draw layer (off).
 	// A peer without it gets a whole-list `materials` after a per-slot gesture (materialsHandler.healOlderPeers).
-	const caps = { wb: 1, dev: 1, lk: 1, slots2: 1 };
+	// 105-slot-shaders `slotShaders`: a shader document keyed `<uuid>/<slotId>` draws on that slot. A peer without it
+	// keeps and forwards the document but draws the slot's own material (People says so: #peers-older-slots).
+	const caps = { wb: 1, dev: 1, lk: 1, slots2: 1, slotShaders: 1 };
 	if (opts.fc) caps.fc = 1;
 	// test seam: `localStorage.debugCapsOff = 'slots2'` dials as a build without that flag (the heal path)
 	try {

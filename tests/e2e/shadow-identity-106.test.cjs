@@ -68,7 +68,9 @@ const loadScene = (page, slug) =>
 			r.render(sc, cam0);
 			// the rig sun's frustum too: it refits to the scene's radius after the meshes land (castle: 30 -> 75 m)
 			const sun = sc.getObjectByName('env-rig-sun');
-			const fit = sun?.shadow?.camera ? +(sun.shadow.camera.right - sun.shadow.camera.left).toFixed(1) : 0;
+			const fit = sun?.shadow?.camera
+				? +(sun.shadow.camera.right - sun.shadow.camera.left).toFixed(1)
+				: 0;
 			const key = c + '|' + r.info.render.triangles + '|' + fit;
 			same = key === last && c > 0 ? same + 1 : 0;
 			last = key;
@@ -79,7 +81,12 @@ const loadScene = (page, slug) =>
 		// hold the governor at full quality: the two pages must not step differently
 		s.qualityGovernor?.keepFullQuality?.();
 		const cam = read(s.globalCamera);
-		return { ok, objects: lastCount, settled: last, pose: { p: cam.position.toArray(), q: cam.quaternion.toArray() } };
+		return {
+			ok,
+			objects: lastCount,
+			settled: last,
+			pose: { p: cam.position.toArray(), q: cam.quaternion.toArray() }
+		};
 	}, slug);
 
 /** page side: auto LOD off. Its coarse levels are built in a worker on each page's own clock, so the two pages drew
@@ -107,11 +114,13 @@ const refit = (page) =>
 			b.refreshSceneBounds();
 			const e = await import(/* @vite-ignore */ '/src/lib/environment.js');
 			e.applyEnvironment();
-			const sun = window.__stores && (() => {
-				let v;
-				window.__stores.globalScene.subscribe((x) => (v = x))();
-				return v;
-			})()?.getObjectByName('env-rig-sun');
+			const sun =
+				window.__stores &&
+				(() => {
+					let v;
+					window.__stores.globalScene.subscribe((x) => (v = x))();
+					return v;
+				})()?.getObjectByName('env-rig-sun');
 			const c = sun?.shadow?.camera;
 			return { radius: +b.sceneRadius().toFixed(2), fit: c ? +(c.right - c.left).toFixed(2) : 0 };
 		} catch (err) {
@@ -136,7 +145,8 @@ const loadSettleOnly = (page) =>
 			r.setRenderTarget(null);
 			r.render(sc, cam);
 			const sun = sc.getObjectByName('env-rig-sun');
-			const key = r.info.render.triangles + '|' + (sun?.shadow?.camera ? sun.shadow.camera.right : 0);
+			const key =
+				r.info.render.triangles + '|' + (sun?.shadow?.camera ? sun.shadow.camera.right : 0);
 			same = key === last ? same + 1 : 0;
 			last = key;
 			await new Promise((res) => setTimeout(res, 2000));
@@ -163,7 +173,11 @@ const frame = (page, pose) =>
 		r.render(scene, cam);
 		const t0 = performance.now();
 		r.render(scene, cam);
-		const info = { calls: r.info.render.calls, tris: r.info.render.triangles, programs: r.info.programs?.length ?? null };
+		const info = {
+			calls: r.info.render.calls,
+			tris: r.info.render.triangles,
+			programs: r.info.programs?.length ?? null
+		};
 		// the programs THIS frame draws the scene with (material -> its current program), by full cache key. Not
 		// r.info.programs: that is every program still alive, and when a page frees the last scene's ones is its own
 		// timing (chain 5: the same names, "A only" on every scene)
@@ -192,7 +206,16 @@ const frame = (page, pose) =>
 			const sh = o.shadow;
 			const c = sh?.camera;
 			lights.push(
-				[o.isSunLight ? 'sun' : o.type, o.name, sh?.constructor?.name, sh?.mapSize?.x, sh?.mapSize?.y, sh?.radius, c?.isOrthographicCamera ? +(c.right - c.left).toFixed(2) : 'p', c ? +c.far.toFixed(2) : null].join('|')
+				[
+					o.isSunLight ? 'sun' : o.type,
+					o.name,
+					sh?.constructor?.name,
+					sh?.mapSize?.x,
+					sh?.mapSize?.y,
+					sh?.radius,
+					c?.isOrthographicCamera ? +(c.right - c.left).toFixed(2) : 'p',
+					c ? +c.far.toFixed(2) : null
+				].join('|')
 			);
 		});
 		lights.sort();
@@ -204,10 +227,16 @@ const frame = (page, pose) =>
 			px,
 			lights,
 			shadowLevel: env.shadowLevel ?? null,
-			drawn: s.environment.drawnSceneShadowLevel ? s.environment.drawnSceneShadowLevel() : 'n/a (base)',
-			loaded: s.environment.shadowLevelsLoadedForTest ? s.environment.shadowLevelsLoadedForTest() : 'n/a (base)',
+			drawn: s.environment.drawnSceneShadowLevel
+				? s.environment.drawnSceneShadowLevel()
+				: 'n/a (base)',
+			loaded: s.environment.shadowLevelsLoadedForTest
+				? s.environment.shadowLevelsLoadedForTest()
+				: 'n/a (base)',
 			// the contact pass is added by the drawn level only (absent on the base release)
-			contactInPost: s.lightParams?.contactShadowsWanted ? read(s.lightParams.contactShadowsWanted) : false,
+			contactInPost: s.lightParams?.contactShadowsWanted
+				? read(s.lightParams.contactShadowsWanted)
+				: false,
 			shadowMapOn: r.shadowMap.enabled
 		};
 	}, pose);
@@ -216,12 +245,21 @@ const frame = (page, pose) =>
 function diff(a, b) {
 	if (a.length !== b.length) return 1;
 	let n = 0;
-	for (let i = 0; i < a.length; i += 4) if (Math.abs(a[i] - b[i]) > 2 || Math.abs(a[i + 1] - b[i + 1]) > 2 || Math.abs(a[i + 2] - b[i + 2]) > 2) n++;
+	for (let i = 0; i < a.length; i += 4)
+		if (
+			Math.abs(a[i] - b[i]) > 2 ||
+			Math.abs(a[i + 1] - b[i + 1]) > 2 ||
+			Math.abs(a[i + 2] - b[i + 2]) > 2
+		)
+			n++;
 	return n / (a.length / 4);
 }
 /** on the pixels that hold still on both pages (a1 ~ a2 and b1 ~ b2): the share where A and B differ; and that share of the frame */
 function stillDiff(a1, a2, b1, b2) {
-	const near = (x, y, i) => Math.abs(x[i] - y[i]) <= 2 && Math.abs(x[i + 1] - y[i + 1]) <= 2 && Math.abs(x[i + 2] - y[i + 2]) <= 2;
+	const near = (x, y, i) =>
+		Math.abs(x[i] - y[i]) <= 2 &&
+		Math.abs(x[i + 1] - y[i + 1]) <= 2 &&
+		Math.abs(x[i + 2] - y[i + 2]) <= 2;
 	let still = 0;
 	let n = 0;
 	for (let i = 0; i < a1.length; i += 4) {
@@ -242,7 +280,11 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A', { context: { viewport: VIEW } });
 	const B = await h.setupPage(browser, 'B', { context: { viewport: VIEW } });
 	await B.page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
-	await B.page.waitForFunction(() => !!window.__stores?.environment && !!window.__stores?.sceneTemplates, null, { timeout: 240000 });
+	await B.page.waitForFunction(
+		() => !!window.__stores?.environment && !!window.__stores?.sceneTemplates,
+		null,
+		{ timeout: 240000 }
+	);
 	await sleep(4000);
 	const lodA = await autoLodOff(A.page);
 	const lodB = await autoLodOff(B.page);
@@ -269,10 +311,28 @@ h.run(async () => {
 		const floor = Math.max(diff(a1.px, a2.px), diff(b1.px, b2.px));
 		const ab = diff(a1.px, b1.px);
 		const sd = stillDiff(a1.px, a2.px, b1.px, b2.px);
-		table.push({ slug, still: +(sd.still * 100).toFixed(1), stillAB: +(sd.share * 100).toFixed(3), ab: +(ab * 100).toFixed(3), floor: +(floor * 100).toFixed(3), callsA: a1.info.calls, callsB: b1.info.calls, trisA: a1.info.tris, trisB: b1.info.tris, msA: a1.ms, msB: b1.ms });
+		table.push({
+			slug,
+			still: +(sd.still * 100).toFixed(1),
+			stillAB: +(sd.share * 100).toFixed(3),
+			ab: +(ab * 100).toFixed(3),
+			floor: +(floor * 100).toFixed(3),
+			callsA: a1.info.calls,
+			callsB: b1.info.calls,
+			trisA: a1.info.tris,
+			trisB: b1.info.tris,
+			msA: a1.ms,
+			msB: b1.ms
+		});
 		// what the scene itself varies between two frames of one page
-		const varCalls = Math.max(Math.abs(a1.info.calls - a2.info.calls), Math.abs(b1.info.calls - b2.info.calls));
-		const varTris = Math.max(Math.abs(a1.info.tris - a2.info.tris), Math.abs(b1.info.tris - b2.info.tris));
+		const varCalls = Math.max(
+			Math.abs(a1.info.calls - a2.info.calls),
+			Math.abs(b1.info.calls - b2.info.calls)
+		);
+		const varTris = Math.max(
+			Math.abs(a1.info.tris - a2.info.tris),
+			Math.abs(b1.info.tris - b2.info.tris)
+		);
 		const extraOf = (ap, bp) => {
 			const bKeys = new Set(bp.map((x) => x[1]));
 			return ap
@@ -285,7 +345,9 @@ h.run(async () => {
 						if (bn !== name) continue;
 						const tb = bk.split(',');
 						const d = [];
-						for (let i = 0; i < Math.max(ta.length, tb.length); i++) if (ta[i] !== tb[i]) d.push(`#${i} ${String(ta[i]).slice(0, 60)} / ${String(tb[i]).slice(0, 60)}`);
+						for (let i = 0; i < Math.max(ta.length, tb.length); i++)
+							if (ta[i] !== tb[i])
+								d.push(`#${i} ${String(ta[i]).slice(0, 60)} / ${String(tb[i]).slice(0, 60)}`);
 						if (!best || d.length < best.length) best = d;
 					}
 					return `${name} [${best ? best.slice(0, 3).join('; ') : 'no same-name program on B'}]`;
@@ -304,19 +366,38 @@ h.run(async () => {
 			a2.progs = a3.progs;
 			b2.progs = b3.progs;
 		}
-		h.check(a1.shadowLevel === null && a1.drawn === 'basic', `${slug}: reads as Basic (stored ${a1.shadowLevel}, drawn ${a1.drawn})`);
+		h.check(
+			a1.shadowLevel === null && a1.drawn === 'basic',
+			`${slug}: reads as Basic (stored ${a1.shadowLevel}, drawn ${a1.drawn})`
+		);
 		h.check(a1.loaded === false, `${slug}: the Soft / Far chunk is never loaded (${a1.loaded})`);
 		h.check(!a1.contactInPost, `${slug}: no contact-shadow pass in the post stack`);
-		h.check(a1.shadowMapOn === b1.shadowMapOn, `${slug}: shadow map on the same (${a1.shadowMapOn} / ${b1.shadowMapOn})`);
-		h.check(JSON.stringify(a1.lights) === JSON.stringify(b1.lights), `${slug}: the same casting lights (${a1.lights.join(' ; ')}${JSON.stringify(a1.lights) === JSON.stringify(b1.lights) ? '' : ' vs ' + b1.lights.join(' ; ')})`);
 		h.check(
-			Math.abs(a1.info.calls - b1.info.calls) <= varCalls && Math.abs(a1.info.tris - b1.info.tris) <= varTris,
+			a1.shadowMapOn === b1.shadowMapOn,
+			`${slug}: shadow map on the same (${a1.shadowMapOn} / ${b1.shadowMapOn})`
+		);
+		h.check(
+			JSON.stringify(a1.lights) === JSON.stringify(b1.lights),
+			`${slug}: the same casting lights (${a1.lights.join(' ; ')}${JSON.stringify(a1.lights) === JSON.stringify(b1.lights) ? '' : ' vs ' + b1.lights.join(' ; ')})`
+		);
+		h.check(
+			Math.abs(a1.info.calls - b1.info.calls) <= varCalls &&
+				Math.abs(a1.info.tris - b1.info.tris) <= varTris,
 			`${slug}: the same cost, draw calls ${a1.info.calls}/${b1.info.calls}, triangles ${a1.info.tris}/${b1.info.tris} (the scene's own frame-to-frame spread ${varCalls} calls / ${varTris} triangles; frame ${a1.ms} / ${b1.ms} ms, printed only)`
 		);
-		h.check(extra.length === 0, `${slug}: the frame draws with no shader program B lacks (${a2.progs.length}/${b2.progs.length} in use${extra.length ? '; A only: ' + extra.join(', ') : ''}${progNote})`);
-		h.check(sd.still >= 0.2 && sd.share <= TOL, `${slug}: pixel-identical where the frame holds still (${(sd.still * 100).toFixed(1)} % of it): A vs B ${(sd.share * 100).toFixed(3)} % of those > 2/255 (moving pixels: A vs B ${(ab * 100).toFixed(3)} % of the frame, frame-to-frame floor ${(floor * 100).toFixed(3)} %)`);
+		h.check(
+			extra.length === 0,
+			`${slug}: the frame draws with no shader program B lacks (${a2.progs.length}/${b2.progs.length} in use${extra.length ? '; A only: ' + extra.join(', ') : ''}${progNote})`
+		);
+		h.check(
+			sd.still >= 0.2 && sd.share <= TOL,
+			`${slug}: pixel-identical where the frame holds still (${(sd.still * 100).toFixed(1)} % of it): A vs B ${(sd.share * 100).toFixed(3)} % of those > 2/255 (moving pixels: A vs B ${(ab * 100).toFixed(3)} % of the frame, frame-to-frame floor ${(floor * 100).toFixed(3)} %)`
+		);
 	}
 	console.log('TABLE ' + JSON.stringify(table));
-	h.check(h.pageErrors(A).length === 0, `no page errors on A (${JSON.stringify(h.pageErrors(A)).slice(0, 300)})`);
+	h.check(
+		h.pageErrors(A).length === 0,
+		`no page errors on A (${JSON.stringify(h.pageErrors(A)).slice(0, 300)})`
+	);
 	await h.finish(browser);
 });

@@ -35,12 +35,19 @@ const state = (page) =>
 			contact: read(s.lightParams.contactShadowsWanted),
 			mapOn: r.shadowMap.enabled,
 			sun: sun
-				? { cascaded: !!sun.isSunLight, cls: sh?.constructor?.name, radius: sh?.radius, map: [sh?.mapSize?.x, sh?.mapSize?.y], far: sh?.camera?.far }
+				? {
+						cascaded: !!sun.isSunLight,
+						cls: sh?.constructor?.name,
+						radius: sh?.radius,
+						map: [sh?.mapSize?.x, sh?.mapSize?.y],
+						far: sh?.camera?.far
+					}
 				: null,
 			preset: env.preset
 		};
 	});
-const setLevel = (page, level) => page.evaluate((l) => window.__stores.environment.setSceneShadowLevel(l), level);
+const setLevel = (page, level) =>
+	page.evaluate((l) => window.__stores.environment.setSceneShadowLevel(l), level);
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -49,17 +56,31 @@ h.run(async () => {
 
 	// 5 (first, while nothing has asked): view-off = zero change
 	const fresh = await state(A.page);
-	h.check(fresh.stored === null && fresh.drawn === 'basic', `5. a fresh scene is Basic (stored ${fresh.stored}, drawn ${fresh.drawn})`);
-	h.check(fresh.loaded === false, '5. the Soft / Far chunk is not loaded by a scene that never asks');
+	h.check(
+		fresh.stored === null && fresh.drawn === 'basic',
+		`5. a fresh scene is Basic (stored ${fresh.stored}, drawn ${fresh.drawn})`
+	);
+	h.check(
+		fresh.loaded === false,
+		'5. the Soft / Far chunk is not loaded by a scene that never asks'
+	);
 	h.check(fresh.contact === false, '5. no contact pass');
 	const basicSun = fresh.sun;
-	h.check(!!basicSun && basicSun.radius === 1 && !basicSun.cascaded, `5. today's rig sun: ${JSON.stringify(basicSun)}`);
+	h.check(
+		!!basicSun && basicSun.radius === 1 && !basicSun.cascaded,
+		`5. today's rig sun: ${JSON.stringify(basicSun)}`
+	);
 
 	await h.connect(B, A);
 
 	// 1 + 2: Far
 	await setLevel(A.page, 'far');
-	await h.eventually(() => state(B.page), (s) => s.stored === 'far' && s.drawn === 'far' && s.sun?.cascaded, '1. B follows Far (stored, drawn, the sun cascaded)', 15000);
+	await h.eventually(
+		() => state(B.page),
+		(s) => s.stored === 'far' && s.drawn === 'far' && s.sun?.cascaded,
+		'1. B follows Far (stored, drawn, the sun cascaded)',
+		15000
+	);
 	// A loads the same lazy chunk as B: wait for its own sun too (a single read raced it in chain 5)
 	let farA = await state(A.page);
 	const tA = Date.now();
@@ -67,27 +88,60 @@ h.run(async () => {
 		await new Promise((r) => setTimeout(r, 500));
 		farA = await state(A.page);
 	}
-	h.check(farA.sun?.cascaded && farA.sun.cls === 'SunLightShadow', `2. Far: the rig sun draws SunLightShadow cascades (${JSON.stringify(farA.sun)}, after ${Date.now() - tA} ms)`);
+	h.check(
+		farA.sun?.cascaded && farA.sun.cls === 'SunLightShadow',
+		`2. Far: the rig sun draws SunLightShadow cascades (${JSON.stringify(farA.sun)}, after ${Date.now() - tA} ms)`
+	);
 	h.check(farA.contact === false, '2. Far: no contact pass (no tier draws it in this release, Q6)');
 	// the pass itself still works where a tier turns it on (forced here: the suites' switch)
 	await A.page.evaluate(() => window.__stores.shadowLevels.contactForTest(true));
-	await h.eventually(() => state(A.page), (s) => s.contact === true, '2. Far with the contact switch on: the pass is in the post stack', 10000);
+	await h.eventually(
+		() => state(A.page),
+		(s) => s.contact === true,
+		'2. Far with the contact switch on: the pass is in the post stack',
+		10000
+	);
 	await A.page.evaluate(() => window.__stores.shadowLevels.contactForTest(null));
-	await h.eventually(() => state(A.page), (s) => s.contact === false, '2. the switch back to the tier table: no pass', 10000);
+	await h.eventually(
+		() => state(A.page),
+		(s) => s.contact === false,
+		'2. the switch back to the tier table: no pass',
+		10000
+	);
 
 	// 3: the save carries it; a reload rejoins at the same level
-	const payload = await B.page.evaluate(() => window.__stores.sessions.buildSessionPayload('shadow-sync-106'));
-	h.check(payload?.environment?.shadowLevel === 'far', `3. a save carries shadowLevel far (${JSON.stringify(payload?.environment?.shadowLevel)})`);
+	const payload = await B.page.evaluate(() =>
+		window.__stores.sessions.buildSessionPayload('shadow-sync-106')
+	);
+	h.check(
+		payload?.environment?.shadowLevel === 'far',
+		`3. a save carries shadowLevel far (${JSON.stringify(payload?.environment?.shadowLevel)})`
+	);
 	await h.freshReload(B);
-	await h.eventually(() => state(B.page), (s) => s.stored === 'far' && s.drawn === 'far', '3. B reloaded and rejoined at Far', 60000);
+	await h.eventually(
+		() => state(B.page),
+		(s) => s.stored === 'far' && s.drawn === 'far',
+		'3. B reloaded and rejoined at Far',
+		60000
+	);
 
 	// Soft
 	await setLevel(A.page, 'soft');
-	await h.eventually(() => state(B.page), (s) => s.stored === 'soft' && s.sun && !s.sun.cascaded && s.sun.radius === 3, '1. B follows Soft (radius 3, no cascades)', 15000);
+	await h.eventually(
+		() => state(B.page),
+		(s) => s.stored === 'soft' && s.sun && !s.sun.cascaded && s.sun.radius === 3,
+		'1. B follows Soft (radius 3, no cascades)',
+		15000
+	);
 
 	// Off
 	await setLevel(A.page, 'off');
-	await h.eventually(() => state(B.page), (s) => s.stored === 'off' && s.mapOn === false, '1. B follows Off (shadow map off)', 15000);
+	await h.eventually(
+		() => state(B.page),
+		(s) => s.stored === 'off' && s.mapOn === false,
+		'1. B follows Off (shadow map off)',
+		15000
+	);
 
 	// Basic again: today's Basic, byte for byte where it is measurable
 	await setLevel(A.page, 'basic');
@@ -95,17 +149,32 @@ h.run(async () => {
 		[A, 'A'],
 		[B, 'B']
 	]) {
-		await h.eventually(() => state(P.page), (s) => s.stored === null && s.drawn === 'basic' && s.mapOn === true && s.contact === false, `1. ${name} back to Basic (nothing stored, map on, no contact)`, 15000);
+		await h.eventually(
+			() => state(P.page),
+			(s) => s.stored === null && s.drawn === 'basic' && s.mapOn === true && s.contact === false,
+			`1. ${name} back to Basic (nothing stored, map on, no contact)`,
+			15000
+		);
 		const s = await state(P.page);
 		h.check(
-			s.sun && !s.sun.cascaded && s.sun.cls === basicSun.cls && s.sun.radius === 1 && s.sun.map[0] === basicSun.map[0] && s.sun.map[1] === basicSun.map[1],
+			s.sun &&
+				!s.sun.cascaded &&
+				s.sun.cls === basicSun.cls &&
+				s.sun.radius === 1 &&
+				s.sun.map[0] === basicSun.map[0] &&
+				s.sun.map[1] === basicSun.map[1],
 			`2. ${name}: Basic after Far / Soft is today's Basic (${JSON.stringify(s.sun)} vs ${JSON.stringify(basicSun)})`
 		);
 	}
 
 	// 4: an old scene (no level in the file) loads as Basic
 	await setLevel(A.page, 'far');
-	await h.eventually(() => state(B.page), (s) => s.stored === 'far', '4. (setup) both at Far', 15000);
+	await h.eventually(
+		() => state(B.page),
+		(s) => s.stored === 'far',
+		'4. (setup) both at Far',
+		15000
+	);
 	const old = JSON.parse(JSON.stringify(payload));
 	if (old.environment) delete old.environment.shadowLevel;
 	await A.page.evaluate((p) => window.__stores.sessions.applySession(p), old);
@@ -113,13 +182,20 @@ h.run(async () => {
 		[A, 'A'],
 		[B, 'B']
 	])
-		await h.eventually(() => state(P.page), (s) => s.stored === null && s.drawn === 'basic', `4. an old scene loads as Basic on ${name}`, 20000);
+		await h.eventually(
+			() => state(P.page),
+			(s) => s.stored === null && s.drawn === 'basic',
+			`4. an old scene loads as Basic on ${name}`,
+			20000
+		);
 
 	// 6: the newest release opens a file saved here
 	if (BASE_URL) {
 		const C = await h.setupPage(browser, 'C');
 		await C.page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
-		await C.page.waitForFunction(() => !!window.__stores?.sessions?.applySession, null, { timeout: 240000 });
+		await C.page.waitForFunction(() => !!window.__stores?.sessions?.applySession, null, {
+			timeout: 240000
+		});
 		const res = await C.page.evaluate(async (p) => {
 			const s = window.__stores;
 			let err = null;
@@ -132,11 +208,20 @@ h.run(async () => {
 			s.environment.environment.subscribe((v) => (env = v))();
 			return { err, preset: env.preset, level: env.shadowLevel ?? null };
 		}, payload);
-		h.check(res.err === null, `6. the release before 106 opens a file saved at Far (${res.err ?? 'no error'})`);
+		h.check(
+			res.err === null,
+			`6. the release before 106 opens a file saved at Far (${res.err ?? 'no error'})`
+		);
 		h.check(res.preset === payload.environment.preset, `6. with the same sky (${res.preset})`);
-		h.check(h.pageErrors(C).length === 0, `6. no page errors there (${JSON.stringify(h.pageErrors(C)).slice(0, 200)})`);
+		h.check(
+			h.pageErrors(C).length === 0,
+			`6. no page errors there (${JSON.stringify(h.pageErrors(C)).slice(0, 200)})`
+		);
 	} else h.check(true, 'SKIPPED 6: BASE_URL is not set');
 
-	h.check(h.pageErrors(A).length === 0 && h.pageErrors(B).length === 0, `no page errors (${JSON.stringify([...h.pageErrors(A), ...h.pageErrors(B)]).slice(0, 300)})`);
+	h.check(
+		h.pageErrors(A).length === 0 && h.pageErrors(B).length === 0,
+		`no page errors (${JSON.stringify([...h.pageErrors(A), ...h.pageErrors(B)]).slice(0, 300)})`
+	);
 	await h.finish(browser);
 });

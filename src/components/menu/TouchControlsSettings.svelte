@@ -1,7 +1,7 @@
 <script module>
 	/** 36 I4: what the settings search should also match for this section (labels are searched
 	 * already; these are the words people type for it). */
-	export const keywords = ['touch', 'mobile', 'phone', 'tablet', 'buttons', 'joystick', 'stick', 'jump', 'fire', 'haptic', 'vibrate', 'layout', 'on-screen'];
+	export const keywords = ['touch', 'mobile', 'phone', 'tablet', 'buttons', 'joystick', 'stick', 'jump', 'fire', 'haptic', 'vibrate', 'vibration', 'feedback', 'layout', 'on-screen'];
 </script>
 
 <script>
@@ -41,6 +41,7 @@
 		openTouchLayoutEditor
 	} from '$lib/touchActions';
 	import { touchSpec } from '$lib/touchSpec';
+	import { uiHapticPrefs, setUiHapticPrefs, uiHapticsSupport } from '$lib/uiHaptics';
 	import { gameId } from '$lib/gameSettings';
 
 	/** while the settings search has a query, the section is open so its rows can match */
@@ -84,6 +85,23 @@
 	/** the action whose sub-page is open ("touch:<id>") */
 	const editing = $derived($sub?.id?.startsWith('touch:') ? (actions.find((a) => 'touch:' + a.id === $sub.id) ?? null) : null);
 	const imageItems = $derived($explorerItems.filter((it) => it.kind === 'image' || /\.svg$/i.test(it.name ?? '')));
+
+	// 103 (H13): Touch feedback — the level, the four kinds, a slider to try it on
+	const FEEDBACK_LEVELS = [
+		{ value: 'off', label: 'Off' },
+		{ value: 'light', label: 'Light' },
+		{ value: 'medium', label: 'Medium' },
+		{ value: 'strong', label: 'Strong' }
+	];
+	const FEEDBACK_KINDS = /** @type {const} */ ([
+		['buttons', 'Buttons and switches', 'Switches, choices, tabs and the on-screen game buttons.'],
+		['values', 'Sliders and values', 'A tick per step, a firmer one at the default and at the ends.'],
+		['snap', 'Snapping', 'When a move, a key or a UV point snaps into place.'],
+		['gestures', 'Gestures', 'A long press, picking up a card or a tab.']
+	]);
+	const feedbackSupport = uiHapticsSupport();
+	const feedbackReason = feedbackSupport.ios ? 'iPhone and iPad cannot vibrate for a web page: Safari has no vibration.' : 'This browser cannot vibrate.';
+	let tryValue = $state(5);
 
 	const VISIBILITY = [
 		{ value: 'auto', label: 'Auto' },
@@ -228,9 +246,6 @@
 				<SettingRow id="row-touch-in-edit" label="Show in edit" description="Also draw the action buttons while editing.">
 					<Toggle id="touch-show-in-edit" label="Show in edit" checked={$touchPrefs.showInEdit} onchange={(on) => setTouchPrefs({ showInEdit: on })} />
 				</SettingRow>
-				<SettingRow id="row-touch-haptics" label="Haptic tick" description="A short vibration on each press, where supported." keywords="vibrate vibration haptics">
-					<Toggle id="touch-haptics" label="Haptic tick" checked={$touchPrefs.haptics} onchange={(on) => setTouchPrefs({ haptics: on })} />
-				</SettingRow>
 				<SettingRow id="row-touch-look" label="Look speed" description="How far a drag on the right half turns the view.">
 					<Slider
 						id="touch-look-speed"
@@ -247,6 +262,25 @@
 					<Button id="touch-reset-layout" size="sm" variant="outline" onclick={resetLayouts}>Reset</Button>
 					<Button id="touch-edit-layout" data-tour="touch-edit-layout" size="sm" variant="outline" onclick={editLayout}>Edit layout</Button>
 				</SettingRow>
+			</Section>
+			<Section variant="card" label="Touch feedback" badge="This device">
+				{#if feedbackSupport.ok}
+					<SettingRow id="row-touch-feedback" label="Touch feedback" description="On phones: a short vibration when you touch a control. Off when your device asks for reduced motion." keywords="vibrate vibration haptics haptic tick">
+						<Segmented id="touch-feedback-level" label="Touch feedback" options={FEEDBACK_LEVELS} value={$uiHapticPrefs.level} onchange={(v) => setUiHapticPrefs({ level: /** @type {any} */ (v) })} />
+					</SettingRow>
+					{#each FEEDBACK_KINDS as [kind, label, description] (kind)}
+						<SettingRow id={'row-touch-feedback-' + kind} {label} {description} keywords="vibrate vibration haptics">
+							<Toggle id={'touch-feedback-' + kind} {label} disabled={$uiHapticPrefs.level === 'off'} checked={$uiHapticPrefs[kind]} onchange={(on) => setUiHapticPrefs({ [kind]: on })} />
+						</SettingRow>
+					{/each}
+					<SettingRow id="row-touch-feedback-try" label="Try it" description="Drag it: a tick per step, a firmer one at 5, a bump at each end.">
+						<Slider id="touch-feedback-try" label="Try touch feedback" min={0} max={10} step={1} defaultValue={5} value={tryValue} onchange={(v) => (tryValue = v)} />
+					</SettingRow>
+				{:else}
+					<SettingRow id="row-touch-feedback" label="Touch feedback" description={feedbackReason} keywords="vibrate vibration haptics haptic tick">
+						<span class="tcs-cap" data-feedback-unsupported>Not available</span>
+					</SettingRow>
+				{/if}
 			</Section>
 			<Section variant="card" label="Button looks">
 				<SettingRow id="row-touch-looks" label="Button looks" description="Pick one to change its images, tint and size." keywords="images icons textures look">

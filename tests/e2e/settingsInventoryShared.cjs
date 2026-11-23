@@ -75,7 +75,8 @@ const PAGES = {
 	touch: [
 		{ id: 'touch-visibility', kind: 'seg', set: 'never', key: 'touchControlsPrefs', want: field('visibility', 'never'), def: (raw) => raw === null || json(raw)?.visibility === 'auto' },
 		{ id: 'touch-show-in-edit', kind: 'toggle', key: 'touchControlsPrefs', want: field('showInEdit', true), def: (raw) => raw === null || json(raw)?.showInEdit === false },
-		{ id: 'touch-haptics', kind: 'toggle', key: 'touchControlsPrefs', want: field('haptics', false), def: (raw) => raw === null || json(raw)?.haptics === true },
+		// 103 (H13): Touch feedback replaced Haptic tick; the reset writes {} (the default, no second migration)
+		{ id: 'touch-feedback-level', kind: 'seg', set: 'strong', key: 'ui:touchFeedback', want: field('level', 'strong'), def: (raw) => raw === null || raw === '{}', note: '103 (NEW)' },
 		{ id: 'touch-look-speed', kind: 'range', set: '1.5', key: 'touchLookSpeed', want: '1.5', def: absentOr('1') }
 	],
 	scene: [

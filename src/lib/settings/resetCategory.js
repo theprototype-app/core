@@ -79,6 +79,7 @@ import { flowMouseBindings } from '../flowPrefs';
 import { nodeEditorOpens } from '../flowView';
 import { setTouchPrefs, DEFAULT_TOUCH_PREFS, touchTextures, touchLayouts } from '../touchActions';
 import { setTouchLookSpeed } from '../touchControls';
+import { resetUiHapticPrefs } from '../uiHaptics';
 import { resetAllShortcuts } from '../shortcuts';
 import { lightHelperLength } from '../lightHelpers';
 import { shadowQuality } from '../lightParams';
@@ -189,6 +190,7 @@ const RESETS = {
 		safeStorage.removeItem('touchControlsTextures');
 		touchLayouts.set({ global: null, games: {} });
 		safeStorage.removeItem('touchControlsLayouts');
+		resetUiHapticPrefs(); // 103 (H13): Touch feedback back to its default (Light, Off under reduced motion)
 	},
 	shortcuts() {
 		resetAllShortcuts();

@@ -70,7 +70,9 @@ h.run(async () => {
 		h.check(c0.left.join() === 'ai-hud-button,mobile-add-button' && c0.right.join() === 'chat-button,mic-button', T + `premise: AI under "+" left, chat under mic right (${JSON.stringify(c0)})`);
 		const ai = await P.locator('#ai-hud-button').boundingBox();
 		const add = await P.locator('#mobile-add-button').boundingBox();
-		h.check(Math.abs(ai.x - 16) < 2 && add.y < ai.y && Math.round(P.viewportSize().height - (ai.y + ai.height)) === 16, T + `premise: the left stack sits in the corner, bottom 16 (${JSON.stringify({ ai, add })})`);
+		// 103 H15: the left inset is the HUD grid's (--hud-inset), the bottom keeps its 16
+		const inset = await P.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--hud-inset')) || 16);
+		h.check(Math.abs(ai.x - inset) < 2 && add.y < ai.y && Math.round(P.viewportSize().height - (ai.y + ai.height)) === 16, T + `premise: the left stack sits in the corner, bottom 16 (${JSON.stringify({ ai, add })})`);
 
 		// ---- enter: a right-click on a cell offers "Edit positions" first in the Toolbar section ----
 		await P.locator('#controls-pill > div > [title="Explorer"]').click({ button: 'right' });

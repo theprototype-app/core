@@ -160,3 +160,30 @@ export function healSlotGroups(root) {
 	});
 	return n;
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// fix-late-joiners row 6 — A BIG MULTI-SLOT MESH REACHES A LATE JOINER WHOLE. Above the toJSON cap (45,000 position
+// floats: toJSON writes plain number arrays, which the wire's packer cannot take at that size) a slot-list mesh
+// travels by glTF, and GLTFExporter writes ONE PRIMITIVE PER GROUP: the joiner got a Group of single-material
+// meshes (fresh uuids, no slots, the slot rows of the Inspector gone). The glTF stays the transport (its buffers
+// pack as base64); the message carries the slot LAYOUT beside it (additive: an older receiver ignores it and keeps
+// what it always built), and the joiner folds the primitives back into the one mesh: the primitives share the
+// attribute accessors, each holds its group's index range, in group order.
+
+/**
+ * The slot layout of a multi-slot mesh, for the glTF send. Null for anything else.
+ * @param {any} mesh @returns {{slots: number, groups: {start: number, count: number, materialIndex: number}[], indexed: boolean, count: number} | null}
+ */
+export function slotLayoutOf(mesh) {
+	const geometry = mesh?.geometry;
+	if (!mesh?.isMesh || !Array.isArray(mesh.material) || !geometry?.groups?.length) return null;
+	const count = geometry.index ? geometry.index.count : geometry.attributes?.position?.count ?? 0;
+	return {
+		slots: mesh.material.length,
+		groups: geometry.groups.map((/** @type {any} */ g) => ({ start: g.start, count: g.count, materialIndex: g.materialIndex || 0 })),
+		indexed: !!geometry.index,
+		count
+	};
+}
+// the joiner's half (validate + fold the primitives back) is slotRejoin.js: a lazy chunk, only a receiver of a
+// `slots` field pays for it (boot rule)

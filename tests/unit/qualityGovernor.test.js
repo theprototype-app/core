@@ -190,6 +190,11 @@ describe('drawGapFor (the ingest rule)', () => {
 		expect(drawGapFor({ ...base, backlog: 10 })).toBe(0);
 		expect(drawGapFor({ ...base, draining: false })).toBe(0);
 	});
+	it('fix-late-joiners: a slow frame spaces the draws by four of them (250..1000 ms), decided once per drain', () => {
+		expect(drawGapFor({ ...base, p95: 200 })).toBe(800);
+		expect(drawGapFor({ ...base, p95: 900 })).toBe(1000);
+		expect(drawGapFor({ ...base, engaged: true, engagedGap: 800, p95: 800 })).toBe(800);
+	});
 	it('is STICKY for the drain: throttled frames are cheap, and must not switch it off', () => {
 		expect(drawGapFor({ ...base, engaged: true, p95: 5, backlog: 1 })).toBe(INGEST_DRAW_GAP_MS);
 		expect(drawGapFor({ ...base, engaged: true, draining: false })).toBe(0);

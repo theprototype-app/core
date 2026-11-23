@@ -4920,6 +4920,7 @@
 				"Components",
 				"Environment",
 				"Fog",
+				"Game menus",
 				"Grid",
 				"Layers",
 				"Level of detail",
@@ -4996,6 +4997,7 @@
 			],
 			"play": [
 				"Baked light",
+				"Game menus",
 				"Levels",
 				"Music",
 				"Physics",

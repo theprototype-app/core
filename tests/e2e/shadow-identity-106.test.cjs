@@ -273,22 +273,37 @@ h.run(async () => {
 		// what the scene itself varies between two frames of one page
 		const varCalls = Math.max(Math.abs(a1.info.calls - a2.info.calls), Math.abs(b1.info.calls - b2.info.calls));
 		const varTris = Math.max(Math.abs(a1.info.tris - a2.info.tris), Math.abs(b1.info.tris - b2.info.tris));
-		const bKeys = new Set(b2.progs.map((x) => x[1]));
-		const extra = a2.progs
-			.filter((x) => !bKeys.has(x[1]))
-			.map(([name, key]) => {
-				// why: the tokens that differ from B's closest program of the same name
-				const ta = key.split(',');
-				let best = null;
-				for (const [bn, bk] of b2.progs) {
-					if (bn !== name) continue;
-					const tb = bk.split(',');
-					const d = [];
-					for (let i = 0; i < Math.max(ta.length, tb.length); i++) if (ta[i] !== tb[i]) d.push(`#${i} ${String(ta[i]).slice(0, 60)} / ${String(tb[i]).slice(0, 60)}`);
-					if (!best || d.length < best.length) best = d;
-				}
-				return `${name} [${best ? best.slice(0, 3).join('; ') : 'no same-name program on B'}]`;
-			});
+		const extraOf = (ap, bp) => {
+			const bKeys = new Set(bp.map((x) => x[1]));
+			return ap
+				.filter((x) => !bKeys.has(x[1]))
+				.map(([name, key]) => {
+					// why: the tokens that differ from B's closest program of the same name
+					const ta = key.split(',');
+					let best = null;
+					for (const [bn, bk] of bp) {
+						if (bn !== name) continue;
+						const tb = bk.split(',');
+						const d = [];
+						for (let i = 0; i < Math.max(ta.length, tb.length); i++) if (ta[i] !== tb[i]) d.push(`#${i} ${String(ta[i]).slice(0, 60)} / ${String(tb[i]).slice(0, 60)}`);
+						if (!best || d.length < best.length) best = d;
+					}
+					return `${name} [${best ? best.slice(0, 3).join('; ') : 'no same-name program on B'}]`;
+				});
+		};
+		// a program can differ for a moment (a texture still streaming in on one page compiles its material without
+		// the uv define; a pass that drew to a target first): read both again after 5 s and fail only if it persists
+		let extra = extraOf(a2.progs, b2.progs);
+		let progNote = '';
+		if (extra.length) {
+			progNote = `; first read A only: ${extra.join(', ')}, read again after 5 s`;
+			await sleep(5000);
+			const a3 = await frame(A.page, pose);
+			const b3 = await frame(B.page, pose);
+			extra = extraOf(a3.progs, b3.progs);
+			a2.progs = a3.progs;
+			b2.progs = b3.progs;
+		}
 		h.check(a1.shadowLevel === null && a1.drawn === 'basic', `${slug}: reads as Basic (stored ${a1.shadowLevel}, drawn ${a1.drawn})`);
 		h.check(a1.loaded === false, `${slug}: the Soft / Far chunk is never loaded (${a1.loaded})`);
 		h.check(!a1.contactInPost, `${slug}: no contact-shadow pass in the post stack`);
@@ -298,7 +313,7 @@ h.run(async () => {
 			Math.abs(a1.info.calls - b1.info.calls) <= varCalls && Math.abs(a1.info.tris - b1.info.tris) <= varTris,
 			`${slug}: the same cost, draw calls ${a1.info.calls}/${b1.info.calls}, triangles ${a1.info.tris}/${b1.info.tris} (the scene's own frame-to-frame spread ${varCalls} calls / ${varTris} triangles; frame ${a1.ms} / ${b1.ms} ms, printed only)`
 		);
-		h.check(extra.length === 0, `${slug}: the frame draws with no shader program B lacks (${a2.progs.length}/${b2.progs.length} in use${extra.length ? '; A only: ' + extra.join(', ') : ''})`);
+		h.check(extra.length === 0, `${slug}: the frame draws with no shader program B lacks (${a2.progs.length}/${b2.progs.length} in use${extra.length ? '; A only: ' + extra.join(', ') : ''}${progNote})`);
 		h.check(sd.still >= 0.2 && sd.share <= TOL, `${slug}: pixel-identical where the frame holds still (${(sd.still * 100).toFixed(1)} % of it): A vs B ${(sd.share * 100).toFixed(3)} % of those > 2/255 (moving pixels: A vs B ${(ab * 100).toFixed(3)} % of the frame, frame-to-frame floor ${(floor * 100).toFixed(3)} %)`);
 	}
 	console.log('TABLE ' + JSON.stringify(table));

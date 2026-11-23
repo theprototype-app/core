@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-11-23T18:37:51.089Z",
+	"recordedAt": "2026-11-23T20:16:16.099Z",
 	"viewport": {
 		"width": 1440,
 		"height": 900
@@ -199,7 +199,7 @@
 									"avatars.avatarPreview": "<object>",
 									"avatars.studioIsolating": true,
 									"avatars.studioOpen": true,
-									"cameraClaim": "<varies>",
+									"cameraClaim": 2,
 									"characterModalOpen": true,
 									"settingsOpen": false
 								},
@@ -910,7 +910,6 @@
 									"a11yAnnounce.politeAnnouncement": "Tours reset — each one shows again the first time it applies.",
 									"notifications": "<object>",
 									"notificationsUnread": "<changed>",
-									"toastStore": "<object>",
 									"tours.tourRecords": 9
 								},
 								"html": [],
@@ -10360,7 +10359,7 @@
 							"scope": "device",
 							"restored": false,
 							"storageAfterRestore": {
-								"notifications": "[{\"id\":\"n1795456677056_1\",\"text\":\"The VR welcome will play the next time you enter VR.\",\"ts\":1795456677056,\"kind\":\"action\"},{\"id\":\"n1795456689475_2\",\"text\":\"Tours reset — each one shows again the first time it applies.\",\"ts\":1795456689475,\"kind\":\"info\"},{\"id\":\"n1795456697830_3\",\"text\":\"Window positions reset\",\"ts\":1795456697830,\"kind\":\"info\"},{\"id\":\"n1795456798905_4\",\"text\":\"Touch layout reset to the default arrangement\",\"ts\":1795456798905,\"kind\":\"info\"},{\"id\":\"n1795457275487_5\",\"text\":\"Line colors reset\",\"ts\":1795457275487,\"kind\":\"info\"},{\"id\":\"n1795457446612_6\",\"text\":\"Passthrough on — takes effect on the next VR entry\",\"ts\":1795457446612,\"kind\":\"info\"},{\"id\":\"n1795457447525_7\",\"text\":\"Passthrough off — takes effect on the next VR entry\",\"ts\":1795457447525,\"kind\":\"info\"}]",
+								"notifications": "[{\"id\":\"n1795462627475_1\",\"text\":\"The VR welcome will play the next time you enter VR.\",\"ts\":1795462627475,\"kind\":\"action\"},{\"id\":\"n1795462641040_2\",\"text\":\"Tours reset — each one shows again the first time it applies.\",\"ts\":1795462641040,\"kind\":\"info\"},{\"id\":\"n1795462652453_3\",\"text\":\"Window positions reset\",\"ts\":1795462652453,\"kind\":\"info\"},{\"id\":\"n1795462811954_4\",\"text\":\"Touch layout reset to the default arrangement\",\"ts\":1795462811954,\"kind\":\"info\"},{\"id\":\"n1795463387583_5\",\"text\":\"Line colors reset\",\"ts\":1795463387583,\"kind\":\"info\"},{\"id\":\"n1795463585755_6\",\"text\":\"Passthrough on — takes effect on the next VR entry\",\"ts\":1795463585755,\"kind\":\"info\"},{\"id\":\"n1795463586742_7\",\"text\":\"Passthrough off — takes effect on the next VR entry\",\"ts\":1795463586742,\"kind\":\"info\"}]",
 								"vrPassthrough": "false"
 							},
 							"exercise": "done"
@@ -11019,13 +11018,32 @@
 							"exercise": "done"
 						},
 						{
-							"kind": "segment",
+							"kind": "toggle",
 							"id": "tool-chat-voice-enable",
 							"label": "Enable Voice typing",
 							"where": "control",
 							"default": true,
 							"disabled": false,
-							"exercise": "skip"
+							"state": false,
+							"effects": {
+								"storage": {
+									"aiStt": "{\"preset\":\"openai\",\"baseUrl\":\"https://api.openai.com/v1\",\"apiKey\":\"\",\"model\":\"whisper-1\",\"language\":\"\",\"enabled\":false}"
+								},
+								"stores": {
+									"aiStt.sttConfig": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {
+								"aiStt": "{\"preset\":\"openai\",\"baseUrl\":\"https://api.openai.com/v1\",\"apiKey\":\"\",\"model\":\"whisper-1\",\"language\":\"\"}"
+							},
+							"exercise": "done"
 						},
 						{
 							"kind": "button",
@@ -11055,7 +11073,7 @@
 					"name": "Keep sent pictures in Explorer",
 					"controls": [
 						{
-							"kind": "segment",
+							"kind": "toggle",
 							"id": "chat-keep-pictures",
 							"label": "Keep sent pictures in Explorer",
 							"where": "control",
@@ -11076,10 +11094,8 @@
 								"events": []
 							},
 							"scope": "device",
-							"restored": true,
-							"storageAfterRestore": {
-								"chat:keepSentPictures": "true"
-							},
+							"restored": false,
+							"storageAfterRestore": {},
 							"exercise": "done"
 						}
 					]
@@ -11173,13 +11189,30 @@
 							"exercise": "done"
 						},
 						{
-							"kind": "segment",
+							"kind": "toggle",
 							"id": "tool-desktop-blender-enable",
 							"label": "Enable Blender and other 3D tools",
 							"where": "control",
 							"default": true,
 							"disabled": false,
-							"exercise": "skip"
+							"state": false,
+							"effects": {
+								"storage": {
+									"tools:blender": "false"
+								},
+								"stores": {
+									"toolStatus.featureStatuses": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
 						}
 					]
 				}
@@ -11228,7 +11261,7 @@
 							"scope": "shared",
 							"restored": false,
 							"storageAfterRestore": {
-								"notifications": "[{\"id\":\"n1795456677056_1\",\"text\":\"The VR welcome will play the next time you enter VR.\",\"ts\":1795456677056,\"kind\":\"action\"},{\"id\":\"n1795456689475_2\",\"text\":\"Tours reset — each one shows again the first time it applies.\",\"ts\":1795456689475,\"kind\":\"info\"},{\"id\":\"n1795456697830_3\",\"text\":\"Window positions reset\",\"ts\":1795456697830,\"kind\":\"info\"},{\"id\":\"n1795456798905_4\",\"text\":\"Touch layout reset to the default arrangement\",\"ts\":1795456798905,\"kind\":\"info\"},{\"id\":\"n1795457275487_5\",\"text\":\"Line colors reset\",\"ts\":1795457275487,\"kind\":\"info\"},{\"id\":\"n1795457446612_6\",\"text\":\"Passthrough on — takes effect on the next VR entry\",\"ts\":1795457446612,\"kind\":\"info\"},{\"id\":\"n1795457447525_7\",\"text\":\"Passthrough off — takes effect on the next VR entry\",\"ts\":1795457447525,\"kind\":\"info\"},{\"id\":\"n1795457452910_8\",\"text\":\"VR panel positions reset\",\"ts\":1795457452910,\"kind\":\"info\"},{\"id\":\"n1795457491260_9\",\"text\":\"Colocated — room room-25622\",\"ts\":1795457491260,\"kind\":\"info\"},{\"id\":\"n1795457536366_10\",\"text\":\"This room locks an object only while someone is editing it\",\"ts\":1795457536366,\"kind\":\"info\"},{\"id\":\"n1795457537206_11\",\"text\":\"This room locks an object while someone has it selected\",\"ts\":1795457537206,\"kind\":\"info\"}]"
+								"notifications": "[{\"id\":\"n1795462627475_1\",\"text\":\"The VR welcome will play the next time you enter VR.\",\"ts\":1795462627475,\"kind\":\"action\"},{\"id\":\"n1795462641040_2\",\"text\":\"Tours reset — each one shows again the first time it applies.\",\"ts\":1795462641040,\"kind\":\"info\"},{\"id\":\"n1795462652453_3\",\"text\":\"Window positions reset\",\"ts\":1795462652453,\"kind\":\"info\"},{\"id\":\"n1795462811954_4\",\"text\":\"Touch layout reset to the default arrangement\",\"ts\":1795462811954,\"kind\":\"info\"},{\"id\":\"n1795463387583_5\",\"text\":\"Line colors reset\",\"ts\":1795463387583,\"kind\":\"info\"},{\"id\":\"n1795463585755_6\",\"text\":\"Passthrough on — takes effect on the next VR entry\",\"ts\":1795463585755,\"kind\":\"info\"},{\"id\":\"n1795463586742_7\",\"text\":\"Passthrough off — takes effect on the next VR entry\",\"ts\":1795463586742,\"kind\":\"info\"},{\"id\":\"n1795463591997_8\",\"text\":\"VR panel positions reset\",\"ts\":1795463591997,\"kind\":\"info\"},{\"id\":\"n1795463618006_9\",\"text\":\"Colocated — room room-d20ad\",\"ts\":1795463618006,\"kind\":\"info\"},{\"id\":\"n1795463662087_10\",\"text\":\"This room locks an object only while someone is editing it\",\"ts\":1795463662087,\"kind\":\"info\"},{\"id\":\"n1795463663197_11\",\"text\":\"This room locks an object while someone has it selected\",\"ts\":1795463663197,\"kind\":\"info\"}]"
 							},
 							"exercise": "done"
 						}
@@ -15125,7 +15158,7 @@
 						"default": "Test"
 					},
 					{
-						"kind": "segment",
+						"kind": "toggle",
 						"id": "tool-chat-voice-enable",
 						"default": true
 					},
@@ -15140,7 +15173,7 @@
 				"name": "Keep sent pictures in Explorer",
 				"controls": [
 					{
-						"kind": "segment",
+						"kind": "toggle",
 						"id": "chat-keep-pictures",
 						"default": false
 					}
@@ -15178,7 +15211,7 @@
 						"default": "Test"
 					},
 					{
-						"kind": "segment",
+						"kind": "toggle",
 						"id": "tool-desktop-blender-enable",
 						"default": true
 					}

@@ -62,7 +62,8 @@ function describeRows({ ROW_SEL, NAME_SEL, CONTROL_SEL, FIELD_SEL }) {
 		if (tag === 'input' && type === 'color') return 'color';
 		if (tag === 'input' && type === 'file') return 'file';
 		if (tag === 'textarea' || (tag === 'input' && (type === 'text' || type === '' || type === 'search' || type === 'url'))) return 'text';
-		if (role === 'radio' || (tag === 'button' && el.hasAttribute('aria-pressed') && el.closest('[role=group], [role=radiogroup], .tp-seg'))) return 'segment';
+		// 104-int: a settings CARD is a labelled role=group too (89's Settings > AI cards); its toggles are toggles, not one segmented control
+		if (role === 'radio' || (tag === 'button' && el.hasAttribute('aria-pressed') && el.closest('[role=group]:not([data-settings-group]), [role=radiogroup], .tp-seg'))) return 'segment';
 		if (tag === 'button' && el.hasAttribute('aria-pressed')) return 'toggle';
 		if (tag === 'button' || tag === 'a') return 'button';
 		return 'other';

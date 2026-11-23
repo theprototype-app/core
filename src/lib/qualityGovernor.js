@@ -92,6 +92,8 @@ let wasHidden = false;
 let pinned = false;
 let snoozedUntil = 0;
 let drawGapEngaged = false;
+/** the gap decided when it engaged (fix-late-joiners: it follows the frame's cost, once per drain) */
+let drawGapMsEngaged = 0;
 /** @type {string} */
 let lastReason = '';
 /** 36-fb-water F27: a scene load was running at the last frame (its end starts a settle) */
@@ -232,10 +234,14 @@ export function decideNow(t = now()) {
 
 	// THE INGEST RULE (26-E): while a received batch drains through slow frames, draw at
 	// most four frames a second so the queue gets the main thread back
-	const draining = sceneBatchOpen();
-	const backlog = Number(ctx.metrics?.ingestBacklog) || 0;
-	const gap = enabled ? drawGapFor({ engaged: drawGapEngaged, draining, backlog, p95: d.p95, profile: ctx.profile }) : 0;
+	// fix-late-joiners: an announced batch still arriving is a drain too (its objects come a message at a time,
+	// so the parked queue alone stays under the threshold for a whole 500-object join)
+	const left = Number(ctx.metrics?.loadingLeft) || 0;
+	const draining = sceneBatchOpen() || left > 0;
+	const backlog = Math.max(Number(ctx.metrics?.ingestBacklog) || 0, left);
+	const gap = enabled ? drawGapFor({ engaged: drawGapEngaged, engagedGap: drawGapMsEngaged, draining, backlog, p95: d.p95, profile: ctx.profile }) : 0;
 	drawGapEngaged = gap > 0;
+	drawGapMsEngaged = gap;
 	if (get(ingestDrawGap) !== gap) ingestDrawGap.set(gap);
 	return d;
 }
@@ -305,6 +311,7 @@ autoQuality.subscribe((on) => {
 		publish(0, 'turned off');
 		ingestDrawGap.set(0);
 		drawGapEngaged = false;
+		drawGapMsEngaged = 0;
 	}
 });
 
@@ -403,6 +410,7 @@ export const governorForTest = {
 		pinned = false;
 		snoozedUntil = 0;
 		drawGapEngaged = false;
+		drawGapMsEngaged = 0;
 		lastDecideAt = 0;
 		governor.clearFlapLock();
 		governor.setLevel(0, -1e9);

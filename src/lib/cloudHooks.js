@@ -25,6 +25,7 @@ const ALWAYS_ALLOWED = new Set([
 	'userdata', // whitelist sync
 	'cloud', // the plugin's OWN control channel (roles, room announces) — never gate it
 	'locked', // lock-state restore on handshake
+	'ratelimited', // 71 TR7: "some of yours were dropped" — a notice, no content; a viewer can still be the one saying it
 	// late-joiner full-state REQUESTS (answering them is how a peer ever syncs)
 	'getobjects',
 	'getnodes',
@@ -691,6 +692,24 @@ export function setPeerMenuItems(items) {
 			.slice(0, 8)
 			.map((i, n) => ({ id: String(i.id ?? 'item-' + n).slice(0, 40), label: String(i.label).trim().slice(0, 40), run: i.run }))
 	);
+}
+
+/**
+ * 71 AS3: the ROOM-ACCESS fixes the block toast offers. A session block holds a PEER ID, and a guest
+ * (not signed in) comes back with a fresh one, so blocking a guest offers the real fix in the same
+ * toast. Core owns "Require approval to join" for this session (every automatic join, invite links
+ * included, becomes the approval card); a plugin adds what only it can do. Shape, all optional:
+ *   { isGuest(peerId) → boolean | null   false = signed in: the account block list already holds,
+ *                                         so the toast stays the plain one; null/absent = unknown (guest)
+ *     requireApproval() → void|Promise   also make the ROOM ask (the cloud's "Require approval to join")
+ *     signedInOnly() → void|Promise      offered as "Signed-in people only" only when present
+ *     state() → {gated?, signedInOnly?}  what is on already (that button is then left out) }
+ * Null = the OSS state: the toast offers Require approval only. Set via cloudApi.setRoomAccess.
+ * @type {import('svelte/store').Writable<any>} */
+export const roomAccess = writable(null);
+/** @param {any} p */
+export function setRoomAccess(p) {
+	roomAccess.set(p && typeof p === 'object' ? p : null);
 }
 
 /**

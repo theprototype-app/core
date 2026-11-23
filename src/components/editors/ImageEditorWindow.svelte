@@ -194,6 +194,7 @@
 	];
 	function startCrop() {
 		if (!work) return;
+		closeNoise();
 		cropping = true;
 		crop = aspectRatio ? aspectRect(work.width, work.height, aspectRatio) : { x: 0, y: 0, w: work.width, h: work.height };
 		wrapEl?.focus();
@@ -262,6 +263,42 @@
 		brightness = contrast = saturation = 0;
 	}
 
+	// ---- 105-noise: the Noise panel (a LAZY chunk, ImageNoisePanel.svelte) -------------------
+	// open like Crop; while open the canvas draws its preview instead of the working image, and Apply commits
+	let noiseOpen = $state(false);
+	let noiseKey = $state(0);
+	let noiseInitial = $state.raw(/** @type {any} */ ({}));
+	let noisePreview = $state.raw(/** @type {Raster | null} */ (null));
+	let NoisePanel = $state.raw(/** @type {any} */ (null));
+	/** @param {any} [initial] the panel's starting options (a material slot's row defaults) */
+	function openNoise(initial = {}) {
+		cropping = false;
+		noiseInitial = initial ?? {};
+		noiseKey++;
+		noiseOpen = true;
+		if (!NoisePanel)
+			import('./ImageNoisePanel.svelte').then((m) => (NoisePanel = m.default)).catch(() => {
+				noiseOpen = false;
+				showToast('Could not load the noise panel');
+			});
+		tick().then(() => document.getElementById('image-editor-noise-section')?.scrollIntoView({ block: 'nearest' }));
+	}
+	function closeNoise() {
+		noiseOpen = false;
+		noisePreview = null;
+	}
+	/** @param {Raster} r */
+	function applyNoise(r) {
+		if (!work || r.width !== work.width || r.height !== work.height) return;
+		commit(r);
+		closeNoise();
+	}
+	// a material slot's "Fill with noise…" opens the editor with the panel asked for
+	$effect(() => {
+		const t = target;
+		if (t?.panel === 'noise') untrack(() => openNoise(t.noise));
+	});
+
 	// ---- save ----------------------------------------------------------------------------
 	function baked() {
 		return work && adjusted ? adjustRaster(work, adjust) : work;
@@ -274,6 +311,9 @@
 			const blob = await encodeImage(r, encoding);
 			const res = await saveImage(item.id, blob, { raster: r });
 			if (!res) return;
+			// 105-noise: opened from a non-colour map row (Fill with noise…): Save also writes that row
+			const slotMap = target?.slotMap;
+			if (slotMap) res.textures += await import('$lib/image/noiseFill').then((m) => m.writeSlotMapBack(slotMap, blob));
 			// the new bytes are now the starting point; the effect would reload them anyway,
 			// but doing it here keeps the view where it is instead of re-fitting
 			loadedHash = res.record?.hash ?? loadedHash;
@@ -451,7 +491,8 @@
 	let shown = $state.raw(/** @type {HTMLCanvasElement | null} */ (null));
 	let adjustFrame = 0;
 	$effect(() => {
-		const base = previewBase;
+		// 105-noise: while the Noise panel is open its preview stands in for the working image
+		const base = noisePreview ?? previewBase;
 		const a = adjust;
 		cancelAnimationFrame(adjustFrame);
 		if (!base) {
@@ -723,6 +764,8 @@
 			if (mod && e.code === 'KeyY') return stop(), redo();
 			if (cropping && e.key === 'Enter') return stop(), applyCrop();
 			if (cropping && e.key === 'Escape') return stop(), void (cropping = false);
+			if (noiseOpen && e.key === 'Escape') return stop(), closeNoise();
+			if (!mod && !e.altKey && e.key.toLowerCase() === 'n' && work && !noiseOpen) return stop(), openNoise();
 			if (e.key === 'Escape') return stop(), void close();
 			if (!mod && (e.key === '+' || e.key === '=')) return stop(), zoomAt(1.25);
 			if (!mod && e.key === '-') return stop(), zoomAt(1 / 1.25);
@@ -846,6 +889,19 @@
 			<SliderRow id="image-editor-saturation" label="Saturation" min={-100} max={100} step={1} decimals={0} value={saturation} onchange={(v) => (saturation = v)} />
 			<UiButton size="sm" variant="warn-text" disabled={!adjusted} onclick={resetAdjust}>Reset adjustments</UiButton>
 		</div>
+
+		<div class="ie-section" id="image-editor-noise-section">
+			<div class="ui-section-label">Noise</div>
+			{#if noiseOpen && NoisePanel}
+				{#key noiseKey}
+					<NoisePanel {work} initial={noiseInitial} onpreview={(/** @type {Raster | null} */ r) => (noisePreview = r)} onapply={applyNoise} oncancel={closeNoise} />
+				{/key}
+			{:else if noiseOpen}
+				<p class="ie-note">Loading…</p>
+			{:else}
+				<UiButton id="image-editor-noise-open" size="sm" variant="outline" icon="wand-sparkles" full disabled={!work} title="Fill or blend the image with generated noise: Perlin, Simplex, cells or value (N)" onclick={() => openNoise()}>Noise…</UiButton>
+			{/if}
+		</div>
 	</div>
 {/snippet}
 
@@ -943,6 +999,9 @@
 						<div class="ie-overlay" id="image-editor-empty">Open an image from the Explorer (right-click it ▸ Edit image…) to edit it here.</div>
 					{:else if !item}
 						<div class="ie-overlay">This image is no longer in the library.</div>
+					{/if}
+					{#if noiseOpen && noisePreview}
+						<div id="image-editor-noise-badge" class="ie-badge">Noise preview — Apply writes it, Esc cancels</div>
 					{/if}
 					{#if cropping}
 						<div id="image-editor-crop-badge" class="ie-badge">Crop {crop.w} × {crop.h} — Enter applies, Esc cancels</div>

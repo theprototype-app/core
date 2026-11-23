@@ -6,6 +6,41 @@
      rendering, so maintainer notes stay out of the user-facing window. No emoji from
      1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
 
+## 1.77.0 — Games feel complete
+
+### Start, pause and save
+- **Title screen**: a game can open on its own start screen with **Continue**, **Play** (or **New game**), **Load game** and **Settings**, over the scene, a colour or a picture. Play links and exported games open on it; Configure Scene ▸ **Game menus**. A first-use hint offers to try it. In a headset the title is skipped for now and VR Play starts the game straight away. <!-- 92-menus GC1, 92-int VR ruling -->
+- **A pause menu that really pauses** when you play alone: physics, timers and the round clock hold still and the sound dips. In a shared game the others keep playing and the menu says so. New rows: Restart level, Save game, Load game, Join requests, Quit to title. <!-- 92-menus GC2 -->
+- **Player settings** in the pause menu: look speed, invert look, subtitles and reduced motion, beside volume and quality, saved per game on this device. <!-- 92-menus GC2 -->
+- **Three save slots** with the time, the level and a small picture; overwriting or deleting asks first, a Checkpoint saves into the slot you play, and a save from a newer version is shown but not loaded. <!-- 92-menus GC5 -->
+- **Let people in without leaving the game**: a join request shows as a small card over the game, answered from the pause menu's **Join requests**; **Auto-admit while playing** lets them in by itself (agents and blocked people still ask, and so does everyone while **Require approval to join** is on). <!-- 92-menus GC8 -->
+
+### Controllers and cameras
+- **Gamepads play every built-in action** (A jump, X use, RT fire, LT grab, B crouch, L3 sprint, Y reload, RB/LB fly, Start menu). Pause menu ▸ Accessibility ▸ **Controls** remaps keys and pad buttons, and says when a new one swaps with another action. Prompts (the Playing banner, How to play, HUD key hints, the dialogue box) show your own pad's buttons or your key. <!-- 92-input GC3 -->
+- **Play cameras**: the Character Controller can play in **third person** (walls pull the camera in), as a **side-scroller** or **top-down**; the mouse wheel zooms. VR stays first person. <!-- 92-input GC4a GC4 -->
+
+### Characters who talk
+- **The Dialogue node**: lines with the speaker's name and picture in a box at the bottom of the screen (a panel in VR), choices that set a variable or jump to another part, and a pulse when the talk ends. Only the player who walked up or clicked sees it. <!-- 92-dialogue GC6 -->
+- **New template: Starter game** — a title screen, a pause menu, save slots, a gamepad-ready third-person camera and a character who talks. <!-- 92-int GC7 -->
+
+### For AI agents
+- `game_setup` gains `title`, `pause`, `saves` and `dialogue`; `play_camera` gains the `third`, `side` and `top` modes. No tool names changed. <!-- 92-menus 92-dialogue 92-input -->
+
+### Fixes
+- **Exported games no longer ask to restore a previous session.** <!-- 92-menus -->
+- **The pause menu loads when a game first needs it**, so the editor and play links start a little lighter. <!-- 92-int boot ruling -->
+
+### Games behave the way you expect
+- **Timers start with the game**: a HUD Timer set to Autostart counts down from the round's start (or from Play in a game with no rounds), shows its full time in the editor, stops while the game is paused, and a late joiner sees the same time. <!-- 92-correct row 1 -->
+- **Spawned copies act like the original**: every copy a Spawn node or a kit spawner makes runs the template's own flow (On Click, On Hover, On Grab, On Enter / Exit, On Hit), with "this object" meaning that copy. <!-- 92-correct row 2 -->
+- **Each player sees their own team and score**: behaviours hear `playerJoined` / `playerLeft` and list `this.players()`, and a **Game Value** set to **For: me** shows each person their own entry. <!-- 92-correct row 3 -->
+- **Movement is per second**: walking, flying, the gamepad and touch stick, the VR edit stick, kit enemies and possessed objects cover the same distance at 30, 60, 90 or 120 Hz; scenes made before keep the speed they had at 60 Hz. <!-- 92-correct row 4 -->
+- **NPCs climb and jump** (Navigation module 1.1.0): the Navmesh node's **Ledge** and **Jump** let NPCs that patrol or chase climb a low ledge and jump a gap; both are off by default. <!-- 92-correct row 5, modules #63 -->
+
+### Compatibility
+- **Scene files**: format unchanged. A game made before keeps its old menu (no pause, no title) until you turn the game menus on. A file with game menus or a Dialogue opens in 1.76.0: the menus and the talk are kept but do not show there. <!-- 92-menus compat B, 92-dialogue -->
+- **In a session with someone on 1.76.0**: they see no title screen, no save slots and no dialogue box; the scene itself is the same. <!-- 92 -->
+
 ## 1.76.0 — Accounts and safety
 
 ### Your account and data (theprototype.app)

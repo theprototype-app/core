@@ -42,7 +42,14 @@ async function roundTrip(page, bytes) {
 		const strip = (o) => JSON.parse(JSON.stringify(o ?? null, (k, v) => (k === 'changedAt' || k === 'ts' ? undefined : v)));
 		let live;
 		window.__tp.test.v1.scenePhysics.scenePhysicsState_.subscribe((x) => (live = x))();
-		return { count: after.count, physicsBefore: strip(before.physics), physicsAfter: strip(after.physics), liveMenus: strip(live?.play?.menus ?? null) };
+		// every flow node by graph, with its data: a node an older build does not know (Dialogue) must ride verbatim
+		const nodesOf = (p) => {
+			const g = p?.graphs ?? p?.nodes?.graphs ?? {};
+			const out = [];
+			for (const [, doc] of Object.entries(g)) for (const n of doc?.nodes ?? []) out.push({ type: n.type, data: strip(n.data) });
+			return out.sort((a, b) => (a.type + JSON.stringify(a.data) < b.type + JSON.stringify(b.data) ? -1 : 1));
+		};
+		return { count: after.count, physicsBefore: strip(before.physics), physicsAfter: strip(after.physics), liveMenus: strip(live?.play?.menus ?? null), nodesBefore: nodesOf(before), nodesAfter: nodesOf(after) };
 	}, Array.from(bytes));
 }
 
@@ -56,7 +63,13 @@ h.run(async () => {
 		const r = await roundTrip(A.page, fs.readFileSync(process.env.MENUS_FILE));
 		console.log('B', JSON.stringify({ count: r.count, menus: r.physicsAfter?.play?.menus ?? null }));
 		check(r.count >= 1, `B: the lane's scene loads (${r.count} objects)`);
-		check(JSON.stringify(r.physicsBefore?.play?.menus) === JSON.stringify(MENUS_NORMALIZED()), 'B: the file carries the lane\'s menus');
+		// MENUS_FILE_ANY=1: any union-saved file (92-int: the Starter game template) — its own menus, not the fixture's
+		if (process.env.MENUS_FILE_ANY === '1') check(!!r.physicsBefore?.play?.menus, 'B: the file carries menus');
+		else check(JSON.stringify(r.physicsBefore?.play?.menus) === JSON.stringify(MENUS_NORMALIZED()), 'B: the file carries the lane\'s menus');
+		const types = r.nodesBefore.map((n) => n.type);
+		console.log('B nodes', JSON.stringify(types));
+		if (process.env.EXPECT_NODE) check(types.includes(process.env.EXPECT_NODE), `B: the file has a ${process.env.EXPECT_NODE} node`);
+		check(JSON.stringify(r.nodesAfter) === JSON.stringify(r.nodesBefore), `B: every flow node rides a re-save with its data (${r.nodesBefore.length} -> ${r.nodesAfter.length})`);
 		check(JSON.stringify(r.physicsAfter?.play?.menus) === JSON.stringify(r.physicsBefore?.play?.menus), 'B: play.menus rides through a re-save untouched');
 		const rest = (p) => JSON.stringify({ ...(p ?? {}), play: { ...(p?.play ?? {}), menus: undefined } });
 		check(rest(r.physicsAfter) === rest(r.physicsBefore), 'B: the rest of the physics block re-saves unchanged');

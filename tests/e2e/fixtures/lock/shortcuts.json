@@ -42,6 +42,66 @@
 			"when": false
 		},
 		{
+			"id": "transform.now-move",
+			"keys": "",
+			"defaultKeys": "",
+			"group": "Transform",
+			"scope": "viewport",
+			"label": "Move now — the selection follows the pointer",
+			"kind": "action",
+			"when": true
+		},
+		{
+			"id": "transform.now-rotate",
+			"keys": "",
+			"defaultKeys": "",
+			"group": "Transform",
+			"scope": "viewport",
+			"label": "Rotate now — turns with the pointer",
+			"kind": "action",
+			"when": true
+		},
+		{
+			"id": "transform.now-scale",
+			"keys": "",
+			"defaultKeys": "",
+			"group": "Transform",
+			"scope": "viewport",
+			"label": "Resize now — scales with the pointer",
+			"kind": "action",
+			"when": true
+		},
+		{
+			"id": "transform.lock-x",
+			"keys": "X",
+			"defaultKeys": "X",
+			"group": "Transform",
+			"scope": "modal",
+			"label": "Lock to X while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)",
+			"kind": "external",
+			"when": false
+		},
+		{
+			"id": "transform.lock-y",
+			"keys": "Y",
+			"defaultKeys": "Y",
+			"group": "Transform",
+			"scope": "modal",
+			"label": "Lock to Y while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)",
+			"kind": "external",
+			"when": false
+		},
+		{
+			"id": "transform.lock-z",
+			"keys": "Z",
+			"defaultKeys": "Z",
+			"group": "Transform",
+			"scope": "modal",
+			"label": "Lock to Z while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)",
+			"kind": "external",
+			"when": false
+		},
+		{
 			"id": "uv.grab",
 			"keys": "G",
 			"defaultKeys": "G",
@@ -49,6 +109,106 @@
 			"scope": "uv",
 			"label": "Arm Move (in the UV editor)",
 			"kind": "external",
+			"when": false
+		},
+		{
+			"id": "uv.now-move",
+			"keys": "",
+			"defaultKeys": "",
+			"group": "UV editor",
+			"scope": "uv",
+			"label": "Move now (in the UV editor) — the selection follows the pointer",
+			"kind": "external",
+			"when": false
+		},
+		{
+			"id": "uv.now-rotate",
+			"keys": "",
+			"defaultKeys": "",
+			"group": "UV editor",
+			"scope": "uv",
+			"label": "Rotate now (in the UV editor)",
+			"kind": "external",
+			"when": false
+		},
+		{
+			"id": "uv.now-scale",
+			"keys": "",
+			"defaultKeys": "",
+			"group": "UV editor",
+			"scope": "uv",
+			"label": "Resize now (in the UV editor)",
+			"kind": "external",
+			"when": false
+		},
+		{
+			"id": "uv.lock-u",
+			"keys": "X",
+			"defaultKeys": "X",
+			"group": "UV editor",
+			"scope": "uv",
+			"label": "Lock to U while a UV move / resize runs",
+			"kind": "external",
+			"when": false
+		},
+		{
+			"id": "uv.lock-v",
+			"keys": "Y",
+			"defaultKeys": "Y",
+			"group": "UV editor",
+			"scope": "uv",
+			"label": "Lock to V while a UV move / resize runs",
+			"kind": "external",
+			"when": false
+		},
+		{
+			"id": "uv.tool-select",
+			"keys": "",
+			"defaultKeys": "",
+			"group": "UV editor",
+			"scope": "uv",
+			"label": "Select tool (in the UV editor)",
+			"kind": "external",
+			"when": false
+		},
+		{
+			"id": "uv.tool-box",
+			"keys": "",
+			"defaultKeys": "",
+			"group": "UV editor",
+			"scope": "uv",
+			"label": "Box select tool (in the UV editor)",
+			"kind": "external",
+			"when": false
+		},
+		{
+			"id": "uv.tool-lasso",
+			"keys": "",
+			"defaultKeys": "",
+			"group": "UV editor",
+			"scope": "uv",
+			"label": "Lasso select tool (in the UV editor)",
+			"kind": "external",
+			"when": false
+		},
+		{
+			"id": "uv.tool-paint",
+			"keys": "",
+			"defaultKeys": "",
+			"group": "UV editor",
+			"scope": "uv",
+			"label": "Paint tool (in the UV editor)",
+			"kind": "external",
+			"when": false
+		},
+		{
+			"id": "uv.space-pan",
+			"keys": "Space (hold)",
+			"defaultKeys": "Space (hold)",
+			"group": "UV editor",
+			"scope": "uv",
+			"label": "Hold and drag to pan, whatever the tool (no middle button needed)",
+			"kind": "fixed",
 			"when": false
 		},
 		{
@@ -109,6 +269,16 @@
 			"scope": "viewport",
 			"label": "Fly 3x faster",
 			"kind": "fixed",
+			"when": false
+		},
+		{
+			"id": "movement.fly-direction",
+			"keys": "",
+			"defaultKeys": "",
+			"group": "Movement",
+			"scope": "viewport",
+			"label": "Fly direction: switch between Level and Where I look",
+			"kind": "action",
 			"when": false
 		},
 		{
@@ -738,6 +908,36 @@
 			"group": "Mesh edit",
 			"scope": "mesh",
 			"label": "Connect two corners of a face (vertices)",
+			"kind": "external",
+			"when": false
+		},
+		{
+			"id": "mesh.now-move",
+			"keys": "",
+			"defaultKeys": "",
+			"group": "Mesh edit",
+			"scope": "mesh",
+			"label": "Move now — the picked vertices / edges / faces follow the pointer",
+			"kind": "external",
+			"when": false
+		},
+		{
+			"id": "mesh.now-rotate",
+			"keys": "",
+			"defaultKeys": "",
+			"group": "Mesh edit",
+			"scope": "mesh",
+			"label": "Rotate now (vertices / edges / faces)",
+			"kind": "external",
+			"when": false
+		},
+		{
+			"id": "mesh.now-scale",
+			"keys": "",
+			"defaultKeys": "",
+			"group": "Mesh edit",
+			"scope": "mesh",
+			"label": "Resize now (vertices / edges / faces)",
 			"kind": "external",
 			"when": false
 		},

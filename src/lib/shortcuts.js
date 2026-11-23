@@ -160,6 +160,7 @@ function meshRows(table) {
  * @param {string} combo @returns {string | null}
  */
 export function meshCommandFor(combo) {
+	if (!combo) return null; // 103: an unbound row's keys are '' — no press means it
 	const row = shortcuts.find((s) => s.scope === 'mesh' && s.keys === combo);
 	if (row) return row.id;
 	if (combo === 'Ctrl++' && bindingOf('mesh.grow') === 'Ctrl+=') return 'mesh.grow';

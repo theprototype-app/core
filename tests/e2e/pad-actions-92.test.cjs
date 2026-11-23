@@ -137,7 +137,7 @@ h.run(async () => {
 	await V(page, () => /** @type {any} */ (window).__tp.test.v1.hudDocs.setHudDocFor('scene', null));
 
 	console.log('\n=== 5. the Controls rows, the shared capture, the flagged conflict ===');
-	await V(page, () => /** @type {any} */ (window).__tp.test.v1.gameKit.gameShell.openShellMenu('access'));
+	await V(page, () => /** @type {any} */ (window).__tp.test.v1.gameKit.gameShell.openAccessCard());
 	await page.waitForTimeout(400);
 	const rows = await page.$$eval('[data-remap^="pad:"]', (els) => els.map((e) => e.getAttribute('data-remap')));
 	h.check(['pad:GamepadA', 'pad:GamepadX', 'pad:GamepadB', 'pad:GamepadStart'].every((r) => rows.includes(r)), '5.1 the built-in pad actions are rows (' + rows.join(' ') + ')');

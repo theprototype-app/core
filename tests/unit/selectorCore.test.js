@@ -106,6 +106,21 @@ describe('selector picks', () => {
 		expect(nameMatcher('(1)')('Box (1)')).toBe(true);
 		expect(nameMatcher('')('anything')).toBe(false);
 	});
+	it('nameMatcher: glob semantics, bounded cost (102-int-3)', () => {
+		expect(nameMatcher('coin*')('Coin 12')).toBe(true);
+		expect(nameMatcher('*coin')('Gold coin')).toBe(true);
+		expect(nameMatcher('c?in')('Coin')).toBe(true);
+		expect(nameMatcher('c?in')('Cin')).toBe(false);
+		expect(nameMatcher('a*b*c')('aXXbYYc')).toBe(true);
+		expect(nameMatcher('a*b*c')('aXXbYY')).toBe(false);
+		expect(nameMatcher('**')('')).toBe(true);
+		expect(nameMatcher('*a*')('bab')).toBe(true);
+		const t0 = performance.now();
+		const m = nameMatcher('*a*a*a*a*a*a*a*a*a*a*a*a*a*a*a*a*a*a*a*b');
+		const long = 'a'.repeat(1024);
+		for (let i = 0; i < 20; i++) expect(m(long)).toBe(false);
+		expect(performance.now() - t0).toBeLessThan(500);
+	});
 	it('the memo key folds case and whitespace', () => {
 		expect(selectorKey({ pick: 'tag', match: ' Star ' })).toBe(selectorKey({ pick: 'tag', match: 'star' }));
 		expect(selectorKey({ pick: 'tag', match: 'star' })).not.toBe(selectorKey({ pick: 'name', match: 'star' }));

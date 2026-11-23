@@ -262,7 +262,12 @@ export const VALIDATORS = {
 	object: (d) => d.element !== undefined && (d.uuids != null || objectJsonVerdict(d.element)),
 	group: (d) => d.uuid !== undefined,
 	duplicate: (d) => isUuid(d.sourceUuid) && isArray(d.uuids),
-	nodes: (d) => isArray(d.nodes) && isArray(d.edges),
+	// 102-int-3: `replaceGraphs` (optional) = object graph ids this message REPLACES whole instead of merging
+	nodes: (d) =>
+		isArray(d.nodes) &&
+		isArray(d.edges) &&
+		(d.replaceGraphs === undefined ||
+			(isArray(d.replaceGraphs) && d.replaceGraphs.length <= 64 && d.replaceGraphs.every((/** @type {any} */ g) => typeof g === 'string' && g.length <= 64))),
 	// 36-sim (found proving B2): graphHash() returns a NUMBER (djb2 >>> 0). Requiring a string
 	// rejected EVERY nodesync since 27-A, so graph drift between peers was never noticed.
 	nodesync: (d) => (typeof d.hash === 'string' || Number.isFinite(d.hash)) && typeof d.count === 'number',

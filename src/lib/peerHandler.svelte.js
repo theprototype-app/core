@@ -1942,7 +1942,7 @@ export class PeerConnection {
 					});
 				} else if(data.type == 'nodes') {
 					preloadSandboxFor(data); // 69: a joiner's scene with code starts the engine before its first tick
-					applyNodesSnapshot(data.nodes, data.edges, data.graphs);
+					applyNodesSnapshot(data.nodes, data.edges, data.graphs, data.replaceGraphs);
 					noteNodesSnapshot(conn.peer); // fix-agenttest 5: the handshake's graphs are here
 				} else if(data.type == 'nodesync') {
 					applyNodeSync(data);

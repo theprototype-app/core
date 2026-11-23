@@ -909,6 +909,7 @@ export function fireAnimState(uuid, id, name) {
 		const wanted = String(node.data?.state ?? '').trim().toLowerCase();
 		if (wanted && wanted !== String(name).toLowerCase() && wanted !== String(id).toLowerCase()) return;
 		if (!reachesObjectSelector(node.id, uuid) && implicitOwnerOf(node) !== uuid) return;
+		noteFired(node, uuid); // 102-int-3: Fired Object says which member of a set changed state (every peer derives it)
 		applyNodeTrigger(node.id, syncedNow(), false);
 	});
 }

@@ -102,9 +102,33 @@ export function nameMatcher(pattern) {
 	const p = String(pattern ?? '').trim().toLowerCase();
 	if (!p) return () => false;
 	if (!/[*?]/.test(p)) return (name) => String(name ?? '').toLowerCase().includes(p);
-	const source = p.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
-	const re = new RegExp('^' + source + '$');
-	return (name) => re.test(String(name ?? '').toLowerCase());
+	return (name) => globMatch(p, String(name ?? '').toLowerCase());
+}
+
+/**
+ * `*` / `?` glob over a whole string in at most pattern x name steps: only the LAST star is remembered to back
+ * up to, so no pattern can blow up the way a backtracking RegExp of `.*` runs can (the set is re-resolved every
+ * tick on every peer). @param {string} p @param {string} s
+ */
+function globMatch(p, s) {
+	let i = 0;
+	let j = 0;
+	let star = -1;
+	let mark = 0;
+	while (j < s.length) {
+		if (i < p.length && (p[i] === '?' || p[i] === s[j])) {
+			i++;
+			j++;
+		} else if (i < p.length && p[i] === '*') {
+			star = i++;
+			mark = j;
+		} else if (star >= 0) {
+			i = star + 1;
+			j = ++mark;
+		} else return false;
+	}
+	while (i < p.length && p[i] === '*') i++;
+	return i === p.length;
 }
 
 /** helpers and editor furniture are never members (the gizmo, a ping, an arch part's leaf) @param {any} o */

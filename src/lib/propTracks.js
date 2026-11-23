@@ -190,6 +190,26 @@ export function setProp(object, path, value) {
 	return true;
 }
 
+// the Inspector's names for the constraint kinds (ConstraintsSection), so two weights on one object read apart
+const CONSTRAINT_KIND_LABEL = /** @type {Record<string, string>} */ ({ lookat: 'Look at', copy: 'Copy transform', limit: 'Limit rotation', ik2: 'Two-bone IK', ikchain: 'Chain IK' });
+
+/**
+ * A path's label ON this object: a constraint weight names its constraint ("Look at weight", "Chain IK weight 2"
+ * when the object has two of that kind); every other path is its def's label. @param {any} object @param {string} path
+ */
+export function propLabelFor(object, path) {
+	const def = propDef(path);
+	if (!def) return path;
+	const m = CONSTRAINT_WEIGHT.exec(resolvePath(path));
+	if (!m) return def.label;
+	const list = Array.isArray(object?.userData?.constraints) ? object.userData.constraints : [];
+	const entry = list.find((/** @type {any} */ c) => c?.id === m[1]);
+	if (!entry) return def.label;
+	const same = list.filter((/** @type {any} */ c) => c?.kind === entry.kind);
+	const name = (CONSTRAINT_KIND_LABEL[entry.kind] ?? 'Constraint') + ' weight';
+	return same.length > 1 ? name + ' ' + (same.indexOf(entry) + 1) : name;
+}
+
 /** Paths that apply to an object, for menus. @param {any} object */
 export function pathsFor(object) {
 	const out = Object.keys(PROPS).filter((p) => PROPS[p].applies(object));

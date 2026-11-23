@@ -191,7 +191,8 @@ export function validateScene(w) {
 			!(typeof n.data?.target === 'string' && n.data.target && n.data.target !== '-None-') &&
 			!ix.out(n.id).some((/** @type {any} */ e) => {
 				const t = ix.byId.get(e.target);
-				return t?.type === 'objectselector' && t.data?.selected && t.data.selected !== '-None-';
+				// a tag / group / name selector reaches its set (an empty set is selector-matches-nothing's finding)
+				return t?.type === 'objectselector' && (isManySelector(t.data) || (t.data?.selected && t.data.selected !== '-None-'));
 			})
 		)
 			add({

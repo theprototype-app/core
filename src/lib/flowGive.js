@@ -80,6 +80,30 @@ export function flowCopyFor(doc, fromUuid, toUuid, newId = () => crypto.randomUU
 	return { nodes, edges };
 }
 
+// replaced documents waiting to go out: ONE `nodes` message per REPLACE_CHUNK graphs, each listed in
+// `replaceGraphs`, so a receiver takes them whole (a plain `nodes` merges and would keep the old nodes) and the
+// whole give costs a few edit tokens, not one per node (a refused delete beside an applied snapshot left the
+// old and the new flow both running on that peer)
+const REPLACE_CHUNK = 32;
+/** @type {Map<string, any> | null} */
+let pending = null;
+
+/** send what `pending` holds @param {Map<string, any>} queue */
+function flushReplaced(queue) {
+	/** @type {any} */
+	const peer = get(peers);
+	if (!peer || !queue.size) return;
+	const ids = [...queue.keys()];
+	for (let i = 0; i < ids.length; i += REPLACE_CHUNK) {
+		const part = ids.slice(i, i + REPLACE_CHUNK);
+		/** @type {Record<string, any>} */
+		const graphs = {};
+		for (const id of part) graphs[id] = queue.get(id);
+		// `nodes`/`edges` are the scene graph's slot in this message (the validator wants both arrays); empty = untouched
+		peer.send({ type: 'nodes', nodes: [], edges: [], graphs, replaceGraphs: part });
+	}
+}
+
 /** replace `uuid`'s flow document with `doc` (null = none), replicated, no history @param {string} uuid @param {any} doc */
 function writeGraph(uuid, doc) {
 	if (!uuid || uuid === SCENE_GRAPH) return;
@@ -88,24 +112,15 @@ function writeGraph(uuid, doc) {
 		return;
 	}
 	const existed = graphExists(uuid);
-	const old = existed ? graphOf(uuid) : null;
 	const next = /** @type {any} */ (clone(doc));
 	updateGraph(uuid, () => next);
 	/** @type {any} */
 	const peer = get(peers);
 	if (!peer) return;
 	if (!existed) peer.send({ type: 'graphcreate', uuid });
-	else if (old) {
-		// a received `nodes` MERGES, so what the new document does not have is deleted by name first
-		const keepNodes = new Set(next.nodes.map((/** @type {any} */ n) => n.id));
-		const keepEdges = new Set(next.edges.map((/** @type {any} */ e) => e.id));
-		const edgeIds = (old.edges ?? []).map((/** @type {any} */ e) => e.id).filter((/** @type {string} */ id) => !keepEdges.has(id));
-		const nodeIds = (old.nodes ?? []).map((/** @type {any} */ n) => n.id).filter((/** @type {string} */ id) => !keepNodes.has(id));
-		if (edgeIds.length) peer.send({ type: 'edgedelete', ids: edgeIds, graphId: uuid });
-		if (nodeIds.length) peer.send({ type: 'nodedelete', ids: nodeIds, graphId: uuid });
-	}
-	// `nodes`/`edges` are the scene graph's slot in this message (the validator wants both arrays); empty = untouched
-	peer.send({ type: 'nodes', nodes: [], edges: [], graphs: { [uuid]: { nodes: next.nodes.map(serializeNode), edges: next.edges.map(serializeEdge) } } });
+	const wire = { nodes: next.nodes.map(serializeNode), edges: next.edges.map(serializeEdge) };
+	if (pending) pending.set(uuid, wire);
+	else flushReplaced(new Map([[uuid, wire]]));
 }
 
 /** set / clear the family link on one object, replicated @param {string} uuid @param {string | null} root */
@@ -158,6 +173,7 @@ export async function giveFlow(fromUuid, targets, opts = {}) {
 	beginHistoryBatch();
 	try {
 		withWireBatch(() => {
+			pending = new Map();
 			for (const uuid of list) {
 				const before = clone(graphExists(uuid) ? graphOf(uuid) : null);
 				const beforeFrom = objectOf(uuid)?.userData?.flowFrom ?? null;
@@ -168,8 +184,12 @@ export async function giveFlow(fromUuid, targets, opts = {}) {
 				if (beforeFrom !== afterFrom) writeFlowFrom(uuid, afterFrom);
 				recordEntry({ kind: 'flowreplace', uuid, before: { graph: before, from: beforeFrom }, after: { graph: clone(after), from: afterFrom } });
 			}
+			const queue = pending;
+			pending = null;
+			flushReplaced(queue);
 		});
 	} finally {
+		pending = null;
 		endHistoryBatch(`${label} (${list.length})`);
 	}
 	showToast(list.length === 1 ? 'Flow given to 1 object' : `Flow given to ${list.length} objects`);

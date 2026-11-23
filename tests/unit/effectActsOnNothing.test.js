@@ -33,6 +33,12 @@ describe('validate_scene: effect-no-object', () => {
 		expect(codes(validateScene(world({ nodes: [{ id: 's', type: 'spin', __graph: 'box' }] })))).not.toContain('effect-no-object');
 		expect(codes(validateScene(world({ nodes: [{ id: 's', type: 'setcolor', data: { target: 'box' } }] })))).not.toContain('effect-no-object');
 	});
+	it('wired to a tag / group / name selector: fine (102-int-3 seam: 102b-flows)', () => {
+		for (const data of [{ pick: 'tag', match: 'coin', selected: '-None-' }, { pick: 'group', match: 'g1' }, { pick: 'name', match: 'Coin*' }]) {
+			const r = validateScene(world({ nodes: [{ id: 's', type: 'spin' }, { id: 'o', type: 'objectselector', data }], edges: [{ source: 's', target: 'o' }], selectorSet: () => ['box'] }));
+			expect(codes(r)).not.toContain('effect-no-object');
+		}
+	});
 	it('a Script with outputs is a value, not an effect', () => {
 		expect(codes(validateScene(world({ nodes: [{ id: 's', type: 'script', data: { outputs: [{ name: 'n', type: 'number' }] } }] })))).not.toContain('effect-no-object');
 	});

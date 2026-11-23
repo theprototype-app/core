@@ -109,7 +109,7 @@
 	} from '$lib/sequenceCore';
 	import { listCameraObjects } from '$lib/cameraObjects';
 	import { timelineFocus } from '$lib/timelineOpen';
-	import { propDef, pathsFor, propType, getProp } from '$lib/propTracks';
+	import { propDef, propLabelFor, pathsFor, propType, getProp } from '$lib/propTracks';
 	import { smoothKeys, insertKey } from '$lib/curveCore';
 	import { animations, clipList } from '$lib/animationPreview';
 	import { animatedObjects, clipInfo } from '$lib/animatedImports';
@@ -192,7 +192,7 @@
 			target: obj.uuid,
 			path,
 			type: propType(path),
-			name: (obj.name || 'Object') + ' · ' + (propDef(path)?.label ?? path),
+			name: (obj.name || 'Object') + ' · ' + propLabelFor(obj, path),
 			t: playhead,
 			value: Array.isArray(value) ? value.slice() : value
 		});
@@ -768,7 +768,7 @@
 				{ section: obj ? 'Animate a property of ' + (obj.name || 'the selection') : 'Animate a property' },
 				...(paths.length
 					? paths.map((p: string) => ({
-							label: propDef(p)?.label ?? p,
+							label: propLabelFor(obj, p),
 							icon: 'spline',
 							title: 'A property track with its first key at the playhead',
 							action: () => animateProperty(p)

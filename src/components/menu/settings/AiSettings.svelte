@@ -9,6 +9,10 @@
 </script>
 
 <script>
+	// 89 I2: Settings ▸ AI again (it was "Tools & connections" since 59 T4; 'tools' / 'toolsconnections' stay deep-link
+	// aliases), in TWO cards: "AI inside the app (your key)" — every form below, unchanged — and "AI apps that work in
+	// your scene" — the agents rows + Connected apps (moved here from Settings ▸ Account, which keeps a link row).
+	// Desktop tools sit under them as "Other tools". One docs page explains both: USE_ANY_AI_DOCS_URL.
 	// 59 T4: this page is Settings ▸ TOOLS & CONNECTIONS now. Its main view is the registry's hub
 	// (ToolsHub.svelte); the provider / mesh / voice FORMS below stay here as its sub-pages, unchanged,
 	// so the stores and storage keys they write are the ones every saved setup already uses.
@@ -18,6 +22,7 @@
 	// form logic moved here from Settings.svelte unchanged (roadmap #10 / #11): per-preset key memory,
 	// the silent /models refresh with its sequence guard, Test connection. Same stores, same keys.
 	import { getContext, tick } from 'svelte';
+	import { readable } from 'svelte/store';
 	import Section from '../../ui/Section.svelte';
 	import SettingRow from '../../ui/SettingRow.svelte';
 	import Toggle from '../../ui/Toggle.svelte';
@@ -27,6 +32,18 @@
 	import ToolsHub from './ToolsHub.svelte';
 	import { toolsFocus } from '$lib/tools/toolStatus.js';
 	import ChatPictureSettings from './ChatPictureSettings.svelte'; // 56 C8
+	import ConnectedAppsSettings from './ConnectedAppsSettings.svelte'; // 86 B5, moved here by 89 I2
+	import { USE_ANY_AI_DOCS_URL } from '$lib/connector/connectorLinks.js';
+	/** 89 I2: bring a card to the top of the page and move focus to its heading @param {string} id */
+	function jumpTo(id) {
+		const card = document.getElementById(id);
+		card?.scrollIntoView({ block: 'start' });
+		/** @type {HTMLElement | null} */ (card?.querySelector('.ai-card-title') ?? null)?.focus({ preventScroll: true });
+	}
+	/** 89 I2: the tool sections each card draws (toolStatus TOOL_SECTIONS ids) */
+	const IN_APP = ['chat', 'mesh', 'animation', 'aibox'];
+	const IN_SCENE = ['agents'];
+	const OTHER = ['desktop'];
 	import { NAV_CONTEXT } from '$lib/settingsNav';
 	import { showToast } from '../../../stores/appStore.js';
 	import {
@@ -56,8 +73,10 @@
 
 	const nav = /** @type {any} */ (getContext(NAV_CONTEXT));
 	const sub = nav?.sub;
-	/** this page's section key (sectionKeyOf('Tools & connections')) */
-	const PAGE = 'toolsconnections';
+	/** 89 I2: the jump line stands down while a search shows rows from every page */
+	const searching = nav?.searching ?? readable(false);
+	/** this page's section key (sectionKeyOf('AI')) */
+	const PAGE = 'ai';
 
 	/** a hub row's form (built-in sections) @param {string} kind @param {any} [ref] */
 	function openForm(kind, ref) {
@@ -458,19 +477,103 @@
 			{/if}
 		</div>
 	{:else}
-		<ToolsHub onform={openForm}>
-			{#snippet afterChat()}
-				<Section variant="card" label="Chat pictures" badge="This device">
-					<ChatPictureSettings /><!-- 56 C8 -->
-				</Section>
-			{/snippet}
-		</ToolsHub>
+		<!-- 89 I2 (find-it): the page is long, so its two cards are one press away from the top -->
+		{#if !$searching}<p class="ai-jump" id="ai-jump">
+			<span>On this page:</span>
+			<button type="button" class="ai-jump-link" id="ai-jump-in-app" onclick={() => jumpTo('ai-card-in-app')}>AI inside the app (your key)</button>
+			<span aria-hidden="true">·</span>
+			<button type="button" class="ai-jump-link" id="ai-jump-in-scene" onclick={() => jumpTo('ai-card-in-scene')}>AI apps that work in your scene (ChatGPT, Claude, connected apps)</button>
+		</p>{/if}
+		<div class="ai-card" id="ai-card-in-app" data-ai-card="in-app" data-settings-group role="group" aria-labelledby="ai-card-in-app-title">
+			<div class="ai-card-head">
+				<h3 class="ai-card-title" id="ai-card-in-app-title" tabindex="-1">AI inside the app (your key)</h3>
+				<p class="ai-card-desc">The app's own assistant, voice typing and 3D generation, run with a key or a server you set up here.</p>
+			</div>
+			<ToolsHub onform={openForm} only={IN_APP}>
+				{#snippet afterChat()}
+					<Section variant="card" label="Chat pictures" badge="This device">
+						<ChatPictureSettings /><!-- 56 C8 -->
+					</Section>
+				{/snippet}
+			</ToolsHub>
+			<!-- roadmap 84 (connect any AI) adds its presets and "Test connection" to THIS card; nothing of it is built here -->
+		</div>
+		<div class="ai-card" id="ai-card-in-scene" data-ai-card="in-scene" data-settings-group role="group" aria-labelledby="ai-card-in-scene-title">
+			<div class="ai-card-head">
+				<h3 class="ai-card-title" id="ai-card-in-scene-title" tabindex="-1">AI apps that work in your scene</h3>
+				<p class="ai-card-desc">
+					Claude, ChatGPT and other AI apps build in this tab with your access. No key here: add theprototype in the app, connect this tab, and revoke an app
+					any time below.
+					<a class="ai-card-link" href={USE_ANY_AI_DOCS_URL} target="_blank" rel="noopener">Which one do I need?</a>
+				</p>
+			</div>
+			<ToolsHub onform={openForm} only={IN_SCENE} footnote={false} />
+			<ConnectedAppsSettings />
+		</div>
+		<div class="ai-card" id="ai-card-other" data-ai-card="other" data-settings-group role="group" aria-labelledby="ai-card-other-title">
+			<div class="ai-card-head">
+				<h3 class="ai-card-title" id="ai-card-other-title">Other tools</h3>
+			</div>
+			<ToolsHub onform={openForm} only={OTHER} footnote={false} />
+		</div>
 	{/if}
 </div>
 
 <style>
 	.settings-page-body {
 		display: contents;
+	}
+	.ai-jump {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: var(--space-1) var(--space-2);
+		margin: 0 0 var(--space-3);
+		font-size: var(--fs-desc);
+		color: var(--text-muted);
+	}
+	.ai-jump-link {
+		padding: 0;
+		border: 0;
+		background: none;
+		font: inherit;
+		color: var(--accent-text);
+		text-decoration: underline;
+		cursor: pointer;
+	}
+	.ai-jump-link:focus-visible {
+		outline: 2px solid var(--focus-ring, var(--accent));
+		outline-offset: 2px;
+	}
+	/* 89 I2: the page's two cards (and Other tools) — a heading + a line, then that card's groups */
+	.ai-card {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-3);
+	}
+	.ai-card + .ai-card {
+		margin-top: var(--space-4);
+		padding-top: var(--space-4);
+		border-top: 1px solid var(--border);
+	}
+	.ai-card-head {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
+	}
+	.ai-card-title {
+		margin: 0;
+		font-size: var(--fs-panel-title);
+		font-weight: 600;
+		color: var(--text);
+	}
+	.ai-card-desc {
+		margin: 0;
+		font-size: var(--fs-desc);
+		color: var(--text-muted);
+	}
+	.ai-card-link {
+		color: var(--accent-text);
 	}
 	.ai-actions {
 		display: flex;

@@ -1,4 +1,5 @@
 // Roadmap 86 B1/B2 — what the UI knows about the Claude connector, as a LEAF (svelte/store + cloudHooks):
+// 89: `who` = the AI app on the other end (appName.js: the Worker's trusted name, "Claude" until a Worker says otherwise).
 // the AI window's button, the top-bar chip and Settings ▸ Account ▸ Connected apps read it without loading the
 // connector itself, which is a dynamic import (connector.js) pulled in only by a Connect Claude press.
 
@@ -7,7 +8,7 @@ import { connectorProvider } from '../cloudHooks.js';
 
 /**
  * @typedef {{phase: 'idle'|'pairing'|'connecting'|'connected'|'reconnecting'|'closed'|'error', reason: string, message: string,
- *   connections: {id: string, client: string, scopes: string[], lastUsed: number}[], retryAt: number,
+ *   connections: {id: string, client: string, app?: string, scopes: string[], lastUsed: number}[], retryAt: number, who: string,
  *   hidden: boolean, throttled: boolean, busy: number, lastCall: {tool: string, at: number, ok: boolean} | null}} ConnectorView
  */
 
@@ -18,6 +19,7 @@ export const CONNECTOR_IDLE = {
 	message: '',
 	connections: [],
 	retryAt: 0,
+	who: 'Claude',
 	hidden: false,
 	throttled: false,
 	busy: 0,
@@ -35,11 +37,11 @@ export function connectorLine(s) {
 	switch (s.phase) {
 		case 'pairing':
 		case 'connecting':
-			return 'Connecting Claude…';
+			return 'Connecting ' + (s.who || 'Claude') + '…';
 		case 'connected':
-			return 'Claude connected · this tab';
+			return (s.who || 'Claude') + ' connected · this tab';
 		case 'reconnecting':
-			return 'Claude reconnecting…';
+			return (s.who || 'Claude') + ' reconnecting…';
 		default:
 			return '';
 	}

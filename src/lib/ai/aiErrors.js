@@ -64,7 +64,7 @@ export function describeAiError(error, config) {
 			return (
 				'Could not reach the server — a network, certificate or CORS problem' +
 				(vllm ? ' (vLLM needs --allowed-origins)' : '') +
-				'. Settings ▸ Tools & connections ▸ Test tells which.'
+				'. Settings ▸ AI ▸ Test tells which.'
 			);
 		}
 		return error.message;

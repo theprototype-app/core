@@ -52,9 +52,14 @@
 		}
 	}
 
+	/** 89 I2: an AI app that is not Claude connects through the same server — its steps sit on Settings ▸ AI's card 2 */
+	function openOtherApps() {
+		openSettingsAt('ai', 'ai-card-in-scene');
+	}
+
 	function openConnectedApps() {
 		// uir-account: Connected apps lives in Settings ▸ Account now
-		openSettingsAt('account', 'connected-apps-settings');
+		openSettingsAt('ai', 'connected-apps-settings'); // 89 I2: Connected apps lives on Settings ▸ AI
 	}
 </script>
 
@@ -108,6 +113,8 @@
 					</div>
 					<span class="sr-only" role="status" aria-live="polite">{copied ? 'Copied' : ''}</span>
 					<a id="connect-claude-how" class="cc-link cc-how" href={CONNECTOR_DOCS_URL} target="_blank" rel="noopener noreferrer"><Icon name="circle-help" size={16} aria-hidden="true" />How it works</a>
+					<!-- 89 I2 (find-it): beside How it works, so the card keeps its height (the N6 unfolded welcome fits with no inner scroll) -->
+					<button type="button" id="connect-claude-other" class="cc-link cc-how cc-other" title="ChatGPT, Gemini CLI, VS Code, Cursor: they connect the same way, in Settings ▸ AI" onclick={openOtherApps}>ChatGPT or another AI app?</button>
 				</li>
 				<li id="connect-claude-step-2">
 					{#if signIn}Then press Sign in to connect above. Once you are signed in, the same button reads Connect Claude: press it and keep this tab open.{:else}Then press Connect Claude here and keep this tab open.{/if}
@@ -273,6 +280,9 @@
 	}
 	.cc-warn {
 		color: var(--warn-text);
+	}
+	.cc-other {
+		margin-left: var(--space-3);
 	}
 	.cc-link {
 		padding: 0 2px;

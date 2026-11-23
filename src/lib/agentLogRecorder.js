@@ -56,7 +56,7 @@ function settled() {
 
 /**
  * Start recording. Idempotent.
- * @param {{name?: string, accept?: () => boolean}} [opts] 86 B3: the Claude connector records in a PERSON's tab,
+ * @param {{name?: string | (() => string), accept?: () => boolean}} [opts] 86 B3: the Claude connector records in a PERSON's tab,
  *   where the in-app assistant runs through the same `executeAiTool` — `accept` says whether a call is the
  *   connector's (others get no line), and `name` is the fixed label its lines carry ("Claude (connector)")
  */
@@ -85,7 +85,7 @@ export function startAgentRecorder(opts = {}) {
 			publishAgentEntry({
 				id,
 				peer: me,
-				name: opts.name ?? agentName(me),
+				name: (typeof opts.name === 'function' ? opts.name() : opts.name) ?? agentName(me), // 89: per app
 				tool,
 				text,
 				uuids: touchedUuids(tool, args, result),

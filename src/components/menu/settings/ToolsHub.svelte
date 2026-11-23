@@ -31,13 +31,13 @@
 		'glb',
 		'dcc'
 	]);
-	registerSettingsKeywords('agents', ['agent', 'mcp', 'claude code', 'invite', 'connect claude', 'connector', 'setup command']);
+	registerSettingsKeywords('agents', ['agent', 'mcp', 'claude code', 'invite', 'connect claude', 'connector', 'setup command', 'chatgpt', 'ai apps']);
 	registerSettingsKeywords('voice typing', ['stt', 'whisper', 'speech', 'mic', 'dictation', 'voice typing provider']);
 	registerSettingsKeywords('chat pictures', ['image', 'photo', 'picture', 'attach', 'vision']);
 </script>
 
 <script>
-	// 59 T4 — Settings ▸ Tools & connections: ONE page for everything outside the app. It renders the
+	// 59 T4 — Settings ▸ AI: ONE page for everything outside the app. It renders the
 	// registry (`$lib/tools/toolStatus.js`) — every section that has rows, in page order — and knows
 	// nothing about any provider: a row brings its own status, Test, Enable / Disable and the
 	// features it turns on. A row's form is either its own `configure()` (a later roadmap's section)
@@ -59,8 +59,11 @@
 	} from '$lib/tools/toolStatus.js';
 	import '$lib/tools/builtinTools.js';
 
-	/** @type {{onform?: (kind: string, ref?: any) => void, afterChat?: import('svelte').Snippet}} */
-	let { onform = () => {}, afterChat } = $props();
+	/** 89 I2: `only` = the TOOL_SECTIONS ids this copy draws (the AI page splits them over its two cards); `footnote` =
+	 * the API-key line under them (the key card only)
+	 * @type {{onform?: (kind: string, ref?: any) => void, afterChat?: import('svelte').Snippet, only?: string[] | null, footnote?: boolean}} */
+	let { onform = () => {}, afterChat, only = null, footnote = true } = $props();
+	const shown = $derived(only ? $toolSections.filter((g) => only.includes(g.section.id)) : $toolSections);
 
 	/** @type {Record<string, boolean>} */
 	let testing = $state({});
@@ -115,7 +118,7 @@
 	});
 </script>
 
-{#each $toolSections as group (group.section.id)}
+{#each shown as group (group.section.id)}
 	<div
 		class="tools-section"
 		data-tool-section={group.section.id}
@@ -211,9 +214,11 @@
 	</div>
 	{#if group.section.id === 'chat'}{@render afterChat?.()}{/if}
 {/each}
+{#if footnote}
 <p class="settings-footnote">
 	API keys are stored unencrypted in this browser and only ever sent to the provider you set up.
 </p>
+{/if}
 
 <style>
 	.tools-desc {

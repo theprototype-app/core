@@ -2020,7 +2020,7 @@ export function buildSystemPrompt(opts) {
 	const toolsLine = missing.length
 		? '\nNot set up on this device: ' +
 			missing.map((f) => f.label + ' (needs ' + f.needs + ')').join('; ') +
-			'. If the user asks for one of these, say what it needs and that they can set it up in Settings ▸ Tools & connections.'
+			'. If the user asks for one of these, say what it needs and that they can set it up in Settings ▸ AI.'
 		: '';
 	const physics = !!opts?.physics || physicsToolsEnabled();
 	const flowBlock = [

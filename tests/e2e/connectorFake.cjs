@@ -23,8 +23,11 @@ async function installProvider(page, grants = [{ id: 'g_1', client: 'Claude', sc
 	);
 }
 
-/** the fake DO: records every frame the tab sends, answers hello with ready, lets the test send calls */
-async function fakeRelay(page, url = RELAY) {
+/**
+ * the fake DO: records every frame the tab sends, answers hello with ready, lets the test send calls. 89: `ready` overrides
+ * the ready frame's connection / connections (a Worker that names the app: `{connection: {…, app: 'ChatGPT'}}`).
+ */
+async function fakeRelay(page, url = RELAY, ready = null) {
 	/** @type {any} */
 	const relay = { frames: [], sockets: 0, ws: null, closed: [] };
 	await page.routeWebSocket(url, (ws) => {
@@ -39,12 +42,12 @@ async function fakeRelay(page, url = RELAY) {
 				f = { raw: text };
 			}
 			relay.frames.push({ text, f });
-			if (f.type === 'hello') ws.send(JSON.stringify({ type: 'ready', connection: { id: 'L1', client: 'Claude', account: 'ann' }, connections: [{ id: 'g_1', client: 'Claude', scopes: ['session:read', 'session:edit'] }] }));
+			if (f.type === 'hello') ws.send(JSON.stringify({ type: 'ready', connection: { id: 'L1', client: 'Claude', account: 'ann' }, connections: [{ id: 'g_1', client: 'Claude', scopes: ['session:read', 'session:edit'] }], ...(ready ?? {}) }));
 			if (text === '{"type":"ping"}') ws.send('{"type":"pong"}');
 		});
 		ws.onClose((code) => relay.closed.push(code));
 	});
-	relay.call = (id, tool, args = {}, scope = 'edit') => relay.ws.send(JSON.stringify({ type: 'call', id, tool, args, scope, connection: 'g_1', timeoutMs: 120000 }));
+	relay.call = (id, tool, args = {}, scope = 'edit', connection = 'g_1') => relay.ws.send(JSON.stringify({ type: 'call', id, tool, args, scope, connection, timeoutMs: 120000 }));
 	/** the link dies under the tab, which sees a blip and pairs again @param {number} code */
 	relay.drop = (code = 4000) => relay.ws.close({ code, reason: 'drop' });
 	relay.cancel = (id) => relay.ws.send(JSON.stringify({ type: 'cancel', id }));

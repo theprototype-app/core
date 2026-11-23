@@ -10,7 +10,7 @@ export function namedError(msg, cfg) {
 	const names = [cfg.label, cfg.kind, cfg.kind === 'meshy' ? 'Meshy' : 'ComfyUI'].filter(Boolean).map((n) => n.toLowerCase());
 	const low = msg.toLowerCase();
 	if (names.some((n) => low.includes(n))) return msg;
-	if (/failed to fetch|networkerror|load failed/i.test(msg)) return cfg.label + ' could not be reached — check the connection and the address in Settings ▸ Tools & connections';
+	if (/failed to fetch|networkerror|load failed/i.test(msg)) return cfg.label + ' could not be reached — check the connection and the address in Settings ▸ AI';
 	return cfg.label + ': ' + msg;
 }
 

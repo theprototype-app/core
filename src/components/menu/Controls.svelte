@@ -1401,7 +1401,7 @@
 	}
 
 	/** the AI button press — AiHudButton's own path (I3). 86-fix N1: it always opens the window; with no
-	 *  provider set up the window itself offers Connect Claude or Settings ▸ Tools & connections */
+	 *  provider set up the window itself offers Connect Claude or Settings ▸ AI */
 	function toggleAiAssistant() {
 		// dock-fixes: one tree for a floating, sidebar-docked or bottom-docked window ($lib/panelToggles);
 		// uir-chat: the AI assistant is the Assistant tab of the one Chat window

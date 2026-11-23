@@ -18,7 +18,8 @@ import { createDispatcher } from './dispatcher.js';
 import { HIDDEN_THROTTLE_MS, MAX_IMAGE_BASE64 } from './protocol.js';
 import { connectorState, CONNECTOR_IDLE } from './connectorStore.js';
 import { connectorProvider } from '../cloudHooks.js';
-import { createConnectorAgent, CONNECTOR_LABEL } from '../agent/tpAgent.js';
+import { createConnectorAgent } from '../agent/tpAgent.js';
+import { whoOf, connectorLabelFor } from './appName.js';
 import { startAgentRecorder, stopAgentRecorder } from '../agentLogRecorder.js';
 import { showConfirm } from '../confirmDialog.js';
 import { showToast, userdata, username } from '../../stores/appStore.js';
@@ -43,6 +44,12 @@ const visible = () => typeof document === 'undefined' || document.visibilityStat
 
 /** @param {Partial<import('./connectorStore.js').ConnectorView>} patch */
 const view = (patch) => connectorState.update((s) => ({ ...s, ...patch }));
+/** 89: the app of the call that ran last (its grant id), so its line and undo step carry that app's name */
+let callGrant = /** @type {string | null} */ (null);
+/** 89: who the tab is talking to now ("Claude", "ChatGPT", "AI app") */
+const who = () => whoOf(client?.state(), callGrant);
+/** 89: the label of the connector's lines and undo steps, per app */
+const label = () => connectorLabelFor(who());
 
 /**
  * The screenshot as the Worker wants it: a JPEG (a PNG of a lit scene is 5-10x bigger), base64, with
@@ -84,7 +91,7 @@ function onVisibility() {
 			if (visible() || client?.state().phase !== 'connected') return;
 			view({ throttled: true });
 			// lands in the notification history, so the person sees it on their way back
-			showToast('Claude: this tab has been in the background for a while, so the browser slows it down — Claude’s calls may lag and screenshots are refused. Bring the tab back to the front.');
+			showToast(who() + ': this tab has been in the background for a while, so the browser slows it down — ' + who() + '’s calls may lag and screenshots are refused. Bring the tab back to the front.');
 		}, HIDDEN_THROTTLE_MS);
 }
 
@@ -103,7 +110,7 @@ export function youOf(st) {
 
 function setup() {
 	if (client) return client;
-	core = createConnectorAgent();
+	core = createConnectorAgent(label);
 	const agent = core.agent;
 	/** answers that finished during a blip @type {string[]} */
 	const unsent = [];
@@ -149,7 +156,11 @@ function setup() {
 		openSocket: (url) => /** @type {any} */ (new WebSocket(url)),
 		appVersion: APP_VERSION,
 		toolNames: () => dispatcher?.toolNames() ?? [],
-		onCall: (f) => dispatcher?.handle(f),
+		onCall: (f) => {
+			callGrant = typeof f?.connection === 'string' ? f.connection : null;
+			view({ who: who() });
+			dispatcher?.handle(f);
+		},
 		onCancel: (id) => dispatcher?.cancel(id),
 		// the link went down for good (Disconnect, revoke, replaced): nothing pending may run or answer.
 		// mcp-fix: a blip is not that: the same tab pairs again and its calls go on (the Worker holds them for a moment)
@@ -160,16 +171,16 @@ function setup() {
 		},
 		confirmReplace: () =>
 			showConfirm({
-				title: 'Use this tab for Claude?',
-				message: 'Claude is connected in another theprototype tab. Connecting here moves it to this tab; the other tab stops answering.',
+				title: 'Use this tab for ' + who() + '?',
+				message: who() + ' is connected in another theprototype tab. Connecting here moves it to this tab; the other tab stops answering.',
 				confirmLabel: 'Use this tab',
 				cancelLabel: 'Cancel'
 			}).then((ok) => !!ok),
 		visible,
 		onState: (s) => {
-			view({ phase: s.phase, reason: s.reason, message: s.message, connections: s.connections, retryAt: s.retryAt });
+			view({ phase: s.phase, reason: s.reason, message: s.message, connections: s.connections, retryAt: s.retryAt, who: whoOf(s, callGrant) });
 			if (s.phase === 'connected') {
-				startAgentRecorder({ name: CONNECTOR_LABEL, accept: () => relaying > 0 });
+				startAgentRecorder({ name: label, accept: () => relaying > 0 });
 				for (const text of unsent.splice(0)) client?.send(text);
 			}
 			if (s.phase === 'idle' || s.phase === 'closed' || s.phase === 'error') {

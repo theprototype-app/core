@@ -300,7 +300,7 @@
 							{/each}
 						</optgroup>
 					{:else}
-						<option value="" disabled>No assistant set up (Settings ▸ Tools & connections)</option>
+						<option value="" disabled>No assistant set up (Settings ▸ AI)</option>
 					{/if}
 					{#if $agentTargets.length || agentId}
 						<optgroup label="AI agents in this session">
@@ -315,10 +315,10 @@
 				</select>
 			{:else}
 				<!-- 38 NOTES-38 #24 (design page): the hint is the way there — 59 T5: the Chat providers
-				     row in Settings › Tools & connections, the same place the provider toast opens -->
+				     row in Settings › AI, the same place the provider toast opens -->
 				<span class="ai-hint flex-1"
 					>No chat provider yet. <button type="button" id="ai-hint-setup" class="ai-hint-link" onclick={() => openToolRow('chat')}
-						>Set one up in Tools &amp; connections</button
+						>Set one up in Settings ▸ AI</button
 					></span
 				>
 			{/if}
@@ -348,7 +348,7 @@
 					? 'Stop and type what was said'
 					: $voiceReady
 						? 'Voice typing'
-						: 'Voice typing needs a voice typing server — set one up in Settings ▸ Tools & connections'}
+						: 'Voice typing needs a voice typing server — set one up in Settings ▸ AI'}
 				disabled={inputDisabled || $dictation.state === 'transcribing'}
 				onclick={toggleMic}
 			>

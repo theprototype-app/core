@@ -1,5 +1,5 @@
 // 59 T5 — what a button does when its tool is missing: say WHAT is missing and open the row in
-// Settings ▸ Tools & connections, instead of hiding the button. One place, so the AI button, the
+// Settings ▸ AI, instead of hiding the button. One place, so the AI button, the
 // quick prompt bar, the Add menu's Generate 3D model, the mic and the phone's More sheet all say
 // the same sentence and land on the same row.
 import { settingsOpen, settingsSection, showToast } from '../../stores/appStore.js';
@@ -10,7 +10,7 @@ import './builtinTools.js'; // fills the registry before anyone asks it
 export const TOOLS_SECTION_KEY = 'tools';
 
 /**
- * Open Settings ▸ Tools & connections at a section (and a row in it).
+ * Open Settings ▸ AI at a section (and a row in it).
  * @param {string} section a TOOL_SECTIONS id @param {string | null} [row] a row id ('mesh:<id>')
  */
 export function openToolRow(section, row = null) {

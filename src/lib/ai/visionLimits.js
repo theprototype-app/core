@@ -52,7 +52,7 @@ export function visionSupport(config) {
 		return { ok: false, reason: 'Pictures for this provider need its own preset, which comes in a later release', suggest: '', limits };
 	}
 	if (BLIND.test(model) || (config.preset === 'grok' && !SEES.test(model))) {
-		const offer = suggest && suggest !== model ? ` — pick ${suggest} in Settings ▸ Tools & connections to send pictures` : '';
+		const offer = suggest && suggest !== model ? ` — pick ${suggest} in Settings ▸ AI to send pictures` : '';
 		return { ok: false, reason: `${model || 'This model'} can’t see pictures${offer}`, suggest, limits };
 	}
 	if (config.preset === 'gemini' || config.preset === 'grok') return { ok: true, reason: '', suggest, limits };

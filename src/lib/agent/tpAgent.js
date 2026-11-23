@@ -420,7 +420,7 @@ async function agentRun(name, args, opts) {
 /**
  * Build the wired agent.
  * @param {{screenshot?: (opts: any) => Promise<string|null>, missingTools?: () => {name: string, reason: string}[],
- *   deps?: Partial<import('./agentCore.js').AgentDeps>, physics?: boolean, localSim?: boolean, connector?: boolean, saveLabel?: string}} [extra] `deps` override
+ *   deps?: Partial<import('./agentCore.js').AgentDeps>, physics?: boolean, localSim?: boolean, connector?: boolean, saveLabel?: string | (() => string)}} [extra] `deps` override
  *   the agent-page wiring (86: the connector); `physics` offers + runs the physics tools for THIS agent only (86-fix B1:
  *   never the page-wide forcePhysicsTools, which would flip the person's own assistant); `localSim` runs
  *   control_simulation on this page instead of relaying it to the host (86-fix B2); `connector` = a person's own tab:
@@ -575,7 +575,7 @@ export function createTpAgent(extra = {}) {
 			// 56 C12: keep this scene (the person's Library; a guest's goes to the host's)
 			save_scene: {
 				schema: SAVE_SCENE_SCHEMA,
-				run: (args) => saveSceneTool(args, /** @type {any} */ (core.agent.status()).role, extra.saveLabel ?? 'An agent')
+				run: (args) => saveSceneTool(args, /** @type {any} */ (core.agent.status()).role, (typeof extra.saveLabel === 'function' ? extra.saveLabel() : extra.saveLabel) ?? 'An agent')
 			}
 		},
 		...(extra.deps ?? {})
@@ -596,14 +596,16 @@ export const CONNECTOR_LABEL = 'Claude (connector)';
  *   · no agent-page tools (install_modules, pending/accept offers): the person keeps those buttons.
  * Never installed on `window`: the connector (src/lib/connector/) holds it.
  */
-export function createConnectorAgent() {
+/** 89: `label` names the app on the other end per call ("ChatGPT (connector)"); it defaults to the fixed words
+ * @param {() => string} [label] */
+export function createConnectorAgent(label = () => CONNECTOR_LABEL) {
 	return createTpAgent({
 		// 86-fix B1/B2: physics tools on for the connector's own list (the person's "Physics tools" checkbox is
 		// for their assistant), and the simulation runs in this full-speed tab
 		physics: true,
 		localSim: true,
 		connector: true,
-		saveLabel: CONNECTOR_LABEL,
+		saveLabel: label,
 		deps: {
 			inSession: () => {
 				const host = get(sessionHost);
@@ -611,7 +613,7 @@ export function createConnectorAgent() {
 			},
 			hostAway: () => null,
 			room: () => null,
-			endBatch: (label) => endHistoryBatch(String(label).replace(/^Agent:/, CONNECTOR_LABEL + ':'))
+			endBatch: (batch) => endHistoryBatch(String(batch).replace(/^Agent:/, label() + ':'))
 		}
 	});
 }

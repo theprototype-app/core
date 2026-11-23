@@ -10446,7 +10446,7 @@
 				}
 			]
 		},
-		"Tools & connections": {
+		"AI": {
 			"rows": [
 				{
 					"name": "Voice typing",
@@ -14235,7 +14235,7 @@
 				]
 			}
 		],
-		"Tools & connections": [
+		"AI": [
 			{
 				"name": "Voice typing",
 				"controls": [

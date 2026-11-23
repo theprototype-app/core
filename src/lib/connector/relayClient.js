@@ -15,6 +15,7 @@
 // · Disconnect is the kill switch: `bye`, close, and every listener hears it at once (in-flight calls
 //   are cancelled by the dispatcher on that edge).
 
+import { whoOf } from './appName.js';
 import {
 	parseFrame,
 	helloFrame,
@@ -43,10 +44,23 @@ import {
 
 /** the words the tab shows for a final close @type {Record<string, string>} */
 export const CLOSE_WORDS = {
-	revoked: 'Claude’s access was revoked (Settings ▸ Account ▸ Connected apps). Press Connect Claude to connect again.',
+	revoked: 'Claude’s access was revoked (Settings ▸ AI ▸ Connected apps). Press Connect Claude to connect again.',
 	replaced: 'Claude is now connected in another tab. Press Connect Claude here to bring it back to this tab.',
 	refused: 'The connection was refused — the pairing expired. Press Connect Claude to try again.'
 };
+
+/**
+ * 89: the close words for the app that was connected — "Claude" stays the words above exactly; another app's name
+ * (the Worker's trusted one, appName.js) takes Claude's place where the sentence is about the app, not the button.
+ * @param {string} reason @param {string} who @returns {string | undefined}
+ */
+export function closeWords(reason, who) {
+	const w = CLOSE_WORDS[reason];
+	if (w === undefined || !who || who === 'Claude') return w;
+	if (reason === 'revoked') return who + '’s access was revoked (Settings ▸ AI ▸ Connected apps). Press Connect Claude to connect again.';
+	if (reason === 'replaced') return who + ' is now connected in another tab. Press Connect Claude here to bring it back to this tab.';
+	return w;
+}
 
 /** backoff before reconnect attempt n (1-based) @param {number} n */
 export function backoffMs(n) {
@@ -284,7 +298,7 @@ export function createRelayClient(deps) {
 			set({ phase: 'idle', reason: '', message: '', connection: null, connections: [], attempt: 0 });
 			return;
 		}
-		set({ phase: 'closed', reason, message: CLOSE_WORDS[reason] ?? detail ?? '', connection: null, connections: [], attempt: 0 });
+		set({ phase: 'closed', reason, message: closeWords(reason, whoOf(state)) ?? detail ?? '', connection: null, connections: [], attempt: 0 });
 	}
 
 	return {

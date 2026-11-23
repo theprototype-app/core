@@ -129,7 +129,7 @@ function deleteFromViewport() {
 
 /**
  * Toggle the quick AI prompt pill (roadmap #10). Opens only when a provider is
- * configured; otherwise says what is missing and opens Settings ▸ Tools & connections.
+ * configured; otherwise says what is missing and opens Settings ▸ AI.
  */
 function toggleAiPrompt() {
 	if (get(aiPromptBarOpen)) {

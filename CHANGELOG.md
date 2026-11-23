@@ -6,6 +6,45 @@
      rendering, so maintainer notes stay out of the user-facing window. No emoji from
      1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
 
+## 1.75.0 — Look, assets and animation
+
+**Exports work again.** Every export in 1.74.0 failed its own file check (the app had grown past the 1,000-file limit an export zip may hold); the app now builds into about 700 files, and Export, the .zip and the itch.io upload work again. <!-- fix-export-files #608 -->
+
+### Paint, decals and scans
+- **Decals**: right-click a surface ▸ **Add decal here** projects an image onto it (a sign on a wall, an arrow on the floor, dirt, a crack). It wraps the surface, moves with the object it sits on, and Properties ▸ **Decal** sets its image, size, depth, opacity, roughness, wrap angle and tint. A new free pack, **Decals Starter**, has 12 CC0 decals. Not on animated characters or scattered copies yet. <!-- 102-decals M3 -->
+- **Stamp Decal node**: presses a mark onto a surface while the game runs (a footprint, a scorch), for example where an **On Impact** touched; marks fade, are the same for everyone and go when the run stops. <!-- 102-decals M3 -->
+- **Paint roughness, metalness and glow**, not just colour: the UV editor's **Paint** tool has a **Channel** switch, and the first stroke makes the map (1k or 2k), starting from the material's own value. <!-- 102-paint -->
+- **Paint straight on the model in the viewport**, with a ring that shows the brush; **Alt+click** picks the colour. Brush **hardness**, **opacity**, **flow**, **eraser**, **Mirror X** and image **stamps**; **Show this channel alone**. A mesh without clean UVs (none, or overlapping like a default box) paints vertex colours instead, and says why. <!-- 102-paint -->
+- **Painting in VR**: **Selected ▸ Paint**; the trigger paints, the stick sets size and flow, a **Paint** ring picks the channel and brush. GLB export carries the painted roughness, metalness and glow maps. <!-- 102-paint -->
+- **Gaussian splats**: import a captured scene (.ply, .spz or .splat, from Polycam, Luma, Scaniverse, Postshot or a 3DGS training run) and it becomes an object in the shared scene: move, scale, group, undo, save and share it like any model. Properties ▸ **Splat** sets its opacity and trims it with a crop box. A file over 25 MB is offered a smaller .spz copy. Photo mode and the Cinematic view leave splats out and say so. Drawn by Spark (MIT), which loads only when a scene holds a splat. <!-- 102-splats M5 -->
+
+### Models
+- **Simplify mesh**: make a heavy model lighter by a percentage or a triangle count, with a live count and a preview only you see. UVs, normals, colours, skin weights and material slots are kept. Applying it is one undo step and reaches everyone in the session. **Ctrl+Alt+D**, the palette, or **Mesh ▸ Simplify…** on imported models. <!-- 102-simplify-export M1 -->
+- **Export for 3D printing**: **Save as… ▸ STL** or **3MF** (in millimetres, sitting on the bed, a colour per object in 3MF), with a scale or longest-side prompt and a warning (never a block) when the mesh has holes. **Ctrl+Alt+E**. <!-- 102-simplify-export M2 -->
+- **Export for AR**: **Save as… ▸ USDZ** for iPhone and iPad Quick Look, textures capped at 2k, the size shown before you download. <!-- 102-simplify-export M2 -->
+
+### Animation
+- **Constraints and IK**: make any object or bone **look at**, **copy**, **follow** (parent with offset) or **reach for** another object, with **two-bone IK** (an arm or a leg, with a pole) and **chain IK** (a tail). Properties ▸ **Constraints**; the weight can be keyed on the Timeline; two new flow nodes, **Set Constraint Weight** and **Set Constraint Target**; **Save options ▸ Bake constraints** puts the pose into GLTF files. Every computer works the pose out itself, so constraints send nothing while they run. <!-- 102-ik M7 -->
+
+### For AI agents
+- `create_objects` takes `kind: "decal"`; new `simplify_mesh` tool, over the connector as `edit_shape {action: "simplify"}`. No tool names changed. <!-- 102-decals P4, 102-simplify-export -->
+
+### Claude and other agents in a live scene
+- **On the ground means on the ground**: placing on the floor passes through water and trigger volumes, and a terrain counts as ground at any height; the answer says what it landed on. <!-- 104-bugs A1 -->
+- **Islands get a rim**: a new Terrain setting, **Rim depth**, sinks an island's edge below the water (new islands from the assistant get 2 m; saved terrains are unchanged), and the water tool reports the surface, the wave height and a warning when land sits inside the waves. <!-- 104-bugs A2 -->
+- **Sculpting through the assistant works like the toolbar brush** (flatten leaves a clean pad and says where). <!-- 104-bugs A3 -->
+- **Screenshots frame the build, not the ocean**: a top, front or iso shot over a big water or ground backdrop frames the content and says what it left out; every screenshot describes its picture in words, and the scene list shows each water's preset, colours, level and waves. No tool names changed. <!-- 104-bugs A4, A5 -->
+
+### Fixes
+- **Water level now means how full, from 0 to 1**, as the docs always said; the water tool wrote it as a height before. <!-- 104-bugs #612 -->
+- **A saved scene keeps every face of a shape with an added material slot** (after a save and reopen, a box could lose most of its faces and a sphere draw nothing). <!-- 105-slot-save-fix #609 -->
+- **Unlink material** in the Inspector now reaches everyone in the session (it was local only). <!-- 102-paint -->
+- **GLTF exports and autosaves store the resting pose of animated objects again** (they could carry the pose on screen). <!-- 102-ik -->
+
+### Compatibility
+- **Scene files**: format unchanged (minor 4). A file written by 1.75 opens in 1.74: a decal is kept as an invisible placeholder, a splat as an invisible box that keeps its scan (it draws again when the file comes back to 1.75), and constraints are kept but do not move anything. <!-- 102-decals 102-splats 102-ik -->
+- **In a session with someone on 1.74**: decals and splats are invisible on their screen and constraints do not pose anything there. <!-- 102-decals 102-splats 102-ik -->
+
 ## 1.74.0 — Games and play
 
 ### Game values and game feel

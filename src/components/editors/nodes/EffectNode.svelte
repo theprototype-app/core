@@ -14,7 +14,9 @@
 		lookat: 'target',
 		setcolor: 'color',
 		visibility: 'on',
-		setuniform: 'value'
+		setuniform: 'value',
+		constraintweight: 'weight', // 102 M7
+		constrainttarget: 'target'
 	};
 	$: handleId = INPUT[data.type] ?? 'in';
 	const DEFAULT_COLOR = '#ff4000'; // tokens-ok: the picker's starting value (user data)
@@ -50,6 +52,13 @@
 			</p>
 			<span class="text-[9px] text-text-muted" title="Wire a colour here to drive a colour uniform">color</span>
 			<span class="text-[9px] text-text-muted" title="Wire a Vector3 here to drive a vector uniform">vector</span>
+		{:else if data.type === 'constraintweight' || data.type === 'constrainttarget'}
+			<!-- 102 M7: which of the object's constraints: its number in the Inspector's stack (or its id) -->
+			<label class="flex items-center gap-2 text-[10px] text-text-muted" title="Which constraint: 1 = the first in the object's Constraints stack">
+				constraint
+				<input class="nodrag nopan w-12 font-mono" type="text" value={data.constraint ?? '1'}
+					on:change={(e) => setNodeData(id, { constraint: e.currentTarget.value.trim() || '1' })} />
+			</label>
 		{:else if data.type === 'visibility'}
 			<label class="flex items-center gap-2">
 				<input class="nodrag nopan" type="checkbox" checked={data.on !== false}

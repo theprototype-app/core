@@ -18,6 +18,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { MAX_RADIUS_SEGMENTS, DEFAULT_RADIUS_SEGMENTS } from './roundedBoxGate.js';
+import { healSlotGroups } from './slotGroups.js';
 
 export { MAX_RADIUS_SEGMENTS, DEFAULT_RADIUS_SEGMENTS };
 
@@ -73,6 +74,7 @@ export function restoreRoundedBoxes(root) {
 		const fresh = boxGeometryFor(gp.params);
 		g.dispose();
 		o.geometry = fresh;
+		healSlotGroups(o); // 105: a slot list saved before the fix gets its groups back on the rounded geometry
 		n++;
 	});
 	return n;

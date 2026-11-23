@@ -25,6 +25,7 @@ const UUID_EDITS = new Set([
 	'group',
 	'lock',
 	'uvpaint',
+	'meshpaint',
 	'splineedit',
 	'graphcreate', // an object graph's id is its owner's uuid
 	'graphdelete'

@@ -6,3 +6,6 @@ import { writable } from 'svelte/store';
 export const vrDollhouseOpen = writable(false);
 /** a VR sculpt session is up (vr/sculpt.js writes it) */
 export const vrSculptActive = writable(false);
+
+/** 102 M6: a VR paint session is up (vr/meshPaint.js writes it) */
+export const vrPaintActive = writable(false);

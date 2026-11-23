@@ -159,6 +159,19 @@ function objectActionRows(uuid) {
 }
 
 /**
+ * 102 M3: place a decal on the mesh hit and select it (the write path loads on demand).
+ * @param {string} hitUuid @param {number[]} point @param {number[]} normal
+ */
+function addDecalAt(hitUuid, point, normal) {
+	const hit = get(objectsGroup)?.getObjectByProperty('uuid', hitUuid);
+	if (!hit) return;
+	void import('./decalEdit.js').then((m) => {
+		const decal = m.placeDecalOn(hit, point, normal);
+		if (decal) selectObject(decal.uuid, true);
+	});
+}
+
+/**
  * The FULL object context menu, shared so the direct object menu (right-click an
  * object / an object-list row, Controls.svelte) and the empty-space menu's
  * "Selected" submenu (ViewportMenu.svelte) expose the SAME actions — they used to
@@ -169,7 +182,7 @@ function objectActionRows(uuid) {
  * selection AND the selection has 2+ members, set-oriented items act on the whole
  * SET with a counted label; a "Group selection" item appears. Object-specific
  * items (rename / edit mesh / add note / request control) stay on the clicked one.
- * @param {string} uuid @param {{ point?: number[] | null, locked?: boolean, selection?: string[] }} [opts]
+ * @param {string} uuid @param {{ point?: number[] | null, normal?: number[] | null, hitUuid?: string | null, locked?: boolean, selection?: string[] }} [opts]
  */
 export function buildObjectMenuItems(uuid, opts = {}) {
 	const point = opts.point ?? null;
@@ -345,6 +358,18 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 						icon: 'sticky-note',
 						tooltip: 'Pin a synced note exactly where you pointed',
 						action: () => addAnnotation(uuid, point)
+					}
+				]),
+		// 102 M3: a decal projected onto the surface right-clicked (the viewport path only: the
+		// list and the Selected submenu have no point to put it at)
+		...(multi || !point || !opts.normal || !opts.hitUuid || object?.userData?.decal
+			? []
+			: [
+					{
+						label: 'Add decal here',
+						icon: 'sticker',
+						tooltip: 'Project an image onto this surface (pick the image in Properties)',
+						action: () => addDecalAt(/** @type {string} */ (opts.hitUuid), /** @type {number[]} */ (point), /** @type {number[]} */ (opts.normal))
 					}
 				])
 	];
@@ -696,6 +721,18 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 	// mesh): a lone primitive would gain a top-level row past the budget, so it gets both rows from
 	// Properties ▸ Model (and the drop onto it) instead
 	if (mesh.length || isGroup) mesh.unshift(...model);
+	// 102 M1: Simplify — fewer triangles, attributes kept, one undo step — inside Mesh ▸ wherever
+	// Mesh ▸ is there anyway (an imported model, a group, a reduced import). A lone primitive gets
+	// no Mesh ▸ for it (the top-level row budget, NOTES-38 #22): Ctrl+Alt+D and the palette reach
+	// it, and the action asks to bake it first. Why something cannot be simplified is said when picked.
+	if (!multi && !loadingStub && (mesh.length || isGroup) && hasMesh(object))
+		mesh.push(/** @type {any} */ ({
+			label: 'Simplify…',
+			icon: 'shrink',
+			disabled: locked,
+			tooltip: locked ? lockedTooltip : 'Fewer triangles, same look — pick a percentage or a count, preview, apply (Ctrl+Alt+D)',
+			action: () => import('./meshSimplifyAction').then((m) => m.openSimplify(uuid))
+		}));
 
 
 	/** @type {any[]} Physics & effects ▸ — joints, particles, the object's flow, Use as scatter source */
@@ -912,7 +949,7 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 			children: SAVE_AS_FORMATS.map((format) => ({
 				label: format.label,
 				tooltip: format.tooltip,
-				icon: format.kind === 'download' ? 'arrow-down-to-line' : 'package',
+				icon: format.kind === 'download' ? 'arrow-down-to-line' : format.kind === 'export3d' ? (format.ext === 'usdz' ? 'smartphone' : 'box') : 'package',
 				action: () =>
 					void saveSelectionAs(format.id, targets, multi ? undefined : object?.name || object?.type || undefined)
 			}))

@@ -122,10 +122,12 @@ h.run(async () => {
 	if (isBuilt && built) {
 		// RUNTIME chunks a player legitimately loads after boot (shared chunks carry only a name):
 		//   addObjects, waterActions — the module SDK's primed refs (src/lib/sdk/refs.js: api.addObject, api.water)
-		//   vrSleeve                 — the vrsleeve core module's own runtime (src/modules/vrsleeve)
+		//   vrSleeve, vrSleeveMath   — the vrsleeve core module's own runtime (src/modules/vrsleeve) and its
+		//                              pure maths, which only vrSleeve.js imports (the default split shipped it
+		//                              inside the vrSleeve chunk; scripts/boot-chunk-groups.cjs gives it its own)
 		//   catalog, hdriPrefs       — the scene environment's HDRI catalog + this device's HDRI prefs
 		// Anything else in the editor's boot that /play fetches is an editor surface leaking in.
-		const RUNTIME_PRIMES = /^(addObjects|waterActions|vrSleeve|catalog|hdriPrefs)$/;
+		const RUNTIME_PRIMES = /^(addObjects|waterActions|vrSleeve|vrSleeveMath|catalog|hdriPrefs)$/;
 		// a CLEAN player page: no `debugStores` — the debug hook table imports every module it names
 		// at install, which is a test page's choice and not what a shared link loads
 		const C = await playPage(browser, 'C', `play?scene=${encodeURIComponent(sceneUrl)}`, { debug: false });

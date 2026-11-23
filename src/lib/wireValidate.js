@@ -28,6 +28,8 @@ import { isPingMessage } from './pingCore.js';
 // 101 F2: the object schema's receive verdicts (a pure leaf; the cleaning runs in the appliers)
 import { objectJsonVerdict, materialSetVerdict } from './sceneSchema.js';
 import { validPhotoRequest, validPhotoResult } from './photo/photoCore.js';
+// 102 M6: the live mesh-paint stroke's shape (a zero-import leaf)
+import { validMeshPaint } from './meshPaintWire.js';
 
 /** @param {unknown} v */
 export function isUuid(v) {
@@ -177,6 +179,9 @@ const shortStr = (v) => typeof v === 'string' && v.length > 0 && v.length <= 128
  * @type {Record<string, (data: any) => boolean>}
  */
 export const VALIDATORS = {
+	// 102 M6: a live mesh-paint stroke (a preview; the committed map / meshgeo is the truth)
+	meshpaint: (d) => validMeshPaint(d),
+	meshpaintend: (d) => typeof d.id === 'string' && d.id.length <= 64,
 	// 98 P2 (98-photo): Photo mode's hand-off — a view to render, its answer (PNG bytes capped), a stop
 	photoreq: (d) => validPhotoRequest(d),
 	photores: (d) => validPhotoResult(d),
@@ -188,6 +193,9 @@ export const VALIDATORS = {
 	chathistory: (d) => isArray(d.messages) && d.messages.length <= 500,
 	// 48 S2: a sequence document (normalized again on apply) / its delete / the full map
 	seq: (d) => typeof d.id === 'string' && d.id.length <= 64 && !!d.doc && typeof d.doc === 'object' && !Array.isArray(d.doc),
+	// 102 M3: a stamped mark (applyDecalStamp re-checks and clamps every field)
+	decalstamp: (d) =>
+		typeof d.id === 'string' && d.id.length <= 64 && isUuid(d.target) && isNumberArray(d.pose) && d.pose.length === 16 && (d.image === undefined || (typeof d.image === 'string' && d.image.length <= 128)),
 	seqdelete: (d) => typeof d.id === 'string' && d.id.length <= 64,
 	seqs: (d) => !!d.seqs && typeof d.seqs === 'object' && !Array.isArray(d.seqs),
 	// 50 Y1: shared text — a document key (`n:<graph>:<node>` / `f:<name>`) and Yjs's own binary
@@ -478,6 +486,13 @@ export const VALIDATORS = {
 		if (d.parameter === 'terrainLayers') return isUuid(d.uuid) && (d.terrainLayers === null || isArray(d.terrainLayers));
 		if (d.parameter === 'terrainScatter')
 			return isUuid(d.uuid) && (d.terrainScatter === null || (!!d.terrainScatter && typeof d.terrainScatter === 'object' && isArray(d.terrainScatter.sets)));
+		// 102 M7: a constraint stack is a short array of plain objects (normalized again by the applier), or null
+		if (d.parameter === 'constraints')
+			return (
+				isUuid(d.uuid) &&
+				(d.constraints === null ||
+					(isArray(d.constraints) && d.constraints.length <= 16 && d.constraints.every((/** @type {any} */ c) => !!c && typeof c === 'object' && !isArray(c) && typeof c.id === 'string' && c.id.length <= 24)))
+			);
 		// 48 B2: a measurement's record — null is not a record (an item is deleted, never emptied)
 		if (d.parameter === 'measure')
 			return isUuid(d.uuid) && !!d.measure && typeof d.measure === 'object' && isArray(d.measure.points) && d.measure.points.length <= 64;
@@ -510,6 +525,8 @@ export const VALIDATORS = {
 		// 101 F2: a slot list + groups — the schema's verdict here, the field-by-field cleaning in applyMaterials
 		if (d.parameter === 'materials') return isUuid(d.uuid) && materialSetVerdict(d.payload);
 		if (d.parameter === 'materialParam') return isUuid(d.uuid) && checkMaterialParam(null, d.key, d.value).ok;
+		// 102 M6: "this object only" on a shared material — the peer clones it too
+		if (d.parameter === 'materialUnlink') return isUuid(d.uuid);
 		// 72 LK1: a texture map slot takes an inline image or null, never a URL a peer could make us fetch
 		if (d.parameter === 'mapSlot') return isUuid(d.uuid) && isMapSlotKey(d.key) && isMapSlotImage(d.map);
 		// the base-colour map: an embedded image or null, never an address a peer could make us fetch
@@ -523,6 +540,15 @@ export const VALIDATORS = {
 			const v = d.textPath;
 			if (v === null) return isUuid(d.uuid);
 			return isUuid(d.uuid) && !!v && typeof v === 'object' && !isArray(v) && (v.text === undefined || (typeof v.text === 'string' && v.text.length <= 4000));
+		}
+		// 102 M3: a decal record (normalizeDecal clamps every field)
+		if (d.parameter === 'decal') return isUuid(d.uuid) && !!d.decal && typeof d.decal === 'object' && !isArray(d.decal);
+		// 102: a Gaussian splat's record (normalizeSplat clamps the rest) or null; the hash is a content
+		// address, never a URL
+		if (d.parameter === 'splat') {
+			const v = d.splat;
+			if (v === null) return isUuid(d.uuid);
+			return isUuid(d.uuid) && !!v && typeof v === 'object' && !isArray(v) && (v.hash === undefined || (typeof v.hash === 'string' && /^[0-9a-f]{0,128}$/i.test(v.hash)));
 		}
 		// 102b-arrange: an object's layer id (from the scene's layer table) or null
 		if (d.parameter === 'layer') return isUuid(d.uuid) && (d.layer === null || (typeof d.layer === 'string' && d.layer.length <= 64));

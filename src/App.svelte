@@ -91,6 +91,8 @@
   // 36-export: the Publish / Export modal (core owns the shell + Export tab; a cloud plugin mounts
   // Publish into it) and the exported game's boot (inert on every normal page load)
   import { publishExportOpen } from '$lib/export/exportStores.js'
+  import { simplifyDialog } from '$lib/makerDialogs.js'
+  import { export3dDialog } from '$lib/makerDialogs.js'
   // 47-cc0: the free CC0 asset browser (lazy, like the export modal)
   import { assetBrowserOpen } from '$lib/cc0/assetBrowserState.js'
   import { recordingOpen, recordingState } from '$lib/recording/recordingStores.js'
@@ -468,16 +470,21 @@ import { startMusicToolbox } from './lib/musicToolbox'
     // or dropped onto the selected object) — modelDrop asks; several are always new objects
     const models = files.filter((file) => modelExt.test(file.name.toLowerCase()))
     const { clientX, clientY } = event
+    // 102: Gaussian splats (.ply / .spz / .splat) go to the Explorer through the splat gate, then into the scene
+    const splatExt = /\.(ply|spz|splat)$/i
+    const splatFiles = files.filter((file) => splatExt.test(file.name))
+    if (splatFiles.length)
+      Promise.all([import('./lib/splat/splatImport.js'), import('./lib/explorerDrop')]).then(([s, d]) => s.importSplatFiles(splatFiles, d.dropTarget(clientX, clientY).point))
     files.forEach((file) => {
       const name = file.name.toLowerCase()
-      if (clipFiles.includes(file)) return
+      if (clipFiles.includes(file) || splatFiles.includes(file)) return
       if (modelExt.test(name) && models.length === 1) import('./lib/modelDrop').then((m) => m.dropModelFile(file, { companions, clientX, clientY }))
       else if (modelExt.test(name)) importFile(file, file.name.replace(modelExt, ''), undefined, undefined, companions)
       else if (name.endsWith('.json')) load(file)
       else if (!companions.includes(file)) skipped.push(file.name)
     })
     if (skipped.length > 0)
-      showToast('Unsupported: ' + skipped.join(', ') + '. Supported formats: .glb, .gltf, .obj, .stl, .fbx (models), .json (scene)')
+      showToast('Unsupported: ' + skipped.join(', ') + '. Supported formats: .glb, .gltf, .obj, .stl, .fbx (models), .ply, .spz, .splat (Gaussian splats), .json (scene)')
   }
 </script>
 
@@ -550,6 +557,14 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <ModulesManager />
 <!-- 36-export: loaded and mounted only while open (the Profiler idiom) — a closed modal costs
      the boot nothing and the editor runs exactly as before until somebody asks to export -->
+<!-- 102 M1: Simplify — the lazy-modal idiom: mounted (and its simplifier loaded) only while open -->
+{#if $simplifyDialog}
+{#await import('./components/menu/SimplifyDialog.svelte') then m}<m.default />{/await}
+{/if}
+<!-- 102 M2: Export for 3D print / AR — same idiom (writers, zip and USDZExporter load with it) -->
+{#if $export3dDialog}
+{#await import('./components/menu/Export3dDialog.svelte') then m}<m.default />{/await}
+{/if}
 {#if $publishExportOpen}
 {#await import('./components/menu/PublishExportModal.svelte') then m}<m.default />{/await}
 {/if}

@@ -617,12 +617,12 @@ export const ROOM_SCOPED = new Set([
 	// object lifecycle & geometry
 	'create', 'light', 'group', 'object', 'objectfile', 'duplicate', 'delete', 'name',
 	'move', 'throw', 'hit', 'behavior', 'simulate', 'simvote', 'simhandoff', 'color', 'objectParameters', 'geometry', 'lighttarget',
-	'verts', 'meshgeo', 'uvpaint', 'uvpaintend', 'splineedit', 'drawlive', 'drawend',
+	'verts', 'meshgeo', 'uvpaint', 'uvpaintend', 'meshpaint', 'meshpaintend', 'splineedit', 'drawlive', 'drawend',
 	'clearscene', 'loading',
 	// flow
 	'nodes', 'nodesync', 'graphcreate', 'graphdelete', 'nodecreate', 'nodemove',
 	'nodedata', 'nodedelete', 'edgecreate', 'edgedelete', 'nodetrigger', 'triggers',
-	'particleburst', 'flowcursor',
+	'particleburst', 'flowcursor', 'decalstamp',
 	// scene singletons and keyed documents
 	// 23-A2/A4: 'transport' (the musical clock) and 'patch' (the cable routing) are scene
 	// singletons exactly like 'music' beside them, and 'devicenote' is a runtime event on a

@@ -52,6 +52,7 @@ import { desktopSpawn, spawnEyePose } from './playSpawn'; // 30b P4 (+ vrOnly: c
 import { shareDuplicatedMaterials, linkMaterials } from './materialSharing';
 import { applyFlowPathTo } from './sim/flowPathObject.js'; // 36-fb F24 (a three leaf)
 import { applyTextPathTo, bumpTextTurn } from './textPathObject.js'; // 64 D2 (a three leaf)
+import { markConstraintsDirty } from './rig/constraintHub.js'; // 102 M7 (the solver loads on first use)
 import {
 	duplicateCarriesAnimation,
 	duplicateCarriesFlow,
@@ -611,6 +612,17 @@ export function topLevelObjectOf(object) {
 	return current.parent === group ? current : null;
 }
 
+/**
+ * 102 M3: the EDITOR's pick target — a decal (a child of the object it sits on) is selected
+ * itself; everything else resolves to its top-level object. Play mode keeps topLevelObjectOf,
+ * so a click on a sign still reaches the wall's own click graph.
+ * @param {any} object
+ */
+export function editorTargetOf(object) {
+	if (object?.userData?.decal && object.isMesh) return object;
+	return topLevelObjectOf(object);
+}
+
 /** Collect an object and all descendants in a stable depth-first order @param {any} object @param {any[]} list */
 function collectTree(object, list = []) {
 	list.push(object);
@@ -924,6 +936,13 @@ registerHistoryKind('props', (entry, state) => {
 		else delete object.userData.lod;
 		if (peer) peer.send({ type: 'objectParameters', parameter: 'lod', uuid: entry.uuid, lod: state.lod ?? null });
 	}
+	if ('constraints' in state) {
+		// 102 M7: an object's constraint stack (rig/constraintEdit.js is the write path)
+		if (Array.isArray(state.constraints) && state.constraints.length) object.userData.constraints = state.constraints;
+		else delete object.userData.constraints;
+		markConstraintsDirty();
+		if (peer) peer.send({ type: 'objectParameters', parameter: 'constraints', uuid: entry.uuid, constraints: state.constraints ?? null });
+	}
 	if ('fluid' in state) {
 		// 36-sim U2b: a fluid tank's settings (fluidActions.setFluidFor is the write path)
 		if (state.fluid) object.userData.fluid = state.fluid;
@@ -959,6 +978,21 @@ registerHistoryKind('props', (entry, state) => {
 		else delete object.userData.textPath;
 		if (peer)
 			peer.send({ type: 'objectParameters', parameter: 'textPath', uuid: entry.uuid, textPath: state.textPath ?? null, ...(state.bake ? { bake: true } : {}) });
+	}
+	if ('decal' in state) {
+		// 102 M3: a decal's record — every peer rebuilds the surface from it
+		// the record was normalized when it was written, so undo can apply it as it is (no decal module in the boot)
+		if (state.decal && object.userData?.decal) {
+			object.userData.decal = state.decal;
+			if (peer) peer.send({ type: 'objectParameters', parameter: 'decal', uuid: entry.uuid, decal: state.decal });
+		}
+	}
+	if ('splat' in state) {
+		// 102: a Gaussian splat's record — the proxy box is rebuilt from it, the splats redraw from it
+		// the record only: the splat runtime normalizes it and rebuilds the proxy box next frame (off the boot path)
+		if (state.splat) object.userData.splat = { ...state.splat };
+		else delete object.userData.splat;
+		if (peer) peer.send({ type: 'objectParameters', parameter: 'splat', uuid: entry.uuid, splat: state.splat ?? null });
 	}
 	if ('layer' in state) {
 		// 102b-arrange: the object's layer id (tidyActions.setObjectsLayer is the write path)

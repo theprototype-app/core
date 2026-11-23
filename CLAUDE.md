@@ -2870,18 +2870,21 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   Soft · Far, stored as `environment.shadowLevel` (ABSENT = Basic: an old scene and an old release read Basic; the
   setter and `set_light {shadowQuality}` store `basic` as absent), so it saves, syncs, undoes and snapshots with the
   sky. Every device DRAWS it capped by its tier (`shadowLevelCore.TIER_SHADOW_CAP`, measured in S0: pc Far, phone
-  Soft without contact, Quest Basic until a preview measures it; `environment.shadowTier` = XR presenting / headset
+  Soft, Quest Basic until a preview measures it; `environment.shadowTier` = XR presenting / headset
   UA / coarse pointer) and the row says "This device draws <cap>"; Quality ▸ Shadow detail (the old per-device map
   cap, `shadowQuality`) caps further, and the governor's shadows-off under load is untouched. BOOT carries only
-  `shadowLevelCore` (+~2 KB); `shadowLevels.js` (+ `contactShadows.js`, `shadowLevelParams.js`) load the first time
+  `shadowLevelCore`, inlined into environment's chunk (+0.5 KB); `shadowLevels.js` (+ `contactShadows.js`, `shadowLevelParams.js`) load the first time
   a scene's drawn level is Soft or Far, and going back to Basic restores every original (Basic after Far = today's
   Basic, asserted in pixels). Soft = PCF radius 3 on the rig sun AND authored lights (an authored shadow's radius is
   serialized, so `LightShadow.toJSON` is guarded to write the AUTHORED radius); Far = the rig sun alone becomes
   three r186's `SunLightShadow` (two cascades in one atlas, `isSunLight` flag, reach 300 m: three draws NO sun shadow
-  past the last cascade and fades its last 10 %, so 200 m needs > 200) and authored lights draw Soft's kernel (Q1:
+  past the last cascade and fades its last 10 %, so 200 m needs > 200; three's bias is in DEPTH units and a
+  cascade's depth spans ~500 m, so `keepWorldBias` re-scales it each update to Basic's bias in metres, else the
+  shadow leaves a box's base at 1 m) and authored lights draw Soft's kernel (Q1:
   swapping an authored shadow would put a SunLightShadow on the wire). Contact shadows (S2) are a LOCAL post entry
-  (`lightParams.contactShadowsWanted` → Outline prepends it; never in a look document) on tiers in `TIER_CONTACT`; the
-  march starts off the surface's depth-rebuilt normal and skips surfaces turned from the sun. The Cinematic view
+  (`lightParams.contactShadowsWanted` → Outline prepends it; never in a look document) on tiers in `TIER_CONTACT` — NONE in
+  this release (Q6: on the Deck's iGPU it doubled frames over 20 ms; `shadowLevels.contactForTest(true)` forces it
+  for suites and the S0 driver's CONTACT=1); the march starts off the surface's depth-rebuilt normal and skips surfaces turned from the sun. The Cinematic view
   (WebGPU picks a light's shadow node by CLASS) draws Far as Soft (`cinematicShadowLevel`); an XR session start/end
   re-applies the cap. Suites: unit `shadowLevel106`; e2e `shadow-sync-106`, `shadow-levels-106`,
   `shadow-identity-106` (release gate vs BASE_URL); S0 driver `shadow-frames-106.cjs` + page half

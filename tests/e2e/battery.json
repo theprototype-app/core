@@ -8,7 +8,7 @@
 	"shards": {"target_minutes":36,"max":20,"min":4,"par":1},
 	"pc": {"games":["jam-room","race","dungeon-realms","escape-room","waves"],"levels":["tavern-interior","castle-courtyard","forest-clearing","wizards-tower","market-square"]},
 	"skip": {
-		"shadow-identity-106": "the 106 release gate: needs a dev server of the release before 106 (BASE_URL, a v1.74.0 tree), so it only SKIPs without one; run on the desk at the int",
+		"shadow-identity-106": "the 106 release gate: needs a dev server of the release before 106 (BASE_URL, a v1.74.0 tree), so it only SKIPs without one; run on the desk at the int (ten scenes on two pages: ~100 min on software GL, E2E_GPU=1 on a GPU slot is faster)",
 		"arch-primitives": "two peers on the self-hosted signaling box",
 		"csp-build": "needs the built app (scripts/serve-build.cjs); a dev server ships no policy, so it only SKIPs there",
 		"error-reports": "needs the production origin mapped to the dev server (a hosts-file setup)",
@@ -789,7 +789,7 @@
 		"quality-toast-preset": 70,
 		"race-vr-shadows": 123,
 		"race-vr-shadows-iwer": 121,
-		"shadow-identity-106": 600,
+		"shadow-identity-106": 7200,
 		"shadow-levels-106": 300,
 		"shadow-sync-106": 300,
 		"reload-memory": 190,

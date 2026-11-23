@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { objectsGroup, lockedObjects, globalScene, TControls, gizmoSuppressed, pokeScene } from '../stores/sceneStore';
 import { showToast } from '../stores/appStore';
-import { commitMeshGeoSnapshot } from './faceEdit';
+import { commitMeshGeoSnapshot, registerSculptCacheRefresher } from './faceEdit';
 import { sendMeshGeo } from './meshCommit';
 import { MAX_SNAPSHOT, previewReplicable } from './meshBudget';
 import { selectObject, deselectObject } from './objectActions';
@@ -376,6 +376,10 @@ export function rebuildSculptCaches(object) {
 	if (get(sculptMode) === 'mesh') rebuildMeshWeldMap(object);
 	else rebuildWeldMap(object);
 }
+// faceEdit's geometry swap calls this for the live sculpt object (registered here: faceEdit cannot import us)
+registerSculptCacheRefresher((uuid, object) => {
+	if (get(sculptObject) === uuid) rebuildSculptCaches(object);
+});
 
 /** hard cap on a sculptable mesh — the meshgeo COMMIT limit (floats). It used to
  * be the same 45000 as the preview, which refused to sculpt anything an artist

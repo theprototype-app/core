@@ -216,6 +216,14 @@ let vertexSessionRefresher = null;
 export function registerVertexSessionRefresher(fn) {
 	vertexSessionRefresher = fn;
 }
+/** the sculpt session's weld-cache refresh, registered at terrainSculpt's module eval the same way (it imports us; a
+ * sculpt session cannot exist before that module loads, so a swap with nothing registered has nothing to rebuild)
+ * @type {((uuid: string, object: any) => void) | null} */
+let sculptCacheRefresher = null;
+/** @param {(uuid: string, object: any) => void} fn */
+export function registerSculptCacheRefresher(fn) {
+	sculptCacheRefresher = fn;
+}
 
 /** objectsGroup lookup that also finds the registered edit proxy @param {string} uuid */
 export function lookupEditable(uuid) {
@@ -904,11 +912,9 @@ export function applyMeshGeo(uuid, positions, groups, uvs, faceCounts, faceTris,
 		refreshFaceWireframe(); // B2: remote/undo swap replaced the geometry
 	}
 	// a live sculpt session's weld map is a cache over THIS geometry — rebuild
-	// it after a remote stroke / undo swap (dynamic: terrainSculpt imports us);
-	// rebuildSculptCaches picks the terrain OR mesh map by the active mode
-	import('./terrainSculpt').then((m) => {
-		if (get(m.sculptObject) === uuid) m.rebuildSculptCaches(object);
-	});
+	// it after a remote stroke / undo swap (terrainSculpt imports us, so it registers
+	// the hook at its module eval; rebuildSculptCaches picks the terrain OR mesh map)
+	sculptCacheRefresher?.(uuid, object);
 	// D1: a live VERTEX session's handles are a cache over THIS geometry too —
 	// rebuild them after an undo / remote commit. meshEdit registers the hook at
 	// module eval (it imports us — a dynamic import back would be a SECOND module

@@ -39,6 +39,7 @@
 		{ "id": "island-campfire", "say": "Go to my Island scene and put a campfire on the beach there.", "pass": [{ "tool": "scene", "action": "open" }], "partial": [] },
 		{ "id": "file-roundtrip", "say": "Make me a notes file called todo.md that says buy rope, then read it back to me.", "pass": [{ "tool": "files", "action": "create" }], "partial": [{ "tool": "files", "action": "write" }] },
 		{ "id": "script-line", "say": "Open the door script at line 12 so I can see it.", "pass": [{ "tool": "show", "action": "code" }], "partial": [{ "tool": "files", "action": "read" }] },
-		{ "id": "other-scene", "say": "Save this and open my other scene, Harbour.", "pass": [{ "tool": "scene", "action": "open" }], "partial": [{ "tool": "save_scene" }] }
+		{ "id": "other-scene", "say": "Save this and open my other scene, Harbour.", "pass": [{ "tool": "scene", "action": "open" }], "partial": [{ "tool": "save_scene" }] },
+		{ "id": "furnish-room", "scene": "scene-my-room.json", "say": "I just scanned my room. Furnish it: a rug on the floor, a lamp on the table, a plant in a corner, and paint the walls a warm colour.", "pass": [{ "tool": "create_objects", "after": "list_scene" }, { "tool": "update_objects", "after": "list_scene" }, { "tool": "set_look", "action": "material", "after": "list_scene" }], "partial": [{ "tool": "create_objects" }, { "tool": "update_objects" }, { "tool": "set_look", "action": "material" }] }
 	]
 }

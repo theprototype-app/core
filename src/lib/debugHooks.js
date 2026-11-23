@@ -46,6 +46,8 @@ export const DEBUG_HOOKS = [
 	// `momentBuffer` through registerDebugHook when the first Play loads it
 	['momentStores', () => import('./moment/momentStores.js')],
 	['problemReport', () => import('./problemReport')],
+	// 104 D1: Scan my room (scanMyRoom, readRoom, applyRoom, roomScanDebug.last())
+	['roomScan', () => import('./vr/roomScan.js')],
 	['profilerView', () => import('./perf/profilerView')],
 	['profilerModel', () => import('./perf/profilerModel.js')],
 	['vrRecIndicator', () => import('./vrRecIndicator')],

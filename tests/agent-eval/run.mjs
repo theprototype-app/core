@@ -45,7 +45,7 @@ function run(r) {
 	const log = path.join(dir, r.id + '.jsonl');
 	fs.rmSync(log, { force: true });
 	const cfg = path.join(dir, r.id + '.mcp.json');
-	fs.writeFileSync(cfg, JSON.stringify({ mcpServers: { theprototype: { command: process.execPath, args: [path.join(HERE, 'mock-connector.mjs'), path.resolve(catalogFile), path.resolve(policyFile), log] } } }));
+	fs.writeFileSync(cfg, JSON.stringify({ mcpServers: { theprototype: { command: process.execPath, args: [path.join(HERE, 'mock-connector.mjs'), path.resolve(catalogFile), path.resolve(policyFile), log, ...(r.scene ? [r.scene] : [])] } } }));
 	const prompt = (r.setup ? '(Earlier in this conversation: ' + r.setup + ')\n\n' : '') + r.say;
 	const args = ['-p', prompt, '--model', model, '--mcp-config', cfg, '--strict-mcp-config', '--allowedTools', 'mcp__theprototype', '--tools', '', '--setting-sources', 'project', '--disable-slash-commands', '--no-session-persistence', '--system-prompt', SYSTEM, '--max-turns', '8', '--output-format', 'json'];
 	return new Promise((done) => {

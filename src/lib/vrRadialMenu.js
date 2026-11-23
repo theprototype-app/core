@@ -23,6 +23,7 @@ import { paintLayer } from './terrainPaint';
 import { registerMeasureRings, registerArrangeRings } from './vr/buildRings.js'; // 52 V1/V2
 import { primitivesCatalog } from './primitivesCatalog';
 import { startPeopleRing } from './vr/peopleRing.js'; // 55 A9
+import { roomScanAvailable } from './vr/roomScanEntry.js'; // 104 D1
 
 // D4 (roadmap 13): selection-set helpers for the Edit ring — counted labels
 // act on the whole SET (parity with the desktop object menu, U-2)
@@ -365,6 +366,17 @@ function registerBuiltins() {
 	);
 	// Prefabs opens the thumbnail window (115)
 	registerVRMenuEntry({ id: 'prefabs', group: 'add', label: 'Prefabs', icon: 'package', order: 6 });
+	// 104 D1: the headset's room setup as boxes under "My room" (passthrough sessions; the row says what to do otherwise)
+	registerVRMenuEntry({
+		id: 'roomscan',
+		group: 'add',
+		label: 'Scan my room',
+		icon: 'scan-line',
+		order: 6.5,
+		closes: true,
+		visible: roomScanAvailable,
+		action: () => void import('./vr/roomScan.js').then((m) => m.scanMyRoom())
+	});
 
 	// Scene ▸ — Environment ▸ (the presets), the grid, world scale back to 1:1 (+ Colocate ▸ from its module)
 	registerVRMenuEntry({ id: 'nav:environment', group: 'scene', label: 'Environment', icon: 'sun', order: 0, ring: 'environment' });

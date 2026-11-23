@@ -130,7 +130,7 @@
 				{@const v = pctOf(id)}
 				{@const on = $judgeFor.includes(id)}
 				<button type="button" role="switch" id={'preview-judge-' + id} class="pm-row" aria-checked={on} title={on ? `Stop showing ${JUDGE_LABEL[id]} in the pill` : `Show ${JUDGE_LABEL[id]}'s budget in the pill`} onclick={() => toggleJudge(id)}>
-					<span class="pm-check" aria-hidden="true">{#if on}<Icon name="check" size={14} />{/if}</span>
+					<span class="pm-check" aria-hidden="true">{#if on}<Icon name="check" size={16} />{/if}</span>
 					<Icon name={TARGET_ICON[targetOf(id, hereT)]} size={16} aria-hidden="true" />
 					<span class="pm-grow">{JUDGE_LABEL[id]}</span>
 					<span class="pm-pct" data-tier={v.tier}>{$sceneCost ? v.percent + '%' : ''}</span>

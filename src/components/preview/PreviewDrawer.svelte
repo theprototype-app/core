@@ -5,6 +5,7 @@
 	// one). Phones never get a pill at the top right; Statistics ▸ Budget stays where it is. Lazy.
 	import Icon from '../ui/Icon.svelte';
 	import PreviewMenu from './PreviewMenu.svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { previewDrawerOpen } from '$lib/previewPill.js';
 	import { cinematicState } from '$lib/cinematic/cinematicState.js';
 	import { isLocked } from '../../stores/sceneStore';
@@ -28,9 +29,9 @@
 <div id="preview-drawer" class="pd tp-ui" role="dialog" aria-modal="false" aria-labelledby="preview-drawer-title">
 	<header class="pd-head">
 		<h2 id="preview-drawer-title">Preview</h2>
-		<button type="button" id="preview-drawer-close" class="pd-x" aria-label="Close" title="Close" onclick={close}><Icon name="x" size={18} aria-hidden="true" /></button>
+		<button type="button" id="preview-drawer-close" class="pd-x" aria-label="Close" title="Close" onclick={close}><Icon name="x" size={20} aria-hidden="true" /></button>
 	</header>
-	<div class="pd-body">
+	<div class="pd-body" use:minimalScroll>
 		<PreviewMenu judge={false} {cine} onclose={close} />
 	</div>
 </div>

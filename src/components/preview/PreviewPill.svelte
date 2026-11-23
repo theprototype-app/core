@@ -21,6 +21,7 @@
 	import { onMount } from 'svelte';
 	import Icon from '../ui/Icon.svelte';
 	import Badge from '../ui/Badge.svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import PreviewMenu from './PreviewMenu.svelte';
 	import { isLocked, isVRMode, viewMode } from '../../stores/sceneStore';
 	import { embedMode } from '$lib/playMode';
@@ -297,7 +298,7 @@
 		</div>
 	</div>
 	{#if menuOpen}
-		<div bind:this={menuEl} id="preview-menu" class="pp-menu tp-ui" style:top={menuPos.bottom === null ? menuPos.top + 'px' : 'auto'} style:bottom={menuPos.bottom === null ? 'auto' : menuPos.bottom + 'px'} style:right={menuPos.right + 'px'}>
+		<div bind:this={menuEl} use:minimalScroll id="preview-menu" class="pp-menu tp-ui" style:top={menuPos.bottom === null ? menuPos.top + 'px' : 'auto'} style:bottom={menuPos.bottom === null ? 'auto' : menuPos.bottom + 'px'} style:right={menuPos.right + 'px'}>
 			<PreviewMenu judge {cine} onclose={() => (menuOpen = false)} />
 		</div>
 	{/if}

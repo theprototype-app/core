@@ -68,14 +68,15 @@ function sendTransform(uuid, material, transform, slot) {
  * A map multiplies a value, so on the wrong value it shows nothing at all: metalness 0 hides a metalness
  * map whatever it holds, and a black emissive colour hides an emissive map. Setting the map lifts the
  * value it needs, in the same undo step.
- * @param {any} object @param {string} key
+ * 105-slots: on the slot the map went to (it used to skip a slot list).
+ * @param {any} object @param {string} key @param {number} [slot]
  */
-function liftValueFor(object, key) {
-	const material = object.material;
-	if (!material || Array.isArray(material)) return;
-	if (key === 'metalnessMap' && material.metalness === 0) setMaterialParam(object.uuid, 'metalness', 1);
-	if (key === 'roughnessMap' && material.roughness === 0) setMaterialParam(object.uuid, 'roughness', 1);
-	if (key === 'emissiveMap' && material.emissive?.getHex?.() === 0) setMaterialParam(object.uuid, 'emissive', '#ffffff');
+function liftValueFor(object, key, slot = 0) {
+	const material = materialAt(object, slot);
+	if (!material) return;
+	if (key === 'metalnessMap' && material.metalness === 0) setMaterialParam(object.uuid, 'metalness', 1, true, slot);
+	if (key === 'roughnessMap' && material.roughness === 0) setMaterialParam(object.uuid, 'roughness', 1, true, slot);
+	if (key === 'emissiveMap' && material.emissive?.getHex?.() === 0) setMaterialParam(object.uuid, 'emissive', '#ffffff', true, slot);
 }
 
 /** run `fn` as ONE undo step, inside a caller's open batch when there is one
@@ -102,7 +103,7 @@ function applyUrlToSlot(uuids, key, url, slot) {
 		applyMapSlotTo(material, key, url, object);
 		material.userData.tpEdited = true; // 59 T1: a material changed in the app survives a Replace model
 		sendSlot(uuid, key, url, slot);
-		liftValueFor(object, key);
+		liftValueFor(object, key, slot);
 		applied++;
 	}
 	return applied;

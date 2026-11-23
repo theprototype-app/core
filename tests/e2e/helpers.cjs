@@ -326,7 +326,8 @@ async function setupPage(browser, name, options = {}) {
 	// on the initial navigation, not set afterwards: safe mode is read once during
 	// onMount, so a hash assigned to a live page arrives long after the decision.
 	// Absent means an unchanged URL, so every existing caller is untouched.
-	await page.goto(URL + (options.hash ?? ''), { waitUntil: 'domcontentloaded', timeout: 60000 });
+	// 105-slots: options.url = a page on ANOTHER server (the release before this one, for a two-tree run)
+	await page.goto((options.url ?? URL) + (options.hash ?? ''), { waitUntil: 'domcontentloaded', timeout: 60000 });
 	await page.waitForTimeout(4000);
 	// 43-tests: a THIRD page in one browser boots in ~50 s on a loaded e2e box (two pages already
 	// rendering software GL starve it: logs/p1-probe6.log — no error, no crash, just slow), so the

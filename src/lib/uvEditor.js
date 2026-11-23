@@ -10,6 +10,7 @@ import { recordEntry } from './history';
 import { applyMap, materialAt, recordMaterialChange, copyTextureParams } from './materialsHandler';
 // the unwrap REGISTRY: built-in projections, plus whatever a module registers
 import { unwrap } from './uvUnwrap';
+import { activeMaterialSlot } from './slotDraw.js'; // 105-slots
 import { MAX_SNAPSHOT } from './meshBudget';
 import { safeStorage } from './safeStorage';
 // UV1: read-only reuse of the mesh snapshot pipeline. faceEdit owns the triangle
@@ -47,8 +48,9 @@ export { MAX_SNAPSHOT };
 /** quantization for "these two UV corners are the same point" (~1e-5) */
 const UV_EPSILON = 1e-5;
 
-/** which material slot the editor is showing @type {import('svelte/store').Writable<number>} */
-export const uvActiveSlot = writable(0);
+/** which material slot the editor is showing — 105-slots: the app's ONE active slot (slotDraw.activeMaterialSlot),
+ * shared with the Inspector; the old name stays as an alias @type {import('svelte/store').Writable<number>} */
+export const uvActiveSlot = activeMaterialSlot;
 /** the active selection tool: 'select' (pointer) | 'box' | 'lasso'. UV3 adds
  * 'paint'. @type {import('svelte/store').Writable<string>} */
 export const uvTool = writable('select');

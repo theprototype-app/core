@@ -70,8 +70,16 @@ export function myCaps(opts = {}) {
 	/** @type {Record<string, number>} */
 	// 80a K3 `lk`: stamped lock rows (`ats`, a third element in `locked`), the receiving-side lock
 	// gate and its `lockreject`, the whole held set in the handshake
-	const caps = { wb: 1, dev: 1, lk: 1 };
+	// 105-slots `slots2`: per-slot material values (`slot` on materialParam / material), the slot draw layer (off).
+	// A peer without it gets a whole-list `materials` after a per-slot gesture (materialsHandler.healOlderPeers).
+	const caps = { wb: 1, dev: 1, lk: 1, slots2: 1 };
 	if (opts.fc) caps.fc = 1;
+	// test seam: `localStorage.debugCapsOff = 'slots2'` dials as a build without that flag (the heal path)
+	try {
+		for (const flag of String(globalThis.localStorage?.getItem('debugCapsOff') ?? '').split(',')) if (flag) delete caps[flag];
+	} catch {
+		/* storage blocked: every flag stays */
+	}
 	return caps;
 }
 

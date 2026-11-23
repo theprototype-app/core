@@ -609,7 +609,8 @@ export async function objectParameters(data, from = 'peer') {
         if (mesh) mesh.visible = data.visible;
     } else if (data.parameter == 'material') {
         // carries over color/map/opacity from the previous material
-        switchMaterialType(data.uuid, data.material, false);
+        // 105-slots: `slot` (additive) = one entry of a slot list; absent = slot 0 = as before
+        switchMaterialType(data.uuid, data.material, false, data.slot ?? 0);
     } else if (data.parameter == 'materials') {
         // UV4: the whole slot list + geometry groups. Both halves must arrive
         // together — an array material with no groups renders nothing.
@@ -622,7 +623,7 @@ export async function objectParameters(data, from = 'peer') {
         // 40-image: `source` (additive) = the library image the texture was made from
         if (mesh) applyMap(mesh, data.map, data.slot ?? 0, typeof data.source === 'string' ? data.source : null);
     } else if (data.parameter == 'materialParam') {
-        setMaterialParam(data.uuid, data.key, data.value, false);
+        setMaterialParam(data.uuid, data.key, data.value, false, data.slot ?? 0); // 105-slots: `slot` additive
     } else if (data.parameter == 'materialUnlink') {
         // 102 M6: "this object only" on a shared material — this object gets its own copy here too
         unlinkMaterial(data.uuid);

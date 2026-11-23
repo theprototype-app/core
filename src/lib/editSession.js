@@ -74,6 +74,11 @@ export function sealEditHistorySession(mode) {
 	endHistorySession(resolved);
 }
 
+/** 105-slots: is this object open in Edit Mesh here (vertices or faces)? @param {string} uuid */
+export function isEditingMesh(uuid) {
+	return !!uuid && (vertexOn === uuid || faceOn === uuid);
+}
+
 /** test/debug view */
 export function editSessionDebug() {
 	return { active, sessionUuid, colliderSession, vertexOn, faceOn };

@@ -119,6 +119,10 @@ export const DEBUG_HOOKS = [
 	['historyGesture', () => import('./historyGesture')],
 	['materialsHandler', () => import('./materialsHandler')],
 	['materialMaps', () => import('./materialMaps')],
+	// 105-slots: slotsOf, removeSlot / moveSlot / renameSlot / duplicateSlot / setSlotOff / replaceSlotMaterial
+	['materialSlots', () => import('./materialSlots.js')],
+	['slotDraw', () => import('./slotDraw.js')],
+	['slotDrawLayer', () => import('./slotDrawLayer.js')],
 	['materialMapTextures', () => import('./materialMapTextures.js')],
 	// 37 R5: material presets (materialPresets, peerMaterialPresets, applyMaterialPreset, materialPresetsDebug…)
 	['materialPresets', () => import('./materialPresets')],

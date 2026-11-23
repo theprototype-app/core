@@ -20,7 +20,8 @@ import { objectsGroup, pokeScene } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
 import { recordEntry } from './history';
-import { applyMaterials, materialsPayload } from './materialsHandler';
+import { applyMaterials, materialsPayload, materialAt, isMultiMaterial } from './materialsHandler';
+import { slotIdOf } from './slotDraw.js'; // 105-slots
 import { fanTargets } from './materialSharing';
 import {
 	EXTRA_MAP_FIELDS,
@@ -190,15 +191,33 @@ export function presetWirePayload(preset, current) {
 /**
  * Put a preset on ONE object: one undo entry, one `materials` message, and the same new
  * instance handed to every object sharing its material (D2 — the receivers get the fanned
- * message and re-unify by id). Refuses a material ARRAY (the Inspector's rule: presets edit
- * single-material objects; a slot array is the UV editor's business).
- * @param {string} uuid @param {any} preset any preset payload (starter or saved)
+ * message and re-unify by id). 105-slots: on a slot list, `slot` picks the one entry it replaces
+ * (still one `materials` message, which a peer on the previous release applies too).
+ * @param {string} uuid @param {any} preset any preset payload (starter or saved) @param {number} [slot]
  * @returns {boolean}
  */
-export function applyMaterialPreset(uuid, preset) {
+export function applyMaterialPreset(uuid, preset, slot = 0) {
 	const object = objectOf(uuid);
 	const resolved = resolvePreset(preset);
-	if (!object?.material || Array.isArray(object.material) || !resolved) return false;
+	if (!object?.material || !resolved) return false;
+	// 105-slots: on a slot list the preset replaces ONE entry; the slot keeps its id, name and off flag
+	if (isMultiMaterial(object)) {
+		const own = materialAt(object, slot);
+		if (!own) return false;
+		return replaceMaterials(uuid, (before) => {
+			const one = presetWirePayload(resolved, own);
+			const json = one.materials[0];
+			json.name = own.name ?? '';
+			json.userData = { ...(json.userData ?? {}), slot: { ...(own.userData?.slot ?? {}), id: slotIdOf(own) } };
+			before.materials[slot] = json;
+			before.textures = [...(before.textures ?? []), ...one.textures];
+			before.images = [...(before.images ?? []), ...one.images];
+			if (Array.isArray(before.mapDataUrls)) before.mapDataUrls[slot] = one.mapDataUrls[0] ?? null;
+			if (Array.isArray(before.mapSources)) before.mapSources[slot] = null;
+			return before;
+		});
+	}
+	if (slot || Array.isArray(object.material)) return false;
 	return replaceMaterials(uuid, () => presetWirePayload(resolved, object.material));
 }
 

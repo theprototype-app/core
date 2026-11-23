@@ -514,6 +514,8 @@ export const VALIDATORS = {
 		// null on the wire — images travel as `map`)
 		// 101 F2: a slot list + groups — the schema's verdict here, the field-by-field cleaning in applyMaterials
 		if (d.parameter === 'materials') return isUuid(d.uuid) && materialSetVerdict(d.payload);
+		// 105-slots: `slot` (absent = 0) is a small index on every per-slot message
+		if (d.slot !== undefined && !(Number.isInteger(d.slot) && d.slot >= 0 && d.slot < 256)) return false;
 		if (d.parameter === 'materialParam') return isUuid(d.uuid) && checkMaterialParam(null, d.key, d.value).ok;
 		// 102 M6: "this object only" on a shared material — the peer clones it too
 		if (d.parameter === 'materialUnlink') return isUuid(d.uuid);

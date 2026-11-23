@@ -1412,5 +1412,6 @@
 		"workspace-layouts": false,
 		"workspace-restore": false,
 		"z-scale-layering": false
-	}
+	},
+	"ci": {"comment":"CI-only overrides (BATTERY_CI=1, set by .github/workflows/battery.yml only; a local/desk/pc battery ignores them). timeouts = suite -> seconds, replacing the estimate-based limit for a suite the slow-runner allowance (tests/e2e/helpers.cjs CI_DEFAULT_TIMEOUT_MS / CI_WAIT_SCALE) makes longer on a starved runner. painting-delete-peers: 600 s ran out at 73 of 84 checks on 2026-11-23 (run 45262005710, 1.5 fps).","timeouts":{"painting-delete-peers":1200}}
 }

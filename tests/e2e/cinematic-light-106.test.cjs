@@ -25,6 +25,24 @@ setTimeout(() => {
 	process.exit(1);
 }, 600000).unref();
 
+/**
+ * h.eventually that hands back the last value it read (h.eventually itself returns nothing)
+ * @param {() => Promise<any>} fn @param {(v: any) => boolean} ok @param {string} label @param {number} [timeout]
+ */
+async function until(fn, ok, label, timeout = 10000) {
+	const start = Date.now();
+	let last;
+	while (Date.now() - start < timeout) {
+		last = await fn();
+		if (ok(last)) break;
+		await new Promise((r) => setTimeout(r, 300));
+	}
+	const pass = ok(last);
+	if (!pass) console.log('  last: ' + JSON.stringify(last)?.slice(0, 600));
+	h.check(pass, label);
+	return last;
+}
+
 /** @param {any} page */
 const state = (page) => page.evaluate(() => { let s; window.__tp.test.v1.cinematicState.cinematicState.subscribe((v) => (s = v))(); return s; });
 /** @param {any} page */
@@ -32,7 +50,7 @@ const prefs = (page) => page.evaluate(() => { let s; window.__tp.test.v1.cinemat
 /** @param {any} page */
 const debug = (page) => page.evaluate(async () => (await window.__tp.test.v1.cinematicState.cinematicView()).cinematicDebug());
 /** @param {any} page @param {string} label @param {(d: any) => boolean} ok @param {number} [ms] */
-const waitDebug = (page, label, ok, ms = 30000) => h.eventually(() => debug(page), ok, label, ms);
+const waitDebug = (page, label, ok, ms = 30000) => until(() => debug(page), ok, label, ms);
 
 async function openMenu(page) {
 	if (!(await page.locator('#preview-menu').count())) await page.locator('#preview-more').click();
@@ -188,7 +206,7 @@ h.run(async () => {
 
 	// the view on (Standard)
 	await pickQuality(page, 'standard');
-	const came = await h.eventually(() => state(page), (s) => s.mode === 'on' || (s.mode === 'off' && !!s.disabled), 'the view comes on', 90000);
+	const came = await until(() => state(page), (s) => s.mode === 'on' || (s.mode === 'off' && !!s.disabled), 'the view comes on', 90000);
 	if (came?.mode !== 'on') {
 		h.check(true, `SKIPPED 2-6: the view did not start here (${came?.disabled})`);
 		return h.finish(browser);
@@ -234,14 +252,16 @@ h.run(async () => {
 	h.check(cGi > 0.003, `   Global light changes the view's pixels (${(cGi * 100).toFixed(2)} % moved)`);
 	if (GPU) {
 		h.check(workBoth > workNoRefl, `   Reflections costs frame work (${workBoth} vs ${workNoRefl} ms)`);
-		h.check(workNoRefl > workNone, `   Global light costs frame work (${workNoRefl} vs ${workNone} ms)`);
+		// Global light replaces the full-resolution GTAO with SSGI at half resolution: on a fast GPU it can be CHEAPER
+		// (the Deck: 3.7 vs 5.0 ms), so the frame work must change, in either direction
+		h.check(Math.abs(workNoRefl - workNone) > 0.2, `   Global light changes the frame work (${workNoRefl} vs ${workNone} ms)`);
 	} else h.check(true, `   (software GL: frame work reported only: ${workBoth} / ${workNoRefl} / ${workNone} ms)`);
 	// the view's own meter: frames with and without each pass have been drawn, so both costs become known
 	await pick(page, 'globalLight', 'auto');
 	await pick(page, 'reflections', 'auto');
 	await closeMenu(page);
 	await page.waitForTimeout(4000);
-	const costs = await h.eventually(() => page.evaluate(() => JSON.parse(localStorage.getItem('cinematicCosts') || '{}')), (c) => !!c.reflections && !!c.globalLight, '   both costs are measured on this device and kept', 30000);
+	const costs = await until(() => page.evaluate(() => JSON.parse(localStorage.getItem('cinematicCosts') || '{}')), (c) => !!c.reflections && !!c.globalLight, '   both costs are measured on this device and kept', 30000);
 	await openMenu(page);
 	const notes = await page.evaluate(() => ['reflections', 'globalLight'].map((k) => document.getElementById(`preview-light-${k}-note`)?.textContent ?? ''));
 	h.check(notes.every((n) => /costs (about \d+ ms|under 1 ms)/.test(n)), `   the menu shows each cost (${notes.join(' | ')}; stored ${JSON.stringify(costs)})`);
@@ -251,11 +271,11 @@ h.run(async () => {
 	await settled(page, '4. premise: Standard, Reflections On', (x) => x.lighting.ssr && x.drops === 0);
 	const stepDown = () => page.evaluate(async () => (await window.__tp.test.v1.cinematicState.cinematicView()).stepDownForTest());
 	await stepDown();
-	let s = await h.eventually(() => state(page), (v) => v.dropped === 1, '   one step: Basic', 20000);
+	let s = await until(() => state(page), (v) => v.dropped === 1, '   one step: Basic', 20000);
 	h.check(s.quality === 'basic' && s.lighting.ssr && !s.lighting.gi, `   Basic keeps Reflections (On), Global light follows Auto off (${JSON.stringify(s.lighting)})`);
 	h.check(/Lowered to Basic to keep it smooth/.test(s.stepped), `   the chip says the step (${s.stepped})`);
 	await stepDown();
-	s = await h.eventually(() => state(page), (v) => v.dropped === 2, '   the next step turns Reflections off', 20000);
+	s = await until(() => state(page), (v) => v.dropped === 2, '   the next step turns Reflections off', 20000);
 	h.check(!s.lighting.ssr && s.off.includes('reflections'), `   ...Reflections is off (${JSON.stringify(s.off)})`);
 	await closeMenu(page);
 	const chip = await page.locator('#cinematic-dropped').textContent().catch(() => '');
@@ -265,12 +285,12 @@ h.run(async () => {
 	h.check(/Off for now to keep it smooth/.test(rnote ?? ''), `   and the menu row (${rnote})`);
 	h.check((await stepDown()) === false, '   nothing below that');
 	await pick(page, 'reflections', 'auto');
-	s = await h.eventually(() => state(page), (v) => v.dropped === 0 && v.quality === 'standard', '   a switch change starts the drop over', 20000);
+	s = await until(() => state(page), (v) => v.dropped === 0 && v.quality === 'standard', '   a switch change starts the drop over', 20000);
 
 	// ---- 6. no double light: baked objects keep their pixels -----------------------------------------------------
 	// leave the view to bake (the bake reads the WebGL scene), then come back
 	await page.evaluate(() => window.__tp.test.v1.cinematicState.setCinematic(false));
-	await h.eventually(() => state(page), (v) => v.mode === 'off', '6. premise: the view is off for the bake', 30000);
+	await until(() => state(page), (v) => v.mode === 'off', '6. premise: the view is off for the bake', 30000);
 	await page.evaluate(() => window.__tp.test.v1.bakeRunner.setBakeTestLimits({ atlas: 256, rays: 8, ms: 45000 }));
 	const bake = await page.evaluate(async () => {
 		const r = await window.__tp.test.v1.bakeRunner.runBake({ quality: 'normal' });
@@ -278,9 +298,9 @@ h.run(async () => {
 	});
 	h.check(bake.ok && bake.objects.length >= 4, `   the room is baked (${bake.error || bake.objects.length + ' objects'})`);
 	h.check(!bake.objects.includes(uuidOf('Ball')), '   the moving ball is left out (the unbaked control)');
-	await h.eventually(() => page.evaluate(() => window.__tp.test.v1.bakeApply.bakeApplyDebug().meshes.length), (n) => n >= bake.objects.length, '   the bake is on the materials', 20000);
+	await until(() => page.evaluate(() => window.__tp.test.v1.bakeApply.bakeApplyDebug().meshes.length), (n) => n >= bake.objects.length, '   the bake is on the materials', 20000);
 	await page.evaluate(() => window.__tp.test.v1.cinematicState.setCinematic(true));
-	await h.eventually(() => state(page), (v) => v.mode === 'on', '   the view is on again', 90000);
+	await until(() => state(page), (v) => v.mode === 'on', '   the view is on again', 90000);
 	await pick(page, 'reflections', 'off');
 	await closeMenu(page);
 	d = await settled(page, '   Standard, Global light on, Reflections off; the mask is in the pipeline', (x) => x.lighting.gi && !x.lighting.ssr && x.baked >= bake.objects.length && /\|b$/.test(x.planKey));
@@ -321,7 +341,7 @@ h.run(async () => {
 	await pick(page, 'reflections', 'auto');
 	// back out: the view off restores every material (no mrtNode left behind)
 	await page.evaluate(() => window.__tp.test.v1.cinematicState.setCinematic(false));
-	await h.eventually(() => state(page), (v) => v.mode === 'off', '   the view goes off', 30000);
+	await until(() => state(page), (v) => v.mode === 'off', '   the view goes off', 30000);
 	const left = await page.evaluate(() => {
 		let g;
 		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
@@ -334,7 +354,7 @@ h.run(async () => {
 	h.check(left === 0, `   no material keeps the view's mark (${left})`);
 	// ---- 5. this device only ------------------------------------------------------------------------------------
 	await pickQuality(page, 'standard');
-	await h.eventually(() => state(page), (v) => v.mode === 'on', '5. premise: the view is on', 90000);
+	await until(() => state(page), (v) => v.mode === 'on', '5. premise: the view is on', 90000);
 	const B = await h.setupPageQuiet(browser, 'B', [A], { context: { viewport: { width: 1200, height: 800 } } });
 	await h.connect(B, A);
 	const bBefore = await B.page.evaluate(() => localStorage.getItem('cinematicView'));
@@ -360,7 +380,12 @@ h.run(async () => {
 	await pickQuality(page, 'high');
 	await settled(page, '5. premise: A changed both switches and the level', (x) => !x.lighting.gi && x.lighting.ssr);
 	await page.waitForTimeout(1500);
+	const quiet = (await page.evaluate(() => window.__sent106)).length;
+	// positive control: an ordinary edit IS seen by the spy (and reaches B)
+	await page.evaluate(() => window.__tp.test.v1.addObjects.spawnAtPoint('/create Box 0.3 0.3 0.3', [-2, 0.15, 2]));
+	await page.waitForTimeout(1500);
 	const sent = await page.evaluate(() => window.__sent106);
+	h.check(sent.length > quiet, `   premise: the spy sees A's sends (an edit afterwards: ${quiet} -> ${sent.length})`);
 	const leaked = sent.filter((m) => /reflections|globalLight|cinematic|"lighting"/i.test(m));
 	h.check(leaked.length === 0, `5. nothing about the switches leaves A (${sent.length} messages sent meanwhile, ${leaked.length} name them${leaked.length ? ': ' + leaked[0] : ''})`);
 	const bAfter = await B.page.evaluate(() => localStorage.getItem('cinematicView'));
@@ -377,7 +402,7 @@ h.run(async () => {
 	h.check(p1.globalLight === 'off' && p1.reflections === 'on' && p1.quality === 'high', `   a reload keeps them on this device (${JSON.stringify(p1)})`);
 	const c1 = await page.evaluate(() => localStorage.getItem('cinematicCosts'));
 	h.check(!!c1 && c1 === kept.c, `   and the measured costs (${c1})`);
-	await h.eventually(() => state(page), (v) => v.mode === 'on', '   the view comes back on by itself (it was on)', 90000);
+	await until(() => state(page), (v) => v.mode === 'on', '   the view comes back on by itself (it was on)', 90000);
 	await settled(page, '   with the kept switches', (x) => !x.lighting.gi && x.lighting.ssr);
 	await openMenu(page);
 	const marks = await page.evaluate(() => ['reflections', 'globalLight'].map((k) => document.querySelector(`#preview-light-${k}-mode [aria-checked="true"]`)?.id ?? ''));

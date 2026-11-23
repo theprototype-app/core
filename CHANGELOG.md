@@ -6,6 +6,10 @@
      rendering, so maintainer notes stay out of the user-facing window. No emoji from
      1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
 
+## 1.75.1 — Splats off on Meta Quest for now
+
+- **Gaussian splats are off on Meta Quest for now.** A scan in view slowed a Quest 3 from 72 to 23 frames a second at 30,000 splats and to 6 at 150,000. A headset now draws no splats and says why; the scan stays in the scene, and a desktop or phone shows it as before. <!-- 102-int-2 1.75.1 -->
+
 ## 1.75.0 — Look, assets and animation
 
 **Exports work again.** Every export in 1.74.0 failed its own file check (the app had grown past the 1,000-file limit an export zip may hold); the app now builds into about 700 files, and Export, the .zip and the itch.io upload work again. <!-- fix-export-files #608 -->

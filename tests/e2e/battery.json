@@ -8,6 +8,7 @@
 	"shards": {"target_minutes":36,"max":20,"min":4,"par":1},
 	"pc": {"games":["jam-room","race","dungeon-realms","escape-room","waves"],"levels":["tavern-interior","castle-courtyard","forest-clearing","wizards-tower","market-square"]},
 	"skip": {
+		"shadow-identity-106": "the 106 release gate: needs a dev server of the release before 106 (BASE_URL, a v1.74.0 tree), so it only SKIPs without one; run on the desk at the int",
 		"arch-primitives": "two peers on the self-hosted signaling box",
 		"csp-build": "needs the built app (scripts/serve-build.cjs); a dev server ships no policy, so it only SKIPs there",
 		"error-reports": "needs the production origin mapped to the dev server (a hosts-file setup)",
@@ -21,6 +22,8 @@
 		"levels-export": "needs the built app (scripts/serve-build.cjs): the exporter reads build/export-manifest.json, so it only SKIPs on a dev server"
 	},
 	"optional": {
+		"shadow-sync-106": "joined from 106-shadows (2026-11-23): not yet measured on a GitHub runner, so it reports and does not gate",
+		"shadow-levels-106": "joined from 106-shadows (2026-11-23): not yet measured on a GitHub runner (SwiftShader pixel reads), so it reports and does not gate",
 		"text-bake-peers": "joined from 80a-fix4-net (fix-batch-4 G5, 2026-11-20; two peers, ten bakes): not yet measured on a GitHub runner, so it reports and does not gate",
 		"people-after-join": "joined from 80a-fix4-net (fix-batch-4 G21, 2026-11-20; two peers, a timing check): not yet measured on a GitHub runner, so it reports and does not gate",
 		"towers-late-join": "joined from 80a-fix4-net (fix-batch-4 G18, 2026-11-20; two peers, the real Towers scene): not yet measured on a GitHub runner, so it reports and does not gate",
@@ -786,6 +789,9 @@
 		"quality-toast-preset": 70,
 		"race-vr-shadows": 123,
 		"race-vr-shadows-iwer": 121,
+		"shadow-identity-106": 600,
+		"shadow-levels-106": 300,
+		"shadow-sync-106": 300,
 		"reload-memory": 190,
 		"reload-rejoin": 290,
 		"reset-windows": 21,

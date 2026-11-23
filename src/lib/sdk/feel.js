@@ -4,15 +4,16 @@
 import { vrControlsRef, knockRef, knockReady } from './refs.js';
 import { gameFeelActive } from '../gameFeel';
 import { hapticLevel } from '../gameSettings';
-import { hapticSchedule, xrHaptics, hapticDeviceEnv } from '../hapticPatterns';
+import { hapticSchedule, xrHaptics, hapticDeviceEnv, hapticOutputLayer } from '../hapticPatterns';
 
 // 103 (H6): the vibration output layer (gamepads, Android phones, VR controllers) — LAZY, so a
-// module that never buzzes costs nothing; a call before it lands plays once it has
-/** @type {any} */
-let out = null;
+// module that never buzzes costs nothing; a call before it lands plays once it has. Once ANYONE has
+// loaded it (the Vibrate node, a game-feel node) it is used synchronously: waiting on this file's
+// own dynamic import of an already-loaded module took > 300 ms under load in dev
 /** @type {Promise<any> | null} */
 let outLoad = null;
-const load = () => (outLoad ??= import('../hapticOutput.js').then((m) => (out = m)));
+const layer = () => hapticOutputLayer();
+const load = () => (outLoad ??= import('../hapticOutput.js'));
 /** @param {any} spec @param {any} opts @returns {boolean} */
 function buzz(spec, opts) {
 	// in a headset: the controllers directly, synchronously, as before 103 (vrControls owns that gate)
@@ -25,8 +26,11 @@ function buzz(spec, opts) {
 		return gameFeelActive();
 	}
 	if (!gameFeelActive()) return false;
+	const out = layer();
 	if (out) return out.playHaptic(spec, opts);
-	load().then((m) => m.playHaptic(spec, opts));
+	load()
+		.then((m) => m.playHaptic(spec, opts))
+		.catch(() => {});
 	return true;
 }
 /** @param {any} hand @returns {'left' | 'right' | undefined} */
@@ -79,12 +83,12 @@ export function sdkFeel(ctx) {
 					...(Number.isFinite(Number(options?.scale)) ? { scale: Number(options.scale) } : {})
 				}),
 			stop: () => {
-				out?.stopHaptics?.('module');
+				layer()?.stopHaptics?.('module');
 			},
 			/** @returns {{vr: boolean, gamepads: number, triggerRumble: boolean, phone: boolean}} */
 			outputs: () => {
 				// the layer's read when it is loaded (a suite's fake env), else the browser's, synchronously
-				const env = out?.hapticEnv?.() ?? hapticDeviceEnv();
+				const env = layer()?.hapticEnv?.() ?? hapticDeviceEnv();
 				const pads = env.pads.filter((/** @type {any} */ p) => p.effects.length || p.pulse);
 				return {
 					vr: env.xr,

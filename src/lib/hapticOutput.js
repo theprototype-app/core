@@ -22,7 +22,7 @@
 import { get } from 'svelte/store';
 import { gameFeelActive, gameFeelOn } from './gameFeel';
 import { hapticsAllowed, hapticLevel } from './gameSettings';
-import { hapticSchedule, customHapticSchedule, xrHaptics, hapticDeviceEnv, connectedGamepads as gamepads } from './hapticPatterns';
+import { hapticSchedule, customHapticSchedule, xrHaptics, hapticDeviceEnv, connectedGamepads as gamepads, registerHapticOutput } from './hapticPatterns';
 import { gameState } from './gameState';
 
 /** @typedef {import('./hapticPatterns').HapticPulse} HapticPulse */
@@ -293,3 +293,6 @@ export function resetHapticOutputDebug() {
 	debug.stops = 0;
 	debug.lastStop = '';
 }
+
+// every caller (a module's api.feel, the Vibrate node, the headset path) finds the layer synchronously once it is here
+registerHapticOutput({ playHaptic, stopHaptics, hapticEnv });

@@ -26,6 +26,17 @@ export function registerXrHaptics(sink) {
 export function xrHaptics() {
 	return xrSink;
 }
+/** the output layer once it has loaded (it registers itself), so a caller that did not load it
+ * plays synchronously instead of waiting on its own dynamic import @type {any} */
+let outputLayer = null;
+/** @param {any} layer */
+export function registerHapticOutput(layer) {
+	outputLayer = layer;
+}
+/** @returns {any} */
+export function hapticOutputLayer() {
+	return outputLayer;
+}
 
 /* the device read */
 /** the connected gamepads, as the browser hands them (navigator.getGamepads can throw in a

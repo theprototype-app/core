@@ -16,6 +16,7 @@
 import { writable, get } from 'svelte/store';
 import * as THREE from 'three';
 import { sessionNow } from '../sessionClock';
+import { uiHaptic, setUiHapticsQuiet } from '../uiHaptics';
 import { activeSequence, sequenceOf, createSequence, setSequence } from '../sequences';
 import { beginSequenceGesture, endSequenceGesture } from '../sequenceSync';
 import { playSequence, stopSequence, scrubSequence, releaseScrub, seqTransport } from '../sequencePlayer';
@@ -66,6 +67,8 @@ function syncedNow() {
 /** @param {Partial<TakeUi>} patch */
 function patch(patch) {
 	take.update((s) => ({ ...s, ...patch }));
+	// 103 (H13): the kit's touch feedback stays silent while a take records
+	if ('state' in patch) setUiHapticsQuiet('film', patch.state === 'recording');
 }
 
 /** @param {any} pose @param {number} dt */
@@ -344,11 +347,8 @@ export function addMarker() {
 	const t = segment.t0 + Math.max(0, syncedNow() - segment.runAt);
 	segment.markers.push(t);
 	patch({ markers: segment.markers.length });
-	try {
-		navigator.vibrate?.(15);
-	} catch {
-		/* no haptics here */
-	}
+	// 103 (H13): film's own marker tick, kept as it was (15 ms, during the take); Touch feedback Off silences it
+	uiHaptic('select', { touch: true, play: true, pattern: [15] });
 	return true;
 }
 

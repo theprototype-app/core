@@ -53,6 +53,7 @@
 	import { sequences, activeSequence } from '$lib/sequences';
 	import { registerDebugHook } from '$lib/debugHooks';
 	import { aspectRatio, listCameraObjects, setCameraFromView } from '$lib/cameraObjects';
+	import { uiHaptic } from '$lib/uiHaptics';
 	import { objectsGroup, selectedObject } from '../../stores/sceneStore';
 
 	let vw = $state(typeof window !== 'undefined' ? window.innerWidth : 0);
@@ -371,11 +372,8 @@
 	/** @type {ReturnType<typeof setTimeout> | null} */
 	let countdownTimer = null;
 	function buzz(/** @type {number} */ ms) {
-		try {
-			navigator.vibrate?.(ms);
-		} catch {
-			/* no haptics */
-		}
+		// 103 (H13): film's own countdown / map-tap buzzes keep their lengths; Touch feedback Off silences them
+		uiHaptic('select', { touch: true, play: true, pattern: [ms] });
 	}
 	/** @param {() => any} go */
 	function withCountdown(go) {

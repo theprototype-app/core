@@ -532,6 +532,8 @@ export const DEBUG_HOOKS = [
 	['scenePrivacy', () => import('./scenePrivacy')],
 	['touchControls', () => import('./touchControls')],
 	['touchActions', () => import('./touchActions')],
+	// 103 (H13): the editor's touch feedback (uiHapticsDebug, prefs, the fake-clock / fake-input seams)
+	['uiHaptics', () => import('./uiHaptics')],
 	['touchSpec', () => import('./touchSpec')],
 	['playMode', () => import('./playMode')],
 	// phone-polish: Android Back closes the top surface

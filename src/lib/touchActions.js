@@ -1,5 +1,6 @@
 import { writable, get } from 'svelte/store';
 import { safeStorage } from './safeStorage';
+import { uiHaptic } from './uiHaptics';
 
 // 36 U8: ON-SCREEN ACTION BUTTONS FOR TOUCH SCREENS — the leaf that owns what a phone
 // player can press, where the buttons sit, and what pressing one does.
@@ -225,7 +226,7 @@ export function resolveTouchControls({ declared = [], walk = false, fly = false,
  * @typedef {object} TouchPrefs
  * @property {'auto' | 'always' | 'never'} visibility  auto = `(pointer: coarse)` or a touch seen
  * @property {boolean} showInEdit  draw the buttons in Edit/Interact too (never the stick)
- * @property {boolean} haptics     a short navigator.vibrate tick on press
+ * @property {boolean} haptics     103 (H13): READ ONLY by the migration to Settings ▸ Touch feedback (uiHaptics)
  * @property {'game' | 'global'} scope  where "Edit layout" saves: this game, or every game
  */
 
@@ -593,14 +594,9 @@ export function pressTouchAction(action, down, ctx = {}) {
 		if (held.has(action.id)) return;
 		held.set(action.id, action);
 		debug.presses++;
-		if (ctx.haptics && typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
-			try {
-				navigator.vibrate(12);
-				debug.vibrates++;
-			} catch {
-				/* a permissions policy may forbid it — the tick is a nicety */
-			}
-		}
+		// 103 (H13): the on-screen game buttons' press tick — the one UI feedback that plays in Play,
+		// under Touch feedback's level + "buttons and switches" (the old "Haptic tick" switch migrated)
+		if (ctx.haptics && uiHaptic('select', { kind: 'buttons', play: true })) debug.vibrates++;
 		if (action.onPress) safely(/** @type {() => void} */ (action.onPress));
 		for (const code of action.keys) dispatchKey('keydown', code);
 		if (action.pointer === 'press') dispatchPointer(ctx.canvas ?? null, ['pointerdown', 'mousedown'], 'mouse');

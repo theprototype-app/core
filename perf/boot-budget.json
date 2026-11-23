@@ -136,6 +136,12 @@
 			"play": "v1.74.0 + 92-correct 2150.3 KB -> 2154.1 KB (+3.8), line 2155.0 KB unchanged",
 			"editor": "v1.74.0 + 92-correct 3370.7 KB -> 3375.9 KB (+5.2) -> line 3380.0 KB (rounded up to the next 5 KB)",
 			"note": "measured on the Deck against 92-correct's own build of 06b7cef1. Lazy: playView.js (the three views), padActions.js (the pad bridge, loaded with the first pad), playActions.js (pad catalog, family glyph names, help lines), keyCapture.js (loaded by the press that starts a capture), InputGlyph.svelte (loaded on a pad or a remap). On boot: modules +1.5 (the play-view seam the per-frame code calls, the PLC hooks, the self body, the banner / key-hint / Controls branches), nodes +0.5 (the Character Controller camera rows), inputRuntime +0.4 (the lazy bridge load + device notes), activeDevice +0.3 (the device store), editor only debugHooks +0.2, Flow +0.2 (showIf / defaultsBy on the card), nodeDocs +0.1; renamed-chunk churn ~1 KB (about +0.04 in each of ~25 chunks). Over the ~3 KB boot-wiring rule on the editor by ~2 KB: said in the PR; the int recomputes the line from its union."
+		},
+		{
+			"lane": "92-menus (roadmap 92 GC1/GC2/GC5/GC8)",
+			"play": "base (v1.74.0 + 92-correct) 2150.5 KB -> 2155.9 KB (+5.4) -> line 2157 KB",
+			"editor": "base 3371.2 KB -> 3378.1 KB (+6.9) -> line 3380 KB",
+			"note": "boot wiring only: the menus config normalize (scene play block), the leaf stores, the pause-menu rows (Save / Load / Join requests / Quit to title / Restart level, the Subtitles + Reduced motion rows, the headset's list page), Look speed / Invert look, the master-gain duck. The title screen, save slots, join requests, in-game join card, the menus runtime (pause hold, auto-admit) and the Configure Scene section are lazy chunks; a first cut was +11 KB because a dynamic import() in the gameShell boot chunk gave it its own preload table — they now go through gameShellWire's seams. The last +1 KB is fixes the e2e found: the viewport join card stepping aside under the pause menu (Toasts), one retrying loader for the lazy menu parts, the late-runtime title, exports without autosave"
 		}
 	],
 	"throttle": {

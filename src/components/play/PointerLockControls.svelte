@@ -12,6 +12,7 @@
     import { playCursorFree } from '$lib/playCursor'
     // 31 K3: in a game, Escape (and any lock loss) opens the pause menu instead of leaving play
     import { shellMenu, shellMenuAvailable, openShellMenu, closeShellMenu } from '$lib/gameShell'
+    import { lookTuning } from '$lib/gameSettings' // 92 (GC2): per-game look speed + invert
     import { playCode } from '$lib/playerAccess' // 53 (A6): the player's key remap
     import { inputClaims, getGamepadAxes } from '$lib/inputRuntime'
     import { gamepadPrefs } from '$lib/gamepadPrefs'
@@ -304,8 +305,9 @@
           const lX = prefs.swapSticks ? pad.lx : pad.rx
           const lY = prefs.swapSticks ? pad.ly : pad.ry
           if ((lX || lY) && playViewLooks()) {
-            const rate = PAD_LOOK_RATE * pointerSpeed * prefs.lookSensitivity * delta
-            applyLook(walker, lX * rate, (prefs.invertY ? -lY : lY) * rate)
+            const tune = lookTuning(prefs.invertY) // 92 (GC2): this game's Look speed / Invert look
+            const rate = PAD_LOOK_RATE * pointerSpeed * prefs.lookSensitivity * tune.scale * delta
+            applyLook(walker, lX * rate, (tune.invert ? -lY : lY) * rate)
             onChange()
           }
         }
@@ -387,9 +389,10 @@
           $cameraParent.translateZ(moveY * step)
         }
         if (lookX || lookY) {
-          const rate = PAD_LOOK_RATE * pointerSpeed * padPrefs.lookSensitivity * delta
+          const tune = lookTuning(padPrefs.invertY) // 92 (GC2): this game's Look speed / Invert look
+          const rate = PAD_LOOK_RATE * pointerSpeed * padPrefs.lookSensitivity * tune.scale * delta
           // push the stick UP (negative) to look UP, the console default; invertY flips it
-          applyLook($cameraParent, lookX * rate, (padPrefs.invertY ? -lookY : lookY) * rate)
+          applyLook($cameraParent, lookX * rate, (tune.invert ? -lookY : lookY) * rate)
         }
         if (moveX || moveY || lookX || lookY) onChange()
       }
@@ -568,7 +571,9 @@
   
       const { movementX, movementY } = event
 
-      applyLook($cameraParent, movementX * 0.002 * pointerSpeed, movementY * 0.002 * pointerSpeed)
+      // 92 (GC2): this game's Look speed and Invert look (the mouse has no device invert)
+      const tune = lookTuning(false)
+      applyLook($cameraParent, movementX * 0.002 * pointerSpeed * tune.scale, (tune.invert ? -movementY : movementY) * 0.002 * pointerSpeed * tune.scale)
 
       onChange()
     }

@@ -16,6 +16,8 @@ import { sceneLevelsTable } from './runtime.js';
 import { captureKept, resetOwnKept, withoutKeptVars, withKeptVars } from './keep.js';
 import { spawnOfObject, setPlayerSpawn, clearPlayerSpawn, respawnNow, LEVELS_SPAWN_OWNER } from './spawn.js';
 import { SAVE_VERSION, saveKey, upgradeSave, encodeSave } from './save.js';
+// 92 (GC5): the save slot in use (a leaf store); the slots themselves are a lazy chunk (saveSlots.js)
+import { activeSlot } from '../gameMenus';
 
 /** @typedef {{kind: 'checkpoint' | 'portal', name: string, scene: string, spawn: {position: number[], yaw: number} | null}} Point */
 /** THIS player's last checkpoint (null = none: the level start applies) @type {import('svelte/store').Writable<Point | null>} */
@@ -112,6 +114,12 @@ export async function saveProgress() {
 		return { ok: false, reason: enc.reason };
 	}
 	saveProblem.set('');
+	// 92 (GC5): a save slot in use takes the checkpoint (the player chose it — in the editor too)
+	const slot = get(activeSlot);
+	if (slot) {
+		const res = await (await import('../saveSlots.js')).writeSlot(slot, { auto: true });
+		return res.ok ? { ok: true, bytes: enc.bytes, slot } : { ok: false, reason: res.reason };
+	}
 	if (!persisting()) return { ok: false, skipped: true, bytes: enc.bytes };
 	safeStorage.setItem(saveKey(gameId()), enc.json);
 	return { ok: true, bytes: enc.bytes };
@@ -130,11 +138,12 @@ export function readSave() {
 
 /**
  * Resume the saved game (an export's boot, after its scene loaded): the level, the kept state, then the
- * checkpoint. @returns {Promise<{resumed: boolean, notes: string[]}>}
+ * checkpoint. 92 (GC5): `record` = a save slot's stored record (loaded in the editor too).
+ * @param {{record?: any}} [opts] @returns {Promise<{resumed: boolean, notes: string[]}>}
  */
-export async function resumeSavedGame() {
-	if (!persisting()) return { resumed: false, notes: [] };
-	const { save, notes } = readSave();
+export async function resumeSavedGame(opts = {}) {
+	if (!opts.record && !persisting()) return { resumed: false, notes: [] };
+	const { save, notes } = opts.record ? upgradeSave(opts.record, sceneLevelsTable()) : readSave();
 	if (!save) return { resumed: false, notes };
 	const travel = await import('./travel.js');
 	if (save.level) await travel.goToLevel(save.level, { transition: false });
@@ -150,9 +159,11 @@ export async function resumeSavedGame() {
 	return { resumed: true, notes };
 }
 
-/** New game: forget this player's save, reset what the game keeps, go to the first level */
+/** New game: forget this player's save, reset what the game keeps, go to the first level. 92 (GC5): with
+ * a save slot in use the single save is not touched (it is slot 1's "Saved progress" until slot 1 is
+ * written) — the new game lives in its slot. */
 export async function newGame() {
-	safeStorage.removeItem(saveKey(gameId()));
+	if (!get(activeSlot)) safeStorage.removeItem(saveKey(gameId()));
 	checkpointPoint.set(null);
 	saveProblem.set('');
 	clearPlayerSpawn();

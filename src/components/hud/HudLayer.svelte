@@ -36,6 +36,7 @@
 	import { gameAnnouncement } from '$lib/gameAnnounce';
 	// 31 K3: the game shell's pause menu frees the pointer through the SAME single writer
 	import { shellMenu } from '$lib/gameShell';
+	import { titleScreen } from '$lib/gameMenus'; // 92 (GC1): the title screen frees the pointer too
 	// 53 (A6): the player's HUD text size (per game, LOCAL) — boxes and type grow together
 	import { accessValues } from '$lib/playerAccess';
 	import { hudTextScale } from '$lib/playerAccessCore';
@@ -202,7 +203,7 @@
 	// 48 D1: ...and so is a debugger pause (its panel needs the pointer for Step / Resume)
 	// 95 SM2: ...and so is the Share a moment preview (its trim and buttons need the pointer)
 	const menuWanted = $derived(
-		((screens.some((entry) => entry.screen?.input === 'menu') && anyVisible) || ($shellMenu.open && !$isVRMode) || ($debugStatus.mode === 'paused' && !$isVRMode) || ($momentOpen && !$isVRMode) || (talking && ($dialogueView?.choices.length ?? 0) > 0)) && playing
+		((screens.some((entry) => entry.screen?.input === 'menu') && anyVisible) || ($shellMenu.open && !$isVRMode) || ($titleScreen.open && !$isVRMode) || ($debugStatus.mode === 'paused' && !$isVRMode) || ($momentOpen && !$isVRMode) || (talking && ($dialogueView?.choices.length ?? 0) > 0)) && playing
 	);
 	$effect(() => {
 		playPointerFree.set(menuWanted);

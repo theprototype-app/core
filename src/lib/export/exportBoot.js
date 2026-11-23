@@ -30,7 +30,8 @@
  *   vrButton: boolean,
  *   preset: string,
  *   builtWith: string,
- *   loading?: any
+ *   loading?: any,
+ *   titleImage?: string
  * }} ExportConfig
  */
 
@@ -73,7 +74,9 @@ export function normalizeExportConfig(raw) {
 		preset: String(raw.preset ?? 'static').slice(0, 20),
 		builtWith: String(raw.builtWith ?? '').slice(0, 40),
 		// 93 LP2: the author's loading screen — plain data (cleaned again by loading.normalizeLoading at use)
-		...(plainData(raw.loading, 8192) ? { loading: plainData(raw.loading, 8192) } : {})
+		...(plainData(raw.loading, 8192) ? { loading: plainData(raw.loading, 8192) } : {}),
+		// 92 (GC1): the title screen's image, copied into the bundle (assets/loading/ only)
+		...(relPath(raw.titleImage, '').startsWith('assets/loading/') ? { titleImage: relPath(raw.titleImage, '') } : {})
 	};
 }
 

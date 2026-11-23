@@ -601,6 +601,8 @@ export const DEBUG_HOOKS = [
 	['gameStorage', () => import('./gameStorage')],
 	// 30b (vr-play): the game-feel leaves under ONE name
 	['gameKit', () => import('./gameKit')],
+	// 92 (GC1/GC2/GC5/GC8): the game's menus, its save slots, the title screen, late joiners during Play
+	['gameMenusKit', () => import('./gameMenusKit.js')],
 	['moduleWorld', () => import('./moduleWorld')],
 	['playSpawn', () => import('./playSpawn')],
 	// 78 PL32: the joiner's side step (lastJoinSideStep) + the near-avatar fade maths

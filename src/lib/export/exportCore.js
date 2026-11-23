@@ -51,6 +51,20 @@ export function rewriteIndexHtml(html, { title }) {
 }
 
 /**
+ * 63 PG3: a portal preset's SDK in the exported index.html — a classic <script> right after
+ * ./play.js (their docs: "in the <head> of index.html"), and its host added to the page's CSP
+ * `script-src` (the play page ships `script-src 'self' …`, which would refuse it), with the portal's
+ * own domain wildcard because the SDK loads its parts from sibling hosts on the portal's site. PURE.
+ * @param {string} html @param {string} src an https URL @returns {string}
+ */
+export function addPortalSdk(html, src) {
+	const url = new URL(src);
+	let out = String(html).replace(/<script src="\.\/play\.js"><\/script>/, (m) => m + `\n\t\t<script src="${escapeHtml(url.href)}"></script>`);
+	out = out.replace(/(<meta[^>]+http-equiv=["']content-security-policy["'][^>]+content=")([^"]*)(")/i, (/** @type {string} */ _m, /** @type {string} */ a, /** @type {string} */ csp, /** @type {string} */ z) => a + csp.replace(/script-src ([^;]*)/, (/** @type {string} */ _s, /** @type {string} */ list) => `script-src ${list} ${url.origin} https://*.${url.host.split('.').slice(-2).join('.')}`) + z);
+	return out;
+}
+
+/**
  * 36-int-121: what the WEB HOST added to an HTML page it served, removed. Cloudflare Pages Web
  * Analytics injects `<script defer src='https://static.cloudflareinsights.com/beacon.min.js'
  * data-cf-beacon='…'>` (between two "Cloudflare Pages Analytics" comments) into every HTML response,

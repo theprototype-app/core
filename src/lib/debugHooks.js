@@ -501,6 +501,8 @@ export const DEBUG_HOOKS = [
 	['levelsTravel', () => import('./gameLevels/travel.js')],
 	['levelsCheckpoints', () => import('./gameLevels/checkpoints.js')],
 	['levelsLoading', () => import('./gameLevels/loading.js')],
+	// 63 PG3: the level-change cover the portal adapter reads
+	['levelTransition', () => import('./gameLevels/transition.js')],
 	['levelsSave', () => import('./gameLevels/save.js')],
 	['peerVars', () => import('./peerVars')],
 	['projectManifest', () => import('./projectManifest')],
@@ -556,6 +558,9 @@ export const DEBUG_HOOKS = [
 	['exportStores', () => import('./export/exportStores.js')],
 	// 63: the pure export core (EXPORT_ALLOWED_HOSTS, the preset limits) + the export check rules
 	['exportCore', () => import('./export/exportCore.js')],
+	['exportChecks', () => import('./export/exportChecks.js')],
+	// 63 PG3: the CrazyGames adapter's state (status, environment, the SDK calls in order)
+	['portalCrazyGames', () => import('./export/portals/crazygames.js')],
 	// 41b: the burger's Project actions setting + Save options (H14), the settings-row fit (H12)
 	['projectActions', () => import('./projectActions.js')],
 	['saveOptions', () => import('./saveOptions.js')],

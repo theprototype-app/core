@@ -430,9 +430,12 @@ function createBakeMask(T, scene) {
 	const marked = new Set();
 	/** @param {any} m */
 	const isBaked = (m) => m?.lightMap?.userData?.bake === true;
-	return {
+	const api = {
+		/** e2e (106): the counterfactual run, the mask switched off and kept off */
+		offForTest: false,
 		/** @returns {boolean} the set changed */
 		scan() {
+			if (api.offForTest) return false;
 			/** @type {Set<any>} */
 			const seen = new Set();
 			scene.traverse((/** @type {any} */ o) => {
@@ -466,6 +469,7 @@ function createBakeMask(T, scene) {
 			marked.clear();
 		}
 	};
+	return api;
 }
 
 /** a new pipeline beside the old one (the old keeps drawing until the new one is ready) */
@@ -786,6 +790,14 @@ export async function failCompileForTest() {
 }
 
 /** e2e / debug: the live view's parts (renderer, pipeline, scene, camera) for bisecting a wrong image */
+/** e2e (106 S3): one step of the dynamic drop, as if the frames had stayed over budget */
+export async function stepDownForTest() {
+	if (!live?.built || live.built.plan.steps <= 0) return false;
+	live.drops++;
+	await rebuild();
+	return true;
+}
+
 export function cinematicLiveForTest() {
 	return live;
 }

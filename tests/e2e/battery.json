@@ -341,6 +341,7 @@
 		"photo-mode": 420,
 		"cinematic-view": 600,
 		"cinematic-fx": 480,
+		"cinematic-light-106": 420,
 		"test-players": 600,
 		"test-players-devices": 900,
 		"cinematic-offer-net": 240,
@@ -999,11 +1000,11 @@
 		"untangle": 146
 	},
 	"desk": {
-		"gpu": ["MOD:fx-car-blocks","MOD:untangle","cinematic-view","cinematic-fx"],
+		"gpu": ["MOD:fx-car-blocks","MOD:untangle","cinematic-view","cinematic-fx","cinematic-light-106"],
 		"peer-self": ["arch-primitives","game-race"],
 		"prod-host": ["error-reports"],
 		"software": ["behaviours","community-seams","files-format-row","inspector","save-project-libraries"],
-		"local": ["cinematic-fx","cinematic-view","fb-water-phone","fluid-gpu","net-stress","quality-phone","throw-peer"]
+		"local": ["cinematic-fx","cinematic-light-106","cinematic-view","fb-water-phone","fluid-gpu","net-stress","quality-phone","throw-peer"]
 	},
 	"exclude": {
 		"a diagnostic probe (80a-locks: crossed-claim traces), not a gate; lock-gate covers the races": ["lock-race-probe"],

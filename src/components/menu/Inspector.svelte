@@ -4412,7 +4412,7 @@
 								e.currentTarget.value = '';
 							}}
 						/>
-						<div class="flex items-center gap-3">
+						<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
 							{#if mapPreviewUrl(material)}
 								<img
 									src={mapPreviewUrl(material)}
@@ -4454,15 +4454,15 @@
 							<UiButton
 								id="texture-explorer"
 								size="sm"
-								variant="outline"
+								variant="icon"
 								icon="folder-open"
 								title="Pick the colour map from the Explorer (or drop an Explorer image here)"
-								aria-label="Pick the colour map from the Explorer"
+								label="Pick the colour map from the Explorer"
 								onclick={async () => {
 									const item = await pickFromExplorer({ title: 'Pick the colour map' });
 									if (item) await fanTexture((uuid) => applyExplorerImage(uuid, { id: item.id }), 'Texture');
-								}}>Explorer</UiButton
-							>
+								}}
+							/>
 						</div>
 						</div>
 					{/if}

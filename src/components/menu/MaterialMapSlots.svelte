@@ -139,15 +139,16 @@
 				{:else}
 					<UiButton id={'map-set-' + slot.key} size="sm" variant="outline" aria-label={'Set the ' + slot.label + ' map'} onclick={() => pick(slot.key)}>Set...</UiButton>
 				{/if}
+				<!-- an icon, not a word: the unfolded N6 Inspector is ~220 px and a worded button overflowed the row -->
 				<UiButton
 					id={'map-explorer-' + slot.key}
 					size="sm"
-					variant="outline"
+					variant="icon"
 					icon="folder-open"
-					title={'Pick the ' + slot.label + ' map from the Explorer'}
-					aria-label={'Pick the ' + slot.label + ' map from the Explorer'}
-					onclick={() => pickExplorer(slot)}>Explorer</UiButton
-				>
+					title={'Pick the ' + slot.label + ' map from the Explorer (or drop an Explorer image on this row)'}
+					label={'Pick the ' + slot.label + ' map from the Explorer'}
+					onclick={() => pickExplorer(slot)}
+				/>
 			</div>
 			{#if slot.key === 'normalMap' && slot.filled}
 				<SliderRow
@@ -213,8 +214,9 @@
 <style>
 	.map-row {
 		display: flex;
+		flex-wrap: wrap; /* 105: a narrow (unfolded N6) Inspector wraps the buttons under the label, never scrolls */
 		align-items: center;
-		gap: 8px;
+		gap: 4px 8px;
 		min-height: 32px;
 	}
 	.map-label {

@@ -139,6 +139,8 @@ h.run(async () => {
 	h.check((await page.locator('#texture-explorer').count()) === 1, '1.1 the colour map has From Explorer');
 	for (const key of ['normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap'])
 		h.check((await page.locator('#map-explorer-' + key).count()) === 1, '1.2 ' + key + ' has From Explorer');
+	const btnBox = await page.evaluate(() => { const b = document.getElementById('texture-explorer'); const r = b?.getBoundingClientRect(); const cs = b && getComputedStyle(b); return r && { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), vis: cs.visibility, disp: cs.display }; });
+	h.check(btnBox && btnBox.w >= 24 && btnBox.h >= 24 && btnBox.vis === 'visible', '1.2b the colour-map picker button is a pressable square: ' + JSON.stringify(btnBox));
 	await page.click('#texture-explorer');
 	await page.waitForSelector('#explorer-picker [data-pick-id]', { timeout: 15000 });
 	const cards = await page.locator('#explorer-picker-grid [data-pick-id]').count();
@@ -212,8 +214,13 @@ h.run(async () => {
 		const cy = c.top + c.height / 2;
 		ev('pointerdown', cx, cy, card);
 		await new Promise((r) => setTimeout(r, 650)); // the hold
+		// a real finger's events arrive in separate tasks; the hold's card menu leaves the DOM on the
+		// next flush, so yield a frame between steps or elementFromPoint still hits that menu
+		const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 		ev('pointermove', cx + 20, cy + 20, card); // ...that moves: the pick-up
+		await frame();
 		ev('pointermove', tx, ty, card);
+		await frame();
 		const armed = row.classList.contains('ins-drop-on');
 		ev('pointerup', tx, ty, card);
 		return armed ? 'ok' : 'not-armed';
@@ -288,11 +295,20 @@ h.run(async () => {
 	await page.waitForTimeout(800);
 	const before = { box: await mats(page, box), multi: await mats(page, multi) };
 	await h.freshReload(B);
-	await h.answerRestore(B);
-	await h.connect(B, A);
+	// a joiner's reload REJOINS by itself (no restore question, no dial input): wait for that, and only a
+	// page that does not rejoin answers the restore and dials (the array-tool pattern)
+	const rejoined = await B.page
+		.waitForFunction(() => { let p; window.__tp.test.v1.peers.subscribe((v) => (p = v))(); return (p?.openedPeers?.length ?? p?.openedPeers?.size ?? 0) > 0; }, null, { timeout: 30000, polling: 250 })
+		.then(() => true)
+		.catch(() => false);
+	console.log('B rejoined after its reload by itself:', rejoined);
+	if (!rejoined) {
+		await h.answerRestore(B, 'dismiss').catch(() => {});
+		await h.connect(B, A);
+	}
 	await h.eventually(() => mats(B.page, multi), (m) => m?.[1]?.map, '8.1 B after a reload: slot 1 textured again', 40000);
-	const bBox = await mats(B.page, box);
-	h.check(bBox?.[0]?.map && bBox[0].normal && bBox[0].rough, '8.2 B after a reload: the box keeps colour, normal and roughness maps ' + JSON.stringify(bBox));
+	// the full-state reply streams objects one at a time: wait for the box too, never sample it once
+	await h.eventually(() => mats(B.page, box), (m) => m?.[0]?.map && m[0].normal && m[0].rough, '8.2 B after a reload: the box keeps colour, normal and roughness maps', 40000);
 	await h.freshReload(A);
 	await page.waitForTimeout(2500);
 	await page.evaluate(async () => window.__tp.test.v1.autosave.restoreSnapshot());

@@ -39,6 +39,8 @@ export function hitOpacity(hit) {
 	// 64 D2: a text's carrier draws nothing (opacity 0) — it is the HIT PROXY of letters drawn
 	// at the scene root, and as solid as they are
 	if (object.userData?.textPath) return 1;
+	// 102 M3: a decal's carrier is the hit proxy of its visual (the text rule)
+	if (object.userData?.decal) return 1;
 	let material = object.material;
 	if (Array.isArray(material)) {
 		const index = hit.face?.materialIndex ?? 0;
@@ -142,6 +144,12 @@ export function isSeeThrough(hit, target, pass = PASS_DEFAULTS) {
  * @typedef {{ uuid: string, target: any, hit: any, through: boolean }} StackEntry
  */
 
+/** is `o` or any ancestor on one of the `locked` layers @param {any} o @param {Set<string>} locked */
+function onLockedLayer(o, locked) {
+	for (let n = o; n; n = n.parent) if (n.userData?.layer && locked.has(n.userData.layer)) return true;
+	return false;
+}
+
 /**
  * Collapse raw hits (nearest first) into the STACK of distinct top-level targets.
  * A target counts as opaque if ANY of its hits is — a glass case around a solid core
@@ -162,7 +170,8 @@ export function pickStack(hits, topOf, pass = PASS_DEFAULTS) {
 	for (const hit of hits ?? []) {
 		const target = topOf(hit.object);
 		if (!target) continue;
-		if (locked?.size && target.userData?.layer && locked.has(target.userData.layer)) continue;
+		// 102-int-2: an object on a locked layer locks what hangs off it (a decal is picked as itself, 1 mm off its wall)
+		if (locked?.size && onLockedLayer(target, locked)) continue;
 		const through = isSeeThrough(hit, target, pass);
 		const index = at.get(target.uuid);
 		if (index === undefined) {

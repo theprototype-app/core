@@ -276,6 +276,7 @@
 		saveSnapAnchorAsOrigin
 	} from '$lib/snapEngine';
 	import { peers, inspectorClose, inspectorKind, showToast, inspectorFilter, userdata, closeSelectionInspector } from '../../stores/appStore.js';
+	import { get as getStore } from 'svelte/store'; // 102 M6: the unlink send reads the peer once
 	// 78-int PL13: "changed by <peer / agent> · time" under the shared Configure Scene sections
 	import { sceneSectionEdits } from '$lib/sceneEditBy.js';
 	import { editLine } from '$lib/sceneEditByCore.js';
@@ -635,6 +636,11 @@
 		if (!uuid) return;
 		const count = sharedWith.length;
 		if (!unlinkMaterial(uuid)) return;
+		// 102 M6 (found on the way): the unlink used to stay on this machine, so a peer kept the objects linked
+		// and the next edit of this one changed both over there. An older peer ignores the parameter.
+		/** @type {any} */
+		const peer = getStore(peers);
+		peer?.send({ type: 'objectParameters', parameter: 'materialUnlink', uuid });
 		showToast(
 			'This object has its own material now — the other ' +
 				count +
@@ -3430,7 +3436,12 @@
 			</div>
 			{/if}
 
-			{#if !multiCount && isReplaceableModel($selectedObject)}
+			<!-- 102 M3: a decal's look is its own section, first (where a model's source sits) -->
+			{#if !multiCount && $selectedObject.userData?.decal}
+				<!-- a lazy chunk: the boot never pays for decals -->
+				{#await import('./DecalSection.svelte') then m}<m.default object={$selectedObject} />{/await}
+			{/if}
+			{#if !multiCount && isReplaceableModel($selectedObject) && !$selectedObject.userData?.decal}
 				<!-- 59 T1/T2/T7a: Replace model… / Edit in Blender… / the watched file -->
 				<ModelSourceSection object={$selectedObject} />
 			{/if}
@@ -3474,6 +3485,10 @@
 			<!-- 57: a rigged model's humanoid map, applied clips, licence -->
 			{#if $animatedObjects[$selectedObject.uuid] && restRowsOf($selectedObject.uuid).length}
 				<CharacterSection object={$selectedObject} />
+			{/if}
+			<!-- 102 M7: constraints + IK on any object or bone (lazy: its own chunk) -->
+			{#if $selectedObject?.uuid && !multiCount && !$selectedObject.userData?.isHelper}
+				{#await import('./inspector/ConstraintsSection.svelte') then m}<m.default object={$selectedObject} />{/await}
 			{/if}
 
 			<!-- 16-P5: a camera OBJECT is a marker mesh carrying userData.camera. All
@@ -3888,8 +3903,8 @@
 				<ScatterSection object={$selectedObject} />
 			{/if}
 
-			{#if !isLight && !multiCount && $selectedObject?.uuid && $selectedObject?.isObject3D}
-				<!-- 102b-arrange row 1: Array (a lazy chunk — nothing here is paid at boot) -->
+			{#if !isLight && !multiCount && $selectedObject?.uuid && $selectedObject?.isObject3D && !$selectedObject.userData?.decal && !$selectedObject.userData?.splat}
+				<!-- 102b-arrange row 1: Array (102-int-2: not on a decal or splat carrier, which has no mesh of its own) (a lazy chunk — nothing here is paid at boot) -->
 				{#await import('./inspector/ArraySection.svelte') then m}<m.default object={$selectedObject} />{/await}
 			{/if}
 
@@ -4236,7 +4251,9 @@
 			{/if}
 
 			<!-- 64 D2: a text's carrier draws nothing — its look is the Text section's -->
-			{#if material && !$selectedObject.userData?.textPath}
+			<!-- 102 M3: nor does a decal's — its look is the Decal section's -->
+			<!-- 102: a splat's material is its invisible hit box -->
+			{#if material && !$selectedObject.userData?.textPath && !$selectedObject.userData?.decal && !$selectedObject.userData?.splat}
 				<Section variant="panel" label="Material" clip={{ count: () => matTargets.length, fans: true }}>
 					{#if matCount}
 						<p id="material-multi-note" class="text-[length:var(--fs-badge)] italic text-text-muted">
@@ -4595,7 +4612,8 @@
 			{#if $selectedObject.userData?.flowPath}<FlowPathSection object={$selectedObject} />{/if}<!-- 36-fb F24 -->
 			{#if $selectedObject.userData?.portal || $selectedObject.userData?.checkpoint}<LevelObjectSection object={$selectedObject} />{/if}<!-- 93 LP1/LP3 -->
 			{#if $selectedObject.userData?.textPath}<TextPathSection object={$selectedObject} />{/if}<!-- 64 D2 -->
-			{#if !$selectedObject.isLight}
+			{#if $selectedObject.userData?.splat}{#await import('./SplatSection.svelte') then m}<m.default object={$selectedObject} />{/await}{/if}<!-- 102: a lazy chunk (off the boot path) -->
+			{#if !$selectedObject.isLight && !$selectedObject.userData?.splat}
 				<Section variant="panel" label="Physics" clip={{ count: () => insTargets.length, fans: true }}>
 					{#if multiCount}
 						<p id="physics-multi-note" class="text-[length:var(--fs-badge)] italic text-text-muted">

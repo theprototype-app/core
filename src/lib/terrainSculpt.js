@@ -304,25 +304,7 @@ export function enterSculpt(uuid, opts = {}) {
 	// the toolbar toggle opts back in per session
 	gizmoSuppressed.set(true);
 	selectObject(uuid);
-	// first sculpt on a fresh object: go non-indexed LOCALLY + sync the
-	// representation so peers' snapshots line up (no history entry — visually
-	// identical geometry, nothing to undo)
-	if (object.geometry.index) {
-		const nonIndexed = object.geometry.toNonIndexed();
-		object.geometry.dispose();
-		object.geometry = nonIndexed;
-		object.geometry.computeVertexNormals();
-		/** @type {any} */
-		const peer = get(peers);
-		// raw Float32 bytes (the meshgeo wire format — a plain number array this
-		// big blows binarypack's recursion, see faceEdit.broadcastMeshGeo)
-		if (peer)
-			peer.send({
-				type: 'meshgeo',
-				uuid,
-				positions: new Float32Array(nonIndexed.getAttribute('position').array).buffer
-			});
-	}
+	unindexForSculpt(object);
 	if (isTerrain) rebuildWeldMap(object);
 	else rebuildMeshWeldMap(object);
 	sculptMode.set(isTerrain ? 'terrain' : 'mesh');
@@ -331,6 +313,33 @@ export function enterSculpt(uuid, opts = {}) {
 	if (!isTerrain && get(sculptOp) === 'paint') sculptOp.set('raise');
 	sculptObject.set(uuid);
 	if (isTerrain) startScatterEditSession(() => get(sculptObject), () => get(sculptOp) === 'scatter' && get(sculptMode) === 'terrain');
+	return true;
+}
+
+/**
+ * First sculpt on a fresh object: go non-indexed LOCALLY + sync the representation so peers' snapshots line up
+ * (no history entry — visually identical geometry, nothing to undo). Every brush commit is a meshgeo SNAPSHOT of
+ * the position list, and applyMeshGeo builds an UN-INDEXED mesh from it, so an indexed vertex list committed
+ * as-is draws junk triangles — 104 A3: the agent's terrain tool brushed without this and the island vanished.
+ * Exported so every brush caller runs it. @param {any} object @returns {boolean} true when it converted
+ */
+export function unindexForSculpt(object) {
+	if (!object?.geometry?.index) return false;
+	const uuid = object.uuid;
+	const nonIndexed = object.geometry.toNonIndexed();
+	object.geometry.dispose();
+	object.geometry = nonIndexed;
+	object.geometry.computeVertexNormals();
+	/** @type {any} */
+	const peer = get(peers);
+	// raw Float32 bytes (the meshgeo wire format — a plain number array this
+	// big blows binarypack's recursion, see faceEdit.broadcastMeshGeo)
+	if (peer)
+		peer.send({
+			type: 'meshgeo',
+			uuid,
+			positions: new Float32Array(nonIndexed.getAttribute('position').array).buffer
+		});
 	return true;
 }
 

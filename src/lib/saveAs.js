@@ -49,7 +49,7 @@ import { draftsInSelection, isDraftUuid, liftLocalObjects, noteLocalObjectsExclu
 /**
  * The catalog, as DATA — the `buildObjectMenuItems` / `hudActions` shape, so the menu
  * renders FROM it and a format cannot exist in one place and not the other.
- * @typedef {{id: string, label: string, kind: 'prefab'|'download', ext?: string, tooltip: string}} SaveAsFormat
+ * @typedef {{id: string, label: string, kind: 'prefab'|'download'|'export3d', ext?: string, tooltip: string}} SaveAsFormat
  * @type {SaveAsFormat[]}
  */
 export const SAVE_AS_FORMATS = [
@@ -89,6 +89,29 @@ export const SAVE_AS_FORMATS = [
 		kind: 'download',
 		ext: 'gltf',
 		tooltip: 'Just download the selected objects as text glTF. Nothing is stored in your Library.'
+	},
+	// 102 M2: for a printer and for AR. They open the export dialog (size in mm, scale, the
+	// watertight check, the USDZ's size) rather than writing at once — a print needs a scale.
+	{
+		id: 'print-stl',
+		label: '3D print (.stl)',
+		kind: 'export3d',
+		ext: 'stl',
+		tooltip: 'One mesh in millimetres for any slicer, world positions applied. Colours, materials and animation are not part of STL.'
+	},
+	{
+		id: 'print-3mf',
+		label: '3D print (.3mf)',
+		kind: 'export3d',
+		ext: '3mf',
+		tooltip: 'Millimetres, one object per part with its colour, for multi-colour printers. Textures and animation stay behind.'
+	},
+	{
+		id: 'ar-usdz',
+		label: 'AR (.usdz)',
+		kind: 'export3d',
+		ext: 'usdz',
+		tooltip: 'For AR Quick Look on iPhone and iPad: materials and textures (capped at 2048 px) kept; flows and animation stay behind.'
 	}
 ];
 
@@ -151,6 +174,11 @@ async function saveSelectionAsInner(formatId, uuids, name) {
 		return null;
 	}
 	if (format.kind === 'download') return downloadSelectionAs(format, list, name);
+	if (format.kind === 'export3d') {
+		const { openExport3d } = await import('./makerDialogs');
+		openExport3d(/** @type {any} */ (format.ext), list, name);
+		return true;
+	}
 	if (format.id === 'snapshot') {
 		const element = prefabElementFor(list, name);
 		if (!element) return null;

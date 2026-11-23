@@ -212,7 +212,8 @@ export const GEOMETRY_PARAMS = {
 			'warp',
 			'falloff',
 			'offsetX',
-			'offsetZ'
+			'offsetZ',
+			'rim'
 		],
 		params: [
 			{ key: 'size', label: 'Size', kind: 'slider', min: 1, max: 200, step: 0.5, def: 24 },
@@ -225,7 +226,10 @@ export const GEOMETRY_PARAMS = {
 			{ key: 'warp', label: 'Warp', kind: 'slider', min: 0, max: 2, step: 0.05, def: 0 },
 			{ key: 'falloff', label: 'Edges', kind: 'choice', options: TERRAIN_FALLOFFS, def: 'flat' },
 			{ key: 'offsetX', label: 'Tile X', kind: 'slider', min: -2000, max: 2000, step: 1, def: 0 },
-			{ key: 'offsetZ', label: 'Tile Z', kind: 'slider', min: -2000, max: 2000, step: 1, def: 0 }
+			{ key: 'offsetZ', label: 'Tile Z', kind: 'slider', min: -2000, max: 2000, step: 1, def: 0 },
+			// 104 A2: how far an island's rim sinks below 0 (metres). 0 = the old flat skirt at y 0, which a sea's wave
+			// troughs uncover; absent (every terrain saved before 104) = 0, so old scenes rebuild unchanged
+			{ key: 'rim', label: 'Rim depth', kind: 'slider', min: -20, max: 0, step: 0.1, def: 0, show: (/** @type {any} */ p) => p.falloff === 'island' }
 		]
 	},
 	...ARCH_SPECS

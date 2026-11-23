@@ -3,6 +3,8 @@
 // toast are the same everywhere. See loadGuardCore.js for the rules.
 // 102b: importing it teaches ObjectLoader to read a Box's corner radius
 import { healRoundedBoxes } from './roundedBoxGate.js';
+// 105: a primitive whose slot groups an older build's save dropped gets them back
+import { healSlotGroups } from './slotGroups.js';
 import * as THREE from 'three';
 import { guardChanged, isEmbeddedUrl, isLocalImageUrl, stlWithinLimits } from './loadGuardCore.js';
 // 101 F2: the full object / material schema runs here, on top of loadGuardCore's rules
@@ -167,6 +169,7 @@ export function parseCheckedObject(json, from, what) {
 	});
 	// 102b: a rounded box an older build wrote back square (its radius kept in userData) is rounded again
 	healRoundedBoxes(object);
+	healSlotGroups(object);
 	return object;
 }
 

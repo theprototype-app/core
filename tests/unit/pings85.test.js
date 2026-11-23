@@ -157,6 +157,60 @@ describe('85b S2-S4 placement params', () => {
 	});
 });
 
+describe('104 A1 "on the ground": terrain, not the water', () => {
+	beforeEach(() => applied.splice(0));
+	/** the owner's island: a 24 m terrain 2.5 m tall at the centre inside an 80 m ocean box whose top is at 0.4 m */
+	const island = () => {
+		const land = box(24, 2.255, 24, [0, 2.255 / 2, 0]);
+		land.name = 'Island';
+		land.userData.terrain = true;
+		const sea = box(80, 2, 80, [0, -0.6, 0]);
+		sea.name = 'Ocean';
+		sea.userData.water = { look: { preset: 'ocean' } };
+		sea.userData.physics = { sensor: true };
+		return { land, sea };
+	};
+	it('a box made at y 0 stands on the island (it stood on the sea at 0.4 m), and says so', () => {
+		const { land } = island();
+		const crate = box(0.4, 0.4, 0.4, [0.37, 0, 0.41]);
+		const r = placeObject(crate, { snap: 'floor' }, apply);
+		expect(r.placed).toMatchObject({ snapped: 'Island', on: 'Island', uuid: land.uuid, surface: 'terrain' });
+		expect(r.placed.y).toBeCloseTo(2.255, 3);
+		expect(crate.position.y).toBeCloseTo(2.255 + 0.2, 3);
+	});
+	it('out at sea it passes through the water to the ground; a trigger volume is passed through too', () => {
+		island();
+		const buoy = box(0.4, 0.4, 0.4, [30, 1, 30]);
+		const r = placeObject(buoy, { snap: 'floor' }, apply);
+		expect(r.placed).toMatchObject({ on: 'the ground', surface: 'ground', y: 0 });
+		expect(r.placed.uuid).toBeUndefined();
+		const trigger = box(2, 2, 2, [-20, 1, 0]);
+		trigger.userData.physics = { sensor: true };
+		const coin = box(0.2, 0.2, 0.2, [-20, 1.5, 0]);
+		expect(floorUnder(coin, group)).toBe(null);
+	});
+	it('a terrain counts at any height, a mesh keeps the 2 m rule (a lamp under a high shelf stays on the table)', () => {
+		const hill = box(10, 6, 10, [40, 3, 0]);
+		hill.userData.terrain = true;
+		const low = box(0.4, 0.4, 0.4, [40, 0, 0]);
+		expect(floorUnder(low, group)).toMatchObject({ on: hill, surface: 'terrain' });
+		box(2, 1, 2, [60, 0.5, 0]);
+		box(2, 0.1, 2, [60, 4, 0]); // a shelf 4 m up
+		const lamp = box(0.2, 0.2, 0.2, [60, 1.5, 0]);
+		const r = placeObject(lamp, { snap: 'floor' }, apply);
+		expect(r.placed.surface).toBe('mesh');
+		expect(r.placed.y).toBeCloseTo(1, 3);
+	});
+	it('COUNTERFACTUAL: unmarked (the old rules), the box lands on the sea at 0.4 m', () => {
+		const { land, sea } = island();
+		delete land.userData.terrain;
+		delete sea.userData.water;
+		delete sea.userData.physics;
+		const crate = box(0.4, 0.4, 0.4, [0.37, 0, 0.41]);
+		expect(floorUnder(crate, group)).toMatchObject({ on: sea, surface: 'mesh', y: expect.closeTo(0.4, 3) });
+	});
+});
+
 describe('mcp-diorama2 19 pings: the spot pointed at; groups; nothing NaN', () => {
 	beforeEach(() => applied.splice(0));
 	it('an empty group placed at a ping sits at the ping (it used to get a NaN position)', () => {

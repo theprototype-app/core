@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { planTargets, planTextureCap } from './decimateCore';
+import { planTargets, planTextureCap } from './decimatePlan';
 import { trianglesOf, textureSizeOf, texturesOf } from './importBudget';
 
 // 26-F phase 2 — REDUCE A MODEL BEFORE IT ENTERS THE SCENE, OFF THE MAIN THREAD.
@@ -37,7 +37,7 @@ import { trianglesOf, textureSizeOf, texturesOf } from './importBudget';
 
 /** A Float32 copy of an attribute, whatever it is stored as — interleaved, normalized
  * (KHR_mesh_quantization) or already Float32. @param {any} attribute @param {number} size */
-function floatsOf(attribute, size) {
+export function floatsOf(attribute, size) {
 	if (!attribute) return null;
 	const count = attribute.count;
 	const array = attribute.array;
@@ -69,7 +69,7 @@ export function setWorkerFactory(factory) {
  * that lives on holds the simplifier's wasm heap (grown to the biggest mesh it saw).
  * @param {any[]} meshes @param {ArrayBuffer[]} transfer
  * @returns {Promise<{results: any[], ms: number}>} */
-function runWorker(meshes, transfer) {
+export function runWorker(meshes, transfer) {
 	return new Promise((resolve, reject) => {
 		/** @type {Worker} */
 		let worker;

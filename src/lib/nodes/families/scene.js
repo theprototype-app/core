@@ -113,6 +113,31 @@ export default {
 			// node type has TWO registries and only one of them complains — a `spawn` in the
 			// catalog and not here renders as UnknownNode ("install the module that ships it").
 			card: 'AnimationNode'
+		},
+		// 102 M3: STAMP DECAL — a mark (a footprint, a scorch, a splat) pressed onto a surface at a
+		// point + normal: the last contact of the On Impact wired into its trigger, or a wired
+		// point. Runtime only (never saved, never undone), cleared when the run stops; the
+		// stepping peer stamps and every peer draws the same mark from its one message.
+		{
+			type: 'decalstamp',
+			label: 'Stamp Decal',
+			defaults: { size: 0.4, depth: 0.3, lifetime: 10, cap: 64 },
+			inputs: ['trigger', 'source', 'target', 'point', 'normal'],
+			inputLabels: {
+				source: 'look — a Decal object to copy the image, tint and opacity from',
+				target: 'on — the object to mark (default: what the wired On Impact hit)',
+				point: 'at — a world point (default: where the wired On Impact touched)',
+				normal: 'facing — the surface direction at that point (default: up)'
+			},
+			params: [
+				{ key: 'size', kind: 'range', min: 0.05, max: 5, step: 0.05, label: 'size (m)' },
+				{ key: 'depth', kind: 'range', min: 0.02, max: 2, step: 0.02, label: 'depth (m)' },
+				{ key: 'lifetime', kind: 'range', min: 0, max: 600, step: 1, label: 'seconds (0 = for the run)' },
+				{ key: 'cap', kind: 'range', min: 1, max: 64, step: 1, label: 'most at once (oldest go)' }
+			],
+			note: 'Marks exist only while the game runs. The peer running physics stamps; everyone sees the same marks.',
+			sockets: { out: 'effect', in: { trigger: 'event', source: 'object', target: 'object', point: 'vector3', normal: 'vector3' } },
+			card: 'AnimationNode'
 		}
 	]
 };

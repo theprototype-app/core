@@ -105,6 +105,7 @@ import { oldRulesGame, RETIRED_GAME_NODES } from './oldGameScene.js';
 // 36-community (C4): the scene's permanent game id rides session.json; a load takes it from the file
 import { gameFields, noteLoadedGame } from './gameIdentity.js';
 import { localThumb } from './loadGuardCore.js';
+import { objectToJSON } from './slotGroups.js'; // 105: one serializer for slot groups
 
 // Multi-slot sessions (phase 50) on top of the autosave format. Each session
 // stores its top-level objects as individual ObjectLoader jsons — that makes
@@ -314,7 +315,7 @@ export function buildSessionPayload(name, opts = {}) {
 					.filter((/** @type {any} */ child) => !animatedUuids.includes(child.uuid) && !isTransient(child))
 					// 30c: a pristine KIT PIECE is written as a stub its pack refills (packRefs.js
 					// has the measurement: one wall is 7.9 MB as toJSON)
-					.map((/** @type {any} */ child) => (isPristinePackRef(child) ? stubElementOf(child) : child.toJSON())),
+					.map((/** @type {any} */ child) => (isPristinePackRef(child) ? stubElementOf(child) : objectToJSON(child))),
 				animated: animatedImportsSnapshot(group, { refsOnly: opts.refsOnly }),
 				// authored movement tracks (the Animation window) were never saved
 				animations: animationsSnapshot(),
@@ -427,7 +428,7 @@ export function buildSelectionPayload(name, uuids) {
 		const objects = roots
 			.map((uuid) => group?.getObjectByProperty('uuid', uuid))
 			.filter((/** @type {any} */ object) => object && !animatedUuids.includes(object.uuid) && !isTransient(object))
-			.map((/** @type {any} */ object) => (isPristinePackRef(object) ? stubElementOf(object) : object.toJSON()));
+			.map((/** @type {any} */ object) => (isPristinePackRef(object) ? stubElementOf(object) : objectToJSON(object)));
 		const clips = animationsSnapshot();
 		/** @type {any} */
 		const animations = {};
@@ -1413,7 +1414,7 @@ export function importObjects(payload, indices) {
 		if (object.userData?.packStub && object.userData.packRef) object.userData.packRef.kids = [];
 		group.add(object);
 		recordObjectPresence('create', object);
-		if (peer) peer.send({ type: 'object', element: object.toJSON() });
+		if (peer) peer.send({ type: 'object', element: objectToJSON(object) });
 		added++;
 	}
 	pokeScene();

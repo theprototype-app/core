@@ -89,7 +89,10 @@ const EXTENSIONS = {
 	anim: ['tpanim'],
 	// 64-text TX3: a FONT the 3D text object draws with (a WOFF2 is decoded to TTF on import —
 	// troika and opentype.js cannot read it)
-	font: ['ttf', 'otf', 'woff', 'woff2']
+	font: ['ttf', 'otf', 'woff', 'woff2'],
+	// 102: a Gaussian SPLAT (a captured scene drawn as soft points). A .ply that is a mesh is refused
+	// at the gate (splat/splatImport.js); one over the 25 MB cap is offered a smaller .spz copy
+	splat: ['ply', 'spz', 'splat']
 };
 
 /** 57 M1: extensions whose files MAY be animation clips — the converter decides (lazy chunk) */
@@ -101,6 +104,17 @@ const MAYBE_ANIMATION = /\.(vrma|bvh|glb|fbx)$/i;
  * @param {File} file @returns {Promise<File[] | null | false>}
  */
 async function convertForImport(file) {
+	if (/\.(ply|spz|splat)$/i.test(file.name)) {
+		// 102: the splat gate — a mesh .ply refused, an over-cap scan offered "reduce to fit" (lazy)
+		try {
+			const { prepareSplatFile } = await import('./splat/splatImport.js');
+			return await prepareSplatFile(file);
+		} catch (error) {
+			console.log('splat import failed', file.name, error);
+			showToast('Could not read the splat ' + file.name);
+			return false;
+		}
+	}
 	if (/\.woff2$/i.test(file.name)) {
 		// 64-text: the Library keeps fonts as sfnt bytes (lazy WASM decoder)
 		try {
@@ -544,7 +558,7 @@ export async function importFiles(files, folderId = null, opts = {}) {
 		}
 		const kind = kindOf(file.name);
 		if (!kind) {
-			showToast('Unsupported: ' + file.name + ' (images incl. HEIC photos, audio, text/config, 3D objects, animation clips)');
+			showToast('Unsupported: ' + file.name + ' (images incl. HEIC photos, audio, text/config, 3D objects, animation clips, Gaussian splats)');
 			continue;
 		}
 		if (file.size > MAX_ITEM_BYTES) {

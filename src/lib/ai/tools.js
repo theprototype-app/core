@@ -26,6 +26,7 @@ import { aimLight, setShadowMapSize } from '$lib/lightParams';
 import { itemByHash, itemBlob } from '$lib/explorer';
 import { animatedBaseOf, writingBasePose } from '$lib/flowRuntime';
 import { reportedPose } from './poseReport.js';
+import { waterFacts } from './waterReport.js';
 import { meshGenReady, meshTakesImage, activeMeshConfig } from './meshProviders.js';
 import { featureStatus, toolSummary } from '../tools/toolStatus.js';
 import '../tools/builtinTools.js'; // 59 T5: the registry the prompt's tool lines read
@@ -54,6 +55,7 @@ import {
 import { GEOMETRY_TOOL_NAMES, GEOMETRY_AI_TOOLS, GEOMETRY_PROMPT, geometryTool, MIN_SIZE } from './geometryTools.js';
 import { TEXT_TOOL_NAMES, TEXT_AI_TOOLS, TEXT_PROMPT, textTool } from './textTools.js';
 import { PATH_TOOL_NAMES, PATH_AI_TOOLS, PATH_PROMPT, pathTool } from './pathTools.js'; // 78 F4
+import { SIMPLIFY_TOOL_NAMES, SIMPLIFY_AI_TOOLS, SIMPLIFY_PROMPT, simplifyTool } from './simplifyTools.js'; // 102 M1
 import { shapePose } from './shapeBatchCore.js';
 import { meshStats } from './meshStats.js';
 import { applyShadowFlags, SHADOW_SCHEMA } from './shadowFlags.js';
@@ -165,7 +167,10 @@ function describeObject(object) {
 		...reportedPose(object, animatedBaseOf(object.uuid))
 	};
 	const material = object.material;
-	if (material && !Array.isArray(material)) {
+	// 104 A5: a body of water reports the water the person sees (its preset and colours), not its box's own material
+	const water = waterFacts(object);
+	if (water) out.water = water;
+	else if (material && !Array.isArray(material)) {
 		out.materialType = material.type;
 		if (material.color) out.color = '#' + material.color.getHexString();
 	}
@@ -612,6 +617,11 @@ function duplicateFrom(args) {
 	return { from: uuid, created, uuids: created.filter((c) => c.uuid).map((c) => c.uuid) };
 }
 
+/** 102 M3: the decal write path (lazy), loaded by create_objects when a decal is asked for @type {any} */
+let decalEditMod = null;
+/** @param {any} spec */
+const createDecalOne = (spec) => (decalEditMod ? decalEditMod.createDecalFromSpec(spec) : { error: 'the decal tools are still loading — try again' });
+
 /** @param {any} spec @returns {any} one created object's result */
 function createOne(spec, extraTypes = /** @type {string[]} */ ([])) {
 	// 85b S6: "hip", "0.5 reach" … are metres from here on
@@ -620,6 +630,8 @@ function createOne(spec, extraTypes = /** @type {string[]} */ ([])) {
 	// mcp-diorama2: a parent that is not there is an error, never a silent part at the scene root
 	const parentCheck = parentTarget(spec.parentUuid);
 	if (parentCheck && 'error' in parentCheck) return { error: parentCheck.error };
+	// 102 M3: a decal is placed ON an object (a child of it), not at a free position
+	if (spec.kind === 'decal') return createDecalOne(spec);
 	const uuid = genUuid();
 	let created = null;
 	if (spec.kind === 'light') {
@@ -856,6 +868,7 @@ const TOOL_NAMES = [
 	...GEOMETRY_TOOL_NAMES, // 85 G1-G6 (geometryTools.js)
 	...TEXT_TOOL_NAMES, // 64-text TX7: create_text, list_fonts (textTools.js)
 	...PATH_TOOL_NAMES, // 78 F4: create_path (pathTools.js)
+	...SIMPLIFY_TOOL_NAMES, // 102 M1: simplify_mesh (simplifyTools.js)
 	...LOOK_TOOL_NAMES, // 85 L1-L5 (lookTools.js)
 	...HUD_TOOL_NAMES, // 85 H1 / H2 + hud panel (hudTools.js)
 	...SCENE_SETUP_TOOL_NAMES, // 85 H3-H7: sky, light, spawn, play camera, opening view (sceneSetupTools.js)
@@ -1178,6 +1191,8 @@ async function runAiTool(rawName, rawArgs, opts) {
 				if (copies && !specs.length) return copies;
 				if (!specs.length)
 					return { error: 'no objects provided — pass objects: [{ kind: "primitive", primitive: "Box", ... }]' };
+				// 102 M3: the decal write path is a lazy chunk, loaded only when a decal is asked for
+				if (specs.some((/** @type {any} */ s) => s?.kind === 'decal')) decalEditMod = await import('../decalEdit.js');
 				const results = specs.map((/** @type {any} */ s) => createOne(s));
 				if (copies) return { created: results, copies };
 				// surface a total failure at the TOP level so the caller (and the undo
@@ -1332,6 +1347,9 @@ async function runAiTool(rawName, rawArgs, opts) {
 			case 'create_path':
 				// 78 F4: the Path object (pathTools.js)
 				return await pathTool(name, args);
+			case 'simplify_mesh':
+				// 102 M1: fewer triangles, attributes kept (simplifyTools.js)
+				return await simplifyTool(name, args);
 
 			case 'search_assets':
 			case 'place_asset':
@@ -1446,7 +1464,7 @@ export const AI_TOOLS = [
 		function: {
 			name: 'list_scene',
 			description:
-				'List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. Every mesh also has mesh {vertexCount, faceCount (triangles), bounds {local, world}} — each box [[minX, minY, minZ], [maxX, maxY, maxZ]], local in the mesh\'s own space (its vertices), world in the scene. The transform is the AUTHORED pose: an object an effect is moving also has animated: true, and live {position, rotation, scale, visible} when this frame differs; update_objects writes the authored pose, so never copy live back into it. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius} (near = WHICH OBJECTS are around a spot; the ground height, slope or water under a point is probe). A big flow graph shows its first page and says how to read the rest: pass {flow: "scene" | object uuid, page} to read one page of one graph.',
+				'List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. A body of water has water {preset, shallowColor, deepColor, level (how full 0-1), surface (world height of the still water), waves {height}} in place of color. Every mesh also has mesh {vertexCount, faceCount (triangles), bounds {local, world}} — each box [[minX, minY, minZ], [maxX, maxY, maxZ]], local in the mesh\'s own space (its vertices), world in the scene. The transform is the AUTHORED pose: an object an effect is moving also has animated: true, and live {position, rotation, scale, visible} when this frame differs; update_objects writes the authored pose, so never copy live back into it. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius} (near = WHICH OBJECTS are around a spot; the ground height, slope or water under a point is probe). A big flow graph shows its first page and says how to read the rest: pass {flow: "scene" | object uuid, page} to read one page of one graph.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1478,7 +1496,7 @@ export const AI_TOOLS = [
 		function: {
 			name: 'create_objects',
 			description:
-				'Create one or more primitives, lights or empty groups in a single call. Ground is the y=0 plane; place objects so they rest ON it (a box of height h sits at y=h/2). Returns the new uuids. To copy an existing object instead (a row of fence posts, a ring of chairs), pass from: its uuid, count, offset [x,y,z] between one copy and the next, and optionally randomRot / randomScale with a seed: deep copies (children, materials, flows), one undo step, uuids in order, in the source\'s own group. lookAt turns an object so its local +Z axis (its front) faces a point or another object, +Y kept up.',
+				'Create one or more primitives, lights, empty groups or decals in a single call. A decal (kind decal) is an image projected onto the surface of the object `on`: give point + normal (world) or just normal (aimed at that object\'s middle from that side; default from above). Ground is the y=0 plane; place objects so they rest ON it (a box of height h sits at y=h/2). Returns the new uuids. To copy an existing object instead (a row of fence posts, a ring of chairs), pass from: its uuid, count, offset [x,y,z] between one copy and the next, and optionally randomRot / randomScale with a seed: deep copies (children, materials, flows), one undo step, uuids in order, in the source\'s own group. lookAt turns an object so its local +Z axis (its front) faces a point or another object, +Y kept up.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1494,7 +1512,15 @@ export const AI_TOOLS = [
 						items: {
 							type: 'object',
 							properties: {
-								kind: { type: 'string', enum: ['primitive', 'light', 'group'] },
+								kind: { type: 'string', enum: ['primitive', 'light', 'group', 'decal'] },
+								on: { type: 'string', description: 'kind=decal: uuid of the object to put it on (not a skinned character or scattered copies)' },
+								point: { type: 'array', items: { type: 'number' }, description: 'kind=decal: world [x,y,z] on that object\'s surface' },
+								normal: { type: 'array', items: { type: 'number' }, description: 'kind=decal: the surface direction [x,y,z] there (with no point: the side it is aimed from)' },
+								image: { type: 'string', description: 'kind=decal: a library image hash or file name (omit = a placeholder frame until one is set)' },
+								size: { description: 'kind=decal: metres, a number (square) or [width, height]' },
+								depth: { type: 'number', description: 'kind=decal: how far into and out of the surface it reaches (default 0.25 m)' },
+								opacity: { type: 'number', description: 'kind=decal: 0-1' },
+								tint: { type: 'string', description: 'kind=decal: #rrggbb multiplying the image' },
 								primitive: {
 									type: 'string',
 									enum: PRIMITIVE_TYPES,
@@ -1535,7 +1561,7 @@ export const AI_TOOLS = [
 									}
 								},
 								align: { type: 'string', enum: ['surface'], description: 'with at: back it onto the pinged surface (its +Z along the surface normal, upright on a wall) — a painting on a wall' },
-								snap: { type: 'string', enum: ['floor'], description: 'stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground' },
+								snap: { type: 'string', enum: ['floor'], description: 'stand it on whatever is straight under it: a terrain at any height, a floor or table at most 2 m above its base, else the ground; water and trigger volumes are passed through. The answer says placed {on, uuid, y, surface: terrain|mesh|ground}' },
 								face_user: { description: 'turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users' },
 								front: { type: 'string', enum: ['+z', '-z', '+x', '-x', '+y', '-y'], description: 'which local axis is its front for lookAt and face_user (default +z; many models face +x or -z — look at a screenshot)' },
 								parentUuid: { type: 'string', description: 'uuid of an existing group (or any object, not a light or camera) to nest under — position/rotation/scale are then LOCAL to it. A uuid that is not in the scene is an error and that object is not made' },
@@ -1599,7 +1625,7 @@ export const AI_TOOLS = [
 									}
 								},
 								align: { type: 'string', enum: ['surface'], description: 'with at: back it onto the pinged surface (its +Z along the surface normal, upright on a wall) — a painting on a wall' },
-								snap: { type: 'string', enum: ['floor'], description: 'stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground' },
+								snap: { type: 'string', enum: ['floor'], description: 'stand it on whatever is straight under it: a terrain at any height, a floor or table at most 2 m above its base, else the ground; water and trigger volumes are passed through. The answer says placed {on, uuid, y, surface: terrain|mesh|ground}' },
 								face_user: { description: 'turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users' },
 								front: { type: 'string', enum: ['+z', '-z', '+x', '-x', '+y', '-y'], description: 'which local axis is its front for lookAt and face_user (default +z; many models face +x or -z — look at a screenshot)' },
 								visible: { type: 'boolean' },
@@ -2002,7 +2028,7 @@ const PHYSICS_AI_TOOLS = [
  * Call this per turn (readiness can change). @param {ToolOpts} [opts] @returns {any[]} */
 export function getAiTools(opts) {
 	const physics = !!opts?.physics || physicsToolsEnabled();
-	const tools = [...AI_TOOLS, ...GEOMETRY_AI_TOOLS, ...TEXT_AI_TOOLS, ...PATH_AI_TOOLS, ...LOOK_AI_TOOLS, ...HUD_AI_TOOLS, ...SCENE_SETUP_AI_TOOLS, ...LEVELS_AI_TOOLS, ...NPC_AI_TOOLS, ...WORLD_AI_TOOLS, ...ASSIST_AI_TOOLS, ...RUNTIME_AI_TOOLS, ...PROBE_AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
+	const tools = [...AI_TOOLS, ...GEOMETRY_AI_TOOLS, ...TEXT_AI_TOOLS, ...PATH_AI_TOOLS, ...SIMPLIFY_AI_TOOLS, ...LOOK_AI_TOOLS, ...HUD_AI_TOOLS, ...SCENE_SETUP_AI_TOOLS, ...LEVELS_AI_TOOLS, ...NPC_AI_TOOLS, ...WORLD_AI_TOOLS, ...ASSIST_AI_TOOLS, ...RUNTIME_AI_TOOLS, ...PROBE_AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
 	if (physics) tools.push(...PHYSICS_AI_TOOLS);
 	if (meshGenReady()) tools.push(MESH_TOOL);
 	if (opts?.person) tools.push(...PERSON_AI_TOOLS);
@@ -2109,6 +2135,6 @@ export function buildSystemPrompt(opts) {
 		"an object's name as the tool name — the name of a thing you create belongs in that object's",
 		'`name` field inside create_objects. Every call takes effect immediately, so never repeat a',
 		'call that already came back without an error — once the scene matches the request, stop',
-		'calling tools and write the summary.' + meshLine + toolsLine + GEOMETRY_PROMPT + TEXT_PROMPT + PATH_PROMPT + LOOK_PROMPT + HUD_PROMPT + SCENE_SETUP_PROMPT + LEVELS_PROMPT + NPC_PROMPT + WORLD_PROMPT + ASSIST_PROMPT + RUNTIME_PROMPT + PROBE_PROMPT + flowBlock + extraBlock + physicsBlock
+		'calling tools and write the summary.' + meshLine + toolsLine + GEOMETRY_PROMPT + TEXT_PROMPT + PATH_PROMPT + SIMPLIFY_PROMPT + LOOK_PROMPT + HUD_PROMPT + SCENE_SETUP_PROMPT + LEVELS_PROMPT + NPC_PROMPT + WORLD_PROMPT + ASSIST_PROMPT + RUNTIME_PROMPT + PROBE_PROMPT + flowBlock + extraBlock + physicsBlock
 	].join('\n');
 }

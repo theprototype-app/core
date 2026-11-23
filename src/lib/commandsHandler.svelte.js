@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { notifyOn } from './notifyPrefs';
 import { globalScene, objectsGroup, showGrid, TControls, lockedObjects, selectedObject, globalCamera, peerHands, pokeScene, beginSceneBatch, endSceneBatch } from '../stores/sceneStore.js';
 import { receiveMapSlot, receiveTexTransform, receiveNormalStrength } from '$lib/materialMaps';
+import { unlinkMaterial } from '$lib/materialSharing';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createGeometry, createLight, createGroup } from '$lib/geometries.svelte'
@@ -51,6 +52,8 @@ import { globalRenderer } from '../stores/sceneStore.js';
 import { yieldToEventLoop } from './sceneLoader';
 // 33 (L4): the scene going away is when its modules may be left behind (a leaf)
 import { noteSceneLeaving } from './sceneScope';
+import { markConstraintsDirty } from './rig/constraintHub.js'; // 102 M7 (the solver loads on first use)
+import { objectToJSON } from './slotGroups.js'; // 105: one serializer for slot groups
 
 //Access scene Store
 let scene = $state();
@@ -621,6 +624,9 @@ export async function objectParameters(data, from = 'peer') {
         if (mesh) applyMap(mesh, data.map, data.slot ?? 0, typeof data.source === 'string' ? data.source : null);
     } else if (data.parameter == 'materialParam') {
         setMaterialParam(data.uuid, data.key, data.value, false);
+    } else if (data.parameter == 'materialUnlink') {
+        // 102 M6: "this object only" on a shared material — this object gets its own copy here too
+        unlinkMaterial(data.uuid);
     } else if (data.parameter == 'mapSlot') {
         receiveMapSlot(data); // 72 LK1: normal, roughness, metalness, emissive, AO
     } else if (data.parameter == 'texTransform') {
@@ -685,6 +691,19 @@ export async function objectParameters(data, from = 'peer') {
             pokeScene(); // collider viz re-syncs
             physicsShapeChanged(data.uuid); // CL-A A2: live mid-sim rebuild
         }
+    } else if (data.parameter == 'constraints') {
+        // 102 M7: an object's constraint stack, normalized at the boundary; every peer
+        // evaluates it locally from the synced targets (no pose travels)
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            // stored as validated (wireValidate: <= 16 plain objects with an id); the runtime and the
+            // Inspector normalize on read, so the boot path carries no solver code
+            const list = Array.isArray(data.constraints) ? data.constraints.slice(0, 16).map((/** @type {any} */ c) => ({ ...c })) : [];
+            if (list.length) mesh.userData.constraints = list;
+            else delete mesh.userData.constraints;
+            markConstraintsDirty();
+            pokeScene();
+        }
     } else if (data.parameter == 'fluid') {
         // 36-sim U2b: a fluid tank's settings (the particles are each peer's own).
         // Normalized here — the one boundary a peer's bytes go through.
@@ -736,6 +755,27 @@ export async function objectParameters(data, from = 'peer') {
                     return m.applyRemoteBake(mesh, turn);
                 });
             else delete mesh.userData.textPath;
+            pokeScene();
+        }
+    } else if (data.parameter == 'decal') {
+        // 102 M3: a decal's record, normalized at the boundary; every peer rebuilds the surface
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh && mesh.userData?.decal && data.decal) {
+            // a lazy chunk (the boot never loads decals); one module promise keeps messages in order
+            void import('$lib/decalObject.js').then((m) => {
+                m.applyDecalTo(mesh, data.decal);
+                pokeScene();
+            });
+        }
+    } else if (data.parameter == 'splat') {
+        // 102: a Gaussian splat's record (crop, opacity, the file); the proxy box follows it and every
+        // peer's runtime redraws from it
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            // the record only (wireValidate checked its shape): the splat runtime normalizes it and rebuilds
+            // the proxy box on its next frame, so none of the splat code rides the boot
+            if (data.splat) mesh.userData.splat = { ...data.splat };
+            else delete mesh.userData.splat;
             pokeScene();
         }
     } else if (data.parameter == 'layer') {
@@ -1165,6 +1205,12 @@ export function sendObjects(peerId, element, opts = {}) {
         peer.send({ type: 'object', element: stubElementOf(element), groupuuid: element.parent?.uuid, ...(opts.override ? { override: true } : {}) });
         return;
     }
+    if (peerId === null && element?.isMesh && element.userData?.splat) {
+        // 102: a placed SPLAT carrier is ONE mesh, not an import root — the root path below sends a
+        // 'group' (the record without the mesh) and then only its children, so a peer got an empty node
+        peer.send({ type: 'object', element: element.toJSON(), groupuuid: element.parent?.uuid, pos: element.position.toArray(), rot: element.rotation.toArray(), scale: element.scale.toArray(), ...(opts.override ? { override: true } : {}) });
+        return;
+    }
     if (peerId === null) {
         groupid = element.uuid;
         // 59 T1: `groupparent` (additive) — a replaced model keeps its parent on every peer
@@ -1360,7 +1406,7 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
             elementClone.children = [];
             conn.send({
                 type: 'object',
-                element: elementClone.toJSON(),
+                element: objectToJSON(elementClone),
                 groupuuid: groupuuid,
                 pos: test.toArray(),
                 rot: element.rotation.toArray(),
@@ -1368,7 +1414,8 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
                 ...heal
             });
             sendObject(conn, element, element.uuid, opts);
-        } else if (element.userData?.textPath) {
+        } else if (element.userData?.textPath || element.userData?.decal || element.userData?.splat) {
+            // 102: a SPLAT carrier too — a box proxy + its record; toJSON keeps the proxy's draw-nothing flags
             // 64 TX1: a TEXT carrier travels as its RECORD — toJSON read NOW, while the park hook holds
             // the placeholder (~3 KB). The GLTF branch below exported it in a later callback, after the
             // park was restored: the solid's [face, side] array split into a GROUP of primitives and a

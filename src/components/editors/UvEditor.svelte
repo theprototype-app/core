@@ -232,7 +232,74 @@
 		$objectsGroup;
 		return textureImageOf(target, slot);
 	});
-	const backdrop = $derived(paintCanvas ?? mapImage ?? liveImage);
+	// 102 M6: the painter, loaded on first use (Paint armed). `paintMod` is the loaded module or null.
+	// Its brush panel and settings ride the same lazy load, so none of it is in the boot bundle (boot rule).
+	let paintMod = $state(/** @type {any} */ (null));
+	let PaintPanel = $state(/** @type {any} */ (null));
+	/** @type {Promise<any> | null} */ let paintLoading = null;
+	function loadPaint() {
+		// the panel chunk imports the painter: a dynamic import's preload list (the painter's whole static graph,
+		// ~400 chunk names) is written into the IMPORTING chunk, so it must not be this boot one (5 KB gz measured)
+		paintLoading ??= import('./MeshPaintPanel.svelte').then(async (panel) => {
+			// the panel shows as soon as its own small chunk lands; the painter follows (the old brush paints meanwhile)
+			PaintPanel = panel.default;
+			paintMod = await panel.loadPainter();
+		});
+		return paintLoading;
+	}
+	$effect(() => {
+		if ($uvTool === 'paint') untrack(() => void loadPaint());
+	});
+	/** the brush state the editor needs (channel, channel view, and whether meshPaint owns the stroke) */
+	let paintUi = $state({ channel: 'color', showChannel: false, newBrush: false });
+	$effect(() => {
+		const mod = paintMod;
+		if (!mod) return;
+		return mod.paintUi.subscribe((/** @type {any} */ v) => (paintUi = v));
+	});
+	const usesNewBrush = $derived(paintUi.newBrush);
+	/** which painter owns the stroke in flight: the shipped one (`uv`) or meshPaint (`mesh`) */
+	let paintEngine = /** @type {'uv'|'mesh'} */ ('uv');
+	// a roughness / metalness / emission channel shows ITS map behind the wire (none yet: the first stroke makes one)
+	const channelImage = $derived.by(() => {
+		$uvPaintTick;
+		$objectsGroup;
+		if ($uvTool !== 'paint' || paintUi.channel === 'color' || !paintMod) return undefined;
+		return paintMod.channelBackdrop(target, slot, paintUi.channel) ?? null;
+	});
+	const backdrop = $derived(channelImage !== undefined ? channelImage : paintCanvas ?? mapImage ?? liveImage);
+	// the brush on the MODEL: with Paint armed and the editor open, a drag on the selected object paints it
+	$effect(() => {
+		const on = $uvTool === 'paint' && !$uvEditorClose && !!target && !!paintMod;
+		if (!on) return;
+		const mod = paintMod;
+		const detach = untrack(() =>
+			mod.attachViewportPainting({ target: () => untrack(() => target), slot: () => untrack(() => slot) })
+		);
+		return detach;
+	});
+	// what a stroke on this object paints (map, or vertex colours and why), for the panel
+	$effect(() => {
+		$objectsGroup;
+		const mesh = target;
+		const s = slot;
+		if ($uvTool !== 'paint' || !paintMod) return;
+		untrack(() => (mesh ? paintMod.targetFor(mesh, s) : paintMod.clearTargetInfo()));
+	});
+	// LOCAL view: the painted channel alone on the model
+	$effect(() => {
+		const on = paintUi.showChannel && $uvTool === 'paint' && !$uvEditorClose && !!target && !!paintMod;
+		const mod = paintMod;
+		if (!on) {
+			untrack(() => mod?.hideChannelView());
+			return;
+		}
+		const mesh = target;
+		const s = slot;
+		const ch = paintUi.channel;
+		untrack(() => mod.showChannelView(mesh, s, ch));
+		return () => mod.hideChannelView();
+	});
 	// An imported (glTF) texture samples v=0 from the image TOP, while the editor
 	// draws v UP — so its backdrop has to be blitted vertically flipped or the view
 	// disagrees with the model about which end is which.
@@ -331,6 +398,7 @@
 			grab.cancel();
 			cancelUvDrag();
 			cancelPaintStroke();
+			paintMod?.cancelStroke();
 			selCluster = [];
 			hoverIndex = -1;
 			pivotPlaced = null; // an origin belongs to the map you placed it on
@@ -851,8 +919,19 @@
 		// The stroke opens ASYNChronously (the canvas has to carry the existing
 		// texture before the first dab), so claim the gesture NOW and let the
 		// pending moves queue behind the seed.
+		if ($uvTool === 'paint' && usesNewBrush && paintMod) {
+			// 102 M6: a new channel or brush paints through meshPaint (the same canvas for colour)
+			gesture = 'paint';
+			paintEngine = 'mesh';
+			attachDragListeners();
+			void paintMod.beginStroke({ uuid: target.uuid, slot, sp: 'uv', at: [toU(x), toV(y)], w: pressureOf(e) }).then((/** @type {boolean} */ ok) => {
+				if (!ok && gesture === 'paint') gesture = 'idle';
+			});
+			return;
+		}
 		if ($uvTool === 'paint') {
 			gesture = 'paint';
+			paintEngine = 'uv';
 			// 24-F1 (found on the way): this branch returned WITHOUT the window move/up
 			// pair, so a pointer stroke got its first dab and nothing else — no moves
 			// painted and no pointerup ever committed it (the uv-paint suite asserted only
@@ -956,7 +1035,8 @@
 			}
 			for (const sample of samples.length ? samples : [e]) {
 				const { x, y } = localPoint(sample);
-				paintMove(toU(x), toV(y), $uvBrushColor, brushUv(), pressureOf(sample));
+				if (paintEngine === 'mesh') paintMod?.strokeTo([toU(x), toV(y)], pressureOf(sample));
+				else paintMove(toU(x), toV(y), $uvBrushColor, brushUv(), pressureOf(sample));
 			}
 		}
 	}
@@ -977,7 +1057,8 @@
 
 	function onPointerUp(/** @type {PointerEvent} */ e) {
 		if (gesture === 'paint') {
-			endPaintStroke($uvBrushColor, brushUv());
+			if (paintEngine === 'mesh') paintMod?.endStroke();
+			else endPaintStroke($uvBrushColor, brushUv());
 		} else if (gesture === 'box' && marquee && target) {
 			const hits = uvIndicesInRect(target, slot, {
 				u0: toU(marquee.x0), v0: toV(marquee.y0), u1: toU(marquee.x1), v1: toV(marquee.y1)
@@ -1947,6 +2028,8 @@
 							Each stroke is one undo step; peers watch it live. A pen's pressure varies the
 							width (or the opacity); a mouse stroke is unchanged.
 						</p>
+						<!-- 102 M6: what the brush paints, and how (a lazy chunk, with the painter) -->
+						{#if PaintPanel}<PaintPanel />{/if}
 					</div>
 				{/if}
 				<div class="p-2 text-[11px] leading-relaxed text-text-muted">

@@ -50,6 +50,7 @@ import { captureEditResume, applyEditResume } from './editResume';
 import { disposeTree, keepSet } from './disposeTree';
 import { safeStorage, storageIsolated } from './safeStorage';
 import { registerMetricSource } from './sceneBudget';
+import { objectToJSON } from './slotGroups.js'; // 105: one serializer for slot groups
 
 // Crash safety: snapshots of the scene (GLTF json), the node graph and the
 // camera go to IndexedDB — debounced 30s after any change plus a 3-minute
@@ -244,6 +245,9 @@ function exportScene() {
 		exporter.parse(
 			group,
 			(result) => {
+				// 102 M7: GLTFExporter keeps a REFERENCE to each node's live `matrix.elements`; copy them
+				// before anything unparks, or the snapshot stores the re-posed (animated/constrained) pose
+				for (const n of /** @type {any} */ (result)?.nodes ?? []) if (n.matrix) n.matrix = Array.from(n.matrix);
 				putPiecesBack();
 				unpark(); // before unstamp, so the parked objects lose their __uuid too
 				unstamp();
@@ -780,7 +784,7 @@ async function applyRestore(snapshot, offer = null) {
 					// 80a: the autosave keeps drafts; restoring them makes them drafts here and sends none
 					const draft = adoptLoadedDrafts(child);
 					if (connected && !draft)
-						peer.send({ type: 'object', element: isPristinePackRef(child) ? stubElementOf(child) : child.toJSON() });
+						peer.send({ type: 'object', element: isPristinePackRef(child) ? stubElementOf(child) : objectToJSON(child) });
 					if (child.userData?.packStub) refills.push(fillPackRef(child).finally(() => progress(job)));
 					else progress(job);
 					poke();

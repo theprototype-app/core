@@ -86,7 +86,7 @@ export function bridgeTools(engine = 'browser') {
 			{
 				name: 'screenshot',
 				description:
-					'See the scene: a PNG of a clean frame (no gizmos, no people) from a temporary camera, never moving anyone\'s view. view: current | top | front | iso | focus | camera (focus needs uuid or uuids; camera looks through the scene camera uuid, its lens and framing); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person\'s window, or the framing of the scene camera they look through: where_are_users through). Answers with the camera it used. postEffects: true draws the scene\'s post effects too; hud: true the game HUD on top; avatars: true keeps the people in (current keeps them unless false).',
+					'See the scene: a PNG of a clean frame (no gizmos, no people) from a temporary camera, never moving anyone\'s view. view: current | top | front | iso | focus | camera (focus needs uuid or uuids; camera looks through the scene camera uuid, its lens and framing); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person\'s window, or the framing of the scene camera they look through: where_are_users through). Answers with the camera it used and frame: the picture in words (what is in it by share, the background, what is under the camera, what was left out) for a client that cannot see images. A scene-wide iso / top / front shot frames the content, leaving out a sea or ground plane far bigger than the rest (subject: "scene" frames everything). postEffects: true draws the scene\'s post effects too; hud: true the game HUD on top; avatars: true keeps the people in (current keeps them unless false).',
 				inputSchema: {
 					type: 'object',
 					properties: {
@@ -112,6 +112,11 @@ export function bridgeTools(engine = 'browser') {
 						aspect: { description: 'width to height: "4:3" (default), "1:1", "16:9" or a number. view current defaults to the person\'s window', anyOf: [{ type: 'string' }, { type: 'number' }] },
 						zoom: { type: 'number', description: 'above 1 is closer, 0.1 to 10' },
 						margin: { type: 'number', description: 'room around the subject: 1 touches the frame, default 1.15' },
+						subject: {
+							type: 'string',
+							enum: ['content', 'scene'],
+							description: 'what a scene-wide shot frames: content leaves a sea or ground plane far bigger than the rest out (the default for iso, top and front when one is there; camera.subject.leftOut names it), scene frames everything'
+						},
 						size: { type: 'number', description: 'longest side in pixels' },
 						hud: { type: 'boolean', description: 'true = draw the game HUD this screen shows on top (score, timer, menus), laid out as on screen' },
 						avatars: { type: 'boolean', description: 'true = keep the people (avatars, an agent\'s camera marker) in the frame; default leaves them out, except view current' },

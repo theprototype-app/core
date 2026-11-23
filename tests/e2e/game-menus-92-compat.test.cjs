@@ -68,6 +68,9 @@ h.run(async () => {
 		else check(JSON.stringify(r.physicsBefore?.play?.menus) === JSON.stringify(MENUS_NORMALIZED()), 'B: the file carries the lane\'s menus');
 		const types = r.nodesBefore.map((n) => n.type);
 		console.log('B nodes', JSON.stringify(types));
+		const seen = r.nodesBefore.map((n) => JSON.stringify(n));
+		const extra = r.nodesAfter.filter((n) => { const k = JSON.stringify(n); const i = seen.indexOf(k); if (i < 0) return true; seen.splice(i, 1); return false; });
+		if (extra.length || seen.length) console.log('B node diff', JSON.stringify({ added: extra, lost: seen.map((x) => JSON.parse(x)) }).slice(0, 1500));
 		if (process.env.EXPECT_NODE) check(types.includes(process.env.EXPECT_NODE), `B: the file has a ${process.env.EXPECT_NODE} node`);
 		check(JSON.stringify(r.nodesAfter) === JSON.stringify(r.nodesBefore), `B: every flow node rides a re-save with its data (${r.nodesBefore.length} -> ${r.nodesAfter.length})`);
 		check(JSON.stringify(r.physicsAfter?.play?.menus) === JSON.stringify(r.physicsBefore?.play?.menus), 'B: play.menus rides through a re-save untouched');

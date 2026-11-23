@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-11-22T23:26:18.670Z",
+	"recordedAt": "2026-11-23T17:08:39.865Z",
 	"settings": {
 		"Theme": {
 			"rows": [
@@ -395,6 +395,7 @@
 			"rows": [
 				"HUD editor: show / bring to front / hide",
 				"Node editor: show / bring to front / hide",
+				"Open and close my panels",
 				"Shader editor: show / bring to front / hide",
 				"Show captions",
 				"Show everything",
@@ -406,7 +407,8 @@
 				"Interface",
 				"Accessibility",
 				"Touch controls",
-				"Shortcuts"
+				"Shortcuts",
+				"Privacy"
 			]
 		},
 		"Haptic tick": {
@@ -3131,12 +3133,16 @@
 				"AI assistant",
 				"Coding agents",
 				"Let AI agents join as guests",
+				"Move my view",
+				"Open and close my panels",
+				"Open code for me",
 				"Voice typing"
 			],
 			"sections": [
 				"Interface",
 				"AI",
-				"Connection"
+				"Connection",
+				"Privacy"
 			]
 		},
 		"api key": {
@@ -3642,6 +3648,7 @@
 				"Draw repeated kit pieces together",
 				"Game HUD",
 				"Include VR button",
+				"Move my view",
 				"Offer Enter VR in a headset browser",
 				"Optimize for",
 				"Play on the screen, even in a headset",
@@ -3655,7 +3662,8 @@
 				"Interface",
 				"Scene",
 				"Export",
-				"VR"
+				"VR",
+				"Privacy"
 			]
 		},
 		"xr": {
@@ -3707,13 +3715,17 @@
 				"Blender and other 3D tools",
 				"Coding agents",
 				"Keep sent pictures in Explorer",
+				"Move my view",
+				"Open and close my panels",
+				"Open code for me",
 				"Rigging and animation services",
 				"Voice typing",
 				"Your own GPU box"
 			],
 			"sections": [
 				"Interface",
-				"AI"
+				"AI",
+				"Privacy"
 			]
 		},
 		"peer": {
@@ -4226,6 +4238,9 @@
 		"privacy": {
 			"rows": [
 				"Error reports",
+				"Move my view",
+				"Open and close my panels",
+				"Open code for me",
 				"Recording the last 10 s",
 				"Usage counts"
 			],
@@ -4467,10 +4482,13 @@
 				"Lift the corner buttons above docked panels",
 				"Lift the toolbar above docked panels",
 				"Move focus to the next region — top bar, panels, toolbar, viewport (Shift+F6: back)",
+				"Move my view",
 				"Node editor mouse",
 				"Node editor opens",
 				"Node editor: show / bring to front / hide",
 				"Object list: show / bring to front / hide",
+				"Open and close my panels",
+				"Open code for me",
 				"Panels button",
 				"Reset panel positions",
 				"Reverse trackpad pan",
@@ -4496,7 +4514,8 @@
 				"Input",
 				"Shortcuts",
 				"Scene",
-				"VR"
+				"VR",
+				"Privacy"
 			]
 		},
 		"wheel": {
@@ -4568,6 +4587,7 @@
 				"Left-handed",
 				"Menu hand",
 				"Mirror turn",
+				"Move my view",
 				"My hand model",
 				"Offer Enter VR in a headset browser",
 				"One-handed",
@@ -4604,7 +4624,8 @@
 				"Shortcuts",
 				"Export",
 				"VR",
-				"AI"
+				"AI",
+				"Privacy"
 			]
 		},
 		"ai": {
@@ -4634,6 +4655,9 @@
 				"Locks",
 				"Loop select (faces: again = perpendicular; edges: the chain)",
 				"Max texture size",
+				"Move my view",
+				"Open and close my panels",
+				"Open code for me",
 				"Optimize big models automatically",
 				"Optimize for",
 				"Placeholder style",
@@ -4667,7 +4691,8 @@
 				"Export",
 				"VR",
 				"AI",
-				"Connection"
+				"Connection",
+				"Privacy"
 			]
 		},
 		"zz-no-match": {

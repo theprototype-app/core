@@ -221,12 +221,25 @@ async function run(argv) {
 	// --set confirm --from <dir>: the required reds of a finished run (and what its deadline left unrun), re-run on
 	// THIS fresh runner — part `shard` of `of` takes every of-th one. A red that passes here was the shard's load.
 	const from = opt(argv, '--from');
-	const reds = () =>
-		walk(path.resolve(/** @type {string} */ (from)))
+	// split by TIME, longest first onto the least-loaded part (every part computes the same split): an alphabetical
+	// every-of-th split put two 10-minute reds on one part and its deadline left the rest `notrun`, red unretried
+	const reds = () => {
+		/** @type {SuiteResult[]} */
+		const all = walk(path.resolve(/** @type {string} */ (from)))
 			.filter((f) => /results-\d+\.json$/.test(f))
-			.flatMap((f) => JSON.parse(fs.readFileSync(f, 'utf8')).results.filter(isRed).map((/** @type {SuiteResult} */ r) => r.name))
-			.sort()
-			.filter((_, i) => i % of === shard - 1);
+			.flatMap((f) => JSON.parse(fs.readFileSync(f, 'utf8')).results.filter(isRed));
+		const cost = (/** @type {SuiteResult} */ r) => Math.max(r.secs || 0, b.suites[r.name] || 60);
+		all.sort((x, y) => cost(y) - cost(x) || (x.name < y.name ? -1 : x.name > y.name ? 1 : 0));
+		const load = Array.from({ length: of }, () => 0);
+		/** @type {string[]} */
+		const part = [];
+		for (const r of all) {
+			const k = load.indexOf(Math.min(...load));
+			load[k] += cost(r);
+			if (k === shard - 1) part.push(r.name);
+		}
+		return part;
+	};
 	const mine = only ? only.split(',') : set === 'confirm' ? reds() : assign(b, of, set)[shard - 1].suites;
 	// the suites' own default is a hosts-file origin: say where the app is
 	const url = (process.env.APP_URL ||= `https://localhost:${port}/`);
@@ -407,7 +420,18 @@ function write(b) {
 	if (b.desk) body.push(`\t"desk": ${obj(b.desk, '\t')}`);
 	if (b.exclude) body.push(`\t"exclude": ${obj(Object.fromEntries(Object.entries(b.exclude).map(([k, v]) => [k, [...v].sort()])), '\t')}`);
 	// battery-tiers (battery-desk.cjs tiers): the tier-1 always-set, shared-core files and caps, kept as written
-	for (const k of /** @type {const} */ (['tiers', 'tier1_always', 'tier1_always_files', 'tier1_cap', 'tier1_shared_suites'])) if (b[k] !== undefined) body.push(`\t${JSON.stringify(k)}: ${JSON.stringify(b[k])}`);
+	/** @type {Record<string, any>} */
+	const any = b;
+	const tierKeys = ['tiers', 'tier1_always', 'tier1_always_files', 'tier1_cap', 'tier1_shared_suites'];
+	for (const k of tierKeys) if (any[k] !== undefined) body.push(`\t${JSON.stringify(k)}: ${JSON.stringify(any[k])}`);
+	// any key this writer does not know (61-int's `gpu`, from gpu-neutral-suites.cjs) is kept, never dropped:
+	// a refresh that silently lost 342 gpu rows is how deps-2026-11 found this
+	const known = new Set(['comment', 'refs', 'shards', 'pc', 'skip', 'optional', 'setup', 'suites', 'modules', 'desk', 'exclude', ...tierKeys]);
+	for (const k of Object.keys(any)) {
+		const v = any[k];
+		if (known.has(k) || v === undefined) continue;
+		body.push(`\t${JSON.stringify(k)}: ${v && typeof v === 'object' && !Array.isArray(v) ? obj(v, '\t') : JSON.stringify(v)}`);
+	}
 	fs.writeFileSync(BATTERY, `{\n${body.join(',\n')}\n}\n`);
 }
 

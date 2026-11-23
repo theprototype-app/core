@@ -12,8 +12,8 @@
 //  8 two peers + a third: a dial while the host plays shows the in-game card; the host admits from the
 //    menu WITHOUT leaving Play; the joiner gets the game state; with another player in Play the menu does
 //    NOT pause ("Others are playing")
-//  9 Auto-admit while playing: a dial is let in with no card, and announced
-// 10 reload: the joiner reloads and rejoins, the game state still intact
+//  9 reload: the joiner reloads and rejoins, the game state and the menus still there
+// (Auto-admit while playing: game-menus-92-join, two pages)
 const h = require('./helpers.cjs');
 
 const GAME_HUD = {
@@ -272,29 +272,20 @@ h.run(async () => {
 	h.check(cVars === 99, '8.7 the joiner has the game state (coins 99)');
 	await page.locator('[data-shell-item="resume"]').click().catch(() => {});
 
-	console.log('\n=== 9. Auto-admit while playing ===');
-	await page.evaluate(() => window.__tp.test.v1.gameMenusKit.gameMenusPlan.setGameMenus({ autoAdmit: true }));
-	// a fourth page on the loaded Deck took the whole browser down: C leaves entirely (its context too) first
+	// Auto-admit while playing is its own two-page suite (game-menus-92-join): a fourth page here took the whole
+	// browser down on the loaded Deck. C leaves entirely before the reload.
 	await h.closePeer(C);
-	await page.waitForTimeout(1500);
-	const D = await h.setupPage(browser, 'D');
-	await (await h.openDial(D.page)).fill(A.id);
-	await D.page.getByRole('button', { name: 'Connect', exact: true }).click();
-	const dOpen = await poll(() => openTo(D, A.id), 45000);
-	h.check(!!dOpen, '9.1 let in with no card while the host plays');
-	const j9 = await page.evaluate(() => window.__tp.test.v1.gameMenusKit.playJoins.playJoinsDebug());
-	h.check(j9.admitted.includes(D.id), '9.2 counted as an automatic admission (' + JSON.stringify(j9.admitted) + ')');
-	h.check((await val(page, 'isLocked')) === true, '9.3 the host is still playing');
+	await page.waitForTimeout(1000);
 
-	console.log('\n=== 10. the joiner reloads: the game state is intact ===');
+	console.log('\n=== 9. the joiner reloads: the game state is intact ===');
 	await h.freshReload(B);
 	await h.answerRestore(B).catch(() => {});
 	const bBack = await poll(() => openTo(B, A.id), 60000);
-	h.check(!!bBack, '10.1 the reloaded peer is back in the session');
+	h.check(!!bBack, '9.1 the reloaded peer is back in the session');
 	const bVars = await poll(async () => ((await gameStateOf(B.page)).vars.coins === 99 ? 99 : null), 20000);
-	h.check(bVars === 99, '10.2 and holds the game state (coins 99)');
+	h.check(bVars === 99, '9.2 and holds the game state (coins 99)');
 	const menusB = await B.page.evaluate(() => { let v; window.__tp.test.v1.scenePhysics.scenePhysicsState_.subscribe((x) => (v = x))(); return v.play?.menus ?? null; });
-	h.check(menusB?.title?.title === 'Menu Test' && menusB?.autoAdmit === true, '10.3 the authored menus replicated to the joiner');
+	h.check(menusB?.title?.title === 'Menu Test' && menusB?.saves?.on === true, '9.3 the authored menus replicated to the joiner');
 
 	if (pageErrors.length) console.log('page errors:\n  ' + pageErrors.slice(-20).join('\n  '));
 	await h.finish(browser);

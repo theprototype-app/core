@@ -390,7 +390,7 @@ export function joinerInviteMeta(myId, hostId) {
 /** is our dial to this host an invite? (the join toast says so) @param {string} hostId */
 export const dialingWithInvite = (hostId) => !!joinInvite && joinInvite.host === String(hostId || '').toLowerCase();
 
-/** test seam: forget the joiner's invite */
+/** forget the joiner's invite (a removal ends it — peerModeration; also a test seam) */
 export function clearJoinInvite() {
 	joinInvite = null;
 }

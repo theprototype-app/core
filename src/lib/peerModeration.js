@@ -224,6 +224,10 @@ export function applyKick(data, sender, pc) {
 		}
 		// AFTER leaving: leaveSession -> resetSession clears the refusal chip
 		noteJoinRefusal(sender, 'removed');
+		// 71-int: the remover revoked the invite we came in on (useUpInvite), so a re-dial that
+		// still carried it would be a failed proof — since 71 AS4 that is the collapsed row, never a
+		// card, and "Allow back" could never reach the host. Removed = the invite is over: ask plainly.
+		void inviteStoreModule().then((inv) => inv?.clearJoinInvite?.());
 		showToast(data.block ? 'You were removed from this session and cannot rejoin it.' : 'You were removed from this session.');
 		return verdict;
 	}

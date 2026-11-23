@@ -307,6 +307,16 @@ h.run(async () => {
 		const at = () => [cam.position.x, cam.position.y, cam.position.z];
 		const dist = (a, b) => Math.hypot(a[0] - b[0], a[2] - b[2]);
 		// push the MOVE stick forward: on the standard mapping that is a NEGATIVE y
+		// 92-correct row 4: movement is per second, so one frame's step depends on the frame's length — sample it
+		let lastT = 0;
+		let longest = 0;
+		let sampling = true;
+		const tick = (/** @type {number} */ t) => {
+			if (lastT) longest = Math.max(longest, (t - lastT) / 1000);
+			lastT = t;
+			if (sampling) requestAnimationFrame(tick);
+		};
+		requestAnimationFrame(tick);
 		const before = at();
 		w.__padAxes([0, -1, 0, 0]);
 		await new Promise((r) => setTimeout(r, 900));
@@ -316,7 +326,9 @@ h.run(async () => {
 		const parked = at();
 		await new Promise((r) => setTimeout(r, 500));
 		const stillParked = at();
+		sampling = false;
 		return {
+			longest,
 			walked: dist(before, after),
 			coast: dist(after, parked),
 			drift: dist(parked, stillParked)
@@ -328,11 +340,13 @@ h.run(async () => {
 		`and STOPS when the stick centres — nothing moves in the second half-second (${moved.drift})`
 	);
 	// the poll rides flowRuntime's rAF and the movement threlte's task loop, so one frame
-	// can act on the previous snapshot: 0.1 = exactly one moveSpeed step. Bounded, and
-	// what "continuous input read once per frame" means.
+	// can act on the previous snapshot: at most ONE frame's step (92-correct row 4: per second, so
+	// moveSpeed 0.1 x 60 x the longest frame, capped at 1 s). Bounded, and what "continuous input
+	// read once per frame" means.
+	const oneFrame = 0.1 * 60 * Math.min(1, moved.longest) * 1.1 + 0.01;
 	h.check(
-		moved.coast <= 0.11,
-		`releasing costs at most ONE frame of latency, not a slide (${moved.coast.toFixed(3)} <= 0.11)`
+		moved.coast <= oneFrame,
+		`releasing costs at most ONE frame of latency, not a slide (${moved.coast.toFixed(3)} <= ${oneFrame.toFixed(3)}, longest frame ${(moved.longest * 1000).toFixed(0)} ms)`
 	);
 
 	// the LOOK stick turns the view, and invertY flips the pitch

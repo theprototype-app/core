@@ -6,6 +6,7 @@ import { gameValueOf, gameValueMax } from './gameValues.js';
 import { cameraShake, screenFlash, hitPause } from './gameFeelFx.js'; // 102b-hud row 19 // 102b-hud: the Game Value node's published source
 import { sessionNow, onSessionClockJump } from './sessionClock'; // 25-E: the synced clock is the SESSION's
 import { elapsedNow } from './scriptElapsed.js';
+import { autostartElapsed, wiredElapsed } from './hudTimerClock.js'; // 92-correct row 1: a leaf
 import { setScriptElapsed } from './sandbox/scripts.js';
 import { get } from 'svelte/store';
 import { phaseBegin, phaseEnd, PHASE_INPUT, PHASE_FLOW, PHASE_MODULES, PHASE_PHYSICS } from './perf/perfMarks.js'; // 34 PF: an import-free leaf
@@ -81,6 +82,7 @@ import {
 	DEFAULT_FLY_SPEED,
 	localPlayerBody
 } from './charController';
+import { playViewSettings } from './playViewSettings.js'; // 92-input GC4 (a leaf)
 import { gameFeelActive } from './gameFeel'; // 78 F10: a leaf (sceneStore + svelte/store)
 // 78 F2/F3/F8: the pure halves of On Hover, Hover Animate and Toggle Animation (a leaf)
 import { hoverEnvelope, ringLength, OVER_WINDOW, doorApply, doorPoseAt, poseIndexOf } from './hoverCore.js';
@@ -106,7 +108,8 @@ let behavioursRef = null;
 // 31 (Stars Room): a scene's own settings rows (31-game-shell's leaf), and the pointing switch
 import { registerGameSetting, gameSettingValue } from './gameSettings';
 import { setPointGrabEnabled } from './pointGrab';
-import { spawnedFromOf } from './transientObjects'; // 31: a copy answers to its template (a leaf)
+import { spawnedFromOf, transientObjects } from './transientObjects';
+import { instanceKey, extraCopyList, extraCopyFrom, onCopiesChanged } from './copyRegistry.js'; // 92-correct row 2: a leaf (the instancing, copyGraphs.js, loads with the first copy) // 31: a copy answers to its template (a leaf)
 import { pathCaptureNode } from './pathCaptureState'; // fix-batch-2: a leaf
 import { animateInEditor, EDITOR_MOTION_TYPES } from './editorMotion'; // 78 F6: a leaf
 import { publishLiveStates, liveStatesWanted } from './nodeLiveState'; // 78 F7: a leaf
@@ -535,11 +538,58 @@ function rebuildRuntimeGraph() {
 	dormant = orphanGraphIds();
 	if (!dormant.size) {
 		({ nodes, edges } = runtimeGraph(allNodes(), allEdges()));
+	} else {
+		const live = allNodes().filter((n) => !dormant.has(n.__graph));
+		const ids = new Set(live.map((n) => n.id));
+		({ nodes, edges } = runtimeGraph(live, allEdges().filter((e) => ids.has(e.source) && ids.has(e.target))));
+	}
+	addCopyInstances();
+}
+
+/** 92-correct row 2: the copies that run an instance of their template's flow, and the key of that set */
+let copyInstanceKey = '';
+/** @returns {{uuid: string, from: string}[]} */
+function spawnedCopies() {
+	/** @type {{uuid: string, from: string}[]} */
+	const out = [];
+	for (const object of transientObjects(sceneObjects ?? undefined)) {
+		const from = object.userData?.spawnedFrom;
+		if (typeof from === 'string' && from) out.push({ uuid: object.uuid, from });
+	}
+	for (const c of extraCopyList()) out.push(c); // kit entities (copyGraphs.registerCopy)
+	return out;
+}
+/** the object graphs a copy could instance (every live, non-scene graph) */
+function instanceableGraphs() {
+	return new Set(nodes.filter((n) => n.__graph && n.__graph !== SCENE_GRAPH && !n.__instanceOf).map((n) => n.__graph));
+}
+/** 92-correct row 2: copyGraphs.js once a scene holds a copy whose template has a flow @type {any} */
+let copyGraphsRef = null;
+let copyGraphsLoading = false;
+/** 92-correct row 2: append each spawned copy's instance of its template's object graph (copyGraphs.js) */
+function addCopyInstances() {
+	const copies = spawnedCopies();
+	copyInstanceKey = instanceKey(copies, instanceableGraphs());
+	if (!copyInstanceKey) return;
+	if (!copyGraphsRef) {
+		// lazy: a scene with no spawned copies never pays for the instancing; the first copy's frame
+		// waits one import, then the runtime rebuilds with it
+		if (!copyGraphsLoading) {
+			copyGraphsLoading = true;
+			import('./copyGraphs.js')
+				.then((m) => {
+					copyGraphsRef = m;
+					rebuildRuntimeGraph();
+				})
+				.catch((error) => console.warn('copy instances failed to load', error))
+				.finally(() => (copyGraphsLoading = false));
+		}
 		return;
 	}
-	const live = allNodes().filter((n) => !dormant.has(n.__graph));
-	const ids = new Set(live.map((n) => n.id));
-	({ nodes, edges } = runtimeGraph(live, allEdges().filter((e) => ids.has(e.source) && ids.has(e.target))));
+	const extra = copyGraphsRef.instanceGraphs(copies, nodes, edges);
+	if (!extra.nodes.length) return;
+	nodes = [...nodes, ...extra.nodes];
+	edges = [...edges, ...extra.edges];
 }
 
 /** the debug hook / e2e: what the runtime evaluates right now, and which object graphs sleep */
@@ -1732,31 +1782,33 @@ function runGameFeelFx(type, data) {
  * @type {Map<string, string>} */
 const hudButtonPressed = new Map();
 
-/** fix-batch-1: node id -> the clock time an autostart HUD Timer was first seen @type {Map<string, number>} */
-const hudTimerSeen = new Map();
+/** 92-correct row 1: node id -> where its autostart / wired clock counts from (hudTimerClock.js)
+ * @type {Map<string, any>} */
+const hudTimerAnchors = new Map();
 
-/** Seconds left on a HUD Timer. DERIVED from the shared trigger stamp, so every peer
- * reads the same number with no clock and no message of its own — the same reasoning
- * as a looping sound's phase. An `autostart` timer with nothing wired counts from when THIS
- * peer first saw the node (fix-batch-1, docs-1: it counted from the clock's origin, and the
- * synced clock is seconds since midnight, so an autostart timer always read 0). That one is
- * per peer — a timer everyone must agree on is wired to a shared pulse (`start`).
+/** Seconds left on a HUD Timer. A WIRED timer derives from the shared trigger stamp of its
+ * `start`, so every peer reads the same number with no clock and no message of its own (the
+ * looping sound's phase reasoning); 92-correct: a pause stops it. An `autostart` timer with
+ * nothing wired counts from the ROUND when the game shell is in use (the shared `startedAt`, so
+ * a late joiner reads the host's number) and from this peer's Play press otherwise — never from
+ * the editor (it used to count from when this peer first saw the node, so it had run down before
+ * anyone pressed Play: the 2.0-eval2 round-timer task, 0/10).
  * @param {any} node @param {any} data @param {number} time @param {any} ctx */
 function hudTimerRemaining(node, data, time, ctx) {
 	const duration = Math.max(0, num(data.duration));
 	// fix-batch-1 (docs-1 Q1): the card's socket is `start` (flowSockets types it), and only an
 	// unnamed / `trigger` wire counted — a Start wired by hand was ignored
 	const stamp = triggerStampFor(node.id, ctx, 'start');
+	let anchor = hudTimerAnchors.get(node.id);
+	if (!anchor) hudTimerAnchors.set(node.id, (anchor = {}));
 	if (stamp === null) {
 		if (data.autostart === false) return duration;
-		const seen = hudTimerSeen.get(node.id);
-		// a clock that went BACK by more than a second (midnight, a session clock adopted on join)
-		// re-bases; frame jitter does not (it would hold the timer at its full duration)
-		if (seen === undefined || time < seen - 1) hudTimerSeen.set(node.id, time);
-		return Math.max(0, duration - (time - /** @type {number} */ (hudTimerSeen.get(node.id))));
+		const ran = autostartElapsed({ game: viewGame(), nowMs: sessionNow(), playing: get(isLocked) === true, effNow: effectTime(time) }, anchor);
+		return Math.max(0, duration - ran);
 	}
+	const ran = wiredElapsed({ time, stamp, paused: time - effectTime(time) }, anchor);
 	// a synced stamp can sit AHEAD of `time` by a frame; clamp both ends
-	return Math.max(0, Math.min(duration, duration - (time - stamp)));
+	return Math.max(0, Math.min(duration, duration - ran));
 }
 
 // --- 21-D6: the game shell's ACTION half -------------------------------------
@@ -2574,7 +2626,9 @@ function updateCharNodes(time, ctx) {
 		// keys are local by nature — the moveinput rule). No code = the 21-E6 path, untouched.
 		if (builtinCodeActive(winner)) settings = playerCodeSettings(winner, settings, time);
 		else clearScriptError(winner.id);
-		setCharControl({ ...settings, sourceNodeId: winner.id });
+		// 92-input GC4: the camera this controller asks for (null = first person, every scene before it)
+		const view = playViewSettings(d);
+		setCharControl({ ...settings, sourceNodeId: winner.id, ...(view ? { view } : {}) });
 	}
 
 	// 2. THE ACTIONS, each on a fresh stamp for its OWN handle
@@ -2917,6 +2971,7 @@ function implicitOwnerOf(node) {
 	const graph = node.__graph;
 	if (!graph || graph === SCENE_GRAPH) return null;
 	if (muted.includes(graph)) return null;
+	if (node.__instanceFrom && muted.includes(node.__instanceFrom)) return null; // 92-correct: a muted template mutes its copies
 	const wired = edges.some(
 		(e) => e.source === node.id && nodeById(nodes, e.target)?.type === 'objectselector'
 	);
@@ -3721,7 +3776,10 @@ function reachesObjectSelector(startId, uuid) {
 	// 31 (Stars Room S4): a spawned COPY answers to its template's selectors — a Spawn's
 	// copies are the template's kind of thing, so a graph written for it (an On Hit that
 	// counts, a chime) reaches every copy with no node per copy. Only for transient copies.
-	const from = spawnedFromOf(uuid);
+	let from = spawnedFromOf(uuid) ?? extraCopyFrom(uuid);
+	// 92-correct row 2: a node in the template's OWN flow reaches the copy through the copy's instance
+	// of it (copyGraphs.js) — matching here too would run the template's chain for a copy's event
+	if (from && nodeById(nodes, startId)?.__graph === from) from = null;
 	const seen = new Set([startId]);
 	const stack = [startId];
 	while (stack.length) {
@@ -6165,9 +6223,14 @@ export function startFlowRuntime() {
 		sceneObjects = value;
 		rebuildRuntimeGraph();
 	});
+	// 92-correct row 2: a kit entity drawn or gone changes the copy instances
+	onCopiesChanged(() => {
+		if (instanceKey(spawnedCopies(), instanceableGraphs()) !== copyInstanceKey) rebuildRuntimeGraph();
+	});
 	// 55 Q1: an object added or removed (a delete, its undo, a joiner's objects landing after its graphs)
 	sceneRevision.subscribe(() => {
-		if (!sceneObjects || sameSet(orphanGraphIds(), dormant)) return;
+		// 92-correct row 2: a copy spawned or removed changes the instances, not the dormant set
+		if (!sceneObjects || (sameSet(orphanGraphIds(), dormant) && instanceKey(spawnedCopies(), instanceableGraphs()) === copyInstanceKey)) return;
 		rebuildRuntimeGraph();
 		applyColors();
 	});
@@ -6225,6 +6288,8 @@ const RT = {
 	localPlayerBody,
 	mulberry32,
 	myPeerVar,
+	/** 92-correct row 3: this peer's id, for a Game Value read `for: me` */
+	myPeerId: () => /** @type {any} */ (get(peers))?.peer?.id ?? '',
 	nodeById,
 	num,
 	opFolds,

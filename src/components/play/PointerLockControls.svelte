@@ -15,6 +15,8 @@
     import { playCode } from '$lib/playerAccess' // 53 (A6): the player's key remap
     import { inputClaims, getGamepadAxes } from '$lib/inputRuntime'
     import { gamepadPrefs } from '$lib/gamepadPrefs'
+    // 92-correct row 4: every built-in move is per SECOND (real time, not threlte's 0.1 s-clamped delta)
+    import { makeRealClock, frameDistance } from '$lib/realStep'
     import { coarsePointer } from '$lib/inputDevice'
     // W4: the touch play controls. A phone had no input path here at all — no pointer
     // lock, no keyboard, no Escape — so the overlay publishes a virtual stick and a look
@@ -42,6 +44,9 @@
       collideRigStep
     } from '$lib/charController'
     import { setLocalFeet } from '$lib/avatars/avatarState'
+    // 92-input GC4: third person / side-scroller / top-down. The rig stays the player; these only steer
+    // (side + top: keys are world directions), stop the look (side + top) and take the wheel (zoom)
+    import { playViewLooks, steerPlayMove, lockPlayPlane, playViewWheel } from '$lib/playViewSeam'
 
     const { renderer, camera, invalidate } = useThrelte()
     // 37 R23: a walking player's feet travel on the camera stream (avatarState.setLocalFeet)
@@ -230,8 +235,11 @@
       }
     })
 
+    /** 92-correct row 4: real seconds since the last frame (capped, see realStep.js) */
+    const realClock = makeRealClock()
     useTask(
     (delta) => {
+      const realDt = realClock(performance.now(), delta)
 
       // K-C: a module claimed the keys (possession) — WASD drives IT, not the camera
       if ($inputClaims.includes('keys')) return
@@ -248,7 +256,7 @@
       const lookRig: any = $cameraParent
       if (lookRig && $isLocked === true) {
         const look = drainTouchLook()
-        if (look.dx || look.dy) {
+        if ((look.dx || look.dy) && playViewLooks()) {
           const rate = TOUCH_LOOK_RADIANS_PER_PX * pointerSpeed * $touchLookSpeed
           applyLook(lookRig, look.dx * rate, look.dy * rate)
           onChange()
@@ -279,18 +287,23 @@
           const touch = $touchMove
           const mX = (prefs.swapSticks ? pad.rx : pad.lx) || touch.x
           const mY = (prefs.swapSticks ? pad.ry : pad.ly) || touch.y
-          const padWalkInput = {
+          // 92-input GC4: side / top turn the player to face its world direction and walk it forward
+          const padWalkInput = steerPlayMove(walker, {
             forward: moveState.forward || (mY < -0.01 ? 1 : 0),
             backward: moveState.backward || (mY > 0.01 ? 1 : 0),
             left: moveState.left || (mX < -0.01 ? 1 : 0),
             right: moveState.right || (mX > 0.01 ? 1 : 0)
-          }
-          tickWalker(walker, ctrl, delta, walkStep(walker, padWalkInput, speed, delta))
+          })
+          // 92-correct row 4: a long frame (a throttled tab, a busy phone) is cut into <= 0.1 s parts, each the
+          // step the walker always took, so the distance is per second at any frame rate and a wall still stops it
+          const parts = Math.max(1, Math.ceil(realDt / 0.1 - 1e-6))
+          for (let i = 0; i < parts; i++) tickWalker(walker, ctrl, realDt / parts, walkStep(walker, padWalkInput, speed, realDt / parts))
+          lockPlayPlane(walker)
           // 37 R23: the walker's floor, for the body peers draw (eyeHeight is world metres here)
           setLocalFeet(walker.getWorldPosition(feetProbe).y - Math.max(0.1, Number(ctrl.eyeHeight ?? 1.7) || 1.7))
           const lX = prefs.swapSticks ? pad.lx : pad.rx
           const lY = prefs.swapSticks ? pad.ly : pad.ry
-          if (lX || lY) {
+          if ((lX || lY) && playViewLooks()) {
             const rate = PAD_LOOK_RATE * pointerSpeed * prefs.lookSensitivity * delta
             applyLook(walker, lX * rate, (prefs.invertY ? -lY : lY) * rate)
             onChange()
@@ -304,20 +317,39 @@
       // 30b P3: the rig's WORLD pose before this frame's built-in step, for the collision pass
       const beforeWorld: any = $isLocked === true && $cameraParent ? $cameraParent.getWorldPosition(new Vector3()) : null
 
-      if (moveState.forward === 1) {
-        $cameraParent.translateZ(-speed);
+      // 92-correct row 4: `speed` is per 60 Hz frame (what every saved scene stores); the step is per SECOND
+      const step = frameDistance(speed, realDt)
+      // 92-input GC4: in a side / top view the keys AND the stick are world directions, folded into one
+      // steered "forward" (the walk path's rule); first / third person keep the code that was here
+      const steered = !playViewLooks() && $isLocked === true && $cameraParent
+      let flyMove = moveState
+      if (steered) {
+        const p = $gamepadPrefs
+        const pad = p.enabled ? getGamepadAxes() : { lx: 0, ly: 0, rx: 0, ry: 0 }
+        const sx = (p.swapSticks ? pad.rx : pad.lx) || $touchMove.x
+        const sy = (p.swapSticks ? pad.ry : pad.ly) || $touchMove.y
+        flyMove = steerPlayMove($cameraParent, {
+          ...moveState,
+          forward: moveState.forward || (sy < -0.01 ? 1 : 0),
+          backward: moveState.backward || (sy > 0.01 ? 1 : 0),
+          left: moveState.left || (sx < -0.01 ? 1 : 0),
+          right: moveState.right || (sx > 0.01 ? 1 : 0)
+        })
+      }
+      if (flyMove.forward === 1) {
+        $cameraParent.translateZ(-step);
       }
 
-      if (moveState.backward === 1) {
-        $cameraParent.translateZ(speed);
+      if (flyMove.backward === 1) {
+        $cameraParent.translateZ(step);
       }
 
-      if (moveState.left === 1) {
-        $cameraParent.translateX(-speed);
+      if (flyMove.left === 1) {
+        $cameraParent.translateX(-step);
       }
 
-      if (moveState.right === 1) {
-        $cameraParent.translateX(speed);
+      if (flyMove.right === 1) {
+        $cameraParent.translateX(step);
       }
 
       // 21-E5: THE DEFAULT PAD MAPPING - left stick moves, right stick looks. On with NO
@@ -337,7 +369,7 @@
       // the enabled test moved off this `if` and onto the snapshot below. A phone has no
       // gamepad prefs to go and find, and switching the pad off in Settings must not
       // take the only movement control on the device with it.
-      if ($isLocked === true && $cameraParent) {
+      if ($isLocked === true && $cameraParent && !steered) {
         // the deadzone is already applied in the snapshot - that one is the DEVICE's dead
         // centre (Settings > Input), not a game threshold
         const pad = padPrefs.enabled ? getGamepadAxes() : { lx: 0, ly: 0, rx: 0, ry: 0 }
@@ -348,11 +380,11 @@
         const lookY = padPrefs.swapSticks ? pad.ly : pad.ry
         if (moveX || moveY) {
           // stick forward reads NEGATIVE on the standard mapping and forward is -Z, so the
-          // vertical axis feeds translateZ directly. Scaled by moveSpeed PER FRAME exactly
-          // like the WASD steps above: delta-scaling the stick but not the keys would make
-          // the same scene move at two different speeds depending on the device.
-          $cameraParent.translateX(moveX * moveSpeed)
-          $cameraParent.translateZ(moveY * moveSpeed)
+          // vertical axis feeds translateZ directly. The SAME step as the WASD keys above (92-correct
+          // row 4: per second, and the speed in force — it read the raw moveSpeed before, so the wheel,
+          // a Character Controller and Move Speed never reached a stick)
+          $cameraParent.translateX(moveX * step)
+          $cameraParent.translateZ(moveY * step)
         }
         if (lookX || lookY) {
           const rate = PAD_LOOK_RATE * pointerSpeed * padPrefs.lookSensitivity * delta
@@ -367,11 +399,11 @@
       const play = resolvePlaySettings($globalScene)
 
       if (!play.grounded && moveState.up === 1) {
-        $cameraParent.translateY(-speed);
+        $cameraParent.translateY(-step);
       }
 
       if (!play.grounded && moveState.down === 1) {
-        $cameraParent.translateY(speed);
+        $cameraParent.translateY(step);
       }
 
       if (play.grounded && $isLocked && $cameraParent) {
@@ -398,6 +430,7 @@
       // 30b P3: ...and against the physics world's colliders while a simulation runs, so
       // desktop Play stops at a game's walls as the VR walker does (no world, no change)
       if ($isLocked === true && rig && beforeWorld) collideRigStep(rig, beforeWorld)
+      if ($isLocked === true && rig) lockPlayPlane(rig)
 
     },
     {
@@ -434,6 +467,8 @@
       // something, and says so on the event — never through a one-shot store
       // flag (the twin-Escape lesson)
       if (event.defaultPrevented) return
+      // 92-input GC4: a third / side / top view zooms with the wheel (between the node's limits)
+      if (playViewWheel(event.deltaY)) return
       // 21-E6 wrote through the store only while a controller was declared, and with
       // none it assigned this component's own `moveSpeed` — which is a `$props()`
       // binding (see the declaration), so the write did not reach the per-frame read
@@ -529,6 +564,7 @@
       // owns (module possess locks document.body).
       if (document.pointerLockElement !== domElement) return
       if (!$cameraParent) return
+      if (!playViewLooks()) return   // 92-input GC4: side + top views fix the view
   
       const { movementX, movementY } = event
 

@@ -49,10 +49,17 @@ export function gameKeyBindings() {
 	return mergeBindings(pairs, WALKER_KEYS);
 }
 
-/** The game's gamepad bindings (Gamepad Button nodes). @returns {PlayerBinding[]} */
-export function gamePadBindings() {
+/** The game's gamepad bindings (Gamepad Button nodes), after `actions` (92-input GC3: the built-in pad actions,
+ * playActions.PAD_ACTIONS — passed in, the catalog is lazy) @param {{pad: string, label: string}[]} [actions]
+ * @returns {PlayerBinding[]} */
+export function gamePadBindings(actions = []) {
 	const pairs = allNodes()
 		.filter((n) => n?.type === 'gamepadbutton' && typeof n.data?.button === 'string')
 		.map((n) => ({ code: String(n.data.button), action: n.data?.action }));
-	return mergeBindings(pairs).map((b) => (b.label.startsWith('Key ') ? { ...b, label: 'Button ' + codeLabel(b.code) } : b));
+	// 92-input GC3: the built-in pad actions are bindings too (Jump on A …); a Gamepad Button node on the same
+	// button shares the row (the bridge stands down for it, so the row says what the game made of it)
+	const base = actions.map((a) => ({ code: a.pad, label: a.label }));
+	const nodeCodes = new Set(pairs.map((p) => p.code));
+	const merged = mergeBindings(pairs, base.filter((b) => !nodeCodes.has(b.code)));
+	return merged.map((b) => (b.label.startsWith('Key ') ? { ...b, label: 'Button ' + codeLabel(b.code) } : b));
 }

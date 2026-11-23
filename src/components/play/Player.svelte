@@ -27,6 +27,8 @@
     import { kindOfRow } from '$lib/inviteStore'
     import { agentViews, showAgentMarkers } from '$lib/agentLog'
     import AgentMarker from './AgentMarker.svelte'
+    // 92-input GC4: YOUR body, drawn where you stand while a third / side / top view is in force
+    import { selfBody } from '$lib/playViewSeam'
 
     // CO5 — A COLOCATED PEER IS RENDERED AS A GHOST, and the whole rule lives in this
     // component because it is PRESENTATION. `$colocatedPeers` is a peer id set derived
@@ -212,6 +214,17 @@
       {/if}
   {/each}
   </T.Group>
+
+  <!-- 92-input GC4: YOUR character in a third-person / side / top view (local, scene root; the same look
+       peers see, posed from the play camera by playView.js) -->
+  {#if $selfBody && !$avatarPreview}
+    {@const me = $userdata.find((u) => u[0] == $peers.peer?.id)}
+    <AvatarRig
+      user={['self-view', me?.[1] || $username || 'You', me?.[2] ?? null, null, null, me?.[5]]}
+      lookId={$peers.peer?.id ?? ''}
+      preview={$selfBody}
+    />
+  {/if}
 
   <!-- 36-avatars: YOUR character, while the customise panel is open (local, scene root) -->
   {#if $avatarPreview}

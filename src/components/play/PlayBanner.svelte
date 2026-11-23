@@ -18,6 +18,7 @@
 	import { scenePlay } from '$lib/scenePhysics';
 	import { hudDocs } from '$lib/hudDocs';
 	import { gameLevels, shellMenuAvailable } from '$lib/gameShell';
+	import { activeInput } from '$lib/activeDevice.js'; // 92-input GC3 (the glyph itself is lazy)
 
 	// shellMenuAvailable reads its stores through get(), so the dependencies ride as
 	// unused arguments (GameShellMenu's idiom)
@@ -35,7 +36,8 @@
 		{#if custom}
 			<span class="pb-hint" data-custom="true">{custom}</span>
 		{:else if !coarse}
-			<span class="pb-hint">Press <kbd>Esc</kbd> {game ? 'for the menu' : 'to stop'}</span>
+			<!-- 92-input GC3: the pad's own Menu / Options button when the player is on a pad -->
+			<span class="pb-hint">Press {#if $activeInput.kind === 'pad'}{#await import('../ui/InputGlyph.svelte') then G}<G.default code="Escape" />{/await}{:else}<kbd data-glyph="key">Esc</kbd>{/if} {game ? 'for the menu' : 'to stop'}</span>
 		{/if}
 		<MomentButton />
 		{#if !game && !coarse}
@@ -72,7 +74,7 @@
 	.pb-hint[data-custom='true'] {
 		color: var(--text-2);
 	}
-	kbd {
+	.pb-hint :global(kbd) {
 		padding: 1px 5px;
 		border: 1px solid var(--border-strong);
 		border-radius: 4px;

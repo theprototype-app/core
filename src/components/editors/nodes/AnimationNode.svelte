@@ -44,6 +44,20 @@
 		if (v && typeof v === 'object' && v.__handles && (e.sourceHandle || '__default' in v)) return e.sourceHandle ? v.__handles[e.sourceHandle] : v.__default;
 		return v;
 	};
+	// 92-input GC4: a param may show only for some values of another (`showIf: {camera: ['third']}`) — a WIRED
+	// one always shows, so its edge never loses its handle — and an unset one reads its default from
+	// `defaultsBy` (the view's own default, the number in force) before the plain `defaults`
+	$: shown = (param: any, d: any) =>
+		!param.showIf ||
+		!!wiredSource(param.key) ||
+		Object.entries(param.showIf).every(([k, vals]: [string, any]) => (vals as string[]).includes(String(d[k] ?? spec?.defaults?.[k])))
+	$: dflt = (key: string, d: any) => {
+		for (const [k, table] of Object.entries(spec?.defaultsBy ?? {}) as [string, any][]) {
+			const v = table?.[String(d[k] ?? spec?.defaults?.[k])]?.[key]
+			if (v !== undefined) return v
+		}
+		return spec?.defaults?.[key]
+	}
 	function fmt(v: any) {
 		if (v === undefined || v === null) return '…';
 		if (typeof v === 'number') return (+v).toFixed(2);
@@ -92,6 +106,7 @@
 		{/each}
 		{#if spec?.params}
 			{#each spec.params as param}
+				{#if shown(param, data)}
 				<label class="relative flex flex-col" class:-mx-3={!!spec?.inputs} class:px-3={!!spec?.inputs}>
 					{#if spec?.inputs && param.kind === 'range'}
 						<!-- the row owns its handle here, so it cannot drift from its label -->
@@ -100,7 +115,7 @@
 					<span class="flex justify-between">
 						<span title={param.key}>{param.label ?? param.key}</span>
 						{#if param.kind === 'range' && !wiredSource(param.key)}
-							<span>{data[param.key] ?? spec.defaults[param.key]}</span>
+							<span>{data[param.key] ?? dflt(param.key, data)}</span>
 						{/if}
 					</span>
 					{#if param.kind === 'range' && wiredSource(param.key)}
@@ -115,7 +130,7 @@
 							min={param.min}
 							max={param.max}
 							step={param.step}
-							value={data[param.key] ?? spec.defaults[param.key]}
+							value={data[param.key] ?? dflt(param.key, data)}
 							on:input={(e) => setNodeData(id, { [param.key]: +e.currentTarget.value })}
 						/>
 					{:else if param.kind === 'toggle'}
@@ -123,7 +138,7 @@
 						<span class="nodrag nopan flex items-center gap-1.5">
 							<input
 								type="checkbox"
-								checked={!!(data[param.key] ?? ('legacy' in param ? param.legacy : spec.defaults[param.key]))}
+								checked={!!(data[param.key] ?? ('legacy' in param ? param.legacy : dflt(param.key, data)))}
 								on:change={(e) => setNodeData(id, { [param.key]: e.currentTarget.checked })}
 							/>
 						</span>
@@ -135,13 +150,13 @@
 							type="text"
 							placeholder={param.placeholder ?? ''}
 							maxlength={param.maxLength ?? null}
-							value={data[param.key] ?? spec.defaults[param.key] ?? ''}
+							value={data[param.key] ?? dflt(param.key, data) ?? ''}
 							on:change={(e) => setNodeData(id, { [param.key]: e.currentTarget.value })}
 						/>
 					{:else if param.kind === 'select'}
 						<select
 							class="nodrag nopan"
-							value={data[param.key] ?? spec.defaults[param.key]}
+							value={data[param.key] ?? dflt(param.key, data)}
 							on:change={(e) => setNodeData(id, { [param.key]: e.currentTarget.value })}
 						>
 							{#each param.options as option}
@@ -156,7 +171,7 @@
 							min={param.min ?? null}
 							max={param.max ?? null}
 							step={param.step ?? 'any'}
-							value={data[param.key] ?? spec.defaults[param.key] ?? 0}
+							value={data[param.key] ?? dflt(param.key, data) ?? 0}
 							on:change={(e) => setNodeData(id, { [param.key]: +e.currentTarget.value })}
 						/>
 					{:else if param.kind === 'color'}
@@ -164,11 +179,12 @@
 						<input
 							class="nodrag nopan h-6 w-full cursor-pointer rounded-sm bg-surface-inset"
 							type="color"
-							value={data[param.key] ?? spec.defaults[param.key]}
+							value={data[param.key] ?? dflt(param.key, data)}
 							on:change={(e) => setNodeData(id, { [param.key]: e.currentTarget.value })}
 						/>
 					{/if}
 				</label>
+				{/if}
 			{/each}
 		{/if}
 		{#if spec?.note}

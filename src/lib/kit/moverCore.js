@@ -322,7 +322,20 @@ export function idSide(id) {
  */
 export function stepMovers(ents, dt, t, world = {}) {
 	if (!(dt > 0)) return 0;
-	dt = Math.min(dt, 0.1); // a stalled frame must not teleport through a wall
+	// 92-correct row 4: NPCs move per SECOND at any frame rate. A long frame (a throttled tab: 2-4 fps)
+	// used to count 0.1 s, so movers fell behind real time; now it is cut into <= 0.1 s parts, each the
+	// step a mover always took (so a stalled frame still cannot teleport through a wall), up to 1 s
+	// (realStep.js STEP_CAP_S; this file imports nothing).
+	const total = Math.min(dt, 1);
+	const parts = Math.max(1, Math.ceil(total / 0.1 - 1e-6));
+	const sub = total / parts;
+	let moved = 0;
+	for (let i = 0; i < parts; i++) moved = Math.max(moved, stepMoversOnce(ents, sub, t - total + sub * (i + 1), world));
+	return moved;
+}
+
+/** one <= 0.1 s step of every mover @param {any[]} ents @param {number} dt @param {number} t @param {any} [world] */
+function stepMoversOnce(ents, dt, t, world = {}) {
 	let movedCount = 0;
 	let plans = 0;
 	for (let i = 0; i < ents.length; i++) {

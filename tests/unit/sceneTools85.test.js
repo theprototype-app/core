@@ -155,7 +155,11 @@ describe('scene: spawn, opening view, play camera', () => {
 		expect(scene.planPlayCamera({ mode: 'first' }).controller).toMatchObject({ mode: 'walk', eyeHeight: 1.7 });
 		expect(scene.planPlayCamera({ mode: 'first', fly: true, speed: 9 }).controller).toMatchObject({ mode: 'fly', speed: 1 });
 		expect(scene.planPlayCamera({ mode: 'none' }).controller).toBe(null);
-		for (const m of ['third', 'orbit', 'fixed']) expect(scene.planPlayCamera({ mode: m }).later).toMatch(/Possess Object/);
+		for (const m of ['orbit', 'fixed']) expect(scene.planPlayCamera({ mode: m }).later).toMatch(/Possess Object/);
+		// 92-input GC4: third / side / top are Play cameras now (a Character Controller's `camera`)
+		expect(scene.planPlayCamera({ mode: 'third', distance: 99 }).controller).toMatchObject({ camera: 'third', mode: 'walk', distance: 60 });
+		expect(scene.planPlayCamera({ mode: 'side-scroller', fly: true }).controller).toMatchObject({ camera: 'side', mode: 'walk' });
+		expect(scene.planPlayCamera({ mode: 'top-down', angle: 70 }).controller).toMatchObject({ camera: 'top', angle: 70 });
 		expect(scene.planPlayCamera({ mode: 'drone' }).error).toBeTruthy();
 	});
 });

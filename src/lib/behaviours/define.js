@@ -24,6 +24,11 @@
 //            VALUE output (the replicated state, so every peer reads the same); any other name is
 //            an EVENT output, fired by `this.emit('holeSunk')` (a replicated pulse, the
 //            nodetrigger path: wire it into Announce, Game sound, a kit action…).
+//
+// 92-correct row 3 — PER-PLAYER STATE. `on: {playerJoined({by}) {…}, playerLeft({by}) {…}}` run on the
+// authority as each player enters / leaves Play, and `this.players()` is who is in Play now (sorted
+// peer ids). A state field keyed by peer id (`team: {}`, `score: {}`) is per-player state that every
+// peer agrees on; a Game Value node with `who: me` shows each person their own entry.
 // A behaviour with neither list has no sockets, exactly as before.
 
 /** keys of a behaviour object that are not methods */
@@ -60,6 +65,7 @@ export const CONTEXT_MEMBERS = [
 	'log',
 	'isAuthority',
 	'me',
+	'players',
 	'object',
 	'emit',
 	'id',

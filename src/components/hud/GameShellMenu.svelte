@@ -38,6 +38,9 @@
 	import { codeLabel, playerCodeFor, RESERVED_KEYS } from '$lib/playerAccessCore';
 	import { gameKeyBindings, gamePadBindings } from '$lib/playerBindings';
 	import { GAMEPAD_BUTTONS } from '$lib/gamepadPrefs';
+	// 92-input GC3: the ONE capture (Q6, lazy: loaded by the press that starts one), the conflict note,
+	// and the glyph a row's pad button is drawn with (lazy too)
+	import { activeInput } from '$lib/activeDevice.js';
 	import { flowGraphs } from '../../stores/flowStore';
 	import { touchControlsVisible } from '$lib/touchActions'; // 36 U8: the Touch controls row
 	import { gameSettingValues, gameSettingRows, setGameSetting } from '$lib/gameSettings';
@@ -63,55 +66,62 @@
 	const vrViewsFor = (/** @type {any[]} */ ..._deps) => shellSettingViews({ vr: true }).filter((/** @type {any} */ r) => r.vrOnly);
 	const vrSettings = $derived(vrViewsFor($gameSettingValues));
 	const helpFor = (/** @type {any[]} */ ..._deps) => shellHelpLines({ vr: false });
-	const help = $derived(helpFor($gameHelp, $gameDescription));
+	const help = $derived(helpFor($gameHelp, $gameDescription, $activeInput));
 	const accessFor = (/** @type {any[]} */ ..._deps) => shellAccessViews();
 	const accessRows = $derived(accessFor($accessValues));
 	const keysFor = (/** @type {any[]} */ ..._deps) => gameKeyBindings();
 	const keyRows = $derived(page === 'access' ? keysFor($flowGraphs) : []);
-	const padsFor = (/** @type {any[]} */ ..._deps) => gamePadBindings();
-	const padRows = $derived(page === 'access' ? padsFor($flowGraphs) : []);
+	// 92-input GC3: the built-in pad actions are rows too; their catalog is lazy, fetched as the page opens
+	/** @type {{pad: string, label: string}[]} */
+	let padActions = $state([]);
+	/** the capture core, fetched as the page opens so the press that starts a capture is never early @type {any} */
+	let captureMod = null;
+	$effect(() => {
+		if (page !== 'access') return;
+		if (!padActions.length) import('$lib/playActions.js').then((m) => (padActions = m.PAD_ACTIONS));
+		if (!captureMod) import('$lib/keyCapture.js').then((m) => (captureMod = m));
+	});
+	const padsFor = (/** @type {any[]} */ actions, /** @type {any[]} */ ..._deps) => gamePadBindings(actions);
+	const padRows = $derived(page === 'access' ? padsFor(padActions, $flowGraphs) : []);
 	const coarse = typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches;
 	/** the binding waiting for the player's key / button @type {{kind: 'keys' | 'pad', code: string} | null} */
 	let capturing = $state(null);
 	let captureNote = $state('');
+	/** the live capture (keyCapture.js), so a second press of the row or leaving the page cancels it @type {{cancel: () => void} | null} */
+	let capture = null;
 	$effect(() => {
-		if (!open || page !== 'access') capturing = null;
+		if (!open || page !== 'access') stopCapture();
 	});
+	function stopCapture() {
+		capture?.cancel();
+		capture = null;
+		capturing = null;
+	}
 	/** @param {'keys' | 'pad'} kind @param {string} code */
-	function startCapture(kind, code) {
+	async function startCapture(kind, code) {
+		stopCapture();
 		capturing = { kind, code };
 		captureNote = '';
-		if (kind === 'pad') pollPad();
-	}
-	/** a pad has no key event: poll until a button goes down (or the capture ends) */
-	function pollPad() {
 		const want = capturing;
-		if (!want || want.kind !== 'pad') return;
-		const pads = typeof navigator !== 'undefined' && navigator.getGamepads ? [...navigator.getGamepads()] : [];
-		const pad = pads.find((p) => p && p.connected !== false);
-		const i = pad ? pad.buttons.findIndex((b) => b.pressed) : -1;
-		if (i >= 0 && GAMEPAD_BUTTONS[i]) {
-			remapControl('pad', want.code, GAMEPAD_BUTTONS[i], padRows.map((r) => r.code));
-			capturing = null;
-			return;
-		}
-		requestAnimationFrame(pollPad);
-	}
-	/** capture phase: the pressed key belongs to the remap, not to the game or the menu @param {KeyboardEvent} event */
-	function onCaptureKey(event) {
-		if (!capturing || capturing.kind !== 'keys' || !open) return;
-		event.preventDefault();
-		event.stopPropagation();
-		if (event.code === 'Escape') {
-			capturing = null;
-			return;
-		}
-		if (RESERVED_KEYS.has(event.code)) {
-			captureNote = codeLabel(event.code) + ' is kept for the menu and the browser — pick another key';
-			return;
-		}
-		remapControl('keys', capturing.code, event.code, keyRows.map((r) => r.code));
-		capturing = null;
+		// normally already loaded with the page (synchronous: a key pressed straight after the click is ours)
+		const { remapCapture } = captureMod ?? (captureMod = await import('$lib/keyCapture.js'));
+		if (capturing !== want) return; // cancelled while the capture loaded
+		capture = remapCapture({
+			kind,
+			code,
+			rows: kind === 'pad' ? padRows : keyRows,
+			table: kind === 'pad' ? $accessRemap.pad : $accessRemap.keys,
+			padButtons: GAMEPAD_BUTTONS,
+			reserved: RESERVED_KEYS,
+			codeLabel,
+			playerCodeFor,
+			remap: remapControl,
+			note: (/** @type {string} */ t) => (captureNote = t),
+			done: () => {
+				capture = null;
+				capturing = null;
+			}
+		});
 	}
 	const nameFor = (/** @type {any[]} */ ..._deps) => shellGameName();
 	const gameName = $derived(nameFor($gameDescription, $gameSettingValues));
@@ -168,7 +178,7 @@
 	}
 </script>
 
-<svelte:window onkeydown={onKeyDown} onkeydowncapture={onCaptureKey} />
+<svelte:window onkeydown={onKeyDown} />
 
 {#if offered && !open}
 	<button
@@ -284,7 +294,7 @@
 					</div>
 					{#if !coarse || padRows.length}
 						<h3 class="gs-group">Controls</h3>
-						<p class="gs-note">{capturing ? captureNote || (capturing.kind === 'pad' ? 'Press a gamepad button… (Esc cancels)' : 'Press a key… (Esc cancels)') : 'Pick a control, then press the key or button you want for it.'}</p>
+						<p class="gs-note" data-remap-note aria-live="polite">{capturing ? captureNote || (capturing.kind === 'pad' ? 'Press a gamepad button… (Esc cancels)' : 'Press a key… (Esc cancels)') : captureNote || 'Pick a control, then press the key or button you want for it.'}</p>
 					{/if}
 					{#if !coarse}
 						{#each keyRows as row (row.code)}
@@ -323,7 +333,8 @@
 			class:gs-key-wait={waiting}
 			aria-label={row.label + ': ' + codeLabel(now) + (waiting ? ', waiting for a press' : '. Press to change')}
 			aria-pressed={waiting}
-			onclick={() => (waiting ? (capturing = null) : startCapture(kind, row.code))}>{waiting ? '…' : codeLabel(now)}</button
+			onclick={() => (waiting ? stopCapture() : startCapture(kind, row.code))}
+			>{#if waiting}…{:else if kind === 'pad'}{#await import('../ui/InputGlyph.svelte')}{codeLabel(now)}{:then G}<G.default code={now} as="pad" raw />{/await}{:else}{codeLabel(now)}{/if}</button
 		>
 	</div>
 {/snippet}

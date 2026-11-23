@@ -295,7 +295,8 @@ h.run(async () => {
 	h.check(south?.name === 'Wall 3', `the south wall is Wall 3 (${south?.name})`);
 	await page.evaluate((uuid) => window.__tp.test.v1.materialsHandler.setObjectColor(uuid, '#c0392b'), south.uuid);
 	await iwer.enter(page);
-	const spec6 = turned(room(), 90);
+	// the room as section 5 left it (its north wall moved 10 cm), seen by a session turned 90°
+	const spec6 = turned(room(-1.6), 90);
 	await page.evaluate((spec) => window.__room.set(spec), spec6);
 	await iwer.frames(page, 3);
 	const r6 = await page.evaluate(() => window.__tp.test.v1.roomScan.scanMyRoom());
@@ -323,7 +324,7 @@ h.run(async () => {
 	// a wall gone from the room setup (the east wall, Wall 2): kept, flagged, not removed
 	const east = before6.kids.find((k) => k.name === 'Wall 2');
 	h.check(!!east && east.pos[0] > 1.9, `Wall 2 is the east wall (${JSON.stringify(east?.pos)})`);
-	const spec6b = turned({ planes: room().planes.filter((p) => !(p.label === 'wall' && p.pos[0] > 1.9)), meshes: room().meshes }, 90);
+	const spec6b = turned({ planes: room(-1.6).planes.filter((p) => !(p.label === 'wall' && p.pos[0] > 1.9)), meshes: room(-1.6).meshes }, 90);
 	await page.evaluate((spec) => window.__room.set(spec), spec6b);
 	await iwer.frames(page, 3);
 	await page.evaluate(() => window.__tp.test.v1.toastStore.set([]));
@@ -334,5 +335,5 @@ h.run(async () => {
 	h.check(a6b.kids.length === 10 && a6b.kids.some((k) => k.uuid === east.uuid && k.name === 'Wall 2'), 'Wall 2 is still there under its name');
 	await iwer.exit(page);
 
-	await browser.close();
+	await h.finish(browser);
 });

@@ -12,8 +12,11 @@
 	import Section from '../../ui/Section.svelte';
 	import SettingRow from '../../ui/SettingRow.svelte';
 	import Icon from '../../ui/Icon.svelte';
+	import KeyChips from '../../ui/KeyChips.svelte'; // 103 row 8: one chip style with Ctrl+K and the main menu
 	import { showToast } from '../../../stores/appStore.js';
-	import { shortcuts, comboOf, isRebindable, rebindShortcut, resetShortcut, setOverride, setShortcutCapture, nonLatinLayoutSeen } from '$lib/shortcuts';
+	import { showConfirm } from '$lib/confirmDialog';
+	import { shortcuts, comboOf, isRebindable, rebindShortcut, resetShortcut, takeConflictingKeys, setShortcutCapture, nonLatinLayoutSeen, keymapPreset, presetDefaultOf } from '$lib/shortcuts';
+	import { flyWithWasd } from '$lib/flyPrefs'; // 103 H5: the grid re-keys on it
 	import { scopeLabel } from '$lib/keyScope';
 	import { settingsResetTick } from '$lib/settings/resetCategory.js';
 
@@ -93,15 +96,24 @@
 	function swapConflict() {
 		const c = conflict;
 		if (!c) return;
-		const mine = shortcuts.find((s) => s.id === c.id);
-		if (mine) setOverride(c.other.id, mine.keys);
-		setOverride(c.id, c.keys);
+		// 103 H14: the one write path Ctrl+K's Replace takes too (shortcuts.takeConflictingKeys)
+		takeConflictingKeys(c.id, c.keys, c.other.id, 'swap');
 		conflict = null;
 		version++;
 	}
 
-	/** @param {string} id */
-	function resetOne(id) {
+	/** 103 row 10 (level one): a confirm that says what changes @param {string} id */
+	async function resetOne(id) {
+		const row = shortcuts.find((s) => s.id === id);
+		if (!row) return;
+		const to = presetDefaultOf(id);
+		const ok = await showConfirm({
+			title: `Reset ${row.label.split(/\s+[—–]\s+/)[0]}?`,
+			message: `It goes from ${row.keys || 'no key'} back to ${to || 'no key'}, the active keymap's own key. Nothing else changes.`,
+			confirmLabel: 'Reset',
+			cancelLabel: 'Cancel'
+		});
+		if (!ok) return;
 		resetShortcut(id);
 		conflict = null;
 		version++;
@@ -124,7 +136,13 @@
 		     non-Latin layout — say how letters resolve -->
 		<p id="shortcut-layout-note" class="sc-note">Letter shortcuts use the physical key position on this layout — the key where the letter sits on a QWERTY keyboard.</p>
 	{/if}
-	{#key `${version}:${$settingsResetTick}`}
+	<!-- 103 H5: the keymap preset + the two fly prefs, a LAZY card (the boot rule: the preset tables
+	     load only when this page or a stored preset needs them) -->
+	{#await import('./KeymapSettings.svelte') then mod}
+		{@const KeymapCard = mod.default}
+		<KeymapCard onchange={() => version++} />
+	{/await}
+	{#key `${version}:${$settingsResetTick}:${$keymapPreset}:${$flyWithWasd}`}
 		<div id="shortcut-grid" class="sc-groups">
 			{#each groups as group (group)}
 				<Section variant="card" label={group} badge={groupScope(group) ? 'Keys work ' + groupScope(group) : ''}>
@@ -133,13 +151,14 @@
 							{#if layoutHint(shortcut.keys, layoutLabels)}
 								<span class="shortcut-layout sc-hint" title="Your keyboard layout prints this on that key">· {layoutHint(shortcut.keys, layoutLabels)} on your layout</span>
 							{/if}
+							<span class="sc-keycell">
 							{#if isRebindable(shortcut)}
-								{#if shortcut.keys !== shortcut.defaultKeys}
+								{#if shortcut.keys !== presetDefaultOf(shortcut.id)}
 									<button
 										type="button"
 										class="shortcut-reset sc-reset"
-										title={'Reset to ' + shortcut.defaultKeys}
-										aria-label={'Reset ' + shortcut.label + ' to ' + shortcut.defaultKeys}
+										title={'Reset to ' + (presetDefaultOf(shortcut.id) || 'no key')}
+										aria-label={'Reset ' + shortcut.label + ' to ' + (presetDefaultOf(shortcut.id) || 'no key')}
 										onclick={() => resetOne(shortcut.id)}><Icon name="rotate-ccw" size={16} strokeWidth={1.75} /></button
 									>
 								{/if}
@@ -149,14 +168,15 @@
 									class:sc-capturing={capturingId === shortcut.id}
 									title="Click to rebind"
 									aria-label={'Rebind ' + shortcut.label}
-									onclick={() => startCapture(shortcut.id)}>{capturingId === shortcut.id ? 'Press keys… Esc cancels' : shortcut.keys}</button
+									onclick={() => startCapture(shortcut.id)}>{#if capturingId === shortcut.id}Press keys… Esc cancels{:else if shortcut.keys}<KeyChips keys={shortcut.keys} />{:else}Not set{/if}</button
 								>
 							{:else}
 								<span class="sc-locked" title={shortcut.fixedReason || 'listed for reference'}>
-									<kbd class="sc-keys sc-keys-locked">{shortcut.keys}</kbd>
 									<Icon name="lock" size={16} strokeWidth={1.75} />
+									<span class="sc-keys sc-keys-locked"><KeyChips keys={shortcut.keys} muted /></span>
 								</span>
 							{/if}
+							</span>
 							{#snippet extra()}
 								{#if conflict && conflict.id === shortcut.id}
 									<div class="shortcut-conflict sc-conflict" role="alert">
@@ -188,13 +208,41 @@
 		font-size: var(--fs-desc);
 		color: var(--warn-text);
 	}
+	/* 103 row 8: the keys sit in ONE right-aligned column (the Ctrl+K width), the reset / lock to its left, every row
+	   the palette's and the main menu's height; the key button is a frame around the shared chips */
+	/* the height sits on the border-box ROW, not its body: the card draws a 1 px divider above every row after the
+	   first, and a 32 px body under it made a 33 px pitch beside the palette's 32 */
+	#shortcut-grid :global(.setting-row) {
+		--setting-row-pad-y: 0px;
+		box-sizing: border-box;
+		min-height: var(--key-row-h, 32px);
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+	}
+	#shortcut-grid :global(.setting-row .sr-name) {
+		display: block;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.sc-keycell {
+		display: inline-flex;
+		align-items: center;
+		justify-content: flex-end;
+		gap: 4px;
+		min-width: var(--key-col-w, 112px);
+	}
 	.sc-keys {
-		min-width: 64px;
-		height: var(--control-h-sm);
-		padding: 0 10px;
-		border: 1px solid var(--border-strong);
+		display: inline-flex;
+		align-items: center;
+		justify-content: flex-end;
+		min-width: 0;
+		height: 26px;
+		padding: 0 4px;
+		border: 1px solid transparent;
 		border-radius: 6px;
-		background: var(--surface-inset);
+		background: transparent;
 		font-family: var(--font-ui-mono);
 		font-size: var(--fs-desc);
 		font-weight: 500;

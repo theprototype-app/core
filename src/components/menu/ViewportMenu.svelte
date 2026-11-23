@@ -19,6 +19,7 @@
 	import { moduleViewToggles } from '$lib/moduleWorldItems.js'; // 61-nav: module overlays (navmesh, NPC debug)
 	import { togglePanel } from '$lib/panelToggles';
 	import { trackpadMode } from '$lib/trackpadNav';
+	import { flyWithWasd, flyDirection } from '$lib/flyPrefs'; // 103 H5 / H10
 	import { helpersInPlay } from '$lib/helperLayer';
 	// 42 I14: View ▸ Focus mode (the key's label follows a rebind)
 	import { focusMode, toggleViewportFocus } from '$lib/focusMode';
@@ -358,6 +359,26 @@
 						{ label: 'Zoom (mouse wheel)', checked: $trackpadMode === 'off', action: () => trackpadMode.set('off') },
 						{ label: 'Pan (trackpad swipe)', checked: $trackpadMode === 'on', action: () => trackpadMode.set('on') },
 						{ label: 'Auto-detect', checked: $trackpadMode === 'auto', action: () => trackpadMode.set('auto') }
+					]
+				},
+				{
+					// 103 H10: switch the fly direction without opening Settings
+					label: 'Fly direction',
+					hint: $flyDirection === 'look' ? 'Where I look' : 'Level',
+					tooltip: 'W / S along the ground (Level) or along the view, so looking up and pressing W climbs (Where I look); Q / E always go straight down / up',
+					children: [
+						{ label: 'Level', checked: $flyDirection !== 'look', action: () => flyDirection.set('level') },
+						{ label: 'Where I look', checked: $flyDirection === 'look', action: () => flyDirection.set('look') }
+					]
+				},
+				{
+					// 103 H5: WASD keeps flying by default; the right-button mode frees the letters
+					label: 'Fly with WASD',
+					hint: $flyWithWasd === 'rmb' ? 'Right mouse held' : 'Always',
+					tooltip: 'Always, or only while the right mouse button is held over the viewport (frees W A S D Q E for commands)',
+					children: [
+						{ label: 'Always', checked: $flyWithWasd !== 'rmb', action: () => flyWithWasd.set('always') },
+						{ label: 'Only while holding the right mouse button', checked: $flyWithWasd === 'rmb', action: () => flyWithWasd.set('rmb') }
 					]
 				},
 				{

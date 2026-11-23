@@ -2,8 +2,9 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { objectsGroup, lockedObjects, globalScene, TControls, gizmoSuppressed, pokeScene } from '../stores/sceneStore';
-import { peers, showToast } from '../stores/appStore';
+import { showToast } from '../stores/appStore';
 import { commitMeshGeoSnapshot } from './faceEdit';
+import { sendMeshGeo } from './meshCommit';
 import { MAX_SNAPSHOT, previewReplicable } from './meshBudget';
 import { selectObject, deselectObject } from './objectActions';
 import { nameOf } from './lockControl';
@@ -312,16 +313,8 @@ export function enterSculpt(uuid, opts = {}) {
 		object.geometry.dispose();
 		object.geometry = nonIndexed;
 		object.geometry.computeVertexNormals();
-		/** @type {any} */
-		const peer = get(peers);
-		// raw Float32 bytes (the meshgeo wire format — a plain number array this
-		// big blows binarypack's recursion, see faceEdit.broadcastMeshGeo)
-		if (peer)
-			peer.send({
-				type: 'meshgeo',
-				uuid,
-				positions: new Float32Array(nonIndexed.getAttribute('position').array).buffer
-			});
+		// 99 K2: meshCommit's one sender (raw Float32 bytes, positions only)
+		sendMeshGeo(uuid, nonIndexed.getAttribute('position').array);
 	}
 	if (isTerrain) rebuildWeldMap(object);
 	else rebuildMeshWeldMap(object);
@@ -488,21 +481,14 @@ export function strokeMove(uuid, x, z, dt = 0.016, y = 0) {
 	const now = performance.now();
 	if (now - lastPreview > 200) {
 		const object = objectOf(uuid);
-		/** @type {any} */
-		const peer = get(peers);
 		// The same preview trade the face tools make (see meshBudget.js): a stroke on
 		// a dense mesh would stream megabytes 5×/s to every peer. Above the preview
 		// ceiling the brush stays LOCAL and the stroke's ONE end-of-stroke commit
 		// carries the result — peers see where you got to, not every pass.
 		const floats = object?.geometry?.attributes?.position?.array?.length ?? 0;
-		if (peer && object && previewReplicable(floats)) {
+		// 99 K2: meshCommit's one sender (positions only); false = offline, nothing sent
+		if (object && previewReplicable(floats) && sendMeshGeo(uuid, object.geometry.attributes.position.array))
 			lastPreview = now;
-			peer.send({
-				type: 'meshgeo',
-				uuid,
-				positions: new Float32Array(object.geometry.attributes.position.array).buffer
-			});
-		}
 	}
 	pokeScene();
 }

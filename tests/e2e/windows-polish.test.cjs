@@ -350,7 +350,7 @@ h.run(async () => {
 			const r = el.getBoundingClientRect();
 			const pill = document.getElementById('controls-pill')?.getBoundingClientRect();
 			const stack = [...document.querySelectorAll('#hud-stack-left > *')].map((e) => e.getBoundingClientRect()).filter((s) => s.width && s.left < r.right && s.right > r.left);
-			return { b: Math.round(r.bottom), vh: innerHeight, pillT: pill ? Math.round(pill.top) : null, stackT: stack.length ? Math.round(Math.min(...stack.map((s) => s.top))) : null, scrolls: el.scrollHeight > el.clientHeight + 1, fade: el.dataset.fadeY || '' };
+			return { b: Math.round(r.bottom), vh: innerHeight, pillT: pill ? Math.round(pill.top) : null, stackT: stack.length ? Math.round(Math.min(...stack.map((s) => s.top))) : null, ...(() => { const sc = document.getElementById('sidebar70-scroll') || el; return { scrolls: sc.scrollHeight > sc.clientHeight + 1, fade: sc.dataset.fadeY || '' }; })() };
 		});
 		h.check(menu.b <= menu.vh && (menu.stackT === null || menu.b <= menu.stackT) && (menu.pillT === null || menu.b <= menu.pillT), `PL7 HONOR: the main menu ends inside the screen, above the toolbar and the + corner stack (${JSON.stringify(menu)})`);
 		h.check(!menu.scrolls || menu.fade === 'end', `PL7 ...and what does not fit scrolls, its bottom edge fading (${menu.fade})`);

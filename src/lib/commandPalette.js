@@ -35,16 +35,29 @@ import { POPPABLE, panelTitle, panelIsOpen } from './windows/panelRegistry.js';
 
 /** @returns {Command[]} */
 function toolCommands() {
+	// 103 H14: a FIXED row with an action of its own (Leave focus mode on Escape) is listed too, its key greyed with the
+	// reason — the palette is where a person meets "why can't I change this one"
 	return shortcuts
-		.filter((s) => s.id !== 'help.palette' && !s.external && !s.fixed && typeof s.action === 'function' && (!s.when || s.when()))
+		.filter((s) => s.id !== 'help.palette' && !s.external && typeof s.action === 'function' && (!s.when || s.when()))
 		.map((s) => ({
 			id: 'shortcut:' + s.id,
 			kind: 'tool',
 			label: s.label,
 			detail: s.group,
 			keys: s.keys,
+			shortcutId: s.id,
+			...(s.fixed ? { locked: s.fixedReason || 'This key cannot be changed' } : {}),
 			run: () => s.action?.()
 		}));
+}
+
+/** 103 H14: the registry row that toggles a window, so its palette row shows (and changes) the same key */
+/** @type {Record<string, string>} */
+const WINDOW_SHORTCUTS = { objects: 'panels.object-list', flow: 'panels.node-editor', explorer: 'panels.explorer', animation: 'panels.animation', uv: 'panels.uv-editor', shader: 'panels.shader-editor', hud: 'panels.hud-editor', timeline: 'panels.timeline', chat: 'panels.chat' };
+/** @param {string} key @returns {{ keys?: string, shortcutId?: string }} */
+function windowKeys(key) {
+	const row = shortcuts.find((s) => s.id === WINDOW_SHORTCUTS[key]);
+	return row ? { keys: row.keys, shortcutId: row.id } : {};
 }
 
 /** @returns {Command[]} */
@@ -57,10 +70,11 @@ function windowCommands() {
 		kind: 'window',
 		label: titles[key] ?? key,
 		detail: 'Window — show or hide',
+		...windowKeys(key),
 		run: () => togglePanel(key)
 	}));
 	list.push(
-		{ id: 'window:chat', kind: 'window', label: 'Chat', detail: 'Window — show or hide', run: () => toggleChatTab('session') }, // uir-chat
+		{ id: 'window:chat', kind: 'window', label: 'Chat', detail: 'Window — show or hide', ...windowKeys('chat'), run: () => toggleChatTab('session') }, // uir-chat
 		{ id: 'window:ai', kind: 'window', label: 'AI assistant', detail: 'Window — show or hide', words: 'chat llm', run: () => toggleChatTab('assistant') },
 		{ id: 'window:notes', kind: 'window', label: 'Scene notes', detail: 'Window — show or hide', words: 'annotations', run: () => notesDrawerOpen.update((v) => !v) },
 		{ id: 'window:notifications', kind: 'window', label: 'Notifications', detail: 'Window — show or hide', words: 'history bell', run: () => notificationCenterOpen.update((v) => !v) }

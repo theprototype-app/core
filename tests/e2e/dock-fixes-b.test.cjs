@@ -187,7 +187,8 @@ h.run(async () => {
 	await page.waitForSelector('#sidebar70', { timeout: 10000 });
 	await page.waitForTimeout(600);
 	const menuFade = await S(page, () => {
-		const n = document.getElementById('sidebar70');
+		// 103 H14: the rows (and the fade) live in the inner #sidebar70-scroll
+		const n = document.getElementById('sidebar70-scroll') || document.getElementById('sidebar70');
 		if (!n) return null;
 		const before = { fade: n.dataset.fadeY || '', more: n.scrollHeight - n.clientHeight };
 		n.scrollTop = n.scrollHeight;

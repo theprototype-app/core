@@ -514,6 +514,8 @@
 	 * uv index; -1 = none.
 	 */
 	let navMode = $state(false);
+	/** 103 follow-up: Space is held, so a left drag pans (any tool) */
+	let spaceHeld = $state(false);
 	let navCursor = $state(-1);
 
 	function localPoint(/** @type {PointerEvent | WheelEvent} */ e) {
@@ -593,7 +595,8 @@
 		if (xform === 'move') {
 			// screen delta -> UV delta (dv negated: v is up)
 			const scale = span * zoom;
-			applyUvSnapshot(object, ctx.snapshot, { du: ctx.dx / scale, dv: -ctx.dy / scale });
+			// 103 H4: a U / V lock (Move now's X / Y) keeps the other axis still
+			applyUvSnapshot(object, ctx.snapshot, { du: uvLocks.v && !uvLocks.u ? 0 : ctx.dx / scale, dv: uvLocks.u && !uvLocks.v ? 0 : -ctx.dy / scale });
 			return;
 		}
 		const pivot = ctx.pivot;
@@ -609,7 +612,9 @@
 			const r0 = Math.hypot(from.u - pivot.cu, from.v - pivot.cv);
 			const r1 = Math.hypot(to.u - pivot.cu, to.v - pivot.cv);
 			const k = r0 > 1e-6 ? Math.max(r1 / r0, 0.01) : 1;
-			applyUvSnapshot(object, ctx.snapshot, { scaleU: k, scaleV: k, pivot });
+			// 103 H4: a U / V lock scales that axis alone
+			const oneAxis = uvLocks.u !== uvLocks.v;
+			applyUvSnapshot(object, ctx.snapshot, { scaleU: oneAxis && uvLocks.v ? 1 : k, scaleV: oneAxis && uvLocks.u ? 1 : k, pivot });
 		}
 	}
 
@@ -656,8 +661,42 @@
 		},
 		onActive: (on, modal) => {
 			grabbing = on && modal;
+			if (!on) uvLocks = { u: false, v: false };
+		},
+		// 103 H4: Esc / a right-click cancels (Blender's rule), and the start-at-once keys' locks
+		rightCancels: true,
+		key: (_ctx, e) => {
+			if (e.type !== 'keydown') return false;
+			const combo = comboOf(e);
+			if (bindingOf('uv.lock-u') && combo === bindingOf('uv.lock-u')) {
+				uvLocks = { ...uvLocks, u: !uvLocks.u };
+				grab.refresh();
+				return true;
+			}
+			if (bindingOf('uv.lock-v') && combo === bindingOf('uv.lock-v')) {
+				uvLocks = { ...uvLocks, v: !uvLocks.v };
+				grab.refresh();
+				return true;
+			}
+			for (const [row, mode] of UV_NOW) {
+				if (bindingOf(row) && combo === bindingOf(row)) {
+					armXform(mode);
+					return true;
+				}
+			}
+			return false;
 		}
 	});
+	/** 103 H4: the start-at-once rows ('' = no key; the Blender preset binds G / R / S) */
+	const UV_NOW = /** @type {[string, 'move'|'rotate'|'scale'][]} */ ([
+		['uv.now-move', 'move'],
+		['uv.now-rotate', 'rotate'],
+		['uv.now-scale', 'scale']
+	]);
+	/** 103 H4: X / Y locks while a start-at-once (or middle-button) grab runs */
+	let uvLocks = $state({ u: false, v: false });
+	/** 103 H4: where the pointer last hovered the canvas — a key has no coordinates */
+	let hoverClient = /** @type {[number, number] | null} */ (null);
 
 	/** open a transform gesture on the current selection
 	 * @param {PointerEvent|null} e @param {boolean} modal @param {number[]|null} [collapseTo] */
@@ -824,6 +863,14 @@
 		/** is a vertex under the pointer at all */
 		const canPick = editable.ok && !wireTooDense;
 
+		// 103 follow-up: SPACE held + a left drag pans in ANY tool (the way to pan with no middle
+		// button — a trackpad, a pen); it wins over the origin handle, the brush and the points
+		if (e.button === 0 && spaceHeld) {
+			gesture = 'pan';
+			attachDragListeners();
+			return;
+		}
+
 		// MIDDLE on a SELECTED vertex is the MODAL GRAB; middle anywhere else pans,
 		// which is what it has always done and the only escape hatch the marquee
 		// tools leave for panning.
@@ -909,6 +956,10 @@
 		} else if ($uvTool === 'lasso') {
 			lasso = [[x, y]];
 			gesture = 'lasso';
+		} else if (e.shiftKey && $uvTool === 'select') {
+			// 103 H4: Shift-drag on empty space box-selects (adding), whatever tool is armed
+			marquee = { x0: x, y0: y, x1: x, y1: y };
+			gesture = 'box';
 		} else {
 			gesture = 'pan';
 		}
@@ -1009,6 +1060,7 @@
 	}
 
 	function onHover(/** @type {PointerEvent} */ e) {
+		hoverClient = [e.clientX, e.clientY];
 		if (gesture !== 'idle' || !target || !editable.ok || wireTooDense) return;
 		const { x, y } = localPoint(e);
 		hoverIndex = nearestUvIndex(target, slot, toU(x), toV(y), grabRadius(), faceScope);
@@ -1075,6 +1127,7 @@
 	//   Ctrl+Space       enter keyboard NAVIGATION, then take the cursor's vertex into
 	//                    the selection (or out of it); the arrows walk the cursor while
 	//                    it is on, and Esc leaves
+	//   Space (held)     a left drag pans, whatever the tool (no middle button needed)
 	//   Ctrl+Shift+arrow grow the selection in that direction (in either mode)
 	//   Ctrl+A / Ctrl+I  select all / invert (the mesh editor's pair)
 	//   L                grow to the whole UV island
@@ -1101,6 +1154,28 @@
 		// registry rather than written as a letter here, so rebinding the row in
 		// Settings really moves the key. Tested first, so the binding is authoritative
 		// whatever the user moves it onto.
+		// 103 H4: START AT ONCE — the selection follows the pointer with no button held (rebindable,
+		// no key by default; the Blender preset binds G / R / S). Asked first, like uv.grab below.
+		for (const [row, mode] of UV_NOW) {
+			const bound = bindingOf(row);
+			if (bound && comboOf(e) === bound && selCluster.length && !grab.active()) {
+				claim();
+				armXform(mode);
+				const rect = canvasEl?.getBoundingClientRect();
+				const at = hoverClient ?? (rect ? [rect.left + rect.width / 2, rect.top + rect.height / 2] : [0, 0]);
+				startTransform(/** @type {any} */ ({ clientX: at[0], clientY: at[1] }), true);
+				return;
+			}
+		}
+		// 103 H4: the tool keys (no key by default; the Blender preset binds W / B / C / P)
+		for (const tool of TOOLS) {
+			const bound = bindingOf('uv.tool-' + tool.key);
+			if (bound && comboOf(e) === bound) {
+				claim();
+				uvTool.set(tool.key);
+				return;
+			}
+		}
 		if (comboOf(e) === bindingOf('uv.grab')) {
 			claim();
 			armXform('move');
@@ -1114,6 +1189,12 @@
 		if (e.code === 'Space' && ctrl) {
 			claim();
 			navSelect();
+			return;
+		}
+		// 103 follow-up: bare Space held = a left drag pans (released on keyup / blur)
+		if (e.code === 'Space' && !e.altKey && !e.shiftKey) {
+			claim();
+			spaceHeld = true;
 			return;
 		}
 		if (e.key === 'Escape') {
@@ -1182,12 +1263,21 @@
 	function uvSurface(node) {
 		const keys = /** @type {any} */ (onKey);
 		const menuHandler = /** @type {any} */ (onContextMenu);
+		/** Space up (anywhere: focus may have moved while it was held) or the tab losing focus */
+		const spaceUp = (/** @type {KeyboardEvent} */ e) => {
+			if (e.code === 'Space') spaceHeld = false;
+		};
+		const blur = () => (spaceHeld = false);
 		node.addEventListener('keydown', keys, true);
 		node.addEventListener('contextmenu', menuHandler);
+		window.addEventListener('keyup', spaceUp, true);
+		window.addEventListener('blur', blur);
 		return {
 			destroy: () => {
 				node.removeEventListener('keydown', keys, true);
 				node.removeEventListener('contextmenu', menuHandler);
+				window.removeEventListener('keyup', spaceUp, true);
+				window.removeEventListener('blur', blur);
 			}
 		};
 	}
@@ -1880,7 +1970,8 @@
 					<canvas
 						bind:this={canvasEl}
 						id="uv-canvas"
-						class="absolute inset-0 h-full w-full"
+						class="absolute inset-0 h-full w-full {spaceHeld ? (gesture === 'pan' ? 'cursor-grabbing' : 'cursor-grab') : ''}"
+						data-space-pan={spaceHeld ? '1' : undefined}
 						style="touch-action: none"
 						use:uvCanvas
 					></canvas>
@@ -1952,7 +2043,7 @@
 				<div class="p-2 text-[11px] leading-relaxed text-text-muted">
 					<p class="mb-2">Drag a vertex to move its UV corner. Corners that share a point move together, and dragging any selected vertex moves the whole selection.</p>
 					<p class="mb-2"><span class="text-text-2">Shift</span> (or Ctrl) adds to the selection — clicking a vertex, or with box and lasso.</p>
-					<p class="mb-2"><span class="text-text-2">Box</span> and <span class="text-text-2">Lasso</span> select everything they enclose. Middle-drag pans in any tool; in Select, dragging the background pans and clicking it deselects.</p>
+					<p class="mb-2"><span class="text-text-2">Box</span> and <span class="text-text-2">Lasso</span> select everything they enclose. Middle-drag, or <span class="text-text-2">Space</span> held + drag, pans in any tool; in Select, dragging the background pans, Shift-dragging it box-selects, and clicking it deselects.</p>
 					<p class="mb-2"><span class="text-text-2">1 / 2 / 3</span> arm Move, Rotate and Scale.</p>
 					<p class="mb-2">Rotate and scale turn about the selection's centre. The <span class="text-text-2">origin</span> button places one you can <span class="text-text-2">drag</span> instead — it snaps onto a point when you come near one, Alt places it freely — and right-click ▸ Origin puts it under the pointer. <span class="text-text-2">Alt</span> while STARTING a gesture uses the cursor for that gesture alone.</p>
 					<p class="mb-2"><span class="text-text-2">Middle-press a selected point</span> to grab the selection: it follows the pointer with no button held until a click or <span class="text-text-2">Enter</span> places it, and <span class="text-text-2">Esc</span> puts it back.</p>

@@ -23,7 +23,8 @@ import { SpatialHash } from './spatialHash.js';
  *   cornerVertex?: ArrayLike<number>|null,
  *   triFace?: ArrayLike<number>|null
  * }} MeshArrays
- * @typedef {{ weld?: number|false }} ImportOptions
+ * @typedef {{ weld?: number|false|{ key: number } }} ImportOptions `{ key: s }` welds by the editor's position KEY
+ *   (`Math.round(x * s)` per axis, faceEdit's keyOf at s = 1e4): exactly the vertices the soup operators treat as one
  * @typedef {{ triangles: number, faces: number, ngons: number, degenerate: number, fallbackFaces: number, partition: 'used'|'absent'|'invalid'|'ids', vertices: number }} ImportReport
  */
 
@@ -187,6 +188,7 @@ export function fromArrays(src, options = {}) {
 		let rep = null;
 		if (weld === 0) rep = exactWeld(positions, srcCount);
 		else if (typeof weld === 'number' && weld > 0) rep = epsilonWeld(positions, srcCount, weld);
+		else if (weld && typeof weld === 'object' && weld.key > 0) rep = keyWeld(positions, srcCount, weld.key);
 		const kernelOf = new Int32Array(srcCount).fill(NONE);
 		for (let c = 0; c < cornerCount; c++) {
 			// weld:false on a soup still shares a vertex between corners naming one source index
@@ -337,6 +339,42 @@ export function fromArrays(src, options = {}) {
 	report.degenerate = mesh.numDegenerate;
 	report.vertices = mesh.numVerts;
 	return { mesh, report };
+}
+
+/**
+ * Key weld: source vertex -> the first source vertex with the same rounded key (Math.round(x * s)
+ * per axis — faceEdit's keyOf at s = 1e4, so the topology is the one every soup operator saw). The
+ * first vertex of a key keeps its position. Open addressing on the integer keys.
+ * @param {ArrayLike<number>} p @param {number} n @param {number} s @returns {Int32Array}
+ */
+function keyWeld(p, n, s) {
+	let size = 1;
+	while (size < n * 2) size <<= 1;
+	const mask = size - 1;
+	const table = new Int32Array(size).fill(-1);
+	const keys = new Float64Array(n * 3);
+	const rep = new Int32Array(n);
+	for (let i = 0; i < n; i++) {
+		// + 0: Math.round(-0.4) is -0, which must meet 0 (the string key prints both as "0")
+		const x = (keys[i * 3] = Math.round(p[i * 3] * s) + 0);
+		const y = (keys[i * 3 + 1] = Math.round(p[i * 3 + 1] * s) + 0);
+		const z = (keys[i * 3 + 2] = Math.round(p[i * 3 + 2] * s) + 0);
+		let h = (bitsHash(x) ^ Math.imul(bitsHash(y), 0x27d4eb2f) ^ Math.imul(bitsHash(z), 0x165667b1)) & mask;
+		for (;;) {
+			const j = table[h];
+			if (j < 0) {
+				table[h] = i;
+				rep[i] = i;
+				break;
+			}
+			if (keys[j * 3] === x && keys[j * 3 + 1] === y && keys[j * 3 + 2] === z) {
+				rep[i] = j;
+				break;
+			}
+			h = (h + 1) & mask;
+		}
+	}
+	return rep;
 }
 
 /**

@@ -1753,7 +1753,22 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   operators author through. Imports NOTHING, deliberately: it stays a pure unit outside
   the history-cycle family, and derivation stays in faceEdit where the operators live.
   Full contract in the faceEdit entry below),
-  `meshKernel/` (99 K1, NOT imported by the app yet — K2-K4 move the editor onto it): a
+  **99 K2 — ONE COMMIT, ONE SENDER.** `meshCommit.js` (pure) is the only `meshgeo` builder (`meshGeoMessage`/
+  `sendMeshGeo`; the wire is byte-identical, proved across two trees by `mesh-commit-two-tree`) and `compactMeshState`
+  (what history keeps: Float32 positions/uvs, the partition packed Int32, so `entryBytes` counts what is HELD).
+  `faceEdit.commitMesh(c)` = snapshot -> apply ('session' | 'object') -> broadcast -> record ('op' | 'entry' | false),
+  the one path every mesh commit takes (session ops, commitMeshGeoTriple/Snapshot, the UV editor, adjust, live mirror).
+  **99 K3 — ONE EDIT SESSION.** `editSessionState.js` (a leaf) holds it: `session.face` (`FS` in faceEdit: object,
+  workingTris, faces, quadPartner, overlay(s), grab, adjust, proxy) and `session.vertex` (`VS` in meshEdit: object,
+  handles, handleMesh, overlay, proxy, selectedHandle, selection, proxyGesture) replace the module globals; the shared
+  part (uuid, entry, edited, kernel, ID selection) opens and closes in `editSession.js` on the 15-F moments. ENTRY IS
+  LOSSLESS: the entry geometry is kept by reference and a leave with nothing edited re-emits it (never the welded
+  kernel). The kernel is built after entry in `meshSession.worker.js` (lazy `meshSession.js`, skipped above the commit
+  ceiling); stashed picks are stored as IDs (faces, vertices, edges = vertex-ID pairs). K4 runs bevel, extrude/inset/move,
+  bridge/fill/solidify, merge/dissolve/delete, subdivide/symmetrize on the session's op mesh (`heldOpMesh` ->
+  `sessionKernelCommit`/`objectKernelCommit`, IDs carried; the K3 adapter module had no caller left and went). History counts a typed
+  array shared by several steps once (`meshBudget.historyBytes`; `meshCommit.shareIds` shares equal ID channels).
+  `meshKernel/` (99 K1; the app reaches it only lazily, through meshSession.js — K4 moves the operators onto it): a
   headless face-vertex mesh in flat typed arrays (BMesh disk + radial cycles), no three.js in
   the core (`three.js` is the one adapter that imports it), stable vertex/edge/face IDs = slots
   never reused until `compact()` (returns old -> new maps), n-gons, per-corner attributes,
@@ -2866,6 +2881,24 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   shortcut table stands down in Play), pad `GamepadSelect` via inputRuntime.onInput, the Play bar's `#moment-share`
   (PlayBanner) / `#embed-moment` (EmbedChrome). Debug: `momentStores` row + `momentBuffer` registered at runtime
   (`state()` carries the cost numbers). Suites: unit `moment`; e2e `moment-share`.
+- **103 H14 + rows 7-10 — THE MAIN MENU, Ctrl+K AND YOUR KEYMAPS** (lane 103-menu-palette). The main menu's rows scroll in
+  `#sidebar70-scroll` BETWEEN the locked Ctrl+K row and the Settings footer, and `use:edgeFade` sits on that scroller, so
+  the pinned rows never dim and a side fades only while rows hide there (suites reading the menu's scroll read the inner
+  scroller now). `lib/ui/dragScroll.js`: a mouse drag scrolls with momentum, < 6 px is still a click, a drag never
+  activates a row (capture-phase click swallow), no cursor change. **Ctrl+K is a LAZY chunk** (App mounts it while open,
+  warmed on idle): on the phone shell it is the main menu's sheet (SheetGrip, `paletteSheetH`, above `--kb-inset`); a
+  HANDHELD (`inputDevice.handheldDevice`, not `any-pointer: fine` — the HONOR reports a fine pointer) shows no key column
+  and no editing. Desktop rows edit their shortcut in place (chip / Add shortcut / right-click / F2; Enter saves, Esc
+  cancels, Backspace = a stored `''`) through the SAME write paths as Settings: `takeConflictingKeys` (Settings Swap,
+  Ctrl+K Replace), `clearShortcut`, `resetShortcut`. `components/ui/KeyChips.svelte` is the one key chip (textContent =
+  the combo) for the palette, Settings and the menu; `--key-row-h` / `--key-col-w` give one row height and one
+  right-aligned key column (the height sits on the border-box Settings ROW: the card's 1 px divider made 33 px).
+  `lib/keymaps.js` (lazy with the Keymap card): a SAVED keymap = base preset + changes (`keymapsSaved`, `keymapActive`;
+  the working state stays `keymapPreset` + `shortcutOverrides`, so nothing new runs at boot); "changed since you saved
+  it" counts against the SAVED copy (`changedSinceSavedCount`), "Reset this keymap" against the base
+  (`changedFromBaseCount`); `shortcutsChanged` (shortcuts.js) bumps on every change in force so a derived view follows a
+  rebind made anywhere. Settings do not sync between devices: keymaps move by export / import. Suites: unit
+  `dragScroll`, `keymaps`; e2e `menu-palette-103`; device lab row `m103-palette` (lane evidence, not in cloud).
 
 ## UI design system (redesign epic)
 

@@ -24,7 +24,8 @@ h.run(async () => {
 	// Add search: open via Shift+A (opt-in pref, default off), results list scrolls
 	await page.evaluate(() => window.__tp.test.v1.enableShiftAdd.set(true));
 	await page.keyboard.press('Shift+KeyA');
-	await page.waitForTimeout(300);
+	// (the action imports its store lazily: on a busy dev server it can land after 300 ms — wait for it, up to 3 s)
+	await page.locator('#add-search-box').waitFor({ state: 'visible', timeout: 3000 }).catch(() => {});
 	h.check(await page.locator('#add-search-box').isVisible(), 'add search opens');
 	const scrolls = await page.evaluate(() => {
 		const list = document.querySelector('#add-search-box .overflow-y-auto');

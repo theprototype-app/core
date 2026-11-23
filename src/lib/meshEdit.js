@@ -13,7 +13,7 @@ import { peers, showToast } from '../stores/appStore';
 import { registerHistoryKind, recordEntry } from './history';
 // 15-F: session-scoped undo — editSession imports ONLY history (an edge we
 // already have), so this closes no cycle
-import { noteEditEnter, noteEditExit, sealEditHistorySession } from './editSession';
+import { noteEditEnter, noteEditExit, noteSelectionIds, sealEditHistorySession } from './editSession';
 import {
 	createFaceFromVerts,
 	lookupEditable,
@@ -38,7 +38,8 @@ import {
 	smoothVertices,
 	connectVertices,
 	dissolveVertices,
-	beginOpAdjust
+	beginOpAdjust,
+	recordMeshGeo
 } from './faceEdit';
 // 19-A P4: the proportional stores/falloff moved to a LEAF (faceEdit needs them
 // too, and it cannot import this module — we import faceEdit above). Re-exported
@@ -77,6 +78,9 @@ import {
 	setMeshPivotPreview
 } from './meshPivot';
 import { viewportHasKeys } from './keyScope'; // 36 U11
+import { session as editSession } from './editSessionState';
+/** 99 K3: the vertex part of the one edit session (declared before every module-eval reader) */
+const VS = editSession.vertex;
 
 // Vertex edit mode: one object at a time, drag vertex handles with the
 // regular gizmo. Handles that share a position (e.g. the 24 position entries
@@ -87,12 +91,10 @@ import { viewportHasKeys } from './keyScope'; // 36 U11
 /** @type {import('svelte/store').Writable<string|null>} uuid of the object in edit mode */
 export const editingObject = writable(null);
 
-/** @type {any} */ let edited = null; // the THREE.Mesh being edited
-/** @type {{indices: number[], position: THREE.Vector3}[]} */ let handles = [];
-/** @type {any} */ let handleMesh = null; // InstancedMesh of vertex handles
-/** @type {any} */ let overlay = null; // wireframe overlay child
-/** @type {any} */ let proxy = null; // gizmo target for the selected handle
-let selectedHandle = -1;
+// 99 K3: the vertex session's state lives on the ONE edit session (editSessionState.js
+// `session.vertex`, `VS`): object (was `edited`, the THREE.Mesh being edited), handles, handleMesh,
+// overlay (the wireframe child), proxy (the gizmo target), selectedHandle, selection (was
+// `vertexSelection`) and proxyGesture.
 /** 175: remember the vertex SELECTION per object, restored on re-entry. The whole SET is
  * stashed, not just the anchor: switching Vertices -> Faces -> Vertices kept only the
  * anchored handle, so a carefully built multi-selection vanished on the way through
@@ -103,18 +105,17 @@ let selectedHandle = -1;
 let stashedVert = { uuid: null, handle: -1, set: [], count: -1 };
 /** @type {number[] | null} */
 let dragStartLocal = null;
-/**
- * The live gizmo gesture, or null when no drag is in progress. Everything a
+/*
+ * `VS.proxyGesture`: the live gizmo gesture, or null when no drag is in progress. Everything a
  * rotate/scale needs is captured HERE, at drag start, and every frame writes
  * ABSOLUTELY from it — the documented rule for any "apply a delta to N things"
  * gesture, and the reason 20 small frames land exactly where one big one does.
  *
- * Declared UP HERE with the other session state, well above its readers: this
+ * It lives on `VS`, bound at the top of the file, well above its readers: this
  * file's module-eval store subscribers have TDZ-crashed the SSR prerender three
  * times over a `let` declared further down.
- * @type {{mode: string, seat: any, pos: any, quat: any, scale: any, starts: any[]}|null}
+ * Shape: {mode, seat, pos, quat, scale, starts[]} | null.
  */
-let proxyGesture = null;
 let lastSent = 0;
 
 // B2: the wireframe display toggle + shared overlay builder live in faceEdit
@@ -122,13 +123,13 @@ let lastSent = 0;
 // Subscribed AFTER the `let overlay` declaration — the callback runs at
 // module eval (the classic store-subscriber TDZ).
 meshEditWireframe.subscribe((value) => {
-	if (overlay) overlay.visible = value; // live toggle mid-session (vertex mode)
+	if (VS.overlay) VS.overlay.visible = value; // live toggle mid-session (vertex mode)
 });
 // quad view vs raw triangulation is a different EDGE SET, so it rebuilds
 registerVertexWireRebuild(() => {
-	if (!overlay || !edited) return;
-	overlay.geometry.dispose();
-	overlay.geometry = editWireGeometry(edited.geometry);
+	if (!VS.overlay || !VS.object) return;
+	VS.overlay.geometry.dispose();
+	VS.overlay.geometry = editWireGeometry(VS.object.geometry);
 });
 
 const HANDLE_COLOR = 0x2f81f7;
@@ -193,21 +194,20 @@ const APPARENT_PX = 9;
 vertexHandleAdaptive.subscribe((value) => {
 	if (typeof localStorage !== 'undefined')
 		safeStorage.setItem('vertexHandleAdaptive', value ? '1' : '0');
-	if (!handleMesh || !edited) return;
+	if (!VS.handleMesh || !VS.object) return;
 	// re-pose every handle: the matrices carry the scale, so switching modes is a rewrite
-	for (let i = 0; i < handles.length; i++) refreshHandleMatrix(i);
+	for (let i = 0; i < VS.handles.length; i++) refreshHandleMatrix(i);
 });
 
 vertexHandleScale.subscribe((value) => {
 	if (typeof localStorage !== 'undefined') safeStorage.setItem('vertexHandleScale', String(value));
 	// live, and cheap: the size lives in the instance MATRICES, so nothing is rebuilt and
 	// no handle index moves — the selection survives a size change
-	if (!handleMesh || !edited) return;
-	for (let i = 0; i < handles.length; i++) refreshHandleMatrix(i);
+	if (!VS.handleMesh || !VS.object) return;
+	for (let i = 0; i < VS.handles.length; i++) refreshHandleMatrix(i);
 });
 
-/** 177: handle indices ctrl/shift-selected for Create face */
-let vertexSelection = new Set();
+// 177: the handle indices ctrl/shift-selected for Create face are `VS.selection`
 /** 24-B1: the vertex pick the active mode key HID (with its gizmo) — the face
  * session's `hiddenElements`, for this session. Declared before the gizmo-pref
  * listener below reads it. @type {{ uuid: string, indices: number[], anchor: number } | null} */
@@ -215,14 +215,14 @@ let hiddenVertices = null;
 /** reactive size of the multi-selection (drives the Create face button) */
 export const vertexSelectionSize = writable(0);
 function syncVertexSelection() {
-	vertexSelection = new Set([...vertexSelection].filter((i) => i < handles.length));
-	vertexSelectionSize.set(vertexSelection.size);
-	if (handleMesh) refreshHandleColors();
+	VS.selection = new Set([...VS.selection].filter((i) => i < VS.handles.length));
+	vertexSelectionSize.set(VS.selection.size);
+	if (VS.handleMesh) refreshHandleColors();
 	// the gizmo sits at the selection's CENTRE, so ANY change to the set moves it —
 	// including the removals that never went through setAnchor (dropping a non-anchor
 	// member left the gizmo where the old centroid used to be). Never mid-gesture:
 	// re-seating the proxy under a live drag would fight the pointer.
-	if (selectedHandle >= 0 && proxy && !proxyGesture) seatProxy();
+	if (VS.selectedHandle >= 0 && VS.proxy && !VS.proxyGesture) seatProxy();
 }
 
 // ---- selection history ----------------------------------------------------
@@ -231,31 +231,31 @@ function syncVertexSelection() {
 // two accessors it needs. Handle INDICES are the state; they only mean anything
 // inside this session, which is exactly the scope the 15-F seal gives them.
 registerVertexSelectionHistory({
-	snapshot: () => (edited ? { uuid: edited.uuid, sel: [...vertexSelection] } : null),
+	snapshot: () => (VS.object ? { uuid: VS.object.uuid, sel: [...VS.selection] } : null),
 	/** @param {number[]} sel */
 	apply: (sel) => {
-		if (!edited || !handles.length) return false;
-		const live = sel.filter((i) => i >= 0 && i < handles.length);
-		vertexSelection = new Set(live);
+		if (!VS.object || !VS.handles.length) return false;
+		const live = sel.filter((i) => i >= 0 && i < VS.handles.length);
+		VS.selection = new Set(live);
 		setAnchor(live.length ? live[live.length - 1] : -1);
 		syncVertexSelection();
 		return true;
 	},
 	// 37 R11: the picks as POSITIONS across a live-symmetry rebuild (commitFalloffSnapshot's rule)
 	positions: () =>
-		edited && handles.length
+		VS.object && VS.handles.length
 			? {
-					anchor: selectedHandle >= 0 ? handles[selectedHandle]?.position.clone() ?? null : null,
-					members: [...vertexSelection].map((i) => handles[i]?.position.clone()).filter(Boolean)
+					anchor: VS.selectedHandle >= 0 ? VS.handles[VS.selectedHandle]?.position.clone() ?? null : null,
+					members: [...VS.selection].map((i) => VS.handles[i]?.position.clone()).filter(Boolean)
 				}
 			: null,
 	/** @param {any} picks */
 	reselect: (picks) => {
-		if (!edited || !picks) return;
-		const find = (/** @type {any} */ p) => handles.findIndex((h) => h.position.distanceToSquared(p) < 1e-10);
-		vertexSelection = new Set(picks.members.map(find).filter((/** @type {number} */ i) => i >= 0));
+		if (!VS.object || !picks) return;
+		const find = (/** @type {any} */ p) => VS.handles.findIndex((h) => h.position.distanceToSquared(p) < 1e-10);
+		VS.selection = new Set(picks.members.map(find).filter((/** @type {number} */ i) => i >= 0));
 		const anchor = picks.anchor ? find(picks.anchor) : -1;
-		if (anchor >= 0) vertexSelection.add(anchor);
+		if (anchor >= 0) VS.selection.add(anchor);
 		setAnchor(anchor);
 		syncVertexSelection();
 	}
@@ -317,7 +317,7 @@ function buildHandles(geometry) {
  * both the numerator and the denominator scaled.)
  * @returns {number} */
 function baseRadius() {
-	const box = new THREE.Box3().setFromObject(edited);
+	const box = new THREE.Box3().setFromObject(VS.object);
 	return THREE.MathUtils.clamp(box.getSize(tempVector).length() * 0.012, 0.002, 0.4);
 }
 
@@ -325,16 +325,16 @@ function baseRadius() {
  * instanced mesh — cheap for thousands of vertices). @param {any} scene */
 function buildHandleMesh(scene) {
 	const size = baseRadius();
-	handleMesh = new THREE.InstancedMesh(
+	VS.handleMesh = new THREE.InstancedMesh(
 		new THREE.SphereGeometry(size, 8, 8),
 		new THREE.MeshBasicMaterial({ depthTest: false, transparent: true, opacity: 0.9 }),
-		handles.length
+		VS.handles.length
 	);
-	handleMesh.renderOrder = 999;
-	handleMesh.name = 'vertex-handles';
-	for (let i = 0; i < handles.length; i++) refreshHandleMatrix(i);
+	VS.handleMesh.renderOrder = 999;
+	VS.handleMesh.name = 'vertex-handles';
+	for (let i = 0; i < VS.handles.length; i++) refreshHandleMatrix(i);
 	refreshHandleColors();
-	scene.add(handleMesh);
+	scene.add(VS.handleMesh);
 }
 
 /**
@@ -345,45 +345,45 @@ function buildHandleMesh(scene) {
  * before, so undo mid-session left stale handles pointing at freed geometry).
  */
 export function refreshVertexEditSession() {
-	if (!edited || !handleMesh) return;
+	if (!VS.object || !VS.handleMesh) return;
 	const scene = get(globalScene);
 	if (!scene) return;
-	scene.remove(handleMesh);
-	handleMesh.geometry.dispose();
-	handleMesh.material.dispose();
-	handles = buildHandles(edited.geometry);
+	scene.remove(VS.handleMesh);
+	VS.handleMesh.geometry.dispose();
+	VS.handleMesh.material.dispose();
+	VS.handles = buildHandles(VS.object.geometry);
 	hoveredHandle = -1;
 	// clamp the selection state to the new handle count
-	if (selectedHandle >= handles.length) {
-		selectedHandle = -1;
+	if (VS.selectedHandle >= VS.handles.length) {
+		VS.selectedHandle = -1;
 		/** @type {any} */
 		const controls = get(TControls);
-		if (controls && proxy && controls.object === proxy) controls.detach();
+		if (controls && VS.proxy && controls.object === VS.proxy) controls.detach();
 	}
-	edited.updateMatrixWorld();
-	lastObjectMatrix.copy(edited.matrixWorld);
+	VS.object.updateMatrixWorld();
+	lastObjectMatrix.copy(VS.object.matrixWorld);
 	buildHandleMesh(scene);
 	syncVertexSelection(); // drops out-of-range multi-picks + repaints
 	// re-seat the gizmo proxy (the seat is the pivot / selection centre / handle,
 	// all of which the geometry swap may have moved)
-	if (selectedHandle >= 0 && proxy) setAnchor(selectedHandle);
-	refreshMeshPivotMarker(edited);
+	if (VS.selectedHandle >= 0 && VS.proxy) setAnchor(VS.selectedHandle);
+	refreshMeshPivotMarker(VS.object);
 	// the overlay wraps the NEW geometry
-	if (overlay) {
-		overlay.geometry.dispose();
-		overlay.geometry = editWireGeometry(edited.geometry);
+	if (VS.overlay) {
+		VS.overlay.geometry.dispose();
+		VS.overlay.geometry = editWireGeometry(VS.object.geometry);
 	}
 }
 // applyMeshGeo calls back through this whenever a snapshot lands on the object
 // being vertex-edited (weld's own exit->commit->enter dance is unaffected:
 // `edited` is null during its commit)
 registerVertexSessionRefresher((uuid) => {
-	if (edited && edited.uuid === uuid) refreshVertexEditSession();
+	if (VS.object && VS.object.uuid === uuid) refreshVertexEditSession();
 });
 
 /** @param {number} index @param {any} target */
 function handleWorldPosition(index, target) {
-	return edited.localToWorld(target.copy(handles[index].position));
+	return VS.object.localToWorld(target.copy(VS.handles[index].position));
 }
 
 /** @param {number} index */
@@ -398,29 +398,29 @@ function refreshHandleMatrix(index) {
 		? adaptiveScaleAt(tempVector)
 		: get(vertexHandleScale);
 	if (scale > 0) tempMatrix.scale(scaleVector.setScalar(scale));
-	handleMesh.setMatrixAt(index, tempMatrix);
-	handleMesh.instanceMatrix.needsUpdate = true;
+	VS.handleMesh.setMatrixAt(index, tempMatrix);
+	VS.handleMesh.instanceMatrix.needsUpdate = true;
 	// D2 (roadmap 13): three caches an InstancedMesh boundingSphere for its
 	// raycast pre-check — never invalidated by setMatrixAt, so handles moved
 	// outside the initial bounds (object moved / vertex dragged far) became
 	// unpickable. Null it so the next raycast lazily recomputes.
-	handleMesh.boundingSphere = null;
-	handleMesh.boundingBox = null;
+	VS.handleMesh.boundingSphere = null;
+	VS.handleMesh.boundingBox = null;
 }
 
 function refreshHandleColors() {
-	for (let i = 0; i < handles.length; i++) {
+	for (let i = 0; i < VS.handles.length; i++) {
 		const color =
-			i === selectedHandle
+			i === VS.selectedHandle
 				? HANDLE_SELECTED
-				: vertexSelection.has(i)
+				: VS.selection.has(i)
 					? HANDLE_MULTI
 					: i === hoveredHandle
 						? HANDLE_HOVER
 						: HANDLE_COLOR;
-		handleMesh.setColorAt(i, new THREE.Color(color));
+		VS.handleMesh.setColorAt(i, new THREE.Color(color));
 	}
-	if (handleMesh.instanceColor) handleMesh.instanceColor.needsUpdate = true;
+	if (VS.handleMesh.instanceColor) VS.handleMesh.instanceColor.needsUpdate = true;
 }
 
 /**
@@ -430,7 +430,7 @@ function refreshHandleColors() {
 export function setHoveredHandle(index) {
 	if (index === hoveredHandle) return false;
 	hoveredHandle = index;
-	if (handleMesh) refreshHandleColors();
+	if (VS.handleMesh) refreshHandleColors();
 	return true;
 }
 
@@ -440,11 +440,11 @@ export function setHoveredHandle(index) {
  * Handles live at the scene root in WORLD space, so they don't follow for free.
  */
 export function tickMeshEdit() {
-	if (!edited || !handleMesh) return;
+	if (!VS.object || !VS.handleMesh) return;
 	// 37 R18: the vertex-mode wire re-tints live too (it never re-picked its colour at all)
-	if (overlay) retintEditWire(overlay, edited);
-	edited.updateMatrixWorld();
-	const moved = !lastObjectMatrix.equals(edited.matrixWorld);
+	if (VS.overlay) retintEditWire(VS.overlay, VS.object);
+	VS.object.updateMatrixWorld();
+	const moved = !lastObjectMatrix.equals(VS.object.matrixWorld);
 	// ADAPTIVE mode also has to follow the CAMERA: the handles keep a constant pixel size,
 	// so an orbit or a zoom changes every one of them even though the object never moved.
 	// Compared against the last pose (and zoom, for ortho) so a still camera costs nothing.
@@ -452,12 +452,12 @@ export function tickMeshEdit() {
 	const zoom = camera?.zoom ?? 1;
 	const cameraMoved = !!camera && (!lastCameraPosition.equals(camera.position) || lastCameraZoom !== zoom);
 	if (!moved && !cameraMoved) return;
-	if (moved) lastObjectMatrix.copy(edited.matrixWorld);
+	if (moved) lastObjectMatrix.copy(VS.object.matrixWorld);
 	if (camera) {
 		lastCameraPosition.copy(camera.position);
 		lastCameraZoom = zoom;
 	}
-	for (let i = 0; i < handles.length; i++) refreshHandleMatrix(i);
+	for (let i = 0; i < VS.handles.length; i++) refreshHandleMatrix(i);
 }
 
 /** @param {string} uuid */
@@ -486,8 +486,8 @@ export function enterEditMode(uuid) {
 	const controls = get(TControls);
 	if (!scene || !controls) return;
 
-	edited = object;
-	handles = buildHandles(object.geometry);
+	VS.object = object;
+	VS.handles = buildHandles(object.geometry);
 	hoveredHandle = -1;
 	object.updateMatrixWorld();
 	lastObjectMatrix.copy(object.matrixWorld);
@@ -495,15 +495,15 @@ export function enterEditMode(uuid) {
 
 	// wireframe overlay as a child so it follows the object's transform (B2:
 	// shared builder, raycast stubbed per D8, honors the display toggle)
-	overlay = buildEditWireframe(object);
-	object.add(overlay);
+	VS.overlay = buildEditWireframe(object);
+	object.add(VS.overlay);
 
-	proxy = new THREE.Object3D();
-	proxy.userData.isVertexProxy = true;
-	scene.add(proxy);
+	VS.proxy = new THREE.Object3D();
+	VS.proxy.userData.isVertexProxy = true;
+	scene.add(VS.proxy);
 
 	controls.detach();
-	selectedHandle = -1;
+	VS.selectedHandle = -1;
 
 	// peers must not edit/select it meanwhile
 	/** @type {any} */
@@ -511,17 +511,17 @@ export function enterEditMode(uuid) {
 	if (peer) peer.send(lockMessage([uuid], peer.peer.id)); // 80a K3: stamped
 
 	editingObject.set(uuid);
-	noteEditEnter('vertex', uuid); // 15-F: opens (or continues) the undo barrier
+	noteEditEnter('vertex', uuid, object); // 15-F: opens (or continues) the undo barrier
 	window.addEventListener('keydown', onKeydown);
 	refreshMeshPivotMarker(object); // a saved pivot comes back with the session
 
 	// 175: restore the selection this object had last time (per-mode memory). The whole
 	// SET comes back, and only when the handle count still matches — a topology change
 	// makes the stashed indices meaningless.
-	if (stashedVert.uuid === uuid && stashedVert.count === handles.length) {
-		const live = stashedVert.set.filter((index) => index >= 0 && index < handles.length);
+	if (stashedVert.uuid === uuid && stashedVert.count === VS.handles.length) {
+		const live = stashedVert.set.filter((index) => index >= 0 && index < VS.handles.length);
 		const anchor =
-			stashedVert.handle >= 0 && stashedVert.handle < handles.length
+			stashedVert.handle >= 0 && stashedVert.handle < VS.handles.length
 				? stashedVert.handle
 				: live.length
 					? live[live.length - 1]
@@ -529,8 +529,8 @@ export function enterEditMode(uuid) {
 		if (anchor >= 0) {
 			// the anchor is always a member of the set (the D5 invariant), and setAnchor
 			// is the one place the gizmo seats
-			vertexSelection = new Set(live.length ? live : [anchor]);
-			vertexSelection.add(anchor);
+			VS.selection = new Set(live.length ? live : [anchor]);
+			VS.selection.add(anchor);
 			setAnchor(anchor);
 			syncVertexSelection();
 		}
@@ -539,7 +539,7 @@ export function enterEditMode(uuid) {
 
 /** the selected vertex handle index, or -1 (175 test hook) */
 export function selectedVertexHandle() {
-	return selectedHandle;
+	return VS.selectedHandle;
 }
 
 /**
@@ -550,18 +550,18 @@ export function selectedVertexHandle() {
  * @returns {THREE.Vector3|null} null when nothing is selected
  */
 export function vertexSelectionWorldPoint() {
-	if (!edited || !handles.length) return null;
-	const indices = vertexSelection.size
-		? [...vertexSelection]
-		: selectedHandle >= 0
-			? [selectedHandle]
+	if (!VS.object || !VS.handles.length) return null;
+	const indices = VS.selection.size
+		? [...VS.selection]
+		: VS.selectedHandle >= 0
+			? [VS.selectedHandle]
 			: [];
 	if (!indices.length) return null;
 	const sum = new THREE.Vector3();
 	const point = new THREE.Vector3();
 	let n = 0;
 	for (const index of indices) {
-		if (index < 0 || index >= handles.length) continue;
+		if (index < 0 || index >= VS.handles.length) continue;
 		handleWorldPosition(index, point);
 		sum.add(point);
 		n++;
@@ -570,39 +570,44 @@ export function vertexSelectionWorldPoint() {
 }
 
 export function exitEditMode() {
-	if (!edited) return;
+	if (!VS.object) return;
 	// stash the SELECTION (set + anchor) so a trip through Faces/Edges does not lose it
-	if (selectedHandle >= 0 || vertexSelection.size)
+	if (VS.selectedHandle >= 0 || VS.selection.size)
 		stashedVert = {
-			uuid: edited.uuid,
-			handle: selectedHandle,
-			set: [...vertexSelection],
-			count: handles.length
+			uuid: VS.object.uuid,
+			handle: VS.selectedHandle,
+			set: [...VS.selection],
+			count: VS.handles.length
 		};
+	// 99 K3: the same pick as vertex IDs on the session
+	if (VS.selectedHandle >= 0 || VS.selection.size)
+		noteSelectionIds({
+			handles: [...new Set([...VS.selection, VS.selectedHandle])].filter((i) => i >= 0 && VS.handles[i]).map((i) => VS.handles[i].indices)
+		});
 	const scene = get(globalScene);
 	/** @type {any} */
 	const controls = get(TControls);
-	if (handleMesh) {
-		scene?.remove(handleMesh);
-		handleMesh.geometry.dispose();
-		handleMesh.material.dispose();
+	if (VS.handleMesh) {
+		scene?.remove(VS.handleMesh);
+		VS.handleMesh.geometry.dispose();
+		VS.handleMesh.material.dispose();
 	}
-	if (overlay) {
-		edited.remove(overlay);
-		overlay.geometry.dispose();
-		overlay.material.dispose();
+	if (VS.overlay) {
+		VS.object.remove(VS.overlay);
+		VS.overlay.geometry.dispose();
+		VS.overlay.material.dispose();
 	}
-	if (proxy) {
-		if (controls && controls.object === proxy) controls.detach();
-		scene?.remove(proxy);
+	if (VS.proxy) {
+		if (controls && controls.object === VS.proxy) controls.detach();
+		scene?.remove(VS.proxy);
 	}
 	window.removeEventListener('keydown', onKeydown);
-	edited = null;
-	handles = [];
-	handleMesh = null;
-	overlay = null;
-	proxy = null;
-	selectedHandle = -1;
+	VS.object = null;
+	VS.handles = [];
+	VS.handleMesh = null;
+	VS.overlay = null;
+	VS.proxy = null;
+	VS.selectedHandle = -1;
 	hoveredHandle = -1;
 	slideEdge = null;
 	slideStart = null;
@@ -614,9 +619,9 @@ export function exitEditMode() {
 	hideProportionalRing();
 	endProportionalWheel(); // P7b
 	hideSlideMarker(); // P7b
-	vertexSelection.clear();
+	VS.selection.clear();
 	vertexSelectionSize.set(0);
-	proxyGesture = null;
+	VS.proxyGesture = null;
 	cancelMeshPivotPick(); // an armed pick never outlives the session
 	cancelMeshPivotMove(); // ...nor an armed move (it also puts the gizmo mode back)
 	disposeMeshPivotMarker(); // ...and neither does its viewport helper
@@ -643,8 +648,8 @@ function onKeydown(event) {
  */
 /** @param {any} raycaster @param {boolean} [additive] ctrl/shift adds to the create-face multi-selection */
 export function raycastHandles(raycaster, additive = false) {
-	if (!handleMesh) return false;
-	const hits = raycaster.intersectObject(handleMesh);
+	if (!VS.handleMesh) return false;
+	const hits = raycaster.intersectObject(VS.handleMesh);
 	if (hits.length === 0) return false;
 	const idx = /** @type {number} */ (hits[0].instanceId);
 	if (additive) {
@@ -669,20 +674,20 @@ export function raycastHandles(raycaster, additive = false) {
  * @returns {any} a fresh Vector3, or null when nothing is selected
  */
 function gizmoSeatLocal() {
-	if (!edited || !handles.length) return null;
-	const custom = meshPivotLocal(edited.uuid);
+	if (!VS.object || !VS.handles.length) return null;
+	const custom = meshPivotLocal(VS.object.uuid);
 	if (custom) return custom;
-	const indices = vertexSelection.size
-		? [...vertexSelection]
-		: selectedHandle >= 0
-			? [selectedHandle]
+	const indices = VS.selection.size
+		? [...VS.selection]
+		: VS.selectedHandle >= 0
+			? [VS.selectedHandle]
 			: [];
 	if (!indices.length) return null;
 	const sum = new THREE.Vector3();
 	let n = 0;
 	for (const index of indices) {
-		if (!handles[index]) continue;
-		sum.add(handles[index].position);
+		if (!VS.handles[index]) continue;
+		sum.add(VS.handles[index].position);
 		n++;
 	}
 	return n ? sum.divideScalar(n) : null;
@@ -693,11 +698,11 @@ function gizmoSeatLocal() {
  * measures its delta from whatever pose it finds. */
 function seatProxy() {
 	const seat = gizmoSeatLocal();
-	if (!seat || !proxy || !edited) return;
-	edited.updateMatrixWorld();
-	proxy.position.copy(edited.localToWorld(seat));
-	proxy.quaternion.identity();
-	proxy.scale.setScalar(1);
+	if (!seat || !VS.proxy || !VS.object) return;
+	VS.object.updateMatrixWorld();
+	VS.proxy.position.copy(VS.object.localToWorld(seat));
+	VS.proxy.quaternion.identity();
+	VS.proxy.scale.setScalar(1);
 }
 
 /**
@@ -709,14 +714,14 @@ function seatProxy() {
  * @param {number} index the new anchor, or -1 to drop it (detaches the gizmo)
  */
 function setAnchor(index) {
-	selectedHandle = index;
+	VS.selectedHandle = index;
 	/** @type {any} */
 	const controls = get(TControls);
-	if (!proxy || !controls) return;
+	if (!VS.proxy || !controls) return;
 	// the desktop gizmo never seats in VR (its helper would render in-headset;
 	// VR drags handles directly via vrBeginHandleDrag), and never when the user has
 	// switched the gizmo off (meshGizmoEnabled covers all three element modes)
-	if (index >= 0 && index < handles.length && !get(isVRMode) && get(meshGizmoEnabled)) {
+	if (index >= 0 && index < VS.handles.length && !get(isVRMode) && get(meshGizmoEnabled)) {
 		seatProxy();
 		// HONOUR the app's transform mode. This used to be a hardwired
 		// setMode('translate') that ran on every re-seat, so vertex mode never
@@ -726,17 +731,17 @@ function setAnchor(index) {
 		// vertex mode used to ignore the space pref entirely, so Local/World in the
 		// toolbox only affected faces — the gizmo is one control, it should mean one thing
 		controls.setSpace?.(get(faceGizmoSpace));
-		controls.attach(proxy);
-	} else if (controls.object === proxy) controls.detach();
+		controls.attach(VS.proxy);
+	} else if (controls.object === VS.proxy) controls.detach();
 }
 
 // live: flipping either gizmo pref re-seats (or drops) the VERTEX proxy too.
 // 24-B1: switching the gizmo back ON restores a pick the mode key hid (the toolbox
 // button and the key are one control)
 registerGizmoPrefListener(() => {
-	if (!edited) return;
+	if (!VS.object) return;
 	if (get(meshGizmoEnabled)) restoreHiddenVertices();
-	if (selectedHandle >= 0) setAnchor(selectedHandle);
+	if (VS.selectedHandle >= 0) setAnchor(VS.selectedHandle);
 });
 
 /**
@@ -746,11 +751,11 @@ registerGizmoPrefListener(() => {
  * @returns {boolean} whether there was anything to hide
  */
 export function hideVertexSelection() {
-	if (!edited) return false;
-	const indices = [...vertexSelection];
-	const anchor = selectedHandle;
+	if (!VS.object) return false;
+	const indices = [...VS.selection];
+	const anchor = VS.selectedHandle;
 	if (anchor < 0 && !indices.length) return false;
-	hiddenVertices = { uuid: edited.uuid, indices, anchor };
+	hiddenVertices = { uuid: VS.object.uuid, indices, anchor };
 	clearVertexSelection();
 	if (get(meshGizmoEnabled)) meshGizmoEnabled.set(false);
 	return true;
@@ -758,12 +763,12 @@ export function hideVertexSelection() {
 
 /** the selection half of the restore (the anchor takes the gizmo through setAnchor) */
 function restoreHiddenVertices() {
-	if (!edited || !hiddenVertices || hiddenVertices.uuid !== edited.uuid) return false;
+	if (!VS.object || !hiddenVertices || hiddenVertices.uuid !== VS.object.uuid) return false;
 	const { indices, anchor } = hiddenVertices;
 	hiddenVertices = null;
-	const live = indices.filter((i) => i >= 0 && i < handles.length);
-	vertexSelection = new Set(live);
-	const a = anchor >= 0 && anchor < handles.length ? anchor : live.length ? live[live.length - 1] : -1;
+	const live = indices.filter((i) => i >= 0 && i < VS.handles.length);
+	VS.selection = new Set(live);
+	const a = anchor >= 0 && anchor < VS.handles.length ? anchor : live.length ? live[live.length - 1] : -1;
 	setAnchor(a);
 	syncVertexSelection();
 	return true;
@@ -779,9 +784,9 @@ export function restoreVertexSelection() {
 
 // ...and so does placing / clearing the custom pivot (plus its marker)
 registerMeshPivotListener(() => {
-	if (!edited) return;
-	if (selectedHandle >= 0) setAnchor(selectedHandle);
-	refreshMeshPivotMarker(edited);
+	if (!VS.object) return;
+	if (VS.selectedHandle >= 0) setAnchor(VS.selectedHandle);
+	refreshMeshPivotMarker(VS.object);
 });
 
 /** 177/183: toggle a vertex handle in the selection (ctrl-click on desktop,
@@ -789,13 +794,13 @@ registerMeshPivotListener(() => {
  * the gizmo; removing the anchor promotes another member; empty detaches.
  * @param {number} index */
 function toggleVertexSelectionInner(index) {
-	if (index < 0 || index >= handles.length) return;
-	if (vertexSelection.has(index)) {
-		vertexSelection.delete(index);
-		if (selectedHandle === index)
-			setAnchor(vertexSelection.size ? [...vertexSelection][vertexSelection.size - 1] : -1);
+	if (index < 0 || index >= VS.handles.length) return;
+	if (VS.selection.has(index)) {
+		VS.selection.delete(index);
+		if (VS.selectedHandle === index)
+			setAnchor(VS.selection.size ? [...VS.selection][VS.selection.size - 1] : -1);
 	} else {
-		vertexSelection.add(index);
+		VS.selection.add(index);
 		setAnchor(index);
 	}
 	syncVertexSelection();
@@ -803,9 +808,9 @@ function toggleVertexSelectionInner(index) {
 
 /** 177: deselect all vertices (also parks the gizmo) */
 function clearVertexSelectionInner() {
-	vertexSelection.clear();
-	if (proxy) setAnchor(-1);
-	else selectedHandle = -1;
+	VS.selection.clear();
+	if (VS.proxy) setAnchor(-1);
+	else VS.selectedHandle = -1;
 	syncVertexSelection();
 }
 
@@ -813,9 +818,9 @@ function clearVertexSelectionInner() {
  * used to exist for FACES only, so Ctrl+A did nothing in the other two modes.
  * @returns {boolean} */
 function selectAllVertsInner() {
-	if (!handles.length) return false;
-	vertexSelection = new Set(handles.map((/** @type {any} */ _, /** @type {number} */ i) => i));
-	setAnchor(handles.length - 1);
+	if (!VS.handles.length) return false;
+	VS.selection = new Set(VS.handles.map((/** @type {any} */ _, /** @type {number} */ i) => i));
+	setAnchor(VS.handles.length - 1);
 	syncVertexSelection();
 	return true;
 }
@@ -838,14 +843,14 @@ function selectAllVertsInner() {
  * @returns {number} how many handles are selected afterwards
  */
 function selectVerticesInRectInner(rect, camera, size, additive = false) {
-	if (!edited || !handles.length || !camera || !size?.width || !size?.height) return 0;
+	if (!VS.object || !VS.handles.length || !camera || !size?.width || !size?.height) return 0;
 	const minX = Math.min(rect.x1, rect.x2);
 	const maxX = Math.max(rect.x1, rect.x2);
 	const minY = Math.min(rect.y1, rect.y2);
 	const maxY = Math.max(rect.y1, rect.y2);
-	const next = additive ? new Set(vertexSelection) : new Set();
+	const next = additive ? new Set(VS.selection) : new Set();
 	let last = -1;
-	for (let i = 0; i < handles.length; i++) {
+	for (let i = 0; i < VS.handles.length; i++) {
 		handleWorldPosition(i, tempVector);
 		tempVector.project(camera);
 		// behind the camera: project() mirrors such a point back into the frustum, so a
@@ -859,11 +864,11 @@ function selectVerticesInRectInner(rect, camera, size, additive = false) {
 	}
 	// an empty box REPLACING the pick would make a stray drag wipe the work; an empty
 	// additive box is simply a no-op
-	if (!next.size) return vertexSelection.size;
-	vertexSelection = next;
+	if (!next.size) return VS.selection.size;
+	VS.selection = next;
 	if (last >= 0) setAnchor(last);
 	syncVertexSelection();
-	return vertexSelection.size;
+	return VS.selection.size;
 }
 
 /** One undo step per box, like every other selection command.
@@ -877,14 +882,14 @@ export function selectVerticesInRect(rect, camera, size, additive = false) {
 
 /** Invert the vertex selection — Ctrl+I in vertices mode. @returns {boolean} */
 function invertVertexSelectionInner() {
-	if (!handles.length) return false;
-	const previous = vertexSelection;
-	vertexSelection = new Set(
-		handles
+	if (!VS.handles.length) return false;
+	const previous = VS.selection;
+	VS.selection = new Set(
+		VS.handles
 			.map((/** @type {any} */ _, /** @type {number} */ i) => i)
 			.filter((i) => !previous.has(i))
 	);
-	const members = [...vertexSelection];
+	const members = [...VS.selection];
 	setAnchor(members.length ? members[members.length - 1] : -1);
 	syncVertexSelection();
 	return true;
@@ -899,29 +904,29 @@ function invertVertexSelectionInner() {
  * @returns {boolean}
  */
 export function weldSelectedVerts() {
-	if (!edited || vertexSelection.size < 2) return false;
-	const uuid = edited.uuid;
-	const position = edited.geometry.attributes.position;
+	if (!VS.object || VS.selection.size < 2) return false;
+	const uuid = VS.object.uuid;
+	const position = VS.object.geometry.attributes.position;
 	// D1: snapshot INDEX-EXPANDED positions — applyMeshGeo rebuilds a NON-indexed
 	// geometry, so snapshotting the raw attribute of an INDEXED mesh (a fresh
 	// Box: 24 positions / 36 indices) reinterpreted the 24 triples as 8 arbitrary
 	// triangles ("weld mangles the mesh"), and undo replayed the same wrong
 	// representation. Both snapshots below are in applyMeshGeo's representation.
-	const before = trisToPositions(readTriangles(edited.geometry));
+	const before = trisToPositions(readTriangles(VS.object.geometry));
 	// raw attribute copy so a FAILED commit (size cap) can revert the in-place
 	// centroid write — without it the attribute silently diverged from what
 	// peers and the GPU see (needsUpdate was never set on that path)
 	const rawBefore = Array.from(position.array);
 	const centroid = new THREE.Vector3();
-	const picked = [...vertexSelection];
-	picked.forEach((i) => centroid.add(handles[i].position));
+	const picked = [...VS.selection];
+	picked.forEach((i) => centroid.add(VS.handles[i].position));
 	centroid.multiplyScalar(1 / picked.length);
 	picked.forEach((i) =>
-		handles[i].indices.forEach((/** @type {number} */ idx) =>
+		VS.handles[i].indices.forEach((/** @type {number} */ idx) =>
 			position.setXYZ(idx, centroid.x, centroid.y, centroid.z)
 		)
 	);
-	const after = trisToPositions(readTriangles(edited.geometry));
+	const after = trisToPositions(readTriangles(VS.object.geometry));
 	if (JSON.stringify(before) === JSON.stringify(after)) return false; // already coincident
 	// NO exit/enter dance (a pre-D1 relic): commitMeshGeoSnapshot swaps the
 	// geometry and applyMeshGeo's session refresher rebuilds handles, wireframe
@@ -943,9 +948,9 @@ export function weldSelectedVerts() {
 /** 177: build a face from the 3-4 multi-selected vertices (replicated + undoable).
  * 191: viewerPos (world) winds the face to face the viewer in VR. @param {any} [viewerPos] */
 export function createSelectedFace(viewerPos = null) {
-	if (!edited || vertexSelection.size < 3 || vertexSelection.size > 4) return false;
-	const uuid = edited.uuid;
-	const verts = [...vertexSelection].map((i) => handles[i].position.clone());
+	if (!VS.object || VS.selection.size < 3 || VS.selection.size > 4) return false;
+	const uuid = VS.object.uuid;
+	const verts = [...VS.selection].map((i) => VS.handles[i].position.clone());
 	const ok = createFaceFromVerts(uuid, verts, viewerPos);
 	// the commit's applyMeshGeo already rebuilt the session in place (D1
 	// refresher) — same no-dance rule as weldSelectedVerts
@@ -956,7 +961,7 @@ export function createSelectedFace(viewerPos = null) {
 /** Select exactly this handle (fresh single selection + anchor/gizmo).
  * @param {number} index */
 function selectHandleInner(index) {
-	vertexSelection = new Set(index >= 0 ? [index] : []);
+	VS.selection = new Set(index >= 0 ? [index] : []);
 	setAnchor(index);
 	syncVertexSelection();
 }
@@ -971,15 +976,15 @@ function selectHandleInner(index) {
  * @returns {string[]}
  */
 function selectedVertexKeys() {
-	const indices = vertexSelection.size
-		? [...vertexSelection]
-		: selectedHandle >= 0
-			? [selectedHandle]
+	const indices = VS.selection.size
+		? [...VS.selection]
+		: VS.selectedHandle >= 0
+			? [VS.selectedHandle]
 			: [];
 	return indices
-		.filter((index) => handles[index])
+		.filter((index) => VS.handles[index])
 		.map((index) => {
-			const p = handles[index].position;
+			const p = VS.handles[index].position;
 			return `${Math.round(p.x * 1e4)},${Math.round(p.y * 1e4)},${Math.round(p.z * 1e4)}`;
 		});
 }
@@ -992,18 +997,18 @@ function selectedVertexKeys() {
  * @returns {boolean}
  */
 export function bevelSelectedVerts(width = 0.2, profile = 0) {
-	if (!edited || !handles.length) return false;
+	if (!VS.object || !VS.handles.length) return false;
 	const keys = selectedVertexKeys();
 	if (!keys.length) {
 		showToast('Select a vertex first, then Bevel');
 		return false;
 	}
-	const uuid = edited.uuid;
+	const uuid = VS.object.uuid;
 	const ok = bevelVertices(uuid, keys, { width, profile });
 	// the bevel replaced the corner, so the handle list is stale in every sense — rebuild
 	// the session from the new geometry and drop a selection that no longer means anything
 	if (ok) {
-		vertexSelection.clear();
+		VS.selection.clear();
 		syncVertexSelection();
 		setAnchor(-1);
 		refreshVertexEditSession();
@@ -1021,7 +1026,7 @@ export function bevelSelectedVerts(width = 0.2, profile = 0) {
  * @returns {boolean}
  */
 export function beginVertexBevelAdjust(width = 0.2, profile = 0, segments = 1) {
-	if (!edited || !handles.length) return false;
+	if (!VS.object || !VS.handles.length) return false;
 	const keys = selectedVertexKeys();
 	if (!keys.length) {
 		showToast('Select a vertex first, then Bevel');
@@ -1030,7 +1035,7 @@ export function beginVertexBevelAdjust(width = 0.2, profile = 0, segments = 1) {
 	return beginOpAdjust(
 		'bevel',
 		{ width, profile, segments },
-		{ kind: 'vertices', uuid: edited.uuid, vertexKeys: keys }
+		{ kind: 'vertices', uuid: VS.object.uuid, vertexKeys: keys }
 	);
 }
 
@@ -1044,19 +1049,19 @@ export function beginVertexBevelAdjust(width = 0.2, profile = 0, segments = 1) {
  * @returns {boolean}
  */
 export function deleteSelectedVerts() {
-	if (!edited || !handles.length) return false;
+	if (!VS.object || !VS.handles.length) return false;
 	const keys = selectedVertexKeys();
 	if (!keys.length) {
 		showToast('Select a vertex first, then Delete');
 		return false;
 	}
-	const ok = deleteVertices(edited.uuid, keys);
+	const ok = deleteVertices(VS.object.uuid, keys);
 	if (ok) {
 		// the triangles those handles belonged to are gone, so the handle list is stale in
 		// every sense — rebuild the session and drop a selection that no longer means
 		// anything. Inner/direct, deliberately: a selection entry recorded ON TOP of the
 		// delete would make the next Ctrl+Z undo the housekeeping instead of the delete.
-		vertexSelection.clear();
+		VS.selection.clear();
 		syncVertexSelection();
 		setAnchor(-1);
 		refreshVertexEditSession();
@@ -1078,13 +1083,13 @@ export function deleteSelectedVerts() {
  * @param {number} [iterations] 1..10 passes @returns {boolean}
  */
 export function smoothSelectedVerts(factor = 0.5, iterations = 1) {
-	if (!edited || !handles.length) return false;
+	if (!VS.object || !VS.handles.length) return false;
 	const keys = selectedVertexKeys();
 	if (!keys.length) {
 		showToast('Select a vertex first, then Smooth');
 		return false;
 	}
-	return smoothVertices(edited.uuid, keys, { factor, iterations });
+	return smoothVertices(VS.object.uuid, keys, { factor, iterations });
 }
 
 /**
@@ -1096,10 +1101,10 @@ export function smoothSelectedVerts(factor = 0.5, iterations = 1) {
  * @returns {boolean}
  */
 export function connectSelectedVerts() {
-	if (!edited || !handles.length) return false;
-	const ok = connectVertices(edited.uuid, selectedVertexKeys());
+	if (!VS.object || !VS.handles.length) return false;
+	const ok = connectVertices(VS.object.uuid, selectedVertexKeys());
 	if (ok) {
-		vertexSelection.clear();
+		VS.selection.clear();
 		syncVertexSelection();
 		setAnchor(-1);
 		refreshVertexEditSession();
@@ -1115,15 +1120,15 @@ export function connectSelectedVerts() {
  * @returns {boolean}
  */
 export function dissolveSelectedVerts() {
-	if (!edited || !handles.length) return false;
+	if (!VS.object || !VS.handles.length) return false;
 	const keys = selectedVertexKeys();
 	if (!keys.length) {
 		showToast('Select a vertex first, then Dissolve');
 		return false;
 	}
-	const ok = dissolveVertices(edited.uuid, keys);
+	const ok = dissolveVertices(VS.object.uuid, keys);
 	if (ok) {
-		vertexSelection.clear();
+		VS.selection.clear();
 		syncVertexSelection();
 		setAnchor(-1);
 		refreshVertexEditSession();
@@ -1133,9 +1138,9 @@ export function dissolveSelectedVerts() {
 
 /** World-space focus target {center,radius} for the selected vertex, or null (173). */
 export function focusTargetVertex() {
-	if (!edited || selectedHandle < 0 || !handles[selectedHandle]) return null;
-	const center = handleWorldPosition(selectedHandle, new THREE.Vector3()).clone();
-	const box = new THREE.Box3().setFromObject(edited);
+	if (!VS.object || VS.selectedHandle < 0 || !VS.handles[VS.selectedHandle]) return null;
+	const center = handleWorldPosition(VS.selectedHandle, new THREE.Vector3()).clone();
+	const box = new THREE.Box3().setFromObject(VS.object);
 	const objR = box.getSize(new THREE.Vector3()).length() / 2;
 	return { center, radius: Math.max(objR * 0.2, 0.25) };
 }
@@ -1151,7 +1156,7 @@ const writeVector = new THREE.Vector3();
  * grab. @param {THREE.Vector3} local @returns {number[]} the LOCAL position
  */
 function commitSelectedLocal(local) {
-	const result = writeHandle(selectedHandle, local);
+	const result = writeHandle(VS.selectedHandle, local);
 	refreshGeometryAfterWrite();
 	return result;
 }
@@ -1163,7 +1168,7 @@ function commitSelectedLocal(local) {
  * @param {number} index @param {any} local @returns {number[]} the LOCAL position
  */
 function writeHandle(index, local) {
-	const handle = handles[index];
+	const handle = VS.handles[index];
 	if (!handle) return [0, 0, 0];
 	handle.position.copy(local);
 	// read back off the handle, never off `local`: refreshHandleMatrix mutates the
@@ -1171,7 +1176,7 @@ function writeHandle(index, local) {
 	const x = handle.position.x;
 	const y = handle.position.y;
 	const z = handle.position.z;
-	const position = edited.geometry.attributes.position;
+	const position = VS.object.geometry.attributes.position;
 	handle.indices.forEach((/** @type {number} */ i) => position.setXYZ(i, x, y, z));
 	refreshHandleMatrix(index);
 	return [x, y, z];
@@ -1180,13 +1185,13 @@ function writeHandle(index, local) {
 /** Normals, bounds, the wireframe overlay and the upload flag — once per frame
  * of a gesture, after every handle it moved has been written. */
 function refreshGeometryAfterWrite() {
-	if (!edited) return;
-	edited.geometry.attributes.position.needsUpdate = true;
-	edited.geometry.computeVertexNormals();
-	edited.geometry.computeBoundingSphere();
-	if (overlay) {
-		overlay.geometry.dispose();
-		overlay.geometry = editWireGeometry(edited.geometry);
+	if (!VS.object) return;
+	VS.object.geometry.attributes.position.needsUpdate = true;
+	VS.object.geometry.computeVertexNormals();
+	VS.object.geometry.computeBoundingSphere();
+	if (VS.overlay) {
+		VS.overlay.geometry.dispose();
+		VS.overlay.geometry = editWireGeometry(VS.object.geometry);
 	}
 }
 
@@ -1224,7 +1229,7 @@ function updateSlideMarker(t, landedLocal) {
 		return;
 	}
 	const scene = get(globalScene);
-	if (!scene || !edited) return;
+	if (!scene || !VS.object) return;
 	if (!slideMarker) {
 		slideMarker = new THREE.Mesh(
 			new THREE.SphereGeometry(1, 12, 12),
@@ -1241,8 +1246,8 @@ function updateSlideMarker(t, landedLocal) {
 	}
 	if (!slideMarker.parent) scene.add(slideMarker);
 	slideMarker.visible = true;
-	edited.updateMatrixWorld();
-	slideMarker.position.copy(edited.localToWorld(landedLocal.clone()));
+	VS.object.updateMatrixWorld();
+	slideMarker.position.copy(VS.object.localToWorld(landedLocal.clone()));
 	// a touch larger than a vertex dot so it reads as "the landing", not a handle
 	slideMarker.scale.setScalar(baseRadius() * 1.6);
 }
@@ -1254,8 +1259,8 @@ function hideSlideMarker() {
 /** the LOCAL positions a handle shares an edge with, deduped by welded key
  * @param {number} index @returns {any[]} */
 function incidentEdgeEnds(index) {
-	if (!edited || !handles[index]) return [];
-	const anchor = handles[index].position;
+	if (!VS.object || !VS.handles[index]) return [];
+	const anchor = VS.handles[index].position;
 	const keyOf = (/** @type {any} */ v) =>
 		`${Math.round(v.x * 1e4)},${Math.round(v.y * 1e4)},${Math.round(v.z * 1e4)}`;
 	const anchorKey = keyOf(anchor);
@@ -1263,8 +1268,8 @@ function incidentEdgeEnds(index) {
 	const ends = new Map();
 	// a quad DIAGONAL is a triangulation artifact, not an edge of the model, so it is not a
 	// direction anyone means to slide along — the same rule pickEdgeAt and dissolve follow
-	const internal = internalEdgeSet(edited.geometry);
-	for (const tri of readTriangles(edited.geometry))
+	const internal = internalEdgeSet(VS.object.geometry);
+	for (const tri of readTriangles(VS.object.geometry))
 		for (let c = 0; c < 3; c++) {
 			if (keyOf(tri[c]) !== anchorKey) continue;
 			for (const other of [tri[(c + 1) % 3], tri[(c + 2) % 3]]) {
@@ -1283,16 +1288,16 @@ function incidentEdgeEnds(index) {
  * commit, the broadcast and the undo snapshot with no extra plumbing.
  * @returns {any} */
 function proxyLocal() {
-	const local = edited.worldToLocal(writeVector.copy(proxy.position));
+	const local = VS.object.worldToLocal(writeVector.copy(VS.proxy.position));
 	// the slide projects the PROXY's position onto one of the vertex's own edges,
 	// which only means anything while the proxy IS the vertex — a custom pivot
 	// seats it somewhere else entirely, so the constraint stands down there
-	if (!get(vertexSlide) || !slideStart || vertexSelection.size > 1 || hasMeshPivot(edited.uuid)) {
+	if (!get(vertexSlide) || !slideStart || VS.selection.size > 1 || hasMeshPivot(VS.object.uuid)) {
 		// F2 (v1.13, decided WONTFIX for the interaction, made VISIBLE): the slide
 		// measures from the PROXY, and a placed pivot seats the proxy away from the
 		// vertex, so the projection would slide it by a nonsense amount. The tool
 		// silently doing nothing was the only real problem — say so, once a session.
-		if (get(vertexSlide) && slideStart && vertexSelection.size <= 1 && !slidePivotTold && hasMeshPivot(edited.uuid)) {
+		if (get(vertexSlide) && slideStart && VS.selection.size <= 1 && !slidePivotTold && hasMeshPivot(VS.object.uuid)) {
 			slidePivotTold = true;
 			showToast('Vertex slide is off while a custom pivot is placed — the slide measures from the gizmo, and the pivot moved it off the vertex. Reset the pivot to slide.');
 		}
@@ -1305,7 +1310,7 @@ function proxyLocal() {
 		if (drag.lengthSq() < 1e-8) return local.copy(slideStart);
 		let best = null;
 		let bestDot = -Infinity;
-		for (const end of incidentEdgeEnds(selectedHandle)) {
+		for (const end of incidentEdgeEnds(VS.selectedHandle)) {
 			const direction = end.clone().sub(slideStart);
 			if (direction.lengthSq() < 1e-12) continue;
 			const dot = drag.clone().normalize().dot(direction.clone().normalize());
@@ -1356,16 +1361,16 @@ let falloffWeights = null;
 /** WORLD-space averaged vertex normal of the anchor handle, or null (no anchor /
  * no normal attribute / degenerate sum). @returns {any} */
 function anchorVertexNormalWorld() {
-	if (!edited || selectedHandle < 0) return null;
-	const normalAttr = edited.geometry?.attributes?.normal;
+	if (!VS.object || VS.selectedHandle < 0) return null;
+	const normalAttr = VS.object.geometry?.attributes?.normal;
 	if (!normalAttr) return null;
 	const sum = new THREE.Vector3();
 	const one = new THREE.Vector3();
-	handles[selectedHandle].indices.forEach((/** @type {number} */ idx) => {
+	VS.handles[VS.selectedHandle].indices.forEach((/** @type {number} */ idx) => {
 		sum.add(one.fromBufferAttribute(normalAttr, idx));
 	});
 	if (sum.lengthSq() < 1e-9) return null;
-	return sum.transformDirection(edited.matrixWorld);
+	return sum.transformDirection(VS.object.matrixWorld);
 }
 
 /** camera-facing fallback normal for the ring (a vertex on a crease can have a
@@ -1384,8 +1389,8 @@ function cameraFacingNormal(point) {
 // plain registry push, so module-eval order is safe.
 registerProportionalAnchor('vertices', () => {
 	const point = vertexSelectionWorldPoint();
-	if (!point || !edited) return null;
-	return { point, normal: anchorVertexNormalWorld() ?? cameraFacingNormal(point), object: edited };
+	if (!point || !VS.object) return null;
+	return { point, normal: anchorVertexNormalWorld() ?? cameraFacingNormal(point), object: VS.object };
 });
 
 /** Capture the neighbourhood this drag will carry. Called at drag start, so the weights
@@ -1393,27 +1398,27 @@ registerProportionalAnchor('vertices', () => {
 function beginFalloff() {
 	falloffStart = null;
 	falloffWeights = null;
-	if (!get(proportionalEdit) || !edited || selectedHandle < 0) return;
+	if (!get(proportionalEdit) || !VS.object || VS.selectedHandle < 0) return;
 	const radius = Math.max(get(proportionalRadius), 1e-4);
-	const anchor = handles[selectedHandle].position.clone();
-	falloffStart = handles.map((handle) => handle.position.clone());
-	falloffWeights = handles.map((handle, index) => {
-		if (index === selectedHandle || vertexSelection.has(index)) return 1; // the selection moves fully
+	const anchor = VS.handles[VS.selectedHandle].position.clone();
+	falloffStart = VS.handles.map((handle) => handle.position.clone());
+	falloffWeights = VS.handles.map((handle, index) => {
+		if (index === VS.selectedHandle || VS.selection.has(index)) return 1; // the selection moves fully
 		return falloffWeight(handle.position.distanceTo(anchor) / radius);
 	});
 	// P4: show the falloff radius for the duration of the drag (hidden at drag end)
-	const anchorWorld = handleWorldPosition(selectedHandle, new THREE.Vector3());
+	const anchorWorld = handleWorldPosition(VS.selectedHandle, new THREE.Vector3());
 	showProportionalRingAt({
 		point: anchorWorld,
 		normal: anchorVertexNormalWorld() ?? cameraFacingNormal(anchorWorld),
-		object: edited
+		object: VS.object
 	});
 }
 
 /** the anchor's position when the drag started — the origin every weighted move measures
  * from. Only ever called behind `falloffActive()`. @returns {any} */
 function falloffOrigin() {
-	return falloffStart?.[selectedHandle] ?? handles[selectedHandle].position;
+	return falloffStart?.[VS.selectedHandle] ?? VS.handles[VS.selectedHandle].position;
 }
 
 /**
@@ -1426,20 +1431,20 @@ function falloffOrigin() {
  * neighbourhood re-applies absolutely at the current drag delta.
  */
 function recaptureVertexFalloff() {
-	if (!edited || selectedHandle < 0 || !falloffStart) return;
+	if (!VS.object || VS.selectedHandle < 0 || !falloffStart) return;
 	const radius = Math.max(get(proportionalRadius), 1e-4);
-	const anchor = falloffStart[selectedHandle];
+	const anchor = falloffStart[VS.selectedHandle];
 	const previous = falloffWeights;
 	falloffWeights = falloffStart.map((p, index) => {
-		if (index === selectedHandle || vertexSelection.has(index)) return 1;
+		if (index === VS.selectedHandle || VS.selection.has(index)) return 1;
 		return falloffWeight(p.distanceTo(anchor) / radius);
 	});
-	const position = edited.geometry.attributes.position;
-	for (let i = 0; i < handles.length; i++) {
-		if (i === selectedHandle || vertexSelection.has(i)) continue;
+	const position = VS.object.geometry.attributes.position;
+	for (let i = 0; i < VS.handles.length; i++) {
+		if (i === VS.selectedHandle || VS.selection.has(i)) continue;
 		if ((previous?.[i] ?? 0) > 0 && falloffWeights[i] <= 0) {
-			const p = handles[i].position.copy(falloffStart[i]);
-			handles[i].indices.forEach((/** @type {number} */ idx) => position.setXYZ(idx, p.x, p.y, p.z));
+			const p = VS.handles[i].position.copy(falloffStart[i]);
+			VS.handles[i].indices.forEach((/** @type {number} */ idx) => position.setXYZ(idx, p.x, p.y, p.z));
 			refreshHandleMatrix(i);
 		}
 	}
@@ -1447,17 +1452,17 @@ function recaptureVertexFalloff() {
 	// fall through to the translate falloff and displace the neighbours); the VR /
 	// no-gesture path keeps the translate shape: members first, anchor last — the
 	// tail commitSelectedLocal refreshes normals/bounds/overlay and sets needsUpdate
-	if (proxyGesture) {
+	if (VS.proxyGesture) {
 		applyProxyGesture();
 		return;
 	}
-	applyFalloff(deltaVector.copy(handles[selectedHandle].position).sub(falloffOrigin()));
-	commitSelectedLocal(handles[selectedHandle].position.clone());
+	applyFalloff(deltaVector.copy(VS.handles[VS.selectedHandle].position).sub(falloffOrigin()));
+	commitSelectedLocal(VS.handles[VS.selectedHandle].position.clone());
 }
 
 /** Is a falloff drag live, i.e. is anything beyond the selection moving? */
 function falloffActive() {
-	return !!falloffWeights && falloffWeights.some((w, i) => w > 0 && i !== selectedHandle && !vertexSelection.has(i));
+	return !!falloffWeights && falloffWeights.some((w, i) => w > 0 && i !== VS.selectedHandle && !VS.selection.has(i));
 }
 
 /**
@@ -1468,12 +1473,12 @@ function falloffActive() {
  */
 function applyFalloff(total) {
 	if (!falloffStart || !falloffWeights) return;
-	const position = edited.geometry.attributes.position;
-	for (let i = 0; i < handles.length; i++) {
+	const position = VS.object.geometry.attributes.position;
+	for (let i = 0; i < VS.handles.length; i++) {
 		const weight = falloffWeights[i];
-		if (weight <= 0 || i === selectedHandle) continue;
-		const p = handles[i].position.copy(falloffStart[i]).addScaledVector(total, weight);
-		handles[i].indices.forEach((/** @type {number} */ idx) => position.setXYZ(idx, p.x, p.y, p.z));
+		if (weight <= 0 || i === VS.selectedHandle) continue;
+		const p = VS.handles[i].position.copy(falloffStart[i]).addScaledVector(total, weight);
+		VS.handles[i].indices.forEach((/** @type {number} */ idx) => position.setXYZ(idx, p.x, p.y, p.z));
 		refreshHandleMatrix(i);
 	}
 }
@@ -1491,9 +1496,9 @@ let dragStartExpanded = null;
  * alone. (The falloff neighbourhood is deliberately NOT in here — see
  * `applyPivotTransform`.) @returns {number[]} */
 function gestureIndices() {
-	const set = new Set(vertexSelection);
-	if (selectedHandle >= 0) set.add(selectedHandle);
-	return [...set].filter((i) => handles[i]);
+	const set = new Set(VS.selection);
+	if (VS.selectedHandle >= 0) set.add(VS.selectedHandle);
+	return [...set].filter((i) => VS.handles[i]);
 }
 
 /** The gesture's total TRANSLATION in local space, measured from the seat the
@@ -1501,18 +1506,18 @@ function gestureIndices() {
  * constraint reaches the live drag, the commit, the broadcast and the undo
  * snapshot through this one read. @returns {any} */
 function translateDelta() {
-	return deltaVector.copy(proxyLocal()).sub(/** @type {any} */ (proxyGesture).seat);
+	return deltaVector.copy(proxyLocal()).sub(/** @type {any} */ (VS.proxyGesture).seat);
 }
 
 /** Write the whole gesture as a pure TRANSLATION (absolute from the drag start).
  * @param {any} delta local-space total */
 function applyTranslate(delta) {
-	const g = /** @type {any} */ (proxyGesture);
+	const g = /** @type {any} */ (VS.proxyGesture);
 	// M8: the weighted neighbourhood is written ABSOLUTELY from the drag start and
 	// already covers the selected members at w = 1, so it replaces the plain pass
 	if (falloffActive()) applyFalloff(delta);
 	for (const index of gestureIndices()) {
-		if (falloffActive() && index !== selectedHandle) continue; // applyFalloff did it
+		if (falloffActive() && index !== VS.selectedHandle) continue; // applyFalloff did it
 		writeHandle(index, tempVector.copy(g.starts[index]).add(delta));
 	}
 }
@@ -1528,19 +1533,19 @@ function applyTranslate(delta) {
  * blend note inside. Before that the falloff was a translate-only tool here.
  */
 function applyPivotTransform() {
-	const g = /** @type {any} */ (proxyGesture);
+	const g = /** @type {any} */ (VS.proxyGesture);
 	const pivot = g.seat;
-	edited.updateMatrixWorld();
-	const objQuat = edited.getWorldQuaternion(new THREE.Quaternion());
+	VS.object.updateMatrixWorld();
+	const objQuat = VS.object.getWorldQuaternion(new THREE.Quaternion());
 	// R maps the PROXY frame into object-local; the proxy is seated with an
 	// identity pose, so this is the object's own inverse world rotation
 	const R = objQuat.clone().invert().multiply(g.quat);
 	const Rinv = R.clone().invert();
-	const dQuatProxy = g.quat.clone().invert().multiply(proxy.quaternion);
+	const dQuatProxy = g.quat.clone().invert().multiply(VS.proxy.quaternion);
 	const dQuat = R.clone().multiply(dQuatProxy).multiply(Rinv);
 	// TransformControls scales from the pose it was attached at, and seatProxy
 	// resets that to 1 — the divide keeps it honest if it ever is not
-	const scale = proxy.scale.clone().divide(g.scale);
+	const scale = VS.proxy.scale.clone().divide(g.scale);
 	const point = new THREE.Vector3();
 	// F1 (v1.13): PROPORTIONAL rotate/scale = the WEIGHTED TRANSFORM BLEND (the plan's
 	// option 3): per vertex the rotation is slerped and the scale lerped toward
@@ -1555,7 +1560,7 @@ function applyPivotTransform() {
 	const q = new THREE.Quaternion();
 	const sc = new THREE.Vector3();
 	const indices = weighted
-		? handles.map((_, i) => i).filter((i) => /** @type {number[]} */ (falloffWeights)[i] > 0)
+		? VS.handles.map((_, i) => i).filter((i) => /** @type {number[]} */ (falloffWeights)[i] > 0)
 		: gestureIndices();
 	for (const index of indices) {
 		if (!g.starts[index]) continue;
@@ -1591,17 +1596,17 @@ function axisOf(v, axis) {
 /** Build the twin lookup from the handles as they stand NOW (drag start). */
 function beginLiveTwins() {
 	liveTwins = null;
-	if (!get(liveSymmetry) || !edited || !handles.length) return;
+	if (!get(liveSymmetry) || !VS.object || !VS.handles.length) return;
 	const axisName = get(symAxis);
 	const axis = axisName === 'y' ? 1 : axisName === 'z' ? 2 : 0;
-	const box = new THREE.Box3().setFromObject(edited);
+	const box = new THREE.Box3().setFromObject(VS.object);
 	const tol = Math.max(box.getSize(new THREE.Vector3()).length() * 0.001, 1e-5);
 	const cell = (/** @type {number} */ n) => Math.round(n / tol);
 	const keyAt = (/** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ z) =>
 		cell(x) + ',' + cell(y) + ',' + cell(z);
 	/** @type {Map<string, number>} */
 	const byKey = new Map();
-	const starts = handles.map((h) => h.position.clone());
+	const starts = VS.handles.map((h) => h.position.clone());
 	starts.forEach((p, i) => byKey.set(keyAt(p.x, p.y, p.z), i));
 	/** @type {Map<number, number|undefined>} */
 	const cache = new Map();
@@ -1634,14 +1639,14 @@ function applyLiveTwins() {
 	const twins = liveTwins;
 	if (!twins) return;
 	const moved = falloffActive()
-		? handles.map((_, i) => i).filter((i) => /** @type {number[]} */ (falloffWeights)[i] > 0)
+		? VS.handles.map((_, i) => i).filter((i) => /** @type {number[]} */ (falloffWeights)[i] > 0)
 		: gestureIndices();
 	const movedSet = new Set(moved);
 	const p = new THREE.Vector3();
 	for (const i of moved) {
 		const twin = twins.twinOf(i);
 		if (twin === undefined) continue;
-		p.copy(handles[i].position);
+		p.copy(VS.handles[i].position);
 		if (twin === i) {
 			// on the plane: it may slide along the plane, never off it
 			if (axisOf(p, twins.axis) !== 0) {
@@ -1663,7 +1668,7 @@ function applyLiveTwins() {
 
 /** Apply whichever transform the gesture is (translate / rotate / scale). */
 function applyProxyGesture() {
-	if (/** @type {any} */ (proxyGesture).mode === 'translate') applyTranslate(translateDelta());
+	if (/** @type {any} */ (VS.proxyGesture).mode === 'translate') applyTranslate(translateDelta());
 	else applyPivotTransform();
 	applyLiveTwins(); // 37 R11: the mirror twins follow (no-op unless live symmetry is on)
 	refreshGeometryAfterWrite();
@@ -1676,13 +1681,13 @@ export function onProxyMoved() {
 	// FIRST, above every gesture read (there is no `proxyGesture` in this mode,
 	// and there must never be one).
 	if (get(meshPivotMoving)) {
-		if (edited && proxy) setMeshPivotPreview(proxy.position.clone());
+		if (VS.object && VS.proxy) setMeshPivotPreview(VS.proxy.position.clone());
 		return;
 	}
 	// no live gesture = the 'change' TransformControls fires on attach and on
 	// hover, which must never write geometry (this used to be a distance test
 	// against the anchor, which the centroid seat no longer sits on)
-	if (!edited || selectedHandle < 0 || !proxyGesture) return;
+	if (!VS.object || VS.selectedHandle < 0 || !VS.proxyGesture) return;
 	applyProxyGesture();
 	const now = Date.now();
 	if (now - lastSent < 80) return;
@@ -1692,8 +1697,8 @@ export function onProxyMoved() {
 
 /** Stream every handle this gesture moved over the `verts` channel. */
 function broadcastGesture() {
-	broadcastSelected(handles[selectedHandle].position.toArray());
-	for (const index of gestureIndices()) if (index !== selectedHandle) broadcastHandle(index);
+	broadcastSelected(VS.handles[VS.selectedHandle].position.toArray());
+	for (const index of gestureIndices()) if (index !== VS.selectedHandle) broadcastHandle(index);
 	// 37 R11: the live-symmetry twins this gesture moved ride the same channel
 	if (liveTwins) for (const index of liveTwins.moved) broadcastHandle(index);
 }
@@ -1703,12 +1708,12 @@ function broadcastGesture() {
 function broadcastHandle(index) {
 	/** @type {any} */
 	const peer = get(peers);
-	if (peer && edited)
+	if (peer && VS.object)
 		peer.send({
 			type: 'verts',
-			uuid: edited.uuid,
-			indices: handles[index].indices,
-			position: handles[index].position.toArray()
+			uuid: VS.object.uuid,
+			indices: VS.handles[index].indices,
+			position: VS.handles[index].position.toArray()
 		});
 }
 
@@ -1716,11 +1721,11 @@ function broadcastHandle(index) {
 function broadcastSelected(positionArray) {
 	/** @type {any} */
 	const peer = get(peers);
-	if (peer && edited)
+	if (peer && VS.object)
 		peer.send({
 			type: 'verts',
-			uuid: edited.uuid,
-			indices: handles[selectedHandle].indices,
+			uuid: VS.object.uuid,
+			indices: VS.handles[VS.selectedHandle].indices,
 			position: positionArray
 		});
 }
@@ -1745,38 +1750,38 @@ function broadcastSelected(positionArray) {
  * @returns {boolean} false when the commit was refused (size cap) and nothing changed
  */
 function commitFalloffSnapshot(before, after) {
-	if (!edited || selectedHandle < 0) return false;
-	const anchorPos = handles[selectedHandle].position.clone();
-	const memberPos = [...vertexSelection].map((i) => handles[i]?.position.clone()).filter(Boolean);
-	if (!commitMeshGeoSnapshot(edited.uuid, before, after)) return false;
+	if (!VS.object || VS.selectedHandle < 0) return false;
+	const anchorPos = VS.handles[VS.selectedHandle].position.clone();
+	const memberPos = [...VS.selection].map((i) => VS.handles[i]?.position.clone()).filter(Boolean);
+	if (!commitMeshGeoSnapshot(VS.object.uuid, before, after)) return false;
 	// handles were rebuilt by the vertex session refresher — same positions, new order
-	const find = (/** @type {any} */ p) => handles.findIndex((h) => h.position.distanceToSquared(p) < 1e-10);
+	const find = (/** @type {any} */ p) => VS.handles.findIndex((h) => h.position.distanceToSquared(p) < 1e-10);
 	const anchor = find(anchorPos);
-	vertexSelection = new Set(memberPos.map(find).filter((i) => i >= 0));
-	selectedHandle = anchor;
-	if (anchor >= 0) vertexSelection.add(anchor);
+	VS.selection = new Set(memberPos.map(find).filter((i) => i >= 0));
+	VS.selectedHandle = anchor;
+	if (anchor >= 0) VS.selection.add(anchor);
 	syncVertexSelection();
 	return true;
 }
 
 /** Called from Scene.svelte on dragging-changed for the proxy @param {boolean} dragging */
 export function onProxyDragChanged(dragging) {
-	if (!edited || !proxy) return;
+	if (!VS.object || !VS.proxy) return;
 	// MOVE PIVOT armed: the drag re-points the pivot and touches nothing else.
 	// Diverted HERE, BEFORE the gesture machinery below, so the drag can never
 	// open a `proxyGesture` (or a falloff capture, or a meshgeo snapshot) that
 	// would then have to be unwound — the 17-D `pivotOnly` shape. Drag end writes
 	// the pivot: no geometry, no history entry, no `verts` message.
 	if (get(meshPivotMoving)) {
-		if (dragging) setMeshPivotPreview(proxy.position.clone());
-		else commitMeshPivotDrag(edited, proxy.position);
+		if (dragging) setMeshPivotPreview(VS.proxy.position.clone());
+		else commitMeshPivotDrag(VS.object, VS.proxy.position);
 		return;
 	}
-	if (selectedHandle < 0) return;
+	if (VS.selectedHandle < 0) return;
 	if (dragging) {
-		dragStartLocal = handles[selectedHandle].position.toArray();
+		dragStartLocal = VS.handles[VS.selectedHandle].position.toArray();
 		// M9: the slide picks its edge on the first real movement, from HERE
-		slideStart = handles[selectedHandle].position.clone();
+		slideStart = VS.handles[VS.selectedHandle].position.clone();
 		slideEdge = null;
 		// D5: a multi-drag undoes as ONE meshgeo snapshot (a 'verts' entry holds
 		// one position for all its indices — it cannot carry per-handle befores;
@@ -1786,13 +1791,13 @@ export function onProxyDragChanged(dragging) {
 		// the weights recapture (disarmed at drag end / session exit)
 		if (falloffStart) beginProportionalWheel(recaptureVertexFalloff);
 		const mode = get(transformMode);
-		proxyGesture = {
+		VS.proxyGesture = {
 			mode,
-			seat: gizmoSeatLocal() ?? handles[selectedHandle].position.clone(),
-			pos: proxy.position.clone(),
-			quat: proxy.quaternion.clone(),
-			scale: proxy.scale.clone(),
-			starts: handles.map((/** @type {any} */ handle) => handle.position.clone())
+			seat: gizmoSeatLocal() ?? VS.handles[VS.selectedHandle].position.clone(),
+			pos: VS.proxy.position.clone(),
+			quat: VS.proxy.quaternion.clone(),
+			scale: VS.proxy.scale.clone(),
+			starts: VS.handles.map((/** @type {any} */ handle) => handle.position.clone())
 		};
 		beginLiveTwins(); // 37 R11: find each vertex's mirror twin before anything moves
 		// a falloff drag moves many handles, so it undoes as ONE meshgeo snapshot for the same
@@ -1803,19 +1808,19 @@ export function onProxyDragChanged(dragging) {
 		// A rotate/scale joins them: even a single handle turning about a placed pivot
 		// is easier to reason about as one geometry snapshot than as a 'verts' delta.
 		dragStartExpanded =
-			vertexSelection.size > 1 || !!falloffStart || mode !== 'translate' || !!liveTwins
-				? trisToPositions(readTriangles(edited.geometry))
+			VS.selection.size > 1 || !!falloffStart || mode !== 'translate' || !!liveTwins
+				? trisToPositions(readTriangles(VS.object.geometry))
 				: null;
-	} else if (dragStartLocal && proxyGesture) {
-		const mode = proxyGesture.mode;
+	} else if (dragStartLocal && VS.proxyGesture) {
+		const mode = VS.proxyGesture.mode;
 		// catch any tail movement since the last change event
 		applyProxyGesture();
-		const after = handles[selectedHandle].position.toArray();
+		const after = VS.handles[VS.selectedHandle].position.toArray();
 		// F3: a live falloff commits the WHOLE geometry once (see commitFalloffSnapshot);
 		// read the predicate here, before the falloff state is cleared below
 		let committedWhole = false;
 		if (falloffActive() && dragStartExpanded) {
-			const afterExpanded = trisToPositions(readTriangles(edited.geometry));
+			const afterExpanded = trisToPositions(readTriangles(VS.object.geometry));
 			committedWhole =
 				JSON.stringify(dragStartExpanded) === JSON.stringify(afterExpanded) ||
 				commitFalloffSnapshot(dragStartExpanded, afterExpanded);
@@ -1823,21 +1828,16 @@ export function onProxyDragChanged(dragging) {
 		if (!committedWhole) broadcastGesture(); // final unthrottled state, every moved handle
 		if (committedWhole) {
 			// the commit applied, sent and recorded everything
-		} else if (vertexSelection.size > 1 || falloffActive() || mode !== 'translate' || liveTwins) {
+		} else if (VS.selection.size > 1 || falloffActive() || mode !== 'translate' || liveTwins) {
 			// 37 R11: twins moved too, which a one-position 'verts' entry cannot hold
-			const afterExpanded = trisToPositions(readTriangles(edited.geometry));
+			const afterExpanded = trisToPositions(readTriangles(VS.object.geometry));
 			if (dragStartExpanded && JSON.stringify(dragStartExpanded) !== JSON.stringify(afterExpanded))
-				recordEntry({
-					kind: 'meshgeo',
-					uuid: edited.uuid,
-					before: dragStartExpanded,
-					after: afterExpanded
-				});
+				recordMeshGeo(VS.object.uuid, dragStartExpanded, afterExpanded); // 99 K2: the one record step
 		} else if (JSON.stringify(dragStartLocal) !== JSON.stringify(after)) {
 			recordEntry({
 				kind: 'verts',
-				uuid: edited.uuid,
-				indices: [...handles[selectedHandle].indices],
+				uuid: VS.object.uuid,
+				indices: [...VS.handles[VS.selectedHandle].indices],
 				before: dragStartLocal,
 				after: after
 			});
@@ -1850,12 +1850,12 @@ export function onProxyDragChanged(dragging) {
 		dragStartLocal = null;
 		slideEdge = null;
 		slideStart = null;
-		proxyGesture = null;
+		VS.proxyGesture = null;
 		// put the gizmo back on its seat with a NEUTRAL pose: a constrained drag ends
 		// with the proxy away from the committed point (that is the whole point of a
 		// constraint), and a rotate/scale ends with it turned or stretched — either way
 		// the next gesture would read the leftover as its own starting delta
-		setAnchor(selectedHandle);
+		setAnchor(VS.selectedHandle);
 		dragStartExpanded = null;
 		liveTwins = null;
 	}
@@ -1875,15 +1875,15 @@ export function applyVerts(uuid, indices, positionArray) {
 	object.geometry.computeVertexNormals();
 	object.geometry.computeBoundingSphere();
 	// if we are editing this object right now, keep the handles in sync
-	if (edited === object) {
-		const handleIndex = handles.findIndex((h) => h.indices.includes(indices[0]));
+	if (VS.object === object) {
+		const handleIndex = VS.handles.findIndex((h) => h.indices.includes(indices[0]));
 		if (handleIndex >= 0) {
-			handles[handleIndex].position.fromArray(positionArray);
+			VS.handles[handleIndex].position.fromArray(positionArray);
 			refreshHandleMatrix(handleIndex);
 		}
-		if (overlay) {
-			overlay.geometry.dispose();
-			overlay.geometry = editWireGeometry(object.geometry);
+		if (VS.overlay) {
+			VS.overlay.geometry.dispose();
+			VS.overlay.geometry = editWireGeometry(object.geometry);
 		}
 	}
 	pokeScene();
@@ -1919,20 +1919,20 @@ export function vrVertexEditable(object) {
 
 /** vertices of the mesh currently in edit mode (0 if none) */
 export function editedVertexCount() {
-	return edited?.geometry?.attributes?.position?.count ?? 0;
+	return VS.object?.geometry?.attributes?.position?.count ?? 0;
 }
 
 /** D8: the live vertex-handle InstancedMesh (scene root), or null — the VR
  * beam terminates on handles while vertex-editing (they are NOT in
  * objectsGroup, so beamTarget must ask for them explicitly) */
 export function vertexHandleMesh() {
-	return handleMesh;
+	return VS.handleMesh;
 }
 
 /** Raycast the handles from a controller ray @param {THREE.Raycaster} raycaster @returns {number} handle index or -1 */
 export function vrRaycastHandle(raycaster) {
-	if (!handleMesh) return -1;
-	const hits = raycaster.intersectObject(handleMesh);
+	if (!VS.handleMesh) return -1;
+	const hits = raycaster.intersectObject(VS.handleMesh);
 	return hits.length ? /** @type {number} */ (hits[0].instanceId) : -1;
 }
 
@@ -1942,10 +1942,10 @@ export function vrRaycastHandle(raycaster) {
  * @param {number} index
  */
 export function vrBeginHandleDrag(index) {
-	if (!edited || index < 0 || index >= handles.length) return null;
-	selectedHandle = index;
+	if (!VS.object || index < 0 || index >= VS.handles.length) return null;
+	VS.selectedHandle = index;
 	refreshHandleColors();
-	dragStartLocal = handles[index].position.toArray();
+	dragStartLocal = VS.handles[index].position.toArray();
 	return handleWorldPosition(index, new THREE.Vector3());
 }
 
@@ -1954,8 +1954,8 @@ export function vrBeginHandleDrag(index) {
  * snapStep rounds the LOCAL position to a grid. @param {any} worldPos @param {number=} snapStep
  */
 export function vrDragHandleTo(worldPos, snapStep = 0) {
-	if (!edited || selectedHandle < 0) return;
-	const local = edited.worldToLocal(writeVector.copy(worldPos));
+	if (!VS.object || VS.selectedHandle < 0) return;
+	const local = VS.object.worldToLocal(writeVector.copy(worldPos));
 	if (snapStep > 0) {
 		local.x = Math.round(local.x / snapStep) * snapStep;
 		local.y = Math.round(local.y / snapStep) * snapStep;
@@ -1970,21 +1970,21 @@ export function vrDragHandleTo(worldPos, snapStep = 0) {
 
 /** End a VR handle drag: final broadcast + one undo entry. */
 export function vrEndHandleDrag() {
-	if (edited && selectedHandle >= 0 && dragStartLocal) {
-		const after = commitSelectedLocal(handles[selectedHandle].position.clone());
+	if (VS.object && VS.selectedHandle >= 0 && dragStartLocal) {
+		const after = commitSelectedLocal(VS.handles[VS.selectedHandle].position.clone());
 		broadcastSelected(after);
 		if (JSON.stringify(dragStartLocal) !== JSON.stringify(after))
 			recordEntry({
 				kind: 'verts',
-				uuid: edited.uuid,
-				indices: [...handles[selectedHandle].indices],
+				uuid: VS.object.uuid,
+				indices: [...VS.handles[VS.selectedHandle].indices],
 				before: dragStartLocal,
 				after: after
 			});
 	}
 	dragStartLocal = null;
-	selectedHandle = -1;
-	if (handleMesh) refreshHandleColors();
+	VS.selectedHandle = -1;
+	if (VS.handleMesh) refreshHandleColors();
 }
 
 // undo/redo replays vertex entries through the same apply + broadcast path

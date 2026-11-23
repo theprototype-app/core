@@ -59,7 +59,14 @@ export function focusStack(node, key) {
 	order.push(node);
 	if (key) byKey.set(key, node);
 	apply();
-	const raise = () => raiseNode(node);
+	const raise = () => {
+		raiseNode(node);
+		// 103 H3: a press on the window's chrome (its header, an empty strip) leaves the focus on
+		// <body>, so the list's Up / Down did nothing until a row was clicked. After the press has
+		// placed the focus (same task: pointerdown -> mousedown -> focus), hand it to the list
+		// unless the press focused something inside the window itself.
+		setTimeout(() => focusWindowList(node), 0);
+	};
 	// capture phase: runs before inner handlers, dragging included
 	node.addEventListener('pointerdown', raise, true);
 	return {
@@ -76,8 +83,35 @@ export function focusStack(node, key) {
 /** Raise a keyed window to the front (e.g. when its toolbar button is clicked). @param {string} key */
 export function raiseWindow(key) {
 	const node = byKey.get(key);
-	if (node) raiseNode(node);
+	if (node) {
+		raiseNode(node);
+		// 103 H3: opened or brought forward by its button / key -> its list takes the keyboard. A
+		// frame later: an open flips a store and the window is still `hidden` until svelte flushes.
+		if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => focusWindowList(node));
+	}
 	return !!node;
+}
+
+/** @param {any} el */
+function isTyping(el) {
+	return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
+}
+
+/**
+ * 103 H3: give a window's keyboard LIST (the element marked `data-list-focus` — the object tree,
+ * the Explorer grid) the focus. Never steals it: not from a field being typed in anywhere, and not
+ * from anything already focused inside this window (a rename field, the search box, a row).
+ * @param {any} node the window root @returns {boolean} did it move the focus
+ */
+export function focusWindowList(node) {
+	if (typeof document === 'undefined' || !isVisible(node)) return false;
+	const list = node.querySelector?.('[data-list-focus]');
+	if (!list || !isVisible(list)) return false;
+	const active = document.activeElement;
+	if (active && active !== document.body && node.contains(active)) return false;
+	if (isTyping(active)) return false;
+	list.focus({ preventScroll: true });
+	return document.activeElement === list;
 }
 
 /** Raise a window to the front by its node (e.g. a tab group's active member). @param {any} node */

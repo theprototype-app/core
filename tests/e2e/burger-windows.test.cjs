@@ -69,7 +69,8 @@ h.run(async () => {
 	const want = ['#open-command-palette', 'L:File', 'L:Scene', '#clear-scene', 'L:Versions', '#open-sessions-manager', 'L:Window', '#open-layouts', '#open-windows-menu', 'L:Help', '#report-bug', '#open-settings', '#open-version'];
 	h.check(JSON.stringify(order) === JSON.stringify(want), `0.1 search, File, Scene (Clear scene… last), Versions, Window (Layouts above Windows, uir-polish C1), Help, footer (${JSON.stringify(order)})`);
 	const lastScene = await page.evaluate(() => {
-		const rows = [...document.querySelectorAll('#sidebar70 > *')];
+		// 103 H14: the rows live in the inner #sidebar70-scroll (the search row and Settings are locked outside it)
+		const rows = [...document.querySelectorAll(document.getElementById('sidebar70-scroll') ? '#sidebar70-scroll > *' : '#sidebar70 > *')];
 		const i = rows.findIndex((e) => e.id === 'clear-scene');
 		return { prev: rows[i - 1]?.className ?? '', next: rows[i + 1]?.className ?? '', text: rows[i]?.textContent.trim() };
 	});
@@ -112,11 +113,13 @@ h.run(async () => {
 	await openBurger(page);
 	const foot = await page.evaluate(() => {
 		const nav = document.querySelector('#sidebar70');
-		nav.scrollTop = 0;
+		// 103 H14: the rows scroll in #sidebar70-scroll
+		const scr = document.querySelector('#sidebar70-scroll') || nav;
+		scr.scrollTop = 0;
 		const n = nav.getBoundingClientRect();
 		const f = document.querySelector('#sidebar70 .side-foot').getBoundingClientRect();
 		const last = document.querySelector('#report-bug').getBoundingClientRect();
-		return { scrolls: nav.scrollHeight > nav.clientHeight + 8, navBottom: Math.round(n.bottom), footBottom: Math.round(f.bottom), footTop: Math.round(f.top), lastTop: Math.round(last.top) };
+		return { scrolls: scr.scrollHeight > scr.clientHeight + 8, navBottom: Math.round(n.bottom), footBottom: Math.round(f.bottom), footTop: Math.round(f.top), lastTop: Math.round(last.top) };
 	});
 	h.check(foot.scrolls && foot.lastTop > foot.footTop, `0.5 (premise) on a short window the menu scrolls and the last Help row is hidden below (${JSON.stringify(foot)})`);
 	h.check(Math.abs(foot.footBottom - foot.navBottom) <= 12 && foot.footTop < foot.navBottom, `0.6 ...while the Settings footer stays at the menu's bottom, in view (${JSON.stringify(foot)})`);
@@ -124,8 +127,9 @@ h.run(async () => {
 	const strip = await page.evaluate(() => {
 		const nav = document.querySelector('#sidebar70');
 		const out = [];
+		const scr = document.querySelector('#sidebar70-scroll') || nav;
 		for (const top of [0, 40, 99999]) {
-			nav.scrollTop = top;
+			scr.scrollTop = top;
 			// the menu's INNER bottom edge (its own border is not a gap)
 			const n = nav.getBoundingClientRect().bottom - parseFloat(getComputedStyle(nav).borderBottomWidth);
 			const f = document.querySelector('#sidebar70 .side-foot').getBoundingClientRect();

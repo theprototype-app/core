@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { backClose } from '$lib/backStack.js'; // phone-polish: Android Back closes it
 	import { edgeFade } from '$lib/ui/edgeFade.js'; // 98-int UI-6: the edge with more rows fades (the scroll cue)
+	import { dragScroll } from '$lib/ui/dragScroll.js'; // 103 H14 row 1: a mouse drag scrolls the rows
 	import Icon from '../ui/Icon.svelte';
+	import KeyChips from '../ui/KeyChips.svelte'; // 103 row 8: one key-chip style with Ctrl+K and Settings
 	import SheetGrip from '../ui/SheetGrip.svelte';
 	import { readSheetH, saveSheetH } from '$lib/ui/sheetDrag.js';
 	import { phoneShellActive, phoneSheetMaxH } from '$lib/ui/phoneShell.js';
@@ -274,7 +276,6 @@
 		id="sidebar70"
 		use:backClose={() => closeMenu.set(true)}
 		use:clearToolbar={!$phoneShellActive}
-		use:edgeFade={$phoneShellActive ? 'off' : 'y'}
 		transition:fade={{ duration: motionMs(130) }}
 		class="app-sidebar tp-ui tp-menu tp-noscrollbar fixed"
 		style="--side-top: {$connectDocked ? $connectBarHeight + 64 : 64}px; {$phoneShellActive ? `--menu-sheet-h: ${menuShown}px` : ''}"
@@ -296,8 +297,13 @@
 		     words move ("Load" -> "Open…", "Clear scene…" last in Scene behind a divider). No Undo / Redo row (owner). -->
 		<button id="open-command-palette" class="side-row side-search" onclick={() => { closeMenu.set(true); commandPaletteOpen.set(true); }}>
 			<span class="side-ico"><Icon name="search" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Search commands…</span>
-			<span class="side-hint">Ctrl+K</span>
+			<span class="side-hint"><KeyChips keys={bindingOf('help.palette') || 'Ctrl+K'} /></span>
 		</button>
+		<!-- 103 H14 rows 1, 2, 7: the Ctrl+K row above and Settings below are LOCKED; only the rows between them scroll, in
+		     this inner scroller. Its top / bottom edge fades only while rows are hidden on that side (edgeFade 'y', the mask
+		     lives on the scroller, so the pinned rows never dim), and a mouse drag scrolls it (dragScroll: a press under
+		     6 px is still a click, a drag never activates a row, the pointer never changes) -->
+		<div id="sidebar70-scroll" class="side-scroll tp-noscrollbar" use:edgeFade={'y'} use:dragScroll>
 		<div class="side-label">File</div>
 		{#if $projectActionsLayout === 'compact'}
 			<!-- 41b H14 — COMPACT (the desktop / unfolded default): a strict two-column grid at list-row
@@ -423,7 +429,7 @@
 				>
 					<span class="side-ico"><Icon name="wrench" size={16} aria-hidden="true" /></span>
 					<span class="flex-1 whitespace-nowrap">{box.label}</span>
-					{#if box.shortcut}<span class="side-hint">{box.shortcut}</span>{/if}
+					{#if box.shortcut}<span class="side-hint"><KeyChips keys={box.shortcut} /></span>{/if}
 				</button>
 			{/each}
 		{:else}
@@ -441,7 +447,7 @@
 		<!-- 36 B14: named checkpoints + the timeline they live in -->
 		<button id="save-checkpoint" class="side-row" onclick={() => { checkpointSaveOpen.set(true); closeMenu.set(true); }}>
 			<span class="side-ico"><Icon name="bookmark" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Save checkpoint…</span>
-			<span class="side-hint">Ctrl+Shift+S</span>
+			<span class="side-hint"><KeyChips keys="Ctrl+Shift+S" /></span>
 		</button>
 		<button id="open-checkpoints" class="side-row" onclick={() => { checkpointsOpen.set(true); closeMenu.set(true); }}>
 			<span class="side-ico"><Icon name="history" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Checkpoints</span>
@@ -480,7 +486,7 @@
 			<!-- showhide-v8 §6: the "?" cheat sheet had no menu row -->
 			<button id="open-shortcuts" class="side-row help-btn" title="Keyboard shortcuts ({bindingOf('help.cheatsheet') ?? '?'})" onclick={() => { closeMenu.set(true); cheatSheetOpen.set(true); }}>
 				<span class="side-ico"><Icon name="keyboard" size={16} aria-hidden="true" /></span><span class="help-label">{$phoneShellActive ? 'Keyboard shortcuts' : 'Shortcuts'}</span>
-				{#if $phoneShellActive}<span class="side-hint">{bindingOf('help.cheatsheet') ?? '?'}</span>{/if}
+				{#if $phoneShellActive}<span class="side-hint"><KeyChips keys={bindingOf('help.cheatsheet') ?? '?'} /></span>{/if}
 			</button>
 			<!-- 36 I5: the editor tour (Settings ▸ Tours has the VR welcome + reset). 76 FW1: it no longer starts by
 			     itself after the Welcome — the first-win quest does — so this row is where it lives -->
@@ -491,6 +497,7 @@
 			<button id="report-bug" class="side-row help-btn" title="Report a bug: a picture of this moment, the last 30 s of frame data and a note" onclick={() => { closeMenu.set(true); void openBugReport(); }}>
 				<span class="side-ico"><Icon name="bug" size={16} aria-hidden="true" /></span><span class="help-label">Report a bug</span>
 			</button>
+		</div>
 		</div>
 		<!-- showhide-v8 §6: Settings + the version, a footer that stays in view while the rows scroll; the version opens What's new -->
 		<div class="side-foot">
@@ -580,6 +587,15 @@
 		   viewport you can SEE (URL bar and fold posture included); 100vh is the fallback */
 		max-height: calc(100vh - var(--side-top, 64px) - 8px);
 		max-height: calc(100dvh - var(--side-top, 64px) - 8px);
+		/* 103 H14 row 2: the menu itself does not scroll — the Ctrl+K row and the Settings footer are locked and the
+		   rows between them scroll in .side-scroll (so a row brought into view can never park under the footer) */
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
+	}
+	.side-scroll {
+		flex: 1 1 auto;
+		min-height: 0;
 		overflow-y: auto;
 		overflow-x: hidden;
 		scrollbar-width: none; /* Firefox */
@@ -587,12 +603,17 @@
 		/* a swipe that reaches the end stops here instead of dragging the page/canvas */
 		overscroll-behavior: contain;
 		touch-action: pan-y;
-		/* 78-fix-547: the sticky footer (Settings + version, showhide-v8 §6) covers the menu's last ~53 px, so a row
-		   brought into view (keyboard focus, scrollIntoView) parked UNDER it and a tap there pressed Settings */
-		scroll-padding-bottom: 3.75rem;
+		/* a mouse drag scrolls (row 1): it must not start a text selection on a section label */
+		user-select: none;
+		-webkit-user-select: none;
 	}
-	.app-sidebar::-webkit-scrollbar {
+	.side-scroll::-webkit-scrollbar {
 		display: none; /* Chrome/Safari — scroll, no bar */
+	}
+	/* the two locked rows keep their size whatever the scroller does */
+	.side-search,
+	.side-foot {
+		flex: 0 0 auto;
 	}
 	/* 28-A5: the `.side-cloud :global(...)` halves republish the row look for the cloud
 	   slot's FOREIGN DOM. svelte scopes these rules to elements in this template, and a
@@ -647,6 +668,7 @@
 		font-size: var(--fs-desc);
 	}
 	.side-hint {
+		display: inline-flex;
 		margin-left: auto;
 		padding-left: 12px;
 		color: var(--text-faint);
@@ -665,9 +687,9 @@
 	/* uir-polish C3 (owner 2026-11-11, folded N6): a sticky footer pins at the scroller's padding edge, so the menu's
 	   bottom padding (12 px on the phone sheet, 5 px on desktop) was a see-through strip under Settings while the rows
 	   scrolled behind it. The footer now reaches the menu's bottom edge across that padding (--side-foot-pad) */
+	/* 103 H14: no longer sticky — a locked row under the scroller, which the rows never pass behind; it still reaches
+	   the menu's bottom edge across the padding (C3) */
 	.side-foot {
-		position: sticky;
-		bottom: calc(-1 * var(--side-foot-pad, 5px));
 		margin-bottom: calc(-1 * var(--side-foot-pad, 5px));
 		padding-bottom: var(--side-foot-pad, 5px);
 		display: flex;

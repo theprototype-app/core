@@ -54,6 +54,8 @@ import { selectedObject, selectedObjects } from '../stores/sceneStore';
 import { safeStorage } from './safeStorage';
 // 53 A3: does a key press belong to the 3D view (a zero-import leaf)
 import { tabEditsMesh, trackViewClaim } from './keyboardNav';
+// 103 H5/H10: fly prefs (a leaf) — the Blender preset's bare S depends on 'Fly with WASD'
+import { flyWithWasd, flyDirection, rightButtonHeld } from './flyPrefs';
 
 // Single source of truth for keyboard shortcuts: the same registry binds the keys
 // and renders the list in Settings -> Shortcuts. Other modules push entries via
@@ -142,6 +144,9 @@ function toggleAiPrompt() {
 
 /** I3: the `?` cheat sheet overlay (ShortcutSheet.svelte renders it from `shortcuts`). */
 export const cheatSheetOpen = writable(false);
+/** 103 row 9: bumps whenever the bindings in force change (a rebind, a reset, a preset or keymap switch), so a view
+ *  that shows a derived fact — the Keymap card's changed dot — follows a rebind made anywhere (the grid, Ctrl+K). */
+export const shortcutsChanged = writable(0);
 
 /**
  * 36 B8: the mesh-edit commands — real combos, run by the mesh session's own handler.
@@ -224,6 +229,39 @@ export const shortcuts = [
 		label: 'Move (grab) — same as 1',
 		action: () => setTransformMode('translate')
 	},
+	/*
+	 * 103 H4 — START AT ONCE (Blender's G / R / S). The selection follows the pointer right away:
+	 * X / Y / Z lock an axis (two = that plane), a typed number sets the amount, Enter / a click
+	 * keeps it, Esc / a right-click puts it back, one undo step, and peers see the same `move`
+	 * messages a gizmo drag sends. NO KEY BY DEFAULT (owner, 22 Nov): today's keys stay, and the
+	 * Blender preset binds G / R / Alt+S (bare S when the fly keys wait for the right button).
+	 * The engine is lazy ($lib/modalTransform), so this costs the boot three rows.
+	 */
+	...[
+		['transform.now-move', 'translate', 'Move now — the selection follows the pointer'],
+		['transform.now-rotate', 'rotate', 'Rotate now — turns with the pointer'],
+		['transform.now-scale', 'scale', 'Resize now — scales with the pointer']
+	].map(([id, mode, label]) => ({
+		id,
+		keys: '',
+		group: 'Transform',
+		scope: 'viewport',
+		label,
+		when: () => !keySessionOpen(),
+		action: () => void import('./modalTransform').then((m) => m.startModalTransform(/** @type {'translate'|'rotate'|'scale'} */ (mode)))
+	})),
+	// the lock keys are read by the running gesture itself (capture phase), so they are `external`
+	// rows in their own scope: they never collide with Z (view mode) or anything else outside one.
+	// X / Y / Z by default in EVERY preset (owner, 22 Nov follow-up): they act only while a gesture
+	// runs, so binding just "Move now" gives axis locks at once and nobody else sees a change
+	...['X', 'Y', 'Z'].map((axis) => ({
+		id: 'transform.lock-' + axis.toLowerCase(),
+		keys: axis,
+		group: 'Transform',
+		scope: 'modal',
+		external: true,
+		label: 'Lock to ' + axis + ' while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)'
+	})),
 	{
 		// External + scoped: the UV editor arms this itself, from its own capture-phase
 		// keydown, so it can only ever fire while that canvas holds focus. Listed and
@@ -234,6 +272,31 @@ export const shortcuts = [
 		label: 'Arm Move (in the UV editor)',
 		external: true,
 		scope: 'uv'
+	},
+	// 103 H4: the UV editor's start-at-once keys, its U / V locks and its tool keys — run by the
+	// editor's own capture handler (external); the Blender preset binds the start-at-once and tool
+	// keys. The U / V locks default to X / Y in every preset (claude:9, 22 Nov, like the X / Y / Z
+	// locks): the gesture's own key hook reads them, so they act only while one runs. They stay in
+	// the UV scope: 'modal' would make them collide with the viewport's X / Y locks in Settings.
+	...[
+		['uv.now-move', 'Move now (in the UV editor) — the selection follows the pointer'],
+		['uv.now-rotate', 'Rotate now (in the UV editor)'],
+		['uv.now-scale', 'Resize now (in the UV editor)'],
+		['uv.lock-u', 'Lock to U while a UV move / resize runs', 'X'],
+		['uv.lock-v', 'Lock to V while a UV move / resize runs', 'Y'],
+		['uv.tool-select', 'Select tool (in the UV editor)'],
+		['uv.tool-box', 'Box select tool (in the UV editor)'],
+		['uv.tool-lasso', 'Lasso select tool (in the UV editor)'],
+		['uv.tool-paint', 'Paint tool (in the UV editor)']
+	].map(([id, label, keys = '']) => ({ id, keys, group: 'UV editor', label, external: true, scope: 'uv' })),
+	{
+		id: 'uv.space-pan',
+		keys: 'Space (hold)',
+		group: 'UV editor',
+		scope: 'uv',
+		label: 'Hold and drag to pan, whatever the tool (no middle button needed)',
+		fixed: true,
+		fixedReason: 'held while dragging, handled by the UV editor'
 	},
 	{
 		id: 'animation.grab',
@@ -289,6 +352,20 @@ export const shortcuts = [
 		label: 'Fly 3x faster',
 		fixed: true,
 		fixedReason: 'hold modifier, handled by fly navigation'
+	},
+	{
+		// 103 H10: Level (W / S along the ground) or Where I look (W / S along the view). No key by
+		// default; the viewport menu's View ▸ Fly direction is the other way to switch it.
+		id: 'movement.fly-direction',
+		keys: '',
+		group: 'Movement',
+		scope: 'viewport',
+		label: 'Fly direction: switch between Level and Where I look',
+		action: () => {
+			const next = get(flyDirection) === 'look' ? 'level' : 'look';
+			flyDirection.set(next);
+			showToast(next === 'look' ? 'Fly direction: where I look' : 'Fly direction: level');
+		}
 	},
 	{
 		// 36 L2: back to where the scene opened (its saved view). Quiet when no scene with
@@ -869,7 +946,12 @@ export const shortcuts = [
 		['mesh.delete', 'X', 'Delete the selection (faces; Delete too)'],
 		['mesh.loop', 'L', 'Loop select (faces: again = perpendicular; edges: the chain)'],
 		['mesh.weld', 'W', 'Weld the selected vertices (vertices)'],
-		['mesh.connect', 'J', 'Connect two corners of a face (vertices)']
+		['mesh.connect', 'J', 'Connect two corners of a face (vertices)'],
+		// 103 H4 row 5: start at once on the picked vertices / edges / faces (no key by default; the
+		// Blender preset binds G / R / S — WASD never flies inside a session that holds its keys)
+		['mesh.now-move', '', 'Move now — the picked vertices / edges / faces follow the pointer'],
+		['mesh.now-rotate', '', 'Rotate now (vertices / edges / faces)'],
+		['mesh.now-scale', '', 'Resize now (vertices / edges / faces)']
 	]),
 	/*
 	 * 36 U11 — THE NODE EDITOR'S KEYMAP (scope 'nodes'). These fire only while the node
@@ -989,7 +1071,8 @@ function loadOverrides() {
 		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
 		/** @type {Record<string, string>} */
 		const clean = {};
-		for (const [id, keys] of Object.entries(parsed)) if (typeof keys === 'string' && keys) clean[id] = keys;
+		// 103 H14: '' is a stored "no key" (Backspace in the Ctrl+K capture unbinds a row)
+		for (const [id, keys] of Object.entries(parsed)) if (typeof keys === 'string' && keys.length <= 40) clean[id] = keys;
 		return clean;
 	} catch {
 		return {};
@@ -1022,15 +1105,120 @@ function seedDefaults() {
  */
 export function applyOverrides() {
 	seedDefaults();
+	const preset = presetTable;
 	for (const s of shortcuts) {
 		if (s.fixed) continue;
-		s.keys = overrides[s.id] ?? /** @type {string} */ (s.defaultKeys);
+		s.keys = overrides[s.id] ?? preset[s.id] ?? /** @type {string} */ (s.defaultKeys);
 	}
+	// "a user's own rebinds win over either preset": a preset binding that lands on a combo the
+	// user already gave something else in a colliding scope stands down (unbound) instead
+	for (const s of shortcuts) {
+		if (s.fixed || overrides[s.id] !== undefined || preset[s.id] === undefined || !s.keys) continue;
+		const scope = s.scope || 'global';
+		if (shortcuts.some((o) => o !== s && overrides[o.id] === s.keys && scopesCollide(s, scope, o))) s.keys = '';
+	}
+	// 103 H4: once a start-at-once key is bound, fetch its lazy engine while the page is idle, so the
+	// FIRST press starts the gesture at once (a cold chunk took over a second on a loaded machine)
+	if (typeof window !== 'undefined' && !warmed && shortcuts.some((s) => /^(transform|mesh)\.now-/.test(s.id) && s.keys)) {
+		warmed = true;
+		const warm = () => void import('./modalTransform').catch(() => (warmed = false));
+		if (typeof requestIdleCallback === 'function') requestIdleCallback(warm, { timeout: 3000 });
+		else setTimeout(warm, 500);
+	}
+	shortcutsChanged.update((n) => n + 1);
+}
+let warmed = false;
+
+/* ------------------------------------------------------- 103 H5: keymap presets -- */
+
+// A PRESET is a set of default bindings; the user's own rebinds win over it. The tables and their
+// labels live in the LAZY ./keymapPresets (the boot rule): the default preset is an empty table, so a
+// person who never picks one never loads it. A stored non-default preset loads it at boot.
+const PRESET_IDS = ['theprototype', 'blender', 'unity'];
+const PRESET_KEY = 'keymapPreset';
+
+/** @returns {string} */
+function loadPreset() {
+	try {
+		const raw = typeof localStorage !== 'undefined' ? safeStorage.getItem(PRESET_KEY) : null;
+		return raw && PRESET_IDS.includes(raw) ? raw : 'theprototype';
+	} catch {
+		return 'theprototype';
+	}
+}
+let activePreset = 'theprototype';
+/** the active preset's bindings ('' = unbound); empty for the default @type {Record<string, string>} */
+let presetTable = {};
+/** the chosen preset, for Settings @type {import('svelte/store').Writable<string>} */
+export const keymapPreset = writable(activePreset);
+
+/** @type {Promise<typeof import('./keymapPresets')> | null} */
+let presetsModule = null;
+/** @type {typeof import('./keymapPresets') | null} */
+let presetsLoaded = null;
+/** the lazy preset tables (Settings' Keymap card reads its labels from the same module) */
+export function loadKeymapPresets() {
+	presetsModule ??= import('./keymapPresets').then((m) => (presetsLoaded = m));
+	return presetsModule;
+}
+
+/** keymapPresets.applyPreset calls back here with the table. @param {string} id
+ * @param {Record<string, string>} table @param {boolean} switching the user picked it */
+export function usePresetTable(id, table, switching) {
+	activePreset = id;
+	presetTable = table;
+	if (switching) {
+		try {
+			if (typeof localStorage !== 'undefined') {
+				if (id === 'theprototype') safeStorage.removeItem(PRESET_KEY);
+				else safeStorage.setItem(PRESET_KEY, id);
+			}
+		} catch {
+			/* private mode: this session only */
+		}
+		// an override that now equals the preset's own binding is no override at all
+		for (const [rowId, keys] of Object.entries(overrides)) {
+			const row = shortcuts.find((s) => s.id === rowId);
+			if (row && keys === (table[rowId] ?? row.defaultKeys)) delete overrides[rowId];
+		}
+		saveOverrides();
+	}
+	applyOverrides();
+	keymapPreset.set(id);
+}
+
+/** What a row answers to in the active preset with no rebind of the user's ('' = no key).
+ * @param {string} id @returns {string} */
+export function presetDefaultOf(id) {
+	const s = shortcuts.find((row) => row.id === id);
+	if (!s) return '';
+	return presetTable[id] ?? s.defaultKeys ?? '';
+}
+
+/** Switch the keymap preset; the user's rebinds are kept and still win. Synchronous once the lazy
+ * tables are loaded (the returned promise settles when the switch is in force). @param {string} id */
+export function setKeymapPreset(id) {
+	if (!PRESET_IDS.includes(id)) return Promise.resolve();
+	if (presetsLoaded) {
+		presetsLoaded.applyPreset(id, true);
+		return Promise.resolve();
+	}
+	return loadKeymapPresets().then((m) => m.applyPreset(id, true));
 }
 
 seedDefaults();
 overrides = loadOverrides();
+activePreset = loadPreset();
+keymapPreset.set(activePreset);
 applyOverrides();
+// a stored preset loads its table at boot, and the Blender resize key follows 'Fly with WASD' (bare S
+// only when it is free) — both through the lazy tables, never for the default preset
+flyWithWasd.subscribe(() => {
+	if (activePreset === 'theprototype') return;
+	const id = activePreset;
+	if (presetsLoaded) presetsLoaded.applyPreset(id, false);
+	else void loadKeymapPresets().then((m) => activePreset === id && m.applyPreset(id, false));
+});
 
 /** @param {string} text */
 function slug(text) {
@@ -1204,10 +1392,36 @@ export function setOverride(id, keys) {
 	if (!entry) return;
 	// back at the default = no override, so "reset" and "typed the default back in"
 	// leave identical state
-	if (keys === entry.defaultKeys) delete overrides[id];
+	// 103 H5: "the default" is the active PRESET's binding for the row
+	if (keys === presetDefaultOf(id)) delete overrides[id];
 	else overrides[id] = keys;
 	saveOverrides();
 	applyOverrides();
+}
+
+/** 103 H14: leave a row with no key (a stored '' override; nothing when the row has no default either).
+ * @param {string} id */
+export function clearShortcut(id) {
+	const entry = shortcuts.find((s) => s.id === id);
+	if (!entry || !isRebindable(entry)) return false;
+	setOverride(id, '');
+	return true;
+}
+
+/** Take `keys` for `id` although `otherId` holds it — the two answers to a refused rebind, ONE write path for
+ * Settings (Swap: the other row gets this row's previous keys) and Ctrl+K (Replace: the other row is left with no key).
+ * The other row is freed FIRST. @param {string} id @param {string} keys @param {string} otherId
+ * @param {'swap' | 'replace'} mode */
+export function takeConflictingKeys(id, keys, otherId, mode) {
+	const mine = shortcuts.find((s) => s.id === id);
+	if (!mine) return;
+	setOverride(otherId, mode === 'swap' ? mine.keys : '');
+	setOverride(id, keys);
+}
+
+/** 103 row 10: how many rows a reset of everything to ThePrototype defaults would change (the confirm says it) */
+export function changedFromDefaultsCount() {
+	return shortcuts.filter((s) => !s.fixed && s.keys !== (s.defaultKeys ?? s.keys)).length;
 }
 
 /** @param {string} id */
@@ -1217,10 +1431,47 @@ export function resetShortcut(id) {
 	applyOverrides();
 }
 
+/** 103 row 10 (the third level): EVERYTHING back to ThePrototype defaults — no rebinds, the default preset, no saved
+ * keymap active (the saved keymaps themselves stay). The default preset's table is empty, so nothing lazy loads. */
 export function resetAllShortcuts() {
 	overrides = {};
 	saveOverrides();
+	if (activePreset !== 'theprototype') usePresetTable('theprototype', {}, true);
+	else applyOverrides();
+	setActiveKeymapId(null);
+}
+
+/** 103 row 9: replace the working rebinds wholesale (switching to / discarding into a saved keymap — keymaps.js, lazy).
+ * @param {Record<string, string>} map */
+export function replaceOverrides(map) {
+	/** @type {Record<string, string>} */
+	const clean = {};
+	for (const [id, keys] of Object.entries(map || {})) if (typeof keys === 'string' && keys.length <= 40) clean[id] = keys;
+	overrides = clean;
+	saveOverrides();
 	applyOverrides();
+}
+
+/* 103 row 9: which SAVED keymap (keymaps.js, lazy) the working rebinds belong to; null = a built-in preset. Only the id
+   lives at boot: the working state itself is always `keymapPreset` + `shortcutOverrides`, so a saved keymap needs no boot
+   code to be in force after a reload. */
+const ACTIVE_KEYMAP_KEY = 'keymapActive';
+/** @type {import('svelte/store').Writable<string | null>} */
+export const activeKeymapId = writable(/** @type {string | null} */ (null));
+/** @param {string | null} id */
+export function setActiveKeymapId(id) {
+	activeKeymapId.set(id || null);
+	try {
+		if (typeof localStorage === 'undefined') return;
+		if (id) safeStorage.setItem(ACTIVE_KEYMAP_KEY, id);
+		else safeStorage.removeItem(ACTIVE_KEYMAP_KEY);
+	} catch {
+		/* private mode: this session only */
+	}
+}
+/** the active preset's id (the base a saved keymap is stored against) */
+export function activePresetId() {
+	return activePreset;
 }
 
 /** The stored overrides, for the UI's "is this row customised" test.
@@ -1319,6 +1570,9 @@ function handleKeydown(event) {
 	if (get(isLocked)) return;
 
 	const combo = comboOf(event);
+	// 103 H5: with 'Fly with WASD: only while holding the right mouse button', a held right button
+	// means the fly letters are flying — no command bound to them may also run
+	if (get(flyWithWasd) === 'rmb' && rightButtonHeld() && /^(Shift\+)?[WASDQE]$/.test(combo)) return;
 	// 36 L4: inside an open popover/menu (the profile dropdown is a flowbite popover) Tab
 	// is the browser's focus navigation — the global Tab (enter Edit Mesh) left every
 	// menu row unreachable by keyboard
@@ -1376,6 +1630,11 @@ export function startShortcuts() {
 	// no localStorage to read from
 	overrides = loadOverrides();
 	applyOverrides();
+	try {
+		activeKeymapId.set(safeStorage.getItem(ACTIVE_KEYMAP_KEY) || null);
+	} catch {
+		/* private mode */
+	}
 	startKeyScope();
 	trackViewClaim(); // 53 A3
 	setVrScopeProbe(() => !!get(isVRMode));

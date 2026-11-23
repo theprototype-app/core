@@ -1247,6 +1247,9 @@ export function sendObjects(peerId, element, opts = {}) {
     console.log("Sending " + count + " objects to " + peerId);
 
     // Wait 500ms to ensure the connection is established before sending the objects
+    // fix-late-joiners row 1: …unless it already is (the handshake's getobjects arrived ON it): then a task's
+    // wait is enough — the 500 ms was a flat half second of every late join
+    const openNow = peerId !== null && !!peer?.connections?.[peerId]?.open;
     setTimeout(() => {
         // …and RESOLVE THE CONNECTION HERE, not 500ms ago. `peer.connections[peerId]`
         // is undefined while the dial is still in flight and closed when the joiner
@@ -1276,7 +1279,7 @@ export function sendObjects(peerId, element, opts = {}) {
         } finally {
             restore();
         }
-    }, 500);
+    }, openNow ? 0 : 500);
 
 }
 

@@ -281,6 +281,26 @@ h.run(async () => {
 			90000
 		);
 		if (PROFILE) printProfile((await cdp.send('Profiler.stop')).profile);
+		// the STEADY frame of the landed scene at the same throttle: the floor under any long-task gate (a join
+		// cannot draw a 500-object frame faster than the scene draws one)
+		const steady = await B.page.evaluate(async () => {
+			const w = /** @type {any} */ (window);
+			const frames = [];
+			const longs = [];
+			const obs = new PerformanceObserver((l) => { for (const e of l.getEntries()) longs.push(Math.round(e.duration)); });
+			obs.observe({ type: 'longtask', buffered: false });
+			await new Promise((r) => setTimeout(r, 1500)); // the ingest draw gap lets go
+			let last = performance.now();
+			await new Promise((r) => {
+				const end = last + 3000;
+				const tick = (t) => { frames.push(t - last); last = t; if (t < end) requestAnimationFrame(tick); else r(); };
+				requestAnimationFrame(tick);
+			});
+			obs.disconnect();
+			frames.sort((a, b) => a - b);
+			const q = (f) => Math.round(frames[Math.min(frames.length - 1, Math.floor(f * frames.length))] ?? -1);
+			return { frames: frames.length, p50: q(0.5), p95: q(0.95), maxLongtask: longs.length ? Math.max(...longs) : 0 };
+		});
 		await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
 		const r = await B.page.evaluate(() => { const w = /** @type {any} */ (window); w.__lj.on = false; return w.__lj; });
 		const metric = {
@@ -299,6 +319,7 @@ h.run(async () => {
 			// programs linked during the join, and when (0.5 s buckets)
 			// objects held at each second after the approval (the arrival curve)
 			curve: (() => { const out = {}; for (const [t, n] of r.curve ?? []) out[Math.floor(t / 1000)] = n; return Object.entries(out).map(([k, v]) => k + 's:' + v).join(' '); })(),
+			steadyFrame: steady,
 			maxBacklog: r.maxBacklog ?? -1,
 			maxDrawGap: r.maxGap ?? -1,
 			programs: r.links.length,

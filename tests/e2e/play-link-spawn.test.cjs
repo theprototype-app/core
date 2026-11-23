@@ -21,7 +21,11 @@ h.run(async () => {
 	// a red run exits from inside h.run: the server it started must not outlive it (a stale one on the shared
 	// :9001 swallowed the next run's dials — measured, the second joiner's offer never reached the host)
 	process.on('exit', () => stopSignalServer(signal));
-	const browser = await h.launch();
+	// LJ_GPU=d3d12 on the pc host: the real GPU (see late-joiner-scale); nine pages on SwiftShader crawl
+	if (process.env.LJ_GPU === 'd3d12') process.env.GALLIUM_DRIVER = 'd3d12';
+	const browser = await h.launch(
+		process.env.LJ_GPU === 'd3d12' ? { args: ['--use-gl=angle', '--use-angle=gl-egl', '--enable-gpu', '--ignore-gpu-blocklist'] } : {}
+	);
 	const opts = { storage: LOCAL_PEER_STORAGE };
 	const A = await h.setupPage(browser, 'A', opts);
 	await A.page.evaluate(async (wallX) => {
@@ -67,7 +71,7 @@ h.run(async () => {
 			let p;
 			/** @type {any} */ (window).__tp.test.v1.peers.subscribe((v) => (p = v))();
 			return p?.peer?.open && p.peer.id ? p.peer.id : false;
-		}, null, { timeout: 30000 }).then((r) => r.jsonValue());
+		}, null, { timeout: 90000 }).then((r) => r.jsonValue());
 		J.id = live;
 		await J.page.evaluate((host) => /** @type {any} */ (window).__tp.test.v1.peerApproval.requestConnect(host), A.id);
 		await h.eventually(

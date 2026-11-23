@@ -4071,6 +4071,11 @@
 				<MeasureSection object={$selectedObject} />
 			{/if}
 
+			{#if insTargets.length}
+				<!-- 102b-flows: the tags an Object Selector set to By tag finds (union over a multi-select) -->
+				{#await import('./inspector/TagsSection.svelte') then m}<m.default objects={insTargets} />{/await}
+			{/if}
+
 			{#if isGroup}
 				<Section variant="panel" label="Group">
 					<p class="px-1 text-xs text-text-muted">

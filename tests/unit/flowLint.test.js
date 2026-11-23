@@ -63,3 +63,20 @@ describe('flowLint: reversed trigger wires', () => {
 		expect(out['obj-1'][0].edgeId).toBe('e-sel-click');
 	});
 });
+
+// 102b-flows: an Object Selector picking by tag / group / name that matches nothing acts on nothing
+describe('selector-matches-nothing', () => {
+	const nodes = [node('c', 'onclick'), node('s', 'objectselector', { pick: 'tag', match: 'coin' }), node('v', 'visibility'), node('p', 'objectselector', { selected: 'x' })];
+	const edges = [edge('c', 's'), edge('v', 's'), edge('c', 'p')];
+	it('is flagged once per selector, on its first wire, only when a resolver is given', () => {
+		expect(lintFlowGraph(nodes, edges).length).toBe(0);
+		const found = lintFlowGraph(nodes, edges, { resolve: () => [] });
+		expect(found.map((f) => f.code)).toEqual(['selector-matches-nothing']);
+		expect(found[0].target).toBe('s');
+		expect(found[0].message).toContain('"coin"');
+		expect(found[0].fix).toBeUndefined();
+	});
+	it('a set with members, and a plain selector, are not flagged', () => {
+		expect(lintFlowGraph(nodes, edges, { resolve: () => ['a'] }).length).toBe(0);
+	});
+});

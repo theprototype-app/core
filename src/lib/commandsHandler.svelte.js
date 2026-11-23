@@ -824,6 +824,25 @@ export async function objectParameters(data, from = 'peer') {
             else delete mesh.userData.fluidInteraction;
             pokeScene();
         }
+    } else if (data.parameter == 'tags') {
+        // 102b-flows: an object's tags (what a tag-picking Object Selector finds). null = none.
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            // the validator bounded the list; keep its non-empty strings (selectorPick.normalizeTags' rule, inline:
+            // the wire handler stays off the selector chunk)
+            const clean = Array.isArray(data.tags) ? data.tags.map((/** @type {any} */ t) => String(t).trim()).filter(Boolean).slice(0, 16) : [];
+            if (clean.length) mesh.userData.tags = clean;
+            else delete mesh.userData.tags;
+            pokeScene();
+        }
+    } else if (data.parameter == 'flowFrom') {
+        // 102b-flows: which object's flow this one received a copy of (the "update all" family). null = none.
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            if (typeof data.flowFrom === 'string' && data.flowFrom) mesh.userData.flowFrom = data.flowFrom;
+            else delete mesh.userData.flowFrom;
+            pokeScene();
+        }
     } else if (data.parameter == 'pick') {
         // 30 P2: click-through in the viewport. null = cleared (the default).
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);

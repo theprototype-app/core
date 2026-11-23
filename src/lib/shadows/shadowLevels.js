@@ -15,10 +15,11 @@ import * as THREE from 'three';
 // @ts-expect-error — @types/three has no declaration for the r186 SunLightShadow addon yet
 import { SunLightShadow } from 'three/addons/lights/SunLightShadow.js';
 import { get } from 'svelte/store';
-import { objectsGroup } from '../../stores/sceneStore';
+import { objectsGroup, globalRenderer } from '../../stores/sceneStore';
+import { cinematicState } from '../cinematic/cinematicStore.js';
 import { cappedShadowSize, contactShadowsWanted } from '../lightParams';
 import { registerContactShadows } from './contactShadows.js';
-import { levelParams, cascadeReach, contactShadowsOn } from './shadowLevelParams.js';
+import { levelParams, cascadeReach, contactShadowsOn, cinematicShadowLevel } from './shadowLevelParams.js';
 
 /** shadow -> its authored radius, while a level overrides it */
 const radiusBack = new WeakMap();
@@ -30,7 +31,39 @@ const cascadeBack = new WeakMap();
  * Going back puts the number back, so Basic after Far is today's Basic again. */
 const mapSizeBack = new WeakMap();
 
-const state = { drawn: 'basic', tier: 'pc', contact: false, sweep: /** @type {any} */ (null), sun: /** @type {any} */ (null), applies: 0 };
+const state = { asked: 'basic', drawn: 'basic', tier: 'pc', contact: false, sweep: /** @type {any} */ (null), sun: /** @type {any} */ (null), applies: 0 };
+
+// THE RE-APPLY HOOKS, wired once on the first apply (they lived in environment.js until the boot measure: +0.7 KB
+// there, and cinematicStore split into its own boot chunk). Both only change what a Soft / Far scene draws, and
+// such a scene has loaded this chunk already.
+//   · the Cinematic view draws Far as Soft (cinematicShadowLevel): the switch lands on 'entering', before the
+//     WebGPU renderer first draws, and Far returns on 'off';
+//   · entering or leaving a headset changes the tier (XR presenting = the Quest cap). renderer.xr's own events,
+//     not isVRMode: that store flips BEFORE the session presents.
+let cinematicLive = false;
+let wired = false;
+/** @param {() => void} reapply */
+function wire(reapply) {
+	if (wired) return;
+	wired = true;
+	cinematicState.subscribe((st) => {
+		const live = st.mode !== 'off';
+		if (live === cinematicLive) return;
+		cinematicLive = live;
+		if (state.asked === 'far') reapply();
+	});
+	const xrWired = new WeakSet();
+	globalRenderer.subscribe((r) => {
+		const xr = /** @type {any} */ (r)?.xr;
+		if (!xr?.addEventListener || xrWired.has(xr)) return;
+		xrWired.add(xr);
+		const again = () => {
+			if (state.asked === 'soft' || state.asked === 'far') reapply();
+		};
+		xr.addEventListener('sessionstart', again);
+		xr.addEventListener('sessionend', again);
+	});
+}
 
 let guarded = false;
 /** LightShadow.toJSON writes the AUTHORED radius while a level overrides it (the guard costs one WeakMap read). */
@@ -128,9 +161,12 @@ function sweepAuthored() {
 
 /**
  * Apply the drawn level. Called at the tail of every applyEnvironment once this module is loaded.
- * @param {{scene: any, renderer: any, sun: any, drawn: 'off'|'basic'|'soft'|'far', tier: 'pc'|'phone'|'quest', radius: number}} input
+ * @param {{scene: any, renderer: any, sun: any, drawn: 'off'|'basic'|'soft'|'far', tier: 'pc'|'phone'|'quest', radius: number, asked?: string, reapply?: () => void}} input
  */
-export function applyShadowLevel({ sun, drawn, tier, radius }) {
+export function applyShadowLevel({ sun, drawn: tierDrawn, tier, radius, asked, reapply }) {
+	if (reapply) wire(reapply);
+	state.asked = asked ?? tierDrawn;
+	const drawn = cinematicShadowLevel(tierDrawn, cinematicLive);
 	state.applies++;
 	state.tier = tier;
 	const lifted = drawn === 'soft' || drawn === 'far';
@@ -171,7 +207,9 @@ export function shadowLevelDebug() {
 	const sun = state.sun;
 	const s = sun?.shadow;
 	return {
+		asked: state.asked,
 		drawn: state.drawn,
+		cinematic: cinematicLive,
 		tier: state.tier,
 		contact: state.contact,
 		applies: state.applies,

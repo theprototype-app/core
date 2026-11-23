@@ -417,7 +417,6 @@ export const DEBUG_HOOKS = [
 	['finishCore', () => import('./post/finishCore.js')],
 	['finishEffects', () => import('./post/finishEffects.js')],
 	// 106: shadow quality (the pure table + the lazy Soft / Far half)
-	['shadowLevelCore', () => import('./shadows/shadowLevelCore.js')],
 	['shadowLevelParams', () => import('./shadows/shadowLevelParams.js')],
 	['shadowLevels', () => import('./shadows/shadowLevels.js')],
 	['traaPass', () => import('./post/traaPass.js')],

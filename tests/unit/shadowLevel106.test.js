@@ -7,7 +7,7 @@ import {
 	drawnShadowLevel
 } from '../../src/lib/shadows/shadowLevelCore.js';
 import { planLight, SHADOW_QUALITIES } from '../../src/lib/ai/sceneSetupCore.js';
-import { contactShadowsOn, levelParams, cascadeReach, cappedNote } from '../../src/lib/shadows/shadowLevelParams.js';
+import { contactShadowsOn, levelParams, cascadeReach, cappedNote, cinematicShadowLevel } from '../../src/lib/shadows/shadowLevelParams.js';
 
 describe('106 shadow level core', () => {
 	it('absent or unknown is Basic (old scenes, old peers)', () => {
@@ -52,14 +52,13 @@ describe('106 shadow level core', () => {
 		expect(cascadeReach(NaN)).toBe(300);
 	});
 	it('says when the device draws less', () => {
-		expect(cappedNote('far', 'phone')).toBe('This device draws Soft');
-		expect(cappedNote('far', 'quest')).toBe('This device draws Basic');
-		expect(cappedNote('far', 'pc')).toBe('');
-		expect(cappedNote('basic', 'quest')).toBe('');
+		expect(cappedNote('far', drawnShadowLevel('far', 'phone'))).toBe('This device draws Soft');
+		expect(cappedNote('far', drawnShadowLevel('far', 'quest'))).toBe('This device draws Basic');
+		expect(cappedNote('far', drawnShadowLevel('far', 'pc'))).toBe('');
+		expect(cappedNote('basic', drawnShadowLevel('basic', 'quest'))).toBe('');
 	});
 });
 
-import { cinematicShadowLevel } from '../../src/lib/shadows/shadowLevelCore.js';
 describe('106 the Cinematic view', () => {
 	it('draws Far as Soft, everything else as asked', () => {
 		expect(cinematicShadowLevel('far', true)).toBe('soft');

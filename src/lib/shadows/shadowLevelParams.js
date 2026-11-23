@@ -1,6 +1,7 @@
 // 106 — the knobs a drawn shadow level turns, and the setting row's capped line: pure, and LAZY (shadowLevels.js
 // and the Configure Scene row import it; the boot only needs shadowLevelCore.js).
-import { shadowLevelOf, drawnShadowLevel } from './shadowLevelCore.js';
+// imports NOTHING from shadowLevelCore at runtime (types only): a lazy importer would split the core out of
+// environment's boot chunk into its own (+370 B measured)
 
 /** @typedef {import('./shadowLevelCore.js').ShadowLevel} ShadowLevel */
 /** @typedef {import('./shadowLevelCore.js').ShadowTier} ShadowTier */
@@ -48,11 +49,22 @@ export function cascadeReach(sceneRadius, reach = LEVEL_PARAMS.far.reach) {
 }
 
 /** The setting row's line when the device draws less than the scene asks.
- * @param {any} asked @param {ShadowTier} tier @returns {string} */
-export function cappedNote(asked, tier) {
-	const want = shadowLevelOf(asked);
-	const drawn = drawnShadowLevel(want, tier);
-	if (drawn === want) return '';
+ * @param {ShadowLevel} asked the scene's level (shadowLevelOf'd) @param {ShadowLevel} drawn what this device draws
+ * @returns {string} */
+export function cappedNote(asked, drawn) {
+	if (drawn === asked) return '';
 	return 'This device draws ' + drawn[0].toUpperCase() + drawn.slice(1);
 }
+
+/**
+ * The Cinematic view (WebGPU) picks a light's shadow node by the light's CLASS, so the WebGL cascade path (an
+ * `isSunLight` flag on the rig sun) cannot reach it: while the view is on, Far is drawn as Soft there (its own
+ * best: the fitted sun shadow with the wide kernel). Everything else is drawn as asked.
+ * @param {ShadowLevel} drawn @param {boolean} cinematic
+ * @returns {ShadowLevel}
+ */
+export function cinematicShadowLevel(drawn, cinematic) {
+	return cinematic && drawn === 'far' ? 'soft' : drawn;
+}
+
 

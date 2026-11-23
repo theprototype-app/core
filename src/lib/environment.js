@@ -31,10 +31,12 @@ import { sceneLodBias } from './lod';
 // 37-hdri: the PURE half only (normalize/merge/rotate) — the loader is a registered layer below
 import { mergeHdriPatch, rotateAboutY } from './hdri/hdriCore.js';
 import { ENV_RIG_SUN } from './shadowFitCore.js';
-// 106 S1: the scene's shadow quality (pure half; Soft / Far load lazily in ./shadows/shadowLevels.js)
-import { shadowLevelOf, drawnShadowLevel, shadowTierOf, cinematicShadowLevel } from './shadows/shadowLevelCore.js';
-import { cinematicState } from './cinematic/cinematicStore.js';
+// 106 S1: the scene's shadow quality (pure half; Soft / Far load lazily in ./shadows/shadowLevels.js). Only THIS
+// module imports shadowLevelCore in the app, so it bundles into environment's chunk (a second importer, lazy or a
+// debug row, splits it into its own boot chunk: +370 B measured); the row reads it through the re-export below.
+import { shadowLevelOf, drawnShadowLevel, shadowTierOf } from './shadows/shadowLevelCore.js';
 import { isHeadsetUA } from './hdri/hdriCore.js';
+export { shadowLevelOf, drawnShadowLevel };
 
 // Environment v2 (phase 70). Everything environmental lives under ONE group at
 // the scene root: `environment-root` — the preset rig (hemi+sun) plus any
@@ -931,31 +933,9 @@ export function setSceneLodBias(value) {
 
 environment.subscribe((state) => sceneLodBias.set(lodBiasOf(state)));
 environment.subscribe((state) => sceneShadowsOff.set(shadowLevelOf(state.shadowLevel) === 'off'));
-// 106: the Cinematic view draws Far as Soft (cinematicShadowLevel); its state store is a boot-safe leaf. The
-// switch to Soft lands on 'entering', before the WebGPU renderer first draws, and Far returns on 'off'.
-let cinematicLive = false;
-cinematicState.subscribe((st) => {
-	const live = st.mode !== 'off';
-	if (live === cinematicLive) return;
-	cinematicLive = live;
-	if (shadowLevelOf(get(environment).shadowLevel) === 'far') applyEnvironment();
-});
-
-// 106: entering or leaving a headset changes the tier (XR presenting = the Quest cap), so a scene that asks for
-// Soft / Far is drawn again at what the headset may draw. Basic scenes pay nothing (one string read per switch).
-// renderer.xr's own events, not isVRMode: that store flips BEFORE the session presents.
-const xrWired = new WeakSet();
-globalRenderer.subscribe((r) => {
-	const xr = /** @type {any} */ (r)?.xr;
-	if (!xr?.addEventListener || xrWired.has(xr)) return;
-	xrWired.add(xr);
-	const again = () => {
-		const asked = shadowLevelOf(get(environment).shadowLevel);
-		if (asked === 'soft' || asked === 'far') applyEnvironment();
-	};
-	xr.addEventListener('sessionstart', again);
-	xr.addEventListener('sessionend', again);
-});
+// 106: the Cinematic view (Far drawn as Soft) and an XR session (the headset tier) re-apply through hooks the lazy
+// chunk wires the first time it loads: both only change what a Soft / Far scene draws, and such a scene has
+// loaded the chunk already (a capped device that draws Basic stays Basic when it presents).
 
 /** 106 S1: Configure Scene ▸ Lights ▸ Shadow quality (replicated, saved; absent = Basic).
  * @param {any} level 'off' | 'basic' | 'soft' | 'far' */
@@ -984,10 +964,10 @@ export function shadowTier(renderer) {
 	});
 }
 
-/** What this device draws for the scene's ask right now. @param {any} [renderer] */
+/** What this device draws for the scene's ask right now (the Cinematic view draws Far as Soft on top: shadowLevels).
+ * @param {any} [renderer] */
 export function drawnSceneShadowLevel(renderer) {
-	const d = drawnShadowLevel(get(environment).shadowLevel, shadowTier(renderer ?? get(globalRenderer)));
-	return cinematicShadowLevel(d, cinematicLive);
+	return drawnShadowLevel(get(environment).shadowLevel, shadowTier(renderer ?? get(globalRenderer)));
 }
 
 // 106 S1: Soft / Far are a lazy chunk; Basic and Off never load it. Once loaded it stays (it restores
@@ -1003,7 +983,8 @@ export function shadowLevelsLoadedForTest() {
 /** @param {any} scene @param {any} renderer @param {any} sun */
 function applySceneShadowLevel(scene, renderer, sun) {
 	const drawn = drawnSceneShadowLevel(renderer);
-	if (shadowLevelsMod) return shadowLevelsMod.applyShadowLevel({ scene, renderer, sun, drawn, tier: shadowTier(renderer), radius: sceneRadius() });
+	if (shadowLevelsMod)
+		return shadowLevelsMod.applyShadowLevel({ scene, renderer, sun, drawn, tier: shadowTier(renderer), radius: sceneRadius(), asked: shadowLevelOf(get(environment).shadowLevel), reapply: applyEnvironment });
 	if (drawn !== 'soft' && drawn !== 'far') return;
 	if (shadowLevelsLoading) return;
 	shadowLevelsLoading = true;

@@ -786,6 +786,11 @@
 			"desc": ""
 		},
 		{
+			"name": "Scene shadow quality",
+			"kind": "button",
+			"desc": ""
+		},
+		{
 			"name": "Reduce quality when the scene is heavy",
 			"kind": "toggle",
 			"desc": ""

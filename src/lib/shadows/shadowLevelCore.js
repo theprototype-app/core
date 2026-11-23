@@ -54,14 +54,3 @@ export function drawnShadowLevel(asked, tier) {
 	const cap = /** @type {ShadowLevel} */ (TIER_SHADOW_CAP[tier] ?? 'basic');
 	return RANK[want] <= RANK[cap] ? want : cap;
 }
-
-/**
- * The Cinematic view (WebGPU) picks a light's shadow node by the light's CLASS, so the WebGL cascade path (an
- * `isSunLight` flag on the rig sun) cannot reach it: while the view is on, Far is drawn as Soft there (its own
- * best: the fitted sun shadow with the wide kernel). Everything else is drawn as asked.
- * @param {ShadowLevel} drawn @param {boolean} cinematic
- * @returns {ShadowLevel}
- */
-export function cinematicShadowLevel(drawn, cinematic) {
-	return cinematic && drawn === 'far' ? 'soft' : drawn;
-}

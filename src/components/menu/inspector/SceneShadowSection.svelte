@@ -6,8 +6,9 @@
 	// Lazy: Inspector imports this file only when the section renders, so boot carries none of it.
 	import PropRow from '../../ui/PropRow.svelte';
 	import Segmented from '../../ui/Segmented.svelte';
-	import { environment, setSceneShadowLevel, shadowTier } from '$lib/environment';
-	import { shadowLevelOf, drawnShadowLevel } from '$lib/shadows/shadowLevelCore.js';
+	// the level reader through environment's re-export: importing shadowLevelCore here would split it out of
+	// environment's boot chunk
+	import { environment, setSceneShadowLevel, shadowTier, shadowLevelOf, drawnShadowLevel } from '$lib/environment';
 	import { cappedNote } from '$lib/shadows/shadowLevelParams.js';
 	import { cinematicState } from '$lib/cinematic/cinematicStore.js';
 	import { shadowQuality } from '$lib/lightParams';
@@ -22,8 +23,9 @@
 
 	const asked = $derived(shadowLevelOf($environment.shadowLevel));
 	const tier = $derived(shadowTier($globalRenderer));
-	const capped = $derived(cappedNote(asked, tier));
-	const cinematic = $derived($cinematicState.mode !== 'off' && drawnShadowLevel(asked, tier) === 'far');
+	const drawn = $derived(drawnShadowLevel(asked, tier));
+	const capped = $derived(cappedNote(asked, drawn));
+	const cinematic = $derived($cinematicState.mode !== 'off' && drawn === 'far');
 	const deviceOff = $derived($shadowQuality === 'off' && asked !== 'off');
 </script>
 

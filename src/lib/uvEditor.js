@@ -1,6 +1,7 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
 import { mapPreviewUrl } from './loadGuard.js';
+import { isProxyCarrier } from './proxyCarrier.js'; // 102-int-2
 import { writable, get } from 'svelte/store';
 import { objectsGroup, pokeScene } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
@@ -156,12 +157,13 @@ export function uvTargetOf(primary, set, editing) {
  * (an imported .obj/.gltf is a Group of meshes), else its first mesh.
  * @param {any} object @returns {any} */
 export function meshWithUvs(object) {
-	if (!object) return null;
+	// 102-int-2: a decal / splat carrier draws nothing of its own: never the UV or Paint target
+	if (!object || isProxyCarrier(object)) return null;
 	if (object.geometry?.attributes?.position) return object;
 	/** @type {any} */ let firstMesh = null;
 	/** @type {any} */ let textured = null;
 	object.traverse?.((/** @type {any} */ child) => {
-		if (!child.geometry?.attributes?.position) return;
+		if (!child.geometry?.attributes?.position || isProxyCarrier(child)) return;
 		if (!firstMesh) firstMesh = child;
 		if (!textured && child.geometry.attributes.uv) textured = child;
 	});
@@ -1188,6 +1190,23 @@ export async function beginPaintStroke(uuid, slot = 0) {
 	};
 	return true;
 }
+
+/**
+ * 102 M6: the base-colour paint surface for meshPaint.js — the SAME canvas this module paints, so a brush stroke
+ * from either painter, the UV editor's live backdrop and the next stroke all see one image. Async for the reason
+ * paintSurface is. @param {string} uuid @param {number} [slot] @returns {Promise<any>}
+ */
+export function openColorSurface(uuid, slot = 0) {
+	return paintSurface(uuid, slot);
+}
+
+/** 102 M6: forget a colour surface (meshPaint cancelled a stroke on it) @param {string} uuid @param {number} [slot] */
+export function dropColorSurface(uuid, slot = 0) {
+	paintCanvases.delete(paintKey(uuid, slot));
+}
+
+/** 102 M6: the shared encoder and pressure curve, so both painters commit and taper alike */
+export { canvasToDataUrl as encodePaintCanvas, pressureFactor as paintPressureFactor };
 
 /** is a stroke open? */
 export function painting() {

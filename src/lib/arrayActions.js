@@ -9,6 +9,7 @@ import { canEditObject, warnViewerReadOnly } from './objectPermissions';
 import { duplicateObject, applySelectionSet } from './objectActions';
 import { normalizeArray, arrayTotal, arraySummary, ARRAY_DEFAULTS } from './arrayCore.js';
 import { copyPosesOf } from './arrayRuntime.js';
+import { carrierRefusal } from './proxyCarrier.js'; // 102-int-2: a decal or splat has no mesh of its own to repeat
 import { arraysChanged } from './arrayTick.js';
 
 // 102b-arrange row 1 — THE ARRAY'S WRITE PATH (the Inspector's Array section, the object menu, the
@@ -42,6 +43,11 @@ function editable(object) {
 export function setArray(uuid, record) {
 	const object = objectOf(uuid);
 	if (!editable(object)) return false;
+	const carrier = record === null ? '' : carrierRefusal(object, 'repeat');
+	if (carrier) {
+		showToast(carrier);
+		return false;
+	}
 	const before = object.userData.array ? normalizeArray(object.userData.array) : null;
 	const next = record === null ? null : normalizeArray({ ...(before ?? ARRAY_DEFAULTS), ...record });
 	if (JSON.stringify(before) === JSON.stringify(next)) return false;

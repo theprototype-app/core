@@ -17,14 +17,17 @@
 // function of luck is not something a person can be asked to wait for.
 
 /**
+ * @typedef {{name: string, array: any, itemSize: number, normalized?: boolean}} Extra
+ *   102 M1: a CARRIED per-vertex channel (skin weights, a second uv set): not weighed, its
+ *   typed-array constructor kept, gathered by the same vertex map as position
  * @typedef {{key: string, positions: Float32Array, normals?: Float32Array | null,
  *   uvs?: Float32Array | null, colors?: Float32Array | null, colorSize?: number,
  *   index?: Uint32Array | null, groups?: {start: number, count: number, materialIndex?: number}[],
- *   target: number, errorCap?: number}} MeshIn
+ *   target: number, errorCap?: number, extras?: Extra[], lockBorder?: boolean}} MeshIn
  * @typedef {{key: string, positions: Float32Array, normals: Float32Array | null,
  *   uvs: Float32Array | null, colors: Float32Array | null, colorSize: number, index: Uint32Array,
  *   groups: {start: number, count: number, materialIndex?: number}[], triangles: number,
- *   before: number, error: number, recomputeNormals: boolean, skipped?: string}} MeshOut
+ *   before: number, error: number, recomputeNormals: boolean, skipped?: string, extras?: Extra[]}} MeshOut
  */
 
 /**
@@ -37,7 +40,8 @@
  * flat normal per face, so keying on them would weld nothing at all.
  * @param {Float32Array} positions @param {Float32Array | null | undefined} uvs
  * @param {Float32Array | null | undefined} colors @param {number} colorSize
- * @returns {{positions: Float32Array, uvs: Float32Array | null, colors: Float32Array | null, index: Uint32Array}}
+ * @returns {{positions: Float32Array, uvs: Float32Array | null, colors: Float32Array | null, index: Uint32Array, firsts: Uint32Array}}
+ *   `firsts[j]` = the soup corner welded vertex j was taken from (carried channels gather by it)
  */
 export function weldSoup(positions, uvs, colors, colorSize = 3) {
 	const count = positions.length / 3;
@@ -72,7 +76,20 @@ export function weldSoup(positions, uvs, colors, colorSize = 3) {
 		}
 		if (outCol && colors) for (let c = 0; c < colorSize; c++) outCol[j * colorSize + c] = colors[i * colorSize + c];
 	}
-	return { positions: outPos, uvs: outUv, colors: outCol, index };
+	return { positions: outPos, uvs: outUv, colors: outCol, index, firsts: Uint32Array.from(firsts) };
+}
+
+/** Gather a channel's items at `at` into a fresh array of the same kind.
+ * @param {Extra} extra @param {ArrayLike<number>} at @param {number} count */
+function gatherExtra(extra, at, count) {
+	const size = extra.itemSize;
+	const Ctor = /** @type {any} */ (extra.array).constructor ?? Float32Array;
+	const out = new Ctor(count * size);
+	for (let j = 0; j < count; j++) {
+		const i = at[j];
+		for (let c = 0; c < size; c++) out[j * size + c] = extra.array[i * size + c];
+	}
+	return { name: extra.name, array: out, itemSize: size, ...(extra.normalized ? { normalized: true } : {}) };
 }
 
 /** Interleave the attribute channels meshoptimizer weighs alongside position.
@@ -120,6 +137,7 @@ export function simplifyMesh(simplifier, mesh) {
 	let colors = mesh.colors ?? null;
 	const colorSize = mesh.colorSize ?? 3;
 	let index = mesh.index ?? null;
+	let extras = mesh.extras ?? null;
 	let recomputeNormals = false;
 	const before = Math.floor((index ? index.length : positions.length / 3) / 3);
 	if (!index) {
@@ -128,6 +146,7 @@ export function simplifyMesh(simplifier, mesh) {
 		uvs = welded.uvs;
 		colors = welded.colors;
 		index = welded.index;
+		if (extras) extras = extras.map((e) => gatherExtra(e, welded.firsts, welded.firsts.length));
 		normals = null;
 		recomputeNormals = true;
 	} else {
@@ -159,7 +178,9 @@ export function simplifyMesh(simplifier, mesh) {
 		const end = Math.min(index.length, start + Math.min(group.count, index.length - start));
 		const slice = index.subarray(start, end - ((end - start) % 3));
 		const targetCount = Math.max(3, Math.floor((slice.length / 3) * ratio) * 3);
-		const flags = multi ? ['LockBorder'] : [];
+		// 102 M1: Simplify asks for locked borders always (`lockBorder`): an index-space border is also
+		// a uv SEAM or a pole fan, and letting it slide on one side opens a crack the other side cannot close
+		const flags = multi || mesh.lockBorder ? ['LockBorder'] : [];
 		/** @type {[Uint32Array, number]} */
 		const [out, err] = attrs
 			? simplifier.simplifyWithAttributes(slice, positions, 3, attrs, stride, weights, null, Math.min(targetCount, slice.length), errorCap, flags)
@@ -190,7 +211,16 @@ export function simplifyMesh(simplifier, mesh) {
 		}
 		return dst;
 	};
+	/** @type {Extra[] | undefined} */
+	let outExtras;
+	if (extras) {
+		// the inverse of the remap: kept vertex `to` came from old vertex `v`
+		const from = new Uint32Array(unique);
+		for (let v = 0; v < remap.length; v++) if (remap[v] < unique) from[remap[v]] = v;
+		outExtras = extras.map((e) => gatherExtra(e, from, unique));
+	}
 	return {
+		...(outExtras ? { extras: outExtras } : {}),
 		key: mesh.key,
 		positions: /** @type {Float32Array} */ (pack(positions, 3)),
 		normals: pack(normals, 3),
@@ -206,64 +236,5 @@ export function simplifyMesh(simplifier, mesh) {
 	};
 }
 
-/**
- * How many triangles to ask for. PURE — the quality judgement's arithmetic, out where a
- * test can read it.
- *
- * `room` is the triangle budget left for the WHOLE model (null = no scene-wide limit),
- * `meshCap` the most vertices one mesh may hold. The scene-wide share is split across
- * meshes in proportion to their size, so a model of one huge mesh and ten small ones
- * reduces the huge one and barely touches the rest; the per-mesh cap applies on top
- * (vertices scale with triangles at about 1:2 on a closed surface, so the ratio carries).
- *
- * `floor` is the fraction nothing is reduced below: past about a tenth of its triangles a
- * mesh stops looking like itself, and a reduction that still does not fit is better said
- * out loud ("still over budget") than bought with a shape nobody recognises. Meshes under
- * `minTriangles` are left alone — too small to be worth a seam.
- * @param {{triangles: number, vertices: number}[]} meshes
- * @param {{room?: number | null, meshCap?: number | null, floor?: number, minTriangles?: number}} opts
- * @returns {number[]} a target per mesh (equal to its own count = untouched)
- */
-export function planTargets(meshes, opts = {}) {
-	const floor = opts.floor ?? 0.1;
-	const minTriangles = opts.minTriangles ?? 1000;
-	const total = meshes.reduce((a, m) => a + (m.triangles >= minTriangles ? m.triangles : 0), 0);
-	const small = meshes.reduce((a, m) => a + (m.triangles < minTriangles ? m.triangles : 0), 0);
-	const room = opts.room == null ? null : Math.max(0, opts.room - small);
-	const sceneRatio = room == null || total === 0 ? 1 : Math.min(1, room / total);
-	return meshes.map((m) => {
-		if (m.triangles < minTriangles) return m.triangles;
-		let ratio = sceneRatio;
-		if (opts.meshCap && m.vertices > opts.meshCap) ratio = Math.min(ratio, opts.meshCap / m.vertices);
-		ratio = Math.max(floor, Math.min(1, ratio));
-		return ratio >= 1 ? m.triangles : Math.max(minTriangles, Math.floor(m.triangles * ratio));
-	});
-}
-
-/**
- * The longest side textures should be drawn down to, or null to leave them. PURE.
- *
- * `single` is the single-texture ceiling (nothing above it survives); `budget` is the
- * byte total this model's textures may take (RGBA8 + mips, the importBudget unit) — when
- * the ceiling alone does not fit it, the cap halves down to no smaller than 512px. One
- * cap for every texture rather than a per-texture sum: a model whose albedo is halved
- * and whose normal map is not looks worse than one whose maps all lost the same detail.
- * @param {{width: number, height: number}[]} sizes
- * @param {{single?: number | null, budget?: number | null}} opts
- * @returns {number | null}
- */
-export function planTextureCap(sizes, opts = {}) {
-	const longest = sizes.reduce((m, s) => Math.max(m, s.width || 0, s.height || 0), 0);
-	if (!longest) return null;
-	/** @param {number} cap */
-	const bytesAt = (cap) =>
-		sizes.reduce((sum, s) => {
-			const scale = Math.min(1, cap / Math.max(1, s.width, s.height));
-			return sum + Math.round(s.width * scale) * Math.round(s.height * scale) * 4 * (4 / 3);
-		}, 0);
-	let cap = opts.single && longest > opts.single ? opts.single : longest;
-	if (opts.budget != null) {
-		while (bytesAt(cap) > opts.budget && cap > 512) cap = Math.max(512, 2 ** Math.floor(Math.log2(cap - 1)));
-	}
-	return cap < longest ? cap : null;
-}
+// the planners live in decimatePlan.js (kept importable from here: one public face for the suites)
+export { planTargets, planTextureCap } from './decimatePlan';

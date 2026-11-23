@@ -109,7 +109,7 @@ export function photoDone(s, plan) {
  * What the tracer does with one visible scene object.
  * @param {any} o a three Object3D (duck-typed)
  * @param {{helper?: (o: any) => boolean}} [opts] the editor-helper test (grid, gizmo, edit wireframes)
- * @returns {'trace'|'instances'|'skip-helper'|'skip-text'|'skip-kind'|'skip-shader'|'other'}
+ * @returns {'trace'|'instances'|'skip-helper'|'skip-text'|'skip-kind'|'skip-shader'|'skip-splat'|'other'}
  */
 export function meshKind(o, opts = {}) {
 	if (!o) return 'other';
@@ -117,6 +117,10 @@ export function meshKind(o, opts = {}) {
 	// the helper layer (lights' icons, colliders, camera frustums) lives on layers 1+ only
 	if (o.layers && typeof o.layers.mask === 'number' && (o.layers.mask & 1) === 0) return 'skip-helper';
 	if (o.isPoints || o.isLine || o.isSprite) return 'skip-kind';
+	// 102: Spark's splat meshes cannot be traced; the carrier's box is an invisible hit proxy (traced, it
+	// would be a matte box). One count per splat OBJECT, so the note says how many were left out
+	if (o.userData?.splatVisual) return 'skip-helper';
+	if (o.userData?.splat) return 'skip-splat';
 	if (!o.isMesh) return 'other';
 	// troika flat text: one instanced glyph quad per letter, drawn by its SDF shader — the tracer would see quads
 	if (o.isTroikaText || o.geometry?.isInstancedBufferGeometry) return 'skip-text';
@@ -175,6 +179,7 @@ export const PHOTO_PARITY = Object.freeze([
 	{ kind: 'graph', label: 'Shader-graph materials', shows: 'approx', fallback: "the object's base material; the graph's colours, patterns and movement are not drawn" },
 	{ kind: 'code', label: 'Your own GLSL shaders', shows: 'no', fallback: 'left out of the photo' },
 	{ kind: 'instances', label: 'Scattered and instanced objects', shows: 'yes', fallback: 'up to ' + INSTANCE_PROXY_CAP + ' copies per batch; more are left out' },
+	{ kind: 'splats', label: 'Gaussian splats (scans)', shows: 'no', fallback: 'left out of the photo; the normal still shows them' },
 	{ kind: 'points', label: 'Particles, lines, sprites', shows: 'no', fallback: 'left out of the photo' },
 	{ kind: 'post', label: 'Post effects (bloom, grade, vignette …)', shows: 'no', fallback: 'the photo is the clean render with tone mapping and exposure; add the look afterwards' },
 	{ kind: 'water', label: 'Water surfaces', shows: 'approx', fallback: 'a still glassy surface; no waves or foam' },
@@ -183,7 +188,7 @@ export const PHOTO_PARITY = Object.freeze([
 
 /** the parity rows to name for a render that met these kinds (skip counts from photoRender) @param {Record<string, number>} met */
 export function parityNotes(met) {
-	const map = /** @type {Record<string, string>} */ ({ 'skip-text': 'text-flat', 'skip-shader': 'code', 'skip-kind': 'points', translate: 'basic', 'graph-base': 'graph', 'instances-cut': 'instances' });
+	const map = /** @type {Record<string, string>} */ ({ 'skip-text': 'text-flat', 'skip-shader': 'code', 'skip-kind': 'points', 'skip-splat': 'splats', translate: 'basic', 'graph-base': 'graph', 'instances-cut': 'instances' });
 	const out = [];
 	for (const [k, n] of Object.entries(met ?? {})) {
 		const row = PHOTO_PARITY.find((r) => r.kind === map[k]);

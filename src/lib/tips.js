@@ -52,6 +52,9 @@ export const TIP_MESH_PICTURE = 'mesh-from-picture';
 /** 64-text: the Text section's first-use how-to (Solid / Bake / fonts; retires on a mode switch, or its ✕) */
 export const TIP_TEXT_3D = 'text-3d-first-use';
 
+/** 102 M3: the Decal section's first-use how-to (retires on the first image picked, or its close button) */
+export const TIP_DECAL = 'decal-first-use';
+
 /** 98 P6: the Baked light first-use how-to (presets → Bake → Photo; retires on the first bake, or its ✕) */
 export const TIP_BAKE = 'bake-light-first-use';
 

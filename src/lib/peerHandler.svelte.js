@@ -1980,6 +1980,9 @@ export class PeerConnection {
 						// merged per node (newer stamp wins), and the merge marks the history
 						// epoch so nothing in it can be ACTED on — see triggerSync
 						applyRemoteTriggers(data);
+					} else if(data.type == 'decalstamp') {
+						// 102 M3: a mark the stepping peer stamped — every peer draws the same one
+						void import('$lib/decalStamp.js').then((m) => m.applyRemoteDecalStamp(data));
 					} else if(data.type == 'particleburst') {
 						// PFX-A: shared-timestamp burst — every peer seeds the identical
 						// particle burst from t (no re-broadcast)
@@ -2120,6 +2123,10 @@ export class PeerConnection {
 					applyUvPaint(data);
 				} else if(data.type == 'uvpaintend') {
 					applyUvPaintEnd(data);
+				} else if(data.type == 'meshpaint' || data.type == 'meshpaintend') {
+					// 102 M6: a live mesh-paint stroke (a lazy chunk; import() keeps the messages in order once loaded)
+					const kind = data.type;
+					import('$lib/meshPaint').then((m) => (kind == 'meshpaint' ? m.applyMeshPaint(data) : m.applyMeshPaintEnd(data))).catch(() => {});
 				} else if(data.type == 'splineedit') {
 					// 57.3: only the RECORD travels — the receiver rebuilds the tube
 					applySplineEdit(data.uuid, data.spline);

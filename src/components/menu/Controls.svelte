@@ -983,7 +983,7 @@
 	// Right-click menu for objects (Objects.svelte rows + the viewport) — the item
 	// set is shared with ViewportMenu's "Selected" submenu so both stay in parity.
 	function objectMenuItems(menu) {
-		return buildObjectMenuItems(menu.uuid, { point: menu.point ?? null, locked: menu.locked });
+		return buildObjectMenuItems(menu.uuid, { point: menu.point ?? null, normal: menu.normal ?? null, hitUuid: menu.hitUuid ?? null, locked: menu.locked });
 	}
 
 	// 4a: the play FAB's RIGHT-CLICK menu — pick the mode and enter it in one gesture.

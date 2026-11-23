@@ -348,6 +348,9 @@ everyone leaving). Each is inert without a plugin: nothing subscribes until `onS
 | `buildProjectBundle({versions?})` → `Promise<{blob, meta}>` | the whole PROJECT as a `.tp` — the Explorer's own "Export project" bytes (manifest, every scene and library item; the stored "include versions" preference unless `versions` says otherwise). Downloads, names and changes nothing. `meta = {name, scenes, assets, items, bytes, appVersion}` |
 | `openRemoteProject({url, title?})` → `Promise<counts \| null>` | fetch a `.tp` and OPEN it through core's own path — the format gate and the "This replaces your current project" confirm. Viewer-gated like `loadRemoteScene`. `null` when refused, declined or failed (the user already saw why) |
 
+
+**102 M2 (additive, typeof-probed, no version bump):** `buildArModel()` → `Promise<{blob, bytes} | null>` — the open scene as a USDZ for AR Quick Look (every visible mesh, world-posed, floor-anchored, textures capped at 2048 px; null with no meshes). A publish stores it beside the `.tpscene` so the scene's page can offer "View in your room" as `<a rel="ar" href="….usdz"><img …></a>` (the anchor's first child must be an image or picture), shown only where AR Quick Look exists (iOS / iPadOS Safari: `document.createElement('a').relList.supports('ar')`).
+
 A plugin restoring a SCENE uses `loadRemoteScene({sceneUrl, keepGameId: true})` — the owner reopening their own
 scene keeps its game id instead of forking it as a remix.
 

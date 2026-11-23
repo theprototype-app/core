@@ -1,6 +1,6 @@
 // 85b S2 / S3 / S4 — PLACEMENT PARAMS on create_objects and update_objects (no new tool): `at: {ping}` builds at
 // a spot a person pinged, `align: 'surface'` backs the object onto the pinged surface (a painting on a wall),
-// `snap: 'floor'` stands it on whatever is under it (terrain, floor, table), `face_user` turns it (yaw only) to
+// `snap: 'floor'` stands it on whatever is under it (terrain, floor, table; never water), `face_user` turns it (yaw only) to
 // face a person. Everything is worked out on the object itself and then put back, so the ONE move goes through
 // the tool's own transform path (`apply`: broadcast + undo) with the right "before".
 import * as THREE from 'three';
@@ -70,9 +70,31 @@ function inside(hit, object) {
 }
 
 /**
+ * 104 A1: what a floor snap passes THROUGH — a water body (W1 `userData.water`) or a sensor volume (a trigger box,
+ * `userData.physics.sensor`): nothing stands on either. Walks from the hit up to the group, so a water body's own
+ * surface mesh (a child) counts too. @param {any} hit @param {any} group
+ */
+export function passThrough(hit, group) {
+	for (let o = hit; o && o !== group; o = o.parent) {
+		const u = o.userData;
+		if (u && ((u.water && typeof u.water === 'object') || u.physics?.sensor === true)) return true;
+	}
+	return false;
+}
+
+/** 104 A1: is `hit` part of a terrain (userData.terrain) @param {any} hit @param {any} group */
+function onTerrain(hit, group) {
+	for (let o = hit; o && o !== group; o = o.parent) if (o.userData?.terrain) return true;
+	return false;
+}
+
+/**
  * S3: the surface straight under the object — the highest hit at most SNAP_REACH_UP above its base. Null = none
- * (the caller falls back to the ground).
- * @param {any} object @param {any} group @returns {{y: number, on: any} | null}
+ * (the caller falls back to the ground). 104 A1: water bodies and sensor volumes are skipped (a box "on the
+ * ground" of an island stood on the sea), and a TERRAIN is ground at any height (it is never a ceiling: an
+ * object made at y 0 under a 2.5 m island lands on the island, not on the water around it). Meshes keep the
+ * 2 m rule (a lamp under a shelf stays on the table).
+ * @param {any} object @param {any} group @returns {{y: number, on: any, surface: 'terrain' | 'mesh'} | null}
  */
 export function floorUnder(object, group) {
 	const box = new THREE.Box3().setFromObject(object);
@@ -84,13 +106,13 @@ export function floorUnder(object, group) {
 		const hit = /** @type {any} */ (h.object);
 		if (inside(hit, object) || !hit.isMesh) return false;
 		for (let o = hit; o && o !== group; o = o.parent) if (!o.visible) return false;
-		return true;
+		return !passThrough(hit, group);
 	});
-	const top = hits.find((h) => h.point.y <= box.min.y + SNAP_REACH_UP);
+	const top = hits.find((h) => onTerrain(h.object, group) || h.point.y <= box.min.y + SNAP_REACH_UP);
 	if (!top) return null;
 	let on = top.object;
 	while (on.parent && on.parent !== group) on = on.parent;
-	return { y: top.point.y, on };
+	return { y: top.point.y, on, surface: onTerrain(top.object, group) ? 'terrain' : 'mesh' };
 }
 
 /** mcp-diorama2 (25): the local axis a model's FRONT is along (glTF says +Z, but many models face +X or -Z) */
@@ -204,6 +226,11 @@ export function placeObject(object, spec, apply) {
 			const floorY = hit ? hit.y : group.getWorldPosition(new THREE.Vector3()).y;
 			setWorld(object, object.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, liftOnto(object, floorY), 0)));
 			placed.snapped = hit ? hit.on.name || hit.on.uuid : 'the ground';
+			// 104 A1: what it stands on, in words an agent can check (`snapped` stays for older readers)
+			placed.on = hit ? hit.on.name || hit.on.uuid : 'the ground';
+			if (hit) placed.uuid = hit.on.uuid;
+			placed.y = Math.round(floorY * 1000) / 1000;
+			placed.surface = hit ? hit.surface : 'ground';
 			moved = true;
 		}
 	}

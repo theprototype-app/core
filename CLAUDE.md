@@ -2984,6 +2984,26 @@ sub-entry with its line: grep the index for a word, then read this file from tha
 
 ## Hard-won gotchas (do not rediscover)
 
+- **THE BUILD'S FILE COUNT IS A PRODUCT LIMIT, AND ROLLDOWN'S DEFAULT SPLIT BLOWS IT (fix-export-files,
+  1.74 hotfix).** An exported game copies every file `build/export-manifest.json` lists and itch.io refuses
+  a zip of more than 1,000; 1.74.0 listed 1,056 (the count crept ~+30 a release) and EVERY export failed its
+  own check. Rolldown splits shared code by which entries reach it, and ~230 `import()` targets count as
+  entries, so the editor boot alone fetched ~570 chunks. `scripts/boot-chunk-groups.cjs` (rolldown
+  `codeSplitting.groups`, wired in vite.config.ts) regroups BOOT code only, by its load signature (the
+  pages that boot it + the lazy entries that fetch it on the other pages), then merges small groups within
+  one set of boot pages: 684 files, and boot JS SHRANK (play -277 KB gz, editor -390 KB gz — the default
+  split had folded lazy-only code into a 470 KB boot chunk). /play is PROTECTED from merges (a player
+  fetches no editor code: play-entry §2 names chunks, so groups are named after their largest module the
+  way rolldown names one; a merge that changed what /play fetches lazily went red there). Three traps it
+  rests on: rolldown's group
+  `includeDependenciesRecursively` (forced ON by kit's `preserveEntrySignatures: 'strict'`) drags a
+  member's dependencies into whichever group is built FIRST, so groups get one entry each with priorities
+  in dependency order; a style module left ungrouped rides into the first group importing it (app.css
+  tied every page to the kit page's chunk); and a merge inherits BOTH sides' dependencies, so the closure
+  rule refuses one whose dependency is not already loaded by every trigger of the merged group (without
+  it the kit page's first lazy load pulled 4 MB of editor boot code). `export-manifest.cjs` now FAILS the
+  build above 850 files — the fix for that red is fewer files, never a higher number. `TP_BOOT_CHUNKS=0`
+  builds the old split for an A/B; the file's header lists its other debug env vars.
 - **SVELTEKIT 3 SHALLOW ENTRIES ARE ASYNC, AND THEIR STATE IS A STRING (sk3).** Both history markers
   (play's `tpPlay`, the Back stack's `tpBack`) go through `src/lib/shallowHistory.js` and nowhere else.
   `goto(url, {shallow, state})` (and the deprecated `pushState`) push the entry only after an awaited route

@@ -34,6 +34,10 @@ function commitSha(): string {
 	}
 }
 
+// fix-export-files: TP_BOOT_CHUNKS=0 builds the old split (an A/B lever, not a mode anyone ships)
+// @ts-ignore -- same node-types caveat
+const bootChunks = process.env.TP_BOOT_CHUNKS === '0' ? null : createRequire(import.meta.url)('./scripts/boot-chunk-groups.cjs').bootChunkGroups;
+
 // The guardThrelteXr transform plugin (Cardboard/gaze `stores[handedness]` crash in
 // @threlte/xr 1.0.0-next.15) was DELETED with the 1.6 stable upgrade: the package's
 // input handling was rewritten (setupInputSources keyed map) and the unguarded
@@ -373,7 +377,13 @@ export default defineConfig({
 		rolldownOptions: {
 			output: {
 				codeSplitting: {
-					groups: [{ name: 'three.module', test: /[\\/]node_modules[\\/]three[\\/]build[\\/]three\.(core|module)\.js$/ }]
+					groups: [
+						{ name: 'three.module', priority: 100000, test: /[\\/]node_modules[\\/]three[\\/]build[\\/]three\.(core|module)\.js$/ },
+						// fix-export-files: boot code regrouped by WHEN it runs on each page (scripts/boot-chunk-groups.cjs)
+						// — ~1050 -> ~590 build files (an export copies them all and itch.io caps a zip at 1,000),
+						// no page's boot changes; three keeps its own group above all of them
+						...(bootChunks ? bootChunks() : [])
+					]
 				}
 			}
 		}

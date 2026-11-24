@@ -36,6 +36,26 @@ const loadScene = (page, slug) =>
 			return v;
 		};
 		const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * 103-int-1 (claude:9 Q8 ruling for #640): LAND ONLY — the A vs B share on pixels that hold still on both pages AND
+ * where the base agrees with ITSELF (B vs a third base page C within 2/255), so the water's own base-vs-base spread is
+ * masked out. island-ocean's land must be <= TOL. @param {...Uint8Array} px a1, a2, b1, b2, b3, c1
+ */
+function landDiff(a1, a2, b1, b2, b3, c1) {
+	const near = (x, y, i) =>
+		Math.abs(x[i] - y[i]) <= 2 && Math.abs(x[i + 1] - y[i + 1]) <= 2 && Math.abs(x[i + 2] - y[i + 2]) <= 2;
+	let land = 0;
+	let n = 0;
+	for (let i = 0; i < a1.length; i += 4) {
+		if (!near(a1, a2, i) || !near(b1, b2, i) || !near(b3, c1, i)) continue;
+		land++;
+		if (!near(a1, b1, i)) n++;
+	}
+	return { share: land ? n / land : 1, land: land / (a1.length / 4) };
+}
+/** scenes gated on LAND ONLY instead of the control rule (comma list) */
+const LAND_ONLY = (process.env.LAND_ONLY ?? 'island-ocean').split(',').filter(Boolean);
 		s.sceneSwitch?.modulesOnOpen?.set('keep');
 		let ok = 'not tried';
 		for (let i = 0; i < 3 && ok !== true; i++) {
@@ -429,6 +449,13 @@ h.run(async () => {
 					ctrlOk = ctrl.still >= 0.2 && sd.share <= ctrl.share + TOL;
 					ctrlNote = `; CONTROL base vs base ${(ctrl.share * 100).toFixed(3)} % of ${(ctrl.still * 100).toFixed(1)} % still, the lane may differ by that + ${(TOL * 100).toFixed(1)} %`;
 					table[table.length - 1].ctrl = +(ctrl.share * 100).toFixed(3);
+					const ld = landDiff(a1.px, a2.px, b1.px, b2.px, b3.px, c1.px);
+					table[table.length - 1].land = +(ld.share * 100).toFixed(3);
+					ctrlNote += `; LAND ONLY (base self-diff masked) ${(ld.share * 100).toFixed(3)} % of ${(ld.land * 100).toFixed(1)} % of the frame`;
+					if (LAND_ONLY.includes(slug)) {
+						ctrlOk = ld.land >= 0.2 && ld.share <= TOL;
+						h.check(ctrlOk, `${slug}: LAND ONLY A vs B ${(ld.share * 100).toFixed(3)} % <= ${(TOL * 100).toFixed(1)} % on ${(ld.land * 100).toFixed(1)} % of the frame (the water's base-vs-base pixels masked)`);
+					}
 				} else ctrlNote = `; CONTROL page did not load the scene (${lc.ok})`;
 			} catch (err) {
 				ctrlNote = `; CONTROL failed: ${String(err && err.message).slice(0, 120)}`;

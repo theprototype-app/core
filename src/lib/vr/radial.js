@@ -52,24 +52,8 @@ import {
 	vertexSelectionSize
 } from '../meshEdit';
 import { sealEditHistorySession } from '../editSession';
-import {
-	faceEditObject,
-	faceEditAmount,
-	enterFaceEdit,
-	exitFaceEdit,
-	vrFaceEditable,
-	vrFaceCap,
-	triangleCount,
-	editCapToast,
-	setFaceOp,
-	commitFaceOp,
-	cancelFaceAdjust,
-	faceGesturePending,
-	faceEditMulti,
-	faceEditSelectedTris,
-	toggleFaceGranularity,
-	toggleFaceMulti
-} from '../faceEdit';
+import { faceEditObject, faceEditAmount, vrFaceEditable, vrFaceCap, triangleCount, editCapToast, faceEditMulti, faceEditSelectedTris } from '../faceEditState';
+import { faceEditNow, withFaceEdit } from '../faceEditLazy';
 import { peers, showToast, pendingApprovals } from '../../stores/appStore';
 import { approvePeer, denyPeer } from '../peerApproval';
 import { undo, redo, recordTransform } from '../history';
@@ -188,12 +172,12 @@ export function executeVRMenuAction(name) {
 	}
 	if (name === 'back') {
 		// a pending extrude/inset adjust reverts on Back before leaving (122)
-		if (faceGesturePending()) {
-			cancelFaceAdjust();
+		if (faceEditNow()?.faceGesturePending()) {
+			faceEditNow()?.cancelFaceAdjust();
 			return;
 		}
 		// leaving the Faces ring exits face-edit mode (118)
-		if (get(activeRing) === 'faces') exitFaceEdit();
+		if (get(activeRing) === 'faces') faceEditNow()?.exitFaceEdit();
 		popRing();
 		return;
 	}
@@ -208,7 +192,7 @@ export function executeVRMenuAction(name) {
 		if (get(vrEditMenuOpen)) {
 			commitStretch(); // 161: bake a pending stretch on close
 			exitEditMode();
-			exitFaceEdit();
+			faceEditNow()?.exitFaceEdit();
 			sealEditHistorySession(); // 15-F: the VR done path seals synchronously
 			vrEditMenuOpen.set(false);
 			return;
@@ -216,7 +200,7 @@ export function executeVRMenuAction(name) {
 		const object = /** @type {any} */ (get(selectedObject));
 		if (!object?.uuid) return;
 		// default to Faces when the mesh qualifies, else Vertices, else refuse
-		if (vrFaceEditable(object)) enterFaceEdit(object.uuid);
+		if (vrFaceEditable(object)) void withFaceEdit((fe) => fe.enterFaceEdit(object.uuid));
 		else if (vrVertexEditable(object)) enterEditMode(object.uuid);
 		else {
 			// D7: say WHICH limit blocks + deep-link the setting
@@ -294,7 +278,7 @@ export function executeVRMenuAction(name) {
 		commitStretch();
 		vrFaceCreateMode.set(false);
 		exitEditMode();
-		exitFaceEdit();
+		faceEditNow()?.exitFaceEdit();
 		sealEditHistorySession(); // 15-F: the VR done path seals synchronously
 		vrEditMenuOpen.set(false);
 		return;
@@ -308,11 +292,11 @@ export function executeVRMenuAction(name) {
 		if (proxyUuid) {
 			vrFaceCreateMode.set(false);
 			if (mode === 'vertices') {
-				exitFaceEdit();
+				faceEditNow()?.exitFaceEdit();
 				enterEditMode(proxyUuid);
 			} else if (mode === 'faces') {
 				exitEditMode();
-				enterFaceEdit(proxyUuid);
+				void withFaceEdit((fe) => fe.enterFaceEdit(proxyUuid));
 			}
 			return;
 		}
@@ -321,7 +305,7 @@ export function executeVRMenuAction(name) {
 		vrFaceCreateMode.set(false); // leaving/re-entering a mode exits create-face
 		commitStretch(); // leaving stretch bakes it (no-op otherwise)
 		if (mode === 'vertices') {
-			exitFaceEdit();
+			faceEditNow()?.exitFaceEdit();
 			if (vrVertexEditable(object)) enterEditMode(object.uuid);
 			else
 				editCapToast(
@@ -333,12 +317,12 @@ export function executeVRMenuAction(name) {
 				);
 		} else if (mode === 'stretch') {
 			exitEditMode();
-			exitFaceEdit();
+			faceEditNow()?.exitFaceEdit();
 			beginStretch(object.uuid);
 		} else {
 			exitEditMode();
 			// enterFaceEdit guards the cap itself and shows the D7 toast
-			enterFaceEdit(object.uuid);
+			void withFaceEdit((fe) => fe.enterFaceEdit(object.uuid));
 		}
 		return;
 	}
@@ -372,19 +356,19 @@ export function executeVRMenuAction(name) {
 		return;
 	}
 	if (name === 'edit:granularity') {
-		toggleFaceGranularity(); // B3/15-G: cycles QUAD -> FACE -> TRIANGLE -> SHELL -> OBJECT
+		faceEditNow()?.toggleFaceGranularity(); // B3/15-G: cycles QUAD -> FACE -> TRIANGLE -> SHELL -> OBJECT
 		return;
 	}
 	if (name === 'edit:multi') {
-		toggleFaceMulti(); // 212: accumulate picks on/off
+		faceEditNow()?.toggleFaceMulti(); // 212: accumulate picks on/off
 		return;
 	}
 	if (name.startsWith('face:')) {
 		// arm a face op (side-menu, 137); the pointer trigger picks + commits (118/122)
 		const op = /** @type {any} */ (name.slice('face:'.length));
-		setFaceOp(op);
+		faceEditNow()?.setFaceOp(op);
 		// 212: in Multi mode the button APPLIES the op to the accumulated selection
-		if (get(faceEditMulti) && get(faceEditSelectedTris).length) commitFaceOp(op, get(faceEditAmount));
+		if (get(faceEditMulti) && get(faceEditSelectedTris).length) faceEditNow()?.commitFaceOp(op, get(faceEditAmount));
 		return;
 	}
 	if (name.startsWith('settings:')) {

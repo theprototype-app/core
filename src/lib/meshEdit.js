@@ -14,33 +14,23 @@ import { registerHistoryKind, recordEntry } from './history';
 // 15-F: session-scoped undo — editSession imports ONLY history (an edge we
 // already have), so this closes no cycle
 import { noteEditEnter, noteEditExit, noteSelectionIds, sealEditHistorySession } from './editSession';
-import {
-	createFaceFromVerts,
-	lookupEditable,
-	commitMeshGeoSnapshot,
-	meshEditWireframe,
-	buildEditWireframe,
-	retintEditWire,
-	readTriangles,
-	trisToPositions,
-	registerVertexSessionRefresher,
-	registerVertexSelectionHistory,
-	withSelectionHistory,
-	editWireGeometry,
-	registerVertexWireRebuild,
-	meshGizmoEnabled,
-	faceGizmoSpace,
-	registerGizmoPrefListener,
-	internalEdgeSet,
-	edgeKeyOf,
-	bevelVertices,
-	deleteVertices,
-	smoothVertices,
-	connectVertices,
-	dissolveVertices,
-	beginOpAdjust,
-	recordMeshGeo
-} from './faceEdit';
+import { lookupEditable, meshEditWireframe, registerVertexSessionRefresher, registerVertexSelectionHistory, registerVertexWireRebuild, meshGizmoEnabled, faceGizmoSpace, registerGizmoPrefListener } from './faceEditState';
+import { readTriangles, trisToPositions } from './meshSoup';
+import { faceEditNow, loadFaceEdit } from './faceEditLazy';
+
+/** 102-boot-diet-2: faceEdit (a lazy chunk) records selection undo steps; with it not loaded there is no edit
+ * session to record into, so the pick runs bare -- exactly what it did with nobody recording
+ * @template T @param {'vertices'} mode @param {() => T} run @returns {T} */
+function withSelectionHistoryLazy(mode, run) {
+	const fe = faceEditNow();
+	return fe ? fe.withSelectionHistory(mode, run) : run();
+}
+
+/** 102-boot-diet-2: an op adjust only opens inside a session (faceEdit loaded); false = refused, as before
+ * @param {Parameters<typeof import('./faceEdit').beginOpAdjust>} args @returns {boolean} */
+function beginOpAdjustLazy(...args) {
+	return faceEditNow()?.beginOpAdjust(...args) ?? false;
+}
 // 19-A P4: the proportional stores/falloff moved to a LEAF (faceEdit needs them
 // too, and it cannot import this module — we import faceEdit above). Re-exported
 // below so MeshEditPopup/MeshToolOptions/__stores.meshEdit.* stay byte-compatible.
@@ -129,7 +119,7 @@ meshEditWireframe.subscribe((value) => {
 registerVertexWireRebuild(() => {
 	if (!VS.overlay || !VS.object) return;
 	VS.overlay.geometry.dispose();
-	VS.overlay.geometry = editWireGeometry(VS.object.geometry);
+	VS.overlay.geometry = faceEditNow()?.editWireGeometry(VS.object.geometry);
 });
 
 const HANDLE_COLOR = 0x2f81f7;
@@ -265,23 +255,23 @@ registerVertexSelectionHistory({
 
 /** 177/183: toggle a vertex handle in the selection. @param {number} index */
 export function toggleVertexSelection(index) {
-	withSelectionHistory('vertices', () => toggleVertexSelectionInner(index));
+	withSelectionHistoryLazy('vertices', () => toggleVertexSelectionInner(index));
 }
 /** 177: deselect all vertices (also parks the gizmo) */
 export function clearVertexSelection() {
-	withSelectionHistory('vertices', () => clearVertexSelectionInner());
+	withSelectionHistoryLazy('vertices', () => clearVertexSelectionInner());
 }
 /** Select every vertex handle — Ctrl+A in vertices mode. @returns {boolean} */
 export function selectAllVerts() {
-	return withSelectionHistory('vertices', () => selectAllVertsInner());
+	return withSelectionHistoryLazy('vertices', () => selectAllVertsInner());
 }
 /** Invert the vertex selection — Ctrl+I in vertices mode. @returns {boolean} */
 export function invertVertexSelection() {
-	return withSelectionHistory('vertices', () => invertVertexSelectionInner());
+	return withSelectionHistoryLazy('vertices', () => invertVertexSelectionInner());
 }
 /** plain click: the picked handle becomes the whole selection. @param {number} index */
 export function selectHandle(index) {
-	withSelectionHistory('vertices', () => selectHandleInner(index));
+	withSelectionHistoryLazy('vertices', () => selectHandleInner(index));
 }
 const tempMatrix = new THREE.Matrix4();
 const tempVector = new THREE.Vector3();
@@ -371,7 +361,7 @@ export function refreshVertexEditSession() {
 	// the overlay wraps the NEW geometry
 	if (VS.overlay) {
 		VS.overlay.geometry.dispose();
-		VS.overlay.geometry = editWireGeometry(VS.object.geometry);
+		VS.overlay.geometry = faceEditNow()?.editWireGeometry(VS.object.geometry);
 	}
 }
 // applyMeshGeo calls back through this whenever a snapshot lands on the object
@@ -442,7 +432,7 @@ export function setHoveredHandle(index) {
 export function tickMeshEdit() {
 	if (!VS.object || !VS.handleMesh) return;
 	// 37 R18: the vertex-mode wire re-tints live too (it never re-picked its colour at all)
-	if (VS.overlay) retintEditWire(VS.overlay, VS.object);
+	if (VS.overlay) faceEditNow()?.retintEditWire(VS.overlay, VS.object);
 	VS.object.updateMatrixWorld();
 	const moved = !lastObjectMatrix.equals(VS.object.matrixWorld);
 	// ADAPTIVE mode also has to follow the CAMERA: the handles keep a constant pixel size,
@@ -462,6 +452,15 @@ export function tickMeshEdit() {
 
 /** @param {string} uuid */
 export function enterEditMode(uuid) {
+	// 102-boot-diet-2: a vertex session builds the face editor's wireframe and records through it, so the lazy
+	// chunk loads first (the editor prefetches it at idle; synchronous once loaded)
+	if (!faceEditNow()) {
+		void loadFaceEdit().then(
+			() => enterEditMode(uuid),
+			() => {}
+		);
+		return;
+	}
 	if (get(editingObject)) exitEditMode();
 	const object = lookupEditable(uuid); // A8: also accepts the collider proxy
 	// 64-text: a live text's geometry is rebuilt from its record on every peer — editing it would
@@ -500,7 +499,7 @@ export function enterEditMode(uuid) {
 
 	// wireframe overlay as a child so it follows the object's transform (B2:
 	// shared builder, raycast stubbed per D8, honors the display toggle)
-	VS.overlay = buildEditWireframe(object);
+	VS.overlay = faceEditNow()?.buildEditWireframe(object);
 	object.add(VS.overlay);
 
 	VS.proxy = new THREE.Object3D();
@@ -880,7 +879,7 @@ function selectVerticesInRectInner(rect, camera, size, additive = false) {
  * @param {{x1:number,y1:number,x2:number,y2:number}} rect
  * @param {any} camera @param {{width:number,height:number}} size @param {boolean} [additive] */
 export function selectVerticesInRect(rect, camera, size, additive = false) {
-	return withSelectionHistory('vertices', () =>
+	return withSelectionHistoryLazy('vertices', () =>
 		selectVerticesInRectInner(rect, camera, size, additive)
 	);
 }
@@ -938,7 +937,7 @@ export function weldSelectedVerts() {
 	// overlay and selection IN PLACE — the same path undo and remote commits
 	// take, so the overlay can never diverge from the welded mesh (the dance
 	// left it stale whenever re-entry took any early-out).
-	const ok = commitMeshGeoSnapshot(uuid, before, after);
+	const ok = faceEditNow()?.commitMeshGeoSnapshot(uuid, before, after) ?? false;
 	// Inner, deliberately: this is the OP tidying up after itself, not a pick the
 	// user made. Recording it would put a selection entry ON TOP of the weld's
 	// meshgeo, so the next Ctrl+Z would undo the housekeeping instead of the weld.
@@ -956,7 +955,7 @@ export function createSelectedFace(viewerPos = null) {
 	if (!VS.object || VS.selection.size < 3 || VS.selection.size > 4) return false;
 	const uuid = VS.object.uuid;
 	const verts = [...VS.selection].map((i) => VS.handles[i].position.clone());
-	const ok = createFaceFromVerts(uuid, verts, viewerPos);
+	const ok = faceEditNow()?.createFaceFromVerts(uuid, verts, viewerPos) ?? false;
 	// the commit's applyMeshGeo already rebuilt the session in place (D1
 	// refresher) — same no-dance rule as weldSelectedVerts
 	if (ok) clearVertexSelectionInner(); // op housekeeping, not a user pick
@@ -1009,7 +1008,7 @@ export function bevelSelectedVerts(width = 0.2, profile = 0) {
 		return false;
 	}
 	const uuid = VS.object.uuid;
-	const ok = bevelVertices(uuid, keys, { width, profile });
+	const ok = faceEditNow()?.bevelVertices(uuid, keys, { width, profile }) ?? false;
 	// the bevel replaced the corner, so the handle list is stale in every sense — rebuild
 	// the session from the new geometry and drop a selection that no longer means anything
 	if (ok) {
@@ -1037,7 +1036,7 @@ export function beginVertexBevelAdjust(width = 0.2, profile = 0, segments = 1) {
 		showToast('Select a vertex first, then Bevel');
 		return false;
 	}
-	return beginOpAdjust(
+	return beginOpAdjustLazy(
 		'bevel',
 		{ width, profile, segments },
 		{ kind: 'vertices', uuid: VS.object.uuid, vertexKeys: keys }
@@ -1060,7 +1059,7 @@ export function deleteSelectedVerts() {
 		showToast('Select a vertex first, then Delete');
 		return false;
 	}
-	const ok = deleteVertices(VS.object.uuid, keys);
+	const ok = faceEditNow()?.deleteVertices(VS.object.uuid, keys) ?? false;
 	if (ok) {
 		// the triangles those handles belonged to are gone, so the handle list is stale in
 		// every sense — rebuild the session and drop a selection that no longer means
@@ -1094,7 +1093,7 @@ export function smoothSelectedVerts(factor = 0.5, iterations = 1) {
 		showToast('Select a vertex first, then Smooth');
 		return false;
 	}
-	return smoothVertices(VS.object.uuid, keys, { factor, iterations });
+	return faceEditNow()?.smoothVertices(VS.object.uuid, keys, { factor, iterations }) ?? false;
 }
 
 /**
@@ -1107,7 +1106,7 @@ export function smoothSelectedVerts(factor = 0.5, iterations = 1) {
  */
 export function connectSelectedVerts() {
 	if (!VS.object || !VS.handles.length) return false;
-	const ok = connectVertices(VS.object.uuid, selectedVertexKeys());
+	const ok = faceEditNow()?.connectVertices(VS.object.uuid, selectedVertexKeys()) ?? false;
 	if (ok) {
 		VS.selection.clear();
 		syncVertexSelection();
@@ -1131,7 +1130,7 @@ export function dissolveSelectedVerts() {
 		showToast('Select a vertex first, then Dissolve');
 		return false;
 	}
-	const ok = dissolveVertices(VS.object.uuid, keys);
+	const ok = faceEditNow()?.dissolveVertices(VS.object.uuid, keys) ?? false;
 	if (ok) {
 		VS.selection.clear();
 		syncVertexSelection();
@@ -1196,7 +1195,7 @@ function refreshGeometryAfterWrite() {
 	VS.object.geometry.computeBoundingSphere();
 	if (VS.overlay) {
 		VS.overlay.geometry.dispose();
-		VS.overlay.geometry = editWireGeometry(VS.object.geometry);
+		VS.overlay.geometry = faceEditNow()?.editWireGeometry(VS.object.geometry);
 	}
 }
 
@@ -1273,14 +1272,14 @@ function incidentEdgeEnds(index) {
 	const ends = new Map();
 	// a quad DIAGONAL is a triangulation artifact, not an edge of the model, so it is not a
 	// direction anyone means to slide along — the same rule pickEdgeAt and dissolve follow
-	const internal = internalEdgeSet(VS.object.geometry);
+	const internal = faceEditNow()?.internalEdgeSet(VS.object.geometry);
 	for (const tri of readTriangles(VS.object.geometry))
 		for (let c = 0; c < 3; c++) {
 			if (keyOf(tri[c]) !== anchorKey) continue;
 			for (const other of [tri[(c + 1) % 3], tri[(c + 2) % 3]]) {
 				const key = keyOf(other);
 				if (key === anchorKey || ends.has(key)) continue;
-				if (internal.has(edgeKeyOf(tri[c], other))) continue;
+				if (internal?.has(faceEditNow()?.edgeKeyOf(tri[c], other) ?? '')) continue;
 				ends.set(key, other.clone());
 			}
 		}
@@ -1758,7 +1757,7 @@ function commitFalloffSnapshot(before, after) {
 	if (!VS.object || VS.selectedHandle < 0) return false;
 	const anchorPos = VS.handles[VS.selectedHandle].position.clone();
 	const memberPos = [...VS.selection].map((i) => VS.handles[i]?.position.clone()).filter(Boolean);
-	if (!commitMeshGeoSnapshot(VS.object.uuid, before, after)) return false;
+	if (!faceEditNow()?.commitMeshGeoSnapshot(VS.object.uuid, before, after)) return false;
 	// handles were rebuilt by the vertex session refresher — same positions, new order
 	const find = (/** @type {any} */ p) => VS.handles.findIndex((h) => h.position.distanceToSquared(p) < 1e-10);
 	const anchor = find(anchorPos);
@@ -1837,7 +1836,7 @@ export function onProxyDragChanged(dragging) {
 			// 37 R11: twins moved too, which a one-position 'verts' entry cannot hold
 			const afterExpanded = trisToPositions(readTriangles(VS.object.geometry));
 			if (dragStartExpanded && JSON.stringify(dragStartExpanded) !== JSON.stringify(afterExpanded))
-				recordMeshGeo(VS.object.uuid, dragStartExpanded, afterExpanded); // 99 K2: the one record step
+				faceEditNow()?.recordMeshGeo(VS.object.uuid, dragStartExpanded, afterExpanded); // 99 K2: the one record step
 		} else if (JSON.stringify(dragStartLocal) !== JSON.stringify(after)) {
 			recordEntry({
 				kind: 'verts',
@@ -1888,7 +1887,7 @@ export function applyVerts(uuid, indices, positionArray) {
 		}
 		if (VS.overlay) {
 			VS.overlay.geometry.dispose();
-			VS.overlay.geometry = editWireGeometry(object.geometry);
+			VS.overlay.geometry = faceEditNow()?.editWireGeometry(object.geometry);
 		}
 	}
 	pokeScene();

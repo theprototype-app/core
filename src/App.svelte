@@ -9,6 +9,7 @@
   // frames' blocking shader links. A dynamic import here queued it behind them (a third e2e page
   // took 34 s instead of 8 s to publish __stores).
   import { installDebugHooks } from '$lib/debugHooks'
+  import { prefetchFaceEdit } from '$lib/faceEditLazy'
   // 55 A2: `window.tpAgent` — only `&agent` / safeStorage.agentApi turn it on. A LEAF statically
   // (it must read the hash before the dial consumes it); the API itself is a dynamic import.
   import { agentRequested } from '$lib/agent/agentMode'
@@ -431,6 +432,9 @@ import { startMusicToolbox } from './lib/musicToolbox'
     // state — all windows closed — and the layout is restored only by an explicit
     // Restore, by the auto-restore setting, or by loading a file, because it rides the
     // saved payload rather than localStorage.
+    // 102-boot-diet-2: the mesh editor's face / edge half is a lazy chunk; fetch it once the editor is idle so
+    // the first double-click into Edit Mesh is not a download
+    prefetchFaceEdit()
     // store access for automated tests, opt-in via localStorage
     if (safeStorage.getItem('debugStores')) {
       // 34 R4 (A2): one row per hook in $lib/debugHooks.js (no positional tails here any more)

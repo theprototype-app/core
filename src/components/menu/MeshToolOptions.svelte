@@ -19,14 +19,8 @@
 	// The operators are NOT called from here: the toolbox owns the toasts, the
 	// flash feedback and the "is there a target" checks, so the Apply buttons
 	// AND the adjust callbacks call back into it. This component is layout.
-	import {
-		faceEditAmount,
-		faceAutoApply,
-		opAdjustState,
-		knifePreview,
-		knifeFinish,
-		knifeDropCorner
-	} from '$lib/faceEdit';
+	import { faceEditAmount, faceAutoApply, opAdjustState, knifePreview } from '$lib/faceEditState';
+	import { faceEditNow } from '$lib/faceEditLazy';
 	import { proportionalRadius } from '$lib/meshEdit';
 	// 19-A P4: scrubbing the radius previews the falloff RING at the current
 	// selection (live — the ring re-scales as the store changes under the scrub)
@@ -707,14 +701,14 @@
 				id="knife-undo-corner"
 				class="tbx-cmd"
 				title="Take the last point back (Backspace)"
-				onclick={() => knifeDropCorner()}>Back</button
+				onclick={() => faceEditNow()?.knifeDropCorner()}>Back</button
 			>
 			<button
 				id="knife-finish"
 				class="tbx-primary"
 				disabled={$knifePreview.points.length < 2}
 				title="Cut through the points placed so far (Enter)"
-				onclick={() => knifeFinish()}>Cut</button
+				onclick={() => faceEditNow()?.knifeFinish()}>Cut</button
 			>
 		</div>
 	{/if}

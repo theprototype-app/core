@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { objectsGroup, globalCamera, globalRenderer } from '../stores/sceneStore';
 import { editingObject } from './meshEdit';
-import { faceEditObject } from './faceEdit';
+import { faceEditObject } from './faceEditState';
 import { sculptObject } from './terrainSculpt';
 import { ensureBoundsTrees } from './bvhPicking';
 import { raySegment, normalizeMeasure } from './measureCore'; // 48 B2 (a leaf: imports nothing)

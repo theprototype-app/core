@@ -29,14 +29,8 @@ import { toggleShellMenu, shellMenuAvailable } from '../gameShell';
 import { noteArtificialMotion } from '../comfortVignette';
 import { prefabs } from '../prefabs';
 import { editingObject, vrRaycastHandle, vrDragHandleTo, setHoveredHandle } from '../meshEdit';
-import {
-	faceEditObject,
-	highlightFaceByTriangle,
-	applyFaceGrab,
-	adjustFaceGesture,
-	faceGesturePending,
-	lookupEditable
-} from '../faceEdit';
+import { faceEditObject, lookupEditable } from '../faceEditState';
+import { faceEditNow } from '../faceEditLazy';
 import { snapEnabled, snapSettings } from '../snapping';
 import { selectObject } from '../objectActions';
 import { vrKeyboardTarget } from '../vrKeyboard';
@@ -158,7 +152,7 @@ export function vrNavigationSuppressed(opts = {}) {
 	// move, turn and teleport all stand down — Untangle's held globe reels on Y, scales on X
 	if (isClaimed('sticks')) return true;
 	if (vertexGrab || S.vertexTriggerGrab) return true;
-	if (faceGrabHand || faceGesturePending()) return true;
+	if (faceGrabHand || faceEditNow()?.faceGesturePending()) return true;
 	if (stretchSliderDrag || boxSelect) return true;
 	// K1: module gestures (a held sleeve preview) own the sticks too
 	if (
@@ -481,8 +475,8 @@ export function updateVRControls() {
 			const sx = Math.abs(axes[2] ?? 0) > 0.15 ? axes[2] : 0;
 			faceGrabHand.push += -sy * 0.01;
 			faceGrabHand.scale = Math.min(Math.max(faceGrabHand.scale + sx * 0.01, 0.05), 5);
-			applyFaceGrab({ dPos, dQuat, push: faceGrabHand.push, scale: faceGrabHand.scale });
-		} else if (faceGesturePending()) {
+			faceEditNow()?.applyFaceGrab({ dPos, dQuat, push: faceGrabHand.push, scale: faceGrabHand.scale });
+		} else if (faceEditNow()?.faceGesturePending()) {
 			// 184/185: controller motion along the face normal drives depth (extrude)
 			// / size (inset); the stick still fine-tunes the cap scale (l/r)
 			const menuIndex = [...session.inputSources].findIndex((s) => s.handedness === get(vrMenuHand));
@@ -494,7 +488,7 @@ export function updateVRControls() {
 				dAmount = cur.clone().sub(faceAdjustHand.lastPos).dot(faceAdjustHand.normal);
 				faceAdjustHand.lastPos = cur;
 			}
-			if (dAmount || sx) adjustFaceGesture(dAmount, sx * 0.01);
+			if (dAmount || sx) faceEditNow()?.adjustFaceGesture(dAmount, sx * 0.01);
 		} else {
 			// idle: the pointer ray highlights the face under it (121)
 			const pointerIndex = controllerIndexFor(pointerHand());
@@ -503,7 +497,7 @@ export function updateVRControls() {
 				if (edited) {
 					const hits = controllerRay(pointerIndex).intersectObject(edited, false);
 					const tri = hits.length && hits[0].faceIndex != null ? hits[0].faceIndex : -1;
-					if (highlightFaceByTriangle(tri) && tri >= 0) hapticPulse(0.1, 12);
+					if (faceEditNow()?.highlightFaceByTriangle(tri) && tri >= 0) hapticPulse(0.1, 12);
 				}
 			}
 		}

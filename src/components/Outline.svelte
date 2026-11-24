@@ -32,7 +32,7 @@
 	// module cannot: the NormalPass, added ON DEMAND below when a graph reads normals.
 	import '$lib/postGraphs';
 	import { registerOutlineLayer } from '$lib/editOverlays';
-	import { faceEditObject, meshEditOutline } from '$lib/faceEdit';
+	import { faceEditObject, meshEditOutline } from '$lib/faceEditState';
 	import { editingObject } from '$lib/meshEdit';
 	import { coarsePointer } from '$lib/inputDevice';
 	import { viewPrefs, DEFAULT_VIEW_PREFS } from '$lib/viewPrefs';

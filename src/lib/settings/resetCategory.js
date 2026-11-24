@@ -105,7 +105,7 @@ import { setExportPrefs, DEFAULT_EXPORT_PREFS } from '../export/exportStores.js'
 import { vrSmoothTurn, vrSmoothTurnSpeed, vrComfortVignette, vrStance, vrHeightOffset, vrSnapAngleLast } from '../vr/prefs.js';
 import { resetBindings } from '../vr/bindings.js';
 import { setVrHudPlacement, setVrHudSize, setVrHudHints } from '../vrHudPrefs';
-import { vrFaceCap, VR_FACE_CAP } from '../faceEdit';
+import { vrFaceCap, VR_FACE_CAP } from '../faceEditState';
 import { vrVertexCap, VR_VERTEX_CAP } from '../meshEdit';
 import { setMyHandModel, myHandModel } from '../handModels';
 import { colocatedGhostHands } from '../colocationPresence';

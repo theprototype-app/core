@@ -575,7 +575,12 @@ function registerBuiltins() {
 				if (get(m.colliderEditObject)) {
 					m.exitColliderEdit();
 					vrEditMenuOpen.set(false);
-				} else if (m.enterColliderEdit(uuid)) vrEditMenuOpen.set(true);
+				} else {
+					// 102-boot-diet-2: a Promise when the face editor chunk is still loading
+					const entered = m.enterColliderEdit(uuid);
+					if (entered === true) vrEditMenuOpen.set(true);
+					else if (entered instanceof Promise) void entered.then((ok) => ok && vrEditMenuOpen.set(true));
+				}
 			})
 	});
 	// 216: Ungroup (dissolve the group, move children up)

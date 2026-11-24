@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { knifePreview } from '$lib/faceEdit';
+	import { knifePreview } from '$lib/faceEditState';
 
 	// M9b: the knife's rubber band. The cut is defined in SCREEN space, so the preview belongs
 	// in the DOM rather than the scene — there is no 3D line to draw, and a scene-root line

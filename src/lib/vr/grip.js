@@ -29,24 +29,8 @@ import {
 	vrEndHandleDrag,
 	toggleVertexSelection
 } from '../meshEdit';
-import {
-	faceEditObject,
-	faceEditOp,
-	faceEditAmount,
-	commitArmedFaceOp,
-	faceIndexForTriangle,
-	beginFaceGrab,
-	commitFaceGrab,
-	beginFaceAdjust,
-	commitFaceAdjust,
-	faceGesturePending,
-	highlightedFaceInfo,
-	faceEditMulti,
-	faceEditHoverTri,
-	toggleFaceSelection,
-	currentTargetFace,
-	lookupEditable
-} from '../faceEdit';
+import { faceEditObject, faceEditOp, faceEditAmount, faceEditMulti, faceEditHoverTri, lookupEditable } from '../faceEditState';
+import { faceEditNow } from '../faceEditLazy';
 import { peers } from '../../stores/appStore';
 import { recordTransform, recordTransformSet } from '../history';
 import { withWireBatch } from '../wireBatch';
@@ -395,28 +379,28 @@ export function vrFaceTrigger() {
 	// 212: Multi mode — the trigger ACCUMULATES the pointed unit; the op button
 	// applies to the whole set (no live adjust while multi-selecting)
 	if (get(faceEditMulti)) {
-		toggleFaceSelection(get(faceEditHoverTri));
+		faceEditNow()?.toggleFaceSelection(get(faceEditHoverTri));
 		hapticPulse(0.2, 25);
 		return;
 	}
-	if (commitFaceAdjust()) {
+	if (faceEditNow()?.commitFaceAdjust()) {
 		faceAdjustHand = null; // the second trigger CONFIRMS the extrude/inset
 		return;
 	}
-	if (faceGesturePending()) return; // a grip grab owns the gesture
+	if (faceEditNow()?.faceGesturePending()) return; // a grip grab owns the gesture
 	const op = get(faceEditOp);
-	const target = currentTargetFace(); // 212: hovered polygon / face group
+	const target = faceEditNow()?.currentTargetFace(); // 212: hovered polygon / face group
 	if (!target) return;
 	if (op === 'extrude' || op === 'inset') {
-		if (beginFaceAdjust(target, /** @type {any} */ (op), get(faceEditAmount))) {
+		if (faceEditNow()?.beginFaceAdjust(target, /** @type {any} */ (op), get(faceEditAmount))) {
 			// 184/185: capture the pointer hand so controller motion along the face
 			// normal drives depth (extrude) / size (inset) until the next trigger
-			const info = highlightedFaceInfo();
+			const info = faceEditNow()?.highlightedFaceInfo();
 			const pIdx = controllerIndexFor(pointerHand());
 			const pos = pIdx >= 0 ? renderer.xr.getController(pIdx).getWorldPosition(new THREE.Vector3()) : null;
 			faceAdjustHand = info && pos ? { index: pIdx, lastPos: pos, normal: info.normal.clone() } : null;
 		}
-	} else commitArmedFaceOp();
+	} else faceEditNow()?.commitArmedFaceOp();
 }
 
 /**
@@ -496,8 +480,8 @@ export function onSqueezeStart(index) {
 	if (get(faceEditObject)) {
 		const edited = lookupEditable(get(faceEditObject) ?? '') /* 36 X4: the collider proxy too */;
 		const hit = edited ? controllerRay(index).intersectObject(edited, false)[0] : null;
-		const fi = hit && hit.faceIndex != null ? faceIndexForTriangle(hit.faceIndex) : -1;
-		if (fi >= 0 && beginFaceGrab(fi)) {
+		const fi = hit && hit.faceIndex != null ? (faceEditNow()?.faceIndexForTriangle(hit.faceIndex) ?? -1) : -1;
+		if (fi >= 0 && faceEditNow()?.beginFaceGrab(fi)) {
 			const controller = renderer.xr.getController(index);
 			faceGrabHand = {
 				index,
@@ -882,7 +866,7 @@ export function onSqueezeEnd(index) {
 	// face grab (122): release commits the reshape as one meshgeo + undo entry
 	if (faceGrabHand?.index === index) {
 		faceGrabHand = null;
-		commitFaceGrab();
+		faceEditNow()?.commitFaceGrab();
 		hapticPulse(0.2, 30);
 		return;
 	}

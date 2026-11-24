@@ -8,7 +8,7 @@ import { isClaimed } from './inputRuntime';
 import { shortcuts } from './shortcuts';
 // D3 (15): same cycle argument — meshEdit/faceEdit never import editorNavigation
 import { editingObject } from './meshEdit';
-import { faceEditObject, meshEditHotkeys } from './faceEdit';
+import { faceEditObject, meshEditHotkeys } from './faceEditState';
 // 24-A1: fly keys by layout-independent letter (zero-import leaf) — on a Cyrillic
 // layout W is `ц`, so `event.key` never matched and the camera could not fly
 import { letterOf } from './keyOf';

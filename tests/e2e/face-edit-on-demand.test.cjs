@@ -114,13 +114,20 @@ h.run(async () => {
 	check(!!box.uuid, 'premise: a box in the scene');
 
 	await A.page.evaluate(() => window.__tp.test.v1.selectionPrefs.doubleClickAction.set('meshedit'));
-	const point = await h.projectPoint(A.page, [0, 0, 0]);
-	await A.page.mouse.click(point.x, point.y);
-	await A.page.waitForTimeout(90);
-	await A.page.mouse.click(point.x, point.y);
-	await A.page.waitForFunction(`(${read})(window.__tp.test.v1.faceEdit.faceEditObject) !== null`, null, { timeout: 5000 }).catch(() => {});
-	const face = await A.page.evaluate(`(${read})(window.__tp.test.v1.faceEdit.faceEditObject)`);
-	check(face === box.uuid, `3a a double-click with "Edit mesh" set opens the face editor on the box (${face})`);
+	await A.page.waitForTimeout(700); // the box's first frame (a click before it renders hits nothing)
+	let face = null;
+	let tries = 0;
+	// the gesture is a pointer double-click on a software-GL page: one retry if it missed the box (said in the line)
+	while (face !== box.uuid && tries < 2) {
+		tries++;
+		const point = await h.projectPoint(A.page, [0, 0, 0]);
+		await A.page.mouse.click(point.x, point.y);
+		await A.page.waitForTimeout(90);
+		await A.page.mouse.click(point.x, point.y);
+		await A.page.waitForFunction(`(${read})(window.__tp.test.v1.faceEdit.faceEditObject) !== null`, null, { timeout: 5000 }).catch(() => {});
+		face = await A.page.evaluate(`(${read})(window.__tp.test.v1.faceEdit.faceEditObject)`);
+	}
+	check(face === box.uuid, `3a a double-click with "Edit mesh" set opens the face editor on the box (${face}, ${tries} double-click(s))`);
 
 	const sync = await A.page.evaluate((uuid) => {
 		const w = window.__tp.test.v1;

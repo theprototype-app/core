@@ -6878,7 +6878,9 @@ export function cancelFaceGrab() {
 }
 
 /** after the geometry changed IN PLACE (a grab's commit or cancel): the readers re-weld, the overlays and the wire
- * follow (the applyGeometrySnapshot tail, without a new geometry) */
+ * follow (the applyGeometrySnapshot tail, without a new geometry)
+ * @param {Int32Array | null} [weldBefore] the weld the edit started from, when its partition is unchanged (the wire
+ *   is then kept if the weld is too) */
 function afterInPlaceCommit(weldBefore = null) {
 	rebuildFaces();
 	refreshFaceOverlay();

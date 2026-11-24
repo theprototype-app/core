@@ -59,7 +59,7 @@ function buildBuses() {
 	const ctx = /** @type {AudioContext} */ (context);
 	if (masterGain) return;
 	masterGain = ctx.createGain();
-	masterGain.gain.value = 1;
+	masterGain.gain.value = duckLevel; // 92 (GC2): a pause menu open when the context is built
 	// A limiter matters more than it looks: the moment several instruments run at
 	// once an un-limited master clips, and clipping sounds like the instruments
 	// are broken rather than like the mix is too hot.
@@ -113,6 +113,24 @@ export function setBusLevel(name, level) {
 /** the level a bus is set to (1 when never set) @param {string} name */
 export function busLevel(name) {
 	return busLevels[name] ?? 1;
+}
+
+/** 92 (GC2): the pause menu's DUCK, a factor on the master gain — separate from the per-game bus levels
+ * (busLevel keeps reporting the player's setting). Never builds a context by itself. */
+let duckLevel = 1;
+/** @param {number} level 0..1 (1 = not ducked) */
+export function setMenuDuck(level) {
+	duckLevel = Math.min(1, Math.max(0, Number.isFinite(Number(level)) ? Number(level) : 1));
+	if (!masterGain || !context) return;
+	try {
+		masterGain.gain.setTargetAtTime(duckLevel, context.currentTime, 0.06);
+	} catch {
+		masterGain.gain.value = duckLevel;
+	}
+}
+/** the duck in force (1 = none) */
+export function menuDuckLevel() {
+	return duckLevel;
 }
 
 /** The master gain, for a global volume or a meter tap. @returns {GainNode} */

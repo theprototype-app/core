@@ -41,9 +41,10 @@ import { playerInteractionGroups } from './collisionGroups'; // 36 X5: a leaf
 //
 // UNITS, which are deliberately not uniform. `speed` IS PointerLockControls' own
 // `moveSpeed`: per-FRAME translate units, the number the scroll wheel has always
-// adjusted, and the parity contract pins it there (0.1). Walk mode scales it by
-// dt * 60, so it covers the same distance at the nominal 60fps and stays stable when
-// frames are dropped. `jumpHeight`, `eyeHeight` and gravity are metres and seconds,
+// adjusted, and the parity contract pins it there (0.1). 92-correct row 4: it is
+// the distance of one 60 Hz frame, APPLIED PER SECOND in both modes (x 60 x real dt,
+// realStep.js): 0.1 = 6 m/s at any frame rate, so an old scene keeps its feel at 60 Hz
+// and a 120 Hz screen or a throttled tab covers the same ground. `jumpHeight`, `eyeHeight` and gravity are metres and seconds,
 // because they describe the WORLD rather than the input.
 //
 // `eyeHeight` is the eye's height above the ground in WORLD metres (1.7 = a person).
@@ -60,7 +61,7 @@ const KCC_MAX_DT = 1 / 30;
 
 /**
  * @typedef {{mode: 'fly'|'walk', speed: number, jumpHeight: number, eyeHeight: number,
- *   gravity: boolean, sourceNodeId: string}} CharControl
+ *   gravity: boolean, sourceNodeId: string, view?: import('./playViewSettings.js').PlayView | null}} CharControl
  */
 
 /** The declared controller, or NULL for "no controller node exists" — which is the
@@ -217,7 +218,9 @@ export function setCharControl(next) {
 		current.jumpHeight === next.jumpHeight &&
 		current.eyeHeight === next.eyeHeight &&
 		current.gravity === next.gravity &&
-		current.sourceNodeId === next.sourceNodeId
+		current.sourceNodeId === next.sourceNodeId &&
+		// 92-input GC4: the play camera (third / side / top); absent on both = first person, as before
+		JSON.stringify(/** @type {any} */ (current).view ?? null) === JSON.stringify(/** @type {any} */ (next).view ?? null)
 	)
 		return;
 	// a changed authored speed wins over whatever the wheel left behind

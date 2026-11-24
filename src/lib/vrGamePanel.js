@@ -55,6 +55,7 @@ import {
 	shellAccessViews,
 	shellLevelTabs,
 	shellPageTitle,
+	shellListRows,
 	shellGameName,
 	shellHelpLines,
 	pressShellHit,
@@ -365,7 +366,9 @@ function shellModel() {
 		settings: shellSettingViews({ vr: true }),
 		// 53 (A6): the player's rows; 53 (A7): + the headset's comfort rows (device settings)
 		access: [...shellAccessViews({ vr: true }), ...(shellVrRows()?.rows() ?? [])],
-		help: shellHelpLines({ vr: true })
+		help: shellHelpLines({ vr: true }),
+		// 92 (GC5/GC8): Save / Load game and Join requests as rows of presses
+		list: shellListRows()
 	};
 }
 

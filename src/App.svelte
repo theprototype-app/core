@@ -184,7 +184,8 @@ import { startMusicToolbox } from './lib/musicToolbox'
   import PickCycleHint from './components/menu/PickCycleHint.svelte' // 36 F22 / S6 / S12
   import LiveRegions from './components/ui/LiveRegions.svelte' // 53-reader: toasts, errors, selection read aloud
   // 31 K3: the game shell — the pause menu + its wiring
-  import GameShellMenu from './components/hud/GameShellMenu.svelte'
+  // 92-int (claude:9 boot ruling): loaded the first time Play / Interact / the menu / a title wants it
+  import GameShellMenu from './components/hud/GameShellMenuLazy.svelte'
   import CaptionOverlay from './components/play/CaptionOverlay.svelte' // 53 (A6): captions over a game
   import PlayerColorFilter from './components/play/PlayerColorFilter.svelte' // 53 (A6): the colour-blind filter
   import FpsCounter from './components/hud/FpsCounter.svelte'
@@ -352,7 +353,10 @@ import { startMusicToolbox } from './lib/musicToolbox'
     startSceneBounds()
     startShortcuts()
     startSnapping()
-    startAutosave()
+    // 92 (GC1): an EXPORTED game keeps its progress in its save slots / the levels save, never in the editor's
+    // autosave — whose "Restore previous session?" (a true modal) covered the title screen on every return visit:
+    // the export's world is empty at boot (its scene loads after), so autosave always found something to offer
+    if (!exportMode) startAutosave()
     // 60 Q4: files shared into the app (share_target → sw.js inbox) or opened from the OS
     // (file_handlers → launchQueue); they wait for the restore question (launchInbox.js)
     if (!exportMode) import('$lib/launchInbox').then((m) => m.startLaunchInbox()).catch(() => {})

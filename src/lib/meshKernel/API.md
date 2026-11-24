@@ -71,6 +71,7 @@ const out = toArrays(mesh);   // { positions, attributes, groups, material, triF
 
 ## Spatial hash
 `new SpatialHash(positions, { cellSize, count, include })`, `query(x, y, z, r, visit)` (each point within r once, `return false` stops), `within(...)`, `clusters(eps)` (union-find to the lowest index). `mesh.spatialHash(cellSize)` builds one over the live vertices (rebuild after moves).
+App users (99 K6): the sculpt brush (`terrainSculpt.js`, lazy import; per stroke + a drift pad) and `meshOps/dissolve.js mergeByDistance` (greedy targets via `query`, not `clusters`: a transitive rule collapses a strip spaced under the threshold end to end).
 
 ## Limits
 - 2^26 vertices (the import's pair keys). Float64 positions in the kernel, Float32 out.

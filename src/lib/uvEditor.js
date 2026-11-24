@@ -5,7 +5,6 @@ import { isProxyCarrier } from './proxyCarrier.js'; // 102-int-2
 import { writable, get } from 'svelte/store';
 import { objectsGroup, pokeScene } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
-import { recordEntry } from './history';
 // UV3 painting commits through the EXISTING replicated texture path, so
 // persistence (autosave / .tpscene / the object sync) and undo come free.
 import { applyMap, materialAt, recordMaterialChange, copyTextureParams } from './materialsHandler';
@@ -24,12 +23,13 @@ import {
 	trisToPositions,
 	trisToGroups,
 	trisToUVs,
-	applyMeshGeo,
 	triangleCount,
 	// UV5 reads the Edit Mesh pick to scope the UV view — read-only, no writes
 	faceEditObject,
-	faceEditSelectedTris
+	faceEditSelectedTris,
+	commitMesh
 } from './faceEdit';
+import { sendMeshGeo } from './meshCommit';
 
 // UV editor core (UV1). The editor is a 2D view of a mesh's `uv` attribute: the
 // texture underneath, the UV triangles of ONE material slot on top, and draggable
@@ -801,9 +801,7 @@ export async function unwrapObject(uuid, backend, options = {}, onlyTris = null)
 		return false;
 	}
 	const after = { positions, groups: trisToGroups(triangles), uvs: trisToUVs(triangles) };
-	applyMeshGeo(uuid, after.positions, after.groups, after.uvs);
-	broadcastUvGeo(uuid, after);
-	recordEntry({ kind: 'meshgeo', uuid, before, after });
+	uvCommit(uuid, before, after);
 	return true;
 }
 
@@ -854,9 +852,7 @@ export function assignTrisToSlot(uuid, tris, slot) {
 		return false;
 	}
 	const after = { positions, groups: trisToGroups(triangles), uvs: trisToUVs(triangles) };
-	applyMeshGeo(uuid, after.positions, after.groups, after.uvs);
-	broadcastUvGeo(uuid, after);
-	recordEntry({ kind: 'meshgeo', uuid, before, after });
+	uvCommit(uuid, before, after);
 	return true;
 }
 
@@ -936,9 +932,7 @@ export function endUvDrag(uuid) {
 		showToast('That edit is too large to sync');
 		return false;
 	}
-	applyMeshGeo(uuid, after.positions, after.groups, after.uvs);
-	broadcastUvGeo(uuid, after);
-	recordEntry({ kind: 'meshgeo', uuid, before: session.before, after });
+	uvCommit(uuid, session.before, after);
 	return true;
 }
 
@@ -1533,22 +1527,10 @@ if (typeof window !== 'undefined')
 	}, STROKE_STALE_MS);
 
 /**
- * The meshgeo wire message, byte-identical to faceEdit's private
- * broadcastMeshGeo (raw Float32 BYTES — binarypack recurses per element and
- * silently blows the call stack on a big plain array, and broadcast() swallows
- * the throw). `groups`/`uvs` are omitted when absent so an older peer just sees
- * today's message.
- * @param {string} uuid @param {{positions: number[], groups: any[] | null, uvs: number[] | null}} snapshot
+ * 99 K2: a UV edit's commit — faceEdit's one commit on the object, with this editor's message
+ * (no colours, no topology: `wireFaces: 'none'`). The caller already applied its own size cap.
+ * @param {string} uuid @param {any} before @param {{positions: number[], groups: any[] | null, uvs: number[] | null}} after
  */
-export function broadcastUvGeo(uuid, snapshot) {
-	/** @type {any} */
-	const peer = get(peers);
-	if (!peer) return;
-	peer.send({
-		type: 'meshgeo',
-		uuid: uuid,
-		positions: new Float32Array(snapshot.positions).buffer,
-		...(snapshot.groups?.length ? { groups: snapshot.groups } : {}),
-		...(snapshot.uvs?.length ? { uvs: new Float32Array(snapshot.uvs).buffer } : {})
-	});
+export function uvCommit(uuid, before, after) {
+	return commitMesh({ uuid, apply: 'object', before, after, record: 'entry', cap: false, wireFaces: 'none' });
 }

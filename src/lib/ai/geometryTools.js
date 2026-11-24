@@ -675,6 +675,7 @@ async function editMeshTool(args) {
 	const ops = Array.isArray(args.ops) ? args.ops : [];
 	if (ops.length > MAX_OPS) return { error: 'ops: at most ' + MAX_OPS + ' per call' };
 	const fe = await import('$lib/faceEdit');
+	await fe.loadKernelOps(); // 99 K4: the face operators run on the lazy kernel chunk
 	const topSel = args.select === undefined ? null : parseSelect(args.select);
 	if (topSel && 'error' in topSel) return { error: topSel.error };
 	const modeOf = (/** @type {any} */ s, /** @type {any} */ op) => {

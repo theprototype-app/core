@@ -150,6 +150,7 @@ h.run(async () => {
 			),
 		[path, rect]
 	);
+	await A.page.waitForTimeout(450); // past the 350 ms double-click window (a second press would convert)
 	const node0 = d.paths[0].nodes[0];
 	const targetLocal = [corner[0], node0.y + 0.35];
 	const targetWorld = await toWorld(A.page, path, targetLocal);
@@ -164,6 +165,8 @@ h.run(async () => {
 	await A.page.waitForTimeout(300);
 	d = await dbg(A.page);
 	h.check(Math.abs(d.paths[0].nodes[0].x - corner[0]) < 1e-6, `the anchor takes the corner's x exactly (${d.paths[0].nodes[0].x.toFixed(4)} vs ${corner[0].toFixed(4)})`);
+	if (Math.abs(d.paths[0].nodes[0].x - corner[0]) >= 1e-6)
+		console.log('  guide diag: ' + JSON.stringify({ node0, targetLocal, targetWorld, screen: t, pressed: d.screen[0][0], lastSnap: d.lastSnap }));
 	h.check(!(await A.page.evaluate(() => window.__stores.vectorSnap.snapGuidesDebug())).shown, 'the guide goes on release');
 
 	// ---- 4 close, split, delete a pair ---------------------------------------------------------

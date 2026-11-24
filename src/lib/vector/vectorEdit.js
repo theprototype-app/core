@@ -58,6 +58,8 @@ let working = [];
 let lastDownAt = 0;
 /** @type {null | {sub: number, index: number}} */ let lastDownNode = null;
 let rafId = 0;
+/** suites: the last snap a drag made @type {any} */
+let lastSnap = null;
 
 registerKeySessionProbe(() => get(vectorEditObject) !== null);
 
@@ -368,6 +370,7 @@ function onMove(_hit, ctx) {
 		// rest of the set moves by the same amount
 		const raw = [lead.x + at[0] - gesture.from[0], lead.y + at[1] - gesture.from[1]];
 		const snapped = snapInPlane(edited.matrixWorld, raw, gesture.cand ?? null);
+		lastSnap = { raw, at: snapped.at, kind: snapped.kind, guides: snapped.guides, from: gesture.from, lead: [lead.x, lead.y], pointer: at };
 		showSnapGuides(edited.matrixWorld, snapped);
 		working = moveNodesBy(gesture.base, gesture.picks ?? [{ sub: gesture.sub, index: gesture.index }], snapped.at[0] - lead.x, snapped.at[1] - lead.y);
 	} else
@@ -638,6 +641,7 @@ export function vectorEditDebug() {
 		pick: get(vectorEditPick),
 		picks: get(vectorEditPicks),
 		can: get(vectorEditCan),
+		lastSnap,
 		paths: cloneSubpaths(working),
 		helpers: !!helpers,
 		screen: working.map((sub) => sub.nodes.map((nd) => screenOf(nd.x, nd.y)))

@@ -111,7 +111,19 @@ h.run(async () => {
 			}
 			return prev;
 		};
-		await A.page.waitForTimeout(3000);
+		// an EXTRUDED text builds its solid once its font loads (castShadow false -> true, ~8 s measured on BOTH
+		// builds): wait for every one on both pages, or the two reads compare a built solid with an unbuilt one
+		const solidsBuilt = (page) =>
+			page.evaluate(() => {
+				let g;
+				window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
+				let waiting = 0;
+				g.traverse((o) => {
+					if (o.userData?.textPath?.mode === 'extruded' && o.geometry?.type !== 'ExtrudeGeometry') waiting++;
+				});
+				return waiting;
+			});
+		for (const P of [A, R]) await h.eventually(() => solidsBuilt(P.page), (n) => n === 0, '§1 (premise) every extruded text built its solid', 45000);
 		const [a, r] = [await settled(A.page), await settled(R.page)];
 		console.log(`SIG lane ${a.hash} release ${r.hash} (${a.objects} objects)`);
 		h.check(a.objects > 0, `§1 the old scene loaded (${a.objects} objects)`);

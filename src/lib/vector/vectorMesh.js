@@ -12,13 +12,22 @@
 //
 // The shape lies in its local XY plane facing +Z; an extruded shape grows from z = 0 to
 // z = depth (+Z is the surface normal it was drawn on, so it rises OFF the surface).
+//
+// 64-extrude (D7): an extruded fill is built on the MESH KERNEL (vectorSolid.js): n-gon caps,
+// quad walls and quad bevel rings, stored as the face partition (`__topo`), so Edit mode opens it
+// as a clean mesh. Its colours stay per vertex; a gradient on a solid is NOT refined (that would
+// cut the caps into triangle soup): a two-stop linear gradient is exact, a radial one is coarse.
 import * as THREE from 'three';
 import { flattenSubpath, ringsToPolygons, boundsOf } from './vectorPath.js';
+import { buildSolidArrays } from './vectorSolid.js';
 import { strokeAll, piecesToTriangles } from './vectorStroke.js';
 import { cleanVector, vectorSubpaths, fillColourAt, hexToRgb } from './vectorRecord.js';
 
 /** gap between the fill surface and the stroke drawn over it (metres) */
 export const STROKE_LIFT = 0.0015;
+/** TEST/DEBUG: the last solid built (timing, pieces, the bevel width it could fit) — never on userData,
+ * where a timing would make every save of the same shape differ @type {any} */
+export let lastSolid = null;
 /** a cap on the triangles one shape may build (fill refinement stops early past it) */
 const MAX_TRIANGLES = 60000;
 
@@ -113,78 +122,109 @@ export function buildVectorGeometry(params) {
 	const bw = Math.max(b.maxX - b.minX, 1e-6);
 	const bh = Math.max(b.maxY - b.minY, 1e-6);
 	const depth = p.depth;
-	/** @type {number[]} */
-	const pos = [];
-	/** @type {number[]} */
-	const col = [];
+	/** the pieces, in output order: positions (non-indexed xyz), optional normals, optional face partition
+	 * @type {{pos: ArrayLike<number>, normals: ArrayLike<number> | null, faces: number[][] | null, colour: (x: number, y: number) => number[]}[]} */
+	const parts = [];
+	const fillColour = (/** @type {number} */ x, /** @type {number} */ y) => fillColourAt(p, (x - b.minX) / bw, (y - b.minY) / bh);
+	/** @type {any} */
+	let solidInfo = null;
 
 	// ---- fill
 	if (p.fillType !== 'none') {
 		const polys = ringsToPolygons(all.filter((r) => r.length >= 3));
-		if (polys.length) {
-			const shapes = shapesOf(polys);
-			const g =
-				depth > 0
-					? new THREE.ExtrudeGeometry(shapes, {
-							depth,
-							curveSegments: 1,
-							bevelEnabled: p.bevel > 0,
-							bevelThickness: Math.min(p.bevel, depth / 2),
-							bevelSize: p.bevel,
-							bevelSegments: 2
-						})
-					: new THREE.ShapeGeometry(shapes, 1);
+		if (polys.length && depth > 0) {
+			const solid = buildSolidArrays(polys, { depth, width: p.bevel, segments: p.bevelSegments });
+			solidInfo = solid.info;
+			parts.push({ pos: solid.positions, normals: solid.normals, faces: solid.faces, colour: fillColour });
+		} else if (polys.length) {
+			const g = new THREE.ShapeGeometry(shapesOf(polys), 1);
 			let fill = flatPositions(g);
 			g.dispose();
 			if (p.fillType !== 'solid') fill = refine(fill, Math.max(bw, bh) / 24, MAX_TRIANGLES);
-			if (depth > 0 && p.bevel > 0) {
-				// a bevel grows out to z = depth + bevelThickness on both caps: re-seat the back cap on z = 0
-				const t = Math.min(p.bevel, depth / 2);
-				for (let i = 2; i < fill.length; i += 3) fill[i] += t;
-			}
-			for (let i = 0; i < fill.length; i += 3) {
-				const c = fillColourAt(p, (fill[i] - b.minX) / bw, (fill[i + 1] - b.minY) / bh);
-				col.push(c[0], c[1], c[2]);
-			}
-			pos.push(...fill);
+			parts.push({ pos: fill, normals: null, faces: null, colour: fillColour });
 		}
 	}
 
 	// ---- stroke: front and back copies
 	if (p.strokeWidth > 0) {
 		const tris = piecesToTriangles(strokeAll(lines, { width: p.strokeWidth, join: p.join, cap: p.cap, dash: p.dash, gap: p.gap }));
-		const bevelT = depth > 0 && p.bevel > 0 ? 2 * Math.min(p.bevel, depth / 2) : 0;
-		const front = (p.fillType !== 'none' ? depth + bevelT : 0) + STROKE_LIFT;
+		const front = (p.fillType !== 'none' ? depth : 0) + STROKE_LIFT;
 		const back = -STROKE_LIFT;
 		const sc = hexToRgb(p.stroke);
+		/** @type {number[]} */
+		const pos = [];
 		for (let i = 0; i < tris.length; i += 6) {
 			pos.push(tris[i], tris[i + 1], front, tris[i + 2], tris[i + 3], front, tris[i + 4], tris[i + 5], front);
 			// the back copy is wound the other way so its face points -Z
 			pos.push(tris[i], tris[i + 1], back, tris[i + 4], tris[i + 5], back, tris[i + 2], tris[i + 3], back);
-			for (let k = 0; k < 6; k++) col.push(sc[0], sc[1], sc[2]);
 		}
+		parts.push({ pos, normals: null, faces: null, colour: () => sc });
 	}
 
 	const geometry = new THREE.BufferGeometry();
-	if (!pos.length) return geometry;
-	geometry.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+	const count = parts.reduce((n, part) => n + part.pos.length, 0);
+	if (!count) return geometry;
+	const pos = new Float32Array(count);
+	const normal = new Float32Array(count);
 	// vertex colours are LINEAR in three: convert the sRGB values the record speaks
-	const linear = new Float32Array(col.length);
+	const linear = new Float32Array(count);
+	const uv = new Float32Array((count / 3) * 2);
 	const c = new THREE.Color();
-	for (let i = 0; i < col.length; i += 3) {
-		c.setRGB(col[i], col[i + 1], col[i + 2], THREE.SRGBColorSpace);
-		linear[i] = c.r;
-		linear[i + 1] = c.g;
-		linear[i + 2] = c.b;
+	/** @type {number[][]} */
+	const faces = [];
+	let at = 0;
+	for (const part of parts) {
+		const src = part.pos;
+		const tri0 = at / 9;
+		for (let i = 0; i < src.length; i++) pos[at + i] = src[i];
+		if (part.normals) for (let i = 0; i < src.length; i++) normal[at + i] = part.normals[i];
+		else
+			for (let i = 0; i < src.length; i += 9) {
+				// flat: the triangle's own normal on its three corners
+				const ux = src[i + 3] - src[i];
+				const uy = src[i + 4] - src[i + 1];
+				const uz = src[i + 5] - src[i + 2];
+				const vx = src[i + 6] - src[i];
+				const vy = src[i + 7] - src[i + 1];
+				const vz = src[i + 8] - src[i + 2];
+				let nx = uy * vz - uz * vy;
+				let ny = uz * vx - ux * vz;
+				let nz = ux * vy - uy * vx;
+				const l = Math.hypot(nx, ny, nz) || 1;
+				nx /= l;
+				ny /= l;
+				nz /= l;
+				for (let k = 0; k < 9; k += 3) {
+					normal[at + i + k] = nx;
+					normal[at + i + k + 1] = ny;
+					normal[at + i + k + 2] = nz;
+				}
+			}
+		for (let i = 0; i < src.length; i += 3) {
+			const s = part.colour(src[i], src[i + 1]);
+			c.setRGB(s[0], s[1], s[2], THREE.SRGBColorSpace);
+			linear[at + i] = c.r;
+			linear[at + i + 1] = c.g;
+			linear[at + i + 2] = c.b;
+			const j = ((at + i) / 3) * 2;
+			uv[j] = (src[i] - b.minX) / bw;
+			uv[j + 1] = (src[i + 1] - b.minY) / bh;
+		}
+		const tris = src.length / 9;
+		if (part.faces) for (const face of part.faces) faces.push(face.map((t) => t + tri0));
+		else for (let t = 0; t < tris; t++) faces.push([tri0 + t]);
+		at += src.length;
 	}
+	geometry.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+	geometry.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
 	geometry.setAttribute('color', new THREE.BufferAttribute(linear, 3));
-	const uv = new Float32Array((pos.length / 3) * 2);
-	for (let i = 0, j = 0; i < pos.length; i += 3, j += 2) {
-		uv[j] = (pos[i] - b.minX) / bw;
-		uv[j + 1] = (pos[i + 1] - b.minY) / bh;
-	}
 	geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-	geometry.computeVertexNormals();
+	// 64-extrude: a solid keeps its kernel faces (meshTopology's `__topo`: n-gon caps, quad walls), so
+	// Edit mode opens it as the mesh it was built as instead of re-deriving quads from triangles
+	if (solidInfo) {
+		geometry.userData.__topo = { counts: faces.map((f) => f.length), tris: faces.flat() };
+		lastSolid = solidInfo;
+	}
 	geometry.computeBoundingBox();
 	geometry.computeBoundingSphere();
 	return geometry;

@@ -58,7 +58,8 @@ export function vectorDefaults(kind = 'rect') {
 		dash: 0,
 		gap: 0,
 		depth: 0,
-		bevel: 0
+		bevel: 0,
+		bevelSegments: 2
 	};
 }
 
@@ -123,7 +124,9 @@ export function cleanVector(raw) {
 		dash: num(r.dash, 0, 50, d.dash),
 		gap: num(r.gap, 0, 50, d.gap),
 		depth: num(r.depth, 0, 50, d.depth),
-		bevel: num(r.bevel, 0, 5, d.bevel)
+		bevel: num(r.bevel, 0, 5, d.bevel),
+		// 64-extrude: the bevel's quarter circle in this many steps (1 = a flat chamfer); additive, absent = 2
+		bevelSegments: Math.round(num(r.bevelSegments, 1, 8, d.bevelSegments))
 	};
 	return out;
 }
@@ -226,7 +229,8 @@ export const VECTOR_PARAMS = [
 	{ key: 'dash', label: 'Dash', kind: 'slider', min: 0, max: 2, step: 0.01, def: 0, show: stroked },
 	{ key: 'gap', label: 'Gap', kind: 'slider', min: 0, max: 2, step: 0.01, def: 0, show: (p) => stroked(p) && (p?.dash ?? 0) > 0 },
 	{ key: 'depth', label: 'Extrude', kind: 'slider', min: 0, max: 5, step: 0.01, def: 0 },
-	{ key: 'bevel', label: 'Bevel', kind: 'slider', min: 0, max: 0.5, step: 0.005, def: 0, show: (p) => (p?.depth ?? 0) > 0 }
+	{ key: 'bevel', label: 'Bevel', kind: 'slider', min: 0, max: 0.5, step: 0.005, def: 0, show: (p) => (p?.depth ?? 0) > 0 },
+	{ key: 'bevelSegments', label: 'Bevel steps', kind: 'int', min: 1, max: 8, def: 2, show: (p) => (p?.depth ?? 0) > 0 && (p?.bevel ?? 0) > 0 }
 ];
 
 /** colour fields the Inspector's Vector colours row edits @type {{key: string, label: string, show?: (p: any) => boolean}[]} */

@@ -11,7 +11,6 @@ import { registerVRTriggerHooks, registerGripHooks, registerVRFrameHook } from '
 import { controllerRay } from '../vr/pointer.js';
 import { renderer } from '../vr/core.js';
 import { hapticPulse } from '../vr/haptics.js';
-import { hapticsAllowed } from '../gameSettings';
 import { vectorLaserPen } from './vectorGate.js';
 import { beginPenAt, penAddPoint, penHandleTo, finishPen, undoPenPoint, cancelDraft, setPenFrame, penSnap, penDraft, vectorToolDebug } from './vectorTool.js';
 
@@ -55,8 +54,8 @@ export function stepExtrude() {
 //   trigger ........ a point where the laser meets the plane (snapped like a desktop press); hold and
 //                    pull to drag out a smooth point's handle; on the FIRST point it closes the path
 //   grip ........... carries the plane (and the points on it) with the hand, released where it is
-//   haptic ......... one short tick on the drawing hand per point placed (QUESTIONS Q1: a tool
-//                    confirmation like the Edit/Interact switch tick; off with "Controller vibration")
+//   haptic ......... one short tick on the drawing hand per point placed, through the ordinary gate: silent
+//                    in Edit (the owner's rule, QUESTIONS Q1 answered), felt when the pen is used in Interact
 //   radial ......... Finish path / Undo point / Pen off (visible while armed)
 // The draft IS the desktop pen's (vectorTool.beginPenAt / penAddPoint / finishPen), so a finished path
 // is the same ONE create entry, synced the same way. Input rides the VR trigger and grip hooks, so the
@@ -173,12 +172,11 @@ function hitOf(index) {
 	return { world: p, at: [local.x, local.y] };
 }
 
-/** a short tick on the hand that placed the point @param {number} index */
+/** a short tick on the hand that placed the point — hapticPulse's own gate keeps Edit silent @param {number} index */
 function tick(index) {
 	if (laser) laser.ticks++;
-	if (!hapticsAllowed()) return;
 	const hand = renderer?.xr?.getController?.(index)?.userData?.handedness;
-	hapticPulse(0.25, 12, hand === 'left' || hand === 'right' ? hand : undefined, true);
+	hapticPulse(0.25, 12, hand === 'left' || hand === 'right' ? hand : undefined);
 }
 
 /** a fresh draft on the same plane (after a finish) */

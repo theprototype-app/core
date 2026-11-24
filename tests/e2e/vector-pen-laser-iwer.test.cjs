@@ -1,7 +1,7 @@
 // Roadmap 64 D5 (lane 64-vector-edit) row 5 — THE PEN BY VR LASER, on IWER (a Quest 3 emulated; the real
 // Quest row is the int's preview check):
 //  1 Add ▸ Shapes ▸ Pen arms the laser pen: a work plane 1.5 m ahead, upright, facing you
-//  2 the trigger aimed at the plane places points there (one haptic tick each, the right hand); held and
+//  2 the trigger aimed at the plane places points there (a tick asked per point, silent in Edit); held and
 //    pulled it drags out a smooth point's handle; the trigger on the first point closes the path ->
 //    ONE create entry, a desktop peer sees the closed shape
 //  3 the grip carries the plane: the next path is drawn where the hand put the plane
@@ -73,7 +73,7 @@ h.run(async () => {
 
 	// ---- 2 three points (the second a pulled handle), then close on the first -------------------------
 	const pts = [[-0.4, -0.2], [0, 0.3], [0.4, -0.2]];
-	const ticks0 = (await A.page.evaluate(() => window.__stores.vrControls.hapticDebug())).pulses.length;
+	const hd0 = await A.page.evaluate(() => window.__stores.vrControls.hapticDebug());
 	await aimAt(onPlane(st, ...pts[0]));
 	await iwer.tap(A.page, 'right', 'trigger');
 	await aimAt(onPlane(st, ...pts[1]));
@@ -89,9 +89,10 @@ h.run(async () => {
 	h.check(st.points === 3, `three trigger presses place three points (${st.points})`);
 	h.check(st.nodes.every((p, i) => Math.hypot(p.x - pts[i][0], p.y - pts[i][1]) < 0.03), 'each point lies where the laser met the plane');
 	h.check(st.nodes[1].smooth && Math.abs(st.nodes[1].ox - 0.15) < 0.04, `holding the trigger and pulling drags out a smooth handle (${st.nodes[1].ox.toFixed(2)} m)`);
-	h.check(st.ticks === 3, `one tick per point (${st.ticks})`);
-	const pulses = (await A.page.evaluate(() => window.__stores.vrControls.hapticDebug())).pulses.slice(ticks0);
-	h.check(pulses.length === 3 && pulses.every((p) => p.hand === 'right'), `...felt on the drawing hand (${pulses.map((p) => p.hand).join(',')})`);
+	h.check(st.ticks === 3, `one tick asked per point (${st.ticks})`);
+	const hd1 = await A.page.evaluate(() => window.__stores.vrControls.hapticDebug());
+	// QUESTIONS Q1 (answered): Edit stays silent — the ticks go through hapticPulse's gate and are swallowed there
+	h.check(hd1.pulses.length === hd0.pulses.length && hd1.suppressed - hd0.suppressed >= 3, `...and Edit stays silent: no pulse reached a controller (${hd1.suppressed - hd0.suppressed} swallowed)`);
 	const before = Object.keys(await vectors(A.page));
 	const depth = await undoDepth(A.page);
 	await aimAt(onPlane(st, pts[0][0] + 0.01, pts[0][1]));

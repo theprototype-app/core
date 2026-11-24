@@ -241,6 +241,13 @@ async function setupPage(browser, name, options = {}) {
 	// E2E_NO_PERF_OFFER=1: a deployed PREVIEW build offers perf reports in a sticky toast that covers clicks and
 	// lands in golden frames — answer it up front for proofs against a preview (36-int-125)
 	if (process.env.E2E_NO_PERF_OFFER === '1') await ctx.addInitScript(() => localStorage.setItem('perfReports:offered', 'no'));
+	// ci-speed: the LEAN DRAW (see LEAN_DRAW) — GitHub battery only, and a suite listed in battery.json `ci.fullDraw` draws
+	// in full. Seeded only where the key is absent, so a suite or the app that changes one of these prefs keeps its
+	// change across a reload, and a suite's own `options.storage` (installed below) still wins.
+	if (LEAN_DRAW)
+		await ctx.addInitScript((lean) => {
+			for (const [k, v] of Object.entries(lean)) if (localStorage.getItem(k) === null) localStorage.setItem(k, v);
+		}, LEAN_DRAW_STORAGE);
 	// E2E_NO_ERROR_REPORTS=1 (48-int): a deployed build sends REAL anonymous error reports (48 O1), and a proof's
 	// deliberate page errors on theprototype.pages.dev would count as production — the release's error-spike check
 	// (O2's auto-rollback) must not read them. Proofs against Pages builds switch reporting off (a suite's own choice wins)
@@ -350,7 +357,7 @@ async function setupPage(browser, name, options = {}) {
 	// CI: the frame rate this page draws at, read by battery.cjs (SLOW RUNNER under SLOW_RUNNER_FPS)
 	if (BATTERY_CI) {
 		const fps = await measureFps(page);
-		console.log(`[helpers] fps ${name}: ${fps ?? 'unmeasured'}${fps !== null && fps < SLOW_RUNNER_FPS ? ` (SLOW RUNNER, under ${SLOW_RUNNER_FPS} fps)` : ''}`);
+		console.log(`[helpers] fps ${name}: ${fps ?? 'unmeasured'}${fps !== null && fps < SLOW_RUNNER_FPS ? ` (SLOW RUNNER, under ${SLOW_RUNNER_FPS} fps)` : ''} ${LEAN_DRAW ? '[lean draw]' : '[full draw]'}`);
 	}
 	return { ctx, page, id };
 }
@@ -519,6 +526,13 @@ const PATIENT_CLICK_MS = Number(process.env.E2E_CLICK_MS || 90000);
  * The numbers live here and nowhere else.
  */
 const BATTERY_CI = process.env.BATTERY_CI === '1';
+// ci-speed (claude:9's rule): BATTERY_CI must never reach a local / desk / pc / release run — the battery runners refuse
+// it (scripts/ci/battery.cjs ciEnvError) and so does every suite loading this file, so a single suite run by hand with
+// it set cannot gate on the CI-only allowance and lean draw either
+{
+	const ciError = require('../../scripts/ci/battery.cjs').ciEnvError(process.env);
+	if (ciError) throw new Error('tests/e2e/helpers.cjs: ' + ciError);
+}
 /** Playwright's default action / wait / navigation timeout on a CI page (locally Playwright's own 30 s). */
 const CI_DEFAULT_TIMEOUT_MS = 90000;
 const LOCAL_DEFAULT_TIMEOUT_MS = 30000;
@@ -528,6 +542,23 @@ const CI_WAIT_SCALE = 3;
 const SLOW_RUNNER_FPS = 5;
 /** Connect / Approve in `connect()`: patient on CI, Playwright's default locally (as before #644). */
 const CONNECT_CLICK_MS = BATTERY_CI ? CI_DEFAULT_TIMEOUT_MS : LOCAL_DEFAULT_TIMEOUT_MS;
+
+/**
+ * THE LEAN DRAW (ci-speed, card ci-pause-idle-pages): on a GitHub runner every page renders WebGL through SwiftShader on
+ * 2-4 shared vCPUs, and the default desktop page (the AO view mode's full-screen N8AO pass + shadow maps at 1280x720)
+ * drew at 1.7 fps p50 across 480 battery pages (run 45305773171; 381 of them under SLOW_RUNNER_FPS). Most suites assert
+ * stores, the DOM and the wire, not pixels, so on CI a page draws less through the app's OWN user-facing switches (no
+ * test-only app code): the device Quality preset "Low" (the governor's level 8: shadows, AO, the scene look and its
+ * heavy passes off, resolution 50% — the CSS layout and devicePixelRatio stay 1280x720 @ 1) plus the shadowQuality and
+ * view-mode prefs (shadows off, plain Shaded). Measured locally (SwiftShader, CPU x4, two pages): 2.5 -> 52 fps.
+ * A suite that tests pixels, an effect, the resolution or layout at size draws in full: it is listed in battery.json
+ * `ci.fullDraw` WITH ITS REASON, and battery.cjs hands it E2E_FULL_DRAW=1. Local, desk, pc and release runs never set
+ * BATTERY_CI (battery.cjs ciEnvError refuses it), so they always draw in full.
+ */
+const FULL_DRAW = process.env.E2E_FULL_DRAW === '1';
+const LEAN_DRAW = BATTERY_CI && !FULL_DRAW;
+/** @type {Record<string, string>} */
+const LEAN_DRAW_STORAGE = { 'quality:preset': 'low', shadowQuality: 'off', viewMode: 'shaded' };
 
 /** @param {string} what @param {number} t0 @param {number} localMs @param {number} ciMs */
 function logSlowWait(what, t0, localMs, ciMs) {
@@ -1542,4 +1573,4 @@ async function paneHandleClick(page, sel, opts = {}) {
 	await page.locator('[role=menu] [role=menuitem]', { hasText: /^\s*Hide\b/ }).first().click();
 }
 
-module.exports = { t, URL, paneHandleClick, coverageKey, openDial, GPU_ARGS, N6_UA, PATIENT_CLICK_MS, BATTERY_CI, SLOW_RUNNER_FPS, ciTimeout, ciWait, APPROVE_LABEL, approveButton, watchPress, check, launch, setupPage, setupPageQuiet, connect, leavePlay, eventually, caughtUp, eventuallyAfter, projectPoint, freshReload, answerRestore, closePeer, finish, run, installModule, moduleZipPath, makeCollectibleChains, pageErrors, externalErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta, routeSkies, SKIES_DIR, openWsMode };
+module.exports = { t, URL, paneHandleClick, coverageKey, openDial, GPU_ARGS, N6_UA, PATIENT_CLICK_MS, BATTERY_CI, LEAN_DRAW, SLOW_RUNNER_FPS, ciTimeout, ciWait, APPROVE_LABEL, approveButton, watchPress, check, launch, setupPage, setupPageQuiet, connect, leavePlay, eventually, caughtUp, eventuallyAfter, projectPoint, freshReload, answerRestore, closePeer, finish, run, installModule, moduleZipPath, makeCollectibleChains, pageErrors, externalErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta, routeSkies, SKIES_DIR, openWsMode };

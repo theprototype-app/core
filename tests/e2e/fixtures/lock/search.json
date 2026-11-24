@@ -4720,6 +4720,7 @@
 				"Physics",
 				"Scatter",
 				"Shadow",
+				"Tags",
 				"Texture",
 				"Tidy",
 				"Transform",
@@ -4871,6 +4872,7 @@
 				"Constraints",
 				"Light",
 				"Shadow",
+				"Tags",
 				"Tidy",
 				"Transform"
 			],

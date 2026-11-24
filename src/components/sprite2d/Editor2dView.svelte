@@ -47,12 +47,17 @@
 	// D6: the gizmo moves in the PLANE while the flat view is on — its z handle (and the planes
 	// that include z) hide; leaving the view gives them back
 	$effect(() => {
-		const gizmo: any = $TControls;
-		if (!gizmo || !active) return;
-		const had = gizmo.showZ;
-		gizmo.showZ = false;
+		if (!active) return;
+		// the gizmo is read UNTRACKED: Scene's change handler mutates `$TControls.visible`, which notifies the store
+		// on every gizmo change, so depending on it would re-run this effect from its own write
+		const gizmo: any = untrack(() => $TControls);
+		if (!gizmo) return;
+		// the write fires the gizmo's change handler synchronously (Scene's onchange writes stores): untracked,
+		// or this effect would depend on what that handler writes and loop
+		const had = untrack(() => gizmo.showZ);
+		if (had !== false) untrack(() => (gizmo.showZ = false));
 		return () => {
-			gizmo.showZ = had ?? true;
+			if (gizmo.showZ === false && had !== false) untrack(() => (gizmo.showZ = true));
 		};
 	});
 

@@ -5,7 +5,7 @@
 	// and extrude come from the features that ship them (a `tools2d.js` beside their code), so a
 	// build without them has no such button — never a dead one. "Back to 3D" leaves the view.
 	// LOCAL: which tool is armed is a fact about this screen; what a tool MAKES replicates as usual.
-	import { onDestroy, onMount } from 'svelte';
+	import { onDestroy, onMount, untrack } from 'svelte';
 	import ToolboxWindow from '../ui/ToolboxWindow.svelte';
 	import Icon from '../ui/Icon.svelte';
 	import Layers2dPanel from './Layers2dPanel.svelte';
@@ -20,7 +20,9 @@
 	/** @type {Record<string, boolean>} */
 	let actives = $state({});
 	$effect(() => {
-		const subs = tools.filter((t) => t.active).map((t) => /** @type {any} */ (t.active).subscribe((/** @type {boolean} */ v) => (actives = { ...actives, [t.id]: !!v })));
+		// a store calls back AT ONCE inside subscribe: reading `actives` there would make this effect depend on
+		// what it writes (an update loop), so the write reads it untracked
+		const subs = tools.filter((t) => t.active).map((t) => /** @type {any} */ (t.active).subscribe((/** @type {boolean} */ v) => (actives = { ...untrack(() => actives), [t.id]: !!v })));
 		return () => subs.forEach((u) => u());
 	});
 

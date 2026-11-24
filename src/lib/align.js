@@ -38,25 +38,10 @@ function poseOf(object) {
 	return { pos: object.position.toArray(), rot: object.rotation.toArray(), scale: object.scale.toArray() };
 }
 
-/** the object's box in world metres — or, 64-vector-edit, in a FRAME's axes (a shape's own plane:
- * its x / y are the plane's right / up), measured off every mesh's own box so a rotated plane stays tight
- * @param {any} object @param {THREE.Matrix4 | null} [frame] world matrix of the frame (rotation + position)
- * @returns {{min: number[], max: number[]} | null} */
-function worldBox(object, frame = null) {
+/** @param {any} object @returns {{min: number[], max: number[]} | null} */
+function worldBox(object) {
 	object.updateMatrixWorld(true);
-	if (!frame) {
-		const box = new THREE.Box3().setFromObject(object);
-		return box.isEmpty() ? null : { min: box.min.toArray(), max: box.max.toArray() };
-	}
-	const inv = frame.clone().invert();
-	const box = new THREE.Box3();
-	const m = new THREE.Matrix4();
-	object.traverse((/** @type {any} */ o) => {
-		if (!o.geometry) return;
-		if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
-		if (o.geometry.boundingBox.isEmpty()) return;
-		box.union(o.geometry.boundingBox.clone().applyMatrix4(m.multiplyMatrices(inv, o.matrixWorld)));
-	});
+	const box = new THREE.Box3().setFromObject(object);
 	return box.isEmpty() ? null : { min: box.min.toArray(), max: box.max.toArray() };
 }
 
@@ -99,16 +84,12 @@ function commitArrange(objects, plan, what) {
 	return items.length;
 }
 
-/** shift an object's WORLD position by `delta` on `axis` (parent-frame corrected); with a `frame`,
- * along that frame's axis instead of the world's
- * @param {any} object @param {number} axis @param {number} delta @param {THREE.Matrix4 | null} [frame] */
-function shiftWorld(object, axis, delta, frame = null) {
+/** shift an object's WORLD position by `delta` on `axis` (parent-frame corrected)
+ * @param {any} object @param {number} axis @param {number} delta */
+function shiftWorld(object, axis, delta) {
 	if (Math.abs(delta) < 1e-9) return false;
 	const world = object.getWorldPosition(new THREE.Vector3());
-	if (frame) {
-		const dir = new THREE.Vector3().setFromMatrixColumn(frame, axis).normalize();
-		world.addScaledVector(dir, delta);
-	} else world.setComponent(axis, world.getComponent(axis) + delta);
+	world.setComponent(axis, world.getComponent(axis) + delta);
 	object.parent.updateMatrixWorld(true);
 	object.position.copy(object.parent.worldToLocal(world));
 	object.updateMatrixWorld(true);
@@ -118,9 +99,9 @@ function shiftWorld(object, axis, delta, frame = null) {
 /**
  * Align the selection on one axis.
  * @param {'x'|'y'|'z'} axis @param {'min'|'center'|'max'} edge
- * @param {{to?: 'selection'|'active', uuids?: string[], frame?: THREE.Matrix4, label?: string}} [opts] `to: 'active'` lines
- *   everything up with the ACTIVE (last picked) object, which stays; default = the selection's bounds. `frame`
- *   (64-vector-edit): measure and move in that frame's axes (a shape's plane), `label` names the op in the toast
+ * @param {{to?: 'selection'|'active', uuids?: string[], label?: string, box?: Function, shift?: Function}} [opts] `to: 'active'`
+ *   lines everything up with the ACTIVE (last picked) object, which stays; default = the selection's bounds.
+ *   64-vector-edit: `box(object)` / `shift(object, axis, delta)` measure and move in another frame (a shape's plane)
  * @returns {number} objects moved
  */
 export function alignSelection(axis, edge, opts = {}) {
@@ -132,15 +113,15 @@ export function alignSelection(axis, edge, opts = {}) {
 	const a = axisIndex(axis);
 	const toActive = opts.to === 'active';
 	const label = opts.label ?? `Align ${AXIS_NAME[a]} ${edge === 'center' ? 'centre' : edge}${toActive ? ' to active' : ''}`;
-	const frame = opts.frame ?? null;
+	const { box = worldBox, shift = shiftWorld } = opts;
 	return commitArrange(
 		objects,
 		() => {
-			const boxes = objects.map((o) => worldBox(o, frame));
+			const boxes = objects.map((o) => box(o));
 			const keep = boxes.map((b) => !!b); // an empty group has no box: it stays put
 			const deltas = alignDeltas(/** @type {any} */ (boxes.filter(Boolean)), a, edge, toActive ? keep.filter(Boolean).length - 1 : -1);
 			const deltaOf = indexMap(keep, deltas);
-			return (object, i) => shiftWorld(object, a, deltaOf[i], frame);
+			return (object, i) => shift(object, a, deltaOf[i]);
 		},
 		label
 	);
@@ -156,7 +137,7 @@ function indexMap(keep, deltas) {
 /**
  * Distribute 3+ selected objects on one axis (the two outermost stay).
  * @param {'x'|'y'|'z'} axis @param {'centers'|'gaps'} mode
- * @param {{uuids?: string[], frame?: THREE.Matrix4, label?: string}} [opts] @returns {number} objects moved
+ * @param {{uuids?: string[], label?: string, box?: Function, shift?: Function}} [opts] (box / shift: as alignSelection) @returns {number} objects moved
  */
 export function distributeSelection(axis, mode, opts = {}) {
 	const objects = arrangeTargets(opts.uuids);
@@ -165,14 +146,14 @@ export function distributeSelection(axis, mode, opts = {}) {
 		return 0;
 	}
 	const a = axisIndex(axis);
-	const frame = opts.frame ?? null;
+	const { box = worldBox, shift = shiftWorld } = opts;
 	return commitArrange(
 		objects,
 		() => {
-			const boxes = objects.map((o) => worldBox(o, frame));
+			const boxes = objects.map((o) => box(o));
 			const keep = boxes.map((b) => !!b);
 			const deltaOf = indexMap(keep, distributeDeltas(/** @type {any} */ (boxes.filter(Boolean)), a, mode));
-			return (object, i) => shiftWorld(object, a, deltaOf[i], frame);
+			return (object, i) => shift(object, a, deltaOf[i]);
 		},
 		opts.label ?? `Distribute ${AXIS_NAME[a]} ${mode === 'gaps' ? 'gaps' : 'centres'}`
 	);

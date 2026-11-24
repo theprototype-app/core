@@ -3,7 +3,7 @@
 //
 // ALIGN: the world-axis Align rows (47 M2) read "X min" on a shape drawn on a tilted wall as nonsense,
 // so the shape rows measure and move in the ACTIVE shape's frame — its right is "left / right", its up
-// "top / bottom". The arithmetic and the one-undo, one-batch commit are align.js's own (`frame`).
+// "top / bottom". The arithmetic and the one-undo, one-batch commit are align.js's own (its `box` / `shift` seam).
 // ORDER: see the layer-order section below.
 import * as THREE from 'three';
 import { get } from 'svelte/store';
@@ -54,6 +54,34 @@ export function planeShapes(uuids) {
 	return shapes.filter((o) => 1 - Math.abs(normalOf(o).dot(n)) < PARALLEL);
 }
 
+/** measure and move in a frame (the active shape's plane): its x / y are the plane's right / up
+ * @param {THREE.Matrix4} frame @returns {{box: (o: any) => any, shift: (o: any, axis: number, delta: number) => boolean}} */
+function inFrame(frame) {
+	const inv = frame.clone().invert();
+	return {
+		box(object) {
+			object.updateMatrixWorld(true);
+			const box = new THREE.Box3();
+			const m = new THREE.Matrix4();
+			object.traverse((/** @type {any} */ o) => {
+				if (!o.geometry) return;
+				if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+				if (o.geometry.boundingBox.isEmpty()) return;
+				box.union(o.geometry.boundingBox.clone().applyMatrix4(m.multiplyMatrices(inv, o.matrixWorld)));
+			});
+			return box.isEmpty() ? null : { min: box.min.toArray(), max: box.max.toArray() };
+		},
+		shift(object, axis, delta) {
+			if (Math.abs(delta) < 1e-9) return false;
+			const world = object.getWorldPosition(new THREE.Vector3()).addScaledVector(new THREE.Vector3().setFromMatrixColumn(frame, axis).normalize(), delta);
+			object.parent.updateMatrixWorld(true);
+			object.position.copy(object.parent.worldToLocal(world));
+			object.updateMatrixWorld(true);
+			return true;
+		}
+	};
+}
+
 /** the align rows a menu offers: [id, label, frame axis, edge] */
 export const PLANE_ALIGN = /** @type {const} */ ([
 	['left', 'Left', 'x', 'min'],
@@ -76,7 +104,7 @@ export function alignInPlane(id, uuids) {
 		return 0;
 	}
 	const frame = planeFrameOf(shapes[shapes.length - 1]);
-	return alignSelection(row[2], row[3], { uuids: shapes.map((o) => o.uuid), frame, label: `Align ${row[1].toLowerCase()}` });
+	return alignSelection(row[2], row[3], { uuids: shapes.map((o) => o.uuid), ...inFrame(frame), label: `Align ${row[1].toLowerCase()}` });
 }
 
 /**
@@ -90,7 +118,7 @@ export function distributeInPlane(dir, uuids) {
 		return 0;
 	}
 	const frame = planeFrameOf(shapes[shapes.length - 1]);
-	return distributeSelection(dir === 'h' ? 'x' : 'y', 'gaps', { uuids: shapes.map((o) => o.uuid), frame, label: dir === 'h' ? 'Distribute across' : 'Distribute up' });
+	return distributeSelection(dir === 'h' ? 'x' : 'y', 'gaps', { uuids: shapes.map((o) => o.uuid), ...inFrame(frame), label: dir === 'h' ? 'Distribute across' : 'Distribute up' });
 }
 
 /* ------------------------------------------------------------ layer order ---- */

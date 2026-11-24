@@ -534,6 +534,23 @@ function logSlowWait(what, t0, localMs, ciMs) {
 	if (ms > localMs) console.log(`[helpers] slow wait: ${what} took ${(ms / 1000).toFixed(1)} s (local limit ${localMs / 1000} s, CI limit ${ciMs / 1000} s)`);
 }
 
+/** a suite's EXPLICIT short timeout, on CI only: CI_WAIT_SCALE times it, capped at CI_DEFAULT_TIMEOUT_MS (never below
+ * `ms`); locally `ms` unchanged. Applied one call site at a time, where a CI run showed that wait (deps-2026-11: no sweep).
+ * @param {number} ms */
+const ciTimeout = (ms) => (BATTERY_CI ? Math.max(ms, Math.min(ms * CI_WAIT_SCALE, CI_DEFAULT_TIMEOUT_MS)) : ms);
+
+/**
+ * Run one wait under `ciTimeout(ms)` and LOG it when it used the extra time (`[helpers] slow wait`), like every
+ * other CI allowance — e.g. `await h.ciWait('item visible', 5000, (timeout) => loc.waitFor({ state: 'visible', timeout }))`.
+ * @template T @param {string} label @param {number} ms @param {(timeout: number) => Promise<T>} wait @returns {Promise<T>}
+ */
+async function ciWait(label, ms, wait) {
+	const t0 = Date.now();
+	const result = await wait(ciTimeout(ms));
+	if (BATTERY_CI) logSlowWait(label, t0, ms, ciTimeout(ms));
+	return result;
+}
+
 let slowWaitsWrapped = false;
 /**
  * CI: time every frame-level action and wait that runs on Playwright's DEFAULT timeout (page.click, locator.click —
@@ -1494,4 +1511,4 @@ function t(page) {
 	};
 }
 
-module.exports = { t, URL, coverageKey, openDial, GPU_ARGS, N6_UA, PATIENT_CLICK_MS, BATTERY_CI, SLOW_RUNNER_FPS, APPROVE_LABEL, approveButton, watchPress, check, launch, setupPage, setupPageQuiet, connect, leavePlay, eventually, caughtUp, eventuallyAfter, projectPoint, freshReload, answerRestore, closePeer, finish, run, installModule, moduleZipPath, makeCollectibleChains, pageErrors, externalErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta, routeSkies, SKIES_DIR, openWsMode };
+module.exports = { t, URL, coverageKey, openDial, GPU_ARGS, N6_UA, PATIENT_CLICK_MS, BATTERY_CI, SLOW_RUNNER_FPS, ciTimeout, ciWait, APPROVE_LABEL, approveButton, watchPress, check, launch, setupPage, setupPageQuiet, connect, leavePlay, eventually, caughtUp, eventuallyAfter, projectPoint, freshReload, answerRestore, closePeer, finish, run, installModule, moduleZipPath, makeCollectibleChains, pageErrors, externalErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta, routeSkies, SKIES_DIR, openWsMode };

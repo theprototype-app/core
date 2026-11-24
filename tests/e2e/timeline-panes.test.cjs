@@ -68,7 +68,8 @@ async function sequenceTab(page) {
 
 async function openTimeline(page) {
 	await page.evaluate(() => window.__tp.test.v1.timelineClose.set(false));
-	await page.waitForSelector('#timeline-sequences', { timeout: 15000 });
+	// deps-2026-11: a CI page at 0.6 fps answered this after 15 s with the list already visible (run 45291801654)
+	await h.ciWait('openTimeline #timeline-sequences', 15000, (timeout) => page.waitForSelector('#timeline-sequences', { timeout }));
 }
 
 /** no element of the timeline pokes out sideways */
@@ -139,7 +140,8 @@ h.run(async () => {
 	// ---------- 3. the Item tab ----------
 	console.log('\n=== 3. picking an item opens Properties ▸ Item ===');
 	const ev = pa.locator(`.tl-item[data-item-id="${ids.item}"]`);
-	await ev.waitFor({ state: 'visible', timeout: 5000 });
+	// deps-2026-11: 5 s ran out on a 0.6 fps CI page (run 45291801654); h.ciWait stretches it on CI only, logged
+	await h.ciWait('the event item is visible', 5000, (timeout) => ev.waitFor({ state: 'visible', timeout }));
 	await ev.click();
 	await h.eventually(() => pane(pa), (p) => p.mode === 'item' && p.inspector, 'the pick brings the Item tab forward with the item’s fields');
 	await pa.locator('#timeline-item-event').fill('go');

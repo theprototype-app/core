@@ -77,6 +77,6 @@ describe('battery shards: longest first onto the least-loaded shard', () => {
 		expect(shardCount(battery(Object.fromEntries(Array.from({ length: 99 }, (_, i) => ['s' + i, 600]))))).toBe(20);
 	});
 	it('counts pass/fail lines the way the integrators battery does', () => {
-		expect(counts('  ✓ one\n  ✗ two\nPASS three\n\nlast line\n')).toEqual({ pass: 2, fail: 1, last: 'last line' });
+		expect(counts('  ✓ one\n  ✗ two\nPASS three\n\nlast line\n')).toMatchObject({ pass: 2, fail: 1, last: 'last line', slow: false, slowWaits: 0 });
 	});
 });

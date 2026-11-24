@@ -4,7 +4,6 @@
 // the app (the renderer, scene, camera, the toast) is handed over here as `ctx`, which keeps its
 // preload list (its static import closure) a handful of files instead of the whole app.
 import { get } from 'svelte/store';
-import { mount } from 'svelte';
 import { deviceClass, browserSaysMobile } from '../deviceClass.js';
 import { isVRMode, globalRenderer, globalScene, globalCamera } from '../../stores/sceneStore';
 import { showToast } from '../../stores/appStore';
@@ -57,20 +56,14 @@ export function probeCinematic() {
 		}
 		const v = offerVerdict(facts);
 		cinematicState.update((s) => ({ ...s, offered: v.offered, why: v.why }));
-		if (v.offered) mountSwitch();
 		return v.offered;
 	})();
 	return probing;
 }
 
-let switchMounted = false;
-
-/** the switch, downloaded and mounted only where the view is offered (it hides itself in VR, embeds, locks) */
-function mountSwitch() {
-	if (switchMounted || typeof document === 'undefined') return;
-	switchMounted = true;
-	void import('../../components/cinematic/CinematicSwitch.svelte').then((m) => mount(m.default, { target: document.body }));
-}
+// 103 H11: no switch to mount any more — the Preview pill (components/preview/PreviewPill.svelte, lazy,
+// mounted by Menu.svelte on every non-phone editor screen) reads `cinematicState.offered` and lights its
+// "Preview" part as the switch wherever the view is offered.
 
 /** what the lazy switch needs from the app */
 function ctx() {

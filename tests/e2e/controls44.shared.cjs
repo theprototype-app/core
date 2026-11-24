@@ -45,8 +45,8 @@ async function closeMenus(page) {
  * corner stacks stand. Before H15 (no --hud-inset) the numbers were the row at 78, stacked at 14, the stacks 16 in. */
 async function hudPlaces(page) {
 	return page.evaluate(() => {
-		const cs = getComputedStyle(document.documentElement);
-		const px = (n) => parseFloat(cs.getPropertyValue(n));
+		// the numbers are calc(Npx * var(--ui-scale)) after the UI-scale transform: measure them, never parseFloat
+		const px = (n) => { if (!getComputedStyle(document.documentElement).getPropertyValue(n).trim()) return NaN; const d = document.createElement('div'); d.style.cssText = 'position:absolute;visibility:hidden;width:var(' + n + ')'; document.body.appendChild(d); const w = d.getBoundingClientRect().width; d.remove(); return w; };
 		const inset = px('--hud-inset');
 		if (!Number.isFinite(inset)) return { row: 78, stacked: 14, corner: 16 };
 		return { row: inset + px('--hud-tile') + px('--hud-gap'), stacked: inset, corner: inset };

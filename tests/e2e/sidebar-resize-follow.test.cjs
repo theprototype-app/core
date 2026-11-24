@@ -92,14 +92,17 @@ h.run(async () => {
 				// one sampler per side: the previous side's loop still has a frame queued when __k1On flips back on,
 				// and without its own generation it kept pushing the OTHER column into this side's samples (43-int)
 				const gen = (window.__k1Gen = (window.__k1Gen || 0) + 1);
+				// 103 H15: the logo stands --hud-inset in from the free edge (8 px before the HUD grid); the value is
+				// calc(12px * var(--ui-scale)) after the UI-scale transform, so it is measured once, not parsed
+				const px0 = (n) => { if (!getComputedStyle(document.documentElement).getPropertyValue(n).trim()) return NaN; const d = document.createElement('div'); d.style.cssText = 'position:absolute;visibility:hidden;width:var(' + n + ')'; document.body.appendChild(d); const w = d.getBoundingClientRect().width; d.remove(); return w; };
+				const inset0 = px0('--hud-inset');
+				const inset = Number.isFinite(inset0) ? inset0 : 8;
 				const t = () => {
 					if (!window.__k1On || window.__k1Gen !== gen) return;
 					const col = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(`--sb-${side}-w`));
 					const logo = document.querySelector('.burger')?.getBoundingClientRect();
-					// 103 H15: the logo stands --hud-inset in from the free edge (8 px before the HUD grid)
-					const inset = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--hud-inset'));
 					const tr = document.querySelector('.top-right-chrome')?.getBoundingClientRect();
-					window.__k1.push({ col, inset: Number.isFinite(inset) ? inset : 8, logo: logo ? logo.left : null, trRight: tr ? window.innerWidth - tr.right : null });
+					window.__k1.push({ col, inset, logo: logo ? logo.left : null, trRight: tr ? window.innerWidth - tr.right : null });
 					requestAnimationFrame(t);
 				};
 				requestAnimationFrame(t);

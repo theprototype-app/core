@@ -33,7 +33,9 @@ const TOL = 0.001;
  */
 function landDiff(a1, a2, b1, b2, b3, c1) {
 	const near = (x, y, i) =>
-		Math.abs(x[i] - y[i]) <= 2 && Math.abs(x[i + 1] - y[i + 1]) <= 2 && Math.abs(x[i + 2] - y[i + 2]) <= 2;
+		Math.abs(x[i] - y[i]) <= 2 &&
+		Math.abs(x[i + 1] - y[i + 1]) <= 2 &&
+		Math.abs(x[i + 2] - y[i + 2]) <= 2;
 	let land = 0;
 	let n = 0;
 	for (let i = 0; i < a1.length; i += 4) {
@@ -455,7 +457,10 @@ h.run(async () => {
 					ctrlNote += `; LAND ONLY (base self-diff masked) ${(ld.share * 100).toFixed(3)} % of ${(ld.land * 100).toFixed(1)} % of the frame`;
 					if (LAND_ONLY.includes(slug)) {
 						ctrlOk = ld.land >= 0.2 && ld.share <= TOL;
-						h.check(ctrlOk, `${slug}: LAND ONLY A vs B ${(ld.share * 100).toFixed(3)} % <= ${(TOL * 100).toFixed(1)} % on ${(ld.land * 100).toFixed(1)} % of the frame (the water's base-vs-base pixels masked)`);
+						h.check(
+							ctrlOk,
+							`${slug}: LAND ONLY A vs B ${(ld.share * 100).toFixed(3)} % <= ${(TOL * 100).toFixed(1)} % on ${(ld.land * 100).toFixed(1)} % of the frame (the water's base-vs-base pixels masked)`
+						);
 					}
 				} else ctrlNote = `; CONTROL page did not load the scene (${lc.ok})`;
 			} catch (err) {

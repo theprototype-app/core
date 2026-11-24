@@ -173,8 +173,22 @@
 	/** @type {HTMLElement | undefined} */
 	let menuEl = $state();
 	let menuPos = $state({ top: 0, right: 16, bottom: /** @type {number | null} */ (null) });
-	function toggleMenu() {
+	// the menu reads the Cinematic view's rules (cinematicCore), so it is its own chunk (100-int's gate: a headset
+	// downloads nothing of the view): fetched on the first open, BEFORE the box shows, so it never opens empty
+	/** @type {any} */
+	let MenuView = $state(null);
+	let menuLoading = false;
+	async function toggleMenu() {
 		if (menuOpen) return void (menuOpen = false);
+		if (!MenuView) {
+			if (menuLoading) return;
+			menuLoading = true;
+			try {
+				MenuView = (await import('./PreviewMenu.svelte')).default;
+			} finally {
+				menuLoading = false;
+			}
+		}
 		const r = pill?.getBoundingClientRect();
 		if (r && !r.width) {
 			// hidden (Hide this button) and asked from Configure scene: open where the pill would be
@@ -217,7 +231,7 @@
 		const n = $previewMenuAsk;
 		if (n === asked) return;
 		asked = n;
-		if (!menuOpen) toggleMenu();
+		if (!menuOpen) void toggleMenu();
 	});
 
 	onMount(() => {
@@ -302,7 +316,7 @@
 	</div>
 	{#if menuOpen}
 		<div bind:this={menuEl} use:minimalScroll id="preview-menu" class="pp-menu tp-ui" style:top={menuPos.bottom === null ? menuPos.top + 'px' : 'auto'} style:bottom={menuPos.bottom === null ? 'auto' : menuPos.bottom + 'px'} style:right={menuPos.right + 'px'}>
-			{#await import('./PreviewMenu.svelte') then m}<m.default judge {cine} onclose={() => (menuOpen = false)} />{/await}
+			{#if MenuView}<MenuView judge {cine} onclose={() => (menuOpen = false)} />{/if}
 		</div>
 	{/if}
 {/if}

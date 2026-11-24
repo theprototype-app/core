@@ -206,6 +206,21 @@
 				"92-menus #634": "+4.3 / +5.1",
 				"92-int glue (lazy pause / settings / save panels)": "-4.9 / -4.8"
 			}
+		},
+		{
+			"date": "2026-11-24",
+			"lane": "99-int (roadmap 99 mesh kernel K2-K6 on v1.77.0: core #597 stack with #594/#596, #624 99-live, #619 fix-late-joiners, agent tool dependencies; #620 dedupes with the tag)",
+			"play": "v1.77.0 1887.8 KB -> union on v1.77.0 1887.0 KB (-0.8) -> line 1890 KB unchanged (the int rule: the merged tag + the union sum, rounded up to the next 5 KB)",
+			"editor": "v1.77.0 3006.9 KB -> union on v1.77.0 3006.1 KB (-0.8) -> line 3010 KB unchanged (the same rule)",
+			"note": "set ONCE. Measured on the Deck: v1.77.0 (base worktree) and the union 2dd627c2 built one after the other, each with its own npm ci. The kernel's lazy operators (K4) take more off boot than 99-live's in-place edits and the spatial hash add; #620's +2.1 / +1.6 is already in the tag.",
+			"perLane": {
+				"basis": "each first-parent merge of the union chain built on v1.75.1 (play / editor KB, gzip -9)",
+				"597-stack K2-K4 (#594 #596 #597)": "-6.9 / -6.9",
+				"624 99-live K5-K6": "+6.1 / +6.1",
+				"619 fix-late-joiners": "+1.5 / +1.6",
+				"620 92-correct": "+2.1 / +1.6 (in v1.77.0 already)",
+				"deps-fix agent-security": "+0.1 / +0.4 (chunk churn)"
+			}
 		}
 	],
 	"throttle": {

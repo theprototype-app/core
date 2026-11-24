@@ -141,15 +141,26 @@ export function applyGeometry(uuid, patch, options = {}) {
 	delete object.userData.faceEdited;
 	pokeScene();
 	if (record) recordEntry({ kind: 'geometry', uuid, before, after: { gtype, params } });
-	if (replicate) {
-		/** @type {any} */
-		const peer = get(peers);
-		if (peer) peer.send({ type: 'geometry', uuid, gtype, params });
-		// 64-extrude: a peer without vector shapes gets the mesh itself, once the change settles
-		if (peer && gtype === 'Vector')
-			void import('./vector/vectorOldPeers.js').then((m) => m.scheduleOldPeerSolid(uuid));
-	}
+	if (replicate) replicateGeometry(uuid);
 	return true;
+}
+
+/**
+ * Send an object's current params to the peers (what `applyGeometry` does after a rebuild; a caller
+ * that rebuilt with `replicate: false` — the extrude drag on a heavy record — sends here, less often).
+ * @param {string} uuid
+ */
+export function replicateGeometry(uuid) {
+	/** @type {any} */
+	const peer = get(peers);
+	if (!peer) return;
+	const object = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+	const current = object && geometryParamsOf(object);
+	if (!current) return;
+	peer.send({ type: 'geometry', uuid, gtype: current.gtype, params: current.params });
+	// 64-extrude: a peer without vector shapes gets the mesh itself, once the change settles
+	if (current.gtype === 'Vector')
+		void import('./vector/vectorOldPeers.js').then((m) => m.scheduleOldPeerSolid(uuid));
 }
 
 /** Receive-side applier @param {any} data */
@@ -214,7 +225,17 @@ registerHistoryMerge('geometry', {
 		top.after = next.after;
 		return true;
 	},
-	noop: (entry) => sameJson(entry.before, entry.after)
+	// a drag folds every frame: a top-level value that differs settles it without stringifying the record
+	// (a 2 000-point path is a large JSON)
+	noop: (entry) => {
+		const a = entry.before?.params;
+		const b = entry.after?.params;
+		if (entry.before?.gtype !== entry.after?.gtype) return false;
+		if (a && b)
+			for (const k of Object.keys(b))
+				if (a[k] !== b[k] && (typeof a[k] !== 'object' || typeof b[k] !== 'object')) return false;
+		return sameJson(entry.before, entry.after);
+	}
 });
 
 export { GEOMETRY_PARAMS };

@@ -384,9 +384,10 @@ h.run(async () => {
 			};
 			window.__frameRaf = requestAnimationFrame(loop);
 			window.__long = [];
+			window.__t0 = performance.now();
 			try {
 				window.__lto = new PerformanceObserver((l) =>
-					l.getEntries().forEach((e) => window.__long.push(e.duration))
+					l.getEntries().forEach((e) => window.__long.push([e.startTime - window.__t0, e.duration]))
 				);
 				window.__lto.observe({ entryTypes: ['longtask'] });
 			} catch {}
@@ -396,7 +397,15 @@ h.run(async () => {
 			cancelAnimationFrame(window.__frameRaf);
 			window.__lto?.disconnect();
 			const f = window.__frames.slice(2);
-			return { frames: f.length, worst: Math.max(...f), long: Math.max(0, ...window.__long) };
+			// the longest task and when it began (ms after the watch started; the press follows at once)
+			const top = window.__long.reduce((m, e) => (e[1] > m[1] ? e : m), [0, 0]);
+			return {
+				frames: f.length,
+				worst: Math.max(...f),
+				long: top[1],
+				at: Math.round(top[0]),
+				n: window.__long.length
+			};
 		});
 	const builds = () => A.page.evaluate(() => window.__tp.test.v1.vectorMesh.vectorMeshDebug());
 	const posOf = (u) =>
@@ -418,7 +427,7 @@ h.run(async () => {
 	);
 	h.check(
 		f6.long < 50,
-		`§6 the 64-point star drag blocks no frame for 50 ms or more (longest task ${f6.long.toFixed(0)} ms, worst frame ${f6.worst.toFixed(0)} ms over ${f6.frames}; ${b6e.fullBuilds - b6.fullBuilds} full + ${b6e.fastBuilds - b6.fastBuilds} depth-only builds)`
+		`§6 the 64-point star drag blocks no frame for 50 ms or more (longest task ${f6.long.toFixed(0)} ms at +${f6.at} ms of ${f6.n} long, worst frame ${f6.worst.toFixed(0)} ms over ${f6.frames}; ${b6e.fullBuilds - b6.fullBuilds} full + ${b6e.fastBuilds - b6.fastBuilds} depth-only builds)`
 	);
 	const path = await A.page.evaluate(() => {
 		const nodes = Array.from({ length: 2000 }, (_, i) => {
@@ -451,7 +460,14 @@ h.run(async () => {
 	const f6b = await read();
 	h.check(
 		f6b.long < 100,
-		`§6 a depth drag on the 2 000-point path blocks no frame for 100 ms or more (longest task ${f6b.long.toFixed(0)} ms, worst frame ${f6b.worst.toFixed(0)} ms)`
+		`§6 a depth drag on the 2 000-point path blocks no frame for 100 ms or more (longest task ${f6b.long.toFixed(0)} ms at +${f6b.at} ms of ${f6b.n} long, worst frame ${f6b.worst.toFixed(0)} ms)`
+	);
+	// a heavy record's drag goes on the wire every ~120 ms and once on release: B ends on the same depth
+	const dA = depthOf(await facts(A.page, path.uuid));
+	await h.eventually(
+		() => facts(B.page, path.uuid),
+		(f) => f && Math.abs(depthOf(f) - dA) < 1e-9 && dA > 0.2,
+		`§6 B ends on the 2 000-point path's dragged depth (${dA?.toFixed(3)}; throttled sends + the release)`
 	);
 
 	// ---- §7 Escape ---------------------------------------------------------------------

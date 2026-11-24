@@ -28,7 +28,7 @@ import {
 import { registerModulePointer } from '../modulePointer';
 import { withHistoryGesture } from '../historyGesture';
 import { heldByOther } from '../lockHeld';
-import { applyGeometry } from '../geometryEdit';
+import { applyGeometry, replicateGeometry } from '../geometryEdit';
 import { setTextPathFor } from '../textPathEdit';
 import { normalizeTextPath, isBlockText } from '../textPathCore.js';
 import { editingObject } from '../meshEdit';
@@ -40,6 +40,9 @@ const ARROW_PX = 46;
 const GRAB_PX = 11;
 /** the deepest a drag goes (the record's own caps are 50 m) */
 const MAX_DEPTH = 50;
+/** a record with more path nodes than this is "heavy": its drag goes on the wire at most every WIRE_MS */
+const HEAVY_NODES = 300;
+const WIRE_MS = 120;
 const COLOR = 0xffb84f;
 const COLOR_HOT = 0xffffff;
 
@@ -50,7 +53,7 @@ let rafId = 0;
 let hot = false;
 /**
  * the drag in flight
- * @type {null | {uuid: string, kind: 'vector' | 'text', start: number, depth: number, x0: number, y0: number, ux: number, uy: number, worldPerPx: number, perLocal: number, token: object, pending: number | null}}
+ * @type {null | {uuid: string, kind: 'vector' | 'text', start: number, depth: number, x0: number, y0: number, ux: number, uy: number, worldPerPx: number, perLocal: number, token: object, pending: number | null, heavy: boolean, sentAt: number, unsent: boolean}}
  */
 let drag = null;
 
@@ -235,6 +238,14 @@ function placeHelper() {
 
 /* --------------------------------------------------------------- pointer ---- */
 
+/** how many path nodes a shape's record holds @param {any} o @returns {number} */
+function nodesOf(o) {
+	const paths = o?.userData?.geometryParams?.params?.paths;
+	let n = 0;
+	if (Array.isArray(paths)) for (const sp of paths) n += sp?.nodes?.length ?? 0;
+	return n;
+}
+
 /** is the press on the arrow? @param {number} cx @param {number} cy */
 function onArrow(cx, cy) {
 	if (!target) return false;
@@ -261,7 +272,10 @@ function onDown(_hit, ctx) {
 		...screenAxis(foot, dir),
 		perLocal,
 		token: {},
-		pending: null
+		pending: null,
+		heavy: kind === 'vector' && nodesOf(o) > HEAVY_NODES,
+		sentAt: -Infinity,
+		unsent: false
 	};
 	holdGizmo(true);
 	if (typeof window !== 'undefined') window.addEventListener('keydown', onKeydown, true);
@@ -319,7 +333,14 @@ function flush() {
  */
 export function setDepth(uuid, kind, depth, token = null) {
 	return withHistoryGesture(token, () => {
-		if (kind === 'vector') return applyGeometry(uuid, { depth });
+		if (kind === 'vector') {
+			// a heavy record (a long path) rebuilds every frame but goes on the wire at most every
+			// WIRE_MS while the drag lasts (its record is a large message), and once on release
+			const throttle = !!drag && drag.uuid === uuid && drag.heavy;
+			const ok = applyGeometry(uuid, { depth }, { replicate: !throttle });
+			if (ok && throttle) sendThrottled(false);
+			return ok;
+		}
 		// a text below a millimetre is flat (its record's floor); above it, solid at that depth
 		return !!setTextPathFor(uuid, depth < 0.001 ? { mode: 'flat' } : { mode: 'extruded', depth });
 	});
@@ -331,7 +352,23 @@ function onUp() {
 	endDrag();
 }
 
+/** heavy drag: send now if WIRE_MS passed (or `final`), else leave it for the next frame or the release
+ * @param {boolean} final */
+function sendThrottled(final) {
+	if (!drag?.heavy) return;
+	const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+	if (!final && now - drag.sentAt < WIRE_MS) {
+		drag.unsent = true;
+		return;
+	}
+	if (final && !drag.unsent) return;
+	drag.sentAt = now;
+	drag.unsent = false;
+	replicateGeometry(drag.uuid);
+}
+
 function endDrag() {
+	sendThrottled(true);
 	drag = null;
 	holdGizmo(false);
 	if (typeof window !== 'undefined') window.removeEventListener('keydown', onKeydown, true);

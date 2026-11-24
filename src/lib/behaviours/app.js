@@ -26,8 +26,8 @@
 import * as THREE from 'three';
 import { get, writable } from 'svelte/store';
 import { flowGraphs, allNodes } from '../../stores/flowStore';
-import { peers, loading as syncBatch } from '../../stores/appStore';
-import { objectsGroup } from '../../stores/sceneStore';
+import { peers, loading as syncBatch, peerPlayModes } from '../../stores/appStore';
+import { objectsGroup, isLocked } from '../../stores/sceneStore';
 import { sessionNow } from '../sessionClock';
 import { sessionHost } from '../connectionState';
 import { sceneLoad } from '../sceneLoader';
@@ -81,8 +81,24 @@ const _p = new THREE.Vector3();
 /** @param {any} o */
 const tagsOfObject = (o) => (Array.isArray(o?.userData?.tags) ? o.userData.tags.map(String) : []);
 
+/** 92-correct row 3: who is in Play — this peer when playing, and every OPEN peer whose `playmode`
+ * says playing (gamePresence's rule; never the dial-time roster) @returns {string[]} */
+function playersInPlay() {
+	/** @type {string[]} */
+	const out = [];
+	const mine = me();
+	if (mine && get(isLocked) === true) out.push(mine);
+	/** @type {any} */
+	const p = get(peers);
+	const open = p?.openedPeers ? [...p.openedPeers] : [];
+	const modes = /** @type {Record<string, string>} */ (get(peerPlayModes) ?? {});
+	for (const id of open) if (modes[id] === 'playing') out.push(String(id));
+	return out;
+}
+
 export const runtime = createBehaviourRuntime({
 	me,
+	players: playersInPlay,
 	now: sessionNow,
 	isAuthority: () => {
 		const id = me();

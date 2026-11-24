@@ -118,7 +118,7 @@
 	import { removeVariadicSocket, setSwitcherType, addSwitcherItem } from '$lib/variadicEdit.js'; // 37 (R6)
 	import KitButton from '../ui/Button.svelte'; // 37: the Switcher ⓘ rows on the redesign kit
 	import { moduleNodeGroups, moduleNodeComponents } from '$lib/moduleSDK';
-	import { peers, username, modulesOpen, flowFocus, showToast } from '../../stores/appStore';
+	import { peers, username, modulesOpen, flowFocus, showToast, showToastById } from '../../stores/appStore';
 	import { conversionState } from '$lib/nodes/convertState.js'; // 2.0-int: the applier (convertToCode) loads on the first Convert
 	import { safeStorage } from '$lib/safeStorage';
 	// 48 D1: the node graph debugger — LOCAL breakpoints (a red dot on the card) + the panel
@@ -855,6 +855,8 @@
 		// H1: adding a node to a selected object that has no flow yet CREATES the flow
 		// implicitly (replicated + undoable) — commitCreate does it; 36 U11: undoable too
 		commitCreate([newNode]);
+		// 92-dialogue (GC7): the first Dialogue this person adds says how to write it, once (lazy)
+		if (type === 'dialogue') void import('$lib/dialogue/hint.js').then((h) => h.dialogueHintOnce({ show: showToastById }));
 	}
 
 	// Touch has no HTML5 drag-and-drop, so a palette TAP adds the node at the flow

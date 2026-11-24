@@ -40,6 +40,7 @@ import { kit } from './runtime.js';
 import { setEntityHost, entitiesOfKit } from './entityHub.js';
 import { renderPos } from './entityCore.js';
 import { kitNodeType } from './spec.js';
+import { registerCopy, unregisterCopy } from '../copyRegistry.js'; // 92-correct row 2: a leaf
 
 /** the scene-root group every peer draws its entity copies in */
 export const KIT_ENTITY_GROUP = 'kit-entities';
@@ -255,6 +256,8 @@ function draw() {
 			copy = makeCopy(e);
 			drawn.set(e.id, copy);
 			group.add(copy);
+			// 92-correct row 2: the entity runs its template's event flow ("this object" = the entity)
+			if (e.tpl) registerCopy(e.id, e.tpl);
 		}
 		const p = auth ? e.pos : renderPos(e, t, outPos);
 		copy.position.set(p[0], p[1], p[2]);
@@ -270,6 +273,7 @@ function draw() {
 		if (r.store.ents.has(id)) continue;
 		copy.parent?.remove(copy);
 		drawn.delete(id);
+		unregisterCopy(id);
 		stats.removed++;
 	}
 	stats.drawn = drawn.size;
@@ -278,6 +282,7 @@ function draw() {
 /** drop every drawn copy (a scene clear) */
 function clearDrawn() {
 	for (const copy of drawn.values()) copy.parent?.remove(copy);
+	for (const id of drawn.keys()) unregisterCopy(id);
 	drawn.clear();
 	rt()?.reset();
 }

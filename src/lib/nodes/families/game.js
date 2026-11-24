@@ -296,13 +296,18 @@ export default {
 				{ key: 'max', kind: 'number', min: 0, max: 100000, step: 1 },
 				{ key: 'prefix', kind: 'text', placeholder: 'Coins ', maxLength: 40 },
 				{ key: 'suffix', kind: 'text', placeholder: ' pts', maxLength: 40 },
-				{ key: 'empty', kind: 'text', label: 'when empty', placeholder: 'not cleared yet', maxLength: 60 }
+				{ key: 'empty', kind: 'text', label: 'when empty', placeholder: 'not cleared yet', maxLength: 60 },
+				// 92-correct row 3: PER-PLAYER output. `me` takes this player's entry out of a value keyed by
+				// peer id (a behaviour's `team: {<peer>: 'Red'}`, a variable holding such a map), so one shared,
+				// synced map shows each person their own team or score. Absent = everyone (byte-unchanged).
+				{ key: 'who', kind: 'select', options: ['everyone', 'me'], label: 'for', doc: 'everyone = the value as it is; me = your own entry of a per-player value (a map keyed by player)' }
 			],
-			note: 'Reads a game value and writes it as text for HUD Text; the value output feeds HUD Bar.',
+			note: 'Reads a game value and writes it as text for HUD Text; the value output feeds HUD Bar. For: me shows each player their own entry of a per-player value.',
 			sockets: { out: 'any', in: { value: 'any', max: 'number' }, outHandles: { value: 'number', max: 'number' } },
 			card: 'AnimationNode',
 			eval(node, { d, input }, rt) {
 				const read = readGameValue(String(d.read ?? 'score'), String(d.name ?? '').trim(), input, rt);
+				if (d.who === 'me') read.value = entryFor(read.value, rt.myPeerId?.() ?? '');
 				const wiredMax = input('max', undefined);
 				const max = wiredMax !== undefined && wiredMax !== null && wiredMax !== '' ? rt.num(wiredMax) : read.max ?? rt.num(d.max ?? 0);
 				const text = formatGameValue(read.value, { format: d.format, decimals: d.decimals, max, prefix: d.prefix, suffix: d.suffix, empty: d.empty });
@@ -630,6 +635,25 @@ export default {
 };
 
 
+
+/**
+ * 92-correct row 3: this player's entry of a per-player value — an object keyed by peer id (a JSON
+ * text of one too: a wire or a variable may carry it as text). Anything else is shown as it is.
+ * @param {any} value @param {string} me
+ */
+export function entryFor(value, me) {
+	let v = value;
+	if (typeof v === 'string' && v.startsWith('{')) {
+		try {
+			v = JSON.parse(v);
+		} catch {
+			return value;
+		}
+	}
+	if (!v || typeof v !== 'object' || Array.isArray(v)) return value;
+	const mine = me ? v[me] : undefined;
+	return mine === undefined || mine === null ? '' : mine;
+}
 
 /**
  * One Game Value read: `{value, max}` (max null = the node's own setting).

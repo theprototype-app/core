@@ -276,6 +276,7 @@ async function setupPage(browser, name, options = {}) {
 	if (options.route) await ctx.route(options.route[0], options.route[1]);
 	const page = await ctx.newPage();
 	if (BATTERY_CI) wrapSlowWaits(page);
+	if (PAUSE_IDLE) trackIdlePage(page, name);
 	if (COVERAGE) {
 		// resetOnNavigation off: a suite's reloads (freshReload, a hash change) keep counting into one record
 		await page.coverage.startJSCoverage({ resetOnNavigation: false });
@@ -373,6 +374,8 @@ async function setupPage(browser, name, options = {}) {
  * @param {any} browser @param {string} name @param {any[]} others @param {any=} options
  */
 async function setupPageQuiet(browser, name, others, options = {}) {
+	// ci-speed: under PAUSE_IDLE the others are already paused while the new page boots (it is the page being driven)
+	if (PAUSE_IDLE) return setupPage(browser, name, options);
 	for (const peer of others) await peer.page.evaluate(() => window.__tp.test.v1.overloadGuard.pauseRendering('e2e: another page boots'));
 	try {
 		return await setupPage(browser, name, options);
@@ -581,6 +584,134 @@ async function ciWait(label, ms, wait) {
 	const result = await wait(ciTimeout(ms));
 	if (BATTERY_CI) logSlowWait(label, t0, ms, ciTimeout(ms));
 	return result;
+}
+
+/**
+ * PAUSE THE PAGES A STEP IS NOT DRIVING (ci-speed, card ci-pause-idle-pages). A multi-page suite on a GitHub runner has
+ * two or three pages rendering SwiftShader on the same few vCPUs, so the page a step drives gets a fraction of them. On
+ * CI only, for a suite listed in battery.json `ci.pauseIdle` (battery.cjs hands it E2E_PAUSE_IDLE=1), FOCUS FOLLOWS THE
+ * DRIVER: every Playwright call that reaches a page (a frame or locator action, evaluate, waitFor*, a keyboard or mouse
+ * event, a screenshot) first makes sure THAT page renders — resumed and one fresh frame drawn if it was paused — and
+ * pauses any other page that nothing has touched for PAUSE_IDLE_MS and that has no call in flight. The pause is the
+ * app's own overload-guard pause (what setupPageQuiet already used for a booting page): the page's session, sockets,
+ * stores, flow and physics keep running, only its frames stop. Nothing a suite asserts on is skipped — a read of a
+ * paused page resumes it first — and every transition is counted in the `[helpers] pause-idle` line at the end.
+ */
+const PAUSE_IDLE = BATTERY_CI && process.env.E2E_PAUSE_IDLE === '1';
+/** a page untouched for this long (and with nothing in flight) stops drawing */
+const PAUSE_IDLE_MS = 4000;
+/** @type {Map<any, {name: string, paused: boolean, lastUsed: number, inflight: number, closed: boolean, pauses: number, resumes: number}>} */
+const idlePages = new Map();
+/** @type {Promise<any>} transitions run one at a time, so two calls racing on two pages cannot pause what the other resumes */
+let idleChain = Promise.resolve();
+/** the unwrapped Frame#evaluate, so a transition never re-enters the focus wrappers */
+/** @type {any} */
+let rawEvaluate = null;
+
+/** @param {any} page @param {string} name */
+function trackIdlePage(page, name) {
+	wrapForFocus(page);
+	idlePages.set(page, { name, paused: false, lastUsed: Date.now(), inflight: 0, closed: false, pauses: 0, resumes: 0 });
+	page.on('close', () => {
+		const st = idlePages.get(page);
+		if (st) st.closed = true;
+	});
+}
+
+/** @param {any} page @param {string} what */
+function guardCall(page, what) {
+	return rawEvaluate
+		.call(page.mainFrame(), (/** @type {string} */ w) => {
+			const g = window.__tp?.test?.v1?.overloadGuard;
+			if (!g) return false;
+			if (w === 'pause') g.pauseRendering('e2e: idle page (CI pause-idle)');
+			else {
+				g.resumeRendering();
+				// one fresh frame before the caller reads or clicks anything that the render loop keeps current
+				return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true))));
+			}
+			return true;
+		}, what)
+		.catch(() => false);
+}
+
+/** Make `page` the one being driven: it renders; other pages idle past PAUSE_IDLE_MS stop. @param {any} page */
+function focusPage(page) {
+	const st = idlePages.get(page);
+	if (!st || st.closed) return Promise.resolve();
+	st.lastUsed = Date.now();
+	const run = idleChain.then(async () => {
+		if (st.paused) {
+			st.paused = false;
+			st.resumes++;
+			await guardCall(page, 'resume');
+		}
+		const now = Date.now();
+		for (const [other, o] of idlePages) {
+			if (other === page || o.closed || o.paused || o.inflight > 0 || now - o.lastUsed < PAUSE_IDLE_MS) continue;
+			if (await guardCall(other, 'pause')) {
+				o.paused = true;
+				o.pauses++;
+			}
+		}
+	});
+	idleChain = run.catch(() => {});
+	return run;
+}
+
+let focusWrapped = false;
+/** Patch, once, every Playwright client method that reaches a page so it focuses that page first. @param {any} page */
+function wrapForFocus(page) {
+	if (focusWrapped) return;
+	focusWrapped = true;
+	const frameProto = Object.getPrototypeOf(page.mainFrame());
+	rawEvaluate = frameProto.evaluate;
+	const loc = page.locator('body');
+	/** @param {any} proto @param {string[]} methods @param {(self: any) => any} pageOf */
+	const wrap = (proto, methods, pageOf) => {
+		for (const m of methods) {
+			const orig = proto[m];
+			if (typeof orig !== 'function') continue;
+			proto[m] = async function (/** @type {any[]} */ ...args) {
+				let target = null;
+				try {
+					target = pageOf(this);
+				} catch {}
+				const st = target ? idlePages.get(target) : null;
+				if (!st) return orig.apply(this, args);
+				await focusPage(target);
+				st.inflight++;
+				try {
+					const result = await orig.apply(this, args);
+					for (const h of Array.isArray(result) ? result : [result]) if (h?._elementChannel) wrapHandles(h);
+					return result;
+				} finally {
+					st.inflight--;
+					st.lastUsed = Date.now();
+				}
+			};
+		}
+	};
+	// an ElementHandle's prototype is reachable only from a live handle: wrapped the first time a wrapped call returns one
+	let handlesWrapped = false;
+	/** @param {any} h */
+	const wrapHandles = (h) => {
+		if (handlesWrapped) return;
+		handlesWrapped = true;
+		wrap(Object.getPrototypeOf(h), ['getAttribute', 'inputValue', 'textContent', 'innerText', 'innerHTML', 'isChecked', 'isDisabled', 'isEditable', 'isEnabled', 'isHidden', 'isVisible', 'dispatchEvent', 'scrollIntoViewIfNeeded', 'hover', 'click', 'dblclick', 'tap', 'selectOption', 'fill', 'selectText', 'setInputFiles', 'focus', 'type', 'press', 'check', 'uncheck', 'setChecked', 'boundingBox', 'screenshot', '$', '$$', '$eval', '$$eval', 'waitForElementState', 'waitForSelector', 'evaluate', 'evaluateHandle'], (x) => x._frame?.page());
+	};
+	// async methods only (a sync one — locator(), name(), page() — must stay sync); waitForTimeout is idle on purpose
+	wrap(frameProto, ['goto', 'waitForNavigation', 'waitForLoadState', 'waitForURL', 'evaluateHandle', 'evaluate', '$', 'waitForSelector', 'dispatchEvent', '$eval', '$$eval', '$$', '_queryCount', 'content', 'setContent', 'addScriptTag', 'addStyleTag', 'click', 'dblclick', 'dragAndDrop', 'tap', 'fill', 'focus', 'textContent', 'innerText', 'innerHTML', 'getAttribute', 'inputValue', 'isChecked', 'isDisabled', 'isEditable', 'isEnabled', 'isHidden', 'isVisible', 'hover', 'selectOption', 'setInputFiles', 'type', 'press', 'check', 'uncheck', 'setChecked', 'waitForFunction', 'title'], (f) => f.page());
+	wrap(Object.getPrototypeOf(loc), ['boundingBox', 'check', 'click', 'dblclick', 'dispatchEvent', 'dragTo', 'evaluate', 'evaluateAll', 'evaluateHandle', 'fill', 'clear', 'focus', 'blur', 'count', 'getAttribute', 'hover', 'innerHTML', 'innerText', 'inputValue', 'isChecked', 'isDisabled', 'isEditable', 'isEnabled', 'isHidden', 'isVisible', 'press', 'screenshot', 'ariaSnapshot', 'scrollIntoViewIfNeeded', 'selectOption', 'selectText', 'setChecked', 'setInputFiles', 'tap', 'textContent', 'type', 'pressSequentially', 'uncheck', 'all', 'allInnerTexts', 'allTextContents', 'waitFor', 'elementHandle', 'elementHandles'], (l) => l.page());
+	wrap(Object.getPrototypeOf(page.keyboard), ['down', 'up', 'insertText', 'type', 'press'], (k) => k._page);
+	wrap(Object.getPrototypeOf(page.mouse), ['move', 'down', 'up', 'click', 'dblclick', 'wheel'], (k) => k._page);
+	wrap(Object.getPrototypeOf(page), ['screenshot', 'reload', 'bringToFront', 'goBack', 'goForward'], (p) => p);
+}
+
+/** the per-page transition counts, printed by finish() (and read by a reviewer of a CI log) */
+function pauseIdleSummary() {
+	if (!PAUSE_IDLE || !idlePages.size) return;
+	console.log(`[helpers] pause-idle: ${[...idlePages.values()].map((o) => `${o.name} paused ${o.pauses}x resumed ${o.resumes}x`).join(', ')}`);
 }
 
 let slowWaitsWrapped = false;
@@ -1026,6 +1157,7 @@ async function finish(browser) {
 			}
 		}
 	}
+	pauseIdleSummary();
 	await browser.close();
 	for (const message of fatal) check(false, 'the page threw a render error: ' + message.split('\n')[0]);
 	console.log(failures === 0 ? 'ALL PASS' : failures + ' FAILURES');

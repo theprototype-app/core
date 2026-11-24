@@ -38,7 +38,7 @@ const BATTERY = path.join(ROOT, 'tests', 'e2e', 'battery.json');
  *   pc?: {games: string[], levels: string[]}, skip: Record<string, string>, optional: Record<string, string>, setup: Record<string, string>,
  *   suites: Record<string, number>, modules?: Record<string, number>, desk?: Record<string, string[]>, exclude?: Record<string, string[]>,
  *   tiers?: string, tier1_always?: string[], tier1_always_files?: string[], tier1_cap?: number, tier1_shared_suites?: number,
- *   ci?: {comment?: string, timeouts?: Record<string, number>, fullDraw?: Record<string, string>} }} Battery
+ *   ci?: {comment?: string, timeouts?: Record<string, number>, fullDraw?: Record<string, string>, pauseIdle?: Record<string, string>} }} Battery
  * @typedef {{ name: string, status: 'pass'|'flaky'|'quarantined'|'fail'|'timeout'|'gone'|'notrun', required: boolean, rc: number|null, secs: number,
  *   retrySecs?: number, pass: number, fail: number, last: string, shard: number, minFps?: number, slow?: boolean, slowWaits?: number }} SuiteResult
  */
@@ -134,12 +134,13 @@ function ciEnvError(env) {
 /**
  * ci-speed: the per-suite environment battery.json `ci` asks for, on CI only (BATTERY_CI=1). `ci.fullDraw` (suite ->
  * reason) = this suite tests pixels / an effect / the resolution / layout at size, so it opts OUT of the lean draw
- * (tests/e2e/helpers.cjs LEAN_DRAW) and draws as a user's page does. Anywhere else: nothing.
+ * (tests/e2e/helpers.cjs LEAN_DRAW) and draws as a user's page does. `ci.pauseIdle` (suite -> evidence) = a multi-page
+ * suite A/B'd unchanged with its idle pages paused (helpers PAUSE_IDLE). Anywhere else: nothing.
  * @param {Battery} b @param {string} name @param {Record<string, string | undefined>} env @returns {Record<string, string>}
  */
 function ciSuiteEnv(b, name, env) {
 	if (env.BATTERY_CI !== '1') return {};
-	return b.ci?.fullDraw?.[name] ? { E2E_FULL_DRAW: '1' } : {};
+	return { ...(b.ci?.fullDraw?.[name] ? { E2E_FULL_DRAW: '1' } : {}), ...(b.ci?.pauseIdle?.[name] ? { E2E_PAUSE_IDLE: '1' } : {}) };
 }
 
 /** @param {string[]} argv @param {string} flag */

@@ -119,8 +119,14 @@ describe('the lean draw opt-out (ci-speed): battery.json ci.fullDraw', () => {
 		expect(ciSuiteEnv(/** @type {any} */ (b), 'store-suite', { BATTERY_CI: '1' })).toEqual({});
 		expect(ciSuiteEnv(/** @type {any} */ (b), 'pixel-suite', {})).toEqual({});
 	});
+	it('hands E2E_PAUSE_IDLE=1 to a suite listed in ci.pauseIdle, on CI only, beside its draw choice', () => {
+		const p = { ci: { fullDraw: { both: 'reads pixels' }, pauseIdle: { both: 'A/B 2026-11-24', peers: 'A/B 2026-11-24' } } };
+		expect(ciSuiteEnv(/** @type {any} */ (p), 'peers', { BATTERY_CI: '1' })).toEqual({ E2E_PAUSE_IDLE: '1' });
+		expect(ciSuiteEnv(/** @type {any} */ (p), 'both', { BATTERY_CI: '1' })).toEqual({ E2E_FULL_DRAW: '1', E2E_PAUSE_IDLE: '1' });
+		expect(ciSuiteEnv(/** @type {any} */ (p), 'peers', {})).toEqual({});
+	});
 	it('every listed suite exists and carries its reason', () => {
-		const list = Object.entries(batteryJson.ci?.fullDraw ?? {});
+		const list = [...Object.entries(batteryJson.ci?.fullDraw ?? {}), ...Object.entries(batteryJson.ci?.pauseIdle ?? {})];
 		for (const [name, reason] of list) {
 			expect(fs.existsSync(new URL(`../e2e/${name}.test.cjs`, import.meta.url)), name).toBe(true);
 			expect(typeof reason === 'string' && reason.length > 10, name).toBe(true);

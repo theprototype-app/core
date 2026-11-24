@@ -44,6 +44,13 @@ export const VECTOR_TOOLS = ['rect', 'ellipse', 'star', 'polygon', 'pen'];
 const CLICK_PX = 4;
 /** how close (px) a press must land to the first pen point to close the path */
 const CLOSE_PX = 10;
+/** 64-vector-edit row 4: a finger is bigger than a cursor (the 103 touch rules: 44 px targets) */
+const TOUCH_CLOSE_PX = 22;
+/** a finger that travels less than this (px) tapped */
+const TOUCH_SLOP = 10;
+/** a finger press in flight: where it would place, and the point it placed once it dragged
+ * @type {null | {at: number[], x: number, y: number, placed: number, fresh: boolean}} */
+let touchPress = null;
 /** shapes sit this far off the surface they were drawn on (no z-fight) */
 const SURFACE_LIFT = 0.004;
 
@@ -69,7 +76,7 @@ export function armVectorTool(kind) {
 	if (get(drawMode)) toggleDrawMode();
 	deselectObject();
 	vectorTool.set(/** @type {any} */ (kind));
-	if (!offPointer) offPointer = registerModulePointer({ down: onDown, move: onMove, up: onUp }, { modes: ['edit'] });
+	if (!offPointer) offPointer = registerModulePointer({ down: onDown, move: onMove, up: onUp, cancel: onCancel }, { modes: ['edit'] });
 	if (typeof window !== 'undefined') window.addEventListener('keydown', onKeydown, true);
 	return true;
 }
@@ -84,6 +91,7 @@ export function disarmVectorTool() {
 
 /** drop whatever is half-drawn (the tool stays armed) */
 export function cancelDraft() {
+	touchPress = null;
 	drag = null;
 	pen = null;
 	frame = null;
@@ -236,6 +244,7 @@ function onUp(_hit, ctx) {
 	const tool = get(vectorTool);
 	clearSnapGuides();
 	if (tool === 'pen') {
+		if (touchPress) return touchUp(ctx);
 		if (pen) pen.dragging = -1;
 		return;
 	}
@@ -286,8 +295,94 @@ function place(params, cx, cy) {
 
 /* ------------------------------------------------------------------ pen ---- */
 
+/** 64-vector-edit row 4: a second finger landed — the camera takes the pinch, and whatever the first
+ * finger began goes: the point it placed, the shape it was dragging out, a draft it started */
+function onCancel() {
+	clearSnapGuides();
+	if (touchPress && pen) {
+		if (touchPress.placed >= 0) pen.nodes.splice(touchPress.placed, 1);
+		const fresh = touchPress.fresh;
+		touchPress = null;
+		pen.dragging = -1;
+		if (fresh && !pen.nodes.length) cancelDraft();
+		else {
+			penDraft.set({ count: pen.nodes.length });
+			showPenPreview();
+		}
+		return;
+	}
+	if (drag) {
+		drag = null;
+		frame = null;
+		clearPreview();
+	}
+}
+
+/** a finger on the pen: nothing is placed until it lifts (a tap = a corner) or travels (a drag = a smooth
+ * point whose handle follows the finger), so a pinch's first finger never leaves a point behind @param {any} ctx */
+function touchDown(ctx) {
+	const fresh = !pen || !frame;
+	if (fresh) {
+		pen = { nodes: [], dragging: -1, x: ctx.clientX, y: ctx.clientY, lastDown: pen?.lastDown ?? 0 };
+		startFrame(ctx.ray);
+	}
+	const raw = toFrame(ctx.ray);
+	if (!raw) {
+		if (fresh) cancelDraft();
+		return true;
+	}
+	touchPress = { at: snapFrame(raw), x: ctx.clientX, y: ctx.clientY, placed: -1, fresh };
+	return true;
+}
+
+/** @param {any} ctx */
+function touchMove(ctx) {
+	if (!touchPress || !pen) return;
+	if (touchPress.placed < 0) {
+		if (Math.hypot(ctx.clientX - touchPress.x, ctx.clientY - touchPress.y) < TOUCH_SLOP) return;
+		pen.nodes.push(node(touchPress.at[0], touchPress.at[1]));
+		touchPress.placed = pen.nodes.length - 1;
+		pen.dragging = touchPress.placed;
+		pen.x = touchPress.x;
+		pen.y = touchPress.y;
+		penDraft.set({ count: pen.nodes.length });
+		clearSnapGuides();
+	}
+	penMove(ctx);
+}
+
+/** a finger lifted: a drag already placed its point; a tap closes on the first point, finishes on a
+ * double tap of the last, else places a corner @param {any} ctx */
+function touchUp(ctx) {
+	const press = touchPress;
+	touchPress = null;
+	if (!press || !pen) return;
+	pen.dragging = -1;
+	if (press.placed >= 0) return;
+	const now = performance.now();
+	const near = (/** @type {any} */ n) => {
+		const s = n ? screenOf(n.x, n.y) : null;
+		return !!s && Math.hypot(s[0] - ctx.clientX, s[1] - ctx.clientY) < TOUCH_CLOSE_PX;
+	};
+	const first = pen.nodes[0];
+	const last = pen.nodes[pen.nodes.length - 1];
+	if (first && pen.nodes.length >= 2 && near(first)) {
+		finishPen(true);
+		return;
+	}
+	if (last && now - pen.lastDown < 400 && near(last)) {
+		finishPen(false);
+		return;
+	}
+	pen.lastDown = now;
+	pen.nodes.push(node(press.at[0], press.at[1]));
+	penDraft.set({ count: pen.nodes.length });
+	showPenPreview();
+}
+
 /** @param {any} ctx */
 function penDown(ctx) {
+	if (ctx.pointerType === 'touch') return touchDown(ctx);
 	if (!pen || !frame) {
 		pen = { nodes: [], dragging: -1, x: ctx.clientX, y: ctx.clientY, lastDown: 0 };
 		startFrame(ctx.ray);
@@ -325,6 +420,7 @@ function penDown(ctx) {
 
 /** @param {any} ctx */
 function penMove(ctx) {
+	if (touchPress && touchPress.placed < 0) return touchMove(ctx);
 	if (!pen || pen.dragging < 0) return;
 	if (Math.hypot(ctx.clientX - pen.x, ctx.clientY - pen.y) < CLICK_PX) return;
 	const at = toFrame(ctx.ray);

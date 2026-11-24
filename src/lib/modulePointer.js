@@ -22,7 +22,7 @@ import { objectsGroup, globalScene } from '../stores/sceneStore';
 import { moduleInteractiveGroups } from './sdk/registries.js';
 
 /** @typedef {'edit' | 'interact' | 'play'} PointerMode */
-/** @typedef {{down?: Function, move?: Function, up?: Function}} PointerHandler */
+/** @typedef {{down?: Function, move?: Function, up?: Function, cancel?: Function}} PointerHandler */
 
 /** @type {{handler: PointerHandler, modes: PointerMode[]}[]} registration order */
 const entries = [];
@@ -95,7 +95,7 @@ function ctxOf(mode, ray, event) {
 	};
 }
 
-/** @param {any} handler @param {'down' | 'move' | 'up'} kind @param {any} hit @param {any} ctx */
+/** @param {any} handler @param {'down' | 'move' | 'up' | 'cancel'} kind @param {any} hit @param {any} ctx */
 function call(handler, kind, hit, ctx) {
 	try {
 		return handler?.[kind]?.(hit, ctx);
@@ -138,6 +138,20 @@ export function modulePointerUp(ray, event) {
 	const { handler, mode } = owner;
 	owner = null;
 	call(handler, 'up', hitOf(ray), ctxOf(mode, ray, event));
+	return true;
+}
+
+/**
+ * 64-vector-edit: the owned gesture is CANCELLED (a second finger landed: the camera takes the pinch,
+ * so a touch tool must undo whatever the first finger began). The handler's optional `cancel(hit, ctx)`
+ * hears it; a handler without one simply sees no more of the gesture.
+ * @param {THREE.Raycaster} ray @param {any} event @returns {boolean} there was a gesture to cancel
+ */
+export function modulePointerCancel(ray, event) {
+	if (!owner) return false;
+	const { handler, mode } = owner;
+	owner = null;
+	call(handler, 'cancel', hitOf(ray), ctxOf(mode, ray, event));
 	return true;
 }
 

@@ -43,6 +43,9 @@ export const vectorEditCan = writable({ close: false, split: false });
 
 const PICK_PX = 9;
 const CURVE_PX = 7;
+/** 64-vector-edit row 4: a finger's reach (the 103 touch rules size targets at 44 px) and its tap slop */
+const TOUCH_PICK_PX = 22;
+const TOUCH_SLOP = 10;
 
 /** @type {any} */ let edited = null;
 /** @type {null | (() => void)} */ let offPointer = null;
@@ -51,7 +54,7 @@ const CURVE_PX = 7;
 /** @type {THREE.Group | null} */ let helpers = null;
 /** the paths as the session sees them (the record's, or the drag's working copy) @type {import('./vectorPath.js').VSubpath[]} */
 let working = [];
-/** @type {null | {kind: 'node' | 'in' | 'out', sub: number, index: number, moved: boolean, from?: number[], base?: import('./vectorPath.js').VSubpath[], picks?: {sub: number, index: number}[], cand?: import('./vectorSnap.js').Candidates}} */ let gesture = null;
+/** @type {null | {kind: 'node' | 'in' | 'out' | 'insert', sub: number, index: number, moved: boolean, from?: number[], base?: import('./vectorPath.js').VSubpath[], picks?: {sub: number, index: number}[], cand?: import('./vectorSnap.js').Candidates, touch?: number[], seg?: number, t?: number}} */ let gesture = null;
 let lastDownAt = 0;
 /** @type {null | {sub: number, index: number}} */ let lastDownNode = null;
 let rafId = 0;
@@ -96,7 +99,7 @@ export function enterVectorEdit(uuid) {
 	const peer = get(peers);
 	if (peer) peer.send(lockMessage([uuid], peer.peer.id)); // 80a K3: stamped
 	vectorEditObject.set(uuid);
-	offPointer = registerModulePointer({ down: onDown, move: onMove, up: onUp }, { modes: ['edit'] });
+	offPointer = registerModulePointer({ down: onDown, move: onMove, up: onUp, cancel: onCancel }, { modes: ['edit'] });
 	// a peer's edit or an undo replaced the record: re-read it (never mid-drag)
 	offRevision = sceneRevision.subscribe(() => {
 		if (!edited || gesture) return;
@@ -246,12 +249,12 @@ function visibleHandles() {
 	return out;
 }
 
-/** what is under the pointer @param {number} cx @param {number} cy */
-function pickAt(cx, cy) {
+/** what is under the pointer @param {number} cx @param {number} cy @param {number} [reach] px */
+function pickAt(cx, cy, reach = PICK_PX) {
 	// handles first (they sit over the outline), then anchors
 	/** @type {null | {kind: 'node' | 'in' | 'out', sub: number, index: number}} */
 	let best = null;
-	let bd = PICK_PX;
+	let bd = reach;
 	for (const { sub, index } of visibleHandles()) {
 		const nd = working[sub].nodes[index];
 		for (const which of /** @type {const} */ (['in', 'out'])) {
@@ -267,7 +270,7 @@ function pickAt(cx, cy) {
 		}
 	}
 	if (best) return best;
-	bd = PICK_PX;
+	bd = reach;
 	working.forEach((sub, si) =>
 		sub.nodes.forEach((nd, i) => {
 			const s = screenOf(nd.x, nd.y);
@@ -286,7 +289,8 @@ function pickAt(cx, cy) {
 /** @param {any} _hit @param {any} ctx */
 function onDown(_hit, ctx) {
 	if (!edited) return false;
-	const picked = pickAt(ctx.clientX, ctx.clientY);
+	const touch = ctx.pointerType === 'touch';
+	const picked = pickAt(ctx.clientX, ctx.clientY, touch ? TOUCH_PICK_PX : PICK_PX);
 	const now = performance.now();
 	if (picked?.kind === 'node') {
 		const p = { sub: picked.sub, index: picked.index };
@@ -323,12 +327,12 @@ function onDown(_hit, ctx) {
 		);
 		edited.updateMatrixWorld();
 		const cand = snapCandidates(edited.matrixWorld, { exclude: edited.uuid, own });
-		gesture = { kind: 'node', sub: p.sub, index: p.index, moved: false, from: from ?? undefined, base: cloneSubpaths(working), picks, cand };
+		gesture = { kind: 'node', sub: p.sub, index: p.index, moved: false, from: from ?? undefined, base: cloneSubpaths(working), picks, cand, touch: touch ? [ctx.clientX, ctx.clientY] : undefined };
 		rebuildHelpers();
 		return true;
 	}
 	if (picked) {
-		gesture = { kind: /** @type {'in' | 'out'} */ (picked.kind), sub: picked.sub, index: picked.index, moved: false };
+		gesture = { kind: /** @type {'in' | 'out'} */ (picked.kind), sub: picked.sub, index: picked.index, moved: false, base: cloneSubpaths(working), touch: touch ? [ctx.clientX, ctx.clientY] : undefined };
 		return true;
 	}
 	// on the outline: insert a point
@@ -338,8 +342,10 @@ function onDown(_hit, ctx) {
 			const near = nearestOnSubpath(working[si], at);
 			if (!near) continue;
 			const s = screenOf(near.x, near.y);
-			if (s && Math.hypot(s[0] - ctx.clientX, s[1] - ctx.clientY) < CURVE_PX) {
-				insertPoint(si, near.seg, near.t);
+			if (s && Math.hypot(s[0] - ctx.clientX, s[1] - ctx.clientY) < (touch ? TOUCH_PICK_PX : CURVE_PX)) {
+				// a finger inserts on LIFT (a second finger landing means a pinch, not a point)
+				if (touch) gesture = { kind: 'insert', sub: si, index: -1, seg: near.seg, t: near.t, moved: false };
+				else insertPoint(si, near.seg, near.t);
 				return true;
 			}
 		}
@@ -349,7 +355,9 @@ function onDown(_hit, ctx) {
 
 /** @param {any} _hit @param {any} ctx */
 function onMove(_hit, ctx) {
-	if (!edited || !gesture) return;
+	if (!edited || !gesture || gesture.kind === 'insert') return;
+	// a finger's jitter on a tap is not a drag (it would commit a 1 px edit)
+	if (gesture.touch && !gesture.moved && Math.hypot(ctx.clientX - gesture.touch[0], ctx.clientY - gesture.touch[1]) < TOUCH_SLOP) return;
 	const at = toLocal(ctx.ray);
 	if (!at) return;
 	const sub = working[gesture.sub];
@@ -364,7 +372,7 @@ function onMove(_hit, ctx) {
 		working = moveNodesBy(gesture.base, gesture.picks ?? [{ sub: gesture.sub, index: gesture.index }], snapped.at[0] - lead.x, snapped.at[1] - lead.y);
 	} else
 		working[gesture.sub] =
-			gesture.kind === 'node' ? moveNode(sub, gesture.index, at) : moveHandle(sub, gesture.index, gesture.kind, at, { free: altHeld || !!ctx.altKey });
+			gesture.kind === 'node' ? moveNode(sub, gesture.index, at) : moveHandle(sub, gesture.index, /** @type {'in' | 'out'} */ (gesture.kind), at, { free: altHeld || !!ctx.altKey });
 	gesture.moved = true;
 	const p = vectorParamsOf(edited);
 	if (p) swapGeometry({ ...p, paths: working });
@@ -374,9 +382,22 @@ function onMove(_hit, ctx) {
 function onUp() {
 	clearSnapGuides();
 	if (!gesture) return;
-	const moved = gesture.moved;
+	const g = gesture;
 	gesture = null;
-	if (moved) commit();
+	if (g.kind === 'insert') insertPoint(g.sub, g.seg ?? 0, g.t ?? 0.5);
+	else if (g.moved) commit();
+}
+
+/** 64-vector-edit row 4: a second finger — the drag in flight is dropped, the shape is as it was */
+function onCancel() {
+	clearSnapGuides();
+	const g = gesture;
+	gesture = null;
+	if (!g || !edited || !g.moved) return;
+	working = cloneSubpaths(g.base ?? vectorParamsOf(edited)?.paths ?? []);
+	const p = vectorParamsOf(edited);
+	if (p) swapGeometry(p);
+	rebuildHelpers();
 }
 
 /* ------------------------------------------------------------- commands ---- */

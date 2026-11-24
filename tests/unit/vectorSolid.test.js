@@ -199,8 +199,8 @@ describe('buildVectorGeometry on the kernel', () => {
 		expect(faces).not.toBeNull();
 		expect(Math.max(...(faces ?? []).map((f) => f.length))).toBeGreaterThan(2); // an n-gon cap
 		solid.computeBoundingBox();
-		expect(solid.boundingBox.min.z).toBeCloseTo(0, 6);
-		expect(solid.boundingBox.max.z).toBeCloseTo(0.3, 6);
+		expect(solid.boundingBox?.min.z).toBeCloseTo(0, 6);
+		expect(solid.boundingBox?.max.z).toBeCloseTo(0.3, 6);
 	});
 	test('the editor reads it back as the same clean mesh (n-gons kept, closed)', () => {
 		const solid = buildVectorGeometry(star({ depth: 0.3, bevel: 0.03, bevelSegments: 3 }));
@@ -240,5 +240,15 @@ describe('buildVectorGeometry on the kernel', () => {
 		const n = vectorMeshDebug().fastBuilds;
 		buildVectorGeometry({ ...base, depth: 0.05 });
 		expect(vectorMeshDebug().fastBuilds).toBe(n);
+	});
+});
+
+describe('the 2D toolbar contract (64-2d Q9)', () => {
+	test('src/lib/extrude/tools2d.js: one Extrude tool at order 50 with a Lucide icon the Icon map knows', async () => {
+		const tools = (await import('../../src/lib/extrude/tools2d.js')).default;
+		expect(tools.map((t) => [t.id, t.order, t.icon])).toEqual([['extrude', 50, 'box']]);
+		expect(typeof tools[0].run).toBe('function');
+		const fs = await import('fs');
+		expect(fs.readFileSync('src/components/ui/Icon.svelte', 'utf8')).toMatch(/\n\t\tbox: Box,/);
 	});
 });

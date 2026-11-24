@@ -75,6 +75,12 @@ function depthOf(o, kind) {
 
 /** @type {{id: any, object: any}} */ let seen = { id: null, object: null };
 
+/** the depth of any object (0 = flat, or not extrudable) @param {any} o */
+export function depthNow(o) {
+	const kind = extrudeKindOf(o);
+	return kind ? depthOf(o, kind) : 0;
+}
+
 /** the one selected object the arrow is for, or null */
 function wanted() {
 	if (get(isVRMode) || get(isLocked) === true) return null;

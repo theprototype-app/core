@@ -132,6 +132,7 @@ export function forgetRemoved(peerId) {
 
 /** Drop a peer on THIS machine: whitelist, approval cards, connection. @param {any} pc @param {string} peerId */
 function dropLocally(pc, peerId) {
+	pc?.rj?.forget?.(peerId); // a removed peer's relink secret goes with it
 	userdata.set(/** @type {any} */ (get(userdata)).filter((/** @type {any} */ u) => u[0] !== peerId));
 	pendingApprovals.set(/** @type {any} */ (get(pendingApprovals)).filter((/** @type {any} */ p) => p.peerId !== peerId));
 	waitingForApproval.set(/** @type {any} */ (get(waitingForApproval)).filter((/** @type {any} */ w) => w[0] !== peerId));
@@ -170,6 +171,8 @@ export function removePeer(peerId, opts = {}) {
 	}
 	const block = !!opts.block;
 	const name = peerLabel(peerId);
+	// its relink secret goes BEFORE the kick is said: nothing it holds may bring it back
+	pc?.rj?.forget?.(peerId);
 	pc?.broadcast?.({ type: 'kick', peer: peerId, block });
 	state.remove(peerId, { block, name, by: me || '' });
 	publish();

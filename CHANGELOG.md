@@ -6,6 +6,10 @@
      rendering, so maintainer notes stay out of the user-facing window. No emoji from
      1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
 
+## 1.78.1 — Steadier sessions
+
+- Sessions reconnect by themselves after the host reloads.
+
 ## 1.78.0 — Faster mesh editing
 
 ### Mesh editing on a new core

@@ -1440,6 +1440,7 @@
 		"Shadow quality": {
 			"rows": [
 				"Reduce quality when the scene is heavy",
+				"Scene shadow quality",
 				"Shadow quality"
 			],
 			"sections": [
@@ -2016,6 +2017,7 @@
 				"Quality preset",
 				"Reduce quality when the scene is heavy",
 				"Reset line colours",
+				"Scene shadow quality",
 				"Selection outline colour",
 				"Shadow quality",
 				"Share materials",
@@ -2510,6 +2512,7 @@
 				"Invert look Y",
 				"LOD levels",
 				"Light helper length",
+				"Scene shadow quality",
 				"Selection wireframe",
 				"Shadow quality",
 				"Show helpers in Play",
@@ -2716,6 +2719,7 @@
 				"Quality preset",
 				"Reduce quality when the scene is heavy",
 				"Reset line colours",
+				"Scene shadow quality",
 				"Selection outline colour",
 				"Shadow quality",
 				"Share materials",
@@ -3637,6 +3641,7 @@
 				"Quality preset",
 				"Reduce quality when the scene is heavy",
 				"Reset line colours",
+				"Scene shadow quality",
 				"Selection outline colour",
 				"Shadow quality",
 				"Share materials",
@@ -4342,6 +4347,7 @@
 		"shadow": {
 			"rows": [
 				"Reduce quality when the scene is heavy",
+				"Scene shadow quality",
 				"Shadow quality"
 			],
 			"sections": [
@@ -5032,6 +5038,7 @@
 				"Layers",
 				"Level of detail",
 				"Levels",
+				"Lights",
 				"Music",
 				"Physics",
 				"Play",
@@ -5082,6 +5089,15 @@
 				"Components",
 				"Environment",
 				"Fog",
+				"Sky image"
+			],
+			"lights": [
+				"Background",
+				"Components",
+				"Environment",
+				"Fog",
+				"Lights",
+				"Quality",
 				"Sky image"
 			],
 			"scene look": [
@@ -5147,6 +5163,7 @@
 			],
 			"quality": [
 				"Baked light",
+				"Lights",
 				"Quality",
 				"Scene look",
 				"Shader materials"
@@ -5219,6 +5236,7 @@
 			],
 			"shadow": [
 				"Baked light",
+				"Lights",
 				"Quality",
 				"Scene look",
 				"Shader materials"
@@ -5252,7 +5270,9 @@
 				"Environment",
 				"Fog",
 				"Level of detail",
+				"Lights",
 				"Overrides — this device",
+				"Quality",
 				"Scene look",
 				"Shader materials",
 				"Sky image",

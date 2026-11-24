@@ -518,6 +518,13 @@ const PATIENT_CLICK_MS = Number(process.env.E2E_CLICK_MS || 90000);
  * The numbers live here and nowhere else.
  */
 const BATTERY_CI = process.env.BATTERY_CI === '1';
+// ci-speed (claude:9's rule): BATTERY_CI must never reach a local / desk / pc / release run — the battery runners refuse
+// it (scripts/ci/battery.cjs ciEnvError) and so does every suite loading this file, so a single suite run by hand with
+// it set cannot gate on the CI-only allowance and lean draw either
+{
+	const ciError = require('../../scripts/ci/battery.cjs').ciEnvError(process.env);
+	if (ciError) throw new Error('tests/e2e/helpers.cjs: ' + ciError);
+}
 /** Playwright's default action / wait / navigation timeout on a CI page (locally Playwright's own 30 s). */
 const CI_DEFAULT_TIMEOUT_MS = 90000;
 const LOCAL_DEFAULT_TIMEOUT_MS = 30000;

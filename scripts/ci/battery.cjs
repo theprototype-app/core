@@ -116,6 +116,21 @@ function counts(log) {
 /** @param {{minFps?: number, slow?: boolean}} r */
 const slowRunner = (r) => (r.slow ? ` SLOW RUNNER ${r.minFps} fps` : '');
 
+/**
+ * ci-speed: BATTERY_CI is a GITHUB-ONLY switch. It turns on the slow-runner allowance (longer waits) and the lean
+ * draw (tests/e2e/helpers.cjs: shadows, AO, post and half resolution off unless a suite opts back in through
+ * battery.json `ci.fullDraw`), so a local / desk / pc battery or an int's release gate that inherited it would gate on
+ * a different app than users run, with longer limits. Every runner entry refuses it unless GitHub Actions set
+ * GITHUB_ACTIONS=true. Returns the refusal, or '' when the environment is fine.
+ * @param {Record<string, string | undefined>} env
+ */
+function ciEnvError(env) {
+	const v = env.BATTERY_CI;
+	if (v === undefined || v === '' || v === '0') return '';
+	if (env.GITHUB_ACTIONS === 'true') return '';
+	return `BATTERY_CI=${v} is set outside GitHub Actions (GITHUB_ACTIONS=${env.GITHUB_ACTIONS ?? 'unset'}): it is CI-only (the slow-runner allowance and the lean draw). Unset it; a local, desk, pc or release battery keeps today's limits and full rendering.`;
+}
+
 /** @param {string[]} argv @param {string} flag */
 function opt(argv, flag) {
 	const i = argv.indexOf(flag);
@@ -524,6 +539,11 @@ function plan() {
 
 if (require.main === module) {
 	const [cmd, ...argv] = process.argv.slice(2);
+	const ciError = ciEnvError(process.env);
+	if (ciError) {
+		console.error('battery.cjs: ' + ciError);
+		process.exit(2);
+	}
 	if (cmd === 'plan') plan();
 	else if (cmd === 'run') run(argv);
 	else if (cmd === 'report') report(argv);
@@ -534,4 +554,4 @@ if (require.main === module) {
 	}
 }
 
-module.exports = { load, assign, shardCount, runnable, counts };
+module.exports = { load, assign, shardCount, runnable, counts, ciEnvError };

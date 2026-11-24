@@ -338,11 +338,23 @@ h.run(async () => {
 		h.check((await L.storeValue(page, 'transformMode')) === mode, `${key} sets the gizmo to ${mode}`);
 		if (process.env.LOCK_DEBUG) console.log(`  after ${key}: selection ${JSON.stringify(await L.storeValue(page, 'selectedObjects'))}`);
 	}
-	// the ACTIVE mode's key again (G = Move, already armed by 1) hides the selection and
-	// remembers it; once more brings it back (setTransformMode's toggle)
+	// the ACTIVE mode's key again (G = Move, already armed by 1) walks 103 H7's triple switch
+	// (setTransformMode): that tool's handles -> all in one -> hidden (the selection put away and
+	// remembered) -> back. 103-int-1: the 103-keys suite was written against the old two-step.
+	const handleSetNow = () => page.evaluate(async () => {
+		const p = await /** @type {any} */ (window).__tp.test.v1.gizmoPrefs;
+		let v;
+		p.handleSet.subscribe((/** @type {any} */ x) => (v = x))();
+		return v;
+	});
 	await page.keyboard.press('KeyG');
 	await page.waitForTimeout(200);
-	h.check(JSON.stringify(await L.storeValue(page, 'selectedObjects')) === '[]', 'G while Move is already armed puts the selection away (the active mode toggles)');
+	const selAll = JSON.stringify(await L.storeValue(page, 'selectedObjects'));
+	const hsAll = await handleSetNow();
+	h.check(selAll === JSON.stringify([boxId]) && hsAll === 'all', `G while Move is already armed steps to the all-in-one handles, the selection kept (${hsAll}, ${selAll})`);
+	await page.keyboard.press('KeyG');
+	await page.waitForTimeout(200);
+	h.check(JSON.stringify(await L.storeValue(page, 'selectedObjects')) === '[]', 'G once more puts the selection away (the third step of the switch)');
 	await page.keyboard.press('KeyG');
 	await page.waitForTimeout(200);
 	h.check(JSON.stringify(await L.storeValue(page, 'selectedObjects')) === JSON.stringify([boxId]), 'and G again brings the same selection back');

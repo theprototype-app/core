@@ -4064,6 +4064,11 @@
 				{#await import('./RoundedBoxOffer.svelte') then m}<m.default offer={roundOffer} uuid={$selectedObject.uuid} onconverted={() => geoTick++} />{/await}
 			{/if}
 
+			{#if geoParams?.gtype === 'Vector' && !meshEditedLock && !multiCount}
+				<!-- 64-vector: a vector shape's colours and Edit points (its numeric rows are the Geometry section's); a lazy chunk -->
+				{#await import('./inspector/VectorSection.svelte') then m}<m.default object={$selectedObject} />{/await}
+			{/if}
+
 			{#if $selectedObject?.userData?.terrain && !multiCount}
 				<!-- 47 T1/T2: terrain paint layers + scatter sets -->
 				<TerrainPaintSection object={$selectedObject} />

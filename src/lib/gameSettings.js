@@ -90,6 +90,17 @@ export const CORE_SETTINGS = [
 		optionLabels: ['Auto', 'Standard', 'High', 'Max'],
 		default: 'auto',
 		help: 'How sharp the sky is. Higher downloads more.'
+	},
+	// 92 (GC2): how fast the view turns (mouse AND look stick) and which way up is, for THIS game —
+	// Default keeps the device's Settings ▸ Input answer (lookTuning reads both)
+	{ id: 'lookSpeed', label: 'Look speed', type: 'range', min: 25, max: 200, step: 25, default: 100 },
+	{
+		id: 'invertLook',
+		label: 'Invert look',
+		type: 'choice',
+		options: ['default', 'off', 'on'],
+		optionLabels: ['Default', 'Off', 'On'],
+		default: 'default'
 	}
 ];
 
@@ -418,3 +429,18 @@ export function debugResetGameSettings() {
 // 33 (L4): a scene switch moves module rows in or out of scope. At the END of the module
 // (a module-level subscribe runs synchronously at evaluation — the TDZ rule).
 leftBehindModules.subscribe(() => publishRows());
+
+/**
+ * 92 (GC2): this game's look tuning — `scale` multiplies mouse and stick look (1 = as the device has
+ * it), `invert` = the vertical look flipped, given the device's own invert setting.
+ * @param {boolean} [deviceInvert] @returns {{scale: number, invert: boolean}}
+ */
+export function lookTuning(deviceInvert = false) {
+	const v = get(gameSettingValues);
+	const speed = Number(v.lookSpeed);
+	const choice = String(v.invertLook ?? 'default');
+	return {
+		scale: Number.isFinite(speed) && speed > 0 ? speed / 100 : 1,
+		invert: choice === 'on' ? true : choice === 'off' ? false : !!deviceInvert
+	};
+}

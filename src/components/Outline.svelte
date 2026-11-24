@@ -43,6 +43,7 @@
 	import { shadowQuality } from '$lib/lightParams';
 	import { useTask, useThrelte } from '@threlte/core';
 	import { applyShake, frameHeldByHitPause } from '$lib/gameFeelFx';
+	import { applyPlayView } from '$lib/playViewSeam'; // 92-input GC4
 	import { framesHeld, registerComposerWarm, schedule } from '$lib/sceneLoader';
 	import { tick } from 'svelte';
 	import {
@@ -545,11 +546,14 @@
 			// ...and while a maximized docked window covers the whole 3D view, the main frame is not
 			// drawn at all (nothing could see it)
 			// 102b-hud: a Camera Shake node sways the PLAY camera for this one draw (null = nothing)
+			// 92-input GC4: a third / side / top view draws from behind / beside / above the player (then back)
+			const unview = applyPlayView(camera.current, renderer.xr.isPresenting);
 			const unshake = applyShake(camera.current, renderer.xr.isPresenting);
 			if (!renderer.xr.isPresenting && mainViewCovered()) noteMainSkipped();
 			else if (renderer.xr.isPresenting || nothingToCompose) renderer.render(scene, camera.current);
 			else composer.render(delta);
 			unshake?.();
+			unview?.();
 		},
 		{ stage: renderStage, autoInvalidate: false }
 	);

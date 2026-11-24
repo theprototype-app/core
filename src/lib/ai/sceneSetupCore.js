@@ -408,30 +408,46 @@ export function planOpeningView(raw, ctx) {
 	return { error: 'openingView: {"position": [x,y,z], "target": [x,y,z]}, "spawn", "frame", or null to forget it' };
 }
 
-export const PLAY_CAMERA_MODES = ['first', 'third', 'orbit', 'fixed', 'none'];
+export const PLAY_CAMERA_MODES = ['first', 'third', 'side', 'top', 'orbit', 'fixed', 'none'];
+/** 92-input GC4: the words an agent (or a person) uses for the views */
+const PLAY_CAMERA_ALIASES = { 'third-person': 'third', thirdperson: 'third', 'side-scroller': 'side', sidescroller: 'side', platformer: 'side', '2d': 'side', 'top-down': 'top', topdown: 'top', overhead: 'top', 'first-person': 'first' };
+/** each view's tunables an agent may set, with their limits (the node card's ranges) */
+const PLAY_VIEW_FIELDS = /** @type {[string, number, number][]} */ ([['distance', 0.5, 60], ['height', -2, 10], ['lookAhead', 0, 10], ['angle', 15, 90], ['minZoom', 0.5, 60], ['maxZoom', 0.5, 120]]);
 
 /** what the app cannot do yet, said so an agent can take the route that works today */
 export const PLAY_CAMERA_LATER =
-	'is not a Play camera this build has: Play always looks through the player\'s own eyes. For a vehicle or character, a Possess Object node (camera chase / orbit) on a click or key gives third person; for a fixed shot, put a camera object in the scene and a Set Active Camera / Game Start node look through it. Set first person here, or only openingView.';
+	'is not a Play camera this build has. Play cameras: first (the player\'s own eyes), third (behind the player), side (a side-scroller) and top (top-down). For a vehicle, a Possess Object node (camera chase / orbit) on an On Play start or a key drives it; for a fixed shot, put a camera object in the scene and a Start camera node look through it.';
 
 /**
- * Plan the Character Controller a first-person play camera is.
- * @param {any} args {mode, walk?: boolean (default true), speed?, jumpHeight?, eyeHeight?, gravity?}
+ * Plan the Character Controller a play camera is.
+ * @param {any} args {mode, walk?: boolean (default true), speed?, jumpHeight?, eyeHeight?, gravity?,
+ *   distance?, height?, lookAhead?, angle?, minZoom?, maxZoom?, collide?}
  * @returns {{controller: Record<string, any> | null, words: string} | {later: string} | {error: string}}
  */
 export function planPlayCamera(args) {
-	const mode = String(args?.mode ?? '').toLowerCase();
-	if (!PLAY_CAMERA_MODES.includes(mode)) return { error: 'mode: one of first, third, orbit, fixed, none' };
+	const raw = String(args?.mode ?? '').toLowerCase();
+	const mode = /** @type {Record<string, string>} */ (PLAY_CAMERA_ALIASES)[raw] ?? raw;
+	if (!PLAY_CAMERA_MODES.includes(mode)) return { error: 'mode: one of first, third, side, top, none' };
 	if (mode === 'none') return { controller: null, words: 'the default Play camera' };
-	if (mode !== 'first') return { later: '"' + mode + '" ' + PLAY_CAMERA_LATER };
-	const fly = args?.fly === true || args?.walk === false;
+	if (mode === 'orbit' || mode === 'fixed') return { later: '"' + mode + '" ' + PLAY_CAMERA_LATER };
+	// a side-scroller or a top-down game walks: flying past the plane or the view makes no game
+	const fly = mode !== 'side' && mode !== 'top' && (args?.fly === true || args?.walk === false);
 	/** @type {Record<string, any>} */
-	const controller = { mode: fly ? 'fly' : 'walk', speed: 0.1, jumpHeight: 1.2, eyeHeight: 1.7, gravity: true };
+	const controller = { mode: fly ? 'fly' : 'walk', speed: 0.1, jumpHeight: 1.2, eyeHeight: 1.7, gravity: true, camera: mode };
 	for (const [k, lo, hi] of /** @type {[string, number, number][]} */ ([['speed', 0.01, 1], ['jumpHeight', 0, 5], ['eyeHeight', 0.2, 3]])) {
 		if (args?.[k] === undefined) continue;
 		if (!finite(args[k])) return { error: k + ' is a number' };
 		controller[k] = r3(clamp(args[k], lo, hi));
 	}
 	if (args?.gravity !== undefined) controller.gravity = args.gravity !== false;
-	return { controller, words: 'first person, ' + controller.mode + 'ing' };
+	if (mode !== 'first') {
+		for (const [k, lo, hi] of PLAY_VIEW_FIELDS) {
+			if (args?.[k] === undefined) continue;
+			if (!finite(args[k])) return { error: k + ' is a number' };
+			controller[k] = r3(clamp(args[k], lo, hi));
+		}
+		if (args?.collide !== undefined) controller.collide = args.collide !== false;
+	}
+	const words = { first: 'first person', third: 'third person (behind the player)', side: 'a side-scroller', top: 'top-down' }[mode];
+	return { controller, words: words + ', ' + controller.mode + 'ing' };
 }

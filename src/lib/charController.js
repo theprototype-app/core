@@ -61,7 +61,7 @@ const KCC_MAX_DT = 1 / 30;
 
 /**
  * @typedef {{mode: 'fly'|'walk', speed: number, jumpHeight: number, eyeHeight: number,
- *   gravity: boolean, sourceNodeId: string}} CharControl
+ *   gravity: boolean, sourceNodeId: string, view?: import('./playViewSettings.js').PlayView | null}} CharControl
  */
 
 /** The declared controller, or NULL for "no controller node exists" — which is the
@@ -218,7 +218,9 @@ export function setCharControl(next) {
 		current.jumpHeight === next.jumpHeight &&
 		current.eyeHeight === next.eyeHeight &&
 		current.gravity === next.gravity &&
-		current.sourceNodeId === next.sourceNodeId
+		current.sourceNodeId === next.sourceNodeId &&
+		// 92-input GC4: the play camera (third / side / top); absent on both = first person, as before
+		JSON.stringify(/** @type {any} */ (current).view ?? null) === JSON.stringify(/** @type {any} */ (next).view ?? null)
 	)
 		return;
 	// a changed authored speed wins over whatever the wheel left behind

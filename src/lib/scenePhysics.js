@@ -8,6 +8,7 @@ import { normalizeReach } from './playReach'; // 31-towers P1
 import { normalizePassThrough, PASS_DEFAULTS } from './selectThrough'; // 36 F22 (a leaf)
 import { normalizeLevelsTable } from './gameLevels/table.js'; // 93 LP0 (a leaf)
 import { coerceTouchLayout } from './touchActions'; // 102b-play: the author's touch layout (a leaf)
+import { normalizeGameMenus } from './gameMenusCore.js'; // 92: title / pause / saves / auto-admit (pure)
 
 // CL-A A6 / 21-B B1: scene-wide physics settings. ONE shared object for the
 // whole session, replicated as its OWN latest-wins singleton message (the
@@ -225,9 +226,12 @@ export function normalizeScenePhysics(raw) {
 				...(playRaw.moments === true ? { moments: true } : {}),
 				// 102b-play: the AUTHOR's touch-button layout, shipped with the scene — present only
 				// when one was saved (a player's own layout on their device still wins, item by item)
-				...optional('touch', normalizeSceneTouch(playRaw.touch))
+				...optional('touch', normalizeSceneTouch(playRaw.touch)),
+				// 92 (GC1/GC2/GC5/GC8): the game's title screen, pause rule, save slots and auto-admit —
+				// present only when authored (gameMenusCore.js; a newer app's config is kept verbatim)
+				...optional('menus', normalizeGameMenus(playRaw.menus))
 			},
-			['interaction', 'grounded', 'simOnPlay', 'cursor', 'locomotion', 'spawn', 'bounds', 'reach', 'rayHits', 'banner', 'moments', 'touch']
+			['interaction', 'grounded', 'simOnPlay', 'cursor', 'locomotion', 'spawn', 'bounds', 'reach', 'rayHits', 'banner', 'moments', 'touch', 'menus']
 		),
 		// A1: the 20 ceiling is throwVelocity's MAX_LINVEL, restated rather than imported —
 		// this module is store-only and the response clamps through clampThrow anyway

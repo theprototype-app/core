@@ -49,6 +49,7 @@ export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?:
 	create_text: { title: 'Add 3D text', destructive: false, openWorld: true },
 	list_fonts: { title: 'List fonts for 3D text', read: true },
 	create_path: { title: 'Add a path to walk along', destructive: false }, // 78 F4
+	create_vector: { title: 'Draw a flat vector shape', destructive: false }, // 64-vector
 	create_tube: { title: 'Make a tube along a path', destructive: false },
 	extrude_shape: { title: 'Extrude an outline', destructive: false },
 	create_mesh: { title: 'Make a mesh from data', destructive: false },
@@ -269,8 +270,8 @@ export const CONNECTOR_FAMILIES = Object.freeze({
 	create_shape: {
 		title: 'Make a shape',
 		summary:
-			'Make shapes the basic objects cannot: a lathe (a vase, a bowl, a lamp from a profile turned around an axis), a tube along a path (a rail, a pipe, a cable), an extruded outline (a sign, a star, a wall with a hole), a mesh from your own vertices (anything else), or text = 3D words (a sign, a title: flat, or solid with depth and a bevel; any bundled or Google Fonts font); path = a Path object guards patrol along (points with waits, speeds, jumps and events; walkers walk it at once); import = a glTF / GLB / OBJ model file (base64, chunks or an https url) whose named parts come back as children animate_parts can move.',
-		actions: { lathe: 'create_lathe', tube: 'create_tube', extrude: 'extrude_shape', mesh: 'create_mesh', text: 'create_text', import: 'import_shape', path: 'create_path' }, // 78 F4: a new ACTION, no new connector tool name
+			'Make shapes the basic objects cannot: a lathe (a vase, a bowl, a lamp from a profile turned around an axis), a tube along a path (a rail, a pipe, a cable), an extruded outline (a sign, a star, a wall with a hole), a mesh from your own vertices (anything else), or text = 3D words (a sign, a title: flat, or solid with depth and a bevel; any bundled or Google Fonts font); path = a Path object guards patrol along (points with waits, speeds, jumps and events; walkers walk it at once); vector = a flat 2D shape standing in the scene (rect, ellipse, star, polygon with a live corner radius, an outline from 2D points, or an SVG file as text; fill, stroke, gradient, optional depth); import = a glTF / GLB / OBJ model file (base64, chunks or an https url) whose named parts come back as children animate_parts can move.',
+		actions: { lathe: 'create_lathe', tube: 'create_tube', extrude: 'extrude_shape', mesh: 'create_mesh', text: 'create_text', import: 'import_shape', path: 'create_path', vector: 'create_vector' }, // 78 F4 / 64-vector: a new ACTION, no new connector tool name
 		batch: { key: 'shapes', tool: 'create_shapes' }
 	},
 	edit_shape: {

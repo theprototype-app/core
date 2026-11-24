@@ -21,7 +21,9 @@
 // answer; behaviour input handlers get {by}; validate_scene issue codes value-into-event, fires-on-every-change,
 // missing-handle, action-as-event, not-a-sensor, sensor-is-target, sensor-any, pickup-stays, toggle-per-person;
 // kit-pickups-collect param `hide` (additive: an optional argument, optional fields, new codes, no tool renamed)
-export const TP_AGENT_VERSION = '1.11.0';
+// 1.12.0 (64-vector): a new tool create_vector (the connector's create_shape {action: 'vector'}: rect / ellipse / star /
+// polygon / path / svg); set_geometry params reach a vector shape's record (additive: a new tool behind an existing family)
+export const TP_AGENT_VERSION = '1.12.0';
 
 /** Every method of the contract, in the order the docs list them. */
 export const TP_AGENT_METHODS = /** @type {const} */ ([

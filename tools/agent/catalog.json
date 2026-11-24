@@ -3,7 +3,7 @@
 	"format": 2,
 	"generator": {
 		"source": "tpAgent.tools() via core scripts/agent-tool-catalog.cjs, mapped by tools/agent/src/catalog.js",
-		"hostTools": 89,
+		"hostTools": 90,
 		"dropped": []
 	},
 	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
@@ -2082,6 +2082,138 @@
 			},
 			"annotations": {
 				"title": "Add a path to walk along",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "create_vector",
+			"title": "Draw a flat vector shape",
+			"description": "Add a flat VECTOR SHAPE (a 2D drawing standing in the scene: a logo, a sign, a decal-like panel, a star, a speech bubble): kind rect / ellipse (width, height), star (count points, radius, innerRatio), polygon (sides, radius); rect / star / polygon take a live corner radius. path = your own outline: vertices [[x, y], …] in metres in the shape's own plane around its position, closed (fills) or open (a line), smooth for a curve through them. svg = an SVG file as text (scripts, embedded HTML and external links are refused or taken out; up to 2 MB, 500 shapes). Colours: fill, stroke + strokeWidth, fill2 for a gradient (fillType linear or radial). depth > 0 extrudes it into a solid. It faces the camera unless rotation is given. Returns the uuid(s); change it later with set_geometry params (the same keys), combine shapes from the object menu (union, subtract).\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"kind": {
+						"type": "string",
+						"enum": [
+							"rect",
+							"ellipse",
+							"star",
+							"polygon",
+							"path",
+							"svg"
+						]
+					},
+					"width": {
+						"type": "number",
+						"description": "rect / ellipse, metres (default 1)"
+					},
+					"height": {
+						"type": "number",
+						"description": "rect / ellipse, metres (default 1)"
+					},
+					"radius": {
+						"type": "number",
+						"description": "star / polygon: outer radius, metres (default 0.5)"
+					},
+					"count": {
+						"type": "number",
+						"description": "star: how many points (3..32, default 5)"
+					},
+					"sides": {
+						"type": "number",
+						"description": "polygon: how many sides (3..32, default 6)"
+					},
+					"innerRatio": {
+						"type": "number",
+						"description": "star: inner / outer radius (0.05..1, default 0.45)"
+					},
+					"corner": {
+						"type": "number",
+						"description": "rect / star / polygon: corner radius in metres"
+					},
+					"vertices": {
+						"type": "array",
+						"items": {
+							"type": "array",
+							"items": {
+								"type": "number"
+							},
+							"minItems": 2,
+							"maxItems": 2
+						},
+						"description": "path: [[x, y], …] metres in the shape's plane"
+					},
+					"closed": {
+						"type": "boolean",
+						"description": "path: join the last point to the first (it fills)"
+					},
+					"smooth": {
+						"type": "boolean",
+						"description": "path: a smooth curve through the points (default corners)"
+					},
+					"svg": {
+						"type": "string",
+						"description": "svg: the file's text"
+					},
+					"fill": {
+						"type": "string",
+						"description": "hex #rrggbb"
+					},
+					"fill2": {
+						"type": "string",
+						"description": "second gradient colour, hex"
+					},
+					"fillType": {
+						"type": "string",
+						"enum": [
+							"solid",
+							"linear",
+							"radial",
+							"none"
+						]
+					},
+					"stroke": {
+						"type": "string",
+						"description": "outline colour, hex"
+					},
+					"strokeWidth": {
+						"type": "number",
+						"description": "outline width in metres (0 = none)"
+					},
+					"depth": {
+						"type": "number",
+						"description": "extrude into a solid this thick, metres (0 = flat)"
+					},
+					"name": {
+						"type": "string"
+					},
+					"position": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3,
+						"description": "world point, metres (default 2 m in front of the camera)"
+					},
+					"rotation": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3,
+						"description": "Euler radians (default: facing the camera, upright)"
+					}
+				},
+				"required": [
+					"kind"
+				]
+			},
+			"annotations": {
+				"title": "Draw a flat vector shape",
 				"readOnlyHint": false,
 				"destructiveHint": false,
 				"openWorldHint": false
@@ -6650,6 +6782,7 @@
 				"text": "create_text",
 				"import": "import_shape",
 				"path": "create_path",
+				"vector": "create_vector",
 				"shapes": "create_shapes"
 			},
 			"edit_shape": {
@@ -7504,7 +7637,7 @@
 			{
 				"name": "create_shape",
 				"title": "Make a shape",
-				"description": "Make shapes the basic objects cannot: a lathe (a vase, a bowl, a lamp from a profile turned around an axis), a tube along a path (a rail, a pipe, a cable), an extruded outline (a sign, a star, a wall with a hole), a mesh from your own vertices (anything else), or text = 3D words (a sign, a title: flat, or solid with depth and a bevel; any bundled or Google Fonts font); path = a Path object guards patrol along (points with waits, speeds, jumps and events; walkers walk it at once); import = a glTF / GLB / OBJ model file (base64, chunks or an https url) whose named parts come back as children animate_parts can move.\nCall it as {\"action\": \"lathe\", \"lathe\": {…its fields…}}; each action's fields and limits are in its object below.\nMany at once: {\"shapes\": [{\"action\": \"lathe\", \"lathe\": {…}}, …]} with no action — one call, one undo step.\nTake a screenshot after each change to check your work.",
+				"description": "Make shapes the basic objects cannot: a lathe (a vase, a bowl, a lamp from a profile turned around an axis), a tube along a path (a rail, a pipe, a cable), an extruded outline (a sign, a star, a wall with a hole), a mesh from your own vertices (anything else), or text = 3D words (a sign, a title: flat, or solid with depth and a bevel; any bundled or Google Fonts font); path = a Path object guards patrol along (points with waits, speeds, jumps and events; walkers walk it at once); vector = a flat 2D shape standing in the scene (rect, ellipse, star, polygon with a live corner radius, an outline from 2D points, or an SVG file as text; fill, stroke, gradient, optional depth); import = a glTF / GLB / OBJ model file (base64, chunks or an https url) whose named parts come back as children animate_parts can move.\nCall it as {\"action\": \"lathe\", \"lathe\": {…its fields…}}; each action's fields and limits are in its object below.\nMany at once: {\"shapes\": [{\"action\": \"lathe\", \"lathe\": {…}}, …]} with no action — one call, one undo step.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -7517,7 +7650,8 @@
 								"mesh",
 								"text",
 								"import",
-								"path"
+								"path",
+								"vector"
 							],
 							"description": "What to do. Put its fields in the object named after the action."
 						},
@@ -8303,6 +8437,128 @@
 								"points"
 							],
 							"description": "Add a Path object: a line through the scene that guards patrol, animals wander along or a camera rides. Points are WORLD positions; each point may also say how long to wait there, the speed and ease of the stretch after it, jump (skip straight to the next point), an event name fired on arrival (an On Path Event node hears it) and a facing to hold while waiting. walk: loop | pingpong | once | random. Hidden in Play unless show_in_play. walkers = object uuids that walk it at once (each gets a Path patrol node). Returns the path uuid; walk it later with create_flow_nodes pathpatrol {path: \"<uuid>\", offset}."
+						},
+						"vector": {
+							"type": "object",
+							"properties": {
+								"kind": {
+									"type": "string",
+									"enum": [
+										"rect",
+										"ellipse",
+										"star",
+										"polygon",
+										"path",
+										"svg"
+									]
+								},
+								"width": {
+									"type": "number",
+									"description": "rect / ellipse, metres (default 1)"
+								},
+								"height": {
+									"type": "number",
+									"description": "rect / ellipse, metres (default 1)"
+								},
+								"radius": {
+									"type": "number",
+									"description": "star / polygon: outer radius, metres (default 0.5)"
+								},
+								"count": {
+									"type": "number",
+									"description": "star: how many points (3..32, default 5)"
+								},
+								"sides": {
+									"type": "number",
+									"description": "polygon: how many sides (3..32, default 6)"
+								},
+								"innerRatio": {
+									"type": "number",
+									"description": "star: inner / outer radius (0.05..1, default 0.45)"
+								},
+								"corner": {
+									"type": "number",
+									"description": "rect / star / polygon: corner radius in metres"
+								},
+								"vertices": {
+									"type": "array",
+									"items": {
+										"type": "array",
+										"items": {
+											"type": "number"
+										},
+										"minItems": 2,
+										"maxItems": 2
+									},
+									"description": "path: [[x, y], …] metres in the shape's plane"
+								},
+								"closed": {
+									"type": "boolean",
+									"description": "path: join the last point to the first (it fills)"
+								},
+								"smooth": {
+									"type": "boolean",
+									"description": "path: a smooth curve through the points (default corners)"
+								},
+								"svg": {
+									"type": "string",
+									"description": "svg: the file's text"
+								},
+								"fill": {
+									"type": "string",
+									"description": "hex #rrggbb"
+								},
+								"fill2": {
+									"type": "string",
+									"description": "second gradient colour, hex"
+								},
+								"fillType": {
+									"type": "string",
+									"enum": [
+										"solid",
+										"linear",
+										"radial",
+										"none"
+									]
+								},
+								"stroke": {
+									"type": "string",
+									"description": "outline colour, hex"
+								},
+								"strokeWidth": {
+									"type": "number",
+									"description": "outline width in metres (0 = none)"
+								},
+								"depth": {
+									"type": "number",
+									"description": "extrude into a solid this thick, metres (0 = flat)"
+								},
+								"name": {
+									"type": "string"
+								},
+								"position": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3,
+									"description": "world point, metres (default 2 m in front of the camera)"
+								},
+								"rotation": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3,
+									"description": "Euler radians (default: facing the camera, upright)"
+								}
+							},
+							"required": [
+								"kind"
+							],
+							"description": "Add a flat VECTOR SHAPE (a 2D drawing standing in the scene: a logo, a sign, a decal-like panel, a star, a speech bubble): kind rect / ellipse (width, height), star (count points, radius, innerRatio), polygon (sides, radius); rect / star / polygon take a live corner radius. path = your own outline: vertices [[x, y], …] in metres in the shape's own plane around its position, closed (fills) or open (a line), smooth for a curve through them. svg = an SVG file as text (scripts, embedded HTML and external links are refused or taken out; up to 2 MB, 500 shapes). Colours: fill, stroke + strokeWidth, fill2 for a gradient (fillType linear or radial). depth > 0 extrudes it into a solid. It faces the camera unless rotation is given. Returns the uuid(s); change it later with edit_shape {action: 'params'} params (the same keys), combine shapes from the object menu (union, subtract)."
 						},
 						"shapes": {
 							"type": "array",

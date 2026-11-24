@@ -105,6 +105,16 @@ export function curvePointsToSubpath(pts, opts = {}) {
 		const d = sub3(p, frame.origin);
 		return [dot3(d, frame.x), dot3(d, frame.y)];
 	});
+	return { sub: pointsToSubpath2d(flat, opts), frame };
+}
+
+/**
+ * 2D points -> one subpath: corners, or (smooth, the default) the uniform Catmull-Rom curve through them as
+ * cubics. Shared by Path -> vector and the agent's create_shape {action: 'vector', kind: 'path'}.
+ * @param {number[][]} flat @param {{closed?: boolean, smooth?: boolean}} [opts]
+ * @returns {import('./vectorPath.js').VSubpath}
+ */
+export function pointsToSubpath2d(flat, opts = {}) {
 	const closed = !!opts.closed && flat.length > 2;
 	const smooth = opts.smooth !== false;
 	const n = flat.length;
@@ -120,5 +130,5 @@ export function curvePointsToSubpath(pts, opts = {}) {
 		const last = !closed && i === n - 1;
 		return node(p[0], p[1], first ? 0 : -tx, first ? 0 : -ty, last ? 0 : tx, last ? 0 : ty, !first && !last);
 	});
-	return { sub: { closed, nodes }, frame };
+	return { closed, nodes };
 }

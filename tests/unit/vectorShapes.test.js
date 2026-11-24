@@ -23,7 +23,7 @@ import {
 import { strokePieces, dashPolyline, strokeAll } from '../../src/lib/vector/vectorStroke.js';
 import { cleanVector, vectorDefaults, fillColourAt, MAX_NODES } from '../../src/lib/vector/vectorRecord.js';
 import { buildVectorGeometry, vectorPolylines } from '../../src/lib/vector/vectorMesh.js';
-import { vectorWireElement, rebuildVectorFromRecord, WIRE_FLOAT_CAP, VECTOR_SPEC, loadVectorCore, vectorCore } from '../../src/lib/vector/vectorGate.js';
+import { vectorWireElement, rebuildVectorFromRecord, WIRE_FLOAT_CAP, WIRE_ARRAY_CAP, VECTOR_SPEC, loadVectorCore, vectorCore } from '../../src/lib/vector/vectorGate.js';
 import { objectsGroup } from '../../src/stores/sceneStore';
 import { booleanShapes, outlineStroke, offsetShape, multiArea, recordArea, strokeArea, transformPolygons } from '../../src/lib/vector/vectorBoolean.js';
 import { writeSvg, readOwnSvg, pathData, arcToCubics, subpathFromCurves, importSvg } from '../../src/lib/vector/vectorSvg.js';
@@ -430,6 +430,17 @@ describe('the wire (vectorGate)', () => {
 		expect(Array.from(arrived.geometry.attributes.color.array.slice(0, 30))).toEqual(Array.from(mesh.geometry.attributes.color.array.slice(0, 30)));
 		// a complete mesh is never rebuilt
 		expect(rebuildVectorFromRecord(arrived)).toBe(false);
+	});
+
+	test('a mid-sized shape (one array past WIRE_ARRAY_CAP, the total under WIRE_FLOAT_CAP) also goes without triangles', () => {
+		// the restart's finding: a stroked rounded rect never reached a peer (binarypack recursion per array element)
+		const mesh = meshOf({ kind: 'rect', width: 1.6, height: 0.8, corner: 0.2, stroke: '#000000', strokeWidth: 0.03 });
+		const longest = Math.max(...Object.values(mesh.geometry.attributes).map((a) => a.array.length));
+		const total = Object.values(mesh.geometry.attributes).reduce((s, a) => s + a.array.length, mesh.geometry.index?.array.length ?? 0);
+		expect(longest).toBeGreaterThan(WIRE_ARRAY_CAP);
+		expect(total).toBeLessThan(WIRE_FLOAT_CAP);
+		const element = vectorWireElement(mesh);
+		expect(element.geometries[0].data.attributes.position).toBeUndefined();
 	});
 
 	test('a shape edited by the mesh tools is not a record any more: it always sends its triangles', () => {

@@ -21,6 +21,11 @@ import { objectsGroup, pokeScene } from '../../stores/sceneStore';
 export const VECTOR_GTYPE = 'Vector';
 /** above this many floats (attributes + index) the triangles stay home */
 export const WIRE_FLOAT_CAP = 45000;
+/** ...and above this many numbers in ANY ONE array. Measured on the restart (24 Nov): binarypack's per-element
+ * recursion overflows on one plain array of ~9 300 numbers (node, default stack; ~10 250 inside a `batch`), and
+ * a stroked rounded rect (3 018 vertices: a 9 054-number position array) never reached a peer while its total
+ * (~33 k floats) was under the 45 k cap. Half the measured limit. */
+export const WIRE_ARRAY_CAP = 4000;
 
 /** the armed draw tool, null = off @type {import('svelte/store').Writable<null | 'rect' | 'ellipse' | 'star' | 'polygon' | 'pen'>} */
 export const vectorTool = writable(null);
@@ -108,21 +113,26 @@ export const VECTOR_SPEC = {
 	}
 };
 
-/** @param {any} geometry */
-function floatsOf(geometry) {
-	let n = geometry?.index?.array?.length ?? 0;
-	for (const a of Object.values(geometry?.attributes ?? {})) n += /** @type {any} */ (a).array?.length ?? 0;
-	return n;
+/** too big for a plain-array `object` message? (the total, or any one array) @param {any} geometry */
+function heavyOnWire(geometry) {
+	const arrays = [geometry?.index?.array, ...Object.values(geometry?.attributes ?? {}).map((a) => /** @type {any} */ (a).array)];
+	let n = 0;
+	for (const a of arrays) {
+		const len = a?.length ?? 0;
+		if (len > WIRE_ARRAY_CAP) return true;
+		n += len;
+	}
+	return n > WIRE_FLOAT_CAP;
 }
 
 /**
  * The `element` an `object` message should carry for this mesh: null when it is not a rebuildable
  * vector shape (the caller sends whatever it always did), the full toJSON when it is light, and the
- * toJSON WITHOUT triangles when it is heavy. @param {any} object @returns {any | null}
+ * toJSON WITHOUT triangles when it is heavy (WIRE_FLOAT_CAP in all, WIRE_ARRAY_CAP in one array). @param {any} object @returns {any | null}
  */
 export function vectorWireElement(object) {
 	if (!rebuildable(object)) return null;
-	if (floatsOf(object.geometry) <= WIRE_FLOAT_CAP) return object.toJSON();
+	if (!heavyOnWire(object.geometry)) return object.toJSON();
 	const real = object.geometry;
 	object.geometry = new THREE.BufferGeometry();
 	try {

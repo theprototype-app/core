@@ -47,9 +47,11 @@ h.run(async () => {
 	let depth = await undoDepth(A.page);
 	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('vec:add:star'));
 	await iwer.frames(A.page, 4);
-	const star = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.selectedObject.subscribe((o) => r(o?.userData?.geometryParams?.gtype === 'Vector' ? o.uuid : null))())
-	);
+	// 64-vector restart: the radial rows are boot rows whose ACTIONS are a lazy chunk — wait for the star
+	const selectedStar = () =>
+		A.page.evaluate(() => new Promise((r) => window.__stores.selectedObject.subscribe((o) => r(o?.userData?.geometryParams?.gtype === 'Vector' ? o.uuid : null))()));
+	for (let i = 0; i < 40 && !(await selectedStar()); i++) await iwer.frames(A.page, 2);
+	const star = await selectedStar();
 	h.check(!!star, 'Shapes ▸ Star placed (and selected) a vector star');
 	h.check((await undoDepth(A.page)) === depth + 1, 'placing it is one undo entry');
 	const placed = await info(A.page, star);
@@ -63,6 +65,7 @@ h.run(async () => {
 	depth = await undoDepth(A.page);
 	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('vec:extrude'));
 	await iwer.frames(A.page, 3);
+	for (let i = 0; i < 40 && !((await info(A.page, star))?.depth > 0); i++) await iwer.frames(A.page, 2);
 	const solid = await info(A.page, star);
 	h.check(Math.abs(solid.depth - 0.1) < 1e-9 && solid.zExtent > 0.099 && solid.verts > placed.verts, `Extrude makes a 10 cm solid with side walls (z extent ${solid.zExtent.toFixed(3)})`);
 	h.check((await undoDepth(A.page)) === depth + 1, 'the extrude is one undo entry');

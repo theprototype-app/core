@@ -2,8 +2,8 @@
 // (OLD_APP_URL, a v1.78.0 tree), the other this branch (APP_URL). The release has no vector code at all, so
 // what it gets is the additive record riding the ordinary messages — it must see a plain flat mesh (or
 // nothing), and never an error:
-//   1. the branch places a rectangle, a rounded star and a pen path (light: the whole mesh) and a radial
-//      ellipse (heavy: the record without triangles) -> the release holds the light ones as meshes with the
+//   1. the branch places a rectangle and a rounded star (light: the whole mesh), a pen path and a radial
+//      ellipse (heavy: the record without triangles; vectorGate WIRE_ARRAY_CAP decides) -> the release holds the light ones as meshes with the
 //      branch's vertex count and the heavy one as an object with no triangles; no page error
 //   2. the branch edits the rectangle's corner radius (a `geometry` message of an unknown gtype) and unions
 //      the star into it (geometry + move + delete) -> the release keeps going: the star is gone, no error
@@ -74,22 +74,26 @@ h.run(async () => {
 		return { rect: rect.uuid, star: star.uuid, pen: pen.uuid, heavy: heavy.uuid };
 	});
 	const mine = await meshes(L);
-	for (const k of ['rect', 'star', 'pen']) {
-		await h.eventually(
-			() => meshes(O),
-			(m) => !!m[made[k]] && m[made[k]].verts === mine[made[k]].verts && m[made[k]].verts > 0,
-			`1. the release holds the ${k} as a plain mesh with the branch's ${mine[made[k]].verts} vertices`,
-			20000
-		);
+	// light = every attribute array within vectorGate's WIRE_ARRAY_CAP (the whole mesh rides); heavy = the record only
+	const cap = await L.page.evaluate(() => window.__tp.test.v1.vectorGate.WIRE_ARRAY_CAP);
+	const light = (k) => mine[made[k]].verts * 3 <= cap;
+	h.check(light('rect') && light('star') && !light('heavy'), `1. premise: rect and star are light, the ellipse heavy (cap ${cap} numbers per array)`);
+	for (const k of ['rect', 'star', 'pen', 'heavy']) {
+		if (light(k))
+			await h.eventually(
+				() => meshes(O),
+				(m) => !!m[made[k]] && m[made[k]].verts === mine[made[k]].verts && m[made[k]].verts > 0,
+				`1. the release holds the ${k} as a plain mesh with the branch's ${mine[made[k]].verts} vertices`,
+				20000
+			);
+		else
+			await h.eventually(
+				() => meshes(O),
+				(m) => !!m[made[k]] && m[made[k]].verts === 0,
+				`1. the ${k} (${mine[made[k]].verts} vertices, heavy) reaches the release as its record: an object with no triangles`,
+				20000
+			);
 	}
-	const heavyThere = await h.eventually(
-		() => meshes(O),
-		(m) => !!m[made.heavy],
-		'1. the heavy ellipse arrives as an object (its record, no triangles)',
-		20000
-	);
-	h.check(heavyThere[made.heavy]?.verts === 0, `1. ...with no triangles on the release (plain fallback: ${heavyThere[made.heavy]?.verts} verts)`);
-	h.check(mine[made.heavy].verts > 15000 / 3, `1. premise: the ellipse IS heavy on the branch (${mine[made.heavy].verts} verts)`);
 	h.check(errorsOf(O).length === 0, `1. no page error on the release (${errorsOf(O).join(' | ') || 'none'})`);
 
 	// ---- 2. a geometry edit of an unknown gtype, then a boolean --------------------------------------
@@ -120,11 +124,12 @@ h.run(async () => {
 		'4. the release rejoined after its reload (premise)',
 		90000
 	);
-	for (const k of ['rect', 'pen']) {
+	for (const k of ['rect', 'pen', 'heavy']) {
+		const want = branchNow[made[k]].verts * 3 <= cap ? branchNow[made[k]].verts : 0;
 		await h.eventually(
 			() => meshes(O),
-			(m) => !!m[made[k]] && m[made[k]].verts === branchNow[made[k]].verts,
-			`4. ...and holds the ${k} again with the branch's ${branchNow[made[k]].verts} vertices`,
+			(m) => !!m[made[k]] && m[made[k]].verts === want,
+			`4. ...and holds the ${k} again (${want ? 'the branch\'s ' + want + ' vertices' : 'heavy: its record, no triangles'})`,
 			60000
 		);
 	}
@@ -136,8 +141,8 @@ h.run(async () => {
 	await P.page.evaluate(async (payload) => window.__tp.test.v1.sessions.applySession(payload, { backup: false, replicate: false, quiet: true }), saved);
 	await h.eventually(
 		() => meshes(P),
-		(m) => !!m[made.rect] && m[made.rect].verts === branchNow[made.rect].verts && !!m[made.pen] && m[made.pen].verts > 0,
-		'5. the branch-saved scene opens in the release: the shapes draw as plain meshes',
+		(m) => ['rect', 'pen', 'heavy'].every((k) => !!m[made[k]] && m[made[k]].verts === branchNow[made[k]].verts && m[made[k]].verts > 0),
+		'5. the branch-saved scene opens in the release: every shape draws as a plain mesh with the branch\'s vertices (a file carries the triangles)',
 		30000
 	);
 	h.check(errorsOf(P).length === 0, `5. no page error opening the branch file in the release (${errorsOf(P).join(' | ') || 'none'})`);
@@ -149,16 +154,18 @@ h.run(async () => {
 		c.sceneCommand('/create Box 1 1 1');
 		c.sceneCommand('/create Sphere');
 	});
-	const oldMeshes = await h.eventually(() => meshes(Q), (m) => Object.keys(m).length >= 2, '6. premise: the release made an old scene (a box and a sphere)', 20000);
+	await h.eventually(() => meshes(Q), (m) => Object.keys(m).length >= 2, '6. premise: the release made an old scene (a box and a sphere)', 20000);
+	const oldMeshes = await meshes(Q);
 	const oldFile = await Q.page.evaluate(() => JSON.parse(JSON.stringify(window.__tp.test.v1.sessions.buildSessionPayload('old-scene', { thumbnail: false }))));
 	const R = await h.setupPage(browser, 'R'); // a branch page on its own
 	await R.page.evaluate(async (payload) => window.__tp.test.v1.sessions.applySession(payload, { backup: false, replicate: false, quiet: true }), oldFile);
-	const loaded = await h.eventually(
+	await h.eventually(
 		() => meshes(R),
 		(m) => Object.keys(oldMeshes).every((u) => m[u] && m[u].verts === oldMeshes[u].verts),
 		`6. the old scene loads in the branch unchanged (${Object.keys(oldMeshes).length} objects, same vertex counts)`,
 		30000
 	);
+	const loaded = await meshes(R);
 	h.check(
 		Object.keys(oldMeshes).every((u) => loaded[u]?.gtype === oldMeshes[u].gtype && loaded[u]?.name === oldMeshes[u].name),
 		'6. ...same names and geometry types'

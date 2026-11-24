@@ -62,7 +62,8 @@ h.run(async () => {
 	// ---- arm from the toolbar's entry point -------------------------------
 	await A.page.evaluate(() => window.__stores.vectorTool.armVectorTool('rect'));
 	await A.page.waitForTimeout(300);
-	h.check(await A.page.locator('#vector-toolbar').isVisible(), 'the vector toolbar appears when a tool is armed');
+	// 64-vector restart: the toolbar is a lazy chunk mounted on arming — wait for it, never a fixed 300 ms
+	h.check(await A.page.locator('#vector-toolbar').waitFor({ state: 'visible', timeout: 15000 }).then(() => true, () => false), 'the vector toolbar appears when a tool is armed');
 	const armed = await A.page.evaluate(() => window.__stores.vectorTool.vectorToolDebug());
 	h.check(armed.tool === 'rect' && armed.armed, 'Rectangle is armed and the pointer seam is registered');
 
@@ -193,7 +194,8 @@ h.run(async () => {
 	// ---- edit points: a real drag on an anchor ------------------------------
 	await A.page.evaluate((uuid) => window.__stores.vectorEdit.enterVectorEdit(uuid), path.uuid);
 	await A.page.waitForTimeout(400);
-	h.check(await A.page.locator('#vector-edit-toolbar').isVisible(), 'the edit-points strip appears');
+	// 64-vector restart: the toolbar is a lazy chunk mounted on arming — wait for it, never a fixed 300 ms
+	h.check(await A.page.locator('#vector-edit-toolbar').waitFor({ state: 'visible', timeout: 15000 }).then(() => true, () => false), 'the edit-points strip appears');
 	const dbg = await A.page.evaluate(() => window.__stores.vectorEdit.vectorEditDebug());
 	const anchor = dbg.screen[0][0];
 	const editDepth = await undoDepth(A.page);

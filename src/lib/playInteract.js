@@ -490,7 +490,7 @@ function onPointerDown(event) {
 
 /** 37: a module-owned Play press hears the drag (the aim ray: crosshair or free cursor) @param {PointerEvent} event */
 function onModuleDrag(event) {
-	if (!modulePointerOwned() || !activeCamera) return;
+	if (!modulePointerOwned('play') || !activeCamera) return;
 	aimFrom(activeCamera);
 	modulePointerMove(raycaster, event);
 }
@@ -505,7 +505,7 @@ function isViewportTarget(event) {
 /** @param {PointerEvent} event */
 function onPointerUp(event) {
 	if (event.button !== 0) return;
-	if (modulePointerOwned()) {
+	if (modulePointerOwned('play')) {
 		if (activeCamera) aimFrom(activeCamera);
 		modulePointerUp(raycaster, event);
 		lastUp = 'module';

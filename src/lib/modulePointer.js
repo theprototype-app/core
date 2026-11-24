@@ -50,9 +50,14 @@ export function modulePointerWanted(mode) {
 	return entries.some((e) => e.modes.includes(mode));
 }
 
-/** Does a module own the gesture in flight? */
-export function modulePointerOwned() {
-	return !!owner;
+/**
+ * Does a module own the gesture in flight — in `mode`, when given? 64-vector-edit: Play's window listeners ask for
+ * 'play' only, so an Edit / Interact drag (Scene's, ray through the pointer) is not ALSO fed Play's aim ray (the
+ * crosshair: the screen centre) on every move — the second call won, and an Edit points drag followed the centre.
+ * @param {PointerMode} [mode]
+ */
+export function modulePointerOwned(mode) {
+	return !!owner && (!mode || owner.mode === mode);
 }
 
 /** the nearest mesh under the ray: scene objects and module content @param {THREE.Raycaster} ray */

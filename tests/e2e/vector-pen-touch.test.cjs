@@ -110,9 +110,21 @@ h.run(async () => {
 	}
 	h.check((await pen(A.page)).length === 3, 'panning back to the first point places nothing (still 3)');
 	h.check(inside(fs), `the first point is on screen (${fs && fs.map((v) => v.toFixed(0))})`);
+	// every pointer event the closing tap makes, with its target (a miss says where the tap went)
+	await A.page.evaluate(() => {
+		const log = (window.__tapLog = []);
+		for (const type of ['pointerdown', 'pointerup', 'pointercancel'])
+			window.addEventListener(type, (e) => log.push({ type, id: e.pointerId, pt: e.pointerType, x: Math.round(e.clientX), y: Math.round(e.clientY), target: `${e.target?.tagName}.${String(e.target?.className?.baseVal ?? e.target?.className ?? '').slice(0, 40)}` }), true);
+	});
 	await finger({ x: fs[0] + 6, y: fs[1] - 5 });
-	const now = await vectorParams(A.page);
+	let now = await vectorParams(A.page);
+	for (let i = 0; i < 10 && Object.keys(now).length === before.length; i++) {
+		await A.page.waitForTimeout(200);
+		now = await vectorParams(A.page);
+	}
 	const made = Object.keys(now).find((u) => !before.includes(u));
+	if (!made)
+		console.log('  close diag: ' + JSON.stringify({ tap: [fs[0] + 6, fs[1] - 5], tool: await A.page.evaluate(() => { const d = window.__stores.vectorTool.vectorToolDebug(); return { armed: d.armed, points: d.pen?.length ?? null, screen: d.screen }; }), events: await A.page.evaluate(() => window.__tapLog) }));
 	h.check(!!made && now[made].paths[0].closed && now[made].paths[0].nodes.length === 3, 'a tap on the first point closes the path into a shape');
 	h.check((await undoDepth(A.page)) === depth + 1, 'the finished path is ONE create entry');
 	await h.eventually(() => vectorParams(B.page), (m) => m[made]?.paths?.[0]?.closed === true, 'B sees the finger-drawn shape');

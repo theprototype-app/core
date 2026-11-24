@@ -158,6 +158,7 @@ export function exitVectorEdit() {
 /** set the picked set; the primary is `primary` when given, else the last of the set
  * @param {{sub: number, index: number}[]} list @param {{sub: number, index: number} | null} [primary] */
 function setPicks(list, primary) {
+	/** @type {{sub: number, index: number}[]} */
 	const uniq = [];
 	for (const p of list) if (!uniq.some((q) => q.sub === p.sub && q.index === p.index)) uniq.push({ sub: p.sub, index: p.index });
 	const main = primary && uniq.some((q) => q.sub === primary.sub && q.index === primary.index) ? primary : (uniq[uniq.length - 1] ?? null);
@@ -176,6 +177,7 @@ const isPicked = (p) => get(vectorEditPicks).some((q) => q.sub === p.sub && q.in
 /** pick every point of the shape */
 export function pickAllPoints() {
 	if (!edited) return false;
+	/** @type {{sub: number, index: number}[]} */
 	const all = [];
 	working.forEach((sub, si) => sub.nodes.forEach((_, i) => all.push({ sub: si, index: i })));
 	setPicks(all, get(vectorEditPick));
@@ -321,6 +323,7 @@ function onDown(_hit, ctx) {
 		const from = toLocal(ctx.ray);
 		const picks = isPicked(p) ? get(vectorEditPicks) : [p];
 		// what the moving points may snap to: other shapes, and this shape's points that stay put
+		/** @type {number[][]} */
 		const own = [];
 		working.forEach((sub, si) =>
 			sub.nodes.forEach((nd, i) => {

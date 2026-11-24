@@ -4,7 +4,10 @@
 // nothing), and never an error:
 //   1. the branch places a rectangle and a rounded star (light: the whole mesh), a pen path and a radial
 //      ellipse (heavy: the record without triangles; vectorGate WIRE_ARRAY_CAP decides) -> the release holds the light ones as meshes with the
-//      branch's vertex count and the heavy one as an object with no triangles; no page error
+//      branch's vertex count, and (64-extrude) the heavy one too: the release has no `vs` cap, so the mesh follows as a
+//      binary `meshgeo` marked vectorFallback; no page error
+//   3b. (64-extrude row 6) the branch EXTRUDES the rect with a bevel -> the release gets the solid as a plain mesh (the
+//      branch's vertices, the depth's z extent), the branch's own copy is still its record
 //   2. the branch edits the rectangle's corner radius (a `geometry` message of an unknown gtype) and unions
 //      the star into it (geometry + move + delete) -> the release keeps going: the star is gone, no error
 //   3. the release selects the shape (Inspector over an unknown gtype): no error
@@ -40,7 +43,9 @@ const meshes = (peer) =>
 		const out = {};
 		g?.traverse((o) => {
 			if (!o.isMesh || o === g) return;
-			out[o.uuid] = { name: o.name, verts: o.geometry?.attributes?.position?.count ?? 0, gtype: o.userData?.geometryParams?.gtype ?? null };
+			o.geometry?.computeBoundingBox?.();
+			const b = o.geometry?.boundingBox;
+			out[o.uuid] = { name: o.name, verts: o.geometry?.attributes?.position?.count ?? 0, gtype: o.userData?.geometryParams?.gtype ?? null, zext: b && Number.isFinite(b.max.z) ? b.max.z - b.min.z : 0 };
 		});
 		return out;
 	});
@@ -80,22 +85,13 @@ h.run(async () => {
 	const cap = await L.page.evaluate(() => window.__tp.test.v1.vectorGate.WIRE_ARRAY_CAP);
 	const light = (k) => mine[made[k]].verts * 3 <= cap;
 	h.check(light('rect') && light('star') && !light('heavy'), `1. premise: rect and star are light, the ellipse heavy (cap ${cap} numbers per array)`);
-	for (const k of ['rect', 'star', 'pen', 'heavy']) {
-		if (light(k))
-			await h.eventually(
-				() => meshes(O),
-				(m) => !!m[made[k]] && m[made[k]].verts === mine[made[k]].verts && m[made[k]].verts > 0,
-				`1. the release holds the ${k} as a plain mesh with the branch's ${mine[made[k]].verts} vertices`,
-				20000
-			);
-		else
-			await h.eventually(
-				() => meshes(O),
-				(m) => !!m[made[k]] && m[made[k]].verts === 0,
-				`1. the ${k} (${mine[made[k]].verts} vertices, heavy) reaches the release as its record: an object with no triangles`,
-				20000
-			);
-	}
+	for (const k of ['rect', 'star', 'pen', 'heavy'])
+		await h.eventually(
+			() => meshes(O),
+			(m) => !!m[made[k]] && m[made[k]].verts === mine[made[k]].verts && m[made[k]].verts > 0,
+			`1. the release holds the ${k} as a plain mesh with the branch's ${mine[made[k]].verts} vertices (${light(k) ? 'light: the whole mesh' : 'heavy: the vectorFallback meshgeo'})`,
+			20000
+		);
 	h.check(errorsOf(O).length === 0, `1. no page error on the release (${errorsOf(O).join(' | ') || 'none'})`);
 
 	// ---- 2. a geometry edit of an unknown gtype, then a boolean --------------------------------------
@@ -111,6 +107,20 @@ h.run(async () => {
 	await O.page.waitForTimeout(1500);
 	h.check(errorsOf(O).length === 0, `3. the release selects and inspects the shape with no error (${errorsOf(O).join(' | ') || 'none'})`);
 	await O.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject?.());
+
+	// ---- 3b. 64-extrude: the branch extrudes the rect -> the release gets the solid as a plain mesh ---
+	await L.page.evaluate((uuid) => window.__tp.test.v1.vectorActions.setVectorParams(uuid, { depth: 0.3, bevel: 0.03 }), made.rect);
+	const solid = (await meshes(L))[made.rect];
+	h.check(solid.gtype === 'Vector' && Math.abs(solid.zext - 0.3) < 1e-3, `3b. premise: the branch's rect is a 30 cm solid, still its record (z ${solid.zext.toFixed(3)})`);
+	await h.eventually(
+		() => meshes(O),
+		(m) => !!m[made.rect] && m[made.rect].verts === solid.verts && Math.abs(m[made.rect].zext - 0.3) < 1e-3,
+		`3b. the release gets the solid as a plain mesh (the branch's ${solid.verts} vertices, 30 cm deep)`,
+		20000
+	);
+	const fallback = await L.page.evaluate(() => window.__tp.test.v1.vectorOldPeers.oldPeerDebug());
+	h.check(fallback.sent >= 1 && fallback.oldPeers.length === 1, `3b. the mesh went to the one peer without the vs cap (${JSON.stringify(fallback)})`);
+	h.check(errorsOf(O).length === 0, `3b. no page error on the release (${errorsOf(O).join(' | ') || 'none'})`);
 
 	// ---- 4. two peers + reload: the release reloads and rejoins --------------------------------------
 	const branchNow = await meshes(L);
@@ -128,11 +138,11 @@ h.run(async () => {
 		90000
 	);
 	for (const k of ['rect', 'pen', 'heavy']) {
-		const want = branchNow[made[k]].verts * 3 <= cap ? branchNow[made[k]].verts : 0;
+		const want = branchNow[made[k]].verts;
 		await h.eventually(
 			() => meshes(O),
 			(m) => !!m[made[k]] && m[made[k]].verts === want,
-			`4. ...and holds the ${k} again (${want ? 'the branch\'s ' + want + ' vertices' : 'heavy: its record, no triangles'})`,
+			`4. ...and holds the ${k} again with the branch's ${want} vertices (${want * 3 <= cap ? 'light' : 'heavy: the vectorFallback at join'})`,
 			60000
 		);
 	}

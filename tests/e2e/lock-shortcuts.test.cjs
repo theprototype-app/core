@@ -268,7 +268,8 @@ h.run(async () => {
 	// ---- 4. editor-owned keys -------------------------------------------------------------------
 	const meshMap = await page.evaluate(() => {
 		const S = window.__tp.test.v1.shortcutsRegistry;
-		return S.shortcuts.filter((/** @type {any} */ r) => r.scope === 'mesh').map((/** @type {any} */ r) => [r.id, S.meshCommandFor(r.keys)]);
+		// an unbound row ('' keys, e.g. 99 K8's Path toggle and Bisect) has no key to resolve: meshCommandFor ignores ''
+		return S.shortcuts.filter((/** @type {any} */ r) => r.scope === 'mesh' && r.keys).map((/** @type {any} */ r) => [r.id, S.meshCommandFor(r.keys)]);
 	});
 	const meshBad = meshMap.filter(([id, got]) => id !== got);
 	h.check(meshMap.length > 10 && meshBad.length === 0, `every Edit Mesh key resolves to its own command (${meshMap.length} rows${meshBad.length ? ', wrong ' + JSON.stringify(meshBad) : ''})`);

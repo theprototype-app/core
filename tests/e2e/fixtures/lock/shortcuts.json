@@ -702,6 +702,16 @@
 			"when": false
 		},
 		{
+			"id": "mesh.subdivide-smooth",
+			"keys": "Shift+S",
+			"defaultKeys": "Shift+S",
+			"group": "Mesh edit",
+			"scope": "mesh",
+			"label": "Smooth subdivide, Catmull-Clark (faces; nothing picked = the whole mesh)",
+			"kind": "external",
+			"when": false
+		},
+		{
 			"id": "mesh.loopcut",
 			"keys": "C",
 			"defaultKeys": "C",
@@ -768,6 +778,26 @@
 			"group": "Mesh edit",
 			"scope": "mesh",
 			"label": "Connect two corners of a face (vertices)",
+			"kind": "external",
+			"when": false
+		},
+		{
+			"id": "mesh.path-toggle",
+			"keys": "",
+			"defaultKeys": "",
+			"group": "Mesh edit",
+			"scope": "mesh",
+			"label": "Path select on / off (a click adds the shortest path from the last pick)",
+			"kind": "external",
+			"when": false
+		},
+		{
+			"id": "mesh.bisect",
+			"keys": "",
+			"defaultKeys": "",
+			"group": "Mesh edit",
+			"scope": "mesh",
+			"label": "Arm Bisect (faces): two clicks draw the plane, Enter cuts",
 			"kind": "external",
 			"when": false
 		},

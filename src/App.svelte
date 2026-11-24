@@ -48,7 +48,6 @@
   import { SvelteFlowProvider } from '@xyflow/svelte'
   import Explorer from './components/editors/Explorer.svelte'
   import TextEditorWindow from './components/editors/TextEditorWindow.svelte'
-  import FilePreviewWindow from './components/editors/FilePreviewWindow.svelte'
   import { previewWindows } from './lib/fileWindows'
   import ModelPreviewWindow from './components/editors/ModelPreviewWindow.svelte'
   import DungeonMinimap from './components/play/DungeonMinimap.svelte'
@@ -520,8 +519,9 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <!-- 40-image (F13): the Image editor; renders nothing until an image is opened in it -->
 <!-- R22 round 12: ONE INSTANCE PER OPEN PREVIEW. With the multi-window pref off the list
      never holds more than one, so this renders exactly what it always did. -->
+<!-- 102-boot-diet-2: loaded with the first preview (the Profiler idiom) — ~24 KB gz the editor no longer boots with -->
 {#each $previewWindows as w, i (w.id)}
-  <FilePreviewWindow winId={w.id} index={i} />
+  {#await import('./components/editors/FilePreviewWindow.svelte') then m}<m.default winId={w.id} index={i} />{/await}
 {/each}
 <ModelPreviewWindow />
 {/if}

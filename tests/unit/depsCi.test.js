@@ -5,7 +5,8 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { classify, manifestDir } = require('../../scripts/ci/deps-policy.cjs');
-const { assign, shardCount, counts, ciEnvError, ciSuiteEnv } = require('../../scripts/ci/battery.cjs');
+const { assign, shardCount, counts, ciEnvError, ciSuiteEnv, ciOptional } = require('../../scripts/ci/battery.cjs');
+const { half } = require('../../scripts/ci/battery-desk.cjs');
 const batteryJson = require('../../tests/e2e/battery.json');
 const fs = require('node:fs');
 const { spawnSync } = require('node:child_process');
@@ -129,11 +130,47 @@ describe('the lean draw opt-out (ci-speed): battery.json ci.fullDraw', () => {
 		expect(ciSuiteEnv(/** @type {any} */ (b), 'store-suite', { BATTERY_CI: '1' })).toEqual({});
 		expect(ciSuiteEnv(/** @type {any} */ (b), 'pixel-suite', {})).toEqual({});
 	});
+	it('hands E2E_PAUSE_IDLE=1 to a suite listed in ci.pauseIdle, on CI only, beside its draw choice', () => {
+		const p = { ci: { fullDraw: { both: 'reads pixels' }, pauseIdle: { both: 'A/B 2026-11-24', peers: 'A/B 2026-11-24' } } };
+		expect(ciSuiteEnv(/** @type {any} */ (p), 'peers', { BATTERY_CI: '1' })).toEqual({ E2E_PAUSE_IDLE: '1' });
+		expect(ciSuiteEnv(/** @type {any} */ (p), 'both', { BATTERY_CI: '1' })).toEqual({ E2E_FULL_DRAW: '1', E2E_PAUSE_IDLE: '1' });
+		expect(ciSuiteEnv(/** @type {any} */ (p), 'peers', {})).toEqual({});
+	});
 	it('every listed suite exists and carries its reason', () => {
-		const list = Object.entries(batteryJson.ci?.fullDraw ?? {});
+		const list = [...Object.entries(batteryJson.ci?.fullDraw ?? {}), ...Object.entries(batteryJson.ci?.pauseIdle ?? {})];
 		for (const [name, reason] of list) {
 			expect(fs.existsSync(new URL(`../e2e/${name}.test.cjs`, import.meta.url)), name).toBe(true);
 			expect(typeof reason === 'string' && reason.length > 10, name).toBe(true);
 		}
+	});
+});
+
+describe('GPU-only suites (desk.gpu) are optional on the GitHub runner, required on the desk (ci-speed)', () => {
+	const GPU = 'GPU-only (desk.gpu): needs a real GPU';
+	const b = {
+		...battery({ plain: 600, webgpu: 500, budget: 400, held: 300 }),
+		optional: { held: 'red on the runner, by hand' },
+		desk: { gpu: ['webgpu', 'held', 'MOD:fx'], local: ['budget'] },
+		ci: { optionalTags: { gpu: GPU } }
+	};
+	it('a desk.gpu suite does not gate on GitHub, with the tag reason; an explicit optional entry keeps its own', () => {
+		const opt = ciOptional(/** @type {any} */ (b));
+		expect(opt.webgpu).toBe(GPU);
+		expect(opt.held).toBe('red on the runner, by hand');
+		expect('budget' in opt || 'plain' in opt).toBe(false);
+		expect(assign(/** @type {any} */ (b), 1)[0].suites).toEqual(['plain', 'budget']);
+		expect(assign(/** @type {any} */ (b), 1, 'optional')[0].suites).toEqual(['webgpu', 'held']);
+	});
+	it('without the rule nothing changes (a tag alone is not optional)', () => {
+		const plain = { ...b, ci: {} };
+		expect(assign(/** @type {any} */ (plain), 1)[0].suites).toEqual(['plain', 'webgpu', 'budget']);
+	});
+	it('the desk / pc / int battery still runs (and gates on) every desk.gpu suite', () => {
+		const desk = { ...b, modules: {} };
+		const all = [...half(/** @type {any} */ (desk), 'A', 2), ...half(/** @type {any} */ (desk), 'B', 2)].sort();
+		expect(all).toEqual(['budget', 'held', 'plain', 'webgpu']);
+	});
+	it('battery.json carries the rule for desk.gpu', () => {
+		expect(batteryJson.ci?.optionalTags?.gpu).toMatch(/GPU-only/);
 	});
 });

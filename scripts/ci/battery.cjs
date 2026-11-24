@@ -38,7 +38,7 @@ const BATTERY = path.join(ROOT, 'tests', 'e2e', 'battery.json');
  *   pc?: {games: string[], levels: string[]}, skip: Record<string, string>, optional: Record<string, string>, setup: Record<string, string>,
  *   suites: Record<string, number>, modules?: Record<string, number>, desk?: Record<string, string[]>, exclude?: Record<string, string[]>,
  *   tiers?: string, tier1_always?: string[], tier1_always_files?: string[], tier1_cap?: number, tier1_shared_suites?: number,
- *   ci?: {comment?: string, timeouts?: Record<string, number>, fullDraw?: Record<string, string>} }} Battery
+ *   ci?: {comment?: string, timeouts?: Record<string, number>, fullDraw?: Record<string, string>, pauseIdle?: Record<string, string>, optionalTags?: Record<string, string>} }} Battery
  * @typedef {{ name: string, status: 'pass'|'flaky'|'quarantined'|'fail'|'timeout'|'gone'|'notrun', required: boolean, rc: number|null, secs: number,
  *   retrySecs?: number, pass: number, fail: number, last: string, shard: number, minFps?: number, slow?: boolean, slowWaits?: number }} SuiteResult
  */
@@ -57,9 +57,26 @@ function runnable(b) {
 
 /** @typedef {'required'|'optional'|'all'} BatterySet */
 
+/**
+ * What does not gate ON THE GITHUB RUNNER: battery.json `optional` (suite -> reason, kept by hand and by `refresh`) plus
+ * every suite carrying a tag listed in `ci.optionalTags` (desk tag -> reason). `desk.gpu` is the first such tag: a suite
+ * that needs a real GPU (WebGPU, a measured frame or long-task budget) cannot pass on SwiftShader, and new ones kept
+ * landing as REQUIRED here and failing (cinematic-fx, 2026-11-24). An explicit `optional` entry keeps its own reason.
+ * The desk / pc / int batteries (battery-desk.cjs) do not read this: there these suites gate as before.
+ * @param {Battery} b @returns {Record<string, string>}
+ */
+function ciOptional(b) {
+	/** @type {Record<string, string>} */
+	const out = { ...b.optional };
+	for (const [tag, reason] of Object.entries(b.ci?.optionalTags ?? {}))
+		for (const n of /** @type {Record<string, string[]>} */ (/** @type {any} */ (b).desk ?? {})[tag] ?? []) if (!(n in out)) out[n] = reason;
+	return out;
+}
+
 /** the runnable suites of one set, longest first @param {Battery} b @param {BatterySet} set @returns {[string, number][]} */
 function suitesOf(b, set) {
-	return runnable(b).filter(([n]) => set === 'all' || (set === 'optional') === n in b.optional);
+	const opt = ciOptional(b);
+	return runnable(b).filter(([n]) => set === 'all' || (set === 'optional') === n in opt);
 }
 
 /** @param {Battery} b @param {BatterySet} [set] @returns {number} */
@@ -134,12 +151,13 @@ function ciEnvError(env) {
 /**
  * ci-speed: the per-suite environment battery.json `ci` asks for, on CI only (BATTERY_CI=1). `ci.fullDraw` (suite ->
  * reason) = this suite tests pixels / an effect / the resolution / layout at size, so it opts OUT of the lean draw
- * (tests/e2e/helpers.cjs LEAN_DRAW) and draws as a user's page does. Anywhere else: nothing.
+ * (tests/e2e/helpers.cjs LEAN_DRAW) and draws as a user's page does. `ci.pauseIdle` (suite -> evidence) = a multi-page
+ * suite A/B'd unchanged with its idle pages paused (helpers PAUSE_IDLE). Anywhere else: nothing.
  * @param {Battery} b @param {string} name @param {Record<string, string | undefined>} env @returns {Record<string, string>}
  */
 function ciSuiteEnv(b, name, env) {
 	if (env.BATTERY_CI !== '1') return {};
-	return b.ci?.fullDraw?.[name] ? { E2E_FULL_DRAW: '1' } : {};
+	return { ...(b.ci?.fullDraw?.[name] ? { E2E_FULL_DRAW: '1' } : {}), ...(b.ci?.pauseIdle?.[name] ? { E2E_PAUSE_IDLE: '1' } : {}) };
 }
 
 /** @param {string[]} argv @param {string} flag */
@@ -281,6 +299,10 @@ async function run(argv) {
 		return part;
 	};
 	const mine = only ? only.split(',') : set === 'confirm' ? reds() : assign(b, of, set)[shard - 1].suites;
+	// GitHub-only optional suites (battery.json optional + ci.optionalTags), each with the reason it does not gate here
+	const ciOpt = ciOptional(b);
+	const byTag = mine.filter((n) => !(n in b.optional) && n in ciOpt);
+	if (byTag.length) console.log(`[battery] optional on this runner by tag (${byTag.length}): ${byTag.map((n) => `${n} — ${ciOpt[n]}`).join('; ')}`);
 	// the suites' own default is a hosts-file origin: say where the app is
 	const url = (process.env.APP_URL ||= `https://localhost:${port}/`);
 	let server = argv.includes('--serve') && mine.length ? await serve(port, path.join(out, 'logs', 'dev-server.log')) : null;
@@ -304,7 +326,7 @@ async function run(argv) {
 	const queue = [...mine];
 	const worker = async () => {
 		for (let name = queue.shift(); name; name = queue.shift()) {
-			const required = !(name in b.optional);
+			const required = !(name in ciOpt);
 			if (!fs.existsSync(path.join(ROOT, 'tests', 'e2e', name + '.test.cjs'))) {
 				results.push({ name, status: 'gone', required: false, rc: null, secs: 0, pass: 0, fail: 0, last: 'no such suite (refresh battery.json)', shard });
 				continue;
@@ -524,7 +546,7 @@ function refresh(argv) {
 		const names = (dir, f) => new Set(walk(path.resolve(dir)).filter((x) => /results-\d+\.json$/.test(x)).flatMap((x) => JSON.parse(fs.readFileSync(x, 'utf8')).results.filter(f).map((/** @type {SuiteResult} */ r) => r.name)));
 		const green = new Set(opts(argv, '--green').flatMap((d) => [...names(d, (r) => r.status === 'pass' || r.status === 'flaky')]));
 		for (const d of redDirs)
-			for (const n of names(d, (r) => r.status === 'fail' || r.status === 'timeout' || r.status === 'flaky')) if (n in b.suites && !green.has(n) && !(n in b.optional)) b.optional[n] = reason;
+			for (const n of names(d, (r) => r.status === 'fail' || r.status === 'timeout' || r.status === 'flaky')) if (n in b.suites && !green.has(n) && !(n in ciOptional(b))) b.optional[n] = reason;
 	}
 	for (const k of Object.keys(b.optional)) if (!(k in b.suites)) delete b.optional[k];
 	write(b);
@@ -565,4 +587,4 @@ if (require.main === module) {
 	}
 }
 
-module.exports = { load, assign, shardCount, runnable, counts, ciEnvError, ciSuiteEnv };
+module.exports = { load, assign, shardCount, runnable, counts, ciEnvError, ciSuiteEnv, ciOptional };

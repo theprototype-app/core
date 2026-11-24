@@ -124,8 +124,9 @@ function deskEntries(b) {
 function half(b, half, of, subset) {
 	const i = half.toUpperCase().charCodeAt(0) - 65;
 	const entries = subset ? deskEntries(b).filter(([n]) => subset.includes(n)) : deskEntries(b);
-	// the desk runs every suite the same way: `optional` is a GitHub-runner property, so it is not a set here
-	const shards = assign({ ...b, skip: {}, optional: {}, suites: Object.fromEntries(entries) }, of);
+	// the desk runs every suite the same way: `optional` is a GitHub-runner property, so it is not a set here — and
+	// neither is `ci.optionalTags` (a desk.gpu suite is GPU-only on GitHub, and gates here where the GPU is real)
+	const shards = assign({ ...b, skip: {}, optional: {}, ci: { ...b.ci, optionalTags: {} }, suites: Object.fromEntries(entries) }, of);
 	if (!(i >= 0 && i < of)) throw new Error(`--half ${half}: there are ${of} halves (A..${String.fromCharCode(64 + of)})`);
 	return shards[i].suites;
 }

@@ -5,7 +5,9 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { classify } = require('../../scripts/ci/deps-policy.cjs');
-const { assign, shardCount, counts, ciEnvError } = require('../../scripts/ci/battery.cjs');
+const { assign, shardCount, counts, ciEnvError, ciSuiteEnv } = require('../../scripts/ci/battery.cjs');
+const batteryJson = require('../../tests/e2e/battery.json');
+const fs = require('node:fs');
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 
@@ -107,5 +109,21 @@ describe('BATTERY_CI is GitHub-only (ci-speed): every battery runner refuses it 
 		const h = spawnSync(process.execPath, ['-e', "require('./tests/e2e/helpers.cjs')"], { cwd: root, env, encoding: 'utf8' });
 		expect(h.status).not.toBe(0);
 		expect(h.stderr).toMatch(/outside GitHub Actions/);
+	});
+});
+
+describe('the lean draw opt-out (ci-speed): battery.json ci.fullDraw', () => {
+	const b = { ci: { fullDraw: { 'pixel-suite': 'reads frame pixels' } } };
+	it('hands E2E_FULL_DRAW=1 to a listed suite on CI, nothing to the rest, nothing off CI', () => {
+		expect(ciSuiteEnv(/** @type {any} */ (b), 'pixel-suite', { BATTERY_CI: '1' })).toEqual({ E2E_FULL_DRAW: '1' });
+		expect(ciSuiteEnv(/** @type {any} */ (b), 'store-suite', { BATTERY_CI: '1' })).toEqual({});
+		expect(ciSuiteEnv(/** @type {any} */ (b), 'pixel-suite', {})).toEqual({});
+	});
+	it('every listed suite exists and carries its reason', () => {
+		const list = Object.entries(batteryJson.ci?.fullDraw ?? {});
+		for (const [name, reason] of list) {
+			expect(fs.existsSync(new URL(`../e2e/${name}.test.cjs`, import.meta.url)), name).toBe(true);
+			expect(typeof reason === 'string' && reason.length > 10, name).toBe(true);
+		}
 	});
 });

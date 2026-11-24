@@ -38,7 +38,7 @@ const BATTERY = path.join(ROOT, 'tests', 'e2e', 'battery.json');
  *   pc?: {games: string[], levels: string[]}, skip: Record<string, string>, optional: Record<string, string>, setup: Record<string, string>,
  *   suites: Record<string, number>, modules?: Record<string, number>, desk?: Record<string, string[]>, exclude?: Record<string, string[]>,
  *   tiers?: string, tier1_always?: string[], tier1_always_files?: string[], tier1_cap?: number, tier1_shared_suites?: number,
- *   ci?: {comment?: string, timeouts?: Record<string, number>} }} Battery
+ *   ci?: {comment?: string, timeouts?: Record<string, number>, fullDraw?: Record<string, string>} }} Battery
  * @typedef {{ name: string, status: 'pass'|'flaky'|'quarantined'|'fail'|'timeout'|'gone'|'notrun', required: boolean, rc: number|null, secs: number,
  *   retrySecs?: number, pass: number, fail: number, last: string, shard: number, minFps?: number, slow?: boolean, slowWaits?: number }} SuiteResult
  */
@@ -131,6 +131,17 @@ function ciEnvError(env) {
 	return `BATTERY_CI=${v} is set outside GitHub Actions (GITHUB_ACTIONS=${env.GITHUB_ACTIONS ?? 'unset'}): it is CI-only (the slow-runner allowance and the lean draw). Unset it; a local, desk, pc or release battery keeps today's limits and full rendering.`;
 }
 
+/**
+ * ci-speed: the per-suite environment battery.json `ci` asks for, on CI only (BATTERY_CI=1). `ci.fullDraw` (suite ->
+ * reason) = this suite tests pixels / an effect / the resolution / layout at size, so it opts OUT of the lean draw
+ * (tests/e2e/helpers.cjs LEAN_DRAW) and draws as a user's page does. Anywhere else: nothing.
+ * @param {Battery} b @param {string} name @param {Record<string, string | undefined>} env @returns {Record<string, string>}
+ */
+function ciSuiteEnv(b, name, env) {
+	if (env.BATTERY_CI !== '1') return {};
+	return b.ci?.fullDraw?.[name] ? { E2E_FULL_DRAW: '1' } : {};
+}
+
 /** @param {string[]} argv @param {string} flag */
 function opt(argv, flag) {
 	const i = argv.indexOf(flag);
@@ -206,7 +217,7 @@ function runSuite(name, est, out, tag, capMs) {
 	const log = fs.openSync(logFile, 'w');
 	// every evidence variable the suites read points OUTSIDE the served tree (an .html artefact
 	// inside it full-reloads the app mid-test) and is kept only when the suite fails
-	const env = { ...process.env, EVIDENCE_DIR: ev, EVIDENCE: ev, OUT: ev, SHOT_DIR: ev, SHOTS_DIR: ev };
+	const env = { ...process.env, EVIDENCE_DIR: ev, EVIDENCE: ev, OUT: ev, SHOT_DIR: ev, SHOTS_DIR: ev, ...ciSuiteEnv(load(), name, process.env) };
 	// battery.json `ci.timeouts` (seconds): a CI-only suite limit for a suite the slow-runner allowance makes longer
 	// (BATTERY_CI=1 is set by battery.yml only; a local battery keeps the estimate-based limit)
 	const ciSecs = process.env.BATTERY_CI === '1' ? load().ci?.timeouts?.[name] : undefined;
@@ -554,4 +565,4 @@ if (require.main === module) {
 	}
 }
 
-module.exports = { load, assign, shardCount, runnable, counts, ciEnvError };
+module.exports = { load, assign, shardCount, runnable, counts, ciEnvError, ciSuiteEnv };

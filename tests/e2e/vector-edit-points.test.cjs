@@ -84,6 +84,8 @@ h.run(async () => {
 	await A.page.evaluate(() => {
 		window.__stores.snapping.snapSettings.update((s) => ({ ...s, translate: 0.25 }));
 		window.__stores.snapping.snapEnabled.set(true);
+		// the grid ALONE here: element snap / smart guides take an axis before the grid does (section 3)
+		window.__stores.snapping.snapTargets.update((t) => ({ ...t, enabled: false }));
 	});
 	await A.page.evaluate((u) => window.__stores.vectorEdit.enterVectorEdit(u), path);
 	h.check(await A.page.locator('#vector-edit-toolbar').waitFor({ state: 'visible', timeout: 15000 }).then(() => true, () => false), 'the Edit points strip appears');
@@ -128,7 +130,10 @@ h.run(async () => {
 	h.check((await undoDepth(A.page)) === depth + 1, 'the nudge is one undo entry');
 
 	// ---- 3 smart guides: grid off, line an anchor up with the rectangle's corner -------------
-	await A.page.evaluate(() => window.__stores.snapping.snapEnabled.set(false));
+	await A.page.evaluate(() => {
+		window.__stores.snapping.snapEnabled.set(false);
+		window.__stores.snapping.snapTargets.update((t) => ({ ...t, enabled: true }));
+	});
 	d = await dbg(A.page);
 	await A.page.mouse.click(d.screen[0][0][0], d.screen[0][0][1]); // pick only anchor 0
 	await A.page.waitForTimeout(150);

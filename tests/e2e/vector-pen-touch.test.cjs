@@ -45,6 +45,17 @@ h.run(async () => {
 		await touch('touchEnd', []);
 		await A.page.waitForTimeout(200);
 	};
+	/** the orbit camera coasts (damping) after the fingers lift: wait until it stops, so screen positions read
+	 * afterwards are where a tap will land */
+	const settle = async () => {
+		let a = await camPos(A.page);
+		for (let i = 0; i < 40; i++) {
+			await A.page.waitForTimeout(100);
+			const b = await camPos(A.page);
+			if (moved(a, b) < 1e-4) return;
+			a = b;
+		}
+	};
 	/** two fingers: the first lands, then the second, both travel (apart = pinch, together = pan), both lift */
 	const twoFingers = async (a, b, da, db, steps = 8) => {
 		await touch('touchStart', [{ ...a, id: 1 }]);
@@ -59,6 +70,7 @@ h.run(async () => {
 		}
 		await touch('touchEnd', []);
 		await A.page.waitForTimeout(250);
+		await settle();
 	};
 
 	await A.page.evaluate(() => window.__stores.vectorTool.armVectorTool('pen'));

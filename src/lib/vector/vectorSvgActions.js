@@ -14,6 +14,7 @@ import { showToast } from '../../stores/appStore';
 import { beginHistoryBatch, endHistoryBatch, historyBatchOpen } from '../history';
 import { applySelectionSet } from '../objectActions';
 import { writeSvg, readOwnSvg, importSvg } from './vectorSvg.js';
+import { checkSvgText, svgItemsVerdict } from './vectorSvgSafety.js';
 import { isVector, vectorParamsOf, addVectorShape } from './vectorActions.js';
 import { frameFor } from './vectorTool.js';
 
@@ -81,17 +82,29 @@ function rayAt(cx, cy) {
  * @returns {string[]} the new shapes' uuids
  */
 export function placeSvg(text, opts = {}) {
-	const own = readOwnSvg(text);
+	// 64-vector row 5: the file is UNTRUSTED — size / entity / element caps, nothing that runs or fetches
+	const gate = checkSvgText(text);
+	if (!gate.ok) {
+		showToast(gate.reason);
+		return [];
+	}
+	const safe = gate.text;
+	const own = readOwnSvg(safe);
 	/** @type {{params: Record<string, any>, matrix: number[], name?: string}[]} */
 	let items;
 	try {
-		items = own ?? importSvg(text);
+		items = own ?? importSvg(safe);
 	} catch (error) {
 		console.warn('SVG import failed', error);
 		items = [];
 	}
 	if (!items.length) {
 		showToast('No shapes found in that SVG');
+		return [];
+	}
+	const capped = svgItemsVerdict(items);
+	if (capped) {
+		showToast(capped);
 		return [];
 	}
 	const group = get(objectsGroup);

@@ -43,6 +43,13 @@
 //   sets the merge threshold (0 = exact signatures only); TP_BOOT_CHUNKS_DUMP=<file> writes the
 //   classification (+ the module graph with TP_BOOT_CHUNKS_GRAPH=1) for a post-build check.
 
+/** 64-vector: barrel members the app never renders, whose static imports must not count as boot. Rolldown's
+ * graph still lists them (see KNOWN AND LEFT); when a LAZY module uses the same dependency, the dependency
+ * survives tree-shaking and the grouping put it on the boot path. Measured: @threlte/extras' unused <Svg>
+ * imports SVGLoader, and once the vector importer used SVGLoader the boot grew 8.4 KB gzip on BOTH pages.
+ * Skipping an edge only ever changes which chunk a module rides, never whether an import resolves.
+ * @type {RegExp} */
+const UNRENDERED_BARREL_MEMBER = /[\\/]@threlte[\\/]extras[\\/]dist[\\/]components[\\/]Svg[\\/]/;
 /** the play entry's page component — its page is protected from merges */
 const PROTECTED_ROUTE = /[\\/]routes[\\/]play[\\/]\+page\.svelte$/;
 
@@ -92,6 +99,7 @@ function classifyBootModules(graph, { mergeBelow = 0, protect = PROTECTED_ROUTE 
 			for (const d of dynamic ? [...m.imports, ...m.dynamicImports] : m.imports) {
 				// another page's node is another page: app.js's `() => import('./nodes/N.js')` is the router
 				if (nodeOf.has(d) && !roots.includes(d)) continue;
+				if (UNRENDERED_BARREL_MEMBER.test(d)) continue;
 				if (!seen.has(d)) stack.push(d);
 			}
 		}

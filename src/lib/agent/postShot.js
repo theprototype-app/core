@@ -58,7 +58,9 @@ export function postState() {
  * @returns {Promise<{pixels: Float32Array | Uint8Array, float: boolean} | {error: string}>}
  */
 export async function renderWithPost(renderer, scene, camera, w, h, entries) {
-	const [{ EffectComposer, RenderPass, CopyPass }, { compilePostStack, disposePostStack }] = await Promise.all([import('postprocessing'), import('$lib/postEffects')]);
+	const [{ EffectComposer, RenderPass, CopyPass }, { compilePostStack, disposePostStack, loadN8ao }] = await Promise.all([import('postprocessing'), import('$lib/postEffects')]);
+	// 102-boot-diet-2: N8AO is a lazy chunk; the compile is synchronous, so an AO entry needs it loaded first
+	if (entries.some((/** @type {any} */ e) => e?.kind === 'ao')) await loadN8ao().catch(() => {});
 	const float = !!renderer.extensions?.has?.('EXT_color_buffer_float');
 	const target = createRenderTarget(w, h, { type: float ? THREE.FloatType : THREE.UnsignedByteType, depthBuffer: false });
 	// no renderer at construction: setRenderer would resize the canvas to its own size and switch autoClear off

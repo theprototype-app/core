@@ -22,7 +22,7 @@
 import { get } from 'svelte/store';
 import { gameFeelActive, gameFeelOn } from './gameFeel';
 import { hapticsAllowed, hapticLevel } from './gameSettings';
-import { hapticSchedule, customHapticSchedule, xrHaptics, hapticDeviceEnv, connectedGamepads as gamepads, registerHapticOutput } from './hapticPatterns';
+import { hapticSchedule, customHapticSchedule, xrHaptics, hapticDeviceEnv, connectedGamepads as gamepads, registerHapticOutput, phoneVibrate } from './hapticPatterns';
 import { gameState } from './gameState';
 
 /** @typedef {import('./hapticPatterns').HapticPulse} HapticPulse */
@@ -194,7 +194,7 @@ function fire(call) {
 		} else if (call.out === 'padpulse') {
 			const pad = gamepads().find((p) => Number(p.index) === call.pad);
 			pad?.hapticActuators?.[0]?.pulse?.(call.intensity, call.ms);
-		} else if (call.out === 'vibrate') navigator.vibrate(call.pattern);
+		} else if (call.out === 'vibrate') phoneVibrate(call.pattern);
 	} catch {
 		/* a motor that refuses is a motor that is not there */
 	}
@@ -246,7 +246,7 @@ export function stopHaptics(reason = 'stop') {
 	try {
 		for (const pad of gamepads()) pad.vibrationActuator?.reset?.()?.catch?.(() => {});
 		// cancelling a phone pattern is a vibrate(0); only when we may have started one
-		if (busy || debug.plays) navigator.vibrate?.(0);
+		if (busy || debug.plays) phoneVibrate(0);
 		xrHaptics()?.stop?.();
 	} catch {
 		/* nothing to stop */

@@ -16,6 +16,7 @@
 //   - the click a held press ends with is not a tap — swallowed for a moment after the release.
 //
 //   use:barHold={{ onhold: (x, y) => 'drag' | 'menu' | null, onmove?, ondrop?, oncancel? }}
+import { uiHaptic } from '../uiHaptics';
 
 export const HOLD_MS = 400;
 export const HOLD_SLOP = 10;
@@ -86,9 +87,7 @@ export function barHold(node, options) {
 		timer = 0;
 		if (state !== 'pressing') return;
 		const meant = opts.onhold(x0, y0);
-		try {
-			if (meant) navigator.vibrate?.(12);
-		} catch {}
+		if (meant) uiHaptic('select', { kind: 'gestures', touch: true });
 		if (meant === 'drag') {
 			state = 'dragging';
 			window.addEventListener('touchmove', onTouchMove, { capture: true, passive: false });

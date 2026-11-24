@@ -237,11 +237,6 @@
 			"desc": ""
 		},
 		{
-			"name": "Haptic tick",
-			"kind": "toggle",
-			"desc": ""
-		},
-		{
 			"name": "Look speed",
 			"kind": "range",
 			"desc": ""
@@ -250,6 +245,36 @@
 			"name": "Layout",
 			"kind": "button:Reset",
 			"desc": ""
+		},
+		{
+			"name": "Touch feedback",
+			"kind": "segment",
+			"desc": "103 (H13)"
+		},
+		{
+			"name": "Buttons and switches",
+			"kind": "toggle",
+			"desc": "103 (H13)"
+		},
+		{
+			"name": "Sliders and values",
+			"kind": "toggle",
+			"desc": "103 (H13)"
+		},
+		{
+			"name": "Snapping",
+			"kind": "toggle",
+			"desc": "103 (H13)"
+		},
+		{
+			"name": "Gestures",
+			"kind": "toggle",
+			"desc": "103 (H13)"
+		},
+		{
+			"name": "Try it",
+			"kind": "range",
+			"desc": "103 (H13)"
 		},
 		{
 			"name": "Button looks",

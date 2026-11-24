@@ -333,6 +333,8 @@
 		"papercuts-102b": 300,
 		"keys-103": 450,
 		"mesh-keys-103": 200,
+		"ui-haptics-103": 240,
+		"vibrate-103": 300,
 		"render-seam": 180,
 		"array-tool": 300,
 		"corner-snap": 180,

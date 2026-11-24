@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { explorerTouchDrop, explorerTouchHover, explorerTouchEnd } from '$lib/explorerDropTarget.js';
 	import { parseCheckedObject } from '$lib/loadGuard.js';
+	import { uiHaptic } from '$lib/uiHaptics';
 	import { onLayoutRestore, storedPanelLayout } from '$lib/uiLayoutsCore';
 	import { showChoice, showConfirm } from '$lib/confirmDialog.js';
 	import { safeHtml } from '$lib/sandbox/sanitize.js';
@@ -6309,9 +6310,7 @@
 				try {
 					target.setPointerCapture?.(pid);
 				} catch {}
-				try {
-					navigator.vibrate?.(15);
-				} catch {}
+				uiHaptic('select', { kind: 'gestures', touch: true });
 				beginPlaceDrag({ payload, x: tStartX, y: tStartY, pointerType: e.pointerType || 'touch', pointerId: pid, collapse: true });
 				return;
 			}
@@ -6322,17 +6321,13 @@
 			try {
 				target.setPointerCapture?.(pid);
 			} catch {}
-			try {
-				navigator.vibrate?.(15);
-			} catch {}
+			uiHaptic('select', { kind: 'gestures', touch: true });
 		};
 		// 40 F3: a still HOLD opens the card's menu (long-press-explorer-file); the drag is the
 		// hold that then MOVES (onCardPointerMove) — hold-and-lift keeps the menu
 		tPressTimer = window.setTimeout(() => {
 			tHeld = { pickUp };
-			try {
-				navigator.vibrate?.(12);
-			} catch {}
+			uiHaptic('select', { kind: 'gestures', touch: true });
 			itemMenu(holdEvent(tStartX, tStartY), item);
 		}, HOLD_MS);
 	}

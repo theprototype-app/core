@@ -38,6 +38,25 @@ export function hapticOutputLayer() {
 	return outputLayer;
 }
 
+/** 103 (H13): THE PHONE MOTOR — the one place in the app that calls `navigator.vibrate` (a unit test
+ * greps for any other). The game layer (hapticOutput) and the UI layer (uiHaptics) both play through
+ * it; a suite swaps in a fake. Returns what the browser answered (false = refused / no motor).
+ * @type {((pattern: number | number[]) => boolean) | null} */
+let phoneFake = null;
+/** @param {((pattern: number | number[]) => boolean) | null} fake */
+export function setPhoneVibrateForTest(fake) {
+	phoneFake = fake;
+}
+/** @param {number | number[]} pattern ms, or [on, off, on, ...]; 0 / [] cancels @returns {boolean} */
+export function phoneVibrate(pattern) {
+	if (phoneFake) return phoneFake(pattern);
+	try {
+		return typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function' ? !!navigator.vibrate(pattern) : false;
+	} catch {
+		return false; // a permissions policy may forbid it
+	}
+}
+
 /* the device read */
 /** the connected gamepads, as the browser hands them (navigator.getGamepads can throw in a
  * sandboxed frame) @returns {any[]} */

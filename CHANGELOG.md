@@ -6,6 +6,50 @@
      rendering, so maintainer notes stay out of the user-facing window. No emoji from
      1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
 
+## 1.79.0 — Hands-on editing
+
+### Keyboard and gizmo
+- **Keymap presets**: Settings ▸ Shortcuts ▸ Keymap offers ThePrototype (the default), Blender style and Unity / Maya style. Your own key changes always win. <!-- 103-keys -->
+- **Move now, Rotate now, Resize now**: the selection follows the pointer at once; X / Y / Z lock an axis, type a number for an exact amount, Enter keeps it, Esc cancels. In the 3D view, the UV editor and Edit Mesh. No key by default; G / R / Alt+S in the Blender preset. <!-- 103-keys -->
+- **Fly with WASD** always or only while holding the right mouse button, level or where you look (Settings and the viewport menu ▸ View). The Object list and the Explorer take the arrow keys when you bring them forward. <!-- 103-keys -->
+- **New gizmo styles**: All in one, Touch puck (slide, lift, turn and resize with a thumb) and Box. A mouse now gets All in one and a touch screen the Touch puck; Settings ▸ Scene ▸ Gizmo picks another (Separate is the classic), the handle size and which handles show. <!-- 103-gizmo -->
+- **Press a tool again** (1 / 2 / 3 or its button) to step from its handles to all in one, then hidden. Press a tool button and drag to transform at once. <!-- 103-gizmo -->
+
+### Painting and the UV editor
+- **Pen pressure**: a light touch tints instead of painting full colour, and a stroke crossing itself no longer darkens. New Size + opacity mode, brush **Spacing** and **Smoothing** (also when painting on the model). <!-- 103-uv-touch -->
+- **Fingers in the UV editor**: two fingers pinch and pan, **Pen only draws** lets fingers pan after you use a pen, and the wheel or a pinch zooms toward the pointer. <!-- 103-uv-touch -->
+- **UV editor keys**: Select / Box / Lasso / Paint tool keys (W / B / C / P in the Blender preset), Space-drag pans with any tool, and **Shift-drag on empty space now box-selects** (middle-drag still pans). <!-- 103-keys -->
+
+### Touch feedback and vibration
+- **Touch feedback on phones**: a tick as a slider moves, a firmer one at defaults and whole numbers, a pulse when something snaps. Settings ▸ Touch controls ▸ Touch feedback: Off, Light, Medium or Strong, per kind. It replaces Haptic tick and stays quiet in Play. <!-- 103-ui-haptics -->
+- **Games vibrate gamepads and Android phones**, not only Quest controllers: the new **Vibrate** node, a little vibration on Camera Shake, Screen Flash and Hit Pause (switchable), and Vibration settings for players. <!-- 103-haptics -->
+
+### Around the 3D view
+- **One Preview pill** at the top right replaces the Cinematic switch and the budget chip: Preview turns the Cinematic view on, and its menu holds Draw as, Quality, Judge for (several devices at once) and Statistics. <!-- 103-viewbar -->
+- **New Draw as modes**: Wireframe over shaded, Ambient occlusion only, Normals, UV checker and Weights. <!-- 103-viewbar -->
+- **The controls around the 3D view line up** on one grid: one top row, the same distance from the edge everywhere, and the toolbar fills the space between the corner buttons. <!-- 103-hud-align -->
+
+### Materials and textures
+- **Material slots**: Inspector ▸ Material lists an object's slots to rename, reorder, duplicate, remove, switch off or select faces by; every setting edits the slot you tap. Also in the UV editor. <!-- 105-slots -->
+- **Switch material…** copies a preset or CC0 material into a slot, or links it to one already in the scene; Make unique copies it again. <!-- 105-slots -->
+- **A shader per slot** from the Shader editor's slot chip, for one slot or all of them. <!-- 105-slot-shaders -->
+- **Textures from the Explorer**: a folder button on every map row and UV slot opens one picker, or drag an Explorer image onto a map row, the UV canvas or an object (long-press on touch). <!-- 105-textures -->
+- **Noise** in the Image editor (Edit ▸ Noise…, N), and **Fill with noise** on every map row. <!-- 105-noise -->
+
+### Shadows and the Cinematic view
+- **Shadow quality per scene** (Configure Scene ▸ Lights): Off, Basic, Soft or Far, saved with the scene. A computer draws up to Far, a phone Soft, a headset Basic. Older scenes stay Basic. <!-- 106-shadows -->
+- **Reflections and Global light** switches (Auto / On / Off) in Preview ▸ Cinematic view, with their cost on this device; never saved or shared. Baked objects no longer get extra bounce light. <!-- 106-cine-toggles -->
+
+### Faster start
+- About **52 KB less to download** before the first frame: the code-behaviour runtime loads only when a scene or an agent needs it. <!-- 102-boot-diet -->
+
+### For AI agents
+- `set_material` takes `slot`, `slotName`, `slotOff`, `removeSlot` and `noise`; `create_shader`, `assign_shader` and `edit_shader` take `slot`; `set_light` takes `shadowQuality`. <!-- 105, 106-shadows -->
+
+### Compatibility
+- **Scene files**: older scenes open unchanged. A file saved here opens in 1.78.0 with every slot; there an off slot or a slot shader draws the slot's own material, and shadow quality reads Basic. <!-- TODO int c1: confirm vs 1.78.0 -->
+- **With someone on 1.78.0**: they see slots but draw off slots and slot shaders as normal materials, a Vibrate node does nothing for them, and they read the shadow quality as Basic: their next sky or light change sets it to Basic for everyone, so set it again once everyone has updated. <!-- 105-slots, 105-slot-shaders, 103-haptics, 106-shadows Q4 -->
+
 ## 1.78.0 — Faster mesh editing
 
 ### Mesh editing on a new core

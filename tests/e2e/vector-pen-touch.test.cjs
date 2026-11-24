@@ -96,9 +96,20 @@ h.run(async () => {
 	h.check((await pen(A.page)).length === 3, 'a third tap: three points');
 	const before = Object.keys(await vectorParams(A.page));
 	const depth = await undoDepth(A.page);
-	// the first point where it really is on screen now (the pinch and pan moved the camera)
-	const fs = (await A.page.evaluate(() => window.__stores.vectorTool.vectorToolDebug().screen))?.[0];
-	h.check(!!fs && fs[0] > 0 && fs[1] > 0 && fs[0] < 412 && fs[1] < 915, `the first point is on screen (${fs && fs.map((v) => v.toFixed(0))})`);
+	// the first point where it really is on screen now: the pinch zoomed in and may have pushed it off the
+	// edge, so a two-finger pan brings it back (and, again, places nothing)
+	const firstOnScreen = async () => (await A.page.evaluate(() => window.__stores.vectorTool.vectorToolDebug().screen))?.[0];
+	const inside = (q) => !!q && q[0] > 60 && q[0] < 352 && q[1] > 160 && q[1] < 760;
+	let fs = await firstOnScreen();
+	for (let i = 0; i < 3 && fs && !inside(fs); i++) {
+		const dx = Math.max(-300, Math.min(300, 206 - fs[0]));
+		const dy = Math.max(-400, Math.min(400, 460 - fs[1]));
+		const from = { x: 206 - dx / 2, y: 460 - dy / 2 };
+		await twoFingers({ x: from.x - 25, y: from.y }, { x: from.x + 25, y: from.y }, { x: dx, y: dy }, { x: dx, y: dy });
+		fs = await firstOnScreen();
+	}
+	h.check((await pen(A.page)).length === 3, 'panning back to the first point places nothing (still 3)');
+	h.check(inside(fs), `the first point is on screen (${fs && fs.map((v) => v.toFixed(0))})`);
 	await finger({ x: fs[0] + 6, y: fs[1] - 5 });
 	const now = await vectorParams(A.page);
 	const made = Object.keys(now).find((u) => !before.includes(u));

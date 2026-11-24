@@ -155,9 +155,21 @@ h.run(async () => {
 	const targetLocal = [corner[0], node0.y + 0.35];
 	const targetWorld = await toWorld(A.page, path, targetLocal);
 	const t = await h.projectPoint(A.page, targetWorld);
-	await A.page.mouse.move(d.screen[0][0][0], d.screen[0][0][1]);
+	// the drag in explicit steps, each step's plane point kept (a miss says whether the pointer, the camera
+	// or the canvas moved)
+	const camOf = () => A.page.evaluate(() => new Promise((r) => window.__stores.globalCamera.subscribe((c) => r(c.position.toArray().map((v) => +v.toFixed(3))))()));
+	const rectOf = () => A.page.evaluate(() => new Promise((r) => window.__stores.globalRenderer.subscribe((g) => { const b = g.domElement.getBoundingClientRect(); r([b.left, b.top, b.width, b.height]); })()));
+	const p0 = d.screen[0][0];
+	const cam0 = await camOf();
+	const rect0 = await rectOf();
+	await A.page.mouse.move(p0[0], p0[1]);
 	await A.page.mouse.down();
-	await A.page.mouse.move(t.x + 3, t.y, { steps: 10 });
+	const trail = [];
+	for (let i = 1; i <= 10; i++) {
+		await A.page.mouse.move(p0[0] + ((t.x + 3 - p0[0]) * i) / 10, p0[1] + ((t.y - p0[1]) * i) / 10);
+		const ls = (await dbg(A.page)).lastSnap;
+		trail.push(ls ? ls.pointer.map((v) => +v.toFixed(3)) : null);
+	}
 	await A.page.waitForTimeout(150);
 	const mid = await A.page.evaluate(() => window.__stores.vectorSnap.snapGuidesDebug());
 	h.check(mid.shown && mid.segments >= 1, 'a smart guide shows while the anchor lines up with the corner');
@@ -166,7 +178,7 @@ h.run(async () => {
 	d = await dbg(A.page);
 	h.check(Math.abs(d.paths[0].nodes[0].x - corner[0]) < 1e-6, `the anchor takes the corner's x exactly (${d.paths[0].nodes[0].x.toFixed(4)} vs ${corner[0].toFixed(4)})`);
 	if (Math.abs(d.paths[0].nodes[0].x - corner[0]) >= 1e-6)
-		console.log('  guide diag: ' + JSON.stringify({ node0, targetLocal, targetWorld, screen: t, pressed: d.screen[0][0], lastSnap: d.lastSnap }));
+		console.log('  guide diag: ' + JSON.stringify({ node0, targetLocal, targetWorld, screen: t, p0, after: d.screen[0][0], cam0, cam1: await camOf(), rect0, rect1: await rectOf(), trail, lastSnap: d.lastSnap }));
 	h.check(!(await A.page.evaluate(() => window.__stores.vectorSnap.snapGuidesDebug())).shown, 'the guide goes on release');
 
 	// ---- 4 close, split, delete a pair ---------------------------------------------------------

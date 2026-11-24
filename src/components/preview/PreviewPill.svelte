@@ -22,7 +22,6 @@
 	import Icon from '../ui/Icon.svelte';
 	import Badge from '../ui/Badge.svelte';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
-	import PreviewMenu from './PreviewMenu.svelte';
 	import { isLocked, isVRMode, viewMode } from '../../stores/sceneStore';
 	import { embedMode } from '$lib/playMode';
 	import { safeStorage } from '$lib/safeStorage';
@@ -30,8 +29,11 @@
 	import { toolbarSlots } from '$lib/toolbarSlots.js';
 	import { previewMenuAsk } from '$lib/previewPill.js';
 	import { get } from 'svelte/store';
-	import { cinematicState, toggleCinematic } from '$lib/cinematic/cinematicState.js';
-	import { QUALITY } from '$lib/cinematic/cinematicCore.js';
+	// 100-int's gate (cinematic-offer-net): the pill stands on EVERY device, a headset included, so it reads the
+	// light store and the labels only; the probe (cinematicState) and the rules (cinematicCore) load on a press,
+	// and the menu (which reads the rules) when it opens
+	import { cinematicState } from '$lib/cinematic/cinematicStore.js';
+	import { QUALITY_LABEL } from '$lib/cinematic/cinematicOffer.js';
 	import { drawAs, drawRowOf, isUnusualRow, DRAW_AS_LABEL } from '$lib/drawAs.js';
 	import { sceneCost, verdictFor, openBudget, setBudgetTarget, startBudgetMeter, TARGETS } from '$lib/budgetMeter';
 	import { judgeFor, here, maybeAutoOn } from '$lib/judgeFor.js';
@@ -55,7 +57,7 @@
 					: 'Cinematic view: bounced light and reflections, on this computer only (Shift+Z)'
 	);
 	// 106 S3: the drop lowers the step first, then a Reflections / Global light switch set to On (cinematicCore.stepText)
-	const dropText = $derived(cineOn && $cinematicState.dropped > 0 ? $cinematicState.stepped || 'Lowered to ' + QUALITY[$cinematicState.quality].label + ' to keep it smooth' : '');
+	const dropText = $derived(cineOn && $cinematicState.dropped > 0 ? $cinematicState.stepped || 'Lowered to ' + QUALITY_LABEL[/** @type {'basic'} */ ($cinematicState.quality)] + ' to keep it smooth' : '');
 
 	const HINT_KEY = 'cinematic:hintSeen';
 	let hint = $state(false);
@@ -90,7 +92,7 @@
 	function pressWord() {
 		if (!cine) return void toggleMenu();
 		if (cineOff) showWhy();
-		else void toggleCinematic();
+		else void import('$lib/cinematic/cinematicState.js').then((m) => m.toggleCinematic());
 	}
 
 	// ---- the devices ----
@@ -300,7 +302,7 @@
 	</div>
 	{#if menuOpen}
 		<div bind:this={menuEl} use:minimalScroll id="preview-menu" class="pp-menu tp-ui" style:top={menuPos.bottom === null ? menuPos.top + 'px' : 'auto'} style:bottom={menuPos.bottom === null ? 'auto' : menuPos.bottom + 'px'} style:right={menuPos.right + 'px'}>
-			<PreviewMenu judge {cine} onclose={() => (menuOpen = false)} />
+			{#await import('./PreviewMenu.svelte') then m}<m.default judge {cine} onclose={() => (menuOpen = false)} />{/await}
 		</div>
 	{/if}
 {/if}

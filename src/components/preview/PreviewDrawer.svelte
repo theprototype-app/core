@@ -7,7 +7,7 @@
 	import PreviewMenu from './PreviewMenu.svelte';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { previewDrawerOpen } from '$lib/previewPill.js';
-	import { cinematicState } from '$lib/cinematic/cinematicState.js';
+	import { cinematicState } from '$lib/cinematic/cinematicStore.js';
 	import { isLocked } from '../../stores/sceneStore';
 
 	const cine = $derived(!!$cinematicState.offered || (!!$cinematicState.disabled && $cinematicState.mode === 'off'));

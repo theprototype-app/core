@@ -14,7 +14,7 @@
 //                     vertex deformers), so they get no stand-in and the chip does not list them
 
 /** @typedef {import('./cinematicOffer.js').Quality} Quality */
-import { asQuality, asLightMode, DEFAULT_QUALITY } from './cinematicOffer.js';
+import { asQuality, asLightMode, DEFAULT_QUALITY, QUALITY_LABEL } from './cinematicOffer.js';
 export { asQuality, asLightMode, DEFAULT_QUALITY, offerVerdict } from './cinematicOffer.js';
 
 /** the three steps, lowest first (the drop walks this list down) @type {Quality[]} */
@@ -26,9 +26,9 @@ export const QUALITY_STEPS = ['basic', 'standard', 'high'];
  * gi/ssr off = GTAO in their place (the basic look: tone mapping, GTAO, TRAA, bloom).
  */
 export const QUALITY = Object.freeze({
-	basic: Object.freeze({ label: 'Basic', gi: false, ssr: false, scale: 1 }),
-	standard: Object.freeze({ label: 'Standard', gi: true, ssr: true, scale: 0.5 }),
-	high: Object.freeze({ label: 'High', gi: true, ssr: true, scale: 1 })
+	basic: Object.freeze({ label: QUALITY_LABEL.basic, gi: false, ssr: false, scale: 1 }),
+	standard: Object.freeze({ label: QUALITY_LABEL.standard, gi: true, ssr: true, scale: 0.5 }),
+	high: Object.freeze({ label: QUALITY_LABEL.high, gi: true, ssr: true, scale: 1 })
 });
 
 /** the words under each choice (the quality menu) */

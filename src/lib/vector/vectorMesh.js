@@ -269,6 +269,7 @@ export function buildVectorGeometry(params) {
 	if (solidInfo) {
 		geometry.userData.__topo = { counts: faces.map((f) => f.length), tris: faces.flat() };
 		lastSolid = solidInfo;
+		fullBuilds++;
 		remember(p, { pos, normal, colour: linear, uv, topo: geometry.userData.__topo });
 	}
 	geometry.computeBoundingBox();
@@ -331,9 +332,10 @@ function depthOnly(p) {
 	return geometry;
 }
 
-/** TEST/DEBUG: how many builds took the depth path */
+/** TEST/DEBUG: how many builds took the depth path, and how many solids were built in full */
 let fastBuilds = 0;
-export const vectorMeshDebug = () => ({ fastBuilds, cached: solids.size, lastSolid });
+let fullBuilds = 0;
+export const vectorMeshDebug = () => ({ fastBuilds, fullBuilds, cached: solids.size, lastSolid });
 /** TEST: forget the cached solids */
 export function resetSolidCache() {
 	solids.clear();

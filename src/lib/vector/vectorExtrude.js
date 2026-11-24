@@ -8,8 +8,9 @@
 // and Escape (or a drag back to where it began) leaves none. Dragging back to zero makes the shape
 // flat again (a text goes back to Flat).
 //
-// The arrow sits on the corner, not the middle, so it never covers the transform gizmo at the
-// object's origin. It is a scene-root helper sized in screen pixels; the press is taken through the
+// The arrow sits on the corner, not the middle, so on a shape of any size on screen it stays clear of
+// the transform gizmo at the object's origin; on a small one the gizmo can overlap it, and then the
+// arrow wins the press (the gizmo stands down until the release, so a drag is never also a move). It is a scene-root helper sized in screen pixels; the press is taken through the
 // modulePointer seam (Edit only, so no editor session or tool is holding the viewport).
 // A LAZY chunk: vectorBoot.js loads it when such an object is first selected.
 import * as THREE from 'three';
@@ -21,7 +22,8 @@ import {
 	selectedObjects,
 	objectsGroup,
 	isVRMode,
-	isLocked
+	isLocked,
+	TControls
 } from '../../stores/sceneStore';
 import { registerModulePointer } from '../modulePointer';
 import { withHistoryGesture } from '../historyGesture';
@@ -261,8 +263,31 @@ function onDown(_hit, ctx) {
 		token: {},
 		pending: null
 	};
+	holdGizmo(true);
 	if (typeof window !== 'undefined') window.addEventListener('keydown', onKeydown, true);
 	return true;
+}
+
+/** the gizmo's own listener sees the same press: the arrow takes it, so the gizmo stands down for the
+ * drag (and lets go of a grab it already started on this press — nothing has moved yet, so no step) */
+let gizmoHeld = /** @type {any} */ (null);
+/** @param {boolean} on */
+function holdGizmo(on) {
+	if (on) {
+		/** @type {any} */
+		const controls = get(TControls);
+		if (!controls || !controls.enabled) return;
+		if (controls.dragging) {
+			controls.pointerUp?.(null);
+			controls.dragging = false;
+			controls.axis = null;
+		}
+		controls.enabled = false;
+		gizmoHeld = controls;
+	} else if (gizmoHeld) {
+		gizmoHeld.enabled = true;
+		gizmoHeld = null;
+	}
 }
 
 /** @param {any} _hit @param {any} ctx */
@@ -308,6 +333,7 @@ function onUp() {
 
 function endDrag() {
 	drag = null;
+	holdGizmo(false);
 	if (typeof window !== 'undefined') window.removeEventListener('keydown', onKeydown, true);
 }
 

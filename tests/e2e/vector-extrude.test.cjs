@@ -123,13 +123,17 @@ h.run(async () => {
 	await dragArrow(A.page, a1, 140, {
 		mid: async () => {
 			// live: B sees a depth before the release
-			const f = await h.eventually(
-				() => facts(B.page, star),
+			// (eventually returns the check, not the value: keep the last value it saw)
+			await h.eventually(
+				async () => {
+					const f = await facts(B.page, star);
+					midB = depthOf(f) ?? 0;
+					return f;
+				},
 				(f) => depthOf(f) > 0,
 				'§1 B watches the star grow DURING the drag',
 				8000
 			);
-			midB = depthOf(f);
 		}
 	});
 	const s1 = await facts(A.page, star);
@@ -306,12 +310,19 @@ h.run(async () => {
 		a3.target !== star,
 		'§3 a mesh-edited shape has no extrude arrow (its record no longer is its mesh)'
 	);
-	// back to the record for the rest
-	await undo(A.page);
-	await h.eventually(
-		() => facts(A.page, star),
-		(f) => !f.faceEdited,
-		'§3 undo takes the bevel back off'
+	// undo takes the bevel back off (the Edit session may have left a selection step on top of it).
+	// The shape stays marked mesh-edited — faceEdit stamps that on every swap, undo too (base) — and
+	// §4's setDepth rebuilds it from its record, which clears the mark.
+	let f3 = null;
+	for (let i = 0; i < 4; i++) {
+		await undo(A.page);
+		await A.page.waitForTimeout(200);
+		f3 = await facts(A.page, star);
+		if (f3?.verts === bevel.before * 3) break;
+	}
+	h.check(
+		f3?.verts === bevel.before * 3,
+		`§3 undo takes the bevel back off (${f3?.verts / 3} triangles, ${bevel.before} before it)`
 	);
 
 	// ---- §4 the Inspector row: one scrub, one step ---------------------------------------
@@ -387,13 +398,27 @@ h.run(async () => {
 			const f = window.__frames.slice(2);
 			return { frames: f.length, worst: Math.max(...f), long: Math.max(0, ...window.__long) };
 		});
+	const builds = () => A.page.evaluate(() => window.__tp.test.v1.vectorMesh.vectorMeshDebug());
+	const posOf = (u) =>
+		A.page.evaluate((id) => {
+			let g;
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
+			return g.getObjectByProperty('uuid', id)?.position.toArray();
+		}, u);
+	const p6 = await posOf(star64);
+	const b6 = await builds();
 	await watch();
 	await dragArrow(A.page, a6, 160, { steps: 30, pause: 16 });
 	const f6 = await read();
+	const b6e = await builds();
 	h.check(depthOf(await facts(A.page, star64)) > 0.05, '§6 the 64-point star extruded');
 	h.check(
+		JSON.stringify(await posOf(star64)) === JSON.stringify(p6),
+		'§6 the drag never moves the star (the gizmo under the arrow stands down)'
+	);
+	h.check(
 		f6.long < 50,
-		`§6 the 64-point star drag blocks no frame for 50 ms or more (longest task ${f6.long.toFixed(0)} ms, worst frame ${f6.worst.toFixed(0)} ms over ${f6.frames})`
+		`§6 the 64-point star drag blocks no frame for 50 ms or more (longest task ${f6.long.toFixed(0)} ms, worst frame ${f6.worst.toFixed(0)} ms over ${f6.frames}; ${b6e.fullBuilds - b6.fullBuilds} full + ${b6e.fastBuilds - b6.fastBuilds} depth-only builds)`
 	);
 	const path = await A.page.evaluate(() => {
 		const nodes = Array.from({ length: 2000 }, (_, i) => {

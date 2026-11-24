@@ -9,7 +9,7 @@
 ## 1.78.0 — Faster mesh editing
 
 ### Mesh editing on a new core
-- **Big meshes edit faster**: extrude, inset, move, bevel, loop cut, knife and connect run on a new mesh core. On a 67,000-triangle mesh, entering Edit Mesh, extruding, bevelling an edge, cutting with the knife and undoing each take about half the time or less. <!-- 99-ops-a, 99-int speed check -->
+- **Big meshes edit faster**: extrude, inset, move, bevel, loop cut, knife and connect run on a new mesh core. On a 67,000-triangle mesh, entering Edit Mesh and undoing are about three times faster, extruding and bevelling an edge about twice as fast, and the knife about 1.7 times. <!-- 99-ops-a, 99-int speed check -->
 - **The rest of the mesh tools came along**: bridge, fill, solidify, merge, dissolve, delete, subdivide and symmetrize give the same results, faster on big meshes (dissolving vertices on a 67k-triangle scan: 6.1 s to 1.3 s). <!-- 99-ops-b -->
 - **Dragging stays smooth on dense meshes**: grabbing faces, edges and vertices and scrubbing a loop cut update the mesh in place, so a 67k-triangle mesh follows the pointer instead of stepping. <!-- 99-live K5 -->
 - **Sculpting is quicker** on big meshes and terrain: about 1.4 to 1.7 times faster strokes on 67k to 250k triangles. <!-- 99-live K6 -->

@@ -9,7 +9,7 @@
 		},
 		"editor": {
 			"html": "index.html",
-			"maxJsGzBytes": 3087360,
+			"maxJsGzBytes": 3082240,
 			"maxFirstFrameMs": 32000
 		}
 	},
@@ -236,13 +236,6 @@
 			"play": "v1.76.0 line 1909 KB -> union on v1.76.0 1880.6 KB -> line kept",
 			"editor": "v1.76.0 line 3029 KB -> union on v1.76.0 2999.4 KB -> line kept",
 			"note": "measured on the Deck; the five 104 lanes fit inside the 1.76.0 lines, so no raise"
-		},
-		{
-			"date": "2026-11-24",
-			"lane": "104-int-rel (the 104-int union with v1.78.1 merged, cf482b3f)",
-			"play": "v1.78.1 1891.0 KB (over its own 1890 line) -> union on v1.78.1 1888.2 KB (-2.8) -> line 1890 KB unchanged",
-			"editor": "v1.78.1 3010.8 KB (over its own 3010 line) -> union on v1.78.1 3011.2 KB (+0.4) -> line 3015 KB (the int rule: the merged tag + the union sum, rounded up to the next 5 KB)",
-			"note": "measured on the Deck, both trees built back to back; the overshoot is the tag's own, the 104 union adds 0.4 KB editor"
 		}
 	],
 	"throttle": {

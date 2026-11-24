@@ -2249,9 +2249,11 @@
 					extra={slotButtons}
 					rowAttrs={(/** @type {number} */ i) => ({ 'data-uv-slot': i })}
 					rowClass={(/** @type {number} */ i) => 'uv-slot' + (i === slot ? ' uv-slot-active' : '') + (dropSlot === i ? ' uv-slot-drop' : '')}
-					ondragover={onSlotDragOver}
-					ondragleave={(/** @type {number} */ i) => (dropSlot = dropSlot === i ? -1 : dropSlot)}
-					ondrop={onSlotDrop}
+					dropTarget={(/** @type {number} */ i) => ({
+						ondrop: (/** @type {any} */ payload) => slotDropItem(payload, i),
+						onfile: (/** @type {File} */ file) => slotDropFile(file, i),
+						onhover: (/** @type {boolean} */ on) => (dropSlot = on ? i : dropSlot === i ? -1 : dropSlot)
+					})}
 					onassign={assignSelectionTo}
 					canAssign={!!pickedTris}
 				/>

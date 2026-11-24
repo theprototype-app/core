@@ -56,7 +56,45 @@ function behaviourFiles() {
 	return { app, acorn };
 }
 
-async function page(browser, name, query, { debug = false, scene = null } = {}) {
+/** 103-int-1: the code of the start probe (section 5) */
+const PROBE_CODE = `export default behaviour({
+	name: 'Start probe',
+	state: { starts: 0, mark: 0, ticks: 0 },
+	on: {
+		start() {
+			this.state.starts += 1;
+			this.state.mark = 7;
+			this.log('start ' + this.state.starts);
+			this.after(0.05, 'tick');
+		}
+	},
+	tick() {
+		this.state.ticks += 1;
+		if (this.state.ticks === 1) this.log('tick1 mark=' + this.state.mark);
+		if (this.state.ticks < 20) this.after(0.05, 'tick');
+		else this.log('ticks ' + this.state.ticks + ' starts ' + this.state.starts);
+	}
+});
+`;
+
+/** the scene with one more behaviour node, the start probe (in the graph and the flat mirror) @param {string} file */
+function probeScene(file) {
+	const { unzipSync, zipSync, strFromU8, strToU8 } = require('fflate');
+	const files = unzipSync(fs.readFileSync(file));
+	const s = JSON.parse(strFromU8(files['session.json']));
+	const node = {
+		id: 'startProbe',
+		type: 'behaviour',
+		position: { x: 300, y: 600 },
+		data: { label: 'Behaviour', type: 'behaviour', name: 'Start probe', code: PROBE_CODE }
+	};
+	if (s.graphs?.scene?.nodes) s.graphs.scene.nodes.push(node);
+	if (Array.isArray(s.nodes) && s.nodes !== s.graphs?.scene?.nodes) s.nodes.push(structuredClone(node));
+	files['session.json'] = strToU8(JSON.stringify(s));
+	return Buffer.from(zipSync(files));
+}
+
+async function page(browser, name, query, { debug = false, scene = null, sceneBytes = null, delayFile = null, delay = 0 } = {}) {
 	const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
 	await ctx.addInitScript((dbg) => {
 		try {
@@ -67,14 +105,21 @@ async function page(browser, name, query, { debug = false, scene = null } = {}) 
 			/* no storage */
 		}
 	}, debug);
-	if (scene)
+	if (scene || sceneBytes)
 		await ctx.route('**/e2e-scenes/*.tpscene', (route) =>
 			route.fulfill({
 				status: 200,
 				contentType: 'application/octet-stream',
-				body: fs.readFileSync(scene)
+				body: sceneBytes ?? fs.readFileSync(/** @type {string} */ (scene))
 			})
 		);
+	// 103-int-1 counterfactual: hold the behaviours chunk (one request; nothing else waits on this route)
+	if (delayFile)
+		await ctx.route('**/' + delayFile, async (route) => {
+			const res = await route.fetch();
+			await new Promise((r) => setTimeout(r, delay));
+			await route.fulfill({ response: res });
+		});
 	const p = await ctx.newPage();
 	/** @type {string[]} */
 	const requests = [];
@@ -282,6 +327,48 @@ h.run(async () => {
 			`/play (debug) ${WITH}: no page errors (${D.errors.slice(0, 2).join(' | ')})`
 		);
 		await D.ctx.close();
+
+		// ------------------------------------------------------------ 5. the first tick is not missed
+		// 103-int-1 (the GAME RULE for 102-boot-diet): a game's behaviour now starts only after its
+		// runtime arrives, so prove that `start` fires EXACTLY once and that the state it sets is there
+		// on the behaviour's first timer tick — on a plain /play page (no debug hook table, which would
+		// load the runtime at boot and hide the on-demand path). The probe is a second behaviour added
+		// to the scene; `this.log` is console.log on the page. BHV_DELAY_MS (the counterfactual) holds
+		// the behaviours chunk's response that long, as a slow network would.
+		const probe = probeScene(withScene);
+		const delay = Number(process.env.BHV_DELAY_MS || 0);
+		const P = await page(
+			browser,
+			'P',
+			`play?scene=${encodeURIComponent('/e2e-scenes/' + WITH + '-probe.tpscene')}`,
+			{ sceneBytes: probe, delayFile: delay ? files.app : null, delay }
+		);
+		/** @type {string[]} */
+		const lines = [];
+		P.page.on('console', (m) => {
+			const t = m.text();
+			if (t.includes('[behaviour Start probe]')) lines.push(t.replace(/^.*\[behaviour Start probe\]\s*/, ''));
+		});
+		const pLoaded = await playLoaded(P.page);
+		check(pLoaded, `/play loads ${WITH} with the start probe${delay ? ` (behaviours chunk held ${delay} ms)` : ''}`);
+		const done = () => lines.some((l) => l.startsWith('ticks 20'));
+		for (const t0 = Date.now(); Date.now() - t0 < 30000 && !done(); ) await P.page.waitForTimeout(250);
+		console.log(`probe lines before Play: ${JSON.stringify(lines)}`);
+		const starts = () => lines.filter((l) => l.startsWith('start ')).length;
+		check(starts() === 1, `On start fires exactly once at load (${starts()})`);
+		check(
+			lines.includes('tick1 mark=7'),
+			`the state On start set is there on the first tick (frame-1 value: ${lines.find((l) => l.startsWith('tick1')) ?? 'no tick'})`
+		);
+		check(done() && lines.includes('ticks 20 starts 1'), 'the probe counted 20 ticks with one start');
+		await P.page.click('#embed-play').catch(() => {});
+		await P.page.waitForTimeout(5000);
+		check(starts() === 1, `entering Play does not start it again (${starts()} start lines after Play)`);
+		check(
+			P.errors.length === 0,
+			`/play probe: no page errors (${P.errors.slice(0, 2).join(' | ')})`
+		);
+		await P.ctx.close();
 	} finally {
 		await h.finish(browser);
 	}

@@ -309,8 +309,9 @@ export const DEBUG_HOOKS = [
 	['dockHost', () => import('./dockHost')],
 	['focusMode', () => import('./focusMode')],
 	['explorerDrop', () => import('./explorerDrop')],
-	['explorerDropTarget', () => import('./explorerDropTarget.js')], // 105 T1
-	['explorerPick', () => import('./explorerPick.js')], // 105 T1
+	// 105 T1: the Explorer drop target (desktop drag + touch long-press drop) and the shared Explorer picker
+	['explorerDropTarget', () => import('./explorerDropTarget.js')],
+	['explorerPick', () => import('./explorerPick.js')],
 	['assetShare', () => import('./assetShare')],
 	['soundRuntime', () => import('./soundRuntime')],
 	['dungeonPlay', () => import('./dungeonPlay')],

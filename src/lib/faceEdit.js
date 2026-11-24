@@ -2194,8 +2194,10 @@ export function selectAllFaces() {
 /** 105-slots: select every triangle of one material SLOT (the slot list's "Select its faces"). @param {number} slot */
 export function selectFacesOfSlot(slot) {
 	return withSelectionHistory('faces', () => {
-		if (!faceEdited) return false;
-		faceEditSelectedTris.set(workingTris.flatMap((/** @type {any} */ t, /** @type {number} */ i) => ((t.mi ?? 0) === slot ? [i] : [])));
+		// 103-int-1: on the 99 K5 triangle frame (the session soup is gone): `M` = slot per triangle, null = all 0
+		if (!FS.object || !FS.frame) return false;
+		const M = FS.frame.M;
+		faceEditSelectedTris.set(allTris().filter((i) => (M ? M[i] : 0) === slot));
 		refreshFaceOverlay();
 		return true;
 	});

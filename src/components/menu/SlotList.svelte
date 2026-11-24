@@ -23,12 +23,14 @@
 		makeSlotUnique
 	} from '$lib/materialSlots.js';
 	import { materialsOf } from '$lib/materialsHandler';
+	import { explorerDropTarget } from '$lib/explorerDropTarget.js';
 
 	/**
 	 * `extra(index)` renders a host's own row buttons (the UV editor's image / assign / remove); `rowAttrs(index)` adds
-	 * attributes to a row (the UV editor's `data-uv-slot`), `rowClass(index)` classes; `ondragover` / `ondragleave` /
-	 * `ondrop` make each row a drop target (an Explorer image or a file onto a slot).
-	 * @type {{ object: any, idPrefix?: string, onswitch?: (index: number, anchor: HTMLElement) => void, onselectfaces?: (index: number) => void, onassign?: (index: number) => void, canAssign?: boolean, extra?: import('svelte').Snippet<[number]>, rowAttrs?: (index: number) => Record<string, any>, rowClass?: (index: number) => string, ondragover?: (e: DragEvent, index: number) => void, ondragleave?: (index: number) => void, ondrop?: (e: DragEvent, index: number) => void }}
+	 * attributes to a row (the UV editor's `data-uv-slot`), `rowClass(index)` classes; `dropTarget(index)` makes each
+	 * row a drop target (an Explorer image or a file onto a slot; 103-int-1: through 105-textures' explorerDropTarget,
+	 * so the Explorer's touch long-press drag lands on a row too).
+	 * @type {{ object: any, idPrefix?: string, onswitch?: (index: number, anchor: HTMLElement) => void, onselectfaces?: (index: number) => void, onassign?: (index: number) => void, canAssign?: boolean, extra?: import('svelte').Snippet<[number]>, rowAttrs?: (index: number) => Record<string, any>, rowClass?: (index: number) => string, dropTarget?: (index: number) => import('$lib/explorerDropTarget.js').DropOpts }}
 	 */
 	let {
 		object,
@@ -40,9 +42,7 @@
 		extra,
 		rowAttrs,
 		rowClass,
-		ondragover,
-		ondragleave,
-		ondrop
+		dropTarget
 	} = $props();
 
 	const rows = $derived.by(() => {
@@ -231,9 +231,7 @@
 			class="slot-row {row.index === active ? 'slot-row-active' : ''} {rowClass?.(row.index) ?? ''}"
 			data-slot-id={row.id}
 			{...rowAttrs?.(row.index) ?? {}}
-			ondragover={ondragover ? (e) => ondragover(e, row.index) : undefined}
-			ondragleave={ondragleave ? () => ondragleave(row.index) : undefined}
-			ondrop={ondrop ? (e) => ondrop(e, row.index) : undefined}
+			use:explorerDropTarget={dropTarget ? dropTarget(row.index) : { ondrop: () => {}, disabled: true }}
 		>
 			{#if renaming === row.index}
 				<input

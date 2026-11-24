@@ -1145,7 +1145,8 @@ function quadWireGeometry(geometry) {
 	const reuse = wireReuseFor(geometry);
 	const f = reuse ? reuse.frame : frameOfGeometry(geometry);
 	const faces = readStoredFaces(geometry);
-	const skip = internalEdgeKeysOf(f, faces, faces ? new Int32Array(0) : reuse ? reuse.partner : pairQuadsOf(f, QUAD_COPLANAR, quadScore));
+	const partner = faces ? new Int32Array(0) : reuse ? reuse.partner : pairQuadsOf(f, QUAD_COPLANAR, quadScore);
+	const skip = internalEdgeKeysOf(f, faces, partner);
 	const seen = new Set();
 	/** @type {number[]} the corner each wire point is read from (99 K5: a live edit rewrites the wire from them) */
 	const from = [];
@@ -1163,6 +1164,9 @@ function quadWireGeometry(geometry) {
 	const out = new THREE.BufferGeometry();
 	out.setAttribute('position', new THREE.BufferAttribute(points, 3));
 	out.userData.fromCorners = Int32Array.from(from);
+	// lane 99-scrub: the DERIVED pairing this wire skipped the diagonals of (null when a stored partition drew it) —
+	// a mesh's first commit stores a partition and keeps the wire when that partition pairs the same
+	out.userData.partner = faces ? null : partner;
 	return out;
 }
 
@@ -5157,6 +5161,28 @@ function carryOrDeriveFaces(geometry, previous) {
 	storeDerivedFaces(geometry, readTriangles(geometry));
 }
 
+/** lane 99-scrub: `storeDerivedFaces` from the geometry's own frame (no triangle objects: pairQuads(tris) IS
+ * pairQuadsOf(frameOfTris(tris)), and frameOfGeometry reads readTriangles' values exactly); returns the pairing it
+ * stored from, or null @param {any} geometry @returns {Int32Array | null} */
+function storeDerivedFacesOf(geometry) {
+	const partner = derivedPartnerOf(geometry);
+	if (!partner.length) return null;
+	return storeFaces(geometry, derivePartition(partner.length, partner)) ? partner : null;
+}
+
+/** The derived quad pairing of a geometry, read off its frame: `pairQuads(readTriangles(geometry))` without the
+ * triangle objects (unit grabCommit99 pins the equality). @param {any} geometry @returns {Int32Array} */
+export function derivedPartnerOf(geometry) {
+	return pairQuadsOf(frameOfGeometry(geometry), QUAD_COPLANAR, quadScore);
+}
+
+/** two integer arrays, element for element @param {ArrayLike<number>} a @param {ArrayLike<number>} b */
+function sameInts(a, b) {
+	if (a.length !== b.length) return false;
+	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+	return true;
+}
+
 /**
  * Derive a quad partition from coplanarity and STORE it. Only ever reached for geometry
  * with no authored and no carryable topology — a mesh's first edit — because derivation
@@ -6051,7 +6077,8 @@ function restoreCapturedSelection(sel, uuid) {
  *   stampFaces?: boolean,
  *   carryColors?: boolean,
  *   selectionBefore?: any,
- *   wireFaces?: 'object' | 'none'
+ *   wireFaces?: 'object' | 'none',
+ *   weldBefore?: Int32Array | null
  * }} c `after` = `{positions, groups?, uvs?, colors?}` or a bare positions array; `faces` = the
  *   partition the operator AUTHORED (applied as stored topology; absent = carry or derive);
  *   `cap` = the noun of the size refusal (false: the caller already refused); `stampFaces` =
@@ -6082,8 +6109,14 @@ export function commitMesh(c) {
 		// carryOrDeriveFaces -> storeDerivedFaces on the new triangles), so later swaps carry these faces instead of
 		// re-guessing them. One pairing pass, on the first edit only (v1.75 paid it on every commit)
 		const live = FS.object?.geometry;
-		if (live && !readStoredFaces(live)) storeDerivedFaces(live, readTriangles(live));
-		afterInPlaceCommit();
+		const stored = !!(live && readStoredFaces(live));
+		// lane 99-scrub: the pairing straight off the geometry's frame (pairQuads(readTriangles(g)) is this pairing of
+		// frameOfTris of the same values, so the partition is the same — without 67k triangle objects)
+		const partner = live && !stored ? storeDerivedFacesOf(live) : null;
+		// the wire stays when its structure does: same weld, and the partition it skipped is the one stored now
+		const wirePartner = wire?.geometry?.userData?.partner;
+		const samePartition = stored || (!!partner && !!wirePartner && sameInts(partner, wirePartner));
+		afterInPlaceCommit(samePartition ? (c.weldBefore ?? null) : null);
 	} else if (bare) {
 		applyMeshGeo(uuid, positions);
 	} else {
@@ -6343,6 +6376,9 @@ function ensureLiveGeometry() {
 	FS.object.geometry = copy;
 	FS.frame = frameOfGeometry(copy);
 	weld(FS.frame);
+	// lane 99-scrub: the copy holds the same triangles in the same order, so the edit wire drawn from `g` describes it
+	// corner for corner — re-source it, or the first live write rebuilds the whole wire (~190 ms at 67k)
+	if (wireSource === g) wireSource = copy;
 	// the geometry the copy replaced: a cancel puts it back (a grab that changed nothing leaves the session as it
 	// was, the K3 lossless leave included), a commit disposes it when it was ours
 	return { replaced: g };
@@ -6538,6 +6574,9 @@ export function beginFaceGrab(faceOrIndex) {
 	FS.grab = {
 		index,
 		triIndices,
+		// lane 99-scrub: the weld before any write (writeLive drops FS.frame.V per move); the commit keeps the edit
+		// wire when the move left it unchanged
+		weldAtStart: weld(FS.frame),
 		// a TRIPLE, matching commitFaceGrab's `after`: an undo then restores the
 		// pre-grab mapping explicitly instead of relying on carry-over
 		before: { ...stateOf(FS.frame) },
@@ -6791,6 +6830,7 @@ export function commitFaceGrab() {
 	const before = FS.grab.before;
 	const moved = FS.grab.corners;
 	const selectionBefore = FS.grab.selectionBefore;
+	const weldBefore = FS.grab.weldAtStart ?? null;
 	settleReplaced(FS.grab, false);
 	FS.grab = null;
 	// carry groups + uvs explicitly rather than leaning on preserveUVs' carry-over (commitFaceAdjust's shape):
@@ -6809,7 +6849,8 @@ export function commitFaceGrab() {
 		stampFaces: true,
 		record: 'op',
 		cap: false,
-		selectionBefore
+		selectionBefore,
+		weldBefore
 	});
 	return true;
 }
@@ -6838,12 +6879,25 @@ export function cancelFaceGrab() {
 
 /** after the geometry changed IN PLACE (a grab's commit or cancel): the readers re-weld, the overlays and the wire
  * follow (the applyGeometrySnapshot tail, without a new geometry) */
-function afterInPlaceCommit() {
+function afterInPlaceCommit(weldBefore = null) {
 	rebuildFaces();
 	refreshFaceOverlay();
 	refreshEdgeHighlight();
-	refreshFaceWireframe();
+	// lane 99-scrub: the quad wire is a function of the weld (which corners share a vertex) and the stored partition.
+	// A move that kept both — the usual grab — leaves the wire's STRUCTURE as it was, and the drag already rewrote
+	// its points in place (writeLive -> updateFaceWireframe); rebuilding it here was ~190 ms of a 67k commit (string
+	// edge keys over every triangle). A move that changed the weld (a corner dragged onto another vertex) rebuilds.
+	if (weldBefore && wireFitsWeld(weldBefore)) updateFaceWireframe();
+	else refreshFaceWireframe();
 	pokeScene();
+}
+
+/** whether the edit wire was built from this very geometry and the session's weld is still `weldBefore`
+ * (same corners welded together: the integer weld numbers vertices in first-seen corner order, so an unchanged
+ * partition gives an identical array) @param {Int32Array} weldBefore */
+function wireFitsWeld(weldBefore) {
+	if (!wire || !FS.object || wireSource !== FS.object.geometry || wire.parent !== FS.object) return false;
+	return sameInts(weld(FS.frame), weldBefore);
 }
 
 /**

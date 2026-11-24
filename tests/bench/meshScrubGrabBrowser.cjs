@@ -98,79 +98,84 @@ const { launch, setupPage } = require('../e2e/helpers.cjs');
 			},
 			{ size }
 		);
-		const scrub = await page.evaluate(
-			async ({ steps }) => {
-				const { s, fe, tri } = window.__bench.pick();
-				if (tri < 0) return { error: 'no equator triangle' };
-				const raf = () => new Promise((r) => requestAnimationFrame(r));
-				const now = () => performance.now();
-				const sorted = (a) => [...a].sort((x, y) => x - y);
-				const q = (a, p) =>
-					a.length ? sorted(a)[Math.min(a.length - 1, Math.floor(a.length * p))] : null;
-				fe.pickFaceUnit(tri); // quad granularity: the quad under that triangle
-				const pickedTris = fe.currentTargetFace()?.triIndices?.length ?? null;
-				// idle frames: what a frame costs with nothing changing (the step numbers include one)
-				const idle = [];
-				for (let i = 0; i < 20; i++) {
-					const a = now();
-					await raf();
-					idle.push(now() - a);
-				}
-				let began = false;
-				const t0 = now();
-				for (let i = 0; i < 400 && !began; i++) {
-					began = fe.beginOpAdjust('loopcut', { cuts: 1, position: 0.5 }) !== false;
-					if (!began) await new Promise((r) => setTimeout(r, 50));
-				}
-				if (!began) return { error: 'loop cut never began' };
-				const beginMs = now() - t0;
-				for (let i = 0; i < 3; i++) await raf();
-				const bracket = typeof fe.beginAdjustScrub === 'function';
-				const drive = async (values, key) => {
-					const call = [];
-					const step = [];
-					if (bracket) fe.beginAdjustScrub();
-					for (const v of values) {
-						const a = now();
-						fe.reapplyOpAdjust({ [key]: v });
-						const b = now();
-						await raf();
-						call.push(b - a);
-						step.push(now() - a);
-					}
-					const r0 = now();
-					fe.settleOpAdjust();
-					const release = now() - r0;
-					await raf();
-					return {
-						call: { median: q(call, 0.5), p95: q(call, 0.95), max: q(call, 1) },
-						step: { median: q(step, 0.5), p75: q(step, 0.75), p95: q(step, 0.95) },
-						releaseMs: release
-					};
-				};
-				const positions = Array.from(
-					{ length: steps },
-					(_, i) => 0.3 + (0.4 * i) / Math.max(1, steps - 1)
-				);
-				const pos = await drive(positions, 'position');
-				const cutsVals = [2, 3, 4, 5, 6, 5, 4, 3, 2, 1];
-				const cuts = await drive(cutsVals, 'cuts');
-				const tris = window.__bench.object.geometry.attributes.position.count / 3;
-				fe.endOpAdjust();
-				s.history.undo();
-				for (let i = 0; i < 3; i++) await raf();
-				return {
-					beginMs,
-					bracket,
-					pickedTris,
-					idleFrame: { median: q(idle, 0.5), p95: q(idle, 0.95) },
-					position: pos,
-					cuts,
-					trisAfterCut: tris
-				};
-			},
-			{ steps }
-		);
+		const part = process.env.BENCH_PART ?? 'all'; // scrub | grab | all (one part fits one foreground slot run)
+		const moves = Number(process.env.BENCH_MOVES ?? 60);
+		const scrub =
+			part === 'grab'
+				? { skipped: true }
+				: await page.evaluate(
+						async ({ steps }) => {
+							const { s, fe, tri } = window.__bench.pick();
+							if (tri < 0) return { error: 'no equator triangle' };
+							const raf = () => new Promise((r) => requestAnimationFrame(r));
+							const now = () => performance.now();
+							const sorted = (a) => [...a].sort((x, y) => x - y);
+							const q = (a, p) =>
+								a.length ? sorted(a)[Math.min(a.length - 1, Math.floor(a.length * p))] : null;
+							fe.pickFaceUnit(tri); // quad granularity: the quad under that triangle
+							const pickedTris = fe.currentTargetFace()?.triIndices?.length ?? null;
+							// idle frames: what a frame costs with nothing changing (the step numbers include one)
+							const idle = [];
+							for (let i = 0; i < 20; i++) {
+								const a = now();
+								await raf();
+								idle.push(now() - a);
+							}
+							let began = false;
+							const t0 = now();
+							for (let i = 0; i < 400 && !began; i++) {
+								began = fe.beginOpAdjust('loopcut', { cuts: 1, position: 0.5 }) !== false;
+								if (!began) await new Promise((r) => setTimeout(r, 50));
+							}
+							if (!began) return { error: 'loop cut never began' };
+							const beginMs = now() - t0;
+							for (let i = 0; i < 3; i++) await raf();
+							const bracket = typeof fe.beginAdjustScrub === 'function';
+							const drive = async (values, key) => {
+								const call = [];
+								const step = [];
+								if (bracket) fe.beginAdjustScrub();
+								for (const v of values) {
+									const a = now();
+									fe.reapplyOpAdjust({ [key]: v });
+									const b = now();
+									await raf();
+									call.push(b - a);
+									step.push(now() - a);
+								}
+								const r0 = now();
+								fe.settleOpAdjust();
+								const release = now() - r0;
+								await raf();
+								return {
+									call: { median: q(call, 0.5), p95: q(call, 0.95), max: q(call, 1) },
+									step: { median: q(step, 0.5), p75: q(step, 0.75), p95: q(step, 0.95) },
+									releaseMs: release
+								};
+							};
+							const positions = Array.from(
+								{ length: steps },
+								(_, i) => 0.3 + (0.4 * i) / Math.max(1, steps - 1)
+							);
+							const pos = await drive(positions, 'position');
+							const cutsVals = [2, 3, 4, 5, 6, 5, 4, 3, 2, 1];
+							const cuts = await drive(cutsVals, 'cuts');
+							const tris = window.__bench.object.geometry.attributes.position.count / 3;
+							fe.endOpAdjust();
+							s.history.undo();
+							for (let i = 0; i < 3; i++) await raf();
+							return {
+								beginMs,
+								bracket,
+								pickedTris,
+								idleFrame: { median: q(idle, 0.5), p95: q(idle, 0.95) },
+								position: pos,
+								cuts,
+								trisAfterCut: tris
+							};
+						},
+						{ steps }
+					);
 		let client = null;
 		if (profile) {
 			client = await page.context().newCDPSession(page);
@@ -178,7 +183,7 @@ const { launch, setupPage } = require('../e2e/helpers.cjs');
 			await client.send('Profiler.setSamplingInterval', { interval: 100 });
 		}
 		const grabMoves = () =>
-			page.evaluate(async () => {
+			page.evaluate(async (moves) => {
 				const { fe, V3, tri } = window.__bench.pick();
 				if (tri < 0) return { error: 'no equator triangle' };
 				const raf = () => new Promise((r) => requestAnimationFrame(r));
@@ -186,16 +191,19 @@ const { launch, setupPage } = require('../e2e/helpers.cjs');
 				fe.pickFaceUnit(tri);
 				const target = fe.currentTargetFace();
 				if (!target || !fe.beginFaceGrab(target)) return { error: 'grab did not begin' };
-				const moves = [];
-				for (let i = 1; i <= 60; i++) {
+				const took = [];
+				for (let i = 1; i <= moves; i++) {
 					const a = now();
 					fe.applyFaceGrab({ dPos: new V3(0.0004 * i, 0.0002 * i, 0) });
-					moves.push(now() - a);
+					took.push(now() - a);
 					await raf();
 				}
-				moves.sort((x, y) => x - y);
-				return { moveMedian: moves[30], grabbedTris: target.triIndices.length };
-			});
+				took.sort((x, y) => x - y);
+				return {
+					moveMedian: took[Math.floor(took.length / 2)],
+					grabbedTris: target.triIndices.length
+				};
+			}, moves);
 		const grabCommit = () =>
 			page.evaluate(async () => {
 				const fe = window.__tp.test.v1.faceEdit;
@@ -208,7 +216,7 @@ const { launch, setupPage } = require('../e2e/helpers.cjs');
 			});
 		const grabs = [];
 		const profiles = [];
-		for (let r = 0; r < runs; r++) {
+		for (let r = 0; r < (part === 'scrub' ? 0 : runs); r++) {
 			const m = await grabMoves();
 			if (m.error) {
 				grabs.push(m);

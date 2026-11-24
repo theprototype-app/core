@@ -297,5 +297,5 @@ h.run(async () => {
 		h.pageErrors(A).length === 0,
 		`no page errors on A (${JSON.stringify(h.pageErrors(A).slice(0, 3))})`
 	);
-	await browser.close();
+	await h.finish(browser);
 });

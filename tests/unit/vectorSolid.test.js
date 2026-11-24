@@ -1,8 +1,25 @@
 // 64-extrude (D7): the kernel solid builder (vectorSolid.js) and its use in buildVectorGeometry.
 import { describe, test, expect } from 'vitest';
-import { buildSolidKernel, buildSolidArrays, bridgePieces, cleanRing, profileLevels, safeInset, ringMiters } from '../../src/lib/vector/vectorSolid.js';
-import { ringsToPolygons, flattenSubpath, starPath, rectPath } from '../../src/lib/vector/vectorPath.js';
-import { buildVectorGeometry } from '../../src/lib/vector/vectorMesh.js';
+import {
+	buildSolidKernel,
+	buildSolidArrays,
+	bridgePieces,
+	cleanRing,
+	profileLevels,
+	safeInset,
+	ringMiters
+} from '../../src/lib/vector/vectorSolid.js';
+import {
+	ringsToPolygons,
+	flattenSubpath,
+	starPath,
+	rectPath
+} from '../../src/lib/vector/vectorPath.js';
+import {
+	buildVectorGeometry,
+	vectorMeshDebug,
+	resetSolidCache
+} from '../../src/lib/vector/vectorMesh.js';
 import { cleanVector, vectorDefaults } from '../../src/lib/vector/vectorRecord.js';
 import { readStoredFaces } from '../../src/lib/meshTopology.js';
 import { fromBufferGeometry } from '../../src/lib/meshKernel/geometry.js';
@@ -16,7 +33,8 @@ const ring = (n, r, cx = 0, cy = 0, ccw = true) =>
 /** @param {number[][]} r */
 const area = (r) => {
 	let a = 0;
-	for (let i = 0, j = r.length - 1; i < r.length; j = i++) a += r[j][0] * r[i][1] - r[i][0] * r[j][1];
+	for (let i = 0, j = r.length - 1; i < r.length; j = i++)
+		a += r[j][0] * r[i][1] - r[i][0] * r[j][1];
 	return a / 2;
 };
 /** the summed signed area of the triangles lying on z = `z` (xy projection) @param {ArrayLike<number>} p @param {number} z */
@@ -24,7 +42,8 @@ function areaAt(p, z) {
 	let s = 0;
 	for (let t = 0; t < p.length; t += 9) {
 		if (![p[t + 2], p[t + 5], p[t + 8]].every((v) => Math.abs(v - z) < 1e-6)) continue;
-		s += ((p[t + 3] - p[t]) * (p[t + 7] - p[t + 1]) - (p[t + 4] - p[t + 1]) * (p[t + 6] - p[t])) / 2;
+		s +=
+			((p[t + 3] - p[t]) * (p[t + 7] - p[t + 1]) - (p[t + 4] - p[t + 1]) * (p[t + 6] - p[t])) / 2;
 	}
 	return s;
 }
@@ -89,7 +108,8 @@ describe('caps with holes', () => {
 		expect(pieces.length).toBe(2);
 		const sum = pieces.reduce((s, piece) => s + area(piece.map(([r, i]) => rings[r][i])), 0);
 		expect(sum).toBeCloseTo(area(rings[0]) + area(rings[1]), 9);
-		for (const piece of pieces) expect(new Set(piece.map((ref) => ref.join(','))).size).toBe(piece.length);
+		for (const piece of pieces)
+			expect(new Set(piece.map((ref) => ref.join(','))).size).toBe(piece.length);
 	});
 	test('two holes side by side cut into three pieces', () => {
 		const rings = [ring(48, 2), ring(12, 0.4, -0.8, 0, false), ring(12, 0.4, 0.8, 0, false)];
@@ -146,7 +166,11 @@ describe('the solid', () => {
 		expect(sizes.filter((n) => n === 4).length).toBe(10);
 	});
 	test('budget: a 2 000-point path with a hole builds in well under 300 ms', () => {
-		const { info } = buildSolidKernel(ringsToPolygons([wavy(), ring(400, 1)]), { depth: 0.5, width: 0.05, segments: 2 });
+		const { info } = buildSolidKernel(ringsToPolygons([wavy(), ring(400, 1)]), {
+			depth: 0.5,
+			width: 0.05,
+			segments: 2
+		});
 		expect(info.ms).toBeLessThan(300);
 	});
 	test('normals: caps point along z, a smooth side has no crease along a curve', () => {
@@ -195,5 +219,26 @@ describe('buildVectorGeometry on the kernel', () => {
 		expect(cleanVector({ kind: 'star' }).bevelSegments).toBe(2);
 		expect(cleanVector({ kind: 'star', bevelSegments: 99 }).bevelSegments).toBe(8);
 		expect(cleanVector({ kind: 'star', bevelSegments: 0 }).bevelSegments).toBe(1);
+	});
+	test('a depth-only change takes the fast path and matches a full build', () => {
+		resetSolidCache();
+		const base = star({ depth: 0.3, bevel: 0.03, strokeWidth: 0.01 });
+		buildVectorGeometry(base);
+		const before = vectorMeshDebug().fastBuilds;
+		const fast = buildVectorGeometry({ ...base, depth: 0.7 });
+		expect(vectorMeshDebug().fastBuilds).toBe(before + 1);
+		resetSolidCache();
+		const full = buildVectorGeometry({ ...base, depth: 0.7 });
+		const a = fast.attributes.position.array;
+		const b = full.attributes.position.array;
+		expect(a.length).toBe(b.length);
+		let worst = 0;
+		for (let i = 0; i < a.length; i++) worst = Math.max(worst, Math.abs(a[i] - b[i]));
+		expect(worst).toBeLessThan(1e-5);
+		expect(fast.userData.__topo).toEqual(full.userData.__topo);
+		// a bevel that no longer fits inside the depth builds in full
+		const n = vectorMeshDebug().fastBuilds;
+		buildVectorGeometry({ ...base, depth: 0.05 });
+		expect(vectorMeshDebug().fastBuilds).toBe(n);
 	});
 });

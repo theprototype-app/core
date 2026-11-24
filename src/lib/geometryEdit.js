@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { objectsGroup, pokeScene } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
-import { recordEntry, registerHistoryKind } from './history';
+import { recordEntry, registerHistoryKind, registerHistoryMerge, sameJson } from './history';
 import { GEOMETRY_PARAMS, geometrySpec, boundGeometryParams } from './geometryParams';
 import { loadRoundedBox } from './roundedBoxGate.js';
 import { healSlotGroups } from './slotGroups.js';
@@ -32,7 +32,7 @@ export function buildGeometry(gtype, params) {
 		key === 'points' || key === 'path' ? undefined : params[key]
 	);
 	try {
-		return new (/** @type {any} */ (THREE))[gtype + 'Geometry'](...args);
+		return new /** @type {any} */ (THREE)[gtype + 'Geometry'](...args);
 	} catch (error) {
 		console.log('buildGeometry failed', gtype, error);
 		return null;
@@ -140,8 +140,7 @@ export function applyGeometry(uuid, patch, options = {}) {
 	delete object.userData.vertexEdited;
 	delete object.userData.faceEdited;
 	pokeScene();
-	if (record)
-		recordEntry({ kind: 'geometry', uuid, before, after: { gtype, params } });
+	if (record) recordEntry({ kind: 'geometry', uuid, before, after: { gtype, params } });
 	if (replicate) {
 		/** @type {any} */
 		const peer = get(peers);
@@ -173,7 +172,10 @@ export function applyRemoteGeometry(data) {
 	if (!fresh) return;
 	object.geometry.dispose();
 	object.geometry = fresh;
-	object.userData.geometryParams = { gtype: data.gtype, params: cleanFor(data.gtype, { ...data.params }) };
+	object.userData.geometryParams = {
+		gtype: data.gtype,
+		params: cleanFor(data.gtype, { ...data.params })
+	};
 	healSlotGroups(object); // 105: as applyGeometry
 	delete object.userData.vertexEdited;
 	delete object.userData.faceEdited; // same lock, same reset as the local path
@@ -184,7 +186,24 @@ export function applyRemoteGeometry(data) {
 // {gtype, params} side (history passes entry.before/.after by value)
 registerHistoryKind('geometry', (entry, state) => {
 	// 85 G1: the recorded side's TYPE too — undoing a box → cylinder brings the box back
-	return applyGeometry(entry.uuid, state.params, { record: false, replicate: true, gtype: state.gtype });
+	return applyGeometry(entry.uuid, state.params, {
+		record: false,
+		replicate: true,
+		gtype: state.gtype
+	});
+});
+
+// 64-extrude: a scrub (the Inspector's Extrude slider, the viewport's extrude handle) records one
+// entry per step inside ONE history gesture; folding them keeps the first `before` and the last
+// `after`, so undo is one rebuild (not a replay of every step) and a scrub back to where it began
+// leaves no step at all
+registerHistoryMerge('geometry', {
+	merge: (top, next) => {
+		if (top.uuid !== next.uuid) return false;
+		top.after = next.after;
+		return true;
+	},
+	noop: (entry) => sameJson(entry.before, entry.after)
 });
 
 export { GEOMETRY_PARAMS };

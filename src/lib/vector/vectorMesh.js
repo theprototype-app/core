@@ -47,20 +47,27 @@ export function vectorPolylines(params) {
 	const p = cleanVector(params);
 	const subs = vectorSubpaths(p);
 	const tol = toleranceFor(subs.map((s) => s.nodes.map((n) => [n.x, n.y])));
-	return subs.map((s) => ({ pts: flattenSubpath(s, tol), closed: s.closed })).filter((l) => l.pts.length >= 2);
+	return subs
+		.map((s) => ({ pts: flattenSubpath(s, tol), closed: s.closed }))
+		.filter((l) => l.pts.length >= 2);
 }
 
 /** the fill region as a MultiPolygon (open subpaths close implicitly, as SVG fills them)
  * @param {Record<string, any>} params @returns {number[][][][]} */
 export function vectorFillPolygons(params) {
-	return ringsToPolygons(vectorPolylines(params).map((l) => l.pts).filter((r) => r.length >= 3));
+	return ringsToPolygons(
+		vectorPolylines(params)
+			.map((l) => l.pts)
+			.filter((r) => r.length >= 3)
+	);
 }
 
 /** @param {number[][][][]} polys */
 function shapesOf(polys) {
 	return polys.map((poly) => {
 		const shape = new THREE.Shape(poly[0].map((p) => new THREE.Vector2(p[0], p[1])));
-		for (const hole of poly.slice(1)) shape.holes.push(new THREE.Path(hole.map((p) => new THREE.Vector2(p[0], p[1]))));
+		for (const hole of poly.slice(1))
+			shape.holes.push(new THREE.Path(hole.map((p) => new THREE.Vector2(p[0], p[1]))));
 		return shape;
 	});
 }
@@ -91,9 +98,17 @@ function refine(pos, maxEdge, budget) {
 				continue;
 			}
 			// rotate so the longest edge is v0-v1, then split it at its midpoint
-			const r = m === d01 ? t : m === d12 ? [...t.slice(3), ...t.slice(0, 3)] : [...t.slice(6), ...t.slice(0, 6)];
+			const r =
+				m === d01
+					? t
+					: m === d12
+						? [...t.slice(3), ...t.slice(0, 3)]
+						: [...t.slice(6), ...t.slice(0, 6)];
 			const mid = [(r[0] + r[3]) / 2, (r[1] + r[4]) / 2, (r[2] + r[5]) / 2];
-			next.push([...r.slice(0, 3), ...mid, ...r.slice(6, 9)], [...mid, ...r.slice(3, 6), ...r.slice(6, 9)]);
+			next.push(
+				[...r.slice(0, 3), ...mid, ...r.slice(6, 9)],
+				[...mid, ...r.slice(3, 6), ...r.slice(6, 9)]
+			);
 		}
 		queue = next;
 	}
@@ -116,6 +131,8 @@ function flatPositions(g) {
  */
 export function buildVectorGeometry(params) {
 	const p = cleanVector(params);
+	const fast = depthOnly(p);
+	if (fast) return fast;
 	const lines = vectorPolylines(p);
 	const all = lines.map((l) => l.pts);
 	const b = boundsOf(all);
@@ -125,7 +142,8 @@ export function buildVectorGeometry(params) {
 	/** the pieces, in output order: positions (non-indexed xyz), optional normals, optional face partition
 	 * @type {{pos: ArrayLike<number>, normals: ArrayLike<number> | null, faces: number[][] | null, colour: (x: number, y: number) => number[]}[]} */
 	const parts = [];
-	const fillColour = (/** @type {number} */ x, /** @type {number} */ y) => fillColourAt(p, (x - b.minX) / bw, (y - b.minY) / bh);
+	const fillColour = (/** @type {number} */ x, /** @type {number} */ y) =>
+		fillColourAt(p, (x - b.minX) / bw, (y - b.minY) / bh);
 	/** @type {any} */
 	let solidInfo = null;
 
@@ -135,7 +153,12 @@ export function buildVectorGeometry(params) {
 		if (polys.length && depth > 0) {
 			const solid = buildSolidArrays(polys, { depth, width: p.bevel, segments: p.bevelSegments });
 			solidInfo = solid.info;
-			parts.push({ pos: solid.positions, normals: solid.normals, faces: solid.faces, colour: fillColour });
+			parts.push({
+				pos: solid.positions,
+				normals: solid.normals,
+				faces: solid.faces,
+				colour: fillColour
+			});
 		} else if (polys.length) {
 			const g = new THREE.ShapeGeometry(shapesOf(polys), 1);
 			let fill = flatPositions(g);
@@ -147,16 +170,38 @@ export function buildVectorGeometry(params) {
 
 	// ---- stroke: front and back copies
 	if (p.strokeWidth > 0) {
-		const tris = piecesToTriangles(strokeAll(lines, { width: p.strokeWidth, join: p.join, cap: p.cap, dash: p.dash, gap: p.gap }));
+		const tris = piecesToTriangles(
+			strokeAll(lines, { width: p.strokeWidth, join: p.join, cap: p.cap, dash: p.dash, gap: p.gap })
+		);
 		const front = (p.fillType !== 'none' ? depth : 0) + STROKE_LIFT;
 		const back = -STROKE_LIFT;
 		const sc = hexToRgb(p.stroke);
 		/** @type {number[]} */
 		const pos = [];
 		for (let i = 0; i < tris.length; i += 6) {
-			pos.push(tris[i], tris[i + 1], front, tris[i + 2], tris[i + 3], front, tris[i + 4], tris[i + 5], front);
+			pos.push(
+				tris[i],
+				tris[i + 1],
+				front,
+				tris[i + 2],
+				tris[i + 3],
+				front,
+				tris[i + 4],
+				tris[i + 5],
+				front
+			);
 			// the back copy is wound the other way so its face points -Z
-			pos.push(tris[i], tris[i + 1], back, tris[i + 4], tris[i + 5], back, tris[i + 2], tris[i + 3], back);
+			pos.push(
+				tris[i],
+				tris[i + 1],
+				back,
+				tris[i + 4],
+				tris[i + 5],
+				back,
+				tris[i + 2],
+				tris[i + 3],
+				back
+			);
 		}
 		parts.push({ pos, normals: null, faces: null, colour: () => sc });
 	}
@@ -224,14 +269,84 @@ export function buildVectorGeometry(params) {
 	if (solidInfo) {
 		geometry.userData.__topo = { counts: faces.map((f) => f.length), tris: faces.flat() };
 		lastSolid = solidInfo;
+		remember(p, { pos, normal, colour: linear, uv, topo: geometry.userData.__topo });
 	}
 	geometry.computeBoundingBox();
 	geometry.computeBoundingSphere();
 	return geometry;
 }
 
+/* ---------------------------------------------------------- depth drag ---- */
+
+// 64-extrude: dragging the depth changes nothing but how far the front half sits from the back, so
+// the solid's faces, normals, colours and uvs stay; only the front half's z moves. Every peer builds
+// from the record, so this path is what keeps a drag on a 2 000-point shape at frame rate on all of
+// them. It applies when the bevel fits inside both depths with room to spare (a bevel that takes
+// the whole depth merges two levels: a different mesh) — anything else builds in full.
+
+/** the last few solids built, by their record minus depth @type {Map<string, {depth: number, bevel: number, pos: Float32Array, normal: Float32Array, colour: Float32Array, uv: Float32Array, topo: {counts: number[], tris: number[]}}>} */
+const solids = new Map();
+const SOLIDS_MAX = 3;
+
+/** @param {Record<string, any>} p */
+const shapeKey = (p) => JSON.stringify({ ...p, depth: 0 });
+
+/** @param {Record<string, any>} p @param {{pos: Float32Array, normal: Float32Array, colour: Float32Array, uv: Float32Array, topo: any}} arrays */
+function remember(p, arrays) {
+	const key = shapeKey(p);
+	solids.delete(key);
+	solids.set(key, {
+		depth: p.depth,
+		bevel: p.bevel,
+		pos: arrays.pos.slice(),
+		normal: arrays.normal.slice(),
+		colour: arrays.colour.slice(),
+		uv: arrays.uv.slice(),
+		topo: { counts: arrays.topo.counts.slice(), tris: arrays.topo.tris.slice() }
+	});
+	while (solids.size > SOLIDS_MAX)
+		solids.delete(/** @type {string} */ (solids.keys().next().value));
+}
+
+/** a solid of the same shape at another depth, from the cache; null = build it @param {Record<string, any>} p */
+function depthOnly(p) {
+	if (!(p.depth > 0) || p.fillType === 'none') return null;
+	const hit = solids.get(shapeKey(p));
+	if (!hit) return null;
+	// the bevel must fit strictly inside both depths (or be off)
+	if (p.bevel > 0 && !(p.bevel < hit.depth / 2 && p.bevel < p.depth / 2)) return null;
+	const pos = hit.pos.slice();
+	const split = hit.depth / 2;
+	const shift = p.depth - hit.depth;
+	for (let i = 2; i < pos.length; i += 3) if (pos[i] > split) pos[i] += shift;
+	const geometry = new THREE.BufferGeometry();
+	geometry.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+	geometry.setAttribute('normal', new THREE.BufferAttribute(hit.normal.slice(), 3));
+	geometry.setAttribute('color', new THREE.BufferAttribute(hit.colour.slice(), 3));
+	geometry.setAttribute('uv', new THREE.BufferAttribute(hit.uv.slice(), 2));
+	geometry.userData.__topo = { counts: hit.topo.counts.slice(), tris: hit.topo.tris.slice() };
+	geometry.computeBoundingBox();
+	geometry.computeBoundingSphere();
+	fastBuilds++;
+	return geometry;
+}
+
+/** TEST/DEBUG: how many builds took the depth path */
+let fastBuilds = 0;
+export const vectorMeshDebug = () => ({ fastBuilds, cached: solids.size, lastSolid });
+/** TEST: forget the cached solids */
+export function resetSolidCache() {
+	solids.clear();
+}
+
 /** the material a vector shape is made with (vertex colours carry every colour)
  * @returns {THREE.MeshStandardMaterial} */
 export function vectorMaterial() {
-	return new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.8, metalness: 0, side: THREE.DoubleSide });
+	return new THREE.MeshStandardMaterial({
+		color: 0xffffff,
+		vertexColors: true,
+		roughness: 0.8,
+		metalness: 0,
+		side: THREE.DoubleSide
+	});
 }

@@ -503,6 +503,9 @@ export const DEBUG_HOOKS = [
 	['vectorSvgActions', () => import('./vector/vectorSvgActions.js')],
 	['vectorVR', () => import('./vector/vectorVR.js')],
 	['vectorCurveActions', () => import('./vector/vectorCurveActions.js')],
+	// 64-extrude: the extrude arrow (extrudeDebug / setDepth) + the mesh builder's debug (vectorMeshDebug)
+	['vectorExtrude', () => import('./vector/vectorExtrude.js')],
+	['vectorMesh', () => import('./vector/vectorMesh.js')],
 	['splineTube', () => import('./splineTube')],
 	['splineTool', () => import('./splineTool')],
 	['splineEdit', () => import('./splineEdit')],

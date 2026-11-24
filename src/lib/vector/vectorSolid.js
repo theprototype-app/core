@@ -48,7 +48,8 @@ const BRIDGE_TRIES = 256;
 /** twice the signed area @param {Pt[]} r */
 function area2(r) {
 	let a = 0;
-	for (let i = 0, j = r.length - 1; i < r.length; j = i++) a += r[j][0] * r[i][1] - r[i][0] * r[j][1];
+	for (let i = 0, j = r.length - 1; i < r.length; j = i++)
+		a += r[j][0] * r[i][1] - r[i][0] * r[j][1];
 	return a;
 }
 
@@ -76,7 +77,12 @@ export function cleanRing(ring) {
 		if (q && Math.abs(q[0] - p[0]) <= eps && Math.abs(q[1] - p[1]) <= eps) continue;
 		out.push([p[0], p[1]]);
 	}
-	while (out.length > 1 && Math.abs(out[0][0] - out[out.length - 1][0]) <= eps && Math.abs(out[0][1] - out[out.length - 1][1]) <= eps) out.pop();
+	while (
+		out.length > 1 &&
+		Math.abs(out[0][0] - out[out.length - 1][0]) <= eps &&
+		Math.abs(out[0][1] - out[out.length - 1][1]) <= eps
+	)
+		out.pop();
 	// collinear: the corner's cross product, relative to its two sides, under ~1e-9 rad
 	let changed = true;
 	while (changed && out.length > 3) {
@@ -197,14 +203,19 @@ export function safeInset(rings, miters, want) {
 /** do segments ab and cd cross or touch (endpoints shared by the two are not a touch)?
  * @param {Pt} a @param {Pt} b @param {Pt} c @param {Pt} d */
 function segmentsMeet(a, b, c, d) {
-	const o = (/** @type {Pt} */ p, /** @type {Pt} */ q, /** @type {Pt} */ r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+	const o = (/** @type {Pt} */ p, /** @type {Pt} */ q, /** @type {Pt} */ r) =>
+		(q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
 	const d1 = o(c, d, a);
 	const d2 = o(c, d, b);
 	const d3 = o(a, b, c);
 	const d4 = o(a, b, d);
-	if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) return true;
+	if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0)))
+		return true;
 	const on = (/** @type {Pt} */ p, /** @type {Pt} */ q, /** @type {Pt} */ r) =>
-		Math.min(p[0], q[0]) <= r[0] && r[0] <= Math.max(p[0], q[0]) && Math.min(p[1], q[1]) <= r[1] && r[1] <= Math.max(p[1], q[1]);
+		Math.min(p[0], q[0]) <= r[0] &&
+		r[0] <= Math.max(p[0], q[0]) &&
+		Math.min(p[1], q[1]) <= r[1] &&
+		r[1] <= Math.max(p[1], q[1]);
 	if (d1 === 0 && on(c, d, a)) return true;
 	if (d2 === 0 && on(c, d, b)) return true;
 	if (d3 === 0 && on(a, b, c)) return true;
@@ -218,7 +229,11 @@ function inside(p, ring) {
 	for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
 		const a = ring[i];
 		const b = ring[j];
-		if (a[1] > p[1] !== b[1] > p[1] && p[0] < ((b[0] - a[0]) * (p[1] - a[1])) / (b[1] - a[1]) + a[0]) c = !c;
+		if (
+			a[1] > p[1] !== b[1] > p[1] &&
+			p[0] < ((b[0] - a[0]) * (p[1] - a[1])) / (b[1] - a[1]) + a[0]
+		)
+			c = !c;
 	}
 	return c;
 }
@@ -235,7 +250,9 @@ export function bridgePieces(rings) {
 	let failures = 0;
 	const holes = rings.slice(1).map((_, k) => k + 1);
 	// right to left, the earcut order: a later hole bridges past the ones already cut
-	holes.sort((a, b) => Math.max(...rings[b].map((p) => p[0])) - Math.max(...rings[a].map((p) => p[0])));
+	holes.sort(
+		(a, b) => Math.max(...rings[b].map((p) => p[0])) - Math.max(...rings[a].map((p) => p[0]))
+	);
 	const pending = new Set(holes);
 	for (const h of holes) {
 		pending.delete(h);
@@ -260,12 +277,16 @@ export function bridgePieces(rings) {
 		let iR = 0;
 		let iL = 0;
 		for (let i = 1; i < ring.length; i++) {
-			if (ring[i][0] > ring[iR][0] || (ring[i][0] === ring[iR][0] && ring[i][1] < ring[iR][1])) iR = i;
-			if (ring[i][0] < ring[iL][0] || (ring[i][0] === ring[iL][0] && ring[i][1] > ring[iL][1])) iL = i;
+			if (ring[i][0] > ring[iR][0] || (ring[i][0] === ring[iR][0] && ring[i][1] < ring[iR][1]))
+				iR = i;
+			if (ring[i][0] < ring[iL][0] || (ring[i][0] === ring[iL][0] && ring[i][1] > ring[iL][1]))
+				iL = i;
 		}
 		/** @param {Pt} from @param {number} skip a piece index already used @param {Pt[] | null} other a bridge it must not cross */
 		const bridge = (from, skip, other) => {
-			const order = pts.map((p, i) => [i, (p[0] - from[0]) ** 2 + (p[1] - from[1]) ** 2]).sort((a, b) => a[1] - b[1]);
+			const order = pts
+				.map((p, i) => [i, (p[0] - from[0]) ** 2 + (p[1] - from[1]) ** 2])
+				.sort((a, b) => a[1] - b[1]);
 			for (let k = 0; k < Math.min(order.length, BRIDGE_TRIES); k++) {
 				const qi = order[k][0];
 				if (qi === skip) continue;
@@ -297,7 +318,7 @@ export function bridgePieces(rings) {
 		/** @param {number} from @param {number} to @param {number} len */
 		const walk = (from, to, len) => {
 			const out = [from];
-			for (let i = from; i !== to; ) out.push((i = (i + 1) % len));
+			for (let i = from; i !== to;) out.push((i = (i + 1) % len));
 			return out;
 		};
 		const A = [...walk(q1, q2, n).map((i) => piece[i]), ...walk(iL, iR, m).map((i) => [h, i])];
@@ -396,14 +417,21 @@ export function buildSolidKernel(polys, options = {}) {
 	const levels = profileLevels(zBack, zFront, width, thickness, segments, outset);
 	const L = levels.length;
 	const points = allRings.reduce((s, r) => s + r.length, 0);
-	const mesh = new MeshKernel({ vertices: points * L + 8, faces: points * (L - 1) + 64, corners: points * (L - 1) * 4 + points * 4 + 64, attributes: { normal: 3 } });
+	const mesh = new MeshKernel({
+		vertices: points * L + 8,
+		faces: points * (L - 1) + 64,
+		corners: points * (L - 1) * 4 + points * 4 + 64,
+		attributes: { normal: 3 }
+	});
 	// vertex IDs: [ring][level][index]
 	/** @type {number[][][]} */
 	const vid = allRings.map((ring, r) =>
 		levels.map(([off, z]) => {
 			const m = miters[r];
 			// outward = against the left normal
-			return ring.map((p, i) => mesh.addVertex(p[0] - off * m[i * 2], p[1] - off * m[i * 2 + 1], z));
+			return ring.map((p, i) =>
+				mesh.addVertex(p[0] - off * m[i * 2], p[1] - off * m[i * 2 + 1], z)
+			);
 		})
 	);
 	/** @type {number[]} */
@@ -418,7 +446,12 @@ export function buildSolidKernel(polys, options = {}) {
 			const hi = vid[r][l + 1];
 			for (let i = 0; i < n; i++) {
 				const j = (i + 1) % n;
-				sideFaces.push(mesh.addFace([lo[i], lo[j], hi[j], hi[i]], { material: sideMaterial, triangles: [0, 1, 2, 0, 2, 3] }));
+				sideFaces.push(
+					mesh.addFace([lo[i], lo[j], hi[j], hi[i]], {
+						material: sideMaterial,
+						triangles: [0, 1, 2, 0, 2, 3]
+					})
+				);
 			}
 		}
 	}
@@ -430,7 +463,9 @@ export function buildSolidKernel(polys, options = {}) {
 		const capOff = levels[0][0];
 		const capRings = poly.map((ring, k) => {
 			const m = miters[ringBase + k];
-			return ring.map((p, i) => /** @type {Pt} */ ([p[0] - capOff * m[i * 2], p[1] - capOff * m[i * 2 + 1]]));
+			return ring.map(
+				(p, i) => /** @type {Pt} */ ([p[0] - capOff * m[i * 2], p[1] - capOff * m[i * 2 + 1]])
+			);
 		});
 		const { pieces, failures } = bridgePieces(capRings);
 		bridgeFailures += failures;
@@ -446,7 +481,8 @@ export function buildSolidKernel(polys, options = {}) {
 			capFaces.push(mesh.addFace(front, { material: capMaterial, triangles: tris }));
 			const back = piece.map(([r, i]) => vid[ringBase + r][0][i]).reverse();
 			const mirrored = [];
-			for (let t = 0; t < tris.length; t += 3) mirrored.push(n - 1 - tris[t], n - 1 - tris[t + 2], n - 1 - tris[t + 1]);
+			for (let t = 0; t < tris.length; t += 3)
+				mirrored.push(n - 1 - tris[t], n - 1 - tris[t + 2], n - 1 - tris[t + 1]);
 			capFaces.push(mesh.addFace(back, { material: capMaterial, triangles: mirrored }));
 			pieceCount++;
 		}
@@ -456,7 +492,16 @@ export function buildSolidKernel(polys, options = {}) {
 	const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now();
 	return {
 		mesh,
-		info: { rings: allRings.length, points, pieces: pieceCount, bridgeFailures, width, thickness, levels: L, ms: t1 - t0 }
+		info: {
+			rings: allRings.length,
+			points,
+			pieces: pieceCount,
+			bridgeFailures,
+			width,
+			thickness,
+			levels: L,
+			ms: t1 - t0
+		}
 	};
 }
 
@@ -511,7 +556,8 @@ function writeNormals(mesh, caps, sides) {
 			let sz = 0;
 			for (const g of mesh.vertexFaces(mesh.cVert[c])) {
 				if (!isSide[g]) continue;
-				const dot = fn[f * 3] * fn[g * 3] + fn[f * 3 + 1] * fn[g * 3 + 1] + fn[f * 3 + 2] * fn[g * 3 + 2];
+				const dot =
+					fn[f * 3] * fn[g * 3] + fn[f * 3 + 1] * fn[g * 3 + 1] + fn[f * 3 + 2] * fn[g * 3 + 2];
 				if (g !== f && dot < SMOOTH_COS) continue;
 				// a sliver still counts a little, or a needle tip loses its own direction
 				const w = Math.max(fa[g], 1e-12);

@@ -26,17 +26,6 @@ const SCENES = (
 const VIEW = { width: 1280, height: 720 };
 const TOL = 0.001;
 
-/** page side: load a shelf scene by slug (templates / examples / games), settle, return its camera pose */
-const loadScene = (page, slug) =>
-	page.evaluate(async (slug) => {
-		const s = window.__stores;
-		const read = (st) => {
-			let v;
-			st.subscribe((x) => (v = x))();
-			return v;
-		};
-		const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
 /**
  * 103-int-1 (claude:9 Q8 ruling for #640): LAND ONLY — the A vs B share on pixels that hold still on both pages AND
  * where the base agrees with ITSELF (B vs a third base page C within 2/255), so the water's own base-vs-base spread is
@@ -56,6 +45,18 @@ function landDiff(a1, a2, b1, b2, b3, c1) {
 }
 /** scenes gated on LAND ONLY instead of the control rule (comma list) */
 const LAND_ONLY = (process.env.LAND_ONLY ?? 'island-ocean').split(',').filter(Boolean);
+
+/** page side: load a shelf scene by slug (templates / examples / games), settle, return its camera pose */
+const loadScene = (page, slug) =>
+	page.evaluate(async (slug) => {
+		const s = window.__stores;
+		const read = (st) => {
+			let v;
+			st.subscribe((x) => (v = x))();
+			return v;
+		};
+		const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 		s.sceneSwitch?.modulesOnOpen?.set('keep');
 		let ok = 'not tried';
 		for (let i = 0; i < 3 && ok !== true; i++) {

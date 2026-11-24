@@ -5,7 +5,7 @@
 import { get } from 'svelte/store';
 import { selectedObject } from '../../stores/sceneStore';
 import { registerVRMenuEntry } from '../vrRadialMenu';
-import { isVectorObject, toggleVectorTool } from './vectorGate.js';
+import { isVectorObject, toggleVectorTool, vectorLaserPen } from './vectorGate.js';
 
 const vr = () => import('./vectorVR.js');
 
@@ -17,6 +17,15 @@ registerVRMenuEntry({ id: 'nav:vecshapes', group: 'add', label: 'Shapes', icon: 
 	['polygon', 'Polygon', 'hexagon']
 ].forEach(([kind, label, icon], order) =>
 	registerVRMenuEntry({ id: 'vec:add:' + kind, group: 'vecshapes', label, icon, order, closes: true, action: () => void vr().then((m) => m.spawnVectorAhead(kind)) })
+);
+// 64-vector-edit row 5: the laser pen (the chunk's actions); while it is armed the root ring offers its rows
+registerVRMenuEntry({ id: 'vec:pen', group: 'vecshapes', label: 'Pen', icon: 'pen-tool', order: 4, closes: true, active: () => get(vectorLaserPen), action: () => void vr().then((m) => m.toggleLaserPen()) });
+[
+	['vec:pen-finish', 'Finish path', 'check', 'laserFinish'],
+	['vec:pen-undo', 'Undo point', 'undo-2', 'laserUndoPoint'],
+	['vec:pen-off', 'Pen off', 'x', 'disarmLaserPen']
+].forEach(([id, label, icon, fn], i) =>
+	registerVRMenuEntry({ id, label, icon, order: 0.1 + i * 0.01, closes: true, visible: () => get(vectorLaserPen), action: () => void vr().then((m) => /** @type {any} */ (m)[fn]()) })
 );
 registerVRMenuEntry({
 	id: 'vec:extrude',

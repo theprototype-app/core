@@ -576,6 +576,32 @@ export function vectorToolDebug() {
 	};
 }
 
+/** 64-vector-edit row 5 (VR): move the draft's frame — the work plane the grip carries; the points ride
+ * along (they live in the frame) @param {number[]} origin @param {number[]} quat */
+export function setPenFrame(origin, quat) {
+	if (!frame) return false;
+	frame.origin.fromArray(origin);
+	frame.quat.fromArray(quat);
+	frame.plane.setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 0, 1).applyQuaternion(frame.quat), frame.origin);
+	snapCand = null;
+	if (pen) showPenPreview();
+	return true;
+}
+
+/** 64-vector-edit row 5 (VR): pull a pen point's out-handle to frame (x, y), the in-handle mirrored —
+ * the trigger held and dragged @param {number} index @param {number} x @param {number} y */
+export function penHandleTo(index, x, y) {
+	if (!pen?.nodes[index]) return false;
+	pen.nodes = moveHandle({ closed: false, nodes: pen.nodes }, index, 'out', [x, y], { mirror: true }).nodes;
+	showPenPreview();
+	return true;
+}
+
+/** a frame point snapped the way a press would snap it (VR) @param {number[]} at */
+export function penSnap(at) {
+	return snapFrame(at);
+}
+
 /** suites + VR: start a pen draft on an explicit frame (world origin + quaternion)
  * @param {number[]} origin @param {number[]} quat */
 export function beginPenAt(origin, quat) {

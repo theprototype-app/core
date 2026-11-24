@@ -366,16 +366,21 @@
 		// look (`adopted`), but the governor still applies on top — it is this machine giving
 		// up post to keep its frames, and that must not be undone by watching somebody.
 		const reduced = $qualityOverrides;
+		// 64-2d: through an ORTHOGRAPHIC camera (the 2D view, a 2D game camera) AO stands down too
+		// — flat layers metres apart in depth only grow screen-space halos around every sprite
+		// (106's contact shadows, once merged, take `&& !orthoView` on their own condition — 64-int)
+		const orthoView = !!($camera as any)?.isOrthographicCamera;
+		const aoOff = reduced.aoOff || orthoView;
 		const overrides = adopted ? adopted.look : undefined;
 		const adoptedMode = adopted ? adopted.mode : $viewMode;
 		const entries = effectivePostStack({
 			stack: resolvedDoc(POST_SCENE_KEY, overrides),
 			cameraStack: /** @type {any} */ (throughCamera ? resolvedDoc(throughCamera, overrides) : null),
-			mode: reduced.aoOff && adoptedMode === 'shaded-ao' ? 'shaded' : adoptedMode,
+			mode: aoOff && adoptedMode === 'shaded-ao' ? 'shaded' : adoptedMode,
 			localEnabled: (adopted ? adopted.overrides.post !== false : $postEnabledLocal) && !reduced.postOff,
 			postOk,
 			postWarm
-		}).filter((entry) => !(reduced.aoOff && entry.kind === 'ao'));
+		}).filter((entry) => !(aoOff && entry.kind === 'ao') && !(orthoView && entry.kind === 'contactshadows'));
 		// 98-int: the governor's "Scene look lighter" step keeps the grade and drops the heavy passes
 		const shown = reduced.lookLite ? liteLook(entries) : entries;
 		const signature = postStackSignature(shown);

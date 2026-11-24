@@ -733,6 +733,18 @@ export async function objectParameters(data, from = 'peer') {
             else delete mesh.userData.fluid;
             pokeScene();
         }
+    } else if (data.parameter == 'sprite' || data.parameter == 'layer2d') {
+        // 64-2d: a sprite's settings / a 2D layer's parallax. Stored as sent (the sender compacted
+        // it; the lazy runtime normalizes on read and derives frames + parallax per peer) — only
+        // the shape is checked here, so the boot carries no sprite code.
+        let object = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (object) {
+            const key = data.parameter;
+            const value = data[key];
+            if (value && typeof value === 'object' && !Array.isArray(value)) object.userData[key] = value;
+            else delete object.userData[key];
+            pokeScene();
+        }
     } else if (data.parameter == 'fluidEmitter') {
         // 36-fb F23: a Fluid emitter's settings, normalized at the boundary (the particles stay local)
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);

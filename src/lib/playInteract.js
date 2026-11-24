@@ -511,6 +511,12 @@ function onPointerUp(event) {
 		lastUp = 'module';
 		return;
 	}
+	// an Edit / Interact press a module owns: Scene releases it with ITS ray; Play stays out (no tap)
+	if (modulePointerOwned()) {
+		press = null;
+		lastUp = 'module';
+		return;
+	}
 	const wasPress = press;
 	press = null;
 	if (grab) {

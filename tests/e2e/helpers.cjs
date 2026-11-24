@@ -666,8 +666,12 @@ async function answerRestore(peer, choice = 'dismiss', timeout = 10000) {
 	// a restore of a heavy autosave (painted maps, splats) takes 10-30 s under load
 	await page.waitForFunction(
 		() => {
+			// guarded: since 99 K4 the debug facade appears only once the lazy mesh operators load, so a freshly
+			// reloaded page can answer this before window.__tp exists (99-int: panel-windows counted the throw as a page error)
+			const m = window.__tp?.test?.v1?.autosave;
+			if (!m?.restoreAvailable) return false;
 			let v;
-			window.__tp.test.v1.autosave.restoreAvailable.subscribe((x) => (v = x))();
+			m.restoreAvailable.subscribe((x) => (v = x))();
 			return !v && !document.querySelector('#restore-session-modal[open]');
 		},
 		null,

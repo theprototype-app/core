@@ -6,7 +6,7 @@
 	// 41 G3b: it lives on --z-onboarding, ABOVE the modals and every top/bottom button (logo,
 	// undo/redo, multi-select, notifications, profile, Connect, the Controls bar) at every width —
 	// so no focusStack: that would rank it back into the --z-window band under the chrome.
-	import { whatsNewOpen, closeWhatsNew, CHANGELOG } from '$lib/whatsNew';
+	import { whatsNewOpen, closeWhatsNew, changelogText, loadChangelog } from '$lib/whatsNew';
 	import { changelogReleases, changelogBlocks } from '$lib/changelog.js';
 	import { whatsNewCloud } from '$lib/cloudHooks';
 	import { dragWindow } from '$lib/dragWindow';
@@ -27,8 +27,14 @@
 
 	// the changelog as releases (one foldable section each) — $lib/changelog.js, shared with
 	// Settings ▸ About ▸ What's new (37-settings)
-	const { intro, releases } = changelogReleases(CHANGELOG);
-	type Block = (typeof intro)[number];
+	// 102-boot-diet-2: the markdown is a lazy chunk, fetched when the window opens (however it was opened)
+	$effect(() => {
+		if ($whatsNewOpen) void loadChangelog().catch(() => {});
+	});
+	const parsed = $derived($changelogText == null ? null : changelogReleases($changelogText));
+	const intro = $derived(parsed?.intro ?? []);
+	const releases = $derived(parsed?.releases ?? []);
+	type Block = ReturnType<typeof changelogReleases>['intro'][number];
 
 	// 37-fx: the cloud plugin's own section (null without a plugin), same escaped subset;
 	// its h1/h2 headings step down to h3 so they read as part of ONE folded section
@@ -74,6 +80,7 @@
 					{/if}
 				{/each}
 			{/snippet}
+			{#if !parsed}<p class="wn-loading">Loading the changelog...</p>{/if}
 			{@render body(intro)}
 			{#if $whatsNewCloud && cloudBlocks.length}
 				<details id="whats-new-cloud" class="wn-release wn-cloud" open>

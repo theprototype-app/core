@@ -127,7 +127,8 @@ h.run(async () => {
 		await A.page.waitForFunction(`(${read})(window.__tp.test.v1.faceEdit.faceEditObject) !== null`, null, { timeout: 5000 }).catch(() => {});
 		face = await A.page.evaluate(`(${read})(window.__tp.test.v1.faceEdit.faceEditObject)`);
 	}
-	check(face === box.uuid, `3a a double-click with "Edit mesh" set opens the face editor on the box (${face}, ${tries} double-click(s))`);
+	const why = face === box.uuid ? '' : await A.page.evaluate(`(() => { const w = window.__tp.test.v1; const r = ${read}; return JSON.stringify({ selected: r(w.selectedObjects), action: r(w.selectionPrefs.doubleClickAction), editing: r(w.meshEdit.editingObject) }); })()`);
+	check(face === box.uuid, `3a a double-click with "Edit mesh" set opens the face editor on the box (${face}, ${tries} double-click(s)${why ? ', ' + why : ''})`);
 
 	const sync = await A.page.evaluate((uuid) => {
 		const w = window.__tp.test.v1;

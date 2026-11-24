@@ -282,6 +282,7 @@ export async function stopTest() {
 		}
 		pc?.reconnecting?.delete?.(id);
 		pc?.unloadedPeers?.delete?.(id);
+		pc?.rj?.forget?.(id);
 		pc?.gracefulLeft?.delete?.(id);
 		pc?.inboundDials?.delete?.(id);
 		pc?.approvedDialBacks?.delete?.(id);

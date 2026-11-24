@@ -50,8 +50,20 @@ h.run(async () => {
 	list = await prefabList(A.page);
 	h.check(list.length === 1, 'prefab persisted across reload');
 
-	// reconnect after reload, then instantiate twice -> appears on B too
-	await h.connect(A, B, 9000);
+	// B links back to the reloaded host by itself (no second connect), then instantiate twice -> appears on B too
+	const opened = (/** @type {any} */ p) =>
+		p.page.evaluate(() => {
+			let pr;
+			window.__tp.test.v1.peers.subscribe((/** @type {any} */ v) => (pr = v))();
+			return [...(pr?.openedPeers ?? [])];
+		});
+	const t0 = Date.now();
+	let back = false;
+	while (!back && Date.now() - t0 < 150000) {
+		back = (await opened(A)).includes(B.id) && (await opened(B)).includes(A.id);
+		if (!back) await A.page.waitForTimeout(1000);
+	}
+	h.check(back, `B is linked to A again by itself after A's reload (${Math.round((Date.now() - t0) / 1000)} s)`);
 	await A.page.evaluate(async () => {
 		const lib = window.__tp.test.v1.prefabs;
 		const prefab = await new Promise((r) => lib.prefabs.subscribe((l) => r(l[0]))());

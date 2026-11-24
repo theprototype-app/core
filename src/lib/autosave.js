@@ -782,6 +782,12 @@ async function applyRestore(snapshot, offer = null) {
 			try {
 				for (const child of children) {
 					await slice(job);
+					// the offer was made on an empty scene, but a session can bring the same objects back while it waits
+					// (a host's guests return after its reload and hand it the session's scene): one copy of each, never two
+					if (group.children.some((/** @type {any} */ c) => c.uuid === child.uuid)) {
+						progress(job);
+						continue;
+					}
 					group.add(child);
 					// 80a: the autosave keeps drafts; restoring them makes them drafts here and sends none
 					const draft = adoptLoadedDrafts(child);

@@ -111,6 +111,8 @@ await tick();
 const out = p.outConns[0];
 out._open();
 await tick();
+// 80a R4: the roster names the inbound peer
+out.emit('data', { type: 'userdata', userdata: [['host1', 'Host', ''], ['peer2', 'Peer', '']] });
 const inbound = new MockConn('peer2');
 p.emit('connection', inbound);
 inbound._open();

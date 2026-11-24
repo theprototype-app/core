@@ -183,7 +183,9 @@ describe('22 terrain: height is the peak, island edges, layers that show, paint 
 		expect(r.updated[0].peak).toBeCloseTo(6, 1);
 		expect(maxY(t)).toBeCloseTo(6, 1);
 		const a = t.geometry.attributes.position.array;
-		expect(Math.abs(a[1])).toBeLessThan(1e-6); // a corner of an island is at 0
+		// 104 A2: a corner of an island made by the tool sits at its rim, 2 m under 0 (it was at exactly 0, a flat skirt
+		// a sea's troughs uncovered); rim: 0 keeps the old edge
+		expect(a[1]).toBeCloseTo(-2, 6);
 	});
 
 	it('layers on an unpainted terrain get a paint map so they show; paintBy height writes one by height', async () => {

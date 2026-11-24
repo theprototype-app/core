@@ -4,12 +4,12 @@
 	"pages": {
 		"play": {
 			"html": "play.html",
-			"maxJsGzBytes": 2170880,
+			"maxJsGzBytes": 1935360,
 			"maxFirstFrameMs": 20000
 		},
 		"editor": {
 			"html": "index.html",
-			"maxJsGzBytes": 3404800,
+			"maxJsGzBytes": 3082240,
 			"maxFirstFrameMs": 32000
 		}
 	},
@@ -56,6 +56,171 @@
 			"play": "v1.71.0 2114.3 KB -> 2117.6 KB (+3.3: 61-test ~0.5 bot-frame storage guard; 61-nav ~2.4 SDK gameWorld slice, pathCore split, moduleWorldItems, modules; 61-int ~0.4 presence in api.players) -> line 2120.0 KB (the INT BOOT RULE: merged tag + the union, rounded up to the next 5 KB)",
 			"editor": "v1.71.0 3314.1 KB -> 3320.3 KB (+6.2: 61-test ~1.6 storage guard + the Test with players menu leaf; 61-nav ~4.2 the same SDK slice, pathCore, moduleWorldItems, modules; 61-int ~0.4 presence) -> line 3325.0 KB (the INT BOOT RULE)",
 			"note": "what 61 keeps on the boots after its lazy splits (the enemy sheet entry and the collider reader load on first use): the bot-frame storage guard (safeStorage overlay + idb memory store, it must run before any store is read), the SDK gameWorld slice (paths.of/list, players, isAuthority and the two registries, kept sync so makeApi stays sync), moduleWorldItems + the Test with players menu leaf, a pathCore chunk split, and api.players()[].playing (the peerPlayModes store moved into stores/appStore so the SDK reads presence without gamePresence's graph). The recast navmesh WASM is a module asset only scenes with NPCs download. QUESTIONS-61-int 2, accepted by the orchestrator; lane split approximate (per-chunk diff; renamed-chunk churn ~1 KB)"
+		},
+		{
+			"date": "2026-11-21",
+			"lane": "80a-int (Locks that hold + fix-batch-4)",
+			"play": "v1.72.0 2117.2 KB -> 2131.5 KB (+14.3) -> line 2132.2 KB = v1.72.0 + 15 KB (the int boot rule: tag + the union's sum rounded up to 5 KB); on v1.71.0 it was +13.6",
+			"editor": "v1.72.0 3320.5 KB -> 3340.7 KB (+20.2) -> line 3345.5 KB = v1.72.0 + 25 KB by the rounding rule (orchestrator + claude:9 OK, no trim under the battery; next int claws back ~5 KB by making HeldBanner and the held-lock-only UI lazy); on v1.71.0 it was +19.1, the 1.72 merge added ~1 KB",
+			"note": "orchestrator OK (QUESTIONS-80a-int Q1), measured against a v1.70.0 build on the same machine and node_modules. Growth per module (gzip): peerHandler's chunk (lock receive gate, lockreject, held set in the handshake, drafts outbound gate, signaling hold) +2.85; lockHeld +1.95 (new); lockControl +1.12; objectPermissions (drafts scrub + adopt on load) +1.10; lockMode +0.89 (new); rosterOrigin +0.48 (new); editor only: HeldBanner +1.76, PeerAvatar +0.77, Flow +0.94, debugHooks +0.56. The play check: play joins sessions (PlayApp imports peerHandler) and its selection, session and cloud paths (objectActions, commandsHandler, cloudPlugin) call nearly every lock export; the editor-only exports left are a few lines each. lockIdle (the 5-minute idle ask) moved to a lazy import: -0.8 play / -1.1 editor. After the 1.71.0 merge (its editor line 3319.1 KB) re-measure and lower the editor line to the new measurement + 2 KB.",
+			"perLane": {
+				"basis": "each union merge built on v1.70.0 with v1.70.0's deps, same machine (play / editor KB, gzip -9)",
+				"80a-fix4-net #573": "+0.5 / +1.0",
+				"80a-locks #577": "+9.8 / +15.6",
+				"80a-drafts #571": "+1.1 / +0.9",
+				"80a-fix4-ui #576": "+0.7 / +2.0",
+				"102-stats #578": "+1.0 / -0.2",
+				"100-cover-fx #579": "+0.0 / +0.1 (on v1.71.0; the fx cover is lazy)",
+				"80a-int (gates hardening, heal keeps locks) + the v1.71.0 merge": "+0.5 / -0.2",
+				"the v1.72.0 merge (on v1.72.0, same machine)": "+0.7 / +1.1"
+			}
+		},
+		{
+			"date": "2026-11-21",
+			"lane": "102b-play",
+			"play": "v1.70.0 2110.8 KB -> 2112.2 KB (+1.4), line unchanged",
+			"editor": "v1.70.0 3459.0 KB -> 3461.2..3461.8 KB across builds of the same code (+2.2..+2.8) -> line 3462.5 KB",
+			"note": "inside the ~3 KB boot rule (claude:9, 21 Nov): the scene touch-layout validator, the info-point field normalizer and the note pin filter. The info points card, the picture downscaler, wake lock and the colour dropper are lazy chunks. Chunk-hash churn moves the editor ~0.6 KB between builds; the integrator may veto"
+		},
+		{
+			"date": "2026-11-22",
+			"lane": "102-int-1 (Games and play: 99-kernel, 102b-hud, 102b-physics, 102b-arrange, 102b-play, 102b-papercuts)",
+			"play": "v1.73.0 2131.3 KB -> 2147.7 KB (+16.4) -> line 2150.0 KB (the int boot rule: merged tag + the union, rounded up to the next 5 KB)",
+			"editor": "v1.73.0 3342.0 KB -> 3366.5 KB (+24.5) -> line 3370.0 KB (the same rule)",
+			"note": "measured on the Deck, v1.73.0 and each union step built in one worktree with one node_modules. Growth by module (gzip, union vs v1.73.0): flowRuntime +2.5 (Game Value, game feel, Show / Hide, toggle/text ops), colliderHelpers +2.0 (gravity scale, drag), nodes +1.9 (new node specs), joints +1.2 (four kinds, reload), modules +1.1; editor only: Inspector +3.7 (Array, Tidy, Joints, corner radius rows). Over the ~15 KB tell rule: claude:9 told before the release",
+			"perLane": {
+				"basis": "each first-parent merge of the union chain built on v1.73.0 (play / editor KB, gzip -9)",
+				"99-kernel #588": "+0.1 / +0.0 (not wired in)",
+				"102b-hud #580": "+5.8 / +7.1",
+				"102b-physics #582": "+3.5 / +6.4",
+				"102b-arrange #587": "+2.3 / +3.2",
+				"102b-play #589": "+1.0 / +2.1",
+				"102b-papercuts #595": "+3.6 / +5.4",
+				"build-to-build churn (two builds of ce7ec23b)": "+0.1 / +0.3"
+			}
+		},
+		{
+			"date": "2026-11-22",
+			"lane": "102-int-2 (Look, assets and animation: 102-decals, 102-paint, 102-splats, 102-simplify-export, 102-ik)",
+			"play": "v1.74.0 2147.7 KB -> 2155.1 KB (+7.4) -> line 2160.0 KB (the int boot rule: merged tag + the union, rounded up to the next 5 KB)",
+			"editor": "v1.74.0 3366.5 KB -> 3380.2 KB (+13.7) -> line 3385.0 KB (the same rule)",
+			"note": "measured on the Deck after merging v1.74.0. Under the ~15 KB tell rule. Decals, splats, Paint, the simplify/export dialogs and the constraint solver are lazy chunks; what rides the boot is the record appliers, wire validators, the Inspector rows and the node specs",
+			"perLane": {
+				"basis": "each first-parent merge of the union chain built on v1.73.0 in one worktree with one node_modules (play/editor KB gz vs v1.73.0 2131.3/3342.0)",
+				"102-decals": "+2.6 / +4.3",
+				"102-paint": "+1.7 / +3.5",
+				"102-splats": "+1.0 / +1.7",
+				"102-simplify-export": "+0.6 / +1.7",
+				"102-ik": "+0.7 / +1.1",
+				"102-int-2 seam fixes": "+0.3 / +0.1",
+				"with 102-int-1": "+0.5 / +1.3 (the union's rows meeting int-1's Inspector and node registry)"
+			}
+		},
+		{
+			"date": "2026-11-23",
+			"lane": "102-int-2 (1.75.0) + fix-export-files #608",
+			"play": "2155.1 KB (102-int-2 union on v1.74.0) -> 1877.4 measured with #608 (-277.7: boot code regrouped by when it runs) -> line 1900 KB (+1.2 %)",
+			"editor": "3380.2 KB -> 2988.5 measured with #608 (-391.7) -> line 3020 KB (+1.1 %)",
+			"note": "claude:9 ruling: reset the lines to the measured union + about 1 % so the #608 win cannot be eaten silently (the 2160 / 3385 lines set earlier for this union are retired). Union = decals, paint, splats, simplify-export, ik, #608, #609, #612; build 717 files (budget 850)."
+		},
+		{
+			"date": "2026-11-22",
+			"lane": "99-edit-core (roadmap 99 K2 + K3)",
+			"play": "feat/99-kernel 32bc25f8 2117.5 KB -> 2120.1 KB (+2.6: faceEdit +1.1 the one commit service commitMesh + meshGeoEntry with the ID-channel share and the session-state reads; editSession +0.9 the one session's sync half (entry capture, edited check, open/close, lossless leave); meshEdit +0.3, history +0.1 the shared-array stack count, meshBudget +0.1) -> line 2122.0 KB",
+			"editor": "3321.0 KB -> 3323.8 KB (+2.8), line 3325.0 KB unchanged",
+			"note": "the brief's boot allowance is about 3 KB; the 61-int line left 2.5 KB over the base, so the lane tips play by 0.1 KB. Everything kernel-side is lazy (meshSession.js + its worker load on the first edit-mode entry, meshSessionAdapters.js is K4's and unused by the app, meshCommitKernel.js only where the kernel is). +2 KB on the line covers renamed-chunk churn (~1 KB between builds of the same code). QUESTIONS-99-edit-core 7; the integrator re-lines by the INT BOOT RULE and may veto"
+		},
+		{
+			"date": "2026-11-23",
+			"lane": "71-rooms (on v1.74.0 + core #506 feat/71-privacy)",
+			"play": "v1.74.0 2147.7 KB -> + #506 2150.0 KB (+2.3) -> + 71-rooms 2152.2 KB (+2.2) -> line 2155.0 KB",
+			"editor": "v1.74.0 3366.5 KB -> + #506 3371.2 KB (+4.7, already over 3370) -> + 71-rooms 3373.9 KB (+2.7) -> line 3377.5 KB",
+			"note": "inside the ~3 KB boot rule (claude:9, 21 Nov): the invite join gate has to answer a dial synchronously (inviteStore +1.4: failed-proof counter, pause, re-join pacing, mint limits), plus the block-toast fix and the Require approval flag in peerModeration. The collapsed failed-invite row (FailedInviteJoins.svelte) is a lazy chunk. Base and lane built on the Deck with one node_modules; 71-int re-measures the union and may veto"
+		},
+		{
+			"date": "2026-11-23",
+			"lane": "fix-late-joiners (with #609 105-slot-save merged in)",
+			"play": "v1.74.0 2148.6 KB -> 2151.7 KB (+3.1: #609 +1.6, this lane +1.5) -> line 2152.5 KB",
+			"editor": "v1.74.0 3369.3 KB -> 3372.8 KB (+3.6: #609 +1.9, this lane +1.7) -> line 3374.0 KB",
+			"note": "inside the ~3 KB boot rule per lane. Measured on the pc host (tp-lanes), v1.74.0, #609's head and this branch built in one worktree with one node_modules; the per-lane split is from sourcemap builds of the three. This lane by module (gzip, editor): commandsHandler +0.5 (late-joiner ingest look-ahead, the primitive recipe path, the announced batch hold, the visible/slots fields), playSpawn +0.4 (the lazy loader and v1.74.0's fallback), flowStore graph tombstones, sceneStore poke pacing, qualityGovernor, autosave/gltfNames ~0.1 each. Lazy chunks (paid only when used): spawnPick + spawnSlots (load with the first peer link), slotRejoin (only a message carrying slots). Chunk-hash churn moves the editor ~0.6 KB between builds; the integrator may veto or fold it into the int line."
+		},
+		{
+			"date": "2026-11-23",
+			"lane": "92-correct (rows 1-4: HUD Timer from Play, spawned copies run the template's event flow, per-player Game Value + behaviour player events, per-second movement)",
+			"play": "v1.74.0 2148.6 KB -> 2150.5 KB (+1.9) -> line 2155.0 KB (rounded up to the next 5 KB)",
+			"editor": "v1.74.0 3369.2 KB -> 3371.2 KB (+2.0) -> line 3375.0 KB (the same rule)",
+			"note": "measured on the Deck, v1.74.0 and the lane built in one worktree with one node_modules. Inside the ~3 KB boot-wiring rule (claude:9, 21 Nov). The copy instancing (copyGraphs.js, 0.9 KB) is a lazy chunk loaded with the first spawned copy; what stays on boot: modules +0.6 (behaviour player events, Game Value for: me, node docs), flowRuntime +0.5 (timer clock, copy registry, myPeerId), nodes +0.2, playInteract +0.1. The int recomputes the line from its union."
+		},
+		{
+			"date": "2026-11-23",
+			"lane": "71-int (Accounts and safety: #506 71-privacy, #618 71-rooms, #619 fix-late-joiners with #609)",
+			"play": "v1.74.0 2148.6 KB -> 2155.5 KB (+6.9) -> line 2160.0 KB (the int boot rule: merged tag + the union, rounded up to the next 5 KB)",
+			"editor": "v1.74.0 3369.2 KB -> 3377.9 KB (+8.7) -> line 3380.0 KB (the same rule)",
+			"note": "measured on the pc host (tp-lanes): v1.74.0 and each union step built in one worktree with one node_modules. Under the ~15 KB tell rule. The two lane entries above are kept as their lanes wrote them; this line replaces theirs. If v1.75.0 (102-int-2, lines reset to 1900 / 3020 KB) is merged before the release, the line is set again ONCE from the measured merged tag + this union's sum",
+			"perLane": {
+				"basis": "each first-parent merge of the union chain built on v1.74.0 (play / editor KB, gzip -9)",
+				"71-privacy #506": "+1.4 / +1.9",
+				"71-rooms #618": "+2.5 / +3.2",
+				"fix-late-joiners #619 (with #609)": "+3.0 / +3.6",
+				"71-int fixes e3e8e7af, f1dcd3e3": "measured with the union at the release candidate (gates rc)"
+			}
+		},
+		{
+			"date": "2026-11-23",
+			"lane": "71-int-rel (1.76 Accounts and safety on v1.75.0: #506 71-privacy, #618 71-rooms, #619 fix-late-joiners)",
+			"play": "v1.75.0 1877.3 KB -> union on v1.75.0 1883.4 KB (+6.1) -> line 1909 KB (the 1.75.0 line 1900 + 3 KB per core lane x 3)",
+			"editor": "v1.75.0 2988.4 KB -> union on v1.75.0 2998.8 KB (+10.4) -> line 3029 KB (the 1.75.0 line 3020 + 3 KB per core lane x 3)",
+			"note": "orchestrator rule for this release (theprototype-41, 23 Nov): the 71-int candidate's 2160 / 3380 lines were set under the old rules and are retired; the new line is the 1.75.0 line + 3 KB per lane. Measured on the Deck after merging v1.75.0 (build 9a4cefaa). Per-lane split from the pc host on v1.74.0 (71-int entry above): #506 +1.4 / +1.9, #618 +2.5 / +3.2, #619 +3.0 / +3.6"
+		},
+		{
+			"date": "2026-11-23",
+			"lane": "92-correct (rows 1-4: HUD Timer from Play, spawned copies run the template's event flow, per-player Game Value + behaviour player events, per-second movement)",
+			"play": "v1.74.0 2148.6 KB -> 2150.5 KB (+1.9) -> line 2155.0 KB (rounded up to the next 5 KB)",
+			"editor": "v1.74.0 3369.2 KB -> 3371.2 KB (+2.0) -> line 3375.0 KB (the same rule)",
+			"note": "measured on the Deck, v1.74.0 and the lane built in one worktree with one node_modules. Inside the ~3 KB boot-wiring rule (claude:9, 21 Nov). The copy instancing (copyGraphs.js, 0.9 KB) is a lazy chunk loaded with the first spawned copy; what stays on boot: modules +0.6 (behaviour player events, Game Value for: me, node docs), flowRuntime +0.5 (timer clock, copy registry, myPeerId), nodes +0.2, playInteract +0.1. The int recomputes the line from its union."
+		},
+		{
+			"date": "2026-11-23",
+			"lane": "92-input (GC4a + GC4 third-person / side / top Play cameras, GC3 pad play actions, remap rows, device glyphs)",
+			"play": "v1.74.0 + 92-correct 2150.3 KB -> 2154.1 KB (+3.8), line 2155.0 KB unchanged",
+			"editor": "v1.74.0 + 92-correct 3370.7 KB -> 3375.9 KB (+5.2) -> line 3380.0 KB (rounded up to the next 5 KB)",
+			"note": "measured on the Deck against 92-correct's own build of 06b7cef1. Lazy: playView.js (the three views), padActions.js (the pad bridge, loaded with the first pad), playActions.js (pad catalog, family glyph names, help lines), keyCapture.js (loaded by the press that starts a capture), InputGlyph.svelte (loaded on a pad or a remap). On boot: modules +1.5 (the play-view seam the per-frame code calls, the PLC hooks, the self body, the banner / key-hint / Controls branches), nodes +0.5 (the Character Controller camera rows), inputRuntime +0.4 (the lazy bridge load + device notes), activeDevice +0.3 (the device store), editor only debugHooks +0.2, Flow +0.2 (showIf / defaultsBy on the card), nodeDocs +0.1; renamed-chunk churn ~1 KB (about +0.04 in each of ~25 chunks). Over the ~3 KB boot-wiring rule on the editor by ~2 KB: said in the PR; the int recomputes the line from its union."
+		},
+		{
+			"lane": "92-menus (roadmap 92 GC1/GC2/GC5/GC8)",
+			"play": "base (v1.74.0 + 92-correct) 2150.5 KB -> 2155.9 KB (+5.4) -> line 2157 KB",
+			"editor": "base 3371.2 KB -> 3378.1 KB (+6.9) -> line 3380 KB",
+			"note": "boot wiring only: the menus config normalize (scene play block), the leaf stores, the pause-menu rows (Save / Load / Join requests / Quit to title / Restart level, the Subtitles + Reduced motion rows, the headset's list page), Look speed / Invert look, the master-gain duck. The title screen, save slots, join requests, in-game join card, the menus runtime (pause hold, auto-admit) and the Configure Scene section are lazy chunks; a first cut was +11 KB because a dynamic import() in the gameShell boot chunk gave it its own preload table — they now go through gameShellWire's seams. The last +1 KB is fixes the e2e found: the viewport join card stepping aside under the pause menu (Toasts), one retrying loader for the lazy menu parts, the late-runtime title, exports without autosave"
+		},
+		{
+			"date": "2026-11-23",
+			"lane": "92-int (1.77 Games feel complete on v1.76.0: #620 92-correct, #629 92-input, #630 92-dialogue, #634 92-menus + int glue)",
+			"play": "v1.76.0 1883.4 KB -> union on v1.76.0 1887.8 KB (+4.4) -> line 1890 KB (the int rule: the merged tag + the union sum +5.5, rounded up to the next 5 KB)",
+			"editor": "v1.76.0 2999.0 KB -> union on v1.76.0 3005.3 KB (+6.3) -> line 3010 KB (the same rule, sum +7.1)",
+			"note": "set ONCE. Measured on the Deck: v1.76.0 and the union (73047265) built one after the other with one node_modules. The sum is the per-lane split measured on v1.75.0 as each first-parent merge of the union chain: 92-correct +2.2 / +2.2, 92-input +2.5 / +2.9, 92-dialogue +1.4 / +1.7, 92-menus +4.3 / +5.1, int glue -4.9 / -4.8 (the pause, settings and save panels load lazily: claude:9's boot ruling). The lane entries above are kept as their lanes wrote them; this line replaces theirs and 71-int-rel's 1909 / 3029.",
+			"perLane": {
+				"basis": "each first-parent merge of the union chain built on v1.75.0 (play / editor KB, gzip -9)",
+				"92-correct #620": "+2.2 / +2.2",
+				"92-input #629": "+2.5 / +2.9",
+				"92-dialogue #630": "+1.4 / +1.7",
+				"92-menus #634": "+4.3 / +5.1",
+				"92-int glue (lazy pause / settings / save panels)": "-4.9 / -4.8"
+			}
+		},
+		{
+			"date": "2026-11-24",
+			"lane": "99-int (roadmap 99 mesh kernel K2-K6 on v1.77.0: core #597 stack with #594/#596, #624 99-live, #619 fix-late-joiners, agent tool dependencies; #620 dedupes with the tag)",
+			"play": "v1.77.0 1887.8 KB -> union on v1.77.0 1887.0 KB (-0.8) -> line 1890 KB unchanged (the int rule: the merged tag + the union sum, rounded up to the next 5 KB)",
+			"editor": "v1.77.0 3006.9 KB -> union on v1.77.0 3006.1 KB (-0.8) -> line 3010 KB unchanged (the same rule)",
+			"note": "set ONCE. Measured on the Deck: v1.77.0 (base worktree) and the union 2dd627c2 built one after the other, each with its own npm ci. The kernel's lazy operators (K4) take more off boot than 99-live's in-place edits and the spatial hash add; #620's +2.1 / +1.6 is already in the tag.",
+			"perLane": {
+				"basis": "each first-parent merge of the union chain built on v1.75.1 (play / editor KB, gzip -9)",
+				"597-stack K2-K4 (#594 #596 #597)": "-6.9 / -6.9",
+				"624 99-live K5-K6": "+6.1 / +6.1",
+				"619 fix-late-joiners": "+1.5 / +1.6",
+				"620 92-correct": "+2.1 / +1.6 (in v1.77.0 already)",
+				"deps-fix agent-security": "+0.1 / +0.4 (chunk churn)"
+			}
 		}
 	],
 	"throttle": {

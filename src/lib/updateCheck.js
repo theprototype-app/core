@@ -4,7 +4,8 @@
 // per browser session. No modal, no peer blocking, no backup nag; dev skips.
 import { APP_VERSION, IS_DEV } from './version.js';
 import { exportMode } from './export/exportBoot.js';
-import { showToast } from '../stores/appStore.js';
+import { showToastById } from '../stores/appStore.js';
+import { UPDATE_TOAST_ID, reloadPromptShown } from './chunkReload.js';
 import { markContentStale } from './contentBase.js';
 
 const SHOWN_KEY = 'updateToastShown';
@@ -28,7 +29,9 @@ async function poll() {
 		// General tab / packs / Browse re-fetch on next open even before the user reloads
 		markContentStale();
 		sessionStorage.setItem(SHOWN_KEY, 'true');
-		showToast('New version ' + remote.version + ' available — reload to update.', [
+		// 80a-fix4-ui aa: a missing chunk already put up the reload prompt for this deploy — one is enough
+		if (reloadPromptShown()) return;
+		showToastById(UPDATE_TOAST_ID, 'New version ' + remote.version + ' available — reload to update.', [
 			{ label: 'Reload', action: reloadToUpdate }
 		]);
 	} catch {

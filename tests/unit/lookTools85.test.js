@@ -8,6 +8,7 @@ import { get } from 'svelte/store';
 const agentPage = vi.hoisted(() => ({ on: false }));
 vi.mock('$lib/agent/agentMode.js', () => ({ agentRequested: () => agentPage.on }));
 vi.mock('../../src/lib/agent/agentMode.js', () => ({ agentRequested: () => agentPage.on }));
+vi.mock('$lib/geometries.svelte', async () => (await import('./helpers/geometriesStub.js')).geometriesStub());
 vi.mock('$lib/objectActions', () => ({ moveObjectToGroup: () => {}, selectionTintOriginals: () => null }));
 
 const { objectsGroup } = await import('../../src/stores/sceneStore');

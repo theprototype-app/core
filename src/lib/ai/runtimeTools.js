@@ -52,10 +52,10 @@ const triggerNow = () => (sessionNow() % 86400000) / 1000;
 const objectOf = (uuid) => /** @type {any} */ (get(objectsGroup))?.getObjectByProperty?.('uuid', uuid);
 
 /** the socket tables, loaded once (flowSockets is a leaf; the kit's action set needs the kit catalog) */
-/** @type {Promise<{isSource: (t: string) => boolean, isAction: (t: string) => boolean, inputsOf: (t: string) => {name: string, type: string}[]}> | null} */
+/** @type {Promise<{isSource: (t: string) => boolean, isAction: (t: string) => boolean, isObjectEffect: (t: string) => boolean, inputsOf: (t: string) => {name: string, type: string}[]}> | null} */
 let typeInfoP = null;
 function typeInfo() {
-	typeInfoP ??= Promise.all([import('$lib/flowSockets'), import('$lib/kit/nodes.js').catch(() => null), import('./edgeHandles.js')]).then(([s, kit, eh]) => {
+	typeInfoP ??= Promise.all([import('$lib/flowSockets'), import('$lib/kit/nodes.js').catch(() => null), import('./edgeHandles.js'), import('$lib/nodeCatalog'), import('$lib/moduleSDK')]).then(([s, kit, eh, cat, sdk]) => {
 		/** @param {string} t */
 		const inputsOf = (t) => s.inputHandles(t).map((name) => ({ name, type: s.inputType(t, name) }));
 		/** @param {string} t */
@@ -64,7 +64,10 @@ function typeInfo() {
 		/** @param {string} t */
 		const isAction = (t) => TRIGGERED_ACTIONS.has(t) || kitActions.has(t);
 		// 2.0-n3b step 2: the same edge checks create_flow_nodes runs, over the graph as it stands
-		return { isSource, isAction, inputsOf, edgeTypeProblem: eh.edgeTypeProblem, edgeHandleProblems: eh.edgeHandleProblems };
+		// 102b-papercuts: the per-frame effects that act only through an Object Selector (or their own graph's object)
+		/** @param {string} t */
+		const isObjectEffect = (t) => cat.animationTypes.includes(t) || !!sdk.moduleEffects[t] || t === 'script' || t === 'customnode';
+		return { isSource, isAction, inputsOf, isObjectEffect, edgeTypeProblem: eh.edgeTypeProblem, edgeHandleProblems: eh.edgeHandleProblems };
 	});
 	return typeInfoP;
 }
@@ -478,7 +481,7 @@ export const RUNTIME_AI_TOOLS = [
 		function: {
 			name: 'validate_scene',
 			description:
-				'Check the scene for what would not work when someone presses Play: actions nothing fires, an Object Selector wired the wrong way round, a scene-graph On Click that reaches no object, Game Start wired as an event, HUD nodes pointing at elements that do not exist, walk mode with no spawn, a scene with no light, behaviour code problems. Each issue says what to fix. Run it after building a game, then playtest.',
+				'Check the scene for what would not work when someone presses Play: actions nothing fires, effects that act on no object, an Object Selector wired the wrong way round, a scene-graph On Click that reaches no object, Game Start wired as an event, HUD nodes pointing at elements that do not exist, walk mode with no spawn, a scene with no light, behaviour code problems. Each issue says what to fix. Run it after building a game, then playtest.',
 			parameters: { type: 'object', properties: {} }
 		}
 	},

@@ -4,7 +4,7 @@
 //   set_light        (set_look {light})      the rig sun + ambient, environment lights
 //   get_environment  (set_look {environment}) read all of it (viewers may read)
 //   place_spawn      (game_setup {spawn})    where Play starts and which way the player faces
-//   set_play_camera  (game_setup {play_camera}) first person walk / fly (the Character Controller) + H6 openingView
+//   set_play_camera  (game_setup {play_camera}) first / third person, side-scroller, top-down (the Character Controller) + H6 openingView
 //
 // Sky and light change the OWNER's look, so they ask first (agent/confirmGate, rule 7) and apply as ONE undo step
 // (the `environment` kind) through environment.js's one write path. Spawn and opening view ride the scene-settings
@@ -138,7 +138,13 @@ function describeEnvironment() {
 					minQuality: hdri.minQuality
 				}
 			: null,
-		fog: p.fog ? { color: p.fog.color, near: p.fog.near, far: p.fog.far } : null,
+		fog: p.fog
+			? p.fog.kind === 'height'
+				? { kind: 'height', color: p.fog.color, density: p.fog.density, base: p.fog.base, thickness: p.fog.thickness }
+				: p.fog.kind === 'distance'
+					? { kind: 'distance', color: p.fog.color, density: p.fog.density }
+					: { color: p.fog.color, near: p.fog.near, far: p.fog.far }
+			: null,
 		sun: p.sun ? { color: p.sun.color, intensity: p.sun.intensity, position: p.sun.position } : null,
 		ambient: p.hemi ? { sky: p.hemi.sky, ground: p.hemi.ground, intensity: p.hemi.intensity } : null,
 		envLights: (s.lights ?? []).map((/** @type {any} */ l) => ({ id: l.id, kind: l.kind, color: l.color, intensity: l.intensity, position: l.position, ...(l.groundColor ? { groundColor: l.groundColor } : {}) }))
@@ -242,7 +248,7 @@ async function setPlayCameraTool(args) {
 		} else {
 			const flow = await controllerNodes(plan.controller);
 			if ('error' in flow) return { error: flow.error, ...(out.updated.length ? { applied: out } : {}) };
-			out.playCamera = { mode: plan.controller ? 'first' : 'none', ...(plan.controller ?? {}) };
+			out.playCamera = { ...(plan.controller ?? {}), mode: plan.controller ? plan.controller.camera : 'none', ...(plan.controller ? { movement: plan.controller.mode } : {}) };
 			out.updated.push({ playCamera: true, ok: true });
 			if (flow.nodeId) out.created = [{ node: flow.nodeId }];
 			notes.push(flow.note);
@@ -315,7 +321,7 @@ export const SCENE_SETUP_AI_TOOLS = [
 				PRESET_NAMES +
 				'), a sky image by name (' +
 				SKY_NAMES +
-				'; a search_assets HDRI id "cc0:polyhaven/<id>" (fetched into the library once) or "lib:<hash>"; or {hash} of an HDR in the library — upload your own .hdr / .exr with assets upload; never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres, or {color, density}; null = none) and exposure. "Make it night": preset night or hdri starlight + a dark fog. Changes the whole scene\'s look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step.',
+				'; a search_assets HDRI id "cc0:polyhaven/<id>" (fetched into the library once) or "lib:<hash>"; or {hash} of an HDR in the library — upload your own .hdr / .exr with assets upload; never a URL) with rotation, intensity, blur and Sky quality (auto / standard / high / max, plus a minimum), a background colour or {top, bottom} gradient, fog ({color, near, far} in metres; {color, density} for distance fog; {color, density, base, thickness} for ground fog lying from base up over thickness metres; null = none) and exposure. "Make it night": preset night or hdri starlight + a dark fog. Changes the whole scene\'s look, so the host is asked first: it answers needsConfirm, then repeat with confirmId. One undo step.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -338,7 +344,15 @@ export const SCENE_SETUP_AI_TOOLS = [
 					gradient: { type: ['object', 'null'], properties: { top: { type: 'string' }, bottom: { type: 'string' } } },
 					fog: {
 						type: ['object', 'null'],
-						properties: { color: { type: 'string' }, near: { type: 'number', minimum: 0 }, far: { type: 'number', minimum: 0 }, density: { type: 'number', exclusiveMinimum: 0 } }
+						properties: {
+							kind: { type: 'string', enum: ['linear', 'distance', 'height'], description: 'linear = near to far; distance = thickens with distance (density); height = ground fog (density, base, thickness)' },
+							color: { type: 'string' },
+							near: { type: 'number', minimum: 0 },
+							far: { type: 'number', minimum: 0 },
+							density: { type: 'number', exclusiveMinimum: 0 },
+							base: { type: 'number', description: 'ground fog: the height (m) where it is thickest' },
+							thickness: { type: 'number', exclusiveMinimum: 0, description: 'ground fog: how far up (m) it thins out' }
+						}
 					},
 					exposure: { type: 'number', minimum: 0.1, maximum: 4 },
 					...CONFIRM
@@ -401,7 +415,7 @@ export const SCENE_SETUP_AI_TOOLS = [
 		function: {
 			name: 'set_play_camera',
 			description:
-				'How Play looks and where the editor opens. mode: first = first person through the player\'s eyes, walking (fly: true to fly) with speed, jumpHeight, eyeHeight, gravity — a Character Controller node in the scene graph, changed in place on a second call; none = the default Play camera. third / orbit / fixed are not Play cameras yet (the answer says what to use instead). openingView (H6): where the editor camera starts when the scene opens — {position, target}, "spawn" (behind the player), "frame" (the whole scene) or null; saved with the scene, nobody\'s view moves now.',
+				'How Play looks and where the editor opens. mode: first = through the player\'s eyes; third = behind the player (distance, height above the head, collide: walls pull the camera in); side = a side-scroller (the player walks a locked plane left / right, the view leads by lookAhead); top = top-down (angle in degrees, distance); the wheel zooms third / side / top between minZoom and maxZoom. Every mode walks (fly: true to fly, first / third only) with speed, jumpHeight, eyeHeight, gravity — one Character Controller node in the scene graph, changed in place on a second call; your own avatar is drawn in third / side / top. none = the default Play camera. orbit / fixed are not Play cameras (the answer says what to use instead). openingView (H6): where the editor camera starts when the scene opens — {position, target}, "spawn" (behind the player), "frame" (the whole scene) or null; saved with the scene, nobody\'s view moves now.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -411,6 +425,14 @@ export const SCENE_SETUP_AI_TOOLS = [
 					jumpHeight: { type: 'number', minimum: 0, maximum: 5 },
 					eyeHeight: { type: 'number', minimum: 0.2, maximum: 3 },
 					gravity: { type: 'boolean' },
+					// 92-input GC4: the view tunables (third / side / top)
+					distance: { type: 'number', minimum: 0.5, maximum: 60 },
+					height: { type: 'number', minimum: -2, maximum: 10 },
+					lookAhead: { type: 'number', minimum: 0, maximum: 10 },
+					angle: { type: 'number', minimum: 15, maximum: 90 },
+					minZoom: { type: 'number', minimum: 0.5, maximum: 60 },
+					maxZoom: { type: 'number', minimum: 0.5, maximum: 120 },
+					collide: { type: 'boolean' },
 					openingView: {
 						type: ['object', 'string', 'null'],
 						description: '{position: [x,y,z], target: [x,y,z]}, "spawn", "frame" or null',
@@ -423,4 +445,4 @@ export const SCENE_SETUP_AI_TOOLS = [
 ];
 
 export const SCENE_SETUP_PROMPT =
-	'\n\nSky, light and game setup: set_sky (preset, sky image, background, fog, exposure) and set_light (sun, ambient, environment lights) change the whole look, so they answer needsConfirm until the host allows it — then repeat with confirmId; get_environment reads both. place_spawn sets where Play starts; set_play_camera picks first person (walk or fly) and the scene\'s opening view.';
+	'\n\nSky, light and game setup: set_sky (preset, sky image, background, fog, exposure) and set_light (sun, ambient, environment lights) change the whole look, so they answer needsConfirm until the host allows it — then repeat with confirmId; get_environment reads both. place_spawn sets where Play starts; set_play_camera picks the Play camera (first person, third person, side-scroller or top-down) and the scene\'s opening view.';

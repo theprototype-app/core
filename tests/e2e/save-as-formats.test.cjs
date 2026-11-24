@@ -109,7 +109,7 @@ h.run(async () => {
 		}))
 	);
 	h.check(
-		catalog.map((f) => f.id).join(',') === 'snapshot,glb,tpscene,download-glb,download-gltf',
+		catalog.map((f) => f.id).join(',') === 'snapshot,glb,tpscene,download-glb,download-gltf,print-stl,print-3mf,ar-usdz', // 102 M2: + 3D print / AR
 		`the catalog holds the five formats the user asked for (${catalog.map((f) => f.id).join(',')})`
 	);
 	const tpTip = catalog.find((f) => f.id === 'tpscene')?.tip ?? '';

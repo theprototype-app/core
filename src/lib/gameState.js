@@ -283,7 +283,14 @@ export function applyGameVarOp(req) {
 	if (appliedVarOps.length > GAMEVAR_RID_WINDOW) appliedVarOps.shift();
 	const v = Number(req.value) || 0;
 	const current = Number(held.vars?.[req.name]) || 0;
-	const value = req.op === 'add' ? current + v : req.op === 'subtract' ? current - v : v;
+	// 102b-hud: `toggle` flips a flag (0 <-> 1) ONCE per event (the rid rule above is what makes a
+	// toggle safe here), `text` holds words
+	const value =
+		req.op === 'text' ? String(req.value ?? '').slice(0, 200)
+		: req.op === 'toggle' ? (current ? 0 : 1)
+		: req.op === 'add' ? current + v
+		: req.op === 'subtract' ? current - v
+		: v;
 	commitGameState({ vars: { ...held.vars, [req.name]: value }, varOps: [...(held.varOps ?? []), req.rid].slice(-GAMEVAR_RID_SHARED) });
 	return true;
 }

@@ -5,7 +5,11 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { classify } = require('../../scripts/ci/deps-policy.cjs');
-const { assign, shardCount, counts } = require('../../scripts/ci/battery.cjs');
+const { assign, shardCount, counts, ciEnvError, ciSuiteEnv } = require('../../scripts/ci/battery.cjs');
+const batteryJson = require('../../tests/e2e/battery.json');
+const fs = require('node:fs');
+const { spawnSync } = require('node:child_process');
+const path = require('node:path');
 
 /** @param {string} name @param {string} type @param {string} up @param {string} [dir] @param {string} [eco] */
 const dep = (name, type, up, dir = '/', eco = 'npm_and_yarn') => ({
@@ -77,6 +81,49 @@ describe('battery shards: longest first onto the least-loaded shard', () => {
 		expect(shardCount(battery(Object.fromEntries(Array.from({ length: 99 }, (_, i) => ['s' + i, 600]))))).toBe(20);
 	});
 	it('counts pass/fail lines the way the integrators battery does', () => {
-		expect(counts('  ✓ one\n  ✗ two\nPASS three\n\nlast line\n')).toEqual({ pass: 2, fail: 1, last: 'last line' });
+		expect(counts('  ✓ one\n  ✗ two\nPASS three\n\nlast line\n')).toMatchObject({ pass: 2, fail: 1, last: 'last line', slow: false, slowWaits: 0 });
+	});
+});
+
+describe('BATTERY_CI is GitHub-only (ci-speed): every battery runner refuses it elsewhere', () => {
+	it('accepts it on GitHub Actions and accepts its absence anywhere', () => {
+		expect(ciEnvError({ BATTERY_CI: '1', GITHUB_ACTIONS: 'true' })).toBe('');
+		expect(ciEnvError({})).toBe('');
+		expect(ciEnvError({ BATTERY_CI: '', GITHUB_ACTIONS: undefined })).toBe('');
+		expect(ciEnvError({ BATTERY_CI: '0' })).toBe('');
+	});
+	it('refuses it on a local / desk / pc / release run, whatever value it carries', () => {
+		expect(ciEnvError({ BATTERY_CI: '1' })).toMatch(/outside GitHub Actions/);
+		expect(ciEnvError({ BATTERY_CI: 'true', GITHUB_ACTIONS: 'false' })).toMatch(/CI-only/);
+		expect(ciEnvError({ BATTERY_CI: '1', GITHUB_ACTIONS: '1' })).toMatch(/GITHUB_ACTIONS=1/);
+	});
+	it('the runners exit 2 before doing anything (battery.cjs, battery-desk.cjs) and the e2e helpers refuse to load', () => {
+		const root = path.resolve(new URL('.', import.meta.url).pathname, '../..');
+		const { GITHUB_ACTIONS: _onGitHub, ...rest } = process.env;
+		const env = { ...rest, BATTERY_CI: '1' };
+		for (const script of ['scripts/ci/battery.cjs', 'scripts/ci/battery-desk.cjs']) {
+			const r = spawnSync(process.execPath, [path.join(root, script), 'plan'], { cwd: root, env, encoding: 'utf8' });
+			expect(r.status).toBe(2);
+			expect(r.stderr).toMatch(/outside GitHub Actions/);
+		}
+		const h = spawnSync(process.execPath, ['-e', "require('./tests/e2e/helpers.cjs')"], { cwd: root, env, encoding: 'utf8' });
+		expect(h.status).not.toBe(0);
+		expect(h.stderr).toMatch(/outside GitHub Actions/);
+	});
+});
+
+describe('the lean draw opt-out (ci-speed): battery.json ci.fullDraw', () => {
+	const b = { ci: { fullDraw: { 'pixel-suite': 'reads frame pixels' } } };
+	it('hands E2E_FULL_DRAW=1 to a listed suite on CI, nothing to the rest, nothing off CI', () => {
+		expect(ciSuiteEnv(/** @type {any} */ (b), 'pixel-suite', { BATTERY_CI: '1' })).toEqual({ E2E_FULL_DRAW: '1' });
+		expect(ciSuiteEnv(/** @type {any} */ (b), 'store-suite', { BATTERY_CI: '1' })).toEqual({});
+		expect(ciSuiteEnv(/** @type {any} */ (b), 'pixel-suite', {})).toEqual({});
+	});
+	it('every listed suite exists and carries its reason', () => {
+		const list = Object.entries(batteryJson.ci?.fullDraw ?? {});
+		for (const [name, reason] of list) {
+			expect(fs.existsSync(new URL(`../e2e/${name}.test.cjs`, import.meta.url)), name).toBe(true);
+			expect(typeof reason === 'string' && reason.length > 10, name).toBe(true);
+		}
 	});
 });

@@ -39,6 +39,9 @@
 	import Icon from '../ui/Icon.svelte';
 	import HeadDockPop from '../ui/HeadDockPop.svelte'; // uir-polish G2/G3
 	import PaneHandle from '../ui/PaneHandle.svelte'; // showhide-v8: the one pane-handle pattern
+	// 80a-fix4-ui O2: the panes' elements (an open pane's handle is not drawn; its menu moves to the pane's top band)
+	let listEl = $state(/** @type {HTMLElement | null} */ (null));
+	let keyEl = $state(/** @type {HTMLElement | null} */ (null));
 	import { readPanelOpen, writePanelOpen } from '$lib/ui/handheldPanels.js';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import ContextMenu from '../ContextMenu.svelte';
@@ -2068,6 +2071,7 @@
 				use:minimalScroll
 				class:an-pane-full={compact}
 				class:an-pane-off={compact ? phonePane !== 'list' : !listOpen}
+				bind:this={listEl}
 				bind:clientHeight={sideH}
 			>
 				{#if clips.length}
@@ -2281,6 +2285,7 @@
 						id="animation-list-toggle"
 						edge="left"
 						open={listOpen}
+						pane={listEl}
 						label="the channel list"
 						windowKey="animation"
 						style="top: 5.5rem; left: 0"
@@ -2665,6 +2670,7 @@
 						id="animation-key-toggle"
 						edge="right"
 						open={keyOpen}
+						pane={keyEl}
 						label="the key properties"
 						role="info"
 						windowKey="animation"
@@ -2681,6 +2687,7 @@
 				class="w-52 shrink-0 overflow-y-auto border-l border-border p-2"
 				class:an-pane-full={compact}
 				class:an-pane-off={compact ? phonePane !== 'key' : !keyOpen}
+				bind:this={keyEl}
 				use:minimalScroll
 			>
 				{#if selTrack}

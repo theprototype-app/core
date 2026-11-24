@@ -27,6 +27,7 @@ import { writable, get } from 'svelte/store';
 import { isLocked } from '../stores/sceneStore';
 import { currentLevel, sceneSignature } from './levels';
 import { buildSessionPayload } from './sessions';
+import { withoutLocalObjects } from './objectPermissions';
 import { projectManifest } from './projectManifest';
 import { dirtyPulse } from './autosave';
 
@@ -71,7 +72,8 @@ export function recomputeSceneDirty() {
 	if (get(isLocked) === true) return get(sceneDirty);
 	let signature = '';
 	try {
-		const payload = /** @type {any} */ (buildSessionPayload(at.name));
+		// 80a D2: as a file sees it — a draft edit is not an unsaved change of the scene file
+		const payload = /** @type {any} */ (withoutLocalObjects(() => buildSessionPayload(at.name)).result);
 		signature = sceneSignature(payload);
 	} catch {
 		return get(sceneDirty); // a scene that cannot be serialized says nothing new

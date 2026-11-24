@@ -32,6 +32,10 @@
 		TOUCH_OPACITY_RANGE
 	} from '$lib/touchActions';
 	import { touchSpec } from '$lib/touchSpec';
+	// 102b-play: a third scope, "This scene" — the AUTHOR's layout, saved into the scene for every player
+	import { scenePlay, setScenePhysics } from '$lib/scenePhysics';
+	import { embedMode } from '$lib/playMode';
+	import { isViewer } from '$lib/objectPermissions';
 	import TouchActionButton from './TouchActionButton.svelte';
 
 	let viewW = $state(typeof window === 'undefined' ? 1280 : window.innerWidth);
@@ -44,13 +48,21 @@
 	const spec = demo ? resolveTouchControls({ declared: [{ owner: '', actions: [], preset: 'shooter', at: 0 }] }) : sceneSpec;
 	const game = get(gameId);
 
-	let scope = $state(/** @type {'game' | 'global'} */ (get(touchPrefs).scope));
+	/** the scene's shipped layout, read once (the working copy is what changes) */
+	const author = get(scenePlay).touch ?? null;
+	/** only someone who can edit the scene can ship a layout with it: never in the play app or as a viewer */
+	const canAuthor = !get(embedMode) && !isViewer() && !demo;
+	let scope = $state(/** @type {'game' | 'global' | 'scene'} */ (get(touchPrefs).scope));
+	/** what a scope shows when opened: the player's scopes start from the author's layout
+	 * @param {'game' | 'global' | 'scene'} which @param {number} w @param {number} h */
+	function layoutFor(which, w, h) {
+		const store = get(touchLayouts);
+		if (which === 'scene') return effectiveTouchLayout(spec, null, w, h, author);
+		const saved = which === 'global' ? store.global : savedLayoutFor(store, game);
+		return effectiveTouchLayout(spec, saved, w, h, author);
+	}
 	/** the working copy, item key -> item */
-	let items = $state(
-		structuredClone(
-			effectiveTouchLayout(spec, savedLayoutFor(get(touchLayouts), game), window.innerWidth, window.innerHeight).items
-		)
-	);
+	let items = $state(structuredClone(layoutFor(untrack(() => scope), window.innerWidth, window.innerHeight).items));
 	let selected = $state(/** @type {string | null} */ (spec.actions[0] ? 'btn:' + spec.actions[0].id : 'stick'));
 	let dirty = $state(false);
 
@@ -176,28 +188,28 @@
 		};
 	});
 
-	/** @param {'game' | 'global'} next */
+	/** @param {'game' | 'global' | 'scene'} next */
 	function pickScope(next) {
 		scope = next;
-		setTouchPrefs({ scope: next });
+		// the scene scope is a choice for this one edit, never the remembered default
+		if (next !== 'scene') setTouchPrefs({ scope: next });
 		// show what that scope would load, unless the player has already moved things
-		if (!dirty) {
-			const store = get(touchLayouts);
-			const saved = next === 'global' ? store.global : savedLayoutFor(store, game);
-			items = structuredClone(effectiveTouchLayout(spec, saved, viewW, viewH).items);
-		}
+		if (!dirty) items = structuredClone(layoutFor(next, viewW, viewH).items);
 	}
 
 	function reset() {
-		resetTouchLayout(scope, game);
+		if (scope === 'scene') setScenePhysics({ play: { touch: null } });
+		else resetTouchLayout(scope, game);
 		const store = get(touchLayouts);
 		const fallback = scope === 'game' ? store.global : null;
-		items = structuredClone(effectiveTouchLayout(spec, fallback, viewW, viewH).items);
+		items = structuredClone(effectiveTouchLayout(spec, fallback, viewW, viewH, scope === 'scene' ? null : author).items);
 		dirty = false;
 	}
 
 	function save() {
-		saveTouchLayout({ v: 1, items: untrack(() => $state.snapshot(items)) }, scope, game);
+		const layout = { v: 1, items: untrack(() => $state.snapshot(items)) };
+		if (scope === 'scene') setScenePhysics({ play: { touch: layout } });
+		else saveTouchLayout(/** @type {import('$lib/touchActions').TouchLayout} */ (layout), scope, game);
 		closeTouchLayoutEditor();
 	}
 
@@ -241,10 +253,23 @@
 			<span class="tle-seg tp-seg" role="group" aria-label="Save for">
 				<button type="button" id="touch-layout-scope-game" class="tp-seg-btn" aria-pressed={scope === 'game'} onclick={() => pickScope('game')}>This game</button>
 				<button type="button" id="touch-layout-scope-global" class="tp-seg-btn" aria-pressed={scope === 'global'} onclick={() => pickScope('global')}>All games</button>
+				{#if canAuthor}
+					<button
+						type="button"
+						id="touch-layout-scope-scene"
+						class="tp-seg-btn"
+						aria-pressed={scope === 'scene'}
+						title="Save this layout into the scene: every player starts from it. A player's own layout still wins."
+						onclick={() => pickScope('scene')}>For players</button
+					>
+				{/if}
 			</span>
 		</div>
 		{#if demo}
 			<p class="tle-hint">This scene has no action buttons of its own — arranging the usual Fire and Jump here sets the layout games start from.</p>
+		{/if}
+		{#if scope === 'scene'}
+			<p class="tle-hint" id="touch-layout-scene-hint">Saved into this scene: every player starts from this layout. A player who arranges their own buttons keeps theirs.</p>
 		{/if}
 		{#if sel && selected}
 			<div class="tle-row">

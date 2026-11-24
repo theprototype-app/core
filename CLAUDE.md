@@ -763,6 +763,31 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   store OFF by default + toggle under the object-list filter cog + auto-on via
   `markLocalOnly`; Share/Share-all broadcast toJSON + clear the flag; drop-to-local =
   viewer local COPY / editor delete-for-peers. `Objects.svelte` gained a local badge + Share.
+- `src/lib/hideMyIp.js` + `peerRateLimit.js` + `peerRateGate.js` (71 TR4, TR7) — the session's own protections,
+  both per device. HIDE MY IP: `iceTransportPolicy: 'relay'` on the LIVE Peer's `options.config`, because PeerJS
+  builds every RTCPeerConnection (dialled, answered, data, voice) from that object at that moment; never in
+  `resolvePeerOptions`, where `undefined` means PeerJS's own defaults and a `config` would replace them. FAIL
+  CLOSED: no relay server = the dial fails with a sentence, never a direct try. A link already up keeps its route
+  (no renegotiation), and a Settings reset does not switch it off. Suite `hide-my-ip` needs a LOCAL slot: the
+  browser must reach `tests/e2e/lib/miniTurn.cjs`, a real TURN server small enough to read that counts the bytes it
+  carried. RATE LIMITS: per-peer token buckets for discrete edits and chat (`rateKind`, null for streams and state
+  replies, which keep flowing), checked right after `canApply`; the session host is exempt. A refused sender hears
+  one `ratelimited` every 30 s (on the ALWAYS_ALLOWED floor) and the host/admin gets a notice with Remove.
+  cloudApi `removePeer(peerId, {block})` is the seam the cloud's account block list enforces through.
+- `src/lib/inviteLimits.js` (71 AS4, PURE: imports only inviteCore) + `peerModeration.blockToast` /
+  `requireApproval` (71 AS3) — ROOMS YOU CAN TRUST. INVITES: <= 20 live per host device and <= 10 minted per 10 min
+  (`mintVerdict`; the window counts MINTS in `tp:inviteMints`, never records, or mint-forget-mint walks past it);
+  `createInvite` returns `{refused}` and mints nothing. A FAILED PROOF IS NEVER A CARD: `verifyInviteDial` counts it in
+  `createJoinGate` and it lands in ONE `failedInviteJoins` row (`FailedInviteJoins.svelte`, lazy, in Toasts + the
+  drawer; a line on `VRPeerApprove`) with Review / Let in / Dismiss — the 12-card cap (`boundApprovals`) drops the OLDEST
+  card, so a flood used to push a real joiner out. > 10 failures / min PAUSE invite joins 60 s (one host toast, Resume
+  now); a paused or too-fast re-join (`again`, a token bucket: 2 free, then 1 / 30 s) is refused with additive dial
+  metadata `why: 'invite-paused' | 'invite-slow'` on the 'denied' result (`joinWhyText`; an older joiner reads
+  "declined"). BLOCK TOAST: a session block holds a PEER ID and a guest returns with a new one, so blocking a guest (we
+  host; `roomAccess.isGuest() !== false`) offers Require approval to join — a SESSION flag on the host (`requireApproval`,
+  reset with the block list; Settings ▸ Connection row) that turns every automatic admit, a working invite included, into
+  the card — and the plugin's Signed-in people only (`cloudApi.setRoomAccess`, OPEN-CORE.md). Suites `invite-limits`,
+  `block-guest-fix`; `invite-links`' counterfactuals assert the collapsed row now.
 - `src/lib/connectionState.js` (store-only) — `sessionHost` (peer that approved OUR
   outbound request; null = we host), `peerJoinedAt`, `resetSession`. Connect state
   derives from `$peers.openedPeers`, **NEVER `userdata.length`** (the roster is
@@ -884,12 +909,16 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   (meshEdit `liveTwins`; plane vertices are pinned to the plane). The source side is the side
   the edit CHANGED (`editSide`), `symKeep` only breaks a tie. `mirrorTrisCore` is the shared
   pure half of Symmetrize.
-  Two traps live here. The LIVE PREVIEW (`liveGeometryUpdate`) swaps geometry every
-  frame, so topology has to survive the preview or there is nothing left for the
+  Two traps live here. The LIVE PREVIEW (`liveGeometryUpdate`) swapped geometry every
+  frame, so topology had to survive the preview or there was nothing left for the
   commit to carry — that was the real reason a rotated band still lost its quads after
-  the commit path already carried them. And GLTF-based autosave does NOT round-trip
-  geometry.userData (toJSON/ObjectLoader does), so a restored autosave re-derives:
-  acceptable degradation, never a wrong result.
+  the commit path already carried them (99 K5: a grab and a same-layout scrub now write IN PLACE into a
+  session-private geometry, so the stored partition simply stays; a layout change still swaps, with the carry). GLTF autosave DOES carry `__topo` for a
+  single-material mesh (99 K1 measured it, `meshKernelGltfTopo.test.js`: GLTFExporter writes
+  geometry.userData as the primitive's `extras`, GLTFLoader reads them back, triangle order
+  kept); a multi-slot mesh is split into per-group primitives whose copies fail
+  `facesValidFor` and are DROPPED, and its toJSON multiMaterial sidecar keeps the partition.
+  Either way a missing or invalid partition re-derives: never a wrong result.
   Still true of the soup: an extrusion wall is coplanar+adjacent with the flat side
   beneath it so `groupFaces` MERGES them (Face granularity can't isolate the band —
   that is why Quad exists), and a quad's internal DIAGONAL is a triangulation
@@ -927,8 +956,8 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   leaves the geometry edited. Bridge pairs its loops by ANGLE around their centres in
   one basis perpendicular to the tunnel axis (the old closest-vertex anchor + direction
   vote was tie-sensitive between aligned caps, and a one-step rotation = a skewed tunnel).
-  M6 `recalculateNormals` (signed volume per shell), `mergeByDistance` (quantized-grid
-  clusters, deterministic), `setShadingSmooth` (userData.shading, replicates as just
+  M6 `recalculateNormals` (signed volume per shell), `mergeByDistance` (99 K6: greedy
+  distance clusters through the kernel's SpatialHash — a pair across a cell wall merges; deterministic), `setShadingSmooth` (userData.shading, replicates as just
   the FLAG, re-applied by applyMeshGeo). A CLOSED region has no border, so extrude
   degenerates to a translate — refused with an explanation (that is also what
   Shell/Object granularity means for extrude). `stashSelections`/`restoreSelection`
@@ -1115,7 +1144,8 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   any object + chase/orbit camera; possessing = selecting; ONE undo per ride),
   `handModels` (#12: custom hand GLB = IDENTITY — hash on `handmodel` msg + handshake,
   assetShare pull, rigid-at-wrist render), `terrainSculpt` (#12: brush raise/lower/
-  smooth/flatten over the meshgeo channel; weld by quantized (x,z) COLUMNS, rebuilt in
+  smooth/flatten over the meshgeo channel (99 K6: the brush finds its vertices through the kernel's SpatialHash —
+  terrain hashes its columns' x/z, mesh mode per stroke with a drift pad; no linear scan); weld by quantized (x,z) COLUMNS, rebuilt in
   the applyMeshGeo hook (`rebuildSculptCaches`) AND guarded by position-ATTRIBUTE
   identity so a same-tick brush after a remote/undo swap never hits a stale cache;
   one snapshot+undo per stroke; CL-B follow-up MESH mode (`sculptMode`): the same
@@ -1750,6 +1780,42 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   operators author through. Imports NOTHING, deliberately: it stays a pure unit outside
   the history-cycle family, and derivation stays in faceEdit where the operators live.
   Full contract in the faceEdit entry below),
+  **99 K2 — ONE COMMIT, ONE SENDER.** `meshCommit.js` (pure) is the only `meshgeo` builder (`meshGeoMessage`/
+  `sendMeshGeo`; the wire is byte-identical, proved across two trees by `mesh-commit-two-tree`) and `compactMeshState`
+  (what history keeps: Float32 positions/uvs, the partition packed Int32, so `entryBytes` counts what is HELD).
+  `faceEdit.commitMesh(c)` = snapshot -> apply ('session' | 'object') -> broadcast -> record ('op' | 'entry' | false),
+  the one path every mesh commit takes (session ops, commitMeshGeoTriple/Snapshot, the UV editor, adjust, live mirror).
+  **99 K3 — ONE EDIT SESSION.** `editSessionState.js` (a leaf) holds it: `session.face` (`FS` in faceEdit: object,
+  frame, faces, quadPartner, overlay(s), grab, adjust, proxy) and `session.vertex` (`VS` in meshEdit: object,
+  handles, handleMesh, overlay, proxy, selectedHandle, selection, proxyGesture) replace the module globals; the shared
+  part (uuid, entry, edited, kernel, ID selection) opens and closes in `editSession.js` on the 15-F moments. ENTRY IS
+  LOSSLESS: the entry geometry is kept by reference and a leave with nothing edited re-emits it (never the welded
+  kernel). The kernel is built after entry in `meshSession.worker.js` (lazy `meshSession.js`, skipped above the commit
+  ceiling); stashed picks are stored as IDs (faces, vertices, edges = vertex-ID pairs). K4 runs bevel, extrude/inset/move,
+  bridge/fill/solidify, merge/dissolve/delete, subdivide/symmetrize on the session's op mesh (`heldOpMesh` ->
+  `sessionKernelCommit`/`objectKernelCommit`, IDs carried; the K3 adapter module had no caller left and went). History counts a typed
+  array shared by several steps once (`meshBudget.historyBytes`; `meshCommit.shareIds` shares equal ID channels).
+  **99 K5 — NO SOUP, LIVE EDITS IN PLACE.** `triFrame.js` (a leaf, THREE only) is the session's view of its geometry:
+  `FS.frame` = the position attribute itself (zero-copy when plain non-indexed Float32), slot per triangle, uvs, an
+  integer weld on the keyOf grid; every reader (faces, quads, shells, borders, loops, picks, overlays) runs on it and
+  the soup-shaped exports (`groupFaces`, `boundaryEdges`, ...) wrap it — `FS.workingTris` is gone. A grab writes its
+  corners into a SESSION-PRIVATE copy (`ensureLiveGeometry`; never the entry geometry, which a clone may share; a
+  cancel puts the original object back), normals by `normalPlan`/`applyNormalPlan` (flat corners -> face normal,
+  smoothing groups -> summed normal, untouched corners byte-identical; `applyMeshGeo` applies the same plan for a
+  move so peers and undo match), the quad wire in place (`fromCorners`), the pick BVH refitted
+  (`ensureBoundsTrees(root, skip, live)`). The adjust engine's kernel ops return a flat `state` (soup lazy), and a
+  scrub with an unchanged layout writes in place. The edit wire reuses `FS.frame` + the DERIVED `FS.quadPartner`
+  while `rebuildFaces`' stamp still matches (same frame, same position attribute + version: `wireReuse`), so a
+  commit welds and pairs the mesh once, not twice. Suite `mesh-live-edit`.
+  `meshKernel/` (99 K1; the app reaches it only lazily, through meshSession.js — K4 moves the operators onto it): a
+  headless face-vertex mesh in flat typed arrays (BMesh disk + radial cycles), no three.js in
+  the core (`three.js` is the one adapter that imports it), stable vertex/edge/face IDs = slots
+  never reused until `compact()` (returns old -> new maps), n-gons, per-corner attributes,
+  material per face, a CSR `SpatialHash`, triangulation only as OUTPUT (a per-face cache with
+  order keys, so geometry -> kernel -> geometry is value-identical; every mesh of every scene
+  is held to that). Import welds by EXACT equality (lossless; a sphere's uv seam stays open —
+  `weld: 1e-4` is the editor's tolerance). Adapters speak today's CSR packing and `meshgeo`
+  fields, plus optional ID channels. One-page API: `src/lib/meshKernel/API.md`,
   `uvEditor` (UV1-UV5 + UV4, PRs #106/#107/#108/#109: the UV editor's whole core.
   Editing UVs IS a geometry edit — there is no standalone uv channel — so every UV
   write REUSES faceEdit's exported `readTriangles`/`trisToPositions`/`trisToGroups`/
@@ -2972,6 +3038,26 @@ sub-entry with its line: grep the index for a word, then read this file from tha
 
 ## Hard-won gotchas (do not rediscover)
 
+- **THE BUILD'S FILE COUNT IS A PRODUCT LIMIT, AND ROLLDOWN'S DEFAULT SPLIT BLOWS IT (fix-export-files,
+  1.74 hotfix).** An exported game copies every file `build/export-manifest.json` lists and itch.io refuses
+  a zip of more than 1,000; 1.74.0 listed 1,056 (the count crept ~+30 a release) and EVERY export failed its
+  own check. Rolldown splits shared code by which entries reach it, and ~230 `import()` targets count as
+  entries, so the editor boot alone fetched ~570 chunks. `scripts/boot-chunk-groups.cjs` (rolldown
+  `codeSplitting.groups`, wired in vite.config.ts) regroups BOOT code only, by its load signature (the
+  pages that boot it + the lazy entries that fetch it on the other pages), then merges small groups within
+  one set of boot pages: 684 files, and boot JS SHRANK (play -277 KB gz, editor -390 KB gz — the default
+  split had folded lazy-only code into a 470 KB boot chunk). /play is PROTECTED from merges (a player
+  fetches no editor code: play-entry §2 names chunks, so groups are named after their largest module the
+  way rolldown names one; a merge that changed what /play fetches lazily went red there). Three traps it
+  rests on: rolldown's group
+  `includeDependenciesRecursively` (forced ON by kit's `preserveEntrySignatures: 'strict'`) drags a
+  member's dependencies into whichever group is built FIRST, so groups get one entry each with priorities
+  in dependency order; a style module left ungrouped rides into the first group importing it (app.css
+  tied every page to the kit page's chunk); and a merge inherits BOTH sides' dependencies, so the closure
+  rule refuses one whose dependency is not already loaded by every trigger of the merged group (without
+  it the kit page's first lazy load pulled 4 MB of editor boot code). `export-manifest.cjs` now FAILS the
+  build above 850 files — the fix for that red is fewer files, never a higher number. `TP_BOOT_CHUNKS=0`
+  builds the old split for an A/B; the file's header lists its other debug env vars.
 - **SVELTEKIT 3 SHALLOW ENTRIES ARE ASYNC, AND THEIR STATE IS A STRING (sk3).** Both history markers
   (play's `tpPlay`, the Back stack's `tpBack`) go through `src/lib/shallowHistory.js` and nowhere else.
   `goto(url, {shallow, state})` (and the deprecated `pushState`) push the entry only after an awaited route
@@ -4320,7 +4406,7 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   on which way the feature pushes (this cost three wrong red/green readings across the
   vertex and edge bevels).
 - **A helper that indexes SESSION state cannot be reused outside that session.**
-  `quadRingKeys(a, b)` takes triangle INDICES and reads the face session's `workingTris`,
+  `quadRingKeys(a, b)` takes triangle INDICES and reads the face session's `workingTris` (99 K5: the frame),
   so `diagonalEdgeKeys` — built on it — returned an EMPTY set whenever no face session was
   open. Two consequences went unnoticed for a long time: the quad-structure WIREFRAME was
   silently the raw triangulation in VERTEX mode, and M9's vertex slide offered face
@@ -4369,7 +4455,8 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   Face granularity resolves all 10 triangles and the heal fires. Pass `false` when the
   selection is the thing you mean.
 - **State attached to a geometry must survive the LIVE PREVIEW, not just the commit.**
-  `liveGeometryUpdate` builds a FRESH BufferGeometry on every frame of a face gesture,
+  `liveGeometryUpdate` built a FRESH BufferGeometry on every frame of a face gesture (99 K5: only when the
+  layout changes — a grab and a same-layout scrub write in place),
   so anything hanging off the geometry (P9's stored topology; anything similar you add)
   is gone by the time the commit runs — and a commit-side carry-over then finds nothing
   to carry. The symptom is maddening because the commit path looks correct in isolation:
@@ -5111,8 +5198,23 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   (`createFaceFromVerts` — else it faces away and you see nothing, 191). VR Stretch =
   per-axis infinite sliders in the Edit▸Stretch menu (grab a `vrstretch-<axis>` handle,
   horizontal controller motion scales that axis), NOT a spatial gesture (193).
-- Locks: `lockedObjects` holds REMOTE locks only — "we hold X" = X is our selection;
-  one lock per peer (a new lock replaces the old one); `unlock` message exists.
+- Locks: `lockedObjects` holds REMOTE rows only (`[peerId, uuid, at]`, holder-first); what
+  WE hold is `lockHeld.myLocks` (a `lock` carries our whole held set, `unlock` lets go).
+  80a: the RECEIVER gates (`gateLockedEdit`: an edit of an object held by someone else is
+  dropped and answered `lockreject`, which heals the sender's copy), a tie on the same object
+  goes to the earlier `at` then the lower id, and the handshake carries the whole held set
+  (caps flag `lk`, OPEN-CORE.md). A held object is read-only in Properties (`HeldBanner`,
+  `heldReadOnly.js`), its flow opens view-only, and the viewport shows the holder's avatar
+  (`lock-avatar` child of the highlight; suites counting highlight boxes skip it). Letting go:
+  Release / Keep holding in the row menu, Object list chips, 5 min idle expiry asked 30 s
+  before (`lockIdle.js`, never while alone), and a healed link lets go on BOTH sides at the top
+  of `sendHandshake(..., {heal:true})` (the hook every fix4-net heal path ends in). ROOM LOCK
+  MODE (`lockMode.js`): `select` (default) or `edit` = the first SENT edit takes the object
+  (the claim goes out ahead of the edit on the same ordered conns) and it frees 3 s after the
+  last; host-only writer (an admin under roles), `lockmode {mode, at}` latest-wins, the host's
+  handshake carries it only once it was ever set. Roster changes are tied to the connection
+  that made them (`rosterOrigin.js`). Suites lock-gate / lock-held-ui / lock-release /
+  lock-mode / roster-origin.
 - vite re-optimizes new deps on first page load (one reload) — rerun once; lazy wasm
   (rapier) needs a throwaway prewarm page in tests.
 - Postprocessing composers (Outline) do NOT render in WebXR — VR indicators are

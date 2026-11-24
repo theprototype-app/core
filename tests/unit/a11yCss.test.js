@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 import { normalizeUiScale, UI_SCALES, cssPx } from '../../src/lib/uiScale.js';
 
 const { scaleCssLengths, scaleValue } = createRequire(import.meta.url)('../../scripts/a11y-css.cjs');
-const S = (/** @type {number} */ n) => `calc(${n}px * var(--ui-scale, 1))`;
+const S = (/** @type {number | string} */ n) => `calc(${n}px * var(--ui-scale, 1))`;
 
 describe('ui-scale-css: px lengths follow --ui-scale', () => {
 	it('rewrites a plain length, a shorthand and a calc operand', () => {
@@ -20,6 +20,15 @@ describe('ui-scale-css: px lengths follow --ui-scale', () => {
 		expect(scaleValue("url(\"data:image/svg+xml;utf8,<svg width='12px'/>\") 4px")).toBe(`url("data:image/svg+xml;utf8,<svg width='12px'/>") ${S(4)}`);
 		expect(scaleValue("'12px'")).toBe("'12px'");
 		expect(scaleValue('calc(16px * var(--ui-scale, 1))')).toBe('calc(16px * var(--ui-scale, 1))');
+	});
+	it('reads an exponent as part of the number and leaves sentinel lengths alone (80a-fix4-ui O4)', () => {
+		// the minified rounded-full: was rewritten to `3.40282ecalc(38px * …)`, an invalid radius (square avatars)
+		expect(scaleValue('3.40282e38px')).toBe('3.40282e38px');
+		expect(scaleValue('9999999px')).toBe('9999999px');
+		expect(scaleValue('1.2e1px')).toBe(S('1.2e1'));
+		expect(scaleValue('2E1px 4px')).toBe(`${S('2E1')} ${S(4)}`);
+		// a digit inside a name is not a length
+		expect(scaleValue('var(--w12px)')).toBe('var(--w12px)');
 	});
 	it('never touches an at-rule prelude (breakpoints describe the screen)', () => {
 		const out = scaleCssLengths('@media (max-width: 639.98px) { .a { padding: 8px; --t: 44px } }');

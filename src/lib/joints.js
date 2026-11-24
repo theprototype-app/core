@@ -5,6 +5,7 @@ import { objectsGroup } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { registerHistoryKind, recordEntry } from './history';
 import { originWorld } from './objectOrigin';
+import { jointKindOf, jointParamsFor, jointEditPatch, normalizeJointDef, TWO_POINT_KINDS, AXIS_KINDS } from './physicsTuning';
 
 // Physics joints (P-B): a REPLICATED list of joint definitions between object
 // pairs (the annotations pattern — a joint references two uuids, so it can't
@@ -17,10 +18,18 @@ import { originWorld } from './objectOrigin';
 // pull via getjoints -> joints (sendAnnotations retry pattern); deleting an
 // object cascades jointdelete at the SENDER (receivers just apply each one).
 
-/** @typedef {{id: string, a: string, b: string, kind: 'fixed'|'revolute',
+/** @typedef {{id: string, a: string, b: string,
+ *   kind: 'fixed'|'revolute'|'spherical'|'prismatic'|'spring'|'rope'|'weld',
  *   anchorA: number[], anchorB: number[], axisA?: number[],
  *   motor?: {vel?: number, maxForce?: number, pos?: number, stiffness?: number, damping?: number},
- *   limits?: number[], contacts?: boolean, sparks?: boolean}} JointDef */
+ *   limits?: number[], contacts?: boolean, sparks?: boolean,
+ *   rest?: number, stiffness?: number, damping?: number, length?: number}} JointDef */
+// 102b: four more kinds, rapier's own joints. `spherical` (ball) and `prismatic` (slider) anchor at
+// ONE point like a hinge (b's origin by default); a slider runs along a's local axis (`axisA`) and its
+// `limits` are METRES along it. `spring` and `rope` join TWO points (a's and b's origins by default):
+// a spring pulls toward `rest` metres apart with `stiffness`/`damping`, a rope lets them get no more
+// than `length` apart. All new fields are optional extras on the same def, the same message and the
+// same save key; a pre-102b build builds an unknown kind as a weld (its fallback branch).
 // 37-fx additions, all optional (absent = the 1.25 joint, byte-identical): `limits` [min, max]
 // radians on a revolute, `contacts: false` stops the two bodies colliding with each other (a
 // steering knuckle sits inside its wheel), `motor.pos` (+stiffness/damping) drives a revolute
@@ -93,13 +102,24 @@ function removeLocal(id) {
  * replicate it. Weld anchor = the midpoint between the two origins; hinge
  * anchor = B's origin (put the wheel where it should spin, then hinge) with
  * the axis = A's chosen LOCAL axis at the current pose.
- * @param {'fixed'|'revolute'} kind @param {string} aUuid @param {string} bUuid
+ * @param {string} rawKind 'fixed'|'revolute' (+ 102b 'spherical'|'prismatic'|'spring'|'rope'; the words
+ *   weld / hinge / ball / slider are accepted too) @param {string} aUuid @param {string} bUuid
  * @param {'x'|'y'|'z'=} axis @param {JointDef['motor']=} motor
- * @param {{limits?: number[], contacts?: boolean, sparks?: boolean, anchor?: number[]}=} opts 37-fx
- *   (jointOptions); `anchor` = a world point for the joint instead of the origins
+ * @param {{limits?: number[], contacts?: boolean, sparks?: boolean, anchor?: number[],
+ *   anchors?: number[][], rest?: number, stiffness?: number, damping?: number, length?: number}=} opts
+ *   37-fx (jointOptions); `anchor` = a world point for the joint instead of the origins; 102b:
+ *   `anchors` = [onA, onB] world points for a spring / rope, and the kind's own fields
  * @returns {JointDef | null}
  */
-export function createJoint(kind, aUuid, bUuid, axis, motor, opts) {
+export function createJoint(rawKind, aUuid, bUuid, axis, motor, opts) {
+	// 102b: 'weld' (the Joint node's and the SDK's word) keeps its stored spelling — a pre-102b build
+	// reading it must still weld — every other word becomes the canonical kind
+	const canonical = jointKindOf(rawKind);
+	if (!canonical) {
+		showToast('Unknown joint kind: ' + rawKind);
+		return null;
+	}
+	const kind = rawKind === 'weld' ? 'weld' : canonical;
 	const a = objectOf(aUuid);
 	const b = objectOf(bUuid);
 	if (!a || !b || aUuid === bUuid) {
@@ -117,25 +137,32 @@ export function createJoint(kind, aUuid, bUuid, axis, motor, opts) {
 	// 55 owner finding 6: an explicit WORLD anchor (opts.anchor [x,y,z]) wins — a pendulum is a
 	// rod hinged at its top, not a rod plus a pivot ball placed at B's origin
 	const at = opts?.anchor;
-	const anchorWorld =
-		Array.isArray(at) && at.length === 3 && at.every((n) => Number.isFinite(n))
-			? new THREE.Vector3(at[0], at[1], at[2])
-			: kind === 'revolute'
-				? bPos.clone()
-				: aPos.clone().lerp(bPos, 0.5);
+	/** @param {any} v @returns {v is number[]} */
+	const isPoint = (v) => Array.isArray(v) && v.length === 3 && v.every((n) => Number.isFinite(n));
+	const anchorWorld = isPoint(at)
+		? new THREE.Vector3(at[0], at[1], at[2])
+		: kind === 'revolute' || kind === 'spherical' || kind === 'prismatic'
+			? bPos.clone()
+			: aPos.clone().lerp(bPos, 0.5);
+	// 102b: a spring / rope joins TWO points — a's and b's origins unless the caller names them
+	const twoPoint = TWO_POINT_KINDS.includes(/** @type {any} */ (canonical));
+	const pair = Array.isArray(opts?.anchors) ? opts.anchors : [];
+	const worldA = twoPoint ? (isPoint(pair[0]) ? new THREE.Vector3(...pair[0]) : aPos.clone()) : anchorWorld;
+	const worldB = twoPoint ? (isPoint(pair[1]) ? new THREE.Vector3(...pair[1]) : bPos.clone()) : anchorWorld;
 	/** @type {JointDef} */
 	const joint = {
 		id: crypto.randomUUID().slice(0, 8),
 		a: aUuid,
 		b: bUuid,
-		kind,
-		anchorA: a.worldToLocal(anchorWorld.clone()).toArray(),
-		anchorB: b.worldToLocal(anchorWorld.clone()).toArray(),
-		...(kind === 'revolute'
+		kind: /** @type {JointDef['kind']} */ (kind),
+		anchorA: a.worldToLocal(worldA.clone()).toArray(),
+		anchorB: b.worldToLocal(worldB.clone()).toArray(),
+		...(AXIS_KINDS.includes(/** @type {any} */ (canonical))
 			? { axisA: axis === 'x' ? [1, 0, 0] : axis === 'z' ? [0, 0, 1] : [0, 1, 0] }
 			: {}),
-		...(motor ? { motor } : {}),
-		...(kind === 'revolute' ? jointOptions(opts) : jointOptions({ sparks: opts?.sparks }))
+		...(motor && canonical === 'revolute' ? { motor } : {}),
+		...(canonical === 'revolute' ? jointOptions(opts) : jointOptions({ sparks: opts?.sparks, contacts: opts?.contacts })),
+		...jointParamsFor(canonical, opts, worldA.distanceTo(worldB))
 	};
 	upsertLocal(joint);
 	recordEntry({ kind: 'joint', joint, before: { present: false }, after: { present: true } });
@@ -143,6 +170,28 @@ export function createJoint(kind, aUuid, bUuid, axis, motor, opts) {
 	const peer = get(peers);
 	if (peer) peer.send({ type: 'jointcreate', joint });
 	return joint;
+}
+
+/**
+ * 102b: edit an existing joint (slider limits, spring rest / stiffness / damping, rope length,
+ * hinge or slider axis, contacts). Replicates as `jointcreate` with the same id — every applier
+ * upserts by id, so this needs no new message and older builds already follow it — and records a
+ * 'jointedit' undo entry (a scrub or a typing session in a DragRow folds its entries into one
+ * step through historyGesture, so a slider drag is one undo).
+ * A running simulation rebuilds the live joint (physics.js compares the def).
+ * @param {string} id @param {any} patch @returns {JointDef | null} the new def, or null
+ */
+export function updateJoint(id, patch) {
+	const def = get(sceneJoints).find((j) => j.id === id);
+	if (!def) return null;
+	const next = jointEditPatch(def, patch);
+	if (!next) return null;
+	upsertLocal(next);
+	recordEntry({ kind: 'jointedit', id, before: { joint: def }, after: { joint: next } });
+	/** @type {any} */
+	const peer = get(peers);
+	if (peer) peer.send({ type: 'jointcreate', joint: next });
+	return next;
 }
 
 /** Delete one joint (replicated + undoable). @param {string} id */
@@ -207,7 +256,8 @@ export function copyJointsWithin(uuidMap) {
 
 /** @param {any} data */
 export function applyJointCreate(data) {
-	if (data?.joint?.id) upsertLocal(data.joint);
+	const joint = normalizeJointDef(data?.joint);
+	if (joint) upsertLocal(joint);
 }
 
 /** @param {any} data */
@@ -218,7 +268,10 @@ export function applyJointDelete(data) {
 /** Merge a late-joiner snapshot by id. @param {any[]} list */
 export function applyJointsSnapshot(list) {
 	if (!Array.isArray(list)) return;
-	list.forEach((joint) => joint?.id && upsertLocal(joint));
+	for (const raw of list) {
+		const joint = normalizeJointDef(raw);
+		if (joint) upsertLocal(joint);
+	}
 }
 
 /** Full-state reply on handshake (sendAnnotations retry pattern). @param {string} peerId */
@@ -244,7 +297,8 @@ export function jointsSnapshot() {
 
 /** @param {any[]} list */
 export function jointsRestore(list) {
-	sceneJoints.set(Array.isArray(list) ? list : []);
+	// a file's or the autosave's joints are checked like a peer's (normalizeJointDef keeps a valid def as it is)
+	sceneJoints.set(Array.isArray(list) ? list.map(normalizeJointDef).filter(Boolean) : []);
 }
 
 // ---- undo/redo --------------------------------------------------------------
@@ -261,5 +315,16 @@ registerHistoryKind('joint', (entry, state) => {
 		removeLocal(entry.joint.id);
 		if (peer) peer.send({ type: 'jointdelete', id: entry.joint.id });
 	}
+	return true;
+});
+
+// 102b: an edit replays as the def it held; the wire is jointcreate (upsert by id). A joint deleted
+// since is not resurrected by undoing an edit made before the delete — the 'joint' entry owns presence.
+registerHistoryKind('jointedit', (entry, state) => {
+	if (!get(sceneJoints).some((j) => j.id === entry.id) || !state?.joint) return true;
+	upsertLocal(state.joint);
+	/** @type {any} */
+	const peer = get(peers);
+	if (peer) peer.send({ type: 'jointcreate', joint: state.joint });
 	return true;
 });

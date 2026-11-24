@@ -37,9 +37,10 @@ const BATTERY = path.join(ROOT, 'tests', 'e2e', 'battery.json');
  * @typedef {{ comment?: string, refs: Record<string, {repo: string, ref: string}>, shards: {target_minutes: number, max: number, min: number, par?: number},
  *   pc?: {games: string[], levels: string[]}, skip: Record<string, string>, optional: Record<string, string>, setup: Record<string, string>,
  *   suites: Record<string, number>, modules?: Record<string, number>, desk?: Record<string, string[]>, exclude?: Record<string, string[]>,
- *   tiers?: string, tier1_always?: string[], tier1_always_files?: string[], tier1_cap?: number, tier1_shared_suites?: number }} Battery
+ *   tiers?: string, tier1_always?: string[], tier1_always_files?: string[], tier1_cap?: number, tier1_shared_suites?: number,
+ *   ci?: {comment?: string, timeouts?: Record<string, number>, fullDraw?: Record<string, string>} }} Battery
  * @typedef {{ name: string, status: 'pass'|'flaky'|'quarantined'|'fail'|'timeout'|'gone'|'notrun', required: boolean, rc: number|null, secs: number,
- *   retrySecs?: number, pass: number, fail: number, last: string, shard: number }} SuiteResult
+ *   retrySecs?: number, pass: number, fail: number, last: string, shard: number, minFps?: number, slow?: boolean, slowWaits?: number }} SuiteResult
  */
 
 /** @returns {Battery} */
@@ -102,7 +103,43 @@ function counts(log) {
 	const pass = lines.filter((l) => /^\s*(✓|PASS|ok)/.test(l)).length;
 	const fail = lines.filter((l) => /^\s*(✗|FAIL|not ok)/.test(l)).length;
 	const last = (lines.filter((l) => l.trim()).pop() || '').slice(0, 160);
-	return { pass, fail, last };
+	// the slow-runner allowance (helpers.cjs, CI only): the slowest page's measured fps, and how many waits used
+	// more than their local limit — a green on a starved runner shows as one (SLOW RUNNER in the summary)
+	const fpsList = lines.map((l) => /^\[helpers\] fps [^:]+: ([\d.]+)/.exec(l)).filter(Boolean).map((m) => Number(/** @type {RegExpExecArray} */ (m)[1]));
+	const minFps = fpsList.length ? Math.min(...fpsList) : undefined;
+	// the threshold is helpers.cjs SLOW_RUNNER_FPS alone: a page under it prints "(SLOW RUNNER, …)" on its fps line
+	const slow = lines.some((l) => /^\[helpers\] fps .*SLOW RUNNER/.test(l));
+	const slowWaits = lines.filter((l) => /^\[helpers\] slow (wait|click):/.test(l)).length;
+	return { pass, fail, last, minFps, slow, slowWaits };
+}
+
+/** @param {{minFps?: number, slow?: boolean}} r */
+const slowRunner = (r) => (r.slow ? ` SLOW RUNNER ${r.minFps} fps` : '');
+
+/**
+ * ci-speed: BATTERY_CI is a GITHUB-ONLY switch. It turns on the slow-runner allowance (longer waits) and the lean
+ * draw (tests/e2e/helpers.cjs: shadows, AO, post and half resolution off unless a suite opts back in through
+ * battery.json `ci.fullDraw`), so a local / desk / pc battery or an int's release gate that inherited it would gate on
+ * a different app than users run, with longer limits. Every runner entry refuses it unless GitHub Actions set
+ * GITHUB_ACTIONS=true. Returns the refusal, or '' when the environment is fine.
+ * @param {Record<string, string | undefined>} env
+ */
+function ciEnvError(env) {
+	const v = env.BATTERY_CI;
+	if (v === undefined || v === '' || v === '0') return '';
+	if (env.GITHUB_ACTIONS === 'true') return '';
+	return `BATTERY_CI=${v} is set outside GitHub Actions (GITHUB_ACTIONS=${env.GITHUB_ACTIONS ?? 'unset'}): it is CI-only (the slow-runner allowance and the lean draw). Unset it; a local, desk, pc or release battery keeps today's limits and full rendering.`;
+}
+
+/**
+ * ci-speed: the per-suite environment battery.json `ci` asks for, on CI only (BATTERY_CI=1). `ci.fullDraw` (suite ->
+ * reason) = this suite tests pixels / an effect / the resolution / layout at size, so it opts OUT of the lean draw
+ * (tests/e2e/helpers.cjs LEAN_DRAW) and draws as a user's page does. Anywhere else: nothing.
+ * @param {Battery} b @param {string} name @param {Record<string, string | undefined>} env @returns {Record<string, string>}
+ */
+function ciSuiteEnv(b, name, env) {
+	if (env.BATTERY_CI !== '1') return {};
+	return b.ci?.fullDraw?.[name] ? { E2E_FULL_DRAW: '1' } : {};
 }
 
 /** @param {string[]} argv @param {string} flag */
@@ -180,8 +217,11 @@ function runSuite(name, est, out, tag, capMs) {
 	const log = fs.openSync(logFile, 'w');
 	// every evidence variable the suites read points OUTSIDE the served tree (an .html artefact
 	// inside it full-reloads the app mid-test) and is kept only when the suite fails
-	const env = { ...process.env, EVIDENCE_DIR: ev, EVIDENCE: ev, OUT: ev, SHOT_DIR: ev, SHOTS_DIR: ev };
-	const timeout = Math.max(60000, Math.min(capMs, Math.min(1800, Math.max(600, Math.round(est * 3))) * 1000));
+	const env = { ...process.env, EVIDENCE_DIR: ev, EVIDENCE: ev, OUT: ev, SHOT_DIR: ev, SHOTS_DIR: ev, ...ciSuiteEnv(load(), name, process.env) };
+	// battery.json `ci.timeouts` (seconds): a CI-only suite limit for a suite the slow-runner allowance makes longer
+	// (BATTERY_CI=1 is set by battery.yml only; a local battery keeps the estimate-based limit)
+	const ciSecs = process.env.BATTERY_CI === '1' ? load().ci?.timeouts?.[name] : undefined;
+	const timeout = Math.max(60000, Math.min(capMs, (ciSecs ?? Math.min(1800, Math.max(600, Math.round(est * 3)))) * 1000));
 	const t0 = Date.now();
 	return new Promise((resolve) => {
 		const child = spawn('node', [file], { cwd: ROOT, env, stdio: ['ignore', log, log], detached: true });
@@ -312,10 +352,10 @@ async function run(argv) {
 				}
 			}
 			const last = quarantinedChecks.length ? 'quarantined: ' + quarantinedChecks.join(' | ').slice(0, 140) : r.last;
-			results.push({ name, status, required, rc: r.rc, secs: r.secs, retrySecs, pass: r.pass, fail: r.fail, last, shard });
+			results.push({ name, status, required, rc: r.rc, secs: r.secs, retrySecs, pass: r.pass, fail: r.fail, last, shard, minFps: r.minFps, slow: r.slow, slowWaits: r.slowWaits });
 			save();
 			if (status === 'pass' || status === 'flaky' || status === 'quarantined') fs.rmSync(path.join(out, 'evidence', name), { recursive: true, force: true });
-			console.log(`${name} ${status}${required ? '' : ' (optional)'} rc=${r.rc} pass~${r.pass} fail~${r.fail} ${r.secs}s${retrySecs ? ` retry ${retrySecs}s` : ''} :: ${last}`);
+			console.log(`${name} ${status}${required ? '' : ' (optional)'} rc=${r.rc} pass~${r.pass} fail~${r.fail} ${r.secs}s${retrySecs ? ` retry ${retrySecs}s` : ''}${slowRunner(r)}${r.slowWaits ? ` slow-waits=${r.slowWaits}` : ''} :: ${last}`);
 		}
 	};
 	await Promise.all(Array.from({ length: par }, worker));
@@ -346,6 +386,11 @@ function table(results, title) {
 	if (opt.length) md += `<details><summary>Optional reds (do not gate)</summary>\n\n${head}${opt.map(row).join('\n')}\n\n</details>\n\n`;
 	if (quar.length) md += `<details><summary>Quarantined reds (tests/e2e/quarantine.json — do not gate)</summary>\n\n${head}${quar.map(row).join('\n')}\n\n</details>\n\n`;
 	if (flaky.length) md += `<details><summary>Flaky (green on the retry)</summary>\n\n${head}${flaky.map(row).join('\n')}\n\n</details>\n\n`;
+	// the slow-runner allowance (helpers.cjs, CI only): every suite whose slowest page drew under SLOW_RUNNER_FPS,
+	// green or red — a green here ran on the extra time, and says so
+	const slow = results.filter((r) => slowRunner(r));
+	if (slow.length)
+		md += `**SLOW RUNNER** (a page drew under helpers.cjs SLOW_RUNNER_FPS; waits past their local limit are logged as \`[helpers] slow wait\`/\`slow click\`)\n\n| suite | status | shard | slowest page | slow waits |\n|---|---|---|---|---|\n${slow.map((r) => `| ${r.name} | ${r.status} | ${r.shard} | SLOW RUNNER ${r.minFps} fps | ${r.slowWaits ?? 0} |`).join('\n')}\n\n`;
 	const gone = results.filter((r) => r.status === 'gone');
 	if (gone.length) md += `Listed but gone (refresh tests/e2e/battery.json): ${gone.map((r) => r.name).join(', ')}\n\n`;
 	return md;
@@ -505,6 +550,11 @@ function plan() {
 
 if (require.main === module) {
 	const [cmd, ...argv] = process.argv.slice(2);
+	const ciError = ciEnvError(process.env);
+	if (ciError) {
+		console.error('battery.cjs: ' + ciError);
+		process.exit(2);
+	}
 	if (cmd === 'plan') plan();
 	else if (cmd === 'run') run(argv);
 	else if (cmd === 'report') report(argv);
@@ -515,4 +565,4 @@ if (require.main === module) {
 	}
 }
 
-module.exports = { load, assign, shardCount, runnable, counts };
+module.exports = { load, assign, shardCount, runnable, counts, ciEnvError, ciSuiteEnv };

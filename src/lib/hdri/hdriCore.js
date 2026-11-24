@@ -163,20 +163,27 @@ export function skyFileTier(quality, tiers, caps = {}) {
  * `skyFileTier`: 8K on a machine with >= 8 GB that is not a phone (on a sky that has an 8K file;
  * the others top out at 4K, hence "up to"), else 4K. The picker said "Max (4K)" while the PC
  * loaded the 8192 Meadow cube.
- * @param {{memoryGB?: number, phone?: boolean}} facts
+ * @param {{memoryGB?: number, phone?: boolean, maxTexture?: number, maxCube?: number}} facts
+ * @param {string[] | null} [tiers] the sky's file tiers (G3: the label names the file Max loads for that sky)
  */
-export function skyMaxLabel(facts = {}) {
+export function skyMaxLabel(facts = {}, tiers = null) {
+	// 80a-fix4-ui G3: with the sky known, the label is the file Max fetches for IT (skyFileTier, the runtime's own
+	// rule): "Max (8K)" on Meadow, "Max (4K)" on a sky without an 8K file — never a hedge
+	if (Array.isArray(tiers) && tiers.length) return 'Max (' + skyFileTier('max', tiers, facts).toUpperCase() + ')';
 	return facts.memoryGB && facts.memoryGB >= 8 && !facts.phone ? 'Max (up to 8K)' : 'Max (4K)';
 }
 
-/** this device's facts for `skyMaxLabel` (navigator.deviceMemory + a coarse pointer = a phone) */
-export function skyMaxLabelHere() {
+/**
+ * this device's facts for `skyMaxLabel` (navigator.deviceMemory + a coarse pointer = a phone)
+ * @param {string[] | null} [tiers] the shown sky's file tiers, when there is one (G3)
+ */
+export function skyMaxLabelHere(tiers = null) {
 	try {
 		const nav = /** @type {any} */ (globalThis.navigator);
 		const phone = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-		return skyMaxLabel({ memoryGB: Number(nav?.deviceMemory) || 0, phone });
+		return skyMaxLabel({ memoryGB: Number(nav?.deviceMemory) || 0, phone }, tiers);
 	} catch {
-		return skyMaxLabel();
+		return skyMaxLabel({}, tiers);
 	}
 }
 

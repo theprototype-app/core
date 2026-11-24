@@ -9,6 +9,7 @@ import { heicToJpegFile } from './heic.js';
 import { checkMaterialParam } from './materialParamRules.js'; // 55: one check for every material parameter
 import { recordEntry, registerHistoryKind } from '$lib/history';
 import { TEXTURE_PARAMS, copyTextureParams, adoptTexTransform, carryMapSlots } from './materialMapTextures.js'; // 72 LK1
+import { objectToJSON, settleSlotGroups } from './slotGroups.js'; // 105: one serializer for slot groups
 
 // Custom materials and image textures for scene objects, replicated to peers
 // through the existing objectParameters message. Textures travel as dataURLs
@@ -181,6 +182,7 @@ export function applyMaterials(object, payload, replicate = false, from = 'devic
 		for (const group of payload.groups)
 			object.geometry.addGroup(group.start, group.count, group.materialIndex);
 	}
+	settleSlotGroups(object); // 105: a primitive's custom groups must survive every later toJSON
 	object.material.needsUpdate ??= true;
 	pokeScene();
 	if (replicate)
@@ -202,23 +204,18 @@ export function isMultiMaterial(object) {
  * and data-URL textures — with one catch. A PARAMETRIC geometry serializes as its
  * parameters (`{type:'BoxGeometry', ...}`) and the loader RE-RUNS the generator,
  * regenerating the default groups and silently discarding custom ones, which would
- * undo every face-to-slot assignment on a primitive. Copy into a plain
- * BufferGeometry first so real attributes + groups are written.
+ * undo every face-to-slot assignment on a primitive. slotGroups.objectToJSON writes
+ * such a geometry as plain attributes + groups (105: and only when the generator
+ * would not rebuild the same groups).
  *
  * Shared by the peer object sync and the autosave snapshot — both had the same hole.
  * @param {any} element
  */
 export function serializeMeshWithGroups(element) {
-	const geometry = element.geometry;
-	if (!geometry?.parameters) return element.toJSON();
-	const flat = new THREE.BufferGeometry().copy(geometry); // attributes, groups, index
-	const clone = element.clone();
+	// 105: the rule lives in slotGroups.js (one serializer for every save, undo and sync path)
+	const clone = element.clone(false); // shares geometry + material; no children
 	clone.uuid = element.uuid; // clone() re-uuids; everything is keyed by this
-	clone.children = [];
-	clone.geometry = flat;
-	const json = clone.toJSON();
-	flat.dispose();
-	return json;
+	return objectToJSON(clone);
 }
 
 /** The wire payload for an object's CURRENT slots + groups. @param {any} object */
@@ -253,6 +250,7 @@ export function setObjectMaterials(uuid, materials, groups) {
 		object.geometry.clearGroups();
 		for (const group of groups) object.geometry.addGroup(group.start, group.count, group.materialIndex);
 	}
+	settleSlotGroups(object); // 105: as applyMaterials
 	pokeScene();
 	const after = materialsPayload(object);
 	recordEntry({

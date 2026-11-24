@@ -112,7 +112,8 @@ h.run(async () => {
 		h.check(!!lampId, '3. set_light returns the new light id: ' + short(lit));
 		await h.eventually(() => envOnHost(A.page), (e) => (e?.lights || []).some((l) => l.id === lampId) && e.customPreset?.sun?.intensity === 0.15, '3. the host has the lamp and a dim moon', 20000);
 		const envRead = json(await call(B.client, 'get_environment'));
-		h.check(envRead.fog?.far === 40 && envRead.envLights?.some((l) => l.id === lampId), '3. get_environment reads it back: ' + short({ fog: envRead.fog, envLights: envRead.envLights }));
+		// 102b-papercuts: a density is real exponential fog (kind distance) and reads back as one; an older build read it as linear 0-40 m
+		h.check((envRead.fog?.far === 40 || (envRead.fog?.kind === 'distance' && envRead.fog?.density === 0.05)) && envRead.envLights?.some((l) => l.id === lampId), '3. get_environment reads it back: ' + short({ fog: envRead.fog, envLights: envRead.envLights }));
 
 		console.log('\n=== 4. spawn + play camera ===');
 		const spawn = json(await call(B.client, 'place_spawn', { position: [0, 0, 6], facing: [0, 0, 0] }));
@@ -122,8 +123,12 @@ h.run(async () => {
 		h.check(!cam.error && !!cam.playCamera, '4. set_play_camera first + opening view: ' + short(cam));
 		await h.eventually(() => controllersOnHost(A.page), (n) => n.length === 1, '4. the host has one Character Controller node', 20000);
 		await h.eventually(() => playOnHost(A.page), (p) => Array.isArray(p.startView?.position), '4. the host has the opening view', 20000);
-		const third = json(await call(B.client, 'set_play_camera', { mode: 'third' }));
-		h.check(third.unavailable === true && /Possess Object/.test(third.error || ''), '4. third person is said to be unavailable, with the route: ' + String(third.error).slice(0, 80));
+		// 92-input GC4a: third person is a Play camera now — the same Character Controller, changed in place
+		const third = json(await call(B.client, 'set_play_camera', { mode: 'third', distance: 5 }));
+		h.check(!third.error && third.playCamera?.mode === 'third', '4. set_play_camera third: ' + short(third));
+		await h.eventually(() => controllersOnHost(A.page), (n) => n.length === 1 && n[0].data?.camera === 'third' && n[0].data?.distance === 5, '4. the host\'s one Character Controller is third person', 20000);
+		const orbit = json(await call(B.client, 'set_play_camera', { mode: 'orbit' }));
+		h.check(orbit.unavailable === true && /Possess Object/.test(orbit.error || ''), '4. orbit is said to be unavailable, with the route: ' + String(orbit.error).slice(0, 80));
 
 		console.log('\n=== 5. the A8 log + Undo from the host ===');
 		await h.eventually(() => read(A.page, 'agentLog.agentLog'), (l) => WRITERS.every((t) => (l || []).some((e) => e.tool === t && e.ok !== false)), '5. the host\'s A8 log has a line for each writer', 20000);

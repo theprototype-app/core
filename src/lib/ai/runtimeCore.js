@@ -39,6 +39,7 @@ const r1 = (n) => Math.round(n * 10) / 10;
  *   behaviours?: {name: string, issues: {line?: number, message: string}[]}[],
  *   isSource: (type: string) => boolean,
  *   isAction: (type: string) => boolean,
+ *   isObjectEffect?: (type: string) => boolean,
  *   inputsOf: (type: string) => {name: string, type: string}[],
  *   edgeTypeProblem?: (source: any, target: any, sourceHandle?: string, targetHandle?: string) => ({refuse?: string, warn?: string} | null),
  *   edgeHandleProblems?: (source: any, target: any, sourceHandle?: string, targetHandle?: string) => string[]
@@ -175,6 +176,25 @@ export function validateScene(w) {
 			if (n.type === 'onclick' && w.play?.interaction === 'off')
 				add({ code: 'clicks-off', level: 'warning', node: n.id, message: name + ': clicking is switched off in Play (scene physics ▸ play interaction "off"), so a player cannot click it.', fix: 'Set the play interaction to click or grab.' });
 		}
+		// 102b-papercuts (scout row 18): a per-frame EFFECT in the scene graph that reaches no object (no Object
+		// Selector picking one, no target of its own) does nothing — the node editor card says so too
+		if (
+			w.isObjectEffect?.(n.type) &&
+			!(n.type === 'script' && Array.isArray(n.data?.outputs) && n.data.outputs.length) &&
+			(!n.__graph || n.__graph === 'scene') &&
+			!(typeof n.data?.target === 'string' && n.data.target && n.data.target !== '-None-') &&
+			!ix.out(n.id).some((/** @type {any} */ e) => {
+				const t = ix.byId.get(e.target);
+				return t?.type === 'objectselector' && t.data?.selected && t.data.selected !== '-None-';
+			})
+		)
+			add({
+				code: 'effect-no-object',
+				level: 'warning',
+				node: n.id,
+				message: name + ' is in the scene graph and is not wired into an Object Selector that picks an object, so it acts on nothing.',
+				fix: 'Wire it into an Object Selector naming the object, or move it into that object\'s own graph.'
+			});
 		// an ACTION with no source upstream never runs (kit actions, setgamestate, travel, spawn …)
 		if (w.isAction(n.type) && !w.isSource(n.type)) {
 			const triggerWired = ix.into(n.id).length > 0;

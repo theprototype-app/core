@@ -18,6 +18,7 @@ import { coarsePointer } from '$lib/inputDevice'; // phone-polish item 5: the pa
     // open the Explorer BEFORE arming: the save card is drawn by the Explorer's own effect,
     // so arming a panel that is not mounted arms nothing
     import { armExplorerSceneSave, explorerClose } from '../../stores/appStore'
+    import { failedInviteJoins } from '$lib/inviteStore'
     import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode, restorePanels, appNotice, connectDrawerOpen, connectDrawerTab, toastsInDrawerOnly, showInfoToast, dismissToastById } from '../../stores/appStore'
     // P2: the watch banner says when the watched peer's look CANNOT be adopted (the
     // P1 rule: a scoped feature must say on its own surface when it takes no effect)
@@ -29,6 +30,8 @@ import { coarsePointer } from '$lib/inputDevice'; // phone-polish item 5: the pa
     import { lastUncaught, copyDiagnostics } from '$lib/diagnostics'
     // 27-E: the card ages against the SAME clock the joiner's pill counts down from, and
     // the caps decide whether approving is even offered.
+    import { isLocked } from '../../stores/sceneStore' // 92 (GC8)
+    import { shellMenu, shellMenuAvailable } from '$lib/gameShell' // 92 (GC8)
     import { approvalStartedAt, APPROVAL_WINDOW_MS, softPeerCap, HARD_PEER_CAP, sessionSize, roomIsFull } from '$lib/connectionState'
     import { rolesInfo } from '$lib/cloudHooks'
     import { sceneCommand } from '$lib/commandsHandler.svelte';
@@ -130,6 +133,10 @@ import { coarsePointer } from '$lib/inputDevice'; // phone-polish item 5: the pa
 //  - informational toasts hide when the drawer is open OR when the user opted into
 //    "toasts in the drawer only".
 const hideCritical = $derived($connectDrawerOpen || $toastsInDrawerOnly);
+// 92 (GC8): while a game's pause menu is open over Play, its Join requests page owns the requests — this card
+// sat on top of the menu (--z-toast) and covered the menu's own Admit button. Outside the menu it shows as before.
+const gameOwnsRequestsNow = (..._deps: unknown[]) => $isLocked === true && $shellMenu.open && !$shellMenu.standalone && shellMenuAvailable();
+const gameOwnsRequests = $derived(gameOwnsRequestsNow($isLocked, $shellMenu));
 const hideRegular = $derived($connectDrawerOpen || $toastsInDrawerOnly);
 
 // U-3: cap how many generic toasts stack at once (older ones collapse into a
@@ -516,7 +523,7 @@ $effect(() => {
 class:cxd-hidden={hideCritical}
 style="z-index: var(--z-toast); pointer-events: none;"
 >
-{#each $pendingApprovals.slice(0, MAX_REQUESTS) as approval}
+{#each (gameOwnsRequests ? [] : $pendingApprovals).slice(0, MAX_REQUESTS) as approval}
 <div class="my-1 tp-toast tp-toast--req" transition:fly={{ y: -8, duration: motionMs(180) }}>
     <div class="tp-toast-body">
         <!-- 55 A4: an AI agent's dial says so — the robot, and "AI agent" in the line -->
@@ -559,6 +566,8 @@ style="z-index: var(--z-toast); pointer-events: none;"
     </div>
 </div>
 {/each}
+<!-- 71 AS4: invite dials whose proof failed — ONE row, never a card (lazy) -->
+{#if $failedInviteJoins.count > 0 || $failedInviteJoins.pausedUntil > 0}{#await import('./FailedInviteJoins.svelte') then m}<m.default />{/await}{/if}
 <!-- 15-P: a rush of joiners folds like any other burst — the drawer lists them all -->
 {#if $pendingApprovals.length > MAX_REQUESTS}
 <div class="my-1 text-center">

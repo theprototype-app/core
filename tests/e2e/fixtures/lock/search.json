@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-11-20T11:34:27.020Z",
+	"recordedAt": "2026-11-23T11:19:18.892Z",
 	"settings": {
 		"Theme": {
 			"rows": [
@@ -805,6 +805,7 @@
 			"rows": [
 				"Allow undocking on touch screens",
 				"Customize buttons",
+				"Simplify mesh… (fewer triangles, one undo step)",
 				"Touch tools",
 				"Undo",
 				"Undock button"
@@ -1535,11 +1536,13 @@
 				"Placement preview",
 				"Preview triangle budget",
 				"Show dimensions",
+				"Simplify mesh… (fewer triangles, one undo step)",
 				"Snap angle",
 				"Texture threshold",
 				"Triangle threshold"
 			],
 			"sections": [
+				"Shortcuts",
 				"Scene",
 				"Import",
 				"VR"
@@ -2352,10 +2355,12 @@
 		"Signaling server": {
 			"rows": [
 				"Apply changes",
+				"Hide my IP",
 				"Signaling server"
 			],
 			"sections": [
-				"Connection"
+				"Connection",
+				"Privacy"
 			]
 		},
 		"Apply changes": {
@@ -2391,6 +2396,7 @@
 			"rows": [
 				"Diagnostics",
 				"Error reports",
+				"Hide my IP",
 				"Usage counts",
 				"Wheel diagnostics"
 			],
@@ -2681,6 +2687,7 @@
 		"telemetry": {
 			"rows": [
 				"Error reports",
+				"Hide my IP",
 				"Usage counts"
 			],
 			"sections": [
@@ -2874,6 +2881,7 @@
 				"Auto-restore on load",
 				"Autosave",
 				"Error reports",
+				"Hide my IP",
 				"Usage counts"
 			],
 			"sections": [
@@ -3037,6 +3045,9 @@
 				"Apply changes",
 				"Cached downloads",
 				"Let AI agents join as guests",
+				"Limit floods from peers",
+				"Locks",
+				"Require approval to join",
 				"Session size",
 				"Show where AI agents look",
 				"Signaling server",
@@ -3049,8 +3060,14 @@
 			]
 		},
 		"relay": {
-			"rows": [],
-			"sections": []
+			"rows": [
+				"Error reports",
+				"Hide my IP",
+				"Usage counts"
+			],
+			"sections": [
+				"Privacy"
+			]
 		},
 		"nat": {
 			"rows": [
@@ -3084,6 +3101,7 @@
 			"rows": [
 				"Diagnostics",
 				"Error reports",
+				"Hide my IP",
 				"Show helpers in Play",
 				"Toggle a debugger breakpoint on the selected nodes (Play pauses when an event reaches them)",
 				"Usage counts",
@@ -3399,6 +3417,7 @@
 				"Enter mesh edit mode (inside it Tab cycles Vertices/Edges/Faces; Esc exits) — on a measurement, edit its points",
 				"Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)",
 				"Explorer: show / bring to front / hide",
+				"Export for 3D print or AR… (STL, 3MF, USDZ)",
 				"Fix overlaps and crossings, keeping the layout",
 				"Flip normals (faces); fill the hole (edges)",
 				"Flow code: open it in the Code window",
@@ -3414,6 +3433,7 @@
 				"Group the selection",
 				"Grow the selection (faces)",
 				"HUD editor: show / bring to front / hide",
+				"Hold while moving: snap the nearest corner onto a corner or edge middle",
 				"Invert the selection (any mode)",
 				"Keyboard cheat sheet (every scope; the focused one first)",
 				"Leave focus mode",
@@ -3471,6 +3491,7 @@
 				"Show helpers in Play",
 				"Show this shortcut list",
 				"Shrink the selection (faces)",
+				"Simplify mesh… (fewer triangles, one undo step)",
 				"Simulate physics (toggle)",
 				"Subdivide (faces)",
 				"Tidy the graph: lay it out left to right, nothing overlapping, no wire across a card",
@@ -3567,6 +3588,7 @@
 				"Auto checkpoints on large scenes",
 				"Automatic checkpoint every",
 				"Checkpoint storage",
+				"Hold while moving: snap the nearest corner onto a corner or edge middle",
 				"Keep automatic checkpoints",
 				"Mirror turn",
 				"Snap angle",
@@ -3716,9 +3738,12 @@
 				"Diagnostics",
 				"Keep a recycle bin",
 				"Let AI agents join as guests",
+				"Limit floods from peers",
+				"Locks",
 				"Peer hands",
 				"People leaving",
 				"Ping colour",
+				"Require approval to join",
 				"Selection outline colour",
 				"Session size",
 				"Show my status",
@@ -3741,13 +3766,18 @@
 		"server": {
 			"rows": [
 				"Apply changes",
+				"Hide my IP",
 				"Let AI agents join as guests",
+				"Limit floods from peers",
+				"Locks",
+				"Require approval to join",
 				"Session size",
 				"Show where AI agents look",
 				"Signaling server"
 			],
 			"sections": [
-				"Connection"
+				"Connection",
+				"Privacy"
 			]
 		},
 		"invite": {
@@ -3756,6 +3786,9 @@
 				"Coding agents",
 				"First-game quest",
 				"Let AI agents join as guests",
+				"Limit floods from peers",
+				"Locks",
+				"Require approval to join",
 				"Session size",
 				"Show where AI agents look",
 				"Signaling server"
@@ -3772,6 +3805,9 @@
 				"Colocation",
 				"Ghost hands",
 				"Let AI agents join as guests",
+				"Limit floods from peers",
+				"Locks",
+				"Require approval to join",
 				"Session size",
 				"Show others as classic heads",
 				"Show where AI agents look",
@@ -3788,8 +3824,12 @@
 				"Apply changes",
 				"Clear saved session",
 				"Diagnostics",
+				"Hide my IP",
 				"Let AI agents join as guests",
+				"Limit floods from peers",
+				"Locks",
 				"People leaving",
+				"Require approval to join",
 				"Session size",
 				"Show where AI agents look",
 				"Signaling server",
@@ -3802,6 +3842,7 @@
 				"Explorer",
 				"Save options",
 				"Connection",
+				"Privacy",
 				"About & what’s new"
 			]
 		},
@@ -3843,6 +3884,7 @@
 				"Enter mesh edit mode (inside it Tab cycles Vertices/Edges/Faces; Esc exits) — on a measurement, edit its points",
 				"Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)",
 				"Explorer: show / bring to front / hide",
+				"Export for 3D print or AR… (STL, 3MF, USDZ)",
 				"Fix overlaps and crossings, keeping the layout",
 				"Flip normals (faces); fill the hole (edges)",
 				"Flow code: open it in the Code window",
@@ -3858,6 +3900,7 @@
 				"Group the selection",
 				"Grow the selection (faces)",
 				"HUD editor: show / bring to front / hide",
+				"Hold while moving: snap the nearest corner onto a corner or edge middle",
 				"Invert the selection (any mode)",
 				"Keyboard cheat sheet (every scope; the focused one first)",
 				"Leave focus mode",
@@ -3911,6 +3954,7 @@
 				"Shader editor: show / bring to front / hide",
 				"Show this shortcut list",
 				"Shrink the selection (faces)",
+				"Simplify mesh… (fewer triangles, one undo step)",
 				"Simulate physics (toggle)",
 				"Subdivide (faces)",
 				"Tidy the graph: lay it out left to right, nothing overlapping, no wire across a card",
@@ -3967,6 +4011,7 @@
 				"Enter mesh edit mode (inside it Tab cycles Vertices/Edges/Faces; Esc exits) — on a measurement, edit its points",
 				"Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)",
 				"Explorer: show / bring to front / hide",
+				"Export for 3D print or AR… (STL, 3MF, USDZ)",
 				"Fix overlaps and crossings, keeping the layout",
 				"Flip normals (faces); fill the hole (edges)",
 				"Flow code: open it in the Code window",
@@ -3982,6 +4027,7 @@
 				"Group the selection",
 				"Grow the selection (faces)",
 				"HUD editor: show / bring to front / hide",
+				"Hold while moving: snap the nearest corner onto a corner or edge middle",
 				"Invert the selection (any mode)",
 				"Keyboard cheat sheet (every scope; the focused one first)",
 				"Leave focus mode",
@@ -4035,6 +4081,7 @@
 				"Shader editor: show / bring to front / hide",
 				"Show this shortcut list",
 				"Shrink the selection (faces)",
+				"Simplify mesh… (fewer triangles, one undo step)",
 				"Simulate physics (toggle)",
 				"Subdivide (faces)",
 				"Tidy the graph: lay it out left to right, nothing overlapping, no wire across a card",
@@ -4091,6 +4138,7 @@
 				"Enter mesh edit mode (inside it Tab cycles Vertices/Edges/Faces; Esc exits) — on a measurement, edit its points",
 				"Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)",
 				"Explorer: show / bring to front / hide",
+				"Export for 3D print or AR… (STL, 3MF, USDZ)",
 				"Fix overlaps and crossings, keeping the layout",
 				"Flip normals (faces); fill the hole (edges)",
 				"Flow code: open it in the Code window",
@@ -4106,6 +4154,7 @@
 				"Group the selection",
 				"Grow the selection (faces)",
 				"HUD editor: show / bring to front / hide",
+				"Hold while moving: snap the nearest corner onto a corner or edge middle",
 				"Invert the selection (any mode)",
 				"Keyboard cheat sheet (every scope; the focused one first)",
 				"Leave focus mode",
@@ -4160,6 +4209,7 @@
 				"Shader editor: show / bring to front / hide",
 				"Show this shortcut list",
 				"Shrink the selection (faces)",
+				"Simplify mesh… (fewer triangles, one undo step)",
 				"Simulate physics (toggle)",
 				"Subdivide (faces)",
 				"Tidy the graph: lay it out left to right, nothing overlapping, no wire across a card",
@@ -4204,6 +4254,7 @@
 		"privacy": {
 			"rows": [
 				"Error reports",
+				"Hide my IP",
 				"Recording the last 10 s",
 				"Usage counts"
 			],
@@ -4369,6 +4420,7 @@
 		"export": {
 			"rows": [
 				"Custom theme",
+				"Export for 3D print or AR… (STL, 3MF, USDZ)",
 				"Include VR button",
 				"Optimize for",
 				"Project actions",
@@ -4380,6 +4432,7 @@
 			],
 			"sections": [
 				"Interface",
+				"Shortcuts",
 				"Export"
 			]
 		},
@@ -4606,12 +4659,14 @@
 				"LOD levels",
 				"Let AI agents join as guests",
 				"Lift the corner buttons above docked panels",
+				"Locks",
 				"Loop select (faces: again = perpendicular; edges: the chain)",
 				"Max texture size",
 				"Optimize big models automatically",
 				"Optimize for",
 				"Placeholder style",
 				"Project actions",
+				"Require approval to join",
 				"Reset tips",
 				"Reverse trackpad pan",
 				"Rigging and animation services",
@@ -4652,6 +4707,8 @@
 	"inspector": {
 		"object": {
 			"": [
+				"Array",
+				"Constraints",
 				"Emission",
 				"Geometry",
 				"LOD",
@@ -4664,6 +4721,7 @@
 				"Scatter",
 				"Shadow",
 				"Texture",
+				"Tidy",
 				"Transform",
 				"Water"
 			],
@@ -4671,12 +4729,21 @@
 				"Model",
 				"Scatter"
 			],
+			"constraints": [
+				"Constraints"
+			],
 			"transform": [
 				"Transform"
 			],
+			"tidy": [
+				"Tidy"
+			],
 			"object": [
+				"Array",
+				"Constraints",
 				"LOD",
 				"Object",
+				"Physics",
 				"Scatter",
 				"Transform",
 				"Water"
@@ -4696,6 +4763,9 @@
 			"scatter": [
 				"Scatter"
 			],
+			"array": [
+				"Array"
+			],
 			"geometry": [
 				"Geometry"
 			],
@@ -4705,7 +4775,8 @@
 				"Material",
 				"Physics",
 				"Shadow",
-				"Texture"
+				"Texture",
+				"Tidy"
 			],
 			"texture": [
 				"Emission",
@@ -4767,7 +4838,9 @@
 			"colour": [],
 			"intensity": [],
 			"fog": [],
-			"grid": [],
+			"grid": [
+				"Array"
+			],
 			"camera": [],
 			"render": [
 				"Object"
@@ -4795,12 +4868,20 @@
 		"light": {
 			"": [
 				"Aim at",
+				"Constraints",
 				"Light",
 				"Shadow",
+				"Tidy",
 				"Transform"
+			],
+			"constraints": [
+				"Constraints"
 			],
 			"transform": [
 				"Transform"
+			],
+			"tidy": [
+				"Tidy"
 			],
 			"light": [
 				"Aim at",
@@ -4830,7 +4911,9 @@
 			"color": [],
 			"colour": [],
 			"physics": [],
-			"material": [],
+			"material": [
+				"Tidy"
+			],
 			"intensity": [
 				"Aim at",
 				"Light",
@@ -4867,7 +4950,9 @@
 				"Components",
 				"Environment",
 				"Fog",
+				"Game menus",
 				"Grid",
+				"Layers",
 				"Level of detail",
 				"Levels",
 				"Music",
@@ -4942,6 +5027,7 @@
 			],
 			"play": [
 				"Baked light",
+				"Game menus",
 				"Levels",
 				"Music",
 				"Physics",
@@ -4950,6 +5036,14 @@
 				"Scene track (shared)",
 				"Shader materials",
 				"This device"
+			],
+			"layers": [
+				"Baked light",
+				"Layers",
+				"Physics",
+				"Play",
+				"Scene look",
+				"Shader materials"
 			],
 			"levels": [
 				"Level of detail",

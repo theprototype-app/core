@@ -3,6 +3,7 @@ import { HELPER_LAYER } from './helperLayer'; // 60 Q5
 import { showToast, appNotice, peers, cloudIdentity, userdata, waitingForApproval } from '../stores/appStore';
 import { globalScene, globalCamera, globalRenderer, orbitControls, cameraClaim, isLocked, isVRMode } from '../stores/sceneStore';
 import { requestConnect } from './peerApproval';
+import { removePeer } from './peerModeration'; // 71 TR7
 import { sessionHost } from './connectionState';
 // 55 A4: invite grants for the roles plugin (store-only)
 import { inviteGrantFor, onInvitesChange, isAgentPeer, joinedVia } from './inviteStore';
@@ -34,9 +35,10 @@ import { currentLevel } from './levels';
 import { myPlayMode, peerPlayModes } from './gamePresence';
 import { onPlayOrigin, playUrl } from './playOrigin.js';
 import { safeStorage, storageIsolated } from './safeStorage'; // 61 G3: storageIsolated
+import { setLockMode, lockMode } from './lockMode'; // 80a K15
 // v3.1 (roadmap 29 G-3): the hosted-AI preset seam. Both provider modules are LEAVES
 // (svelte/store + safeStorage), so a static edge from here closes nothing.
-import { meshJobStatus, onExportBuilt, onTemplateOpen, onFunnelEvent, setSceneHeart, problemReporter, setWhatsNewCloud, setConnectBadge, setPeerMenuItems, setConnectorProvider, connectorSignInSlot } from './cloudHooks';
+import { meshJobStatus, onExportBuilt, onTemplateOpen, onFunnelEvent, onPlayStats, setSceneHeart, problemReporter, setWhatsNewCloud, setConnectBadge, setPeerMenuItems, setConnectorProvider, connectorSignInSlot, setRoomAccess } from './cloudHooks';
 // 36-community (C4): a leaf (svelte/store only) — safe as a static edge
 import { gameIdentity, ensureGameId, forkGameId } from './gameIdentity.js';
 import { exportMode } from './export/exportBoot.js';
@@ -399,6 +401,13 @@ export function makeCloudApi() {
 		 *  viewer actions (2026-07-25). Pass null to clear. */
 		setRolesInfo: (/** @type {any} */ info) => rolesInfo.set(info || null),
 
+		// --- 80a K15: the room's lock mode, for the room settings (additive; typeof-probe it) ---
+		/** 'select' (lock while selected, default) | 'edit' (lock only while editing); false = not
+		 *  ours to set (host or admin only). Everyone follows the host's value. */
+		setLockMode: (/** @type {any} */ mode) => setLockMode(mode),
+		/** the current mode, and a subscription to it: {mode, at} */
+		lockMode: { get: () => get(lockMode).mode, subscribe: (/** @type {any} */ fn) => lockMode.subscribe(fn) },
+
 		// --- 21-G5 (F7): cross-scene presence, v2.4 --------------------------------
 		/** publish who is in the project's OTHER rooms/scenes (the rolesInfo bridge
 		 *  shape — see cloudHooks.scenePresence for the document). Null clears. */
@@ -461,6 +470,21 @@ export function makeCloudApi() {
 		 *   camera: {position: number[], target: number[]} | null, duration: number | null, files: any[],
 		 *   signature?: string}}>} (`signature` = CL-5's content identity, only with `signature: true`)
 		 */
+		/**
+		 * 102 M2 (additive, typeof-probed — no CLOUD_HOOKS_VERSION bump): the open scene as a
+		 * USDZ for AR Quick Look, so a publish can store it beside the .tpscene and the scene's
+		 * page can offer "View in your room" (`<a rel="ar" href="….usdz">` — iOS / iPadOS only,
+		 * the page decides where it shows). Every visible mesh, world-posed, floor-anchored,
+		 * textures capped at 2048 px. Null for a scene with no meshes. Lazy: the exporter loads
+		 * on the first call.
+		 * @returns {Promise<{blob: Blob, bytes: number} | null>}
+		 */
+		buildArModel: async () => {
+			const m = await import('./export3d/export3dAction.js');
+			if (!m.collectParts(null).length) return null;
+			const bytes = await m.usdzBytes(null);
+			return { blob: new Blob([/** @type {any} */ (bytes)], { type: 'model/vnd.usdz+zip' }), bytes: bytes.byteLength };
+		},
 		buildSceneBundle: async ({ assets = true, flow = true, name = '', signature = false, chats = 'published' } = {}) => {
 			const { buildSessionPayload, exportSessionZip, sessionFileList } = await import('./sessions');
 			// 36-community (C4): a published file carries the scene's permanent game id
@@ -661,6 +685,10 @@ export function makeCloudApi() {
 		/** 76 FW2: an anonymous first-visit funnel event `fn({e, c, b, d, x})` — closed fields only,
 		 *  already past core's once-per-browser / DNT / GPC rules. Returns `off`. Probe with typeof. */
 		onFunnelEvent: (/** @type {any} */ fn) => onFunnelEvent(fn),
+		/** 102 M4: an anonymous play-statistics beacon `fn({v, s, d, e})` for the published scene on
+		 *  screen — already past DNT / GPC / Settings ▸ Privacy / the under-test guard. Send it
+		 *  synchronously (pagehide) and return true when it went out. Returns `off`. Probe with typeof. */
+		onPlayStats: (/** @type {any} */ fn) => onPlayStats(fn),
 		/** 76 FW2: the plugin's own funnel event, through the same rules. Only `ob_waitlist` (a
 		 *  feature-update opt-in) is accepted; anything else is ignored. Returns whether it went out. */
 		funnelEvent: async (/** @type {any} */ name) => (String(name) === 'ob_waitlist' ? (await import('./onboarding/funnel.js')).funnelEvent('ob_waitlist') : false),
@@ -673,6 +701,12 @@ export function makeCloudApi() {
 		/** fix-live: entries for the Users peer menu, `[{id, label, run(peerId, {name})}]` (≤ 8;
 		 *  [] clears) — the cloud's "Report…". Probe with typeof. */
 		setPeerMenuItems: (/** @type {any} */ items) => setPeerMenuItems(items),
+		/** 71 TR7: remove someone from this session, the Users menu's own action (`{block: true}` keeps them
+		 *  out for the session). Under the same rule as that menu: false, with a toast, if you may not. Probe with typeof. */
+		removePeer: (/** @type {string} */ peerId, /** @type {{block?: boolean}} */ opts) => removePeer(peerId, opts),
+		/** 71 AS3: the room-access fixes the block toast offers for a guest — `{isGuest(peerId), requireApproval(),
+		 *  signedInOnly(), state()}`, all optional (see cloudHooks.roomAccess); null removes. Probe with typeof. */
+		setRoomAccess: (/** @type {any} */ p) => setRoomAccess(p),
 		/** 86 B1/B5: the Claude connector's account half — `{pair({resume}), connections(), revoke(id),
 		 *  revokeAll(), account()}` (see cloudHooks.connectorProvider) or null. Core shows Connect Claude
 		 *  and Settings ▸ Account ▸ Connected apps only while one is installed. Probe with typeof. */

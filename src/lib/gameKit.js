@@ -30,3 +30,6 @@ export * as playerAccess from './playerAccess';
 export * as playerAccessCore from './playerAccessCore';
 export * as captions from './captions';
 export * as playerBindings from './playerBindings';
+// 102b-hud: shake / flash / hit pause, and the published values the Game Value node reads
+export * as gameFeelFx from './gameFeelFx';
+export * as gameValues from './gameValues';

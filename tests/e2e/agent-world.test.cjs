@@ -1,7 +1,8 @@
 // Roadmap 85b (lane 85-world) — the world tools END TO END: a REAL MCP stdio client spawns
 // `tools/agent/src/cli.js mcp <link>`, the host approves, and every result is read back on the HOST page:
 //   1  the new tools are listed, schemas verbatim from the host app's shared registry
-//   2  "forest on hills": terrain (made, raised) + scatter on it — the host has the terrain and the set
+//   2  "forest on hills": terrain (made, raised) + scatter on it — the host has the terrain and the set (104 A3: and its
+//      4,608 triangles after the raise)
 //   3  "lake with a jetty": water {lake} — the host has the water blob; a pattern (planks) on the jetty's material
 //   4  "campfire with sound": fire + fireflies particles; place_sound from an https WAV (host page's own executor,
 //      the route is the test's) — the host's library holds the sound and a sound node targets the fire
@@ -136,6 +137,10 @@ h.run(async () => {
 		ids.terrain = t.created?.[0]?.uuid;
 		h.check(!!ids.terrain && t.created[0].sculpted === 1, 'terrain: made and raised: ' + short(t));
 		await h.eventually(() => onHost(A.page, ids.terrain), (o) => o?.terrain === true && o.maxY > 2.5, '2. the host has the terrain, with the hill', 30000);
+		// 104 A3: a sculpt through the assistant keeps the terrain whole — 48 × 48 × 2 triangles (the peak alone stayed
+		// green on v1.73.0, where the indexed list was committed as a soup: 800 junk triangles, the terrain gone)
+		const tt = await onHost(A.page, ids.terrain);
+		h.check(tt?.tris === 4608, '2. A3 the host\'s sculpted terrain keeps its 4,608 triangles (' + tt?.tris + ')');
 		const s = json(await call(B.client, 'scatter', { surface: ids.terrain, asset: 'Cone', count: 40, scale: [0.6, 1.4], rules: { slope: [0, 35] }, seed: 9 }));
 		h.check(s.updated?.[0]?.ok === true && !!s.updated[0].set, 'scatter: a set id: ' + short(s));
 		await h.eventually(() => onHost(A.page, ids.terrain), (o) => o?.scatterSets === 1, '2. the host has the scatter set on the terrain', 30000);

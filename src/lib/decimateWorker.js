@@ -18,6 +18,8 @@ function transferables(result) {
 		const array = result[key];
 		if (array?.buffer && !out.includes(array.buffer)) out.push(array.buffer);
 	}
+	// 102 M1: carried channels (skin weights, a second uv set) come back too
+	for (const extra of result.extras ?? []) if (extra?.array?.buffer && !out.includes(extra.array.buffer)) out.push(extra.array.buffer);
 	return out;
 }
 

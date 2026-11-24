@@ -78,7 +78,8 @@ function roundRect(g, x, y, w, h, r) {
  *   help: string[], fps?: string | null,
  *   access?: {id: string, label: string, type: string, value: any, display: string, game?: boolean}[],
  *   tabs?: {id: string, label: string, options: {value: string, label: string}[], value: string}[],
- *   levelPage?: number | null}} ShellModel
+ *   levelPage?: number | null,
+ *   list?: {id: string, label: string, sub?: string, disabled?: boolean}[] | null}} ShellModel
  */
 
 /** the sub-pages' content starts here, in stage px */
@@ -204,6 +205,24 @@ export function drawShellPage(g, model, opts) {
 		const backX = (SHELL_STAGE.w - 300) / 2;
 		if (grid.page > 0) button('shell:lvpage:' + (grid.page - 1), '‹ Page ' + grid.page, backX - 12 - 200, backY, 200, 54);
 		if (grid.page < grid.pages - 1) button('shell:lvpage:' + (grid.page + 1), 'Page ' + (grid.page + 2) + ' ›', backX + 300 + 12, backY, 200, 54);
+		return hits;
+	}
+
+	// 92 (GC5/GC8): a list page (save slots, join requests) — one wide press per row
+	if (Array.isArray(model.list)) {
+		const bw = 760;
+		const bh = 64;
+		const gap = 12;
+		if (!model.list.length) {
+			g.textAlign = 'center';
+			g.textBaseline = 'middle';
+			g.fillStyle = '#cbd5e1';
+			g.font = `500 ${Math.round(24 * k)}px system-ui, sans-serif`;
+			g.fillText('Nobody is waiting to join.', W / 2, (top + 40) * k);
+		}
+		model.list.slice(0, 6).forEach((row, i) => {
+			button(row.id, row.label, (SHELL_STAGE.w - bw) / 2, top + i * (bh + gap), bw, bh, { disabled: !!row.disabled, sub: row.sub });
+		});
 		return hits;
 	}
 

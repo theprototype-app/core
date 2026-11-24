@@ -3,7 +3,6 @@ import { safeStorage } from './safeStorage';
 import { phoneShell } from './ui/phoneShell.js';
 import { SIDES, sidebarsWide, sidebarVisible, sidebarWanted, sidebarTabs, toggleSidebar } from './sidebars';
 import { unfoldedPhone } from './deviceClass.js';
-import { sidebarHandlesOn } from './sidebarHandles.js';
 import { registerChromeButton } from './chromeButtons';
 import { onLayoutRestore } from './uiLayoutsCore';
 
@@ -34,13 +33,15 @@ onLayoutRestore(() => panelsButtonMode.set(asMode(safeStorage.getItem(KEY))));
 
 /**
  * showhide-v8 (owner 2026-11-09) — WHERE THE BUTTON IS DRAWN. "Auto" now follows the owner's device table
- * ($lib/deviceClass): shown on the UNFOLDED PHONE only; hidden on a desktop (Customize adds it) and on a tablet (the
- * viewport sidebar handles replace it). Turning the handles on by hand anywhere hides it the same way. 'on' (Customize
+ * ($lib/deviceClass): shown on the UNFOLDED PHONE only, handles on or off (80a-fix4-ui O1: the owner's "the sidebar
+ * button is always there"); hidden on a desktop (Customize adds it) and on a tablet (the viewport sidebar handles
+ * replace it). 'on' (Customize
  * ▸ add it back, Settings ▸ On) draws it wherever sidebars exist; 'off' never.
  */
-export const panelsButtonShown = derived([panelsButtonMode, unfoldedPhone, sidebarHandlesOn, sidebarsWide, phoneShell], ([$mode, $unfolded, $handles, $wide, $phone]) => {
+export const panelsButtonShown = derived([panelsButtonMode, unfoldedPhone, sidebarsWide, phoneShell], ([$mode, $unfolded, $wide, $phone]) => {
 	if ($phone || !$wide) return false;
-	return $mode === 'on' || ($mode === 'auto' && $unfolded && !$handles);
+	// 80a-fix4-ui O1 (owner 2026-11-20): on the unfolded phone the button is ALWAYS there in Auto, handles on or off
+	return $mode === 'on' || ($mode === 'auto' && $unfolded);
 });
 
 /** is any sidebar column on screen (the button's pressed state) */
@@ -89,7 +90,7 @@ export function hidePanelsButton() {
  * (the unfolded phone with the handles off) and 'on' everywhere else (where auto would leave it hidden) */
 function showPanelsButton() {
 	if (get(panelsButtonMode) !== 'off') return;
-	panelsButtonMode.set(beforeHide ?? (get(unfoldedPhone) && !get(sidebarHandlesOn) ? 'auto' : 'on'));
+	panelsButtonMode.set(beforeHide ?? (get(unfoldedPhone) ? 'auto' : 'on'));
 }
 
 // panel-gestures item 5: the Panels button is one of the hideable chrome buttons. Its shown / hidden state is

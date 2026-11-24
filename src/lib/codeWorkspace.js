@@ -33,6 +33,7 @@ import { codeWorkspaceClose, showToast, focusFlowNode } from '../stores/appStore
 import { setNodeData, serializeNode, serializeEdge } from './nodesHandler';
 import { recordFlowNodesEntry } from './flowGraphs';
 import { safeStorage } from './safeStorage';
+import { flowHolderOf, heldByOther, nameOf } from './lockHeld'; // 80a K4
 import { graphToText, textToGraph } from './graphText';
 import {
 	findTab,
@@ -460,6 +461,14 @@ async function saveNow(id, opts) {
 	const code = tab.code;
 	const bound = boundNodesOf(tab);
 	const ids = bound.map((b) => b.node.id);
+	// 80a K4: a flow another peer's object lock covers is view-only from here too (graph, node and
+	// file tabs alike: a file tab writes every node bound to it)
+	const graphsTouched = tab.kind === 'graph' ? [tab.graphId ?? SCENE_GRAPH] : bound.map((/** @type {any} */ b) => b.graphId);
+	const heldGraph = graphsTouched.find((g) => flowHolderOf(g));
+	if (heldGraph) {
+		if (!opts.quiet) showToast(nameOf(/** @type {string} */ (flowHolderOf(heldGraph))) + ' is editing that object: its flow is view-only until they let go');
+		return { ok: false };
+	}
 
 	if (tab.kind === 'graph') {
 		const graphId = tab.graphId ?? SCENE_GRAPH;
@@ -769,6 +778,8 @@ export async function goToNode(nodeId, graphId) {
 	// the editor's scope FOLLOWS the selection, so select the graph's owner (or nothing)
 	const oa = await import('./objectActions');
 	if (found.graphId === SCENE_GRAPH) oa.deselectObject();
+	// 80a K4: a held object cannot be selected; VIEW it, and the editor shows its flow view-only
+	else if (heldByOther(found.graphId)) oa.selectObject(found.graphId);
 	else oa.applySelectionSet([found.graphId]);
 	setActiveGraph(found.graphId);
 	focusFlowNode(nodeId);

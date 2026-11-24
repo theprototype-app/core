@@ -75,6 +75,18 @@ export const insetIndividual = writable(false);
  * NOT named `subdivideLevels` — the kernel operators (meshOps) export one of that name
  * and the two would shadow each other at every import site. */
 export const subdivideLevelCount = writable(1);
+/** 99 K8: Subdivide's method — false = the quad-aware split (default, unchanged), true = SMOOTH (Catmull-Clark on
+ * the kernel: the pick, or the whole mesh when nothing is picked) */
+export const subdivideSmooth = writable(false);
+/** 99 K8: PATH select — a click on an element adds the shortest path from the active one (Ctrl+click does it
+ * without the toggle; the toggle is the touch / VR way in). Local, per tab. */
+export const meshPathSelect = writable(false);
+/** 99 K8: the path counts STEPS (topological distance) instead of length */
+export const meshPathTopological = writable(false);
+/** 99 K8: Bisect closes each cut loop with a face (with a cleared side) */
+export const bisectFill = writable(false);
+/** 99 K8: Bisect removes one side: 'none' | 'inner' (behind the plane) | 'outer' (the side its tick points at) */
+export const bisectClear = writable('none');
 /** 19-A P5b: how far Edge extrude pulls the strip (world units, signed — negative
  * goes the other way along the chain's averaged normal). */
 export const edgeExtrudeDistance = writable(0.5);
@@ -131,6 +143,7 @@ const WITH_OPTIONS = new Set([
 	'extrude',
 	'inset',
 	'knife',
+	'bisect',
 	'bevel',
 	'loopcut',
 	'bridge',
@@ -175,6 +188,11 @@ export function resetToolParams() {
 	insetDepth.set(0);
 	insetIndividual.set(false);
 	subdivideLevelCount.set(1);
+	subdivideSmooth.set(false);
+	meshPathSelect.set(false);
+	meshPathTopological.set(false);
+	bisectFill.set(false);
+	bisectClear.set('none');
 	edgeExtrudeDistance.set(0.5);
 	smoothFactor.set(0.5);
 	smoothIterations.set(1);
@@ -204,6 +222,11 @@ export function toolParams() {
 		insetDepth: get(insetDepth),
 		insetIndividual: get(insetIndividual),
 		subdivideLevelCount: get(subdivideLevelCount),
+		subdivideSmooth: get(subdivideSmooth),
+		meshPathSelect: get(meshPathSelect),
+		meshPathTopological: get(meshPathTopological),
+		bisectFill: get(bisectFill),
+		bisectClear: get(bisectClear),
 		edgeExtrudeDistance: get(edgeExtrudeDistance),
 		smoothFactor: get(smoothFactor),
 		smoothIterations: get(smoothIterations),

@@ -84,6 +84,7 @@
 
 	/** Split a combo for display: `Ctrl+Shift+G` -> ['Ctrl', 'Shift', 'G']. @param {string} keys */
 	function parts(keys) {
+		if (!keys) return ['none']; // 99 K8: an unbound row (Settings ▸ Shortcuts gives it a key)
 		if (/\s/.test(keys) || keys.length === 1) return [keys];
 		return keys.split('+');
 	}

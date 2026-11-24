@@ -70,7 +70,7 @@ import { editOverlaysParked } from './editOverlays';
 // 19-A P3: the desktop pane's extrude/inset extras, read at BEGIN so a click-
 // extrude matches the toolbox's Apply. meshToolParams is a svelte/store-only
 // leaf, so this cannot close a cycle into history.
-import { extrudeIndividual, insetDepth, insetIndividual, liveSymmetry, symAxis, symKeep } from './meshToolParams';
+import { extrudeIndividual, insetDepth, insetIndividual, liveSymmetry, symAxis, symKeep, meshPathSelect, meshPathTopological } from './meshToolParams';
 // 19-A P4: proportional editing shared with the vertex path. Both are LEAVES
 // (proportional = svelte/store only; proportionalRing = three + sceneStore +
 // proportional) — this module must NEVER import meshEdit (meshEdit imports us),
@@ -1309,7 +1309,7 @@ export const faceEditObject = writable(null);
 /** highlighted face index (ray/selection), or -1 @type {import('svelte/store').Writable<number>} */
 export const faceEditHighlight = writable(-1);
 /** armed op for the next commit (B4 adds the one-shots)
- * @type {import('svelte/store').Writable<'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'|'knife'>} */
+ * @type {import('svelte/store').Writable<'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'|'knife'|'bisect'>} */
 // MOVE is the default tool, not extrude: with auto-apply on, a plain click
 // COMMITS the armed op, so an extrude-by-default session turned every click on a
 // face into an extrusion — the reported "clicking twice on a quad breaks the
@@ -1349,7 +1349,7 @@ export function autoApplyFaceOp() {
 }
 
 /** Arm an op (from the Faces sub-ring / desktop toolbar)
- * @param {'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'|'knife'} op */
+ * @param {'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'|'knife'|'bisect'} op */
 export function setFaceOp(op) {
 	faceEditOp.set(op);
 	// inset lives in 0..0.9; the others are signed distances
@@ -2223,6 +2223,86 @@ export function selectAllEdges() {
 /** invert the edge selection (Ctrl+I in edge mode). @returns {boolean} */
 export function invertEdgeSelection() {
 	return withSelectionHistory('edges', () => invertEdgeSelectionInner());
+}
+
+// ---- 99 K8: shortest-path select -------------------------------------------------------------------
+// Ctrl+click (or a click with the toolbox's Path toggle on) on a second element ADDS the shortest path from the
+// active one (the last picked) to it, the clicked element becoming the active one. Length or step count
+// (`meshPathTopological`). With nothing active, or on the active element itself, it is the ordinary additive
+// click (the caller falls back), so the first Ctrl+click still starts a pick.
+
+/** the clicked element is a path target: Ctrl alone (Shift / Cmd keep the plain add), or any click under the
+ * Path toggle @param {{ ctrlKey?: boolean, shiftKey?: boolean, metaKey?: boolean }} event */
+export function pathGesture(event) {
+	return get(meshPathSelect) || (!!event.ctrlKey && !event.shiftKey && !event.metaKey);
+}
+
+/** 99 K8: the op mesh a path search reads (the session's in a face session, else the object's own)
+ * @param {any} geometry @returns {any} */
+function pathOpMesh(geometry) {
+	const ops = editSession.ops;
+	if (!ops || !geometry) return null;
+	if (FS.object?.geometry === geometry) return sessionOpMesh();
+	return heldOpMesh(ops, geometry, () => facePartitionOf(geometry).partition, OBJECT_PARTNER);
+}
+
+/**
+ * 99 K8: the shortest path between two elements of `geometry` in the editor's selection currency (vertex keys,
+ * edge keys, output triangles), or null (no kernel yet, an end not on the mesh, nothing connects them).
+ * @param {any} geometry @param {'vertex' | 'edge' | 'face'} kind @param {string | number} from @param {string | number} to
+ * @returns {{ keys?: string[], tris?: number[] } | null}
+ */
+export function pathBetween(geometry, kind, from, to) {
+	const om = pathOpMesh(geometry);
+	if (!om) {
+		showToast(KERNEL_LOADING);
+		return null;
+	}
+	return editSession.ops.pathSelect(om, kind, from, to, { topological: get(meshPathTopological) });
+}
+
+/** @param {number} tri the clicked triangle @returns {boolean} false = no path (the caller does the plain add) */
+function pathSelectFacesInner(tri) {
+	const sel = get(faceEditSelectedTris);
+	const from = sel.length ? sel[sel.length - 1] : -1;
+	if (from < 0 || !hasTri(FS.frame, tri) || !FS.object) return false;
+	const unit = pickFaceUnitTris(tri);
+	if (unit.includes(from)) return false;
+	const r = pathBetween(FS.object.geometry, 'face', from, tri);
+	if (!r?.tris) return false;
+	const set = new Set(sel);
+	for (const t of r.tris) set.add(t);
+	// the clicked unit last: it is the next path's start
+	for (const t of unit) set.delete(t);
+	faceEditSelectedTris.set([...set, ...unit]);
+	refreshFaceOverlay();
+	return true;
+}
+
+/** 99 K8: faces — add the shortest path from the active face to `tri`. @param {number} tri @returns {boolean} */
+export function pathSelectFaces(tri) {
+	return withSelectionHistory('faces', () => pathSelectFacesInner(tri));
+}
+
+/** @param {string} key the clicked edge @returns {boolean} */
+function pathSelectEdgesInner(key) {
+	const sel = get(edgeEditSelected);
+	const from = sel.length ? sel[sel.length - 1] : '';
+	if (!from || !key || from === key || !FS.object) return false;
+	const r = pathBetween(FS.object.geometry, 'edge', from, key);
+	if (!r?.keys) return false;
+	const set = new Set(sel);
+	for (const k of r.keys) set.add(k);
+	set.delete(key);
+	edgeEditSelected.set([...set, key]);
+	edgeEditHover.set('');
+	refreshEdgeHighlight();
+	return true;
+}
+
+/** 99 K8: edges — add the shortest chain from the active edge to `key`. @param {string} key @returns {boolean} */
+export function pathSelectEdges(key) {
+	return withSelectionHistory('edges', () => pathSelectEdgesInner(key));
 }
 /** selected edge keys, canonical `ka|kb` @type {import('svelte/store').Writable<string[]>} */
 export const edgeEditSelected = writable(/** @type {string[]} */ ([]));
@@ -5767,10 +5847,38 @@ function sessionKernelCommit(run, beforeSwap, options = {}) {
 }
 
 /**
+ * 99 K8: BISECT the face selection (faces mode; nothing picked, or edges / vertices mode = the whole mesh) with a
+ * plane in the edited object's LOCAL space, on the session's op mesh (meshOps/bisectOp.js), IDs carried, ONE undo
+ * step that brings the starting pick back. Afterwards the cut is the EDGE selection in edges mode; in faces mode
+ * the pick is cleared (its triangles were renumbered). @param {{ point: number[], normal: number[] }} plane
+ * @param {{ clear?: 'inner' | 'outer' | null, fill?: boolean }} [options] @returns {boolean}
+ */
+export function commitBisect(plane, options = {}) {
+	interruptOpAdjust();
+	if (!FS.object) return false;
+	const sel = get(faceEditSubmode) === 'faces' ? get(faceEditSelectedTris).filter((/** @type {number} */ t) => hasTri(FS.frame, t)) : [];
+	const r = sessionKernelCommit(
+		(ops, om) => ops.bisectRegion(om, sel.length ? sel : null, plane, options),
+		() => {
+			if (get(faceEditSelectedTris).length) faceEditSelectedTris.set([]);
+			faceEditHighlight.set(-1);
+			clearEdgeSelectionInner();
+		},
+		{ tooLarge: 'cut' }
+	);
+	if (!r) return false;
+	if (get(faceEditSubmode) === 'edges' && r.cutKeys.length) {
+		edgeEditSelected.set(r.cutKeys.filter((/** @type {string} */ k) => !!edgeEndpoints(k)));
+		refreshEdgeHighlight();
+	} else refreshFaceOverlay();
+	return true;
+}
+
+/**
  * Run an op on the highlighted face and commit: rebuild geometry, replicate
  * the snapshot, record history. subdivide/flip take no amount (B4); for M3's
  * loopcut and 18-C5's bridge `amount` is the CUT COUNT, not a distance.
- * @param {'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'|'knife'} op
+ * @param {'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'|'knife'|'bisect'} op
  * @param {number} amount
  */
 export function commitFaceOp(op, amount) {
@@ -7228,6 +7336,8 @@ function mergeAdjustParams(a, patch) {
 	} else if (a.op === 'subdivide') {
 		// P3: 4^levels growth — MAX_SNAPSHOT backstops the big-face case
 		p.levels = Math.max(1, Math.min(Math.round(p.levels ?? 1) || 1, 3));
+		// 99 K8: smooth = Catmull-Clark (the kernel's, shared with the agent); off = the quad-aware split
+		p.smooth = !!p.smooth;
 	} else if (a.op === 'edge-extrude') {
 		// P5b: world units, signed — negative pulls the strip the other way
 		p.distance = Math.min(Math.max(p.distance ?? 0.5, -5), 5);
@@ -7475,7 +7585,12 @@ function runAdjustCore(a) {
 		// P3 / 99 K4 family 6: the quad-aware split `levels` times on a COPY of the op mesh captured at begin
 		const ops = kernelOps();
 		const om = ops.beginOp(ops.cloneOpMesh(a.opBase));
-		const r = ops.subdivideLevels(om, a.target.triIndices, a.quadPartner, p.levels);
+		// 99 K8: smooth = Catmull-Clark on the pick (null = the whole mesh); the plain split needs a pick
+		if (!p.smooth && !a.target.triIndices) return { error: 'Click a face first' };
+		const r = p.smooth
+			? ops.smoothSubdivide(om, a.target.triIndices, p.levels)
+			: ops.subdivideLevels(om, a.target.triIndices, a.quadPartner, p.levels);
+		if ('error' in r) return { error: r.error };
 		return {
 			...opResult(om),
 			faces: ops.opPartition(om, 'appearance'),
@@ -7832,8 +7947,9 @@ export function beginOpAdjust(op, params, opts = {}) {
 		// P3: the target is the picked tri set; the pairing rides along exactly
 		// like loopcut's (subdivideLevels is quad-aware through it)
 		const face = opts.target ?? opTargetFace();
-		if (!face?.triIndices?.length) return false;
-		a.target = { triIndices: [...face.triIndices] };
+		// 99 K8: a smooth subdivide with nothing picked smooths the whole mesh (Catmull-Clark's usual use)
+		if (!face?.triIndices?.length && !params?.smooth) return false;
+		a.target = { triIndices: face?.triIndices?.length ? [...face.triIndices] : null };
 		a.quadPartner = FS.quadPartner;
 		if (!(a.opBase = sessionOpMesh())) return kernelLoadingRefusal();
 	} else if (op === 'bridge') {
@@ -8176,14 +8292,17 @@ export function facePartitionOf(geometry) {
 }
 
 /** the face ops faceOpOnObject runs */
-export const OBJECT_FACE_OPS = /** @type {const} */ (['extrude', 'inset', 'move', 'bevel', 'subdivide', 'delete', 'flip']);
+export const OBJECT_FACE_OPS = /** @type {const} */ (['extrude', 'inset', 'move', 'bevel', 'subdivide', 'subdivide_smooth', 'bisect', 'delete', 'flip']);
 
 /**
  * Run one face operator on an object's triangles `triIndices` (one region, like a multi-select).
  * @param {string} uuid
  * @param {string} op one of OBJECT_FACE_OPS
  * @param {number[]} triIndices
- * @param {{amount?: number, width?: number, segments?: number, profile?: number, direction?: 'out'|'in'}} [options]
+ * @param {{amount?: number, width?: number, segments?: number, profile?: number, direction?: 'out'|'in', levels?: number,
+ *   point?: number[], normal?: number[], clear?: 'inner'|'outer'|null, fill?: boolean}} [options]
+ *   `levels` = subdivide_smooth's Catmull-Clark levels (1-3); `point` / `normal` / `clear` / `fill` = bisect's plane
+ *   (object-local) and options
  * @returns {{ok: true, triangles: number, kept: number[] | null} | {ok: false, error: string}}
  *   `kept` = the triangles still selected afterwards (the extruded cap, the inset's inner face — the
  *   ops that move the picked triangles in place and APPEND the rest), null where the op reshapes them
@@ -8222,6 +8341,24 @@ export function faceOpOnObject(uuid, op, triIndices, options = {}) {
 		// 99 K4 family 6: on the kernel, IDs carried
 		const partner = storedPartner(object.geometry, tris.length) ?? pairQuads(tris);
 		const r = objectKernelCommit(uuid, object, () => partition, tris, (ops, om) => ops.subdivideUnits(om, picked, partner));
+		return r && !('error' in r) ? { ok: true, triangles: r.count, kept: null } : { ok: false, error: r?.error ?? 'the edit could not be committed' };
+	} else if (op === 'subdivide_smooth') {
+		// 99 K8: Catmull-Clark on the kernel (the one implementation create_shape's `subdivide` uses too), IDs carried
+		const levels = Math.max(1, Math.min(Math.round(Number(options.levels ?? 1)) || 1, 3));
+		const r = objectKernelCommit(uuid, object, () => partition, tris, (ops, om) =>
+			ops.smoothSubdivide(om, picked.length >= tris.length ? null : picked, levels)
+		);
+		return r && !('error' in r) ? { ok: true, triangles: r.count, kept: null } : { ok: false, error: r?.error ?? 'the edit could not be committed' };
+	} else if (op === 'bisect') {
+		// 99 K8: the plane cut on the kernel, IDs carried; every picked face (all of them = the whole mesh)
+		const v3 = (/** @type {any} */ a) => (Array.isArray(a) && a.length === 3 && a.every((x) => Number.isFinite(Number(x))) ? a.map(Number) : null);
+		const point = v3(options.point) ?? [0, 0, 0];
+		const n = v3(options.normal);
+		if (!n) return { ok: false, error: 'bisect: give the plane a normal [x, y, z]' };
+		const clear = options.clear === 'inner' || options.clear === 'outer' ? options.clear : null;
+		const r = objectKernelCommit(uuid, object, () => partition, tris, (ops, om) =>
+			ops.bisectRegion(om, picked.length >= tris.length ? null : picked, { point, normal: n }, { clear, fill: !!options.fill })
+		);
 		return r && !('error' in r) ? { ok: true, triangles: r.count, kept: null } : { ok: false, error: r?.error ?? 'the edit could not be committed' };
 	} else if (op === 'delete') {
 		if (picked.length >= tris.length) return { ok: false, error: 'delete: that would remove every face of the mesh' };

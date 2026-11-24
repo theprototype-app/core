@@ -30,6 +30,9 @@
 		insetDepth,
 		insetIndividual,
 		subdivideLevelCount,
+		subdivideSmooth,
+		meshPathSelect,
+		meshPathTopological,
 		edgeExtrudeDistance,
 		smoothFactor,
 		smoothIterations,
@@ -225,7 +228,8 @@
 		{ op: 'move', label: 'Move', hint: 'G', key: 'mesh.move', oneShot: false, param: false, icon: 'move', desc: 'seat the gizmo on the selection and drag it' },
 		{ op: 'extrude', label: 'Extrude', hint: 'E', key: 'mesh.extrude', oneShot: false, param: false, icon: 'extrude', desc: 'pull the face out along its normal' },
 		{ op: 'inset', label: 'Inset', hint: 'I', key: 'mesh.inset', oneShot: false, param: false, icon: 'inset', desc: 'shrink a copy inside a stitched ring' },
-		{ op: 'knife', label: 'Knife', hint: 'K', oneShot: false, param: false, icon: 'knife', desc: 'cut across the mesh: click one end of the line, then the other (Shift+click adds corners)' }
+		{ op: 'knife', label: 'Knife', hint: 'K', oneShot: false, param: false, icon: 'knife', desc: 'cut across the mesh: click one end of the line, then the other (Shift+click adds corners)' },
+		{ op: 'bisect', label: 'Bisect', hint: '', key: 'mesh.bisect', oneShot: false, param: false, icon: 'bisect', desc: 'cut the selection (or the whole mesh) with a plane: two clicks draw it, the gizmo adjusts it, Apply cuts' }
 	];
 	const ACTION_OPS = [
 		{ op: 'bevel', label: 'Bevel', hint: '', oneShot: true, param: true, icon: 'bevel', desc: "chamfer the selected face's border" },
@@ -394,7 +398,7 @@
 			return '';
 		}
 		if (focus === 'loopcut') return loopCutReady() ? '' : 'Click a quad to choose the ring';
-		if (focus === 'subdivide') return hasTarget() ? '' : 'Click a face first';
+		if (focus === 'subdivide') return hasTarget() || $subdivideSmooth ? '' : 'Click a face first';
 		if (focus === 'solidify') return hasTarget() ? '' : 'Select the surface to thicken first';
 		if (focus === 'bridge') {
 			if (selInfo.pieces !== 2) return 'Select two separate pieces (Ctrl+click both)';
@@ -474,11 +478,12 @@
 				invert: $bridgeInvert
 			});
 		} else if (op === 'subdivide') {
-			if (!hasTarget()) {
+			// 99 K8: Smooth (Catmull-Clark) with nothing picked smooths the whole mesh
+			if (!hasTarget() && !$subdivideSmooth) {
 				showToast('Click a face first');
 				return false;
 			}
-			ok = beginOpAdjust('subdivide', { levels: $subdivideLevelCount });
+			ok = beginOpAdjust('subdivide', { levels: $subdivideLevelCount, smooth: $subdivideSmooth });
 		} else if (op === 'edge-extrude') {
 			// P5b: an adjust-engine op — the engine validates the edge pick and the
 			// border rule, and toasts its own refusals
@@ -685,6 +690,12 @@
 		let cmd = meshCommandFor(combo);
 		if (!cmd && event.key === 'Delete' && !event.ctrlKey && !event.metaKey && !event.altKey) cmd = 'mesh.delete';
 		if (!cmd) return;
+		// 99 K8: the Path toggle (an unbound row: Settings ▸ Shortcuts can give it a key) works in all three modes
+		if (cmd === 'mesh.path-toggle') {
+			meshPathSelect.update((on) => !on);
+			event.preventDefault();
+			return;
+		}
 		// M2/M6: the SELECTION commands resolve against the CURRENT mode's list, so
 		// Ctrl+A / Ctrl+I work in all three modes instead of faces only
 		/** @type {Record<string, string[]>} */
@@ -732,8 +743,16 @@
 				'mesh.flip': 'flip',
 				'mesh.delete': 'delete',
 				'mesh.loopcut': 'loopcut',
-				'mesh.bridge': 'bridge'
+				'mesh.bridge': 'bridge',
+				'mesh.bisect': 'bisect'
 			};
+			// 99 K8: Shift+S = Subdivide with the Smooth method on (the pane shows it checked)
+			if (cmd === 'mesh.subdivide-smooth') {
+				subdivideSmooth.set(true);
+				runOp('subdivide');
+				event.preventDefault();
+				return;
+			}
 			const op = ops[cmd];
 			if (!op) return;
 			runOp(op);
@@ -1227,6 +1246,24 @@
 			onSettle={() => settleOpAdjust()}
 			onRevert={() => cancelOpAdjust()}
 		/>
+
+		<!-- 99 K8: shortest-path select. Ctrl+click does it on desktop; the toggle is the touch way in (a tap then
+		     adds the path from the last pick). Steps = count steps instead of length. It sits UNDER the tool options,
+		     not in the Select rows above the grid: a row there pushed the grid and the options pane down (the knife's
+		     touch Cut button moved 23 px down onto a spot something covers: mesh-knife went 3/3 red against 1/2 on base). -->
+		<div class="tbx-row text-xs text-text-2">
+			<button
+				id="mesh-path-select"
+				class="tbx-cmd {$meshPathSelect ? 'tbx-on bg-accent-fill text-on-accent' : ''}"
+				aria-pressed={$meshPathSelect}
+				title={`Path — a click adds the shortest path from the last pick to the one you click (Ctrl+click does it without this${hintOf({ key: 'mesh.path-toggle' }) ? '; ' + hintOf({ key: 'mesh.path-toggle' }) : ''})`}
+				onclick={() => meshPathSelect.update((on) => !on)}>Path</button
+			>
+			<label class="flex items-center gap-1" title="Count steps (faces, edges or vertices crossed) instead of length">
+				<input id="mesh-path-steps" class="tbx-check" type="checkbox" bind:checked={$meshPathTopological} />
+				steps
+			</label>
+		</div>
 
 		<!-- GIZMO & PIVOT: ONE collapsible section, offered in EVERY element mode.
 		     The switch and the orientation used to live inside the faces-only

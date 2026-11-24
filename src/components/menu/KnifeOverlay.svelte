@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { knifePreview } from '$lib/faceEdit';
+	import { bisectPreview } from '$lib/meshBisectTool';
 
 	// M9b: the knife's rubber band. The cut is defined in SCREEN space, so the preview belongs
 	// in the DOM rather than the scene — there is no 3D line to draw, and a scene-root line
@@ -43,6 +44,21 @@
 			stroke="#ff7a1a"
 			stroke-width="1.5"
 		/>
+	</svg>
+{/if}
+<!-- 99 K8: Bisect's line while it is drawn (the plane it makes runs through it and the eye) -->
+{#if $bisectPreview}
+	<svg class="knife-overlay bisect-overlay" width="100%" height="100%" aria-hidden="true">
+		<line
+			x1={$bisectPreview.from[0]}
+			y1={$bisectPreview.from[1]}
+			x2={$bisectPreview.to[0]}
+			y2={$bisectPreview.to[1]}
+			stroke="#ff7a1a"
+			stroke-width="1.5"
+			stroke-dasharray="10 4 2 4"
+		/>
+		<circle cx={$bisectPreview.from[0]} cy={$bisectPreview.from[1]} r="3.5" fill="#ff7a1a" />
 	</svg>
 {/if}
 <!-- tokens-ok-end -->

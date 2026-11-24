@@ -79,8 +79,16 @@
 		switchMaterialType,
 		recordMaterialChange,
 		setObjectColor,
-		setObjectsTexture
+		setObjectsTexture,
+		isMultiMaterial,
+		materialAt,
+		addMaterialSlot
 	} from '$lib/materialsHandler';
+	// 105-slots: the ONE active material slot (shared with the UV editor); the slot list itself is lazy (SlotList.svelte)
+	import { activeMaterialSlot } from '$lib/slotDraw.js';
+	import { linkedOthers, sharedCount } from '$lib/slotDraw.js'; // 105-slots LINK (the boot gate): the colour drag reaches every holder
+	// 105-slots: "Select its faces" / "Assign selected faces" read the Edit Mesh face session (already in the boot)
+	import { faceEditObject, faceEditSelectedTris } from '$lib/faceEdit';
 	import { recordEntry, beginHistoryBatch, endHistoryBatch, recordTransformSet, registerPendingSeal } from '$lib/history';
 	import { withWireBatch, withWireBatchAsync } from '$lib/wireBatch';
 	import { setObjectFlag, lightStateOf, recordLightChange, sendLight, allMembers } from '$lib/multiEdit';
@@ -512,10 +520,85 @@
 	});
 	/** 0 when a single object is being edited, else the number of targets */
 	const multiCount = $derived(insTargets.length > 1 ? insTargets.length : 0);
-	/** targets that actually carry a single (non-array) material */
+	/** 105-slots: the primary object wears a SLOT LIST (2+ materials). Then the Material section edits that object
+	 * only, at its ACTIVE slot (every fan below is then exactly one slot), and says so when more is selected. */
+	const primaryMulti = $derived.by(() => {
+		$objectsGroup; // a slot added / removed in place
+		return !isLight && !isGroup && isMultiMaterial($selectedObject) && canEditObject($selectedObject);
+	});
+	/** 105-slots: how many slots the primary has, and the active one clamped into them */
+	const slotTotal = $derived.by(() => {
+		$objectsGroup;
+		return primaryMulti ? $selectedObject.material.length : 1;
+	});
+	const activeSlot = $derived(Math.min(Math.max(0, $activeMaterialSlot), Math.max(slotTotal - 1, 0)));
+	/** targets that actually carry a single (non-array) material — or, 105-slots, the slot-list primary alone */
 	const matTargets = $derived(
-		insTargets.filter((/** @type {any} */ o) => o?.material && !Array.isArray(o.material))
+		primaryMulti
+			? insTargets.filter((/** @type {any} */ o) => o?.uuid === $selectedObject?.uuid)
+			: insTargets.filter((/** @type {any} */ o) => o?.material && !Array.isArray(o.material))
 	);
+	/** 105-slots: the slot a write to `object` goes to (the active slot of a slot list, else 0) @param {any} object */
+	const slotFor = (object) => (isMultiMaterial(object) && object?.uuid === $selectedObject?.uuid ? activeSlot : 0);
+	/** 105-slots: the material a row reads for `object` @param {any} object */
+	const matOf = (object) => materialAt(object, slotFor(object)) ?? {};
+	/** 105-slots: other selected objects the slot-list edits do not reach */
+	const slotOthers = $derived(primaryMulti ? insTargets.length - 1 : 0);
+	/** 105-slots LINK: a ONE-material object whose material is linked to other slots (a slot list shows it per row) */
+	const singleShared = $derived.by(() => {
+		$objectsGroup;
+		const m = !primaryMulti && $selectedObject?.material && !Array.isArray($selectedObject.material) ? $selectedObject.material : null;
+		return m ? sharedCount(m) - 1 : 0;
+	});
+	async function makeSingleUnique() {
+		const uuid = $selectedObject?.uuid;
+		if (!uuid) return;
+		const { makeSlotUnique } = await import('$lib/materialSlots.js');
+		if (makeSlotUnique(uuid, 0)) showToast('This object has its own copy of the material now');
+	}
+	/** 105-slots: faces picked in Edit Mesh on THIS object (what "Assign selected faces" would move) */
+	const pickedFaces = $derived($faceEditObject && $faceEditObject === $selectedObject?.uuid ? $faceEditSelectedTris.length : 0);
+
+	/** 105-slots: the Material section's own ⋯ menu — "Add material slot" on any mesh with a material */
+	function materialSectionMenu() {
+		const object = $selectedObject;
+		if (!object?.isMesh || !object.material || !canEditObject(object)) return [];
+		return [
+			{
+				label: 'Add material slot',
+				testid: 'material-add-slot',
+				action: () => {
+					const index = addMaterialSlot(object.uuid);
+					if (index >= 0) activeMaterialSlot.set(index);
+				}
+			}
+		];
+	}
+	/** 105-slots: open Edit Mesh on the object and select the triangles of slot `index` @param {number} index */
+	async function selectSlotFaces(index) {
+		const uuid = $selectedObject?.uuid;
+		if (!uuid) return;
+		const faceEdit = await import('$lib/faceEdit');
+		if (getStore(faceEdit.faceEditObject) !== uuid) faceEdit.enterFaceEdit(uuid);
+		faceEdit.selectFacesOfSlot(index);
+	}
+	/** 105-slots: the faces picked in Edit Mesh go to slot `index` (the UV editor's assign, 99's commit path) @param {number} index */
+	async function assignFacesToSlot(index) {
+		const uuid = $selectedObject?.uuid;
+		if (!uuid || !pickedFaces) return;
+		const { assignTrisToSlot } = await import('$lib/uvEditor');
+		if (assignTrisToSlot(uuid, getStore(faceEditSelectedTris), index)) {
+			activeMaterialSlot.set(index);
+			showToast(pickedFaces + ' face triangles now use slot ' + (index + 1));
+		}
+	}
+	/** 105-slots: Switch material… — the popover is lazy (SlotSwitch.svelte) @type {{index: number, x: number, y: number} | null} */
+	let slotSwitch = $state(null);
+	/** @param {number} index @param {HTMLElement} anchor */
+	function openSlotSwitch(index, anchor) {
+		const r = anchor?.getBoundingClientRect?.();
+		slotSwitch = { index, x: r ? r.left : 40, y: r ? r.bottom : 120 };
+	}
 	const matCount = $derived(matTargets.length > 1 ? matTargets.length : 0);
 
 	// ---- 23-B4: a device's declared params, fanned over the selection ----------------
@@ -1045,8 +1128,10 @@
 	 */
 	const material = $derived.by(() => {
 		$objectsGroup; // in-place material edits poke this store
-		const m =
-			!isLight && !isGroup && $selectedObject?.material && !Array.isArray($selectedObject.material)
+		// 105-slots: a slot list shows its ACTIVE slot's material (it used to be null, so the section was missing)
+		const m = primaryMulti
+			? materialAt($selectedObject, activeSlot)
+			: !isLight && !isGroup && $selectedObject?.material && !Array.isArray($selectedObject.material)
 				? $selectedObject.material
 				: null;
 		if (!m) return null;
@@ -1179,31 +1264,49 @@
 	// record 600ms after the last input. 17-D1: with a multi-selection the
 	// gesture remembers EVERY target's own starting colour (they may differ) and
 	// seals them into one batch, so undo restores each object's original.
-	/** @type {Map<string,string>|null} */
+	/** 105-slots: keyed `uuid:slot`, with the slot and whether the object is a slot list
+	 * @type {Map<string, {uuid: string, slot: number, multi: boolean, before: string}>|null} */
 	let colorGestureStart = null;
 	/** @type {any} */
 	let colorGestureTimer;
+	/** 105-slots: every (object, slot) one colour drag writes — the targets at their slot, plus every other holder of a
+	 * linked slot among them (a shared material changes everywhere it is used, live) */
+	function colorTargets() {
+		/** @type {{object: any, slot: number}[]} */
+		const out = matTargets.map((/** @type {any} */ object) => ({ object, slot: slotFor(object) }));
+		const seen = new Set(out.map((t) => t.object.uuid + ':' + t.slot));
+		for (const t of [...out])
+			for (const h of linkedOthers(t.object, t.slot)) {
+				const key = h.object.uuid + ':' + h.index;
+				if (!seen.has(key)) seen.add(key), out.push({ object: h.object, slot: h.index });
+			}
+		return out;
+	}
+
 	/** @param {any} hex */
 	function trackColorGesture(hex) {
 		if (colorGestureStart == null) {
 			colorGestureStart = new Map();
-			for (const object of matTargets)
-				colorGestureStart.set(object.uuid, '#' + object.material.color.getHexString());
+			for (const t of colorTargets()) {
+				const m = materialAt(t.object, t.slot);
+				if (m?.color) colorGestureStart.set(t.object.uuid + ':' + t.slot, { uuid: t.object.uuid, slot: t.slot, multi: isMultiMaterial(t.object), before: '#' + m.color.getHexString() });
+			}
 		}
 		clearTimeout(colorGestureTimer);
 		colorGestureTimer = setTimeout(() => {
 			const befores = colorGestureStart;
 			colorGestureStart = null;
 			if (!befores?.size) return;
+			// 105-slots: a slot list's colour is a per-slot materialParam (never the one-material `color` entry)
+			const record = (/** @type {any} */ b) =>
+				b.multi ? recordMaterialChange(b.uuid, 'materialParam', 'color', b.before, hex, b.slot) : recordMaterialChange(b.uuid, 'color', null, b.before, hex);
 			if (befores.size === 1) {
-				const [uuid, before] = [...befores][0];
-				recordMaterialChange(uuid, 'color', null, before, hex);
+				record([...befores.values()][0]);
 				return;
 			}
 			beginHistoryBatch();
 			try {
-				for (const [uuid, before] of befores)
-					recordMaterialChange(uuid, 'color', null, before, hex);
+				for (const b of befores.values()) record(b);
 			} finally {
 				endHistoryBatch(`Colour (${befores.size})`);
 			}
@@ -1212,6 +1315,7 @@
 		// recordMaterialChange, and materialsHandler keys off that single funnel — so
 		// every material edit, present or future, behaves the same way.)
 	}
+
 
 	// ---- replication (identical messages to the retired panels) -------------
 	/** @param {any} object */
@@ -1551,7 +1655,7 @@
 	/** Material parameter → the whole selection (17-D1)
 	 * @param {string} key @param {any} value */
 	function setMat(key, value) {
-		fanMat(key, (object) => setMaterialParam(object.uuid, key, value));
+		fanMat(key, (object) => setMaterialParam(object.uuid, key, value, true, slotFor(object)));
 	}
 
 	/**
@@ -1586,7 +1690,8 @@
 		if (!uuids.length) return;
 		if (uuids.length > 1) beginHistoryBatch();
 		try {
-			await withWireBatchAsync(() => setObjectsTexture(uuids, file));
+			// 105-slots: a slot-list primary is the only target, at its active slot
+			await withWireBatchAsync(() => setObjectsTexture(uuids, file, primaryMulti ? activeSlot : 0));
 		} finally {
 			if (uuids.length > 1) endHistoryBatch(`Texture (${uuids.length})`);
 		}
@@ -4275,7 +4380,37 @@
 			<!-- 102 M3: nor does a decal's — its look is the Decal section's -->
 			<!-- 102: a splat's material is its invisible hit box -->
 			{#if material && !$selectedObject.userData?.textPath && !$selectedObject.userData?.decal && !$selectedObject.userData?.splat}
-				<Section variant="panel" label="Material" clip={{ count: () => matTargets.length, fans: true }}>
+				<Section variant="panel" label="Material" clip={{ count: () => matTargets.length, fans: true }} menu={materialSectionMenu}>
+					<!-- 105-slots: a SLOT LIST on top when the object has 2+ slots; every row below edits the ACTIVE slot -->
+					{#if primaryMulti}
+						{#if slotOthers}
+							<p id="material-slot-note" class="text-[length:var(--fs-badge)] italic text-text-muted">
+								Edits the active slot of this object only — the other {slotOthers} selected
+								{slotOthers === 1 ? 'object is' : 'objects are'} not changed.
+							</p>
+						{/if}
+						{#await import('./SlotList.svelte') then SlotListModule}
+							<SlotListModule.default
+								object={$selectedObject}
+								idPrefix="ins-slot"
+								onswitch={openSlotSwitch}
+								onselectfaces={selectSlotFaces}
+								onassign={assignFacesToSlot}
+								canAssign={pickedFaces > 0}
+							/>
+						{/await}
+						{#if slotSwitch}
+							{#await import('./SlotSwitch.svelte') then SlotSwitchModule}
+								<SlotSwitchModule.default
+									object={$selectedObject}
+									index={slotSwitch.index}
+									x={slotSwitch.x}
+									y={slotSwitch.y}
+									onclose={() => (slotSwitch = null)}
+								/>
+							{/await}
+						{/if}
+					{/if}
 					{#if matCount}
 						<p id="material-multi-note" class="text-[length:var(--fs-badge)] italic text-text-muted">
 							Applies to {matCount} selected objects.
@@ -4333,6 +4468,19 @@
 					     changes all of them — for everyone. Said here rather than left to be
 					     discovered, and with the way out beside it (the `shader-driven` notice's
 					     shape, one concern over). -->
+					{#if singleShared}
+						<div id="material-slot-shared-note" class="shader-driven">
+							<p class="shader-driven-text">
+								This material is shared with {singleShared} other slot{singleShared === 1 ? '' : 's'} — editing it here
+								changes {singleShared === 1 ? 'that one' : 'them'} too, for everyone.
+							</p>
+							<div class="shader-driven-actions">
+								<button id="material-make-unique" class="ui-button-quiet" title="Give this object its own copy of the material" onclick={makeSingleUnique}>
+									Make unique
+								</button>
+							</div>
+						</div>
+					{/if}
 					{#if sharedWith.length}
 						<div id="material-shared-note" class="shader-driven">
 							<p class="shader-driven-text">
@@ -4354,28 +4502,28 @@
 					{/if}
 
 					{#if !allShaderDriven}
-					<MaterialPresetsRow {material} count={matCount} fan={fanMat} primaryUuid={$selectedObject?.uuid ?? ''} />
+					<MaterialPresetsRow {material} count={matCount} fan={fanMat} primaryUuid={$selectedObject?.uuid ?? ''} slot={primaryMulti ? activeSlot : 0} />
 					<Cc0Credit id="inspector-cc0-material" source={material?.userData?.cc0Source} />
 					<ThemedSelect
 						id="select-material"
 						items={materials}
 						value={material.type}
-						mixed={matMixed((o) => o.material.type)}
+						mixed={matMixed((o) => matOf(o).type)}
 						onchange={(/** @type {any} */ val) => {
 							// switches type but keeps color/texture/opacity, locally and on peers
-							fanMat('Material type', (object) => switchMaterialType(object.uuid, val));
+							fanMat('Material type', (object) => switchMaterialType(object.uuid, val, true, slotFor(object)));
 							selectedObject.update((s) => s);
 						}}
 					/>
 
 					{#if material.color && material.type !== 'MeshNormalMaterial'}
-						{#if matMixed((o) => o.material.color?.getHex?.())}
+						{#if matMixed((o) => matOf(o).color?.getHex?.())}
 							<!-- 37 R1: the picker can only show ONE colour; say the set differs -->
 							<p id="material-color-mixed" class="text-[10px] italic text-text-muted">
 								Colour — (mixed): picking one sets all {matCount}.
 							</p>
 						{/if}
-						<FieldClip clip={colorClip('Color', () => color, (hex) => { color = hex; fanMat('Colour', (object) => setObjectColor(object.uuid, hex)); })}>
+						<FieldClip clip={colorClip('Color', () => color, (hex) => { color = hex; fanMat('Colour', (object) => setObjectColor(object.uuid, hex, true, slotFor(object))); })}>
 						<ColorPicker
 							isAlpha={false}
 							isTextInput={true}
@@ -4403,10 +4551,16 @@
 								trackColorGesture(c.hex);
 								// 37 R1: the whole set's colour leaves as ONE replicated batch
 								withWireBatch(() => {
-									for (const object of matTargets) {
-										object.material.color.set(c.hex);
-										object.material.needsUpdate = true;
-										$peers.send({ type: 'color', uuid: object.uuid, color: c.hex });
+									// 105-slots: the targets at their slot + every holder of a linked slot (colorTargets)
+									for (const { object, slot } of colorTargets()) {
+										const m = materialAt(object, slot);
+										if (!m?.color) continue;
+										m.color.set(c.hex);
+										m.needsUpdate = true;
+										// a slot's colour is a per-slot materialParam (the `color` receiver assumes one material)
+										if (isMultiMaterial(object)) {
+											$peers.send({ type: 'objectParameters', parameter: 'materialParam', uuid: object.uuid, key: 'color', value: c.hex, ...(slot ? { slot } : {}) });
+										} else $peers.send({ type: 'color', uuid: object.uuid, color: c.hex });
 									}
 								});
 								pokeScene();
@@ -4425,7 +4579,7 @@
 							id="texture-drop"
 							class="rounded-sm border border-dashed {textureDropActive ? 'ins-drop-on' : 'border-transparent'}"
 							use:explorerDropTarget={{
-								ondrop: (payload) => fanTexture((uuid) => applyExplorerImage(uuid, payload), 'Texture'),
+								ondrop: (payload) => fanTexture((uuid) => applyExplorerImage(uuid, payload, primaryMulti ? activeSlot : 0), 'Texture'),
 								onhover: (on) => (textureDropActive = on)
 							}}
 						>
@@ -4459,14 +4613,14 @@
 									title="Edit this texture in the Image editor — crop, rotate, resize, adjust"
 									onclick={() => {
 										const uuid = matTargets[0]?.uuid;
-										if (uuid) import('$lib/image/imageEditor').then((m) => m.editMaterialTexture(uuid, 0));
+										if (uuid) import('$lib/image/imageEditor').then((m) => m.editMaterialTexture(uuid, primaryMulti ? activeSlot : 0));
 									}}>Edit</UiButton
 								>
 								<UiButton
 									size="sm"
 									variant="outline"
 									onclick={() =>
-										fanTexture(async (uuid) => removeObjectTexture(uuid), 'Remove texture')}
+										fanTexture(async (uuid) => removeObjectTexture(uuid, primaryMulti ? activeSlot : 0), 'Remove texture')}
 										>Remove</UiButton
 								>
 							{:else}
@@ -4488,7 +4642,7 @@
 								label="Pick the colour map from the Explorer"
 								onclick={async () => {
 									const item = await pickFromExplorer({ title: 'Pick the colour map' });
-									if (item) await fanTexture((uuid) => applyExplorerImage(uuid, { id: item.id }), 'Texture');
+									if (item) await fanTexture((uuid) => applyExplorerImage(uuid, { id: item.id }, primaryMulti ? activeSlot : 0), 'Texture');
 								}}
 							/>
 						</div>
@@ -4496,33 +4650,33 @@
 					{/if}
 
 					<!-- 72 LK1: normal, roughness, metalness, emissive, AO + tiling / offset / rotation -->
-					<MaterialMapSlots {material} targets={shaderFree} {matMixed} refresh={() => selectedObject.update((s) => s)} />
+					<MaterialMapSlots {material} targets={shaderFree} {matMixed} materialSlot={primaryMulti ? activeSlot : 0} refresh={() => selectedObject.update((s) => s)} />
 
 					{#if material.type === 'MeshStandardMaterial' || material.type === 'MeshPhysicalMaterial'}
 						<SliderRow label="Roughness" resetValue={1} min={0} max={1} step={0.05} value={material.roughness}
-							mixed={matMixed((o) => o.material.roughness)}
+							mixed={matMixed((o) => matOf(o).roughness)}
 							onchange={(v) => setMat('roughness', v)} />
 						<SliderRow label="Metalness" resetValue={0} min={0} max={1} step={0.05} value={material.metalness}
-							mixed={matMixed((o) => o.material.metalness)}
+							mixed={matMixed((o) => matOf(o).metalness)}
 							onchange={(v) => setMat('metalness', v)} />
 					{/if}
 					{#if material.type === 'MeshPhysicalMaterial'}
 						<SliderRow label="Clearcoat" resetValue={0} min={0} max={1} step={0.05} value={material.clearcoat}
-							mixed={matMixed((o) => o.material.clearcoat)}
+							mixed={matMixed((o) => matOf(o).clearcoat)}
 							onchange={(v) => setMat('clearcoat', v)} />
 						<SliderRow label="Clearcoat rough" resetValue={0} min={0} max={1} step={0.05} value={material.clearcoatRoughness}
-							mixed={matMixed((o) => o.material.clearcoatRoughness)}
+							mixed={matMixed((o) => matOf(o).clearcoatRoughness)}
 							onchange={(v) => setMat('clearcoatRoughness', v)} />
 						<SliderRow label="Transmission" resetValue={0} min={0} max={1} step={0.05} value={material.transmission}
-							mixed={matMixed((o) => o.material.transmission)}
+							mixed={matMixed((o) => matOf(o).transmission)}
 							onchange={(v) => setMat('transmission', v)} />
 						<SliderRow label="IOR" resetValue={1.5} min={1} max={2.333} step={0.01} decimals={2} value={material.ior}
-							mixed={matMixed((o) => o.material.ior)}
+							mixed={matMixed((o) => matOf(o).ior)}
 							onchange={(v) => setMat('ior', v)} />
 					{/if}
 					{#if material.type === 'MeshPhongMaterial'}
 						<SliderRow label="Shininess" resetValue={30} min={0} max={100} step={1} decimals={0} value={material.shininess}
-							mixed={matMixed((o) => o.material.shininess)}
+							mixed={matMixed((o) => matOf(o).shininess)}
 							onchange={(v) => setMat('shininess', v)} />
 					{/if}
 					{#if material.type === 'MeshNormalMaterial' || material.type === 'MeshDepthMaterial'}
@@ -4532,18 +4686,18 @@
 					{/if}
 					{#if typeof material.opacity !== 'undefined' && material.type !== 'ShadowMaterial'}
 						<SliderRow label="Opacity" resetValue={1} min={0} max={1} step={0.05} value={material.opacity}
-							mixed={matMixed((o) => o.material.opacity)}
+							mixed={matMixed((o) => matOf(o).opacity)}
 							onchange={(v) =>
 								fanMat('Opacity', (object) => {
-									setMaterialParam(object.uuid, 'transparent', v < 1);
-									setMaterialParam(object.uuid, 'opacity', v);
+									setMaterialParam(object.uuid, 'transparent', v < 1, true, slotFor(object));
+									setMaterialParam(object.uuid, 'opacity', v, true, slotFor(object));
 								})} />
 					{/if}
 					{#if typeof material.wireframe !== 'undefined'}
 						<InsToggle
 							id="inspector-wireframe"
-							checked={allOf((o) => o.material.wireframe, matTargets)}
-							indeterminate={matMixed((o) => !!o.material.wireframe)}
+							checked={allOf((o) => matOf(o).wireframe, matTargets)}
+							indeterminate={matMixed((o) => !!matOf(o).wireframe)}
 							onchange={(/** @type {any} */ e) => setMat('wireframe', e.target.checked)}
 						>
 							Wireframe
@@ -4552,8 +4706,8 @@
 					{#if 'flatShading' in material}
 						<InsToggle
 							id="inspector-flat-shading"
-							checked={allOf((o) => o.material.flatShading, matTargets)}
-							indeterminate={matMixed((o) => !!o.material.flatShading)}
+							checked={allOf((o) => matOf(o).flatShading, matTargets)}
+							indeterminate={matMixed((o) => !!matOf(o).flatShading)}
 							onchange={(/** @type {any} */ e) => setMat('flatShading', e.target.checked)}
 						>
 							Flat shading
@@ -4570,7 +4724,7 @@
 									{ value: 2, name: 'Double' }
 								]}
 								value={material.side}
-								mixed={matMixed((o) => o.material.side)}
+								mixed={matMixed((o) => matOf(o).side)}
 								onchange={(/** @type {any} */ v) => setMat('side', +v)}
 							/>
 						</div>
@@ -4584,7 +4738,7 @@
 					{#if material.emissive}
 						<p class="ui-section-label">Emission</p>
 						<SliderRow label="Strength" resetValue={1} min={0} max={5} step={0.05} value={material.emissiveIntensity ?? 1}
-							mixed={matMixed((o) => o.material.emissiveIntensity)}
+							mixed={matMixed((o) => matOf(o).emissiveIntensity)}
 							onchange={(v) => setMat('emissiveIntensity', v)} />
 						<FieldClip clip={colorClip('Emission color', () => '#' + material.emissive.getHexString(), (hex) => setMat('emissive', hex), NO_EMISSION)}>
 												<div id="inspector-emissive" class="ui-row items-center gap-2">
@@ -4597,7 +4751,7 @@
 								value={'#' + material.emissive.getHexString()}
 								oninput={(/** @type {any} */ e) => setMat('emissive', e.currentTarget.value)}
 							/>
-							<span class="text-[length:var(--fs-badge)] italic text-text-muted">{matMixed((o) => o.material.emissive?.getHex?.()) ? '— (mixed) · ' : ''}black = no glow</span>
+							<span class="text-[length:var(--fs-badge)] italic text-text-muted">{matMixed((o) => matOf(o).emissive?.getHex?.()) ? '— (mixed) · ' : ''}black = no glow</span>
 						</div>
 						</FieldClip>
 					{/if}

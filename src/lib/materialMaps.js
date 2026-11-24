@@ -15,6 +15,24 @@ import {
 import { recordEntry, registerHistoryKind, registerHistoryMerge, beginHistoryBatch, endHistoryBatch, historyBatchOpen, sameJson } from '$lib/history';
 import { isMapSlotKey, isMapSlotImage, normalizeTexTransform, guessMapSlot, MAP_SLOTS, NORMAL_STRENGTH_MAX } from './materialParamRules.js';
 import { applyMapSlotTo, applyTexTransform, applyNormalStrength, mapSlotFilled, mapSlotUrl, normalStrengthOf, texTransformOf } from './materialMapTextures.js';
+import { linkedEdit, linkedOthers } from './slotDraw.js'; // 105-slots LINK (the boot gate of slotLinks.js)
+
+/**
+ * 105-slots LINK: the (uuid, slot) pairs a write reaches — the ones asked for, then every other holder of a linked
+ * slot among them (once each). An unlinked selection is exactly `uuids` at `slot`.
+ * @param {string[]} uuids @param {number} slot @returns {[string, number][]}
+ */
+function withLinked(uuids, slot) {
+	/** @type {[string, number][]} */
+	const out = uuids.map((u) => [u, slot]);
+	const seen = new Set(out.map(([u, s]) => u + ':' + s));
+	for (const uuid of uuids)
+		for (const h of linkedOthers(objectOf(uuid), slot)) {
+			const key = h.object.uuid + ':' + h.index;
+			if (!seen.has(key)) seen.add(key), out.push([h.object.uuid, h.index]);
+		}
+	return out;
+}
 
 /** @param {string} uuid */
 function objectOf(uuid) {
@@ -68,14 +86,15 @@ function sendTransform(uuid, material, transform, slot) {
  * A map multiplies a value, so on the wrong value it shows nothing at all: metalness 0 hides a metalness
  * map whatever it holds, and a black emissive colour hides an emissive map. Setting the map lifts the
  * value it needs, in the same undo step.
- * @param {any} object @param {string} key
+ * 105-slots: on the slot the map went to (it used to skip a slot list).
+ * @param {any} object @param {string} key @param {number} [slot]
  */
-function liftValueFor(object, key) {
-	const material = object.material;
-	if (!material || Array.isArray(material)) return;
-	if (key === 'metalnessMap' && material.metalness === 0) setMaterialParam(object.uuid, 'metalness', 1);
-	if (key === 'roughnessMap' && material.roughness === 0) setMaterialParam(object.uuid, 'roughness', 1);
-	if (key === 'emissiveMap' && material.emissive?.getHex?.() === 0) setMaterialParam(object.uuid, 'emissive', '#ffffff');
+function liftValueFor(object, key, slot = 0) {
+	const material = materialAt(object, slot);
+	if (!material) return;
+	if (key === 'metalnessMap' && material.metalness === 0) setMaterialParam(object.uuid, 'metalness', 1, true, slot);
+	if (key === 'roughnessMap' && material.roughness === 0) setMaterialParam(object.uuid, 'roughness', 1, true, slot);
+	if (key === 'emissiveMap' && material.emissive?.getHex?.() === 0) setMaterialParam(object.uuid, 'emissive', '#ffffff', true, slot);
 }
 
 /** run `fn` as ONE undo step, inside a caller's open batch when there is one
@@ -93,17 +112,18 @@ async function asOneStep(label, fn) {
 /** @param {string[]} uuids @param {string} key @param {string} url @param {number} slot @returns {number} */
 function applyUrlToSlot(uuids, key, url, slot) {
 	let applied = 0;
-	for (const uuid of uuids) {
+	const asked = new Set(uuids);
+	for (const [uuid, at] of withLinked(uuids, slot)) {
 		const object = objectOf(uuid);
-		const material = object && materialAt(object, slot);
+		const material = object && materialAt(object, at);
 		if (!material || !(key in material)) continue;
 		const before = mapSlotUrl(material, key);
-		recordEntry({ kind: 'materialmaps', uuid, param: 'slot', key, ...(slot ? { slot } : {}), before: { value: before }, after: { value: url } });
+		recordEntry({ kind: 'materialmaps', uuid, param: 'slot', key, ...(at ? { slot: at } : {}), before: { value: before }, after: { value: url } });
 		applyMapSlotTo(material, key, url, object);
 		material.userData.tpEdited = true; // 59 T1: a material changed in the app survives a Replace model
-		sendSlot(uuid, key, url, slot);
-		liftValueFor(object, key);
-		applied++;
+		sendSlot(uuid, key, url, at);
+		liftValueFor(object, key, at);
+		if (asked.has(uuid)) applied++;
 	}
 	return applied;
 }
@@ -131,6 +151,21 @@ export async function setObjectsMapSlot(uuids, key, file, slot = 0) {
  * @param {string} uuid @param {string} key @param {string | null} before @param {string} url @param {number} [slot]
  */
 export function commitPaintedMapSlot(uuid, key, before, url, slot = 0) {
+	// a painted map on a linked slot becomes every holder's map (each records its own before)
+	return linkedEdit(
+		objectOf(uuid),
+		slot,
+		() => commitPaintedMapSlotOne(uuid, key, before, url, slot),
+		(other, at) => {
+			const m = materialAt(objectOf(other), at);
+			commitPaintedMapSlotOne(other, key, m ? mapSlotUrl(m, key) : null, url, at);
+		},
+		'Paint'
+	);
+}
+
+/** @param {string} uuid @param {string} key @param {string | null} before @param {string} url @param {number} slot */
+function commitPaintedMapSlotOne(uuid, key, before, url, slot) {
 	const object = objectOf(uuid);
 	const material = object && materialAt(object, slot);
 	if (!material || !isMapSlotKey(key) || !(key in material) || !isMapSlotImage(url)) return false;
@@ -149,14 +184,14 @@ export function commitPaintedMapSlot(uuid, key, before, url, slot = 0) {
 export async function removeObjectsMapSlot(uuids, key, slot = 0) {
 	if (!isMapSlotKey(key)) return;
 	await asOneStep('Remove map', async () => {
-		for (const uuid of uuids) {
+		for (const [uuid, at] of withLinked(uuids, slot)) {
 			const object = objectOf(uuid);
-			const material = object && materialAt(object, slot);
+			const material = object && materialAt(object, at);
 			// an image still loading counts as set: the Remove has to beat it
 			if (!mapSlotFilled(material, key)) continue;
-			recordEntry({ kind: 'materialmaps', uuid, param: 'slot', key, ...(slot ? { slot } : {}), before: { value: mapSlotUrl(material, key) }, after: { value: null } });
+			recordEntry({ kind: 'materialmaps', uuid, param: 'slot', key, ...(at ? { slot: at } : {}), before: { value: mapSlotUrl(material, key) }, after: { value: null } });
 			applyMapSlotTo(material, key, null, object);
-			sendSlot(uuid, key, null, slot);
+			sendSlot(uuid, key, null, at);
 		}
 	});
 }
@@ -166,6 +201,11 @@ export async function removeObjectsMapSlot(uuids, key, slot = 0) {
  * @param {string} uuid @param {{repeat?: number[], offset?: number[], rotation?: number}} patch @param {number} [slot]
  */
 export function setTexTransform(uuid, patch, slot = 0) {
+	return linkedEdit(objectOf(uuid), slot, () => setTexTransformOne(uuid, patch, slot), (other, at) => setTexTransformOne(other, patch, at), 'Tiling');
+}
+
+/** @param {string} uuid @param {any} patch @param {number} slot */
+function setTexTransformOne(uuid, patch, slot) {
 	const material = materialAt(objectOf(uuid), slot);
 	if (!material) return false;
 	const before = texTransformOf(material);
@@ -179,6 +219,11 @@ export function setTexTransform(uuid, patch, slot = 0) {
 
 /** @param {string} uuid @param {number} value @param {number} [slot] */
 export function setNormalStrength(uuid, value, slot = 0) {
+	return linkedEdit(objectOf(uuid), slot, () => setNormalStrengthOne(uuid, value, slot), (other, at) => setNormalStrengthOne(other, value, at), 'Normal strength');
+}
+
+/** @param {string} uuid @param {number} value @param {number} slot */
+function setNormalStrengthOne(uuid, value, slot) {
 	const object = objectOf(uuid);
 	const material = materialAt(object, slot);
 	if (!material?.normalScale || !Number.isFinite(value)) return false;
@@ -195,9 +240,10 @@ export function setNormalStrength(uuid, value, slot = 0) {
  * given, or by its file name. One undo step for the lot.
  * @param {string[]} uuids
  * @param {{file: File | Blob, name?: string, slot?: string | null}[]} files `slot` = 'map' or a slot key
+ * @param {number} [materialSlot] 105-slots: which MATERIAL slot of a slot list (here `slot` names a map)
  * @returns {Promise<{placed: {name: string, slot: string}[], unknown: string[]}>}
  */
-export async function setObjectsMapSet(uuids, files) {
+export async function setObjectsMapSet(uuids, files, materialSlot = 0) {
 	/** @type {{name: string, slot: string}[]} */
 	const placed = [];
 	/** @type {string[]} */
@@ -207,9 +253,9 @@ export async function setObjectsMapSet(uuids, files) {
 			const name = entry.name ?? /** @type {any} */ (entry.file).name ?? 'image';
 			const slot = entry.slot ?? guessMapSlot(name);
 			if (slot === 'map') {
-				if (await setObjectsTexture(uuids, entry.file)) placed.push({ name, slot });
+				if (await setObjectsTexture(uuids, entry.file, materialSlot)) placed.push({ name, slot });
 			} else if (slot && isMapSlotKey(slot)) {
-				if (await setObjectsMapSlot(uuids, slot, entry.file)) placed.push({ name, slot });
+				if (await setObjectsMapSlot(uuids, slot, entry.file, materialSlot)) placed.push({ name, slot });
 			} else unknown.push(name);
 		}
 	});

@@ -330,7 +330,7 @@ async function setupPage(browser, name, options = {}) {
 	// on the initial navigation, not set afterwards: safe mode is read once during
 	// onMount, so a hash assigned to a live page arrives long after the decision.
 	// Absent means an unchanged URL, so every existing caller is untouched.
-	// options.url (fix-late-joiners): a page of ANOTHER build (a release next to the branch: the wire both ways)
+	// options.url (fix-late-joiners): a page of ANOTHER build (a release next to the branch: the wire both ways) (105-slots: the release before this one, for a two-tree run)
 	await page.goto((options.url ?? URL) + (options.hash ?? ''), { waitUntil: 'domcontentloaded', timeout: 60000 });
 	await page.waitForTimeout(4000);
 	// 43-tests: a THIRD page in one browser boots in ~50 s on a loaded e2e box (two pages already

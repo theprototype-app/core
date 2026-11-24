@@ -20,7 +20,9 @@ import { objectsGroup, pokeScene } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
 import { recordEntry } from './history';
-import { applyMaterials, materialsPayload } from './materialsHandler';
+import { applyMaterials, materialsPayload, materialAt, isMultiMaterial } from './materialsHandler';
+import { slotIdOf } from './slotDraw.js'; // 105-slots
+import { linkedEdit } from './slotDraw.js'; // 105-slots LINK: a preset on a linked slot reaches every holder (boot gate)
 import { fanTargets } from './materialSharing';
 import {
 	EXTRA_MAP_FIELDS,
@@ -190,16 +192,51 @@ export function presetWirePayload(preset, current) {
 /**
  * Put a preset on ONE object: one undo entry, one `materials` message, and the same new
  * instance handed to every object sharing its material (D2 — the receivers get the fanned
- * message and re-unify by id). Refuses a material ARRAY (the Inspector's rule: presets edit
- * single-material objects; a slot array is the UV editor's business).
- * @param {string} uuid @param {any} preset any preset payload (starter or saved)
+ * message and re-unify by id). 105-slots: on a slot list, `slot` picks the one entry it replaces
+ * (still one `materials` message, which a peer on the previous release applies too).
+ * @param {string} uuid @param {any} preset any preset payload (starter or saved) @param {number} [slot]
  * @returns {boolean}
  */
-export function applyMaterialPreset(uuid, preset) {
+export function applyMaterialPreset(uuid, preset, slot = 0) {
+	return linkedEdit(
+		objectOf(uuid),
+		slot,
+		() => applyMaterialPresetOne(uuid, preset, slot),
+		(other, at) => applyMaterialPresetOne(other, preset, at),
+		'Material preset'
+	);
+}
+
+/** @param {string} uuid @param {any} preset @param {number} slot */
+function applyMaterialPresetOne(uuid, preset, slot) {
 	const object = objectOf(uuid);
 	const resolved = resolvePreset(preset);
-	if (!object?.material || Array.isArray(object.material) || !resolved) return false;
-	return replaceMaterials(uuid, () => presetWirePayload(resolved, object.material));
+	if (!object?.material || !resolved) return false;
+	// 105-slots: on a slot list the preset replaces ONE entry; the slot keeps its id, name and off flag
+	if (isMultiMaterial(object)) {
+		const own = materialAt(object, slot);
+		if (!own) return false;
+		return replaceMaterials(uuid, (before) => {
+			const one = presetWirePayload(resolved, own);
+			const json = one.materials[0];
+			json.name = own.name ?? '';
+			json.userData = { ...(json.userData ?? {}), slot: { ...(own.userData?.slot ?? {}), id: slotIdOf(own) } };
+			before.materials[slot] = json;
+			before.textures = [...(before.textures ?? []), ...one.textures];
+			before.images = [...(before.images ?? []), ...one.images];
+			if (Array.isArray(before.mapDataUrls)) before.mapDataUrls[slot] = one.mapDataUrls[0] ?? null;
+			if (Array.isArray(before.mapSources)) before.mapSources[slot] = null;
+			return before;
+		});
+	}
+	if (slot || Array.isArray(object.material)) return false;
+	const slotData = object.material.userData?.slot;
+	return replaceMaterials(uuid, () => {
+		const payload = presetWirePayload(resolved, object.material);
+		// 105-slots: a one-material object keeps its slot data (its link) under the new look
+		if (slotData) payload.materials[0].userData = { ...(payload.materials[0].userData ?? {}), slot: { ...slotData } };
+		return payload;
+	});
 }
 
 /**
@@ -261,10 +298,12 @@ export function lookOfMaterial(material, label = 'Material') {
 /**
  * The look an OBJECT wears — its material's look with the selection tint taken back out (a
  * multi-select member's emissive is the highlight, not the author's).
- * @param {string} uuid @param {string} [label]
+ * 105-slots: `slot` = which slot of a slot list (the selection tint never sits on one).
+ * @param {string} uuid @param {string} [label] @param {number} [slot]
  */
-export function lookOfObject(uuid, label = 'Material') {
+export function lookOfObject(uuid, label = 'Material', slot = 0) {
 	const object = objectOf(uuid);
+	if (isMultiMaterial(object)) return lookOfMaterial(materialAt(object, slot), label);
 	const look = lookOfMaterial(object?.material, label);
 	if (!look) return null;
 	const original = actionsRef?.selectionTintOriginals?.(uuid)?.[object.uuid];
@@ -345,8 +384,8 @@ function putInStore(name, payload, dropName) {
 }
 
 /** Snapshot an object's material and save it. @param {string} uuid @param {string} name */
-export async function saveObjectMaterialAsPreset(uuid, name) {
-	const look = lookOfObject(uuid, name);
+export async function saveObjectMaterialAsPreset(uuid, name, slot = 0) {
+	const look = lookOfObject(uuid, name, slot);
 	if (!look) {
 		showToast('This object has no single material to save');
 		return null;

@@ -212,17 +212,21 @@ function triggerStart(index) {
 
 /** @param {number} index */
 function triggerEnd(index) {
-	if (!laser?.drag || laser.drag.slot !== index) return false;
+	if (!laser) return false;
+	if (index >= 0) laser.claimed[index] = false;
+	if (!laser.drag || laser.drag.slot !== index) return false;
 	laser.drag = null;
 	return true;
 }
 
-/** eat the trailing 'select' of a press the pen took (it must not select what is behind the plane) @param {number} index */
+/** eat the 'select' of a press the pen takes (it must not select what is behind the plane). A headset sends
+ * it on release, after our selectstart; IWER sends it on press, BEFORE — so a press aimed at the plane is
+ * eaten either way @param {number} index */
 function swallow(index) {
 	if (!laser) return false;
 	const slots = index >= 0 ? [index] : [0, 1];
 	for (const i of slots)
-		if (laser.claimed[i]) {
+		if (laser.claimed[i] || (!get(vrMenuOpen) && hitOf(i))) {
 			laser.claimed[i] = false;
 			return true;
 		}

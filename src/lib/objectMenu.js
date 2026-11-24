@@ -196,6 +196,21 @@ function vectorMenuRows(object, targets, multi, locked, lockedTooltip) {
 			['exclude', 'Exclude', 'Keep where an odd number of shapes overlap']
 		])
 			children.push(row(`${label} (${vectors.length})`, tip + ' (one undo)', () => ops().then((m) => m.combineShapes(op, vectors))));
+	// 64-vector-edit (D5 row 2): align / distribute in the shapes' own plane
+	const arrange = () => import('./vector/vectorArrange.js');
+	const tip = 'in the shapes\' own plane, to the active shape\'s right / up (one undo)';
+	if (vectors.length >= 2)
+		children.push({
+			label: 'Align in plane',
+			children: [
+				...[['left', 'Left'], ['hcentre', 'Centre'], ['right', 'Right'], ['top', 'Top'], ['vcentre', 'Middle'], ['bottom', 'Bottom']].map(([id, l]) =>
+					row(l, 'Line the shapes up ' + tip, () => arrange().then((m) => m.alignInPlane(id, vectors)))
+				),
+				...[['h', 'Distribute across'], ['v', 'Distribute up']].map(([d, l]) =>
+					row(l, 'Equal gaps ' + tip, () => arrange().then((m) => m.distributeInPlane(/** @type {'h'|'v'} */ (d), vectors)), vectors.length < 3, 'Pick three or more shapes')
+				)
+			]
+		});
 	if (!multi && isVectorObject(object)) {
 		const stroked = object.userData.geometryParams.params?.strokeWidth > 0;
 		children.push(

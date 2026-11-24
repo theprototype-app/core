@@ -27,6 +27,7 @@ import { node, moveHandle, centreSubpaths } from './vectorPath.js';
 import { cleanVector, vectorDefaults } from './vectorRecord.js';
 import { buildVectorGeometry, vectorMaterial } from './vectorMesh.js';
 import { addVectorShape } from './vectorActions.js';
+import { snapCandidates, snapInPlane, showSnapGuides, clearSnapGuides } from './vectorSnap.js';
 
 // the armed tool lives in the boot gate (Tools ▸ Draw shapes reads it before this chunk loads)
 import { vectorTool } from './vectorGate.js';
@@ -84,6 +85,8 @@ export function cancelDraft() {
 	drag = null;
 	pen = null;
 	frame = null;
+	snapCand = null;
+	clearSnapGuides();
 	penDraft.set({ count: 0 });
 	clearPreview();
 }
@@ -149,6 +152,42 @@ function screenOf(x, y) {
 	return [rect.left + ((v.x + 1) / 2) * rect.width, rect.top + ((1 - v.y) / 2) * rect.height];
 }
 
+/* ------------------------------------------------------------- snapping ---- */
+
+/** @type {import('./vectorSnap.js').Candidates | null} what this draft snaps to (gathered once per frame) */
+let snapCand = null;
+
+/** the frame as a world matrix (its z = 0 is the drawing plane) */
+function frameMatrix() {
+	return frame ? new THREE.Matrix4().compose(frame.origin, frame.quat, new THREE.Vector3(1, 1, 1)) : new THREE.Matrix4();
+}
+
+/** 64-vector-edit row 2: snap a frame point (grid / points / edges / guides — the scene's own
+ * settings, vectorSnap.js); the pen's own points join the candidates so a path lines up with itself
+ * @param {number[]} at @returns {number[]} */
+function snapFrame(at) {
+	if (!frame) return at;
+	const m = frameMatrix();
+	snapCand ??= snapCandidates(m);
+	const own = pen ? pen.nodes.map((n) => [n.x, n.y]) : [];
+	const cand = own.length ? { ...snapCand, points: [...snapCand.points, ...own], guidePoints: [...snapCand.guidePoints, ...own] } : snapCand;
+	const r = snapInPlane(m, at, cand);
+	showSnapGuides(m, r);
+	return r.at;
+}
+
+/** a fresh frame: its origin (the press point) snaps too, so a shape starts on the grid
+ * @param {THREE.Raycaster} ray */
+function startFrame(ray) {
+	frame = frameFor(ray);
+	snapCand = null;
+	const o = snapFrame([0, 0]);
+	if (o[0] || o[1]) {
+		frame.origin.add(new THREE.Vector3(o[0], o[1], 0).applyQuaternion(frame.quat));
+		frame.plane.setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 0, 1).applyQuaternion(frame.quat), frame.origin);
+	}
+}
+
 /* -------------------------------------------------------------- pointer ---- */
 
 /** @param {any} _hit @param {any} ctx */
@@ -156,7 +195,7 @@ function onDown(_hit, ctx) {
 	const tool = get(vectorTool);
 	if (!tool) return false;
 	if (tool === 'pen') return penDown(ctx);
-	frame = frameFor(ctx.ray);
+	startFrame(ctx.ray);
 	drag = { start: [ctx.clientX, ctx.clientY], x: 0, y: 0, at: [0, 0] };
 	return true;
 }
@@ -166,10 +205,11 @@ function onMove(_hit, ctx) {
 	const tool = get(vectorTool);
 	if (tool === 'pen') return penMove(ctx);
 	if (!drag) return;
-	const at = toFrame(ctx.ray);
-	if (!at) return;
-	drag.at = at;
+	const raw = toFrame(ctx.ray);
+	if (!raw) return;
 	if (Math.hypot(ctx.clientX - drag.start[0], ctx.clientY - drag.start[1]) < CLICK_PX) return;
+	const at = snapFrame(raw);
+	drag.at = at;
 	const shaped = dragShape(/** @type {string} */ (tool), at, { square: !!ctx.shiftKey || shiftHeld, centre: !!ctx.altKey || altHeld });
 	showPreview(shaped.params, shaped.cx, shaped.cy);
 }
@@ -177,13 +217,15 @@ function onMove(_hit, ctx) {
 /** @param {any} _hit @param {any} ctx */
 function onUp(_hit, ctx) {
 	const tool = get(vectorTool);
+	clearSnapGuides();
 	if (tool === 'pen') {
 		if (pen) pen.dragging = -1;
 		return;
 	}
 	if (!drag || !frame) return;
 	const moved = Math.hypot(ctx.clientX - drag.start[0], ctx.clientY - drag.start[1]) >= CLICK_PX;
-	const at = toFrame(ctx.ray) ?? drag.at;
+	const end = toFrame(ctx.ray);
+	const at = end && moved ? snapFrame(end) : drag.at;
 	const shaped = moved ? dragShape(/** @type {string} */ (tool), at, { square: shiftHeld, centre: altHeld }) : { params: styled(/** @type {string} */ (tool)), cx: 0, cy: 0 };
 	place(shaped.params, shaped.cx, shaped.cy);
 	drag = null;
@@ -230,11 +272,11 @@ function place(params, cx, cy) {
 /** @param {any} ctx */
 function penDown(ctx) {
 	if (!pen || !frame) {
-		frame = frameFor(ctx.ray);
 		pen = { nodes: [], dragging: -1, x: ctx.clientX, y: ctx.clientY, lastDown: 0 };
+		startFrame(ctx.ray);
 	}
-	const at = toFrame(ctx.ray);
-	if (!at) return true;
+	const raw = toFrame(ctx.ray);
+	if (!raw) return true;
 	const now = performance.now();
 	const last = pen.nodes[pen.nodes.length - 1];
 	// a double click: the second press lands on the point the first one made -> finish
@@ -254,6 +296,7 @@ function penDown(ctx) {
 			return true;
 		}
 	}
+	const at = snapFrame(raw);
 	pen.nodes.push(node(at[0], at[1]));
 	pen.dragging = pen.nodes.length - 1;
 	pen.x = ctx.clientX;
@@ -427,6 +470,7 @@ export function beginPenAt(origin, quat) {
 	const q = new THREE.Quaternion().fromArray(quat);
 	const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
 	frame = { origin: o, quat: q, plane: new THREE.Plane().setFromNormalAndCoplanarPoint(normal, o) };
+	snapCand = null;
 	pen = { nodes: [], dragging: -1, x: 0, y: 0, lastDown: 0 };
 	penDraft.set({ count: 0 });
 }

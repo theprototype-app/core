@@ -24,6 +24,7 @@ import { viewportHasKeys } from '../keyScope';
 import { applyGeometry } from '../geometryEdit';
 import { moveNode, moveHandle, convertNode, deleteNode, insertNodeAt, nearestOnSubpath, cloneSubpaths, moveNodesBy, closable, closeSubpath, splitSubpathAt } from './vectorPath.js';
 import { snapEnabled, snapSettings } from '../snapping';
+import { snapCandidates, snapInPlane, showSnapGuides, clearSnapGuides } from './vectorSnap.js';
 import { cleanVector, vectorSubpaths } from './vectorRecord.js';
 import { buildVectorGeometry } from './vectorMesh.js';
 import { isVector, vectorParamsOf } from './vectorActions.js';
@@ -50,7 +51,7 @@ const CURVE_PX = 7;
 /** @type {THREE.Group | null} */ let helpers = null;
 /** the paths as the session sees them (the record's, or the drag's working copy) @type {import('./vectorPath.js').VSubpath[]} */
 let working = [];
-/** @type {null | {kind: 'node' | 'in' | 'out', sub: number, index: number, moved: boolean, from?: number[], base?: import('./vectorPath.js').VSubpath[], picks?: {sub: number, index: number}[]}} */ let gesture = null;
+/** @type {null | {kind: 'node' | 'in' | 'out', sub: number, index: number, moved: boolean, from?: number[], base?: import('./vectorPath.js').VSubpath[], picks?: {sub: number, index: number}[], cand?: import('./vectorSnap.js').Candidates}} */ let gesture = null;
 let lastDownAt = 0;
 /** @type {null | {sub: number, index: number}} */ let lastDownNode = null;
 let rafId = 0;
@@ -131,6 +132,7 @@ export function exitVectorEdit() {
 	if (rafId && typeof cancelAnimationFrame !== 'undefined') cancelAnimationFrame(rafId);
 	rafId = 0;
 	disposeHelpers();
+	clearSnapGuides();
 	if (gesture) {
 		// a drag cut short: put the committed geometry back
 		gesture = null;
@@ -312,7 +314,16 @@ function onDown(_hit, ctx) {
 		}
 		const from = toLocal(ctx.ray);
 		const picks = isPicked(p) ? get(vectorEditPicks) : [p];
-		gesture = { kind: 'node', sub: p.sub, index: p.index, moved: false, from: from ?? undefined, base: cloneSubpaths(working), picks };
+		// what the moving points may snap to: other shapes, and this shape's points that stay put
+		const own = [];
+		working.forEach((sub, si) =>
+			sub.nodes.forEach((nd, i) => {
+				if (!picks.some((q) => q.sub === si && q.index === i)) own.push([nd.x, nd.y]);
+			})
+		);
+		edited.updateMatrixWorld();
+		const cand = snapCandidates(edited.matrixWorld, { exclude: edited.uuid, own });
+		gesture = { kind: 'node', sub: p.sub, index: p.index, moved: false, from: from ?? undefined, base: cloneSubpaths(working), picks, cand };
 		rebuildHelpers();
 		return true;
 	}
@@ -343,9 +354,14 @@ function onMove(_hit, ctx) {
 	if (!at) return;
 	const sub = working[gesture.sub];
 	if (!sub) return;
-	if (gesture.kind === 'node' && gesture.base && gesture.from && (gesture.picks?.length ?? 0) > 1) {
-		// the set moves by the pointer's travel since the press
-		working = moveNodesBy(gesture.base, gesture.picks ?? [], at[0] - gesture.from[0], at[1] - gesture.from[1]);
+	const lead = gesture.base?.[gesture.sub]?.nodes[gesture.index];
+	if (gesture.kind === 'node' && gesture.base && gesture.from && lead) {
+		// the pressed point leads: it follows the pointer's travel since the press and snaps; the
+		// rest of the set moves by the same amount
+		const raw = [lead.x + at[0] - gesture.from[0], lead.y + at[1] - gesture.from[1]];
+		const snapped = snapInPlane(edited.matrixWorld, raw, gesture.cand ?? null);
+		showSnapGuides(edited.matrixWorld, snapped);
+		working = moveNodesBy(gesture.base, gesture.picks ?? [{ sub: gesture.sub, index: gesture.index }], snapped.at[0] - lead.x, snapped.at[1] - lead.y);
 	} else
 		working[gesture.sub] =
 			gesture.kind === 'node' ? moveNode(sub, gesture.index, at) : moveHandle(sub, gesture.index, gesture.kind, at, { free: altHeld || !!ctx.altKey });
@@ -356,6 +372,7 @@ function onMove(_hit, ctx) {
 }
 
 function onUp() {
+	clearSnapGuides();
 	if (!gesture) return;
 	const moved = gesture.moved;
 	gesture = null;

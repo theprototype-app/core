@@ -428,8 +428,12 @@ h.run(async () => {
 		let ctrlNote = '';
 		let ctrlOk = false;
 		if (sd.still >= 0.2 && sd.share > TOL) {
-			const C = await h.setupPage(browser, 'C', { context: { viewport: VIEW } });
+			// the third page boots with A and B paused (setupPageQuiet): beside two pages drawing the island it
+			// took over 90 s on a local slot, and a failed boot is a CONTROL note, not a crash of the whole run
+			/** @type {any} */
+			let C = null;
 			try {
+				C = await h.setupPageQuiet(browser, 'C', [A, B], { context: { viewport: VIEW } });
 				await C.page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
 				await C.page.waitForFunction(
 					() => !!window.__stores?.environment && !!window.__stores?.sceneTemplates,
@@ -466,10 +470,11 @@ h.run(async () => {
 			} catch (err) {
 				ctrlNote = `; CONTROL failed: ${String(err && err.message).slice(0, 120)}`;
 			} finally {
-				await C.page
-					.context()
-					.close()
-					.catch(() => {});
+				if (C)
+					await C.page
+						.context()
+						.close()
+						.catch(() => {});
 			}
 		}
 		h.check(

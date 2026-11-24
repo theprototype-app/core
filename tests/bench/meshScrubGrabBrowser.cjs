@@ -80,16 +80,18 @@ const { launch, setupPage } = require('../e2e/helpers.cjs');
 						const d = (x - 1) ** 2 + y * y + z * z;
 						if (d < bd) ((bd = d), (tri = t));
 					}
-					const faces = fe.currentFaces();
-					const best = faces.findIndex((f) => f.triIndices.includes(tri));
-					return { s, fe, V3, faces, best, tri };
+					return { s, fe, V3, tri };
 				};
 				window.__bench = { object, uuid: object.uuid, pick };
-				const probe = pick();
+				let renderer = null;
+				try {
+					const gl = document.createElement('canvas').getContext('webgl2');
+					const ext = gl?.getExtension('WEBGL_debug_renderer_info');
+					renderer = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : null;
+				} catch {}
 				return {
+					renderer,
 					entered,
-					faces: probe.faces.length,
-					pickedFaceTris: probe.faces[probe.best]?.triIndices?.length ?? null,
 					tris: object.geometry.attributes.position.count / 3,
 					scrubBracket: typeof fe.beginAdjustScrub === 'function'
 				};
@@ -98,15 +100,22 @@ const { launch, setupPage } = require('../e2e/helpers.cjs');
 		);
 		const scrub = await page.evaluate(
 			async ({ steps }) => {
-				const { s, fe, faces, best } = window.__bench.pick();
-				if (best < 0)
-					return { error: 'no face under the equator triangle (' + faces.length + ' faces)' };
+				const { s, fe, tri } = window.__bench.pick();
+				if (tri < 0) return { error: 'no equator triangle' };
 				const raf = () => new Promise((r) => requestAnimationFrame(r));
 				const now = () => performance.now();
 				const sorted = (a) => [...a].sort((x, y) => x - y);
 				const q = (a, p) =>
 					a.length ? sorted(a)[Math.min(a.length - 1, Math.floor(a.length * p))] : null;
-				fe.pickFaceUnit(faces[best].triIndices[0]);
+				fe.pickFaceUnit(tri); // quad granularity: the quad under that triangle
+				const pickedTris = fe.currentTargetFace()?.triIndices?.length ?? null;
+				// idle frames: what a frame costs with nothing changing (the step numbers include one)
+				const idle = [];
+				for (let i = 0; i < 20; i++) {
+					const a = now();
+					await raf();
+					idle.push(now() - a);
+				}
 				let began = false;
 				const t0 = now();
 				for (let i = 0; i < 400 && !began; i++) {
@@ -150,7 +159,15 @@ const { launch, setupPage } = require('../e2e/helpers.cjs');
 				fe.endOpAdjust();
 				s.history.undo();
 				for (let i = 0; i < 3; i++) await raf();
-				return { beginMs, bracket, position: pos, cuts, trisAfterCut: tris };
+				return {
+					beginMs,
+					bracket,
+					pickedTris,
+					idleFrame: { median: q(idle, 0.5), p95: q(idle, 0.95) },
+					position: pos,
+					cuts,
+					trisAfterCut: tris
+				};
 			},
 			{ steps }
 		);
@@ -160,35 +177,47 @@ const { launch, setupPage } = require('../e2e/helpers.cjs');
 			await client.send('Profiler.enable');
 			await client.send('Profiler.setSamplingInterval', { interval: 100 });
 		}
-		const grabOne = async () =>
+		const grabMoves = () =>
 			page.evaluate(async () => {
-				const { fe, V3, faces, best } = window.__bench.pick();
-				if (best < 0) return { error: 'no face to grab' };
+				const { fe, V3, tri } = window.__bench.pick();
+				if (tri < 0) return { error: 'no equator triangle' };
 				const raf = () => new Promise((r) => requestAnimationFrame(r));
 				const now = () => performance.now();
-				fe.pickFaceUnit(faces[best].triIndices[0]);
-				if (!fe.beginFaceGrab(best)) return { error: 'grab did not begin' };
+				fe.pickFaceUnit(tri);
+				const target = fe.currentTargetFace();
+				if (!target || !fe.beginFaceGrab(target)) return { error: 'grab did not begin' };
 				const moves = [];
 				for (let i = 1; i <= 60; i++) {
 					const a = now();
-					fe.applyFaceGrab({ dPos: new V3(0.002 * i, 0.001 * i, 0) });
+					fe.applyFaceGrab({ dPos: new V3(0.0004 * i, 0.0002 * i, 0) });
 					moves.push(now() - a);
 					await raf();
 				}
-				const a = now();
-				fe.commitFaceGrab();
-				const call = now() - a;
-				await raf();
-				const frame = now() - a;
 				moves.sort((x, y) => x - y);
-				return { call, frame, moveMedian: moves[30] };
+				return { moveMedian: moves[30], grabbedTris: target.triIndices.length };
+			});
+		const grabCommit = () =>
+			page.evaluate(async () => {
+				const fe = window.__tp.test.v1.faceEdit;
+				const raf = () => new Promise((r) => requestAnimationFrame(r));
+				const a = performance.now();
+				fe.commitFaceGrab();
+				const call = performance.now() - a;
+				await raf();
+				return { call, frame: performance.now() - a };
 			});
 		const grabs = [];
 		const profiles = [];
 		for (let r = 0; r < runs; r++) {
+			const m = await grabMoves();
+			if (m.error) {
+				grabs.push(m);
+				continue;
+			}
 			if (client) await client.send('Profiler.start');
-			grabs.push(await grabOne());
+			const c = await grabCommit();
 			if (client) profiles.push((await client.send('Profiler.stop')).profile);
+			grabs.push({ ...m, ...c });
 			await page.evaluate(() => new Promise((r) => setTimeout(r, 150)));
 		}
 		const ok = grabs.filter((g) => !g.error);

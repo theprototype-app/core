@@ -328,7 +328,7 @@
 					// 64-2d: the local flat 2D view (orthographic, pan + zoom, no rotate) — 2D layers show parallax
 					label: '2D view',
 					checked: !!$view2d.on,
-					tooltip: 'Look straight at the scene with an orthographic camera: drag pans, the wheel zooms, nothing rotates. Only your view changes.',
+					tooltip: 'A flat orthographic view: drag pans, the wheel zooms. Only your view changes.',
 					action: () => toggle2dView()
 				},
 				{

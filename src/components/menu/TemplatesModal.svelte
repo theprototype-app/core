@@ -485,7 +485,7 @@
 					<button
 						id="template-2d"
 						class="tpl-card tpl-blank flex flex-col items-center justify-center gap-2 rounded-card border border-dashed border-border-strong p-4 text-text-2"
-						title="A 2D starter: an orthographic camera that follows a walking sprite past three parallax layers (replaces the scene for everyone)"
+						title="A 2D starter with sprites and parallax layers (replaces the scene for everyone)"
 						onclick={pick2d}
 					>
 						<Icon name="gamepad-2" size={24} aria-hidden="true" />

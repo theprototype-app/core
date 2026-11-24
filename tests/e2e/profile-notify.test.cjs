@@ -142,7 +142,7 @@ h.run(async () => {
 	const leave = async (/** @type {string} */ id) =>
 		P.evaluate(async (pid) => {
 			const S = /** @type {any} */ (window).__tp?.test.v1;
-			S.userdata.update((/** @type {any[]} */ u) => [...u, [pid, 'Ann', '']]);
+			S.userdata.update((/** @type {any[]} */ u) => [...u, [pid, 'Ann ' + pid, '']]);
 			await new Promise((r) => setTimeout(r, 50));
 			S.commandsHandler.handleDisconnected(pid);
 		}, id);
@@ -155,7 +155,7 @@ h.run(async () => {
 	await closeSettings();
 	await leave('PEERON');
 	await P.waitForTimeout(300);
-	h.check((await notes()).some((t) => /PEERON disconnected/.test(t)), 'People leaving ON (counterfactual): the pop-up shows');
+	h.check((await notes()).some((t) => /^Ann PEERON disconnected/.test(t)), 'People leaving ON (counterfactual): the pop-up shows, with the name');
 
 	// ---- 4b. Chat badge ---------------------------------------------------------------------------------------
 	const chat = (/** @type {string} */ id) =>

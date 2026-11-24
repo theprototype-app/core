@@ -27,7 +27,9 @@
 		'wireframe colour': ['wireframe color', 'wireframe'],
 		'selection outline colour': ['selection outline color', 'outline', 'selection'],
 		'edit mesh wireframe colour': ['edit mesh wireframe', 'mesh', 'edges'],
-		'reset line colours': ['reset line colors', 'colors', 'colours']
+		'reset line colours': ['reset line colors', 'colors', 'colours'],
+		'gizmo style': ['gizmo', 'transform', 'handles', 'move', 'rotate', 'resize', 'puck', 'box', 'all in one'],
+		'handle size': ['gizmo', 'handles', 'size']
 	};
 	for (const [row, words] of Object.entries(ROW_WORDS)) registerSettingsKeywords(row, words);
 </script>
@@ -137,6 +139,11 @@
 			<Toggle id="show-sim-controls" label="Show the simulation controls" bind:checked={$showSimControls} />
 		</SettingRow>
 	</Section>
+
+	<!-- 103 H7: the Gizmo card loads with this page, not with the app (boot rule) -->
+	{#await import('./GizmoSettings.svelte') then m}
+		<m.default />
+	{/await}
 
 	<Section variant="card" label="Performance" badge="This device">
 		<SettingRow id="row-quality-preset" label="Quality preset" description="Auto lowers quality on its own when the scene is heavy; High, Medium and Low hold one level. A game’s own Quality setting wins while you play it." wide>

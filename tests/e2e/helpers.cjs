@@ -235,6 +235,10 @@ async function setupPage(browser, name, options = {}) {
 		// silently — so no update badge/toast appears either.)
 		localStorage.setItem('hasSeenWelcome', 'true');
 		if (peerConfig) localStorage.setItem('peerServerConfig', peerConfig);
+		// 103 H7: the suites written before the gizmo styles drag three's own handles (style A); the
+		// app's default is Auto (B with a mouse, C on touch), so a suite that wants it seeds its own
+		// `gizmoStyle` through options.storage (which runs after this and wins)
+		if (localStorage.getItem('gizmoStyle') === null) localStorage.setItem('gizmoStyle', 'A');
 	}, PEER_CONFIG);
 	// E2E_NO_PERF_OFFER=1: a deployed PREVIEW build offers perf reports in a sticky toast that covers clicks and
 	// lands in golden frames — answer it up front for proofs against a preview (36-int-125)

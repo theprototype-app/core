@@ -83,6 +83,7 @@
 	import { selectedObjects, transformMode, editorMode } from '../../stores/sceneStore';
 	import { undo, redo, canUndo, canRedo } from '$lib/history';
 	import { setTransformMode, toggleEditorMode } from '$lib/objectActions';
+	import { handleSet } from '$lib/gizmo/gizmoPrefs';
 	import { phoneBarTap, phoneChatTap, openPhoneTab, closePhoneTab, phoneDockShown, phoneTabsOpen } from '$lib/phoneDock';
 	import { toggleViewportFocus } from '$lib/focusMode';
 	import { requestPlay, willEnterXR, willEnterAR, playAsItems } from '$lib/playMode';
@@ -500,6 +501,16 @@
 		run: fromMore(() => phoneBarTap(key)),
 		pressed: () => $visibleDockKey === key && !$dockMinimized
 	});
+	/**
+	 * row 4: a press that travels from the button transforms at once (the module loads on the press)
+	 * @param {PointerEvent} e
+	 * @param {'translate' | 'rotate' | 'scale'} mode
+	 */
+	const pressTool = (e, mode) => {
+		if (e.button === 0 && hasSel) void import('$lib/gizmo/toolPress').then((m) => m.trackToolPress(e, mode));
+	};
+	/** 103 H7 row 8: a transform button's state — its tool's handles, all in one, or off @param {string} mode */
+	const handlesOf = (mode) => (!hasSel || $transformMode !== mode ? 'off' : $handleSet === 'all' ? 'all' : 'tool');
 	/** @param {'translate' | 'rotate' | 'scale'} mode @param {string} label @param {string} icon @param {string} key */
 	const transformAction = (mode, label, icon, key) => ({
 		label,
@@ -826,9 +837,9 @@
 	     is an icon toggle; each shows its real on/off state. -->
 	{#if stripOn}
 		<div class="ps-strip tp-noscrollbar" role="toolbar" aria-label="Edit selection" id="ps-strip" bind:this={stripEl} use:stripScroll>
-			<button type="button" class="ps-cell" id="ps-move" aria-label="Move (1)" disabled={!hasSel} aria-pressed={hasSel && $transformMode === 'translate'} onclick={() => setTransformMode('translate')}><Icon name="move" size={20} /></button>
-			<button type="button" class="ps-cell" id="ps-rotate" aria-label="Rotate (2)" disabled={!hasSel} aria-pressed={hasSel && $transformMode === 'rotate'} onclick={() => setTransformMode('rotate')}><Icon name="rotate-ccw" size={20} /></button>
-			<button type="button" class="ps-cell" id="ps-scale" aria-label="Scale (3)" disabled={!hasSel} aria-pressed={hasSel && $transformMode === 'scale'} onclick={() => setTransformMode('scale')}><Icon name="maximize-2" size={20} /></button>
+			<button type="button" class="ps-cell relative" id="ps-move" aria-label="Move (1)" disabled={!hasSel} aria-pressed={hasSel && $transformMode === 'translate'} data-handles={handlesOf('translate')} onpointerdown={(e) => pressTool(e, 'translate')} onclick={() => setTransformMode('translate')}><Icon name="move" size={20} />{#if handlesOf('translate') === 'all'}<span class="ps-all-mark" aria-hidden="true"></span>{/if}</button>
+			<button type="button" class="ps-cell relative" id="ps-rotate" aria-label="Rotate (2)" disabled={!hasSel} aria-pressed={hasSel && $transformMode === 'rotate'} data-handles={handlesOf('rotate')} onpointerdown={(e) => pressTool(e, 'rotate')} onclick={() => setTransformMode('rotate')}><Icon name="rotate-ccw" size={20} />{#if handlesOf('rotate') === 'all'}<span class="ps-all-mark" aria-hidden="true"></span>{/if}</button>
+			<button type="button" class="ps-cell relative" id="ps-scale" aria-label="Scale (3)" disabled={!hasSel} aria-pressed={hasSel && $transformMode === 'scale'} data-handles={handlesOf('scale')} onpointerdown={(e) => pressTool(e, 'scale')} onclick={() => setTransformMode('scale')}><Icon name="maximize-2" size={20} />{#if handlesOf('scale') === 'all'}<span class="ps-all-mark" aria-hidden="true"></span>{/if}</button>
 			<button type="button" class="ps-cell" id="ps-multiselect" aria-label="Select multiple" title="Select multiple" aria-pressed={$multiSelectMode} onclick={() => multiSelectMode.update((v) => !v)}><Icon name="square-dashed" size={20} /></button>
 			<button type="button" class="ps-cell" id="ps-interact" aria-label="Interact mode (I)" title="Interact mode (I)" aria-pressed={interactOn} onclick={() => toggleEditorMode()}><Icon name="hand" size={20} /></button>
 			<span class="ps-sep" aria-hidden="true"></span>
@@ -1040,6 +1051,24 @@
 </div>
 
 <style>
+	/* 103 H7 row 8: the "all in one" mark — corner ticks around the icon, in the accent */
+	.ps-cell[data-handles] {
+		touch-action: none; /* a drag from Move / Rotate / Scale is the transform, never a pan */
+	}
+	.ps-all-mark {
+		position: absolute;
+		inset: 6px;
+		pointer-events: none;
+		background:
+			linear-gradient(var(--accent), var(--accent)) top left / 5px 2px no-repeat,
+			linear-gradient(var(--accent), var(--accent)) top left / 2px 5px no-repeat,
+			linear-gradient(var(--accent), var(--accent)) top right / 5px 2px no-repeat,
+			linear-gradient(var(--accent), var(--accent)) top right / 2px 5px no-repeat,
+			linear-gradient(var(--accent), var(--accent)) bottom left / 5px 2px no-repeat,
+			linear-gradient(var(--accent), var(--accent)) bottom left / 2px 5px no-repeat,
+			linear-gradient(var(--accent), var(--accent)) bottom right / 5px 2px no-repeat,
+			linear-gradient(var(--accent), var(--accent)) bottom right / 2px 5px no-repeat;
+	}
 	/* the bar/strip sit BELOW the drawer tier (30): the Inspector, the notes sheet, the dock
 	   and every window cover them, the way a sheet covers a tab bar */
 	.ps-chipwrap {

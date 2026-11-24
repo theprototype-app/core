@@ -931,6 +931,7 @@
 		"sim-water": 65,
 		"slot-save": 300,
 		"material-slots-manage": 210,
+		"shader-slots": 240,
 		"material-slots-ui": 200,
 		"material-slots-link": 240,
 		"sound-node": 120,

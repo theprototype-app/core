@@ -44,6 +44,22 @@ export function ownMaterialsOf(object) {
 }
 
 /**
+ * 105-slot-shaders: a WHOLE-object shader (a single-material object) is installed as `object.material` itself, not
+ * through the draw layer, so single-slot behaviour stays exactly as it was. The one place that must still see the
+ * object's own material behind it is a slot-LIST commit (add slot, the list message, its undo snapshot): without
+ * this, "Add material slot" on a shader-driven box wrote the compiled clone into the list as slot 0.
+ * compiled material -> the object's own material (written by shaderGraph.js) @type {WeakMap<any, any>}
+ */
+export const wholeShaderBase = new WeakMap();
+
+/** The own materials for a slot-list commit: `ownMaterialsOf`, seeing through a whole-object shader. @param {any} object */
+export function listOwnOf(object) {
+	const material = object?.material;
+	if (material && !Array.isArray(material) && wholeShaderBase.has(material)) return [wholeShaderBase.get(material)];
+	return ownMaterialsOf(object);
+}
+
+/**
  * THE active material slot (an index) — the one the Inspector's Material rows, the UV editor and (105-slot-shaders)
  * the Shader editor write. LOCAL. Lives in this leaf so uvEditor's `uvActiveSlot` can be the same store.
  * @type {import('svelte/store').Writable<number>}

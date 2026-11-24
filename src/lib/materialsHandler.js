@@ -23,7 +23,7 @@ import {
 } from './materialMapTextures.js'; // 72 LK1
 import { objectToJSON, settleSlotGroups } from './slotGroups.js'; // 105: one serializer for slot groups
 // 105-slots: what a slot draws (off, a seated shader) vs what it IS — every read here goes through the own material
-import { ownMaterialsOf, syncSlotDraw, slotIdOf } from './slotDraw.js';
+import { ownMaterialsOf, syncSlotDraw, slotIdOf, listOwnOf } from './slotDraw.js';
 // 105-slots LINK: a look edit on a linked slot runs on every holder of the link (slotLinks.js)
 import { linkedEdit, linkedOthers, linkHistory } from './slotDraw.js'; // the boot gate of slotLinks.js
 // the fan's history calls (slotLinks.js may not import history: see slotDraw.linkHistory)
@@ -249,7 +249,7 @@ export function serializeMeshWithGroups(element) {
 
 /** The wire payload for an object's CURRENT slots + groups. @param {any} object */
 export function materialsPayload(object) {
-	const materials = materialsOf(object);
+	const materials = listOwnOf(object); // 105-slot-shaders: never a whole-object shader's compiled clone
 	const serialized = serializeMaterials(materials);
 	return {
 		...serialized,
@@ -286,7 +286,7 @@ export function setObjectMaterials(uuid, materials, groups) {
 export function commitMaterialList(uuid, build) {
 	const object = objectOf(uuid);
 	if (!object) return false;
-	const own = materialsOf(object);
+	const own = listOwnOf(object);
 	// A COPY: Material.toJSON hands out the live `userData` object by reference, so a build that writes a slot's
 	// userData (off, a removal's survivor) would rewrite the undo snapshot too (measured: undoing "on" stayed on)
 	const before = structuredClone(materialsPayload(object));
@@ -330,7 +330,7 @@ export function commitMaterialList(uuid, build) {
 export function addMaterialSlot(uuid) {
 	const object = objectOf(uuid);
 	if (!object) return -1;
-	const current = materialsOf(object);
+	const current = listOwnOf(object);
 	if (!current.length) return -1;
 	const fresh = current[current.length - 1].clone();
 	fresh.name = 'slot' + current.length;

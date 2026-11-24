@@ -7,6 +7,18 @@
 // lives behind ONE accessor (`graphKeyFor`) so layer 2 is an assignment change later
 // rather than a rewrite.
 //
+// 105-slot-shaders: `<objectUuid>/<slotId>` = ONE material slot of that object (the slot's
+// stable id, 105-slots' `slotIdsOf`). The plain `<objectUuid>` keeps meaning the whole
+// object = every slot without its own key. Per slot: slot key -> object key -> scene
+// default -> its own material (`graphKeyForSlot`). `shaderKeyParts` is the ONE place that
+// reads a key. The wire, undo and save shapes are unchanged (a key is still a string).
+//
+// THE STATE behind a key is per TARGET: a single-material object is one target (slot
+// null, today's path verbatim: `object.material` IS the compiled material); an object
+// with a material ARRAY is one target per slot, and the compiled material is SEATED in
+// that slot through 105-slots' draw layer (`setSlotProduct`), so the slot's own material
+// stays the truth for every serializer and an off slot draws the default, shader or not.
+//
 // This module owns the DATA and the compile orchestration. It deliberately does NOT own
 // the wire or history: `setShaderGraphFor` is the single write path and calls the seams
 // SH2 fills in. Compiling goes through `shaderBackends`, so the ShaderFrog/inject choice
@@ -45,6 +57,7 @@ import { showToast } from '../stores/appStore.js';
 import { deviceRefusal, reachRefusal, customShadersOnQuest, shaderCodeHeld, holdShaderCode, releaseHeldShaderCode } from './shaderCodeReach.js'; // 73 AI9
 import { exportMode } from './export/exportBoot.js';
 import { cleanFlowNode, cleanFlowEdge } from './flowClean.js';
+import { slotIdOf, slotIdsOf, ownOf, ownMaterialsOf, loadSlotDrawLayer, wholeShaderBase } from './slotDraw.js';
 
 /** The reserved key for the scene default material (layer 2). */
 export const SCENE_GRAPH_KEY = 'scene';
@@ -68,11 +81,111 @@ export const shaderErrors = writable({});
 /** Which graph the editor is scoped to. @type {import('svelte/store').Writable<string|null>} */
 export const activeShaderGraph = writable(null);
 
-/** Objects whose material we replaced: uuid -> the ORIGINAL material. @type {Map<string, any>} */
+/**
+ * Targets whose material we replaced: state key -> the ORIGINAL material. A state key is
+ * the object's uuid (a single-material object) or `<uuid>/<slotId>` (one slot of a list).
+ * @type {Map<string, any>}
+ */
 const baseMaterials = new Map();
 
-/** uuid -> the last material we successfully compiled and installed. @type {Map<string, any>} */
+/** state key -> the last material we successfully compiled and installed. @type {Map<string, any>} */
 const installed = new Map();
+
+/**
+ * What one compile drives: a whole single-material object (`slot` null) or one slot of a
+ * material list (`slot` = its id, `index` = where it sits now).
+ * @typedef {{object: any, slot: string | null, index?: number}} ShaderTarget
+ */
+
+/** 105-slot-shaders: state key -> its SLOT target (slot states only) @type {Map<string, ShaderTarget>} */
+const slotStates = new Map();
+
+/** the draw layer, once loaded (slot targets need it) @type {any} */
+let slotLayer = null;
+
+// ---- 105-slot-shaders: the key ---------------------------------------------------
+
+/**
+ * THE one place that reads a shader key: `{ uuid, slot }`. `'scene'` and `'post:<id>'`
+ * name no object (both null); `<uuid>` is the whole object; `<uuid>/<slotId>` one slot.
+ * @param {string} key @returns {{uuid: string | null, slot: string | null}}
+ */
+export function shaderKeyParts(key) {
+	if (typeof key !== 'string' || !key || key === SCENE_GRAPH_KEY || key.startsWith('post:'))
+		return { uuid: null, slot: null };
+	const cut = key.indexOf('/');
+	if (cut < 0) return { uuid: key, slot: null };
+	return { uuid: key.slice(0, cut), slot: key.slice(cut + 1) || null };
+}
+
+/** The key for one slot (no slot = the whole object's key). @param {string} uuid @param {string | null} [slotId] */
+export function slotShaderKey(uuid, slotId) {
+	return slotId ? uuid + '/' + slotId : uuid;
+}
+
+/** @param {ShaderTarget} t */
+const stateKeyOf = (t) => slotShaderKey(t.object.uuid, t.slot);
+
+/** A single-material object's one slot id (seen through a whole-object shader). @param {any} object */
+function singleSlotIdOf(object) {
+	return slotIdOf(baseMaterials.get(object.uuid) ?? ownOf(object.material));
+}
+
+/** @param {any} object @returns {string[]} the object's slot ids, in order */
+export function slotIdsOfObject(object) {
+	if (Array.isArray(object?.material)) return slotIdsOf(object.material.map(ownOf));
+	return object?.material ? [singleSlotIdOf(object)] : [];
+}
+
+/**
+ * Which document drives ONE slot: its own key -> the object's -> the scene default ->
+ * null (its own material). `slotId` absent = the object as a whole (`graphKeyFor`).
+ * @param {string} uuid @param {string | null} [slotId] @returns {string|null}
+ */
+export function graphKeyForSlot(uuid, slotId) {
+	if (uuid && slotId && get(shaderGraphs)[uuid + '/' + slotId]) return uuid + '/' + slotId;
+	return graphKeyFor(uuid);
+}
+
+/**
+ * Does `key` cover slot `slotId` of `uuid`, whether or not its document exists right now
+ * (a delete must reach exactly what the document drove)?
+ * @param {Record<string, any>} all @param {string} key @param {string} uuid @param {string} slotId
+ */
+function keyCovers(all, key, uuid, slotId) {
+	const parts = shaderKeyParts(key);
+	if (parts.slot) return parts.uuid === uuid && parts.slot === slotId;
+	if (all[uuid + '/' + slotId]) return false; // the slot's own key wins
+	if (parts.uuid) return parts.uuid === uuid;
+	return key === SCENE_GRAPH_KEY && !all[uuid];
+}
+
+/**
+ * Every TARGET a key drives: a single-material object whole (today's path), or each
+ * covered slot of a material list.
+ * @param {string} key @returns {ShaderTarget[]}
+ */
+function slotTargetsFor(key) {
+	const all = get(shaderGraphs);
+	const parts = shaderKeyParts(key);
+	/** @type {ShaderTarget[]} */
+	const out = [];
+	for (const object of targetsFor(key)) {
+		if (!object) continue;
+		if (!object.material || !Array.isArray(object.material)) {
+			// a slot key reaches a single-material object only when it names its one slot (a
+			// list that lost every other slot keeps the survivor's shader); with no slot key
+			// for this object anywhere this is exactly the pre-slot target list
+			const slotted = !!object.material && (!!parts.slot || Object.keys(all).some((k) => k.startsWith(object.uuid + '/')));
+			if (!slotted || keyCovers(all, key, object.uuid, singleSlotIdOf(object))) out.push({ object, slot: null });
+			continue;
+		}
+		slotIdsOf(object.material.map(ownOf)).forEach((id, index) => {
+			if (keyCovers(all, key, object.uuid, id)) out.push({ object, slot: id, index });
+		});
+	}
+	return out;
+}
 
 /**
  * ONE normalize at every store boundary (wire, autosave restore, session load, undo), so
@@ -124,20 +237,17 @@ export function graphKeyFor(uuid) {
 }
 
 /**
- * Multi-slot objects are REFUSED in v1 rather than half-supported: a material ARRAY needs
- * the slot-aware plumbing UV4 built, and `switchMaterialType` sets the precedent of
- * declining instead of collapsing the array.
+ * 105-slot-shaders: a material LIST takes a shader per slot (or one for all its slots), so
+ * the only refusal left is an object with no material at all.
  * @param {any} object @returns {boolean}
  */
 export function shaderTargetSupported(object) {
-	return !!object && !!object.material && !Array.isArray(object.material);
+	return !!object && !!object.material;
 }
 
 /** @param {any} object @returns {string} */
 export function shaderRefusalReason(object) {
 	if (!object?.material) return 'That object has no material.';
-	if (Array.isArray(object.material))
-		return 'That object has ' + object.material.length + ' material slots. Shader graphs support single-material objects for now.';
 	return '';
 }
 
@@ -294,9 +404,11 @@ export async function compileAndApply(key) {
 	if ((doc?.domain === 'post' || (!doc && postDomainHook && key.startsWith('post:'))) && postDomainHook)
 		return postDomainHook(key) ?? { ok: true };
 	if (!doc) {
-		// deleted: put every target back to its own material
-		for (const object of targetsFor(key)) detachFrom(object);
+		// deleted: put every target back to its own material (a slot the key drove falls
+		// back to the next key in its resolution, through the reconcile)
+		for (const target of slotTargetsFor(key)) detachTarget(target);
 		setErrors(key, []);
+		if (slotStates.size || shaderKeyParts(key).slot) reconcileShaderGraphs();
 		return { ok: true };
 	}
 	if (usesShaderCode(doc)) return compileCodeAndApply(key, doc);
@@ -305,7 +417,8 @@ export async function compileAndApply(key) {
 		setErrors(key, result.errors ?? ['Shader compile failed.']);
 		return { ok: false, errors: result.errors };
 	}
-	const targets = targetsFor(key);
+	const targets = slotTargetsFor(key);
+	if (targets.some((t) => t.slot)) slotLayer ??= await loadSlotDrawLayer();
 	// test-health-1: a graph for an OBJECT that has not arrived yet (a late joiner's graph reply is
 	// far smaller than the GLTF that carries the object) compiles nothing — and the reconcile below
 	// waits on an objectsGroup poke the object's arrival does not always make (shader-sync: the
@@ -315,29 +428,35 @@ export async function compileAndApply(key) {
 	else missingTries.delete(key);
 	/** @type {string[]} */
 	const errors = [];
-	for (const object of targets) {
+	for (const target of targets) {
+		const { object } = target;
 		if (!shaderTargetSupported(object)) {
 			errors.push(shaderRefusalReason(object));
 			continue;
 		}
-		const base = captureBase(object);
+		const base = baseFor(target);
+		if (!base) continue; // the slot went away since the list was read
 		try {
 			// the inject backend needs none of these; ShaderFrog needs all three (it
 			// harvests three's own GLSL by compiling a probe material in the real scene)
 			const material = await compileShaderGraph(result.ir, {
 				object,
+				slot: target.slot,
 				scene: get(globalScene),
 				camera: get(globalCamera),
 				renderer: get(globalRenderer),
 				baseMaterial: base
 			}, doc.backend || INJECT_SHADER_BACKEND);
+			// a slot's resolution can move while a compile awaits (its own key arrived, the
+			// slot was removed): never seat a product for a key that no longer drives it
+			if (target.slot && !stillDrives(key, target)) continue;
 			// stash the sampler REFERENCES so the retry path can re-fill without the IR. A
 			// backend need not know about content hashes at all, and this is the one place
 			// holding both the compiled material and the IR that named them.
 			material.userData.shaderTextureRefs = (result.ir.uniforms ?? [])
 				.filter((/** @type {any} */ u) => u.hash !== undefined)
 				.map((/** @type {any} */ u) => ({ name: u.name, hash: u.hash }));
-			applyMaterial(object, material);
+			applyMaterial(target, material);
 			fillTextureUniforms(material);
 		} catch (err) {
 			errors.push(String(err && /** @type {any} */ (err).message ? /** @type {any} */ (err).message : err));
@@ -359,7 +478,7 @@ const saidRefusals = new Set();
  * @returns {{ok: boolean, errors: string[]}}
  */
 function standDownCode(key, hash, reason) {
-	for (const object of targetsFor(key)) if (installed.get(object.uuid)?.userData?.shaderCodeHash) detachFrom(object);
+	for (const target of slotTargetsFor(key)) if (installed.get(stateKeyOf(target))?.userData?.shaderCodeHash) detachTarget(target);
 	setErrors(key, [reason]);
 	if (!saidRefusals.has(hash)) {
 		saidRefusals.add(hash);
@@ -414,25 +533,28 @@ async function compileCodeAndApply(key, doc) {
 	/** @type {string[]} */
 	const errors = [];
 	const fields = scanShaderUniforms(now?.code?.vertex, now?.code?.fragment).uniforms;
-	const targets = targetsFor(key);
+	const targets = slotTargetsFor(key);
+	if (targets.some((t) => t.slot)) slotLayer ??= await loadSlotDrawLayer();
 	if (!targets.length && key !== SCENE_GRAPH_KEY) retryMissingTarget(key);
 	else missingTries.delete(key);
-	for (const object of targets) {
+	for (const target of targets) {
+		const { object } = target;
 		if (!shaderTargetSupported(object)) {
 			errors.push(shaderRefusalReason(object));
 			continue;
 		}
-		const current = installed.get(object.uuid);
+		const current = installed.get(stateKeyOf(target));
 		if (current?.userData?.shaderCodeHash === hash) {
 			// the same program: a field moved, which is a value write and never a recompile
 			for (const { name, type } of fields)
 				if (current.userData.shaderUniforms[name]) current.userData.shaderUniforms[name].value = codeUniformValue(now?.code?.uniforms?.[name], type);
 			continue;
 		}
-		const base = captureBase(object);
+		const base = baseFor(target);
+		if (!base) continue;
 		const material = makeCodeMaterial(now?.code, hash);
 		material.side = base.side;
-		applyMaterial(object, material);
+		applyMaterial(target, material);
 		watchFirstFrame(material, hash, (reason) => standDownCode(key, hash, reason));
 	}
 	setErrors(key, errors);
@@ -496,7 +618,7 @@ export function shaderCodeRunState(key) {
 	const doc = shaderGraphOf(key);
 	if (!usesShaderCode(doc)) return 'off';
 	const hash = shaderCodeHash(doc?.code);
-	return targetsFor(key).some((/** @type {any} */ o) => installed.get(o?.uuid)?.userData?.shaderCodeHash === hash) ? 'running' : 'waiting';
+	return slotTargetsFor(key).some((t) => installed.get(stateKeyOf(t))?.userData?.shaderCodeHash === hash) ? 'running' : 'waiting';
 }
 
 /** A code material left an object. Its hash stays answerable while another object still runs it. @param {any} material */
@@ -517,7 +639,8 @@ export function defaultTargetsFor(key) {
 	const group = get(objectsGroup);
 	if (!group) return [];
 	if (key !== SCENE_GRAPH_KEY) {
-		const object = group.getObjectByProperty('uuid', key);
+		const { uuid } = shaderKeyParts(key);
+		const object = uuid ? group.getObjectByProperty('uuid', uuid) : null;
 		return object ? [object] : [];
 	}
 	const all = get(shaderGraphs);
@@ -559,6 +682,8 @@ function applyShaderLayer(on) {
 		if (on) node.material = mine;
 		else if (base && node.material === mine) node.material = base;
 	});
+	// 105-slot-shaders: a slot's product is seated / taken off through the draw layer
+	for (const [key, target] of slotStates) slotLayer?.setSlotProduct(target.object, target.slot, on ? installed.get(key) : null);
 	// THREE trees are not reactive: without the poke the Inspector's material derived and
 	// the shader-driven notice both keep showing the state before the switch (26-B: one
 	// coalesced poke, which is what every call site in the tree uses now)
@@ -612,10 +737,65 @@ function startReconcile() {
 
 /** Compile any graph whose targets exist but are not driven yet. */
 export function reconcileShaderGraphs() {
+	pruneSlotStates();
 	const all = get(shaderGraphs);
 	for (const key of Object.keys(all)) {
-		const targets = targetsFor(key);
-		if (targets.some((/** @type {any} */ o) => o && !installed.has(o.uuid))) scheduleCompile(key, 0);
+		const targets = slotTargetsFor(key);
+		if (targets.some((t) => t.object && !targetDriven(t))) scheduleCompile(key, 0);
+	}
+}
+
+/**
+ * Is this target drawing what we compiled for it? A whole object: today's test (a state
+ * exists). A slot: the state exists, was compiled from the slot's CURRENT own material (a
+ * peer's list message, an undo or a type switch replaces it) and is seated on this very
+ * object (a delete + undo brings back a new instance).
+ * @param {ShaderTarget} t
+ */
+function targetDriven(t) {
+	const key = stateKeyOf(t);
+	if (!t.slot) return installed.has(key);
+	const mine = installed.get(key);
+	if (!mine || slotStates.get(key)?.object !== t.object) return false;
+	if (baseMaterials.get(key) !== ownAt(t.object, t.slot)) return false;
+	return !shadersOn || slotLayer?.slotProductOf(t.object, t.slot) === mine;
+}
+
+/** @param {string} key @param {ShaderTarget} t */
+function stillDrives(key, t) {
+	return inScene(t.object) && graphKeyForSlot(t.object.uuid, t.slot) === key && !!ownAt(t.object, /** @type {string} */ (t.slot));
+}
+
+/** The slot's own material now (null when the slot is gone). @param {any} object @param {string} slotId */
+function ownAt(object, slotId) {
+	if (!Array.isArray(object?.material)) return null;
+	const i = slotIdsOf(object.material.map(ownOf)).indexOf(slotId);
+	return i < 0 ? null : ownOf(object.material[i]);
+}
+
+/** Is this node still inside the scene's object tree? @param {any} node */
+function inScene(node) {
+	const group = get(objectsGroup);
+	for (let n = node; n; n = n.parent) if (n === group) return true;
+	return false;
+}
+
+/**
+ * Forget states whose target is gone: a slot removed, the object deleted or turned back
+ * into a single material; a whole-object state whose object became a LIST (Add material
+ * slot on a shader-driven box) is dropped without writing its old material over the list.
+ * The DOCUMENTS stay (undo of a remove finds its shader); only the drawn products go.
+ */
+function pruneSlotStates() {
+	for (const t of [...slotStates.values()]) {
+		if (!inScene(t.object) || !ownAt(t.object, /** @type {string} */ (t.slot))) detachTarget(t);
+	}
+	const group = get(objectsGroup);
+	for (const key of [...installed.keys()]) {
+		if (key.includes('/')) continue;
+		const object = group?.getObjectByProperty?.('uuid', key);
+		if (object && Array.isArray(object.material) && !object.material.includes(installed.get(key)))
+			detachTarget({ object, slot: null });
 	}
 }
 
@@ -723,15 +903,36 @@ export function captureBase(object) {
 	return object.material;
 }
 
-/** @param {string} uuid @returns {any} */
-export function baseMaterialOf(uuid) {
-	return baseMaterials.get(uuid) ?? null;
+/**
+ * @param {string} uuid @param {string | null} [slotId] 105-slot-shaders: one slot's own material
+ * @returns {any}
+ */
+export function baseMaterialOf(uuid, slotId) {
+	return baseMaterials.get(slotShaderKey(uuid, slotId)) ?? null;
 }
 
-/** @param {any} object @param {any} material */
-function applyMaterial(object, material) {
+/**
+ * The material a target compiles FROM: a whole object's captured original (today), or the
+ * slot's own material as it is NOW (the draw layer keeps the own material the truth, so
+ * there is nothing to capture; a later replacement of it recompiles through the reconcile).
+ * @param {ShaderTarget} t @returns {any}
+ */
+function baseFor(t) {
+	if (!t.slot) return captureBase(t.object);
+	const own = ownAt(t.object, t.slot);
+	if (own) baseMaterials.set(stateKeyOf(t), own);
+	return own;
+}
+
+/** @param {ShaderTarget} target @param {any} material */
+function applyMaterial(target, material) {
+	if (target.slot) return applySlotMaterial(target, material);
+	const object = target.object;
 	const previous = installed.get(object.uuid);
 	installed.set(object.uuid, material);
+	// a slot-list commit on this object reads its own material through this (slotDraw.listOwnOf)
+	const base = baseMaterials.get(object.uuid);
+	if (base) wholeShaderBase.set(material, base);
 	if (previous?.userData?.shaderCodeHash && previous !== material) {
 		releaseCodeMaterial(previous);
 		previous.dispose?.();
@@ -745,6 +946,24 @@ function applyMaterial(object, material) {
 	// Inspector's `material` derived and its shader-driven notice both read through
 	// `objectsGroup`, and without the poke they keep showing the pre-shader state. Safe
 	// from the reconcile's own subscriber because a compile always runs off a timer.
+	pokeScene();
+}
+
+/** 105-slot-shaders: seat a compiled material in ONE slot (the draw layer). @param {ShaderTarget} target @param {any} material */
+function applySlotMaterial(target, material) {
+	const key = stateKeyOf(target);
+	const previous = installed.get(key);
+	const before = slotStates.get(key);
+	// the same uuid on a NEW object instance (delete + undo): the old one's product goes first
+	if (before && before.object !== target.object) slotLayer?.setSlotProduct(before.object, before.slot, null);
+	installed.set(key, material);
+	slotStates.set(key, { object: target.object, slot: target.slot });
+	if (previous && previous !== material) {
+		if (previous.userData?.shaderCodeHash) releaseCodeMaterial(previous);
+		previous.dispose?.();
+	}
+	if (!shadersOn) return;
+	slotLayer?.setSlotProduct(target.object, target.slot, material);
 	pokeScene();
 }
 
@@ -795,14 +1014,40 @@ export function refillShaderTextures() {
 
 /**
  * Put an object back on its own material and forget our state for it. Undo of an attach
- * and an explicit Detach both land here.
- * @param {any} object
+ * and an explicit Detach both land here. 105-slot-shaders: `slotId` = that one slot only;
+ * absent = the whole object and every slot of it.
+ * @param {any} object @param {string | null} [slotId]
  */
-export function detachFrom(object) {
+export function detachFrom(object, slotId) {
 	if (!object) return;
+	if (slotId) return detachTarget({ object, slot: slotId });
+	for (const [key, t] of [...slotStates]) if (t.object === object || key.startsWith(object.uuid + '/')) detachTarget(t);
+	if (!installed.has(object.uuid) && Array.isArray(object.material)) return;
+	detachTarget({ object, slot: null });
+}
+
+/** @param {ShaderTarget} target */
+function detachTarget(target) {
+	const object = target.object;
+	if (!object) return;
+	if (target.slot) {
+		const key = stateKeyOf(target);
+		const mine = installed.get(key);
+		const holder = slotStates.get(key)?.object ?? object;
+		baseMaterials.delete(key);
+		installed.delete(key);
+		slotStates.delete(key);
+		slotLayer?.setSlotProduct(holder, target.slot, null);
+		releaseCodeMaterial(mine);
+		forgetShaderContext(holder, target.slot);
+		if (mine && typeof mine.dispose === 'function') mine.dispose();
+		pokeScene();
+		return;
+	}
 	const base = baseMaterials.get(object.uuid);
 	const mine = installed.get(object.uuid);
-	if (base) object.material = base;
+	// never over a material LIST that replaced the object's one material (Add slot)
+	if (base && !Array.isArray(object.material)) object.material = base;
 	baseMaterials.delete(object.uuid);
 	installed.delete(object.uuid);
 	releaseCodeMaterial(mine);
@@ -814,9 +1059,24 @@ export function detachFrom(object) {
 	pokeScene();
 }
 
-/** Is this object currently shader-driven? @param {string} uuid */
-export function isShaderDriven(uuid) {
-	return installed.has(uuid);
+/**
+ * Is this object currently shader-driven? 105-slot-shaders: `slotId` asks about one slot
+ * (a single-material object's one slot = the object); absent = any part of the object.
+ * @param {string} uuid @param {string | null} [slotId]
+ */
+export function isShaderDriven(uuid, slotId) {
+	if (installed.has(uuid)) return true;
+	if (slotId) return installed.has(uuid + '/' + slotId);
+	if (!slotStates.size) return false;
+	for (const key of slotStates.keys()) if (key.startsWith(uuid + '/')) return true;
+	return false;
+}
+
+/** 105-slot-shaders: how many of an object's slots are driven right now. @param {string} uuid */
+export function drivenSlotCount(uuid) {
+	let n = 0;
+	for (const key of slotStates.keys()) if (key.startsWith(uuid + '/')) n++;
+	return n;
 }
 
 /**
@@ -838,8 +1098,26 @@ export function copyShaderGraphTo(fromUuid, toUuid) {
 	if (!fromUuid || fromUuid === toUuid) return false;
 	const all = get(shaderGraphs);
 	// only an OWN graph is copied: an object inheriting the scene default already
-	// inherits it as the clone too, and copying would pin a private snapshot of it
-	return copyShaderGraphFrom(all[fromUuid], toUuid);
+	// inherits it as the clone too, and copying would pin a private snapshot of it.
+	// 105-slot-shaders: and its slot documents (a duplicate keeps its slot ids)
+	return copyShaderGraphsOf(all, fromUuid, toUuid) > 0;
+}
+
+/**
+ * Every document an object OWNS in `map` (its object key and each slot key), copied onto
+ * `toUuid` under the same slot ids — duplicate, merge import and prefab all re-key this
+ * way, and all three keep a slot's id (it rides the material).
+ * @param {Record<string, any> | null | undefined} map @param {string} fromUuid @param {string} toUuid
+ * @returns {number} documents installed
+ */
+export function copyShaderGraphsOf(map, fromUuid, toUuid) {
+	if (!map || !fromUuid || !toUuid) return 0;
+	let n = 0;
+	for (const [key, doc] of Object.entries(map)) {
+		const { uuid, slot } = shaderKeyParts(key);
+		if (uuid === fromUuid && copyShaderGraphFrom(doc, slotShaderKey(toUuid, slot))) n++;
+	}
+	return n;
 }
 
 /**
@@ -863,10 +1141,35 @@ export function copyShaderGraphFrom(doc, toUuid) {
  * Does this object have (or inherit) a graph AT ALL? `isShaderDriven` answers "is a
  * compiled material installed right now", which is false for a graph whose compile has
  * not run yet — so the Inspector needs this one to decide what to OFFER.
- * @param {string} uuid @returns {boolean}
+ * 105-slot-shaders: `slotId` = that slot's resolution (its own key -> the object's -> the scene's).
+ * @param {string} uuid @param {string | null} [slotId] @returns {boolean}
  */
-export function hasShaderGraph(uuid) {
-	return !!graphKeyFor(uuid);
+export function hasShaderGraph(uuid, slotId) {
+	return !!(slotId ? graphKeyForSlot(uuid, slotId) : graphKeyFor(uuid));
+}
+
+/**
+ * 105-slot-shaders: move a document between an object's two keys ("Only this slot" / "All
+ * slots") as ONE undo step (shaderSync registers the move; without it, two plain writes).
+ * @param {string} fromKey @param {string} toKey @returns {boolean}
+ */
+export function moveShaderGraph(fromKey, toKey) {
+	const doc = shaderGraphOf(fromKey);
+	if (!doc || fromKey === toKey || get(shaderGraphs)[toKey]) return false;
+	if (moveHook) return moveHook(fromKey, toKey, doc);
+	setShaderGraphFor(toKey, structuredClone(doc));
+	setShaderGraphFor(fromKey, null);
+	return true;
+}
+
+/** @type {((fromKey: string, toKey: string, doc: any) => boolean) | null} */
+let moveHook = null;
+/** shaderSync installs the one-undo-step move. @param {(fromKey: string, toKey: string, doc: any) => boolean} fn */
+export function registerShaderMove(fn) {
+	moveHook = fn;
+	return () => {
+		if (moveHook === fn) moveHook = null;
+	};
 }
 
 /**
@@ -891,11 +1194,52 @@ export async function openShaderEditor() {
 /**
  * The live uniform record for a graph's param — how the editor writes a value with NO
  * recompile (SH0.5 measured 0 ms). Returns null when the graph is not installed.
- * @param {string} uuid @param {string} uniformName
+ * 105-slot-shaders: `slotId` = that slot's; absent = the whole object's, else the first
+ * driven slot that has it.
+ * @param {string} uuid @param {string} uniformName @param {string | null} [slotId]
  */
-export function shaderUniform(uuid, uniformName) {
-	const material = installed.get(uuid);
-	return material?.userData?.shaderUniforms?.[uniformName] ?? material?.uniforms?.[uniformName] ?? null;
+export function shaderUniform(uuid, uniformName, slotId) {
+	if (slotId) return uniformOf(installed.get(uuid + '/' + slotId), uniformName) ?? uniformOf(installed.get(uuid), uniformName);
+	const whole = uniformOf(installed.get(uuid), uniformName);
+	if (whole || !slotStates.size) return whole;
+	return shaderUniformsOf(uuid, uniformName)[0] ?? null;
+}
+
+/** @param {any} material @param {string} name */
+function uniformOf(material, name) {
+	return material?.userData?.shaderUniforms?.[name] ?? material?.uniforms?.[name] ?? null;
+}
+
+/**
+ * 105-slot-shaders: the live uniform record of EVERY driven part of an object that has
+ * the uniform (the whole object, or each slot) — the `setuniform` node with no slot.
+ * @param {string} uuid @param {string} uniformName @returns {any[]}
+ */
+export function shaderUniformsOf(uuid, uniformName) {
+	/** @type {any[]} */
+	const out = [];
+	const whole = uniformOf(installed.get(uuid), uniformName);
+	if (whole) out.push(whole);
+	for (const key of slotStates.keys()) {
+		if (!key.startsWith(uuid + '/')) continue;
+		const record = uniformOf(installed.get(key), uniformName);
+		if (record) out.push(record);
+	}
+	return out;
+}
+
+/**
+ * 105-slot-shaders: a slot reference (index, id or name) -> its id on this object, or null.
+ * @param {any} object @param {number | string | null | undefined} ref
+ */
+export function slotIdFor(object, ref) {
+	if (ref === null || ref === undefined || ref === '') return null;
+	const ids = slotIdsOfObject(object);
+	if (typeof ref === 'number' || /^\d+$/.test(String(ref))) return ids[Number(ref)] ?? null;
+	const text = String(ref);
+	if (ids.includes(text)) return text;
+	const byName = ownMaterialsOf(object).findIndex((m) => m?.name === text);
+	return byName >= 0 ? (ids[byName] ?? null) : null;
 }
 
 /**
@@ -998,7 +1342,10 @@ export function shaderGraphsSnapshot(opts = {}) {
 	/** @type {Record<string, any>} */
 	const out = {};
 	for (const [key, doc] of Object.entries(all)) {
-		if (key !== SCENE_GRAPH_KEY && opts.pruneMissing?.(key)) continue;
+		// 105-slot-shaders: a slot key is an orphan when its object OR its slot is gone
+		const { uuid, slot } = shaderKeyParts(key);
+		if (key !== SCENE_GRAPH_KEY && opts.pruneMissing?.(slot ? /** @type {string} */ (uuid) : key)) continue;
+		if (slot && slotGone(/** @type {string} */ (uuid), slot)) continue;
 		out[key] = normalizeShaderGraph(doc);
 	}
 	return out;
@@ -1025,9 +1372,20 @@ export function shaderGraphsRestore(map, replace = false) {
 	reconcileShaderGraphs();
 }
 
-/** How many objects are shader-driven right now (the GLTF export warning). */
+/** An object we cannot find is the caller's prune to decide. @param {string} uuid @param {string} slot */
+function slotGone(uuid, slot) {
+	const object = get(objectsGroup)?.getObjectByProperty?.('uuid', uuid);
+	return !!object && !slotIdsOfObject(object).includes(slot);
+}
+
+/** How many objects (105-slot-shaders: and slots) are shader-driven right now (the GLTF export warning). */
 export function shaderDrivenCount() {
 	return installed.size;
+}
+
+/** 105-slot-shaders: how many of those are material SLOTS (the export note says so). */
+export function shaderDrivenSlotCount() {
+	return slotStates.size;
 }
 
 /** Test/serializer seam: drop everything (a scene load replaces all documents). */
@@ -1036,6 +1394,8 @@ export function clearShaderGraphs() {
 	timers.clear();
 	shaderGraphs.set({});
 	shaderErrors.set({});
+	for (const t of slotStates.values()) slotLayer?.setSlotProduct(t.object, t.slot, null);
+	slotStates.clear();
 	baseMaterials.clear();
 	installed.clear();
 }

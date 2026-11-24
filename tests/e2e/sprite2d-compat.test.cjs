@@ -98,8 +98,21 @@ h.run(async () => {
 		const old = fs.readFileSync(OLD);
 		await open(A.page, old);
 		await open(R.page, old);
+		// SETTLED signatures: lazy runtimes finish the load after it applied (the text runtime turns a flat text's
+		// castShadow off once its chunk loads — seconds later on a cold dev server than on a built release), so
+		// read each page until two reads 1.5 s apart agree (at most 30 s)
+		const settled = async (page) => {
+			let prev = await signature(page);
+			for (let i = 0; i < 20; i++) {
+				await page.waitForTimeout(1500);
+				const next = await signature(page);
+				if (next.hash === prev.hash) return next;
+				prev = next;
+			}
+			return prev;
+		};
 		await A.page.waitForTimeout(3000);
-		const [a, r] = [await signature(A.page), await signature(R.page)];
+		const [a, r] = [await settled(A.page), await settled(R.page)];
 		console.log(`SIG lane ${a.hash} release ${r.hash} (${a.objects} objects)`);
 		h.check(a.objects > 0, `§1 the old scene loaded (${a.objects} objects)`);
 		if (a.hash !== r.hash) {

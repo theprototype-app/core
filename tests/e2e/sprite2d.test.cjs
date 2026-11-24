@@ -308,7 +308,8 @@ h.run(async () => {
 	// restart (v1.78.0): the 2D view component is a LAZY chunk now, so it mounts a moment after the load applied
 	await h.eventually(() => A.page.evaluate(() => window.__view2dDebug?.() ?? null), (v) => !!v?.active, '6.4a the 2D view mounted on the opener', 30000);
 	const v2 = await A.page.evaluate(() => window.__view2dDebug?.());
-	h.check(t1[0].previewing && v2?.active && v2.ortho && v2.rotate === false, '6.4 the opener is in the 2D editor view: orthographic, no rotate (' + JSON.stringify(v2) + ')');
+	const opener = await scene2d(A.page); // re-read: `previewing` was taken before the lazy view mounted
+	h.check(opener.previewing && v2?.active && v2.ortho && v2.rotate === false, '6.4 the opener is in the 2D editor view: orthographic, no rotate (' + JSON.stringify(v2) + ')');
 	// framed in METRES: 10 m tall (the template camera's size), not the canvas in pixels
 	const aspect = await A.page.evaluate(() => innerWidth / innerHeight);
 	h.check(!!v2?.frustum && Math.abs(v2.frustum[2] - 5) < 1e-6 && Math.abs(v2.frustum[1] / v2.frustum[2] - aspect) < 0.05, '6.4c the 2D view frames 10 m of the scene at the canvas aspect (' + JSON.stringify(v2?.frustum) + ', aspect ' + aspect.toFixed(3) + ')');

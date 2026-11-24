@@ -67,6 +67,7 @@
 	import { sineIn } from 'svelte/easing';
 	import { applyExplorerImage } from '$lib/explorerDrop';
 	import MaterialMapSlots from './MaterialMapSlots.svelte';
+	import { explorerDropTarget } from '$lib/explorerDropTarget.js';
 	import { explorerItems, explorerFolders, inspectedFile, itemBlob, renameItem, deleteItem, updateItemBytes } from '$lib/explorer';
 	import { decodeMeta } from '$lib/audioEngine';
 	import { openTextEditor, openImagePreview } from '$lib/fileWindows';
@@ -292,6 +293,9 @@
 		SCENE_GRAPH_KEY,
 		shaderDrivenCount
 	} from '$lib/shaderGraph';
+	// 105 T1: the picker and its leaf are lazy (boot rule) — loaded on the first press
+	/** @param {any} opts */
+	const pickFromExplorer = (opts) => import('$lib/explorerPick.js').then((m) => m.pickFromExplorer(opts));
 
 	/**
 	 * P6 — the material layer's COST, in the same voice as the post stack's
@@ -4406,21 +4410,9 @@
 						<div
 							id="texture-drop"
 							class="rounded-sm border border-dashed {textureDropActive ? 'ins-drop-on' : 'border-transparent'}"
-							ondragover={(e) => {
-								if (e.dataTransfer?.types.includes('application/x-explorer-item')) {
-									e.preventDefault();
-									textureDropActive = true;
-								}
-							}}
-							ondragleave={() => (textureDropActive = false)}
-							ondrop={async (e) => {
-								const raw = e.dataTransfer?.getData('application/x-explorer-item');
-								textureDropActive = false;
-								if (!raw) return;
-								e.preventDefault();
-								e.stopPropagation();
-								const payload = JSON.parse(raw);
-								await fanTexture((uuid) => applyExplorerImage(uuid, payload), 'Texture');
+							use:explorerDropTarget={{
+								ondrop: (payload) => fanTexture((uuid) => applyExplorerImage(uuid, payload), 'Texture'),
+								onhover: (on) => (textureDropActive = on)
 							}}
 						>
 						<input
@@ -4434,7 +4426,7 @@
 								e.currentTarget.value = '';
 							}}
 						/>
-						<div class="flex items-center gap-3">
+						<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
 							{#if mapPreviewUrl(material)}
 								<img
 									src={mapPreviewUrl(material)}
@@ -4471,8 +4463,20 @@
 								>
 									Set texture...
 								</UiButton>
-								<span class="text-[length:var(--fs-badge)] text-text-faint">or drop an Explorer image</span>
 							{/if}
+							<!-- 105 T1: the shared Explorer picker beside upload, stored like an upload -->
+							<UiButton
+								id="texture-explorer"
+								size="sm"
+								variant="icon"
+								icon="folder-open"
+								title="Pick the colour map from the Explorer (or drop an Explorer image here)"
+								label="Pick the colour map from the Explorer"
+								onclick={async () => {
+									const item = await pickFromExplorer({ title: 'Pick the colour map' });
+									if (item) await fanTexture((uuid) => applyExplorerImage(uuid, { id: item.id }), 'Texture');
+								}}
+							/>
 						</div>
 						</div>
 					{/if}

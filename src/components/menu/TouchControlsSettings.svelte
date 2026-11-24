@@ -25,7 +25,7 @@
 	import TouchActionButton from '../play/TouchActionButton.svelte';
 	import { settingsOpen, settingsSection, showToast } from '../../stores/appStore.js';
 	import { NAV_CONTEXT } from '$lib/settingsNav';
-	import { explorerItems, itemBlob } from '$lib/explorer';
+	import { itemBlob } from '$lib/explorer';
 	import { touchLookSpeed, setTouchLookSpeed, TOUCH_LOOK_SPEED_RANGE } from '$lib/touchControls';
 	import {
 		BUILTIN_ACTIONS,
@@ -42,6 +42,9 @@
 	} from '$lib/touchActions';
 	import { touchSpec } from '$lib/touchSpec';
 	import { gameId } from '$lib/gameSettings';
+	// 105 T1: the picker and its leaf are lazy (boot rule) — loaded on the first press
+	/** @param {any} opts */
+	const pickFromExplorer = (opts) => import('$lib/explorerPick.js').then((m) => m.pickFromExplorer(opts));
 
 	/** while the settings search has a query, the section is open so its rows can match */
 	let { searching = false } = $props();
@@ -83,7 +86,6 @@
 	const actions = $derived(actionList($touchSpec));
 	/** the action whose sub-page is open ("touch:<id>") */
 	const editing = $derived($sub?.id?.startsWith('touch:') ? (actions.find((a) => 'touch:' + a.id === $sub.id) ?? null) : null);
-	const imageItems = $derived($explorerItems.filter((it) => it.kind === 'image' || /\.svg$/i.test(it.name ?? '')));
 
 	const VISIBILITY = [
 		{ value: 'auto', label: 'Auto' },
@@ -135,18 +137,17 @@
 		if (url) setTouchTexture(id, { [asState(state)]: url });
 	}
 
-	/** @param {string} id @param {string} state @param {any} e */
-	async function onExplorerPick(id, state, e) {
-		const select = e.currentTarget;
-		const itemId = select.value;
-		select.value = '';
-		if (!itemId) return;
+	/** 105 T1: the shared Explorer picker (thumbnails, search, folders, recent) @param {string} id @param {string} state */
+	async function onExplorerPick(id, state) {
+		const picked = await pickFromExplorer({ title: 'Pick the ' + (state === 'pressed' ? 'pressed' : 'released') + ' image', accept: ['image', '.svg'] });
+		if (!picked) return;
+		const itemId = picked.id;
 		const blob = await itemBlob(itemId);
 		if (!blob) {
 			showToast('That file is not on this device yet');
 			return;
 		}
-		const typed = blob.type ? blob : new Blob([blob], { type: /\.svg$/i.test(imageItems.find((i) => i.id === itemId)?.name ?? '') ? 'image/svg+xml' : 'image/png' });
+		const typed = blob.type ? blob : new Blob([blob], { type: /\.svg$/i.test(picked.name ?? '') ? 'image/svg+xml' : 'image/png' });
 		const url = await blobToDataUrl(typed);
 		if (url) setTouchTexture(id, { [asState(state)]: url });
 	}
@@ -180,12 +181,7 @@
 							data-touch-tex-file={editing.id + ':' + state}
 							onchange={(e) => onUpload(editing.id, state, e)}
 						/>
-						<select class="tcs-select" aria-label={'Pick a ' + label.toLowerCase() + ' from Explorer'} onchange={(e) => onExplorerPick(editing.id, state, e)}>
-							<option value="">From Explorer…</option>
-							{#each imageItems as item (item.id)}
-								<option value={item.id}>{item.name}</option>
-							{/each}
-						</select>
+						<Button size="sm" variant="outline" icon="folder-open" id={'touch-tex-explorer-' + state + '-' + safeId(editing.id)} label={'Pick a ' + label.toLowerCase() + ' from Explorer'} onclick={() => onExplorerPick(editing.id, state)}>From Explorer…</Button>
 						{#if texHas(tex, state)}
 							<Button size="sm" variant="ghost" label={'Clear the ' + label.toLowerCase()} onclick={() => setTouchTexture(editing.id, { [asState(state)]: undefined })}>Clear</Button>
 						{/if}
@@ -326,17 +322,6 @@
 		font-size: var(--fs-desc);
 		color: var(--text-muted);
 	}
-	.tcs-select {
-		max-width: 160px;
-		height: var(--control-h-sm);
-		padding: 0 8px;
-		border: 1px solid var(--border-input);
-		border-radius: var(--radius-button, 8px);
-		background: var(--surface-inset);
-		color: var(--text);
-		font: inherit;
-		font-size: var(--fs-desc);
-	}
 	.tcs-color {
 		width: 40px;
 		height: 28px;
@@ -345,11 +330,5 @@
 		border-radius: 6px;
 		background: transparent;
 		cursor: pointer;
-	}
-	@media (max-width: 639.98px) {
-		.tcs-select {
-			font-size: 16px;
-			height: 44px;
-		}
 	}
 </style>

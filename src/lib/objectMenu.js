@@ -208,7 +208,9 @@ function vectorMenuRows(object, targets, multi, locked, lockedTooltip) {
 				const p = object.userData.geometryParams.params;
 				const holes = p?.kind === 'path' && (p.paths?.length ?? 0) > 1;
 				return row(holes ? 'Make Path object (outer outline)' : 'Make Path object', 'Add a Path along this outline, for walkers, the dolly and Array along path; curves are simplified to at most 200 points (the shape stays)', () => curves().then((m) => m.vectorToPath(object.uuid)));
-			})()
+			})(),
+			// 64-extrude: the text object's Bake, same word, same confirm, one undo
+			row('Bake to mesh…', 'Turn the shape into a normal mesh you can edit in Edit mode (its points, depth and bevel stop being editable; undo brings the shape back)', () => import('./vector/vectorActions.js').then((m) => m.confirmBakeVector(object.uuid)))
 		);
 	}
 	const many = vectors.length > 1;

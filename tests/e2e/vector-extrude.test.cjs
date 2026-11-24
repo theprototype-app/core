@@ -440,6 +440,37 @@ h.run(async () => {
 		`§7 ...and leaves no undo step (${(await undoDepth(A.page)) - u7})`
 	);
 
+	// ---- §8 Bake ------------------------------------------------------------------------
+	const u8 = await undoDepth(A.page);
+	const before8 = await facts(A.page, star);
+	const baked = await A.page.evaluate(
+		(u) => window.__tp.test.v1.vectorActions.bakeVectorToMesh(u),
+		star
+	);
+	h.check(baked?.ok, `§8 Bake to mesh runs on the extruded star (${JSON.stringify(baked)})`);
+	const after8 = await facts(A.page, star);
+	h.check(
+		after8.gtype === null &&
+			after8.verts === before8.verts &&
+			after8.topoFaces === before8.topoFaces,
+		`§8 A: a plain mesh, same triangles, the kernel faces kept (${after8.verts} verts, ${after8.topoFaces} faces)`
+	);
+	await h.eventually(
+		() => facts(B.page, star),
+		(f) => !!f && f.gtype === null && f.verts === before8.verts,
+		'§8 B: the record is gone, the same mesh stays'
+	);
+	h.check((await undoDepth(A.page)) === u8 + 1, '§8 Bake is ONE undo entry');
+	await select(A.page, star);
+	await A.page.waitForTimeout(300);
+	h.check((await arrow(A.page)).target !== star, '§8 a baked shape has no extrude arrow');
+	await undo(A.page);
+	await h.eventually(
+		() => facts(B.page, star),
+		(f) => f?.gtype === 'Vector' && Math.abs(depthOf(f) - depthOf(before8)) < 1e-9,
+		'§8 ONE undo brings the shape (its record) back on A and B'
+	);
+
 	h.check(
 		(A.page.__errors ?? []).length === 0 && (B.page.__errors ?? []).length === 0,
 		`no page errors (${[...(A.page.__errors ?? []), ...(B.page.__errors ?? [])].join(' | ') || 'none'})`

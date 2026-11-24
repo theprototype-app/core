@@ -1541,6 +1541,11 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
                 scale: element.scale.toArray(),
                 ...heal
             });
+            // 64-extrude: a build without vector shapes cannot rebuild a heavy one — it gets the mesh itself
+            if (!vectorElement.geometries?.[0]?.data?.attributes?.position) {
+                const uuid = element.uuid;
+                void import('$lib/vector/vectorOldPeers.js').then((m) => m.sendOldPeerSolid(uuid, [conn.peer]));
+            }
         } else if (multiMaterialSyncable(element)) {
             // A MATERIAL ARRAY cannot survive the GLTF round trip: the exporter
             // splits geometry.groups into one primitive per material and the loader

@@ -70,7 +70,8 @@ export function myCaps(opts = {}) {
 	/** @type {Record<string, number>} */
 	// 80a K3 `lk`: stamped lock rows (`ats`, a third element in `locked`), the receiving-side lock
 	// gate and its `lockreject`, the whole held set in the handshake
-	const caps = { wb: 1, dev: 1, lk: 1 };
+	// 64-extrude `vs`: vector shapes and their solids — a peer without it gets an extruded shape as a plain mesh
+	const caps = { wb: 1, dev: 1, lk: 1, vs: 1 };
 	if (opts.fc) caps.fc = 1;
 	return caps;
 }

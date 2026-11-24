@@ -145,6 +145,9 @@ export function applyGeometry(uuid, patch, options = {}) {
 		/** @type {any} */
 		const peer = get(peers);
 		if (peer) peer.send({ type: 'geometry', uuid, gtype, params });
+		// 64-extrude: a peer without vector shapes gets the mesh itself, once the change settles
+		if (peer && gtype === 'Vector')
+			void import('./vector/vectorOldPeers.js').then((m) => m.scheduleOldPeerSolid(uuid));
 	}
 	return true;
 }
@@ -155,6 +158,14 @@ export function applyRemoteGeometry(data) {
 	const group = get(objectsGroup);
 	const object = group?.getObjectByProperty('uuid', data.uuid);
 	if (!object?.geometry) return;
+	// 64-extrude: a vector shape BAKED to a mesh — the mesh is the one this peer already built from the same
+	// record, so only the record goes (`vectorBake` is additive; before the `baked` branch, which builds boxes)
+	if (data.vectorBake) {
+		if (object.userData?.geometryParams?.gtype === data.gtype)
+			delete object.userData.geometryParams;
+		pokeScene();
+		return;
+	}
 	// 102b: an undone Convert goes back to the BAKED mesh (`baked` is additive: an older peer builds the box)
 	if (data.baked) {
 		// (through the gate's small chunk: importing roundedBoxConvert here would put its preload list on boot)

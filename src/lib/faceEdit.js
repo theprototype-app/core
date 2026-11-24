@@ -26,6 +26,8 @@ import {
 	boundaryLoopOf,
 	vertexKeysOf,
 	internalEdgeKeysOf,
+	internalEdgeIdsOf,
+	edgeIdOf,
 	centroidOf,
 	stateOf,
 	normalPlan,
@@ -1146,14 +1148,15 @@ function quadWireGeometry(geometry) {
 	const f = reuse ? reuse.frame : frameOfGeometry(geometry);
 	const faces = readStoredFaces(geometry);
 	const partner = faces ? new Int32Array(0) : reuse ? reuse.partner : pairQuadsOf(f, QUAD_COPLANAR, quadScore);
-	const skip = internalEdgeKeysOf(f, faces, partner);
+	// lane 99-scrub: weld-id edges, not string keys (the same edges in the same order: ids are equal exactly when keys are)
+	const skip = internalEdgeIdsOf(f, faces, partner);
+	const V = weld(f);
 	const seen = new Set();
 	/** @type {number[]} the corner each wire point is read from (99 K5: a live edit rewrites the wire from them) */
 	const from = [];
 	for (let t = 0; t < f.count; t++) {
-		const keys = [keyAt(f, t, 0), keyAt(f, t, 1), keyAt(f, t, 2)];
 		for (let e = 0; e < 3; e++) {
-			const key = edgeKey(keys[e], keys[(e + 1) % 3]);
+			const key = edgeIdOf(f, V[t * 3 + e], V[t * 3 + ((e + 1) % 3)]);
 			if (skip.has(key) || seen.has(key)) continue;
 			seen.add(key);
 			from.push(t * 3 + e, t * 3 + ((e + 1) % 3));

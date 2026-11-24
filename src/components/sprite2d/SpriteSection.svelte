@@ -154,7 +154,7 @@
 							title="Play this clip here (only you see the preview)"
 							onclick={() => playSpriteClip(object, clip.name, { action: 'restart' })}>Preview</button
 						>
-						<button class="sprite-clip-remove ui-chip text-text-muted hover:bg-surface-hover" title="Remove clip" aria-label={'Remove clip ' + clip.name} onclick={() => removeClip(i)}><Icon name="x" size={14} aria-hidden="true" /></button>
+						<button class="sprite-clip-remove ui-chip text-text-muted hover:bg-surface-hover" title="Remove clip" aria-label={'Remove clip ' + clip.name} onclick={() => removeClip(i)}><Icon name="x" size={16} aria-hidden="true" /></button>
 					</div>
 					<div class="ui-row items-center gap-1">
 						<span class="w-12 shrink-0 text-xs text-text-muted">Frames</span>

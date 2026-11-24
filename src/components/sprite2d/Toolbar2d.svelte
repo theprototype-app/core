@@ -73,7 +73,7 @@
 				title={tool.title ?? tool.label}
 				aria-label={tool.label}
 				aria-pressed={tool.active || tool.id === 'select' ? on : undefined}
-				onclick={() => press(tool)}><Icon name={tool.icon} size={18} aria-hidden="true" /></button
+				onclick={() => press(tool)}><Icon name={tool.icon} size={20} aria-hidden="true" /></button
 			>
 		{/each}
 		<button type="button" id="tool2d-back3d" class="tbx-cmd mt-1 w-full text-[length:var(--fs-badge)]" title="Back to 3D — the perspective view (only your view changes)" onclick={back}

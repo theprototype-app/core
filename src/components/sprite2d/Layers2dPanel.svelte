@@ -91,6 +91,6 @@
 		{/each}
 	</ul>
 	<div class="tbx-row mt-1">
-		<button type="button" id="layers-2d-new" class="tbx-cmd" title="A new layer in front of the others" onclick={newLayer}><Icon name="plus" size={14} aria-hidden="true" /> New layer</button>
+		<button type="button" id="layers-2d-new" class="tbx-cmd" title="A new layer in front of the others" onclick={newLayer}><Icon name="plus" size={16} aria-hidden="true" /> New layer</button>
 	</div>
 </ToolboxWindow>

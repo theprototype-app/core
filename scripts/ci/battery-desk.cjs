@@ -59,7 +59,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
-const { load, assign, counts } = require('./battery.cjs');
+const { load, assign, counts, ciEnvError } = require('./battery.cjs');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const STATE = process.env.BATTERY_STATE || path.join(process.env.XDG_STATE_HOME || path.join(os.homedir(), '.local', 'state'), 'theprototype', 'battery');
@@ -1479,6 +1479,12 @@ function recordCmd(argv) {
 
 if (require.main === module) {
 	const [cmd, ...argv] = process.argv.slice(2);
+	// ci-speed: BATTERY_CI is GitHub-only (battery.cjs ciEnvError) — a desk / pc / release battery refuses it
+	const ciError = ciEnvError(process.env);
+	if (ciError) {
+		console.error('battery-desk.cjs: ' + ciError);
+		process.exit(2);
+	}
 	try {
 		if (cmd === 'run') run(argv);
 		else if (cmd === 'queue') queueCmd(argv);

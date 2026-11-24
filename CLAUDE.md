@@ -2737,6 +2737,17 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   document is real (rev > 0) — a lowest-id joiner read the session's round arriving as a new round and cleared the
   wave. Suites: vitest `sim/behaviours` (14, on logicSim via `behaviourSim.js` + its `onPeer/extra` hooks),
   `behaviourAnalyze` (23); e2e `behaviours` (two peers + a joiner; proof ports side by side with kit-node versions).
+  **102-boot-diet (1.79) — THE RUNTIME LOADS WITH THE SCENE THAT USES IT.** `app.js` (+ the sandbox guest, the analyzer
+  and acorn) is OFF both boots: `peerHandler` imports the leaf `behaviours/load.js`, which queues `bhv` messages in order
+  until `app.js` is in. `loadBehaviours()` triggers: a `behaviour` node in any graph (flowRuntime's graph watch, so the
+  chunk is fetched while the scene still loads), a `bhv` message, `assistant.runPrompt`, `createTpAgent`, a behaviour
+  tool call, opening a behaviour view, and the `behaviours` DEBUG HOOK (`behaviours/debugHook.js`: a test page starts
+  behaviours the way boot used to, so a debug page never shows the on-demand path). `joinArrival.js` owns the joiner's
+  "host's first batch" watch from boot (a late start cannot tell a closed batch from one not begun); `codeParse.js`
+  holds the code workspace's parse check (codeTabs, on the editor boot, has no acorn). NodeProperties / BehaviourView /
+  CodeWorkspace read the analyzer and the module through `load.js` stores, never by import. Built-app suite
+  `behaviours-on-demand` (§5: On start fires exactly once and its state is there on the first timer tick, on a plain
+  /play page; `BHV_DELAY_MS` holds the chunk as a slow network would).
 - **ROADMAP 33 — EDITOR UI + GAMES (33-editor-ui, 33-games, 33-untangle-core)**: the default Controls bar is
   Move/Rotate/Scale, Interact, Play, list, nodes, Explorer, Animation (an untouched stored default MIGRATES, a
   customised bar wins); the Interact toggle's ring is keyboard-only (`focus-visible`) and the well halves answer

@@ -4,12 +4,12 @@
 	"pages": {
 		"play": {
 			"html": "play.html",
-			"maxJsGzBytes": 1894400,
+			"maxJsGzBytes": 1899520,
 			"maxFirstFrameMs": 20000
 		},
 		"editor": {
 			"html": "index.html",
-			"maxJsGzBytes": 3056640,
+			"maxJsGzBytes": 3061760,
 			"maxFirstFrameMs": 32000
 		}
 	},
@@ -227,9 +227,9 @@
 		{
 			"date": "2026-11-24",
 			"lane": "103-int-1 (Hands-on editing + 105 materials + 106 shadows + 102-boot-diet: 14 PRs)",
-			"play": "v1.78.0 1887.0 KB -> 1846.9 KB (-40.1) -> line 1850.0 KB (the int boot rule: merged tag + the union, rounded up to the next 5 KB; was 1890.0)",
-			"editor": "v1.78.0 3006.9 KB -> 2981.0 KB (-25.9) -> line 2985.0 KB (the same rule; was 3010.0)",
-			"note": "measured on the Deck, v1.78.0 and each first-parent merge built in one worktree with one node_modules. 102-boot-diet #637 takes the behaviours runtime + acorn off both boots (-51.8 / -52.6); without it the 13 feature merges add +11.7 / +26.7 (claude:9 told before the release). The line is set at the union so the #637 win is kept",
+			"play": "v1.78.1 1890.9 KB -> 1851.0 KB (-39.9) -> line 1855.0 KB (the int boot rule: merged tag + the union, next 5 KB; was 1890.0; 1850 before v1.78.1 was merged)",
+			"editor": "v1.78.1 3010.6 KB -> 2987.1 KB (-23.5, with the 1.79.0 changelog: CHANGELOG.md rides the editor boot) -> line 2990.0 KB (the same rule; was 3010.0; 2985 before v1.78.1)",
+			"note": "measured on the Deck, v1.78.0 and each first-parent merge built in one worktree with one node_modules. 102-boot-diet #637 takes the behaviours runtime + acorn off both boots (-51.8 / -52.6); without it the 13 feature merges add +11.7 / +26.7 (claude:9 told before the release). The line is set at the union so the #637 win is kept. v1.78.1 (sec-fb9's patch, +3.9 / +3.7 over v1.78.0) merged last; the line re-applied on it (claude:9 told)",
 			"perLane": {
 				"basis": "each first-parent merge of the union chain on v1.78.0 (play / editor KB gz vs 1887.0 / 3006.9)",
 				"103-keys #600": "+1.9 / +3.4",

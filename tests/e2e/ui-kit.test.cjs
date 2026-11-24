@@ -192,8 +192,34 @@ h.run(async () => {
 	await page.waitForTimeout(400);
 	await dragHandle(-300, 20, 60);
 	h.check((await sheetEl.getAttribute('data-detent')) === 'full', 'Sheet: a slow drag settles on the nearest detent (half → full)');
+	/** a FAST flick by dy, dispatched page-side: down, `steps` moves ~8 ms apart, up, in ONE sequence.
+	 * The flick is a VELOCITY test (event timestamps), and on a remote slot every `page.mouse` call
+	 * crosses the network to the browser host — a pointerup arriving 200 ms after the last move reads
+	 * as a stopped finger (velocity ~0) and the sheet rightly stays put. Synthetic events carry their
+	 * own creation time as `timeStamp`, which is what sheetDrag reads. @param {number} dy @param {number} steps */
+	async function flickHandle(dy, steps) {
+		const b = await handle.boundingBox();
+		if (!b) return;
+		await page.evaluate(
+			async ({ x, y, dy, steps }) => {
+				const target = /** @type {Element} */ (document.elementFromPoint(x, y));
+				const fire = (type, cy) =>
+					target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, composed: true, pointerId: 41, pointerType: 'mouse', isPrimary: true, button: 0, buttons: type === 'pointerup' ? 0 : 1, clientX: x, clientY: cy }));
+				const wait = () => new Promise((r) => setTimeout(r, 8));
+				fire('pointerdown', y);
+				for (let i = 1; i <= steps; i++) {
+					await wait();
+					fire('pointermove', y + (dy * i) / steps);
+				}
+				await wait();
+				fire('pointerup', y + dy);
+			},
+			{ x: b.x + b.width / 2, y: b.y + b.height / 2, dy, steps }
+		);
+		await page.waitForTimeout(400);
+	}
 	// a fast flick DOWN a short way from full: one detent down, though full is nearer
-	await dragHandle(80, 3, 0);
+	await flickHandle(80, 3);
 	h.check((await sheetEl.getAttribute('data-detent')) === 'half', 'Sheet: a fast flick moves one detent (full → half)');
 	// a slow drag far below peek: dismissed
 	await dragHandle(420, 20, 60);

@@ -42,6 +42,7 @@ export const animationTypes = [
 	'ambientanimal', // 85 N3 (motion/ambientNodes.js)
 	'highlight', 'pressbutton', // 85 I2 (motion/pressNodes.js)
 	'lookat', 'setcolor', 'visibility', 'setuniform',
+	'constraintweight', 'constrainttarget', // 102 M7 (rig/constraintRuntime overrides)
 	'camerarig', // 37 (R8)
 	'deviceparam', 'notetrigger' // 23-B3
 ];

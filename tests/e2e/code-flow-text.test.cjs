@@ -140,13 +140,14 @@ h.run(async () => {
 	const handle = page.locator('#code-ws-toggle-left').first();
 	h.check((await handle.count()) === 1, '5.1 the files sidebar has an edge handle');
 	const before = await leftOpen();
-	await handle.click();
+	// O2 (fix-batch-4): an OPEN sidebar's handle is not drawn; the press goes through the pane's top-band menu then
+	await h.paneHandleClick(page, '#code-ws-toggle-left');
 	await page.waitForTimeout(300);
 	h.check((await leftOpen()) === !before, `5.2 unlocked, a press toggles the sidebar (counterfactual for 5.4) (${before} -> ${!before})`);
 	await S(page, () => window.__tp.test.v1.paneLocks.togglePaneLock('code', true));
 	await page.waitForTimeout(200);
 	const lockedState = await leftOpen();
-	await handle.click();
+	await h.paneHandleClick(page, '#code-ws-toggle-left');
 	await page.waitForTimeout(300);
 	h.check((await leftOpen()) === lockedState, '5.3 locked, a press changes nothing');
 	h.check((await handle.getAttribute('aria-label'))?.includes('locked'), '5.4 ...and the handle says the sidebars are locked');

@@ -7722,6 +7722,7 @@
 							"effects": {
 								"storage": {
 									"exportPreset": "full",
+									"gltfBakeConstraints": "false",
 									"saveFormat": "tp",
 									"saveManyLibraries": "active",
 									"showGltfFormat": "false",

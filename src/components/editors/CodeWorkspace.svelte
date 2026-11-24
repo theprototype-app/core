@@ -11,6 +11,9 @@
 	import { registerDockCloser } from '$lib/dockMenu';
 	import { get } from 'svelte/store';
 	import PaneHandle from '../ui/PaneHandle.svelte';
+	// 80a-fix4-ui O2: the panes' elements (an open pane's handle is not drawn; its menu moves to the pane's top band)
+	let leftEl = $state(/** @type {HTMLElement | null} */ (null));
+	let rightEl = $state(/** @type {HTMLElement | null} */ (null));
 	import { paneLocks } from '$lib/ui/paneLocks.js';
 	import Icon from '../ui/Icon.svelte';
 	import HeadDockPop from '../ui/HeadDockPop.svelte'; // uir-polish G2/G3
@@ -739,7 +742,7 @@
 {#snippet main()}
 	<div class="code-main" class:code-narrow={narrow} bind:clientWidth={mainW}>
 		{#if leftShown}
-			<div class="code-side code-side-left" style:width="{leftW}px">
+			<div class="code-side code-side-left" bind:this={leftEl} style:width="{leftW}px">
 				<CodeSidebarLeft {badOf} onClose={requestClose} />
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div class="code-side-grip code-side-grip-l" title="Drag to resize" onpointerdown={(e) => startSide(e, 'left')} onpointermove={moveSide} onpointerup={endSide}></div>
@@ -776,7 +779,7 @@
 			</div>
 		{/if}
 		{#if rightShown}
-			<div class="code-side code-side-right" style:width="{rightW}px">
+			<div class="code-side code-side-right" bind:this={rightEl} style:width="{rightW}px">
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div class="code-side-grip code-side-grip-r" title="Drag to resize" onpointerdown={(e) => startSide(e, 'right')} onpointermove={moveSide} onpointerup={endSide}></div>
 				<CodeSidebarRight {runtimeOf} />
@@ -787,6 +790,7 @@
 			id="code-ws-toggle-left"
 			edge="left"
 			open={leftShown}
+			pane={leftEl}
 			label="the files sidebar"
 			windowKey="code"
 			role="folder-tree"
@@ -797,6 +801,7 @@
 			id="code-ws-toggle-right"
 			edge="right"
 			open={rightShown}
+			pane={rightEl}
 			label="the tools sidebar"
 			windowKey="code"
 			role="list-tree"

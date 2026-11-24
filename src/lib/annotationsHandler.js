@@ -24,6 +24,7 @@ import { flyTo } from './objectActions';
 import { safeStorage } from './safeStorage';
 import { normalizeReplies, mergeReplies } from './noteReplies';
 import { isSafeCssValue } from './loadGuardCore.js';
+import { applyInfoPointFields } from './infoPoints.js'; // 102b-play: info points for visitors (a leaf)
 
 // Synced note pins on objects. Offsets are object-local so pins follow their
 // object; one note per pin. Replication mirrors the flow-graph pattern:
@@ -121,8 +122,15 @@ export function normalizeAnnotation(a) {
 	const replies = normalizeReplies(a?.replies);
 	if (replies.length) out.replies = replies;
 	else delete out.replies;
-	return out;
+	// 102b-play: an INFO POINT — shown to visitors in the play app, with one picture. Both
+	// present only when set, so every other note is byte-identical to before
+	return applyInfoPointFields(out, a);
 }
+
+/** 102b-play: which notes get a pin here — null = all (the editor); the play app sets a filter
+ * (visitor notes only), and the pins layer and its click path both read it.
+ * @type {import('svelte/store').Writable<((note: any) => boolean) | null>} */
+export const notePinFilter = writable(null);
 
 // 37 R16: the reply rules are a zero-import leaf (vitest: tests/unit/noteReplies.test.js)
 export { MAX_REPLIES, normalizeReplies, mergeReplies } from './noteReplies';

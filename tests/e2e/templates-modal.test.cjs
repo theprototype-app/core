@@ -167,6 +167,22 @@ h.run(async () => {
 	h.check(await A.page.locator('[data-scene-slug="mock-example"]').isVisible(), 'example card renders');
 
 	// -- 4: community empty state (manifest 404 = repo not published yet)
+	// 80a-fix4-ui E1 + G20: a CLOUD build (production, preview) lists the community through the cloud plugin's
+	// provider (cloudHooks.communityProvider), which these GitHub mocks never reach — the suite was red on production
+	// since 1.55.0 for that reason alone. Sections 4-5 test the OSS gallery path, so the provider is PARKED for them
+	// (sceneTemplates falls back to the GitHub gallery the moment it is cleared) and put back after section 5, where
+	// a cloud build must then list the real community (section 5b). On an OSS build there is no provider: no-op.
+	const cloudGallery = await A.page.evaluate(() => {
+		const ch = window.__tp.test.v1.cloudHooks;
+		let prov = null;
+		ch.communityProvider.subscribe((/** @type {any} */ v) => (prov = v))();
+		if (!prov) return false;
+		/** @type {any} */ (window).__parkedCommunityProvider = prov;
+		ch.communityProvider.set(null);
+		return true;
+	});
+	console.log(`  community source: ${cloudGallery ? 'the cloud provider (parked for 4-5)' : 'the GitHub gallery (OSS build)'}`);
+	if (cloudGallery) await A.page.evaluate(() => window.__tp.test.v1.sceneTemplates.loadCommunityGallery(true));
 	await A.page.locator('#templates-tab-community').click();
 	await h.eventually(
 		() => A.page.locator('#community-empty').isVisible(),
@@ -192,6 +208,20 @@ h.run(async () => {
 		castleText.includes('Mock Castle') && castleText.includes('somebody') && castleText.includes('CC-BY-4.0'),
 		'community card carries title/author/license'
 	);
+	// -- 5b (E1): a cloud build lists the REAL community once its provider is back
+	if (cloudGallery) {
+		await A.page.evaluate(() => {
+			window.__tp.test.v1.cloudHooks.communityProvider.set(/** @type {any} */ (window).__parkedCommunityProvider);
+			return window.__tp.test.v1.sceneTemplates.loadCommunityGallery(true);
+		});
+		await h.eventually(
+			() => A.page.evaluate(() => document.querySelectorAll('#templates-modal [data-scene-slug]:not([data-scene-slug="mock-castle"])').length),
+			(n) => n > 0,
+			'E1 a cloud build lists the published community through its provider',
+			20000
+		);
+		console.log(`  live community cards: ${await A.page.evaluate(() => document.querySelectorAll('#templates-modal [data-scene-slug]').length)}`);
+	}
 
 	// -- 6: template load round-trip (backup stash + replace via the session path)
 	await A.page.evaluate(() => {

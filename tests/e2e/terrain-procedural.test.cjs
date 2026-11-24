@@ -76,6 +76,7 @@ const terrainInfo = (page) =>
 						params: mesh.userData.geometryParams?.params ?? null,
 						gtype: mesh.userData.geometryParams?.gtype ?? null,
 						spread: maxY - minY,
+						minY,
 						faceEdited: !!mesh.userData.faceEdited
 					});
 				})();
@@ -290,6 +291,18 @@ h.run(async () => {
 		(t) => t?.hash === reseeded.hash,
 		'B follows the seed change, still bit-identical'
 	);
+
+	// ---- 104 A2: the island RIM, a new param — rides the same message, and absent = 0 = every terrain before it ----
+	await A.page.evaluate((uuid) => window.__tp.test.v1.geometryEdit.applyGeometry(uuid, { rim: -2 }), flat.uuid);
+	await A.page.waitForTimeout(500);
+	const rimmed = await terrainInfo(A.page);
+	h.check(rimmed.params?.rim === -2 && Math.abs(rimmed.minY + 2) < 0.01, `104 A2 rim -2 sinks the island's edge to -2 m (min ${rimmed.minY.toFixed(3)})`);
+	await h.eventually(() => terrainInfo(B.page), (t) => t?.hash === rimmed.hash, '104 A2 B rebuilds the sunk rim bit for bit from the params');
+	await A.page.evaluate((uuid) => window.__tp.test.v1.geometryEdit.applyGeometry(uuid, { rim: 0 }), flat.uuid);
+	await A.page.waitForTimeout(500);
+	const unrimmed = await terrainInfo(A.page);
+	h.check(unrimmed.hash === reseeded.hash, '104 A2 rim 0 is bit-identical to a terrain with no rim at all (old scenes rebuild unchanged)');
+	await h.eventually(() => terrainInfo(B.page), (t) => t?.hash === reseeded.hash, '104 A2 and B follows it back');
 
 	// ---- the counterfactual: the build hook IS the fix ---------------------
 	// Without it, buildGeometry can only make what three has a constructor for,
@@ -552,6 +565,9 @@ h.run(async () => {
 		rebuilt === late.hash,
 		`and rebuilding from those params on C reproduces A's terrain bit for bit (${rebuilt} vs ${late.hash})`
 	);
+	// 80a: A still has the terrain selected, so A holds it and would refuse C's edit: A lets go first
+	await A.page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
+	await h.eventually(() => C.page.evaluate((u) => window.__tp.test.v1.lockHeld.holderNow(u), late.uuid), (v) => !v, 'premise: nobody holds the terrain now');
 	const cEdit = await C.page.evaluate(
 		(uuid) => window.__tp.test.v1.geometryEdit.applyGeometry(uuid, { amplitude: 12 }),
 		late.uuid

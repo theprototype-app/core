@@ -157,6 +157,7 @@ function trimeshPiece(object) {
 	/** @param {any} node @param {boolean} root */
 	const walk = (node, root) => {
 		if (!root && node.visible === false) return;
+		if (!root && node.userData?.decal) return; // 102 M3: a sticker is not part of the shape
 		if (node.isMesh && !node.isInstancedMesh && node.geometry?.attributes?.position) meshes.push(node);
 		for (const child of node.children) walk(child, false);
 	};

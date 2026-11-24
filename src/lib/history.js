@@ -4,9 +4,10 @@ import { objectsGroup, TControls, selectedObject, pokeScene } from '../stores/sc
 import { peers, showToast, closeSelectionInspector } from '../stores/appStore';
 import { notifyExternalMove } from '$lib/flowRuntime';
 import { parkEditOverlays, stripEditOverlays } from '$lib/editOverlays';
-import { HISTORY_BYTES, entryBytes } from '$lib/meshBudget';
+import { HISTORY_BYTES, historyBytes } from '$lib/meshBudget';
 import { withWireBatch } from '$lib/wireBatch';
 import { currentHistoryGesture } from '$lib/historyGesture';
+import { objectToJSON } from './slotGroups.js'; // 105: one serializer for slot groups
 
 // Undo/redo for local edits; remote peers' changes are not recorded, so
 // histories stay per-user.
@@ -256,10 +257,11 @@ export function recordEntry(entry) {
 		// total fits: the far past is what a user has already stopped wanting.
 		// The NEWEST entry is never evicted, however big it is — an undo that cannot
 		// undo the thing you just did would be worse than the memory.
-		let bytes = next.reduce((sum, e) => sum + entryBytes(e), 0);
+		// 99 K3: a typed array steps share by reference (ID channels) is counted once
+		let bytes = historyBytes(next);
 		while (bytes > HISTORY_BYTES && next.length > 1) {
-			bytes -= entryBytes(next[0]);
 			next.splice(0, 1);
+			bytes = historyBytes(next);
 		}
 		return next;
 	});
@@ -290,6 +292,32 @@ let sessionRedoBase = 0; // redoStack length at session start (protected below)
 export function beginHistorySession() {
 	sessionBase = get(undoStack).length;
 	sessionRedoBase = get(redoStack).length;
+}
+
+
+/**
+ * Deep value equality of two history states (99 K2: a meshgeo side holds typed arrays now, and
+ * JSON.stringify writes a Float32Array as an object of index keys — slow, and never equal to the
+ * plain array an older producer stored). Arrays and typed arrays compare by element.
+ * @param {any} a @param {any} b @returns {boolean}
+ */
+function sameState(a, b) {
+	if (a === b) return true;
+	if (a == null || b == null || typeof a !== 'object' || typeof b !== 'object') return a === b;
+	const listA = Array.isArray(a) || ArrayBuffer.isView(a);
+	const listB = Array.isArray(b) || ArrayBuffer.isView(b);
+	if (listA || listB) {
+		/** @type {any} */ const x = a;
+		/** @type {any} */ const y = b;
+		if (!listA || !listB || x.length !== y.length) return false;
+		for (let i = 0; i < x.length; i++) if (!sameState(x[i], y[i])) return false;
+		return true;
+	}
+	const keysA = Object.keys(a).filter((k) => a[k] !== undefined);
+	const keysB = Object.keys(b).filter((k) => b[k] !== undefined);
+	if (keysA.length !== keysB.length) return false;
+	for (const k of keysA) if (!sameState(a[k], b[k])) return false;
+	return true;
 }
 
 /**
@@ -336,7 +364,7 @@ export function endHistorySession(mode = 'collapse', label = 'Mesh edit') {
 		// cannot bracket the compacted before/after; verts-only or verts-bracketed
 		// sessions take the composite path below, which replays each sub-entry
 		// through its own kind
-		if (JSON.stringify(first.before) !== JSON.stringify(last.after))
+		if (!sameState(first.before, last.after))
 			recordEntry({ kind: 'meshgeo', uuid: first.uuid, before: first.before, after: last.after });
 		return;
 	}
@@ -389,7 +417,7 @@ export function captureObjectSnapshot(object, quiet = false) {
 	const unpark = parkEditOverlays(object);
 	try {
 		const reference = referenceSnapshot ? referenceSnapshot(object) : null;
-		const element = reference ?? object.toJSON();
+		const element = reference ?? objectToJSON(object); // 105: slot groups survive undo
 		if (JSON.stringify(element).length > SNAPSHOT_LIMIT) {
 			if (!quiet) showToast('Object is too large for undo history — this step will not be undoable');
 			return null;

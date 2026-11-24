@@ -191,8 +191,14 @@ registerHistoryKind('flowgraph', (entry, state) => {
 		const peer = get(peers);
 		if (peer) {
 			peer.send({ type: 'graphcreate', uuid: entry.uuid });
+			// fix-batch-4 G24: the entry holds the LIVE node/edge shapes (xyflow's measured/selected/
+			// internals ride along), which the receiver's validator refuses as `invalid:nodes` — the wire
+			// carries the serialized copies, the same as every other `nodes` sender
 			if (entry.graph.nodes.length || entry.graph.edges.length)
-				peer.send({ type: 'nodes', graphs: { [entry.uuid]: entry.graph } });
+				peer.send({
+					type: 'nodes',
+					graphs: { [entry.uuid]: { nodes: entry.graph.nodes.map(serializeNode), edges: entry.graph.edges.map(serializeEdge) } }
+				});
 		}
 	} else {
 		deleteObjectGraph(entry.uuid, { record: false });

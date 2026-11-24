@@ -4,6 +4,8 @@ Moved by `battery.cjs refresh --red` from two runs on unchanged code: deps.yml d
 
 **+3 on 2026-11-23** from #628's own run (45110064000, after the 85 moved): roster-rows, session-volume and wire-proto were green in both base runs but red in every attempt there (required + confirm), all at the third page's Connect, all green on the desk at v1.72.0. Timing, same as roster-merge / toggle-peers. **+1** from run 45132432893: dock-strip-drop, a test race in its 6.3 check that is flaky on the desk too. 89 in all. behaviour-load-joiner (red at the first try in all four #628 runs, the join premise) STAYS REQUIRED on purpose: 102-boot-diet #637 changes when the behaviour runtime loads, which is exactly a joiner arriving at a behaviour scene, so a red there may be real (rerun, never move it). The same commit makes the confirm step split its reds by suite time over five parts at 35 min (was three parts dealt alphabetically at 20 min), so a flake gets its retry instead of a `notrun`.
 
+**+2 on 2026-11-24** from #650 (sync-main, run 45386327812): `cinematic-fx` and `fix4-sky-swap-longtask` arrived with main v1.78.0 and had never run on a runner; red in required + confirm + retry, both GPU-calibrated desk suites (env (GPU) below). Their gate is the PC GPU queue. 91 in all.
+
 Bringing a suite back to required: fix the cause, see it green in a deps.yml run, then delete its `optional` line in battery.json and its row here. Classes: env (the runner lacks something), timing (a wait or frame-rate check on a slow runner), real (the app is wrong).
 
 ## real: red on the desk battery at the v1.72.0 tag as well, a product question (own card) (1)
@@ -39,10 +41,12 @@ Bringing a suite back to required: fix the cause, see it green in a deps.yml run
 | `tpanim-states` | 2/2 | clip assets from the packs pin (+ idb timeouts under load) | FAIL four clips bound on A |
 | `two-levels-template` | 2/2 | the courtyard template scene comes from the scenes pin | FAIL 2.1 the walker stands on the courtyard floor (rapier tier) |
 
-## env (GPU): needs what SwiftShader on a 2-core runner does not give (path tracer, frame-cost budgets, WebGL2 probes, encoders) (6)
+## env (GPU): needs what SwiftShader on a 2-core runner does not give (path tracer, frame-cost budgets, WebGL2 probes, encoders, WebGPU) (8)
 
 | suite | runner runs red | why | first red line |
 |---|---|---|---|
+| `cinematic-fx` | 3/3 of run 45386327812 (#650) | new in main v1.78.0 (100 C2); WebGPU on SwiftShader loses the device as the cinematic view starts; desk.gpu + desk.local | FAIL 3. the view is on, no errors ([{"lost":"A valid external Instance reference no longer exists."},{"fatal":"the graphics device was lost."}...]) |
+| `fix4-sky-swap-longtask` | 3/3 of run 45386327812 (#650) | new in main v1.78.0 (80a-fix4 G11); a <100 ms long-task budget at 4x CPU calibrated on the PC queue, the runner measures 188-431 ms on every swap; desk.gpu | FAIL G11 no main-thread task during a 2K sky swap reaches 100 ms at 4x CPU (431 ms) |
 | `bake-light` | 2/2 | lightmap tracing on SwiftShader runs past the 480 s watchdog | FAIL 2.1 premise: cancelled while tracing (Unwrapping lightmap UVs) |
 | `load-check` | 2/2 | texture round-trip of an exported glTF on SwiftShader (found:false in both runs) | FAIL an exported glTF arrives with its texture ({"found":false}) |
 | `moment-share` | 2/2 | a frame-cost budget (1 ms) measured on SwiftShader: 282 ms | FAIL the buffer's mean main-thread cost per frame is within the 1 ms desktop budget (282.489 ms) |

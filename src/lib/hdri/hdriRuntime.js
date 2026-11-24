@@ -35,6 +35,7 @@ import { isVRMode } from '../../stores/sceneStore';
 import { hdriQuality } from './hdriPrefs.js';
 import { environment, presetPayload } from '../environment';
 import { createRenderTarget } from '../render/renderTargets.js'; // 101 F3: the one factory
+import { compileAsync } from '../render/compile.js'; // 101 F3: the one compileAsync
 
 const HALF_MAX = 65000; // a sun pixel past half-float range becomes Inf and NaNs the PMREM blur
 
@@ -131,6 +132,13 @@ function wantedSkyFile(hdri, renderer) {
 	return file;
 }
 
+/** G11: let the page breathe between the steps of a sky swap (input and frames run in between) */
+function nextTask() {
+	const sched = /** @type {any} */ (globalThis).scheduler;
+	if (typeof sched?.yield === 'function') return sched.yield();
+	return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 /** @param {{target?: any}} entry */
 function dropSky(entry) {
 	entry?.target?.dispose?.();
@@ -206,12 +214,43 @@ async function recoverUltraHdr(renderer, buffer, maxWidth) {
 	quad.frustumCulled = false;
 	const scene = new THREE.Scene();
 	scene.add(quad);
+	const camera = new THREE.Camera();
+	// 80a-fix4-ui G11 (r1590-08: the 2K swap held the HONOR main thread 133-158 ms in ONE task): the two uploads, the
+	// shader's compile and the draw each get a task of their own, and the compile runs through compileAsync (the
+	// driver's parallel compile where it has one), so no single task carries the whole swap
+	try {
+		renderer.initTexture?.(sdr);
+		await nextTask();
+		renderer.initTexture?.(gain);
+		await nextTask();
+		// the program is keyed by the render target current at compile time (its colour space and tone mapping):
+		// compiled with none set, it was the screen's program, and the draw into the half-float target linked its own
+		// synchronously (the profile: onFirstUse -> getProgramInfoLog, 73 ms at 4x CPU). So compile WITH the target
+		// current — three fixes the program in compileAsync's synchronous part — and put the target back at once,
+		// before any frame can run, then wait for the driver
+		const was = renderer.getRenderTarget();
+		const xrOn = renderer.xr.enabled;
+		/** @type {Promise<any>} */
+		let compiled;
+		renderer.xr.enabled = false;
+		renderer.setRenderTarget(target);
+		try {
+			compiled = compileAsync(renderer, scene, camera);
+		} finally {
+			renderer.setRenderTarget(was);
+			renderer.xr.enabled = xrOn;
+		}
+		await compiled;
+		await nextTask();
+	} catch {
+		/* the draw below uploads and compiles what is left, as before */
+	}
 	const previous = renderer.getRenderTarget();
 	const xrWas = renderer.xr.enabled;
 	renderer.xr.enabled = false; // a one-off into a target, never through the XR cameras
 	try {
 		renderer.setRenderTarget(target);
-		renderer.render(scene, new THREE.Camera());
+		renderer.render(scene, camera);
 	} finally {
 		renderer.xr.enabled = xrWas;
 		renderer.setRenderTarget(previous);
@@ -238,6 +277,7 @@ function ensureSkyCube(renderer, src, file) {
 	const pending = (async () => {
 		const buffer = await fetchSky(skyTierFile(/** @type {any} */ (row), file));
 		const equirect = await recoverUltraHdr(renderer, buffer, skyTierWidth(file));
+		await nextTask(); // G11: the cube's six faces in a task of their own, not on the end of the recovery's
 		try {
 			const width = equirect.width;
 			const target = new THREE.WebGLCubeRenderTarget(width / 4, {

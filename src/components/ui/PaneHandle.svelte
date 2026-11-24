@@ -1,3 +1,7 @@
+<script lang="ts" module>
+	let phSeq = 0;
+</script>
+
 <script lang="ts">
 	// showhide-v8 (owner 2026-11-09, "one arrow pattern in tabbed windows" + "Handle icons" (b)) — THE ONE SIDE-PANE
 	// HANDLE every window with side panes uses (Node editor, Shader, Animation, UV, HUD, Explorer, Profiler, Code):
@@ -8,6 +12,10 @@
 	//     role icon under the chevron (the hybrid: HUD keeps its cog, Properties panes show info) — no six-dot
 	//   - narrow to look at (14 px), a bigger hit area (24 px with a mouse, 44 px on touch), widens a little on hover
 	//   - its menu (right-click, a long press on touch): Hide / Show, and Lock sidebars for the whole window
+	//   - 80a-fix4-ui O2 (owner 2026-11-20, phones AND desktop): drawn ONLY while its pane is HIDDEN (an open pane's
+	//     handle is redundant). It stays in the layout, invisible, so Ctrl+B / Ctrl+Alt+B ($lib/ui/paneKeys) still
+	//     find it; the pane hides from its own header (Close, where it has one), the keys, or the menu, which moves to
+	//     a right-click / long press on the pane's TOP BAND (its header or tab strip: `pane`, the pane's element)
 	import Icon from './Icon.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import { paneLocks, togglePaneLock } from '$lib/ui/paneLocks.js';
@@ -23,6 +31,7 @@
 		onclick,
 		style = '',
 		extraItems = [],
+		pane = null,
 		...rest
 	}: {
 		/** which side of the WINDOW the pane lives on */
@@ -38,6 +47,8 @@
 		onclick: () => void;
 		style?: string;
 		extraItems?: any[];
+		/** the pane's own element: while it is open, its top band opens this handle's menu */
+		pane?: HTMLElement | null;
 		[k: string]: any;
 	} = $props();
 
@@ -84,6 +95,32 @@
 			window.removeEventListener('resize', measureShift);
 		};
 	});
+	// O2: the open pane's header / tab strip (its top band) carries this menu while the handle is not drawn. A row
+	// with a menu of its own (it calls preventDefault) keeps it; a text field keeps the browser's
+	const BAND = 44;
+	// the handle and its pane carry one key, so a test (or a tool) can find the band that stands in for a hidden handle
+	const phKey = `ph${++phSeq}`;
+	$effect(() => {
+		const el = pane;
+		if (!el) return;
+		el.dataset.phPane = phKey;
+		return () => {
+			if (el.dataset.phPane === phKey) delete el.dataset.phPane;
+		};
+	});
+	$effect(() => {
+		const el = pane;
+		if (!el || !open) return;
+		const onPaneMenu = (e: MouseEvent) => {
+			if (e.defaultPrevented) return;
+			const t = e.target as HTMLElement | null;
+			if (t?.closest?.('input, textarea, select, [contenteditable=""], [contenteditable="true"]')) return;
+			if (e.clientY - el.getBoundingClientRect().top > BAND) return;
+			onMenu(e);
+		};
+		el.addEventListener('contextmenu', onPaneMenu);
+		return () => el.removeEventListener('contextmenu', onPaneMenu);
+	});
 	// B5: Ctrl+B / Ctrl+Alt+B reach this pane when its docked window has the focus or the mouse ($lib/ui/paneKeys)
 	$effect(() => registerPaneHandle({ el: () => btn, edge, press }));
 	const items = $derived([
@@ -112,13 +149,17 @@
 	class:ph-left={edge === 'left'}
 	class:ph-right={edge === 'right'}
 	class:ph-open={open}
+	class:ph-gone={open}
 	class:ph-locked={locked}
 	class:ph-role={!!role}
 	aria-expanded={open}
+	aria-hidden={open ? 'true' : undefined}
+	tabindex={open ? -1 : undefined}
 	aria-label={locked ? `${label} — the sidebars are locked` : open ? `Hide ${label}` : `Show ${label}`}
 	title={locked ? `The sidebars are locked — right-click to unlock` : `${open ? 'Hide' : 'Show'} ${label} — right-click for more`}
 	style={shift && !open ? `${style}; translate: ${shift}px 0` : style}
 	data-ph-shift={shift && !open ? shift : undefined}
+	data-ph-key={pane ? phKey : undefined}
 	bind:this={btn}
 	onclick={press}
 	oncontextmenu={onMenu}
@@ -152,6 +193,11 @@
 	}
 	.ph-role {
 		height: 68px;
+	}
+	/* O2: an open pane's handle is not drawn and takes no press (it stays in the layout for the pane keys) */
+	.ph-gone {
+		visibility: hidden;
+		pointer-events: none;
 	}
 	/* a left pane: the tab hangs to the RIGHT of its edge (into the content), and the reverse */
 	.ph-left {

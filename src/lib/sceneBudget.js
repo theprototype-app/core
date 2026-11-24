@@ -644,6 +644,19 @@ const frameAcc = { calls: 0, triangles: 0 };
 let renderFrames = 0;
 
 /**
+ * 102: triangles a render() drew that are NOT scene geometry — Spark draws every Gaussian splat as one
+ * instanced quad, so a 1 M splat scan reads as ~2 M triangles per pass and would push the triangle
+ * budget (and the headset governor reading it) red for something the splat budget already caps.
+ * splatRuntime registers it while splats exist; (scene) -> triangles to take off this call.
+ * @type {null | ((scene: any) => number)}
+ */
+let triangleDiscount = null;
+/** @param {null | ((scene: any) => number)} fn */
+export function setTriangleDiscount(fn) {
+	triangleDiscount = typeof fn === 'function' ? fn : null;
+}
+
+/**
  * Wrap this renderer's `render` so each call adds what it drew to the accumulator. Once
  * per instance (a restored context can hand the store a NEW renderer, which gets its own).
  * @param {any} renderer
@@ -675,11 +688,19 @@ export function countRenderCalls(renderer) {
 		const result = original.apply(this, args);
 		if (info) {
 			const calls = info.calls - baseCalls;
+			let tris = info.triangles - baseTris;
+			if (triangleDiscount) {
+				try {
+					tris = Math.max(0, tris - Math.max(0, triangleDiscount(args[0]) || 0));
+				} catch {
+					/* a failing discount never breaks the meter */
+				}
+			}
 			renderAcc.calls += calls;
-			renderAcc.triangles += info.triangles - baseTris;
+			renderAcc.triangles += tris;
 			renderAcc.renders++;
 			frameAcc.calls += calls;
-			frameAcc.triangles += info.triangles - baseTris;
+			frameAcc.triangles += tris;
 			const shadows = Math.min(calls, shadowCallsInRender);
 			sourceAcc.shadows += shadows;
 			sourceAcc[renderSource(args[0], args[1], get(globalScene), get(globalCamera))] += calls - shadows;

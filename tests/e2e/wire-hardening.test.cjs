@@ -39,6 +39,8 @@ h.run(async () => {
 		return group.children[group.children.length - 1].uuid;
 	});
 	h.check(!!uuid, `premise: there is an object to move (${uuid})`);
+	// 80a: the box we just made is selected, so we hold it and would refuse a peer's move: let go
+	await page.evaluate(() => window.__tp.test.v1.objectActions.deselectObject());
 
 	// ---- feed the REAL dispatcher a hostile stream through a stubbed conn --------------
 	await page.evaluate(

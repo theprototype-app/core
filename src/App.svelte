@@ -85,12 +85,14 @@
   import { isLocked } from './stores/sceneStore'
   // 29-E: `?embed=1` — the editor windows and the dock inset stand down for the page's
   // life; a corner link and a ▶ button are the only chrome an embed draws
-  import { embedMode } from './lib/playMode'
+  import { embedMode, embedSceneId } from './lib/playMode'
   import EmbedChrome from './components/play/EmbedChrome.svelte'
   import MadeWithBadge from './components/play/MadeWithBadge.svelte'
   // 36-export: the Publish / Export modal (core owns the shell + Export tab; a cloud plugin mounts
   // Publish into it) and the exported game's boot (inert on every normal page load)
   import { publishExportOpen } from '$lib/export/exportStores.js'
+  import { simplifyDialog } from '$lib/makerDialogs.js'
+  import { export3dDialog } from '$lib/makerDialogs.js'
   // 47-cc0: the free CC0 asset browser (lazy, like the export modal)
   import { assetBrowserOpen } from '$lib/cc0/assetBrowserState.js'
   import { recordingOpen, recordingState } from '$lib/recording/recordingStores.js'
@@ -182,7 +184,8 @@ import { startMusicToolbox } from './lib/musicToolbox'
   import PickCycleHint from './components/menu/PickCycleHint.svelte' // 36 F22 / S6 / S12
   import LiveRegions from './components/ui/LiveRegions.svelte' // 53-reader: toasts, errors, selection read aloud
   // 31 K3: the game shell — the pause menu + its wiring
-  import GameShellMenu from './components/hud/GameShellMenu.svelte'
+  // 92-int (claude:9 boot ruling): loaded the first time Play / Interact / the menu / a title wants it
+  import GameShellMenu from './components/hud/GameShellMenuLazy.svelte'
   import CaptionOverlay from './components/play/CaptionOverlay.svelte' // 53 (A6): captions over a game
   import PlayerColorFilter from './components/play/PlayerColorFilter.svelte' // 53 (A6): the colour-blind filter
   import FpsCounter from './components/hud/FpsCounter.svelte'
@@ -228,6 +231,10 @@ import { startMusicToolbox } from './lib/musicToolbox'
   // node graph animations keep running even when the flow drawer is closed
   onMount(() => {
     startFlowCodeRedirect() // showhide-v8 §4: the old Flow code tab opens Code's flow code tab
+    // 102b-play: the screen stays awake while playing, filming, recording or watching a hand-off,
+    // and a colour dropper sits beside colour fields — both only where the browser has the API
+    if (typeof navigator !== 'undefined' && 'wakeLock' in navigator) void import('$lib/wakeLockWiring.js').then((m) => m.startAppWakeLock({ filming: true }))
+    if (typeof window !== 'undefined' && 'EyeDropper' in window) void import('$lib/ui/eyeDropper.js').then((m) => m.startEyeDropper())
     // showhide-v8 §6: Windows ▸ Remember layout per scene (both modules lazily: neither belongs on the boot path)
     void Promise.all([import('$lib/uiLayouts'), import('$lib/levels')]).then(([u, l]) => u.startSceneLayouts(l.currentLevel))
     // 27-B: FIRST, so a failure during the rest of this boot is already recorded.
@@ -235,6 +242,8 @@ import { startMusicToolbox } from './lib/musicToolbox'
     startWireErrors()
     // 48 O1: anonymous error + crash reports (default on, Settings ▸ Privacy; inert without VITE_ERROR_REPORTS_URL)
     startErrorReports()
+    // 102 M4: anonymous play statistics, only for a page opened on a published scene (?s=<id>) — lazy, sent by the cloud plugin
+    if (embedSceneId) void import('./lib/play/playStats').then((m) => m.startPlayStats(embedSceneId))
     if (!webglOk) reportNoWebGL()
     // 26-A: one rAF loop, ~2 samples a second. Started here rather than inside Scene so
     // it keeps measuring while the canvas is remounting — which is exactly when a
@@ -344,7 +353,10 @@ import { startMusicToolbox } from './lib/musicToolbox'
     startSceneBounds()
     startShortcuts()
     startSnapping()
-    startAutosave()
+    // 92 (GC1): an EXPORTED game keeps its progress in its save slots / the levels save, never in the editor's
+    // autosave — whose "Restore previous session?" (a true modal) covered the title screen on every return visit:
+    // the export's world is empty at boot (its scene loads after), so autosave always found something to offer
+    if (!exportMode) startAutosave()
     // 60 Q4: files shared into the app (share_target → sw.js inbox) or opened from the OS
     // (file_handlers → launchQueue); they wait for the restore question (launchInbox.js)
     if (!exportMode) import('$lib/launchInbox').then((m) => m.startLaunchInbox()).catch(() => {})
@@ -462,16 +474,21 @@ import { startMusicToolbox } from './lib/musicToolbox'
     // or dropped onto the selected object) — modelDrop asks; several are always new objects
     const models = files.filter((file) => modelExt.test(file.name.toLowerCase()))
     const { clientX, clientY } = event
+    // 102: Gaussian splats (.ply / .spz / .splat) go to the Explorer through the splat gate, then into the scene
+    const splatExt = /\.(ply|spz|splat)$/i
+    const splatFiles = files.filter((file) => splatExt.test(file.name))
+    if (splatFiles.length)
+      Promise.all([import('./lib/splat/splatImport.js'), import('./lib/explorerDrop')]).then(([s, d]) => s.importSplatFiles(splatFiles, d.dropTarget(clientX, clientY).point))
     files.forEach((file) => {
       const name = file.name.toLowerCase()
-      if (clipFiles.includes(file)) return
+      if (clipFiles.includes(file) || splatFiles.includes(file)) return
       if (modelExt.test(name) && models.length === 1) import('./lib/modelDrop').then((m) => m.dropModelFile(file, { companions, clientX, clientY }))
       else if (modelExt.test(name)) importFile(file, file.name.replace(modelExt, ''), undefined, undefined, companions)
       else if (name.endsWith('.json')) load(file)
       else if (!companions.includes(file)) skipped.push(file.name)
     })
     if (skipped.length > 0)
-      showToast('Unsupported: ' + skipped.join(', ') + '. Supported formats: .glb, .gltf, .obj, .stl, .fbx (models), .json (scene)')
+      showToast('Unsupported: ' + skipped.join(', ') + '. Supported formats: .glb, .gltf, .obj, .stl, .fbx (models), .ply, .spz, .splat (Gaussian splats), .json (scene)')
   }
 </script>
 
@@ -544,6 +561,14 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <ModulesManager />
 <!-- 36-export: loaded and mounted only while open (the Profiler idiom) — a closed modal costs
      the boot nothing and the editor runs exactly as before until somebody asks to export -->
+<!-- 102 M1: Simplify — the lazy-modal idiom: mounted (and its simplifier loaded) only while open -->
+{#if $simplifyDialog}
+{#await import('./components/menu/SimplifyDialog.svelte') then m}<m.default />{/await}
+{/if}
+<!-- 102 M2: Export for 3D print / AR — same idiom (writers, zip and USDZExporter load with it) -->
+{#if $export3dDialog}
+{#await import('./components/menu/Export3dDialog.svelte') then m}<m.default />{/await}
+{/if}
 {#if $publishExportOpen}
 {#await import('./components/menu/PublishExportModal.svelte') then m}<m.default />{/await}
 {/if}

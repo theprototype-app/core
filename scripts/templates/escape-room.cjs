@@ -1,6 +1,7 @@
 // Template def `escape-room` — one file per template (34 R4 A3). Authored by scripts/author-templates.cjs;
 // the def schema is the comment block at the top of that file; the table is ./index.cjs.
 
+const { gameValueData } = require('./_game-values.cjs');
 const { graphBuilder, rulesSource } = require('./_builders.cjs');
 const { P, I, AR, H: HALF, piece } = require('./_level-kit.cjs');
 
@@ -118,12 +119,13 @@ function escapeGraph() {
 	G('g-moments', 'Win & buzzes', fb, 660, 40);
 	T('n-moments', 'Win & buzzes', '**escaped** ends the round as won (the results screen, your best time); a room opening and a gem placed buzz the controllers. Banners and sounds come from the engine on every screen.', 900, 0, { w: 260, h: 130, color: 'green' });
 
-	// ---- the HUD words (the engine's Escape info node, one per line) --------------------------
+	// ---- the HUD words (a Game Value node, one per line) --------------------------
 	const hud = [];
 	const text = (id, read, element, i) => {
 		const x = 1300 + (i % 2) * 520;
 		const y = 40 + Math.floor(i / 2) * 130;
-		hud.push(N(id + 'i', 'escapeinfo', 'Escape: ' + read, x, y, { read }));
+		// 102b-hud: the core Game Value node over the module's published values (_game-values.cjs)
+		hud.push(N(id + 'i', 'gamevalue', 'Game value: ' + read, x, y, gameValueData('escapeinfo', { read })));
 		hud.push(N(id + 't', 'hudtext', 'HUD ' + element, x + 250, y, { element, format: '', decimals: 0, value: 0 }));
 		E(id + 'i', id + 't', 'format');
 	};
@@ -136,7 +138,7 @@ function escapeGraph() {
 	text('best', 'best', 'es-best', 6);
 	text('mbest', 'menuBest', 'menu-best', 7);
 	G('g-hud', 'HUD words', hud, 1300, 40);
-	T('n-hud', 'HUD words', 'Each **Escape info** node reads one line from the house (the room, the clock, what you carry, the goal…) into a HUD Text (the HUD editor lays the screens out).', 1300, 170, { w: 270, h: 120, color: 'purple' });
+	T('n-hud', 'HUD words', 'Each **Game Value** node reads one value the house publishes (the room, the clock, what you carry, the goal…) and writes it as words into a HUD Text (the HUD editor lays the screens out).', 1300, 170, { w: 270, h: 120, color: 'purple' });
 
 	// ---- the player: walk with gravity (desktop WASD, VR stick); no jumping over a locked door
 	N('body', 'charcontroller', 'Player: walk', 660, 420, { mode: 'walk', speed: 0.05, jumpHeight: 0, eyeHeight: 1.65, gravity: true });

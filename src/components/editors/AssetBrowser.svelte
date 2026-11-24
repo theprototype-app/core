@@ -31,6 +31,8 @@
 		ACG_PAGE,
 		normalizePolyHaven,
 		normalizeAmbientCg,
+		acgSearchQuery,
+		exactIdFirst,
 		ambientCgTotal,
 		normalizePhCategories,
 		normalizeAcgCategories,
@@ -127,11 +129,11 @@
 				categories = list.categories;
 			} else {
 				const [page, cats] = await Promise.all([
-					acgPage({ query: query.trim(), category, fresh }),
+					acgPage({ query: acgSearchQuery(query), category, fresh }),
 					acgCategories(fresh).catch(() => null)
 				]);
 				if (my !== ticket) return;
-				rows = normalizeAmbientCg(page.data);
+				rows = exactIdFirst(normalizeAmbientCg(page.data), query);
 				acgTotal = ambientCgTotal(page.data);
 				categories = cats ? normalizeAcgCategories(cats.data) : categories;
 				noteStale(page);
@@ -155,7 +157,7 @@
 		const my = ticket;
 		loading = true;
 		try {
-			const page = await acgPage({ query: query.trim(), category, offset: rows.length });
+			const page = await acgPage({ query: acgSearchQuery(query), category, offset: rows.length });
 			if (my !== ticket) return;
 			rows = [...rows, ...normalizeAmbientCg(page.data)];
 			acgTotal = ambientCgTotal(page.data);

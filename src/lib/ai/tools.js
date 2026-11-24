@@ -1,5 +1,6 @@
 import { parentTarget } from './parentTarget.js';
 import { get } from 'svelte/store';
+import { scenePhysicsState_ } from '../scenePhysics'; // 102b-arrange: layer names for list_scene
 import * as THREE from 'three';
 import { objectsGroup, lockedObjects, pokeScene } from '../../stores/sceneStore.js';
 import { peers } from '../../stores/appStore.js';
@@ -25,6 +26,7 @@ import { aimLight, setShadowMapSize } from '$lib/lightParams';
 import { itemByHash, itemBlob } from '$lib/explorer';
 import { animatedBaseOf, writingBasePose } from '$lib/flowRuntime';
 import { reportedPose } from './poseReport.js';
+import { waterFacts } from './waterReport.js';
 import { meshGenReady, meshTakesImage, activeMeshConfig } from './meshProviders.js';
 import { featureStatus, toolSummary } from '../tools/toolStatus.js';
 import '../tools/builtinTools.js'; // 59 T5: the registry the prompt's tool lines read
@@ -53,6 +55,7 @@ import {
 import { GEOMETRY_TOOL_NAMES, GEOMETRY_AI_TOOLS, GEOMETRY_PROMPT, geometryTool, MIN_SIZE } from './geometryTools.js';
 import { TEXT_TOOL_NAMES, TEXT_AI_TOOLS, TEXT_PROMPT, textTool } from './textTools.js';
 import { PATH_TOOL_NAMES, PATH_AI_TOOLS, PATH_PROMPT, pathTool } from './pathTools.js'; // 78 F4
+import { SIMPLIFY_TOOL_NAMES, SIMPLIFY_AI_TOOLS, SIMPLIFY_PROMPT, simplifyTool } from './simplifyTools.js'; // 102 M1
 import { shapePose } from './shapeBatchCore.js';
 import { meshStats } from './meshStats.js';
 import { applyShadowFlags, SHADOW_SCHEMA } from './shadowFlags.js';
@@ -61,7 +64,9 @@ import { LOOK_TOOL_NAMES, LOOK_AI_TOOLS, LOOK_PROMPT, lookTool } from './lookToo
 import { HUD_TOOL_NAMES, HUD_AI_TOOLS, HUD_PROMPT, hudTool } from './hudTools.js';
 import { SCENE_SETUP_TOOL_NAMES, SCENE_SETUP_AI_TOOLS, SCENE_SETUP_PROMPT, sceneSetupTool } from './sceneSetupTools.js';
 import { LEVELS_TOOL_NAMES, LEVELS_AI_TOOLS, LEVELS_PROMPT, levelsTool } from './levelsTools.js'; // 93
+import { MENUS_TOOL_NAMES, MENUS_AI_TOOLS, MENUS_PROMPT, menusTool } from './menusTools.js'; // 92: title / pause / saves
 import { NPC_TOOL_NAMES, NPC_AI_TOOLS, NPC_PROMPT, npcTool } from './npcTools.js'; // 61-nav G10
+import { DIALOGUE_TOOL_NAMES, DIALOGUE_AI_TOOLS, DIALOGUE_PROMPT, dialogueTool } from './dialogueTools.js'; // 92-dialogue GC6
 import { WORLD_TOOL_NAMES, WORLD_AI_TOOLS, WORLD_PROMPT, worldTool, resolvePatterns } from './worldTools.js';
 import { RUNTIME_TOOL_NAMES, RUNTIME_AI_TOOLS, RUNTIME_PROMPT, runtimeTool } from './runtimeTools.js';
 import { beginAiEdit, endAiEdit } from '../sceneEditBy.js'; // 78-int PL13: "changed by Claude (AI)"
@@ -145,6 +150,12 @@ function r3(n) {
 	return Math.round(n * 1000) / 1000;
 }
 
+/** 102b-arrange: a layer id as its name (the id when the table does not name it) @param {string} id */
+function layerNameOf(id) {
+	const list = get(scenePhysicsState_)?.layers;
+	return (Array.isArray(list) && list.find((/** @type {any} */ l) => l?.id === id)?.name) || id;
+}
+
 /** @param {any} object @returns {any} */
 function describeObject(object) {
 	/** @type {any} */
@@ -156,11 +167,17 @@ function describeObject(object) {
 		...reportedPose(object, animatedBaseOf(object.uuid))
 	};
 	const material = object.material;
-	if (material && !Array.isArray(material)) {
+	// 104 A5: a body of water reports the water the person sees (its preset and colours), not its box's own material
+	const water = waterFacts(object);
+	if (water) out.water = water;
+	else if (material && !Array.isArray(material)) {
 		out.materialType = material.type;
 		if (material.color) out.color = '#' + material.color.getHexString();
 	}
 	if (object.userData?.physics) out.physics = { ...object.userData.physics };
+	// 102b-arrange: a live array, as stored (drawn copies, not objects — update_objects {array, makeReal})
+	if (object.userData?.array && typeof object.userData.array === 'object') out.array = { ...object.userData.array };
+	if (typeof object.userData?.layer === 'string') out.layer = layerNameOf(object.userData.layer);
 	const pivot = originOf(object);
 	if (pivot) out.pivot = pivot.map(r3); // 85 set_pivot: object space
 	const geometry = geometrySummary(object);
@@ -600,6 +617,11 @@ function duplicateFrom(args) {
 	return { from: uuid, created, uuids: created.filter((c) => c.uuid).map((c) => c.uuid) };
 }
 
+/** 102 M3: the decal write path (lazy), loaded by create_objects when a decal is asked for @type {any} */
+let decalEditMod = null;
+/** @param {any} spec */
+const createDecalOne = (spec) => (decalEditMod ? decalEditMod.createDecalFromSpec(spec) : { error: 'the decal tools are still loading — try again' });
+
 /** @param {any} spec @returns {any} one created object's result */
 function createOne(spec, extraTypes = /** @type {string[]} */ ([])) {
 	// 85b S6: "hip", "0.5 reach" … are metres from here on
@@ -608,6 +630,8 @@ function createOne(spec, extraTypes = /** @type {string[]} */ ([])) {
 	// mcp-diorama2: a parent that is not there is an error, never a silent part at the scene root
 	const parentCheck = parentTarget(spec.parentUuid);
 	if (parentCheck && 'error' in parentCheck) return { error: parentCheck.error };
+	// 102 M3: a decal is placed ON an object (a child of it), not at a free position
+	if (spec.kind === 'decal') return createDecalOne(spec);
 	const uuid = genUuid();
 	let created = null;
 	if (spec.kind === 'light') {
@@ -774,6 +798,35 @@ async function updateOne(spec) {
 		}
 	}
 	if (typeof spec.visible === 'boolean' && object.visible !== spec.visible) toggleObjectVisibility(uuid);
+	// 102b-arrange: the object's layer by NAME (a new name makes the layer)
+	if (spec.layer !== undefined) {
+		const tidy = await import('../tidyActions.js');
+		if (spec.layer === null || spec.layer === '') tidy.setObjectsLayer([uuid], null);
+		else if (typeof spec.layer !== 'string' || spec.layer.length > 60) errors.push('layer: a layer name (up to 60 characters) or null');
+		else {
+			const name = spec.layer.trim();
+			const found = tidy.sceneLayers().find((l) => l.name.toLowerCase() === name.toLowerCase());
+			const id = found?.id ?? tidy.addLayer(name);
+			if (id) tidy.setObjectsLayer([uuid], id);
+			else errors.push('layer: the scene is full of layers');
+		}
+	}
+	// 102b-arrange: a live array (record only) and Make real objects — the Inspector's write path
+	/** @type {string[] | null} */
+	let made = null;
+	if (spec.array !== undefined || spec.makeReal === true) {
+		const arr = await import('../arrayActions.js');
+		if (spec.array === null) arr.setArray(uuid, null);
+		else if (spec.array !== undefined) {
+			if (!spec.array || typeof spec.array !== 'object' || Array.isArray(spec.array)) errors.push('array: takes an object like {"mode": "grid", "grid": [4, 1, 4]} or null');
+			else if (spec.array.mode !== undefined && !['line', 'grid', 'circle', 'path'].includes(spec.array.mode)) errors.push('array.mode: one of line, grid, circle, path');
+			else arr.setArray(uuid, spec.array);
+		}
+		if (spec.makeReal === true) {
+			if (!object.userData.array) errors.push('makeReal: this object has no array');
+			else made = arr.makeArrayReal(uuid);
+		}
+	}
 	// mcp-shapes: after the move, so a new position is where it looks from
 	if (spec.lookAt !== undefined) {
 		const why = lookAtTarget(object, spec.lookAt, spec.front);
@@ -787,7 +840,7 @@ async function updateOne(spec) {
 		applyAiTransform(object, was);
 		return { uuid, ok: false, errors: [...errors, clash + ' (it was put back)'] };
 	}
-	const extra = { ...(place.placed ? { placed: place.placed } : {}), ...(unitsOf.units ? { units: unitsOf.units } : {}) };
+	const extra = { ...(place.placed ? { placed: place.placed } : {}), ...(unitsOf.units ? { units: unitsOf.units } : {}), ...(made ? { made } : {}) };
 	return errors.length ? { uuid, ok: false, errors, ...extra } : { uuid, ok: true, ...extra };
 }
 
@@ -815,11 +868,14 @@ const TOOL_NAMES = [
 	...GEOMETRY_TOOL_NAMES, // 85 G1-G6 (geometryTools.js)
 	...TEXT_TOOL_NAMES, // 64-text TX7: create_text, list_fonts (textTools.js)
 	...PATH_TOOL_NAMES, // 78 F4: create_path (pathTools.js)
+	...SIMPLIFY_TOOL_NAMES, // 102 M1: simplify_mesh (simplifyTools.js)
 	...LOOK_TOOL_NAMES, // 85 L1-L5 (lookTools.js)
 	...HUD_TOOL_NAMES, // 85 H1 / H2 + hud panel (hudTools.js)
 	...SCENE_SETUP_TOOL_NAMES, // 85 H3-H7: sky, light, spawn, play camera, opening view (sceneSetupTools.js)
 	...LEVELS_TOOL_NAMES, // 93: the Levels table, portals, loading screens, checkpoints (levelsTools.js)
+	...MENUS_TOOL_NAMES, // 92: title screen, pause menu, save slots (menusTools.js)
 	...NPC_TOOL_NAMES, // 61-nav G10: set_npc = game_setup {npc} (npcTools.js)
+	...DIALOGUE_TOOL_NAMES, // 92-dialogue GC6: set_dialogue = game_setup {dialogue} (dialogueTools.js)
 	...WORLD_TOOL_NAMES, // 85b W1-W7 (worldTools.js)
 	...ASSIST_TOOL_NAMES, // 85 undo_last, pivots, images (assistTools.js): unlisted, their arguments read as create_objects / update_objects
 	...RUNTIME_TOOL_NAMES // 85b R1-R4 (runtimeTools.js): inspect, validate, logs, playtest
@@ -1130,6 +1186,8 @@ async function runAiTool(rawName, rawArgs, opts) {
 				if (copies && !specs.length) return copies;
 				if (!specs.length)
 					return { error: 'no objects provided — pass objects: [{ kind: "primitive", primitive: "Box", ... }]' };
+				// 102 M3: the decal write path is a lazy chunk, loaded only when a decal is asked for
+				if (specs.some((/** @type {any} */ s) => s?.kind === 'decal')) decalEditMod = await import('../decalEdit.js');
 				const results = specs.map((/** @type {any} */ s) => createOne(s));
 				if (copies) return { created: results, copies };
 				// surface a total failure at the TOP level so the caller (and the undo
@@ -1284,6 +1342,9 @@ async function runAiTool(rawName, rawArgs, opts) {
 			case 'create_path':
 				// 78 F4: the Path object (pathTools.js)
 				return await pathTool(name, args);
+			case 'simplify_mesh':
+				// 102 M1: fewer triangles, attributes kept (simplifyTools.js)
+				return await simplifyTool(name, args);
 
 			case 'search_assets':
 			case 'place_asset':
@@ -1346,9 +1407,19 @@ async function runAiTool(rawName, rawArgs, opts) {
 				// 93 (levelsTools.js)
 				return await levelsTool(name, args, createOne);
 
+			case 'set_title_screen':
+			case 'set_pause_menu':
+			case 'set_save_slots':
+				// 92 (menusTools.js)
+				return await menusTool(name, args);
+
 			case 'set_npc':
 				// 61-nav G10 (npcTools.js): the navigation module's enemy recipe
 				return await npcTool(name, args);
+
+			case 'set_dialogue':
+				// 92-dialogue GC6 (dialogueTools.js): a talk on an object
+				return await dialogueTool(name, args);
 
 			case 'inspect_runtime':
 			case 'validate_scene':
@@ -1394,7 +1465,7 @@ export const AI_TOOLS = [
 		function: {
 			name: 'list_scene',
 			description:
-				'List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. Every mesh also has mesh {vertexCount, faceCount (triangles), bounds {local, world}} — each box [[minX, minY, minZ], [maxX, maxY, maxZ]], local in the mesh\'s own space (its vertices), world in the scene. The transform is the AUTHORED pose: an object an effect is moving also has animated: true, and live {position, rotation, scale, visible} when this frame differs; update_objects writes the authored pose, so never copy live back into it. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: "scene" | object uuid, page} to read one page of one graph.',
+				'List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. A body of water has water {preset, shallowColor, deepColor, level (how full 0-1), surface (world height of the still water), waves {height}} in place of color. Every mesh also has mesh {vertexCount, faceCount (triangles), bounds {local, world}} — each box [[minX, minY, minZ], [maxX, maxY, maxZ]], local in the mesh\'s own space (its vertices), world in the scene. The transform is the AUTHORED pose: an object an effect is moving also has animated: true, and live {position, rotation, scale, visible} when this frame differs; update_objects writes the authored pose, so never copy live back into it. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: "scene" | object uuid, page} to read one page of one graph.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1426,7 +1497,7 @@ export const AI_TOOLS = [
 		function: {
 			name: 'create_objects',
 			description:
-				'Create one or more primitives, lights or empty groups in a single call. Ground is the y=0 plane; place objects so they rest ON it (a box of height h sits at y=h/2). Returns the new uuids. To copy an existing object instead (a row of fence posts, a ring of chairs), pass from: its uuid, count, offset [x,y,z] between one copy and the next, and optionally randomRot / randomScale with a seed: deep copies (children, materials, flows), one undo step, uuids in order, in the source\'s own group. lookAt turns an object so its local +Z axis (its front) faces a point or another object, +Y kept up.',
+				'Create one or more primitives, lights, empty groups or decals in a single call. A decal (kind decal) is an image projected onto the surface of the object `on`: give point + normal (world) or just normal (aimed at that object\'s middle from that side; default from above). Ground is the y=0 plane; place objects so they rest ON it (a box of height h sits at y=h/2). Returns the new uuids. To copy an existing object instead (a row of fence posts, a ring of chairs), pass from: its uuid, count, offset [x,y,z] between one copy and the next, and optionally randomRot / randomScale with a seed: deep copies (children, materials, flows), one undo step, uuids in order, in the source\'s own group. lookAt turns an object so its local +Z axis (its front) faces a point or another object, +Y kept up.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1442,7 +1513,15 @@ export const AI_TOOLS = [
 						items: {
 							type: 'object',
 							properties: {
-								kind: { type: 'string', enum: ['primitive', 'light', 'group'] },
+								kind: { type: 'string', enum: ['primitive', 'light', 'group', 'decal'] },
+								on: { type: 'string', description: 'kind=decal: uuid of the object to put it on (not a skinned character or scattered copies)' },
+								point: { type: 'array', items: { type: 'number' }, description: 'kind=decal: world [x,y,z] on that object\'s surface' },
+								normal: { type: 'array', items: { type: 'number' }, description: 'kind=decal: the surface direction [x,y,z] there (with no point: the side it is aimed from)' },
+								image: { type: 'string', description: 'kind=decal: a library image hash or file name (omit = a placeholder frame until one is set)' },
+								size: { description: 'kind=decal: metres, a number (square) or [width, height]' },
+								depth: { type: 'number', description: 'kind=decal: how far into and out of the surface it reaches (default 0.25 m)' },
+								opacity: { type: 'number', description: 'kind=decal: 0-1' },
+								tint: { type: 'string', description: 'kind=decal: #rrggbb multiplying the image' },
 								primitive: {
 									type: 'string',
 									enum: PRIMITIVE_TYPES,
@@ -1457,7 +1536,7 @@ export const AI_TOOLS = [
 									type: 'array',
 									items: { type: 'number' },
 									description:
-										'up to 4 constructor args. Box=[w,h,d], Sphere=[radius], Cylinder=[rTop,rBottom,height], Cone=[radius,height], Plane=[w,h], Torus=[radius,tube]. Omit for sensible defaults. Sizes go down to 0.001 m.'
+										'up to 4 constructor args. Box=[w,h,d], Sphere=[radius], Cylinder=[rTop,rBottom,height], Cone=[radius,height], Plane=[w,h], Torus=[radius,tube]. Omit for sensible defaults. For a rounded box, create a Box and then set_geometry {radius}. Sizes go down to 0.001 m.'
 								},
 								name: { type: 'string' },
 								position: { type: 'array', items: { type: 'number' }, description: '[x,y,z]' },
@@ -1483,7 +1562,7 @@ export const AI_TOOLS = [
 									}
 								},
 								align: { type: 'string', enum: ['surface'], description: 'with at: back it onto the pinged surface (its +Z along the surface normal, upright on a wall) — a painting on a wall' },
-								snap: { type: 'string', enum: ['floor'], description: 'stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground' },
+								snap: { type: 'string', enum: ['floor'], description: 'stand it on whatever is straight under it: a terrain at any height, a floor or table at most 2 m above its base, else the ground; water and trigger volumes are passed through. The answer says placed {on, uuid, y, surface: terrain|mesh|ground}' },
 								face_user: { description: 'turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users' },
 								front: { type: 'string', enum: ['+z', '-z', '+x', '-x', '+y', '-y'], description: 'which local axis is its front for lookAt and face_user (default +z; many models face +x or -z — look at a screenshot)' },
 								parentUuid: { type: 'string', description: 'uuid of an existing group (or any object, not a light or camera) to nest under — position/rotation/scale are then LOCAL to it. A uuid that is not in the scene is an error and that object is not made' },
@@ -1547,10 +1626,16 @@ export const AI_TOOLS = [
 									}
 								},
 								align: { type: 'string', enum: ['surface'], description: 'with at: back it onto the pinged surface (its +Z along the surface normal, upright on a wall) — a painting on a wall' },
-								snap: { type: 'string', enum: ['floor'], description: 'stand it on whatever is straight under it (terrain, floor, table; at most 2 m above its base), else the ground' },
+								snap: { type: 'string', enum: ['floor'], description: 'stand it on whatever is straight under it: a terrain at any height, a floor or table at most 2 m above its base, else the ground; water and trigger volumes are passed through. The answer says placed {on, uuid, y, surface: terrain|mesh|ground}' },
 								face_user: { description: 'turn it (yaw only) so its front faces a person: true = the person you act for, or a peer id / name from where_are_users' },
 								front: { type: 'string', enum: ['+z', '-z', '+x', '-x', '+y', '-y'], description: 'which local axis is its front for lookAt and face_user (default +z; many models face +x or -z — look at a screenshot)' },
 								visible: { type: 'boolean' },
+								array: {
+									description:
+										'102b: repeat this object as a live ARRAY (drawn copies that follow every change to it; one undo, one message): {mode: line|grid|circle|path, count (2-500, the object included), step [x,y,z] (line), grid [nx,ny,nz] + gridStep [x,y,z] (grid), radius + arc degrees + faceOut (circle, centre radius m on -X), path (a Path uuid) + spacing (0 = even) + follow (path), rotStep [x,y,z] degrees per copy, scaleStep per copy}. Fields merge over the current array. null removes it. Copies have no physics or logic until makeReal'
+								},
+								layer: { type: ['string', 'null'], description: '102b: put it on the layer with this NAME (made when new; Configure Scene > Layers hides and locks layers), or null for no layer' },
+								makeReal: { type: 'boolean', description: '102b: true = turn the object\'s array copies into ordinary objects (one undo); the result lists their uuids' },
 								parentUuid: {
 									type: 'string',
 									description: 'group uuid (or any object, not a light or camera) to nest under, or "root" to un-nest. The object keeps its world pose; a position given in the same update is LOCAL to the new parent. A uuid not in the scene is an error'
@@ -1839,6 +1924,18 @@ const PHYSICS_AI_TOOLS = [
 									type: 'array',
 									items: { type: 'string', enum: ['default', 'a', 'b', 'c', 'd', 'water', 'player'] },
 									description: 'groups this object collides with (omit = all); leave out player for a ghost wall the player walks through'
+								},
+								gravityScale: {
+									type: 'number',
+									description: 'dynamic bodies: how strongly gravity pulls this one, -5..5 (1 normal, 0 floats in place, below 0 rises — a balloon, a jump pad feel)'
+								},
+								linearDamping: {
+									type: 'number',
+									description: 'dynamic bodies: air drag on movement 0..5 (a feather, a parachute); omit = the scene\'s value'
+								},
+								angularDamping: {
+									type: 'number',
+									description: 'dynamic bodies: drag on spinning 0..5; omit = the scene\'s value'
 								}
 							},
 							required: ['uuid']
@@ -1854,7 +1951,7 @@ const PHYSICS_AI_TOOLS = [
 		function: {
 			name: 'create_joints',
 			description:
-				'Attach object pairs with physics joints: "fixed" welds them rigidly, "revolute" hinges around an axis (optional motor spins it). Move parts to their final pose WORLD-ALIGNED (no rotation) before jointing. Without anchor a hinge sits at b\'s origin (its centre) and a weld midway: pass anchor [x,y,z] (world) for the real pivot, e.g. the top of a pendulum rod or a door\'s edge. Jointed bodies that touch (a door in its frame, a wheel in its arch) also need contacts:false, or the solver pushes them apart.',
+				'Attach object pairs with physics joints: "fixed" welds them rigidly, "revolute" hinges around an axis (optional motor spins it), "ball" lets b swing and twist freely about one point (a ragdoll shoulder, a wrecking ball on a rod), "slider" lets b move only along a\'s axis (a piston, a drawer, an elevator; limits in metres), "spring" pulls the two toward rest metres apart (a bouncy seat, a car suspension), "rope" lets them get no further than length metres apart and never pushes (a hanging lamp, a rope bridge plank). Move parts to their final pose WORLD-ALIGNED (no rotation) before jointing. Without anchor a hinge sits at b\'s origin (its centre) and a weld midway: pass anchor [x,y,z] (world) for the real pivot, e.g. the top of a pendulum rod or a door\'s edge. Jointed bodies that touch (a door in its frame, a wheel in its arch) also need contacts:false, or the solver pushes them apart.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1863,10 +1960,10 @@ const PHYSICS_AI_TOOLS = [
 						items: {
 							type: 'object',
 							properties: {
-								kind: { type: 'string', enum: ['fixed', 'revolute'] },
+								kind: { type: 'string', enum: ['fixed', 'revolute', 'ball', 'slider', 'spring', 'rope'] },
 								a: { type: 'string', description: 'uuid of the base object' },
-								b: { type: 'string', description: 'uuid of the attached object (hinge anchors at its origin)' },
-								axis: { type: 'string', enum: ['x', 'y', 'z'], description: 'hinge axis (revolute only, default y)' },
+								b: { type: 'string', description: 'uuid of the attached object (hinge, ball and slider anchor at its origin)' },
+								axis: { type: 'string', enum: ['x', 'y', 'z'], description: 'hinge or slider axis, a\'s local axis (revolute and slider only, default y)' },
 								anchor: {
 									type: 'array',
 									items: { type: 'number' },
@@ -1876,8 +1973,17 @@ const PHYSICS_AI_TOOLS = [
 								limits: {
 									type: 'array',
 									items: { type: 'number' },
-									description: 'revolute only: [min, max] radians the hinge may turn'
+									description: 'revolute: [min, max] radians the hinge may turn; slider: [min, max] metres b may move along the axis'
 								},
+								anchors: {
+									type: 'array',
+									items: { type: 'array', items: { type: 'number' } },
+									description: 'spring and rope only: [[x,y,z] on a, [x,y,z] on b] world points the spring or rope ties (default: the two origins)'
+								},
+								rest: { type: 'number', description: 'spring only: rest length in metres (default: the current distance)' },
+								stiffness: { type: 'number', description: 'spring only: how hard it pulls (default 50; 10 soft, 500 stiff)' },
+								damping: { type: 'number', description: 'spring only: how fast the bounce dies (default 2)' },
+								length: { type: 'number', description: 'rope only: maximum distance in metres (default: the current distance)' },
 								motor: {
 									type: 'object',
 									description: 'revolute only: {vel: rad/s, maxForce}',
@@ -1913,7 +2019,7 @@ const PHYSICS_AI_TOOLS = [
  * Call this per turn (readiness can change). @param {ToolOpts} [opts] @returns {any[]} */
 export function getAiTools(opts) {
 	const physics = !!opts?.physics || physicsToolsEnabled();
-	const tools = [...AI_TOOLS, ...GEOMETRY_AI_TOOLS, ...TEXT_AI_TOOLS, ...PATH_AI_TOOLS, ...LOOK_AI_TOOLS, ...HUD_AI_TOOLS, ...SCENE_SETUP_AI_TOOLS, ...LEVELS_AI_TOOLS, ...NPC_AI_TOOLS, ...WORLD_AI_TOOLS, ...ASSIST_AI_TOOLS, ...RUNTIME_AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
+	const tools = [...AI_TOOLS, ...GEOMETRY_AI_TOOLS, ...TEXT_AI_TOOLS, ...PATH_AI_TOOLS, ...SIMPLIFY_AI_TOOLS, ...LOOK_AI_TOOLS, ...HUD_AI_TOOLS, ...SCENE_SETUP_AI_TOOLS, ...LEVELS_AI_TOOLS, ...MENUS_AI_TOOLS, ...NPC_AI_TOOLS, ...DIALOGUE_AI_TOOLS, ...WORLD_AI_TOOLS, ...ASSIST_AI_TOOLS, ...RUNTIME_AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
 	if (physics) tools.push(...PHYSICS_AI_TOOLS);
 	if (meshGenReady()) tools.push(MESH_TOOL);
 	return tools;
@@ -1986,7 +2092,8 @@ export function buildSystemPrompt(opts) {
 				'Physics: objects made with create_objects are STATIC (they stay put in Play) unless you',
 				'create them with physics "dynamic" or a mass — then they fall and collide once a',
 				'simulation runs. Use set_physics to make existing objects dynamic, tune bodies or pin',
-				'scenery. create_joints welds (fixed) or hinges (revolute, optional motor) pairs:',
+				'scenery; its gravityScale / linearDamping make one body float, rise or drift down slowly.',
+				'create_joints welds (fixed), hinges (revolute, optional motor), ball, slider, spring or rope pairs:',
 				'assemble parts at their final pose WORLD-ALIGNED (no rotation) BEFORE jointing, or the',
 				'hinge axis is wrong and the solver launches the assembly. Give a hinge its pivot with',
 				'anchor [x,y,z] (default: b\'s origin) and contacts:false for parts that touch. A door =',
@@ -2018,6 +2125,6 @@ export function buildSystemPrompt(opts) {
 		"an object's name as the tool name — the name of a thing you create belongs in that object's",
 		'`name` field inside create_objects. Every call takes effect immediately, so never repeat a',
 		'call that already came back without an error — once the scene matches the request, stop',
-		'calling tools and write the summary.' + meshLine + toolsLine + GEOMETRY_PROMPT + TEXT_PROMPT + PATH_PROMPT + LOOK_PROMPT + HUD_PROMPT + SCENE_SETUP_PROMPT + LEVELS_PROMPT + NPC_PROMPT + WORLD_PROMPT + ASSIST_PROMPT + RUNTIME_PROMPT + flowBlock + extraBlock + physicsBlock
+		'calling tools and write the summary.' + meshLine + toolsLine + GEOMETRY_PROMPT + TEXT_PROMPT + PATH_PROMPT + SIMPLIFY_PROMPT + LOOK_PROMPT + HUD_PROMPT + SCENE_SETUP_PROMPT + LEVELS_PROMPT + MENUS_PROMPT + NPC_PROMPT + DIALOGUE_PROMPT + WORLD_PROMPT + ASSIST_PROMPT + RUNTIME_PROMPT + flowBlock + extraBlock + physicsBlock
 	].join('\n');
 }

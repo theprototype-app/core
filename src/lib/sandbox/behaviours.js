@@ -20,7 +20,7 @@ import { wrapSource } from '../behaviours/source.js';
 import { behaviour as markBehaviour } from '../behaviours/define.js';
 
 /** context members that only READ (no state sync around them) */
-const PURE = new Set(['rand', 'randInt', 'pick', 'now', 'log', 'isAuthority', 'me', 'find', 'findAll', 'cancel']);
+const PURE = new Set(['rand', 'randInt', 'pick', 'now', 'log', 'isAuthority', 'me', 'players', 'find', 'findAll', 'cancel']);
 /** context members that are data, refreshed on entry */
 const DATA = new Set(['id', 'params', 'state', 'object', 'kit']);
 

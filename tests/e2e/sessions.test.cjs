@@ -89,10 +89,48 @@ h.run(async () => {
 		'A is told about the decline'
 	);
 
+	// fix-batch-4 B1: A (the PROPOSER, which runs the backup) holds many big saved sessions, the shape that made the 'Backup before' save slow
+	// (it re-read every saved session for the list: ~8 of ~10 s under load). Seeded straight into idb so
+	// the seeding itself reads nothing; the clock runs from B's Accept press to A's backup row and objects phase.
+	const SEED = Number(process.env.SESSIONS_B1_SEED ?? 24);
+	await A.page.evaluate(async (n) => {
+		const t = window.__tp.test.v1;
+		const pad = 'x'.repeat(1_500_000);
+		for (let i = 0; i < n; i++)
+			await t.idb.idbPut('session:b1-seed-' + i, { id: 'b1-seed-' + i, name: 'B1 seed ' + i, createdAt: Date.now() - 1e6 - i, format: 1, objects: [], pad });
+		// @ts-ignore
+		window.__b1 = { armed: -1, backup: 0, objects: 0, phases: /** @type {any[]} */ ([]) };
+		t.sessions.sessions.subscribe((list) => {
+			// @ts-ignore
+			if (window.__b1.armed >= 0 && !window.__b1.backup && list.filter((m) => /^Backup before/.test(m.name)).length > window.__b1.armed) window.__b1.backup = Date.now();
+		});
+		t.sceneLoader.sceneLoad.subscribe((/** @type {any} */ l) => {
+			// @ts-ignore
+			if (window.__b1.armed >= 0 && l && window.__b1.phases.at(-1)?.[0] !== l.phase) window.__b1.phases.push([l.phase, Date.now()]);
+			// @ts-ignore
+			if (window.__b1.armed >= 0 && !window.__b1.objects && l?.phase === 'objects') window.__b1.objects = Date.now();
+		});
+	}, SEED);
 	// then B accepts: the load applies and replicates
-	await A.page.evaluate((id) => window.__tp.test.v1.sessions.requestLoadSession(id), target.id);
+	await A.page.evaluate((id) => {
+		const t = window.__tp.test.v1;
+		/** @type {any[]} */ let list = [];
+		t.sessions.sessions.subscribe((/** @type {any} */ v) => (list = v))();
+		// @ts-ignore
+		window.__b1.armed = list.filter((m) => /^Backup before/.test(m.name)).length;
+		return t.sessions.requestLoadSession(id);
+	}, target.id);
 	await B.page.waitForTimeout(800);
-	await B.page.locator('.tp-toast', { hasText: /wants to load session/ }).getByRole('button', { name: 'Accept', exact: true }).click();
+	// the press is stamped IN THE PAGE in the same task that presses it (a document capture listener never
+	// saw Playwright's pointerdown/click reach the toast button: the app's own capture handlers get it first)
+	await B.page.locator('.tp-toast', { hasText: /wants to load session/ }).getByRole('button', { name: 'Accept', exact: true }).waitFor({ timeout: 15000 });
+	await B.page.evaluate(() => {
+		const toast = [...document.querySelectorAll('.tp-toast')].find((t) => /wants to load session/.test(t.textContent ?? ''));
+		const btn = /** @type {HTMLButtonElement | undefined} */ ([...(toast?.querySelectorAll('button') ?? [])].find((x) => (x.textContent ?? '').trim() === 'Accept'));
+		// @ts-ignore
+		window.__b1accept = Date.now();
+		btn?.click();
+	});
 	let replaced = false;
 	await h.eventually(
 		() => Promise.all([objectNames(A.page), objectNames(B.page)]),
@@ -108,6 +146,29 @@ h.run(async () => {
 		// objects after it, so a 15 s window read "nothing happened" while the load was still running
 		60000
 	);
+	// @ts-ignore
+	// the PROPOSER (A) runs the backup and the load and replicates it; B's Accept only answers. Both pages run in
+	// one browser on one machine, so Date.now() is one clock
+	const b1 = { ...(await A.page.evaluate(() => window.__b1)), accept: await B.page.evaluate(() => window.__b1accept ?? 0) };
+	const ms = (/** @type {number} */ t) => (t && b1.accept ? Math.round(t - b1.accept) : -1);
+	h.check(b1.accept > 0, 'premise: B pressed Accept (stamped in the page)');
+	console.log(`  B1: Accept -> backup saved ${ms(b1.backup)} ms, -> objects building ${ms(b1.objects)} ms (${SEED} seeded sessions of 1.5 MB)`);
+	console.log('  B1 phases on A: ' + (b1.phases ?? []).map((/** @type {any} */ [p, t]) => `${p} +${Math.round(t - b1.accept)}`).join(' -> '));
+	// what A's page fetched between the Accept and the objects phase (a dev server compiles a module on its first import)
+	const fetched = await A.page.evaluate(([a, o]) => {
+		const t0 = performance.timeOrigin;
+		return performance.getEntriesByType('resource').filter((e) => t0 + e.startTime >= a - 50 && t0 + e.startTime <= (o || a + 60000))
+			.map((e) => [e.name.replace(/^.*?\/(src|node_modules)\//, '$1/').replace(/\?.*$/, '').slice(0, 70), Math.round(t0 + e.startTime - a), Math.round(e.duration)])
+			.sort((x, y) => y[2] - x[2]).slice(0, 8);
+	}, [b1.accept, b1.objects]);
+	console.log('  B1 fetched on A in that window (path, +ms, ms): ' + JSON.stringify(fetched));
+	// the row's own words: "Accept -> the load STARTS in < 2 s" = the proposer's load bar is up (the 'backup' phase
+	// says so on screen). Measured: 336 ms on the fix; v1.70.0 sat 36 s in an unlabelled backup re-reading every
+	// saved session. The objects bound is the regression guard (fix 3.8-5.3 s on a pc slot, v1.70.0 39.5 s); what
+	// is left after the backup is the scene clear every load makes
+	const started = (b1.phases ?? []).find((/** @type {any} */ [p]) => p === 'backup' || p === 'objects');
+	h.check(!!started && started[1] - b1.accept < 2000, `B1: Accept -> the proposer's load starts (bar up, '${started?.[0]}') in < 2 s with ${SEED} big saved sessions (${started ? Math.round(started[1] - b1.accept) : -1} ms)`);
+	h.check(b1.backup > 0 && b1.objects > 0 && b1.objects - b1.accept < 10000, `B1: ... and builds objects in < 10 s (${ms(b1.objects)} ms; v1.70.0 measured 39.5 s)`);
 	// test-health-1: red since the toast check stopped masking it (e3edaee5) and not explained from the
 	// code (A clears and adds nothing, B applies nothing) — a red prints each side's link, load job and
 	// recent net/session diagnostics, so the next run says which path stopped

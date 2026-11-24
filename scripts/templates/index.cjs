@@ -23,6 +23,8 @@ const TEMPLATE_FILES = [
 	'starter-recipes',
 	// 61-int G9: the starter for enemies (a guard on a Path that spots and chases; needs the navigation module)
 	'guard-patrol',
+	// 92 GC7: the starter that feels like a finished game (title, pause, third person, two save slots, a talking NPC)
+	'starter-game',
 	'lighthouse-island',
 	// 23-D3's Jam Room, a game since 30 visuals-core
 	'jam-room',

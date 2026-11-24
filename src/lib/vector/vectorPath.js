@@ -549,3 +549,73 @@ export function simplifyRing(ring, eps) {
 	}
 	return pts;
 }
+
+/* -------------------------------------------------- 64-vector-edit (D5) ---- */
+
+/**
+ * Translate several anchors at once (their handles ride along). `picks` name nodes by
+ * subpath + index; a node named twice moves once. Returns new subpaths.
+ * @param {VSubpath[]} subs @param {{sub: number, index: number}[]} picks @param {number} dx @param {number} dy
+ */
+export function moveNodesBy(subs, picks, dx, dy) {
+	const out = cloneSubpaths(subs);
+	const seen = new Set();
+	for (const p of picks) {
+		const key = p.sub + ':' + p.index;
+		const n = out[p.sub]?.nodes[p.index];
+		if (!n || seen.has(key)) continue;
+		seen.add(key);
+		n.x += dx;
+		n.y += dy;
+	}
+	return out;
+}
+
+/** can this open subpath be closed? (three points, or two joined by a curve) @param {VSubpath} sub */
+export function closable(sub) {
+	if (sub.closed) return false;
+	const n = sub.nodes.length;
+	if (n >= 3) return true;
+	return n === 2 && (hasHandles(sub.nodes[0]) || hasHandles(sub.nodes[1]));
+}
+
+/** close an open subpath (the last point joins the first) @param {VSubpath} sub @returns {VSubpath} */
+export function closeSubpath(sub) {
+	const copy = cloneSubpaths([sub])[0];
+	if (closable(sub)) copy.closed = true;
+	return copy;
+}
+
+/**
+ * Split a subpath AT a point. A CLOSED loop opens there: the point becomes both ends (the start
+ * keeps its out handle, the end its in handle), so the outline does not move. An OPEN path is cut
+ * in two at an interior point, which both halves keep. An end point of an open path cannot be
+ * split: null.
+ * @param {VSubpath} sub @param {number} index @returns {VSubpath[] | null}
+ */
+export function splitSubpathAt(sub, index) {
+	const nodes = sub.nodes.map(cloneNode);
+	const n = nodes.length;
+	if (!nodes[index]) return null;
+	if (sub.closed) {
+		if (n < 2) return null;
+		const ring = [...nodes.slice(index), ...nodes.slice(0, index)];
+		const start = ring[0];
+		const end = { ...cloneNode(start), ox: 0, oy: 0, smooth: false };
+		start.ix = start.iy = 0;
+		start.smooth = false;
+		return [{ closed: false, nodes: [...ring, end] }];
+	}
+	if (index <= 0 || index >= n - 1) return null;
+	const a = nodes.slice(0, index + 1);
+	const b = nodes.slice(index).map(cloneNode);
+	const aEnd = a[a.length - 1];
+	aEnd.ox = aEnd.oy = 0;
+	aEnd.smooth = false;
+	b[0].ix = b[0].iy = 0;
+	b[0].smooth = false;
+	return [
+		{ closed: false, nodes: a },
+		{ closed: false, nodes: b }
+	];
+}

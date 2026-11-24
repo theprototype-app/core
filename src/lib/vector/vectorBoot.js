@@ -37,7 +37,15 @@ export const VECTOR_SHORTCUTS = [
 	{ id: 'tools.draw-shapes', keys: 'Alt+V', group: 'Tools', scope: 'viewport', label: 'Draw shapes (rectangle, ellipse, star, polygon, pen)', action: () => void toggleVectorTool() },
 	{ id: 'vector.pen-finish', keys: 'Enter', group: 'Shapes', scope: 'vector', label: 'Pen: finish the open path', external: true },
 	{ id: 'vector.pen-undo', keys: 'Backspace', group: 'Shapes', scope: 'vector', label: 'Pen: remove the last point', external: true },
-	{ id: 'vector.point-delete', keys: 'Delete', group: 'Shapes', scope: 'vector', label: 'Edit points: delete the picked point', external: true }
+	{ id: 'vector.point-delete', keys: 'Delete', group: 'Shapes', scope: 'vector', label: 'Edit points: delete the picked points', external: true },
+	// 64-vector-edit (D5)
+	{ id: 'vector.point-all', keys: 'Ctrl+A', group: 'Shapes', scope: 'vector', label: 'Edit points: pick every point', external: true },
+	{ id: 'vector.path-close', keys: 'C', group: 'Shapes', scope: 'vector', label: 'Edit points: close the open path', external: true },
+	{ id: 'vector.path-split', keys: 'K', group: 'Shapes', scope: 'vector', label: 'Edit points: split the path at the picked point', external: true },
+	{ id: 'vector.point-nudge-left', keys: 'ArrowLeft', group: 'Shapes', scope: 'vector', label: 'Edit points: nudge left (Shift = 10x)', external: true },
+	{ id: 'vector.point-nudge-right', keys: 'ArrowRight', group: 'Shapes', scope: 'vector', label: 'Edit points: nudge right (Shift = 10x)', external: true },
+	{ id: 'vector.point-nudge-up', keys: 'ArrowUp', group: 'Shapes', scope: 'vector', label: 'Edit points: nudge up (Shift = 10x)', external: true },
+	{ id: 'vector.point-nudge-down', keys: 'ArrowDown', group: 'Shapes', scope: 'vector', label: 'Edit points: nudge down (Shift = 10x)', external: true }
 ];
 
 // a dynamic import, the checkpoints precedent: shortcuts sits in history's import family

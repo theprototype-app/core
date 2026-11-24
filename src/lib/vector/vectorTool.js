@@ -170,7 +170,7 @@ function onMove(_hit, ctx) {
 	if (!at) return;
 	drag.at = at;
 	if (Math.hypot(ctx.clientX - drag.start[0], ctx.clientY - drag.start[1]) < CLICK_PX) return;
-	const shaped = dragShape(/** @type {string} */ (tool), at, { square: !!ctx.event?.shiftKey || shiftHeld, centre: altHeld });
+	const shaped = dragShape(/** @type {string} */ (tool), at, { square: !!ctx.shiftKey || shiftHeld, centre: !!ctx.altKey || altHeld });
 	showPreview(shaped.params, shaped.cx, shaped.cy);
 }
 

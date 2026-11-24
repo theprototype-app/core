@@ -79,6 +79,22 @@ function hitOf(ray) {
 	return { object: best.object, point: [best.point.x, best.point.y, best.point.z], uuid: best.object.uuid, distance: best.distance };
 }
 
+/** the ctx a handler gets. 64-vector-edit: + pointerId and the modifier keys (additive — a
+ * module that never read them sees the same object it always did, plus three fields)
+ * @param {PointerMode} mode @param {THREE.Raycaster} ray @param {any} event */
+function ctxOf(mode, ray, event) {
+	return {
+		mode,
+		ray,
+		clientX: event.clientX ?? 0,
+		clientY: event.clientY ?? 0,
+		pointerType: event.pointerType ?? 'mouse',
+		pointerId: event.pointerId ?? 1,
+		shiftKey: !!event.shiftKey,
+		altKey: !!event.altKey
+	};
+}
+
 /** @param {any} handler @param {'down' | 'move' | 'up'} kind @param {any} hit @param {any} ctx */
 function call(handler, kind, hit, ctx) {
 	try {
@@ -98,7 +114,7 @@ export function modulePointerDown(mode, ray, event) {
 	owner = null;
 	if (!modulePointerWanted(mode)) return false;
 	const hit = hitOf(ray);
-	const ctx = { mode, ray, clientX: event.clientX ?? 0, clientY: event.clientY ?? 0, pointerType: event.pointerType ?? 'mouse' };
+	const ctx = ctxOf(mode, ray, event);
 	for (const entry of [...entries]) {
 		if (!entry.modes.includes(mode)) continue;
 		if (call(entry.handler, 'down', hit, ctx) === true) {
@@ -112,7 +128,7 @@ export function modulePointerDown(mode, ray, event) {
 /** The owned gesture moved. @param {THREE.Raycaster} ray @param {any} event @returns {boolean} routed */
 export function modulePointerMove(ray, event) {
 	if (!owner) return false;
-	call(owner.handler, 'move', hitOf(ray), { mode: owner.mode, ray, clientX: event.clientX ?? 0, clientY: event.clientY ?? 0, pointerType: event.pointerType ?? 'mouse' });
+	call(owner.handler, 'move', hitOf(ray), ctxOf(owner.mode, ray, event));
 	return true;
 }
 
@@ -121,7 +137,7 @@ export function modulePointerUp(ray, event) {
 	if (!owner) return false;
 	const { handler, mode } = owner;
 	owner = null;
-	call(handler, 'up', hitOf(ray), { mode, ray, clientX: event.clientX ?? 0, clientY: event.clientY ?? 0, pointerType: event.pointerType ?? 'mouse' });
+	call(handler, 'up', hitOf(ray), ctxOf(mode, ray, event));
 	return true;
 }
 

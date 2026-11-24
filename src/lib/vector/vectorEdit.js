@@ -1,11 +1,14 @@
 // 64 D1: EDIT POINTS on a vector shape — the pen's other half. A session on one shape shows its
 // anchors (and the handles of the picked one and its neighbours) at the scene root, and takes
 // presses through the modulePointer seam:
-//   press an anchor ........ pick it and drag it (its handles ride along)
+//   press an anchor ........ pick it and drag it (its handles ride along); Shift adds / removes
+//                            it from the picked set, and a drag on a picked point moves the set
 //   press a handle ......... drag it (a smooth point keeps the opposite handle collinear; Alt breaks it)
 //   press the outline ...... insert a point there (the curve keeps its shape — de Casteljau)
 //   double-click an anchor . convert corner <-> smooth
-//   Delete / Backspace ..... remove the picked point · Esc ends the session
+//   Delete / Backspace ..... remove the picked points · Esc ends the session
+//   arrows ................. nudge the picked points (Shift = x10; the grid step when grid snap is on)
+//   Ctrl+A ................. pick every point · C closes an open path / K splits it at the point
 // A parametric shape (rect / star / ...) is converted to a path on entry — ONE geometry entry,
 // said in a toast. Every gesture is one `applyGeometry` (one undo entry, one message): a drag
 // previews by swapping the local geometry only and commits on release, so the recorded `before`
@@ -19,7 +22,8 @@ import { registerKeySessionProbe, comboOf, bindingOf } from '../shortcuts';
 import { heldByOther, lockMessage } from '../lockHeld'; // 80a
 import { viewportHasKeys } from '../keyScope';
 import { applyGeometry } from '../geometryEdit';
-import { moveNode, moveHandle, convertNode, deleteNode, insertNodeAt, nearestOnSubpath, cloneSubpaths } from './vectorPath.js';
+import { moveNode, moveHandle, convertNode, deleteNode, insertNodeAt, nearestOnSubpath, cloneSubpaths, moveNodesBy, closable, closeSubpath, splitSubpathAt } from './vectorPath.js';
+import { snapEnabled, snapSettings } from '../snapping';
 import { cleanVector, vectorSubpaths } from './vectorRecord.js';
 import { buildVectorGeometry } from './vectorMesh.js';
 import { isVector, vectorParamsOf } from './vectorActions.js';
@@ -29,8 +33,12 @@ import { disarmVectorTool } from './vectorTool.js';
 // the shape being edited lives in the boot gate (the toolbar mounts on it before this chunk loads)
 import { vectorEditObject } from './vectorGate.js';
 export { vectorEditObject };
-/** the picked point @type {import('svelte/store').Writable<{sub: number, index: number} | null>} */
+/** the picked point (the PRIMARY one: its handles show, Convert reads it) @type {import('svelte/store').Writable<{sub: number, index: number} | null>} */
 export const vectorEditPick = writable(null);
+/** 64-vector-edit: EVERY picked point (the primary among them) @type {import('svelte/store').Writable<{sub: number, index: number}[]>} */
+export const vectorEditPicks = writable([]);
+/** what the toolbar offers for the primary point's subpath @type {import('svelte/store').Writable<{close: boolean, split: boolean}>} */
+export const vectorEditCan = writable({ close: false, split: false });
 
 const PICK_PX = 9;
 const CURVE_PX = 7;
@@ -42,7 +50,7 @@ const CURVE_PX = 7;
 /** @type {THREE.Group | null} */ let helpers = null;
 /** the paths as the session sees them (the record's, or the drag's working copy) @type {import('./vectorPath.js').VSubpath[]} */
 let working = [];
-/** @type {null | {kind: 'node' | 'in' | 'out', sub: number, index: number, moved: boolean}} */ let gesture = null;
+/** @type {null | {kind: 'node' | 'in' | 'out', sub: number, index: number, moved: boolean, from?: number[], base?: import('./vectorPath.js').VSubpath[], picks?: {sub: number, index: number}[]}} */ let gesture = null;
 let lastDownAt = 0;
 /** @type {null | {sub: number, index: number}} */ let lastDownNode = null;
 let rafId = 0;
@@ -76,7 +84,7 @@ export function enterVectorEdit(uuid) {
 	}
 	edited = object;
 	working = cloneSubpaths(vectorParamsOf(object)?.paths ?? []);
-	vectorEditPick.set(null);
+	setPicks([]);
 	// the session belongs to the shape it edits: select it first, or the selection watch below
 	// sees whatever else was selected and ends the session on its first emission
 	if (!get(selectedObjects)?.some?.((/** @type {any} */ o) => (o?.uuid ?? o) === uuid)) selectObject(uuid);
@@ -95,8 +103,10 @@ export function enterVectorEdit(uuid) {
 		const p = vectorParamsOf(edited);
 		if (!p || p.kind !== 'path') return exitVectorEdit();
 		working = cloneSubpaths(p.paths);
+		// a pick the new record no longer has goes; the rest stay picked
+		const kept = get(vectorEditPicks).filter((p) => working[p.sub]?.nodes[p.index]);
 		const pick = get(vectorEditPick);
-		if (pick && !working[pick.sub]?.nodes[pick.index]) vectorEditPick.set(null);
+		setPicks(kept, pick && working[pick.sub]?.nodes[pick.index] ? pick : null);
 		rebuildHelpers();
 	});
 	// selecting something else ends the session
@@ -132,8 +142,46 @@ export function exitVectorEdit() {
 	if (peer) peer.send({ type: 'unlock', uuid, peerId: peer.peer.id });
 	edited = null;
 	working = [];
-	vectorEditPick.set(null);
+	setPicks([]);
 	vectorEditObject.set(null);
+}
+
+/* ---------------------------------------------------------------- picks ---- */
+
+/** set the picked set; the primary is `primary` when given, else the last of the set
+ * @param {{sub: number, index: number}[]} list @param {{sub: number, index: number} | null} [primary] */
+function setPicks(list, primary) {
+	const uniq = [];
+	for (const p of list) if (!uniq.some((q) => q.sub === p.sub && q.index === p.index)) uniq.push({ sub: p.sub, index: p.index });
+	const main = primary && uniq.some((q) => q.sub === primary.sub && q.index === primary.index) ? primary : (uniq[uniq.length - 1] ?? null);
+	vectorEditPicks.set(uniq);
+	vectorEditPick.set(main ? { sub: main.sub, index: main.index } : null);
+	const sub = main ? working[main.sub] : null;
+	vectorEditCan.set({
+		close: !!sub && closable(sub),
+		split: !!sub && !!main && (sub.closed || (main.index > 0 && main.index < sub.nodes.length - 1))
+	});
+}
+
+/** @param {{sub: number, index: number}} p */
+const isPicked = (p) => get(vectorEditPicks).some((q) => q.sub === p.sub && q.index === p.index);
+
+/** pick every point of the shape */
+export function pickAllPoints() {
+	if (!edited) return false;
+	const all = [];
+	working.forEach((sub, si) => sub.nodes.forEach((_, i) => all.push({ sub: si, index: i })));
+	setPicks(all, get(vectorEditPick));
+	rebuildHelpers();
+	return true;
+}
+
+/** pick points as a suite or the VR laser would @param {{sub: number, index: number}[]} list */
+export function pickPoints(list) {
+	if (!edited) return false;
+	setPicks(list.filter((p) => working[p.sub]?.nodes[p.index]));
+	rebuildHelpers();
+	return true;
 }
 
 /* ------------------------------------------------------------- geometry ---- */
@@ -239,16 +287,32 @@ function onDown(_hit, ctx) {
 	const picked = pickAt(ctx.clientX, ctx.clientY);
 	const now = performance.now();
 	if (picked?.kind === 'node') {
-		const again = lastDownNode && lastDownNode.sub === picked.sub && lastDownNode.index === picked.index && now - lastDownAt < 350;
+		const p = { sub: picked.sub, index: picked.index };
+		const additive = !!ctx.shiftKey || shiftHeld;
+		const again = !additive && lastDownNode && lastDownNode.sub === p.sub && lastDownNode.index === p.index && now - lastDownAt < 350;
 		lastDownAt = now;
-		lastDownNode = { sub: picked.sub, index: picked.index };
-		vectorEditPick.set({ sub: picked.sub, index: picked.index });
+		lastDownNode = p;
+		if (additive) {
+			// Shift: toggle this point in the set (a press that then drags moves the set)
+			const list = get(vectorEditPicks);
+			if (isPicked(p)) {
+				setPicks(list.filter((q) => q.sub !== p.sub || q.index !== p.index));
+				gesture = null; // un-picking is the whole gesture: nothing to drag
+				rebuildHelpers();
+				return true;
+			}
+			setPicks([...list, p], p);
+		} else if (isPicked(p)) setPicks(get(vectorEditPicks), p); // keep the set: a drag moves all of it
+		else setPicks([p]);
 		if (again) {
-			convertPoint(picked.sub, picked.index);
+			setPicks([p]);
+			convertPoint(p.sub, p.index);
 			gesture = null;
 			return true;
 		}
-		gesture = { kind: 'node', sub: picked.sub, index: picked.index, moved: false };
+		const from = toLocal(ctx.ray);
+		const picks = isPicked(p) ? get(vectorEditPicks) : [p];
+		gesture = { kind: 'node', sub: p.sub, index: p.index, moved: false, from: from ?? undefined, base: cloneSubpaths(working), picks };
 		rebuildHelpers();
 		return true;
 	}
@@ -279,8 +343,12 @@ function onMove(_hit, ctx) {
 	if (!at) return;
 	const sub = working[gesture.sub];
 	if (!sub) return;
-	working[gesture.sub] =
-		gesture.kind === 'node' ? moveNode(sub, gesture.index, at) : moveHandle(sub, gesture.index, gesture.kind, at, { free: altHeld });
+	if (gesture.kind === 'node' && gesture.base && gesture.from && (gesture.picks?.length ?? 0) > 1) {
+		// the set moves by the pointer's travel since the press
+		working = moveNodesBy(gesture.base, gesture.picks ?? [], at[0] - gesture.from[0], at[1] - gesture.from[1]);
+	} else
+		working[gesture.sub] =
+			gesture.kind === 'node' ? moveNode(sub, gesture.index, at) : moveHandle(sub, gesture.index, gesture.kind, at, { free: altHeld || !!ctx.altKey });
 	gesture.moved = true;
 	const p = vectorParamsOf(edited);
 	if (p) swapGeometry({ ...p, paths: working });
@@ -301,7 +369,7 @@ export function insertPoint(sub, seg, t) {
 	if (!edited || !working[sub]) return false;
 	working[sub] = insertNodeAt(working[sub], seg, t);
 	const pairs = working[sub].nodes.length;
-	vectorEditPick.set({ sub, index: Math.min(seg + 1, pairs - 1) });
+	setPicks([{ sub, index: Math.min(seg + 1, pairs - 1) }]);
 	return commit();
 }
 
@@ -320,19 +388,83 @@ export function movePoint(sub, index, at) {
 	return commit();
 }
 
-/** remove the picked point (a subpath keeps two; the last two go with their subpath) */
+/** remove the picked points, ONE undo entry (a subpath keeps two; a subpath left with fewer goes
+ * whole, and the shape's last subpath is refused — delete the shape instead) */
 export function deletePickedPoint() {
-	const pick = get(vectorEditPick);
-	if (!edited || !pick || !working[pick.sub]) return false;
-	const sub = working[pick.sub];
-	if (sub.nodes.length <= 2) {
-		if (working.length <= 1) {
-			showToast('A path needs at least two points — delete the shape instead');
-			return false;
+	const picks = get(vectorEditPicks);
+	if (!edited || !picks.length) return false;
+	/** @type {Map<number, number[]>} */
+	const bySub = new Map();
+	for (const p of picks) if (working[p.sub]?.nodes[p.index]) bySub.set(p.sub, [...(bySub.get(p.sub) ?? []), p.index]);
+	const next = cloneSubpaths(working);
+	/** @type {number[]} */
+	const dropSubs = [];
+	for (const [si, list] of bySub) {
+		const sub = next[si];
+		if (sub.nodes.length - list.length < 2) {
+			dropSubs.push(si);
+			continue;
 		}
-		working.splice(pick.sub, 1);
-	} else working[pick.sub] = deleteNode(sub, pick.index);
-	vectorEditPick.set(null);
+		let cur = sub;
+		for (const i of [...list].sort((a, b) => b - a)) cur = deleteNode(cur, i);
+		next[si] = cur;
+	}
+	if (dropSubs.length >= next.length) {
+		showToast('A path needs at least two points — delete the shape instead');
+		return false;
+	}
+	working = next.filter((_, si) => !dropSubs.includes(si));
+	setPicks([]);
+	return commit();
+}
+
+/** convert every picked point to the opposite of what the PRIMARY one is (one undo entry) */
+export function convertPicked() {
+	const pick = get(vectorEditPick);
+	if (!edited || !pick || !working[pick.sub]?.nodes[pick.index]) return false;
+	const smooth = !working[pick.sub].nodes[pick.index].smooth;
+	for (const p of get(vectorEditPicks)) if (working[p.sub]?.nodes[p.index]) working[p.sub] = convertNode(working[p.sub], p.index, smooth);
+	return commit();
+}
+
+/** close the primary point's open subpath (the pen's "click the first point", after the fact) */
+export function closePickedPath() {
+	const pick = get(vectorEditPick);
+	const sub = pick ? working[pick.sub] : null;
+	if (!edited || !pick || !sub || !closable(sub)) return false;
+	working[pick.sub] = closeSubpath(sub);
+	setPicks(get(vectorEditPicks), pick);
+	return commit();
+}
+
+/** split at the primary point: a closed loop opens there, an open path is cut in two */
+export function splitAtPick() {
+	const pick = get(vectorEditPick);
+	const sub = pick ? working[pick.sub] : null;
+	if (!edited || !pick || !sub) return false;
+	const parts = splitSubpathAt(sub, pick.index);
+	if (!parts) {
+		showToast('Pick a point inside the path to split it (an end point has nothing to split)');
+		return false;
+	}
+	working.splice(pick.sub, 1, ...parts);
+	// the point the cut made: a loop's new start, or the second half's first point
+	setPicks([{ sub: pick.sub + parts.length - 1, index: 0 }]);
+	return commit();
+}
+
+/** the nudge step (metres): the grid step when grid snap is on, else 1 cm; x10 with Shift @param {boolean} big */
+export function nudgeStep(big) {
+	const grid = get(snapEnabled) ? Number(get(snapSettings)?.translate) || 0 : 0;
+	const base = grid > 0 ? grid : 0.01;
+	return big && !(grid > 0) ? base * 10 : base;
+}
+
+/** move the picked points by (dx, dy) in the shape's plane, one undo entry @param {number} dx @param {number} dy */
+export function nudgePicked(dx, dy) {
+	const picks = get(vectorEditPicks);
+	if (!edited || !picks.length) return false;
+	working = moveNodesBy(working, picks, dx, dy);
 	return commit();
 }
 
@@ -368,12 +500,9 @@ function rebuildHelpers() {
 	helpers = new THREE.Group();
 	helpers.name = 'vector-edit-helpers';
 	helpers.userData.isEditOverlay = true;
-	const pick = get(vectorEditPick);
 	/** @type {number[]} */ const anchors = [];
 	/** @type {number[]} */ const picked = [];
-	working.forEach((sub, si) =>
-		sub.nodes.forEach((nd, i) => (pick && pick.sub === si && pick.index === i ? picked : anchors).push(nd.x, nd.y, 0))
-	);
+	working.forEach((sub, si) => sub.nodes.forEach((nd, i) => (isPicked({ sub: si, index: i }) ? picked : anchors).push(nd.x, nd.y, 0)));
 	/** @type {number[]} */ const handleDots = [];
 	/** @type {number[]} */ const lines = [];
 	for (const { sub, index } of visibleHandles()) {
@@ -417,25 +546,49 @@ function tick() {
 /* ----------------------------------------------------------------- keys ---- */
 
 let altHeld = false;
+let shiftHeld = false;
+
+/** the arrow rows (rebindable; Shift+ the same key is the big step) */
+const NUDGES = /** @type {const} */ ([
+	['vector.point-nudge-left', -1, 0],
+	['vector.point-nudge-right', 1, 0],
+	['vector.point-nudge-up', 0, 1],
+	['vector.point-nudge-down', 0, -1]
+]);
 
 /** @param {KeyboardEvent} event */
 function onKeydown(event) {
 	altHeld = event.altKey;
+	shiftHeld = event.shiftKey;
 	if (!edited || !viewportHasKeys(event)) return;
 	const target = /** @type {any} */ (event.target);
 	if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
 	let handled = true;
 	if (event.key === 'Escape') exitVectorEdit();
 	// Delete (rebindable: Settings ▸ Shortcuts ▸ Shapes) and Backspace, the laptop's delete key
-	else if ((comboOf(event) === bindingOf('vector.point-delete') || event.key === 'Backspace') && get(vectorEditPick)) deletePickedPoint();
-	else handled = false;
+	else if ((comboOf(event) === bindingOf('vector.point-delete') || event.key === 'Backspace') && get(vectorEditPicks).length) deletePickedPoint();
+	else if (comboOf(event) === bindingOf('vector.point-all')) pickAllPoints();
+	else if (comboOf(event) === bindingOf('vector.path-close') && get(vectorEditCan).close) closePickedPath();
+	else if (comboOf(event) === bindingOf('vector.path-split') && get(vectorEditCan).split) splitAtPick();
+	else {
+		const combo = comboOf(event);
+		const plain = combo.replace(/^Shift\+/, '');
+		const row = get(vectorEditPicks).length ? NUDGES.find(([id]) => bindingOf(id) === combo || bindingOf(id) === plain) : null;
+		if (row) {
+			const step = nudgeStep(combo !== plain);
+			nudgePicked(row[1] * step, row[2] * step);
+		} else handled = false;
+	}
 	if (handled) {
 		event.preventDefault();
 		event.stopImmediatePropagation();
 	}
 }
 if (typeof window !== 'undefined') {
-	const track = (/** @type {KeyboardEvent} */ e) => (altHeld = e.altKey);
+	const track = (/** @type {KeyboardEvent} */ e) => {
+		altHeld = e.altKey;
+		shiftHeld = e.shiftKey;
+	};
 	window.addEventListener('keydown', track, true);
 	window.addEventListener('keyup', track, true);
 }
@@ -445,6 +598,8 @@ export function vectorEditDebug() {
 	return {
 		uuid: get(vectorEditObject),
 		pick: get(vectorEditPick),
+		picks: get(vectorEditPicks),
+		can: get(vectorEditCan),
 		paths: cloneSubpaths(working),
 		helpers: !!helpers,
 		screen: working.map((sub) => sub.nodes.map((nd) => screenOf(nd.x, nd.y)))

@@ -4,12 +4,18 @@
 // ALIGN: the world-axis Align rows (47 M2) read "X min" on a shape drawn on a tilted wall as nonsense,
 // so the shape rows measure and move in the ACTIVE shape's frame — its right is "left / right", its up
 // "top / bottom". The arithmetic and the one-undo, one-batch commit are align.js's own (`frame`).
+// ORDER: see the layer-order section below.
 import * as THREE from 'three';
 import { get } from 'svelte/store';
-import { objectsGroup, selectedObjects } from '../../stores/sceneStore';
+import { objectsGroup, selectedObjects, pokeScene } from '../../stores/sceneStore';
 import { showToast } from '../../stores/appStore';
 import { alignSelection, distributeSelection } from '../align';
+import { beginHistoryBatch, endHistoryBatch, historyBatchOpen } from '../history';
+import { withWireBatch } from '../wireBatch';
+import { applyGeometry } from '../geometryEdit';
+import { heldByOther } from '../lockHeld';
 import { isVectorObject } from './vectorGate.js';
+import { stackOrder, reorder, layersFor, layerOnTop } from './vectorOrder.js';
 
 /** normals closer than this (1 - cos) count as one plane direction */
 const PARALLEL = 1e-3;
@@ -85,4 +91,100 @@ export function distributeInPlane(dir, uuids) {
 	}
 	const frame = planeFrameOf(shapes[shapes.length - 1]);
 	return distributeSelection(dir === 'h' ? 'x' : 'y', 'gaps', { uuids: shapes.map((o) => o.uuid), frame, label: dir === 'h' ? 'Distribute across' : 'Distribute up' });
+}
+
+/* ------------------------------------------------------------ layer order ---- */
+// ROW 3: forward / backward / to front / to back for shapes on ONE plane (the active shape's plane,
+// facing the same way, within STACK_TOL of it). The order is vectorOrder.js's: by height along the
+// normal, then uuid. Only layers change (applyGeometry, the `geometry` message every peer knows),
+// every changed shape in ONE history batch and ONE wire batch: one undo step, one burst.
+
+/** metres between two parallel planes that still count as one stack (a 4 mm surface lift is in) */
+export const STACK_TOL = 0.05;
+
+/**
+ * Every vector shape on the plane of `active` (same facing, within STACK_TOL), as stack items.
+ * @param {any} active @returns {{items: import('./vectorOrder.js').StackItem[], objects: Map<string, any>}}
+ */
+export function stackOf(active) {
+	const n = normalOf(active);
+	const base0 = active.getWorldPosition(new THREE.Vector3()).dot(n);
+	/** @type {import('./vectorOrder.js').StackItem[]} */
+	const items = [];
+	const objects = new Map();
+	/** @type {any} */ (get(objectsGroup))?.traverse((/** @type {any} */ o) => {
+		if (!isVectorObject(o)) return;
+		if (normalOf(o).dot(n) < 1 - PARALLEL) return; // another plane direction, or facing away
+		const base = o.getWorldPosition(new THREE.Vector3()).dot(n);
+		if (Math.abs(base - base0) > STACK_TOL) return;
+		items.push({ id: o.uuid, base, layer: o.userData.geometryParams.params?.layer ?? 0 });
+		objects.set(o.uuid, o);
+	});
+	return { items, objects };
+}
+
+/** the four moves a menu offers: [op, label, tip] */
+export const ORDER_OPS = /** @type {const} */ ([
+	['front', 'Bring to front', 'Put the shapes on top of every shape on their plane'],
+	['forward', 'Bring forward', 'Move the shapes one place up on their plane'],
+	['backward', 'Send backward', 'Move the shapes one place down on their plane'],
+	['back', 'Send to back', 'Put the shapes under every shape on their plane']
+]);
+
+/**
+ * Reorder the shapes on their plane. ONE undo step for every layer that changed.
+ * @param {'forward' | 'backward' | 'front' | 'back'} op @param {string[]} [uuids] @returns {number} shapes whose layer changed
+ */
+export function orderShapes(op, uuids) {
+	const shapes = planeShapes(uuids);
+	const active = shapes[shapes.length - 1];
+	if (!active) {
+		showToast('Order: pick a shape');
+		return 0;
+	}
+	const { items, objects } = stackOf(active);
+	const moving = shapes.map((o) => o.uuid).filter((id) => objects.has(id));
+	const before = stackOrder(items);
+	const after = reorder(before, moving, op);
+	const layers = layersFor(items, after);
+	const changed = items.filter((it) => layers.get(it.id) !== it.layer);
+	if (!changed.length || before.every((id, i) => id === after[i])) {
+		showToast(op === 'front' || op === 'forward' ? 'Already on top' : 'Already at the back');
+		return 0;
+	}
+	// 80a: a shape another peer holds cannot be relayered under them
+	const held = changed.find((it) => heldByOther(it.id));
+	if (held) {
+		showToast(`${objects.get(held.id)?.name || 'A shape'} on this plane is locked by another peer`);
+		return 0;
+	}
+	const open = historyBatchOpen();
+	if (!open) beginHistoryBatch();
+	try {
+		withWireBatch(() => {
+			for (const it of changed) applyGeometry(it.id, { layer: layers.get(it.id) ?? 0 });
+		});
+	} finally {
+		if (!open) endHistoryBatch(ORDER_OPS.find((r) => r[0] === op)?.[1] ?? 'Order');
+	}
+	pokeScene();
+	return changed.length;
+}
+
+/**
+ * The layer a NEW shape drawn on `object`'s plane takes so it lands on top. @param {any} object a shape on the plane
+ * @param {THREE.Vector3} origin the new shape's world origin
+ */
+export function layerAbove(object, origin) {
+	const { items } = stackOf(object);
+	return layerOnTop(items, origin.dot(normalOf(object)));
+}
+
+/** suites: the stack of a shape's plane, bottom-up, with layers @param {string} uuid */
+export function stackDebug(uuid) {
+	const o = objectOf(uuid);
+	if (!o) return [];
+	const { items } = stackOf(o);
+	const byId = new Map(items.map((it) => [it.id, it]));
+	return stackOrder(items).map((id) => ({ uuid: id, layer: byId.get(id)?.layer ?? 0, base: byId.get(id)?.base ?? 0 }));
 }

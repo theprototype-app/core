@@ -28,6 +28,8 @@ import { cleanVector, vectorDefaults } from './vectorRecord.js';
 import { buildVectorGeometry, vectorMaterial } from './vectorMesh.js';
 import { addVectorShape } from './vectorActions.js';
 import { snapCandidates, snapInPlane, showSnapGuides, clearSnapGuides } from './vectorSnap.js';
+import { layerAbove, normalOf } from './vectorArrange.js';
+import { isVectorObject } from './vectorGate.js';
 
 // the armed tool lives in the boot gate (Tools ▸ Draw shapes reads it before this chunk loads)
 import { vectorTool } from './vectorGate.js';
@@ -46,7 +48,7 @@ const CLOSE_PX = 10;
 const SURFACE_LIFT = 0.004;
 
 /** @type {null | (() => void)} */ let offPointer = null;
-/** @type {null | {origin: THREE.Vector3, quat: THREE.Quaternion, plane: THREE.Plane}} */ let frame = null;
+/** @type {null | {origin: THREE.Vector3, quat: THREE.Quaternion, plane: THREE.Plane, layer?: number}} */ let frame = null;
 /** a parametric drag in flight @type {null | {start: number[], x: number, y: number, at: number[]}} */ let drag = null;
 /** @type {null | {nodes: import('./vectorPath.js').VNode[], dragging: number, x: number, y: number, lastDown: number}} */ let pen = null;
 /** @type {THREE.Mesh | null} */ let preview = null;
@@ -102,20 +104,35 @@ function surfaceUnder(ray) {
 			const normal = h.face ? h.face.normal.clone().transformDirection(h.object.matrixWorld) : new THREE.Vector3(0, 1, 0);
 			// face the viewer: a double-sided shape's back face reports the far normal
 			if (normal.dot(ray.ray.direction) > 0) normal.negate();
-			return { point: h.point.clone(), normal };
+			return { point: h.point.clone(), normal, object: /** @type {any} */ (h.object) };
 		}
 	}
 	const ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 	const point = new THREE.Vector3();
-	if (ray.ray.intersectPlane(ground, point)) return { point, normal: new THREE.Vector3(0, 1, 0) };
+	if (ray.ray.intersectPlane(ground, point)) return { point, normal: new THREE.Vector3(0, 1, 0), object: null };
 	// looking at the sky: a plane facing the camera, 4 m out
 	const n = ray.ray.direction.clone().negate();
-	return { point: ray.ray.at(4, new THREE.Vector3()), normal: n };
+	return { point: ray.ray.at(4, new THREE.Vector3()), normal: n, object: null };
 }
 
 /** the drawing frame for a press @param {THREE.Raycaster} ray */
 export function frameFor(ray) {
-	const { point, normal } = surfaceUnder(ray);
+	const hit = surfaceUnder(ray);
+	let { point, normal } = hit;
+	let lift = SURFACE_LIFT;
+	/** @type {any} */ let onShape = null;
+	// 64-vector-edit row 3: a press on the FRONT of a flat shape draws on that shape's own plane, one
+	// layer above everything on it (a stable order, never a 4 mm stack of planes that z-fight)
+	if (isVectorObject(hit.object) && !(hit.object.userData.geometryParams.params?.depth > 0)) {
+		const z = normalOf(hit.object);
+		if (z.dot(normal) > 1 - 1e-3) {
+			const base = hit.object.getWorldPosition(new THREE.Vector3()).dot(z);
+			point = point.clone().addScaledVector(z, base - point.dot(z));
+			normal = z;
+			lift = 0;
+			onShape = hit.object;
+		}
+	}
 	/** @type {any} */
 	const camera = get(globalCamera);
 	const right = new THREE.Vector3(1, 0, 0);
@@ -127,8 +144,8 @@ export function frameFor(ray) {
 	const up = new THREE.Vector3().crossVectors(normal, right).normalize();
 	const basis = new THREE.Matrix4().makeBasis(right, up, normal);
 	const quat = new THREE.Quaternion().setFromRotationMatrix(basis);
-	const origin = point.clone().addScaledVector(normal, SURFACE_LIFT);
-	return { origin, quat, plane: new THREE.Plane().setFromNormalAndCoplanarPoint(normal, origin) };
+	const origin = point.clone().addScaledVector(normal, lift);
+	return { origin, quat, plane: new THREE.Plane().setFromNormalAndCoplanarPoint(normal, origin), layer: onShape ? layerAbove(onShape, origin) : 0 };
 }
 
 /** a ray onto the frame's plane, in frame coordinates @param {THREE.Raycaster} ray @returns {number[] | null} */
@@ -264,7 +281,7 @@ function place(params, cx, cy) {
 	const position = group.worldToLocal(world.clone());
 	const groupQuat = group.getWorldQuaternion(new THREE.Quaternion());
 	const quaternion = groupQuat.invert().multiply(frame.quat);
-	return addVectorShape(params, { position, quaternion, select: false });
+	return addVectorShape(frame.layer ? { ...params, layer: frame.layer } : params, { position, quaternion, select: false });
 }
 
 /* ------------------------------------------------------------------ pen ---- */

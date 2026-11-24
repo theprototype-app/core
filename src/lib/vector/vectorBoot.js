@@ -45,7 +45,23 @@ export const VECTOR_SHORTCUTS = [
 	{ id: 'vector.point-nudge-left', keys: 'ArrowLeft', group: 'Shapes', scope: 'vector', label: 'Edit points: nudge left (Shift = 10x)', external: true },
 	{ id: 'vector.point-nudge-right', keys: 'ArrowRight', group: 'Shapes', scope: 'vector', label: 'Edit points: nudge right (Shift = 10x)', external: true },
 	{ id: 'vector.point-nudge-up', keys: 'ArrowUp', group: 'Shapes', scope: 'vector', label: 'Edit points: nudge up (Shift = 10x)', external: true },
-	{ id: 'vector.point-nudge-down', keys: 'ArrowDown', group: 'Shapes', scope: 'vector', label: 'Edit points: nudge down (Shift = 10x)', external: true }
+	{ id: 'vector.point-nudge-down', keys: 'ArrowDown', group: 'Shapes', scope: 'vector', label: 'Edit points: nudge down (Shift = 10x)', external: true },
+	...[
+		['front', 'Ctrl+Alt+]', 'Bring to front'],
+		['forward', 'Ctrl+]', 'Bring forward'],
+		['backward', 'Ctrl+[', 'Send backward'],
+		['back', 'Ctrl+Alt+[', 'Send to back']
+	].map(([op, keys, label]) => ({
+		id: 'vector.order-' + op,
+		keys,
+		group: 'Shapes',
+		scope: 'viewport',
+		label: `Shapes: ${label.toLowerCase()} on their plane`,
+		action: () => {
+			if (!isVectorObject(get(selectedObject))) return;
+			void import('./vectorArrange.js').then((m) => m.orderShapes(/** @type {any} */ (op)));
+		}
+	}))
 ];
 
 // a dynamic import, the checkpoints precedent: shortcuts sits in history's import family

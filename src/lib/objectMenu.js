@@ -211,6 +211,14 @@ function vectorMenuRows(object, targets, multi, locked, lockedTooltip) {
 				)
 			]
 		});
+	// 64-vector-edit (D5 row 3): layer order on the plane (one undo)
+	const orderSet = vectors.length ? vectors : [object.uuid];
+	children.push({
+		label: 'Order',
+		children: [['front', 'Bring to front'], ['forward', 'Bring forward'], ['backward', 'Send backward'], ['back', 'Send to back']].map(([op, l]) =>
+			row(l, 'Among the shapes on this plane (one undo)', () => arrange().then((m) => m.orderShapes(/** @type {any} */ (op), orderSet)))
+		)
+	});
 	if (!multi && isVectorObject(object)) {
 		const stroked = object.userData.geometryParams.params?.strokeWidth > 0;
 		children.push(

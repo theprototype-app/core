@@ -11,6 +11,7 @@
 // so userData never holds a value the builder would not use (the arch `clean` rule) and a
 // hostile record off the wire cannot ask for a million nodes.
 import { rectPath, ellipsePath, starPath, polygonPath, cloneSubpaths } from './vectorPath.js';
+import { MAX_LAYER } from './vectorOrder.js';
 
 export const VECTOR_KINDS = ['rect', 'ellipse', 'star', 'polygon', 'path'];
 export const FILL_TYPES = ['solid', 'linear', 'radial', 'none'];
@@ -125,6 +126,10 @@ export function cleanVector(raw) {
 		depth: num(r.depth, 0, 50, d.depth),
 		bevel: num(r.bevel, 0, 5, d.bevel)
 	};
+	// 64-vector-edit row 3: the layer on its plane — kept only when above 0, so a record nobody
+	// reordered is byte-identical to one written before layers existed
+	const layer = Math.round(num(r.layer, 0, MAX_LAYER, 0));
+	if (layer > 0) /** @type {any} */ (out).layer = layer;
 	return out;
 }
 

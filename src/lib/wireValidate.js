@@ -28,6 +28,8 @@ import { isPingMessage } from './pingCore.js';
 // 101 F2: the object schema's receive verdicts (a pure leaf; the cleaning runs in the appliers)
 import { objectJsonVerdict, materialSetVerdict } from './sceneSchema.js';
 import { validPhotoRequest, validPhotoResult } from './photo/photoCore.js';
+// 102 M6: the live mesh-paint stroke's shape (a zero-import leaf)
+import { validMeshPaint } from './meshPaintWire.js';
 
 /** @param {unknown} v */
 export function isUuid(v) {
@@ -119,6 +121,9 @@ function isNum(v) {
 
 /** 34 R2: the most rows one `kitentity` message may carry (the kit's entity ceiling, 200, + slack) */
 export const KIT_ENTITY_MAX_ROWS = 256;
+/** 80a K3: one peer's lock set (`lock` uuids / ats) and a whole lock table (`locked`) */
+export const LOCK_SET_MAX = 4096;
+export const LOCK_TABLE_MAX_ROWS = 16384;
 
 /**
  * 34 R2: one full kit entity record. Its pose and hp are applied the moment it lands (a NaN
@@ -174,6 +179,9 @@ const shortStr = (v) => typeof v === 'string' && v.length > 0 && v.length <= 128
  * @type {Record<string, (data: any) => boolean>}
  */
 export const VALIDATORS = {
+	// 102 M6: a live mesh-paint stroke (a preview; the committed map / meshgeo is the truth)
+	meshpaint: (d) => validMeshPaint(d),
+	meshpaintend: (d) => typeof d.id === 'string' && d.id.length <= 64,
 	// 98 P2 (98-photo): Photo mode's hand-off — a view to render, its answer (PNG bytes capped), a stop
 	photoreq: (d) => validPhotoRequest(d),
 	photores: (d) => validPhotoResult(d),
@@ -185,6 +193,9 @@ export const VALIDATORS = {
 	chathistory: (d) => isArray(d.messages) && d.messages.length <= 500,
 	// 48 S2: a sequence document (normalized again on apply) / its delete / the full map
 	seq: (d) => typeof d.id === 'string' && d.id.length <= 64 && !!d.doc && typeof d.doc === 'object' && !Array.isArray(d.doc),
+	// 102 M3: a stamped mark (applyDecalStamp re-checks and clamps every field)
+	decalstamp: (d) =>
+		typeof d.id === 'string' && d.id.length <= 64 && isUuid(d.target) && isNumberArray(d.pose) && d.pose.length === 16 && (d.image === undefined || (typeof d.image === 'string' && d.image.length <= 128)),
 	seqdelete: (d) => typeof d.id === 'string' && d.id.length <= 64,
 	seqs: (d) => !!d.seqs && typeof d.seqs === 'object' && !Array.isArray(d.seqs),
 	// 50 Y1: shared text — a document key (`n:<graph>:<node>` / `f:<name>`) and Yjs's own binary
@@ -204,8 +215,15 @@ export const VALIDATORS = {
 		(d.src === undefined || (typeof d.src === 'string' && d.src.startsWith('data:image/') && d.src.length <= 12 * 1024 * 1024)),
 	underlaydelete: (d) => typeof d.id === 'string' && d.id.length <= 64,
 	userdata: (d) => isArray(d.userdata),
-	locked: (d) => isArray(d.lockeditems),
-	lock: (d) => isUuid(d.uuid) && (d.uuids === undefined || isArray(d.uuids)),
+	locked: (d) => isArray(d.lockeditems) && d.lockeditems.length <= LOCK_TABLE_MAX_ROWS,
+	lock: (d) =>
+		isUuid(d.uuid) &&
+		(d.uuids === undefined || (isArray(d.uuids) && d.uuids.length <= LOCK_SET_MAX)) &&
+		(d.ats === undefined || (isArray(d.ats) && d.ats.length <= LOCK_SET_MAX)),
+	// 80a K3: the holder refused an edit of ours (only the holder's is acted on: lockControl)
+	lockreject: (d) => isUuid(d.uuid),
+	// 80a K15: the room's lock mode (only the host's or an admin's is followed: lockMode.js)
+	lockmode: (d) => (d.mode === 'select' || d.mode === 'edit') && Number.isFinite(d.at),
 	unlock: (d) => d.peerId === undefined || typeof d.peerId === 'string',
 	clearscene: (d) => typeof d.peerId === 'string',
 	delete: (d) => isUuid(d.uuid),
@@ -356,8 +374,9 @@ export const VALIDATORS = {
 		typeof d.name === 'string' &&
 		d.name.length > 0 &&
 		d.name.length <= 200 &&
-		(d.op === 'set' || d.op === 'add' || d.op === 'subtract') &&
-		Number.isFinite(d.value),
+		(d.op === 'set' || d.op === 'add' || d.op === 'subtract' || d.op === 'toggle' || d.op === 'text') &&
+		// 102b-hud: a `text` op carries words (a variable that holds a name, a code), capped
+		(d.op === 'text' ? typeof d.value === 'string' && d.value.length <= 200 : Number.isFinite(d.value)),
 	kitreq: (d) =>
 		typeof d.rid === 'string' &&
 		d.rid.length > 0 &&
@@ -467,6 +486,13 @@ export const VALIDATORS = {
 		if (d.parameter === 'terrainLayers') return isUuid(d.uuid) && (d.terrainLayers === null || isArray(d.terrainLayers));
 		if (d.parameter === 'terrainScatter')
 			return isUuid(d.uuid) && (d.terrainScatter === null || (!!d.terrainScatter && typeof d.terrainScatter === 'object' && isArray(d.terrainScatter.sets)));
+		// 102 M7: a constraint stack is a short array of plain objects (normalized again by the applier), or null
+		if (d.parameter === 'constraints')
+			return (
+				isUuid(d.uuid) &&
+				(d.constraints === null ||
+					(isArray(d.constraints) && d.constraints.length <= 16 && d.constraints.every((/** @type {any} */ c) => !!c && typeof c === 'object' && !isArray(c) && typeof c.id === 'string' && c.id.length <= 24)))
+			);
 		// 48 B2: a measurement's record — null is not a record (an item is deleted, never emptied)
 		if (d.parameter === 'measure')
 			return isUuid(d.uuid) && !!d.measure && typeof d.measure === 'object' && isArray(d.measure.points) && d.measure.points.length <= 64;
@@ -499,6 +525,8 @@ export const VALIDATORS = {
 		// 101 F2: a slot list + groups — the schema's verdict here, the field-by-field cleaning in applyMaterials
 		if (d.parameter === 'materials') return isUuid(d.uuid) && materialSetVerdict(d.payload);
 		if (d.parameter === 'materialParam') return isUuid(d.uuid) && checkMaterialParam(null, d.key, d.value).ok;
+		// 102 M6: "this object only" on a shared material — the peer clones it too
+		if (d.parameter === 'materialUnlink') return isUuid(d.uuid);
 		// 72 LK1: a texture map slot takes an inline image or null, never a URL a peer could make us fetch
 		if (d.parameter === 'mapSlot') return isUuid(d.uuid) && isMapSlotKey(d.key) && isMapSlotImage(d.map);
 		// the base-colour map: an embedded image or null, never an address a peer could make us fetch
@@ -513,6 +541,20 @@ export const VALIDATORS = {
 			if (v === null) return isUuid(d.uuid);
 			return isUuid(d.uuid) && !!v && typeof v === 'object' && !isArray(v) && (v.text === undefined || (typeof v.text === 'string' && v.text.length <= 4000));
 		}
+		// 102 M3: a decal record (normalizeDecal clamps every field)
+		if (d.parameter === 'decal') return isUuid(d.uuid) && !!d.decal && typeof d.decal === 'object' && !isArray(d.decal);
+		// 102: a Gaussian splat's record (normalizeSplat clamps the rest) or null; the hash is a content
+		// address, never a URL
+		if (d.parameter === 'splat') {
+			const v = d.splat;
+			if (v === null) return isUuid(d.uuid);
+			return isUuid(d.uuid) && !!v && typeof v === 'object' && !isArray(v) && (v.hash === undefined || (typeof v.hash === 'string' && /^[0-9a-f]{0,128}$/i.test(v.hash)));
+		}
+		// 102b-arrange: an object's layer id (from the scene's layer table) or null
+		if (d.parameter === 'layer') return isUuid(d.uuid) && (d.layer === null || (typeof d.layer === 'string' && d.layer.length <= 64));
+		// 102b-arrange: an array record is a small plain object or null (normalizeArray cleans it on read)
+		if (d.parameter === 'array')
+			return isUuid(d.uuid) && (d.array === null || (!!d.array && typeof d.array === 'object' && !isArray(d.array) && JSON.stringify(d.array).length <= 2000));
 		if (d.parameter === 'water' || d.parameter === 'bubbles' || d.parameter === 'pour') {
 			const v = d[d.parameter];
 			return isUuid(d.uuid) && (v === null || (!!v && typeof v === 'object' && !isArray(v)));

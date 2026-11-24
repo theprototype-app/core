@@ -36,6 +36,10 @@
 	import { peerVarsAll, peerVarNames } from '$lib/peerVars';
 	import { userdata, peers } from '../../stores/appStore';
 	import Icon from '../ui/Icon.svelte';
+	// 92-input GC3: a key hint follows the player's remap, and on a pad shows the pad's own button (the
+	// glyph component is lazy: a keyboard player's hint is the plain keycap it always was)
+	import { activeInput } from '$lib/activeDevice.js';
+	import { accessRemap } from '$lib/playerAccess';
 	import { onDestroy } from 'svelte';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
@@ -667,7 +671,11 @@
 	</div>
 {:else if kind === 'keyhint'}
 	<div class="hud-el hud-keyhint" style={boxStyle}>
-		<kbd class="hud-kbd">{element?.keyName ?? ''}</kbd>
+		{#if $activeInput.kind === 'pad' || element?.code || Object.keys($accessRemap.keys ?? {}).length}
+			<span class="hud-kbd hud-kbd-glyph">{#await import('../ui/InputGlyph.svelte')}{element?.keyName ?? ''}{:then G}<G.default code={element?.code ?? ''} name={element?.keyName ?? ''} />{/await}</span>
+		{:else}
+			<kbd class="hud-kbd" data-glyph="key">{element?.keyName ?? ''}</kbd>
+		{/if}
 		<span class="hud-in-label">{text}</span>
 	</div>
 {:else if kind === 'tabs'}
@@ -915,6 +923,18 @@
 		font-size: 0.9em;
 		line-height: 1.4;
 		opacity: 0.9;
+	}
+	/* 92-input GC3: the glyph sits INSIDE the keycap (one border, the hint's own font and colour) */
+	.hud-kbd-glyph {
+		display: inline-flex;
+		align-items: center;
+	}
+	.hud-kbd-glyph :global(.ig-key) {
+		font: inherit;
+		border: 0;
+		padding: 0;
+		background: none;
+		color: inherit;
 	}
 	.hud-tabs {
 		display: flex;

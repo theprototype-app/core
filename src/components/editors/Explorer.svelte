@@ -1098,6 +1098,7 @@
 		'prefab-folder': 'folder', // 37 R4: a folder inside the Prefabs view
 		scene: 'map', // 21-F4: a level (.tpscene)
 		anim: 'person-standing', // 57 M1: an animation clip (.tpanim)
+		splat: 'scan-box', // 102: a Gaussian splat (.ply / .spz / .splat)
 		tpchat: 'message-square' // 56 C10: a chat of the scene (Scene ▸ chats)
 	};
 	// semantic icon colors (ui.css classes over the --icon-* theme tokens)
@@ -1111,11 +1112,12 @@
 		object: '3D models',
 		prefab: 'Prefabs',
 		scene: 'Scenes',
-		anim: 'Animation clips'
+		anim: 'Animation clips',
+		splat: 'Gaussian splats'
 	};
 	/** R22-R7: the filter's fixed order. Every kind the Explorer can hold, so the menu is
 	 * a statement about the app rather than about this library's current contents. */
-	const FILTER_KINDS = ['image', 'object', 'anim', 'audio', 'video', 'text', 'scene', 'prefab'];
+	const FILTER_KINDS = ['image', 'object', 'splat', 'anim', 'audio', 'video', 'text', 'scene', 'prefab'];
 	const KIND_COLORS: Record<string, string> = {
 		image: 'ico-image',
 		audio: 'ico-audio',
@@ -1126,6 +1128,7 @@
 		'prefab-folder': 'ico-folder',
 		scene: 'ico-prefab', // 21-F4: levels share the prefab tint
 		anim: 'ico-object', // 57 M1: a clip belongs with the models it moves
+		splat: 'ico-object', // 102: a scan is placed like a model
 		tpchat: 'ico-doc' // 56 C10
 	};
 
@@ -7889,7 +7892,7 @@
 						onclick={() => openFolder('scene')} ondblclick={toggleScene}><Icon name="globe" size={16} class="mr-1.5 text-text-muted" aria-hidden="true" />Scene {sceneExpanded ? '▾' : '▸'}</button
 					>
 					{#if sceneExpanded}
-					{#each ['audio', 'config', 'textures', 'chats', 'references', 'generated'] as sub}
+					{#each ['audio', 'config', 'textures', 'splats', 'chats', 'references', 'generated'] as sub}
 						<button
 							class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'scene:' + sub
 								? 'ex-tree-on'

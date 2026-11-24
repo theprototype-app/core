@@ -92,6 +92,17 @@ describe('scene: sky', () => {
 		expect(scene.planSky({ fog: { near: 10, far: 5 } }, NOW).error).toMatch(/far must be beyond near/);
 		expect(scene.planSky({ fog: null }, NOW).state.customPreset.fog).toBe(null);
 	});
+	it('102b-papercuts: a density is real distance fog; base / thickness make ground fog; near / far stay for older builds', () => {
+		const d = scene.planSky({ fog: { color: '#ffffff', density: 0.05 } }, NOW).state.customPreset.fog;
+		expect(d).toMatchObject({ kind: 'distance', density: 0.05, near: 0, far: 40 });
+		const h = scene.planSky({ fog: { color: '#ffffff', density: 0.1, base: 1, thickness: 3 } }, NOW).state.customPreset.fog;
+		expect(h).toMatchObject({ kind: 'height', density: 0.1, base: 1, thickness: 3 });
+		const k = scene.planSky({ fog: { kind: 'height' } }, NOW).state.customPreset.fog;
+		expect(k).toMatchObject({ kind: 'height', density: 0.02, base: 0, thickness: 6 });
+		expect(scene.planSky({ fog: { near: 2, far: 30 } }, NOW).state.customPreset.fog.kind).toBe('linear');
+		expect(scene.planSky({ fog: { kind: 'volumetric' } }, NOW).error).toMatch(/fog.kind/);
+		expect(scene.planSky({ fog: { thickness: 0 } }, NOW).error).toMatch(/thickness/);
+	});
 	it('takes a bundled sky with quality, never a URL', () => {
 		const r = scene.planSky({ hdri: { name: 'starlight', quality: 'high', rotation: 1 } }, NOW);
 		expect(r.state.customPreset.hdri).toMatchObject({ src: 'bundled:starlight', quality: 'high', rotation: 1 });
@@ -144,7 +155,11 @@ describe('scene: spawn, opening view, play camera', () => {
 		expect(scene.planPlayCamera({ mode: 'first' }).controller).toMatchObject({ mode: 'walk', eyeHeight: 1.7 });
 		expect(scene.planPlayCamera({ mode: 'first', fly: true, speed: 9 }).controller).toMatchObject({ mode: 'fly', speed: 1 });
 		expect(scene.planPlayCamera({ mode: 'none' }).controller).toBe(null);
-		for (const m of ['third', 'orbit', 'fixed']) expect(scene.planPlayCamera({ mode: m }).later).toMatch(/Possess Object/);
+		for (const m of ['orbit', 'fixed']) expect(scene.planPlayCamera({ mode: m }).later).toMatch(/Possess Object/);
+		// 92-input GC4: third / side / top are Play cameras now (a Character Controller's `camera`)
+		expect(scene.planPlayCamera({ mode: 'third', distance: 99 }).controller).toMatchObject({ camera: 'third', mode: 'walk', distance: 60 });
+		expect(scene.planPlayCamera({ mode: 'side-scroller', fly: true }).controller).toMatchObject({ camera: 'side', mode: 'walk' });
+		expect(scene.planPlayCamera({ mode: 'top-down', angle: 70 }).controller).toMatchObject({ camera: 'top', angle: 70 });
 		expect(scene.planPlayCamera({ mode: 'drone' }).error).toBeTruthy();
 	});
 });

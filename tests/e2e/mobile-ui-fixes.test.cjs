@@ -179,7 +179,7 @@ h.run(async () => {
 	// premise; both passed while the user watched the menu swallow the circle. This one
 	// opens the menu with a TRUSTED Playwright click (flowbite's trigger ignores
 	// `el.click()` from evaluate) and asks what is actually at that position.
-	await A.page.locator('#avatar-menu img, #avatar-menu [class*="rounded-full"]').first().click({ force: true });
+	await A.page.locator('#avatar-menu img, #avatar-menu .pm-avatar, #avatar-menu [class*="rounded-full"]').first().click({ force: true });
 	await A.page.waitForTimeout(700);
 	const CIRCLE = '[aria-label="Close profile menu"]';
 	const profile = await A.page.evaluate((sel) => {
@@ -294,7 +294,8 @@ h.run(async () => {
 		`on a MOBILE viewport the panel still seats on the circle (${JSON.stringify(mob)})`
 	);
 	h.check(
-		!!mob && mob.inset >= 12 && Math.abs(mob.circleGap ?? 99) <= 2,
+		// 80a-fix4-ui O4: the profile button sits at the burger's inset (8 px); the panel keeps that inset, not 0
+		!!mob && mob.inset >= 8 && Math.abs(mob.circleGap ?? 99) <= 2,
 		'it does not slide to the window edge and clip the circle off the screen'
 	);
 

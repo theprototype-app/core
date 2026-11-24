@@ -1,4 +1,5 @@
 import { embeddedOnlyManager, checkFbx, refusal } from './loadGuard.js';
+import { clearInboundDraftFlags } from './objectPermissions';
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { createGltfLoader } from './gltfLoader';
@@ -1241,8 +1242,9 @@ export function setAnimationState(uuid, next, replicate = true) {
 }
 
 /** Receive side of the raw-bytes sync (a local restore may pass `live`, see
- * animatedImportsRestore) @param {any} data */
-export async function applyObjectFile(data) {
+ * animatedImportsRestore). `opts.inbound`: the message came from a peer, so nothing in it makes the
+ * object a draft here (clearInboundDraftFlags) @param {any} data @param {{inbound?: boolean}} [opts] */
+export async function applyObjectFile(data, opts = {}) {
 	const group = get(objectsGroup);
 	if (!group) return;
 	let held = group.getObjectByProperty('uuid', data.uuid);
@@ -1262,7 +1264,7 @@ export async function applyObjectFile(data) {
 		// animation on every walk-in for no gain.
 		if (!data.override) return;
 		if (data.name) held.name = data.name;
-		applyUserDataFields(held, data.userData);
+		applyUserDataFields(held, opts.inbound ? withoutDraftFlag(data.userData) : data.userData);
 		if (data.lod && typeof data.lod === 'object') held.userData.lod = data.lod;
 		applyRootData(held, data);
 		if (data.character)
@@ -1292,6 +1294,7 @@ export async function applyObjectFile(data) {
 		// whatever the file's own extras say, or nothing
 		// 59 T1: the object's own rows first, so the fields below (and the file's parse) keep theirs
 		applyUserDataFields(root, data.userData);
+		if (opts.inbound) clearInboundDraftFlags(root); // the rows and the file's own extras
 		const spec = normalizeBehavior(data.behavior);
 		if (spec) root.userData.behavior = spec;
 		if (data.lod && typeof data.lod === 'object') root.userData.lod = data.lod;
@@ -1383,6 +1386,13 @@ function userDataFields(root) {
 	} catch {
 		return {};
 	}
+}
+
+/** a peer's rows never say whether an object is a draft here @param {any} rows */
+function withoutDraftFlag(rows) {
+	if (!rows || typeof rows !== 'object' || Array.isArray(rows) || !('__localOnly' in rows)) return rows;
+	const { __localOnly, ...rest } = rows;
+	return rest;
 }
 
 /** what an objectfile / save entry's `userData` puts back on the parsed root @param {any} root @param {any} rows */

@@ -10,6 +10,7 @@
 	};
 	for (const [row, words] of Object.entries(ROW_WORDS)) registerSettingsKeywords(row, words);
 	registerSettingsKeywords('turn urls', ['relay', 'nat', 'firewall', 'network']);
+	registerSettingsKeywords('locks', ['lock', 'held', 'editing', 'select', 'together', 'room']);
 	registerSettingsKeywords('stun urls', ['nat', 'network']);
 </script>
 
@@ -28,9 +29,15 @@
 	import Button from '../../ui/Button.svelte';
 	import { NAV_CONTEXT } from '$lib/settingsNav';
 	import { peers, showToast } from '../../../stores/appStore.js';
-	import { softPeerCap, HARD_PEER_CAP, SOFT_PEER_CAP_DEFAULT } from '$lib/connectionState';
+	import { softPeerCap, HARD_PEER_CAP, SOFT_PEER_CAP_DEFAULT, sessionHost } from '$lib/connectionState';
+	// 80a K15: the room's lock mode, the host's to set (an admin's too under a roles plugin)
+	import { lockMode, setLockMode, maySetLockMode } from '$lib/lockMode';
+	import { rolesInfo } from '$lib/cloudHooks';
+	import { nameOf } from '$lib/lockHeld';
 	import { agentsAsGuests } from '$lib/inviteStore'; // 55 A4
 	import { showAgentMarkers } from '$lib/agentLog'; // 55 A7
+	import { peerRateLimits } from '$lib/peerRateGate'; // 71 TR7
+	import { requireApproval, setRequireApproval } from '$lib/peerModeration'; // 71 AS3
 	import { peerServerConfig, HAS_SELF_HOSTED, SELF_HOSTED_HOST, peerServerStatus } from '$lib/peerServer';
 
 	const nav = /** @type {any} */ (getContext(NAV_CONTEXT));
@@ -60,6 +67,15 @@
 	/** @param {Event} e */
 	const value = (e) => /** @type {HTMLInputElement} */ (e.currentTarget).value;
 
+	const LOCK_MODE_OPTIONS = [
+		{ value: 'select', label: 'While selected', title: 'Lock while selected (default)' },
+		{ value: 'edit', label: 'Only while editing', title: 'Lock only while editing: free 3 seconds after the last change' }
+	];
+	const canSetLocks = $derived.by(() => {
+		void $sessionHost;
+		void $rolesInfo;
+		return maySetLockMode();
+	});
 	const MODES = [
 		{ value: 'default', label: 'Default', title: HAS_SELF_HOSTED ? 'Self-hosted, with the public cloud as fallback' : 'The public PeerJS cloud' },
 		{ value: 'public', label: 'Public', title: 'The public PeerJS cloud' },
@@ -110,6 +126,28 @@
 			</SettingRow>
 		</Section>
 	{:else}
+		<!-- 80a K15: how this room locks objects; the host decides, everyone follows (late joiners too) -->
+		<Section variant="card" label="Editing together" badge="This room">
+			<SettingRow
+				id="row-lock-mode"
+				label="Locks"
+				description={canSetLocks
+					? 'While selected: an object is yours from the moment you select it. Only while editing: it is yours while you change it, and free again 3 seconds after your last change.'
+					: 'The host sets this' + ($sessionHost ? ' (' + nameOf($sessionHost) + ')' : '') + '. While selected: an object is held from selection. Only while editing: held while changing it, free 3 seconds after the last change.'}
+				wide
+			>
+				<Segmented
+					id="lock-mode"
+					label="Locks"
+					options={LOCK_MODE_OPTIONS}
+					value={$lockMode.mode}
+					disabled={!canSetLocks}
+					onchange={(v) => {
+						if (!setLockMode(v === 'edit' ? 'edit' : 'select')) showToast('Only the host can change how this room locks objects');
+					}}
+				/>
+			</SettingRow>
+		</Section>
 		<Section variant="card" label="Session" badge="This device">
 			<SettingRow id="row-session-size" label="Session size" description={'How many people you expect. Past this an approval warns; the hard limit is ' + HARD_PEER_CAP + '.'}>
 				<input
@@ -125,6 +163,14 @@
 						softPeerCap.set(Number.isFinite(n) ? Math.min(HARD_PEER_CAP, Math.max(2, Math.round(n))) : SOFT_PEER_CAP_DEFAULT);
 					}}
 				/>
+			</SettingRow>
+			<!-- 71 TR7: per-peer limits, applied on this device -->
+			<SettingRow id="row-peer-rate-limits" label="Limit floods from peers" description="Ignores edits and chat from someone sending far more than a person would. The session host is never limited." wide>
+				<Segmented id="peer-rate-limits" label="Limit floods from peers" bind:value={$peerRateLimits} options={[{ value: 'off', label: 'Off' }, { value: 'normal', label: 'Normal' }, { value: 'strict', label: 'Strict' }]} />
+			</SettingRow>
+			<!-- 71 AS3: this session only — every automatic join (invite links too) becomes the approval card -->
+			<SettingRow id="row-require-approval" label="Require approval to join" description="This session: nobody joins by themselves, not even with an invite link. Each person waits for your approval. Off again when you leave." keywords="block guest invite approve">
+				<Toggle id="require-approval" label="Require approval to join" checked={$requireApproval} onchange={(on) => setRequireApproval(on, { quiet: true })} />
 			</SettingRow>
 			<!-- 55 A4: an AI agent's dial gets the approval card even where guests join automatically -->
 			<SettingRow id="row-agents-as-guests" label="Let AI agents join as guests" description="Off: an AI agent asks first even when your room lets guests join automatically. An invite link always lets it in.">

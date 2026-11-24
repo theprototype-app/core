@@ -86,7 +86,8 @@
 			<span data-behaviour-state>{state}</span>
 			{#if state === 'running'}· {handlers} handler{handlers === 1 ? '' : 's'}{/if}
 		</span>
-		<div class="flex gap-1">
+		<!-- 80a-fix4-ui D3: the buttons never wrap ("Open view" broke onto two lines) -->
+		<div class="flex gap-1 whitespace-nowrap">
 			<button
 				class="nodrag nopan behaviour-open rounded-sm bg-accent-fill px-2 py-0.5 text-on-accent hover:brightness-110"
 				on:click={() => behaviourViewOpen.set({ id, graphId: $activeGraphId })}

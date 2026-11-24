@@ -326,7 +326,8 @@ async function setupPage(browser, name, options = {}) {
 	// on the initial navigation, not set afterwards: safe mode is read once during
 	// onMount, so a hash assigned to a live page arrives long after the decision.
 	// Absent means an unchanged URL, so every existing caller is untouched.
-	await page.goto(URL + (options.hash ?? ''), { waitUntil: 'domcontentloaded', timeout: 60000 });
+	// options.url (fix-late-joiners): a page of ANOTHER build (a release next to the branch: the wire both ways)
+	await page.goto((options.url ?? URL) + (options.hash ?? ''), { waitUntil: 'domcontentloaded', timeout: 60000 });
 	await page.waitForTimeout(4000);
 	// 43-tests: a THIRD page in one browser boots in ~50 s on a loaded e2e box (two pages already
 	// rendering software GL starve it: logs/p1-probe6.log — no error, no crash, just slow), so the
@@ -654,7 +655,15 @@ async function answerRestore(peer, choice = 'dismiss', timeout = 10000) {
 		.then(() => true)
 		.catch(() => false);
 	if (!offered) return false;
-	await page.locator(choice === 'restore' ? '#restore-session-restore' : '#restore-session-dismiss').click({ timeout: 10000 });
+	const sel = choice === 'restore' ? '#restore-session-restore' : '#restore-session-dismiss';
+	// a freshly reloaded page can be too busy booting to answer a Playwright click within 10 s
+	// (102-int-2: decals §8 and mesh-paint, loaded Deck) -> fall back to a DOM click, which
+	// queues behind the boot instead of timing out
+	await page
+		.locator(sel)
+		.click({ timeout: 10000 })
+		.catch(() => page.evaluate((s) => /** @type {HTMLElement} */ (document.querySelector(s))?.click(), sel));
+	// a restore of a heavy autosave (painted maps, splats) takes 10-30 s under load
 	await page.waitForFunction(
 		() => {
 			let v;
@@ -662,7 +671,7 @@ async function answerRestore(peer, choice = 'dismiss', timeout = 10000) {
 			return !v && !document.querySelector('#restore-session-modal[open]');
 		},
 		null,
-		{ timeout: 10000, polling: 100 }
+		{ timeout: 60000, polling: 100 }
 	);
 	return true;
 }
@@ -1386,4 +1395,26 @@ function t(page) {
 	};
 }
 
-module.exports = { t, URL, coverageKey, openDial, GPU_ARGS, N6_UA, PATIENT_CLICK_MS, APPROVE_LABEL, approveButton, watchPress, check, launch, setupPage, setupPageQuiet, connect, leavePlay, eventually, caughtUp, eventuallyAfter, projectPoint, freshReload, answerRestore, closePeer, finish, run, installModule, moduleZipPath, makeCollectibleChains, pageErrors, externalErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta, routeSkies, SKIES_DIR, openWsMode };
+/**
+ * 80a-fix4-ui O2: press a side-pane handle (PaneHandle) the way a person can. A CLOSED pane's handle is drawn and is
+ * clicked; an OPEN pane's handle is hidden, and its menu lives on the open pane's top band (right-click there): a
+ * left press picks "Hide ..." from that menu (what pressing the handle did), a right press leaves the menu open.
+ * @param {any} page @param {string} sel the handle (the first match) @param {{ button?: 'left'|'right' }=} opts
+ */
+async function paneHandleClick(page, sel, opts = {}) {
+	const button = opts.button || 'left';
+	const st = await page.locator(sel).first().evaluate((/** @type {HTMLElement} */ el) => {
+		const r = el.getBoundingClientRect();
+		const drawn = r.width > 0 && getComputedStyle(el).visibility !== 'hidden';
+		const key = el.dataset.phKey;
+		const pane = key ? document.querySelector(`[data-ph-pane="${key}"]`) : null;
+		const p = pane?.getBoundingClientRect();
+		return { drawn, band: p && p.width > 0 ? { x: p.x + p.width / 2, y: p.y + 10 } : null };
+	});
+	if (st.drawn || !st.band) return page.locator(sel).first().click({ button });
+	await page.mouse.click(st.band.x, st.band.y, { button: 'right' });
+	if (button === 'right') return;
+	await page.locator('[role=menu] [role=menuitem]', { hasText: /^\s*Hide\b/ }).first().click();
+}
+
+module.exports = { t, URL, paneHandleClick, coverageKey, openDial, GPU_ARGS, N6_UA, PATIENT_CLICK_MS, APPROVE_LABEL, approveButton, watchPress, check, launch, setupPage, setupPageQuiet, connect, leavePlay, eventually, caughtUp, eventuallyAfter, projectPoint, freshReload, answerRestore, closePeer, finish, run, installModule, moduleZipPath, makeCollectibleChains, pageErrors, externalErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta, routeSkies, SKIES_DIR, openWsMode };

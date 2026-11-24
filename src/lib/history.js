@@ -7,6 +7,7 @@ import { parkEditOverlays, stripEditOverlays } from '$lib/editOverlays';
 import { HISTORY_BYTES, entryBytes } from '$lib/meshBudget';
 import { withWireBatch } from '$lib/wireBatch';
 import { currentHistoryGesture } from '$lib/historyGesture';
+import { objectToJSON } from './slotGroups.js'; // 105: one serializer for slot groups
 
 // Undo/redo for local edits; remote peers' changes are not recorded, so
 // histories stay per-user.
@@ -389,7 +390,7 @@ export function captureObjectSnapshot(object, quiet = false) {
 	const unpark = parkEditOverlays(object);
 	try {
 		const reference = referenceSnapshot ? referenceSnapshot(object) : null;
-		const element = reference ?? object.toJSON();
+		const element = reference ?? objectToJSON(object); // 105: slot groups survive undo
 		if (JSON.stringify(element).length > SNAPSHOT_LIMIT) {
 			if (!quiet) showToast('Object is too large for undo history — this step will not be undoable');
 			return null;

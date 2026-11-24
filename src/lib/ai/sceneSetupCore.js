@@ -157,22 +157,47 @@ export function planSky(args, now) {
 				if (!c) return { error: 'fog.color: a colour' };
 				fog.color = c;
 			}
+			// 102b-papercuts: a density is REAL exponential fog now (kind distance), or the ground layer (kind height);
+			// near / far are still written, as the linear fog an older build falls back to
+			if (f.kind !== undefined && !['linear', 'distance', 'height'].includes(f.kind)) return { error: 'fog.kind: linear (near / far), distance (density) or height (density, base, thickness)' };
 			if (f.density !== undefined) {
 				if (!finite(f.density) || f.density <= 0) return { error: 'fog.density: a number above 0 (0.01 thin, 0.1 thick)' };
+				fog.density = r3(clamp(f.density, 0.0005, 1)) || 0.001;
 				fog.near = 0;
 				fog.far = r3(clamp(DENSITY_FAR / f.density, 1, 20000));
 				fog.fit = false;
-				warnings.push('density ' + f.density + ' became linear fog from 0 to ' + fog.far + ' m (the scene renders linear fog)');
+				if (f.kind === undefined && fog.kind !== 'height') fog.kind = 'distance';
+			}
+			if (f.kind !== undefined) {
+				fog.kind = f.kind;
+				if (f.kind !== 'linear' && !(fog.density > 0)) fog.density = 0.02;
+			}
+			for (const k of ['base', 'thickness']) {
+				if (f[k] === undefined) continue;
+				if (!finite(f[k]) || (k === 'thickness' && f[k] <= 0)) return { error: 'fog.' + k + (k === 'base' ? ' is the ground height in metres' : ' is metres above 0') };
+				fog[k] = r3(clamp(f[k], k === 'base' ? -10000 : 0.1, 10000));
+				if (f.kind === undefined) fog.kind = 'height';
+			}
+			if (fog.kind === 'height') {
+				if (!finite(fog.base)) fog.base = 0;
+				if (!(fog.thickness > 0)) fog.thickness = 6;
 			}
 			for (const k of ['near', 'far']) {
 				if (f[k] === undefined) continue;
+				if (f.kind === undefined && f.density === undefined) fog.kind = 'linear';
 				if (!finite(f[k]) || f[k] < 0) return { error: 'fog.' + k + ' is metres (0 or more)' };
 				fog[k] = r3(clamp(f[k], 0, 20000));
 				fog.fit = false;
 			}
 			if (fog.far <= fog.near) return { error: 'fog: far must be beyond near' };
 			payload.fog = fog;
-			words.push('fog ' + fog.color + ' ' + fog.near + '-' + fog.far + ' m');
+			words.push(
+				fog.kind === 'height'
+					? 'ground fog ' + fog.color + ' density ' + fog.density + ', ' + fog.thickness + ' m thick from ' + fog.base + ' m'
+					: fog.kind === 'distance'
+						? 'fog ' + fog.color + ' density ' + fog.density
+						: 'fog ' + fog.color + ' ' + fog.near + '-' + fog.far + ' m'
+			);
 		}
 		custom = true;
 	}
@@ -383,30 +408,46 @@ export function planOpeningView(raw, ctx) {
 	return { error: 'openingView: {"position": [x,y,z], "target": [x,y,z]}, "spawn", "frame", or null to forget it' };
 }
 
-export const PLAY_CAMERA_MODES = ['first', 'third', 'orbit', 'fixed', 'none'];
+export const PLAY_CAMERA_MODES = ['first', 'third', 'side', 'top', 'orbit', 'fixed', 'none'];
+/** 92-input GC4: the words an agent (or a person) uses for the views */
+const PLAY_CAMERA_ALIASES = { 'third-person': 'third', thirdperson: 'third', 'side-scroller': 'side', sidescroller: 'side', platformer: 'side', '2d': 'side', 'top-down': 'top', topdown: 'top', overhead: 'top', 'first-person': 'first' };
+/** each view's tunables an agent may set, with their limits (the node card's ranges) */
+const PLAY_VIEW_FIELDS = /** @type {[string, number, number][]} */ ([['distance', 0.5, 60], ['height', -2, 10], ['lookAhead', 0, 10], ['angle', 15, 90], ['minZoom', 0.5, 60], ['maxZoom', 0.5, 120]]);
 
 /** what the app cannot do yet, said so an agent can take the route that works today */
 export const PLAY_CAMERA_LATER =
-	'is not a Play camera this build has: Play always looks through the player\'s own eyes. For a vehicle or character, a Possess Object node (camera chase / orbit) on a click or key gives third person; for a fixed shot, put a camera object in the scene and a Set Active Camera / Game Start node look through it. Set first person here, or only openingView.';
+	'is not a Play camera this build has. Play cameras: first (the player\'s own eyes), third (behind the player), side (a side-scroller) and top (top-down). For a vehicle, a Possess Object node (camera chase / orbit) on an On Play start or a key drives it; for a fixed shot, put a camera object in the scene and a Start camera node look through it.';
 
 /**
- * Plan the Character Controller a first-person play camera is.
- * @param {any} args {mode, walk?: boolean (default true), speed?, jumpHeight?, eyeHeight?, gravity?}
+ * Plan the Character Controller a play camera is.
+ * @param {any} args {mode, walk?: boolean (default true), speed?, jumpHeight?, eyeHeight?, gravity?,
+ *   distance?, height?, lookAhead?, angle?, minZoom?, maxZoom?, collide?}
  * @returns {{controller: Record<string, any> | null, words: string} | {later: string} | {error: string}}
  */
 export function planPlayCamera(args) {
-	const mode = String(args?.mode ?? '').toLowerCase();
-	if (!PLAY_CAMERA_MODES.includes(mode)) return { error: 'mode: one of first, third, orbit, fixed, none' };
+	const raw = String(args?.mode ?? '').toLowerCase();
+	const mode = /** @type {Record<string, string>} */ (PLAY_CAMERA_ALIASES)[raw] ?? raw;
+	if (!PLAY_CAMERA_MODES.includes(mode)) return { error: 'mode: one of first, third, side, top, none' };
 	if (mode === 'none') return { controller: null, words: 'the default Play camera' };
-	if (mode !== 'first') return { later: '"' + mode + '" ' + PLAY_CAMERA_LATER };
-	const fly = args?.fly === true || args?.walk === false;
+	if (mode === 'orbit' || mode === 'fixed') return { later: '"' + mode + '" ' + PLAY_CAMERA_LATER };
+	// a side-scroller or a top-down game walks: flying past the plane or the view makes no game
+	const fly = mode !== 'side' && mode !== 'top' && (args?.fly === true || args?.walk === false);
 	/** @type {Record<string, any>} */
-	const controller = { mode: fly ? 'fly' : 'walk', speed: 0.1, jumpHeight: 1.2, eyeHeight: 1.7, gravity: true };
+	const controller = { mode: fly ? 'fly' : 'walk', speed: 0.1, jumpHeight: 1.2, eyeHeight: 1.7, gravity: true, camera: mode };
 	for (const [k, lo, hi] of /** @type {[string, number, number][]} */ ([['speed', 0.01, 1], ['jumpHeight', 0, 5], ['eyeHeight', 0.2, 3]])) {
 		if (args?.[k] === undefined) continue;
 		if (!finite(args[k])) return { error: k + ' is a number' };
 		controller[k] = r3(clamp(args[k], lo, hi));
 	}
 	if (args?.gravity !== undefined) controller.gravity = args.gravity !== false;
-	return { controller, words: 'first person, ' + controller.mode + 'ing' };
+	if (mode !== 'first') {
+		for (const [k, lo, hi] of PLAY_VIEW_FIELDS) {
+			if (args?.[k] === undefined) continue;
+			if (!finite(args[k])) return { error: k + ' is a number' };
+			controller[k] = r3(clamp(args[k], lo, hi));
+		}
+		if (args?.collide !== undefined) controller.collide = args.collide !== false;
+	}
+	const words = { first: 'first person', third: 'third person (behind the player)', side: 'a side-scroller', top: 'top-down' }[mode];
+	return { controller, words: words + ', ' + controller.mode + 'ing' };
 }

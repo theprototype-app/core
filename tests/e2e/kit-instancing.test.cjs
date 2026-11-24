@@ -71,8 +71,38 @@ h.run(async () => {
 		await page.waitForTimeout(500);
 	};
 	await settle();
+	// 80a-fix4-ui u: the refill is async past packRefsSettled — on the PC queue the premise below ran over EMPTY stubs
+	// (0.0 %), and a refill landing between the two frames of the comparison made them differ by half the frame. Wait
+	// for the 12 kit meshes first, then scan
+	await h.eventually(
+		() => page.evaluate(() => {
+			let g;
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
+			let n = 0;
+			g.traverse((o) => o.isMesh && n++);
+			return n;
+		}),
+		(n) => n >= 12,
+		'premise: the pack refilled the 12 stubs',
+		60000
+	);
+	await settle();
 	await page.evaluate(() => window.__tp.test.v1.kitInstancing.scanForKitInstancing());
 	await settle();
+	/** a frame the viewport has STOPPED changing on (two grabs 400 ms apart agree to < 0.05 %): a texture upload or a
+	 * temporal pass still converging after a switch is not a difference the switch made @param {any} [clip] */
+	const stableFrame = async (clip) => {
+		let prev = await h.grabFrame(peer, clip);
+		for (let i = 0; i < 10; i++) {
+			await page.waitForTimeout(400);
+			const next = await h.grabFrame(peer, clip);
+			const d = await h.frameDelta(page, prev, next, 10);
+			prev = next;
+			if (!d.error && d.fraction < 0.0005) return next;
+		}
+		console.log('  (the frame never settled: comparing the last grab)');
+		return prev;
+	};
 	// the premise: the pieces are ON SCREEN (a frame comparison over an empty view proves nothing)
 	const showAll = (on) =>
 		page.evaluate((on) => {
@@ -82,10 +112,10 @@ h.run(async () => {
 		}, on);
 	await showAll(false);
 	await settle();
-	const empty = await h.grabFrame(peer);
+	const empty = await stableFrame();
 	await showAll(true);
 	await settle();
-	const full = await h.grabFrame(peer);
+	const full = await stableFrame();
 	const present = await h.frameDelta(page, empty, full, 20);
 	h.check(present.fraction > 0.08, `premise: the 12 pieces are on screen (${(present.fraction * 100).toFixed(1)} % of the frame is them)`);
 
@@ -127,10 +157,10 @@ h.run(async () => {
 	});
 	h.check(meshes >= 12, `the fixture refilled: ${meshes} kit meshes in the tree`);
 	const on = await calls();
-	const frameOn = await h.grabFrame(peer);
+	const frameOn = await stableFrame();
 	await setOn(false);
 	const off = await calls();
-	const frameOff = await h.grabFrame(peer);
+	const frameOff = await stableFrame();
 	if (process.env.SHOTS) {
 		require('fs').writeFileSync(process.env.SHOTS + '/ki-on.png', frameOn);
 		require('fs').writeFileSync(process.env.SHOTS + '/ki-off.png', frameOff);
@@ -140,6 +170,13 @@ h.run(async () => {
 	h.check(off.worst - on.worst >= 10, `instancing draws the 12 pieces in fewer calls: ${off.worst} -> ${on.worst} (batches ${on.stats.batches}, members ${on.stats.members})`);
 	const same = await h.frameDelta(page, frameOff, frameOn, 10);
 	h.check(!same.error && same.fraction < 0.003, `the instanced frame is the same picture (${same.changed} of ${same.total} pixels differ by > 10)`);
+	if (same.error || same.fraction >= 0.003) {
+		// u: keep both frames of a red for the next look (test-results/ is vite-ignored and pc-mirrored)
+		const dir = require('path').join(__dirname, '..', '..', 'test-results');
+		require('fs').mkdirSync(dir, { recursive: true });
+		require('fs').writeFileSync(dir + '/kit-instancing-on.png', frameOn);
+		require('fs').writeFileSync(dir + '/kit-instancing-off.png', frameOff);
+	}
 
 	// off-screen members stay out of their batch (three culls them as themselves): a view of
 	// the row's west end batches only what it sees

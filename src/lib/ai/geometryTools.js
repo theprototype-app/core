@@ -1108,7 +1108,7 @@ export const GEOMETRY_AI_TOOLS = [
 		function: {
 			name: 'set_geometry',
 			description:
-				'Reshape existing objects in place (they keep uuid, transform, material and flows): change a primitive\'s params (the keys list_scene shows under geometry, e.g. {width, height, depth} for a Box, {radiusTop, radiusBottom, height, radialSegments} for a Cylinder, {segments, phiLength} for a Lathe, {depth, bevel} for an extrusion), or its TYPE (box → Cylinder) with params on top of the new type\'s defaults. A tube (create_tube) takes path, radius / radii, closed. A 3D text (create_text) takes its text fields as params (text, font, size, depth, bevel, align, maxWidth, anchor, color …). An object whose vertices were hand-edited refuses unless force: true (the rebuild replaces those edits). Up to ' +
+				'Reshape existing objects in place (they keep uuid, transform, material and flows): change a primitive\'s params (the keys list_scene shows under geometry, e.g. {width, height, depth} for a Box (plus {radius, radiusSegments} to round its edges and corners: a rounded box, saved as two numbers), {radiusTop, radiusBottom, height, radialSegments} for a Cylinder, {segments, phiLength} for a Lathe, {depth, bevel} for an extrusion), or its TYPE (box → Cylinder) with params on top of the new type\'s defaults. A tube (create_tube) takes path, radius / radii, closed. A 3D text (create_text) takes its text fields as params (text, font, size, depth, bevel, align, maxWidth, anchor, color …). An object whose vertices were hand-edited refuses unless force: true (the rebuild replaces those edits). Up to ' +
 				MAX_UPDATES +
 				' objects per call, one undo step.',
 			parameters: {

@@ -8,8 +8,9 @@
 //
 //   1. per device: the class, the handles, the button, before and after opening Configure Scene, and after closing
 //   2. a handle sits BELOW the logo / the profile button (never covers them), on its screen edge
-//   3. a handle press opens its column; the touch handle closes it again from the column's inner edge
-//   4. turning the handles ON by hand on the unfolded phone hides the button (the counterfactual: off = shown)
+//   3. a handle press opens its column; the handle is gone while it is open (80a-fix4-ui O2), the strip's hide button closes it
+//   4. turning the handles ON by hand on the unfolded phone draws them AND keeps the button (80a-fix4-ui O1: the
+//      button hiding there was the owner's "the sidebar button disappeared"); back to Auto: the button, no handles
 //   5. the Panels button cycles left -> right -> hide all, skipping an empty side
 //   6. "Hide handles" (the setting Off) hides them; Auto brings them back
 //   7. desktop at 1920 and 1280: nothing stray is drawn above the open right column beside the profile button
@@ -98,13 +99,10 @@ h.run(async () => {
 			await settle(page);
 			st = await state(page);
 			h.check(st.vis.right === true, `${tag('3.1')} the right handle opens the right column`);
-			if (dev.cls === 'desktop') {
-				h.check(!st.hr, `${tag('3.2')} desktop: the handle is gone while its column is open (the border closes it)`);
-				await page.evaluate(() => window.__tp.test.v1.sidebars.toggleSidebar('right', false));
-			} else {
-				h.check(!!st.hr && st.colR && Math.abs(st.hr.r - st.colR.x) <= 2, `${tag('3.2')} touch: the handle rides the column's inner edge (${st.hr?.r} ~ ${st.colR?.x})`);
-				await page.locator('#sidebar-handle-right').click();
-			}
+			// 80a-fix4-ui O2 (owner 2026-11-20): gone while its column is open on EVERY layout (touch used to keep it on
+			// the column's inner edge); the strip's hide button closes the column
+			h.check(!st.hr, `${tag('3.2')} the handle is gone while its column is open (${dev.cls})`);
+			await page.locator('#sidebar-hide-right').click();
 			await settle(page);
 			h.check((await state(page)).vis.right === false, `${tag('3.3')} ...and the column closes again`);
 		}
@@ -160,15 +158,15 @@ h.run(async () => {
 			const v2 = (await state(page)).vis;
 			h.check(v1.right && !v1.left, `${tag('5.1')} the first press shows the right side (the left is empty) (${JSON.stringify(v1)})`);
 			h.check(!v2.right && !v2.left, `${tag('5.2')} the next press hides all (${JSON.stringify(v2)})`);
-			// --- 4: handles on by hand hide the button ---
+			// --- 4: handles on by hand: drawn, and the button stays (O1) ---
 			await page.evaluate(() => window.__tp.test.v1.sidebarHandles.sidebarHandlesMode.set('on'));
 			await settle(page);
 			st = await state(page);
-			h.check(!st.panels && !!st.hl, `${tag('4.1')} handles On by hand: handles drawn, the button hides`);
+			h.check(!!st.panels && !!st.hl, `${tag('4.1')} handles On by hand: handles drawn, the button stays (O1)`);
 			await page.evaluate(() => window.__tp.test.v1.sidebarHandles.sidebarHandlesMode.set('auto'));
 			await settle(page);
 			st = await state(page);
-			h.check(!!st.panels && !st.hl, `${tag('4.2')} back to Auto: the button returns, no handles (the counterfactual)`);
+			h.check(!!st.panels && !st.hl, `${tag('4.2')} back to Auto: the button, no handles`);
 		} else {
 			// --- 6: Hide handles, then Auto ---
 			const was = await page.evaluate(() => window.__tp.test.v1.sidebarHandles.hideSidebarHandles());

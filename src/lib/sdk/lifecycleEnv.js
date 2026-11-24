@@ -66,7 +66,8 @@ export async function lifecycleEnv() {
 		modulePointer,
 		sdkRegistries,
 		pointerSeam,
-		moduleWorldItems
+		moduleWorldItems,
+		gameValues
 	] = await Promise.all([
 		import('../moduleSDK.js'),
 		import('./index.js'),
@@ -116,7 +117,8 @@ export async function lifecycleEnv() {
 		tryLoad(import('../modulePointer.js')),
 		tryLoad(import('./registries.js')),
 		tryLoad(import('./pointerSeam.js')),
-		tryLoad(import('../moduleWorldItems.js'))
+		tryLoad(import('../moduleWorldItems.js')),
+		tryLoad(import('../gameValues.js')) // 102b-hud: api.values
 	]);
 	const browser = typeof window !== 'undefined' && typeof document !== 'undefined';
 	return {
@@ -152,6 +154,7 @@ export async function lifecycleEnv() {
 			qualityGovernor,
 			shadowClaims,
 			peerVars,
+			gameValues,
 			uvUnwrap,
 			shaderBackends,
 			audioDevices,

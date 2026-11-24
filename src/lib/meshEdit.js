@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
+import { lockMessage } from './lockHeld';
 import {
 	globalScene,
 	globalCamera,
@@ -469,6 +470,11 @@ export function enterEditMode(uuid) {
 		showToast('This is a text object: switch it to Solid and use Bake to mesh in the Text section to edit its vertices');
 		return;
 	}
+	// 102: a splat's mesh is only its hit box — the scan itself is splats, not vertices
+	if (object?.userData?.splat) {
+		showToast('This is a Gaussian splat: its box is only a click target. Use Crop in the Splat section to trim it');
+		return;
+	}
 	if (!object || !object.geometry?.attributes?.position) {
 		// D7: a multi-mesh GROUP is the common blocker for imports — say so
 		if (object?.type === 'Group')
@@ -507,7 +513,7 @@ export function enterEditMode(uuid) {
 	// peers must not edit/select it meanwhile
 	/** @type {any} */
 	const peer = get(peers);
-	if (peer) peer.send({ type: 'lock', uuid: uuid, peerId: peer.peer.id });
+	if (peer) peer.send(lockMessage([uuid], peer.peer.id)); // 80a K3: stamped
 
 	editingObject.set(uuid);
 	noteEditEnter('vertex', uuid); // 15-F: opens (or continues) the undo barrier

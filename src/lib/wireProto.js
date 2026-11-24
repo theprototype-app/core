@@ -68,7 +68,9 @@ export function protoVerdict(theirs, mine = WIRE_PROTO) {
  */
 export function myCaps(opts = {}) {
 	/** @type {Record<string, number>} */
-	const caps = { wb: 1, dev: 1 };
+	// 80a K3 `lk`: stamped lock rows (`ats`, a third element in `locked`), the receiving-side lock
+	// gate and its `lockreject`, the whole held set in the handshake
+	const caps = { wb: 1, dev: 1, lk: 1 };
 	if (opts.fc) caps.fc = 1;
 	return caps;
 }

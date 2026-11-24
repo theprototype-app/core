@@ -28,6 +28,14 @@
     // THREE children/userData aren't reactive — re-derive on each objectsGroup poke
     const kids = $derived.by(() => { void $objectsGroup; return (element?.children ?? []).filter((/** @type {any} */ c) => !c.userData?.archPart); }); // 37 R3: a door's leaf is not a row
     const isLocal = $derived.by(() => { void $objectsGroup; return !!element?.userData?.__localOnly; });
+    // 102b-arrange: the layer this row is on (a colour dot; absent = no layer, the row is unchanged)
+    const layerRow = $derived.by(() => {
+        void $objectsGroup;
+        const id = element?.userData?.layer;
+        if (!id) return null;
+        const list = $scenePhysicsState_?.layers;
+        return (Array.isArray(list) && list.find((/** @type {any} */ l) => l?.id === id)) || null;
+    });
     // groups on the path to a match auto-expand while filtering
     $effect(() => {
         if ($objectFilter && kids.length > 0 && $objectFilter.has(element.uuid))
@@ -37,8 +45,10 @@
     import { withExpanded } from '$lib/objectListNav';
     import { objectsGroup, TControls, selectedObject, selectedObjects, lockedObjects } from '../../stores/sceneStore';
     import { sceneCommand } from '$lib/commandsHandler.svelte';
+    import { scenePhysicsState_ } from '$lib/scenePhysics';
     import { selectObject, renameObject, toggleObjectVisibility, dragUuidsFor, moveObjectsToParent } from '$lib/objectActions';
     import { nameOf, peerColor } from '$lib/lockControl';
+    import { myLocks, heldByMe } from '$lib/lockHeld'; // 80a K6: the "Held by me" chip
     import { objectName, objectTypeLabel } from '$lib/a11y/announce';
     import {
         showSidebar,
@@ -73,6 +83,8 @@
         if (tree && tree.contains(document.activeElement)) rowEl.scrollIntoView?.({ block: 'nearest' });
     });
     const lockEntry = $derived($lockedObjects.find((lockedUuid) => lockedUuid[1] === element.uuid));
+    // 80a K6: we hold it (our claim wins, K3); shown as a chip, Release lives on the row menu
+    const heldMine = $derived.by(() => { void $myLocks; void $lockedObjects; return heldByMe(element.uuid); });
     // 53-reader (A4): the row's NAME for a screen reader. Without it a treeitem is named from its
     // content — "Expand group Crate Hide Properties Delete" — so it says what the row IS instead:
     // "<name>, <type>" plus the states a sighted user reads off its badges. Level/selected/expanded
@@ -82,7 +94,8 @@
         const parts = [objectName(element), objectTypeLabel(element)];
         if (element.visible === false) parts.push('hidden');
         if (isLocal) parts.push('local only');
-        if (lockEntry) parts.push('locked by ' + nameOf(lockEntry[0]));
+        if (lockEntry) parts.push('held by ' + nameOf(lockEntry[0]));
+        else if (heldMine) parts.push('held by me');
         return parts.join(', ');
     });
 
@@ -333,14 +346,24 @@
                     {element.name}
                 </p>
             {/if}
+            {#if layerRow}
+                <span class="layer-dot h-2 w-2 shrink-0 rounded-full" style={'background:' + layerRow.color} title={'Layer: ' + layerRow.name + (layerRow.locked ? ' (locked)' : '')} aria-label={'Layer ' + layerRow.name}></span>
+            {/if}
 
             <!-- quick actions: appear on hover; lock badge when held by a peer -->
             {#if lockEntry}
-                <span class="flex shrink-0 items-center gap-1 pr-1" title="Locked by {nameOf(lockEntry[0])} — right-click to request control">
-                    <span class="h-2 w-2 rounded-full" style={'background:' + peerColor(lockEntry[0])}></span>
-                    <Icon name="lock" size={16} class="obj-ico" aria-hidden="true" />
+                <span class="held-chip shrink-0" data-held="other" title="{nameOf(lockEntry[0])} is editing this: right-click to request control">
+                    <span class="h-2 w-2 shrink-0 rounded-full" style={'background:' + peerColor(lockEntry[0])}></span>
+                    <Icon name="lock" size={16} aria-hidden="true" />
+                    <span class="held-chip-text">Held by {nameOf(lockEntry[0])}</span>
                 </span>
             {:else}
+                {#if heldMine}
+                    <span class="held-chip held-mine shrink-0 group-hover/row:hidden" data-held="me" title="You are editing this: others see it read-only. Right-click to release">
+                        <Icon name="lock-open" size={16} aria-hidden="true" />
+                        <span class="held-chip-text">Held by me</span>
+                    </span>
+                {/if}
                 <span class="row-actions hidden shrink-0 items-center gap-1.5 pr-1 group-hover/row:flex">
                     <button
                         class="obj-act"
@@ -370,6 +393,29 @@
 
 
 <style>
+    /* 80a K6: who holds a row, in words (the dot is the holder's lock colour) */
+    .held-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        max-width: 9.5rem;
+        margin-right: 4px;
+        padding: 0 6px;
+        border-radius: 999px;
+        border: 1px solid var(--warn-text);
+        color: var(--warn-text);
+        font-size: var(--fs-badge);
+        line-height: 18px;
+    }
+    .held-chip.held-mine {
+        border-color: var(--accent-text);
+        color: var(--accent-text);
+    }
+    .held-chip-text {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
     /* 38 R6: rows in the tokens — one accent for the selection (SPEC §1), quiet type icons */
     .obj-row {
         border-radius: var(--radius-input);

@@ -1,6 +1,9 @@
 <script>
 	import { backClose } from '$lib/backStack.js'; // phone-polish: Android Back closes it
 	import PaneHandle from '../ui/PaneHandle.svelte'; // showhide-v8: the one pane-handle pattern
+	// 80a-fix4-ui O2: the panes' elements (an open pane's handle is not drawn; its menu moves to the pane's top band)
+	let paletteEl = $state(/** @type {HTMLElement | null} */ (null));
+	let propsEl = $state(/** @type {HTMLElement | null} */ (null));
 	import { onLayoutRestore, storedPanelLayout } from '$lib/uiLayoutsCore';
 	// The Shader editor dock tab (plan SH3).
 	//
@@ -758,7 +761,7 @@
 		{/if}
 		<div class="shader-body" bind:clientWidth={bodyW}>
 			{#if paletteOpen && !compact}
-				<div class="shader-side shader-side-left" bind:clientHeight={paletteColH}>
+				<div class="shader-side shader-side-left" bind:this={paletteEl} bind:clientHeight={paletteColH}>
 					{@render paletteContent(paletteColH, addNodeAtCentre)}
 				</div>
 			{/if}
@@ -769,6 +772,7 @@
 					id="shader-palette-toggle"
 					edge="left"
 					open={paletteOpen}
+					pane={paletteEl}
 					label="the node palette"
 					windowKey="shader"
 					style="top: 2.5rem; left: 0"
@@ -880,6 +884,7 @@
 					id="shader-props-toggle"
 					edge="right"
 					open={propsOpen}
+					pane={propsEl}
 					label="properties"
 					role="info"
 					windowKey="shader"
@@ -889,7 +894,7 @@
 			</div>
 			{/if}
 			{#if propsOpen && !compact}
-				<div class="shader-side shader-side-right" id="shader-props" use:minimalScroll>
+				<div class="shader-side shader-side-right" id="shader-props" bind:this={propsEl} use:minimalScroll>
 					{@render propsContent()}
 				</div>
 			{/if}

@@ -78,6 +78,10 @@
 			<SettingRow id="row-export-preset" label="Optimize for" description="For Quest / web: KTX2-compressed textures at most 2048 px and an LOD chain (GLTF adds meshopt geometry) — much smaller, loads on a headset." wide>
 				<Segmented id="export-preset" label="Optimize for" options={EXPORT_PRESET_OPTIONS} value={draft.exportPreset} onchange={(v) => edit({ exportPreset: /** @type {any} */ (v) })} />
 			</SettingRow>
+			<!-- 102 M7: constraints are evaluated live; a GLTF file can only carry the pose they make -->
+			<SettingRow id="row-bake-constraints" label="Bake constraints" description="GLTF keeps the pose your constraints and IK make right now. Off exports the pose you set by hand.">
+				<Toggle id="bake-constraints" label="Bake constraints" checked={draft.bakeConstraints} onchange={(v) => edit({ bakeConstraints: v })} />
+			</SettingRow>
 		</Section>
 		<Section variant="card" label="A scene (.tpscene) includes">
 			<SettingRow id="row-tpscene-assets" label="Assets" description="Audio, textures and configs the scene uses.">

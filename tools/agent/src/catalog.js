@@ -54,6 +54,7 @@ export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?:
 	create_mesh: { title: 'Make a mesh from data', destructive: false },
 	set_geometry: { title: 'Reshape objects', destructive: true },
 	edit_mesh: { title: 'Edit a mesh', destructive: true },
+	simplify_mesh: { title: 'Simplify a mesh', destructive: true }, // 102 M1
 	set_material: { title: 'Change materials and textures', destructive: true, openWorld: true },
 	list_materials: { title: 'Read materials', read: true },
 	get_material: { title: 'Read one material', read: true },
@@ -90,6 +91,8 @@ export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?:
 	set_play_camera: { title: 'Set the play camera and opening view', destructive: true },
 	// 61-nav G10: game_setup {npc}
 	set_npc: { title: 'Make an object an enemy', destructive: true },
+	// 92-dialogue GC6: game_setup {dialogue}
+	set_dialogue: { title: 'Give an object a talk', destructive: true },
 	// 85b 85-world
 	search_assets: { title: 'Find assets', read: true, openWorld: true },
 	place_asset: { title: 'Place an asset', destructive: false, openWorld: true },
@@ -273,8 +276,8 @@ export const CONNECTOR_FAMILIES = Object.freeze({
 	edit_shape: {
 		title: 'Reshape or model objects',
 		summary:
-			'Change the shape of objects that exist: params = new size / segments / type in place (on a 3D text: its words, font, size, depth, bevel, align, wrap width, anchor, colours), mesh = model faces and vertices (extrude, inset, bevel, subdivide, weld, smooth, dissolve, make a face), update = new vertices / faces for a mesh made from data (replace it, or patch a range), duplicate = copies of an object in a row, or its mirror image (a left arm → the right one), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together.',
-		actions: { params: 'set_geometry', mesh: 'edit_mesh', update: 'update_mesh', duplicate: 'duplicate', pivot: 'set_pivot', pivot_group: 'create_pivot' }
+			'Change the shape of objects that exist: params = new size / segments / type in place (on a 3D text: its words, font, size, depth, bevel, align, wrap width, anchor, colours), mesh = model faces and vertices (extrude, inset, bevel, subdivide, weld, smooth, dissolve, make a face), update = new vertices / faces for a mesh made from data (replace it, or patch a range), duplicate = copies of an object in a row, or its mirror image (a left arm → the right one), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together, simplify = fewer triangles on a mesh or model (a percentage or a count; UVs, colours, skin weights and material slots kept; one undo step).',
+		actions: { params: 'set_geometry', mesh: 'edit_mesh', update: 'update_mesh', duplicate: 'duplicate', pivot: 'set_pivot', pivot_group: 'create_pivot', simplify: 'simplify_mesh' } // 102 M1: simplify
 	},
 	set_look: {
 		title: 'Materials, shaders, sky, light and post effects',
@@ -332,10 +335,10 @@ export const CONNECTOR_FAMILIES = Object.freeze({
 	},
 	// 85-scene (85b): 85 H3 + H6; levels / portal / loading / checkpoint join with 91 / 93
 	game_setup: {
-		title: 'Game setup: spawn, play camera, levels, portals, checkpoints, loading, enemies',
+		title: 'Game setup: spawn, play camera, levels, portals, checkpoints, loading, enemies, title screen, pause, saves, dialogue',
 		summary:
-			'How the game starts: spawn = where Play starts and which way the player faces; play_camera = first person walking or flying (speed, jump, eye height) and openingView = where the editor camera starts when the scene opens; levels = the game\'s one Levels table (order, scene or spawn point, goals) and what carries from level to level (score, inventory, health, named variables); portal = a doorway to a level, scene or spot (one player at a time, with a fade / iris / card); checkpoint = a pad that saves the player\'s progress; loading = the loading screen a level change shows; npc = make an object an enemy that patrols a Path, sees and hears the player, chases, attacks, gives up and returns (the object menu\'s "Make this an enemy" sheet).',
-		actions: { spawn: 'place_spawn', play_camera: 'set_play_camera', levels: 'set_levels', portal: 'set_portal', checkpoint: 'set_checkpoint', loading: 'set_loading', npc: 'set_npc' }
+			'How the game starts: spawn = where Play starts and which way the player faces; play_camera = first person walking or flying (speed, jump, eye height) and openingView = where the editor camera starts when the scene opens; levels = the game\'s one Levels table (order, scene or spawn point, goals) and what carries from level to level (score, inventory, health, named variables); portal = a doorway to a level, scene or spot (one player at a time, with a fade / iris / card); checkpoint = a pad that saves the player\'s progress; loading = the loading screen a level change shows; npc = make an object an enemy that patrols a Path, sees and hears the player, chases, attacks, gives up and returns (the object menu\'s "Make this an enemy" sheet); dialogue = give an object a talk: lines in a box for the player who walks up or clicks it, choices that set a variable or jump; title = the game\'s title screen (Continue / Play / Load game / Settings; exports open on it); pause = whether the pause menu pauses (only when nobody else plays) and auto-admit while playing; saves = three save slots.',
+		actions: { spawn: 'place_spawn', play_camera: 'set_play_camera', levels: 'set_levels', portal: 'set_portal', checkpoint: 'set_checkpoint', loading: 'set_loading', npc: 'set_npc', title: 'set_title_screen', pause: 'set_pause_menu', saves: 'set_save_slots', dialogue: 'set_dialogue' }
 	}
 });
 

@@ -37,7 +37,9 @@ export const CONFIG_KEYS = Object.freeze([
 	'quality',
 	'vrButton',
 	'preset',
-	'builtWith'
+	'builtWith',
+	// 92 (GC1): the title screen's bundled image
+	'titleImage'
 ]);
 
 /**

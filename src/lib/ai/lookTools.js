@@ -972,7 +972,7 @@ async function describeShaderNodesTool(args) {
 	return {
 		nodes: rows,
 		format: 'one line per node: id = type {param: value}; one per edge: source[.output] -> target.input. End at a "' + cat.outputNodeFor(domain) + '" node.',
-		uniforms: 'a param marked uniform compiles to u_<nodeId>_<param>; a float one can be driven by a flow "setuniform" node (data.uniform = that name) on the same object.'
+		uniforms: 'a param marked uniform compiles to u_<nodeId>_<param>; a flow "setuniform" node (data.uniform = that name) on the same object drives it: data.value for a float, data.color ("#rrggbb") or data.vector ([x, y, z]) for a vec3/vec2/vec4.'
 	};
 }
 
@@ -1276,7 +1276,6 @@ async function setFaceUv(uuid, object, args, t) {
 	const ue = await import('$lib/uvEditor');
 	/** @type {any} */
 	const fe = await import('$lib/faceEdit');
-	const { recordEntry } = await import('$lib/history');
 	const editable = ue.uvEditable(object);
 	if (!editable.ok) return { error: editable.reason };
 	const before = ue.readUvSnapshot(object);
@@ -1284,9 +1283,7 @@ async function setFaceUv(uuid, object, args, t) {
 	const uvs = projectFaceUvs(picked.tris.map((i) => [tris[i][0], tris[i][1], tris[i][2]]), t);
 	picked.tris.forEach((triIndex, k) => (tris[triIndex].uv = uvs[k]));
 	const after = { positions: fe.trisToPositions(tris), groups: fe.trisToGroups(tris), uvs: fe.trisToUVs(tris) };
-	fe.applyMeshGeo(uuid, after.positions, after.groups, after.uvs);
-	ue.broadcastUvGeo(uuid, after);
-	recordEntry({ kind: 'meshgeo', uuid, before, after });
+	ue.uvCommit(uuid, before, after); // 99 K2: the one commit (the UV editor's message)
 	return { faces: picked.tris.length };
 }
 
@@ -1474,7 +1471,7 @@ export const LOOK_AI_TOOLS = [
 		function: {
 			name: 'create_shader',
 			description:
-				'Give objects a node shader, written as text like flow graphs: one line per node (id = type {param: value}), one per edge (source[.output] -> target.input), ending at a "surface" node. Example: c = color {value: "#ff8800"}\\nout = surface\\nc -> out.emissive. Call describe_shader_nodes for the types. Each object gets its own copy. Compiler errors come back in the result and nothing is written. Returns the graph key and its uniforms: a float one (u_<nodeId>_<param>) can be driven by a flow "setuniform" node on that object. scene: true makes the default for every object, which asks the host first.',
+				'Give objects a node shader, written as text like flow graphs: one line per node (id = type {param: value}), one per edge (source[.output] -> target.input), ending at a "surface" node. Example: c = color {value: "#ff8800"}\\nout = surface\\nc -> out.emissive. Call describe_shader_nodes for the types. Each object gets its own copy. Compiler errors come back in the result and nothing is written. Returns the graph key and its uniforms (u_<nodeId>_<param>): a flow "setuniform" node on that object drives a float, colour or vector one. scene: true makes the default for every object, which asks the host first.',
 			parameters: {
 				type: 'object',
 				properties: {

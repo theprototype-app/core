@@ -460,8 +460,22 @@ export default {
 		// editor shows beside a uniform-backed param; the value rides a number socket, so
 		// no recompile and no message of its own (the flow value is already replicated).
 		{
+			// 102b-papercuts: `color` and `vector` reach a vec3/vec2/vec4 uniform (uniformWrite.js);
+			// both optional, so an old node's data is unchanged
 			type: 'setuniform', label: 'Set Shader Uniform', defaults: { uniform: '', value: 0 },
-			sockets: { out: 'effect', in: { value: 'number' } },
+			sockets: { out: 'effect', in: { value: 'number', color: 'color', vector: 'vector3' } },
+			card: 'EffectNode'
+		},
+		// 102 M7: drive one of the object's constraints (Inspector > Constraints) from a graph,
+		// LOCAL per peer like setuniform: the value comes through the replicated graph
+		{
+			type: 'constraintweight', label: 'Set Constraint Weight', defaults: { constraint: '1', weight: 1 },
+			sockets: { out: 'effect', in: { weight: 'number' } },
+			card: 'EffectNode'
+		},
+		{
+			type: 'constrainttarget', label: 'Set Constraint Target', defaults: { constraint: '1' },
+			sockets: { out: 'effect', in: { target: 'object' } },
 			card: 'EffectNode'
 		}
 	]

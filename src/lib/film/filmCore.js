@@ -113,6 +113,36 @@ export function recentreOffset(sensorQ, targetQ) {
 }
 
 /**
+ * 80a-fix4-ui G4 (release check r1590-02): THE HAND-OVER BETWEEN PHONE TILT AND TOUCH CARRIES THE QUATERNION. Both
+ * directions used to go through the forward vector's yaw, which is undefined looking straight down: a phone lying
+ * flat (pitch -88 deg, its 2 deg of tilt past the pole) rolled the Film view ~167 deg on every hand-over.
+ *
+ * `handoverOffset` is the yaw (a rotation about world +Y) that best carries `sensorQ` onto `targetQ`: the TWIST about
+ * Y of the difference (swing-twist), defined at the pole too. Equal pitch and roll = exact; otherwise gravity stays
+ * the truth (pitch and roll follow the phone) and only the heading is matched.
+ * @param {Quat} sensorQ @param {Quat} targetQ @returns {Quat}
+ */
+export function handoverOffset(sensorQ, targetQ) {
+	const d = quatMul(targetQ, quatConj(sensorQ));
+	const n = Math.hypot(d[1], d[3]);
+	if (n < 1e-6) return recentreOffset(sensorQ, targetQ);
+	return [0, d[1] / n, 0, d[3] / n];
+}
+
+/**
+ * Touch look about a carried orientation: the drag's yaw turns about world +Y, its pitch about the view's own X; the
+ * base keeps whatever roll it came with (no re-derivation from the forward vector). Pitch is held within +-1.5 rad of
+ * the horizon, or where the base already is beyond that (a drag can only bring it back).
+ * @param {Quat} base @param {number} dragYaw @param {number} dragPitch @returns {Quat}
+ */
+export function touchLook(base, dragYaw, dragPitch) {
+	const f = forwardOf(base);
+	const pb = Math.atan2(f[1], Math.hypot(f[0], f[2]));
+	const dp = Math.max(Math.min(-1.5, pb) - pb, Math.min(Math.max(1.5, pb) - pb, dragPitch));
+	return quatNorm(quatMul(quatMul(quatAxisAngle(Y, dragYaw), base), quatAxisAngle(X, dp)));
+}
+
+/**
  * Remove the roll: the same forward direction with the camera's up kept in the vertical
  * plane (HORIZON LOCK). Looking straight up/down keeps the incoming orientation.
  * @param {Quat} q @returns {Quat}

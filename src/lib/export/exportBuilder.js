@@ -343,6 +343,9 @@ export async function buildExport(opts, onProgress = () => {}) {
 	// 93 LP2: the game's own loading screen covers the export's first load
 	const { exportLoadingScreen } = await import('../gameLevels/exportLoading.js');
 	const loading = await exportLoadingScreen(out, payload, warnings);
+	// 92 (GC1): the title screen's library image rides the bundle too
+	const { exportTitleImage } = await import('../gameLevels/exportLoading.js');
+	const titleImage = await exportTitleImage(out, payload, warnings);
 
 	// 5. the config, the cover, the readme
 	const config = {
@@ -359,7 +362,8 @@ export async function buildExport(opts, onProgress = () => {}) {
 		vrButton: opts.vrButton !== false,
 		preset: opts.preset,
 		builtWith: APP_VERSION,
-		...(loading ? { loading } : {})
+		...(loading ? { loading } : {}),
+		...(titleImage ? { titleImage } : {})
 	};
 	const playJs = makePlayJs(config);
 	out['play.js'] = enc.encode(playJs);

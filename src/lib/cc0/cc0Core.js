@@ -126,6 +126,28 @@ export function normalizeAmbientCg(page) {
 	return rows;
 }
 
+/**
+ * 80a-fix4-ui E2: ambientCG's search matches TITLES ("Wood 051"), never ids, so a typed id ("Wood051",
+ * "PavingStones142") found nothing in the Asset Browser (the same gap 1.56 fixed for set_material). An id-shaped
+ * query is asked in its title form; anything else is asked as typed.
+ * @param {string} typed @returns {string}
+ */
+export function acgSearchQuery(typed) {
+	const t = String(typed ?? '').trim();
+	if (!/^[A-Za-z]+\d+[A-Za-z]?$/.test(t)) return t;
+	return t.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/([A-Za-z])(\d)/g, '$1 $2');
+}
+
+/**
+ * E2: the row whose id is exactly what was typed goes first (a title search also finds its neighbours).
+ * @template {{id: string}} R @param {R[]} rows @param {string} typed @returns {R[]}
+ */
+export function exactIdFirst(rows, typed) {
+	const t = String(typed ?? '').trim().toLowerCase();
+	const i = t ? rows.findIndex((r) => String(r.id).toLowerCase() === t) : -1;
+	return i <= 0 ? rows : [rows[i], ...rows.slice(0, i), ...rows.slice(i + 1)];
+}
+
 /** the total an ambientCG page reports (for "load more") @param {any} page */
 export function ambientCgTotal(page) {
 	return Number.isFinite(page?.totalResults) ? page.totalResults : 0;

@@ -1,4 +1,5 @@
 import { parseCheckedObject } from './loadGuard.js';
+import { inflateSharedGeometries } from './sharedGeometry.js';
 import * as THREE from 'three';
 import { renderOffscreen } from './render/offscreen.js';
 import './threeFixes.js'; // 36-fb-water F14: transmissive materials survive a JSON trip (the export runtime loads scenes here too)
@@ -13,6 +14,7 @@ import { flowViewsSnapshot } from './flowView';
 import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
 import { stripEditOverlays } from './editOverlays';
+import { adoptLoadedDrafts, clearInboundDraftFlags } from './objectPermissions'; // 80a migration
 import { withCleanView } from './cleanView'; // 50-window (C2): thumbnails without the editor's scaffolding
 import { isPristinePackRef, stubElementOf, stubNodeCount, fillPackRef, warmPrograms } from './packRefs';
 // 36 L2: the scene's saved view is applied at the START of a load (startView.js)
@@ -103,6 +105,7 @@ import { oldRulesGame, RETIRED_GAME_NODES } from './oldGameScene.js';
 // 36-community (C4): the scene's permanent game id rides session.json; a load takes it from the file
 import { gameFields, noteLoadedGame } from './gameIdentity.js';
 import { localThumb } from './loadGuardCore.js';
+import { objectToJSON } from './slotGroups.js'; // 105: one serializer for slot groups
 
 // Multi-slot sessions (phase 50) on top of the autosave format. Each session
 // stores its top-level objects as individual ObjectLoader jsons — that makes
@@ -312,7 +315,7 @@ export function buildSessionPayload(name, opts = {}) {
 					.filter((/** @type {any} */ child) => !animatedUuids.includes(child.uuid) && !isTransient(child))
 					// 30c: a pristine KIT PIECE is written as a stub its pack refills (packRefs.js
 					// has the measurement: one wall is 7.9 MB as toJSON)
-					.map((/** @type {any} */ child) => (isPristinePackRef(child) ? stubElementOf(child) : child.toJSON())),
+					.map((/** @type {any} */ child) => (isPristinePackRef(child) ? stubElementOf(child) : objectToJSON(child))),
 				animated: animatedImportsSnapshot(group, { refsOnly: opts.refsOnly }),
 				// authored movement tracks (the Animation window) were never saved
 				animations: animationsSnapshot(),
@@ -425,7 +428,7 @@ export function buildSelectionPayload(name, uuids) {
 		const objects = roots
 			.map((uuid) => group?.getObjectByProperty('uuid', uuid))
 			.filter((/** @type {any} */ object) => object && !animatedUuids.includes(object.uuid) && !isTransient(object))
-			.map((/** @type {any} */ object) => (isPristinePackRef(object) ? stubElementOf(object) : object.toJSON()));
+			.map((/** @type {any} */ object) => (isPristinePackRef(object) ? stubElementOf(object) : objectToJSON(object)));
 		const clips = animationsSnapshot();
 		/** @type {any} */
 		const animations = {};
@@ -503,7 +506,9 @@ export function emptySessionPayload(name) {
 }
 
 /** Persist a payload as a slot @param {any} payload */
-async function persistSession(payload) {
+/** @param {any} payload @param {{listOnly?: boolean}} [opts] fix-batch-4 B1: `listOnly` adds this one row
+ * to the Sessions list instead of re-reading every saved session (see the backup in applySessionNow) */
+async function persistSession(payload, opts = {}) {
 	// 37 R15: a SAVED SESSION keeps the conversation (Sessions manager saves, projects and the
 	// "Backup before" stashes all come through here). Additive and local: absent when nobody
 	// has said anything, never written into a .tpscene/.zip export (exportSessionZip strips it).
@@ -516,7 +521,8 @@ async function persistSession(payload) {
 		return null;
 	}
 	await idbPut(KEY + payload.id, payload);
-	await loadSessions();
+	if (opts.listOnly) sessions.update((list) => [metaOf(payload), ...list.filter((m) => m.id !== payload.id)]);
+	else await loadSessions();
 	return payload;
 }
 
@@ -592,8 +598,9 @@ export async function restoreSessionLibrary(payload) {
 }
 
 /** Snapshot the current scene into a named session @param {string} name */
-export async function saveSession(name) {
-	const payload = await persistSession(buildSessionPayload(name));
+/** @param {string} name @param {{listOnly?: boolean}} [opts] */
+export async function saveSession(name, opts = {}) {
+	const payload = await persistSession(buildSessionPayload(name), opts);
 	if (payload) showToast('Session saved: ' + payload.name);
 	return payload;
 }
@@ -666,13 +673,17 @@ export const SESSION_FORMAT = 1;
 // 2.0-n3c: 3 = custom node definitions are saved (`nodeDefs`), a graph node may carry `v` (its
 // definition's version; absent = 1) and a Script node `data.convertedFrom` (Convert to code). An older
 // reader ignores all three: the scene opens, its custom nodes without definitions (as before).
-export const SESSION_FORMAT_MINOR = 3;
+// 102b-papercuts: 4 = a Box geometry may carry `radius` / `radiusSegments` (a rounded box; an older reader
+// draws the plain box of the same size) and a file may carry `sharedGeometries` (repeated meshes saved once,
+// see sharedGeometry.js; an older reader draws each repeat as a plain box of its size).
+export const SESSION_FORMAT_MINOR = 4;
 
 /** Parse + shape-validate a session JSON string. @param {string} json */
 function parseSessionJson(json) {
 	const payload = JSON.parse(json);
 	if (!payload || !Array.isArray(payload.objects)) throw new Error('not a session file');
-	return payload;
+	// 102b: a file's repeated meshes come back where they were used before anything reads the objects
+	return inflateSharedGeometries(payload);
 }
 
 /** V4: true when the payload's format is loadable; a NEWER format asks first.
@@ -1014,7 +1025,9 @@ export async function exportSessionZip(payload, opts = { assets: true, packs: fa
 		}
 		wire = { ...payload, library: { folders: payload.library.folders ?? [], items: libIndex } };
 	}
-	files['session.json'] = strToU8(JSON.stringify(wire));
+	// 102b: equal shapes are written once (sharedGeometry.js); the live payload is not changed
+	const { shareGeometries } = await import('./sharedGeometryWrite.js');
+	files['session.json'] = strToU8(JSON.stringify(shareGeometries(wire)));
 	Object.assign(files, presetFiles);
 	/** @type {Array<{hash: string, name: string, kind: string, file: string}>} */
 	const index = [];
@@ -1401,7 +1414,7 @@ export function importObjects(payload, indices) {
 		if (object.userData?.packStub && object.userData.packRef) object.userData.packRef.kids = [];
 		group.add(object);
 		recordObjectPresence('create', object);
-		if (peer) peer.send({ type: 'object', element: object.toJSON() });
+		if (peer) peer.send({ type: 'object', element: objectToJSON(object) });
 		added++;
 	}
 	pokeScene();
@@ -1564,7 +1577,15 @@ async function applySessionNow(payload, opts, job) {
 	// 33 L1: a load that interrupted another one still building finds HALF of that scene on
 	// screen — nothing anybody made, so no "Backup before" of it
 	const hadContent = !!group?.children.length && !job.interrupted;
-	if (backup && hadContent) await saveSession('Backup before "' + payload.name + '"');
+	// fix-batch-4 B1: the backup used to re-read EVERY saved session for the list afterwards
+	// (loadSessions reads each payload whole: ~8 of the ~10 s an Accept waited under load).
+	// It adds its own row instead (the manager re-reads on open anyway), and the bar says so.
+	if (backup && hadContent) {
+		const phase = job.phase;
+		updateLoad(job, { phase: 'backup' });
+		await saveSession('Backup before "' + payload.name + '"', { listOnly: true });
+		updateLoad(job, { phase });
+	}
 	// 36-community (C4): the arriving scene's game identity — AFTER the backup, which saves the
 	// scene being LEFT under its own id
 	noteLoadedGame(payload);
@@ -1664,7 +1685,12 @@ async function applySessionNow(payload, opts, job) {
 			// on the way in; the peers do the same in `createObject`.
 			stripEditOverlays(object);
 			group.add(object); // keep original uuids — every peer converges on them
-			if (replicate && peer) peer.send({ type: 'object', element });
+			// 80a migration: a file saved with drafts in it loads them as private drafts — marked
+			// here, before anything is sent, and the draft itself is not sent at all
+			// a load that replicates nothing (a travel node) is everyone's scene: it brings no drafts
+			if (!replicate) clearInboundDraftFlags(object);
+			const draft = replicate ? adoptLoadedDrafts(object) : false;
+			if (replicate && peer && !draft) peer.send({ type: 'object', element });
 			// a kit piece is not loaded until its pack refilled it: counted when it lands,
 			// and asked for NOW rather than on the scan's next debounce
 			if (object.userData?.packStub) refills.push(fillPackRef(object).finally(() => progress(job)));

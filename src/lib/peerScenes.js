@@ -35,7 +35,8 @@
 import { writable, get } from 'svelte/store';
 import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { peers } from '../stores/appStore';
-import { lockedObjects, selectedObject } from '../stores/sceneStore';
+import { lockedObjects } from '../stores/sceneStore';
+import { myLockRows } from './lockHeld'; // 80a K3
 import { currentLevel } from './levels';
 // R22 round 36 (rooms): WHOSE world the unnamed room IS. A store-only leaf (the
 // `peerApproval` precedent), so importing it closes no cycle — and it is the one fact
@@ -224,9 +225,8 @@ function pushMyLocksTo(peerId) {
 		const rows = (get(lockedObjects) ?? []).filter(
 			(/** @type {any} */ row) => Array.isArray(row) && row[0] === id
 		);
-		/** @type {any} */
-		const selected = get(selectedObject);
-		if (selected?.uuid) rows.push([id, selected.uuid]);
+		// 80a K3 (L5): every object we hold, with its stamp (lockHeld), not the primary selection
+		rows.push(...myLockRows());
 		if (!rows.length) return false;
 		conn.send({ type: 'locked', lockeditems: rows });
 		return true;
@@ -617,12 +617,12 @@ export const ROOM_SCOPED = new Set([
 	// object lifecycle & geometry
 	'create', 'light', 'group', 'object', 'objectfile', 'duplicate', 'delete', 'name',
 	'move', 'throw', 'hit', 'behavior', 'simulate', 'simvote', 'simhandoff', 'color', 'objectParameters', 'geometry', 'lighttarget',
-	'verts', 'meshgeo', 'uvpaint', 'uvpaintend', 'splineedit', 'drawlive', 'drawend',
+	'verts', 'meshgeo', 'uvpaint', 'uvpaintend', 'meshpaint', 'meshpaintend', 'splineedit', 'drawlive', 'drawend',
 	'clearscene', 'loading',
 	// flow
 	'nodes', 'nodesync', 'graphcreate', 'graphdelete', 'nodecreate', 'nodemove',
 	'nodedata', 'nodedelete', 'edgecreate', 'edgedelete', 'nodetrigger', 'triggers',
-	'particleburst', 'flowcursor',
+	'particleburst', 'flowcursor', 'decalstamp',
 	// scene singletons and keyed documents
 	// 23-A2/A4: 'transport' (the musical clock) and 'patch' (the cable routing) are scene
 	// singletons exactly like 'music' beside them, and 'devicenote' is a runtime event on a
@@ -636,7 +636,7 @@ export const ROOM_SCOPED = new Set([
 	// 56 C10/C8: a scene's AI chats and kept pictures are room content like its HUD
 	'tpchat', 'tpchatdel', 'tpchats', 'tprefs',
 	// coordination
-	'lock', 'locked', 'lockrequest', 'unlock', 'lockdenied', 'sessionproposal',
+	'lock', 'locked', 'lockrequest', 'unlock', 'lockdenied', 'lockreject', 'sessionproposal',
 	'sessionanswer', 'ping', 'sceneadopt'
 ]);
 // 34 R2 (kit-entities): the kit's entities are room content like the kit document

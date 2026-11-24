@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { notifyOn } from './notifyPrefs';
 import { globalScene, objectsGroup, showGrid, TControls, lockedObjects, selectedObject, globalCamera, peerHands, pokeScene, beginSceneBatch, endSceneBatch } from '../stores/sceneStore.js';
 import { receiveMapSlot, receiveTexTransform, receiveNormalStrength } from '$lib/materialMaps';
+import { unlinkMaterial } from '$lib/materialSharing';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createGeometry, createLight, createGroup } from '$lib/geometries.svelte'
@@ -15,7 +16,9 @@ import { dropPeerQuality } from '$lib/networkQuality'
 import { dropPeerClock } from '$lib/musicClock'
 import { applyRemoteDevice } from '$lib/audioDevices'
 import { sessionHost, dropPeerJoined, noteSnapshotAnswered } from '$lib/connectionState'
-import { acceptedLockRows, mergeLockRows } from '$lib/lockTrust'
+import { acceptedLockRows, mergeLockRows, sortLockTable, stampRestoredRows } from '$lib/lockTrust'
+import { lockMessage, myClaim, raceFloor } from '$lib/lockHeld'
+import { sessionNow } from '$lib/sessionClock'
 import { environment, editEnvSky } from '$lib/environment'
 import { hasAnimatedImport, sendAnimatedImport, setAnimationState, setClipRefs, setAnimGraph, attachToSocket, dropAllAnimatedImports, setVrmExpression } from '$lib/animatedImports'
 import { dropAllAnimations } from '$lib/animationPreview'
@@ -23,6 +26,7 @@ import { parkAnimatedAtBase } from '$lib/flowRuntime'
 import { stripEditOverlays } from '$lib/editOverlays'
 import { isPristinePackRef, stubElementOf } from '$lib/packRefs'
 import { withTwins, attachTwinsFromGltf } from '$lib/ktx2Twins'
+import { restoreGltfNames } from '$lib/gltfNames'
 import { normalizeLodGroup } from '$lib/lodGroupCore'
 import { normalizeFluid } from '$lib/sim/fluidCore.js'; // 36-sim
 import { normalizeEmitter, normalizeInteraction } from '$lib/sim/fluidEmitterCore.js'; // 36-fb F23
@@ -31,7 +35,7 @@ import { normalizePortal, normalizeCheckpoint } from '$lib/gameLevels/objects.js
 import { applyTextPathTo, bumpTextTurn } from '$lib/textPathObject.js'; // 64 D2
 import { runSceneClearHandlers } from '$lib/moduleSDK'
 import { annotations } from '$lib/annotationsHandler'
-import { isViewer, warnViewerReadOnly } from '$lib/objectPermissions'
+import { isViewer, warnViewerReadOnly, clearInboundDraftFlags } from '$lib/objectPermissions'
 import { isHeldOut } from '$lib/peerModeration' // 55 A9
 import { get, writable } from 'svelte/store'
 import { addMessage, loading, loadingcount, showToast, fixLight, specatorMode } from '../stores/appStore';
@@ -46,8 +50,11 @@ import { safeStorage } from './safeStorage';
 // reach — it REGISTERS rather than importing us, the registerDiagnosticsSection shape.
 import { registerMetricSource, ingestVerdict, profileFor } from './sceneBudget';
 import { globalRenderer } from '../stores/sceneStore.js';
+import { yieldToEventLoop } from './sceneLoader';
 // 33 (L4): the scene going away is when its modules may be left behind (a leaf)
 import { noteSceneLeaving } from './sceneScope';
+import { objectToJSON, slotLayoutOf } from './slotGroups.js'; // 105: one serializer for slot groups (+ row 6: the glTF send)
+import { markConstraintsDirty } from './rig/constraintHub.js'; // 102 M7 (the solver loads on first use)
 
 //Access scene Store
 let scene = $state();
@@ -209,7 +216,7 @@ export function sceneCommand(command) {
                 peer.send({type: 'create', command: command, uuid: uuid});
                 recordObjectPresence('create', sceneObjects.getObjectByProperty('uuid', uuid));
                 }
-                peer.send({type: 'lock', uuid: uuid, peerId: peer.peer.id});
+                if (uuid != null) peer.send(lockMessage([uuid], peer.peer.id));
 
                 // the environment rig lights every preset except Classic —
                 // only nag about missing lights in Classic
@@ -229,7 +236,7 @@ export function sceneCommand(command) {
                 peer.send({type: 'light', command: command, uuid: uuid});
                 recordObjectPresence('create', sceneObjects.getObjectByProperty('uuid', uuid));
                 }
-                peer.send({type: 'lock', uuid: uuid, peerId: peer.peer.id});
+                if (uuid != null) peer.send(lockMessage([uuid], peer.peer.id));
         }
         else if (command.startsWith('/group')) {
                 let uuid = createGroup(command);
@@ -238,7 +245,7 @@ export function sceneCommand(command) {
                 peer.send({type: 'group', command: command, uuid: uuid});
                 recordObjectPresence('create', sceneObjects.getObjectByProperty('uuid', uuid));
                 }
-                peer.send({type: 'lock', uuid: uuid, peerId: peer.peer.id});
+                if (uuid != null) peer.send(lockMessage([uuid], peer.peer.id));
         }
         else if (command.startsWith('/transform')) {
             const regex = /(\translate|\.rotate|\.scale)/i;
@@ -255,13 +262,13 @@ export function sceneCommand(command) {
                     console.log(locked)
                     if(!locked.filter(lockedUuid => lockedUuid[1] === uuid)) {
                         controls.attach(sceneObjects.getObjectByProperty( 'uuid' , uuid));
-                        peer.send({type: 'lock', uuid: command.split(' ')[1], peerId: peer.peer.id});
+                        peer.send(lockMessage([command.split(' ')[1]], peer.peer.id));
                     } else {
                         console.log('Object ' + uuid + ' already locked by ' + locked.find(lockedUuid => lockedUuid[1] === uuid)[0]);
                     }
                 } else {
                     controls.attach(sceneObjects.getObjectByProperty( 'uuid' , uuid));
-                    peer.send({type: 'lock', uuid: command.split(' ')[1], peerId: peer.peer.id});
+                    peer.send(lockMessage([command.split(' ')[1]], peer.peer.id));
                 }
             }
             else
@@ -335,9 +342,15 @@ export function applyClearScene(peerId) {
 export function lockRestore(lockeditems, from, fromHost, mayLock) {
     // 27-A: same trust, same fix — a non-array here threw inside the handshake.
     if (!Array.isArray(lockeditems)) return;
-    const rows = acceptedLockRows(lockeditems, { from, selfId: peer?.peer?.id, fromHost, mayLock });
-    if (!rows.length) return;
-    locked = mergeLockRows(locked, rows);
+    const accepted = acceptedLockRows(lockeditems, { from, selfId: peer?.peer?.id, fromHost, mayLock });
+    // 80a K3: the same stamp rule as a `lock` set (geometries.lockGeometry)
+    const now = sessionNow();
+    const rows = stampRestoredRows(accepted, locked, myClaim, now, { from, fromHost, floor: raceFloor(from, now) });
+    // 80a K6: the sender's own rows are its whole held set (sendHandshake sends myLockRows), like a `lock`
+    // set: what it let go of while a link was down goes, what it still holds keeps the stamp stored before
+    const rest = locked.filter((/** @type {any} */ l) => l[0] !== from);
+    if (!rows.length && rest.length === locked.length) return;
+    locked = sortLockTable(mergeLockRows(rest, rows, { replace: !!fromHost }));
     lockedObjects.set(locked);
 }
 
@@ -504,8 +517,26 @@ export function lastSyncStats() {
 // Subscribing here sees both without touching either writer.
 /** outstanding count at the last notification, so only PROGRESS re-arms the stall */
 let loadingLastLeft = 0;
+// fix-late-joiners row 1 — ONE SCENE BATCH FOR THE WHOLE ANNOUNCED TRANSFER. A join's objects come one wire
+// message at a time, so the drainer emptied its queue every few objects, and each drain's END closed the scene
+// batch with an immediate full poke: the object list and every tree consumer re-rendered every few objects
+// (measured: svelte's flushes 6.1 s of a 15 s join, the drain's endSceneBatch 1.2 s more). The batch is held
+// from the `loading` announcement until the last announced uuid is here (or the batch is closed by a stall,
+// a cancel, a departed sender: every one of them empties `loading`), so pokes stay paced the whole way.
+let announcedBatchOpen = false;
+function holdAnnouncedBatch() {
+    if (announcedBatchOpen) return;
+    announcedBatchOpen = true;
+    beginSceneBatch();
+}
+function releaseAnnouncedBatch() {
+    if (!announcedBatchOpen) return;
+    announcedBatchOpen = false;
+    endSceneBatch();
+}
 loading.subscribe((/** @type {any} */ left) => {
     const count = Array.isArray(left) ? left.length : 0;
+    if (!count) releaseAnnouncedBatch();
     // progress on an open batch: re-arm — but only a timer that is running, never one the
     // ingest fork parked on purpose while its question is open
     if (loadingStartedAt && count > 0 && count < loadingLastLeft && loadingStallTimer) armLoadingStall();
@@ -553,6 +584,7 @@ export async function createLoader(count, uuids, senderId) {
     loadingSender = senderId ?? null;
     // an empty announcement opens nothing to finish, so it starts no clock
     loadingStartedAt = Array.isArray(uuids) && uuids.length ? performance.now() : 0;
+    if (loadingStartedAt) holdAnnouncedBatch();
     loadingAnnounced = Number(count) || 0;
     // 26-C: THE ONE MOMENT the size is known and nothing has been applied. Past it a
     // 4,000-object scene is simply happening to you.
@@ -612,6 +644,9 @@ export async function objectParameters(data, from = 'peer') {
         if (mesh) applyMap(mesh, data.map, data.slot ?? 0, typeof data.source === 'string' ? data.source : null);
     } else if (data.parameter == 'materialParam') {
         setMaterialParam(data.uuid, data.key, data.value, false);
+    } else if (data.parameter == 'materialUnlink') {
+        // 102 M6: "this object only" on a shared material — this object gets its own copy here too
+        unlinkMaterial(data.uuid);
     } else if (data.parameter == 'mapSlot') {
         receiveMapSlot(data); // 72 LK1: normal, roughness, metalness, emissive, AO
     } else if (data.parameter == 'texTransform') {
@@ -676,6 +711,19 @@ export async function objectParameters(data, from = 'peer') {
             pokeScene(); // collider viz re-syncs
             physicsShapeChanged(data.uuid); // CL-A A2: live mid-sim rebuild
         }
+    } else if (data.parameter == 'constraints') {
+        // 102 M7: an object's constraint stack, normalized at the boundary; every peer
+        // evaluates it locally from the synced targets (no pose travels)
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            // stored as validated (wireValidate: <= 16 plain objects with an id); the runtime and the
+            // Inspector normalize on read, so the boot path carries no solver code
+            const list = Array.isArray(data.constraints) ? data.constraints.slice(0, 16).map((/** @type {any} */ c) => ({ ...c })) : [];
+            if (list.length) mesh.userData.constraints = list;
+            else delete mesh.userData.constraints;
+            markConstraintsDirty();
+            pokeScene();
+        }
     } else if (data.parameter == 'fluid') {
         // 36-sim U2b: a fluid tank's settings (the particles are each peer's own).
         // Normalized here — the one boundary a peer's bytes go through.
@@ -720,8 +768,51 @@ export async function objectParameters(data, from = 'peer') {
             const turn = bumpTextTurn(data.uuid);
             if (data.textPath) applyTextPathTo(mesh, data.textPath);
             // 64-text TX5: Bake — this peer bakes its own build of the record (the mesh never travels)
-            else if (data.bake === true && mesh.userData.textPath) void import('$lib/textPathEdit.js').then((m) => m.applyRemoteBake(mesh, turn));
+            // (fix-batch-4 G5: the bake probe notes every arrival, before the bake's own steps)
+            else if (data.bake === true && mesh.userData.textPath)
+                void import('$lib/textPathEdit.js').then((m) => {
+                    m.bakeNote(data.uuid, 'arrived', { turn });
+                    return m.applyRemoteBake(mesh, turn);
+                });
             else delete mesh.userData.textPath;
+            pokeScene();
+        }
+    } else if (data.parameter == 'decal') {
+        // 102 M3: a decal's record, normalized at the boundary; every peer rebuilds the surface
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh && mesh.userData?.decal && data.decal) {
+            // a lazy chunk (the boot never loads decals); one module promise keeps messages in order
+            void import('$lib/decalObject.js').then((m) => {
+                m.applyDecalTo(mesh, data.decal);
+                pokeScene();
+            });
+        }
+    } else if (data.parameter == 'splat') {
+        // 102: a Gaussian splat's record (crop, opacity, the file); the proxy box follows it and every
+        // peer's runtime redraws from it
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            // the record only (wireValidate checked its shape): the splat runtime normalizes it and rebuilds
+            // the proxy box on its next frame, so none of the splat code rides the boot
+            if (data.splat) mesh.userData.splat = { ...data.splat };
+            else delete mesh.userData.splat;
+            pokeScene();
+        }
+    } else if (data.parameter == 'layer') {
+        // 102b-arrange: which layer an object is on (an id from the scene's layer table) or null
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            if (typeof data.layer === 'string' && data.layer) mesh.userData.layer = data.layer;
+            else delete mesh.userData.layer;
+            pokeScene();
+        }
+    } else if (data.parameter == 'array') {
+        // 102b-arrange: an array record (wireValidate checked the shape; the runtime normalizes on
+        // read) or null = the array is gone. Every peer draws the copies itself.
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            if (data.array) mesh.userData.array = JSON.parse(JSON.stringify(data.array));
+            else delete mesh.userData.array;
             pokeScene();
         }
     } else if (data.parameter == 'fluidInteraction') {
@@ -861,8 +952,11 @@ export async function createObject(object, uuid, override, groupuuid, pos, rot, 
 // rendering and the poke flush all get a turn while a big scene lands. A batch is open
 // for the whole drain, which is what puts `pokeScene` into its one-per-frame mode.
 //
-// A macrotask (setTimeout 0) is the yield, not a microtask: a microtask chain never
-// returns to the browser, so it would slice the work without ever letting a frame run.
+// A task is the yield, not a microtask: a microtask chain never returns to the browser, so
+// it would slice the work without ever letting a frame run. 54-net: and not setTimeout(0) —
+// a throttled page stretches every chained timeout to ~1 s (measured: 10 in 10.9 s on a busy
+// e2e box), so the full-state reply after a heal landed one object per second and an edit
+// made during the drop showed up after the check had given up. sceneLoader's yield has neither.
 // ---------------------------------------------------------------------------
 
 /** How long the drainer may hold the thread before yielding. 8ms leaves half a 60Hz
@@ -974,8 +1068,9 @@ async function drainIngest() {
                     continue;
                 }
                 try {
-                    // @ts-ignore - spread of a fixed-length arg tuple
-                    job.resolve(await applyCreateObject(...job.args));
+                    lookAheadIngest();
+                    const [a0, a1, a2, a3, a4, a5, a6, a7] = job.args;
+                    job.resolve(await applyCreateObject(a0, a1, a2, a3, a4, a5, a6, a7, /** @type {any} */ (job).parsed));
                     if (Number.isFinite(ingestCap)) ingestCap--;
                 } catch (error) {
                     // a parse that rejects is still an ARRIVAL as far as the progress bar
@@ -988,7 +1083,7 @@ async function drainIngest() {
                     else job.reject(error);
                 }
             }
-            if (ingestQueue.length && !ingestHeld) await new Promise((r) => setTimeout(r, 0));
+            if (ingestQueue.length && !ingestHeld) await yieldToEventLoop();
         }
     } finally {
         ingestDraining = false;
@@ -1010,18 +1105,50 @@ export function dropIngestQueue() {
     return dropped;
 }
 
+// fix-late-joiners row 1 — LOOK AHEAD. A glTF parse is mostly waiting (a data-URI fetch per buffer, then the
+// loader's own promise chain), and the drainer applied objects strictly one after another, so each glTF object
+// cost several tasks of nothing; at a joiner's fps that was seconds per object. The next few glTF jobs start
+// their parse while the current one is applied. ORDER IS UNCHANGED: a job is still applied only after every
+// job before it, and a parse touches no scene state. Not while the ingest gate holds the queue (the user may
+// say no), and never past the cap the user agreed to.
+const INGEST_LOOKAHEAD = 8;
+
+/** checked, then parsed by three's loader (embedded data only) @param {any} object @param {string} from */
+function parseIncomingGltf(object, from) {
+    if (!checkGltf(object.element, from, 'object')) return Promise.reject(refusal('object'));
+    const loader = new GLTFLoader(embeddedOnlyManager(from, 'object'));
+    return new Promise((resolve, reject) => {
+        loader.parse(object.element, '', (gltf) => resolve(gltf), (error) => reject(error));
+    });
+}
+
+/** start the parse of the next few glTF jobs (their promise rides the job) */
+function lookAheadIngest() {
+    const n = Math.min(INGEST_LOOKAHEAD, ingestQueue.length, Number.isFinite(ingestCap) ? Math.max(0, ingestCap) : Infinity);
+    for (let k = 0; k < n; k++) {
+        const job = /** @type {any} */ (ingestQueue[k]);
+        if (job.parsed || job.args[1] == null) continue;
+        job.parsed = parseIncomingGltf(job.args[0], job.args[7] ?? 'peer');
+        job.parsed.catch(() => {}); // a rejection is reported when the job is applied, not here
+    }
+}
+
 /** How many objects are parked. Read by the suite and the 26-A meter. */
 export function ingestBacklog() {
     return ingestQueue.length;
 }
 registerMetricSource('ingestBacklog', ingestBacklog);
+// fix-late-joiners row 1: the objects a peer ANNOUNCED (`loading`) that have not arrived yet. A late join's
+// objects come one wire message (one task) at a time, so the parked queue stays short (measured: <= 18 of
+// 500) while the batch is far from done — the ingest draw rule must see the announcement, not only the queue.
+registerMetricSource('loadingLeft', () => /** @type {string[]} */ (get(loading)).length);
 
 /**
  * @param {any} object @param {string[]|null} uuid @param {boolean} [override]
  * @param {string} [groupuuid] @param {number[]} [pos] @param {number[]} [rot] @param {number[]} [scale]
- * @param {string} [from]
+ * @param {string} [from] @param {Promise<any>} [parsed] the glTF already being parsed (the drainer's look-ahead)
  */
-async function applyCreateObject(object, uuid, override, groupuuid, pos, rot, scale, from = 'peer') {
+async function applyCreateObject(object, uuid, override, groupuuid, pos, rot, scale, from = 'peer', parsed = undefined) {
     let parent;
     if (uuid == null) {
     // checked before three's loader sees it (loadGuardCore.js); a refusal throws into the
@@ -1030,6 +1157,7 @@ async function applyCreateObject(object, uuid, override, groupuuid, pos, rot, sc
     // an incoming object can only carry a STALE edit wireframe (a peer on an
     // older build, or a scene saved with a session open) — never a live one
     stripEditOverlays(mesh);
+    clearInboundDraftFlags(mesh);
     let existing = override ? sceneObjects.getObjectByProperty('uuid', mesh.uuid) : null;
     if (existing) {
         // replace IN PLACE, under the same parent. The gizmo has to let go first or it
@@ -1052,17 +1180,29 @@ async function applyCreateObject(object, uuid, override, groupuuid, pos, rot, sc
         // console.log("Adding GLTF object " + uuid)
         // a glTF made by the sender's exporter embeds everything it needs: a uri that is not a data
         // URL (or an absurd size) refuses the object, and the loader cannot fetch either way
-        if (!checkGltf(object.element, from, 'object')) throw refusal('object');
-        const loader = new GLTFLoader(embeddedOnlyManager(from, 'object'));
-        const result = await new Promise((resolve, reject) => {
-          loader.parse(object.element, '', (gltf) => resolve(gltf), (error) => reject(error));
-        });
+        // fix-late-joiners: parsed ahead by the drainer when it could (parseIncomingGltf), applied here in order
+        const result = await (parsed ?? parseIncomingGltf(object, from));
         // 46: a texture the sender drew from a KTX2 twin arrives with the twin beside its
         // plain image (KHR_texture_basisu + fallback): re-form the twin here
         void attachTwinsFromGltf(result, object.element);
+        // fix-late-joiners: the loader sanitized every name ("Gate zone" -> "Gate_zone"); the JSON has the real one
+        restoreGltfNames(result, object.element);
+        const hiddenOnSender = object?.visible === false;
+        // fix-late-joiners row 6: one primitive per slot group came back as a Group of meshes: fold it into one mesh
+        if (object?.slots && result.scene.children.length === 1) {
+            const node = result.scene.children[0];
+            const { rejoinSlotPrimitives } = await import('./slotRejoin.js'); // lazy: only a `slots` message pays
+            const whole = rejoinSlotPrimitives(node, object.slots);
+            if (whole) {
+                result.scene.remove(node);
+                result.scene.add(whole);
+            }
+        }
         result.scene.uuid = uuid
         result.scene.children.forEach((object, index) => {
           let mesh = object.clone()
+          clearInboundDraftFlags(mesh);
+          if (hiddenOnSender) mesh.visible = false;
           mesh.uuid = uuid[index]
           object.uuid = uuid[index]
           const existing = sceneObjects.getObjectByProperty('uuid', mesh.uuid)
@@ -1129,6 +1269,12 @@ export function sendObjects(peerId, element, opts = {}) {
         peer.send({ type: 'object', element: stubElementOf(element), groupuuid: element.parent?.uuid, ...(opts.override ? { override: true } : {}) });
         return;
     }
+    if (peerId === null && element?.isMesh && element.userData?.splat) {
+        // 102: a placed SPLAT carrier is ONE mesh, not an import root — the root path below sends a
+        // 'group' (the record without the mesh) and then only its children, so a peer got an empty node
+        peer.send({ type: 'object', element: element.toJSON(), groupuuid: element.parent?.uuid, pos: element.position.toArray(), rot: element.rotation.toArray(), scale: element.scale.toArray(), ...(opts.override ? { override: true } : {}) });
+        return;
+    }
     if (peerId === null) {
         groupid = element.uuid;
         // 59 T1: `groupparent` (additive) — a replaced model keeps its parent on every peer
@@ -1142,6 +1288,7 @@ export function sendObjects(peerId, element, opts = {}) {
             // nested group did (sendObject's 23-C1 branch). Same additive field, same
             // receiver merge; absent when there is nothing to carry.
             ...(element.userData && Object.keys(element.userData).length ? { userData: element.userData } : {}),
+            ...(element.visible === false ? { visible: false } : {}),
             ...(opts.override ? { override: true } : {})
         });
     }
@@ -1156,6 +1303,9 @@ export function sendObjects(peerId, element, opts = {}) {
     console.log("Sending " + count + " objects to " + peerId);
 
     // Wait 500ms to ensure the connection is established before sending the objects
+    // fix-late-joiners row 1: …unless it already is (the handshake's getobjects arrived ON it): then a task's
+    // wait is enough — the 500 ms was a flat half second of every late join
+    const openNow = peerId !== null && !!peer?.connections?.[peerId]?.open;
     setTimeout(() => {
         // …and RESOLVE THE CONNECTION HERE, not 500ms ago. `peer.connections[peerId]`
         // is undefined while the dial is still in flight and closed when the joiner
@@ -1185,7 +1335,7 @@ export function sendObjects(peerId, element, opts = {}) {
         } finally {
             restore();
         }
-    }, 500);
+    }, openNow ? 0 : 500);
 
 }
 
@@ -1214,8 +1364,52 @@ function multiMaterialSyncable(element) {
     // while this path sends toJSON's PLAIN NUMBER ARRAYS, whose limit is binarypack's
     // per-element recursion — an unrelated constraint that did not move.
     if (position && position.count * 3 > 45000) {
-        showToast('"' + (element.name || element.type) + '" is too large to share its material slots');
+        // fix-late-joiners row 6: it goes by glTF, and its slot LAYOUT rides beside it (slotGroups.slotLayoutOf):
+        // the joiner folds the per-slot primitives back into this mesh, so nothing is lost and nothing is said
         return false;
+    }
+    return true;
+}
+
+/**
+ * fix-late-joiners row 1 — A PRIMITIVE TRAVELS AS ITS RECIPE. Every app-made box, sphere or cylinder used to
+ * go through GLTFExporter (async, base64 buffers) and arrive through GLTFLoader (a parse with a data-URI
+ * fetch per buffer, several tasks each), one object per drain step: a 500-object scene took 26 s to land on
+ * a late joiner at CPU x4, and the joiner got a plain BufferGeometry back instead of the parametric one.
+ * A pristine parametric geometry is a few numbers in toJSON and ObjectLoader builds it synchronously; every
+ * receiver already reads that shape (lights, parents and convert-to-mesh use it), so the wire stays as it is.
+ * PRISTINE is the whole condition: toJSON writes a parametric geometry as its PARAMETERS ONLY, so any
+ * in-place edit (a vertex drag, a sculpt) would be lost — every attribute must be unmodified (version 0)
+ * and no edit flag set. Textured materials keep the GLTF path (its KTX2 twins, its image packing).
+ * @param {any} element
+ */
+export function primitiveSyncable(element) {
+    if (!element?.isMesh || element.type !== 'Mesh') return false;
+    const geometry = element.geometry;
+    if (!geometry || geometry.type === 'BufferGeometry' || !geometry.parameters) return false;
+    if (element.userData?.vertexEdited || element.userData?.faceEdited || geometry.userData?.__topo) return false;
+    if (Object.keys(geometry.morphAttributes ?? {}).length) return false;
+    for (const attribute of Object.values(geometry.attributes ?? {})) if (/** @type {any} */ (attribute).version !== 0) return false;
+    const material = element.material;
+    if (!material || Array.isArray(material)) return false;
+    for (const value of Object.values(material)) if (/** @type {any} */ (value)?.isTexture) return false;
+    return true;
+}
+
+/**
+ * 80a K3: one object, as it is here, to one peer as an arrival heal (`override`: the receiver
+ * replaces its copy in place). The answer to an edit the lock gate refused. Its subtree goes too.
+ * @param {any} conn @param {string} uuid @returns {boolean} sent
+ */
+export function healObjectTo(conn, uuid) {
+    const target = sceneObjects?.getObjectByProperty('uuid', uuid);
+    if (!target || !conn?.open) return false;
+    // the same ritual as every serializer: animated objects at their base pose while we read them
+    const restore = parkAnimatedAtBase();
+    try {
+        sendObject(conn, { children: [target] }, target.parent && target.parent !== sceneObjects ? target.parent.uuid : undefined, { override: true });
+    } finally {
+        restore();
     }
     return true;
 }
@@ -1274,6 +1468,8 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
                 // its whole document in userData.device) — additive, absent on the /group
                 // command path and ignored by an older receiver
                 ...(element.userData && Object.keys(element.userData).length ? { userData: element.userData } : {}),
+                // fix-late-joiners: a hidden group stays hidden on the joiner (additive; absent when visible)
+                ...(element.visible === false ? { visible: false } : {}),
                 ...heal
             });
             // the 4th argument used to be a stray `groupuuid` that the 3-parameter
@@ -1306,7 +1502,7 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
             elementClone.children = [];
             conn.send({
                 type: 'object',
-                element: elementClone.toJSON(),
+                element: objectToJSON(elementClone),
                 groupuuid: groupuuid,
                 pos: test.toArray(),
                 rot: element.rotation.toArray(),
@@ -1314,7 +1510,8 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
                 ...heal
             });
             sendObject(conn, element, element.uuid, opts);
-        } else if (element.userData?.textPath) {
+        } else if (element.userData?.textPath || element.userData?.decal || element.userData?.splat) {
+            // 102: a SPLAT carrier too — a box proxy + its record; toJSON keeps the proxy's draw-nothing flags
             // 64 TX1: a TEXT carrier travels as its RECORD — toJSON read NOW, while the park hook holds
             // the placeholder (~3 KB). The GLTF branch below exported it in a later callback, after the
             // park was restored: the solid's [face, side] array split into a GROUP of primitives and a
@@ -1346,12 +1543,30 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
                 scale: element.scale.toArray(),
                 ...heal
             });
+        } else if (primitiveSyncable(element)) {
+            // fix-late-joiners row 1: a pristine primitive as its recipe (see primitiveSyncable); the
+            // ObjectLoader path keeps name, visibility, userData and the parametric geometry exactly
+            conn.send({
+                type: 'object',
+                element: element.toJSON(),
+                groupuuid: groupuuid,
+                pos: element.position.toArray(),
+                rot: element.rotation.toArray(),
+                scale: element.scale.toArray(),
+                ...heal
+            });
         } else {
             // capture the transform NOW (synchronously, while animated objects
             // are parked at their base) — the exporter callback fires later (88)
             const pos = element.position.toArray();
             const rot = element.rotation.toArray();
             const scale = element.scale.toArray();
+            // fix-late-joiners: glTF has no visibility, so a HIDDEN object (a spawner's template, a trigger zone,
+            // a hidden original) reached every late joiner VISIBLE. Read now, while the flow runtime is parked at
+            // its base, so this is the authored state; additive, absent for a visible object.
+            const hidden = element.visible === false;
+            // fix-late-joiners row 6: a multi-slot mesh too big for toJSON — its slots, for the joiner to rejoin
+            const slots = slotLayoutOf(element);
             // 46: KTX2 twins ride the wire beside the plain image (ktx2Twins.js)
             const exporter = withTwins(new GLTFExporter());
             exporter.parse(
@@ -1365,6 +1580,8 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
                         pos: pos,
                         rot: rot,
                         scale: scale,
+                        ...(hidden ? { visible: false } : {}),
+                        ...(slots ? { slots } : {}),
                         ...heal
                     });
                 },

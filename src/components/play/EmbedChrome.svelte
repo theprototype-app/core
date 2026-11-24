@@ -23,8 +23,17 @@
 	import HeartButton from '../ui/HeartButton.svelte';
 	// 95 SM2/SM3: Share a moment — shown only while the buffer records, i.e. the author allowed it
 	import MomentButton from '../moment/MomentButton.svelte';
+	// 102b-play: info points — the card is a LAZY chunk, fetched only when the scene has a visitor note
+	import { annotations } from '$lib/annotationsHandler';
+	const hasInfoPoints = $derived($annotations.some((/** @type {any} */ n) => n?.visitors === true));
 	// 53 (A6): captions / colour filter / text size / controls, set before pressing Play
 	import { openAccessCard } from '$lib/gameShell';
+	// 92 (GC1): the game's title screen replaces this start card when the game has one
+	import { gameMenus } from '$lib/gameMenus';
+	import { retryImport } from '$lib/chunkReload';
+	const loadTitle = () => import('../hud/GameMenusParts.svelte').catch((e) => retryImport(() => import('../hud/GameMenusParts.svelte'), e));
+	/** @param {any} error */
+	const lazyFailed = (error) => (console.error('game menus: the title screen did not load', error), '');
 
 	const vrAllowed = exportConfig ? exportConfig.vrButton : true;
 	/** the same scene opened in the editor as a remix ('' without a scene id; an export has none) */
@@ -60,6 +69,7 @@
 {#if $embedMode && !$isVRMode}
 	<div id="embed-chrome" class="embed-chrome" data-play-chrome>
 		<MomentButton id="embed-moment" variant="embed" />
+		{#if hasInfoPoints}{#await import('./InfoPoints.svelte') then m}<m.default />{/await}{/if}
 		{#if canFullscreen}
 			<button
 				id="embed-fullscreen"
@@ -86,7 +96,10 @@
 			<a id="embed-remix-link" class="embed-btn embed-link" href={remixHref} target="_blank" rel="noopener">Remix ↗</a>
 		{/if}
 	</div>
-	{#if $isLocked !== true}
+	{#if $isLocked !== true && $gameMenus.title}
+		<!-- 92 (GC1): a game with a title screen opens ON it — its Play / Continue are the gesture -->
+		{#await loadTitle() then m}<m.default part="title" mode="start" />{:catch error}{lazyFailed(error)}{/await}
+	{:else if $isLocked !== true}
 		<div id="embed-start" class="embed-start">
 			{#if title}<div class="embed-title">{title}</div>{/if}
 			<!-- fix-play-link: on a headset Enter VR comes FIRST (data-vr-first) — it is what the device

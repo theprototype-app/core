@@ -6,6 +6,200 @@
      rendering, so maintainer notes stay out of the user-facing window. No emoji from
      1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
 
+## 1.78.0 — Faster mesh editing
+
+### Mesh editing on a new core
+- **Big meshes edit faster**: extrude, inset, move, bevel, loop cut, knife and connect run on a new mesh core. On a 67,000-triangle mesh, entering Edit Mesh and undoing are about three times faster, extruding and bevelling an edge about twice as fast, and the knife about 1.7 times. <!-- 99-ops-a, 99-int speed check -->
+- **The rest of the mesh tools came along**: bridge, fill, solidify, merge, dissolve, delete, subdivide and symmetrize give the same results, faster on big meshes (dissolving vertices on a 67k-triangle scan: 6.1 s to 1.3 s). <!-- 99-ops-b -->
+- **Dragging stays smooth on dense meshes**: grabbing faces, edges and vertices and scrubbing a loop cut update the mesh in place, so a 67k-triangle mesh follows the pointer instead of stepping. <!-- 99-live K5 -->
+- **Sculpting is quicker** on big meshes and terrain: about 1.4 to 1.7 times faster strokes on 67k to 250k triangles. <!-- 99-live K6 -->
+- **Undo after a mesh operation puts back the selection you had before it.** <!-- 99-ops-a -->
+- **Undo history on big meshes holds less memory**, so more steps fit in the same budget. <!-- 99-edit-core K2 -->
+- **Leaving Edit Mesh without an edit** gives the mesh back exactly as it was. <!-- 99-edit-core K3 -->
+- **Merge by distance** joins every point within the distance of the first one it meets, including pairs on either side of a grid cell that used to stay apart. On a noisy scan this merges more. <!-- 99-live K6 -->
+
+### Maintenance
+- Agent tool dependencies updated. <!-- deps-fix/agent-security -->
+
+### Compatibility
+- **Scene files**: format unchanged; scenes from earlier versions open and edit the same, and a scene saved here opens in 1.77.0. <!-- 99-int save/sync rows -->
+- **In a session with someone on 1.77.0**: mesh edits reach each other the same way as before. <!-- mesh-commit-two-tree -->
+
+## 1.77.0 — Games feel complete
+
+### Start, pause and save
+- **Title screen**: a game can open on its own start screen with **Continue**, **Play** (or **New game**), **Load game** and **Settings**, over the scene, a colour or a picture. Play links and exported games open on it; Configure Scene ▸ **Game menus**. A first-use hint offers to try it. In a headset the title is skipped for now and VR Play starts the game straight away. <!-- 92-menus GC1, 92-int VR ruling -->
+- **A pause menu that really pauses** when you play alone: physics, timers and the round clock hold still and the sound dips. In a shared game the others keep playing and the menu says so. New rows: Restart level, Save game, Load game, Join requests, Quit to title. <!-- 92-menus GC2 -->
+- **Player settings** in the pause menu: look speed, invert look, subtitles and reduced motion, beside volume and quality, saved per game on this device. <!-- 92-menus GC2 -->
+- **Three save slots** with the time, the level and a small picture; overwriting or deleting asks first, a Checkpoint saves into the slot you play, and a save from a newer version is shown but not loaded. <!-- 92-menus GC5 -->
+- **Let people in without leaving the game**: a join request shows as a small card over the game, answered from the pause menu's **Join requests**; **Auto-admit while playing** lets them in by itself (agents and blocked people still ask, and so does everyone while **Require approval to join** is on). <!-- 92-menus GC8 -->
+
+### Controllers and cameras
+- **Gamepads play every built-in action** (A jump, X use, RT fire, LT grab, B crouch, L3 sprint, Y reload, RB/LB fly, Start menu). Pause menu ▸ Accessibility ▸ **Controls** remaps keys and pad buttons, and says when a new one swaps with another action. Prompts (the Playing banner, How to play, HUD key hints, the dialogue box) show your own pad's buttons or your key. <!-- 92-input GC3 -->
+- **Play cameras**: the Character Controller can play in **third person** (walls pull the camera in), as a **side-scroller** or **top-down**; the mouse wheel zooms. VR stays first person. <!-- 92-input GC4a GC4 -->
+
+### Characters who talk
+- **The Dialogue node**: lines with the speaker's name and picture in a box at the bottom of the screen (a panel in VR), choices that set a variable or jump to another part, and a pulse when the talk ends. Only the player who walked up or clicked sees it. <!-- 92-dialogue GC6 -->
+- **New template: Starter game** — a title screen, a pause menu, save slots, a gamepad-ready third-person camera and a character who talks. <!-- 92-int GC7 -->
+
+### For AI agents
+- `game_setup` gains `title`, `pause`, `saves` and `dialogue`; `play_camera` gains the `third`, `side` and `top` modes. No tool names changed. <!-- 92-menus 92-dialogue 92-input -->
+
+### Fixes
+- **Exported games no longer ask to restore a previous session.** <!-- 92-menus -->
+- **The pause menu loads when a game first needs it**, so the editor and play links start a little lighter. <!-- 92-int boot ruling -->
+
+### Games behave the way you expect
+- **Timers start with the game**: a HUD Timer set to Autostart counts down from the round's start (or from Play in a game with no rounds), shows its full time in the editor, stops while the game is paused, and a late joiner sees the same time. <!-- 92-correct row 1 -->
+- **Spawned copies act like the original**: every copy a Spawn node or a kit spawner makes runs the template's own flow (On Click, On Hover, On Grab, On Enter / Exit, On Hit), with "this object" meaning that copy. <!-- 92-correct row 2 -->
+- **Each player sees their own team and score**: behaviours hear `playerJoined` / `playerLeft` and list `this.players()`, and a **Game Value** set to **For: me** shows each person their own entry. <!-- 92-correct row 3 -->
+- **Movement is per second**: walking, flying, the gamepad and touch stick, the VR edit stick, kit enemies and possessed objects cover the same distance at 30, 60, 90 or 120 Hz; scenes made before keep the speed they had at 60 Hz. <!-- 92-correct row 4 -->
+- **NPCs climb and jump** (Navigation module 1.1.0): the Navmesh node's **Ledge** and **Jump** let NPCs that patrol or chase climb a low ledge and jump a gap; both are off by default. <!-- 92-correct row 5, modules #63 -->
+
+### Compatibility
+- **Scene files**: format unchanged. A game made before keeps its old menu (no pause, no title) until you turn the game menus on. A file with game menus or a Dialogue opens in 1.76.0: the menus and the talk are kept but do not show there. <!-- 92-menus compat B, 92-dialogue -->
+- **In a session with someone on 1.76.0**: they see no title screen, no save slots and no dialogue box; the scene itself is the same. <!-- 92 -->
+
+## 1.76.0 — Accounts and safety
+
+### Your account and data (theprototype.app)
+- **Download my data**: one zip with your saves (every version), profile, published templates, comments, likes and contest entries. The size and count show before it starts. In the profile menu, and as step 1 of deleting your account. <!-- 71-account -->
+- **Delete your account, with 30 days to change your mind**: your profile and templates are hidden at once and you are signed out everywhere. Sign in within 30 days and press **Keep my account** to undo it. <!-- 71-account -->
+- **See where you are signed in** (Settings ▸ Account ▸ Devices) and **sign out everywhere** in one press. <!-- 71-account -->
+- **An email when someone signs in from a new device**, once per device, never for a refresh. You can turn it off. <!-- 71-account -->
+- **Block an account**: someone you block cannot join sessions you host, on any device, until you unblock them (profile menu ▸ Blocked people). <!-- 71-account -->
+- The privacy page says what is kept and for how long. <!-- 71-account -->
+
+### Rooms you can trust
+- **Blocking a guest offers the real fix**: a guest can come back with a new id, so the toast offers **Require approval to join** for this session (Undo; a row in Settings ▸ Connection). <!-- 71-rooms -->
+- **Invite links have limits**: up to 20 links that still work, up to 10 made in 10 minutes. The Invite sheet says why and when to try again. <!-- 71-rooms -->
+- **Failed invite joins are one row**, with Review, Let in and Dismiss, so they never push a real request off the list. Many in a minute pause invite joins for 60 seconds, with **Resume now**. <!-- 71-rooms -->
+- **Hide my IP**: connect through the relay server only (Settings ▸ Connection). <!-- 71-privacy -->
+- **Edit and chat limits per person**, so one peer cannot flood a session (Settings ▸ Connection). <!-- 71-privacy -->
+
+### Joining a session
+- **Joining a big scene is much faster**: 500 objects arrive in seconds instead of about 40. <!-- fix-late-joiners -->
+- **Hidden objects stay hidden and names arrive as written** for someone who joins late. <!-- fix-late-joiners -->
+- **People who open a play link spawn apart**, never inside each other or inside a wall. <!-- fix-late-joiners -->
+- **A mesh with several materials keeps them** for someone who joins late. <!-- fix-late-joiners -->
+- **A deleted node graph stays deleted** when peers merge. <!-- fix-late-joiners -->
+
+### For module authors and developers
+- **Plugins**: `cloudApi.setRoomAccess` (the block toast's room fixes) and `removePeer(peerId, {block})` (OPEN-CORE.md). The join dial's `denied` result may carry a `why` (`invite-paused`, `invite-slow`); an older joiner reads it as declined. Object messages gain the additive `visible` and `slots` fields. <!-- 71-int -->
+
+## 1.75.1 — Splats off on Meta Quest for now
+
+- **Gaussian splats are off on Meta Quest for now.** A scan in view slowed a Quest 3 from 72 to 23 frames a second at 30,000 splats and to 6 at 150,000. A headset now draws no splats and says why; the scan stays in the scene, and a desktop or phone shows it as before. <!-- 102-int-2 1.75.1 -->
+
+## 1.75.0 — Look, assets and animation
+
+**Exports work again.** Every export in 1.74.0 failed its own file check (the app had grown past the 1,000-file limit an export zip may hold); the app now builds into about 700 files, and Export, the .zip and the itch.io upload work again. <!-- fix-export-files #608 -->
+
+### Paint, decals and scans
+- **Decals**: right-click a surface ▸ **Add decal here** projects an image onto it (a sign on a wall, an arrow on the floor, dirt, a crack). It wraps the surface, moves with the object it sits on, and Properties ▸ **Decal** sets its image, size, depth, opacity, roughness, wrap angle and tint. A new free pack, **Decals Starter**, has 12 CC0 decals. Not on animated characters or scattered copies yet. <!-- 102-decals M3 -->
+- **Stamp Decal node**: presses a mark onto a surface while the game runs (a footprint, a scorch), for example where an **On Impact** touched; marks fade, are the same for everyone and go when the run stops. <!-- 102-decals M3 -->
+- **Paint roughness, metalness and glow**, not just colour: the UV editor's **Paint** tool has a **Channel** switch, and the first stroke makes the map (1k or 2k), starting from the material's own value. <!-- 102-paint -->
+- **Paint straight on the model in the viewport**, with a ring that shows the brush; **Alt+click** picks the colour. Brush **hardness**, **opacity**, **flow**, **eraser**, **Mirror X** and image **stamps**; **Show this channel alone**. A mesh without clean UVs (none, or overlapping like a default box) paints vertex colours instead, and says why. <!-- 102-paint -->
+- **Painting in VR**: **Selected ▸ Paint**; the trigger paints, the stick sets size and flow, a **Paint** ring picks the channel and brush. GLB export carries the painted roughness, metalness and glow maps. <!-- 102-paint -->
+- **Gaussian splats**: import a captured scene (.ply, .spz or .splat, from Polycam, Luma, Scaniverse, Postshot or a 3DGS training run) and it becomes an object in the shared scene: move, scale, group, undo, save and share it like any model. Properties ▸ **Splat** sets its opacity and trims it with a crop box. A file over 25 MB is offered a smaller .spz copy. Photo mode and the Cinematic view leave splats out and say so. Drawn by Spark (MIT), which loads only when a scene holds a splat. <!-- 102-splats M5 -->
+
+### Models
+- **Simplify mesh**: make a heavy model lighter by a percentage or a triangle count, with a live count and a preview only you see. UVs, normals, colours, skin weights and material slots are kept. Applying it is one undo step and reaches everyone in the session. **Ctrl+Alt+D**, the palette, or **Mesh ▸ Simplify…** on imported models. <!-- 102-simplify-export M1 -->
+- **Export for 3D printing**: **Save as… ▸ STL** or **3MF** (in millimetres, sitting on the bed, a colour per object in 3MF), with a scale or longest-side prompt and a warning (never a block) when the mesh has holes. **Ctrl+Alt+E**. <!-- 102-simplify-export M2 -->
+- **Export for AR**: **Save as… ▸ USDZ** for iPhone and iPad Quick Look, textures capped at 2k, the size shown before you download. <!-- 102-simplify-export M2 -->
+
+### Animation
+- **Constraints and IK**: make any object or bone **look at**, **copy**, **follow** (parent with offset) or **reach for** another object, with **two-bone IK** (an arm or a leg, with a pole) and **chain IK** (a tail). Properties ▸ **Constraints**; the weight can be keyed on the Timeline; two new flow nodes, **Set Constraint Weight** and **Set Constraint Target**; **Save options ▸ Bake constraints** puts the pose into GLTF files. Every computer works the pose out itself, so constraints send nothing while they run. <!-- 102-ik M7 -->
+
+### For AI agents
+- `create_objects` takes `kind: "decal"`; new `simplify_mesh` tool, over the connector as `edit_shape {action: "simplify"}`. No tool names changed. <!-- 102-decals P4, 102-simplify-export -->
+
+### Claude and other agents in a live scene
+- **On the ground means on the ground**: placing on the floor passes through water and trigger volumes, and a terrain counts as ground at any height; the answer says what it landed on. <!-- 104-bugs A1 -->
+- **Islands get a rim**: a new Terrain setting, **Rim depth**, sinks an island's edge below the water (new islands from the assistant get 2 m; saved terrains are unchanged), and the water tool reports the surface, the wave height and a warning when land sits inside the waves. <!-- 104-bugs A2 -->
+- **Sculpting through the assistant works like the toolbar brush** (flatten leaves a clean pad and says where). <!-- 104-bugs A3 -->
+- **Screenshots frame the build, not the ocean**: a top, front or iso shot over a big water or ground backdrop frames the content and says what it left out; every screenshot describes its picture in words, and the scene list shows each water's preset, colours, level and waves. No tool names changed. <!-- 104-bugs A4, A5 -->
+
+### Fixes
+- **Water level now means how full, from 0 to 1**, as the docs always said; the water tool wrote it as a height before. <!-- 104-bugs #612 -->
+- **A saved scene keeps every face of a shape with an added material slot** (after a save and reopen, a box could lose most of its faces and a sphere draw nothing). <!-- 105-slot-save-fix #609 -->
+- **Unlink material** in the Inspector now reaches everyone in the session (it was local only). <!-- 102-paint -->
+- **GLTF exports and autosaves store the resting pose of animated objects again** (they could carry the pose on screen). <!-- 102-ik -->
+
+### Compatibility
+- **Scene files**: format unchanged (minor 4). A file written by 1.75 opens in 1.74: a decal is kept as an invisible placeholder, a splat as an invisible box that keeps its scan (it draws again when the file comes back to 1.75), and constraints are kept but do not move anything. <!-- 102-decals 102-splats 102-ik -->
+- **In a session with someone on 1.74**: decals and splats are invisible on their screen and constraints do not pose anything there. <!-- 102-decals 102-splats 102-ik -->
+
+## 1.74.0 — Games and play
+
+### Game values and game feel
+- **Show any game value in the HUD without code**: the new **Game Value** node reads the score, your score, the best score, the clock, time left, the round, the level, stars, lives, a variable or a stored value, and writes it as words ("1:04", "3 / 10", "★★☆") ready for a **HUD Text**. Its **value** output is the number, for a **HUD Bar**. Module authors publish their own with `api.values.set`. <!-- 102b-hud -->
+- **HUD buttons**: a press **sound** and a **value**. A **HUD Button** node with a screen and no element answers every button on that screen, and its **value** output says which was pressed: one node for a whole level grid. <!-- 102b-hud -->
+- **Show / Hide Element**: show, hide or toggle one HUD element, on a trigger or from a wired value. <!-- 102b-hud -->
+- **Variables that hold words and flags**: **Set Variable** ▸ **toggle** flips a flag, **text** stores words; **Get Variable** ▸ **text** reads them back. <!-- 102b-hud -->
+- **Camera Shake, Screen Flash and Hit Pause** nodes for hits and pickups, for the player who made the hit or for everyone. **Reduced motion** turns them down. <!-- 102b-hud -->
+
+### Physics
+- **Physics per object**: gravity scale, drag and spin drag on each body (Properties ▸ Physics). <!-- 102b-physics -->
+- **Four more joints**: ball, slider, spring and rope, with a **Joints** panel in Properties and gizmos in the view. <!-- 102b-physics -->
+- **Joints are kept when the page reloads** (they used to be lost on every reload). <!-- 102b-physics -->
+- **Joint and body values from a file or a peer are checked**, and a scene's arrays share one drawing budget (20,000 copies, 2 million triangles). <!-- 102-int-1 -->
+
+### Arrange and tidy
+- **Arrays**: repeat an object in a line, a grid, a circle or along a path, with a turn and a growth per copy. The copies stay live and follow the object until you press **Make real objects** (Properties ▸ Array). <!-- 102b-arrange -->
+- **Hold B while moving an object** to snap its nearest corner onto another object's corner or edge middle. <!-- 102b-arrange -->
+- **Layers**: name, colour, hide on your screen, lock for everyone (Configure Scene ▸ Layers; Properties ▸ Tidy ▸ Layer). Object list rows show the layer's colour. <!-- 102b-arrange -->
+- **Tidy**: select similar (shape, material, prefab, tag, layer), rename many with a counter, and randomise turn, size and place within ranges. Each is one undo step. <!-- 102b-arrange -->
+
+### Play
+- **Your touch layout ships with the scene**: the **For players** layout is saved in the scene; a player's own layout still wins, item by item. <!-- 102b-play -->
+- **Info points**: a note can be shown to visitors in Play, with one picture; Play lists them and opens each as a card with **Show the view**. <!-- 102b-play -->
+- **The screen stays awake** while you play, film or hand off to a phone, and a **colour dropper** sits beside colour fields where the browser has one (or press I). <!-- 102b-play -->
+
+### Paper cuts
+- **Rounded boxes**: a Box has **Corner radius** and **Corner segs**, and saves as its size plus two numbers instead of about 270 KB of vertices. A mesh that is exactly a rounded box gets a **Convert to a rounded Box** button (never automatic, one undo). <!-- 102b-papercuts -->
+- **Repeated meshes are saved once**: ten copies of one mesh store it one time. <!-- 102b-papercuts -->
+- **Fog kinds**: Linear, Distance and Height (ground fog). **Cube-map skies**: Upload HDRI… takes a cube cross, a strip, six face files or an equirectangular image. <!-- 102b-papercuts -->
+- **Set Shader Uniform drives colours and vectors**; **a Script node can fire an event**; **an effect that acts on nothing says so** on its card. <!-- 102b-papercuts -->
+
+### For AI agents, module authors and developers
+- **Agents**: `set_physics` takes gravity scale and drag, `create_joints` the new kinds, `update_objects` takes `array`, `makeReal` and `layer` (and `list_scene` reports them), `set_geometry` takes `radius` / `radiusSegments`, `set_sky fog` takes `kind`, `density`, `base`, `thickness`. No tool names changed. <!-- 102b-physics 102b-arrange 102b-papercuts -->
+- **Module authors**: `api.values` publishes values for the Game Value node. <!-- 102b-hud -->
+- **Internal**: a headless mesh kernel (src/lib/meshKernel/) for the coming mesh-editing work; not used by the editor yet. <!-- 99-kernel -->
+
+### Compatibility
+- **Scene files**: format minor 4. A file written by 1.74 opens in 1.73: rounded boxes and repeated meshes show there as plain boxes of the same size, new joint kinds as welds, arrays and layers are kept but not drawn. <!-- 102b-papercuts 102b-physics 102b-arrange -->
+- **In a session with someone on 1.73**: they see rounded boxes as square boxes and Height or Distance fog as Linear, do not draw array copies, and a layer lock does not apply on their screen; the new HUD variable ops (toggle, text) are refused by a 1.73 host. <!-- 102b-papercuts 102b-arrange 102b-hud -->
+
+## 1.73.0 — Locks that hold
+
+### Locks that hold
+- **See who is editing**: the Properties of an object someone else is editing say **<name> is editing this**, read-only, with a **Request** button; a small avatar of that person floats over the object. Its flow opens view-only. The same on a phone. <!-- 80a-locks K1 K4 -->
+- **One holder, agreed by everyone**: when two people take the same object at the same moment, everyone agrees who has it and the other person is told. An edit of an object someone else holds is not applied, and the sender's copy is put back. Someone who joins late sees everything each person is holding. <!-- 80a-locks K3 -->
+- **Release**: Object list rows say **Held by me** or **Held by <name>**; the row menu has **Release** and **Keep holding**. An object you hold for 5 minutes without an edit is let go (you are asked first), and your locks survive a short network drop. <!-- 80a-locks K6 -->
+- **Lock mode**: a new room setting, **Settings ▸ Connection ▸ Editing together ▸ Locks**: **While selected** (the default) or **Only while editing** (an object is taken on its first change and free 3 s after the last). The host sets it and everyone follows. <!-- 80a-locks K15 -->
+- **Selecting is not an edit**: selecting an object no longer sends a move to everyone; the move handle sends a position only when it moved. <!-- 80a-locks -->
+- **Requests are answered on the connection they came on, and roster changes are tied to the connection that made them.** <!-- 80a-locks K12 R -->
+
+### Drafts stay yours
+- **Drafts stay private**: nothing about an object in **Local objects** reaches other people, including its edits, flows, animation and joints. Scene saves, prefabs and **Save as** leave drafts out, with their clips and joints, and say **N drafts not included — share first?**. A copy of a draft is a draft too. Older scenes that still hold drafts open with them as drafts. <!-- 80a-drafts D1 D2 -->
+
+### Cinematic view
+- **Particles, bursts, bubbles and swaying show in the Cinematic view**: particle emitters, bursts, bubbles, and jiggle, body wave, wind sway and water flow are drawn there now, the way the standard view draws them. Turning the view on in a scene with bubbles (such as the aquarium) no longer gives a blank frame and an error. <!-- 100-cover-fx C2-2 C2-4 -->
+
+### Fixes
+- **Sessions heal**: a connection that drops while your own signaling server is briefly unreachable (up to about a minute) now heals instead of ending the session. <!-- 80a-fix4-net X1 -->
+- **Accepting a proposed session starts at once**: the backup of your current scene no longer re-reads every saved session first (a long Sessions list made it wait 30 s or more), and the bar says **saving a backup of this scene…**. <!-- 80a-fix4-net B1 -->
+- **Undoing the delete of an object flow reaches everyone** in the session. <!-- 80a-fix4-net G24 -->
+- **Round buttons are round again** on the live site (a build step had squared them). The profile button matches the menu button, and opening the profile menu no longer nudges the picture. <!-- 80a-fix4-ui O4 O5 -->
+- **Sidebars**: on every layout a sidebar's edge handle shows only while that sidebar is closed; right-click (long-press) an open sidebar's header for **Hide**, **Switch sidebar side** and **Lock**. On an unfolded foldable the sidebar button is there in every tab. <!-- 80a-fix4-ui O1 O2 -->
+- **On a wide phone the Connect bar is one compact row again**: your id, **Invite**, and a field to join. <!-- 80a-fix4-ui O3 -->
+- **Switching the sky to High or Max no longer freezes the app for a moment**, and the sky's **Max** label names the size Max actually loads. <!-- 80a-fix4-ui G11 G3 -->
+- **After the site updates, an open tab shows one "A new version is ready — Reload" prompt** (it could show two). <!-- 80a-fix4-ui aa -->
+- **Nodes and HUD**: HUD node sockets sit beside their rows and are named; behaviour card buttons and long node titles stay whole. <!-- 80a-fix4-ui D2 D3 -->
+- **Smaller fixes**: the Asset Browser finds an ambientCG asset by its id; Film view keeps the view where it was when you switch between phone tilt and touch, even looking straight down; one XR entry block, not two; see-through materials load see-through; a text bake that fails on someone else's screen no longer leaves a half-baked text behind. <!-- 80a-fix4-ui E2 G4 G9 G16; fix4-net G5 -->
+- **Play statistics**: **Your games & stats** now shows anonymous play statistics for each published game: plays per day, time played, where players stop and which devices they use (no ids; Do Not Track, Global Privacy Control and the **Count my visits** switch are honoured). <!-- 102-stats M4 -->
+
 ## 1.72.0 — Make real games
 
 - **Test with players**: right-click **Play** (long-press on a phone) ▸ **Test with players…** adds 1 to 3 simulated players to your session: real copies of the app in this tab, each a Player, Viewer or Editor. Watch them in small views, **Drive** one to play as it, and **Stop test** removes them all with no rows, saves or settings left behind. Phones and headsets run one; they start one after another, and one that does not start says **Did not start**. Simulated players start with the modules you have installed. <!-- 61-test G3, 61-int -->

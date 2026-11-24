@@ -124,6 +124,24 @@ export async function setObjectsMapSlot(uuids, key, file, slot = 0) {
 }
 
 /**
+ * 102 M6: commit a PAINTED map slot. The brush has been drawing on a canvas installed as the slot's texture, so
+ * the slot's current image is no longer what undo should go back to: the caller passes the image it held when
+ * the stroke began (`before`, null when the stroke made the map). Records, applies and sends (the send fans to a
+ * shared material's other users, `broadcastMaterial`). Inside a caller's history batch when one is open.
+ * @param {string} uuid @param {string} key @param {string | null} before @param {string} url @param {number} [slot]
+ */
+export function commitPaintedMapSlot(uuid, key, before, url, slot = 0) {
+	const object = objectOf(uuid);
+	const material = object && materialAt(object, slot);
+	if (!material || !isMapSlotKey(key) || !(key in material) || !isMapSlotImage(url)) return false;
+	recordEntry({ kind: 'materialmaps', uuid, param: 'slot', key, ...(slot ? { slot } : {}), before: { value: before }, after: { value: url } });
+	applyMapSlotTo(material, key, url, object);
+	material.userData.tpEdited = true;
+	sendSlot(uuid, key, url, slot);
+	return true;
+}
+
+/**
  * Clear a map slot on many objects, one undo step. A compressed (KTX2) map has no image to keep, so undo
  * cannot bring that one back.
  * @param {string[]} uuids @param {string} key @param {number} [slot]

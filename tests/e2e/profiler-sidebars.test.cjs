@@ -142,7 +142,7 @@ h.run(async () => {
 
 		// ---- the left sidebar hides like every docked window's, remembered -------------------
 		await step('left sidebar hides', async () => {
-			await P.locator('#profiler-dock [data-ws-primary-toggle]').click();
+			await h.paneHandleClick(P, '#profiler-dock [data-ws-primary-toggle]');
 			await P.waitForTimeout(300);
 			const gone = !(await el(P, '#profiler-side'));
 			const tl0 = await el(P, '#profiler-timeline');
@@ -151,7 +151,7 @@ h.run(async () => {
 			await P.evaluate(() => window.__tp.test.v1.profilerClose.set(false));
 			await P.waitForTimeout(1200);
 			h.check(!(await el(P, '#profiler-side')), '...and stays hidden after a reload');
-			await P.locator('#profiler-dock [data-ws-primary-toggle]').click();
+			await h.paneHandleClick(P, '#profiler-dock [data-ws-primary-toggle]');
 			await P.waitForTimeout(300);
 			h.check(!!(await el(P, '#profiler-side')) && !!tl0, 'the same button brings it back');
 			await P.locator('#profiler-recordings li[data-id]').first().click();

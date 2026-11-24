@@ -14,7 +14,8 @@ import {
 	applySelectionSet,
 	selectionUuids
 } from './objectActions';
-import { requestControl, nameOf } from './lockControl';
+import { requestControl, nameOf, letGoOf } from './lockControl';
+import { heldByMe, touchMyLock } from './lockHeld'; // 80a K6
 import { createJoint, detachJoints, jointsFor } from './joints';
 import { addParticlesPreset, removeObjectParticles, burstObjectParticles } from './particleActions';
 import { PARTICLE_PRESETS } from './particlePresets';
@@ -158,6 +159,19 @@ function objectActionRows(uuid) {
 }
 
 /**
+ * 102 M3: place a decal on the mesh hit and select it (the write path loads on demand).
+ * @param {string} hitUuid @param {number[]} point @param {number[]} normal
+ */
+function addDecalAt(hitUuid, point, normal) {
+	const hit = get(objectsGroup)?.getObjectByProperty('uuid', hitUuid);
+	if (!hit) return;
+	void import('./decalEdit.js').then((m) => {
+		const decal = m.placeDecalOn(hit, point, normal);
+		if (decal) selectObject(decal.uuid, true);
+	});
+}
+
+/**
  * The FULL object context menu, shared so the direct object menu (right-click an
  * object / an object-list row, Controls.svelte) and the empty-space menu's
  * "Selected" submenu (ViewportMenu.svelte) expose the SAME actions — they used to
@@ -168,7 +182,7 @@ function objectActionRows(uuid) {
  * selection AND the selection has 2+ members, set-oriented items act on the whole
  * SET with a counted label; a "Group selection" item appears. Object-specific
  * items (rename / edit mesh / add note / request control) stay on the clicked one.
- * @param {string} uuid @param {{ point?: number[] | null, locked?: boolean, selection?: string[] }} [opts]
+ * @param {string} uuid @param {{ point?: number[] | null, normal?: number[] | null, hitUuid?: string | null, locked?: boolean, selection?: string[] }} [opts]
  */
 export function buildObjectMenuItems(uuid, opts = {}) {
 	const point = opts.point ?? null;
@@ -201,6 +215,27 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 	// 15-Q still holds: no Show/Hide (the object-list eye owns visibility), lucide kebab icons
 	// (ui/Icon.svelte), shortcut hints as the dimmed right column.
 
+	// 80a K6: what we hold, we can let go of (or say we are still on it, which restarts the idle count).
+	// Owner 2026-11-21: its own group AFTER the act-on-it group, so Properties stays the first action (NOTES-38 #5)
+	/** @type {any[]} */
+	const held = [
+		...(!locked && targets.some((u) => heldByMe(u))
+			? [
+					{
+						label: 'Release' + suffix,
+						icon: 'lock-open',
+						tooltip: 'Let go so others can edit it',
+						action: () => letGoOf(targets.filter((u) => heldByMe(u)))
+					},
+					{
+						label: 'Keep holding',
+						icon: 'lock',
+						tooltip: 'You are still editing: do not let go when idle',
+						action: () => targets.forEach((u) => touchMyLock(u))
+					}
+				]
+			: []),
+	];
 	/** @type {any[]} the act-on-it group: what a right-click is most often for */
 	const primary = [
 		...(locked
@@ -323,6 +358,18 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 						icon: 'sticky-note',
 						tooltip: 'Pin a synced note exactly where you pointed',
 						action: () => addAnnotation(uuid, point)
+					}
+				]),
+		// 102 M3: a decal projected onto the surface right-clicked (the viewport path only: the
+		// list and the Selected submenu have no point to put it at)
+		...(multi || !point || !opts.normal || !opts.hitUuid || object?.userData?.decal
+			? []
+			: [
+					{
+						label: 'Add decal here',
+						icon: 'sticker',
+						tooltip: 'Project an image onto this surface (pick the image in Properties)',
+						action: () => addDecalAt(/** @type {string} */ (opts.hitUuid), /** @type {number[]} */ (point), /** @type {number[]} */ (opts.normal))
 					}
 				])
 	];
@@ -674,6 +721,18 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 	// mesh): a lone primitive would gain a top-level row past the budget, so it gets both rows from
 	// Properties ▸ Model (and the drop onto it) instead
 	if (mesh.length || isGroup) mesh.unshift(...model);
+	// 102 M1: Simplify — fewer triangles, attributes kept, one undo step — inside Mesh ▸ wherever
+	// Mesh ▸ is there anyway (an imported model, a group, a reduced import). A lone primitive gets
+	// no Mesh ▸ for it (the top-level row budget, NOTES-38 #22): Ctrl+Alt+D and the palette reach
+	// it, and the action asks to bake it first. Why something cannot be simplified is said when picked.
+	if (!multi && !loadingStub && (mesh.length || isGroup) && hasMesh(object))
+		mesh.push(/** @type {any} */ ({
+			label: 'Simplify…',
+			icon: 'shrink',
+			disabled: locked,
+			tooltip: locked ? lockedTooltip : 'Fewer triangles, same look — pick a percentage or a count, preview, apply (Ctrl+Alt+D)',
+			action: () => import('./meshSimplifyAction').then((m) => m.openSimplify(uuid))
+		}));
 
 
 	/** @type {any[]} Physics & effects ▸ — joints, particles, the object's flow, Use as scatter source */
@@ -701,7 +760,36 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 											tooltip:
 												'Revolute joint about the first object’s local ' + axis.toUpperCase() + ' axis, anchored at the second object',
 											action: () => createJoint('revolute', targets[0], targets[1], /** @type {'x'|'y'|'z'} */ (axis))
-										}))
+										})),
+										// 102b: rapier's ball, slider, spring and rope joints (tune them in Properties ▸ Physics ▸ Joints)
+										{
+											label: 'Ball joint',
+											icon: 'tool:joint-ball',
+											tooltip: 'Ball and socket — the second object swings and twists freely about its own origin',
+											action: () => createJoint('spherical', targets[0], targets[1])
+										},
+										{
+											label: 'Slider',
+											icon: 'tool:joint-slider',
+											tooltip: 'The second object moves only along one of the first object’s local axes (a piston, a drawer)',
+											children: ['x', 'y', 'z'].map((axis) => ({
+												label: `${axis.toUpperCase()} axis`,
+												tooltip: 'Slide along the first object’s local ' + axis.toUpperCase() + ' axis; set limits in Properties',
+												action: () => createJoint('prismatic', targets[0], targets[1], /** @type {'x'|'y'|'z'} */ (axis))
+											}))
+										},
+										{
+											label: 'Spring',
+											icon: 'tool:joint-spring',
+											tooltip: 'Pulls the two origins back to the distance they have now — tune stiffness in Properties',
+											action: () => createJoint('spring', targets[0], targets[1])
+										},
+										{
+											label: 'Rope',
+											icon: 'tool:joint-rope',
+											tooltip: 'The two origins can get no further apart than they are now, and come closer freely',
+											action: () => createJoint('rope', targets[0], targets[1])
+										}
 									]
 								: []),
 							...(jointsFor(targets).length
@@ -861,14 +949,14 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 			children: SAVE_AS_FORMATS.map((format) => ({
 				label: format.label,
 				tooltip: format.tooltip,
-				icon: format.kind === 'download' ? 'arrow-down-to-line' : 'package',
+				icon: format.kind === 'download' ? 'arrow-down-to-line' : format.kind === 'export3d' ? (format.ext === 'usdz' ? 'smartphone' : 'box') : 'package',
 				action: () =>
 					void saveSelectionAs(format.id, targets, multi ? undefined : object?.name || object?.type || undefined)
 			}))
 		}
 	];
 
-	const groups = [loading, primary, view, edit, more].filter((g) => g.length);
+	const groups = [loading, primary, held, view, edit, more].filter((g) => g.length);
 	return [
 		{
 			header: {

@@ -60,14 +60,20 @@ export const PAYLOAD_TYPES = {
 	'health.died': { entity: 'entity', by: 'string' },
 	'health.revived': { entity: 'entity' },
 	'mover.stuck': { entity: 'entity' },
-	'rules.refused': { uuid: 'string', reason: 'string', distance: 'number', hand: 'string' }
+	'rules.refused': { uuid: 'string', reason: 'string', distance: 'number', hand: 'string' },
+	playerJoined: { by: 'string' },
+	playerLeft: { by: 'string' }
 };
 
 /** the special (non-kit) events */
 export const SPECIAL_EVENTS = {
 	start: { label: 'On behaviour start', local: false },
 	load: { label: 'On load (every peer)', local: true },
-	grabRequest: { label: 'On grab request', local: true }
+	grabRequest: { label: 'On grab request', local: true },
+	// 92-correct row 3: a player entered / left Play — on the authority, once per player (the
+	// document remembers who was announced, so a new authority does not announce them again)
+	playerJoined: { label: 'On player joined', local: false },
+	playerLeft: { label: 'On player left', local: false }
 };
 
 /**

@@ -133,7 +133,7 @@ h.run(async () => {
 	};
 	console.log('DIAG §4 keys naming the draft:', JSON.stringify(where(sessionJson)), 'toasts:', JSON.stringify((await toasts(A.page)).slice(-4)));
 	h.check(!!sessionJson && !sessionJson.includes(draft) && !sessionJson.includes('Secret draft name'), '§4 ... and not the draft');
-	h.check((await toasts(A.page)).some((t) => /^1 local object was not included/.test(t)), '§4 toast "1 local object was not included …"');
+	h.check((await toasts(A.page)).some((t) => /^1 draft not included — share first\?/.test(t)), '§4 toast "1 draft not included — share first?"');
 	h.check(JSON.stringify(await slotOf(A.page, draft)) === JSON.stringify(slot), '§4 the draft is back in its slot afterwards');
 
 	// §5 the whole-scene JSON export leaves it out too

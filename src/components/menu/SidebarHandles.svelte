@@ -14,8 +14,8 @@
 	//   - the saved spot is a fraction of the free height too, so a taller / shorter window moves it in proportion (A2)
 	//   - a press toggles the column; a press that TRAVELS up / down moves the handle; right-click / long-press = its
 	//     menu (Hide handles · Move up / down · Reset position · Dim at rest)
-	//   - on a touch screen it stays while the column is open, on the column's inner edge (it is how the column
-	//     closes there); with a mouse it is drawn only while the column is closed (Blender style)
+	//   - drawn only while its column is CLOSED, on every layout (80a-fix4-ui O2, owner 2026-11-20; touch used to keep
+	//     it on an open column's inner edge): an open column hides from the hide button in its tab strip
 	import { onMount } from 'svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import { SIDES, sidebarVisible, sidebarWidth, sidebarsWide } from '$lib/sidebars';

@@ -34,6 +34,10 @@ function commitSha(): string {
 	}
 }
 
+// fix-export-files: TP_BOOT_CHUNKS=0 builds the old split (an A/B lever, not a mode anyone ships)
+// @ts-ignore -- same node-types caveat
+const bootChunks = process.env.TP_BOOT_CHUNKS === '0' ? null : createRequire(import.meta.url)('./scripts/boot-chunk-groups.cjs').bootChunkGroups;
+
 // The guardThrelteXr transform plugin (Cardboard/gaze `stores[handedness]` crash in
 // @threlte/xr 1.0.0-next.15) was DELETED with the 1.6 stable upgrade: the package's
 // input handling was rewritten (setupInputSources keyed map) and the unguarded
@@ -45,6 +49,23 @@ function commitSha(): string {
 // null (reading 'getViewerPose')" after the session ended). The rewrite lives in
 // scripts/guard-threlte-xr.cjs (unit-tested against the real dist file); @threlte/xr is served as
 // SOURCE (optimizeDeps.exclude) so the transform reaches it in dev as well as the build.
+// 102 M2: three's USDZExporter imports zipSync from three's OWN vendored fflate
+// (examples/jsm/libs/fflate.module.js), a module the boot chunk already holds a sliver of (a
+// boot loader uses its inflate). A lazy chunk's static import of more of it grows that shared
+// boot chunk (measured +3.3 KB gz on both pages). npm `fflate` (the same library, one minor
+// apart) already carries zipSync for the app's own lazy zip writers, so the exporter is pointed
+// there: the export stays lazy and the boot is unchanged.
+function usdzUsesAppFflate(): Plugin {
+	return {
+		name: 'usdz-uses-app-fflate',
+		enforce: 'pre',
+		async resolveId(source, importer) {
+			if (!importer || !/[\\/]USDZExporter\.js$/.test(importer) || !/libs[\\/]fflate\.module\.js$/.test(source)) return null;
+			return this.resolve('fflate', importer, { skipSelf: true });
+		}
+	};
+}
+
 function guardThrelteXr(): Plugin {
 	const { guardThrelteXrSource } = createRequire(import.meta.url)('./scripts/guard-threlte-xr.cjs');
 	return {
@@ -270,6 +291,7 @@ export default defineConfig({
 	plugins: [
 			fixShaderfrogArrayVaryings(),
 			guardThrelteXr(), // 54i: null XR frame guard (see the function)
+			usdzUsesAppFflate(), // 102 M2: keeps the USDZ export's zip out of the boot (see the function)
 			importRetry(), // 54i aa: one retry for a failed lazy chunk (see the function)
 			tailwindcss(),
 			a11yCss(), // 53 A1/A5: after tailwindcss() — see the function
@@ -321,7 +343,8 @@ export default defineConfig({
 			// 69: the script engine loads with the first scene that carries code — the same reload, with
 			// the scene that was just opened gone (its wasm comes in by ?url, so pre-bundling is safe)
 			// 68 V9 (from 65 M4): mediabunny + gifenc are reached only by the video export's lazy import — the same rule
-			include: ['quickjs-emscripten-core', '@jitl/quickjs-wasmfile-release-sync', 'lodash.groupby', 'meshoptimizer/simplifier', '@codemirror/state', '@codemirror/language', '@lezer/highlight', 'meshoptimizer', '@gltf-transform/core', '@gltf-transform/extensions', '@gltf-transform/functions', 'ktx-parse', 'libheif-js/libheif-wasm/libheif.js', 'yjs', 'y-protocols/awareness', 'y-codemirror.next', 'mediabunny', 'gifenc']
+			// 102-splats: the splat renderer (Spark) is reached only by the first splat's lazy import — the same rule
+			include: ['quickjs-emscripten-core', '@jitl/quickjs-wasmfile-release-sync', 'lodash.groupby', 'meshoptimizer/simplifier', '@codemirror/state', '@codemirror/language', '@lezer/highlight', 'meshoptimizer', '@gltf-transform/core', '@gltf-transform/extensions', '@gltf-transform/functions', 'ktx-parse', 'libheif-js/libheif-wasm/libheif.js', 'yjs', 'y-protocols/awareness', 'y-codemirror.next', 'mediabunny', 'gifenc', '@sparkjsdev/spark']
 		},
 	// dev https via the repo's local certs (vite-plugin-mkcert stayed on vite<=5;
 	// certs/ was already how CI-less https worked before mkcert)
@@ -354,7 +377,13 @@ export default defineConfig({
 		rolldownOptions: {
 			output: {
 				codeSplitting: {
-					groups: [{ name: 'three.module', test: /[\\/]node_modules[\\/]three[\\/]build[\\/]three\.(core|module)\.js$/ }]
+					groups: [
+						{ name: 'three.module', priority: 100000, test: /[\\/]node_modules[\\/]three[\\/]build[\\/]three\.(core|module)\.js$/ },
+						// fix-export-files: boot code regrouped by WHEN it runs on each page (scripts/boot-chunk-groups.cjs)
+						// — ~1050 -> ~590 build files (an export copies them all and itch.io caps a zip at 1,000),
+						// no page's boot changes; three keeps its own group above all of them
+						...(bootChunks ? bootChunks() : [])
+					]
 				}
 			}
 		}

@@ -23,6 +23,9 @@ export const DEBUG_HOOKS = [
 	['*', () => import('../stores/sceneStore')],
 	['*', () => import('../stores/appStore')],
 	['*', () => import('../stores/flowStore')],
+	// 102 M7: constraints + IK (the runtime's state + the write path)
+	['constraints', () => import('./rig/constraintRuntime.js')],
+	['constraintEdit', () => import('./rig/constraintEdit.js')],
 	// 34 R2: the game kit (kit, kitDebug, kitAuthorityId)
 	['kit', () => import('./kit/runtime.js')],
 	// 55: the pure authority pick, so a suite can re-run it on a page's live facts
@@ -40,6 +43,8 @@ export const DEBUG_HOOKS = [
 	['errorReports', () => import('./errorReports')],
 	// 54i aa: the lazy-chunk retry + new-version notice (chunkReloadDebug)
 	['chunkReload', () => import('./chunkReload.js')],
+	['hideMyIp', () => import('./hideMyIp')],
+	['peerRateGate', () => import('./peerRateGate')],
 	['staleModules', () => import('./staleModules')],
 	['perfMoment', () => import('./perf/moment')],
 	// 95 SM1-SM3: Share a moment — the stores (setting, status, open); the buffer itself publishes
@@ -153,6 +158,11 @@ export const DEBUG_HOOKS = [
 	['nodeLiveState', () => import('./nodeLiveState')],
 	['flowLint', () => import('./flowLint.js')],
 	['lockControl', () => import('./lockControl')],
+	['lockHeld', () => import('./lockHeld')],
+	['lockIdle', () => import('./lockIdle')],
+	['lockMode', () => import('./lockMode')],
+	['rosterOrigin', () => import('./rosterOrigin')],
+	['sessionClock', () => import('./sessionClock')],
 	['prefabs', () => import('./prefabs')],
 	['prefabLinks', () => import('./prefabLinks')],
 	['prefabSync', () => import('./prefabSync')],
@@ -319,6 +329,8 @@ export const DEBUG_HOOKS = [
 	['peerServer', () => import('./peerServer')],
 	['cloudHooks', () => import('./cloudHooks')],
 	['cloudPlugin', () => import('./cloudPlugin')],
+	// 102 M4: anonymous play statistics (the tracker's view + a flush as a hide would do)
+	['playStats', () => import('./play/playStats')],
 	['connectionState', () => import('./connectionState')],
 	['peerApproval', () => import('./peerApproval')],
 	['inviteStore', () => import('./inviteStore')],
@@ -356,6 +368,7 @@ export const DEBUG_HOOKS = [
 	['playSettings', () => import('./playSettings')],
 	['colliderSpec', () => import('./colliderSpec')],
 	['colliderHelpers', () => import('./colliderHelpers')],
+	['jointHelpers', () => import('./jointHelpers')],
 	['colliderDecompose', () => import('./colliderDecompose')],
 	['colliderEdit', () => import('./colliderEdit')],
 	['editSession', () => import('./editSession')],
@@ -383,6 +396,9 @@ export const DEBUG_HOOKS = [
 	['moduleGallery', () => import('./moduleGallery')],
 	['moduleInstallJobs', () => import('./moduleInstallJobs')],
 	['uvEditor', () => import('./uvEditor')],
+	// 102 M6: paint on meshes (the lazy painter + its prefs leaf)
+	['meshPaint', () => import('./meshPaint')],
+	['meshPaintPrefs', () => import('./meshPaintPrefs')],
 	['uvUnwrap', () => import('./uvUnwrap')],
 	['meshTopology', () => import('./meshTopology')],
 	['meshBoolean', () => import('./meshBoolean')],
@@ -482,6 +498,10 @@ export const DEBUG_HOOKS = [
 	['hudViewportDrag', () => import('./hudViewportDrag')],
 	['gamepadPrefs', () => import('./gamepadPrefs')],
 	['charController', () => import('./charController')],
+	// 92-input GC4: the play views (playViewDebug / playViewKind / PLAY_VIEW_DEFAULTS)
+	['playView', () => import('./playViewSeam.js')],
+	// 92-input GC3: the pad bridge (padActionsDebug) + the device prompts follow (activeInput)
+	['padActions', () => import('./padActions.js')],
 	['hudRichText', () => import('./hudRichText')],
 	['moduleHudKinds', () => import('./moduleHudKinds')],
 	['hudMinimap', () => import('./hudMinimap')],
@@ -525,6 +545,9 @@ export const DEBUG_HOOKS = [
 	['scenePrivacy', () => import('./scenePrivacy')],
 	['touchControls', () => import('./touchControls')],
 	['touchActions', () => import('./touchActions')],
+	// 102b-play: wakeLock, infoPoints
+	['wakeLock', () => import('./wakeLock.js')],
+	['infoPoints', () => import('./infoPoints.js')],
 	['touchSpec', () => import('./touchSpec')],
 	['playMode', () => import('./playMode')],
 	// phone-polish: Android Back closes the top surface
@@ -580,6 +603,8 @@ export const DEBUG_HOOKS = [
 	['gameStorage', () => import('./gameStorage')],
 	// 30b (vr-play): the game-feel leaves under ONE name
 	['gameKit', () => import('./gameKit')],
+	// 92 (GC1/GC2/GC5/GC8): the game's menus, its save slots, the title screen, late joiners during Play
+	['gameMenusKit', () => import('./gameMenusKit.js')],
 	['moduleWorld', () => import('./moduleWorld')],
 	['playSpawn', () => import('./playSpawn')],
 	// 78 PL32: the joiner's side step (lastJoinSideStep) + the near-avatar fade maths
@@ -594,6 +619,12 @@ export const DEBUG_HOOKS = [
 	['replaceModel', () => import('./replaceModel')],
 	// 59 T1/T2/T7: Replace from file, Edit in Blender, the drop router, the file watch
 	['modelReplace', () => import('./modelReplace')],
+	// 102 M1/M2: Simplify (scene half + pure core) and Export for 3D print / AR (writers, dialogs)
+	['meshSimplify', () => import('./meshSimplify')],
+	['meshSimplifyAction', () => import('./meshSimplifyAction')],
+	['print3dCore', () => import('./export3d/print3dCore')],
+	['export3dAction', () => import('./export3d/export3dAction')],
+	['makerDialogs', () => import('./makerDialogs')],
 	['editInBlender', () => import('./editInBlender')],
 	['modelDrop', () => import('./modelDrop')],
 	['modelWatch', () => import('./modelWatch')],
@@ -651,6 +682,20 @@ export const DEBUG_HOOKS = [
 	// 64 D2: text on a path (textPathDebug, setLetterOverrides)
 	['textPath', () => import('./textPathRuntime.js')],
 	['textPathEdit', () => import('./textPathEdit.js')],
+	// 102 M3: decals (decalDebug, placeDecalOn, setDecalFor)
+	['decal', () => import('./decalRuntime.js')],
+	['decalTick', () => import('./decalTick.js')],
+	['decalEdit', () => import('./decalEdit.js')],
+	// 102: Gaussian splats (splatTick.splatDebug reads the runtime without loading Spark)
+	['splatTick', () => import('./splat/splatTick.js')],
+	['splatCore', () => import('./splat/splatCore.js')],
+	['splatEdit', () => import('./splat/splatEdit.js')],
+	['splatImport', () => import('./splat/splatImport.js')],
+	// 102b-arrange: arrays (runtime debug + actions), tidy, vertex snap
+	['arrayRuntime', () => import('./arrayRuntime.js')],
+	['arrayActions', () => import('./arrayActions.js')],
+	['tidyActions', () => import('./tidyActions.js')],
+	['layersRuntime', () => import('./layersRuntime.js')],
 	// 64-text: fonts (bundled + Library + Google), the solid build, the export licence walk
 	['textFonts', () => import('./textFonts.js')],
 	['text3dBuild', () => import('./text3dBuild.js')],
@@ -662,7 +707,12 @@ export const DEBUG_HOOKS = [
 	['pathState', () => import('./path/pathState.js')],
 	['pathTools', () => import('./ai/pathTools.js')],
 	// 101 F3: the renderer seam (disposeRenderer, recycleMainRenderer, seamState, the factories)
-	['renderSeam', () => import('./render/index.js')]
+	['renderSeam', () => import('./render/index.js')],
+	// 92-dialogue (GC6): the open talk (dialogueView), the runtime's actions, the script reader, the agent tool
+	['dialogueView', () => import('./dialogue/view.js')],
+	['dialogue', () => import('./dialogue/runtime.js')],
+	['dialogueScript', () => import('./dialogue/script.js')],
+	['dialogueTools', () => import('./ai/dialogueTools.js')]
 ];
 
 /** Load every row and publish `window.__stores` + the 101 F5 facade `window.__tp.test.v1` over it
@@ -670,7 +720,12 @@ export const DEBUG_HOOKS = [
  * @returns {Promise<Record<string, any>>} */
 export function installDebugHooks() {
 	// 101 F5: the facade module loads WITH the rows (lazy: the boot graph never carries it)
-	return Promise.all([Promise.all(DEBUG_HOOKS.map(([, load]) => load())), import('./testFacade.js')]).then(([mods, facade]) => {
+	// 99 K4: + the kernel operators' lazy chunk, so a test's synchronous operator call finds them loaded
+	return Promise.all([
+		Promise.all(DEBUG_HOOKS.map(([, load]) => load())),
+		import('./testFacade.js'),
+		import('./editSession').then((m) => m.loadKernelOps())
+	]).then(([mods, facade]) => {
 		/** @type {Record<string, any>} */
 		const stores = {};
 		DEBUG_HOOKS.forEach(([name], i) => {

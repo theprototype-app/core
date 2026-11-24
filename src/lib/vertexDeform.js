@@ -130,3 +130,14 @@ export function deformersOf(mesh) {
 	const record = liveRecord(mesh);
 	return record ? [...record.deformers.keys()] : [];
 }
+
+/**
+ * The deformers on a mesh as data, in the order they were added: kind, slot and the uniform holders its runtime writes
+ * every frame (the Cinematic view builds the same motion as a TSL position node from these: cinematic/fxCover.js).
+ * Empty when the mesh's current material is not the deformer clone.
+ * @param {any} mesh @returns {{ id: string, kind: string, slot: number, uniforms: Record<string, any> }[]}
+ */
+export function deformSpecsOf(mesh) {
+	const record = liveRecord(mesh);
+	return record ? [...record.deformers].map(([id, d]) => ({ id, kind: d.kind, slot: d.slot, uniforms: d.uniforms })) : [];
+}

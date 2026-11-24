@@ -52,6 +52,7 @@ import { hasImpactEmitter, applyBurst } from './particleRuntime';
 import { sessionNow } from './sessionClock';
 import { nameOf } from './lockControl';
 import { sceneJoints, onJointRemoved } from './joints';
+import { BODY_TUNING_KEYS, bodyTuningOf } from './physicsTuning'; // 102b
 // 36-sim I1: buoyancy + drag + flow in water volumes (W1). Both leaves import nothing
 // from the app, so these edges close no cycle.
 import { bodySamples, applyBuoyancy, buoyancyOut, normalizeFloats } from './sim/buoyancy.js';
@@ -105,6 +106,8 @@ let bodies = [];
 /** @type {{uuid: string, before: any}[]} */ let beforeStates = [];
 /** @type {Map<string, any>} joint def id -> live rapier impulse joint (P-B) */
 let liveJoints = new Map();
+/** @type {Map<string, string>} 102b: joint def id -> the def (JSON) its live joint was built from */
+const liveJointDefs = new Map();
 /** @type {Map<string, any>} uuid -> FIXED body (scenery a joint may pin to) */
 let fixedBodies = new Map();
 /** @type {string[]} dynamic+animated uuids whose effects we suspended for the run */
@@ -165,7 +168,7 @@ let lastAnyImpactAt = new Map();
 /** contacts collected inside the substep loop (36 X6: + the other body; fix-batch-1 #14: the
  * two channels — `down` = downward speed, `speed` = closing speed along the contact normal,
  * null where that channel did not count the contact)
- * @type {{uuid: string, down: number | null, speed: number | null, other: string}[]} */
+ * @type {{uuid: string, down: number | null, speed: number | null, other: string, contact?: {point: number[], normal: number[]} | null}[]} */
 let pendingImpacts = [];
 /** CL-A: colliders attached to FIXED scenery bodies (rebuild bookkeeping —
  * BodyEntry only exists for dynamic/kinematic). @type {Map<string, any[]>} */
@@ -275,6 +278,15 @@ export function simulationGaps() {
 	return { nested, lockedOut };
 }
 
+/** 102b: push the resolved tuning onto a live dynamic body. @param {any} body @param {any} p @param {any} defaults */
+function applyBodyTuning(body, p, defaults) {
+	const t = bodyTuningOf(p, defaults);
+	body.setLinearDamping(t.linear);
+	body.setAngularDamping(t.angular);
+	// wake it: a scale change on a resting body must show (sleep is off for dynamics, but be explicit)
+	if (body.gravityScale?.() !== t.gravityScale) body.setGravityScale(t.gravityScale, true);
+}
+
 /**
  * Per-object physics params. Source of truth = object.userData.physics
  * {mode:'auto'|'static'|'dynamic', mass, restitution, friction, collider}
@@ -302,6 +314,8 @@ function collectParams(group) {
 		if (p.sensor) map[object.uuid].sensor = true; // CL-A A3: trigger volume
 		if (p.freeze) map[object.uuid].freeze = p.freeze; // CL-A A5: axis locks
 		if (typeof p.ccd === 'boolean') map[object.uuid].ccd = p.ccd; // 49 P1: absent = the scene's
+		// 102b: per-body gravity scale + damping; absent = gravity 1 and the scene's damping
+		for (const key of BODY_TUNING_KEYS) if (Number.isFinite(p[key])) map[object.uuid][key] = p[key];
 	});
 	// H1: physics nodes live in ANY graph (scene or per-object documents)
 	// 36 U11: a muted physics node does nothing (runtimeGraph drops it and its wires)
@@ -440,19 +454,41 @@ function buildLiveJoint(def) {
 	const a1 = bodyLocal(objA, movedA && !movedB ? anchorOn(objB, def.anchorB, objA) : def.anchorA, bodyA);
 	const a2 = bodyLocal(objB, movedB ? anchorOn(objA, def.anchorA, objB) : def.anchorB, bodyB);
 	let data;
-	if (def.kind === 'revolute') {
+	/** a's local axis, in body A's frame (identity at sim start, so the second turn is a no-op then) */
+	const axisInBodyA = () => {
 		objA.getWorldQuaternion(tempJointQuat);
 		jointAxisWorld.fromArray(def.axisA ?? [0, 1, 0]).applyQuaternion(tempJointQuat);
-		// into body A's frame (identity at sim start, so this is a no-op then)
 		const r = bodyA.rotation();
 		jointAxisWorld.applyQuaternion(tempJointQuat.set(r.x, r.y, r.z, r.w).invert()).normalize();
-		data = RAPIER.JointData.revolute(a1, a2, { x: jointAxisWorld.x, y: jointAxisWorld.y, z: jointAxisWorld.z });
-	} else {
-		data = RAPIER.JointData.fixed(a1, { w: 1, x: 0, y: 0, z: 0 }, a2, { w: 1, x: 0, y: 0, z: 0 });
+		return { x: jointAxisWorld.x, y: jointAxisWorld.y, z: jointAxisWorld.z };
+	};
+	let joint;
+	try {
+		if (def.kind === 'revolute') {
+			data = RAPIER.JointData.revolute(a1, a2, axisInBodyA());
+		} else if (def.kind === 'spherical') {
+			data = RAPIER.JointData.spherical(a1, a2); // 102b ball
+		} else if (def.kind === 'prismatic') {
+			data = RAPIER.JointData.prismatic(a1, a2, axisInBodyA()); // 102b slider
+		} else if (def.kind === 'spring') {
+			data = RAPIER.JointData.spring(def.rest ?? 1, def.stiffness ?? 50, def.damping ?? 2, a1, a2); // 102b
+		} else if (def.kind === 'rope') {
+			data = RAPIER.JointData.rope(def.length ?? 1, a1, a2); // 102b
+		} else if (def.kind === 'fixed' || def.kind === 'weld' || !def.kind) {
+			data = RAPIER.JointData.fixed(a1, { w: 1, x: 0, y: 0, z: 0 }, a2, { w: 1, x: 0, y: 0, z: 0 });
+		} else {
+			// 102b: a kind a NEWER build made — holding it as a weld would be a wrong joint, not a missing one
+			return;
+		}
+		joint = world.createImpulseJoint(data, bodyA, bodyB, true);
+	} catch (err) {
+		// one joint the engine cannot build must not stop the run: it is left out, the rest still start
+		console.warn('[physics] joint ' + def.id + ' left out:', err);
+		return;
 	}
-	const joint = world.createImpulseJoint(data, bodyA, bodyB, true);
-	// 37-fx: limits, no self-collision, an ANGLE motor (a steering knuckle)
-	if (def.kind === 'revolute' && Array.isArray(def.limits)) joint.setLimits?.(def.limits[0], def.limits[1]);
+	liveJointDefs.set(def.id, JSON.stringify(def));
+	// 37-fx: limits, no self-collision, an ANGLE motor (a steering knuckle); 102b: slider limits (metres)
+	if ((def.kind === 'revolute' || def.kind === 'prismatic') && Array.isArray(def.limits)) joint.setLimits?.(def.limits[0], def.limits[1]);
 	if (def.contacts === false) joint.setContactsEnabled?.(false);
 	if (def.kind === 'revolute' && def.motor) {
 		if (Number.isFinite(def.motor.pos))
@@ -473,7 +509,18 @@ function syncLiveJoints(list) {
 		if (!ids.has(id)) {
 			dropLiveJoint(joint);
 			liveJoints.delete(id);
+			liveJointDefs.delete(id);
 		}
+	// 102b: an EDITED def (same id, new object — updateJoint / its undo / a peer's jointcreate) is
+	// rebuilt from the current poses, which is how a mid-run edit takes effect with no restart
+	for (const def of list) {
+		const built = liveJointDefs.get(def.id);
+		if (built && built !== JSON.stringify(def) && liveJoints.has(def.id)) {
+			dropLiveJoint(liveJoints.get(def.id));
+			liveJoints.delete(def.id);
+			liveJointDefs.delete(def.id);
+		}
+	}
 	list.forEach((def) => buildLiveJoint(def));
 }
 
@@ -503,6 +550,7 @@ function jointBroke(def) {
 	if (live) {
 		dropLiveJoint(live);
 		liveJoints.delete(def.id);
+		liveJointDefs.delete(def.id);
 	}
 	if (!get(simulating) && !get(remoteSimulating)) return;
 	if (def.sparks === false) return;
@@ -650,6 +698,8 @@ export function physicsShapeChanged(uuid) {
 			entry.ccd = p.ccd;
 			entry.body.enableCcd(p.ccd ?? !!get(scenePhysicsDefaults).ccd);
 		}
+		// 102b: gravity scale + damping need no rebuild either — the live body takes them
+		if (entry.mode === 'dynamic') applyBodyTuning(entry.body, p, get(scenePhysicsDefaults));
 		if (entry.shapeKey === shapeKeyOf(p, entry.object)) return false;
 		rebuildColliders(entry, p);
 		return true;
@@ -700,7 +750,8 @@ export function listPhysicsObjects() {
  *   friction?: number, collider?: string, sensor?: boolean|null,
  *   freeze?: any, material?: string, group?: string|null,
  *   collidesWith?: string[]|null, colliderVerts?: number[],
- *   colliderPieces?: number[][], ccd?: boolean|null}} patch — 36 X5: collision group + filter; 36 X3: a
+ *   colliderPieces?: number[][], ccd?: boolean|null, gravityScale?: number|null,
+ *   linearDamping?: number|null, angularDamping?: number|null}} patch — 36 X5: collision group + filter; 36 X3: a
  *   decomposed custom collider — 21-C4: sensor/freeze/material were
  *   missing from this type while the Inspector had been writing all three since
  *   CL-A (its collider row, its Sensor checkbox and its material presets), so any
@@ -716,6 +767,8 @@ export function setPhysicsFor(uuid, patch) {
 	const next = { mode: 'auto', ...(object.userData.physics ?? {}), ...patch };
 	// 49 P1: "Scene default" is the ABSENCE of the key, so a scene that never picked saves as before
 	if (next.ccd == null) delete next.ccd;
+	// 102b: the same rule for gravity scale and damping — null = back to the scene's value
+	for (const key of BODY_TUNING_KEYS) if (next[key] == null) delete next[key];
 	object.userData.physics = next;
 	recordEntry({ kind: 'props', uuid, before: { physics: before }, after: { physics: next } });
 	/** @type {any} */
@@ -999,10 +1052,12 @@ function createBodyFor(object, p, opts) {
 	// B4: scene damping defaults — the knob that turns a jittery tower stable
 	// and stops crates sliding forever. Dynamics only: a kinematic body's motion
 	// is prescribed and a fixed one has none.
+	// 102b: an object's own damping / gravity scale wins over the scene's (absent = as before).
 	if (dynamic) {
-		const defaults = get(scenePhysicsDefaults);
-		bodyDesc.setLinearDamping(defaults.damping.linear ?? 0);
-		bodyDesc.setAngularDamping(defaults.damping.angular ?? 0);
+		const tuning = bodyTuningOf(p, get(scenePhysicsDefaults));
+		bodyDesc.setLinearDamping(tuning.linear);
+		bodyDesc.setAngularDamping(tuning.angular);
+		if (tuning.gravityScale !== 1) bodyDesc.setGravityScale(tuning.gravityScale);
 	}
 	const body = world.createRigidBody(bodyDesc);
 	// B4: no CCD by default, and a 20 m/s throw moves 0.33 m per step — thin
@@ -1191,6 +1246,7 @@ async function startSimulation(opts = {}) {
 	// so body-local = world - translation and ONE world-space axis is valid in
 	// both bodies' local frames — which rapier's revolute() requires.
 	liveJoints = new Map();
+	liveJointDefs.clear(); // 102b
 	get(sceneJoints).forEach((def) => buildLiveJoint(def));
 
 	// C2: initial angular velocities + graph-driven motors (needs liveJoints).
@@ -1240,10 +1296,11 @@ async function startSimulation(opts = {}) {
 				defaultsSubPrimed = true;
 				return; // the bodies were just built with these values
 			}
+			// 102b: a body with its own damping keeps it; the rest follow the scene
+			const own = collectParams(get(objectsGroup));
 			bodies.forEach((entry) => {
 				if (entry.mode !== 'dynamic') return;
-				entry.body.setLinearDamping(defaults.damping.linear ?? 0);
-				entry.body.setAngularDamping(defaults.damping.angular ?? 0);
+				applyBodyTuning(entry.body, own[entry.object.uuid], defaults);
 				entry.body.enableCcd(entry.ccd ?? !!defaults.ccd); // 49 P1: an own pick stays
 			});
 			// a material change is collider state, so it rides the shapeKey drift
@@ -2140,9 +2197,10 @@ function queueContact(h1, h2, now) {
 		if (down !== null) lastImpactAt.set(uuid, now);
 		if (speed !== null) lastAnyImpactAt.set(uuid, now);
 		// 36 X6: and what it hit — the other collider's owner, '' for the ground
-		pendingImpacts.push({ uuid, down, speed, other: hit?.uuid ?? '' });
+		// 102 M3: + WHERE (world point, the other surface's outward normal) for Stamp decal
+		pendingImpacts.push({ uuid, down, speed, other: hit?.uuid ?? '', contact: contactPlace(handle, other) });
 		if (hit && !hit.sensor && hit.uuid !== uuid && hit.entry?.mode !== 'dynamic')
-			pendingImpacts.push({ uuid: hit.uuid, down, speed, other: uuid });
+			pendingImpacts.push({ uuid: hit.uuid, down, speed, other: uuid, contact: contactPlace(other, handle) });
 	}
 }
 
@@ -2164,6 +2222,55 @@ function contactNormal(h1, h2) {
 		n = { x: v.x, y: v.y, z: v.z };
 	});
 	return n;
+}
+
+/**
+ * 102 M3: where a contact that just started touches, in world space, and the normal of the
+ * OTHER collider's surface there (pointing out of it, toward `mover`). Null when rapier holds
+ * no manifold for the pair. Initiator-local (only the stepping peer has contacts).
+ * @param {number} mover @param {number} other @returns {{point: number[], normal: number[]} | null}
+ */
+function contactPlace(mover, other) {
+	const c1 = world?.getCollider(mover);
+	const c2 = world?.getCollider(other);
+	if (!c1 || !c2) return null;
+	/** @type {{point: number[], normal: number[]} | null} */
+	let out = null;
+	try {
+		world.contactPair(c1, c2, (/** @type {any} */ manifold, /** @type {boolean} */ flipped) => {
+			if (out || !manifold.numContacts()) return;
+			const n = manifold.normal();
+			// the manifold's normal points from its first collider to its second: first = the mover
+			// unless flipped, and the surface we want faces the mover
+			const s = flipped ? 1 : -1;
+			let p = null;
+			if (manifold.numSolverContacts() > 0) {
+				const v = manifold.solverContactPoint(0);
+				p = [v.x, v.y, v.z];
+			} else {
+				const first = flipped ? c2 : c1;
+				const l = manifold.localContactPoint1(0);
+				if (l) {
+					const t = first.translation();
+					const q = first.rotation();
+					// rotate the local point by the collider's quaternion, then translate
+					const ix = q.w * l.x + q.y * l.z - q.z * l.y;
+					const iy = q.w * l.y + q.z * l.x - q.x * l.z;
+					const iz = q.w * l.z + q.x * l.y - q.y * l.x;
+					const iw = -q.x * l.x - q.y * l.y - q.z * l.z;
+					p = [
+						ix * q.w + iw * -q.x + iy * -q.z - iz * -q.y + t.x,
+						iy * q.w + iw * -q.y + iz * -q.x - ix * -q.z + t.y,
+						iz * q.w + iw * -q.z + ix * -q.y - iy * -q.x + t.z
+					];
+				}
+			}
+			if (p && p.every(Number.isFinite)) out = { point: p, normal: [n.x * s, n.y * s, n.z * s] };
+		});
+	} catch {
+		return null;
+	}
+	return out;
 }
 
 /**
@@ -2352,11 +2459,11 @@ function dispatchImpacts() {
 	const impacts = pendingImpacts;
 	pendingImpacts = [];
 	const group = get(objectsGroup);
-	impacts.forEach(({ uuid, down, speed, other }) => {
+	impacts.forEach(({ uuid, down, speed, other, contact }) => {
 		// flow path: pulse On Impact nodes targeting this object — the trigger
 		// stamp replicates (nodetrigger), so every peer computes the same pulse.
 		// fix-batch-1 #14: each node picks its channel (direction any | down)
-		fireObjectImpact(uuid, down, other, speed);
+		fireObjectImpact(uuid, down, other, speed, contact);
 		// the emitters keep the landing rule: their "On impact" has no direction option, so
 		// a sideways contact bursting them would change every scene that uses one
 		if (down === null) return;
@@ -2452,6 +2559,7 @@ export function stopSimulation(opts = {}) {
 	bodies = [];
 	beforeStates = [];
 	liveJoints = new Map();
+	liveJointDefs.clear(); // 102b
 	fixedBodies = new Map();
 	fixedColliders = new Map();
 	fixedShapeKeys = new Map();
@@ -2846,6 +2954,7 @@ export function physicsDebug() {
 		mass: entry.body?.mass?.() ?? null,
 		linearDamping: entry.body?.linearDamping?.() ?? null,
 		angularDamping: entry.body?.angularDamping?.() ?? null,
+		gravityScale: entry.body?.gravityScale?.() ?? null, // 102b
 		hold: entry.hold,
 		bodyType: entry.body?.bodyType?.(),
 		sleeping: entry.body?.isSleeping?.() ?? null,

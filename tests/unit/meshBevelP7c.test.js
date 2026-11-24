@@ -7,9 +7,12 @@
 // count 1..8, for every profile sign, at valence 3 (the chain rule, regression), 4 and
 // 5 (the mitered corner), and a mixed edge (valence 3 at one end, 4 at the other).
 // The same gate for the vertex bevel's new SEGMENTS.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import * as THREE from 'three';
-import { readTriangles, bevelEdgesCore, bevelVerticesCore } from '$lib/faceEdit.js';
+import { readTriangles, bevelEdgesCore, bevelVerticesCore, loadKernelOps } from '$lib/faceEdit.js';
+
+// 99 K4 family 2: the cores run on the kernel, a lazy chunk (an edit session loads it; a test loads it here)
+beforeAll(() => loadKernelOps());
 
 const keyOf = (v) => `${Math.round(v.x * 1e4)},${Math.round(v.y * 1e4)},${Math.round(v.z * 1e4)}`;
 const ek = (a, b) => (a < b ? a + '|' + b : b + '|' + a);

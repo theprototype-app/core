@@ -503,6 +503,9 @@ export const DEBUG_HOOKS = [
 	['vectorSvgActions', () => import('./vector/vectorSvgActions.js')],
 	['vectorVR', () => import('./vector/vectorVR.js')],
 	['vectorCurveActions', () => import('./vector/vectorCurveActions.js')],
+	// 64-vector-edit (D5): snapping, arranging / layer order
+	['vectorSnap', () => import('./vector/vectorSnap.js')],
+	['vectorArrange', () => import('./vector/vectorArrange.js')],
 	['splineTube', () => import('./splineTube')],
 	['splineTool', () => import('./splineTool')],
 	['splineEdit', () => import('./splineEdit')],

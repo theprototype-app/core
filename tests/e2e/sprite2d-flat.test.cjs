@@ -146,10 +146,17 @@ h.run(async () => {
 
 	// ---- 4 by finger ----------------------------------------------------------------------------
 	const cdp = await A.page.context().newCDPSession(A.page);
+	// the element the flat view's controls listen on (the FIRST <canvas> in the document is a hidden 0x0 one)
 	const box = await A.page.evaluate(() => {
-		const r = document.querySelector('canvas').getBoundingClientRect();
-		return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+		let oc;
+		window.__tp.test.v1.orbitControls.subscribe((v) => (oc = v))();
+		// nothing selected (New layer left its group selected, and a touch on its gizmo moves the group, not the view)
+		window.__stores.objectActions?.deselectObject?.();
+		const r = oc.domElement.getBoundingClientRect();
+		// off-centre: the middle of the view is where a selected object's gizmo would sit
+		return { x: r.left + r.width * 0.3, y: r.top + r.height * 0.35 };
 	});
+	await A.page.waitForTimeout(300);
 	const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(([x, y], id) => ({ x, y, id })) });
 	const v0 = (await state(A.page)).view;
 	await touch('touchStart', [[box.x, box.y]]);
@@ -210,8 +217,6 @@ h.run(async () => {
 		const zip = await s.sessions.exportSessionZip(s.sessions.buildSessionPayload('2D scene'), { assets: true, packs: false, flow: true });
 		return Array.from(zip);
 	});
-	fs.mkdirSync(FIXTURE_DIR, { recursive: true });
-	fs.writeFileSync(path.join(FIXTURE_DIR, 'template2d.tpscene'), Buffer.from(bytes));
 	await A.page.evaluate(async (arr) => {
 		const s = window.__tp.test.v1.sessions;
 		const payload = await s.importSessionZip(new Uint8Array(arr).buffer);
@@ -221,7 +226,9 @@ h.run(async () => {
 	const back = await scene(A.page);
 	const key = (l) => JSON.stringify(l.filter((o) => o.sprite || o.layer).map((o) => [o.name, o.sprite, o.layer, o.z]).sort());
 	h.check(key(back) === key(saved), '7.2 the sprite and layer documents and depths are as saved');
-
 	h.check(h.pageErrors(A).length === 0, `no page errors (${h.pageErrors(A).join(' | ')})`);
+	// the fixture is written LAST: a file written into the tree makes the dev server reload open pages
+	fs.mkdirSync(FIXTURE_DIR, { recursive: true });
+	fs.writeFileSync(path.join(FIXTURE_DIR, 'template2d.tpscene'), Buffer.from(bytes));
 	await h.finish(browser);
 });

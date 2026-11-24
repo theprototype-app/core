@@ -279,6 +279,19 @@ h.run(async () => {
 	await h.answerRestore(A, 'restore', 20000);
 	await h.eventually(() => state(A, NAME), good, '7c the host reloads, restores the autosave: every face', 30000);
 
+	// the joiner links back to the reloaded host by itself (before that, what it shows is only its own copy)
+	const opened = (/** @type {any} */ p) =>
+		p.page.evaluate(() => {
+			let pr;
+			window.__tp.test.v1.peers.subscribe((/** @type {any} */ v) => (pr = v))();
+			return [...(pr?.openedPeers ?? [])];
+		});
+	await h.eventually(
+		async () => (await opened(A)).includes(B.id) && (await opened(B)).includes(A.id),
+		(back) => back === true,
+		'7c the joiner is linked to the host again by itself',
+		150000
+	);
 	await load(A, fixedFile, true);
 	await h.eventually(() => state(A, NAME), good, '7d the host opens the saved scene: every face', 20000);
 	await h.eventually(() => state(B, NAME), good, '7d the joiner receives the opened scene: every face', 30000);

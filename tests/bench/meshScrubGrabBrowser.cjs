@@ -57,26 +57,39 @@ const { launch, setupPage } = require('../e2e/helpers.cjs');
 				const object = g.children[g.children.length - 1];
 				const geometry = bench.makeMesh('sphere', size);
 				fe.applyMeshGeo(object.uuid, Array.from(geometry.attributes.position.array));
-				fe.enterFaceEdit(object.uuid);
+				const entered = fe.enterFaceEdit(object.uuid);
 				fe.setFaceSubmode('faces');
 				fe.setFaceGranularity('quad');
 				for (let i = 0; i < 5; i++) await raf();
 				// the kernel (the adjust engine's op mesh) builds off-thread: wait until a loop cut can begin
-				// the quad nearest the equator at +x (a whole latitude ring runs through it)
+				// the face holding the triangle nearest (1, 0, 0): a quad on the equator, a whole latitude ring through it
 				const pick = () => {
 					const V3 = object.position.constructor;
-					const faces = fe.currentFaces();
-					let best = -1;
+					const P = object.geometry.attributes.position.array;
+					let tri = -1;
 					let bd = Infinity;
-					faces.forEach((f, i) => {
-						if (f.triIndices.length !== 2) return;
-						const d = f.centroid.distanceTo(new V3(1, 0.01, 0.02));
-						if (d < bd) (bd = d), (best = i);
-					});
-					return { s, fe, V3, faces, best };
+					for (let t = 0; t < P.length / 9; t++) {
+						let x = 0,
+							y = 0,
+							z = 0;
+						for (let c = 0; c < 3; c++) {
+							x += P[t * 9 + c * 3] / 3;
+							y += P[t * 9 + c * 3 + 1] / 3;
+							z += P[t * 9 + c * 3 + 2] / 3;
+						}
+						const d = (x - 1) ** 2 + y * y + z * z;
+						if (d < bd) ((bd = d), (tri = t));
+					}
+					const faces = fe.currentFaces();
+					const best = faces.findIndex((f) => f.triIndices.includes(tri));
+					return { s, fe, V3, faces, best, tri };
 				};
 				window.__bench = { object, uuid: object.uuid, pick };
+				const probe = pick();
 				return {
+					entered,
+					faces: probe.faces.length,
+					pickedFaceTris: probe.faces[probe.best]?.triIndices?.length ?? null,
 					tris: object.geometry.attributes.position.count / 3,
 					scrubBracket: typeof fe.beginAdjustScrub === 'function'
 				};
@@ -86,6 +99,8 @@ const { launch, setupPage } = require('../e2e/helpers.cjs');
 		const scrub = await page.evaluate(
 			async ({ steps }) => {
 				const { s, fe, faces, best } = window.__bench.pick();
+				if (best < 0)
+					return { error: 'no face under the equator triangle (' + faces.length + ' faces)' };
 				const raf = () => new Promise((r) => requestAnimationFrame(r));
 				const now = () => performance.now();
 				const sorted = (a) => [...a].sort((x, y) => x - y);
@@ -146,29 +161,28 @@ const { launch, setupPage } = require('../e2e/helpers.cjs');
 			await client.send('Profiler.setSamplingInterval', { interval: 100 });
 		}
 		const grabOne = async () =>
-			page.evaluate(
-				async () => {
-					const { fe, V3, faces, best } = window.__bench.pick();
-					const raf = () => new Promise((r) => requestAnimationFrame(r));
-					const now = () => performance.now();
-					fe.pickFaceUnit(faces[best].triIndices[0]);
-					if (!fe.beginFaceGrab(best)) return { error: 'grab did not begin' };
-					const moves = [];
-					for (let i = 1; i <= 60; i++) {
-						const a = now();
-						fe.applyFaceGrab({ dPos: new V3(0.002 * i, 0.001 * i, 0) });
-						moves.push(now() - a);
-						await raf();
-					}
+			page.evaluate(async () => {
+				const { fe, V3, faces, best } = window.__bench.pick();
+				if (best < 0) return { error: 'no face to grab' };
+				const raf = () => new Promise((r) => requestAnimationFrame(r));
+				const now = () => performance.now();
+				fe.pickFaceUnit(faces[best].triIndices[0]);
+				if (!fe.beginFaceGrab(best)) return { error: 'grab did not begin' };
+				const moves = [];
+				for (let i = 1; i <= 60; i++) {
 					const a = now();
-					fe.commitFaceGrab();
-					const call = now() - a;
+					fe.applyFaceGrab({ dPos: new V3(0.002 * i, 0.001 * i, 0) });
+					moves.push(now() - a);
 					await raf();
-					const frame = now() - a;
-					moves.sort((x, y) => x - y);
-					return { call, frame, moveMedian: moves[30] };
 				}
-			);
+				const a = now();
+				fe.commitFaceGrab();
+				const call = now() - a;
+				await raf();
+				const frame = now() - a;
+				moves.sort((x, y) => x - y);
+				return { call, frame, moveMedian: moves[30] };
+			});
 		const grabs = [];
 		const profiles = [];
 		for (let r = 0; r < runs; r++) {

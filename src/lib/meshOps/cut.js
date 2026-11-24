@@ -45,6 +45,70 @@ function triCorners(om, t) {
 }
 
 /**
+ * One quad of a loop-cut ring, walked: its two triangles and its corners A B C D in cut order (the cut runs from
+ * A-D to B-C at fraction t). Null when the quad cannot be walked (no mate, no shared diagonal, the crossed edge not
+ * on it) — the cut skips it, and so does the preview, from this one function.
+ * @param {OpMesh} om @param {number} quad @param {string[]} cross @param {Int32Array | number[]} partner
+ */
+function ringQuad(om, quad, cross, partner) {
+	const mate = partner[quad] ?? -1;
+	if (quad < 0 || quad >= om.view.count || mate < 0 || mate >= om.view.count) return null;
+	const ta = triCorners(om, quad);
+	const tb = triCorners(om, mate);
+	// faceEdit quadRingKeysIn: p, ra, q, rb (the shared side p-q is the diagonal)
+	const ka = ta.map((c) => c.key);
+	const kb = tb.map((c) => c.key);
+	const shared = ka.filter((k) => kb.includes(k));
+	if (shared.length !== 2) return null;
+	const ra = ka.find((k) => !shared.includes(k));
+	const rbk = kb.find((k) => !shared.includes(k));
+	if (!ra || !rbk) return null;
+	const keys = [shared[0], ra, shared[1], rbk];
+	const edges = [0, 1, 2, 3].map((i) => edgeKey(keys[i], keys[(i + 1) % 4]));
+	const at = edges.indexOf(cross[0]);
+	if (at < 0) return null;
+	// faceEdit quadCornersIn: the first corner seen per key gives its point and uv
+	/** @type {Map<string, { pos: number[], uv: number[] | null }>} */
+	const corner = new Map();
+	for (const c of [...ta, ...tb]) if (!corner.has(c.key)) corner.set(c.key, { pos: c.pos, uv: c.uv });
+	const [A, B, C, D] = [0, 1, 2, 3].map((o) => corner.get(keys[(at + o) % 4]));
+	if (!A || !B || !C || !D) return null;
+	return { ta, A, B, C, D };
+}
+
+/**
+ * Where the cuts land along each rail (0..1): one cut at `position`, more cuts evenly spaced (the Blender rule).
+ * Shared by the cut and its scrub preview. @param {number} cuts @param {number} position @returns {number[]}
+ */
+export function loopCutStops(cuts, position) {
+	// clamped short of 0/1: a cut AT the boundary would emit a zero-width band of degenerate quads
+	const at = Math.min(Math.max(position, 0.01), 0.99);
+	return cuts === 1 ? [at] : Array.from({ length: cuts }, (_, i) => (i + 1) / (cuts + 1));
+}
+
+/**
+ * Lane 99-scrub: the loop cut's RAILS, for the scrub preview — per walkable quad of `ring`, its corners A B C D
+ * (12 floats, the op mesh's local space). A cut at fraction t is the segment lerp(A, D, t) -> lerp(B, C, t): the
+ * same points `loopCutRegion` puts its new vertices at, from the same walk. Read-only on `om`.
+ * @param {OpMesh} om @param {{ quad: number, cross: string[] }[]} ring @param {Int32Array | number[]} partner
+ * @returns {Float32Array}
+ */
+export function loopCutRails(om, ring, partner) {
+	const out = new Float32Array(ring.length * 12);
+	let n = 0;
+	for (const { quad, cross } of ring) {
+		const walked = ringQuad(om, quad, cross, partner);
+		if (!walked) continue;
+		for (const c of [walked.A, walked.B, walked.C, walked.D]) {
+			out[n++] = c.pos[0];
+			out[n++] = c.pos[1];
+			out[n++] = c.pos[2];
+		}
+	}
+	return out.subarray(0, n);
+}
+
+/**
  * LOOP CUT (faceEdit `loopCutCore`): every quad of `ring` is split across the walk into cuts + 1 sub-quads,
  * positions and uvs interpolated, its material kept; each sub-quad is ONE authored face. The flanking quads
  * keep their full edge (the soup's T-junction). `ring` and `partner` index the op mesh's output triangles
@@ -56,10 +120,7 @@ function triCorners(om, t) {
  * @returns {{ firstNew: number, consumed: number[] }} firstNew = the output index of the first new triangle
  */
 export function loopCutRegion(om, ring, partner, options = {}) {
-	const n = options.cuts ?? 1;
-	// clamped short of 0/1: a cut AT the boundary would emit a zero-width band of degenerate quads
-	const position = Math.min(Math.max(options.position ?? 0.5, 0.01), 0.99);
-	const cutsAt = n === 1 ? [position] : Array.from({ length: n }, (_, i) => (i + 1) / (n + 1));
+	const cutsAt = loopCutStops(options.cuts ?? 1, options.position ?? 0.5);
 	const bounds = [0, ...cutsAt, 1];
 	/** @type {Set<number>} */
 	const consumed = new Set();
@@ -73,29 +134,9 @@ export function loopCutRegion(om, ring, partner, options = {}) {
 	/** @type {Set<number>} */
 	const used = new Set();
 	for (const { quad, cross } of ring) {
-		const mate = partner[quad] ?? -1;
-		if (quad < 0 || quad >= om.view.count || mate < 0 || mate >= om.view.count) continue;
-		const ta = triCorners(om, quad);
-		const tb = triCorners(om, mate);
-		// faceEdit quadRingKeysIn: p, ra, q, rb (the shared side p-q is the diagonal)
-		const ka = ta.map((c) => c.key);
-		const kb = tb.map((c) => c.key);
-		const shared = ka.filter((k) => kb.includes(k));
-		if (shared.length !== 2) continue;
-		const ra = ka.find((k) => !shared.includes(k));
-		const rbk = kb.find((k) => !shared.includes(k));
-		if (!ra || !rbk) continue;
-		const keys = [shared[0], ra, shared[1], rbk];
-		const edges = [0, 1, 2, 3].map((i) => edgeKey(keys[i], keys[(i + 1) % 4]));
-		const at = edges.indexOf(cross[0]);
-		if (at < 0) continue;
-		// faceEdit quadCornersIn: the first corner seen per key gives its point and uv
-		/** @type {Map<string, { pos: number[], uv: number[] | null }>} */
-		const corner = new Map();
-		for (const c of [...ta, ...tb])
-			if (!corner.has(c.key)) corner.set(c.key, { pos: c.pos, uv: c.uv });
-		const [A, B, C, D] = [0, 1, 2, 3].map((o) => corner.get(keys[(at + o) % 4]));
-		if (!A || !B || !C || !D) continue;
+		const walked = ringQuad(om, quad, cross, partner);
+		if (!walked) continue;
+		const { ta, A, B, C, D } = walked;
 		const material = om.mesh.fMat[om.view.tFace[quad]];
 		const want = triNormal(ta[0].pos, ta[1].pos, ta[2].pos);
 		const textured = !!A.uv;

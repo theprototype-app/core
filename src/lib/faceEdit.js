@@ -7938,6 +7938,149 @@ export function beginOpAdjust(op, params, opts = {}) {
 	return true;
 }
 
+// ---- lane 99-scrub: the loop-cut scrub is a PREVIEW --------------------------
+// Re-running the cut per scrub step cost 249-375 ms a step on the Deck at 67k (the 99-int row): a kernel copy, the
+// cut, a geometry write, the normals and the BVH, and a wire message, for a state the hand has already left. While
+// the options pane's DragRow holds a scrub open, a loop-cut adjust only moves a LINE: the ring was walked once at
+// begin (a.target / a.altTarget), its rails are read once per axis, and a step writes 2 points per quad per cut
+// into one preallocated buffer. The cut runs ONCE on release, through the same core, and that settle is the one
+// broadcast — peers see the result, not the scrub. Typed input and direct reapply calls (VR, tests) keep the live
+// cut: the bracket is opened only by a pointer scrub.
+
+/** @type {any} scene-root LineSegments: where the scrubbed cut will land */
+let loopCutPreview = null;
+/** most cuts the pane allows (mergeAdjustParams' clamp) — sizes the preview buffer once per ring */
+const LOOPCUT_MAX_CUTS = 20;
+
+/**
+ * Open the scrub bracket (DragRow onscrubstart): from here until settleOpAdjust, a loop-cut adjust previews instead
+ * of cutting. Any other op, or a deferred (VR) adjust, is untouched. @returns {boolean} whether the bracket opened
+ */
+export function beginAdjustScrub() {
+	const a = FS.adjust;
+	if (!a || a.op !== 'loopcut' || a.record === 'deferred' || !a.opBase) return false;
+	const object = liveObjectOf(a);
+	if (!object || object.geometry !== a.installedGeometry) return false;
+	a.scrub = true;
+	a.scrubDirty = false;
+	a.scrubFrom = { ...a.params }; // what the cut on screen was made with (a refused release goes back to it)
+	return true;
+}
+
+/** the rails of the ring the current axis cuts across, read once per axis per adjust @param {any} a */
+function loopCutRailsOf(a) {
+	const axis = a.params.axis === 1 && a.altTarget?.length ? 1 : 0;
+	a.rails ??= [null, null];
+	if (!a.rails[axis]) {
+		const ring = axis === 1 ? a.altTarget : a.target;
+		a.rails[axis] = kernelOps().loopCutRails(a.opBase, ring, a.quadPartner);
+	}
+	return a.rails[axis];
+}
+
+/** write the preview line for the adjust's current cuts / position / axis, in place @param {any} a */
+function drawLoopCutPreview(a) {
+	const scene = get(globalScene);
+	const object = liveObjectOf(a);
+	if (!scene || !object) return;
+	const rails = loopCutRailsOf(a);
+	const quads = rails.length / 12;
+	if (!loopCutPreview || loopCutPreview.userData.capacity < quads) {
+		clearLoopCutPreview();
+		const geometry = new THREE.BufferGeometry();
+		geometry.setAttribute(
+			'position',
+			new THREE.BufferAttribute(new Float32Array(Math.max(1, quads) * LOOPCUT_MAX_CUTS * 6), 3).setUsage(
+				THREE.DynamicDrawUsage
+			)
+		);
+		loopCutPreview = new THREE.LineSegments(
+			geometry,
+			new THREE.LineBasicMaterial({ color: 0xffd23f, depthTest: false, transparent: true })
+		);
+		loopCutPreview.userData.capacity = Math.max(1, quads);
+		loopCutPreview.renderOrder = 1000; // over the edge overlay (999)
+		loopCutPreview.name = 'loopcut-preview';
+		loopCutPreview.raycast = () => {}; // never eat a pick (the buildEditWireframe rule)
+		loopCutPreview.frustumCulled = false; // the buffer is rewritten in place; its bounds are never recomputed
+		scene.add(loopCutPreview);
+	}
+	// baked world space like the edge overlay; the object cannot move during a scrub, so once per step is plenty
+	object.updateMatrixWorld(true);
+	loopCutPreview.matrixAutoUpdate = false;
+	loopCutPreview.matrix.copy(object.matrixWorld);
+	loopCutPreview.matrixWorldNeedsUpdate = true;
+	const stops = kernelOps().loopCutStops(a.params.cuts, a.params.position);
+	const attr = loopCutPreview.geometry.attributes.position;
+	const out = attr.array;
+	let n = 0;
+	for (let q = 0; q < quads; q++) {
+		const o = q * 12; // A B C D
+		for (const t of stops) {
+			for (const [from, to] of [
+				[o, o + 9], // A -> D
+				[o + 3, o + 6] // B -> C
+			]) {
+				out[n++] = rails[from] + (rails[to] - rails[from]) * t;
+				out[n++] = rails[from + 1] + (rails[to + 1] - rails[from + 1]) * t;
+				out[n++] = rails[from + 2] + (rails[to + 2] - rails[from + 2]) * t;
+			}
+		}
+	}
+	loopCutPreview.geometry.setDrawRange(0, n / 3);
+	attr.addUpdateRange?.(0, n);
+	attr.needsUpdate = true;
+	loopCutPreview.visible = true;
+}
+
+/** drop the preview line (release, end, cancel, a new adjust) */
+function clearLoopCutPreview() {
+	if (!loopCutPreview) return;
+	loopCutPreview.parent?.remove(loopCutPreview);
+	loopCutPreview.geometry?.dispose?.();
+	loopCutPreview.material?.dispose?.();
+	loopCutPreview = null;
+}
+
+/** e2e: what the preview draws now — segment count and the segments (object-local), or null when none is up */
+export function loopCutPreviewDebug() {
+	if (!loopCutPreview) return null;
+	const count = loopCutPreview.geometry.drawRange.count;
+	return {
+		segments: count / 2,
+		points: Array.from(loopCutPreview.geometry.attributes.position.array.subarray(0, count * 3))
+	};
+}
+
+/**
+ * The release of a scrub that moved the cut: run the loop cut ONCE at the final params and apply it the way
+ * beginOpAdjust does (one full apply, one broadcast), then keep the history entry's `after` current.
+ * @param {any} a @returns {boolean}
+ */
+function settleScrubbedCut(a) {
+	const result = mirrorAdjustResult(a, runAdjustCore(a));
+	if (result.error || resultState(result).positions.length > MAX_SNAPSHOT) {
+		// the cut on screen is still the last good one: its params come back with it
+		a.params = { ...a.scrubFrom };
+		opAdjustState.set({ op: a.op, params: { ...a.params }, ...adjustStateExtras(a) });
+		if (result.error) showToast(result.error);
+		else if (!a.capWarned) {
+			a.capWarned = true;
+			showToast(tooLargeMessage(resultState(result).positions.length, 'edit'));
+		}
+		return false;
+	}
+	a.lastFaces = result.faces;
+	a.lastIds = result.ids ?? null;
+	a.lastSelect = result.select;
+	a.after = applyAdjustFull(a, result);
+	applyAdjustSelection(a, result.select, true);
+	if (a.entry) a.entry.after = a.after;
+	a.installedGeometry = liveObjectOf(a)?.geometry ?? null;
+	opAdjustState.set({ op: a.op, params: { ...a.params }, ...adjustStateExtras(a) });
+	return true;
+}
+
 /**
  * Re-run the live adjust at merged params — every scrub move. IDENTITY GUARD
  * first: `geometry !== installedGeometry` means an undo / remote meshgeo /
@@ -7954,6 +8097,14 @@ export function reapplyOpAdjust(patch = {}) {
 		return false;
 	}
 	mergeAdjustParams(a, patch);
+	if (a.scrub) {
+		// lane 99-scrub: a loop-cut SCRUB moves the preview line only — no kernel op, no geometry, no wire; the
+		// cut runs once, on release (settleOpAdjust)
+		a.scrubDirty = true;
+		drawLoopCutPreview(a);
+		opAdjustState.set({ op: a.op, params: { ...a.params }, ...adjustStateExtras(a) });
+		return true;
+	}
 	const result = mirrorAdjustResult(a, runAdjustCore(a));
 	if (result.error) return false; // keep the last good geometry on a refusal
 	const state = resultState(result);
@@ -8000,6 +8151,14 @@ export function settleOpAdjust() {
 	if (!object || object.geometry !== a.installedGeometry) {
 		endOpAdjust();
 		return false;
+	}
+	if (a.scrub) {
+		a.scrub = false;
+		clearLoopCutPreview();
+		if (a.scrubDirty) {
+			a.scrubDirty = false;
+			return settleScrubbedCut(a);
+		}
 	}
 	const result = {
 		state: stateOfGeometry(object.geometry),
@@ -8058,6 +8217,7 @@ export function cancelOpAdjust() {
  * picks (withSelectionHistory), mode switches, session exits, and the
  * identity guard. */
 export function endOpAdjust() {
+	clearLoopCutPreview();
 	if (!FS.adjust) return;
 	FS.adjust = null;
 	opAdjustState.set(null);

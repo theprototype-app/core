@@ -65,7 +65,9 @@ h.run(async () => {
 	const made = await L.page.evaluate(async () => {
 		const v = window.__tp.test.v1.vectorActions;
 		const rect = v.placeVectorShape('rect', [-2, 0, 0]);
-		const star = v.placeVectorShape('star', [-1.6, 0, 0], { corner: 0.05 });
+		// the star overlaps the rect IN ITS PLANE (same turn, 0.4 m along its +X), or a union refuses it
+		const at = rect.position.clone().add(new rect.position.constructor(0.4, 0.1, 0).applyQuaternion(rect.quaternion));
+		const star = v.addVectorShape({ ...window.__tp.test.v1.vectorRecord.vectorDefaults('star'), corner: 0.05 }, { position: at, quaternion: rect.quaternion });
 		const pen = v.addVectorShape(
 			{ kind: 'path', paths: [{ closed: false, nodes: [{ x: 0, y: 0, ix: 0, iy: 0, ox: 0.3, oy: 0.4 }, { x: 1, y: 0, ix: -0.3, iy: 0.4, ox: 0, oy: 0 }] }], strokeWidth: 0.04, fillType: 'none' },
 			{ position: [1, 0.5, 0], name: 'Pen line' }
@@ -99,7 +101,8 @@ h.run(async () => {
 	// ---- 2. a geometry edit of an unknown gtype, then a boolean --------------------------------------
 	await L.page.evaluate((uuid) => window.__tp.test.v1.vectorActions.setVectorParams(uuid, { corner: 0.2 }), made.rect);
 	await O.page.waitForTimeout(1500);
-	await L.page.evaluate(async ({ rect, star }) => window.__tp.test.v1.vectorOps.combineShapes('union', [rect, star]), made);
+	const unioned = await L.page.evaluate(async ({ rect, star }) => window.__tp.test.v1.vectorOps.combineShapes('union', [rect, star]), made);
+	h.check(unioned === made.rect, '2. premise: the branch unions the star into the rect');
 	await h.eventually(() => meshes(O), (m) => !m[made.star] && !!m[made.rect], '2. after the union the release dropped the star and kept the subject', 20000);
 	h.check(errorsOf(O).length === 0, `2. no page error on the release after a Vector geometry edit + union (${errorsOf(O).join(' | ') || 'none'})`);
 
@@ -136,6 +139,8 @@ h.run(async () => {
 	h.check(errorsOf(O).length === 0, `4. no page error on the release after the rejoin (${errorsOf(O).join(' | ') || 'none'})`);
 
 	// ---- 5. a file saved by the branch opens in the release ------------------------------------------
+	// at most three pages at once from here: a fourth boot on a loaded box passed setupPage's 90 s (day1c)
+	await O.page.context().close();
 	const saved = await L.page.evaluate(() => JSON.parse(JSON.stringify(window.__tp.test.v1.sessions.buildSessionPayload('vector-old-peer', { thumbnail: false }))));
 	const P = await hOld.setupPage(browser, 'P'); // a release page on its own (no session)
 	await P.page.evaluate(async (payload) => window.__tp.test.v1.sessions.applySession(payload, { backup: false, replicate: false, quiet: true }), saved);
@@ -146,6 +151,7 @@ h.run(async () => {
 		30000
 	);
 	h.check(errorsOf(P).length === 0, `5. no page error opening the branch file in the release (${errorsOf(P).join(' | ') || 'none'})`);
+	await P.page.context().close();
 
 	// ---- 6. an old scene loads in the branch unchanged ------------------------------------------------
 	const Q = await hOld.setupPage(browser, 'Q'); // a release page on its own: a box and a sphere, saved there
@@ -157,6 +163,7 @@ h.run(async () => {
 	await h.eventually(() => meshes(Q), (m) => Object.keys(m).length >= 2, '6. premise: the release made an old scene (a box and a sphere)', 20000);
 	const oldMeshes = await meshes(Q);
 	const oldFile = await Q.page.evaluate(() => JSON.parse(JSON.stringify(window.__tp.test.v1.sessions.buildSessionPayload('old-scene', { thumbnail: false }))));
+	await Q.page.context().close();
 	const R = await h.setupPage(browser, 'R'); // a branch page on its own
 	await R.page.evaluate(async (payload) => window.__tp.test.v1.sessions.applySession(payload, { backup: false, replicate: false, quiet: true }), oldFile);
 	await h.eventually(

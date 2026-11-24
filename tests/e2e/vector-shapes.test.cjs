@@ -184,7 +184,8 @@ h.run(async () => {
 			fill: !!document.querySelector('#vector-colour-fill'),
 			rows: document.querySelector('#inspector-geometry')?.textContent ?? ''
 		}));
-	await h.eventually(readInspector, (i) => i.section && /Points/.test(i.rows), 'the Inspector opens on the star');
+	// (64-vector restart: the Shape section is a lazy mount — on a loaded box its first load passed 10 s)
+	await h.eventually(readInspector, (i) => i.section && /Points/.test(i.rows), 'the Inspector opens on the star', 45000);
 	const inspector = await readInspector();
 	h.check(inspector.section && inspector.fill, 'the Inspector shows the Shape section with a fill colour');
 	h.check(/Points/.test(inspector.rows) && /Corner radius/.test(inspector.rows) && !/Width/.test(inspector.rows), 'the Geometry rows are the star\'s own (Points, Corner radius — no Width)');

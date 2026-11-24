@@ -6,6 +6,25 @@
      rendering, so maintainer notes stay out of the user-facing window. No emoji from
      1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
 
+## 1.78.0 — Faster mesh editing
+
+### Mesh editing on a new core
+- **Big meshes edit faster**: extrude, inset, move, bevel, loop cut, knife and connect run on a new mesh core. On a 67,000-triangle mesh, entering Edit Mesh and undoing are about three times faster, extruding and bevelling an edge about twice as fast, and the knife about 1.7 times. <!-- 99-ops-a, 99-int speed check -->
+- **The rest of the mesh tools came along**: bridge, fill, solidify, merge, dissolve, delete, subdivide and symmetrize give the same results, faster on big meshes (dissolving vertices on a 67k-triangle scan: 6.1 s to 1.3 s). <!-- 99-ops-b -->
+- **Dragging stays smooth on dense meshes**: grabbing faces, edges and vertices and scrubbing a loop cut update the mesh in place, so a 67k-triangle mesh follows the pointer instead of stepping. <!-- 99-live K5 -->
+- **Sculpting is quicker** on big meshes and terrain: about 1.4 to 1.7 times faster strokes on 67k to 250k triangles. <!-- 99-live K6 -->
+- **Undo after a mesh operation puts back the selection you had before it.** <!-- 99-ops-a -->
+- **Undo history on big meshes holds less memory**, so more steps fit in the same budget. <!-- 99-edit-core K2 -->
+- **Leaving Edit Mesh without an edit** gives the mesh back exactly as it was. <!-- 99-edit-core K3 -->
+- **Merge by distance** joins every point within the distance of the first one it meets, including pairs on either side of a grid cell that used to stay apart. On a noisy scan this merges more. <!-- 99-live K6 -->
+
+### Maintenance
+- Agent tool dependencies updated. <!-- deps-fix/agent-security -->
+
+### Compatibility
+- **Scene files**: format unchanged; scenes from earlier versions open and edit the same, and a scene saved here opens in 1.77.0. <!-- 99-int save/sync rows -->
+- **In a session with someone on 1.77.0**: mesh edits reach each other the same way as before. <!-- mesh-commit-two-tree -->
+
 ## 1.77.0 — Games feel complete
 
 ### Start, pause and save

@@ -2,8 +2,9 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { objectsGroup, lockedObjects, globalScene, TControls, gizmoSuppressed, pokeScene } from '../stores/sceneStore';
-import { peers, showToast } from '../stores/appStore';
-import { commitMeshGeoSnapshot } from './faceEdit';
+import { showToast } from '../stores/appStore';
+import { commitMeshGeoSnapshot, registerSculptCacheRefresher } from './faceEdit';
+import { sendMeshGeo } from './meshCommit';
 import { MAX_SNAPSHOT, previewReplicable } from './meshBudget';
 import { selectObject, deselectObject } from './objectActions';
 import { nameOf } from './lockControl';
@@ -58,7 +59,7 @@ export const sculptRadius = writable(3);
 export const sculptStrength = writable(0.5);
 
 /** @type {{uuid: string, attr: any, columns: Map<string, number[]>, colPos: {x: number, z: number, key: string, indices: number[]}[],
- *   neighbors: Map<string, string[]>, cell: number} | null} */
+ *   neighbors: Map<string, string[]>, cell: number, hash: BrushHash | null} | null} */
 let weld = null;
 /** @type {Float32Array | null} stroke-start snapshot */
 let strokeBefore = null;
@@ -68,6 +69,55 @@ let cursor = null;
 
 const KEY = (/** @type {number} */ x, /** @type {number} */ z) =>
 	Math.round(x * 1e4) + '|' + Math.round(z * 1e4);
+
+// ---- 99 K6: the brush's "who is inside the radius" on the kernel's SpatialHash ----------------------------------
+// Both brushes used to scan EVERY welded vertex twice per dab (once for the nearest, once for the radius). They ask a
+// SpatialHash now (meshKernel/spatialHash.js, CSR-packed, a query visits only the cells its radius touches). The hash
+// is a cache over the weld map and lives ON it, so it dies with it: every rebuild (enter, the applyMeshGeo hook after
+// a remote stroke / undo, the position-ATTRIBUTE identity guard) drops it — the stale-cache guarantee is the weld
+// map's own. TERRAIN indexes each column's (x, 0, z): a terrain stroke only moves Y, so that hash never goes stale.
+// MESH indexes the group positions at build time and keeps `drift` = the furthest any group moved since, and every
+// query is padded by it — so a group that moved INTO the radius is still found. MEASURED (zzBenchSculpt99, report
+// ROW3): rebuilt once per stroke (beginStroke), and again when the drift passes half a cell or the radius leaves
+// [cell / 4, cell * 2]; per-dab rebuilds cost more than the scans they replace. Every candidate list is visited in
+// ASCENDING index order — the linear scan's order — because smooth reads its neighbours in place (Gauss-Seidel), so
+// the order is part of the result. Parity with the pre-K6 brush: tests/unit/sculptHash99.test.js.
+// The class is loaded LAZILY (enterSculpt / the first dab): this module is in the boot graph and the hash is not
+// needed to draw a frame. Until it lands a dab scans every vertex as before (same result, slower), so no dab is lost.
+
+/** @typedef {import('./sculptHash.js').BrushHash} BrushHash */
+
+/** @type {any} the lazy helpers (sculptHash.js, with the kernel's SpatialHash) once loaded */
+let H = null;
+/** @type {Promise<boolean> | null} */
+let hashLoading = null;
+/** 'adaptive' (the measured default) | 'stroke' (never re-index for drift) | 'dab' (rebuild every dab) | 'scan' (no hash) */
+let hashPolicy = 'adaptive';
+const hashStats = { builds: 0, hashed: 0, scanned: 0 };
+
+/** Load the SpatialHash (idempotent; resolves true once the brush can use it). */
+export function sculptHashReady() {
+	if (!hashLoading)
+		hashLoading = import('./sculptHash.js').then(
+			(m) => {
+				m.setup(hashStats, () => hashPolicy);
+				H = m;
+				return true;
+			},
+			() => {
+				hashLoading = null;
+				return false;
+			}
+		);
+	return hashLoading;
+}
+
+/** Suites / benches: the brush hash's state, optionally switching the rebuild policy.
+ * @param {'adaptive'|'stroke'|'dab'|'scan'} [policy] */
+export function sculptHashDebug(policy) {
+	if (policy) hashPolicy = policy;
+	return { ready: !!H, policy: hashPolicy, ...hashStats };
+}
 
 /** @param {string} uuid */
 function objectOf(uuid) {
@@ -111,16 +161,41 @@ export function rebuildWeldMap(object) {
 	/** @type {Map<string, string[]>} */
 	const neighbors = new Map();
 	const reach = cell * 1.55;
-	for (const a of colPos) {
-		const list = [];
-		for (const b of colPos) {
-			if (a === b) continue;
-			if (Math.abs(a.x - b.x) <= reach && Math.abs(a.z - b.z) <= reach) list.push(b.key);
+	if (H && hashPolicy !== 'scan' && colPos.length) {
+		// 99 K6: the same box test over the hash's candidates (the box sits inside its circumcircle), in colPos order
+		const xz = H.columnXZ(colPos);
+		const h = H.buildBrushHash(xz, colPos.length, reach);
+		for (let ai = 0; ai < colPos.length; ai++) {
+			const a = colPos[ai];
+			const count = H.ascendingWithin(h, colPos.length, a.x, 0, a.z, H.pad(reach * Math.SQRT2));
+			const list = [];
+			for (let k = 0; k < count; k++) {
+				const b = colPos[H.cand[k]];
+				if (a === b) continue;
+				if (Math.abs(a.x - b.x) <= reach && Math.abs(a.z - b.z) <= reach) list.push(b.key);
+			}
+			neighbors.set(a.key, list);
 		}
-		neighbors.set(a.key, list);
-	}
-	weld = { uuid: object.uuid, attr: position, columns, colPos, neighbors, cell };
+	} else
+		for (const a of colPos) {
+			const list = [];
+			for (const b of colPos) {
+				if (a === b) continue;
+				if (Math.abs(a.x - b.x) <= reach && Math.abs(a.z - b.z) <= reach) list.push(b.key);
+			}
+			neighbors.set(a.key, list);
+		}
+	weld = { uuid: object.uuid, attr: position, columns, colPos, neighbors, cell, hash: null };
 	return weld;
+}
+
+/** the terrain brush hash: columns never move in x/z, so only a radius change rebuilds it
+ * @param {NonNullable<typeof weld>} map @param {number} radius */
+function terrainHashFor(map, radius) {
+	void sculptHashReady();
+	if (!H || hashPolicy === 'scan' || !map.colPos.length || !(radius > 0 && radius < Infinity)) return null;
+	if (!H.hashFits(map.hash, radius)) map.hash = H.buildBrushHash(H.columnXZ(map.colPos), map.colPos.length, radius);
+	return map.hash;
 }
 
 // ---- MESH sculpt (CL-B follow-up): normal-direction brush on any mesh ------
@@ -129,8 +204,25 @@ export function rebuildWeldMap(object) {
 // along each welded vertex's averaged normal.
 
 /** @type {{uuid: string, attr: any, groups: {indices: number[], pos: any}[],
- *   neighbors: Map<number, Set<number>>} | null} */
+ *   neighbors: Map<number, Set<number>>, hash: BrushHash | null} | null} */
 let meshWeld = null;
+
+/** the mesh brush hash over the group positions (indexed at build; `drift` pads the queries since)
+ * @param {NonNullable<typeof meshWeld>} map @param {number} radius */
+function meshHashFor(map, radius) {
+	void sculptHashReady();
+	const n = map.groups.length;
+	if (!H || hashPolicy === 'scan' || !n || !(radius > 0 && radius < Infinity)) return null;
+	if (H.hashFits(map.hash, radius)) return map.hash;
+	const pos = new Float64Array(n * 3);
+	for (let i = 0; i < n; i++) {
+		const p = map.groups[i].pos;
+		pos[i * 3] = p.x;
+		pos[i * 3 + 1] = p.y;
+		pos[i * 3 + 2] = p.z;
+	}
+	return (map.hash = H.buildBrushHash(pos, n, radius));
+}
 
 const KEY3 = (/** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ z) =>
 	Math.round(x * 1e4) + '|' + Math.round(y * 1e4) + '|' + Math.round(z * 1e4);
@@ -181,7 +273,7 @@ export function rebuildMeshWeldMap(object) {
 		link(c, a);
 		link(a, c);
 	}
-	meshWeld = { uuid: object.uuid, attr: position, groups, neighbors };
+	meshWeld = { uuid: object.uuid, attr: position, groups, neighbors, hash: null };
 	return meshWeld;
 }
 
@@ -211,22 +303,35 @@ export function applyMeshBrushAt(uuid, x, y, z, op, radius, strength, dt = 0.016
 		for (const i of g.indices) n.add(new THREE.Vector3(normal.getX(i), normal.getY(i), normal.getZ(i)));
 		return n.lengthSq() > 1e-12 ? n.normalize() : n.set(0, 1, 0);
 	};
-	// the hit group (nearest) anchors flatten's tangent plane
+	// (a non-finite centre scans, as before: no window can hold it)
+	const h = Number.isFinite(x + y + z) ? meshHashFor(map, radius) : null;
+	const groups = map.groups;
+	// the hit group (nearest) anchors flatten's tangent plane (only flatten reads it)
 	let hit = null;
-	let hitDist = Infinity;
-	for (const g of map.groups) {
-		const d = g.pos.distanceTo(center);
-		if (d < hitDist) {
-			hitDist = d;
-			hit = g;
+	if (op === 'flatten') {
+		if (h) {
+			const gi = H.nearestVia(h, x, y, z, radius, (/** @type {number} */ i) => groups[i].pos.distanceTo(center));
+			hit = gi >= 0 ? groups[gi] : null;
+		} else {
+			let hitDist = Infinity;
+			for (const g of groups) {
+				const d = g.pos.distanceTo(center);
+				if (d < hitDist) {
+					hitDist = d;
+					hit = g;
+				}
+			}
 		}
 	}
 	const hitNormal = hit ? groupNormal(hit) : new THREE.Vector3(0, 1, 0);
 	const hitPos = hit ? hit.pos.clone() : center;
 	let touched = false;
 	const next = new THREE.Vector3();
-	for (let gi = 0; gi < map.groups.length; gi++) {
-		const g = map.groups[gi];
+	const count = h ? H.ascendingWithin(h, groups.length, x, y, z, H.pad(radius) + h.drift) : groups.length;
+	hashStats[h ? 'hashed' : 'scanned']++;
+	for (let k = 0; k < count; k++) {
+		const gi = h ? H.cand[k] : k;
+		const g = groups[gi];
 		const d = g.pos.distanceTo(center);
 		if (d > radius) continue;
 		// smoothstep falloff 1 -> 0 across the radius
@@ -250,6 +355,10 @@ export function applyMeshBrushAt(uuid, x, y, z, op, radius, strength, dt = 0.016
 		if (!next.equals(g.pos)) {
 			g.pos.copy(next);
 			for (const i of g.indices) position.setXYZ(i, next.x, next.y, next.z);
+			if (h) {
+				const moved = Math.hypot(next.x - h.pos[gi * 3], next.y - h.pos[gi * 3 + 1], next.z - h.pos[gi * 3 + 2]);
+				if (moved > h.drift) h.drift = moved;
+			}
 			touched = true;
 		}
 	}
@@ -267,6 +376,10 @@ export function rebuildSculptCaches(object) {
 	if (get(sculptMode) === 'mesh') rebuildMeshWeldMap(object);
 	else rebuildWeldMap(object);
 }
+// faceEdit's geometry swap calls this for the live sculpt object (registered here: faceEdit cannot import us)
+registerSculptCacheRefresher((uuid, object) => {
+	if (get(sculptObject) === uuid) rebuildSculptCaches(object);
+});
 
 /** hard cap on a sculptable mesh — the meshgeo COMMIT limit (floats). It used to
  * be the same 45000 as the preview, which refused to sculpt anything an artist
@@ -305,6 +418,7 @@ export function enterSculpt(uuid, opts = {}) {
 	gizmoSuppressed.set(true);
 	selectObject(uuid);
 	unindexForSculpt(object);
+	void sculptHashReady(); // 99 K6: the brush hash class (lazy; dabs scan until it lands)
 	if (isTerrain) rebuildWeldMap(object);
 	else rebuildMeshWeldMap(object);
 	sculptMode.set(isTerrain ? 'terrain' : 'mesh');
@@ -330,16 +444,8 @@ export function unindexForSculpt(object) {
 	object.geometry.dispose();
 	object.geometry = nonIndexed;
 	object.geometry.computeVertexNormals();
-	/** @type {any} */
-	const peer = get(peers);
-	// raw Float32 bytes (the meshgeo wire format — a plain number array this
-	// big blows binarypack's recursion, see faceEdit.broadcastMeshGeo)
-	if (peer)
-		peer.send({
-			type: 'meshgeo',
-			uuid,
-			positions: new Float32Array(nonIndexed.getAttribute('position').array).buffer
-		});
+	// 99 K2: meshCommit's one sender (raw Float32 bytes, positions only)
+	sendMeshGeo(uuid, nonIndexed.getAttribute('position').array);
 	return true;
 }
 
@@ -415,20 +521,32 @@ export function applyBrushAt(uuid, x, z, op, radius, strength, dt = 0.016) {
 		const list = map.columns.get(key);
 		return list ? position.getY(list[0]) : 0;
 	};
-	// the hit column (nearest) for flatten's target height
+	const h = Number.isFinite(x + z) ? terrainHashFor(map, radius) : null;
+	const colPos = map.colPos;
+	// the hit column (nearest) for flatten's target height (only flatten reads it)
 	let hitKey = null;
-	let hitDist = Infinity;
-	for (const col of map.colPos) {
-		const d = Math.hypot(col.x - x, col.z - z);
-		if (d < hitDist) {
-			hitDist = d;
-			hitKey = col.key;
+	if (op === 'flatten') {
+		if (h) {
+			const ci = H.nearestVia(h, x, 0, z, radius, (/** @type {number} */ i) => Math.hypot(colPos[i].x - x, colPos[i].z - z));
+			hitKey = ci >= 0 ? colPos[ci].key : null;
+		} else {
+			let hitDist = Infinity;
+			for (const col of colPos) {
+				const d = Math.hypot(col.x - x, col.z - z);
+				if (d < hitDist) {
+					hitDist = d;
+					hitKey = col.key;
+				}
+			}
 		}
 	}
 	const targetHeight = hitKey ? heightOf(hitKey) : 0;
 
 	let touched = false;
-	for (const col of map.colPos) {
+	const count = h ? H.ascendingWithin(h, colPos.length, x, 0, z, H.pad(radius)) : colPos.length;
+	hashStats[h ? 'hashed' : 'scanned']++;
+	for (let k = 0; k < count; k++) {
+		const col = colPos[h ? H.cand[k] : k];
 		const d = Math.hypot(col.x - x, col.z - z);
 		if (d > radius) continue;
 		// smoothstep falloff 1 -> 0 across the radius
@@ -477,6 +595,8 @@ export function beginStroke(uuid) {
 	const object = objectOf(uuid);
 	if (!object?.geometry?.attributes?.position) return;
 	strokeBefore = object.geometry.attributes.position.array.slice();
+	// 99 K6: one mesh-hash build per stroke (the first dab re-indexes; drift starts at 0 again)
+	if (meshWeld) meshWeld.hash = null;
 }
 
 /** Per-move during a stroke: brush + throttled preview (~5/s). `y` feeds the
@@ -497,21 +617,14 @@ export function strokeMove(uuid, x, z, dt = 0.016, y = 0) {
 	const now = performance.now();
 	if (now - lastPreview > 200) {
 		const object = objectOf(uuid);
-		/** @type {any} */
-		const peer = get(peers);
 		// The same preview trade the face tools make (see meshBudget.js): a stroke on
 		// a dense mesh would stream megabytes 5×/s to every peer. Above the preview
 		// ceiling the brush stays LOCAL and the stroke's ONE end-of-stroke commit
 		// carries the result — peers see where you got to, not every pass.
 		const floats = object?.geometry?.attributes?.position?.array?.length ?? 0;
-		if (peer && object && previewReplicable(floats)) {
+		// 99 K2: meshCommit's one sender (positions only); false = offline, nothing sent
+		if (object && previewReplicable(floats) && sendMeshGeo(uuid, object.geometry.attributes.position.array))
 			lastPreview = now;
-			peer.send({
-				type: 'meshgeo',
-				uuid,
-				positions: new Float32Array(object.geometry.attributes.position.array).buffer
-			});
-		}
 	}
 	pokeScene();
 }
@@ -530,11 +643,23 @@ export function endStroke() {
 		strokeBefore = null;
 		return;
 	}
-	const before = Array.from(strokeBefore);
-	const after = Array.from(object.geometry.attributes.position.array);
+	const before = strokeBefore;
+	const after = object.geometry.attributes.position.array;
 	strokeBefore = null;
-	if (uuid && JSON.stringify(before) !== JSON.stringify(after))
-		commitMeshGeoSnapshot(uuid, before, after);
+	if (uuid && positionsDiffer(before, after)) commitMeshGeoSnapshot(uuid, Array.from(before), Array.from(after));
+}
+
+/** 99 K6: did the stroke move anything? The typed-array form of the JSON.stringify compare it replaces, with the
+ * same answer: a length change differs, and two values are equal when === or both non-finite (JSON writes NaN and
+ * ±Infinity alike as null; -0 and 0 alike as 0). @param {ArrayLike<number>} a @param {ArrayLike<number>} b */
+export function positionsDiffer(a, b) {
+	if (a.length !== b.length) return true;
+	for (let i = 0; i < a.length; i++) {
+		const x = a[i];
+		const y = b[i];
+		if (x !== y && (Number.isFinite(x) || Number.isFinite(y))) return true;
+	}
+	return false;
 }
 
 // ---- brush cursor (scene-root ring: never in objectsGroup -> never syncs) ---

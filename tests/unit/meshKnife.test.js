@@ -7,9 +7,12 @@
 // box) and consistently WOUND (no directed edge walked twice the same way) — plus the things a
 // polyline adds: every corner the user placed on the mesh is a real VERTEX, the cut runs along
 // mesh edges between them, and a triangle crossed by 3+ cut pieces resolves cleanly.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import * as THREE from 'three';
-import { readTriangles, knifeCutCore, trisToUVs } from '$lib/faceEdit.js';
+import { readTriangles, knifeCutCore, trisToUVs, loadKernelOps } from '$lib/faceEdit.js';
+
+// 99 K4 family 3: the core runs on the lazy kernel chunk (QUESTIONS row 11)
+beforeAll(() => loadKernelOps());
 
 const keyOf = (v) => `${Math.round(v.x * 1e4)},${Math.round(v.y * 1e4)},${Math.round(v.z * 1e4)}`;
 const ek = (a, b) => (a < b ? a + '|' + b : b + '|' + a);

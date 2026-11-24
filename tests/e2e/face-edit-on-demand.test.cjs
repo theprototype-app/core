@@ -25,6 +25,8 @@ async function plainPage(browser, query) {
 	const ctx = await browser.newContext({ ignoreHTTPSErrors: true, serviceWorkers: 'block' });
 	await ctx.addInitScript(() => {
 		try {
+			// the Resource Timing buffer (250) is full long before a lazy chunk loads: make the fetch visible
+			performance.setResourceTimingBufferSize?.(200000);
 			localStorage.setItem('hasSeenDisclaimer', 'true');
 			localStorage.setItem('hasSeenWelcome', 'true');
 		} catch {
@@ -57,7 +59,10 @@ h.run(async () => {
 		// ---- 0. the build -----------------------------------------------------------------------------------
 		const bs = require('../../scripts/boot-size.cjs');
 		const m = bs.loadManifest();
-		const file = m.m['src/lib/faceEdit.js']?.file;
+		// a dynamic entry when only import() reaches it; a shared chunk named after it when the lazy meshBoolean /
+		// meshPaint import it statically too (the build does that) -- either way ONE file holds faceEdit
+		const rec = m.m['src/lib/faceEdit.js'] ?? Object.values(m.m).find((r) => r.name === 'faceEdit' && !r.isEntry);
+		const file = rec?.file;
 		check(!!file && fs.existsSync(path.join(ROOT, 'build', file)), `0a faceEdit.js is a chunk of its own in build/ (${file})`);
 		for (const [name, htmlFile] of [['play', 'play.html'], ['editor', 'index.html']]) {
 			const r = bs.measurePage(htmlFile, m);

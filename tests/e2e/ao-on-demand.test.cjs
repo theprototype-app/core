@@ -22,6 +22,8 @@ async function plainPage(browser, query, storage = {}) {
 	const ctx = await browser.newContext({ ignoreHTTPSErrors: true, serviceWorkers: 'block' });
 	await ctx.addInitScript((s) => {
 		try {
+			// the Resource Timing buffer (250) is full long before a lazy chunk loads: make the fetch visible
+			performance.setResourceTimingBufferSize?.(200000);
 			localStorage.setItem('hasSeenDisclaimer', 'true');
 			localStorage.setItem('hasSeenWelcome', 'true');
 			for (const [k, v] of Object.entries(s)) localStorage.setItem(k, String(v));
@@ -97,14 +99,21 @@ h.run(async () => {
 	await A.page.waitForTimeout(3000); // past the 10-frame warm-up
 	const before = await chain();
 	check(!before.some((p) => /\bao\b/.test(p)), `3a starting in Shaded: no AO pass (${before.join(' > ')})`);
-	const n8aoEarly = await A.page.evaluate(() => performance.getEntriesByType('resource').filter((e) => /n8ao/i.test(e.name)).length);
-	if (!built) check(n8aoEarly === 0, `3b ...and the N8AO module was never fetched (${n8aoEarly})`);
-	else check(!later.some(isN8ao), '3b ...and the N8AO chunk was not fetched since the page settled');
+	// the module's own flag (the Resource Timing buffer is full on an app page, so entries would be blind)
+	const readyOf = () => A.page.evaluate(() => {
+		let v;
+		window.__tp.test.v1.postEffects.n8aoReady.subscribe((x) => (v = x))();
+		return v;
+	});
+	const earlyReady = await readyOf();
+	check(earlyReady === false, `3b ...and N8AO was never loaded (n8aoReady ${earlyReady})`);
+	if (built) check(!later.some(isN8ao), '3b2 ...nor its chunk fetched since the page settled');
 
 	await A.page.evaluate(() => window.__tp.test.v1.viewMode.set('shaded-ao'));
 	await A.page.waitForFunction(() => (window.__postDebug?.().chain ?? []).some((p) => /\bao\b/.test(p)), null, { timeout: 30000 }).catch(() => {});
 	const withAo = await chain();
 	check(withAo.some((p) => /\bao\b/.test(p)), `3c Shaded + AO: the chain is rebuilt WITH the AO pass once it loads (${withAo.join(' > ')})`);
+	check((await readyOf()) === true, '3c2 ...and n8aoReady flipped (the positive counterfactual of 3b)');
 
 	await A.page.evaluate(() => window.__tp.test.v1.viewMode.set('shaded'));
 	await A.page.waitForTimeout(800);

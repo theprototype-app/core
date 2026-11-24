@@ -14,6 +14,9 @@
 //     (Newell normal for a loop, the widest spread otherwise), so the shape has its own 2D frame.
 import { flattenSubpath, node } from './vectorPath.js';
 
+/** the sampling tolerance (metres) a curve is flattened at before the cap makes it coarser */
+export const DEFAULT_TOLERANCE = 0.01;
+
 /** the most points a 78 Path holds (splineTube MAX_POINTS) */
 export const MAX_CURVE_POINTS = 200;
 
@@ -23,22 +26,48 @@ const straight = (sub) => sub.nodes.every((n) => n.ix === 0 && n.iy === 0 && n.o
 /**
  * A subpath as Path points in the shape's own 2D frame.
  * @param {import('./vectorPath.js').VSubpath} sub
- * @returns {{points: number[][], closed: boolean, smooth: boolean} | null}
+ * @returns {{points: number[][], closed: boolean, smooth: boolean, coarser: boolean} | null}
  */
 export function subpathToCurvePoints(sub, maxPoints = MAX_CURVE_POINTS) {
 	if (!sub?.nodes?.length || sub.nodes.length < 2) return null;
 	const closed = !!sub.closed && sub.nodes.length > 2;
 	if (straight(sub)) {
 		if (sub.nodes.length > maxPoints) return null;
-		return { points: sub.nodes.map((n) => [n.x, n.y]), closed, smooth: false };
+		return { points: sub.nodes.map((n) => [n.x, n.y]), closed, smooth: false, coarser: false };
 	}
-	let tolerance = 0.01;
+	// LOSSY (claude:9 ruling Q1): a curve becomes samples within a tolerance; when the default one would pass
+	// the cap, the tolerance grows until it fits (`coarser`: points were dropped) — never more than the cap
+	let tolerance = DEFAULT_TOLERANCE;
 	for (let i = 0; i < 24; i++) {
 		const pts = flattenSubpath({ ...sub, closed }, tolerance);
-		if (pts.length <= maxPoints && pts.length >= 2) return { points: pts, closed, smooth: true };
+		if (pts.length <= maxPoints && pts.length >= 2) return { points: pts, closed, smooth: true, coarser: i > 0 };
 		tolerance *= 1.6;
 	}
 	return null;
+}
+
+/**
+ * The OUTER ring of a shape's subpaths: the one whose flattened outline encloses the most area (an open
+ * subpath counts by its bounding box), so a shape with holes converts its outline, never a hole.
+ * @param {import('./vectorPath.js').VSubpath[]} subs @returns {import('./vectorPath.js').VSubpath | null}
+ */
+export function outerSubpath(subs) {
+	let best = null;
+	let bestArea = -1;
+	for (const sub of subs ?? []) {
+		if (!sub?.nodes?.length || sub.nodes.length < 2) continue;
+		const pts = flattenSubpath(sub, 0.05);
+		let area = 0;
+		if (sub.closed) for (let i = 0; i < pts.length; i++) area += pts[i][0] * pts[(i + 1) % pts.length][1] - pts[(i + 1) % pts.length][0] * pts[i][1];
+		else {
+			const xs = pts.map((p) => p[0]);
+			const ys = pts.map((p) => p[1]);
+			area = (Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys));
+		}
+		area = Math.abs(area);
+		if (area > bestArea) ((bestArea = area), (best = sub));
+	}
+	return best;
 }
 
 /** @param {number[]} a @param {number[]} b */

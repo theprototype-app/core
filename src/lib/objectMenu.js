@@ -181,7 +181,7 @@ function vectorMenuRows(object, targets, multi, locked, lockedTooltip) {
 	const curves = () => import('./vector/vectorCurveActions.js');
 	// 64-vector row 2 (one curve): a 78 Path becomes a pen path (a new shape; the Path stays)
 	if (!multi && object?.userData?.spline?.path && !isVectorObject(object))
-		return [{ label: 'Shape', icon: 'pen-tool', children: [{ label: 'Make vector shape', disabled: locked, tooltip: locked ? lockedTooltip : 'Add a pen path that follows this Path (the Path stays)', action: () => curves().then((m) => m.pathToVector(object.uuid)) }] }];
+		return [{ label: 'Shape', icon: 'pen-tool', children: [{ label: 'Make vector shape', disabled: locked, tooltip: locked ? lockedTooltip : 'Add a stroked pen path with smooth points along this Path (the Path stays)', action: () => curves().then((m) => m.pathToVector(object.uuid)) }] }];
 	if (!isVectorObject(object) && !vectors.length) return [];
 	const ops = () => import('./vector/vectorOps.js');
 	/** @param {string} label @param {string} tip @param {() => any} run @param {boolean} [off] @param {string} [offTip] */
@@ -203,7 +203,12 @@ function vectorMenuRows(object, targets, multi, locked, lockedTooltip) {
 			row('Outline stroke', 'Turn the stroke into a filled shape of its own', () => ops().then((m) => m.outlineShape(object.uuid)), !stroked, 'This shape has no stroke'),
 			row('Inset 5 cm', 'Shrink the fill by 5 cm all round', () => ops().then((m) => m.offsetVector(object.uuid, -0.05))),
 			row('Outset 5 cm', 'Grow the fill by 5 cm all round', () => ops().then((m) => m.offsetVector(object.uuid, 0.05))),
-			row('Make Path object', 'Add a Path along this outline, for walkers, the dolly and Array along path (the shape stays)', () => curves().then((m) => m.vectorToPath(object.uuid)))
+			(() => {
+				// claude:9 ruling Q1: the outer ring only, and the menu says so when there are holes
+				const p = object.userData.geometryParams.params;
+				const holes = p?.kind === 'path' && (p.paths?.length ?? 0) > 1;
+				return row(holes ? 'Make Path object (outer outline)' : 'Make Path object', 'Add a Path along this outline, for walkers, the dolly and Array along path; curves are simplified to at most 200 points (the shape stays)', () => curves().then((m) => m.vectorToPath(object.uuid)));
+			})()
 		);
 	}
 	const many = vectors.length > 1;

@@ -1,7 +1,7 @@
 // @ts-nocheck — a fixture test: results are asserted non-null by the checks themselves
 // 64-vector row 2 (one curve): a vector subpath <-> 78 Path points, both ways (vectorCurve.js).
 import { describe, test, expect } from 'vitest';
-import { subpathToCurvePoints, curvePointsToSubpath, planeFrame, MAX_CURVE_POINTS } from '../../src/lib/vector/vectorCurve.js';
+import { subpathToCurvePoints, curvePointsToSubpath, planeFrame, outerSubpath, MAX_CURVE_POINTS } from '../../src/lib/vector/vectorCurve.js';
 import { rectPath, ellipsePath, starPath, segmentControls, cubicAt } from '../../src/lib/vector/vectorPath.js';
 
 const near = (a, b, tol = 1e-9) => Math.abs(a - b) <= tol;
@@ -24,6 +24,11 @@ describe('vector -> Path', () => {
 		expect(c.points.length).toBeLessThanOrEqual(MAX_CURVE_POINTS);
 		expect(c.points.length).toBeGreaterThan(16);
 		for (const [x, y] of c.points) expect(Math.abs(Math.hypot(x, y) - 10)).toBeLessThan(0.01);
+		// a 20 m circle at the default tolerance would pass the cap: points were dropped (the toast says so)
+		expect(c.coarser).toBe(true);
+		const small = subpathToCurvePoints(ellipsePath(0.5, 0.5)[0]);
+		expect(small.coarser).toBe(false);
+		expect(subpathToCurvePoints(rectPath(2, 1, 0)[0]).coarser).toBe(false);
 		// a rounded rect mixes both: still under the cap, still closed
 		const [rr] = rectPath(4, 2, 0.5);
 		const r = subpathToCurvePoints(rr);
@@ -34,6 +39,16 @@ describe('vector -> Path', () => {
 	test('a cap too small for the corners is refused (null), not truncated', () => {
 		const [star] = starPath(32, 1, 0.4, 0);
 		expect(subpathToCurvePoints(star, 10)).toBeNull();
+	});
+});
+
+describe('the outer ring (ruling Q1: a shape with holes converts its outline only)', () => {
+	test('the largest ring wins, whatever the order', () => {
+		const [hole] = rectPath(1, 1, 0);
+		const [outline] = rectPath(4, 3, 0);
+		expect(outerSubpath([hole, outline])).toBe(outline);
+		expect(outerSubpath([outline, hole])).toBe(outline);
+		expect(outerSubpath([])).toBeNull();
 	});
 });
 

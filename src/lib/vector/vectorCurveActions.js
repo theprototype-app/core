@@ -1,7 +1,7 @@
 // 64-vector row 2: the SCENE half of the one-curve bridge (vectorCurve.js is the pure half). Both commands
 // ADD an object and keep the source (one undo step each): Shape ▸ Make Path object lays a 78 Path along a
 // vector shape's outline (a walker, the dolly or Array along path can then use it); Shape ▸ Make vector
-// shape draws a Path as a pen path (its own bezier record, editable with Edit points). Reached by dynamic
+// shape draws a Path as a pen path (an open stroke, smooth points) (its own bezier record, editable with Edit points). Reached by dynamic
 // import only.
 import * as THREE from 'three';
 import { get } from 'svelte/store';
@@ -11,7 +11,7 @@ import { createPath, pathObjectOf } from '../path/pathActions.js';
 import { normalizeSpline } from '../splineTube.js';
 import { vectorSubpaths } from './vectorRecord.js';
 import { isVector, vectorParamsOf, addVectorShape } from './vectorActions.js';
-import { subpathToCurvePoints, curvePointsToSubpath } from './vectorCurve.js';
+import { subpathToCurvePoints, curvePointsToSubpath, outerSubpath } from './vectorCurve.js';
 import { centreSubpaths } from './vectorPath.js';
 
 /** @param {string} uuid */
@@ -26,14 +26,15 @@ export function vectorToPath(uuid) {
 	const params = vectorParamsOf(object);
 	if (!object || !params) return null;
 	const subs = vectorSubpaths(params).filter((s) => s.nodes.length >= 2);
-	if (!subs.length) {
+	// claude:9 ruling Q1: the OUTER ring only (the menu says so when the shape has holes)
+	const outer = outerSubpath(subs);
+	if (!outer) {
 		showToast('This shape has no outline to follow');
 		return null;
 	}
-	const outer = subs.reduce((a, b) => (b.nodes.length > a.nodes.length ? b : a));
 	const curve = subpathToCurvePoints(outer);
 	if (!curve) {
-		showToast('That outline has too many points for a Path (200 at most)');
+		showToast('That outline has too many corners for a Path (200 at most)');
 		return null;
 	}
 	object.updateMatrixWorld(true);
@@ -43,6 +44,12 @@ export function vectorToPath(uuid) {
 		showToast(made.error);
 		return null;
 	}
+	// LOSSY: say so in plain words when the Path is not the outline exactly
+	const notes = [];
+	if (curve.coarser) notes.push(`its curves were simplified to ${curve.points.length} points (a Path holds 200 at most)`);
+	else if (curve.smooth) notes.push(`its curves follow ${curve.points.length} points`);
+	if (subs.length > 1) notes.push('only the outer outline was used');
+	if (notes.length) showToast('Path made: ' + notes.join('; '));
 	return made.object?.uuid ?? null;
 }
 
@@ -56,7 +63,8 @@ export function pathToVector(uuid) {
 	const rec = normalizeSpline(object.userData.spline);
 	object.updateMatrixWorld(true);
 	const world = rec.points.map((p) => new THREE.Vector3(...p.pos).applyMatrix4(object.matrixWorld).toArray());
-	const done = curvePointsToSubpath(world, { closed: rec.closed, smooth: rec.path?.smooth !== false });
+	// claude:9 ruling Q1: an open stroke with smooth points (a closed Path keeps its loop, stroked, not filled)
+	const done = curvePointsToSubpath(world, { closed: rec.closed, smooth: true });
 	if (!done) {
 		showToast('A path needs at least two points');
 		return null;
@@ -69,9 +77,8 @@ export function pathToVector(uuid) {
 	if (!group) return null;
 	group.updateMatrixWorld(true);
 	const quaternion = group.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(new THREE.Quaternion().setFromRotationMatrix(basis));
-	const closed = done.sub.closed;
 	const mesh = addVectorShape(
-		{ kind: 'path', paths: subpaths, fillType: closed ? 'solid' : 'none', strokeWidth: closed ? 0 : 0.03 },
+		{ kind: 'path', paths: subpaths, fillType: 'none', strokeWidth: 0.03 },
 		{ position: group.worldToLocal(at), quaternion, name: (object.name || 'Path') + ' shape' }
 	);
 	return mesh?.uuid ?? null;

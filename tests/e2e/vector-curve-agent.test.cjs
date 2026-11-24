@@ -55,7 +55,9 @@ h.run(async () => {
 	await h.eventually(() => record(B, pathUuid), (r) => !!r?.spline?.path && r.spline.points.length === 10, '§2 B has the Path', 20000);
 	const back = await A.page.evaluate((u) => window.__tp.test.v1.vectorCurveActions.pathToVector(u), pathUuid);
 	const br = await record(A, back);
-	h.check(br?.gp?.gtype === 'Vector' && br.gp.params.kind === 'path' && br.gp.params.paths[0].nodes.length === 10 && br.gp.params.paths[0].closed, '§2 Make vector shape drew the Path as a closed 10-corner pen path');
+	const pp = br?.gp?.params;
+	h.check(pp?.kind === 'path' && pp.paths[0].nodes.length === 10 && pp.paths[0].closed, '§2 Make vector shape drew the Path as a pen path through its 10 points (the loop kept)');
+	h.check(pp?.fillType === 'none' && pp.strokeWidth > 0 && pp.paths[0].nodes.every((n) => n.smooth && (n.ox !== 0 || n.oy !== 0)), '§2 ...an open stroke (not filled) with smooth points (ruling Q1)');
 	// the corners land on the star's corners, in the world
 	const sameCorners = await A.page.evaluate(
 		({ s, b }) => {
@@ -72,10 +74,20 @@ h.run(async () => {
 		},
 		{ s: star.uuid, b: back }
 	);
-	h.check(sameCorners, '§2 ...its corners are the star\'s corners in the world (round trip)');
+	h.check(sameCorners, '§2 ...its points sit on the star\'s corners in the world (round trip)');
 	await h.eventually(() => record(B, back), (r) => r?.gp?.params?.paths?.[0]?.nodes?.length === 10, '§2 B has the pen path', 20000);
 	await undo(A);
 	await h.eventually(() => record(B, back), (r) => r === null, '§2 one undo takes the pen path away on both', 20000);
+
+	// §2b ruling Q1: a curved outline is LOSSY — sampled under the 200 cap, said in a toast; a big circle drops points
+	const big = await tool(A, 'create_vector', { kind: 'ellipse', width: 20, height: 20, position: [0, 1, -6] });
+	const circlePath = await A.page.evaluate((u) => window.__tp.test.v1.vectorCurveActions.vectorToPath(u), big.uuid);
+	const cp = await record(A, circlePath);
+	h.check(!!cp && cp.spline.points.length <= 200 && cp.spline.points.length > 16 && cp.spline.path.smooth === true, `§2b a 20 m circle becomes a smooth Path of ${cp?.spline?.points?.length} points (<= 200)`);
+	h.check(
+		await A.page.locator('.tp-toast').filter({ hasText: 'simplified to' }).last().waitFor({ state: 'visible', timeout: 8000 }).then(() => true, () => false),
+		'§2b ...and a toast says its curves were simplified (points dropped)'
+	);
 
 	// §3 SVG untrusted ------------------------------------------------------------------------------------
 	const outside = [];

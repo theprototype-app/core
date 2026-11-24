@@ -48,7 +48,7 @@ let rafId = 0;
 let hot = false;
 /**
  * the drag in flight
- * @type {null | {uuid: string, kind: 'vector' | 'text', start: number, depth: number, origin: THREE.Vector3, dir: THREE.Vector3, perLocal: number, t0: number, token: object, pending: number | null}}
+ * @type {null | {uuid: string, kind: 'vector' | 'text', start: number, depth: number, x0: number, y0: number, ux: number, uy: number, worldPerPx: number, perLocal: number, token: object, pending: number | null}}
  */
 let drag = null;
 
@@ -147,16 +147,25 @@ function arrowOf(o) {
 	return { foot, dir, tip, perLocal };
 }
 
-/** the parameter along the line (origin + t dir) nearest to the ray @param {THREE.Ray} ray @param {THREE.Vector3} origin @param {THREE.Vector3} dir */
-function alongAxis(ray, origin, dir) {
-	const w = origin.clone().sub(ray.origin);
-	const b = dir.dot(ray.direction);
-	const d = dir.dot(w);
-	const e = ray.direction.dot(w);
-	const denom = 1 - b * b;
-	// the ray runs along the axis: no depth to read
-	if (denom < 1e-6) return null;
-	return (b * e - d) / denom;
+/** a projected arrow shorter than this (px) is looking straight at you: the drag reads screen-up instead */
+const MIN_AXIS_PX = 14;
+
+/**
+ * How a pointer move maps onto the depth, read at the press: along the arrow as the screen shows it,
+ * or — when the arrow points (nearly) at the camera, which is how a shape placed facing you starts —
+ * straight up the screen, at the foot's own world-per-pixel. Screen space rather than a ray-to-axis
+ * closest point, which has no answer when the ray runs along the axis.
+ * @param {THREE.Vector3} foot @param {THREE.Vector3} dir @returns {{ux: number, uy: number, worldPerPx: number}}
+ */
+export function screenAxis(foot, dir) {
+	const wpp = worldPerPixel(foot);
+	const len = ARROW_PX * wpp;
+	const a = screenOf(foot);
+	const b = screenOf(foot.clone().addScaledVector(dir, len));
+	const px = a && b ? Math.hypot(b[0] - a[0], b[1] - a[1]) : 0;
+	if (a && b && px >= MIN_AXIS_PX)
+		return { ux: (b[0] - a[0]) / px, uy: (b[1] - a[1]) / px, worldPerPx: len / px };
+	return { ux: 0, uy: -1, worldPerPx: wpp };
 }
 
 /** distance (px) from a point to a screen segment @param {number[]} p @param {number[]} a @param {number[]} b */
@@ -239,18 +248,16 @@ function onDown(_hit, ctx) {
 	if (!o || o !== target || !onArrow(ctx.clientX, ctx.clientY)) return false;
 	const kind = /** @type {'vector' | 'text'} */ (extrudeKindOf(o));
 	const { foot, dir, perLocal } = arrowOf(o);
-	const t0 = alongAxis(ctx.ray.ray, foot, dir);
-	if (t0 === null) return false;
 	const start = depthOf(o, kind);
 	drag = {
 		uuid: o.uuid,
 		kind,
 		start,
 		depth: start,
-		origin: foot,
-		dir,
+		x0: ctx.clientX,
+		y0: ctx.clientY,
+		...screenAxis(foot, dir),
 		perLocal,
-		t0,
 		token: {},
 		pending: null
 	};
@@ -261,12 +268,11 @@ function onDown(_hit, ctx) {
 /** @param {any} _hit @param {any} ctx */
 function onMove(_hit, ctx) {
 	if (!drag) return;
-	const t = alongAxis(ctx.ray.ray, drag.origin, drag.dir);
-	if (t === null) return;
+	const along = (ctx.clientX - drag.x0) * drag.ux + (ctx.clientY - drag.y0) * drag.uy;
 	// a shape grows from its back face, so its front follows the pointer 1:1; a text is centred on
 	// its depth, so the front moves half as far as the depth grows
 	const k = drag.kind === 'text' ? 2 : 1;
-	let depth = drag.start + (k * (t - drag.t0)) / drag.perLocal;
+	let depth = drag.start + (k * along * drag.worldPerPx) / drag.perLocal;
 	depth = Math.min(MAX_DEPTH, Math.max(0, Math.round(depth * 1000) / 1000));
 	drag.pending = depth;
 	if (typeof requestAnimationFrame === 'undefined') flush();
@@ -367,9 +373,12 @@ function stop() {
 /** suites: the arrow's screen segment, the target and the drag @returns {any} */
 export function extrudeDebug() {
 	if (!target) return { target: null, drag: null };
-	const { foot, tip } = arrowOf(target);
+	const { foot, tip, dir } = arrowOf(target);
+	const axis = screenAxis(foot, dir);
 	return {
 		target: target.uuid,
+		// the screen direction a drag reads as "deeper" (unit, px space)
+		pull: [axis.ux, axis.uy],
 		kind: extrudeKindOf(target),
 		depth: depthOf(target, /** @type {any} */ (extrudeKindOf(target))),
 		foot: screenOf(foot),

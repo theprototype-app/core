@@ -64,7 +64,7 @@ async function arrowOn(page, uuid, label) {
 	let a = null;
 	await h.eventually(
 		async () => (a = await arrow(page)),
-		(d) => d && d.target === uuid && d.helper && !!d.foot && !!d.tip,
+		(d) => d && d.target === uuid && d.helper && !!d.foot && !!d.tip && !!d.pull,
 		label,
 		20000
 	);
@@ -75,8 +75,8 @@ async function arrowOn(page, uuid, label) {
 async function dragArrow(page, a, px, opts = {}) {
 	const mx = (a.foot[0] + a.tip[0]) / 2;
 	const my = (a.foot[1] + a.tip[1]) / 2;
-	const dx = a.tip[0] - a.foot[0];
-	const dy = a.tip[1] - a.foot[1];
+	// the screen direction the arrow reads as deeper (along the arrow, or up the screen when it faces you)
+	const [dx, dy] = a.pull;
 	const l = Math.hypot(dx, dy) || 1;
 	const steps = opts.steps ?? 12;
 	await page.mouse.move(mx, my);
@@ -110,9 +110,13 @@ h.run(async () => {
 	);
 	await select(A.page, star);
 	const a1 = await arrowOn(A.page, star, '§1 the extrude arrow stands on the selected star');
+	// a star placed facing the camera points its arrow (nearly) AT you: the drag then reads screen-up
+	const len1 = Math.hypot(a1.tip[0] - a1.foot[0], a1.tip[1] - a1.foot[1]);
 	h.check(
-		Math.hypot(a1.tip[0] - a1.foot[0], a1.tip[1] - a1.foot[1]) > 20,
-		`§1 the arrow is a grabbable ${Math.round(Math.hypot(a1.tip[0] - a1.foot[0], a1.tip[1] - a1.foot[1]))} px on screen`
+		len1 >= 14
+			? Math.abs(Math.hypot(...a1.pull) - 1) < 1e-6
+			: a1.pull[0] === 0 && a1.pull[1] === -1,
+		`§1 the drag direction is the arrow on screen, or up when it faces you (${Math.round(len1)} px, pull ${a1.pull.map((v) => v.toFixed(2))})`
 	);
 	const u0 = await undoDepth(A.page);
 	let midB = 0;

@@ -74,18 +74,20 @@ describe('the wiring', () => {
 
 	it('a reload says it is one, and the guest comes back on its id dialling the host', () => {
 		expect(peer).toMatch(/broadcast\(\{ type: 'disconnected', peerId: this\.peer\.id, unload: true \}\)/);
-		expect(peer).toMatch(/this\.myId = rejoin\?\.id \?\? id;/);
+		expect(peer).toMatch(/this\.myId = rejoin\?\.id \?\? hostBack\?\.id \?\? id;/);
 		// 55: the hash is an invite (`#<id>&…`), read through parseInviteHash
 		expect(peer).toMatch(/let connect = rejoinHost \?\? parseInviteHash\(window\.location\.hash\)/);
 	});
 
-	it('the host re-admits only an UNLOAD goodbye inside the window, never a removed peer', () => {
-		expect(peer).toMatch(/data\.unload === true && this\.openedPeers\.has\(data\.peerId\)/);
+	it('the host re-admits only a returning dial that PROVED itself, never a removed peer', () => {
+		expect(peer).toMatch(/const reloading = data\.unload === true && this\.openedPeers\.has\(data\.peerId\)/);
+		// the secret is taken only by a dial that says it returns, and never for a removed peer
+		expect(peer).toMatch(/conn\?\.metadata\?\.rj === 1 && !get\(sessionHost\) && myKind\(\) !== 'agent' && !this\.removedPeers\.has\(conn\.peer\)/);
 		const removed = peer.indexOf('if (this.removedPeers.has(conn.peer)) {');
-		const readmit = peer.indexOf('const leftAt = this.unloadedPeers.get(conn.peer);');
+		const readmit = peer.indexOf('const proven = /** @type {any} */ (conn).__rjOk;');
 		expect(removed).toBeGreaterThan(0);
 		expect(readmit).toBeGreaterThan(removed);
-		expect(peer).toMatch(/Date\.now\(\) - leftAt <= REJOIN_WINDOW_MS && !roomIsFull\(this\)/);
+		expect(peer).not.toMatch(/this\.unloadedPeers\.get\(/);
 	});
 
 	it('the restore prompt waits for the rejoin and stands down when it joined', () => {

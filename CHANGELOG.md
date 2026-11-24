@@ -49,6 +49,9 @@
 ### Compatibility
 - **Scene files**: older scenes open unchanged. A file saved here opens in 1.78.0 with every slot; there an off slot or a slot shader draws the slot's own material, and shadow quality reads Basic. <!-- 103-int-1 vs 1.78.0: material-slots-manage 7a-c, shader-slots 11a/11c, shadow-sync-106 4/6 -->
 - **With someone on 1.78.0**: they see slots but draw off slots and slot shaders as normal materials, a Vibrate node does nothing for them, and they read the shadow quality as Basic: their next sky or light change sets it to Basic for everyone, so set it again once everyone has updated. <!-- 105-slots, 105-slot-shaders, 103-haptics, 106-shadows Q4 -->
+## 1.78.1 — Steadier sessions
+
+- Sessions reconnect by themselves after the host reloads.
 
 ## 1.78.0 — Faster mesh editing
 

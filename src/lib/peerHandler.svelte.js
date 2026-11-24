@@ -1,7 +1,7 @@
 import Peer from 'peerjs';
 import { peerSerializers, setFrameRefusalHandler } from './peerCodec.js';
 import { backoffDelay } from '$lib/netBackoff';
-import { sceneCommand, lockRestore, checkLocks, createObject, sendObjects, healObjectTo, deleteObject, colorObject, createLoader, userData, handleDisconnected, specator, cameraSettings, objectParameters, applyClearScene, ROSTER_GRACE_MS } from './commandsHandler.svelte';
+import { sceneCommand, lockRestore, checkLocks, createObject, sendObjects, healObjectTo, deleteObject, colorObject, createLoader, userData, handleDisconnected, specator, cameraSettings, objectParameters, applyClearScene, ROSTER_GRACE_MS, quietLeaveOnce } from './commandsHandler.svelte';
 import { gateCreationBroadcast, gateDraftsOutbound, gateDraftsInbound } from './objectPermissions';
 import { createGeometry, createLight, createGroup, changeName, moveGeometry, moveCamera } from '$lib/geometries.svelte';
 import { sendNodes, applyNodesSnapshot, applyNodeSync, noteNodesSnapshot, noteNodeSyncHandshake, forgetNodeSyncPeer, createFlowNode, moveFlowNode, updateFlowNodeData, deleteFlowNodes, createFlowEdge, deleteFlowEdges, applyFlowCursor } from '$lib/nodesHandler';
@@ -39,7 +39,7 @@ import { applyAgentChatMessage, sendAgentChatBacklogTo, agentChatPeerGone } from
 import { pauseToastText } from '$lib/inviteLimits';
 import { resumeInviteJoins, resetInviteJoinGate } from '$lib/inviteStore';
 import { captureInviteHash, verifyInviteDial, joinerInviteMeta, dialingWithInvite, myKind, noteDialKind, noteJoinedVia, agentsAsGuests, isAgentSession, isAgentPeer } from '$lib/inviteStore';
-import { applyKick, isBlocked, isHeldOut, resetModeration, blockReplay, requireApproval } from '$lib/peerModeration'; // 55 A9, 71 AS3
+import { applyKick, isBlocked, isHeldOut, resetModeration, blockReplay, requireApproval, peerLabel } from '$lib/peerModeration'; // 55 A9, 71 AS3
 import { notePeerFacts, notePeerActivity, dropPeerFacts, myDevice } from '$lib/peerFacts'; // 55 A9
 import { sessionHost, pendingConnectDecision, markPeerJoined, resetSession, signalingRetry, noteSignalingRetry, clearSignalingRetry, noteApprovalStarted, clearApprovalStarted, approvalStartedAt, APPROVAL_WINDOW_MS, MAX_PENDING_APPROVALS, HARD_PEER_CAP, roomIsFull } from '$lib/connectionState';
 import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo, rolesPending, isFloorMessage, holdUntilRoles } from '$lib/cloudHooks';
@@ -60,7 +60,9 @@ import { noteWireError, noteWireDrop } from '$lib/wireErrors';
 setFrameRefusalHandler((peerId, reason) => noteWireError(peerId, 'frame', reason));
 import { composeAdmitNotice, shortPeer } from '$lib/admitNotice';
 import { ICE_DROP_GRACE_MS, LINK_POLL_MS, strikesNeeded, quietPeerError, unavailablePeerId, consentCounters, linkSilence, keepPeerId, silenceCloseAllowed, meshHosts, signalingHold, SIGNALING_RECHECK_MS } from '$lib/peerDrop';
-import { takeRejoin, rememberRejoin, settleRejoin, REJOIN_WINDOW_MS, REJOIN_DIAL_MS } from '$lib/rejoin'; // fix-agenttest 6
+import { takeRejoin, rememberRejoin, settleRejoin, takeHostRejoin, rememberHostRejoin, REJOIN_WINDOW_MS, REJOIN_DIAL_MS } from '$lib/rejoin'; // fix-agenttest 6
+import { createRelinks, RELINK_MS, HOST_OPEN_MS } from '$lib/rejoinLinks'; // a returning link proves itself
+import { PROOF_TYPES } from '$lib/rejoinProof';
 import { createDialBackQueue } from '$lib/dialBackQueue'; // scatter-sync: room edits held for an opening approval dial-back
 import { noteWire } from '$lib/sceneBudget';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
@@ -236,6 +238,11 @@ const RETRY_BACKOFF = { base: 800, cap: 8000, max: Infinity, jitter: 0.25 };
 // restoreConnection's own retry cadence (pre-existing 4s) — also used to spot
 // a restore dial that is already in flight so parallel calls don't stack.
 const RESTORE_RETRY_MS = 4000;
+/** the waits before each dial to a host whose page is reloading (its boot measured 11-26 s); the
+ * window (REJOIN_WINDOW_MS) ends the wait whatever is left @type {number[]} */
+const HOST_BACK_WAITS = [5000, 5000, 8000, 10000, 15000, 20000, 25000];
+/** how much longer each later dial to a reloading host may take to open than the one before it */
+const HOST_DIAL_STEP_MS = 15000;
 
 //Access locked objects
 let locked = $state();
@@ -320,6 +327,7 @@ function dialOptions(result, cloud, extra) {
 	// 71 AS4: why an invite dial was refused ('invite-paused' | 'invite-slow'), additive — an older
 	// joiner reads the plain 'denied'
 	if (extra?.why && result === 'denied') metadata.why = String(extra.why).slice(0, 24);
+	if (extra?.rj === 1 && !result) metadata.rj = 1;
 	return { metadata };
 }
 
@@ -380,12 +388,34 @@ export class PeerConnection {
 		startLockLifecycle(); // 80a K6: idle expiry of what we hold (idempotent)
 		registerLockModeHooks({ send: (data) => this.send(data) }); // 80a K15
 		// fix-agenttest 6: a reload while joined comes back on the SAME id and dials the host
-		// (rejoin.js); the host re-admits an id that left by unloading (unloadedPeers)
+		// (rejoin.js). A RETURNING LINK PROVES ITSELF (rejoinLinks.js): the host admits it again
+		// without a card only when it answers the challenge with the secret the host gave it, and
+		// a returning guest sends nothing until the host has answered too. A host that reloads
+		// comes back on its own id with its guests' secrets (`tp:hostrejoin`), and they dial it.
 		const rejoin = takeRejoin();
+		const hostBack = rejoin ? null : takeHostRejoin();
 		/** @type {string | null} */
 		this.rejoinHost = rejoin?.host ?? null;
-		/** @type {Map<string, number>} id -> when it said goodbye from a pagehide */
+		/** retired: a returning id alone no longer re-admits anybody (kept for older test seams) @type {Map<string, number>} */
 		this.unloadedPeers = new Map();
+		this.rj = createRelinks({
+			myId: () => this.peer?.id ?? this.myId,
+			// a secret is taken only from the host that admitted us, over its own link
+			acceptSecretFrom: (peerId) => !!peerId && get(sessionHost) === peerId
+		});
+		if (rejoin?.s) this.rj.setHostSecret(rejoin.host, rejoin.s);
+		if (hostBack) this.rj.restoreReturning(hostBack.guests, hostBack.at);
+		// a roles plugin that takes someone's role away (to none) takes their way back with it
+		rolesInfo.subscribe((/** @type {any} */ info) => {
+			if (!info || typeof info.roleOf !== 'function') return;
+			for (const id of this.rj.holders()) {
+				let role;
+				try { role = info.roleOf(id); } catch (e) { role = undefined; }
+				if (role === 'none') this.rj.forget(id);
+			}
+		});
+		/** a host we wait for while its page reloads: {id, at, tries, timer} @type {any} */
+		this.hostAway = null;
 		/** @type {ReturnType<typeof setTimeout> | null} the roster sweep a refused goodbye report schedules (one at a time) */
 		this.goneReportSweep = null;
 		this.goneReportAgain = false;
@@ -393,7 +423,7 @@ export class PeerConnection {
 		this.approvedBy = new Set();
 		/** @type {Map<string, string>} 80a R1 */
 		this.joinedVia = new Map();
-		this.myId = rejoin?.id ?? id;
+		this.myId = rejoin?.id ?? hostBack?.id ?? id;
 		this.reconnectAttempts = 0;
 		this.hasOpened = false;   // the signaling link has opened at least once
 		this.didFallback = false; // we've already switched to the public cloud
@@ -431,6 +461,9 @@ export class PeerConnection {
 		/** @type {Set<string>} peers that ANNOUNCED they were leaving (the
 		 * `disconnected` self-message) — their close is expected, don't redial */
 		this.gracefulLeft = new Set();
+		/** @type {Set<string>} peers whose link came back through the reconnect check (their reload or ours): the
+		 * same session, so the first-contact question about merging two worlds is never put for them */
+		this.cameBack = new Set();
 		/** F-3: when a peer last left or dropped (or we left) — peer-level errors right after
 		 * one are its symptoms, not news (peerDrop.quietPeerError) */
 		this.lastLeaveAt = 0;
@@ -762,6 +795,14 @@ export class PeerConnection {
 			this.rejoinHost = null;
 			if (rejoinHost) later(() => settleRejoin('failed'), REJOIN_DIAL_MS);
 			if (!rejoinHost && !window.location.hash.slice(1)) return;
+			// a returning guest that holds its host's secret PROVES its way back (relinkHost); one with
+			// no secret (an older host gave none) dials as it always has
+			if (rejoinHost && this.rj.hostSecret(rejoinHost)) {
+				// 71 TR4: with Hide my IP on, the boot dial waits for the relay credential like any first dial
+				if (get(hideMyIp)) whenRelayReady(p).then(() => this.relinkHost(rejoinHost, 'reload'));
+				else this.relinkHost(rejoinHost, 'reload');
+				return;
+			}
 			// 55: `#<id>&agent…` — the id is everything before the first `&` (parseInviteHash)
 			let connect = rejoinHost ?? parseInviteHash(window.location.hash).peerId.toLocaleLowerCase()
 			if (!connect) return;
@@ -842,7 +883,7 @@ export class PeerConnection {
 			// 44 L2: "ours" is decided by the SERVER this id opened on, not by `hasOpened` (see
 			// registeredOn). Once the waits are spent, a fresh id beats "please reload".
 			// fix-agenttest 6: so is the id a rejoin brought back from before the reload
-			const ownHeld = this.registeredOn.has(this.serverKey) || !!this.rejoinHost;
+			const ownHeld = this.registeredOn.has(this.serverKey) || !!this.rejoinHost || this.rj.hasReturning();
 			if (err.type === 'unavailable-id' && ownHeld && this.idRetries < 3) {
 				this.idRetries++;
 				const wait = backoffDelay(this.idRetries, RETRY_BACKOFF) ?? 8000;
@@ -865,6 +906,21 @@ export class PeerConnection {
 				// 27-E: end the request this names. The pill used to sit on "Requesting"
 				// beside this very toast, and the optimistic whitelist row never went away.
 				const id = unavailablePeerId(err.message);
+				// a relink to a host that is not (yet) back on the server: the waiting dials try again later
+				if (id && this.rj.claiming(id)) {
+					this.rj.cancel(id);
+					const stale = this.connections[id];
+					if (stale && !stale.open) {
+						delete this.connections[id];
+						try { stale.close(); } catch (e) { /* never opened */ }
+					}
+					if (this.hostAway?.id === id) {
+						this.nextHostDial();
+						return;
+					}
+					this.rj.forget(id);
+					userdata.set(/** @type {any} */ (get(userdata)).filter((/** @type {any} */ u) => u[0] !== id));
+				}
 				settleRejoin('failed'); // fix-agenttest 6: the only dial a pending rejoin has is to its host
 				// 25-F: a refusal to somebody who already gave up and left is not news
 				if (id && this.refusalDials.has(id)) return;
@@ -924,7 +980,10 @@ export class PeerConnection {
 				// fix-agenttest 6: joined as a guest → remember the session for a reload (rejoin.js);
 				// `unload` tells the host this goodbye may come back on the same id
 				const host = get(sessionHost);
-				rememberRejoin(this.peer?.id, host && this.openedPeers.has(host) ? host : null);
+				const joined = host && this.openedPeers.has(host) ? host : null;
+				rememberRejoin(this.peer?.id, joined, Date.now(), joined ? this.rj.hostSecret(joined) : null);
+				// hosting: our id and the secret of every guest still linked, so they can come back to us
+				rememberHostRejoin(this.peer?.id, host ? {} : this.rj.hostRecord(this.openedPeers));
 				try { this.broadcast({ type: 'disconnected', peerId: this.peer.id, unload: true }); } catch (e) { /* going down anyway */ }
 			});
 			// 27-F: the two events that mean "there is a point in trying NOW" — a wifi hop
@@ -1015,6 +1074,52 @@ export class PeerConnection {
 				return;
 			}
 
+			// our host's id while its page is away: between our own dials nothing on that id is let in (a
+			// link from it is only taken while one of our dials is proving itself, and that link proves too)
+			if (this.hostAway?.id === conn.peer && !this.rj.pending(conn.peer)) {
+				/** @type {any} */ (conn).__rjRefused = true;
+				try { conn.close(); } catch (e) { /* not open yet */ }
+				return;
+			}
+
+			// A DIAL THAT SAYS IT COMES BACK (a guest after its reload, or after ours) is let in again
+			// without a card ONLY once it has proven it holds the secret we gave it, on this link, before
+			// anything crosses it either way. The secret is taken once; a dial that cannot prove it is a
+			// stranger and goes the ordinary way below, with nothing different for it to read.
+			if (!conn.__rjDone) {
+				/** @type {any} */ (conn).__rjDone = true;
+				if (conn?.metadata?.rj === 1 && !get(sessionHost)) this.rj.supersede(conn.peer);
+				const back = conn?.metadata?.rj === 1 && !get(sessionHost) && myKind() !== 'agent' && !this.removedPeers.has(conn.peer)
+					? this.rj.takeReturning(conn.peer)
+					: null;
+				if (conn?.metadata?.rj === 1) log('info', 'net', 'a dial says it comes back', { peer: conn.peer, held: !!back, hosting: !get(sessionHost) });
+				if (back && !roomIsFull(this) && !isHeldOut(conn.peer)) {
+					const again = () => handleConnection.call(this, conn);
+					this.rj.begin(conn.peer, 'host', back.s, {
+						onOk: () => {
+							this.rj.putBack(conn.peer, false); // proven: spent (a fresh one is issued on the greeting)
+							/** @type {any} */ (conn).__rjOk = back;
+							again();
+						},
+						onFail: () => {
+							this.rj.putBack(conn.peer);
+							if (conn.open === false) {
+								// never opened (or gone): nothing more is read from it
+								/** @type {any} */ (conn).__rjRefused = true;
+								try { conn.close(); } catch (e) { /* not open */ }
+								return;
+							}
+							again();
+						}
+					}, HOST_OPEN_MS);
+					conn.on('open', () => this.rj.opened(conn, () => {}));
+					conn.on('close', () => this.rj.closed(conn));
+					this.wireData(conn);
+					if (conn.open) this.rj.opened(conn, () => {});
+					return;
+				}
+			}
+
 			// Update approval status on expected connections
 			let waiting = get(waitingForApproval);
 			waiting.forEach(element => {
@@ -1097,12 +1202,15 @@ export class PeerConnection {
 						conn.close();
 						return;
 					}
-					// fix-agenttest 6: a guest that RELOADED (its goodbye said `unload`) is back on the id
-					// we approved a moment ago — re-admitted as the auto-approve below does, no new card
-					const leftAt = this.unloadedPeers.get(conn.peer);
-					this.unloadedPeers.delete(conn.peer);
-					if (leftAt !== undefined && Date.now() - leftAt <= REJOIN_WINDOW_MS && !roomIsFull(this) && !isHeldOut(conn.peer)) {
+					// fix-agenttest 6: a guest that came back (its reload, or ours) and PROVED it on this link
+					// (the relink above) — re-admitted as the auto-approve below does, no new card, with the
+					// role an invite gave it
+					const proven = /** @type {any} */ (conn).__rjOk;
+					/** @type {any} */ (conn).__rjOk = undefined;
+					if (proven && !roomIsFull(this) && !isHeldOut(conn.peer)) {
 						found = true;
+						this.cameBack.add(conn.peer);
+						if (proven.role) this.invitedRoles.set(conn.peer, proven.role);
 						const roster = /** @type {any[]} */ (get(userdata));
 						if (!roster.some((/** @type {any} */ e) => e[0] === conn.peer))
 							// 55 A7: an agent's row keeps saying so (slot 6), so no avatar is built
@@ -1113,7 +1221,7 @@ export class PeerConnection {
 							this.send({ type: 'userdata', userdata: get(userdata) });
 							this.approveDialBack(conn.peer);
 						}
-						log('info', 'net', 'a guest reloaded and is back on its id — re-admitted', { peer: conn.peer });
+						log('info', 'net', 'a guest proved it is back — re-admitted', { peer: conn.peer });
 					}
 					// 61 G3: a bot this tab started, over its local link — admitted with no card and no toast
 					const testBot = !found && !!testSeams.botAdmit?.(conn);
@@ -1214,6 +1322,7 @@ export class PeerConnection {
 					// used to collect a card per dial with nothing dropping them (audit H3).
 					noteApprovalStarted(conn.peer);
 					pendingApprovals.set(boundApprovals(approvals));
+					log('info', 'net', 'a join request is waiting for an answer', { peer: conn.peer, inRoster: /** @type {any[]} */ (get(userdata)).some((/** @type {any} */ u) => u[0] === conn.peer), linked: !!this.connections[conn.peer]?.open, back: conn?.metadata?.rj === 1 });
 				}
 				conn.close();
 			}
@@ -1229,7 +1338,9 @@ export class PeerConnection {
 			// approving, the close is often never signaled, and the fresh reopen can
 			// wedge mid-ICE — leaving the JOINER unable to send ANYTHING to the host.
 			// DataConnections are bidirectional, and this one is provably alive.
-			conn.on('open', () => {
+			conn.on('close', () => this.rj.closed(conn));
+			const adoptOpen = () => this.rj.opened(conn, () => {
+				if (conn.open === false) return;
 				const existing = this.connections[conn.peer];
 				if (existing?.open) return; // stable outgoing conn stays preferred
 				log('warn', 'net', 'adopting inbound connection as the send channel', { peer: conn.peer });
@@ -1248,12 +1359,19 @@ export class PeerConnection {
 				const wantState = this.wantsStateFrom.has(conn.peer) || healing;
 				this.sendHandshake(conn, conn.peer, wantState, this.peer.id, { heal: healing });
 			});
+			// a relinked dial is admitted only once it proved itself, by which time it is already open
+			if (conn.open) adoptOpen();
+			else conn.on('open', adoptOpen);
 
 			this.wireData(conn);
 		}
 
 		/** @this {any} @param {any} conn */
 		function handleData(conn) {
+			// one dispatcher per conn: a relink wires its link before it is admitted, and the admission
+			// that follows must not wire it twice
+			if (conn.__tpWired) return;
+			conn.__tpWired = true;
 			// 27-A: a conn reports its OWN failures now. eventemitter3 swallows an 'error'
 			// nobody listens for, so a send to a half-open conn and a failed negotiation were
 			// both invisible. This is the one function every creation site already calls —
@@ -1266,6 +1384,8 @@ export class PeerConnection {
 				conn.__tpDraftGate = true;
 				const rawSend = conn.send.bind(conn);
 				conn.send = (/** @type {any} */ data, /** @type {any[]} */ ...rest) => {
+					// a link still proving itself carries the exchange and nothing else
+					if (this.rj.pending(conn.peer) && !PROOF_TYPES.has(data?.type)) return;
 					const out = gateDraftsOutbound(data);
 					if (out === null) return;
 					return rawSend(out, ...rest);
@@ -1863,7 +1983,8 @@ export class PeerConnection {
 						fromHost: get(sessionHost) === conn.peer,
 						mineScene: myRoomLabel(),
 						mineName: myScene()?.scene ?? '',
-						arriving: !!data.arriving
+						arriving: !!data.arriving,
+						back: this.cameBack.has(conn.peer)
 					});
 				} else if(data.type == 'objectfile') {
 					applyObjectFile(data, { inbound: true });
@@ -1901,12 +2022,13 @@ export class PeerConnection {
 						// P-A finding), and marking it graceful stops the transient-drop
 						// reconnect from redialing someone who left on purpose (B5)
 						this.gracefulLeft.add(data.peerId);
-						// fix-agenttest 6: a tab that unloaded may reload and dial back on this id
-						if (data.unload === true && this.openedPeers.has(data.peerId)) {
-							const now = Date.now();
-							for (const [id, at] of this.unloadedPeers) if (now - at > REJOIN_WINDOW_MS) this.unloadedPeers.delete(id);
-							this.unloadedPeers.set(data.peerId, now);
-						}
+						// fix-agenttest 6: a tab that unloaded may reload and come back on this id — and must
+						// prove it with the secret it holds (a guest of ours), or be proven (our host)
+						const reloading = data.unload === true && this.openedPeers.has(data.peerId);
+						const ourHost = get(sessionHost) === data.peerId;
+						if (reloading && !ourHost) this.rj.unloaded(data.peerId);
+						else if (!reloading) this.rj.forget(data.peerId);
+						if (reloading && ourHost && this.rj.hostSecret(data.peerId)) this.waitForHost(data.peerId);
 						if (this.openedPeers.has(data.peerId)) this.finalizeDisconnect(data.peerId, false);
 					} else if (this.connections[data.peerId] || this.reconnecting.has(data.peerId)) {
 						// a relayed rumor about a peer we have FIRST-HAND state on — our
@@ -1918,6 +2040,7 @@ export class PeerConnection {
 						// the grace has passed with no link (it never touches a peer we reach)
 						this.sweepRosterLater();
 					} else {
+						this.cameBack.delete(data.peerId);
 						handleDisconnected(data.peerId);
 						dropPeerPlayMode(data.peerId); // 21-F3
 						dropPeerScene(data.peerId); // P2b
@@ -1936,7 +2059,8 @@ export class PeerConnection {
 						theirHash: get(peerScenes)[conn.peer]?.hash ?? '',
 						fromHost: get(sessionHost) === conn.peer,
 						mineScene: myRoomLabel(),
-						mineName: myScene()?.scene ?? ''
+						mineName: myScene()?.scene ?? '',
+						back: this.cameBack.has(conn.peer)
 					});
 				} else if(data.type == 'nodes') {
 					preloadSandboxFor(data); // 69: a joiner's scene with code starts the engine before its first tick
@@ -2221,6 +2345,14 @@ export class PeerConnection {
 					noteWireError(conn.peer, 'shape', 'type');
 					return;
 				}
+				// a link whose far side failed to prove itself is closing: nothing more from it counts
+				if (conn.__rjRefused) return;
+				// a returning link proves itself first: the exchange is read here, and while it runs
+				// everything else from that peer waits (in order) for the answer, or is dropped with it
+				if (this.rj.gate(conn, data, () => {
+					if (conn.open === false) return;
+					if (this.protoGate(conn, data, via, proceed)) proceed(data, via);
+				})) return;
 				// 101 F1: the protocol gate — nothing from a link on another protocol reaches anything below
 				if (!this.protoGate(conn, data, via, proceed)) return;
 				proceed(data, via);
@@ -2330,6 +2462,12 @@ export class PeerConnection {
 		// peer that reads messages rather than metadata, and it is idempotent on a joiner
 		// that has already moved on.
 		if (this.approvedDialBacks.delete(peerId)) conn.send({ type: 'joinresult', result: 'approved' });
+		// THE HOST GREETS AN ADMITTED GUEST WITH A SECRET OF ITS OWN, over this link and no other: what it
+		// proves itself with if it (or we) reload. A fresh one after every relink (it was taken by the dial).
+		if (!get(sessionHost) && !this.hostAway && myKind() !== 'agent' && this.peerCaps.get(peerId)?.rj && !this.rj.hasIssued(peerId)
+			&& /** @type {any[]} */ (get(userdata)).some((/** @type {any} */ u) => u[0] === peerId)) {
+			this.rj.issue(peerId, conn, this.invitedRoles.get(peerId));
+		}
 		// 60-int: a HEAL says so before anything that is answered. Our end of the old link is
 		// closed (F-3's silence close, or a drop), but theirs may still read `open` — a close
 		// never crosses a dead link — and they would keep sending, and answering this very
@@ -2417,7 +2555,8 @@ export class PeerConnection {
 		// test-health-1: the connect decision is a FIRST-CONTACT question; a healed conn is the same
 		// session coming back, so it never holds (it deferred our state for a decision nobody asked:
 		// net-drop HARD healed, open both ways, and no edit crossed)
-		const holdContent = secret || (getobjects && !opts.heal && connectDecisionApplies(get(sessionHost) === peerId, myScene()?.scene ?? ''));
+		// …and neither does a link that came back through the reconnect check: what both sides hold is this session's scene
+		const holdContent = secret || (getobjects && !opts.heal && !this.cameBack.has(peerId) && connectDecisionApplies(get(sessionHost) === peerId, myScene()?.scene ?? ''));
 		if (holdContent && !secret) noteHandshakeDeferred(peerId);
 		if (!holdContent) {
 			conn.send(environmentState())
@@ -2494,7 +2633,9 @@ export class PeerConnection {
 		return {
 			invite: joinerInviteMeta(myId, peerId),
 			kind: myKind(),
-			invited: this.invitedRoles?.get(peerId)
+			invited: this.invitedRoles?.get(peerId),
+			// a returning guest says so: the host then asks it to prove it (never the secret itself)
+			rj: this.rj?.claiming(peerId) ? 1 : undefined
 		};
 	}
 
@@ -2753,14 +2894,16 @@ export class PeerConnection {
 
 			conn.on('close', () => this.onConnClose(peerId, conn));
 
-            conn.on('open', () => {
+            conn.on('close', () => this.rj.closed(conn));
+            conn.on('open', () => this.rj.opened(conn, () => {
+				if (conn.open === false) return;
 				console.log('Connection to ' + peerId + ' established');
 				this.openedPeers.add(peerId);
 				markPeerJoined(peerId);
 				//Trigger reactivity for UI list of objects
 				peers.update((value) => value);
 				this.sendHandshake(conn, peerId, getobjects, id);
-			});
+			}));
 			// the remote may adopt THIS conn as their send channel (bidirectional)
 			this.wireData(conn);
         } else {
@@ -2831,13 +2974,15 @@ export class PeerConnection {
 		/** @type {any} */ (conn).__dialedAt = Date.now();
 		this.connections[peerId] = conn;
 		conn.on('close', () => this.onConnClose(peerId, conn));
-		conn.on('open', () => {
+		conn.on('close', () => this.rj.closed(conn));
+		conn.on('open', () => this.rj.opened(conn, () => {
+			if (conn.open === false) return;
 			log('info', 'net', 'connection restored', { peer: peerId });
 			this.openedPeers.add(peerId);
 			markPeerJoined(peerId);
 			peers.update((value) => value);
 			this.sendHandshake(conn, peerId, getobjects, id);
-		});
+		}));
 		this.wireData(conn);
 		setTimeout(() => {
 			// still ours, still never opened -> replace the stale conn and retry
@@ -3038,6 +3183,7 @@ export class PeerConnection {
 	// kick with a block list is roadmap 55 A9; this is the host's own door.)
 	/** @param {string} peerId */
 	removeAdmittedPeer(peerId) {
+		this.rj.forget(peerId); // its secret first: nothing it holds lets it back
 		this.removedPeers.add(peerId);
 		this.gracefulLeft.add(peerId); // their close is expected — no redial
 		const roster = /** @type {any[]} */ (get(userdata)).filter((/** @type {any} */ e) => e[0] !== peerId);
@@ -3110,7 +3256,9 @@ export class PeerConnection {
 		/** @type {any} */ (conn).__dialedAt = Date.now();
 		this.connections[peerId] = conn;
 		conn.on('close', () => this.onConnClose(peerId, conn));
-		conn.on('open', () => {
+		conn.on('close', () => this.rj.closed(conn));
+		conn.on('open', () => this.rj.opened(conn, () => {
+			if (conn.open === false) return;
 			log('info', 'net', 'reconnected', { peer: peerId });
 			this.reconnecting.delete(peerId);
 			this.inboundDials.delete(peerId);
@@ -3119,7 +3267,7 @@ export class PeerConnection {
 			this.awayPeers.delete(peerId);
 			peers.update((value) => value);
 			this.sendHandshake(conn, peerId, true, this.peer.id, { heal: true });
-		});
+		}));
 		this.wireData(conn);
 	}
 
@@ -3150,6 +3298,7 @@ export class PeerConnection {
 		this.openedPeers.delete(peerId);
 		this.dropFastPeer(peerId); // 60 Q2
 		dropPeerLockState(peerId); // 80a K6: its parked edits and heal pacing
+		this.cameBack.delete(peerId);
 		handleDisconnected(peerId);
 		clearPeerPreview(peerId); // 16-P5
 		perfLivePeerGone(peerId); // 34 PF
@@ -3211,6 +3360,7 @@ export class PeerConnection {
 			const conn = this.connections[peerId];
 			delete this.connections[peerId];
 			try { conn?.close(); } catch {}
+			this.cameBack.delete(peerId);
 			if (this.openedPeers.has(peerId)) {
 				this.openedPeers.delete(peerId);
 				handleDisconnected(peerId);
@@ -3233,6 +3383,10 @@ export class PeerConnection {
 		pendingApprovals.set([]);
 		this.approvedBy.clear();
 		this.unloadedPeers.clear();
+		// every relink secret and proof goes with the session (and a host we were waiting for)
+		this.rj.reset();
+		if (this.hostAway) clearTimeout(this.hostAway.timer);
+		this.hostAway = null;
 		// 27-H (audit M9): leaving a session must hand the microphone back. Nothing here
 		// touched voice, so the tab's recording indicator stayed on and the device stayed
 		// claimed after you left — for the life of the page.
@@ -3486,6 +3640,125 @@ export class PeerConnection {
 	askingOnly(from) {
 		if (get(sessionHost) === from || this.approvedBy.has(from)) return false;
 		return get(waitingForApproval).some((/** @type {any} */ w) => w[0] === from && w[1] === 'pending');
+	}
+
+	/**
+	 * A RETURNING GUEST DIALS ITS HOST AND PROVES ITSELF — after its own reload (`reload`) or while the
+	 * host reloads (`away`). Nothing but the exchange crosses the link until the host has answered too;
+	 * the host's id is whitelisted so its dial-back links, and its messages wait behind the gate.
+	 * @param {string} hostId @param {'reload' | 'away'} why @returns {boolean} dialled
+	 */
+	relinkHost(hostId, why) {
+		const secret = this.rj.hostSecret(hostId);
+		if (!secret || !this.peer || this.peer.disconnected) return false;
+		const roster = /** @type {any[]} */ (get(userdata));
+		if (!roster.some((/** @type {any} */ u) => u[0] === hostId)) userdata.set(/** @type {any} */ ([...roster, [hostId, '', '']]));
+		const stale = this.connections[hostId];
+		if (stale && !stale.open) {
+			delete this.connections[hostId];
+			try { stale.close(); } catch (e) { /* never opened */ }
+		}
+		// a dial the server did not refuse may still open (a host page still booting answers late); a refusal comes back at once
+		const away = this.hostAway?.id === hostId ? this.hostAway : null;
+		// a dial that left before the host's page was registered again can be lost by the server without a word, so no
+		// single dial may hold the window: the first gets RELINK_MS to open, each later one 15 s more (a host page that is
+		// slow to boot), never past the window's end (5 s at the least)
+		const opens = away ? Math.max(5000, Math.min(away.at + REJOIN_WINDOW_MS - Date.now(), RELINK_MS + HOST_DIAL_STEP_MS * Math.max(0, away.tries - 1))) : RELINK_MS;
+		this.rj.begin(hostId, 'guest', secret, {
+			onOk: () => this.hostProven(hostId, why),
+			onFail: (reason) => {
+				// a dial that never opened is not a failed check (the host may still be booting): while
+				// it is away, drop that dial and try the next one; anything that DID open and failed stops
+				// …and one that opened but heard nothing back is a page too busy to answer yet: the same, never a failed check
+				// …and so is one whose host proved itself but never put its own question ('unasked': we sent nothing)
+				const quiet = reason === 'unreached' || reason === 'silent' || reason === 'unasked';
+				if (quiet && this.hostAway?.id === hostId) {
+					this.dropHostLinks(hostId);
+					this.nextHostDial();
+					return;
+				}
+				this.hostNotProven(hostId, quiet ? 'gone' : 'proof');
+			}
+		}, opens);
+		this.connectToPeer(hostId, true);
+		return true;
+	}
+
+	/** The host answered: we are in its session again. @param {string} hostId @param {'reload' | 'away'} why */
+	hostProven(hostId, why) {
+		const name = this.hostAway?.id === hostId ? this.hostAway.name : null;
+		if (this.hostAway?.id === hostId) {
+			clearTimeout(this.hostAway.timer);
+			this.hostAway = null;
+		}
+		if (!get(sessionHost)) sessionHost.set(hostId);
+		this.approvedBy.add(hostId);
+		this.cameBack.add(hostId);
+		confirmRosterRows(hostId); // 80a R1
+		this.announceJoinedHost(hostId, undefined, this.connections[hostId]);
+		settleRejoin('joined');
+		log('info', 'net', 'the host proved it is back — linked again', { peer: hostId });
+		if (why === 'away') showToast('Linked again with ' + (name || peerLabel(hostId)) + '.');
+	}
+
+	/**
+	 * The id we dialled could not show it is our host (or never came back): stop, drop every link to it,
+	 * and say so. No retry against an id that failed the proof. @param {string} hostId @param {'proof' | 'gone'} reason
+	 */
+	hostNotProven(hostId, reason) {
+		if (this.hostAway?.id === hostId) {
+			clearTimeout(this.hostAway.timer);
+			this.hostAway = null;
+		}
+		this.rj.forget(hostId);
+		this.dropHostLinks(hostId);
+		this.openedPeers.delete(hostId);
+		userdata.set(/** @type {any} */ (get(userdata)).filter((/** @type {any} */ u) => u[0] !== hostId));
+		waitingForApproval.set(/** @type {any} */ (get(waitingForApproval)).filter((/** @type {any} */ w) => w[0] !== hostId));
+		settleRejoin('failed');
+		peers.update((value) => value);
+		log('warn', 'net', reason === 'proof' ? 'the host could not be verified — not linked' : 'the host did not come back', { peer: hostId });
+		showToast(reason === 'proof' ? 'Could not verify the host. Join again with the invite.' : 'The host has not come back. Join again with the invite.');
+	}
+
+	/** Close every link to `hostId` (ours and its) and mark them so nothing more is read from them. @param {string} hostId */
+	dropHostLinks(hostId) {
+		const mine = this.connections[hostId];
+		delete this.connections[hostId];
+		/** @type {any[]} */
+		const links = [mine, ...(/** @type {any} */ (this.peer)?.connections?.[hostId] ?? [])];
+		for (const c of links) {
+			if (!c) continue;
+			c.__rjRefused = true;
+			try { c.close(); } catch (e) { /* already closed */ }
+		}
+	}
+
+	/** Our host said its page is going away and may come back: wait for it, then dial it a few times. @param {string} hostId */
+	waitForHost(hostId) {
+		if (this.hostAway) clearTimeout(this.hostAway.timer);
+		quietLeaveOnce(hostId); // its own notice below, not "<name> disconnected"
+		// its name as we know it now: its roster row may be gone by the time it is back
+		this.hostAway = { id: hostId, at: Date.now(), tries: 0, timer: null, name: peerLabel(hostId) };
+		showToast(this.hostAway.name + ' (the host) is reloading. You will be linked again when it is back.');
+		this.nextHostDial();
+	}
+
+	/** One more dial to a reloading host after the next wait, or the end of the window. */
+	nextHostDial() {
+		const away = this.hostAway;
+		if (!away) return;
+		clearTimeout(away.timer);
+		const wait = HOST_BACK_WAITS[Math.min(away.tries, HOST_BACK_WAITS.length - 1)];
+		away.timer = setTimeout(() => {
+			if (this.hostAway !== away) return;
+			if (Date.now() - away.at > REJOIN_WINDOW_MS || away.tries >= HOST_BACK_WAITS.length) {
+				this.hostNotProven(away.id, 'gone');
+				return;
+			}
+			away.tries++;
+			if (!this.relinkHost(away.id, 'away')) this.nextHostDial();
+		}, wait);
 	}
 
 	/**

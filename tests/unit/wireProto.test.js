@@ -58,8 +58,8 @@ describe('wireProto', () => {
 	it('caps: the flags that exist today, fc only when the fast channel is on', () => {
 		// 105-slots: slots2 = per-slot material values + the slot draw layer
 		// 105-slot-shaders: slotShaders = a `<uuid>/<slotId>` shader document draws on that slot
-		expect(myCaps()).toEqual({ wb: 1, dev: 1, lk: 1, slots2: 1, slotShaders: 1 });
-		expect(myCaps({ fc: true })).toEqual({ wb: 1, dev: 1, lk: 1, slots2: 1, slotShaders: 1, fc: 1 });
+		expect(myCaps()).toEqual({ wb: 1, dev: 1, lk: 1, rj: 1, slots2: 1, slotShaders: 1 });
+		expect(myCaps({ fc: true })).toEqual({ wb: 1, dev: 1, lk: 1, rj: 1, slots2: 1, slotShaders: 1, fc: 1 });
 		expect(capsOf(undefined)).toEqual({});
 		expect(capsOf([1])).toEqual({});
 		expect(capsOf({ wb: 1, future: 'x' })).toEqual({ wb: 1, future: 'x' });

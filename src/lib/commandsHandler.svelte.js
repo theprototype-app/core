@@ -36,7 +36,7 @@ import { applyTextPathTo, bumpTextTurn } from '$lib/textPathObject.js'; // 64 D2
 import { runSceneClearHandlers } from '$lib/moduleSDK'
 import { annotations } from '$lib/annotationsHandler'
 import { isViewer, warnViewerReadOnly, clearInboundDraftFlags } from '$lib/objectPermissions'
-import { isHeldOut } from '$lib/peerModeration' // 55 A9
+import { isHeldOut, peerLabel } from '$lib/peerModeration' // 55 A9
 import { get, writable } from 'svelte/store'
 import { addMessage, loading, loadingcount, showToast, fixLight, specatorMode } from '../stores/appStore';
 import { dropWireErrors } from './wireErrors';
@@ -354,6 +354,13 @@ export function lockRestore(lockeditems, from, fromHost, mayLock) {
     lockedObjects.set(locked);
 }
 
+/** peers whose next teardown says nothing (a host that is reloading has its own notice) @type {Set<string>} */
+const quietLeaves = new Set();
+/** The next `handleDisconnected` of `peerId` shows no "disconnected" toast. @param {string} peerId */
+export function quietLeaveOnce(peerId) {
+    quietLeaves.add(peerId);
+}
+
 export function handleDisconnected(peerId) {
     console.log(peerId + ' disconnected');
     // Full per-peer teardown, idempotent so it's safe to run from both the
@@ -361,7 +368,9 @@ export function handleDisconnected(peerId) {
     // peer is still known, so relayed duplicates don't stack toasts (172).
     delete rosterFirstSeen[peerId];
     const known = users.some((/** @type {any} */ u) => u[0] === peerId);
-    if (known && notifyOn('peerLeft')) showToast(peerId + ' disconnected'); // profile-notify: Settings ▸ Interface ▸ Notifications
+    const quiet = quietLeaves.delete(peerId);
+    // the NAME the roster knows them by, not the raw id (78 PL34)
+    if (known && !quiet && notifyOn('peerLeft')) showToast(peerLabel(peerId) + ' disconnected'); // profile-notify: Settings ▸ Interface ▸ Notifications
     users = users.filter(u => u[0] !== peerId);
     userdata.set(users);
     userdata.update((value) => value);

@@ -41,6 +41,17 @@ async function closeMenus(page) {
 		await page.waitForTimeout(200);
 	}
 }
+/** 103-int-1: 103 H15's HUD grid (styles/hud.css --hud-inset / --hud-tile / --hud-gap) — where the top-left row and the
+ * corner stacks stand. Before H15 (no --hud-inset) the numbers were the row at 78, stacked at 14, the stacks 16 in. */
+async function hudPlaces(page) {
+	return page.evaluate(() => {
+		const cs = getComputedStyle(document.documentElement);
+		const px = (n) => parseFloat(cs.getPropertyValue(n));
+		const inset = px('--hud-inset');
+		if (!Number.isFinite(inset)) return { row: 78, stacked: 14, corner: 16 };
+		return { row: inset + px('--hud-tile') + px('--hud-gap'), stacked: inset, corner: inset };
+	});
+}
 async function sidebar(page, { side = 'right', open = true, full = false, w = 320 } = {}) {
 	await page.evaluate(({ side, open, full, w }) => {
 		const S = window.__tp?.test.v1;
@@ -383,8 +394,9 @@ module.exports = (/** @type {string[]} */ parts) => {
 			let g = await P.evaluate(() => { let v; window.__tp.test.v1.sidebars.geometry.subscribe((x) => (v = x))(); return v; });
 			let tt = await rect(P, '#touch-tools');
 			const logo = await rect(P, '#logo-menu');
-			// beside the logo (78 + w) or, with no room there, stacked under it (14 + w) — either way beside the column
-			h.check(tt && (Math.abs(tt.left - (78 + g.left.w)) <= 2 || Math.abs(tt.left - (14 + g.left.w)) <= 2), T + `M13: Edit positions, pinned left sidebar → the row beside the logo slides with it (${Math.round(tt?.left)}, logo ${Math.round(logo.left)}, column ${g.left.w})`);
+			// beside the logo (row + w) or, with no room there, stacked under it (stacked + w) — either way beside the column
+			const hp = await hudPlaces(P);
+			h.check(tt && (Math.abs(tt.left - (hp.row + g.left.w)) <= 2 || Math.abs(tt.left - (hp.stacked + g.left.w)) <= 2), T + `M13: Edit positions, pinned left sidebar → the row beside the logo slides with it (${Math.round(tt?.left)}, logo ${Math.round(logo.left)}, column ${g.left.w})`);
 			let st = await rect(P, '#hud-stack-left');
 			h.check(st.left >= g.left.w + 8, T + `M13: …and the bottom-left stack's placeholders are beside it too (${Math.round(st.left)})`);
 			await shot(P, 'm13-edit-left-pinned');
@@ -394,7 +406,7 @@ module.exports = (/** @type {string[]} */ parts) => {
 			await P.evaluate(() => window.__tp.test.v1.touchTools.set(true));
 			await P.waitForTimeout(500);
 			tt = await rect(P, '#touch-tools');
-			h.check(Math.abs(tt.left - (78 + g.left.w)) <= 2 || Math.abs(tt.left - (14 + g.left.w)) <= 2, T + `M13: pinned left sidebar → the row beside the logo slides with the logo (beside or stacked under it: ${Math.round(tt.left)})`);
+			h.check(Math.abs(tt.left - (hp.row + g.left.w)) <= 2 || Math.abs(tt.left - (hp.stacked + g.left.w)) <= 2, T + `M13: pinned left sidebar → the row beside the logo slides with the logo (beside or stacked under it: ${Math.round(tt.left)})`);
 			const pillHits = await P.evaluate(() => {
 				const p = document.querySelector('.connect-pill').getBoundingClientRect();
 				const t = document.getElementById('touch-tools').getBoundingClientRect();
@@ -405,7 +417,7 @@ module.exports = (/** @type {string[]} */ parts) => {
 			await sidebar(P, { side: 'left', full: false, w: 360 });
 			g = await P.evaluate(() => { let v; window.__tp.test.v1.sidebars.geometry.subscribe((x) => (v = x))(); return v; });
 			tt = await rect(P, '#touch-tools');
-			h.check(Math.abs(tt.left - 78) <= 2, T + `M13: an unpinned left column below the row leaves the row in place (${Math.round(tt.left)})`);
+			h.check(Math.abs(tt.left - hp.row) <= 2, T + `M13: an unpinned left column below the row leaves the row in place (${Math.round(tt.left)})`);
 			// …but in Edit positions every cluster sits beside it
 			await enterEdit(P);
 			tt = await rect(P, '#touch-tools');
@@ -422,8 +434,8 @@ module.exports = (/** @type {string[]} */ parts) => {
 			await P.waitForTimeout(300);
 			st = await rect(P, '#hud-stack-right');
 			// dock-fixes item 4 (device lab UI-3): the corner stacks live in the FREE viewport, so with the right column
-			// still open "its corner" is the free rect's corner — 16 px beside the 320 px column
-			h.check(Math.abs(1440 - st.right - (320 + 16)) <= 1, T + `M13: leaving Edit positions puts the stack back in its corner of the free viewport, beside the open column (${Math.round(1440 - st.right)})`);
+			// still open "its corner" is the free rect's corner — the grid's inset beside the 320 px column
+			h.check(Math.abs(1440 - st.right - (320 + hp.corner)) <= 1, T + `M13: leaving Edit positions puts the stack back in its corner of the free viewport, beside the open column (${Math.round(1440 - st.right)})`);
 			await sidebar(P, { open: false });
 			await P.evaluate(() => window.__tp.test.v1.touchTools.set(false));
 			h.check(h.pageErrors(A).length === 0, T + `no page errors (${h.pageErrors(A).join(' / ')})`);

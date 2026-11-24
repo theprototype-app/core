@@ -581,7 +581,10 @@ h.run(async () => {
 				counts.push(`${w}:${f.length}`);
 				// right to left by the user's order: the folded ones are exactly the row's tail
 				const tailOk = cells.length + f.length === all.length && JSON.stringify(cells) === JSON.stringify(all.slice(0, cells.length));
-				const clear = bar.right <= 1100 - g.right.w - 7 && bar.left >= stackL.right + 7;
+				// 103-int-1: 103 H15 sets the bar's band exactly one --hud-gap (6 px) beside the corner stack; before it, 7+
+				const gap = await P.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--hud-gap')));
+				const need = Number.isFinite(gap) ? gap - 0.5 : 7;
+				const clear = bar.right <= 1100 - g.right.w - need && bar.left >= stackL.right + need;
 				h.check(tailOk && clear && cells.includes('__spacer'), T + `J10: sidebar ${w}px — ${f.length} folded (${f.join(',') || 'none'}), the bar clear of the sidebar and the corner (${Math.round(bar.left)}..${Math.round(bar.right)})`);
 				if (w === 440) {
 					h.check(f.length > 0, T + 'J10: a wide pinned sidebar folds the tail into "»"');

@@ -96,8 +96,10 @@ h.run(async () => {
 					if (!window.__k1On || window.__k1Gen !== gen) return;
 					const col = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(`--sb-${side}-w`));
 					const logo = document.querySelector('.burger')?.getBoundingClientRect();
+					// 103 H15: the logo stands --hud-inset in from the free edge (8 px before the HUD grid)
+					const inset = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--hud-inset'));
 					const tr = document.querySelector('.top-right-chrome')?.getBoundingClientRect();
-					window.__k1.push({ col, logo: logo ? logo.left : null, trRight: tr ? window.innerWidth - tr.right : null });
+					window.__k1.push({ col, inset: Number.isFinite(inset) ? inset : 8, logo: logo ? logo.left : null, trRight: tr ? window.innerWidth - tr.right : null });
 					requestAnimationFrame(t);
 				};
 				requestAnimationFrame(t);
@@ -116,7 +118,7 @@ h.run(async () => {
 				window.__k1On = false;
 				return window.__k1;
 			});
-			const off = s.map((f) => (side === 'left' ? Math.abs(f.logo - (8 + f.col)) : Math.abs(f.trRight - f.col)));
+			const off = s.map((f) => (side === 'left' ? Math.abs(f.logo - (f.inset + f.col)) : Math.abs(f.trRight - f.col)));
 			const worst = Math.max(...off);
 			const moved = Math.max(...s.map((f) => f.col)) - Math.min(...s.map((f) => f.col));
 			h.check(s.length > 15 && moved > 100, `${side}: (premise) the column widened while sampled (${s.length} frames, +${moved}px)`);

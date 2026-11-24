@@ -38,7 +38,9 @@ const BRIDGE_TRIES = 256;
  * @typedef {number[]} Pt [x, y]
  * @typedef {{ depth?: number, zBack?: number, zFront?: number, width?: number, thickness?: number,
  *   segments?: number, outset?: number, capMaterial?: number, sideMaterial?: number,
- *   roundProfile?: boolean }} SolidOptions
+ *   roundProfile?: boolean, clamp?: boolean }} SolidOptions
+ * `clamp: false` keeps the bevel as asked even where an inset side folds (the 1.61 text object's
+ * look, which caps its own inward share at 1.5% of the em)
  * @typedef {{ rings: number, points: number, pieces: number, bridgeFailures: number, width: number,
  *   thickness: number, levels: number, ms: number }} SolidInfo
  */
@@ -408,8 +410,10 @@ export function buildSolidKernel(polys, options = {}) {
 		zBack = options.zBack;
 		zFront = options.zFront ?? zBack;
 		thickness = Math.max(0, options.thickness ?? width);
-		const inward = safeInset(allRings, miters, width - outset);
-		width = Math.max(0, Math.min(width, inward + outset));
+		if (options.clamp !== false) {
+			const inward = safeInset(allRings, miters, width - outset);
+			width = Math.max(0, Math.min(width, inward + outset));
+		}
 		zBack -= thickness;
 		zFront += thickness;
 		if (width <= 0) thickness = 0;
@@ -438,9 +442,13 @@ export function buildSolidKernel(polys, options = {}) {
 	const capFaces = [];
 	/** @type {number[]} */
 	const sideFaces = [];
-	// ---- walls + bevel rings: a quad per side per level step, outward
+	// ---- walls + bevel rings: a quad per side per level step, outward. They form a GRID per ring
+	// (face = base + level * n + side), which is how the normals find a corner's neighbours
+	/** @type {{n: number, base: number}[]} */
+	const grids = [];
 	for (let r = 0; r < allRings.length; r++) {
 		const n = allRings[r].length;
+		grids.push({ n, base: sideFaces.length });
 		for (let l = 0; l + 1 < L; l++) {
 			const lo = vid[r][l];
 			const hi = vid[r][l + 1];
@@ -488,7 +496,7 @@ export function buildSolidKernel(polys, options = {}) {
 		}
 		ringBase += poly.length;
 	}
-	writeNormals(mesh, capFaces, sideFaces);
+	writeNormals(mesh, capFaces, sideFaces, grids, L);
 	const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now();
 	return {
 		mesh,
@@ -507,15 +515,17 @@ export function buildSolidKernel(polys, options = {}) {
 
 /**
  * Per-corner normals: caps flat, sides smooth by angle among SIDE faces only (a cap never bends
- * the side, the side never shades the cap). @param {MeshKernel} mesh @param {number[]} caps @param {number[]} sides
+ * the side, the side never shades the cap). A side corner's neighbours are read off the grid
+ * (the up-to-four quads around its vertex), never walked through the kernel's adjacency: this pass
+ * was half the build time of a paragraph of text when it asked `vertexFaces` per corner.
+ * @param {MeshKernel} mesh @param {number[]} caps @param {number[]} sides
+ * @param {{n: number, base: number}[]} grids @param {number} L levels
  */
-function writeNormals(mesh, caps, sides) {
+function writeNormals(mesh, caps, sides, grids, L) {
 	const data = mesh.attrs.normal.data;
-	const fn = new Float64Array(mesh.fTop * 3);
-	const fa = new Float64Array(mesh.fTop);
-	const isSide = new Uint8Array(mesh.fTop);
-	for (const f of [...caps, ...sides]) {
-		// Newell normal, unnormalised: its length is twice the area
+	const p = mesh.vPos;
+	/** unit normal + area of a face @param {number} f @param {Float64Array} out @param {number} at */
+	const newell = (f, out, at) => {
 		let nx = 0;
 		let ny = 0;
 		let nz = 0;
@@ -524,52 +534,68 @@ function writeNormals(mesh, caps, sides) {
 		for (let k = 0; k < len; k++) {
 			const a = mesh.cVert[first + k] * 3;
 			const b = mesh.cVert[first + ((k + 1) % len)] * 3;
-			const p = mesh.vPos;
 			nx += (p[a + 1] - p[b + 1]) * (p[a + 2] + p[b + 2]);
 			ny += (p[a + 2] - p[b + 2]) * (p[a] + p[b]);
 			nz += (p[a] - p[b]) * (p[a + 1] + p[b + 1]);
 		}
 		const l = Math.hypot(nx, ny, nz);
-		fa[f] = l / 2;
-		if (l > 0) {
-			fn[f * 3] = nx / l;
-			fn[f * 3 + 1] = ny / l;
-			fn[f * 3 + 2] = nz / l;
-		}
-	}
-	for (const f of sides) isSide[f] = 1;
+		out[at * 4] = l > 0 ? nx / l : 0;
+		out[at * 4 + 1] = l > 0 ? ny / l : 0;
+		out[at * 4 + 2] = l > 0 ? nz / l : 0;
+		// a sliver still counts a little, or a needle tip loses its own direction
+		out[at * 4 + 3] = Math.max(l / 2, 1e-12);
+	};
+	const one = new Float64Array(4);
 	for (const f of caps) {
+		newell(f, one, 0);
 		const first = mesh.fFirst[f];
 		for (let k = 0; k < mesh.fLen[f]; k++) {
 			const c = first + k;
-			data[c * 3] = fn[f * 3];
-			data[c * 3 + 1] = fn[f * 3 + 1];
-			data[c * 3 + 2] = fn[f * 3 + 2];
+			data[c * 3] = one[0];
+			data[c * 3 + 1] = one[1];
+			data[c * 3 + 2] = one[2];
 		}
 	}
-	for (const f of sides) {
-		const first = mesh.fFirst[f];
-		for (let k = 0; k < mesh.fLen[f]; k++) {
-			const c = first + k;
-			let sx = 0;
-			let sy = 0;
-			let sz = 0;
-			for (const g of mesh.vertexFaces(mesh.cVert[c])) {
-				if (!isSide[g]) continue;
-				const dot =
-					fn[f * 3] * fn[g * 3] + fn[f * 3 + 1] * fn[g * 3 + 1] + fn[f * 3 + 2] * fn[g * 3 + 2];
-				if (g !== f && dot < SMOOTH_COS) continue;
-				// a sliver still counts a little, or a needle tip loses its own direction
-				const w = Math.max(fa[g], 1e-12);
-				sx += fn[g * 3] * w;
-				sy += fn[g * 3 + 1] * w;
-				sz += fn[g * 3 + 2] * w;
+	// side face normals by their index in `sides` (= the grid index)
+	const sn = new Float64Array(sides.length * 4);
+	for (let s = 0; s < sides.length; s++) newell(sides[s], sn, s);
+	const rows = L - 1;
+	for (const { n, base } of grids) {
+		for (let l = 0; l < rows; l++)
+			for (let i = 0; i < n; i++) {
+				const s = base + l * n + i;
+				const f = sides[s];
+				const first = mesh.fFirst[f];
+				// corners: (l, i) (l, i+1) (l+1, i+1) (l+1, i) — the quad's own winding
+				for (let k = 0; k < 4; k++) {
+					const lv = l + (k >= 2 ? 1 : 0);
+					const iv = (i + (k === 1 || k === 2 ? 1 : 0)) % n;
+					let sx = 0;
+					let sy = 0;
+					let sz = 0;
+					for (let dl = -1; dl <= 0; dl++) {
+						const gl = lv + dl;
+						if (gl < 0 || gl >= rows) continue;
+						for (let di = -1; di <= 0; di++) {
+							const g = base + gl * n + ((iv + di + n) % n);
+							const dot =
+								sn[s * 4] * sn[g * 4] +
+								sn[s * 4 + 1] * sn[g * 4 + 1] +
+								sn[s * 4 + 2] * sn[g * 4 + 2];
+							if (g !== s && dot < SMOOTH_COS) continue;
+							const w = sn[g * 4 + 3];
+							sx += sn[g * 4] * w;
+							sy += sn[g * 4 + 1] * w;
+							sz += sn[g * 4 + 2] * w;
+						}
+					}
+					const len = Math.hypot(sx, sy, sz) || 1;
+					const c = first + k;
+					data[c * 3] = sx / len;
+					data[c * 3 + 1] = sy / len;
+					data[c * 3 + 2] = sz / len;
+				}
 			}
-			const l = Math.hypot(sx, sy, sz) || 1;
-			data[c * 3] = sx / l;
-			data[c * 3 + 1] = sy / l;
-			data[c * 3 + 2] = sz / l;
-		}
 	}
 }
 

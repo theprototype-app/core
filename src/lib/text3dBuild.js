@@ -3,12 +3,20 @@ import * as THREE from 'three';
 import { pathToContours, contoursToShapes, styleShapes, layoutBlock } from './text3dCore.js';
 import { QUALITY_SEGMENTS, mergeLetterStyles, textCharCap } from './textPathCore.js';
 import { fontFromUrl } from './textFonts.js';
+import { buildSolidArrays } from './vector/vectorSolid.js';
 
 // 64-text TX1 — EXTRUDED text, built LOCALLY on every peer from the record (only the record
 // travels and saves): opentype.js reads the font, text3dCore lays the characters out and sorts
-// each glyph's flattened loops into outlines + holes, and ONE ExtrudeGeometry holds the whole
-// text (group 0 = the caps, the face material; group 1 = the sides). Per-letter size, nudge and
+// each glyph's flattened loops into outlines + holes, and ONE geometry holds the whole text
+// (material 0 = the caps, the face material; material 1 = the sides). Per-letter size, nudge and
 // turn apply in the text's plane before extruding; per-letter COLOUR is a flat-text feature.
+//
+// 64-extrude (D7): the solid is built on the MESH KERNEL (vector/vectorSolid.js, the vector shapes'
+// builder) instead of three's ExtrudeGeometry: the same profile (three's bevelSize / thickness /
+// offset maths, `clamp: false` so the look is unchanged), n-gon caps and quad sides stored as the
+// face partition, so a BAKED text opens in Edit mode as a clean mesh. Measured on the restart:
+// "HELLO" 6-8 ms on both builders, a 200-letter paragraph 123 ms (kernel) vs 142 ms (three) in
+// IBM Plex Sans, 249 vs 229 ms in Noto Serif.
 //
 // A lazy chunk (with opentype.js), reached only from the text runtime.
 
@@ -22,7 +30,21 @@ const BUILT_MAX = 8;
 
 /** the fields that change the SHAPE (colours / materials do not) @param {any} rec @param {string} url @param {string} profile */
 export function shapeKeyOf(rec, url, profile) {
-	return JSON.stringify([url, profile, rec.text, rec.size, rec.spacing, rec.lineHeight, rec.maxWidth, rec.align, rec.anchor, rec.depth, rec.bevel, rec.quality, rec.letters]);
+	return JSON.stringify([
+		url,
+		profile,
+		rec.text,
+		rec.size,
+		rec.spacing,
+		rec.lineHeight,
+		rec.maxWidth,
+		rec.align,
+		rec.anchor,
+		rec.depth,
+		rec.bevel,
+		rec.quality,
+		rec.letters
+	]);
 }
 
 /** @param {any} font @param {string} url @param {any} glyph @param {number} seg */
@@ -30,7 +52,9 @@ function loopsOf(font, url, glyph, seg) {
 	const key = url + '|' + glyph.index + '|' + seg;
 	let loops = glyphLoops.get(key);
 	if (!loops) {
-		loops = contoursToShapes(pathToContours(glyph.path?.commands ?? [], seg, { scale: 1 / font.unitsPerEm }));
+		loops = contoursToShapes(
+			pathToContours(glyph.path?.commands ?? [], seg, { scale: 1 / font.unitsPerEm })
+		);
 		if (glyphLoops.size > GLYPH_CACHE_MAX) glyphLoops.clear();
 		glyphLoops.set(key, loops);
 	}
@@ -69,16 +93,24 @@ export async function buildExtruded(rec, url, profile) {
 	};
 	const metrics = {
 		advance: (/** @type {string} */ ch) => (glyphOf(ch).advanceWidth ?? 0) * k,
-		kern: (/** @type {string} */ a, /** @type {string} */ b) => (font.getKerningValue?.(glyphOf(a), glyphOf(b)) ?? 0) * k,
+		kern: (/** @type {string} */ a, /** @type {string} */ b) =>
+			(font.getKerningValue?.(glyphOf(a), glyphOf(b)) ?? 0) * k,
 		ascender: font.ascender * k,
 		descender: font.descender * k
 	};
 	const em = rec.size;
-	const place = layoutBlock(chars, metrics, { size: em, spacing: rec.spacing, lineHeight: rec.lineHeight, maxWidth: rec.maxWidth, align: rec.align, anchor: rec.anchor });
+	const place = layoutBlock(chars, metrics, {
+		size: em,
+		spacing: rec.spacing,
+		lineHeight: rec.lineHeight,
+		maxWidth: rec.maxWidth,
+		align: rec.align,
+		anchor: rec.anchor
+	});
 	const styles = mergeLetterStyles(chars.length, rec.letters, null);
 	const seg = QUALITY_SEGMENTS[/** @type {'low'|'medium'|'high'} */ (rec.quality)] ?? 6;
-	/** @type {any[]} */
-	const shapes = [];
+	/** @type {number[][][][]} one [outer, ...holes] per outline */
+	const polys = [];
 	let missing = 0;
 	let drawn = 0;
 	chars.forEach((ch, i) => {
@@ -95,15 +127,13 @@ export async function buildExtruded(rec, url, profile) {
 		// ems -> metres at the pen position
 		const placed = loops.map((/** @type {any} */ sh) => ({
 			outer: sh.outer.map((/** @type {number[]} */ p) => [p[0] * em + x, p[1] * em + y]),
-			holes: sh.holes.map((/** @type {number[][]} */ h) => h.map((p) => [p[0] * em + x, p[1] * em + y]))
+			holes: sh.holes.map((/** @type {number[][]} */ h) =>
+				h.map((p) => [p[0] * em + x, p[1] * em + y])
+			)
 		}));
 		const st = styles[i];
 		const out = styleShapes(placed, st, [x + place.advance[i] / 2, y], em);
-		for (const sh of out) {
-			const shape = new THREE.Shape(sh.outer.map((/** @type {number[]} */ p) => new THREE.Vector2(p[0], p[1])));
-			for (const h of sh.holes) shape.holes.push(new THREE.Path(h.map((/** @type {number[]} */ p) => new THREE.Vector2(p[0], p[1]))));
-			shapes.push(shape);
-		}
+		for (const sh of out) polys.push([sh.outer, ...sh.holes]);
 		drawn++;
 	});
 	const bevel = rec.bevel;
@@ -114,20 +144,42 @@ export async function buildExtruded(rec, url, profile) {
 	// close the counters of a, e, g)
 	const bevelSize = Math.min(bevel.size, em * 0.06);
 	const bevelInset = Math.min(bevelSize, em * 0.015);
-	const geometry = shapes.length
-		? new THREE.ExtrudeGeometry(shapes, {
-				depth: rec.depth,
-				steps: 1,
-				curveSegments: 1, // the loops are already flattened at the record's quality
-				bevelEnabled: bevelOn,
-				bevelSize,
-				bevelThickness: Math.min(bevel.thickness, rec.depth * 2),
-				bevelOffset: bevelOn ? -bevelInset : 0, // the face is inset a little, the sides grow by the rest
-				bevelSegments: bevel.segments
-			})
-		: new THREE.BufferGeometry();
+	const geometry = new THREE.BufferGeometry();
+	if (polys.length) {
+		const solid = buildSolidArrays(polys, {
+			zBack: 0,
+			zFront: rec.depth,
+			width: bevelOn ? bevelSize : 0,
+			thickness: bevelOn ? Math.min(bevel.thickness, rec.depth * 2) : 0,
+			outset: bevelOn ? bevelSize - bevelInset : 0, // three's bevelOffset = -bevelInset
+			segments: bevel.segments,
+			capMaterial: 0,
+			sideMaterial: 1,
+			clamp: false
+		});
+		geometry.setAttribute('position', new THREE.BufferAttribute(solid.positions, 3));
+		if (solid.normals) geometry.setAttribute('normal', new THREE.BufferAttribute(solid.normals, 3));
+		const uv = new Float32Array((solid.positions.length / 3) * 2);
+		for (let v = 0, j = 0; v < solid.positions.length; v += 3, j += 2) {
+			uv[j] = solid.positions[v];
+			uv[j + 1] = solid.positions[v + 1];
+		}
+		geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+		// one draw group per run of one material (the sides, then the caps)
+		const mats = solid.material;
+		for (let t = 0; t < mats.length;) {
+			let e = t;
+			while (e < mats.length && mats[e] === mats[t]) e++;
+			geometry.addGroup(t * 3, (e - t) * 3, mats[t]);
+			t = e;
+		}
+		geometry.userData.__topo = {
+			counts: solid.faces.map((f) => f.length),
+			tris: solid.faces.flat()
+		};
+	}
 	// centred on its depth, so the anchor sits in the middle of the slab
-	if (shapes.length) geometry.translate(0, 0, -rec.depth / 2);
+	if (polys.length) geometry.translate(0, 0, -rec.depth / 2);
 	geometry.computeBoundingBox();
 	geometry.computeBoundingSphere();
 	const triangles = (geometry.getAttribute('position')?.count ?? 0) / 3;
@@ -173,7 +225,9 @@ export function ownsGeometry(g) {
  */
 export function bakeCopy(g) {
 	const copy = new THREE.BufferGeometry().copy(g);
-	copy.userData = {};
+	// 64-extrude: the face partition stays (Edit mode opens the baked text as n-gon caps + quad sides)
+	const topo = g.userData?.__topo;
+	copy.userData = topo ? { __topo: { counts: topo.counts.slice(), tris: topo.tris.slice() } } : {};
 	return copy;
 }
 

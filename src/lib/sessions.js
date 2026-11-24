@@ -2296,7 +2296,7 @@ async function stashAndJoin(opts = {}) {
  *      both sides non-empty is the classic Share/Stash merge, anything else replies.
  *
  * @param {'objects'|'nodes'} kind @param {string} sender
- * @param {{otherCount?: number, theirScene?: string, theirName?: string, theirHash?: string, fromHost?: boolean, mineScene?: string, mineName?: string, arriving?: boolean}|number} [opts]
+ * @param {{otherCount?: number, theirScene?: string, theirName?: string, theirHash?: string, fromHost?: boolean, mineScene?: string, mineName?: string, arriving?: boolean, back?: boolean}|number} [opts]
  *   a bare number is read as `otherCount` — the pre-A1 shape, kept so no call site can
  *   silently pass a count into a field that ignores it. R22 round 36 (rooms):
  *   `mineScene`/`theirScene` are ROOMS and `mineName`/`theirName` are scene NAMES; a
@@ -2304,9 +2304,9 @@ async function stashAndJoin(opts = {}) {
  *   DEFAULT to the rooms and a build that never sends the token never sees one.
  */
 export function deferUntilShareChoice(kind, sender, opts = {}) {
-	/** @type {{otherCount?: number, theirScene?: string, theirName?: string, theirHash?: string, fromHost?: boolean, mineScene?: string, mineName?: string, arriving?: boolean}} */
+	/** @type {{otherCount?: number, theirScene?: string, theirName?: string, theirHash?: string, fromHost?: boolean, mineScene?: string, mineName?: string, arriving?: boolean, back?: boolean}} */
 	const context = typeof opts === 'number' ? { otherCount: opts } : opts || {};
-	const { otherCount = 0, theirScene = '', theirHash = '', fromHost = false, mineScene = '', arriving = false } = context;
+	const { otherCount = 0, theirScene = '', theirHash = '', fromHost = false, mineScene = '', arriving = false, back = false } = context;
 	// `??`, never `||`: an explicit empty NAME beside a non-empty room is the whole point
 	// of the pair (we are standing in the session's world, which has no name).
 	const theirName = String(context.theirName ?? theirScene ?? '').trim();
@@ -2374,6 +2374,18 @@ export function deferUntilShareChoice(kind, sender, opts = {}) {
 		replyTo(kind, sender);
 		// R22 round 33: no decision is coming (we hold nothing to decide about), so
 		// whatever our own handshake withheld is owed now. A no-op unless it withheld.
+		askDeferredState(sender);
+		return;
+	}
+
+	// ---- BACK: the link came back through the reconnect check ----------------
+	// `back` is OUR record (peerHandler's `cameBack`), never a field off the wire: this peer was in this session,
+	// its page or ours reloaded, and the link proved it with the secret the host gave it. What each side holds is
+	// the session's scene, so there are not two worlds to merge and nothing to ask. The reply is the plain one
+	// (add-only, never `override`): a reloaded host that dismissed its restore gets the session's scene back from
+	// its guests, and a host that restored keeps it (the uuids are the same). No verdict is recorded.
+	if (back && !split) {
+		replyTo(kind, sender);
 		askDeferredState(sender);
 		return;
 	}

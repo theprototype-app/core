@@ -6,6 +6,7 @@
 //    and the guide line shows while dragging
 //  4 C closes the path, K splits it at a picked point (opens the loop there), Delete removes a picked
 //    pair — each one undo entry, each seen by B; undo brings the previous outline back on B
+//  5 the 64-2d toolbar's plane lock: armVectorTool(kind, {planeZ}) draws on the XY plane at that z
 const h = require('./helpers.cjs');
 
 const rec = (page, uuid) =>
@@ -197,6 +198,36 @@ h.run(async () => {
 	await A.page.keyboard.press('Escape');
 	await A.page.waitForTimeout(200);
 	h.check(!(await A.page.locator('#vector-edit-toolbar').isVisible()), 'Esc ends the session');
+
+	// ---- 5 the 2D toolbar's plane lock (src/lib/vector/tools2d.js -> armVectorTool(kind, {planeZ})) ------------
+	// 64-2d's flat view looks down -Z at the XY plane: a drag on empty space draws THERE, never on the floor behind
+	const before5 = await vectorUuids(A.page);
+	await A.page.evaluate(() => window.__stores.vectorTool.armVectorTool('rect', { planeZ: 0.5 }));
+	const q0 = await h.projectPoint(A.page, [-0.4, 0.9, 0.5]);
+	const q1 = await h.projectPoint(A.page, [0.3, 1.5, 0.5]);
+	await A.page.mouse.move(q0.x, q0.y);
+	await A.page.mouse.down();
+	await A.page.mouse.move(q1.x, q1.y, { steps: 6 });
+	await A.page.mouse.up();
+	await A.page.waitForTimeout(300);
+	await A.page.evaluate(() => window.__stores.vectorTool.disarmVectorTool());
+	const locked = (await vectorUuids(A.page)).find((u) => !before5.includes(u));
+	const pose = locked
+		? await A.page.evaluate(
+				(u) =>
+					new Promise((r) =>
+						window.__stores.objectsGroup.subscribe((g) => {
+							const o = g.getObjectByProperty('uuid', u);
+							o.updateMatrixWorld(true);
+							const e = o.matrixWorld.elements;
+							const l = Math.hypot(e[8], e[9], e[10]);
+							r({ normal: [e[8] / l, e[9] / l, e[10] / l], z: e[14] });
+						})()
+				),
+				locked
+			)
+		: null;
+	h.check(!!pose && pose.normal[2] > 0.999 && Math.abs(pose.z - 0.5) < 0.01, `5. with planeZ the drag draws on the XY plane at z 0.5, facing +Z (${pose && pose.z.toFixed(3)})`);
 
 	await h.finish(browser);
 });

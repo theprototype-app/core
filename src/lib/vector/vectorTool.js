@@ -65,14 +65,20 @@ registerKeySessionProbe(() => get(vectorTool) !== null);
 
 /* --------------------------------------------------------------- arming ---- */
 
-/** arm a tool (the same one again disarms) @param {string} kind */
-export function armVectorTool(kind) {
+/** 64-vector-edit (64-2d's flat view, tools2d.js): presses draw on the plane z = lockedZ (facing +Z), never
+ * on the floor behind it; null = the surface under the press, as ever @type {number | null} */
+let lockedZ = null;
+
+/** arm a tool (the same one again disarms) @param {string} kind
+ * @param {{planeZ?: number}} [opts] planeZ: draw on the XY plane at that z (the 2D view's active layer) */
+export function armVectorTool(kind, opts = {}) {
 	if (!VECTOR_TOOLS.includes(kind)) return false;
 	if (get(vectorTool) === kind) {
 		disarmVectorTool();
 		return false;
 	}
 	cancelDraft();
+	lockedZ = Number.isFinite(opts.planeZ) ? Number(opts.planeZ) : null;
 	if (get(drawMode)) toggleDrawMode();
 	deselectObject();
 	vectorTool.set(/** @type {any} */ (kind));
@@ -87,6 +93,7 @@ export function disarmVectorTool() {
 	offPointer = null;
 	if (typeof window !== 'undefined') window.removeEventListener('keydown', onKeydown, true);
 	vectorTool.set(null);
+	lockedZ = null;
 }
 
 /** drop whatever is half-drawn (the tool stays armed) */
@@ -106,6 +113,18 @@ export function cancelDraft() {
 /** the surface under the ray (point + world normal), else the ground @param {THREE.Raycaster} ray */
 function surfaceUnder(ray) {
 	const group = get(objectsGroup);
+	if (lockedZ !== null) {
+		const n = new THREE.Vector3(0, 0, 1);
+		// a flat shape ON the plane under the press: draw on it (it stacks one layer up, frameFor)
+		for (const h of group ? ray.intersectObject(group, true) : []) {
+			if (!h.object?.visible || !(/** @type {any} */ (h.object).isMesh)) continue;
+			if (isVectorObject(h.object) && Math.abs(normalOf(h.object).dot(n)) > 1 - 1e-3 && Math.abs(h.point.z - lockedZ) < 0.05)
+				return { point: h.point.clone(), normal: n, object: /** @type {any} */ (h.object) };
+			break;
+		}
+		const point = ray.ray.intersectPlane(new THREE.Plane(n, -lockedZ), new THREE.Vector3());
+		if (point) return { point, normal: n, object: null };
+	}
 	if (group) {
 		for (const h of ray.intersectObject(group, true)) {
 			if (!h.object?.visible || !(/** @type {any} */ (h.object).isMesh)) continue;

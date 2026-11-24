@@ -63,7 +63,7 @@ const signature = async (page) => {
 		if (!ids.has(u)) ids.set(u, 'u' + ids.size);
 		return ids.get(u);
 	});
-	return { ...r, hash: crypto.createHash('sha256').update(canon).digest('hex').slice(0, 16) };
+	return { ...r, canon, hash: crypto.createHash('sha256').update(canon).digest('hex').slice(0, 16) };
 };
 
 /** meshes a page holds: name, textured, sprite block, visible */
@@ -102,6 +102,16 @@ h.run(async () => {
 		const [a, r] = [await signature(A.page), await signature(R.page)];
 		console.log(`SIG lane ${a.hash} release ${r.hash} (${a.objects} objects)`);
 		h.check(a.objects > 0, `§1 the old scene loaded (${a.objects} objects)`);
+		if (a.hash !== r.hash) {
+			// say WHERE they part: the first differing character, with context on both sides
+			let i = 0;
+			while (i < a.canon.length && a.canon[i] === r.canon[i]) i++;
+			console.log(`  §1 first difference at ${i} of ${a.canon.length} / ${r.canon.length}:\n    lane    ...${a.canon.slice(Math.max(0, i - 160), i + 240)}\n    release ...${r.canon.slice(Math.max(0, i - 160), i + 240)}`);
+			if (process.env.SPRITE_SIG_DIR) {
+				fs.writeFileSync(path.join(process.env.SPRITE_SIG_DIR, 'lane.sig'), a.canon);
+				fs.writeFileSync(path.join(process.env.SPRITE_SIG_DIR, 'release.sig'), r.canon);
+			}
+		}
 		h.check(a.hash === r.hash, `§1 its signature on this build equals the release's (${a.hash} vs ${r.hash})`);
 		h.check(!a.keys, '§1 its save carries no sprite / layer2d key');
 		h.check(a.loaded === false, '§1 a scene without sprites never loads the sprite runtime');

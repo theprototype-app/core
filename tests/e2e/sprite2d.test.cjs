@@ -305,6 +305,8 @@ h.run(async () => {
 		h.check(zOf(0) < zOf(0.3) && zOf(0.3) < zOf(0.6) && zOf(0.6) < zOf(1) && r.player && r.player.y > r.groundY, '6.2b ' + who + ': the layers keep their depth order and the player stands above the ground (' + JSON.stringify({ z: [0, 0.3, 0.6, 1].map(zOf), playerY: r.player?.y, groundY: r.groundY }) + ')');
 		h.check(r.player && r.player.status.clip === 'walk' && r.player.status.playing && r.player.nearest && r.player.size === 1, '6.3 ' + who + ': the player is an animated sprite sheet (walk autoplays, nearest, 1 m) (' + JSON.stringify(r.player) + ')');
 	}
+	// restart (v1.78.0): the 2D view component is a LAZY chunk now, so it mounts a moment after the load applied
+	await h.eventually(() => A.page.evaluate(() => window.__view2dDebug?.() ?? null), (v) => !!v?.active, '6.4a the 2D view mounted on the opener', 30000);
 	const v2 = await A.page.evaluate(() => window.__view2dDebug?.());
 	h.check(t1[0].previewing && v2?.active && v2.ortho && v2.rotate === false, '6.4 the opener is in the 2D editor view: orthographic, no rotate (' + JSON.stringify(v2) + ')');
 	// framed in METRES: 10 m tall (the template camera's size), not the canvas in pixels

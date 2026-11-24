@@ -102,13 +102,16 @@ async function createVectorTool(args) {
 		if (!gate.ok) return { error: 'svg: ' + gate.reason };
 		const uuids = svg.placeSvg(r.svg, { frame: { origin: at.world, quat: new THREE.Quaternion().copy(/** @type {any} */ (get(objectsGroup)).getWorldQuaternion(new THREE.Quaternion())).multiply(at.quaternion).toArray() } });
 		if (!uuids.length) return { error: 'svg: no shapes could be read from it (see the message in the app)' };
-		return { created: uuids.map((uuid) => ({ uuid })), ...(gate.stripped.length ? { note: 'taken out of the file: ' + gate.stripped.join(', ') } : {}), hint: 'One undo step for the whole drawing. Our own exports read back exactly.' };
+		return { ok: true, uuids, uuid: uuids[0], ...(gate.stripped.length ? { note: 'taken out of the file: ' + gate.stripped.join(', ') } : {}), hint: 'One undo step for the whole drawing. Our own exports read back exactly.' };
 	}
 	const actions = await import('../vector/vectorActions.js');
 	const mesh = actions.addVectorShape(r.params, { position: at.position, quaternion: at.quaternion, name: typeof a.name === 'string' && a.name.trim() ? a.name.trim().slice(0, 80) : undefined });
 	if (!mesh) return { error: 'could not add the shape' };
 	return {
-		created: { uuid: mesh.uuid, name: mesh.name, kind: r.params.kind },
+		ok: true,
+		uuid: mesh.uuid,
+		name: mesh.name,
+		kind: r.params.kind,
 		hint: 'Edit it with set_geometry params (width, height, radius, points, corner, fill, stroke, strokeWidth, depth, …). Booleans (union, subtract, intersect, exclude) are in the object menu under Shape.'
 	};
 }

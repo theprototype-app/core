@@ -1,3 +1,4 @@
+// @ts-nocheck — a fixture test: results are asserted non-null by the checks themselves
 // 64-vector row 5: an imported SVG is untrusted. One row per rule of vectorSvgSafety.js — refused
 // with a plain sentence, or read with everything that could run or fetch taken out.
 import { describe, test, expect } from 'vitest';

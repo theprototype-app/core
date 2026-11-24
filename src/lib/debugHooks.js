@@ -502,6 +502,7 @@ export const DEBUG_HOOKS = [
 	['vectorOps', () => import('./vector/vectorOps.js')],
 	['vectorSvgActions', () => import('./vector/vectorSvgActions.js')],
 	['vectorVR', () => import('./vector/vectorVR.js')],
+	['vectorCurveActions', () => import('./vector/vectorCurveActions.js')],
 	['splineTube', () => import('./splineTube')],
 	['splineTool', () => import('./splineTool')],
 	['splineEdit', () => import('./splineEdit')],

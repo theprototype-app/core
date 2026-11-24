@@ -178,6 +178,10 @@ function addDecalAt(hitUuid, point, normal) {
 function vectorMenuRows(object, targets, multi, locked, lockedTooltip) {
 	const group = get(objectsGroup);
 	const vectors = targets.filter((u) => isVectorObject(group?.getObjectByProperty('uuid', u)));
+	const curves = () => import('./vector/vectorCurveActions.js');
+	// 64-vector row 2 (one curve): a 78 Path becomes a pen path (a new shape; the Path stays)
+	if (!multi && object?.userData?.spline?.path && !isVectorObject(object))
+		return [{ label: 'Shape', icon: 'pen-tool', children: [{ label: 'Make vector shape', disabled: locked, tooltip: locked ? lockedTooltip : 'Add a pen path that follows this Path (the Path stays)', action: () => curves().then((m) => m.pathToVector(object.uuid)) }] }];
 	if (!isVectorObject(object) && !vectors.length) return [];
 	const ops = () => import('./vector/vectorOps.js');
 	/** @param {string} label @param {string} tip @param {() => any} run @param {boolean} [off] @param {string} [offTip] */
@@ -198,7 +202,8 @@ function vectorMenuRows(object, targets, multi, locked, lockedTooltip) {
 			row('Edit points', 'Drag points and handles, add points on the outline (a parametric shape becomes a path)', () => import('./vector/vectorEdit.js').then((m) => m.enterVectorEdit(object.uuid))),
 			row('Outline stroke', 'Turn the stroke into a filled shape of its own', () => ops().then((m) => m.outlineShape(object.uuid)), !stroked, 'This shape has no stroke'),
 			row('Inset 5 cm', 'Shrink the fill by 5 cm all round', () => ops().then((m) => m.offsetVector(object.uuid, -0.05))),
-			row('Outset 5 cm', 'Grow the fill by 5 cm all round', () => ops().then((m) => m.offsetVector(object.uuid, 0.05)))
+			row('Outset 5 cm', 'Grow the fill by 5 cm all round', () => ops().then((m) => m.offsetVector(object.uuid, 0.05))),
+			row('Make Path object', 'Add a Path along this outline, for walkers, the dolly and Array along path (the shape stays)', () => curves().then((m) => m.vectorToPath(object.uuid)))
 		);
 	}
 	const many = vectors.length > 1;

@@ -95,7 +95,8 @@ h.run(async () => {
 	};
 	const expectTop = async (uuid, label) => {
 		const a = await hit(A.page, spot[0], spot[1]);
-		h.check(a?.uuid === uuid, `${label}: on A the ray down meets the ${uuid === made.red ? 'red' : uuid === made.green ? 'green' : 'blue'} square first`);
+		const name = { [made.red]: 'red square', [made.green]: 'green square', [made.blue]: 'blue square' }[uuid] ?? 'drawn shape';
+		h.check(a?.uuid === uuid, `${label}: on A the ray down meets the ${name} first`);
 		await h.eventually(() => hit(B.page, spot[0], spot[1]), (b) => b?.uuid === uuid, `${label}: ...and on B`);
 	};
 
@@ -144,10 +145,26 @@ h.run(async () => {
 	const drawn = after.find((s) => !all.includes(s.uuid));
 	h.check(after.length === before + 1 && !!drawn, '2. the rectangle drawn on the stack joins it (same plane)');
 	h.check(after[after.length - 1].uuid === drawn?.uuid && Math.abs(drawn.base - after[0].base) < 1e-6, `2. ...on top, one layer up, on the stack's own plane (layer ${drawn?.layer})`);
+	// probe the drawn shape's own centre (its corners snap, so a fixed spot may lie outside it)
+	const dc = await A.page.evaluate(
+		(u) =>
+			new Promise((r) =>
+				window.__stores.objectsGroup.subscribe((g) => {
+					const o = g.getObjectByProperty('uuid', u);
+					o.updateMatrixWorld(true);
+					o.geometry.computeBoundingBox();
+					const c = o.geometry.boundingBox.getCenter(o.position.clone()).applyMatrix4(o.matrixWorld);
+					r([c.x, c.z]);
+				})()
+			),
+		drawn.uuid
+	);
+	spot[0] = dc[0];
+	spot[1] = dc[1];
 	await expectTop(drawn.uuid, '2. drawn on top');
 
 	// ---- 3 align and distribute in the plane --------------------------------------------------------------
-	const edges = (page) =>
+	const edges = (page, uuids = all) =>
 		page.evaluate(
 			(uuids) =>
 				new Promise((r) =>

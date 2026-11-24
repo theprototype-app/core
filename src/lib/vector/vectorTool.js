@@ -590,6 +590,8 @@ export function vectorToolDebug() {
 		tool: get(vectorTool),
 		armed: !!offPointer,
 		pen: pen ? pen.nodes.map((n) => ({ ...n })) : null,
+		// 64-vector-edit: where each pen point is on screen now (suites aim taps at them)
+		screen: pen ? pen.nodes.map((n) => screenOf(n.x, n.y)) : null,
 		preview: !!preview,
 		frame: frame ? { origin: frame.origin.toArray(), quat: frame.quat.toArray() } : null
 	};

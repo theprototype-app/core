@@ -96,8 +96,10 @@ h.run(async () => {
 	h.check((await pen(A.page)).length === 3, 'a third tap: three points');
 	const before = Object.keys(await vectorParams(A.page));
 	const depth = await undoDepth(A.page);
-	const first = await h.projectPoint(A.page, w[0]);
-	await finger({ x: first.x + 6, y: first.y - 5 });
+	// the first point where it really is on screen now (the pinch and pan moved the camera)
+	const fs = (await A.page.evaluate(() => window.__stores.vectorTool.vectorToolDebug().screen))?.[0];
+	h.check(!!fs && fs[0] > 0 && fs[1] > 0 && fs[0] < 412 && fs[1] < 915, `the first point is on screen (${fs && fs.map((v) => v.toFixed(0))})`);
+	await finger({ x: fs[0] + 6, y: fs[1] - 5 });
 	const now = await vectorParams(A.page);
 	const made = Object.keys(now).find((u) => !before.includes(u));
 	h.check(!!made && now[made].paths[0].closed && now[made].paths[0].nodes.length === 3, 'a tap on the first point closes the path into a shape');

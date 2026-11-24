@@ -123,20 +123,32 @@ h.run(async () => {
 	await iwer.tap(A.page, 'right', 'trigger');
 	await aimAt(onPlane(st, 0.3, 0.1));
 	await iwer.tap(A.page, 'right', 'trigger');
+	const two = await laser(A.page);
+	h.check(two.points === 2, `two presses on the carried plane place two points (${two.points})`);
+	if (two.points !== 2) console.log('  laser diag: ' + JSON.stringify({ st, two, menu: await A.page.evaluate(() => new Promise((r) => window.__stores.vrMenuOpen?.subscribe?.((v) => r(v))?.() ?? r('n/a'))) }));
 	const before2 = Object.keys(await vectors(A.page));
-	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('vec:pen-finish'));
-	await iwer.frames(A.page, 4);
+	const ran = await A.page.evaluate(() => {
+		try {
+			window.__stores.vrControls.executeVRMenuAction('vec:pen-finish');
+			return 'ok';
+		} catch (e) {
+			return String(e);
+		}
+	});
+	for (let i = 0; i < 20 && Object.keys(await vectors(A.page)).length === before2.length; i++) await iwer.frames(A.page, 2);
+	if (ran !== 'ok') console.log('  finish threw: ' + ran);
 	const open = Object.entries(await vectors(A.page)).find(([u]) => !before2.includes(u));
 	h.check(!!open && open[1].params.paths[0].closed === false && open[1].params.paths[0].nodes.length === 2, 'Finish path ends an open two-point path');
 	h.check(!!open && Math.abs(open[1].pos[0] - st.origin[0]) < 0.35 && Math.abs(open[1].pos[1] - st.origin[1]) < 0.2, '...drawn on the carried plane');
 	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('vec:pen-off'));
-	await iwer.frames(A.page, 4);
+	for (let i = 0; i < 20 && (await laser(A.page)).active; i++) await iwer.frames(A.page, 2);
 	h.check(!(await laser(A.page)).active, 'Pen off disarms');
 	h.check(!(await A.page.evaluate(() => new Promise((r) => window.__stores.globalScene.subscribe((s) => r(!!s.getObjectByName('vector-work-plane')))()))), '...and the plane is gone');
 	const count = Object.keys(await vectors(A.page)).length;
 	await aimAt(onPlane(st, 0, 0));
 	await iwer.tap(A.page, 'right', 'trigger');
 	h.check(Object.keys(await vectors(A.page)).length === count, 'with the pen off the trigger draws nothing');
+	h.check(h.pageErrors(A).length === 0, `no page error (${h.pageErrors(A).join(' | ') || 'none'})`);
 
 	await h.finish(browser);
 });

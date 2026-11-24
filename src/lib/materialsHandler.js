@@ -427,31 +427,6 @@ export async function downscaleImage(file, maxSize, quality = 0.8) {
 }
 
 /**
- * 64-2d: encode an image LOSSLESSLY for pixel art — PNG, never webp/jpeg, and image smoothing
- * OFF when it has to shrink (an integer step down, so a sheet's grid survives). Sprites go
- * through this (setObjectsTexture `lossless`): a webp re-encode smears every edge.
- * @param {File | Blob} file @param {number} maxSize
- */
-export async function encodeLossless(file, maxSize) {
-	const bitmap = await createImageBitmap(file);
-	const side = Math.max(bitmap.width, bitmap.height);
-	const div = side > maxSize ? Math.ceil(side / maxSize) : 1;
-	const canvas = document.createElement('canvas');
-	canvas.width = Math.max(1, Math.floor(bitmap.width / div));
-	canvas.height = Math.max(1, Math.floor(bitmap.height / div));
-	const ctx = canvas.getContext('2d');
-	if (ctx) {
-		ctx.imageSmoothingEnabled = false;
-		ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-	}
-	bitmap.close?.();
-	return canvas.toDataURL('image/png');
-}
-
-/** 64-2d: the longest side a LOSSLESS (sprite) texture keeps — a 64-frame sheet of 32 px is 2048 */
-export const SPRITE_TEXTURE_MAX_SIDE = 2048;
-
-/**
  * 40-image (F13, the user's image-large report): the texture is DOWNSCALED to 1024 px
  * whatever comes in, so refusing a big file at 8 MB refused photos the path was already
  * built to shrink. The only limit left is a decode-safety one — a file this size is not
@@ -477,7 +452,8 @@ export async function decodeTextureFile(file, quality = 0.8, lossless = false) {
 	const decoded = await heicToJpegFile(file, { onError: showToast });
 	if (!decoded) return null;
 	try {
-		return lossless ? await encodeLossless(decoded, SPRITE_TEXTURE_MAX_SIDE) : await downscaleImage(decoded, TEXTURE_MAX_SIDE, quality);
+		// 64-2d: the lossless encoder is a lazy leaf (only a sprite texture needs it)
+		return lossless ? await (await import('./sprite2d/losslessImage.js')).encodeLossless(decoded) : await downscaleImage(decoded, TEXTURE_MAX_SIDE, quality);
 	} catch (error) {
 		console.log(error);
 		showToast('Could not read the image file');

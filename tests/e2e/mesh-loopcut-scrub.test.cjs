@@ -49,7 +49,6 @@ const beginCut = (page) =>
 		w.objectsGroup.subscribe((v) => (g = v))();
 		const box = g.children[g.children.length - 1];
 		w.faceEdit.enterFaceEdit(box.uuid);
-		w.faceEdit.setFaceSubmode('faces');
 		const top = w.faceEdit.currentFaces().find((f) => f.normal.y > 0.99);
 		w.faceEdit.pickFaceUnit(top.triIndices[0]);
 		w.meshToolParams.focusTool('loopcut');
@@ -61,8 +60,11 @@ const beginCut = (page) =>
 			if (!began) await new Promise((r) => setTimeout(r, 50));
 		}
 		// the toolbox is a lazy chunk: wait for the pane to mount (a loaded host takes seconds)
-		for (let i = 0; i < 150 && !document.querySelector('#loopcut-position'); i++)
+		// (and the popup's focus effect follows the ARMED op on mount, which can clear a focus set before it: re-assert)
+		for (let i = 0; i < 150 && !document.querySelector('#loopcut-position'); i++) {
+			w.meshToolParams.focusTool('loopcut');
 			await new Promise((r) => setTimeout(r, 200));
+		}
 		await new Promise((r) => setTimeout(r, 300));
 		return { uuid: box.uuid, began, pane: !!document.querySelector('#loopcut-position') };
 	});

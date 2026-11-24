@@ -221,6 +221,8 @@ export class RiggedAvatar {
 		this.disposed = false;
 		this.ready = false;
 		this.placed = false;
+		/** 92-input GC4: pose without easing (the self body in a third-person view) */
+		this.snap = false;
 		this.ik = { left: 0, right: 0 };
 		this.ikShown = { left: false, right: false };
 		/** @type {any} */
@@ -424,7 +426,8 @@ export class RiggedAvatar {
 		const tz = p.z;
 		const o = this.object.position;
 		const jump = Math.hypot(tx - o.x, ty - o.y, tz - o.z);
-		if (!this.placed || jump > TELEPORT_M) o.set(tx, ty, tz);
+		// 92-input GC4: `snap` = your own body in a third-person view, posed every frame — no stream to ease
+		if (!this.placed || jump > TELEPORT_M || this.snap) o.set(tx, ty, tz);
 		else {
 			const k = 1 - Math.exp(-dt * 14);
 			o.x += (tx - o.x) * k;

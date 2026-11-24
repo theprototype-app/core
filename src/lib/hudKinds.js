@@ -496,7 +496,10 @@ export const HUD_KIND_DEFS = [
 		styleDefaults: { size: 12, color: '#e5e7eb' },
 		fields: [
 			{ key: 'keyName', kind: 'text', label: 'key', placeholder: 'E' },
-			{ key: 'label', kind: 'text', label: 'text', placeholder: 'Interact' }
+			{ key: 'label', kind: 'text', label: 'text', placeholder: 'Interact' },
+			// 92-input GC3: the game key it stands for (KeyE, Space, GamepadA). Empty = read from `key` when it
+			// names one. The hint follows the player's remap and shows the pad's own button on a pad.
+			{ key: 'code', kind: 'text', label: 'game key', placeholder: 'from key (e.g. Space)' }
 		],
 		style: [...TEXT_STYLE, STYLE.bg, STYLE.border, STYLE.radius, STYLE.pad]
 	},

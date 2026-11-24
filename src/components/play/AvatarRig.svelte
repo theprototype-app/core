@@ -23,7 +23,7 @@
 	// stream); the rigged body is its SIBLING because a body must stand upright.
 	export let user: any[]
 	/** the customise panel's self-preview: a fixed pose instead of a camera stream */
-	export let preview: { position: number[]; yaw: number } | null = null
+	export let preview: { position: number[]; yaw: number; feet?: number | null; alpha?: number; snap?: boolean } | null = null
 	/** the id `auto` hashes (the preview shows what PEERS will see for your real id) */
 	export let lookId: string = ''
 
@@ -154,12 +154,20 @@
 		if (preview && root) {
 			root.position.set(preview.position[0], preview.position[1], preview.position[2])
 			root.rotation.set(0, preview.yaw, 0, 'YXZ')
+			// 92-input GC4: the third-person self body stands on the walker's floor and never trails the camera
+			if (preview.feet !== undefined) root.userData.feet = preview.feet ?? undefined
+			if (avatar) avatar.snap = !!preview.snap
 		}
 		if (card) card.lookAt(viewer)
 		if (labelGroup) labelGroup.lookAt(viewer)
 		if (avatar && root) avatar.update(Math.min(delta, 0.1), performance.now() / 1000, root, preview ? null : $peerHands[user[0]], viewer)
 		tickClassicDizzy(Math.min(delta, 0.1))
 		// 78 PL32: an avatar standing in (or right in front of) THIS screen's camera fades out
+		// 92-input GC4: the self body fades as a wall pulls the camera into it (the view measured the distance)
+		if (preview?.alpha !== undefined && root && (preview.alpha < 1 || nearAlpha < 1)) {
+			fadeAvatar([root, avatar?.object], preview.alpha)
+			nearAlpha = preview.alpha
+		}
 		if (!preview && root) {
 			const alpha = nearFadeAlpha(root.getWorldPosition(headAt).distanceTo(viewer))
 			if (alpha < 1 || nearAlpha < 1) {

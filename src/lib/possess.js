@@ -1,5 +1,6 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
+import { STEP_CAP_S } from './realStep.js'; // 92-correct row 4: a leaf
 import { writable, get } from 'svelte/store';
 import { objectsGroup, lockedObjects, orbitControls, globalCamera, globalRenderer, isVRMode } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
@@ -226,7 +227,9 @@ function tick(now) {
 		release(); // deleted out from under us
 		return;
 	}
-	const dt = Math.min((now - state.lastTime) / 1000, 0.1);
+	// 92-correct row 4: per second down to 2 fps (a throttled tab); a possessed drive has no collision sweep
+	// to protect, so a long frame counts in full up to realStep's cap (it used to stop at 0.1 s)
+	const dt = Math.min((now - state.lastTime) / 1000, STEP_CAP_S);
 	state.lastTime = now;
 	const { codes, axes, pad } = getInput();
 	const { speed, turnSpeed, camera } = state.opts;

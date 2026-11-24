@@ -66,7 +66,7 @@ h.run(async () => {
 				same: JSON.stringify(cat.slice(0, core.length).map((g) => ({ group: g.group, types: g.items.map((i) => i.type) }))) === JSON.stringify(core)
 			};
 		});
-		h.check(reg.types.length === 152 && reg.errors.length === 0, `152 core node types (148 on int-102-1 + 102 Stamp Decal + 102 M7 constraint weight/target + 102b-flows Fired Object), one whole definition each (${reg.types.length}, errors ${JSON.stringify(reg.errors)})`);
+		h.check(reg.types.length === 153 && reg.errors.length === 0, `153 core node types (148 on int-102-1 + 102 Stamp Decal + 102 M7 constraint weight/target + 102b-flows Fired Object + 92 Dialogue), one whole definition each (${reg.types.length}, errors ${JSON.stringify(reg.errors)})`);
 		h.check(reg.same, 'the palette the app built is the definitions, in family order');
 		await openEditor(A.page);
 		const nodes = reg.types.map((type, i) => ({ id: 'p' + i, type, position: { x: (i % 12) * 260, y: Math.floor(i / 12) * 260 }, data: { type } }));

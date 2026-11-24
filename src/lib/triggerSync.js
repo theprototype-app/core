@@ -30,6 +30,7 @@
 import { get } from 'svelte/store';
 import { peers } from '../stores/appStore';
 import { flowTriggers, allNodes } from '../stores/flowStore';
+import { instanceBaseId } from './copyRegistry.js';
 import { markTriggerHistory } from './flowRuntime';
 
 // ---- outbound -------------------------------------------------------------------
@@ -58,7 +59,9 @@ export function triggerLogPayload() {
 	const triggers = {};
 	for (const [id, entry] of Object.entries(get(flowTriggers) ?? {})) {
 		// 36 (U10): a NAMED output's stamp is keyed `<node>#<output>` (a behaviour's emit)
-		if (!live.has(id.includes('#') ? id.slice(0, id.indexOf('#')) : id)) continue;
+		// 92-correct row 2: a spawned copy's instance of its template's flow is `<copy>~<node>` (copyGraphs.js)
+		const base = instanceBaseId(id);
+		if (!live.has(base.includes('#') ? base.slice(0, base.indexOf('#')) : base)) continue;
 		if (typeof entry?.lastT !== 'number') continue;
 		triggers[id] = { count: Number(entry.count) || 0, lastT: entry.lastT };
 	}

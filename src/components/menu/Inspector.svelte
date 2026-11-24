@@ -2453,6 +2453,9 @@
 
 			<Section variant="panel" label="Levels" closed aliases={['Level', 'Portals', 'Checkpoints', 'Loading screen', 'Keep across levels']} note={sectionNote('Levels')}><LevelsSection /></Section>
 
+			<!-- 92 (GC1/GC2/GC5/GC8): title screen, pause, save slots, auto-admit (a lazy chunk) -->
+			<Section variant="panel" label="Game menus" closed aliases={['Title screen', 'Start screen', 'Pause menu', 'Save slots', 'Auto-admit']}>{#await import('./scene/GameMenusSection.svelte') then m}<m.default />{/await}</Section>
+
 			<Section variant="panel" label="Physics" closed note={sectionNote('Physics')}>
 				<!-- B4: ONE section, three labelled sub-blocks (the Snapping section's
 					 internal grouping). Splitting it would break its collapse state, the

@@ -3,7 +3,7 @@
 //   · Rotate / Motor's spin-up ramp: every wheel turned at full speed from the first frame;
 //   · HUD Timer with Autostart: `duration - time` read 0 the moment it appeared.
 // Measured: a 60 rpm rotor with a 3 s spin-up turns well under its post-ramp speed in its first
-// half-second; an autostart 60 s timer starts near 60 and counts down.
+// half-second; an autostart 60 s timer starts near 60 (and, since 92-correct, holds it until Play).
 // COUNTERFACTUAL (4cd3dafc): the rotor is at full speed at once; the timer reads 0.
 // Run: APP_URL=https://theprototype.app:5591/ node tests/e2e/flow-clock-origin.test.cjs
 const h = require('./helpers.cjs');
@@ -105,9 +105,11 @@ h.run(async () => {
 		Number(timerEarly) >= 58 && Number(timerEarly) <= 60,
 		`HUD Timer with Autostart starts at its duration, not 0 (${timerEarly})`
 	);
+	// 92-correct row 1: an autostart timer counts from Play (or the round), so in the editor it holds its full
+	// time; it counting down in Play is hud-timer-play's check. The fix-batch-1 point stays: it never reads 0.
 	h.check(
-		Number(timerLate) < Number(timerEarly) && Number(timerLate) >= 54,
-		`…and counts down (${timerEarly} -> ${timerLate})`
+		Number(timerLate) === Number(timerEarly) && Number(timerLate) >= 58,
+		`…and in the editor holds its full time until Play (${timerEarly} -> ${timerLate}; counting in Play: hud-timer-play)`
 	);
 
 	h.check(

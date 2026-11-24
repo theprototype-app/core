@@ -500,6 +500,10 @@ export const DEBUG_HOOKS = [
 	['hudViewportDrag', () => import('./hudViewportDrag')],
 	['gamepadPrefs', () => import('./gamepadPrefs')],
 	['charController', () => import('./charController')],
+	// 92-input GC4: the play views (playViewDebug / playViewKind / PLAY_VIEW_DEFAULTS)
+	['playView', () => import('./playViewSeam.js')],
+	// 92-input GC3: the pad bridge (padActionsDebug) + the device prompts follow (activeInput)
+	['padActions', () => import('./padActions.js')],
 	['hudRichText', () => import('./hudRichText')],
 	['moduleHudKinds', () => import('./moduleHudKinds')],
 	['hudMinimap', () => import('./hudMinimap')],
@@ -601,6 +605,8 @@ export const DEBUG_HOOKS = [
 	['gameStorage', () => import('./gameStorage')],
 	// 30b (vr-play): the game-feel leaves under ONE name
 	['gameKit', () => import('./gameKit')],
+	// 92 (GC1/GC2/GC5/GC8): the game's menus, its save slots, the title screen, late joiners during Play
+	['gameMenusKit', () => import('./gameMenusKit.js')],
 	['moduleWorld', () => import('./moduleWorld')],
 	['playSpawn', () => import('./playSpawn')],
 	// 78 PL32: the joiner's side step (lastJoinSideStep) + the near-avatar fade maths
@@ -703,7 +709,12 @@ export const DEBUG_HOOKS = [
 	['pathState', () => import('./path/pathState.js')],
 	['pathTools', () => import('./ai/pathTools.js')],
 	// 101 F3: the renderer seam (disposeRenderer, recycleMainRenderer, seamState, the factories)
-	['renderSeam', () => import('./render/index.js')]
+	['renderSeam', () => import('./render/index.js')],
+	// 92-dialogue (GC6): the open talk (dialogueView), the runtime's actions, the script reader, the agent tool
+	['dialogueView', () => import('./dialogue/view.js')],
+	['dialogue', () => import('./dialogue/runtime.js')],
+	['dialogueScript', () => import('./dialogue/script.js')],
+	['dialogueTools', () => import('./ai/dialogueTools.js')]
 ];
 
 /** Load every row and publish `window.__stores` + the 101 F5 facade `window.__tp.test.v1` over it

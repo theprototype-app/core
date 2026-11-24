@@ -123,8 +123,12 @@ h.run(async () => {
 		h.check(!cam.error && !!cam.playCamera, '4. set_play_camera first + opening view: ' + short(cam));
 		await h.eventually(() => controllersOnHost(A.page), (n) => n.length === 1, '4. the host has one Character Controller node', 20000);
 		await h.eventually(() => playOnHost(A.page), (p) => Array.isArray(p.startView?.position), '4. the host has the opening view', 20000);
-		const third = json(await call(B.client, 'set_play_camera', { mode: 'third' }));
-		h.check(third.unavailable === true && /Possess Object/.test(third.error || ''), '4. third person is said to be unavailable, with the route: ' + String(third.error).slice(0, 80));
+		// 92-input GC4a: third person is a Play camera now — the same Character Controller, changed in place
+		const third = json(await call(B.client, 'set_play_camera', { mode: 'third', distance: 5 }));
+		h.check(!third.error && third.playCamera?.mode === 'third', '4. set_play_camera third: ' + short(third));
+		await h.eventually(() => controllersOnHost(A.page), (n) => n.length === 1 && n[0].data?.camera === 'third' && n[0].data?.distance === 5, '4. the host\'s one Character Controller is third person', 20000);
+		const orbit = json(await call(B.client, 'set_play_camera', { mode: 'orbit' }));
+		h.check(orbit.unavailable === true && /Possess Object/.test(orbit.error || ''), '4. orbit is said to be unavailable, with the route: ' + String(orbit.error).slice(0, 80));
 
 		console.log('\n=== 5. the A8 log + Undo from the host ===');
 		await h.eventually(() => read(A.page, 'agentLog.agentLog'), (l) => WRITERS.every((t) => (l || []).some((e) => e.tool === t && e.ok !== false)), '5. the host\'s A8 log has a line for each writer', 20000);

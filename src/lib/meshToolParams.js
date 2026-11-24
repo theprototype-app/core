@@ -72,7 +72,7 @@ export const insetDepth = writable(0);
  * default granularity) instead of one shared ring per connected piece. */
 export const insetIndividual = writable(false);
 /** 19-A P3: how many times Subdivide splits (each level = 4x the triangles).
- * NOT named `subdivideLevels` — faceEdit exports a pure HELPER of that name
+ * NOT named `subdivideLevels` — the kernel operators (meshOps) export one of that name
  * and the two would shadow each other at every import site. */
 export const subdivideLevelCount = writable(1);
 /** 19-A P5b: how far Edge extrude pulls the strip (world units, signed — negative

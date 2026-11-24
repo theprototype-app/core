@@ -1276,7 +1276,6 @@ async function setFaceUv(uuid, object, args, t) {
 	const ue = await import('$lib/uvEditor');
 	/** @type {any} */
 	const fe = await import('$lib/faceEdit');
-	const { recordEntry } = await import('$lib/history');
 	const editable = ue.uvEditable(object);
 	if (!editable.ok) return { error: editable.reason };
 	const before = ue.readUvSnapshot(object);
@@ -1284,9 +1283,7 @@ async function setFaceUv(uuid, object, args, t) {
 	const uvs = projectFaceUvs(picked.tris.map((i) => [tris[i][0], tris[i][1], tris[i][2]]), t);
 	picked.tris.forEach((triIndex, k) => (tris[triIndex].uv = uvs[k]));
 	const after = { positions: fe.trisToPositions(tris), groups: fe.trisToGroups(tris), uvs: fe.trisToUVs(tris) };
-	fe.applyMeshGeo(uuid, after.positions, after.groups, after.uvs);
-	ue.broadcastUvGeo(uuid, after);
-	recordEntry({ kind: 'meshgeo', uuid, before, after });
+	ue.uvCommit(uuid, before, after); // 99 K2: the one commit (the UV editor's message)
 	return { faces: picked.tris.length };
 }
 

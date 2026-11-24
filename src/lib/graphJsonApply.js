@@ -89,7 +89,7 @@ function replaceDocument(graphId, from, to) {
 }
 
 /**
- * Apply a validated result of `codeTabs.parseGraphJson` to a graph, as ONE undo step.
+ * Apply a validated result of `codeParse.parseGraphJson` to a graph, as ONE undo step.
  * @param {string} graphId @param {{nodes: any[], edges: any[]}} result
  */
 export function applyGraphJson(graphId, result) {

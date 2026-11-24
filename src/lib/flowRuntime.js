@@ -103,8 +103,10 @@ import { GAME_FEEL_ACTIONS, runGameFeelAction, updateGameMusicNodes, primeGameFe
 // 34 R2 (T3): the game kit — its action nodes act on the stamp edge here, its document ticks here
 import { KIT_ACTION_TYPES, runKitNodeAction, installKitNodes } from './kit/nodes.js';
 import { tickKit, primeKitRuntime, kitAuthorityId, kit } from './kit/runtime.js';
-/** 34 R3: behaviours/app.js, primed in startFlowRuntime @type {any} */
+/** 34 R3: behaviours/app.js, set when it loads (behaviours/load.js; 102-boot-diet) @type {any} */
 let behavioursRef = null;
+import { onBehavioursLoad, loadBehaviours, hasBehaviourNode } from './behaviours/load.js'; // 102-boot-diet (a leaf)
+import { reserveEngineNames } from './behaviours/engines.js'; // 102-boot-diet: on the boot already (sdk/kit)
 // 31 (Stars Room): a scene's own settings rows (31-game-shell's leaf), and the pointing switch
 import { registerGameSetting, gameSettingValue } from './gameSettings';
 import { setPointGrabEnabled } from './pointGrab';
@@ -6277,16 +6279,22 @@ export function startFlowRuntime() {
 	installKitNodes(); // 34 R2: the kit nodes' outputs and named inputs, declared once
 	// 34 R2 (kit-entities): draw the kit's entities, give the movers the scene (primed: three + stores)
 	import('./kit/entityApp.js').then((m) => m.startKitEntities()).catch(() => {});
-	// 34 R3 (D1): behaviour nodes load + tick (primed: the module loader reaches the SDK)
-	import('./behaviours/app.js')
-		.then((m) => {
-			behavioursRef = m;
-			// 36 (U10): `this.emit(name)` = a replicated pulse on the node's output `name`
-			m.setBehaviourEmitter?.((/** @type {string} */ id, /** @type {string} */ name) => applyNodeTrigger(id + '#' + name, syncedNow(), true));
-			m.startBehaviours();
-		})
-		.catch((error) => console.warn('behaviours failed to start', error));
+	// 34 R3 (D1): behaviour nodes load + tick (primed: the module loader reaches the SDK).
+	// 102-boot-diet: app.js (and its analyzer, acorn) loads when a graph first holds a behaviour node,
+	// a `bhv` message arrives or the AI layer loads (behaviours/load.js); this is what runs once it is in
+	// a module's engine piece may not shadow a kit piece: reserved at start, as startBehaviours did when it
+	// ran at every boot (it still re-reserves the same names when behaviours load)
+	reserveEngineNames(kit.specs().map((/** @type {any} */ s) => s.piece));
+	onBehavioursLoad((m) => {
+		behavioursRef = m;
+		// 36 (U10): `this.emit(name)` = a replicated pulse on the node's output `name`
+		m.setBehaviourEmitter?.((/** @type {string} */ id, /** @type {string} */ name) => applyNodeTrigger(id + '#' + name, syncedNow(), true));
+		m.startBehaviours();
+	});
 	flowGraphs.subscribe(() => {
+		// 102-boot-diet: the graph watch is the scene loader's moment (a load, a joiner's node sync, a node
+		// added by hand), so the behaviours chunk is fetched while the rest of the scene is still arriving
+		if (!behavioursRef && hasBehaviourNode(allNodes())) loadBehaviours();
 		// 36 U11: muted nodes and the editor-only kinds (group, note) are not evaluated; 55 Q1: nor dormant graphs
 		rebuildRuntimeGraph();
 		applyColors();

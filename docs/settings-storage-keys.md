@@ -216,6 +216,9 @@ Each section is a single component — see ExportSettingsSection and NodeTypesSe
 | Conflict — Swap | *action* `setOverride(other.id, mine.keys)` + `setOverride(id, keys)` | `shortcutOverrides` | — | DEVICE | lib/shortcuts.js:994 | |
 | Per-row reset (↺) | *action* `resetShortcut(id)` | `shortcutOverrides` | — | DEVICE | lib/shortcuts.js:1006 | |
 | Reset all (`#shortcut-reset-all`) | *action* `resetAllShortcuts()` | removes `shortcutOverrides` | — | DEVICE | lib/shortcuts.js:1012 | |
+| Keymap preset (`#keymap-preset`, 103) | `keymapPreset` (lib/shortcuts.js) via `setKeymapPreset(id)` | `keymapPreset` | `theprototype` (key absent) | DEVICE | lib/shortcuts.js | 'blender' / 'unity'; **key removed for the default**; switching drops overrides equal to the new preset's key |
+| Fly with WASD (`#fly-with-wasd`, viewport menu View, 103) | `flyWithWasd` (lib/flyPrefs.js) | `flyWithWasd` | `always` (key absent) | DEVICE | lib/flyPrefs.js | 'rmb' = only while the right mouse button is held; key removed for the default |
+| Fly direction (`#fly-direction`, viewport menu View, 103) | `flyDirection` (lib/flyPrefs.js) | `flyDirection` | `level` (key absent) | DEVICE | lib/flyPrefs.js | 'look' = W / S along the view; key removed for the default |
 | Layout note (`#shortcut-layout-note`) | `nonLatinLayoutSeen` (read-only) | not persisted | `false` | runtime | lib/shortcuts.js:1095 | |
 | Locked rows | — (display only) | — | — | — | | |
 

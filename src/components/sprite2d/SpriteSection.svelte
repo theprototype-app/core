@@ -10,6 +10,9 @@
 	import { sceneRevision } from '../../stores/sceneStore';
 	import { normalizeSprite, compactSprite, parseFramesText, framesText, parseEventsText, eventsText, MAX_SHEET_SIDE } from '$lib/sprite2d/spriteCore.js';
 	import { setSpriteFor, setSpriteImage } from '$lib/sprite2d/spriteActions.js';
+	import { explorerItems } from '$lib/explorer';
+	import { applyExplorerImage } from '$lib/explorerDrop';
+	import Icon from '../ui/Icon.svelte';
 	import { playSpriteClip, resetSpritePlayback, spriteStatus } from '$lib/sprite2d/spriteRuntime.js';
 
 	/** @type {{object: any}} */
@@ -39,6 +42,30 @@
 		const file = e.currentTarget.files?.[0];
 		e.currentTarget.value = '';
 		if (file) await setSpriteImage([object.uuid], file);
+	}
+	// the 105 way: an Explorer image goes through the ordinary texture path (applyExplorerImage ->
+	// setObjectTexture with the item's hash as its source; a sprite target is encoded lossless there)
+	const explorerImages = $derived(/** @type {any[]} */ ($explorerItems).filter((i) => i.kind === 'image'));
+	/** @param {any} e */
+	function pickExplorer(e) {
+		const id = e.currentTarget.value;
+		e.currentTarget.value = '';
+		if (id) void applyExplorerImage(object.uuid, { id });
+	}
+	/** @param {DragEvent} e */
+	function overImage(e) {
+		if (e.dataTransfer?.types.includes('application/x-explorer-item')) e.preventDefault();
+	}
+	/** @param {DragEvent} e */
+	function dropImage(e) {
+		const raw = e.dataTransfer?.getData('application/x-explorer-item');
+		if (!raw) return;
+		e.preventDefault();
+		try {
+			void applyExplorerImage(object.uuid, JSON.parse(raw));
+		} catch {
+			/* not an Explorer item */
+		}
 	}
 	/** the clip list as stored, with one clip patched @param {number} i @param {any} patch */
 	function setClip(i, patch) {
@@ -76,7 +103,7 @@
 <div data-keywords={keywords} class="contents">
 	<Section variant="panel" label="Sprite">
 		<div data-tour="sprite" class="contents">
-			<div class="ui-row items-center gap-2">
+			<div class="ui-row flex-wrap items-center gap-2" id="sprite-image-row" role="group" aria-label="Sprite image (drop an Explorer image here)" ondragover={overImage} ondrop={dropImage}>
 				<span class="w-20 shrink-0 text-xs text-text-muted">Image</span>
 				{#if thumb}
 					<img id="sprite-thumb" src={thumb} alt="Sprite sheet" class="h-8 max-w-24 rounded-sm border border-border-strong object-contain" style="image-rendering: pixelated" />
@@ -85,6 +112,12 @@
 					{thumb ? 'Replace…' : 'Choose image…'}
 				</button>
 				<input bind:this={fileInput} type="file" accept="image/*" class="hidden" aria-label="Sprite image" onchange={pickImage} />
+				{#if explorerImages.length}
+					<select id="sprite-explorer" class="ui-input min-w-0 flex-1" aria-label="Sprite image from the Explorer" onchange={pickExplorer}>
+						<option value="">From Explorer…</option>
+						{#each explorerImages as item (item.id)}<option value={item.id}>{item.name}</option>{/each}
+					</select>
+				{/if}
 			</div>
 			<div class="ui-row items-center gap-2" title="Nearest keeps pixel art crisp; Linear smooths painted art">
 				<span class="w-20 shrink-0 text-xs text-text-muted">Filter</span>
@@ -121,7 +154,7 @@
 							title="Play this clip here (only you see the preview)"
 							onclick={() => playSpriteClip(object, clip.name, { action: 'restart' })}>Preview</button
 						>
-						<button class="sprite-clip-remove ui-chip text-text-muted hover:bg-surface-hover" title="Remove clip" aria-label={'Remove clip ' + clip.name} onclick={() => removeClip(i)}>✕</button>
+						<button class="sprite-clip-remove ui-chip text-text-muted hover:bg-surface-hover" title="Remove clip" aria-label={'Remove clip ' + clip.name} onclick={() => removeClip(i)}><Icon name="x" size={14} aria-hidden="true" /></button>
 					</div>
 					<div class="ui-row items-center gap-1">
 						<span class="w-12 shrink-0 text-xs text-text-muted">Frames</span>

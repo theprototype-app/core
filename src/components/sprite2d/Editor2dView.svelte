@@ -9,7 +9,7 @@
 	import { T, useThrelte } from '@threlte/core';
 	import { OrbitControls } from '@threlte/extras';
 	import * as THREE from 'three';
-	import { orbitControls, isLocked } from '../../stores/sceneStore';
+	import { orbitControls, isLocked, TControls } from '../../stores/sceneStore';
 	import { specatorMode } from '../../stores/appStore';
 	import { cameraPreview } from '$lib/cameraPreview';
 	import { view2d } from '$lib/sprite2d/view2d.js';
@@ -41,6 +41,18 @@
 			// OrbitControls that is merely dropped keeps its DOM listeners (the 16-Q5 zombie)
 			view2d.update((v) => ({ ...v, x: controls.target.x, y: controls.target.y, halfH: v.halfH / Math.max(0.01, camera.zoom || 1) }));
 			controls.dispose?.();
+		};
+	});
+
+	// D6: the gizmo moves in the PLANE while the flat view is on — its z handle (and the planes
+	// that include z) hide; leaving the view gives them back
+	$effect(() => {
+		const gizmo: any = $TControls;
+		if (!gizmo || !active) return;
+		const had = gizmo.showZ;
+		gizmo.showZ = false;
+		return () => {
+			gizmo.showZ = had ?? true;
 		};
 	});
 

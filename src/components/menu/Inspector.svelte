@@ -4679,6 +4679,10 @@
 									if (item) await fanTexture((uuid) => applyExplorerImage(uuid, { id: item.id }, primaryMulti ? activeSlot : 0), 'Texture');
 								}}
 							/>
+							<!-- 105-noise: fill / modulate the colour texture with generated noise (lazy) -->
+							<UiButton id="texture-noise" variant="icon" size="sm" icon="wand-sparkles" label="Fill the texture with noise"
+								title="Fill or blend the texture with noise (Perlin, Simplex, cells, value) in the Image editor"
+								onclick={() => import('$lib/image/noiseFill').then((m) => m.fillSlotWithNoise({ uuids: matTargets.map((o) => o.uuid), key: 'map', slot: primaryMulti ? activeSlot : 0 }))} />
 						</div>
 						</div>
 					{/if}

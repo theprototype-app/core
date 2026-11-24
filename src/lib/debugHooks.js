@@ -222,6 +222,10 @@ export const DEBUG_HOOKS = [
 	['imageEditor', () => import('./image/imageEditor')],
 	['imageOps', () => import('./image/imageOps')],
 	['imageVersions', () => import('./image/imageVersions')],
+	// 105-noise: the noise generator, its worker pool and the slot fill (image-noise suite)
+	['noiseCore', () => import('./image/noiseCore.js')],
+	['noiseRun', () => import('./image/noiseRun')],
+	['noiseFill', () => import('./image/noiseFill')],
 	['sceneBounds', () => import('./sceneBounds')],
 	['cameraClip', () => import('./cameraClip')],
 	['ping', () => import('./ping')],

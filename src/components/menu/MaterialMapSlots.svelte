@@ -151,6 +151,16 @@
 					label={'Pick the ' + slot.label + ' map from the Explorer'}
 					onclick={() => pickExplorer(slot)}
 				/>
+				<!-- 105-noise: fill / modulate this row's image with generated noise (lazy: noiseFill.js + the editor's panel) -->
+				<UiButton
+					id={'map-noise-' + slot.key}
+					variant="icon"
+					size="sm"
+					icon="wand-sparkles"
+					label={'Fill the ' + slot.label + ' map with noise'}
+					title={(slot.filled ? 'Blend noise into the ' : 'Fill the ') + slot.label + ' map with noise (Perlin, Simplex, cells, value) in the Image editor'}
+					onclick={() => import('$lib/image/noiseFill').then((m) => m.fillSlotWithNoise({ uuids, key: slot.key, slot: materialSlot })).then(refresh)}
+				/>
 			</div>
 			{#if slot.key === 'normalMap' && slot.filled}
 				<SliderRow

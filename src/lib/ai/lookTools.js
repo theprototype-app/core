@@ -1519,10 +1519,15 @@ export const LOOK_AI_TOOLS = [
 						description:
 							'85b: a procedural albedo texture by name — wood, planks, brick, tiles, marble, stone, concrete, metal, grass, sand, fabric, checker, stripes, noise — or {name, colors: [dark, light], scale, seed, size}; it becomes a library image first'
 					},
-					patternScale: { type: 'number', description: 'with pattern: how many times it repeats across each face (e.g. 4 for a floor)' },
+					noise: {
+						type: 'object',
+						description:
+							'105: a generated noise albedo (instead of pattern): {kind: perlin|simplex|worley|value, scale (cells across, 1-64), octaves (1-8), roughness (0-1), seed, contrast (-100..100), invert, tileable (default true), colors: [low, …, high] (2-5 hex), size (default 1024)}; becomes a library image first. maps.<slot>: {noise: {...}} for another map (maps.normal makes a normal map from the noise as height). The answer lists what it wrote.'
+					},
+					patternScale: { type: 'number', description: 'with pattern or noise: how many times it repeats across each face (e.g. 4 for a floor)' },
 					maps: {
 						type: 'object',
-						description: 'texture slots, each a library image hash, an https URL, {pattern: name} (a procedural texture), or null to clear',
+						description: 'texture slots, each a library image hash, an https URL, {pattern: name} (a procedural texture), {noise: {kind, scale, octaves, seed, …}} (generated noise), or null to clear',
 						properties: {
 							albedo: { type: ['string', 'object', 'null'] },
 							normal: { type: ['string', 'object', 'null'] },

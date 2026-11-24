@@ -9,8 +9,9 @@
 //      (watertight after), the Geometry rows lock, the arrow goes away
 //   §4 the Inspector's Extrude row: a scrub is ONE undo step (the geometry merge)
 //   §5 bevel + steps: inward, the solid stays inside z 0..depth; bevelSegments reaches B
-//   §6 budget: a 64-point star drags at frame rate (no frame over 50 ms on the PC); a 2 000-point
-//      path builds under 300 ms, and a depth drag on it blocks no frame over 100 ms
+//   §6 budget: a 64-point star drag adds < 50 ms to any frame over the page's idle frames (a software-GL PC
+//      renders every frame as a long task; on a GPU idle is ~0, so this is the absolute line); a 2 000-point
+//      path builds under 300 ms, and a depth drag on it adds under 100 ms to any frame (same baseline)
 //   §7 Escape mid-drag leaves the depth where it was and no undo step
 //   §8 Bake: the shape becomes a plain mesh on A and B (no record), one undo brings the record back
 //
@@ -407,6 +408,15 @@ h.run(async () => {
 				n: window.__long.length
 			};
 		});
+	// the page's own frame cost with nothing happening, on this renderer (a software GL renders every frame
+	// as a long task on a loaded PC; on a GPU it is ~0): the drag must add no more than the budget to it
+	const idle = async () => {
+		await watch();
+		await A.page
+			.waitForFunction(() => window.__frames.length >= 24, null, { timeout: 60000 })
+			.catch(() => {});
+		return read();
+	};
 	const builds = () => A.page.evaluate(() => window.__tp.test.v1.vectorMesh.vectorMeshDebug());
 	const posOf = (u) =>
 		A.page.evaluate((id) => {
@@ -416,6 +426,7 @@ h.run(async () => {
 		}, u);
 	const p6 = await posOf(star64);
 	const b6 = await builds();
+	const i6 = await idle();
 	await watch();
 	await dragArrow(A.page, a6, 160, { steps: 30, pause: 16 });
 	const f6 = await read();
@@ -426,8 +437,8 @@ h.run(async () => {
 		'§6 the drag never moves the star (the gizmo under the arrow stands down)'
 	);
 	h.check(
-		f6.long < 50,
-		`§6 the 64-point star drag blocks no frame for 50 ms or more (longest task ${f6.long.toFixed(0)} ms at +${f6.at} ms of ${f6.n} long, worst frame ${f6.worst.toFixed(0)} ms over ${f6.frames}; ${b6e.fullBuilds - b6.fullBuilds} full + ${b6e.fastBuilds - b6.fastBuilds} depth-only builds)`
+		f6.long - i6.long < 50,
+		`§6 the 64-point star drag adds under 50 ms to any frame (+${(f6.long - i6.long).toFixed(0)}: idle longest ${i6.long.toFixed(0)} ms; drag longest task ${f6.long.toFixed(0)} ms at +${f6.at} ms of ${f6.n} long, worst frame ${f6.worst.toFixed(0)} ms over ${f6.frames}; ${b6e.fullBuilds - b6.fullBuilds} full + ${b6e.fastBuilds - b6.fastBuilds} depth-only builds)`
 	);
 	const path = await A.page.evaluate(() => {
 		const nodes = Array.from({ length: 2000 }, (_, i) => {
@@ -455,12 +466,13 @@ h.run(async () => {
 	);
 	await select(A.page, path.uuid);
 	const a6b = await arrowOn(A.page, path.uuid, '§6 premise: the arrow on the 2 000-point path');
+	const i6b = await idle();
 	await watch();
 	await dragArrow(A.page, a6b, 120, { steps: 24, pause: 16 });
 	const f6b = await read();
 	h.check(
-		f6b.long < 100,
-		`§6 a depth drag on the 2 000-point path blocks no frame for 100 ms or more (longest task ${f6b.long.toFixed(0)} ms at +${f6b.at} ms of ${f6b.n} long, worst frame ${f6b.worst.toFixed(0)} ms)`
+		f6b.long - i6b.long < 100,
+		`§6 a depth drag on the 2 000-point path adds under 100 ms to any frame (+${(f6b.long - i6b.long).toFixed(0)}: idle longest ${i6b.long.toFixed(0)} ms; drag longest task ${f6b.long.toFixed(0)} ms at +${f6b.at} ms of ${f6b.n} long, worst frame ${f6b.worst.toFixed(0)} ms)`
 	);
 	// a heavy record's drag goes on the wire every ~120 ms and once on release: B ends on the same depth
 	const dA = depthOf(await facts(A.page, path.uuid));

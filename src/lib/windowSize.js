@@ -162,8 +162,10 @@ export function sizeResetOf(node) {
  * full-width bar when docked), the notes / notifications / people cluster and the profile circle.
  * 76 FW-AI cleared the profile circle for the AI window alone; a docked Connect bar on a tablet-wide
  * screen pushes the whole cluster down, so every window that opens at the top right (the AI window,
- * the Debugger, module toolboxes) slid its header under the bell row. */
-export const TOP_CHROME = ['.connect-pill', '#hud-tr', '#avatar-trigger'];
+ * the Debugger, module toolboxes) slid its header under the bell row. 103-int-1: 103 H15's grid made the logo and
+ * the row beside it (the touch tools) tiles at the top-left inset, so a window clamped up on a short screen (the Edit
+ * Mesh toolbox at 1280 x 720) slid its title under the logo: they count too. */
+export const TOP_CHROME = ['.connect-pill', '#hud-tr', '#avatar-trigger', '#logo-menu', '#touch-tools'];
 
 /** The lowest top a window `left..left+width` may take: just under every chrome rect it overlaps
  * horizontally (an empty rect — hidden chrome — never counts). 0 when it overlaps none.

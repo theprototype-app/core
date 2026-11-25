@@ -53,7 +53,7 @@ export const SDK_TABLE = [
 	['ui', sdkUi], // registerMenu, *Toolbox, registerVRMenuEntry
 	['input', sdkInput], // registerBindings, input, keyOf, letterOf, onInput, claim/releaseInput
 	['physics', sdkPhysics], // api.physics
-	['feel', sdkFeel], // haptic, hapticPattern, onHit, hitLog
+	['feel', sdkFeel], // haptic, hapticPattern, feel (vibrate / stop / outputs, 103), onHit, hitLog
 	['world', sdkWorld], // locomotion, isVR, isPlaying, peerIds, peerNames, create, moveObject, flyTo
 	['sound', sdkSound], // playSound, effects, announce, music
 	['view', sdkView], // followCam, stopFollowCam, vrHand, vrPanel

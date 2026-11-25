@@ -2183,13 +2183,17 @@
 					"pattern": {
 						"description": "85b: a procedural albedo texture by name — wood, planks, brick, tiles, marble, stone, concrete, metal, grass, sand, fabric, checker, stripes, noise — or {name, colors: [dark, light], scale, seed, size}; it becomes a library image first"
 					},
+					"noise": {
+						"type": "object",
+						"description": "105: a generated noise albedo (instead of pattern): {kind: perlin|simplex|worley|value, scale (cells across, 1-64), octaves (1-8), roughness (0-1), seed, contrast (-100..100), invert, tileable (default true), colors: [low, …, high] (2-5 hex), size (default 1024)}; becomes a library image first. maps.<slot>: {noise: {...}} for another map (maps.normal makes a normal map from the noise as height). The answer lists what it wrote."
+					},
 					"patternScale": {
 						"type": "number",
-						"description": "with pattern: how many times it repeats across each face (e.g. 4 for a floor)"
+						"description": "with pattern or noise: how many times it repeats across each face (e.g. 4 for a floor)"
 					},
 					"maps": {
 						"type": "object",
-						"description": "texture slots, each a library image hash, an https URL, {pattern: name} (a procedural texture), or null to clear",
+						"description": "texture slots, each a library image hash, an https URL, {pattern: name} (a procedural texture), {noise: {kind, scale, octaves, seed, …}} (generated noise), or null to clear",
 						"properties": {
 							"albedo": {
 								"type": [
@@ -2256,9 +2260,31 @@
 						"description": "a CC0 material by Poly Haven name, ambientCG id (\"Wood051\", \"Bricks076\", \"Metal032\") or words (\"brown planks\")"
 					},
 					"slot": {
-						"type": "integer",
-						"minimum": 0,
-						"description": "which material slot of a multi-material object (default 0)"
+						"type": [
+							"integer",
+							"string"
+						],
+						"description": "which material slot of a multi-material object: its index (0 = first), or its id or name from list_materials (default 0)"
+					},
+					"slotName": {
+						"type": "string",
+						"description": "rename that slot"
+					},
+					"slotOff": {
+						"type": "boolean",
+						"description": "true: that slot draws the plain default material (its own material is kept); false: its material again"
+					},
+					"removeSlot": {
+						"type": "object",
+						"description": "remove that slot; its faces go to slot `to` (index, id or name; default the first other slot). Give nothing else in the call.",
+						"properties": {
+							"to": {
+								"type": [
+									"integer",
+									"string"
+								]
+							}
+						}
 					},
 					"faces": {
 						"type": "object",
@@ -2279,7 +2305,7 @@
 		{
 			"name": "list_materials",
 			"title": "Read materials",
-			"description": "What objects wear: per object its material slots (type, colour, numbers, which maps) and shader, plus the preset names (the starters Wood, Metal, Plastic, Glass, Stone, Rubber, Fish scales, Neon, Water, and any the person saved) and shader keys. Read this before editing.",
+			"description": "What objects wear: per object its material slots (type, colour, numbers, which maps; on a slot list each slot's id and the shader that draws it) and shader, plus the preset names (the starters Wood, Metal, Plastic, Glass, Stone, Rubber, Fish scales, Neon, Water, and any the person saved) and shader keys. Read this before editing.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -2356,6 +2382,13 @@
 					"name": {
 						"type": "string"
 					},
+					"slot": {
+						"type": [
+							"integer",
+							"string"
+						],
+						"description": "one material slot of a multi-material object (index, id or name from list_materials): that slot gets its own shader; absent = the whole object (every slot without its own)"
+					},
 					"replace": {
 						"type": "boolean",
 						"description": "replace a graph the object already has"
@@ -2390,7 +2423,14 @@
 				"properties": {
 					"shader": {
 						"type": "string",
-						"description": "the key from create_shader or list_materials"
+						"description": "the key from create_shader or list_materials (a slot's is \"<uuid>/<slot id>\")"
+					},
+					"slot": {
+						"type": [
+							"integer",
+							"string"
+						],
+						"description": "with an object uuid as shader: that material slot's own shader (index, id or name)"
 					},
 					"params": {
 						"type": "array",
@@ -2459,6 +2499,13 @@
 							"null"
 						],
 						"description": "the key of the graph to copy, or null to remove"
+					},
+					"slot": {
+						"type": [
+							"integer",
+							"string"
+						],
+						"description": "one material slot of a multi-material object (index, id or name from list_materials): that slot gets its own shader; absent = the whole object (every slot without its own)"
 					}
 				},
 				"required": [
@@ -3390,7 +3437,7 @@
 		{
 			"name": "set_light",
 			"title": "Change the scene light",
-			"description": "The scene's own lighting: sun {color, intensity, direction [x,y,z] the light shines (y below 0)} or null for none, ambient {sky, ground, intensity} or null, and environment lights (directional / point / hemisphere, at most 8): add [{kind, color, intensity, position}], update [{id, …}], remove [ids] (get_environment lists their ids). Lamps, spots and area lights in the scene are objects: create_objects kind light. Changes the whole scene's look, so the host is asked first (needsConfirm, then repeat with confirmId). One undo step.\nTake a screenshot after each change to check your work.",
+			"description": "The scene's own lighting: sun {color, intensity, direction [x,y,z] the light shines (y below 0)} or null for none, ambient {sky, ground, intensity} or null, environment lights (directional / point / hemisphere, at most 8): add [{kind, color, intensity, position}], update [{id, …}], remove [ids] (get_environment lists their ids), and shadowQuality (off / basic / soft / far). Lamps, spots and area lights in the scene are objects: create_objects kind light. Changes the whole scene's look, so the host is asked first (needsConfirm, then repeat with confirmId). One undo step.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -3504,6 +3551,16 @@
 						"items": {
 							"type": "string"
 						}
+					},
+					"shadowQuality": {
+						"type": "string",
+						"enum": [
+							"off",
+							"basic",
+							"soft",
+							"far"
+						],
+						"description": "the scene's shadows for everyone: off, basic (the default), soft (softer edges), far (soft + the sky sun casts sharp near and far, out to 300 m; none past that); a phone or headset may draw less (get_environment says shadowQualityDrawnHere)"
 					},
 					"confirmId": {
 						"type": "string",
@@ -9055,13 +9112,17 @@
 								"pattern": {
 									"description": "85b: a procedural albedo texture by name — wood, planks, brick, tiles, marble, stone, concrete, metal, grass, sand, fabric, checker, stripes, noise — or {name, colors: [dark, light], scale, seed, size}; it becomes a library image first"
 								},
+								"noise": {
+									"type": "object",
+									"description": "105: a generated noise albedo (instead of pattern): {kind: perlin|simplex|worley|value, scale (cells across, 1-64), octaves (1-8), roughness (0-1), seed, contrast (-100..100), invert, tileable (default true), colors: [low, …, high] (2-5 hex), size (default 1024)}; becomes a library image first. maps.<slot>: {noise: {...}} for another map (maps.normal makes a normal map from the noise as height). The answer lists what it wrote."
+								},
 								"patternScale": {
 									"type": "number",
-									"description": "with pattern: how many times it repeats across each face (e.g. 4 for a floor)"
+									"description": "with pattern or noise: how many times it repeats across each face (e.g. 4 for a floor)"
 								},
 								"maps": {
 									"type": "object",
-									"description": "texture slots, each a library image hash, an https URL, {pattern: name} (a procedural texture), or null to clear",
+									"description": "texture slots, each a library image hash, an https URL, {pattern: name} (a procedural texture), {noise: {kind, scale, octaves, seed, …}} (generated noise), or null to clear",
 									"properties": {
 										"albedo": {
 											"type": [
@@ -9128,9 +9189,31 @@
 									"description": "a CC0 material by Poly Haven name, ambientCG id (\"Wood051\", \"Bricks076\", \"Metal032\") or words (\"brown planks\")"
 								},
 								"slot": {
-									"type": "integer",
-									"minimum": 0,
-									"description": "which material slot of a multi-material object (default 0)"
+									"type": [
+										"integer",
+										"string"
+									],
+									"description": "which material slot of a multi-material object: its index (0 = first), or its id or name from list_materials (default 0)"
+								},
+								"slotName": {
+									"type": "string",
+									"description": "rename that slot"
+								},
+								"slotOff": {
+									"type": "boolean",
+									"description": "true: that slot draws the plain default material (its own material is kept); false: its material again"
+								},
+								"removeSlot": {
+									"type": "object",
+									"description": "remove that slot; its faces go to slot `to` (index, id or name; default the first other slot). Give nothing else in the call.",
+									"properties": {
+										"to": {
+											"type": [
+												"integer",
+												"string"
+											]
+										}
+									}
 								},
 								"faces": {
 									"type": "object",
@@ -9167,7 +9250,7 @@
 									"maximum": 200
 								}
 							},
-							"description": "What objects wear: per object its material slots (type, colour, numbers, which maps) and shader, plus the preset names (the starters Wood, Metal, Plastic, Glass, Stone, Rubber, Fish scales, Neon, Water, and any the person saved) and shader keys. Read this before editing."
+							"description": "What objects wear: per object its material slots (type, colour, numbers, which maps; on a slot list each slot's id and the shader that draws it) and shader, plus the preset names (the starters Wood, Metal, Plastic, Glass, Stone, Rubber, Fish scales, Neon, Water, and any the person saved) and shader keys. Read this before editing."
 						},
 						"get_material": {
 							"type": "object",
@@ -9200,6 +9283,13 @@
 								"name": {
 									"type": "string"
 								},
+								"slot": {
+									"type": [
+										"integer",
+										"string"
+									],
+									"description": "one material slot of a multi-material object (index, id or name from list_materials): that slot gets its own shader; absent = the whole object (every slot without its own)"
+								},
 								"replace": {
 									"type": "boolean",
 									"description": "replace a graph the object already has"
@@ -9224,7 +9314,14 @@
 							"properties": {
 								"shader": {
 									"type": "string",
-									"description": "the key from create_shader or list_materials"
+									"description": "the key from create_shader or list_materials (a slot's is \"<uuid>/<slot id>\")"
+								},
+								"slot": {
+									"type": [
+										"integer",
+										"string"
+									],
+									"description": "with an object uuid as shader: that material slot's own shader (index, id or name)"
 								},
 								"params": {
 									"type": "array",
@@ -9283,6 +9380,13 @@
 										"null"
 									],
 									"description": "the key of the graph to copy, or null to remove"
+								},
+								"slot": {
+									"type": [
+										"integer",
+										"string"
+									],
+									"description": "one material slot of a multi-material object (index, id or name from list_materials): that slot gets its own shader; absent = the whole object (every slot without its own)"
 								}
 							},
 							"required": [
@@ -9746,6 +9850,16 @@
 										"type": "string"
 									}
 								},
+								"shadowQuality": {
+									"type": "string",
+									"enum": [
+										"off",
+										"basic",
+										"soft",
+										"far"
+									],
+									"description": "the scene's shadows for everyone: off, basic (the default), soft (softer edges), far (soft + the sky sun casts sharp near and far, out to 300 m; none past that); a phone or headset may draw less (get_environment says shadowQualityDrawnHere)"
+								},
 								"confirmId": {
 									"type": "string",
 									"description": "the id a needsConfirm answer gave: repeat the call with it to get the host's answer and apply"
@@ -9755,7 +9869,7 @@
 									"description": "with confirmId: seconds to wait for the answer (up to 60)"
 								}
 							},
-							"description": "The scene's own lighting: sun {color, intensity, direction [x,y,z] the light shines (y below 0)} or null for none, ambient {sky, ground, intensity} or null, and environment lights (directional / point / hemisphere, at most 8): add [{kind, color, intensity, position}], update [{id, …}], remove [ids] (set_look {action: 'environment'} lists their ids). Lamps, spots and area lights in the scene are objects: create_objects kind light. Changes the whole scene's look, so the host is asked first (needsConfirm, then repeat with confirmId). One undo step."
+							"description": "The scene's own lighting: sun {color, intensity, direction [x,y,z] the light shines (y below 0)} or null for none, ambient {sky, ground, intensity} or null, environment lights (directional / point / hemisphere, at most 8): add [{kind, color, intensity, position}], update [{id, …}], remove [ids] (set_look {action: 'environment'} lists their ids), and shadowQuality (off / basic / soft / far). Lamps, spots and area lights in the scene are objects: create_objects kind light. Changes the whole scene's look, so the host is asked first (needsConfirm, then repeat with confirmId). One undo step."
 						},
 						"environment": {
 							"type": "object",

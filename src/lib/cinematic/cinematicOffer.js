@@ -11,6 +11,16 @@ export function asQuality(q) {
 	return q === 'basic' || q === 'standard' || q === 'high' ? q : DEFAULT_QUALITY;
 }
 
+/** each step's name (cinematicCore's QUALITY reads it; the Preview pill, on every device, reads only this) */
+export const QUALITY_LABEL = Object.freeze({ basic: 'Basic', standard: 'Standard', high: 'High' });
+
+/** @typedef {'auto'|'on'|'off'} LightMode */
+
+/** 106 S3: a stored Reflections / Global light switch (Auto = what the quality step decides) @param {any} v @returns {LightMode} */
+export function asLightMode(v) {
+	return v === 'on' || v === 'off' ? v : 'auto';
+}
+
 /** a Quest / headset browser */
 export const HEADSET_UA = /OculusBrowser|Quest|Pico/i;
 

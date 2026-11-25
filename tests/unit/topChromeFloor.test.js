@@ -12,7 +12,7 @@ const avatar = rect(702, 60, 750, 108);
 
 describe('topChromeFloor', () => {
 	it('names the cluster and the profile circle as well as the Connect pill', () => {
-		expect(TOP_CHROME).toEqual(expect.arrayContaining(['.connect-pill', '#hud-tr', '#avatar-trigger']));
+		expect(TOP_CHROME).toEqual(expect.arrayContaining(['.connect-pill', '#hud-tr', '#avatar-trigger', '#logo-menu', '#touch-tools']));
 	});
 	it('a window under the bell row opens below it, not just below the profile circle', () => {
 		expect(topChromeFloor(255, 500, [bar, cluster, avatar])).toBe(118);

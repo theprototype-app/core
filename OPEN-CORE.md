@@ -427,7 +427,14 @@ and is **1**; a peer that sends no `proto` speaks 1 (every build up to 1.65).
   `lock` carries `ats` parallel to `uuids` (when each object was taken, session clock), the handshake's
   `locked` carries every held object, an edit of an object someone else holds is not applied and the
   holder answers `lockreject {uuid}` plus the object as it is; `lockmode {mode, at}` from the host says
-  whether selecting locks). Read a flag from `peerCaps`; absent = the peer does not have it.
+  whether selecting locks), `slots2` (105: a per-slot material value travels as `materialParam` /
+  `material` with an additive `slot` index, and a slot's `userData.slot.off` draws the plain default;
+  while a peer without it is connected, a per-slot gesture ends with one whole-list `materials` message
+  to that peer), `slotShaders` (105: a `shadergraph` document keyed `<objectUuid>/<slotId>` drives that one
+  material slot; a peer without it keeps and forwards the document, draws the slot's own material and drops
+  it from its own saves, and People shows "N people here use an older version — they do not see per-slot
+  shaders" while one is connected and the scene holds a slot shader). Read a flag from `peerCaps`; absent =
+  the peer does not have it.
 - **Inbound limits (F4):** each peer has a per-second budget of messages and bytes and an `object`
   size cap ([src/lib/wireBudget.js](src/lib/wireBudget.js) `LIMITS`, set at >= 4x the measured
   peaks); a message over budget is dropped and counted (`budget:*` in Diagnostics), the person is

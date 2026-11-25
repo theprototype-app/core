@@ -3,7 +3,7 @@
 	import { objectsGroup, selectedObjects, lockedObjects, viewMode, isLocked, editorMode } from '../stores/sceneStore.js';
 	import { showToast } from '../stores/appStore.js';
 	import { get } from 'svelte/store';
-	import { chromiumMajor, postSupported } from '$lib/viewMode';
+	import { chromiumMajor, postSupported, drawAsWantsAo } from '$lib/viewMode'; // 103 H11: Ambient occlusion only asks for the personal AO pass
 	import { registerToneMappingOwner, applyEnvironment } from '$lib/environment';
 	// 21/L-C: which camera we are LOOKING THROUGH, so its own look composes on top of
 	// the scene's. Exactly how HudLayer resolves an attached HUD — a look on a camera IS
@@ -40,7 +40,9 @@
 	import { recordingClean } from '$lib/helperLayer';
 	// 41 G10: the character studio hides the scene, so the selection glare stands down with it
 	import { studioIsolating } from '$lib/avatars/avatarState';
-	import { shadowQuality } from '$lib/lightParams';
+	import { shadowQuality, contactShadowsWanted } from '$lib/lightParams';
+	// 106 S2: the local contact-shadow entry (its kind registers lazily with Soft / Far)
+	const CONTACT_ENTRY = Object.freeze({ id: 'builtin-contact', kind: 'contactshadows', enabled: true, params: { steps: 12 } });
 	import { useTask, useThrelte } from '@threlte/core';
 	import { applyShake, frameHeldByHitPause } from '$lib/gameFeelFx';
 	import { applyPlayView } from '$lib/playViewSeam'; // 92-input GC4
@@ -367,7 +369,7 @@
 		// up post to keep its frames, and that must not be undone by watching somebody.
 		const reduced = $qualityOverrides;
 		const overrides = adopted ? adopted.look : undefined;
-		const adoptedMode = adopted ? adopted.mode : $viewMode;
+		const adoptedMode = adopted ? adopted.mode : $drawAsWantsAo ? 'shaded-ao' : $viewMode;
 		const inputs = {
 			stack: resolvedDoc(POST_SCENE_KEY, overrides),
 			cameraStack: /** @type {any} */ (throughCamera ? resolvedDoc(throughCamera, overrides) : null),
@@ -382,8 +384,12 @@
 		const aoReady = $n8aoReady;
 		if (!aoReady && !reduced.aoOff && effectivePostStack({ ...inputs, postWarm: true }).some((entry) => entry.kind === 'ao'))
 			void loadN8ao().catch(() => {});
+		// 106 S2: contact shadows are the drawn shadow level's, LOCAL (never in a document): first in the chain,
+		// on the lit image, wherever post runs at all here; the governor's lighter look and shadows-off drop them
+		const contact = $contactShadowsWanted && adoptedMode !== 'wireframe' && postOk && postWarm && !reduced.postOff && !reduced.lookLite && !reduced.shadowsOff;
+		const withContact = contact ? [CONTACT_ENTRY, ...entries] : entries;
 		// 98-int: the governor's "Scene look lighter" step keeps the grade and drops the heavy passes
-		const shown = reduced.lookLite ? liteLook(entries) : entries;
+		const shown = reduced.lookLite ? liteLook(withContact) : withContact;
 		const signature = postStackSignature(shown) + (aoReady ? '' : '|ao-loading');
 		if (signature === stackSignature) return;
 		stackSignature = signature;

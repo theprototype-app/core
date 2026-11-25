@@ -1,0 +1,95 @@
+// 106 — the knobs a drawn shadow level turns, and the setting row's capped line: pure, and LAZY (shadowLevels.js
+// and the Configure Scene row import it; the boot only needs shadowLevelCore.js).
+// imports NOTHING from shadowLevelCore at runtime (types only): a lazy importer would split the core out of
+// environment's boot chunk into its own (+370 B measured)
+
+/** @typedef {import('./shadowLevelCore.js').ShadowLevel} ShadowLevel */
+/** @typedef {import('./shadowLevelCore.js').ShadowTier} ShadowTier */
+
+/**
+ * Contact shadows (S2) per tier: only where S0 measured they fit. None does in this release (Q6, 2026-11-23): on
+ * the Deck's iGPU (a pc-tier device) the pass doubles the frames over 20 ms on product-shot and castle (Soft 41 vs
+ * 20 without it, Far 55 vs 10), on the HONOR it adds frames on every scene, and the Quest is Basic. The pass stays
+ * in the code, measured and tested, for the tier that fits it first.
+ */
+export const TIER_CONTACT = Object.freeze({ pc: false, phone: false, quest: false });
+
+/** Does this device draw contact shadows for the drawn level? @param {ShadowLevel} drawn @param {ShadowTier} tier */
+export function contactShadowsOn(drawn, tier) {
+	return (drawn === 'soft' || drawn === 'far') && !!TIER_CONTACT[tier];
+}
+
+/**
+ * The knobs a drawn level turns. Basic is the identity (nothing written), so Basic stays byte-for-byte today's.
+ *  · radius       PCF kernel radius in texels (three's default 1)
+ *  · cascades     the sun draws SunLightShadow's two cascades
+ *  · reach        how far (m) the cascades reach from the camera (the sun shadow camera's far)
+ *  · cascadeMap   per-cascade map size before the device's own size cap
+ */
+export const LEVEL_PARAMS = Object.freeze({
+	off: Object.freeze({ radius: 1, cascades: false, reach: 0, cascadeMap: 0 }),
+	basic: Object.freeze({ radius: 1, cascades: false, reach: 0, cascadeMap: 0 }),
+	soft: Object.freeze({ radius: 3, cascades: false, reach: 0, cascadeMap: 0 }),
+	far: Object.freeze({ radius: 2, cascades: true, reach: 300, cascadeMap: 2048 })
+});
+
+/** Soft's widest blur in metres (6 cm). A kernel is counted in TEXELS, and a scene-fitted map's texel grows with the
+ * scene: Basic's 2048 map over a 240 m frustum (r = 120) is 12 cm a texel, where radius 3 blurred ~35 cm and a 40 cm
+ * box's shadow washed out to 0.8 of lit (shadow-levels-106 on the PC GPU). */
+export const SOFT_BLUR_M = 0.06;
+
+/**
+ * The kernel radius a light draws at a lifted level: the level's radius, but never wider than SOFT_BLUR_M on an
+ * orthographic (directional) map and never under 1 (Basic's). A perspective map (spot / point) keeps the radius.
+ * @param {{camera?: any, mapSize?: {x: number}} | null | undefined} shadow @param {number} radius
+ * @returns {number}
+ */
+export function kernelRadiusFor(shadow, radius) {
+	const c = shadow?.camera;
+	const w = c?.isOrthographicCamera ? Math.abs(c.right - c.left) : 0;
+	const px = shadow?.mapSize?.x || 0;
+	if (!(w > 0) || !(px > 0) || radius <= 1) return radius;
+	const fit = SOFT_BLUR_M / (w / px);
+	return Math.max(1, Math.min(radius, Math.round(fit * 10) / 10));
+}
+
+/** @param {ShadowLevel} level */
+export function levelParams(level) {
+	return LEVEL_PARAMS[level] ?? LEVEL_PARAMS.basic;
+}
+
+/**
+ * The cascades' reach for a scene: Far's 300 m, but never past 2.5x the scene's radius (a small scene keeps
+ * its near cascade sharp) and never under 40 m. WHY 300 and not the 200 the brief names: three's sun shader draws
+ * NO shadow past the last cascade's end and fades the last 10 % of the second cascade out, so a reach of 200
+ * left an object at 200 m view depth unshadowed (Basic's one fitted map still shadows it, blurred). At 300 the
+ * practical split puts the near cascade at ~0-78 m and 200 m sits in the solid part of the far one. Past the
+ * reach Far draws no rig-sun shadow: the row and the docs say so.
+ * @param {number} sceneRadius @param {number} [reach]
+ */
+export function cascadeReach(sceneRadius, reach = LEVEL_PARAMS.far.reach) {
+	const r = Number(sceneRadius);
+	const fit = Number.isFinite(r) && r > 0 ? r * 2.5 : reach;
+	return Math.max(40, Math.min(reach, fit));
+}
+
+/** The setting row's line when the device draws less than the scene asks.
+ * @param {ShadowLevel} asked the scene's level (shadowLevelOf'd) @param {ShadowLevel} drawn what this device draws
+ * @returns {string} */
+export function cappedNote(asked, drawn) {
+	if (drawn === asked) return '';
+	return 'This device draws ' + drawn[0].toUpperCase() + drawn.slice(1);
+}
+
+/**
+ * The Cinematic view (WebGPU) picks a light's shadow node by the light's CLASS, so the WebGL cascade path (an
+ * `isSunLight` flag on the rig sun) cannot reach it: while the view is on, Far is drawn as Soft there (its own
+ * best: the fitted sun shadow with the wide kernel). Everything else is drawn as asked.
+ * @param {ShadowLevel} drawn @param {boolean} cinematic
+ * @returns {ShadowLevel}
+ */
+export function cinematicShadowLevel(drawn, cinematic) {
+	return cinematic && drawn === 'far' ? 'soft' : drawn;
+}
+
+

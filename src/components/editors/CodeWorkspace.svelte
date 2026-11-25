@@ -1,4 +1,5 @@
 <script>
+	import { behavioursModule } from '$lib/behaviours/load.js'; // 102-boot-diet
 	import { onLayoutRestore, storedPanelLayout } from '$lib/uiLayoutsCore';
 	// 36-code (plan 75.2) — THE CODE WORKSPACE: a notebook of sources, docked as the bottom
 	// dock's `code` tab or floating (FlowCode's shell). Every tab buffers its text; Ctrl+S
@@ -214,12 +215,14 @@
 		return out;
 	}
 
-	/** behaviours/app.js's status, loaded lazily (the card's rule: it must not join this import graph) */
+	/** behaviours/app.js's status, once something has loaded it (the card's rule: it must not join this
+	 * import graph). 102-boot-diet: followed through behaviours/load.js instead of imported on mount, so an
+	 * open workspace with no behaviour in the scene does not fetch the behaviours chunk (and acorn) */
 	let behaviourStatus = $state(/** @type {Record<string, any>} */ ({}));
 	$effect(() => {
-		let off = () => {};
-		import('$lib/behaviours/app.js').then((m) => (off = m.behaviourStatus.subscribe((all) => (behaviourStatus = all))));
-		return () => off();
+		const m = $behavioursModule;
+		if (!m) return;
+		return m.behaviourStatus.subscribe((/** @type {any} */ all) => (behaviourStatus = all));
 	});
 	const problems = $derived(active ? problemsOf(active, $scriptErrors, $scriptFileErrors, $flowGraphs) : []);
 

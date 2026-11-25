@@ -1,5 +1,6 @@
 import { writable, derived, get } from 'svelte/store';
 import { safeStorage } from './safeStorage';
+import { uiHaptic } from './uiHaptics';
 import { onLayoutRestore } from './uiLayoutsCore';
 import { settingsOpen, settingsSection, settingsSearchSeed } from '../stores/appStore.js';
 
@@ -242,9 +243,7 @@ export function chromeButton(node, id) {
 		timer = setTimeout(() => {
 			timer = 0;
 			if (Math.hypot(x - x0, y - y0) > HOLD_SLOP) return;
-			try {
-				navigator.vibrate?.(10);
-			} catch {}
+			uiHaptic('select', { kind: 'gestures', touch: true });
 			swallowClick = true;
 			open(x0, y0);
 		}, HOLD_MS);

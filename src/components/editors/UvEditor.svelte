@@ -1,4 +1,12 @@
+<script module>
+	// 105-slots: the slot list (SlotList.svelte, shared with the Inspector) is lazy — not in the boot's static closure,
+	// no modulepreload — and WARMED right after this module loads, so the Materials pane has it the moment it opens
+	// (measured: an idle-time warm still lost the race on a loaded box, and the UV suites read the rows at once).
+	if (typeof window !== 'undefined') setTimeout(() => import('../menu/SlotList.svelte').catch(() => {}), 0);
+</script>
+
 <script>
+	import { feelSnap } from '$lib/uiHaptics'; // 103 (H13): snapping touch feedback
 	import { mapPreviewUrl } from '$lib/loadGuard.js';
 	import { onLayoutRestore, storedPanelLayout } from '$lib/uiLayoutsCore';
 	import { isHeicFileLike } from '$lib/heicCore.js';
@@ -19,7 +27,10 @@
 	import { selectedObject, selectedObjects, objectsGroup, globalScene } from '../../stores/sceneStore';
 	import { uvEditorClose, showToast } from '../../stores/appStore.js';
 	import { setObjectTexture, removeObjectTexture, addMaterialSlot } from '$lib/materialsHandler';
-	import { applyExplorerImage } from '$lib/explorerDrop';
+	import { applyExplorerImage, holdsUnsavedPixels } from '$lib/explorerDrop';
+	import { explorerDropTarget } from '$lib/explorerDropTarget.js';
+	import { showConfirm } from '$lib/confirmDialog';
+	import { notePointer, mayDraw } from '$lib/penInput';
 	import { unwrapBackends } from '$lib/uvUnwrap';
 	import {
 		uvActiveSlot, uvTool, uvBrushColor, uvBrushSize, uvPenPressure, uvFaceFilter, uvPaintTick, uvEditable, uvViewable, UV_WIRE_LIMIT, uvTriangles, materialsOf, slotCount,
@@ -51,6 +62,9 @@
 	import { setDockOccupant, dockHeight, visibleDockKey, dockShownKeys, dockPaneOf, dockMinimized, activateDock, dockModeArm, forgetDockTab } from '$lib/bottomDock';
 	import { bottomDockable } from '$lib/bottomDockDrop';
 	import { safeStorage } from '$lib/safeStorage';
+	// 105 T1: the picker and its leaf are lazy (boot rule) — loaded on the first press
+	/** @param {any} opts */
+	const pickFromExplorer = (opts) => import('$lib/explorerPick.js').then((m) => m.pickFromExplorer(opts));
 
 	/** the armed transform modes, in 1/2/3 order */
 	const MODES = /** @type {['move'|'rotate'|'scale', string, string][]} */ ([
@@ -251,7 +265,7 @@
 		if ($uvTool === 'paint') untrack(() => void loadPaint());
 	});
 	/** the brush state the editor needs (channel, channel view, and whether meshPaint owns the stroke) */
-	let paintUi = $state({ channel: 'color', showChannel: false, newBrush: false });
+	let paintUi = $state({ channel: 'color', showChannel: false, newBrush: false, smoothPx: 0 });
 	$effect(() => {
 		const mod = paintMod;
 		if (!mod) return;
@@ -399,6 +413,7 @@
 			cancelUvDrag();
 			cancelPaintStroke();
 			paintMod?.cancelStroke();
+			meshHeld = null;
 			selCluster = [];
 			hoverIndex = -1;
 			pivotPlaced = null; // an origin belongs to the map you placed it on
@@ -549,7 +564,15 @@
 	// delegated handler, and a drag whose pointerdown never arrived then jumps by
 	// the pointer's ABSOLUTE position (the DragRow trap, 16-Q3). pointermove/up
 	// live on WINDOW so a drag survives leaving the canvas box.
-	let gesture = $state(/** @type {'idle'|'pan'|'drag'|'box'|'lasso'|'paint'|'pivot'} */ ('idle'));
+	let gesture = $state(/** @type {'idle'|'pan'|'drag'|'box'|'lasso'|'paint'|'pivot'|'pinch'} */ ('idle'));
+	// 103 H2: which pointer owns the gesture. A pen's or a finger's gesture listens to ITS pointer only, so a palm
+	// resting on the screen (or a second finger) cannot end the pen's stroke; a mouse gesture is as before.
+	let gestureId = -1;
+	let gestureType = '';
+	/** the fingers on the canvas: pointerId -> client point (tracked by window listeners while any is down) */
+	const touches = new Map();
+	/** a two-finger pinch: the UV point under the fingers' centre, their distance and the zoom when it began */
+	/** @type {{u: number, v: number, d: number, zoom: number} | null} */ let pinch = null;
 	let lastX = 0;
 	let lastY = 0;
 	/** did this gesture actually move? a press with no movement is a CLICK */
@@ -582,9 +605,11 @@
 	 * uv index; -1 = none.
 	 */
 	let navMode = $state(false);
+	/** 103 follow-up: Space is held, so a left drag pans (any tool) */
+	let spaceHeld = $state(false);
 	let navCursor = $state(-1);
 
-	function localPoint(/** @type {PointerEvent | WheelEvent} */ e) {
+	function localPoint(/** @type {PointerEvent | WheelEvent | {clientX: number, clientY: number}} */ e) {
 		const rect = canvasEl?.getBoundingClientRect();
 		return { x: e.clientX - (rect?.left ?? 0), y: e.clientY - (rect?.top ?? 0) };
 	}
@@ -661,7 +686,8 @@
 		if (xform === 'move') {
 			// screen delta -> UV delta (dv negated: v is up)
 			const scale = span * zoom;
-			applyUvSnapshot(object, ctx.snapshot, { du: ctx.dx / scale, dv: -ctx.dy / scale });
+			// 103 H4: a U / V lock (Move now's X / Y) keeps the other axis still
+			applyUvSnapshot(object, ctx.snapshot, { du: uvLocks.v && !uvLocks.u ? 0 : ctx.dx / scale, dv: uvLocks.u && !uvLocks.v ? 0 : -ctx.dy / scale });
 			return;
 		}
 		const pivot = ctx.pivot;
@@ -677,7 +703,9 @@
 			const r0 = Math.hypot(from.u - pivot.cu, from.v - pivot.cv);
 			const r1 = Math.hypot(to.u - pivot.cu, to.v - pivot.cv);
 			const k = r0 > 1e-6 ? Math.max(r1 / r0, 0.01) : 1;
-			applyUvSnapshot(object, ctx.snapshot, { scaleU: k, scaleV: k, pivot });
+			// 103 H4: a U / V lock scales that axis alone
+			const oneAxis = uvLocks.u !== uvLocks.v;
+			applyUvSnapshot(object, ctx.snapshot, { scaleU: oneAxis && uvLocks.v ? 1 : k, scaleV: oneAxis && uvLocks.u ? 1 : k, pivot });
 		}
 	}
 
@@ -724,8 +752,42 @@
 		},
 		onActive: (on, modal) => {
 			grabbing = on && modal;
+			if (!on) uvLocks = { u: false, v: false };
+		},
+		// 103 H4: Esc / a right-click cancels (Blender's rule), and the start-at-once keys' locks
+		rightCancels: true,
+		key: (_ctx, e) => {
+			if (e.type !== 'keydown') return false;
+			const combo = comboOf(e);
+			if (bindingOf('uv.lock-u') && combo === bindingOf('uv.lock-u')) {
+				uvLocks = { ...uvLocks, u: !uvLocks.u };
+				grab.refresh();
+				return true;
+			}
+			if (bindingOf('uv.lock-v') && combo === bindingOf('uv.lock-v')) {
+				uvLocks = { ...uvLocks, v: !uvLocks.v };
+				grab.refresh();
+				return true;
+			}
+			for (const [row, mode] of UV_NOW) {
+				if (bindingOf(row) && combo === bindingOf(row)) {
+					armXform(mode);
+					return true;
+				}
+			}
+			return false;
 		}
 	});
+	/** 103 H4: the start-at-once rows ('' = no key; the Blender preset binds G / R / S) */
+	const UV_NOW = /** @type {[string, 'move'|'rotate'|'scale'][]} */ ([
+		['uv.now-move', 'move'],
+		['uv.now-rotate', 'rotate'],
+		['uv.now-scale', 'scale']
+	]);
+	/** 103 H4: X / Y locks while a start-at-once (or middle-button) grab runs */
+	let uvLocks = $state({ u: false, v: false });
+	/** 103 H4: where the pointer last hovered the canvas — a key has no coordinates */
+	let hoverClient = /** @type {[number, number] | null} */ (null);
 
 	/** open a transform gesture on the current selection
 	 * @param {PointerEvent|null} e @param {boolean} modal @param {number[]|null} [collapseTo] */
@@ -747,6 +809,8 @@
 	// PLACED — and once placed it is a handle you drag, which snaps onto a uv point
 	// when you come near one (hold Alt to place it freely).
 
+	/** 103 (H13): the origin drag's touch-feedback token */
+	const pivotFelt = {};
 	/** put the origin under the pointer, snapped to a nearby point unless Alt is held
 	 * @param {PointerEvent} e */
 	function movePivotTo(e) {
@@ -760,6 +824,8 @@
 				u = uv.getX(near);
 				v = uv.getY(near);
 			}
+			// 103 (H13): the origin snapping onto a uv point is a detent (each new point, once)
+			feelSnap(pivotFelt, near >= 0 ? near : null);
 		}
 		pivotPlaced = { cu: u, cv: v };
 	}
@@ -875,12 +941,23 @@
 	const extendKey = (e) => e.shiftKey || e.ctrlKey || e.metaKey;
 
 	function onPointerDown(/** @type {PointerEvent} */ e) {
+		notePointer(e);
+		if (e.pointerType === 'touch') touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+		// 103 H2: a second FINGER pinch-zooms and pans, and abandons whatever the first one started (no stray dot);
+		// any other second pointer (a palm under a pen's stroke) is ignored
+		if (gesture !== 'idle' && gesture !== 'pinch' && strictGesture() && e.pointerId !== gestureId) {
+			if (e.pointerType === 'touch' && gestureType === 'touch' && touches.size >= 2) startPinch();
+			return;
+		}
+		if (gesture === 'pinch') return;
 		if (!target || !viewable.ok) return;
 		// a modal grab is running: its own capture handler commits on this press
 		if (grab.isModal()) return;
 		// RIGHT is the context menu (`onContextMenu`). It used to fall through to the
 		// drag/marquee/pan code AND show the browser's menu on top of everything.
 		if (e.button === 2) return;
+		gestureId = e.pointerId;
+		gestureType = e.pointerType || 'mouse';
 		const { x, y } = localPoint(e);
 		lastX = e.clientX;
 		lastY = e.clientY;
@@ -891,6 +968,14 @@
 		wrapEl?.focus?.({ preventScroll: true });
 		/** is a vertex under the pointer at all */
 		const canPick = editable.ok && !wireTooDense;
+
+		// 103 follow-up: SPACE held + a left drag pans in ANY tool (the way to pan with no middle
+		// button — a trackpad, a pen); it wins over the origin handle, the brush and the points
+		if (e.button === 0 && spaceHeld) {
+			gesture = 'pan';
+			attachDragListeners();
+			return;
+		}
 
 		// MIDDLE on a SELECTED vertex is the MODAL GRAB; middle anywhere else pans,
 		// which is what it has always done and the only escape hatch the marquee
@@ -919,19 +1004,47 @@
 		// The stroke opens ASYNChronously (the canvas has to carry the existing
 		// texture before the first dab), so claim the gesture NOW and let the
 		// pending moves queue behind the seed.
-		if ($uvTool === 'paint' && usesNewBrush && paintMod) {
-			// 102 M6: a new channel or brush paints through meshPaint (the same canvas for colour)
+		// 103 H2: once a pen is seen, a finger in Paint pans instead of drawing ("Pen only draws")
+		if ($uvTool === 'paint' && !mayDraw(e)) {
+			gesture = 'pan';
+			attachDragListeners();
+			return;
+		}
+		if ($uvTool === 'paint' && ((usesNewBrush && paintMod) || layerStroke(e))) {
+			// 102 M6: a new channel or brush paints through meshPaint (the same canvas for colour). 103 H1: so does a
+			// pen stroke whose pressure drives OPACITY — the shipped painter strokes each segment at its own alpha,
+			// so the overlaps stacked to opaque; meshPaint draws one layer per stroke and composites it once.
 			gesture = 'paint';
 			paintEngine = 'mesh';
+			brushAt = [x, y];
+			lastRaw = null;
 			attachDragListeners();
-			void paintMod.beginStroke({ uuid: target.uuid, slot, sp: 'uv', at: [toU(x), toV(y)], w: pressureOf(e) }).then((/** @type {boolean} */ ok) => {
-				if (!ok && gesture === 'paint') gesture = 'idle';
+			const begin = { uuid: target.uuid, slot, sp: 'uv', at: [toU(x), toV(y)], w: pressureOf(e) };
+			const open = () =>
+				void paintMod.beginStroke(begin).then((/** @type {boolean} */ ok) => {
+					if (!ok && gesture === 'paint') gesture = 'idle';
+				});
+			if (paintMod) {
+				open();
+				return;
+			}
+			// the painter is still loading (Paint was armed a moment ago): hold the samples, then replay them
+			const held = { moves: /** @type {any[]} */ ([]), ended: false };
+			meshHeld = held;
+			void loadPaint().then(() => {
+				if (meshHeld !== held || !paintMod) return;
+				meshHeld = null;
+				open();
+				for (const m of held.moves) paintMod.strokeTo(m.at, m.w);
+				if (held.ended) paintMod.endStroke();
 			});
 			return;
 		}
 		if ($uvTool === 'paint') {
 			gesture = 'paint';
 			paintEngine = 'uv';
+			brushAt = [x, y];
+			lastRaw = null;
 			// 24-F1 (found on the way): this branch returned WITHOUT the window move/up
 			// pair, so a pointer stroke got its first dab and nothing else — no moves
 			// painted and no pointerup ever committed it (the uv-paint suite asserted only
@@ -988,10 +1101,52 @@
 		} else if ($uvTool === 'lasso') {
 			lasso = [[x, y]];
 			gesture = 'lasso';
+		} else if (e.shiftKey && $uvTool === 'select') {
+			// 103 H4: Shift-drag on empty space box-selects (adding), whatever tool is armed
+			marquee = { x0: x, y0: y, x1: x, y1: y };
+			gesture = 'box';
 		} else {
 			gesture = 'pan';
 		}
 		if (!extendKey(e)) pendingClear = true; // a plain marquee/click replaces
+	}
+
+	/** a pen's or a finger's gesture answers to its own pointer only */
+	const strictGesture = () => gestureType === 'pen' || gestureType === 'touch';
+
+	/** 103 H2: two fingers are down — drop the first finger's gesture (a stroke is CANCELLED, so it leaves no dot
+	 * here or on a peer) and pinch */
+	function startPinch() {
+		if (gesture === 'paint') {
+			cancelPaintStroke();
+			paintMod?.cancelStroke();
+			meshHeld = null;
+			lastRaw = null;
+		}
+		if (grab.active()) grab.cancel();
+		marquee = null;
+		lasso = [];
+		pendingClear = false;
+		endGesture();
+		const [a, b] = [...touches.values()];
+		const c = localPoint({ clientX: (a.x + b.x) / 2, clientY: (a.y + b.y) / 2 });
+		pinch = { u: toU(c.x), v: toV(c.y), d: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), zoom };
+		gesture = 'pinch';
+		gestureId = -1;
+		gestureType = 'touch';
+		attachDragListeners();
+	}
+	/** zoom by the fingers' spread, about the UV point that was under their centre, which follows the centre (so
+	 * moving both fingers pans) */
+	function pinchMove() {
+		const pts = [...touches.values()];
+		if (pts.length < 2 || !pinch) return;
+		const [a, b] = pts;
+		const c = localPoint({ clientX: (a.x + b.x) / 2, clientY: (a.y + b.y) / 2 });
+		const d = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
+		zoom = Math.min(Math.max((pinch.zoom * d) / pinch.d, 0.1), 32);
+		panX += c.x - toScreenX(pinch.u);
+		panY += c.y - toScreenY(pinch.v);
 	}
 
 	/** pan / marquee / lasso / paint keep their own window pair; a TRANSFORM does
@@ -1005,6 +1160,11 @@
 	let pendingClear = false;
 
 	function onPointerMove(/** @type {PointerEvent} */ e) {
+		if (gesture === 'pinch') {
+			pinchMove();
+			return;
+		}
+		if (strictGesture() && e.pointerId !== gestureId) return;
 		const dx = e.clientX - lastX;
 		const dy = e.clientY - lastY;
 		if (Math.abs(dx) > 0 || Math.abs(dy) > 0) moved = true;
@@ -1035,8 +1195,16 @@
 			}
 			for (const sample of samples.length ? samples : [e]) {
 				const { x, y } = localPoint(sample);
-				if (paintEngine === 'mesh') paintMod?.strokeTo([toU(x), toV(y)], pressureOf(sample));
-				else paintMove(toU(x), toV(y), $uvBrushColor, brushUv(), pressureOf(sample));
+				const w = pressureOf(sample);
+				// 103 H1: the stabiliser (Smoothing in the brush panel) trails the pen on a string, in screen px
+				const R = paintMod ? paintUi.smoothPx : 0;
+				if (R > 0) {
+					lastRaw = { x, y, w };
+					const next = paintMod.pullString(brushAt, [x, y], R);
+					if (!next) continue;
+					brushAt = next;
+					paintAt(next[0], next[1], w);
+				} else paintAt(x, y, w);
 			}
 		}
 	}
@@ -1050,15 +1218,50 @@
 		return Number.isFinite(p) ? Math.max(0, Math.min(1, p)) : undefined;
 	}
 
+	/** one stroke point at view px (x, y) to whichever painter owns the stroke @param {number} x @param {number} y
+	 * @param {number | undefined} w */
+	function paintAt(x, y, w) {
+		if (paintEngine === 'mesh') {
+			if (meshHeld) meshHeld.moves.push({ at: [toU(x), toV(y)], w });
+			else paintMod?.strokeTo([toU(x), toV(y)], w);
+		} else paintMove(toU(x), toV(y), $uvBrushColor, brushUv(), w);
+	}
+	/** 103 H1 smoothing: where the brush is (view px) and the last raw sample, which the stroke ends on */
+	/** @type {number[] | null} */ let brushAt = null;
+	/** @type {{x: number, y: number, w: number | undefined} | null} */ let lastRaw = null;
+
+	/** 103 H1: does this press paint through meshPaint's stroke layer? A PEN, with its pressure on opacity.
+	 * @param {PointerEvent} e */
+	const layerStroke = (e) => e.pointerType === 'pen' && ($uvPenPressure === 'opacity' || $uvPenPressure === 'both');
+	/** a layer stroke that started before the painter chunk landed: its samples, replayed on load */
+	/** @type {{moves: any[], ended: boolean} | null} */ let meshHeld = null;
+
 	/** The brush is set in TEXTURE pixels, so it paints the same width whatever
 	 * the view zoom — a brush measured in screen px would get finer as you zoom
 	 * in, which is the opposite of what a painter expects. */
 	const brushUv = () => $uvBrushSize;
 
 	function onPointerUp(/** @type {PointerEvent} */ e) {
+		if (gesture === 'pinch') {
+			touches.delete(e.pointerId);
+			// the pinch ends when a finger lifts; the one left on the glass does nothing until it lifts too
+			if (touches.size < 2) {
+				pinch = null;
+				endGesture();
+			}
+			return;
+		}
+		if (strictGesture() && e.pointerId !== gestureId) return;
+		if (gesture === 'paint' && lastRaw) {
+			// a smoothed stroke catches up and ends where the pen lifted
+			paintAt(lastRaw.x, lastRaw.y, lastRaw.w);
+			lastRaw = null;
+		}
 		if (gesture === 'paint') {
-			if (paintEngine === 'mesh') paintMod?.endStroke();
-			else endPaintStroke($uvBrushColor, brushUv());
+			if (paintEngine === 'mesh') {
+				if (meshHeld) meshHeld.ended = true;
+				else paintMod?.endStroke();
+			} else endPaintStroke($uvBrushColor, brushUv());
 		} else if (gesture === 'box' && marquee && target) {
 			const hits = uvIndicesInRect(target, slot, {
 				u0: toU(marquee.x0), v0: toV(marquee.y0), u1: toU(marquee.x1), v1: toV(marquee.y1)
@@ -1090,6 +1293,7 @@
 	}
 
 	function onHover(/** @type {PointerEvent} */ e) {
+		hoverClient = [e.clientX, e.clientY];
 		if (gesture !== 'idle' || !target || !editable.ok || wireTooDense) return;
 		const { x, y } = localPoint(e);
 		hoverIndex = nearestUvIndex(target, slot, toU(x), toV(y), grabRadius(), faceScope);
@@ -1156,6 +1360,7 @@
 	//   Ctrl+Space       enter keyboard NAVIGATION, then take the cursor's vertex into
 	//                    the selection (or out of it); the arrows walk the cursor while
 	//                    it is on, and Esc leaves
+	//   Space (held)     a left drag pans, whatever the tool (no middle button needed)
 	//   Ctrl+Shift+arrow grow the selection in that direction (in either mode)
 	//   Ctrl+A / Ctrl+I  select all / invert (the mesh editor's pair)
 	//   L                grow to the whole UV island
@@ -1182,6 +1387,28 @@
 		// registry rather than written as a letter here, so rebinding the row in
 		// Settings really moves the key. Tested first, so the binding is authoritative
 		// whatever the user moves it onto.
+		// 103 H4: START AT ONCE — the selection follows the pointer with no button held (rebindable,
+		// no key by default; the Blender preset binds G / R / S). Asked first, like uv.grab below.
+		for (const [row, mode] of UV_NOW) {
+			const bound = bindingOf(row);
+			if (bound && comboOf(e) === bound && selCluster.length && !grab.active()) {
+				claim();
+				armXform(mode);
+				const rect = canvasEl?.getBoundingClientRect();
+				const at = hoverClient ?? (rect ? [rect.left + rect.width / 2, rect.top + rect.height / 2] : [0, 0]);
+				startTransform(/** @type {any} */ ({ clientX: at[0], clientY: at[1] }), true);
+				return;
+			}
+		}
+		// 103 H4: the tool keys (no key by default; the Blender preset binds W / B / C / P)
+		for (const tool of TOOLS) {
+			const bound = bindingOf('uv.tool-' + tool.key);
+			if (bound && comboOf(e) === bound) {
+				claim();
+				uvTool.set(tool.key);
+				return;
+			}
+		}
 		if (comboOf(e) === bindingOf('uv.grab')) {
 			claim();
 			armXform('move');
@@ -1195,6 +1422,12 @@
 		if (e.code === 'Space' && ctrl) {
 			claim();
 			navSelect();
+			return;
+		}
+		// 103 follow-up: bare Space held = a left drag pans (released on keyup / blur)
+		if (e.code === 'Space' && !e.altKey && !e.shiftKey) {
+			claim();
+			spaceHeld = true;
 			return;
 		}
 		if (e.key === 'Escape') {
@@ -1263,12 +1496,21 @@
 	function uvSurface(node) {
 		const keys = /** @type {any} */ (onKey);
 		const menuHandler = /** @type {any} */ (onContextMenu);
+		/** Space up (anywhere: focus may have moved while it was held) or the tab losing focus */
+		const spaceUp = (/** @type {KeyboardEvent} */ e) => {
+			if (e.code === 'Space') spaceHeld = false;
+		};
+		const blur = () => (spaceHeld = false);
 		node.addEventListener('keydown', keys, true);
 		node.addEventListener('contextmenu', menuHandler);
+		window.addEventListener('keyup', spaceUp, true);
+		window.addEventListener('blur', blur);
 		return {
 			destroy: () => {
 				node.removeEventListener('keydown', keys, true);
 				node.removeEventListener('contextmenu', menuHandler);
+				window.removeEventListener('keyup', spaceUp, true);
+				window.removeEventListener('blur', blur);
 			}
 		};
 	}
@@ -1456,8 +1698,27 @@
 		node.addEventListener('pointerdown', /** @type {any} */ (onPointerDown));
 		node.addEventListener('wheel', /** @type {any} */ (onWheel), { passive: false });
 		node.addEventListener('pointermove', /** @type {any} */ (onHover));
+		// 103 H2: where each finger is, whatever the gesture (a pinch starts from the fingers' CURRENT points)
+		const track = (/** @type {PointerEvent} */ e) => {
+			if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+		};
+		const lift = (/** @type {PointerEvent} */ e) => {
+			if (gesture !== 'pinch') touches.delete(e.pointerId);
+		};
+		const cancel = (/** @type {PointerEvent} */ e) => {
+			// the browser took the pointer (a system gesture): treat it as lifted
+			if (gesture === 'drag' && e.pointerId === gestureId) grab.cancel();
+			else if (gesture === 'pinch' || e.pointerId === gestureId) onPointerUp(e);
+			touches.delete(e.pointerId);
+		};
+		window.addEventListener('pointermove', track, true);
+		window.addEventListener('pointerup', lift);
+		window.addEventListener('pointercancel', cancel);
 		return {
 			destroy: () => {
+				window.removeEventListener('pointermove', track, true);
+				window.removeEventListener('pointerup', lift);
+				window.removeEventListener('pointercancel', cancel);
 				node.removeEventListener('pointerdown', /** @type {any} */ (onPointerDown));
 				node.removeEventListener('wheel', /** @type {any} */ (onWheel));
 				node.removeEventListener('pointermove', /** @type {any} */ (onHover));
@@ -1477,33 +1738,56 @@
 	// often reports no MIME type for one
 	const IMAGE_TYPES = 'image/png,image/jpeg,image/webp,image/heic,image/heif,.heic,.heif';
 
-	/** @param {DragEvent} e @param {number} index */
-	function onSlotDragOver(e, index) {
-		const kinds = [...(e.dataTransfer?.types ?? [])];
-		if (!kinds.includes('application/x-explorer-item') && !kinds.includes('Files')) return;
-		e.preventDefault();
-		if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
-		dropSlot = index;
+	/** an Explorer card on a slot row (desktop drag or touch long-press drag) @param {any} payload @param {number} index */
+	async function slotDropItem(payload, index) {
+		if (!target) return;
+		await applyExplorerImage(target.uuid, payload, index);
 	}
 
-	/** @param {DragEvent} e @param {number} index */
-	async function onSlotDrop(e, index) {
-		e.preventDefault();
-		e.stopPropagation(); // the window-level import drop would place a MODEL
-		dropSlot = -1;
+	/** an OS file on a slot row @param {File} file @param {number} index */
+	async function slotDropFile(file, index) {
 		if (!target) return;
-		const raw = e.dataTransfer?.getData('application/x-explorer-item');
-		if (raw) {
-			const ok = await applyExplorerImage(target.uuid, JSON.parse(raw), index);
-			if (!ok) showToast('That Explorer item is not an image');
-			return;
-		}
-		const file = [...(e.dataTransfer?.files ?? [])].find((f) => f.type.startsWith('image/') || isHeicFileLike(f));
-		if (!file) {
+		if (!(file.type.startsWith('image/') || isHeicFileLike(file))) {
 			showToast('Drop an image to texture this material');
 			return;
 		}
 		await setObjectTexture(target.uuid, file, index);
+	}
+
+	/** 105 T1: "From Explorer" on a slot row — the shared picker @param {number} index */
+	async function pickExplorerFor(index) {
+		const item = await pickFromExplorer({ title: 'Pick an image for this material' });
+		if (item) await slotDropItem({ id: item.id }, index);
+	}
+
+	// 105 T1: an image dropped on the UV CANVAS becomes the active slot's colour map (the paint base).
+	// Pixels that live in no library file (painted here, or picked from disk) are asked about first.
+	let canvasDrop = $state(false);
+	/** @returns {Promise<boolean>} */
+	async function mayReplaceActive() {
+		if (!target) return false;
+		const material = materialsOf(target)[slot];
+		if (!material || !('map' in material)) {
+			showToast('This material cannot take a texture');
+			return false;
+		}
+		if (!holdsUnsavedPixels(material)) return true;
+		return showConfirm({
+			title: 'Replace the painted image?',
+			message: 'This material shows an image that is in no Explorer file (painted here or picked from disk). The new image replaces it; Undo brings it back.',
+			confirmLabel: 'Replace'
+		});
+	}
+	/** @param {any} payload */
+	async function canvasDropItem(payload) {
+		if (!(await mayReplaceActive())) return;
+		await slotDropItem(payload, slot);
+	}
+	/** @param {File} file */
+	async function canvasDropFile(file) {
+		if (!(file.type.startsWith('image/') || isHeicFileLike(file))) return showToast('Drop an image to texture this material');
+		if (!(await mayReplaceActive())) return;
+		await slotDropFile(file, slot);
 	}
 
 	// --- selection ops + unwrap ---------------------------------------------
@@ -1690,17 +1974,20 @@
 
 <svelte:window onresize={fitToViewport} />
 
+<!-- 105-slots: the plain rows (as before this lane) shown while the shared SlotList loads (it is lazy) -->
 {#snippet slotRow(/** @type {{slot:number,name:string,type:string,mapUrl:string|null}} */ material, /** @type {number} */ index)}
 	<!-- The row is a DROP TARGET for an Explorer image or an OS file, the
 	     Inspector #texture-drop recipe. svelte-ignore: the drag handlers live on
 	     the wrapper so the whole row (not just the button) accepts a drop. -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
-		class="uv-slot group/slot {index === slot ? 'uv-slot-active' : ''} {dropSlot === index ? 'uv-slot-drop' : ''}"
+		class="uv-slot uv-slot-fallback group/slot {index === slot ? 'uv-slot-active' : ''} {dropSlot === index ? 'uv-slot-drop' : ''}"
 		data-uv-slot={index}
-		ondragover={(e) => onSlotDragOver(e, index)}
-		ondragleave={() => (dropSlot = dropSlot === index ? -1 : dropSlot)}
-		ondrop={(e) => onSlotDrop(e, index)}
+		use:explorerDropTarget={{
+			ondrop: (payload) => slotDropItem(payload, index),
+			onfile: (file) => slotDropFile(file, index),
+			onhover: (on) => (dropSlot = on ? index : dropSlot === index ? -1 : dropSlot)
+		}}
 	>
 		<button
 			class="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-xs {index === slot ? 'text-accent-soft-text' : 'text-text-2'}"
@@ -1727,6 +2014,15 @@
 		</button>
 		<button
 			class="uv-slot-btn"
+			id="uv-slot-explorer-{index}"
+			title="Pick an image from the Explorer"
+			aria-label="Pick an image from the Explorer"
+			onclick={() => pickExplorerFor(index)}
+		>
+			<Icon name="folder-open" size={16} aria-hidden="true" />
+		</button>
+		<button
+			class="uv-slot-btn"
 			id="uv-slot-image-{index}"
 			title={material.mapUrl ? 'Replace this image' : 'Add an image'}
 			aria-label={material.mapUrl ? 'Replace this image' : 'Add an image'}
@@ -1744,6 +2040,41 @@
 			>✕</button>
 		{/if}
 	</div>
+{/snippet}
+
+{#snippet slotButtons(/** @type {number} */ index)}
+	<!-- 105-slots: the shared slot list (SlotList.svelte) draws the row; these are the UV editor's own buttons -->
+	{@const material = slots[index] ?? { slot: index, name: '', type: '', mapUrl: null }}
+	<button
+		class="uv-slot-btn"
+		id="uv-slot-assign-{index}"
+		title={pickedTris
+			? `Assign the ${pickedTris} selected face triangles to this slot`
+			: 'Select faces in Edit Mesh first, then assign them to a slot'}
+		aria-label="Assign the selected faces to this slot"
+		disabled={!pickedTris}
+		onclick={() => assignSelectionTo(index)}
+	>
+		<Icon name="target" size={16} aria-hidden="true" />
+	</button>
+	<button
+		class="uv-slot-btn"
+		id="uv-slot-image-{index}"
+		title={material.mapUrl ? 'Replace this image' : 'Add an image'}
+		aria-label={material.mapUrl ? 'Replace this image' : 'Add an image'}
+		onclick={() => pickImageFor(index)}
+	>
+		<Icon name="image-plus" size={16} aria-hidden="true" />
+	</button>
+	{#if material.mapUrl}
+		<button
+			class="uv-slot-btn text-ink-bad"
+			id="uv-slot-remove-{index}"
+			title="Remove this image"
+			aria-label="Remove this image"
+			onclick={() => target && removeObjectTexture(target.uuid, index)}
+		>✕</button>
+	{/if}
 {/snippet}
 
 {#snippet body()}
@@ -1906,9 +2237,27 @@
 			{#if !slots.length}
 				<p class="p-2 text-[11px] text-text-faint">No material on this object.</p>
 			{:else}
-				{#each slots as material, index (index)}
-					{@render slotRow(material, index)}
-				{/each}
+				<!-- 105-slots: the one slot list (also the Inspector's), lazy: it is not boot weight -->
+				{#await import('../menu/SlotList.svelte')}
+					{#each slots as material, index (index)}
+						{@render slotRow(material, index)}
+					{/each}
+				{:then SlotListModule}
+				<SlotListModule.default
+					object={target}
+					idPrefix="uv-slot"
+					extra={slotButtons}
+					rowAttrs={(/** @type {number} */ i) => ({ 'data-uv-slot': i })}
+					rowClass={(/** @type {number} */ i) => 'uv-slot' + (i === slot ? ' uv-slot-active' : '') + (dropSlot === i ? ' uv-slot-drop' : '')}
+					dropTarget={(/** @type {number} */ i) => ({
+						ondrop: (/** @type {any} */ payload) => slotDropItem(payload, i),
+						onfile: (/** @type {File} */ file) => slotDropFile(file, i),
+						onhover: (/** @type {boolean} */ on) => (dropSlot = on ? i : dropSlot === i ? -1 : dropSlot)
+					})}
+					onassign={assignSelectionTo}
+					canAssign={!!pickedTris}
+				/>
+				{/await}
 				<button
 					id="uv-add-slot"
 					class="mt-1 flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-[11px] text-text-2 hover:bg-surface-hover"
@@ -1944,10 +2293,11 @@
 			<div
 				bind:this={wrapEl}
 				id="uv-canvas-wrap"
-				class="relative h-full w-full overflow-hidden bg-app outline-none"
+				class="relative h-full w-full overflow-hidden bg-app outline-none {canvasDrop ? 'uv-canvas-drop' : ''}"
 				data-key-scope="uv"
 				tabindex="-1"
 				use:uvSurface
+				use:explorerDropTarget={{ ondrop: canvasDropItem, onfile: canvasDropFile, onhover: (on) => (canvasDrop = on), disabled: !target || !viewable.ok }}
 			>
 				{#if !target}
 					<div class="flex h-full items-center justify-center p-6 text-center text-sm text-text-muted">
@@ -1961,7 +2311,8 @@
 					<canvas
 						bind:this={canvasEl}
 						id="uv-canvas"
-						class="absolute inset-0 h-full w-full"
+						class="absolute inset-0 h-full w-full {spaceHeld ? (gesture === 'pan' ? 'cursor-grabbing' : 'cursor-grab') : ''}"
+						data-space-pan={spaceHeld ? '1' : undefined}
 						style="touch-action: none"
 						use:uvCanvas
 					></canvas>
@@ -2010,32 +2361,19 @@
 								oninput={(e) => uvBrushSize.set(parseInt(e.currentTarget.value) || 1)}
 							/>
 						</label>
-						<!-- 24-F1: pen pressure — size (default) · opacity · off -->
-						<div class="mt-2 text-[11px] text-text-muted">Pen pressure</div>
-						<div id="uv-pen-pressure" class="mt-1 flex gap-1" role="radiogroup" aria-label="Pen pressure">
-							{#each [['size', 'Size'], ['opacity', 'Opacity'], ['off', 'Off']] as [value, label] (value)}
-								<button
-									type="button"
-									role="radio"
-									aria-checked={$uvPenPressure === value}
-									data-value={value}
-									class={'flex-1 rounded-sm px-2 py-0.5 text-[11px] ' + ($uvPenPressure === value ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 text-text-2 hover:bg-surface-active')}
-									onclick={() => uvPenPressure.set(/** @type {any} */ (value))}>{label}</button>
-							{/each}
-						</div>
 						<p class="mt-1 text-[10px] leading-relaxed text-text-faint">
-							Size is in texture pixels, so it paints the same width at any zoom.
+							Size is in texture pixels, so it paints the same width at any zoom. Two fingers pinch-zoom and pan.
 							Each stroke is one undo step; peers watch it live. A pen's pressure varies the
-							width (or the opacity); a mouse stroke is unchanged.
+							width, the opacity, or both; a mouse stroke is unchanged.
 						</p>
 						<!-- 102 M6: what the brush paints, and how (a lazy chunk, with the painter) -->
-						{#if PaintPanel}<PaintPanel />{/if}
+						{#if PaintPanel}<PaintPanel {uvPenPressure} />{/if}
 					</div>
 				{/if}
 				<div class="p-2 text-[11px] leading-relaxed text-text-muted">
 					<p class="mb-2">Drag a vertex to move its UV corner. Corners that share a point move together, and dragging any selected vertex moves the whole selection.</p>
 					<p class="mb-2"><span class="text-text-2">Shift</span> (or Ctrl) adds to the selection — clicking a vertex, or with box and lasso.</p>
-					<p class="mb-2"><span class="text-text-2">Box</span> and <span class="text-text-2">Lasso</span> select everything they enclose. Middle-drag pans in any tool; in Select, dragging the background pans and clicking it deselects.</p>
+					<p class="mb-2"><span class="text-text-2">Box</span> and <span class="text-text-2">Lasso</span> select everything they enclose. Middle-drag, or <span class="text-text-2">Space</span> held + drag, pans in any tool; in Select, dragging the background pans, Shift-dragging it box-selects, and clicking it deselects.</p>
 					<p class="mb-2"><span class="text-text-2">1 / 2 / 3</span> arm Move, Rotate and Scale.</p>
 					<p class="mb-2">Rotate and scale turn about the selection's centre. The <span class="text-text-2">origin</span> button places one you can <span class="text-text-2">drag</span> instead — it snaps onto a point when you come near one, Alt places it freely — and right-click ▸ Origin puts it under the pointer. <span class="text-text-2">Alt</span> while STARTING a gesture uses the cursor for that gesture alone.</p>
 					<p class="mb-2"><span class="text-text-2">Middle-press a selected point</span> to grab the selection: it follows the pointer with no button held until a click or <span class="text-text-2">Enter</span> places it, and <span class="text-text-2">Esc</span> puts it back.</p>
@@ -2209,24 +2547,33 @@
 	.uv-chip:hover {
 		background: var(--surface-hover);
 	}
-	.uv-slot {
+	/* 105-slots: the rows are drawn by SlotList.svelte now (these classes reach them through rowClass), hence :global */
+	:global(.uv-slot) {
+		padding-right: 0.25rem;
+	}
+	:global(.uv-slot:hover) {
+		background: var(--surface-hover);
+	}
+	/* the plain row shown while SlotList loads (its own layout: the shared row's lives in SlotList) */
+	.uv-slot-fallback {
 		display: flex;
 		width: 100%;
 		align-items: center;
 		gap: 0.125rem;
-		padding-right: 0.25rem;
 	}
-	.uv-slot:hover {
-		background: var(--surface-hover);
-	}
-	.uv-slot-active {
+	.uv-slot-fallback.uv-slot-active {
 		background: var(--accent-soft);
 	}
 	/* dashed ring while an image hovers the row (the Inspector drop-zone cue) */
-	.uv-slot-drop {
+	:global(.uv-slot-drop) {
 		outline: 1px dashed var(--accent);
 		outline-offset: -1px;
 		background: var(--accent-soft);
+	}
+	/* 105 T1: an image held over the canvas — it will become this slot's colour map */
+	.uv-canvas-drop {
+		outline: 2px dashed var(--accent);
+		outline-offset: -2px;
 	}
 	.uv-slot-btn {
 		display: inline-flex;
@@ -2243,7 +2590,14 @@
 		background: var(--surface-active);
 	}
 	/* keyboard users need the row buttons without a hover */
-	.uv-slot:focus-within .uv-slot-btn {
+	:global(.uv-slot:focus-within) .uv-slot-btn {
 		opacity: 1;
+	}
+	/* 105-slots touch (Find N6): the row's own buttons are 44 px targets too (they were 20 px) */
+	@media (pointer: coarse) {
+		.uv-slot-btn {
+			height: 44px;
+			width: 44px;
+		}
 	}
 </style>

@@ -23,14 +23,14 @@ import { releaseMainContext, restoreMainContext } from './mainContext.js';
 import { glGenerationEnding, glGenerationStarting, gpuGenerationStarting, gpuGenerationEnded, generationStats } from '../render/generations.js';
 import { compileAsync } from '../render/compile.js';
 import { captureEnvironment, useCopies, restoreEnvironment } from './envHandover.js';
-import { buildPipeline } from './pipeline.js';
-import { classifyMaterial, notShownText, effectiveQuality, createDropWatch, quantile } from './cinematicCore.js';
+import { buildPipeline, bakedMrt } from './pipeline.js';
+import { classifyMaterial, notShownText, effectiveQuality, createDropWatch, quantile, lightingPlan, planKey, stepText, createCostMeter, costKey, LIGHT_SWITCHES } from './cinematicCore.js';
 import { HEIGHT_FOG } from '../fogModes.js';
 
 /** 102b-papercuts: what the chip names — the stand-ins, plus a height fog (WebGL-only shader chunk) @param {any} swap */
 const shownKinds = (swap) => (HEIGHT_FOG[2] > 0.5 ? [...swap.kinds, 'heightfog'] : swap.kinds);
 // the STORE leaf, never ./cinematicState.js (that one reaches the app's stores: this chunk's preload list)
-import { cinematicState, cinematicPrefs, disableCinematic, cinematicDisabled } from './cinematicStore.js';
+import { cinematicState, cinematicPrefs, cinematicCosts, disableCinematic, cinematicDisabled } from './cinematicStore.js';
 import { deformersOf } from '../vertexDeform.js';
 import { createLabelQuads } from './labelQuads.js';
 import { createFxCover } from './fxCover.js';
@@ -295,7 +295,7 @@ async function enterSteps() {
 	if (!gl || !scene || !cam) return null;
 	if (gl.xr?.isPresenting) return null;
 	const t = { start: now(), imported: 0, released: 0, init: 0, compiled: 0, firstFrame: 0 };
-	patchState({ mode: 'entering', error: '', dropped: 0 });
+	patchState({ mode: 'entering', error: '', dropped: 0, off: [], stepped: '' });
 	let W;
 	let T;
 	try {
@@ -324,7 +324,7 @@ async function enterSteps() {
 	const gpuEra = gpuGenerationStarting();
 	/** @type {any} */
 	const r = new W.WebGPURenderer({ canvas, antialias: false, alpha: false, powerPreference: 'high-performance' });
-	live = { W, T, r, gpuEra, gl, scene, canvas, glCanvas, env, built: null, swap: null, labels: null, fx: null, water: null, ro: null, errors: [], frames: 0, last: 0, drop: createDropWatch(), drops: 0, rebuilding: false, failing: false, camera: cam, t };
+	live = { W, T, r, gpuEra, gl, scene, canvas, glCanvas, env, built: null, swap: null, labels: null, fx: null, water: null, ro: null, errors: [], frames: 0, last: 0, drop: createDropWatch(), drops: 0, meter: createCostMeter(), settle: 0, costPending: false, mask: null, rebuilding: false, failing: false, camera: cam, t };
 	r.onDeviceLost = (/** @type {any} */ info) => {
 		log.errors.push({ at: Math.round(now()), lost: String(info?.message ?? info?.reason ?? '') });
 		void fail(LOST);
@@ -355,8 +355,7 @@ async function enterSteps() {
 		if (b.width > 0 && b.height > 0 && live) {
 			live.r.setSize(b.width, b.height, false);
 			// a window that grew past 1440p loses High (its GI costs 39 ms at 4K)
-			const q = targetQuality();
-			if (live.built && q !== live.built.quality) void rebuild();
+			if (live.built && planKey(currentPlan(), bakedNow()) !== live.built.key) void rebuild();
 		}
 	});
 	live.ro.observe(glCanvas);
@@ -382,9 +381,12 @@ async function enterSteps() {
 	const water = live.water;
 	live.swap = createSwapper(W, scene, { covered: (/** @type {any} */ ob, /** @type {any} */ m) => fx.covered(ob, m) || !!water?.covered(ob, m) });
 	live.swap.scan();
+	// 106: the objects with baked light flag their pixels (Global light and the screen AO leave them alone)
+	live.mask = createBakeMask(T, scene);
+	live.mask.scan();
 	patchState({ notShown: notShownText(shownKinds(live.swap)) });
 	try {
-		live.built = await build(targetQuality());
+		live.built = await build(currentPlan());
 		await compileAsync(r, scene, cam);
 	} catch (e) {
 		log.errors.push({ at: Math.round(now()), msg: String(/** @type {any} */ (e)?.message ?? e).slice(0, 300), stack: String(/** @type {any} */ (e)?.stack ?? '').split('\n').slice(1, 7).join(' | ').slice(0, 900) });
@@ -401,7 +403,7 @@ async function enterSteps() {
 	await r.backend?.device?.queue?.onSubmittedWorkDone?.();
 	if (!live || live.failing) return null; // G30: the device went away while the first frame was in flight
 	t.firstFrame = now();
-	patchState({ mode: 'on', quality: live.built.quality });
+	patchState({ mode: 'on', quality: live.built.quality, lighting: { gi: live.built.lighting.gi, ssr: live.built.lighting.ssr } });
 	const rec = {
 		dir: 'on',
 		ms: { import: t.imported - t.start, release: t.released - t.imported, init: t.init - t.released, compile: t.compiled - t.init, firstFrame: t.firstFrame - t.compiled, total: t.firstFrame - t.start },
@@ -413,18 +415,79 @@ async function enterSteps() {
 	return rec;
 }
 
-/** the step this window runs: the asked one, capped by its size, lowered by the drop */
-function targetQuality() {
-	if (!live) return 'basic';
-	return effectiveQuality(get(cinematicPrefs).quality, drawnPixels(live.r, live.glCanvas), live.drops);
+/** what this window draws: the asked step capped by its size, the two switches (106 S3), lowered by the drop */
+function currentPlan() {
+	const p = get(cinematicPrefs);
+	return lightingPlan({ asked: p.quality, pixels: live ? drawnPixels(live.r, live.glCanvas) : 0, drops: live?.drops ?? 0, reflections: p.reflections, globalLight: p.globalLight });
 }
 
-/** @param {import('./cinematicCore.js').Quality} quality */
-function build(quality) {
+/** does the scene hold an object with baked light now (the pipeline reads the mask only then) */
+const bakedNow = () => (live?.mask?.count() ?? 0) > 0;
+
+/** @param {ReturnType<typeof lightingPlan>} pl */
+async function build(pl) {
+	const baked = bakedNow();
 	// the water pass and the underwater look exist only while there is water to draw: a scene with none gets the
 	// pipeline it had before C2-3, unchanged (draw() rebuilds when water appears or goes)
 	const withWater = !!live.water && live.water.count > 0;
-	return buildPipeline({ W: live.W, T: live.T, renderer: live.r, scene: live.scene, camera: live.camera, quality, outline: viewSelection, fx: live.fx, water: withWater ? live.water : null }).then((b) => Object.assign(b, { withWater }));
+	const b = await buildPipeline({ W: live.W, T: live.T, renderer: live.r, scene: live.scene, camera: live.camera, quality: pl.quality, lighting: pl, baked, outline: viewSelection, fx: live.fx, water: withWater ? live.water : null });
+	return Object.assign(b, { key: planKey(pl, baked), plan: pl, withWater });
+}
+
+/**
+ * 106 (no double light): marks every material that carries Pro look's baked light (98 bakeApply: its `lightMap` is the
+ * bake atlas, `userData.bake`) with the MRT override that flags its pixels, for the view's lifetime. The WebGPU renderer
+ * copies a WebGL material's own properties into its node material on each build, so the override reaches it; the
+ * WebGL renderer never reads `mrtNode`, and no serializer writes it (Material.toJSON lists its fields).
+ * @param {any} T three/tsl @param {any} scene
+ */
+function createBakeMask(T, scene) {
+	/** @type {any} */
+	let node = null;
+	/** @type {Set<any>} */
+	const marked = new Set();
+	/** @param {any} m */
+	const isBaked = (m) => m?.lightMap?.userData?.bake === true;
+	const api = {
+		/** e2e (106): the counterfactual run, the mask switched off and kept off */
+		offForTest: false,
+		/** @returns {boolean} the set changed */
+		scan() {
+			if (api.offForTest) return false;
+			/** @type {Set<any>} */
+			const seen = new Set();
+			scene.traverse((/** @type {any} */ o) => {
+				if (!o.isMesh) return;
+				for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (isBaked(m)) seen.add(m);
+			});
+			let changed = false;
+			for (const m of seen) {
+				if (marked.has(m)) continue;
+				node ??= bakedMrt(T);
+				m.mrtNode = node;
+				m.needsUpdate = true;
+				marked.add(m);
+				changed = true;
+			}
+			for (const m of [...marked]) {
+				if (seen.has(m)) continue;
+				if (m.mrtNode === node) delete m.mrtNode;
+				m.needsUpdate = true;
+				marked.delete(m);
+				changed = true;
+			}
+			return changed;
+		},
+		count: () => marked.size,
+		undo() {
+			for (const m of marked) {
+				if (m.mrtNode === node) delete m.mrtNode;
+				m.needsUpdate = true;
+			}
+			marked.clear();
+		}
+	};
+	return api;
 }
 
 /** a new pipeline beside the old one (the old keeps drawing until the new one is ready) */
@@ -432,14 +495,16 @@ async function rebuild() {
 	if (!live || live.rebuilding) return;
 	live.rebuilding = true;
 	try {
-		const q = targetQuality();
-		const next = await build(q);
+		const pl = currentPlan();
+		const next = await build(pl);
 		if (!live) return next.dispose();
 		const old = live.built;
 		live.built = next;
 		old?.dispose();
 		live.drop.reset();
-		patchState({ quality: q, dropped: live.drops });
+		// the first frames of a new pipeline compile: not what the passes cost
+		live.settle = live.frames + 30;
+		patchState({ quality: pl.quality, dropped: live.drops, off: pl.off, stepped: stepText(pl), lighting: { gi: pl.gi, ssr: pl.ssr } });
 	} catch (e) {
 		void fail(NO_COMPILE);
 	} finally {
@@ -493,21 +558,58 @@ function draw(_delta) {
 		const ms = a - g.last;
 		log.frames.push(ms);
 		if (log.frames.length > 6000) log.frames.splice(0, 3000);
-		if (g.drop.feed(ms, a) && g.built.quality !== 'basic' && !g.rebuilding) {
+		if (g.drop.feed(ms, a) && g.built.plan.steps > 0 && !g.rebuilding) {
 			g.drops++;
 			void rebuild();
 		}
 	}
 	g.last = a;
+	sampleCost(g, a);
 	if (!g.frames++) g.onFirst?.();
 	// about once a second: stand-ins for what arrived since (BEFORE it draws as an opaque fallback next frame)
 	if (g.frames % 60 === 0) rescan(g);
+}
+
+/**
+ * 106 S3: what each pass costs here. Every 4th frame, the work from the frame's start until the GPU finished it
+ * (onSubmittedWorkDone) is filed under the frame's configuration; once a pass has frames with and without it, its
+ * cost is kept for this device (cinematicCosts) and the menu shows it.
+ * @param {any} g @param {number} a the frame's start
+ */
+function sampleCost(g, a) {
+	const q = g.r.backend?.device?.queue;
+	if (!q?.onSubmittedWorkDone || g.costPending || g.frames < g.settle || g.frames % 4) return;
+	const lit = g.built.lighting;
+	g.costPending = true;
+	q.onSubmittedWorkDone().then(
+		() => {
+			g.costPending = false;
+			if (live !== g || costKey(g.built.lighting) !== costKey(lit) || g.frames < g.settle) return;
+			g.meter.feed(lit, now() - a);
+		},
+		() => (g.costPending = false)
+	);
+	if (g.frames % 120) return;
+	const pixels = drawnPixels(g.r, g.glCanvas);
+	cinematicCosts.update((c) => {
+		let out = c;
+		for (const k of LIGHT_SWITCHES) {
+			const ms = g.meter.cost(k, lit);
+			if (ms == null) continue;
+			const was = c[k] ? (c[k].ms * pixels) / c[k].pixels : -1;
+			if (Math.abs(was - ms) < 0.3) continue;
+			out = { ...out, [k]: { ms: Math.round(ms * 10) / 10, pixels } };
+		}
+		return out;
+	});
 }
 
 /** @param {any} g */
 function rescan(g) {
 	const before = notShownText(shownKinds(g.swap));
 	g.swap.scan();
+	// a bake applied or removed while the view is on: the mask joins or leaves the pipeline
+	if (g.mask?.scan() && g.built && g.built.baked !== bakedNow()) void rebuild();
 	g.labels?.scan(g.scene);
 	const after = notShownText(shownKinds(g.swap));
 	if (after !== before) patchState({ notShown: after });
@@ -537,6 +639,7 @@ async function teardown(reason) {
 	g.fx?.undo();
 	g.water?.undo();
 	g.swap?.undo();
+	g.mask?.undo();
 	g.labels?.undo();
 	try {
 		g.r.dispose();
@@ -553,7 +656,7 @@ async function teardown(reason) {
 	const camerasBack = giveCamerasBack(g.gl, g.scene, [g.camera, app?.camera?.()]);
 	g.glCanvas.style.opacity = '';
 	const held = flushHeldDisposals();
-	patchState({ mode: 'off', notShown: '', dropped: 0 });
+	patchState({ mode: 'off', notShown: '', dropped: 0, off: [], stepped: '', lighting: { gi: false, ssr: false } });
 	const rec = { dir: 'off', reason, restored, held, env: { kind: g.env?.kind, ...envBack }, shadowMaps: shadowsBack, cameras: camerasBack, ms: { dispose: t1 - t0, restore: now() - t1, total: now() - t0 } };
 	log.switches.push(rec);
 	return rec;
@@ -629,7 +732,8 @@ export async function viewStill(plan) {
 	const b = glCanvas.getBoundingClientRect();
 	// the view's resolution rules: no full-resolution GI above 1440p-equivalent
 	const capped = effectiveQuality(g.built.quality, plan.width * plan.height, 0);
-	const built = capped === g.built.quality ? g.built : await build(capped);
+	const prefs = get(cinematicPrefs);
+	const built = capped === g.built.quality ? g.built : await build(lightingPlan({ asked: capped, pixels: plan.width * plan.height, reflections: prefs.reflections, globalLight: prefs.globalLight }));
 	try {
 		// the still's size: the canvas resized for one frame (the next resize puts it back)
 		r.setPixelRatio(1);
@@ -676,6 +780,10 @@ export function cinematicDebug(reset = false) {
 		on: cinematicOn(),
 		quality: live?.built?.quality ?? null,
 		drops: live?.drops ?? 0,
+		lighting: live?.built?.lighting ?? null,
+		planKey: live?.built?.key ?? null,
+		baked: live?.mask?.count() ?? 0,
+		costSamples: live?.meter?.counts() ?? null,
 		frames: { n: f.length, median: quantile(f, 0.5), p95: quantile(f, 0.95) },
 		switches: log.switches.slice(-40),
 		errors: log.errors.slice(-60),
@@ -724,6 +832,14 @@ export async function failCompileForTest() {
 }
 
 /** e2e / debug: the live view's parts (renderer, pipeline, scene, camera) for bisecting a wrong image */
+/** e2e (106 S3): one step of the dynamic drop, as if the frames had stayed over budget */
+export async function stepDownForTest() {
+	if (!live?.built || live.built.plan.steps <= 0) return false;
+	live.drops++;
+	await rebuild();
+	return true;
+}
+
 export function cinematicLiveForTest() {
 	return live;
 }

@@ -145,8 +145,9 @@ import { applyRemoteTpchat, applyRemoteTpchatDelete, applyRemoteTpchats, applyRe
 // 34 R2 (T3): the game kit's document + requests (kit/runtime.js; a leaf-side module)
 import { receiveKitMessage, kitPayload } from '$lib/kit/runtime.js';
 import { kitEntityPayloads } from '$lib/kit/entityApp.js'; // 34 R2 (kit-entities)
-// 34 R3 (D1): behaviours' replicated documents (behaviours/app.js)
-import { receiveBehaviourMessage, behaviourPayloads } from '$lib/behaviours/app.js';
+// 34 R3 (D1): behaviours' replicated documents (behaviours/app.js, through the load leaf: 102-boot-diet,
+// app.js and the analyzer load when a scene has a behaviour or a `bhv` message arrives, not at boot)
+import { receiveBehaviourMessage, behaviourPayloads } from '$lib/behaviours/load.js';
 import { applyRemoteTriggers, sendTriggers } from '$lib/triggerSync';
 import { applySessionProposal, applySessionAnswer, deferUntilShareChoice, localSceneCount, gateHolds, registerWorldStatePush, connectDecisionApplies, noteHandshakeDeferred } from '$lib/sessions';
 import { applyRemoteGeometry } from '$lib/geometryEdit';

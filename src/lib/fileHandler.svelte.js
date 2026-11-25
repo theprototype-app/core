@@ -22,7 +22,7 @@ import { recordObjectPresence, recordEntry, registerHistoryKind } from '$lib/his
 // STATIC on purpose — a lazy import of it from here never settled in dev, and
 // materialsHandler does not import fileHandler, so this closes no cycle.
 import { downscaleImage } from '$lib/materialsHandler';
-import { shaderDrivenCount } from '$lib/shaderGraph';
+import { shaderDrivenCount, shaderDrivenSlotCount } from '$lib/shaderGraph';
 import { originOf, bakeOriginForExport } from '$lib/objectOrigin';
 import { bakeAnimationsForExport } from '$lib/animationPreview';
 import { withLookAnimation, hasLookAnimation } from '$lib/gltfLookExport';
@@ -180,6 +180,7 @@ function exportGltf(format, input, opts = {}) {
 	// `shaderDrivenCount` counts the SCENE's graphs, which says nothing about a detached
 	// tree, so the prefab path opts out rather than warning about somebody else's object.
 	const shaderDriven = opts.shaderNote === false ? 0 : shaderDrivenCount();
+	const shaderSlots = opts.shaderNote === false ? 0 : shaderDrivenSlotCount(); // 105-slot-shaders
 	// fix-batch-2 (1.45.1): a WHOLE-SCENE export leaves local objects (drafts) out, lifted
 	// until the parse finishes like the animation park below
 	const lift = opts.excludeLocal ? liftLocalObjects() : null;
@@ -235,7 +236,15 @@ function exportGltf(format, input, opts = {}) {
 			window.URL.revokeObjectURL(url);
 			// glTF cannot express a node-graph shader: the file carries each object's
 			// BASE material instead. Saying nothing would make the export look complete.
-			if (shaderDriven > 0)
+			if (shaderSlots > 0)
+				// 105-slot-shaders: a slot list draws one shader per slot, so the note counts slots
+				showToast(
+					shaderDriven +
+						(shaderDriven === 1 ? ' shader was' : ' shaders were') +
+						' not exported (' + shaderSlots + ' on material slot' + (shaderSlots === 1 ? '' : 's') +
+						') — glTF has no node shaders, so each slot carries its plain material. Save a .tpscene to keep them.'
+				);
+			else if (shaderDriven > 0)
 				showToast(
 					shaderDriven === 1
 						? 'One object’s shader graph was not exported — glTF has no node shaders, so it carries the plain material. Save a .tpscene to keep it.'

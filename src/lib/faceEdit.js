@@ -1787,6 +1787,17 @@ export function shrinkSelection() {
 export function selectAllFaces() {
 	return withSelectionHistory('faces', () => selectAllFacesInner());
 }
+/** 105-slots: select every triangle of one material SLOT (the slot list's "Select its faces"). @param {number} slot */
+export function selectFacesOfSlot(slot) {
+	return withSelectionHistory('faces', () => {
+		// 103-int-1: on the 99 K5 triangle frame (the session soup is gone): `M` = slot per triangle, null = all 0
+		if (!FS.object || !FS.frame) return false;
+		const M = FS.frame.M;
+		faceEditSelectedTris.set(allTris().filter((i) => (M ? M[i] : 0) === slot));
+		refreshFaceOverlay();
+		return true;
+	});
+}
 /** M6: invert the selection (by pick UNIT, so quads stay whole). @returns {boolean} */
 export function invertFaceSelection() {
 	return withSelectionHistory('faces', () => invertFaceSelectionInner());

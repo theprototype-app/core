@@ -20,6 +20,7 @@
 //
 // `createTabGesture` is the pure state machine (unit-tested); `tabTouch` is the Svelte action that wires
 // it to a tab:   use:tabTouch={{ onlift?, onmove, ondrop, oncancel?, onmenu }}
+import { uiHaptic } from '../uiHaptics';
 
 export const AXIS_PX = 8;
 export const LIFT_MS = 350;
@@ -178,9 +179,7 @@ export function tabTouch(node, options = {}) {
 			liftTimer = 0;
 			if (!g.lift()) return;
 			mark();
-			try {
-				navigator.vibrate?.(10);
-			} catch {}
+			uiHaptic('select', { kind: 'gestures', touch: true });
 			try {
 				node.setPointerCapture?.(pid);
 			} catch {}

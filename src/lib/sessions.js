@@ -29,7 +29,7 @@ import {
 	animatedImportsRestore
 } from './animatedImports';
 import { animationsSnapshot, animationsRestore, copyAnimationsFrom } from './animationPreview';
-import { shaderGraphsSnapshot, shaderGraphsRestore, copyShaderGraphFrom } from './shaderGraph';
+import { shaderGraphsSnapshot, shaderGraphsRestore, copyShaderGraphsOf } from './shaderGraph';
 import { preloadSandboxFor } from './sandbox/preload.js';
 import {
 	peers,
@@ -1441,8 +1441,8 @@ function carryObjectDocuments(payload, uuidMap) {
 	for (const [from, to] of uuidMap) {
 		const graph = payload.graphs?.[from];
 		if (graph) copyGraphFrom(graph, to);
-		const shader = payload.shaderGraphs?.[from];
-		if (shader) copyShaderGraphFrom(shader, to);
+		// 105-slot-shaders: the object key and every slot key (`<uuid>/<slotId>`, the ids ride the materials)
+		copyShaderGraphsOf(payload.shaderGraphs, from, to);
 		const clips = payload.animations?.[from];
 		if (clips) copyAnimationsFrom(clips, to);
 	}

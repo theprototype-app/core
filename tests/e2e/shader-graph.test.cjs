@@ -343,7 +343,9 @@ h.run(async () => {
 		'the scene default stops claiming it as a target: ' + JSON.stringify(resolution.sceneTargets)
 	);
 
-	// ---- 6. a multi-slot object is REFUSED, not half-supported ---------------
+	// ---- 6. a multi-slot object is SUPPORTED (105-slot-shaders: a shader per slot, or one for all) ----
+	// Before 105-slot-shaders this section asserted the refusal; the only refusal left is "no material"
+	// (the per-slot behaviour itself is the shader-slots suite's).
 	const refusal = await page.evaluate(async () => {
 		const S = window.__tp.test.v1.shaderGraph;
 		const { mesh, THREE } = window.__g;
@@ -355,8 +357,8 @@ h.run(async () => {
 		mesh.material = was;
 		return { single, multi, reason };
 	});
-	h.check(refusal.single && !refusal.multi, 'a single-material object is supported, a multi-slot one is not');
-	h.check(/material slots/i.test(refusal.reason), 'and the refusal explains itself: "' + refusal.reason + '"');
+	h.check(refusal.single && refusal.multi, 'a single-material object is supported, and so is a multi-slot one');
+	h.check(refusal.reason === '', 'and nothing refuses it: "' + refusal.reason + '"');
 
 
 	// ---- 7. a Texture node resolves an EXPLORER ASSET and renders it ---------

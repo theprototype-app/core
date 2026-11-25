@@ -13,14 +13,15 @@
 import { get } from 'svelte/store';
 import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { peers } from '../stores/appStore';
-import { registerHistoryKind, registerHistoryMerge, recordEntry, sameJson } from './history';
+import { registerHistoryKind, registerHistoryMerge, recordEntry, sameJson, beginHistoryBatch, endHistoryBatch, historyBatchOpen } from './history';
 import {
 	shaderGraphs,
 	shaderGraphOf,
 	setShaderGraphFor,
 	normalizeShaderGraph,
 	registerShaderBroadcast,
-	registerShaderHistory
+	registerShaderHistory,
+	registerShaderMove
 } from './shaderGraph';
 
 /** @param {any} doc @returns {any} */
@@ -160,6 +161,18 @@ let disposers = [];
 export function startShaderSync() {
 	if (disposers.length) return;
 	disposers.push(registerShaderBroadcast(broadcast));
+	// 105-slot-shaders: "Only this slot" / "All slots" moves a document between an object's two keys — two
+	// ordinary `shadergraph` writes (the wire and save shapes do not change), ONE undo step
+	disposers.push(
+		registerShaderMove((fromKey, toKey, doc) => {
+			const own = !historyBatchOpen();
+			if (own) beginHistoryBatch();
+			setShaderGraphFor(toKey, structuredClone(doc));
+			setShaderGraphFor(fromKey, null);
+			if (own) endHistoryBatch('Move shader');
+			return true;
+		})
+	);
 	disposers.push(
 		registerShaderHistory((key, before, after) => {
 			// inside a gesture the entry is deferred to endShaderGesture

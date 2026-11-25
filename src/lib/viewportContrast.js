@@ -52,6 +52,12 @@ export function outlineColors(hc, prefColor, prefDefault) {
 	return { selected: own ? prefColor : t.outline || prefColor, locked: t.locked || null, thick: true };
 }
 
+/** 103 H7: the theme sets the BASE size; the gizmo's own S / M / L step multiplies it @param {any} controls @param {number} base */
+function setBaseSize(controls, base) {
+	controls.baseSize = base;
+	controls.size = base * (controls.sizeFactor ?? 1);
+}
+
 /**
  * Paint the transform gizmo for the theme (three's TransformControls instance, or nothing).
  * @param {any} controls @param {boolean} hc
@@ -60,10 +66,10 @@ export function applyGizmoContrast(controls, hc) {
 	if (!controls || typeof controls.setColors !== 'function') return;
 	if (hc) {
 		const t = viewportTokens();
-		controls.size = HC_GIZMO_SIZE;
+		setBaseSize(controls, HC_GIZMO_SIZE);
 		controls.setColors(t.x || GIZMO_DEFAULT.x, t.y || GIZMO_DEFAULT.y, t.z || GIZMO_DEFAULT.z, t.active || GIZMO_DEFAULT.active);
 	} else {
-		controls.size = 1;
+		setBaseSize(controls, 1);
 		controls.setColors(GIZMO_DEFAULT.x, GIZMO_DEFAULT.y, GIZMO_DEFAULT.z, GIZMO_DEFAULT.active);
 	}
 }

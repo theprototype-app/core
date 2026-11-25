@@ -1,4 +1,5 @@
-// 24-B1: 1/2/3 recall the last selection. Pressing the active mode key with a gizmo
+// 24-B1: 1/2/3 recall the last selection. (103 H7 row 8: the hide is the THIRD step of the active
+// tool's cycle now — its handles, all in one, hidden — so each hide below presses twice.) Pressing the active mode key with a gizmo
 // attached HIDES the selection (deselect + detach — the long-standing "done"
 // gesture); nothing remembered what was hidden, so a third press only set the mode
 // (reported: "the gizmo should appear with latest selection, also for multiselect and
@@ -36,6 +37,19 @@ const key = async (page, code) => {
 	await page.keyboard.press(code);
 	await page.waitForTimeout(180);
 };
+// 103 H7 row 8: a repeat press on the active tool steps its handles -> ALL IN ONE -> hidden, so a
+// "hide" is now two presses (the first shows all in one with the selection still there)
+const hide = async (page, code) => {
+	await key(page, code);
+	await key(page, code);
+};
+const handleSet = (page) =>
+	page.evaluate(async () => {
+		const p = await window.__tp.test.v1.gizmoPrefs;
+		let v;
+		p.handleSet.subscribe((x) => (v = x))();
+		return v;
+	});
 const same = (a, b) => a.length === b.length && a.every((x) => b.includes(x));
 
 h.run(async () => {
@@ -74,6 +88,10 @@ h.run(async () => {
 	h.check(s.mode === 'translate' && s.attached === 'pivot', `1 with another mode active only switches (${s.mode}, ${s.attached})`);
 	await key(A.page, 'Digit1');
 	s = await read(A.page);
+	const hs1 = await handleSet(A.page);
+	h.check(same(s.selected, [u1, u2]) && s.attached === 'pivot' && hs1 === 'all', `row 8: 1 on the active mode first shows all in one, the set still on its pivot (${hs1}, ${s.attached})`);
+	await key(A.page, 'Digit1');
+	s = await read(A.page);
 	h.check(s.selected.length === 0 && s.attached === null, `1 on the active mode HIDES (selected ${s.selected.length}, attached ${s.attached})`);
 	h.check(same(s.memory ?? [], [u1, u2]), 'the memory holds the hidden set');
 	await key(A.page, 'Digit1');
@@ -82,9 +100,9 @@ h.run(async () => {
 
 	// ---- 2. 2 2 then 3: restored in the mode of the key that restored it ---------------
 	await key(A.page, 'Digit2');
-	await key(A.page, 'Digit2');
+	await hide(A.page, 'Digit2');
 	s = await read(A.page);
-	h.check(s.selected.length === 0, '2 2 = rotate, then hide');
+	h.check(s.selected.length === 0, '2 2 2 = rotate, all in one, then hide');
 	await key(A.page, 'Digit3');
 	s = await read(A.page);
 	h.check(same(s.selected, [u1, u2]) && s.mode === 'scale' && s.attached === 'pivot', `3 restores the set in Scale (${s.mode})`);
@@ -92,7 +110,7 @@ h.run(async () => {
 	// ---- 3. a hand-placed selection origin survives the hide ---------------------------
 	await A.page.evaluate(() => window.__tp.test.v1.multiTransform.setPivotOrigin([5, 1, 5]));
 	await A.page.waitForTimeout(100);
-	await key(A.page, 'Digit3'); // hide
+	await hide(A.page, 'Digit3'); // all in one, hide
 	await key(A.page, 'Digit3'); // back
 	s = await read(A.page);
 	const p = s.pivotPos ?? [0, 0, 0];
@@ -102,7 +120,7 @@ h.run(async () => {
 	);
 
 	// ---- 4. a cube locked by a peer meanwhile stays out, and says so -------------------
-	await key(A.page, 'Digit3'); // hide again
+	await hide(A.page, 'Digit3'); // hide again
 	await B.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), u1);
 	await h.eventually(() => read(A.page), (r) => r.locked.includes(u1), 'A sees B holding cube 1', 15000);
 	await key(A.page, 'Digit1');
@@ -116,7 +134,7 @@ h.run(async () => {
 	// here, but a memory whose objects are ALL gone is
 	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.selectObject(u), u2);
 	await A.page.waitForTimeout(150);
-	await key(A.page, 'Digit1'); // hide the single cube (mode is translate)
+	await hide(A.page, 'Digit1'); // hide the single cube (mode is translate)
 	await A.page.evaluate((u) => window.__tp.test.v1.objectActions.deleteObjectsByUuid([u]), u2);
 	await A.page.waitForTimeout(300);
 	await key(A.page, 'Digit1');
@@ -140,14 +158,14 @@ h.run(async () => {
 	s = await read(A.page);
 	const picked = s.faceTris.slice();
 	h.check(picked.length > 0 && s.attached === 'face' && s.gizmoPref === true, `premise: a face is picked and the face gizmo is seated (${picked.length} tris, ${s.attached})`);
-	await key(A.page, 'Digit1'); // mode is translate → hide
+	await hide(A.page, 'Digit1'); // mode is translate → all in one, hide
 	s = await read(A.page);
 	h.check(s.attached === null && s.faceTris.length === 0 && s.gizmoPref === false, `1 hides the face pick AND flips the toolbox's gizmo switch (${s.attached}, ${s.faceTris.length}, pref ${s.gizmoPref})`);
 	await key(A.page, 'Digit1');
 	s = await read(A.page);
 	h.check(same(s.faceTris, picked) && s.attached === 'face' && s.gizmoPref === true, `1 brings the same face back with its gizmo (${s.faceTris.length}, ${s.attached}, pref ${s.gizmoPref})`);
 	// the toolbox BUTTON restores too — one control
-	await key(A.page, 'Digit1'); // hide
+	await hide(A.page, 'Digit1'); // hide
 	await A.page.evaluate(() => window.__tp.test.v1.faceEdit.meshGizmoEnabled.set(true));
 	await A.page.waitForTimeout(200);
 	s = await read(A.page);
@@ -164,7 +182,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(300);
 	s = await read(A.page);
 	h.check(s.vertexAnchor === 0 && s.attached === 'vertex', `premise: vertex 0 anchored, vertex proxy seated (${s.vertexAnchor}, ${s.attached})`);
-	await key(A.page, 'Digit1');
+	await hide(A.page, 'Digit1');
 	s = await read(A.page);
 	h.check(s.attached === null && s.vertexAnchor === -1 && s.vertexCount === 0 && s.gizmoPref === false, `1 hides the vertex pick + gizmo (${s.attached}, anchor ${s.vertexAnchor}, pref ${s.gizmoPref})`);
 	await key(A.page, 'Digit1');

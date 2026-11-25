@@ -310,7 +310,13 @@ h.run(async () => {
 		const titles = [...document.querySelectorAll('#shortcut-sheet section')].map((s) => s.getAttribute('data-scope'));
 		const reg = window.__tp.test.v1.shortcutsRegistry.shortcuts;
 		const rows = [...document.querySelectorAll('#shortcut-sheet [data-shortcut-id]')].map((r) => r.getAttribute('data-shortcut-id'));
-		return { titles, missing: reg.filter((s) => !rows.includes(s.id)).map((s) => s.id), total: rows.length };
+		// 103 H5 (the sheet's own rule, as in lock-shortcuts): a row with no key is not listed, and the
+		// gesture locks wait until a Move / Rotate / Resize now key (UV: a UV now key) is bound
+		const NOW = ['transform.now-move', 'transform.now-rotate', 'transform.now-scale', 'mesh.now-move', 'mesh.now-rotate', 'mesh.now-scale'];
+		const gestureBound = reg.some((s) => NOW.includes(s.id) && s.keys);
+		const uvGestureBound = reg.some((s) => /^uv\.now-/.test(s.id) && s.keys);
+		const listed = (s) => !!s.keys && (s.scope !== 'modal' || gestureBound) && (!['uv.lock-u', 'uv.lock-v'].includes(s.id) || uvGestureBound);
+		return { titles, missing: reg.filter((s) => listed(s) && !rows.includes(s.id)).map((s) => s.id), total: rows.length };
 	});
 	h.check(sheet.titles[0] === 'nodes', `? opens the sheet with the node editor first (${sheet.titles.join(',')})`);
 	h.check(sheet.missing.length === 0 && sheet.total > 60, `the sheet lists every registry row (${sheet.total}; missing ${sheet.missing.join(',') || 'none'})`);

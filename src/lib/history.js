@@ -189,6 +189,12 @@ export function endHistoryBatch(label = 'AI edit') {
 
 /** 37 R25: is a batch collecting entries right now (a caller that wants its own ONE entry
  * must not open a second batch inside somebody else's — beginHistoryBatch flushes) */
+/** 105-slots LINK: is an undo / redo replaying right now? (a replayed linked edit must not fan again: the batch
+ * holds every holder's own entry) */
+export function historyApplying() {
+	return applying;
+}
+
 export function historyBatchOpen() {
 	return batch !== null;
 }

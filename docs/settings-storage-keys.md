@@ -216,6 +216,9 @@ Each section is a single component — see ExportSettingsSection and NodeTypesSe
 | Conflict — Swap | *action* `setOverride(other.id, mine.keys)` + `setOverride(id, keys)` | `shortcutOverrides` | — | DEVICE | lib/shortcuts.js:994 | |
 | Per-row reset (↺) | *action* `resetShortcut(id)` | `shortcutOverrides` | — | DEVICE | lib/shortcuts.js:1006 | |
 | Reset all (`#shortcut-reset-all`) | *action* `resetAllShortcuts()` | removes `shortcutOverrides` | — | DEVICE | lib/shortcuts.js:1012 | |
+| Keymap preset (`#keymap-preset`, 103) | `keymapPreset` (lib/shortcuts.js) via `setKeymapPreset(id)` | `keymapPreset` | `theprototype` (key absent) | DEVICE | lib/shortcuts.js | 'blender' / 'unity'; **key removed for the default**; switching drops overrides equal to the new preset's key |
+| Fly with WASD (`#fly-with-wasd`, viewport menu View, 103) | `flyWithWasd` (lib/flyPrefs.js) | `flyWithWasd` | `always` (key absent) | DEVICE | lib/flyPrefs.js | 'rmb' = only while the right mouse button is held; key removed for the default |
+| Fly direction (`#fly-direction`, viewport menu View, 103) | `flyDirection` (lib/flyPrefs.js) | `flyDirection` | `level` (key absent) | DEVICE | lib/flyPrefs.js | 'look' = W / S along the view; key removed for the default |
 | Layout note (`#shortcut-layout-note`) | `nonLatinLayoutSeen` (read-only) | not persisted | `false` | runtime | lib/shortcuts.js:1095 | |
 | Locked rows | — (display only) | — | — | — | | |
 
@@ -306,7 +309,9 @@ Chrome only (sidebar, accordion wrapper). No setting rows. Persistence: `setting
 |---|---|---|---|---|---|---|
 | Show touch controls (`#touch-visibility-auto/always/never`) | `touchPrefs.visibility` via `setTouchPrefs` | `touchControlsPrefs` | `'auto'` | DEVICE | lib/touchActions.js:251 (key :217, defaults :219) | JSON `{visibility, showInEdit, haptics, scope}`; setter-only. `scope` (`'game'`) has no row here |
 | Show in edit (`#touch-show-in-edit`) | `touchPrefs.showInEdit` | `touchControlsPrefs` | `false` | DEVICE | lib/touchActions.js:251 | |
-| Haptic tick (`#touch-haptics`) | `touchPrefs.haptics` | `touchControlsPrefs` | `true` | DEVICE | lib/touchActions.js:251 | |
+| ~~Haptic tick (`#touch-haptics`)~~ (103: replaced by Touch feedback) | `touchPrefs.haptics` | `touchControlsPrefs` | `true` | DEVICE | lib/touchActions.js | READ ONLY by the Touch feedback migration (on -> Light, off -> Off); no row writes it any more |
+| Touch feedback (`#touch-feedback-level-off/light/medium/strong`) | `uiHapticPrefs.level` via `setUiHapticPrefs` | `ui:touchFeedback` | `'light'` (`'off'` under reduced motion) | DEVICE | lib/uiHaptics.js | JSON `{level, buttons, values, snap, gestures}`; absent = migrate the old switch; the category reset writes `{}` |
+| Buttons and switches / Sliders and values / Snapping / Gestures (`#touch-feedback-buttons/values/snap/gestures`) | `uiHapticPrefs.<kind>` | `ui:touchFeedback` | `true` | DEVICE | lib/uiHaptics.js | hidden with a reason where the device cannot vibrate (iPhone, no touch screen) |
 | Look speed (`#touch-look-speed`) | `touchLookSpeed` via `setTouchLookSpeed` | `touchLookSpeed` | `1` | DEVICE | lib/touchControls.js:75 (key :54, setter :78) | num str, clamp 0.25–3; setter-only |
 | Layout — Edit layout (`#touch-edit-layout`) | *action* `openTouchLayoutEditor()` (+ close Settings); the editor saves via `saveTouchLayout` | `touchControlsLayouts` | — | DEVICE | lib/touchActions.js:619; store :344 (key :287) | JSON `{global: layout\|null, games: {[gameId]: {v:1, items:{[id]: {x, y, size, opacity, hidden?}}}}}` |
 | Layout — Reset (`#touch-reset-layout`) | *action* `resetTouchLayout('game', $gameId)` + `resetTouchLayout('global', $gameId)` + toast | `touchControlsLayouts` (game entry deleted, global → null) | `{global:null, games:{}}` | DEVICE | lib/touchActions.js:375; `gameId` lib/gameSettings.js:183 | |

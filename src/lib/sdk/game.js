@@ -108,7 +108,7 @@ export function sdkGame(ctx) {
 				return off ? owned('game.setting', off, { key: 'game.setting:' + String(row?.id) }) : null;
 			},
 			/** 31 K3: the current value of a setting — one of yours, or a core row ('music',
-			 * 'musicVolume', 'sfx', 'sfxVolume', 'haptics', 'showFps', 'turning', 'turnAngle',
+			 * 'musicVolume', 'sfx', 'sfxVolume', 'haptics', 'hapticStrength', 'showFps', 'turning', 'turnAngle',
 			 * 'vignette', 'quality'), so a module playing its OWN audio can obey 'sfx'.
 			 * @param {string} id */
 			setting(id) {
@@ -117,7 +117,7 @@ export function sdkGame(ctx) {
 			/** 31 K3: write one of YOUR rows (a module's own in-game toggle). Core rows belong
 			 * to the player and are refused. @param {string} id @param {any} value */
 			setSetting(id, value) {
-				if (['music', 'musicVolume', 'sfx', 'sfxVolume', 'haptics', 'showFps', 'turning', 'turnAngle', 'vignette', 'quality'].includes(id)) return undefined;
+				if (['music', 'musicVolume', 'sfx', 'sfxVolume', 'haptics', 'hapticStrength', 'showFps', 'turning', 'turnAngle', 'vignette', 'quality'].includes(id)) return undefined;
 				return setGameSetting(id, value);
 			},
 			/** 31 K3: `fn(values)` hears every settings change (coalesced per frame).

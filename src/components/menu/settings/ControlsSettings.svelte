@@ -10,7 +10,8 @@
 		'reverse trackpad pan': ['touchpad', 'invert', 'natural scrolling'],
 		'pinch zoom': ['touchpad', 'trackpad'],
 		'allow browser pinch zoom': ['accessibility', 'page zoom', 'ctrl+scroll'],
-		'wheel diagnostics': ['wheel', 'mouse', 'scroll', 'debug', 'steam deck']
+		'wheel diagnostics': ['wheel', 'mouse', 'scroll', 'debug', 'steam deck'],
+		'pen only draws': ['stylus', 'pencil', 'palm', 'tablet', 'finger', 'touch', 'paint', 'uv']
 	};
 	for (const [row, words] of Object.entries(ROW_WORDS)) registerSettingsKeywords(row, words);
 </script>
@@ -26,6 +27,7 @@
 	import { enableShiftAdd, noteDoubleClickToOpen } from '../../../stores/appStore.js';
 	import { helpersInPlay } from '$lib/helperLayer';
 	import { trackpadMode, allowBrowserZoom, reversePan, panEnabled, pinchZoomEnabled, lastWheelEvents } from '$lib/trackpadNav';
+	import { penOnlyDraws } from '$lib/penInput';
 
 	// 24-A2.1: the wheel diagnostics readout's static half — WHAT machine this is
 	const wheelPlatform =
@@ -73,6 +75,12 @@
 		</SettingRow>
 		<SettingRow id="row-browser-zoom" label="Allow browser pinch zoom" description="Lets pinch and Ctrl+scroll zoom the whole page (accessibility).">
 			<Toggle id="browser-zoom" label="Allow browser pinch zoom" bind:checked={$allowBrowserZoom} />
+		</SettingRow>
+	</Section>
+
+	<Section variant="card" label="Pen and touch">
+		<SettingRow id="row-pen-only" label="Pen only draws" description="Once a pen touches the screen, fingers pan and pinch-zoom instead of painting (UV editor and painting on the model).">
+			<Toggle id="pen-only-draws" label="Pen only draws" bind:checked={$penOnlyDraws} />
 		</SettingRow>
 	</Section>
 

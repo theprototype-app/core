@@ -95,6 +95,8 @@ h.run(async () => {
 	const offered = await read(P, 'cinematicState.cinematicState');
 	if (!offered?.offered) {
 		await P.locator('#preview-word').click();
+		// 102-int-3: the menu is its own chunk, fetched on the first open (PreviewPill.toggleMenu): wait for it
+		await P.locator('#preview-menu').waitFor({ state: 'attached', timeout: 8000 }).catch(() => {});
 		h.check((await P.locator('#preview-menu').count()) === 1, '1. Cinematic view not offered here: a click on the word opens the menu');
 		await closeMenu(P);
 	} else h.check(true, '1. (Cinematic offered on this runner: the word is the switch, covered by cinematic-view)');

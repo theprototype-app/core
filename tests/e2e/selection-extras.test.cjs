@@ -204,7 +204,8 @@ h.run(async () => {
 	// otherwise the registry would swallow every Escape in the app
 	const escapeFree = await A.page.evaluate(() => {
 		const registry = window.__tp.test.v1.shortcutsRegistry;
-		const entry = registry.shortcuts.find((s) => s.keys === 'Escape');
+		// 102-int-3: the isolation entry, not the first Escape row (53 A3's navigation.leave-viewport has no `when`)
+		const entry = registry.shortcuts.find((s) => s.id === 'objects.leave-isolation');
 		return { hasEntry: !!entry, declines: entry ? entry.when() === false : null };
 	});
 	h.check(escapeFree.hasEntry, 'Escape is in the shortcut registry (so it is listed in Settings)');

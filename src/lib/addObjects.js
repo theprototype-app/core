@@ -97,6 +97,23 @@ export function buildAddChildren(pointOf) {
 			}))
 		})),
 		{ label: 'Group', tooltip: 'Create an empty group', action: () => spawnAtPoint('/group New', null) },
+		// 64 D1: flat vector shapes (a toJSON create, never /create — the record carries the colours; a lazy chunk)
+		{
+			label: 'Vector',
+			children: [
+				['rect', 'Rectangle', 'A rectangle with a live corner radius'],
+				['ellipse', 'Ellipse', 'An ellipse'],
+				['star', 'Star', 'A star: points, inner radius and corner radius are live'],
+				['polygon', 'Polygon', 'A regular polygon: sides and corner radius are live']
+			].map(([kind, label, tooltip]) => ({
+				label,
+				tooltip,
+				action: () => {
+					const at = pointOf();
+					return import('./vector/vectorActions.js').then((m) => m.placeVectorShape(kind, at));
+				}
+			}))
+		},
 		// 23-A5: instruments and effects. Built from the registry at menu-open time, so a
 		// module registering (or going away) needs no menu plumbing of its own. A device is
 		// created through addDevice (a replicated toJSON), never through /create.

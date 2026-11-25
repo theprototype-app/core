@@ -179,6 +179,10 @@ const shortStr = (v) => typeof v === 'string' && v.length > 0 && v.length <= 128
  * @type {Record<string, (data: any) => boolean>}
  */
 export const VALIDATORS = {
+	// 64-vector: a parametric geometry edit (a vector shape's record rides it). The applier cleans the
+	// params through the type's own boundary (cleanVector for 'Vector'); this is only the shape
+	geometry: (d) =>
+		isUuid(d.uuid) && typeof d.gtype === 'string' && d.gtype.length > 0 && d.gtype.length <= 32 && (d.params === undefined || (!!d.params && typeof d.params === 'object' && !Array.isArray(d.params))),
 	// 102 M6: a live mesh-paint stroke (a preview; the committed map / meshgeo is the truth)
 	meshpaint: (d) => validMeshPaint(d),
 	meshpaintend: (d) => typeof d.id === 'string' && d.id.length <= 64,

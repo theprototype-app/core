@@ -24,6 +24,7 @@ import { hasAnimatedImport, sendAnimatedImport, setAnimationState, setClipRefs, 
 import { dropAllAnimations } from '$lib/animationPreview'
 import { parkAnimatedAtBase } from '$lib/flowRuntime'
 import { stripEditOverlays } from '$lib/editOverlays'
+import { vectorWireElement, rebuildVectorFromRecord } from '$lib/vector/vectorGate.js' // 64-vector (a boot leaf)
 import { isPristinePackRef, stubElementOf } from '$lib/packRefs'
 import { withTwins, attachTwinsFromGltf } from '$lib/ktx2Twins'
 import { restoreGltfNames } from '$lib/gltfNames'
@@ -1166,6 +1167,8 @@ async function applyCreateObject(object, uuid, override, groupuuid, pos, rot, sc
     // an incoming object can only carry a STALE edit wireframe (a peer on an
     // older build, or a scene saved with a session open) — never a live one
     stripEditOverlays(mesh);
+    // 64-vector: a heavy vector shape travels as its record only; its triangles are rebuilt here
+    rebuildVectorFromRecord(mesh);
     clearInboundDraftFlags(mesh);
     let existing = override ? sceneObjects.getObjectByProperty('uuid', mesh.uuid) : null;
     if (existing) {
@@ -1441,6 +1444,7 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
     }
     // Iterate over all objects in the scene
     objects.forEach(element => {
+        let vectorElement; // 64-vector: a vector shape's wire element (vectorGate.js)
         // viewer perms: never sync a viewer's local-only objects to a peer
         if (element.userData && element.userData.__localOnly) return;
         if (isPristinePackRef(element)) {
@@ -1528,6 +1532,18 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
             conn.send({
                 type: 'object',
                 element: element.toJSON(),
+                groupuuid: groupuuid,
+                pos: element.position.toArray(),
+                rot: element.rotation.toArray(),
+                scale: element.scale.toArray(),
+                ...heal
+            });
+        } else if ((vectorElement = vectorWireElement(element))) {
+            // 64-vector: a vector shape is its RECORD — toJSON, without its triangles when they are
+            // heavy (the receiver rebuilds them), where the GLTF route ships every vertex as base64
+            conn.send({
+                type: 'object',
+                element: vectorElement,
                 groupuuid: groupuuid,
                 pos: element.position.toArray(),
                 rot: element.rotation.toArray(),

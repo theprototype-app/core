@@ -71,6 +71,8 @@
   import CommandPalette from './components/menu/CommandPalette.svelte'
   import TouchPlayControls from './components/play/TouchPlayControls.svelte'
   import DrawToolbar from './components/menu/DrawToolbar.svelte'
+  import { vectorTool, vectorEditObject } from '$lib/vector/vectorGate.js' // 64-vector (boot leaf)
+  import '$lib/vector/vectorBoot.js' // 64-vector: VR radial rows + palette / key rows (small; every action lazy)
   import SculptToolbar from './components/menu/SculptToolbar.svelte'
   import SplineToolbar from './components/menu/SplineToolbar.svelte'
   import MeasureToolbar from './components/menu/MeasureToolbar.svelte' // 47 M1
@@ -485,10 +487,12 @@ import { startMusicToolbox } from './lib/musicToolbox'
       if (modelExt.test(name) && models.length === 1) import('./lib/modelDrop').then((m) => m.dropModelFile(file, { companions, clientX, clientY }))
       else if (modelExt.test(name)) importFile(file, file.name.replace(modelExt, ''), undefined, undefined, companions)
       else if (name.endsWith('.json')) load(file)
+      // 64-vector: an SVG becomes vector shapes on the surface under the drop (a lazy chunk; the file is untrusted)
+      else if (name.endsWith('.svg')) import('./lib/vector/vectorSvgActions.js').then((m) => m.importSvgFile(file, clientX, clientY))
       else if (!companions.includes(file)) skipped.push(file.name)
     })
     if (skipped.length > 0)
-      showToast('Unsupported: ' + skipped.join(', ') + '. Supported formats: .glb, .gltf, .obj, .stl, .fbx (models), .ply, .spz, .splat (Gaussian splats), .json (scene)')
+      showToast('Unsupported: ' + skipped.join(', ') + '. Supported formats: .glb, .gltf, .obj, .stl, .fbx (models), .ply, .spz, .splat (Gaussian splats), .svg (vector shapes), .json (scene)')
   }
 </script>
 
@@ -544,6 +548,8 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <PlaceholderTooltip />
 <CharacterDialogs />
 <DrawToolbar />
+<!-- 64-vector: the shapes toolbar, a lazy chunk mounted only while the draw tool or Edit points is on -->
+{#if $vectorTool || $vectorEditObject}{#await import('./components/menu/VectorToolbar.svelte') then m}<m.default />{/await}{/if}
 <SculptToolbar />
 <SplineToolbar />
 <MeasureToolbar />

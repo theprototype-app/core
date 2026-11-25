@@ -16,6 +16,11 @@ import { terrainGeometry, TERRAIN_FALLOFFS, latheGeometry, cleanLathe, extrudeGe
 // `build`-hook shape as Terrain, plus `fromArgs` (createGeometry maps `/create` numbers to
 // params with it) and the collider hint stamped at creation
 import { ARCH_SPECS } from './arch/archGeometry.js';
+// 64-vector: VECTOR SHAPES (rect / ellipse / star / polygon / pen path) — the same `build`-hook shape,
+// through the boot gate (builder, cleaner and rows are a lazy chunk; vectorGate.js says how a shape
+// built before the chunk lands is healed). The record is the params, so a shape edit is the ordinary
+// `geometry` message + undo entry.
+import { VECTOR_SPEC } from './vector/vectorGate.js';
 // 102b-papercuts: a Box may be ROUNDED (corner radius + segments), still a Box in the file
 import { boxGeometryFor, MAX_RADIUS_SEGMENTS, DEFAULT_RADIUS_SEGMENTS } from './roundedBoxGate.js';
 
@@ -232,7 +237,8 @@ export const GEOMETRY_PARAMS = {
 			{ key: 'rim', label: 'Rim depth', kind: 'slider', min: -20, max: 0, step: 0.1, def: 0, show: (/** @type {any} */ p) => p.falloff === 'island' }
 		]
 	},
-	...ARCH_SPECS
+	...ARCH_SPECS,
+	Vector: VECTOR_SPEC
 };
 
 /** Registry spec for a mesh's geometry, by three type name @param {string} gtype e.g. 'Sphere' */

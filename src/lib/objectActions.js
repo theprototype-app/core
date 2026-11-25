@@ -24,7 +24,8 @@ import {
 	isLocked,
 	cameraClaim, pokeScene } from '../stores/sceneStore';
 import { attachMultiPivot, releaseMultiPivot, hasCustomOrigin, pivotPose, setPivotOrigin } from './multiTransform';
-import { focusTargetFace, faceEditObject, hideElementSelection, restoreElementSelection } from './faceEdit';
+import { faceEditObject } from './faceEditState';
+import { faceEditNow } from './faceEditLazy';
 import { focusTargetVertex, editingObject, hideVertexSelection, restoreVertexSelection } from './meshEdit';
 import {
 	peers,
@@ -457,7 +458,7 @@ export function setTransformMode(mode) {
 	if (same && object && !vr) {
 		if (isEditProxy) {
 			// the element selection goes with the gizmo, remembered in the session
-			if (get(faceEditObject) && object.userData.isFaceProxy && hideElementSelection()) return;
+			if (get(faceEditObject) && object.userData.isFaceProxy && faceEditNow()?.hideElementSelection()) return;
 			if (get(editingObject) && object.userData.isVertexProxy && hideVertexSelection()) return;
 			// a proxy with nothing to hide just keeps its mode (163)
 		} else {
@@ -470,7 +471,7 @@ export function setTransformMode(mode) {
 	}
 	if (!object && !vr) {
 		// restore: an edit session's hidden elements first, then the object memory
-		if (get(faceEditObject) && restoreElementSelection()) {
+		if (get(faceEditObject) && faceEditNow()?.restoreElementSelection()) {
 			controls?.setMode(mode);
 			transformMode.set(mode);
 			return;
@@ -1597,7 +1598,7 @@ export function focusObject(uuid) {
 	if (get(specatorMode) || get(isVRMode)) return;
 	// 173: in mesh-edit, F frames the selected face/vertex; fall back to the object
 	if (!uuid) {
-		const editFocus = focusTargetFace() || focusTargetVertex();
+		const editFocus = faceEditNow()?.focusTargetFace() || focusTargetVertex();
 		if (editFocus) {
 			/** @type {any} */
 			const camera = get(globalCamera);

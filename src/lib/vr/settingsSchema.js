@@ -28,7 +28,7 @@ import {
 import { showToast } from '../../stores/appStore';
 import { perfStatsShown } from '../fpsMeter';
 import { vrMicMode, setMicMode } from '../voiceChat';
-import { vrFaceCap } from '../faceEdit';
+import { vrFaceCap } from '../faceEditState';
 import { vrVertexCap } from '../meshEdit';
 import { resetWindowPoses } from '../vrWindowPoses';
 import { safeStorage } from '../safeStorage';

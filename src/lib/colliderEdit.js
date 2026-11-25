@@ -4,16 +4,10 @@ import { writable, get } from 'svelte/store';
 import { globalScene, selectedObject, objectsGroup, pokeScene } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { recordEntry } from './history';
-import {
-	enterFaceEdit,
-	exitFaceEdit,
-	faceEditObject,
-	readTriangles,
-	trisToPositions,
-	shellsOfTris,
-	registerEditProxy,
-	applyMeshGeo
-} from './faceEdit';
+import { faceEditObject, registerEditProxy } from './faceEditState';
+import { applyMeshGeo } from './meshGeoApply';
+import { readTriangles, trisToPositions, shellsOfTris } from './meshSoup';
+import { faceEditNow, loadFaceEdit } from './faceEditLazy';
 import { exitEditMode, enterEditMode, editingObject } from './meshEdit';
 import { colliderSpecOf, CUSTOM_MAX_FLOATS } from './colliderSpec';
 // 15-F: proxy sessions DISCARD their history (the proxy is disposed on exit,
@@ -106,9 +100,13 @@ function seedGeometry(object) {
 
 /**
  * Start a custom-collider edit session on an object: build the proxy, then
- * enter the regular face-edit mode ON the proxy. @param {string} uuid @returns {boolean}
+ * enter the regular face-edit mode ON the proxy. @param {string} uuid @returns {boolean | Promise<boolean>} a Promise only while the face editor chunk loads
  */
 export function enterColliderEdit(uuid) {
+	// 102-boot-diet-2: the session runs the real face editor, a lazy chunk now -- load it, then enter.
+	// Once it is loaded (the editor prefetches it at idle, VR on entry) this stays synchronous.
+	const fe = faceEditNow();
+	if (!fe) return loadFaceEdit().then(() => enterColliderEdit(uuid));
 	const object = objectOf(uuid);
 	const scene = get(globalScene);
 	if (!object || !scene) return false;
@@ -131,7 +129,7 @@ export function enterColliderEdit(uuid) {
 	registerEditProxy(proxy);
 	targetUuid = uuid;
 	colliderEditObject.set(uuid);
-	enterFaceEdit(proxy.uuid);
+	fe.enterFaceEdit(proxy.uuid);
 	if (get(faceEditObject) !== proxy.uuid) {
 		// face edit refused (caps etc.) — abort the session
 		exitColliderEdit(false);
@@ -260,7 +258,7 @@ export function exitColliderEdit(toast = true) {
 	watchUnsubs.forEach((unsub) => unsub());
 	watchUnsubs = [];
 	if (get(editingObject) === proxy?.uuid) exitEditMode();
-	if (get(faceEditObject) === proxy?.uuid) exitFaceEdit();
+	if (get(faceEditObject) === proxy?.uuid) faceEditNow()?.exitFaceEdit();
 	if (proxy) {
 		proxy.parent?.remove(proxy);
 		proxy.geometry?.dispose?.();

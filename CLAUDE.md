@@ -1780,6 +1780,22 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   operators author through. Imports NOTHING, deliberately: it stays a pure unit outside
   the history-cycle family, and derivation stays in faceEdit where the operators live.
   Full contract in the faceEdit entry below),
+  **102-boot-diet-2 — FACEEDIT IS A LAZY CHUNK.** No boot module may import `faceEdit.js` statically (it left both boots,
+  ~30 KB gz). The boot half lives in `faceEditState.js` (the stores + local prefs with ONE subscriber each: persist ->
+  faceEdit's `prefHooks` reaction -> meshEdit's listeners; the meshEdit / terrainSculpt / colliderEdit registries in
+  `editHooks`; lookupEditable / triangleCount / editCapToast), `meshGeoApply.js` (applyMeshGeo + helpers: a peer's /
+  an undo's `meshgeo` applies synchronously and IN ORDER; the open-session step is `editHooks.faceSessionSwap`) and
+  `meshSoup.js` (readTriangles / trisTo* / shellsOfTris / stretchPositions). faceEdit re-exports all of it (same
+  instances). Boot code reaches the rest through `faceEditLazy.js`: `withFaceEdit(fn)` (synchronous once loaded) for
+  ENTRIES and commits, `faceEditNow()?.` for code that only matters inside a session. THE INVARIANT: an open edit
+  session implies faceEdit is loaded -- enterEditMode / enterColliderEdit / carveTerrainAlong load-then-re-call
+  themselves; faceEdit adopts itself into the loader at its own eval, so a session the debug hook or an agent tool
+  opens is seen by the viewport. Prefetch: the editor at idle (App onMount), any page on entering VR, a sculpt /
+  stretch tool on start. vrControls' evaluation-order list names faceEdit's DEPENDENCIES instead of faceEdit (34 A5).
+  Suite `face-edit-on-demand`, unit `faceEditLazy`. Same lane: n8ao (`postEffects.loadN8ao` / `n8aoReady`, Outline
+  starts it during the post warm-up when the warmed stack holds AO; suite `ao-on-demand`), FilePreviewWindow (App
+  `{#await import()}` per preview), the FBX parser (await import at every parse), and `useKtx2`'s phantom edge
+  (vite `treeshake.moduleSideEffects` + `boot-chunk-groups.cjs` PHANTOM_EDGES) all left the boot.
   **99 K2 — ONE COMMIT, ONE SENDER.** `meshCommit.js` (pure) is the only `meshgeo` builder (`meshGeoMessage`/
   `sendMeshGeo`; the wire is byte-identical, proved across two trees by `mesh-commit-two-tree`) and `compactMeshState`
   (what history keeps: Float32 positions/uvs, the partition packed Int32, so `entryBytes` counts what is HELD).

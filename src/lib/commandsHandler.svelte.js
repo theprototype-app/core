@@ -704,7 +704,7 @@ export async function objectParameters(data, from = 'peer') {
             if (data.shading === 'smooth') {
                 // DYNAMIC import: a static commandsHandler -> faceEdit edge would
                 // be a new arc into the history.js cycle family (CLAUDE.md)
-                const { smoothWeldedNormals } = await import('$lib/faceEdit');
+                const { smoothWeldedNormals } = await import('$lib/meshGeoApply');
                 smoothWeldedNormals(mesh.geometry);
             } else mesh.geometry.computeVertexNormals();
             mesh.geometry.attributes.normal.needsUpdate = true;

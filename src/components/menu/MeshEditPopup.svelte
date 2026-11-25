@@ -69,67 +69,13 @@
 		vertexSlide
 	} from '$lib/meshEdit';
 	import { undo, redo, canUndo, canRedo } from '$lib/history';
-	import {
-		faceEditObject,
-		enterFaceEdit,
-		exitFaceEdit,
-		faceEditHighlight,
-		faceEditHoverTri,
-		faceEditAmount,
-		faceEditOp,
-		setFaceOp,
-		faceAutoApply,
-		commitFaceOp,
-		faceEditGranularity,
-		setFaceGranularity,
-		faceEditSelectedTris,
-		faceSelectionInfo,
-		faceGizmoSpace,
-		meshGizmoEnabled,
-		meshEditWireframe,
-		meshEditHotkeys,
-		meshEditOutline,
-		meshEditTriWire,
-		selectFaceLoop,
-		growSelection,
-		shrinkSelection,
-		selectAllFaces,
-		invertFaceSelection,
-		selectLinkedFaces,
-		recalculateNormals,
-		mergeByDistance,
-		setShadingSmooth,
-		shadingMode,
-		faceEditSubmode,
-		edgeEditSelected,
-		selectEdgeLoop,
-		dissolveEdges,
-		deleteSelectedEdges,
-		subdivideSelectedEdges,
-		duplicateSelectedFaces,
-		separateSelectedFaces,
-		fillHole,
-		triangulateMesh,
-		trisToQuadsMesh,
-		symmetrizeMesh,
-		escapeConsumedByKnife,
-		clearEdgeSelection,
-		stashSelections,
-		setFaceSubmode,
-		selectEdgeRing,
-		selectAllEdges,
-		invertEdgeSelection,
-		cancelEditSession,
-		sessionHasChanges,
-		beginOpAdjust,
-		reapplyOpAdjust,
-		settleOpAdjust,
-		cancelOpAdjust,
-		endOpAdjust,
-		opAdjustState,
-		faceBevelReady,
-		loopCutReady
-	} from '$lib/faceEdit';
+	import { faceEditObject, faceEditHighlight, faceEditHoverTri, faceEditAmount, faceEditOp, faceAutoApply, faceEditGranularity, faceEditSelectedTris, faceGizmoSpace, meshGizmoEnabled, meshEditWireframe, meshEditHotkeys, meshEditOutline, meshEditTriWire, faceEditSubmode, edgeEditSelected, opAdjustState } from '$lib/faceEditState';
+	import { faceEditNow, withFaceEdit } from '$lib/faceEditLazy';
+	/** 102-boot-diet-2: an op adjust only opens inside a session (faceEdit loaded); false = refused, as before
+	 * @param {Parameters<typeof import('$lib/faceEdit').beginOpAdjust>} args @returns {boolean} */
+	function beginOpAdjustLazy(...args) {
+		return faceEditNow()?.beginOpAdjust(...args) ?? false;
+	}
 	import Icon from '../ui/Icon.svelte';
 	import ToolboxWindow from '../ui/ToolboxWindow.svelte';
 	import {
@@ -183,12 +129,12 @@
 		const uuid = /** @type {string} */ ($editingObject || $faceEditObject || $selectedObject?.uuid);
 		if (!uuid) return;
 		if (next === mode) return;
-		endOpAdjust(); // 19-A P2: a mode switch ends a live adjust (the edit stays)
+		faceEditNow()?.endOpAdjust(); // 19-A P2: a mode switch ends a live adjust (the edit stays)
 		// remember what THIS mode had picked before leaving it, so coming back
 		// restores it (unless the geometry changed underneath)
-		stashSelections();
+		faceEditNow()?.stashSelections();
 		if (next === 'vertices') {
-			exitFaceEdit();
+			faceEditNow()?.exitFaceEdit();
 			enterEditMode(uuid);
 			return;
 		}
@@ -197,8 +143,11 @@
 		// setFaceSubmode owns the stash/restore + both overlay refreshes + the
 		// gizmo, so the leaving mode's highlight can't survive the switch.
 		exitEditMode();
-		if (!$faceEditObject) enterFaceEdit(uuid);
-		setFaceSubmode(next === 'edges' ? 'edges' : 'faces');
+		// 102-boot-diet-2: faceEdit is a lazy chunk; inside a session it is loaded, so this runs now
+		void withFaceEdit((fe) => {
+			if (!$faceEditObject) fe.enterFaceEdit(uuid);
+			fe.setFaceSubmode(next === 'edges' ? 'edges' : 'faces');
+		});
 	}
 
 	// armed tools (extrude/inset reveal the amount row; move seats the gizmo);
@@ -278,21 +227,21 @@
 	// for TOOLS you arm; commands read better as words. (Photoshop's toolbar is
 	// tools; its Select menu is words.)
 	const FACE_CMDS = [
-		{ id: 'loop', label: 'Loop', hint: 'L', key: 'mesh.loop', run: selectFaceLoop, desc: 'the quad ring running through this face — press again for the perpendicular one' },
-		{ id: 'grow', label: 'Grow', hint: 'Ctrl +', key: 'mesh.grow', run: growSelection, desc: 'add the neighbouring ring' },
-		{ id: 'shrink', label: 'Shrink', hint: 'Ctrl -', key: 'mesh.shrink', run: shrinkSelection, desc: 'drop the border ring' },
-		{ id: 'all', label: 'All', hint: 'Ctrl A', key: 'mesh.select-all', run: selectAllFaces, desc: 'every face of the mesh' },
-		{ id: 'invert', label: 'Invert', hint: 'Ctrl I', key: 'mesh.select-invert', run: invertFaceSelection, desc: 'swap picked and unpicked' },
-		{ id: 'linked', label: 'Linked', hint: '', run: selectLinkedFaces, desc: 'the whole connected island this face belongs to' }
+		{ id: 'loop', label: 'Loop', hint: 'L', key: 'mesh.loop', run: () => faceEditNow()?.selectFaceLoop(), desc: 'the quad ring running through this face — press again for the perpendicular one' },
+		{ id: 'grow', label: 'Grow', hint: 'Ctrl +', key: 'mesh.grow', run: () => faceEditNow()?.growSelection(), desc: 'add the neighbouring ring' },
+		{ id: 'shrink', label: 'Shrink', hint: 'Ctrl -', key: 'mesh.shrink', run: () => faceEditNow()?.shrinkSelection(), desc: 'drop the border ring' },
+		{ id: 'all', label: 'All', hint: 'Ctrl A', key: 'mesh.select-all', run: () => faceEditNow()?.selectAllFaces(), desc: 'every face of the mesh' },
+		{ id: 'invert', label: 'Invert', hint: 'Ctrl I', key: 'mesh.select-invert', run: () => faceEditNow()?.invertFaceSelection(), desc: 'swap picked and unpicked' },
+		{ id: 'linked', label: 'Linked', hint: '', run: () => faceEditNow()?.selectLinkedFaces(), desc: 'the whole connected island this face belongs to' }
 	];
 	// Every mode gets the SAME command vocabulary — Ctrl+A / Ctrl+I were wired
 	// for faces only, so they silently did nothing in edges and vertices.
 	const EDGE_CMDS = [
-		{ id: 'eloop', label: 'Loop', hint: 'L', key: 'mesh.loop', run: selectEdgeLoop, desc: 'the edge chain running end to end through this edge' },
-		{ id: 'ering', label: 'Ring', hint: '', run: selectEdgeRing, desc: 'the parallel rungs a face loop crosses — the other half of the standard pair' },
-		{ id: 'eall', label: 'All', hint: 'Ctrl A', key: 'mesh.select-all', run: selectAllEdges, desc: 'every edge of the mesh' },
-		{ id: 'einvert', label: 'Invert', hint: 'Ctrl I', key: 'mesh.select-invert', run: invertEdgeSelection, desc: 'swap picked and unpicked' },
-		{ id: 'enone', label: 'None', hint: '', run: () => (clearEdgeSelection(), true), desc: 'deselect everything' }
+		{ id: 'eloop', label: 'Loop', hint: 'L', key: 'mesh.loop', run: () => faceEditNow()?.selectEdgeLoop(), desc: 'the edge chain running end to end through this edge' },
+		{ id: 'ering', label: 'Ring', hint: '', run: () => faceEditNow()?.selectEdgeRing(), desc: 'the parallel rungs a face loop crosses — the other half of the standard pair' },
+		{ id: 'eall', label: 'All', hint: 'Ctrl A', key: 'mesh.select-all', run: () => faceEditNow()?.selectAllEdges(), desc: 'every edge of the mesh' },
+		{ id: 'einvert', label: 'Invert', hint: 'Ctrl I', key: 'mesh.select-invert', run: () => faceEditNow()?.invertEdgeSelection(), desc: 'swap picked and unpicked' },
+		{ id: 'enone', label: 'None', hint: '', run: () => (faceEditNow()?.clearEdgeSelection(), true), desc: 'deselect everything' }
 	];
 	const VERT_CMDS = [
 		{ id: 'vall', label: 'All', hint: 'Ctrl A', key: 'mesh.select-all', run: selectAllVerts, desc: 'every vertex of the mesh' },
@@ -314,14 +263,14 @@
 			id: 'normals',
 			label: 'Recalculate normals',
 			icon: 'recalc-normals',
-			run: () => recalculateNormals(),
+			run: () => faceEditNow()?.recalculateNormals(),
 			desc: 'rewind every face to point outward'
 		},
 		{
 			id: 'merge',
 			label: 'Merge by distance',
 			icon: 'merge-distance',
-			run: () => mergeByDistance($mergeDistance),
+			run: () => faceEditNow()?.mergeByDistance($mergeDistance),
 			desc: 'collapse near-coincident vertices and drop the degenerate faces'
 		},
 		// P5a: the two TOPOLOGY-only ops. They move no vertex — they rewrite the
@@ -332,14 +281,14 @@
 			id: 'triangulate',
 			label: 'Triangulate',
 			icon: 'triangulation',
-			run: () => triangulateMesh(),
+			run: () => faceEditNow()?.triangulateMesh(),
 			desc: 'split every quad and n-gon back into its triangles (positions are untouched)'
 		},
 		{
 			id: 'quads',
 			label: 'Tris to quads',
 			icon: 'tris-to-quads',
-			run: () => trisToQuadsMesh(),
+			run: () => faceEditNow()?.trisToQuadsMesh(),
 			desc: 'pair coplanar triangles back into quads (positions are untouched)'
 		}
 	];
@@ -356,7 +305,7 @@
 	const selInfo = $derived.by(() => {
 		void $faceEditSelectedTris; // the trigger; the geometry poke rides objectsGroup
 		void $objectsGroup;
-		return faceSelectionInfo();
+		return faceEditNow()?.faceSelectionInfo() ?? { tris: 0, faces: 0, pieces: 0, loops: null };
 	});
 
 	// 19-A P2: the PRECONDITION map — what the focused tool's pane says when its
@@ -384,16 +333,16 @@
 		}
 		if (focus === 'extrude' || focus === 'inset') {
 			if (!hasTarget()) return 'Click a face first';
-			if (focus === 'extrude' && !faceBevelReady())
+			if (focus === 'extrude' && !faceEditNow()?.faceBevelReady())
 				return 'The selection is a closed surface — nothing to extrude from';
 			return '';
 		}
 		if (focus === 'bevel') {
 			if (!hasTarget()) return 'Select a face with a border';
-			if (!faceBevelReady()) return 'The selection is a closed surface — no border to fold';
+			if (!faceEditNow()?.faceBevelReady()) return 'The selection is a closed surface — no border to fold';
 			return '';
 		}
-		if (focus === 'loopcut') return loopCutReady() ? '' : 'Click a quad to choose the ring';
+		if (focus === 'loopcut') return faceEditNow()?.loopCutReady() ? '' : 'Click a quad to choose the ring';
 		if (focus === 'subdivide') return hasTarget() ? '' : 'Click a face first';
 		if (focus === 'solidify') return hasTarget() ? '' : 'Select the surface to thicken first';
 		if (focus === 'bridge') {
@@ -438,7 +387,7 @@
 				showToast('Click a face first');
 				return false;
 			}
-			ok = beginOpAdjust(
+			ok = beginOpAdjustLazy(
 				/** @type {any} */ (op),
 				op === 'inset'
 					? { distance: $faceEditAmount, depth: $insetDepth, individual: $insetIndividual }
@@ -450,12 +399,12 @@
 				mode === 'vertices'
 					? beginVertexBevelAdjust($bevelWidth, signedProfile, $bevelSegments)
 					: mode === 'edges'
-						? beginOpAdjust(
+						? beginOpAdjustLazy(
 								'bevel',
 								{ width: $bevelWidth, segments: $bevelSegments, profile: signedProfile },
 								{ kind: 'edges' }
 							)
-						: beginOpAdjust(
+						: beginOpAdjustLazy(
 								'bevel',
 								{
 									width: $bevelWidth,
@@ -466,9 +415,9 @@
 								{ kind: 'faces' }
 							);
 		} else if (op === 'loopcut') {
-			ok = beginOpAdjust('loopcut', { cuts: $loopCuts, position: $loopCutPosition });
+			ok = beginOpAdjustLazy('loopcut', { cuts: $loopCuts, position: $loopCutPosition });
 		} else if (op === 'bridge') {
-			ok = beginOpAdjust('bridge', {
+			ok = beginOpAdjustLazy('bridge', {
 				cuts: $bridgeCuts,
 				twist: $bridgeTwist,
 				invert: $bridgeInvert
@@ -478,23 +427,23 @@
 				showToast('Click a face first');
 				return false;
 			}
-			ok = beginOpAdjust('subdivide', { levels: $subdivideLevelCount });
+			ok = beginOpAdjustLazy('subdivide', { levels: $subdivideLevelCount });
 		} else if (op === 'edge-extrude') {
 			// P5b: an adjust-engine op — the engine validates the edge pick and the
 			// border rule, and toasts its own refusals
-			ok = beginOpAdjust('edge-extrude', { distance: $edgeExtrudeDistance });
+			ok = beginOpAdjustLazy('edge-extrude', { distance: $edgeExtrudeDistance });
 		} else if (op === 'smooth') {
 			// P5b: a plain one-shot — one meshgeo commit per click, never an adjust
 			ok = smoothSelectedVerts($smoothFactor, $smoothIterations);
 		} else if (op === 'edge-slide') {
 			// P6: adjust-engine ops — the engine validates and toasts its refusals
-			ok = beginOpAdjust('edge-slide', { factor: $edgeSlideFactor });
+			ok = beginOpAdjustLazy('edge-slide', { factor: $edgeSlideFactor });
 		} else if (op === 'solidify') {
 			if (!hasTarget()) {
 				showToast('Select the surface to thicken first');
 				return false;
 			}
-			ok = beginOpAdjust('solidify', { thickness: $solidifyThickness });
+			ok = beginOpAdjustLazy('solidify', { thickness: $solidifyThickness });
 		}
 		if (ok) flash(op);
 		return ok;
@@ -510,12 +459,12 @@
 		// commitFaceOp case — it appends and re-seats the gizmo itself, and it owns
 		// its refusal toast)
 		if (op === 'duplicate') {
-			if (duplicateSelectedFaces()) flash(op);
+			if (faceEditNow()?.duplicateSelectedFaces()) flash(op);
 			return;
 		}
 		// P6: Separate makes a new OBJECT — its own operator, its own toasts
 		if (op === 'separate') {
-			if (separateSelectedFaces()) flash(op);
+			if (faceEditNow()?.separateSelectedFaces()) flash(op);
 			return;
 		}
 		const spec = OPS.find((o) => o.op === op);
@@ -529,12 +478,12 @@
 				showToast('Click a face first');
 				return;
 			}
-			if (commitFaceOp(/** @type {any} */ (op), $faceEditAmount)) flash(op);
+			if (faceEditNow()?.commitFaceOp(/** @type {any} */ (op), $faceEditAmount)) flash(op);
 			return;
 		}
 		// Extrude/Inset/Move arm as the current tool; extrude/inset apply on a
 		// face click (auto-apply) or via Apply; Move seats the gizmo (B1)
-		setFaceOp(/** @type {any} */ (op));
+		faceEditNow()?.setFaceOp(/** @type {any} */ (op));
 	}
 
 	// 176: force-apply the active op on the currently highlighted face.
@@ -547,7 +496,7 @@
 		}
 		const op = $faceEditOp;
 		if (op === 'extrude' || op === 'inset') applyOp(op);
-		else commitFaceOp(/** @type {any} */ (op), $faceEditAmount);
+		else faceEditNow()?.commitFaceOp(/** @type {any} */ (op), $faceEditAmount);
 	}
 
 	/** Bevel for whichever element mode is open, via the adjust engine. */
@@ -630,7 +579,7 @@
 
 	function finish() {
 		exitEditMode();
-		exitFaceEdit();
+		faceEditNow()?.exitFaceEdit();
 		sealEditHistorySession(); // 15-F: Done seals the session into ONE undo entry
 	}
 
@@ -642,7 +591,7 @@
 		if (!active) confirmCancel = false;
 	});
 	function askCancel() {
-		if (!sessionHasChanges()) {
+		if (!faceEditNow()?.sessionHasChanges()) {
 			showToast('Nothing to revert — no edits yet this session');
 			return;
 		}
@@ -650,9 +599,9 @@
 	}
 	function doCancel() {
 		confirmCancel = false;
-		cancelEditSession();
+		faceEditNow()?.cancelEditSession();
 		exitEditMode();
-		exitFaceEdit();
+		faceEditNow()?.exitFaceEdit();
 		// 'discard' drops the session's undo entries: they describe edits that no
 		// longer exist, so keeping them would make Ctrl+Z replay into thin air
 		sealEditHistorySession('discard');
@@ -669,7 +618,7 @@
 			// (here, meshEdit's and faceEdit's) have to ask, since whichever runs
 			// first would otherwise tear the session down mid-gesture — which is why
 			// the verdict rides the EVENT and not a one-shot store flag.
-			if (escapeConsumedByKnife(event)) return;
+			if (faceEditNow()?.escapeConsumedByKnife(event)) return;
 			if (escapeConsumedByPivotPick(event)) return; // ...and so does an armed pivot pick
 			if (escapeConsumedByPivotMove(event)) return; // ...and an armed pivot MOVE
 			if (!$colliderEditObject) finish(); // a collider session tears down via its watcher
@@ -748,7 +697,7 @@
 		} else if (mode === 'edges' && cmd === 'mesh.flip') {
 			// 19-A P6: F = fill the hole the picked rim goes around (the flip key's edge-mode
 			// meaning, as L is loop in faces and chain in edges: one rebindable row)
-			if (fillHole()) flash('efill');
+			if (faceEditNow()?.fillHole()) flash('efill');
 			event.preventDefault();
 		}
 	}
@@ -990,7 +939,7 @@
 							id={`mesh-gran-${g.value}`}
 							class="px-2 py-0.5 {$faceEditGranularity === g.value ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 hover:bg-surface-hover'}"
 							title={g.title}
-							onclick={() => setFaceGranularity(/** @type {any} */ (g.value))}>{g.label}</button
+							onclick={() => faceEditNow()?.setFaceGranularity(/** @type {any} */ (g.value))}>{g.label}</button
 						>
 					{/each}
 				</div>
@@ -1020,7 +969,7 @@
 				class="tbx-btn {$faceEditOp === 'move' ? 'tbx-on bg-accent-fill text-on-accent' : ''}"
 				aria-label="Move edges with the gizmo"
 				title="Move — seat the gizmo on the selected edges (X runs along the edge, Z out of the surface). The welded neighbours stretch with it."
-				onclick={() => setFaceOp('move')}
+				onclick={() => faceEditNow()?.setFaceOp('move')}
 				><Icon name="tool:move" size={20} /></button
 			>
 			<button
@@ -1061,7 +1010,7 @@
 				aria-label="Subdivide edges"
 				title="Subdivide — split every face along the selected edges at their midpoints. Both sides split at the identical welded point, so the mesh stays watertight; the two halves stay selected."
 				onclick={() => {
-					if (subdivideSelectedEdges()) flash('esubdivide');
+					if (faceEditNow()?.subdivideSelectedEdges()) flash('esubdivide');
 				}}><Icon name="tool:edge-subdivide" size={20} /></button
 			>
 			<button
@@ -1072,7 +1021,7 @@
 				aria-label="Fill the hole"
 				title="Fill — close the hole the selected border edges go around with one new face (pick ONE rim edge to fill its whole hole). The cap is wound to match the faces around it."
 				onclick={() => {
-					if (fillHole()) flash('efill');
+					if (faceEditNow()?.fillHole()) flash('efill');
 				}}><Icon name="tool:fill-hole" size={20} /></button
 			>
 			<button
@@ -1083,7 +1032,7 @@
 				aria-label="Dissolve edges"
 				title="Dissolve — remove the edge and merge the two coplanar faces it joins"
 				onclick={() => {
-					if (dissolveEdges()) flash('dissolve');
+					if (faceEditNow()?.dissolveEdges()) flash('dissolve');
 				}}><Icon name="tool:dissolve" size={20} /></button
 			>
 			<button
@@ -1094,7 +1043,7 @@
 				aria-label="Delete edges"
 				title="Delete — remove the faces on BOTH sides of the selected edges, leaving a hole. (Dissolve keeps the surface; this opens it up, which is how you make a hole to bridge or fill.)"
 				onclick={() => {
-					if (deleteSelectedEdges()) flash('edelete');
+					if (faceEditNow()?.deleteSelectedEdges()) flash('edelete');
 				}}><Icon name="tool:delete-face" size={20} /></button
 			>
 			{@render proportionalBtn()}
@@ -1223,9 +1172,9 @@
 			onApplySmooth={() => applyOp('smooth')}
 			onApplyEdgeSlide={() => applyOp('edge-slide')}
 			onApplySolidify={() => applyOp('solidify')}
-			onAdjust={(patch) => reapplyOpAdjust(patch)}
-			onSettle={() => settleOpAdjust()}
-			onRevert={() => cancelOpAdjust()}
+			onAdjust={(patch) => faceEditNow()?.reapplyOpAdjust(patch)}
+			onSettle={() => faceEditNow()?.settleOpAdjust()}
+			onRevert={() => faceEditNow()?.cancelOpAdjust()}
 		/>
 
 		<!-- GIZMO & PIVOT: ONE collapsible section, offered in EVERY element mode.
@@ -1384,13 +1333,13 @@
 				id="mesh-shading"
 				class="tbx-btn {wholeMeshReady ? '' : 'tbx-disabled'}"
 				aria-label="Smooth shading"
-				aria-pressed={shadingMode() === 'smooth'}
-				title={shadingMode() === 'smooth'
+				aria-pressed={faceEditNow()?.shadingMode() === 'smooth'}
+				title={faceEditNow()?.shadingMode() === 'smooth'
 					? 'Smooth shading — click for flat'
 					: 'Flat shading — click for smooth'}
 				onclick={() =>
 					runWholeMesh(() => {
-						setShadingSmooth(shadingMode() !== 'smooth');
+						faceEditNow()?.setShadingSmooth(faceEditNow()?.shadingMode() !== 'smooth');
 						flash('shading');
 					})}><Icon name="tool:shading" size={20} /></button
 			>
@@ -1436,7 +1385,7 @@
 					class="tbx-primary"
 					onclick={() =>
 						runWholeMesh(() => {
-							if (symmetrizeMesh($symAxis, $symKeep)) flash('symmetrize');
+							if (faceEditNow()?.symmetrizeMesh($symAxis, $symKeep)) flash('symmetrize');
 						})}>Symmetrize</button
 				>
 			</div>

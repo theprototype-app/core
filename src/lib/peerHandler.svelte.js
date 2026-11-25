@@ -12,7 +12,7 @@ import { applyBurst } from '$lib/particleRuntime';
 import { applyNodeDef, applyNodeDefDelete, applyNodeDefsSnapshot, sendNodeDefs } from '$lib/customNodes';
 import { applyRemoteDuplicate } from '$lib/objectActions';
 import { applyVerts } from '$lib/meshEdit';
-import { applyMeshGeo } from '$lib/faceEdit';
+import { applyMeshGeo } from '$lib/meshGeoApply';
 // UV3 texture paint: live stroke segments. Safe as a STATIC import — uvEditor
 // registers no history kind at module eval and its own imports (faceEdit,
 // materialsHandler, history) are already in this file's subtree.

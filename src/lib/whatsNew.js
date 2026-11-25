@@ -8,14 +8,31 @@
 import { writable, get } from 'svelte/store';
 import { APP_VERSION, IS_DEV } from './version.js';
 import { showToast } from '../stores/appStore.js';
-// The changelog ships as the repo-root CHANGELOG.md (GitHub renders the same file).
-import changelogRaw from '../../CHANGELOG.md?raw';
 import { safeStorage } from './safeStorage';
 import { simpleUntilPlay } from './onboarding/onboardState.js';
 import { funnelBoot } from './onboarding/funnel.js';
 
-/** Raw markdown of the changelog, rendered by WhatsNew.svelte. */
-export const CHANGELOG = String(changelogRaw || '');
+/** The changelog ships as the repo-root CHANGELOG.md (GitHub renders the same file). 102-boot-diet-2: it is a
+ * LAZY chunk (changelogText.js) — `changelogText` holds the raw markdown once loaded (null before), and
+ * `loadChangelog()` fetches it; the views call it when they open, the update toast as it shows.
+ * @type {import('svelte/store').Writable<string | null>} */
+export const changelogText = writable(/** @type {string | null} */ (null));
+/** @type {Promise<string> | null} */
+let changelogLoading = null;
+/** fetch (or join the fetch of) the changelog markdown; a failure is retried on the next ask */
+export function loadChangelog() {
+	changelogLoading ??= import('./changelogText.js').then(
+		(m) => {
+			changelogText.set(m.default);
+			return m.default;
+		},
+		(error) => {
+			changelogLoading = null;
+			throw error;
+		}
+	);
+	return changelogLoading;
+}
 
 const SEEN_WELCOME = 'hasSeenWelcome';
 const LAST_SEEN_VERSION = 'lastSeenVersion';
@@ -66,6 +83,7 @@ function markSeen() {
 /** Open the changelog window; clears the badge and marks this version seen. */
 export function openWhatsNew() {
 	markWhatsNewSeen();
+	void loadChangelog().catch(() => {});
 	whatsNewOpen.set(true);
 }
 
@@ -186,6 +204,7 @@ export function startWhatsNew() {
 	// Welcome-on-start opt-ins still get the dot, but a toast on top of the overlay
 	// they asked for is noise — the badge alone carries the news that boot.
 	if (welcomeThisBoot) return;
+	void loadChangelog().catch(() => {}); // the toast's button opens it: fetch it now
 	showToast('Updated to ' + APP_VERSION + (IS_DEV ? '-dev' : '') + ' — see what changed.', [
 		{ label: "What's new", action: openWhatsNew }
 	]);

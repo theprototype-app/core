@@ -26,13 +26,13 @@
 	} from '$lib/scenePost';
 	// side-effecting import: registers the built-in effect kinds. It also owns the
 	// postprocessing/n8ao imports, which is what keeps scenePost.js a pure leaf.
-	import { compilePostStack, disposePostStack } from '$lib/postEffects';
+	import { compilePostStack, disposePostStack, n8aoReady, loadN8ao } from '$lib/postEffects';
 	// P4: side-effecting too — registers the `graph` kind, so a post-domain shader graph
 	// is just another entry in the stack above. This component owns the one thing that
 	// module cannot: the NormalPass, added ON DEMAND below when a graph reads normals.
 	import '$lib/postGraphs';
 	import { registerOutlineLayer } from '$lib/editOverlays';
-	import { faceEditObject, meshEditOutline } from '$lib/faceEdit';
+	import { faceEditObject, meshEditOutline } from '$lib/faceEditState';
 	import { editingObject } from '$lib/meshEdit';
 	import { coarsePointer } from '$lib/inputDevice';
 	import { viewPrefs, DEFAULT_VIEW_PREFS } from '$lib/viewPrefs';
@@ -368,17 +368,23 @@
 		const reduced = $qualityOverrides;
 		const overrides = adopted ? adopted.look : undefined;
 		const adoptedMode = adopted ? adopted.mode : $viewMode;
-		const entries = effectivePostStack({
+		const inputs = {
 			stack: resolvedDoc(POST_SCENE_KEY, overrides),
 			cameraStack: /** @type {any} */ (throughCamera ? resolvedDoc(throughCamera, overrides) : null),
 			mode: reduced.aoOff && adoptedMode === 'shaded-ao' ? 'shaded' : adoptedMode,
 			localEnabled: (adopted ? adopted.overrides.post !== false : $postEnabledLocal) && !reduced.postOff,
 			postOk,
 			postWarm
-		}).filter((entry) => !(reduced.aoOff && entry.kind === 'ao'));
+		};
+		const entries = effectivePostStack(inputs).filter((entry) => !(reduced.aoOff && entry.kind === 'ao'));
+		// 102-boot-diet-2: N8AO is a lazy chunk. Fetch it as soon as the WARMED stack would draw AO (during the
+		// warm-up, so it is usually here by frame 10); `$n8aoReady` in the signature recompiles the chain once it lands
+		const aoReady = $n8aoReady;
+		if (!aoReady && !reduced.aoOff && effectivePostStack({ ...inputs, postWarm: true }).some((entry) => entry.kind === 'ao'))
+			void loadN8ao().catch(() => {});
 		// 98-int: the governor's "Scene look lighter" step keeps the grade and drops the heavy passes
 		const shown = reduced.lookLite ? liteLook(entries) : entries;
-		const signature = postStackSignature(shown);
+		const signature = postStackSignature(shown) + (aoReady ? '' : '|ao-loading');
 		if (signature === stackSignature) return;
 		stackSignature = signature;
 		untrack(() => rebuildStack(shown));

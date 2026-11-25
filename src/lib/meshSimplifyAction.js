@@ -6,7 +6,7 @@ import { objectsGroup, pokeScene } from '../stores/sceneStore';
 import { showToast } from '../stores/appStore';
 import { simulating } from './physics';
 import { editingObject } from './meshEdit';
-import { faceEditObject } from './faceEdit';
+import { faceEditObject } from './faceEditState';
 import { runWorker, floatsOf } from './decimate';
 import { simplifyJob, simplifyResult, simplifyRefusal, simplifyTarget } from './meshSimplify';
 import { installRebuild, modelLockedByOther, modelFileClips } from './modelReplace';

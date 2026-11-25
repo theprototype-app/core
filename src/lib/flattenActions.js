@@ -3,7 +3,7 @@ import { get, writable } from 'svelte/store';
 import { objectsGroup } from '../stores/sceneStore';
 import { showToast, showInfoToast, dismissToastById } from '../stores/appStore';
 import { carveAlongSpline, splineInFrameOf, CARVE_DEFAULTS } from './terrainCarve';
-import { commitMeshGeoSnapshot } from './faceEdit';
+import { faceEditNow, loadFaceEdit } from './faceEditLazy';
 import { splineDataOf, splineObjectOf, commitSplineEdit } from './splineTool';
 import { cloneSpline } from './splineTube';
 
@@ -47,9 +47,12 @@ const objectOf = (uuid) => get(objectsGroup)?.getObjectByProperty('uuid', uuid) 
  *
  * @param {string} splineUuid @param {string} terrainUuid
  * @param {any=} options width / shoulder / mode / bankToCurve / clearance
- * @returns {boolean}
+ * @returns {boolean | Promise<boolean>} a Promise only while the face editor chunk loads
  */
 export function carveTerrainAlong(splineUuid, terrainUuid, options = {}) {
+	// 102-boot-diet-2: the commit is the face editor's (a lazy chunk): load it, then carve (synchronous once loaded)
+	const fe = faceEditNow();
+	if (!fe) return loadFaceEdit().then(() => carveTerrainAlong(splineUuid, terrainUuid, options));
 	const road = objectOf(splineUuid);
 	const terrain = objectOf(terrainUuid);
 	if (!road?.userData?.spline?.points?.length) {
@@ -103,7 +106,7 @@ export function carveTerrainAlong(splineUuid, terrainUuid, options = {}) {
 		);
 		return false;
 	}
-	const ok = commitMeshGeoSnapshot(terrainUuid, before, Array.from(after));
+	const ok = fe.commitMeshGeoSnapshot(terrainUuid, before, Array.from(after));
 	if (ok) showToast(`Carved ${moved} vertices of ${terrain.name || 'the terrain'} — Ctrl+Z to undo`);
 	return ok;
 }

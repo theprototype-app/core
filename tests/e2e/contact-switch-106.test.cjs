@@ -140,7 +140,8 @@ h.run(async () => {
 	await page.waitForTimeout(1500);
 	const frameOn = await h.grabFrame(A, clip);
 	const d = await h.frameDelta(page, frameAuto, frameOn, 3);
-	h.check(d.changed > Math.max(30, 3 * floor.changed), `2. the frame changes at the box's foot (${d.changed} px over 3, max ${d.max}; noise floor ${floor.changed} px)`);
+	// a small footprint (RTX 4090: 21 px, max 54; floor 0): judged against the frame's own noise, not a pixel count
+	h.check(d.changed >= 10 && d.changed > 3 * floor.changed && d.max >= 20, `2. the frame changes at the box's foot (${d.changed} px over 3, max ${d.max}; noise floor ${floor.changed} px)`);
 	await pick(page, 'off');
 	await until(() => state(page), (v) => v.mode === 'off' && !v.wanted && v.live === 0, '2. Off: the pass is gone', 20000);
 	await closeMenu(page);

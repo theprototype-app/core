@@ -275,7 +275,7 @@ describe('the 2D toolbar contract (64-2d Q9)', () => {
 describe('64-int: the corner limit (text keeps three\'s sqrt(2))', () => {
 	// a sharp apex: 20 degrees at (0, 1), counter-clockwise
 	const tri = [[-0.18, 0], [0.18, 0], [0, 1]];
-	const len = (m, i) => Math.hypot(m[i * 2], m[i * 2 + 1]);
+	const len = (/** @type {Float64Array} */ m, /** @type {number} */ i) => Math.hypot(m[i * 2], m[i * 2 + 1]);
 	test('ringMiters caps the apex at the given limit; the default (shapes) lets it reach 6', () => {
 		expect(len(ringMiters(tri), 2)).toBeGreaterThan(5);
 		expect(len(ringMiters(tri, Math.SQRT2), 2)).toBeCloseTo(Math.SQRT2, 6);
@@ -283,7 +283,7 @@ describe('64-int: the corner limit (text keeps three\'s sqrt(2))', () => {
 	test('buildSolidArrays({miterMax: sqrt 2}) keeps a bevelled apex within sqrt(2) x the outset of the outline', () => {
 		const polys = [[tri]];
 		const opts = { zBack: 0, zFront: 0.2, width: 0.03, thickness: 0.03, outset: 0.03, segments: 3, clamp: false };
-		const top = (o) => {
+		const top = (/** @type {any} */ o) => {
 			let y = -Infinity;
 			const p = buildSolidArrays(polys, o).positions;
 			for (let i = 1; i < p.length; i += 3) y = Math.max(y, p[i]);

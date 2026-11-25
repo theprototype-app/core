@@ -119,7 +119,11 @@ h.run(async () => {
 				window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
 				let waiting = 0;
 				g.traverse((o) => {
-					if (o.userData?.textPath?.mode === 'extruded' && o.geometry?.type !== 'ExtrudeGeometry') waiting++;
+					// built = the release's ExtrudeGeometry, or (64-extrude, in the 64-int union) the kernel solid: a plain
+					// BufferGeometry carrying its face partition `__topo` and triangles
+					const geo = o.geometry;
+					const built = geo?.type === 'ExtrudeGeometry' || (!!geo?.userData?.__topo && (geo.attributes?.position?.count ?? 0) > 0);
+					if (o.userData?.textPath?.mode === 'extruded' && !built) waiting++;
 				});
 				return waiting;
 			});

@@ -241,6 +241,25 @@ describe('buildVectorGeometry on the kernel', () => {
 		buildVectorGeometry({ ...base, depth: 0.05 });
 		expect(vectorMeshDebug().fastBuilds).toBe(n);
 	});
+	test('64-int: a layered solid (64-vector-edit layer + 64-extrude depth drag) takes the fast path and matches a full build', () => {
+		resetSolidCache();
+		// a thin solid: the 8 mm lift is more than half its depth, so the halves must part ABOVE the lift
+		const base = star({ depth: 0.01, bevel: 0, layer: 4 });
+		const first = buildVectorGeometry(base);
+		first.computeBoundingBox();
+		expect(first.boundingBox?.min.z).toBeCloseTo(0.008, 5); // 4 layer steps of 2 mm
+		const before = vectorMeshDebug().fastBuilds;
+		const fast = buildVectorGeometry({ ...base, depth: 0.05 });
+		expect(vectorMeshDebug().fastBuilds).toBe(before + 1);
+		resetSolidCache();
+		const full = buildVectorGeometry({ ...base, depth: 0.05 });
+		const a = fast.attributes.position.array;
+		const b = full.attributes.position.array;
+		expect(a.length).toBe(b.length);
+		let worst = 0;
+		for (let i = 0; i < a.length; i++) worst = Math.max(worst, Math.abs(a[i] - b[i]));
+		expect(worst).toBeLessThan(1e-5);
+	});
 });
 
 describe('the 2D toolbar contract (64-2d Q9)', () => {

@@ -170,9 +170,6 @@ export function buildVectorGeometry(params) {
 		parts.push({ pos, normals: null, faces: null, colour: () => sc });
 	}
 
-	// 64-vector-edit row 3: the layer lifts the whole shape along its +Z (layer 0 adds nothing)
-	const lift = (p.layer ?? 0) * LAYER_STEP;
-	if (lift) for (let i = 2; i < pos.length; i += 3) pos[i] += lift;
 	const geometry = new THREE.BufferGeometry();
 	const count = parts.reduce((n, part) => n + part.pos.length, 0);
 	if (!count) return geometry;
@@ -227,6 +224,9 @@ export function buildVectorGeometry(params) {
 		else for (let t = 0; t < tris; t++) faces.push([tri0 + t]);
 		at += src.length;
 	}
+	// 64-vector-edit row 3: the layer lifts the whole shape along its +Z (layer 0 adds nothing)
+	const lift = (p.layer ?? 0) * LAYER_STEP;
+	if (lift) for (let i = 2; i < pos.length; i += 3) pos[i] += lift;
 	geometry.setAttribute('position', new THREE.BufferAttribute(pos, 3));
 	geometry.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
 	geometry.setAttribute('color', new THREE.BufferAttribute(linear, 3));
@@ -284,7 +284,8 @@ function depthOnly(p) {
 	// the bevel must fit strictly inside both depths (or be off)
 	if (p.bevel > 0 && !(p.bevel < hit.depth / 2 && p.bevel < p.depth / 2)) return null;
 	const pos = hit.pos.slice();
-	const split = hit.depth / 2;
+	// the cached solid carries its layer's lift (shapeKey keeps `layer`), so the halves part above it
+	const split = (p.layer ?? 0) * LAYER_STEP + hit.depth / 2;
 	const shift = p.depth - hit.depth;
 	for (let i = 2; i < pos.length; i += 3) if (pos[i] > split) pos[i] += shift;
 	const geometry = new THREE.BufferGeometry();

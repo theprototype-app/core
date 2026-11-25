@@ -1416,7 +1416,6 @@
 		"late-joiner-scale": false,
 		"play-link-spawn": false,
 		"late-joiner-compat": false,
-		"sprite2d-compat": false,
 		"late-joiner-slots": false,
 		"tpanim-clips": false,
 		"tpanim-motion": false,

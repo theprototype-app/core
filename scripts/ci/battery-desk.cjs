@@ -59,7 +59,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
-const { load, assign, counts } = require('./battery.cjs');
+const { load, assign, counts, ciEnvError } = require('./battery.cjs');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const STATE = process.env.BATTERY_STATE || path.join(process.env.XDG_STATE_HOME || path.join(os.homedir(), '.local', 'state'), 'theprototype', 'battery');
@@ -124,8 +124,9 @@ function deskEntries(b) {
 function half(b, half, of, subset) {
 	const i = half.toUpperCase().charCodeAt(0) - 65;
 	const entries = subset ? deskEntries(b).filter(([n]) => subset.includes(n)) : deskEntries(b);
-	// the desk runs every suite the same way: `optional` is a GitHub-runner property, so it is not a set here
-	const shards = assign({ ...b, skip: {}, optional: {}, suites: Object.fromEntries(entries) }, of);
+	// the desk runs every suite the same way: `optional` is a GitHub-runner property, so it is not a set here — and
+	// neither is `ci.optionalTags` (a desk.gpu suite is GPU-only on GitHub, and gates here where the GPU is real)
+	const shards = assign({ ...b, skip: {}, optional: {}, ci: { ...b.ci, optionalTags: {} }, suites: Object.fromEntries(entries) }, of);
 	if (!(i >= 0 && i < of)) throw new Error(`--half ${half}: there are ${of} halves (A..${String.fromCharCode(64 + of)})`);
 	return shards[i].suites;
 }
@@ -1479,6 +1480,12 @@ function recordCmd(argv) {
 
 if (require.main === module) {
 	const [cmd, ...argv] = process.argv.slice(2);
+	// ci-speed: BATTERY_CI is GitHub-only (battery.cjs ciEnvError) — a desk / pc / release battery refuses it
+	const ciError = ciEnvError(process.env);
+	if (ciError) {
+		console.error('battery-desk.cjs: ' + ciError);
+		process.exit(2);
+	}
 	try {
 		if (cmd === 'run') run(argv);
 		else if (cmd === 'queue') queueCmd(argv);

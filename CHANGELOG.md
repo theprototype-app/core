@@ -6,6 +6,22 @@
      rendering, so maintainer notes stay out of the user-facing window. No emoji from
      1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
 
+## 1.80.0 — Bisect, smooth subdivide and path select
+
+### Mesh editing
+- **Bisect**: cut a mesh with a flat plane. Two clicks draw it, the gizmo moves and turns it, Apply (or Enter) cuts the picked faces or the whole mesh. Clear the inner or outer side, and fill the opening so a closed model stays closed. Settings ▸ Shortcuts can give it a key. <!-- 99-newops K8 #635 -->
+- **Smooth subdivide**: tick **smooth** under Subdivide, or press Shift+S, to round a shape off as it splits (Catmull-Clark, levels 1 to 3). The picked faces smooth while their border stays put; with nothing picked the whole mesh smooths. Open edges keep their line and textures stay in place. <!-- 99-newops K8 #635 -->
+- **Path select**: Ctrl+click picks the shortest path of faces, edges or vertices from your last pick; tick **steps** to count steps instead of length. On touch and in VR, the **Path** toggle does the same. Shift+click still adds a single element. <!-- 99-newops K8 #635 -->
+- **Loop cut**: dragging Position or Cuts shows a yellow line where the cut will land; the cut happens when you let go. While you drag, the previous cut stays visible under the line. Others in the session see the result, not the drag. Typing a value still cuts straight away. <!-- 99-scrub #656 -->
+- **Moving faces on a big mesh** finishes about 3x faster, and the first move on a mesh no longer stalls. <!-- 99-scrub #656: 67k grab commit median 215 -> 70 ms, p95 400 -> 240 ms (PC); Deck row in 99-int-2 STATUS -->
+
+### For AI agents
+- `edit_mesh` gains `subdivide_smooth` (levels) and `bisect` (a point, a direction, clear and fill). `create_shape`'s subdivide now runs the same Catmull-Clark as the editor; its output is unchanged. <!-- 99-newops K8, parity 12/12 -->
+
+### Compatibility
+- **Scene files**: format unchanged; a scene saved here opens in 1.79.0. <!-- 99-int-2 s2: late-joiner-compat vs built 1.79.0 -->
+- **With someone on 1.79.0**: mesh edits reach each other the same way as before; the new tools travel as ordinary mesh edits. <!-- 99-int-2 s2: mesh-commit-two-tree with a 1.79.0 peer -->
+
 ## 1.79.0 — Hands-on editing
 
 ### Keyboard and gizmo

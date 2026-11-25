@@ -4,7 +4,7 @@
 	"pages": {
 		"play": {
 			"html": "play.html",
-			"maxJsGzBytes": 1899520,
+			"maxJsGzBytes": 1894400,
 			"maxFirstFrameMs": 20000
 		},
 		"editor": {
@@ -263,6 +263,13 @@
 			"play": "v1.76.0 line 1909 KB -> union on v1.76.0 1880.6 KB -> line kept",
 			"editor": "v1.76.0 line 3029 KB -> union on v1.76.0 2999.4 KB -> line kept",
 			"note": "measured on the Deck; the five 104 lanes fit inside the 1.76.0 lines, so no raise"
+		},
+		{
+			"date": "2026-11-25",
+			"lane": "104-int-rel (roadmap 104 connector round 2 + 89-apps on v1.79.0, 90db734e)",
+			"play": "v1.79.0 1851.0 KB -> union on v1.79.0 1848.2 KB (-2.8) -> line 1850.0 KB (the int boot rule: the measure on the newest tag, rounded up to the next 5 KB; was 1855.0)",
+			"editor": "v1.79.0 2987.2 KB -> union on v1.79.0 2987.4 KB (+0.2) -> line 2990.0 KB (the same rule; unchanged)",
+			"note": "measured on the Deck, v1.79.0 and the union built back to back. 104's own delta is +0.2 KB editor / -2.8 KB play. Largest editor contributor in 104: 89-apps (+1.6 KB at 104-int on v1.75.0) = the give-back row for 102-boot-diet-2. The 1.8x changelog entry rides the editor boot: measured again at release."
 		}
 	],
 	"throttle": {

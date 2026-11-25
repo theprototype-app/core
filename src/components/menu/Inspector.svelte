@@ -88,7 +88,7 @@
 	import { activeMaterialSlot, slotIdsOf, ownMaterialsOf } from '$lib/slotDraw.js';
 	import { linkedOthers, sharedCount } from '$lib/slotDraw.js'; // 105-slots LINK (the boot gate): the colour drag reaches every holder
 	// 105-slots: "Select its faces" / "Assign selected faces" read the Edit Mesh face session (already in the boot)
-	import { faceEditObject, faceEditSelectedTris } from '$lib/faceEdit';
+	import { faceEditObject, faceEditSelectedTris } from '$lib/faceEditState'; // 102-int-3: the boot half (faceEdit.js is lazy, 102-boot-diet-2)
 	import { recordEntry, beginHistoryBatch, endHistoryBatch, recordTransformSet, registerPendingSeal } from '$lib/history';
 	import { withWireBatch, withWireBatchAsync } from '$lib/wireBatch';
 	import { setObjectFlag, lightStateOf, recordLightChange, sendLight, allMembers } from '$lib/multiEdit';

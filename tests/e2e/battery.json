@@ -738,6 +738,8 @@
 		"mesh-paint": 240,
 		"mesh-sculpt": 17,
 		"mesh-toolbox-redesign": 242,
+		"mesh-loopcut-scrub": 60,
+		"mesh-grab-wire": 180,
 		"mobile-editors": 75,
 		"mobile-hud": 19,
 		"mobile-map": 86,

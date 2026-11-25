@@ -26,6 +26,8 @@ import {
 	boundaryLoopOf,
 	vertexKeysOf,
 	internalEdgeKeysOf,
+	internalEdgeIdsOf,
+	edgeIdOf,
 	centroidOf,
 	stateOf,
 	normalPlan,
@@ -1145,14 +1147,16 @@ function quadWireGeometry(geometry) {
 	const reuse = wireReuseFor(geometry);
 	const f = reuse ? reuse.frame : frameOfGeometry(geometry);
 	const faces = readStoredFaces(geometry);
-	const skip = internalEdgeKeysOf(f, faces, faces ? new Int32Array(0) : reuse ? reuse.partner : pairQuadsOf(f, QUAD_COPLANAR, quadScore));
+	const partner = faces ? new Int32Array(0) : reuse ? reuse.partner : pairQuadsOf(f, QUAD_COPLANAR, quadScore);
+	// lane 99-scrub: weld-id edges, not string keys (the same edges in the same order: ids are equal exactly when keys are)
+	const skip = internalEdgeIdsOf(f, faces, partner);
+	const V = weld(f);
 	const seen = new Set();
 	/** @type {number[]} the corner each wire point is read from (99 K5: a live edit rewrites the wire from them) */
 	const from = [];
 	for (let t = 0; t < f.count; t++) {
-		const keys = [keyAt(f, t, 0), keyAt(f, t, 1), keyAt(f, t, 2)];
 		for (let e = 0; e < 3; e++) {
-			const key = edgeKey(keys[e], keys[(e + 1) % 3]);
+			const key = edgeIdOf(f, V[t * 3 + e], V[t * 3 + ((e + 1) % 3)]);
 			if (skip.has(key) || seen.has(key)) continue;
 			seen.add(key);
 			from.push(t * 3 + e, t * 3 + ((e + 1) % 3));
@@ -1163,6 +1167,9 @@ function quadWireGeometry(geometry) {
 	const out = new THREE.BufferGeometry();
 	out.setAttribute('position', new THREE.BufferAttribute(points, 3));
 	out.userData.fromCorners = Int32Array.from(from);
+	// lane 99-scrub: the DERIVED pairing this wire skipped the diagonals of (null when a stored partition drew it) —
+	// a mesh's first commit stores a partition and keeps the wire when that partition pairs the same
+	out.userData.partner = faces ? null : partner;
 	return out;
 }
 
@@ -5248,6 +5255,28 @@ function carryOrDeriveFaces(geometry, previous) {
 	storeDerivedFaces(geometry, readTriangles(geometry));
 }
 
+/** lane 99-scrub: `storeDerivedFaces` from the geometry's own frame (no triangle objects: pairQuads(tris) IS
+ * pairQuadsOf(frameOfTris(tris)), and frameOfGeometry reads readTriangles' values exactly); returns the pairing it
+ * stored from, or null @param {any} geometry @returns {Int32Array | null} */
+function storeDerivedFacesOf(geometry) {
+	const partner = derivedPartnerOf(geometry);
+	if (!partner.length) return null;
+	return storeFaces(geometry, derivePartition(partner.length, partner)) ? partner : null;
+}
+
+/** The derived quad pairing of a geometry, read off its frame: `pairQuads(readTriangles(geometry))` without the
+ * triangle objects (unit grabCommit99 pins the equality). @param {any} geometry @returns {Int32Array} */
+export function derivedPartnerOf(geometry) {
+	return pairQuadsOf(frameOfGeometry(geometry), QUAD_COPLANAR, quadScore);
+}
+
+/** two integer arrays, element for element @param {ArrayLike<number>} a @param {ArrayLike<number>} b */
+function sameInts(a, b) {
+	if (a.length !== b.length) return false;
+	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+	return true;
+}
+
 /**
  * Derive a quad partition from coplanarity and STORE it. Only ever reached for geometry
  * with no authored and no carryable topology — a mesh's first edit — because derivation
@@ -6170,7 +6199,8 @@ function restoreCapturedSelection(sel, uuid) {
  *   stampFaces?: boolean,
  *   carryColors?: boolean,
  *   selectionBefore?: any,
- *   wireFaces?: 'object' | 'none'
+ *   wireFaces?: 'object' | 'none',
+ *   weldBefore?: Int32Array | null
  * }} c `after` = `{positions, groups?, uvs?, colors?}` or a bare positions array; `faces` = the
  *   partition the operator AUTHORED (applied as stored topology; absent = carry or derive);
  *   `cap` = the noun of the size refusal (false: the caller already refused); `stampFaces` =
@@ -6201,8 +6231,14 @@ export function commitMesh(c) {
 		// carryOrDeriveFaces -> storeDerivedFaces on the new triangles), so later swaps carry these faces instead of
 		// re-guessing them. One pairing pass, on the first edit only (v1.75 paid it on every commit)
 		const live = FS.object?.geometry;
-		if (live && !readStoredFaces(live)) storeDerivedFaces(live, readTriangles(live));
-		afterInPlaceCommit();
+		const stored = !!(live && readStoredFaces(live));
+		// lane 99-scrub: the pairing straight off the geometry's frame (pairQuads(readTriangles(g)) is this pairing of
+		// frameOfTris of the same values, so the partition is the same — without 67k triangle objects)
+		const partner = live && !stored ? storeDerivedFacesOf(live) : null;
+		// the wire stays when its structure does: same weld, and the partition it skipped is the one stored now
+		const wirePartner = wire?.geometry?.userData?.partner;
+		const samePartition = stored || (!!partner && !!wirePartner && sameInts(partner, wirePartner));
+		afterInPlaceCommit(samePartition ? (c.weldBefore ?? null) : null);
 	} else if (bare) {
 		applyMeshGeo(uuid, positions);
 	} else {
@@ -6462,6 +6498,9 @@ function ensureLiveGeometry() {
 	FS.object.geometry = copy;
 	FS.frame = frameOfGeometry(copy);
 	weld(FS.frame);
+	// lane 99-scrub: the copy holds the same triangles in the same order, so the edit wire drawn from `g` describes it
+	// corner for corner — re-source it, or the first live write rebuilds the whole wire (~190 ms at 67k)
+	if (wireSource === g) wireSource = copy;
 	// the geometry the copy replaced: a cancel puts it back (a grab that changed nothing leaves the session as it
 	// was, the K3 lossless leave included), a commit disposes it when it was ours
 	return { replaced: g };
@@ -6657,6 +6696,9 @@ export function beginFaceGrab(faceOrIndex) {
 	FS.grab = {
 		index,
 		triIndices,
+		// lane 99-scrub: the weld before any write (writeLive drops FS.frame.V per move); the commit keeps the edit
+		// wire when the move left it unchanged
+		weldAtStart: weld(FS.frame),
 		// a TRIPLE, matching commitFaceGrab's `after`: an undo then restores the
 		// pre-grab mapping explicitly instead of relying on carry-over
 		before: { ...stateOf(FS.frame) },
@@ -6910,6 +6952,7 @@ export function commitFaceGrab() {
 	const before = FS.grab.before;
 	const moved = FS.grab.corners;
 	const selectionBefore = FS.grab.selectionBefore;
+	const weldBefore = FS.grab.weldAtStart ?? null;
 	settleReplaced(FS.grab, false);
 	FS.grab = null;
 	// carry groups + uvs explicitly rather than leaning on preserveUVs' carry-over (commitFaceAdjust's shape):
@@ -6928,7 +6971,8 @@ export function commitFaceGrab() {
 		stampFaces: true,
 		record: 'op',
 		cap: false,
-		selectionBefore
+		selectionBefore,
+		weldBefore
 	});
 	return true;
 }
@@ -6956,13 +7000,28 @@ export function cancelFaceGrab() {
 }
 
 /** after the geometry changed IN PLACE (a grab's commit or cancel): the readers re-weld, the overlays and the wire
- * follow (the applyGeometrySnapshot tail, without a new geometry) */
-function afterInPlaceCommit() {
+ * follow (the applyGeometrySnapshot tail, without a new geometry)
+ * @param {Int32Array | null} [weldBefore] the weld the edit started from, when its partition is unchanged (the wire
+ *   is then kept if the weld is too) */
+function afterInPlaceCommit(weldBefore = null) {
 	rebuildFaces();
 	refreshFaceOverlay();
 	refreshEdgeHighlight();
-	refreshFaceWireframe();
+	// lane 99-scrub: the quad wire is a function of the weld (which corners share a vertex) and the stored partition.
+	// A move that kept both — the usual grab — leaves the wire's STRUCTURE as it was, and the drag already rewrote
+	// its points in place (writeLive -> updateFaceWireframe); rebuilding it here was ~190 ms of a 67k commit (string
+	// edge keys over every triangle). A move that changed the weld (a corner dragged onto another vertex) rebuilds.
+	if (weldBefore && wireFitsWeld(weldBefore)) updateFaceWireframe();
+	else refreshFaceWireframe();
 	pokeScene();
+}
+
+/** whether the edit wire was built from this very geometry and the session's weld is still `weldBefore`
+ * (same corners welded together: the integer weld numbers vertices in first-seen corner order, so an unchanged
+ * partition gives an identical array) @param {Int32Array} weldBefore */
+function wireFitsWeld(weldBefore) {
+	if (!wire || !FS.object || wireSource !== FS.object.geometry || wire.parent !== FS.object) return false;
+	return sameInts(weld(FS.frame), weldBefore);
 }
 
 /**
@@ -8065,6 +8124,149 @@ export function beginOpAdjust(op, params, opts = {}) {
 	return true;
 }
 
+// ---- lane 99-scrub: the loop-cut scrub is a PREVIEW --------------------------
+// Re-running the cut per scrub step cost 249-375 ms a step on the Deck at 67k (the 99-int row): a kernel copy, the
+// cut, a geometry write, the normals and the BVH, and a wire message, for a state the hand has already left. While
+// the options pane's DragRow holds a scrub open, a loop-cut adjust only moves a LINE: the ring was walked once at
+// begin (a.target / a.altTarget), its rails are read once per axis, and a step writes 2 points per quad per cut
+// into one preallocated buffer. The cut runs ONCE on release, through the same core, and that settle is the one
+// broadcast — peers see the result, not the scrub. Typed input and direct reapply calls (VR, tests) keep the live
+// cut: the bracket is opened only by a pointer scrub.
+
+/** @type {any} scene-root LineSegments: where the scrubbed cut will land */
+let loopCutPreview = null;
+/** most cuts the pane allows (mergeAdjustParams' clamp) — sizes the preview buffer once per ring */
+const LOOPCUT_MAX_CUTS = 20;
+
+/**
+ * Open the scrub bracket (DragRow onscrubstart): from here until settleOpAdjust, a loop-cut adjust previews instead
+ * of cutting. Any other op, or a deferred (VR) adjust, is untouched. @returns {boolean} whether the bracket opened
+ */
+export function beginAdjustScrub() {
+	const a = FS.adjust;
+	if (!a || a.op !== 'loopcut' || a.record === 'deferred' || !a.opBase) return false;
+	const object = liveObjectOf(a);
+	if (!object || object.geometry !== a.installedGeometry) return false;
+	a.scrub = true;
+	a.scrubDirty = false;
+	a.scrubFrom = { ...a.params }; // what the cut on screen was made with (a refused release goes back to it)
+	return true;
+}
+
+/** the rails of the ring the current axis cuts across, read once per axis per adjust @param {any} a */
+function loopCutRailsOf(a) {
+	const axis = a.params.axis === 1 && a.altTarget?.length ? 1 : 0;
+	a.rails ??= [null, null];
+	if (!a.rails[axis]) {
+		const ring = axis === 1 ? a.altTarget : a.target;
+		a.rails[axis] = kernelOps().loopCutRails(a.opBase, ring, a.quadPartner);
+	}
+	return a.rails[axis];
+}
+
+/** write the preview line for the adjust's current cuts / position / axis, in place @param {any} a */
+function drawLoopCutPreview(a) {
+	const scene = get(globalScene);
+	const object = liveObjectOf(a);
+	if (!scene || !object) return;
+	const rails = loopCutRailsOf(a);
+	const quads = rails.length / 12;
+	if (!loopCutPreview || loopCutPreview.userData.capacity < quads) {
+		clearLoopCutPreview();
+		const geometry = new THREE.BufferGeometry();
+		geometry.setAttribute(
+			'position',
+			new THREE.BufferAttribute(new Float32Array(Math.max(1, quads) * LOOPCUT_MAX_CUTS * 6), 3).setUsage(
+				THREE.DynamicDrawUsage
+			)
+		);
+		loopCutPreview = new THREE.LineSegments(
+			geometry,
+			new THREE.LineBasicMaterial({ color: 0xffd23f, depthTest: false, transparent: true })
+		);
+		loopCutPreview.userData.capacity = Math.max(1, quads);
+		loopCutPreview.renderOrder = 1000; // over the edge overlay (999)
+		loopCutPreview.name = 'loopcut-preview';
+		loopCutPreview.raycast = () => {}; // never eat a pick (the buildEditWireframe rule)
+		loopCutPreview.frustumCulled = false; // the buffer is rewritten in place; its bounds are never recomputed
+		scene.add(loopCutPreview);
+	}
+	// baked world space like the edge overlay; the object cannot move during a scrub, so once per step is plenty
+	object.updateMatrixWorld(true);
+	loopCutPreview.matrixAutoUpdate = false;
+	loopCutPreview.matrix.copy(object.matrixWorld);
+	loopCutPreview.matrixWorldNeedsUpdate = true;
+	const stops = kernelOps().loopCutStops(a.params.cuts, a.params.position);
+	const attr = loopCutPreview.geometry.attributes.position;
+	const out = attr.array;
+	let n = 0;
+	for (let q = 0; q < quads; q++) {
+		const o = q * 12; // A B C D
+		for (const t of stops) {
+			for (const [from, to] of [
+				[o, o + 9], // A -> D
+				[o + 3, o + 6] // B -> C
+			]) {
+				out[n++] = rails[from] + (rails[to] - rails[from]) * t;
+				out[n++] = rails[from + 1] + (rails[to + 1] - rails[from + 1]) * t;
+				out[n++] = rails[from + 2] + (rails[to + 2] - rails[from + 2]) * t;
+			}
+		}
+	}
+	loopCutPreview.geometry.setDrawRange(0, n / 3);
+	attr.addUpdateRange?.(0, n);
+	attr.needsUpdate = true;
+	loopCutPreview.visible = true;
+}
+
+/** drop the preview line (release, end, cancel, a new adjust) */
+function clearLoopCutPreview() {
+	if (!loopCutPreview) return;
+	loopCutPreview.parent?.remove(loopCutPreview);
+	loopCutPreview.geometry?.dispose?.();
+	loopCutPreview.material?.dispose?.();
+	loopCutPreview = null;
+}
+
+/** e2e: what the preview draws now — segment count and the segments (object-local), or null when none is up */
+export function loopCutPreviewDebug() {
+	if (!loopCutPreview) return null;
+	const count = loopCutPreview.geometry.drawRange.count;
+	return {
+		segments: count / 2,
+		points: Array.from(loopCutPreview.geometry.attributes.position.array.subarray(0, count * 3))
+	};
+}
+
+/**
+ * The release of a scrub that moved the cut: run the loop cut ONCE at the final params and apply it the way
+ * beginOpAdjust does (one full apply, one broadcast), then keep the history entry's `after` current.
+ * @param {any} a @returns {boolean}
+ */
+function settleScrubbedCut(a) {
+	const result = mirrorAdjustResult(a, runAdjustCore(a));
+	if (result.error || resultState(result).positions.length > MAX_SNAPSHOT) {
+		// the cut on screen is still the last good one: its params come back with it
+		a.params = { ...a.scrubFrom };
+		opAdjustState.set({ op: a.op, params: { ...a.params }, ...adjustStateExtras(a) });
+		if (result.error) showToast(result.error);
+		else if (!a.capWarned) {
+			a.capWarned = true;
+			showToast(tooLargeMessage(resultState(result).positions.length, 'edit'));
+		}
+		return false;
+	}
+	a.lastFaces = result.faces;
+	a.lastIds = result.ids ?? null;
+	a.lastSelect = result.select;
+	a.after = applyAdjustFull(a, result);
+	applyAdjustSelection(a, result.select, true);
+	if (a.entry) a.entry.after = a.after;
+	a.installedGeometry = liveObjectOf(a)?.geometry ?? null;
+	opAdjustState.set({ op: a.op, params: { ...a.params }, ...adjustStateExtras(a) });
+	return true;
+}
+
 /**
  * Re-run the live adjust at merged params — every scrub move. IDENTITY GUARD
  * first: `geometry !== installedGeometry` means an undo / remote meshgeo /
@@ -8081,6 +8283,14 @@ export function reapplyOpAdjust(patch = {}) {
 		return false;
 	}
 	mergeAdjustParams(a, patch);
+	if (a.scrub) {
+		// lane 99-scrub: a loop-cut SCRUB moves the preview line only — no kernel op, no geometry, no wire; the
+		// cut runs once, on release (settleOpAdjust)
+		a.scrubDirty = true;
+		drawLoopCutPreview(a);
+		opAdjustState.set({ op: a.op, params: { ...a.params }, ...adjustStateExtras(a) });
+		return true;
+	}
 	const result = mirrorAdjustResult(a, runAdjustCore(a));
 	if (result.error) return false; // keep the last good geometry on a refusal
 	const state = resultState(result);
@@ -8127,6 +8337,14 @@ export function settleOpAdjust() {
 	if (!object || object.geometry !== a.installedGeometry) {
 		endOpAdjust();
 		return false;
+	}
+	if (a.scrub) {
+		a.scrub = false;
+		clearLoopCutPreview();
+		if (a.scrubDirty) {
+			a.scrubDirty = false;
+			return settleScrubbedCut(a);
+		}
 	}
 	const result = {
 		state: stateOfGeometry(object.geometry),
@@ -8185,6 +8403,7 @@ export function cancelOpAdjust() {
  * picks (withSelectionHistory), mode switches, session exits, and the
  * identity guard. */
 export function endOpAdjust() {
+	clearLoopCutPreview();
 	if (!FS.adjust) return;
 	FS.adjust = null;
 	opAdjustState.set(null);

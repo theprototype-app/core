@@ -27,7 +27,7 @@ export {
 export { plainAttribute } from '../meshKernel/geometry.js';
 export { fromSoup, toSoup, opMeshFromGeometry } from './soup.js';
 export { insetFraction, bevelRegion, bevelVertices, bevelEdges } from './bevel.js';
-export { loopCutRegion, connectVerticesRegion } from './cut.js';
+export { loopCutRegion, loopCutRails, loopCutStops, connectVerticesRegion } from './cut.js';
 export { knifeCut } from './knife.js';
 export { cellMap } from './rebuild.js';
 // 99-ops-b family 4

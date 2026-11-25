@@ -65,7 +65,7 @@
 	 *   onApplyBridge: () => void, onApplySubdivide?: () => void,
 	 *   onApplyEdgeExtrude?: () => void, onApplySmooth?: () => void,
 	 *   onApplyEdgeSlide?: () => void, onApplySolidify?: () => void,
-	 *   onAdjust?: (patch: any) => void, onSettle?: () => void, onRevert?: () => void }} */
+	 *   onAdjust?: (patch: any) => void, onScrubStart?: () => void, onSettle?: () => void, onRevert?: () => void }} */
 	let {
 		mode,
 		focus,
@@ -81,6 +81,7 @@
 		onApplyEdgeSlide = () => {},
 		onApplySolidify = () => {},
 		onAdjust = () => {},
+		onScrubStart = () => {},
 		onSettle = () => {},
 		onRevert = () => {}
 	} = $props();
@@ -128,6 +129,8 @@
 		if (!adjusting) return;
 		scrubActive = true;
 		clearTimeout(settleTimer);
+		// lane 99-scrub: the engine's scrub bracket — a loop cut previews a line until the release settles it
+		onScrubStart();
 	}
 	function scrubEnd() {
 		if (!adjusting) return;

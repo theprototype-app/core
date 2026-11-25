@@ -126,6 +126,7 @@
 		sessionHasChanges,
 		beginOpAdjust,
 		reapplyOpAdjust,
+		beginAdjustScrub,
 		settleOpAdjust,
 		cancelOpAdjust,
 		endOpAdjust,
@@ -1255,6 +1256,7 @@
 			onApplyEdgeSlide={() => applyOp('edge-slide')}
 			onApplySolidify={() => applyOp('solidify')}
 			onAdjust={(patch) => reapplyOpAdjust(patch)}
+			onScrubStart={() => beginAdjustScrub()}
 			onSettle={() => settleOpAdjust()}
 			onRevert={() => cancelOpAdjust()}
 		/>

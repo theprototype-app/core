@@ -10,16 +10,21 @@
 	import { hasAnyMap, mapSlotFilled, mapSlotThumb, normalStrengthOf, texTransformOf } from '$lib/materialMapTextures.js';
 	import { removeObjectsMapSlot, setNormalStrength, setObjectsMapSet, setObjectsMapSlot, setTexTransform } from '$lib/materialMaps';
 	import { applyExplorerImageToMapSlot } from '$lib/explorerDrop';
+	import { explorerDropTarget } from '$lib/explorerDropTarget.js';
 	import { setMaterialParam } from '$lib/materialsHandler';
 	import { beginHistoryBatch, endHistoryBatch } from '$lib/history';
 	import { withWireBatch, withWireBatchAsync } from '$lib/wireBatch';
+	// 105 T1: the picker and its leaf are lazy (boot rule) — loaded on the first press
+	/** @param {any} opts */
+	const pickFromExplorer = (opts) => import('$lib/explorerPick.js').then((m) => m.pickFromExplorer(opts));
 
 	const ACCEPT = 'image/png, image/jpeg, image/webp, image/heic, image/heif, .heic, .heif';
-	const EXPLORER_ITEM = 'application/x-explorer-item';
 	const DEG = 180 / Math.PI;
 
-	/** @type {{ material: any, targets: any[], matMixed: (read: (object: any) => any) => boolean, refresh: () => void }} */
-	let { material, targets, matMixed, refresh } = $props();
+	/** 105-slots: `materialSlot` = which slot of a slot list every write goes to (the Inspector's active slot; the
+	 * targets are then that one object). Absent = 0 = as before.
+	 * @type {{ material: any, targets: any[], matMixed: (read: (object: any) => any) => boolean, refresh: () => void, materialSlot?: number }} */
+	let { material, targets, matMixed, refresh, materialSlot = 0 } = $props();
 
 	// `live` keeps one identity while its maps change. `material` is the Inspector's fresh snapshot, made on
 	// every scene poke, so everything read off the live material below goes through it.
@@ -51,30 +56,25 @@
 	}
 
 	/** @param {string} key @param {File} file */
-	const setFile = (key, file) => run(() => setObjectsMapSlot(uuids, key, file));
+	const setFile = (key, file) => run(() => setObjectsMapSlot(uuids, key, file, materialSlot));
 
 	/** @param {FileList | null} list */
 	async function setFromFiles(list) {
 		const files = [...(list ?? [])].map((file) => ({ file, name: file.name }));
 		if (!files.length) return;
-		const result = await withWireBatchAsync(() => setObjectsMapSet(uuids, files));
+		const result = await withWireBatchAsync(() => setObjectsMapSet(uuids, files, materialSlot));
 		refresh();
 		if (result.unknown.length) showToast('Could not tell which map these are: ' + result.unknown.join(', ') + '. Set them on their own row.');
 		else showToast(result.placed.length + (result.placed.length === 1 ? ' map set' : ' maps set'));
 	}
 
-	/** @param {DragEvent} event @param {string} key */
-	async function drop(event, key) {
-		dropKey = null;
-		event.preventDefault();
-		event.stopPropagation();
-		const raw = event.dataTransfer?.getData(EXPLORER_ITEM);
-		if (raw) {
-			await run(() => applyExplorerImageToMapSlot(uuids, JSON.parse(raw), key));
-			return;
-		}
-		const file = event.dataTransfer?.files?.[0];
-		if (file) await setFile(key, file);
+	/** an Explorer card (desktop drag or touch long-press drag) @param {any} payload @param {string} key */
+	const dropItem = (payload, key) => run(() => applyExplorerImageToMapSlot(uuids, payload, key, materialSlot)); // 105-slots: the active slot;
+
+	/** 105 T1: "From Explorer" — the shared picker, stored exactly like an upload @param {any} slot */
+	async function pickExplorer(slot) {
+		const item = await pickFromExplorer({ title: 'Pick the ' + slot.label + ' map' });
+		if (item) await dropItem({ id: item.id }, slot.key);
 	}
 
 	/** one write per object as ONE undo step and ONE wire batch @param {string} label @param {(uuid: string) => void} write */
@@ -93,7 +93,7 @@
 	}
 
 	/** @param {any} patch */
-	const patchTransform = (patch) => fan('Tiling', (uuid) => setTexTransform(uuid, patch));
+	const patchTransform = (patch) => fan('Tiling', (uuid) => setTexTransform(uuid, patch, materialSlot));
 	/** @param {number} index @param {number} value */
 	const setTiling = (index, value) => patchTransform({ repeat: index === 0 ? [value, transform.repeat[1]] : [transform.repeat[0], value] });
 	/** @param {number} index @param {number} value */
@@ -111,15 +111,11 @@
 				id={'map-slot-' + slot.key}
 				class="map-row rounded-sm border border-dashed {dropKey === slot.key ? 'ins-drop-on' : 'border-transparent'}"
 				title={slot.hint}
-				ondragover={(event) => {
-					if (event.dataTransfer?.types.includes(EXPLORER_ITEM) || event.dataTransfer?.types.includes('Files')) {
-						event.preventDefault();
-						event.stopPropagation();
-						dropKey = slot.key;
-					}
+				use:explorerDropTarget={{
+					ondrop: (payload) => dropItem(payload, slot.key),
+					onfile: (file) => setFile(slot.key, file),
+					onhover: (on) => (dropKey = on ? slot.key : dropKey === slot.key ? null : dropKey)
 				}}
-				ondragleave={() => (dropKey = null)}
-				ondrop={(event) => drop(event, slot.key)}
 			>
 				<input
 					type="file"
@@ -141,10 +137,30 @@
 					{:else}
 						<span class="text-[length:var(--fs-badge)] text-text-faint">From the model</span>
 					{/if}
-					<UiButton id={'map-remove-' + slot.key} size="sm" variant="outline" onclick={() => run(() => removeObjectsMapSlot(uuids, slot.key))}>Remove</UiButton>
+					<UiButton id={'map-remove-' + slot.key} size="sm" variant="outline" onclick={() => run(() => removeObjectsMapSlot(uuids, slot.key, materialSlot))}>Remove</UiButton>
 				{:else}
 					<UiButton id={'map-set-' + slot.key} size="sm" variant="outline" aria-label={'Set the ' + slot.label + ' map'} onclick={() => pick(slot.key)}>Set...</UiButton>
 				{/if}
+				<!-- an icon, not a word: the unfolded N6 Inspector is ~220 px and a worded button overflowed the row -->
+				<UiButton
+					id={'map-explorer-' + slot.key}
+					size="sm"
+					variant="icon"
+					icon="folder-open"
+					title={'Pick the ' + slot.label + ' map from the Explorer (or drop an Explorer image on this row)'}
+					label={'Pick the ' + slot.label + ' map from the Explorer'}
+					onclick={() => pickExplorer(slot)}
+				/>
+				<!-- 105-noise: fill / modulate this row's image with generated noise (lazy: noiseFill.js + the editor's panel) -->
+				<UiButton
+					id={'map-noise-' + slot.key}
+					variant="icon"
+					size="sm"
+					icon="wand-sparkles"
+					label={'Fill the ' + slot.label + ' map with noise'}
+					title={(slot.filled ? 'Blend noise into the ' : 'Fill the ') + slot.label + ' map with noise (Perlin, Simplex, cells, value) in the Image editor'}
+					onclick={() => import('$lib/image/noiseFill').then((m) => m.fillSlotWithNoise({ uuids, key: slot.key, slot: materialSlot })).then(refresh)}
+				/>
 			</div>
 			{#if slot.key === 'normalMap' && slot.filled}
 				<SliderRow
@@ -156,7 +172,7 @@
 					step={0.05}
 					value={normalStrength}
 					mixed={matMixed((object) => normalStrengthOf(object.material))}
-					onchange={(value) => fan('Normal strength', (uuid) => setNormalStrength(uuid, value))}
+					onchange={(value) => fan('Normal strength', (uuid) => setNormalStrength(uuid, value, materialSlot))}
 				/>
 			{/if}
 			{#if slot.key === 'aoMap' && slot.filled}
@@ -169,7 +185,7 @@
 					step={0.05}
 					value={aoStrength}
 					mixed={matMixed((object) => object.material.aoMapIntensity)}
-					onchange={(value) => fan('AO strength', (uuid) => setMaterialParam(uuid, 'aoMapIntensity', value))}
+					onchange={(value) => fan('AO strength', (uuid) => setMaterialParam(uuid, 'aoMapIntensity', value, true, materialSlot))}
 				/>
 			{/if}
 		{/each}
@@ -210,8 +226,9 @@
 <style>
 	.map-row {
 		display: flex;
+		flex-wrap: wrap; /* 105: a narrow (unfolded N6) Inspector wraps the buttons under the label, never scrolls */
 		align-items: center;
-		gap: 8px;
+		gap: 4px 8px;
 		min-height: 32px;
 	}
 	.map-label {

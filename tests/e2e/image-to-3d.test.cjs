@@ -204,7 +204,9 @@ h.run(async () => {
 	await waitPicture(page);
 	h.check((await page.locator('#mesh-gen-picture').innerText()).includes('ref-73'), "the Explorer's entry opens with that picture chosen");
 	await page.click('#mesh-gen-image-clear');
-	await page.selectOption('#mesh-gen-explorer', itemId);
+	// 105 T1: the dialog's picker is the shared Explorer picker
+	await page.click('#mesh-gen-explorer');
+	await page.locator(`#explorer-picker [data-pick-id="${itemId}"]`).first().click();
 	await waitPicture(page);
 	await generate(page, true);
 	await waitCount(A, base + 3, 'the Explorer model is placed');

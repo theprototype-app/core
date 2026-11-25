@@ -1,6 +1,6 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
-import { get } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import { globalScene, viewMode, isVRMode } from '../stores/sceneStore';
 import { viewPrefs } from './viewPrefs';
 
@@ -39,6 +39,9 @@ function apply() {
 }
 
 /** Whether the grid + shadow catcher should hide (wireframe renders them as junk). */
+/** 103 H11: Draw as ▸ Ambient occlusion only is on (set by the lazy $lib/drawAs; Outline reads it) */
+export const drawAsWantsAo = writable(false);
+
 export function wireframeActive() {
 	return get(viewMode) === 'wireframe' && !get(isVRMode);
 }

@@ -1,0 +1,263 @@
+// 106 S1 — Soft and Far, the LAZY half (environment.js loads it the first time a scene's drawn level is Soft or
+// Far; Basic and Off never load it). The rules in shadowLevelCore.js; this file only writes them onto lights.
+//
+// WHAT IS TOUCHED, and why nothing of it reaches a save or the wire:
+//   · the environment RIG SUN lives in ENV_ROOT, which never enters a save or object sync, so its shadow may be
+//     swapped freely: Far gives it a SunLightShadow (three r186's two-cascade sun shadow, rendered by the
+//     WebGL renderer's own sun-light path: one atlas, no shader patch, no per-material setup) and flags the
+//     instance `isSunLight`, which WebGLLights tests BEFORE isDirectionalLight. The rig sun's target sits at the
+//     origin, so "direction = position" (the sun-light convention) is exactly the direction it already has.
+//   · an AUTHORED light's shadow radius IS serialized (LightShadow.toJSON writes it), so Soft's wider kernel on
+//     an authored light is written through a toJSON guard: the save and the wire always carry the authored
+//     radius, the screen draws the level's.
+// Going back to Basic restores every original, so Basic after Soft / Far is today's Basic again.
+import * as THREE from 'three';
+// @ts-expect-error — @types/three has no declaration for the r186 SunLightShadow addon yet
+import { SunLightShadow } from 'three/addons/lights/SunLightShadow.js';
+import { get } from 'svelte/store';
+import { objectsGroup, globalRenderer } from '../../stores/sceneStore';
+import { cinematicState } from '../cinematic/cinematicStore.js';
+import { cappedShadowSize, contactShadowsWanted } from '../lightParams';
+import { registerContactShadows } from './contactShadows.js';
+import { levelParams, cascadeReach, contactShadowsOn, cinematicShadowLevel, kernelRadiusFor } from './shadowLevelParams.js';
+
+/** shadow -> its authored radius, while a level overrides it */
+const radiusBack = new WeakMap();
+/** the rig sun -> its own DirectionalLightShadow, while Far gives it cascades */
+const cascadeBack = new WeakMap();
+/** the own shadow -> its mapSize as it was. WebGLLights caches shadow uniforms PER LIGHT: the directional branch
+ * stores a REFERENCE to shadow.mapSize, and the sun branch then writes `copy(mapSize).multiply(extents)` into the
+ * same cached object, i.e. into the own shadow's mapSize (measured: 2048 -> 4096 x 2048 after one Far frame).
+ * Going back puts the number back, so Basic after Far is today's Basic again. */
+const mapSizeBack = new WeakMap();
+
+const state = { asked: 'basic', drawn: 'basic', tier: 'pc', contact: false, sweep: /** @type {any} */ (null), sun: /** @type {any} */ (null), applies: 0 };
+
+// THE RE-APPLY HOOKS, wired once on the first apply (they lived in environment.js until the boot measure: +0.7 KB
+// there, and cinematicStore split into its own boot chunk). Both only change what a Soft / Far scene draws, and
+// such a scene has loaded this chunk already.
+//   · the Cinematic view draws Far as Soft (cinematicShadowLevel): the switch lands on 'entering', before the
+//     WebGPU renderer first draws, and Far returns on 'off';
+//   · entering or leaving a headset changes the tier (XR presenting = the Quest cap). renderer.xr's own events,
+//     not isVRMode: that store flips BEFORE the session presents.
+let cinematicLive = false;
+let wired = false;
+/** the suites' and S0 driver's contact override (null = the tier table) @type {boolean | null} */
+let contactForce = null;
+/** @type {(() => void) | null} */
+let lastReapply = null;
+/** @param {() => void} reapply */
+function wire(reapply) {
+	if (wired) return;
+	wired = true;
+	cinematicState.subscribe((st) => {
+		const live = st.mode !== 'off';
+		if (live === cinematicLive) return;
+		cinematicLive = live;
+		if (state.asked === 'far') reapply();
+	});
+	const xrWired = new WeakSet();
+	globalRenderer.subscribe((r) => {
+		const xr = /** @type {any} */ (r)?.xr;
+		if (!xr?.addEventListener || xrWired.has(xr)) return;
+		xrWired.add(xr);
+		const again = () => {
+			if (state.asked === 'soft' || state.asked === 'far') reapply();
+		};
+		xr.addEventListener('sessionstart', again);
+		xr.addEventListener('sessionend', again);
+	});
+}
+
+let guarded = false;
+/** LightShadow.toJSON writes the AUTHORED radius while a level overrides it (the guard costs one WeakMap read). */
+function guardToJSON() {
+	if (guarded) return;
+	guarded = true;
+	// LightShadow is a real three export that @types/three leaves out
+	const proto = /** @type {any} */ (THREE).LightShadow.prototype;
+	const original = proto.toJSON;
+	proto.toJSON = function () {
+		if (!radiusBack.has(this)) return original.call(this);
+		const live = this.radius;
+		this.radius = radiusBack.get(this);
+		try {
+			return original.call(this);
+		} finally {
+			this.radius = live;
+		}
+	};
+}
+
+/** @param {any} shadow @param {number} radius */
+function setRadius(shadow, radius) {
+	if (!shadow) return;
+	if (!radiusBack.has(shadow)) radiusBack.set(shadow, shadow.radius);
+	shadow.radius = radius;
+}
+
+/** @param {any} shadow */
+function restoreRadius(shadow) {
+	if (!shadow || !radiusBack.has(shadow)) return;
+	shadow.radius = radiusBack.get(shadow);
+	radiusBack.delete(shadow);
+}
+
+/**
+ * three's shadow bias is in DEPTH units of the shadow camera. A cascade's depth runs from the caster ceiling to the
+ * far end of 300 m of view (~400-650 m), so Basic's -0.0002 there was ~10 cm: the shadow started ~15 cm off a box's
+ * base at 1 m (peter-panning, measured by shadow-levels-106). Each update re-scales the bias so the cascades keep a
+ * fixed bias IN METRES: Basic's -0.0002 over 100 m = 2 cm (a sweep from 5 mm to 5 cm: no acne at 1 / 20 / 200 m,
+ * the shadow reaches the base at 3 cm or less).
+ * @param {any} s
+ */
+function keepWorldBias(s) {
+	/** @this {any} @param {any} light @param {any} viewCamera */
+	s.updateMatrices = function (light, viewCamera) {
+		SunLightShadow.prototype.updateMatrices.call(this, light, viewCamera);
+		const c = this._cameras?.[0];
+		if (c && this._worldBias) this.bias = this._worldBias / Math.max(1, c.far - c.near);
+	};
+}
+
+/** Give the rig sun its two cascades. @param {any} sun @param {number} reach @param {number} radius */
+function cascadeOn(sun, reach, radius) {
+	if (!cascadeBack.has(sun)) {
+		const own = sun.shadow;
+		const s = new SunLightShadow();
+		keepWorldBias(s);
+		s.bias = own.bias;
+		s.normalBias = own.normalBias;
+		s.intensity = own.intensity;
+		cascadeBack.set(sun, own);
+		mapSizeBack.set(own, [own.mapSize.x, own.mapSize.y]);
+		sun.shadow = s;
+		sun.isSunLight = true;
+	}
+	const s = sun.shadow;
+	const size = cappedShadowSize(levelParams('far').cascadeMap);
+	if (s.mapSize.x !== size) {
+		s.mapSize.set(size, size);
+		s.map?.dispose();
+		s.map = null;
+	}
+	// the cascades span the camera's near plane to this reach (the view camera's far when that is nearer)
+	s.camera.far = reach;
+	s.radius = radius;
+	const own = cascadeBack.get(sun);
+	s._worldBias = (own?.bias ?? -0.0002) * 100;
+}
+
+/** @param {any} sun */
+function cascadeOff(sun) {
+	const own = cascadeBack.get(sun);
+	if (!own) return;
+	sun.shadow.map?.dispose();
+	sun.shadow.dispose?.();
+	sun.shadow = own;
+	delete sun.isSunLight;
+	cascadeBack.delete(sun);
+	const size = mapSizeBack.get(own);
+	mapSizeBack.delete(own);
+	if (size && (own.mapSize.x !== size[0] || own.mapSize.y !== size[1])) {
+		own.mapSize.set(size[0], size[1]);
+		own.map?.dispose();
+		own.map = null;
+	}
+}
+
+/** Every authored shadow-casting light (objectsGroup). @param {(l: any) => void} fn */
+function eachAuthoredLight(fn) {
+	get(objectsGroup)?.traverse?.((/** @type {any} */ o) => {
+		if (o.isLight && o.shadow && !o.isSunLight) fn(o);
+	});
+}
+
+/** Soft's kernel on authored lights, in Soft AND Far (Q1: Far's cascades are the rig sun's alone; an authored
+ * directional light keeps its own fitted map and draws Soft's kernel), including lights added after the apply
+ * (cheap: one traverse a second, only while Soft / Far). */
+function sweepAuthored() {
+	const radius = levelParams('soft').radius;
+	eachAuthoredLight((l) => {
+		const r = kernelRadiusFor(l.shadow, radius);
+		if (l.shadow.radius !== r) setRadius(l.shadow, r);
+	});
+}
+
+/**
+ * Apply the drawn level. Called at the tail of every applyEnvironment once this module is loaded.
+ * @param {{scene: any, renderer: any, sun: any, drawn: 'off'|'basic'|'soft'|'far', tier: 'pc'|'phone'|'quest', radius: number, asked?: string, reapply?: () => void}} input
+ */
+export function applyShadowLevel({ sun, drawn: tierDrawn, tier, radius, asked, reapply }) {
+	if (reapply) {
+		wire(reapply);
+		lastReapply = reapply;
+	}
+	state.asked = asked ?? tierDrawn;
+	const drawn = cinematicShadowLevel(tierDrawn, cinematicLive);
+	state.applies++;
+	state.tier = tier;
+	const lifted = drawn === 'soft' || drawn === 'far';
+	state.drawn = drawn;
+	state.contact = contactForce === null ? contactShadowsOn(drawn, tier) : contactForce && lifted;
+	if (state.contact) registerContactShadows();
+	if (get(contactShadowsWanted) !== state.contact) contactShadowsWanted.set(state.contact);
+	if (!lifted) {
+		// Basic / Off: put back everything a level wrote
+		if (state.sun) cascadeOff(state.sun);
+		if (sun) cascadeOff(sun);
+		restoreRadius(sun?.shadow);
+		eachAuthoredLight((l) => restoreRadius(l.shadow));
+		if (state.sweep) clearInterval(state.sweep);
+		state.sweep = null;
+		state.sun = null;
+		return;
+	}
+	guardToJSON();
+	const p = levelParams(drawn);
+	if (sun) {
+		if (p.cascades) {
+			// Soft -> Far: the directional shadow goes back to its own radius before it is set aside
+			if (!cascadeBack.has(sun)) restoreRadius(sun.shadow);
+			cascadeOn(sun, cascadeReach(radius, p.reach), p.radius);
+		} else {
+			cascadeOff(sun);
+			setRadius(sun.shadow, kernelRadiusFor(sun.shadow, p.radius));
+		}
+		state.sun = sun;
+	}
+	sweepAuthored();
+	if (!state.sweep && typeof setInterval === 'function') state.sweep = setInterval(sweepAuthored, 1000);
+}
+
+/** The suites' and the S0 driver's contact switch: true / false forces it on a lifted level, null = the tier table. @param {boolean | null} on */
+export function contactForTest(on) {
+	contactForce = on;
+	lastReapply?.();
+}
+
+/** For the suites and the S0 driver. */
+export function shadowLevelDebug() {
+	const sun = state.sun;
+	const s = sun?.shadow;
+	return {
+		asked: state.asked,
+		drawn: state.drawn,
+		cinematic: cinematicLive,
+		tier: state.tier,
+		contact: state.contact,
+		applies: state.applies,
+		sun: sun
+			? {
+					cascades: !!sun.isSunLight,
+					radius: s?.radius,
+					mapSize: s?.mapSize?.x,
+					reach: s?.camera?.far,
+					atlas: s?.map ? [s.map.width, s.map.height] : null,
+					splits: s?._cascadeSplits ? [...s._cascadeSplits].map((v) => +v.toFixed(2)) : null,
+					bias: s?.bias,
+					depth: s?._cameras?.[0] ? +(s._cameras[0].far - s._cameras[0].near).toFixed(1) : null
+				}
+			: null
+	};
+}

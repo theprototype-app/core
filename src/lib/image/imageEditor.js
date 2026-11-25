@@ -39,8 +39,12 @@ import { openPreviewEditor } from '../fileWindows';
 // the open state lives in a leaf so the dock can address the editor (41 G24)
 export { imageEditorTarget, closeImageEditor, imageEditorClose } from './imageEditorState';
 
-/** Open the Image editor on an Explorer image. @param {string} itemId */
-export function openImageEditor(itemId) {
+/**
+ * Open the Image editor on an Explorer image. 105-noise: `extra` rides the target — `panel: 'noise'` opens the Noise
+ * panel (with `noise` as its starting options), and `slotMap` = a non-colour map row the editor was opened from, so
+ * Save writes that row too. A walk to another image drops them (the target is replaced).
+ * @param {string} itemId @param {{panel?: 'noise', noise?: any, slotMap?: {uuids: string[], key: string, slot?: number}}} [extra] */
+export function openImageEditor(itemId, extra = {}) {
 	const item = itemById(itemId);
 	if (!item || item.kind !== 'image') {
 		showToast('Only an image can be edited here');
@@ -50,7 +54,7 @@ export function openImageEditor(itemId) {
 	// the header reads right at once), then point the editor at it
 	openPreviewEditor(item.id, item.name);
 	const now = get(imageEditorTarget);
-	imageEditorTarget.set({ itemId: item.id, raise: (now?.raise ?? 0) + 1 });
+	imageEditorTarget.set({ itemId: item.id, raise: (now?.raise ?? 0) + 1, ...extra });
 	return true;
 }
 
@@ -60,9 +64,9 @@ export function openImageEditor(itemId) {
  * image; one that came from anywhere else (picked from disk, an imported model, a paint
  * stroke) is first put into the library as "<object> texture.webp" and LINKED, so saving
  * it updates the material like any other.
- * @param {string} uuid @param {number} [slot]
+ * @param {string} uuid @param {number} [slot] @param {Parameters<typeof openImageEditor>[1]} [extra] what to open with
  */
-export async function editMaterialTexture(uuid, slot = 0) {
+export async function editMaterialTexture(uuid, slot = 0, extra = {}) {
 	const object = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
 	const material = materialAt(object, slot);
 	const url = mapPreviewUrl(material);
@@ -72,7 +76,7 @@ export async function editMaterialTexture(uuid, slot = 0) {
 	}
 	const source = material.userData.mapSource;
 	const held = source ? itemByHash(source) : null;
-	if (held && held.kind === 'image') return openImageEditor(held.id);
+	if (held && held.kind === 'image') return openImageEditor(held.id, extra);
 	const blob = await (await fetch(url)).blob();
 	const ext = blob.type === 'image/jpeg' ? 'jpg' : blob.type === 'image/png' ? 'png' : 'webp';
 	const base = String(object?.name || 'Object').replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'Object';
@@ -80,7 +84,7 @@ export async function editMaterialTexture(uuid, slot = 0) {
 	if (!record) return false;
 	linkTextureSource(uuid, slot, record.hash);
 	pokeScene();
-	return openImageEditor(record.id);
+	return openImageEditor(record.id, extra);
 }
 
 // ---- decode / encode --------------------------------------------------------------

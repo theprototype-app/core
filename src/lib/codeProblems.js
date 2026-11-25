@@ -7,7 +7,7 @@
 // Memoised per text: a tab's problems are recomputed only when its text changes, so a keystroke
 // in one tab re-reads one tab.
 
-import { parseCheck } from './codeTabs.js';
+import { parseCheck } from './codeParse.js';
 import { lintScript } from './scriptLint.js';
 import { analyze } from './behaviours/analyze.js';
 

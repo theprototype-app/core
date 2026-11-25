@@ -40,6 +40,7 @@ import {
 } from './lookToolsCore.js';
 import { FETCH_TIMEOUT_MS } from './imageToolCore.js';
 import { STARTER_PRESETS } from '$lib/materialPresetsCore.js';
+import { slotIdsOf, slotOffOf, slotIndexOf } from '$lib/materialSlotsCore.js'; // 105-slots: ids, off, slot references
 
 /** mcp-shapes: the starter presets every scene has, said in the tool text so an agent does not have to guess */
 const STARTER_NAMES = STARTER_PRESETS.map((p) => p.label).join(', ');
@@ -381,14 +382,23 @@ async function setMaterialTool(args) {
 		if (!wantType) errors.push('type: one of ' + MATERIAL_TYPES.join(', '));
 	}
 	const baseSlot = args.slot === undefined ? 0 : args.slot;
-	if (!Number.isInteger(baseSlot) || baseSlot < 0) errors.push('slot: a whole number from 0');
+	// 105-slots: a slot is named by its index, its id or its name (list_materials gives all three)
+	if (!(Number.isInteger(baseSlot) && baseSlot >= 0) && !(typeof baseSlot === 'string' && baseSlot.trim()))
+		errors.push('slot: an index from 0, or a slot id or name from list_materials');
+	if (args.slotName !== undefined && typeof args.slotName !== 'string') errors.push('slotName: a name');
+	if (args.slotOff !== undefined && typeof args.slotOff !== 'boolean') errors.push('slotOff: true (it draws the plain default) or false');
+	const removing = args.removeSlot !== undefined && args.removeSlot !== null && args.removeSlot !== false;
+	if (removing && (typeof args.removeSlot !== 'object' && args.removeSlot !== true)) errors.push('removeSlot: {} or {"to": a slot}');
 	if (args.faces !== undefined && args.slot !== undefined) errors.push('faces and slot: give one (faces makes a new slot)');
 	if (args.cc0 !== undefined && (typeof args.cc0 !== 'string' || !args.cc0.trim())) errors.push('cc0: a material name, e.g. "Wood051"');
 	if (args.preset !== undefined && (typeof args.preset !== 'string' || !args.preset.trim())) errors.push('preset: a preset name');
 	if (args.cc0 && args.preset) errors.push('cc0 and preset: give one');
 	if (args.cc0 && uuids.length > MAX_CC0_OBJECTS) errors.push('cc0: at most ' + MAX_CC0_OBJECTS + ' objects in one call (each one carries the images)');
-	if (!Object.keys(fields).length && !Object.keys(maps.slots).length && !wantType && !args.cc0 && !args.preset && args.faces === undefined)
-		errors.push('nothing to set: give color, roughness, metalness, emissive, opacity, params, maps, type, preset or cc0');
+	const listChange = args.slotName !== undefined || args.slotOff !== undefined;
+	if (removing && (Object.keys(fields).length || Object.keys(maps.slots).length || wantType || args.cc0 || args.preset || args.faces !== undefined || listChange))
+		errors.push('removeSlot: give it alone (the slot and everything on it goes)');
+	if (!Object.keys(fields).length && !Object.keys(maps.slots).length && !wantType && !args.cc0 && !args.preset && args.faces === undefined && !listChange && !removing)
+		errors.push('nothing to set: give color, roughness, metalness, emissive, opacity, params, maps, type, preset, cc0, slotName, slotOff or removeSlot');
 	if (errors.length) return { error: errors.join('; ') };
 
 	// sources first: a bad URL changes nothing
@@ -446,18 +456,36 @@ async function setMaterialTool(args) {
 			skipped.push({ uuid, reason: 'it has no material (a group or a light)' });
 			continue;
 		}
-		if (isShaderDriven(uuid)) {
-			skipped.push({ uuid, reason: 'it wears a shader graph, which decides its look; remove it first: assign_shader {"objects": ["' + uuid + '"], "shader": null}' });
+		// 105-slots: the slot reference, per object (an id or a name means something different on each one)
+		let slot = typeof baseSlot === 'number' ? baseSlot : slotIndexOf(mh.materialsOf(object), String(baseSlot).trim());
+		if (slot < 0) {
+			skipped.push({ uuid, reason: 'it has no slot "' + String(baseSlot).slice(0, 40) + '" (list_materials names its slots)' });
 			continue;
 		}
-		let slot = baseSlot;
+		// 105-slot-shaders: only the slot a shader draws is off limits (a one-material object: the object, as before)
+		const own = mh.materialsOf(object);
+		const drivenSlotId = own.length > 1 ? slotIdsOf(own)[slot] : null;
+		if (drivenSlotId ? isShaderDriven(uuid, drivenSlotId) : isShaderDriven(uuid)) {
+			skipped.push({
+				uuid,
+				reason: drivenSlotId
+					? 'that slot wears a shader graph, which decides its look; remove it first: assign_shader {"objects": ["' + uuid + '"], "slot": ' + slot + ', "shader": null}'
+					: 'it wears a shader graph, which decides its look; remove it first: assign_shader {"objects": ["' + uuid + '"], "shader": null}'
+			});
+			continue;
+		}
+		if (removing) {
+			const ms = await import('$lib/materialSlots.js');
+			const to = typeof args.removeSlot === 'object' ? args.removeSlot.to : undefined;
+			if (mh.materialsOf(object).length < 2) skipped.push({ uuid, reason: 'it has one material slot: there is nothing to remove' });
+			else if (!ms.removeSlot(uuid, slot, to)) skipped.push({ uuid, reason: 'the slot could not be removed (is it open in Edit Mesh?)' });
+			else updated.push({ uuid, ok: true, removedSlot: slot });
+			continue;
+		}
 		if (preset || wantType) {
-			if (Array.isArray(object.material)) {
-				skipped.push({ uuid, reason: 'it has ' + object.material.length + ' material slots: a preset or a type change takes one' });
-				continue;
-			}
-			if (wantType && object.material.type !== wantType) mh.switchMaterialType(uuid, wantType, true);
-			if (preset && !mp.applyMaterialPreset(uuid, preset)) {
+			// 105-slots: a preset or a type change now goes to ONE slot of a slot list (it used to refuse)
+			if (wantType && mh.materialAt(object, slot)?.type !== wantType) mh.switchMaterialType(uuid, wantType, true, slot);
+			if (preset && !mp.applyMaterialPreset(uuid, preset, slot)) {
 				skipped.push({ uuid, reason: 'the preset could not be applied' });
 				continue;
 			}
@@ -502,20 +530,17 @@ async function setMaterialTool(args) {
 			skipped.push({ uuid, reason: fieldErrors.join('; ') });
 			continue;
 		}
-		const single = !Array.isArray(object.material) && slot === 0;
-		if (single) {
-			for (const [key, value] of Object.entries(checked)) {
-				if (key === 'color') mh.setObjectColor(uuid, value);
-				else if (!mh.setMaterialParam(uuid, key, value, true)) fieldErrors.push(key + ': not applied');
-			}
-		} else if (Object.keys(checked).length) {
-			mp.replaceMaterials(uuid, (payload) => {
-				const m = payload.materials[slot];
-				for (const [key, value] of Object.entries(checked))
-					m[key] = typeof value === 'string' && value.startsWith('#') ? parseInt(value.slice(1), 16) : value;
-				return payload;
-			});
+		// 105-slots: one path for a single material and a slot list: the per-slot messages (light, and healed for a peer
+		// on the previous release), not a whole-list rewrite
+		for (const [key, value] of Object.entries(checked)) {
+			if (key === 'color') mh.setObjectColor(uuid, value, true, slot);
+			else if (!mh.setMaterialParam(uuid, key, value, true, slot)) fieldErrors.push(key + ': not applied');
 		}
+		if (listChange && mh.materialsOf(object).length > 1) {
+			const ms = await import('$lib/materialSlots.js');
+			if (args.slotName !== undefined) ms.renameSlot(uuid, slot, args.slotName);
+			if (args.slotOff !== undefined) ms.setSlotOff(uuid, slot, args.slotOff);
+		} else if (listChange) fieldErrors.push('slotName / slotOff: it has one material slot (add one with faces first)');
 		const row = { uuid, slot, object, material: null, errors: fieldErrors };
 		rows.push(row);
 		if (maps.slots.map?.clear) mh.removeObjectTexture(uuid, slot);
@@ -592,6 +617,23 @@ function textureFacts(tex, source) {
 	return out;
 }
 
+/**
+ * 105-slots: rows of a slot list carry the slot's `id` (stable across reorder / remove; what `slot` also accepts) and
+ * `off` when it is switched off. A single material is described as before.
+ * @param {any[]} list @param {(m: any, slot: number) => any} describe
+ */
+function withSlotFacts(list, describe) {
+	const ids = list.length > 1 ? slotIdsOf(list) : null;
+	return list.map((m, slot) => {
+		const row = describe(m, slot);
+		if (ids) {
+			row.id = ids[slot];
+			if (slotOffOf(m)) row.off = true;
+		}
+		return row;
+	});
+}
+
 /** a material as a person would describe it @param {any} m @param {number} slot @param {boolean} [full] */
 function describeMaterial(m, slot, full = false) {
 	/** @type {any} */
@@ -650,7 +692,7 @@ async function listMaterialsTool(args) {
 		return {
 			uuid: node.uuid,
 			name: node.name || node.type,
-			slots: (base ? [base] : materialsOf(node)).map((m, slot) => describeMaterial(m, slot)),
+			slots: withSlotShaders(sg, node, withSlotFacts(base ? [base] : materialsOf(node), (m, slot) => describeMaterial(m, slot))),
 			...(key ? { shader: key } : {})
 		};
 	});
@@ -661,6 +703,33 @@ async function listMaterialsTool(args) {
 		presets: [...mp.starterPresets().map((s) => s.label), ...get(mp.materialPresets).map((p) => p.name)],
 		shaders: Object.keys(get(sg.shaderGraphs))
 	};
+}
+
+/**
+ * 105-slot-shaders: on a slot list, each slot row says which shader draws it (its own `<uuid>/<slotId>`, the
+ * object's, or the scene default); a one-material object's rows are unchanged.
+ * @param {any} sg the shaderGraph module @param {any} node @param {any[]} rows
+ */
+function withSlotShaders(sg, node, rows) {
+	if (rows.length < 2) return rows;
+	for (const row of rows) {
+		const key = row.id ? sg.graphKeyForSlot(node.uuid, row.id) : null;
+		if (key) row.shader = key;
+	}
+	return rows;
+}
+
+/**
+ * 105-slot-shaders: the graph key a call means for one object: `slot` (index, id or name) = that slot's
+ * `<uuid>/<slotId>`, absent = the object's own key (every slot without its own).
+ * @param {any} sg @param {any} object @param {string} uuid @param {any} slotArg
+ * @returns {{key: string, slot?: string} | {error: string}}
+ */
+function shaderKeyForArgs(sg, object, uuid, slotArg) {
+	if (slotArg === undefined || slotArg === null || slotArg === '') return { key: uuid };
+	const id = object ? sg.slotIdFor(object, slotArg) : null;
+	if (!id) return { error: 'it has no slot "' + String(slotArg).slice(0, 40) + '" (list_materials names its slots)' };
+	return { key: sg.slotShaderKey(uuid, id), slot: id };
 }
 
 /** a graph document as a tool answers it @param {string} key @param {any} doc */
@@ -692,11 +761,11 @@ async function getMaterialTool(args) {
 	const base = sg.isShaderDriven(uuid) ? sg.baseMaterialOf(uuid) : null;
 	const groups = object.geometry?.groups ?? [];
 	const list = base ? [base] : materialsOf(object);
-	const slots = list.map((m, slot) => {
+	const slots = withSlotShaders(sg, object, withSlotFacts(list, (m, slot) => {
 		const row = describeMaterial(m, slot, true);
 		if (list.length > 1) row.triangles = groups.filter((/** @type {any} */ g) => (g.materialIndex || 0) === slot).reduce((/** @type {number} */ n, /** @type {any} */ g) => n + g.count / 3, 0);
 		return row;
-	});
+	}));
 	const key = sg.graphKeyFor(uuid);
 	const doc = key ? sg.shaderGraphOf(key) : null;
 	return { uuid, name: object.name || object.type, slots, ...(doc && key ? { shader: await shaderFacts(key, doc) } : {}) };
@@ -756,30 +825,36 @@ async function driverErrors(object) {
 		const camera = get(globalCamera);
 		if (!renderer?.compile || !scene || !camera || !object?.material) return [];
 		renderer.compile(object, camera, scene);
-		const program = renderer.properties?.get?.(object.material)?.currentProgram;
-		if (!program) return [];
-		program.getUniforms?.(); // what makes three run its check and fill the diagnostics
-		const d = program.diagnostics;
-		if (!d || d.runnable) return [];
-		return [String(d.fragmentShader?.log || d.vertexShader?.log || d.programLog || 'the GPU refused this shader').slice(0, 600)];
+		// 105-slot-shaders: a slot list draws one program per slot; each is checked
+		for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+			const program = renderer.properties?.get?.(material)?.currentProgram;
+			if (!program) continue;
+			program.getUniforms?.(); // what makes three run its check and fill the diagnostics
+			const d = program.diagnostics;
+			if (!d || d.runnable) continue;
+			return [String(d.fragmentShader?.log || d.vertexShader?.log || d.programLog || 'the GPU refused this shader').slice(0, 600)];
+		}
+		return [];
 	} catch {
 		return [];
 	}
 }
 
-/** Write one graph on an object and report what the compiler says; a graph the GPU refuses is taken back.
- * @param {string} uuid @param {any} patch @param {any} before the document before this write */
-async function writeObjectGraph(uuid, patch, before) {
+/** Write one graph on an object (105-slot-shaders: or one of its slots) and report what the compiler says; a
+ * graph the GPU refuses is taken back.
+ * @param {string} key an object uuid or `<uuid>/<slotId>` @param {any} patch @param {any} before the document before this write */
+async function writeObjectGraph(key, patch, before) {
 	const sg = await import('$lib/shaderGraph');
-	const after = sg.setShaderGraphFor(uuid, patch);
-	const compiled = await sg.compileAndApply(uuid);
+	const { uuid, slot } = sg.shaderKeyParts(key);
+	const after = sg.setShaderGraphFor(key, patch);
+	const compiled = await sg.compileAndApply(key);
 	const errors = [...(compiled.errors ?? [])];
-	if (!errors.length) errors.push(...(await driverErrors(objectOf(uuid))));
+	if (!errors.length) errors.push(...(await driverErrors(objectOf(uuid ?? key))));
 	if (errors.length) {
-		sg.setShaderGraphFor(uuid, before ?? null);
-		return { uuid, errors };
+		sg.setShaderGraphFor(key, before ?? null);
+		return { uuid: uuid ?? key, ...(slot ? { slot } : {}), errors };
 	}
-	return { uuid, ok: true, ...(await shaderFacts(uuid, after)) };
+	return { uuid: uuid ?? key, ...(slot ? { slot } : {}), ok: true, ...(await shaderFacts(key, after)) };
 }
 
 /** @param {any} args */
@@ -825,12 +900,18 @@ async function createShaderTool(args) {
 			skipped.push({ uuid, reason: refusal });
 			continue;
 		}
-		const before = get(sg.shaderGraphs)[uuid] ? sg.shaderGraphOf(uuid) : null;
-		if (before && args.replace !== true) {
-			skipped.push({ uuid, reason: 'it already has a shader graph: use edit_shader, or pass replace: true' });
+		// 105-slot-shaders: `slot` = that material slot's own shader
+		const target = shaderKeyForArgs(sg, object, uuid, args?.slot);
+		if ('error' in target) {
+			skipped.push({ uuid, reason: target.error });
 			continue;
 		}
-		const row = await writeObjectGraph(uuid, structuredClone(patch), before);
+		const before = get(sg.shaderGraphs)[target.key] ? sg.shaderGraphOf(target.key) : null;
+		if (before && args.replace !== true) {
+			skipped.push({ uuid, reason: (target.slot ? 'that slot' : 'it') + ' already has a shader graph: use edit_shader, or pass replace: true' });
+			continue;
+		}
+		const row = await writeObjectGraph(target.key, structuredClone(patch), before);
 		if (row.errors) skipped.push({ uuid, reason: 'the compiler refused it', errors: row.errors });
 		else created.push(row);
 	}
@@ -841,12 +922,19 @@ async function createShaderTool(args) {
 /** @param {any} args */
 async function editShaderTool(args) {
 	const sg = await import('$lib/shaderGraph');
-	const key = args?.shader ?? args?.object ?? args?.uuid;
-	if (typeof key !== 'string' || !key) return { error: 'shader: the key from create_shader or list_materials (an object uuid, "scene" or "post:…")' };
+	let key = args?.shader ?? args?.object ?? args?.uuid;
+	if (typeof key !== 'string' || !key) return { error: 'shader: the key from create_shader or list_materials (an object uuid, "<uuid>/<slot id>", "scene" or "post:…")' };
+	// 105-slot-shaders: an object uuid + `slot` names that slot's shader (the same as its `<uuid>/<slotId>` key)
+	if (args?.slot !== undefined && args?.slot !== null && args?.slot !== '' && !key.includes('/')) {
+		const target = shaderKeyForArgs(sg, objectOf(key), key, args.slot);
+		if ('error' in target) return { error: target.error };
+		key = target.key;
+	}
 	const doc = sg.shaderGraphOf(key);
-	if (!doc) return { error: 'no shader graph "' + key.slice(0, 40) + '" (create_shader makes one)' };
-	const object = objectOf(key);
-	const locked = object ? lockSkip(key, object) : null;
+	if (!doc) return { error: 'no shader graph "' + key.slice(0, 60) + '" (create_shader makes one)' };
+	const ownerUuid = sg.shaderKeyParts(key).uuid;
+	const object = ownerUuid ? objectOf(ownerUuid) : null;
+	const locked = object && ownerUuid ? lockSkip(ownerUuid, object) : null;
 	if (locked) return { error: locked };
 	const params = args?.params;
 	if (params !== undefined && (!Array.isArray(params) || params.some((p) => !p || typeof p.node !== 'string' || typeof p.param !== 'string' || p.value === undefined)))
@@ -923,14 +1011,29 @@ async function assignShaderTool(args) {
 			skipped.push({ uuid, reason: locked });
 			continue;
 		}
+		// 105-slot-shaders: `slot` = that material slot's own shader (absent = the object's, every slot without one)
+		const target = shaderKeyForArgs(sg, object, uuid, args?.slot);
+		if ('error' in target) {
+			skipped.push({ uuid, reason: target.error });
+			continue;
+		}
+		const key = target.key;
 		if (from === null) {
-			if (!get(sg.shaderGraphs)[uuid]) {
-				skipped.push({ uuid, reason: sg.graphKeyFor(uuid) ? 'it inherits the scene default, it has no graph of its own' : 'it has no shader graph' });
+			if (!get(sg.shaderGraphs)[key]) {
+				const inherited = target.slot ? sg.graphKeyForSlot(uuid, target.slot) : sg.graphKeyFor(uuid);
+				skipped.push({
+					uuid,
+					reason: inherited
+						? target.slot
+							? 'that slot has no shader of its own; it draws ' + (inherited === uuid ? "the object's shader (remove it without slot)" : 'the scene default')
+							: 'it inherits the scene default, it has no graph of its own'
+						: 'it has no shader graph'
+				});
 				continue;
 			}
-			sg.setShaderGraphFor(uuid, null);
-			await sg.compileAndApply(uuid);
-			updated.push({ uuid, ok: true, shader: null });
+			sg.setShaderGraphFor(key, null);
+			await sg.compileAndApply(key);
+			updated.push({ uuid, ...(target.slot ? { slot: target.slot } : {}), ok: true, shader: null });
 			continue;
 		}
 		const refusal = sg.shaderRefusalReason(object);
@@ -938,13 +1041,13 @@ async function assignShaderTool(args) {
 			skipped.push({ uuid, reason: refusal });
 			continue;
 		}
-		if (uuid === from) {
+		if (key === from) {
 			skipped.push({ uuid, reason: 'it is the graph being copied' });
 			continue;
 		}
-		const before = get(sg.shaderGraphs)[uuid] ? sg.shaderGraphOf(uuid) : null;
+		const before = get(sg.shaderGraphs)[key] ? sg.shaderGraphOf(key) : null;
 		const { changedAt: _stamp, ...copy } = structuredClone(/** @type {any} */ (source));
-		const row = await writeObjectGraph(uuid, copy, before);
+		const row = await writeObjectGraph(key, copy, before);
 		if (row.errors) skipped.push({ uuid, reason: 'the compiler refused it', errors: row.errors });
 		else updated.push(row);
 	}
@@ -1416,10 +1519,15 @@ export const LOOK_AI_TOOLS = [
 						description:
 							'85b: a procedural albedo texture by name — wood, planks, brick, tiles, marble, stone, concrete, metal, grass, sand, fabric, checker, stripes, noise — or {name, colors: [dark, light], scale, seed, size}; it becomes a library image first'
 					},
-					patternScale: { type: 'number', description: 'with pattern: how many times it repeats across each face (e.g. 4 for a floor)' },
+					noise: {
+						type: 'object',
+						description:
+							'105: a generated noise albedo (instead of pattern): {kind: perlin|simplex|worley|value, scale (cells across, 1-64), octaves (1-8), roughness (0-1), seed, contrast (-100..100), invert, tileable (default true), colors: [low, …, high] (2-5 hex), size (default 1024)}; becomes a library image first. maps.<slot>: {noise: {...}} for another map (maps.normal makes a normal map from the noise as height). The answer lists what it wrote.'
+					},
+					patternScale: { type: 'number', description: 'with pattern or noise: how many times it repeats across each face (e.g. 4 for a floor)' },
 					maps: {
 						type: 'object',
-						description: 'texture slots, each a library image hash, an https URL, {pattern: name} (a procedural texture), or null to clear',
+						description: 'texture slots, each a library image hash, an https URL, {pattern: name} (a procedural texture), {noise: {kind, scale, octaves, seed, …}} (generated noise), or null to clear',
 						properties: {
 							albedo: { type: ['string', 'object', 'null'] },
 							normal: { type: ['string', 'object', 'null'] },
@@ -1432,7 +1540,17 @@ export const LOOK_AI_TOOLS = [
 					type: { type: 'string', enum: MATERIAL_TYPES, description: 'swap the material class first' },
 					preset: { type: 'string', description: 'a preset: ' + STARTER_NAMES + ', or a saved one list_materials names' },
 					cc0: { type: 'string', description: 'a CC0 material by Poly Haven name, ambientCG id ("Wood051", "Bricks076", "Metal032") or words ("brown planks")' },
-					slot: { type: 'integer', minimum: 0, description: 'which material slot of a multi-material object (default 0)' },
+					slot: {
+						type: ['integer', 'string'],
+						description: 'which material slot of a multi-material object: its index (0 = first), or its id or name from list_materials (default 0)'
+					},
+					slotName: { type: 'string', description: 'rename that slot' },
+					slotOff: { type: 'boolean', description: 'true: that slot draws the plain default material (its own material is kept); false: its material again' },
+					removeSlot: {
+						type: 'object',
+						description: 'remove that slot; its faces go to slot `to` (index, id or name; default the first other slot). Give nothing else in the call.',
+						properties: { to: { type: ['integer', 'string'] } }
+					},
 					faces: FACES_SCHEMA
 				},
 				required: ['objects']
@@ -1444,7 +1562,7 @@ export const LOOK_AI_TOOLS = [
 		function: {
 			name: 'list_materials',
 			description:
-				'What objects wear: per object its material slots (type, colour, numbers, which maps) and shader, plus the preset names (the starters ' +
+				'What objects wear: per object its material slots (type, colour, numbers, which maps; on a slot list each slot\'s id and the shader that draws it) and shader, plus the preset names (the starters ' +
 				STARTER_NAMES +
 				', and any the person saved) and shader keys. Read this before editing.',
 			parameters: {
@@ -1478,6 +1596,10 @@ export const LOOK_AI_TOOLS = [
 					objects: { ...OBJECTS_SCHEMA, maxItems: MAX_SHADER_OBJECTS },
 					text: { type: 'string', description: 'the graph as text' },
 					name: { type: 'string' },
+					slot: {
+						type: ['integer', 'string'],
+						description: 'one material slot of a multi-material object (index, id or name from list_materials): that slot gets its own shader; absent = the whole object (every slot without its own)'
+					},
 					replace: { type: 'boolean', description: 'replace a graph the object already has' },
 					scene: { type: 'boolean', description: 'the scene default instead of objects (asks the host)' },
 					...CONFIRM_SCHEMA
@@ -1493,7 +1615,8 @@ export const LOOK_AI_TOOLS = [
 			parameters: {
 				type: 'object',
 				properties: {
-					shader: { type: 'string', description: 'the key from create_shader or list_materials' },
+					shader: { type: 'string', description: 'the key from create_shader or list_materials (a slot\'s is "<uuid>/<slot id>")' },
+					slot: { type: ['integer', 'string'], description: 'with an object uuid as shader: that material slot\'s own shader (index, id or name)' },
 					params: { type: 'array', items: { type: 'object', properties: { node: { type: 'string' }, param: { type: 'string' }, value: {} }, required: ['node', 'param', 'value'] } },
 					add: { type: 'string', description: 'text: nodes to add or replace and edges to add' },
 					removeNodes: { type: 'array', items: { type: 'string' } },
@@ -1512,7 +1635,11 @@ export const LOOK_AI_TOOLS = [
 				type: 'object',
 				properties: {
 					objects: { ...OBJECTS_SCHEMA, maxItems: MAX_SHADER_OBJECTS },
-					shader: { type: ['string', 'null'], description: 'the key of the graph to copy, or null to remove' }
+					shader: { type: ['string', 'null'], description: 'the key of the graph to copy, or null to remove' },
+					slot: {
+						type: ['integer', 'string'],
+						description: 'one material slot of a multi-material object (index, id or name from list_materials): that slot gets its own shader; absent = the whole object (every slot without its own)'
+					}
 				},
 				required: ['objects', 'shader']
 			}

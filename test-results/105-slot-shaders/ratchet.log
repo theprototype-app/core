@@ -1,0 +1,4 @@
+svelte-check: 282 errors / 37 warnings (baseline 273/37)
+BASELINE EXCEEDED by 9 error(s) and 0 warning(s).
+Fix them, or if they are genuinely pre-existing, say so in the PR and move the baseline.
+rc=1

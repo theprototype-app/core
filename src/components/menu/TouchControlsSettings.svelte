@@ -1,7 +1,7 @@
 <script module>
 	/** 36 I4: what the settings search should also match for this section (labels are searched
 	 * already; these are the words people type for it). */
-	export const keywords = ['touch', 'mobile', 'phone', 'tablet', 'buttons', 'joystick', 'stick', 'jump', 'fire', 'haptic', 'vibrate', 'layout', 'on-screen'];
+	export const keywords = ['touch', 'mobile', 'phone', 'tablet', 'buttons', 'joystick', 'stick', 'jump', 'fire', 'haptic', 'vibrate', 'vibration', 'feedback', 'layout', 'on-screen'];
 </script>
 
 <script>
@@ -25,7 +25,7 @@
 	import TouchActionButton from '../play/TouchActionButton.svelte';
 	import { settingsOpen, settingsSection, showToast } from '../../stores/appStore.js';
 	import { NAV_CONTEXT } from '$lib/settingsNav';
-	import { explorerItems, itemBlob } from '$lib/explorer';
+	import { itemBlob } from '$lib/explorer';
 	import { touchLookSpeed, setTouchLookSpeed, TOUCH_LOOK_SPEED_RANGE } from '$lib/touchControls';
 	import {
 		BUILTIN_ACTIONS,
@@ -41,7 +41,11 @@
 		openTouchLayoutEditor
 	} from '$lib/touchActions';
 	import { touchSpec } from '$lib/touchSpec';
+	import { uiHapticPrefs, setUiHapticPrefs, uiHapticsSupport } from '$lib/uiHaptics';
 	import { gameId } from '$lib/gameSettings';
+	// 105 T1: the picker and its leaf are lazy (boot rule) — loaded on the first press
+	/** @param {any} opts */
+	const pickFromExplorer = (opts) => import('$lib/explorerPick.js').then((m) => m.pickFromExplorer(opts));
 
 	/** while the settings search has a query, the section is open so its rows can match */
 	let { searching = false } = $props();
@@ -83,7 +87,23 @@
 	const actions = $derived(actionList($touchSpec));
 	/** the action whose sub-page is open ("touch:<id>") */
 	const editing = $derived($sub?.id?.startsWith('touch:') ? (actions.find((a) => 'touch:' + a.id === $sub.id) ?? null) : null);
-	const imageItems = $derived($explorerItems.filter((it) => it.kind === 'image' || /\.svg$/i.test(it.name ?? '')));
+
+	// 103 (H13): Touch feedback — the level, the four kinds, a slider to try it on
+	const FEEDBACK_LEVELS = [
+		{ value: 'off', label: 'Off' },
+		{ value: 'light', label: 'Light' },
+		{ value: 'medium', label: 'Medium' },
+		{ value: 'strong', label: 'Strong' }
+	];
+	const FEEDBACK_KINDS = /** @type {const} */ ([
+		['buttons', 'Buttons and switches', 'Switches, choices, tabs and the on-screen game buttons.'],
+		['values', 'Sliders and values', 'A tick per step, a firmer one at the default and at the ends.'],
+		['snap', 'Snapping', 'When a move, a key or a UV point snaps into place.'],
+		['gestures', 'Gestures', 'A long press, picking up a card or a tab.']
+	]);
+	const feedbackSupport = uiHapticsSupport();
+	const feedbackReason = feedbackSupport.ios ? 'iPhone and iPad cannot vibrate for a web page: Safari has no vibration.' : 'This browser cannot vibrate.';
+	let tryValue = $state(5);
 
 	const VISIBILITY = [
 		{ value: 'auto', label: 'Auto' },
@@ -135,18 +155,17 @@
 		if (url) setTouchTexture(id, { [asState(state)]: url });
 	}
 
-	/** @param {string} id @param {string} state @param {any} e */
-	async function onExplorerPick(id, state, e) {
-		const select = e.currentTarget;
-		const itemId = select.value;
-		select.value = '';
-		if (!itemId) return;
+	/** 105 T1: the shared Explorer picker (thumbnails, search, folders, recent) @param {string} id @param {string} state */
+	async function onExplorerPick(id, state) {
+		const picked = await pickFromExplorer({ title: 'Pick the ' + (state === 'pressed' ? 'pressed' : 'released') + ' image', accept: ['image', '.svg'] });
+		if (!picked) return;
+		const itemId = picked.id;
 		const blob = await itemBlob(itemId);
 		if (!blob) {
 			showToast('That file is not on this device yet');
 			return;
 		}
-		const typed = blob.type ? blob : new Blob([blob], { type: /\.svg$/i.test(imageItems.find((i) => i.id === itemId)?.name ?? '') ? 'image/svg+xml' : 'image/png' });
+		const typed = blob.type ? blob : new Blob([blob], { type: /\.svg$/i.test(picked.name ?? '') ? 'image/svg+xml' : 'image/png' });
 		const url = await blobToDataUrl(typed);
 		if (url) setTouchTexture(id, { [asState(state)]: url });
 	}
@@ -180,12 +199,7 @@
 							data-touch-tex-file={editing.id + ':' + state}
 							onchange={(e) => onUpload(editing.id, state, e)}
 						/>
-						<select class="tcs-select" aria-label={'Pick a ' + label.toLowerCase() + ' from Explorer'} onchange={(e) => onExplorerPick(editing.id, state, e)}>
-							<option value="">From Explorer…</option>
-							{#each imageItems as item (item.id)}
-								<option value={item.id}>{item.name}</option>
-							{/each}
-						</select>
+						<Button size="sm" variant="outline" icon="folder-open" id={'touch-tex-explorer-' + state + '-' + safeId(editing.id)} label={'Pick a ' + label.toLowerCase() + ' from Explorer'} onclick={() => onExplorerPick(editing.id, state)}>From Explorer…</Button>
 						{#if texHas(tex, state)}
 							<Button size="sm" variant="ghost" label={'Clear the ' + label.toLowerCase()} onclick={() => setTouchTexture(editing.id, { [asState(state)]: undefined })}>Clear</Button>
 						{/if}
@@ -228,9 +242,6 @@
 				<SettingRow id="row-touch-in-edit" label="Show in edit" description="Also draw the action buttons while editing.">
 					<Toggle id="touch-show-in-edit" label="Show in edit" checked={$touchPrefs.showInEdit} onchange={(on) => setTouchPrefs({ showInEdit: on })} />
 				</SettingRow>
-				<SettingRow id="row-touch-haptics" label="Haptic tick" description="A short vibration on each press, where supported." keywords="vibrate vibration haptics">
-					<Toggle id="touch-haptics" label="Haptic tick" checked={$touchPrefs.haptics} onchange={(on) => setTouchPrefs({ haptics: on })} />
-				</SettingRow>
 				<SettingRow id="row-touch-look" label="Look speed" description="How far a drag on the right half turns the view.">
 					<Slider
 						id="touch-look-speed"
@@ -247,6 +258,25 @@
 					<Button id="touch-reset-layout" size="sm" variant="outline" onclick={resetLayouts}>Reset</Button>
 					<Button id="touch-edit-layout" data-tour="touch-edit-layout" size="sm" variant="outline" onclick={editLayout}>Edit layout</Button>
 				</SettingRow>
+			</Section>
+			<Section variant="card" label="Touch feedback" badge="This device">
+				{#if feedbackSupport.ok}
+					<SettingRow id="row-touch-feedback" label="Touch feedback" description="On phones: a short vibration when you touch a control. Off when your device asks for reduced motion." keywords="vibrate vibration haptics haptic tick">
+						<Segmented id="touch-feedback-level" label="Touch feedback" options={FEEDBACK_LEVELS} value={$uiHapticPrefs.level} onchange={(v) => setUiHapticPrefs({ level: /** @type {any} */ (v) })} />
+					</SettingRow>
+					{#each FEEDBACK_KINDS as [kind, label, description] (kind)}
+						<SettingRow id={'row-touch-feedback-' + kind} {label} {description} keywords="vibrate vibration haptics">
+							<Toggle id={'touch-feedback-' + kind} {label} disabled={$uiHapticPrefs.level === 'off'} checked={$uiHapticPrefs[kind]} onchange={(on) => setUiHapticPrefs({ [kind]: on })} />
+						</SettingRow>
+					{/each}
+					<SettingRow id="row-touch-feedback-try" label="Try it" description="Drag it: a tick per step, a firmer one at 5, a bump at each end.">
+						<Slider id="touch-feedback-try" label="Try touch feedback" min={0} max={10} step={1} defaultValue={5} value={tryValue} onchange={(v) => (tryValue = v)} />
+					</SettingRow>
+				{:else}
+					<SettingRow id="row-touch-feedback" label="Touch feedback" description={feedbackReason} keywords="vibrate vibration haptics haptic tick">
+						<span class="tcs-cap" data-feedback-unsupported>Not available</span>
+					</SettingRow>
+				{/if}
 			</Section>
 			<Section variant="card" label="Button looks">
 				<SettingRow id="row-touch-looks" label="Button looks" description="Pick one to change its images, tint and size." keywords="images icons textures look">
@@ -326,17 +356,6 @@
 		font-size: var(--fs-desc);
 		color: var(--text-muted);
 	}
-	.tcs-select {
-		max-width: 160px;
-		height: var(--control-h-sm);
-		padding: 0 8px;
-		border: 1px solid var(--border-input);
-		border-radius: var(--radius-button, 8px);
-		background: var(--surface-inset);
-		color: var(--text);
-		font: inherit;
-		font-size: var(--fs-desc);
-	}
 	.tcs-color {
 		width: 40px;
 		height: 28px;
@@ -345,11 +364,5 @@
 		border-radius: 6px;
 		background: transparent;
 		cursor: pointer;
-	}
-	@media (max-width: 639.98px) {
-		.tcs-select {
-			font-size: 16px;
-			height: 44px;
-		}
 	}
 </style>

@@ -13,6 +13,7 @@
 //   - `-webkit-touch-callout: none` is set on the node (scoped to Explorer items, not the app).
 //
 //   use:touchHold={{ onhold?: (x, y) => void }}   (no onhold = only the suppression)
+import { uiHaptic } from '../uiHaptics';
 
 export const HOLD_MS = 450;
 export const HOLD_SLOP = 10;
@@ -45,9 +46,7 @@ export function touchHold(node, options = {}) {
 		if (!opts.onhold) return;
 		timer = window.setTimeout(() => {
 			timer = 0;
-			try {
-				navigator.vibrate?.(12);
-			} catch {}
+			uiHaptic('select', { kind: 'gestures', touch: true });
 			opts.onhold?.(x0, y0);
 		}, HOLD_MS);
 	};

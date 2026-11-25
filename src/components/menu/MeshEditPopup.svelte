@@ -696,6 +696,14 @@
 			event.preventDefault();
 			return;
 		}
+		// 103 H4 row 5: Move / Rotate / Resize now — the picked elements follow the pointer at once,
+		// in every element mode (the engine drives this session's own gizmo proxy; lazy)
+		if (cmd === 'mesh.now-move' || cmd === 'mesh.now-rotate' || cmd === 'mesh.now-scale') {
+			const now = cmd === 'mesh.now-move' ? 'translate' : cmd === 'mesh.now-rotate' ? 'rotate' : 'scale';
+			void import('$lib/modalTransform').then((m) => m.startMeshModal(now));
+			event.preventDefault();
+			return;
+		}
 		// M2/M6: the SELECTION commands resolve against the CURRENT mode's list, so
 		// Ctrl+A / Ctrl+I work in all three modes instead of faces only
 		/** @type {Record<string, string[]>} */
@@ -798,6 +806,10 @@
 							[k('mesh.mode-next', 'Tab'), 'Next element mode (Vertices - Edges - Faces)'],
 							[k('mesh.mode-prev', 'Shift+Tab'), 'Previous element mode'],
 							['1 / 2 / 3', 'Gizmo: Move / Rotate / Scale'],
+							// 103 row 5: shown once a preset (or the user) binds them
+							...(bindingOf('mesh.now-move') || bindingOf('mesh.now-rotate') || bindingOf('mesh.now-scale')
+								? [[[k('mesh.now-move', ''), k('mesh.now-rotate', ''), k('mesh.now-scale', '')].filter(Boolean).join(' / '), 'Move / Rotate / Resize now (X / Y / Z lock, type a number, Enter keeps, Esc cancels)']]
+								: []),
 							[k('mesh.select-all', 'Ctrl+A'), 'Select all'],
 							[k('mesh.select-invert', 'Ctrl+I'), 'Invert the selection'],
 							['Esc', 'Done — leave the session']
@@ -807,7 +819,7 @@
 						id: 'faces',
 						title: 'Faces',
 						rows: [
-							[[k('mesh.extrude', 'E'), k('mesh.inset', 'I'), k('mesh.move', 'G')].join(' / '), 'Arm Extrude / Inset / Move'],
+							[[k('mesh.extrude', 'E'), k('mesh.inset', 'I'), k('mesh.move', 'G')].filter(Boolean).join(' / '), 'Arm Extrude / Inset / Move'],
 							[[k('mesh.subdivide', 'S'), k('mesh.loopcut', 'C')].join(' / '), 'Subdivide / Loop cut'],
 							[[k('mesh.bridge', 'B'), k('mesh.flip', 'F'), k('mesh.delete', 'X')].join(' / '), 'Bridge / Flip normals / Delete'],
 							[k('mesh.loop', 'L'), 'Loop select (again = perpendicular)'],

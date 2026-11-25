@@ -16,6 +16,7 @@ import { selectedObjects } from '../../stores/sceneStore';
 import { showToast } from '../../stores/appStore';
 import { CC0_SITES, phFilePlan, acgDownloadFor, acgMapsFromNames, sourceRecord, assetFileName, packGlb, gltfExternalUris, classifyError } from './cc0Core.js';
 import { phFiles, acgResolve, fetchBytes } from './cc0Fetch.js';
+import { assetBrowserTarget } from './assetBrowserState.js'; // 105-slots: Apply to <slot>
 // static, not dynamic: this module is itself loaded lazily (with the window), and a dynamic import
 // from it could bind a SECOND instance of these singletons on a long-lived dev server
 import { editEnvSky } from '../environment';
@@ -270,6 +271,14 @@ async function importMaterial(row, res, key, applyToSelection) {
 
 /** @param {any} mp the materialPresets module @param {any} preset */
 async function applyToSelected(mp, preset) {
+	// 105-slots: a slot target (Switch material… > CC0 library) wins over the selection, once
+	const target = get(assetBrowserTarget);
+	if (target) {
+		assetBrowserTarget.set(null);
+		const ok = mp.applyMaterialPreset(target.uuid, preset, target.slot);
+		if (!ok) showToast('That slot is gone — pick it again');
+		return ok ? 1 : 0;
+	}
 	const uuids = get(selectedObjects)
 		.map((/** @type {any} */ o) => (typeof o === 'string' ? o : o?.uuid))
 		.filter(Boolean);

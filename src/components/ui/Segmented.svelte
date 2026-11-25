@@ -1,4 +1,5 @@
 <script>
+	import { uiHaptic } from '$lib/uiHaptics'; // 103 (H13): touch feedback
 	// 38 R3 — 2 to 4 EXCLUSIVE options (SPEC §2 Segmented): Theme, Show touch controls, grid /
 	// list view. Five or more → Chips. A role="radiogroup" of role="radio" buttons (SPEC §8)
 	// with ONE tab stop — the selected option — and arrow keys that move AND select
@@ -33,6 +34,7 @@
 		if (!o || o.disabled || disabled) return;
 		if (o.value !== value) {
 			value = o.value;
+			uiHaptic('select');
 			onchange(o.value);
 		}
 	}

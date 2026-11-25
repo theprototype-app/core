@@ -18,11 +18,17 @@
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { objectsGroup, selectedObjects } from '../../stores/sceneStore';
 	import { applySelectionSet, deselectObject } from '$lib/objectActions';
+	import { activeMaterialSlot } from '$lib/slotDraw.js';
 
 	/** `paneHeight` is the LEFT COLUMN's measured height — see the resize ceiling below.
+	 * 105-slot-shaders: `keyParts` (the shader editor passes shaderGraph's `shaderKeyParts`) reads a key as
+	 * `{uuid, slot}`, so a slot document lists UNDER its object; `slotsOf` names an object's slots. Absent (the
+	 * flow editor) = every key is an object uuid, exactly as before.
 	 * @type {{ kind: 'flow'|'shader', documents: Record<string, any>, sceneKey: string,
-	 *   label?: string, paneHeight?: number }} */
-	let { kind, documents, sceneKey, label = 'Graphs', paneHeight = 0 } = $props();
+	 *   label?: string, paneHeight?: number,
+	 *   keyParts?: ((key: string) => {uuid: string | null, slot: string | null}) | null,
+	 *   slotsOf?: ((object: any) => {id: string, name: string}[]) | null }} */
+	let { kind, documents, sceneKey, label = 'Graphs', paneHeight = 0, keyParts = null, slotsOf = null } = $props();
 
 	const LS = typeof localStorage !== 'undefined' ? localStorage : null;
 	// a ONE-TIME read of `kind` on purpose: an editor never changes which kind it shows,
@@ -69,21 +75,45 @@
 	// $objectsGroup is READ here on purpose: a derived that only watched `documents`
 	// would keep a deleted object's name forever (the THREE-trees-are-not-reactive rule)
 	const rows = $derived(
-		Object.keys(documents ?? {})
+		[...new Set(Object.keys(documents ?? {})
 			.filter((key) => key !== sceneKey)
+			.map((key) => (keyParts ? (keyParts(key).uuid ?? key) : key)))]
 			.map((uuid) => {
 				const object = $objectsGroup?.getObjectByProperty('uuid', uuid);
+				const slots = keyParts ? slotRowsOf(uuid, object) : [];
 				return {
 					uuid,
 					name: object?.name || object?.type || 'Object',
 					// an ORPHAN: the document outlives its object until the next save prunes
 					// it, so say so rather than pretending it is navigable
 					missing: !object,
-					nodes: (documents?.[uuid]?.nodes ?? []).length
+					own: !!documents?.[uuid],
+					nodes: (documents?.[uuid]?.nodes ?? []).length,
+					slots
 				};
 			})
 			.sort((a, b) => a.name.localeCompare(b.name))
 	);
+
+	/** 105-slot-shaders: an object's slot documents, in slot order (a gone slot = an orphan, listed last)
+	 * @param {string} uuid @param {any} object */
+	function slotRowsOf(uuid, object) {
+		const names = object && slotsOf ? slotsOf(object) : [];
+		return Object.keys(documents ?? {})
+			.map((key) => ({ key, parts: /** @type {any} */ (keyParts)(key) }))
+			.filter(({ parts }) => parts.uuid === uuid && parts.slot)
+			.map(({ key, parts }) => {
+				const index = names.findIndex((n) => n.id === parts.slot);
+				return {
+					key,
+					index,
+					name: index >= 0 ? names[index].name : 'Removed slot',
+					missing: !object || index < 0,
+					nodes: (documents?.[key]?.nodes ?? []).length
+				};
+			})
+			.sort((a, b) => (a.index < 0 ? 1e9 : a.index) - (b.index < 0 ? 1e9 : b.index));
+	}
 
 	const sceneNodes = $derived((documents?.[sceneKey]?.nodes ?? []).length);
 	const sceneActive = $derived(($selectedObjects?.length ?? 0) !== 1);
@@ -129,8 +159,29 @@
 						: 'Edit ' + row.name + "'s own graph"}
 				>
 					<span class="flex-1 truncate text-left">{row.name}</span>
-					<span class="gt-count">{row.nodes}</span>
+					{#if row.own || !keyParts}<span class="gt-count">{row.nodes}</span>{/if}
 				</button>
+				{#each row.slots as slot (slot.key)}
+					<button
+						class="gt-row gt-child gt-slot"
+						class:gt-active={isActive(row.uuid) && slot.index === $activeMaterialSlot}
+						class:gt-missing={slot.missing}
+						data-shader-key={slot.key}
+						onclick={() => {
+							if (slot.missing) return;
+							applySelectionSet([row.uuid]);
+							activeMaterialSlot.set(slot.index);
+						}}
+						disabled={slot.missing}
+						title={slot.missing
+							? 'That slot is gone; its shader is dropped on the next save (undo brings the slot back)'
+							: "Edit the shader of " + row.name + "'s slot " + slot.name}
+					>
+						<span class="gt-ico"><Icon name="layers" size={16} aria-hidden="true" /></span>
+						<span class="flex-1 truncate text-left">{slot.name}</span>
+						<span class="gt-count">{slot.nodes}</span>
+					</button>
+				{/each}
 			{/each}
 			{#if !rows.length}
 				<p class="gt-empty">
@@ -209,6 +260,9 @@
 	}
 	.gt-child {
 		padding-left: 20px;
+	}
+	.gt-slot {
+		padding-left: 32px;
 	}
 	.gt-active {
 		background: var(--accent-soft);

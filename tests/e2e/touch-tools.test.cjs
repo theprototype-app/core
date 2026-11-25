@@ -456,9 +456,15 @@ h.run(async () => {
 					noRoom: !!pill && pill.width > 0 && pill.left < logo.right + 3 * 48 + 2 * 6 + 24 && pill.top < logo.bottom,
 					stacked: tools.height > tools.width,
 					belowLogo: tools.y >= logo.bottom,
-					// centres of a 48px button at this inset vs the 44px HUD button at 16px
-					centre: tools.x + 24,
-					hudCentre: 16 + 22
+					// 103 H15: both are tiles on the HUD grid now — measure both centres instead of the old 48@? vs 44@16
+					centre: (() => {
+						const b = document.querySelector('#touch-tools .tt-btn')?.getBoundingClientRect();
+						return b ? b.left + b.width / 2 : null;
+					})(),
+					hudCentre: (() => {
+						const b = document.querySelector('#hud-stack-left > .hud-fab')?.getBoundingClientRect();
+						return b ? b.left + b.width / 2 : null;
+					})()
 				}
 			: null;
 	});

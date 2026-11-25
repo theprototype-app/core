@@ -5,7 +5,8 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { qualityOverrides } from '$lib/qualityGovernor';
 	import { T, useTask, useThrelte } from '@threlte/core';
-	import { Environment, interactivity, OrbitControls, TransformControls } from '@threlte/extras';
+	import { Environment, interactivity, OrbitControls } from '@threlte/extras';
+	import GizmoControls from './GizmoControls.svelte';
 	import { XR, Controller, Hand, useHand } from '@threlte/xr'
 	import { spring } from 'svelte/motion';
 	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu, viewportMenuOpener, addMenu, addMenuOpener, showToast, multiSelectMode } from '../stores/appStore';
@@ -106,6 +107,8 @@
 	import { cameraPreview, activeOrbit, setOrbitEnabled } from '$lib/cameraPreview';
 	import CameraPreview from './CameraPreview.svelte';
 	import { startEditorNavigation, updateEditorNavigation } from '$lib/editorNavigation';
+	import { flyWithWasd, flewThisHold } from '$lib/flyPrefs'; // 103 H5
+	import { notePointer } from '$lib/pointerAt'; // 103 H4
 	import { vrMenuOpen } from '../stores/sceneStore';
 	import VRMenu from './play/VRMenu.svelte';
 	import VRStats from './play/VRStats.svelte';
@@ -1077,6 +1080,7 @@
 			// remember where the cursor is so keyboard commands (Shift+A) can anchor to
 			// it and spawn under it — null until the pointer has moved at least once
 			lastPointerXY = [event.clientX, event.clientY];
+			notePointer(event.clientX, event.clientY); // 103 H4: Move now starts from here
 			// 19-B: the element-snap search is cursor-based — track the pointer while a
 			// gizmo drag runs (this listener is on window, so mid-gesture moves arrive)
 			if ($TControls?.dragging) setSnapPointer(event.clientX, event.clientY);
@@ -1544,8 +1548,25 @@
 			// only a short stationary tap opens menus — right-DRAG keeps panning
 			const moved = Math.hypot(event.clientX - down[0], event.clientY - down[1]);
 			if (moved > 5 || Date.now() - down[2] > 400) return;
+			// 103 H5: 'Fly with WASD: only while holding the right mouse button'. Where contextmenu
+			// fires on the PRESS (Linux), the menu would open before the hold could fly — wait for the
+			// release, and open nothing if a fly key moved the camera meanwhile.
+			if (get(flyWithWasd) === 'rmb' && event.buttons & 2) {
+				pendingRightMenu = [event.clientX, event.clientY, down[2]];
+				return;
+			}
+			if (flewThisHold()) return;
 			openViewportMenuAt(event.clientX, event.clientY);
 		};
+		let pendingRightMenu: [number, number, number] | null = null;
+		const onRightRelease = (event: PointerEvent) => {
+			if (event.button !== 2 || !pendingRightMenu) return;
+			const [x, y, at] = pendingRightMenu;
+			pendingRightMenu = null;
+			if (flewThisHold() || Math.hypot(event.clientX - x, event.clientY - y) > 5 || Date.now() - at > 400) return;
+			openViewportMenuAt(x, y);
+		};
+		window.addEventListener('pointerup', onRightRelease);
 		dom.addEventListener('contextmenu', onContextMenu);
 
 		// touch long-press = right-click (touch has no contextmenu). A stationary
@@ -1782,6 +1803,7 @@
 			stopVrGameInput(); // 30b
 			element.removeEventListener('pointerdown', onPointerDown);
 			dom.removeEventListener('contextmenu', onContextMenu);
+			window.removeEventListener('pointerup', onRightRelease);
 			offContextLoss();
 			window.removeEventListener('pointerup', onPointerUp);
 			window.removeEventListener('pointercancel', onPointerCancel);
@@ -1996,7 +2018,7 @@
 </T.Group>
 
 {#if !$isLocked && !$isVRMode}
-<TransformControls bind:controls={$TControls} {onchange} {oncreate} />
+<GizmoControls bind:controls={$TControls} {onchange} {oncreate} />
 {/if}
 
 <!-- 21-A A8: the composer renders in PLAY mode too. A game's authored look is

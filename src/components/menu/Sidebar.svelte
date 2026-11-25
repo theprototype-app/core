@@ -257,7 +257,7 @@
 	class="burger tp-ui hud-glass flex items-center justify-center rounded-xl transition-transform hover:scale-105 {$closeMenu
 		? ''
 		: 'logo-open'}"
-	style="height: var(--hud-fab); width: var(--hud-fab); {$connectDocked ? `top: ${$connectBarHeight + 8}px` : ''}"
+	style="height: var(--hud-tile); width: var(--hud-tile); {$connectDocked ? `top: calc(${$connectBarHeight}px + var(--hud-inset))` : ''}"
 	title={$closeMenu ? 'Open menu' : 'Close menu'}
 	onclick={toggleMenu}
 >
@@ -525,10 +525,12 @@
 <style>
 	/* (no background here: an undefined --color-form blanked the utility's surface fill — a
 	   scoped rule beats every utility — which theme.css's !important remap used to hide) */
+	/* 103 H15: the top-left corner of the HUD grid (styles/hud.css) — the touch tools, the corner stack and the toolbar's
+	   band share its left inset */
 	.burger {
-		top: 8px;
+		top: var(--hud-inset);
 		/* 42 I2: a FULL-HEIGHT left sidebar takes the corner — the logo slides inward by its width */
-		left: calc(8px + var(--sb-dock-left, 0px));
+		left: calc(var(--hud-inset) + var(--sb-dock-left, 0px));
 		/* 45 N3: the hover scale only — the logo JUMPS beside a pinned / closed sidebar in one frame (the user:
 		   "remove animations when hide/show sidebars on top clusters and burger menu and profile buttons") */
 		transition: transform 150ms;

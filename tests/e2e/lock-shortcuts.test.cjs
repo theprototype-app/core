@@ -113,8 +113,20 @@ h.run(async () => {
 		filterFocused: document.activeElement?.id === 'shortcut-sheet-filter'
 	}));
 	const sheetIds = new Set(sheet.rows);
-	const missingFromSheet = ids.filter((/** @type {string} */ id) => !sheetIds.has(id));
-	h.check(missingFromSheet.length === 0 && sheet.rows.length === ids.length, `the sheet lists every registry row once (${sheet.rows.length}/${ids.length}${missingFromSheet.length ? ', missing ' + missingFromSheet.join(',') : ''})`);
+	// 103 H5: the sheet shows what a key DOES, so a row with no key is not listed, and the gesture locks
+	// (X / Y / Z, the UV editor's U / V) wait until a Move / Rotate / Resize now key is bound
+	const NOW_ROWS = ['transform.now-move', 'transform.now-rotate', 'transform.now-scale', 'mesh.now-move', 'mesh.now-rotate', 'mesh.now-scale'];
+	const gestureBound = registry.some((/** @type {any} */ r) => NOW_ROWS.includes(r.id) && r.keys);
+	const uvGestureBound = registry.some((/** @type {any} */ r) => /^uv\.now-/.test(r.id) && r.keys);
+	const listed = (/** @type {any} */ r) => !!r.keys && (r.scope !== 'modal' || gestureBound) && (!['uv.lock-u', 'uv.lock-v'].includes(r.id) || uvGestureBound);
+	const sheetWant = registry.filter(listed).map((/** @type {any} */ r) => r.id);
+	const missingFromSheet = sheetWant.filter((/** @type {string} */ id) => !sheetIds.has(id));
+	const extraOnSheet = sheet.rows.filter((/** @type {any} */ id) => !sheetWant.includes(id));
+	h.check(missingFromSheet.length === 0 && extraOnSheet.length === 0 && sheet.rows.length === sheetWant.length, `the sheet lists every registry row with a key once (${sheet.rows.length}/${sheetWant.length}${missingFromSheet.length ? ', missing ' + missingFromSheet.join(',') : ''}${extraOnSheet.length ? ', extra ' + extraOnSheet.join(',') : ''})`);
+	// default keymap: exactly the start-at-once rows (no key) and their locks are left off
+	const unlisted = registry.filter((/** @type {any} */ r) => !listed(r)).map((/** @type {any} */ r) => r.id).sort();
+	const UNLISTED_103 = ['mesh.now-move', 'mesh.now-rotate', 'mesh.now-scale', 'movement.fly-direction', 'transform.lock-x', 'transform.lock-y', 'transform.lock-z', 'transform.now-move', 'transform.now-rotate', 'transform.now-scale', 'uv.lock-u', 'uv.lock-v', 'uv.now-move', 'uv.now-rotate', 'uv.now-scale', 'uv.tool-box', 'uv.tool-lasso', 'uv.tool-paint', 'uv.tool-select'];
+	h.check(JSON.stringify(unlisted) === JSON.stringify(UNLISTED_103), `only the 103 rows with no key (and their locks) stay off the default sheet (${unlisted.length}${JSON.stringify(unlisted) === JSON.stringify(UNLISTED_103) ? '' : ': ' + unlisted.join(',')})`);
 	h.check(sheet.first === 'viewport' && !!sheet.marked, `the focused scope comes first and is marked "has focus" (${sheet.first})`);
 	h.check(sheet.filterFocused, 'the filter takes the keyboard when the sheet opens');
 	await page.keyboard.type('undo');
@@ -268,11 +280,13 @@ h.run(async () => {
 	// ---- 4. editor-owned keys -------------------------------------------------------------------
 	const meshMap = await page.evaluate(() => {
 		const S = window.__tp.test.v1.shortcutsRegistry;
-		// an unbound row ('' keys, e.g. 99 K8's Path toggle and Bisect) has no key to resolve: meshCommandFor ignores ''
+		// an unbound row ('' keys: 99 K8's Path toggle and Bisect, 103's Move / Rotate / Resize now) has no key to resolve: meshCommandFor ignores ''
 		return S.shortcuts.filter((/** @type {any} */ r) => r.scope === 'mesh' && r.keys).map((/** @type {any} */ r) => [r.id, S.meshCommandFor(r.keys)]);
 	});
 	const meshBad = meshMap.filter(([id, got]) => id !== got);
 	h.check(meshMap.length > 10 && meshBad.length === 0, `every Edit Mesh key resolves to its own command (${meshMap.length} rows${meshBad.length ? ', wrong ' + JSON.stringify(meshBad) : ''})`);
+	const emptyCombo = await page.evaluate(() => window.__tp.test.v1.shortcutsRegistry.meshCommandFor(''));
+	h.check(emptyCombo === null, `an empty combo resolves to no Edit Mesh command (${emptyCombo})`);
 	// G in the timeline arms Move (the animation editor's own capture handler owns it)
 	await giveFocus(await openPane('animation', 'animationClose', 'animation'));
 	await page.keyboard.press('KeyG');
@@ -324,11 +338,23 @@ h.run(async () => {
 		h.check((await L.storeValue(page, 'transformMode')) === mode, `${key} sets the gizmo to ${mode}`);
 		if (process.env.LOCK_DEBUG) console.log(`  after ${key}: selection ${JSON.stringify(await L.storeValue(page, 'selectedObjects'))}`);
 	}
-	// the ACTIVE mode's key again (G = Move, already armed by 1) hides the selection and
-	// remembers it; once more brings it back (setTransformMode's toggle)
+	// the ACTIVE mode's key again (G = Move, already armed by 1) walks 103 H7's triple switch
+	// (setTransformMode): that tool's handles -> all in one -> hidden (the selection put away and
+	// remembered) -> back. 103-int-1: the 103-keys suite was written against the old two-step.
+	const handleSetNow = () => page.evaluate(async () => {
+		const p = await /** @type {any} */ (window).__tp.test.v1.gizmoPrefs;
+		let v;
+		p.handleSet.subscribe((/** @type {any} */ x) => (v = x))();
+		return v;
+	});
 	await page.keyboard.press('KeyG');
 	await page.waitForTimeout(200);
-	h.check(JSON.stringify(await L.storeValue(page, 'selectedObjects')) === '[]', 'G while Move is already armed puts the selection away (the active mode toggles)');
+	const selAll = JSON.stringify(await L.storeValue(page, 'selectedObjects'));
+	const hsAll = await handleSetNow();
+	h.check(selAll === JSON.stringify([boxId]) && hsAll === 'all', `G while Move is already armed steps to the all-in-one handles, the selection kept (${hsAll}, ${selAll})`);
+	await page.keyboard.press('KeyG');
+	await page.waitForTimeout(200);
+	h.check(JSON.stringify(await L.storeValue(page, 'selectedObjects')) === '[]', 'G once more puts the selection away (the third step of the switch)');
 	await page.keyboard.press('KeyG');
 	await page.waitForTimeout(200);
 	h.check(JSON.stringify(await L.storeValue(page, 'selectedObjects')) === JSON.stringify([boxId]), 'and G again brings the same selection back');

@@ -7,9 +7,32 @@ import { fanTargets } from './materialSharing';
 import { peers, showToast } from '../stores/appStore';
 import { heicToJpegFile } from './heic.js';
 import { checkMaterialParam } from './materialParamRules.js'; // 55: one check for every material parameter
-import { recordEntry, registerHistoryKind } from '$lib/history';
-import { TEXTURE_PARAMS, copyTextureParams, adoptTexTransform, carryMapSlots } from './materialMapTextures.js'; // 72 LK1
+import {
+	recordEntry,
+	registerHistoryKind,
+	beginHistoryBatch,
+	endHistoryBatch,
+	historyBatchOpen,
+	historyApplying
+} from '$lib/history';
+import {
+	TEXTURE_PARAMS,
+	copyTextureParams,
+	adoptTexTransform,
+	carryMapSlots
+} from './materialMapTextures.js'; // 72 LK1
 import { objectToJSON, settleSlotGroups } from './slotGroups.js'; // 105: one serializer for slot groups
+// 105-slots: what a slot draws (off, a seated shader) vs what it IS — every read here goes through the own material
+import { ownMaterialsOf, syncSlotDraw, slotIdOf, listOwnOf } from './slotDraw.js';
+// 105-slots LINK: a look edit on a linked slot runs on every holder of the link (slotLinks.js)
+import { linkedEdit, linkedOthers, linkHistory } from './slotDraw.js'; // the boot gate of slotLinks.js
+// the fan's history calls (slotLinks.js may not import history: see slotDraw.linkHistory)
+Object.assign(linkHistory, {
+	begin: beginHistoryBatch,
+	end: endHistoryBatch,
+	open: historyBatchOpen,
+	applying: historyApplying
+});
 
 // Custom materials and image textures for scene objects, replicated to peers
 // through the existing objectParameters message. Textures travel as dataURLs
@@ -54,9 +77,8 @@ function objectOf(uuid) {
  * @param {any} object @returns {any[]}
  */
 export function materialsOf(object) {
-	const material = object?.material;
-	if (!material) return [];
-	return Array.isArray(material) ? material : [material];
+	// 105-slots: the slots' OWN materials, whatever the draw layer seats in their place (slotDraw.js)
+	return ownMaterialsOf(object);
 }
 
 /**
@@ -121,7 +143,7 @@ registerHistoryKind('material', (entry, state) => {
 	} else if (entry.param === 'materials') {
 		applyMaterials(object, state.value, true);
 	} else if (entry.param === 'materialParam') {
-		setMaterialParam(entry.uuid, entry.key, state.value, true);
+		setMaterialParam(entry.uuid, entry.key, state.value, true, entry.slot ?? 0);
 	} else if (entry.param === 'color') {
 		if (object.material?.color) object.material.color.set(state.value);
 		broadcast({ type: 'color', uuid: entry.uuid, color: state.value });
@@ -150,7 +172,11 @@ function serializeMaterials(materials) {
 	/** @type {any} */
 	const meta = { textures: {}, images: {} };
 	const list = materials.map((material) => material.toJSON(meta));
-	return { materials: list, textures: Object.values(meta.textures), images: Object.values(meta.images) };
+	return {
+		materials: list,
+		textures: Object.values(meta.textures),
+		images: Object.values(meta.images)
+	};
 }
 
 /**
@@ -166,7 +192,9 @@ export function applyMaterials(object, payload, replicate = false, from = 'devic
 	// checked in place before three's loaders see it (loadGuard.js: sceneSchema + loadGuardCore)
 	const materials = parseCheckedMaterials(payload, from, 'materials');
 	if (!materials) return;
-	const next = payload.materials.map((/** @type {any} */ entry) => materials[entry.uuid]).filter(Boolean);
+	const next = payload.materials
+		.map((/** @type {any} */ entry) => materials[entry.uuid])
+		.filter(Boolean);
 	if (!next.length) return;
 	// carry the thumbnail dataURL the UI reads (material.toJSON does not keep it)
 	next.forEach((/** @type {any} */ material, /** @type {number} */ i) => {
@@ -183,6 +211,7 @@ export function applyMaterials(object, payload, replicate = false, from = 'devic
 			object.geometry.addGroup(group.start, group.count, group.materialIndex);
 	}
 	settleSlotGroups(object); // 105: a primitive's custom groups must survive every later toJSON
+	syncSlotDraw(object); // 105-slots: an off slot draws the plain default (the flag rides the material)
 	object.material.needsUpdate ??= true;
 	pokeScene();
 	if (replicate)
@@ -220,7 +249,7 @@ export function serializeMeshWithGroups(element) {
 
 /** The wire payload for an object's CURRENT slots + groups. @param {any} object */
 export function materialsPayload(object) {
-	const materials = materialsOf(object);
+	const materials = listOwnOf(object); // 105-slot-shaders: never a whole-object shader's compiled clone
 	const serialized = serializeMaterials(materials);
 	return {
 		...serialized,
@@ -242,17 +271,45 @@ export function materialsPayload(object) {
  * @returns {boolean}
  */
 export function setObjectMaterials(uuid, materials, groups) {
+	if (!materials?.length) return false;
+	return commitMaterialList(uuid, () => ({ materials, groups }));
+}
+
+/**
+ * 105-slots: THE one slot-list commit. `build` gets a copy of the own materials and of the groups and returns the
+ * next list (it may write into the materials it was handed: the undo snapshot is taken first). One `materials`
+ * message (list + groups together, so a peer on the previous release applies it too), one undo step.
+ * @param {string} uuid
+ * @param {(materials: any[], groups: {start: number, count: number, materialIndex: number}[]) => ({materials: any[], groups?: any[]} | null | undefined)} build
+ * @returns {boolean}
+ */
+export function commitMaterialList(uuid, build) {
 	const object = objectOf(uuid);
-	if (!object || !materials?.length) return false;
-	const before = materialsPayload(object);
-	object.material = materials.length === 1 ? materials[0] : materials;
-	if (groups && object.geometry) {
+	if (!object) return false;
+	const own = listOwnOf(object);
+	// A COPY: Material.toJSON hands out the live `userData` object by reference, so a build that writes a slot's
+	// userData (off, a removal's survivor) would rewrite the undo snapshot too (measured: undoing "on" stayed on)
+	const before = structuredClone(materialsPayload(object));
+	const next = build(
+		[...own],
+		(object.geometry?.groups ?? []).map((/** @type {any} */ g) => ({
+			start: g.start,
+			count: g.count,
+			materialIndex: g.materialIndex || 0
+		}))
+	);
+	if (!next?.materials?.length) return false;
+	object.material = next.materials.length === 1 ? next.materials[0] : next.materials;
+	if (next.groups && object.geometry) {
 		object.geometry.clearGroups();
-		for (const group of groups) object.geometry.addGroup(group.start, group.count, group.materialIndex);
+		for (const group of next.groups)
+			object.geometry.addGroup(group.start, group.count, group.materialIndex);
 	}
 	settleSlotGroups(object); // 105: as applyMaterials
+	syncSlotDraw(object);
+	for (const m of materialsOf(object)) m.needsUpdate = true;
 	pokeScene();
-	const after = materialsPayload(object);
+	const after = structuredClone(materialsPayload(object)); // a later edit must not reach the redo snapshot
 	recordEntry({
 		kind: 'material',
 		uuid,
@@ -273,10 +330,12 @@ export function setObjectMaterials(uuid, materials, groups) {
 export function addMaterialSlot(uuid) {
 	const object = objectOf(uuid);
 	if (!object) return -1;
-	const current = materialsOf(object);
+	const current = listOwnOf(object);
 	if (!current.length) return -1;
 	const fresh = current[current.length - 1].clone();
 	fresh.name = 'slot' + current.length;
+	// 105-slots: the clone copied the last slot's id and off flag; a new slot is a new slot (its uuid is its id)
+	delete fresh.userData.slot;
 	// a cloned material shares its parent's map OBJECT; that is fine (both slots
 	// showing one texture until one is re-textured) and keeps the clone cheap
 	const materials = [...current, fresh];
@@ -288,8 +347,7 @@ export function addMaterialSlot(uuid) {
 	// those faces would render nothing. Before the add every face showed the one
 	// material; after it, every face must still show slot 0.
 	// With an array already present the groups are real and are left alone.
-	const groups =
-		current.length > 1 ? undefined : [{ start: 0, count, materialIndex: 0 }];
+	const groups = current.length > 1 ? undefined : [{ start: 0, count, materialIndex: 0 }];
 	return setObjectMaterials(uuid, materials, groups) ? materials.length - 1 : -1;
 }
 
@@ -330,9 +388,7 @@ export function recordMaterialChange(uuid, param, key, before, after, slot = 0) 
 // through history -> flowRuntime (the moduleSDK pattern).
 /** @type {any} */
 let animRef = null;
-import('./animationPreview')
-	.then((module) => (animRef = module))
-	.catch(() => {});
+import('./animationPreview').then((module) => (animRef = module)).catch(() => {});
 
 /**
  * @param {string} uuid
@@ -443,7 +499,11 @@ export const TEXTURE_MAX_SIDE = 1024;
  */
 export async function decodeTextureFile(file, quality = 0.8) {
 	if (file.size > MAX_TEXTURE_SOURCE_BYTES) {
-		showToast('That image is too big to read (' + Math.round(file.size / 1048576) + ' MB) — save it smaller first');
+		showToast(
+			'That image is too big to read (' +
+				Math.round(file.size / 1048576) +
+				' MB) — save it smaller first'
+		);
 		return null;
 	}
 	// 46-media H1: a HEIC photo picked straight into a texture slot is decoded first (heic.js) —
@@ -478,25 +538,50 @@ export async function setObjectsTexture(uuids, file, slot = 0, opts = {}) {
 	if (!dataURL) return 0;
 	let applied = 0;
 	let missingSlot = 0;
-	for (const uuid of uuids) {
-		const object = objectOf(uuid);
-		const material = materialAt(object, slot);
-		if (!material) {
-			if (object?.material) missingSlot++;
-			continue;
+	// 105-slots LINK: a linked slot's other holders take the same image, as ONE undo step with these
+	/** @type {[string, number][]} */
+	const linked = [];
+	const seen = new Set(uuids.map((u) => u + ':' + slot));
+	for (const uuid of uuids)
+		for (const h of linkedOthers(objectOf(uuid), slot)) {
+			const key = h.object.uuid + ':' + h.index;
+			if (!seen.has(key)) (seen.add(key), linked.push([h.object.uuid, h.index]));
 		}
-		recordMaterialChange(uuid, 'map', null, material.userData?.mapDataUrl ?? null, dataURL, slot);
-		applyMap(object, dataURL, slot, source);
-		broadcast({
-			type: 'objectParameters',
-			parameter: 'map',
-			uuid: uuid,
-			map: dataURL,
-			...(slot ? { slot } : {}),
-			// additive: an older peer ignores it, and a message without it drops the link
-			...(source ? { source } : {})
-		});
-		applied++;
+	const batch = linked.length > 0 && !historyBatchOpen();
+	if (batch) beginHistoryBatch();
+	try {
+		for (const [uuid, at, mine] of [
+			...uuids.map((u) => [u, slot, true]),
+			...linked.map(([u, s]) => [u, s, false])
+		]) {
+			const object = objectOf(/** @type {string} */ (uuid));
+			const material = materialAt(object, /** @type {number} */ (at));
+			if (!material) {
+				if (mine && object?.material) missingSlot++;
+				continue;
+			}
+			recordMaterialChange(
+				/** @type {string} */ (uuid),
+				'map',
+				null,
+				material.userData?.mapDataUrl ?? null,
+				dataURL,
+				/** @type {number} */ (at)
+			);
+			applyMap(object, dataURL, /** @type {number} */ (at), source);
+			broadcast({
+				type: 'objectParameters',
+				parameter: 'map',
+				uuid: uuid,
+				map: dataURL,
+				...(at ? { slot: at } : {}),
+				// additive: an older peer ignores it, and a message without it drops the link
+				...(source ? { source } : {})
+			});
+			if (mine) applied++;
+		}
+	} finally {
+		if (batch) endHistoryBatch('Texture (shared material)');
 	}
 	if (missingSlot) showToast('That object has no material slot ' + slot);
 	return applied;
@@ -520,7 +605,8 @@ export function texturesFromSource(hash) {
 	if (!want) return out;
 	get(objectsGroup)?.traverse?.((/** @type {any} */ node) => {
 		materialsOf(node).forEach((/** @type {any} */ m, /** @type {number} */ slot) => {
-			if (m?.userData?.mapSource === want && m.userData.mapDataUrl) out.push({ uuid: node.uuid, slot });
+			if (m?.userData?.mapSource === want && m.userData.mapDataUrl)
+				out.push({ uuid: node.uuid, slot });
 		});
 	});
 	return out;
@@ -551,6 +637,17 @@ export function linkTextureSource(uuid, slot, hash) {
 
 /** @param {string} uuid @param {number} [slot] */
 export function removeObjectTexture(uuid, slot = 0) {
+	linkedEdit(
+		objectOf(uuid),
+		slot,
+		() => removeObjectTextureOne(uuid, slot),
+		(other, otherSlot) => removeObjectTextureOne(other, otherSlot),
+		'Remove texture'
+	);
+}
+
+/** @param {string} uuid @param {number} slot */
+function removeObjectTextureOne(uuid, slot) {
 	const object = objectOf(uuid);
 	if (!object) return;
 	const material = materialAt(object, slot);
@@ -568,25 +665,13 @@ export function removeObjectTexture(uuid, slot = 0) {
 }
 
 /**
- * Switch the material type, carrying over color/map/opacity so peers do not
- * lose them (the old behavior recreated a default material on the receivers).
- * @param {string} uuid @param {string} type @param {boolean} replicate
+ * A fresh material of `type` carrying over what the old one had that the new type can show: color, emissive, the
+ * maps (and their data-URLs / library source), transparency, wireframe and the shared numeric params.
+ * @param {any} old @param {string} type @param {any} object
  */
-export function switchMaterialType(uuid, type, replicate = true) {
-	const object = objectOf(uuid);
-	if (!object || !MATERIAL_TYPES.includes(type)) return;
-	const old = object.material;
-	// A multi-material mesh used to fall through here and have its whole slot array
-	// replaced by ONE fresh material — silently, on both sides, with no history entry
-	// (the carry-over and recordMaterialChange both skip arrays). Refuse instead;
-	// per-slot type switching would need a slot argument and a materials commit.
-	if (Array.isArray(old) && old.length > 1) {
-		if (replicate) showToast('Cannot change the material type of a multi-slot object yet');
-		return;
-	}
-	if (replicate && old && !Array.isArray(old)) recordMaterialChange(uuid, 'type', null, old.type, type);
+function rebuildAsType(old, type, object) {
 	/** @type {any} */
-	const fresh = new (/** @type {any} */ (THREE))[type]();
+	const fresh = new /** @type {any} */ (THREE)[type]();
 	if (old && !Array.isArray(old)) {
 		if (old.color && fresh.color) fresh.color.copy(old.color);
 		if (old.emissive && fresh.emissive) fresh.emissive.copy(old.emissive);
@@ -603,6 +688,71 @@ export function switchMaterialType(uuid, type, replicate = true) {
 			if (key in fresh && key in old && typeof old[key] === 'number') fresh[key] = old[key];
 		}
 	}
+	return fresh;
+}
+
+/**
+ * 105-slots: a replaced slot material keeps the slot — its name, and its id written explicitly (the new instance has
+ * a new uuid) with the off flag beside it.
+ * @param {any} old @param {any} fresh
+ */
+export function keepSlotIdentity(old, fresh) {
+	fresh.name = old.name ?? '';
+	fresh.userData.slot = { ...(old.userData?.slot ?? {}), id: slotIdOf(old) };
+	return fresh;
+}
+
+/**
+ * Switch the material type, carrying over color/map/opacity so peers do not
+ * lose them (the old behavior recreated a default material on the receivers).
+ * 105-slots: `slot` on a multi-slot object rebuilds that entry only (id, name and maps kept) as ONE `materials`
+ * commit, which a peer on the previous release applies too. Absent / 0 on a single-material object = as before.
+ * @param {string} uuid @param {string} type @param {boolean} replicate @param {number} [slot]
+ */
+export function switchMaterialType(uuid, type, replicate = true, slot = 0) {
+	if (!replicate) return switchMaterialTypeOne(uuid, type, false, slot);
+	linkedEdit(
+		objectOf(uuid),
+		slot,
+		() => switchMaterialTypeOne(uuid, type, true, slot),
+		(other, otherSlot) => switchMaterialTypeOne(other, type, true, otherSlot),
+		'Material type'
+	);
+}
+
+/** @param {string} uuid @param {string} type @param {boolean} replicate @param {number} slot */
+function switchMaterialTypeOne(uuid, type, replicate, slot) {
+	const object = objectOf(uuid);
+	if (!object || !MATERIAL_TYPES.includes(type)) return;
+	if (isMultiMaterial(object)) {
+		const old = materialAt(object, slot);
+		if (!old) return;
+		if (old.type === type) return;
+		const build = (/** @type {any[]} */ materials) => {
+			const fresh = keepSlotIdentity(old, rebuildAsType(old, type, object));
+			fresh.userData.tpEdited = true; // 59 T1
+			materials[slot] = fresh;
+			return { materials };
+		};
+		if (replicate) commitMaterialList(uuid, build);
+		else {
+			// a `material` message with a slot (no build sends one; the list message is the carrier): apply here only
+			const materials = materialsOf(object).slice();
+			build(materials);
+			object.material = materials;
+			syncSlotDraw(object);
+			pokeScene();
+		}
+		return;
+	}
+	if (slot) return; // a slot that does not exist on a single-material object
+	const old = object.material;
+	if (replicate && old && !Array.isArray(old))
+		recordMaterialChange(uuid, 'type', null, old.type, type);
+	const fresh = rebuildAsType(old, type, object);
+	// 105-slots: a one-material object's slot data (its link) survives the new instance
+	if (old && !Array.isArray(old) && old.userData?.slot)
+		fresh.userData.slot = { ...old.userData.slot };
 	object.material = fresh;
 	fresh.needsUpdate = true;
 	// 59 T1: a material changed in the app survives a Replace model (modelReplace's override rule)
@@ -625,9 +775,30 @@ export function switchMaterialType(uuid, type, replicate = true) {
  * Set an object's base material color and replicate + record (the missing
  * counterpart to setMaterialParam — color previously lived inline in the
  * Properties picker and vrControls; both can call this now).
- * @param {string} uuid @param {string} hex @param {boolean} replicate
+ * 105-slots: on a multi-slot object the colour of `slot` travels as `materialParam` key `color` (never the `color`
+ * message: its receiver assumes one material).
+ * @param {string} uuid @param {string} hex @param {boolean} replicate @param {number} [slot]
  */
-export function setObjectColor(uuid, hex, replicate = true) {
+export function setObjectColor(uuid, hex, replicate = true, slot = 0) {
+	const object = objectOf(uuid);
+	if (isMultiMaterial(object)) {
+		setMaterialParam(uuid, 'color', hex, replicate, slot);
+		return;
+	}
+	if (slot) return; // a slot that does not exist on a single-material object
+	if (replicate)
+		return linkedEdit(
+			object,
+			0,
+			() => setObjectColorOne(uuid, hex, true),
+			(other, otherSlot) => setMaterialParam(other, 'color', hex, true, otherSlot),
+			'Colour'
+		);
+	if (!slot) setObjectColorOne(uuid, hex, false);
+}
+
+/** the one-material colour write @param {string} uuid @param {string} hex @param {boolean} replicate */
+function setObjectColorOne(uuid, hex, replicate) {
 	const object = objectOf(uuid);
 	const material = object?.material;
 	if (!material || Array.isArray(material) || !material.color) return;
@@ -644,15 +815,32 @@ export function setObjectColor(uuid, hex, replicate = true) {
 
 /**
  * Set a single material parameter (roughness, metalness, shininess, wireframe, ...)
- * @param {string} uuid @param {string} key @param {any} value @param {boolean} replicate
+ * 105-slots: `slot` picks the material of a slot list (absent on the wire when 0, so a single-material message is
+ * byte-unchanged). A peer on the previous release ignores a value on a multi-slot object; while one is connected,
+ * the gesture ends with one whole-list message to it (`healOlderPeers`).
+ * @param {string} uuid @param {string} key @param {any} value @param {boolean} replicate @param {number} [slot]
  */
-export function setMaterialParam(uuid, key, value, replicate = true) {
+export function setMaterialParam(uuid, key, value, replicate = true, slot = 0) {
+	if (!replicate) return setMaterialParamOne(uuid, key, value, false, slot);
+	return linkedEdit(
+		objectOf(uuid),
+		slot,
+		() => setMaterialParamOne(uuid, key, value, true, slot),
+		(other, otherSlot) => setMaterialParamOne(other, key, value, true, otherSlot),
+		'Material: ' + key
+	);
+}
+
+/** @param {string} uuid @param {string} key @param {any} value @param {boolean} replicate @param {number} slot */
+function setMaterialParamOne(uuid, key, value, replicate, slot) {
 	const object = objectOf(uuid);
-	const material = object?.material;
-	if (!material || Array.isArray(material) || !(key in material)) return false;
+	const material = materialAt(object, slot);
+	if (!material || !(key in material)) return false;
 	// 55: one check for every way in (a local edit, undo, a replicated message): a key this app knows,
 	// with a value of the right kind — never a texture slot handed a string
-	const checked = checkMaterialParam(material, key, value, { texture: !replicate || value?.isTexture === true });
+	const checked = checkMaterialParam(material, key, value, {
+		texture: !replicate || value?.isTexture === true
+	});
 	if (!checked.ok) {
 		console.warn('material parameter refused: ' + checked.error);
 		return false;
@@ -665,13 +853,62 @@ export function setMaterialParam(uuid, key, value, replicate = true) {
 	const current = material[key];
 	const isColor = !!(current && current.isColor);
 	const before = isColor ? '#' + current.getHexString() : current;
-	if (replicate) recordMaterialChange(uuid, 'materialParam', key, before, value);
+	if (replicate) recordMaterialChange(uuid, 'materialParam', key, before, value, slot);
 	if (isColor) material[key].set(value);
 	else material[key] = value;
 	material.needsUpdate = true;
 	material.userData.tpEdited = true; // 59 T1 (see switchMaterialType)
 	pokeScene();
-	if (replicate)
-		broadcast({ type: 'objectParameters', parameter: 'materialParam', uuid: uuid, key: key, value: value });
+	if (replicate) {
+		broadcast({
+			type: 'objectParameters',
+			parameter: 'materialParam',
+			uuid: uuid,
+			key: key,
+			value: value,
+			...(slot ? { slot } : {})
+		});
+		if (isMultiMaterial(object)) healOlderPeers(uuid);
+	}
 	return true;
+}
+
+// ---- 105-slots: peers on the previous release ------------------------------------------------------------------
+// A build without the `slots2` cap ignores a per-slot value on a multi-slot object (its setMaterialParam refuses an
+// array, no error). While such a peer is connected, a per-slot gesture ends with ONE whole-list `materials` message
+// to it, 400 ms after the last change, so it does not sit on a stale value. Sent to those peers only: the list
+// message rebuilds every material, which a current peer has no need for.
+
+/** @type {Map<string, any>} */
+const healTimers = new Map();
+
+/** Open links to peers that did not say `slots2`. @param {any} peer @returns {string[]} */
+function peersWithoutSlots2(peer) {
+	const links = peer?.connections ?? {};
+	return Object.keys(links).filter((id) => links[id]?.open && !peer.peerCaps?.get?.(id)?.slots2);
+}
+
+/** @param {string} uuid */
+export function healOlderPeers(uuid) {
+	/** @type {any} */
+	const peer = get(peers);
+	if (typeof peer?.sendReliableTo !== 'function' || !peersWithoutSlots2(peer).length) return;
+	clearTimeout(healTimers.get(uuid));
+	healTimers.set(
+		uuid,
+		setTimeout(() => {
+			healTimers.delete(uuid);
+			const object = objectOf(uuid);
+			const older = peersWithoutSlots2(peer);
+			if (!object || !isMultiMaterial(object) || !older.length) return;
+			const message = {
+				type: 'objectParameters',
+				parameter: 'materials',
+				uuid,
+				payload: materialsPayload(object)
+			};
+			peer.sendReliableTo(message, older);
+			for (const other of fanTargets(uuid)) peer.sendReliableTo({ ...message, uuid: other }, older);
+		}, 400)
+	);
 }

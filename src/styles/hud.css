@@ -14,19 +14,33 @@
 	/* the glass every HUD container floats on: the window surface, slightly see-through */
 	--hud-glass: color-mix(in srgb, var(--surface-1) 88%, transparent);
 	--hud-shadow: var(--shadow-window);
+	/* 103 H15 — THE HUD GRID: one rule for every STANDING control around the viewport (the logo, the row beside it,
+	   the Connect pill, the top-right group, the profile button, the corner stacks, the toolbar's band, the Preview
+	   pill). Each sits --hud-inset in from the FREE viewport's left / right / top edge (beside any open column, below a
+	   docked Connect bar); the bottom row keeps its own --hud-inset-bottom. Every top-row item and every corner tile is
+	   --hud-tile square (the row is one height, so one centre line), --hud-gap apart, corner radius --hud-radius.
+	   $lib/hudGrid reads the same numbers for the scripts that measure. Edit positions still moves the clusters;
+	   Reset puts them back on this grid. */
+	--hud-inset: 12px;
+	--hud-inset-bottom: 16px;
+	--hud-tile: 44px;
+	--hud-gap: 6px;
+	--hud-radius: var(--radius-window);
 	--hud-cell: 38px; /* toolbar cells */
 	--hud-icon-button: 34px; /* top-right / Connect icon buttons */
-	--hud-fab: 44px; /* the corner buttons (already a touch size) */
+	--hud-fab: var(--hud-tile); /* the corner buttons */
+	--hud-play: 44px; /* Play, in the toolbar's well (its own size: the bar's fold arithmetic reads it) */
 	--hud-bar-h: 48px; /* the toolbar: at most 48 so it never shares a row with the mic/AI buttons above the bottom pair (toolbar-position) */
-	--hud-row-h: 44px; /* Connect bar, top-right group */
+	--hud-row-h: var(--hud-tile); /* the top row: logo, Connect pill, top-right group, profile — one height */
 }
-/* touch: every HUD hit target reaches 44 px (SPEC §6) */
+/* touch: every HUD hit target reaches 44 px (SPEC §6); the grid's tile is 48 so the top row's groups (44 px cells
+   inside a 1 px border) are the same height as the tiles beside them */
 @media (pointer: coarse) {
 	:root {
+		--hud-tile: 48px;
 		--hud-cell: 44px;
 		--hud-icon-button: 44px;
 		--hud-bar-h: 56px;
-		--hud-row-h: 52px;
 	}
 }
 
@@ -89,7 +103,7 @@
 	width: var(--hud-fab);
 	height: var(--hud-fab);
 	padding: 0;
-	border-radius: var(--radius-window);
+	border-radius: var(--hud-radius);
 	background: var(--hud-glass);
 	border: 1px solid var(--border);
 	box-shadow: var(--hud-shadow);
@@ -182,7 +196,7 @@
 	align-items: center;
 	justify-content: center;
 	flex: 0 0 auto;
-	width: calc(var(--hud-fab) + 12px);
+	width: calc(var(--hud-play) + 12px);
 	height: 100%;
 }
 .hud-play {
@@ -190,8 +204,8 @@
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	width: var(--hud-fab);
-	height: var(--hud-fab);
+	width: var(--hud-play);
+	height: var(--hud-play);
 	margin: 0;
 	border-radius: 50%;
 	background: var(--live);
@@ -239,19 +253,19 @@
 }
 .hud-stack {
 	position: fixed;
-	bottom: calc(var(--hud-stack-lift, 0px) + 16px);
+	bottom: calc(var(--hud-stack-lift, 0px) + var(--hud-inset-bottom));
 	z-index: var(--z-chrome);
 	display: flex;
 	flex-direction: column-reverse;
-	gap: 4px;
+	gap: var(--hud-gap);
 }
 /* dock-fixes (owner 2026-11-08): the stacks sit inside the FREE viewport rect — beside every open
    sidebar, pinned or not ($lib/sidebars --sb-free-*, 0px with no column / on a phone) */
 .hud-stack-left {
-	left: calc(16px + var(--sb-free-left, 0px));
+	left: calc(var(--hud-inset) + var(--sb-free-left, 0px));
 }
 .hud-stack-right {
-	right: calc(16px + var(--sb-free-right, 0px));
+	right: calc(var(--hud-inset) + var(--sb-free-right, 0px));
 }
 .hud-stack .hud-fab {
 	position: relative;
@@ -263,11 +277,16 @@
 /* the opt-in sim transport rides above whatever the right stack holds (Controls publishes the
    count); an id + this file beat SimControls' bottom-[112px] utility */
 #sim-controls {
-	bottom: calc(var(--hud-stack-lift, 0px) + 16px + var(--hud-stack-right-n, 2) * (var(--hud-fab) + 4px) + 4px);
+	bottom: calc(var(--hud-stack-lift, 0px) + var(--hud-inset-bottom) + var(--hud-stack-right-n, 2) * (var(--hud-fab) + var(--hud-gap)));
+}
+/* 103 H15: the corner stacks lifted ABOVE the toolbar's row (a narrow screen, or a narrow free width between open
+   columns) sit one gap above the bar — the bar's own bottom inset + its height + the gap */
+:root {
+	--hud-stack-over-bar: calc(var(--hud-inset-bottom) + var(--hud-bar-h) + var(--hud-gap));
 }
 @media (max-width: 600px) {
 	#sim-controls {
-		bottom: calc(var(--hud-stack-lift, 0px) + 74px + var(--hud-stack-right-n, 2) * (var(--hud-fab) + 4px) + 4px);
+		bottom: calc(var(--hud-stack-lift, 0px) + var(--hud-stack-over-bar) + var(--hud-stack-right-n, 2) * (var(--hud-fab) + var(--hud-gap)));
 	}
 }
 /* 43 J5: lifted, a stack also keeps clear of a PINNED (full-height) sidebar on its side — it slides
@@ -278,15 +297,15 @@
 /* dock-fixes: the stacks now take the FREE rect lifted or not (the rule above); the sim transport rides
    the right stack, so it does too — an id here beats SimControls' right-4 utility */
 #sim-controls {
-	right: calc(16px + var(--sb-free-right, 0px));
+	right: calc(var(--hud-inset) + var(--sb-free-right, 0px));
 }
 /* dock-fixes: a free width of a phone's between the open columns (`sb-free-narrow`, $lib/sidebars) lifts the stacks
    above the toolbar's row — ui.css's <= 600 px rule, keyed to the room that is left rather than the screen */
 :root.sb-free-narrow .hud-stack {
-	bottom: calc(var(--hud-stack-lift, 0px) + 74px);
+	bottom: calc(var(--hud-stack-lift, 0px) + var(--hud-stack-over-bar));
 }
 :root.sb-free-narrow #sim-controls {
-	bottom: calc(var(--hud-stack-lift, 0px) + 74px + var(--hud-stack-right-n, 2) * (var(--hud-fab) + 4px) + 4px);
+	bottom: calc(var(--hud-stack-lift, 0px) + var(--hud-stack-over-bar) + var(--hud-stack-right-n, 2) * (var(--hud-fab) + var(--hud-gap)));
 }
 .hud-edit-item {
 	position: relative;
@@ -494,7 +513,7 @@
 		min-width: 30px;
 	}
 	#controls-pill .hud-play-well {
-		width: calc(var(--hud-fab) + 6px);
+		width: calc(var(--hud-play) + 6px);
 	}
 }
 
@@ -503,9 +522,10 @@
 	display: flex;
 	align-items: center;
 	gap: 2px;
+	box-sizing: border-box;
 	height: var(--hud-row-h);
 	padding: 0 5px;
-	border-radius: var(--radius-window);
+	border-radius: var(--hud-radius);
 }
 /* The top-right group HOSTS fixed-position panels (#notif-panel, which the phone shell turns
    into a full-width sheet, and #peers-popover under a docked Connect bar), and a
@@ -742,7 +762,7 @@
 }
 :root.cl-bar-rotated #controls-pill .hud-play-well {
 	width: 100%;
-	height: calc(var(--hud-fab) + 12px);
+	height: calc(var(--hud-play) + 12px);
 }
 :root.cl-bar-rotated #controls-pill .hud-sep {
 	width: 22px;

@@ -1,5 +1,6 @@
 <script>
 	import { onLayoutRestore, storedPanelLayout } from '$lib/uiLayoutsCore';
+	import { feelSnap } from '$lib/uiHaptics'; // 103 (H13): snapping touch feedback
 	// Animation window: a keyframe animator for the selected object. DOCKED mode is a
 	// Flow-family tab in the bottom dock; UNDOCKED mode is a floating, resizable
 	// window. Left = the object's clips (the ones it was imported with, then the
@@ -845,6 +846,8 @@
 				...((scaling || dv !== null) && !s.stepped ? { v: value } : {})
 			};
 		});
+		// 103 (H13): a key dragged on the snap grid feels each grid step it lands on
+		if (!scaling && snapMode !== 'off' && moves.length) feelSnap(move, moves[0].t);
 		// keys re-sort as they pass one another; moveKeys reports where each one
 		// LANDED, which is the only reliable identity once two of them share a time
 		const landed = moveKeys(target.uuid, moves);
@@ -964,12 +967,17 @@
 	// swallows pointermove/up mid-gesture, so these live on `window` like every
 	// other drag in the app.
 	let scrubbing = false;
+	/** the current scrub, for its touch feedback (a new object per scrub) */
+	let scrubFelt = {};
 	function scrubAt(/** @type {number} */ clientX) {
 		if (!target || !plotEl) return;
 		const r = plotEl.getBoundingClientRect();
 		// the playhead lands on the snap grid too: a frame grid you can scrub off is
 		// not a frame grid, and it showed times no key could ever sit on
-		scrub(target.uuid, snapT(Math.max(0, Math.min(duration, xt(clientX - r.left)))));
+		const t = snapT(Math.max(0, Math.min(duration, xt(clientX - r.left))));
+		// 103 (H13): a scrub on the snap grid feels each step (scrubFelt is one per scrub)
+		if (snapMode !== 'off') feelSnap(scrubFelt, t);
+		scrub(target.uuid, t);
 	}
 	/**
 	 * Starts a scrub when the press lands in the ruler BAND. It listens on the whole
@@ -1000,6 +1008,7 @@
 		if (y <= RULER_H) {
 			e.preventDefault();
 			scrubbing = true;
+			scrubFelt = {};
 			scrubAt(e.clientX);
 			window.addEventListener('pointermove', rulerMove);
 			window.addEventListener('pointerup', rulerUp);

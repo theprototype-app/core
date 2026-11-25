@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { handleSet, noteHiddenByTool } from './gizmo/gizmoPrefs';
 import { showConfirm } from './confirmDialog.js';
 import { get } from 'svelte/store';
 import { motionMs } from './motion'; // 53 A5
@@ -50,6 +51,7 @@ import { phoneShell } from './ui/phoneShell.js';
 import { desktopSpawn, spawnEyePose } from './playSpawn'; // 30b P4 (+ vrOnly: core-games)
 // D2: a LEAF (svelte stores + THREE), so a static import here closes no cycle
 import { shareDuplicatedMaterials, linkMaterials } from './materialSharing';
+import { slotIdsOf, ownOf } from './slotDraw.js'; // 105-slot-shaders: a copy keeps its slot ids (a leaf)
 import { applyFlowPathTo } from './sim/flowPathObject.js'; // 36-fb F24 (a three leaf)
 import { applyTextPathTo, bumpTextTurn } from './textPathObject.js'; // 64 D2 (a three leaf)
 import { markConstraintsDirty } from './rig/constraintHub.js'; // 102 M7 (the solver loads on first use)
@@ -454,7 +456,18 @@ export function setTransformMode(mode) {
 	}
 	const same = get(transformMode) === mode;
 	const isEditProxy = !!(object?.userData?.isFaceProxy || object?.userData?.isVertexProxy);
+	// 103 H7 row 8 — THE TRIPLE SWITCH: a repeat press on the active tool steps that tool's handles ->
+	// all in one -> hidden (the hide below, as before) -> that tool's handles. A different tool always
+	// lands on its own handles. Targets whose tools restrict the gizmo (scatter, spline, LOD) have no
+	// all-in-one and keep the old two-step.
+	const allInOne = !!object && !object.userData?.isScatterProxy && !object.userData?.isSplineProxy && !object.userData?.isLodLevelProxy;
+	if (!same) handleSet.set('tool');
+	else if (object && !vr && allInOne && get(handleSet) === 'tool') {
+		handleSet.set('all');
+		return;
+	}
 	if (same && object && !vr) {
+		noteHiddenByTool();
 		if (isEditProxy) {
 			// the element selection goes with the gizmo, remembered in the session
 			if (get(faceEditObject) && object.userData.isFaceProxy && hideElementSelection()) return;
@@ -469,6 +482,7 @@ export function setTransformMode(mode) {
 		}
 	}
 	if (!object && !vr) {
+		noteHiddenByTool(); // row 8: what a tool press brings back shows that tool's handles
 		// restore: an edit session's hidden elements first, then the object memory
 		if (get(faceEditObject) && restoreElementSelection()) {
 			controls?.setMode(mode);
@@ -640,10 +654,28 @@ function collectTree(object, list = []) {
  */
 function detachMaterials(clone) {
 	collectTree(clone).forEach((node) => {
+		// 105-slot-shaders: a slot list's copy keeps its slot IDS (a clone mints a new material uuid, which IS a
+		// slot's id unless one is written): each peer clones on its own, so only a written id agrees across the
+		// session — and the copy's slot shaders (`<uuid>/<slotId>`) need that
+		const ids = Array.isArray(node.material) && node.material.length > 1 ? slotIdsOf(node.material.map(ownOf)) : null;
 		if (node.material)
 			node.material = Array.isArray(node.material)
 				? node.material.map((/** @type {any} */ m) => m.clone())
 				: node.material.clone();
+		if (ids)
+			node.material.forEach((/** @type {any} */ m, /** @type {number} */ i) => {
+				m.userData.slot = { ...(m.userData.slot ?? {}), id: ids[i] };
+			});
+		// 105-slots LINK: a copy is a working copy — its slots leave any shared-material link (both sides of a duplicate
+		// run this, so every peer agrees)
+		for (const m of Array.isArray(node.material) ? node.material : node.material ? [node.material] : []) {
+			if (m?.userData?.slot?.link) {
+				const slot = { ...m.userData.slot };
+				delete slot.link;
+				if (Object.keys(slot).length) m.userData.slot = slot;
+				else delete m.userData.slot;
+			}
+		}
 		// own geometry so vertex edits on the copy don't deform the original
 		if (node.geometry) node.geometry = node.geometry.clone();
 	});

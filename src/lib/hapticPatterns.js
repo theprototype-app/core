@@ -7,10 +7,80 @@
 // REPLACES the one running, so a pattern is timed pulses, never overlapping ones — the
 // schedule below is what vrControls plays through setTimeout.
 //
-// Imports NOTHING: the shapes are tested with no browser and no headset. How they FEEL is
+// Imports NOTHING (103: plus the XR sink slot below): the shapes are tested with no browser and no headset. How they FEEL is
 // the on-device check (owed) — the numbers are a first pass at "make it cool".
 
 /** @typedef {{at: number, intensity: number, ms: number}} HapticPulse */
+
+/** 103 (H6): the XR SINK slot. vr/haptics (boot) registers the headset's controllers here and the
+ * lazy output layer (hapticOutput) reads it — the one mutable thing in this file, kept here because
+ * both sides already import it and neither may import the other.
+ * @typedef {{active: () => boolean, pulse: (intensity: number, ms: number, hand: 'left' | 'right' | undefined) => void, stop?: () => void}} XrHapticSink */
+/** @type {XrHapticSink | null} */
+let xrSink = null;
+/** @param {XrHapticSink | null} sink */
+export function registerXrHaptics(sink) {
+	xrSink = sink;
+}
+/** @returns {XrHapticSink | null} */
+export function xrHaptics() {
+	return xrSink;
+}
+/** the output layer once it has loaded (it registers itself), so a caller that did not load it
+ * plays synchronously instead of waiting on its own dynamic import @type {any} */
+let outputLayer = null;
+/** @param {any} layer */
+export function registerHapticOutput(layer) {
+	outputLayer = layer;
+}
+/** @returns {any} */
+export function hapticOutputLayer() {
+	return outputLayer;
+}
+
+/** 103 (H13): THE PHONE MOTOR — the one place in the app that calls `navigator.vibrate` (a unit test
+ * greps for any other). The game layer (hapticOutput) and the UI layer (uiHaptics) both play through
+ * it; a suite swaps in a fake. Returns what the browser answered (false = refused / no motor).
+ * @type {((pattern: number | number[]) => boolean) | null} */
+let phoneFake = null;
+/** @param {((pattern: number | number[]) => boolean) | null} fake */
+export function setPhoneVibrateForTest(fake) {
+	phoneFake = fake;
+}
+/** @param {number | number[]} pattern ms, or [on, off, on, ...]; 0 / [] cancels @returns {boolean} */
+export function phoneVibrate(pattern) {
+	if (phoneFake) return phoneFake(pattern);
+	try {
+		return typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function' ? !!navigator.vibrate(pattern) : false;
+	} catch {
+		return false; // a permissions policy may forbid it
+	}
+}
+
+/* the device read */
+/** the connected gamepads, as the browser hands them (navigator.getGamepads can throw in a
+ * sandboxed frame) @returns {any[]} */
+export function connectedGamepads() {
+	try {
+		const list = typeof navigator !== 'undefined' && typeof navigator.getGamepads === 'function' ? navigator.getGamepads() : [];
+		return Array.from(list ?? []).filter((p) => p && p.connected !== false);
+	} catch {
+		return [];
+	}
+}
+
+/** 103 (H6): what this device can vibrate with — VR controllers, pads, a phone motor. Lives here, in
+ * the boot chunk, so `api.feel.outputs()` answers on its first call (the output layer is lazy). @returns {import('./hapticOutput.js').HapticEnv} */
+export function hapticDeviceEnv() {
+	const pads = connectedGamepads().map((/** @type {any} */ p) => {
+		const actuator = p.vibrationActuator;
+		const effects = actuator && typeof actuator.playEffect === 'function' ? (Array.isArray(actuator.effects) ? [...actuator.effects] : ['dual-rumble']) : [];
+		const pulse = typeof p.hapticActuators?.[0]?.pulse === 'function';
+		return { index: Number(p.index), effects, pulse };
+	});
+	const vibrate = typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function';
+	return { xr: !!xrHaptics()?.active?.(), pads, vibrate };
+}
 
 /** @type {Record<string, HapticPulse[]>} */
 export const HAPTIC_PATTERNS = {
@@ -65,6 +135,17 @@ export function hapticSchedule(name, scale = 1) {
 		intensity: Math.min(1, Math.max(0, p.intensity * k)),
 		ms: Math.min(1000, Math.max(1, p.ms))
 	}));
+}
+
+/**
+ * 103 (H6): a CUSTOM buzz — one pulse of `strength` (0..1) for `ms` (10..1000), the Vibrate node's
+ * "custom" and `api.feel.vibrate({strength, ms})`. Clamped like a pattern. PURE.
+ * @param {number} strength @param {number} ms @returns {HapticPulse[]}
+ */
+export function customHapticSchedule(strength, ms) {
+	const i = Number.isFinite(strength) ? Math.min(1, Math.max(0, strength)) : 0;
+	const d = Number.isFinite(ms) ? Math.min(1000, Math.max(10, ms)) : 80;
+	return i > 0 ? [{ at: 0, intensity: i, ms: Math.round(d) }] : [];
 }
 
 /**

@@ -235,6 +235,10 @@ async function setupPage(browser, name, options = {}) {
 		// silently — so no update badge/toast appears either.)
 		localStorage.setItem('hasSeenWelcome', 'true');
 		if (peerConfig) localStorage.setItem('peerServerConfig', peerConfig);
+		// 103 H7: the suites written before the gizmo styles drag three's own handles (style A); the
+		// app's default is Auto (B with a mouse, C on touch), so a suite that wants it seeds its own
+		// `gizmoStyle` through options.storage (which runs after this and wins)
+		if (localStorage.getItem('gizmoStyle') === null) localStorage.setItem('gizmoStyle', 'A');
 	}, PEER_CONFIG);
 	// E2E_NO_PERF_OFFER=1: a deployed PREVIEW build offers perf reports in a sticky toast that covers clicks and
 	// lands in golden frames — answer it up front for proofs against a preview (36-int-125)
@@ -326,7 +330,7 @@ async function setupPage(browser, name, options = {}) {
 	// on the initial navigation, not set afterwards: safe mode is read once during
 	// onMount, so a hash assigned to a live page arrives long after the decision.
 	// Absent means an unchanged URL, so every existing caller is untouched.
-	// options.url (fix-late-joiners): a page of ANOTHER build (a release next to the branch: the wire both ways)
+	// options.url (fix-late-joiners): a page of ANOTHER build (a release next to the branch: the wire both ways) (105-slots: the release before this one, for a two-tree run)
 	await page.goto((options.url ?? URL) + (options.hash ?? ''), { waitUntil: 'domcontentloaded', timeout: 60000 });
 	await page.waitForTimeout(4000);
 	// 43-tests: a THIRD page in one browser boots in ~50 s on a loaded e2e box (two pages already

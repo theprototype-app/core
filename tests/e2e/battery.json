@@ -18,6 +18,7 @@
 		"stale-chunk": "needs the built app (scripts/serve-build.cjs): vite's preload helper is build-only, so it only SKIPs on a dev server",
 		"stale-deploy-swap": "needs the built app: it serves build/ itself through a symlink it swaps (80a-fix4-ui aa); SKIPs without a build",
 		"text-export": "needs the built app (scripts/serve-build.cjs): the exporter reads build/export-manifest.json, so it only SKIPs on a dev server",
+		"vector-2d-export": "needs the built app (scripts/serve-build.cjs): the exporter reads build/export-manifest.json, so it only SKIPs on a dev server (64-int: a 2D scene and vector + extruded shapes export and run)",
 		"levels-export": "needs the built app (scripts/serve-build.cjs): the exporter reads build/export-manifest.json, so it only SKIPs on a dev server"
 	},
 	"optional": {
@@ -585,6 +586,7 @@
 		"export-presets": 288,
 		"export-zip": 2,
 		"text-export": 240,
+		"vector-2d-export": 300,
 		"external-font-cdn": 19,
 		"fb-water": 80,
 		"fb-water-phone": 260,

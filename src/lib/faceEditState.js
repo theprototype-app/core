@@ -165,7 +165,7 @@ export const faceEditObject = writable(null);
 /** highlighted face index (ray/selection), or -1 @type {import('svelte/store').Writable<number>} */
 export const faceEditHighlight = writable(-1);
 /** armed op for the next commit (B4 adds the one-shots)
- * @type {import('svelte/store').Writable<'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'|'knife'>} */
+ * @type {import('svelte/store').Writable<'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'|'knife'|'bisect'>} */
 export const faceEditOp = writable('move');
 /** live op amount, stick-driven @type {import('svelte/store').Writable<number>} */
 export const faceEditAmount = writable(0.3);

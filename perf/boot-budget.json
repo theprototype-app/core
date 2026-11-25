@@ -4,12 +4,12 @@
 	"pages": {
 		"play": {
 			"html": "play.html",
-			"maxJsGzBytes": 1935360,
+			"maxJsGzBytes": 1940480,
 			"maxFirstFrameMs": 20000
 		},
 		"editor": {
 			"html": "index.html",
-			"maxJsGzBytes": 3084288,
+			"maxJsGzBytes": 3092480,
 			"maxFirstFrameMs": 32000
 		}
 	},
@@ -228,6 +228,13 @@
 			"play": "64-vector 1887.2 KB -> 1887.5 KB (+0.3), line 1890 KB unchanged",
 			"editor": "64-vector 3009.7 KB -> 3010.6 KB (+0.9) -> line 3012 KB (the brief's ~3 KB boot allowance; ~1 KB of it is chunk churn between builds)",
 			"note": "what boots: the caps flag, the meshgeo vectorFallback guard, the geometry history merge + its vectorBake branch, the Bake to mesh row and Inspector button, the bevel-steps record row, the selection watch that lazy-loads the arrow. The solid builder, the arrow, the old-peer sender and the 2D tool are lazy chunks. The 64-int sets the line once."
+		},
+		{
+			"date": "2026-11-25",
+			"lane": "64-int (union of #652 64-vector, #655 64-vector-edit, #657 64-extrude, #653 64-2d on v1.78.1)",
+			"play": "v1.78.1 measured 1891.0 KB -> union 1894.0 KB (+3.0) -> line 1895 KB",
+			"editor": "v1.78.1 measured 3010.8 KB -> union 3019.0 KB (+8.2) -> line 3020 KB",
+			"note": "claude:9 rule: the tag's measured size + the union's own delta, rounded up to the next 5 KB. Largest editor contributors (raw source bytes): objectMenu.js +3.8 KB (the Shape submenu rows of three lanes), vector/vectorBoot.js +3.6 KB (shortcuts, VR rows, the extrude-arrow watch). Re-set after merging v1.79.0."
 		}
 	],
 	"throttle": {

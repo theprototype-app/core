@@ -70,7 +70,7 @@ export function createContactMeter(o = {}) {
 			if (s.on.length < min || s.off.length < min) return null;
 			return { ms: Math.max(0, median(s.on) - median(s.off)), pixels: px };
 		},
-		counts: () => ({ on: s.on.length, off: s.off.length, pixels: px })
+		counts: () => ({ on: s.on.length, off: s.off.length, pixels: px, onMs: s.on.length ? median(s.on) : null, offMs: s.off.length ? median(s.off) : null })
 	};
 }
 

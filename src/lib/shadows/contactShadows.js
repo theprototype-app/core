@@ -102,6 +102,14 @@ class ContactShadowEffect extends Effect {
 		});
 		this.camera = camera;
 		this.sceneRef = scene;
+		this.disposed = false;
+		live++;
+	}
+
+	dispose() {
+		if (!this.disposed) live--;
+		this.disposed = true;
+		super.dispose();
 	}
 
 	/** @param {any} _renderer @param {any} _input @param {number} _dt */
@@ -120,6 +128,12 @@ class ContactShadowEffect extends Effect {
 		_sun.sub(_target).normalize().transformDirection(cam.matrixWorldInverse);
 		/** @type {any} */ (u.get('lightView')).value.copy(_sun);
 	}
+}
+
+/** 106 S2b: how many contact effects are built (the suites' "is the pass in the post stack") */
+let live = 0;
+export function contactEffectsLive() {
+	return live;
 }
 
 let registered = false;

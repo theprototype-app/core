@@ -157,7 +157,7 @@ describe('106 S2b contact switch: the cost meter', () => {
 		expect(m.cost()).toBeNull();
 		m.feed(true, 2000, NaN);
 		m.feed(true, 2000, 5000);
-		expect(m.counts()).toEqual({ on: 1, off: 0, pixels: 2000 });
+		expect(m.counts()).toEqual({ on: 1, off: 0, pixels: 2000, onMs: 3, offMs: null });
 	});
 	it('the menu words, scaled to the pixels drawn now', () => {
 		expect(contactCostText(null, 100)).toBe('');

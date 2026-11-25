@@ -451,6 +451,7 @@ export const DEBUG_HOOKS = [
 	['shadowLevels', () => import('./shadows/shadowLevels.js')],
 	// 106 S2b: the Contact shadows cost meter
 	['contactCost', () => import('./shadows/contactCost.js')],
+	['contactShadows', () => import('./shadows/contactShadows.js')],
 	['traaPass', () => import('./post/traaPass.js')],
 	['xrLook', () => import('./xrLook.js')],
 	['xrLookCore', () => import('./xrLookCore.js')],

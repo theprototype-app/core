@@ -297,7 +297,15 @@ h.run(async () => {
 	// ---- FRAMES: the frame row --------------------------------------------------------------------------------------------
 	if (FRAMES) {
 		await page.evaluate(fs.readFileSync(path.join(__dirname, 'shadow-s0-106.page.js'), 'utf8'));
-		const result = { device: DEVICE, at: new Date().toISOString(), gpu: GPU, scenes: /** @type {any} */ ({}) };
+		const renderer = await page.evaluate(() => {
+			let r;
+			/** @type {any} */ (window).__tp.test.v1.globalRenderer.subscribe((/** @type {any} */ x) => (r = x))();
+			const gl = r.getContext();
+			const ext = gl.getExtension('WEBGL_debug_renderer_info');
+			return { renderer: ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER), canvas: [gl.canvas.width, gl.canvas.height] };
+		});
+		console.log(`  frames: renderer ${JSON.stringify(renderer)}`);
+		const result = { device: DEVICE, at: new Date().toISOString(), gpu: GPU, renderer, scenes: /** @type {any} */ ({}) };
 		for (const slug of ['product-shot', 'castle-courtyard']) {
 			const load = await page.evaluate((s) => /** @type {any} */ (window).__s0.load(s), slug);
 			console.log(`  frames: ${slug} loaded ${JSON.stringify({ ok: load.ok, objects: load.objects })}`);

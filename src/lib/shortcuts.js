@@ -160,7 +160,7 @@ function meshRows(table) {
  * @param {string} combo @returns {string | null}
  */
 export function meshCommandFor(combo) {
-	if (!combo) return null; // 103: an unbound row's keys are '' — no press means it
+	if (!combo) return null; // 103 + 99 K8: an unbound row's keys are '' — no press means it
 	const row = shortcuts.find((s) => s.scope === 'mesh' && s.keys === combo);
 	if (row) return row.id;
 	if (combo === 'Ctrl++' && bindingOf('mesh.grow') === 'Ctrl+=') return 'mesh.grow';
@@ -967,6 +967,7 @@ export const shortcuts = [
 		['mesh.extrude', 'E', 'Arm Extrude (faces)'],
 		['mesh.inset', 'I', 'Arm Inset (faces)'],
 		['mesh.subdivide', 'S', 'Subdivide (faces)'],
+		['mesh.subdivide-smooth', 'Shift+S', 'Smooth subdivide, Catmull-Clark (faces; nothing picked = the whole mesh)'],
 		['mesh.loopcut', 'C', 'Loop cut (faces)'],
 		['mesh.bridge', 'B', 'Bridge (faces)'],
 		['mesh.flip', 'F', 'Flip normals (faces); fill the hole (edges)'],
@@ -974,6 +975,9 @@ export const shortcuts = [
 		['mesh.loop', 'L', 'Loop select (faces: again = perpendicular; edges: the chain)'],
 		['mesh.weld', 'W', 'Weld the selected vertices (vertices)'],
 		['mesh.connect', 'J', 'Connect two corners of a face (vertices)'],
+		// 99 K8: unbound (Settings ▸ Shortcuts can give them a key); Ctrl+click already does a path pick
+		['mesh.path-toggle', '', 'Path select on / off (a click adds the shortest path from the last pick)'],
+		['mesh.bisect', '', 'Arm Bisect (faces): two clicks draw the plane, Enter cuts'],
 		// 103 H4 row 5: start at once on the picked vertices / edges / faces (no key by default; the
 		// Blender preset binds G / R / S — WASD never flies inside a session that holds its keys)
 		['mesh.now-move', '', 'Move now — the picked vertices / edges / faces follow the pointer'],

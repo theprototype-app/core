@@ -329,8 +329,9 @@ h.run(async () => {
 		}
 		return out;
 	});
+	// 99 K8: Bisect is an armed tool (two clicks place its plane), so it joins the Tools group
 	h.check(
-		JSON.stringify(groups.tools) === JSON.stringify(['move', 'extrude', 'inset', 'knife']),
+		JSON.stringify(groups.tools) === JSON.stringify(['move', 'extrude', 'inset', 'knife', 'bisect']),
 		`TOOLS holds only the ARMED tools (${(groups.tools ?? []).join(', ')})`
 	);
 	h.check(

@@ -531,6 +531,54 @@ export function internalEdgeKeysOf(f, faces, partner) {
 	return out;
 }
 
+/** lane 99-scrub: the unordered welded edge between vertex ids `a` and `b` as one number (`edgeKey` of their keys,
+ * without strings: the weld's ids are equal exactly when the keys are) @param {TriFrame} f @param {number} a
+ * @param {number} b */
+export const edgeIdOf = (f, a, b) => (a < b ? a * f.nV + b : b * f.nV + a);
+
+/**
+ * `internalEdgeKeysOf` as weld-id edges (`edgeIdOf`): the same edges, member for member, for a wire that keys by
+ * id (lane 99-scrub: at 67k the string keys were ~90 ms of every wire build). @param {TriFrame} f
+ * @param {number[][] | null} faces @param {Int32Array} partner @returns {Set<number>}
+ */
+export function internalEdgeIdsOf(f, faces, partner) {
+	const V = weld(f);
+	const out = new Set();
+	if (!faces) {
+		for (let i = 0; i < f.count; i++) {
+			const mate = partner[i];
+			if (mate == null || mate < 0 || mate < i || mate >= f.count) continue;
+			let first = -1;
+			let second = -1;
+			let shared = 0;
+			for (let c = 0; c < 3; c++) {
+				const v = V[i * 3 + c];
+				if (V[mate * 3] === v || V[mate * 3 + 1] === v || V[mate * 3 + 2] === v) {
+					if (shared === 0) first = c;
+					else if (shared === 1) second = c;
+					shared++;
+				}
+			}
+			if (shared === 2) out.add(edgeIdOf(f, V[i * 3 + first], V[i * 3 + second]));
+		}
+		return out;
+	}
+	for (const face of faces) {
+		if (face.length < 2) continue;
+		/** @type {Map<number, number>} */
+		const count = new Map();
+		for (const t of face) {
+			if (!hasTri(f, t)) continue;
+			for (let e = 0; e < 3; e++) {
+				const id = edgeIdOf(f, V[t * 3 + e], V[t * 3 + ((e + 1) % 3)]);
+				count.set(id, (count.get(id) ?? 0) + 1);
+			}
+		}
+		for (const [id, seen] of count) if (seen >= 2) out.add(id);
+	}
+	return out;
+}
+
 /** centroid of a triangle set (every corner counted) @param {TriFrame} f @param {number[]} triIndices */
 export function centroidOf(f, triIndices) {
 	const centroid = new THREE.Vector3();

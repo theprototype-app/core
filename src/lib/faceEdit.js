@@ -26,6 +26,8 @@ import {
 	boundaryLoopOf,
 	vertexKeysOf,
 	internalEdgeKeysOf,
+	internalEdgeIdsOf,
+	edgeIdOf,
 	centroidOf,
 	stateOf,
 	normalPlan,
@@ -70,7 +72,7 @@ import { editOverlaysParked } from './editOverlays';
 // 19-A P3: the desktop pane's extrude/inset extras, read at BEGIN so a click-
 // extrude matches the toolbox's Apply. meshToolParams is a svelte/store-only
 // leaf, so this cannot close a cycle into history.
-import { extrudeIndividual, insetDepth, insetIndividual, liveSymmetry, symAxis, symKeep } from './meshToolParams';
+import { extrudeIndividual, insetDepth, insetIndividual, liveSymmetry, symAxis, symKeep, meshPathSelect, meshPathTopological } from './meshToolParams';
 // 19-A P4: proportional editing shared with the vertex path. Both are LEAVES
 // (proportional = svelte/store only; proportionalRing = three + sceneStore +
 // proportional) — this module must NEVER import meshEdit (meshEdit imports us),
@@ -1145,14 +1147,16 @@ function quadWireGeometry(geometry) {
 	const reuse = wireReuseFor(geometry);
 	const f = reuse ? reuse.frame : frameOfGeometry(geometry);
 	const faces = readStoredFaces(geometry);
-	const skip = internalEdgeKeysOf(f, faces, faces ? new Int32Array(0) : reuse ? reuse.partner : pairQuadsOf(f, QUAD_COPLANAR, quadScore));
+	const partner = faces ? new Int32Array(0) : reuse ? reuse.partner : pairQuadsOf(f, QUAD_COPLANAR, quadScore);
+	// lane 99-scrub: weld-id edges, not string keys (the same edges in the same order: ids are equal exactly when keys are)
+	const skip = internalEdgeIdsOf(f, faces, partner);
+	const V = weld(f);
 	const seen = new Set();
 	/** @type {number[]} the corner each wire point is read from (99 K5: a live edit rewrites the wire from them) */
 	const from = [];
 	for (let t = 0; t < f.count; t++) {
-		const keys = [keyAt(f, t, 0), keyAt(f, t, 1), keyAt(f, t, 2)];
 		for (let e = 0; e < 3; e++) {
-			const key = edgeKey(keys[e], keys[(e + 1) % 3]);
+			const key = edgeIdOf(f, V[t * 3 + e], V[t * 3 + ((e + 1) % 3)]);
 			if (skip.has(key) || seen.has(key)) continue;
 			seen.add(key);
 			from.push(t * 3 + e, t * 3 + ((e + 1) % 3));
@@ -1163,6 +1167,9 @@ function quadWireGeometry(geometry) {
 	const out = new THREE.BufferGeometry();
 	out.setAttribute('position', new THREE.BufferAttribute(points, 3));
 	out.userData.fromCorners = Int32Array.from(from);
+	// lane 99-scrub: the DERIVED pairing this wire skipped the diagonals of (null when a stored partition drew it) —
+	// a mesh's first commit stores a partition and keeps the wire when that partition pairs the same
+	out.userData.partner = faces ? null : partner;
 	return out;
 }
 
@@ -1309,7 +1316,7 @@ export const faceEditObject = writable(null);
 /** highlighted face index (ray/selection), or -1 @type {import('svelte/store').Writable<number>} */
 export const faceEditHighlight = writable(-1);
 /** armed op for the next commit (B4 adds the one-shots)
- * @type {import('svelte/store').Writable<'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'|'knife'>} */
+ * @type {import('svelte/store').Writable<'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'|'knife'|'bisect'>} */
 // MOVE is the default tool, not extrude: with auto-apply on, a plain click
 // COMMITS the armed op, so an extrude-by-default session turned every click on a
 // face into an extrusion — the reported "clicking twice on a quad breaks the
@@ -1349,7 +1356,7 @@ export function autoApplyFaceOp() {
 }
 
 /** Arm an op (from the Faces sub-ring / desktop toolbar)
- * @param {'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'|'knife'} op */
+ * @param {'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'|'knife'|'bisect'} op */
 export function setFaceOp(op) {
 	faceEditOp.set(op);
 	// inset lives in 0..0.9; the others are signed distances
@@ -2234,6 +2241,86 @@ export function selectAllEdges() {
 /** invert the edge selection (Ctrl+I in edge mode). @returns {boolean} */
 export function invertEdgeSelection() {
 	return withSelectionHistory('edges', () => invertEdgeSelectionInner());
+}
+
+// ---- 99 K8: shortest-path select -------------------------------------------------------------------
+// Ctrl+click (or a click with the toolbox's Path toggle on) on a second element ADDS the shortest path from the
+// active one (the last picked) to it, the clicked element becoming the active one. Length or step count
+// (`meshPathTopological`). With nothing active, or on the active element itself, it is the ordinary additive
+// click (the caller falls back), so the first Ctrl+click still starts a pick.
+
+/** the clicked element is a path target: Ctrl alone (Shift / Cmd keep the plain add), or any click under the
+ * Path toggle @param {{ ctrlKey?: boolean, shiftKey?: boolean, metaKey?: boolean }} event */
+export function pathGesture(event) {
+	return get(meshPathSelect) || (!!event.ctrlKey && !event.shiftKey && !event.metaKey);
+}
+
+/** 99 K8: the op mesh a path search reads (the session's in a face session, else the object's own)
+ * @param {any} geometry @returns {any} */
+function pathOpMesh(geometry) {
+	const ops = editSession.ops;
+	if (!ops || !geometry) return null;
+	if (FS.object?.geometry === geometry) return sessionOpMesh();
+	return heldOpMesh(ops, geometry, () => facePartitionOf(geometry).partition, OBJECT_PARTNER);
+}
+
+/**
+ * 99 K8: the shortest path between two elements of `geometry` in the editor's selection currency (vertex keys,
+ * edge keys, output triangles), or null (no kernel yet, an end not on the mesh, nothing connects them).
+ * @param {any} geometry @param {'vertex' | 'edge' | 'face'} kind @param {string | number} from @param {string | number} to
+ * @returns {{ keys?: string[], tris?: number[] } | null}
+ */
+export function pathBetween(geometry, kind, from, to) {
+	const om = pathOpMesh(geometry);
+	if (!om) {
+		showToast(KERNEL_LOADING);
+		return null;
+	}
+	return editSession.ops.pathSelect(om, kind, from, to, { topological: get(meshPathTopological) });
+}
+
+/** @param {number} tri the clicked triangle @returns {boolean} false = no path (the caller does the plain add) */
+function pathSelectFacesInner(tri) {
+	const sel = get(faceEditSelectedTris);
+	const from = sel.length ? sel[sel.length - 1] : -1;
+	if (from < 0 || !hasTri(FS.frame, tri) || !FS.object) return false;
+	const unit = pickFaceUnitTris(tri);
+	if (unit.includes(from)) return false;
+	const r = pathBetween(FS.object.geometry, 'face', from, tri);
+	if (!r?.tris) return false;
+	const set = new Set(sel);
+	for (const t of r.tris) set.add(t);
+	// the clicked unit last: it is the next path's start
+	for (const t of unit) set.delete(t);
+	faceEditSelectedTris.set([...set, ...unit]);
+	refreshFaceOverlay();
+	return true;
+}
+
+/** 99 K8: faces — add the shortest path from the active face to `tri`. @param {number} tri @returns {boolean} */
+export function pathSelectFaces(tri) {
+	return withSelectionHistory('faces', () => pathSelectFacesInner(tri));
+}
+
+/** @param {string} key the clicked edge @returns {boolean} */
+function pathSelectEdgesInner(key) {
+	const sel = get(edgeEditSelected);
+	const from = sel.length ? sel[sel.length - 1] : '';
+	if (!from || !key || from === key || !FS.object) return false;
+	const r = pathBetween(FS.object.geometry, 'edge', from, key);
+	if (!r?.keys) return false;
+	const set = new Set(sel);
+	for (const k of r.keys) set.add(k);
+	set.delete(key);
+	edgeEditSelected.set([...set, key]);
+	edgeEditHover.set('');
+	refreshEdgeHighlight();
+	return true;
+}
+
+/** 99 K8: edges — add the shortest chain from the active edge to `key`. @param {string} key @returns {boolean} */
+export function pathSelectEdges(key) {
+	return withSelectionHistory('edges', () => pathSelectEdgesInner(key));
 }
 /** selected edge keys, canonical `ka|kb` @type {import('svelte/store').Writable<string[]>} */
 export const edgeEditSelected = writable(/** @type {string[]} */ ([]));
@@ -5168,6 +5255,28 @@ function carryOrDeriveFaces(geometry, previous) {
 	storeDerivedFaces(geometry, readTriangles(geometry));
 }
 
+/** lane 99-scrub: `storeDerivedFaces` from the geometry's own frame (no triangle objects: pairQuads(tris) IS
+ * pairQuadsOf(frameOfTris(tris)), and frameOfGeometry reads readTriangles' values exactly); returns the pairing it
+ * stored from, or null @param {any} geometry @returns {Int32Array | null} */
+function storeDerivedFacesOf(geometry) {
+	const partner = derivedPartnerOf(geometry);
+	if (!partner.length) return null;
+	return storeFaces(geometry, derivePartition(partner.length, partner)) ? partner : null;
+}
+
+/** The derived quad pairing of a geometry, read off its frame: `pairQuads(readTriangles(geometry))` without the
+ * triangle objects (unit grabCommit99 pins the equality). @param {any} geometry @returns {Int32Array} */
+export function derivedPartnerOf(geometry) {
+	return pairQuadsOf(frameOfGeometry(geometry), QUAD_COPLANAR, quadScore);
+}
+
+/** two integer arrays, element for element @param {ArrayLike<number>} a @param {ArrayLike<number>} b */
+function sameInts(a, b) {
+	if (a.length !== b.length) return false;
+	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+	return true;
+}
+
 /**
  * Derive a quad partition from coplanarity and STORE it. Only ever reached for geometry
  * with no authored and no carryable topology — a mesh's first edit — because derivation
@@ -5778,10 +5887,38 @@ function sessionKernelCommit(run, beforeSwap, options = {}) {
 }
 
 /**
+ * 99 K8: BISECT the face selection (faces mode; nothing picked, or edges / vertices mode = the whole mesh) with a
+ * plane in the edited object's LOCAL space, on the session's op mesh (meshOps/bisectOp.js), IDs carried, ONE undo
+ * step that brings the starting pick back. Afterwards the cut is the EDGE selection in edges mode; in faces mode
+ * the pick is cleared (its triangles were renumbered). @param {{ point: number[], normal: number[] }} plane
+ * @param {{ clear?: 'inner' | 'outer' | null, fill?: boolean }} [options] @returns {boolean}
+ */
+export function commitBisect(plane, options = {}) {
+	interruptOpAdjust();
+	if (!FS.object) return false;
+	const sel = get(faceEditSubmode) === 'faces' ? get(faceEditSelectedTris).filter((/** @type {number} */ t) => hasTri(FS.frame, t)) : [];
+	const r = sessionKernelCommit(
+		(ops, om) => ops.bisectRegion(om, sel.length ? sel : null, plane, options),
+		() => {
+			if (get(faceEditSelectedTris).length) faceEditSelectedTris.set([]);
+			faceEditHighlight.set(-1);
+			clearEdgeSelectionInner();
+		},
+		{ tooLarge: 'cut' }
+	);
+	if (!r) return false;
+	if (get(faceEditSubmode) === 'edges' && r.cutKeys.length) {
+		edgeEditSelected.set(r.cutKeys.filter((/** @type {string} */ k) => !!edgeEndpoints(k)));
+		refreshEdgeHighlight();
+	} else refreshFaceOverlay();
+	return true;
+}
+
+/**
  * Run an op on the highlighted face and commit: rebuild geometry, replicate
  * the snapshot, record history. subdivide/flip take no amount (B4); for M3's
  * loopcut and 18-C5's bridge `amount` is the CUT COUNT, not a distance.
- * @param {'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'|'knife'} op
+ * @param {'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'|'knife'|'bisect'} op
  * @param {number} amount
  */
 export function commitFaceOp(op, amount) {
@@ -6062,7 +6199,8 @@ function restoreCapturedSelection(sel, uuid) {
  *   stampFaces?: boolean,
  *   carryColors?: boolean,
  *   selectionBefore?: any,
- *   wireFaces?: 'object' | 'none'
+ *   wireFaces?: 'object' | 'none',
+ *   weldBefore?: Int32Array | null
  * }} c `after` = `{positions, groups?, uvs?, colors?}` or a bare positions array; `faces` = the
  *   partition the operator AUTHORED (applied as stored topology; absent = carry or derive);
  *   `cap` = the noun of the size refusal (false: the caller already refused); `stampFaces` =
@@ -6093,8 +6231,14 @@ export function commitMesh(c) {
 		// carryOrDeriveFaces -> storeDerivedFaces on the new triangles), so later swaps carry these faces instead of
 		// re-guessing them. One pairing pass, on the first edit only (v1.75 paid it on every commit)
 		const live = FS.object?.geometry;
-		if (live && !readStoredFaces(live)) storeDerivedFaces(live, readTriangles(live));
-		afterInPlaceCommit();
+		const stored = !!(live && readStoredFaces(live));
+		// lane 99-scrub: the pairing straight off the geometry's frame (pairQuads(readTriangles(g)) is this pairing of
+		// frameOfTris of the same values, so the partition is the same — without 67k triangle objects)
+		const partner = live && !stored ? storeDerivedFacesOf(live) : null;
+		// the wire stays when its structure does: same weld, and the partition it skipped is the one stored now
+		const wirePartner = wire?.geometry?.userData?.partner;
+		const samePartition = stored || (!!partner && !!wirePartner && sameInts(partner, wirePartner));
+		afterInPlaceCommit(samePartition ? (c.weldBefore ?? null) : null);
 	} else if (bare) {
 		applyMeshGeo(uuid, positions);
 	} else {
@@ -6354,6 +6498,9 @@ function ensureLiveGeometry() {
 	FS.object.geometry = copy;
 	FS.frame = frameOfGeometry(copy);
 	weld(FS.frame);
+	// lane 99-scrub: the copy holds the same triangles in the same order, so the edit wire drawn from `g` describes it
+	// corner for corner — re-source it, or the first live write rebuilds the whole wire (~190 ms at 67k)
+	if (wireSource === g) wireSource = copy;
 	// the geometry the copy replaced: a cancel puts it back (a grab that changed nothing leaves the session as it
 	// was, the K3 lossless leave included), a commit disposes it when it was ours
 	return { replaced: g };
@@ -6549,6 +6696,9 @@ export function beginFaceGrab(faceOrIndex) {
 	FS.grab = {
 		index,
 		triIndices,
+		// lane 99-scrub: the weld before any write (writeLive drops FS.frame.V per move); the commit keeps the edit
+		// wire when the move left it unchanged
+		weldAtStart: weld(FS.frame),
 		// a TRIPLE, matching commitFaceGrab's `after`: an undo then restores the
 		// pre-grab mapping explicitly instead of relying on carry-over
 		before: { ...stateOf(FS.frame) },
@@ -6802,6 +6952,7 @@ export function commitFaceGrab() {
 	const before = FS.grab.before;
 	const moved = FS.grab.corners;
 	const selectionBefore = FS.grab.selectionBefore;
+	const weldBefore = FS.grab.weldAtStart ?? null;
 	settleReplaced(FS.grab, false);
 	FS.grab = null;
 	// carry groups + uvs explicitly rather than leaning on preserveUVs' carry-over (commitFaceAdjust's shape):
@@ -6820,7 +6971,8 @@ export function commitFaceGrab() {
 		stampFaces: true,
 		record: 'op',
 		cap: false,
-		selectionBefore
+		selectionBefore,
+		weldBefore
 	});
 	return true;
 }
@@ -6848,13 +7000,28 @@ export function cancelFaceGrab() {
 }
 
 /** after the geometry changed IN PLACE (a grab's commit or cancel): the readers re-weld, the overlays and the wire
- * follow (the applyGeometrySnapshot tail, without a new geometry) */
-function afterInPlaceCommit() {
+ * follow (the applyGeometrySnapshot tail, without a new geometry)
+ * @param {Int32Array | null} [weldBefore] the weld the edit started from, when its partition is unchanged (the wire
+ *   is then kept if the weld is too) */
+function afterInPlaceCommit(weldBefore = null) {
 	rebuildFaces();
 	refreshFaceOverlay();
 	refreshEdgeHighlight();
-	refreshFaceWireframe();
+	// lane 99-scrub: the quad wire is a function of the weld (which corners share a vertex) and the stored partition.
+	// A move that kept both — the usual grab — leaves the wire's STRUCTURE as it was, and the drag already rewrote
+	// its points in place (writeLive -> updateFaceWireframe); rebuilding it here was ~190 ms of a 67k commit (string
+	// edge keys over every triangle). A move that changed the weld (a corner dragged onto another vertex) rebuilds.
+	if (weldBefore && wireFitsWeld(weldBefore)) updateFaceWireframe();
+	else refreshFaceWireframe();
 	pokeScene();
+}
+
+/** whether the edit wire was built from this very geometry and the session's weld is still `weldBefore`
+ * (same corners welded together: the integer weld numbers vertices in first-seen corner order, so an unchanged
+ * partition gives an identical array) @param {Int32Array} weldBefore */
+function wireFitsWeld(weldBefore) {
+	if (!wire || !FS.object || wireSource !== FS.object.geometry || wire.parent !== FS.object) return false;
+	return sameInts(weld(FS.frame), weldBefore);
 }
 
 /**
@@ -7239,6 +7406,8 @@ function mergeAdjustParams(a, patch) {
 	} else if (a.op === 'subdivide') {
 		// P3: 4^levels growth — MAX_SNAPSHOT backstops the big-face case
 		p.levels = Math.max(1, Math.min(Math.round(p.levels ?? 1) || 1, 3));
+		// 99 K8: smooth = Catmull-Clark (the kernel's, shared with the agent); off = the quad-aware split
+		p.smooth = !!p.smooth;
 	} else if (a.op === 'edge-extrude') {
 		// P5b: world units, signed — negative pulls the strip the other way
 		p.distance = Math.min(Math.max(p.distance ?? 0.5, -5), 5);
@@ -7486,7 +7655,12 @@ function runAdjustCore(a) {
 		// P3 / 99 K4 family 6: the quad-aware split `levels` times on a COPY of the op mesh captured at begin
 		const ops = kernelOps();
 		const om = ops.beginOp(ops.cloneOpMesh(a.opBase));
-		const r = ops.subdivideLevels(om, a.target.triIndices, a.quadPartner, p.levels);
+		// 99 K8: smooth = Catmull-Clark on the pick (null = the whole mesh); the plain split needs a pick
+		if (!p.smooth && !a.target.triIndices) return { error: 'Click a face first' };
+		const r = p.smooth
+			? ops.smoothSubdivide(om, a.target.triIndices, p.levels)
+			: ops.subdivideLevels(om, a.target.triIndices, a.quadPartner, p.levels);
+		if ('error' in r) return { error: r.error };
 		return {
 			...opResult(om),
 			faces: ops.opPartition(om, 'appearance'),
@@ -7843,8 +8017,9 @@ export function beginOpAdjust(op, params, opts = {}) {
 		// P3: the target is the picked tri set; the pairing rides along exactly
 		// like loopcut's (subdivideLevels is quad-aware through it)
 		const face = opts.target ?? opTargetFace();
-		if (!face?.triIndices?.length) return false;
-		a.target = { triIndices: [...face.triIndices] };
+		// 99 K8: a smooth subdivide with nothing picked smooths the whole mesh (Catmull-Clark's usual use)
+		if (!face?.triIndices?.length && !params?.smooth) return false;
+		a.target = { triIndices: face?.triIndices?.length ? [...face.triIndices] : null };
 		a.quadPartner = FS.quadPartner;
 		if (!(a.opBase = sessionOpMesh())) return kernelLoadingRefusal();
 	} else if (op === 'bridge') {
@@ -7949,6 +8124,149 @@ export function beginOpAdjust(op, params, opts = {}) {
 	return true;
 }
 
+// ---- lane 99-scrub: the loop-cut scrub is a PREVIEW --------------------------
+// Re-running the cut per scrub step cost 249-375 ms a step on the Deck at 67k (the 99-int row): a kernel copy, the
+// cut, a geometry write, the normals and the BVH, and a wire message, for a state the hand has already left. While
+// the options pane's DragRow holds a scrub open, a loop-cut adjust only moves a LINE: the ring was walked once at
+// begin (a.target / a.altTarget), its rails are read once per axis, and a step writes 2 points per quad per cut
+// into one preallocated buffer. The cut runs ONCE on release, through the same core, and that settle is the one
+// broadcast — peers see the result, not the scrub. Typed input and direct reapply calls (VR, tests) keep the live
+// cut: the bracket is opened only by a pointer scrub.
+
+/** @type {any} scene-root LineSegments: where the scrubbed cut will land */
+let loopCutPreview = null;
+/** most cuts the pane allows (mergeAdjustParams' clamp) — sizes the preview buffer once per ring */
+const LOOPCUT_MAX_CUTS = 20;
+
+/**
+ * Open the scrub bracket (DragRow onscrubstart): from here until settleOpAdjust, a loop-cut adjust previews instead
+ * of cutting. Any other op, or a deferred (VR) adjust, is untouched. @returns {boolean} whether the bracket opened
+ */
+export function beginAdjustScrub() {
+	const a = FS.adjust;
+	if (!a || a.op !== 'loopcut' || a.record === 'deferred' || !a.opBase) return false;
+	const object = liveObjectOf(a);
+	if (!object || object.geometry !== a.installedGeometry) return false;
+	a.scrub = true;
+	a.scrubDirty = false;
+	a.scrubFrom = { ...a.params }; // what the cut on screen was made with (a refused release goes back to it)
+	return true;
+}
+
+/** the rails of the ring the current axis cuts across, read once per axis per adjust @param {any} a */
+function loopCutRailsOf(a) {
+	const axis = a.params.axis === 1 && a.altTarget?.length ? 1 : 0;
+	a.rails ??= [null, null];
+	if (!a.rails[axis]) {
+		const ring = axis === 1 ? a.altTarget : a.target;
+		a.rails[axis] = kernelOps().loopCutRails(a.opBase, ring, a.quadPartner);
+	}
+	return a.rails[axis];
+}
+
+/** write the preview line for the adjust's current cuts / position / axis, in place @param {any} a */
+function drawLoopCutPreview(a) {
+	const scene = get(globalScene);
+	const object = liveObjectOf(a);
+	if (!scene || !object) return;
+	const rails = loopCutRailsOf(a);
+	const quads = rails.length / 12;
+	if (!loopCutPreview || loopCutPreview.userData.capacity < quads) {
+		clearLoopCutPreview();
+		const geometry = new THREE.BufferGeometry();
+		geometry.setAttribute(
+			'position',
+			new THREE.BufferAttribute(new Float32Array(Math.max(1, quads) * LOOPCUT_MAX_CUTS * 6), 3).setUsage(
+				THREE.DynamicDrawUsage
+			)
+		);
+		loopCutPreview = new THREE.LineSegments(
+			geometry,
+			new THREE.LineBasicMaterial({ color: 0xffd23f, depthTest: false, transparent: true })
+		);
+		loopCutPreview.userData.capacity = Math.max(1, quads);
+		loopCutPreview.renderOrder = 1000; // over the edge overlay (999)
+		loopCutPreview.name = 'loopcut-preview';
+		loopCutPreview.raycast = () => {}; // never eat a pick (the buildEditWireframe rule)
+		loopCutPreview.frustumCulled = false; // the buffer is rewritten in place; its bounds are never recomputed
+		scene.add(loopCutPreview);
+	}
+	// baked world space like the edge overlay; the object cannot move during a scrub, so once per step is plenty
+	object.updateMatrixWorld(true);
+	loopCutPreview.matrixAutoUpdate = false;
+	loopCutPreview.matrix.copy(object.matrixWorld);
+	loopCutPreview.matrixWorldNeedsUpdate = true;
+	const stops = kernelOps().loopCutStops(a.params.cuts, a.params.position);
+	const attr = loopCutPreview.geometry.attributes.position;
+	const out = attr.array;
+	let n = 0;
+	for (let q = 0; q < quads; q++) {
+		const o = q * 12; // A B C D
+		for (const t of stops) {
+			for (const [from, to] of [
+				[o, o + 9], // A -> D
+				[o + 3, o + 6] // B -> C
+			]) {
+				out[n++] = rails[from] + (rails[to] - rails[from]) * t;
+				out[n++] = rails[from + 1] + (rails[to + 1] - rails[from + 1]) * t;
+				out[n++] = rails[from + 2] + (rails[to + 2] - rails[from + 2]) * t;
+			}
+		}
+	}
+	loopCutPreview.geometry.setDrawRange(0, n / 3);
+	attr.addUpdateRange?.(0, n);
+	attr.needsUpdate = true;
+	loopCutPreview.visible = true;
+}
+
+/** drop the preview line (release, end, cancel, a new adjust) */
+function clearLoopCutPreview() {
+	if (!loopCutPreview) return;
+	loopCutPreview.parent?.remove(loopCutPreview);
+	loopCutPreview.geometry?.dispose?.();
+	loopCutPreview.material?.dispose?.();
+	loopCutPreview = null;
+}
+
+/** e2e: what the preview draws now — segment count and the segments (object-local), or null when none is up */
+export function loopCutPreviewDebug() {
+	if (!loopCutPreview) return null;
+	const count = loopCutPreview.geometry.drawRange.count;
+	return {
+		segments: count / 2,
+		points: Array.from(loopCutPreview.geometry.attributes.position.array.subarray(0, count * 3))
+	};
+}
+
+/**
+ * The release of a scrub that moved the cut: run the loop cut ONCE at the final params and apply it the way
+ * beginOpAdjust does (one full apply, one broadcast), then keep the history entry's `after` current.
+ * @param {any} a @returns {boolean}
+ */
+function settleScrubbedCut(a) {
+	const result = mirrorAdjustResult(a, runAdjustCore(a));
+	if (result.error || resultState(result).positions.length > MAX_SNAPSHOT) {
+		// the cut on screen is still the last good one: its params come back with it
+		a.params = { ...a.scrubFrom };
+		opAdjustState.set({ op: a.op, params: { ...a.params }, ...adjustStateExtras(a) });
+		if (result.error) showToast(result.error);
+		else if (!a.capWarned) {
+			a.capWarned = true;
+			showToast(tooLargeMessage(resultState(result).positions.length, 'edit'));
+		}
+		return false;
+	}
+	a.lastFaces = result.faces;
+	a.lastIds = result.ids ?? null;
+	a.lastSelect = result.select;
+	a.after = applyAdjustFull(a, result);
+	applyAdjustSelection(a, result.select, true);
+	if (a.entry) a.entry.after = a.after;
+	a.installedGeometry = liveObjectOf(a)?.geometry ?? null;
+	opAdjustState.set({ op: a.op, params: { ...a.params }, ...adjustStateExtras(a) });
+	return true;
+}
+
 /**
  * Re-run the live adjust at merged params — every scrub move. IDENTITY GUARD
  * first: `geometry !== installedGeometry` means an undo / remote meshgeo /
@@ -7965,6 +8283,14 @@ export function reapplyOpAdjust(patch = {}) {
 		return false;
 	}
 	mergeAdjustParams(a, patch);
+	if (a.scrub) {
+		// lane 99-scrub: a loop-cut SCRUB moves the preview line only — no kernel op, no geometry, no wire; the
+		// cut runs once, on release (settleOpAdjust)
+		a.scrubDirty = true;
+		drawLoopCutPreview(a);
+		opAdjustState.set({ op: a.op, params: { ...a.params }, ...adjustStateExtras(a) });
+		return true;
+	}
 	const result = mirrorAdjustResult(a, runAdjustCore(a));
 	if (result.error) return false; // keep the last good geometry on a refusal
 	const state = resultState(result);
@@ -8011,6 +8337,14 @@ export function settleOpAdjust() {
 	if (!object || object.geometry !== a.installedGeometry) {
 		endOpAdjust();
 		return false;
+	}
+	if (a.scrub) {
+		a.scrub = false;
+		clearLoopCutPreview();
+		if (a.scrubDirty) {
+			a.scrubDirty = false;
+			return settleScrubbedCut(a);
+		}
 	}
 	const result = {
 		state: stateOfGeometry(object.geometry),
@@ -8069,6 +8403,7 @@ export function cancelOpAdjust() {
  * picks (withSelectionHistory), mode switches, session exits, and the
  * identity guard. */
 export function endOpAdjust() {
+	clearLoopCutPreview();
 	if (!FS.adjust) return;
 	FS.adjust = null;
 	opAdjustState.set(null);
@@ -8187,14 +8522,17 @@ export function facePartitionOf(geometry) {
 }
 
 /** the face ops faceOpOnObject runs */
-export const OBJECT_FACE_OPS = /** @type {const} */ (['extrude', 'inset', 'move', 'bevel', 'subdivide', 'delete', 'flip']);
+export const OBJECT_FACE_OPS = /** @type {const} */ (['extrude', 'inset', 'move', 'bevel', 'subdivide', 'subdivide_smooth', 'bisect', 'delete', 'flip']);
 
 /**
  * Run one face operator on an object's triangles `triIndices` (one region, like a multi-select).
  * @param {string} uuid
  * @param {string} op one of OBJECT_FACE_OPS
  * @param {number[]} triIndices
- * @param {{amount?: number, width?: number, segments?: number, profile?: number, direction?: 'out'|'in'}} [options]
+ * @param {{amount?: number, width?: number, segments?: number, profile?: number, direction?: 'out'|'in', levels?: number,
+ *   point?: number[], normal?: number[], clear?: 'inner'|'outer'|null, fill?: boolean}} [options]
+ *   `levels` = subdivide_smooth's Catmull-Clark levels (1-3); `point` / `normal` / `clear` / `fill` = bisect's plane
+ *   (object-local) and options
  * @returns {{ok: true, triangles: number, kept: number[] | null} | {ok: false, error: string}}
  *   `kept` = the triangles still selected afterwards (the extruded cap, the inset's inner face — the
  *   ops that move the picked triangles in place and APPEND the rest), null where the op reshapes them
@@ -8233,6 +8571,24 @@ export function faceOpOnObject(uuid, op, triIndices, options = {}) {
 		// 99 K4 family 6: on the kernel, IDs carried
 		const partner = storedPartner(object.geometry, tris.length) ?? pairQuads(tris);
 		const r = objectKernelCommit(uuid, object, () => partition, tris, (ops, om) => ops.subdivideUnits(om, picked, partner));
+		return r && !('error' in r) ? { ok: true, triangles: r.count, kept: null } : { ok: false, error: r?.error ?? 'the edit could not be committed' };
+	} else if (op === 'subdivide_smooth') {
+		// 99 K8: Catmull-Clark on the kernel (the one implementation create_shape's `subdivide` uses too), IDs carried
+		const levels = Math.max(1, Math.min(Math.round(Number(options.levels ?? 1)) || 1, 3));
+		const r = objectKernelCommit(uuid, object, () => partition, tris, (ops, om) =>
+			ops.smoothSubdivide(om, picked.length >= tris.length ? null : picked, levels)
+		);
+		return r && !('error' in r) ? { ok: true, triangles: r.count, kept: null } : { ok: false, error: r?.error ?? 'the edit could not be committed' };
+	} else if (op === 'bisect') {
+		// 99 K8: the plane cut on the kernel, IDs carried; every picked face (all of them = the whole mesh)
+		const v3 = (/** @type {any} */ a) => (Array.isArray(a) && a.length === 3 && a.every((x) => Number.isFinite(Number(x))) ? a.map(Number) : null);
+		const point = v3(options.point) ?? [0, 0, 0];
+		const n = v3(options.normal);
+		if (!n) return { ok: false, error: 'bisect: give the plane a normal [x, y, z]' };
+		const clear = options.clear === 'inner' || options.clear === 'outer' ? options.clear : null;
+		const r = objectKernelCommit(uuid, object, () => partition, tris, (ops, om) =>
+			ops.bisectRegion(om, picked.length >= tris.length ? null : picked, { point, normal: n }, { clear, fill: !!options.fill })
+		);
 		return r && !('error' in r) ? { ok: true, triangles: r.count, kept: null } : { ok: false, error: r?.error ?? 'the edit could not be committed' };
 	} else if (op === 'delete') {
 		if (picked.length >= tris.length) return { ok: false, error: 'delete: that would remove every face of the mesh' };

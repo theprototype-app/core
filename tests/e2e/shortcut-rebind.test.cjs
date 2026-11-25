@@ -130,9 +130,10 @@ h.run(async () => {
 	h.check(alt.plain === 'K' && alt.altOnly === 'Alt+K', `1.8 comboOf spells Alt (${alt.plain} / ${alt.altOnly})`);
 	h.check(alt.all === 'Ctrl+Alt+Shift+K', `1.9 canonical modifier order is Ctrl+Alt+Shift (${alt.all})`);
 	h.check(
-		// 102 M1/M2: Simplify (Ctrl+Alt+D) and Export for print / AR (Ctrl+Alt+E) are the next Alt users
-		alt.altDefaults.every((id) => id.startsWith('panels.') || ['objects.simplify', 'objects.export-3d'].includes(id)),
-		`1.10 only the Panels batch (and 102's two Ctrl+Alt rows) spend Alt — every older combo is byte-identical (${alt.altDefaults.join(',') || 'none'})`
+		// 102 M1/M2: Simplify (Ctrl+Alt+D) and Export for print / AR (Ctrl+Alt+E) are the next Alt users;
+		// 64: Draw shapes (Alt+V, 64-vector) and the shapes' to front / to back (Ctrl+Alt+] / Ctrl+Alt+[, 64-vector-edit)
+		alt.altDefaults.every((id) => id.startsWith('panels.') || ['objects.simplify', 'objects.export-3d', 'tools.draw-shapes', 'vector.order-front', 'vector.order-back'].includes(id)),
+		`1.10 only the Panels batch (and 102's two Ctrl+Alt rows, 64's three shape rows) spend Alt — every older combo is byte-identical (${alt.altDefaults.join(',') || 'none'})`
 	);
 
 	// ------------------------------------------------- 2. rebind through the UI

@@ -16,7 +16,7 @@
 //      Statistics checked "Right sidebar"); a plain click picks one and closes
 //   4  shortcuts: Ctrl+Alt+B hides the right sidebar with its tabs still open (no strip, members hidden),
 //      again shows it; Ctrl+B opens the EMPTY left sidebar and hides it again; the registry reports no
-//      conflict for either; Settings ▸ Shortcuts lists both rows; rebinding the left one to Ctrl+[ moves
+//      conflict for either; Settings ▸ Shortcuts lists both rows; rebinding the left one to Ctrl+; moves
 //      the key (and resetting puts Ctrl+B back)
 //   5  a floating window dragged over the EMPTY left column (not its edge) joins it as its tab
 //   6  M8 on the dock "+": on the empty dock, Ctrl-click Timeline and Shift-click Animation dock both
@@ -191,7 +191,8 @@ h.run(async () => {
 	await press(page, 'Control+KeyB');
 	l = await side(page, 'left');
 	h.check(!l.strip, `4.5 Ctrl+B again hides it (${JSON.stringify(l)})`);
-	// Settings ▸ Shortcuts: both rows; rebind left to Ctrl+[ through the real capture
+	// Settings ▸ Shortcuts: both rows; rebind left to Ctrl+; through the real capture (Ctrl+[ is the shapes' Send backward
+	// since 64-vector-edit, so the capture rightly refuses it)
 	await S(page, () => {
 		window.__tp.test.v1.settingsSection.set('shortcuts');
 		window.__tp.test.v1.settingsOpen.set(true);
@@ -203,20 +204,20 @@ h.run(async () => {
 	if (rowsSet[0]) {
 		await page.click('[data-shortcut="panels.sidebar-left"] .shortcut-keys');
 		await page.waitForTimeout(250);
-		await page.keyboard.press('Control+BracketLeft');
+		await page.keyboard.press('Control+Semicolon');
 		await page.waitForTimeout(400);
 	}
 	const rebound = await S(page, () => window.__tp.test.v1.shortcutsRegistry.shortcuts.find((x) => x.id === 'panels.sidebar-left')?.keys);
 	await S(page, () => window.__tp.test.v1.settingsOpen.set(false));
 	await page.waitForTimeout(500);
-	h.check(rebound === 'Ctrl+[', `4.7 rebound to Ctrl+[ through the Settings capture (${rebound})`);
-	await press(page, 'Control+BracketLeft');
+	h.check(rebound === 'Ctrl+;', `4.7 rebound to Ctrl+; through the Settings capture (${rebound})`);
+	await press(page, 'Control+Semicolon');
 	l = await side(page, 'left');
 	const viaOld = l.strip;
-	await press(page, 'Control+BracketLeft');
+	await press(page, 'Control+Semicolon');
 	await press(page, 'Control+KeyB');
 	l = await side(page, 'left');
-	h.check(viaOld && !l.strip, `4.8 ...Ctrl+[ now toggles the left sidebar and Ctrl+B no longer does (${viaOld} / ${l.strip})`);
+	h.check(viaOld && !l.strip, `4.8 ...Ctrl+; now toggles the left sidebar and Ctrl+B no longer does (${viaOld} / ${l.strip})`);
 	await S(page, () => window.__tp.test.v1.shortcutsRegistry.resetShortcut('panels.sidebar-left'));
 
 	// ---- 5. a floating window dragged over the EMPTY left column joins it ----------------------------

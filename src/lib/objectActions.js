@@ -949,6 +949,13 @@ registerHistoryKind('props', (entry, state) => {
 		else delete object.userData.fluid;
 		if (peer) peer.send({ type: 'objectParameters', parameter: 'fluid', uuid: entry.uuid, fluid: state.fluid ?? null });
 	}
+	for (const key of ['sprite', 'layer2d']) {
+		// 64-2d: a sprite's settings / a group's 2D layer block (sprite2d/spriteActions is the write path)
+		if (!(key in state)) continue;
+		if (state[key]) object.userData[key] = state[key];
+		else delete object.userData[key];
+		if (peer) peer.send({ type: 'objectParameters', parameter: key, uuid: entry.uuid, [key]: state[key] ?? null });
+	}
 	if ('fluidEmitter' in state) {
 		// 36-fb F23: a Fluid emitter's settings (fluidEmitterActions.setFluidEmitterFor is the write path)
 		if (state.fluidEmitter) object.userData.fluidEmitter = state.fluidEmitter;

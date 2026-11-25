@@ -329,5 +329,7 @@ export const customGeometryBuilders = {
 	Portal: portalGeometry, // 93 LP1 (gameLevels/objects.js)
 	Checkpoint: checkpointGeometry, // 93 LP3
 	Text: textPlaceholderGeometry, // 64 D2: text on a path (the hit proxy until the first layout)
-	Path: pathGeometry // 78 F4: the Path object (path/pathObject.js)
+	Path: pathGeometry, // 78 F4: the Path object (path/pathObject.js)
+	// 64-2d: a sprite starts as a 1 m quad; the sprite runtime resizes it to frame px / ppu
+	Sprite: () => new THREE.PlaneGeometry(1, 1)
 };

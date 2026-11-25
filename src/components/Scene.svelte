@@ -55,6 +55,8 @@
 	import { tickSim } from '$lib/sim/runtime.js'; // 36-sim: jiggle, splashes, fluid tanks
 	import { tickTextPathsLazy } from '$lib/textPathTick.js'; // 64 D2: text on a path
 	import { tickDecalsLazy } from '$lib/decalTick.js'; // 102 M3: decals
+	import { tickSprites2dLazy } from '$lib/sprite2d/sprite2dTick.js'; // 64-2d: sprite frames, flipbooks, parallax (lazy)
+	import { view2d } from '$lib/sprite2d/view2d.js'; // 64-2d: the flat 2D view stands the perspective controls down
 	import { tickSplatsLazy } from '$lib/splat/splatTick.js'; // 102: Gaussian splats (Spark loads with the first one)
 	import { tickArraysLazy } from '$lib/arrayTick.js'; // 102b-arrange: array copies (lazy runtime)
 	import { startPackBehaviors, tickPackBehaviors } from '$lib/packBehavior';
@@ -466,6 +468,7 @@
 		tickPackBehaviors(); // 33 P2: doors/lids/levers pose from their shared state (rest in Edit)
 		tickSim($objectsGroup, camera.current, renderer, performance.now()); // 36-sim (after mixers: jiggle rides the posed bones)
 		tickTextPathsLazy($objectsGroup, performance.now()); // 64 D2: letters follow their carriers (and linked paths)
+		tickSprites2dLazy($objectsGroup, camera.current, renderer, performance.now()); // 64-2d (frames + the parallax view camera)
 		tickAnimationPreview(); // Animation window: local transform preview (not synced)
 		tickSequences(); // 48 S2: shots / clips / audio / events of running sequences
 		// 102 M7: constraints + IK, after every animation runtime above (mixers, clips, the sequencer's
@@ -1928,7 +1931,7 @@
 	     changes, so a `false` from here is stomped within the tick (traced: our write,
 	     then a `true` from execute_effect_teardown). It never touches `enableZoom`.
 	     isLocked is three-state: null editor / true playing / false just exited. -->
-	{#if !$specatorMode && !$cameraPreview}
+	{#if !$specatorMode && !$cameraPreview && !($view2d.on && $isLocked !== true)}
 		<OrbitControls bind:ref={$orbitControls} enableZoom={$isLocked !== true} enableDamping autoRotateSpeed={0.5} target.y={1.5} />
 	{/if}
 </T.PerspectiveCamera>
@@ -1962,6 +1965,7 @@
 	<UnderlayLayer />
 
 	<CameraPreview />
+	{#if $view2d.on}{#await import('./sprite2d/Editor2dView.svelte') then m}<m.default />{/await}{/if}<!-- 64-2d: the local flat 2D view (lazy) -->
 
 	<!-- CO4: no virtual ground in AR — the grid stands down over passthrough
 	     (LOCAL: showGrid itself is untouched, so it returns on session end) -->

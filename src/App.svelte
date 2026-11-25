@@ -77,6 +77,7 @@
   import SplineToolbar from './components/menu/SplineToolbar.svelte'
   import MeasureToolbar from './components/menu/MeasureToolbar.svelte' // 47 M1
   import PathCaptureToolbar from './components/menu/PathCaptureToolbar.svelte' // fix-batch-2
+  import { view2d } from './lib/sprite2d/view2d.js' // 64-2d D6
   import CaptureBanner from './components/menu/CaptureBanner.svelte' // 78 F5
   import { startCaptureModes } from '$lib/captureModes' // 78 F5: the viewport capture stack
   import UnderlayWindow from './components/menu/UnderlayWindow.svelte' // 60 Q5
@@ -554,6 +555,8 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <SplineToolbar />
 <MeasureToolbar />
 <PathCaptureToolbar />
+<!-- 64-2d D6: the 2D toolbar, while the flat 2D view is on (a lazy chunk; nothing at boot but the store) -->
+{#if $view2d.on && !$isLocked && !$embedMode}{#await import('./components/sprite2d/Toolbar2d.svelte') then m}<m.default />{/await}{/if}
 <CaptureBanner />
 <!-- 60 Q5: Reference images (+ the image-drop "Use as reference" menu) -->
 <UnderlayWindow />

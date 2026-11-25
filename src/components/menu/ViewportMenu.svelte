@@ -21,6 +21,7 @@
 	import { togglePanel } from '$lib/panelToggles';
 	import { trackpadMode } from '$lib/trackpadNav';
 	import { helpersInPlay } from '$lib/helperLayer';
+	import { view2d, toggle2dView } from '$lib/sprite2d/view2d.js'; // 64-2d
 	// 42 I14: View ▸ Focus mode (the key's label follows a rebind)
 	import { focusMode, toggleViewportFocus } from '$lib/focusMode';
 	import { bindingOf } from '$lib/shortcuts';
@@ -332,6 +333,13 @@
 						if (safeStorage.getItem('showGrid')) safeStorage.removeItem('showGrid');
 						else safeStorage.setItem('showGrid', 'false');
 					}
+				},
+				{
+					// 64-2d: the local flat 2D view (orthographic, pan + zoom, no rotate) — 2D layers show parallax
+					label: '2D view',
+					checked: !!$view2d.on,
+					tooltip: 'A flat orthographic view: drag pans, the wheel zooms. Only your view changes.',
+					action: () => toggle2dView()
 				},
 				{
 					label: 'Grid & axes settings…',

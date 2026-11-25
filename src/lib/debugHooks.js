@@ -660,6 +660,12 @@ export const DEBUG_HOOKS = [
 	// 40 F14: the substitutes a fallback group draws
 	['lodTrees', () => import('./lodTrees.js')],
 	['lodGroupActions', () => import('./lodGroupActions')],
+	// 64-2d: sprites, flipbooks, 2D layers (spriteStatus / sprite2dDebug / setSpriteFor / the pure core / the lazy tick)
+	['sprite2d', () => import('./sprite2d/spriteRuntime.js')],
+	['sprite2dActions', () => import('./sprite2d/spriteActions.js')],
+	['sprite2dCore', () => import('./sprite2d/spriteCore.js')],
+	['sprite2dTick', () => import('./sprite2d/sprite2dTick.js')],
+	['view2d', () => import('./sprite2d/view2d.js')],
 	['lodLevelEdit', () => import('./lodLevelEdit')],
 	['packBehavior', () => import('./packBehavior')],
 	// 37 R3: parametric architecture parts (archPartsDebug, reconcileArchParts)

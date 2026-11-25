@@ -99,12 +99,14 @@ import { safeStorage } from './safeStorage';
 // 30 P4: the device-local store Store Value / Stored Value read and write (a leaf)
 import { sceneStorageKey, readStored, writeStored } from './gameStorage';
 // 30b (core-games): the game-feel nodes' runtime half (announce/sound/burst/haptic/music)
-import { GAME_FEEL_ACTIONS, runGameFeelAction, updateGameMusicNodes, primeGameFeelActions } from './gameFeelActions';
+import { GAME_FEEL_ACTIONS, runGameFeelAction, updateGameMusicNodes, primeGameFeelActions, runVibrate, vibrateHere, feelVibration } from './gameFeelActions';
 // 34 R2 (T3): the game kit — its action nodes act on the stamp edge here, its document ticks here
 import { KIT_ACTION_TYPES, runKitNodeAction, installKitNodes } from './kit/nodes.js';
 import { tickKit, primeKitRuntime, kitAuthorityId, kit } from './kit/runtime.js';
-/** 34 R3: behaviours/app.js, primed in startFlowRuntime @type {any} */
+/** 34 R3: behaviours/app.js, set when it loads (behaviours/load.js; 102-boot-diet) @type {any} */
 let behavioursRef = null;
+import { onBehavioursLoad, loadBehaviours, hasBehaviourNode } from './behaviours/load.js'; // 102-boot-diet (a leaf)
+import { reserveEngineNames } from './behaviours/engines.js'; // 102-boot-diet: on the boot already (sdk/kit)
 // 31 (Stars Room): a scene's own settings rows (31-game-shell's leaf), and the pointing switch
 import { registerGameSetting, gameSettingValue } from './gameSettings';
 import { setPointGrabEnabled } from './pointGrab';
@@ -1788,6 +1790,17 @@ function runGameFeelFx(type, data) {
 	if (type === 'camerashake') cameraShake({ strength: num(data.strength), seconds: num(data.seconds), frequency: num(data.frequency) });
 	else if (type === 'screenflash') screenFlash({ color: String(data.color ?? ''), seconds: num(data.seconds), strength: num(data.strength) });
 	else if (type === 'hitpause') hitPause(num(data.ms));
+	// 103 (H6): the default vibration that goes with it, on the same device (off: the node's `vibrate`)
+	const feel = feelVibration(type, data);
+	if (feel) vibrateHere(feel.spec, feel.scale === undefined ? {} : { scale: feel.scale });
+}
+/** 103 (H6): is a pulse AIMED at this device's player? The peer whose event made the stamp when it is
+ * known (2.0-n3b's origins), else whether this peer made the stamp itself.
+ * @param {string} nodeId @param {number} stamp @param {any} ctx */
+function aimedHere(nodeId, stamp, ctx) {
+	const origin = stampOrigin(nodeId, stamp, ctx);
+	if (origin) return origin === String(/** @type {any} */ (get(peers))?.peer?.id ?? '');
+	return localStamps.has(stamp);
 }
 /** 102b-hud: a HUD Button node id -> the element its last press came from (its `value` handle)
  * @type {Map<string, string>} */
@@ -2294,7 +2307,7 @@ function updateGameNodes(time, ctx) {
 	// 1. the ACTIONS, on a fresh trigger stamp only
 	for (const node of nodes) {
 		const type = node.type;
-		if (type !== 'setgamestate' && type !== 'setcamera' && type !== 'setvariable' && type !== 'setlook' && type !== 'travel' && type !== 'storevalue' && type !== 'playseq' && !GAME_FEEL_ACTIONS.includes(type) && !GAME_FEEL_FX.has(type) && !KIT_ACTION_TYPES.has(type))
+		if (type !== 'setgamestate' && type !== 'setcamera' && type !== 'setvariable' && type !== 'setlook' && type !== 'travel' && type !== 'storevalue' && type !== 'playseq' && !GAME_FEEL_ACTIONS.includes(type) && !GAME_FEEL_FX.has(type) && type !== 'vibrate' && !KIT_ACTION_TYPES.has(type))
 			continue;
 		seeActionNode(node, time);
 		const stamp = triggerStampFor(node.id, ctx);
@@ -2353,6 +2366,9 @@ function updateGameNodes(time, ctx) {
 			// saw it — and a perPlayer pulse, seen only by its player, still reaches it
 			// 2.0-n3b: + the peer whose event it was, so "collect" credits the toucher, not the authority
 			runKitNodeAction(type, data, node.id, stamp, node.__graph && node.__graph !== SCENE_GRAPH ? node.__graph : null, stampOrigin(node.id, stamp, ctx));
+		} else if (type === 'vibrate') {
+			// 103 (H6): a buzz is aimed — `who: me` (the default) only on the player whose pulse it was
+			if (data.who === 'everyone' || aimedHere(node.id, stamp, ctx)) runVibrate(data);
 		} else if (GAME_FEEL_FX.has(type)) {
 			// 102b-hud (row 19): shake / flash / hit pause — LOCAL presentation inside the actionSeenAt
 			// family above. `who: me` (the default) acts only where the pulse was MADE (this peer's
@@ -5038,7 +5054,15 @@ function applyAnimation(object, base, anim, time, ctx) {
 		const name = typeof data.uniform === 'string' ? data.uniform.trim() : '';
 		if (name && shaderRef?.shaderUniform) {
 			// 102b-papercuts: a vecN slot now takes a vector or a colour too (uniformWrite.js)
-			writeUniformSlot(shaderRef.shaderUniform(object.uuid, name), data);
+			// 105-slot-shaders: `slot` (index, id or name) = that material slot's shader; empty = every slot of
+			// the object that has the uniform (a single-material object: its one shader, as before)
+			const slot = typeof data.slot === 'string' ? data.slot.trim() : data.slot;
+			if (slot !== undefined && slot !== null && slot !== '' && shaderRef.slotIdFor) {
+				const id = shaderRef.slotIdFor(object, slot);
+				if (id) writeUniformSlot(shaderRef.shaderUniform(object.uuid, name, id), data);
+			} else if (shaderRef.shaderUniformsOf) {
+				for (const record of shaderRef.shaderUniformsOf(object.uuid, name)) writeUniformSlot(record, data);
+			} else writeUniformSlot(shaderRef.shaderUniform(object.uuid, name), data);
 		}
 	}
 }
@@ -6283,16 +6307,22 @@ export function startFlowRuntime() {
 	installKitNodes(); // 34 R2: the kit nodes' outputs and named inputs, declared once
 	// 34 R2 (kit-entities): draw the kit's entities, give the movers the scene (primed: three + stores)
 	import('./kit/entityApp.js').then((m) => m.startKitEntities()).catch(() => {});
-	// 34 R3 (D1): behaviour nodes load + tick (primed: the module loader reaches the SDK)
-	import('./behaviours/app.js')
-		.then((m) => {
-			behavioursRef = m;
-			// 36 (U10): `this.emit(name)` = a replicated pulse on the node's output `name`
-			m.setBehaviourEmitter?.((/** @type {string} */ id, /** @type {string} */ name) => applyNodeTrigger(id + '#' + name, syncedNow(), true));
-			m.startBehaviours();
-		})
-		.catch((error) => console.warn('behaviours failed to start', error));
+	// 34 R3 (D1): behaviour nodes load + tick (primed: the module loader reaches the SDK).
+	// 102-boot-diet: app.js (and its analyzer, acorn) loads when a graph first holds a behaviour node,
+	// a `bhv` message arrives or the AI layer loads (behaviours/load.js); this is what runs once it is in
+	// a module's engine piece may not shadow a kit piece: reserved at start, as startBehaviours did when it
+	// ran at every boot (it still re-reserves the same names when behaviours load)
+	reserveEngineNames(kit.specs().map((/** @type {any} */ s) => s.piece));
+	onBehavioursLoad((m) => {
+		behavioursRef = m;
+		// 36 (U10): `this.emit(name)` = a replicated pulse on the node's output `name`
+		m.setBehaviourEmitter?.((/** @type {string} */ id, /** @type {string} */ name) => applyNodeTrigger(id + '#' + name, syncedNow(), true));
+		m.startBehaviours();
+	});
 	flowGraphs.subscribe(() => {
+		// 102-boot-diet: the graph watch is the scene loader's moment (a load, a joiner's node sync, a node
+		// added by hand), so the behaviours chunk is fetched while the rest of the scene is still arriving
+		if (!behavioursRef && hasBehaviourNode(allNodes())) loadBehaviours();
 		// 36 U11: muted nodes and the editor-only kinds (group, note) are not evaluated; 55 Q1: nor dormant graphs
 		rebuildRuntimeGraph();
 		applyColors();

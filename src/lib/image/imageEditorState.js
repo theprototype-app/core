@@ -7,8 +7,9 @@ import { writable, derived, get } from 'svelte/store';
  * The open editor: which Explorer image, plus a `raise` counter so asking again for the
  * same image brings the window forward instead of reloading it (the 21-I3 ruling the
  * preview window keeps). null = closed. `itemId: ''` = open with no image yet (the dock
- * "+" row) — the editor shows how to pick one.
- * @type {import('svelte/store').Writable<{itemId: string, raise: number} | null>}
+ * "+" row) — the editor shows how to pick one. 105-noise: `panel` / `noise` / `slotMap` are what
+ * `openImageEditor`'s `extra` carries (the Noise panel opened from a material slot's map row).
+ * @type {import('svelte/store').Writable<{itemId: string, raise: number, panel?: 'noise', noise?: any, slotMap?: {uuids: string[], key: string, slot?: number}} | null>}
  */
 export const imageEditorTarget = writable(null);
 

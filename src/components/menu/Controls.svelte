@@ -4,6 +4,7 @@
 	import { edgeFade } from '$lib/ui/edgeFade.js';
 	import { objectsGroup, TControls, transformMode, editorMode, isLocked, lockedObjects, globalScene, selectedObject, selectedObjects } from '../../stores/sceneStore';
 	import { view2d } from '$lib/sprite2d/view2d.js'; // 64-2d D6
+	import { handleSet } from '$lib/gizmo/gizmoPrefs';
 	import { chatUnread, chatMentioned } from '../../stores/appStore.js'; // 37 R15: the chat button's badge
 	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, uvEditorClose, shaderEditorClose, hudEditorClose, timelineClose, explorerClose, profilerClose, codeWorkspaceClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, floatingToolbar, toolbarAlwaysOnTop, hudStackLift, showSimControls, expandedObjects } from '../../stores/appStore.js';
 	// 24-B2: keyboard navigation in the object list (the Explorer's gridKeydown shape)
@@ -55,7 +56,8 @@
 	// 42 I9: the top-right group's and the touch tools' buttons join the roster
 	import { notesDrawerOpen, multiSelectMode, touchTools } from '../../stores/appStore.js';
 	import { undo, redo } from '$lib/history';
-	import { toolbarSlots, TOP_DEFAULT, TOUCH_DEFAULT, TOP_NATIVE, TOUCH_NATIVE } from '$lib/toolbarSlots';
+	import { toolbarSlots, TOP_DEFAULT, TOUCH_DEFAULT, TOP_NATIVE, TOUCH_NATIVE, registerClusterSetter } from '$lib/toolbarSlots';
+	import { previewDrawerOpen } from '$lib/previewPill.js'; // 103 H11: the optional Preview toolbar item
 	import { canvasCenter } from '$lib/canvasRect';
 	import { micActive, pttActive, toggleMic } from '$lib/voiceChat';
 	import { phoneShell } from '$lib/ui/phoneShell.js';
@@ -113,6 +115,7 @@
 	import type { ToolbarLayout, LayoutConfig, Placements, Region } from '$lib/toolbarLayout';
 	import { pivotMode, pivotParentAvailable } from '$lib/multiTransform'; // 37 R1: the toolbar Pivot cell
 	import { cssPx, scaledPx, uiScale } from '$lib/uiScale'; // 53 A1: hud.css px tokens read back as calc(...)
+	import { hudGrid } from '$lib/hudGrid'; // 103 H15: the toolbar's band edges are the HUD grid's
 	import XrButtons from '../play/XrButtons.svelte';
 
 	// A panel is "shown" when it is open AND either the visible dock tab OR floating
@@ -1099,7 +1102,7 @@
 	// 42 I7: `label` is the SHORT name the menus print (Customize toolbar…, Edit positions, the "+"
 	// popup, Swap with) — `title` stays the cell's tooltip, which may carry state and a hint
 	// ("Pivot: Median point (click to change)") and which suites select the bar's cells by
-	type CellButton = { title: string; label?: string; slot?: string; icon?: any; iconName?: string; tint: () => string; run: () => void; pressed?: () => boolean };
+	type CellButton = { title: string; label?: string; slot?: string; icon?: any; iconName?: string; tint: () => string; run: () => void; pressed?: () => boolean; tool?: string; mark?: () => boolean };
 
 	/** the one PSEUDO-cell: the transparent well the play FAB sits in. It is not a
 	 *  roster entry (play is never hideable) but it IS a cell of the row, which is
@@ -1205,18 +1208,27 @@
 			title: 'Move (1)',
 			icon: 'move',
 			tint: () => (hasSel && $transformMode === 'translate' ? ICON_ON : ICON_OFF),
+			// 103 H7 row 8: the "all" mark while the tool's repeat press shows all in one
+			tool: 'translate',
+			mark: () => hasSel && $transformMode === 'translate' && $handleSet === 'all',
 			run: () => setTransformMode('translate')
 		},
 		rotate: {
 			title: 'Rotate (2)',
 			icon: 'rotate-ccw',
 			tint: () => (hasSel && $transformMode === 'rotate' ? ICON_ON : ICON_OFF),
+			// 103 H7 row 8: the "all" mark while the tool's repeat press shows all in one
+			tool: 'rotate',
+			mark: () => hasSel && $transformMode === 'rotate' && $handleSet === 'all',
 			run: () => setTransformMode('rotate')
 		},
 		scale: {
 			title: 'Scale (3)',
 			icon: 'maximize-2',
 			tint: () => (hasSel && $transformMode === 'scale' ? ICON_ON : ICON_OFF),
+			// 103 H7 row 8: the "all" mark while the tool's repeat press shows all in one
+			tool: 'scale',
+			mark: () => hasSel && $transformMode === 'scale' && $handleSet === 'all',
 			run: () => setTransformMode('scale')
 		},
 		objects: {
@@ -1368,6 +1380,17 @@
 			pressed: () => $animateInEditor,
 			run: () => toggleAnimateInEditor()
 		},
+		// 103 H11: PREVIEW — an OPTIONAL roster button (Customize toolbar / the "+" list): the drawer with Draw as,
+		// Quality and the Cinematic view where offered. The unfolded phone's way in (it has no Preview pill).
+		preview: {
+			title: 'Preview: how this device draws the scene (never saved, never shared)',
+			label: 'Preview',
+			slot: 'preview-button',
+			icon: 'eye',
+			tint: () => ($previewDrawerOpen ? ICON_ON : ICON_OFF),
+			pressed: () => $previewDrawerOpen,
+			run: () => previewDrawerOpen.update((v) => !v)
+		},
 		multiselect: {
 			get title() {
 				return $multiSelectMode
@@ -1391,7 +1414,7 @@
 	 *  may only live in the top-right group (moved, removed, re-added there — never elsewhere) */
 	const HOME_ONLY: Record<string, Region> = { notifications: 'top', peers: 'top' };
 	/** 60 Q1: optional tool buttons (listed in Customize unchecked, like the optional views) */
-	const OPTIONAL_TOOLS = ['playhere', 'animateedit'];
+	const OPTIONAL_TOOLS = ['playhere', 'animateedit', 'preview'];
 	const ROSTER_IDS = [...DEFAULT_ORDER, ...OPTIONAL_VIEWS, ...OPTIONAL_TOOLS, ...CORNER_LEFT, ...CORNER_RIGHT, ...TOP_DEFAULT, ...TOUCH_DEFAULT];
 	/** 42 I7: the name a MENU prints for a button (its short label, else its title) */
 	function labelOf(id: string) {
@@ -1537,6 +1560,8 @@
 	// the live resetters, which is exactly this job one domain over; `resetWindowLayout`
 	// clears `controlsLayout` and this brings the live bar back with no reload.
 	onMount(() => registerWindowReset(() => resetLayout()));
+	// 103 H11: the Preview pill's chrome-button menu hides its cluster through the one writer
+	onMount(() => registerClusterSetter((id, patch) => setCluster(id, patch)));
 
 	/** THE VISUAL ROW — the bar exactly as the user reads it: the shown buttons with
 	 *  the FAB's well spliced in at `spacerIndex` (`$lib/toolbarLayout`'s `visualRow`). Every
@@ -1796,7 +1821,7 @@
 	function onEditOutside(e: PointerEvent) {
 		if (!editing || editAddMenu || clusterMenu || clusterGrab.active()) return;
 		const t = e.target as Element | null;
-		if (t?.closest?.('#controls-pill, .hud-stack, #hud-tr, #touch-tools, #toolbar-edit-ghost, #connect-edit, [role="menu"], [data-cluster-grip], #cluster-move-hint, .connect-wrap, #budget-edit, #budget-chip-wrap')) return;
+		if (t?.closest?.('#controls-pill, .hud-stack, #hud-tr, #touch-tools, #toolbar-edit-ghost, #connect-edit, [role="menu"], [data-cluster-grip], #cluster-move-hint, .connect-wrap, #budget-edit, #preview-pill, #preview-menu')) return;
 		cancelEditPositions();
 	}
 
@@ -2016,7 +2041,7 @@
 		touch: '#touch-tools',
 		top: '#hud-tr',
 		connect: '.connect-pill',
-		budget: '#budget-chip-wrap'
+		budget: '#preview-pill'
 	};
 	const CLUSTER_LABEL: Record<string, string> = {
 		bar: 'Toolbar',
@@ -2025,7 +2050,7 @@
 		touch: 'Buttons beside the logo',
 		top: 'Top-right buttons',
 		connect: 'Connect bar',
-		budget: 'Budget chip'
+		budget: 'Preview and budget'
 	};
 	/** a cluster's home orientation (rotation turns it 90° from this) */
 	const HOME_VERTICAL: Record<string, boolean> = { bar: false, left: true, right: true, touch: false, top: false };
@@ -2070,8 +2095,6 @@
 	function clusterEl(id: string) {
 		if (typeof document === 'undefined') return null;
 		const el = document.querySelector(CLUSTER_SEL[id]) as HTMLElement | null;
-		// 48 F1: the budget chip keeps a box while it waits for a spot (it is measured invisible) — not drawn = not there
-		if (id === 'budget' && el?.classList.contains('bc-hidden')) return null;
 		return el;
 	}
 	const boxOf = (r: DOMRect): Box => ({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
@@ -2423,7 +2446,7 @@
 					? { label: 'Show cluster', tooltip: id === 'touch' ? 'Show these buttons beside the logo (Touch tools on)' : undefined, action: () => showCluster(id) }
 					: {
 							label: 'Hide cluster',
-							tooltip: id === 'bar' ? 'The toolbar holds Play — it cannot be hidden' : id === 'budget' ? 'Hide the budget chip (Customize toolbar… or Show all brings it back)' : 'Hide these buttons (Show all brings them back)',
+							tooltip: id === 'bar' ? 'The toolbar holds Play — it cannot be hidden' : id === 'budget' ? 'Hide the Preview pill (Customize toolbar… or Show all brings it back)' : 'Hide these buttons (Show all brings them back)',
 							disabled: id === 'bar',
 							action: () => hideCluster(id)
 						},
@@ -3155,13 +3178,13 @@
 				tooltip: controlsLayout.connect !== false ? 'Hide the Connect bar at the top of the screen' : 'Show the Connect bar at the top of the screen',
 				action: () => setLayout({ connect: controlsLayout.connect === false })
 			},
-			// 48 F1: the budget chip beside the toolbar — shown or hidden (moved in Edit positions)
+			// 48 F1 / 103 H11: the Preview pill (Preview + the judged devices' budget) — shown or hidden (moved in Edit positions)
 			{
 				key: BUDGET,
-				label: 'Budget chip',
+				label: 'Preview and budget',
 				checked: !controlsLayout.clusters?.budget?.hidden,
 				keepOpen: true,
-				tooltip: controlsLayout.clusters?.budget?.hidden ? 'Show the scene budget chip beside the toolbar' : 'Hide the scene budget chip beside the toolbar',
+				tooltip: controlsLayout.clusters?.budget?.hidden ? 'Show the Preview pill at the top right of the 3D view' : 'Hide the Preview pill at the top right of the 3D view',
 				action: () => setCluster('budget', { hidden: !controlsLayout.clusters?.budget?.hidden })
 			},
 			...(offBar.length || controlsLayout.more === false
@@ -3227,7 +3250,9 @@
 	// (each BUTTON is measured, not the stack box: a stack is as tall as what it holds, so its
 	// box would read the upper buttons as sharing the bar's row)
 	const TOOLBAR_NEIGHBOURS = ['#hud-stack-left > *', '#hud-stack-right > *', '#sim-controls'];
-	const EDGE_MARGIN = 8; // breathing room against a neighbour and against the viewport
+	// 103 H15: the bar's band edges are the HUD grid's (styles/hud.css via $lib/hudGrid): --hud-inset from the free
+	// viewport's edges (so a bar that fills its row starts where the logo and the corner stacks do) and --hud-gap from
+	// a corner button beside it — read per measurement, never a copy of the CSS number
 	const SNAP_PX = 24; // how near the middle still counts as the middle
 	const DRAG_SLOP = 6; // travel that turns a press into a move
 	const EDIT_APPLY_OVERHANG = 18; // 43 J8: how far Edit positions' ✓ reaches past the bar's right edge (hud.css)
@@ -3285,6 +3310,7 @@
 		const pill = nav.getBoundingClientRect();
 		if (!pill.width) return;
 		const vw = window.innerWidth;
+		const { inset: EDGE_MARGIN, gap: NEAR_MARGIN } = hudGrid();
 		if (barPlaced) {
 			// 44 M12b: a placed bar has no bottom track; its room is the area's length along the bar (the folded
 			// "»" budget) — across the area when horizontal, down it when vertical
@@ -3328,8 +3354,8 @@
 			// here: at that width chat / AI / mic / "+" have moved ABOVE this row, so
 			// they stop clamping and the bar gets the full width — measured, not coded.
 			if (r.bottom <= rowTop || r.top >= pill.bottom) continue;
-			if ((r.left + r.right) / 2 < vw / 2) left = Math.max(left, r.right + EDGE_MARGIN);
-			else right = Math.min(right, r.left - EDGE_MARGIN);
+			if ((r.left + r.right) / 2 < vw / 2) left = Math.max(left, r.right + NEAR_MARGIN);
+			else right = Math.min(right, r.left - NEAR_MARGIN);
 		}
 		observeNeighbours(nav, found);
 		if (editing) {
@@ -3380,7 +3406,7 @@
 		const cs = getComputedStyle(nav);
 		const row = nav.querySelector('.hud-bar-row');
 		const cell = cssPx(root.getPropertyValue('--hud-cell')) || 38;
-		const fab = cssPx(root.getPropertyValue('--hud-fab')) || 44;
+		const fab = cssPx(root.getPropertyValue('--hud-play')) || 44; // 103 H15: Play's own size (the corner tiles grow on touch)
 		const gap = row ? px(getComputedStyle(row).columnGap) : 2;
 		const navGap = px(cs.columnGap);
 		const sep = nav.querySelector('.hud-sep');
@@ -3459,6 +3485,12 @@
 	 *  that would clear the flag, and clearing it any later would eat the user's next
 	 *  real press. The timer is the release valve for a gesture that produces no click
 	 *  at all (Enter, or a pointer that left the window). */
+	/** an Edit Mesh session's element gizmo is seated (the bar's press-and-drag drives it too) */
+	function meshProxyAttached() {
+		const ud = ($TControls as any)?.object?.userData;
+		return !!(ud?.isVertexProxy || ud?.isFaceProxy);
+	}
+
 	function swallowNextClick() {
 		if (typeof window === 'undefined') return;
 		let timer = 0;
@@ -3570,9 +3602,11 @@
 	function toolbarDrag(node: HTMLElement) {
 		let from: { x: number; y: number } | null = null;
 		let press: PointerEvent | null = null;
+		let toolPress = '';
 		const done = () => {
 			from = null;
 			press = null;
+			toolPress = '';
 			window.removeEventListener('pointermove', onMove);
 			window.removeEventListener('pointerup', done);
 			window.removeEventListener('pointercancel', done);
@@ -3581,6 +3615,18 @@
 			if (!from || !press) return;
 			if (Math.abs(e.clientX - from.x) + Math.abs(e.clientY - from.y) < DRAG_SLOP) return;
 			e.preventDefault();
+			// 103 H7 row 4: a press that starts on Move / Rotate / Resize with something selected is that
+			// transform at once, anywhere on screen (the touch twin of the keys) — not a toolbar move
+			if (toolPress) {
+				const mode = toolPress;
+				const origin = press;
+				done();
+				swallowNextClick();
+				void import('$lib/modalTransform').then((m) => {
+					if (m.startDragTransform(mode as any, origin)) window.dispatchEvent(new PointerEvent('pointermove', { clientX: e.clientX, clientY: e.clientY, pointerType: e.pointerType }));
+				});
+				return;
+			}
 			// hand over with the ORIGINAL press as the origin, so the bar does not jump
 			// by the slop it took to decide. 44 M12b: a PLACED bar moves as a cluster (anywhere, snapping)
 			if (barPlaced) grabId = 'bar';
@@ -3598,6 +3644,8 @@
 			if (toolbarGrab.active() || clusterGrab.active()) return; // an armed move already owns the bar
 			from = { x: e.clientX, y: e.clientY };
 			press = e;
+			const tool = (e.target as Element)?.closest?.('[data-tool]')?.getAttribute('data-tool') ?? '';
+			toolPress = tool && (hasSel || meshProxyAttached()) ? tool : '';
 			window.addEventListener('pointermove', onMove);
 			window.addEventListener('pointerup', done);
 			window.addEventListener('pointercancel', done);
@@ -3666,6 +3714,9 @@
 		const hi = editPlace.right - half;
 		return lo > hi ? (editPlace.left + editPlace.right) / 2 : Math.max(lo, Math.min(hi, pillCentre));
 	});
+	/** 103 H15: the bar fills its band exactly when it is FULL — something folded into "»" (it cannot be wider than
+	 *  the band, and a full bar narrower than it only by a fraction of a cell read as a third left edge on the N6) */
+	const fillsBand = $derived(!barPlaced && !movingBar && dragCentre == null && folded.length > 0 && barRoom.ok && barRoom.right - barRoom.left > 0);
 	const pillStyle = $derived(
 		// 44 M12b: a PLACED bar is drawn where the cluster engine put it (the --cl-bar-* pair, layoutClusters)
 		barPlaced
@@ -3680,6 +3731,10 @@
 			: 'bottom: 16px;') +
 			(editCentre != null
 				? ` left: ${Math.round(editCentre)}px; max-width: ${Math.max(0, Math.floor(editPlace!.right - editPlace!.left))}px;`
+				: fillsBand
+					? // 103 H15: a bar that folded ("»") is as wide as its band — its edges ARE the grid's inset (or a gap from
+						// the corner button beside it), not wherever the last whole cell happened to end
+						` left: ${Math.round((barRoom.left + barRoom.right) / 2)}px; width: ${Math.floor(barRoom.right - barRoom.left)}px; justify-content: center;`
 				: track.mid > 0
 					? ` left: ${Math.round(pillCentre)}px;`
 					: '') +
@@ -3846,6 +3901,8 @@
 						id={btn.slot}
 						class="hud-cell relative"
 						class:on={tint === ICON_ON}
+						data-tool={btn.tool}
+						data-handles={btn.tool ? (btn.mark?.() ? 'all' : tint === ICON_ON ? 'tool' : 'off') : undefined}
 						title={btn.title}
 						role="button"
 						tabindex="-1"
@@ -3854,6 +3911,9 @@
 						use:cellMenu={cell.id}
 					>
 						<Icon name={glyph} size={20} class={tint} aria-hidden="true" />
+						{#if btn.mark?.()}
+							<span class="gizmo-all-mark" aria-hidden="true"></span>
+						{/if}
 						{#if cell.id === 'chat' && $chatUnread > 0}
 							<span id="chat-unread" class="chat-unread-badge" class:mention={$chatMentioned}>{$chatUnread > 99 ? '99+' : $chatUnread}</span>
 						{/if}
@@ -4018,9 +4078,9 @@
 		use:clusterGrip={'budget'}
 	>
 		{#if off}
-			<button type="button" id="budget-edit-add" class="hud-edit-remove hud-edit-add" tabindex="-1" title="Show the budget chip" aria-label="Show the budget chip" use:onPress={() => setCluster('budget', { hidden: false })}><Icon name="plus" size={16} aria-hidden="true" /></button>
+			<button type="button" id="budget-edit-add" class="hud-edit-remove hud-edit-add" tabindex="-1" title="Show the Preview pill" aria-label="Show the Preview pill" use:onPress={() => setCluster('budget', { hidden: false })}><Icon name="plus" size={16} aria-hidden="true" /></button>
 		{:else}
-			<button type="button" id="budget-edit-remove" class="hud-edit-remove" tabindex="-1" title="Hide the budget chip" aria-label="Hide the budget chip" use:onPress={() => setCluster('budget', { hidden: true })}><Icon name="minus" size={16} aria-hidden="true" /></button>
+			<button type="button" id="budget-edit-remove" class="hud-edit-remove" tabindex="-1" title="Hide the Preview pill" aria-label="Hide the Preview pill" use:onPress={() => setCluster('budget', { hidden: true })}><Icon name="minus" size={16} aria-hidden="true" /></button>
 		{/if}
 	</div>
 {/if}
@@ -4252,6 +4312,7 @@
 		     (1280 px at xl), so the docked list stopped short of the dock's right edge on a wide screen -->
 		<div
 			id="object-tree"
+			data-list-focus
 			class="w-full outline-none focus-visible:ring-1 focus-visible:ring-accent"
 			role="tree"
 			tabindex="0"
@@ -4423,6 +4484,23 @@
 {/if}
 
 <style>
+	/* 103 H7 row 8: the "all in one" mark on the active tool's button — four small corner ticks
+	   around the icon (the handles of every tool at once), in the accent */
+	.gizmo-all-mark {
+		position: absolute;
+		inset: 5px;
+		pointer-events: none;
+		border-radius: 3px;
+		background:
+			linear-gradient(var(--accent), var(--accent)) top left / 5px 2px no-repeat,
+			linear-gradient(var(--accent), var(--accent)) top left / 2px 5px no-repeat,
+			linear-gradient(var(--accent), var(--accent)) top right / 5px 2px no-repeat,
+			linear-gradient(var(--accent), var(--accent)) top right / 2px 5px no-repeat,
+			linear-gradient(var(--accent), var(--accent)) bottom left / 5px 2px no-repeat,
+			linear-gradient(var(--accent), var(--accent)) bottom left / 2px 5px no-repeat,
+			linear-gradient(var(--accent), var(--accent)) bottom right / 5px 2px no-repeat,
+			linear-gradient(var(--accent), var(--accent)) bottom right / 2px 5px no-repeat;
+	}
 	/* 38 R6: the object list's filter row, footer and chip popover in the tokens — chips are
 	   the kit's Chips look (pill, border-strong, the accent-soft fill when on); the row logic
 	   (All restores the previous set, Environment / System are exclusive views) is unchanged */

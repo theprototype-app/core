@@ -657,14 +657,14 @@ async function carryPrefabDocuments(prefab, uuidMap) {
 	try {
 		const { readSessionZip } = await import('./sessions');
 		const { copyGraphFrom } = await import('./flowGraphs');
-		const { copyShaderGraphFrom } = await import('./shaderGraph');
+		const { copyShaderGraphsOf } = await import('./shaderGraph');
 		const { copyAnimationsFrom } = await import('./animationPreview');
 		const payload = await readSessionZip(prefab.bytes);
 		if (!payload) return;
 		let carried = 0;
 		for (const [from, to] of uuidMap) {
 			if (payload.graphs?.[from]) (copyGraphFrom(payload.graphs[from], to), carried++);
-			if (payload.shaderGraphs?.[from]) (copyShaderGraphFrom(payload.shaderGraphs[from], to), carried++);
+			carried += copyShaderGraphsOf(payload.shaderGraphs, from, to); // 105-slot-shaders: + its slot documents
 			if (payload.animations?.[from]) (copyAnimationsFrom(payload.animations[from], to), carried++);
 		}
 		if (carried) showToast('Restored ' + carried + ' saved document' + (carried === 1 ? '' : 's') + ' with the prefab');

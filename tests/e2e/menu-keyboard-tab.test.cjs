@@ -20,13 +20,19 @@ h.run(async () => {
 		return { n: f.length, first: document.activeElement === f[0] };
 	});
 	h.check(rows.n >= 2 && rows.first, `the profile menu has focusable rows and the first takes focus (${rows.n})`);
-	const before = await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 80));
+	// compare the ELEMENT, not a slice of its HTML: two menu rows of one component start with the same 80 characters
+	// (103 H15: the seated avatar is position: fixed, so the offsetParent filter above starts on the first ROW now)
+	await page.evaluate(() => document.activeElement?.setAttribute('data-tab-before', ''));
 	await page.keyboard.press('Tab');
-	const after = await page.evaluate(() => ({ html: document.activeElement?.outerHTML.slice(0, 80), inside: !!document.activeElement?.closest('#avatar-dropdown') }));
-	h.check(after.html !== before && after.inside, `Tab moves focus to the next row inside the menu (${JSON.stringify(after.html)})`);
+	const after = await page.evaluate(() => ({ html: document.activeElement?.outerHTML.slice(0, 80), moved: !document.activeElement?.hasAttribute('data-tab-before'), inside: !!document.activeElement?.closest('#avatar-dropdown') }));
+	h.check(after.moved && after.inside, `Tab moves focus to the next row inside the menu (${JSON.stringify(after.html)})`);
 	await page.keyboard.press('Shift+Tab');
-	const back = await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 80));
-	h.check(back === before, 'Shift+Tab moves back');
+	const back = await page.evaluate(() => {
+		const was = !!document.activeElement?.hasAttribute('data-tab-before');
+		document.querySelector('[data-tab-before]')?.removeAttribute('data-tab-before');
+		return was;
+	});
+	h.check(back, 'Shift+Tab moves back');
 	await page.keyboard.press('Escape');
 
 	// ---- 2. counterfactual: on the canvas Tab is still the Edit Mesh shortcut

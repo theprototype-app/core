@@ -41,8 +41,6 @@ import {
 	reconcileExternal,
 	reloadTab,
 	nextActiveAfterClose,
-	parseCheck,
-	parseGraphJson,
 	graphJson,
 	normalizeCodeRequest,
 	moveTab
@@ -306,6 +304,7 @@ export async function openCode(request) {
 	activeCodeTab.set(tabId);
 	codeWorkspaceClose.set(false);
 	import('./bottomDock').then((m) => m.activateDock('code')).catch(() => {});
+	import('./codeParse.js').catch(() => {}); // 102-boot-diet: the save's parse check, fetched as the tab opens
 	if (req.line) codeRevealLine.set({ tabId, line: req.line, token: ++lineToken });
 	return tabId;
 }
@@ -452,6 +451,8 @@ const saving = new Map();
 /** @param {string} id @param {{quiet?: boolean}} opts
  * @returns {Promise<{ok: boolean, error?: import('./codeTabs').CodeError, nodes?: number}>} */
 async function saveNow(id, opts) {
+	// 102-boot-diet: the parse check carries acorn (~34 KB gz), so it loads on the first save, not at boot
+	const { parseCheck, parseGraphJson } = await import('./codeParse.js');
 	const tab = tabById(id);
 	if (!tab) return { ok: false };
 	if (tab.readOnly) {

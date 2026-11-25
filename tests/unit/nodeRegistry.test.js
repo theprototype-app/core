@@ -17,7 +17,7 @@ describe('2.0 N1: every core node type has exactly one definition', () => {
 	});
 	test('153 core types, each defined once, in palette order', () => {
 		const all = NODE_FAMILIES.flatMap((f) => f.nodes.map((n) => n.type));
-		expect(all.length).toBe(153); // int-102-1 148 + 102 M3 decalstamp + 102 M7 constraintweight, constrainttarget + 92 dialogue + 64-2d follow2d
+		expect(all.length).toBe(154); // int-102-1 148 + 102 M3 decalstamp + 102 M7 constraintweight, constrainttarget + 92 dialogue + 103 (H6) vibrate + 64-2d follow2d
 		expect(new Set(all).size).toBe(all.length);
 		expect(coreNodeTypes()).toEqual(all);
 	});

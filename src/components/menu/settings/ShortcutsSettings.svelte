@@ -13,7 +13,8 @@
 	import SettingRow from '../../ui/SettingRow.svelte';
 	import Icon from '../../ui/Icon.svelte';
 	import { showToast } from '../../../stores/appStore.js';
-	import { shortcuts, comboOf, isRebindable, rebindShortcut, resetShortcut, setOverride, setShortcutCapture, nonLatinLayoutSeen } from '$lib/shortcuts';
+	import { shortcuts, comboOf, isRebindable, rebindShortcut, resetShortcut, setOverride, setShortcutCapture, nonLatinLayoutSeen, keymapPreset, presetDefaultOf } from '$lib/shortcuts';
+	import { flyWithWasd } from '$lib/flyPrefs'; // 103 H5: the grid re-keys on it
 	import { scopeLabel } from '$lib/keyScope';
 	import { settingsResetTick } from '$lib/settings/resetCategory.js';
 
@@ -124,7 +125,13 @@
 		     non-Latin layout — say how letters resolve -->
 		<p id="shortcut-layout-note" class="sc-note">Letter shortcuts use the physical key position on this layout — the key where the letter sits on a QWERTY keyboard.</p>
 	{/if}
-	{#key `${version}:${$settingsResetTick}`}
+	<!-- 103 H5: the keymap preset + the two fly prefs, a LAZY card (the boot rule: the preset tables
+	     load only when this page or a stored preset needs them) -->
+	{#await import('./KeymapSettings.svelte') then mod}
+		{@const KeymapCard = mod.default}
+		<KeymapCard onchange={() => version++} />
+	{/await}
+	{#key `${version}:${$settingsResetTick}:${$keymapPreset}:${$flyWithWasd}`}
 		<div id="shortcut-grid" class="sc-groups">
 			{#each groups as group (group)}
 				<Section variant="card" label={group} badge={groupScope(group) ? 'Keys work ' + groupScope(group) : ''}>
@@ -134,12 +141,12 @@
 								<span class="shortcut-layout sc-hint" title="Your keyboard layout prints this on that key">· {layoutHint(shortcut.keys, layoutLabels)} on your layout</span>
 							{/if}
 							{#if isRebindable(shortcut)}
-								{#if shortcut.keys !== shortcut.defaultKeys}
+								{#if shortcut.keys !== presetDefaultOf(shortcut.id)}
 									<button
 										type="button"
 										class="shortcut-reset sc-reset"
-										title={'Reset to ' + shortcut.defaultKeys}
-										aria-label={'Reset ' + shortcut.label + ' to ' + shortcut.defaultKeys}
+										title={'Reset to ' + (presetDefaultOf(shortcut.id) || 'no key')}
+										aria-label={'Reset ' + shortcut.label + ' to ' + (presetDefaultOf(shortcut.id) || 'no key')}
 										onclick={() => resetOne(shortcut.id)}><Icon name="rotate-ccw" size={16} strokeWidth={1.75} /></button
 									>
 								{/if}
@@ -149,7 +156,7 @@
 									class:sc-capturing={capturingId === shortcut.id}
 									title="Click to rebind"
 									aria-label={'Rebind ' + shortcut.label}
-									onclick={() => startCapture(shortcut.id)}>{capturingId === shortcut.id ? 'Press keys… Esc cancels' : shortcut.keys}</button
+									onclick={() => startCapture(shortcut.id)}>{capturingId === shortcut.id ? 'Press keys… Esc cancels' : shortcut.keys || 'Not set'}</button
 								>
 							{:else}
 								<span class="sc-locked" title={shortcut.fixedReason || 'listed for reference'}>

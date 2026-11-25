@@ -217,7 +217,7 @@
 		if (!action || [...buttonTouches.values()].includes(id)) return;
 		buttonTouches.set(event.pointerId, id);
 		pressedIds = [...pressedIds, id];
-		pressTouchAction(action, true, { canvas: canvasEl(), haptics: $touchPrefs.haptics });
+		pressTouchAction(action, true, { canvas: canvasEl(), haptics: true });
 	}
 
 	/** @param {PointerEvent} event */

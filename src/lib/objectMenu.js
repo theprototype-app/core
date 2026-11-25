@@ -591,11 +591,12 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 					{
 						label: 'Edit shader',
 						icon: 'sparkles',
-						disabled: locked || !object?.material || Array.isArray(object?.material),
+						// 105-slot-shaders: a slot list takes a shader too (the editor opens on the active slot)
+						disabled: locked || !object?.material,
 						tooltip: locked
 							? lockedTooltip
 							: Array.isArray(object?.material)
-								? 'Shader graphs support single-material objects for now'
+								? 'Author a material slot (or all of them) as a node graph'
 								: 'Author this material as a node graph',
 						action: () => {
 							selectObject(uuid, false);

@@ -1,3 +1,7 @@
+// 103 H11: the chip is a PART of the Preview pill now — one part per device toggled under Judge for (menu
+// #preview-menu, rows #preview-judge-<id>), nothing toggled by default; a part's click = Statistics ▸ Budget for
+// that device. The meter, the verdicts and Statistics are unchanged, so every section below still holds.
+//
 // 46 B1/B2 — THE BUDGET CHIP and STATISTICS ▸ BUDGET. The user (roadmap 46, "Chip + Statistics"): "a small
 // coloured chip with the target (Quest / Phone / Desktop, picked in the chip's menu, LOCAL) near the toolbar
 // while editing; click opens Statistics on a Budget section: draw calls, triangles, texture memory,
@@ -19,18 +23,22 @@ const h = require('./helpers.cjs');
 const { startRecorder, readScene } = require('../../scripts/perfProbe.cjs');
 
 /** @param {any} page */
-const chip = (page) =>
-	page.evaluate(() => {
-		const w = document.getElementById('budget-chip-wrap');
+const chip = (page, id = 'quest') =>
+	page.evaluate((id) => {
+		const w = document.getElementById('preview-pill');
+		const d = document.getElementById('preview-dev-' + id);
 		if (!w) return null;
 		const r = w.getBoundingClientRect();
-		const p = document.getElementById('controls-pill')?.getBoundingClientRect();
 		const cs = getComputedStyle(w);
-		// a position:fixed element has no offsetParent, so "drawn" = a box that is not visibility:hidden
-		// (#editor-chrome's display:none in Play leaves it a 0 x 0 box)
-		const visible = cs.visibility !== 'hidden' && r.width > 0 && r.height > 0;
-		return { visible, room: w.dataset.room, tier: w.dataset.tier, target: w.dataset.target, text: w.textContent.trim().replace(/\s+/g, ' '), rect: { x: r.x, y: r.y, w: r.width, h: r.height }, pill: p ? { x: p.x, y: p.y, w: p.width, h: p.height } : null };
-	});
+		const visible = cs.visibility !== 'hidden' && cs.display !== 'none' && r.width > 0 && r.height > 0;
+		return { visible, part: !!d, room: 'top-right', tier: d?.dataset.tier, target: id === 'pc' ? 'desktop' : id, text: d ? d.textContent.trim().replace(/\s+/g, ' ') : '', icon: d?.querySelector('svg')?.getAttribute('class') ?? '' };
+	}, id);
+/** a Judge for toggle in the pill's menu (the menu stays open) @param {any} page @param {string} id */
+async function toggle(page, id) {
+	if (!(await page.locator('#preview-menu').count())) await page.locator('#preview-more').click();
+	await page.locator('#preview-judge-' + id).click();
+	await page.waitForTimeout(250);
+}
 
 /** add `n` plain boxes (one call, 12 triangles each) to the objects group @param {any} page @param {number} n */
 const addBoxes = (page, n) =>
@@ -74,22 +82,21 @@ h.run(async () => {
 	await clearScene(P);
 	await addBoxes(P, 3);
 
-	// ---------- 1. beside the toolbar, green on a near-empty scene ----------
-	await h.eventually(() => chip(P), (c) => !!c && c.visible && c.room !== 'measuring', 'the budget chip is drawn while editing');
+	// ---------- 1. the pill, no device part by default; Quest toggled on: green on a near-empty scene ----------
+	await h.eventually(() => chip(P), (c) => !!c && c.visible, 'the Preview pill is drawn while editing');
+	h.check(!(await chip(P)).part && (await P.locator('.pp-dev').count()) === 0, '103: nothing toggled under Judge for by default = no percent in the pill');
+	await toggle(P, 'quest');
+	await P.keyboard.press('Escape');
 	const c1 = await chip(P);
 	console.log('  chip: ' + JSON.stringify(c1));
-	h.check(c1.target === 'quest' && /^Quest\b/.test(c1.text), `it judges for Quest by default — the perf gate's target (${c1.text})`);
+	h.check(c1.part && /^\d+%$/.test(c1.text) && /glasses/.test(c1.icon), `Quest toggled on: its part shows an icon and the percent, also under 100 % (${c1.text})`);
 	h.check(c1.tier === 'green', `three boxes and the default sun read GREEN — one sun is not a warning (${c1.tier})`);
-	h.check(
-		!!c1.pill && Math.abs(c1.rect.y + c1.rect.h / 2 - (c1.pill.y + c1.pill.h / 2)) < 3 && c1.rect.x >= c1.pill.x + c1.pill.w && c1.rect.x - (c1.pill.x + c1.pill.w) < 16,
-		`…placed right beside the toolbar pill, centred on it (${c1.room})`
-	);
 	const free = await P.evaluate(() => {
-		const r = document.getElementById('budget-chip-wrap').getBoundingClientRect();
+		const r = document.getElementById('preview-dev-quest').getBoundingClientRect();
 		const el = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
-		return !!el?.closest('#budget-chip-wrap');
+		return !!el?.closest('#preview-dev-quest');
 	});
-	h.check(free, 'the chip is on top at its own centre (nothing covers it)');
+	h.check(free, 'the part is on top at its own centre (nothing covers it)');
 	// the gate's numbers: Quest IS perf/budgets.json defaults
 	const quest = await P.evaluate(() => window.__tp.test.v1.budgetMeter.TARGETS.quest);
 	const file = require('../../perf/budgets.json');
@@ -104,24 +111,23 @@ h.run(async () => {
 	await h.eventually(() => chip(P), (c) => c?.tier === 'red', 'RED past the budget (160 draws > 150)');
 	await P.screenshot({ path: process.env.EVIDENCE ? process.env.EVIDENCE + '/10-suite-red-chip.png' : '/dev/null', clip: { x: 300, y: 760, width: 900, height: 140 } }).catch(() => {});
 
-	// ---------- 3. the target switch, LOCAL + persisted ----------
-	await P.locator('#budget-chip-target').click();
-	await P.waitForTimeout(400);
-	const menuRows = await P.evaluate(() => [...document.querySelectorAll('[role=menuitem]')].map((e) => e.textContent.trim()));
-	h.check(['Quest / VR', 'Phone', 'Desktop'].every((t) => menuRows.some((r) => r.includes(t))), `the chip's menu offers Quest / Phone / Desktop (${menuRows.join(' | ')})`);
-	await P.locator('[role=menuitem]', { hasText: 'Desktop' }).first().click();
-	await h.eventually(() => chip(P), (c) => c?.target === 'desktop' && c.tier === 'green' && /^Desktop/.test(c.text), 'Desktop judges the same 160 boxes GREEN');
-	const persisted = await P.evaluate(() => localStorage.getItem('budgetTarget'));
-	h.check(persisted === 'desktop', `the pick is a LOCAL pref (safeStorage budgetTarget = ${persisted})`);
-	// right-click is the other way in
-	await P.locator('#budget-chip').click({ button: 'right' });
-	await P.waitForTimeout(400);
-	await P.locator('[role=menuitem]', { hasText: 'Quest / VR' }).first().click();
-	await h.eventually(() => chip(P), (c) => c?.target === 'quest' && c.tier === 'red', 'a right-click on the chip opens the same menu (back to Quest: red)');
+	// ---------- 3. Judge for: independent toggles, LOCAL + persisted ----------
+	await toggle(P, 'pc');
+	const menuRows = await P.evaluate(() => [...document.querySelectorAll('#preview-judge [role=switch]')].map((e) => e.textContent.trim()));
+	h.check(['This device', 'Phone', 'Quest', 'PC'].every((t) => menuRows.some((r) => r.startsWith(t))), `the menu's Judge for lists This device / Phone / Quest / PC (${menuRows.join(' | ')})`);
+	h.check((await P.locator('#preview-menu').count()) === 1, 'the menu stays open while toggles change');
+	await P.keyboard.press('Escape');
+	await h.eventually(() => chip(P, 'pc'), (c) => c?.part && c.tier === 'green', 'PC judges the same 160 boxes GREEN, beside Quest');
+	h.check((await chip(P)).tier === 'red', '…while Quest stays red: both parts show at once');
+	const persisted = await P.evaluate(() => localStorage.getItem('budget:judgeFor'));
+	h.check(persisted === '["quest","pc"]', `the toggles are a LOCAL pref (safeStorage budget:judgeFor = ${persisted})`);
+	await toggle(P, 'pc');
+	await P.keyboard.press('Escape');
+	await h.eventually(() => chip(P, 'pc'), (c) => !c?.part, 'PC toggled off: its part goes');
 
 	// ---------- 4. click → Statistics ▸ Budget ----------
 	h.check((await P.locator('#stats-window').count()) === 0, 'Statistics starts closed (premise)');
-	await P.locator('#budget-chip').click();
+	await P.locator('#preview-dev-quest').click();
 	await P.waitForTimeout(900);
 	const st = await P.evaluate(() => {
 		const w = document.getElementById('stats-window');
@@ -144,7 +150,7 @@ h.run(async () => {
 		return sc.scrollTop;
 	});
 	await P.waitForTimeout(200);
-	await P.locator('#budget-chip').click();
+	await P.locator('#preview-dev-quest').click();
 	await P.waitForTimeout(700);
 	const back = await P.evaluate(() => {
 		const sc = document.getElementById('stats-budget').parentElement;
@@ -155,7 +161,7 @@ h.run(async () => {
 	h.check(away > 100 && back.top < 20 && back.inView, `a click while Statistics is scrolled away (scrollTop ${away}) brings the Budget section back (${back.top})`);
 	// the segmented target picker inside is the same pref
 	await P.locator('#stats-budget-target-phone').click();
-	await h.eventually(() => chip(P), (c) => c?.target === 'phone', 'Statistics ▸ Budget switches the same target (the chip follows)');
+	await h.eventually(() => store(P, 'budgetMeter.budgetTarget'), (t) => t === 'phone', 'Statistics ▸ Budget keeps its own target pick (the pill\'s toggles are separate)');
 	await P.locator('#stats-budget-target-quest').click();
 
 	// ---------- 5. the heaviest list: the heavy object first, savings, click selects ----------
@@ -207,7 +213,7 @@ h.run(async () => {
 	await P.locator('#play-button').click();
 	await h.eventually(() => store(P, 'isLocked'), (v) => v === true, 'Play entered (premise)');
 	const inPlay = await chip(P);
-	h.check(!inPlay?.visible, 'the chip is hidden in Play');
+	h.check(!inPlay?.visible, 'the pill is hidden in Play');
 	await h.leavePlay(A);
 	await h.eventually(() => chip(P), (c) => !!c?.visible, '…and back when Play ends');
 	await A.ctx.close();
@@ -223,7 +229,7 @@ h.run(async () => {
 	await addBoxes(Q, 200);
 	await Q.waitForTimeout(1500);
 	const fc = await chip(Q);
-	h.check(!fc?.visible, 'folded phone: no floating chip on the toolbar (the bar has no room)');
+	h.check(!fc, '103: folded phone: no Preview pill at all (not even hidden)');
 	h.check(!(await Q.evaluate(() => !!document.querySelector('#ps-bar [data-bar-item="budget"]'))), '…and not on the default bar either');
 	const cdp = await Q.context().newCDPSession(Q);
 	const tap = async (sel) => {

@@ -13,11 +13,16 @@
 	import { findNodeSpec } from '$lib/nodeCatalog';
 	import { recordFlowNodesEntry } from '$lib/flowGraphs';
 	import { propertyRows, coerceProp, propPatch, type PropRow } from '$lib/nodeProps';
-	import { analyze, setParamLiteral } from '$lib/behaviours/analyze.js';
+	// 102-boot-diet: the analyzer (acorn) is not on the editor's boot; it is in by the time a behaviour
+	// node exists (behaviours/load.js), and this panel asks for it too in case it is not
+	import { analyzeLib, loadAnalyzer } from '$lib/behaviours/load.js';
 
 	let { node }: { node: any } = $props();
 
-	const behaviourModel = $derived(node?.type === 'behaviour' ? analyze(String(node.data?.code ?? '')) : null);
+	$effect(() => {
+		if (node?.type === 'behaviour' && !$analyzeLib) loadAnalyzer();
+	});
+	const behaviourModel = $derived(node?.type === 'behaviour' && $analyzeLib ? $analyzeLib.analyze(String(node.data?.code ?? '')) : null);
 	const rows: PropRow[] = $derived(
 		propertyRows(node, findNodeSpec(node?.type), $flowEdges as any[], { behaviour: behaviourModel })
 	);
@@ -48,7 +53,8 @@
 		const graphId = $activeGraphId; // the panel edits the ACTIVE graph's selected node
 		if (row.source === 'behaviour') {
 			const before = String(node.data?.code ?? '');
-			const r = setParamLiteral(before, row.key, value);
+			if (!$analyzeLib) return; // a behaviour row exists only once the analyzer has read the source
+			const r = $analyzeLib.setParamLiteral(before, row.key, value);
 			if (!r.changed) return;
 			setNodeData(node.id, { code: r.source }, graphId);
 			recordFlowNodesEntry({ op: 'data', graphId, items: [{ id: node.id, before: { code: before }, after: { code: r.source } }] });

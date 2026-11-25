@@ -15,7 +15,8 @@
 	import { setNodeData } from '$lib/nodesHandler';
 	import { recordFlowNodesEntry } from '$lib/flowGraphs';
 	import { sessionNow } from '$lib/sessionClock';
-	import { analyze, setParamLiteral } from '$lib/behaviours/analyze.js';
+	// 102-boot-diet: the analyzer (acorn) loads on demand (behaviours/load.js), not with the editor
+	import { analyzeLib, behavioursModule, loadBehaviours } from '$lib/behaviours/load.js';
 	import { deriveGraph, formatValue } from '$lib/behaviours/graph.js';
 	import CodeEditor from '../CodeEditor.svelte';
 	import { codeIsReadOnly, forkNodeSource } from '$lib/codeOpen'; // 36 (G1): module-bound source
@@ -59,20 +60,27 @@
 	}
 	const status = $derived(open ? (allStatus[open.id] ?? null) : null);
 
-	let offStatus = () => {};
-	onMount(() => {
-		import('$lib/behaviours/app.js').then((m) => {
-			app = m;
-			offStatus = m.behaviourStatus.subscribe((all: any) => (allStatus = all));
-		});
+	// 102-boot-diet: this view is mounted with the Flow dock whether or not the scene has a behaviour, so
+	// it no longer imports app.js on mount (that put the behaviours chunk and acorn on every editor
+	// start). It follows the module once something loads it (a behaviour node, a `bhv` message, the AI
+	// layer: behaviours/load.js) and asks for it when a behaviour view is actually opened.
+	$effect(() => {
+		if (open) loadBehaviours();
 	});
-	onDestroy(() => offStatus());
+	$effect(() => {
+		const m = $behavioursModule;
+		if (!m) return;
+		app = m;
+		return m.behaviourStatus.subscribe((all: any) => (allStatus = all));
+	});
 
 	// rebuild the derived graph only when the STRUCTURE changes (a value change keeps the layout).
 	// The structure is the runtime's model (analyzed with the kit specs, so kit calls are named);
 	// before it has one, our own read of the source.
 	$effect(() => {
-		const m = status?.model ?? analyze(code);
+		const lib = $analyzeLib;
+		if (!status?.model && !lib) return; // the analyzer is still loading (it re-runs this when it lands)
+		const m = status?.model ?? lib?.analyze(code);
 		const key = JSON.stringify([m.params?.map((p: any) => [p.key, p.min, p.max, p.step]), m.state, m.handlers?.map((h: any) => [h.name, h.reads, h.writes, h.calls, h.timers, h.kit, h.actions]), m.methods?.map((h: any) => [h.name, h.reads, h.writes, h.calls, h.timers, h.kit])]);
 		const k = (open?.id ?? '') + key;
 		if (k === lastModelKey) return;
@@ -96,7 +104,9 @@
 		app.runtime.setParam(open.id, key, value);
 		if (!final || readOnly) return; // 36: a module's source is previewed, never rewritten
 		const before = code;
-		const r = setParamLiteral(before, key, value);
+		const lib = $analyzeLib;
+		if (!lib) return;
+		const r = lib.setParamLiteral(before, key, value);
 		if (!r.changed) return;
 		setNodeData(open.id, { code: r.source }, open.graphId);
 		recordFlowNodesEntry({ op: 'data', graphId: open.graphId, items: [{ id: open.id, before: { code: before }, after: { code: r.source } }] });

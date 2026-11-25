@@ -70,10 +70,20 @@ export function myCaps(opts = {}) {
 	/** @type {Record<string, number>} */
 	// 80a K3 `lk`: stamped lock rows (`ats`, a third element in `locked`), the receiving-side lock
 	// gate and its `lockreject`, the whole held set in the handshake
-	// `rj`: a returning link proves itself (rejoinLinks: the `rjs` secret, the `rjc`/`rjp` exchange)
+	// 105-slots `slots2`: per-slot material values (`slot` on materialParam / material), the slot draw layer (off).
+	// A peer without it gets a whole-list `materials` after a per-slot gesture (materialsHandler.healOlderPeers).
+	// 105-slot-shaders `slotShaders`: a shader document keyed `<uuid>/<slotId>` draws on that slot. A peer without it
+	// keeps and forwards the document but draws the slot's own material (People says so: #peers-older-slots).
+	// `rj` (1.78.1): a returning link proves itself (rejoinLinks: the `rjs` secret, the `rjc`/`rjp` exchange)
 	// 64-extrude `vs`: vector shapes and their solids — a peer without it gets an extruded shape as a plain mesh
-	const caps = { wb: 1, dev: 1, lk: 1, rj: 1, vs: 1 };
+	const caps = { wb: 1, dev: 1, lk: 1, rj: 1, slots2: 1, slotShaders: 1, vs: 1 };
 	if (opts.fc) caps.fc = 1;
+	// test seam: `localStorage.debugCapsOff = 'slots2'` dials as a build without that flag (the heal path)
+	try {
+		for (const flag of String(globalThis.localStorage?.getItem('debugCapsOff') ?? '').split(',')) if (flag) delete caps[flag];
+	} catch {
+		/* storage blocked: every flag stays */
+	}
 	return caps;
 }
 

@@ -3,6 +3,8 @@
 	// desktop pill's dropdown (all groups) and the phone drawer (no Judge for). Groups, in order:
 	//   Cinematic view   Off / the quality levels (only where the view is offered; 100 C1's own rules), then
 	//                    106 S3's Reflections and Global light: Auto / On / Off each, with what it measured here
+	//   Look             106 S2b: Contact shadows, Auto / On / Off for this device (the standard view's pass: the
+	//                    Cinematic view does not draw it), what it measured here; On on a computer only
 	//   Draw as          viewMode's three + the Draw as modes ($lib/drawAs)
 	//   Quality          the device quality preset (Auto / High / Medium / Low, 42 I12)
 	//   Judge for        This device / Phone / Quest / PC, independent toggles ($lib/judgeFor) — desktop only
@@ -21,6 +23,13 @@
 	import { scenePost, sceneProvidesAo } from '$lib/scenePost';
 	import { sceneCost, verdictFor, openBudget, setBudgetTarget } from '$lib/budgetMeter';
 	import { judgeFor, toggleJudge, here } from '$lib/judgeFor.js';
+	import { onMount } from 'svelte';
+	import { contactShadowsMode, contactShadowsWanted, shadowQuality, sceneShadowsOff } from '$lib/lightParams';
+	import { qualityOverrides } from '$lib/qualityGovernor';
+	import { shadowTier } from '$lib/environment';
+	import { globalRenderer } from '../../stores/sceneStore';
+	import { CONTACT_ON_TIERS, CONTACT_NOT_HERE } from '$lib/shadows/shadowLevelParams.js';
+	import { contactCost, contactCostText, startContactMeter } from '$lib/shadows/contactCost.js';
 	import { JUDGE_IDS, JUDGE_LABEL, TARGET_ICON, targetOf } from '$lib/judgeForCore.js';
 
 	/** judge = the Judge for group (desktop); cine = the Cinematic view group (where it is offered) */
@@ -66,6 +75,29 @@
 		const state = lightNow(k) ? 'On' : 'Off';
 		return cost ? `${state} · costs ${cost}` : state;
 	}
+
+	// ---- 106 S2b: Contact shadows (this device; On on the pc tier only) ----
+	const CONTACT_MODES = [
+		{ value: 'auto', label: 'Auto', title: 'What this kind of device draws (off on every device for now)' },
+		{ value: 'on', label: 'On', title: 'On whenever this device draws the scene’s shadows' },
+		{ value: 'off', label: 'Off', title: 'Never on this device' }
+	];
+	const tier = $derived(shadowTier($globalRenderer));
+	const contactOk = $derived(!!CONTACT_ON_TIERS[tier]);
+	const contactDrawn = $derived($contactShadowsWanted && !$qualityOverrides.contactOff && !$qualityOverrides.shadowsOff && !cineOn);
+	const contactNote = $derived.by(() => {
+		if (!contactOk) return CONTACT_NOT_HERE[/** @type {'phone'|'quest'} */ (tier)] ?? '';
+		if (cineOn) return 'Not drawn in the Cinematic view';
+		if ($contactShadowsWanted && $qualityOverrides.contactOff) return 'Off for now to keep it smooth';
+		const noShadows = $sceneShadowsOff || $shadowQuality === 'off' || $qualityOverrides.shadowsOff;
+		if ($contactShadowsMode === 'on' && noShadows) return 'Off: no shadows are drawn here right now';
+		const cost = contactCostText($contactCost, pixels);
+		if (contactDrawn) return cost ? `On · costs ${cost}` : 'On';
+		return cost ? `Off · costs ${cost} when on` : 'Off';
+	});
+	onMount(() => {
+		if (contactOk) startContactMeter();
+	});
 
 	// ---- Draw as ----
 	const row = $derived(drawRowOf($viewMode, $drawAs));
@@ -134,6 +166,15 @@
 			</div>
 		{/each}
 	{/if}
+
+	<p class="pm-g" id="pm-g-look">Look</p>
+	<div class="pm-light" id="preview-contact" data-on={contactDrawn ? '1' : '0'} data-tier={tier} title="A small, sharp shadow where an object meets what it stands on">
+		<div class="pm-light-head">
+			<span class="pm-grow" id="pm-contact">Contact shadows</span>
+			<span class="pm-light-note" id="preview-contact-note">{contactNote}</span>
+		</div>
+		<Segmented id="preview-contact-mode" labelledby="pm-contact" full disabled={!contactOk} options={CONTACT_MODES} value={$contactShadowsMode} onchange={(/** @type {any} */ v) => contactShadowsMode.set(v)} />
+	</div>
 
 	<p class="pm-g" id="pm-g-draw">Draw as</p>
 	<div class="pm-rows" role="radiogroup" aria-labelledby="pm-g-draw" id="preview-draw">

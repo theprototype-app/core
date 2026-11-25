@@ -21,7 +21,7 @@
 // Every step is REVERSIBLE and LOCAL — nothing here writes a preference, a document or a
 // message. A level is a fact about this device right now.
 
-/** @typedef {{dprScale: number, shadowsOff: boolean, aoOff: boolean, lookLite: boolean, postOff: boolean, particlesCapped: boolean, presenceSlow: boolean}} QualityOverrides */
+/** @typedef {{dprScale: number, shadowsOff: boolean, aoOff: boolean, lookLite: boolean, postOff: boolean, particlesCapped: boolean, presenceSlow: boolean, contactOff?: boolean}} QualityOverrides */
 
 /** @type {QualityOverrides} */
 export const FULL_QUALITY = Object.freeze({
@@ -31,8 +31,12 @@ export const FULL_QUALITY = Object.freeze({
 	lookLite: false,
 	postOff: false,
 	particlesCapped: false,
-	presenceSlow: false
+	presenceSlow: false,
+	contactOff: false
 });
+
+/** 106 S2b: the pre-step's label (the chip's tooltip and the Inspector's "Lowered for now" list) */
+export const CONTACT_STEP_LABEL = 'Contact shadows off';
 
 /**
  * The steps, in the order they are taken. Each names only what it changes; a level is the
@@ -294,6 +298,16 @@ export function createGovernor(opts = {}) {
 	let thresholdOverride = null;
 	/** 31-perf P3: recovery never walks below this (a headset's entry floor) */
 	let floor = 0;
+	// 106 S2b — THE CONTACT PRE-STEP. Contact shadows (a full-screen march, drawn only where this device's switch or
+	// the tier table asks) go FIRST: while the pass is drawn (`ctx.contact`), the first overload at level 0 turns it
+	// off and changes nothing else; the next one is step 1 (shadows off). Not a level, so the ladder's numbers, the
+	// presets and the headset / phone start levels are untouched, and a device that does not draw the pass sees
+	// exactly the old ladder. Same hold, same recovery (calm frames for the recovery hold, at level 0 only: the
+	// ladder walks back down first) and the same flap rule (back on, then off again within flapWindowMs = stays off
+	// until clearFlapLock). Not gated on `heavy`: the pass costs fill, not draw calls (the phone rule).
+	let contactOff = false;
+	let contactLock = false;
+	let contactOnAt = -Infinity;
 
 	function trim(/** @type {number} */ now) {
 		// keep enough for the LONGEST window any decision reads — the recovery hold grows
@@ -367,11 +381,17 @@ export function createGovernor(opts = {}) {
 		},
 		/**
 		 * @param {number} now
-		 * @param {{profile?: 'desktop'|'vr', heavy: boolean, pinned?: boolean, calls?: number|null}} ctx
-		 * @returns {{level: number, moved: 'up'|'down'|null, reason: string, p95: number|null}}
+		 * @param {{profile?: 'desktop'|'vr', heavy: boolean, pinned?: boolean, calls?: number|null, contact?: boolean, snoozed?: boolean}} ctx
+		 *   contact (106 S2b): this device draws contact shadows unless the pre-step holds them off; snoozed: no climbing
+		 * @returns {{level: number, moved: 'up'|'down'|null, reason: string, p95: number|null, step?: 'contact'}}
 		 */
 		decide(now, ctx) {
 			trim(now);
+			// the pass is no longer drawn (switch, level, a lighter look): the pre-step has nothing to hold
+			if (contactOff && !ctx.contact) {
+				contactOff = false;
+				return { level, moved: 'down', reason: 'contact not drawn', p95: null, step: 'contact' };
+			}
 			const t = thresholdOverride ?? THRESHOLDS[ctx.profile === 'vr' ? 'vr' : 'desktop'];
 			const p95 = p95Over(now, timing.triggerWindowMs);
 			const tasks = longTasks.filter((at) => at >= now - timing.longTaskWindowMs).length;
@@ -383,6 +403,13 @@ export function createGovernor(opts = {}) {
 			const overloaded = !trivial && ((p95 != null && p95 > t.overMs) || tasks > timing.longTasksOver);
 			const since = now - changedAt;
 
+			// 106 S2b: contact shadows first (see contactOff)
+			if (overloaded && level === 0 && ctx.contact && !contactOff && !ctx.snoozed && since >= timing.stepHoldMs) {
+				if (now - contactOnAt < timing.flapWindowMs) contactLock = true;
+				contactOff = true;
+				change(0, now);
+				return { level, moved: 'up', reason: p95 != null && p95 > t.overMs ? 'frames' : 'long tasks', p95, step: 'contact' };
+			}
 			// UP: overloaded, the scene is heavy enough that setting quality aside could help,
 			// and the last step has had its hold
 			if (overloaded && ctx.heavy && level < MAX_LEVEL && since >= timing.stepHoldMs) {
@@ -403,20 +430,37 @@ export function createGovernor(opts = {}) {
 					return { level, moved: 'down', reason: 'recovered', p95: calm };
 				}
 			}
+			// 106 S2b: back at full quality but for contact shadows: calm frames give them back
+			if (level === 0 && contactOff && !contactLock && !ctx.pinned && since >= recoverHoldMs) {
+				const calm = p95Over(now, recoverHoldMs);
+				if (calm != null && calm < t.underMs && tasks === 0) {
+					contactOff = false;
+					contactOnAt = now;
+					change(0, now);
+					return { level, moved: 'down', reason: 'recovered', p95: calm, step: 'contact' };
+				}
+			}
 			return { level, moved: null, reason: overloaded ? 'overloaded' : trivial ? 'trivially light' : 'steady', p95 };
 		},
 		/** Set the level directly (the chip's "restore full quality"). @param {number} to @param {number} now */
 		setLevel(to, now) {
 			const next = Math.max(0, Math.min(MAX_LEVEL, Math.floor(to) || 0));
-			if (next !== level) change(next, now);
+			// 106 S2b: full quality means the contact pre-step too
+			if (next === 0 && contactOff) {
+				contactOff = false;
+				change(0, now);
+			} else if (next !== level) change(next, now);
 			return level;
 		},
+		/** 106 S2b: is the contact pre-step in effect */
+		contactOff: () => contactOff,
 		/** 40 F12: the lowest level recovery may reach because it flapped there (-1 = none) */
 		flapLock: () => flapLock,
 		/** 40 F12: a new scene / "Keep full quality" / the auto switch — the old flap is no evidence */
 		clearFlapLock() {
 			flapLock = -1;
 			lastDownFrom = -1;
+			contactLock = false;
 		},
 		/** 31-perf P3: judge against these (an XR session's rate) until cleared with null.
 		 * @param {{overMs: number, underMs: number, budgetMs?: number} | null} t */

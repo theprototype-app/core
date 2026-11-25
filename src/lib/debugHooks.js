@@ -449,6 +449,8 @@ export const DEBUG_HOOKS = [
 	// 106: shadow quality (the pure table + the lazy Soft / Far half)
 	['shadowLevelParams', () => import('./shadows/shadowLevelParams.js')],
 	['shadowLevels', () => import('./shadows/shadowLevels.js')],
+	// 106 S2b: the Contact shadows cost meter
+	['contactCost', () => import('./shadows/contactCost.js')],
 	['traaPass', () => import('./post/traaPass.js')],
 	['xrLook', () => import('./xrLook.js')],
 	['xrLookCore', () => import('./xrLookCore.js')],

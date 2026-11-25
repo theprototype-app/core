@@ -138,26 +138,51 @@ describe('106 S2b contact switch: the governor drops it FIRST', () => {
 
 describe('106 S2b contact switch: the cost meter', () => {
 	it('cost = median with the pass - median without it, once both sides have samples', () => {
-		const m = createContactMeter({ min: 5 });
-		for (let i = 0; i < 4; i++) m.feed(false, 1000, 2 + i * 0.01);
-		for (let i = 0; i < 9; i++) m.feed(true, 1000, 3.5);
+		const m = createContactMeter({ min: 5, settle: 0 });
+		let t = 0;
+		for (let i = 0; i < 4; i++) m.feed(false, 1000, 2 + i * 0.01, (t += 10));
+		for (let i = 0; i < 9; i++) m.feed(true, 1000, 3.5, (t += 10));
 		expect(m.cost()).toBeNull();
-		m.feed(false, 1000, 2);
+		m.feed(false, 1000, 2, (t += 10));
 		expect(m.cost().ms).toBeCloseTo(1.5, 1);
 		expect(m.cost().pixels).toBe(1000);
 	});
-	it('a resize starts both sides again; junk is ignored', () => {
-		const m = createContactMeter({ min: 2 });
-		m.feed(true, 1000, 3);
-		m.feed(true, 1000, 3);
-		m.feed(false, 1000, 1);
-		m.feed(false, 1000, 1);
-		expect(m.cost().ms).toBe(2);
-		m.feed(true, 2000, 3);
+	it('the samples right after the pass joins or leaves the stack are skipped (its compile)', () => {
+		const m = createContactMeter({ min: 2, settle: 3 });
+		let t = 0;
+		m.feed(false, 1000, 1, (t += 10));
+		m.feed(false, 1000, 1, (t += 10));
+		// the flip: three compile frames are not the pass
+		for (const ms of [40, 30, 20]) m.feed(true, 1000, ms, (t += 10));
+		m.feed(true, 1000, 1.5, (t += 10));
+		m.feed(true, 1000, 1.5, (t += 10));
+		expect(m.cost().ms).toBeCloseTo(0.5, 5);
+	});
+	it('old samples age out (another scene, a load): only the last window counts', () => {
+		const m = createContactMeter({ min: 2, settle: 0, windowMs: 1000 });
+		m.feed(true, 1000, 9, 0);
+		m.feed(true, 1000, 9, 10);
+		m.feed(false, 1000, 1, 2000);
+		m.feed(false, 1000, 1, 2010);
 		expect(m.cost()).toBeNull();
-		m.feed(true, 2000, NaN);
-		m.feed(true, 2000, 5000);
+		m.feed(true, 1000, 2, 2020);
+		m.feed(true, 1000, 2, 2030);
+		expect(m.cost().ms).toBe(1);
+	});
+	it('a resize starts both sides again; junk is ignored; reset forgets', () => {
+		const m = createContactMeter({ min: 2, settle: 0 });
+		m.feed(true, 1000, 3, 1);
+		m.feed(true, 1000, 3, 2);
+		m.feed(false, 1000, 1, 3);
+		m.feed(false, 1000, 1, 4);
+		expect(m.cost().ms).toBe(2);
+		m.feed(true, 2000, 3, 5);
+		expect(m.cost()).toBeNull();
+		m.feed(true, 2000, NaN, 6);
+		m.feed(true, 2000, 5000, 7);
 		expect(m.counts()).toEqual({ on: 1, off: 0, pixels: 2000, onMs: 3, offMs: null });
+		m.reset();
+		expect(m.counts().on).toBe(0);
 	});
 	it('the menu words, scaled to the pixels drawn now', () => {
 		expect(contactCostText(null, 100)).toBe('');

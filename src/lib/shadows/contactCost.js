@@ -15,6 +15,10 @@ import { safeStorage } from '../safeStorage';
 const KEY = 'contactShadowsCost';
 export const MIN = 20;
 const KEEP = 90;
+/** samples older than this (ms) no longer count */
+export const WINDOW_MS = 30000;
+/** samples skipped after the pass joins or leaves the stack */
+export const SETTLE = 8;
 
 /** @returns {{ ms: number, pixels: number } | null} */
 function load() {
@@ -44,33 +48,64 @@ function median(xs) {
 }
 
 /**
- * The pure meter: feed(drawn, pixels, ms); cost() = median(with) - median(without) at the newest pixel count, or null.
- * A window resize starts both sides again (the pass costs per pixel). @param {{ min?: number, keep?: number }} [o]
+ * The pure meter: feed(drawn, pixels, ms, t); cost() = median(with) - median(without), or null.
+ *  · a window resize starts both sides again (the pass costs per pixel)
+ *  · only samples from the last WINDOW_MS count (a scene load, a level change or another scene's frames age out
+ *    instead of pricing the pass: chain 1 stored 6.3 ms from post-reload frames while the medians differed by 0.07)
+ *  · the first SETTLE samples after the pass joins or leaves the stack are skipped (its shader compile)
+ * @param {{ min?: number, keep?: number, windowMs?: number, settle?: number }} [o]
  */
 export function createContactMeter(o = {}) {
 	const min = o.min ?? MIN;
 	const keep = o.keep ?? KEEP;
+	const windowMs = o.windowMs ?? WINDOW_MS;
+	const settle = o.settle ?? SETTLE;
 	let px = 0;
-	/** @type {{ on: number[], off: number[] }} */
+	let newest = -Infinity;
+	/** @type {boolean | null} */
+	let lastDrawn = null;
+	let skip = 0;
+	/** @type {{ on: {t: number, ms: number}[], off: {t: number, ms: number}[] }} */
 	let s = { on: [], off: [] };
+	/** @param {'on'|'off'} k */
+	const fresh = (k) => s[k].filter((x) => x.t >= newest - windowMs).map((x) => x.ms);
 	return {
-		/** @param {boolean} drawn @param {number} pixels @param {number} ms */
-		feed(drawn, pixels, ms) {
-			if (!(ms >= 0) || ms > 1000 || !(pixels > 0)) return;
+		/** @param {boolean} drawn @param {number} pixels @param {number} ms @param {number} t */
+		feed(drawn, pixels, ms, t) {
+			if (!(ms >= 0) || ms > 1000 || !(pixels > 0) || !Number.isFinite(t)) return;
 			if (pixels !== px) {
 				px = pixels;
 				s = { on: [], off: [] };
 			}
+			if (lastDrawn !== null && drawn !== lastDrawn) skip = settle;
+			lastDrawn = drawn;
+			if (skip > 0) {
+				skip--;
+				return;
+			}
+			newest = Math.max(newest, t);
 			const xs = drawn ? s.on : s.off;
-			xs.push(ms);
+			xs.push({ t, ms });
 			if (xs.length > keep) xs.shift();
 		},
 		/** @returns {{ ms: number, pixels: number } | null} */
 		cost() {
-			if (s.on.length < min || s.off.length < min) return null;
-			return { ms: Math.max(0, median(s.on) - median(s.off)), pixels: px };
+			const on = fresh('on');
+			const off = fresh('off');
+			if (on.length < min || off.length < min) return null;
+			return { ms: Math.max(0, median(on) - median(off)), pixels: px };
 		},
-		counts: () => ({ on: s.on.length, off: s.off.length, pixels: px, onMs: s.on.length ? median(s.on) : null, offMs: s.off.length ? median(s.off) : null })
+		/** forget every sample (the suites' frame rows start clean) */
+		reset() {
+			s = { on: [], off: [] };
+			lastDrawn = null;
+			skip = 0;
+		},
+		counts: () => {
+			const on = fresh('on');
+			const off = fresh('off');
+			return { on: on.length, off: off.length, pixels: px, onMs: on.length ? median(on) : null, offMs: off.length ? median(off) : null };
+		}
 	};
 }
 
@@ -102,10 +137,10 @@ function poll() {
 	if (!pending.length) return;
 	const disjoint = gl.getParameter(ext.GPU_DISJOINT_EXT);
 	while (pending.length) {
-		const [q, drawn, pixels] = pending[0];
+		const [q, drawn, pixels, t] = pending[0];
 		if (!gl.getQueryParameter(q, gl.QUERY_RESULT_AVAILABLE)) break;
 		pending.shift();
-		if (!disjoint) meter.feed(drawn, pixels, gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6);
+		if (!disjoint) meter.feed(drawn, pixels, gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6, t);
 		gl.deleteQuery(q);
 	}
 	if (pending.length > 32) pending.splice(0, pending.length - 32).forEach(([q]) => gl.deleteQuery(q));
@@ -153,7 +188,7 @@ const probe = {
 		if (!open) return;
 		try {
 			gl.endQuery(ext.TIME_ELAPSED_EXT);
-			pending.push([open, !!drawn, openPixels]);
+			pending.push([open, !!drawn, openPixels, performance.now()]);
 		} catch {
 			/* a lost context */
 		}
@@ -166,6 +201,11 @@ export function startContactMeter() {
 	if (started) return;
 	started = true;
 	contactFrameProbe.on = probe;
+}
+
+/** For the suites' frame rows: start the meter's samples clean. */
+export function contactMeterReset() {
+	meter.reset();
 }
 
 /** For the suites: the meter's sample counts, whether a GPU timer exists, the stored cost. */

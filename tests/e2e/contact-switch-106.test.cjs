@@ -116,29 +116,36 @@ h.run(async () => {
 	h.check(li >= 0 && groups[li + 1] === 'Draw as' && (li === 0 || groups[li - 1] === 'Cinematic view'), `1. a Look group after the Cinematic view group (${groups.join(' · ')})`);
 	const s1 = await state(page);
 	h.check(s1.checked === 'preview-contact-mode-auto' && !s1.disabled && /^Off/.test(s1.note ?? ''), `1. the row: Auto checked, enabled, "${s1.note}"`);
+	await closeMenu(page);
 
 	// ---- 2. On draws the pass, at Basic ---------------------------------------------------------------------------
 	await page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.addObjects.spawnAtPoint('/create Box 0.6 0.6 0.6', [0, 0.3, 0]));
 	await page.waitForTimeout(1500);
+	await page.keyboard.press('Escape'); // no selection outline in the frames
+	await page.waitForTimeout(1500);
 	const saveOff = await saveText(page);
 	const envAt0 = (await state(page)).envAt;
-	const frameAuto = await h.grabFrame(A);
+	// the box's foot, and the frame's own noise floor (two grabs with nothing changed)
+	const clip = await h.centeredClip(A, [0, 0, 0], 320);
+	const frameAuto = await h.grabFrame(A, clip);
+	await page.waitForTimeout(1500);
+	const floor = await h.frameDelta(page, frameAuto, await h.grabFrame(A, clip), 6);
 	await pick(page, 'on');
 	const s2 = await until(() => state(page), (v) => v.mode === 'on' && v.wanted && v.live > 0, '2. On: the pass is built in the post stack', 20000);
 	h.check(s2.drawn === 'basic' && s2.stored === 'on', `2. ...in a Basic scene (drawn ${s2.drawn}), stored on this device (${s2.stored})`);
 	h.check(/^On/.test(s2.note ?? '') && s2.checked === 'preview-contact-mode-on', `2. the row says On ("${s2.note}")`);
 	await closeMenu(page);
 	await page.waitForTimeout(1500);
-	const frameOn = await h.grabFrame(A);
+	const frameOn = await h.grabFrame(A, clip);
 	const d = await h.frameDelta(page, frameAuto, frameOn, 6);
-	h.check(d.changed > 50, `2. the frame changes where the pass draws (${d.changed} px over 6, max ${d.max})`);
+	h.check(d.changed > Math.max(50, 3 * floor.changed), `2. the frame changes at the box's foot (${d.changed} px over 6, max ${d.max}; noise floor ${floor.changed} px)`);
 	await pick(page, 'off');
 	await until(() => state(page), (v) => v.mode === 'off' && !v.wanted && v.live === 0, '2. Off: the pass is gone', 20000);
 	await closeMenu(page);
 	await page.waitForTimeout(1500);
-	const frameOff = await h.grabFrame(A);
+	const frameOff = await h.grabFrame(A, clip);
 	const d0 = await h.frameDelta(page, frameAuto, frameOff, 6);
-	h.check(d0.changed < d.changed / 4, `2. counterfactual: Off draws what Auto drew (${d0.changed} px vs On's ${d.changed})`);
+	h.check(d0.changed <= Math.max(50, 3 * floor.changed) && d0.changed < d.changed / 4, `2. counterfactual: Off draws what Auto drew (${d0.changed} px vs On's ${d.changed}, floor ${floor.changed})`);
 
 	// ---- 3. never in the scene file ---------------------------------------------------------------------------------
 	const saveOffAgain = await saveText(page);
@@ -146,7 +153,8 @@ h.run(async () => {
 	await until(() => state(page), (v) => v.live > 0, '3. premise: On again', 20000);
 	const saveOn = await saveText(page);
 	h.check(saveOn === saveOff && saveOffAgain === saveOff, `3. a save is the same with the switch On, Off and Auto (${saveOn.length} chars)`);
-	h.check(!/contact/i.test(saveOn), '3. the save names nothing "contact"');
+	const named = [...saveOn.matchAll(/.{0,40}contact.{0,40}/gi)].map((m) => m[0]);
+	h.check(!/contactShadows/i.test(saveOn), `3. the save carries no contactShadows key (other "contact" words, unchanged On/Off: ${JSON.stringify(named.slice(0, 2))})`);
 	h.check((await state(page)).envAt === envAt0, '3. the environment was not re-stamped by the switch');
 	// an old scene (no word about the switch, saved before it): loads unchanged, the device keeps its own setting
 	const oldScene = await page.evaluate(async () => {
@@ -252,6 +260,8 @@ h.run(async () => {
 	h.check(m1.length === 1 && m1[0].step === 'contact' && m1[0].level === 0, `7. the first overload takes contact off and nothing else (${JSON.stringify(m1)})`);
 	const g1 = await until(() => state(page), (v) => v.contactOff && v.level === 0 && v.live === 0 && !v.shadowsOff, '7. contact off at level 0: the pass leaves the stack, shadows stay', 20000);
 	h.check(g1.labels[0] === 'Contact shadows off' && g1.note === 'Off for now to keep it smooth', `7. the labels and the row say so (${JSON.stringify(g1.labels)}, "${g1.note}")`);
+	// the contact step published level 0, which forgets the full-quality baseline: the heavy premise again
+	await page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.sceneBudget.qualityBaseline.set({ objects: 0, triangles: 0, calls: 5000 }));
 	const m2 = await page.evaluate(() => /** @type {any} */ (window).__g106drive(3600, 60));
 	h.check(m2.length >= 1 && m2[0].level === 1 && m2[0].step === null, `7. the next overload is step 1 (${JSON.stringify(m2)})`);
 	const g2 = await state(page);
@@ -276,7 +286,8 @@ h.run(async () => {
 		await pick(page, 'off');
 		await until(meter, (v) => v.off >= 20, '8. frames without the pass sampled', 120000);
 		await pick(page, 'on');
-		const mc = await until(meter, (v) => v.on >= 20 && !!v.stored, '8. frames with the pass sampled, a cost kept for this device', 120000);
+		// the kept number is the meter's own difference now (the stale-sample trap chain 1 found: 6.3 kept, 0.07 measured)
+		const mc = await until(meter, (v) => v.on >= 20 && !!v.stored && v.cost && Math.abs(v.stored.ms - v.cost.ms) < 0.3, '8. frames with the pass sampled, the kept cost = the measured difference', 120000);
 		const row = await until(() => state(page), (v) => /costs (about \d+ ms|under 1 ms)/.test(v.note ?? ''), '8. the row shows the measured cost', 15000);
 		const kept = await page.evaluate(() => localStorage.getItem('contactShadowsCost'));
 		h.check(!!kept && JSON.parse(kept).pixels > 0, `8. kept in localStorage (${kept}); "${row.note}"; on ${mc.onMs?.toFixed?.(2)} ms vs off ${mc.offMs?.toFixed?.(2)} ms GPU`);
@@ -294,6 +305,7 @@ h.run(async () => {
 			for (const mode of ['off', 'on', 'off', 'on']) {
 				await page.evaluate((m) => /** @type {any} */ (window).__tp.test.v1.lightParams.contactShadowsMode.set(m), mode);
 				await page.waitForTimeout(2500);
+				await page.evaluate(async () => (await /** @type {any} */ (window).__tp.test.v1.contactCost).contactMeterReset());
 				const r = await page.evaluate(async (sampleMs) => {
 					const S = /** @type {any} */ (window).__tp.test.v1;
 					const xs = [];
@@ -312,7 +324,7 @@ h.run(async () => {
 					const q = (/** @type {number} */ p) => +s[Math.min(s.length - 1, Math.floor(p * s.length))].toFixed(2);
 					const cs = await S.contactShadows;
 					const m = (await S.contactCost).contactMeterDebug();
-					return { live: cs.contactEffectsLive(), frames: xs.length, median: q(0.5), p95: q(0.95), over20: xs.filter((x) => x > 20).length, gpuOn: m.onMs, gpuOff: m.offMs, cost: m.cost };
+					return { live: cs.contactEffectsLive(), frames: xs.length, median: q(0.5), p95: q(0.95), over20: xs.filter((x) => x > 20).length, drawn: S.environment.drawnSceneShadowLevel(), gpuMs: m.onMs ?? m.offMs, gpuSamples: m.on + m.off };
 				}, 6000);
 				rows.push({ mode, ...r });
 				console.log(`  frames: ${slug} contact ${mode}: ${JSON.stringify(r)}`);

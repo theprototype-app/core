@@ -16,6 +16,7 @@ import * as THREE from 'three';
 import { flattenSubpath, ringsToPolygons, boundsOf } from './vectorPath.js';
 import { strokeAll, piecesToTriangles } from './vectorStroke.js';
 import { cleanVector, vectorSubpaths, fillColourAt, hexToRgb } from './vectorRecord.js';
+import { LAYER_STEP } from './vectorOrder.js';
 
 /** gap between the fill surface and the stroke drawn over it (metres) */
 export const STROKE_LIFT = 0.0015;
@@ -165,6 +166,9 @@ export function buildVectorGeometry(params) {
 		}
 	}
 
+	// 64-vector-edit row 3: the layer lifts the whole shape along its +Z (layer 0 adds nothing)
+	const lift = (p.layer ?? 0) * LAYER_STEP;
+	if (lift) for (let i = 2; i < pos.length; i += 3) pos[i] += lift;
 	const geometry = new THREE.BufferGeometry();
 	if (!pos.length) return geometry;
 	geometry.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));

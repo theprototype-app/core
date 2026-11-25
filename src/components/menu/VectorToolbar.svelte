@@ -3,7 +3,7 @@
 	// drawn with, and the pen's Finish / Undo point; while a shape's points are being edited, the
 	// session's own strip (convert / delete / done). The DrawToolbar shape, one tool family over.
 	import { vectorTool, vectorStyle, penDraft, armVectorTool, disarmVectorTool, finishPen, undoPenPoint, VECTOR_TOOLS } from '$lib/vector/vectorTool.js';
-	import { vectorEditObject, vectorEditPick, exitVectorEdit, convertPoint, deletePickedPoint } from '$lib/vector/vectorEdit.js';
+	import { vectorEditObject, vectorEditPick, vectorEditPicks, vectorEditCan, exitVectorEdit, convertPicked, deletePickedPoint, closePickedPath, splitAtPick, pickAllPoints } from '$lib/vector/vectorEdit.js';
 
 	/** @type {Record<string, string>} */
 	const LABELS = { rect: 'Rectangle', ellipse: 'Ellipse', star: 'Star', polygon: 'Polygon', pen: 'Pen' };
@@ -78,20 +78,36 @@
 		class="fixed left-1/2 top-20 z-(--z-window) flex w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center gap-3 rounded-2xl sm:rounded-full bg-surface-1 px-4 py-2 text-sm text-text shadow-window"
 	>
 		<span class="font-semibold">Edit points</span>
-		<span class="text-xs text-text-2">drag points and handles · click the outline to add · double-click to convert · Alt breaks a handle</span>
+		<span class="text-xs text-text-2">drag points and handles · Shift picks more · click the outline to add · double-click to convert · Alt breaks a handle</span>
+		<span id="vector-edit-count" class="text-xs text-text-2">{$vectorEditPicks.length} picked</span>
+		<button id="vector-edit-all" class="rounded-full bg-surface-2 px-2.5 py-0.5 text-xs hover:bg-surface-hover" title="Pick every point (Ctrl+A)" onclick={() => pickAllPoints()}>All</button>
 		<button
 			id="vector-edit-convert"
 			class="rounded-full bg-surface-2 px-2.5 py-0.5 text-xs hover:bg-surface-hover disabled:opacity-50"
 			disabled={!$vectorEditPick}
-			title="Corner <-> smooth"
-			onclick={() => $vectorEditPick && convertPoint($vectorEditPick.sub, $vectorEditPick.index)}>Convert</button
+			title="Corner <-> smooth (double-click a point)"
+			onclick={() => convertPicked()}>Convert</button
 		>
 		<button
 			id="vector-edit-delete"
 			class="rounded-full bg-surface-2 px-2.5 py-0.5 text-xs hover:bg-surface-hover disabled:opacity-50"
-			disabled={!$vectorEditPick}
-			title="Remove the picked point (Delete)"
-			onclick={() => deletePickedPoint()}>Delete point</button
+			disabled={!$vectorEditPicks.length}
+			title="Remove the picked points (Delete)"
+			onclick={() => deletePickedPoint()}>Delete</button
+		>
+		<button
+			id="vector-edit-close"
+			class="rounded-full bg-surface-2 px-2.5 py-0.5 text-xs hover:bg-surface-hover disabled:opacity-50"
+			disabled={!$vectorEditCan.close}
+			title="Join the last point to the first (C)"
+			onclick={() => closePickedPath()}>Close path</button
+		>
+		<button
+			id="vector-edit-split"
+			class="rounded-full bg-surface-2 px-2.5 py-0.5 text-xs hover:bg-surface-hover disabled:opacity-50"
+			disabled={!$vectorEditCan.split}
+			title="Open a closed path at the picked point, or cut an open one in two there (K)"
+			onclick={() => splitAtPick()}>Split</button
 		>
 		<button id="vector-edit-done" class="rounded-full bg-accent-muted px-3 py-0.5 text-accent-soft-text" onclick={() => exitVectorEdit()}>Done</button>
 	</div>

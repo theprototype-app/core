@@ -49,7 +49,7 @@
 	import { startClap, tickClap, stopClap } from '$lib/clap'; // 31: two hands together make something
 	import { tickMoveSmoothing } from '$lib/moveSmoothing';
 	import { moduleInteractiveGroups, fireClickMiss, runClickHandlers } from '$lib/moduleSDK';
-	import { modulePointerDown, modulePointerMove, modulePointerUp, modulePointerWanted } from '$lib/modulePointer';
+	import { modulePointerDown, modulePointerMove, modulePointerUp, modulePointerWanted, modulePointerCancel } from '$lib/modulePointer';
 	import { updateSpatialAudio } from '$lib/voiceChat';
 	import { tickAnimatedMixers } from '$lib/animatedImports';
 	import { tickSim } from '$lib/sim/runtime.js'; // 36-sim: jiggle, splashes, fluid tanks
@@ -102,7 +102,7 @@
 	import { startCables, updateCables } from '$lib/audioPatch';
 	import { updateTinyMarkers } from '$lib/tinyMarkers';
 	import { tickAgentMarkers } from '$lib/agentPresence'; // 74 VH3
-	import { cameraPreview, activeOrbit, setOrbitEnabled } from '$lib/cameraPreview';
+	import { cameraPreview, activeOrbit, setOrbitEnabled, handOrbitPointers } from '$lib/cameraPreview';
 	import CameraPreview from './CameraPreview.svelte';
 	import { startEditorNavigation, updateEditorNavigation } from '$lib/editorNavigation';
 	import { vrMenuOpen } from '../stores/sceneStore';
@@ -892,6 +892,8 @@
 		// 37 (DEVX #29): a module may OWN a press — Interact, or Edit when no editor tool or
 		// session holds it (a handler that asked for 'edit'); Play's presses are playInteract's
 		let modulePressOwned = false;
+		// 64-vector-edit: the press that claimed it (a second finger hands both to the camera)
+		let modulePress: PointerEvent | null = null;
 		const modulePressMode = () => {
 			if ($isLocked === true || $isVRMode || $specatorMode) return null;
 			if (interactPress()) return 'interact';
@@ -900,12 +902,24 @@
 		};
 
 		const onPointerDown = (event) => {
+			// 64-vector-edit: a SECOND finger while a tool holds the first — the tool lets go (and undoes
+			// what the first finger began) and the camera takes the pinch / two-finger pan
+			if (modulePressOwned && event.pointerType === 'touch' && modulePress && event.pointerId !== modulePress.pointerId) {
+				setRayFromEvent(event);
+				modulePointerCancel(selectionRaycaster, event);
+				modulePressOwned = false;
+				handOrbitPointers([modulePress, event]);
+				modulePress = null;
+				downPosition = null;
+				return;
+			}
 			if (event.button === 0) {
 				const pm = modulePressMode();
 				if (pm && modulePointerWanted(pm)) {
 					setRayFromEvent(event);
 					if (modulePointerDown(pm, selectionRaycaster, event)) {
 						modulePressOwned = true;
+						modulePress = event;
 						setOrbitEnabled(false);
 						return;
 					}
@@ -1054,6 +1068,7 @@
 		const onPointerMove = (event) => {
 			// 37: a module-owned press hears the drag, and nothing else does
 			if (modulePressOwned) {
+				if (modulePress && event.pointerId !== modulePress.pointerId) return; // only the owning finger
 				setRayFromEvent(event);
 				modulePointerMove(selectionRaycaster, event);
 				return;
@@ -1147,7 +1162,9 @@
 
 		const onPointerUp = (event) => {
 			if (modulePressOwned && event.button === 0) {
+				if (modulePress && event.pointerId !== modulePress.pointerId) return;
 				modulePressOwned = false;
+				modulePress = null;
 				setRayFromEvent(event);
 				modulePointerUp(selectionRaycaster, event);
 				setOrbitEnabled(true);
@@ -1546,8 +1563,11 @@
 				holdX = e.touches[0].clientX;
 				holdY = e.touches[0].clientY;
 				holdTimer = setTimeout(() => {
-					openViewportMenuAt(holdX, holdY);
 					holdTimer = 0;
+					// 64-vector-edit: a tool (or module) that owns the press keeps it — a slow pen handle
+					// drag that starts with a still finger is not a long-press
+					if (modulePressOwned) return;
+					openViewportMenuAt(holdX, holdY);
 				}, 500);
 			},
 			{ passive: true }

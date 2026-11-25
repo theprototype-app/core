@@ -43,7 +43,8 @@ h.run(async () => {
 		add: window.__stores.vrRadialMenu.ringEntries('add').map((e) => e.id),
 		shapes: window.__stores.vrRadialMenu.ringEntries('vecshapes').map((e) => e.id)
 	}));
-	h.check(entries.add.includes('nav:vecshapes') && entries.shapes.length === 4, 'the Add ring has Shapes ▸ with four shapes');
+	// 64-vector-edit: + Pen (the laser pen), so four shapes and the pen
+	h.check(entries.add.includes('nav:vecshapes') && entries.shapes.filter((id) => id.startsWith('vec:add:')).length === 4 && entries.shapes.includes('vec:pen'), 'the Add ring has Shapes ▸ with four shapes and the pen');
 	let depth = await undoDepth(A.page);
 	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('vec:add:star'));
 	await iwer.frames(A.page, 4);

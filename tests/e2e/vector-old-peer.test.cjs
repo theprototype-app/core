@@ -9,7 +9,8 @@
 //      the star into it (geometry + move + delete) -> the release keeps going: the star is gone, no error
 //   3. the release selects the shape (Inspector over an unknown gtype): no error
 //   4. two peers + reload: the release reloads and rejoins -> the light shapes come back with their vertices
-//   5. a file saved by the branch (buildSessionPayload) opens in the release: light shapes draw, no error
+//   5. a file saved by the branch (buildSessionPayload) opens in the release: light shapes draw, no error;
+//      a shape on layer 2 (64-vector-edit) keeps its lift there
 //   6. an old scene (saved by the release: a box, a sphere) loads in the branch unchanged (same objects,
 //      same vertex counts)
 // Run: OLD_APP_URL=https://theprototype.app:<old port>/ APP_URL=https://theprototype.app:<branch port>/ node tests/e2e/vector-old-peer.test.cjs
@@ -40,7 +41,10 @@ const meshes = (peer) =>
 		const out = {};
 		g?.traverse((o) => {
 			if (!o.isMesh || o === g) return;
-			out[o.uuid] = { name: o.name, verts: o.geometry?.attributes?.position?.count ?? 0, gtype: o.userData?.geometryParams?.gtype ?? null };
+			const pos = o.geometry?.attributes?.position;
+			let zMax = -Infinity;
+			for (let i = 0; pos && i < pos.count; i++) zMax = Math.max(zMax, pos.getZ(i));
+			out[o.uuid] = { name: o.name, verts: pos?.count ?? 0, gtype: o.userData?.geometryParams?.gtype ?? null, zMax };
 		});
 		return out;
 	});
@@ -141,6 +145,10 @@ h.run(async () => {
 	// ---- 5. a file saved by the branch opens in the release ------------------------------------------
 	// at most three pages at once from here: a fourth boot on a loaded box passed setupPage's 90 s (day1c)
 	await O.page.context().close();
+	// 64-vector-edit: the pen path goes to layer 2 first — the file carries the lifted triangles, so the release draws it in order
+	await L.page.evaluate((uuid) => window.__tp.test.v1.vectorActions.setVectorParams(uuid, { layer: 2 }), made.pen);
+	const layered = (await meshes(L))[made.pen];
+	h.check(layered.verts === branchNow[made.pen].verts && Math.abs(layered.zMax - branchNow[made.pen].zMax - 0.004) < 1e-6, '5. premise: layer 2 lifts the pen path 4 mm, same vertices');
 	const saved = await L.page.evaluate(() => JSON.parse(JSON.stringify(window.__tp.test.v1.sessions.buildSessionPayload('vector-old-peer', { thumbnail: false }))));
 	const P = await hOld.setupPage(browser, 'P'); // a release page on its own (no session)
 	await P.page.evaluate(async (payload) => window.__tp.test.v1.sessions.applySession(payload, { backup: false, replicate: false, quiet: true }), saved);
@@ -150,6 +158,7 @@ h.run(async () => {
 		'5. the branch-saved scene opens in the release: every shape draws as a plain mesh with the branch\'s vertices (a file carries the triangles)',
 		30000
 	);
+	h.check(Math.abs((await meshes(P))[made.pen].zMax - layered.zMax) < 1e-6, '5. ...the layered pen path keeps its lift in the release (64-vector-edit layer order)');
 	h.check(errorsOf(P).length === 0, `5. no page error opening the branch file in the release (${errorsOf(P).join(' | ') || 'none'})`);
 	await P.page.context().close();
 

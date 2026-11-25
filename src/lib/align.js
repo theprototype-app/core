@@ -99,8 +99,9 @@ function shiftWorld(object, axis, delta) {
 /**
  * Align the selection on one axis.
  * @param {'x'|'y'|'z'} axis @param {'min'|'center'|'max'} edge
- * @param {{to?: 'selection'|'active', uuids?: string[]}} [opts] `to: 'active'` lines everything up
- *   with the ACTIVE (last picked) object, which stays; default = the selection's bounds
+ * @param {{to?: 'selection'|'active', uuids?: string[], label?: string, box?: Function, shift?: Function}} [opts] `to: 'active'`
+ *   lines everything up with the ACTIVE (last picked) object, which stays; default = the selection's bounds.
+ *   64-vector-edit: `box(object)` / `shift(object, axis, delta)` measure and move in another frame (a shape's plane)
  * @returns {number} objects moved
  */
 export function alignSelection(axis, edge, opts = {}) {
@@ -111,15 +112,16 @@ export function alignSelection(axis, edge, opts = {}) {
 	}
 	const a = axisIndex(axis);
 	const toActive = opts.to === 'active';
-	const label = `Align ${AXIS_NAME[a]} ${edge === 'center' ? 'centre' : edge}${toActive ? ' to active' : ''}`;
+	const label = opts.label ?? `Align ${AXIS_NAME[a]} ${edge === 'center' ? 'centre' : edge}${toActive ? ' to active' : ''}`;
+	const { box = worldBox, shift = shiftWorld } = opts;
 	return commitArrange(
 		objects,
 		() => {
-			const boxes = objects.map(worldBox);
+			const boxes = objects.map((o) => box(o));
 			const keep = boxes.map((b) => !!b); // an empty group has no box: it stays put
 			const deltas = alignDeltas(/** @type {any} */ (boxes.filter(Boolean)), a, edge, toActive ? keep.filter(Boolean).length - 1 : -1);
 			const deltaOf = indexMap(keep, deltas);
-			return (object, i) => shiftWorld(object, a, deltaOf[i]);
+			return (object, i) => shift(object, a, deltaOf[i]);
 		},
 		label
 	);
@@ -135,7 +137,7 @@ function indexMap(keep, deltas) {
 /**
  * Distribute 3+ selected objects on one axis (the two outermost stay).
  * @param {'x'|'y'|'z'} axis @param {'centers'|'gaps'} mode
- * @param {{uuids?: string[]}} [opts] @returns {number} objects moved
+ * @param {{uuids?: string[], label?: string, box?: Function, shift?: Function}} [opts] (box / shift: as alignSelection) @returns {number} objects moved
  */
 export function distributeSelection(axis, mode, opts = {}) {
 	const objects = arrangeTargets(opts.uuids);
@@ -144,15 +146,16 @@ export function distributeSelection(axis, mode, opts = {}) {
 		return 0;
 	}
 	const a = axisIndex(axis);
+	const { box = worldBox, shift = shiftWorld } = opts;
 	return commitArrange(
 		objects,
 		() => {
-			const boxes = objects.map(worldBox);
+			const boxes = objects.map((o) => box(o));
 			const keep = boxes.map((b) => !!b);
 			const deltaOf = indexMap(keep, distributeDeltas(/** @type {any} */ (boxes.filter(Boolean)), a, mode));
-			return (object, i) => shiftWorld(object, a, deltaOf[i]);
+			return (object, i) => shift(object, a, deltaOf[i]);
 		},
-		`Distribute ${AXIS_NAME[a]} ${mode === 'gaps' ? 'gaps' : 'centres'}`
+		opts.label ?? `Distribute ${AXIS_NAME[a]} ${mode === 'gaps' ? 'gaps' : 'centres'}`
 	);
 }
 

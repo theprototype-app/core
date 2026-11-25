@@ -31,6 +31,8 @@ export const WIRE_ARRAY_CAP = 4000;
 export const vectorTool = writable(null);
 /** the shape whose points are being edited (uuid) @type {import('svelte/store').Writable<string | null>} */
 export const vectorEditObject = writable(null);
+/** 64-vector-edit row 5: the VR laser pen is armed (the radial's rows read it before the chunk loads) */
+export const vectorLaserPen = writable(false);
 
 /** is this object a vector shape? @param {any} object */
 export function isVectorObject(object) {

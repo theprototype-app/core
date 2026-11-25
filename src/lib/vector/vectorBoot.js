@@ -5,7 +5,7 @@
 import { get } from 'svelte/store';
 import { selectedObject } from '../../stores/sceneStore';
 import { registerVRMenuEntry } from '../vrRadialMenu';
-import { isVectorObject, toggleVectorTool } from './vectorGate.js';
+import { isVectorObject, toggleVectorTool, vectorLaserPen } from './vectorGate.js';
 
 const vr = () => import('./vectorVR.js');
 
@@ -17,6 +17,15 @@ registerVRMenuEntry({ id: 'nav:vecshapes', group: 'add', label: 'Shapes', icon: 
 	['polygon', 'Polygon', 'hexagon']
 ].forEach(([kind, label, icon], order) =>
 	registerVRMenuEntry({ id: 'vec:add:' + kind, group: 'vecshapes', label, icon, order, closes: true, action: () => void vr().then((m) => m.spawnVectorAhead(kind)) })
+);
+// 64-vector-edit row 5: the laser pen (the chunk's actions); while it is armed the root ring offers its rows
+registerVRMenuEntry({ id: 'vec:pen', group: 'vecshapes', label: 'Pen', icon: 'pen-tool', order: 4, closes: true, active: () => get(vectorLaserPen), action: () => void vr().then((m) => m.toggleLaserPen()) });
+[
+	['vec:pen-finish', 'Finish path', 'check', 'laserFinish'],
+	['vec:pen-undo', 'Undo point', 'undo-2', 'laserUndoPoint'],
+	['vec:pen-off', 'Pen off', 'x', 'disarmLaserPen']
+].forEach(([id, label, icon, fn], i) =>
+	registerVRMenuEntry({ id, label, icon, order: 0.1 + i * 0.01, closes: true, visible: () => get(vectorLaserPen), action: () => void vr().then((m) => /** @type {any} */ (m)[fn]()) })
 );
 registerVRMenuEntry({
 	id: 'vec:extrude',
@@ -37,7 +46,31 @@ export const VECTOR_SHORTCUTS = [
 	{ id: 'tools.draw-shapes', keys: 'Alt+V', group: 'Tools', scope: 'viewport', label: 'Draw shapes (rectangle, ellipse, star, polygon, pen)', action: () => void toggleVectorTool() },
 	{ id: 'vector.pen-finish', keys: 'Enter', group: 'Shapes', scope: 'vector', label: 'Pen: finish the open path', external: true },
 	{ id: 'vector.pen-undo', keys: 'Backspace', group: 'Shapes', scope: 'vector', label: 'Pen: remove the last point', external: true },
-	{ id: 'vector.point-delete', keys: 'Delete', group: 'Shapes', scope: 'vector', label: 'Edit points: delete the picked point', external: true }
+	{ id: 'vector.point-delete', keys: 'Delete', group: 'Shapes', scope: 'vector', label: 'Edit points: delete the picked points', external: true },
+	// 64-vector-edit (D5)
+	{ id: 'vector.point-all', keys: 'Ctrl+A', group: 'Shapes', scope: 'vector', label: 'Edit points: pick every point', external: true },
+	{ id: 'vector.path-close', keys: 'C', group: 'Shapes', scope: 'vector', label: 'Edit points: close the open path', external: true },
+	{ id: 'vector.path-split', keys: 'K', group: 'Shapes', scope: 'vector', label: 'Edit points: split the path at the picked point', external: true },
+	{ id: 'vector.point-nudge-left', keys: 'ArrowLeft', group: 'Shapes', scope: 'vector', label: 'Edit points: nudge left (Shift = 10x)', external: true },
+	{ id: 'vector.point-nudge-right', keys: 'ArrowRight', group: 'Shapes', scope: 'vector', label: 'Edit points: nudge right (Shift = 10x)', external: true },
+	{ id: 'vector.point-nudge-up', keys: 'ArrowUp', group: 'Shapes', scope: 'vector', label: 'Edit points: nudge up (Shift = 10x)', external: true },
+	{ id: 'vector.point-nudge-down', keys: 'ArrowDown', group: 'Shapes', scope: 'vector', label: 'Edit points: nudge down (Shift = 10x)', external: true },
+	...[
+		['front', 'Ctrl+Alt+]', 'Bring to front'],
+		['forward', 'Ctrl+]', 'Bring forward'],
+		['backward', 'Ctrl+[', 'Send backward'],
+		['back', 'Ctrl+Alt+[', 'Send to back']
+	].map(([op, keys, label]) => ({
+		id: 'vector.order-' + op,
+		keys,
+		group: 'Shapes',
+		scope: 'viewport',
+		label: `Shapes: ${label.toLowerCase()} on their plane`,
+		action: () => {
+			if (!isVectorObject(get(selectedObject))) return;
+			void import('./vectorArrange.js').then((m) => m.orderShapes(/** @type {any} */ (op)));
+		}
+	}))
 ];
 
 // a dynamic import, the checkpoints precedent: shortcuts sits in history's import family

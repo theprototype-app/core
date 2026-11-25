@@ -129,7 +129,9 @@ export async function buildExtruded(rec, url, profile) {
 			segments: bevel.segments,
 			capMaterial: 0,
 			sideMaterial: 1,
-			clamp: false
+			clamp: false,
+			// 64-int: three's corner limit, so old text keeps its silhouette (text-extrude-compat §5)
+			miterMax: Math.SQRT2
 		});
 		geometry.setAttribute('position', new THREE.BufferAttribute(solid.positions, 3));
 		if (solid.normals) geometry.setAttribute('normal', new THREE.BufferAttribute(solid.normals, 3));

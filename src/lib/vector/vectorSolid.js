@@ -38,7 +38,7 @@ const BRIDGE_TRIES = 256;
  * @typedef {number[]} Pt [x, y]
  * @typedef {{ depth?: number, zBack?: number, zFront?: number, width?: number, thickness?: number,
  *   segments?: number, outset?: number, capMaterial?: number, sideMaterial?: number,
- *   roundProfile?: boolean, clamp?: boolean }} SolidOptions
+ *   roundProfile?: boolean, clamp?: boolean, miterMax?: number }} SolidOptions
  * `clamp: false` keeps the bevel as asked even where an inset side folds (the 1.61 text object's
  * look, which caps its own inward share at 1.5% of the em)
  * @typedef {{ rings: number, points: number, pieces: number, bridgeFailures: number, width: number,
@@ -118,10 +118,12 @@ export function cleanRing(ring) {
 
 /**
  * The unit mitre of every corner: the bisector of its two LEFT normals (into the region), scaled
- * so moving the corner by `d * mitre` moves both sides by `d` (cut at MITER_MAX).
- * @param {Pt[]} r @returns {Float64Array} 2 per corner
+ * so moving the corner by `d * mitre` moves both sides by `d` (cut at `max`, default MITER_MAX).
+ * 64-int: text passes sqrt(2) — three's ExtrudeGeometry (getBevelVec) never pushed a corner further than
+ * sqrt(2) x the offset, so sharp letters (A, V, W) keep the silhouette they had on 1.61-1.79.
+ * @param {Pt[]} r @param {number} [max] @returns {Float64Array} 2 per corner
  */
-export function ringMiters(r) {
+export function ringMiters(r, max = MITER_MAX) {
 	const n = r.length;
 	const out = new Float64Array(n * 2);
 	for (let i = 0; i < n; i++) {
@@ -154,7 +156,7 @@ export function ringMiters(r) {
 		}
 		mx /= lm;
 		my /= lm;
-		const k = 1 / Math.max(mx * n1x + my * n1y, 1 / MITER_MAX);
+		const k = 1 / Math.max(mx * n1x + my * n1y, 1 / max);
 		out[i * 2] = mx * k;
 		out[i * 2 + 1] = my * k;
 	}
@@ -392,7 +394,8 @@ export function buildSolidKernel(polys, options = {}) {
 		clean.push([outer, ...holes]);
 	}
 	const allRings = clean.flat();
-	const miters = allRings.map(ringMiters);
+	const miterMax = Math.max(options.miterMax ?? MITER_MAX, 1);
+	const miters = allRings.map((r) => ringMiters(r, miterMax));
 	// the bevel: inside the depth, and no wider than the shape is thin
 	let zBack;
 	let zFront;

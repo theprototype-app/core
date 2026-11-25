@@ -38,7 +38,7 @@ const BRIDGE_TRIES = 256;
  * @typedef {number[]} Pt [x, y]
  * @typedef {{ depth?: number, zBack?: number, zFront?: number, width?: number, thickness?: number,
  *   segments?: number, outset?: number, capMaterial?: number, sideMaterial?: number,
- *   roundProfile?: boolean, clamp?: boolean, miterMax?: number }} SolidOptions
+ *   roundProfile?: boolean, clamp?: boolean, miterMax?: number, capFromOutline?: boolean }} SolidOptions
  * `clamp: false` keeps the bevel as asked even where an inset side folds (the 1.61 text object's
  * look, which caps its own inward share at 1.5% of the em)
  * @typedef {{ rings: number, points: number, pieces: number, bridgeFailures: number, width: number,
@@ -478,14 +478,19 @@ export function buildSolidKernel(polys, options = {}) {
 				(p, i) => /** @type {Pt} */ ([p[0] - capOff * m[i * 2], p[1] - capOff * m[i * 2 + 1]])
 			);
 		});
-		const { pieces, failures } = bridgePieces(capRings);
+		// 64-int: text (`capFromOutline`) cuts and triangulates its caps on the OUTLINE and only places
+		// the corners on the cap level, as three's ExtrudeGeometry did: an unclamped bevel inset can make
+		// a thin letter's rings touch or cross, and a cap cut on THOSE covered part of a counter (6, g).
+		// The pieces address corners by [ring, index], the same on every level.
+		const topoRings = options.capFromOutline ? poly : capRings;
+		const { pieces, failures } = bridgePieces(topoRings);
 		bridgeFailures += failures;
 		for (const piece of pieces) {
 			const n = piece.length;
 			const coords = new Float64Array(n * 3);
 			piece.forEach(([r, i], k) => {
-				coords[k * 3] = capRings[r][i][0];
-				coords[k * 3 + 1] = capRings[r][i][1];
+				coords[k * 3] = topoRings[r][i][0];
+				coords[k * 3 + 1] = topoRings[r][i][1];
 			});
 			const tris = triangulatePolygon(coords, n);
 			const front = piece.map(([r, i]) => vid[ringBase + r][L - 1][i]);
@@ -541,7 +546,7 @@ function writeNormals(mesh, caps, sides, grids, L) {
 			ny += (p[a + 2] - p[b + 2]) * (p[a] + p[b]);
 			nz += (p[a] - p[b]) * (p[a + 1] + p[b + 1]);
 		}
-		const l = Math.hypot(nx, ny, nz);
+		const l = Math.sqrt(nx * nx + ny * ny + nz * nz); // not Math.hypot: several times slower in V8, and this runs per face
 		out[at * 4] = l > 0 ? nx / l : 0;
 		out[at * 4 + 1] = l > 0 ? ny / l : 0;
 		out[at * 4 + 2] = l > 0 ? nz / l : 0;
@@ -592,7 +597,7 @@ function writeNormals(mesh, caps, sides, grids, L) {
 							sz += sn[g * 4 + 2] * w;
 						}
 					}
-					const len = Math.hypot(sx, sy, sz) || 1;
+					const len = Math.sqrt(sx * sx + sy * sy + sz * sz) || 1;
 					const c = first + k;
 					data[c * 3] = sx / len;
 					data[c * 3 + 1] = sy / len;

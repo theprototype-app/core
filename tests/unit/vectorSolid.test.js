@@ -293,3 +293,35 @@ describe('64-int: the corner limit (text keeps three\'s sqrt(2))', () => {
 		expect(top(opts) - 1).toBeGreaterThan(0.03 * 3);
 	});
 });
+
+describe('64-int: text caps are cut on the outline (three\'s topology), so an unclamped inset never fills a counter', () => {
+	// a 1 m square with a square hole and 5 cm walls; the inset (outset - width = -3 cm) pushes the hole ring past the outer one
+	const outer = [[0, 0], [1, 0], [1, 1], [0, 1]];
+	const hole = [[0.05, 0.05], [0.05, 0.95], [0.95, 0.95], [0.95, 0.05]];
+	const opts = { zBack: 0, zFront: 0.1, width: 0.04, thickness: 0.02, outset: 0.01, segments: 2, clamp: false };
+	const coversCentre = (/** @type {any} */ o) => {
+		const p = buildSolidArrays([[outer, hole]], o).positions;
+		let zTop = -Infinity;
+		for (let i = 2; i < p.length; i += 3) zTop = Math.max(zTop, p[i]);
+		const cross = (/** @type {number[]} */ a, /** @type {number[]} */ b, /** @type {number[]} */ c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+		for (let t = 0; t < p.length; t += 9) {
+			if (Math.abs(p[t + 2] - zTop) > 1e-9 || Math.abs(p[t + 5] - zTop) > 1e-9 || Math.abs(p[t + 8] - zTop) > 1e-9) continue;
+			const A = [p[t], p[t + 1]];
+			const B = [p[t + 3], p[t + 4]];
+			const C = [p[t + 6], p[t + 7]];
+			const P = [0.5, 0.5];
+			const d1 = cross(A, B, P);
+			const d2 = cross(B, C, P);
+			const d3 = cross(C, A, P);
+			if ((d1 >= 0 && d2 >= 0 && d3 >= 0) || (d1 <= 0 && d2 <= 0 && d3 <= 0)) return true;
+		}
+		return false;
+	};
+	test('the counterfactual: cut on the inset rings, the hole is lost and the front cap covers its centre', () => {
+		expect(coversCentre(opts)).toBe(true);
+	});
+	test('cut on the outline (text), the hole stays open', () => {
+		expect(coversCentre({ ...opts, capFromOutline: true })).toBe(false);
+		expect(buildSolidArrays([[outer, hole]], { ...opts, capFromOutline: true }).info.bridgeFailures).toBe(0);
+	});
+});

@@ -427,7 +427,32 @@ h.run(async () => {
 		gx2.sprites.length === ed2.sprites.length && same.every((s) => s.ok),
 		`§3 every sprite is a shown textured plane with the editor's image size, plane size and frame repeat (${gx2.sprites.length}/${ed2.sprites.length}; off: ${JSON.stringify(same.filter((s) => !s.ok)) || 'none'})`
 	);
+	const camWhy = () =>
+		G2.frame.evaluate(() => {
+			const w = /** @type {any} */ (window);
+			const t = w.__tp.test.v1;
+			let prev = null;
+			let game = null;
+			let g = null;
+			w.__stores.cameraPreview?.cameraPreview?.subscribe((v) => (prev = v))();
+			w.__stores.gameState?.gameState?.subscribe((v) => (game = v))();
+			t.objectsGroup.subscribe((v) => (g = v))();
+			const markers = [];
+			g?.traverse((o) => o.userData?.camera && markers.push({ uuid: o.uuid.slice(0, 8), kind: o.userData.camera.kind }));
+			return { preview: prev, state: game?.state, markers, ortho: t.sprite2d.sprite2dDebug().ortho };
+		});
+	for (let i = 0; i < 20; i++) {
+		if (await G2.frame.evaluate(() => /** @type {any} */ (window).__tp.test.v1.sprite2d.sprite2dDebug().ortho)) break;
+		await G2.frame.waitForTimeout(500);
+	}
 	const dbg = await G2.frame.evaluate(() => /** @type {any} */ (window).__tp.test.v1.sprite2d.sprite2dDebug());
+	if (!dbg.ortho) {
+		console.log('  §3 camera diagnostics: ' + JSON.stringify(await camWhy()));
+		// does the late-joiner catch-up fix it? (says whether the transition was missed or the look-through refused)
+		await G2.frame.evaluate(() => /** @type {any} */ (window).__stores.flowRuntime?.syncGameCameraNow?.());
+		await G2.frame.waitForTimeout(1500);
+		console.log('  §3 after syncGameCameraNow(): ' + JSON.stringify(await camWhy()));
+	}
 	h.check(dbg.ortho === true && !dbg.xr, `§3 the camera the game draws through is orthographic — Game Start looks through the template's 2D camera (sprite2dDebug ${JSON.stringify({ sprites: dbg.sprites, layers: dbg.layers, ortho: dbg.ortho })})`);
 	const gFlip = player ? await flipbook(G2.frame, player.uuid, 16, 100) : [];
 	const offs = [...new Set(gFlip.map((s) => s.off))];

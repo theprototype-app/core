@@ -131,7 +131,9 @@ export async function buildExtruded(rec, url, profile) {
 			sideMaterial: 1,
 			clamp: false,
 			// 64-int: three's corner limit, so old text keeps its silhouette (text-extrude-compat §5)
-			miterMax: Math.SQRT2
+			miterMax: Math.SQRT2,
+			// and its caps are cut on the outline, not on the inset ring (three's topology)
+			capFromOutline: true
 		});
 		geometry.setAttribute('position', new THREE.BufferAttribute(solid.positions, 3));
 		if (solid.normals) geometry.setAttribute('normal', new THREE.BufferAttribute(solid.normals, 3));

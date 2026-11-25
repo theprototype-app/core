@@ -7,7 +7,8 @@
 //   4. never on the wire: a connected peer receives nothing about it (A's sends spied, with a positive control) and
 //      B's own switch, pass and environment are untouched
 //   5. per device: a reload keeps On (localStorage `contactShadows`), and the pass comes back by itself
-//   6. tier gating: as a phone / a headset (the shadow tier override) the switch is disabled with the reason and the
+//   6. tier gating: as a phone / a headset (the shadow tier override) the switch offers Auto / Off and On is disabled
+//      with the reason (102-int-3: claude:9's Q1 condition), and the
 //      pass is gone even though the stored setting says On; back on the pc tier it returns
 //   7. the governor drops it FIRST: overloaded frames (synthetic clock) take contact off at level 0, the note says
 //      so, the next overload is step 1 (shadows off); "Restore full quality" gives both back
@@ -74,6 +75,12 @@ const state = (page) =>
 			envAt: read(S.environment.environment).changedAt ?? 0,
 			note: document.getElementById('preview-contact-note')?.textContent ?? null,
 			disabled: !!document.querySelector('#preview-contact-mode [aria-checked]')?.hasAttribute('disabled'),
+			onDisabled: !!document.getElementById('preview-contact-mode-on')?.hasAttribute('disabled'),
+			autoOffOpen: ['auto', 'off'].every((v) => {
+				const b = document.getElementById('preview-contact-mode-' + v);
+				return !!b && !b.hasAttribute('disabled');
+			}),
+			onTitle: document.getElementById('preview-contact-mode-on')?.getAttribute('title') ?? null,
 			checked: document.querySelector('#preview-contact-mode [aria-checked="true"]')?.id ?? null
 		};
 	});
@@ -224,7 +231,7 @@ h.run(async () => {
 		await page.evaluate((t) => /** @type {any} */ (window).__tp.test.v1.environment.setShadowTierOverride(t), tier);
 		await openMenu(page);
 		const g = await until(() => state(page), (v) => v.tier === tier && !v.wanted && v.live === 0, `6. as a ${tier}: no pass although the setting says On`, 20000);
-		h.check(g.disabled && /^Not (on a phone|in a headset)/.test(g.note ?? ''), `6. ${tier}: the switch is disabled with the reason ("${g.note}")`);
+		h.check(g.onDisabled && g.autoOffOpen && /^Not (on a phone|in a headset)/.test(g.note ?? '') && /^Not (on a phone|in a headset)/.test(g.onTitle ?? ''), `6. ${tier}: Auto / Off stay offered, On is disabled with the reason ("${g.note}" / "${g.onTitle}")`);
 		h.check(g.mode === 'on' && g.stored === 'on', `6. ${tier}: the stored setting is left alone (${g.stored})`);
 		await closeMenu(page);
 	}

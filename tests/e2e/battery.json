@@ -1079,7 +1079,7 @@
 		"untangle": 146
 	},
 	"desk": {
-		"gpu": ["MOD:fx-car-blocks","MOD:untangle","cinematic-view","cinematic-fx","cinematic-water","cinematic-light-106"],
+		"gpu": ["MOD:fx-car-blocks","MOD:untangle","cinematic-view","cinematic-fx","cinematic-water","cinematic-light-106","contact-switch-106"],
 		"peer-self": ["arch-primitives","game-race"],
 		"prod-host": ["error-reports"],
 		"software": ["behaviours","community-seams","files-format-row","inspector","save-project-libraries"],

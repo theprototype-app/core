@@ -4,7 +4,8 @@
 	//   Cinematic view   Off / the quality levels (only where the view is offered; 100 C1's own rules), then
 	//                    106 S3's Reflections and Global light: Auto / On / Off each, with what it measured here
 	//   Look             106 S2b: Contact shadows, Auto / On / Off for this device (the standard view's pass: the
-	//                    Cinematic view does not draw it), what it measured here; On on a computer only
+	//                    Cinematic view does not draw it), what it measured here; On on a computer only (phone /
+	//                    Quest: Auto / Off, On disabled with the reason)
 	//   Draw as          viewMode's three + the Draw as modes ($lib/drawAs)
 	//   Quality          the device quality preset (Auto / High / Medium / Low, 42 I12)
 	//   Judge for        This device / Phone / Quest / PC, independent toggles ($lib/judgeFor) — desktop only
@@ -84,6 +85,11 @@
 	];
 	const tier = $derived(shadowTier($globalRenderer));
 	const contactOk = $derived(!!CONTACT_ON_TIERS[tier]);
+	// 102-int-3 (claude:9's Q1 condition): where On is not allowed (Quest, phone) the switch still offers Auto / Off;
+	// On alone is disabled with the reason, until a headset row is measured on a preview
+	const contactModes = $derived(
+		contactOk ? CONTACT_MODES : CONTACT_MODES.map((o) => (o.value === 'on' ? { ...o, disabled: true, title: CONTACT_NOT_HERE[/** @type {'phone'|'quest'} */ (tier)] ?? o.title } : o))
+	);
 	const contactDrawn = $derived($contactShadowsWanted && !$qualityOverrides.contactOff && !$qualityOverrides.shadowsOff && !cineOn);
 	const contactNote = $derived.by(() => {
 		if (!contactOk) return CONTACT_NOT_HERE[/** @type {'phone'|'quest'} */ (tier)] ?? '';
@@ -173,7 +179,7 @@
 			<span class="pm-grow" id="pm-contact">Contact shadows</span>
 			<span class="pm-light-note" id="preview-contact-note">{contactNote}</span>
 		</div>
-		<Segmented id="preview-contact-mode" labelledby="pm-contact" full disabled={!contactOk} options={CONTACT_MODES} value={$contactShadowsMode} onchange={(/** @type {any} */ v) => contactShadowsMode.set(v)} />
+		<Segmented id="preview-contact-mode" labelledby="pm-contact" full options={contactModes} value={$contactShadowsMode} onchange={(/** @type {any} */ v) => contactShadowsMode.set(v)} />
 	</div>
 
 	<p class="pm-g" id="pm-g-draw">Draw as</p>

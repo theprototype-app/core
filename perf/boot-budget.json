@@ -287,8 +287,8 @@
 			"date": "2026-11-26",
 			"lane": "104-int-rel (roadmap 104 connector round 2 + 89-apps on v1.80.0, fc5e326e)",
 			"play": "v1.80.0 1854.1 KB -> union on v1.80.0 1851.4 KB (-2.7) -> line 1855.0 KB (the int boot rule: the measure on the newest tag rounded up to the next 5 KB = v1.80.0's own line; the 1850.0 set on v1.79.0 is below the measure once 1.80.0's +3.1 KB is in)",
-			"editor": "v1.80.0 2992.5 KB -> union on v1.80.0 2992.6 KB (+0.1) -> line 2995.0 KB (the same rule; unchanged)",
-			"note": "measured on the Deck, v1.80.0 (detached worktree) and the union built back to back with the same node_modules. 104's own delta is +0.1 KB editor / -2.7 KB play. Give-back row for 102-boot-diet-2 stays 89-apps (+1.6 KB editor at 104-int). The 1.81.0 changelog entry rides the editor boot: measured again at release."
+			"editor": "v1.80.0 2992.5 KB -> union on v1.80.0 2992.6 KB (+0.1; 2994.1 KB with the 1.81.0 changelog, which rides the editor boot) -> line 2995.0 KB (the same rule; unchanged)",
+			"note": "measured on the Deck, v1.80.0 (detached worktree) and the union built back to back with the same node_modules. 104's own delta is +0.1 KB editor / -2.7 KB play. Give-back row for 102-boot-diet-2 stays 89-apps (+1.6 KB editor at 104-int). The 1.81.0 changelog entry rides the editor boot: measured with it, 2994.1 KB, inside the line."
 		}
 	],
 	"throttle": {

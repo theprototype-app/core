@@ -119,17 +119,19 @@ h.run(async () => {
 	await closeMenu(page);
 
 	// ---- 2. On draws the pass, at Basic ---------------------------------------------------------------------------
-	await page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.addObjects.spawnAtPoint('/create Box 0.6 0.6 0.6', [0, 0.3, 0]));
+	await page.evaluate(() => /** @type {any} */ (window).__tp.test.v1.addObjects.spawnAtPoint('/create Box 1.5 1.5 1.5', [0, 0.75, 0]));
 	await page.waitForTimeout(1500);
 	await page.keyboard.press('Escape'); // no selection outline in the frames
 	await page.waitForTimeout(1500);
 	const saveOff = await saveText(page);
 	const envAt0 = (await state(page)).envAt;
 	// the box's foot, and the frame's own noise floor (two grabs with nothing changed)
-	const clip = await h.centeredClip(A, [0, 0, 0], 320);
+	const clip = await h.centeredClip(A, [0, 0, 0], 400);
 	const frameAuto = await h.grabFrame(A, clip);
 	await page.waitForTimeout(1500);
-	const floor = await h.frameDelta(page, frameAuto, await h.grabFrame(A, clip), 6);
+	// threshold 3: the pass darkens by up to 45 % right at the contact and fades along the march, so most of its
+	// pixels move by a few levels (chain 2: 10 px over 6 on a 0.6 m box, max 82)
+	const floor = await h.frameDelta(page, frameAuto, await h.grabFrame(A, clip), 3);
 	await pick(page, 'on');
 	const s2 = await until(() => state(page), (v) => v.mode === 'on' && v.wanted && v.live > 0, '2. On: the pass is built in the post stack', 20000);
 	h.check(s2.drawn === 'basic' && s2.stored === 'on', `2. ...in a Basic scene (drawn ${s2.drawn}), stored on this device (${s2.stored})`);
@@ -137,15 +139,15 @@ h.run(async () => {
 	await closeMenu(page);
 	await page.waitForTimeout(1500);
 	const frameOn = await h.grabFrame(A, clip);
-	const d = await h.frameDelta(page, frameAuto, frameOn, 6);
-	h.check(d.changed > Math.max(50, 3 * floor.changed), `2. the frame changes at the box's foot (${d.changed} px over 6, max ${d.max}; noise floor ${floor.changed} px)`);
+	const d = await h.frameDelta(page, frameAuto, frameOn, 3);
+	h.check(d.changed > Math.max(30, 3 * floor.changed), `2. the frame changes at the box's foot (${d.changed} px over 3, max ${d.max}; noise floor ${floor.changed} px)`);
 	await pick(page, 'off');
 	await until(() => state(page), (v) => v.mode === 'off' && !v.wanted && v.live === 0, '2. Off: the pass is gone', 20000);
 	await closeMenu(page);
 	await page.waitForTimeout(1500);
 	const frameOff = await h.grabFrame(A, clip);
-	const d0 = await h.frameDelta(page, frameAuto, frameOff, 6);
-	h.check(d0.changed <= Math.max(50, 3 * floor.changed) && d0.changed < d.changed / 4, `2. counterfactual: Off draws what Auto drew (${d0.changed} px vs On's ${d.changed}, floor ${floor.changed})`);
+	const d0 = await h.frameDelta(page, frameAuto, frameOff, 3);
+	h.check(d0.changed <= Math.max(10, 3 * floor.changed), `2. counterfactual: Off draws what Auto drew (${d0.changed} px vs On's ${d.changed}, floor ${floor.changed})`);
 
 	// ---- 3. never in the scene file ---------------------------------------------------------------------------------
 	const saveOffAgain = await saveText(page);
@@ -305,6 +307,8 @@ h.run(async () => {
 			return { renderer: ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER), canvas: [gl.canvas.width, gl.canvas.height] };
 		});
 		console.log(`  frames: renderer ${JSON.stringify(renderer)}`);
+		// chain 2's "pc" slot fell back to the Deck while the PC slept: a PC row must say which GPU drew it
+		if (DEVICE === 'pc') h.check(/NVIDIA|RTX|GeForce/i.test(renderer.renderer), `FRAMES: the PC GPU row ran on the PC (${renderer.renderer})`);
 		const result = { device: DEVICE, at: new Date().toISOString(), gpu: GPU, renderer, scenes: /** @type {any} */ ({}) };
 		for (const slug of ['product-shot', 'castle-courtyard']) {
 			const load = await page.evaluate((s) => /** @type {any} */ (window).__s0.load(s), slug);

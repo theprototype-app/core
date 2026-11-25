@@ -23,7 +23,7 @@ function ensureHeightFogShader(scene) {
 }
 import { registerSystemGroup } from './moduleSDK';
 import { createLight } from './geometries.svelte';
-import { cappedShadowSize, shadowsDisabled, sceneShadowsOff } from './lightParams';
+import { cappedShadowSize, shadowsDisabled, sceneShadowsOff, contactShadowsMode } from './lightParams';
 import { wireframeActive } from './viewMode';
 import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
 import { safeStorage } from './safeStorage';
@@ -985,7 +985,9 @@ function applySceneShadowLevel(scene, renderer, sun) {
 	const drawn = drawnSceneShadowLevel(renderer);
 	if (shadowLevelsMod)
 		return shadowLevelsMod.applyShadowLevel({ scene, renderer, sun, drawn, tier: shadowTier(renderer), radius: sceneRadius(), asked: shadowLevelOf(get(environment).shadowLevel), reapply: applyEnvironment });
-	if (drawn !== 'soft' && drawn !== 'far') return;
+	// 106 S2b: the device's Contact shadows switch set to On draws the pass at Basic too (pc tier; the rule is
+	// shadowLevelParams.contactShadowsOn, in the chunk)
+	if (drawn !== 'soft' && drawn !== 'far' && !(drawn === 'basic' && get(contactShadowsMode) === 'on' && shadowTier(renderer) === 'pc')) return;
 	if (shadowLevelsLoading) return;
 	shadowLevelsLoading = true;
 	import('./shadows/shadowLevels.js')
@@ -996,6 +998,13 @@ function applySceneShadowLevel(scene, renderer, sun) {
 		.catch((err) => console.warn('[shadows] Soft / Far unavailable', err))
 		.finally(() => (shadowLevelsLoading = false));
 }
+
+// 106 S2b: the switch re-applies (its first call is the stored value: nothing to do yet)
+let contactModeSeen = false;
+contactShadowsMode.subscribe(() => {
+	if (contactModeSeen) applyEnvironment();
+	contactModeSeen = true;
+});
 
 /** A6: the authored sky/fog/lighting as SAVE data, or NULL when it is the stock
  * studio look — so a default scene saves byte-identical and an older reader sees

@@ -43,6 +43,8 @@
 	import { openToolRow } from '$lib/tools/toolLinks.js';
 	import { tipShown, dismissTip, TIP_MESH_PICTURE } from '$lib/tips.js';
 	import { pictureConsentFor } from '$lib/ai/meshConsent.js';
+	// 105 T1: the picker and its leaf are lazy (boot rule) — loaded on the first press
+	const pickFromExplorer = (opts: any) => import('$lib/explorerPick.js').then((m) => m.pickFromExplorer(opts));
 
 	const KEY = 'meshGen';
 	/** 73 AI6: the first-use hint, until a picture is picked */
@@ -75,12 +77,7 @@
 	});
 
 	const phone = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
-	const explorerImages = $derived(
-		($explorerItems as any[])
-			.filter((i) => i.kind === 'image')
-			.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
-			.slice(0, 24)
-	);
+	const hasExplorerImages = $derived(($explorerItems as any[]).some((i) => i.kind === 'image'));
 
 	const active = $derived($meshProviders.find((p) => p.id === $meshActiveProvider) ?? null);
 	const isHosted = $derived(active?.kind === 'meshy');
@@ -142,11 +139,10 @@
 		if (file) void pick(() => prepareImage(file, file.name, MESH_IMAGE));
 	}
 
-	function onExplorerPick(e: Event) {
-		const select = e.currentTarget as HTMLSelectElement;
-		const id = select.value;
-		select.value = '';
-		if (id) void pick(() => explorerPicture(id, MESH_IMAGE));
+	// 105 T1: the shared Explorer picker (thumbnails, search, folders, recent)
+	async function onExplorerPick() {
+		const item = await pickFromExplorer({ title: 'Pick a picture to make the model from' });
+		if (item) void pick(() => explorerPicture(item.id, MESH_IMAGE));
 	}
 
 	function onPaste(e: ClipboardEvent) {
@@ -296,13 +292,8 @@
 									<button id="mesh-gen-camera" class="ui-button-quiet" disabled={busy} onclick={() => cameraInput?.click()}>Camera</button>
 								{/if}
 								<button id="mesh-gen-viewport" class="ui-button-quiet" disabled={busy} onclick={() => pick(() => viewportPicture(MESH_IMAGE))}>Viewport</button>
-								{#if explorerImages.length}
-									<select id="mesh-gen-explorer" class="ui-input min-w-0 flex-1" aria-label="From Explorer" disabled={busy} onchange={onExplorerPick}>
-										<option value="">From Explorer…</option>
-										{#each explorerImages as it (it.id)}
-											<option value={it.id}>{it.name}</option>
-										{/each}
-									</select>
+								{#if hasExplorerImages}
+									<button id="mesh-gen-explorer" class="ui-button-quiet" disabled={busy} onclick={onExplorerPick}>From Explorer…</button>
 								{/if}
 							</div>
 						{/if}

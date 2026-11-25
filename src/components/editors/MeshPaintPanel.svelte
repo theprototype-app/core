@@ -13,8 +13,13 @@
 	import HudImagePicker from '../hud/HudImagePicker.svelte';
 	import {
 		paintChannel, paintValue, paintHardness, paintOpacity, paintFlow, paintErase, paintMirror, paintStamp,
-		paintMapSize, paintShowChannel, paintTargetInfo
+		paintMapSize, paintShowChannel, paintTargetInfo, paintSpacing, paintSmoothing
 	} from '$lib/meshPaintPrefs';
+	import { penOnlyDraws, penSeen } from '$lib/penInput';
+	// 103: the pen-pressure store comes as a PROP — importing $lib/uvEditor here would write the whole app graph
+	// into this lazy chunk's preload list, which lives in the boot chunk that imports it (the 102 trap)
+	/** @type {{ uvPenPressure: import('svelte/store').Writable<string> }} */
+	let { uvPenPressure } = $props();
 
 	const CHANNEL_CHOICES = /** @type {const} */ ([
 		['color', 'Colour', 'Paint the base colour'],
@@ -24,6 +29,28 @@
 	]);
 </script>
 
+<!-- 24-F1: pen pressure — size (default) · opacity · off; 103 H1 adds Size + opacity. Moved here from the UV
+     editor (103, boot rule): this panel is the lazy brush chunk -->
+<div class="text-[11px] text-text-muted">Pen pressure</div>
+<div id="uv-pen-pressure" class="mt-1 grid grid-cols-2 gap-1" role="radiogroup" aria-label="Pen pressure">
+	{#each [['size', 'Size', 'Pressing harder paints wider'], ['opacity', 'Opacity', 'Pressing harder paints stronger; a light touch tints'], ['both', 'Size + opacity', 'Pressing harder paints wider and stronger'], ['off', 'Off', 'The pen paints like a mouse']] as [value, label, hint] (value)}
+		<button
+			type="button"
+			role="radio"
+			aria-checked={$uvPenPressure === value}
+			data-value={value}
+			title={hint}
+			class={'rounded-sm px-2 py-0.5 text-[11px] ' + ($uvPenPressure === value ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 text-text-2 hover:bg-surface-active')}
+			onclick={() => uvPenPressure.set(/** @type {any} */ (value))}>{label}</button>
+	{/each}
+</div>
+<!-- 103 H2: fingers stop drawing once a pen is seen -->
+<label class="mt-2 flex items-center gap-2 text-[11px] text-text-muted" title="Once a pen touches the screen, fingers pan and pinch-zoom instead of painting. Turn off to paint with a finger too.">
+	<input id="uv-pen-only" type="checkbox" class="tp-check" checked={$penOnlyDraws}
+		onchange={(e) => penOnlyDraws.set(e.currentTarget.checked)} />
+	Pen only draws
+</label>
+{#if $penSeen && $penOnlyDraws}<p id="uv-pen-only-note" class="mt-0.5 text-[10px] text-text-faint">Pen found: one finger pans, two pinch-zoom.</p>{/if}
 <div class="mt-3 text-[11px] text-text-muted">Channel</div>
 <div id="paint-channel" class="mt-1 grid grid-cols-4 gap-1" role="radiogroup" aria-label="Paint channel">
 	{#each CHANNEL_CHOICES as [value, label, hint] (value)}
@@ -58,6 +85,17 @@
 	Flow <span class="tabular-nums text-text-2">{Math.round($paintFlow * 100)}%</span>
 	<input id="paint-flow" type="range" min="0.01" max="1" step="0.01" class="mt-1 w-full accent-accent"
 		value={$paintFlow} oninput={(e) => paintFlow.set(parseFloat(e.currentTarget.value))} />
+</label>
+<!-- 103 H1: dab spacing and the stroke stabiliser -->
+<label class="mt-2 block text-[11px] text-text-muted" title="The gap between dabs, as a share of the brush width: low is a smooth line, high a dotted one">
+	Spacing <span class="tabular-nums text-text-2">{Math.round($paintSpacing * 100)}%</span>
+	<input id="paint-spacing" type="range" min="0.05" max="1" step="0.01" class="mt-1 w-full accent-accent"
+		value={$paintSpacing} oninput={(e) => paintSpacing.set(parseFloat(e.currentTarget.value))} />
+</label>
+<label class="mt-2 block text-[11px] text-text-muted" title="Steadies the line: the brush trails the pen on a string and only moves when you pull it. 0 is off.">
+	Smoothing <span class="tabular-nums text-text-2">{Math.round($paintSmoothing * 100)}%</span>
+	<input id="paint-smoothing" type="range" min="0" max="1" step="0.01" class="mt-1 w-full accent-accent"
+		value={$paintSmoothing} oninput={(e) => paintSmoothing.set(parseFloat(e.currentTarget.value))} />
 </label>
 <div class="mt-2 flex gap-1">
 	<button id="paint-erase" type="button" aria-pressed={$paintErase}

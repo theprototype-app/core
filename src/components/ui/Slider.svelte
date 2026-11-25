@@ -1,9 +1,10 @@
 <script>
+	import { feelValue } from '$lib/uiHaptics'; // 103 (H13): a tick per step, a detent at the default / 0, a bump at the ends
 	// 38 R3 — a range with its value BESIDE it (SPEC §3: "slider values beside the slider, not
 	// in text"), for SettingRow (Game sounds, Music). Mono readout; `format` turns the number
 	// into the label ("80%"). One-way: render from `value`, report through `onchange(next)`
 	// (live, on input). Inspector-style rows with a scrub box are PropRow, not this.
-	/** @type {{value?: number, min?: number, max?: number, step?: number, label?: string, id?: string, disabled?: boolean, readout?: boolean, format?: (v: number) => string, width?: string, onchange?: (next: number) => void} & Record<string, any>} */
+	/** @type {{value?: number, min?: number, max?: number, step?: number, label?: string, id?: string, disabled?: boolean, readout?: boolean, format?: (v: number) => string, width?: string, defaultValue?: number, detents?: number[], onchange?: (next: number) => void} & Record<string, any>} */
 	let {
 		value = 0,
 		min = 0,
@@ -15,6 +16,8 @@
 		readout = true,
 		format = (v) => String(v),
 		width = '180px',
+		defaultValue = undefined,
+		detents = [],
 		onchange = () => {},
 		...rest
 	} = $props();
@@ -22,12 +25,17 @@
 	/** @param {Event & {currentTarget: HTMLInputElement}} e */
 	function onInput(e) {
 		const next = parseFloat(e.currentTarget.value);
-		if (!Number.isNaN(next)) onchange(next);
+		if (Number.isNaN(next)) return;
+		feelValue(felt ?? value, next, { min, max, detents: [0, ...(defaultValue === undefined ? [] : [defaultValue]), ...detents] });
+		felt = next;
+		onchange(next);
 	}
+	/** the value the last feedback was measured from (several inputs can land before `value` re-renders) @type {number | null} */
+	let felt = null;
 </script>
 
 <div class="tp-ui sl" style:--sl-w={width} {...rest}>
-	<input {id} class="sl-range" type="range" {min} {max} {step} {value} {disabled} aria-label={label || undefined} oninput={onInput} />
+	<input {id} class="sl-range" type="range" {min} {max} {step} {value} {disabled} aria-label={label || undefined} onpointerdown={() => (felt = null)} oninput={onInput} />
 	{#if readout}<span class="sl-readout" aria-hidden="true">{format(value)}</span>{/if}
 </div>
 

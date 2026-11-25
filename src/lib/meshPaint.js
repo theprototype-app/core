@@ -47,7 +47,7 @@ import {
 	uvPenPressure
 } from './uvEditor';
 import { readTriangles, trisToPositions, trisToGroups, trisToUVs, commitMeshGeoTriple } from './faceEdit';
-import { paintChannel, paintValue, paintMapSize, paintTargetInfo, paintShowChannel, BRUSH_STORES } from './meshPaintPrefs';
+import { paintChannel, paintValue, paintMapSize, paintTargetInfo, paintShowChannel, paintSmoothing, BRUSH_STORES } from './meshPaintPrefs';
 import {
 	channelOf,
 	normalizeBrush,
@@ -75,21 +75,35 @@ import {
 	mirrorX,
 	onMirrorPlane,
 	srgbToLinear,
-	hashBytes
+	hashBytes,
+	pullString,
+	SMOOTH_MAX_PX,
+	accumulate,
+	pressureEffect,
+	pressureModeOf
 } from './meshPaintCore.js';
 import { quantizePoint } from './meshPaintWire.js';
+import { notePointer, mayDraw } from './penInput';
 
 // 102 M6 (boot rule): the UV editor reads the brush state through this lazy chunk, so the prefs leaf and the
 // brush panel stay out of the boot bundle. `newBrush` = a channel other than colour or a brush other than the
 // shipped hard round one, which paints through this module instead of uvEditor's own painter.
 export const paintUi = derived(
-	[paintChannel, paintShowChannel, BRUSH_STORES.hardness, BRUSH_STORES.opacity, BRUSH_STORES.flow, BRUSH_STORES.erase, BRUSH_STORES.stamp],
-	([channel, showChannel, hardness, opacity, flow, erase, stamp]) => ({
+	[paintChannel, paintShowChannel, BRUSH_STORES.hardness, BRUSH_STORES.opacity, BRUSH_STORES.flow, BRUSH_STORES.erase, BRUSH_STORES.stamp, BRUSH_STORES.spacing, paintSmoothing],
+	([channel, showChannel, hardness, opacity, flow, erase, stamp, spacing, smoothing]) => ({
 		channel,
 		showChannel: !!showChannel,
-		newBrush: channel !== 'color' || hardness !== 1 || opacity !== 1 || flow !== 1 || !!erase || !!stamp
+		newBrush: channel !== 'color' || hardness !== 1 || opacity !== 1 || flow !== 1 || !!erase || !!stamp || spacing !== 0.2,
+		// 103 H1: the stabiliser's string length in screen px (0 = off); input-side, so both painters use it
+		smoothPx: toSmoothPx(smoothing)
 	})
 );
+/** @param {any} v 0..1 */
+const toSmoothPx = (v) => Math.max(0, Math.min(1, Number(v) || 0)) * SMOOTH_MAX_PX;
+const smoothPx = () => toSmoothPx(get(paintSmoothing));
+
+/** 103 H1: the stabiliser for a caller that holds its own screen points (the UV editor) */
+export { pullString };
 /** forget what the panel says a stroke paints (the editor lost its target) */
 export function clearTargetInfo() {
 	paintTargetInfo.set(null);
@@ -275,15 +289,15 @@ function tileAt(layer, tx, ty) {
 	return t;
 }
 
-/** Add `a` of the stroke at pixel (x, y), once per dab. @param {any} layer @param {number} x @param {number} y @param {number} a */
-function touch(layer, x, y, a) {
+/** Add `a` of the stroke at pixel (x, y), once per dab, toward the dab's ceiling `q` (103 H1: `accumulate`).
+ * @param {any} layer @param {number} x @param {number} y @param {number} a @param {number} [q] */
+function touch(layer, x, y, a, q = 1) {
 	if (!(a > 0) || x < 0 || y < 0 || x >= layer.W || y >= layer.H) return;
 	const t = tileAt(layer, (x / TILE) | 0, (y / TILE) | 0);
 	const i = (y - t.y) * t.w + (x - t.x);
 	if (t.mark[i] === layer.dab) return;
 	t.mark[i] = layer.dab;
-	const aa = a > 1 ? 1 : a;
-	t.L[i] = t.L[i] + aa * (1 - t.L[i]);
+	t.L[i] = accumulate(t.L[i], a, q);
 	layer.dirty.add(t.key);
 }
 
@@ -332,8 +346,9 @@ function sampleMask(mask, sx, sy) {
 	return a * (1 - ty) + b * ty;
 }
 
-/** A dab in texture px (the UV canvas). @param {any} s the stroke @param {number} cx @param {number} cy @param {number} r @param {number} a */
-function dabUv(s, cx, cy, r, a) {
+/** A dab in texture px (the UV canvas). @param {any} s the stroke @param {number} cx @param {number} cy @param {number} r @param {number} a
+ * @param {number} [q] the dab's opacity ceiling */
+function dabUv(s, cx, cy, r, a, q = 1) {
 	const layer = s.layer;
 	const x0 = Math.max(0, Math.floor(cx - r));
 	const x1 = Math.min(layer.W - 1, Math.ceil(cx + r));
@@ -346,16 +361,16 @@ function dabUv(s, cx, cy, r, a) {
 			const d = Math.sqrt(dx * dx + dy * dy);
 			if (d > r) continue;
 			const cov = s.mask ? sampleMask(s.mask, dx / r, dy / r) : falloff(d / r, s.brush.hardness);
-			touch(layer, x, y, a * cov);
+			touch(layer, x, y, a * cov, q);
 		}
 }
 
 /**
  * A dab on the model: a sphere (centre `c`, radius `R`, object space) painted into the map through every triangle
  * it touches. Pass 1 paints pixels a touched triangle OWNS; pass 2 pads each into the uncovered gutter.
- * @param {any} s @param {number[]} c @param {number} R @param {number} a
+ * @param {any} s @param {number[]} c @param {number} R @param {number} a @param {number} [q] the dab's opacity ceiling
  */
-function dabModel(s, c, R, a) {
+function dabModel(s, c, R, a, q = 1) {
 	const { layer, model } = s;
 	const W = layer.W;
 	const H = layer.H;
@@ -413,7 +428,7 @@ function dabModel(s, c, R, a) {
 						const st = s.stampFrame;
 						k = sampleMask(s.mask, (wx * st.t[0] + wy * st.t[1] + wz * st.t[2]) / R, (wx * st.b[0] + wy * st.b[1] + wz * st.b[2]) / R);
 					} else k = falloff(Math.sqrt(d2) / R, hard);
-					touch(layer, x, y, a * k);
+					touch(layer, x, y, a * k, q);
 				}
 		}
 }
@@ -434,12 +449,13 @@ function footprint(h, c, R, W, H) {
 	return [Math.max(0, Math.floor(cx - ex - 1)), Math.min(W - 1, Math.ceil(cx + ex + 1)), Math.max(0, Math.floor(cy - ey - 1)), Math.min(H - 1, Math.ceil(cy + ey + 1))];
 }
 
-/** A dab on vertex colours. @param {any} s @param {number[]} c @param {number} R @param {number} a */
-function dabVertex(s, c, R, a, mirrored = false) {
+/** A dab on vertex colours. @param {any} s @param {number[]} c @param {number} R @param {number} a
+ * @param {boolean} [mirrored] @param {number} [q] the dab's opacity ceiling */
+function dabVertex(s, c, R, a, mirrored = false, q = 1) {
 	const v = s.vertex;
 	// the stroke's normal faces the nearest-vertex fallback (a low-poly mesh); the mirrored half faces the mirror way
 	const n = s.n ? (mirrored ? [-s.n[0], s.n[1], s.n[2]] : s.n) : null;
-	const touched = vertexDab(v.positions, c, R, s.brush.hardness, a, v.acc, { normals: v.normals, n });
+	const touched = vertexDab(v.positions, c, R, s.brush.hardness, a, v.acc, { normals: v.normals, n }, q);
 	if (!touched.length) return;
 	blendVertexColors(v.base, v.target, v.acc, s.brush.opacity, v.out, touched);
 	v.dirty = true;
@@ -452,7 +468,8 @@ function strokePoint(s, p) {
 	if (last && last.length === p.length && last.every((/** @type {number} */ x, /** @type {number} */ i) => x === p[i])) return;
 	// the UV canvas measures in texture px, the model in its own units
 	const metric = s.sp === 'uv' ? [p[0] * s.layer.W, (s.flip ? 1 - p[1] : p[1]) * s.layer.H, p[2] ?? 1] : [p[0], p[1], p[2], p[3] ?? 1];
-	const step = Math.max(DAB_SPACING * 2 * s.r, s.sp === 'uv' ? 0.5 : 1e-6);
+	// 103 H1: the brush's own spacing (DAB_SPACING unless set); a pressure-sized stroke spaces by the full radius
+	const step = Math.max((s.brush.spacing ?? DAB_SPACING) * 2 * s.r, s.sp === 'uv' ? 0.5 : 1e-6);
 	const from = s.lastMetric ?? metric;
 	const run = s.lastMetric ? dabsAlong(from, metric, dim, step, s.carry) : { dabs: [metric], carry: 0 };
 	s.carry = run.carry;
@@ -460,23 +477,26 @@ function strokePoint(s, p) {
 	s.lastMetric = metric;
 	for (const d of run.dabs) {
 		const w = d[dim];
-		const factor = s.pm === 'off' ? 1 : paintPressureFactor(Number.isFinite(w) ? w : 1);
-		const r = s.pm === 'opacity' || s.pm === 'off' ? s.r : s.r * factor;
-		const a = s.brush.flow * (s.pm === 'opacity' ? factor : 1);
+		// 103 H1: pressure scales the radius (size, both) and/or sets the dab's opacity CEILING (opacity, both).
+		// The ceiling used to be multiplied into the flow, so overlapping dabs summed to opaque at any pressure.
+		const fx = pressureEffect(s.pm, paintPressureFactor(Number.isFinite(w) ? w : 1));
+		const r = s.r * fx.size;
+		const a = s.brush.flow;
+		const q = fx.ceil;
 		// one mark per dab: a pixel takes a dab once, and the mirrored half is the SAME dab, so where the two halves
 		// meet on the mirror plane they union rather than stack
 		if (s.layer) s.layer.dab++;
-		if (s.sp === 'uv') dabUv(s, d[0], d[1], r, a);
+		if (s.sp === 'uv') dabUv(s, d[0], d[1], r, a, q);
 		else {
 			const c = [d[0], d[1], d[2]];
 			const mirrored = s.brush.mirror && !onMirrorPlane(c, r) ? mirrorX(c) : null;
 			if (s.sp === 'vtx') {
 				// vertex dabs stack per call, so the mirrored half (disjoint off the plane) is its own call
-				dabVertex(s, c, r, a);
-				if (mirrored) dabVertex(s, mirrored, r, a, true);
+				dabVertex(s, c, r, a, false, q);
+				if (mirrored) dabVertex(s, mirrored, r, a, true, q);
 			} else {
-				dabModel(s, c, r, a);
-				if (mirrored) dabModel(s, mirrored, r, a);
+				dabModel(s, c, r, a, q);
+				if (mirrored) dabModel(s, mirrored, r, a, q);
 			}
 		}
 		s.dabs++;
@@ -880,7 +900,7 @@ export async function beginStroke(opts) {
 		c: paintStyle(ch, get(uvBrushColor), get(paintValue), brush.erase),
 		r: Math.round(r * 1e5) / 1e5 || 1e-5,
 		b: brushWire(brush),
-		pm: get(uvPenPressure),
+		pm: pressureModeOf(get(uvPenPressure)),
 		n: opts.normal ? opts.normal.map((x) => Math.round(x * 1e4) / 1e4) : null
 	};
 	// the image before the stroke — what undo goes back to (an imported colour map has no data URL, so it is
@@ -972,7 +992,8 @@ function flush(s) {
 		c: s.c,
 		r: s.r,
 		...(b ? { b } : {}),
-		...(s.pm === 'opacity' || s.pm === 'off' ? { pm: s.pm } : {}),
+		// absent = size; 103's 'both' reads as size on a 102 peer (width varies, full opacity) until the commit lands
+		...(s.pm !== 'size' ? { pm: s.pm } : {}),
 		...(s.n ? { n: s.n } : {}),
 		seg
 	});
@@ -1116,7 +1137,7 @@ const remote = new Map();
 export async function applyMeshPaint(data) {
 	let entry = remote.get(data.id);
 	if (!entry) {
-		const spec = { id: data.id, uuid: data.uuid, slot: data.slot ?? 0, ch: data.ch ?? 'color', sp: data.sp, c: data.c, r: data.r, b: brushWire(brushFromWire(data.b)), pm: data.pm ?? 'size', n: data.n ?? null };
+		const spec = { id: data.id, uuid: data.uuid, slot: data.slot ?? 0, ch: data.ch ?? 'color', sp: data.sp, c: data.c, r: data.r, b: brushWire(brushFromWire(data.b)), pm: pressureModeOf(data.pm), n: data.n ?? null };
 		entry = { ready: openStroke(spec, false), ts: Date.now() };
 		remote.set(data.id, entry);
 	}
@@ -1319,6 +1340,16 @@ export function ringRadius(mesh, slot, hit) {
 export function attachViewportPainting(opts) {
 	const ray = new THREE.Raycaster();
 	let active = false;
+	// 103 H1: the stabiliser, in screen px: where the brush is, and the last raw sample (the stroke ends there)
+	/** @type {number[] | null} */ let brushAt = null;
+	/** @type {any} */ let lastRaw = null;
+	/** @param {any} e @param {number[]} at */
+	const at = (e, at) => ({ clientX: at[0], clientY: at[1], pressure: e.pressure, pointerType: e.pointerType });
+	// 103 H2: the pointer that owns the stroke; a pen's or a finger's stroke answers to it alone (a palm under the pen)
+	let ownId = -1;
+	let ownType = '';
+	/** @param {PointerEvent} e */
+	const foreign = (e) => active && (ownType === 'pen' || ownType === 'touch') && e.pointerId !== ownId;
 	/** @param {any} e */
 	const hitAt = (e) => {
 		const cam = /** @type {any} */ (get(globalCamera));
@@ -1338,7 +1369,23 @@ export function attachViewportPainting(opts) {
 	};
 	/** @param {PointerEvent} e */
 	const down = (e) => {
+		notePointer(e);
+		if (foreign(e)) {
+			if (ownType === 'touch' && e.pointerType === 'touch') {
+				// a second finger: the camera's pinch, never a stroke — drop the open one with no dot left behind
+				cancelStroke();
+				active = false;
+				lastRaw = null;
+				return;
+			}
+			// a palm while the pen paints: keep it from the camera too
+			e.stopPropagation();
+			e.stopImmediatePropagation();
+			return;
+		}
 		if (e.button !== 0) return;
+		// once a pen is seen a finger orbits the camera instead ("Pen only draws")
+		if (!mayDraw(e)) return;
 		const canvas = /** @type {any} */ (get(globalRenderer))?.domElement;
 		if (!canvas || e.target !== canvas) return;
 		const found = hitAt(e);
@@ -1351,6 +1398,10 @@ export function attachViewportPainting(opts) {
 			return;
 		}
 		active = true;
+		ownId = e.pointerId;
+		ownType = e.pointerType || 'mouse';
+		brushAt = [e.clientX, e.clientY];
+		lastRaw = null;
 		const h = localHit(found.mesh, found.hit);
 		void beginStroke({ uuid: found.mesh.uuid, slot: slotOfHit(found.mesh, found.hit, opts.slot()), sp: 'obj', at: h.local, w: pressure(e), normal: h.normal }).then((ok) => {
 			if (!ok) active = false;
@@ -1358,6 +1409,7 @@ export function attachViewportPainting(opts) {
 	};
 	/** @param {PointerEvent} e */
 	const move = (e) => {
+		if (foreign(e)) return;
 		if (active) {
 			e.stopPropagation();
 			let samples = [];
@@ -1366,7 +1418,13 @@ export function attachViewportPainting(opts) {
 			} catch {
 				samples = [];
 			}
-			for (const sample of samples.length ? samples : [e]) {
+			const R = smoothPx();
+			for (const raw of samples.length ? samples : [e]) {
+				lastRaw = raw;
+				const next = R > 0 ? pullString(brushAt, [raw.clientX, raw.clientY], R) : null;
+				if (R > 0 && !next) continue;
+				if (next) brushAt = next;
+				const sample = next ? at(raw, next) : raw;
 				const found = hitAt(sample);
 				if (found) strokeTo(localHit(found.mesh, found.hit).local, pressure(sample));
 			}
@@ -1377,9 +1435,15 @@ export function attachViewportPainting(opts) {
 	};
 	/** @param {PointerEvent} e */
 	const up = (e) => {
-		if (!active) return;
+		if (!active || foreign(e)) return;
 		e.stopPropagation();
 		active = false;
+		// a smoothed stroke catches up: it ends where the pen lifted, not a string's length short of it
+		if (lastRaw && smoothPx() > 0) {
+			const found = hitAt(lastRaw);
+			if (found) strokeTo(localHit(found.mesh, found.hit).local, pressure(lastRaw));
+		}
+		lastRaw = null;
 		endStroke();
 	};
 	/** @param {KeyboardEvent} e */
@@ -1397,11 +1461,13 @@ export function attachViewportPainting(opts) {
 	window.addEventListener('pointerdown', down, true);
 	window.addEventListener('pointermove', move, true);
 	window.addEventListener('pointerup', up, true);
+	window.addEventListener('pointercancel', up, true);
 	window.addEventListener('keydown', key, true);
 	return () => {
 		window.removeEventListener('pointerdown', down, true);
 		window.removeEventListener('pointermove', move, true);
 		window.removeEventListener('pointerup', up, true);
+		window.removeEventListener('pointercancel', up, true);
 		window.removeEventListener('keydown', key, true);
 		if (active) endStroke();
 		active = false;

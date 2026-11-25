@@ -6,6 +6,7 @@
 // and QUIET MODE (T7) — an agent page is nobody's screen, so the prompts a person would answer are
 // either answered "not now" (nudges) or kept as offers the agent can read and press (questions).
 
+import { loadBehaviours } from '../behaviours/load.js'; // 102-boot-diet (a leaf)
 import { get } from 'svelte/store';
 import { createAgentCore, missingModulesFrom, viewerRefusal } from './agentCore.js';
 import { getAiTools, executeAiTool, buildSystemPrompt, summarizeScene, repairToolCall, MESH_TOOL } from '$lib/ai/tools.js';
@@ -428,6 +429,9 @@ async function agentRun(name, args, opts) {
  *   no agent-page tools (the person keeps those buttons), and it counts its own session as one
  */
 export function createTpAgent(extra = {}) {
+	// 102-boot-diet: behaviours load on demand; an agent may create one on an empty scene, and its tool
+	// list offers the behaviour tools once their host has registered, so start loading them with the agent
+	loadBehaviours();
 	/** @type {{physics: boolean, localSim: boolean, by?: string}} */
 	const toolOpts = { physics: !!extra.physics, localSim: !!extra.localSim };
 	// 89 x 104: the connector names the AI app at work ("ChatGPT moved your view · Back"), read per call; 'Claude' before 89's Worker

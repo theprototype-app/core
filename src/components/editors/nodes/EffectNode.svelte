@@ -52,6 +52,13 @@
 			</p>
 			<span class="text-[9px] text-text-muted" title="Wire a colour here to drive a colour uniform">color</span>
 			<span class="text-[9px] text-text-muted" title="Wire a Vector3 here to drive a vector uniform">vector</span>
+			<!-- 105-slot-shaders: which material slot's shader (empty = every slot that has the uniform) -->
+			<label class="flex w-full flex-col gap-0.5" title="A material slot's number (0 = the first), id or name; empty = every slot of the object that has this uniform">
+				<span class="text-[9px] text-text-muted">slot</span>
+				<input class="nodrag nopan w-full font-mono text-[10px]" type="text" placeholder="every slot"
+					value={data.slot ?? ''}
+					on:change={(e) => setNodeData(id, { slot: e.currentTarget.value.trim() })} />
+			</label>
 		{:else if data.type === 'constraintweight' || data.type === 'constrainttarget'}
 			<!-- 102 M7: which of the object's constraints: its number in the Inspector's stack (or its id) -->
 			<label class="flex items-center gap-2 text-[10px] text-text-muted" title="Which constraint: 1 = the first in the object's Constraints stack">

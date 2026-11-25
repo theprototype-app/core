@@ -33,7 +33,9 @@ export const DEBUG_HOOKS = [
 	// 34 R2 (kit-entities): entities drawn / world / api (kitEntitiesDebug, kitEntitiesApi, entityOfObject)
 	['kitEntities', () => import('./kit/entityApp.js')],
 	// 34 R3 (D1/D2): behaviours (runtime, behaviourStatus, behavioursDebug)
-	['behaviours', () => import('./behaviours/app.js')],
+	// 102-boot-diet: app.js's exports, and a test page's behaviours START as they did at boot before the
+	// lane (app.js now loads on demand: behaviours/load.js)
+	['behaviours', () => import('./behaviours/debugHook.js')],
 	// 69: the sandbox engine (sandboxReady / loadSandbox / sandboxLoadError) — probes on built apps
 	['sandbox', () => import('./sandbox/engine.js')],
 	['meshEdit', () => import('./meshEdit')],
@@ -126,6 +128,10 @@ export const DEBUG_HOOKS = [
 	['historyGesture', () => import('./historyGesture')],
 	['materialsHandler', () => import('./materialsHandler')],
 	['materialMaps', () => import('./materialMaps')],
+	// 105-slots: slotsOf, removeSlot / moveSlot / renameSlot / duplicateSlot / setSlotOff / replaceSlotMaterial
+	['materialSlots', () => import('./materialSlots.js')],
+	['slotDraw', () => import('./slotDraw.js')],
+	['slotDrawLayer', () => import('./slotDrawLayer.js')],
 	['materialMapTextures', () => import('./materialMapTextures.js')],
 	// 37 R5: material presets (materialPresets, peerMaterialPresets, applyMaterialPreset, materialPresetsDebug…)
 	['materialPresets', () => import('./materialPresets')],
@@ -220,6 +226,10 @@ export const DEBUG_HOOKS = [
 	['imageEditor', () => import('./image/imageEditor')],
 	['imageOps', () => import('./image/imageOps')],
 	['imageVersions', () => import('./image/imageVersions')],
+	// 105-noise: the noise generator, its worker pool and the slot fill (image-noise suite)
+	['noiseCore', () => import('./image/noiseCore.js')],
+	['noiseRun', () => import('./image/noiseRun')],
+	['noiseFill', () => import('./image/noiseFill')],
 	['sceneBounds', () => import('./sceneBounds')],
 	['cameraClip', () => import('./cameraClip')],
 	['ping', () => import('./ping')],
@@ -236,6 +246,13 @@ export const DEBUG_HOOKS = [
 	['viewModeCtl', () => import('./viewMode')],
 	['inputRuntime', () => import('./inputRuntime')],
 	['shortcutsRegistry', () => import('./shortcuts')],
+	// 103 H4/H5/H10: the fly prefs and the start-at-once engine (modalTransformState)
+	['flyPrefs', () => import('./flyPrefs')],
+	['modalTransform', () => import('./modalTransform')],
+	// 103 H7: the gizmo styles (prefs, the row 8 cycle) and the faces' test seam (describeFace)
+	['gizmoPrefs', () => import('./gizmo/gizmoPrefs')],
+	['gizmoFaces', () => import('./gizmo/faces')],
+	['gizmoHide', () => import('./gizmo/gizmoHide')],
 	['keyScope', () => import('./keyScope')],
 	// 36 F3/F4: the window-chrome rules (isHeaderDrag, windowDragActive)
 	['windowGrip', () => import('./windowGrip')],
@@ -294,6 +311,9 @@ export const DEBUG_HOOKS = [
 	['dockHost', () => import('./dockHost')],
 	['focusMode', () => import('./focusMode')],
 	['explorerDrop', () => import('./explorerDrop')],
+	// 105 T1: the Explorer drop target (desktop drag + touch long-press drop) and the shared Explorer picker
+	['explorerDropTarget', () => import('./explorerDropTarget.js')],
+	['explorerPick', () => import('./explorerPick.js')],
 	['assetShare', () => import('./assetShare')],
 	['soundRuntime', () => import('./soundRuntime')],
 	['dungeonPlay', () => import('./dungeonPlay')],
@@ -401,6 +421,8 @@ export const DEBUG_HOOKS = [
 	// 102 M6: paint on meshes (the lazy painter + its prefs leaf)
 	['meshPaint', () => import('./meshPaint')],
 	['meshPaintPrefs', () => import('./meshPaintPrefs')],
+	// 103 H2: pen / finger rule
+	['penInput', () => import('./penInput')],
 	['uvUnwrap', () => import('./uvUnwrap')],
 	['meshTopology', () => import('./meshTopology')],
 	['meshBoolean', () => import('./meshBoolean')],
@@ -426,6 +448,9 @@ export const DEBUG_HOOKS = [
 	['proPresets', () => import('./post/proPresets.js')],
 	['finishCore', () => import('./post/finishCore.js')],
 	['finishEffects', () => import('./post/finishEffects.js')],
+	// 106: shadow quality (the pure table + the lazy Soft / Far half)
+	['shadowLevelParams', () => import('./shadows/shadowLevelParams.js')],
+	['shadowLevels', () => import('./shadows/shadowLevels.js')],
 	['traaPass', () => import('./post/traaPass.js')],
 	['xrLook', () => import('./xrLook.js')],
 	['xrLookCore', () => import('./xrLookCore.js')],
@@ -555,6 +580,8 @@ export const DEBUG_HOOKS = [
 	// 102b-play: wakeLock, infoPoints
 	['wakeLock', () => import('./wakeLock.js')],
 	['infoPoints', () => import('./infoPoints.js')],
+	// 103 (H13): the editor's touch feedback (uiHapticsDebug, prefs, the fake-clock / fake-input seams)
+	['uiHaptics', () => import('./uiHaptics')],
 	['touchSpec', () => import('./touchSpec')],
 	['playMode', () => import('./playMode')],
 	// phone-polish: Android Back closes the top surface
@@ -601,6 +628,11 @@ export const DEBUG_HOOKS = [
 	// 46 B1/B2: the budget chip + Statistics ▸ Budget (budgetTarget, sceneCost, sampleBudget, openBudget, TARGETS)
 	['budgetMeter', () => import('./budgetMeter')],
 	['budgetMeterCore', () => import('./budgetMeterCore')],
+	// 103 H11: the Preview pill — Draw as (+ its lazy renderer's drawAsDebug), Judge for, the drawer store
+	['drawAs', () => import('./drawAs.js')],
+	['drawAsRender', () => import('./drawAsRender.js')],
+	['judgeFor', () => import('./judgeFor.js')],
+	['previewPill', () => import('./previewPill.js')],
 	['overloadGuard', () => import('./overloadGuard')],
 	['qualityGovernor', () => import('./qualityGovernor')],
 	['importBudget', () => import('./importBudget')],

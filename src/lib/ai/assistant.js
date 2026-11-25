@@ -1,4 +1,5 @@
 import { get } from 'svelte/store';
+import { loadBehaviours } from '../behaviours/load.js'; // 102-boot-diet (a leaf)
 import { showToast } from '../../stores/appStore.js';
 import { activeAiConfig } from './providers.js';
 import { explainMissing } from '../tools/toolLinks.js';
@@ -200,6 +201,9 @@ export async function runPrompt(text, images = []) {
 		...(images.length ? { images: images.map((i) => ({ url: 'data:' + i.mimeType + ';base64,' + i.data, name: i.name ?? 'picture' })) } : {})
 	});
 	aiBusy.set(true);
+	// 102-boot-diet: behaviours load on demand; this turn's tool list and system prompt offer
+	// create_behaviour only once their host has registered, so load them before either is built
+	await loadBehaviours();
 
 	// 73 AI2: JPEG on the wire, the one format every vision provider reads
 	/** @type {any[]} */

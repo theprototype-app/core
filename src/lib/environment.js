@@ -23,7 +23,7 @@ function ensureHeightFogShader(scene) {
 }
 import { registerSystemGroup } from './moduleSDK';
 import { createLight } from './geometries.svelte';
-import { cappedShadowSize, shadowsDisabled } from './lightParams';
+import { cappedShadowSize, shadowsDisabled, sceneShadowsOff } from './lightParams';
 import { wireframeActive } from './viewMode';
 import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
 import { safeStorage } from './safeStorage';
@@ -31,6 +31,12 @@ import { sceneLodBias } from './lod';
 // 37-hdri: the PURE half only (normalize/merge/rotate) — the loader is a registered layer below
 import { mergeHdriPatch, rotateAboutY } from './hdri/hdriCore.js';
 import { ENV_RIG_SUN } from './shadowFitCore.js';
+// 106 S1: the scene's shadow quality (pure half; Soft / Far load lazily in ./shadows/shadowLevels.js). Only THIS
+// module imports shadowLevelCore in the app, so it bundles into environment's chunk (a second importer, lazy or a
+// debug row, splits it into its own boot chunk: +370 B measured); the row reads it through the re-export below.
+import { shadowLevelOf, drawnShadowLevel, shadowTierOf } from './shadows/shadowLevelCore.js';
+import { isHeadsetUA } from './hdri/hdriCore.js';
+export { shadowLevelOf, drawnShadowLevel };
 
 // Environment v2 (phase 70). Everything environmental lives under ONE group at
 // the scene root: `environment-root` — the preset rig (hemi+sun) plus any
@@ -580,6 +586,7 @@ export function applyEnvironment() {
 	}
 
 	reconcileExtraLights(scene, state.lights ?? []);
+	applySceneShadowLevel(scene, renderer, sun);
 }
 
 /** Apply a state change locally, persist and replicate @param {any} partial @param {boolean} [replicate] */
@@ -596,7 +603,7 @@ function commit(partial, replicate = true) {
 /**
  * 85 H4 / H5 / H7: a whole environment state through the one write path — the agent's set_sky / set_light
  * and their undo (the `environment` history kind, ai/sceneSetupHistory.js). Persists, applies, replicates.
- * @param {{preset?: string, exposure?: number, customPreset?: any, lights?: any[], lodBias?: number}} state
+ * @param {{preset?: string, exposure?: number, customPreset?: any, lights?: any[], lodBias?: number, shadowLevel?: string}} state
  */
 export function commitEnvironment(state) {
 	commit({
@@ -604,7 +611,8 @@ export function commitEnvironment(state) {
 		exposure: state.exposure ?? 1,
 		customPreset: state.customPreset ?? null,
 		lights: Array.isArray(state.lights) ? state.lights : [],
-		lodBias: lodBiasOf(state) === 1 ? undefined : lodBiasOf(state)
+		lodBias: lodBiasOf(state) === 1 ? undefined : lodBiasOf(state),
+		shadowLevel: shadowLevelOf(state.shadowLevel) === 'basic' ? undefined : shadowLevelOf(state.shadowLevel)
 	});
 }
 
@@ -897,6 +905,7 @@ export function applyRemoteEnvironment(data) {
 		customPreset: data.customPreset ?? null,
 		lights: data.lights ?? [],
 		...(lodBiasOf(data) !== 1 ? { lodBias: lodBiasOf(data) } : {}),
+		...(shadowLevelOf(data.shadowLevel) !== 'basic' ? { shadowLevel: shadowLevelOf(data.shadowLevel) } : {}),
 		changedAt: data.changedAt
 	});
 	applyEnvironment();
@@ -923,6 +932,70 @@ export function setSceneLodBias(value) {
 }
 
 environment.subscribe((state) => sceneLodBias.set(lodBiasOf(state)));
+environment.subscribe((state) => sceneShadowsOff.set(shadowLevelOf(state.shadowLevel) === 'off'));
+// 106: the Cinematic view (Far drawn as Soft) and an XR session (the headset tier) re-apply through hooks the lazy
+// chunk wires the first time it loads: both only change what a Soft / Far scene draws, and such a scene has
+// loaded the chunk already (a capped device that draws Basic stays Basic when it presents).
+
+/** 106 S1: Configure Scene ▸ Lights ▸ Shadow quality (replicated, saved; absent = Basic).
+ * @param {any} level 'off' | 'basic' | 'soft' | 'far' */
+export function setSceneShadowLevel(level) {
+	const v = shadowLevelOf(level);
+	if (v === shadowLevelOf(get(environment).shadowLevel)) return;
+	commit({ shadowLevel: v === 'basic' ? undefined : v });
+}
+
+/** S0 measurement only (debug hook): draw as another tier would, to price Soft / Far on a capped device. */
+let shadowTierOverride = /** @type {null | 'pc' | 'phone' | 'quest'} */ (null);
+/** @param {null | 'pc' | 'phone' | 'quest'} tier */
+export function setShadowTierOverride(tier) {
+	shadowTierOverride = tier;
+	applyEnvironment();
+}
+
+/** This device's shadow tier (the 98 finish tier facts; read per apply). @param {any} [renderer] */
+export function shadowTier(renderer) {
+	if (shadowTierOverride) return shadowTierOverride;
+	const nav = typeof navigator !== 'undefined' ? navigator : null;
+	return shadowTierOf({
+		presenting: !!renderer?.xr?.isPresenting,
+		headset: !!nav && isHeadsetUA(nav.userAgent),
+		phone: typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches
+	});
+}
+
+/** What this device draws for the scene's ask right now (the Cinematic view draws Far as Soft on top: shadowLevels).
+ * @param {any} [renderer] */
+export function drawnSceneShadowLevel(renderer) {
+	return drawnShadowLevel(get(environment).shadowLevel, shadowTier(renderer ?? get(globalRenderer)));
+}
+
+// 106 S1: Soft / Far are a lazy chunk; Basic and Off never load it. Once loaded it stays (it restores
+// Basic itself when the level goes back), so a scene that never asks pays one comparison per apply.
+/** @type {any} */
+let shadowLevelsMod = null;
+let shadowLevelsLoading = false;
+/** For the suites: has THIS module loaded the Soft / Far chunk (a scene that never asks never does). The debug hook
+ * row loads the chunk for the console, which does not count: only environment's own import arms it. */
+export function shadowLevelsLoadedForTest() {
+	return !!shadowLevelsMod;
+}
+/** @param {any} scene @param {any} renderer @param {any} sun */
+function applySceneShadowLevel(scene, renderer, sun) {
+	const drawn = drawnSceneShadowLevel(renderer);
+	if (shadowLevelsMod)
+		return shadowLevelsMod.applyShadowLevel({ scene, renderer, sun, drawn, tier: shadowTier(renderer), radius: sceneRadius(), asked: shadowLevelOf(get(environment).shadowLevel), reapply: applyEnvironment });
+	if (drawn !== 'soft' && drawn !== 'far') return;
+	if (shadowLevelsLoading) return;
+	shadowLevelsLoading = true;
+	import('./shadows/shadowLevels.js')
+		.then((m) => {
+			shadowLevelsMod = m;
+			applyEnvironment();
+		})
+		.catch((err) => console.warn('[shadows] Soft / Far unavailable', err))
+		.finally(() => (shadowLevelsLoading = false));
+}
 
 /** A6: the authored sky/fog/lighting as SAVE data, or NULL when it is the stock
  * studio look — so a default scene saves byte-identical and an older reader sees
@@ -935,7 +1008,8 @@ export function environmentSnapshot() {
 		(state.exposure ?? 1) === 1 &&
 		!state.customPreset &&
 		!(state.lights ?? []).length &&
-		lodBiasOf(state) === 1;
+		lodBiasOf(state) === 1 &&
+		shadowLevelOf(state.shadowLevel) === 'basic';
 	if (stock) return null;
 	return {
 		preset: state.preset,
@@ -943,6 +1017,7 @@ export function environmentSnapshot() {
 		customPreset: state.customPreset ?? null,
 		lights: state.lights ?? [],
 		...(lodBiasOf(state) !== 1 ? { lodBias: lodBiasOf(state) } : {}),
+		...(shadowLevelOf(state.shadowLevel) !== 'basic' ? { shadowLevel: shadowLevelOf(state.shadowLevel) } : {}),
 		changedAt: state.changedAt ?? 0
 	};
 }
@@ -963,6 +1038,7 @@ export function environmentRestore(payload, replicate = false) {
 				customPreset: payload.customPreset ?? null,
 				lights: payload.lights ?? [],
 				...(lodBiasOf(payload) !== 1 ? { lodBias: lodBiasOf(payload) } : {}),
+				...(shadowLevelOf(payload.shadowLevel) !== 'basic' ? { shadowLevel: shadowLevelOf(payload.shadowLevel) } : {}),
 				changedAt: sessionNow()
 			}
 		: { ...DEFAULT_STATE, changedAt: sessionNow() };

@@ -1,4 +1,5 @@
 <script>
+	import { uiHaptic } from '$lib/uiHaptics'; // 103 (H13): touch feedback
 	// 38 R3 — a checkbox, ONLY for picking items in a list (multi-select: files to export,
 	// peers to invite). Every on/off SETTING is a Toggle (SPEC §2). A real <input
 	// type="checkbox"> under a drawn box, so forms, labels and keyboard behave natively; the
@@ -19,6 +20,7 @@
 	/** @param {Event & {currentTarget: HTMLInputElement}} e */
 	function onChange(e) {
 		checked = e.currentTarget.checked;
+		uiHaptic(checked ? 'on' : 'off');
 		onchange(checked);
 	}
 </script>

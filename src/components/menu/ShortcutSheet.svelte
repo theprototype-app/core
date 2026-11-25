@@ -20,7 +20,17 @@
 		focusedScope = lastScope();
 		/** @type {Map<string, Map<string, any[]>>} */
 		const byScope = new Map();
+		// the X / Y / Z locks have keys in every preset but act only inside a start-at-once gesture:
+		// listed once one of those has a key, so the default sheet stays as it was
+		const NOW_ROWS = ['transform.now-move', 'transform.now-rotate', 'transform.now-scale', 'mesh.now-move', 'mesh.now-rotate', 'mesh.now-scale'];
+		const gestureBound = shortcuts.some((r) => NOW_ROWS.includes(r.id) && r.keys);
+		// the UV editor's U / V locks (X / Y by default) likewise wait for a UV start-at-once key
+		const uvGestureBound = shortcuts.some((r) => /^uv\.now-/.test(r.id) && r.keys);
 		for (const row of shortcuts) {
+			// 103 H5: a row with no key (the start-at-once actions in the default preset) has nothing to show
+			if (!row.keys) continue;
+			if (row.scope === 'modal' && !gestureBound) continue;
+			if ((row.id === 'uv.lock-u' || row.id === 'uv.lock-v') && !uvGestureBound) continue;
 			const scope = row.scope || 'global';
 			if (!byScope.has(scope)) byScope.set(scope, new Map());
 			const groups = /** @type {Map<string, any[]>} */ (byScope.get(scope));

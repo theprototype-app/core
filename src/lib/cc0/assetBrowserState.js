@@ -39,3 +39,22 @@ export const assetBrowserRes = persisted('assetBrowser:res', deviceResolution(),
 export function openAssetBrowser() {
 	assetBrowserOpen.set(true);
 }
+
+/**
+ * 105-slots: "Apply to <slot>" — the slot list's Switch material… opens the browser on materials with ONE slot as the
+ * target; a material's Apply then goes to that slot of that object (and the target clears). LOCAL.
+ * @type {import('svelte/store').Writable<{uuid: string, slot: number, label: string} | null>}
+ */
+export const assetBrowserTarget = writable(/** @type {{uuid: string, slot: number, label: string} | null} */ (null));
+
+// a closed browser forgets its slot target: the next Apply from it goes to the selection again
+assetBrowserOpen.subscribe((open) => {
+	if (!open) assetBrowserTarget.set(null);
+});
+
+/** @param {{uuid: string, slot: number, label: string}} target */
+export function openAssetBrowserForSlot(target) {
+	assetBrowserTarget.set(target);
+	assetBrowserKind.set('materials');
+	assetBrowserOpen.set(true);
+}

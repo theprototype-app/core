@@ -139,7 +139,7 @@ const measure = (page, menus) =>
 			if (r && el.dataset.docked !== 'left' && el.dataset.docked !== 'right' && !el.closest('[data-sidebar-member]')) panels.push({ name: 'floating stats', l: r.left, r: r.right, t: r.top, b: r.bottom, el });
 		}
 		// OVERLAYS
-		const OVER = ['#hud-stack-left > *', '#hud-stack-right > *', '#controls-pill', '#hud-tr > *', '#avatar-trigger', '#budget-chip-wrap:not(.bc-hidden)', '#touch-tools > *', '#sim-controls', '.hud-cell'];
+		const OVER = ['#hud-stack-left > *', '#hud-stack-right > *', '#controls-pill', '#hud-tr > *', '#avatar-trigger', '#preview-pill', '#touch-tools > *', '#sim-controls', '.hud-cell'];
 		const overlap = [];
 		const off = [];
 		const seen = new Set();

@@ -133,7 +133,8 @@ these three rows in this order.
 |---|---|---|---|---|---|---|---|---|
 | 1 | On-screen controls *(badge This device)* | Show touch controls | seg (tp-seg) Auto/Always/Never | D | `touchPrefs.visibility` → `touchControlsPrefs` (json) | | seg (Segmented primitive) | |
 | 2 | On-screen controls | Show in edit | toggle | D | `touchPrefs.showInEdit` (json) | | toggle | |
-| 3 | On-screen controls | Haptic tick | toggle | D | `touchPrefs.haptics` (json) | | toggle | |
+| 3 | Touch feedback (103) | Touch feedback | seg Off/Light/Medium/Strong | D | `uiHapticPrefs.level` (`ui:touchFeedback` json; migrates the old Haptic tick: on -> Light, off -> Off) | | seg | replaced Haptic tick |
+| 3 | Touch feedback (103) | Buttons and switches · Sliders and values · Snapping · Gestures | toggle x4 | D | `uiHapticPrefs.<kind>` | | toggle | + a Try it slider (not stored); hidden with a reason where the browser cannot vibrate |
 | 4 | On-screen controls | Look speed | range (readout in the description) | D | `touchLookSpeed` → `touchLookSpeed` | | range + readout "1.00×" | |
 | 5 | On-screen controls | Layout | btns "Edit layout" / "Reset" | — + D | `openTouchLayoutEditor()` / `resetTouchLayout('game'\|'global')` → `touchControlsLayouts` | | btn pair "Reset" · "Edit layout" | |
 | 6 | Button looks | one row per action: Jump, Fire, Use, Grab, Crouch, Sprint, Reload, Up, Down (+ any the open scene's game adds) — each with previews, Released/Pressed image (Upload · Explorer… · ✕), Tint, Size, "Default look" | ~10 controls in one row | D | `touchTextures[actionId]` → `touchControlsTextures` (json: released, pressed, tint, scale) | | **3-column tile grid** (icon, name, "Default"/"Custom"); a tile is a **nav** to a sub-page | **SUBMENU** below |

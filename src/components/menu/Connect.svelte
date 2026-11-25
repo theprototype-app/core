@@ -882,9 +882,10 @@
 {/if}
 
 <style>
+	/* 103 H15: on the HUD grid's top row (styles/hud.css) — the logo's inset, the row's one height */
 	.connect-wrap {
 		position: fixed;
-		top: 8px;
+		top: var(--hud-inset);
 		/* 42 I2: centred in the gap between the corner chrome while a full-height column is pinned
 		   (measureDock; 0 = the window's centre) */
 		left: calc(50% + var(--cx-shift, 0px));
@@ -915,7 +916,7 @@
 		gap: 6px;
 		box-sizing: border-box;
 		height: var(--hud-row-h);
-		border-radius: var(--radius-window);
+		border-radius: var(--hud-radius);
 		padding: 0 5px 0 6px;
 		white-space: nowrap;
 		/* reserve room for the logo (left) + peers/profile (right) so the centred pill

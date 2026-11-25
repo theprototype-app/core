@@ -13,6 +13,8 @@ import { faceEditObject, meshEditHotkeys } from './faceEdit';
 // layout W is `ц`, so `event.key` never matched and the camera could not fly
 import { letterOf } from './keyOf';
 import { viewportHasKeys } from './keyScope'; // 36 U11
+// 103 H5/H10: fly-with-WASD + fly-direction prefs (a leaf)
+import { flyWithWasd, flyDirection, setRightHeld, rightButtonHeld, noteFlew } from './flyPrefs';
 
 // WASD fly-panning for the desktop editor, Q down / E up, Shift = 3x.
 // Camera position and orbit target move together. Inert while typing, in
@@ -74,13 +76,38 @@ export function startEditorNavigation() {
 		if (!viewportHasKeys(event)) return;
 		const key = letterOf(event);
 		if (event.shiftKey && isShiftCommand(key)) return; // a command, not movement
+		// 103 H5: 'only while holding the right mouse button' — a bare W / S outside a hold is a
+		// command key (the Blender preset's S resizes), never movement
+		if (get(flyWithWasd) === 'rmb' && !rightButtonHeld()) return;
 		if (KEYS.includes(key)) pressed.add(key);
 	});
+	// 103 H5: the right-button hold that 'rmb' fly mode waits for. Capture phase on window:
+	// OrbitControls captures the pointer on press, so the release may land anywhere.
+	window.addEventListener(
+		'pointerdown',
+		(event) => {
+			if (event.button !== 2) return;
+			const target = /** @type {any} */ (event.target);
+			if (target?.tagName === 'CANVAS' || target?.closest?.('[data-viewport], #viewport')) setRightHeld(true);
+		},
+		true
+	);
+	const releaseRight = (/** @type {PointerEvent} */ event) => {
+		if (event.type === 'pointerup' && event.button !== 2) return;
+		if (!rightButtonHeld()) return;
+		setRightHeld(false);
+		if (get(flyWithWasd) === 'rmb') pressed.clear();
+	};
+	window.addEventListener('pointerup', releaseRight, true);
+	window.addEventListener('pointercancel', releaseRight, true);
 	window.addEventListener('keyup', (event) => {
 		if (event.key === 'Shift') return pressed.delete('shift');
 		pressed.delete(letterOf(event));
 	});
-	window.addEventListener('blur', () => pressed.clear());
+	window.addEventListener('blur', () => {
+		pressed.clear();
+		setRightHeld(false);
+	});
 }
 
 const forward = new THREE.Vector3();
@@ -107,10 +134,19 @@ export function updateEditorNavigation(delta, camera, controls) {
 
 	movement.set(0, 0, 0);
 	camera.getWorldDirection(forward);
+	// 103 H10: 'look' keeps the view direction's climb, so looking up and pressing W rises.
+	// The strafe axis is always level (from the flattened direction), and Q / E stay vertical.
+	const look = get(flyDirection) === 'look';
+	const climb = forward.y;
 	forward.y = 0;
 	if (forward.lengthSq() < 1e-6) forward.set(0, 0, -1);
 	forward.normalize();
 	right.crossVectors(forward, UP).normalize();
+	if (look) {
+		camera.getWorldDirection(forward);
+		if (forward.lengthSq() < 1e-6 || Math.abs(climb) > 0.9999) forward.set(0, Math.sign(climb) || -1, 0);
+		forward.normalize();
+	}
 
 	if (pressed.has('w')) movement.add(forward);
 	if (pressed.has('s')) movement.sub(forward);
@@ -121,6 +157,7 @@ export function updateEditorNavigation(delta, camera, controls) {
 	if (movement.lengthSq() === 0) return;
 
 	movement.normalize().multiplyScalar(delta * SPEED * (pressed.has('shift') ? 3 : 1));
+	if (rightButtonHeld()) noteFlew();
 	camera.position.add(movement);
 	controls.target.add(movement);
 	controls.update?.();

@@ -42,6 +42,10 @@ import { findNodeSpec } from '$lib/nodeCatalog';
 import { codeViewOn } from '$lib/nodes/codeViewFlag.js';
 import { aiReferences, behaviourHost } from './aiExtensions.js';
 import { behaviourToolSchemas, behaviourTool, summarizeBehaviours } from './behaviourTools.js';
+// 102-boot-diet: behaviours load on demand; a behaviour tool call that arrives before they have loaded
+// loads them first (the assistant's turn and the agent tab load them up front: assistant.runPrompt,
+// tpAgent.createTpAgent). Not at this module's top: the editor loads the assistant soon after every start
+import { loadBehaviours } from '../behaviours/load.js';
 import {
 	physicsToolsEnabled,
 	aiNodeVocabulary,
@@ -1275,6 +1279,7 @@ async function runAiTool(rawName, rawArgs, opts) {
 
 			case 'create_behaviour':
 			case 'edit_behaviour':
+				if (!behaviourHost()) await loadBehaviours(); // 102-boot-diet: a call that beat the load
 				return await behaviourTool(name, args);
 
 			case 'set_physics': {
@@ -1372,10 +1377,17 @@ async function runAiTool(rawName, rawArgs, opts) {
 				const resolved = await resolvePatterns(args);
 				if ('error' in resolved) return { error: resolved.error };
 				const done = await lookTool(name, resolved.args);
-				if (!done || typeof done !== 'object' || done.error || !resolved.patterns?.length) return done;
+				const noise = 'noise' in resolved ? resolved.noise : undefined;
+				if (!done || typeof done !== 'object' || done.error || (!resolved.patterns?.length && !noise?.length)) return done;
 				// patternScale: the texture repeats that many times (set_uv's tiling, in the same call's undo step)
 				const tiled = resolved.tiling ? await lookTool('set_uv', { objects: resolved.args.objects, tiling: resolved.tiling }) : null;
-				return { ...done, patterns: resolved.patterns, ...(tiled?.error ? { warnings: ['patternScale: ' + tiled.error] } : {}) };
+				return {
+					...done,
+					...(resolved.patterns?.length ? { patterns: resolved.patterns } : {}),
+					// 105-noise: what each generated noise map is (kind, scale, octaves, seed, size, its library hash)
+					...(noise?.length ? { noise } : {}),
+					...(tiled?.error ? { warnings: ['patternScale: ' + tiled.error] } : {})
+				};
 			}
 			case 'list_materials':
 			case 'get_material':

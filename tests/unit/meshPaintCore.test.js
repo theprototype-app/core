@@ -2,6 +2,11 @@
 import { describe, it, expect } from 'vitest';
 import {
 	CHANNELS,
+	accumulate,
+	pressureEffect,
+	pressureModeOf,
+	PRESSURE_MODES,
+	pullString,
 	channelOf,
 	normalizeBrush,
 	isDefaultBrush,
@@ -40,14 +45,48 @@ describe('channels and brush', () => {
 	});
 	it('clamps a hostile brush', () => {
 		const b = normalizeBrush({ hardness: -3, opacity: 9, flow: 0, erase: 'yes', mirror: true, stamp: '<script>' });
-		expect(b).toEqual({ hardness: 0, opacity: 1, flow: 0.01, erase: false, mirror: true, stamp: '' });
+		expect(b).toEqual({ hardness: 0, opacity: 1, flow: 0.01, erase: false, mirror: true, stamp: '', spacing: 0.2 });
 	});
 	it('a default brush sends nothing and round-trips', () => {
 		expect(brushWire({})).toEqual({});
 		expect(isDefaultBrush({})).toBe(true);
-		const b = { hardness: 0.25, opacity: 0.5, flow: 0.3, erase: true, mirror: true, stamp: 'abc123' };
+		const b = { hardness: 0.25, opacity: 0.5, flow: 0.3, erase: true, mirror: true, stamp: 'abc123', spacing: 0.2 };
 		expect(isDefaultBrush(b)).toBe(false);
 		expect(brushFromWire(brushWire(b))).toEqual(b);
+	});
+	it('103: spacing is a brush field, absent on the wire at the default, clamped, an older brush reads as 0.2', () => {
+		expect(isDefaultBrush({ spacing: 0.2 })).toBe(true);
+		expect(isDefaultBrush({ spacing: 0.5 })).toBe(false);
+		expect(brushWire({ spacing: 0.5 })).toEqual({ d: 0.5 });
+		expect(brushFromWire({ d: 0.5 }).spacing).toBe(0.5);
+		expect(brushFromWire({ h: 0.5 }).spacing).toBe(0.2);
+		expect(normalizeBrush({ spacing: 9 }).spacing).toBe(1);
+		expect(normalizeBrush({ spacing: 0 }).spacing).toBe(0.05);
+	});
+	it('103: the pulled-string stabiliser', () => {
+		expect(pullString(null, [3, 4], 10)).toEqual([3, 4]);
+		expect(pullString([0, 0], [3, 4], 10)).toBe(null); // slack: 5 px inside a 10 px string
+		const p = pullString([0, 0], [30, 40], 10); // 50 px away: the brush moves to 10 px behind the pointer
+		expect(Math.hypot(30 - p[0], 40 - p[1])).toBeCloseTo(10, 9);
+		expect(pullString([0, 0], [30, 40], 0)).toEqual([30, 40]); // off
+		// a jittery path: the stabilised one travels less sideways
+		let at = null;
+		let raw = 0;
+		let calm = 0;
+		let prevRaw = 0;
+		let prevCalm = 0;
+		for (let i = 0; i < 200; i++) {
+			const y = i % 2 ? 6 : -6;
+			const q = pullString(at, [i * 3, y], 12);
+			if (q) at = q;
+			raw += Math.abs(y - prevRaw);
+			prevRaw = y;
+			if (at) {
+				calm += Math.abs(at[1] - prevCalm);
+				prevCalm = at[1];
+			}
+		}
+		expect(calm).toBeLessThan(raw / 4);
 	});
 	it('the eraser paints the value that hides the map', () => {
 		expect(paintStyle('color', '#FF0000', 0, false)).toBe('#ff0000');
@@ -244,5 +283,46 @@ describe('the live stroke wire', () => {
 	it('rounds points, drops full pressure', () => {
 		expect(quantizePoint([0.1234567, 2, 3, 1], 3)).toEqual([0.12346, 2, 3]);
 		expect(quantizePoint([0.5, 0.5, 0.33333], 2)).toEqual([0.5, 0.5, 0.333]);
+	});
+});
+
+// 103 H1: pressure opacity is a CEILING per dab (max, not sum). The 102 rule multiplied the pressure into the flow,
+// so twenty overlapping dabs at a light touch summed to nearly opaque — the owner's N6 report.
+describe('103 H1: the stroke layer pixel rule', () => {
+	it('q = 1 is the 102 source-over build-up exactly', () => {
+		for (const [L, a] of [[0, 1], [0, 0.3], [0.4, 0.5], [0.99, 0.2], [1, 1]]) expect(accumulate(L, a)).toBeCloseTo(L + a * (1 - L), 12);
+	});
+	it('overlapping dabs of one pressure stop at that pressure', () => {
+		let L = 0;
+		for (let i = 0; i < 40; i++) L = accumulate(L, 1, 0.3);
+		expect(L).toBeCloseTo(0.3, 12);
+		let soft = 0;
+		for (let i = 0; i < 400; i++) soft = accumulate(soft, 0.2, 0.3);
+		expect(soft).toBeLessThanOrEqual(0.3 + 1e-12);
+		expect(soft).toBeGreaterThan(0.29);
+	});
+	it('the counterfactual: the 102 rule (pressure inside the flow) stacks to opaque', () => {
+		let old = 0;
+		for (let i = 0; i < 20; i++) old = accumulate(old, 0.3); // a = flow * factor, q = 1
+		expect(old).toBeGreaterThan(0.99);
+	});
+	it('a lighter dab over a darker spot adds nothing; a darker one raises it', () => {
+		expect(accumulate(0.8, 1, 0.3)).toBe(0.8);
+		expect(accumulate(0.3, 1, 0.8)).toBeCloseTo(0.8, 12);
+	});
+	it('pressure modes: size, opacity, both, off; unknown reads as size', () => {
+		expect(pressureEffect('size', 0.4)).toEqual({ size: 0.4, ceil: 1 });
+		expect(pressureEffect('opacity', 0.4)).toEqual({ size: 1, ceil: 0.4 });
+		expect(pressureEffect('both', 0.4)).toEqual({ size: 0.4, ceil: 0.4 });
+		expect(pressureEffect('off', 0.4)).toEqual({ size: 1, ceil: 1 });
+		expect(pressureModeOf('curve')).toBe('size');
+		expect(pressureModeOf(undefined)).toBe('size');
+		expect(PRESSURE_MODES).toEqual(['size', 'opacity', 'both', 'off']);
+	});
+	it('vertex colours take the same ceiling', () => {
+		const positions = new Float32Array([0, 0, 0, 3, 0, 0]);
+		const acc = new Float32Array(2);
+		for (let i = 0; i < 30; i++) vertexDab(positions, [0, 0, 0], 1, 1, 1, acc, undefined, 0.25);
+		expect(acc[0]).toBeCloseTo(0.25, 12);
 	});
 });

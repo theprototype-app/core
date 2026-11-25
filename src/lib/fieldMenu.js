@@ -26,6 +26,7 @@ import { get, writable } from 'svelte/store';
 import { coerce, coerceSection, formatField, keyOf, parseClipboard, parseComponent } from './fieldClipboard.js';
 import { fromDisplay, parseValue, toDisplay, unitStoreFor } from './units.js';
 import { withHistoryGesture } from './historyGesture.js';
+import { uiHaptic } from './uiHaptics.js';
 import { showToastById } from '../stores/appStore.js';
 
 /** @typedef {{kind: 'number'|'vector'|'color'|'enum'|'bool', name: string, key?: string, get: () => any, set: (v: any) => void, reset?: any, unit?: string, options?: {value: any, label?: string, name?: string}[], min?: number, max?: number, disabled?: boolean}} FieldSpec */
@@ -676,7 +677,7 @@ export function fieldClip(node, getSpec) {
 			const s = spec?.(target);
 			if (!s || /** @type {any} */ (e).__fieldClipOwner !== node) return;
 			swallow = open(startX, startY, itemsFor(node, s, target));
-			if (swallow) navigator.vibrate?.(10);
+			if (swallow) uiHaptic('select', { kind: 'gestures', touch: true });
 		}, LONG_PRESS_MS);
 	}
 	/** @param {PointerEvent} e */

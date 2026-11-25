@@ -83,6 +83,7 @@
 	import { selectedObjects, transformMode, editorMode } from '../../stores/sceneStore';
 	import { undo, redo, canUndo, canRedo } from '$lib/history';
 	import { setTransformMode, toggleEditorMode } from '$lib/objectActions';
+	import { handleSet } from '$lib/gizmo/gizmoPrefs';
 	import { phoneBarTap, phoneChatTap, openPhoneTab, closePhoneTab, phoneDockShown, phoneTabsOpen } from '$lib/phoneDock';
 	import { toggleViewportFocus } from '$lib/focusMode';
 	import { requestPlay, willEnterXR, willEnterAR, playAsItems } from '$lib/playMode';
@@ -97,7 +98,8 @@
 	import { canvasCenter } from '$lib/canvasRect';
 	import { statsOpen } from '$lib/sceneBudget';
 	// 46 B1: the budget chip's phone form (an item of the bar catalog — in More ▸ Tools & View by default)
-	import { budgetTarget, sceneCost, TARGETS, verdictFor, openBudget } from '$lib/budgetMeter';
+	import { budgetTarget, sceneCost, TARGETS, verdictFor, openBudget, startBudgetMeter } from '$lib/budgetMeter';
+	import { previewDrawerOpen } from '$lib/previewPill.js'; // 103 H11
 	import { uiScale } from '$lib/uiScale'; // 53 A1: the shell's script geometry follows the UI scale
 	const moreTipShown = tipShown(TIP_PHONE_MORE);
 
@@ -488,6 +490,9 @@
 		phoneSheet.set(null);
 		phoneChatTap('assistant'); // uir-chat + 78 PL23: the Assistant tab of the one Chat window (a phone dock tab)
 	}
+	// 103 H11: the budget chip that kept the meter sampling on a phone is gone (the pill is desktop-only); the
+	// `budget` item reads the same reading, so the shell keeps it fresh while it is mounted
+	$effect(() => startBudgetMeter());
 	/** close the shell's own sheet, then run (a destination opened from More replaces it) */
 	const fromMore = (/** @type {() => void} */ fn) => () => {
 		phoneSheet.set(null);
@@ -500,6 +505,16 @@
 		run: fromMore(() => phoneBarTap(key)),
 		pressed: () => $visibleDockKey === key && !$dockMinimized
 	});
+	/**
+	 * row 4: a press that travels from the button transforms at once (the module loads on the press)
+	 * @param {PointerEvent} e
+	 * @param {'translate' | 'rotate' | 'scale'} mode
+	 */
+	const pressTool = (e, mode) => {
+		if (e.button === 0 && hasSel) void import('$lib/gizmo/toolPress').then((m) => m.trackToolPress(e, mode));
+	};
+	/** 103 H7 row 8: a transform button's state — its tool's handles, all in one, or off @param {string} mode */
+	const handlesOf = (mode) => (!hasSel || $transformMode !== mode ? 'off' : $handleSet === 'all' ? 'all' : 'tool');
 	/** @param {'translate' | 'rotate' | 'scale'} mode @param {string} label @param {string} icon @param {string} key */
 	const transformAction = (mode, label, icon, key) => ({
 		label,
@@ -604,6 +619,15 @@
 		focus: { label: 'Focus mode', short: 'Focus', icon: 'maximize-2', run: () => enterFocusMode() },
 		// 68 V1: film the scene with the phone (turn it to look, a stick to move, ● to record)
 		film: { label: 'Film with phone', short: 'Film', icon: 'video', hint: 'The phone becomes a scene camera: turn it to look around, record a shot into the Timeline', run: fromMore(() => openFilm()) },
+		// 103 H11: PREVIEW — how this phone draws the scene (Draw as, Quality); no pill at the top right on a phone
+		preview: {
+			label: 'Preview',
+			short: 'Preview',
+			icon: 'eye',
+			hint: 'How this device draws the scene: Draw as and Quality. Never saved, never shared',
+			pressed: () => $previewDrawerOpen,
+			run: fromMore(() => previewDrawerOpen.update((v) => !v))
+		},
 		// 46 B1: the scene budget for the chosen device (Statistics ▸ Budget picks the device); the dot is its tier
 		budget: {
 			get label() {
@@ -826,9 +850,9 @@
 	     is an icon toggle; each shows its real on/off state. -->
 	{#if stripOn}
 		<div class="ps-strip tp-noscrollbar" role="toolbar" aria-label="Edit selection" id="ps-strip" bind:this={stripEl} use:stripScroll>
-			<button type="button" class="ps-cell" id="ps-move" aria-label="Move (1)" disabled={!hasSel} aria-pressed={hasSel && $transformMode === 'translate'} onclick={() => setTransformMode('translate')}><Icon name="move" size={20} /></button>
-			<button type="button" class="ps-cell" id="ps-rotate" aria-label="Rotate (2)" disabled={!hasSel} aria-pressed={hasSel && $transformMode === 'rotate'} onclick={() => setTransformMode('rotate')}><Icon name="rotate-ccw" size={20} /></button>
-			<button type="button" class="ps-cell" id="ps-scale" aria-label="Scale (3)" disabled={!hasSel} aria-pressed={hasSel && $transformMode === 'scale'} onclick={() => setTransformMode('scale')}><Icon name="maximize-2" size={20} /></button>
+			<button type="button" class="ps-cell relative" id="ps-move" aria-label="Move (1)" disabled={!hasSel} aria-pressed={hasSel && $transformMode === 'translate'} data-handles={handlesOf('translate')} onpointerdown={(e) => pressTool(e, 'translate')} onclick={() => setTransformMode('translate')}><Icon name="move" size={20} />{#if handlesOf('translate') === 'all'}<span class="ps-all-mark" aria-hidden="true"></span>{/if}</button>
+			<button type="button" class="ps-cell relative" id="ps-rotate" aria-label="Rotate (2)" disabled={!hasSel} aria-pressed={hasSel && $transformMode === 'rotate'} data-handles={handlesOf('rotate')} onpointerdown={(e) => pressTool(e, 'rotate')} onclick={() => setTransformMode('rotate')}><Icon name="rotate-ccw" size={20} />{#if handlesOf('rotate') === 'all'}<span class="ps-all-mark" aria-hidden="true"></span>{/if}</button>
+			<button type="button" class="ps-cell relative" id="ps-scale" aria-label="Scale (3)" disabled={!hasSel} aria-pressed={hasSel && $transformMode === 'scale'} data-handles={handlesOf('scale')} onpointerdown={(e) => pressTool(e, 'scale')} onclick={() => setTransformMode('scale')}><Icon name="maximize-2" size={20} />{#if handlesOf('scale') === 'all'}<span class="ps-all-mark" aria-hidden="true"></span>{/if}</button>
 			<button type="button" class="ps-cell" id="ps-multiselect" aria-label="Select multiple" title="Select multiple" aria-pressed={$multiSelectMode} onclick={() => multiSelectMode.update((v) => !v)}><Icon name="square-dashed" size={20} /></button>
 			<button type="button" class="ps-cell" id="ps-interact" aria-label="Interact mode (I)" title="Interact mode (I)" aria-pressed={interactOn} onclick={() => toggleEditorMode()}><Icon name="hand" size={20} /></button>
 			<span class="ps-sep" aria-hidden="true"></span>
@@ -1040,6 +1064,24 @@
 </div>
 
 <style>
+	/* 103 H7 row 8: the "all in one" mark — corner ticks around the icon, in the accent */
+	.ps-cell[data-handles] {
+		touch-action: none; /* a drag from Move / Rotate / Scale is the transform, never a pan */
+	}
+	.ps-all-mark {
+		position: absolute;
+		inset: 6px;
+		pointer-events: none;
+		background:
+			linear-gradient(var(--accent), var(--accent)) top left / 5px 2px no-repeat,
+			linear-gradient(var(--accent), var(--accent)) top left / 2px 5px no-repeat,
+			linear-gradient(var(--accent), var(--accent)) top right / 5px 2px no-repeat,
+			linear-gradient(var(--accent), var(--accent)) top right / 2px 5px no-repeat,
+			linear-gradient(var(--accent), var(--accent)) bottom left / 5px 2px no-repeat,
+			linear-gradient(var(--accent), var(--accent)) bottom left / 2px 5px no-repeat,
+			linear-gradient(var(--accent), var(--accent)) bottom right / 5px 2px no-repeat,
+			linear-gradient(var(--accent), var(--accent)) bottom right / 2px 5px no-repeat;
+	}
 	/* the bar/strip sit BELOW the drawer tier (30): the Inspector, the notes sheet, the dock
 	   and every window cover them, the way a sheet covers a tab bar */
 	.ps-chipwrap {

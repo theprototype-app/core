@@ -97,3 +97,58 @@ describe('SVG import safety', () => {
 		expect(refused(svg('<script><script>a</script>b</script>' + square.replace('/>', '/><script'))));
 	});
 });
+
+// 64-int (QUESTIONS-64-int Q1): one path past the per-shape cap is simplified to fit, never cut off
+import { fitSvgItems } from '../../src/lib/vector/vectorSvgSafety.js';
+import { MAX_NODES, cleanVector } from '../../src/lib/vector/vectorRecord.js';
+
+describe('fitSvgItems: a path over the per-shape node cap', () => {
+	const wavy = (n, closed = true) => {
+		const nodes = [];
+		for (let i = 0; i < n; i++) {
+			const a = (i / n) * Math.PI * 2;
+			const r = 40 + 6 * Math.sin(a * 60);
+			nodes.push({ x: 50 + r * Math.cos(a), y: 50 + r * Math.sin(a), ix: 0, iy: 0, ox: 0, oy: 0, smooth: false });
+		}
+		return { closed, nodes };
+	};
+	const area = (nodes) => {
+		let s = 0;
+		for (let i = 0; i < nodes.length; i++) {
+			const a = nodes[i];
+			const b = nodes[(i + 1) % nodes.length];
+			s += a.x * b.y - b.x * a.y;
+		}
+		return Math.abs(s) / 2;
+	};
+	test('12 000 points -> at most the cap, the outline kept (area within 1 %), and cleanVector keeps every node', () => {
+		const item = { name: 'Blob', params: { kind: 'path', paths: [wavy(12000)] }, matrix: [1, 0, 0, 1, 0, 0] };
+		const { items, simplified } = fitSvgItems([item], MAX_NODES);
+		const kept = items[0].params.paths[0].nodes;
+		expect(kept.length).toBeLessThanOrEqual(MAX_NODES);
+		expect(kept.length).toBeGreaterThan(MAX_NODES * 0.9);
+		expect(simplified).toEqual([{ name: 'Blob', before: 12000, after: kept.length }]);
+		expect(Math.abs(area(kept) - area(item.params.paths[0].nodes)) / area(item.params.paths[0].nodes)).toBeLessThan(0.01);
+		// the counterfactual: unfitted, the record cap keeps the first 4 000 nodes = a third of the outline
+		const cut = cleanVector(item.params).paths[0].nodes;
+		expect(cut.length).toBe(MAX_NODES);
+		expect(area(cut) / area(item.params.paths[0].nodes)).toBeLessThan(0.5);
+		expect(cleanVector(items[0].params).paths[0].nodes.length).toBe(kept.length);
+		// deterministic, and the input is not mutated
+		expect(fitSvgItems([item], MAX_NODES).items[0].params.paths[0].nodes).toEqual(kept);
+		expect(item.params.paths[0].nodes.length).toBe(12000);
+	});
+	test('an open path keeps both ends; several subpaths share the budget; under the cap nothing changes', () => {
+		const open = wavy(9000, false);
+		const { items } = fitSvgItems([{ params: { kind: 'path', paths: [open, wavy(3000)] } }], MAX_NODES);
+		const [a, b] = items[0].params.paths;
+		expect(a.nodes[0]).toBe(open.nodes[0]);
+		expect(a.nodes[a.nodes.length - 1]).toBe(open.nodes[8999]);
+		expect(a.nodes.length + b.nodes.length).toBeLessThanOrEqual(MAX_NODES);
+		expect(b.nodes.length).toBeGreaterThan(500);
+		const small = { params: { kind: 'path', paths: [wavy(100)] } };
+		const r = fitSvgItems([small], MAX_NODES);
+		expect(r.items[0]).toBe(small);
+		expect(r.simplified).toEqual([]);
+	});
+});

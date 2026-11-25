@@ -14,7 +14,8 @@ import { showToast } from '../../stores/appStore';
 import { beginHistoryBatch, endHistoryBatch, historyBatchOpen } from '../history';
 import { applySelectionSet } from '../objectActions';
 import { writeSvg, readOwnSvg, importSvg } from './vectorSvg.js';
-import { checkSvgText, svgItemsVerdict } from './vectorSvgSafety.js';
+import { checkSvgText, svgItemsVerdict, fitSvgItems } from './vectorSvgSafety.js';
+import { MAX_NODES } from './vectorRecord.js';
 import { isVector, vectorParamsOf, addVectorShape } from './vectorActions.js';
 import { frameFor } from './vectorTool.js';
 
@@ -107,6 +108,11 @@ export function placeSvg(text, opts = {}) {
 		showToast(capped);
 		return [];
 	}
+	// 64-int (QUESTIONS-64-int Q1): a path over the per-shape cap is simplified to fit, never cut off
+	const fit = fitSvgItems(items, MAX_NODES);
+	items = fit.items;
+	for (const f of fit.simplified)
+		showToast(`Simplified ${f.name || 'a path'} from ${f.before.toLocaleString('en-US')} to ${f.after.toLocaleString('en-US')} points (a shape holds ${MAX_NODES.toLocaleString('en-US')})`);
 	const group = get(objectsGroup);
 	if (!group) return [];
 	let frame;

@@ -78,3 +78,83 @@ export function svgItemsVerdict(items) {
 	if (nodes > MAX_SVG_NODES) return `That SVG has ${nodes} points; the limit is ${MAX_SVG_NODES}`;
 	return null;
 }
+
+/**
+ * 64-int (QUESTIONS-64-int Q1): a shape keeps at most `max` nodes — cleanVector's MAX_NODES cuts the rest
+ * off, and a long closed path then ends in a straight chord across the drawing. A path over it is SIMPLIFIED
+ * to fit before it is placed: the nodes whose removal changes the outline least go first (Visvalingam: the
+ * triangle a node makes with its live neighbours), never an open path's two ends, never below 3 nodes on a
+ * closed one. Pure and deterministic (ties go by index). The caps stay what they are: the record rides the wire.
+ * @template {{params: any, name?: string}} T @param {T[]} items @param {number} max
+ * @returns {{items: T[], simplified: {name: string, before: number, after: number}[]}}
+ */
+export function fitSvgItems(items, max) {
+	/** @type {{name: string, before: number, after: number}[]} */
+	const simplified = [];
+	const out = items.map((it) => {
+		const paths = it.params?.paths;
+		if (!Array.isArray(paths)) return it;
+		const sizes = paths.map((s) => (Array.isArray(s?.nodes) ? s.nodes.length : 0));
+		const total = sizes.reduce((a, b) => a + b, 0);
+		if (total <= max) return it;
+		const budgets = paths.map((s, i) => Math.min(sizes[i], Math.max(s?.closed ? 3 : 2, Math.floor((sizes[i] * max) / total))));
+		let sum = budgets.reduce((a, b) => a + b, 0);
+		while (sum > max) {
+			let k = 0;
+			for (let i = 1; i < budgets.length; i++) if (budgets[i] > budgets[k]) k = i;
+			if (budgets[k] <= 3) break;
+			budgets[k]--;
+			sum--;
+		}
+		const next = paths.map((s, i) => (sizes[i] > budgets[i] ? { ...s, nodes: thinNodes(s.nodes, budgets[i], !!s.closed) } : s));
+		const after = next.reduce((n, s) => n + (Array.isArray(s?.nodes) ? s.nodes.length : 0), 0);
+		simplified.push({ name: it.name ?? '', before: total, after });
+		return { ...it, params: { ...it.params, paths: next } };
+	});
+	return { items: out, simplified };
+}
+
+/** keep `keep` of a subpath's nodes, dropping the least significant first @param {any[]} nodes @param {number} keep @param {boolean} closed */
+function thinNodes(nodes, keep, closed) {
+	const n = nodes.length;
+	keep = Math.max(keep, closed ? 3 : 2);
+	if (n <= keep) return nodes;
+	const prev = new Int32Array(n);
+	const next = new Int32Array(n);
+	for (let i = 0; i < n; i++) {
+		prev[i] = i === 0 ? (closed ? n - 1 : -1) : i - 1;
+		next[i] = i === n - 1 ? (closed ? 0 : -1) : i + 1;
+	}
+	const alive = new Uint8Array(n).fill(1);
+	let live = n;
+	const xy = (/** @type {number} */ i) => [Number(nodes[i]?.x) || 0, Number(nodes[i]?.y) || 0];
+	while (live > keep) {
+		/** @type {[number, number][]} */
+		const scored = [];
+		for (let i = 0; i < n; i++) {
+			if (!alive[i] || prev[i] < 0 || next[i] < 0) continue;
+			const [ax, ay] = xy(prev[i]);
+			const [px, py] = xy(i);
+			const [bx, by] = xy(next[i]);
+			scored.push([Math.abs((px - ax) * (by - ay) - (py - ay) * (bx - ax)), i]);
+		}
+		if (!scored.length) break;
+		scored.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+		// a pass drops at most a third of what is live, never two neighbours (their areas changed)
+		let quota = Math.min(live - keep, Math.max(1, Math.floor(live / 3)));
+		const touched = new Uint8Array(n);
+		for (const [, i] of scored) {
+			if (quota <= 0) break;
+			if (touched[i]) continue;
+			alive[i] = 0;
+			live--;
+			quota--;
+			const a = prev[i];
+			const b = next[i];
+			next[a] = b;
+			prev[b] = a;
+			touched[a] = touched[b] = 1;
+		}
+	}
+	return nodes.filter((_, i) => alive[i]);
+}

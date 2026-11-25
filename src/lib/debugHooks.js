@@ -506,6 +506,10 @@ export const DEBUG_HOOKS = [
 	// 64-vector-edit (D5): snapping, arranging / layer order
 	['vectorSnap', () => import('./vector/vectorSnap.js')],
 	['vectorArrange', () => import('./vector/vectorArrange.js')],
+	// 64-extrude: the extrude arrow (extrudeDebug / setDepth) + the mesh builder's debug (vectorMeshDebug)
+	['vectorExtrude', () => import('./vector/vectorExtrude.js')],
+	['vectorMesh', () => import('./vector/vectorMesh.js')],
+	['vectorOldPeers', () => import('./vector/vectorOldPeers.js')],
 	['splineTube', () => import('./splineTube')],
 	['splineTool', () => import('./splineTool')],
 	['splineEdit', () => import('./splineEdit')],

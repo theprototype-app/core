@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { objectsGroup, pokeScene } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
-import { recordEntry, registerHistoryKind } from './history';
+import { recordEntry, registerHistoryKind, registerHistoryMerge, sameJson } from './history';
 import { GEOMETRY_PARAMS, geometrySpec, boundGeometryParams } from './geometryParams';
 import { loadRoundedBox } from './roundedBoxGate.js';
 import { healSlotGroups } from './slotGroups.js';
@@ -142,12 +142,26 @@ export function applyGeometry(uuid, patch, options = {}) {
 	pokeScene();
 	if (record)
 		recordEntry({ kind: 'geometry', uuid, before, after: { gtype, params } });
-	if (replicate) {
-		/** @type {any} */
-		const peer = get(peers);
-		if (peer) peer.send({ type: 'geometry', uuid, gtype, params });
-	}
+	if (replicate) replicateGeometry(uuid);
 	return true;
+}
+
+/**
+ * Send an object's current params to the peers (what `applyGeometry` does after a rebuild; a caller
+ * that rebuilt with `replicate: false` — the extrude drag on a heavy record — sends here, less often).
+ * @param {string} uuid
+ */
+export function replicateGeometry(uuid) {
+	/** @type {any} */
+	const peer = get(peers);
+	if (!peer) return;
+	const object = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+	const current = object && geometryParamsOf(object);
+	if (!current) return;
+	peer.send({ type: 'geometry', uuid, gtype: current.gtype, params: current.params });
+	// 64-extrude: a peer without vector shapes gets the mesh itself, once the change settles
+	if (current.gtype === 'Vector')
+		void import('./vector/vectorOldPeers.js').then((m) => m.scheduleOldPeerSolid(uuid));
 }
 
 /** Receive-side applier @param {any} data */
@@ -156,6 +170,14 @@ export function applyRemoteGeometry(data) {
 	const group = get(objectsGroup);
 	const object = group?.getObjectByProperty('uuid', data.uuid);
 	if (!object?.geometry) return;
+	// 64-extrude: a vector shape BAKED to a mesh — the mesh is the one this peer already built from the same
+	// record, so only the record goes (`vectorBake` is additive; before the `baked` branch, which builds boxes)
+	if (data.vectorBake) {
+		if (object.userData?.geometryParams?.gtype === data.gtype)
+			delete object.userData.geometryParams;
+		pokeScene();
+		return;
+	}
 	// 102b: an undone Convert goes back to the BAKED mesh (`baked` is additive: an older peer builds the box)
 	if (data.baked) {
 		// (through the gate's small chunk: importing roundedBoxConvert here would put its preload list on boot)
@@ -185,6 +207,29 @@ export function applyRemoteGeometry(data) {
 registerHistoryKind('geometry', (entry, state) => {
 	// 85 G1: the recorded side's TYPE too — undoing a box → cylinder brings the box back
 	return applyGeometry(entry.uuid, state.params, { record: false, replicate: true, gtype: state.gtype });
+});
+
+// 64-extrude: a scrub (the Inspector's Extrude slider, the viewport's extrude handle) records one
+// entry per step inside ONE history gesture; folding them keeps the first `before` and the last
+// `after`, so undo is one rebuild (not a replay of every step) and a scrub back to where it began
+// leaves no step at all
+registerHistoryMerge('geometry', {
+	merge: (top, next) => {
+		if (top.uuid !== next.uuid) return false;
+		top.after = next.after;
+		return true;
+	},
+	// a drag folds every frame: a top-level value that differs settles it without stringifying the record
+	// (a 2 000-point path is a large JSON)
+	noop: (entry) => {
+		const a = entry.before?.params;
+		const b = entry.after?.params;
+		if (entry.before?.gtype !== entry.after?.gtype) return false;
+		if (a && b)
+			for (const k of Object.keys(b))
+				if (a[k] !== b[k] && (typeof a[k] !== 'object' || typeof b[k] !== 'object')) return false;
+		return sameJson(entry.before, entry.after);
+	}
 });
 
 export { GEOMETRY_PARAMS };

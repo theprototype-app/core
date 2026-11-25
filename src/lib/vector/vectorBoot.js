@@ -3,7 +3,7 @@
 // Edit points keys (rebindable, `external`: vectorTool.js / vectorEdit.js read them through
 // `bindingOf`). Every action is a dynamic import, so the tools themselves stay lazy chunks.
 import { get } from 'svelte/store';
-import { selectedObject } from '../../stores/sceneStore';
+import { selectedObject, selectedObjects, objectsGroup } from '../../stores/sceneStore';
 import { registerVRMenuEntry } from '../vrRadialMenu';
 import { isVectorObject, toggleVectorTool, vectorLaserPen } from './vectorGate.js';
 
@@ -72,6 +72,17 @@ export const VECTOR_SHORTCUTS = [
 		}
 	}))
 ];
+
+// 64-extrude: one selected shape or text gets the extrude arrow (the chunk watches from then on and
+// stops by itself when the selection moves on)
+selectedObjects.subscribe((list) => {
+	const id = Array.isArray(list) && list.length === 1 ? list[0] : null;
+	const o = /** @type {any} */ (
+		id ? get(objectsGroup)?.getObjectByProperty('uuid', /** @type {any} */ (id)?.uuid ?? id) : null
+	);
+	if (o?.isMesh && (isVectorObject(o) || o.userData?.textPath))
+		void import('./vectorExtrude.js').then((m) => m.watchExtrude());
+});
 
 // a dynamic import, the checkpoints precedent: shortcuts sits in history's import family
 void import('../shortcuts').then(({ registerShortcut }) => VECTOR_SHORTCUTS.forEach((row) => registerShortcut(row)));

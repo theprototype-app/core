@@ -4054,6 +4054,15 @@
 									{@render geoSlider(spec, undefined)}
 								{/if}
 							{/each}
+							{#if geoParams.gtype === 'Vector' && !multiCount}
+								<!-- 64-extrude: the text object's Bake, for a shape (the menu's Shape ▸ Bake to mesh… too) -->
+								<UiButton
+									id="vector-bake"
+									size="sm"
+									variant="outline"
+									onclick={() => import('$lib/vector/vectorActions.js').then((m) => m.confirmBakeVector($selectedObject.uuid))}>Bake to mesh…</UiButton
+								>
+							{/if}
 						</div>
 					{/if}
 				</Section>

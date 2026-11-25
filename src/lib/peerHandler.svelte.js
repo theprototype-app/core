@@ -2242,7 +2242,8 @@ export class PeerConnection {
 				} else if(data.type == 'verts') {
 					applyVerts(data.uuid, data.indices, data.position);
 				} else if(data.type == 'meshgeo') {
-					applyMeshGeo(data.uuid, data.positions, data.groups, data.uvs, data.faceCounts, data.faceTris, data.colors);
+					// 64-extrude: a solid's mesh sent for builds WITHOUT vector shapes; we rebuild it from the record
+					if (!data.vectorFallback) applyMeshGeo(data.uuid, data.positions, data.groups, data.uvs, data.faceCounts, data.faceTris, data.colors);
 				} else if(data.type == 'uvpaint') {
 					applyUvPaint(data);
 				} else if(data.type == 'uvpaintend') {

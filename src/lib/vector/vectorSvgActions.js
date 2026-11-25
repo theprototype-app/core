@@ -91,7 +91,7 @@ export function placeSvg(text, opts = {}) {
 	}
 	const safe = gate.text;
 	const own = readOwnSvg(safe);
-	/** @type {{params: Record<string, any>, matrix: number[], name?: string}[]} */
+	/** @type {{params: Record<string, any>, matrix: number[], name?: string, fitted?: {name: string, before: number, after: number}}[]} */
 	let items;
 	try {
 		items = own ?? importSvg(safe);
@@ -109,9 +109,11 @@ export function placeSvg(text, opts = {}) {
 		return [];
 	}
 	// 64-int (QUESTIONS-64-int Q1): a path over the per-shape cap is simplified to fit, never cut off
+	// (a foreign file arrives already fitted by importSvg, `fitted` on the item; this catches anything else)
 	const fit = fitSvgItems(items, MAX_NODES);
+	const simplified = [...items.flatMap((/** @type {any} */ it) => (it.fitted ? [it.fitted] : [])), ...fit.simplified];
 	items = fit.items;
-	for (const f of fit.simplified)
+	for (const f of simplified)
 		showToast(`Simplified ${f.name || 'a path'} from ${f.before.toLocaleString('en-US')} to ${f.after.toLocaleString('en-US')} points (a shape holds ${MAX_NODES.toLocaleString('en-US')})`);
 	const group = get(objectsGroup);
 	if (!group) return [];

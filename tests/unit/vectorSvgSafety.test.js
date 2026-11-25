@@ -152,3 +152,12 @@ describe('fitSvgItems: a path over the per-shape node cap', () => {
 		expect(r.simplified).toEqual([]);
 	});
 });
+
+describe('svgItemsVerdict counts the points the FILE had (64-int Q1)', () => {
+	test('a fitted item counts its `before`, so fitting never walks past the 40 000-point file cap', () => {
+		const item = { params: { paths: [{ closed: true, nodes: new Array(4000).fill({ x: 0, y: 0 }) }] } };
+		expect(svgItemsVerdict([item])).toBe(null);
+		expect(svgItemsVerdict([{ ...item, fitted: { name: 'x', before: 12000, after: 4000 } }])).toBe(null);
+		expect(svgItemsVerdict([{ ...item, fitted: { name: 'x', before: MAX_SVG_NODES + 1, after: 4000 } }])).toMatch(/points; the limit is/);
+	});
+});

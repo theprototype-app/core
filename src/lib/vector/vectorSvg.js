@@ -14,7 +14,8 @@
 import * as THREE from 'three';
 import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
 import { isLine, segmentPairs, node, centreSubpaths, boundsOf } from './vectorPath.js';
-import { cleanVector, vectorSubpaths, gradientStops, KIND_NAMES } from './vectorRecord.js';
+import { cleanVector, vectorSubpaths, gradientStops, KIND_NAMES, MAX_NODES } from './vectorRecord.js';
+import { fitSvgItems } from './vectorSvgSafety.js';
 import { vectorPolylines } from './vectorMesh.js';
 
 export const PX_PER_M = 100;
@@ -280,7 +281,8 @@ function gradientFields(el) {
 /**
  * Import any SVG text: our own files come back verbatim, anything else through SVGLoader.
  * Records are re-centred on the drawing's centre so the import lands around one point.
- * @param {string} text @returns {{params: Record<string, any>, matrix: number[], name: string}[]}
+ * A path over the per-shape node cap comes back simplified, with `fitted: {name, before, after}`.
+ * @param {string} text @returns {{params: Record<string, any>, matrix: number[], name: string, fitted?: {name: string, before: number, after: number}}[]}
  */
 export function importSvg(text) {
 	const own = readOwnSvg(text);
@@ -339,6 +341,14 @@ export function importSvg(text) {
 	const gy = (all.minY + all.maxY) / 2;
 	return shapes.map((s) => {
 		const { subpaths, cx, cy } = centreSubpaths(s.params.paths);
-		return { params: cleanVector({ ...s.params, paths: subpaths }), matrix: [1, 0, 0, 1, cx - gx, cy - gy], name: s.name };
+		// 64-int (QUESTIONS-64-int Q1): fit a path over the per-shape cap BEFORE cleanVector, which would cut it off
+		const fit = fitSvgItems([{ params: { paths: subpaths }, name: s.name }], MAX_NODES);
+		const fitted = fit.simplified[0];
+		return {
+			params: cleanVector({ ...s.params, paths: fit.items[0].params.paths }),
+			matrix: [1, 0, 0, 1, cx - gx, cy - gy],
+			name: s.name,
+			...(fitted ? { fitted } : {})
+		};
 	});
 }

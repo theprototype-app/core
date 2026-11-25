@@ -68,13 +68,18 @@ export function checkSvgText(text) {
 }
 
 /**
- * The reader's caps on what came out (shapes and points in all). @param {{params: any}[]} items
+ * The reader's caps on what came out (shapes and points in all). @param {{params: any, fitted?: {before: number}}[]} items
  * @returns {string | null} the refusal, or null
  */
 export function svgItemsVerdict(items) {
 	if (items.length > MAX_SVG_SHAPES) return `That SVG has ${items.length} shapes; the limit is ${MAX_SVG_SHAPES}`;
 	let nodes = 0;
-	for (const it of items) for (const sub of it.params?.paths ?? []) nodes += sub?.nodes?.length ?? 0;
+	for (const it of items) {
+		// a path the importer simplified to fit counts the points the FILE had (64-int Q1)
+		const before = /** @type {any} */ (it).fitted?.before;
+		if (Number.isFinite(before)) nodes += before;
+		else for (const sub of it.params?.paths ?? []) nodes += sub?.nodes?.length ?? 0;
+	}
 	if (nodes > MAX_SVG_NODES) return `That SVG has ${nodes} points; the limit is ${MAX_SVG_NODES}`;
 	return null;
 }

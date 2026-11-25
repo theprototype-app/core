@@ -4,12 +4,12 @@
 	"pages": {
 		"play": {
 			"html": "play.html",
-			"maxJsGzBytes": 1899520,
+			"maxJsGzBytes": 1904640,
 			"maxFirstFrameMs": 20000
 		},
 		"editor": {
 			"html": "index.html",
-			"maxJsGzBytes": 3061760,
+			"maxJsGzBytes": 3072000,
 			"maxFirstFrameMs": 32000
 		}
 	},
@@ -258,10 +258,10 @@
 		},
 		{
 			"date": "2026-11-25",
-			"lane": "64-int (union of #652 64-vector, #655 64-vector-edit, #657 64-extrude, #653 64-2d on v1.78.1)",
-			"play": "v1.78.1 measured 1891.0 KB -> union 1894.0 KB (+3.0) -> line 1895 KB",
-			"editor": "v1.78.1 measured 3010.8 KB -> union 3019.0 KB (+8.2) -> line 3020 KB",
-			"note": "claude:9 rule: the tag's measured size + the union's own delta, rounded up to the next 5 KB. Largest editor contributors (raw source bytes): objectMenu.js +3.8 KB (the Shape submenu rows of three lanes), vector/vectorBoot.js +3.6 KB (shortcuts, VR rows, the extrude-arrow watch). Re-set after merging v1.79.0."
+			"lane": "64-int (union of #652 64-vector, #655 64-vector-edit, #657 64-extrude, #653 64-2d; v1.79.0 merged)",
+			"play": "v1.79.0 measured 1851.0 KB -> union 1853.6 KB (+2.7) -> line 1855 + 2.7 -> 1860 KB",
+			"editor": "v1.79.0 measured 2987.2 KB -> union 2994.8 KB (+7.6) -> line 2990 + 7.6 -> 3000 KB",
+			"note": "claude:9 rule (orchestrator 25 Nov): the 1.79.0 line + the union's own delta, next 5 KB. Both builds on the PC host, one node_modules. Largest editor contributors (raw source bytes, vs v1.78.1): objectMenu.js +3.8 KB (the Shape submenu rows of three lanes), vector/vectorBoot.js +3.6 KB (shortcuts, VR rows, the extrude-arrow watch). Per lane (their own builds): 64-vector +2.9 / +0.2, 64-vector-edit +1.2 / +0.1, 64-extrude +0.9 / +0.3, 64-2d +2.1 / +1.3 (editor / play)."
 		}
 	],
 	"throttle": {

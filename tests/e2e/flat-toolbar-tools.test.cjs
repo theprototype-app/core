@@ -5,6 +5,7 @@
 //   2 Pen: three clicks + a click on the first point close a path on the same plane; ONE undo
 //   3 Extrude: with the rectangle selected, the button makes it a 10 cm solid (one undo step) and a second press
 //     makes it flat again; with nothing selectable it says so and changes nothing
+//   5 Play starts the template's game and looks through its orthographic 2D camera; leaving Play ends it
 //   4 no page error
 // Run: APP_URL=https://theprototype.app:7229/ node tests/e2e/flat-toolbar-tools.test.cjs
 const h = require('./helpers.cjs');
@@ -129,6 +130,26 @@ h.run(async () => {
 	await h.eventually(() => scene(A.page), (l) => (l.find((o) => o.uuid === rect.uuid)?.depth ?? -1) === 0, '3.4 a second press makes it flat again', 15000);
 	await A.page.evaluate(() => window.__stores.history.undo());
 	await h.eventually(() => scene(A.page), (l) => Math.abs((l.find((o) => o.uuid === rect.uuid)?.depth ?? 0) - 0.1) < 1e-6, '3.5 undo goes back to the solid', 8000);
+
+	// ---- 5 Play looks through the template's 2D camera (64-int: the template had no way into `playing`) --------
+	const play = () =>
+		A.page.evaluate(() => {
+			const st = window.__stores;
+			let game = null;
+			let prev = null;
+			st.gameState.gameState.subscribe((v) => (game = v))();
+			st.cameraPreview.cameraPreview.subscribe((v) => (prev = v))();
+			let g = null;
+			window.__tp.test.v1.objectsGroup.subscribe((v) => (g = v))();
+			let cam = null;
+			g.traverse((o) => o.userData?.camera?.kind === 'orthographic' && (cam = o.uuid));
+			return { state: game?.state, preview: prev?.uuid ?? null, cam, ortho: window.__tp.test.v1.sprite2d.sprite2dDebug().ortho };
+		});
+	await A.page.evaluate(() => window.__stores.isLocked.set(true));
+	await h.eventually(play, (p) => p.state === 'playing' && !!p.cam && p.preview === p.cam && p.ortho, '5.1 Play starts the game and looks through the template\'s orthographic camera (sprites see an ortho view: parallax on)', 20000);
+	await A.page.evaluate(() => window.__stores.isLocked.set(false));
+	await h.eventually(play, (p) => p.state === 'menu', '5.2 leaving Play ends the game (state menu)', 20000);
+	await A.page.evaluate(() => window.__stores.isLocked.set(null));
 
 	// ---- 4 --------------------------------------------------------------------------------------------------
 	h.check(!(A.page.__errors ?? []).length, `4. no page error (${(A.page.__errors ?? []).join(' | ') || 'none'})`);

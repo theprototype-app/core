@@ -190,8 +190,20 @@ export function build2dTemplate(version) {
 	});
 	const graphs = {
 		scene: {
-			nodes: [node('t2d-start', 'gamestart', { label: 'Game Start', camera: camera.uuid, state: 'playing' }, 0, 0)],
-			edges: []
+			// 64-int: Play starts the game and leaving Play ends it, so the Start camera (state playing) looks
+			// through the 2D camera in Play AND in an exported game; without these the game shell stayed in
+			// `menu` and Play / the export drew the 2D scene through the default perspective camera (no parallax)
+			nodes: [
+				node('t2d-start', 'gamestart', { label: 'Game Start', camera: camera.uuid, state: 'playing' }, 0, 0),
+				node('t2d-onplay', 'onplaystart', { label: 'On Play start', who: 'session', pulse: 0.3 }, 0, 140),
+				node('t2d-play', 'setgamestate', { label: 'Set Game State', state: 'playing', outcome: '' }, 260, 140),
+				node('t2d-onstop', 'onplaystop', { label: 'On Play stop', who: 'session', pulse: 0.3 }, 0, 280),
+				node('t2d-menu', 'setgamestate', { label: 'Set Game State', state: 'menu', outcome: '' }, 260, 280)
+			],
+			edges: [
+				{ id: 't2d-e-play', source: 't2d-onplay', target: 't2d-play', targetHandle: 'trigger' },
+				{ id: 't2d-e-stop', source: 't2d-onstop', target: 't2d-menu', targetHandle: 'trigger' }
+			]
 		},
 		[player.uuid]: {
 			nodes: [

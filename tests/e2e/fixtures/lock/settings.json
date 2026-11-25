@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-11-25T14:22:17.899Z",
+	"recordedAt": "2026-11-25T22:36:14.497Z",
 	"viewport": {
 		"width": 1440,
 		"height": 900
@@ -1050,7 +1050,8 @@
 								"stores": {
 									"a11yAnnounce.politeAnnouncement": "Window positions reset",
 									"notifications": "<object>",
-									"notificationsUnread": "<changed>"
+									"notificationsUnread": "<changed>",
+									"toastStore": "<object>"
 								},
 								"html": [],
 								"body": [],
@@ -2778,7 +2779,8 @@
 								"stores": {
 									"a11yAnnounce.politeAnnouncement": "Touch layout reset to the default arrangement",
 									"notifications": "<object>",
-									"notificationsUnread": "<changed>"
+									"notificationsUnread": "<changed>",
+									"toastStore": "<object>"
 								},
 								"html": [],
 								"body": [],
@@ -5264,6 +5266,31 @@
 					]
 				},
 				{
+					"name": "Smooth subdivide, Catmull-Clark (faces; nothing picked = the whole mesh)",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Smooth subdivide, Catmull-Clark (faces; nothing picke",
+							"where": "control",
+							"default": "Shift+S",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
 					"name": "Loop cut (faces)",
 					"controls": [
 						{
@@ -5422,6 +5449,56 @@
 							"label": "Rebind Connect two corners of a face (vertices)",
 							"where": "control",
 							"default": "J",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Path select on / off (a click adds the shortest path from the last pick)",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Path select on / off (a click adds the shortest path ",
+							"where": "control",
+							"default": "Not set",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Arm Bisect (faces): two clicks draw the plane, Enter cuts",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Arm Bisect (faces): two clicks draw the plane, Enter ",
+							"where": "control",
+							"default": "Not set",
 							"disabled": false,
 							"state": "Press keys… Esc cancels",
 							"effects": {
@@ -11355,7 +11432,7 @@
 							"scope": "device",
 							"restored": false,
 							"storageAfterRestore": {
-								"notifications": "[{\"id\":\"n1795614852367_1\",\"text\":\"The VR welcome will play the next time you enter VR.\",\"ts\":1795614852367,\"kind\":\"action\"},{\"id\":\"n1795614863542_2\",\"text\":\"Tours reset — each one shows again the first time it applies.\",\"ts\":1795614863542,\"kind\":\"info\"},{\"id\":\"n1795614870628_3\",\"text\":\"Window positions reset\",\"ts\":1795614870628,\"kind\":\"info\"},{\"id\":\"n1795614953889_4\",\"text\":\"Touch layout reset to the default arrangement\",\"ts\":1795614953889,\"kind\":\"info\"},{\"id\":\"n1795615439938_5\",\"text\":\"Line colors reset\",\"ts\":1795615439938,\"kind\":\"info\"},{\"id\":\"n1795615577018_6\",\"text\":\"Passthrough on — takes effect on the next VR entry\",\"ts\":1795615577018,\"kind\":\"info\"},{\"id\":\"n1795615577594_7\",\"text\":\"Passthrough off — takes effect on the next VR entry\",\"ts\":1795615577594,\"kind\":\"info\"}]",
+								"notifications": "[{\"id\":\"n1795644571053_1\",\"text\":\"The VR welcome will play the next time you enter VR.\",\"ts\":1795644571053,\"kind\":\"action\"},{\"id\":\"n1795644581618_2\",\"text\":\"Tours reset — each one shows again the first time it applies.\",\"ts\":1795644581618,\"kind\":\"info\"},{\"id\":\"n1795644588368_3\",\"text\":\"Window positions reset\",\"ts\":1795644588368,\"kind\":\"info\"},{\"id\":\"n1795644665865_4\",\"text\":\"Touch layout reset to the default arrangement\",\"ts\":1795644665865,\"kind\":\"info\"},{\"id\":\"n1795645132212_5\",\"text\":\"Line colors reset\",\"ts\":1795645132212,\"kind\":\"info\"},{\"id\":\"n1795645260158_6\",\"text\":\"Passthrough on — takes effect on the next VR entry\",\"ts\":1795645260158,\"kind\":\"info\"},{\"id\":\"n1795645260705_7\",\"text\":\"Passthrough off — takes effect on the next VR entry\",\"ts\":1795645260705,\"kind\":\"info\"}]",
 								"vrPassthrough": "false"
 							},
 							"exercise": "done"
@@ -12257,7 +12334,7 @@
 							"scope": "shared",
 							"restored": false,
 							"storageAfterRestore": {
-								"notifications": "[{\"id\":\"n1795614852367_1\",\"text\":\"The VR welcome will play the next time you enter VR.\",\"ts\":1795614852367,\"kind\":\"action\"},{\"id\":\"n1795614863542_2\",\"text\":\"Tours reset — each one shows again the first time it applies.\",\"ts\":1795614863542,\"kind\":\"info\"},{\"id\":\"n1795614870628_3\",\"text\":\"Window positions reset\",\"ts\":1795614870628,\"kind\":\"info\"},{\"id\":\"n1795614953889_4\",\"text\":\"Touch layout reset to the default arrangement\",\"ts\":1795614953889,\"kind\":\"info\"},{\"id\":\"n1795615439938_5\",\"text\":\"Line colors reset\",\"ts\":1795615439938,\"kind\":\"info\"},{\"id\":\"n1795615577018_6\",\"text\":\"Passthrough on — takes effect on the next VR entry\",\"ts\":1795615577018,\"kind\":\"info\"},{\"id\":\"n1795615577594_7\",\"text\":\"Passthrough off — takes effect on the next VR entry\",\"ts\":1795615577594,\"kind\":\"info\"},{\"id\":\"n1795615581384_8\",\"text\":\"VR panel positions reset\",\"ts\":1795615581384,\"kind\":\"info\"},{\"id\":\"n1795615602453_9\",\"text\":\"Colocated — room room-29727\",\"ts\":1795615602453,\"kind\":\"info\"},{\"id\":\"n1795615632646_10\",\"text\":\"This room locks an object only while someone is editing it\",\"ts\":1795615632646,\"kind\":\"info\"},{\"id\":\"n1795615633254_11\",\"text\":\"This room locks an object while someone has it selected\",\"ts\":1795615633254,\"kind\":\"info\"}]"
+								"notifications": "[{\"id\":\"n1795644571053_1\",\"text\":\"The VR welcome will play the next time you enter VR.\",\"ts\":1795644571053,\"kind\":\"action\"},{\"id\":\"n1795644581618_2\",\"text\":\"Tours reset — each one shows again the first time it applies.\",\"ts\":1795644581618,\"kind\":\"info\"},{\"id\":\"n1795644588368_3\",\"text\":\"Window positions reset\",\"ts\":1795644588368,\"kind\":\"info\"},{\"id\":\"n1795644665865_4\",\"text\":\"Touch layout reset to the default arrangement\",\"ts\":1795644665865,\"kind\":\"info\"},{\"id\":\"n1795645132212_5\",\"text\":\"Line colors reset\",\"ts\":1795645132212,\"kind\":\"info\"},{\"id\":\"n1795645260158_6\",\"text\":\"Passthrough on — takes effect on the next VR entry\",\"ts\":1795645260158,\"kind\":\"info\"},{\"id\":\"n1795645260705_7\",\"text\":\"Passthrough off — takes effect on the next VR entry\",\"ts\":1795645260705,\"kind\":\"info\"},{\"id\":\"n1795645264241_8\",\"text\":\"VR panel positions reset\",\"ts\":1795645264241,\"kind\":\"info\"},{\"id\":\"n1795645284091_9\",\"text\":\"Colocated — room room-b2b82\",\"ts\":1795645284091,\"kind\":\"info\"},{\"id\":\"n1795645312688_10\",\"text\":\"This room locks an object only while someone is editing it\",\"ts\":1795645312688,\"kind\":\"info\"},{\"id\":\"n1795645313238_11\",\"text\":\"This room locks an object while someone has it selected\",\"ts\":1795645313238,\"kind\":\"info\"}]"
 							},
 							"exercise": "done"
 						}
@@ -14486,6 +14563,16 @@
 				]
 			},
 			{
+				"name": "Smooth subdivide, Catmull-Clark (faces; nothing picked = the whole mesh)",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Shift+S"
+					}
+				]
+			},
+			{
 				"name": "Loop cut (faces)",
 				"controls": [
 					{
@@ -14552,6 +14639,26 @@
 						"kind": "button",
 						"id": "",
 						"default": "J"
+					}
+				]
+			},
+			{
+				"name": "Path select on / off (a click adds the shortest path from the last pick)",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Not set"
+					}
+				]
+			},
+			{
+				"name": "Arm Bisect (faces): two clicks draw the plane, Enter cuts",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Not set"
 					}
 				]
 			},

@@ -9,7 +9,7 @@
 		},
 		"editor": {
 			"html": "index.html",
-			"maxJsGzBytes": 3061760,
+			"maxJsGzBytes": 3066880,
 			"maxFirstFrameMs": 32000
 		}
 	},
@@ -247,6 +247,18 @@
 				"105-noise #639": "+0.1 / +1.5",
 				"102-boot-diet #637": "-51.8 / -52.6",
 				"int seams": "+0.0 / +0.0"
+			}
+		},
+		{
+			"date": "2026-11-25",
+			"lane": "99-int-2 (99 K8 newops #635 + 99-scrub #656 on v1.79.0)",
+			"play": "v1.79.0 1851.0 KB -> 1854.1 KB (+3.1; 1854.0 KB with the 1.80.0 changelog) -> line stays 1855.0 KB (the int boot rule: merged tag + the union, next 5 KB)",
+			"editor": "v1.79.0 2987.2 KB -> 2991.6 KB (+4.5; 2992.2 KB with the 1.80.0 changelog, which rides the editor boot) -> line 2995.0 KB (the same rule; was 2990.0)",
+			"note": "measured on the Deck: v1.79.0 built in a detached worktree, the union and its first-parent merge without #656 built with the same node_modules. The only per-chunk mover is the chunk named three_core (+2.8 KB), which also carries app code: #635's agent edit_mesh bisect/subdivide_smooth handling, Bisect's arm glue and the new mesh tool-param stores; #656's loop-cut scrub preview and the grab-commit wire keep. Give-back row for 102-boot-diet-2: #635's agent handling + Bisect arm glue into the lazy meshOps chunk (the largest editor contributor)",
+			"perLane": {
+				"basis": "each first-parent merge of the union chain on v1.79.0 (play / editor KB gz vs 1851.0 / 2987.2)",
+				"99-newops #635 (+ v1.79.0 merge seams)": "+2.2 / +3.4",
+				"99-scrub #656": "+0.9 / +1.1"
 			}
 		}
 	],

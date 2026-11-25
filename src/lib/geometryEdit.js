@@ -32,7 +32,7 @@ export function buildGeometry(gtype, params) {
 		key === 'points' || key === 'path' ? undefined : params[key]
 	);
 	try {
-		return new /** @type {any} */ (THREE)[gtype + 'Geometry'](...args);
+		return new (/** @type {any} */ (THREE))[gtype + 'Geometry'](...args);
 	} catch (error) {
 		console.log('buildGeometry failed', gtype, error);
 		return null;
@@ -140,7 +140,8 @@ export function applyGeometry(uuid, patch, options = {}) {
 	delete object.userData.vertexEdited;
 	delete object.userData.faceEdited;
 	pokeScene();
-	if (record) recordEntry({ kind: 'geometry', uuid, before, after: { gtype, params } });
+	if (record)
+		recordEntry({ kind: 'geometry', uuid, before, after: { gtype, params } });
 	if (replicate) replicateGeometry(uuid);
 	return true;
 }
@@ -194,10 +195,7 @@ export function applyRemoteGeometry(data) {
 	if (!fresh) return;
 	object.geometry.dispose();
 	object.geometry = fresh;
-	object.userData.geometryParams = {
-		gtype: data.gtype,
-		params: cleanFor(data.gtype, { ...data.params })
-	};
+	object.userData.geometryParams = { gtype: data.gtype, params: cleanFor(data.gtype, { ...data.params }) };
 	healSlotGroups(object); // 105: as applyGeometry
 	delete object.userData.vertexEdited;
 	delete object.userData.faceEdited; // same lock, same reset as the local path
@@ -208,11 +206,7 @@ export function applyRemoteGeometry(data) {
 // {gtype, params} side (history passes entry.before/.after by value)
 registerHistoryKind('geometry', (entry, state) => {
 	// 85 G1: the recorded side's TYPE too — undoing a box → cylinder brings the box back
-	return applyGeometry(entry.uuid, state.params, {
-		record: false,
-		replicate: true,
-		gtype: state.gtype
-	});
+	return applyGeometry(entry.uuid, state.params, { record: false, replicate: true, gtype: state.gtype });
 });
 
 // 64-extrude: a scrub (the Inspector's Extrude slider, the viewport's extrude handle) records one

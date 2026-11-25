@@ -17,13 +17,7 @@ export const FILL_TYPES = ['solid', 'linear', 'radial', 'none'];
 export const JOINS = ['miter', 'round', 'bevel'];
 export const CAPS = ['butt', 'round', 'square'];
 /** the display name an object of each kind gets */
-export const KIND_NAMES = {
-	rect: 'Rectangle',
-	ellipse: 'Ellipse',
-	star: 'Star',
-	polygon: 'Polygon',
-	path: 'Path'
-};
+export const KIND_NAMES = { rect: 'Rectangle', ellipse: 'Ellipse', star: 'Star', polygon: 'Polygon', path: 'Path' };
 
 /** caps that keep a record (and the geometry built from it) bounded */
 export const MAX_SUBPATHS = 64;
@@ -32,13 +26,11 @@ export const MAX_STOPS = 8;
 const MAX_SIZE = 200;
 
 /** @param {any} v @param {number} lo @param {number} hi @param {number} def */
-const num = (v, lo, hi, def) =>
-	typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : def;
+const num = (v, lo, hi, def) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : def);
 /** @param {any} v @param {string[]} list @param {string} def */
 const pick = (v, list, def) => (list.includes(v) ? v : def);
 /** @param {any} v @param {string} def */
-const colour = (v, def) =>
-	typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v) ? v.toLowerCase() : def;
+const colour = (v, def) => (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v) ? v.toLowerCase() : def);
 
 /** @returns {Record<string, any>} */
 export function vectorDefaults(kind = 'rect') {
@@ -85,15 +77,7 @@ function cleanPaths(raw) {
 			if (!n) continue;
 			const c = (/** @type {any} */ v) => num(v, -MAX_SIZE, MAX_SIZE, 0);
 			if (!Number.isFinite(n.x) || !Number.isFinite(n.y)) continue;
-			nodes.push({
-				x: c(n.x),
-				y: c(n.y),
-				ix: c(n.ix),
-				iy: c(n.iy),
-				ox: c(n.ox),
-				oy: c(n.oy),
-				smooth: !!n.smooth
-			});
+			nodes.push({ x: c(n.x), y: c(n.y), ix: c(n.ix), iy: c(n.iy), ox: c(n.ox), oy: c(n.oy), smooth: !!n.smooth });
 			budget--;
 		}
 		if (nodes.length >= 2) out.push({ closed: !!sub.closed, nodes });
@@ -173,12 +157,7 @@ export function hexToRgb(hex) {
 
 /** the gradient's stop list (the two-colour shorthand when none are authored) @param {Record<string, any>} p */
 export function gradientStops(p) {
-	return p.stops?.length >= 2
-		? p.stops
-		: [
-				[0, p.fill],
-				[1, p.fill2]
-			];
+	return p.stops?.length >= 2 ? p.stops : [[0, p.fill], [1, p.fill2]];
 }
 
 /** sRGB colour of a stop list at t (interpolated in sRGB, the SVG default) @param {any[]} stops @param {number} t */
@@ -232,149 +211,26 @@ const stroked = (/** @type {any} */ p) => (p?.strokeWidth ?? 0) > 0;
 /** the Geometry-section rows (ParamSpec, geometryParams.js) — `show` keeps each kind's own
  * @type {import('../geometryParams.js').ParamSpec[]} */
 export const VECTOR_PARAMS = [
-	{
-		key: 'width',
-		label: 'Width',
-		kind: 'slider',
-		min: 0.05,
-		max: 20,
-		step: 0.05,
-		def: 1,
-		show: forKinds(['rect', 'ellipse'])
-	},
-	{
-		key: 'height',
-		label: 'Height',
-		kind: 'slider',
-		min: 0.05,
-		max: 20,
-		step: 0.05,
-		def: 1,
-		show: forKinds(['rect', 'ellipse'])
-	},
-	{
-		key: 'radius',
-		label: 'Radius',
-		kind: 'slider',
-		min: 0.05,
-		max: 10,
-		step: 0.05,
-		def: 0.5,
-		show: forKinds(['star', 'polygon'])
-	},
-	{
-		key: 'points',
-		label: 'Points',
-		kind: 'int',
-		min: 3,
-		max: 32,
-		def: 5,
-		show: forKinds(['star'])
-	},
-	{
-		key: 'points',
-		label: 'Sides',
-		kind: 'int',
-		min: 3,
-		max: 32,
-		def: 6,
-		show: forKinds(['polygon'])
-	},
-	{
-		key: 'innerRatio',
-		label: 'Inner',
-		kind: 'slider',
-		min: 0.05,
-		max: 1,
-		step: 0.01,
-		def: 0.45,
-		show: forKinds(['star'])
-	},
-	{
-		key: 'corner',
-		label: 'Corner radius',
-		kind: 'slider',
-		min: 0,
-		max: 5,
-		step: 0.01,
-		def: 0,
-		show: forKinds(['rect', 'star', 'polygon'])
-	},
+	{ key: 'width', label: 'Width', kind: 'slider', min: 0.05, max: 20, step: 0.05, def: 1, show: forKinds(['rect', 'ellipse']) },
+	{ key: 'height', label: 'Height', kind: 'slider', min: 0.05, max: 20, step: 0.05, def: 1, show: forKinds(['rect', 'ellipse']) },
+	{ key: 'radius', label: 'Radius', kind: 'slider', min: 0.05, max: 10, step: 0.05, def: 0.5, show: forKinds(['star', 'polygon']) },
+	{ key: 'points', label: 'Points', kind: 'int', min: 3, max: 32, def: 5, show: forKinds(['star']) },
+	{ key: 'points', label: 'Sides', kind: 'int', min: 3, max: 32, def: 6, show: forKinds(['polygon']) },
+	{ key: 'innerRatio', label: 'Inner', kind: 'slider', min: 0.05, max: 1, step: 0.01, def: 0.45, show: forKinds(['star']) },
+	{ key: 'corner', label: 'Corner radius', kind: 'slider', min: 0, max: 5, step: 0.01, def: 0, show: forKinds(['rect', 'star', 'polygon']) },
 	{ key: 'fillType', label: 'Fill', kind: 'choice', options: FILL_TYPES, def: 'solid' },
-	{
-		key: 'gradAngle',
-		label: 'Angle',
-		kind: 'slider',
-		min: -180,
-		max: 180,
-		step: 1,
-		def: 0,
-		show: (p) => p?.fillType === 'linear'
-	},
-	{
-		key: 'gradX',
-		label: 'Centre X',
-		kind: 'slider',
-		min: 0,
-		max: 1,
-		step: 0.01,
-		def: 0.5,
-		show: (p) => p?.fillType === 'radial'
-	},
-	{
-		key: 'gradY',
-		label: 'Centre Y',
-		kind: 'slider',
-		min: 0,
-		max: 1,
-		step: 0.01,
-		def: 0.5,
-		show: (p) => p?.fillType === 'radial'
-	},
-	{
-		key: 'gradR',
-		label: 'Spread',
-		kind: 'slider',
-		min: 0.05,
-		max: 2,
-		step: 0.01,
-		def: 0.5,
-		show: (p) => p?.fillType === 'radial'
-	},
+	{ key: 'gradAngle', label: 'Angle', kind: 'slider', min: -180, max: 180, step: 1, def: 0, show: (p) => p?.fillType === 'linear' },
+	{ key: 'gradX', label: 'Centre X', kind: 'slider', min: 0, max: 1, step: 0.01, def: 0.5, show: (p) => p?.fillType === 'radial' },
+	{ key: 'gradY', label: 'Centre Y', kind: 'slider', min: 0, max: 1, step: 0.01, def: 0.5, show: (p) => p?.fillType === 'radial' },
+	{ key: 'gradR', label: 'Spread', kind: 'slider', min: 0.05, max: 2, step: 0.01, def: 0.5, show: (p) => p?.fillType === 'radial' },
 	{ key: 'strokeWidth', label: 'Stroke', kind: 'slider', min: 0, max: 1, step: 0.005, def: 0 },
 	{ key: 'join', label: 'Join', kind: 'choice', options: JOINS, def: 'miter', show: stroked },
 	{ key: 'cap', label: 'Cap', kind: 'choice', options: CAPS, def: 'butt', show: stroked },
 	{ key: 'dash', label: 'Dash', kind: 'slider', min: 0, max: 2, step: 0.01, def: 0, show: stroked },
-	{
-		key: 'gap',
-		label: 'Gap',
-		kind: 'slider',
-		min: 0,
-		max: 2,
-		step: 0.01,
-		def: 0,
-		show: (p) => stroked(p) && (p?.dash ?? 0) > 0
-	},
+	{ key: 'gap', label: 'Gap', kind: 'slider', min: 0, max: 2, step: 0.01, def: 0, show: (p) => stroked(p) && (p?.dash ?? 0) > 0 },
 	{ key: 'depth', label: 'Extrude', kind: 'slider', min: 0, max: 5, step: 0.01, def: 0 },
-	{
-		key: 'bevel',
-		label: 'Bevel',
-		kind: 'slider',
-		min: 0,
-		max: 0.5,
-		step: 0.005,
-		def: 0,
-		show: (p) => (p?.depth ?? 0) > 0
-	},
-	{
-		key: 'bevelSegments',
-		label: 'Bevel steps',
-		kind: 'int',
-		min: 1,
-		max: 8,
-		def: 2,
-		show: (p) => (p?.depth ?? 0) > 0 && (p?.bevel ?? 0) > 0
-	}
+	{ key: 'bevel', label: 'Bevel', kind: 'slider', min: 0, max: 0.5, step: 0.005, def: 0, show: (p) => (p?.depth ?? 0) > 0 },
+	{ key: 'bevelSegments', label: 'Bevel steps', kind: 'int', min: 1, max: 8, def: 2, show: (p) => (p?.depth ?? 0) > 0 && (p?.bevel ?? 0) > 0 }
 ];
 
 /** colour fields the Inspector's Vector colours row edits @type {{key: string, label: string, show?: (p: any) => boolean}[]} */

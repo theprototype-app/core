@@ -30,21 +30,7 @@ const BUILT_MAX = 8;
 
 /** the fields that change the SHAPE (colours / materials do not) @param {any} rec @param {string} url @param {string} profile */
 export function shapeKeyOf(rec, url, profile) {
-	return JSON.stringify([
-		url,
-		profile,
-		rec.text,
-		rec.size,
-		rec.spacing,
-		rec.lineHeight,
-		rec.maxWidth,
-		rec.align,
-		rec.anchor,
-		rec.depth,
-		rec.bevel,
-		rec.quality,
-		rec.letters
-	]);
+	return JSON.stringify([url, profile, rec.text, rec.size, rec.spacing, rec.lineHeight, rec.maxWidth, rec.align, rec.anchor, rec.depth, rec.bevel, rec.quality, rec.letters]);
 }
 
 /** @param {any} font @param {string} url @param {any} glyph @param {number} seg */
@@ -52,9 +38,7 @@ function loopsOf(font, url, glyph, seg) {
 	const key = url + '|' + glyph.index + '|' + seg;
 	let loops = glyphLoops.get(key);
 	if (!loops) {
-		loops = contoursToShapes(
-			pathToContours(glyph.path?.commands ?? [], seg, { scale: 1 / font.unitsPerEm })
-		);
+		loops = contoursToShapes(pathToContours(glyph.path?.commands ?? [], seg, { scale: 1 / font.unitsPerEm }));
 		if (glyphLoops.size > GLYPH_CACHE_MAX) glyphLoops.clear();
 		glyphLoops.set(key, loops);
 	}
@@ -93,20 +77,12 @@ export async function buildExtruded(rec, url, profile) {
 	};
 	const metrics = {
 		advance: (/** @type {string} */ ch) => (glyphOf(ch).advanceWidth ?? 0) * k,
-		kern: (/** @type {string} */ a, /** @type {string} */ b) =>
-			(font.getKerningValue?.(glyphOf(a), glyphOf(b)) ?? 0) * k,
+		kern: (/** @type {string} */ a, /** @type {string} */ b) => (font.getKerningValue?.(glyphOf(a), glyphOf(b)) ?? 0) * k,
 		ascender: font.ascender * k,
 		descender: font.descender * k
 	};
 	const em = rec.size;
-	const place = layoutBlock(chars, metrics, {
-		size: em,
-		spacing: rec.spacing,
-		lineHeight: rec.lineHeight,
-		maxWidth: rec.maxWidth,
-		align: rec.align,
-		anchor: rec.anchor
-	});
+	const place = layoutBlock(chars, metrics, { size: em, spacing: rec.spacing, lineHeight: rec.lineHeight, maxWidth: rec.maxWidth, align: rec.align, anchor: rec.anchor });
 	const styles = mergeLetterStyles(chars.length, rec.letters, null);
 	const seg = QUALITY_SEGMENTS[/** @type {'low'|'medium'|'high'} */ (rec.quality)] ?? 6;
 	/** @type {number[][][][]} one [outer, ...holes] per outline */
@@ -127,9 +103,7 @@ export async function buildExtruded(rec, url, profile) {
 		// ems -> metres at the pen position
 		const placed = loops.map((/** @type {any} */ sh) => ({
 			outer: sh.outer.map((/** @type {number[]} */ p) => [p[0] * em + x, p[1] * em + y]),
-			holes: sh.holes.map((/** @type {number[][]} */ h) =>
-				h.map((p) => [p[0] * em + x, p[1] * em + y])
-			)
+			holes: sh.holes.map((/** @type {number[][]} */ h) => h.map((p) => [p[0] * em + x, p[1] * em + y]))
 		}));
 		const st = styles[i];
 		const out = styleShapes(placed, st, [x + place.advance[i] / 2, y], em);

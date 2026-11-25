@@ -57,16 +57,9 @@ export function addVectorShape(params, opts = {}) {
 	const group = get(objectsGroup);
 	if (!group) return null;
 	const mesh = makeVectorMesh(params, opts.name);
-	if (opts.position)
-		Array.isArray(opts.position)
-			? mesh.position.fromArray(opts.position)
-			: mesh.position.copy(opts.position);
-	if (opts.quaternion)
-		Array.isArray(opts.quaternion)
-			? mesh.quaternion.fromArray(opts.quaternion)
-			: mesh.quaternion.copy(opts.quaternion);
-	if (opts.scale)
-		Array.isArray(opts.scale) ? mesh.scale.fromArray(opts.scale) : mesh.scale.copy(opts.scale);
+	if (opts.position) Array.isArray(opts.position) ? mesh.position.fromArray(opts.position) : mesh.position.copy(opts.position);
+	if (opts.quaternion) Array.isArray(opts.quaternion) ? mesh.quaternion.fromArray(opts.quaternion) : mesh.quaternion.copy(opts.quaternion);
+	if (opts.scale) Array.isArray(opts.scale) ? mesh.scale.fromArray(opts.scale) : mesh.scale.copy(opts.scale);
 	group.add(mesh);
 	mesh.updateMatrixWorld(true);
 	pokeScene();
@@ -103,8 +96,7 @@ export function placeVectorShape(kind, point, patch = {}) {
 	if (camera?.position) {
 		const dx = camera.position.x - at.x;
 		const dz = camera.position.z - at.z;
-		if (Math.hypot(dx, dz) > 1e-6)
-			quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(dx, dz));
+		if (Math.hypot(dx, dz) > 1e-6) quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(dx, dz));
 	}
 	return addVectorShape(params, { position: at, quaternion });
 }

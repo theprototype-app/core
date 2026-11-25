@@ -47,27 +47,20 @@ export function vectorPolylines(params) {
 	const p = cleanVector(params);
 	const subs = vectorSubpaths(p);
 	const tol = toleranceFor(subs.map((s) => s.nodes.map((n) => [n.x, n.y])));
-	return subs
-		.map((s) => ({ pts: flattenSubpath(s, tol), closed: s.closed }))
-		.filter((l) => l.pts.length >= 2);
+	return subs.map((s) => ({ pts: flattenSubpath(s, tol), closed: s.closed })).filter((l) => l.pts.length >= 2);
 }
 
 /** the fill region as a MultiPolygon (open subpaths close implicitly, as SVG fills them)
  * @param {Record<string, any>} params @returns {number[][][][]} */
 export function vectorFillPolygons(params) {
-	return ringsToPolygons(
-		vectorPolylines(params)
-			.map((l) => l.pts)
-			.filter((r) => r.length >= 3)
-	);
+	return ringsToPolygons(vectorPolylines(params).map((l) => l.pts).filter((r) => r.length >= 3));
 }
 
 /** @param {number[][][][]} polys */
 function shapesOf(polys) {
 	return polys.map((poly) => {
 		const shape = new THREE.Shape(poly[0].map((p) => new THREE.Vector2(p[0], p[1])));
-		for (const hole of poly.slice(1))
-			shape.holes.push(new THREE.Path(hole.map((p) => new THREE.Vector2(p[0], p[1]))));
+		for (const hole of poly.slice(1)) shape.holes.push(new THREE.Path(hole.map((p) => new THREE.Vector2(p[0], p[1]))));
 		return shape;
 	});
 }
@@ -98,17 +91,9 @@ function refine(pos, maxEdge, budget) {
 				continue;
 			}
 			// rotate so the longest edge is v0-v1, then split it at its midpoint
-			const r =
-				m === d01
-					? t
-					: m === d12
-						? [...t.slice(3), ...t.slice(0, 3)]
-						: [...t.slice(6), ...t.slice(0, 6)];
+			const r = m === d01 ? t : m === d12 ? [...t.slice(3), ...t.slice(0, 3)] : [...t.slice(6), ...t.slice(0, 6)];
 			const mid = [(r[0] + r[3]) / 2, (r[1] + r[4]) / 2, (r[2] + r[5]) / 2];
-			next.push(
-				[...r.slice(0, 3), ...mid, ...r.slice(6, 9)],
-				[...mid, ...r.slice(3, 6), ...r.slice(6, 9)]
-			);
+			next.push([...r.slice(0, 3), ...mid, ...r.slice(6, 9)], [...mid, ...r.slice(3, 6), ...r.slice(6, 9)]);
 		}
 		queue = next;
 	}
@@ -170,38 +155,16 @@ export function buildVectorGeometry(params) {
 
 	// ---- stroke: front and back copies
 	if (p.strokeWidth > 0) {
-		const tris = piecesToTriangles(
-			strokeAll(lines, { width: p.strokeWidth, join: p.join, cap: p.cap, dash: p.dash, gap: p.gap })
-		);
+		const tris = piecesToTriangles(strokeAll(lines, { width: p.strokeWidth, join: p.join, cap: p.cap, dash: p.dash, gap: p.gap }));
 		const front = (p.fillType !== 'none' ? depth : 0) + STROKE_LIFT;
 		const back = -STROKE_LIFT;
 		const sc = hexToRgb(p.stroke);
 		/** @type {number[]} */
 		const pos = [];
 		for (let i = 0; i < tris.length; i += 6) {
-			pos.push(
-				tris[i],
-				tris[i + 1],
-				front,
-				tris[i + 2],
-				tris[i + 3],
-				front,
-				tris[i + 4],
-				tris[i + 5],
-				front
-			);
+			pos.push(tris[i], tris[i + 1], front, tris[i + 2], tris[i + 3], front, tris[i + 4], tris[i + 5], front);
 			// the back copy is wound the other way so its face points -Z
-			pos.push(
-				tris[i],
-				tris[i + 1],
-				back,
-				tris[i + 4],
-				tris[i + 5],
-				back,
-				tris[i + 2],
-				tris[i + 3],
-				back
-			);
+			pos.push(tris[i], tris[i + 1], back, tris[i + 4], tris[i + 5], back, tris[i + 2], tris[i + 3], back);
 		}
 		parts.push({ pos, normals: null, faces: null, colour: () => sc });
 	}
@@ -344,11 +307,5 @@ export function resetSolidCache() {
 /** the material a vector shape is made with (vertex colours carry every colour)
  * @returns {THREE.MeshStandardMaterial} */
 export function vectorMaterial() {
-	return new THREE.MeshStandardMaterial({
-		color: 0xffffff,
-		vertexColors: true,
-		roughness: 0.8,
-		metalness: 0,
-		side: THREE.DoubleSide
-	});
+	return new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.8, metalness: 0, side: THREE.DoubleSide });
 }

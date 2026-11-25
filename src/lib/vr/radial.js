@@ -74,6 +74,7 @@ import { drawMode, toggleDrawMode } from '../drawMode';
 import { cycleMicMode } from '../voiceChat';
 import { safeStorage } from '../safeStorage';
 import { resetWindowPoses } from '../vrWindowPoses';
+import { meshPathSelect } from '../meshToolParams'; // 99 K8
 import { S } from './state.js';
 import { renderer, tempVector } from './core.js';
 import { transformStateOf, broadcastMove, resetWorldRig } from './grip.js';
@@ -361,6 +362,10 @@ export function executeVRMenuAction(name) {
 	}
 	if (name === 'edit:multi') {
 		faceEditNow()?.toggleFaceMulti(); // 212: accumulate picks on/off
+		return;
+	}
+	if (name === 'edit:path') {
+		meshPathSelect.update((on) => !on); // 99 K8: the trigger adds the shortest path from the last pick
 		return;
 	}
 	if (name.startsWith('face:')) {

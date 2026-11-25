@@ -125,8 +125,9 @@ h.run(async () => {
 	h.check(missingFromSheet.length === 0 && extraOnSheet.length === 0 && sheet.rows.length === sheetWant.length, `the sheet lists every registry row with a key once (${sheet.rows.length}/${sheetWant.length}${missingFromSheet.length ? ', missing ' + missingFromSheet.join(',') : ''}${extraOnSheet.length ? ', extra ' + extraOnSheet.join(',') : ''})`);
 	// default keymap: exactly the start-at-once rows (no key) and their locks are left off
 	const unlisted = registry.filter((/** @type {any} */ r) => !listed(r)).map((/** @type {any} */ r) => r.id).sort();
-	const UNLISTED_103 = ['mesh.now-move', 'mesh.now-rotate', 'mesh.now-scale', 'movement.fly-direction', 'transform.lock-x', 'transform.lock-y', 'transform.lock-z', 'transform.now-move', 'transform.now-rotate', 'transform.now-scale', 'uv.lock-u', 'uv.lock-v', 'uv.now-move', 'uv.now-rotate', 'uv.now-scale', 'uv.tool-box', 'uv.tool-lasso', 'uv.tool-paint', 'uv.tool-select'];
-	h.check(JSON.stringify(unlisted) === JSON.stringify(UNLISTED_103), `only the 103 rows with no key (and their locks) stay off the default sheet (${unlisted.length}${JSON.stringify(unlisted) === JSON.stringify(UNLISTED_103) ? '' : ': ' + unlisted.join(',')})`);
+	// + 99 K8's two unbound mesh rows (Bisect, Path select on / off)
+	const UNLISTED_103 = ['mesh.bisect', 'mesh.now-move', 'mesh.now-rotate', 'mesh.now-scale', 'mesh.path-toggle', 'movement.fly-direction', 'transform.lock-x', 'transform.lock-y', 'transform.lock-z', 'transform.now-move', 'transform.now-rotate', 'transform.now-scale', 'uv.lock-u', 'uv.lock-v', 'uv.now-move', 'uv.now-rotate', 'uv.now-scale', 'uv.tool-box', 'uv.tool-lasso', 'uv.tool-paint', 'uv.tool-select'];
+	h.check(JSON.stringify(unlisted) === JSON.stringify(UNLISTED_103), `only the 103 + 99 rows with no key (and their locks) stay off the default sheet (${unlisted.length}${JSON.stringify(unlisted) === JSON.stringify(UNLISTED_103) ? '' : ': ' + unlisted.join(',')})`);
 	h.check(sheet.first === 'viewport' && !!sheet.marked, `the focused scope comes first and is marked "has focus" (${sheet.first})`);
 	h.check(sheet.filterFocused, 'the filter takes the keyboard when the sheet opens');
 	await page.keyboard.type('undo');
@@ -280,7 +281,7 @@ h.run(async () => {
 	// ---- 4. editor-owned keys -------------------------------------------------------------------
 	const meshMap = await page.evaluate(() => {
 		const S = window.__tp.test.v1.shortcutsRegistry;
-		// a row with no key (103's Move / Rotate / Resize now, unbound by default) has nothing to resolve
+		// an unbound row ('' keys: 99 K8's Path toggle and Bisect, 103's Move / Rotate / Resize now) has no key to resolve: meshCommandFor ignores ''
 		return S.shortcuts.filter((/** @type {any} */ r) => r.scope === 'mesh' && r.keys).map((/** @type {any} */ r) => [r.id, S.meshCommandFor(r.keys)]);
 	});
 	const meshBad = meshMap.filter(([id, got]) => id !== got);

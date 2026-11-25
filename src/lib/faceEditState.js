@@ -18,6 +18,7 @@ import { safeStorage } from './safeStorage';
 import { objectsGroup } from '../stores/sceneStore';
 import { showToast, settingsOpen, settingsSection } from '../stores/appStore';
 import { viewPrefs } from './viewPrefs';
+import { meshPathSelect } from './meshToolParams';
 
 const hasLS = typeof localStorage !== 'undefined';
 
@@ -216,3 +217,10 @@ meshGizmoEnabled.subscribe((value) => {
 	prefHooks.gizmoEnabled?.(value); // seat / drop the face gizmo, restore a hidden pick
 	editHooks.gizmoPrefListeners.forEach((fn) => fn());
 });
+
+/** 99 K8: the clicked element is a path target: Ctrl alone (Shift / Cmd keep the plain add), or any click under the
+ * Path toggle. Here (not in faceEdit.js) so the viewport's click handler asks it without the lazy chunk
+ * @param {{ ctrlKey?: boolean, shiftKey?: boolean, metaKey?: boolean }} event */
+export function pathGesture(event) {
+	return get(meshPathSelect) || (!!event.ctrlKey && !event.shiftKey && !event.metaKey);
+}

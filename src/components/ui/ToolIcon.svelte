@@ -48,6 +48,11 @@
 			base: ['M3 21l5.5-5.5'],
 			accent: ['M8.5 15.5l5-5', 'M13.5 10.5l6-6 2.5 2.5-6 6z']
 		},
+		// 99 K8: a solid, and the plane through it (running past both sides: a plane, not a knife's trail)
+		bisect: {
+			base: ['M6 5h12v14H6z'],
+			accent: ['M2 17L22 7']
+		},
 		// a quad ring, and the loops inserted across it (two, so it cannot be
 		// mistaken for subdivide's single cross)
 		'loop-cut': {

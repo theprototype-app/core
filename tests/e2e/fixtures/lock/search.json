@@ -3660,7 +3660,10 @@
 				"Undo",
 				"Ungroup (the selected group, or the one you are in)",
 				"Weld the selected vertices (vertices)",
-				"Wheel diagnostics"
+				"Wheel diagnostics",
+				"Arm Bisect (faces): two clicks draw the plane, Enter cuts",
+				"Path select on / off (a click adds the shortest path from the last pick)",
+				"Smooth subdivide, Catmull-Clark (faces; nothing picked = the whole mesh)"
 			],
 			"sections": [
 				"Interface",
@@ -4148,7 +4151,10 @@
 				"UV editor: show / bring to front / hide",
 				"Undo",
 				"Ungroup (the selected group, or the one you are in)",
-				"Weld the selected vertices (vertices)"
+				"Weld the selected vertices (vertices)",
+				"Arm Bisect (faces): two clicks draw the plane, Enter cuts",
+				"Path select on / off (a click adds the shortest path from the last pick)",
+				"Smooth subdivide, Catmull-Clark (faces; nothing picked = the whole mesh)"
 			],
 			"sections": [
 				"Shortcuts"
@@ -4298,7 +4304,10 @@
 				"UV editor: show / bring to front / hide",
 				"Undo",
 				"Ungroup (the selected group, or the one you are in)",
-				"Weld the selected vertices (vertices)"
+				"Weld the selected vertices (vertices)",
+				"Arm Bisect (faces): two clicks draw the plane, Enter cuts",
+				"Path select on / off (a click adds the shortest path from the last pick)",
+				"Smooth subdivide, Catmull-Clark (faces; nothing picked = the whole mesh)"
 			],
 			"sections": [
 				"Shortcuts"
@@ -4449,7 +4458,10 @@
 				"UV editor: show / bring to front / hide",
 				"Undo",
 				"Ungroup (the selected group, or the one you are in)",
-				"Weld the selected vertices (vertices)"
+				"Weld the selected vertices (vertices)",
+				"Arm Bisect (faces): two clicks draw the plane, Enter cuts",
+				"Path select on / off (a click adds the shortest path from the last pick)",
+				"Smooth subdivide, Catmull-Clark (faces; nothing picked = the whole mesh)"
 			],
 			"sections": [
 				"Input",

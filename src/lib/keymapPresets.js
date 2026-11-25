@@ -50,12 +50,14 @@ export function presetKeys(preset) {
 			'uv.tool-lasso': 'C',
 			'uv.tool-paint': 'P',
 			// Edit Mesh: G starts the move (mesh.move's "arm Move" goes unbound; the toolbox button
-			// stays), R / S rotate / resize, and Subdivide leaves S for Shift+S
+			// stays), R / S rotate / resize, Subdivide leaves S for Shift+S, and Smooth subdivide
+			// (Shift+S by default) goes unbound: Subdivide's "smooth" tick stays, Settings can bind it
 			'mesh.now-move': 'G',
 			'mesh.move': '',
 			'mesh.now-rotate': 'R',
 			'mesh.now-scale': 'S',
-			'mesh.subdivide': 'Shift+S'
+			'mesh.subdivide': 'Shift+S',
+			'mesh.subdivide-smooth': ''
 		};
 	// W / E fly while the fly keys are always on, so the tool letters only arrive with 'rmb'
 	if (preset === 'unity') return freeS ? { 'transform.move': 'W', 'transform.rotate': 'E', 'transform.scale': 'R' } : {};

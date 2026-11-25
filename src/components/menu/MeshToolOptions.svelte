@@ -40,6 +40,9 @@
 		insetDepth,
 		insetIndividual,
 		subdivideLevelCount,
+		subdivideSmooth,
+		bisectFill,
+		bisectClear,
 		edgeExtrudeDistance,
 		smoothFactor,
 		smoothIterations,
@@ -48,6 +51,7 @@
 		slideClamp
 	} from '$lib/meshToolParams';
 	import DragRow from '../ui/DragRow.svelte';
+	import { bisectPlaced, applyBisect, cancelBisect } from '$lib/meshBisectTool'; // 99 K8
 
 	/** @type {{ mode: 'vertices'|'edges'|'faces', focus: string, hint?: string,
 	 *   adjusting?: boolean,
@@ -55,7 +59,7 @@
 	 *   onApplyBridge: () => void, onApplySubdivide?: () => void,
 	 *   onApplyEdgeExtrude?: () => void, onApplySmooth?: () => void,
 	 *   onApplyEdgeSlide?: () => void, onApplySolidify?: () => void,
-	 *   onAdjust?: (patch: any) => void, onSettle?: () => void, onRevert?: () => void }} */
+	 *   onAdjust?: (patch: any) => void, onScrubStart?: () => void, onSettle?: () => void, onRevert?: () => void }} */
 	let {
 		mode,
 		focus,
@@ -71,6 +75,7 @@
 		onApplyEdgeSlide = () => {},
 		onApplySolidify = () => {},
 		onAdjust = () => {},
+		onScrubStart = () => {},
 		onSettle = () => {},
 		onRevert = () => {}
 	} = $props();
@@ -118,6 +123,8 @@
 		if (!adjusting) return;
 		scrubActive = true;
 		clearTimeout(settleTimer);
+		// lane 99-scrub: the engine's scrub bracket — a loop cut previews a line until the release settles it
+		onScrubStart();
 	}
 	function scrubEnd() {
 		if (!adjusting) return;
@@ -517,6 +524,23 @@
 			onscrubstart={scrubStart}
 			onscrubend={scrubEnd}
 		/>
+		<label
+			class="flex items-center gap-1"
+			title="Smooth: Catmull-Clark — corners round off, an open border keeps its line, uvs stay put. With nothing picked it smooths the whole mesh (Shift+S)."
+		>
+			<input
+				id="subdivide-smooth"
+				class="tbx-check"
+				type="checkbox"
+				checked={$subdivideSmooth}
+				onchange={(e) => {
+					const on = e.currentTarget.checked;
+					subdivideSmooth.set(on);
+					if (adjusting) adjustChanged({ smooth: on });
+				}}
+			/>
+			smooth
+		</label>
 		{#if adjusting}
 			{@render revertBtn()}
 		{:else}
@@ -687,6 +711,36 @@
 			clamp to edge
 		</label>
 	</div>
+{:else if focus === 'bisect'}
+	<span class="tbx-label">Bisect options</span>
+	<div class="tbx-row text-xs text-text-muted">
+		Click two points to draw the cut line; the plane runs through it, straight away from you. Drag the gizmo to
+		move or turn it, then Apply (Enter). It cuts the selected faces, or the whole mesh when none are. Esc drops it.
+	</div>
+	<div id="bisect-params" class="tbx-row text-xs text-text-2">
+		<span>clear</span>
+		<div class="tbx-seg">
+			{#each [['none', 'none', 'Keep both sides'], ['inner', 'inner', 'Remove what is behind the plane (away from its tick)'], ['outer', 'outer', 'Remove the side the plane\'s tick points at']] as [value, label, title] (value)}
+				<button
+					id={`bisect-clear-${value}`}
+					class="px-2 py-0.5 {$bisectClear === value ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 hover:bg-surface-hover'}"
+					aria-pressed={$bisectClear === value}
+					{title}
+					onclick={() => bisectClear.set(value)}>{label}</button
+				>
+			{/each}
+		</div>
+		<label class="flex items-center gap-1" title="Close each cut loop with a face (with a side cleared)">
+			<input id="bisect-fill" class="tbx-check" type="checkbox" bind:checked={$bisectFill} disabled={$bisectClear === 'none'} />
+			fill
+		</label>
+	</div>
+	{#if $bisectPlaced}
+		<div id="bisect-pending" class="tbx-row text-xs text-text-2">
+			<button id="bisect-cancel" class="tbx-cmd" title="Drop the plane (Esc)" onclick={() => cancelBisect()}>Cancel</button>
+			<button id="bisect-apply" class="tbx-primary" title="Cut with the plane as placed (Enter)" onclick={() => applyBisect()}>Apply</button>
+		</div>
+	{/if}
 {:else if focus === 'knife'}
 	<span class="tbx-label">Knife options</span>
 	<div class="tbx-row text-xs text-text-muted">

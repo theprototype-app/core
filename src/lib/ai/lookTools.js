@@ -852,14 +852,14 @@ function graphFromArgs(args, textKey = 'text') {
 	return { error: 'give the graph as text, e.g. "c = color {value: \\"#ff8800\\"}\\nout = surface\\nc -> out.emissive"' };
 }
 
-/** 107: dangling nodes, an unwired output and expression problems, said per node @param {{nodes: any[], edges: any[]}} graph @param {string} domain */
+/** 107: dangling nodes, an unwired output and expression problems, said per node @param {any} graph @param {string} domain */
 async function graphDiagnostics(graph, domain) {
 	const cat = await import('$lib/shaderCatalog');
 	const { glslExpressionProblem } = await import('$lib/shaderCode');
 	return shaderGraphDiagnostics(graph, (k) => cat.shaderNodeDef(k), { output: domain === 'post' ? cat.POST_OUTPUT_NODE : cat.SURFACE_NODE, expressionProblem: glslExpressionProblem });
 }
 
-/** 107: the warnings a written graph carries in its answer @param {{nodes: any[], edges: any[]}} graph @param {string} domain */
+/** 107: the warnings a written graph carries in its answer @param {any} graph @param {string} domain */
 async function graphNotes(graph, domain) {
 	const d = await graphDiagnostics(graph, domain);
 	return { ...(d.warnings.length ? { warnings: d.warnings } : {}), ...(d.dangling.length ? { dangling: d.dangling } : {}) };

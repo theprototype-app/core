@@ -562,7 +562,7 @@ registerHistoryKind('transformSet', (entry, state) => {
 	/** @type {any} */
 	const peer = get(peers);
 	let any = false;
-	entry.items.forEach((item) => {
+	entry.items.forEach((/** @type {any} */ item) => {
 		const target = item[state]; // state is 'before' | 'after'
 		const object = group?.getObjectByProperty('uuid', item.uuid);
 		if (!object || !target) return;

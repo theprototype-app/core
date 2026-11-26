@@ -341,7 +341,7 @@ export function commitMaterialList(uuid, build) {
  * Append a slot, cloned from the last one so it inherits the look rather than
  * appearing as an untextured default. Existing geometry groups are preserved, so
  * nothing changes visually until faces are assigned to the new slot.
- * @param {string} uuid @returns {number} the new slot index, or -1
+ * @param {string} uuid @param {number} [from] the slot to copy (default the last) @returns {number} the new slot index, or -1
  */
 export function addMaterialSlot(uuid, from) {
 	const object = objectOf(uuid);
@@ -349,7 +349,8 @@ export function addMaterialSlot(uuid, from) {
 	const current = listOwnOf(object);
 	if (!current.length) return -1;
 	// 107: `from` = the slot the new one takes its look from (set_material faces: the slot those faces wore), else the last
-	const source = current[Number.isInteger(from) && from >= 0 && from < current.length ? from : current.length - 1];
+	const at = typeof from === 'number' && Number.isInteger(from) && from >= 0 && from < current.length ? from : current.length - 1;
+	const source = current[at];
 	const fresh = cloneSlotMaterial(source);
 	fresh.name = 'slot' + current.length;
 	// 105-slots: the clone copied the last slot's id and off flag; a new slot is a new slot (its uuid is its id)

@@ -157,13 +157,43 @@ async function createHudTool(args) {
 		if (activate) doc.active = activate;
 		return {
 			hud: where.key,
-			screens,
+			// 107: where each screen shows, so a new screen is never "visible nowhere" without saying so
+			screens: screens.map((sc) => ({ ...sc, shows: whereItShows(doc, doc.screens.find((/** @type {any} */ x) => x.id === sc.id), where.key) })),
 			elements,
 			active: doc.active,
 			note: 'Bind a live value with create_flow_nodes: a hudtext / hudbar / hudtimer node whose element is one of these ids (e.g. counter -> hudtext).',
 			...(warnings.length ? { warnings } : {})
 		};
+	}).then(async (out) => {
+		if (out?.error || !out?.screens?.length) return out;
+		// 107: the HUD Editor, when it is open, turns to the first screen this call made (or filled)
+		const { hudEditorClose } = await import('../../stores/appStore.js');
+		const { hudEditorFocus } = await import('$lib/hudDocs');
+		const first = out.screens.find((/** @type {any} */ s) => s.created) ?? out.screens[0];
+		if (!get(hudEditorClose)) {
+			hudEditorFocus.set({ key: where.key, screen: first.id, at: Date.now() });
+			return { ...out, hudEditor: 'selected "' + first.name + '" in the open HUD Editor' };
+		}
+		return { ...out, hudEditor: 'closed, so nothing was selected: the person opens it from the bottom dock\'s HUD tab (it lays the screen out at full size), and it then shows the active screen' };
 	});
+}
+
+/**
+ * 107: where one screen draws, in words. The HUD is drawn over the view only in Play (HudLayer's `shown`); while building,
+ * the HUD Editor (bottom dock) shows the screen it has selected, and over the scene only with its preview eye on.
+ * @param {any} doc @param {any} screen @param {string} key
+ * @returns {{play: string, editor: string}}
+ */
+function whereItShows(doc, screen, key) {
+	const camera = key === HUD_SCENE_KEY ? '' : ' while the view is through its camera';
+	/** @type {Record<string, string>} */
+	const STATE = { menu: 'on the menu (before a round starts)', playing: 'while a round is playing', paused: 'while the game is paused', over: 'when the game is over' };
+	const play = screen?.showWhile
+		? 'in Play ' + (STATE[screen.showWhile] ?? 'in game state "' + screen.showWhile + '"') + camera + ' (showWhile)'
+		: doc.active === screen?.id
+			? 'in Play' + camera + ': it is the screen that shows'
+			: 'NOT on its own: only when a hudscreen flow node shows it, or after update {screens: [{id, active: true}]} makes it the one that shows';
+	return { play, editor: 'not over the editor view (the HUD draws in Play); in the HUD Editor when that screen is selected there, and over the scene with its preview eye on' };
 }
 
 /** @param {any} args */
@@ -366,7 +396,7 @@ export const HUD_AI_TOOLS = [
 		function: {
 			name: 'create_hud',
 			description:
-				'Give the game a HUD (2D screen overlay): screens of elements — a timer, a score text, a health bar, buttons, an image. A screen named like an existing one gets the elements added. Returns every element id: bind live values with create_flow_nodes (a hudtext / hudbar / hudtimer node with data.element = the id, e.g. counter -> hudtext; for a game value — score, clock, best, level, stars, lives, a variable, a stored or published value — use gamevalue -> hudtext with data.read and data.format: number, time, fraction, percent, stars, text). A new screen becomes the one that shows unless active: false. One undo step.',
+				'Give the game a HUD (2D screen overlay): screens of elements — a timer, a score text, a health bar, buttons, an image. A screen named like an existing one gets the elements added. Returns every element id: bind live values with create_flow_nodes (a hudtext / hudbar / hudtimer node with data.element = the id, e.g. counter -> hudtext; for a game value — score, clock, best, level, stars, lives, a variable, a stored or published value — use gamevalue -> hudtext with data.read and data.format: number, time, fraction, percent, stars, text). A new screen becomes the one that shows unless active: false. The HUD draws in Play, not over the editor view: each screen in the answer says where it shows (shows.play / shows.editor), and an open HUD Editor turns to it. One undo step.',
 			parameters: {
 				type: 'object',
 				properties: {

@@ -95,7 +95,13 @@ if [ "${1:-}" = --gpu ]; then
 	# optional one screenshot: /etc/tpci/shot.env may set TPCI_SHOT_URL / TPCI_SHOT_INIT / TPCI_SHOT_WAIT
 	shot=()
 	if [ -r /etc/tpci/shot.env ]; then
-		while IFS= read -r kv; do [ -n "$kv" ] && shot+=("$kv"); done < /etc/tpci/shot.env
+		# KEY=VALUE per line; one pair of surrounding double quotes on the value is dropped (KEY="a|b" = KEY=a|b)
+		while IFS= read -r kv; do
+			[ -n "$kv" ] || continue
+			k=${kv%%=*} v=${kv#*=}
+			case "$v" in \"*\") v=${v#\"} v=${v%\"} ;; esac
+			shot+=("$k=$v")
+		done < /etc/tpci/shot.env
 		shot+=(TPCI_SHOT_OUT=/tmp/tpci-shot.png)
 	fi
 	as_runner env "${shot[@]}" node /opt/tpci/gpu-check.cjs

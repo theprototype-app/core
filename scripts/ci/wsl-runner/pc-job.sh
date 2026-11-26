@@ -74,8 +74,11 @@ case "$mode" in
 		# shot.env on stdin (may be empty): KEY=VALUE lines for one screenshot on the GPU path
 		"$WSL" -d "$name" -u root -- sh -c 'cat > /etc/tpci/shot.env'
 		"$WSL" -d "$name" -u root -- /opt/tpci/start-job.sh --gpu < /dev/null
+		grc=$?
 		"$WSL" -d "$name" -u root -- sh -c 'cat /tmp/tpci-shot.png 2>/dev/null' > "$TPCI_LINROOT/logs/$name-shot.png" || true
 		[ -s "$TPCI_LINROOT/logs/$name-shot.png" ] && log "shot: $TPCI_LINROOT/logs/$name-shot.png" || rm -f "$TPCI_LINROOT/logs/$name-shot.png"
+		# the probe's own result, not the shot copy's: a failed screenshot must fail the check
+		(exit $grc)
 		;;
 	*) log "unknown mode $mode"; false ;;
 esac

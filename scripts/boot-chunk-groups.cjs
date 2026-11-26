@@ -62,8 +62,33 @@ function kitOwned(id) {
  * @returns {{names: Map<string, string>, order: string[], sigs?: Map<string, string>}} names = module ->
  *   group; order = the groups, dependencies first; sigs = module -> exact signature (before merging)
  */
+/**
+ * 102-boot-diet-2: PHANTOM static edges — an import rolldown's module graph lists but the bundle tree-shakes away,
+ * whose target is ALSO an import() target the app uses. Counted, the target reads as boot code and rides a boot group
+ * chunk (the KNOWN AND LEFT note above). @threlte/extras' barrel re-exports `useKtx2`, which statically imports
+ * KTX2Loader (+ zstddec, ~21 KB gz); src never calls useKtx2, and gltfLoader.js imports KTX2Loader on demand, so
+ * both boots carried it for nothing. Ignoring an edge only changes which chunk a module lands in, never whether an
+ * import resolves: if the importer were used after all, the target falls back to rolldown's default split.
+ * Keep this list to measured cases (pairs of [importer, target] path tests).
+ */
+const PHANTOM_EDGES = [[/[\\/]@threlte[\\/]extras[\\/]dist[\\/]hooks[\\/]useKtx2\.js$/, /[\\/]three[\\/]examples[\\/]jsm[\\/]loaders[\\/]KTX2Loader\.js$/]];
+
+/** the graph without the phantom edges (records copied only where an edge is dropped) @param {Map<string, any>} modules */
+function withoutPhantomEdges(modules) {
+	let out = modules;
+	for (const [id, m] of modules) {
+		const drop = PHANTOM_EDGES.filter(([from]) => from.test(id));
+		if (!drop.length) continue;
+		const imports = m.imports.filter((/** @type {string} */ d) => !drop.some(([, to]) => to.test(d)));
+		if (imports.length === m.imports.length) continue;
+		if (out === modules) out = new Map(modules);
+		out.set(id, { ...m, imports });
+	}
+	return out;
+}
+
 function classifyBootModules(graph, { mergeBelow = 0, protect = PROTECTED_ROUTE } = {}) {
-	const mods = graph.modules;
+	const mods = withoutPhantomEdges(graph.modules);
 	const entries = [...mods.keys()].filter((id) => mods.get(id).isEntry);
 	const nodeOf = new Map();
 	for (const id of entries) {

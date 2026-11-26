@@ -1588,6 +1588,25 @@ objectsGroup.subscribe((g) => {
 	if (root) waterVolumes.setRoot(g);
 });
 
+/**
+ * 100 C2-3: what the Cinematic view draws the water from (its WebGPU renderer skips this module's scene hooks, so the
+ * placeholder swap and the underwater test happen there). Read every frame of the view; nothing here is written.
+ * @param {any} camera @param {any[]} [out] reused list
+ */
+export function waterViewState(camera, out = []) {
+	out.length = 0;
+	for (const e of entries.values()) out.push(e);
+	/** @type {any} */
+	let under = null;
+	if (camera?.matrixWorld && entries.size) {
+		_cam.setFromMatrixPosition(camera.matrixWorld);
+		const q = waterVolumes.query(_cam, { volumes: volumeList, time: currentT });
+		const e = q ? entries.get(q.volume.uuid) : null;
+		if (e && e.visible) under = { entry: e, look: resolveLook(e.volume.spec), surfaceY: q?.surfaceY ?? 0 };
+	}
+	return { entries: out, overlay, under, sun: shared.uSunColor.value };
+}
+
 /** The pre-pass colour + depth target (the suite reads it back). */
 export function waterPrepassTarget() {
 	return prepass.target;

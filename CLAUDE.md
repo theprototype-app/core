@@ -1780,6 +1780,22 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   operators author through. Imports NOTHING, deliberately: it stays a pure unit outside
   the history-cycle family, and derivation stays in faceEdit where the operators live.
   Full contract in the faceEdit entry below),
+  **102-boot-diet-2 — FACEEDIT IS A LAZY CHUNK.** No boot module may import `faceEdit.js` statically (it left both boots,
+  ~30 KB gz). The boot half lives in `faceEditState.js` (the stores + local prefs with ONE subscriber each: persist ->
+  faceEdit's `prefHooks` reaction -> meshEdit's listeners; the meshEdit / terrainSculpt / colliderEdit registries in
+  `editHooks`; lookupEditable / triangleCount / editCapToast), `meshGeoApply.js` (applyMeshGeo + helpers: a peer's /
+  an undo's `meshgeo` applies synchronously and IN ORDER; the open-session step is `editHooks.faceSessionSwap`) and
+  `meshSoup.js` (readTriangles / trisTo* / shellsOfTris / stretchPositions). faceEdit re-exports all of it (same
+  instances). Boot code reaches the rest through `faceEditLazy.js`: `withFaceEdit(fn)` (synchronous once loaded) for
+  ENTRIES and commits, `faceEditNow()?.` for code that only matters inside a session. THE INVARIANT: an open edit
+  session implies faceEdit is loaded -- enterEditMode / enterColliderEdit / carveTerrainAlong load-then-re-call
+  themselves; faceEdit adopts itself into the loader at its own eval, so a session the debug hook or an agent tool
+  opens is seen by the viewport. Prefetch: the editor at idle (App onMount), any page on entering VR, a sculpt /
+  stretch tool on start. vrControls' evaluation-order list names faceEdit's DEPENDENCIES instead of faceEdit (34 A5).
+  Suite `face-edit-on-demand`, unit `faceEditLazy`. Same lane: n8ao (`postEffects.loadN8ao` / `n8aoReady`, Outline
+  starts it during the post warm-up when the warmed stack holds AO; suite `ao-on-demand`), FilePreviewWindow (App
+  `{#await import()}` per preview), the FBX parser (await import at every parse), and `useKtx2`'s phantom edge
+  (vite `treeshake.moduleSideEffects` + `boot-chunk-groups.cjs` PHANTOM_EDGES) all left the boot.
   **99 K2 — ONE COMMIT, ONE SENDER.** `meshCommit.js` (pure) is the only `meshgeo` builder (`meshGeoMessage`/
   `sendMeshGeo`; the wire is byte-identical, proved across two trees by `mesh-commit-two-tree`) and `compactMeshState`
   (what history keeps: Float32 positions/uvs, the partition packed Int32, so `entryBytes` counts what is HELD).
@@ -2931,6 +2947,30 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   shortcut table stands down in Play), pad `GamepadSelect` via inputRuntime.onInput, the Play bar's `#moment-share`
   (PlayBanner) / `#embed-moment` (EmbedChrome). Debug: `momentStores` row + `momentBuffer` registered at runtime
   (`state()` carries the cost numbers). Suites: unit `moment`; e2e `moment-share`.
+- **102b-SOUND — SOUND IN VIDEOS AND MOMENTS; TRIM AND FADE A SOUND.** WHAT IS RECORDED is the engine's non-voice
+  buses (music, sfx, instruments), tapped after each bus level by the LAZY `recording/sceneAudio.js` (`tapSceneMix` sums
+  `bus(name)` into its own limiter copy, so audioEngine.js is unchanged); the `voice` bus is never connected and the mic
+  reaches no bus, so voices cannot get into a file BY CONSTRUCTION; previews (`<audio>` elements) are not the scene.
+  Live: `openSceneAudioTrack` (MediaStreamAudioDestination) for the MediaRecorder take (`pickAvMimeType`: webm+opus,
+  mp4+aac) and `createSceneAudioRing` (AudioWorklet `sceneAudioTap.worklet.js`, ScriptProcessor fallback; a silent gain
+  to the destination keeps it pulled) stamped on the PERFORMANCE clock via `getOutputTimestamp`, beside the moment
+  frames. **Play makes an audio context even in a silent scene**, so a moment carries sound only when its slice is
+  audible (> -80 dBFS) — the zero-change rule. Offline (frame-exact export): `exportAudioCore.js` (PURE) places the
+  timeline's audio clips on the FILE clock with the frames' own mapping (timelineTime / rangeTime, loops, Film's
+  ranges) plus the music bed from the phase heard at Start; `exportAudio.js` renders it in an OfflineAudioContext
+  before the first frame; flow / module sounds on their own clock are not in a frame-exact file. `exportSinks.videoSink`
+  takes `audio` (planar PCM from t=0) and adds a Mediabunny `AudioSampleSource` (aac, else opus; webm opus, else
+  vorbis), fed a little ahead of each video frame; no encoder = silent + `NO_AUDIO_ENCODER`. Prefs `sound` (default
+  on); results carry `sound` (codec) and a note. TRIM / FADE: `soundEdits.js` (LEAF) = a latest-wins scene SINGLETON
+  `{edits: {hash: {start, end, fadeIn, fadeOut, normalize}}, changedAt}` — wire `soundedits` (ROOM_SCOPED, handshake
+  push only when stamped), save field `soundEdits` only when non-empty, an absent field CLEARS on load (a scene load is
+  a whole-world replace), `editedBuffer(hash, buffer)` is what every player plays (soundRuntime — its loop key holds
+  `soundEditKey`, so an edit restarts a playing loop — sequencePlayer, sceneMusic, exportAudio); the library bytes are
+  never touched. `soundEditSync.js` (LAZY, outside history's import tree) = the `soundedit` undo kind, the preview WAV
+  and the waveform peaks; `SoundEditPanel.svelte` (lazy, in FilePreviewWindow for a LIBRARY sound): E opens, I / O mark
+  in FILE time (while the edit plays the player's clock starts at the edit's start). Agent tools place_sound /
+  set_music take `trim`. Suites: unit `sceneSound`, `exportAudio`, `soundEdits`; e2e `scene-sound-102b`,
+  `sound-trim-102b`.
 - **SHADOW QUALITY AS SCENE DATA (106)** — `src/lib/shadows/`: Configure Scene ▸ Lights ▸ Shadow quality = Off · Basic ·
   Soft · Far, stored as `environment.shadowLevel` (ABSENT = Basic: an old scene and an old release read Basic; the
   setter and `set_light {shadowQuality}` store `basic` as absent), so it saves, syncs, undoes and snapshots with the

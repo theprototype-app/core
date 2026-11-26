@@ -71,6 +71,20 @@ export const sceneShadowsOff = writable(false);
  * registered; Outline.svelte prepends the local entry to the post stack). Never saved, never sent. */
 export const contactShadowsWanted = writable(false);
 
+/** 106 S2b: THIS DEVICE's Contact shadows switch (Preview ▸ Look): 'auto' | 'on' | 'off'. Kept in safeStorage only:
+ * never in the scene, never on the wire. The rule is shadowLevelParams.contactShadowsOn (lazy). */
+export const contactShadowsMode = writable(asContactMode(safeStorage.getItem('contactShadows')));
+contactShadowsMode.subscribe((m) => {
+	if (safeStorage.getItem('contactShadows') !== asContactMode(m)) safeStorage.setItem('contactShadows', asContactMode(m));
+});
+/** @param {any} v @returns {'auto'|'on'|'off'} */
+export function asContactMode(v) {
+	return v === 'on' || v === 'off' ? v : 'auto';
+}
+
+/** 106 S2b: the lazy cost meter's frame seam around the composer's render (Outline.svelte; null = no meter). */
+export const contactFrameProbe = { on: /** @type {null | { begin: (r: any) => void, end: (drawn: boolean) => void }} */ (null) };
+
 export function applyShadowQualityCap() {
 	const off = shadowsDisabled();
 	/** @type {any} */

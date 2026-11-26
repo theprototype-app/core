@@ -7,7 +7,7 @@
 	import { vrEditMenuOpen, vrMenuHand, vrStretchObject, vrStretchFactors } from '../../stores/sceneStore'
 	import { vrHovered, vrEditGroup, vrFaceCreateMode, controllerIndexFor } from '$lib/vrControls'
 	import { editingObject, vertexSelectionSize } from '$lib/meshEdit'
-	import { faceEditObject, faceEditOp, faceEditGranularity, faceEditMulti, faceEditSelectedTris } from '$lib/faceEdit'
+	import { faceEditObject, faceEditOp, faceEditGranularity, faceEditMulti, faceEditSelectedTris } from '$lib/faceEditState'
 	import { applyWindowPose } from '$lib/vrWindowPoses'
 	import { menuPoseFromController } from '$lib/vrRadialMenu'
 	import { colliderEditObject } from '$lib/colliderEdit' // 36 X4

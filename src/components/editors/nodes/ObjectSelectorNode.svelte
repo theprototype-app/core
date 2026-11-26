@@ -4,6 +4,7 @@
 	import NodeWrapper from './NodeWrapper.svelte';
 	import { objectsGroup } from '../../../stores/sceneStore';
 	import { setNodeData } from '$lib/nodesHandler';
+	import { pickOf, matchOf } from '$lib/selectorPick.js';
 
 	type $$Props = NodeProps;
 	export let id: string;
@@ -17,24 +18,63 @@
 		? sceneObjects.children.map((child: any) => ({ id: child.uuid, name: child.name || child.type }))
 		: [];
 	// One-way flow: render from data, write through setNodeData (replicates to peers)
+
+	// 102b-flows: pick ONE object (the default, what every saved selector is) or a SET — every object
+	// with a tag, every object in a group, or every object whose name matches. Effects wired in act
+	// on all of them; triggers wired in fire for any of them (Fired Object says which).
+	const PICKS = [
+		{ value: 'object', label: 'One object' },
+		{ value: 'tag', label: 'By tag' },
+		{ value: 'group', label: 'By group' },
+		{ value: 'name', label: 'By name' }
+	];
+	let pick: string;
+	$: pick = pickOf(data);
+	let match: string;
+	$: match = matchOf(data);
+	function setPick(next: string) {
+		// back to one object: the fields go, so the node is exactly a plain selector again
+		if (next === 'object') setNodeData(id, { pick: undefined, match: undefined });
+		else setNodeData(id, { pick: next, match: next === pick ? match : '' });
+	}
 </script>
 
 <NodeWrapper type={data.type} label={data.label}>
-	<div class="flex w-full items-center space-x-2">
+	<div class="flex w-full flex-col gap-1">
 		<select
 			class="nodrag nopan"
-			value={data.selected ?? '-None-'}
-			on:change={(e) => setNodeData(id, { selected: e.currentTarget.value })}
+			aria-label="What this selector picks"
+			data-selector-pick
+			value={pick}
+			on:change={(e) => setPick(e.currentTarget.value)}
 		>
-			<option>-None-</option>
-			{#each items as option}
-				<option value={option.id}>{option.name}</option>
+			{#each PICKS as p (p.value)}
+				<option value={p.value}>{p.label}</option>
 			{/each}
 		</select>
+		{#if pick === 'object'}
+			<select
+				class="nodrag nopan"
+				aria-label="Object"
+				value={data.selected ?? '-None-'}
+				on:change={(e) => setNodeData(id, { selected: e.currentTarget.value })}
+			>
+				<option>-None-</option>
+				{#each items as option}
+					<option value={option.id}>{option.name}</option>
+				{/each}
+			</select>
+		{:else}
+			<!-- 102b-flows: the set fields + live count are a lazy chunk (a One object card never loads it) -->
+			{#await import('./SelectorSetFields.svelte') then m}
+				<m.default {id} {data} {pick} {match} />
+			{/await}
+		{/if}
 	</div>
 	<Socket kind="target" nodeType={data.type} position={Position.Left} />
 	<!-- the chosen object, as a value: this is what every `object` input in the
 	     catalog wires from. Declared in flowSockets since 165; the card simply
-	     never offered the handle, so those inputs were unreachable. -->
+	     never offered the handle, so those inputs were unreachable.
+	     102b-flows: for a set, the member a trigger fired for last (else the first). -->
 	<Socket kind="source" nodeType={data.type} position={Position.Right} />
 </NodeWrapper>

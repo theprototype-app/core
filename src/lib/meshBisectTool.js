@@ -12,7 +12,7 @@
 
 import { writable, get } from 'svelte/store';
 import { showToast } from '../stores/appStore';
-import { faceEditOp, faceEditObject } from './faceEdit';
+import { faceEditOp, faceEditObject } from './faceEditState'; // 102-int-3: the boot never imports faceEdit.js
 
 /** the rubber band while the cut line is being drawn: {from, to} client pixels, or null
  * @type {import('svelte/store').Writable<{ from: number[], to: number[] } | null>} */

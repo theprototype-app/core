@@ -375,6 +375,13 @@ export default defineConfig({
 		// output.codeSplitting itself (its manifest group), which silently drops an advancedChunks group;
 		// Vite's config merge concatenates both group lists.
 		rolldownOptions: {
+			// 102-boot-diet-2: @threlte/extras declares no `sideEffects`, so its barrel kept the UNUSED `useKtx2` hook
+			// and, through it, KTX2Loader + zstddec (~21 KB gz) on the boot of both pages. The app never calls useKtx2;
+			// gltfLoader.js imports KTX2Loader on demand. Only this module is marked side-effect free: `undefined`
+			// leaves every other module to the default (package.json) rule.
+			treeshake: {
+				moduleSideEffects: (id: string) => (/[\\/]@threlte[\\/]extras[\\/]dist[\\/]hooks[\\/]useKtx2\.js$/.test(id) ? false : undefined)
+			},
 			output: {
 				codeSplitting: {
 					groups: [

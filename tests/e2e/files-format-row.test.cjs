@@ -82,7 +82,13 @@ const toastsOf = (peer) =>
 		window.__tp.test.v1.toastStore.subscribe((t) => (toasts = t))();
 		return (toasts ?? []).map((t) => (typeof t === 'string' ? t : (t.text ?? '')));
 	});
-const clearToasts = (peer) => peer.page.evaluate(() => window.__tp.test.v1.toastStore.set([]));
+// ci-speed: a cleared card leaves through a 180 ms fly-out and stays in the DOM (inert) until it ends, so a check that
+// counts toast BUTTONS straight after the clear also counted the leaving ones — 4 "Save a scene" where the store held 1,
+// once the suite ran in 20 s (lean CI draw) instead of 92 s (the earlier refusals had auto-dismissed by then). Wait them out.
+const clearToasts = async (peer) => {
+	await peer.page.evaluate(() => window.__tp.test.v1.toastStore.set([]));
+	await peer.page.waitForFunction(() => !document.querySelector('.tp-toast[inert], [inert] .tp-toast'), null, { timeout: 5000 });
+};
 
 const libraryOf = (peer) =>
 	peer.page.evaluate(() => {

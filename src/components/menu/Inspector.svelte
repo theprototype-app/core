@@ -88,7 +88,7 @@
 	import { activeMaterialSlot, slotIdsOf, ownMaterialsOf } from '$lib/slotDraw.js';
 	import { linkedOthers, sharedCount } from '$lib/slotDraw.js'; // 105-slots LINK (the boot gate): the colour drag reaches every holder
 	// 105-slots: "Select its faces" / "Assign selected faces" read the Edit Mesh face session (already in the boot)
-	import { faceEditObject, faceEditSelectedTris } from '$lib/faceEdit';
+	import { faceEditObject, faceEditSelectedTris } from '$lib/faceEditState'; // 102-int-3: the boot half (faceEdit.js is lazy, 102-boot-diet-2)
 	import { recordEntry, beginHistoryBatch, endHistoryBatch, recordTransformSet, registerPendingSeal } from '$lib/history';
 	import { withWireBatch, withWireBatchAsync } from '$lib/wireBatch';
 	import { setObjectFlag, lightStateOf, recordLightChange, sendLight, allMembers } from '$lib/multiEdit';
@@ -4221,6 +4221,11 @@
 			{#if $selectedObject?.userData?.measure?.points && !multiCount}
 				<!-- 48 B2: a measurement item's numbers + Edit points -->
 				<MeasureSection object={$selectedObject} />
+			{/if}
+
+			{#if insTargets.length}
+				<!-- 102b-flows: the tags an Object Selector set to By tag finds (union over a multi-select) -->
+				{#await import('./inspector/TagsSection.svelte') then m}<m.default objects={insTargets} />{/await}
 			{/if}
 
 			{#if isGroup}

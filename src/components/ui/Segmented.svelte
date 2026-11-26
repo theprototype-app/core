@@ -25,8 +25,9 @@
 	/** @type {HTMLElement[]} */
 	const buttons = [];
 	const selectedIndex = $derived(options.findIndex((o) => o.value === value));
-	// the one tab stop: the selected option, or the first enabled one when nothing matches
-	const tabStop = $derived(selectedIndex >= 0 ? selectedIndex : options.findIndex((o) => !o.disabled));
+	// the one tab stop: the selected option, or the first enabled one when nothing matches (or the selected one is
+	// disabled: a stored value this device may not use, e.g. Contact shadows On on a Quest)
+	const tabStop = $derived(selectedIndex >= 0 && !options[selectedIndex].disabled ? selectedIndex : options.findIndex((o) => !o.disabled));
 
 	/** @param {number} i */
 	function pick(i) {

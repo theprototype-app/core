@@ -4,12 +4,12 @@
 	"pages": {
 		"play": {
 			"html": "play.html",
-			"maxJsGzBytes": 1899520,
+			"maxJsGzBytes": 1751040,
 			"maxFirstFrameMs": 20000
 		},
 		"editor": {
 			"html": "index.html",
-			"maxJsGzBytes": 3066880,
+			"maxJsGzBytes": 2795520,
 			"maxFirstFrameMs": 32000
 		}
 	},
@@ -289,6 +289,24 @@
 			"play": "v1.80.0 1854.1 KB -> union on v1.80.0 1851.4 KB (-2.7) -> line 1855.0 KB (the int boot rule: the measure on the newest tag rounded up to the next 5 KB = v1.80.0's own line; the 1850.0 set on v1.79.0 is below the measure once 1.80.0's +3.1 KB is in)",
 			"editor": "v1.80.0 2992.5 KB -> union on v1.80.0 2992.6 KB (+0.1; 2994.1 KB with the 1.81.0 changelog, which rides the editor boot) -> line 2995.0 KB (the same rule; unchanged)",
 			"note": "measured on the Deck, v1.80.0 (detached worktree) and the union built back to back with the same node_modules. 104's own delta is +0.1 KB editor / -2.7 KB play. Give-back row for 102-boot-diet-2 stays 89-apps (+1.6 KB editor at 104-int). The 1.81.0 changelog entry rides the editor boot: measured with it, 2994.1 KB, inside the line."
+		},
+		{
+			"date": "2026-11-26",
+			"lane": "102-int-3 (roadmap 102 the rest: #601 #599 #610 #593 #642 #654 #660 + deps 19de5dba, on v1.81.0, 46f30038)",
+			"play": "v1.81.0 1851.4 KB -> union on v1.81.0 1709.6 KB (-141.8) -> line 1710.0 KB (the int boot rule: the measured union on the last tag, rounded up to the next 5 KB; was 1855.0)",
+			"editor": "v1.81.0 2993.9 KB -> union on v1.81.0 2726.9 KB (-267.0; 2726.7 KB with the release's changelog draft in) -> line 2730.0 KB (the same rule; was 2995.0)",
+			"note": "measured on the Deck: v1.81.0 built in a detached worktree (its own lock's node_modules, SvelteKit 3.1.1) and the union back to back (deps' SvelteKit 3.4.0, which moved neither boot at the deps gate: 1711.1 / 2723.6 KB before and after). The drop is #654 (102-boot-diet-2): the face editor, AO (n8ao), KTX2/basis, FBX and the behaviour runtime load on demand; its rule (no boot module imports faceEdit.js statically) held through the v1.79.0-v1.81.0 merges (950bfa29 took 1.79.0's static Inspector import back out). Largest editor contributor among the additions: 102b-flows #593 (+2.8 KB editor on v1.76.0, flowRuntime + the Object Selector / Fired Object nodes) = the give-back row for the next boot diet. Play has 0.4 KB of headroom: a play-boot addition raises the line in its own PR with a reason here.",
+			"perLane": {
+				"basis": "each first-parent merge of the union chain on its own base (play / editor KB gz): #601-#593 on v1.76.0 (1883.4 / 2999.0), #654 on v1.78.1 (1891.0 / 3010.8), #660 + the int fixes + deps on the v1.79.0 union",
+				"2.0-eval2 #601": "+0.0 / +0.0",
+				"102-curves #599": "+0.3 / +1.7",
+				"100-cover-water #642": "+0.1 / +0.2",
+				"102b-sound #610": "+1.5 / +1.9",
+				"102b-flows #593": "+1.6 / +2.8",
+				"102-boot-diet-2 #654": "-146.2 / -268.9",
+				"106-contact-switch #660 + 950bfa29 (1.79.0's static faceEdit import back out) + deps 19de5dba": "+0.3 / -29.4 (the 1.79.0 merge put faceEdit back: 67acb369 2753.0 -> 950bfa29 2723.7; deps ~0)",
+				"int merges of v1.80.0 / v1.81.0": "-1.5 / +3.3 (the tags' own additions, on the lazy split)"
+			}
 		}
 	],
 	"throttle": {

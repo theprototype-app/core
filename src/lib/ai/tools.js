@@ -1,4 +1,5 @@
 import { parentTarget } from './parentTarget.js';
+import { setObjectTags } from '../objectTags.js'; // 102b-flows
 import { get } from 'svelte/store';
 import { scenePhysicsState_ } from '../scenePhysics'; // 102b-arrange: layer names for list_scene
 import * as THREE from 'three';
@@ -833,6 +834,11 @@ async function updateOne(spec) {
 			else made = arr.makeArrayReal(uuid);
 		}
 	}
+	// 102b-flows: the object's tags (what an Object Selector set to pick: tag finds); [] clears them
+	if (spec.tags !== undefined) {
+		if (Array.isArray(spec.tags) && spec.tags.every((/** @type {any} */ t) => typeof t === 'string')) setObjectTags(uuid, spec.tags);
+		else errors.push('tags: takes a list of words like ["coin", "pickup"]');
+	}
 	// mcp-shapes: after the move, so a new position is where it looks from
 	if (spec.lookAt !== undefined) {
 		const why = lookAtTarget(object, spec.lookAt, spec.front);
@@ -1661,6 +1667,11 @@ export const AI_TOOLS = [
 								},
 								layer: { type: ['string', 'null'], description: '102b: put it on the layer with this NAME (made when new; Configure Scene > Layers hides and locks layers), or null for no layer' },
 								makeReal: { type: 'boolean', description: '102b: true = turn the object\'s array copies into ordinary objects (one undo); the result lists their uuids' },
+								tags: {
+									type: 'array',
+									items: { type: 'string' },
+									description: 'replace the object\'s tags (short words; [] clears). One flow then drives every object with a tag: an objectselector {pick: "tag", match: "<tag>"}'
+								},
 								parentUuid: {
 									type: 'string',
 									description: 'group uuid (or any object, not a light or camera) to nest under, or "root" to un-nest. The object keeps its world pose; a position given in the same update is LOCAL to the new parent. A uuid not in the scene is an error'

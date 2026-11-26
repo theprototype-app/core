@@ -4,7 +4,7 @@
 	import { T, useTask } from '@threlte/core'
 	import { selectedObject, isVRMode, objectsGroup, vrWireframeSelection } from '../../stores/sceneStore'
 	import { editingObject } from '$lib/meshEdit'
-	import { faceEditObject } from '$lib/faceEdit'
+	import { faceEditObject } from '$lib/faceEditState'
 	// 30b P1: a selection indicator is editor scaffolding - none in Interact/Play
 	import { editorHelpersShown } from '$lib/helperLayer'
 

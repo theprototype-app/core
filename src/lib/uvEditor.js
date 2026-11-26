@@ -19,17 +19,9 @@ import { safeStorage } from './safeStorage';
 // needs NO new wire type, NO new history kind, and NOT ONE line changed in
 // faceEdit.js — which matters because the mesh-hardening lane is rewriting it in
 // parallel.
-import {
-	readTriangles,
-	trisToPositions,
-	trisToGroups,
-	trisToUVs,
-	triangleCount,
-	// UV5 reads the Edit Mesh pick to scope the UV view — read-only, no writes
-	faceEditObject,
-	faceEditSelectedTris,
-	commitMesh
-} from './faceEdit';
+import { triangleCount, faceEditObject, faceEditSelectedTris } from './faceEditState';
+import { readTriangles, trisToPositions, trisToGroups, trisToUVs } from './meshSoup';
+import { faceEditNow, withFaceEdit, loadFaceEdit } from './faceEditLazy';
 import { sendMeshGeo } from './meshCommit';
 
 // UV editor core (UV1). The editor is a 2D view of a mesh's `uv` attribute: the
@@ -805,6 +797,7 @@ export async function unwrapObject(uuid, backend, options = {}, onlyTris = null)
 		return false;
 	}
 	const after = { positions, groups: trisToGroups(triangles), uvs: trisToUVs(triangles) };
+	await loadFaceEdit(); // 102-boot-diet-2: an async caller commits synchronously, as before (agent tools read the result)
 	uvCommit(uuid, before, after);
 	return true;
 }
@@ -1566,5 +1559,11 @@ if (typeof window !== 'undefined')
  * @param {string} uuid @param {any} before @param {{positions: number[], groups: any[] | null, uvs: number[] | null}} after
  */
 export function uvCommit(uuid, before, after) {
-	return commitMesh({ uuid, apply: 'object', before, after, record: 'entry', cap: false, wireFaces: 'none' });
+	const c = /** @type {const} */ ({ uuid, apply: 'object', before, after, record: 'entry', cap: false, wireFaces: 'none' });
+	// 102-boot-diet-2: the commit is the face editor's (a lazy chunk). Loaded (the editor prefetches it at idle) it
+	// runs now and returns the entry, as before; else it runs in order once loaded (no caller reads the entry then)
+	const fe = faceEditNow();
+	if (fe) return fe.commitMesh(c);
+	void withFaceEdit((m) => m.commitMesh(c));
+	return null;
 }

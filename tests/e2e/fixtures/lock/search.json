@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-11-25T22:08:47.679Z",
+	"recordedAt": "2026-11-26T01:33:08.651Z",
 	"settings": {
 		"Theme": {
 			"rows": [
@@ -4999,6 +4999,7 @@
 				"Physics",
 				"Scatter",
 				"Shadow",
+				"Tags",
 				"Texture",
 				"Tidy",
 				"Transform",
@@ -5047,6 +5048,9 @@
 			],
 			"geometry": [
 				"Geometry"
+			],
+			"tags": [
+				"Tags"
 			],
 			"material": [
 				"Emission",
@@ -5150,6 +5154,7 @@
 				"Constraints",
 				"Light",
 				"Shadow",
+				"Tags",
 				"Tidy",
 				"Transform"
 			],
@@ -5161,6 +5166,9 @@
 			],
 			"tidy": [
 				"Tidy"
+			],
+			"tags": [
+				"Tags"
 			],
 			"light": [
 				"Aim at",

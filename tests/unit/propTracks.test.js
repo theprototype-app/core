@@ -1,6 +1,6 @@
 // 68: the allowlisted property registry + "live-control tracks record and play back exactly"
 import { describe, it, expect } from 'vitest';
-import { PROPS, resolvePath, propType, getProp, setProp, pathsFor, FILM_PATHS } from '../../src/lib/propTracks.js';
+import { PROPS, resolvePath, propType, getProp, setProp, pathsFor, FILM_PATHS, propLabelFor } from '../../src/lib/propTracks.js';
 import { reduceSamples, sampleCurve, normalizeCurve, valueError } from '../../src/lib/curveCore.js';
 import { normalizeSequence, propsAt } from '../../src/lib/sequenceCore.js';
 
@@ -74,5 +74,16 @@ describe('live-control tracks record and play back exactly', () => {
 	it('the curve passes exactly through each key (record → key → play is lossless at keys)', () => {
 		const keys = normalizeCurve('number', fovKeys);
 		for (const k of keys) expect(valueError('number', sampleCurve('number', keys, k.t), k.v)).toBeLessThan(1e-9);
+	});
+});
+
+// 102-int-3 (seam 102 M7 x 102-curves): two constraints on one object read apart in "Animate a property"
+describe('propLabelFor', () => {
+	it('names the constraint kind, numbered only when the kind repeats', () => {
+		const o = { userData: { constraints: [{ id: 'a1', kind: 'lookat', weight: 1 }, { id: 'c1', kind: 'ikchain', weight: 1 }, { id: 'c2', kind: 'ikchain', weight: 1 }] } };
+		expect(propLabelFor(o, 'constraint.a1.weight')).toBe('Look at weight');
+		expect(propLabelFor(o, 'constraint.c1.weight')).toBe('Chain IK weight 1');
+		expect(propLabelFor(o, 'constraint.c2.weight')).toBe('Chain IK weight 2');
+		expect(new Set(pathsFor(o).filter((p) => p.startsWith('constraint.')).map((p) => propLabelFor(o, p))).size).toBe(3);
 	});
 });

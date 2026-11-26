@@ -242,6 +242,9 @@ h.run(async () => {
 	await page.evaluate(() => { const s = window.__tp.test.v1; s.safeStorage.setItem('show:allow:panel', 'always'); });
 	await resetShow();
 	await call('show', { action: 'reveal', path: 't2.txt' });
+	// the assistant chat (opened at the start) can cover the Explorer: the person's own right-click needs the card
+	await page.evaluate(() => window.__tp.test.v1.chatHidden.set('hidden'));
+	await page.waitForTimeout(300);
 	const card = page.locator('#explorer-list .explorer-card', { hasText: 't2.txt' }).first();
 	await card.click({ button: 'right' });
 	await page.waitForTimeout(300);

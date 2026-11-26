@@ -6,6 +6,33 @@
      rendering, so maintainer notes stay out of the user-facing window. No emoji from
      1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
 
+## 1.82.0 — Curves, sound and many objects
+
+### Animation
+- **Property tracks open as curves on the Timeline**: drag keys and handles, type exact values, copy and paste keys, pick a key mode or an ease preset (overshoot, anticipate, bounce and more). **Add track** gains **Animate a property** for the selected object. Imported cubic animation clips keep their curves in .tpanim. <!-- 102-curves #599 -->
+
+### Sound
+- **Videos and moments carry the scene's own sound**: music, sound effects and instrument sounds, never voices or a microphone ("Scene sound", on by default). A GIF has no sound. <!-- 102b-sound #610 -->
+- **Trim, fade and normalise a sound** in its player window (E, or the scissors button) without changing the file: the setting belongs to the sound in this scene, is shared with the room, saved with the scene and used by sound nodes, timeline clips, the scene music and exports. <!-- 102b-sound #610 -->
+
+### One flow, many objects
+- **Tag objects** in the Inspector, and point one **Object Selector** at every object with a tag, in a group or matching a name (`Star*`). A new **Fired Object** node says which one was clicked or touched. **Give this flow to the selection**, and **update all the copies** from any one of them. <!-- 102b-flows #593 -->
+
+### Look
+- **Water in the Cinematic view**: water surfaces and tank bodies draw with the editor view's look (waves, refraction, depth colour, foam, caustics, reflections), and under the surface the view shows the water's fog, tint and caustics. "Water" no longer appears under "Not shown". In water-heavy scenes the Cinematic view may step its quality down on integrated GPUs. Fluid tanks still draw as their stand-in. <!-- 100-cover-water #642 -->
+- **Contact shadows, this device**: the Preview menu has a new Look group with a Contact shadows switch (Auto / On / Off) and what it costs here. On is for computers: on a phone or a headset On is disabled and says why. When frames run late, contact shadows are the first thing the automatic quality turns off. <!-- 106-contact-switch #660; Quest On stays disabled until a Quest row is measured -->
+
+### Faster start
+- **The editor and the play page load less before they start** (about 265 KB less for the editor and 140 KB less for play, compressed): the face editor, ambient occlusion, What's new, the file preview, and the KTX2 and FBX readers now load the first time you use them. <!-- 102-boot-diet-2 #654: play 1851.4 -> 1709.6 KB, editor 2993.9 -> 2726.9 KB gz on v1.81.0 -->
+
+### For AI agents and developers
+- Agent tools: `update_objects` takes `tags`; `place_sound` and `set_music` take `trim` {start, end, fadeIn, fadeOut, normalize}. Additive: nothing renamed or removed. <!-- 102b-flows, 102b-sound -->
+- Agent eval: load-proof waits, 8 new multiplayer and game tasks, new baseline 18.65 / 23 (v1.72.0, 10 runs). <!-- 2.0-eval2 #601 -->
+- Dependencies: SvelteKit 3.4, @lucide/svelte 1.63. <!-- deps-2026-11 19de5dba -->
+
+### Compatibility
+- **Scene files**: no format change. **Everyone in a session should be on 1.82.0**: an older version ignores tags, so an Object Selector by tag finds nothing on its screen, and it reads curve keys without their handles.
+
 ## 1.81.0 — AI apps in your scene, and your room in VR
 
 ### Use theprototype from ChatGPT and other AI apps

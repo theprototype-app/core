@@ -24,9 +24,15 @@ const FILES_DESCRIPTION =
 	'Not for scenes (scene opens them) or for the scene\'s objects (list_scene).';
 
 const SHOW_DESCRIPTION =
-	"Show the person something on THEIR OWN screen (never anyone else's): panel = open, close or bring forward one of their panels " +
-	'(Explorer, Objects, Inspector, Flow editor, Code, Timeline, Assets, Preview, Chat, Assistant); camera = move their editor view to frame objects ' +
-	'(frame: [uuids], select: true also selects them), to a position + target, or let them look through a scene camera (through: uuid); ' +
+	"Show the person something on THEIR OWN screen (never anyone else's). " +
+	'panels = the list of every real panel (id, title, what it contains, read-only or not) with its state now: open, where (dock, left, right, floating, window), visible and front; ' +
+	'also the dock and the two sidebars, focus mode, the saved layouts, and the refused surfaces by reason. It only reads and never asks. ' +
+	'panel = open, close, focus (bring to the front where it is), toggle, move (to: dock, left, right, floating), maximize / restore (a docked panel fills the window), ' +
+	'collapse / expand one of its own sidebars (pane) for one panel by its name: Explorer, Objects, Inspector, Configure Scene, Flow editor, Animation, Timeline, UV editor, Shader editor, HUD editor, Code, ' +
+	'Profiler and Statistics (read-only views), Free assets, Preview (the selected Explorer file), Debugger, Chat, Assistant; or name "Dock", "Left sidebar", "Right sidebar" to open, close or toggle them (close hides, tabs stay open). ' +
+	'An unknown name opens nothing and the error lists the valid names: never guess another panel. The answer says visible and front truthfully. ' +
+	'layout = apply a saved layout by name, or save the current one under a new name. ' +
+	'camera = move their editor view to frame objects (frame: [uuids], select: true also selects them), to a position + target, or let them look through a scene camera (through: uuid); ' +
 	'code = open a file or a Script / Behaviour node\'s code in their Code tab at a line, selecting lines [line, to], a range, or the first match of find; ' +
 	'back = undo what the last show changed. The first time for each of panel / camera / code the person is asked on their screen (Always / This time / No): ' +
 	'call again with the confirmId; after No, do not ask again, tell them where to look instead. ' +
@@ -81,9 +87,18 @@ export const PERSON_AI_TOOLS = [
 			parameters: {
 				type: 'object',
 				properties: {
-					action: { type: 'string', enum: ['panel', 'camera', 'code', 'back'], description: 'what to show' },
-					name: { type: 'string', description: 'panel: Explorer, Objects, Inspector, Flow editor, Code, Timeline, Assets, Preview, Chat or Assistant' },
-					state: { type: 'string', enum: ['open', 'close', 'focus'], description: 'panel: default open (focus brings an open one forward)' },
+					action: { type: 'string', enum: ['panels', 'panel', 'layout', 'camera', 'code', 'back'], description: 'what to show (panels = the list, reads only)' },
+					name: { type: 'string', description: 'panel: a panel title from panels (Animation, UV editor, Profiler, ...) or Dock / Left sidebar / Right sidebar; layout: the layout name' },
+					state: {
+						type: 'string',
+						enum: ['open', 'close', 'focus', 'toggle', 'move', 'maximize', 'restore', 'collapse', 'expand', 'apply', 'save'],
+						description: 'panel: default open (focus brings an open one to the front; move needs to; collapse / expand need pane); layout: apply (default) or save'
+					},
+					to: {
+						description: 'panel: where to move it — dock, left, right or floating. code: with line, the last line to select',
+						anyOf: [{ type: 'string', enum: ['dock', 'left', 'right', 'floating'] }, { type: 'number' }]
+					},
+					pane: { type: 'string', description: 'panel collapse / expand: one of the panel\'s own sidebars (panels lists paneNames: tree, files, tools, ...)' },
 					frame: { type: 'array', items: { type: 'string' }, description: 'camera: object uuids to frame together' },
 					select: {
 						description: 'camera: true = also select the framed objects. code: a range to select, {from: [line, col], to: [line, col]} (lines from 1, columns from 0)',
@@ -100,7 +115,6 @@ export const PERSON_AI_TOOLS = [
 					node: { type: 'string', description: 'code: a Script or Behaviour node id' },
 					object: { type: 'string', description: 'code: an object uuid: its first Script or Behaviour node' },
 					line: { type: 'number', description: 'code: the line to go to (from 1)' },
-					to: { type: 'number', description: 'code: with line, select lines line..to' },
 					find: { type: 'string', description: 'code: select the first match of this text (from line, when given)' },
 					confirmId: { type: 'string', description: 'the answer to the first-use question (from a needsConfirm answer)' },
 					wait: { type: 'number', description: 'with confirmId: seconds to wait for the person\'s answer (at most 60)' }

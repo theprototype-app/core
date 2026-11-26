@@ -1,9 +1,12 @@
 // Roadmap 104 C2 — `show`: the assistant drives the person's OWN interface, in their own tab. A lazy
 // chunk (personTools.js loads it on the first call). The rules are listed in showCore.js.
 //
-//   panel   {name, state: open | close | focus}   the allow-list in showCore.SHOW_PANELS, through the app's
-//           own toggles (panelToggles / dockHost / showSidebar / openChatTab), so a panel opens where
-//           the person keeps it (dock, sidebar, floating)
+//   panel   {name, state: open | close | focus | toggle | move (to) | maximize | restore | collapse | expand (pane)}
+//           107-panels: the registry in panelsCore.js (every real panel, the dock and the two sidebars as named
+//           targets), through the app's own seams (panels.js), so a panel opens where the person keeps it. An
+//           unknown name never substitutes: it errors with the valid names and the refused surfaces by reason.
+//   panels  the whole registry with each panel's state (open / where / visible / front): reads, never asks
+//   layout  {name, state: apply | save} the Windows ▸ Layouts named layouts
 //   camera  {frame: [uuids]} | {position, target} | {through: cameraUuid}, select: true selects what was
 //           framed. objectActions.flyTo (0.6 s, an instant cut under reduced motion) / startCameraPreview
 //   code    {path | id | node | object, line, to, select: {from, to}, find}: codeWorkspace.openCode, then
@@ -17,21 +20,11 @@
 
 import { get } from 'svelte/store';
 import { safeStorage } from '../safeStorage';
-import { showToastById, inspectorClose, inspectorKind, chatHidden, chatTab, showSidebar, closeSelectionInspector, specatorMode } from '../../stores/appStore';
+import { showToastById, specatorMode } from '../../stores/appStore';
 import { globalCamera, orbitControls, globalRenderer, objectsGroup, TControls, isLocked, selectedObjects, marqueeRect, isVRMode } from '../../stores/sceneStore';
 import { askPerson } from './personAsk.js';
-import {
-	SHOW_PANELS,
-	SHOW_PER_MINUTE,
-	CAMERA_GAP_MS,
-	FLY_MS,
-	KIND_WORDS,
-	panelOf,
-	deniedPanel,
-	frameBox,
-	isVec3,
-	findRange
-} from './showCore.js';
+import { SHOW_PANELS, SHOW_PER_MINUTE, CAMERA_GAP_MS, FLY_MS, KIND_WORDS, panelOf, deniedPanel, frameBox, isVec3, findRange } from './showCore.js';
+import { targetOf } from './panelsCore.js';
 import { createRateLimit, resolveRef, isTextName, extOf } from './filesCore.js';
 import { isDirty } from '../codeTabs';
 
@@ -141,81 +134,223 @@ const waitFrames = (frames) =>
 	});
 
 // ---------------------------------------------------------------- panel
+// 107-panels: the registry (panelsCore.js) says WHICH panels exist and what each is called; panels.js says where
+// each one is and works the app's own seams. This section is the show rules around them: an unknown name never
+// substitutes, the answer reports visible + front truthfully, and every change has a Back.
 
-/** @param {string} key */
-async function panelOpenNow(key) {
-	const { windowWhere } = await import('../dockMenu');
-	return windowWhere(key) !== null;
+/** the snapshot of what bringing something forward can change, so Back puts it back @returns {Promise<any>} */
+async function chromeSnapshot() {
+	const [b, sb, fm] = await Promise.all([import('../bottomDock'), import('../sidebars'), import('../focusMode')]);
+	return { active: get(b.bottomDockActive), min: get(b.dockMinimized), vis: { ...get(sb.sidebarVisible) }, shown: { ...get(sb.sidebarShown) }, focus: get(fm.focusMode) };
 }
 
-/** @param {string} id the SHOW_PANELS id */
-async function isOpen(id) {
-	const p = SHOW_PANELS[id];
-	if (p.via === 'inspector') return !get(inspectorClose) && get(inspectorKind) === 'selection';
-	if (p.via === 'chat') return get(chatHidden) === '' && get(chatTab) === (id === 'assistant' ? 'assistant' : 'session');
-	return panelOpenNow(p.key);
+/** @param {any} snap */
+async function restoreChrome(snap) {
+	const [b, sb, fm] = await Promise.all([import('../bottomDock'), import('../sidebars'), import('../focusMode')]);
+	b.bottomDockActive.set(snap.active);
+	b.dockMinimized.set(snap.min);
+	for (const side of /** @type {const} */ (['left', 'right'])) {
+		if (snap.shown[side] && get(sb.sidebarShown)[side] !== snap.shown[side]) sb.activateSidebarTab(snap.shown[side]);
+		if (!snap.vis[side] && get(sb.sidebarVisible)[side]) sb.toggleSidebar(side, false);
+	}
+	if (snap.focus && !get(fm.focusMode)) fm.enterFocus(snap.focus);
+}
+
+/** the answer's state fields @param {string} id @returns {Promise<{where?: string | null, visible?: boolean, front?: boolean, panes?: any}>} */
+async function panelState(id) {
+	const P = await import('./panels.js');
+	await P.waitFrames(2);
+	const r = await P.readPanel(id);
+	return r ? { where: r.where, visible: r.visible, front: r.front, ...(r.panes ? { panes: r.panes } : {}) } : {};
+}
+
+/** why a panel that is open is still not visible, for the note @param {any} st */
+function hiddenWhy(st) {
+	if (get(isLocked) === true) return 'The person is playing (Play mode hides the editor): it shows when they press Esc.';
+	if (st.where && !st.visible) return 'It is open but not showing on this screen (a narrow screen or a phone can fold it away).';
+	return '';
 }
 
 /** @param {string} id */
-async function openPanel(id) {
-	const p = SHOW_PANELS[id];
-	if (p.via === 'inspector') return showSidebar('properties', { focus: true });
-	if (p.via === 'chat') {
-		const { openChatTab } = await import('../chat/chatWindow.js');
-		return openChatTab(id === 'assistant' ? 'assistant' : 'session');
-	}
-	const { focusWindow } = await import('../dockMenu');
-	if (focusWindow(p.key)) return;
-	if (p.via === 'toggle') {
-		const { togglePanel } = await import('../panelToggles');
-		return togglePanel(p.key);
-	}
-	const { HOSTED } = await import('../dockHost');
-	HOSTED[p.key]?.open();
-}
+const readOnlyNote = (id) => (SHOW_PANELS[id]?.readOnly ? { readOnly: true, note: 'A read-only panel: it shows figures; it changes nothing in the scene.' } : {});
 
-/** @param {string} id */
-async function closePanel(id) {
-	const p = SHOW_PANELS[id];
-	if (p.via === 'inspector') return closeSelectionInspector();
-	if (p.via === 'chat') return chatHidden.set('hidden');
-	if (p.via === 'hosted') {
-		const { HOSTED } = await import('../dockHost');
-		return HOSTED[p.key]?.close();
+/** the dock / a sidebar as a target @param {'dock'|'left'|'right'} tid @param {string} state @param {string} by */
+async function targetAction(tid, state, by) {
+	const T = (await import('./panelsCore.js')).TARGETS[tid];
+	const want = state === 'focus' ? 'open' : state;
+	if (!['open', 'close', 'toggle'].includes(want)) return fail(T.title + ': state open, close or toggle');
+	const P = await import('./panels.js');
+	const r = await P.setTarget(tid, /** @type {any} */ (want));
+	if ('error' in r) return fail(r.error);
+	const all = await P.readPanels();
+	const now = /** @type {any} */ (all)[tid];
+	if (r.changed) {
+		push((r.open ? 'opened ' : 'closed ') + T.title, () => {
+			r.undo();
+			return (r.open ? 'closed ' : 'reopened ') + T.title;
+		});
+		line(by + (r.open ? ' opened ' : ' closed ') + 'the ' + T.title.toLowerCase());
 	}
-	const { closeDockView } = await import('../dockMenu');
-	closeDockView(p.key);
+	return { target: T.title, ...now, state: now.open ? 'open' : 'closed', changed: r.changed, ...(r.changed && !r.open ? { note: 'Hidden, not closed: every tab in it stays open.' } : {}) };
 }
 
 /** @param {any} args @param {string} by */
 async function panelAction(args, by) {
+	const core = await import('./panelsCore.js');
 	const asked = String(args.name ?? args.panel ?? '');
-	if (!asked) return fail('name: the panel to show — ' + Object.values(SHOW_PANELS).map((p) => p.label).join(', '));
-	if (deniedPanel(asked)) return fail('"' + asked + '" is not something show opens: sign-in, account, consent, publishing, connected apps, payment and settings stay the person\'s own to open', { refused: true });
-	const id = panelOf(asked);
-	if (!id) return fail('no panel "' + asked + '": show opens ' + Object.values(SHOW_PANELS).map((p) => p.label).join(', '));
-	const state = String(args.state ?? 'open');
-	if (!['open', 'close', 'focus'].includes(state)) return fail('state: open, close or focus');
-	const label = SHOW_PANELS[id].label;
-	const was = await isOpen(id);
+	if (!asked) return fail('name: the panel to show. ' + core.unknownPanelError('').error.replace(/^no panel "": nothing was opened\. /, ''), { valid: core.validNames(), blocked: core.blockedList() });
+	const reason = core.blockedReason(asked);
+	if (reason) return fail('"' + asked + '" is not something show opens (' + reason + '): sign-in, account, consent, publishing, connected apps, payment and settings stay the person\'s own to open. Read-only views (Profiler, Statistics) do open.', { refused: true, reason, blocked: core.blockedList() });
+	const state = String(args.state ?? (args.to ? 'move' : 'open'));
+	const tid = core.targetOf(asked);
+	if (tid) return targetAction(/** @type {any} */ (tid), state, by);
+	const id = core.panelOf(asked);
+	if (!id) {
+		const e = core.unknownPanelError(asked);
+		return fail(e.error, { valid: e.valid, blocked: e.blocked });
+	}
+	const p = core.PANEL_BY_ID[id];
+	const label = p.title;
+	const P = await import('./panels.js');
+	const STATES = ['open', 'close', 'focus', 'toggle', 'move', 'maximize', 'restore', 'collapse', 'expand'];
+	if (!STATES.includes(state)) return fail('state: ' + STATES.join(', '));
+	const before = await P.readPanel(id);
+	const was = !!before?.open;
+	const sameAs = { id, ...(asked.trim().toLowerCase() !== label.toLowerCase() ? { asked } : {}) };
+
+	if (state === 'toggle') return panelAction({ ...args, state: was && before?.front ? 'close' : 'open' }, by);
+
 	if (state === 'close') {
-		if (!was) return { panel: label, state: 'closed', changed: false };
-		await closePanel(id);
+		if (!was) return { panel: label, ...sameAs, state: 'closed', changed: false };
+		const snap = await chromeSnapshot();
+		await P.closePanel(p);
 		push('closed ' + label, async () => {
-			await openPanel(id);
+			await P.openPanel(p);
+			await restoreChrome(snap);
 			return 'reopened ' + label;
 		});
 		line(by + ' closed ' + label);
-		return { panel: label, state: 'closed', changed: true };
+		return { panel: label, ...sameAs, state: 'closed', changed: true };
 	}
-	await openPanel(id);
-	if (!was)
-		push('opened ' + label, async () => {
-			await closePanel(id);
-			return 'closed ' + label;
+
+	if (state === 'collapse' || state === 'expand') {
+		if (!args.pane) return fail('pane: which of ' + label + '\'s own sidebars — ' + (p.panes ? Object.keys(p.panes).join(', ') : 'it has none'));
+		if (!was) return fail(label + ' is not open: open it first');
+		const r = await P.setPane(p, String(args.pane), state === 'expand');
+		if ('error' in r) return fail(r.error);
+		const changed = r.was !== (state === 'expand');
+		if (changed) {
+			push((state === 'expand' ? 'opened ' : 'closed ') + label + '\'s ' + r.pane, async () => {
+				await P.setPane(p, r.pane, r.was);
+				return 'put ' + label + '\'s ' + r.pane + ' back';
+			});
+			line(by + (state === 'expand' ? ' opened ' : ' closed ') + label + '\'s ' + r.pane + ' sidebar');
+		}
+		return { panel: label, ...sameAs, pane: r.pane, paneState: state === 'expand' ? 'open' : 'closed', changed, ...(await panelState(id)) };
+	}
+
+	if (state === 'maximize' || state === 'restore') {
+		const r = await P.maximizePanel(p, state === 'maximize');
+		if ('error' in r) return fail(r.error);
+		const fm = await import('../focusMode');
+		const now = get(fm.focusMode);
+		const changed = now !== r.was;
+		if (changed) {
+			push(state === 'maximize' ? 'maximized ' + label : 'restored the layout', async () => {
+				if (r.was) fm.enterFocus(/** @type {any} */ (r.was));
+				else fm.exitFocus();
+				return state === 'maximize' ? 'restored the layout' : 'maximized it again';
+			});
+			line(by + (state === 'maximize' ? ' maximized ' + label + ' (Esc restores)' : ' restored your layout'));
+		}
+		return { panel: label, ...sameAs, maximized: now === 'dock', changed, ...(await panelState(id)) };
+	}
+
+	if (state === 'move') {
+		const to = String(args.to ?? '');
+		if (!['dock', 'left', 'right', 'floating'].includes(to)) return fail('to: dock, left, right or floating');
+		const r = await P.movePanel(p, /** @type {any} */ (to));
+		if ('error' in r) return fail(r.error);
+		const st = await panelState(id);
+		const changed = r.from !== st.where;
+		if (changed && r.from) {
+			const from = r.from;
+			push('moved ' + label, async () => {
+				await P.movePanel(p, /** @type {any} */ (from));
+				return 'moved ' + label + ' back';
+			});
+			line(by + ' moved ' + label + ' to the ' + (to === 'dock' ? 'dock' : to === 'floating' ? 'a floating window' : to + ' sidebar'));
+		}
+		return { panel: label, ...sameAs, state: 'open', changed, ...st };
+	}
+
+	// open / focus: open it where it lives, or bring it to the front where it is
+	const snap = await chromeSnapshot();
+	const { exitedFocus } = was ? await P.bringForward(p) : (await P.openPanel(p), { exitedFocus: null });
+	let st = await panelState(id);
+	// a move asked together with the open
+	if (args.to && ['dock', 'left', 'right', 'floating'].includes(String(args.to)) && st.where !== args.to) {
+		const r = await P.movePanel(p, /** @type {any} */ (String(args.to)));
+		if ('error' in r) return fail(r.error, { opened: !was, panel: label });
+		st = await panelState(id);
+	}
+	const changed = !was || !before?.front || before?.where !== st.where || !!exitedFocus;
+	if (changed)
+		push((was ? 'brought ' + label + ' forward' : 'opened ' + label), async () => {
+			if (!was) await P.closePanel(p);
+			await restoreChrome(snap);
+			return was ? 'put the panels back as they were' : 'closed ' + label;
 		});
-	line(by + (was ? ' brought ' + label + ' forward' : ' opened ' + label));
-	return { panel: label, state: 'open', changed: !was, ...(inVR() ? { note: 'The person is in a headset: panels show when they take it off.' } : {}) };
+	if (changed) line(by + (was ? ' brought ' + label + ' forward' : ' opened ' + label));
+	const why = st.visible ? '' : hiddenWhy(st);
+	const ro = readOnlyNote(id);
+	const notes = [ro.note, why, exitedFocus ? 'Focus mode was hiding it: the person\'s layout is back (back re-enters focus mode).' : '', inVR() ? 'The person is in a headset: panels show when they take it off.' : ''].filter(Boolean);
+	return {
+		panel: label,
+		...sameAs,
+		state: 'open',
+		changed,
+		...st,
+		...(ro.readOnly ? { readOnly: true } : {}),
+		...(notes.length ? { note: notes.join(' ') } : {})
+	};
+}
+
+// ---------------------------------------------------------------- layout (the Layouts menu's named layouts)
+
+/** @param {any} args @param {string} by */
+async function layoutAction(args, by) {
+	const L = await import('../uiLayouts');
+	const list = /** @type {any[]} */ (get(L.uiLayouts));
+	const state = String(args.state ?? 'apply');
+	const name = String(args.name ?? '').trim();
+	if (!name) return fail('name: the layout\'s name. Saved layouts: ' + (list.map((l) => l.name).join(', ') || 'none yet'), { layouts: list.map((l) => l.name) });
+	const hit = list.find((l) => String(l.name).toLowerCase() === name.toLowerCase());
+	if (state === 'save') {
+		if (hit) return fail('a layout named "' + hit.name + '" exists: show never overwrites one (the person replaces it in Windows ▸ Layouts), pick a new name', { layouts: list.map((l) => l.name) });
+		const r = L.saveLayout(name);
+		if (!r.ok) return fail(r.reason);
+		const id = r.layout.id;
+		push('saved the layout "' + r.layout.name + '"', () => {
+			L.deleteLayout(id);
+			return 'removed the layout "' + r.layout.name + '"';
+		});
+		line(by + ' saved your layout as "' + r.layout.name + '"');
+		return { layout: r.layout.name, saved: true, layouts: get(L.uiLayouts).map((/** @type {any} */ l) => l.name) };
+	}
+	if (state !== 'apply') return fail('layout state: apply (default) or save');
+	if (!hit) return fail('no layout "' + name + '": nothing changed. Saved layouts: ' + (list.map((l) => l.name).join(', ') || 'none yet'), { layouts: list.map((l) => l.name) });
+	const beforeRec = L.captureLayout('before');
+	const beforeActive = get(L.activeLayoutId);
+	const ok = await L.applyLayout(hit.id);
+	if (!ok) return fail('the layout could not be applied right now (another one is applying): try again in a moment');
+	push('applied the layout "' + hit.name + '"', async () => {
+		await L.applyLayoutRecord(beforeRec);
+		L.activeLayoutId.set(beforeActive);
+		return 'put the layout from before back';
+	});
+	line(by + ' applied your layout "' + hit.name + '"');
+	return { layout: hit.name, applied: true };
 }
 
 // ---------------------------------------------------------------- camera
@@ -410,20 +545,26 @@ async function codeAction(args, by) {
  */
 export async function showTool(args, ctx = {}) {
 	const a = args && typeof args === 'object' ? args : {};
-	const action = String(a.action ?? '');
+	const raw = String(a.action ?? '');
 	const by = String(ctx.by || 'The assistant');
-	if (action === 'back') {
+	if (raw === 'back') {
 		if (!stack.length) return { back: false, note: 'nothing to put back: show has not changed anything yet (or it was all put back)' };
 		const said = await back();
 		return { back: true, did: said, left: stack.length };
 	}
-	if (!['panel', 'camera', 'code'].includes(action)) return fail('action: panel, camera, code or back');
-	// rule 2 first: a denied or unknown panel is refused without asking and without spending the minute's calls
-	if (action === 'panel') {
-		const asked = String(a.name ?? a.panel ?? '');
-		if (asked && deniedPanel(asked)) return panelAction(a, by);
-		if (asked && !panelOf(asked)) return panelAction(a, by);
+	// 107-panels: the panel list only reads — no question, no pacing
+	if (raw === 'panels') {
+		const { readPanels } = await import('./panels.js');
+		return readPanels();
 	}
+	if (!['panel', 'camera', 'code', 'layout'].includes(raw)) return fail('action: panel, panels, layout, camera, code or back');
+	// rule 2 first: a denied or unknown panel is refused without asking and without spending the minute's calls
+	if (raw === 'panel') {
+		const asked = String(a.name ?? a.panel ?? '');
+		if (!asked || deniedPanel(asked) || (!panelOf(asked) && !targetOf(asked))) return panelAction(a, by);
+	}
+	// 107-panels: a layout asks as a panel change (the same first-use kind: "open and close your panels")
+	const action = raw === 'layout' ? 'panel' : raw;
 	const busy = busyReason();
 	if (busy) return fail(busy + ': show waits until they stop (try again in a moment)', { busy: true, retryAfter: 3 });
 	// the camera's own pacing first (it is synchronous): the checks below await
@@ -440,7 +581,8 @@ export async function showTool(args, ctx = {}) {
 	const run = async () => {
 		calls.note();
 		debug.done++;
-		debug.last = { action, at: Date.now() };
+		debug.last = { action: raw, at: Date.now() };
+		if (raw === 'layout') return layoutAction(a, by);
 		if (action === 'panel') return panelAction(a, by);
 		if (action === 'camera') return cameraAction(a, by);
 		return codeAction(a, by);

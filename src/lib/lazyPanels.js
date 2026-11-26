@@ -43,8 +43,10 @@ export function loadPanel(key) {
 	if (!p) {
 		const load = LOADERS[key];
 		if (!load) return Promise.reject(new Error('no lazy panel ' + key));
+		mark(key, 'start'); // the first-open timing, readable by the dock-on-demand suite and a profiler
 		p = load().then(
 			(m) => {
+				mark(key, 'loaded');
 				pending.delete(key);
 				lazyPanels.update((s) => ({ ...s, [key]: m.default }));
 				return m.default;
@@ -58,6 +60,15 @@ export function loadPanel(key) {
 		pending.set(key, p);
 	}
 	return p;
+}
+
+/** @param {string} key @param {string} what */
+export function mark(key, what) {
+	try {
+		performance.mark('lazy-panel:' + key + ':' + what);
+	} catch {
+		/* no performance API */
+	}
 }
 
 /** test pages: every body, before the debug hook publishes @returns {Promise<void>} */

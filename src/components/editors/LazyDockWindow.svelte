@@ -7,7 +7,7 @@
 	// or open, exactly as the static import kept it.
 	import { onDestroy } from 'svelte';
 	import { SvelteFlowProvider } from '@xyflow/svelte';
-	import { lazyPanels, loadPanel } from '$lib/lazyPanels';
+	import { lazyPanels, loadPanel, mark } from '$lib/lazyPanels';
 	import { storedPanelLayout } from '$lib/uiLayoutsCore';
 	import { safeStorage } from '$lib/safeStorage';
 	import {
@@ -53,6 +53,15 @@
 	});
 	const placeholder = $derived(!Body && !closed);
 	const dockVisible = $derived(($dockShownKeys as string[]).includes(key));
+
+	// the first-open timing: the body is in the DOM (an effect runs after the mount)
+	let markedMount = false;
+	$effect(() => {
+		if (Body && !markedMount) {
+			markedMount = true;
+			mark(key, 'mounted');
+		}
+	});
 
 	// a docked placeholder IS the dock's occupant until the body takes over (the body reports the same key)
 	$effect(() => {

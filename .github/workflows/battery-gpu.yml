@@ -1,0 +1,143 @@
+# pc-ci-runner — THE E2E BATTERY ON THE SELF-HOSTED GPU RUNNER (a throwaway WSL2 distro per job, one job at a time).
+# scripts/ci/wsl-runner/ builds that machine; this file only runs a suite list or a shard on it.
+#
+# WHO MAY RUN HERE. core is public, and a self-hosted runner must never run code from a fork. Four layers:
+#   1. the job `if:` below — same repository, and the actor AND the triggering actor are in the repository variable
+#      GPU_RUNNER_ACTORS (a JSON list; unset = nobody, so the job is skipped and never queued for the runner)
+#   2. the repository requires approval for every outside contributor's workflow run
+#   3. the dispatcher mints a just-in-time runner only while EVERY queued job carrying the label passes the same rules
+#   4. the runner's own job-started hook (in the image, outside anything a run can edit) refuses the job before its
+#      first step unless repository, event, actor, triggering actor and this workflow FILE all match its allow list —
+#      the layer that still holds if a pull request rewrites layer 1
+# Triggers: workflow_dispatch (once this file is on the default branch) and a LABEL on a pull request from a branch of
+# this repository — `gpu-smoke` runs SMOKE_SUITES below, `gpu-battery` the required set. Only people with triage
+# rights can label, and layers 1 and 4 still check who did. Never pull_request_target. No secrets, no environments,
+# contents: read.
+name: battery-gpu
+
+on:
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      suites:
+        description: comma-separated suite names (empty = the shard below of the set)
+        type: string
+        default: ''
+      set:
+        description: required | optional | all (used when suites is empty)
+        type: string
+        default: required
+      shard:
+        type: number
+        default: 1
+      of:
+        type: number
+        default: 1
+      gpu:
+        description: all = every launch draws on the GPU (the PC queue's default) | asked = only suites that ask for it
+        type: string
+        default: all
+      deadline:
+        description: minutes after which the run starts no new suite (0 = none)
+        type: number
+        default: 0
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gpu-wsl
+  cancel-in-progress: false
+
+jobs:
+  battery:
+    name: gpu ${{ github.event_name == 'pull_request' && github.event.label.name || (inputs.suites != '' && 'suites' || format('{0} {1}/{2}', inputs.set, inputs.shard, inputs.of)) }}
+    if: >-
+      github.repository == 'theprototype-app/core' &&
+      (github.event_name == 'workflow_dispatch' ||
+        (github.event.pull_request.head.repo.full_name == github.repository &&
+          (github.event.label.name == 'gpu-smoke' || github.event.label.name == 'gpu-battery'))) &&
+      contains(fromJSON(vars.GPU_RUNNER_ACTORS || '[]'), github.actor) &&
+      contains(fromJSON(vars.GPU_RUNNER_ACTORS || '[]'), github.triggering_actor)
+    runs-on: [self-hosted, linux, x64, gpu-wsl]
+    timeout-minutes: 120
+    env:
+      E2E_NO_PERF_OFFER: '1'
+      MODE: quick
+      PW_WSL_GPU: '1'
+      PW_GPU_ALL: ${{ (github.event_name == 'pull_request' || inputs.gpu == 'all') && '1' || '' }}
+      # a short cross-section (UI, two peers, flow, physics viz, mesh tools, LOD) for the gpu-smoke label
+      SMOKE_SUITES: theme-tokens,ui-kit,net-mesh,flow-typed-sockets,context-menu-v2,collider-viz,mesh-sculpt,lod,uv-editor,peers-popover
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: core
+          persist-credentials: false
+      - name: sibling refs
+        id: refs
+        run: echo "refs=$(jq -c .refs core/tests/e2e/battery.json)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ fromJSON(steps.refs.outputs.refs).scenes.repo }}
+          ref: ${{ fromJSON(steps.refs.outputs.refs).scenes.ref }}
+          path: scenes
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ fromJSON(steps.refs.outputs.refs).modules.repo }}
+          ref: ${{ fromJSON(steps.refs.outputs.refs).modules.ref }}
+          path: modules
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ fromJSON(steps.refs.outputs.refs).packs.repo }}
+          ref: ${{ fromJSON(steps.refs.outputs.refs).packs.ref }}
+          path: packs
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: core/.nvmrc
+      - name: install
+        run: |
+          (cd core && npm ci --no-audit --no-fund && npm run certs)
+          (cd modules && npm ci --no-audit --no-fund && node scripts/pack.cjs --all --force)
+          # the image carries the browsers of one Playwright version; a newer lockfile fetches its own (no OS step:
+          # the job has no root, and the libraries rarely change between minors)
+          want=$(node -p "require('./core/node_modules/playwright/package.json').version")
+          if [ ! -d "$PLAYWRIGHT_BROWSERS_PATH" ] || ! ls "$PLAYWRIGHT_BROWSERS_PATH" | grep -q "^chromium-$(node -p "require('./core/node_modules/playwright-core/browsers.json').browsers.find(b => b.name === 'chromium').revision")\$"; then
+            echo "image browsers are not Playwright $want's: fetching them"
+            export PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/ms-playwright"; echo "PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_BROWSERS_PATH" >> "$GITHUB_ENV"
+            (cd core && npx playwright install chromium)
+          fi
+      - name: battery
+        working-directory: core
+        env:
+          LABEL: ${{ github.event.label.name }}
+          SUITES: ${{ inputs.suites }}
+          SET: ${{ inputs.set || 'required' }}
+          SHARD: ${{ inputs.shard || 1 }}
+          OF: ${{ inputs.of || 1 }}
+          DEADLINE: ${{ inputs.deadline || 0 }}
+        run: |
+          W=$GITHUB_WORKSPACE; S=$W/scenes; G=$S/games
+          export SCENES_DIR=$S SCENES_REPO=$S SHELL_SCENES_DIR=$G GAMES_DIR=$G FBW_SCENES=$S/examples
+          export MODULES_REPO=$W/modules MODULES_DIR=$W/modules PACKS_DIR=$W/packs
+          for g in dungeon-realms:DUNGEON_REALMS escape-room:ESCAPE football:FOOTBALL jam-room:JAM_ROOM marble-maze:MARBLE \
+                   mini-golf:MINIGOLF sky-run:SKY_RUN stars-room:STARS_ROOM target-toss:TARGET_TOSS towers:TOWERS \
+                   untangle:UNTANGLE waves:WAVES race:RACE; do export "${g#*:}_TPSCENE=$G/${g%%:*}/scene.tpscene"; done
+          export JELLY_TPSCENE=$S/examples/jelly-room/scene.tpscene TANK_TPSCENE=$S/examples/fluid-tank-toy/scene.tpscene \
+                 POOL_TPSCENE=$S/examples/pool-party/scene.tpscene
+          export NODE_OPTIONS="--require $PWD/scripts/ci/wsl-runner/pw-wsl-gpu.cjs ${NODE_OPTIONS:-}"
+          [ "$LABEL" = gpu-smoke ] && SUITES=$SMOKE_SUITES
+          args=(--set "$SET" --shard "$SHARD" --of "$OF")
+          [ -n "$SUITES" ] && args=(--only "$SUITES")
+          [ "$DEADLINE" != 0 ] && args+=(--deadline "$DEADLINE")
+          node scripts/ci/battery.cjs run "${args[@]}" --serve --port 5173 --out "$W/battery-out"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: battery-gpu-${{ github.run_id }}
+          path: battery-out
+          retention-days: 14
+          if-no-files-found: ignore

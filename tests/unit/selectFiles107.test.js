@@ -26,7 +26,7 @@ describe('107 usersOfFile', () => {
 	it('the name matches case-insensitively; no hash = name rules only; nothing given = nobody', () => {
 		expect(usersOfFile({ name: 'BOOM.OGG' }, nodes).byName.map((r) => r.node)).toEqual(['n1', 'n2']);
 		expect(usersOfFile({ hash: '', name: '' }, nodes)).toEqual({ byHash: [], byName: [] });
-		expect(usersOfFile({ hash: H, name: 'x.png' }, null)).toEqual({ byHash: [], byName: [] });
+		expect(usersOfFile({ hash: H, name: 'x.png' }, /** @type {any} */ (null))).toEqual({ byHash: [], byName: [] });
 	});
 });
 

@@ -18,6 +18,7 @@
 	import ExportSettingsSection from './ExportSettingsSection.svelte';
 	import GallerySubmitPanel from './GallerySubmitPanel.svelte';
 	import LicenceWarnings from './LicenceWarnings.svelte';
+	import PublishCheck from './PublishCheck.svelte';
 
 	const TABS = [
 		{ id: 'publish', label: 'Publish' },
@@ -60,6 +61,8 @@
 				<!-- 57 M7: what the scene's licences ask, above the publish flow (warn, never block) -->
 				<LicenceWarnings where="publish" id="licence-warnings-publish" />
 				{#if $publishSlot}
+					<!-- 63-publish: what a visitor would hit, with a fix each (warns, never blocks) -->
+					<PublishCheck />
 					<CloudSlot mount={$publishSlot} />
 				{:else}
 					<div id="publish-oss" class="pe-oss">

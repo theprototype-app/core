@@ -19,14 +19,22 @@
 // suite. So the BUILD fails above MAX_RUNTIME_FILES, leaving that headroom for the game; the fix
 // for a red is fewer files (scripts/boot-chunk-groups.cjs is where the chunk count is decided),
 // never a higher number.
+// 64-int-rel (claude:9, card export-file-budget-850): the 850 counts what a SLIM export carries (63 PG1 leaves the
+// editor-only files out); the full build has its own ceiling, MAX_BUILD_FILES. Neither number is ever raised.
 //
 //   node scripts/export-manifest.cjs [buildDir]     (default ./build)
 const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-/** the most runtime files a build may list — 1,000 (itch.io) minus room for the game's own files */
+/** the most runtime files an export may carry — 1,000 (itch.io) minus room for the game's own files. Never raise it. */
 const MAX_RUNTIME_FILES = 850;
+/** 64-int-rel (claude:9 ruling, card export-file-budget-850): since 63 PG1 a slim export leaves the editor-only files
+ * out, so the 850 gate counts what that export CARRIES (exportCarried); the FULL build keeps a ceiling of its own, so the
+ * editor-only side cannot grow unwatched. An export of an older (non-slim) deployment carries everything. */
+const MAX_BUILD_FILES = 900;
+/** the pages an export never carries as such (the play entry becomes index.html) — exportBuilder.js ENTRY_PAGES */
+const ENTRY_PAGES = new Set(['index.html', 'play.html', 'kit.html']);
 const BUILD = path.resolve(process.argv[2] || path.join(ROOT, 'build'));
 
 /** paths (relative, forward slashes) an export never carries @param {string} rel */
@@ -128,17 +136,27 @@ function main() {
 	const manifest = { format: 1, version: String(pkg.version), files, bytes };
 	fs.writeFileSync(path.join(BUILD, 'export-manifest.json'), JSON.stringify(manifest));
 	const cut = files.filter((f) => f.editorOnly);
-	console.log(`export-manifest: ${files.length} files (budget ${MAX_RUNTIME_FILES}), ${(bytes / 1048576).toFixed(1)} MB -> ${path.relative(ROOT, BUILD)}/export-manifest.json`);
+	console.log(`export-manifest: ${files.length} files, ${(bytes / 1048576).toFixed(1)} MB -> ${path.relative(ROOT, BUILD)}/export-manifest.json`);
 	console.log(`export-manifest: ${cut.length} files (${(cut.reduce((n, f) => n + f.bytes, 0) / 1048576).toFixed(1)} MB) only the editor / kit page reach — an exported game leaves them out`);
-	const over = overBudget(files);
+	const carried = exportCarried(files);
+	console.log(`export-manifest: a slim export carries ${carried.length} files (budget ${MAX_RUNTIME_FILES}); the full build lists ${files.length} (ceiling ${MAX_BUILD_FILES})`);
+	const over = overBudget(carried) || overBudget(files, MAX_BUILD_FILES, 'full build ceiling');
 	if (over) {
 		console.error('export-manifest: ' + over);
 		process.exit(1);
 	}
 }
 
-/** null when the list fits, else the reason (with the biggest folders, so the red says where) @param {{path: string}[]} files */
-function overBudget(files, max = MAX_RUNTIME_FILES) {
+/** what a slim export copies of the build: exportBuilder.js runtimeFiles (minus the entry pages, and minus `editorOnly`
+ * when the build has the slim play entry) @template {{path: string, editorOnly?: boolean}} F @param {F[]} files @returns {F[]} */
+function exportCarried(files) {
+	const slim = files.some((f) => f.path === 'play.html');
+	return files.filter((f) => !ENTRY_PAGES.has(f.path) && !(slim && f.editorOnly));
+}
+
+/** null when the list fits, else the reason (with the biggest folders, so the red says where)
+ * @param {{path: string}[]} files @param {number} [max] @param {string} [what] */
+function overBudget(files, max = MAX_RUNTIME_FILES, what = 'export budget') {
 	if (files.length <= max) return null;
 	/** @type {Map<string, number>} */
 	const by = new Map();
@@ -147,9 +165,9 @@ function overBudget(files, max = MAX_RUNTIME_FILES) {
 		by.set(dir, (by.get(dir) || 0) + 1);
 	}
 	const top = [...by].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([d, n]) => `${d} ${n}`).join(', ');
-	return `${files.length} files is over the export budget of ${max} — an exported game would pass itch.io's 1,000-file limit (biggest folders: ${top}). Cut files (scripts/boot-chunk-groups.cjs decides the chunk count); do not raise the budget.`;
+	return `${files.length} files is over the ${what} of ${max} — an exported game would pass itch.io's 1,000-file limit (biggest folders: ${top}). Cut files (scripts/boot-chunk-groups.cjs decides the chunk count); do not raise the budget.`;
 }
 
 if (require.main === module) main();
 
-module.exports = { MAX_RUNTIME_FILES, overBudget, excluded, editorOnlyFiles };
+module.exports = { MAX_RUNTIME_FILES, MAX_BUILD_FILES, overBudget, exportCarried, excluded, editorOnlyFiles };

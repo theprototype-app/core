@@ -4,12 +4,12 @@
 	"pages": {
 		"play": {
 			"html": "play.html",
-			"maxJsGzBytes": 1751040,
+			"maxJsGzBytes": 1756160,
 			"maxFirstFrameMs": 20000
 		},
 		"editor": {
 			"html": "index.html",
-			"maxJsGzBytes": 2795520,
+			"maxJsGzBytes": 2805760,
 			"maxFirstFrameMs": 32000
 		}
 	},
@@ -328,6 +328,13 @@
 			"play": "v1.82.0 1709.6 KB -> union on v1.82.0 1709.9 KB (+0.3) -> line 1710.0 KB (the int boot rule: the measure on the newest tag + the union's sum, rounded up to the next 5 KB; unchanged). Headroom 0.1 KB: the next int on play will cross it",
 			"editor": "v1.82.0 2726.6 KB -> union on v1.82.0 2727.3 KB (+0.7) -> line 2730.0 KB (the same rule; unchanged)",
 			"note": "measured on the Deck, v1.82.0 (detached worktree) and the union built back to back after npm ci on both. Per lane, measured on v1.81.0 the same way: 63-publish alone +0.1 play / +0.3 editor (302ab91f); 63-export + the 63-int first-use hint +0.2 play / +0.5 editor. The 1.83.0 changelog no longer rides the editor boot (What's new loads on demand since #654)."
+		},
+		{
+			"date": "2026-11-26",
+			"lane": "64-int-rel (roadmap 64: #652 64-vector, #655 64-vector-edit, #657 64-extrude, #653 64-2d via 64-int #659; v1.83.0 merged)",
+			"play": "v1.83.0 measured 1709.9 KB -> union 1713.2 KB (+3.3) -> line 1710 + 3.3 -> 1715 KB",
+			"editor": "v1.83.0 measured 2727.5 KB -> union 2736.1 KB (+8.6) -> line 2730 + 8.6 -> 2740 KB",
+			"note": "Over the 64 allowance (+3 / +8): claude:9 ACCEPTED 1715 / 2740 on 26 Nov (QUESTIONS-64-int-rel Q1). Boot modules that grew (raw): vector/vectorGate.js +7.7 KB (new on both boots, the old-peer wire gate), objectMenu.js +5.6 KB (editor, the Shape submenu rows), sprite2d/view2d.js +3.3 and sprite2d/sprite2dTick.js +3.0 (both boots), geometryEdit +2.1, flowRuntime +1.8. Give-back card 102-boot-diet-4 (objectMenu Shape rows, vectorBoot, vectorGate lazy behind the caps check; target play >= 3, editor >= 8 KB back). Both built on the Deck, one node_modules, back to back."
 		}
 	],
 	"throttle": {

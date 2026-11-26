@@ -6,6 +6,37 @@
      rendering, so maintainer notes stay out of the user-facing window. No emoji from
      1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
 
+## 1.84.0 — Vector shapes and 2D scenes
+
+### Vector shapes
+- **Draw vector shapes**: Tools ▸ Draw shapes (Alt+V) draws rectangles, ellipses, stars and polygons with a live corner radius, and pen paths. Fill them with a colour or a gradient, give them a stroke with its own width, join, cap and dash. <!-- 64-vector D1, #652 -->
+- **Combine shapes**: Union, Subtract, Intersect and Exclude, Outline stroke, Inset and Outset, each one undo step. <!-- 64-vector D3 -->
+- **SVG in and out**: drop an .svg on the viewport to import it (scripts, embedded pages and outside links are taken out first), and export shapes as SVG. A path longer than a shape holds (4,000 points) is simplified to fit, and the app says so. <!-- 64-vector row 5; 64-int Q1 -->
+- **Shapes and Paths**: Make Path object turns a shape's outline into a Path, and a Path's Make vector shape draws it as a pen path. <!-- 64-vector one curve -->
+- **Edit shapes after drawing**: pick several points and move them together, nudge with the arrow keys, close or split a path, add and delete points, switch corner and smooth. <!-- 64-vector-edit D5 #655 -->
+- **Snapping, smart guides and align in plane**: points and shapes snap to the grid and to other shapes, guide lines show when points line up, and Align in plane lines shapes up on any wall or floor. <!-- 64-vector-edit -->
+- **Layer order** for flat shapes on one plane: bring forward, send backward, to front, to back (Ctrl+] / Ctrl+[). <!-- 64-vector-edit -->
+- **The pen by finger and in VR**: on a phone, tap for a corner and drag for a curve (two fingers move the camera); in VR, Add ▸ Shapes ▸ Pen puts a drawing sheet in front of you. <!-- 64-vector-edit rows 4-5 -->
+- **Extrude with one drag**: select a shape or a text and drag the arrow on its corner to make it a 3D solid, live for everyone. The solid has clean faces, so Edit Mesh works on it; Bake to mesh turns a shape into a plain mesh. <!-- 64-extrude D7 #657 -->
+
+### 2D scenes
+- **A 2D scene template** that opens in a flat 2D view with its own toolbar: select, pen, shapes, text, extrude and layers. Play starts the game and looks through its 2D camera. <!-- 64-2d D6 #653; 64-int template fix -->
+- **Sprites and flipbooks**: pixel-sharp sprites from your images, sprite-sheet animations that loop, play once or ping-pong, and Play Animation plays them. <!-- 64-2d D4 -->
+- **2D layers with parallax**, and a **Camera Follow 2D** node that follows the player. <!-- 64-2d -->
+- New docs page **Vector shapes and SVG**; the 2D scenes page links its toolbar rows to it. <!-- docs #106 -->
+
+### Also
+- **Solid text** is built the same way as extruded shapes: its sides are smooth instead of faceted. <!-- 64-extrude; 64-int Q2 corner + counter fixes -->
+- Fixed: an orthographic camera preview drew the scene at 1 metre per pixel. <!-- 64-2d -->
+- Fixed: a module's drag in Edit / Interact is aimed at the pointer (it could be aimed at the middle of the screen). <!-- 64-vector-edit playInteract; module-drag A/B vs v1.78.1 + v1.79.0 identical: no module relied on the old ray -->
+
+### For AI agents and developers
+- Agents can draw shapes: `create_shape` gains action `'vector'` (rectangle, ellipse, star, polygon, path, SVG); the in-page tool is `create_vector`. Agent contract 1.13.0 (additive). <!-- 64-vector -->
+- CI: an optional GPU battery on a self-hosted runner. Each job runs in a fresh WSL2 distro that is deleted afterwards, as a single-use just-in-time runner; only the maintainers' own runs, never a fork. Triggered by workflow_dispatch or the gpu-smoke / gpu-battery label. <!-- pc-ci-runner #647; optional, never a required check -->
+
+### Compatibility
+- **Scene files**: vector shapes, solids and sprites are new records; an older version opens them as plain meshes and textured planes, never an error. **Sessions**: a peer on an older version sees vector shapes and solids as plain meshes and sprites as textured planes; it cannot edit a shape's points. <!-- 64 old peers; do NOT promise that older versions rejoin after a reload (1.78.1 relink regression, routed) -->
+
 ## 1.83.0 — Publish your game
 
 ### Before you publish

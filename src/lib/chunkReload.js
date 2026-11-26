@@ -58,9 +58,22 @@ export function reloadPromptShown() {
 	return noticed;
 }
 
+/** 102-boot-diet-3: how many background prefetches are in flight (their chunk failures stay silent) */
+let quiet = 0;
+
+/**
+ * Run a BACKGROUND load whose chunk failure must say nothing (the idle prefetch of the dock editors): the person did
+ * not ask for it, and the real open retries and speaks if the chunk is still missing.
+ * @template T @param {() => Promise<T>} load @returns {Promise<T>}
+ */
+export function quietly(load) {
+	quiet++;
+	return load().finally(() => quiet--);
+}
+
 /** say so ONCE per page; the person decides when to reload */
 export function noteStaleCode() {
-	if (noticed) return;
+	if (noticed || quiet) return;
 	noticed = true;
 	chunkReloadDebug.notices++;
 	dismissToastById(UPDATE_TOAST_ID);

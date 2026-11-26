@@ -6,17 +6,18 @@
 // What this suite holds:
 //   0. (BUILT) each body is its own chunk, in NEITHER page's static boot closure (play.html, index.html);
 //   1. (BUILT) a player never fetches them: `/play` boots, renders, idles, and no editor chunk is requested;
-//   2. (BUILT) the editor does NOT prefetch them (it idles 8 s and fetches none), and on a 3G-throttled link (Chrome's
-//      "Fast 3G": 562 ms RTT, ~1.4 Mbit/s down) a first open's LAZY LOAD -- fetch + eval + mount, the loader's own
-//      performance marks -- stays under 2.5 s (a regression guard; the brief's 1.5 s is printed); key -> window beside it (on a headless software-GL page it
-//      also carries input latency and frame cost that v1.82.0's open pays too: tools/probe-3g.cjs measures both builds);
+//   2. (BUILT) the IDLE PREFETCH (claude:9's Q3 = b, $lib/panelPrefetch.js): it fetches the five after the page's load
+//      event and first paint and mounts nothing (2b); prefetched, a first open on 3G (Chrome's "Fast 3G": 562 ms RTT,
+//      ~1.4 Mbit/s) fetches nothing and its load + mount (the loader's performance marks) is under 1.5 s (2c, 2d);
+//      COLD (prefetch off) the open's times are printed, not gated (2e); Save-Data / 2g / slow-2g skip it (2f); blocked
+//      chunks make the prefetch fail SILENTLY and every editor's first open still loads (2g);
 //   3. every way in opens a CLOSED, NEVER-LOADED window and the body mounts: a click (the dock's "+" menu), its key
 //      (Alt+A/U/S/H/T), Ctrl+K, and the agent's `show` (Timeline: the one of the five `show` knows). A fresh page per
 //      window per route, with the test hook's preload switched off (`debugLazyPanels` = 'cold');
 //   4. a window open in the saved layout (auto-restore) comes back after a reload, its placeholder holding the place
 //      until the body lands: no frame with NEITHER (the "no empty flash" rule), the frames the placeholder showed
 //      printed; and the active-sequence rule holds before the Timeline ever opened.
-// Counterfactual (v1.82.0): the five bodies sit in the editor's boot chunks -- 0 and 2's "fetched none" go red.
+// Counterfactual (v1.82.0): the five bodies sit in the editor's boot chunks -- 0, 2b and 2e go red.
 // Dev server: 0-2 SKIP (a dev server serves modules, not chunks); 3-4 run.
 const fs = require('fs');
 const path = require('path');
@@ -72,18 +73,45 @@ const WINDOWS = [
 const TOOLBOX_SRC = 'src/components/menu/MeshEditPopup.svelte';
 const read = `(s) => { let v; s.subscribe((x) => (v = x))(); return v; }`;
 
-/** a fresh context WITHOUT the debug hooks; every request's path + time */
-async function plainPage(browser, query) {
+/**
+ * a fresh context WITHOUT the debug hooks; every request's path + time.
+ * opts.storage: localStorage entries before the first script; opts.connection: a `navigator.connection` to report;
+ * opts.block: paths whose requests are aborted (until `unblock()`)
+ * @param {any} browser @param {string} query @param {{storage?: Record<string, string>, connection?: any, block?: string[]}} [opts]
+ */
+async function plainPage(browser, query, opts = {}) {
 	const ctx = await browser.newContext({ ignoreHTTPSErrors: true, serviceWorkers: 'block' });
-	await ctx.addInitScript(() => {
-		try {
-			performance.setResourceTimingBufferSize?.(200000);
-			localStorage.setItem('hasSeenDisclaimer', 'true');
-			localStorage.setItem('hasSeenWelcome', 'true');
-		} catch {
-			/* no storage */
-		}
-	});
+	await ctx.addInitScript(
+		([storage, connection]) => {
+			try {
+				performance.setResourceTimingBufferSize?.(200000);
+				localStorage.setItem('hasSeenDisclaimer', 'true');
+				localStorage.setItem('hasSeenWelcome', 'true');
+				for (const [k, v] of Object.entries(storage)) localStorage.setItem(k, v);
+			} catch {
+				/* no storage */
+			}
+			if (connection)
+				Object.defineProperty(Navigator.prototype, 'connection', {
+					configurable: true,
+					get: () => connection
+				});
+		},
+		[opts.storage ?? {}, opts.connection ?? null]
+	);
+	/** @type {string[]} */
+	const aborted = [];
+	let blocking = !!opts.block?.length;
+	if (blocking)
+		await ctx.route('**/*.js', (route) => {
+			const p = new globalThis.URL(route.request().url()).pathname;
+			if (blocking && opts.block?.includes(p)) {
+				aborted.push(p);
+				return route.abort('failed');
+			}
+			return route.continue();
+		});
+	const unblock = () => (blocking = false);
 	const page = await ctx.newPage();
 	/** @type {{path: string, at: number}[]} */
 	const requests = [];
@@ -92,7 +120,7 @@ async function plainPage(browser, query) {
 		requests.push({ path: new globalThis.URL(r.url()).pathname, at: Date.now() - t0 })
 	);
 	const res = await page.goto(h.URL + query, { waitUntil: 'domcontentloaded', timeout: 90000 });
-	return { ctx, page, requests, status: res?.status() ?? 0 };
+	return { ctx, page, requests, aborted, unblock, status: res?.status() ?? 0 };
 }
 
 /** is any of the body selectors in the DOM? (docked behind another tab still counts: it is mounted) */
@@ -174,80 +202,201 @@ h.run(async () => {
 		);
 		await P.ctx.close();
 
-		// ---- 2. no prefetch; the 3G first open (guard 2.5 s) ---------------------------------------------------------
-		const E = await plainPage(browser, '');
-		check(E.status === 200, `2a the editor answers 200 (${E.status})`);
-		await E.page.waitForFunction(() => !!document.querySelector('canvas'), null, {
-			timeout: 90000
-		});
-		await E.page.waitForTimeout(8000);
-		const early = E.requests.filter((r) => WINDOWS.some((w) => chunkOf[w.key] === r.path));
-		check(
-			early.length === 0,
-			`2b an idle editor fetches none of the five (${early.map((r) => r.path).join(', ') || 'none'})`
-		);
-		const cdp = await E.ctx.newCDPSession(E.page);
-		await cdp.send('Network.enable');
-		await cdp.send('Network.emulateNetworkConditions', {
+		// ---- 2. the idle prefetch (Q3 = b) and the 3G first open -----------------------------------------------------
+		const FAST_3G = {
 			offline: false,
 			latency: 562.5,
 			downloadThroughput: 180000,
 			uploadThroughput: 84375
-		});
-		for (const w of WINDOWS) {
-			await focusViewport(E.page);
-			const t0 = Date.now();
-			await E.page.keyboard.press(w.combo);
-			let ms = null;
-			try {
-				await E.page.waitForFunction((s) => s.some((q) => !!document.querySelector(q)), w.body, {
-					timeout: 20000,
-					polling: 16
-				});
-				ms = Date.now() - t0;
-			} catch {
-				/* never appeared: reported below */
-			}
-			const fetched = E.requests.some((r) => r.path === chunkOf[w.key]);
-			// the loader's own marks (lazyPanels.mark): what the LAZY LOAD costs -- fetch + eval + mount -- apart from
-			// the input latency and the frame cost a headless software-GL page adds to any open (v1.82.0 pays those too)
-			const marks = await E.page.evaluate((k) => {
+		};
+		const five = WINDOWS.map((w) => chunkOf[w.key]);
+		const prefetchDone = (page, ms = 90000) =>
+			page
+				.waitForFunction(
+					() => performance.getEntriesByName('lazy-panel:prefetch:done').length > 0,
+					null,
+					{ timeout: ms }
+				)
+				.then(
+					() => true,
+					() => false
+				);
+		const readMarks = (page, key) =>
+			page.evaluate((k) => {
 				const at = (/** @type {string} */ w) =>
 					performance.getEntriesByName(`lazy-panel:${k}:${w}`)[0]?.startTime ?? null;
 				return { start: at('start'), loaded: at('loaded'), mounted: at('mounted') };
-			}, w.key);
-			const lazyMs =
-				marks.start != null && marks.mounted != null
-					? Math.round(marks.mounted - marks.start)
-					: null;
-			const fetchMs =
-				marks.start != null && marks.loaded != null ? Math.round(marks.loaded - marks.start) : null;
+			}, key);
+		/** open each window on a 3G link, report key -> window and the loader's start -> mounted @returns {Promise<Record<string, {ms: number|null, lazyMs: number|null, fetched: boolean}>>} */
+		const openAll3g = async (P) => {
+			const cdp = await P.ctx.newCDPSession(P.page);
+			await cdp.send('Network.enable');
+			await cdp.send('Network.emulateNetworkConditions', FAST_3G);
+			/** @type {Record<string, any>} */
+			const out = {};
+			for (const w of WINDOWS) {
+				const before = P.requests.length;
+				await focusViewport(P.page);
+				const t0 = Date.now();
+				await P.page.keyboard.press(w.combo);
+				const ms = await P.page
+					.waitForFunction((s) => s.some((q) => !!document.querySelector(q)), w.body, {
+						timeout: 20000,
+						polling: 16
+					})
+					.then(
+						() => Date.now() - t0,
+						() => null
+					);
+				const m = await readMarks(P.page, w.key);
+				const lazyMs =
+					m.start != null && m.mounted != null ? Math.round(m.mounted - m.start) : null;
+				out[w.key] = {
+					ms,
+					lazyMs,
+					fetched: P.requests.slice(before).some((r) => r.path === chunkOf[w.key])
+				};
+				await focusViewport(P.page);
+				await P.page.keyboard.press(w.combo); // close it again (the body stays mounted)
+				await P.page.waitForTimeout(300);
+			}
+			await cdp.send('Network.emulateNetworkConditions', {
+				offline: false,
+				latency: 0,
+				downloadThroughput: -1,
+				uploadThroughput: -1
+			});
+			return out;
+		};
+
+		// 2a-2d: the prefetch starts after the page's load event, fetches the five, mounts nothing; then a 3G open is warm
+		const W = await plainPage(browser, '');
+		check(W.status === 200, `2a the editor answers 200 (${W.status})`);
+		check(await prefetchDone(W.page), '2b the idle prefetch ran to its end');
+		const pf = await W.page.evaluate((paths) => {
+			const nav = /** @type {any} */ (performance.getEntriesByType('navigation')[0]);
+			const fcp = performance.getEntriesByName('first-contentful-paint')[0]?.startTime ?? null;
+			const res = performance
+				.getEntriesByType('resource')
+				.filter((e) => paths.includes(new URL(e.name).pathname));
+			return {
+				loadEnd: nav?.loadEventEnd ?? null,
+				fcp,
+				starts: res.map((e) => Math.round(e.startTime)),
+				count: res.length
+			};
+		}, five);
+		check(pf.count === five.length, `2b ...and fetched all five chunks (${pf.count})`);
+		check(
+			pf.loadEnd != null &&
+				pf.fcp != null &&
+				pf.starts.every((t) => t >= pf.loadEnd && t >= pf.fcp),
+			`2b ...every one after the load event and the first paint (load ${Math.round(pf.loadEnd ?? -1)} ms, fcp ${Math.round(pf.fcp ?? -1)} ms, fetches at ${pf.starts.join(', ')} ms)`
+		);
+		const mountedEarly = [];
+		for (const w of WINDOWS) if (await bodyMounted(W.page, w.body)) mountedEarly.push(w.key);
+		check(
+			mountedEarly.length === 0,
+			`2b ...and mounted nothing (${mountedEarly.join(', ') || 'none mounted'})`
+		);
+		const warm = await openAll3g(W);
+		for (const w of WINDOWS) {
+			const r = warm[w.key];
 			console.log(
-				`3G first open ${w.key}: key -> window ${ms == null ? 'never' : ms + ' ms'}; load start -> chunk ${fetchMs ?? '?'} ms, -> body mounted ${lazyMs ?? '?'} ms (chunk fetched: ${fetched})`
-			);
-			check(fetched, `2c ${w.key}: the first open fetched its chunk`);
-			check(
-				ms != null,
-				`2d ${w.key}: on 3G the window shows (${ms == null ? 'never' : ms + ' ms'} from the key)`
+				`3G WARM first open ${w.key} (prefetched): key -> window ${r.ms ?? 'never'} ms; load start -> body mounted ${r.lazyMs ?? '?'} ms; chunk fetched again: ${r.fetched}`
 			);
 			check(
-				// a REGRESSION GUARD (a second round trip, a fatter chunk): 1.4-1.7 s measured on the PC, at the floor of one
-				// 562 ms round trip + the transfer + a headless software-GL main thread; the brief's 1.5 s target is
-				// printed, not asserted (QUESTIONS 102-boot-diet-3 Q3)
-				lazyMs != null && lazyMs < 2500,
-				`2e ${w.key}: on 3G the lazy load (fetch + eval + mount) takes under 2.5 s (${lazyMs ?? '?'} ms; target 1.5 s ${lazyMs != null && lazyMs < 1500 ? 'met' : 'not met'})`
+				r.ms != null && !r.fetched,
+				`2c ${w.key}: a prefetched editor opens on 3G without a fetch (${r.ms ?? 'never'} ms from the key)`
 			);
-			await focusViewport(E.page);
-			await E.page.keyboard.press(w.combo); // close it again (the body stays mounted)
-			await E.page.waitForTimeout(300);
+			check(
+				r.lazyMs != null && r.lazyMs < 1500,
+				`2d ${w.key}: prefetched, the first open's load + mount is under 1.5 s on 3G (${r.lazyMs ?? '?'} ms)`
+			);
 		}
-		await cdp.send('Network.emulateNetworkConditions', {
-			offline: false,
-			latency: 0,
-			downloadThroughput: -1,
-			uploadThroughput: -1
+		check(
+			!(await W.page.evaluate(() => /A new version is ready/.test(document.body.innerText))),
+			'2d no reload notice'
+		);
+		await W.ctx.close();
+
+		// 2e: COLD -- opened before any prefetch (switched off for the measurement): numbers, not a gate
+		const C = await plainPage(browser, '', { storage: { debugPanelPrefetch: 'off' } });
+		await C.page.waitForFunction(() => !!document.querySelector('canvas'), null, {
+			timeout: 90000
 		});
-		await E.ctx.close();
+		await C.page.waitForTimeout(8000);
+		const early = C.requests.filter((r) => five.includes(r.path));
+		check(
+			early.length === 0,
+			`2e with the prefetch off an idle editor fetches none of the five (${early.map((r) => r.path).join(', ') || 'none'})`
+		);
+		const cold = await openAll3g(C);
+		for (const w of WINDOWS) {
+			const r = cold[w.key];
+			console.log(
+				`3G COLD first open ${w.key} (no prefetch): key -> window ${r.ms ?? 'never'} ms; load start -> body mounted ${r.lazyMs ?? '?'} ms (chunk fetched: ${r.fetched})`
+			);
+			check(
+				r.ms != null && r.fetched,
+				`2e ${w.key}: cold, the first open fetches its chunk and shows (${r.ms ?? 'never'} ms; a number, not a gate)`
+			);
+		}
+		await C.ctx.close();
+
+		// 2f: not on Save-Data, not on a 2G-class link
+		for (const [label, connection] of [
+			['Save-Data', { saveData: true, effectiveType: '4g' }],
+			['2g', { saveData: false, effectiveType: '2g' }],
+			['slow-2g', { effectiveType: 'slow-2g' }]
+		]) {
+			const S = await plainPage(browser, '', { connection });
+			await S.page.waitForFunction(() => !!document.querySelector('canvas'), null, {
+				timeout: 90000
+			});
+			await S.page.waitForFunction(() => document.readyState === 'complete', null, {
+				timeout: 90000
+			});
+			await S.page.waitForTimeout(14000); // past the idle callbacks and their 10 s timeout
+			const hits = S.requests.filter((r) => five.includes(r.path));
+			check(
+				hits.length === 0,
+				`2f ${label}: no prefetch (${hits.map((r) => r.path).join(', ') || 'none fetched'})`
+			);
+			await S.ctx.close();
+		}
+
+		// 2g: a prefetch whose chunks fail is SILENT, and every editor's first open still loads it
+		const X = await plainPage(browser, '', { block: five });
+		check(await prefetchDone(X.page), '2g the prefetch ends even when every chunk fails');
+		const tried = five.filter((p) => X.aborted.includes(p));
+		check(tried.length === five.length, `2g ...it tried all five (${tried.length})`);
+		check(
+			!(await X.page.evaluate(() => /A new version is ready/.test(document.body.innerText))),
+			'2g ...and said nothing (no "A new version is ready" notice)'
+		);
+		X.unblock();
+		for (const w of WINDOWS) {
+			await focusViewport(X.page);
+			await X.page.keyboard.press(w.combo);
+			const ok = await X.page
+				.waitForFunction((s) => s.some((q) => !!document.querySelector(q)), w.body, {
+					timeout: 20000
+				})
+				.then(
+					() => true,
+					() => false
+				);
+			check(ok, `2g ${w.key}: after the failed prefetch, the first open loads and shows it`);
+			await focusViewport(X.page);
+			await X.page.keyboard.press(w.combo);
+			await X.page.waitForTimeout(300);
+		}
+		check(
+			!(await X.page.evaluate(() => /A new version is ready/.test(document.body.innerText))),
+			'2g ...and the opens raised no notice either'
+		);
+		await X.ctx.close();
 	}
 
 	// ---- 3. every way in, on a closed never-loaded window --------------------------------------------------------

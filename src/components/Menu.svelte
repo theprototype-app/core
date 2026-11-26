@@ -31,16 +31,23 @@
 	import { editingObject } from '$lib/meshEdit';
 	import { faceEditObject } from '$lib/faceEditState';
 	import { lazyPanels, loadPanel } from '$lib/lazyPanels';
+	import { quietly } from '$lib/chunkReload.js';
 	import { onMount } from 'svelte';
 	const MeshEditPopup = $derived(($lazyPanels as Record<string, any>).meshToolbox ?? null);
 	const loadMeshEditPopup = () => void loadPanel('meshToolbox').catch(() => {}); // a failure retries on the next session
 	$effect(() => {
 		if ($editingObject || $faceEditObject) loadMeshEditPopup();
 	});
+	// ...and (Q3 = b) the five dock editors' modules: $lib/panelPrefetch waits for the page's load event and idle,
+	// skips embeds, Save-Data and 2G, and is silent on failure
+	const idleLoads = () => {
+		loadMeshEditPopup();
+		void quietly(() => import('$lib/panelPrefetch.js')).then((m) => m.prefetchDockPanels(), () => {});
+	};
 	onMount(() => {
 		const idle = (window as any).requestIdleCallback;
-		if (typeof idle === 'function') idle(loadMeshEditPopup, { timeout: 5000 });
-		else setTimeout(loadMeshEditPopup, 2000);
+		if (typeof idle === 'function') idle(idleLoads, { timeout: 5000 });
+		else setTimeout(idleLoads, 2000);
 	});
 	import MarqueeOverlay from './menu/MarqueeOverlay.svelte';
 	import AddMenu from './menu/AddMenu.svelte';

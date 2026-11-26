@@ -57,18 +57,19 @@
 	import PrivacySettings from './settings/PrivacySettings.svelte'; // 48 O1
 	import MomentSettings from './settings/MomentSettings.svelte'; // 95 SM3
 	import AssistantViewSettings from './settings/AssistantViewSettings.svelte'; // 104 C2
-	import ConnectedAppsLink from './settings/ConnectedAppsLink.svelte'; // 89 I2: Account's link to Settings ▸ AI ▸ Connected apps
 	import { connectorProvider, settingsSlots } from '$lib/cloudHooks';
 	import CloudSlot from '../CloudSlot.svelte';
 	import VRSettingsSection from './VRSettingsSection.svelte'; // the whole VR page
 	// 89 I2: the AI page (+ its provider forms; was Tools & connections). 102-boot-diet-3: a lazy chunk (AiSettings,
 	// ToolsHub, Connected apps, speech input; ~6 KB gz), loaded ONCE when Settings first opens or the page / a search
 	// mounts it. The filter's MutationObserver and the anchor reveal's wait already take bodies that arrive late.
+	// ...with Account's link row to it (ConnectedAppsLink, 89 I2), which loads beside it
 	let AiSettings: any = null;
+	let ConnectedAppsLink: any = null;
 	let aiSettingsLoading: Promise<unknown> | null = null;
 	function loadAiSettings() {
-		aiSettingsLoading ??= import('./settings/AiSettings.svelte').then(
-			(m) => (AiSettings = m.default),
+		aiSettingsLoading ??= Promise.all([import('./settings/AiSettings.svelte'), import('./settings/ConnectedAppsLink.svelte')]).then(
+			([m, link]) => ((AiSettings = m.default), (ConnectedAppsLink = link.default)),
 			(err) => {
 				aiSettingsLoading = null; // the next open retries (a failure must not latch)
 				console.warn('[settings] could not load the AI page', err);
@@ -669,7 +670,7 @@
 						{#snippet header()}Account{/snippet}
 						<div id="settings-account" class="settings-account" data-keywords="account">
 							{#if $settingsSlots.account}<CloudSlot mount={$settingsSlots.account} />{/if}
-							<ConnectedAppsLink />
+							{#if ConnectedAppsLink}<svelte:component this={ConnectedAppsLink} />{/if}
 						</div>
 					</AccordionItem>
 				{/if}

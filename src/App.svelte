@@ -52,7 +52,8 @@
   // panel, so it sits with ConfirmModal where every entry point can reach it.
   import StorageModal from './components/menu/StorageModal.svelte'
   import ReplaceModelModal from './components/menu/ReplaceModelModal.svelte'
-  import EditInBlenderCard from './components/menu/EditInBlenderCard.svelte' // 59 T2
+  // 59 T2; 102-boot-diet-3: the Edit-in-Blender card loads when something opens it (the store stays in the boot)
+  import { editInBlenderCard } from '$lib/editInBlenderState'
   // 57: Apply clip… / Download… / the Skeleton view — a tiny host, the dialogs load on open
   import CharacterDialogs from './components/characters/CharacterDialogs.svelte'
   import PlaceholderTooltip from './components/menu/PlaceholderTooltip.svelte'
@@ -567,7 +568,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <StorageModal />
 <!-- 36 U9: Replace model… for a loading/failed placeholder, and the hover tooltip over one -->
 <ReplaceModelModal />
-<EditInBlenderCard />
+{#if $editInBlenderCard}{#await import('./components/menu/EditInBlenderCard.svelte') then m}<m.default />{/await}{/if}
 <PlaceholderTooltip />
 <CharacterDialogs />
 <DrawToolbar />

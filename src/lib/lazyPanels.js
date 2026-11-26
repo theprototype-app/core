@@ -16,8 +16,8 @@
 // - play never reaches this module's loaders: every caller sits in the editor's `!$isLocked && !$embedMode` block.
 import { writable, get } from 'svelte/store';
 
-/** key -> the body's loader. The dock keys are the bottomDock / panelRegistry keys. */
-const LOADERS = /** @type {Record<string, () => Promise<any>>} */ ({
+/** key -> the body's loader. The dock keys are the bottomDock / panelRegistry keys. (panelPrefetch.js reads it) */
+export const LOADERS = /** @type {Record<string, () => Promise<any>>} */ ({
 	animation: () => import('../components/editors/AnimationWindow.svelte'),
 	uv: () => import('../components/editors/UvEditor.svelte'),
 	shader: () => import('../components/editors/ShaderEditor.svelte'),

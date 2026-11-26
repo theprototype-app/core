@@ -32,6 +32,9 @@ export function rateKind(type, msg) {
 	// a `group` carrying a pose is a scene transfer's group (full state, one per Group of a shared or joined
 	// scene, like `object`); a person's grouping edit carries `command` / `group` and no pose
 	if (type === 'group' && Array.isArray(msg?.pos)) return null;
+	// 102-int-3: a `nodes` that REPLACES object flows (give a flow / update all copies, up to 64 graphs a message)
+	// is an edit, one token a message — not a full-state reply
+	if (type === 'nodes' && Array.isArray(msg?.replaceGraphs)) return 'edit';
 	return EDIT_TYPES.has(type) ? 'edit' : null;
 }
 

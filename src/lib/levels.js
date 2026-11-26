@@ -179,6 +179,8 @@ export function sceneSignature(payload) {
 		environment: stripStamps(payload.environment ?? null),
 		physics: stripStamps(payload.physics ?? null),
 		music: stripStamps(payload.music ?? null),
+		// 102b-sound: a trim or a fade is scene data worth a save — keyed in only when present
+		...(payload.soundEdits ? { soundEdits: payload.soundEdits } : {}),
 		// 98 P1: a bake is scene data worth a save — keyed in only when present
 		...(payload.bake ? { bake: stripStamps(payload.bake) } : {}),
 		hud: stripStamps(payload.hud ?? null),

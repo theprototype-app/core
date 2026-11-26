@@ -1,0 +1,567 @@
+{
+	"_about": "2.0-eval2: hand builds for round-timer (round-relative) and the 8 tasks 2.0-eval2 added, followed against their checks with no model (`npm run eval:controls2`). A control that scores below its expect is a broken check or an app gap named in STATUS-2.0-eval2.",
+	"round-timer": [
+		{
+			"tool": "hud",
+			"args": {
+				"action": "create",
+				"create": {
+					"screens": [
+						{
+							"name": "Round",
+							"showWhile": "playing",
+							"elements": [
+								{
+									"kind": "timer",
+									"text": "2:00",
+									"anchor": "top-center",
+									"y": 20,
+									"w": 160,
+									"h": 50,
+									"duration": 120,
+									"countDown": true
+								}
+							]
+						}
+					]
+				}
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "scene",
+				"text": "g = kit-round-started\nt = hudtimer {element: \"$@0.elements.0.id\", duration: 120, autostart: false, format: \"{v}s\"}\ng -> t.start"
+			}
+		}
+	],
+	"late-joiner": [
+		{
+			"tool": "create_behaviour",
+			"args": {
+				"name": "Lanterns",
+				"source": "export default behaviour({\n  name: 'Lanterns',\n  state: { lit1: false, lit2: false, lit3: false },\n  inputs: ['click1', 'click2', 'click3'],\n  outputs: ['lit1', 'lit2', 'lit3'],\n  on: {\n    click1() { this.state.lit1 = true; },\n    click2() { this.state.lit2 = true; },\n    click3() { this.state.lit3 = true; }\n  }\n});"
+			}
+		},
+		{
+			"tool": "create_objects",
+			"args": {
+				"objects": [
+					{
+						"kind": "primitive",
+						"primitive": "Sphere",
+						"name": "Glow 1",
+						"params": [
+							0.33
+						],
+						"position": [
+							-3,
+							1.5,
+							-3
+						],
+						"color": "#ffcc44",
+						"castShadow": false
+					},
+					{
+						"kind": "primitive",
+						"primitive": "Sphere",
+						"name": "Glow 2",
+						"params": [
+							0.33
+						],
+						"position": [
+							0,
+							1.5,
+							-3
+						],
+						"color": "#ffcc44",
+						"castShadow": false
+					},
+					{
+						"kind": "primitive",
+						"primitive": "Sphere",
+						"name": "Glow 3",
+						"params": [
+							0.33
+						],
+						"position": [
+							3,
+							1.5,
+							-3
+						],
+						"color": "#ffcc44",
+						"castShadow": false
+					}
+				]
+			}
+		},
+		{
+			"tool": "update_objects",
+			"args": {
+				"updates": [
+					{
+						"uuid": "$Glow 1",
+						"materialParams": {
+							"emissive": "#ffaa00",
+							"emissiveIntensity": 2
+						}
+					},
+					{
+						"uuid": "$Glow 2",
+						"materialParams": {
+							"emissive": "#ffaa00",
+							"emissiveIntensity": 2
+						}
+					},
+					{
+						"uuid": "$Glow 3",
+						"materialParams": {
+							"emissive": "#ffaa00",
+							"emissiveIntensity": 2
+						}
+					}
+				]
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "scene",
+				"text": "c = onclick\np = objectselector {selected: \"$Lantern 1\"}\nv = visibility {target: \"$Glow 1\", on: false}\nc -> p\nc -> $@0.created.0.id.click1\n$@0.created.0.id.lit1 -> v.on"
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "scene",
+				"text": "c = onclick\np = objectselector {selected: \"$Lantern 2\"}\nv = visibility {target: \"$Glow 2\", on: false}\nc -> p\nc -> $@0.created.0.id.click2\n$@0.created.0.id.lit2 -> v.on"
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "scene",
+				"text": "c = onclick\np = objectselector {selected: \"$Lantern 3\"}\nv = visibility {target: \"$Glow 3\", on: false}\nc -> p\nc -> $@0.created.0.id.click3\n$@0.created.0.id.lit3 -> v.on"
+			}
+		},
+		{
+			"tool": "run",
+			"args": {
+				"action": "validate"
+			}
+		}
+	],
+	"key-door": [
+		{
+			"tool": "create_behaviour",
+			"args": {
+				"name": "KeyDoor",
+				"source": "export default behaviour({\n  name: 'KeyDoor',\n  state: { hasKey: false, keyShown: true, doorShut: true },\n  inputs: ['gotKey', 'atDoor'],\n  outputs: ['keyShown', 'doorShut'],\n  on: {\n    gotKey() { this.state.hasKey = true; this.state.keyShown = false; },\n    atDoor() { if (this.state.hasKey) this.state.doorShut = false; }\n  }\n});"
+			}
+		},
+		{
+			"tool": "create_objects",
+			"args": {
+				"objects": [
+					{
+						"kind": "primitive",
+						"primitive": "Box",
+						"name": "Door Zone",
+						"params": [
+							3,
+							2,
+							2
+						],
+						"position": [
+							0,
+							1,
+							-2.5
+						],
+						"color": "#88ccff"
+					}
+				]
+			}
+		},
+		{
+			"tool": "set_physics",
+			"args": {
+				"updates": [
+					{
+						"uuid": "$Key",
+						"sensor": true
+					},
+					{
+						"uuid": "$Door Zone",
+						"sensor": true
+					}
+				]
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "scene",
+				"text": "sk = objectselector {selected: \"$Key\"}\nek = onenter {who: \"player\"}\nsz = objectselector {selected: \"$Door Zone\"}\nez = onenter {who: \"player\"}\nvk = visibility {target: \"$Key\", on: true}\nvd = visibility {target: \"$Door\", on: true}\nsk -> ek.filter\nsz -> ez.filter\nek -> $@0.created.0.id.gotKey\nez -> $@0.created.0.id.atDoor\n$@0.created.0.id.keyShown -> vk.on\n$@0.created.0.id.doorShut -> vd.on"
+			}
+		}
+	],
+	"lap-counter": [
+		{
+			"tool": "create_behaviour",
+			"args": {
+				"name": "Laps",
+				"source": "export default behaviour({\n  name: 'Laps',\n  state: { laps: 0, best: 0, last: -1 },\n  inputs: ['cross'],\n  outputs: ['laps', 'best'],\n  on: {\n    cross() {\n      const t = this.now();\n      if (this.state.last < 0) { this.state.last = t; return; }\n      const lap = t - this.state.last;\n      if (lap < 3) return;\n      this.state.laps += 1;\n      if (!this.state.best || lap < this.state.best) this.state.best = Math.round(lap * 10) / 10;\n      this.state.last = t;\n    }\n  }\n});"
+			}
+		},
+		{
+			"tool": "create_objects",
+			"args": {
+				"objects": [
+					{
+						"kind": "primitive",
+						"primitive": "Box",
+						"name": "Line Gate",
+						"params": [
+							4,
+							2,
+							1
+						],
+						"position": [
+							0,
+							1,
+							0
+						],
+						"color": "#ffffff"
+					}
+				]
+			}
+		},
+		{
+			"tool": "set_physics",
+			"args": {
+				"updates": [
+					{
+						"uuid": "$Line Gate",
+						"sensor": true
+					}
+				]
+			}
+		},
+		{
+			"tool": "hud",
+			"args": {
+				"action": "create",
+				"create": {
+					"screens": [
+						{
+							"name": "Race",
+							"showWhile": "playing",
+							"elements": [
+								{
+									"kind": "text",
+									"text": "Laps: 0",
+									"anchor": "top-left",
+									"x": 20,
+									"y": 20,
+									"w": 200,
+									"h": 40
+								},
+								{
+									"kind": "text",
+									"text": "Best: -",
+									"anchor": "top-right",
+									"x": 20,
+									"y": 20,
+									"w": 200,
+									"h": 40
+								}
+							]
+						}
+					]
+				}
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "scene",
+				"text": "s = objectselector {selected: \"$Line Gate\"}\ne = onenter {who: \"player\"}\nl = hudtext {element: \"$@3.elements.0.id\", format: \"Laps: {v}\"}\nb = hudtext {element: \"$@3.elements.1.id\", format: \"Best: {v}s\", decimals: 1}\ns -> e.filter\ne -> $@0.created.0.id.cross\n$@0.created.0.id.laps -> l.value\n$@0.created.0.id.best -> b.value"
+			}
+		}
+	],
+	"spawner-cap": [
+		{
+			"tool": "create_behaviour",
+			"args": {
+				"name": "Waves",
+				"source": "export default behaviour({\n  name: 'Waves',\n  state: { on: false },\n  inputs: ['begin'],\n  outputs: [],\n  on: {\n    begin() { if (!this.state.on) { this.state.on = true; this.after(1, 'wave'); } }\n  },\n  wave() {\n    if (kit.spawner.count('enemy') < 5) {\n      const t = this.find('Enemy');\n      const ids = kit.spawner.spawn({ kind: 'enemy', template: t ? t.uuid : '', count: 1, hp: 1, speed: 0, spread: 6, removeAfter: 0 });\n      for (const id of ids || []) this.after(8, 'expire', id);\n    }\n    this.after(1, 'wave');\n  },\n  expire(id) { kit.health.damage(id, 999); }\n});"
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "scene",
+				"text": "p = onplaystart\np -> $@0.created.0.id.begin"
+			}
+		}
+	],
+	"team-score": [
+		{
+			"tool": "create_behaviour",
+			"args": {
+				"name": "Teams",
+				"source": "export default behaviour({\n  name: 'Teams',\n  state: { team: {}, nRed: 0, nBlue: 0, red: 0, blue: 0 },\n  inputs: ['join', 'hit'],\n  outputs: ['red', 'blue'],\n  on: {\n    join({ by }) { this.place(by); },\n    hit({ by }) { const t = this.place(by); this.state[t] += 1; }\n  },\n  place(by) {\n    if (!this.state.team[by]) {\n      const t = this.state.nRed <= this.state.nBlue ? 'red' : 'blue';\n      this.state.team[by] = t;\n      if (t === 'red') this.state.nRed += 1; else this.state.nBlue += 1;\n    }\n    return this.state.team[by];\n  }\n});"
+			}
+		},
+		{
+			"tool": "hud",
+			"args": {
+				"action": "create",
+				"create": {
+					"screens": [
+						{
+							"name": "Teams",
+							"showWhile": "playing",
+							"elements": [
+								{
+									"kind": "text",
+									"text": "Red: 0",
+									"anchor": "top-left",
+									"x": 20,
+									"y": 20,
+									"w": 200,
+									"h": 40
+								},
+								{
+									"kind": "text",
+									"text": "Blue: 0",
+									"anchor": "top-right",
+									"x": 20,
+									"y": 20,
+									"w": 200,
+									"h": 40
+								}
+							]
+						}
+					]
+				}
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "scene",
+				"text": "p = onplaystart\nc = onclick\ns = objectselector {selected: \"$Ball\"}\nr = hudtext {element: \"$@1.elements.0.id\", format: \"Red: {v}\"}\nb = hudtext {element: \"$@1.elements.1.id\", format: \"Blue: {v}\"}\nc -> s\np -> $@0.created.0.id.join\nc -> $@0.created.0.id.hit\n$@0.created.0.id.red -> r.value\n$@0.created.0.id.blue -> b.value"
+			}
+		}
+	],
+	"dialogue-own": [
+		{
+			"tool": "create_shape",
+			"args": {
+				"action": "text",
+				"text": {
+					"text": "Welcome, traveller!",
+					"size": 0.3,
+					"name": "Sign",
+					"position": [
+						0,
+						2.2,
+						-4
+					],
+					"color": "#ffffff"
+				}
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "$Sign",
+				"text": "s = objectselector {selected: \"$Old Man\"}\np = proximity {to: \"player\", radius: 2.5}\nv = visibility {target: \"$Sign\"}\ns -> p.a\np -> v.on"
+			}
+		}
+	],
+	"inventory-respawn": [
+		{
+			"tool": "set_physics",
+			"args": {
+				"updates": [
+					{
+						"uuid": "$Gem 1",
+						"sensor": true
+					},
+					{
+						"uuid": "$Gem 2",
+						"sensor": true
+					},
+					{
+						"uuid": "$Gem 3",
+						"sensor": true
+					},
+					{
+						"uuid": "$Lava",
+						"sensor": true
+					}
+				]
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "$Gem 1",
+				"text": "c = kit-pickups-collect {score: 1}"
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "$Gem 2",
+				"text": "c = kit-pickups-collect {score: 1}"
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "$Gem 3",
+				"text": "c = kit-pickups-collect {score: 1}"
+			}
+		},
+		{
+			"tool": "hud",
+			"args": {
+				"action": "create",
+				"create": {
+					"screens": [
+						{
+							"name": "Gems",
+							"showWhile": "playing",
+							"elements": [
+								{
+									"kind": "text",
+									"text": "Gems: 0",
+									"anchor": "top-left",
+									"x": 20,
+									"y": 20,
+									"w": 200,
+									"h": 40
+								}
+							]
+						}
+					]
+				}
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "scene",
+				"text": "m = kit-score-mine\nh = hudtext {element: \"$@4.elements.0.id\", format: \"Gems: {v}\"}\nm -> h.value"
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "$Lava",
+				"text": "e = onenter {who: \"player\"}\nr = kit-levels-respawn\ne -> r.trigger"
+			}
+		}
+	],
+	"day-night": [
+		{
+			"tool": "create_objects",
+			"args": {
+				"objects": [
+					{
+						"kind": "light",
+						"light": "directional",
+						"name": "Sun",
+						"position": [
+							5,
+							10,
+							5
+						],
+						"color": "#fff4e0",
+						"intensity": 3
+					}
+				]
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "$Lever",
+				"text": "c = onclick\ns = lightswitch {target: \"$Sun\", on: true, fade: 0.2}\nc -> s.toggle"
+			}
+		}
+	],
+	"two-plates": [
+		{
+			"tool": "create_behaviour",
+			"args": {
+				"name": "Plates",
+				"source": "export default behaviour({\n  name: 'Plates',\n  state: { l: 0, r: 0, shut: true },\n  inputs: ['inL', 'outL', 'inR', 'outR'],\n  outputs: ['shut'],\n  on: {\n    inL() { this.state.l += 1; this.check(); },\n    outL() { this.state.l = Math.max(0, this.state.l - 1); this.check(); },\n    inR() { this.state.r += 1; this.check(); },\n    outR() { this.state.r = Math.max(0, this.state.r - 1); this.check(); }\n  },\n  check() { this.state.shut = !(this.state.l > 0 && this.state.r > 0); }\n});"
+			}
+		},
+		{
+			"tool": "create_objects",
+			"args": {
+				"objects": [
+					{
+						"kind": "primitive",
+						"primitive": "Box",
+						"name": "Zone Left",
+						"params": [
+							2,
+							2,
+							2
+						],
+						"position": [
+							-4,
+							1,
+							0
+						],
+						"color": "#88ccff"
+					},
+					{
+						"kind": "primitive",
+						"primitive": "Box",
+						"name": "Zone Right",
+						"params": [
+							2,
+							2,
+							2
+						],
+						"position": [
+							4,
+							1,
+							0
+						],
+						"color": "#88ccff"
+					}
+				]
+			}
+		},
+		{
+			"tool": "set_physics",
+			"args": {
+				"updates": [
+					{
+						"uuid": "$Zone Left",
+						"sensor": true
+					},
+					{
+						"uuid": "$Zone Right",
+						"sensor": true
+					}
+				]
+			}
+		},
+		{
+			"tool": "create_flow_nodes",
+			"args": {
+				"graph": "scene",
+				"text": "sl = objectselector {selected: \"$Zone Left\"}\nsr = objectselector {selected: \"$Zone Right\"}\nel = onenter {who: \"player\"}\nxl = onexit {who: \"player\"}\ner = onenter {who: \"player\"}\nxr = onexit {who: \"player\"}\nv = visibility {target: \"$Gate\", on: true}\nsl -> el.filter\nsl -> xl.filter\nsr -> er.filter\nsr -> xr.filter\nel -> $@0.created.0.id.inL\nxl -> $@0.created.0.id.outL\ner -> $@0.created.0.id.inR\nxr -> $@0.created.0.id.outR\n$@0.created.0.id.shut -> v.on"
+			}
+		}
+	]
+}

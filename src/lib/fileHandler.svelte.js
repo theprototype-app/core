@@ -13,7 +13,6 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 // re-optimize deps on first use, which reloads the dev page mid-import (17-D2)
 import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
-import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { get, writable } from 'svelte/store';
 import { scenePost } from '$lib/scenePost';
 import { objectsGroup, TControls, selectedObject, selectedObjects, pokeScene } from '../stores/sceneStore.js';
@@ -819,6 +818,8 @@ export async function parseModelFile(file, extension, extras) {
 	if (extension === 'fbx') {
 		const buffer = await readAs(file, 'buffer');
 		if (!checkFbx(buffer, 'file', 'model')) throw refusal('model');
+		// 102-boot-diet-2: the FBX parser (~13 KB gz) loads with the first .fbx, not with every page
+		const { FBXLoader } = await import('three/addons/loaders/FBXLoader.js');
 		const object = new FBXLoader(embeddedOnlyManager('file', 'model')).parse(buffer, '');
 		// 17-D2: FBX clips used to be dropped on the floor (the loader parsed
 		// them, nothing read them). Animated rigs now take the SAME raw-bytes

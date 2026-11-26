@@ -43,7 +43,8 @@ export function plainClip(clip, opts = {}) {
 						: null;
 		if (!path || !node) continue;
 		const mode = track.getInterpolation();
-		if (mode === THREE.InterpolateSmooth) {
+		// 102 M8: a cubic (glTF CUBICSPLINE) track holds [in, v, out] per key: sample it like a smooth one
+		if (mode === THREE.InterpolateSmooth || /** @type {any} */ (track).createInterpolant?.isInterpolantFactoryMethodGLTFCubicSpline) {
 			const times = frameTimes(clip.duration, fps);
 			const n = path === 'rotation' ? 4 : 3;
 			const values = new Float32Array(times.length * n);

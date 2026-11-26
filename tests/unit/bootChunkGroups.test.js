@@ -52,6 +52,29 @@ describe('classifyBootModules', () => {
 		for (const id of [START, APP, N(0), N(2)]) expect(names.has(id)).toBe(false);
 	});
 
+	it('102-boot-diet-2: a PHANTOM edge (useKtx2 -> KTX2Loader) does not make its target boot code', () => {
+		const KTX = '/r/node_modules/three/examples/jsm/loaders/KTX2Loader.js';
+		const ZSTD = '/r/node_modules/three/examples/jsm/libs/zstddec.module.js';
+		const HOOK = '/r/node_modules/@threlte/extras/dist/hooks/useKtx2.js';
+		const spec = {
+			[N(2)]: [['/r/src/scene.js']],
+			'/r/src/scene.js': [[HOOK], ['/r/src/gltfLoader.js']],
+			[HOOK]: [[KTX]],
+			[KTX]: [[ZSTD]],
+			[ZSTD]: [],
+			'/r/src/gltfLoader.js': [[], [KTX]]
+		};
+		const { names } = classifyBootModules(graph(spec));
+		expect(names.has('/r/src/scene.js')).toBe(true);
+		expect(names.has(HOOK)).toBe(true);
+		expect(names.has(KTX)).toBe(false); // left to the default split: the lazy gltfLoader path fetches it
+		expect(names.has(ZSTD)).toBe(false);
+		// the counterfactual: the same graph with any OTHER importer keeps the edge, and the loader groups as boot code
+		const other = { ...spec, '/r/src/scene.js': [['/r/src/ktxUser.js'], ['/r/src/gltfLoader.js']], '/r/src/ktxUser.js': [[KTX]] };
+		delete other[HOOK];
+		expect(classifyBootModules(graph(other)).names.has(KTX)).toBe(true);
+	});
+
 	it('splits boot code by the lazy entries that fetch it on the OTHER pages (the exact signature)', () => {
 		const g = graph({
 			[N(2)]: [['/r/src/a.js', '/r/src/b.js']],

@@ -7,18 +7,16 @@
 // which is what a trim boundary, a seam and a crossfade window are measured in.
 
 import * as THREE from 'three';
-import { frameTimes } from './format.js';
+import { frameTimes, tpInterpolant } from './format.js';
 
 /** @typedef {import('./format.js').TpClip} TpClip */
 /** @typedef {import('./format.js').TpTrack} TpTrack */
 
 const KEY_EPS = 1e-5;
 
-/** @param {TpTrack} tr */
+/** @param {TpTrack} tr (102 M8: a CUBICSPLINE track evaluates its curve) */
 function interpolantOf(tr) {
-	const T = tr.path === 'rotation' ? THREE.QuaternionKeyframeTrack : THREE.VectorKeyframeTrack;
-	const track = new T('n.x', Array.from(tr.times), Array.from(tr.values), tr.interp === 'STEP' ? THREE.InterpolateDiscrete : THREE.InterpolateLinear);
-	return /** @type {any} */ (track).createInterpolant();
+	return tpInterpolant(tr);
 }
 
 /** @param {TpTrack} tr */
@@ -35,7 +33,9 @@ export function resample(tp) {
 		const n = width(tr);
 		const values = new Float32Array(times.length * n);
 		times.forEach((t, f) => values.set(ip.evaluate(t), f * n));
-		return { ...tr, times, values };
+		// a curve sampled at every frame is a LINEAR track (its tangents described the old keys)
+		const { inT: _i, outT: _o, ...rest } = tr;
+		return { ...rest, times, values, interp: /** @type {'LINEAR'|'STEP'} */ (tr.interp === 'STEP' ? 'STEP' : 'LINEAR') };
 	});
 	return { ...tp, tracks, frames: times.length - 1 };
 }

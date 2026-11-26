@@ -316,6 +316,8 @@ export const DEBUG_HOOKS = [
 	['explorerPick', () => import('./explorerPick.js')],
 	['assetShare', () => import('./assetShare')],
 	['soundRuntime', () => import('./soundRuntime')],
+	// 102b-sound: a scene's sound trims / fades (soundEdits, setSoundEdit, editedBuffer)
+	['soundEdits', () => import('./soundEdits')],
 	['dungeonPlay', () => import('./dungeonPlay')],
 	['modelLoader', () => import('./modelLoader')],
 	['sceneAssets', () => import('./sceneAssets')],
@@ -451,6 +453,9 @@ export const DEBUG_HOOKS = [
 	// 106: shadow quality (the pure table + the lazy Soft / Far half)
 	['shadowLevelParams', () => import('./shadows/shadowLevelParams.js')],
 	['shadowLevels', () => import('./shadows/shadowLevels.js')],
+	// 106 S2b: the Contact shadows cost meter
+	['contactCost', () => import('./shadows/contactCost.js')],
+	['contactShadows', () => import('./shadows/contactShadows.js')],
 	['traaPass', () => import('./post/traaPass.js')],
 	['xrLook', () => import('./xrLook.js')],
 	['xrLookCore', () => import('./xrLookCore.js')],

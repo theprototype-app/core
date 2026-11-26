@@ -65,6 +65,8 @@
 		let stale = false;
 		error = '';
 		if (direct) {
+			// 102b-sound: the trim editor swaps in a WAV of the edit and back — release our own URL first
+			if (ownsUrl && url) URL.revokeObjectURL(url);
 			url = direct;
 			ownsUrl = false;
 			return;
@@ -169,6 +171,10 @@
 	}
 	export function hasAudio() {
 		return duration > 0;
+	}
+	/** 102b-sound: the playhead, seconds (the trim editor's I / O mark there) */
+	export function currentTime() {
+		return el?.currentTime ?? 0;
 	}
 
 	function seekTo(fraction: number) {

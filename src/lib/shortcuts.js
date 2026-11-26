@@ -31,7 +31,7 @@ import {
 } from './objectActions';
 import { undo, redo } from './history';
 import { editingObject, enterEditMode, exitEditMode } from './meshEdit';
-import { faceEditObject, meshEditHotkeys } from './faceEdit';
+import { faceEditObject, meshEditHotkeys } from './faceEditState';
 import { recallBookmark } from './cameraBookmarks';
 // 36 L2: Home = the scene's start view (startView imports no history-family module)
 import { backToStartView } from './startView';

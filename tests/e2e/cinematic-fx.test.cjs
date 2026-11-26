@@ -17,7 +17,7 @@ const path = require('path');
 const h = require('./helpers.cjs');
 
 const ARGS = [...(process.env.E2E_GPU === '1' ? h.GPU_ARGS : []), '--enable-unsafe-webgpu', '--enable-features=Vulkan'];
-const STORAGE = { debugCinematicSoftware: '1' };
+const STORAGE = { debugCinematicSoftware: '1', ...(process.env.FX_NO_WATER ? { debugCinematicNoWater: '1' } : {}) };
 const OUT = process.env.FX_OUT || path.join(__dirname, '..', '..', 'test-results', '100-cover-fx');
 const W = 480;
 const H = 270;

@@ -95,6 +95,8 @@ h.run(async () => {
 	const offered = await read(P, 'cinematicState.cinematicState');
 	if (!offered?.offered) {
 		await P.locator('#preview-word').click();
+		// 102-int-3: the menu is its own chunk, fetched on the first open (PreviewPill.toggleMenu): wait for it
+		await P.locator('#preview-menu').waitFor({ state: 'attached', timeout: 8000 }).catch(() => {});
 		h.check((await P.locator('#preview-menu').count()) === 1, '1. Cinematic view not offered here: a click on the word opens the menu');
 		await closeMenu(P);
 	} else h.check(true, '1. (Cinematic offered on this runner: the word is the switch, covered by cinematic-view)');
@@ -150,7 +152,8 @@ h.run(async () => {
 		return { groups: [...document.querySelectorAll('#preview-menu .pm-g')].map((g) => g.textContent.trim()), cine: !!st?.offered || (!!st?.disabled && st?.mode === 'off'), st: { offered: !!st?.offered, disabled: st?.disabled ?? null, mode: st?.mode } };
 	});
 	const groups = g3.groups;
-	const wantGroups = (g3.cine ? ['Cinematic view'] : []).concat(['Draw as', 'Quality', 'Judge for']);
+	// 106 S2b: the Look group (Contact shadows) sits after the Cinematic view group, always
+	const wantGroups = (g3.cine ? ['Cinematic view'] : []).concat(['Look', 'Draw as', 'Quality', 'Judge for']);
 	h.check(JSON.stringify(groups) === JSON.stringify(wantGroups), `3. groups in order: ${groups.join(' · ')} (${JSON.stringify(g3.st)})`);
 	const tail = await T(P, () => ({ stats: !!document.getElementById('preview-stats'), look: !!document.getElementById('preview-scene-look'), foot: document.getElementById('preview-foot')?.textContent ?? '' }));
 	h.check(tail.stats && tail.look && /never saved, never shared/.test(tail.foot) && /Configure scene/.test(tail.foot), '3. Statistics…, Scene look settings… and the footer drawing the line with Configure scene');

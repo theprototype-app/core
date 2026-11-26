@@ -4,11 +4,17 @@
 	// the window). The newest release open, the history folded behind its heading. Opening it marks
 	// the version seen, like the window (`markWhatsNewSeen`).
 	import { onMount } from 'svelte';
-	import { CHANGELOG, markWhatsNewSeen } from '$lib/whatsNew';
+	import { changelogText, loadChangelog, markWhatsNewSeen } from '$lib/whatsNew';
 	import { changelogReleases } from '$lib/changelog.js';
 
-	const { intro, releases } = changelogReleases(CHANGELOG);
-	onMount(() => markWhatsNewSeen());
+	// 102-boot-diet-2: the markdown is a lazy chunk, fetched when this page opens
+	const parsed = $derived($changelogText == null ? null : changelogReleases($changelogText));
+	const intro = $derived(parsed?.intro ?? []);
+	const releases = $derived(parsed?.releases ?? []);
+	onMount(() => {
+		markWhatsNewSeen();
+		void loadChangelog().catch(() => {});
+	});
 </script>
 
 {#snippet body(/** @type {import('$lib/changelog.js').Block[]} */ list)}
@@ -30,6 +36,7 @@
 {/snippet}
 
 <div id="settings-whats-new" class="tp-ui cl">
+	{#if !parsed}<p class="cl-loading">Loading the changelog...</p>{/if}
 	{@render body(intro)}
 	{#each releases as release, index (release.title)}
 		<details class="cl-release" open={index === 0}>

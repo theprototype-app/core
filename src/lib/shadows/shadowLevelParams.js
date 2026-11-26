@@ -14,8 +14,27 @@
  */
 export const TIER_CONTACT = Object.freeze({ pc: false, phone: false, quest: false });
 
-/** Does this device draw contact shadows for the drawn level? @param {ShadowLevel} drawn @param {ShadowTier} tier */
-export function contactShadowsOn(drawn, tier) {
+/**
+ * 106 S2b: where the device's Contact shadows switch may be set to On. The pc tier only: S0 measured the pass adding
+ * frames over 20 ms on every HONOR scene (phone), and the Quest draws Basic. Phone / Quest show the switch disabled
+ * with CONTACT_NOT_HERE.
+ */
+export const CONTACT_ON_TIERS = Object.freeze({ pc: true, phone: false, quest: false });
+export const CONTACT_NOT_HERE = Object.freeze({
+	phone: 'Not on a phone: it costs too many frames there',
+	quest: 'Not in a headset: it costs too many frames there'
+});
+
+/**
+ * Does this device draw contact shadows for the drawn level?
+ *  · mode 'off'  never
+ *  · mode 'on'   wherever the device draws the scene's shadows (Basic, Soft or Far; Q1), on a tier that allows On
+ *  · mode 'auto' the tier table (TIER_CONTACT) at Soft / Far: off everywhere today
+ * @param {ShadowLevel} drawn @param {ShadowTier} tier @param {'auto'|'on'|'off'} [mode]
+ */
+export function contactShadowsOn(drawn, tier, mode = 'auto') {
+	if (mode === 'off' || drawn === 'off') return false;
+	if (mode === 'on') return !!CONTACT_ON_TIERS[tier];
 	return (drawn === 'soft' || drawn === 'far') && !!TIER_CONTACT[tier];
 }
 

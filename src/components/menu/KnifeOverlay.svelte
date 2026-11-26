@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { knifePreview } from '$lib/faceEdit';
+	import { knifePreview } from '$lib/faceEditState';
 	import { bisectPreview } from '$lib/meshBisectTool';
 
 	// M9b: the knife's rubber band. The cut is defined in SCREEN space, so the preview belongs

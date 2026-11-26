@@ -2,7 +2,7 @@
 // opened, a star that lit, a score that rose, a clock on the HUD. Pure: no browser, no model.
 // Run: node test/eval.test.mjs
 import { opened, closedAgain, lit, numbersIn, clocksIn, turned } from '../eval/player.mjs';
-import { TASKS, rose } from '../eval/tasks.mjs';
+import { TASKS, rose, teamScore, showsOwnTeam } from '../eval/tasks.mjs';
 
 let pass = 0;
 let fail = 0;
@@ -82,13 +82,13 @@ check('rose: an unchanged 3 is not a rise', !rose([3], [3], 3));
 check('rose: 2 → 3 is up by 1 not 3', rose([2], [3], 1) && !rose([2], [3], 3));
 
 // the task set
-check('15 tasks', TASKS.length === 15);
+check('23 tasks (15 + 2.0-eval2\'s 8)', TASKS.length === 23);
 check('task ids are unique', new Set(TASKS.map((t) => t.id)).size === TASKS.length);
 check(
-	'three sync tasks (pickup, toggle, late joiner)',
+	'seven sync tasks (pickup, toggle, late joiner, teams, dialogue, day/night, plates)',
 	TASKS.filter((t) => t.sync)
 		.map((t) => t.id)
-		.join() === 'pickup-own,toggle-shared,late-joiner'
+		.join() === 'pickup-own,toggle-shared,late-joiner,team-score,dialogue-own,day-night,two-plates'
 );
 check(
 	'every task has a request, a setup and a check',
@@ -96,6 +96,15 @@ check(
 		(t) => t.say.length > 20 && typeof t.setup === 'function' && typeof t.check === 'function'
 	)
 );
+
+// 2.0-eval2: team scores read from HUD text
+check('teamScore: "Red: 3 | Blue: 1"', teamScore('Red: 3 | Blue: 1', 'red') === 3 && teamScore('Red: 3 | Blue: 1', 'blue') === 1);
+check('teamScore: "RED TEAM 2"', teamScore('RED TEAM 2', 'red') === 2);
+check('teamScore: no number in the same element is no score', teamScore('You are on Red | Blue: 4', 'red') === null);
+check('teamScore: "Blue team: 0 points"', teamScore('Blue team: 0 points', 'blue') === 0);
+check('showsOwnTeam: "You are on Red | Red: 1 | Blue: 2"', showsOwnTeam('You are on Red | Red: 1 | Blue: 2', 'red'));
+check('showsOwnTeam: scores alone tell nobody their team', !showsOwnTeam('Red: 1 | Blue: 2', 'red'));
+check('showsOwnTeam: the other team named is not mine', !showsOwnTeam('Team Blue | Red: 1 | Blue: 2', 'red'));
 
 console.log(`\n${pass} pass, ${fail} fail`);
 process.exit(fail ? 1 : 0);

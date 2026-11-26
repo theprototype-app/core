@@ -17,7 +17,7 @@ import { SunLightShadow } from 'three/addons/lights/SunLightShadow.js';
 import { get } from 'svelte/store';
 import { objectsGroup, globalRenderer } from '../../stores/sceneStore';
 import { cinematicState } from '../cinematic/cinematicStore.js';
-import { cappedShadowSize, contactShadowsWanted } from '../lightParams';
+import { cappedShadowSize, contactShadowsWanted, contactShadowsMode } from '../lightParams';
 import { registerContactShadows } from './contactShadows.js';
 import { levelParams, cascadeReach, contactShadowsOn, cinematicShadowLevel, kernelRadiusFor } from './shadowLevelParams.js';
 
@@ -31,7 +31,7 @@ const cascadeBack = new WeakMap();
  * Going back puts the number back, so Basic after Far is today's Basic again. */
 const mapSizeBack = new WeakMap();
 
-const state = { asked: 'basic', drawn: 'basic', tier: 'pc', contact: false, sweep: /** @type {any} */ (null), sun: /** @type {any} */ (null), applies: 0 };
+const state = { asked: 'basic', drawn: 'basic', tier: 'pc', contact: false, mode: /** @type {'auto' | 'on' | 'off'} */ ('auto'), sweep: /** @type {any} */ (null), sun: /** @type {any} */ (null), applies: 0 };
 
 // THE RE-APPLY HOOKS, wired once on the first apply (they lived in environment.js until the boot measure: +0.7 KB
 // there, and cinematicStore split into its own boot chunk). Both only change what a Soft / Far scene draws, and
@@ -199,8 +199,11 @@ export function applyShadowLevel({ sun, drawn: tierDrawn, tier, radius, asked, r
 	state.tier = tier;
 	const lifted = drawn === 'soft' || drawn === 'far';
 	state.drawn = drawn;
-	state.contact = contactForce === null ? contactShadowsOn(drawn, tier) : contactForce && lifted;
+	state.mode = get(contactShadowsMode);
+	state.contact = contactForce === null ? contactShadowsOn(drawn, tier, state.mode) : contactForce && lifted;
 	if (state.contact) registerContactShadows();
+	// 106 S2b: the cost meter runs where On is allowed (lazy, its own chunk)
+	if (tier === 'pc') void import('./contactCost.js').then((m) => m.startContactMeter());
 	if (get(contactShadowsWanted) !== state.contact) contactShadowsWanted.set(state.contact);
 	if (!lifted) {
 		// Basic / Off: put back everything a level wrote
@@ -246,6 +249,7 @@ export function shadowLevelDebug() {
 		cinematic: cinematicLive,
 		tier: state.tier,
 		contact: state.contact,
+		mode: state.mode,
 		applies: state.applies,
 		sun: sun
 			? {

@@ -3,7 +3,8 @@ import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { objectsGroup, lockedObjects, globalScene, TControls, gizmoSuppressed, pokeScene } from '../stores/sceneStore';
 import { showToast } from '../stores/appStore';
-import { commitMeshGeoSnapshot, registerSculptCacheRefresher } from './faceEdit';
+import { registerSculptCacheRefresher } from './faceEditState';
+import { withFaceEdit, prefetchFaceEdit } from './faceEditLazy';
 import { sendMeshGeo } from './meshCommit';
 import { MAX_SNAPSHOT, previewReplicable } from './meshBudget';
 import { selectObject, deselectObject } from './objectActions';
@@ -394,6 +395,7 @@ const MESH_SCULPT_MAX_FLOATS = MAX_SNAPSHOT;
 export function enterSculpt(uuid, opts = {}) {
 	const object = objectOf(uuid);
 	if (!object) return false;
+	prefetchFaceEdit(); // 102-boot-diet-2: a stroke ends in the face editor's commit
 	const isTerrain = !!object.userData?.terrain;
 	if (!isTerrain && opts.scatter) return enterMeshScatter(uuid, object);
 	if (!isTerrain && (!object.isMesh || !object.geometry?.attributes?.position)) {
@@ -646,7 +648,13 @@ export function endStroke() {
 	const before = strokeBefore;
 	const after = object.geometry.attributes.position.array;
 	strokeBefore = null;
-	if (uuid && positionsDiffer(before, after)) commitMeshGeoSnapshot(uuid, Array.from(before), Array.from(after));
+	if (uuid && positionsDiffer(before, after)) {
+		// 102-boot-diet-2: copied NOW (the live array keeps changing); the commit runs at once when the face
+		// editor chunk is loaded (enterSculpt prefetches it), else in order once it lands
+		const b = Array.from(before);
+		const a = Array.from(after);
+		void withFaceEdit((fe) => fe.commitMeshGeoSnapshot(uuid, b, a));
+	}
 }
 
 /** 99 K6: did the stroke move anything? The typed-array form of the JSON.stringify compare it replaces, with the

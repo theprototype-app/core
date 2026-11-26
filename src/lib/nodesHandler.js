@@ -168,10 +168,20 @@ function mergeGraphSnapshot(graphId, nodes, edges) {
 // the scene graph; H1 format adds {graphs: {graphId: {nodes, edges}}}. Nodes we
 // already have are updated in place (position + data) so drift heals when a
 // resync arrives.
-/** @param {any[]} nodes @param {any[]} edges @param {Record<string, any>} [graphs] */
-export function applyNodesSnapshot(nodes, edges, graphs) {
+// 102-int-3: `replace` lists OBJECT graph ids the sender replaced whole (giving a flow to the selection, updating
+// all copies, undoing either): those take the snapshot exactly — a merge would keep the old nodes running beside
+// the new copies. Never the scene graph.
+/** @param {any[]} nodes @param {any[]} edges @param {Record<string, any>} [graphs] @param {any} [replace] */
+export function applyNodesSnapshot(nodes, edges, graphs, replace) {
+	const whole = new Set(Array.isArray(replace) ? replace.filter((g) => typeof g === 'string' && g !== SCENE_GRAPH) : []);
 	if (graphs && typeof graphs === 'object') {
 		for (const [graphId, graph] of Object.entries(graphs)) {
+			if (whole.has(graphId)) {
+				const n = Array.isArray(graph?.nodes) ? graph.nodes.map(cleanFlowNode) : [];
+				const e = Array.isArray(graph?.edges) ? graph.edges.map(cleanFlowEdge) : [];
+				updateGraph(graphId, () => ({ nodes: n, edges: e }));
+				continue;
+			}
 			// fix-late-joiners: a graph deleted here moments ago is not brought back by a stale snapshot
 			if (graphId !== SCENE_GRAPH && !graphExists(graphId) && graphTombstoned(graphId)) continue;
 			mergeGraphSnapshot(graphId, graph?.nodes ?? [], graph?.edges ?? []);

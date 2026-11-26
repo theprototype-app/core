@@ -695,3 +695,60 @@ export function smoothKeys(type, keys, window = 0.4) {
 	});
 	return normalizeCurve(type, out);
 }
+
+// ---- 102 M8: ONE evaluation for every editor (the legacy Animation-window ease lives here) --
+
+/**
+ * The CSS cubic-bezier easing [x1,y1,x2,y2] at normalized time x in [0,1] (17-E's segment
+ * ease): solve x(u) = x by bisection, return y(u). MOVED here from animationPreview.js
+ * unchanged (same iterations, same tolerance), so the Animation window, its export bake, the
+ * play runtime and the Timeline all evaluate through this one module.
+ * @param {number[]} bezier @param {number} x
+ */
+export function easeSegment(bezier, x) {
+	const [x1, y1, x2, y2] = bezier;
+	if (x <= 0) return 0;
+	if (x >= 1) return 1;
+	const cx = 3 * x1;
+	const bx = 3 * (x2 - x1) - cx;
+	const ax = 1 - cx - bx;
+	const cy = 3 * y1;
+	const by = 3 * (y2 - y1) - cy;
+	const ay = 1 - cy - by;
+	const bezX = (/** @type {number} */ t) => ((ax * t + bx) * t + cx) * t;
+	const bezY = (/** @type {number} */ t) => ((ay * t + by) * t + cy) * t;
+	let lo = 0;
+	let hi = 1;
+	let t = x;
+	for (let i = 0; i < 24; i++) {
+		const xEst = bezX(t);
+		if (Math.abs(xEst - x) < 1e-4) break;
+		if (xEst < x) lo = t;
+		else hi = t;
+		t = (lo + hi) / 2;
+	}
+	return bezY(t);
+}
+
+/**
+ * The legacy (17-E) scalar keys `{t, v, ease?}` at `seconds`: hold before the first key and
+ * after the last, otherwise ease across the bracketing pair; `stepped` holds the left value.
+ * animationPreview.sampleTrack is this function.
+ * @param {{t: number, v: number, ease?: number[]}[]|undefined} keys @param {number} seconds @param {boolean} [stepped]
+ * @returns {number|null}
+ */
+export function sampleLegacyKeys(keys, seconds, stepped = false) {
+	if (!keys?.length) return null;
+	if (seconds <= keys[0].t) return keys[0].v;
+	const last = keys[keys.length - 1];
+	if (seconds >= last.t) return last.v;
+	let i = 0;
+	while (i < keys.length - 1 && keys[i + 1].t <= seconds) i++;
+	const a = keys[i];
+	const b = keys[i + 1];
+	if (stepped) return a.v;
+	const span = b.t - a.t;
+	const x = span > 1e-6 ? (seconds - a.t) / span : 1;
+	const eased = a.ease ? easeSegment(a.ease, x) : x;
+	return a.v + (b.v - a.v) * eased;
+}

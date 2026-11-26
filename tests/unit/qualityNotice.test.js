@@ -42,7 +42,8 @@ describe('quality notice (F12)', () => {
 	});
 
 	it('every toggle in the list has a lowered rule', () => {
-		for (const t of QUALITY_TOGGLES) expect(isLowered(t.key, snap(9, { water: true, fluid: true }))).toBe(true);
+		// 106 S2b: the contact pre-step rides beside the level (overridesAt never sets it)
+		for (const t of QUALITY_TOGGLES) expect(isLowered(t.key, snap(9, { water: true, fluid: true, contactOff: true }))).toBe(true);
 		for (const t of QUALITY_TOGGLES) expect(isLowered(t.key, snap(0))).toBe(false);
 	});
 });

@@ -11,7 +11,7 @@ export const PLAYER_WHILE_PLAYING = new Set(['move', 'throw', 'possessnode', 'gr
 /** what any joiner sends by itself in its first seconds (its handshake pushes and its replies to our
  * full-state asks): a refusal of these is the role working, not the bot trying something, so the strip
  * does not count them (they are still recorded) */
-export const JOIN_STATE_TYPES = new Set(['modules', 'environment', 'music', 'scenephysics', 'scenepost', 'transport', 'patch', 'envpresets', 'matpresets', 'kit', 'shadergraphs', 'huds', 'hudvalues', 'modulestate', 'lookstate', 'nodedefs', 'loading', 'triggers', 'handmodel', 'game', 'lock', 'locked', 'objects', 'nodes', 'annotations', 'joints', 'anims', 'animations', 'sequences', 'manifest', 'peervars', 'atscene', 'playmode']);
+export const JOIN_STATE_TYPES = new Set(['modules', 'environment', 'music', 'soundedits', 'scenephysics', 'scenepost', 'transport', 'patch', 'envpresets', 'matpresets', 'kit', 'shadergraphs', 'huds', 'hudvalues', 'modulestate', 'lookstate', 'nodedefs', 'loading', 'triggers', 'handmodel', 'game', 'lock', 'locked', 'objects', 'nodes', 'annotations', 'joints', 'anims', 'animations', 'sequences', 'manifest', 'peervars', 'atscene', 'playmode']);
 /** how long after a bot's link opens its join burst is expected (ms) */
 export const JOIN_QUIET_MS = 4000;
 

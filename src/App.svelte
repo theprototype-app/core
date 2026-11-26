@@ -9,6 +9,23 @@
   // frames' blocking shader links. A dynamic import here queued it behind them (a third e2e page
   // took 34 s instead of 8 s to publish __stores).
   import { installDebugHooks } from '$lib/debugHooks'
+  import { prefetchFaceEdit } from '$lib/faceEditLazy'
+  // 102-boot-diet-2: the file preview window (+ the Image editor face it hosts) is a lazy chunk, loaded once
+  /** @type {any} */
+  let FilePreviewWin = null
+  /** @type {Promise<any> | null} */
+  let previewWinLoading = null
+  function loadPreviewWin() {
+    previewWinLoading ??= import('./components/editors/FilePreviewWindow.svelte').then(
+      (m) => (FilePreviewWin = m.default),
+      (e) => {
+        previewWinLoading = null
+        console.warn('[preview] could not load the preview window', e)
+      }
+    )
+    return previewWinLoading
+  }
+  $: if ($previewWindows.length && !FilePreviewWin) loadPreviewWin()
   // 55 A2: `window.tpAgent` — only `&agent` / safeStorage.agentApi turn it on. A LEAF statically
   // (it must read the hash before the dial consumes it); the API itself is a dynamic import.
   import { agentRequested } from '$lib/agent/agentMode'
@@ -47,7 +64,6 @@
   import { SvelteFlowProvider } from '@xyflow/svelte'
   import Explorer from './components/editors/Explorer.svelte'
   import TextEditorWindow from './components/editors/TextEditorWindow.svelte'
-  import FilePreviewWindow from './components/editors/FilePreviewWindow.svelte'
   import { previewWindows } from './lib/fileWindows'
   import ModelPreviewWindow from './components/editors/ModelPreviewWindow.svelte'
   import DungeonMinimap from './components/play/DungeonMinimap.svelte'
@@ -431,6 +447,13 @@ import { startMusicToolbox } from './lib/musicToolbox'
     // state — all windows closed — and the layout is restored only by an explicit
     // Restore, by the auto-restore setting, or by loading a file, because it rides the
     // saved payload rather than localStorage.
+    // 102-boot-diet-2: the mesh editor's face / edge half is a lazy chunk; fetch it once the editor is idle so
+    // the first double-click into Edit Mesh is not a download
+    prefetchFaceEdit()
+    // ...and the preview window, so the first double-click on a file opens at once
+    const idle = /** @type {any} */ (window).requestIdleCallback
+    if (typeof idle === 'function') idle(() => loadPreviewWin(), { timeout: 6000 })
+    else setTimeout(loadPreviewWin, 3000)
     // store access for automated tests, opt-in via localStorage
     if (safeStorage.getItem('debugStores')) {
       // 34 R4 (A2): one row per hook in $lib/debugHooks.js (no positional tails here any more)
@@ -516,9 +539,13 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <!-- 40-image (F13): the Image editor; renders nothing until an image is opened in it -->
 <!-- R22 round 12: ONE INSTANCE PER OPEN PREVIEW. With the multi-window pref off the list
      never holds more than one, so this renders exactly what it always did. -->
+<!-- 102-boot-diet-2: the component loads ONCE (idle prefetch, or the first preview) and every window then mounts
+     synchronously, as with the static import — ~15 KB gz the editor no longer boots with -->
+{#if FilePreviewWin}
 {#each $previewWindows as w, i (w.id)}
-  <FilePreviewWindow winId={w.id} index={i} />
+  <svelte:component this={FilePreviewWin} winId={w.id} index={i} />
 {/each}
+{/if}
 <ModelPreviewWindow />
 {/if}
 <Menu />

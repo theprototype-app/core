@@ -21,8 +21,6 @@ import {
 	VignetteEffect,
 	VignetteTechnique
 } from 'postprocessing';
-// @ts-ignore - n8ao ships no bundled type declarations
-import { N8AOPostPass } from 'n8ao';
 import { registerPostEffect, postEffectDef, planPostStack } from './scenePost';
 import { lutAffine } from './xrLookCore.js';
 // 98 P4: lens flare, god rays, volumetric fog (registered by side effect, own passes each)
@@ -33,11 +31,41 @@ import { aoTierSettings } from './post/finishCore.js';
 // peer (and every late joiner) grades with a missing texture — golden rule 9.
 import { itemByHash, itemBlob, explorerItems } from './explorer';
 import { requestAsset } from './assetShare';
-import { get } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import { cameraPreview } from './cameraPreview';
 import { objectsGroup, isLocked } from '../stores/sceneStore';
 import { TRAAPass } from './post/traaPass.js';
 import { traaActive } from './post/traaCore.js';
+
+// 102-boot-diet-2 (Row 2): N8AO (~75 KB gz, most of it an inlined noise texture) loads ON DEMAND -- it was on
+// the boot of both pages, and a phone (shaded by default), a player with AO off and every page before its post
+// warm-up never draws it. `n8aoReady` flips when it lands; Outline puts it in the stack signature, so the chain
+// recompiles once with the AO pass. `loadN8ao()` is what Outline calls as soon as the WARMED stack would hold AO
+// (the warm-up already keeps the first 10 frames without post), and the AO entry's `make` calls it too.
+/** @type {any} */
+let N8AOPostPass = null;
+/** @type {Promise<any> | null} */
+let n8aoLoading = null;
+/** true once the N8AO pass class is loaded */
+export const n8aoReady = writable(false);
+/** start (or join) the N8AO load; a failure is logged and retried on the next ask */
+export function loadN8ao() {
+	if (N8AOPostPass) return Promise.resolve(N8AOPostPass);
+	// @ts-ignore - n8ao ships no bundled type declarations
+	n8aoLoading ??= import('n8ao').then(
+		(m) => {
+			N8AOPostPass = m.N8AOPostPass;
+			n8aoReady.set(true);
+			return N8AOPostPass;
+		},
+		(error) => {
+			n8aoLoading = null;
+			console.warn('[post] could not load ambient occlusion', error);
+			throw error;
+		}
+	);
+	return n8aoLoading;
+}
 
 // L1 — the built-in post effects and the COMPILER.
 //
@@ -190,6 +218,11 @@ registerPostEffect('ao', {
 			] }
 	],
 	make: (params, ctx) => {
+		// not loaded yet: build the rest of the chain now; n8aoReady rebuilds it with AO when the chunk lands
+		if (!N8AOPostPass) {
+			void loadN8ao().catch(() => {});
+			return null;
+		}
 		const pass = new N8AOPostPass(ctx.scene, ctx.camera, ctx.width, ctx.height);
 		pass.configuration.aoRadius = num(params.aoRadius, 1.5);
 		pass.configuration.intensity = num(params.intensity, 2.5);

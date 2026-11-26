@@ -96,6 +96,18 @@ ship with a tested union and `main` never takes a dependency change on its own. 
 `deps` up to the released `main` (`git push origin main:deps` when it fast-forwards, else merge `main`
 into `deps`).
 
+**The monthly round** (learned 2026-11):
+- Start by merging `main` into `deps` (a `deps-fix/sync-main` PR). A `deps` branch that lags `main` turns the lag into
+  new reds that are not the bumps' fault.
+- A GPU-only suite (`desk.gpu`) that is new in a release goes to the GitHub battery's `optional` set by default: the
+  SwiftShader runners cannot draw it, and the desk / PC / integrator batteries still gate it.
+- fetch-metadata adds the target branch to `directory` (`/deps`); `deps-policy.cjs` (`manifestDir`) strips it.
+- Dependabot sometimes ignores `@dependabot recreate` / `rebase` on an old PR. Rebasing it yourself is fine, but
+  fetch-metadata then refuses the commit (the `scope` job is red): dispatch deps.yml on that branch by hand
+  (`class=manual`) and merge with a comment that names the run.
+- After a recreate, fetch-metadata's update type can be stale (it once called 3.1.1 -> 3.4.0 a major): when its new
+  version is lower than the old one, trust the commit title instead.
+
 **Security updates** are GitHub's exception: they always target `main`, whatever `target-branch` says.
 deps.yml runs the same battery and labels on them there; nothing auto-merges into `main`, a person does.
 

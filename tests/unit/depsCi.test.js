@@ -4,8 +4,13 @@ import { describe, it, expect } from 'vitest';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { classify } = require('../../scripts/ci/deps-policy.cjs');
-const { assign, shardCount, counts } = require('../../scripts/ci/battery.cjs');
+const { classify, manifestDir } = require('../../scripts/ci/deps-policy.cjs');
+const { assign, shardCount, counts, ciEnvError, ciSuiteEnv, ciOptional } = require('../../scripts/ci/battery.cjs');
+const { half } = require('../../scripts/ci/battery-desk.cjs');
+const batteryJson = require('../../tests/e2e/battery.json');
+const fs = require('node:fs');
+const { spawnSync } = require('node:child_process');
+const path = require('node:path');
 
 /** @param {string} name @param {string} type @param {string} up @param {string} [dir] @param {string} [eco] */
 const dep = (name, type, up, dir = '/', eco = 'npm_and_yarn') => ({
@@ -48,6 +53,16 @@ describe('deps-policy: one class per PR, the most careful part wins', () => {
 		expect(classify([dep('ws', 'direct:production', 'patch', '/tools/agent'), dep('three', 'direct:production', 'patch')]).battery).toBe(true);
 		expect(classify([]).battery).toBe(true);
 	});
+	it('reads the manifest directory without the target branch fetch-metadata glues on', () => {
+		const into = (/** @type {string} */ name, /** @type {string} */ up, /** @type {string} */ dir) => ({ ...dep(name, 'direct:production', up, dir), targetBranch: 'deps' });
+		expect(manifestDir({ directory: '/deps', targetBranch: 'deps' })).toBe('/');
+		expect(manifestDir({ directory: '/tools/agent/deps', targetBranch: 'deps' })).toBe('/tools/agent');
+		expect(manifestDir({ directory: '/', targetBranch: 'main' })).toBe('/');
+		expect(manifestDir({ directory: '/tools/agent' })).toBe('/tools/agent');
+		// the 2026-11-01 round: @lucide/svelte 1.61 → 1.63 came in as "/deps" and skipped battery + PC
+		expect(classify([into('@lucide/svelte', 'minor', '/deps')])).toMatchObject({ cls: 'ready', needsPc: true, battery: true });
+		expect(classify([into('ws', 'patch', '/tools/agent/deps')])).toMatchObject({ cls: 'auto', needsPc: false, battery: false });
+	});
 });
 
 /** @param {Record<string, number>} suites @param {Record<string, string>} [skip] */
@@ -77,6 +92,85 @@ describe('battery shards: longest first onto the least-loaded shard', () => {
 		expect(shardCount(battery(Object.fromEntries(Array.from({ length: 99 }, (_, i) => ['s' + i, 600]))))).toBe(20);
 	});
 	it('counts pass/fail lines the way the integrators battery does', () => {
-		expect(counts('  ✓ one\n  ✗ two\nPASS three\n\nlast line\n')).toEqual({ pass: 2, fail: 1, last: 'last line' });
+		expect(counts('  ✓ one\n  ✗ two\nPASS three\n\nlast line\n')).toMatchObject({ pass: 2, fail: 1, last: 'last line', slow: false, slowWaits: 0 });
+	});
+});
+
+describe('BATTERY_CI is GitHub-only (ci-speed): every battery runner refuses it elsewhere', () => {
+	it('accepts it on GitHub Actions and accepts its absence anywhere', () => {
+		expect(ciEnvError({ BATTERY_CI: '1', GITHUB_ACTIONS: 'true' })).toBe('');
+		expect(ciEnvError({})).toBe('');
+		expect(ciEnvError({ BATTERY_CI: '', GITHUB_ACTIONS: undefined })).toBe('');
+		expect(ciEnvError({ BATTERY_CI: '0' })).toBe('');
+	});
+	it('refuses it on a local / desk / pc / release run, whatever value it carries', () => {
+		expect(ciEnvError({ BATTERY_CI: '1' })).toMatch(/outside GitHub Actions/);
+		expect(ciEnvError({ BATTERY_CI: 'true', GITHUB_ACTIONS: 'false' })).toMatch(/CI-only/);
+		expect(ciEnvError({ BATTERY_CI: '1', GITHUB_ACTIONS: '1' })).toMatch(/GITHUB_ACTIONS=1/);
+	});
+	it('the runners exit 2 before doing anything (battery.cjs, battery-desk.cjs) and the e2e helpers refuse to load', () => {
+		const root = path.resolve(new URL('.', import.meta.url).pathname, '../..');
+		const { GITHUB_ACTIONS: _onGitHub, ...rest } = process.env;
+		const env = { ...rest, BATTERY_CI: '1' };
+		for (const script of ['scripts/ci/battery.cjs', 'scripts/ci/battery-desk.cjs']) {
+			const r = spawnSync(process.execPath, [path.join(root, script), 'plan'], { cwd: root, env, encoding: 'utf8' });
+			expect(r.status).toBe(2);
+			expect(r.stderr).toMatch(/outside GitHub Actions/);
+		}
+		const h = spawnSync(process.execPath, ['-e', "require('./tests/e2e/helpers.cjs')"], { cwd: root, env, encoding: 'utf8' });
+		expect(h.status).not.toBe(0);
+		expect(h.stderr).toMatch(/outside GitHub Actions/);
+	});
+});
+
+describe('the lean draw opt-out (ci-speed): battery.json ci.fullDraw', () => {
+	const b = { ci: { fullDraw: { 'pixel-suite': 'reads frame pixels' } } };
+	it('hands E2E_FULL_DRAW=1 to a listed suite on CI, nothing to the rest, nothing off CI', () => {
+		expect(ciSuiteEnv(/** @type {any} */ (b), 'pixel-suite', { BATTERY_CI: '1' })).toEqual({ E2E_FULL_DRAW: '1' });
+		expect(ciSuiteEnv(/** @type {any} */ (b), 'store-suite', { BATTERY_CI: '1' })).toEqual({});
+		expect(ciSuiteEnv(/** @type {any} */ (b), 'pixel-suite', {})).toEqual({});
+	});
+	it('hands E2E_PAUSE_IDLE=1 to a suite listed in ci.pauseIdle, on CI only, beside its draw choice', () => {
+		const p = { ci: { fullDraw: { both: 'reads pixels' }, pauseIdle: { both: 'A/B 2026-11-24', peers: 'A/B 2026-11-24' } } };
+		expect(ciSuiteEnv(/** @type {any} */ (p), 'peers', { BATTERY_CI: '1' })).toEqual({ E2E_PAUSE_IDLE: '1' });
+		expect(ciSuiteEnv(/** @type {any} */ (p), 'both', { BATTERY_CI: '1' })).toEqual({ E2E_FULL_DRAW: '1', E2E_PAUSE_IDLE: '1' });
+		expect(ciSuiteEnv(/** @type {any} */ (p), 'peers', {})).toEqual({});
+	});
+	it('every listed suite exists and carries its reason', () => {
+		const list = [...Object.entries(batteryJson.ci?.fullDraw ?? {}), ...Object.entries(batteryJson.ci?.pauseIdle ?? {})];
+		for (const [name, reason] of list) {
+			expect(fs.existsSync(new URL(`../e2e/${name}.test.cjs`, import.meta.url)), name).toBe(true);
+			expect(typeof reason === 'string' && reason.length > 10, name).toBe(true);
+		}
+	});
+});
+
+describe('GPU-only suites (desk.gpu) are optional on the GitHub runner, required on the desk (ci-speed)', () => {
+	const GPU = 'GPU-only (desk.gpu): needs a real GPU';
+	const b = {
+		...battery({ plain: 600, webgpu: 500, budget: 400, held: 300 }),
+		optional: { held: 'red on the runner, by hand' },
+		desk: { gpu: ['webgpu', 'held', 'MOD:fx'], local: ['budget'] },
+		ci: { optionalTags: { gpu: GPU } }
+	};
+	it('a desk.gpu suite does not gate on GitHub, with the tag reason; an explicit optional entry keeps its own', () => {
+		const opt = ciOptional(/** @type {any} */ (b));
+		expect(opt.webgpu).toBe(GPU);
+		expect(opt.held).toBe('red on the runner, by hand');
+		expect('budget' in opt || 'plain' in opt).toBe(false);
+		expect(assign(/** @type {any} */ (b), 1)[0].suites).toEqual(['plain', 'budget']);
+		expect(assign(/** @type {any} */ (b), 1, 'optional')[0].suites).toEqual(['webgpu', 'held']);
+	});
+	it('without the rule nothing changes (a tag alone is not optional)', () => {
+		const plain = { ...b, ci: {} };
+		expect(assign(/** @type {any} */ (plain), 1)[0].suites).toEqual(['plain', 'webgpu', 'budget']);
+	});
+	it('the desk / pc / int battery still runs (and gates on) every desk.gpu suite', () => {
+		const desk = { ...b, modules: {} };
+		const all = [...half(/** @type {any} */ (desk), 'A', 2), ...half(/** @type {any} */ (desk), 'B', 2)].sort();
+		expect(all).toEqual(['budget', 'held', 'plain', 'webgpu']);
+	});
+	it('battery.json carries the rule for desk.gpu', () => {
+		expect(batteryJson.ci?.optionalTags?.gpu).toMatch(/GPU-only/);
 	});
 });

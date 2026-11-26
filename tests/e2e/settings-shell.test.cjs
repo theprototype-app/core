@@ -95,10 +95,12 @@ h.run(async () => {
 	for (const id of ['[data-tour="settings-loading"]', '#modules-on-open', '#water-quality']) {
 		h.check((await page.locator('#settings-main ' + id).count()) === 1, `Scene holds ${id}`);
 	}
+	// the Gizmo card is fetched with the page (103 H7: {#await import}), so wait for it before reading the cards
+	await page.locator('#settings-main .ss-page [data-section-label]', { hasText: 'Gizmo' }).first().waitFor({ timeout: 15000 }).catch(() => {});
 	const sceneCards = await page.$$eval('#settings-main .ss-page [data-section-label]', (els) => els.map((e) => (e.textContent || '').trim()));
 	h.check(
-		JSON.stringify(sceneCards) === JSON.stringify(['Viewport', 'Performance', 'Collaboration', 'Saving & checkpoints', 'Editing', 'Units', 'Duplicates', 'Colours', 'Loading placeholders']),
-		'Scene is split into its nine sections (' + sceneCards.join(', ') + ')'
+		JSON.stringify(sceneCards) === JSON.stringify(['Viewport', 'Gizmo', 'Performance', 'Collaboration', 'Saving & checkpoints', 'Editing', 'Units', 'Duplicates', 'Colours', 'Loading placeholders']),
+		'Scene is split into its ten sections (1.79.0 added Gizmo: ' + sceneCards.join(', ') + ')'
 	);
 
 	// ---- 3. Keyboard, persistence, deep links ---------------------------------------------------

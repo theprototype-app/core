@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-11-25T22:08:47.679Z",
+	"recordedAt": "2026-11-26T01:33:08.651Z",
 	"settings": {
 		"Theme": {
 			"rows": [
@@ -3274,8 +3274,8 @@
 			],
 			"sections": [
 				"Interface",
-				"Connection",
 				"AI",
+				"Connection",
 				"Privacy"
 			]
 		},
@@ -3898,8 +3898,8 @@
 				"Your own GPU box"
 			],
 			"sections": [
-				"AI",
 				"Interface",
+				"AI",
 				"Privacy"
 			]
 		},
@@ -3968,8 +3968,8 @@
 			],
 			"sections": [
 				"Interface",
-				"Connection",
-				"AI"
+				"AI",
+				"Connection"
 			]
 		},
 		"room": {
@@ -4973,8 +4973,8 @@
 				"Import",
 				"Export",
 				"VR",
-				"Connection",
 				"AI",
+				"Connection",
 				"Privacy"
 			]
 		},

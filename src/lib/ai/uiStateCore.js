@@ -32,14 +32,26 @@ export const STAT_FIGURES = /** @type {const} */ ([
 ]);
 
 /** the three device targets the Budget section judges for (budgetMeterCore TARGET_IDS), in its order */
-export const TARGET_WORDS = /** @type {Record<string, string>} */ ({ quest: 'Quest / VR', phone: 'Phone', desktop: 'Desktop' });
+export const TARGET_WORDS = /** @type {Record<string, string>} */ ({
+	quest: 'Quest / VR',
+	phone: 'Phone',
+	desktop: 'Desktop'
+});
 
 /** what a person may call a target @param {unknown} v @returns {'quest'|'phone'|'desktop'|null} */
 export function targetOf(v) {
 	const s = String(v ?? '')
 		.toLowerCase()
 		.replace(/[^a-z]/g, '');
-	if (s === 'quest' || s === 'vr' || s === 'questvr' || s === 'headset' || s === 'meta' || s === 'metaquest') return 'quest';
+	if (
+		s === 'quest' ||
+		s === 'vr' ||
+		s === 'questvr' ||
+		s === 'headset' ||
+		s === 'meta' ||
+		s === 'metaquest'
+	)
+		return 'quest';
 	if (s === 'phone' || s === 'mobile' || s === 'android' || s === 'iphone') return 'phone';
 	if (s === 'desktop' || s === 'pc' || s === 'computer' || s === 'laptop') return 'desktop';
 	return null;
@@ -78,7 +90,8 @@ export function compareTargets(verdicts, current) {
 		? 'No reading yet.'
 		: !red.length && !amber.length
 			? 'Fits every device: Quest, phone and desktop are green.'
-			: (red.length ? 'Over the budget on ' + red.join(' and ') + '. ' : '') + (amber.length ? 'Close to the limit on ' + amber.join(' and ') + '.' : '');
+			: (red.length ? 'Over the budget on ' + red.join(' and ') + '. ' : '') +
+				(amber.length ? 'Close to the limit on ' + amber.join(' and ') + '.' : '');
 	return { rows, say: say.trim() };
 }
 
@@ -106,7 +119,13 @@ export function snapshotOf(name, figures, at, heaviest = []) {
 		name: cleanName(name),
 		at,
 		figures: kept,
-		heaviest: (heaviest ?? []).slice(0, 5).map((h) => ({ name: String(h.name ?? '').slice(0, 60), ...(Number.isFinite(h.triangles) ? { triangles: h.triangles } : {}), ...(Number.isFinite(h.calls) ? { calls: h.calls } : {}) }))
+		heaviest: (heaviest ?? [])
+			.slice(0, 5)
+			.map((h) => ({
+				name: String(h.name ?? '').slice(0, 60),
+				...(Number.isFinite(h.triangles) ? { triangles: h.triangles } : {}),
+				...(Number.isFinite(h.calls) ? { calls: h.calls } : {})
+			}))
 	};
 }
 
@@ -145,13 +164,24 @@ export function diffSnapshots(a, b) {
 		changes.push({ figure: f.name, was, now, by, ...(pct !== null ? { percent: pct } : {}) });
 	}
 	changes.sort((x, y) => Math.abs(y.percent ?? 100) - Math.abs(x.percent ?? 100));
-	const top = changes.slice(0, 3).map((c) => c.figure.replace(/ \(.*\)$/, '') + ' ' + (c.by > 0 ? 'up' : 'down') + ' ' + (c.percent !== undefined ? Math.abs(c.percent) + '%' : Math.abs(c.by)));
+	const top = changes
+		.slice(0, 3)
+		.map(
+			(c) =>
+				c.figure.replace(/ \(.*\)$/, '') +
+				' ' +
+				(c.by > 0 ? 'up' : 'down') +
+				' ' +
+				(c.percent !== undefined ? Math.abs(c.percent) + '%' : Math.abs(c.by))
+		);
 	return {
 		from: a?.name,
 		to: b?.name,
 		seconds: Math.round(((b?.at ?? 0) - (a?.at ?? 0)) / 1000),
 		changes,
-		say: changes.length ? 'From "' + a?.name + '" to "' + b?.name + '": ' + top.join(', ') + '.' : 'Nothing changed between "' + a?.name + '" and "' + b?.name + '".'
+		say: changes.length
+			? 'From "' + a?.name + '" to "' + b?.name + '": ' + top.join(', ') + '.'
+			: 'Nothing changed between "' + a?.name + '" and "' + b?.name + '".'
 	};
 }
 
@@ -163,20 +193,27 @@ export const GRANT_WORDS = /** @type {Record<string, string>} */ ({
 });
 
 /**
- * The first-use answers this tab holds, as a list: Always (stored on this device, every trusted app), This time
- * (this page, per app) and No (this page, per app). PURE.
- * @param {string[]} kinds @param {(kind: string) => boolean} always is it stored as Always
+ * The first-use answers this tab holds, per app: Always (stored on this device), This time and No (this page). PURE.
+ * @param {string[]} kinds @param {Record<string, string[]>} always app -> the kinds stored as Always
  * @param {Iterable<[string, string]>} session `kind\napp` -> 'session' | 'no' (showTool's page answers)
  */
 export function grantsList(kinds, always, session) {
-	/** @type {{kind: string, what: string, answer: 'always'|'this time'|'no', app?: string}[]} */
+	/** @type {{kind: string, what: string, answer: 'always'|'this time'|'no', app: string}[]} */
 	const out = [];
-	for (const kind of kinds) if (always(kind)) out.push({ kind, what: GRANT_WORDS[kind] ?? kind, answer: 'always' });
+	for (const [app, list] of Object.entries(always ?? {}))
+		for (const kind of kinds)
+			if (list.includes(kind))
+				out.push({ kind, what: GRANT_WORDS[kind] ?? kind, answer: 'always', app });
 	for (const [key, value] of session) {
-		const [kind, app] = String(key).split('\n');
+		const [kind, app = ''] = String(key).split('\n');
 		if (!kinds.includes(kind)) continue;
-		if (value === 'session' && always(kind)) continue; // Always already covers it
-		out.push({ kind, what: GRANT_WORDS[kind] ?? kind, answer: value === 'no' ? 'no' : 'this time', ...(app ? { app } : {}) });
+		if (value === 'session' && (always?.[app] ?? []).includes(kind)) continue; // Always already covers it
+		out.push({
+			kind,
+			what: GRANT_WORDS[kind] ?? kind,
+			answer: value === 'no' ? 'no' : 'this time',
+			app
+		});
 	}
 	return out;
 }

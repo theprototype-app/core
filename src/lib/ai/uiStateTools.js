@@ -24,11 +24,19 @@ export const UI_STATE_AI_TOOLS = [
 			parameters: {
 				type: 'object',
 				properties: {
-					action: { type: 'string', enum: ['read', 'compare', 'snapshot', 'diff', 'snapshots', 'target'], description: 'default read' },
+					action: {
+						type: 'string',
+						enum: ['read', 'compare', 'snapshot', 'diff', 'snapshots', 'target'],
+						description: 'default read'
+					},
 					name: { type: 'string', description: 'snapshot: its name (at most 40 characters)' },
 					from: { type: 'string', description: 'diff: the earlier snapshot (default the newest)' },
 					to: { type: 'string', description: 'diff: the later snapshot (default now)' },
-					target: { type: 'string', enum: ['quest', 'phone', 'desktop'], description: 'target: the device to judge for' }
+					target: {
+						type: 'string',
+						enum: ['quest', 'phone', 'desktop'],
+						description: 'target: the device to judge for'
+					}
 				}
 			}
 		}

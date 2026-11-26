@@ -632,3 +632,20 @@ describe('85b first-use tip', () => {
 		expect([...AGENT_GAMES_TIP_TOOLS].sort()).toEqual([...want].sort());
 	});
 });
+
+describe('107: the Quality card names who asks', () => {
+	const textOf = (/** @type {any} */ t) => (typeof t === 'string' ? t : t?.text ?? '');
+	it.each([
+		[{ by: 'ChatGPT' }, /^ChatGPT wants /],
+		[{ by: 'Claude' }, /^Claude wants /],
+		[undefined, /^The assistant wants /],
+		[{ by: 'AI app' }, /^An AI app wants /]
+	])('%j', async (opts, want) => {
+		agentPage.on = false;
+		toastStore.set([]);
+		const { lookTool } = await import('../../src/lib/ai/lookTools.js');
+		const r = await lookTool('set_quality', { level: 'high' }, opts);
+		expect(r.needsConfirm).toBe(true);
+		expect(get(toastStore).map(textOf).some((t) => want.test(t))).toBe(true);
+	});
+});

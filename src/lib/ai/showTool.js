@@ -10,13 +10,12 @@
 //           the editor's reveal seam selects (CodeEditor `reveal.select`). Never edits text.
 //   back    undo what the newest `show` changed (a stack of 10)
 //
-// Each kind asks the person once (Always / This time / No): Always is stored on this device
-// (safeStorage `show:allow:<kind>`, the switches in Settings ▸ Privacy), This time and No last
-// until the page reloads, per app. An app the Worker cannot name ("an AI app") is never offered Always
+// Each kind asks the person once (107: one question for every kind not answered yet). Permissions are kept
+// per app: Always is stored on this device for that app (showGrants.js, listed in Settings ▸ Privacy), This
+// time and No last until the page reloads. An app the Worker cannot name ("an AI app") is never offered Always
 // and never uses a stored one (104-int: 89's app names x 104's show).
 
 import { get } from 'svelte/store';
-import { safeStorage } from '../safeStorage';
 import { showToastById, inspectorClose, inspectorKind, chatHidden, chatTab, showSidebar, closeSelectionInspector, specatorMode } from '../../stores/appStore';
 import { globalCamera, orbitControls, globalRenderer, objectsGroup, TControls, isLocked, selectedObjects, marqueeRect, isVRMode } from '../../stores/sceneStore';
 import { askPerson } from './personAsk.js';
@@ -34,7 +33,7 @@ import {
 } from './showCore.js';
 import { createRateLimit, resolveRef, isTextName, extOf } from './filesCore.js';
 import { isDirty } from '../codeTabs';
-import { sessionAnswers, allowKey as grantKey, setAlways, GRANT_KINDS } from './showGrants.js';
+import { sessionAnswers, alwaysAllowed, setAlways, GRANT_KINDS } from './showGrants.js';
 
 /** this page's answers: 'session' (This time) | 'no' — 107: kept in showGrants so Settings lists them with Revoke */
 const answers = sessionAnswers;
@@ -51,8 +50,8 @@ const fail = (msg, extra) => {
 	return { error: msg, ...(extra ?? {}) };
 };
 
-/** @param {string} kind */
-export const allowKey = grantKey;
+/** the per-kind key older builds stored an Always under (showGrants reads it once, as Claude's) @param {string} kind */
+export const allowKey = (kind) => 'show:allow:' + kind;
 
 /** an app with a trusted name (Claude, ChatGPT, the in-app assistant), not one the Worker could not name @param {string} by */
 const trustedApp = (by) => !/^(an )?ai app$/i.test(by.trim());
@@ -63,11 +62,7 @@ const answerKey = (kind, by) => kind + '\n' + by;
 function allowed(kind, by) {
 	if (answers.get(answerKey(kind, by)) === 'session') return true;
 	if (!trustedApp(by)) return false;
-	try {
-		return safeStorage.getItem(allowKey(kind)) === 'always';
-	} catch {
-		return false;
-	}
+	return alwaysAllowed(kind, by);
 }
 
 /** why the view is not free to move (a recording, Film on the phone, a sequence shot), or '' */
@@ -467,7 +462,7 @@ export async function showTool(args, ctx = {}) {
 		apply: async (value) => {
 			const granted = value === 'one' ? [action] : kinds;
 			for (const k of granted) {
-				if (value === 'always') setAlways(k, true);
+				if (value === 'always') setAlways(k, true, by);
 				else answers.set(answerKey(k, by), 'session');
 			}
 			const r = await run();

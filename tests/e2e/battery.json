@@ -546,6 +546,7 @@
 		"connector-relay": 240,
 		"connector-show-scene": 180,
 		"connector-through": 150,
+		"connector-ui-state": 240,
 		"connector-voice": 7,
 		"connector-window": 135,
 		"console-hygiene": 32,

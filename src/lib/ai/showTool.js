@@ -34,9 +34,10 @@ import {
 } from './showCore.js';
 import { createRateLimit, resolveRef, isTextName, extOf } from './filesCore.js';
 import { isDirty } from '../codeTabs';
+import { sessionAnswers, allowKey as grantKey, setAlways, GRANT_KINDS } from './showGrants.js';
 
-/** this page's answers: 'session' (This time) | 'no' @type {Map<string, string>} */
-const answers = new Map();
+/** this page's answers: 'session' (This time) | 'no' — 107: kept in showGrants so Settings lists them with Revoke */
+const answers = sessionAnswers;
 const calls = createRateLimit(SHOW_PER_MINUTE);
 let lastCameraAt = 0;
 /** what `back` undoes, newest last @type {{label: string, undo: () => Promise<string> | string}[]} */
@@ -51,7 +52,7 @@ const fail = (msg, extra) => {
 };
 
 /** @param {string} kind */
-export const allowKey = (kind) => 'show:allow:' + kind;
+export const allowKey = grantKey;
 
 /** an app with a trusted name (Claude, ChatGPT, the in-app assistant), not one the Worker could not name @param {string} by */
 const trustedApp = (by) => !/^(an )?ai app$/i.test(by.trim());
@@ -446,27 +447,42 @@ export async function showTool(args, ctx = {}) {
 		return codeAction(a, by);
 	};
 	if (allowed(action, by)) return run();
-	// rule 3: the first time, the person says whether (Always / This time / No)
+	// rule 3: the first time, the person says whether (Always / This time / No). 107 (owner report): ONE question for
+	// every kind not answered yet — it names each kind it grants and never a refused surface; "Only this" keeps the
+	// narrow answer. Lifetimes as before: Always on this device, This time for this page. Only the person's buttons answer.
+	const kinds = combinedKinds(action, by);
+	const said = kinds.map((k) => KIND_WORDS[k]);
+	const words = said.length > 1 ? said.slice(0, -1).join(', ') + ' and ' + said[said.length - 1] : said[0];
 	return askPerson('show', a, {
-		summary: KIND_WORDS[action],
-		prompt: 'Let ' + by.replace(/^An /, 'an ') + ' ' + KIND_WORDS[action] + '?',
+		summary: words,
+		prompt:
+			'Let ' + by.replace(/^An /, 'an ') + ' ' + words + '?' +
+			(kinds.length > 1 ? ' Never sign-in, account, settings, consent, publishing, connected apps or payment. Settings ▸ Privacy lists what you allowed.' : ''),
 		choices: [
 			...(trustedApp(by) ? [{ label: 'Always', value: 'always' }] : []),
 			{ label: 'This time', value: 'session' },
+			...(kinds.length > 1 ? [{ label: 'Only this', value: 'one' }] : []),
 			{ label: 'No', value: 'no', cancel: true }
 		],
 		apply: async (value) => {
-			if (value === 'always') {
-				try {
-					safeStorage.setItem(allowKey(action), 'always');
-				} catch {}
-			} else answers.set(answerKey(action, by), 'session');
-			return run();
+			const granted = value === 'one' ? [action] : kinds;
+			for (const k of granted) {
+				if (value === 'always') setAlways(k, true);
+				else answers.set(answerKey(k, by), 'session');
+			}
+			const r = await run();
+			return granted.length > 1 && r && typeof r === 'object' ? { ...r, granted: granted.map((k) => KIND_WORDS[k]), grantedFor: value === 'always' ? 'this device' : 'this page' } : r;
 		}
 	}).then((r) => {
-		if (r?.cancelled) answers.set(answerKey(action, by), 'no');
+		if (r?.cancelled) for (const k of kinds) answers.set(answerKey(k, by), 'no'); // No to the question = no to every kind it named
 		return r;
 	});
+}
+
+/** 107: the kinds one first-use question covers — the asked kind first, then every kind this app has neither been
+ * allowed nor refused yet (a No stays a No) @param {string} action @param {string} by */
+export function combinedKinds(action, by) {
+	return [action, ...GRANT_KINDS.filter((k) => k !== action && !allowed(k, by) && answers.get(answerKey(k, by)) !== 'no')];
 }
 
 /** unit / e2e: forget this page's answers and pacing */

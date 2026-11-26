@@ -28,9 +28,10 @@ describe('show: "Always" belongs to apps with a trusted name', () => {
 	it('an unnamed AI app is not offered Always', async () => {
 		const r = await showTool({ action: 'panel', name: 'Explorer' }, { by: 'An AI app' });
 		expect(r.needsConfirm).toBe(true);
-		expect(r.choices).toEqual(['This time', 'No']);
+		// 107-ui-state: one question for every kind not answered yet, with "Only this" for the narrow answer
+		expect(r.choices).toEqual(['This time', 'Only this', 'No']);
 		const c = await showTool({ action: 'panel', name: 'Explorer' }, { by: 'Claude' });
-		expect(c.choices).toEqual(['Always', 'This time', 'No']);
+		expect(c.choices).toEqual(['Always', 'This time', 'Only this', 'No']);
 	});
 	it('a stored Always does not let an unnamed AI app skip the question', async () => {
 		safeStorage.setItem(allowKey('panel'), 'always');

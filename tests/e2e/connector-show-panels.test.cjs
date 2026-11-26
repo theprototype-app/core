@@ -10,6 +10,7 @@
 //   5. Dock / Left sidebar as targets: close hides (tabs stay open), Back reopens
 //   6. move to the right sidebar and Back; maximize a docked panel and restore; collapse / expand the Explorer tree
 //   7. layouts: save under a new name (an existing name is refused), apply, Back
+//   8. (107-int) a named layout without Code, applied over a dirty Code tab: text kept, tab still dirty after reopen
 // Run: APP_URL='https://theprototype.app:7240/' npm run e2e -- connector-show-panels
 const h = require('./helpers.cjs');
 const { installProvider, fakeRelay, connectorPhase } = require('./connectorFake.cjs');
@@ -155,6 +156,38 @@ h.run(async () => {
 	await h.eventually(() => where('explorer'), (w) => w !== null, 'the layout brought the Explorer back', 8000);
 	const nl = await show({ action: 'layout', name: 'No such layout' });
 	h.check(/no layout "No such layout": nothing changed/.test(errOf(nl)), 'an unknown layout changes nothing');
+
+	// ---- 8 (107-int, claude:9 row; scout defect named-layout-closes-code-unasked) ------------------------------
+	// a named layout WITHOUT Code applied while a Code tab holds unsaved text: the text is kept, the tab is still
+	// dirty, and reopening Code shows the ● marker (closing the panel never discards a buffer)
+	await reset();
+	await show({ action: 'panel', name: 'Code', state: 'close' });
+	await h.eventually(() => where('code'), (w) => w === null, 'Code is closed before saving the layout', 5000);
+	const sv2 = await show({ action: 'layout', name: 'E2E no code', state: 'save' });
+	h.check(sv2?.result?.saved === true, `save a layout with Code closed (${short(sv2)})`);
+	const EDIT = '// unsaved 107-int\nreturn { out: 7 };\n';
+	const tabId = await page.evaluate(async () => {
+		const v = window.__tp.test.v1;
+		const ex = v.explorer;
+		await ex.loadExplorer();
+		const item = await ex.addItemFromBytes(new TextEncoder().encode('// a file\nreturn { out: 1 };\n').buffer, 'layout-dirty.js', null);
+		return v.codeWorkspace.openCode({ source: 'script', ref: { itemId: item.id } });
+	});
+	h.check(typeof tabId === 'string', `a .js file opens as a Code tab (${tabId})`);
+	await h.eventually(() => where('code'), (w) => w !== null, 'Code is open', 8000);
+	await page.evaluate(([id, code]) => window.__tp.test.v1.codeWorkspace.setTabCode(id, code), [tabId, EDIT]);
+	const dirtyOf = () => page.evaluate((id) => { const t = window.__tp.test.v1.codeWorkspace.tabById(id); return t ? { code: t.code, dirty: t.code !== t.saved } : null; }, tabId);
+	h.check((await dirtyOf())?.dirty === true, 'the tab is dirty before the layout');
+	await reset();
+	const ap2 = await show({ action: 'layout', name: 'E2E no code' });
+	h.check(ap2?.result?.applied === true, `apply the layout without Code (${short(ap2)})`);
+	await page.waitForTimeout(800);
+	const after = await dirtyOf();
+	h.check(after?.code === EDIT && after.dirty === true, `the unsaved text is kept and the tab is still dirty (${short(after)})`);
+	await reset();
+	await show({ action: 'panel', name: 'Code' });
+	await h.eventually(() => page.locator('.code-tab[data-dirty="true"]').count(), (n) => n >= 1, 'reopened Code shows the tab with the unsaved marker', 15000);
+	h.check((await dirtyOf())?.code === EDIT, 'and the reopened tab holds the unsaved text');
 
 	await h.finish(browser);
 });

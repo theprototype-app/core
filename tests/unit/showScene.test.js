@@ -9,10 +9,10 @@ import { PERSON_AI_TOOLS, PERSON_TOOL_NAMES, personToolReads } from '../../src/l
 const tool = (name) => PERSON_AI_TOOLS.find((t) => t.function.name === name)?.function;
 
 describe('show: panels', () => {
-	it('the allow-list is the nine panels (+ the Assistant tab), by their names and the words people use', () => {
-		expect(Object.values(SHOW_PANELS).map((p) => p.label)).toEqual(['Explorer', 'Objects', 'Inspector', 'Flow editor', 'Code', 'Timeline', 'Assets', 'Preview', 'Chat', 'Assistant']);
+	it('the allow-list is the registry (107-panels), by their names and the words people use', () => {
+		expect(Object.values(SHOW_PANELS).map((p) => p.label)).toEqual(['Explorer', 'Objects', 'Inspector', 'Configure Scene', 'Flow editor', 'Animation', 'Timeline', 'UV editor', 'Shader editor', 'HUD editor', 'Code', 'Profiler', 'Statistics', 'Free assets', 'Preview', 'Debugger', 'Chat', 'Assistant']);
 		expect(panelOf('Explorer')).toBe('explorer');
-		expect(panelOf('the Library')).toBe(null);
+		expect(panelOf('the Library')).toBe('explorer');
 		expect(panelOf('library')).toBe('explorer');
 		expect(panelOf('Flow editor')).toBe('flow');
 		expect(panelOf('node editor')).toBe('flow');
@@ -20,11 +20,12 @@ describe('show: panels', () => {
 		expect(panelOf('code window')).toBe('code');
 		expect(panelOf('Timeline')).toBe('timeline');
 		expect(panelOf('AI assistant')).toBe('assistant');
-		expect(panelOf('UV editor')).toBe(null);
+		expect(panelOf('UV editor')).toBe('uv');
+		expect(panelOf('Animation')).toBe('animation');
 	});
 	it('rule 2: sign-in, account, consent, publish, connected apps, payment and settings are denied', () => {
 		for (const n of ['Sign in', 'login', 'Account', 'Consent', 'Publish', 'Connected apps', 'Connect Claude', 'payment', 'Billing', 'Settings', 'Roles', 'Privacy settings', 'Export']) expect(deniedPanel(n)).toBe(true);
-		for (const n of ['Explorer', 'Objects', 'Inspector', 'Flow editor', 'Code', 'Timeline', 'Assets', 'Preview', 'Chat']) expect(deniedPanel(n)).toBe(false);
+		for (const n of ['Explorer', 'Objects', 'Inspector', 'Flow editor', 'Code', 'Timeline', 'Assets', 'Preview', 'Chat', 'Profiler', 'Statistics']) expect(deniedPanel(n)).toBe(false);
 	});
 	it('rule 7: 6 a minute, one camera move per 2 s', () => {
 		expect(SHOW_PER_MINUTE).toBe(6);
@@ -63,9 +64,9 @@ describe('show + scene: schemas', () => {
 		expect(PERSON_TOOL_NAMES).toEqual(['files', 'show', 'scene']);
 		expect(PERSON_AI_TOOLS.map((t) => t.function.name)).toEqual(['files', 'show', 'scene']);
 	});
-	it('show: panel | camera | code | reveal | select | flow | back (107), and no text to write (rule 8)', () => {
+	it('show: panels | panel | layout | camera | code | reveal | select | flow | back, and no text to write (rule 8)', () => {
 		const s = tool('show');
-		expect(s.parameters.properties.action.enum).toEqual(['panel', 'camera', 'code', 'reveal', 'select', 'flow', 'back']);
+		expect(s.parameters.properties.action.enum).toEqual(['panels', 'panel', 'layout', 'camera', 'code', 'reveal', 'select', 'flow', 'back']);
 		expect(s.description).toMatch(/WITHOUT moving the camera/);
 		expect(s.description).toMatch(/without focusing their editor/);
 		expect(s.parameters.properties.text).toBeUndefined();
@@ -84,10 +85,11 @@ describe('show + scene: schemas', () => {
 		expect(s.description).toMatch(/only the host/);
 		expect(s.description).toMatch(/call list_scene again/);
 	});
-	it('read scope: scene list reads; show never counts as a read', () => {
+	it('read scope: scene list reads; of show only the panels list reads (107-panels)', () => {
 		expect(personToolReads('scene', { action: 'list' })).toBe(true);
 		expect(personToolReads('scene', { action: 'open' })).toBe(false);
 		expect(personToolReads('scene', { action: 'new' })).toBe(false);
-		for (const a of ['panel', 'camera', 'code', 'back']) expect(personToolReads('show', { action: a })).toBe(false);
+		for (const a of ['panel', 'layout', 'camera', 'code', 'back']) expect(personToolReads('show', { action: a })).toBe(false);
+		expect(personToolReads('show', { action: 'panels' })).toBe(true);
 	});
 });

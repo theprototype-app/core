@@ -407,6 +407,19 @@ function moveHere(key, where, target) {
 }
 
 /**
+ * 107-panels — the assistant's show {panel, to}: MOVE an OPEN window to the bottom dock or a sidebar column, the
+ * "+" menus' own move (`moveHere`), so nothing is opened twice. False when it is closed, in a pop-out window, or
+ * cannot live there.
+ * @param {string} key @param {'dock'|'left'|'right'} target
+ */
+export function moveWindowTo(key, target) {
+	const where = windowWhere(key);
+	if (!where || where === 'window') return false;
+	if (where === target) return true;
+	return moveHere(key, where, target);
+}
+
+/**
  * 41 G22 + 44 M5/M7 — THE "+" MENU, every one of them: the dock strip's, a sidebar's, the
  * floating Node editor's header. One row per registry window (`DOCK_WINDOWS` + the hosted ones),
  * and ONE RULE for a row (44 M5, the user: "'+' ▸ Statistics while Statistics lives in a sidebar

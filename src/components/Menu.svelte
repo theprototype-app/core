@@ -25,23 +25,15 @@
 	import TemplatesModal from './menu/TemplatesModal.svelte';
 	import CharacterPanel from './menu/CharacterPanel.svelte'; // 36-avatars: the customise side panel
 	import ViewportMenu from './menu/ViewportMenu.svelte';
-	// 102-boot-diet-3: the mesh toolbox (MeshEditPopup + MeshToolOptions, ~12 KB gz) is a lazy chunk, loaded ONCE --
-	// at idle after the first frame (next to faceEdit's prefetch) or by the first edit session -- and then mounted
-	// synchronously as before. Everything it does is gated on an open session, which needs faceEdit loaded anyway.
+	// 102-boot-diet-3: the mesh toolbox (MeshEditPopup + MeshToolOptions, ~12 KB gz) is a lazy chunk ($lib/lazyPanels),
+	// loaded ONCE -- at idle after the first frame (next to faceEdit's prefetch) or by the first edit session -- and then
+	// mounted synchronously as before. Everything it does is gated on an open session, which needs faceEdit anyway.
 	import { editingObject } from '$lib/meshEdit';
 	import { faceEditObject } from '$lib/faceEditState';
+	import { lazyPanels, loadPanel } from '$lib/lazyPanels';
 	import { onMount } from 'svelte';
-	let MeshEditPopup = $state<any>(null);
-	let meshPopupLoading: Promise<unknown> | null = null;
-	function loadMeshEditPopup() {
-		meshPopupLoading ??= import('./menu/MeshEditPopup.svelte').then(
-			(m) => (MeshEditPopup = m.default),
-			(err) => {
-				meshPopupLoading = null; // retried by the next session (the stale-chunk rule: a failure must not latch)
-				console.warn('[mesh] could not load the mesh toolbox', err);
-			}
-		);
-	}
+	const MeshEditPopup = $derived(($lazyPanels as Record<string, any>).meshToolbox ?? null);
+	const loadMeshEditPopup = () => void loadPanel('meshToolbox').catch(() => {}); // a failure retries on the next session
 	$effect(() => {
 		if ($editingObject || $faceEditObject) loadMeshEditPopup();
 	});

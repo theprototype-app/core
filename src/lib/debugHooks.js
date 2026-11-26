@@ -15,6 +15,7 @@
 // `registerDebugHook(name, obj)` (before or after the install) instead of adding a row.
 
 // 94 SP1: the runtime registry lives in a leaf (the play entry imports it without this table)
+import { safeStorage } from './safeStorage';
 import { registeredDebugHooks as registered, registerDebugHook } from './debugHookRegistry.js';
 export { registerDebugHook };
 
@@ -561,6 +562,7 @@ export const DEBUG_HOOKS = [
 	['filesTool', () => import('./ai/filesTool.js')],
 	['personAsk', () => import('./ai/personAsk.js')],
 	['showTool', () => import('./ai/showTool.js')],
+	['lazyPanels', () => import('./lazyPanels.js')], // 102-boot-diet-3: the lazy editor panels (dock-on-demand)
 	['sceneTool', () => import('./ai/sceneTool.js')],
 	['transferLedger', () => import('./transferLedger')],
 	['explorerView', () => import('./explorerView')],
@@ -765,10 +767,16 @@ export const DEBUG_HOOKS = [
 export function installDebugHooks() {
 	// 101 F5: the facade module loads WITH the rows (lazy: the boot graph never carries it)
 	// 99 K4: + the kernel operators' lazy chunk, so a test's synchronous operator call finds them loaded
+	// 102-boot-diet-3: + the lazy editor panels (lazyPanels.js)
 	return Promise.all([
 		Promise.all(DEBUG_HOOKS.map(([, load]) => load())),
 		import('./testFacade.js'),
-		import('./editSession').then((m) => m.loadKernelOps())
+		import('./editSession').then((m) => m.loadKernelOps()),
+		// 102-boot-diet-3: the lazy editor panels (dock windows, mesh toolbox), so a suite that opens one and acts at once finds it
+		// mounted -- unless the page asked for the real cold path (`debugLazyPanels` = 'cold': tests/e2e/dock-on-demand)
+		safeStorage.getItem('debugLazyPanels') === 'cold'
+			? null
+			: import('./lazyPanels.js').then((m) => m.loadAllPanels())
 	]).then(([mods, facade]) => {
 		/** @type {Record<string, any>} */
 		const stores = {};

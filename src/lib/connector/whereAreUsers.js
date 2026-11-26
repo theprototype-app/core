@@ -10,6 +10,11 @@ import { objectsGroup, globalCamera, globalRenderer, peerHands } from '../../sto
 import { localFeet } from '$lib/avatars/avatarState.js';
 import { recentPings, pingWorld } from '$lib/pingLog.js';
 import { bodyFrom } from '$lib/ai/bodyUnitsCore.js';
+// 104 B2: which camera the person looks through. Loaded beside this module (it reaches cameraPreview, whose
+// graph a unit test of this file cannot carry); a connector answers long after it has landed.
+/** @type {null | ((find: (uuid: string) => any) => any)} */
+let lookingThrough = null;
+import('./throughCamera.js').then((m) => (lookingThrough = m.lookingThrough), () => {});
 
 /** a parked avatar (no live pose yet) sits this high */
 export const NO_POSE_Y = 999;
@@ -101,10 +106,20 @@ export function whereAreUsers(args) {
 	const renderer = /** @type {any} */ (get(globalRenderer));
 	const inVR = !!renderer?.xr?.isPresenting;
 	const cam = inVR ? renderer.xr.getCamera?.() : get(globalCamera);
+	// 104 B2: the camera this tab shows full-screen (a preview, a game, a sequence shot, Film, a recording) — its pose
+	// IS the render camera's, so the pose below is already that camera's; `through` says which and why
+	const through = inVR || !lookingThrough ? null : lookingThrough((uuid) => group.getObjectByProperty('uuid', uuid));
 	if (cam) {
 		cam.updateWorldMatrix?.(true, false);
 		const w = cam.matrixWorld.elements;
-		users.push({ id: me, name: nameOf(me ?? ''), you: true, inVR, ...describePose(local(cam.matrixWorld), floorAt(localFeet(), w)) });
+		users.push({
+			id: me,
+			name: nameOf(me ?? ''),
+			you: true,
+			inVR,
+			...describePose(local(cam.matrixWorld), floorAt(localFeet(), w)),
+			...(through ? { through: { ...through, note: through.note ?? 'position, forward and inFront are this camera\'s, not where the person stands' } } : {})
+		});
 	} else users.push({ id: me, name: nameOf(me ?? ''), you: true, note: 'no camera yet' });
 	for (const id of link?.openedPeers ? [...link.openedPeers].map(String) : []) {
 		const m = root.getObjectByName(id);
@@ -120,7 +135,7 @@ export function whereAreUsers(args) {
 	// 85b S6 / S8: body-scale numbers for everyone with a pose; hands for whoever is in VR
 	const hands = /** @type {Record<string, any>} */ (get(peerHands) ?? {});
 	for (const u of users) {
-		if (!u.position) continue;
+		if (!u.position || u.through) continue; // 104 B2: a camera's height is no body
 		u.body = bodyFrom(u.eyeHeightAboveFloor, u.you && inVR ? xrRoomSide(renderer) : null);
 		const h = u.you ? (inVR ? myHands(renderer) : null) : hands[u.id]?.active ? { left: hands[u.id].left?.pos, right: hands[u.id].right?.pos } : null;
 		if (h) {

@@ -53,6 +53,8 @@ export const DEBUG_HOOKS = [
 	// `momentBuffer` through registerDebugHook when the first Play loads it
 	['momentStores', () => import('./moment/momentStores.js')],
 	['problemReport', () => import('./problemReport')],
+	// 104 D1: Scan my room (scanMyRoom, readRoom, applyRoom, roomScanDebug.last())
+	['roomScan', () => import('./vr/roomScan.js')],
 	['profilerView', () => import('./perf/profilerView')],
 	['profilerModel', () => import('./perf/profilerModel.js')],
 	['vrRecIndicator', () => import('./vrRecIndicator')],
@@ -550,6 +552,11 @@ export const DEBUG_HOOKS = [
 	['importDuplicates', () => import('./importDuplicates')],
 	['peerScenes', () => import('./peerScenes')],
 	['sharedLibrary', () => import('./sharedLibrary')],
+	// 104 C1-C3: the person's tools (files counters, the in-tab questions)
+	['filesTool', () => import('./ai/filesTool.js')],
+	['personAsk', () => import('./ai/personAsk.js')],
+	['showTool', () => import('./ai/showTool.js')],
+	['sceneTool', () => import('./ai/sceneTool.js')],
 	['transferLedger', () => import('./transferLedger')],
 	['explorerView', () => import('./explorerView')],
 	['filePreview', () => import('./filePreview')],

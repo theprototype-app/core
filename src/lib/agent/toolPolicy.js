@@ -27,9 +27,9 @@ export function missingToolsFor(facts) {
 		out.push({
 			name: 'generate_mesh',
 			reason: facts.hostKnown
-				? 'the host has no mesh-generation provider ready (Settings ▸ Tools & connections ▸ Mesh providers on the host\'s machine); build with primitives instead'
+				? 'the host has no mesh-generation provider ready (Settings ▸ AI ▸ Mesh providers on the host\'s machine); build with primitives instead'
 				: facts.personTab
-					? 'this tab has no mesh-generation provider ready (Settings ▸ Tools & connections ▸ Mesh providers); build with primitives instead'
+					? 'this tab has no mesh-generation provider ready (Settings ▸ AI ▸ Mesh providers); build with primitives instead'
 					: 'not joined to a session, and this page has no mesh-generation provider; build with primitives instead'
 		});
 	if (!facts.behaviours)

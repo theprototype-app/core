@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-11-23T11:19:18.892Z",
+	"recordedAt": "2026-11-25T22:08:47.679Z",
 	"settings": {
 		"Theme": {
 			"rows": [
@@ -300,6 +300,7 @@
 		"Pinch zoom": {
 			"rows": [
 				"Allow browser pinch zoom",
+				"Pen only draws",
 				"Pinch zoom",
 				"Trackpad gestures"
 			],
@@ -395,6 +396,7 @@
 			"rows": [
 				"HUD editor: show / bring to front / hide",
 				"Node editor: show / bring to front / hide",
+				"Open and close my panels",
 				"Shader editor: show / bring to front / hide",
 				"Show captions",
 				"Show everything",
@@ -406,7 +408,8 @@
 				"Interface",
 				"Accessibility",
 				"Touch controls",
-				"Shortcuts"
+				"Shortcuts",
+				"Privacy"
 			]
 		},
 		"Look speed": {
@@ -509,6 +512,7 @@
 				"Grid colour",
 				"Grid opacity",
 				"Grid size",
+				"Hide my IP",
 				"Passthrough",
 				"Placeholder grid texture",
 				"Placeholder style",
@@ -518,7 +522,8 @@
 			"sections": [
 				"Touch controls",
 				"Scene",
-				"VR"
+				"VR",
+				"Privacy"
 			]
 		},
 		"Button looks": {
@@ -540,10 +545,17 @@
 		},
 		"Rotate": {
 			"rows": [
+				"Gizmo style",
 				"Grab style",
+				"Lock to X while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)",
+				"Lock to Y while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)",
+				"Lock to Z while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)",
 				"Phone selection toolbar",
 				"Pivot point",
 				"Rotate",
+				"Rotate now (in the UV editor)",
+				"Rotate now (vertices / edges / faces)",
+				"Rotate now — turns with the pointer",
 				"Rotate — in the viewport PiP",
 				"Theme",
 				"World grab snapping"
@@ -551,6 +563,7 @@
 			"sections": [
 				"Interface",
 				"Shortcuts",
+				"Scene",
 				"VR"
 			]
 		},
@@ -560,6 +573,7 @@
 				"Grab style",
 				"Phone selection toolbar",
 				"Pivot point",
+				"Resize now — scales with the pointer",
 				"Scale",
 				"Scale — in the viewport PiP",
 				"Theme",
@@ -607,6 +621,7 @@
 		},
 		"Fly down / up": {
 			"rows": [
+				"Fly direction",
 				"Fly down / up"
 			],
 			"sections": [
@@ -834,7 +849,7 @@
 				"Shortcuts",
 				"Scene",
 				"Explorer",
-				"Tools & connections"
+				"AI"
 			]
 		},
 		"Simulate physics (toggle)": {
@@ -1163,6 +1178,8 @@
 				"Group the selection",
 				"Grow the selection (faces)",
 				"Invert the selection (any mode)",
+				"Move now (in the UV editor) — the selection follows the pointer",
+				"Move now — the selection follows the pointer",
 				"Mute / unmute the selection (a muted node does nothing)",
 				"Nudge the selection down",
 				"Nudge the selection down ×5",
@@ -1447,6 +1464,16 @@
 				"Scene"
 			]
 		},
+		"Scene shadow quality": {
+			"rows": [
+				"Reduce quality when the scene is heavy",
+				"Scene shadow quality",
+				"Shadow quality"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
 		"Reduce quality when the scene is heavy": {
 			"rows": [
 				"Reduce quality when the scene is heavy"
@@ -1702,7 +1729,9 @@
 		},
 		"Grid size": {
 			"rows": [
+				"Gizmo style",
 				"Grid size",
+				"Handle size",
 				"Placement preview",
 				"Preview triangle budget",
 				"Shadow quality",
@@ -1999,9 +2028,11 @@
 				"Draw repeated kit pieces together",
 				"Edit mesh wireframe colour",
 				"GPU fluid",
+				"Gizmo style",
 				"Grid colour",
 				"Grid opacity",
 				"Grid size",
+				"Handle size",
 				"Include VR button",
 				"Keep automatic checkpoints",
 				"Length",
@@ -2371,7 +2402,7 @@
 				"Voice typing"
 			],
 			"sections": [
-				"Tools & connections"
+				"AI"
 			]
 		},
 		"Keep sent pictures in Explorer": {
@@ -2379,7 +2410,7 @@
 				"Keep sent pictures in Explorer"
 			],
 			"sections": [
-				"Tools & connections"
+				"AI"
 			]
 		},
 		"Coding agents": {
@@ -2387,7 +2418,7 @@
 				"Coding agents"
 			],
 			"sections": [
-				"Tools & connections"
+				"AI"
 			]
 		},
 		"Blender and other 3D tools": {
@@ -2395,7 +2426,7 @@
 				"Blender and other 3D tools"
 			],
 			"sections": [
-				"Tools & connections"
+				"AI"
 			]
 		},
 		"Rigging and animation services": {
@@ -2403,7 +2434,7 @@
 				"Rigging and animation services"
 			],
 			"sections": [
-				"Tools & connections"
+				"AI"
 			]
 		},
 		"Your own GPU box": {
@@ -2411,7 +2442,7 @@
 				"Your own GPU box"
 			],
 			"sections": [
-				"Tools & connections"
+				"AI"
 			]
 		},
 		"Session size": {
@@ -2697,9 +2728,11 @@
 				"Draw repeated kit pieces together",
 				"Edit mesh wireframe colour",
 				"GPU fluid",
+				"Gizmo style",
 				"Grid colour",
 				"Grid opacity",
 				"Grid size",
+				"Handle size",
 				"Import defaults",
 				"Keep automatic checkpoints",
 				"LOD 1 keeps",
@@ -2772,6 +2805,7 @@
 			"rows": [
 				"Allow browser pinch zoom",
 				"Double-click to open notes",
+				"Pen only draws",
 				"Pinch zoom",
 				"Reverse trackpad pan",
 				"Shift+A opens the Add menu",
@@ -2788,6 +2822,7 @@
 			"rows": [
 				"Allow browser pinch zoom",
 				"Double-click to open notes",
+				"Pen only draws",
 				"Pinch zoom",
 				"Reverse trackpad pan",
 				"Shift+A opens the Add menu",
@@ -3016,10 +3051,17 @@
 		},
 		"rotate": {
 			"rows": [
+				"Gizmo style",
 				"Grab style",
+				"Lock to X while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)",
+				"Lock to Y while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)",
+				"Lock to Z while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)",
 				"Phone selection toolbar",
 				"Pivot point",
 				"Rotate",
+				"Rotate now (in the UV editor)",
+				"Rotate now (vertices / edges / faces)",
+				"Rotate now — turns with the pointer",
 				"Rotate — in the viewport PiP",
 				"Theme",
 				"World grab snapping"
@@ -3027,6 +3069,7 @@
 			"sections": [
 				"Interface",
 				"Shortcuts",
+				"Scene",
 				"VR"
 			]
 		},
@@ -3216,7 +3259,7 @@
 				"Your own GPU box"
 			],
 			"sections": [
-				"Tools & connections"
+				"AI"
 			]
 		},
 		"claude": {
@@ -3224,12 +3267,16 @@
 				"AI assistant",
 				"Coding agents",
 				"Let AI agents join as guests",
+				"Move my view",
+				"Open and close my panels",
+				"Open code for me",
 				"Voice typing"
 			],
 			"sections": [
 				"Interface",
-				"Tools & connections",
-				"Connection"
+				"AI",
+				"Connection",
+				"Privacy"
 			]
 		},
 		"api key": {
@@ -3237,7 +3284,7 @@
 				"Voice typing"
 			],
 			"sections": [
-				"Tools & connections"
+				"AI"
 			]
 		},
 		"model": {
@@ -3249,6 +3296,7 @@
 				"My hand model",
 				"Optimize big models automatically",
 				"Peer hands",
+				"Pen only draws",
 				"Placement preview",
 				"Preview triangle budget",
 				"Rigging and animation services",
@@ -3258,16 +3306,17 @@
 				"Your own GPU box"
 			],
 			"sections": [
+				"Controls",
 				"Scene",
 				"Import",
 				"VR",
-				"Tools & connections"
+				"AI"
 			]
 		},
 		"meshy": {
 			"rows": [],
 			"sections": [
-				"Tools & connections"
+				"AI"
 			]
 		},
 		"trash": {
@@ -3317,6 +3366,7 @@
 				"Editor tour",
 				"First-game quest",
 				"Game sounds",
+				"Gizmo style",
 				"Knocked-off idle",
 				"Lift the corner buttons above docked panels",
 				"Lift the toolbar above docked panels",
@@ -3357,7 +3407,8 @@
 			"sections": [
 				"Interface",
 				"Accessibility",
-				"Shortcuts"
+				"Shortcuts",
+				"Scene"
 			]
 		},
 		"menu": {
@@ -3438,8 +3489,11 @@
 				"Allow browser pinch zoom",
 				"Double-click to open notes",
 				"Editor tour",
+				"Fly with WASD",
+				"Gizmo style",
 				"Look sensitivity",
 				"Node editor mouse",
+				"Pen only draws",
 				"Pinch zoom",
 				"Reverse trackpad pan",
 				"Shift+A opens the Add menu",
@@ -3452,7 +3506,9 @@
 			"sections": [
 				"Interface",
 				"Controls",
-				"Input"
+				"Input",
+				"Shortcuts",
+				"Scene"
 			]
 		},
 		"keyboard": {
@@ -3473,6 +3529,7 @@
 				"Arm Move (in the UV editor)",
 				"Arm Move (in the timeline)",
 				"Back to the scene's start view",
+				"Box select tool (in the UV editor)",
 				"Bridge (faces)",
 				"Cinematic view on / off (bounced light and reflections)",
 				"Collapse / expand the selected nodes",
@@ -3502,8 +3559,11 @@
 				"Flip normals (faces); fill the hole (edges)",
 				"Flow code: open it in the Code window",
 				"Fly 3x faster",
+				"Fly direction",
+				"Fly direction: switch between Level and Where I look",
 				"Fly down / up",
 				"Fly the camera (horizontal)",
+				"Fly with WASD",
 				"Focus mode — maximize the area under the pointer (the viewport alone, or a docked window filling the window); again to restore",
 				"Focus selected object",
 				"Frame all nodes",
@@ -3513,20 +3573,31 @@
 				"Group the selection",
 				"Grow the selection (faces)",
 				"HUD editor: show / bring to front / hide",
+				"Hold and drag to pan, whatever the tool (no middle button needed)",
 				"Hold while moving: snap the nearest corner onto a corner or edge middle",
 				"Invert the selection (any mode)",
 				"Keyboard cheat sheet (every scope; the focused one first)",
+				"Keymap preset",
+				"Lasso select tool (in the UV editor)",
 				"Leave focus mode",
 				"Leave isolation (double-click view)",
 				"Leave the 3D viewport (when it has the keyboard and nothing else wants Esc)",
 				"Leave the group you are in",
 				"Left sidebar: show / hide",
+				"Lock to U while a UV move / resize runs",
+				"Lock to V while a UV move / resize runs",
+				"Lock to X while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)",
+				"Lock to Y while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)",
+				"Lock to Z while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)",
 				"Loop cut (faces)",
 				"Loop select (faces: again = perpendicular; edges: the chain)",
 				"Move (grab) — same as 1",
 				"Move (translate)",
 				"Move (translate) — in the viewport PiP",
 				"Move focus to the next region — top bar, panels, toolbar, viewport (Shift+F6: back)",
+				"Move now (in the UV editor) — the selection follows the pointer",
+				"Move now — the picked vertices / edges / faces follow the pointer",
+				"Move now — the selection follows the pointer",
 				"Mute / unmute the selection (a muted node does nothing)",
 				"Next element mode (Vertices - Edges - Faces)",
 				"Node editor: show / bring to front / hide",
@@ -3539,8 +3610,10 @@
 				"Nudge the selection up",
 				"Nudge the selection up ×5",
 				"Object list: show / bring to front / hide",
+				"Paint tool (in the UV editor)",
 				"Paste at the cursor",
 				"Path select on / off (a click adds the shortest path from the last pick)",
+				"Pen only draws",
 				"Pinch zoom",
 				"Play / Enter VR·AR (right-click the play button for modes)",
 				"Play here — start from the editor camera",
@@ -3556,9 +3629,15 @@
 				"Recall camera bookmark 5",
 				"Redo",
 				"Redo (alternative)",
+				"Resize now (in the UV editor)",
+				"Resize now (vertices / edges / faces)",
+				"Resize now — scales with the pointer",
 				"Reverse trackpad pan",
 				"Right sidebar: show / hide",
 				"Rotate",
+				"Rotate now (in the UV editor)",
+				"Rotate now (vertices / edges / faces)",
+				"Rotate now — turns with the pointer",
 				"Rotate — in the viewport PiP",
 				"Save checkpoint…",
 				"Save scene",
@@ -3567,6 +3646,7 @@
 				"Select all (any mode)",
 				"Select all nodes",
 				"Select all objects",
+				"Select tool (in the UV editor)",
 				"Shader editor: show / bring to front / hide",
 				"Shift+A opens the Add menu",
 				"Show helpers in Play",
@@ -3628,9 +3708,11 @@
 				"Draw repeated kit pieces together",
 				"Edit mesh wireframe colour",
 				"GPU fluid",
+				"Gizmo style",
 				"Grid colour",
 				"Grid opacity",
 				"Grid size",
+				"Handle size",
 				"Keep automatic checkpoints",
 				"Length",
 				"Light helper length",
@@ -3741,6 +3823,7 @@
 				"Draw repeated kit pieces together",
 				"Game HUD",
 				"Include VR button",
+				"Move my view",
 				"Offer Enter VR in a headset browser",
 				"Optimize for",
 				"Play on the screen, even in a headset",
@@ -3754,7 +3837,8 @@
 				"Interface",
 				"Scene",
 				"Export",
-				"VR"
+				"VR",
+				"Privacy"
 			]
 		},
 		"xr": {
@@ -3806,13 +3890,17 @@
 				"Blender and other 3D tools",
 				"Coding agents",
 				"Keep sent pictures in Explorer",
+				"Move my view",
+				"Open and close my panels",
+				"Open code for me",
 				"Rigging and animation services",
 				"Voice typing",
 				"Your own GPU box"
 			],
 			"sections": [
 				"Interface",
-				"Tools & connections"
+				"AI",
+				"Privacy"
 			]
 		},
 		"peer": {
@@ -3880,7 +3968,7 @@
 			],
 			"sections": [
 				"Interface",
-				"Tools & connections",
+				"AI",
 				"Connection"
 			]
 		},
@@ -3948,6 +4036,7 @@
 				"Arm Move (in the UV editor)",
 				"Arm Move (in the timeline)",
 				"Back to the scene's start view",
+				"Box select tool (in the UV editor)",
 				"Bridge (faces)",
 				"Cinematic view on / off (bounced light and reflections)",
 				"Collapse / expand the selected nodes",
@@ -3975,8 +4064,11 @@
 				"Flip normals (faces); fill the hole (edges)",
 				"Flow code: open it in the Code window",
 				"Fly 3x faster",
+				"Fly direction",
+				"Fly direction: switch between Level and Where I look",
 				"Fly down / up",
 				"Fly the camera (horizontal)",
+				"Fly with WASD",
 				"Focus mode — maximize the area under the pointer (the viewport alone, or a docked window filling the window); again to restore",
 				"Focus selected object",
 				"Frame all nodes",
@@ -3986,20 +4078,31 @@
 				"Group the selection",
 				"Grow the selection (faces)",
 				"HUD editor: show / bring to front / hide",
+				"Hold and drag to pan, whatever the tool (no middle button needed)",
 				"Hold while moving: snap the nearest corner onto a corner or edge middle",
 				"Invert the selection (any mode)",
 				"Keyboard cheat sheet (every scope; the focused one first)",
+				"Keymap preset",
+				"Lasso select tool (in the UV editor)",
 				"Leave focus mode",
 				"Leave isolation (double-click view)",
 				"Leave the 3D viewport (when it has the keyboard and nothing else wants Esc)",
 				"Leave the group you are in",
 				"Left sidebar: show / hide",
+				"Lock to U while a UV move / resize runs",
+				"Lock to V while a UV move / resize runs",
+				"Lock to X while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)",
+				"Lock to Y while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)",
+				"Lock to Z while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)",
 				"Loop cut (faces)",
 				"Loop select (faces: again = perpendicular; edges: the chain)",
 				"Move (grab) — same as 1",
 				"Move (translate)",
 				"Move (translate) — in the viewport PiP",
 				"Move focus to the next region — top bar, panels, toolbar, viewport (Shift+F6: back)",
+				"Move now (in the UV editor) — the selection follows the pointer",
+				"Move now — the picked vertices / edges / faces follow the pointer",
+				"Move now — the selection follows the pointer",
 				"Mute / unmute the selection (a muted node does nothing)",
 				"Next element mode (Vertices - Edges - Faces)",
 				"Node editor: show / bring to front / hide",
@@ -4012,6 +4115,7 @@
 				"Nudge the selection up",
 				"Nudge the selection up ×5",
 				"Object list: show / bring to front / hide",
+				"Paint tool (in the UV editor)",
 				"Paste at the cursor",
 				"Path select on / off (a click adds the shortest path from the last pick)",
 				"Play / Enter VR·AR (right-click the play button for modes)",
@@ -4028,8 +4132,14 @@
 				"Recall camera bookmark 5",
 				"Redo",
 				"Redo (alternative)",
+				"Resize now (in the UV editor)",
+				"Resize now (vertices / edges / faces)",
+				"Resize now — scales with the pointer",
 				"Right sidebar: show / hide",
 				"Rotate",
+				"Rotate now (in the UV editor)",
+				"Rotate now (vertices / edges / faces)",
+				"Rotate now — turns with the pointer",
 				"Rotate — in the viewport PiP",
 				"Save checkpoint…",
 				"Save scene",
@@ -4038,6 +4148,7 @@
 				"Select all (any mode)",
 				"Select all nodes",
 				"Select all objects",
+				"Select tool (in the UV editor)",
 				"Shader editor: show / bring to front / hide",
 				"Show this shortcut list",
 				"Shrink the selection (faces)",
@@ -4078,6 +4189,7 @@
 				"Arm Move (in the UV editor)",
 				"Arm Move (in the timeline)",
 				"Back to the scene's start view",
+				"Box select tool (in the UV editor)",
 				"Bridge (faces)",
 				"Cinematic view on / off (bounced light and reflections)",
 				"Collapse / expand the selected nodes",
@@ -4105,8 +4217,11 @@
 				"Flip normals (faces); fill the hole (edges)",
 				"Flow code: open it in the Code window",
 				"Fly 3x faster",
+				"Fly direction",
+				"Fly direction: switch between Level and Where I look",
 				"Fly down / up",
 				"Fly the camera (horizontal)",
+				"Fly with WASD",
 				"Focus mode — maximize the area under the pointer (the viewport alone, or a docked window filling the window); again to restore",
 				"Focus selected object",
 				"Frame all nodes",
@@ -4116,20 +4231,31 @@
 				"Group the selection",
 				"Grow the selection (faces)",
 				"HUD editor: show / bring to front / hide",
+				"Hold and drag to pan, whatever the tool (no middle button needed)",
 				"Hold while moving: snap the nearest corner onto a corner or edge middle",
 				"Invert the selection (any mode)",
 				"Keyboard cheat sheet (every scope; the focused one first)",
+				"Keymap preset",
+				"Lasso select tool (in the UV editor)",
 				"Leave focus mode",
 				"Leave isolation (double-click view)",
 				"Leave the 3D viewport (when it has the keyboard and nothing else wants Esc)",
 				"Leave the group you are in",
 				"Left sidebar: show / hide",
+				"Lock to U while a UV move / resize runs",
+				"Lock to V while a UV move / resize runs",
+				"Lock to X while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)",
+				"Lock to Y while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)",
+				"Lock to Z while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)",
 				"Loop cut (faces)",
 				"Loop select (faces: again = perpendicular; edges: the chain)",
 				"Move (grab) — same as 1",
 				"Move (translate)",
 				"Move (translate) — in the viewport PiP",
 				"Move focus to the next region — top bar, panels, toolbar, viewport (Shift+F6: back)",
+				"Move now (in the UV editor) — the selection follows the pointer",
+				"Move now — the picked vertices / edges / faces follow the pointer",
+				"Move now — the selection follows the pointer",
 				"Mute / unmute the selection (a muted node does nothing)",
 				"Next element mode (Vertices - Edges - Faces)",
 				"Node editor: show / bring to front / hide",
@@ -4142,6 +4268,7 @@
 				"Nudge the selection up",
 				"Nudge the selection up ×5",
 				"Object list: show / bring to front / hide",
+				"Paint tool (in the UV editor)",
 				"Paste at the cursor",
 				"Path select on / off (a click adds the shortest path from the last pick)",
 				"Play / Enter VR·AR (right-click the play button for modes)",
@@ -4158,8 +4285,14 @@
 				"Recall camera bookmark 5",
 				"Redo",
 				"Redo (alternative)",
+				"Resize now (in the UV editor)",
+				"Resize now (vertices / edges / faces)",
+				"Resize now — scales with the pointer",
 				"Right sidebar: show / hide",
 				"Rotate",
+				"Rotate now (in the UV editor)",
+				"Rotate now (vertices / edges / faces)",
+				"Rotate now — turns with the pointer",
 				"Rotate — in the viewport PiP",
 				"Save checkpoint…",
 				"Save scene",
@@ -4168,6 +4301,7 @@
 				"Select all (any mode)",
 				"Select all nodes",
 				"Select all objects",
+				"Select tool (in the UV editor)",
 				"Shader editor: show / bring to front / hide",
 				"Show this shortcut list",
 				"Shrink the selection (faces)",
@@ -4208,6 +4342,7 @@
 				"Arm Move (in the UV editor)",
 				"Arm Move (in the timeline)",
 				"Back to the scene's start view",
+				"Box select tool (in the UV editor)",
 				"Bridge (faces)",
 				"Cinematic view on / off (bounced light and reflections)",
 				"Collapse / expand the selected nodes",
@@ -4235,8 +4370,11 @@
 				"Flip normals (faces); fill the hole (edges)",
 				"Flow code: open it in the Code window",
 				"Fly 3x faster",
+				"Fly direction",
+				"Fly direction: switch between Level and Where I look",
 				"Fly down / up",
 				"Fly the camera (horizontal)",
+				"Fly with WASD",
 				"Focus mode — maximize the area under the pointer (the viewport alone, or a docked window filling the window); again to restore",
 				"Focus selected object",
 				"Frame all nodes",
@@ -4246,20 +4384,31 @@
 				"Group the selection",
 				"Grow the selection (faces)",
 				"HUD editor: show / bring to front / hide",
+				"Hold and drag to pan, whatever the tool (no middle button needed)",
 				"Hold while moving: snap the nearest corner onto a corner or edge middle",
 				"Invert the selection (any mode)",
 				"Keyboard cheat sheet (every scope; the focused one first)",
+				"Keymap preset",
+				"Lasso select tool (in the UV editor)",
 				"Leave focus mode",
 				"Leave isolation (double-click view)",
 				"Leave the 3D viewport (when it has the keyboard and nothing else wants Esc)",
 				"Leave the group you are in",
 				"Left sidebar: show / hide",
+				"Lock to U while a UV move / resize runs",
+				"Lock to V while a UV move / resize runs",
+				"Lock to X while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)",
+				"Lock to Y while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)",
+				"Lock to Z while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)",
 				"Loop cut (faces)",
 				"Loop select (faces: again = perpendicular; edges: the chain)",
 				"Move (grab) — same as 1",
 				"Move (translate)",
 				"Move (translate) — in the viewport PiP",
 				"Move focus to the next region — top bar, panels, toolbar, viewport (Shift+F6: back)",
+				"Move now (in the UV editor) — the selection follows the pointer",
+				"Move now — the picked vertices / edges / faces follow the pointer",
+				"Move now — the selection follows the pointer",
 				"Mute / unmute the selection (a muted node does nothing)",
 				"Next element mode (Vertices - Edges - Faces)",
 				"Node editor mouse",
@@ -4273,6 +4422,7 @@
 				"Nudge the selection up",
 				"Nudge the selection up ×5",
 				"Object list: show / bring to front / hide",
+				"Paint tool (in the UV editor)",
 				"Paste at the cursor",
 				"Path select on / off (a click adds the shortest path from the last pick)",
 				"Play / Enter VR·AR (right-click the play button for modes)",
@@ -4289,8 +4439,14 @@
 				"Recall camera bookmark 5",
 				"Redo",
 				"Redo (alternative)",
+				"Resize now (in the UV editor)",
+				"Resize now (vertices / edges / faces)",
+				"Resize now — scales with the pointer",
 				"Right sidebar: show / hide",
 				"Rotate",
+				"Rotate now (in the UV editor)",
+				"Rotate now (vertices / edges / faces)",
+				"Rotate now — turns with the pointer",
 				"Rotate — in the viewport PiP",
 				"Save checkpoint…",
 				"Save scene",
@@ -4299,6 +4455,7 @@
 				"Select all (any mode)",
 				"Select all nodes",
 				"Select all objects",
+				"Select tool (in the UV editor)",
 				"Shader editor: show / bring to front / hide",
 				"Show this shortcut list",
 				"Shrink the selection (faces)",
@@ -4349,6 +4506,9 @@
 			"rows": [
 				"Error reports",
 				"Hide my IP",
+				"Move my view",
+				"Open and close my panels",
+				"Open code for me",
 				"Recording the last 10 s",
 				"Usage counts"
 			],
@@ -4548,6 +4708,7 @@
 		"pinch": {
 			"rows": [
 				"Allow browser pinch zoom",
+				"Pen only draws",
 				"Pinch zoom",
 				"Trackpad gestures"
 			],
@@ -4562,6 +4723,7 @@
 				"High contrast",
 				"Motion",
 				"Node editor opens",
+				"Pen only draws",
 				"Pinch zoom",
 				"Show captions",
 				"Trackpad gestures",
@@ -4587,15 +4749,20 @@
 				"Flow code: open it in the Code window",
 				"HUD editor: show / bring to front / hide",
 				"High contrast",
+				"Hold and drag to pan, whatever the tool (no middle button needed)",
 				"Left sidebar: show / hide",
 				"Lift the corner buttons above docked panels",
 				"Lift the toolbar above docked panels",
 				"Move focus to the next region — top bar, panels, toolbar, viewport (Shift+F6: back)",
+				"Move my view",
 				"Node editor mouse",
 				"Node editor opens",
 				"Node editor: show / bring to front / hide",
 				"Object list: show / bring to front / hide",
+				"Open and close my panels",
+				"Open code for me",
 				"Panels button",
+				"Pen only draws",
 				"Reset panel positions",
 				"Reverse trackpad pan",
 				"Right sidebar: show / hide",
@@ -4620,7 +4787,8 @@
 				"Input",
 				"Shortcuts",
 				"Scene",
-				"VR"
+				"VR",
+				"Privacy"
 			]
 		},
 		"wheel": {
@@ -4639,7 +4807,9 @@
 			"rows": [
 				"Dim the handles at rest",
 				"Ghost hands",
+				"Gizmo style",
 				"Grab style",
+				"Handle size",
 				"High contrast",
 				"Left-handed",
 				"Menu hand",
@@ -4655,6 +4825,7 @@
 			"sections": [
 				"Interface",
 				"Accessibility",
+				"Scene",
 				"VR"
 			]
 		},
@@ -4692,6 +4863,7 @@
 				"Left-handed",
 				"Menu hand",
 				"Mirror turn",
+				"Move my view",
 				"My hand model",
 				"Offer Enter VR in a headset browser",
 				"One-handed",
@@ -4728,12 +4900,14 @@
 				"Shortcuts",
 				"Export",
 				"VR",
-				"Tools & connections"
+				"AI",
+				"Privacy"
 			]
 		},
 		"ai": {
 			"rows": [
 				"AI assistant",
+				"Blender and other 3D tools",
 				"Both grips scale the world",
 				"Cached downloads",
 				"Coding agents",
@@ -4741,6 +4915,7 @@
 				"Compress textures (KTX2)",
 				"Dim the handles at rest",
 				"Download shared files automatically",
+				"Fly direction",
 				"Focus mode — maximize the area under the pointer (the viewport alone, or a docked window filling the window); again to restore",
 				"GPU fluid",
 				"Ghost hands",
@@ -4754,11 +4929,19 @@
 				"LOD levels",
 				"Let AI agents join as guests",
 				"Lift the corner buttons above docked panels",
+				"Lock to X while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)",
+				"Lock to Y while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)",
+				"Lock to Z while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)",
 				"Locks",
 				"Loop select (faces: again = perpendicular; edges: the chain)",
 				"Max texture size",
+				"Move my view",
+				"Open and close my panels",
+				"Open code for me",
 				"Optimize big models automatically",
 				"Optimize for",
+				"Paint tool (in the UV editor)",
+				"Pen only draws",
 				"Placeholder style",
 				"Project actions",
 				"Require approval to join",
@@ -4790,8 +4973,9 @@
 				"Import",
 				"Export",
 				"VR",
-				"Tools & connections",
-				"Connection"
+				"AI",
+				"Connection",
+				"Privacy"
 			]
 		},
 		"zz-no-match": {
@@ -5153,6 +5337,9 @@
 			"levels": [
 				"Level of detail",
 				"Levels"
+			],
+			"game menus": [
+				"Game menus"
 			],
 			"physics": [
 				"Camera",

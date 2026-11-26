@@ -6,6 +6,32 @@
      rendering, so maintainer notes stay out of the user-facing window. No emoji from
      1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
 
+## 1.81.0 — AI apps in your scene, and your room in VR
+
+### Use theprototype from ChatGPT and other AI apps
+- **ChatGPT and other AI apps**: the connector now accepts ChatGPT (developer mode) and any MCP app that signs in with OAuth. The approval page names where it returns, and shows a badge only for Claude's and ChatGPT's own addresses. <!-- 89-apps -->
+- **The tab names the AI app at work**: "ChatGPT connected · this tab", "ChatGPT (connector)" in the log, "ChatGPT opened Explorer". An app the server cannot name reads "An AI app". <!-- 89-apps 104-int -->
+- **Settings ▸ AI** (it was Tools & connections) has two cards: AI inside the app (your key) and AI apps that work in your scene, with **Connected apps** moved there from Account: each app named, **Revoke** per app. <!-- 89-apps -->
+- New docs page: **Use any AI** (which one you need, the steps per app, what works where). <!-- 89-apps -->
+
+### What an AI app can do in your tab
+- **Your files, your screen, your scenes**: with your say-so, an AI app can work with the files in your Explorer (delete goes to Deleted), open a panel, move your view, open code at a line, select things, and open or make another scene. It asks the first time (**Always / This time / No**, switches in **Settings ▸ Privacy ▸ Assistant on your screen**), every change has **Back** or **Undo**, and unsaved changes are saved or kept in Sessions before a scene switch, never dropped. Text it reads from your files is treated as data, not instructions. <!-- 104-show 104-int -->
+- **What is under a point**: the new **probe** tool reads the ground height, slope and surface, and any water's surface and depth (up to 64 points, or a ray). Viewers may use it; it only reads. <!-- 104-world -->
+- **The camera you look through**: "where am I" knows when you look through Preview, a game camera, a sequence shot, Film on your phone or a recording, and a screenshot of what you see uses that camera's framing. An AI app does not move your view while you record or film. <!-- 104-world 104-int -->
+- **Things that float**: an AI app can make things float or sink (material, density, from mass, buoyancy, water drag) and says where the waterline will sit. The Inspector's **Floats** hint reads in metres, with a new **Water drag** slider. <!-- 104-world -->
+- **35 connector tools** (31 before): probe, files, show and scene are new; nothing was renamed or removed. <!-- 104-int -->
+
+### Scan my room (Quest)
+- **Scan my room**: your headset's room setup becomes named, see-through boxes at real size under **My room** (VR menu **Add ▸ Scan my room**, or the Play button menu). No camera image is used or stored. The first time, Quest Browser asks to allow the site. <!-- 104-room-scan -->
+- **Scan again and each wall keeps its name**, and your edits on it, on the same real wall. A wall that is no longer in your room setup keeps its name, and the scan says so ("Wall 3 not found in this scan."). <!-- 104-wall-names -->
+
+### For AI agents and developers
+- **Agent contract 1.12.0**: `files`, `show`, `scene` (a person's own tab and the in-app assistant only; headless agent pages do not list them), `probe`, `where_are_users` `you.through`, `set_physics` `float` / `density` / `buoyancy` / `waterDrag` and its `water` answer. Additive: nothing renamed. <!-- 104-show 104-world -->
+- **Eval** (40 spoken requests, sonnet): 37.5 / 40 with this release's tools, 33 / 40 with 1.75's; no request scored worse. <!-- 104-int -->
+
+### Compatibility
+- **Scene files**: no format change. **In a session with someone on an older version**: a floating setting from this release floats on their screen with the older defaults; My room boxes are ordinary boxes there.
+
 ## 1.80.0 — Bisect, smooth subdivide and path select
 
 ### Mesh editing

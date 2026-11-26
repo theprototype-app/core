@@ -18,12 +18,17 @@ const CAN = /** @type {[string, string][]} */ ([
 	['where_are_users', 'build right where you are standing or looking'],
 	['attach_to_user', 'hand you props, like a flashlight'],
 	['save_scene', 'save this scene to your library'],
+	['files', 'read and write the text files in your Explorer'],
+	['scene', 'open your other scenes or start a new one'],
+	['show', 'show you things on your screen: open a panel, frame an object or open code at a line'],
 	['undo_last', 'undo what I just did when you say so'],
 	['screenshot', 'look at the scene to check my work']
 ]);
 
-/** what no agent tool does, wherever it runs (agent page, serve or the connector) */
+/** what no agent tool does, wherever it runs (agent page, serve or the connector); 104: with `files` the
+ *  Explorer's text files are reachable, so "open files" goes from the list */
 const CANNOT = 'open files, change your settings, or see anything outside this tab';
+const CANNOT_WITH_FILES = 'change your settings, or see anything outside this tab and its Explorer';
 
 /**
  * @param {{status?: any, tools: string[]}} facts the page's status() and its tool names
@@ -45,7 +50,8 @@ export function whatCanYouDo(facts) {
 	const say = viewer
 		? 'You are a viewer in this session, so I can look at the scene and describe it, but I cannot build here. Ask the host for edit access and I can add, move and animate things for you.'
 		: 'I can build in your open theprototype tab: ' + (can.length > 1 ? can.slice(0, 3).join(', ') + ', and more' : can[0] ?? 'look at the scene') + '. Everything I change shows for everyone here, and you can undo it.';
-	return { say, can: viewer ? look : can, cannot: (viewer ? 'build or change anything, ' : '') + CANNOT, tryAsking, role: viewer ? 'viewer' : String(status.role ?? 'editor') };
+	if (names.has('scene')) tryAsking.push('Open my other scene');
+	return { say, can: viewer ? look : can, cannot: (viewer ? 'build or change anything, ' : '') + (names.has('files') ? CANNOT_WITH_FILES : CANNOT), tryAsking, role: viewer ? 'viewer' : String(status.role ?? 'editor') };
 }
 
 /** the schema tpAgent registers (agent-only extra tool; read-only) */

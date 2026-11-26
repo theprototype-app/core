@@ -60,7 +60,8 @@ h.run(async () => {
 	await page.evaluate(() => { const s = window.__tp.test.v1; s.explorerClose?.set?.(true); for (const k of ['panel', 'camera', 'code']) s.safeStorage.removeItem('show:allow:' + k); });
 	await h.eventually(() => where('explorer'), (w) => w === null, 'Explorer closed to start', 5000);
 	const p1 = await call('show', { action: 'panel', name: 'Explorer' });
-	h.check(p1?.result?.needsConfirm === true && /Always \/ This time \/ No/.test(p1.result.note ?? ''), `the first panel call asks (${short(p1)})`);
+	// 107-ui-state: the first question covers every kind not answered yet (+ Only this)
+	h.check(p1?.result?.needsConfirm === true && /Always \/ This time \/ (Only this \/ )?No/.test(p1.result.note ?? ''), `the first panel call asks (${short(p1)})`);
 	h.check((await where('explorer')) === null, 'nothing opened while it asks');
 	await press('This time');
 	const p1b = await call('show', { action: 'panel', name: 'Explorer', confirmId: p1?.result?.confirmId, wait: 10 });

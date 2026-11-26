@@ -19,10 +19,15 @@
 		{ kind: 'camera', label: 'Move my view', desc: 'Frame objects, go to a spot or look through a scene camera. Never in a VR headset, never while you drag or type.' },
 		{ kind: 'code', label: 'Open code for me', desc: 'Open a file or a node’s code at a line and select it. It never changes the text.' }
 	];
-	const allow = $derived(($grantsVersion, Object.fromEntries(ROWS.map((r) => [r.kind, alwaysAllowed(r.kind)]))));
+	/** every grant, re-read whenever one changes (the version is the dependency) */
+	const grants = $derived.by(() => {
+		void $grantsVersion;
+		return { always: Object.fromEntries(ROWS.map((r) => [r.kind, alwaysAllowed(r.kind)])), list: showGrants() };
+	});
+	const allow = $derived(grants.always);
 	/** the grants that last until this page reloads (This time), per app */
-	const thisPage = $derived(($grantsVersion, showGrants().filter((g) => g.answer === 'this time')));
-	const anyGranted = $derived(($grantsVersion, showGrants().some((g) => g.answer !== 'no')));
+	const thisPage = $derived(grants.list.filter((g) => g.answer === 'this time'));
+	const anyGranted = $derived(grants.list.some((g) => g.answer !== 'no'));
 	/** @param {string} kind @param {boolean} on */
 	function set(kind, on) {
 		if (on) setAlways(kind, true);

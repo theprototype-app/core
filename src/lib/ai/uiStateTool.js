@@ -216,7 +216,7 @@ async function readFigures() {
 		...pickNum(live ?? {}, ['textures', 'geometries']),
 		qualityLevel: Number(qs?.level) || 0
 	};
-	const heaviest = reading ? core.heaviest(reading.rows ?? [], bm.TARGETS[target] ?? bm.TARGETS.quest, 5) : [];
+	const heaviest = reading ? core.heaviest(reading.rows ?? [], /** @type {any} */ (bm.TARGETS)[target] ?? bm.TARGETS.quest, 5) : [];
 	return { sb, bm, core, live, reading, target, frames, figures, heaviest };
 }
 

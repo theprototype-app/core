@@ -235,7 +235,7 @@ describe('shader graphs', () => {
 		const edited = await call('edit_shader', { shader: o.uuid, params: [{ node: 'glow', param: 'value', value: 5 }] });
 		expect(edited.updated[0].uniforms[0].value).toBe(5);
 		const wrong = await call('edit_shader', { shader: o.uuid, params: [{ node: 'glow', param: 'nope', value: 1 }] });
-		expect(wrong.errors[0]).toMatch(/no param "nope" \(value\)/);
+		expect(wrong.errors[0]).toMatch(/no param "nope" \(value, label\)/);
 		const broke = await call('edit_shader', { shader: o.uuid, removeNodes: ['glow'] });
 		expect(broke.errors[0]).toMatch(/Nothing is connected/);
 		expect(sg.shaderGraphOf(o.uuid).nodes.length).toBe(2);

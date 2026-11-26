@@ -359,10 +359,17 @@ describe('G5 edit_mesh', () => {
 		expect((await call('edit_mesh', { object: box.uuid, ops: [{ op: 'extrude' }] })).error).toMatch(/no selection/);
 		expect((await call('edit_mesh', { object: box.uuid, select: {} })).error).toMatch(/give indices, normal, box or all/);
 		expect((await call('edit_mesh', { object: 'nope', ops: [] })).error).toMatch(/no object/);
-		// a second op failing keeps the first (still one undo step) and says where it stopped
+		// 107: a second op failing takes the first back too (all or nothing) and says where it stopped
+		const trisBefore = readTriangles(live(box.uuid).geometry).length;
 		const half = await call('edit_mesh', { object: box.uuid, select: { normal: 'up' }, ops: [{ op: 'extrude', distance: 0.2 }, { op: 'connect', select: { mode: 'vertices', all: true } }] });
-		expect(half.updated[0]).toMatchObject({ ok: false, ops: [{ op: 'extrude' }] });
-		expect(half.warning).toMatch(/stopped at: ops\[1\]/);
+		expect(half.updated).toBeUndefined();
+		expect(half).toMatchObject({ rolledBack: true });
+		expect(half.error).toMatch(/ops\[1\]/);
+		expect(half.note).toMatch(/taken back \(extrude\)/);
+		expect(readTriangles(live(box.uuid).geometry).length).toBe(trisBefore);
+		// 107: an op with no select of its own goes on with the previous op's selection, top-level select or not
+		const chain = await call('edit_mesh', { object: box.uuid, ops: [{ op: 'extrude', select: { normal: 'up' }, distance: 0.2 }, { op: 'inset', amount: 0.3 }, { op: 'extrude', distance: 0.2 }] });
+		expect(chain.updated[0]).toMatchObject({ ok: true, ops: [{ op: 'extrude' }, { op: 'inset', on: 'previous' }, { op: 'extrude', on: 'previous' }] });
 	});
 });
 

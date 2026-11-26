@@ -75,6 +75,10 @@ export const activeHudDoc = writable(null);
  * never replicated. `null`/absent means "the document's own `active`".
  * @type {import('svelte/store').Writable<Record<string, string|null>>} */
 export const hudScreenOverride = writable({});
+
+/** 107: a screen to bring up in the HUD Editor — the connector's create says where a new screen shows and selects it
+ * there (the editor's screen pick is its own state; this is the one way in). LOCAL. @type {import('svelte/store').Writable<{key: string, screen: string, at: number} | null>} */
+export const hudEditorFocus = writable(null);
 /** 102b-hud (DEVX #26): element id -> shown (false = hidden) on THIS peer, written by the Show / Hide
  * Element node; per peer like a screen override, and cleared with them @type {Map<string, boolean>} */
 export const hudElementShown = new Map();

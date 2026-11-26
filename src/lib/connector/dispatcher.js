@@ -176,6 +176,24 @@ export function createDispatcher(deps) {
 	/** @param {any} r */
 	const isError = (r) => !!(r && typeof r === 'object' && !Array.isArray(r) && r.error);
 
+	/**
+	 * 107: an error answer's own details, said in the message — the frame carries a message only, so a tool's `errors`
+	 * (a shader's per-node problems), `skipped` (why each object was left), `note` (an edit that was taken back) and
+	 * `created` (what was made before it stopped) were dropped on the way to the AI app.
+	 * @param {any} r
+	 */
+	const errorText = (r) => {
+		const parts = [String(r.error)];
+		const list = (/** @type {any} */ v) => (Array.isArray(v) ? v : []);
+		const errs = list(r.errors).map(String);
+		if (errs.length) parts.push('— ' + errs.slice(0, 6).join('; '));
+		const skipped = list(r.skipped).map((/** @type {any} */ x) => [x?.reason, ...list(x?.errors)].filter(Boolean).join(': ')).filter(Boolean);
+		if (skipped.length) parts.push('— ' + [...new Set(skipped)].slice(0, 6).join('; '));
+		if (typeof r.note === 'string') parts.push('(' + r.note + ')');
+		if (r.created) parts.push(JSON.stringify(r.created).slice(0, 600));
+		return parts.join(' ').slice(0, 1000);
+	};
+
 	/** what status() tells a remote caller — the person's own view of where this tab is */
 	function status() {
 		const s = deps.agent.status() ?? {};
@@ -229,7 +247,7 @@ export function createDispatcher(deps) {
 			if (!inFlight.has(id) || inFlight.get(id)?.cancelled) return fail('cancelled', 'cancelled');
 			const r = await deps.agent.exec(tool, args);
 			if (r && typeof r === 'object' && r.refused) return fail('refused', String(r.error ?? 'refused'));
-			if (isError(r)) return fail('failed', String(r.error) + (r.created ? ' ' + JSON.stringify(r.created).slice(0, 600) : ''));
+			if (isError(r)) return fail('failed', errorText(r));
 			// 98 P2: a photo comes back as an image the AI app can see (downscaled like a screenshot)
 			if (tool === 'take_photo' && typeof r?.image_url === 'string') {
 				const { image_url, ...rest } = r;

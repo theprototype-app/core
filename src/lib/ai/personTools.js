@@ -11,6 +11,7 @@
 const FILE_TEXT_EXTENSIONS = ['txt', 'json', 'md', 'cfg', 'js'];
 
 export { PERSON_TOOL_NAMES, personToolReads } from './personToolNames.js';
+import { UI_STATE_AI_TOOLS } from './uiStateTools.js'; // 107-ui-state: ui_state, scene_stats
 
 const FILES_DESCRIPTION =
 	"The person's own Explorer (their Library of files and folders), in their tab: list folders and files, read a text file with numbered lines, " +
@@ -128,7 +129,8 @@ export const PERSON_AI_TOOLS = [
 				required: ['action']
 			}
 		}
-	}
+	},
+	...UI_STATE_AI_TOOLS
 ];
 
 /** how the person's lines name the assistant @param {{by?: string}} [opts] */
@@ -152,5 +154,8 @@ export async function runPersonTool(name, args, opts) {
 		const { sceneTool } = await import('./sceneTool.js');
 		return sceneTool(args, { by: byOf(opts) });
 	}
+	// 107-ui-state
+	if (name === 'ui_state') return (await import('./uiStateTool.js')).uiState(args);
+	if (name === 'scene_stats') return (await import('./uiStateTool.js')).sceneStats(args, { by: byOf(opts) });
 	return { error: 'unknown tool "' + name + '"' };
 }

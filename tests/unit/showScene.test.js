@@ -60,8 +60,8 @@ describe('show: camera and code maths', () => {
 
 describe('show + scene: schemas', () => {
 	it('the person tools are files, show, scene', () => {
-		expect(PERSON_TOOL_NAMES).toEqual(['files', 'show', 'scene']);
-		expect(PERSON_AI_TOOLS.map((t) => t.function.name)).toEqual(['files', 'show', 'scene']);
+		expect(PERSON_TOOL_NAMES).toEqual(['files', 'show', 'scene', 'ui_state', 'scene_stats']); // 107-ui-state
+		expect(PERSON_AI_TOOLS.map((t) => t.function.name)).toEqual(['files', 'show', 'scene', 'ui_state', 'scene_stats']);
 	});
 	it('show: panel | camera | code | back, and no text to write (rule 8)', () => {
 		const s = tool('show');

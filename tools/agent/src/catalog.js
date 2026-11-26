@@ -118,7 +118,10 @@ export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?:
 	// 104 C1-C3: the person's own Explorer, interface and scenes (a person's tab only)
 	files: { title: "Work with the person's files", destructive: true },
 	show: { title: "Show the person something on their screen", destructive: false },
-	scene: { title: "Open the person's scenes", destructive: true }
+	scene: { title: "Open the person's scenes", destructive: true },
+	// 107-ui-state: what the person sees, and the Statistics / Profiler numbers (connector: run {ui, stats})
+	ui_state: { title: "Read what the person's screen shows", read: true },
+	scene_stats: { title: 'Read the Statistics and Profiler numbers', destructive: false }
 });
 
 /** a title from a tool name: `create_objects` → `Create objects` @param {string} name */
@@ -317,8 +320,9 @@ export const CONNECTOR_FAMILIES = Object.freeze({
 	run: {
 		title: 'See and check what the game does',
 		summary:
-			"What the game does when it runs: inspect = when each event and action last fired, the game state and variables, errors, and why a node did not fire (pass node or object); validate = what would not work when someone presses Play, each with its fix; logs = the tab's recent errors, warnings and toasts; photo = a path-traced still of the person's view (a PC peer renders it for a Quest), optionally saved to the Library.",
-		actions: { inspect: 'inspect_runtime', validate: 'validate_scene', logs: 'logs', photo: 'take_photo' }
+			"What the game does when it runs: inspect = when each event and action last fired, the game state and variables, errors, and why a node did not fire (pass node or object); validate = what would not work when someone presses Play, each with its fix; logs = the tab's recent errors, warnings and toasts; photo = a path-traced still of the person's view (a PC peer renders it for a Quest), optionally saved to the Library; ui = what the person's screen shows right now (selection, the graph the Flow editor shows, the open Timeline sequence, camera, device, Quality and what it lowered, the permissions they granted you; read-only); stats = the Statistics and Profiler numbers by the panels' own names, a Quest / phone / desktop compare table, named snapshots and a diff.",
+		// 107-ui-state: ui / stats are new ACTIONS on run, no new connector tool name
+		actions: { inspect: 'inspect_runtime', validate: 'validate_scene', logs: 'logs', photo: 'take_photo', ui: 'ui_state', stats: 'scene_stats' }
 	},
 	assets: {
 		title: 'Images and assets',

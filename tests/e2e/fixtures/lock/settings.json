@@ -10085,7 +10085,7 @@
 							"state": true,
 							"effects": {
 								"storage": {
-									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":true,\"showFps\":false,\"quality\":\"auto\",\"vrButton\":true,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\"}"
+									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":true,\"showFps\":false,\"quality\":\"auto\",\"vrButton\":true,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\",\"mobile\":false}"
 								},
 								"stores": {
 									"exportStores.exportPrefs": "<object>"
@@ -10099,7 +10099,7 @@
 							"scope": "device",
 							"restored": false,
 							"storageAfterRestore": {
-								"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":false,\"quality\":\"auto\",\"vrButton\":true,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\"}"
+								"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":false,\"quality\":\"auto\",\"vrButton\":true,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\",\"mobile\":false}"
 							},
 							"exercise": "done"
 						}
@@ -10118,7 +10118,7 @@
 							"state": true,
 							"effects": {
 								"storage": {
-									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":true,\"quality\":\"auto\",\"vrButton\":true,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\"}"
+									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":true,\"quality\":\"auto\",\"vrButton\":true,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\",\"mobile\":false}"
 								},
 								"stores": {
 									"exportStores.exportPrefs": "<object>"
@@ -10158,7 +10158,7 @@
 							"state": true,
 							"effects": {
 								"storage": {
-									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":false,\"quality\":\"high\",\"vrButton\":true,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\"}"
+									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":false,\"quality\":\"high\",\"vrButton\":true,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\",\"mobile\":false}"
 								},
 								"stores": {
 									"exportStores.exportPrefs": "<object>"
@@ -10184,7 +10184,7 @@
 							"state": true,
 							"effects": {
 								"storage": {
-									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":false,\"quality\":\"medium\",\"vrButton\":true,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\"}"
+									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":false,\"quality\":\"medium\",\"vrButton\":true,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\",\"mobile\":false}"
 								},
 								"stores": {
 									"exportStores.exportPrefs": "<object>"
@@ -10210,7 +10210,7 @@
 							"state": true,
 							"effects": {
 								"storage": {
-									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":false,\"quality\":\"low\",\"vrButton\":true,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\"}"
+									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":false,\"quality\":\"low\",\"vrButton\":true,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\",\"mobile\":false}"
 								},
 								"stores": {
 									"exportStores.exportPrefs": "<object>"
@@ -10241,7 +10241,7 @@
 							"state": false,
 							"effects": {
 								"storage": {
-									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":false,\"quality\":\"auto\",\"vrButton\":false,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\"}"
+									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":false,\"quality\":\"auto\",\"vrButton\":false,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\",\"mobile\":false}"
 								},
 								"stores": {
 									"exportStores.exportPrefs": "<object>"
@@ -10272,7 +10272,7 @@
 							"state": true,
 							"effects": {
 								"storage": {
-									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":false,\"quality\":\"auto\",\"vrButton\":true,\"useCdnForPacks\":true,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\"}"
+									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":false,\"quality\":\"auto\",\"vrButton\":true,\"useCdnForPacks\":true,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\",\"mobile\":false}"
 								},
 								"stores": {
 									"exportStores.exportPrefs": "<object>"

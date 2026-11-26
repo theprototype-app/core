@@ -338,7 +338,8 @@ h.run(async () => {
 	h.check(gState.phase === 'playing', `the game is playing (${gState.phase}${gState.error ? ' — ' + gState.error : ''})`);
 	h.check(gState.path === '/html/4201/index.html', `served from a SUBPATH (${gState.path})`);
 	h.check(gState.locked === true && gState.objects > 10 && gState.module, `autoplay: Play mode, the course loaded, the minigolf module awake (${gState.objects} objects)`);
-	h.check(gState.chromeHidden === true && !gState.openLink, 'no editor chrome, no "open in app" link in an export');
+	// 63 PG1: the export boots the play entry, which has no editor chrome at all (null = absent)
+	h.check(gState.chromeHidden !== false && !gState.openLink, `no editor chrome, no "open in app" link in an export (chrome ${gState.chromeHidden === null ? 'absent' : 'hidden'})`);
 	h.check(gState.peerOpen === false, 'the Peer is the offline stub (no signaling)');
 	const bh = gState.badge;
 	h.check(!!bh, 'the Made with ThePrototype badge is drawn');
@@ -415,6 +416,13 @@ h.run(async () => {
 	// the badge on hover: the words, 85%
 	await G.p.mouse.move(1270 - 12, 720 - 26);
 	await G.p.waitForTimeout(400);
+	// 63: what is under the pointer at the badge (diagnostic for the hover row)
+	console.log('  under the badge: ' + (await G.frame.evaluate(() => {
+		const b = /** @type {HTMLElement} */ (document.querySelector('#made-with-tp'));
+		const r = b.getBoundingClientRect();
+		const el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+		return (el?.tagName || '') + '#' + (el?.id || '') + '.' + String(el?.className?.baseVal ?? el?.className ?? '').slice(0, 60) + ' lock=' + !!document.pointerLockElement + ' rect=' + JSON.stringify(r);
+	})));
 	const hover = await G.frame.evaluate(() => {
 		const b = /** @type {HTMLElement} */ (document.querySelector('#made-with-tp'));
 		return { opacity: getComputedStyle(b).opacity, width: b.getBoundingClientRect().width };

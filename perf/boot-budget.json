@@ -307,6 +307,13 @@
 				"106-contact-switch #660 + 950bfa29 (1.79.0's static faceEdit import back out) + deps 19de5dba": "+0.3 / -29.4 (the 1.79.0 merge put faceEdit back: 67acb369 2753.0 -> 950bfa29 2723.7; deps ~0)",
 				"int merges of v1.80.0 / v1.81.0": "-1.5 / +3.3 (the tags' own additions, on the lazy split)"
 			}
+		},
+		{
+			"date": "2026-11-26",
+			"lane": "63-int (roadmap 63 Publish your game: 63-publish #614 + 63-export #616 + the 63-int hint, on v1.82.0, 1470a08e)",
+			"play": "v1.82.0 1709.6 KB -> union on v1.82.0 1709.9 KB (+0.3) -> line 1710.0 KB (the int boot rule: the measure on the newest tag + the union's sum, rounded up to the next 5 KB; unchanged). Headroom 0.1 KB: the next int on play will cross it",
+			"editor": "v1.82.0 2726.6 KB -> union on v1.82.0 2727.3 KB (+0.7) -> line 2730.0 KB (the same rule; unchanged)",
+			"note": "measured on the Deck, v1.82.0 (detached worktree) and the union built back to back after npm ci on both. Per lane, measured on v1.81.0 the same way: 63-publish alone +0.1 play / +0.3 editor (302ab91f); 63-export + the 63-int first-use hint +0.2 play / +0.5 editor. The 1.83.0 changelog no longer rides the editor boot (What's new loads on demand since #654)."
 		}
 	],
 	"throttle": {

@@ -6,6 +6,27 @@
      rendering, so maintainer notes stay out of the user-facing window. No emoji from
      1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
 
+## 1.83.0 — Publish your game
+
+### Before you publish
+- **Publish check**: the Publish tab opens with **Before you publish**, a short list of what a visitor would trip over, each with a fix where one exists: the scene is over the 25 MB publish limit (its biggest parts listed), textures over 2048 px (**Shrink to 2048 px**, one undo), a game with no spawn point or one outside the play area (**Start players here**), a key phone players cannot press (**Edit touch controls**), a module visitors cannot get (**Open Modules**), files that are not on this device (**Ask connected people for them**), Script nodes that read random numbers, the clock or storage (**Show the node**), and objects that will not show for players. Warnings never block publishing; **Check again** runs it again. <!-- 63-publish #614 -->
+- **Unpublish and Republish** (hosted app): take a published scene or game down from Your games, the Publish dialog or its own scene page (it asks twice). Its links show a plain "No longer published" page; remixes made earlier keep their credit. **Republish** puts it back on the same link. <!-- 63-publish cloud #494 -->
+
+### Export a game that needs no internet
+- **Exported games play offline**: the zip boots the slim player (not the editor) and carries every pack piece with its LOD files, every module and every sky size the game uses; it sends no reports. A small game's zip is about 13 MB. <!-- 63-export #616 PG1 -->
+- **CrazyGames preset**: their SDK, told when the game loads, plays and pauses; their size limits (50 MB before the game starts, 250 MB, 1,500 files) checked before anything downloads. <!-- 63-export PG3 -->
+- **Checks before the download**: the Export tab shows the same rows as Publish plus the preset's limits (itch.io limits re-checked on 23 Nov). A red row stops the download and says why. **Made for phones too** makes the checks look for touch controls. <!-- 63-export PG2 -->
+- **What weighs what**: after a build the result lists the 15 biggest files and what uses them; press one to select it. <!-- 63-export PG2 -->
+- **Updating an upload**: exporting a game again keeps its zip name and export id, so an upload replaces the old build. <!-- 63-export row 7 -->
+- **Starter Dash**: a new starter game, the smallest complete one, made to try the export presets end to end. <!-- 63-export row 5, scenes #40 -->
+- New docs page **Publish your game**: itch.io and CrazyGames step by step, what the check rows mean, updating an upload, taking a game down. The Publish / Export window points to it the first time it opens. <!-- 63-int -->
+
+### For AI agents and developers
+- `save_scene` answers with `publishCheck` (the same rows, with fix names); publishing and every fix stay the person's press. cloudApi `publishCheck({target?, bundle?, phone?})` (additive). <!-- 63-publish -->
+
+### Compatibility
+- **Scene files**: no format change. **Sessions**: nothing new on the wire.
+
 ## 1.82.0 — Curves, sound and many objects
 
 ### Animation

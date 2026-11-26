@@ -245,3 +245,12 @@ export function usersOfFile(file, nodes) {
 	}
 	return { byHash, byName };
 }
+
+/** 107: does `v` hold the string `needle` anywhere `depth` levels down (objects and arrays) @param {any} v @param {string} needle @param {number} [depth] */
+export function holdsValue(v, needle, depth = 3) {
+	if (!needle) return false;
+	if (typeof v === 'string') return v === needle;
+	if (!v || typeof v !== 'object' || depth < 0) return false;
+	for (const x of Object.values(v)) if (holdsValue(x, needle, depth - 1)) return true;
+	return false;
+}

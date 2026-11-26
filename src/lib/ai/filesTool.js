@@ -41,6 +41,8 @@ import { isDirty } from '../codeTabs';
 import { offerUndo } from '../undoToast';
 import { showToast } from '../../stores/appStore';
 import { allNodes } from '../../stores/flowStore';
+import { objectsGroup } from '../../stores/sceneStore';
+import { sequences } from '../sequences';
 import { sceneOfHash } from '../projectManifest';
 import { renameScene, levelSceneName } from '../levels';
 import { askPerson, askKnown } from './personAsk.js';
@@ -61,7 +63,8 @@ import {
 	spliceLines,
 	byteLength,
 	createRateLimit,
-	usersOfFile
+	usersOfFile,
+	holdsValue
 } from './filesCore.js';
 
 const writes = createRateLimit();
@@ -353,14 +356,32 @@ function usersOf(item) {
 	}
 	/** @param {{graph: string, node: string, type: string}} r */
 	const say = (r) => ({ node: r.node, type: r.type, flow: r.graph === 'scene' ? 'scene' : r.graph });
-	return { follow: u.byHash.slice(0, 20).map(say), byName: u.byName.slice(0, 20).map(say), count: u.byHash.length };
+	/** @type {any[]} */
+	const follow = u.byHash.map(say);
+	// materials (a texture made from a Library image keeps its hash, userData.mapSource) and objects' own data
+	// (a clip asset, a model's source): all by content, so they follow
+	const hash = String(item.hash ?? '');
+	/** @type {any} */
+	const group = get(objectsGroup);
+	if (hash && group?.traverse) {
+		group.traverse((/** @type {any} */ o) => {
+			if (o === group) return;
+			const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+			if (mats.some((/** @type {any} */ m) => m?.userData?.mapSource === hash)) follow.push({ object: o.uuid, name: o.name, material: true });
+			else if (holdsValue(o.userData, hash, 3)) follow.push({ object: o.uuid, name: o.name });
+		});
+	}
+	// sequences (an audio clip is {sound: hash})
+	for (const [id, seq] of Object.entries(/** @type {Record<string, any>} */ (get(sequences) ?? {})))
+		if (holdsValue(seq, hash, 5)) follow.push({ sequence: id, name: seq?.name });
+	return { follow: follow.slice(0, 20), byName: u.byName.slice(0, 20).map(say), count: follow.length };
 }
 
 /** a file that only a NAME points at (rule: never leave a reference dangling) @param {any} item @param {{byName: any[]}} users */
 function nameUsersRefusal(item, users) {
 	if (!users.byName.length) return null;
 	return fail(
-		users.byName.length + ' flow node' + (users.byName.length === 1 ? '' : 's') + ' name "' + item.name + '" by its name, not by its content, and would lose it: change them first (update_flow_nodes) or leave the name',
+		users.byName.length + (users.byName.length === 1 ? ' flow node names "' : ' flow nodes name "') + item.name + '" by its name, not by its content, and would lose it: change them first (update_flow_nodes) or leave the name',
 		{ refused: true, users: users.byName }
 	);
 }

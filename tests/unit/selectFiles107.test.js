@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { usersOfFile } from '../../src/lib/ai/filesCore.js';
+import { usersOfFile, holdsValue } from '../../src/lib/ai/filesCore.js';
 import { nameProblem, renamedFileName, extensionOf } from '../../src/lib/codeFilesCore.js';
 
 // 107-select-files: who points at a file (rename / move for every kind), and the name rules a non-text file keeps.
@@ -51,5 +51,16 @@ describe('107 show: the new actions ask no new question', () => {
 		expect(MORE_KIND).toEqual({ reveal: 'panel', select: 'panel', flow: 'panel' });
 		expect(SHOW_KINDS).toEqual(['panel', 'camera', 'code']);
 		expect(KIND_WORDS.panel).toMatch(/select/);
+	});
+});
+
+describe('107 holdsValue (materials, objects, sequences point by content)', () => {
+	it('finds a hash inside nested data, within the depth', () => {
+		const seq = { name: 'Intro', tracks: [{ items: [{ kind: 'audio', sound: H, name: 'boom.ogg' }] }] };
+		expect(holdsValue(seq, H, 5)).toBe(true);
+		expect(holdsValue(seq, H, 2)).toBe(false);
+		expect(holdsValue({ mapSource: H }, H)).toBe(true);
+		expect(holdsValue({ a: 'x' }, H)).toBe(false);
+		expect(holdsValue({ a: H }, '')).toBe(false);
 	});
 });

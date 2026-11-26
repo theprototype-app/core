@@ -373,7 +373,8 @@ async function codeAction(args, by) {
 	const total = text.split('\n').length;
 	/** @type {{from: number[], to: number[]} | null} */
 	let select = null;
-	let at = Math.max(1, Math.floor(Number(args.line) || 0));
+	// 107 (scout inv-B d): no line given = no line (it used to read as line 1, so a bare open moved the caret there)
+	let at = Number(args.line) >= 1 ? Math.floor(Number(args.line)) : 0;
 	if (typeof args.find === 'string' && args.find) {
 		const hit = findRange(text, args.find, at || 1);
 		if (!hit) return fail('"' + String(args.find).slice(0, 60) + '" is not in ' + target.label + ' (it is open now)', { opened: true, tabId });

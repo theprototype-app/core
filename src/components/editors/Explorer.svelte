@@ -46,7 +46,7 @@
 		moveItem,
 		importFiles,
 		revealItemId,
-		revealEntryRequest,
+		explorerExpandTo,
 		deleteItem,
 		renameItem,
 		isValidName,
@@ -1646,22 +1646,22 @@
 		untrack(() => {
 			revealItemId.set(null);
 			const item = [...$explorerItems].find((i) => i.id === id);
+			const folder = item ? null : $explorerFolders.find((f: any) => f.id === id);
 			if (item) void revealItem(item);
+			else if (folder) void revealFolder(folder);
 			else showToast('That file is no longer in your library');
 		});
 	});
 
-	// 107: the assistant's show {reveal} — a file or a folder, the tree expanded down to it. The same walk as
-	// Reveal above (clear the search, land on the folder, two ticks, select, scroll), plus the tree rows.
+	// 107: expandExplorerTo (the assistant's show {reveal}, beside Reveal above): open the tree down to a
+	// folder — its ancestors and itself — and scroll its row into view. Cleared on the way through.
 	$effect(() => {
-		const req = $revealEntryRequest;
-		if (!req) return;
+		const id = $explorerExpandTo;
+		if (!id) return;
 		untrack(() => {
-			revealEntryRequest.set(null);
-			void revealEntry(req).then(
-				(out) => req.done?.(out),
-				() => req.done?.({ ok: false })
-			);
+			explorerExpandTo.set(null);
+			expandAll(ancestorsOf(id));
+			void tick().then(() => document.querySelector(`[data-tree-folder="${id}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
 		});
 	});
 	/** the folder ids from `id` up to the root @param {string | null} id */
@@ -1675,7 +1675,6 @@
 		}
 		return out;
 	}
-	/** @param {string[]} ids */
 	function expandAll(ids: string[]) {
 		if (ids.every((id) => expanded.has(id))) return;
 		const next = new Set(expanded);
@@ -1683,35 +1682,15 @@
 		expanded = next;
 		safeStorage.setItem('explorerExpanded', JSON.stringify([...next]));
 	}
-	async function revealEntry(req: { kind: 'file' | 'folder'; id: string; open?: boolean }) {
-		const scrollTo = (sel: string) => document.querySelector(sel)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-		if (req.kind === 'file') {
-			const item = $explorerItems.find((i: any) => i.id === req.id);
-			if (!item) return { ok: false };
-			expandAll(ancestorsOf(item.folderId ?? null));
-			await revealItem(item);
-			if (item.folderId) scrollTo(`[data-tree-folder="${item.folderId}"]`);
-			return { ok: true, folder: item.folderId ?? null, selected: [...selectedIds].includes(item.id), card: !!document.querySelector(`[data-card-id="${item.id}"]`) };
-		}
-		const folder = $explorerFolders.find((f: any) => f.id === req.id);
-		if (!folder) return { ok: false };
+	/** 107: Reveal for a FOLDER — its card selected in its parent, the same walk as a file's @param {any} folder */
+	async function revealFolder(folder: any) {
 		if (search) search = '';
-		if (req.open) {
-			expandAll(ancestorsOf(folder.id));
-			openFolder(folder.id);
-			await tick();
-			await tick();
-		} else {
-			expandAll(ancestorsOf(folder.parentId ?? null));
-			activeFolder.set(folder.parentId ?? null);
-			await tick();
-			await tick();
-			setSel([folder.id]);
-			await tick();
-			scrollTo(`[data-card-id="${folder.id}"]`);
-		}
-		scrollTo(`[data-tree-folder="${folder.id}"]`);
-		return { ok: true, folder: $activeFolder ?? null, selected: req.open ? false : [...selectedIds].includes(folder.id), card: !!document.querySelector(`[data-card-id="${folder.id}"]`) };
+		activeFolder.set(folder.parentId ?? null);
+		await tick();
+		await tick();
+		setSel([folder.id]);
+		await tick();
+		document.querySelector(`[data-card-id="${folder.id}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 	}
 
 	/**

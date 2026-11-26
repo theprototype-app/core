@@ -998,19 +998,23 @@ export const inspectedFile = writable(null);
  * @type {import('svelte/store').Writable<string | null>}
  */
 export const revealItemId = writable(null);
-/** @param {string} id */
+/** 107: a FOLDER id reveals the folder too (its card selected in its parent) @param {string} id */
 export function revealItem(id) {
 	revealItemId.set(String(id ?? '') || null);
 }
 
 /**
- * 107 — "show me THIS file or folder" for the assistant's show {reveal}: the revealItemId shape (a request the
- * Explorer consumes and clears, because the Explorer may not be mounted yet), widened to folders. The Explorer
- * expands the tree down to it, lands on the folder that holds it (or walks INTO a folder with `open`), selects
- * its card and scrolls card and tree row into view, then calls `done` with what it did.
- * @type {import('svelte/store').Writable<null | {kind: 'file' | 'folder', id: string, open?: boolean, done?: (out: any) => void}>}
+ * 107 — EXPAND THE TREE DOWN TO A FOLDER (the assistant's show {reveal}, beside revealItem): a request the
+ * Explorer consumes and clears, because the tree's expansion is the component's own (`explorerExpanded`) and the
+ * Explorer may not be mounted yet. It opens every ancestor of `folderId` and the folder itself, then scrolls the
+ * folder's tree row into view. null = the Library root (nothing to expand).
+ * @type {import('svelte/store').Writable<string | null>}
  */
-export const revealEntryRequest = writable(null);
+export const explorerExpandTo = writable(null);
+/** @param {string | null} folderId */
+export function expandExplorerTo(folderId) {
+	explorerExpandTo.set(String(folderId ?? '') || null);
+}
 
 /** Save edited text back into an item — hash + size recompute (107)
  * @param {string} id @param {string} text */

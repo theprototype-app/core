@@ -4,8 +4,9 @@
 // prompts (the same report asks for fewer). Every one leaves the person a line with Back and pushes its undo.
 //
 //   reveal  {path | id, state?: 'open'}  a Library file or folder in the Explorer: the tree expanded down to
-//           it, the folder that holds it on screen, its card selected and scrolled to (the Explorer's own
-//           Reveal walk, explorer.revealEntryRequest). state 'open' walks INTO a folder instead.
+//           it (explorer.expandExplorerTo), the folder that holds it on screen, its card selected and scrolled
+//           to (explorer.revealItem, the Explorer's own Reveal; a folder id reveals the folder). state 'open'
+//           walks INTO a folder instead (activeFolder). Only the Explorer's public seams, no component state.
 //   select  {uuids, mode: set | add | remove | clear}  the person's selection, and NOTHING moves the camera
 //           (show camera {select} is the one that flies). Clear lands the Inspector on the scene's settings and
 //           the Flow editor on the scene flow (the Flow editor follows the selection by itself).
@@ -49,17 +50,38 @@ async function revealAction(args, ctx) {
 	if (r.type === 'none') return ctx.fail(r.missing?.length ? 'no folder "' + r.missing.join('/') + '" in the Library (files {action: "list"})' : 'no file or folder "' + (r.name ?? args.path ?? args.id) + '" in the Library (files {action: "list"} shows what is there)');
 	const open = String(args.state ?? '') === 'open';
 	const root = r.type === 'folder' && r.id === null;
+	const folder = r.type === 'folder' && !root ? folders.find((f) => f.id === r.id) : null;
 	const prevFolder = get(ex.activeFolder);
 	const wasOpen = await ensurePanel('explorer', ctx);
-	/** @type {any} */
-	let out = { ok: true };
+	/** the folder the grid should land on, and the card to select there (null = none) */
+	let lands = /** @type {string | null} */ (null);
+	let card = /** @type {string | null} */ (null);
 	if (root) ex.activeFolder.set(null);
-	else {
-		const req = r.type === 'file' ? { kind: /** @type {const} */ ('file'), id: r.item.id } : { kind: /** @type {const} */ ('folder'), id: String(r.id), open };
-		out = await new Promise((resolve) => {
-			const timer = setTimeout(() => resolve({ ok: false, late: true }), 4000);
-			ex.revealEntryRequest.set({ ...req, done: (/** @type {any} */ o) => (clearTimeout(timer), resolve(o)) });
-		});
+	else if (r.type === 'file') {
+		lands = r.item.folderId ?? null;
+		card = r.item.id;
+		ex.expandExplorerTo(lands);
+		ex.revealItem(r.item.id);
+	} else if (open) {
+		lands = folder.id;
+		ex.expandExplorerTo(folder.id);
+		ex.activeFolder.set(folder.id);
+	} else {
+		lands = folder.parentId ?? null;
+		card = folder.id;
+		ex.expandExplorerTo(lands);
+		ex.revealItem(folder.id);
+	}
+	// the Explorer acts on the next frames (and may be mounting): watch for the card, a few seconds at most
+	/** @returns {{at: boolean, shown: boolean, selected: boolean}} */
+	const look = () => {
+		const el = card && typeof document !== 'undefined' ? document.querySelector('[data-card-id="' + card + '"]') : null;
+		return { at: (get(ex.activeFolder) ?? null) === lands, shown: !!el, selected: !!el && /\bborder-accent\b/.test(String(el.className)) };
+	};
+	let seen = look();
+	for (let i = 0; i < 40 && !(seen.at && (!card || seen.selected)); i++) {
+		await sleep(75);
+		seen = look();
 	}
 	const path = root ? '/' : r.type === 'file' ? pathOfItem(r.item, folders) : pathOfFolder(String(r.id), folders) + '/';
 	ctx.push('showed ' + path + ' in the Explorer', async () => {
@@ -70,15 +92,14 @@ async function revealAction(args, ctx) {
 		}
 		return 'put the Explorer back';
 	});
-	const what = root ? 'the Library' : '"' + (r.type === 'file' ? r.item.name : folders.find((f) => f.id === r.id)?.name) + '"';
+	const what = root ? 'the Library' : '"' + (r.type === 'file' ? r.item.name : folder?.name) + '"';
 	ctx.line(ctx.by + (open || root ? ' opened ' + what + ' in the Explorer' : ' showed you ' + what + ' in the Explorer'));
-	if (out?.late) return { revealed: r.type, path, note: 'The Explorer is opening: it lands on it as soon as it is up (screenshot to check).' };
-	if (!out?.ok) return ctx.fail('the Explorer could not show "' + path + '" (it may have just been moved or deleted)');
 	return {
 		revealed: r.type,
 		path,
-		...(open || root ? { opened: true } : { selected: !!out.selected }),
-		inFolder: out.folder ? pathOfFolder(out.folder, folders) + '/' : '/',
+		...(open || root ? { opened: true } : { selected: seen.selected }),
+		inFolder: lands ? pathOfFolder(lands, folders) + '/' : '/',
+		...(!seen.at ? { note: 'The Explorer is still opening: it lands there as soon as it is up (screenshot to check).' } : {}),
 		...(ctx.inVR() ? { note: 'The person is in a headset: they see it when they take it off.' } : {})
 	};
 }

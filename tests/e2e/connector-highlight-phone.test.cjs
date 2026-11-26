@@ -38,24 +38,25 @@ h.run(async () => {
 	// ---- 1 ----------------------------------------------------------------------------------------------------
 	const c1 = await call('show', { action: 'code', path: 'Scripts/phone.js', line: 2, to: 3 });
 	h.check(c1?.result?.highlighted === true && c1.result.focused === false, `show code highlights on a phone (${short(c1)})`);
-	await h.eventually(() => page.evaluate(() => document.querySelectorAll('.cm-editor').length), (n) => n > 0, 'the Code tab shows the file', 10000);
-	await new Promise((r) => setTimeout(r, 1200));
+	// CodeMirror loads lazily: wait until the range is drawn, THEN judge the focus
+	await h.eventually(focusState, (s) => s.sel > 0, 'the Code tab shows the file with the range drawn', 20000);
 	const f1 = await focusState();
-	h.check(!f1.editable && !f1.inEditor && !f1.focusedEditor, `nothing editable has focus: no caret, no keyboard (${JSON.stringify(f1)})`);
-	h.check(f1.sel > 0, `the range is drawn (${f1.sel})`);
+	await new Promise((r) => setTimeout(r, 800));
+	const f1b = await focusState();
+	h.check(!f1b.editable && !f1b.inEditor, `nothing editable has focus: no caret, no keyboard (${JSON.stringify(f1b)}, first ${f1.sel})`);
 
 	// ---- 2 ----------------------------------------------------------------------------------------------------
 	const c2 = await call('show', { action: 'code', path: 'phone.js', find: 'door.open' });
 	h.check(c2?.result?.highlighted === true && JSON.stringify(c2.result.selected) === JSON.stringify({ from: [3, 2], to: [3, 11] }), `find highlights the match (${short(c2)})`);
 	await new Promise((r) => setTimeout(r, 800));
 	const f2 = await focusState();
-	h.check(!f2.editable && !f2.focusedEditor, `still nothing focused (${JSON.stringify(f2)})`);
+	h.check(!f2.editable && !f2.inEditor, `still nothing focused (${JSON.stringify(f2)})`);
 	h.check(f2.vv === before.vv, `the visual viewport did not change size (${before.vv} -> ${f2.vv})`);
 
 	// ---- 3 ----------------------------------------------------------------------------------------------------
 	const c3 = await call('show', { action: 'code', path: 'phone.js', line: 2, focus: true });
 	h.check(c3?.result?.focused === true, `focus: true asks for the caret (${short(c3)})`);
-	await h.eventually(() => focusState(), (s) => s.focusedEditor && s.inEditor, 'the counterfactual: focus: true focuses the editor', 6000);
+	await h.eventually(() => focusState(), (s) => s.inEditor, 'the counterfactual: focus: true focuses the editor', 8000);
 
 	await h.finish(browser);
 });

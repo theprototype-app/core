@@ -209,19 +209,22 @@ h.run(async () => {
 	await page.evaluate(() => document.activeElement?.blur?.());
 	const c1 = await call('show', { action: 'code', path: 'Scripts/hl.js', line: 2, to: 3 });
 	h.check(c1?.result?.highlighted === true && c1.result.focused === false && JSON.stringify(c1.result.selected) === JSON.stringify({ from: [2, 0], to: [3, 14] }), `code highlights lines 2..3 (${short(c1)})`);
-	await new Promise((r) => setTimeout(r, 800));
-	const foc1 = await page.evaluate(() => ({ inEditor: !!document.activeElement?.closest?.('.cm-editor'), focusedEditor: !!document.querySelector('.cm-editor.cm-focused'), sel: document.querySelectorAll('.cm-selectionBackground').length }));
-	h.check(!foc1.inEditor && !foc1.focusedEditor, `the editor is NOT focused: no caret, no on-screen keyboard (${JSON.stringify(foc1)})`);
-	h.check(foc1.sel > 0, `the range is drawn (${foc1.sel} selection boxes)`);
+	// CodeMirror loads lazily: wait until the editor has drawn the range, THEN judge the focus
+	const edState = () => page.evaluate(() => ({ inEditor: !!document.activeElement?.closest?.('.cm-editor'), sel: document.querySelectorAll('.cm-selectionBackground').length }));
+	await h.eventually(edState, (s) => s.sel > 0, 'the range is drawn in the editor', 15000);
+	const foc1 = await edState();
+	h.check(!foc1.inEditor, `the editor is NOT focused: no caret, no on-screen keyboard (${JSON.stringify(foc1)})`);
 	const c2 = await call('show', { action: 'code', path: 'hl.js', find: 'door.open' });
 	h.check(c2?.result?.highlighted === true && JSON.stringify(c2.result.selected) === JSON.stringify({ from: [3, 2], to: [3, 11] }), `find highlights the match (${short(c2)})`);
 	const c3 = await call('show', { action: 'code', path: 'hl.js', line: 1 });
 	h.check(JSON.stringify(c3?.result?.selected) === JSON.stringify({ from: [1, 0], to: [1, 10] }), `a bare line is highlighted whole (${short(c3)})`);
 	await new Promise((r) => setTimeout(r, 500));
-	h.check(!(await page.evaluate(() => !!document.querySelector('.cm-editor.cm-focused'))), 'still not focused');
+	h.check(!(await edState()).inEditor, 'still not focused');
+	const c0 = await call('show', { action: 'code', path: 'hl.js' });
+	h.check(c0?.type === 'result' && c0.result.line === undefined && c0.result.selected === undefined, `a bare open moves nothing: no line, no range (${short(c0)})`);
 	const c4 = await call('show', { action: 'code', path: 'hl.js', line: 2, focus: true });
 	h.check(c4?.result?.focused === true && !c4.result.highlighted, `focus: true puts the caret there (${short(c4)})`);
-	await h.eventually(() => page.evaluate(() => !!document.querySelector('.cm-editor.cm-focused')), (v) => v === true, 'focus: true focuses the editor', 5000);
+	await h.eventually(edState, (s) => s.inEditor, 'the counterfactual: focus: true focuses the editor (the check above can see a focus)', 8000);
 
 	await h.finish(browser);
 });

@@ -236,6 +236,7 @@ function dispatch(/** @type {any} */ over = {}) {
 			ran.push([n, a]);
 			if (over.holdExec) await new Promise((r) => (releaseExec = r));
 			if (over.viewer && n !== 'list_scene') return { error: 'View-only: …', refused: true, role: 'viewer' };
+			if (over.answer && n !== 'list_scene') return over.answer;
 			return n === 'list_scene' ? { objects: [] } : { created: [{ uuid: 'u1' }] };
 		},
 		status: () => ({ role: 'editor', notices: ['secret toast text'] }),
@@ -296,6 +297,13 @@ describe('dispatcher', () => {
 		x.d.handle(/** @type {any} */ (call('s1', 'status', {}, 'read')));
 		await flush();
 		expect(x.sent.at(-1).result.lastJoinResult.state).toBe('failed');
+	});
+	it('107: an error answer carries its errors, skipped reasons and note in the message', async () => {
+		const x = dispatch({ answer: { error: 'the shader was not created', skipped: [{ uuid: 'u1', reason: 'the compiler refused it', errors: ['node "g": bad'] }], errors: ['one'], note: 'nothing changed' } });
+		x.d.handle(/** @type {any} */ (call('c1', 'create_objects', { objects: [{ kind: 'primitive' }] })));
+		await flush();
+		const m = x.sent.at(-1).error.message;
+		expect(m).toMatch(/^the shader was not created — one — the compiler refused it: node "g": bad \(nothing changed\)$/);
 	});
 	it('runs an edit through exec and answers its result', async () => {
 		const x = dispatch();

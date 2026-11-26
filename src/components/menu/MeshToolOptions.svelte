@@ -19,7 +19,7 @@
 	// The operators are NOT called from here: the toolbox owns the toasts, the
 	// flash feedback and the "is there a target" checks, so the Apply buttons
 	// AND the adjust callbacks call back into it. This component is layout.
-	import { faceEditAmount, faceAutoApply, opAdjustState, knifePreview } from '$lib/faceEditState';
+	import { faceEditAmount, faceAutoApply, opAdjustState, knifePreview, bisectPlaced } from '$lib/faceEditState';
 	import { faceEditNow } from '$lib/faceEditLazy';
 	import { proportionalRadius } from '$lib/meshEdit';
 	// 19-A P4: scrubbing the radius previews the falloff RING at the current
@@ -51,7 +51,6 @@
 		slideClamp
 	} from '$lib/meshToolParams';
 	import DragRow from '../ui/DragRow.svelte';
-	import { bisectPlaced, applyBisect, cancelBisect } from '$lib/meshBisectTool'; // 99 K8
 
 	/** @type {{ mode: 'vertices'|'edges'|'faces', focus: string, hint?: string,
 	 *   adjusting?: boolean,
@@ -737,8 +736,8 @@
 	</div>
 	{#if $bisectPlaced}
 		<div id="bisect-pending" class="tbx-row text-xs text-text-2">
-			<button id="bisect-cancel" class="tbx-cmd" title="Drop the plane (Esc)" onclick={() => cancelBisect()}>Cancel</button>
-			<button id="bisect-apply" class="tbx-primary" title="Cut with the plane as placed (Enter)" onclick={() => applyBisect()}>Apply</button>
+			<button id="bisect-cancel" class="tbx-cmd" title="Drop the plane (Esc)" onclick={() => faceEditNow()?.cancelBisect()}>Cancel</button>
+			<button id="bisect-apply" class="tbx-primary" title="Cut with the plane as placed (Enter)" onclick={() => faceEditNow()?.applyBisect()}>Apply</button>
 		</div>
 	{/if}
 {:else if focus === 'knife'}

@@ -133,12 +133,17 @@ import {
 	edgeEditSelected,
 	edgeEditHover,
 	knifePreview,
+	bisectPreview,
+	bisectPlaced,
 	faceGizmoSpace,
 	meshGizmoEnabled,
 	pathGesture
 } from './faceEditState';
 import { applyMeshGeo, smoothWeldedNormals, preserveMaterialGroups, preserveUVs } from './meshGeoApply';
 import { adoptFaceEdit } from './faceEditLazy';
+// 102-boot-diet-3: Bisect's first half (stores in faceEditState; click / hover / Esc / Enter / cancel) rides this
+// chunk; the boot calls it through faceEditNow() like the knife's
+export { bisectClick, bisectHover, onBisectPlaneMoved, applyBisect, cancelBisect } from './meshBisectTool';
 import * as faceEditModule from './faceEdit';
 import { shellsOfTris, withSlot, readTriangles, trisToGroups, trisToUVs, trisToPositions, stretchPositions } from './meshSoup';
 // 102-boot-diet-2: the boot half (stores, prefs, registries, small helpers) re-exported, so every
@@ -182,6 +187,8 @@ export {
 	edgeEditSelected,
 	edgeEditHover,
 	knifePreview,
+	bisectPreview,
+	bisectPlaced,
 	faceGizmoSpace,
 	meshGizmoEnabled,
 	pathGesture

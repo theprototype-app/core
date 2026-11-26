@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { knifePreview } from '$lib/faceEditState';
-	import { bisectPreview } from '$lib/meshBisectTool';
+	import { bisectPreview } from '$lib/faceEditState'; // 102-boot-diet-3: the tool itself rides the faceEdit chunk
 
 	// M9b: the knife's rubber band. The cut is defined in SCREEN space, so the preview belongs
 	// in the DOM rather than the scene — there is no 3D line to draw, and a scene-root line

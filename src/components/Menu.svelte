@@ -25,7 +25,31 @@
 	import TemplatesModal from './menu/TemplatesModal.svelte';
 	import CharacterPanel from './menu/CharacterPanel.svelte'; // 36-avatars: the customise side panel
 	import ViewportMenu from './menu/ViewportMenu.svelte';
-	import MeshEditPopup from './menu/MeshEditPopup.svelte';
+	// 102-boot-diet-3: the mesh toolbox (MeshEditPopup + MeshToolOptions, ~12 KB gz) is a lazy chunk, loaded ONCE --
+	// at idle after the first frame (next to faceEdit's prefetch) or by the first edit session -- and then mounted
+	// synchronously as before. Everything it does is gated on an open session, which needs faceEdit loaded anyway.
+	import { editingObject } from '$lib/meshEdit';
+	import { faceEditObject } from '$lib/faceEditState';
+	import { onMount } from 'svelte';
+	let MeshEditPopup = $state<any>(null);
+	let meshPopupLoading: Promise<unknown> | null = null;
+	function loadMeshEditPopup() {
+		meshPopupLoading ??= import('./menu/MeshEditPopup.svelte').then(
+			(m) => (MeshEditPopup = m.default),
+			(err) => {
+				meshPopupLoading = null; // retried by the next session (the stale-chunk rule: a failure must not latch)
+				console.warn('[mesh] could not load the mesh toolbox', err);
+			}
+		);
+	}
+	$effect(() => {
+		if ($editingObject || $faceEditObject) loadMeshEditPopup();
+	});
+	onMount(() => {
+		const idle = (window as any).requestIdleCallback;
+		if (typeof idle === 'function') idle(loadMeshEditPopup, { timeout: 5000 });
+		else setTimeout(loadMeshEditPopup, 2000);
+	});
 	import MarqueeOverlay from './menu/MarqueeOverlay.svelte';
 	import AddMenu from './menu/AddMenu.svelte';
 	import ObjectSearch from './menu/ObjectSearch.svelte';
@@ -105,7 +129,7 @@
 <TemplatesModal />
 <CharacterPanel />
 <ViewportMenu />
-<MeshEditPopup />
+{#if MeshEditPopup}<MeshEditPopup />{/if}
 <MarqueeOverlay />
 <AddMenu />
 <ObjectSearch />

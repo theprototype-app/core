@@ -10,7 +10,10 @@
 //      Flow editor; back restores the set; an unknown uuid is refused
 //   5. show flow: an object's flow (the owner selected), the scene flow, a node with select: false (the scope moves,
 //      the selection stays, the node is selected in the editor)
-//   6. show code: highlights lines without focusing the editor (no caret); focus: true focuses as before
+//   6. show code: highlights lines without focusing the editor (no caret); focus: true focuses as before; a bare open
+//      moves nothing
+//   7. (scout one-liners) delete_objects keeps the rest of the selection; the Explorer's own Rename refuses a name
+//      another text file has (Enter keeps the field open with the reason), as the Code tab's rename does
 // Run: APP_URL='https://theprototype.app:7245/' npm run e2e -- connector-select-files
 const h = require('./helpers.cjs');
 const { installProvider, fakeRelay, connectorPhase } = require('./connectorFake.cjs');
@@ -225,6 +228,33 @@ h.run(async () => {
 	const c4 = await call('show', { action: 'code', path: 'hl.js', line: 2, focus: true });
 	h.check(c4?.result?.focused === true && !c4.result.highlighted, `focus: true puts the caret there (${short(c4)})`);
 	await h.eventually(edState, (s) => s.inEditor, 'the counterfactual: focus: true focuses the editor (the check above can see a focus)', 8000);
+
+	// ---- 7 ----------------------------------------------------------------------------------------------------
+	const c7 = await mk('Sel C', [0, 0, 8]);
+	await page.evaluate(([x, y]) => window.__tp.test.v1.objectActions.applySelectionSet([x, y], false), [b, c7]);
+	const del = await call('delete_objects', { uuids: [c7] });
+	h.check(del?.result?.deleted === 1, `delete_objects removes one of two selected (${short(del)})`);
+	h.check(JSON.stringify(await store('selectedObjects')) === JSON.stringify([b]), `the rest of the selection stays (${JSON.stringify(await store('selectedObjects'))})`);
+	await resetFiles();
+	await call('files', { action: 'create', path: 't1.txt', text: 'one' });
+	await call('files', { action: 'create', path: 't2.txt', text: 'two' });
+	await page.evaluate(() => window.__tp.test.v1.explorer.activeFolder.set(null));
+	await page.evaluate(() => { const s = window.__tp.test.v1; s.safeStorage.setItem('show:allow:panel', 'always'); });
+	await resetShow();
+	await call('show', { action: 'reveal', path: 't2.txt' });
+	const card = page.locator('#explorer-list .explorer-card', { hasText: 't2.txt' }).first();
+	await card.click({ button: 'right' });
+	await page.waitForTimeout(300);
+	await page.getByText('Rename', { exact: true }).first().click();
+	await page.waitForTimeout(300);
+	await page.keyboard.press('Control+a');
+	await page.keyboard.type('t1.txt');
+	await page.keyboard.press('Enter');
+	await page.waitForTimeout(500);
+	const names = (await lib()).items.map((i) => i.name);
+	h.check(names.filter((n) => n === 't1.txt').length === 1 && names.includes('t2.txt'), `the Explorer's Rename refuses a taken text name (${names.filter((n) => /^t\d/.test(n))})`);
+	h.check((await toasts()).some((t) => /A file called "t1\.txt" already exists/.test(t)), 'and says why');
+	await page.keyboard.press('Escape');
 
 	await h.finish(browser);
 });

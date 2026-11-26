@@ -8,7 +8,7 @@
 	import Icon from '../ui/Icon.svelte';
 	import HeadDockPop from '../ui/HeadDockPop.svelte'; // uir-polish G2/G3
 	import EmptyState from '../ui/EmptyState.svelte';
-	import { FILE_TEMPLATES } from '$lib/codeFilesCore.js';
+	import { FILE_TEMPLATES, nameTakenBy } from '$lib/codeFilesCore.js';
 	import { isViewer } from '$lib/objectPermissions';
 	// Explorer (95, tree v2 in 106): dockable asset browser — real file-manager
 	// tree on the left (inline create/rename, expand/collapse, drag re-parent,
@@ -2620,6 +2620,12 @@
 	function duplicateNameTaken(edit: any) {
 		return edit?.mode === 'duplicate-scene' && sceneNameTaken(edit.value);
 	}
+	// 107 (scout): two TEXT files never share a name — an open text file's shared typing is matched by its name,
+	// so the Code tab's rename refuses it (codeFilesCore.nameTakenBy) and this Rename now does too
+	function textNameHolder(edit: any): any {
+		if (edit?.mode !== 'rename-item' || edit.volumeId) return null;
+		return nameTakenBy(String(edit.value ?? '').trim(), $explorerItems, edit.itemId);
+	}
 	/**
 	 * R22 round 11 (user): "for packs add right click create pack, so I can set name and
 	 * create items there". The name is typed INLINE, in the grid, like every other thing
@@ -2656,6 +2662,12 @@
 			editing = null;
 			return;
 		}
+		const holder = textNameHolder(editing);
+		if (holder) {
+			showToast('Rename cancelled — a file called "' + holder.name + '" already exists');
+			editing = null;
+			return;
+		}
 		void commitEdit();
 	}
 	async function commitEdit() {
@@ -2664,6 +2676,11 @@
 		// still inside, so nothing is stranded — blur has its own exit above)
 		if (duplicateNameTaken(editing)) {
 			showToast('A scene called "' + editing.value.trim() + '" already exists — choose another name');
+			return;
+		}
+		const holder = textNameHolder(editing);
+		if (holder) {
+			showToast('A file called "' + holder.name + '" already exists — two text files with one name would share one editor');
 			return;
 		}
 		// snapshot and CLOSE first: the scene modes await, and an input still mounted over

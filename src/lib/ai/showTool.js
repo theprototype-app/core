@@ -194,21 +194,44 @@ async function targetAction(tid, state, by) {
 	return { target: T.title, ...now, state: now.open ? 'open' : 'closed', changed: r.changed, ...(r.changed && !r.open ? { note: 'Hidden, not closed: every tab in it stays open.' } : {}) };
 }
 
+/**
+ * 107-panels (ruling 2026-11-27): when no panel change can be true. Play mode hides the editor, so show never answers
+ * success for a panel that is not there; an open dialog (Settings, Sessions, ...) puts the panels back as they were
+ * when it closes, and watching someone else's view holds the same snapshot.
+ * @returns {Promise<{error: string, extra: any} | null>}
+ */
+async function panelsNotNow() {
+	if (get(isLocked) === true) return { error: 'the person is playing: panels belong to Edit, and Play hides them. Nothing was opened. Ask them to press Esc to go back to Edit, then call again', extra: { refused: true, playing: true } };
+	const { anyModalOpen } = await import('../../stores/appStore');
+	if (get(anyModalOpen)) return { error: 'a dialog is open on the person\'s screen (Settings, Sessions, Modules, ...): it puts the panels back as they were when it closes. Ask them to close it first', extra: { busy: true, retryAfter: 5 } };
+	if (get(specatorMode)) return { error: 'the person is watching someone else\'s view: their panels come back when they press Exit', extra: { refused: true } };
+	return null;
+}
+
+/** the person's Windows ▸ Lock layout: moves and layouts wait for them @returns {Promise<string>} */
+async function layoutLockedWhy() {
+	const { layoutLocked } = await import('../windowPrefs');
+	return get(layoutLocked) ? 'the person locked the layout (Windows ▸ Lock layout): moving panels and applying a layout wait until they unlock it' : '';
+}
+
 /** @param {any} args @param {string} by */
 async function panelAction(args, by) {
 	const core = await import('./panelsCore.js');
 	const asked = String(args.name ?? args.panel ?? '');
 	if (!asked) return fail('name: the panel to show. ' + core.unknownPanelError('').error.replace(/^no panel "": nothing was opened\. /, ''), { valid: core.validNames(), blocked: core.blockedList() });
-	const reason = core.blockedReason(asked);
-	if (reason) return fail('"' + asked + '" is not something show opens (' + reason + '): sign-in, account, consent, publishing, connected apps, payment and settings stay the person\'s own to open. Read-only views (Profiler, Statistics) do open.', { refused: true, reason, blocked: core.blockedList() });
-	const state = String(args.state ?? (args.to ? 'move' : 'open'));
-	const tid = core.targetOf(asked);
-	if (tid) return targetAction(/** @type {any} */ (tid), state, by);
-	const id = core.panelOf(asked);
-	if (!id) {
+	const blocked = core.blockedError(asked);
+	if (blocked) return fail(blocked.error, { refused: true, reason: blocked.reason, surface: blocked.surface, blocked: blocked.blocked });
+	if (!core.panelOf(asked) && !core.targetOf(asked)) {
 		const e = core.unknownPanelError(asked);
 		return fail(e.error, { valid: e.valid, blocked: e.blocked });
 	}
+	const notNow = await panelsNotNow();
+	if (notNow) return fail(notNow.error, notNow.extra);
+	// a `to` without a state opens it (when closed) and puts it there: the open path below moves it too
+	const state = String(args.state ?? 'open');
+	const tid = core.targetOf(asked);
+	if (tid) return targetAction(/** @type {any} */ (tid), state, by);
+	const id = /** @type {string} */ (core.panelOf(asked));
 	const p = core.PANEL_BY_ID[id];
 	const label = p.title;
 	const P = await import('./panels.js');
@@ -266,6 +289,10 @@ async function panelAction(args, by) {
 		return { panel: label, ...sameAs, maximized: now === 'dock', changed, ...(await panelState(id)) };
 	}
 
+	if (state === 'move' || (args.to && state === 'open')) {
+		const locked = await layoutLockedWhy();
+		if (locked) return fail(locked, { refused: true, locked: true });
+	}
 	if (state === 'move') {
 		const to = String(args.to ?? '');
 		if (!['dock', 'left', 'right', 'floating'].includes(to)) return fail('to: dock, left, right or floating');
@@ -320,6 +347,8 @@ async function panelAction(args, by) {
 
 /** @param {any} args @param {string} by */
 async function layoutAction(args, by) {
+	const notNow = await panelsNotNow();
+	if (notNow) return fail(notNow.error, notNow.extra);
 	const L = await import('../uiLayouts');
 	const list = /** @type {any[]} */ (get(L.uiLayouts));
 	const state = String(args.state ?? 'apply');
@@ -339,6 +368,8 @@ async function layoutAction(args, by) {
 		return { layout: r.layout.name, saved: true, layouts: get(L.uiLayouts).map((/** @type {any} */ l) => l.name) };
 	}
 	if (state !== 'apply') return fail('layout state: apply (default) or save');
+	const locked = await layoutLockedWhy();
+	if (locked) return fail(locked, { refused: true, locked: true });
 	if (!hit) return fail('no layout "' + name + '": nothing changed. Saved layouts: ' + (list.map((l) => l.name).join(', ') || 'none yet'), { layouts: list.map((l) => l.name) });
 	const beforeRec = L.captureLayout('before');
 	const beforeActive = get(L.activeLayoutId);
@@ -562,6 +593,11 @@ export async function showTool(args, ctx = {}) {
 	if (raw === 'panel') {
 		const asked = String(a.name ?? a.panel ?? '');
 		if (!asked || deniedPanel(asked) || (!panelOf(asked) && !targetOf(asked))) return panelAction(a, by);
+	}
+	// 107-panels: nobody is asked about a panel change that cannot happen now (Play, a dialog, spectating)
+	if (raw === 'panel' || raw === 'layout') {
+		const notNow = await panelsNotNow();
+		if (notNow) return fail(notNow.error, notNow.extra);
 	}
 	// 107-panels: a layout asks as a panel change (the same first-use kind: "open and close your panels")
 	const action = raw === 'layout' ? 'panel' : raw;

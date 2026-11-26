@@ -8,9 +8,10 @@
 // id, its title, or one of its aliases — the words people use for THAT panel. Nothing is guessed: an unknown
 // name is an error that lists every valid name and every refused surface with its reason.
 //
-// THE BLOCK RULE (rule 2 of show, unchanged): sign-in, account, consent, publishing, connected apps, payment
-// and settings stay the person's own to open. It is matched on WHOLE WORDS, so "Profiler" is not "profile"
-// and "Statistics" is not refused — the read-only views (Profiler, Statistics) are not settings.
+// THE BLOCK RULE (rule 2 of show): sign-in, account, consent, publishing, connected apps, payment and settings
+// stay the person's own to open. Ruling 2026-11-27: each refused surface is listed BY ITS OWN NAME with its reason,
+// never matched by substring, so "Profiler" is not "profile", "Statistics" opens and "Scene settings" is
+// Configure Scene (scene content, not app settings).
 
 /**
  * @typedef {'toggle' | 'hosted' | 'inspector' | 'scene' | 'chat' | 'debugger'} PanelVia
@@ -42,7 +43,7 @@ export const PANELS = [
 	{ id: 'explorer', key: 'explorer', title: 'Explorer', via: 'toggle', description: 'The Library: the person\'s files and folders as a folder tree and a file list', aliases: ['library', 'files', 'file explorer', 'file browser'], panes: { tree: 'the folder tree (left)', details: 'the file details and settings sidebar (right)' } },
 	{ id: 'objects', key: 'objects', title: 'Objects', via: 'toggle', description: 'Every object in the scene as a tree (the outliner)', aliases: ['outliner', 'object list', 'hierarchy', 'scene tree'] },
 	{ id: 'inspector', key: 'inspector', title: 'Inspector', via: 'inspector', description: 'The selected object\'s properties (the Properties tab: transform, look, physics, lights, cameras)', aliases: ['properties', 'properties panel', 'object properties'] },
-	{ id: 'scene', key: 'scene', title: 'Configure Scene', via: 'scene', description: 'The scene\'s own setup: sky, light, fog, physics, grid (the Inspector\'s other tab)', aliases: ['configure scene', 'scene setup', 'environment', 'sky'] },
+	{ id: 'scene', key: 'scene', title: 'Configure Scene', via: 'scene', description: 'The scene\'s own setup: sky, light, fog, physics, grid (the Inspector\'s other tab)', aliases: ['configure scene', 'scene settings', 'scene setup', 'scene config', 'scene configuration', 'environment', 'sky'] },
 	{ id: 'flow', key: 'flow', title: 'Flow editor', via: 'toggle', description: 'The node editor: an object\'s or the scene\'s behaviour as a node graph', aliases: ['node editor', 'flow', 'nodes', 'flow graph', 'behaviours', 'graph editor'] },
 	{ id: 'animation', key: 'animation', title: 'Animation', via: 'toggle', description: 'The Animation editor: keyframes and clips for the selected object (its own moves, not the Timeline\'s shots)', aliases: ['animation editor', 'animator', 'keyframes', 'dope sheet'] },
 	{ id: 'timeline', key: 'timeline', title: 'Timeline', via: 'toggle', description: 'The Timeline: cutscene sequences of camera shots, clips, audio and events', aliases: ['sequencer', 'sequences', 'cutscenes'], panes: { sequences: 'the sequences list (left)', details: 'the selected track\'s details (right)' } },
@@ -73,18 +74,41 @@ export const TARGETS = {
 };
 
 /**
- * Surfaces show never opens (rule 2), grouped by the reason it gives. `words` are matched as whole words.
- * @type {{reason: string, names: string[], words: string[]}[]}
+ * Surfaces show never opens (rule 2), EACH BY ITS OWN NAME with the reason it gives (ruling 2026-11-27: the refuse
+ * list is by exact surface, never by substring — "Profiler" is not "profile", "Scene settings" is Configure Scene).
+ * A name that is neither a panel nor one of these is simply unknown, and the unknown-name error lists both.
+ * @type {{id: string, title: string, reason: string, aliases?: string[]}[]}
  */
 export const BLOCKED = [
-	{ reason: 'sign-in and account', names: ['Sign in', 'Account', 'Profile'], words: ['sign in', 'signin', 'log in', 'login', 'log out', 'logout', 'sign out', 'account', 'profile', 'password'] },
-	{ reason: 'consent and privacy', names: ['Consent', 'Privacy'], words: ['consent', 'privacy', 'cookies'] },
-	{ reason: 'publishing and export', names: ['Publish', 'Export', 'Share'], words: ['publish', 'publishing', 'export', 'share'] },
-	{ reason: 'connected apps', names: ['Connected apps', 'Connect Claude', 'Generate 3D'], words: ['connected apps', 'connected app', 'connect claude', 'connector', 'generate 3d', 'mesh generator', 'meshy'] },
-	{ reason: 'payment', names: ['Payment', 'Billing', 'Subscription'], words: ['payment', 'payments', 'billing', 'subscription', 'credits'] },
-	{ reason: 'settings', names: ['Settings', 'Preferences'], words: ['settings', 'preferences', 'options'] },
-	{ reason: 'session access', names: ['Roles', 'Permissions', 'Invite'], words: ['roles', 'permissions', 'invite', 'approve'] }
+	{ id: 'signin', title: 'Sign in', reason: 'sign-in and account', aliases: ['sign-in', 'signin', 'log in', 'login', 'log out', 'logout', 'sign out', 'sign up'] },
+	{ id: 'account', title: 'Account', reason: 'sign-in and account', aliases: ['profile', 'edit profile', 'my account', 'profile menu', 'avatar menu', 'password'] },
+	{ id: 'consent', title: 'Consent', reason: 'consent and privacy', aliases: ['cookies', 'cookie consent', 'consent dialog'] },
+	{ id: 'privacy', title: 'Privacy', reason: 'consent and privacy', aliases: ['privacy settings', 'data and privacy'] },
+	{ id: 'publish', title: 'Publish / Export', reason: 'publishing', aliases: ['publish', 'publishing', 'export', 'publish export', 'export for 3d printing', 'export for ar', 'export 3d', 'publish your game'] },
+	{ id: 'moment', title: 'Share a moment', reason: 'publishing', aliases: ['share', 'share moment', 'moment', 'share as video'] },
+	{ id: 'connectedApps', title: 'Connected apps', reason: 'connected apps', aliases: ['connected app'] },
+	{ id: 'connectClaude', title: 'Connect Claude', reason: 'connected apps', aliases: ['connector', 'claude connector', 'connect ai'] },
+	{ id: 'meshGen', title: 'Generate 3D', reason: 'connected apps', aliases: ['generate 3d model', 'mesh generator', 'meshy'] },
+	{ id: 'payment', title: 'Payment', reason: 'payment', aliases: ['payments', 'billing', 'subscription', 'credits', 'buy credits'] },
+	{ id: 'settings', title: 'Settings', reason: 'settings', aliases: ['app settings', 'preferences', 'options', 'settings dialog'] },
+	{ id: 'roles', title: 'Roles', reason: 'session access', aliases: ['permissions', 'connected peers', 'peers', 'people'] },
+	{ id: 'invite', title: 'Invite', reason: 'session access', aliases: ['invite to this session', 'invites', 'invite link'] },
+	{ id: 'joinRequests', title: 'Join requests', reason: 'session access', aliases: ['approve', 'approvals', 'connection requests'] },
+	{ id: 'connect', title: 'Connect', reason: 'session access', aliases: ['connect bar', 'connect drawer', 'session connect'] },
+	{ id: 'reportBug', title: 'Report a bug', reason: 'sends data out', aliases: ['bug report', 'problem report', 'feedback'] }
 ];
+
+/** what each reason means, for the refusal */
+export const BLOCK_REASONS = /** @type {Record<string, string>} */ ({
+	'sign-in and account': 'signing in and the person\'s account stay theirs to open',
+	'consent and privacy': 'consent and privacy choices are the person\'s own',
+	publishing: 'publishing and export stay refused: they send the person\'s work out of the app, so the person opens them',
+	'connected apps': 'connected apps (the connector itself, Generate 3D) are the person\'s own to open',
+	payment: 'payment is the person\'s own',
+	settings: 'the app\'s Settings stay the person\'s own (scene setup is Configure Scene, which opens)',
+	'session access': 'who may join or edit the session is the person\'s own to decide',
+	'sends data out': 'a bug report sends data out of the app: the person opens it'
+});
 
 /** @param {string} name @returns {string} lower-case, single-spaced, no "panel"/"window"/"tab"/"view"/"the"/"editor" noise */
 export function normalName(name) {
@@ -119,16 +143,19 @@ export function targetOf(name) {
 	return NAME_TO_TARGET.get(n) ?? null;
 }
 
-/** @param {string} hay @param {string} word */
-const hasWord = (hay, word) => (' ' + hay + ' ').includes(' ' + word + ' ');
+const NAME_TO_BLOCKED = /** @type {Map<string, {id: string, title: string, reason: string}>} */ (new Map());
+for (const b of BLOCKED) for (const sp of spellings(b)) if (!NAME_TO_BLOCKED.has(sp)) NAME_TO_BLOCKED.set(sp, b);
 
-/** the reason a name is refused (rule 2), or null. A real panel's own name is never refused. @param {string} name */
-export function blockedReason(name) {
-	if (panelOf(name) || targetOf(name)) return null;
+/** the refused surface a name means, exactly, or null @param {string} name */
+export function blockedOf(name) {
 	const n = normalName(name);
-	if (!n) return null;
-	for (const b of BLOCKED) if (b.words.some((w) => hasWord(n, normalName(w)))) return b.reason;
-	return null;
+	if (!n || panelOf(name) || targetOf(name)) return null;
+	return NAME_TO_BLOCKED.get(n) ?? null;
+}
+
+/** the reason a name is refused (rule 2), or null @param {string} name */
+export function blockedReason(name) {
+	return blockedOf(name)?.reason ?? null;
 }
 
 /** is this a surface rule 2 keeps closed @param {string} name */
@@ -141,14 +168,30 @@ export function validNames() {
 	return [...PANELS.map((p) => p.title), ...Object.values(TARGETS).map((t) => t.title)];
 }
 
-/** the refused surfaces, by reason, for an error and the panels list */
+/** the refused surfaces, by reason, for an error and the panels list @returns {{reason: string, names: string[]}[]} */
 export function blockedList() {
-	return BLOCKED.map((b) => ({ reason: b.reason, names: b.names }));
+	/** @type {Map<string, string[]>} */
+	const by = new Map();
+	for (const b of BLOCKED) by.set(b.reason, [...(by.get(b.reason) ?? []), b.title]);
+	return [...by].map(([reason, names]) => ({ reason, names }));
 }
 
 /** one line naming the refused surfaces by reason */
 export function blockedLine() {
-	return BLOCKED.map((b) => b.reason + ' (' + b.names.join(', ') + ')').join('; ');
+	return blockedList().map((b) => b.reason + ' (' + b.names.join(', ') + ')').join('; ');
+}
+
+/** the refusal for a blocked surface @param {string} asked */
+export function blockedError(asked) {
+	const b = blockedOf(asked);
+	if (!b) return null;
+	return {
+		error: '"' + String(asked).slice(0, 60) + '" is not something show opens (' + b.reason + '): ' + (BLOCK_REASONS[b.reason] ?? 'it stays the person\'s own') + '. Nothing was opened. Read-only views (Profiler, Statistics) and Configure Scene do open.',
+		refused: true,
+		reason: b.reason,
+		surface: b.title,
+		blocked: blockedList()
+	};
 }
 
 /** the error for a name that is neither a panel, a target nor a refused surface @param {string} asked */

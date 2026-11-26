@@ -18,6 +18,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 	const page = A.page;
+	await page.evaluate(() => window.__tp.test.v1.aiAssistantHidden.set(''));
 	const relay = await fakeRelay(page);
 	await installProvider(page);
 	await page.locator('#connect-claude-button').click();
@@ -70,10 +71,24 @@ h.run(async () => {
 	const unk = await show({ action: 'panel', name: 'Animations timeline' });
 	h.check(/no panel "Animations timeline": nothing was opened/.test(errOf(unk)) && /Animation, Timeline/.test(errOf(unk)) && /settings \(Settings/.test(errOf(unk)), `an unknown name errors with the valid names and the block list (${errOf(unk).slice(0, 200)})`);
 	h.check((await panels()).panels.filter((p) => p.open).map((p) => p.id).join() === openBefore, 'and nothing opened');
-	for (const [name, reason] of [['Settings', 'settings'], ['Profile', 'sign-in and account'], ['Publish', 'publishing and export'], ['Generate 3D', 'connected apps']]) {
+	for (const [name, reason] of [['Settings', 'settings'], ['Profile', 'sign-in and account'], ['Publish', 'publishing'], ['Export', 'publishing'], ['Generate 3D', 'connected apps']]) {
 		const r = await show({ action: 'panel', name });
 		h.check(new RegExp('not something show opens \\(' + reason + '\\)').test(errOf(r)), `"${name}" is refused: ${reason} (${errOf(r).slice(0, 120)})`);
 	}
+	h.check(/publishing and export stay refused/.test(errOf(await show({ action: 'panel', name: 'Export' }))), 'the publishing refusal says it stays refused');
+	const notSub = await show({ action: 'panel', name: 'Explorer settings' });
+	h.check(/^no panel "Explorer settings"/.test(errOf(notSub)), `no substring block: "Explorer settings" is unknown, not refused (${errOf(notSub).slice(0, 80)})`);
+	await reset();
+	const sceneSet = await show({ action: 'panel', name: 'Scene settings' });
+	h.check(sceneSet?.result?.id === 'scene' && sceneSet.result.state === 'open', `"Scene settings" opens Configure Scene (scene content, not app settings) (${short(sceneSet)})`);
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(true));
+	const inPlay = await show({ action: 'panel', name: 'Timeline' });
+	const inPlayDock = await show({ action: 'panel', name: 'Dock', state: 'open' });
+	const readInPlay = await panels();
+	await page.evaluate(() => window.__tp.test.v1.isLocked.set(false));
+	h.check(/panels belong to Edit/.test(errOf(inPlay)) && inPlay?.error?.data?.playing !== false, `in Play a panel call is an error, never a success (${errOf(inPlay).slice(0, 100)})`);
+	h.check(/panels belong to Edit/.test(errOf(inPlayDock)), 'and so is a dock call');
+	h.check(readInPlay?.playing === true && readInPlay.panels.every((p) => !p.visible), 'panels still reads in Play: playing true, nothing visible');
 
 	// ---- 4 ----------------------------------------------------------------------------------------------------
 	await reset();

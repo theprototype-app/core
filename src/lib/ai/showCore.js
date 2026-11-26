@@ -37,8 +37,8 @@ export { panelOf, deniedPanel, normalName, blockedReason };
  */
 export const SHOW_PANELS = Object.fromEntries(PANELS.map((p) => [p.id, { key: p.key, label: p.title, via: p.via, ...(p.readOnly ? { readOnly: true } : {}) }]));
 
-/** surfaces `show` never opens or presses (rule 2), every word of every reason */
-export const DENIED = BLOCKED.flatMap((b) => b.words);
+/** surfaces `show` never opens or presses (rule 2), by their names */
+export const DENIED = BLOCKED.flatMap((b) => [b.title, ...(b.aliases ?? [])].map(normalName));
 
 /**
  * Where the camera goes to frame a box, keeping the view direction (objectActions.focusObject's

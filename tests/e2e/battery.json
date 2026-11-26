@@ -544,6 +544,7 @@
 		"connector-join": 120,
 		"connector-physics": 41,
 		"connector-relay": 240,
+		"connector-show-panels": 200,
 		"connector-show-scene": 180,
 		"connector-through": 150,
 		"connector-voice": 7,

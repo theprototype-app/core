@@ -31,13 +31,14 @@ const SHOW_DESCRIPTION =
 	'collapse / expand one of its own sidebars (pane) for one panel by its name: Explorer, Objects, Inspector, Configure Scene, Flow editor, Animation, Timeline, UV editor, Shader editor, HUD editor, Code, ' +
 	'Profiler and Statistics (read-only views), Free assets, Preview (the selected Explorer file), Debugger, Chat, Assistant; or name "Dock", "Left sidebar", "Right sidebar" to open, close or toggle them (close hides, tabs stay open). ' +
 	'An unknown name opens nothing and the error lists the valid names: never guess another panel. The answer says visible and front truthfully. ' +
+	'Panels belong to Edit: while the person plays, panel and layout calls are refused (panels still reads). ' +
 	'layout = apply a saved layout by name, or save the current one under a new name. ' +
 	'camera = move their editor view to frame objects (frame: [uuids], select: true also selects them), to a position + target, or let them look through a scene camera (through: uuid); ' +
 	'code = open a file or a Script / Behaviour node\'s code in their Code tab at a line, selecting lines [line, to], a range, or the first match of find; ' +
 	'back = undo what the last show changed. The first time for each of panel / camera / code the person is asked on their screen (Always / This time / No): ' +
 	'call again with the confirmId; after No, do not ask again, tell them where to look instead. ' +
 	'Each action leaves a line with a Back button for the person. Not in a VR headset (camera moves are refused there), not while they play, drag or type; ' +
-	'6 calls a minute, one camera move per 2 s. Never opens sign-in, account, settings, consent, publishing, connected apps or payment. ' +
+	'6 calls a minute, one camera move per 2 s. Never opens sign-in, account, settings, consent, publishing or export, connected apps or payment (each refused by name, with its reason); Configure Scene (scene settings) is scene content and opens. ' +
 	'screenshot never moves anyone (use it to look yourself); show moves the person\'s own view. show only opens and selects code: change text with files {action: "write"}, running code with edit_behaviour. ' +
 	'Opening another scene is scene, not show.';
 
@@ -92,7 +93,7 @@ export const PERSON_AI_TOOLS = [
 					state: {
 						type: 'string',
 						enum: ['open', 'close', 'focus', 'toggle', 'move', 'maximize', 'restore', 'collapse', 'expand', 'apply', 'save'],
-						description: 'panel: default open (focus brings an open one to the front; move needs to; collapse / expand need pane); layout: apply (default) or save'
+						description: 'panel: default open (with to: opens it there); focus brings an open one to the front; move needs to; collapse / expand need pane. layout: apply (default) or save'
 					},
 					to: {
 						description: 'panel: where to move it — dock, left, right or floating. code: with line, the last line to select',

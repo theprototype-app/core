@@ -562,7 +562,8 @@ export const DEBUG_HOOKS = [
 	['filesTool', () => import('./ai/filesTool.js')],
 	['personAsk', () => import('./ai/personAsk.js')],
 	['showTool', () => import('./ai/showTool.js')],
-	['lazyPanels', () => import('./lazyPanels.js')], // 102-boot-diet-3: the lazy editor panels (dock-on-demand)
+	// 102-boot-diet-3: the lazy editor panels (dock-on-demand)
+	['lazyPanels', () => import('./lazyPanels.js')],
 	['sceneTool', () => import('./ai/sceneTool.js')],
 	['transferLedger', () => import('./transferLedger')],
 	['explorerView', () => import('./explorerView')],

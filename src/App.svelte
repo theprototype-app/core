@@ -87,10 +87,13 @@
   import CommandPalette from './components/menu/CommandPalette.svelte'
   import TouchPlayControls from './components/play/TouchPlayControls.svelte'
   import DrawToolbar from './components/menu/DrawToolbar.svelte'
+  import { vectorTool, vectorEditObject } from '$lib/vector/vectorGate.js' // 64-vector (boot leaf)
+  import '$lib/vector/vectorBoot.js' // 64-vector: VR radial rows + palette / key rows (small; every action lazy)
   import SculptToolbar from './components/menu/SculptToolbar.svelte'
   import SplineToolbar from './components/menu/SplineToolbar.svelte'
   import MeasureToolbar from './components/menu/MeasureToolbar.svelte' // 47 M1
   import PathCaptureToolbar from './components/menu/PathCaptureToolbar.svelte' // fix-batch-2
+  import { view2d } from './lib/sprite2d/view2d.js' // 64-2d D6
   import CaptureBanner from './components/menu/CaptureBanner.svelte' // 78 F5
   import { startCaptureModes } from '$lib/captureModes' // 78 F5: the viewport capture stack
   import UnderlayWindow from './components/menu/UnderlayWindow.svelte' // 60 Q5
@@ -508,10 +511,12 @@ import { startMusicToolbox } from './lib/musicToolbox'
       if (modelExt.test(name) && models.length === 1) import('./lib/modelDrop').then((m) => m.dropModelFile(file, { companions, clientX, clientY }))
       else if (modelExt.test(name)) importFile(file, file.name.replace(modelExt, ''), undefined, undefined, companions)
       else if (name.endsWith('.json')) load(file)
+      // 64-vector: an SVG becomes vector shapes on the surface under the drop (a lazy chunk; the file is untrusted)
+      else if (name.endsWith('.svg')) import('./lib/vector/vectorSvgActions.js').then((m) => m.importSvgFile(file, clientX, clientY))
       else if (!companions.includes(file)) skipped.push(file.name)
     })
     if (skipped.length > 0)
-      showToast('Unsupported: ' + skipped.join(', ') + '. Supported formats: .glb, .gltf, .obj, .stl, .fbx (models), .ply, .spz, .splat (Gaussian splats), .json (scene)')
+      showToast('Unsupported: ' + skipped.join(', ') + '. Supported formats: .glb, .gltf, .obj, .stl, .fbx (models), .ply, .spz, .splat (Gaussian splats), .svg (vector shapes), .json (scene)')
   }
 </script>
 
@@ -571,10 +576,14 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <PlaceholderTooltip />
 <CharacterDialogs />
 <DrawToolbar />
+<!-- 64-vector: the shapes toolbar, a lazy chunk mounted only while the draw tool or Edit points is on -->
+{#if $vectorTool || $vectorEditObject}{#await import('./components/menu/VectorToolbar.svelte') then m}<m.default />{/await}{/if}
 <SculptToolbar />
 <SplineToolbar />
 <MeasureToolbar />
 <PathCaptureToolbar />
+<!-- 64-2d D6: the 2D toolbar, while the flat 2D view is on (a lazy chunk; nothing at boot but the store) -->
+{#if $view2d.on && !$isLocked && !$embedMode}{#await import('./components/sprite2d/Toolbar2d.svelte') then m}<m.default />{/await}{/if}
 <CaptureBanner />
 <!-- 60 Q5: Reference images (+ the image-drop "Use as reference" menu) -->
 <UnderlayWindow />

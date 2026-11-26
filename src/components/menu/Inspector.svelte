@@ -49,6 +49,7 @@
 	import FlowPathSection from '../sim/FlowPathSection.svelte'; // 36-fb F24
 	import LevelObjectSection from './inspector/LevelObjectSection.svelte'; // 93 LP1/LP3
 	import TextPathSection from './TextPathSection.svelte'; // 64 D2
+	import { offers2dLayer } from '$lib/sprite2d/sprite2dTick.js'; // 64-2d (the sections themselves are lazy)
 	import TextOnPathButton from './TextOnPathButton.svelte'; // 64 D2
 	import PathSection from './inspector/PathSection.svelte'; // 78 F4
 	import FluidTankSection from '../sim/FluidTankSection.svelte'; // 36-sim U2b
@@ -249,7 +250,7 @@
 		globalCamera,
 		orbitControls,
 		viewMode,
-		showGrid, pokeScene, lockedObjects } from '../../stores/sceneStore';
+		showGrid, pokeScene, lockedObjects, sceneRevision } from '../../stores/sceneStore';
 	// 80a K1: an object another peer holds shows read-only, with who and Request control
 	import { myLocks, holderNow } from '$lib/lockHeld';
 	import { heldReadOnly } from '$lib/ui/heldReadOnly';
@@ -4203,6 +4204,15 @@
 									{@render geoSlider(spec, undefined)}
 								{/if}
 							{/each}
+							{#if geoParams.gtype === 'Vector' && !multiCount}
+								<!-- 64-extrude: the text object's Bake, for a shape (the menu's Shape ▸ Bake to mesh… too) -->
+								<UiButton
+									id="vector-bake"
+									size="sm"
+									variant="outline"
+									onclick={() => import('$lib/vector/vectorActions.js').then((m) => m.confirmBakeVector($selectedObject.uuid))}>Bake to mesh…</UiButton
+								>
+							{/if}
 						</div>
 					{/if}
 				</Section>
@@ -4211,6 +4221,11 @@
 				     with a corner radius. Never automatic: the shape stays the same, the file gets smaller and the
 				     Geometry rows come back. One undo step. -->
 				{#await import('./RoundedBoxOffer.svelte') then m}<m.default offer={roundOffer} uuid={$selectedObject.uuid} onconverted={() => geoTick++} />{/await}
+			{/if}
+
+			{#if geoParams?.gtype === 'Vector' && !meshEditedLock && !multiCount}
+				<!-- 64-vector: a vector shape's colours and Edit points (its numeric rows are the Geometry section's); a lazy chunk -->
+				{#await import('./inspector/VectorSection.svelte') then m}<m.default object={$selectedObject} />{/await}
 			{/if}
 
 			{#if $selectedObject?.userData?.terrain && !multiCount}
@@ -4830,6 +4845,8 @@
 			{#if $selectedObject.userData?.flowPath}<FlowPathSection object={$selectedObject} />{/if}<!-- 36-fb F24 -->
 			{#if $selectedObject.userData?.portal || $selectedObject.userData?.checkpoint}<LevelObjectSection object={$selectedObject} />{/if}<!-- 93 LP1/LP3 -->
 			{#if $selectedObject.userData?.textPath}<TextPathSection object={$selectedObject} />{/if}<!-- 64 D2 -->
+			{#if $selectedObject.isMesh && $selectedObject.userData?.sprite}{#await import('../sprite2d/SpriteSection.svelte') then m}<m.default object={$selectedObject} />{/await}{/if}<!-- 64-2d: lazy -->
+			{#if $sceneRevision >= 0 && offers2dLayer($selectedObject)}{#await import('../sprite2d/Layer2dSection.svelte') then m}<m.default object={$selectedObject} />{/await}{/if}<!-- 64-2d: lazy -->
 			{#if $selectedObject.userData?.splat}{#await import('./SplatSection.svelte') then m}<m.default object={$selectedObject} />{/await}{/if}<!-- 102: a lazy chunk (off the boot path) -->
 			{#if !$selectedObject.isLight && !$selectedObject.userData?.splat}
 				<Section variant="panel" label="Physics" clip={{ count: () => insTargets.length, fans: true }}>

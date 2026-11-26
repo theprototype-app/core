@@ -370,26 +370,31 @@
 		// look (`adopted`), but the governor still applies on top — it is this machine giving
 		// up post to keep its frames, and that must not be undone by watching somebody.
 		const reduced = $qualityOverrides;
+		// 64-2d: through an ORTHOGRAPHIC camera (the 2D view, a 2D game camera) AO stands down too
+		// — flat layers metres apart in depth only grow screen-space halos around every sprite
+		// (106's contact shadows take `&& !orthoView` on their own condition below — 64-int)
+		const orthoView = !!($camera as any)?.isOrthographicCamera;
+		const aoOff = reduced.aoOff || orthoView;
 		const overrides = adopted ? adopted.look : undefined;
 		const adoptedMode = adopted ? adopted.mode : $drawAsWantsAo ? 'shaded-ao' : $viewMode;
 		const inputs = {
 			stack: resolvedDoc(POST_SCENE_KEY, overrides),
 			cameraStack: /** @type {any} */ (throughCamera ? resolvedDoc(throughCamera, overrides) : null),
-			mode: reduced.aoOff && adoptedMode === 'shaded-ao' ? 'shaded' : adoptedMode,
+			mode: aoOff && adoptedMode === 'shaded-ao' ? 'shaded' : adoptedMode,
 			localEnabled: (adopted ? adopted.overrides.post !== false : $postEnabledLocal) && !reduced.postOff,
 			postOk,
 			postWarm
 		};
-		const entries = effectivePostStack(inputs).filter((entry) => !(reduced.aoOff && entry.kind === 'ao'));
+		const entries = effectivePostStack(inputs).filter((entry) => !(aoOff && entry.kind === 'ao'));
 		// 102-boot-diet-2: N8AO is a lazy chunk. Fetch it as soon as the WARMED stack would draw AO (during the
 		// warm-up, so it is usually here by frame 10); `$n8aoReady` in the signature recompiles the chain once it lands
 		const aoReady = $n8aoReady;
-		if (!aoReady && !reduced.aoOff && effectivePostStack({ ...inputs, postWarm: true }).some((entry) => entry.kind === 'ao'))
+		if (!aoReady && !aoOff && effectivePostStack({ ...inputs, postWarm: true }).some((entry) => entry.kind === 'ao'))
 			void loadN8ao().catch(() => {});
 		// 106 S2: contact shadows are the drawn shadow level's, LOCAL (never in a document): first in the chain,
 		// on the lit image, wherever post runs at all here; the governor's lighter look and shadows-off drop them
 		// 106 S2b: ...and its contact pre-step drops them FIRST (the governor is told whether they would draw)
-		const contactLive = $contactShadowsWanted && adoptedMode !== 'wireframe' && postOk && postWarm && !reduced.postOff && !reduced.lookLite && !reduced.shadowsOff;
+		const contactLive = $contactShadowsWanted && adoptedMode !== 'wireframe' && postOk && postWarm && !reduced.postOff && !reduced.lookLite && !reduced.shadowsOff && !orthoView; // 64-2d: no contact shadows through an orthographic view
 		setContactLive(contactLive);
 		const contact = contactLive && !reduced.contactOff;
 		contactInStack = contact;

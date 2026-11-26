@@ -3,6 +3,7 @@
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { edgeFade } from '$lib/ui/edgeFade.js';
 	import { objectsGroup, TControls, transformMode, editorMode, isLocked, lockedObjects, globalScene, selectedObject, selectedObjects } from '../../stores/sceneStore';
+	import { view2d } from '$lib/sprite2d/view2d.js'; // 64-2d D6
 	import { handleSet } from '$lib/gizmo/gizmoPrefs';
 	import { chatUnread, chatMentioned } from '../../stores/appStore.js'; // 37 R15: the chat button's badge
 	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, uvEditorClose, shaderEditorClose, hudEditorClose, timelineClose, explorerClose, profilerClose, codeWorkspaceClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, floatingToolbar, toolbarAlwaysOnTop, hudStackLift, showSimControls, expandedObjects } from '../../stores/appStore.js';
@@ -1581,6 +1582,8 @@
 	// (the record keeps it; the Inspector and the object menu still set the pivot there) —
 	// the multiselect lane's own fallback (QUESTIONS-37-multiselect #1).
 	const NARROW_BAR = 440;
+	/** 64-2d D6: the 3D toolbox cells the flat 2D view hides */
+	const FLAT_VIEW_HIDES = new Set(['move', 'rotate', 'scale', 'pivot']);
 	/** 43 J10: at or below this the bar's cells SHARE the width (hud.css, max-width 520px) — no folding */
 	const FOLD_MIN_VW = 520;
 	// 41 G23: the SERVER's width until mounted (see the hydration note above)
@@ -1598,7 +1601,9 @@
 	// positions runs (it shows every item, wrapping) and on a phone-width bar (its cells shrink instead).
 	const foldPlan = $derived.by(() => {
 		if (controlsLayout.collapsed) return { shown: [SPACER], folded: [] as string[] };
-		const all = visualIds().filter((id) => !(id === 'pivot' && viewportW < NARROW_BAR));
+		// 64-2d D6: in the flat 2D view the 2D toolbar stands in for the 3D toolbox — the transform
+		// cells step aside (the record keeps them; leaving the view brings them back)
+		const all = visualIds().filter((id) => !(id === 'pivot' && viewportW < NARROW_BAR) && !($view2d.on && FLAT_VIEW_HIDES.has(id)));
 		if (editing) return { shown: all, folded: [] as string[] };
 		// 76 FW1: until a new user's first Play the advanced buttons wait in "»" (still one press away)
 		const { row, held } = holdAdvanced(all, $simpleUntilPlay);

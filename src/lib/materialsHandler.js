@@ -495,9 +495,10 @@ export const TEXTURE_MAX_SIDE = 1024;
 /**
  * A picked image as the inline URL a texture stores: size check, HEIC decode, downscale. Null = refused,
  * with the reason already toasted. 72 LK1: maps that hold numbers ask for a higher quality.
- * @param {File | Blob} file @param {number} [quality] @returns {Promise<string | null>}
+ * 64-2d: `lossless` = PNG at up to 2048 px with no smoothing (encodeLossless) — sprites.
+ * @param {File | Blob} file @param {number} [quality] @param {boolean} [lossless] @returns {Promise<string | null>}
  */
-export async function decodeTextureFile(file, quality = 0.8) {
+export async function decodeTextureFile(file, quality = 0.8, lossless = false) {
 	if (file.size > MAX_TEXTURE_SOURCE_BYTES) {
 		showToast(
 			'That image is too big to read (' +
@@ -511,7 +512,8 @@ export async function decodeTextureFile(file, quality = 0.8) {
 	const decoded = await heicToJpegFile(file, { onError: showToast });
 	if (!decoded) return null;
 	try {
-		return await downscaleImage(decoded, TEXTURE_MAX_SIDE, quality);
+		// 64-2d: the lossless encoder is a lazy leaf (only a sprite texture needs it)
+		return lossless ? await (await import('./sprite2d/losslessImage.js')).encodeLossless(decoded) : await downscaleImage(decoded, TEXTURE_MAX_SIDE, quality);
 	} catch (error) {
 		console.log(error);
 		showToast('Could not read the image file');
@@ -529,12 +531,15 @@ export async function decodeTextureFile(file, quality = 0.8) {
  * UV2: `slot` picks the material slot, so a multi-material mesh is no longer
  * refused — it used to toast "not supported yet" and skip.
  * 40-image: `opts.source` = the content hash of the Explorer image `file` holds (see applyMap).
- * @param {string[]} uuids @param {File | Blob} file @param {number} [slot] @param {{source?: string | null}} [opts]
+ * 64-2d: `opts.lossless` = PNG, no smoothing (decodeTextureFile); absent = on when any target is a
+ * sprite, so the map picker and an Explorer drop keep pixel art crisp with no path of their own.
+ * @param {string[]} uuids @param {File | Blob} file @param {number} [slot] @param {{source?: string | null, lossless?: boolean}} [opts]
  * @returns {Promise<number>} how many were textured
  */
 export async function setObjectsTexture(uuids, file, slot = 0, opts = {}) {
 	const source = opts.source ? String(opts.source) : null;
-	const dataURL = await decodeTextureFile(file);
+	const lossless = opts.lossless ?? uuids.some((uuid) => !!objectOf(uuid)?.userData?.sprite);
+	const dataURL = await decodeTextureFile(file, 0.8, lossless);
 	if (!dataURL) return 0;
 	let applied = 0;
 	let missingSlot = 0;
@@ -588,7 +593,7 @@ export async function setObjectsTexture(uuids, file, slot = 0, opts = {}) {
 }
 
 /** Set an image file as the object's texture and replicate
- * @param {string} uuid @param {File | Blob} file @param {number} [slot] @param {{source?: string | null}} [opts] */
+ * @param {string} uuid @param {File | Blob} file @param {number} [slot] @param {{source?: string | null, lossless?: boolean}} [opts] */
 export async function setObjectTexture(uuid, file, slot = 0, opts = {}) {
 	await setObjectsTexture([uuid], file, slot, opts);
 }

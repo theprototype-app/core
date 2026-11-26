@@ -75,7 +75,8 @@ export function myCaps(opts = {}) {
 	// 105-slot-shaders `slotShaders`: a shader document keyed `<uuid>/<slotId>` draws on that slot. A peer without it
 	// keeps and forwards the document but draws the slot's own material (People says so: #peers-older-slots).
 	// `rj` (1.78.1): a returning link proves itself (rejoinLinks: the `rjs` secret, the `rjc`/`rjp` exchange)
-	const caps = { wb: 1, dev: 1, lk: 1, rj: 1, slots2: 1, slotShaders: 1 };
+	// 64-extrude `vs`: vector shapes and their solids — a peer without it gets an extruded shape as a plain mesh
+	const caps = { wb: 1, dev: 1, lk: 1, rj: 1, slots2: 1, slotShaders: 1, vs: 1 };
 	if (opts.fc) caps.fc = 1;
 	// test seam: `localStorage.debugCapsOff = 'slots2'` dials as a build without that flag (the heal path)
 	try {

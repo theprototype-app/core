@@ -3,6 +3,7 @@
 	import ContextMenu from '../ContextMenu.svelte';
 	import { undo, redo, canUndo, canRedo } from '$lib/history';
 	import { drawMode, toggleDrawMode } from '$lib/drawMode';
+	import { vectorTool, toggleVectorTool } from '$lib/vector/vectorGate.js'; // 64 D1 (a boot leaf)
 	import { simulating, simPaused, remoteSimulating, toggleSimulation, pauseSimulation, resetSimulation } from '$lib/physics';
 	import { nameOf } from '$lib/lockControl';
 	import { snapEnabled, snapSettings, surfaceSnap, snapTargets } from '$lib/snapping';
@@ -21,6 +22,7 @@
 	import { trackpadMode } from '$lib/trackpadNav';
 	import { flyWithWasd, flyDirection } from '$lib/flyPrefs'; // 103 H5 / H10
 	import { helpersInPlay } from '$lib/helperLayer';
+	import { view2d, toggle2dView } from '$lib/sprite2d/view2d.js'; // 64-2d
 	// 42 I14: View ▸ Focus mode (the key's label follows a rebind)
 	import { focusMode, toggleViewportFocus } from '$lib/focusMode';
 	import { bindingOf } from '$lib/shortcuts';
@@ -187,6 +189,15 @@
 					action: toggleDrawMode
 				},
 				{
+					// 64 D1: vector shapes — drag a rectangle / ellipse / star / polygon, or the pen
+					label: 'Draw shapes',
+					icon: 'square',
+					hint: bindingOf('tools.draw-shapes') || 'Alt+V',
+					checked: !!$vectorTool,
+					tooltip: 'Drag out rectangles, ellipses, stars and polygons, or place bezier points with the pen (Esc exits)',
+					action: () => void toggleVectorTool()
+				},
+				{
 					// 36-share (B13): a turntable or flythrough of the viewport, as a webm
 					label: 'Recording…',
 					icon: 'video',
@@ -323,6 +334,13 @@
 						if (safeStorage.getItem('showGrid')) safeStorage.removeItem('showGrid');
 						else safeStorage.setItem('showGrid', 'false');
 					}
+				},
+				{
+					// 64-2d: the local flat 2D view (orthographic, pan + zoom, no rotate) — 2D layers show parallax
+					label: '2D view',
+					checked: !!$view2d.on,
+					tooltip: 'A flat orthographic view: drag pans, the wheel zooms. Only your view changes.',
+					action: () => toggle2dView()
 				},
 				{
 					label: 'Grid & axes settings…',

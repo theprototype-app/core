@@ -123,7 +123,7 @@ h.run(async () => {
 	);
 	h.check(registry.system.length === 0, 'no System ring is left (a module filing under "system" lands in Settings)');
 	h.check(registry.objectOps.includes('snap'), 'Selected ring keeps Snapping');
-	h.check(registry.addCount === 10 && registry.sceneHasEnv, `Add ring: 6 primitives + Terrain (37 R9) + Architecture ▸ (37 R3) + Prefabs (115) + Assets (52 V4) (${registry.addCount})`);
+	h.check(registry.addCount === 11 && registry.sceneHasEnv, `Add ring: 6 primitives + Terrain (37 R9) + Architecture ▸ (37 R3) + Prefabs (115) + Assets (52 V4) + Shapes ▸ (64-vector) (${registry.addCount})`);
 	h.check(
 		registry.archRing.length === 12 && registry.archRing[0] === 'Wall' && registry.archRing.includes('Stairs (spiral)'),
 		`Architecture ▸ ring = the desktop Add menu's 12 pieces (${registry.archRing.join(', ')})`

@@ -24,6 +24,7 @@ import { hasAnimatedImport, sendAnimatedImport, setAnimationState, setClipRefs, 
 import { dropAllAnimations } from '$lib/animationPreview'
 import { parkAnimatedAtBase } from '$lib/flowRuntime'
 import { stripEditOverlays } from '$lib/editOverlays'
+import { vectorWireElement, rebuildVectorFromRecord } from '$lib/vector/vectorGate.js' // 64-vector (a boot leaf)
 import { isPristinePackRef, stubElementOf } from '$lib/packRefs'
 import { withTwins, attachTwinsFromGltf } from '$lib/ktx2Twins'
 import { restoreGltfNames } from '$lib/gltfNames'
@@ -743,6 +744,18 @@ export async function objectParameters(data, from = 'peer') {
             else delete mesh.userData.fluid;
             pokeScene();
         }
+    } else if (data.parameter == 'sprite' || data.parameter == 'layer2d') {
+        // 64-2d: a sprite's settings / a 2D layer's parallax. Stored as sent (the sender compacted
+        // it; the lazy runtime normalizes on read and derives frames + parallax per peer) — only
+        // the shape is checked here, so the boot carries no sprite code.
+        let object = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (object) {
+            const key = data.parameter;
+            const value = data[key];
+            if (value && typeof value === 'object' && !Array.isArray(value)) object.userData[key] = value;
+            else delete object.userData[key];
+            pokeScene();
+        }
     } else if (data.parameter == 'fluidEmitter') {
         // 36-fb F23: a Fluid emitter's settings, normalized at the boundary (the particles stay local)
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
@@ -1186,6 +1199,8 @@ async function applyCreateObject(object, uuid, override, groupuuid, pos, rot, sc
     // an incoming object can only carry a STALE edit wireframe (a peer on an
     // older build, or a scene saved with a session open) — never a live one
     stripEditOverlays(mesh);
+    // 64-vector: a heavy vector shape travels as its record only; its triangles are rebuilt here
+    rebuildVectorFromRecord(mesh);
     clearInboundDraftFlags(mesh);
     let existing = override ? sceneObjects.getObjectByProperty('uuid', mesh.uuid) : null;
     if (existing) {
@@ -1461,6 +1476,7 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
     }
     // Iterate over all objects in the scene
     objects.forEach(element => {
+        let vectorElement; // 64-vector: a vector shape's wire element (vectorGate.js)
         // viewer perms: never sync a viewer's local-only objects to a peer
         if (element.userData && element.userData.__localOnly) return;
         if (isPristinePackRef(element)) {
@@ -1554,6 +1570,23 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
                 scale: element.scale.toArray(),
                 ...heal
             });
+        } else if ((vectorElement = vectorWireElement(element))) {
+            // 64-vector: a vector shape is its RECORD — toJSON, without its triangles when they are
+            // heavy (the receiver rebuilds them), where the GLTF route ships every vertex as base64
+            conn.send({
+                type: 'object',
+                element: vectorElement,
+                groupuuid: groupuuid,
+                pos: element.position.toArray(),
+                rot: element.rotation.toArray(),
+                scale: element.scale.toArray(),
+                ...heal
+            });
+            // 64-extrude: a build without vector shapes cannot rebuild a heavy one — it gets the mesh itself
+            if (!vectorElement.geometries?.[0]?.data?.attributes?.position) {
+                const uuid = element.uuid;
+                void import('$lib/vector/vectorOldPeers.js').then((m) => m.sendOldPeerSolid(uuid, [conn.peer]));
+            }
         } else if (multiMaterialSyncable(element)) {
             // A MATERIAL ARRAY cannot survive the GLTF round trip: the exporter
             // splits geometry.groups into one primitive per material and the loader

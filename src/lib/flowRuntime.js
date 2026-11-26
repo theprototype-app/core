@@ -141,6 +141,7 @@ import {
 } from './motion/motionNodes.js';
 // 37 (R6): variadic math/gate + the Switcher multiplexer (a leaf, no imports)
 import { rigGoal, rigStep, validVec } from './cameraRig.js'; // 37 (R8): a three leaf
+import { sprite2dRuntime, loadSprite2dRuntime, onSprite2dRuntime } from './sprite2d/sprite2dTick.js'; // 64-2d: a boot leaf (the runtime chunk stays lazy)
 import { runParkHooks } from './parkHooks.js'; // 68: extra parks (prop tracks), a leaf
 import { INPUT_LETTERS, socketCount, opFolds, foldMath, foldGate, switcherItems, switcherHandle, switcherIndexOf, switcherRadioIndex } from './variadicNodes.js';
 import { blendSpeedWeights, smoothWeights, clipForSlot } from './tpanim/blendSpeed.js'; // 57 M3 (a leaf)
@@ -745,6 +746,16 @@ function updatePlayAnim(pairs, ctx) {
 		// latency out of phase.
 		const at = triggerStampFor(node.id, ctx) ?? logicNow();
 
+		// 64-2d: a sprite's FLIPBOOK clip — local on every peer from the same stamp, like the rest
+		// (an empty clip field on a sprite means its autoplay / first clip). The sprite chunk is
+		// loaded whenever the scene holds a sprite (sprite2dTick), so a null ref means no sprite.
+		const spriteRef = sprite2dRuntime();
+		const spriteObject = spriteRef ? sceneObjects?.getObjectByProperty('uuid', uuid) : null;
+		const spriteClip = spriteObject ? clip || spriteRef.defaultSpriteClip(spriteObject) : '';
+		if (spriteClip && spriteRef.hasSpriteClip(spriteObject, spriteClip)) {
+			spriteRef.playSpriteClip(spriteObject, spriteClip, { action, at, speed });
+			continue;
+		}
 		// an imported clip NAME funnels to the mixer path, which is already
 		// replicated — one node drives both animation systems
 		const imported = animImportsRef?.clipInfo?.(uuid) ?? [];
@@ -5141,6 +5152,18 @@ function applyAnimation(object, base, anim, time, ctx) {
 		if (target) object.lookAt(target);
 	} else if (anim.type === 'camerarig') {
 		applyCameraRig(object, anim, data);
+	} else if (anim.type === 'follow2d') {
+		// 64-2d: Camera Follow 2D (the maths lives in the lazy sprite chunk)
+		if (!object?.userData?.camera) {
+			if (!cameraRigWarned.has(anim.id)) {
+				cameraRigWarned.add(anim.id);
+				showToast('Camera Follow 2D moves camera objects only — wire it into an Object Selector that picks a camera.');
+			}
+		} else {
+			const runtime = sprite2dRuntime();
+			if (runtime) runtime.applyFollow2d(object, anim.id, data, sceneObjects);
+			else void loadSprite2dRuntime();
+		}
 	} else if (anim.type === 'setcolor') {
 		// drive the material color from a color input, LOCAL per peer (no spam) — 134
 		if (object.material?.color && typeof data.color === 'string') object.material.color.set(data.color);
@@ -5302,6 +5325,8 @@ function pruneCameraRigs(/** @type {Map<string, any>} */ active) {
 		const [id, uuid] = key.split('|');
 		if (!(active.get(uuid) ?? []).some((/** @type {any} */ a) => a.id === id && a.type === 'camerarig')) cameraRigState.delete(key);
 	}
+	// 64-2d: the same for Camera Follow 2D
+	sprite2dRuntime()?.pruneFollow2d((/** @type {string} */ id, /** @type {string} */ uuid) => (active.get(uuid) ?? []).some((/** @type {any} */ a) => a.id === id && a.type === 'follow2d'));
 }
 
 /**
@@ -6454,6 +6479,9 @@ export function startFlowRuntime() {
 	import('./scenePost').then((m) => (postRef = m));
 	import('./cameraPreview').then((m) => (previewRef = m));
 	import('./animatedImports').then((m) => (animImportsRef = m));
+	// 64-2d: flipbook events + ends pulse the Animation Marker / Animation Finished nodes (once the
+	// sprite chunk loads — it loads only for a scene that holds a sprite)
+	onSprite2dRuntime((m) => m.setSpriteEventSink({ marker: fireAnimMarker, finished: fireAnimFinished }));
 	// 21-E6: possess, for the Possess Object / Camera Follow nodes (see the TDZ note
 	// beside its ref above)
 	import('./possess').then((m) => (possessRef = m));

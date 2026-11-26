@@ -62,7 +62,8 @@ const TUBE_MAX_RADIUS = 50;
 /** diorama2: the smallest size (metres) any primitive takes from an agent — create_objects params and set_geometry alike */
 export const MIN_SIZE = 0.001;
 
-const TYPE_TARGETS = Object.keys(GEOMETRY_PARAMS).filter((t) => t !== 'Terrain');
+// (64-vector: a Vector shape is drawn or made by create_shape's vector kinds, never converted into)
+const TYPE_TARGETS = Object.keys(GEOMETRY_PARAMS).filter((t) => t !== 'Terrain' && t !== 'Vector');
 
 /** @param {number} n */
 const r3 = (n) => Math.round(n * 1000) / 1000;

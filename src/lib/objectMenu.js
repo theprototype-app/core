@@ -16,6 +16,7 @@ import {
 } from './objectActions';
 import { requestControl, nameOf, letGoOf } from './lockControl';
 import { heldByMe, touchMyLock } from './lockHeld'; // 80a K6
+import { isVectorObject } from './vector/vectorGate.js'; // 64-vector (a boot leaf)
 import { createJoint, detachJoints, jointsFor } from './joints';
 import { addParticlesPreset, removeObjectParticles, burstObjectParticles } from './particleActions';
 import { PARTICLE_PRESETS } from './particlePresets';
@@ -169,6 +170,79 @@ function addDecalAt(hitUuid, point, normal) {
 		const decal = m.placeDecalOn(hit, point, normal);
 		if (decal) selectObject(decal.uuid, true);
 	});
+}
+
+/** 64 D1/D3: the Shape ▸ rows for a vector shape (or a set holding some). Every action is a dynamic
+ * import: polygon-clipping and SVGLoader stay lazy chunks. A locked shape's edits are disabled.
+ * @param {any} object @param {string[]} targets @param {boolean} multi @param {boolean} locked @param {string} lockedTooltip */
+function vectorMenuRows(object, targets, multi, locked, lockedTooltip) {
+	const group = get(objectsGroup);
+	const vectors = targets.filter((u) => isVectorObject(group?.getObjectByProperty('uuid', u)));
+	const curves = () => import('./vector/vectorCurveActions.js');
+	// 64-vector row 2 (one curve): a 78 Path becomes a pen path (a new shape; the Path stays)
+	if (!multi && object?.userData?.spline?.path && !isVectorObject(object))
+		return [{ label: 'Shape', icon: 'pen-tool', children: [{ label: 'Make vector shape', disabled: locked, tooltip: locked ? lockedTooltip : 'Add a stroked pen path with smooth points along this Path (the Path stays)', action: () => curves().then((m) => m.pathToVector(object.uuid)) }] }];
+	if (!isVectorObject(object) && !vectors.length) return [];
+	const ops = () => import('./vector/vectorOps.js');
+	/** @param {string} label @param {string} tip @param {() => any} run @param {boolean} [off] @param {string} [offTip] */
+	const row = (label, tip, run, off = false, offTip = '') => ({ label, disabled: locked || off, tooltip: locked ? lockedTooltip : off ? offTip : tip, action: run });
+	/** @type {any[]} */
+	const children = [];
+	if (vectors.length >= 2)
+		for (const [op, label, tip] of [
+			['union', 'Union', 'Merge the shapes into one'],
+			['subtract', 'Subtract', 'Cut the other shapes out of the first one picked'],
+			['intersect', 'Intersect', 'Keep only where all the shapes overlap'],
+			['exclude', 'Exclude', 'Keep where an odd number of shapes overlap']
+		])
+			children.push(row(`${label} (${vectors.length})`, tip + ' (one undo)', () => ops().then((m) => m.combineShapes(op, vectors))));
+	// 64-vector-edit (D5 row 2): align / distribute in the shapes' own plane
+	const arrange = () => import('./vector/vectorArrange.js');
+	const tip = 'in the shapes\' own plane, to the active shape\'s right / up (one undo)';
+	if (vectors.length >= 2)
+		children.push({
+			label: 'Align in plane',
+			children: [
+				...[['left', 'Left'], ['hcentre', 'Centre'], ['right', 'Right'], ['top', 'Top'], ['vcentre', 'Middle'], ['bottom', 'Bottom']].map(([id, l]) =>
+					row(l, 'Line the shapes up ' + tip, () => arrange().then((m) => m.alignInPlane(id, vectors)))
+				),
+				...[['h', 'Distribute across'], ['v', 'Distribute up']].map(([d, l]) =>
+					row(l, 'Equal gaps ' + tip, () => arrange().then((m) => m.distributeInPlane(/** @type {'h'|'v'} */ (d), vectors)), vectors.length < 3, 'Pick three or more shapes')
+				)
+			]
+		});
+	// 64-vector-edit (D5 row 3): layer order on the plane (one undo)
+	const orderSet = vectors.length ? vectors : [object.uuid];
+	children.push({
+		label: 'Order',
+		children: [['front', 'Bring to front'], ['forward', 'Bring forward'], ['backward', 'Send backward'], ['back', 'Send to back']].map(([op, l]) =>
+			row(l, 'Among the shapes on this plane (one undo)', () => arrange().then((m) => m.orderShapes(/** @type {any} */ (op), orderSet)))
+		)
+	});
+	if (!multi && isVectorObject(object)) {
+		const stroked = object.userData.geometryParams.params?.strokeWidth > 0;
+		children.push(
+			row('Edit points', 'Drag points and handles, add points on the outline (a parametric shape becomes a path)', () => import('./vector/vectorEdit.js').then((m) => m.enterVectorEdit(object.uuid))),
+			row('Outline stroke', 'Turn the stroke into a filled shape of its own', () => ops().then((m) => m.outlineShape(object.uuid)), !stroked, 'This shape has no stroke'),
+			row('Inset 5 cm', 'Shrink the fill by 5 cm all round', () => ops().then((m) => m.offsetVector(object.uuid, -0.05))),
+			row('Outset 5 cm', 'Grow the fill by 5 cm all round', () => ops().then((m) => m.offsetVector(object.uuid, 0.05))),
+			(() => {
+				// claude:9 ruling Q1: the outer ring only, and the menu says so when there are holes
+				const p = object.userData.geometryParams.params;
+				const holes = p?.kind === 'path' && (p.paths?.length ?? 0) > 1;
+				return row(holes ? 'Make Path object (outer outline)' : 'Make Path object', 'Add a Path along this outline, for walkers, the dolly and Array along path; curves are simplified to at most 200 points (the shape stays)', () => curves().then((m) => m.vectorToPath(object.uuid)));
+			})(),
+			// 64-extrude: the text object's Bake, same word, same confirm, one undo
+			row('Bake to mesh…', 'Turn the shape into a normal mesh you can edit in Edit mode (its points, depth and bevel stop being editable; undo brings the shape back)', () => import('./vector/vectorActions.js').then((m) => m.confirmBakeVector(object.uuid)))
+		);
+	}
+	const many = vectors.length > 1;
+	children.push({
+		label: many ? `Export SVG (${vectors.length})` : 'Export SVG',
+		tooltip: 'Download the shape' + (many ? 's' : '') + ' as an SVG file (our own files read back exactly)',
+		action: () => import('./vector/vectorSvgActions.js').then((m) => m.downloadShapesSvg(vectors.length ? vectors : [object.uuid]))
+	});
+	return [{ label: 'Shape', icon: 'pen-tool', children }];
 }
 
 /**
@@ -479,6 +553,9 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 						]
 					}
 				]),
+		// 64 D1/D3: vector shapes — booleans across the set (the FIRST picked is the subject),
+		// outline / inset / outset / edit points on one, SVG export of every shape in the set
+		...vectorMenuRows(object, targets, multi, locked, lockedTooltip),
 		// T-2: brush sculpting — Terrain keeps its column brush; any other mesh gets the
 		// normal-brush MESH sculpt (same toolbar + replication)
 		...(multi

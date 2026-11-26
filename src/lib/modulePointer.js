@@ -22,7 +22,7 @@ import { objectsGroup, globalScene } from '../stores/sceneStore';
 import { moduleInteractiveGroups } from './sdk/registries.js';
 
 /** @typedef {'edit' | 'interact' | 'play'} PointerMode */
-/** @typedef {{down?: Function, move?: Function, up?: Function}} PointerHandler */
+/** @typedef {{down?: Function, move?: Function, up?: Function, cancel?: Function}} PointerHandler */
 
 /** @type {{handler: PointerHandler, modes: PointerMode[]}[]} registration order */
 const entries = [];
@@ -50,9 +50,14 @@ export function modulePointerWanted(mode) {
 	return entries.some((e) => e.modes.includes(mode));
 }
 
-/** Does a module own the gesture in flight? */
-export function modulePointerOwned() {
-	return !!owner;
+/**
+ * Does a module own the gesture in flight — in `mode`, when given? 64-vector-edit: Play's window listeners ask for
+ * 'play' only, so an Edit / Interact drag (Scene's, ray through the pointer) is not ALSO fed Play's aim ray (the
+ * crosshair: the screen centre) on every move — the second call won, and an Edit points drag followed the centre.
+ * @param {PointerMode} [mode]
+ */
+export function modulePointerOwned(mode) {
+	return !!owner && (!mode || owner.mode === mode);
 }
 
 /** the nearest mesh under the ray: scene objects and module content @param {THREE.Raycaster} ray */
@@ -79,7 +84,23 @@ function hitOf(ray) {
 	return { object: best.object, point: [best.point.x, best.point.y, best.point.z], uuid: best.object.uuid, distance: best.distance };
 }
 
-/** @param {any} handler @param {'down' | 'move' | 'up'} kind @param {any} hit @param {any} ctx */
+/** the ctx a handler gets. 64-vector-edit: + pointerId and the modifier keys (additive — a
+ * module that never read them sees the same object it always did, plus three fields)
+ * @param {PointerMode} mode @param {THREE.Raycaster} ray @param {any} event */
+function ctxOf(mode, ray, event) {
+	return {
+		mode,
+		ray,
+		clientX: event.clientX ?? 0,
+		clientY: event.clientY ?? 0,
+		pointerType: event.pointerType ?? 'mouse',
+		pointerId: event.pointerId ?? 1,
+		shiftKey: !!event.shiftKey,
+		altKey: !!event.altKey
+	};
+}
+
+/** @param {any} handler @param {'down' | 'move' | 'up' | 'cancel'} kind @param {any} hit @param {any} ctx */
 function call(handler, kind, hit, ctx) {
 	try {
 		return handler?.[kind]?.(hit, ctx);
@@ -98,7 +119,7 @@ export function modulePointerDown(mode, ray, event) {
 	owner = null;
 	if (!modulePointerWanted(mode)) return false;
 	const hit = hitOf(ray);
-	const ctx = { mode, ray, clientX: event.clientX ?? 0, clientY: event.clientY ?? 0, pointerType: event.pointerType ?? 'mouse' };
+	const ctx = ctxOf(mode, ray, event);
 	for (const entry of [...entries]) {
 		if (!entry.modes.includes(mode)) continue;
 		if (call(entry.handler, 'down', hit, ctx) === true) {
@@ -112,7 +133,7 @@ export function modulePointerDown(mode, ray, event) {
 /** The owned gesture moved. @param {THREE.Raycaster} ray @param {any} event @returns {boolean} routed */
 export function modulePointerMove(ray, event) {
 	if (!owner) return false;
-	call(owner.handler, 'move', hitOf(ray), { mode: owner.mode, ray, clientX: event.clientX ?? 0, clientY: event.clientY ?? 0, pointerType: event.pointerType ?? 'mouse' });
+	call(owner.handler, 'move', hitOf(ray), ctxOf(owner.mode, ray, event));
 	return true;
 }
 
@@ -121,7 +142,21 @@ export function modulePointerUp(ray, event) {
 	if (!owner) return false;
 	const { handler, mode } = owner;
 	owner = null;
-	call(handler, 'up', hitOf(ray), { mode, ray, clientX: event.clientX ?? 0, clientY: event.clientY ?? 0, pointerType: event.pointerType ?? 'mouse' });
+	call(handler, 'up', hitOf(ray), ctxOf(mode, ray, event));
+	return true;
+}
+
+/**
+ * 64-vector-edit: the owned gesture is CANCELLED (a second finger landed: the camera takes the pinch,
+ * so a touch tool must undo whatever the first finger began). The handler's optional `cancel(hit, ctx)`
+ * hears it; a handler without one simply sees no more of the gesture.
+ * @param {THREE.Raycaster} ray @param {any} event @returns {boolean} there was a gesture to cancel
+ */
+export function modulePointerCancel(ray, event) {
+	if (!owner) return false;
+	const { handler, mode } = owner;
+	owner = null;
+	call(handler, 'cancel', hitOf(ray), ctxOf(mode, ray, event));
 	return true;
 }
 

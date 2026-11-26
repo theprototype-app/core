@@ -109,6 +109,25 @@ export function setOrbitEnabled(on) {
 }
 
 /**
+ * 64-vector-edit: hand a two-finger gesture to the camera AFTER a tool held the first finger (orbit was
+ * off, so OrbitControls never tracked it). Feeding both presses through its own pointerdown is safe in
+ * either listener order: it ignores a pointer it already tracks.
+ * @param {PointerEvent[]} presses
+ */
+export function handOrbitPointers(presses) {
+	const controls = /** @type {any} */ (get(activeOrbit));
+	if (!controls) return;
+	controls.enabled = true;
+	for (const e of presses) {
+		try {
+			controls._onPointerDown?.(e);
+		} catch {
+			/* a controls build without the bound handler: the next finger move still pans with one */
+		}
+	}
+}
+
+/**
  * 48 S1: a POSE SEAM for the preview camera. While a Timeline shot glides between two
  * camera marks, the sequence player owns the pose (and fov); CameraPreview asks this
  * every frame before following the marker. Returns true when it posed the camera.

@@ -4,12 +4,12 @@
 	"pages": {
 		"play": {
 			"html": "play.html",
-			"maxJsGzBytes": 1751040,
+			"maxJsGzBytes": 1756160,
 			"maxFirstFrameMs": 20000
 		},
 		"editor": {
 			"html": "index.html",
-			"maxJsGzBytes": 2795520,
+			"maxJsGzBytes": 2805760,
 			"maxFirstFrameMs": 32000
 		}
 	},
@@ -250,6 +250,20 @@
 			}
 		},
 		{
+			"date": "2026-11-24",
+			"lane": "64-extrude (D7, stacked on #652 64-vector)",
+			"play": "64-vector 1887.2 KB -> 1887.5 KB (+0.3), line 1890 KB unchanged",
+			"editor": "64-vector 3009.7 KB -> 3010.6 KB (+0.9) -> line 3012 KB (the brief's ~3 KB boot allowance; ~1 KB of it is chunk churn between builds)",
+			"note": "what boots: the caps flag, the meshgeo vectorFallback guard, the geometry history merge + its vectorBake branch, the Bake to mesh row and Inspector button, the bevel-steps record row, the selection watch that lazy-loads the arrow. The solid builder, the arrow, the old-peer sender and the 2D tool are lazy chunks. The 64-int sets the line once."
+		},
+		{
+			"date": "2026-11-25",
+			"lane": "64-int (union of #652 64-vector, #655 64-vector-edit, #657 64-extrude, #653 64-2d; v1.79.0 merged)",
+			"play": "v1.79.0 measured 1851.0 KB -> union 1853.6 KB (+2.7) -> line 1855 + 2.7 -> 1860 KB",
+			"editor": "v1.79.0 measured 2987.2 KB -> union 2994.8 KB (+7.6) -> line 2990 + 7.6 -> 3000 KB",
+			"note": "claude:9 rule (orchestrator 25 Nov): the 1.79.0 line + the union's own delta, next 5 KB. Both builds on the PC host, one node_modules. Largest editor contributors (raw source bytes, vs v1.78.1): objectMenu.js +3.8 KB (the Shape submenu rows of three lanes), vector/vectorBoot.js +3.6 KB (shortcuts, VR rows, the extrude-arrow watch). Per lane (their own builds): 64-vector +2.9 / +0.2, 64-vector-edit +1.2 / +0.1, 64-extrude +0.9 / +0.3, 64-2d +2.1 / +1.3 (editor / play)."
+		},
+		{
 			"date": "2026-11-25",
 			"lane": "99-int-2 (99 K8 newops #635 + 99-scrub #656 on v1.79.0)",
 			"play": "v1.79.0 1851.0 KB -> 1854.1 KB (+3.1; 1854.0 KB with the 1.80.0 changelog) -> line stays 1855.0 KB (the int boot rule: merged tag + the union, next 5 KB)",
@@ -314,6 +328,13 @@
 			"play": "v1.82.0 1709.6 KB -> union on v1.82.0 1709.9 KB (+0.3) -> line 1710.0 KB (the int boot rule: the measure on the newest tag + the union's sum, rounded up to the next 5 KB; unchanged). Headroom 0.1 KB: the next int on play will cross it",
 			"editor": "v1.82.0 2726.6 KB -> union on v1.82.0 2727.3 KB (+0.7) -> line 2730.0 KB (the same rule; unchanged)",
 			"note": "measured on the Deck, v1.82.0 (detached worktree) and the union built back to back after npm ci on both. Per lane, measured on v1.81.0 the same way: 63-publish alone +0.1 play / +0.3 editor (302ab91f); 63-export + the 63-int first-use hint +0.2 play / +0.5 editor. The 1.83.0 changelog no longer rides the editor boot (What's new loads on demand since #654)."
+		},
+		{
+			"date": "2026-11-26",
+			"lane": "64-int-rel (roadmap 64: #652 64-vector, #655 64-vector-edit, #657 64-extrude, #653 64-2d via 64-int #659; v1.83.0 merged)",
+			"play": "v1.83.0 measured 1709.9 KB -> union 1713.2 KB (+3.3) -> line 1710 + 3.3 -> 1715 KB",
+			"editor": "v1.83.0 measured 2727.5 KB -> union 2736.1 KB (+8.6) -> line 2730 + 8.6 -> 2740 KB",
+			"note": "Over the 64 allowance (+3 / +8): claude:9 ACCEPTED 1715 / 2740 on 26 Nov (QUESTIONS-64-int-rel Q1). Boot modules that grew (raw): vector/vectorGate.js +7.7 KB (new on both boots, the old-peer wire gate), objectMenu.js +5.6 KB (editor, the Shape submenu rows), sprite2d/view2d.js +3.3 and sprite2d/sprite2dTick.js +3.0 (both boots), geometryEdit +2.1, flowRuntime +1.8. Give-back card 102-boot-diet-4 (objectMenu Shape rows, vectorBoot, vectorGate lazy behind the caps check; target play >= 3, editor >= 8 KB back). Both built on the Deck, one node_modules, back to back."
 		}
 	],
 	"throttle": {

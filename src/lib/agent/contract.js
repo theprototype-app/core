@@ -24,7 +24,9 @@
 // 1.12.0 (104): files / show / scene, the person's own tools: only the connector tab and the in-app assistant list them,
 // headless agent pages do not (additive: three new tool names, nothing renamed); probe tool; where_are_users you.through;
 // set_physics float / density / buoyancy / waterDrag + the water answer (waterline) (104-world, additive: one new tool name)
-export const TP_AGENT_VERSION = '1.12.0';
+// 1.13.0 (64-vector): a new tool create_vector (the connector's create_shape {action: 'vector'}: rect / ellipse / star /
+// polygon / path / svg); set_geometry params reach a vector shape's record (additive: a new tool behind an existing family)
+export const TP_AGENT_VERSION = '1.13.0';
 
 /** Every method of the contract, in the order the docs list them. */
 export const TP_AGENT_METHODS = /** @type {const} */ ([

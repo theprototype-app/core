@@ -44,6 +44,7 @@ export const animationTypes = [
 	'lookat', 'setcolor', 'visibility', 'setuniform',
 	'constraintweight', 'constrainttarget', // 102 M7 (rig/constraintRuntime overrides)
 	'camerarig', // 37 (R8)
+	'follow2d', // 64-2d (sprite2d: Camera Follow 2D)
 	'deviceparam', 'notetrigger' // 23-B3
 ];
 

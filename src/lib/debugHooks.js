@@ -522,6 +522,26 @@ export const DEBUG_HOOKS = [
 	['hudActions', () => import('./hudActions')],
 	['moduleNodeIO', () => import('./moduleNodeIO')],
 	['moduleToolboxes', () => import('./moduleToolboxes')],
+	// 64 D1/D3: vector shapes (gate, record, path math, mesh, actions, tools, booleans, SVG)
+	['vectorGate', () => import('./vector/vectorGate.js')],
+	['vectorRecord', () => import('./vector/vectorRecord.js')],
+	['vectorPath', () => import('./vector/vectorPath.js')],
+	['vectorActions', () => import('./vector/vectorActions.js')],
+	['vectorTool', () => import('./vector/vectorTool.js')],
+	['vectorEdit', () => import('./vector/vectorEdit.js')],
+	['vectorBoolean', () => import('./vector/vectorBoolean.js')],
+	['vectorSvg', () => import('./vector/vectorSvg.js')],
+	['vectorOps', () => import('./vector/vectorOps.js')],
+	['vectorSvgActions', () => import('./vector/vectorSvgActions.js')],
+	['vectorVR', () => import('./vector/vectorVR.js')],
+	['vectorCurveActions', () => import('./vector/vectorCurveActions.js')],
+	// 64-vector-edit (D5): snapping, arranging / layer order
+	['vectorSnap', () => import('./vector/vectorSnap.js')],
+	['vectorArrange', () => import('./vector/vectorArrange.js')],
+	// 64-extrude: the extrude arrow (extrudeDebug / setDepth) + the mesh builder's debug (vectorMeshDebug)
+	['vectorExtrude', () => import('./vector/vectorExtrude.js')],
+	['vectorMesh', () => import('./vector/vectorMesh.js')],
+	['vectorOldPeers', () => import('./vector/vectorOldPeers.js')],
 	['splineTube', () => import('./splineTube')],
 	['splineTool', () => import('./splineTool')],
 	['splineEdit', () => import('./splineEdit')],
@@ -693,6 +713,12 @@ export const DEBUG_HOOKS = [
 	// 40 F14: the substitutes a fallback group draws
 	['lodTrees', () => import('./lodTrees.js')],
 	['lodGroupActions', () => import('./lodGroupActions')],
+	// 64-2d: sprites, flipbooks, 2D layers (spriteStatus / sprite2dDebug / setSpriteFor / the pure core / the lazy tick)
+	['sprite2d', () => import('./sprite2d/spriteRuntime.js')],
+	['sprite2dActions', () => import('./sprite2d/spriteActions.js')],
+	['sprite2dCore', () => import('./sprite2d/spriteCore.js')],
+	['sprite2dTick', () => import('./sprite2d/sprite2dTick.js')],
+	['view2d', () => import('./sprite2d/view2d.js')],
 	['lodLevelEdit', () => import('./lodLevelEdit')],
 	['packBehavior', () => import('./packBehavior')],
 	// 37 R3: parametric architecture parts (archPartsDebug, reconcileArchParts)

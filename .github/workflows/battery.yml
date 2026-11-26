@@ -48,6 +48,10 @@ jobs:
     env:
       E2E_NO_PERF_OFFER: '1'
       MODE: quick
+      # the slow-runner allowance (tests/e2e/helpers.cjs CI_DEFAULT_TIMEOUT_MS / CI_WAIT_SCALE, battery.json `ci`):
+      # set HERE ONLY, so a local / desk / pc battery keeps today's limits. Every wait that uses the extra time is
+      # logged, and a page under 5 fps marks its suite SLOW RUNNER in the summary.
+      BATTERY_CI: '1'
     steps:
       - uses: actions/checkout@v7
         with:

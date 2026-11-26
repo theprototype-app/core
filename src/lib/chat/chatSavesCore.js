@@ -6,7 +6,7 @@
 //    (the scene's name; an unnamed scene shares one "Untitled scene" log). The wire is unchanged —
 //    lines still travel as `sent` and a joiner still gets 200 of them from a peer (`getchat`); this is
 //    only what THIS device remembers, so a reload or a later visit to the scene brings the talk back.
-//  · A PROVIDER CHAT: a conversation with your own AI provider (Settings ▸ Tools & connections), kept
+//  · A PROVIDER CHAT: a conversation with your own AI provider (Settings ▸ AI), kept
 //    per device until accounts (71). Agent chats are scene data already (.tpchat, 56 C10) and are
 //    listed beside these, never copied.
 // Pictures stay ATTACHMENTS: a saved provider chat names each picture by key and the bytes are stored

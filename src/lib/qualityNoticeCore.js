@@ -17,13 +17,14 @@ export const QUALITY_TOGGLES = [
 	{ key: 'water', name: 'water quality' },
 	{ key: 'fluid', name: 'fluid quality' },
 	{ key: 'shadows', name: 'shadows' },
+	{ key: 'contact', name: 'contact shadows' },
 	{ key: 'resolution', name: 'resolution' },
 	{ key: 'ao', name: 'ambient occlusion' },
 	{ key: 'post', name: 'the scene look' },
 	{ key: 'particles', name: 'particles' }
 ];
 
-/** @typedef {{dprScale?: number, shadowsOff?: boolean, aoOff?: boolean, postOff?: boolean, particlesCapped?: boolean, water?: boolean, fluid?: boolean}} QualitySnapshot */
+/** @typedef {{contactOff?: boolean, dprScale?: number, shadowsOff?: boolean, aoOff?: boolean, postOff?: boolean, particlesCapped?: boolean, water?: boolean, fluid?: boolean}} QualitySnapshot */
 
 /** Is this toggle lowered in `s`? @param {string} key @param {QualitySnapshot | null | undefined} s */
 export function isLowered(key, s) {
@@ -35,6 +36,8 @@ export function isLowered(key, s) {
 			return !!s.fluid;
 		case 'shadows':
 			return !!s.shadowsOff;
+		case 'contact':
+			return !!s.contactOff;
 		case 'resolution':
 			return Number(s.dprScale ?? 1) < 1;
 		case 'ao':

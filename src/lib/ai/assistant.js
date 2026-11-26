@@ -173,7 +173,7 @@ function pictureFailure(error, config) {
 	if (isVisionRefusal(error.status, error.body)) {
 		// 73 AI4: say so, and offer a model that has it
 		const suggest = visionSupport(config).suggest;
-		const offer = suggest && suggest !== config?.model ? ' (for example ' + suggest + ' in Settings ▸ Tools & connections)' : '';
+		const offer = suggest && suggest !== config?.model ? ' (for example ' + suggest + ' in Settings ▸ AI)' : '';
 		return (config?.model || 'This model') + ' can’t read pictures — pick a vision model' + offer + ', or ask without the picture. The picture is left out of the rest of this chat.';
 	}
 	return describeAiError(error, config) + ' — pictures are left out of the rest of this chat.';
@@ -239,8 +239,9 @@ export async function runPrompt(text, images = []) {
 		const result = await runChat({
 			config,
 			messages: apiHistory,
-			tools: getAiTools(),
-			executeTool: executeAiTool,
+			// 104: the person's own assistant also works their Explorer, interface and scenes
+			tools: getAiTools({ person: true }),
+			executeTool: (name, args) => executeAiTool(name, args, { person: true }),
 			onDelta: (t) => {
 				aiStatus.set('');
 				streamInto(t);

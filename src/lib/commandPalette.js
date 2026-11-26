@@ -13,6 +13,7 @@ import {
 	settingsOpen,
 	settingsSection,
 	settingsSearchSeed,
+	settingsAnchor,
 	modulesOpen,
 	sessionsOpen,
 	checkpointsOpen,
@@ -91,7 +92,7 @@ function menuCommands() {
 
 /** @returns {Command[]} */
 function settingsCommands() {
-	return SETTINGS_ROWS.map(([section, name, desc]) => ({
+	return SETTINGS_ROWS.map(([section, name, desc, anchor]) => ({
 		id: 'setting:' + section + ':' + name,
 		kind: 'setting',
 		label: name,
@@ -99,7 +100,9 @@ function settingsCommands() {
 		words: desc,
 		run: () => {
 			settingsSection.set(/** @type {any} */ (SETTINGS_SECTION_IDS)[section] ?? null);
-			settingsSearchSeed.set(name);
+			// 89 I2: a card heading is not a row a search can find — land on the card itself
+			if (anchor) settingsAnchor.set(anchor);
+			else settingsSearchSeed.set(name);
 			settingsOpen.set(true);
 		}
 	}));

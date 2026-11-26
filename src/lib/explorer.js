@@ -10,7 +10,6 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 // @ts-ignore - see above
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 // @ts-ignore - see above
-import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { idbGet, idbPut, idbDelete } from './idb';
 import { showToast } from '../stores/appStore';
 import { heicToJpegFile } from './heic.js';
@@ -449,6 +448,8 @@ export async function parseObjectFile(buffer, ext) {
 	}
 	if (ext === 'fbx') {
 		if (!checkFbx(buffer, 'library', 'model')) throw refusal('model');
+		// 102-boot-diet-2: the FBX parser (~13 KB gz) loads with the first .fbx, not with every page
+		const { FBXLoader } = await import('three/addons/loaders/FBXLoader.js');
 		return new FBXLoader(embeddedOnlyManager('library', 'model')).parse(buffer, '');
 	}
 	// glb/gltf

@@ -26,13 +26,13 @@
 	} from '$lib/scenePost';
 	// side-effecting import: registers the built-in effect kinds. It also owns the
 	// postprocessing/n8ao imports, which is what keeps scenePost.js a pure leaf.
-	import { compilePostStack, disposePostStack } from '$lib/postEffects';
+	import { compilePostStack, disposePostStack, n8aoReady, loadN8ao } from '$lib/postEffects';
 	// P4: side-effecting too — registers the `graph` kind, so a post-domain shader graph
 	// is just another entry in the stack above. This component owns the one thing that
 	// module cannot: the NormalPass, added ON DEMAND below when a graph reads normals.
 	import '$lib/postGraphs';
 	import { registerOutlineLayer } from '$lib/editOverlays';
-	import { faceEditObject, meshEditOutline } from '$lib/faceEdit';
+	import { faceEditObject, meshEditOutline } from '$lib/faceEditState';
 	import { editingObject } from '$lib/meshEdit';
 	import { coarsePointer } from '$lib/inputDevice';
 	import { viewPrefs, DEFAULT_VIEW_PREFS } from '$lib/viewPrefs';
@@ -40,7 +40,7 @@
 	import { recordingClean } from '$lib/helperLayer';
 	// 41 G10: the character studio hides the scene, so the selection glare stands down with it
 	import { studioIsolating } from '$lib/avatars/avatarState';
-	import { shadowQuality, contactShadowsWanted } from '$lib/lightParams';
+	import { shadowQuality, contactShadowsWanted, contactFrameProbe } from '$lib/lightParams';
 	// 106 S2: the local contact-shadow entry (its kind registers lazily with Soft / Far)
 	const CONTACT_ENTRY = Object.freeze({ id: 'builtin-contact', kind: 'contactshadows', enabled: true, params: { steps: 12 } });
 	import { useTask, useThrelte } from '@threlte/core';
@@ -59,7 +59,7 @@
 	} from 'postprocessing';
 	import { onMount, onDestroy, untrack } from 'svelte';
 	import { renderPaused } from '$lib/overloadGuard';
-	import { qualityOverrides, ingestDrawGap, settleQuality } from '$lib/qualityGovernor';
+	import { qualityOverrides, ingestDrawGap, settleQuality, setContactLive } from '$lib/qualityGovernor';
 	import { liteLook } from '$lib/post/proPresetsCore.js';
 	import { agentRequested } from '$lib/agent/agentMode';
 	// 16-Q4 / 43 K5: every PiP window renders as a view of THIS renderer ($lib/pipViews)
@@ -162,6 +162,8 @@
 	// "would the compiled chain differ?" — a param scrub that changes nothing must
 	// not thrash the composer, and the effect below re-runs on every store write
 	let stackSignature = '';
+	/** 106 S2b: the contact pass is in the planned stack (the cost meter files each frame under it) */
+	let contactInStack = false;
 
 	// L4: answer environment's "does the post stack map the frame itself?" ONCE —
 	// the closure reads the live flag, so rebuildStack never re-registers.
@@ -375,21 +377,31 @@
 		const aoOff = reduced.aoOff || orthoView;
 		const overrides = adopted ? adopted.look : undefined;
 		const adoptedMode = adopted ? adopted.mode : $drawAsWantsAo ? 'shaded-ao' : $viewMode;
-		const entries = effectivePostStack({
+		const inputs = {
 			stack: resolvedDoc(POST_SCENE_KEY, overrides),
 			cameraStack: /** @type {any} */ (throughCamera ? resolvedDoc(throughCamera, overrides) : null),
 			mode: aoOff && adoptedMode === 'shaded-ao' ? 'shaded' : adoptedMode,
 			localEnabled: (adopted ? adopted.overrides.post !== false : $postEnabledLocal) && !reduced.postOff,
 			postOk,
 			postWarm
-		}).filter((entry) => !(aoOff && entry.kind === 'ao'));
+		};
+		const entries = effectivePostStack(inputs).filter((entry) => !(aoOff && entry.kind === 'ao'));
+		// 102-boot-diet-2: N8AO is a lazy chunk. Fetch it as soon as the WARMED stack would draw AO (during the
+		// warm-up, so it is usually here by frame 10); `$n8aoReady` in the signature recompiles the chain once it lands
+		const aoReady = $n8aoReady;
+		if (!aoReady && !aoOff && effectivePostStack({ ...inputs, postWarm: true }).some((entry) => entry.kind === 'ao'))
+			void loadN8ao().catch(() => {});
 		// 106 S2: contact shadows are the drawn shadow level's, LOCAL (never in a document): first in the chain,
 		// on the lit image, wherever post runs at all here; the governor's lighter look and shadows-off drop them
-		const contact = $contactShadowsWanted && adoptedMode !== 'wireframe' && postOk && postWarm && !reduced.postOff && !reduced.lookLite && !reduced.shadowsOff && !orthoView; // 64-2d: no contact shadows through an orthographic view
+		// 106 S2b: ...and its contact pre-step drops them FIRST (the governor is told whether they would draw)
+		const contactLive = $contactShadowsWanted && adoptedMode !== 'wireframe' && postOk && postWarm && !reduced.postOff && !reduced.lookLite && !reduced.shadowsOff && !orthoView; // 64-2d: no contact shadows through an orthographic view
+		setContactLive(contactLive);
+		const contact = contactLive && !reduced.contactOff;
+		contactInStack = contact;
 		const withContact = contact ? [CONTACT_ENTRY, ...entries] : entries;
 		// 98-int: the governor's "Scene look lighter" step keeps the grade and drops the heavy passes
 		const shown = reduced.lookLite ? liteLook(withContact) : withContact;
-		const signature = postStackSignature(shown);
+		const signature = postStackSignature(shown) + (aoReady ? '' : '|ao-loading');
 		if (signature === stackSignature) return;
 		stackSignature = signature;
 		untrack(() => rebuildStack(shown));
@@ -562,7 +574,13 @@
 			const unshake = applyShake(camera.current, renderer.xr.isPresenting);
 			if (!renderer.xr.isPresenting && mainViewCovered()) noteMainSkipped();
 			else if (renderer.xr.isPresenting || nothingToCompose) renderer.render(scene, camera.current);
-			else composer.render(delta);
+			else {
+				// 106 S2b: the contact cost meter times this frame's GPU work (lazy; null until loaded)
+				const probe = contactFrameProbe.on;
+				probe?.begin(renderer);
+				composer.render(delta);
+				probe?.end(contactInStack);
+			}
 			unshake?.();
 			unview?.();
 		},

@@ -26,6 +26,8 @@ import {
 	boundaryLoopOf,
 	vertexKeysOf,
 	internalEdgeKeysOf,
+	internalEdgeIdsOf,
+	edgeIdOf,
 	centroidOf,
 	stateOf,
 	normalPlan,
@@ -34,7 +36,7 @@ import {
 	edgeKey,
 	keyOf as frameKeyOf
 } from './triFrame';
-import { peers, showToast, settingsOpen, settingsSection } from '../stores/appStore';
+import { peers, showToast } from '../stores/appStore';
 import {
 	registerHistoryKind,
 	recordEntry,
@@ -48,9 +50,7 @@ import {
 import {
 	readStoredFaces,
 	storeFaces,
-	clearStoredFaces,
 	facesWireFields,
-	applyFacesWire,
 	carryFaces,
 	packFaces,
 	composeFaces,
@@ -70,7 +70,7 @@ import { editOverlaysParked } from './editOverlays';
 // 19-A P3: the desktop pane's extrude/inset extras, read at BEGIN so a click-
 // extrude matches the toolbox's Apply. meshToolParams is a svelte/store-only
 // leaf, so this cannot close a cycle into history.
-import { extrudeIndividual, insetDepth, insetIndividual, liveSymmetry, symAxis, symKeep } from './meshToolParams';
+import { extrudeIndividual, insetDepth, insetIndividual, liveSymmetry, symAxis, symKeep, meshPathTopological } from './meshToolParams';
 // 19-A P4: proportional editing shared with the vertex path. Both are LEAVES
 // (proportional = svelte/store only; proportionalRing = three + sceneStore +
 // proportional) — this module must NEVER import meshEdit (meshEdit imports us),
@@ -84,7 +84,6 @@ import {
 	endProportionalWheel
 } from './proportional';
 import { showProportionalRingAt, hideProportionalRing } from './proportionalRing';
-import { safeStorage } from './safeStorage';
 // the custom transform PIVOT (a LOCAL per-object pref). Another leaf — meshPivot
 // imports THREE, the two stores and `proportional`, and nothing from here.
 import {
@@ -101,6 +100,92 @@ import {
 	setMeshPivotPreview
 } from './meshPivot';
 import { viewportHasKeys } from './keyScope'; // 36 U11
+import {
+	VR_FACE_CAP,
+	vrFaceCap,
+	editCapToast,
+	triangleCount,
+	vrFaceEditable,
+	registerEditProxy,
+	lookupEditable,
+	editHooks,
+	prefHooks,
+	registerVertexSessionRefresher,
+	registerSculptCacheRefresher,
+	registerVertexWireRebuild,
+	registerVertexSelectionHistory,
+	registerGizmoPrefListener,
+	meshEditWireframe,
+	meshEditHotkeys,
+	meshEditOutline,
+	meshEditTriWire,
+	faceEditObject,
+	faceEditHighlight,
+	faceEditOp,
+	faceEditAmount,
+	faceAutoApply,
+	opAdjustState,
+	faceEditGranularity,
+	faceEditMulti,
+	faceEditSelectedTris,
+	faceEditHoverTri,
+	faceEditSubmode,
+	edgeEditSelected,
+	edgeEditHover,
+	knifePreview,
+	faceGizmoSpace,
+	meshGizmoEnabled,
+	pathGesture
+} from './faceEditState';
+import { applyMeshGeo, smoothWeldedNormals, preserveMaterialGroups, preserveUVs } from './meshGeoApply';
+import { adoptFaceEdit } from './faceEditLazy';
+import * as faceEditModule from './faceEdit';
+import { shellsOfTris, withSlot, readTriangles, trisToGroups, trisToUVs, trisToPositions, stretchPositions } from './meshSoup';
+// 102-boot-diet-2: the boot half (stores, prefs, registries, small helpers) re-exported, so every
+// existing `import { … } from './faceEdit'` and `fe.<name>` keeps resolving to the same instances
+export {
+	applyMeshGeo,
+	shellsOfTris,
+	readTriangles,
+	trisToGroups,
+	trisToUVs,
+	trisToPositions,
+	stretchPositions,
+	smoothWeldedNormals,
+	VR_FACE_CAP,
+	vrFaceCap,
+	editCapToast,
+	triangleCount,
+	vrFaceEditable,
+	registerEditProxy,
+	lookupEditable,
+	registerVertexSessionRefresher,
+	registerSculptCacheRefresher,
+	registerVertexWireRebuild,
+	registerVertexSelectionHistory,
+	registerGizmoPrefListener,
+	meshEditWireframe,
+	meshEditHotkeys,
+	meshEditOutline,
+	meshEditTriWire,
+	faceEditObject,
+	faceEditHighlight,
+	faceEditOp,
+	faceEditAmount,
+	faceAutoApply,
+	opAdjustState,
+	faceEditGranularity,
+	faceEditMulti,
+	faceEditSelectedTris,
+	faceEditHoverTri,
+	faceEditSubmode,
+	edgeEditSelected,
+	edgeEditHover,
+	knifePreview,
+	faceGizmoSpace,
+	meshGizmoEnabled,
+	pathGesture
+};
 /** 99 K3: the face part of the one edit session */
 const FS = editSession.face;
 
@@ -138,31 +223,7 @@ const FS = editSession.face;
  * The SYNC ceilings are separate and much higher (meshBudget.js): this one is
  * about interaction cost, not about what can be replicated.
  */
-export const VR_FACE_CAP = 2500;
-/** D7: user-editable face-edit triangle limit (Settings ▸ VR, local pref)
- * @type {import('svelte/store').Writable<number>} */
-export const vrFaceCap = writable(
-	typeof localStorage !== 'undefined'
-		? parseInt(safeStorage.getItem('vrFaceCap') ?? '') || VR_FACE_CAP
-		: VR_FACE_CAP
-);
-if (typeof localStorage !== 'undefined')
-	vrFaceCap.subscribe((value) => safeStorage.setItem('vrFaceCap', String(value)));
-
-/** D7: over-limit / blocked-edit warning with a deep link into the Settings
- * VR section (works in noVR immediately; VR users see it on exit — on-device
- * surfacing stays a manual check). @param {string} message */
-export function editCapToast(message) {
-	showToast(message, [
-		{
-			label: 'Open Settings',
-			action: () => {
-				settingsSection.set('vr');
-				settingsOpen.set(true);
-			}
-		}
-	]);
-}
+// VR_FACE_CAP / vrFaceCap / editCapToast live in faceEditState.js (102-boot-diet-2)
 // MAX_SNAPSHOT now lives in meshBudget.js (imported above) — one number for every
 // module that used to keep its own copy of 45000.
 
@@ -188,104 +249,16 @@ function keyOf(x, y, z) {
 	return frameKeyOf(x, y, z);
 }
 
-/**
- * Union-find over welded vertex keys: the connected components ("shells") of
- * a triangle soup — a merged-in primitive is one shell, a plane floating off
- * a box is another. Shared by Shell granularity (CL-B) and custom-collider
- * piece splitting (CL-A A8). @param {any[]} tris @returns {number[][]} tri-index groups
- */
-export function shellsOfTris(tris) {
-	return shellsOf(frameOfTris(tris));
-}
 
 // ---- CL-A A8: scene-root edit proxy ----------------------------------------
 // The custom-collider session edits a PROXY mesh at the scene root (never in
 // objectsGroup, so it can't leak into GLTF sync). objectsGroup lookups in the
 // edit tools fall back to it; peers never learn its uuid, so replicated edit
 // messages (verts/meshgeo/lock) NO-OP on their side.
-/** @type {any} */ let editProxy = null;
-/** @param {any} object the live proxy mesh, or null to clear */
-export function registerEditProxy(object) {
-	editProxy = object;
-}
-/** D1: meshEdit's live-session refresh hook — registered at ITS module eval
- * (meshEdit imports us; see the applyMeshGeo call site for why not import()).
- * @type {((uuid: string) => void) | null} */
-let vertexSessionRefresher = null;
-/** @param {(uuid: string) => void} fn */
-export function registerVertexSessionRefresher(fn) {
-	vertexSessionRefresher = fn;
-}
-/** the sculpt session's weld-cache refresh, registered at terrainSculpt's module eval the same way (it imports us; a
- * sculpt session cannot exist before that module loads, so a swap with nothing registered has nothing to rebuild)
- * @type {((uuid: string, object: any) => void) | null} */
-let sculptCacheRefresher = null;
-/** @param {(uuid: string, object: any) => void} fn */
-export function registerSculptCacheRefresher(fn) {
-	sculptCacheRefresher = fn;
-}
+// registerEditProxy / lookupEditable and the meshEdit / terrainSculpt hook registries live in faceEditState.js
 
-/** objectsGroup lookup that also finds the registered edit proxy @param {string} uuid */
-export function lookupEditable(uuid) {
-	const found = get(objectsGroup)?.getObjectByProperty('uuid', uuid) ?? null;
-	if (found) return found;
-	return editProxy && editProxy.uuid === uuid ? editProxy : null;
-}
 
-/** Carry a MATERIAL SLOT (and M1: the per-corner UVs) onto a triangle. Stored as
- * properties on the triangle array so every op that clones/filters/maps tris
- * keeps them without changing the [v0,v1,v2] shape every caller expects.
- * @param {any} tri @param {number=} mi @param {any=} uv */
-function withSlot(tri, mi, uv) {
-	tri.mi = mi || 0;
-	if (uv) tri.uv = uv; // M1: per-corner [[u,v],[u,v],[u,v]], absent when untextured
-	return tri;
-}
 
-/** element index -> material slot, read off a geometry's groups (0 when the
- * geometry is ungrouped) @param {any[]} groups @param {number} count */
-function slotLookup(groups, count) {
-	if (!groups?.length) return () => 0;
-	const slots = new Int32Array(count);
-	for (const group of groups) {
-		const start = Math.max(group.start | 0, 0);
-		const end = Math.min(start + (group.count | 0), count);
-		for (let i = start; i < end; i++) slots[i] = group.materialIndex || 0;
-	}
-	return (/** @type {number} */ i) => slots[i] || 0;
-}
-
-/**
- * Read a geometry into triangles [[Vector3,Vector3,Vector3], ...] (index
- * expanded). Each triangle also carries `mi` — the MATERIAL SLOT it came from
- * (15-G): a merged or imported mesh can wear a material ARRAY, and three draws
- * an array material by walking `geometry.groups`, so a swapped-in geometry with
- * no groups renders NOTHING AT ALL. @param {any} geometry
- */
-export function readTriangles(geometry) {
-	const pos = geometry.attributes.position;
-	const uvAttr = geometry.attributes.uv;
-	const index = geometry.index;
-	const count = index ? index.count : pos.count;
-	const slotAt = slotLookup(geometry.groups, count);
-	const tris = [];
-	for (let i = 0; i < count; i += 3) {
-		const idx = (/** @type {number} */ o) => (index ? index.getX(i + o) : i + o);
-		const vert = (/** @type {number} */ o) => {
-			const j = idx(o);
-			return new THREE.Vector3(pos.getX(j), pos.getY(j), pos.getZ(j));
-		};
-		const tri = withSlot([vert(0), vert(1), vert(2)], slotAt(i));
-		// M1: carry TEXTURE COORDINATES through the edit. Every op used to rebuild
-		// the geometry from positions alone, so editing a textured mesh silently
-		// destroyed its mapping. `uv` is [[u,v],[u,v],[u,v]] per corner, or absent
-		// when the source has no uv attribute (the overwhelmingly common case —
-		// nothing extra is computed, stored or sent for those).
-		if (uvAttr) tri.uv = [0, 1, 2].map((o) => [uvAttr.getX(idx(o)), uvAttr.getY(idx(o))]);
-		tris.push(tri);
-	}
-	return tris;
-}
 
 /** M1: uv of a triangle corner, or [0,0] when the mesh is untextured.
  * @param {any} tri @param {number} corner */
@@ -685,312 +658,19 @@ export function trisToGeometry(tris) {
 	return geometry;
 }
 
-/**
- * 15-G: the triangles' MATERIAL SLOTS run-length encoded into geometry groups
- * (vertex units, the shape three wants). Returns null when everything is slot 0
- * — a single-material mesh needs no groups at all, so the overwhelmingly common
- * case puts nothing extra on the wire and behaves exactly as before.
- * @param {any[]} tris @returns {any[] | null}
- */
-export function trisToGroups(tris) {
-	if (!tris.length || !tris.some((t) => (t.mi || 0) > 0)) return null;
-	/** @type {any[]} */
-	const groups = [];
-	let start = 0;
-	let slot = tris[0].mi || 0;
-	for (let i = 1; i <= tris.length; i++) {
-		const next = i < tris.length ? tris[i].mi || 0 : -1;
-		if (next === slot) continue;
-		groups.push({ start: start * 3, count: (i - start) * 3, materialIndex: slot });
-		start = i;
-		slot = next;
-	}
-	return groups;
-}
 
-/**
- * Keep a MULTI-MATERIAL mesh renderable across a geometry swap (15-G). three
- * draws an array material by iterating `geometry.groups`, so a fresh geometry
- * with none draws NOTHING — a merged mesh vanished the moment any face op ran.
- * Prefer the groups the edit computed; else carry the previous geometry's over
- * (exact whenever the vertex count is unchanged — the sculpt / vertex-drag
- * paths); and always cover the tail so no triangle is left unrendered.
- * @param {any} geometry @param {any} previous the geometry being replaced
- * @param {any} object @param {any[] | null} [groups]
- */
-function preserveMaterialGroups(geometry, previous, object, groups) {
-	if (!Array.isArray(object?.material) || object.material.length < 2) return;
-	const count = geometry.attributes.position.count;
-	const source = groups?.length ? groups : previous?.groups;
-	let covered = 0;
-	let last = 0;
-	if (source?.length)
-		for (const group of source) {
-			const start = Math.max(group.start | 0, 0);
-			const size = Math.min(group.count | 0, count - start);
-			if (start >= count || size <= 0) continue;
-			last = group.materialIndex || 0;
-			geometry.addGroup(start, size, last);
-			covered = Math.max(covered, start + size);
-		}
-	// a shorter list than the geometry (an older peer's ungrouped snapshot, or a
-	// path that does not track slots) would leave the tail invisible
-	if (covered < count) geometry.addGroup(covered, count - covered, last);
-}
 
-/**
- * M1: the triangles' UVs as a flat array (2 per vertex), or null when the mesh
- * is untextured — the common case then puts nothing extra on the wire, in
- * history, or in the geometry, exactly like `trisToGroups`. A triangle that
- * somehow lost its uv (new geometry an op forgot to tag) contributes zeros
- * rather than a short array: a uv attribute must cover EVERY vertex.
- * @param {any[]} tris @returns {number[] | null}
- */
-export function trisToUVs(tris) {
-	if (!tris.some((t) => !!t.uv)) return null;
-	/** @type {number[]} */
-	const uvs = [];
-	for (const t of tris)
-		for (let c = 0; c < 3; c++) {
-			const pair = t.uv ? t.uv[c] : null;
-			uvs.push(pair ? pair[0] : 0, pair ? pair[1] : 0);
-		}
-	return uvs;
-}
 
-/**
- * mcp-shapes: a mesh with vertex colours (create_mesh `colors`) keeps them across a geometry swap. Given colours win;
- * else the previous attribute is carried when the vertex count is unchanged (a move, a smooth, a sculpt stroke) and
- * reset to WHITE when it is not — corners an op invented have no colour, and carrying by index would scramble them.
- * A mesh that never had colours gets none (the common case stays byte-identical).
- * @param {any} geometry @param {any} previous @param {Float32Array | null} colors
- */
-function preserveColors(geometry, previous, colors) {
-	const count = geometry.attributes.position.count;
-	if (colors?.length) {
-		const array = new Float32Array(count * 3).fill(1);
-		array.set(colors.length > array.length ? colors.subarray(0, array.length) : colors);
-		geometry.setAttribute('color', new THREE.BufferAttribute(array, 3));
-		return;
-	}
-	const old = previous?.attributes?.color;
-	if (!old) return;
-	const array = new Float32Array(count * 3).fill(1);
-	if (old.count === count) for (let i = 0; i < count; i++) array.set([old.getX(i), old.getY(i), old.getZ(i)], i * 3);
-	geometry.setAttribute('color', new THREE.BufferAttribute(array, 3));
-}
 
-/**
- * M1: keep a TEXTURED mesh mapped across a geometry swap. Prefer the uvs the
- * edit computed; else carry the previous geometry's attribute over — exact
- * whenever the vertex count is unchanged (sculpt strokes, vertex drags, VR
- * grabs, stretch), clipped or zero-padded when an op grew/shrank the mesh
- * without tracking uvs (createFaceFromVerts). Never leaves a partial attribute:
- * three requires uv.count === position.count.
- * @param {any} geometry @param {any} previous @param {number[] | null} [uvs]
- */
-function preserveUVs(geometry, previous, uvs) {
-	const count = geometry.attributes.position.count;
-	if (uvs?.length) {
-		const array = new Float32Array(count * 2);
-		array.set(uvs.length > array.length ? uvs.slice(0, array.length) : uvs);
-		geometry.setAttribute('uv', new THREE.BufferAttribute(array, 2));
-		return;
-	}
-	const old = previous?.attributes?.uv;
-	if (!old) return;
-	// Read through the previous geometry's INDEX when it had one: several paths
-	// snapshot INDEX-EXPANDED positions (weld, entering sculpt, create-face), so
-	// the new vertex count is previous.index.count while the old uv attribute is
-	// still in unique-vertex space. Without this a weld on an indexed mesh
-	// zero-padded 12 of a box's 36 uvs.
-	const index = previous.index;
-	const expanded = index && count === index.count;
-	const array = new Float32Array(count * 2);
-	for (let i = 0; i < count; i++) {
-		const j = expanded ? index.getX(i) : i;
-		if (j >= old.count) continue; // grew past what we know — leave 0,0
-		array[i * 2] = old.getX(j);
-		array[i * 2 + 1] = old.getY(j);
-	}
-	geometry.setAttribute('uv', new THREE.BufferAttribute(array, 2));
-}
 
-/** flat positions array for a snapshot message @param {any[]} tris */
-export function trisToPositions(tris) {
-	/** @type {number[]} */
-	const positions = [];
-	tris.forEach((t) => t.forEach((/** @type {any} */ v) => positions.push(v.x, v.y, v.z)));
-	return positions;
-}
 
-/**
- * Scale one axis of a flat xyz positions array about its centroid on that axis
- * (161 stretch). Pure. @param {number[]} positions @param {number} axis 0|1|2
- * @param {number} factor @returns {number[]}
- */
-export function stretchPositions(positions, axis, factor) {
-	const out = positions.slice();
-	const count = out.length / 3;
-	if (!count) return out;
-	let sum = 0;
-	for (let i = axis; i < out.length; i += 3) sum += out[i];
-	const center = sum / count;
-	for (let i = axis; i < out.length; i += 3) out[i] = center + (out[i] - center) * factor;
-	return out;
-}
 
-/**
- * Numbers off the wire: a plain array (history replays), an ArrayBuffer (the
- * wire format) or a typed-array VIEW — binarypack may deliver a view into a
- * LARGER buffer, so slice the exact bytes (the assetShare gotcha).
- * @param {any} data
- */
-function toFloats(data) {
-	if (data instanceof ArrayBuffer) return new Float32Array(data);
-	if (ArrayBuffer.isView(data))
-		return new Float32Array(
-			/** @type {any} */ (data).buffer.slice(
-				/** @type {any} */ (data).byteOffset,
-				/** @type {any} */ (data).byteOffset + /** @type {any} */ (data).byteLength
-			)
-		);
-	// a list of numbers, never a bare number: `new Float32Array(n)` would allocate n floats
-	if (!Array.isArray(data)) return new Float32Array(0);
-	return new Float32Array(data);
-}
 
-/**
- * Swap an object's geometry to a positions snapshot (remote msg / undo replay).
- * @param {string} uuid @param {number[]} positions
- * @param {any[] | null} [groups] material groups for a multi-material mesh (15-G);
- *   omitted by the sculpt/vertex paths, which never change the vertex count
- * @param {any} [uvs] M1: texture coordinates, same three wire shapes as
- *   positions; omitted means "carry the previous attribute over"
- * @param {any} [faceCounts] P9 stored topology, CSR half one — one Int32 per face.
- *   Absent means "the sender did not author faces": the previous partition is CARRIED
- *   when it still fits the new mesh exactly and dropped otherwise (A7), which is what
- *   an older peer's positions-only message does too.
- * @param {any} [faceTris] P9 stored topology, CSR half two — the flat triangle run
- * @param {any} [colors] mcp-shapes: per-vertex colours (3 per vertex), same wire shapes as positions;
- *   omitted = carry the previous colours when the vertex count is unchanged (else white)
- */
-export function applyMeshGeo(uuid, positions, groups, uvs, faceCounts, faceTris, colors) {
-	const object = lookupEditable(uuid); // A8: also finds the collider-edit proxy
-	if (!object) return;
-	const floats = toFloats(positions);
-	const geometry = new THREE.BufferGeometry();
-	geometry.setAttribute('position', new THREE.BufferAttribute(floats, 3));
-	const previous = object.geometry;
-	const smooth = !!(object.userData.terrain || object.userData.shading === 'smooth');
-	// 99 K5: a MOVE (same triangles, some corners elsewhere) updates only the touched normals, from the previous
-	// geometry's — the live grab's own policy (triFrame.normalPlan), so a peer and an undo land the same normals as
-	// the editor that made the move, authored normals elsewhere stay byte-identical, and a stroke on a dense mesh
-	// skips the full recompute. Anything else recomputes in full, as before.
-	if (!incrementalNormals(geometry, previous, smooth)) {
-		geometry.computeVertexNormals();
-		// T-2: terrain reads smooth, not faceted — average normals across
-		// position-welded vertices (deterministic: every peer derives the same
-		// shading from the same positions; nothing extra on the wire). M6 makes the
-		// same treatment a per-object CHOICE, so it has to survive every swap.
-		if (smooth) smoothWeldedNormals(geometry);
-	}
-	geometry.computeBoundingSphere();
-	preserveMaterialGroups(geometry, previous, object, groups);
-	preserveUVs(geometry, previous, uvs == null ? null : Array.from(toFloats(uvs)));
-	preserveColors(geometry, previous, colors == null ? null : toFloats(colors));
-	if (faceCounts != null && faceTris != null) applyFacesWire(geometry, faceCounts, faceTris);
-	else if (!carryFaces(geometry, previous)) clearStoredFaces(geometry);
-	previous?.dispose?.();
-	object.geometry = geometry;
-	object.userData.faceEdited = true; // parametric Geometry rows disable (like vertexEdited)
-	// if we're editing this object, re-derive working tris + faces (a remote
-	// change or undo swapped the geometry out from under the session, 122)
-	if (FS.object === object) {
-		rebuildFaces();
-		refreshFaceOverlay();
-		refreshFaceWireframe(); // B2: remote/undo swap replaced the geometry
-	}
-	// a live sculpt session's weld map is a cache over THIS geometry — rebuild
-	// it after a remote stroke / undo swap (terrainSculpt imports us, so it registers
-	// the hook at its module eval; rebuildSculptCaches picks the terrain OR mesh map)
-	sculptCacheRefresher?.(uuid, object);
-	// D1: a live VERTEX session's handles are a cache over THIS geometry too —
-	// rebuild them after an undo / remote commit. meshEdit registers the hook at
-	// module eval (it imports us — a dynamic import back would be a SECOND module
-	// instance under vite's ?t= HMR stamps, whose editingObject is always null).
-	vertexSessionRefresher?.(uuid);
-	pokeScene();
-}
 
-/**
- * 99 K5: give `geometry` (positions only) the previous geometry's normals with only the moved corners' touched
- * normals recomputed — when it is a move: the same corner count on a plain non-indexed Float32 previous geometry
- * with normals, at most half of the corners moved. Returns false (the caller recomputes in full) otherwise.
- * @param {any} geometry @param {any} previous @param {boolean} smooth
- */
-function incrementalNormals(geometry, previous, smooth) {
-	const pos = previous?.attributes?.position;
-	const normal = previous?.attributes?.normal;
-	const next = geometry.attributes.position.array;
-	if (!pos || !normal || previous.index || pos.isInterleavedBufferAttribute || normal.isInterleavedBufferAttribute) return false;
-	if (!(pos.array instanceof Float32Array) || !(normal.array instanceof Float32Array)) return false;
-	if (pos.array.length !== next.length || normal.array.length !== next.length || !next.length) return false;
-	const moved = changedCorners(pos.array, next);
-	if (moved.length * 2 > next.length / 3) return false;
-	const normals = Float32Array.from(normal.array);
-	geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
-	if (!moved.length) return true;
-	const before = frameOfGeometry(previous);
-	const plan = normalPlan(before, normals, moved, { smooth });
-	if (!plan) return false;
-	applyNormalPlan(frameOfGeometry(geometry), normals, plan);
-	return true;
-}
 
-/** Average normals across position-welded vertices of a NON-INDEXED geometry
- * (computeVertexNormals on split tris gives flat shading). @param {any} geometry */
-export function smoothWeldedNormals(geometry) {
-	const position = geometry.attributes.position;
-	const normal = geometry.attributes.normal;
-	if (!position || !normal) return;
-	/** @type {Map<string, number[]>} */
-	const groups = new Map();
-	for (let i = 0; i < position.count; i++) {
-		const key =
-			Math.round(position.getX(i) * 1e4) +
-			'|' +
-			Math.round(position.getY(i) * 1e4) +
-			'|' +
-			Math.round(position.getZ(i) * 1e4);
-		let list = groups.get(key);
-		if (!list) groups.set(key, (list = []));
-		list.push(i);
-	}
-	const sum = new THREE.Vector3();
-	for (const indices of groups.values()) {
-		if (indices.length < 2) continue;
-		sum.set(0, 0, 0);
-		for (const i of indices) sum.add(new THREE.Vector3(normal.getX(i), normal.getY(i), normal.getZ(i)));
-		sum.normalize();
-		for (const i of indices) normal.setXYZ(i, sum.x, sum.y, sum.z);
-	}
-	normal.needsUpdate = true;
-}
 
 /** Triangle count of an object's geometry (0 when not a mesh) @param {any} object */
-export function triangleCount(object) {
-	const pos = object?.geometry?.attributes?.position;
-	if (!pos) return 0;
-	return (object.geometry.index ? object.geometry.index.count : pos.count) / 3;
-}
-
-/** Is this object simple enough to face-edit in VR? D7: capped by the
- * user-editable vrFaceCap setting. @param {any} object */
-export function vrFaceEditable(object) {
-	const tris = triangleCount(object);
-	return tris > 0 && tris <= get(vrFaceCap);
-}
+// triangleCount / vrFaceEditable live in faceEditState.js
 
 // ---- B2: edit-session wireframe (shared by vertex + face modes) ------------
 
@@ -1002,80 +682,24 @@ let wire = null;
  * refreshFaceWireframe writes it and a module-eval subscriber can reach that. */
 let wireSource = null;
 
-/** wireframe overlay display toggle — honored by BOTH edit modes, local pref */
-export const meshEditWireframe = writable(
-	typeof localStorage === 'undefined' || safeStorage.getItem('meshEditWireframe') !== 'false'
-);
-meshEditWireframe.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') safeStorage.setItem('meshEditWireframe', String(value));
+// the four wire prefs + the editWireColor watch live in faceEditState.js (they also fire meshEdit's
+// rebuild while this module is not loaded); this module adds its own half of each reaction
+// meshGeoApply's in-session step: a remote change or undo swapped the geometry out from under
+// the open face session (122) -- re-derive working tris + faces and both overlays
+editHooks.faceSessionSwap = () => {
+	rebuildFaces();
+	refreshFaceOverlay();
+	refreshFaceWireframe(); // B2: remote/undo swap replaced the geometry
+};
+prefHooks.wireframe = (value) => {
 	if (wire) wire.visible = value; // live toggle mid-session (face mode)
-});
-
-/** D3: mesh-edit hotkeys (E/I/G/S/B/F/X · W) enabled — local pref, default ON.
- * Read by MeshEditPopup (the local keydown), shortcuts.js (bare mesh-edit keys
- * never match the registry while a session owns them — F also focuses) and
- * editorNavigation (W/A/S/D/Q/E fly is suppressed while it's on; toggling the
- * pref OFF is the escape hatch that returns the camera keys, quiz 15-D3). */
-export const meshEditHotkeys = writable(
-	typeof localStorage === 'undefined' || safeStorage.getItem('meshEditHotkeys') !== 'false'
-);
-meshEditHotkeys.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') safeStorage.setItem('meshEditHotkeys', String(value));
-});
-
-/** Show the object SELECTION OUTLINE while mesh-editing — local pref, default
- * OFF. The outline is a postprocessing pass composited after the whole scene,
- * so it paints OVER the vertex handles and the edge/face highlights no matter
- * what they do with depthTest/renderOrder: while you are editing elements, the
- * object-level outline is pure glare. Read by Outline.svelte. */
-export const meshEditOutline = writable(
-	typeof localStorage !== 'undefined' && safeStorage.getItem('meshEditOutline') === 'true'
-);
-meshEditOutline.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') safeStorage.setItem('meshEditOutline', String(value));
-});
-
-/** Show the raw TRIANGULATION in the edit wireframe — local pref, default OFF.
- * The default draws the QUAD structure instead: a quad's internal diagonal is
- * a triangulation artifact, deliberately not pickable (pickEdgeAt skips it) and
- * not dissolvable, so drawing it advertised an edge the tools refuse to touch.
- * Every modeller shows quads in edit mode for the same reason. */
-export const meshEditTriWire = writable(
-	typeof localStorage !== 'undefined' && safeStorage.getItem('meshEditTriWire') === 'true'
-);
-
-/** meshEdit owns the vertex-mode overlay; it imports THIS module, so it hands
- * us a rebuild callback rather than the other way round (the TDZ cycle rule).
- * Declared ABOVE the subscriber below, which runs at module eval — the classic
- * store-subscriber TDZ that has bitten this file twice.
- * @type {(() => void) | null} */
-let vertexWireRebuild = null;
-/** @param {() => void} fn */
-export function registerVertexWireRebuild(fn) {
-	vertexWireRebuild = fn;
-}
-
-meshEditTriWire.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') safeStorage.setItem('meshEditTriWire', String(value));
-	// the edge set differs, so this rebuilds rather than toggling visibility.
-	// `wire` is the only session state read here: faceEdited lives further down
-	// the file and would TDZ-crash the SSR eval, so refreshFaceWireframe (which
-	// checks it itself) is the gate.
+};
+prefHooks.triWire = () => {
 	if (wire) refreshFaceWireframe();
-	vertexWireRebuild?.();
-});
-
-/** 18-A: the overlay colour is baked into its material at BUILD time (and 'auto'
- * re-reads the object's luminance), so a colour change rebuilds — the same shape
- * as the triangulation toggle above, and subject to the same TDZ rule: everything
- * read here is declared above. */
-let lastEditWireColor = get(viewPrefs).editWireColor;
-viewPrefs.subscribe((prefs) => {
-	if (prefs.editWireColor === lastEditWireColor) return;
-	lastEditWireColor = prefs.editWireColor;
+};
+prefHooks.wireColor = () => {
 	if (wire) refreshFaceWireframe();
-	vertexWireRebuild?.();
-});
+};
 
 /** the welded edge keys that are quad DIAGONALS — everything the quad view leaves out.
  *
@@ -1145,14 +769,16 @@ function quadWireGeometry(geometry) {
 	const reuse = wireReuseFor(geometry);
 	const f = reuse ? reuse.frame : frameOfGeometry(geometry);
 	const faces = readStoredFaces(geometry);
-	const skip = internalEdgeKeysOf(f, faces, faces ? new Int32Array(0) : reuse ? reuse.partner : pairQuadsOf(f, QUAD_COPLANAR, quadScore));
+	const partner = faces ? new Int32Array(0) : reuse ? reuse.partner : pairQuadsOf(f, QUAD_COPLANAR, quadScore);
+	// lane 99-scrub: weld-id edges, not string keys (the same edges in the same order: ids are equal exactly when keys are)
+	const skip = internalEdgeIdsOf(f, faces, partner);
+	const V = weld(f);
 	const seen = new Set();
 	/** @type {number[]} the corner each wire point is read from (99 K5: a live edit rewrites the wire from them) */
 	const from = [];
 	for (let t = 0; t < f.count; t++) {
-		const keys = [keyAt(f, t, 0), keyAt(f, t, 1), keyAt(f, t, 2)];
 		for (let e = 0; e < 3; e++) {
-			const key = edgeKey(keys[e], keys[(e + 1) % 3]);
+			const key = edgeIdOf(f, V[t * 3 + e], V[t * 3 + ((e + 1) % 3)]);
 			if (skip.has(key) || seen.has(key)) continue;
 			seen.add(key);
 			from.push(t * 3 + e, t * 3 + ((e + 1) % 3));
@@ -1163,6 +789,9 @@ function quadWireGeometry(geometry) {
 	const out = new THREE.BufferGeometry();
 	out.setAttribute('position', new THREE.BufferAttribute(points, 3));
 	out.userData.fromCorners = Int32Array.from(from);
+	// lane 99-scrub: the DERIVED pairing this wire skipped the diagonals of (null when a stored partition drew it) —
+	// a mesh's first commit stores a partition and keeps the wire when that partition pairs the same
+	out.userData.partner = faces ? null : partner;
 	return out;
 }
 
@@ -1304,22 +933,13 @@ export function tickEditWireframe() {
 
 // ---- face edit MODE (VR + desktop-parity hook) ----
 
-/** @type {import('svelte/store').Writable<string|null>} uuid in face-edit mode */
-export const faceEditObject = writable(null);
-/** highlighted face index (ray/selection), or -1 @type {import('svelte/store').Writable<number>} */
-export const faceEditHighlight = writable(-1);
 /** armed op for the next commit (B4 adds the one-shots)
- * @type {import('svelte/store').Writable<'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'|'knife'>} */
+ * @type {import('svelte/store').Writable<'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'|'knife'|'bisect'>} */
 // MOVE is the default tool, not extrude: with auto-apply on, a plain click
 // COMMITS the armed op, so an extrude-by-default session turned every click on a
 // face into an extrusion — the reported "clicking twice on a quad breaks the
 // texture". Move only selects and seats the gizmo, which is what a click should
 // do; extrude is one key (E) or one button away.
-export const faceEditOp = writable('move');
-/** live op amount, stick-driven @type {import('svelte/store').Writable<number>} */
-export const faceEditAmount = writable(0.3);
-/** 176: desktop auto-apply the active extrude/inset op on face click */
-export const faceAutoApply = writable(true);
 
 /** 19-A P2: UI/e2e mirror of the LIVE op adjust — `{op, params}` or null.
  * The engine's own state (`opAdjust`) lives with the gesture code far below;
@@ -1327,7 +947,6 @@ export const faceAutoApply = writable(true);
  * must never read declarations that come later in the file (the documented
  * store-subscriber TDZ trap).
  * @type {import('svelte/store').Writable<any>} */
-export const opAdjustState = writable(null);
 
 /** 176: on a desktop face click, apply the active extrude/inset op if auto-apply
  * is on and a face is highlighted. Returns TRUE if it committed.
@@ -1349,7 +968,7 @@ export function autoApplyFaceOp() {
 }
 
 /** Arm an op (from the Faces sub-ring / desktop toolbar)
- * @param {'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'|'knife'} op */
+ * @param {'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'|'knife'|'bisect'} op */
 export function setFaceOp(op) {
 	faceEditOp.set(op);
 	// inset lives in 0..0.9; the others are signed distances
@@ -1387,7 +1006,6 @@ export function commitArmedFaceOp() {
  * RETIRED alias still reads as 'triangle', and must not be confused with
  * 'quad'); 'shell' = the connected island of welded triangles; 'object' = all.
  * @type {import('svelte/store').Writable<'quad'|'face'|'triangle'|'shell'|'object'|'polygon'>} */
-export const faceEditGranularity = writable('quad');
 
 /** the granularity with the legacy 'polygon' value migrated at read time */
 /** every triangle index of the session (the Object pick unit, select all) */
@@ -1399,12 +1017,7 @@ function granularity() {
 	const g = get(faceEditGranularity);
 	return g === 'polygon' ? 'triangle' : g;
 }
-/** Multi mode: triggers ACCUMULATE picks; ops apply to the whole set */
-export const faceEditMulti = writable(false);
 /** accumulated selected tri indices (into the session frame) in Multi mode @type {import('svelte/store').Writable<number[]>} */
-export const faceEditSelectedTris = writable(/** @type {number[]} */ ([]));
-/** the raw triangle under the ray/cursor (for polygon picking), or -1 */
-export const faceEditHoverTri = writable(-1);
 
 /** The tri indices a single pick selects, per granularity. @param {number} tri */
 function pickFaceUnitTris(tri) {
@@ -1893,7 +1506,6 @@ export function commitLoopCut(cuts = 1, position = 0.5) {
 
 /** 'faces' picks coplanar units, 'edges' picks single edges (M4)
  * @type {import('svelte/store').Writable<'faces'|'edges'>} */
-export const faceEditSubmode = writable('faces');
 
 // Per-MODE selection memory: switching Vertices <-> Edges <-> Faces to look at
 // something and coming back should not throw the pick away. Keyed by the object
@@ -2046,13 +1658,6 @@ export function setFaceSubmode(next) {
  * order, so the picks cross it as positions and are re-found after.
  * @type {{snapshot: () => {uuid: string, sel: number[]} | null, apply: (sel: number[]) => boolean,
  *   positions?: () => any, reselect?: (picks: any) => void} | null} */
-let vertexSelectionHistory = null;
-
-/** @param {{snapshot: () => any, apply: (sel: number[]) => boolean, positions?: () => any,
- *   reselect?: (picks: any) => void}} hooks */
-export function registerVertexSelectionHistory(hooks) {
-	vertexSelectionHistory = hooks;
-}
 
 /** guards against a wrapped command calling another wrapped command (granularity
  * changes clear the selection, loop select replaces it) — the OUTER pair wins */
@@ -2061,7 +1666,7 @@ let recordingSelection = false;
 /** @param {'faces'|'edges'|'vertices'} mode */
 function selectionSnapshot(mode) {
 	if (mode === 'vertices') {
-		const state = vertexSelectionHistory?.snapshot();
+		const state = editHooks.vertexSelectionHistory?.snapshot();
 		return state ? { uuid: state.uuid, sel: [...state.sel] } : null;
 	}
 	if (!FS.object) return null;
@@ -2130,7 +1735,7 @@ export function withSelectionHistory(mode, run) {
 // replay: set the stores back and rebuild the overlay. LOCAL ONLY — no peer send.
 registerHistoryKind('selection', (entry, state) => {
 	const sel = Array.isArray(state) ? state : [];
-	if (entry.mode === 'vertices') return vertexSelectionHistory?.apply(sel) ?? false;
+	if (entry.mode === 'vertices') return editHooks.vertexSelectionHistory?.apply(sel) ?? false;
 	if (!FS.object || FS.object.uuid !== entry.uuid || selectionSignature() !== entry.sig) {
 		showToast('That selection belongs to different geometry');
 		return false;
@@ -2235,10 +1840,83 @@ export function selectAllEdges() {
 export function invertEdgeSelection() {
 	return withSelectionHistory('edges', () => invertEdgeSelectionInner());
 }
+
+// ---- 99 K8: shortest-path select -------------------------------------------------------------------
+// Ctrl+click (or a click with the toolbox's Path toggle on) on a second element ADDS the shortest path from the
+// active one (the last picked) to it, the clicked element becoming the active one. Length or step count
+// (`meshPathTopological`). With nothing active, or on the active element itself, it is the ordinary additive
+// click (the caller falls back), so the first Ctrl+click still starts a pick.
+
+// pathGesture (the clicked element is a path target) lives in faceEditState.js (102-int-3: the boot asks it)
+
+/** 99 K8: the op mesh a path search reads (the session's in a face session, else the object's own)
+ * @param {any} geometry @returns {any} */
+function pathOpMesh(geometry) {
+	const ops = editSession.ops;
+	if (!ops || !geometry) return null;
+	if (FS.object?.geometry === geometry) return sessionOpMesh();
+	return heldOpMesh(ops, geometry, () => facePartitionOf(geometry).partition, OBJECT_PARTNER);
+}
+
+/**
+ * 99 K8: the shortest path between two elements of `geometry` in the editor's selection currency (vertex keys,
+ * edge keys, output triangles), or null (no kernel yet, an end not on the mesh, nothing connects them).
+ * @param {any} geometry @param {'vertex' | 'edge' | 'face'} kind @param {string | number} from @param {string | number} to
+ * @returns {{ keys?: string[], tris?: number[] } | null}
+ */
+export function pathBetween(geometry, kind, from, to) {
+	const om = pathOpMesh(geometry);
+	if (!om) {
+		showToast(KERNEL_LOADING);
+		return null;
+	}
+	return editSession.ops.pathSelect(om, kind, from, to, { topological: get(meshPathTopological) });
+}
+
+/** @param {number} tri the clicked triangle @returns {boolean} false = no path (the caller does the plain add) */
+function pathSelectFacesInner(tri) {
+	const sel = get(faceEditSelectedTris);
+	const from = sel.length ? sel[sel.length - 1] : -1;
+	if (from < 0 || !hasTri(FS.frame, tri) || !FS.object) return false;
+	const unit = pickFaceUnitTris(tri);
+	if (unit.includes(from)) return false;
+	const r = pathBetween(FS.object.geometry, 'face', from, tri);
+	if (!r?.tris) return false;
+	const set = new Set(sel);
+	for (const t of r.tris) set.add(t);
+	// the clicked unit last: it is the next path's start
+	for (const t of unit) set.delete(t);
+	faceEditSelectedTris.set([...set, ...unit]);
+	refreshFaceOverlay();
+	return true;
+}
+
+/** 99 K8: faces — add the shortest path from the active face to `tri`. @param {number} tri @returns {boolean} */
+export function pathSelectFaces(tri) {
+	return withSelectionHistory('faces', () => pathSelectFacesInner(tri));
+}
+
+/** @param {string} key the clicked edge @returns {boolean} */
+function pathSelectEdgesInner(key) {
+	const sel = get(edgeEditSelected);
+	const from = sel.length ? sel[sel.length - 1] : '';
+	if (!from || !key || from === key || !FS.object) return false;
+	const r = pathBetween(FS.object.geometry, 'edge', from, key);
+	if (!r?.keys) return false;
+	const set = new Set(sel);
+	for (const k of r.keys) set.add(k);
+	set.delete(key);
+	edgeEditSelected.set([...set, key]);
+	edgeEditHover.set('');
+	refreshEdgeHighlight();
+	return true;
+}
+
+/** 99 K8: edges — add the shortest chain from the active edge to `key`. @param {string} key @returns {boolean} */
+export function pathSelectEdges(key) {
+	return withSelectionHistory('edges', () => pathSelectEdgesInner(key));
+}
 /** selected edge keys, canonical `ka|kb` @type {import('svelte/store').Writable<string[]>} */
-export const edgeEditSelected = writable(/** @type {string[]} */ ([]));
-/** the edge under the cursor, or '' @type {import('svelte/store').Writable<string>} */
-export const edgeEditHover = writable('');
 
 /** the two endpoints of a canonical edge key, as live positions from the mesh
  * @param {string} key @returns {any[] | null} */
@@ -2987,7 +2665,6 @@ export function bevelEdges(width = 0.1, segments = 1, profile = 0) {
  * and `to` follows the pointer. A store rather than component state because the clicks come
  * from Scene.svelte and the keys (Enter, Backspace, Escape) from this module's listener.
  * @type {import('svelte/store').Writable<{points: number[][], from: number[], to: number[]}|null>} */
-export const knifePreview = writable(null);
 
 /** Drop a pending cut: every placed corner is forgotten and the band disappears. */
 export function cancelKnife() {
@@ -3434,7 +3111,7 @@ function recordOp(entry) {
 export function liveMirrorEntry(entry) {
 	if (liveMirroring || !entry?.uuid) return false;
 	const session = !!FS.object && entry.uuid === FS.object.uuid;
-	if (!session && vertexSelectionHistory?.snapshot()?.uuid !== entry.uuid) return false;
+	if (!session && editHooks.vertexSelectionHistory?.snapshot()?.uuid !== entry.uuid) return false;
 	const object = session ? FS.object : lookupEditable(entry.uuid);
 	if (!object?.geometry) return false;
 	const tris = readTriangles(object.geometry);
@@ -3489,9 +3166,9 @@ export function liveMirrorEntry(entry) {
 		} else {
 			// the vertex session rebuilds its handles in triangle order on the swap, so the
 			// picks are carried as POSITIONS (the commitFalloffSnapshot rule)
-			const picks = vertexSelectionHistory?.positions?.() ?? null;
+			const picks = editHooks.vertexSelectionHistory?.positions?.() ?? null;
 			mirrored = mirrorCommit(entry.uuid, false, positions, groups, uvs, faces, out.ids);
-			if (picks) vertexSelectionHistory?.reselect?.(picks);
+			if (picks) editHooks.vertexSelectionHistory?.reselect?.(picks);
 		}
 		// the op's ONE entry now holds the mirrored state (99 K2: compact, like every entry)
 		entry.after = mirrored.after;
@@ -5168,6 +4845,28 @@ function carryOrDeriveFaces(geometry, previous) {
 	storeDerivedFaces(geometry, readTriangles(geometry));
 }
 
+/** lane 99-scrub: `storeDerivedFaces` from the geometry's own frame (no triangle objects: pairQuads(tris) IS
+ * pairQuadsOf(frameOfTris(tris)), and frameOfGeometry reads readTriangles' values exactly); returns the pairing it
+ * stored from, or null @param {any} geometry @returns {Int32Array | null} */
+function storeDerivedFacesOf(geometry) {
+	const partner = derivedPartnerOf(geometry);
+	if (!partner.length) return null;
+	return storeFaces(geometry, derivePartition(partner.length, partner)) ? partner : null;
+}
+
+/** The derived quad pairing of a geometry, read off its frame: `pairQuads(readTriangles(geometry))` without the
+ * triangle objects (unit grabCommit99 pins the equality). @param {any} geometry @returns {Int32Array} */
+export function derivedPartnerOf(geometry) {
+	return pairQuadsOf(frameOfGeometry(geometry), QUAD_COPLANAR, quadScore);
+}
+
+/** two integer arrays, element for element @param {ArrayLike<number>} a @param {ArrayLike<number>} b */
+function sameInts(a, b) {
+	if (a.length !== b.length) return false;
+	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+	return true;
+}
+
 /**
  * Derive a quad partition from coplanarity and STORE it. Only ever reached for geometry
  * with no authored and no carryable topology — a mesh's first edit — because derivation
@@ -5778,10 +5477,38 @@ function sessionKernelCommit(run, beforeSwap, options = {}) {
 }
 
 /**
+ * 99 K8: BISECT the face selection (faces mode; nothing picked, or edges / vertices mode = the whole mesh) with a
+ * plane in the edited object's LOCAL space, on the session's op mesh (meshOps/bisectOp.js), IDs carried, ONE undo
+ * step that brings the starting pick back. Afterwards the cut is the EDGE selection in edges mode; in faces mode
+ * the pick is cleared (its triangles were renumbered). @param {{ point: number[], normal: number[] }} plane
+ * @param {{ clear?: 'inner' | 'outer' | null, fill?: boolean }} [options] @returns {boolean}
+ */
+export function commitBisect(plane, options = {}) {
+	interruptOpAdjust();
+	if (!FS.object) return false;
+	const sel = get(faceEditSubmode) === 'faces' ? get(faceEditSelectedTris).filter((/** @type {number} */ t) => hasTri(FS.frame, t)) : [];
+	const r = sessionKernelCommit(
+		(ops, om) => ops.bisectRegion(om, sel.length ? sel : null, plane, options),
+		() => {
+			if (get(faceEditSelectedTris).length) faceEditSelectedTris.set([]);
+			faceEditHighlight.set(-1);
+			clearEdgeSelectionInner();
+		},
+		{ tooLarge: 'cut' }
+	);
+	if (!r) return false;
+	if (get(faceEditSubmode) === 'edges' && r.cutKeys.length) {
+		edgeEditSelected.set(r.cutKeys.filter((/** @type {string} */ k) => !!edgeEndpoints(k)));
+		refreshEdgeHighlight();
+	} else refreshFaceOverlay();
+	return true;
+}
+
+/**
  * Run an op on the highlighted face and commit: rebuild geometry, replicate
  * the snapshot, record history. subdivide/flip take no amount (B4); for M3's
  * loopcut and 18-C5's bridge `amount` is the CUT COUNT, not a distance.
- * @param {'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'|'knife'} op
+ * @param {'extrude'|'inset'|'move'|'delete'|'subdivide'|'flip'|'bridge'|'loopcut'|'knife'|'bisect'} op
  * @param {number} amount
  */
 export function commitFaceOp(op, amount) {
@@ -6001,7 +5728,7 @@ function broadcastMeshGeo(uuid, positions, groups, uvs, colors) {
  */
 function captureSelection(uuid) {
 	const face = FS.object?.uuid === uuid;
-	const vertex = vertexSelectionHistory?.snapshot();
+	const vertex = editHooks.vertexSelectionHistory?.snapshot();
 	return {
 		uuid,
 		faces: face ? [...get(faceEditSelectedTris)] : null,
@@ -6029,8 +5756,8 @@ function restoreCapturedSelection(sel, uuid) {
 			if (get(faceEditOp) === 'move') attachFaceGizmo();
 			else detachFaceGizmo();
 		}
-	} else if (sel.verts && vertexSelectionHistory?.snapshot()?.uuid === uuid) {
-		vertexSelectionHistory.apply(sel.verts);
+	} else if (sel.verts && editHooks.vertexSelectionHistory?.snapshot()?.uuid === uuid) {
+		editHooks.vertexSelectionHistory.apply(sel.verts);
 	}
 }
 
@@ -6062,7 +5789,8 @@ function restoreCapturedSelection(sel, uuid) {
  *   stampFaces?: boolean,
  *   carryColors?: boolean,
  *   selectionBefore?: any,
- *   wireFaces?: 'object' | 'none'
+ *   wireFaces?: 'object' | 'none',
+ *   weldBefore?: Int32Array | null
  * }} c `after` = `{positions, groups?, uvs?, colors?}` or a bare positions array; `faces` = the
  *   partition the operator AUTHORED (applied as stored topology; absent = carry or derive);
  *   `cap` = the noun of the size refusal (false: the caller already refused); `stampFaces` =
@@ -6093,8 +5821,14 @@ export function commitMesh(c) {
 		// carryOrDeriveFaces -> storeDerivedFaces on the new triangles), so later swaps carry these faces instead of
 		// re-guessing them. One pairing pass, on the first edit only (v1.75 paid it on every commit)
 		const live = FS.object?.geometry;
-		if (live && !readStoredFaces(live)) storeDerivedFaces(live, readTriangles(live));
-		afterInPlaceCommit();
+		const stored = !!(live && readStoredFaces(live));
+		// lane 99-scrub: the pairing straight off the geometry's frame (pairQuads(readTriangles(g)) is this pairing of
+		// frameOfTris of the same values, so the partition is the same — without 67k triangle objects)
+		const partner = live && !stored ? storeDerivedFacesOf(live) : null;
+		// the wire stays when its structure does: same weld, and the partition it skipped is the one stored now
+		const wirePartner = wire?.geometry?.userData?.partner;
+		const samePartition = stored || (!!partner && !!wirePartner && sameInts(partner, wirePartner));
+		afterInPlaceCommit(samePartition ? (c.weldBefore ?? null) : null);
 	} else if (bare) {
 		applyMeshGeo(uuid, positions);
 	} else {
@@ -6354,6 +6088,9 @@ function ensureLiveGeometry() {
 	FS.object.geometry = copy;
 	FS.frame = frameOfGeometry(copy);
 	weld(FS.frame);
+	// lane 99-scrub: the copy holds the same triangles in the same order, so the edit wire drawn from `g` describes it
+	// corner for corner — re-source it, or the first live write rebuilds the whole wire (~190 ms at 67k)
+	if (wireSource === g) wireSource = copy;
 	// the geometry the copy replaced: a cancel puts it back (a grab that changed nothing leaves the session as it
 	// was, the K3 lossless leave included), a commit disposes it when it was ours
 	return { replaced: g };
@@ -6549,6 +6286,9 @@ export function beginFaceGrab(faceOrIndex) {
 	FS.grab = {
 		index,
 		triIndices,
+		// lane 99-scrub: the weld before any write (writeLive drops FS.frame.V per move); the commit keeps the edit
+		// wire when the move left it unchanged
+		weldAtStart: weld(FS.frame),
 		// a TRIPLE, matching commitFaceGrab's `after`: an undo then restores the
 		// pre-grab mapping explicitly instead of relying on carry-over
 		before: { ...stateOf(FS.frame) },
@@ -6802,6 +6542,7 @@ export function commitFaceGrab() {
 	const before = FS.grab.before;
 	const moved = FS.grab.corners;
 	const selectionBefore = FS.grab.selectionBefore;
+	const weldBefore = FS.grab.weldAtStart ?? null;
 	settleReplaced(FS.grab, false);
 	FS.grab = null;
 	// carry groups + uvs explicitly rather than leaning on preserveUVs' carry-over (commitFaceAdjust's shape):
@@ -6820,7 +6561,8 @@ export function commitFaceGrab() {
 		stampFaces: true,
 		record: 'op',
 		cap: false,
-		selectionBefore
+		selectionBefore,
+		weldBefore
 	});
 	return true;
 }
@@ -6848,13 +6590,28 @@ export function cancelFaceGrab() {
 }
 
 /** after the geometry changed IN PLACE (a grab's commit or cancel): the readers re-weld, the overlays and the wire
- * follow (the applyGeometrySnapshot tail, without a new geometry) */
-function afterInPlaceCommit() {
+ * follow (the applyGeometrySnapshot tail, without a new geometry)
+ * @param {Int32Array | null} [weldBefore] the weld the edit started from, when its partition is unchanged (the wire
+ *   is then kept if the weld is too) */
+function afterInPlaceCommit(weldBefore = null) {
 	rebuildFaces();
 	refreshFaceOverlay();
 	refreshEdgeHighlight();
-	refreshFaceWireframe();
+	// lane 99-scrub: the quad wire is a function of the weld (which corners share a vertex) and the stored partition.
+	// A move that kept both — the usual grab — leaves the wire's STRUCTURE as it was, and the drag already rewrote
+	// its points in place (writeLive -> updateFaceWireframe); rebuilding it here was ~190 ms of a 67k commit (string
+	// edge keys over every triangle). A move that changed the weld (a corner dragged onto another vertex) rebuilds.
+	if (weldBefore && wireFitsWeld(weldBefore)) updateFaceWireframe();
+	else refreshFaceWireframe();
 	pokeScene();
+}
+
+/** whether the edit wire was built from this very geometry and the session's weld is still `weldBefore`
+ * (same corners welded together: the integer weld numbers vertices in first-seen corner order, so an unchanged
+ * partition gives an identical array) @param {Int32Array} weldBefore */
+function wireFitsWeld(weldBefore) {
+	if (!wire || !FS.object || wireSource !== FS.object.geometry || wire.parent !== FS.object) return false;
+	return sameInts(weld(FS.frame), weldBefore);
 }
 
 /**
@@ -6931,14 +6688,6 @@ registerMeshPivotListener(() => {
 	refreshMeshPivotMarker(FS.object);
 });
 
-/** meshEdit registers here so the vertex proxy follows both prefs without importing
- * faceEdit's internals (and without a cycle — meshEdit already imports this module)
- * @type {(() => void)[]} */
-const gizmoPrefListeners = [];
-/** @param {() => void} fn */
-export function registerGizmoPrefListener(fn) {
-	gizmoPrefListeners.push(fn);
-}
 
 // ^ declared ABOVE the stores below: their subscribers run SYNCHRONOUSLY at module
 // eval, and reading a `let`/`const` declared later TDZ-crashes the SSR prerender
@@ -6949,36 +6698,15 @@ export function registerGizmoPrefListener(fn) {
  * orients local, whatever `.space` says. Declared AFTER faceProxy: the
  * subscriber runs at module eval (the store-subscriber TDZ gotcha).
  * @type {import('svelte/store').Writable<'local'|'world'>} */
-export const faceGizmoSpace = writable(
-	typeof localStorage !== 'undefined' && safeStorage.getItem('faceGizmoSpace') === 'world'
-		? 'world'
-		: 'local'
-);
-faceGizmoSpace.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') safeStorage.setItem('faceGizmoSpace', String(value));
+// faceGizmoSpace / meshGizmoEnabled (and meshEdit's listeners) live in faceEditState.js; this is
+// the face half of each reaction, in the old order (before meshEdit's listeners)
+prefHooks.gizmoSpace = (value) => {
 	/** @type {any} */
 	const controls = get(TControls);
 	// live flip while the face gizmo is seated
 	if (FS.proxy && controls && controls.object === FS.proxy) controls.setSpace?.(value);
-	// vertex mode seats its own proxy (meshEdit) — it re-reads this store on change
-	gizmoPrefListeners.forEach((fn) => fn());
-});
-
-/**
- * Whether a transform gizmo seats at all, in EVERY element mode (vertices/edges/faces).
- * One switch rather than three: the gizmo is a preference about how you like to work, not
- * a property of what you happen to have selected, and a per-mode toggle would need
- * explaining. Local pref, default ON.
- *
- * Modes with no selection detach anyway; this is the answer to "let me get the gizmo out
- * of the way" — modelling with click-select and the ops toolbar only.
- * @type {import('svelte/store').Writable<boolean>} */
-export const meshGizmoEnabled = writable(
-	typeof localStorage !== 'undefined' ? safeStorage.getItem('meshGizmoEnabled') !== '0' : true
-);
-meshGizmoEnabled.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') safeStorage.setItem('meshGizmoEnabled', value ? '1' : '0');
-	if (typeof window === 'undefined') return;
+};
+prefHooks.gizmoEnabled = (value) => {
 	// live: seat or drop the gizmo the moment the switch flips, in whichever mode is open.
 	// 24-B1: switching it back ON also restores a pick the mode key hid, so the toolbox
 	// button and the key are one control (no-op when nothing is hidden)
@@ -6986,8 +6714,7 @@ meshGizmoEnabled.subscribe((value) => {
 		restoreHiddenElements();
 		attachFaceGizmo();
 	} else detachFaceGizmo();
-	gizmoPrefListeners.forEach((fn) => fn());
-});
+};
 
 /** E9: pick the world axis least aligned with n (deterministic tangent seed)
  * @param {any} n */
@@ -7239,6 +6966,8 @@ function mergeAdjustParams(a, patch) {
 	} else if (a.op === 'subdivide') {
 		// P3: 4^levels growth — MAX_SNAPSHOT backstops the big-face case
 		p.levels = Math.max(1, Math.min(Math.round(p.levels ?? 1) || 1, 3));
+		// 99 K8: smooth = Catmull-Clark (the kernel's, shared with the agent); off = the quad-aware split
+		p.smooth = !!p.smooth;
 	} else if (a.op === 'edge-extrude') {
 		// P5b: world units, signed — negative pulls the strip the other way
 		p.distance = Math.min(Math.max(p.distance ?? 0.5, -5), 5);
@@ -7486,7 +7215,12 @@ function runAdjustCore(a) {
 		// P3 / 99 K4 family 6: the quad-aware split `levels` times on a COPY of the op mesh captured at begin
 		const ops = kernelOps();
 		const om = ops.beginOp(ops.cloneOpMesh(a.opBase));
-		const r = ops.subdivideLevels(om, a.target.triIndices, a.quadPartner, p.levels);
+		// 99 K8: smooth = Catmull-Clark on the pick (null = the whole mesh); the plain split needs a pick
+		if (!p.smooth && !a.target.triIndices) return { error: 'Click a face first' };
+		const r = p.smooth
+			? ops.smoothSubdivide(om, a.target.triIndices, p.levels)
+			: ops.subdivideLevels(om, a.target.triIndices, a.quadPartner, p.levels);
+		if ('error' in r) return { error: r.error };
 		return {
 			...opResult(om),
 			faces: ops.opPartition(om, 'appearance'),
@@ -7619,7 +7353,7 @@ function applyAdjustSelection(a, select, seatGizmo) {
 	} else if (select.kind === 'vertsCleared') {
 		// the bevel replaced the corner, so stale handle indices mean nothing
 		// (bevelSelectedVerts' rule); applyMeshGeo already rebuilt the handles
-		vertexSelectionHistory?.apply([]);
+		editHooks.vertexSelectionHistory?.apply([]);
 	}
 }
 
@@ -7843,8 +7577,9 @@ export function beginOpAdjust(op, params, opts = {}) {
 		// P3: the target is the picked tri set; the pairing rides along exactly
 		// like loopcut's (subdivideLevels is quad-aware through it)
 		const face = opts.target ?? opTargetFace();
-		if (!face?.triIndices?.length) return false;
-		a.target = { triIndices: [...face.triIndices] };
+		// 99 K8: a smooth subdivide with nothing picked smooths the whole mesh (Catmull-Clark's usual use)
+		if (!face?.triIndices?.length && !params?.smooth) return false;
+		a.target = { triIndices: face?.triIndices?.length ? [...face.triIndices] : null };
 		a.quadPartner = FS.quadPartner;
 		if (!(a.opBase = sessionOpMesh())) return kernelLoadingRefusal();
 	} else if (op === 'bridge') {
@@ -7902,7 +7637,7 @@ export function beginOpAdjust(op, params, opts = {}) {
 		faces: [...get(faceEditSelectedTris)],
 		highlight: get(faceEditHighlight),
 		edges: [...get(edgeEditSelected)],
-		verts: vertexSelectionHistory?.snapshot()?.sel ?? null
+		verts: editHooks.vertexSelectionHistory?.snapshot()?.sel ?? null
 	};
 	// run the pure core + apply
 	const result = mirrorAdjustResult(a, runAdjustCore(a));
@@ -7949,6 +7684,149 @@ export function beginOpAdjust(op, params, opts = {}) {
 	return true;
 }
 
+// ---- lane 99-scrub: the loop-cut scrub is a PREVIEW --------------------------
+// Re-running the cut per scrub step cost 249-375 ms a step on the Deck at 67k (the 99-int row): a kernel copy, the
+// cut, a geometry write, the normals and the BVH, and a wire message, for a state the hand has already left. While
+// the options pane's DragRow holds a scrub open, a loop-cut adjust only moves a LINE: the ring was walked once at
+// begin (a.target / a.altTarget), its rails are read once per axis, and a step writes 2 points per quad per cut
+// into one preallocated buffer. The cut runs ONCE on release, through the same core, and that settle is the one
+// broadcast — peers see the result, not the scrub. Typed input and direct reapply calls (VR, tests) keep the live
+// cut: the bracket is opened only by a pointer scrub.
+
+/** @type {any} scene-root LineSegments: where the scrubbed cut will land */
+let loopCutPreview = null;
+/** most cuts the pane allows (mergeAdjustParams' clamp) — sizes the preview buffer once per ring */
+const LOOPCUT_MAX_CUTS = 20;
+
+/**
+ * Open the scrub bracket (DragRow onscrubstart): from here until settleOpAdjust, a loop-cut adjust previews instead
+ * of cutting. Any other op, or a deferred (VR) adjust, is untouched. @returns {boolean} whether the bracket opened
+ */
+export function beginAdjustScrub() {
+	const a = FS.adjust;
+	if (!a || a.op !== 'loopcut' || a.record === 'deferred' || !a.opBase) return false;
+	const object = liveObjectOf(a);
+	if (!object || object.geometry !== a.installedGeometry) return false;
+	a.scrub = true;
+	a.scrubDirty = false;
+	a.scrubFrom = { ...a.params }; // what the cut on screen was made with (a refused release goes back to it)
+	return true;
+}
+
+/** the rails of the ring the current axis cuts across, read once per axis per adjust @param {any} a */
+function loopCutRailsOf(a) {
+	const axis = a.params.axis === 1 && a.altTarget?.length ? 1 : 0;
+	a.rails ??= [null, null];
+	if (!a.rails[axis]) {
+		const ring = axis === 1 ? a.altTarget : a.target;
+		a.rails[axis] = kernelOps().loopCutRails(a.opBase, ring, a.quadPartner);
+	}
+	return a.rails[axis];
+}
+
+/** write the preview line for the adjust's current cuts / position / axis, in place @param {any} a */
+function drawLoopCutPreview(a) {
+	const scene = get(globalScene);
+	const object = liveObjectOf(a);
+	if (!scene || !object) return;
+	const rails = loopCutRailsOf(a);
+	const quads = rails.length / 12;
+	if (!loopCutPreview || loopCutPreview.userData.capacity < quads) {
+		clearLoopCutPreview();
+		const geometry = new THREE.BufferGeometry();
+		geometry.setAttribute(
+			'position',
+			new THREE.BufferAttribute(new Float32Array(Math.max(1, quads) * LOOPCUT_MAX_CUTS * 6), 3).setUsage(
+				THREE.DynamicDrawUsage
+			)
+		);
+		loopCutPreview = new THREE.LineSegments(
+			geometry,
+			new THREE.LineBasicMaterial({ color: 0xffd23f, depthTest: false, transparent: true })
+		);
+		loopCutPreview.userData.capacity = Math.max(1, quads);
+		loopCutPreview.renderOrder = 1000; // over the edge overlay (999)
+		loopCutPreview.name = 'loopcut-preview';
+		loopCutPreview.raycast = () => {}; // never eat a pick (the buildEditWireframe rule)
+		loopCutPreview.frustumCulled = false; // the buffer is rewritten in place; its bounds are never recomputed
+		scene.add(loopCutPreview);
+	}
+	// baked world space like the edge overlay; the object cannot move during a scrub, so once per step is plenty
+	object.updateMatrixWorld(true);
+	loopCutPreview.matrixAutoUpdate = false;
+	loopCutPreview.matrix.copy(object.matrixWorld);
+	loopCutPreview.matrixWorldNeedsUpdate = true;
+	const stops = kernelOps().loopCutStops(a.params.cuts, a.params.position);
+	const attr = loopCutPreview.geometry.attributes.position;
+	const out = attr.array;
+	let n = 0;
+	for (let q = 0; q < quads; q++) {
+		const o = q * 12; // A B C D
+		for (const t of stops) {
+			for (const [from, to] of [
+				[o, o + 9], // A -> D
+				[o + 3, o + 6] // B -> C
+			]) {
+				out[n++] = rails[from] + (rails[to] - rails[from]) * t;
+				out[n++] = rails[from + 1] + (rails[to + 1] - rails[from + 1]) * t;
+				out[n++] = rails[from + 2] + (rails[to + 2] - rails[from + 2]) * t;
+			}
+		}
+	}
+	loopCutPreview.geometry.setDrawRange(0, n / 3);
+	attr.addUpdateRange?.(0, n);
+	attr.needsUpdate = true;
+	loopCutPreview.visible = true;
+}
+
+/** drop the preview line (release, end, cancel, a new adjust) */
+function clearLoopCutPreview() {
+	if (!loopCutPreview) return;
+	loopCutPreview.parent?.remove(loopCutPreview);
+	loopCutPreview.geometry?.dispose?.();
+	loopCutPreview.material?.dispose?.();
+	loopCutPreview = null;
+}
+
+/** e2e: what the preview draws now — segment count and the segments (object-local), or null when none is up */
+export function loopCutPreviewDebug() {
+	if (!loopCutPreview) return null;
+	const count = loopCutPreview.geometry.drawRange.count;
+	return {
+		segments: count / 2,
+		points: Array.from(loopCutPreview.geometry.attributes.position.array.subarray(0, count * 3))
+	};
+}
+
+/**
+ * The release of a scrub that moved the cut: run the loop cut ONCE at the final params and apply it the way
+ * beginOpAdjust does (one full apply, one broadcast), then keep the history entry's `after` current.
+ * @param {any} a @returns {boolean}
+ */
+function settleScrubbedCut(a) {
+	const result = mirrorAdjustResult(a, runAdjustCore(a));
+	if (result.error || resultState(result).positions.length > MAX_SNAPSHOT) {
+		// the cut on screen is still the last good one: its params come back with it
+		a.params = { ...a.scrubFrom };
+		opAdjustState.set({ op: a.op, params: { ...a.params }, ...adjustStateExtras(a) });
+		if (result.error) showToast(result.error);
+		else if (!a.capWarned) {
+			a.capWarned = true;
+			showToast(tooLargeMessage(resultState(result).positions.length, 'edit'));
+		}
+		return false;
+	}
+	a.lastFaces = result.faces;
+	a.lastIds = result.ids ?? null;
+	a.lastSelect = result.select;
+	a.after = applyAdjustFull(a, result);
+	applyAdjustSelection(a, result.select, true);
+	if (a.entry) a.entry.after = a.after;
+	a.installedGeometry = liveObjectOf(a)?.geometry ?? null;
+	opAdjustState.set({ op: a.op, params: { ...a.params }, ...adjustStateExtras(a) });
+	return true;
+}
+
 /**
  * Re-run the live adjust at merged params — every scrub move. IDENTITY GUARD
  * first: `geometry !== installedGeometry` means an undo / remote meshgeo /
@@ -7965,6 +7843,14 @@ export function reapplyOpAdjust(patch = {}) {
 		return false;
 	}
 	mergeAdjustParams(a, patch);
+	if (a.scrub) {
+		// lane 99-scrub: a loop-cut SCRUB moves the preview line only — no kernel op, no geometry, no wire; the
+		// cut runs once, on release (settleOpAdjust)
+		a.scrubDirty = true;
+		drawLoopCutPreview(a);
+		opAdjustState.set({ op: a.op, params: { ...a.params }, ...adjustStateExtras(a) });
+		return true;
+	}
 	const result = mirrorAdjustResult(a, runAdjustCore(a));
 	if (result.error) return false; // keep the last good geometry on a refusal
 	const state = resultState(result);
@@ -8011,6 +7897,14 @@ export function settleOpAdjust() {
 	if (!object || object.geometry !== a.installedGeometry) {
 		endOpAdjust();
 		return false;
+	}
+	if (a.scrub) {
+		a.scrub = false;
+		clearLoopCutPreview();
+		if (a.scrubDirty) {
+			a.scrubDirty = false;
+			return settleScrubbedCut(a);
+		}
 	}
 	const result = {
 		state: stateOfGeometry(object.geometry),
@@ -8069,6 +7963,7 @@ export function cancelOpAdjust() {
  * picks (withSelectionHistory), mode switches, session exits, and the
  * identity guard. */
 export function endOpAdjust() {
+	clearLoopCutPreview();
 	if (!FS.adjust) return;
 	FS.adjust = null;
 	opAdjustState.set(null);
@@ -8187,14 +8082,17 @@ export function facePartitionOf(geometry) {
 }
 
 /** the face ops faceOpOnObject runs */
-export const OBJECT_FACE_OPS = /** @type {const} */ (['extrude', 'inset', 'move', 'bevel', 'subdivide', 'delete', 'flip']);
+export const OBJECT_FACE_OPS = /** @type {const} */ (['extrude', 'inset', 'move', 'bevel', 'subdivide', 'subdivide_smooth', 'bisect', 'delete', 'flip']);
 
 /**
  * Run one face operator on an object's triangles `triIndices` (one region, like a multi-select).
  * @param {string} uuid
  * @param {string} op one of OBJECT_FACE_OPS
  * @param {number[]} triIndices
- * @param {{amount?: number, width?: number, segments?: number, profile?: number, direction?: 'out'|'in'}} [options]
+ * @param {{amount?: number, width?: number, segments?: number, profile?: number, direction?: 'out'|'in', levels?: number,
+ *   point?: number[], normal?: number[], clear?: 'inner'|'outer'|null, fill?: boolean}} [options]
+ *   `levels` = subdivide_smooth's Catmull-Clark levels (1-3); `point` / `normal` / `clear` / `fill` = bisect's plane
+ *   (object-local) and options
  * @returns {{ok: true, triangles: number, kept: number[] | null} | {ok: false, error: string}}
  *   `kept` = the triangles still selected afterwards (the extruded cap, the inset's inner face — the
  *   ops that move the picked triangles in place and APPEND the rest), null where the op reshapes them
@@ -8233,6 +8131,24 @@ export function faceOpOnObject(uuid, op, triIndices, options = {}) {
 		// 99 K4 family 6: on the kernel, IDs carried
 		const partner = storedPartner(object.geometry, tris.length) ?? pairQuads(tris);
 		const r = objectKernelCommit(uuid, object, () => partition, tris, (ops, om) => ops.subdivideUnits(om, picked, partner));
+		return r && !('error' in r) ? { ok: true, triangles: r.count, kept: null } : { ok: false, error: r?.error ?? 'the edit could not be committed' };
+	} else if (op === 'subdivide_smooth') {
+		// 99 K8: Catmull-Clark on the kernel (the one implementation create_shape's `subdivide` uses too), IDs carried
+		const levels = Math.max(1, Math.min(Math.round(Number(options.levels ?? 1)) || 1, 3));
+		const r = objectKernelCommit(uuid, object, () => partition, tris, (ops, om) =>
+			ops.smoothSubdivide(om, picked.length >= tris.length ? null : picked, levels)
+		);
+		return r && !('error' in r) ? { ok: true, triangles: r.count, kept: null } : { ok: false, error: r?.error ?? 'the edit could not be committed' };
+	} else if (op === 'bisect') {
+		// 99 K8: the plane cut on the kernel, IDs carried; every picked face (all of them = the whole mesh)
+		const v3 = (/** @type {any} */ a) => (Array.isArray(a) && a.length === 3 && a.every((x) => Number.isFinite(Number(x))) ? a.map(Number) : null);
+		const point = v3(options.point) ?? [0, 0, 0];
+		const n = v3(options.normal);
+		if (!n) return { ok: false, error: 'bisect: give the plane a normal [x, y, z]' };
+		const clear = options.clear === 'inner' || options.clear === 'outer' ? options.clear : null;
+		const r = objectKernelCommit(uuid, object, () => partition, tris, (ops, om) =>
+			ops.bisectRegion(om, picked.length >= tris.length ? null : picked, { point, normal: n }, { clear, fill: !!options.fill })
+		);
 		return r && !('error' in r) ? { ok: true, triangles: r.count, kept: null } : { ok: false, error: r?.error ?? 'the edit could not be committed' };
 	} else if (op === 'delete') {
 		if (picked.length >= tris.length) return { ok: false, error: 'delete: that would remove every face of the mesh' };
@@ -8332,3 +8248,6 @@ function objectKernelCommit(uuid, object, partition, tris, run, options = {}) {
 
 /** the face ops whose picked triangles survive at the same indices (moved in place; new ones appended) */
 const KEEPS_SELECTION = new Set(['extrude', 'inset', 'move', 'flip']);
+
+// 102-boot-diet-2: tell the boot's loader this module is live, however it was imported (see faceEditLazy.js)
+adoptFaceEdit(faceEditModule);

@@ -77,7 +77,9 @@
 	import { startSnapEngine, setSnapPointer, beginSnapDrag, endSnapDrag, maybeSnapGizmo, snapAnchorPicking, snapAnchorClick, updateSnapAnchor } from '$lib/snapEngine';
 	import { meshPivotPicking, meshPivotClick, tickMeshPivotMarker } from '$lib/meshPivot';
 	import { editingObject, enterEditMode, exitEditMode, raycastHandles, clearVertexSelection, onProxyMoved, onProxyDragChanged, tickMeshEdit, selectVerticesInRect } from '$lib/meshEdit';
-	import { faceEditObject, enterFaceEdit, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, clearFaceSelection, pickFaceUnit, lookupEditable, faceEditSubmode, faceEditSelectedTris, setFaceSubmode, selectElementsInRect, pickEdge, pickEdgeAt, clearEdgeSelection, knifeClick, knifeHover, knifePreview, tickEditWireframe } from '$lib/faceEdit';
+	import { faceEditObject, faceEditOp, faceEditMulti, lookupEditable, faceEditSubmode, faceEditSelectedTris, knifePreview, pathGesture } from '$lib/faceEditState';
+	import { faceEditNow, withFaceEdit, loadFaceEdit } from '$lib/faceEditLazy';
+	import { bisectClick, bisectHover, bisectPreview, onBisectPlaneMoved } from '$lib/meshBisectTool'; // 99 K8
 	import { fireObjectClick } from '$lib/flowRuntime';
 	import { peerScenes } from '$lib/peerScenes';
 	// 37 R23/R22: presence extras on the camera stream (a walker's feet, the knocked-off idle)
@@ -163,7 +165,13 @@
 		el.__captureGuarded = true;
 		el.setPointerCapture = function (this: any, pointerId: number) {
 			if (this.ownerDocument?.pointerLockElement) return; // the lock already owns the pointer
-			return Element.prototype.setPointerCapture.call(this, pointerId);
+			// 63 PG1: a framed export's first click requests the lock and presses in the same moment;
+			// the lock is not granted yet and Chromium still refuses the capture (a page error there)
+			try {
+				return Element.prototype.setPointerCapture.call(this, pointerId);
+			} catch (e: any) {
+				if (e?.name !== 'InvalidStateError') throw e;
+			}
 		};
 		return () => {
 			delete el.setPointerCapture;
@@ -481,7 +489,7 @@
 		tickSplatsLazy($objectsGroup, performance.now()); // 102: splat meshes follow their carriers (after anything that poses them)
 		tickArraysLazy($objectsGroup, performance.now()); // 102b-arrange: every peer draws its arrays' copies (102-int-2: after constraints, decals and splats pose the originals)
 		tickMeshEdit(); // vertex handles follow the object if it moves (119)
-		tickEditWireframe(); // ...and the edit wireframe stays parented to it (faceEdit)
+		faceEditNow()?.tickEditWireframe(); // ...and the edit wireframe stays parented to it (faceEdit)
 		tickMeshPivotMarker(); // ...and the placed transform pivot's marker (meshPivot)
 		tickSplineEdit(); // 57.3: spline handles do the same (scene-root, world space)
 		tickPathObjects(scene, $objectsGroup, { playing: $isLocked === true, selected: $selectedObjects ?? [] }); // 78 F4: hide in Play, numbers, scrub ghost
@@ -520,7 +528,7 @@
 			// multi-select pivot excludes EVERY member (P3: its drags snap too).
 			if (!event.value) endSnapDrag();
 			else if (object.userData?.isMultiPivot) beginSnapDrag([...$selectedObjects]);
-			else if (!object.userData?.isVertexProxy && !object.userData?.isFaceProxy && !object.userData?.isLodLevelProxy)
+			else if (!object.userData?.isVertexProxy && !object.userData?.isFaceProxy && !object.userData?.isLodLevelProxy && !object.userData?.isBisectProxy)
 				beginSnapDrag([object.uuid]);
 			// vertex handles record their own history entries
 			if (object.userData?.isVertexProxy) {
@@ -529,9 +537,11 @@
 			}
 			// face gizmo (163): begin the rigid grab on drag, commit on release
 			if (object.userData?.isFaceProxy) {
-				onFaceGizmoDragChanged(event.value);
+				faceEditNow()?.onFaceGizmoDragChanged(event.value);
 				return;
 			}
+			// 99 K8: the bisect plane is a helper: a drag records and sends nothing
+			if (object.userData?.isBisectProxy) return;
 			// 57.3: a spline control point — ONE spline undo entry per drag
 			if (object.userData?.isSplineProxy) {
 				onSplineProxyDragChanged(event.value);
@@ -726,7 +736,7 @@
 				}
 				const action = $doubleClickAction;
 				selectObject(target.uuid, isDouble && action === 'properties', additive);
-				if (isDouble && action === 'meshedit') enterFaceEdit(target.uuid);
+				if (isDouble && action === 'meshedit') void withFaceEdit((fe) => fe.enterFaceEdit(target.uuid));
 				else if (isDouble && action === 'sametype') selectSameType(target.uuid);
 				else if (isDouble && action === 'isolate') {
 					focusObject(target.uuid);
@@ -782,17 +792,25 @@
 			},
 			applySelection: (uuids) => applySelectionSet(uuids),
 			enterFace: (uuid, submode, tris) => {
-				enterFaceEdit(uuid);
-				// enterFaceEdit can REFUSE (the triangle cap) — a legitimate outcome on a
-				// machine that is not the author's; the scene stays loaded and unedited
-				if (!get(faceEditObject)) return null;
-				// the submode switch refreshes BOTH overlays and re-seats the gizmo, so it
-				// has to run BEFORE the picks or it wipes them
-				// only 'edges' can reach here: 'vertices' returned above and 'faces' is the
-				// session's own entry submode (lang="ts", so the literal has to be narrowed)
-				if (submode === 'edges') setFaceSubmode('edges');
-				else if (tris.length) faceEditSelectedTris.set(tris);
-				return submode;
+				const resume = (fe: typeof import('$lib/faceEdit')) => {
+					fe.enterFaceEdit(uuid);
+					// enterFaceEdit can REFUSE (the triangle cap) — a legitimate outcome on a
+					// machine that is not the author's; the scene stays loaded and unedited
+					if (!get(faceEditObject)) return null;
+					// the submode switch refreshes BOTH overlays and re-seats the gizmo, so it
+					// has to run BEFORE the picks or it wipes them
+					// only 'edges' can reach here: 'vertices' returned above and 'faces' is the
+					// session's own entry submode (lang="ts", so the literal has to be narrowed)
+					if (submode === 'edges') fe.setFaceSubmode('edges');
+					else if (tris.length) faceEditSelectedTris.set(tris);
+					return submode;
+				};
+				const fe = faceEditNow();
+				if (fe) return resume(fe);
+				// 102-boot-diet-2: the face editor is a lazy chunk; a restore that comes before it
+				// lands resumes the session once it does (applyEditResume's callers ignore the verdict)
+				void loadFaceEdit().then(resume, () => {});
+				return null;
 			},
 			enterVertex: (uuid) => {
 				enterEditMode(uuid);
@@ -808,7 +826,7 @@
 			if (xrAutoClearWas !== null) renderer.autoClear = xrAutoClearWas; // fix-film
 			xrAutoClearWas = null;
 			exitEditMode(); // leave vertex edit mode cleanly (113)
-			exitFaceEdit(); // and face edit mode (118)
+			faceEditNow()?.exitFaceEdit(); // and face edit mode (118)
 			exitSplineEdit(); // and any spline session (57.4)
 			$isVRMode = false; // back to the editor whichever way the session ended
 			resetWorldRig(); // the grabbed world snaps back to 1:1 (least surprise)
@@ -1100,7 +1118,8 @@
 			// gizmo drag runs (this listener is on window, so mid-gesture moves arrive)
 			if ($TControls?.dragging) setSnapPointer(event.clientX, event.clientY);
 			// M9b: the knife's rubber band follows the pointer while a cut is pending
-			if ($knifePreview) knifeHover([event.clientX, event.clientY]);
+			if ($knifePreview) faceEditNow()?.knifeHover([event.clientX, event.clientY]);
+			if ($bisectPreview) bisectHover([event.clientX, event.clientY]);
 			// 47 M1: where the next measure click would land (the snap marker + rubber band) — a
 			// mouse that is not pressing; a finger has no hover
 			if ($measureMode && captureOwns('measure') && !event.buttons && event.pointerType !== 'touch')
@@ -1215,15 +1234,15 @@
 						// vertices seat their own gizmo through setAnchor
 						selectVerticesInRect(local, camera.current, size, true);
 					} else {
-						selectElementsInRect(local, camera.current, size, true);
+						faceEditNow()?.selectElementsInRect(local, camera.current, size, true);
 						// FACES need the gizmo seated explicitly, exactly as the click path
 						// does it — an edge selection re-seats itself through
 						// withSelectionHistory, and attachFaceGizmo refuses in edge mode
 						// anyway. Without this a boxed face selection had no gizmo, which is
 						// what the user hit: it worked in vertices and not in faces.
 						if ($faceEditSubmode !== 'edges') {
-							if ($faceEditOp === 'move') attachFaceGizmo();
-							else detachFaceGizmo();
+							if ($faceEditOp === 'move') faceEditNow()?.attachFaceGizmo();
+							else faceEditNow()?.detachFaceGizmo();
 						}
 					}
 					downPosition = null;
@@ -1351,7 +1370,8 @@
 			if ($editingObject) {
 				// D2: a miss deselects all vertices (parking the gizmo, D5) — the
 				// session and the object selection stay (deliberate)
-				if (!raycastHandles(selectionRaycaster, event.ctrlKey || event.shiftKey || event.metaKey || $multiSelectMode))
+				// 99 K8: Ctrl alone (or the Path toggle) adds the shortest path from the anchor
+				if (!raycastHandles(selectionRaycaster, event.ctrlKey || event.shiftKey || event.metaKey || $multiSelectMode, pathGesture(event)))
 					clearVertexSelection();
 				return;
 			}
@@ -1363,7 +1383,12 @@
 				// only records; 37 R11: an ADDITIVE click (the selection's add gesture) places a
 				// polyline corner, a plain one ends the cut, cuts and disarms.
 				if ($faceEditOp === 'knife') {
-					knifeClick([event.clientX, event.clientY], event.ctrlKey || event.shiftKey || event.metaKey || $multiSelectMode);
+					faceEditNow()?.knifeClick([event.clientX, event.clientY], event.ctrlKey || event.shiftKey || event.metaKey || $multiSelectMode);
+					return;
+				}
+				// 99 K8 BISECT: two clicks draw the cut line (a screen line, like the knife's)
+				if ($faceEditOp === 'bisect') {
+					bisectClick([event.clientX, event.clientY]);
 					return;
 				}
 				// A8: lookupEditable also finds the scene-root collider-edit proxy
@@ -1374,11 +1399,15 @@
 				// instead of a face unit (every click picks one, so no threshold)
 				if ($faceEditSubmode === 'edges') {
 					if (tri < 0 || !hit || !edited) {
-						if (!(event.ctrlKey || event.shiftKey || event.metaKey || $multiSelectMode)) clearEdgeSelection();
+						if (!(event.ctrlKey || event.shiftKey || event.metaKey || $multiSelectMode)) faceEditNow()?.clearEdgeSelection();
 						return;
 					}
 					const local = edited.worldToLocal(hit.point.clone());
-					pickEdge(pickEdgeAt(tri, local), event.ctrlKey || event.shiftKey || event.metaKey || $multiSelectMode);
+					const fe = faceEditNow();
+					const edgeKey = fe?.pickEdgeAt(tri, local) ?? '';
+					// 99 K8: Ctrl alone (or the Path toggle) adds the shortest edge chain from the active edge
+					if (pathGesture(event) && fe?.pathSelectEdges(edgeKey)) return;
+					fe?.pickEdge(edgeKey, event.ctrlKey || event.shiftKey || event.metaKey || $multiSelectMode);
 					return;
 				}
 				// E10: ctrl/shift-click ADDS to the selection (never auto-applies); a
@@ -1386,27 +1415,35 @@
 				// flag is off for additive clicks — the heal would wipe the very
 				// selection they are adding to.
 				const additive = event.ctrlKey || event.shiftKey || event.metaKey || $multiSelectMode || $faceEditMulti;
-				highlightFaceByTriangle(tri, !additive);
+				// 99 K8: Ctrl alone (or the Path toggle) adds the shortest path of faces from the active one
+				const fePath = faceEditNow();
+				if (tri >= 0 && fePath && pathGesture(event) && fePath.pathSelectFaces(tri)) {
+					fePath.highlightFaceByTriangle(tri, false);
+					if ($faceEditOp === 'move') fePath.attachFaceGizmo();
+					else fePath.detachFaceGizmo();
+					return;
+				}
+				faceEditNow()?.highlightFaceByTriangle(tri, !additive);
 				if (tri >= 0) {
 					if (additive) {
-						toggleFaceSelection(tri);
+						faceEditNow()?.toggleFaceSelection(tri);
 						// B1: only the armed Move op keeps a gizmo on a non-commit click
-						if ($faceEditOp === 'move') attachFaceGizmo();
-						else detachFaceGizmo();
+						if ($faceEditOp === 'move') faceEditNow()?.attachFaceGizmo();
+						else faceEditNow()?.detachFaceGizmo();
 					} else {
-						pickFaceUnit(tri);
-						const committed = autoApplyFaceOp();
+						faceEditNow()?.pickFaceUnit(tri);
+						const committed = faceEditNow()?.autoApplyFaceOp();
 						// E7: a commit re-seats the gizmo itself (on the new cap);
 						// otherwise the B1 rule holds — a seated gizmo intercepts the
 						// NEXT click, so only Move keeps one armed
 						if (!committed) {
-							if ($faceEditOp === 'move') attachFaceGizmo();
-							else detachFaceGizmo();
+							if ($faceEditOp === 'move') faceEditNow()?.attachFaceGizmo();
+							else faceEditNow()?.detachFaceGizmo();
 						}
 					}
 				} else {
-					clearFaceSelection(); // D2: a miss drops the accumulated multi-pick
-					attachFaceGizmo(); // no target left -> detaches
+					faceEditNow()?.clearFaceSelection(); // D2: a miss drops the accumulated multi-pick
+					faceEditNow()?.attachFaceGizmo(); // no target left -> detaches
 				}
 				return;
 			}
@@ -1850,7 +1887,13 @@
 		// face gizmo proxy (163): apply the rigid face transform live
 		if ($TControls.object?.userData?.isFaceProxy) {
 			$TControls.visible = true;
-			onFaceGizmoMoved();
+			faceEditNow()?.onFaceGizmoMoved();
+			return;
+		}
+		// 99 K8: the bisect plane follows the gizmo; nothing is cut until Apply
+		if ($TControls.object?.userData?.isBisectProxy) {
+			$TControls.visible = true;
+			onBisectPlaneMoved();
 			return;
 		}
 		// 57.3: spline control-point proxy — the move rebuilds the tube from the

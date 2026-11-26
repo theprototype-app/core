@@ -225,7 +225,7 @@ export async function generateMesh(params) {
 		throw new Error('no mesh provider');
 	}
 	if (!params.providerId && !meshGenReady()) {
-		showToast('The active mesh provider is not fully set up — Settings ▸ Tools & connections ▸ Mesh providers');
+		showToast('The active mesh provider is not fully set up — Settings ▸ AI ▸ Mesh providers');
 		throw new Error('mesh provider not ready');
 	}
 

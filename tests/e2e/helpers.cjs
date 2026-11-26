@@ -226,6 +226,8 @@ async function setupPage(browser, name, options = {}) {
 	// worker forwards — suites that mock a server by route (vr-ai-panel, vr-ai-voice) need it blocked there (36-int-124)
 	const sw = process.env.E2E_BLOCK_SW === '1' ? { serviceWorkers: /** @type {'block'} */ ('block') } : {};
 	const ctx = await browser.newContext({ ignoreHTTPSErrors: true, ...sw, ...(options.context ?? {}) });
+	// CI only: the slow-runner allowance (see CI_DEFAULT_TIMEOUT_MS) — an explicit timeout in a suite still wins
+	if (BATTERY_CI) ctx.setDefaultTimeout(CI_DEFAULT_TIMEOUT_MS);
 	await ctx.addInitScript((peerConfig) => {
 		localStorage.setItem('debugStores', 'true');
 		localStorage.setItem('hasSeenDisclaimer', 'true');
@@ -243,6 +245,13 @@ async function setupPage(browser, name, options = {}) {
 	// E2E_NO_PERF_OFFER=1: a deployed PREVIEW build offers perf reports in a sticky toast that covers clicks and
 	// lands in golden frames — answer it up front for proofs against a preview (36-int-125)
 	if (process.env.E2E_NO_PERF_OFFER === '1') await ctx.addInitScript(() => localStorage.setItem('perfReports:offered', 'no'));
+	// ci-speed: the LEAN DRAW (see LEAN_DRAW) — GitHub battery only, and a suite listed in battery.json `ci.fullDraw` draws
+	// in full. Seeded only where the key is absent, so a suite or the app that changes one of these prefs keeps its
+	// change across a reload, and a suite's own `options.storage` (installed below) still wins.
+	if (LEAN_DRAW)
+		await ctx.addInitScript((lean) => {
+			for (const [k, v] of Object.entries(lean)) if (localStorage.getItem(k) === null) localStorage.setItem(k, v);
+		}, LEAN_DRAW_STORAGE);
 	// E2E_NO_ERROR_REPORTS=1 (48-int): a deployed build sends REAL anonymous error reports (48 O1), and a proof's
 	// deliberate page errors on theprototype.pages.dev would count as production — the release's error-spike check
 	// (O2's auto-rollback) must not read them. Proofs against Pages builds switch reporting off (a suite's own choice wins)
@@ -270,6 +279,8 @@ async function setupPage(browser, name, options = {}) {
 	// replaces a module the app would load — dev servers only, a PROD service worker hides routes)
 	if (options.route) await ctx.route(options.route[0], options.route[1]);
 	const page = await ctx.newPage();
+	if (BATTERY_CI) wrapSlowWaits(page);
+	if (PAUSE_IDLE) trackIdlePage(page, name);
 	if (COVERAGE) {
 		// resetOnNavigation off: a suite's reloads (freshReload, a hash change) keep counting into one record
 		await page.coverage.startJSCoverage({ resetOnNavigation: false });
@@ -348,6 +359,11 @@ async function setupPage(browser, name, options = {}) {
 		() => new Promise((r) => window.__tp.test.v1.peers.subscribe((p) => r(p?.peer?.id))())
 	);
 	console.log(name + ' id: ' + id);
+	// CI: the frame rate this page draws at, read by battery.cjs (SLOW RUNNER under SLOW_RUNNER_FPS)
+	if (BATTERY_CI) {
+		const fps = await measureFps(page);
+		console.log(`[helpers] fps ${name}: ${fps ?? 'unmeasured'}${fps !== null && fps < SLOW_RUNNER_FPS ? ` (SLOW RUNNER, under ${SLOW_RUNNER_FPS} fps)` : ''} ${LEAN_DRAW ? '[lean draw]' : '[full draw]'}`);
+	}
 	return { ctx, page, id };
 }
 
@@ -362,6 +378,8 @@ async function setupPage(browser, name, options = {}) {
  * @param {any} browser @param {string} name @param {any[]} others @param {any=} options
  */
 async function setupPageQuiet(browser, name, others, options = {}) {
+	// ci-speed: under PAUSE_IDLE the others are already paused while the new page boots (it is the page being driven)
+	if (PAUSE_IDLE) return setupPage(browser, name, options);
 	for (const peer of others) await peer.page.evaluate(() => window.__tp.test.v1.overloadGuard.pauseRendering('e2e: another page boots'));
 	try {
 		return await setupPage(browser, name, options);
@@ -422,9 +440,21 @@ async function connect(from, to, settleMs = 9000) {
 	// and the dial input shows only after a tap on it — press it first when it is what is there
 	// …and on the Invite-first pill (uir-people) the field shows after Join…
 	await step(from, 'fill the peer id', async () => (await openDial(from.page)).fill(to.id));
+	// PATIENT: a GitHub runner (SwiftShader, two or three rendering pages) keeps the dialler's main thread in native
+	// render/GL work, so Playwright's input waits 16-31 s for it to be taken (measured by the #643 CPU profile:
+	// ~97% `(program)`, green tries 16-18 s, red ones crossed the 30 s default with the click still queued).
+	// Every actionability check still runs; only the wait is longer, and only on CI (CONNECT_CLICK_MS: the
+	// slow-runner allowance). A slow one is LOGGED, so the margin left is visible in every battery log
+	// (grep "[helpers] slow click").
+	const slow = (what, t0) => {
+		const s = (Date.now() - t0) / 1000;
+		if (s > 5) console.log(`[helpers] slow click: ${what} took ${s.toFixed(1)} s (limit ${CONNECT_CLICK_MS / 1000} s)`);
+	};
+	const tConnect = Date.now();
 	await step(from, 'press Connect', () =>
-		from.page.getByRole('button', { name: 'Connect', exact: true }).click()
+		from.page.getByRole('button', { name: 'Connect', exact: true }).click({ timeout: CONNECT_CLICK_MS })
 	);
+	slow('press Connect', tConnect);
 	// R22 round 33 REMOVED the dial-time ask (round 31's "Save & connect / Connect anyway /
 	// Cancel"), and with it the block that used to answer it here. A dialer holding work in
 	// an UNNAMED scene now dials immediately; the question is put at the HOST's APPROVAL
@@ -436,7 +466,9 @@ async function connect(from, to, settleMs = 9000) {
 	// `h.setupPage(browser, 'X', { storage: { 'connect:mergeOnConnect': 'true' } })`.
 	// a cloud build (Pages deploys) asks the host for a ROLE instead — "View only" / "Editor access" /
 	// "Reject" (cloudHooks roles); "Editor access" is the plain build's Approve
-	await step(to, 'approve the request', () => approveButton(to.page).click({ timeout: 30000 }));
+	const tApprove = Date.now();
+	await step(to, 'approve the request', () => approveButton(to.page).click({ timeout: CONNECT_CLICK_MS }));
+	slow('approve the request', tApprove);
 	await from.page.waitForTimeout(settleMs);
 	// scatter-sync: the settle is a MINIMUM now — on a slow runner (GitHub, SwiftShader) the approval
 	// dial-back took 15 s to open, so a suite's first edit raced a conn that was still negotiating.
@@ -488,13 +520,268 @@ async function step(peer, what, run) {
  */
 const PATIENT_CLICK_MS = Number(process.env.E2E_CLICK_MS || 90000);
 
+/**
+ * SLOW-RUNNER ALLOWANCE (deps-2026-11, #644): GitHub's runners (2-4 vCPUs, SwiftShader, two or three pages
+ * rendering) drew at ~1.5 fps on 2026-11-23, and every 30 s Playwright default and 10 s `eventually` in the battery
+ * became a coin flip — Connect first, then whatever click or premise came next. CI ONLY: `BATTERY_CI=1` is set by
+ * .github/workflows/battery.yml and nowhere else, so a local / desk / pc battery (the ints' release gates) keeps
+ * today's limits. The allowance can not hide a real slowdown:
+ *   - every page logs its measured fps at setup (`[helpers] fps`), and battery.cjs flags a suite whose slowest page
+ *     drew under SLOW_RUNNER_FPS as "SLOW RUNNER x fps" in the summary, green or red;
+ *   - every wait that USED the extra time (longer than its local limit) logs `[helpers] slow wait: … took x s
+ *     (local limit y s, CI limit z s)`, so the margin is in every log (grep "[helpers] slow").
+ * The numbers live here and nowhere else.
+ */
+const BATTERY_CI = process.env.BATTERY_CI === '1';
+// ci-speed (claude:9's rule): BATTERY_CI must never reach a local / desk / pc / release run — the battery runners refuse
+// it (scripts/ci/battery.cjs ciEnvError) and so does every suite loading this file, so a single suite run by hand with
+// it set cannot gate on the CI-only allowance and lean draw either
+{
+	const ciError = require('../../scripts/ci/battery.cjs').ciEnvError(process.env);
+	if (ciError) throw new Error('tests/e2e/helpers.cjs: ' + ciError);
+}
+/** Playwright's default action / wait / navigation timeout on a CI page (locally Playwright's own 30 s). */
+const CI_DEFAULT_TIMEOUT_MS = 90000;
+const LOCAL_DEFAULT_TIMEOUT_MS = 30000;
+/** `eventually`'s timeout multiplier on CI. */
+const CI_WAIT_SCALE = 3;
+/** Under this measured frame rate a suite's result is flagged SLOW RUNNER. */
+const SLOW_RUNNER_FPS = 5;
+/** Connect / Approve in `connect()`: patient on CI, Playwright's default locally (as before #644). */
+const CONNECT_CLICK_MS = BATTERY_CI ? CI_DEFAULT_TIMEOUT_MS : LOCAL_DEFAULT_TIMEOUT_MS;
+
+/**
+ * THE LEAN DRAW (ci-speed, card ci-pause-idle-pages): on a GitHub runner every page renders WebGL through SwiftShader on
+ * 2-4 shared vCPUs, and the default desktop page (the AO view mode's full-screen N8AO pass + shadow maps at 1280x720)
+ * drew at 1.7 fps p50 across 480 battery pages (run 45305773171; 381 of them under SLOW_RUNNER_FPS). Most suites assert
+ * stores, the DOM and the wire, not pixels, so on CI a page draws less through the app's OWN user-facing switches (no
+ * test-only app code): the device Quality preset "Low" (the governor's level 8: shadows, AO, the scene look and its
+ * heavy passes off, resolution 50% — the CSS layout and devicePixelRatio stay 1280x720 @ 1) plus the shadowQuality and
+ * view-mode prefs (shadows off, plain Shaded). Measured locally (SwiftShader, CPU x4, two pages): 2.5 -> 52 fps.
+ * A suite that tests pixels, an effect, the resolution or layout at size draws in full: it is listed in battery.json
+ * `ci.fullDraw` WITH ITS REASON, and battery.cjs hands it E2E_FULL_DRAW=1. Local, desk, pc and release runs never set
+ * BATTERY_CI (battery.cjs ciEnvError refuses it), so they always draw in full.
+ */
+const FULL_DRAW = process.env.E2E_FULL_DRAW === '1';
+const LEAN_DRAW = BATTERY_CI && !FULL_DRAW;
+/** @type {Record<string, string>} */
+const LEAN_DRAW_STORAGE = { 'quality:preset': 'low', shadowQuality: 'off', viewMode: 'shaded' };
+
+/** @param {string} what @param {number} t0 @param {number} localMs @param {number} ciMs */
+function logSlowWait(what, t0, localMs, ciMs) {
+	const ms = Date.now() - t0;
+	if (ms > localMs) console.log(`[helpers] slow wait: ${what} took ${(ms / 1000).toFixed(1)} s (local limit ${localMs / 1000} s, CI limit ${ciMs / 1000} s)`);
+}
+
+/** a suite's EXPLICIT short timeout, on CI only: CI_WAIT_SCALE times it, capped at CI_DEFAULT_TIMEOUT_MS (never below
+ * `ms`); locally `ms` unchanged. Applied one call site at a time, where a CI run showed that wait (deps-2026-11: no sweep).
+ * @param {number} ms */
+const ciTimeout = (ms) => (BATTERY_CI ? Math.max(ms, Math.min(ms * CI_WAIT_SCALE, CI_DEFAULT_TIMEOUT_MS)) : ms);
+
+/**
+ * Run one wait under `ciTimeout(ms)` and LOG it when it used the extra time (`[helpers] slow wait`), like every
+ * other CI allowance — e.g. `await h.ciWait('item visible', 5000, (timeout) => loc.waitFor({ state: 'visible', timeout }))`.
+ * @template T @param {string} label @param {number} ms @param {(timeout: number) => Promise<T>} wait @returns {Promise<T>}
+ */
+async function ciWait(label, ms, wait) {
+	const t0 = Date.now();
+	const result = await wait(ciTimeout(ms));
+	if (BATTERY_CI) logSlowWait(label, t0, ms, ciTimeout(ms));
+	return result;
+}
+
+/**
+ * PAUSE THE PAGES A STEP IS NOT DRIVING (ci-speed, card ci-pause-idle-pages). A multi-page suite on a GitHub runner has
+ * two or three pages rendering SwiftShader on the same few vCPUs, so the page a step drives gets a fraction of them. On
+ * CI only, for a suite listed in battery.json `ci.pauseIdle` (battery.cjs hands it E2E_PAUSE_IDLE=1), FOCUS FOLLOWS THE
+ * DRIVER: every Playwright call that reaches a page (a frame or locator action, evaluate, waitFor*, a keyboard or mouse
+ * event, a screenshot) first makes sure THAT page renders — resumed and one fresh frame drawn if it was paused — and
+ * pauses any other page that nothing has touched for PAUSE_IDLE_MS and that has no call in flight. The pause is the
+ * app's own overload-guard pause (what setupPageQuiet already used for a booting page): the page's session, sockets,
+ * stores, flow and physics keep running, only its frames stop. Nothing a suite asserts on is skipped — a read of a
+ * paused page resumes it first — and every transition is counted in the `[helpers] pause-idle` line at the end.
+ */
+const PAUSE_IDLE = BATTERY_CI && process.env.E2E_PAUSE_IDLE === '1';
+/** a page untouched for this long (and with nothing in flight) stops drawing */
+const PAUSE_IDLE_MS = 4000;
+/** @type {Map<any, {name: string, paused: boolean, lastUsed: number, inflight: number, closed: boolean, pauses: number, resumes: number}>} */
+const idlePages = new Map();
+/** @type {Promise<any>} transitions run one at a time, so two calls racing on two pages cannot pause what the other resumes */
+let idleChain = Promise.resolve();
+/** the unwrapped Frame#evaluate, so a transition never re-enters the focus wrappers */
+/** @type {any} */
+let rawEvaluate = null;
+
+/** @param {any} page @param {string} name */
+function trackIdlePage(page, name) {
+	wrapForFocus(page);
+	idlePages.set(page, { name, paused: false, lastUsed: Date.now(), inflight: 0, closed: false, pauses: 0, resumes: 0 });
+	page.on('close', () => {
+		const st = idlePages.get(page);
+		if (st) st.closed = true;
+	});
+}
+
+/** @param {any} page @param {string} what */
+function guardCall(page, what) {
+	return rawEvaluate
+		.call(page.mainFrame(), (/** @type {string} */ w) => {
+			const g = window.__tp?.test?.v1?.overloadGuard;
+			if (!g) return false;
+			if (w === 'pause') g.pauseRendering('e2e: idle page (CI pause-idle)');
+			else {
+				g.resumeRendering();
+				// one fresh frame before the caller reads or clicks anything that the render loop keeps current
+				return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true))));
+			}
+			return true;
+		}, what)
+		.catch(() => false);
+}
+
+/** Make `page` the one being driven: it renders; other pages idle past PAUSE_IDLE_MS stop. @param {any} page */
+function focusPage(page) {
+	const st = idlePages.get(page);
+	if (!st || st.closed) return Promise.resolve();
+	st.lastUsed = Date.now();
+	const run = idleChain.then(async () => {
+		if (st.paused) {
+			st.paused = false;
+			st.resumes++;
+			await guardCall(page, 'resume');
+		}
+		const now = Date.now();
+		for (const [other, o] of idlePages) {
+			if (other === page || o.closed || o.paused || o.inflight > 0 || now - o.lastUsed < PAUSE_IDLE_MS) continue;
+			if (await guardCall(other, 'pause')) {
+				o.paused = true;
+				o.pauses++;
+			}
+		}
+	});
+	idleChain = run.catch(() => {});
+	return run;
+}
+
+let focusWrapped = false;
+/** Patch, once, every Playwright client method that reaches a page so it focuses that page first. @param {any} page */
+function wrapForFocus(page) {
+	if (focusWrapped) return;
+	focusWrapped = true;
+	const frameProto = Object.getPrototypeOf(page.mainFrame());
+	rawEvaluate = frameProto.evaluate;
+	const loc = page.locator('body');
+	/** @param {any} proto @param {string[]} methods @param {(self: any) => any} pageOf */
+	const wrap = (proto, methods, pageOf) => {
+		for (const m of methods) {
+			const orig = proto[m];
+			if (typeof orig !== 'function') continue;
+			proto[m] = async function (/** @type {any[]} */ ...args) {
+				let target = null;
+				try {
+					target = pageOf(this);
+				} catch {}
+				const st = target ? idlePages.get(target) : null;
+				if (!st) return orig.apply(this, args);
+				await focusPage(target);
+				st.inflight++;
+				try {
+					const result = await orig.apply(this, args);
+					for (const h of Array.isArray(result) ? result : [result]) if (h?._elementChannel) wrapHandles(h);
+					return result;
+				} finally {
+					st.inflight--;
+					st.lastUsed = Date.now();
+				}
+			};
+		}
+	};
+	// an ElementHandle's prototype is reachable only from a live handle: wrapped the first time a wrapped call returns one
+	let handlesWrapped = false;
+	/** @param {any} h */
+	const wrapHandles = (h) => {
+		if (handlesWrapped) return;
+		handlesWrapped = true;
+		wrap(Object.getPrototypeOf(h), ['getAttribute', 'inputValue', 'textContent', 'innerText', 'innerHTML', 'isChecked', 'isDisabled', 'isEditable', 'isEnabled', 'isHidden', 'isVisible', 'dispatchEvent', 'scrollIntoViewIfNeeded', 'hover', 'click', 'dblclick', 'tap', 'selectOption', 'fill', 'selectText', 'setInputFiles', 'focus', 'type', 'press', 'check', 'uncheck', 'setChecked', 'boundingBox', 'screenshot', '$', '$$', '$eval', '$$eval', 'waitForElementState', 'waitForSelector', 'evaluate', 'evaluateHandle'], (x) => x._frame?.page());
+	};
+	// async methods only (a sync one — locator(), name(), page() — must stay sync); waitForTimeout is idle on purpose
+	wrap(frameProto, ['goto', 'waitForNavigation', 'waitForLoadState', 'waitForURL', 'evaluateHandle', 'evaluate', '$', 'waitForSelector', 'dispatchEvent', '$eval', '$$eval', '$$', '_queryCount', 'content', 'setContent', 'addScriptTag', 'addStyleTag', 'click', 'dblclick', 'dragAndDrop', 'tap', 'fill', 'focus', 'textContent', 'innerText', 'innerHTML', 'getAttribute', 'inputValue', 'isChecked', 'isDisabled', 'isEditable', 'isEnabled', 'isHidden', 'isVisible', 'hover', 'selectOption', 'setInputFiles', 'type', 'press', 'check', 'uncheck', 'setChecked', 'waitForFunction', 'title'], (f) => f.page());
+	wrap(Object.getPrototypeOf(loc), ['boundingBox', 'check', 'click', 'dblclick', 'dispatchEvent', 'dragTo', 'evaluate', 'evaluateAll', 'evaluateHandle', 'fill', 'clear', 'focus', 'blur', 'count', 'getAttribute', 'hover', 'innerHTML', 'innerText', 'inputValue', 'isChecked', 'isDisabled', 'isEditable', 'isEnabled', 'isHidden', 'isVisible', 'press', 'screenshot', 'ariaSnapshot', 'scrollIntoViewIfNeeded', 'selectOption', 'selectText', 'setChecked', 'setInputFiles', 'tap', 'textContent', 'type', 'pressSequentially', 'uncheck', 'all', 'allInnerTexts', 'allTextContents', 'waitFor', 'elementHandle', 'elementHandles'], (l) => l.page());
+	wrap(Object.getPrototypeOf(page.keyboard), ['down', 'up', 'insertText', 'type', 'press'], (k) => k._page);
+	wrap(Object.getPrototypeOf(page.mouse), ['move', 'down', 'up', 'click', 'dblclick', 'wheel'], (k) => k._page);
+	wrap(Object.getPrototypeOf(page), ['screenshot', 'reload', 'bringToFront', 'goBack', 'goForward'], (p) => p);
+}
+
+/** the per-page transition counts, printed by finish() (and read by a reviewer of a CI log) */
+function pauseIdleSummary() {
+	if (!PAUSE_IDLE || !idlePages.size) return;
+	console.log(`[helpers] pause-idle: ${[...idlePages.values()].map((o) => `${o.name} paused ${o.pauses}x resumed ${o.resumes}x`).join(', ')}`);
+}
+
+let slowWaitsWrapped = false;
+/**
+ * CI: time every frame-level action and wait that runs on Playwright's DEFAULT timeout (page.click, locator.click —
+ * a locator delegates to its frame — getAttribute, waitForSelector, …) and log the ones that needed more than the
+ * local 30 s. One patch of the Frame prototype, so every page of every context is covered.
+ * @param {any} page
+ */
+function wrapSlowWaits(page) {
+	if (slowWaitsWrapped) return;
+	slowWaitsWrapped = true;
+	const proto = Object.getPrototypeOf(page.mainFrame());
+	const methods = ['click', 'dblclick', 'tap', 'fill', 'press', 'type', 'hover', 'focus', 'check', 'uncheck', 'selectOption', 'setInputFiles', 'dragAndDrop', 'dispatchEvent', 'getAttribute', 'textContent', 'innerText', 'innerHTML', 'inputValue', 'waitForSelector', 'waitForFunction'];
+	for (const m of methods) {
+		const orig = proto[m];
+		if (typeof orig !== 'function') continue;
+		proto[m] = async function (/** @type {any[]} */ ...args) {
+			// waitForFunction(fn, arg, options): its 2nd argument is the page function's, not options
+			const options = m === 'waitForFunction' ? args[2] : [...args].reverse().find((a) => a && typeof a === 'object' && !Array.isArray(a));
+			if (options?.timeout !== undefined) return orig.apply(this, args);
+			const t0 = Date.now();
+			const result = await orig.apply(this, args);
+			const target = typeof args[0] === 'string' ? args[0].slice(0, 80) : m === 'waitForFunction' ? '(function)' : '';
+			logSlowWait(`${m}(${target})`, t0, LOCAL_DEFAULT_TIMEOUT_MS, CI_DEFAULT_TIMEOUT_MS);
+			return result;
+		};
+	}
+}
+
+/**
+ * Frames the page drew in ~2 s (requestAnimationFrame), capped at 6 s of wall time so a starved page still answers.
+ * @param {any} page @returns {Promise<number|null>}
+ */
+async function measureFps(page) {
+	return page
+		.evaluate(
+			() =>
+				new Promise((resolve) => {
+					let n = 0;
+					const t0 = performance.now();
+					const done = () => resolve(Math.round(((n * 1000) / (performance.now() - t0)) * 10) / 10);
+					const cap = setTimeout(done, 6000);
+					const tick = () => {
+						n++;
+						if (performance.now() - t0 < 2000) requestAnimationFrame(tick);
+						else (clearTimeout(cap), done());
+					};
+					requestAnimationFrame(tick);
+				})
+		)
+		.catch(() => null);
+}
+
 /** Poll `fn` until `predicate` holds; records a PASS/FAIL check. */
 async function eventually(fn, predicate, label, timeout = 10000) {
 	const start = Date.now();
+	// CI: CI_WAIT_SCALE times the suite's own limit, and a pass that needed the extra time says so
+	const limit = BATTERY_CI ? timeout * CI_WAIT_SCALE : timeout;
 	let last;
-	while (Date.now() - start < timeout) {
+	while (Date.now() - start < limit) {
 		last = await fn();
-		if (predicate(last)) return check(true, label);
+		if (predicate(last)) {
+			if (BATTERY_CI) logSlowWait(`eventually "${String(label).slice(0, 80)}"`, start, timeout, limit);
+			return check(true, label);
+		}
 		await new Promise((r) => setTimeout(r, 400));
 	}
 	console.log('  last: ' + JSON.stringify(last));
@@ -874,6 +1161,7 @@ async function finish(browser) {
 			}
 		}
 	}
+	pauseIdleSummary();
 	await browser.close();
 	for (const message of fatal) check(false, 'the page threw a render error: ' + message.split('\n')[0]);
 	console.log(failures === 0 ? 'ALL PASS' : failures + ' FAILURES');
@@ -1425,4 +1713,4 @@ async function paneHandleClick(page, sel, opts = {}) {
 	await page.locator('[role=menu] [role=menuitem]', { hasText: /^\s*Hide\b/ }).first().click();
 }
 
-module.exports = { t, URL, paneHandleClick, coverageKey, openDial, GPU_ARGS, N6_UA, PATIENT_CLICK_MS, APPROVE_LABEL, approveButton, watchPress, check, launch, setupPage, setupPageQuiet, connect, leavePlay, eventually, caughtUp, eventuallyAfter, projectPoint, freshReload, answerRestore, closePeer, finish, run, installModule, moduleZipPath, makeCollectibleChains, pageErrors, externalErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta, routeSkies, SKIES_DIR, openWsMode };
+module.exports = { t, URL, paneHandleClick, coverageKey, openDial, GPU_ARGS, N6_UA, PATIENT_CLICK_MS, BATTERY_CI, LEAN_DRAW, SLOW_RUNNER_FPS, ciTimeout, ciWait, APPROVE_LABEL, approveButton, watchPress, check, launch, setupPage, setupPageQuiet, connect, leavePlay, eventually, caughtUp, eventuallyAfter, projectPoint, freshReload, answerRestore, closePeer, finish, run, installModule, moduleZipPath, makeCollectibleChains, pageErrors, externalErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta, routeSkies, SKIES_DIR, openWsMode };

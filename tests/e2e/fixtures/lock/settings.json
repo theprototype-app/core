@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-11-04T09:12:10.045Z",
+	"recordedAt": "2026-11-25T22:36:14.497Z",
 	"viewport": {
 		"width": 1440,
 		"height": 900
@@ -212,6 +212,40 @@
 								"events": []
 							},
 							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Show my status",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "setting-presence",
+							"label": "Show my status",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"people:presence": "1"
+								},
+								"stores": {
+									"peoplePresence.presenceEnabled": true,
+									"userdata": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {
+								"people:presence": "0"
+							},
 							"exercise": "done"
 						}
 					]
@@ -495,6 +529,159 @@
 							},
 							"scope": "device",
 							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "People leaving",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "notify-peerLeft",
+							"label": "People leaving",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"notifyPrefs": "{\"peerLeft\":false}"
+								},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Chat badge",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "notify-chat",
+							"label": "Chat badge",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"notifyPrefs": "{\"chat\":false}"
+								},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Ping sounds",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "notify-pingSound",
+							"label": "Ping sounds",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"notifyPrefs": "{\"pingSound\":false}"
+								},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						},
+						{
+							"kind": "button",
+							"id": "notify-ping-character",
+							"label": "Customize character",
+							"where": "body",
+							"default": "Customize character",
+							"disabled": false
+						}
+					]
+				},
+				{
+					"name": "AI assistant",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "notify-agent",
+							"label": "AI assistant",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"notifyPrefs": "{\"agent\":false}"
+								},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Auto quality",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "notify-autoQuality",
+							"label": "Auto quality",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"notifyPrefs": "{\"autoQuality\":false}"
+								},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
 							"storageAfterRestore": {},
 							"exercise": "done"
 						}
@@ -863,7 +1050,8 @@
 								"stores": {
 									"a11yAnnounce.politeAnnouncement": "Window positions reset",
 									"notifications": "<object>",
-									"notificationsUnread": "<changed>"
+									"notificationsUnread": "<changed>",
+									"toastStore": "<object>"
 								},
 								"html": [],
 								"body": [],
@@ -964,6 +1152,173 @@
 					]
 				},
 				{
+					"name": "Panels button",
+					"controls": [
+						{
+							"kind": "segment",
+							"id": "panels-button-mode-auto",
+							"label": "Auto",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "segment",
+							"id": "panels-button-mode-on",
+							"label": "On",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"panelsButton": "on"
+								},
+								"stores": {
+									"panelsButton.panelsButtonMode": "on",
+									"panelsButton.panelsButtonShown": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						},
+						{
+							"kind": "segment",
+							"id": "panels-button-mode-off",
+							"label": "Off",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"panelsButton": "off"
+								},
+								"stores": {
+									"chromeButtons.hiddenChromeIds": "<object>",
+									"panelsButton.panelsButtonMode": "off"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Show viewport sidebar handles",
+					"controls": [
+						{
+							"kind": "segment",
+							"id": "sidebar-handles-mode-auto",
+							"label": "Auto",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "segment",
+							"id": "sidebar-handles-mode-on",
+							"label": "On",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"sidebarHandles": "on"
+								},
+								"stores": {
+									"sidebarHandles.sidebarHandlesMode": "on"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						},
+						{
+							"kind": "segment",
+							"id": "sidebar-handles-mode-off",
+							"label": "Off",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"sidebarHandles": "off"
+								},
+								"stores": {
+									"sidebarHandles.sidebarHandleShown": "<object>",
+									"sidebarHandles.sidebarHandlesMode": "off",
+									"sidebarHandles.sidebarHandlesOn": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Dim the handles at rest",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "sidebar-handles-dim",
+							"label": "Dim the handles at rest",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"sidebarHandles:dim": "false"
+								},
+								"stores": {
+									"sidebarHandles.sidebarHandlesDim": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
 					"name": "Always show tab strip in windows",
 					"controls": [
 						{
@@ -1018,6 +1373,100 @@
 							"restored": false,
 							"storageAfterRestore": {},
 							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Customize buttons",
+					"controls": [
+						{
+							"kind": "segment",
+							"id": "cb-toggle-sidebar-toggle",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "segment",
+							"id": "cb-toggle-sidebar-full",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "segment",
+							"id": "cb-toggle-dock-split",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "segment",
+							"id": "cb-toggle-dock-undock",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "segment",
+							"id": "cb-toggle-dock-minimize",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "segment",
+							"id": "cb-toggle-group-dock",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "segment",
+							"id": "cb-toggle-group-close",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "segment",
+							"id": "cb-toggle-top-preview",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "segment",
+							"id": "cb-toggle-top-panels",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "button",
+							"id": "chrome-buttons-show-all",
+							"label": "Show all",
+							"where": "control",
+							"default": "Show all",
+							"disabled": true
 						}
 					]
 				},
@@ -1512,7 +1961,8 @@
 								},
 								"stores": {
 									"motion.motionPref": "reduce",
-									"motion.reducedMotion": true
+									"motion.reducedMotion": true,
+									"uiHaptics.uiHapticPrefs": "<object>"
 								},
 								"html": [
 									"data-motion"
@@ -1870,6 +2320,37 @@
 							},
 							"scope": "device",
 							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Pen only draws",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "pen-only-draws",
+							"label": "Pen only draws",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"penOnlyDraws": "false"
+								},
+								"stores": {
+									"penInput.penOnlyDraws": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
 							"storageAfterRestore": {},
 							"exercise": "done"
 						}
@@ -2298,7 +2779,8 @@
 								"stores": {
 									"a11yAnnounce.politeAnnouncement": "Touch layout reset to the default arrangement",
 									"notifications": "<object>",
-									"notificationsUnread": "<changed>"
+									"notificationsUnread": "<changed>",
+									"toastStore": "<object>"
 								},
 								"html": [],
 								"body": [],
@@ -2335,6 +2817,252 @@
 								"events": []
 							},
 							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Touch feedback",
+					"controls": [
+						{
+							"kind": "segment",
+							"id": "touch-feedback-level-off",
+							"label": "Off",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"ui:touchFeedback": "{\"level\":\"off\",\"buttons\":true,\"values\":true,\"snap\":true,\"gestures\":true}"
+								},
+								"stores": {
+									"uiHaptics.uiHapticPrefs": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {
+								"ui:touchFeedback": "{\"level\":\"light\",\"buttons\":true,\"values\":true,\"snap\":true,\"gestures\":true}"
+							},
+							"exercise": "done"
+						},
+						{
+							"kind": "segment",
+							"id": "touch-feedback-level-light",
+							"label": "Light",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "segment",
+							"id": "touch-feedback-level-medium",
+							"label": "Medium",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"ui:touchFeedback": "{\"level\":\"medium\",\"buttons\":true,\"values\":true,\"snap\":true,\"gestures\":true}"
+								},
+								"stores": {
+									"uiHaptics.uiHapticPrefs": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						},
+						{
+							"kind": "segment",
+							"id": "touch-feedback-level-strong",
+							"label": "Strong",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"ui:touchFeedback": "{\"level\":\"strong\",\"buttons\":true,\"values\":true,\"snap\":true,\"gestures\":true}"
+								},
+								"stores": {
+									"uiHaptics.uiHapticPrefs": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Buttons and switches",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "touch-feedback-buttons",
+							"label": "Buttons and switches",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"ui:touchFeedback": "{\"level\":\"light\",\"buttons\":false,\"values\":true,\"snap\":true,\"gestures\":true}"
+								},
+								"stores": {
+									"uiHaptics.uiHapticPrefs": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Sliders and values",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "touch-feedback-values",
+							"label": "Sliders and values",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"ui:touchFeedback": "{\"level\":\"light\",\"buttons\":true,\"values\":false,\"snap\":true,\"gestures\":true}"
+								},
+								"stores": {
+									"uiHaptics.uiHapticPrefs": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Snapping",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "touch-feedback-snap",
+							"label": "Snapping",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"ui:touchFeedback": "{\"level\":\"light\",\"buttons\":true,\"values\":true,\"snap\":false,\"gestures\":true}"
+								},
+								"stores": {
+									"uiHaptics.uiHapticPrefs": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Gestures",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "touch-feedback-gestures",
+							"label": "Gestures",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"ui:touchFeedback": "{\"level\":\"light\",\"buttons\":true,\"values\":true,\"snap\":true,\"gestures\":false}"
+								},
+								"stores": {
+									"uiHaptics.uiHapticPrefs": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Try it",
+					"controls": [
+						{
+							"kind": "range",
+							"id": "touch-feedback-try",
+							"label": "Try touch feedback",
+							"where": "control",
+							"default": "5",
+							"disabled": false,
+							"dir": 1,
+							"state": "6",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "5",
+							"storageAfterRestore": {},
 							"exercise": "done"
 						}
 					]
@@ -2420,6 +3148,112 @@
 		},
 		"Shortcuts": {
 			"rows": [
+				{
+					"name": "Keymap preset",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "keymap-preset",
+							"label": "",
+							"where": "control",
+							"default": "ThePrototype (default)",
+							"disabled": false,
+							"options": [
+								"ThePrototype (default)",
+								"Blender style",
+								"Unity / Maya style"
+							],
+							"state": "Blender style",
+							"effects": {
+								"storage": {
+									"keymapPreset": "blender"
+								},
+								"stores": {
+									"shortcutsRegistry.keymapPreset": "blender"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "ThePrototype (default)",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Fly with WASD",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "fly-with-wasd",
+							"label": "",
+							"where": "control",
+							"default": "Always",
+							"disabled": false,
+							"options": [
+								"Always",
+								"Only while holding the right mouse button"
+							],
+							"state": "Only while holding the right mouse button",
+							"effects": {
+								"storage": {
+									"flyWithWasd": "rmb"
+								},
+								"stores": {
+									"flyPrefs.flyWithWasd": "rmb"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "Always",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Fly direction",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "fly-direction",
+							"label": "",
+							"where": "control",
+							"default": "Level",
+							"disabled": false,
+							"options": [
+								"Level",
+								"Where I look"
+							],
+							"state": "Where I look",
+							"effects": {
+								"storage": {
+									"flyDirection": "look"
+								},
+								"stores": {
+									"flyPrefs.flyDirection": "look"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "Level",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
 				{
 					"name": "Move (translate)",
 					"controls": [
@@ -2521,6 +3355,156 @@
 					]
 				},
 				{
+					"name": "Move now — the selection follows the pointer",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Move now — the selection follows the pointer",
+							"where": "control",
+							"default": "Not set",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Rotate now — turns with the pointer",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Rotate now — turns with the pointer",
+							"where": "control",
+							"default": "Not set",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Resize now — scales with the pointer",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Resize now — scales with the pointer",
+							"where": "control",
+							"default": "Not set",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Lock to X while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Lock to X while Move / Rotate / Resize now runs (agai",
+							"where": "control",
+							"default": "X",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Lock to Y while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Lock to Y while Move / Rotate / Resize now runs (agai",
+							"where": "control",
+							"default": "Y",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Lock to Z while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Lock to Z while Move / Rotate / Resize now runs (agai",
+							"where": "control",
+							"default": "Z",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
 					"name": "Arm Move (in the UV editor)",
 					"controls": [
 						{
@@ -2544,6 +3528,235 @@
 							"exercise": "done"
 						}
 					]
+				},
+				{
+					"name": "Move now (in the UV editor) — the selection follows the pointer",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Move now (in the UV editor) — the selection follows t",
+							"where": "control",
+							"default": "Not set",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Rotate now (in the UV editor)",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Rotate now (in the UV editor)",
+							"where": "control",
+							"default": "Not set",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Resize now (in the UV editor)",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Resize now (in the UV editor)",
+							"where": "control",
+							"default": "Not set",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Lock to U while a UV move / resize runs",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Lock to U while a UV move / resize runs",
+							"where": "control",
+							"default": "X",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Lock to V while a UV move / resize runs",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Lock to V while a UV move / resize runs",
+							"where": "control",
+							"default": "Y",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Select tool (in the UV editor)",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Select tool (in the UV editor)",
+							"where": "control",
+							"default": "Not set",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Box select tool (in the UV editor)",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Box select tool (in the UV editor)",
+							"where": "control",
+							"default": "Not set",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Lasso select tool (in the UV editor)",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Lasso select tool (in the UV editor)",
+							"where": "control",
+							"default": "Not set",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Paint tool (in the UV editor)",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Paint tool (in the UV editor)",
+							"where": "control",
+							"default": "Not set",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Hold and drag to pan, whatever the tool (no middle button needed)",
+					"controls": []
 				},
 				{
 					"name": "Arm Move (in the timeline)",
@@ -2581,6 +3794,31 @@
 				{
 					"name": "Fly 3x faster",
 					"controls": []
+				},
+				{
+					"name": "Fly direction: switch between Level and Where I look",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Fly direction: switch between Level and Where I look",
+							"where": "control",
+							"default": "Not set",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
 				},
 				{
 					"name": "Move focus to the next region — top bar, panels, toolbar, viewport (Shift+F6: back)",
@@ -2916,6 +4154,56 @@
 					]
 				},
 				{
+					"name": "Simplify mesh… (fewer triangles, one undo step)",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Simplify mesh… (fewer triangles, one undo step)",
+							"where": "control",
+							"default": "Ctrl+Alt+D",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Export for 3D print or AR… (STL, 3MF, USDZ)",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Export for 3D print or AR… (STL, 3MF, USDZ)",
+							"where": "control",
+							"default": "Ctrl+Alt+E",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
 					"name": "Edit / Interact mode (Interact: clicks play with the scene instead of selecting)",
 					"controls": [
 						{
@@ -3099,6 +4387,31 @@
 							"label": "Rebind Explorer: show / bring to front / hide",
 							"where": "control",
 							"default": "Alt+E",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Flow code: open it in the Code window",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Flow code: open it in the Code window",
+							"where": "control",
+							"default": "Alt+F",
 							"disabled": false,
 							"state": "Press keys… Esc cancels",
 							"effects": {
@@ -3416,6 +4729,10 @@
 					]
 				},
 				{
+					"name": "Hold while moving: snap the nearest corner onto a corner or edge middle",
+					"controls": []
+				},
+				{
 					"name": "Save checkpoint…",
 					"controls": [
 						{
@@ -3524,6 +4841,31 @@
 							"label": "Rebind Cycle view mode (Shaded / Shaded + AO / Wireframe)",
 							"where": "control",
 							"default": "Z",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Cinematic view on / off (bounced light and reflections)",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Cinematic view on / off (bounced light and reflection",
+							"where": "control",
+							"default": "Shift+Z",
 							"disabled": false,
 							"state": "Press keys… Esc cancels",
 							"effects": {
@@ -3924,6 +5266,31 @@
 					]
 				},
 				{
+					"name": "Smooth subdivide, Catmull-Clark (faces; nothing picked = the whole mesh)",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Smooth subdivide, Catmull-Clark (faces; nothing picke",
+							"where": "control",
+							"default": "Shift+S",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
 					"name": "Loop cut (faces)",
 					"controls": [
 						{
@@ -4082,6 +5449,131 @@
 							"label": "Rebind Connect two corners of a face (vertices)",
 							"where": "control",
 							"default": "J",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Path select on / off (a click adds the shortest path from the last pick)",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Path select on / off (a click adds the shortest path ",
+							"where": "control",
+							"default": "Not set",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Arm Bisect (faces): two clicks draw the plane, Enter cuts",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Arm Bisect (faces): two clicks draw the plane, Enter ",
+							"where": "control",
+							"default": "Not set",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Move now — the picked vertices / edges / faces follow the pointer",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Move now — the picked vertices / edges / faces follow",
+							"where": "control",
+							"default": "Not set",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Rotate now (vertices / edges / faces)",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Rotate now (vertices / edges / faces)",
+							"where": "control",
+							"default": "Not set",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Resize now (vertices / edges / faces)",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Resize now (vertices / edges / faces)",
+							"where": "control",
+							"default": "Not set",
 							"disabled": false,
 							"state": "Press keys… Esc cancels",
 							"effects": {
@@ -4554,7 +6046,7 @@
 						{
 							"kind": "button",
 							"id": "",
-							"label": "Rebind Enter the selected group / leave the one you are in / else search for a node to add (wired from the selected node)",
+							"label": "Rebind Enter the selected group / leave the one you are in /",
 							"where": "control",
 							"default": "Tab",
 							"disabled": false,
@@ -5182,6 +6674,112 @@
 					]
 				},
 				{
+					"name": "Gizmo style",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "gizmo-style",
+							"label": "",
+							"where": "control",
+							"default": "Separate",
+							"disabled": false,
+							"options": [
+								"Auto",
+								"Separate",
+								"All in one",
+								"Touch puck",
+								"Box"
+							],
+							"state": "All in one",
+							"effects": {
+								"storage": {
+									"gizmoStyle": "B"
+								},
+								"stores": {
+									"gizmoPrefs.activeGizmoStyle": "B",
+									"gizmoPrefs.gizmoStyle": "B",
+									"gizmoPrefs.handleSet": "all"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "Separate",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Handle size",
+					"controls": [
+						{
+							"kind": "segment",
+							"id": "gizmo-size-S",
+							"label": "Small",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"gizmoSize": "S"
+								},
+								"stores": {
+									"gizmoPrefs.gizmoSize": "S"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						},
+						{
+							"kind": "segment",
+							"id": "gizmo-size-M",
+							"label": "Medium",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "segment",
+							"id": "gizmo-size-L",
+							"label": "Large",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"gizmoSize": "L"
+								},
+								"stores": {
+									"gizmoPrefs.gizmoSize": "L"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
 					"name": "Quality preset",
 					"controls": [
 						{
@@ -5373,6 +6971,54 @@
 							"default": true,
 							"disabled": false,
 							"exercise": "skip"
+						}
+					]
+				},
+				{
+					"name": "Scene shadow quality",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "open-scene-shadow-quality",
+							"label": "Open",
+							"where": "control",
+							"default": "Open",
+							"disabled": false,
+							"state": {
+								"gone": true
+							},
+							"effects": {
+								"storage": {
+									"inspector:sec:Lights": "open",
+									"sidebar:active:right": "scene",
+									"sidebar:order:left": "[]",
+									"sidebar:order:right": "[\"scene\"]"
+								},
+								"stores": {
+									"anyModalOpen": false,
+									"inspectorClose": false,
+									"inspectorKind": "scene",
+									"panelsButton.panelsOpen": true,
+									"settingsOpen": false,
+									"sidebarHandles.sidebarHandleShown": "<object>",
+									"sidebars.geometry": "<object>",
+									"sidebars.inspectorPanelTitle": "Configure Scene",
+									"sidebars.inspectorTabs": "<object>",
+									"sidebars.sidebarShown": "<object>",
+									"sidebars.sidebarTabs": "<object>",
+									"sidebars.sidebarVisible": "<object>",
+									"sidebars.sidebarWanted": "<object>"
+								},
+								"html": [
+									"style"
+								],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
 						}
 					]
 				},
@@ -7714,6 +9360,7 @@
 							"restored": false,
 							"storageAfterRestore": {
 								"exportPreset": "full",
+								"gltfBakeConstraints": "false",
 								"saveFormat": "tp",
 								"saveManyLibraries": "ask",
 								"showGltfFormat": "false",
@@ -8438,7 +10085,7 @@
 							"state": true,
 							"effects": {
 								"storage": {
-									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":true,\"showFps\":false,\"quality\":\"auto\",\"vrButton\":true,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\"}"
+									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":true,\"showFps\":false,\"quality\":\"auto\",\"vrButton\":true,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\",\"mobile\":false}"
 								},
 								"stores": {
 									"exportStores.exportPrefs": "<object>"
@@ -8452,7 +10099,7 @@
 							"scope": "device",
 							"restored": false,
 							"storageAfterRestore": {
-								"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":false,\"quality\":\"auto\",\"vrButton\":true,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\"}"
+								"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":false,\"quality\":\"auto\",\"vrButton\":true,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\",\"mobile\":false}"
 							},
 							"exercise": "done"
 						}
@@ -8471,7 +10118,7 @@
 							"state": true,
 							"effects": {
 								"storage": {
-									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":true,\"quality\":\"auto\",\"vrButton\":true,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\"}"
+									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":true,\"quality\":\"auto\",\"vrButton\":true,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\",\"mobile\":false}"
 								},
 								"stores": {
 									"exportStores.exportPrefs": "<object>"
@@ -8511,7 +10158,7 @@
 							"state": true,
 							"effects": {
 								"storage": {
-									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":false,\"quality\":\"high\",\"vrButton\":true,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\"}"
+									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":false,\"quality\":\"high\",\"vrButton\":true,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\",\"mobile\":false}"
 								},
 								"stores": {
 									"exportStores.exportPrefs": "<object>"
@@ -8537,7 +10184,7 @@
 							"state": true,
 							"effects": {
 								"storage": {
-									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":false,\"quality\":\"medium\",\"vrButton\":true,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\"}"
+									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":false,\"quality\":\"medium\",\"vrButton\":true,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\",\"mobile\":false}"
 								},
 								"stores": {
 									"exportStores.exportPrefs": "<object>"
@@ -8563,7 +10210,7 @@
 							"state": true,
 							"effects": {
 								"storage": {
-									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":false,\"quality\":\"low\",\"vrButton\":true,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\"}"
+									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":false,\"quality\":\"low\",\"vrButton\":true,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\",\"mobile\":false}"
 								},
 								"stores": {
 									"exportStores.exportPrefs": "<object>"
@@ -8594,7 +10241,7 @@
 							"state": false,
 							"effects": {
 								"storage": {
-									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":false,\"quality\":\"auto\",\"vrButton\":false,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\"}"
+									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":false,\"quality\":\"auto\",\"vrButton\":false,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\",\"mobile\":false}"
 								},
 								"stores": {
 									"exportStores.exportPrefs": "<object>"
@@ -8625,7 +10272,7 @@
 							"state": true,
 							"effects": {
 								"storage": {
-									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":false,\"quality\":\"auto\",\"vrButton\":true,\"useCdnForPacks\":true,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\"}"
+									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":false,\"quality\":\"auto\",\"vrButton\":true,\"useCdnForPacks\":true,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\",\"mobile\":false}"
 								},
 								"stores": {
 									"exportStores.exportPrefs": "<object>"
@@ -9785,7 +11432,7 @@
 							"scope": "device",
 							"restored": false,
 							"storageAfterRestore": {
-								"notifications": "[{\"id\":\"n1793782171767_1\",\"text\":\"The VR welcome will play the next time you enter VR.\",\"ts\":1793782171767,\"kind\":\"action\"},{\"id\":\"n1793782182266_2\",\"text\":\"Tours reset — each one shows again the first time it applies.\",\"ts\":1793782182266,\"kind\":\"info\"},{\"id\":\"n1793782188850_3\",\"text\":\"Window positions reset\",\"ts\":1793782188850,\"kind\":\"info\"},{\"id\":\"n1793782257363_4\",\"text\":\"Touch layout reset to the default arrangement\",\"ts\":1793782257363,\"kind\":\"info\"},{\"id\":\"n1793782629898_5\",\"text\":\"Line colors reset\",\"ts\":1793782629898,\"kind\":\"info\"},{\"id\":\"n1793782756293_6\",\"text\":\"Passthrough on — takes effect on the next VR entry\",\"ts\":1793782756293,\"kind\":\"info\"},{\"id\":\"n1793782756842_7\",\"text\":\"Passthrough off — takes effect on the next VR entry\",\"ts\":1793782756842,\"kind\":\"info\"}]",
+								"notifications": "[{\"id\":\"n1795644571053_1\",\"text\":\"The VR welcome will play the next time you enter VR.\",\"ts\":1795644571053,\"kind\":\"action\"},{\"id\":\"n1795644581618_2\",\"text\":\"Tours reset — each one shows again the first time it applies.\",\"ts\":1795644581618,\"kind\":\"info\"},{\"id\":\"n1795644588368_3\",\"text\":\"Window positions reset\",\"ts\":1795644588368,\"kind\":\"info\"},{\"id\":\"n1795644665865_4\",\"text\":\"Touch layout reset to the default arrangement\",\"ts\":1795644665865,\"kind\":\"info\"},{\"id\":\"n1795645132212_5\",\"text\":\"Line colors reset\",\"ts\":1795645132212,\"kind\":\"info\"},{\"id\":\"n1795645260158_6\",\"text\":\"Passthrough on — takes effect on the next VR entry\",\"ts\":1795645260158,\"kind\":\"info\"},{\"id\":\"n1795645260705_7\",\"text\":\"Passthrough off — takes effect on the next VR entry\",\"ts\":1795645260705,\"kind\":\"info\"}]",
 								"vrPassthrough": "false"
 							},
 							"exercise": "done"
@@ -10416,7 +12063,7 @@
 				}
 			]
 		},
-		"Tools & connections": {
+		"AI": {
 			"rows": [
 				{
 					"name": "Voice typing",
@@ -10647,6 +12294,53 @@
 		"Connection": {
 			"rows": [
 				{
+					"name": "Locks",
+					"controls": [
+						{
+							"kind": "segment",
+							"id": "lock-mode-select",
+							"label": "While selected",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "segment",
+							"id": "lock-mode-edit",
+							"label": "Only while editing",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"notifications": "notified: [\"This room locks an object only while someone is editing it\"]"
+								},
+								"stores": {
+									"a11yAnnounce.politeAnnouncement": "This room locks an object only while someone is editing it",
+									"lockMode.lockMode": "<object>",
+									"notifications": "<object>",
+									"notificationsUnread": "<changed>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [
+									"lockmode"
+								],
+								"events": []
+							},
+							"scope": "shared",
+							"restored": false,
+							"storageAfterRestore": {
+								"notifications": "[{\"id\":\"n1795644571053_1\",\"text\":\"The VR welcome will play the next time you enter VR.\",\"ts\":1795644571053,\"kind\":\"action\"},{\"id\":\"n1795644581618_2\",\"text\":\"Tours reset — each one shows again the first time it applies.\",\"ts\":1795644581618,\"kind\":\"info\"},{\"id\":\"n1795644588368_3\",\"text\":\"Window positions reset\",\"ts\":1795644588368,\"kind\":\"info\"},{\"id\":\"n1795644665865_4\",\"text\":\"Touch layout reset to the default arrangement\",\"ts\":1795644665865,\"kind\":\"info\"},{\"id\":\"n1795645132212_5\",\"text\":\"Line colors reset\",\"ts\":1795645132212,\"kind\":\"info\"},{\"id\":\"n1795645260158_6\",\"text\":\"Passthrough on — takes effect on the next VR entry\",\"ts\":1795645260158,\"kind\":\"info\"},{\"id\":\"n1795645260705_7\",\"text\":\"Passthrough off — takes effect on the next VR entry\",\"ts\":1795645260705,\"kind\":\"info\"},{\"id\":\"n1795645264241_8\",\"text\":\"VR panel positions reset\",\"ts\":1795645264241,\"kind\":\"info\"},{\"id\":\"n1795645284091_9\",\"text\":\"Colocated — room room-b2b82\",\"ts\":1795645284091,\"kind\":\"info\"},{\"id\":\"n1795645312688_10\",\"text\":\"This room locks an object only while someone is editing it\",\"ts\":1795645312688,\"kind\":\"info\"},{\"id\":\"n1795645313238_11\",\"text\":\"This room locks an object while someone has it selected\",\"ts\":1795645313238,\"kind\":\"info\"}]"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
 					"name": "Session size",
 					"controls": [
 						{
@@ -10673,6 +12367,101 @@
 							},
 							"scope": "device",
 							"restored": "8",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Limit floods from peers",
+					"controls": [
+						{
+							"kind": "segment",
+							"id": "peer-rate-limits-off",
+							"label": "Off",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"connect:rateLimits": "off"
+								},
+								"stores": {
+									"peerRateGate.peerRateLimits": "off"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						},
+						{
+							"kind": "segment",
+							"id": "peer-rate-limits-normal",
+							"label": "Normal",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "segment",
+							"id": "peer-rate-limits-strict",
+							"label": "Strict",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"connect:rateLimits": "strict"
+								},
+								"stores": {
+									"peerRateGate.peerRateLimits": "strict"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Require approval to join",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "require-approval",
+							"label": "Require approval to join",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {},
+								"stores": {
+									"peerModeration.requireApproval": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
 							"storageAfterRestore": {},
 							"exercise": "done"
 						}
@@ -10877,12 +12666,161 @@
 		"Privacy": {
 			"rows": [
 				{
+					"name": "Hide my IP",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "hide-my-ip",
+							"label": "Hide my IP",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"hideMyIp": "true"
+								},
+								"stores": {
+									"hideMyIp.hideMyIp": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
 					"name": "Error reports",
 					"controls": []
 				},
 				{
 					"name": "Usage counts",
 					"controls": []
+				},
+				{
+					"name": "Recording the last 10 s",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "moment-recording",
+							"label": "Recording the last 10 s",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"moment:record": "0"
+								},
+								"stores": {
+									"momentStores.momentRecording": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Open and close my panels",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "show-allow-panel",
+							"label": "Open and close my panels",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"show:allow:panel": "always"
+								},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Move my view",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "show-allow-camera",
+							"label": "Move my view",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"show:allow:camera": "always"
+								},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Open code for me",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "show-allow-code",
+							"label": "Open code for me",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"show:allow:code": "always"
+								},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
 				}
 			]
 		},
@@ -11052,6 +12990,16 @@
 				]
 			},
 			{
+				"name": "Show my status",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "setting-presence",
+						"default": false
+					}
+				]
+			},
+			{
 				"name": "Show others as classic heads",
 				"controls": [
 					{
@@ -11133,6 +13081,56 @@
 						"kind": "toggle",
 						"id": "toasts-in-drawer",
 						"default": false
+					}
+				]
+			},
+			{
+				"name": "People leaving",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "notify-peerLeft",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Chat badge",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "notify-chat",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Ping sounds",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "notify-pingSound",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "AI assistant",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "notify-agent",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Auto quality",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "notify-autoQuality",
+						"default": true
 					}
 				]
 			},
@@ -11283,6 +13281,111 @@
 						"kind": "segment",
 						"id": "undock-button-mode-group",
 						"default": false
+					}
+				]
+			},
+			{
+				"name": "Panels button",
+				"controls": [
+					{
+						"kind": "segment",
+						"id": "panels-button-mode-auto",
+						"default": true
+					},
+					{
+						"kind": "segment",
+						"id": "panels-button-mode-on",
+						"default": false
+					},
+					{
+						"kind": "segment",
+						"id": "panels-button-mode-off",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Show viewport sidebar handles",
+				"controls": [
+					{
+						"kind": "segment",
+						"id": "sidebar-handles-mode-auto",
+						"default": true
+					},
+					{
+						"kind": "segment",
+						"id": "sidebar-handles-mode-on",
+						"default": false
+					},
+					{
+						"kind": "segment",
+						"id": "sidebar-handles-mode-off",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Dim the handles at rest",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "sidebar-handles-dim",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Customize buttons",
+				"controls": [
+					{
+						"kind": "segment",
+						"id": "cb-toggle-sidebar-toggle",
+						"default": true
+					},
+					{
+						"kind": "segment",
+						"id": "cb-toggle-sidebar-full",
+						"default": true
+					},
+					{
+						"kind": "segment",
+						"id": "cb-toggle-dock-split",
+						"default": true
+					},
+					{
+						"kind": "segment",
+						"id": "cb-toggle-dock-undock",
+						"default": true
+					},
+					{
+						"kind": "segment",
+						"id": "cb-toggle-dock-minimize",
+						"default": true
+					},
+					{
+						"kind": "segment",
+						"id": "cb-toggle-group-dock",
+						"default": true
+					},
+					{
+						"kind": "segment",
+						"id": "cb-toggle-group-close",
+						"default": true
+					},
+					{
+						"kind": "segment",
+						"id": "cb-toggle-top-preview",
+						"default": true
+					},
+					{
+						"kind": "segment",
+						"id": "cb-toggle-top-panels",
+						"default": true
+					},
+					{
+						"kind": "button",
+						"id": "chrome-buttons-show-all",
+						"default": "Show all"
 					}
 				]
 			},
@@ -11499,6 +13602,16 @@
 				]
 			},
 			{
+				"name": "Pen only draws",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "pen-only-draws",
+						"default": true
+					}
+				]
+			},
+			{
 				"name": "Wheel diagnostics",
 				"controls": [
 					{
@@ -11594,6 +13707,36 @@
 		"Touch controls": [],
 		"Shortcuts": [
 			{
+				"name": "Keymap preset",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "keymap-preset",
+						"default": "ThePrototype (default)"
+					}
+				]
+			},
+			{
+				"name": "Fly with WASD",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "fly-with-wasd",
+						"default": "Always"
+					}
+				]
+			},
+			{
+				"name": "Fly direction",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "fly-direction",
+						"default": "Level"
+					}
+				]
+			},
+			{
 				"name": "Move (translate)",
 				"controls": [
 					{
@@ -11634,6 +13777,66 @@
 				]
 			},
 			{
+				"name": "Move now — the selection follows the pointer",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Not set"
+					}
+				]
+			},
+			{
+				"name": "Rotate now — turns with the pointer",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Not set"
+					}
+				]
+			},
+			{
+				"name": "Resize now — scales with the pointer",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Not set"
+					}
+				]
+			},
+			{
+				"name": "Lock to X while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "X"
+					}
+				]
+			},
+			{
+				"name": "Lock to Y while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Y"
+					}
+				]
+			},
+			{
+				"name": "Lock to Z while Move / Rotate / Resize now runs (again with another axis = that plane; again on the same = off)",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Z"
+					}
+				]
+			},
+			{
 				"name": "Arm Move (in the UV editor)",
 				"controls": [
 					{
@@ -11642,6 +13845,100 @@
 						"default": "G"
 					}
 				]
+			},
+			{
+				"name": "Move now (in the UV editor) — the selection follows the pointer",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Not set"
+					}
+				]
+			},
+			{
+				"name": "Rotate now (in the UV editor)",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Not set"
+					}
+				]
+			},
+			{
+				"name": "Resize now (in the UV editor)",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Not set"
+					}
+				]
+			},
+			{
+				"name": "Lock to U while a UV move / resize runs",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "X"
+					}
+				]
+			},
+			{
+				"name": "Lock to V while a UV move / resize runs",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Y"
+					}
+				]
+			},
+			{
+				"name": "Select tool (in the UV editor)",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Not set"
+					}
+				]
+			},
+			{
+				"name": "Box select tool (in the UV editor)",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Not set"
+					}
+				]
+			},
+			{
+				"name": "Lasso select tool (in the UV editor)",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Not set"
+					}
+				]
+			},
+			{
+				"name": "Paint tool (in the UV editor)",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Not set"
+					}
+				]
+			},
+			{
+				"name": "Hold and drag to pan, whatever the tool (no middle button needed)",
+				"controls": []
 			},
 			{
 				"name": "Arm Move (in the timeline)",
@@ -11664,6 +13961,16 @@
 			{
 				"name": "Fly 3x faster",
 				"controls": []
+			},
+			{
+				"name": "Fly direction: switch between Level and Where I look",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Not set"
+					}
+				]
 			},
 			{
 				"name": "Move focus to the next region — top bar, panels, toolbar, viewport (Shift+F6: back)",
@@ -11804,6 +14111,26 @@
 				]
 			},
 			{
+				"name": "Simplify mesh… (fewer triangles, one undo step)",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Ctrl+Alt+D"
+					}
+				]
+			},
+			{
+				"name": "Export for 3D print or AR… (STL, 3MF, USDZ)",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Ctrl+Alt+E"
+					}
+				]
+			},
+			{
 				"name": "Edit / Interact mode (Interact: clicks play with the scene instead of selecting)",
 				"controls": [
 					{
@@ -11880,6 +14207,16 @@
 						"kind": "button",
 						"id": "",
 						"default": "Alt+E"
+					}
+				]
+			},
+			{
+				"name": "Flow code: open it in the Code window",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Alt+F"
 					}
 				]
 			},
@@ -12004,6 +14341,10 @@
 				]
 			},
 			{
+				"name": "Hold while moving: snap the nearest corner onto a corner or edge middle",
+				"controls": []
+			},
+			{
 				"name": "Save checkpoint…",
 				"controls": [
 					{
@@ -12050,6 +14391,16 @@
 						"kind": "button",
 						"id": "",
 						"default": "Z"
+					}
+				]
+			},
+			{
+				"name": "Cinematic view on / off (bounced light and reflections)",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Shift+Z"
 					}
 				]
 			},
@@ -12212,6 +14563,16 @@
 				]
 			},
 			{
+				"name": "Smooth subdivide, Catmull-Clark (faces; nothing picked = the whole mesh)",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Shift+S"
+					}
+				]
+			},
+			{
 				"name": "Loop cut (faces)",
 				"controls": [
 					{
@@ -12278,6 +14639,56 @@
 						"kind": "button",
 						"id": "",
 						"default": "J"
+					}
+				]
+			},
+			{
+				"name": "Path select on / off (a click adds the shortest path from the last pick)",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Not set"
+					}
+				]
+			},
+			{
+				"name": "Arm Bisect (faces): two clicks draw the plane, Enter cuts",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Not set"
+					}
+				]
+			},
+			{
+				"name": "Move now — the picked vertices / edges / faces follow the pointer",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Not set"
+					}
+				]
+			},
+			{
+				"name": "Rotate now (vertices / edges / faces)",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Not set"
+					}
+				]
+			},
+			{
+				"name": "Resize now (vertices / edges / faces)",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Not set"
 					}
 				]
 			},
@@ -12716,6 +15127,36 @@
 				]
 			},
 			{
+				"name": "Gizmo style",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "gizmo-style",
+						"default": "Separate"
+					}
+				]
+			},
+			{
+				"name": "Handle size",
+				"controls": [
+					{
+						"kind": "segment",
+						"id": "gizmo-size-S",
+						"default": false
+					},
+					{
+						"kind": "segment",
+						"id": "gizmo-size-M",
+						"default": true
+					},
+					{
+						"kind": "segment",
+						"id": "gizmo-size-L",
+						"default": false
+					}
+				]
+			},
+			{
 				"name": "Quality preset",
 				"controls": [
 					{
@@ -12762,6 +15203,16 @@
 						"kind": "segment",
 						"id": "shadow-quality-high",
 						"default": true
+					}
+				]
+			},
+			{
+				"name": "Scene shadow quality",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "open-scene-shadow-quality",
+						"default": "Open"
 					}
 				]
 			},
@@ -14205,7 +16656,7 @@
 				]
 			}
 		],
-		"Tools & connections": [
+		"AI": [
 			{
 				"name": "Voice typing",
 				"controls": [
@@ -14277,12 +16728,57 @@
 		],
 		"Connection": [
 			{
+				"name": "Locks",
+				"controls": [
+					{
+						"kind": "segment",
+						"id": "lock-mode-select",
+						"default": true
+					},
+					{
+						"kind": "segment",
+						"id": "lock-mode-edit",
+						"default": false
+					}
+				]
+			},
+			{
 				"name": "Session size",
 				"controls": [
 					{
 						"kind": "number",
 						"id": "soft-peer-cap",
 						"default": "8"
+					}
+				]
+			},
+			{
+				"name": "Limit floods from peers",
+				"controls": [
+					{
+						"kind": "segment",
+						"id": "peer-rate-limits-off",
+						"default": false
+					},
+					{
+						"kind": "segment",
+						"id": "peer-rate-limits-normal",
+						"default": true
+					},
+					{
+						"kind": "segment",
+						"id": "peer-rate-limits-strict",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Require approval to join",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "require-approval",
+						"default": false
 					}
 				]
 			},

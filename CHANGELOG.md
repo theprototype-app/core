@@ -6,6 +6,97 @@
      rendering, so maintainer notes stay out of the user-facing window. No emoji from
      1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
 
+## 1.83.0 — Publish your game
+
+### Before you publish
+- **Publish check**: the Publish tab opens with **Before you publish**, a short list of what a visitor would trip over, each with a fix where one exists: the scene is over the 25 MB publish limit (its biggest parts listed), textures over 2048 px (**Shrink to 2048 px**, one undo), a game with no spawn point or one outside the play area (**Start players here**), a key phone players cannot press (**Edit touch controls**), a module visitors cannot get (**Open Modules**), files that are not on this device (**Ask connected people for them**), Script nodes that read random numbers, the clock or storage (**Show the node**), and objects that will not show for players. Warnings never block publishing; **Check again** runs it again. <!-- 63-publish #614 -->
+- **Unpublish and Republish** (hosted app): take a published scene or game down from Your games, the Publish dialog or its own scene page (it asks twice). Its links show a plain "No longer published" page; remixes made earlier keep their credit. **Republish** puts it back on the same link. <!-- 63-publish cloud #494 -->
+
+### Export a game that needs no internet
+- **Exported games play offline**: the zip boots the slim player (not the editor) and carries every pack piece with its LOD files, every module and every sky size the game uses; it sends no reports. A small game's zip is about 13 MB. <!-- 63-export #616 PG1 -->
+- **CrazyGames preset**: their SDK, told when the game loads, plays and pauses; their size limits (50 MB before the game starts, 250 MB, 1,500 files) checked before anything downloads. <!-- 63-export PG3 -->
+- **Checks before the download**: the Export tab shows the same rows as Publish plus the preset's limits (itch.io limits re-checked on 23 Nov). A red row stops the download and says why. **Made for phones too** makes the checks look for touch controls. <!-- 63-export PG2 -->
+- **What weighs what**: after a build the result lists the 15 biggest files and what uses them; press one to select it. <!-- 63-export PG2 -->
+- **Updating an upload**: exporting a game again keeps its zip name and export id, so an upload replaces the old build. <!-- 63-export row 7 -->
+- **Starter Dash**: a new starter game, the smallest complete one, made to try the export presets end to end. <!-- 63-export row 5, scenes #40 -->
+- New docs page **Publish your game**: itch.io and CrazyGames step by step, what the check rows mean, updating an upload, taking a game down. The Publish / Export window points to it the first time it opens. <!-- 63-int -->
+
+### For AI agents and developers
+- `save_scene` answers with `publishCheck` (the same rows, with fix names); publishing and every fix stay the person's press. cloudApi `publishCheck({target?, bundle?, phone?})` (additive). <!-- 63-publish -->
+
+### Compatibility
+- **Scene files**: no format change. **Sessions**: nothing new on the wire.
+
+## 1.82.0 — Curves, sound and many objects
+
+### Animation
+- **Property tracks open as curves on the Timeline**: drag keys and handles, type exact values, copy and paste keys, pick a key mode or an ease preset (overshoot, anticipate, bounce and more). **Add track** gains **Animate a property** for the selected object. Imported cubic animation clips keep their curves in .tpanim. <!-- 102-curves #599 -->
+
+### Sound
+- **Videos and moments carry the scene's own sound**: music, sound effects and instrument sounds, never voices or a microphone ("Scene sound", on by default). A GIF has no sound. <!-- 102b-sound #610 -->
+- **Trim, fade and normalise a sound** in its player window (E, or the scissors button) without changing the file: the setting belongs to the sound in this scene, is shared with the room, saved with the scene and used by sound nodes, timeline clips, the scene music and exports. <!-- 102b-sound #610 -->
+
+### One flow, many objects
+- **Tag objects** in the Inspector, and point one **Object Selector** at every object with a tag, in a group or matching a name (`Star*`). A new **Fired Object** node says which one was clicked or touched. **Give this flow to the selection**, and **update all the copies** from any one of them. <!-- 102b-flows #593 -->
+
+### Look
+- **Water in the Cinematic view**: water surfaces and tank bodies draw with the editor view's look (waves, refraction, depth colour, foam, caustics, reflections), and under the surface the view shows the water's fog, tint and caustics. "Water" no longer appears under "Not shown". In water-heavy scenes the Cinematic view may step its quality down on integrated GPUs. Fluid tanks still draw as their stand-in. <!-- 100-cover-water #642 -->
+- **Contact shadows, this device**: the Preview menu has a new Look group with a Contact shadows switch (Auto / On / Off) and what it costs here. On is for computers: on a phone or a headset On is disabled and says why. When frames run late, contact shadows are the first thing the automatic quality turns off. <!-- 106-contact-switch #660; Quest On stays disabled until a Quest row is measured -->
+
+### Faster start
+- **The editor and the play page load less before they start** (about 265 KB less for the editor and 140 KB less for play, compressed): the face editor, ambient occlusion, What's new, the file preview, and the KTX2 and FBX readers now load the first time you use them. <!-- 102-boot-diet-2 #654: play 1851.4 -> 1709.6 KB, editor 2993.9 -> 2726.9 KB gz on v1.81.0 -->
+
+### For AI agents and developers
+- Agent tools: `update_objects` takes `tags`; `place_sound` and `set_music` take `trim` {start, end, fadeIn, fadeOut, normalize}. Additive: nothing renamed or removed. <!-- 102b-flows, 102b-sound -->
+- Agent eval: load-proof waits, 8 new multiplayer and game tasks, new baseline 18.65 / 23 (v1.72.0, 10 runs). <!-- 2.0-eval2 #601 -->
+- Dependencies: SvelteKit 3.4, @lucide/svelte 1.63. <!-- deps-2026-11 19de5dba -->
+- CI: a page that a multi-page e2e step is not driving now pauses on GitHub runners, and suites that need a real GPU no longer gate the GitHub battery (the desktop and integrator batteries still run them). <!-- #649 -->
+
+### Compatibility
+- **Scene files**: no format change. **Everyone in a session should be on 1.82.0**: an older version ignores tags, so an Object Selector by tag finds nothing on its screen, and it reads curve keys without their handles.
+
+## 1.81.0 — AI apps in your scene, and your room in VR
+
+### Use theprototype from ChatGPT and other AI apps
+- **ChatGPT and other AI apps**: the connector now accepts ChatGPT (developer mode) and any MCP app that signs in with OAuth. The approval page names where it returns, and shows a badge only for Claude's and ChatGPT's own addresses. <!-- 89-apps -->
+- **The tab names the AI app at work**: "ChatGPT connected · this tab", "ChatGPT (connector)" in the log, "ChatGPT opened Explorer". An app the server cannot name reads "An AI app". <!-- 89-apps 104-int -->
+- **Settings ▸ AI** (it was Tools & connections) has two cards: AI inside the app (your key) and AI apps that work in your scene, with **Connected apps** moved there from Account: each app named, **Revoke** per app. <!-- 89-apps -->
+- New docs page: **Use any AI** (which one you need, the steps per app, what works where). <!-- 89-apps -->
+
+### What an AI app can do in your tab
+- **Your files, your screen, your scenes**: with your say-so, an AI app can work with the files in your Explorer (delete goes to Deleted), open a panel, move your view, open code at a line, select things, and open or make another scene. It asks the first time (**Always / This time / No**, switches in **Settings ▸ Privacy ▸ Assistant on your screen**), every change has **Back** or **Undo**, and unsaved changes are saved or kept in Sessions before a scene switch, never dropped. Text it reads from your files is treated as data, not instructions. <!-- 104-show 104-int -->
+- **What is under a point**: the new **probe** tool reads the ground height, slope and surface, and any water's surface and depth (up to 64 points, or a ray). Viewers may use it; it only reads. <!-- 104-world -->
+- **The camera you look through**: "where am I" knows when you look through Preview, a game camera, a sequence shot, Film on your phone or a recording, and a screenshot of what you see uses that camera's framing. An AI app does not move your view while you record or film. <!-- 104-world 104-int -->
+- **Things that float**: an AI app can make things float or sink (material, density, from mass, buoyancy, water drag) and says where the waterline will sit. The Inspector's **Floats** hint reads in metres, with a new **Water drag** slider. <!-- 104-world -->
+- **35 connector tools** (31 before): probe, files, show and scene are new; nothing was renamed or removed. <!-- 104-int -->
+
+### Scan my room (Quest)
+- **Scan my room**: your headset's room setup becomes named, see-through boxes at real size under **My room** (VR menu **Add ▸ Scan my room**, or the Play button menu). No camera image is used or stored. The first time, Quest Browser asks to allow the site. <!-- 104-room-scan -->
+- **Scan again and each wall keeps its name**, and your edits on it, on the same real wall. A wall that is no longer in your room setup keeps its name, and the scan says so ("Wall 3 not found in this scan."). <!-- 104-wall-names -->
+
+### For AI agents and developers
+- **Agent contract 1.12.0**: `files`, `show`, `scene` (a person's own tab and the in-app assistant only; headless agent pages do not list them), `probe`, `where_are_users` `you.through`, `set_physics` `float` / `density` / `buoyancy` / `waterDrag` and its `water` answer. Additive: nothing renamed. <!-- 104-show 104-world -->
+- **Eval** (40 spoken requests, sonnet): 37.5 / 40 with this release's tools, 33 / 40 with 1.75's; no request scored worse. <!-- 104-int -->
+
+### Compatibility
+- **Scene files**: no format change. **In a session with someone on an older version**: a floating setting from this release floats on their screen with the older defaults; My room boxes are ordinary boxes there.
+
+## 1.80.0 — Bisect, smooth subdivide and path select
+
+### Mesh editing
+- **Bisect**: cut a mesh with a flat plane. Two clicks draw it, the gizmo moves and turns it, Apply (or Enter) cuts the picked faces or the whole mesh. Clear the inner or outer side, and fill the opening so a closed model stays closed. Settings ▸ Shortcuts can give it a key. <!-- 99-newops K8 #635 -->
+- **Smooth subdivide**: tick **smooth** under Subdivide, or press Shift+S, to round a shape off as it splits (Catmull-Clark, levels 1 to 3). The picked faces smooth while their border stays put; with nothing picked the whole mesh smooths. Open edges keep their line and textures stay in place. In the Blender style keymap Shift+S is Subdivide, so Smooth subdivide has no key there (give it one in Settings ▸ Shortcuts). <!-- 99-newops K8 #635 -->
+- **Path select**: Ctrl+click picks the shortest path of faces, edges or vertices from your last pick; tick **steps** to count steps instead of length. On touch and in VR, the **Path** toggle does the same. Shift+click still adds a single element. <!-- 99-newops K8 #635 -->
+- **Loop cut**: dragging Position or Cuts shows a yellow line where the cut will land; the cut happens when you let go. While you drag, the previous cut stays visible under the line. Others in the session see the result, not the drag. Typing a value still cuts straight away. <!-- 99-scrub #656 -->
+- **Moving faces on a big mesh** finishes about 3x faster, and the first move on a mesh no longer stalls. <!-- 99-scrub #656: 67k grab commit median 215 -> 70 ms, p95 400 -> 240 ms (PC); Deck row in 99-int-2 STATUS -->
+
+### For AI agents
+- `edit_mesh` gains `subdivide_smooth` (levels) and `bisect` (a point, a direction, clear and fill). `create_shape`'s subdivide now runs the same Catmull-Clark as the editor; its output is unchanged. <!-- 99-newops K8, parity 12/12 -->
+
+### Compatibility
+- **Scene files**: format unchanged; a scene saved here opens in 1.79.0. <!-- 99-int-2 s2: late-joiner-compat vs built 1.79.0 -->
+- **With someone on 1.79.0**: mesh edits reach each other the same way as before; the new tools travel as ordinary mesh edits. <!-- 99-int-2 s2: mesh-commit-two-tree with a 1.79.0 peer -->
+
 ## 1.79.0 — Hands-on editing
 
 ### Keyboard and gizmo

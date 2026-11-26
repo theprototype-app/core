@@ -14,6 +14,7 @@ import { IMPORT_MODEL_TOOL } from '$lib/ai/importModel.js'; // 56 C9
 import { IMPORT_SHAPE_TOOL } from '$lib/ai/importShape.js'; // diorama2 item 9
 import { UPLOAD_ASSET_TOOL } from '$lib/ai/uploadAsset.js'; // diorama2 items 16 + 24
 import { IMPORT_FILE_TOOL } from '$lib/ai/importFile.js'; // 66 S4b
+import { PERSON_AI_TOOLS, runPersonTool } from '$lib/ai/personTools.js'; // 104 C1-C3
 import { physicsToolsEnabled, forcePhysicsTools } from '$lib/ai/flowTools.js';
 import { meshGenReady } from '$lib/ai/meshProviders.js';
 import { behaviourHost } from '$lib/ai/aiExtensions.js';
@@ -347,7 +348,18 @@ async function saveSceneTool(args, role, by) {
 	// the gap counts from the END of a save: a big scene's own save can take longer than the gap
 	const hold = setInterval(() => (lastAgentSaveAt = Date.now()), 1000);
 	try {
-		return await runSaveScene(args, by);
+		const r = await runSaveScene(args, by);
+		// 63-publish: the publish check rides a successful save as data (the same rows as the Publish
+		// tab), so an agent can tell the person what a visitor would hit; it never publishes itself
+		if (r?.saved) {
+			try {
+				const { publishCheckData } = await import('../export/publishCheckData.js');
+				return { ...r, publishCheck: await publishCheckData() };
+			} catch {
+				/* a check that cannot run leaves the save's answer as it was */
+			}
+		}
+		return r;
 	} finally {
 		clearInterval(hold);
 		lastAgentSaveAt = Date.now();
@@ -420,7 +432,8 @@ async function agentRun(name, args, opts) {
 /**
  * Build the wired agent.
  * @param {{screenshot?: (opts: any) => Promise<string|null>, missingTools?: () => {name: string, reason: string}[],
- *   deps?: Partial<import('./agentCore.js').AgentDeps>, physics?: boolean, localSim?: boolean, connector?: boolean, saveLabel?: string}} [extra] `deps` override
+ *   deps?: Partial<import('./agentCore.js').AgentDeps>, physics?: boolean, localSim?: boolean, connector?: boolean, saveLabel?: string | (() => string),
+ *   who?: () => string}} [extra] `deps` override
  *   the agent-page wiring (86: the connector); `physics` offers + runs the physics tools for THIS agent only (86-fix B1:
  *   never the page-wide forcePhysicsTools, which would flip the person's own assistant); `localSim` runs
  *   control_simulation on this page instead of relaying it to the host (86-fix B2); `connector` = a person's own tab:
@@ -430,11 +443,28 @@ export function createTpAgent(extra = {}) {
 	// 102-boot-diet: behaviours load on demand; an agent may create one on an empty scene, and its tool
 	// list offers the behaviour tools once their host has registered, so start loading them with the agent
 	loadBehaviours();
-	const toolOpts = { physics: !!extra.physics, localSim: !!extra.localSim, ...(extra.connector ? { by: 'Claude' } : {}) };
+	/** @type {{physics: boolean, localSim: boolean, by?: string}} */
+	const toolOpts = { physics: !!extra.physics, localSim: !!extra.localSim };
+	// 89 x 104: the connector names the AI app at work ("ChatGPT moved your view · Back"), read per call; 'Claude' before 89's Worker
+	const by = () => (typeof extra.who === 'function' && extra.who()) || 'Claude';
+	if (extra.connector) Object.defineProperty(toolOpts, 'by', { get: by, enumerable: true });
 	/** @type {ReturnType<typeof createAgentCore>} */
 	let core;
 	const inbox = agentInbox();
 	let unsettledSince = 0;
+	/** 104 C1-C3: the person's own tools (their Explorer, interface, scenes) — a person's tab only, so a
+	 * headless agent page never lists them. They gate themselves (a viewer may list and read files)
+	 * @returns {Record<string, any>} */
+	const personTools = () =>
+		Object.fromEntries(
+			PERSON_AI_TOOLS.map((t) => [
+				t.function.name,
+				{
+					schema: { description: t.function.description, parameters: t.function.parameters },
+					run: (/** @type {any} */ args) => runPersonTool(t.function.name, args, { by: by() })
+				}
+			])
+		);
 	/** the tools only an agent page has @returns {Record<string, any>} */
 	const agentPageTools = () => ({
 			install_modules: {
@@ -552,7 +582,7 @@ export function createTpAgent(extra = {}) {
 			} catch {}
 		},
 		extraTools: {
-			...(extra.connector ? {} : agentPageTools()),
+			...(extra.connector ? personTools() : agentPageTools()),
 			// 86 T3: "what can you do here?" for a voice conversation (the connector, serve)
 			what_can_you_do: {
 				schema: WHAT_CAN_YOU_DO_SCHEMA,
@@ -565,7 +595,7 @@ export function createTpAgent(extra = {}) {
 			// 56 C12: keep this scene (the person's Library; a guest's goes to the host's)
 			save_scene: {
 				schema: SAVE_SCENE_SCHEMA,
-				run: (args) => saveSceneTool(args, /** @type {any} */ (core.agent.status()).role, extra.saveLabel ?? 'An agent')
+				run: (args) => saveSceneTool(args, /** @type {any} */ (core.agent.status()).role, (typeof extra.saveLabel === 'function' ? extra.saveLabel() : extra.saveLabel) ?? 'An agent')
 			}
 		},
 		...(extra.deps ?? {})
@@ -586,14 +616,18 @@ export const CONNECTOR_LABEL = 'Claude (connector)';
  *   · no agent-page tools (install_modules, pending/accept offers): the person keeps those buttons.
  * Never installed on `window`: the connector (src/lib/connector/) holds it.
  */
-export function createConnectorAgent() {
+/** 89: `label` names the app on the other end per call ("ChatGPT (connector)"); it defaults to the fixed words.
+ * `who` is the bare name ("ChatGPT") the person's own lines use (104 files / show / scene, the scene panel's edit mark)
+ * @param {() => string} [label] @param {() => string} [who] */
+export function createConnectorAgent(label = () => CONNECTOR_LABEL, who = () => 'Claude') {
 	return createTpAgent({
+		who,
 		// 86-fix B1/B2: physics tools on for the connector's own list (the person's "Physics tools" checkbox is
 		// for their assistant), and the simulation runs in this full-speed tab
 		physics: true,
 		localSim: true,
 		connector: true,
-		saveLabel: CONNECTOR_LABEL,
+		saveLabel: label,
 		deps: {
 			inSession: () => {
 				const host = get(sessionHost);
@@ -601,7 +635,7 @@ export function createConnectorAgent() {
 			},
 			hostAway: () => null,
 			room: () => null,
-			endBatch: (label) => endHistoryBatch(String(label).replace(/^Agent:/, CONNECTOR_LABEL + ':'))
+			endBatch: (batch) => endHistoryBatch(String(batch).replace(/^Agent:/, label() + ':'))
 		}
 	});
 }

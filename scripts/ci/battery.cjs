@@ -37,9 +37,10 @@ const BATTERY = path.join(ROOT, 'tests', 'e2e', 'battery.json');
  * @typedef {{ comment?: string, refs: Record<string, {repo: string, ref: string}>, shards: {target_minutes: number, max: number, min: number, par?: number},
  *   pc?: {games: string[], levels: string[]}, skip: Record<string, string>, optional: Record<string, string>, setup: Record<string, string>,
  *   suites: Record<string, number>, modules?: Record<string, number>, desk?: Record<string, string[]>, exclude?: Record<string, string[]>,
- *   tiers?: string, tier1_always?: string[], tier1_always_files?: string[], tier1_cap?: number, tier1_shared_suites?: number }} Battery
+ *   tiers?: string, tier1_always?: string[], tier1_always_files?: string[], tier1_cap?: number, tier1_shared_suites?: number,
+ *   ci?: {comment?: string, timeouts?: Record<string, number>, fullDraw?: Record<string, string>, pauseIdle?: Record<string, string>, optionalTags?: Record<string, string>} }} Battery
  * @typedef {{ name: string, status: 'pass'|'flaky'|'quarantined'|'fail'|'timeout'|'gone'|'notrun', required: boolean, rc: number|null, secs: number,
- *   retrySecs?: number, pass: number, fail: number, last: string, shard: number }} SuiteResult
+ *   retrySecs?: number, pass: number, fail: number, last: string, shard: number, minFps?: number, slow?: boolean, slowWaits?: number }} SuiteResult
  */
 
 /** @returns {Battery} */
@@ -56,9 +57,26 @@ function runnable(b) {
 
 /** @typedef {'required'|'optional'|'all'} BatterySet */
 
+/**
+ * What does not gate ON THE GITHUB RUNNER: battery.json `optional` (suite -> reason, kept by hand and by `refresh`) plus
+ * every suite carrying a tag listed in `ci.optionalTags` (desk tag -> reason). `desk.gpu` is the first such tag: a suite
+ * that needs a real GPU (WebGPU, a measured frame or long-task budget) cannot pass on SwiftShader, and new ones kept
+ * landing as REQUIRED here and failing (cinematic-fx, 2026-11-24). An explicit `optional` entry keeps its own reason.
+ * The desk / pc / int batteries (battery-desk.cjs) do not read this: there these suites gate as before.
+ * @param {Battery} b @returns {Record<string, string>}
+ */
+function ciOptional(b) {
+	/** @type {Record<string, string>} */
+	const out = { ...b.optional };
+	for (const [tag, reason] of Object.entries(b.ci?.optionalTags ?? {}))
+		for (const n of /** @type {Record<string, string[]>} */ (/** @type {any} */ (b).desk ?? {})[tag] ?? []) if (!(n in out)) out[n] = reason;
+	return out;
+}
+
 /** the runnable suites of one set, longest first @param {Battery} b @param {BatterySet} set @returns {[string, number][]} */
 function suitesOf(b, set) {
-	return runnable(b).filter(([n]) => set === 'all' || (set === 'optional') === n in b.optional);
+	const opt = ciOptional(b);
+	return runnable(b).filter(([n]) => set === 'all' || (set === 'optional') === n in opt);
 }
 
 /** @param {Battery} b @param {BatterySet} [set] @returns {number} */
@@ -102,7 +120,44 @@ function counts(log) {
 	const pass = lines.filter((l) => /^\s*(✓|PASS|ok)/.test(l)).length;
 	const fail = lines.filter((l) => /^\s*(✗|FAIL|not ok)/.test(l)).length;
 	const last = (lines.filter((l) => l.trim()).pop() || '').slice(0, 160);
-	return { pass, fail, last };
+	// the slow-runner allowance (helpers.cjs, CI only): the slowest page's measured fps, and how many waits used
+	// more than their local limit — a green on a starved runner shows as one (SLOW RUNNER in the summary)
+	const fpsList = lines.map((l) => /^\[helpers\] fps [^:]+: ([\d.]+)/.exec(l)).filter(Boolean).map((m) => Number(/** @type {RegExpExecArray} */ (m)[1]));
+	const minFps = fpsList.length ? Math.min(...fpsList) : undefined;
+	// the threshold is helpers.cjs SLOW_RUNNER_FPS alone: a page under it prints "(SLOW RUNNER, …)" on its fps line
+	const slow = lines.some((l) => /^\[helpers\] fps .*SLOW RUNNER/.test(l));
+	const slowWaits = lines.filter((l) => /^\[helpers\] slow (wait|click):/.test(l)).length;
+	return { pass, fail, last, minFps, slow, slowWaits };
+}
+
+/** @param {{minFps?: number, slow?: boolean}} r */
+const slowRunner = (r) => (r.slow ? ` SLOW RUNNER ${r.minFps} fps` : '');
+
+/**
+ * ci-speed: BATTERY_CI is a GITHUB-ONLY switch. It turns on the slow-runner allowance (longer waits) and the lean
+ * draw (tests/e2e/helpers.cjs: shadows, AO, post and half resolution off unless a suite opts back in through
+ * battery.json `ci.fullDraw`), so a local / desk / pc battery or an int's release gate that inherited it would gate on
+ * a different app than users run, with longer limits. Every runner entry refuses it unless GitHub Actions set
+ * GITHUB_ACTIONS=true. Returns the refusal, or '' when the environment is fine.
+ * @param {Record<string, string | undefined>} env
+ */
+function ciEnvError(env) {
+	const v = env.BATTERY_CI;
+	if (v === undefined || v === '' || v === '0') return '';
+	if (env.GITHUB_ACTIONS === 'true') return '';
+	return `BATTERY_CI=${v} is set outside GitHub Actions (GITHUB_ACTIONS=${env.GITHUB_ACTIONS ?? 'unset'}): it is CI-only (the slow-runner allowance and the lean draw). Unset it; a local, desk, pc or release battery keeps today's limits and full rendering.`;
+}
+
+/**
+ * ci-speed: the per-suite environment battery.json `ci` asks for, on CI only (BATTERY_CI=1). `ci.fullDraw` (suite ->
+ * reason) = this suite tests pixels / an effect / the resolution / layout at size, so it opts OUT of the lean draw
+ * (tests/e2e/helpers.cjs LEAN_DRAW) and draws as a user's page does. `ci.pauseIdle` (suite -> evidence) = a multi-page
+ * suite A/B'd unchanged with its idle pages paused (helpers PAUSE_IDLE). Anywhere else: nothing.
+ * @param {Battery} b @param {string} name @param {Record<string, string | undefined>} env @returns {Record<string, string>}
+ */
+function ciSuiteEnv(b, name, env) {
+	if (env.BATTERY_CI !== '1') return {};
+	return { ...(b.ci?.fullDraw?.[name] ? { E2E_FULL_DRAW: '1' } : {}), ...(b.ci?.pauseIdle?.[name] ? { E2E_PAUSE_IDLE: '1' } : {}) };
 }
 
 /** @param {string[]} argv @param {string} flag */
@@ -180,8 +235,11 @@ function runSuite(name, est, out, tag, capMs) {
 	const log = fs.openSync(logFile, 'w');
 	// every evidence variable the suites read points OUTSIDE the served tree (an .html artefact
 	// inside it full-reloads the app mid-test) and is kept only when the suite fails
-	const env = { ...process.env, EVIDENCE_DIR: ev, EVIDENCE: ev, OUT: ev, SHOT_DIR: ev, SHOTS_DIR: ev };
-	const timeout = Math.max(60000, Math.min(capMs, Math.min(1800, Math.max(600, Math.round(est * 3))) * 1000));
+	const env = { ...process.env, EVIDENCE_DIR: ev, EVIDENCE: ev, OUT: ev, SHOT_DIR: ev, SHOTS_DIR: ev, ...ciSuiteEnv(load(), name, process.env) };
+	// battery.json `ci.timeouts` (seconds): a CI-only suite limit for a suite the slow-runner allowance makes longer
+	// (BATTERY_CI=1 is set by battery.yml only; a local battery keeps the estimate-based limit)
+	const ciSecs = process.env.BATTERY_CI === '1' ? load().ci?.timeouts?.[name] : undefined;
+	const timeout = Math.max(60000, Math.min(capMs, (ciSecs ?? Math.min(1800, Math.max(600, Math.round(est * 3)))) * 1000));
 	const t0 = Date.now();
 	return new Promise((resolve) => {
 		const child = spawn('node', [file], { cwd: ROOT, env, stdio: ['ignore', log, log], detached: true });
@@ -221,13 +279,30 @@ async function run(argv) {
 	// --set confirm --from <dir>: the required reds of a finished run (and what its deadline left unrun), re-run on
 	// THIS fresh runner — part `shard` of `of` takes every of-th one. A red that passes here was the shard's load.
 	const from = opt(argv, '--from');
-	const reds = () =>
-		walk(path.resolve(/** @type {string} */ (from)))
+	// split by TIME, longest first onto the least-loaded part (every part computes the same split): an alphabetical
+	// every-of-th split put two 10-minute reds on one part and its deadline left the rest `notrun`, red unretried
+	const reds = () => {
+		/** @type {SuiteResult[]} */
+		const all = walk(path.resolve(/** @type {string} */ (from)))
 			.filter((f) => /results-\d+\.json$/.test(f))
-			.flatMap((f) => JSON.parse(fs.readFileSync(f, 'utf8')).results.filter(isRed).map((/** @type {SuiteResult} */ r) => r.name))
-			.sort()
-			.filter((_, i) => i % of === shard - 1);
+			.flatMap((f) => JSON.parse(fs.readFileSync(f, 'utf8')).results.filter(isRed));
+		const cost = (/** @type {SuiteResult} */ r) => Math.max(r.secs || 0, b.suites[r.name] || 60);
+		all.sort((x, y) => cost(y) - cost(x) || (x.name < y.name ? -1 : x.name > y.name ? 1 : 0));
+		const load = Array.from({ length: of }, () => 0);
+		/** @type {string[]} */
+		const part = [];
+		for (const r of all) {
+			const k = load.indexOf(Math.min(...load));
+			load[k] += cost(r);
+			if (k === shard - 1) part.push(r.name);
+		}
+		return part;
+	};
 	const mine = only ? only.split(',') : set === 'confirm' ? reds() : assign(b, of, set)[shard - 1].suites;
+	// GitHub-only optional suites (battery.json optional + ci.optionalTags), each with the reason it does not gate here
+	const ciOpt = ciOptional(b);
+	const byTag = mine.filter((n) => !(n in b.optional) && n in ciOpt);
+	if (byTag.length) console.log(`[battery] optional on this runner by tag (${byTag.length}): ${byTag.map((n) => `${n} — ${ciOpt[n]}`).join('; ')}`);
 	// the suites' own default is a hosts-file origin: say where the app is
 	const url = (process.env.APP_URL ||= `https://localhost:${port}/`);
 	let server = argv.includes('--serve') && mine.length ? await serve(port, path.join(out, 'logs', 'dev-server.log')) : null;
@@ -251,7 +326,7 @@ async function run(argv) {
 	const queue = [...mine];
 	const worker = async () => {
 		for (let name = queue.shift(); name; name = queue.shift()) {
-			const required = !(name in b.optional);
+			const required = !(name in ciOpt);
 			if (!fs.existsSync(path.join(ROOT, 'tests', 'e2e', name + '.test.cjs'))) {
 				results.push({ name, status: 'gone', required: false, rc: null, secs: 0, pass: 0, fail: 0, last: 'no such suite (refresh battery.json)', shard });
 				continue;
@@ -299,10 +374,10 @@ async function run(argv) {
 				}
 			}
 			const last = quarantinedChecks.length ? 'quarantined: ' + quarantinedChecks.join(' | ').slice(0, 140) : r.last;
-			results.push({ name, status, required, rc: r.rc, secs: r.secs, retrySecs, pass: r.pass, fail: r.fail, last, shard });
+			results.push({ name, status, required, rc: r.rc, secs: r.secs, retrySecs, pass: r.pass, fail: r.fail, last, shard, minFps: r.minFps, slow: r.slow, slowWaits: r.slowWaits });
 			save();
 			if (status === 'pass' || status === 'flaky' || status === 'quarantined') fs.rmSync(path.join(out, 'evidence', name), { recursive: true, force: true });
-			console.log(`${name} ${status}${required ? '' : ' (optional)'} rc=${r.rc} pass~${r.pass} fail~${r.fail} ${r.secs}s${retrySecs ? ` retry ${retrySecs}s` : ''} :: ${last}`);
+			console.log(`${name} ${status}${required ? '' : ' (optional)'} rc=${r.rc} pass~${r.pass} fail~${r.fail} ${r.secs}s${retrySecs ? ` retry ${retrySecs}s` : ''}${slowRunner(r)}${r.slowWaits ? ` slow-waits=${r.slowWaits}` : ''} :: ${last}`);
 		}
 	};
 	await Promise.all(Array.from({ length: par }, worker));
@@ -333,6 +408,11 @@ function table(results, title) {
 	if (opt.length) md += `<details><summary>Optional reds (do not gate)</summary>\n\n${head}${opt.map(row).join('\n')}\n\n</details>\n\n`;
 	if (quar.length) md += `<details><summary>Quarantined reds (tests/e2e/quarantine.json — do not gate)</summary>\n\n${head}${quar.map(row).join('\n')}\n\n</details>\n\n`;
 	if (flaky.length) md += `<details><summary>Flaky (green on the retry)</summary>\n\n${head}${flaky.map(row).join('\n')}\n\n</details>\n\n`;
+	// the slow-runner allowance (helpers.cjs, CI only): every suite whose slowest page drew under SLOW_RUNNER_FPS,
+	// green or red — a green here ran on the extra time, and says so
+	const slow = results.filter((r) => slowRunner(r));
+	if (slow.length)
+		md += `**SLOW RUNNER** (a page drew under helpers.cjs SLOW_RUNNER_FPS; waits past their local limit are logged as \`[helpers] slow wait\`/\`slow click\`)\n\n| suite | status | shard | slowest page | slow waits |\n|---|---|---|---|---|\n${slow.map((r) => `| ${r.name} | ${r.status} | ${r.shard} | SLOW RUNNER ${r.minFps} fps | ${r.slowWaits ?? 0} |`).join('\n')}\n\n`;
 	const gone = results.filter((r) => r.status === 'gone');
 	if (gone.length) md += `Listed but gone (refresh tests/e2e/battery.json): ${gone.map((r) => r.name).join(', ')}\n\n`;
 	return md;
@@ -407,7 +487,18 @@ function write(b) {
 	if (b.desk) body.push(`\t"desk": ${obj(b.desk, '\t')}`);
 	if (b.exclude) body.push(`\t"exclude": ${obj(Object.fromEntries(Object.entries(b.exclude).map(([k, v]) => [k, [...v].sort()])), '\t')}`);
 	// battery-tiers (battery-desk.cjs tiers): the tier-1 always-set, shared-core files and caps, kept as written
-	for (const k of /** @type {const} */ (['tiers', 'tier1_always', 'tier1_always_files', 'tier1_cap', 'tier1_shared_suites'])) if (b[k] !== undefined) body.push(`\t${JSON.stringify(k)}: ${JSON.stringify(b[k])}`);
+	/** @type {Record<string, any>} */
+	const any = b;
+	const tierKeys = ['tiers', 'tier1_always', 'tier1_always_files', 'tier1_cap', 'tier1_shared_suites'];
+	for (const k of tierKeys) if (any[k] !== undefined) body.push(`\t${JSON.stringify(k)}: ${JSON.stringify(any[k])}`);
+	// any key this writer does not know (61-int's `gpu`, from gpu-neutral-suites.cjs) is kept, never dropped:
+	// a refresh that silently lost 342 gpu rows is how deps-2026-11 found this
+	const known = new Set(['comment', 'refs', 'shards', 'pc', 'skip', 'optional', 'setup', 'suites', 'modules', 'desk', 'exclude', ...tierKeys]);
+	for (const k of Object.keys(any)) {
+		const v = any[k];
+		if (known.has(k) || v === undefined) continue;
+		body.push(`\t${JSON.stringify(k)}: ${v && typeof v === 'object' && !Array.isArray(v) ? obj(v, '\t') : JSON.stringify(v)}`);
+	}
 	fs.writeFileSync(BATTERY, `{\n${body.join(',\n')}\n}\n`);
 }
 
@@ -455,7 +546,7 @@ function refresh(argv) {
 		const names = (dir, f) => new Set(walk(path.resolve(dir)).filter((x) => /results-\d+\.json$/.test(x)).flatMap((x) => JSON.parse(fs.readFileSync(x, 'utf8')).results.filter(f).map((/** @type {SuiteResult} */ r) => r.name)));
 		const green = new Set(opts(argv, '--green').flatMap((d) => [...names(d, (r) => r.status === 'pass' || r.status === 'flaky')]));
 		for (const d of redDirs)
-			for (const n of names(d, (r) => r.status === 'fail' || r.status === 'timeout' || r.status === 'flaky')) if (n in b.suites && !green.has(n) && !(n in b.optional)) b.optional[n] = reason;
+			for (const n of names(d, (r) => r.status === 'fail' || r.status === 'timeout' || r.status === 'flaky')) if (n in b.suites && !green.has(n) && !(n in ciOptional(b))) b.optional[n] = reason;
 	}
 	for (const k of Object.keys(b.optional)) if (!(k in b.suites)) delete b.optional[k];
 	write(b);
@@ -481,6 +572,11 @@ function plan() {
 
 if (require.main === module) {
 	const [cmd, ...argv] = process.argv.slice(2);
+	const ciError = ciEnvError(process.env);
+	if (ciError) {
+		console.error('battery.cjs: ' + ciError);
+		process.exit(2);
+	}
 	if (cmd === 'plan') plan();
 	else if (cmd === 'run') run(argv);
 	else if (cmd === 'report') report(argv);
@@ -491,4 +587,4 @@ if (require.main === module) {
 	}
 }
 
-module.exports = { load, assign, shardCount, runnable, counts };
+module.exports = { load, assign, shardCount, runnable, counts, ciEnvError, ciSuiteEnv, ciOptional };

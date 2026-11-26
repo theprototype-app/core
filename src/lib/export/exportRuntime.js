@@ -66,6 +66,15 @@ export async function startExportRuntime() {
 	const cfg = exportConfig;
 	/** 93 LP2: ends the first-load cover @type {(v?: any) => void} */
 	let coverDone = () => {};
+	// 63 PG3: a portal preset's adapter starts FIRST, so its loading phase covers the whole boot
+	if (cfg.preset) {
+		const { PORTALS } = await import('./portals/index.js');
+		const load = /** @type {Record<string, any>} */ (PORTALS)[cfg.preset];
+		if (load)
+			void load()
+				.then((/** @type {any} */ start) => start({ getRuntimePhase: () => exportRuntimeState.phase }))
+				.catch((/** @type {any} */ e) => console.warn('export: the portal adapter did not start', e));
+	}
 	try {
 		exportRuntimeState.phase = 'engine';
 		await waitFor(() => get(objectsGroup) && get(globalRenderer));
@@ -126,8 +135,8 @@ export async function startExportRuntime() {
 }
 
 /**
- * The export's Show FPS / Quality as the game's DEFAULT: applied ONCE per export per device
- * (a marker keyed by the export id), so a player who then changes them in the game's menu keeps
+ * The export's Show FPS / Quality as the game's DEFAULT: applied ONCE per export id and defaults per device
+ * (a marker keyed by both), so a player who then changes them in the game's menu keeps
  * their choice on the next visit. Not "only when nothing is stored": a game module may write its
  * own defaults into the same row while it loads (Sky Run's comfort vignette does).
  * @param {import('./exportBoot.js').ExportConfig} cfg
@@ -135,7 +144,9 @@ export async function startExportRuntime() {
 async function applyGameDefaults(cfg) {
 	const { setGameSetting } = await import('../gameSettings');
 	const { safeStorage } = await import('../safeStorage');
-	const marker = 'tp:export:' + (cfg.id || 'game') + ':defaults';
+	// keyed by the export id AND the defaults: the id is kept across re-exports (63 row 7), so a re-export
+	// with other defaults must still reach a player who ran an earlier build
+	const marker = 'tp:export:' + (cfg.id || 'game') + ':defaults:' + (cfg.showFps ? 'f' : '-') + String(cfg.quality || 'auto');
 	if (safeStorage.getItem(marker)) return;
 	if (cfg.showFps) setGameSetting('showFps', true);
 	if (cfg.quality !== 'auto') setGameSetting('quality', cfg.quality);

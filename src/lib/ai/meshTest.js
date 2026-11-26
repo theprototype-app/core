@@ -1,4 +1,4 @@
-// 59 T4 — Test for a mesh-generation provider (Settings ▸ Tools & connections). Mesh providers had
+// 59 T4 — Test for a mesh-generation provider (Settings ▸ AI). Mesh providers had
 // no Test at all: the first sign of a wrong URL or key was a failed generation. Both probes are
 // READ-ONLY and cost nothing — ComfyUI answers `GET /system_stats`; Meshy lists our own tasks
 // (`GET /openapi/v2/text-to-3d?page_size=1`, no generation, no credits). A ComfyUI workflow is

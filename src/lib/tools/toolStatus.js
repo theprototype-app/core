@@ -202,10 +202,10 @@ function statusOf(f) {
 	};
 }
 
-/** "Generate 3D model needs a Mesh provider: set one up in Settings ▸ Tools & connections."
+/** "Generate 3D model needs a Mesh provider: set one up in Settings ▸ AI."
  * @param {string} label @param {string} needs @param {string} [fix] what to do (default "set one up") */
 export function missingMessage(label, needs, fix = 'set one up') {
-	return `${label} needs ${needs}: ${fix} in Settings ▸ Tools & connections.`;
+	return `${label} needs ${needs}: ${fix} in Settings ▸ AI.`;
 }
 
 /** What a feature needs right now; an unregistered id reads as ready (nothing to explain). @param {string} id @returns {FeatureStatus} */
@@ -239,7 +239,7 @@ export function toolSummary() {
 
 // ---- where the page should land -------------------------------------------------------------
 
-/** the row (or section) Settings ▸ Tools & connections scrolls to and flashes; `at` makes a repeat a change */
+/** the row (or section) Settings ▸ AI scrolls to and flashes; `at` makes a repeat a change */
 /** @type {import('svelte/store').Writable<{section: string, row: string | null, at: number} | null>} */
 export const toolsFocus = writable(null);
 

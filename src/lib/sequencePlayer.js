@@ -309,9 +309,11 @@ function startAudio(run, seq, item) {
 	// still a subtitle); the player's / 53-scale's Captions switch decides whether it shows
 	if (item.caption) showCaption({ text: item.caption, source: 'timeline', seconds: Math.max(1, Math.min(15, item.dur - Math.max(0, syncedNow() - moment))) });
 	if (!item.sound) return;
-	void Promise.all([import('./soundRuntime'), import('./audioEngine')])
-		.then(async ([sr, ae]) => {
-			const buffer = await sr.sampleBuffer(item.sound, { timeoutMs: 10000 });
+	void Promise.all([import('./soundRuntime'), import('./audioEngine'), import('./soundEdits')])
+		.then(async ([sr, ae, se]) => {
+			const raw = await sr.sampleBuffer(item.sound, { timeoutMs: 10000 });
+			// 102b-sound: the clip plays the sound with this scene's trim / fade / normalise
+			const buffer = raw && se.editedBuffer(item.sound, raw);
 			if (!buffer || runs.get(run.id) !== run) return;
 			const now = syncedNow();
 			const late = Math.max(0, now - moment);
@@ -375,6 +377,13 @@ function applyShot(run, seq, t) {
 		cameraOwner = run.id;
 		run.shot = uuid;
 	}
+}
+
+/** 104 B2: the camera a running sequence is showing on this peer right now (its shot), or null */
+export function sequenceCamera() {
+	if (!cameraOwner) return null;
+	const run = runs.get(cameraOwner);
+	return run?.shot ? { run: cameraOwner, uuid: run.shot } : null;
 }
 
 /** Give the view back: the camera this peer looked through before, or its own. */

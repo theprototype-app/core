@@ -257,3 +257,21 @@ export function createCostMeter(n = 120) {
 		}
 	};
 }
+
+/**
+ * 102b-sound: the part of the moment's sound a file of `seconds` from `start` plays (t = 0 at the first
+ * kept frame), silence-padded. Pure.
+ * @param {{sampleRate: number, channels: Float32Array[]} | null | undefined} audio @param {number} start @param {number} seconds
+ */
+export function momentAudioSlice(audio, start, seconds) {
+	if (!audio || !audio.channels.length || !(seconds > 0)) return null;
+	const rate = audio.sampleRate;
+	const from = Math.max(0, Math.round(start * rate));
+	const n = Math.round(seconds * rate);
+	const channels = audio.channels.map((ch) => {
+		const out = new Float32Array(n);
+		out.set(ch.subarray(from, Math.min(ch.length, from + n)));
+		return out;
+	});
+	return { sampleRate: rate, channels };
+}

@@ -24,6 +24,9 @@
 	const BASE = 10;
 	// 36-community (C4): the game id is known once the scene has LOADED (it is in the file), so the
 	// link follows it — a pending remix still counts the original: that is the game being played
+	// 63 PG3: CrazyGames allows no links out of a game ("no cross-promotions"): the badge is still
+	// DRAWN in that preset (it has no off switch) but is not a link (QUESTIONS-63-export Q1)
+	const noLink = exportConfig?.preset === 'crazygames';
 	const href = $derived(
 		badgeHref(badgeRefFor({ exportConfig, gameId: $gameIdentity?.gameId || '', sceneId: embedSceneId, source: embedSource, build: embedBuild }))
 	);
@@ -57,10 +60,11 @@
 		bind:this={el}
 		id="made-with-tp"
 		class="made-with-tp"
-		{href}
-		target="_blank"
-		rel="noopener"
-		aria-label={BADGE_TEXT + ' — opens theprototype.app in a new tab'}
+		href={noLink ? undefined : href}
+		target={noLink ? undefined : '_blank'}
+		rel={noLink ? undefined : 'noopener'}
+		data-link={noLink ? 'off' : 'on'}
+		aria-label={noLink ? BADGE_TEXT : BADGE_TEXT + ' — opens theprototype.app in a new tab'}
 		title={BADGE_TEXT}
 		style:--badge-lift="{lift}px"
 	>

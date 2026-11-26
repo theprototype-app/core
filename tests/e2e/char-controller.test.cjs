@@ -519,7 +519,13 @@ h.run(async () => {
 		(d) => d.control?.mode === 'fly' && d.control?.speed === 0.1,
 		'back to fly at 0.1 with a Move Speed pair wired up'
 	);
-	const readBefore = await values(A.page);
+	// live readouts publish every ~150 ms (flowRuntime's lastValuesAt throttle): a read taken the same
+	// frame the graph lands can predate the new node's first publish, so wait for it to exist first
+	let readBefore = await values(A.page);
+	for (let i = 0; i < 30 && readBefore?.readout === undefined; i++) {
+		await A.page.waitForTimeout(100);
+		readBefore = await values(A.page);
+	}
 	h.check(
 		Math.abs((readBefore.readout ?? -1) - 0.1) < 1e-6,
 		`Move Speed READS the speed in force (${readBefore.readout})`

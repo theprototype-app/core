@@ -112,7 +112,13 @@ export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?:
 	logs: { title: 'Read the recent log', read: true },
 	playtest: { title: 'Play the game as a test player', destructive: false },
 	// 98 P2
-	take_photo: { title: 'Take a path-traced photo of the view', destructive: false }
+	take_photo: { title: 'Take a path-traced photo of the view', destructive: false },
+	// 104 B1
+	probe: { title: 'Read the ground and water under a point', read: true },
+	// 104 C1-C3: the person's own Explorer, interface and scenes (a person's tab only)
+	files: { title: "Work with the person's files", destructive: true },
+	show: { title: "Show the person something on their screen", destructive: false },
+	scene: { title: "Open the person's scenes", destructive: true }
 });
 
 /** a title from a tool name: `create_objects` → `Create objects` @param {string} name */
@@ -277,7 +283,7 @@ export const CONNECTOR_FAMILIES = Object.freeze({
 	edit_shape: {
 		title: 'Reshape or model objects',
 		summary:
-			'Change the shape of objects that exist: params = new size / segments / type in place (on a 3D text: its words, font, size, depth, bevel, align, wrap width, anchor, colours), mesh = model faces and vertices (extrude, inset, bevel, subdivide, weld, smooth, dissolve, make a face), update = new vertices / faces for a mesh made from data (replace it, or patch a range), duplicate = copies of an object in a row, or its mirror image (a left arm → the right one), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together, simplify = fewer triangles on a mesh or model (a percentage or a count; UVs, colours, skin weights and material slots kept; one undo step).',
+			'Change the shape of objects that exist: params = new size / segments / type in place (on a 3D text: its words, font, size, depth, bevel, align, wrap width, anchor, colours), mesh = model faces and vertices (extrude, inset, bevel, subdivide flat or smooth, bisect with a plane, weld, smooth, dissolve, make a face), update = new vertices / faces for a mesh made from data (replace it, or patch a range), duplicate = copies of an object in a row, or its mirror image (a left arm → the right one), pivot = the point an object turns about, pivot_group = a group at a joint so several parts swing together, simplify = fewer triangles on a mesh or model (a percentage or a count; UVs, colours, skin weights and material slots kept; one undo step).',
 		actions: { params: 'set_geometry', mesh: 'edit_mesh', update: 'update_mesh', duplicate: 'duplicate', pivot: 'set_pivot', pivot_group: 'create_pivot', simplify: 'simplify_mesh' } // 102 M1: simplify
 	},
 	set_look: {
@@ -369,6 +375,12 @@ export const CONNECTOR_STANDALONE = Object.freeze([
 	'join_session',
 	'where_are_users',
 	'undo_last',
+	// 104 B1 (roadmap 104 row B1, owner-approved name): the ground / water / ray read
+	'probe',
+	// 104 C1-C3 (roadmap 104, owner rows C1-C3; the 85 budget table's slots for files / show and scene)
+	'files',
+	'show',
+	'scene',
 	// left out by the Worker's own policy (generate_mesh), kept listed so the Worker's EXCLUDED_TOOLS stays the scope call
 	'generate_mesh'
 ]);

@@ -201,6 +201,10 @@
 				{#if focus.why.standing}<span class="debug-why-block text-warn-text">{focus.why.standing}</span>{/if}
 			</div>
 		{/if}
+		{#if focus.set}
+			<!-- 102b-flows: a many-target Object Selector's resolved set (or the set this node acts on) -->
+			<p class="tbx-row text-[11px] text-text-muted" id="debug-set" title={focus.set}>{focus.set}</p>
+		{/if}
 		{#if focus.eventless}
 			<p class="tbx-row text-[11px] text-text-muted">No event reaches this node, so a breakpoint here never pauses — watch it instead.</p>
 		{/if}

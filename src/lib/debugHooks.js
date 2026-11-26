@@ -53,6 +53,8 @@ export const DEBUG_HOOKS = [
 	// `momentBuffer` through registerDebugHook when the first Play loads it
 	['momentStores', () => import('./moment/momentStores.js')],
 	['problemReport', () => import('./problemReport')],
+	// 104 D1: Scan my room (scanMyRoom, readRoom, applyRoom, roomScanDebug.last())
+	['roomScan', () => import('./vr/roomScan.js')],
 	['profilerView', () => import('./perf/profilerView')],
 	['profilerModel', () => import('./perf/profilerModel.js')],
 	['vrRecIndicator', () => import('./vrRecIndicator')],
@@ -314,6 +316,8 @@ export const DEBUG_HOOKS = [
 	['explorerPick', () => import('./explorerPick.js')],
 	['assetShare', () => import('./assetShare')],
 	['soundRuntime', () => import('./soundRuntime')],
+	// 102b-sound: a scene's sound trims / fades (soundEdits, setSoundEdit, editedBuffer)
+	['soundEdits', () => import('./soundEdits')],
 	['dungeonPlay', () => import('./dungeonPlay')],
 	['modelLoader', () => import('./modelLoader')],
 	['sceneAssets', () => import('./sceneAssets')],
@@ -449,6 +453,9 @@ export const DEBUG_HOOKS = [
 	// 106: shadow quality (the pure table + the lazy Soft / Far half)
 	['shadowLevelParams', () => import('./shadows/shadowLevelParams.js')],
 	['shadowLevels', () => import('./shadows/shadowLevels.js')],
+	// 106 S2b: the Contact shadows cost meter
+	['contactCost', () => import('./shadows/contactCost.js')],
+	['contactShadows', () => import('./shadows/contactShadows.js')],
 	['traaPass', () => import('./post/traaPass.js')],
 	['xrLook', () => import('./xrLook.js')],
 	['xrLookCore', () => import('./xrLookCore.js')],
@@ -558,6 +565,8 @@ export const DEBUG_HOOKS = [
 	['levelsTravel', () => import('./gameLevels/travel.js')],
 	['levelsCheckpoints', () => import('./gameLevels/checkpoints.js')],
 	['levelsLoading', () => import('./gameLevels/loading.js')],
+	// 63 PG3: the level-change cover the portal adapter reads
+	['levelTransition', () => import('./gameLevels/transition.js')],
 	['levelsSave', () => import('./gameLevels/save.js')],
 	['peerVars', () => import('./peerVars')],
 	['projectManifest', () => import('./projectManifest')],
@@ -570,6 +579,11 @@ export const DEBUG_HOOKS = [
 	['importDuplicates', () => import('./importDuplicates')],
 	['peerScenes', () => import('./peerScenes')],
 	['sharedLibrary', () => import('./sharedLibrary')],
+	// 104 C1-C3: the person's tools (files counters, the in-tab questions)
+	['filesTool', () => import('./ai/filesTool.js')],
+	['personAsk', () => import('./ai/personAsk.js')],
+	['showTool', () => import('./ai/showTool.js')],
+	['sceneTool', () => import('./ai/sceneTool.js')],
 	['transferLedger', () => import('./transferLedger')],
 	['explorerView', () => import('./explorerView')],
 	['filePreview', () => import('./filePreview')],
@@ -613,6 +627,13 @@ export const DEBUG_HOOKS = [
 	// 36-export: the export builder, its stores, the export boot + runtime state
 	['exportBuilder', () => import('./export/exportBuilder.js')],
 	['exportStores', () => import('./export/exportStores.js')],
+	// 63-publish: the publish check's data door (save_scene, cloudApi.publishCheck)
+	['publishCheckData', () => import('./export/publishCheckData.js')],
+	// 63: the pure export core (EXPORT_ALLOWED_HOSTS, the preset limits) + the export check rules
+	['exportCore', () => import('./export/exportCore.js')],
+	['exportChecks', () => import('./export/exportChecks.js')],
+	// 63 PG3: the CrazyGames adapter's state (status, environment, the SDK calls in order)
+	['portalCrazyGames', () => import('./export/portals/crazygames.js')],
 	// 41b: the burger's Project actions setting + Save options (H14), the settings-row fit (H12)
 	['projectActions', () => import('./projectActions.js')],
 	['saveOptions', () => import('./saveOptions.js')],

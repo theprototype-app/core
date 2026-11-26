@@ -46,7 +46,7 @@ export function createFxCover(o) {
 	const {
 		uniform, attribute, bufferAttribute, positionGeometry, modelViewMatrix, cameraProjectionMatrix, cameraViewMatrix,
 		varying, select, texture, screenUV, vec2, vec3, vec4, float, mix, clamp, pow, exp, sin, cos, sqrt, cross, length, dot, min, max,
-		smoothstep, fract, step, uv
+		smoothstep, fract, step, uv, normalize, reflect
 	} = T;
 
 	/** the scene pass's depth (the pipeline hands its texture over: setSceneDepth), for the twins' own depth test */
@@ -64,7 +64,7 @@ export function createFxCover(o) {
 	const deforms = new Map();
 	/** @type {Set<any>} source materials hidden while the view is on */
 	const hidden = new Set();
-	const stats = { particles: 0, bursts: 0, bubbles: 0, deform: 0, scanMs: 0 };
+	const stats = { particles: 0, bursts: 0, bubbles: 0, drops: 0, deform: 0, scanMs: 0 };
 	let frame = 0;
 
 	/**
@@ -378,6 +378,34 @@ export function createFxCover(o) {
 		return { m, map: null };
 	}
 
+	// ---- pour / spill drops: pourDrops.js VS / FS (C2-3) ----------------------------------------------------------
+
+	/** @param {any} src the drops ShaderMaterial @param {any} g its geometry @param {any} pairs */
+	function dropsMaterial(src, g, pairs) {
+		const U = bridgeAll(src.uniforms);
+		const pos = perInstance(pairs, g.getAttribute('position'));
+		const fade = perInstance(pairs, g.getAttribute('aFade'));
+		const mv = modelViewMatrix.mul(vec4(pos, 1));
+		const px = U.uSize.mul(U.uScale).div(max(mv.z.negate(), 0.01));
+		const clip = cameraProjectionMatrix.mul(mv);
+		const corner = positionGeometry.xy;
+		const at = clip.xy.add(corner.mul(px).mul(2).div(viewPx).mul(clip.w));
+		const m = fxMaterial();
+		const vFade = varying(fade);
+		// gl_PointCoord * 2 - 1 (y down) from the quad corner (y up)
+		const c = varying(vec2(corner.x, corner.y.negate())).mul(2);
+		const r2 = dot(c, c);
+		const n = vec3(c.x, c.y.negate(), sqrt(max(float(1).sub(r2), 0)));
+		const Ld = normalize(vec3(0.4, 0.8, 0.5));
+		const diff = max(dot(n, Ld), 0);
+		const spec = pow(max(dot(reflect(Ld.negate(), n), vec3(0, 0, 1)), 0), 24);
+		m.colorNode = U.uColor.mul(diff.mul(0.55).add(0.45)).add(vec3(spec.mul(0.7)));
+		place(m, vec4(at, clip.zw), select(r2.greaterThan(1).or(vFade.lessThanEqual(0)), float(0), vFade.mul(0.9)));
+		m.alphaTest = 0.01;
+		m.fog = false;
+		return { m, map: null };
+	}
+
 	// ---- deformers: vertexDeform.js specs as one positionNode ---------------------------------------------------
 
 	/** @type {Record<string, (u: Record<string, any>, p: any) => any>} each GLSL block, the same maths */
@@ -455,7 +483,7 @@ export function createFxCover(o) {
 		src.add(twin);
 		sm.visible = false;
 		hidden.add(sm);
-		const rec = { src, sm, twin, m, map, kind, geometry, pairs, seen: frame, ownGeometry: geometry !== src.geometry, additive: /** @type {boolean | null} */ (null) };
+		const rec = { src, sm, twin, m, map, kind, geometry, pairs, seen: frame, ownGeometry: geometry !== src.geometry, srcPos: src.geometry?.getAttribute?.('position') ?? null, additive: /** @type {boolean | null} */ (null) };
 		sync(rec);
 		twins.set(src, rec);
 		return rec;
@@ -531,6 +559,12 @@ export function createFxCover(o) {
 			const { m, map } = burstMaterial(sm, obj.geometry, { pairs: list });
 			return addTwin(obj, quadGeometry(), m, map, kind, list);
 		}
+		if (kind === 'drops') {
+			/** @type {any[]} */
+			const list = [];
+			const { m } = dropsMaterial(sm, obj.geometry, list);
+			return addTwin(obj, quadGeometry(), m, null, kind, list);
+		}
 		if (kind === 'bubbles') {
 			const { m } = bubbleMaterial(sm);
 			return addTwin(obj, obj.geometry, m, null, kind);
@@ -575,7 +609,7 @@ export function createFxCover(o) {
 			const rec = twins.get(obj);
 			if (rec) {
 				// the runtime replaced the source material (a render-mode switch): cover it again
-				if (obj.material !== rec.sm) dropTwin(rec);
+				if (obj.material !== rec.sm || (rec.ownGeometry && rec.srcPos && obj.geometry?.getAttribute('position') !== rec.srcPos)) dropTwin(rec);
 				else {
 					rec.seen = frame;
 					sync(rec);
@@ -601,11 +635,12 @@ export function createFxCover(o) {
 		});
 		for (const r of [...twins.values()]) if (r.seen !== frame) dropTwin(r);
 		for (const m of [...deforms.keys()]) if (!liveDeform.has(m)) undoDeform(m);
-		stats.particles = stats.bursts = stats.bubbles = 0;
+		stats.particles = stats.bursts = stats.bubbles = stats.drops = 0;
 		for (const r of twins.values()) {
 			if (r.kind === 'particles') stats.particles++;
 			else if (r.kind === 'burst') stats.bursts++;
 			else if (r.kind === 'bubbles') stats.bubbles++;
+			else if (r.kind === 'drops') stats.drops++;
 		}
 		stats.deform = deforms.size;
 		stats.scanMs = performance.now() - t0;

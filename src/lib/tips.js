@@ -80,3 +80,9 @@ export const AGENT_GAMES_TIP_TOOLS = new Set([
 	...['set_sky', 'set_light', 'place_spawn', 'set_play_camera'],
 	...['place_asset', 'prefab', 'create_particles', 'scatter', 'terrain', 'water', 'place_sound', 'set_music']
 ]);
+
+/** 63: the Publish / Export dialog's first-use how-to (shown on the first open, retires when that dialog closes or
+ * on its close button; in the page flow above the tab, never over the dialog's buttons) */
+export const TIP_PUBLISH = 'publish-export-first-use';
+/** the docs page the hint (and the Export tab) link to */
+export const PUBLISH_GUIDE_URL = 'https://docs.theprototype.app/publish-your-game/';

@@ -492,7 +492,7 @@ async function runOne(browser, bridge, task, k) {
 			for (const s of steps) {
 				const f = await familyCall(tab, s.tool, fill(s.args));
 				answers.push(f.result ?? null);
-				for (const c of f.result?.created ?? [])
+				for (const c of Array.isArray(f.result?.created) ? f.result.created : [f.result?.created].filter(Boolean))
 					if (c?.name && c?.uuid && !refs[c.name]) refs[c.name] = { uuid: c.uuid, name: c.name };
 				calls.push({
 					tool: s.tool,
@@ -521,7 +521,10 @@ async function runOne(browser, bridge, task, k) {
 			});
 			await h.connect(B, A);
 			await h.caughtUp?.(A, B, 60000).catch(() => {});
-			await B.page.waitForTimeout(2000);
+			// 2.0-eval2: a joined player plays once its LOAD is done (the object batch landed, every start-scene
+			// object there), not after a fixed 2 s — on a 3 fps page a scene of 7 objects takes ~20 s to apply
+			const load = await P.joinLoaded(B.page, Object.values(refs), 120000);
+			notes.push('B loaded in ' + load.ms + ' ms');
 			return B.page;
 		};
 		if (task.sync === 'pair') await joinB();

@@ -6,7 +6,8 @@ import {
 	drawGapFor,
 	FULL_QUALITY,
 	MAX_LEVEL,
-	GOVERNOR_STEPS
+	GOVERNOR_STEPS,
+	CONTACT_STEP_LABEL
 } from './qualityGovernorCore';
 import {
 	registerFrameObserver,
@@ -125,7 +126,9 @@ function publish(level, reason) {
 		});
 	}
 	if (level === 0) qualityBaseline.set(null);
-	qualityOverrides.set(overridesAt(level));
+	// 106 S2b: the contact pre-step rides beside the level (it is not one)
+	const contactOff = governor.contactOff();
+	qualityOverrides.set(contactOff ? { ...overridesAt(level), contactOff } : overridesAt(level));
 	// 31-perf P2/P3: every step also pulls the LOD switch distances in (a struggling device
 	// struggles with triangles too); lod.js reads the bias, never this module
 	lodBias.set(lodBiasFor(level));
@@ -135,7 +138,7 @@ function publish(level, reason) {
 		level,
 		max: MAX_LEVEL,
 		pinned,
-		labels: stepLabelsAt(level),
+		labels: contactOff ? [CONTACT_STEP_LABEL, ...stepLabelsAt(level)] : stepLabelsAt(level),
 		reason,
 		at,
 		snoozedUntil,
@@ -228,7 +231,7 @@ export function decideNow(t = now()) {
 	// "Restore full quality" snoozes CLIMBING for a minute; it never blocks a walk back down
 	const snoozed = Date.now() < snoozedUntil;
 	const d = enabled
-		? governor.decide(t, { profile: ctx.profile, heavy: ctx.heavy && !snoozed, pinned, calls: /** @type {any} */ (ctx).calls })
+		? governor.decide(t, { profile: ctx.profile, heavy: ctx.heavy && !snoozed, pinned, calls: /** @type {any} */ (ctx).calls, contact: contactLive, snoozed })
 		: { level: governor.level(), moved: null, reason: 'off', p95: null };
 	if (d.moved) publish(d.level, d.reason);
 
@@ -244,6 +247,14 @@ export function decideNow(t = now()) {
 	drawGapMsEngaged = gap;
 	if (get(ingestDrawGap) !== gap) ingestDrawGap.set(gap);
 	return d;
+}
+
+/** 106 S2b: is this device drawing contact shadows but for the governor's own pre-step (Outline.svelte says, each
+ * time its post stack is planned; a plain variable, read at the next decision) */
+let contactLive = false;
+/** @param {boolean} on */
+export function setContactLive(on) {
+	contactLive = !!on;
 }
 
 /**

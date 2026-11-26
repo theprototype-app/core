@@ -12,7 +12,7 @@ import { applyBurst } from '$lib/particleRuntime';
 import { applyNodeDef, applyNodeDefDelete, applyNodeDefsSnapshot, sendNodeDefs } from '$lib/customNodes';
 import { applyRemoteDuplicate } from '$lib/objectActions';
 import { applyVerts } from '$lib/meshEdit';
-import { applyMeshGeo } from '$lib/faceEdit';
+import { applyMeshGeo } from '$lib/meshGeoApply';
 // UV3 texture paint: live stroke segments. Safe as a STATIC import — uvEditor
 // registers no history kind at module eval and its own imports (faceEdit,
 // materialsHandler, history) are already in this file's subtree.
@@ -99,6 +99,7 @@ import { applyHandModel, handModelState, dropPeerHandModel } from '$lib/handMode
 import { applyRemoteEnvironment, environmentState, envPresetsState, applyRemoteEnvPresets, dropPeerEnvPresets, environment as environmentStore } from '$lib/environment';
 import { materialPresetsState, applyRemoteMaterialPresets, dropPeerMaterialPresets, answerMaterialPresetRequest, applyMaterialPresetPart } from '$lib/materialPresets'; // 37 R5, 48 F2
 import { applyRemoteMusic, musicState, music as musicStore } from '$lib/sceneMusic';
+import { applyRemoteSoundEdits, soundEditsState } from '$lib/soundEdits'; // 102b-sound
 import { applyRemoteScenePhysics, scenePhysicsState, scenePhysicsState_ } from '$lib/scenePhysics';
 // CO1: where the physical room's origin sits in content coords. The scenephysics
 // shape — one latest-wins singleton + a getroomanchor reply. The per-device ALIGNMENT
@@ -1713,6 +1714,8 @@ export class PeerConnection {
 				} else if(data.type == 'music') {
 					applyRemoteMusic(data);
 					noteSceneEditFrom(data, conn.peer);
+				} else if(data.type == 'soundedits') {
+					applyRemoteSoundEdits(data); // 102b-sound: a scene's trims and fades
 				} else if(data.type == 'scenephysics') {
 					applyRemoteScenePhysics(data);
 					noteSceneEditFrom(data, conn.peer);
@@ -2064,7 +2067,7 @@ export class PeerConnection {
 					});
 				} else if(data.type == 'nodes') {
 					preloadSandboxFor(data); // 69: a joiner's scene with code starts the engine before its first tick
-					applyNodesSnapshot(data.nodes, data.edges, data.graphs);
+					applyNodesSnapshot(data.nodes, data.edges, data.graphs, data.replaceGraphs);
 					noteNodesSnapshot(conn.peer); // fix-agenttest 5: the handshake's graphs are here
 				} else if(data.type == 'nodesync') {
 					applyNodeSync(data);
@@ -2093,7 +2096,7 @@ export class PeerConnection {
 				} else if(data.type == 'edgedelete') {
 					deleteFlowEdges(data.ids, data.graphId);
 				} else if(data.type == 'nodetrigger') {
-						applyNodeTrigger(data.id, data.t, false, null, data.at ?? null, data.other, true, conn.peer, data.held === 1); // 2.0-int: + a held re-stamp. 2.0-n3b: + who sent it. 134: shared-timestamp pulse (31: + where, for a clap; 36 X6: + the contact's other body)
+						applyNodeTrigger(data.id, data.t, false, null, data.at ?? null, data.other, true, conn.peer, data.held === 1, data.obj); // 102b-flows: + which object fired. 2.0-int: + a held re-stamp. 2.0-n3b: + who sent it. 134: shared-timestamp pulse (31: + where, for a clap; 36 X6: + the contact's other body)
 					} else if(data.type == 'gettriggers') {
 						// DEVX #18: the trigger LOG for a late joiner. Deliberately NOT behind
 						// share-or-stash like getobjects/getnodes: there is nothing here for a
@@ -2562,6 +2565,7 @@ export class PeerConnection {
 		if (!holdContent) {
 			conn.send(environmentState())
 			conn.send(musicState())
+			if (soundEditsState().changedAt) conn.send(soundEditsState()) // 102b-sound
 			conn.send(scenePhysicsState())
 			// 23-A2/A4: the musical transport and the patch are scene singletons like the
 			// three above, so they are withheld by the same condition — a joiner's fresher
@@ -3867,6 +3871,7 @@ function pushWorldState(peerId) {
 	if (!conn?.open) return;
 	conn.send(environmentState());
 	conn.send(musicState());
+	if (soundEditsState().changedAt) conn.send(soundEditsState()); // 102b-sound
 	conn.send(scenePhysicsState());
 	// L-C: one per post DOCUMENT — the scene look and any camera looks
 	for (const state of scenePostStates()) conn.send(state);

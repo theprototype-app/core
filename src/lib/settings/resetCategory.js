@@ -106,7 +106,7 @@ import { setExportPrefs, DEFAULT_EXPORT_PREFS } from '../export/exportStores.js'
 import { vrSmoothTurn, vrSmoothTurnSpeed, vrComfortVignette, vrStance, vrHeightOffset, vrSnapAngleLast } from '../vr/prefs.js';
 import { resetBindings } from '../vr/bindings.js';
 import { setVrHudPlacement, setVrHudSize, setVrHudHints } from '../vrHudPrefs';
-import { vrFaceCap, VR_FACE_CAP } from '../faceEdit';
+import { vrFaceCap, VR_FACE_CAP } from '../faceEditState';
 import { vrVertexCap, VR_VERTEX_CAP } from '../meshEdit';
 import { setMyHandModel, myHandModel } from '../handModels';
 import { colocatedGhostHands } from '../colocationPresence';
@@ -282,7 +282,7 @@ const RESETS = {
 		if (get(myHandModel)) setMyHandModel('');
 		colocatedGhostHands.set(true);
 	},
-	toolsconnections() {
+	ai() {
 		// Decision G: saved providers and API keys are DATA and stay; only the switches and the
 		// voice-typing endpoint go back (its API key stays too). 59 T4: the page is Tools &
 		// connections now (it was 'ai'); its Desktop tools switch goes back to on
@@ -339,7 +339,7 @@ export async function askResetCategory(key, label) {
 	const ok = await showConfirm({
 		title: `Reset ${label} to defaults?`,
 		message:
-			key === 'toolsconnections'
+			key === 'ai'
 				? 'Every tool here is switched back to its default on this device: the assistant and mesh generation off, voice typing on OpenAI, desktop tools on. Your saved providers and API keys stay.'
 				: `Every setting on the ${label} page goes back to its default, on this device only. Nothing else changes.`,
 		confirmLabel: 'Reset',

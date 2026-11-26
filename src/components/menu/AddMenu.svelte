@@ -103,7 +103,7 @@
 	}
 
 	// the menu's last row opens the AI assistant — the AiHudButton's own path, opening rather than
-	// toggling (86-fix N1: always; with no provider the window offers Connect Claude or Settings ▸ Tools & connections)
+	// toggling (86-fix N1: always; with no provider the window offers Connect Claude or Settings ▸ AI)
 	function openAi() {
 		close();
 		aiAssistantHidden.set('');

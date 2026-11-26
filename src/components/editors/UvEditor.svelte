@@ -50,7 +50,7 @@
 	import { keyOf } from '$lib/keyOf';
 	import ContextMenu from '../ContextMenu.svelte';
 	// read-only: the Edit Mesh pick is what scopes the UV view (UV5)
-	import { faceEditSelectedTris, faceEditObject, triangleCount } from '$lib/faceEdit';
+	import { faceEditSelectedTris, faceEditObject, triangleCount } from '$lib/faceEditState';
 	import { editingObject } from '$lib/meshEdit';
 	import DockTabs from '../DockTabs.svelte';
 	import WindowChrome from '../ui/WindowChrome.svelte';

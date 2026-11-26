@@ -6,6 +6,7 @@
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import SliderRow from '../ui/SliderRow.svelte';
 	import { FLOAT_PRESETS, normalizeFloats } from '$lib/sim/buoyancy.js';
+	import { floatSummary, floatWords } from '$lib/sim/floatSummary.js'; // 104 B3: the numbers set_physics answers
 
 	/** @type {{object: any, setPhysics: (patch: any) => void}} */
 	let { object, setPhysics } = $props();
@@ -19,7 +20,13 @@
 		const hit = Object.entries(FLOAT_PRESETS).find(([, d]) => d === floats.density);
 		return hit ? hit[0] : 'custom';
 	});
-	const ratio = $derived(typeof floats.density === 'number' ? floats.density / (1000 * Math.max(floats.multiplier, 1e-6)) : null);
+	// 104 B3: the same waterline set_physics answers (density, share under, draft in metres); re-read on
+	// every floats / mass write
+	const summary = $derived.by(() => {
+		void raw;
+		void object?.userData?.physics?.mass;
+		return floatSummary(object);
+	});
 
 	/** @param {any} patch */
 	function write(patch) {
@@ -81,13 +88,16 @@
 		value={floats.multiplier}
 		onchange={(v) => write({ multiplier: v === 1 ? null : v })}
 	/>
+	<SliderRow
+		id="physics-floats-drag"
+		label="Water drag ×"
+		min={0}
+		max={4}
+		step={0.05}
+		value={floats.drag}
+		onchange={(v) => write({ drag: v === 1 ? null : v })}
+	/>
 	<p class="text-[length:var(--fs-badge)] text-text-muted" id="physics-floats-hint">
-		{#if ratio == null}
-			Density = mass ÷ collider volume (water is 1000 kg/m³).
-		{:else if ratio >= 1}
-			Sinks in water (denser than 1000 kg/m³).
-		{:else}
-			Floats about {Math.round(ratio * 100)}% under the surface (kg/m³; water is 1000).
-		{/if}
+		{#if floats.density === 'mass'}Density = mass ÷ collider volume. {/if}{floatWords(summary)}
 	</p>
 {/if}

@@ -1,4 +1,5 @@
 import { parentTarget } from './parentTarget.js';
+import { setObjectTags } from '../objectTags.js'; // 102b-flows
 import { get } from 'svelte/store';
 import { scenePhysicsState_ } from '../scenePhysics'; // 102b-arrange: layer names for list_scene
 import * as THREE from 'three';
@@ -74,7 +75,9 @@ import { NPC_TOOL_NAMES, NPC_AI_TOOLS, NPC_PROMPT, npcTool } from './npcTools.js
 import { DIALOGUE_TOOL_NAMES, DIALOGUE_AI_TOOLS, DIALOGUE_PROMPT, dialogueTool } from './dialogueTools.js'; // 92-dialogue GC6
 import { WORLD_TOOL_NAMES, WORLD_AI_TOOLS, WORLD_PROMPT, worldTool, resolvePatterns } from './worldTools.js';
 import { RUNTIME_TOOL_NAMES, RUNTIME_AI_TOOLS, RUNTIME_PROMPT, runtimeTool } from './runtimeTools.js';
+import { PROBE_TOOL_NAMES, PROBE_AI_TOOLS, PROBE_PROMPT, probeTool } from './probeTools.js'; // 104 B1
 import { beginAiEdit, endAiEdit } from '../sceneEditBy.js'; // 78-int PL13: "changed by Claude (AI)"
+import { PERSON_TOOL_NAMES, PERSON_AI_TOOLS, runPersonTool } from './personTools.js'; // 104 C1-C3: files, show, scene
 
 // AI tool layer (roadmap #10, A4). Maps OpenAI-style function calls onto the
 // existing REPLICATED mutation surface — every tool applies locally AND broadcasts
@@ -832,6 +835,11 @@ async function updateOne(spec) {
 			else made = arr.makeArrayReal(uuid);
 		}
 	}
+	// 102b-flows: the object's tags (what an Object Selector set to pick: tag finds); [] clears them
+	if (spec.tags !== undefined) {
+		if (Array.isArray(spec.tags) && spec.tags.every((/** @type {any} */ t) => typeof t === 'string')) setObjectTags(uuid, spec.tags);
+		else errors.push('tags: takes a list of words like ["coin", "pickup"]');
+	}
 	// mcp-shapes: after the move, so a new position is where it looks from
 	if (spec.lookAt !== undefined) {
 		const why = lookAtTarget(object, spec.lookAt, spec.front);
@@ -884,7 +892,8 @@ const TOOL_NAMES = [
 	...DIALOGUE_TOOL_NAMES, // 92-dialogue GC6: set_dialogue = game_setup {dialogue} (dialogueTools.js)
 	...WORLD_TOOL_NAMES, // 85b W1-W7 (worldTools.js)
 	...ASSIST_TOOL_NAMES, // 85 undo_last, pivots, images (assistTools.js): unlisted, their arguments read as create_objects / update_objects
-	...RUNTIME_TOOL_NAMES // 85b R1-R4 (runtimeTools.js): inspect, validate, logs, playtest
+	...RUNTIME_TOOL_NAMES, // 85b R1-R4 (runtimeTools.js): inspect, validate, logs, playtest
+	...PROBE_TOOL_NAMES // 104 B1 (probeTools.js): what is under a point
 ];
 
 /** 34 D5: the behaviour family's spellings. They map to the behaviour tools only while a
@@ -1074,7 +1083,7 @@ export function repairToolCall(rawName, rawArgs) {
 		return { name: 'control_simulation', args, repaired: true };
 	if (Array.isArray(args.updates)) {
 		// updates whose items carry ONLY physics keys route to set_physics
-		const PHYS_KEYS = ['mass', 'restitution', 'bounciness', 'friction', 'mode', 'collider'];
+		const PHYS_KEYS = ['mass', 'restitution', 'bounciness', 'friction', 'mode', 'collider', 'float', 'density', 'buoyancy', 'waterDrag'];
 		const OBJ_KEYS = ['position', 'rotation', 'scale', 'color', 'name', 'visible', 'materialType', 'materialParams', 'parentUuid'];
 		const items = args.updates.filter((/** @type {any} */ u) => u && typeof u === 'object');
 		const physicsOnly =
@@ -1107,9 +1116,10 @@ export function repairToolCall(rawName, rawArgs) {
 const PHYSICS_DISABLED =
 	'physics tools are disabled — enable "Physics tools" for this provider in Settings → AI';
 
-/** @typedef {{physics?: boolean, by?: string}} ToolOpts `physics`: offer + run the physics tools for THIS caller whatever the
+/** @typedef {{physics?: boolean, by?: string, person?: boolean}} ToolOpts `physics`: offer + run the physics tools for THIS caller whatever the
  * provider's checkbox says (86-fix B1: the Claude connector; the person's own assistant keeps its setting).
- * `by` (78-int PL13): who the scene panel says made the edit ("Claude" for the connector; absent = "AI assistant") */
+ * `by` (78-int PL13): who the scene panel says made the edit ("Claude" for the connector; absent = "AI assistant").
+ * `person` (104): the caller sits in the person's own tab (the in-app assistant), so it gets files / show / scene */
 
 /** 55 A8: one observer of every tool call — `(name, args) => (result) => void`, set by the agent
  * page's action-log recorder. Null everywhere else (the call path is unchanged). @type {any} */
@@ -1159,6 +1169,11 @@ async function observedAiTool(rawName, rawArgs, opts) {
 /** @param {string} rawName @param {any} rawArgs @param {ToolOpts} [opts] @returns {Promise<any>} */
 async function runAiTool(rawName, rawArgs, opts) {
 	const { name, args } = repairToolCall(rawName, rawArgs);
+	// 104: the person's own tools gate themselves (a viewer may still list and read files, and look around)
+	if (/** @type {readonly string[]} */ (PERSON_TOOL_NAMES).includes(name)) {
+		if (!opts?.person) return { error: name + ' works only in the person\'s own tab (the in-app assistant or the Claude connector)' };
+		return runPersonTool(name, args, opts);
+	}
 	// 86-fix B1: a caller that forces the physics tools on (the connector) does so for ITS calls only
 	const physics = !!opts?.physics || physicsToolsEnabled();
 	// F-1: a viewer's edits never reach anyone, so refuse instead of reporting success
@@ -1445,6 +1460,10 @@ async function runAiTool(rawName, rawArgs, opts) {
 				// 85b R1-R4: see what the game does (runtimeTools.js)
 				return await runtimeTool(name, args);
 
+			case 'probe':
+				// 104 B1: the ground and the water under a point (probeTools.js)
+				return await probeTool(name, args);
+
 			default:
 				return {
 					error:
@@ -1482,7 +1501,7 @@ export const AI_TOOLS = [
 		function: {
 			name: 'list_scene',
 			description:
-				'List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. A body of water has water {preset, shallowColor, deepColor, level (how full 0-1), surface (world height of the still water), waves {height}} in place of color. Every mesh also has mesh {vertexCount, faceCount (triangles), bounds {local, world}} — each box [[minX, minY, minZ], [maxX, maxY, maxZ]], local in the mesh\'s own space (its vertices), world in the scene. The transform is the AUTHORED pose: an object an effect is moving also has animated: true, and live {position, rotation, scale, visible} when this frame differs; update_objects writes the authored pose, so never copy live back into it. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: "scene" | object uuid, page} to read one page of one graph.',
+				'List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. A body of water has water {preset, shallowColor, deepColor, level (how full 0-1), surface (world height of the still water), waves {height}} in place of color. Every mesh also has mesh {vertexCount, faceCount (triangles), bounds {local, world}} — each box [[minX, minY, minZ], [maxX, maxY, maxZ]], local in the mesh\'s own space (its vertices), world in the scene. The transform is the AUTHORED pose: an object an effect is moving also has animated: true, and live {position, rotation, scale, visible} when this frame differs; update_objects writes the authored pose, so never copy live back into it. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius} (near = WHICH OBJECTS are around a spot; the ground height, slope or water under a point is probe). A big flow graph shows its first page and says how to read the rest: pass {flow: "scene" | object uuid, page} to read one page of one graph.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1653,6 +1672,11 @@ export const AI_TOOLS = [
 								},
 								layer: { type: ['string', 'null'], description: '102b: put it on the layer with this NAME (made when new; Configure Scene > Layers hides and locks layers), or null for no layer' },
 								makeReal: { type: 'boolean', description: '102b: true = turn the object\'s array copies into ordinary objects (one undo); the result lists their uuids' },
+								tags: {
+									type: 'array',
+									items: { type: 'string' },
+									description: 'replace the object\'s tags (short words; [] clears). One flow then drives every object with a tag: an objectselector {pick: "tag", match: "<tag>"}'
+								},
 								parentUuid: {
 									type: 'string',
 									description: 'group uuid (or any object, not a light or camera) to nest under, or "root" to un-nest. The object keeps its world pose; a position given in the same update is LOCAL to the new parent. A uuid not in the scene is an error'
@@ -1909,7 +1933,9 @@ const PHYSICS_AI_TOOLS = [
 		function: {
 			name: 'set_physics',
 			description:
-				'Set physics body params on objects (batch). NOTE: objects made with create_objects are STATIC unless created with physics "dynamic" or a mass — use this to make existing objects dynamic, to TUNE bodies, or to pin scenery (mode "static"). mode "auto" reverts to scenery defaults.',
+				'Set physics body params on objects (batch). NOTE: objects made with create_objects are STATIC unless created with physics "dynamic" or a mass — use this to make existing objects dynamic, to TUNE bodies, or to pin scenery (mode "static"). mode "auto" reverts to scenery defaults. ' +
+				'FLOATING: a dynamic body floats in any water (effects water, or an object made water). How deep it sits comes from its float setting, not its mass: float "auto" = half under, "foam" / "cork" ride high, "wood" / "ice" sit low, "rubber" / "stone" / "metal" / "sink" sink; or density in kg/m³ (water is 1000: below floats, above sinks); float "mass" makes it mass ÷ its volume, so a heavier object of the same size sits lower and past 1000 kg per m³ sinks. buoyancy scales the lift, waterDrag how fast the water slows it. ' +
+				'Any float field answers water {density, under (share below the surface), draft (metres under), height, sinks} and, when water is under it, surface and restingBottomY (where its bottom rests): put a floating thing at that height so it does not drop in. A cube between ~0.2 and ~0.8 of the density of water tips onto an edge, as a real one does (upright: false, with a note). probe reads the water surface and depth at any point.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1953,7 +1979,15 @@ const PHYSICS_AI_TOOLS = [
 								angularDamping: {
 									type: 'number',
 									description: 'dynamic bodies: drag on spinning 0..5; omit = the scene\'s value'
-								}
+								},
+								float: {
+									type: 'string',
+									enum: ['auto', 'foam', 'cork', 'wood', 'ice', 'rubber', 'stone', 'metal', 'sink', 'mass', 'off'],
+									description: 'how it sits in water (makes it dynamic): auto = half under; foam / cork ride high; wood / ice low; rubber, stone, metal, sink go down; mass = mass ÷ volume decides; off = ignores water'
+								},
+								density: { type: 'number', description: 'kg/m³ for floating, 10-20000 (water 1000: below floats, above sinks); instead of float' },
+								buoyancy: { type: 'number', description: 'lift factor 0-10 (1 = as the density says; 2 = rides higher)' },
+								waterDrag: { type: 'number', description: 'how hard the water slows it, factor 0-10 (1 = the water\'s own; 0.3 = drifts, 3 = holds still)' }
 							},
 							required: ['uuid']
 						}
@@ -2036,9 +2070,10 @@ const PHYSICS_AI_TOOLS = [
  * Call this per turn (readiness can change). @param {ToolOpts} [opts] @returns {any[]} */
 export function getAiTools(opts) {
 	const physics = !!opts?.physics || physicsToolsEnabled();
-	const tools = [...AI_TOOLS, ...GEOMETRY_AI_TOOLS, ...TEXT_AI_TOOLS, ...PATH_AI_TOOLS, ...VECTOR_AI_TOOLS, ...SIMPLIFY_AI_TOOLS, ...LOOK_AI_TOOLS, ...HUD_AI_TOOLS, ...SCENE_SETUP_AI_TOOLS, ...LEVELS_AI_TOOLS, ...MENUS_AI_TOOLS, ...NPC_AI_TOOLS, ...DIALOGUE_AI_TOOLS, ...WORLD_AI_TOOLS, ...ASSIST_AI_TOOLS, ...RUNTIME_AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
+	const tools = [...AI_TOOLS, ...GEOMETRY_AI_TOOLS, ...TEXT_AI_TOOLS, ...PATH_AI_TOOLS, ...VECTOR_AI_TOOLS, ...SIMPLIFY_AI_TOOLS, ...LOOK_AI_TOOLS, ...HUD_AI_TOOLS, ...SCENE_SETUP_AI_TOOLS, ...LEVELS_AI_TOOLS, ...MENUS_AI_TOOLS, ...NPC_AI_TOOLS, ...DIALOGUE_AI_TOOLS, ...WORLD_AI_TOOLS, ...ASSIST_AI_TOOLS, ...RUNTIME_AI_TOOLS, ...PROBE_AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
 	if (physics) tools.push(...PHYSICS_AI_TOOLS);
 	if (meshGenReady()) tools.push(MESH_TOOL);
+	if (opts?.person) tools.push(...PERSON_AI_TOOLS);
 	return tools;
 }
 
@@ -2053,7 +2088,7 @@ export function buildSystemPrompt(opts) {
 	const toolsLine = missing.length
 		? '\nNot set up on this device: ' +
 			missing.map((f) => f.label + ' (needs ' + f.needs + ')').join('; ') +
-			'. If the user asks for one of these, say what it needs and that they can set it up in Settings ▸ Tools & connections.'
+			'. If the user asks for one of these, say what it needs and that they can set it up in Settings ▸ AI.'
 		: '';
 	const physics = !!opts?.physics || physicsToolsEnabled();
 	const flowBlock = [
@@ -2142,6 +2177,6 @@ export function buildSystemPrompt(opts) {
 		"an object's name as the tool name — the name of a thing you create belongs in that object's",
 		'`name` field inside create_objects. Every call takes effect immediately, so never repeat a',
 		'call that already came back without an error — once the scene matches the request, stop',
-		'calling tools and write the summary.' + meshLine + toolsLine + GEOMETRY_PROMPT + TEXT_PROMPT + PATH_PROMPT + VECTOR_PROMPT + SIMPLIFY_PROMPT + LOOK_PROMPT + HUD_PROMPT + SCENE_SETUP_PROMPT + LEVELS_PROMPT + MENUS_PROMPT + NPC_PROMPT + DIALOGUE_PROMPT + WORLD_PROMPT + ASSIST_PROMPT + RUNTIME_PROMPT + flowBlock + extraBlock + physicsBlock
+		'calling tools and write the summary.' + meshLine + toolsLine + GEOMETRY_PROMPT + TEXT_PROMPT + PATH_PROMPT + VECTOR_PROMPT + SIMPLIFY_PROMPT + LOOK_PROMPT + HUD_PROMPT + SCENE_SETUP_PROMPT + LEVELS_PROMPT + MENUS_PROMPT + NPC_PROMPT + DIALOGUE_PROMPT + WORLD_PROMPT + ASSIST_PROMPT + RUNTIME_PROMPT + PROBE_PROMPT + flowBlock + extraBlock + physicsBlock
 	].join('\n');
 }

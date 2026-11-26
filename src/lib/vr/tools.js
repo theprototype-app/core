@@ -10,13 +10,9 @@ import {
 	vrStretchFactors,
 	vrToolMode
 } from '../../stores/sceneStore';
-import {
-	stretchPositions,
-	commitMeshGeoSnapshot,
-	readTriangles,
-	trisToPositions,
-	applyMeshGeo
-} from '../faceEdit';
+import { applyMeshGeo } from '../meshGeoApply';
+import { stretchPositions, readTriangles, trisToPositions } from '../meshSoup';
+import { withFaceEdit, prefetchFaceEdit } from '../faceEditLazy';
 import { applySelectionSet } from '../objectActions';
 import { renderer } from './core.js';
 import { hapticPulse } from './haptics.js';
@@ -157,6 +153,7 @@ function applyStretchPreview() {
 export function beginStretch(uuid) {
 	const object = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
 	if (!object?.geometry) return false;
+	prefetchFaceEdit(); // 102-boot-diet-2: commitStretch bakes through the face editor's commit
 	// expand through the index like the face ops so applyMeshGeo (non-indexed) matches
 	stretch = { uuid, base: trisToPositions(readTriangles(object.geometry)), factors: [1, 1, 1] };
 	vrStretchObject.set(uuid);
@@ -189,7 +186,7 @@ export function commitStretch() {
 	const changed = factors.some((/** @type {number} */ f) => f !== 1);
 	stretch = null;
 	vrStretchObject.set(null);
-	if (changed) commitMeshGeoSnapshot(uuid, base, after);
+	if (changed) void withFaceEdit((fe) => fe.commitMeshGeoSnapshot(uuid, base, after)); // 102-boot-diet-2: sync once loaded
 	return changed;
 }
 

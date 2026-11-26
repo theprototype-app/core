@@ -27,26 +27,11 @@ import {
 	vrRaycastHandle,
 	vrBeginHandleDrag,
 	vrEndHandleDrag,
-	toggleVertexSelection
+	toggleVertexSelection,
+	pathSelectVertex
 } from '../meshEdit';
-import {
-	faceEditObject,
-	faceEditOp,
-	faceEditAmount,
-	commitArmedFaceOp,
-	faceIndexForTriangle,
-	beginFaceGrab,
-	commitFaceGrab,
-	beginFaceAdjust,
-	commitFaceAdjust,
-	faceGesturePending,
-	highlightedFaceInfo,
-	faceEditMulti,
-	faceEditHoverTri,
-	toggleFaceSelection,
-	currentTargetFace,
-	lookupEditable
-} from '../faceEdit';
+import { faceEditObject, faceEditOp, faceEditAmount, faceEditMulti, faceEditHoverTri, lookupEditable } from '../faceEditState';
+import { faceEditNow } from '../faceEditLazy';
 import { peers } from '../../stores/appStore';
 import { recordTransform, recordTransformSet } from '../history';
 import { withWireBatch } from '../wireBatch';
@@ -58,6 +43,7 @@ import { selectObject, topLevelObjectOf } from '../objectActions';
 import { suspendAnimation, resumeAnimation, fireObjectGrab, kinematicGrab } from '../flowRuntime';
 import { grabRule, startGlide, cancelGlide, homeFor } from '../grabReturn.js'; // 85 I1: Grabbable 'return' in VR
 import { safeStorage } from '../safeStorage';
+import { meshPathSelect } from '../meshToolParams'; // 99 K8
 import { S } from './state.js';
 import { renderer, tempVector } from './core.js';
 import { hapticPulse, hapticPattern } from './haptics.js';
@@ -392,31 +378,38 @@ export let faceAdjustHand = null;
 export function vrFaceTrigger() {
 	// 52 (H): editing faces is a precise tool — a tracked hand is asked to pick up a controller
 	if (controllerRequired('edit faces', controllerIndexFor(pointerHand()))) return;
-	// 212: Multi mode — the trigger ACCUMULATES the pointed unit; the op button
-	// applies to the whole set (no live adjust while multi-selecting)
-	if (get(faceEditMulti)) {
-		toggleFaceSelection(get(faceEditHoverTri));
+	// 99 K8: Path on — the trigger adds the shortest path from the last pick (the first one just picks)
+	if (get(meshPathSelect)) {
+		const tri = get(faceEditHoverTri);
+		if (tri >= 0 && !faceEditNow()?.pathSelectFaces(tri)) faceEditNow()?.toggleFaceSelection(tri);
 		hapticPulse(0.2, 25);
 		return;
 	}
-	if (commitFaceAdjust()) {
+	// 212: Multi mode — the trigger ACCUMULATES the pointed unit; the op button
+	// applies to the whole set (no live adjust while multi-selecting)
+	if (get(faceEditMulti)) {
+		faceEditNow()?.toggleFaceSelection(get(faceEditHoverTri));
+		hapticPulse(0.2, 25);
+		return;
+	}
+	if (faceEditNow()?.commitFaceAdjust()) {
 		faceAdjustHand = null; // the second trigger CONFIRMS the extrude/inset
 		return;
 	}
-	if (faceGesturePending()) return; // a grip grab owns the gesture
+	if (faceEditNow()?.faceGesturePending()) return; // a grip grab owns the gesture
 	const op = get(faceEditOp);
-	const target = currentTargetFace(); // 212: hovered polygon / face group
+	const target = faceEditNow()?.currentTargetFace(); // 212: hovered polygon / face group
 	if (!target) return;
 	if (op === 'extrude' || op === 'inset') {
-		if (beginFaceAdjust(target, /** @type {any} */ (op), get(faceEditAmount))) {
+		if (faceEditNow()?.beginFaceAdjust(target, /** @type {any} */ (op), get(faceEditAmount))) {
 			// 184/185: capture the pointer hand so controller motion along the face
 			// normal drives depth (extrude) / size (inset) until the next trigger
-			const info = highlightedFaceInfo();
+			const info = faceEditNow()?.highlightedFaceInfo();
 			const pIdx = controllerIndexFor(pointerHand());
 			const pos = pIdx >= 0 ? renderer.xr.getController(pIdx).getWorldPosition(new THREE.Vector3()) : null;
 			faceAdjustHand = info && pos ? { index: pIdx, lastPos: pos, normal: info.normal.clone() } : null;
 		}
-	} else commitArmedFaceOp();
+	} else faceEditNow()?.commitArmedFaceOp();
 }
 
 /**
@@ -459,6 +452,12 @@ export function vrVertexTrigger(index) {
 		if (h >= 0) toggleVertexSelection(h);
 		return;
 	}
+	// 99 K8: Path on — a trigger click picks (the first) or adds the shortest path from the anchor; no carry
+	if (get(meshPathSelect)) {
+		const h = vrRaycastHandle(controllerRay(index ?? 0));
+		if (h >= 0 && !pathSelectVertex(h)) toggleVertexSelection(h);
+		return;
+	}
 	if (get(vrVertexHold)) return;
 	if (S.vertexTriggerGrab) return endVertexCarry();
 	beginVertexCarry(index);
@@ -469,7 +468,7 @@ export function vrVertexTrigger(index) {
 /** @param {number} index */
 export function vrVertexGrabStart(index) {
 	// create-face selection is driven by the 'select' click, not the press
-	if (!get(editingObject) || get(vrFaceCreateMode) || !get(vrVertexHold) || S.vertexTriggerGrab) return;
+	if (!get(editingObject) || get(vrFaceCreateMode) || get(meshPathSelect) || !get(vrVertexHold) || S.vertexTriggerGrab) return;
 	if (controllerRequired('edit vertices', index)) return; // 52 (H)
 	beginVertexCarry(index);
 }
@@ -496,8 +495,8 @@ export function onSqueezeStart(index) {
 	if (get(faceEditObject)) {
 		const edited = lookupEditable(get(faceEditObject) ?? '') /* 36 X4: the collider proxy too */;
 		const hit = edited ? controllerRay(index).intersectObject(edited, false)[0] : null;
-		const fi = hit && hit.faceIndex != null ? faceIndexForTriangle(hit.faceIndex) : -1;
-		if (fi >= 0 && beginFaceGrab(fi)) {
+		const fi = hit && hit.faceIndex != null ? (faceEditNow()?.faceIndexForTriangle(hit.faceIndex) ?? -1) : -1;
+		if (fi >= 0 && faceEditNow()?.beginFaceGrab(fi)) {
 			const controller = renderer.xr.getController(index);
 			faceGrabHand = {
 				index,
@@ -882,7 +881,7 @@ export function onSqueezeEnd(index) {
 	// face grab (122): release commits the reshape as one meshgeo + undo entry
 	if (faceGrabHand?.index === index) {
 		faceGrabHand = null;
-		commitFaceGrab();
+		faceEditNow()?.commitFaceGrab();
 		hapticPulse(0.2, 30);
 		return;
 	}

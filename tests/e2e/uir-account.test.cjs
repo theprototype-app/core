@@ -3,12 +3,13 @@
 // here a FAKE plugin mount and a FAKE connector provider stand in, so the suite needs no server.
 //
 //   1. no plugin, no provider: Settings has no Account page and no Connected apps page (the OSS build)
-//   2. a connector provider alone: the Account page exists and holds Connected apps; the old "Connected apps" page is
-//      gone from the sidebar; the old deep link ('connectedapps') opens Account at the Connected apps group
-//   3. the plugin mount: its groups come first, Connected apps under them; search finds each moved row by its words
+//   2. a connector provider alone: the Account page exists and holds a Connected apps LINK row (89 I2: the list itself is
+//      on Settings ▸ AI); the old "Connected apps" page is gone from the sidebar; the old deep link ('connectedapps') opens
+//      Settings ▸ AI at the Connected apps group
+//   3. the plugin mount: its groups come first, the Connected apps link under them; search finds each row by its words
 //   4. cloudApi.openSettings(section, anchor): reaches an element the plugin renders LATE, flashes it; refuses junk
 //   5. Connect Claude's "Connected apps" link (connected tab) opens the new place; Revoke there reaches the provider
-//   6. requests: opening Settings ▸ Account asks the provider for the list ONCE; a search after asks nothing
+//   6. requests: opening Settings ▸ AI asks the provider for the list ONCE; a search after asks nothing
 //   7. axe on the page; desktop 1280 + 1920 shots, dark + light, and the N6 folded / unfolded page
 const h = require('./helpers.cjs');
 const fs = require('fs');
@@ -91,14 +92,22 @@ h.run(async () => {
 	h.check((await P.locator('#settings-account').count()) === 0 && !oss.some((l) => /^Account$|^Connected apps$/.test(l)), `no plugin, no provider: no Account and no Connected apps page (${oss.join('|').slice(0, 300)})`);
 	await closeSettings();
 
-	// ---- 2. a provider alone: Connected apps lives in Settings ▸ Account -----------------------------------------
+	// ---- 2. a provider alone: Account holds a link; Connected apps lives in Settings ▸ AI (89 I2) ---------------
 	await installProvider(P);
 	await openSettings('connectedapps'); // the old deep link
-	await P.waitForSelector('#settings-account #connected-apps-settings [data-app="g_1"]', { timeout: 15000 });
+	await P.waitForSelector('#ai-card-in-scene #connected-apps-settings [data-app="g_1"]', { timeout: 15000 });
 	const nav2 = await navLabels();
-	h.check(nav2.includes('Account') && !nav2.includes('Connected apps'), `the sidebar has Account and no separate Connected apps page (${nav2.join('|').slice(0, 300)})`);
-	const title2 = await P.locator('#settings-sections .ss-page[data-section="account"] .ss-title').first().textContent();
-	h.check((title2 || '').trim() === 'Account', `the old 'connectedapps' deep link opens the Account page (${title2})`);
+	h.check(nav2.includes('Account') && nav2.includes('AI') && !nav2.includes('Connected apps'), `the sidebar has Account and AI and no separate Connected apps page (${nav2.join('|').slice(0, 300)})`);
+	const title2 = await P.locator('#settings-sections .ss-page[data-section="ai"] .ss-title').first().textContent();
+	h.check((title2 || '').trim() === 'AI', `the old 'connectedapps' deep link opens Settings ▸ AI (${title2})`);
+	await closeSettings();
+	await openSettings('account');
+	await P.waitForSelector('#settings-account #row-account-connected-apps', { timeout: 15000 });
+	h.check((await P.locator('#settings-account #connected-apps-settings').count()) === 0, 'Settings ▸ Account keeps a link row, not the list');
+	await P.locator('#row-account-connected-apps').click();
+	await P.waitForSelector('#ai-card-in-scene #connected-apps-settings [data-app="g_1"]', { timeout: 15000 });
+	await P.waitForTimeout(400);
+	h.check(await inView('#connected-apps-settings > *'), "Account's Connected apps row opens Settings ▸ AI at the Connected apps groups");
 	await closeSettings();
 
 	// ---- 3. the plugin's groups first, then Connected apps; search ---------------------------------------------------
@@ -110,19 +119,21 @@ h.run(async () => {
 	h.check(mounted === true, 'the plugin mounts into Settings ▸ Account');
 	await openSettings('account');
 	await P.waitForSelector('#settings-account #fake-signin', { timeout: 15000 });
-	await P.waitForSelector('#settings-account #connected-apps-settings [data-app="g_1"]', { timeout: 15000 });
+	await P.waitForSelector('#settings-account #row-account-connected-apps', { timeout: 15000 });
 	const order = await P.evaluate(() => [...document.querySelectorAll('#settings-account [data-section-label]')].map((n) => (n.textContent || '').trim()).filter(Boolean));
 	const iSign = order.findIndex((t) => /Sign-in methods/.test(t));
 	const iDev = order.findIndex((t) => /^Devices/.test(t));
 	const iApps = order.findIndex((t) => /^Connected apps/.test(t));
-	h.check(order[0]?.startsWith('Email') && iSign > 0 && iDev > iSign && iApps > iDev, `Account page order: Email · Sign-in methods · Devices (plugin) · then Connected apps (core) (${order.join(' | ')})`);
+	h.check(order[0]?.startsWith('Email') && iSign > 0 && iDev > iSign && iApps > iDev, `Account page order: Email · Sign-in methods · Devices (plugin) · then the Connected apps link (core) (${order.join(' | ')})`);
 	for (const [q, want, hidden] of [
 		['sign-in methods', '#row-fake-github', '#row-fake-device'],
 		['devices', '#row-fake-device', '#row-fake-github'],
 		['sign out everywhere', '#row-fake-device', '#row-fake-updates'],
 		['connected apps', '#row-connected-app-g_1', '#row-fake-device'],
+		['connected apps', '#row-account-connected-apps', '#row-fake-github'],
 		['revoke', '#row-connected-app-g_1', '#row-fake-github'],
-		['claude', '#row-connector-tab', '#row-fake-github']
+		['claude', '#row-connector-tab', '#row-fake-github'],
+		['chatgpt', '#row-connected-app-g_1', '#row-fake-device']
 	]) {
 		await search(q);
 		await P.waitForTimeout(600);
@@ -155,13 +166,13 @@ h.run(async () => {
 	await P.locator('#connect-claude-button').click();
 	await h.eventually(() => connectorPhase(A), (p) => p === 'connected', 'connected', 20000);
 	await P.locator('#connect-claude-keep-open .cc-link').click();
-	await P.waitForSelector('#settings-account #connected-apps-settings [data-app="g_1"]', { timeout: 15000 });
+	await P.waitForSelector('#ai-card-in-scene #connected-apps-settings [data-app="g_1"]', { timeout: 15000 });
 	await P.waitForTimeout(400);
-	h.check(await inView('#connected-apps-settings > *'), 'Connect Claude ▸ "Connected apps" opens Settings ▸ Account at the Connected apps groups');
+	h.check(await inView('#connected-apps-settings > *'), 'Connect Claude ▸ "Connected apps" opens Settings ▸ AI at the Connected apps groups');
 	await P.locator('#connected-apps-settings [data-app="g_1"]').getByRole('button', { name: 'Revoke Claude' }).click();
 	await P.getByRole('button', { name: 'Revoke', exact: true }).last().click();
 	await h.eventually(() => P.evaluate(() => /** @type {any} */ (window).__connectorFake.revoked), (r) => r.includes('g_1'), 'revoked', 6000);
-	h.check((await P.evaluate(() => /** @type {any} */ (window).__connectorFake.revoked)).includes('g_1'), 'Revoke in Settings ▸ Account ▸ Connected apps reaches the provider');
+	h.check((await P.evaluate(() => /** @type {any} */ (window).__connectorFake.revoked)).includes('g_1'), 'Revoke in Settings ▸ AI ▸ Connected apps reaches the provider');
 	await closeSettings();
 	await P.evaluate(() => /** @type {any} */ (window).__tp.test.v1.aiAssistantHidden.set('1'));
 
@@ -178,8 +189,8 @@ h.run(async () => {
 			return orig();
 		};
 	});
-	await openSettings('account');
-	await P.waitForSelector('#settings-account #connected-apps-settings', { timeout: 15000 });
+	await openSettings('ai');
+	await P.waitForSelector('#ai-card-in-scene #connected-apps-settings', { timeout: 15000 });
 	await P.waitForTimeout(800);
 	const afterOpen = await P.evaluate(() => /** @type {any} */ (window).__lists);
 	await search('revoke');
@@ -187,10 +198,14 @@ h.run(async () => {
 	await search('');
 	await P.waitForTimeout(600);
 	const afterSearch = await P.evaluate(() => /** @type {any} */ (window).__lists);
-	h.check(afterOpen === 1, `opening Settings ▸ Account asks for the connected apps once (${afterOpen})`);
+	h.check(afterOpen === 1, `opening Settings ▸ AI asks for the connected apps once (${afterOpen})`);
 	h.check(afterSearch === afterOpen, `a search on the open page asks nothing more (${afterSearch - afterOpen} more)`);
 
 	// ---- 7. axe + shots ----------------------------------------------------------------------------------------------
+	await closeSettings();
+	await openSettings('account'); // 89 I2: section 6 ends on Settings ▸ AI
+	await P.waitForSelector('#settings-account #row-account-connected-apps', { timeout: 15000 });
+	await P.waitForTimeout(400);
 	await axe(P, '#settings-account', 'Settings ▸ Account');
 	for (const [w, hgt] of [[1280, 800], [1920, 1080]]) {
 		for (const theme of ['dark', 'light']) {
@@ -217,7 +232,7 @@ h.run(async () => {
 			S.settingsSection.set('account');
 			S.settingsOpen.set(true);
 		});
-		await Q.page.waitForSelector('#settings-account #connected-apps-settings [data-app="g_1"]', { timeout: 20000 });
+		await Q.page.waitForSelector('#settings-account #row-account-connected-apps', { timeout: 20000 });
 		await Q.page.waitForTimeout(600);
 		const fits = await Q.page.evaluate(() => {
 			const main = document.getElementById('settings-main');

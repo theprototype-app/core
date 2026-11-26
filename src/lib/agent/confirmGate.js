@@ -17,6 +17,10 @@ import { sessionHost } from '$lib/connectionState';
 import { isAgentPeer } from '$lib/inviteStore';
 import { registerDebugHook } from '$lib/debugHookRegistry.js';
 import { agentRequested } from './agentMode.js';
+import { connectorState } from '$lib/connector/connectorStore.js';
+
+/** 89: the AI app whose call asks ("Claude" until the Worker names another) */
+const connectorWho = () => get(connectorState).who || 'Claude';
 import { confirmRoute, confirmTargets, askRefusal, cleanSummary, CONFIRM_TTL_MS, CONFIRM_MAX_WAIT_S } from './confirmCore.js';
 
 /**
@@ -182,7 +186,7 @@ export async function gateScenewide(tool, args, change) {
 	};
 	if (route === 'local') {
 		asks.set(ask.id, ask);
-		promptHere('Claude' + askLine(tool, ask.summary), (allow) => settle(ask, allow ? 'allowed' : 'denied'));
+		promptHere(connectorWho() + askLine(tool, ask.summary), (allow) => settle(ask, allow ? 'allowed' : 'denied'));
 		return pendingResult(ask);
 	}
 	/** @type {any} */

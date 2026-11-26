@@ -27,7 +27,7 @@ export {
 export { plainAttribute } from '../meshKernel/geometry.js';
 export { fromSoup, toSoup, opMeshFromGeometry } from './soup.js';
 export { insetFraction, bevelRegion, bevelVertices, bevelEdges } from './bevel.js';
-export { loopCutRegion, connectVerticesRegion } from './cut.js';
+export { loopCutRegion, loopCutRails, loopCutStops, connectVerticesRegion } from './cut.js';
 export { knifeCut } from './knife.js';
 export { cellMap } from './rebuild.js';
 // 99-ops-b family 4
@@ -44,3 +44,7 @@ export {
 } from './dissolve.js';
 // 99-ops-b family 6
 export { subdivideUnits, subdivideLevels, subdivideEdges, symmetrize } from './subdivide.js';
+// 99 K8 (99-newops): Catmull-Clark in the editor, bisect, shortest-path select — the kernel's cores on the op mesh
+export { smoothSubdivide } from './smooth.js';
+export { pathSelect } from './select.js';
+export { bisectRegion } from './bisectOp.js';

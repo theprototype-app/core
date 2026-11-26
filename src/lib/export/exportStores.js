@@ -40,7 +40,9 @@ const PREFS_KEY = 'export:prefs';
 
 /** @typedef {{preset: string, startFullscreen: boolean, showFps: boolean, quality: string,
  *   vrButton: boolean, useCdnForPacks: boolean, thumbnail: boolean, viewportW: number,
- *   viewportH: number, embedUrl: string}} ExportPrefs */
+ *   viewportH: number, embedUrl: string, mobile: boolean}} ExportPrefs
+ * 63: `mobile` — the game is made for phones too (itch.io's "Mobile friendly"; the checks then ask
+ * for touch controls) */
 
 /** @type {ExportPrefs} */
 export const DEFAULT_EXPORT_PREFS = Object.freeze({
@@ -53,11 +55,12 @@ export const DEFAULT_EXPORT_PREFS = Object.freeze({
 	thumbnail: true,
 	viewportW: 960,
 	viewportH: 600,
-	embedUrl: ''
+	embedUrl: '',
+	mobile: false
 });
 
 const QUALITIES = ['auto', 'low', 'medium', 'high'];
-const PRESETS = ['itch', 'static', 'embed'];
+const PRESETS = ['itch', 'crazygames', 'static', 'embed'];
 
 /** Typed, clamped prefs from whatever was stored (unknown keys dropped). PURE. @param {any} raw @returns {ExportPrefs} */
 export function coerceExportPrefs(raw) {
@@ -77,7 +80,8 @@ export function coerceExportPrefs(raw) {
 		thumbnail: bool(r.thumbnail, d.thumbnail),
 		viewportW: int(r.viewportW, 200, 4096, d.viewportW),
 		viewportH: int(r.viewportH, 200, 4096, d.viewportH),
-		embedUrl: typeof r.embedUrl === 'string' ? r.embedUrl.slice(0, 500) : d.embedUrl
+		embedUrl: typeof r.embedUrl === 'string' ? r.embedUrl.slice(0, 500) : d.embedUrl,
+		mobile: bool(r.mobile, d.mobile)
 	};
 }
 

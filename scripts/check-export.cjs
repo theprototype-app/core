@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // 36-export (E1) — CHECK AN EXPORTED GAME: structure, relative paths, the itch.io limits.
 //
-//   node scripts/check-export.cjs <game.zip | unzipped-folder> [--preset itch|static] [--json]
+//   node scripts/check-export.cjs <game.zip | unzipped-folder> [--preset itch|crazygames|static] [--json]
 //
-// The rules are src/lib/export/exportValidate.js — the SAME function the in-app exporter runs
+// The rules are src/lib/export/exportChecks.js (63: the preset rules, over exportValidate.js) — the SAME rules the in-app exporter runs
 // before it offers the download, so a zip the app produced and a zip somebody edited by hand
 // are judged alike. Prints a summary (files, size, the largest file, every error and warning)
 // and exits 1 on any error. The limits and their source are in that file's header.
@@ -58,7 +58,7 @@ async function main() {
 	const preset = presetArg >= 0 ? args[presetArg + 1] : '';
 	const asJson = args.includes('--json');
 	if (!target) {
-		console.error('usage: node scripts/check-export.cjs <game.zip | folder> [--preset itch|static] [--json]');
+		console.error('usage: node scripts/check-export.cjs <game.zip | folder> [--preset itch|crazygames|static] [--json]');
 		process.exit(2);
 	}
 	const abs = path.resolve(target);
@@ -69,21 +69,34 @@ async function main() {
 	const files = fs.statSync(abs).isDirectory() ? walk(abs, '', []) : readZip(abs);
 	/** @type {any} */
 	const lib = await import(pathToFileURL(path.join(ROOT, 'src/lib/export/exportValidate.js')).href);
-	const report = lib.validateExport(files, { preset: preset || undefined });
+	/** @type {any} */
+	const rules = await import(pathToFileURL(path.join(ROOT, 'src/lib/export/exportChecks.js')).href);
+	/** @type {any} */
+	const core = await import(pathToFileURL(path.join(ROOT, 'src/lib/export/checkCore.js')).href);
+	/** @type {any} */
+	const ecore = await import(pathToFileURL(path.join(ROOT, 'src/lib/export/exportCore.js')).href);
+	// 63: the preset — the flag, else the one play.js names, else itch.io (the strictest file limits)
+	const configured = lib.parsePlayJs(files.find((f) => f.path === 'play.js')?.text || '')?.preset;
+	const preset2 = preset || (rules.PRESET_LIMITS[configured] ? configured : "itch");
+	const report = lib.validateExport(files, { preset: preset2, allowHosts: ecore.EXPORT_ALLOWED_HOSTS[preset2] || [] });
+	// the same rows the in-app exporter ran before it offered the download (exportChecks.js)
+	const rows = await core.runChecks(rules.EXPORT_RULES, { target: preset2, stage: 'built', files });
+	const sum = core.summarize(rows, preset2);
 	if (asJson) {
-		console.log(JSON.stringify({ ...report, config: report.config }, null, 2));
+		console.log(JSON.stringify({ ...report, target: preset2, rows, summary: sum, ok: sum.blocking === 0 }, null, 2));
 	} else {
-		const L = lib.ITCH_LIMITS;
-		console.log(`check-export: ${path.relative(process.cwd(), abs) || abs}`);
-		console.log(`  files    ${report.stats.files} / ${L.maxFiles} (itch.io)   runtime files ${report.stats.runtimeFiles}`);
+		const L = rules.PRESET_LIMITS[preset2];
+		const name = preset2 === 'crazygames' ? 'CrazyGames' : preset2 === 'static' ? 'static host' : 'itch.io';
+		console.log(`check-export: ${path.relative(process.cwd(), abs) || abs}   (preset ${preset2})`);
+		console.log(`  files    ${report.stats.files} / ${L.maxFiles} (${name})   runtime files ${report.stats.runtimeFiles}`);
 		console.log(`  size     ${mb(report.stats.bytes)} extracted / ${L.maxTotalBytes / 1048576} MB`);
+		if (L.maxInitialBytes) console.log(`  initial  ~${mb(rules.initialDownloadBytes(files))} before play (upper estimate) / ${L.maxInitialBytes / 1048576} MB`);
 		if (report.stats.largest) console.log(`  largest  ${report.stats.largest.path} ${mb(report.stats.largest.bytes)} / ${L.maxFileBytes / 1048576} MB`);
 		if (report.config) console.log(`  config   id=${report.config.id} preset=${report.config.preset} scene=${report.config.scene} packs=${report.config.packsBase || '(none/CDN)'} modules=${(report.config.modules || []).length}`);
-		for (const e of report.errors) console.log('  ERROR    ' + e);
-		for (const w of report.warnings) console.log('  warning  ' + w);
-		console.log(report.ok ? '  OK' : `  FAILED (${report.errors.length} error${report.errors.length === 1 ? '' : 's'})`);
+		for (const r of rows) console.log(`  ${r.severity === 'error' ? 'ERROR  ' : r.severity === 'warn' ? 'warning' : 'note   '}  ${r.title}${r.detail ? ' — ' + r.detail : ''}`);
+		console.log(sum.blocking === 0 ? '  OK' : `  FAILED (${sum.blocking} error${sum.blocking === 1 ? '' : 's'})`);
 	}
-	process.exit(report.ok ? 0 : 1);
+	process.exit(sum.blocking === 0 ? 0 : 1);
 }
 
 main().catch((e) => {

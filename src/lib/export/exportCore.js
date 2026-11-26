@@ -13,6 +13,21 @@ export function slugify(s) {
 	);
 }
 
+/**
+ * 63 PG1 — THE OUTSIDE HOSTS AN EXPORTED GAME MAY CALL, per preset: none. An itch.io / static-host
+ * zip carries every file it loads (the engine, the scene, packs, modules, the sky, fonts) and the
+ * features that would reach a server (accounts, sessions, the community gallery, module / template
+ * galleries, error and perf reports) are off in export mode. The one exception is a portal's own SDK
+ * in that portal's preset (63 PG3). `export-offline` measures the itch list; `export-crazygames` the
+ * CrazyGames one. ("Use CDN for packs" is the author's opt-in to the internet: it is reported, not
+ * allowed here.)
+ */
+export const EXPORT_ALLOWED_HOSTS = Object.freeze({
+	itch: Object.freeze(/** @type {string[]} */ ([])),
+	static: Object.freeze(/** @type {string[]} */ ([])),
+	crazygames: Object.freeze(['sdk.crazygames.com'])
+});
+
 /** @param {string} s */
 export function escapeHtml(s) {
 	return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] || c);
@@ -32,6 +47,20 @@ export function rewriteIndexHtml(html, { title }) {
 	if (/<title>[\s\S]*?<\/title>/i.test(out)) out = out.replace(/<title>[\s\S]*?<\/title>/i, tag);
 	else out = out.replace(/<meta charset="utf-8"\s*\/?>/i, (m) => m + '\n\t\t' + tag);
 	out = out.replace(/<meta charset="utf-8"\s*\/?>/i, (m) => m + '\n\t\t<script src="./play.js"></script>');
+	return out;
+}
+
+/**
+ * 63 PG3: a portal preset's SDK in the exported index.html — a classic <script> right after
+ * ./play.js (their docs: "in the <head> of index.html"), and its host added to the page's CSP
+ * `script-src` (the play page ships `script-src 'self' …`, which would refuse it), with the portal's
+ * own domain wildcard because the SDK loads its parts from sibling hosts on the portal's site. PURE.
+ * @param {string} html @param {string} src an https URL @returns {string}
+ */
+export function addPortalSdk(html, src) {
+	const url = new URL(src);
+	let out = String(html).replace(/<script src="\.\/play\.js"><\/script>/, (m) => m + `\n\t\t<script src="${escapeHtml(url.href)}"></script>`);
+	out = out.replace(/(<meta[^>]+http-equiv=["']content-security-policy["'][^>]+content=")([^"]*)(")/i, (/** @type {string} */ _m, /** @type {string} */ a, /** @type {string} */ csp, /** @type {string} */ z) => a + csp.replace(/script-src ([^;]*)/, (/** @type {string} */ _s, /** @type {string} */ list) => `script-src ${list} ${url.origin} https://*.${url.host.split('.').slice(-2).join('.')}`) + z);
 	return out;
 }
 

@@ -1811,7 +1811,11 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   hook loads every lazy panel before `__stores` publishes (suites open + act at once); `localStorage.debugLazyPanels
   = 'cold'` keeps the real path. Same lane: Bisect's first half rides the faceEdit chunk (stores in faceEditState,
   `faceEditNow()?.bisectClick` like the knife), Settings > AI is a lazy page (loads when Settings opens). Suite
-  `dock-on-demand` (built: chunks, play never fetches, no prefetch, 3G first open; click / key / Ctrl+K / `show` cold).
+  `dock-on-demand` (built: chunks, play never fetches, the prefetch, 3G first open; click / key / Ctrl+K / `show` cold).
+  IDLE PREFETCH (claude:9's ruling): `panelPrefetch.js` (lazy, from Menu's idle callback) imports the five bodies'
+  MODULES after the page's load event + idle, one at a time, mounting nothing; editor only (not embed / play), not on
+  Save-Data / 2g / slow-2g; a failure is silent through `chunkReload.quietly` (a background load never raises "A new
+  version is ready"); `localStorage.debugPanelPrefetch = 'off'` is the cold-measurement seam.
   **99 K2 — ONE COMMIT, ONE SENDER.** `meshCommit.js` (pure) is the only `meshgeo` builder (`meshGeoMessage`/
   `sendMeshGeo`; the wire is byte-identical, proved across two trees by `mesh-commit-two-tree`) and `compactMeshState`
   (what history keeps: Float32 positions/uvs, the partition packed Int32, so `entryBytes` counts what is HELD).

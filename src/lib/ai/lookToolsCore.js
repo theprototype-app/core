@@ -442,3 +442,70 @@ export function planPost(stack, args, defOf, kinds) {
 	if (args.replace === true) for (const x of current) if (!named.has(x.id)) ops.unshift({ op: 'remove', id: x.id, kind: x.kind });
 	return { ops, errors };
 }
+
+/** 107: GLSL words an expression may use besides its inputs a, b, c (built-in functions, types, and what the surface stage has in scope) */
+const GLSL_WORDS = new Set(
+	('abs acos acosh all any asin asinh atan atanh bool ceil clamp cos cosh cross degrees determinant distance dot equal exp exp2 faceforward false float ' +
+		'floor fract greaterThan greaterThanEqual int inverse inversesqrt length lessThan lessThanEqual log log2 mat2 mat3 mat4 max min mix mod normalize not notEqual ' +
+		'pow radians reflect refract round sign sin sinh smoothstep sqrt step tan tanh transpose true trunc vec2 vec3 vec4 ivec2 ivec3 ivec4 bvec2 bvec3 bvec4 ' +
+		'dFdx dFdy fwidth vUv vNormal vViewPosition gl_FragCoord gl_FrontFacing uv position normal cameraPosition PI time uShaderTime').split(' ')
+);
+
+/**
+ * 107: what a shader graph would do that the author probably did not mean, said per node: nodes whose result reaches no
+ * output (dangling), an output with nothing wired, and GLSL expression nodes whose text is invalid (an error) or names
+ * something that is not in scope (a warning). Pure: the catalog is handed in.
+ * @param {{nodes: any[], edges: any[]}} graph
+ * @param {(type: string) => any} defOf
+ * @param {{output: string, expressionProblem: (text: string) => string | null}} opts the domain's output node type
+ * @returns {{errors: string[], warnings: string[], dangling: {node: string, type: string, label?: string}[]}}
+ */
+export function shaderGraphDiagnostics(graph, defOf, opts) {
+	const nodes = graph?.nodes ?? [];
+	const edges = graph?.edges ?? [];
+	/** @type {string[]} */
+	const errors = [];
+	/** @type {string[]} */
+	const warnings = [];
+	const name = (/** @type {any} */ n) => 'node "' + n.id + '"' + (n.data?.label ? ' (' + String(n.data.label).slice(0, 40) + ')' : '');
+	const outputs = nodes.filter((n) => n.type === opts.output);
+	const reached = new Set(outputs.map((n) => n.id));
+	const upstream = new Map();
+	for (const e of edges) upstream.set(e.target, [...(upstream.get(e.target) ?? []), e.source]);
+	const walk = [...reached];
+	while (walk.length) {
+		const id = walk.pop();
+		for (const from of upstream.get(id) ?? []) if (!reached.has(from)) (reached.add(from), walk.push(from));
+	}
+	if (!outputs.length) warnings.push('there is no ' + opts.output + ' output node, so the graph changes nothing');
+	else if (!outputs.some((o) => edges.some((e) => e.target === o.id))) warnings.push('nothing is wired into the ' + opts.output + ' output, so the graph changes nothing');
+	const dangling = nodes
+		.filter((n) => !reached.has(n.id) && !defOf(n.type)?.group?.startsWith?.('Output'))
+		.map((n) => ({ node: String(n.id), type: String(n.type), ...(n.data?.label ? { label: String(n.data.label).slice(0, 60) } : {}) }));
+	if (dangling.length)
+		warnings.push(
+			dangling.length + (dangling.length > 1 ? ' nodes are' : ' node is') + ' not wired to the ' + opts.output + ' output and do nothing: ' +
+				dangling.slice(0, 8).map((d) => d.node + ' (' + d.type + ')').join(', ') + (dangling.length > 8 ? ' …' : '')
+		);
+	for (const n of nodes) {
+		if (n.type !== 'glsl') continue;
+		const text = String(n.data?.expression ?? 'a');
+		const problem = opts.expressionProblem(text) ?? expressionShapeProblem(text);
+		if (problem) {
+			errors.push(name(n) + ', expression "' + text.slice(0, 80) + '": ' + problem);
+			continue;
+		}
+		const unknown = [...new Set([...text.matchAll(/(^|[^.\w])([A-Za-z_]\w*)/g)].map((m) => m[2]))].filter((w) => !/^[abc]$/.test(w) && !GLSL_WORDS.has(w));
+		if (unknown.length) warnings.push(name(n) + ', expression "' + text.slice(0, 80) + '": ' + unknown.slice(0, 4).map((w) => '`' + w + '`').join(', ') + ' is not an input here (a, b, c are) or a GLSL built-in; wire a value into a, b or c');
+	}
+	return { errors, warnings, dangling };
+}
+
+/** an expression's shape: something to compute, and no operator with nothing on one side @param {string} text */
+function expressionShapeProblem(text) {
+	const t = text.trim();
+	if (!t) return 'it is empty';
+	if (/^[*/%&|^<>=?:,]/.test(t) || /[-+*/%&|^<>=?:,!~]$/.test(t)) return 'an operator has nothing on one side';
+	if (/[*/%][*/%]|[+\-*/%]\s*[*/%]|\(\s*\)|\(\s*[*/%,]|[,]\s*\)/.test(t.replace(/\b\w+\s*\(\s*\)/g, 'f'))) return 'two operators in a row, or empty brackets';
+	return null;
+}

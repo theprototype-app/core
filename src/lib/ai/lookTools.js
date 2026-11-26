@@ -36,6 +36,7 @@ import {
 	setPayloadTransform,
 	sniffImageType,
 	checkTextureUrl,
+	shaderGraphDiagnostics,
 	uniformsOf
 } from './lookToolsCore.js';
 import { FETCH_TIMEOUT_MS } from './imageToolCore.js';
@@ -369,6 +370,44 @@ async function albedoLanded(object, slot) {
 	}
 }
 
+/** 107: the slot most of these triangles wear (their `mi` tag), which a new slot from faces copies
+ * @param {any[]} rows readTriangles @param {number[]} tris picked @param {number} slots how many there are */
+function sourceSlotOf(rows, tris, slots) {
+	/** @type {Map<number, number>} */
+	const count = new Map();
+	for (const t of tris) {
+		const mi = Number(rows[t]?.mi ?? 0);
+		const at = Number.isInteger(mi) && mi >= 0 && mi < slots ? mi : 0;
+		count.set(at, (count.get(at) ?? 0) + 1);
+	}
+	let best = 0;
+	let most = -1;
+	for (const [at, n] of count) if (n > most || (n === most && at < best)) (best = at), (most = n);
+	return best;
+}
+
+/** 107: a slot's texture tiling as an agent reads it: its first map's, or null with no map @param {any} m */
+function slotTiling(m) {
+	const tex = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap'].map((k) => m?.[k]).find((t) => t?.isTexture);
+	if (!tex) return { tiling: null };
+	return { tiling: [r3(tex.repeat.x), r3(tex.repeat.y)], offset: [r3(tex.offset.x), r3(tex.offset.y)], rotation: r3(tex.rotation ?? 0) };
+}
+
+/** every slot's tiling, for the uv answer @param {any} object */
+async function everySlotTiling(object) {
+	const { materialsOf } = await import('$lib/materialsHandler');
+	return materialsOf(object).map((m, slot) => ({ slot, ...(m?.name ? { name: m.name } : {}), ...slotTiling(m) }));
+}
+
+/** @param {{slot: number, from: number, tiling: number[] | null, offset?: number[], rotation?: number}} made */
+function newSlotWords(made) {
+	return (
+		'Those faces now have their own slot ' + made.slot + ', a copy of slot ' + made.from + "'s look" +
+		(made.tiling ? ' with its texture tiling ' + made.tiling.join(' x ') + (made.offset?.some((n) => n !== 0) ? ', offset ' + made.offset.join(', ') : '') + (made.rotation ? ', rotation ' + made.rotation : '') + ' (set_uv slot ' + made.slot + ' changes only this slot)' : '') +
+		'.'
+	);
+}
+
 /** @param {any} args */
 async function setMaterialTool(args) {
 	const { uuids, error } = targetsOf(args);
@@ -440,6 +479,8 @@ async function setMaterialTool(args) {
 	const albedoBySlot = new Map();
 	/** @type {any[]} */
 	const rows = [];
+	/** 107: uuid -> the slot a faces call made, the slot it copied and the tiling it took @type {Map<string, any>} */
+	const newSlots = new Map();
 
 	for (const uuid of uuids) {
 		const object = objectOf(uuid);
@@ -496,13 +537,16 @@ async function setMaterialTool(args) {
 				skipped.push({ uuid, reason: picked.error });
 				continue;
 			}
-			const made = mh.addMaterialSlot(uuid);
+			// 107: the new slot starts as the slot those faces wore (most of them), not as the last slot in the list
+			const from = sourceSlotOf(picked.rows, picked.tris, mh.materialsOf(object).length);
+			const made = mh.addMaterialSlot(uuid, from);
 			const { assignTrisToSlot } = await import('$lib/uvEditor');
 			if (made < 0 || !assignTrisToSlot(uuid, picked.tris, made)) {
 				skipped.push({ uuid, reason: 'those faces could not take their own material' });
 				continue;
 			}
 			slot = made;
+			newSlots.set(uuid, { slot: made, from, ...slotTiling(mh.materialAt(object, made)) });
 		}
 		const material = mh.materialAt(object, slot);
 		if (!material) {
@@ -594,7 +638,15 @@ async function setMaterialTool(args) {
 			});
 		}
 		const mapNames = Object.keys(maps.slots).map((k) => SLOT_WORD[k]);
-		updated.push({ uuid: row.uuid, ok: true, slot: row.slot, ...(mapNames.length ? { maps: mapNames } : {}), ...(row.errors.length ? { errors: row.errors } : {}) });
+		const made = newSlots.get(row.uuid);
+		updated.push({
+			uuid: row.uuid,
+			ok: true,
+			slot: row.slot,
+			...(mapNames.length ? { maps: mapNames } : {}),
+			...(made ? { newSlot: made, note: newSlotWords(made) } : {}),
+			...(row.errors.length ? { errors: row.errors } : {})
+		});
 	}
 	pokeScene();
 	if (!updated.length) return { error: skipped.map((s) => s.reason).join('; ') || 'nothing was changed', skipped };
@@ -800,6 +852,26 @@ function graphFromArgs(args, textKey = 'text') {
 	return { error: 'give the graph as text, e.g. "c = color {value: \\"#ff8800\\"}\\nout = surface\\nc -> out.emissive"' };
 }
 
+/** 107: dangling nodes, an unwired output and expression problems, said per node @param {{nodes: any[], edges: any[]}} graph @param {string} domain */
+async function graphDiagnostics(graph, domain) {
+	const cat = await import('$lib/shaderCatalog');
+	const { glslExpressionProblem } = await import('$lib/shaderCode');
+	return shaderGraphDiagnostics(graph, (k) => cat.shaderNodeDef(k), { output: domain === 'post' ? cat.POST_OUTPUT_NODE : cat.SURFACE_NODE, expressionProblem: glslExpressionProblem });
+}
+
+/** 107: the warnings a written graph carries in its answer @param {{nodes: any[], edges: any[]}} graph @param {string} domain */
+async function graphNotes(graph, domain) {
+	const d = await graphDiagnostics(graph, domain);
+	return { ...(d.warnings.length ? { warnings: d.warnings } : {}), ...(d.dangling.length ? { dangling: d.dangling } : {}) };
+}
+
+/** 107: a GPU refusal points at the GLSL expression nodes, the only free text a graph holds @param {any} graph @param {string[]} errors */
+function withExpressionHint(graph, errors) {
+	const exprs = (graph?.nodes ?? []).filter((/** @type {any} */ n) => n.type === 'glsl');
+	if (!exprs.length) return errors;
+	return [...errors, 'the GLSL expression node' + (exprs.length > 1 ? 's ' : ' ') + exprs.map((/** @type {any} */ n) => n.id + ' ("' + String(n.data?.expression ?? 'a').slice(0, 60) + '")').join(', ') + (exprs.length > 1 ? ' are' : ' is') + ' the likely cause: check the types (a vec3 times a vec2 does not compile) and the names'];
+}
+
 /** the node catalog's check + a dry compile: an error here means nothing was written
  * @param {{nodes: any[], edges: any[]}} graph @param {'surface'|'post'} domain @returns {Promise<string[]>} */
 async function graphErrors(graph, domain) {
@@ -807,6 +879,9 @@ async function graphErrors(graph, domain) {
 	const { compileShaderGraphToIR, compilePostGraphToIR } = await import('$lib/shaderCompile');
 	const errors = checkShaderGraph(graph, (k) => cat.shaderNodeDef(k), cat.shaderNodeDefs().map((d) => d.key));
 	if (errors.length) return errors;
+	// 107: an invalid GLSL expression is refused naming its node (the compile only reaches nodes wired to the output)
+	const diag = await graphDiagnostics(graph, domain);
+	if (diag.errors.length) return diag.errors;
 	const compiled = domain === 'post' ? compilePostGraphToIR(graph) : compileShaderGraphToIR(graph);
 	return compiled.ok ? [] : (compiled.errors ?? ['the graph did not compile']);
 }
@@ -849,12 +924,15 @@ async function writeObjectGraph(key, patch, before) {
 	const after = sg.setShaderGraphFor(key, patch);
 	const compiled = await sg.compileAndApply(key);
 	const errors = [...(compiled.errors ?? [])];
-	if (!errors.length) errors.push(...(await driverErrors(objectOf(uuid ?? key))));
+	if (!errors.length) {
+		const gpu = await driverErrors(objectOf(uuid ?? key));
+		if (gpu.length) errors.push(...withExpressionHint(after, gpu));
+	}
 	if (errors.length) {
 		sg.setShaderGraphFor(key, before ?? null);
 		return { uuid: uuid ?? key, ...(slot ? { slot } : {}), errors };
 	}
-	return { uuid: uuid ?? key, ...(slot ? { slot } : {}), ok: true, ...(await shaderFacts(key, after)) };
+	return { uuid: uuid ?? key, ...(slot ? { slot } : {}), ok: true, ...(await shaderFacts(key, after)), ...(await graphNotes(after, 'surface')) };
 }
 
 /** @param {any} args */
@@ -971,7 +1049,12 @@ async function editShaderTool(args) {
 			continue;
 		}
 		const names = (cat.shaderNodeDef(node.type)?.params ?? []).map((/** @type {any} */ r) => r.name);
-		if (!names.includes(p.param)) paramErrors.push('a ' + node.type + ' has no param "' + p.param + '" (' + names.join(', ') + ')');
+		// 107: `label` = the name the person sees on the node card (the Shader Editor's own label field)
+		if (p.param === 'label') {
+			if (p.value !== null && typeof p.value !== 'string') paramErrors.push('label: a short name, or null to clear it');
+			else if (p.value === null || !p.value.trim()) delete node.data.label;
+			else node.data.label = p.value.trim().slice(0, 60);
+		} else if (!names.includes(p.param)) paramErrors.push('a ' + node.type + ' has no param "' + p.param + '" (' + [...names, 'label'].join(', ') + ')');
 		else node.data[p.param] = p.value;
 	}
 	if (paramErrors.length) return { error: 'the shader was not changed', errors: paramErrors };
@@ -987,7 +1070,7 @@ async function editShaderTool(args) {
 		? sg.setShaderGraphFor(key, { nodes: withParams.nodes, edges: withParams.edges })
 		: (params.forEach((/** @type {any} */ p) => sg.setShaderParam(key, p.node, p.param, p.value)), sg.shaderGraphOf(key));
 	await sg.compileAndApply(key);
-	return { updated: [{ ok: true, ...(await shaderFacts(key, written)) }] };
+	return { updated: [{ ok: true, ...(await shaderFacts(key, written)), ...(await graphNotes(written, doc.domain)) }] };
 }
 
 /** @param {any} args */
@@ -1436,7 +1519,8 @@ async function setUvTool(args) {
 			return written.length ? payload : null;
 		});
 		if (!applied) skipped.push({ uuid, reason: 'that slot has no texture to tile (set_material maps first)' });
-		else updated.push({ uuid, ok: true, slot, maps: written.map((k) => SLOT_WORD[k]) });
+		// 107: every slot's tiling, so a caller sees the others did not move
+		else updated.push({ uuid, ok: true, slot, maps: written.map((k) => SLOT_WORD[k]), slots: await everySlotTiling(objectOf(uuid)) });
 	}
 	if (!updated.length) return { error: skipped.map((s) => s.reason).join('; ') || 'nothing was changed', skipped };
 	return { updated, ...(skipped.length ? { skipped } : {}) };
@@ -1502,7 +1586,7 @@ export const LOOK_AI_TOOLS = [
 			description:
 				'Make objects look finished: colour, roughness, metalness, emissive, opacity and texture maps, on many objects in one call. Maps take a library image hash or an https URL (https only, CORS-enabled, 16 MB, PNG/JPEG/WebP/GIF/AVIF; it becomes a library item first and is re-encoded like an upload; returned in assets). cc0 fetches a free CC0 material by id or name from Poly Haven (its texture names) or ambientCG (ids like "Wood051", "Bricks076", "Metal032", "Ground037"), or by words ("brown planks"); preset applies a named preset: one of ' +
 					STARTER_NAMES +
-					', or one the person saved (list_materials lists them all). faces gives just those faces their own new material slot. One undo step.',
+					', or one the person saved (list_materials lists them all). faces gives just those faces their own new material slot, a copy of the slot they wore (look and texture tiling; the answer says which). One undo step.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1589,7 +1673,7 @@ export const LOOK_AI_TOOLS = [
 		function: {
 			name: 'create_shader',
 			description:
-				'Give objects a node shader, written as text like flow graphs: one line per node (id = type {param: value}), one per edge (source[.output] -> target.input), ending at a "surface" node. Example: c = color {value: "#ff8800"}\\nout = surface\\nc -> out.emissive. Call describe_shader_nodes for the types. Each object gets its own copy. Compiler errors come back in the result and nothing is written. Returns the graph key and its uniforms (u_<nodeId>_<param>): a flow "setuniform" node on that object drives a float, colour or vector one. scene: true makes the default for every object, which asks the host first.',
+				'Give objects a node shader, written as text like flow graphs: one line per node (id = type {param: value}), one per edge (source[.output] -> target.input), ending at a "surface" node. Example: c = color {value: "#ff8800"}\\nout = surface\\nc -> out.emissive. Call describe_shader_nodes for the types. Each object gets its own copy. Compiler errors come back in the result, per node, and nothing is written; warnings name nodes not wired to the surface (dangling). Name a node for the person with {label: "Glow"} in its params. Returns the graph key and its uniforms (u_<nodeId>_<param>): a flow "setuniform" node on that object drives a float, colour or vector one. scene: true makes the default for every object, which asks the host first.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1611,7 +1695,8 @@ export const LOOK_AI_TOOLS = [
 		type: 'function',
 		function: {
 			name: 'edit_shader',
-			description: 'Change a shader graph: params [{node, param, value}] for values, add (text: new or replaced nodes, new edges), removeNodes, or text for the whole graph. Errors come back and nothing changes.',
+			description:
+				'Change a shader graph: params [{node, param, value}] for values (param "label" names the node for the person in the Shader Editor), add (text: new or replaced nodes, new edges), removeNodes, or text for the whole graph. Errors come back per node (an invalid GLSL expression, the GPU compiler) and nothing changes; warnings name nodes not wired to the output (they do nothing). Example, a pulsing glow on a graph with out = surface: {"shader": "<uuid>", "add": "t = time\\ns = sin\\ng = color {value: \\"#33ccff\\"}\\nm = multiply\\nt -> s.a\\ng -> m.a\\ns -> m.b\\nm -> out.emissive", "params": [{"node": "g", "param": "label", "value": "Glow colour"}]}.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1784,7 +1869,7 @@ export const LOOK_AI_TOOLS = [
 		function: {
 			name: 'set_uv',
 			description:
-				'Tile, shift or rotate a material slot\'s textures (tiling: 4 repeats a floor texture four times). maps limits it to some slots. With faces it maps only those faces instead: they are projected flat so the image fills them once (a label on one side of a box), with tiling / offset / rotation on top; pair it with set_material faces for an image only on that face. One undo step.',
+				'Tile, shift or rotate a material slot\'s textures (tiling: 4 repeats a floor texture four times). Only that slot moves, even when slots share an image; the answer lists every slot\'s tiling. maps limits it to some texture maps. With faces it maps only those faces instead: they are projected flat so the image fills them once (a label on one side of a box), with tiling / offset / rotation on top; pair it with set_material faces for an image only on that face. One undo step.',
 			parameters: {
 				type: 'object',
 				properties: {

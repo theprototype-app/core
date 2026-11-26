@@ -13,7 +13,7 @@
 import { showToast } from '../stores/appStore';
 import { get } from 'svelte/store';
 import { objectsGroup } from '../stores/sceneStore';
-import { commitMaterialList, materialsOf, keepSlotIdentity } from './materialsHandler';
+import { commitMaterialList, materialsOf, keepSlotIdentity, cloneSlotMaterial } from './materialsHandler';
 import { isEditingMesh } from './editSession';
 import { activeMaterialSlot } from './slotDraw.js';
 // the lazy draw layer: anything that manages slots has a slot list in front of it, so it loads with this module
@@ -168,7 +168,7 @@ export function duplicateSlot(uuid, ref) {
 	if (!object || index < 0) return -1;
 	if (own.length > 1 && refusedWhileEditing(uuid, 'duplicate')) return -1;
 	const ok = commitMaterialList(uuid, (materials, groups) => {
-		const copy = materials[index].clone();
+		const copy = cloneSlotMaterial(materials[index]); // 107: its own textures, so tiling one leaves the other
 		copy.name = (materials[index].name || 'Slot ' + (index + 1)) + ' copy';
 		if (copy.userData?.slot) {
 			delete copy.userData.slot.id;
@@ -259,7 +259,7 @@ export function linkSlotTo(targetUuid, targetRef, sourceUuid, sourceRef) {
 		if (target.object === source.object)
 			return commitMaterialList(targetUuid, (materials) => {
 				withLink(materials[source.index], link);
-				materials[target.index] = withLink(keepSlotIdentity(materials[target.index], sourceMaterial.clone()), link);
+				materials[target.index] = withLink(keepSlotIdentity(materials[target.index], cloneSlotMaterial(sourceMaterial)), link);
 				return { materials };
 			});
 		if (!slotLinkOf(sourceMaterial))
@@ -268,7 +268,7 @@ export function linkSlotTo(targetUuid, targetRef, sourceUuid, sourceRef) {
 				return { materials };
 			});
 		return commitMaterialList(targetUuid, (materials) => {
-			materials[target.index] = withLink(keepSlotIdentity(materials[target.index], sourceMaterial.clone()), link);
+			materials[target.index] = withLink(keepSlotIdentity(materials[target.index], cloneSlotMaterial(sourceMaterial)), link);
 			return { materials };
 		});
 	} finally {

@@ -247,6 +247,22 @@ export function serializeMeshWithGroups(element) {
 	return objectToJSON(clone);
 }
 
+/** every texture key a slot's look can carry (the base colour map + the five map slots) */
+const SLOT_TEXTURE_KEYS = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap'];
+
+/**
+ * 107: a slot material's copy with its OWN textures. Material.clone() shares the map OBJECTS, and tiling lives on the
+ * texture, so tiling one slot moved the other (the owner's per-slot tiling bug). A Texture clone shares the image (no
+ * decode; three uploads one GPU texture per source) and copies repeat / offset / rotation, so the copy starts tiled
+ * exactly as its source and the two are independent from then on.
+ * @param {any} material
+ */
+export function cloneSlotMaterial(material) {
+	const fresh = material.clone();
+	for (const key of SLOT_TEXTURE_KEYS) if (fresh[key]?.isTexture) fresh[key] = fresh[key].clone();
+	return fresh;
+}
+
 /** The wire payload for an object's CURRENT slots + groups. @param {any} object */
 export function materialsPayload(object) {
 	const materials = listOwnOf(object); // 105-slot-shaders: never a whole-object shader's compiled clone
@@ -327,17 +343,17 @@ export function commitMaterialList(uuid, build) {
  * nothing changes visually until faces are assigned to the new slot.
  * @param {string} uuid @returns {number} the new slot index, or -1
  */
-export function addMaterialSlot(uuid) {
+export function addMaterialSlot(uuid, from) {
 	const object = objectOf(uuid);
 	if (!object) return -1;
 	const current = listOwnOf(object);
 	if (!current.length) return -1;
-	const fresh = current[current.length - 1].clone();
+	// 107: `from` = the slot the new one takes its look from (set_material faces: the slot those faces wore), else the last
+	const source = current[Number.isInteger(from) && from >= 0 && from < current.length ? from : current.length - 1];
+	const fresh = cloneSlotMaterial(source);
 	fresh.name = 'slot' + current.length;
 	// 105-slots: the clone copied the last slot's id and off flag; a new slot is a new slot (its uuid is its id)
 	delete fresh.userData.slot;
-	// a cloned material shares its parent's map OBJECT; that is fine (both slots
-	// showing one texture until one is re-textured) and keeps the clone cheap
 	const materials = [...current, fresh];
 	const count = object.geometry?.index?.count ?? object.geometry?.attributes?.position?.count ?? 0;
 	// Growing from a SINGLE material: normalise the groups to one covering group on

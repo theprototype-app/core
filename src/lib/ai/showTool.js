@@ -9,6 +9,9 @@
 //   code    {path | id | node | object, line, to, select: {from, to}, find}: codeWorkspace.openCode, then
 //           the editor's reveal seam selects (CodeEditor `reveal.select`). Never edits text.
 //   back    undo what the newest `show` changed (a stack of 10)
+//   107 (showMore.js, lazy): reveal {path | id, state: 'open'} a file or folder in the Explorer · select {uuids,
+//           mode} with no camera move · flow {object | node} the Flow editor on a flow / a node. All three ride the
+//           PANEL kind's first-use answer (one question, not three more). code highlights without focus by default.
 //
 // Each kind asks the person once (Always / This time / No): Always is stored on this device
 // (safeStorage `show:allow:<kind>`, the switches in Settings ▸ Privacy), This time and No last
@@ -30,7 +33,8 @@ import {
 	deniedPanel,
 	frameBox,
 	isVec3,
-	findRange
+	findRange,
+	MORE_KIND
 } from './showCore.js';
 import { createRateLimit, resolveRef, isTextName, extOf } from './filesCore.js';
 import { isDirty } from '../codeTabs';
@@ -382,7 +386,11 @@ async function codeAction(args, by) {
 		const toLine = Math.min(total, Math.floor(Number(args.to)));
 		select = { from: [at, 0], to: [toLine, (text.split('\n')[toLine - 1] ?? '').length] };
 	}
-	if (at || select) ws.revealInTab(tabId, at || 1, select ?? undefined);
+	// 107: by default the range is HIGHLIGHTED without focusing the editor (no caret, no on-screen keyboard on
+	// a phone), and a bare line is highlighted whole; focus: true puts the caret there as before
+	const focus = args.focus === true;
+	if (!focus && at && !select && at <= total) select = { from: [at, 0], to: [at, (text.split('\n')[at - 1] ?? '').length] };
+	if (at || select) ws.revealInTab(tabId, at || 1, select ?? undefined, { highlight: !focus });
 	const fresh = !before.has(tabId);
 	push('opened ' + target.label, () => {
 		const t = /** @type {any} */ (ws.tabById(tabId));
@@ -398,8 +406,9 @@ async function codeAction(args, by) {
 		tabId,
 		lines: total,
 		...(at ? { line: at } : {}),
-		...(select ? { selected: select } : {}),
-		note: 'Only opened and selected: the person edits it, or change a file with files {action: "write"} (running code: edit_behaviour).'
+		...(select ? { selected: select, ...(focus ? {} : { highlighted: true }) } : {}),
+		focused: focus,
+		note: (focus ? 'Opened with the caret there' : 'Highlighted, without focusing their editor (no caret, no keyboard)') + ': the person edits it, or change a file with files {action: "write"} (running code: edit_behaviour).'
 	};
 }
 
@@ -417,7 +426,9 @@ export async function showTool(args, ctx = {}) {
 		const said = await back();
 		return { back: true, did: said, left: stack.length };
 	}
-	if (!['panel', 'camera', 'code'].includes(action)) return fail('action: panel, camera, code or back');
+	// 107: reveal (Explorer), select (no camera), flow (Flow editor) ride the panel kind's first-use answer
+	const kind = MORE_KIND[action] ?? action;
+	if (!['panel', 'camera', 'code'].includes(kind)) return fail('action: panel, camera, code, reveal, select, flow or back');
 	// rule 2 first: a denied or unknown panel is refused without asking and without spending the minute's calls
 	if (action === 'panel') {
 		const asked = String(a.name ?? a.panel ?? '');
@@ -427,14 +438,14 @@ export async function showTool(args, ctx = {}) {
 	const busy = busyReason();
 	if (busy) return fail(busy + ': show waits until they stop (try again in a moment)', { busy: true, retryAfter: 3 });
 	// the camera's own pacing first (it is synchronous): the checks below await
-	if (action === 'camera' && answers.get(answerKey(action, by)) !== 'no') {
+	if (action === 'camera' && answers.get(answerKey(kind, by)) !== 'no') {
 		const gap = CAMERA_GAP_MS - (Date.now() - lastCameraAt);
 		if (gap > 0 && lastCameraAt) return fail('one camera move at a time: wait ' + Math.ceil(gap / 1000) + ' s', { retryAfter: Math.ceil(gap / 1000) });
 	}
 	// 104-int: refused before the person is asked, so nobody says Always to a move that cannot happen now
 	const filming = action === 'camera' ? await busyCamera() : '';
 	if (filming) return fail(filming, { refused: true, busy: true });
-	if (answers.get(answerKey(action, by)) === 'no') return fail('the person said no to letting you ' + KIND_WORDS[action] + ' in this session: describe where to look instead', { refused: true, denied: true });
+	if (answers.get(answerKey(kind, by)) === 'no') return fail('the person said no to letting you ' + KIND_WORDS[kind] + ' in this session: describe where to look instead', { refused: true, denied: true });
 	const wait = calls.check();
 	if (wait) return fail('show is paced (6 a minute): wait ' + wait + ' s', { retryAfter: wait });
 	const run = async () => {
@@ -443,13 +454,15 @@ export async function showTool(args, ctx = {}) {
 		debug.last = { action, at: Date.now() };
 		if (action === 'panel') return panelAction(a, by);
 		if (action === 'camera') return cameraAction(a, by);
-		return codeAction(a, by);
+		if (action === 'code') return codeAction(a, by);
+		const more = await import('./showMore.js');
+		return more.showMore(action, a, { by, fail, line, push, openPanel, isOpen, inVR, nameOf });
 	};
-	if (allowed(action, by)) return run();
+	if (allowed(kind, by)) return run();
 	// rule 3: the first time, the person says whether (Always / This time / No)
 	return askPerson('show', a, {
-		summary: KIND_WORDS[action],
-		prompt: 'Let ' + by.replace(/^An /, 'an ') + ' ' + KIND_WORDS[action] + '?',
+		summary: KIND_WORDS[kind],
+		prompt: 'Let ' + by.replace(/^An /, 'an ') + ' ' + KIND_WORDS[kind] + '?',
 		choices: [
 			...(trustedApp(by) ? [{ label: 'Always', value: 'always' }] : []),
 			{ label: 'This time', value: 'session' },
@@ -458,13 +471,13 @@ export async function showTool(args, ctx = {}) {
 		apply: async (value) => {
 			if (value === 'always') {
 				try {
-					safeStorage.setItem(allowKey(action), 'always');
+					safeStorage.setItem(allowKey(kind), 'always');
 				} catch {}
-			} else answers.set(answerKey(action, by), 'session');
+			} else answers.set(answerKey(kind, by), 'session');
 			return run();
 		}
 	}).then((r) => {
-		if (r?.cancelled) answers.set(answerKey(action, by), 'no');
+		if (r?.cancelled) answers.set(answerKey(kind, by), 'no');
 		return r;
 	});
 }

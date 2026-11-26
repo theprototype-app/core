@@ -63,9 +63,11 @@ describe('show + scene: schemas', () => {
 		expect(PERSON_TOOL_NAMES).toEqual(['files', 'show', 'scene']);
 		expect(PERSON_AI_TOOLS.map((t) => t.function.name)).toEqual(['files', 'show', 'scene']);
 	});
-	it('show: panel | camera | code | back, and no text to write (rule 8)', () => {
+	it('show: panel | camera | code | reveal | select | flow | back (107), and no text to write (rule 8)', () => {
 		const s = tool('show');
-		expect(s.parameters.properties.action.enum).toEqual(['panel', 'camera', 'code', 'back']);
+		expect(s.parameters.properties.action.enum).toEqual(['panel', 'camera', 'code', 'reveal', 'select', 'flow', 'back']);
+		expect(s.description).toMatch(/WITHOUT moving the camera/);
+		expect(s.description).toMatch(/without focusing their editor/);
 		expect(s.parameters.properties.text).toBeUndefined();
 		expect(s.description).toMatch(/THEIR OWN screen/);
 		expect(s.description).toMatch(/Always \/ This time \/ No/);

@@ -27,8 +27,11 @@ const SHOW_DESCRIPTION =
 	"Show the person something on THEIR OWN screen (never anyone else's): panel = open, close or bring forward one of their panels " +
 	'(Explorer, Objects, Inspector, Flow editor, Code, Timeline, Assets, Preview, Chat, Assistant); camera = move their editor view to frame objects ' +
 	'(frame: [uuids], select: true also selects them), to a position + target, or let them look through a scene camera (through: uuid); ' +
-	'code = open a file or a Script / Behaviour node\'s code in their Code tab at a line, selecting lines [line, to], a range, or the first match of find; ' +
-	'back = undo what the last show changed. The first time for each of panel / camera / code the person is asked on their screen (Always / This time / No): ' +
+	'code = open a file or a Script / Behaviour node\'s code in their Code tab and highlight lines [line, to], a range, or the first match of find, without focusing their editor (no caret, no phone keyboard; focus: true puts the caret there); ' +
+	'reveal = show a Library file or folder in their Explorer (tree expanded, selected, scrolled to; state "open" opens a folder); ' +
+	'select = set / add / remove / clear their selection (uuids, mode) WITHOUT moving the camera (clear shows the scene in Inspector and Flow editor); ' +
+	'flow = the Flow editor on the scene flow, an object\'s flow (object) or a node (node: selected and framed; the owner is selected unless select: false); ' +
+	'back = undo what the last show changed. The first time for each of panel (also reveal, select, flow) / camera / code the person is asked on their screen (Always / This time / No): ' +
 	'call again with the confirmId; after No, do not ask again, tell them where to look instead. ' +
 	'Each action leaves a line with a Back button for the person. Not in a VR headset (camera moves are refused there), not while they play, drag or type; ' +
 	'6 calls a minute, one camera move per 2 s. Never opens sign-in, account, settings, consent, publishing, connected apps or payment. ' +
@@ -81,12 +84,15 @@ export const PERSON_AI_TOOLS = [
 			parameters: {
 				type: 'object',
 				properties: {
-					action: { type: 'string', enum: ['panel', 'camera', 'code', 'back'], description: 'what to show' },
+					action: { type: 'string', enum: ['panel', 'camera', 'code', 'reveal', 'select', 'flow', 'back'], description: 'what to show' },
 					name: { type: 'string', description: 'panel: Explorer, Objects, Inspector, Flow editor, Code, Timeline, Assets, Preview, Chat or Assistant' },
-					state: { type: 'string', enum: ['open', 'close', 'focus'], description: 'panel: default open (focus brings an open one forward)' },
+					state: { type: 'string', enum: ['open', 'close', 'focus'], description: 'panel: default open (focus brings an open one forward); reveal: open = open the folder' },
+					uuids: { type: 'array', items: { type: 'string' }, description: 'select: the objects' },
+					mode: { type: 'string', enum: ['set', 'add', 'remove', 'clear'], description: 'select: default set' },
+					focus: { type: 'boolean', description: 'code: true = focus their editor with the caret on it (default: highlight only)' },
 					frame: { type: 'array', items: { type: 'string' }, description: 'camera: object uuids to frame together' },
 					select: {
-						description: 'camera: true = also select the framed objects. code: a range to select, {from: [line, col], to: [line, col]} (lines from 1, columns from 0)',
+						description: 'camera: true = also select the framed objects. flow: false = keep the selection. code: a range to highlight, {from: [line, col], to: [line, col]} (lines from 1, columns from 0)',
 						anyOf: [
 							{ type: 'boolean' },
 							{ type: 'object', properties: { from: { type: 'array', items: { type: 'number' } }, to: { type: 'array', items: { type: 'number' } } }, required: ['from'] }
@@ -95,13 +101,13 @@ export const PERSON_AI_TOOLS = [
 					position: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3, description: 'camera: where the view goes [x, y, z] (with target)' },
 					target: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3, description: 'camera: the point it looks at [x, y, z]' },
 					through: { type: 'string', description: 'camera: a scene camera\'s uuid to look through' },
-					path: { type: 'string', description: 'code: an Explorer text file, "Scripts/door.js"' },
-					id: { type: 'string', description: 'code: an Explorer file id (instead of path)' },
-					node: { type: 'string', description: 'code: a Script or Behaviour node id' },
-					object: { type: 'string', description: 'code: an object uuid: its first Script or Behaviour node' },
+					path: { type: 'string', description: 'code: an Explorer text file, "Scripts/door.js"; reveal: any file, or a folder "Sounds/"' },
+					id: { type: 'string', description: 'code / reveal: an Explorer file or folder id (instead of path)' },
+					node: { type: 'string', description: 'code: a Script or Behaviour node id; flow: any node id' },
+					object: { type: 'string', description: 'code: an object uuid: its first Script or Behaviour node; flow: whose flow ("scene" or none = the scene flow)' },
 					line: { type: 'number', description: 'code: the line to go to (from 1)' },
 					to: { type: 'number', description: 'code: with line, select lines line..to' },
-					find: { type: 'string', description: 'code: select the first match of this text (from line, when given)' },
+					find: { type: 'string', description: 'code: highlight the first match of this text (from line, when given)' },
 					confirmId: { type: 'string', description: 'the answer to the first-use question (from a needsConfirm answer)' },
 					wait: { type: 'number', description: 'with confirmId: seconds to wait for the person\'s answer (at most 60)' }
 				},

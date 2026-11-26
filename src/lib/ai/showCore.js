@@ -9,7 +9,7 @@
 //   5 no camera move in a headset (this release)                                                 showTool.js
 //   6 reduced motion: an instant cut (flyTo's motionMs)                                           objectActions.flyTo
 //   7 6 calls a minute, one camera move per 2 s, refused while the person drags or types          SHOW_PER_MINUTE / CAMERA_GAP_MS
-//   8 editing text stays files {write}: show {code} only opens, goes to a line and selects        (no text argument)
+//   8 editing text stays files {write}: show {code} only opens, goes to a line and highlights     (no text argument)
 
 /** the kinds the person is asked about, once each */
 export const SHOW_KINDS = /** @type {const} */ (['panel', 'camera', 'code']);
@@ -17,9 +17,12 @@ export const SHOW_PER_MINUTE = 6;
 export const CAMERA_GAP_MS = 2000;
 export const FLY_MS = 600;
 
+/** 107: the actions that ride an existing kind's first-use answer (no new question) */
+export const MORE_KIND = /** @type {Record<string, string>} */ ({ reveal: 'panel', select: 'panel', flow: 'panel' });
+
 /** what the first-use question says, per kind */
 export const KIND_WORDS = /** @type {Record<string, string>} */ ({
-	panel: 'open and close your panels',
+	panel: 'open your panels and select things in them',
 	camera: 'move your view',
 	code: 'open code for you'
 });

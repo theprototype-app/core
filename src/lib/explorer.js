@@ -1003,6 +1003,15 @@ export function revealItem(id) {
 	revealItemId.set(String(id ?? '') || null);
 }
 
+/**
+ * 107 — "show me THIS file or folder" for the assistant's show {reveal}: the revealItemId shape (a request the
+ * Explorer consumes and clears, because the Explorer may not be mounted yet), widened to folders. The Explorer
+ * expands the tree down to it, lands on the folder that holds it (or walks INTO a folder with `open`), selects
+ * its card and scrolls card and tree row into view, then calls `done` with what it did.
+ * @type {import('svelte/store').Writable<null | {kind: 'file' | 'folder', id: string, open?: boolean, done?: (out: any) => void}>}
+ */
+export const revealEntryRequest = writable(null);
+
 /** Save edited text back into an item — hash + size recompute (107)
  * @param {string} id @param {string} text */
 export async function updateItemBytes(id, text) {

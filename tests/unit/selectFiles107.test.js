@@ -43,3 +43,13 @@ describe('107 non-text names', () => {
 		expect(renamedFileName('song.ogg', 'boom.ogg')).toBe('song.ogg');
 	});
 });
+
+import { MORE_KIND, KIND_WORDS, SHOW_KINDS } from '../../src/lib/ai/showCore.js';
+
+describe('107 show: the new actions ask no new question', () => {
+	it('reveal, select and flow ride the panel kind; the kinds stay three', () => {
+		expect(MORE_KIND).toEqual({ reveal: 'panel', select: 'panel', flow: 'panel' });
+		expect(SHOW_KINDS).toEqual(['panel', 'camera', 'code']);
+		expect(KIND_WORDS.panel).toMatch(/select/);
+	});
+});

@@ -75,9 +75,8 @@
 	import { startSnapEngine, setSnapPointer, beginSnapDrag, endSnapDrag, maybeSnapGizmo, snapAnchorPicking, snapAnchorClick, updateSnapAnchor } from '$lib/snapEngine';
 	import { meshPivotPicking, meshPivotClick, tickMeshPivotMarker } from '$lib/meshPivot';
 	import { editingObject, enterEditMode, exitEditMode, raycastHandles, clearVertexSelection, onProxyMoved, onProxyDragChanged, tickMeshEdit, selectVerticesInRect } from '$lib/meshEdit';
-	import { faceEditObject, faceEditOp, faceEditMulti, lookupEditable, faceEditSubmode, faceEditSelectedTris, knifePreview, pathGesture } from '$lib/faceEditState';
+	import { faceEditObject, faceEditOp, faceEditMulti, lookupEditable, faceEditSubmode, faceEditSelectedTris, knifePreview, bisectPreview, pathGesture } from '$lib/faceEditState';
 	import { faceEditNow, withFaceEdit, loadFaceEdit } from '$lib/faceEditLazy';
-	import { bisectClick, bisectHover, bisectPreview, onBisectPlaneMoved } from '$lib/meshBisectTool'; // 99 K8
 	import { fireObjectClick } from '$lib/flowRuntime';
 	import { peerScenes } from '$lib/peerScenes';
 	// 37 R23/R22: presence extras on the camera stream (a walker's feet, the knocked-off idle)
@@ -1101,7 +1100,7 @@
 			if ($TControls?.dragging) setSnapPointer(event.clientX, event.clientY);
 			// M9b: the knife's rubber band follows the pointer while a cut is pending
 			if ($knifePreview) faceEditNow()?.knifeHover([event.clientX, event.clientY]);
-			if ($bisectPreview) bisectHover([event.clientX, event.clientY]);
+			if ($bisectPreview) faceEditNow()?.bisectHover([event.clientX, event.clientY]);
 			// 47 M1: where the next measure click would land (the snap marker + rubber band) — a
 			// mouse that is not pressing; a finger has no hover
 			if ($measureMode && captureOwns('measure') && !event.buttons && event.pointerType !== 'touch')
@@ -1368,7 +1367,7 @@
 				}
 				// 99 K8 BISECT: two clicks draw the cut line (a screen line, like the knife's)
 				if ($faceEditOp === 'bisect') {
-					bisectClick([event.clientX, event.clientY]);
+					faceEditNow()?.bisectClick([event.clientX, event.clientY]); // armed = in a session = loaded (102-boot-diet-3)
 					return;
 				}
 				// A8: lookupEditable also finds the scene-root collider-edit proxy
@@ -1870,7 +1869,7 @@
 		// 99 K8: the bisect plane follows the gizmo; nothing is cut until Apply
 		if ($TControls.object?.userData?.isBisectProxy) {
 			$TControls.visible = true;
-			onBisectPlaneMoved();
+			faceEditNow()?.onBisectPlaneMoved();
 			return;
 		}
 		// 57.3: spline control-point proxy — the move rebuilds the tube from the

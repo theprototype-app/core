@@ -328,13 +328,8 @@
 	const selection = $derived($sequenceSelection as string[]);
 	const oneSel: any = $derived(seq && selection.length === 1 ? findItem(seq, selection[0]) : null);
 
-	// keep the store pointing at a real sequence (a peer deleted ours, a load replaced them)
-	$effect(() => {
-		const want = seqId;
-		untrack(() => {
-			if ((get(activeSequence) ?? null) !== want) activeSequence.set(want);
-		});
-	});
+	// the store keeps pointing at a real sequence through sequences.keepActiveSequence (App starts it; 102-boot-diet-3:
+	// this editor is lazy, and the rule must hold before it first opens). seqId above derives the same answer.
 
 	// closing the editor gives the view back (a scrub looks through shots + poses clips)
 	$effect(() => {

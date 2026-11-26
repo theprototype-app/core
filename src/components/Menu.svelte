@@ -25,7 +25,30 @@
 	import TemplatesModal from './menu/TemplatesModal.svelte';
 	import CharacterPanel from './menu/CharacterPanel.svelte'; // 36-avatars: the customise side panel
 	import ViewportMenu from './menu/ViewportMenu.svelte';
-	import MeshEditPopup from './menu/MeshEditPopup.svelte';
+	// 102-boot-diet-3: the mesh toolbox (MeshEditPopup + MeshToolOptions, ~12 KB gz) is a lazy chunk ($lib/lazyPanels),
+	// loaded ONCE -- at idle after the first frame (next to faceEdit's prefetch) or by the first edit session -- and then
+	// mounted synchronously as before. Everything it does is gated on an open session, which needs faceEdit anyway.
+	import { editingObject } from '$lib/meshEdit';
+	import { faceEditObject } from '$lib/faceEditState';
+	import { lazyPanels, loadPanel } from '$lib/lazyPanels';
+	import { quietly } from '$lib/chunkReload.js';
+	import { onMount } from 'svelte';
+	const MeshEditPopup = $derived(($lazyPanels as Record<string, any>).meshToolbox ?? null);
+	const loadMeshEditPopup = () => void loadPanel('meshToolbox').catch(() => {}); // a failure retries on the next session
+	$effect(() => {
+		if ($editingObject || $faceEditObject) loadMeshEditPopup();
+	});
+	// ...and (Q3 = b) the five dock editors' modules: $lib/panelPrefetch waits for the page's load event and idle,
+	// skips embeds, Save-Data and 2G, and is silent on failure
+	const idleLoads = () => {
+		loadMeshEditPopup();
+		void quietly(() => import('$lib/panelPrefetch.js')).then((m) => m.prefetchDockPanels(), () => {});
+	};
+	onMount(() => {
+		const idle = (window as any).requestIdleCallback;
+		if (typeof idle === 'function') idle(idleLoads, { timeout: 5000 });
+		else setTimeout(idleLoads, 2000);
+	});
 	import MarqueeOverlay from './menu/MarqueeOverlay.svelte';
 	import AddMenu from './menu/AddMenu.svelte';
 	import ObjectSearch from './menu/ObjectSearch.svelte';
@@ -105,7 +128,7 @@
 <TemplatesModal />
 <CharacterPanel />
 <ViewportMenu />
-<MeshEditPopup />
+{#if MeshEditPopup}<MeshEditPopup />{/if}
 <MarqueeOverlay />
 <AddMenu />
 <ObjectSearch />

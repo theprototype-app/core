@@ -1,6 +1,9 @@
 // @ts-check
-// Roadmap 99 K8 (lane 99-newops): the BISECT tool's BOOT half — what has to answer at once, whether or not the
-// plane chunk (meshBisectGesture.js, lazy, fetched the moment Bisect is armed) has arrived yet:
+// Roadmap 99 K8 (lane 99-newops): the BISECT tool's FIRST half — what has to answer at once, whether or not the
+// plane chunk (meshBisectGesture.js, lazy, fetched the moment Bisect is armed) has arrived yet.
+// 102-boot-diet-3: this half rides the faceEdit chunk (faceEdit.js imports it), so neither boot carries it: Bisect
+// is armed only inside a face session, and a session implies faceEdit is loaded. The boot reaches it the knife's
+// way, `faceEditNow()?.bisectClick(…)`; its two stores live in faceEditState.js (the boot reads them). It holds:
 // - the two stores the toolbox and the overlay read;
 // - the first click (it only starts the rubber band) and the band following the pointer;
 // - Esc (drops a pending line or plane and KEEPS the session) and Enter (applies a placed plane), in the CAPTURE
@@ -10,15 +13,12 @@
 // The second click hands the line to the plane chunk (waiting for it if a slow link has not delivered it yet; a
 // cancel in between wins). Nothing here edits, records or sends.
 
-import { writable, get } from 'svelte/store';
+import { get } from 'svelte/store';
 import { showToast } from '../stores/appStore';
-import { faceEditOp, faceEditObject } from './faceEditState'; // 102-int-3: the boot never imports faceEdit.js
+import { faceEditOp, faceEditObject, bisectPreview, bisectPlaced } from './faceEditState';
 
-/** the rubber band while the cut line is being drawn: {from, to} client pixels, or null
- * @type {import('svelte/store').Writable<{ from: number[], to: number[] } | null>} */
-export const bisectPreview = writable(null);
-/** a plane is placed and waiting for Apply (the pane shows Apply / Cancel) */
-export const bisectPlaced = writable(false);
+// the two stores, re-exported (the toolbox and the plane chunk import them from here)
+export { bisectPreview, bisectPlaced };
 
 /** @type {any} */ let gesture = null;
 /** @type {Promise<any> | null} */ let loading = null;

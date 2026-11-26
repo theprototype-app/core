@@ -1,3 +1,11 @@
+<script module>
+	// 105-slots: the slot list (SlotList.svelte, shared with the UV editor) is lazy — not in the boot's static closure,
+	// no modulepreload — and WARMED right after this module loads, so the Materials pane has it the moment it opens
+	// (measured: an idle-time warm still lost the race on a loaded box, and the UV suites read the rows at once).
+	// 102-boot-diet-3: moved here from UvEditor.svelte, which is lazy now (this module is still in the boot).
+	if (typeof window !== 'undefined') setTimeout(() => import('./SlotList.svelte').catch(() => {}), 0);
+</script>
+
 <script>
 	import { mapPreviewUrl } from '$lib/loadGuard.js';
 	import Icon from '../ui/Icon.svelte';

@@ -194,6 +194,13 @@ export const edgeEditHover = writable('');
 /** the knife's pending polyline (see faceEdit's knife section)
  * @type {import('svelte/store').Writable<{points: number[][], from: number[], to: number[]}|null>} */
 export const knifePreview = writable(null);
+/** 99 K8 Bisect: the rubber band while the cut line is being drawn ({from, to} client pixels, or null), and whether a
+ * plane is placed and waiting for Apply. 102-boot-diet-3: the stores live here (the boot reads them: Scene's hover,
+ * KnifeOverlay, the toolbox); the tool itself (meshBisectTool.js) rides the lazy faceEdit chunk, like the knife.
+ * @type {import('svelte/store').Writable<{ from: number[], to: number[] } | null>} */
+export const bisectPreview = writable(null);
+/** @type {import('svelte/store').Writable<boolean>} */
+export const bisectPlaced = writable(false);
 
 // ---- E9: the gizmo prefs (shared by every element mode) ---------------------------------------
 /** E9: face-gizmo space — 'local' = the FACE basis (Z = normal), 'world' = world axes. Persisted

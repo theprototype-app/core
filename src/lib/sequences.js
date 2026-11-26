@@ -9,7 +9,7 @@
 // carries no message of its own: a Play Sequence node acts on the already-replicated
 // trigger stamp on every peer, and autoplay / the editor preview are local views.
 
-import { writable, get } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 import { sessionNow } from './sessionClock';
 import {
 	normalizeSequence,
@@ -37,6 +37,29 @@ export const sequenceSelection = writable([]);
 /** @param {string} id */
 export function sequenceOf(id) {
 	return get(sequences)[id] ?? null;
+}
+
+/**
+ * 102-boot-diet-3: keep `activeSequence` pointing at a real sequence (a peer deleted ours, a load replaced them; the
+ * first by name, else null). The TimelineEditor did this while mounted -- which, statically imported, was always in the
+ * editor -- and Film mode and the constraint keyer read it; the editor is lazy now, so the rule lives here and holds
+ * before it first opens. `when`: the editor UI is up (the Timeline sat inside App's `!$isLocked && !$embedMode`
+ * block, so the rule never ran in play and still does not).
+ * @param {import('svelte/store').Readable<boolean>} when @returns {() => void} unsubscribe
+ */
+export function keepActiveSequence(when) {
+	return derived([sequences, activeSequence, when], (x) => x).subscribe(([all, active, on]) => {
+		if (!on) return;
+		const map = /** @type {Record<string, any>} */ (all);
+		let want = active && map[/** @type {string} */ (active)] ? active : null;
+		if (!want) {
+			const first = Object.values(map).sort(
+				(a, b) => String(a.name).localeCompare(String(b.name)) || String(a.id).localeCompare(String(b.id))
+			)[0];
+			want = first?.id ?? null;
+		}
+		if ((active ?? null) !== want) activeSequence.set(want);
+	});
 }
 
 /** Sorted for menus: by name, then id. */

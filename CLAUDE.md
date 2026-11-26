@@ -1796,6 +1796,26 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   starts it during the post warm-up when the warmed stack holds AO; suite `ao-on-demand`), FilePreviewWindow (App
   `{#await import()}` per preview), the FBX parser (await import at every parse), and `useKtx2`'s phantom edge
   (vite `treeshake.moduleSideEffects` + `boot-chunk-groups.cjs` PHANTOM_EDGES) all left the boot.
+  **102-boot-diet-3 — THE DOCK EDITORS LOAD ON FIRST OPEN, THEN STAY.** No boot module may import AnimationWindow /
+  UvEditor / ShaderEditor / HudEditor / TimelineEditor / MeshEditPopup statically (~120 KB gz left the editor boot).
+  `lazyPanels.js` is the registry (key -> loader, `lazyPanels` store of loaded components, `loadPanel`, a failure
+  never latches); App mounts each dock window through `LazyDockWindow.svelte`: closed-and-never-opened renders
+  nothing, opened-and-loading is a PLACEHOLDER (docked: `setDockOccupant` at `$dockHeight` + DockTabs + title/icon,
+  so the dock neither collapses nor jumps; floating: the stored rect/size, `data-lazy-panel`, never the body's DOM id),
+  loaded = the body, MOUNTED FOR GOOD, closed or open. That last rule is the design: the bodies run close-time effects
+  (the UV checker off, the Timeline's preview stop + scrub release, auto-key disarm on a selection change) and hold view
+  state, all of which an unmount-on-close would break. What must hold BEFORE the first open lives outside the bodies:
+  the active-sequence fallback is `sequences.keepActiveSequence(gate)` (App, gated `!isLocked && !embedMode` as the
+  Timeline was), the SlotList warm-up is Inspector's module script. A new close-time duty in one of these bodies is
+  fine; a duty that must run while the window was never opened belongs in a lib starter. Test pages: the debugStores
+  hook loads every lazy panel before `__stores` publishes (suites open + act at once); `localStorage.debugLazyPanels
+  = 'cold'` keeps the real path. Same lane: Bisect's first half rides the faceEdit chunk (stores in faceEditState,
+  `faceEditNow()?.bisectClick` like the knife), Settings > AI is a lazy page (loads when Settings opens). Suite
+  `dock-on-demand` (built: chunks, play never fetches, the prefetch, 3G first open; click / key / Ctrl+K / `show` cold).
+  IDLE PREFETCH (claude:9's ruling): `panelPrefetch.js` (lazy, from Menu's idle callback) imports the five bodies'
+  MODULES after the page's load event + idle, one at a time, mounting nothing; editor only (not embed / play), not on
+  Save-Data / 2g / slow-2g; a failure is silent through `chunkReload.quietly` (a background load never raises "A new
+  version is ready"); `localStorage.debugPanelPrefetch = 'off'` is the cold-measurement seam.
   **99 K2 — ONE COMMIT, ONE SENDER.** `meshCommit.js` (pure) is the only `meshgeo` builder (`meshGeoMessage`/
   `sendMeshGeo`; the wire is byte-identical, proved across two trees by `mesh-commit-two-tree`) and `compactMeshState`
   (what history keeps: Float32 positions/uvs, the partition packed Int32, so `entryBytes` counts what is HELD).

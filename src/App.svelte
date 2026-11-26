@@ -52,17 +52,18 @@
   // panel, so it sits with ConfirmModal where every entry point can reach it.
   import StorageModal from './components/menu/StorageModal.svelte'
   import ReplaceModelModal from './components/menu/ReplaceModelModal.svelte'
-  import EditInBlenderCard from './components/menu/EditInBlenderCard.svelte' // 59 T2
+  // 59 T2; 102-boot-diet-3: the Edit-in-Blender card loads when something opens it (the store stays in the boot)
+  import { editInBlenderCard } from '$lib/editInBlenderState'
   // 57: Apply clip… / Download… / the Skeleton view — a tiny host, the dialogs load on open
   import CharacterDialogs from './components/characters/CharacterDialogs.svelte'
   import PlaceholderTooltip from './components/menu/PlaceholderTooltip.svelte'
   import Flow from './components/Flow.svelte'
   import { startFlowCodeRedirect } from '$lib/flowCodeRedirect.js'
-  import AnimationWindow from './components/editors/AnimationWindow.svelte'
-  import UvEditor from './components/editors/UvEditor.svelte'
-  import ShaderEditor from './components/editors/ShaderEditor.svelte'
-  import { SvelteFlowProvider } from '@xyflow/svelte'
   import Explorer from './components/editors/Explorer.svelte'
+  // 102-boot-diet-3: the five bottom-dock editors (Animation, UV, Shader, HUD, Timeline) load on first open and then
+  // stay mounted ($lib/lazyPanels.js); LazyDockWindow is their light placeholder
+  import LazyDockWindow from './components/editors/LazyDockWindow.svelte'
+  import { animationClose, uvEditorClose, shaderEditorClose, hudEditorClose, timelineClose } from './stores/appStore'
   import TextEditorWindow from './components/editors/TextEditorWindow.svelte'
   import { previewWindows } from './lib/fileWindows'
   import ModelPreviewWindow from './components/editors/ModelPreviewWindow.svelte'
@@ -208,8 +209,6 @@ import { startMusicToolbox } from './lib/musicToolbox'
   import { startGameShell } from '$lib/gameShellWire'
   // 33 (L2-L4): keep/unload modules on a scene switch, and the scope a kept module lives in
   import { startSceneSwitch } from '$lib/sceneSwitch'
-  import HudEditor from './components/editors/HudEditor.svelte'
-  import TimelineEditor from './components/editors/TimelineEditor.svelte' // 48 S1
   import { importFile, load } from '$lib/fileHandler.svelte'
   import { showToast, showInfoToast } from './stores/appStore'
   // 34 PF: the Profiler dock tab, loaded the first time it opens (it is closed by default)
@@ -222,7 +221,8 @@ import { startMusicToolbox } from './lib/musicToolbox'
   import { startPanelHost } from '$lib/windows/panelHost.js'
   import WindowsOverlay from './components/windows/WindowsOverlay.svelte'
   import { peers, userdata } from './stores/appStore'
-  import { get } from 'svelte/store'
+  import { get, derived } from 'svelte/store'
+  import { keepActiveSequence } from '$lib/sequences'
   import { deviceClass, browserSaysMobile } from '$lib/deviceClass.js'
   import { worthProbing } from '$lib/cinematic/cinematicOffer.js'
   import { initModules, disabledModules } from '$lib/moduleSDK'
@@ -416,6 +416,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
     startHudSync()
     startSequenceSync()
     startSequencePlayer()
+    keepActiveSequence(derived([isLocked, embedMode], ([l, e]) => !l && !e)) // 102-boot-diet-3: was the Timeline's rule
     startHudImages()
     startGameSync()
     // 21-F3: publish our play mode when it changes, and watch for an abandoned round
@@ -523,11 +524,11 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <!-- 70 W2: a panel in a pop-out window is unmounted here (one panel, one place); it remounts in its
      own last dock / float mode when it comes back -->
 {#if !$panelAway.flow}<Flow />{/if}
-{#if !$panelAway.animation}<AnimationWindow />{/if}
-{#if !$panelAway.uv}<UvEditor />{/if}
-{#if !$panelAway.shader}<SvelteFlowProvider><ShaderEditor /></SvelteFlowProvider>{/if}
-{#if !$panelAway.hud}<HudEditor />{/if}
-{#if !$panelAway.timeline}<TimelineEditor />{/if}
+{#if !$panelAway.animation}<LazyDockWindow key="animation" closed={$animationClose} defaultSize={{ w: 660, h: 460 }} defaultRect={{ left: 200, top: 120 }} />{/if}
+{#if !$panelAway.uv}<LazyDockWindow key="uv" closed={$uvEditorClose} defaultSize={{ w: 640, h: 460 }} defaultRect={{ left: 220, top: 140 }} />{/if}
+{#if !$panelAway.shader}<LazyDockWindow key="shader" flow closed={$shaderEditorClose} defaultSize={{ w: 720, h: 480 }} defaultRect={{ left: 240, top: 150 }} />{/if}
+{#if !$panelAway.hud}<LazyDockWindow key="hud" closed={$hudEditorClose} defaultSize={{ w: 680, h: 480 }} defaultRect={{ left: 240, top: 150 }} />{/if}
+{#if !$panelAway.timeline}<LazyDockWindow key="timeline" closed={$timelineClose} defaultSize={{ w: 760, h: 380 }} defaultRect={{ left: 220, top: 170 }} />{/if}
 {#if !$panelAway.explorer}<Explorer />{/if}
 {#if !$profilerClose && !$panelAway.profiler}
 {#await import('./components/editors/Profiler.svelte') then m}<m.default />{/await}
@@ -567,7 +568,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <StorageModal />
 <!-- 36 U9: Replace model… for a loading/failed placeholder, and the hover tooltip over one -->
 <ReplaceModelModal />
-<EditInBlenderCard />
+{#if $editInBlenderCard}{#await import('./components/menu/EditInBlenderCard.svelte') then m}<m.default />{/await}{/if}
 <PlaceholderTooltip />
 <CharacterDialogs />
 <DrawToolbar />

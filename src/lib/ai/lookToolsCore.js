@@ -187,11 +187,24 @@ export function setPayloadTransform(payload, slot, t, only, newId) {
 		if (t.offset) target.offset = [...t.offset];
 		if (t.rotation !== undefined) {
 			target.rotation = t.rotation;
-			target.center = [0.5, 0.5]; // about the middle of the image, not its corner
+			// 107: about the image's corner, as the Inspector's Rotation row turns it (its wire message carries no
+			// centre, so a peer and a later Inspector edit agree only on the corner)
+			target.center = [0, 0];
 		}
 		const repeats = (target.repeat ?? [1, 1]).some((/** @type {number} */ n) => n !== 1) || (target.offset ?? [0, 0]).some((/** @type {number} */ n) => n !== 0);
 		if (repeats) target.wrap = [1000, 1000]; // THREE.RepeatWrapping
 		written.push(key);
+	}
+	// 107: the Inspector reads (and a later image adopts) the material's stored tiling first, so it must say the same
+	// numbers: written from the base colour map (or the first map written) — the one the Tiling rows describe
+	const lead = payloadTextures(payload, slot, written.includes('map') ? ['map'] : written.slice(0, 1))[0]?.texture;
+	if (lead && (!only || written.includes('map') || !material.map)) {
+		const tt = { repeat: [...(lead.repeat ?? [1, 1])], offset: [...(lead.offset ?? [0, 0])], rotation: lead.rotation ?? 0 };
+		const identity = tt.repeat[0] === 1 && tt.repeat[1] === 1 && tt.offset[0] === 0 && tt.offset[1] === 0 && !tt.rotation;
+		const ud = { ...(material.userData ?? {}) };
+		if (identity) delete ud.texTransform;
+		else ud.texTransform = tt;
+		material.userData = ud;
 	}
 	return written;
 }

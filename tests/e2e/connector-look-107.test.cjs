@@ -77,6 +77,18 @@ h.run(async () => {
 	slots = await slotsOf(A, box);
 	h.check(slots[0].rep?.[0] === 9 && slots[1].rep?.[0] === 5 && slots[2].rep?.[0] === 2, '1. Inspector tiling slot 2 moves only slot 2: ' + short(slots));
 
+	// set_uv takes a slot by name, and turns about the corner in the Inspector's terms
+	const byName = await call('set_uv', { objects: [box], slot: 'slot1', rotation: Math.PI / 2 });
+	const r1 = byName.updated?.[0]?.slots?.[1];
+	h.check(byName.updated?.[0]?.slot === 1 && r1?.rotationDegrees === 90 && r1.rotationAbout === 'the corner', '1. set_uv slot by name, rotation said in degrees about the corner (as the Inspector row): ' + short(byName.updated?.[0]?.slots));
+	const inspectorRot = await A.page.evaluate((id) => {
+		let g;
+		window.__tp.test.v1.objectsGroup.subscribe((x) => (g = x))();
+		const m = g.getObjectByProperty('uuid', id).material[1];
+		return [window.__tp.test.v1.materialMapTextures.texTransformOf(m).rotation, m.map.center.x, m.map.center.y];
+	}, box);
+	h.check(Math.abs(inspectorRot[0] - Math.PI / 2) < 1e-6 && inspectorRot[1] === 0 && inspectorRot[2] === 0, '1. the Inspector reads the same rotation, about the same corner: ' + short(inspectorRot));
+
 	// ---- 1b: a scene saved the 1.84 way -------------------------------------------------------------------------
 	console.log('\n=== 1b. a 1.84-saved scene with a shared map ===');
 	const old = await mk('Saved184', [3, 1, 0]);

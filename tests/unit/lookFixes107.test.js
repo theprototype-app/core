@@ -98,3 +98,26 @@ describe('107 history rollbackTo', () => {
 		history.endHistoryBatch('t');
 	});
 });
+
+describe('107 setPayloadTransform keeps the stored tiling in step', async () => {
+	const { setPayloadTransform } = await import('../../src/lib/ai/lookToolsCore.js');
+	const payload = () => ({
+		materials: [{ uuid: 'm0', map: 't0', userData: { texTransform: { repeat: [2, 2], offset: [0, 0], rotation: 0 } } }, { uuid: 'm1', map: 't0' }],
+		textures: [{ uuid: 't0', repeat: [2, 2] }],
+		images: []
+	});
+	it('writes userData.texTransform on the slot it tiled, and gives a shared texture its own copy', () => {
+		const p = payload();
+		let n = 0;
+		setPayloadTransform(p, 0, { tiling: [5, 5], errors: [] }, undefined, () => 'new' + n++);
+		expect(p.materials[0].userData.texTransform).toEqual({ repeat: [5, 5], offset: [0, 0], rotation: 0 });
+		expect(p.materials[0].map).toBe('new0');
+		expect(p.materials[1].map).toBe('t0');
+		expect(p.textures.find((t) => t.uuid === 't0').repeat).toEqual([2, 2]);
+	});
+	it('back to 1 x 1 drops the stored copy', () => {
+		const p = payload();
+		setPayloadTransform(p, 0, { tiling: [1, 1], errors: [] }, undefined, () => 'x');
+		expect(p.materials[0].userData.texTransform).toBeUndefined();
+	});
+});

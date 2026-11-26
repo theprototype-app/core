@@ -1,15 +1,17 @@
-// Roadmap 104 C2 — `show`, the pure half (a LEAF: imports nothing). showTool.js drives the interface.
+// Roadmap 104 C2 — `show`, the pure half (a LEAF: imports only the panelsCore leaf). showTool.js drives the interface.
 //
 // `show` acts on the screen of the person the assistant acts for, and nobody else's: it has no peer
 // argument at all. Its eight safety rules (scout report row 7c) and where each one lives:
 //   1 own tab only; headless agent pages do not get the tool        (personTools.js / tpAgent)
-//   2 a deny-list: never sign-in, consent, Publish, Connected apps, account, payment surfaces   DENIED / deniedPanel()
+//   2 a deny-list: never sign-in, consent, Publish, Connected apps, account, payment surfaces   panelsCore BLOCKED / blockedReason()
 //   3 the first use of each kind asks once (Always / This time / No), stored per device          showTool.js + SHOW_KINDS
 //   4 every action leaves a line the person can act on: "Claude moved your view · Back"          showTool.js
 //   5 no camera move in a headset (this release)                                                 showTool.js
 //   6 reduced motion: an instant cut (flyTo's motionMs)                                           objectActions.flyTo
 //   7 6 calls a minute, one camera move per 2 s, refused while the person drags or types          SHOW_PER_MINUTE / CAMERA_GAP_MS
 //   8 editing text stays files {write}: show {code} only opens, goes to a line and selects        (no text argument)
+
+import { PANELS, panelOf, deniedPanel, normalName, blockedReason, BLOCKED } from './panelsCore.js';
 
 /** the kinds the person is asked about, once each */
 export const SHOW_KINDS = /** @type {const} */ (['panel', 'camera', 'code']);
@@ -24,101 +26,19 @@ export const KIND_WORDS = /** @type {Record<string, string>} */ ({
 	code: 'open code for you'
 });
 
+// 107-panels: the panels, their names and the refused surfaces live in ONE registry (panelsCore.js, also a
+// leaf); these are the names show always exported, kept so every reader keeps working.
+export { panelOf, deniedPanel, normalName, blockedReason };
+
 /**
- * The panels `show` may open, close or bring forward — the allow-list. `key` is the app's own key
- * (panelToggles / dockHost), `via` how it opens.
- * @type {Record<string, {key: string, label: string, via: 'toggle' | 'hosted' | 'inspector' | 'chat'}>}
+ * The panels `show` may open, close or bring forward, by id: `key` is the app's own key (panelToggles /
+ * dockHost), `via` how it opens, `label` its title.
+ * @type {Record<string, {key: string, label: string, via: string, readOnly?: boolean}>}
  */
-export const SHOW_PANELS = {
-	explorer: { key: 'explorer', label: 'Explorer', via: 'toggle' },
-	objects: { key: 'objects', label: 'Objects', via: 'toggle' },
-	inspector: { key: 'inspector', label: 'Inspector', via: 'inspector' },
-	flow: { key: 'flow', label: 'Flow editor', via: 'toggle' },
-	code: { key: 'code', label: 'Code', via: 'toggle' },
-	timeline: { key: 'timeline', label: 'Timeline', via: 'toggle' },
-	assets: { key: 'assets', label: 'Assets', via: 'hosted' },
-	preview: { key: 'preview', label: 'Preview', via: 'hosted' },
-	chat: { key: 'chat', label: 'Chat', via: 'chat' },
-	assistant: { key: 'chat', label: 'Assistant', via: 'chat' }
-};
+export const SHOW_PANELS = Object.fromEntries(PANELS.map((p) => [p.id, { key: p.key, label: p.title, via: p.via, ...(p.readOnly ? { readOnly: true } : {}) }]));
 
-/** other words people use for them */
-const ALIASES = /** @type {Record<string, string>} */ ({
-	library: 'explorer',
-	files: 'explorer',
-	'file explorer': 'explorer',
-	outliner: 'objects',
-	'object list': 'objects',
-	hierarchy: 'objects',
-	properties: 'inspector',
-	'properties panel': 'inspector',
-	'node editor': 'flow',
-	nodes: 'flow',
-	'flow graph': 'flow',
-	'flow editor': 'flow',
-	behaviours: 'flow',
-	'code editor': 'code',
-	'code workspace': 'code',
-	scripts: 'code',
-	animation: 'timeline',
-	sequencer: 'timeline',
-	'asset browser': 'assets',
-	'free assets': 'assets',
-	'file preview': 'preview',
-	'session chat': 'chat',
-	'ai assistant': 'assistant',
-	ai: 'assistant'
-});
-
-/** surfaces `show` never opens or presses (rule 2): named so the refusal can say what was asked */
-export const DENIED = [
-	'sign in',
-	'sign-in',
-	'signin',
-	'log in',
-	'login',
-	'account',
-	'profile',
-	'consent',
-	'privacy',
-	'publish',
-	'export',
-	'connected apps',
-	'connect claude',
-	'connector',
-	'payment',
-	'billing',
-	'subscription',
-	'settings',
-	'roles',
-	'permissions',
-	'invite',
-	'approve'
-];
-
-/** @param {string} name @returns {string} lower-case, single-spaced, no "panel"/"window" */
-export function normalName(name) {
-	return String(name ?? '')
-		.toLowerCase()
-		.replace(/[_-]+/g, ' ')
-		.replace(/\b(panel|window|tab|view)\b/g, ' ')
-		.replace(/\s+/g, ' ')
-		.trim();
-}
-
-/** the allow-listed panel a name means, or null @param {string} name */
-export function panelOf(name) {
-	const n = normalName(name);
-	if (SHOW_PANELS[n]) return n;
-	if (ALIASES[n]) return ALIASES[n];
-	return null;
-}
-
-/** is this a surface rule 2 keeps closed @param {string} name */
-export function deniedPanel(name) {
-	const n = normalName(name);
-	return DENIED.some((d) => n === d || n.includes(d));
-}
+/** surfaces `show` never opens or presses (rule 2), by their names */
+export const DENIED = BLOCKED.flatMap((b) => [b.title, ...(b.aliases ?? [])].map(normalName));
 
 /**
  * Where the camera goes to frame a box, keeping the view direction (objectActions.focusObject's

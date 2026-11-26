@@ -8,5 +8,7 @@ export function personToolReads(name, args) {
 	const action = String(args?.action ?? '');
 	if (name === 'files') return action === 'list' || action === 'read';
 	if (name === 'scene') return action === 'list';
+	// 107-panels: the panel registry with each panel's state
+	if (name === 'show') return action === 'panels';
 	return false;
 }

@@ -35,7 +35,7 @@
 - CI: an optional GPU battery on a self-hosted runner. Each job runs in a fresh WSL2 distro that is deleted afterwards, as a single-use just-in-time runner; only the maintainers' own runs, never a fork. Triggered by workflow_dispatch or the gpu-smoke / gpu-battery label. <!-- pc-ci-runner #647; optional, never a required check -->
 
 ### Compatibility
-- **Scene files**: vector shapes, solids and sprites are new records; an older version opens them as plain meshes and textured planes, never an error. **Sessions**: a peer on an older version sees vector shapes and solids as plain meshes and sprites as textured planes; it cannot edit a shape's points. <!-- 64 old peers; do NOT promise that older versions rejoin after a reload (1.78.1 relink regression, routed) -->
+- **Scene files**: vector shapes, solids and sprites are new records; an older version opens them as plain meshes and textured planes, never an error. **Sessions**: a peer on an older version sees vector shapes and solids as plain meshes and sprites as textured planes; it cannot edit a shape's points. <!-- 64 old peers (vector-old-peer, sprite2d-compat, text-extrude-compat vs the v1.83.0 build) -->
 
 ## 1.83.0 — Publish your game
 

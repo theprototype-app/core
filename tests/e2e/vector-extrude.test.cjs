@@ -93,7 +93,8 @@ async function dragArrow(page, a, px, opts = {}) {
 }
 
 h.run(async () => {
-	const browser = await h.launch();
+	// E2E_GPU=1 (a GPU slot): the real GPU, for §6's absolute frame line (the Deck row of 64-int-rel); default software GL
+	const browser = await h.launch(process.env.E2E_GPU === '1' ? { args: h.GPU_ARGS } : {});
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);

@@ -298,7 +298,12 @@ h.run(async () => {
 		await browser.close();
 		return;
 	}
-	const runtimeFiles = (manifest.files ?? []).map((/** @type {any} */ f) => f.path);
+	// what an export copies (exportBuilder.runtimeFiles, 63 PG1): minus the entry pages, and on a build with the slim
+	// play entry minus the files only the editor / kit page reach (`editorOnly`) — 64-int-rel, on v1.83.0
+	const slim = (manifest.files ?? []).some((/** @type {any} */ f) => f.path === 'play.html');
+	const runtimeFiles = (manifest.files ?? [])
+		.filter((/** @type {any} */ f) => !['index.html', 'play.html', 'kit.html'].includes(f.path) && !(slim && f.editorOnly))
+		.map((/** @type {any} */ f) => f.path);
 	h.check(fs.existsSync(FIXTURE), `premise: the saved 2D template is here (${path.relative(ROOT, FIXTURE)})`);
 
 	// the second origin (games) and the host page origin, and a browser that reaches nothing else

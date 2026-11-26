@@ -61,7 +61,20 @@
 	import { connectorProvider, settingsSlots } from '$lib/cloudHooks';
 	import CloudSlot from '../CloudSlot.svelte';
 	import VRSettingsSection from './VRSettingsSection.svelte'; // the whole VR page
-	import AiSettings from './settings/AiSettings.svelte'; // 89 I2: the AI page (+ its provider forms; was Tools & connections)
+	// 89 I2: the AI page (+ its provider forms; was Tools & connections). 102-boot-diet-3: a lazy chunk (AiSettings,
+	// ToolsHub, Connected apps, speech input; ~6 KB gz), loaded ONCE when Settings first opens or the page / a search
+	// mounts it. The filter's MutationObserver and the anchor reveal's wait already take bodies that arrive late.
+	let AiSettings: any = null;
+	let aiSettingsLoading: Promise<unknown> | null = null;
+	function loadAiSettings() {
+		aiSettingsLoading ??= import('./settings/AiSettings.svelte').then(
+			(m) => (AiSettings = m.default),
+			(err) => {
+				aiSettingsLoading = null; // the next open retries (a failure must not latch)
+				console.warn('[settings] could not load the AI page', err);
+			}
+		);
+	}
 	import ConnectionSettings from './settings/ConnectionSettings.svelte';
 	import { settingsOpen, settingsSection, settingsSearchSeed, settingsAnchor, hidePanels, restorePanels, showToast } from '../../stores/appStore.js';
 	import { cloudPluginInfo } from '$lib/cloudHooks';
@@ -75,6 +88,7 @@
 
 	let shortcutsExpanded = false;
 	let aiExpanded = false;
+	$: if ($settingsOpen || aiExpanded) loadAiSettings();
 	// 36-export: Settings ▸ Export — opened by a search (the filter needs mounted rows) or a deep link
 	let exportExpanded = false;
 	let saveOptionsExpanded = false; // 56 C13
@@ -628,7 +642,7 @@
 				</AccordionItem>
 				<AccordionItem bind:open={aiExpanded}>
 					{#snippet header()}AI{/snippet}
-					<AiSettings />
+					{#if AiSettings}<svelte:component this={AiSettings} />{/if}
 				</AccordionItem>
 				<AccordionItem bind:open={importExpanded}>
 					{#snippet header()}Import{/snippet}

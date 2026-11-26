@@ -377,9 +377,10 @@ export async function buildExport(opts, onProgress = () => {}) {
 	// preflight below counts them
 	const sky = await planSky();
 
-	// 63 PG2: THE PREFLIGHT — before the engine or a single pack file is fetched, the preset's rules
-	// run on the PLANNED file list (sizes known so far; a pack file not fetched yet counts 0): a zip
-	// that cannot pass (too many files, a path too long) is refused here, naming what fails
+	// 63 PG2: THE PREFLIGHT — before the engine (the bulk of every zip) and the sky are fetched, the
+	// preset's rules run on the PLANNED file list (the pack files copied above count their real size,
+	// the sky files 0): a zip that cannot pass (too many files, a path too long) is refused here,
+	// naming what fails
 	{
 		/** @type {{path: string, bytes: number}[]} */
 		const planned = [

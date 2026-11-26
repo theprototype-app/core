@@ -59,23 +59,31 @@
 	});
 
 	/** the scene rules for this preset (the size and portal rules run with the build) */
+	// a newer check supersedes an older one still gathering: only the latest run writes its rows
+	let checkRun = 0;
 	async function checkScene() {
 		if (preset === 'embed') return;
+		const run = ++checkRun;
 		checking = true;
 		try {
 			const { gatherSceneFacts } = await import('$lib/export/sceneFacts.js');
-			checkCtx = { target: preset, phone: !!$exportPrefs.mobile, scene: await gatherSceneFacts({ target: preset }) };
-			sceneRows = await runChecks(SCENE_RULES, checkCtx);
+			const ctx = { target: preset, phone: !!$exportPrefs.mobile, scene: await gatherSceneFacts({ target: preset }) };
+			const rows = await runChecks(SCENE_RULES, ctx);
+			if (run !== checkRun) return;
+			checkCtx = ctx;
+			sceneRows = rows;
 		} catch (e) {
+			if (run !== checkRun) return;
 			sceneRows = [{ id: 'check-failed', owner: 'export', severity: 'info', title: 'The scene check could not run', detail: String(/** @type {any} */ (e)?.message ?? e).slice(0, 200) }];
 		} finally {
-			checking = false;
+			if (run === checkRun) checking = false;
 		}
 	}
-	// re-check when the preset or the phone flag changes (and once on open)
+	// re-check when the preset or the phone flag changes (and once on open) — not on every other export setting
+	const phoneFlag = $derived(!!$exportPrefs.mobile);
 	$effect(() => {
 		void preset;
-		void $exportPrefs.mobile;
+		void phoneFlag;
 		const t = setTimeout(() => void checkScene(), 150);
 		return () => clearTimeout(t);
 	});

@@ -130,7 +130,7 @@ export const EXPORT_RULES = [
 			if (ctx.stage !== 'built' || !ctx.files) return [];
 			const L = limitsOf(ctx);
 			const allowHosts = /** @type {Record<string, readonly string[]>} */ (EXPORT_ALLOWED_HOSTS)[String(ctx.target)] || [];
-			const r = validateExport(ctx.files, { preset: String(ctx.target), allowHosts, limits: /** @type {any} */ ({ ...L, maxFiles: Infinity, maxTotalBytes: Infinity, maxFileBytes: Infinity }) });
+			const r = validateExport(ctx.files, { preset: String(ctx.target), allowHosts, limits: /** @type {any} */ ({ ...L, maxFiles: Infinity, maxTotalBytes: Infinity, maxFileBytes: Infinity, maxPathLength: Infinity }) });
 			return [
 				...r.errors.map((e) => /** @type {CheckRow} */ ({ id: 'export-structure', owner: 'export', severity: 'error', title: 'The zip is not a well-formed game', detail: e })),
 				...r.warnings.map((w) => /** @type {CheckRow} */ ({ id: 'export-structure-note', owner: 'export', severity: 'warn', title: 'Check this before uploading', detail: w }))

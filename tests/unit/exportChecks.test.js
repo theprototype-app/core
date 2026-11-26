@@ -64,6 +64,8 @@ describe('EXPORT_RULES', () => {
 		const long = 'assets/packs/' + 'x'.repeat(240) + '.glb';
 		const rows = await runChecks(EXPORT_RULES, { target: 'itch', stage: 'built', files: game([{ path: long, bytes: 1 }, { path: 'assets/big.glb', bytes: 201 * MB }]) });
 		expect(rows.find((r) => r.id === 'export-path-length')?.file).toBe(long);
+		// one row for the long path: the structure rule leaves lengths to export-path-length
+		expect(rows.filter((r) => (r.detail || '').includes(long)).length).toBe(1);
 		expect(rows.find((r) => r.id === 'export-size-file')?.file).toBe('assets/big.glb');
 	});
 	it('total size: a warning above 80 %, an error over the limit, both listing the biggest assets', async () => {

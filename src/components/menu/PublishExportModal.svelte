@@ -33,7 +33,7 @@
 	const showTip = tipShown(TIP_PUBLISH);
 	let tipSeen = false;
 	$effect(() => {
-		if ($showTip && $publishExportOpen) tipSeen = true;
+		if ($showTip && $publishExportOpen && ($publishExportTab === 'publish' || $publishExportTab === 'export')) tipSeen = true;
 	});
 
 	// App mounts this only while the modal is open (lazy, the Profiler idiom): hide the editor

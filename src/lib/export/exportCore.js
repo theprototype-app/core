@@ -36,13 +36,15 @@ export function escapeHtml(s) {
 /**
  * index.html for the export: ./play.js loads FIRST (a classic, blocking script, so
  * `window.__TP_EXPORT__` exists before any app module evaluates), the game's title, and no
- * web-app manifest (an export is not the installable app). PURE.
+ * web-app manifest (an export is not the installable app) and no robots noindex (the hosted /play page's). PURE.
  * @param {string} html @param {{title: string}} opts @returns {string}
  */
 export function rewriteIndexHtml(html, { title }) {
 	let out = String(html);
 	out = out.replace(/\s*<link[^>]+rel=["']manifest["'][^>]*>/gi, '');
 	out = out.replace(/\s*<meta[^>]+name=["']apple-mobile-web-app-title["'][^>]*>/gi, '');
+	// the hosted play page asks search engines to skip it (/play is a shell); an exported game is the author's own page
+	out = out.replace(/\s*<meta[^>]+name=["']robots["'][^>]*>/gi, '');
 	const tag = `<title>${escapeHtml(title || 'Game')}</title>`;
 	if (/<title>[\s\S]*?<\/title>/i.test(out)) out = out.replace(/<title>[\s\S]*?<\/title>/i, tag);
 	else out = out.replace(/<meta charset="utf-8"\s*\/?>/i, (m) => m + '\n\t\t' + tag);

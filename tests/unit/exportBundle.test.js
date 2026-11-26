@@ -119,6 +119,11 @@ describe('exportCore', () => {
 		expect(out).not.toMatch(/rel="manifest"/);
 		expect(out).not.toMatch(/apple-mobile-web-app-title/);
 	});
+	it('drops the hosted /play page robots noindex (an exported game is the author own page)', () => {
+		const out = rewriteIndexHtml(INDEX.replace('<meta charset="utf-8" />', '<meta charset="utf-8" />\n\t\t<meta name="robots" content="noindex" />'), { title: 'G' });
+		expect(out).not.toMatch(/name="robots"/);
+		expect(out).toContain('<title>G</title>');
+	});
 	it('play.js round-trips through the validator parser', () => {
 		const cfg = { version: 1, id: 'x1', title: 'A "quoted" title', modules: [] };
 		expect(parsePlayJs(makePlayJs(cfg))).toEqual(cfg);

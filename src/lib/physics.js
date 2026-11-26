@@ -1155,10 +1155,18 @@ export function physicsAddBody(uuid) {
 	return true;
 }
 
+/** 107: what the last start did on its own — the selection fallback body (mass 1) — and which flow-animated
+ * objects physics moves instead of their flow motion (Spin, Orbit …) for this run @type {string|null} */
+let startFallback = null;
+export function simStartReport() {
+	return { fallback: startFallback, overridden: [...suspendedForRun] };
+}
+
 /** 78 F25: `handoff` = this peer takes over a run a slower initiator handed it (the bodies'
  * velocities and the run's original start poses ride along).
  * @param {{play?: boolean, handoff?: {from: string, velocities: Record<string, number[]>, before: Record<string, any>}}} [opts] */
 async function startSimulation(opts = {}) {
+	startFallback = null;
 	const group = get(objectsGroup);
 	/** @type {any} */
 	const peer = get(peers);
@@ -1188,6 +1196,7 @@ async function startSimulation(opts = {}) {
 			params[selected.uuid] = { ...(params[selected.uuid] ?? {}), mass: 1 };
 			delete params[selected.uuid].forceStatic;
 			dynamicUuids = [selected.uuid];
+			startFallback = selected.uuid; // 107: control_simulation says so (the toast is all a person gets)
 			showToast(
 				'No objects have physics yet — simulating the selected object with mass 1. Make it permanent in Inspector ▸ Physics.'
 			);

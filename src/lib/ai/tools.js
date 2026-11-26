@@ -2054,7 +2054,7 @@ const PHYSICS_AI_TOOLS = [
 		function: {
 			name: 'control_simulation',
 			description:
-				'Start, stop, pause, resume or reset the physics simulation. After building a physics assembly, start the simulation so the user sees it move.',
+				'Start, stop, pause, resume or reset the physics simulation. After building a physics assembly, start the simulation so the user sees it move. Flow motion (Spin, Orbit, a path) runs WITHOUT the simulation: do not start it just to see a flow move. Starting turns objects with dynamic physics into falling bodies (and, when none has physics, the selected object, for that run): the answer names each, and any whose flow motion physics overrides while it runs.',
 			parameters: {
 				type: 'object',
 				properties: { action: { type: 'string', enum: ['start', 'stop', 'pause', 'resume', 'reset'] } },

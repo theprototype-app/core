@@ -21,7 +21,10 @@
 // answer; behaviour input handlers get {by}; validate_scene issue codes value-into-event, fires-on-every-change,
 // missing-handle, action-as-event, not-a-sensor, sensor-is-target, sensor-any, pickup-stays, toggle-per-person;
 // kit-pickups-collect param `hide` (additive: an optional argument, optional fields, new codes, no tool renamed)
-export const TP_AGENT_VERSION = '1.11.0';
+// 1.12.0 (104): files / show / scene, the person's own tools: only the connector tab and the in-app assistant list them,
+// headless agent pages do not (additive: three new tool names, nothing renamed); probe tool; where_are_users you.through;
+// set_physics float / density / buoyancy / waterDrag + the water answer (waterline) (104-world, additive: one new tool name)
+export const TP_AGENT_VERSION = '1.12.0';
 
 /** Every method of the contract, in the order the docs list them. */
 export const TP_AGENT_METHODS = /** @type {const} */ ([

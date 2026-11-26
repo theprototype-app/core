@@ -279,7 +279,7 @@ export function beginVoice(source) {
 	}
 	if (!get(vrSttReady)) {
 		hapticPulse(0.4, 80);
-		notice('Voice typing needs a voice typing server: set one up in Settings ▸ Tools & connections on desktop');
+		notice('Voice typing needs a voice typing server: set one up in Settings ▸ AI on desktop');
 		return false;
 	}
 	if (get(vrAiBusy) || get(dictation).state !== 'idle') return false;

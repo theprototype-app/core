@@ -25,7 +25,7 @@
 // the shared clock behind any waves) all replicate, so a simulator handover computes
 // the same forces. Nothing here is sent.
 
-/** @typedef {{density?: number | 'mass', multiplier?: number, off?: boolean}} FloatsConfig */
+/** @typedef {{density?: number | 'mass', multiplier?: number, off?: boolean, drag?: number}} FloatsConfig */
 
 /** densities the Inspector offers (kg/m^3); the first is the default */
 export const FLOAT_PRESETS = /** @type {const} */ ({
@@ -43,6 +43,8 @@ export const WATER_DENSITY = 1000;
 const MIN_DENSITY = 10;
 const MAX_DENSITY = 20000;
 const MAX_MULTIPLIER = 10;
+/** 104 B3: the per-object water drag factor (the water's own drag x this; 1 = as before) */
+const MAX_DRAG = 10;
 const HEAVE_DRAG = 4;
 /** 36-fb-water F12: ADDED MASS — a body accelerating through water drags some water with it
  * (a sphere: half its displaced volume). Without it a foam block released at the pool floor
@@ -53,15 +55,16 @@ const ADDED_MASS = 0.5;
  * The ONE boundary for `userData.physics.floats` (replicated bytes from a peer or a
  * file): unknown keys dropped, numbers clamped, garbage -> the default.
  * @param {any} raw
- * @returns {{off: boolean, density: number | 'mass', multiplier: number}}
+ * @returns {{off: boolean, density: number | 'mass', multiplier: number, drag: number}}
  */
 export function normalizeFloats(raw) {
-	const out = { off: false, density: /** @type {number | 'mass'} */ (DEFAULT_BODY_DENSITY), multiplier: 1 };
+	const out = { off: false, density: /** @type {number | 'mass'} */ (DEFAULT_BODY_DENSITY), multiplier: 1, drag: 1 };
 	if (!raw || typeof raw !== 'object') return out;
 	if (raw.off === true) out.off = true;
 	if (raw.density === 'mass') out.density = 'mass';
 	else if (Number.isFinite(raw.density)) out.density = Math.min(MAX_DENSITY, Math.max(MIN_DENSITY, raw.density));
 	if (Number.isFinite(raw.multiplier)) out.multiplier = Math.min(MAX_MULTIPLIER, Math.max(0, raw.multiplier));
+	if (Number.isFinite(raw.drag)) out.drag = Math.min(MAX_DRAG, Math.max(0, raw.drag));
 	return out;
 }
 
@@ -197,7 +200,7 @@ export function bodySamples(parts, res = 3) {
  *   mass: number, gravity: number, dt: number}} body  rapier state (world frame)
  * @param {{points: Float32Array, weights: Float32Array, volume: number, cellH: number, span?: number}} samples
  * @param {(x: number, y: number, z: number, span?: number) => WaterHit | null} query  W1's waterVolumes.query, adapted
- * @param {{off: boolean, density: number | 'mass', multiplier: number}} floats normalized
+ * @param {{off: boolean, density: number | 'mass', multiplier: number, drag?: number}} floats normalized
  * @param {{impulse: number[], torque: number[], linvel: number[], angvel: number[],
  *   submerged: number, volume: any, surfaceY: number}} out
  * @returns {boolean} false when the body is nowhere in water (out untouched beyond submerged = 0)
@@ -285,6 +288,11 @@ export function buoyancyStep(body, samples, query, floats, out) {
 	const flowX = fx / submerged;
 	const flowY = fy / submerged;
 	const flowZ = fz / submerged;
+	// 104 B3: the body's own water-drag factor scales all three (a raft drifts, a buoy holds)
+	const dragK = floats.drag ?? 1;
+	linDrag *= dragK;
+	heave *= dragK;
+	angDrag *= dragK;
 	const kl = 1 - Math.exp(-linDrag * body.dt);
 	// HEAVE is damped harder than sliding: a floating body bobbing up and down pushes
 	// water out of the way (added mass + the waves it radiates), and with the plain drag
@@ -327,7 +335,7 @@ const scratchState = { pos: [0, 0, 0], quat: [0, 0, 0, 1], com: [0, 0, 0], linve
  * @param {any} rb rapier RigidBody
  * @param {{points: Float32Array, weights: Float32Array, volume: number, cellH: number, span?: number}} samples
  * @param {(x: number, y: number, z: number, span?: number) => WaterHit | null} query
- * @param {{off: boolean, density: number | 'mass', multiplier: number}} floats
+ * @param {{off: boolean, density: number | 'mass', multiplier: number, drag?: number}} floats
  * @param {number} gravity world gravity Y (negative)
  * @param {number} dt substep seconds
  * @param {ReturnType<typeof buoyancyOut>} out

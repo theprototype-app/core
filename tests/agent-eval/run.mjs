@@ -8,6 +8,7 @@
 // release notes: the point is to catch a tool listing that makes Claude pick worse, not an absolute number.
 import fs from 'node:fs';
 import path from 'node:path';
+import { personToolReads } from '../../src/lib/ai/personToolNames.js';
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -44,7 +45,7 @@ function run(r) {
 	const log = path.join(dir, r.id + '.jsonl');
 	fs.rmSync(log, { force: true });
 	const cfg = path.join(dir, r.id + '.mcp.json');
-	fs.writeFileSync(cfg, JSON.stringify({ mcpServers: { theprototype: { command: process.execPath, args: [path.join(HERE, 'mock-connector.mjs'), path.resolve(catalogFile), path.resolve(policyFile), log] } } }));
+	fs.writeFileSync(cfg, JSON.stringify({ mcpServers: { theprototype: { command: process.execPath, args: [path.join(HERE, 'mock-connector.mjs'), path.resolve(catalogFile), path.resolve(policyFile), log, ...(r.scene ? [r.scene] : [])] } } }));
 	const prompt = (r.setup ? '(Earlier in this conversation: ' + r.setup + ')\n\n' : '') + r.say;
 	const args = ['-p', prompt, '--model', model, '--mcp-config', cfg, '--strict-mcp-config', '--allowedTools', 'mcp__theprototype', '--tools', '', '--setting-sources', 'project', '--disable-slash-commands', '--no-session-persistence', '--system-prompt', SYSTEM, '--max-turns', '8', '--output-format', 'json'];
 	return new Promise((done) => {
@@ -62,7 +63,8 @@ function run(r) {
 /** @param {any} want @param {any} c @param {any[]} before */
 const matches = (want, c, before) => c.tool === want.tool && (!want.action || c.action === want.action) && !c.error && (!want.after || before.some((b) => b.tool === want.after));
 /** @param {any} c */
-const isRead = (c) => READS.has(c.tool) || READS.has(c.fine);
+// 104: the person's tools read on some actions only (files list/read, scene list), the tab's own rule
+const isRead = (c) => READS.has(c.tool) || READS.has(c.fine) || personToolReads(c.tool, { action: c.action });
 
 /** @param {any} r @param {any[]} calls @returns {'pass'|'partial'|'fail'} */
 export function score(r, calls) {

@@ -818,7 +818,7 @@
 				class="cx-claude"
 				data-phase={$connectorState.phase}
 				class:cx-claude-warn={$connectorState.phase !== 'connected' || $connectorState.throttled}
-				title="Claude uses theprototype through this tab — keep it open. Open the AI assistant to disconnect."
+				title={($connectorState.who || 'Claude') + ' uses theprototype through this tab — keep it open. Open the AI assistant to disconnect.'}
 				onclick={() => aiAssistantHidden.set('')}
 				><span class="cx-claude-dot" aria-hidden="true"></span>{connectorLine($connectorState)}</button
 			>

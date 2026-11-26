@@ -1,9 +1,12 @@
 <script module>
 	/** 86 B5: what the settings search matches beyond the row names */
-	export const keywords = ['claude', 'connector', 'connected apps', 'mcp', 'revoke', 'oauth', 'voice', 'claude.ai', 'disconnect'];
+	export const keywords = ['claude', 'connector', 'connected apps', 'mcp', 'revoke', 'oauth', 'voice', 'claude.ai', 'disconnect', 'chatgpt', 'ai apps', 'remove app'];
 </script>
 
 <script>
+	// 89 I2: drawn by Settings ▸ AI ▸ "AI apps that work in your scene" now (Account keeps a link row, ConnectedAppsLink).
+	// Each row says WHICH app: the Worker's trusted name (`app`, from the exact callback) or, for an unknown callback,
+	// the client's own name marked as its own. A Worker before 89 sends no `app`: the rows read as they always did.
 	// 86 B5 — Settings ▸ Account ▸ Connected apps (uir-account: its own page before, now the Account page's last groups): the apps this ACCOUNT allowed to use theprototype (claude.ai,
 	// Claude Code…), each with its last use and Revoke, plus this tab's own link. Rendered only while the
 	// cloud plugin installs a connector provider (a signed-in cloud build); the plugin talks to the
@@ -17,7 +20,7 @@
 	import { showConfirm } from '$lib/confirmDialog';
 	import { showToast } from '../../../stores/appStore';
 
-	/** @type {{id: string, client: string, redirectHost?: string, scopes?: string[], created?: number, lastUsed?: number}[]} */
+	/** @type {{id: string, client: string, app?: string, redirectHost?: string, scopes?: string[], created?: number, lastUsed?: number}[]} */
 	let apps = $state([]);
 	let loading = $state(true);
 	let failed = $state('');
@@ -53,11 +56,21 @@
 	/** @param {string[]|undefined} scopes */
 	const access = (scopes) => ((scopes ?? []).includes('session:edit') ? 'can build' : 'can look');
 
-	/** @param {{id: string, client: string}} app */
+	/** 89: the row's name — the trusted app name, else the client's own @param {{client: string, app?: string}} app */
+	const nameOf = (app) => (typeof app.app === 'string' && app.app ? app.app : app.client);
+	/** 89: a row whose app the Worker could not name (it sent `app: ''`) says the name is the app's own @param {{app?: string}} app */
+	const unnamed = (app) => app.app === '';
+
+	/** @param {{id: string, client: string, app?: string}} app */
 	async function revoke(app) {
+		const name = nameOf(app);
 		const ok = await showConfirm({
-			title: 'Revoke ' + app.client + '?',
-			message: app.client + ' can no longer use theprototype for you. Adding the connector again in claude.ai asks you to sign in again.',
+			title: 'Revoke ' + name + '?',
+			message:
+				name +
+				(app.app === undefined || app.app === 'Claude'
+					? ' can no longer use theprototype for you. Adding the connector again in claude.ai asks you to sign in again.'
+					: ' can no longer use theprototype for you. Adding theprototype again in ' + (app.app || 'that app') + ' asks you to sign in again.'),
 			confirmLabel: 'Revoke',
 			cancelLabel: 'Cancel'
 		});
@@ -65,7 +78,7 @@
 		busy = app.id;
 		try {
 			await /** @type {any} */ ($connectorProvider).revoke(app.id);
-			showToast(app.client + ' was revoked.');
+			showToast(name + ' was revoked.');
 		} catch (e) {
 			showToast('Could not revoke: ' + (e instanceof Error ? e.message : String(e)));
 		} finally {
@@ -77,7 +90,7 @@
 	async function revokeAll() {
 		const ok = await showConfirm({
 			title: 'Disconnect every app?',
-			message: 'Every connected app loses access, and this tab stops answering Claude.',
+			message: 'Every connected app loses access, and this tab stops answering them.',
 			confirmLabel: 'Disconnect all',
 			cancelLabel: 'Cancel'
 		});
@@ -99,9 +112,11 @@
 {#if $connectorProvider}
 	<div class="contents" data-keywords={keywords.join(' ')} id="connected-apps-settings">
 		<Section variant="card" label="This tab" badge="This device">
-			<SettingRow id="row-connector-tab" label="Claude connector" keywords="claude connector tab voice">
+			<SettingRow id="row-connector-tab" label="Claude connector" keywords="claude chatgpt connector tab voice ai apps">
 				{#snippet desc()}
-					{live ? connectorLine(s) : 'Press Connect Claude to let claude.ai — chat or voice — build in this tab, with your access. Keep the tab open while it works.'}
+					{live
+						? connectorLine(s)
+						: 'Press Connect Claude to let claude.ai — chat or voice — or another AI app you added build in this tab, with your access. Keep the tab open while it works.'}
 				{/snippet}
 				{#if live}
 					<Button id="connected-apps-disconnect" variant="outline" size="sm" icon="unlink" onclick={disconnectClaude}>Disconnect</Button>
@@ -121,15 +136,15 @@
 				<SettingRow
 					id="row-connected-apps-none"
 					label="No connected apps"
-					description="Add theprototype as a connector in claude.ai (Settings ▸ Connectors), sign in, and it appears here."
+					description="Add theprototype as a connector in claude.ai (Settings ▸ Connectors), ChatGPT or another AI app, sign in, and it appears here."
 				/>
 			{:else}
 				{#each apps as app (app.id)}
-					<SettingRow id={'row-connected-app-' + app.id} label={app.client} data-app={app.id} keywords="revoke connector">
+					<SettingRow id={'row-connected-app-' + app.id} label={nameOf(app)} data-app={app.id} data-app-name={app.app ?? ''} keywords="revoke connector">
 						{#snippet desc()}
-							{access(app.scopes)} · {app.redirectHost ? app.redirectHost + ' · ' : ''}{when(app.lastUsed)}
+							{unnamed(app) ? 'name chosen by the app · ' : ''}{access(app.scopes)} · {app.redirectHost ? app.redirectHost + ' · ' : ''}{when(app.lastUsed)}
 						{/snippet}
-						<Button variant="warn-text" size="sm" disabled={!!busy} aria-label={'Revoke ' + app.client} onclick={() => revoke(app)}>Revoke</Button>
+						<Button variant="warn-text" size="sm" disabled={!!busy} aria-label={'Revoke ' + nameOf(app)} onclick={() => revoke(app)}>Revoke</Button>
 					</SettingRow>
 				{/each}
 				<SettingRow id="row-connected-apps-all" label="Disconnect everything" description="Every app above loses access and this tab’s link ends.">

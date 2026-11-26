@@ -41,10 +41,14 @@ async function hostTools() {
 		const protocol = await server.ssrLoadModule('/src/lib/connector/protocol.js');
 		const names = (/** @type {any[]} */ list) => list.map((t) => t?.function?.name ?? t?.name);
 		// generate_mesh needs a provider, which a generator has none of, but a static list must name it (mcp-fix)
-		const list = tp.createTpAgent().agent.tools();
+		const base = tp.createTpAgent().agent.tools();
+		// 104 C1-C3: the person's own tools exist only in a person's tab (the connector), never on an agent page
+		const { PERSON_TOOL_NAMES } = await server.ssrLoadModule('/src/lib/ai/personTools.js');
+		const tab = tp.createConnectorAgent().agent.tools();
+		const list = [...base, ...tab.filter((/** @type {any} */ t) => PERSON_TOOL_NAMES.includes(t?.function?.name ?? t?.name))];
 		return {
 			tools: names(list).includes('generate_mesh') ? list : [...list, MESH_TOOL],
-			tabTools: names(tp.createConnectorAgent().agent.tools()),
+			tabTools: names(tab),
 			conditional: ['generate_mesh'],
 			own: [...protocol.BRIDGE_TOOLS, 'join_session', 'where_are_users'],
 			excluded: [...protocol.CONNECTOR_BLOCKED_TOOLS]

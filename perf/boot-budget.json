@@ -260,6 +260,35 @@
 				"99-newops #635 (+ v1.79.0 merge seams)": "+2.2 / +3.4",
 				"99-scrub #656": "+0.9 / +1.1"
 			}
+		},
+		{
+			"date": "2026-11-23",
+			"lane": "104-int (roadmap 104 + 89-apps, on v1.75.0)",
+			"play": "1.75.0 1877.3 KB -> union 1875.0 KB (-2.3) -> line kept 1900 KB",
+			"editor": "1.75.0 2988.4 KB -> union 2991.4 KB (+3.0) -> line kept 3020 KB",
+			"perLane": "editor / play gz, each lane on its own base: 104-world +1.4 / +0.4; 104-show +0.3 / 0; 104-room-scan +0.5 wiring (scan code lazy) / 0; 104-wall-names 0 / 0; 89-apps +1.6 / 0; int fixes ~0",
+			"note": "the lines 1.75.0 set (union + ~1 %) stand: the union is +3.0 KB on the editor for five lanes, inside 3 KB per lane, so no raise"
+		},
+		{
+			"date": "2026-11-23",
+			"lane": "104-int-rel (the 104-int union with v1.76.0 merged, ac5bbe78)",
+			"play": "v1.76.0 line 1909 KB -> union on v1.76.0 1880.6 KB -> line kept",
+			"editor": "v1.76.0 line 3029 KB -> union on v1.76.0 2999.4 KB -> line kept",
+			"note": "measured on the Deck; the five 104 lanes fit inside the 1.76.0 lines, so no raise"
+		},
+		{
+			"date": "2026-11-25",
+			"lane": "104-int-rel (roadmap 104 connector round 2 + 89-apps on v1.79.0, 90db734e)",
+			"play": "v1.79.0 1851.0 KB -> union on v1.79.0 1848.2 KB (-2.8) -> line 1850.0 KB (the int boot rule: the measure on the newest tag, rounded up to the next 5 KB; was 1855.0)",
+			"editor": "v1.79.0 2987.2 KB -> union on v1.79.0 2987.4 KB (+0.2) -> line 2990.0 KB (the same rule; unchanged)",
+			"note": "measured on the Deck, v1.79.0 and the union built back to back. 104's own delta is +0.2 KB editor / -2.8 KB play. Largest editor contributor in 104: 89-apps (+1.6 KB at 104-int on v1.75.0) = the give-back row for 102-boot-diet-2. The 1.8x changelog entry rides the editor boot: measured again at release."
+		},
+		{
+			"date": "2026-11-26",
+			"lane": "104-int-rel (roadmap 104 connector round 2 + 89-apps on v1.80.0, fc5e326e)",
+			"play": "v1.80.0 1854.1 KB -> union on v1.80.0 1851.4 KB (-2.7) -> line 1855.0 KB (the int boot rule: the measure on the newest tag rounded up to the next 5 KB = v1.80.0's own line; the 1850.0 set on v1.79.0 is below the measure once 1.80.0's +3.1 KB is in)",
+			"editor": "v1.80.0 2992.5 KB -> union on v1.80.0 2992.6 KB (+0.1; 2994.1 KB with the 1.81.0 changelog, which rides the editor boot) -> line 2995.0 KB (the same rule; unchanged)",
+			"note": "measured on the Deck, v1.80.0 (detached worktree) and the union built back to back with the same node_modules. 104's own delta is +0.1 KB editor / -2.7 KB play. Give-back row for 102-boot-diet-2 stays 89-apps (+1.6 KB editor at 104-int). The 1.81.0 changelog entry rides the editor boot: measured with it, 2994.1 KB, inside the line."
 		}
 	],
 	"throttle": {

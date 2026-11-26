@@ -1,0 +1,263 @@
+{
+	"$comment": "104 D1: the room 'Scan my room' made on a Quest (walls, floor, ceiling and furniture as named, see-through boxes under 'My room'; real size, metres). The person stands in it, in passthrough.",
+	"list_scene": {
+		"objects": [
+			{
+				"uuid": "room-1",
+				"name": "My room",
+				"type": "Group",
+				"position": [
+					0,
+					0,
+					0
+				],
+				"children": [
+					"floor-r",
+					"ceiling-r",
+					"wall-1",
+					"wall-2",
+					"wall-3",
+					"wall-4",
+					"couch-r",
+					"door-r",
+					"table-r"
+				]
+			},
+			{
+				"uuid": "floor-r",
+				"name": "Floor",
+				"type": "Mesh",
+				"geometry": {
+					"type": "Box",
+					"width": 4,
+					"height": 0.02,
+					"depth": 3
+				},
+				"position": [
+					0,
+					-0.01,
+					0
+				],
+				"parent": "room-1",
+				"color": "#8a8f98",
+				"opacity": 0.45
+			},
+			{
+				"uuid": "ceiling-r",
+				"name": "Ceiling",
+				"type": "Mesh",
+				"geometry": {
+					"type": "Box",
+					"width": 4,
+					"height": 0.02,
+					"depth": 3
+				},
+				"position": [
+					0,
+					2.51,
+					0
+				],
+				"parent": "room-1",
+				"color": "#d8dade",
+				"opacity": 0.45
+			},
+			{
+				"uuid": "wall-1",
+				"name": "Wall 1",
+				"type": "Mesh",
+				"geometry": {
+					"type": "Box",
+					"width": 4,
+					"height": 0.02,
+					"depth": 2.5
+				},
+				"position": [
+					0,
+					1.25,
+					-1.51
+				],
+				"parent": "room-1",
+				"color": "#c9ccd2",
+				"opacity": 0.45
+			},
+			{
+				"uuid": "wall-2",
+				"name": "Wall 2",
+				"type": "Mesh",
+				"geometry": {
+					"type": "Box",
+					"width": 3,
+					"height": 0.02,
+					"depth": 2.5
+				},
+				"position": [
+					2.01,
+					1.25,
+					0
+				],
+				"parent": "room-1",
+				"color": "#c9ccd2",
+				"opacity": 0.45
+			},
+			{
+				"uuid": "wall-3",
+				"name": "Wall 3",
+				"type": "Mesh",
+				"geometry": {
+					"type": "Box",
+					"width": 4,
+					"height": 0.02,
+					"depth": 2.5
+				},
+				"position": [
+					0,
+					1.25,
+					1.51
+				],
+				"parent": "room-1",
+				"color": "#c9ccd2",
+				"opacity": 0.45
+			},
+			{
+				"uuid": "wall-4",
+				"name": "Wall 4",
+				"type": "Mesh",
+				"geometry": {
+					"type": "Box",
+					"width": 3,
+					"height": 0.02,
+					"depth": 2.5
+				},
+				"position": [
+					-2.01,
+					1.25,
+					0
+				],
+				"parent": "room-1",
+				"color": "#c9ccd2",
+				"opacity": 0.45
+			},
+			{
+				"uuid": "couch-r",
+				"name": "Couch",
+				"type": "Mesh",
+				"geometry": {
+					"type": "Box",
+					"width": 2,
+					"height": 0.45,
+					"depth": 0.9
+				},
+				"position": [
+					-1,
+					0.225,
+					1
+				],
+				"parent": "room-1",
+				"color": "#c79a5b",
+				"opacity": 0.45
+			},
+			{
+				"uuid": "door-r",
+				"name": "Door",
+				"type": "Mesh",
+				"geometry": {
+					"type": "Box",
+					"width": 0.9,
+					"height": 0.01,
+					"depth": 2.1
+				},
+				"position": [
+					1.2,
+					1.05,
+					1.495
+				],
+				"parent": "room-1",
+				"color": "#9a7552",
+				"opacity": 0.45
+			},
+			{
+				"uuid": "table-r",
+				"name": "Table",
+				"type": "Mesh",
+				"geometry": {
+					"type": "Box",
+					"width": 1.2,
+					"height": 0.75,
+					"depth": 0.8
+				},
+				"position": [
+					1,
+					0.375,
+					-0.8
+				],
+				"parent": "room-1",
+				"color": "#c79a5b",
+				"opacity": 0.45
+			},
+			{
+				"uuid": "sun-1",
+				"name": "Sun",
+				"type": "DirectionalLight",
+				"position": [
+					5,
+					10,
+					5
+				],
+				"intensity": 3
+			}
+		],
+		"count": 11
+	},
+	"status": {
+		"joined": true,
+		"you": {
+			"peerId": "me-1",
+			"name": "Alex",
+			"role": "host",
+			"you": true
+		},
+		"role": "host",
+		"canEdit": true,
+		"users": [
+			{
+				"peerId": "me-1",
+				"name": "Alex",
+				"you": true
+			}
+		]
+	},
+	"where_are_users": {
+		"users": [
+			{
+				"peerId": "me-1",
+				"name": "Alex",
+				"you": true,
+				"position": [
+					0,
+					1.6,
+					0.5
+				],
+				"yaw": 0,
+				"forward": [
+					0,
+					0,
+					-1
+				],
+				"floor": 0,
+				"ahead1_5m": [
+					0,
+					0,
+					-1
+				],
+				"ahead3m": [
+					0,
+					0,
+					-1.4
+				]
+			}
+		]
+	},
+	"screenshot": {
+		"note": "a picture of the scene from iso: a see-through box room (floor, ceiling, four walls) with a door, a couch and a table inside; anything you just added stands among them"
+	}
+}

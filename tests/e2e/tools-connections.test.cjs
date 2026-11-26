@@ -112,8 +112,8 @@ h.run(async () => {
 			.join('|')
 	);
 	h.check(
-		/Tools & connections/.test(title),
-		`the deep link opens Settings ▸ Tools & connections (${title})`
+		/^AI$/.test(title),
+		`the deep link opens Settings ▸ AI (89 I2: was Tools & connections) (${title})`
 	);
 	const rows = await page.evaluate(() =>
 		[...document.querySelectorAll('#settings-main [data-tool-row]')].map((r) => ({

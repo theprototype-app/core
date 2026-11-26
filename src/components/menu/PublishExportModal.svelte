@@ -19,6 +19,8 @@
 	import GallerySubmitPanel from './GallerySubmitPanel.svelte';
 	import LicenceWarnings from './LicenceWarnings.svelte';
 	import PublishCheck from './PublishCheck.svelte';
+	import Icon from '../ui/Icon.svelte';
+	import { dismissTip, tipShown, TIP_PUBLISH, PUBLISH_GUIDE_URL } from '$lib/tips.js';
 
 	const TABS = [
 		{ id: 'publish', label: 'Publish' },
@@ -27,11 +29,25 @@
 		{ id: 'settings', label: 'Settings' }
 	];
 
+	// 63: the first-use hint shows on the first open only: once it has been seen, closing the dialog retires it
+	const showTip = tipShown(TIP_PUBLISH);
+	let tipSeen = false;
+	$effect(() => {
+		if ($showTip && $publishExportOpen) tipSeen = true;
+	});
+
 	// App mounts this only while the modal is open (lazy, the Profiler idiom): hide the editor
 	// panels for its life and put them back when it goes
 	$effect(() => {
 		untrack(() => hidePanels());
-		return () => untrack(() => restorePanels());
+		return () =>
+			untrack(() => {
+				restorePanels();
+				if (tipSeen) dismissTip(TIP_PUBLISH);
+			});
+	});
+	$effect(() => {
+		if (!$publishExportOpen && tipSeen) untrack(() => dismissTip(TIP_PUBLISH));
 	});
 </script>
 
@@ -56,6 +72,19 @@
 	{/snippet}
 	<!-- the tabs mount only while open, so a plugin's Publish flow starts fresh on every open -->
 	{#if $publishExportOpen}
+		{#if $showTip && ($publishExportTab === 'publish' || $publishExportTab === 'export')}
+			<!-- 63: in the flow above the tab (never over its buttons); retires when this dialog closes -->
+			<div id="publish-first-use" class="pe-tip" role="note">
+				<p>
+					<strong>Publish</strong> gives the scene a play link here, with a short check of what a visitor would trip over first (it never stops you).
+					<strong>Export</strong> makes a zip that plays offline on itch.io, CrazyGames or any web host.
+					<a href={PUBLISH_GUIDE_URL} target="_blank" rel="noopener" onclick={() => dismissTip(TIP_PUBLISH)}>Step by step: Publish your game</a>
+				</p>
+				<button type="button" class="ui-button-quiet" id="publish-first-use-close" aria-label="Close the tip" title="Close the tip" onclick={() => dismissTip(TIP_PUBLISH)}
+					><Icon name="x" size={16} aria-hidden="true" /></button
+				>
+			</div>
+		{/if}
 		{#if $publishExportTab === 'publish'}
 			<div id="publish-tab" role="tabpanel" aria-labelledby="publish-export-tab-publish">
 				<!-- 57 M7: what the scene's licences ask, above the publish flow (warn, never block) -->
@@ -82,6 +111,27 @@
 </ModalDialog>
 
 <style>
+	.pe-tip {
+		display: flex;
+		align-items: flex-start;
+		gap: var(--space-2);
+		margin-bottom: var(--space-3, 12px);
+		padding: var(--space-2);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-md);
+		background: var(--surface-2);
+		font-size: var(--fs-desc);
+		line-height: 1.5;
+		color: var(--text-2);
+	}
+	.pe-tip p {
+		flex: 1 1 auto;
+		margin: 0;
+	}
+	.pe-tip a {
+		color: var(--accent-text);
+		text-decoration: underline;
+	}
 	.pe-oss {
 		display: flex;
 		flex-direction: column;

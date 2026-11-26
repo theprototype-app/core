@@ -15,6 +15,7 @@
 	// for the two on/off rows, presets as cards with the accent selection, tokens only.
 	import Button from '../ui/Button.svelte';
 	import Toggle from '../ui/Toggle.svelte';
+	import { PUBLISH_GUIDE_URL } from '$lib/tips.js';
 
 	const PRESETS = [
 		{ id: 'itch', label: 'itch.io', sub: 'zip · index.html at the root', tip: 'A zip for an itch.io HTML game page (≤ 1,000 files, ≤ 500 MB)' },
@@ -279,6 +280,10 @@
 				<li>CrazyGames limits: ≤ 50 MB loaded before the game starts (20 MB for their mobile homepage), ≤ 250 MB in all, ≤ 1,500 files.</li>
 			</ul>
 		{/if}
+		{#if preset !== 'embed'}
+			<!-- 63-int: the docs page, step by step with pictures (updating an upload, taking a game down) -->
+			<p class="ex-note"><a id="export-guide" class="ex-link" href={PUBLISH_GUIDE_URL} target="_blank" rel="noopener">Step by step: Publish your game</a> — uploading, updating a game you already uploaded, what the checks mean.</p>
+		{/if}
 
 		<div class="ex-label" id="export-checks-label">Checks</div>
 		<CheckList
@@ -458,6 +463,10 @@
 	.ex-notes {
 		padding-left: var(--space-4);
 		list-style: disc;
+	}
+	.ex-link {
+		color: var(--accent-text);
+		text-decoration: underline;
 	}
 	.ex-estimate {
 		font-family: var(--font-ui-mono);

@@ -10,6 +10,7 @@
 //     (the texture is 2048 and ONE undo puts it back), Ask connected people (the row stays —
 //     nobody is connected — and says so); a select item selects the object and closes the modal
 //   4 the data door: cloudApi publishCheck() and save_scene's publishCheck carry the same rows
+//   1 also (63-int): the first-use hint shows once, links the guide, covers no button, retires on close
 //   5 the N6 folded width (344 px): the list fits, nothing scrolls sideways, fix buttons >= 44 px
 // Run: APP_URL=https://localhost:5996/ npm run e2e -- publish-check
 const h = require('./helpers.cjs');
@@ -48,6 +49,33 @@ h.run(async () => {
 	h.check((await page.locator('#publish-check-list li.cl-row').count()) === 0, '1.3 a plain box scene: no rows');
 	h.check(/Nothing a visitor would trip over/.test(await page.locator('#publish-check-list').innerText()), '1.4 …and it says so');
 	h.check(await page.locator('#fake-publish-go').isVisible(), "1.5 the plugin's flow sits below the check");
+	// 63-int row 2: the first-use hint, once, in the flow above the tab, never over the dialog's buttons
+	h.check(await page.locator('#publish-first-use').isVisible(), '1.6 the first open shows the first-use hint');
+	h.check(
+		(await page.locator('#publish-first-use a').getAttribute('href')) === 'https://docs.theprototype.app/publish-your-game/',
+		'1.7 the hint links the Publish your game page'
+	);
+	const overlaps = await page.evaluate(() => {
+		const tip = document.querySelector('#publish-first-use')?.getBoundingClientRect();
+		const modal = document.querySelector('#publish-export-modal');
+		if (!tip || !modal) return ['no tip'];
+		return [...modal.querySelectorAll('button')]
+			.filter((b) => !b.closest('#publish-first-use'))
+			.filter((b) => {
+				const r = b.getBoundingClientRect();
+				return r.width > 0 && r.left < tip.right && r.right > tip.left && r.top < tip.bottom && r.bottom > tip.top;
+			})
+			.map((b) => b.id || b.textContent?.trim().slice(0, 30));
+	});
+	h.check(overlaps.length === 0, '1.8 the hint covers none of the dialog\'s buttons (' + overlaps.join(', ') + ')');
+	await page.keyboard.press('Escape');
+	await page.evaluate(() => window.__tp.test.v1.exportStores.openPublishExport('export'));
+	await page.locator('#publish-export-modal').waitFor({ state: 'visible', timeout: 15000 });
+	h.check((await page.locator('#publish-first-use').count()) === 0, '1.9 closing the dialog retired the hint (the next open has none)');
+	h.check(
+		(await page.locator('#export-guide').getAttribute('href')) === 'https://docs.theprototype.app/publish-your-game/',
+		'1.10 the Export tab links the same page'
+	);
 	await page.keyboard.press('Escape');
 
 	// ---- 2 a scene that trips the rules -------------------------------------------------------

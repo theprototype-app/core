@@ -15,7 +15,7 @@ export { PERSON_TOOL_NAMES, personToolReads } from './personToolNames.js';
 const FILES_DESCRIPTION =
 	"The person's own Explorer (their Library of files and folders), in their tab: list folders and files, read a text file with numbered lines, " +
 	'create a text file or folder, write (replace the text, or lines [from, to]), rename, move, delete and restore. ' +
-	'Text files only (' + FILE_TEXT_EXTENSIONS.join(', ') + '); images, sounds and models are listed but stay with assets. ' +
+	'read / write / create take text files only (' + FILE_TEXT_EXTENSIONS.join(', ') + '); new images, sounds and models come in with assets; rename and move take every file (a .tpscene renames as its scene; never onto a taken name; what points at the file by content follows, a node naming it only by name refuses with the list; the answer says old -> new and the undo call). ' +
 	'Paths are folder names from the Library root: "Scripts/door.js", "Notes/" for a folder; a bare file name finds the file anywhere. ' +
 	'delete moves it to the Explorer\'s Deleted bin, exactly as the person\'s own delete (a folder with files in it, or a delete with the bin switched off, asks the person on their screen first: call again with the confirmId); restore brings it back (list {deleted: true} shows what can come back). ' +
 	'New files are private: nothing is shared with the session by this tool, and a folder shared with the session cannot take new files. Files someone else shared are read-only. ' +

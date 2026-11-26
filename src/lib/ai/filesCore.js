@@ -208,3 +208,40 @@ export function createRateLimit(perMinute = WRITES_PER_MINUTE, now = () => Date.
 		}
 	};
 }
+
+/**
+ * 107 — WHO USES A FILE, from the flow graphs (every node's data, three levels deep). A scene, a flow or a
+ * sequence points at a Library file by its content HASH, so a rename or a move cannot break it: those are
+ * `byHash` and they follow. A node that names the file only by its NAME (no hash anywhere in its data) would
+ * be left pointing at nothing by a rename: those are `byName`, and files {rename} refuses with them listed.
+ * @param {{hash?: string, name: string}} file
+ * @param {{id: string, type: string, data?: any, __graph?: string}[]} nodes allNodes() (the __graph tag names the graph)
+ * @returns {{byHash: {graph: string, node: string, type: string}[], byName: {graph: string, node: string, type: string}[]}}
+ */
+export function usersOfFile(file, nodes) {
+	const hash = String(file?.hash ?? '');
+	const name = String(file?.name ?? '').toLowerCase();
+	/** @type {{graph: string, node: string, type: string}[]} */
+	const byHash = [];
+	/** @type {{graph: string, node: string, type: string}[]} */
+	const byName = [];
+	for (const n of nodes ?? []) {
+		let h = false;
+		let m = false;
+		/** @param {any} v @param {number} depth */
+		const walk = (v, depth) => {
+			if (typeof v === 'string') {
+				if (hash && v === hash) h = true;
+				else if (name && v.length >= name.length) {
+					const low = v.toLowerCase();
+					if (low === name || low.endsWith('/' + name)) m = true;
+				}
+			} else if (v && typeof v === 'object' && depth < 3) for (const x of Object.values(v)) walk(x, depth + 1);
+		};
+		walk(n?.data, 0);
+		const row = { graph: String(n?.__graph ?? 'scene'), node: String(n?.id ?? ''), type: String(n?.type ?? '') };
+		if (h) byHash.push(row);
+		else if (m) byName.push(row);
+	}
+	return { byHash, byName };
+}

@@ -18,7 +18,9 @@
 // THE TEN SAFETY RULES (scout report row 7a), where each lives:
 //   1 the person's own Explorer, in their tab only: explorerItems / explorerFolders, never the disk, a URL,
 //     a mounted project volume or another peer's library      → visibleRows()
-//   2 text kinds + folders only (txt json md cfg js); binary stays with assets {upload} → textOnly()
+//   2 read / write / create / delete: text kinds + folders only (txt json md cfg js); binary stays with assets
+//     {upload}. 107: rename and move take EVERY kind, through the Code tab's verbs (a scene through the scene
+//     rename); a reference by content follows, one by name only refuses (usersOfFile)
 //   3 caps: 256 KB a file, 20 writes a minute, 200 made per session, list 100 a page, read 64 KB → filesCore
 //   4 nothing runs: a .js write attaches to nothing, and a .js a Script node runs is refused
 //     (edit_behaviour / the Code tab change running code)       → boundRefusal()
@@ -38,6 +40,9 @@ import { codeTabs } from '../codeWorkspace';
 import { isDirty } from '../codeTabs';
 import { offerUndo } from '../undoToast';
 import { showToast } from '../../stores/appStore';
+import { allNodes } from '../../stores/flowStore';
+import { sceneOfHash } from '../projectManifest';
+import { renameScene, levelSceneName } from '../levels';
 import { askPerson, askKnown } from './personAsk.js';
 import {
 	MAX_FILE_BYTES,
@@ -55,7 +60,8 @@ import {
 	readWindow,
 	spliceLines,
 	byteLength,
-	createRateLimit
+	createRateLimit,
+	usersOfFile
 } from './filesCore.js';
 
 const writes = createRateLimit();
@@ -161,7 +167,7 @@ function listAction(args) {
 		page,
 		pages,
 		...(page < pages ? { next: { action: 'list', path: at ? pathOfFolder(at, folders) + '/' : '/', page: page + 1 } } : {}),
-		note: 'Only text files (txt, json, md, cfg, js) can be read and written here; images, sounds and models are listed for reference (assets handles those).'
+		note: 'Only text files (txt, json, md, cfg, js) can be read and written here; every file renames and moves (rename, move).'
 	};
 }
 
@@ -333,6 +339,32 @@ async function writeAction(args, by) {
 	return { written: true, path: pathOfItem(item, folders), id: item.id, bytes: byteLength(next), lines: next.split('\n').length };
 }
 
+/** 107: the users of a file, in words for the answer (at most 20) @param {any} item */
+function usersOf(item) {
+	const nodes = allNodes();
+	const u = usersOfFile(item, nodes);
+	// a scene is also named by Travel nodes (data.sceneName): the scene rename rewrites those, so they follow
+	if (item.kind === 'scene' || extOf(item.name) === 'tpscene') {
+		const scene = sceneOfHash(item.hash) ?? levelSceneName(item.name);
+		const low = scene.toLowerCase();
+		for (const n of nodes)
+			if (String(n?.data?.sceneName ?? '').toLowerCase() === low && !u.byHash.some((r) => r.node === n.id))
+				u.byHash.push({ graph: String(n.__graph ?? 'scene'), node: n.id, type: n.type });
+	}
+	/** @param {{graph: string, node: string, type: string}} r */
+	const say = (r) => ({ node: r.node, type: r.type, flow: r.graph === 'scene' ? 'scene' : r.graph });
+	return { follow: u.byHash.slice(0, 20).map(say), byName: u.byName.slice(0, 20).map(say), count: u.byHash.length };
+}
+
+/** a file that only a NAME points at (rule: never leave a reference dangling) @param {any} item @param {{byName: any[]}} users */
+function nameUsersRefusal(item, users) {
+	if (!users.byName.length) return null;
+	return fail(
+		users.byName.length + ' flow node' + (users.byName.length === 1 ? '' : 's') + ' name "' + item.name + '" by its name, not by its content, and would lose it: change them first (update_flow_nodes) or leave the name',
+		{ refused: true, users: users.byName }
+	);
+}
+
 /** @param {any} args @param {string} by */
 function renameAction(args, by) {
 	const { folders, items } = visibleRows();
@@ -344,19 +376,76 @@ function renameAction(args, by) {
 	if (r.type === 'file') {
 		const item = r.item;
 		if (foreign(item)) return fail('"' + item.name + '" was shared by someone else: only they rename it', { refused: true });
-		if (!isTextName(item.name)) return fail('"' + item.name + '" is not a text file: files renames text files and folders only (the person renames the rest in the Explorer)');
+		const fromPath = pathOfItem(item, folders);
+		const users = usersOf(item);
+		const byName = nameUsersRefusal(item, users);
+		if (byName) return byName;
+		// a scene renames as a SCENE (the Explorer's "Rename scene…"): its versions follow, Travel nodes are rewritten
+		if (item.kind === 'scene' || extOf(item.name) === 'tpscene') return renameSceneFile(item, to, fromPath, users, by);
 		const out = renameCodeEntry({ kind: 'file', id: item.id, name: to }, { quiet: true, by });
 		if (!out.ok) return fail(out.reason ?? 'could not rename');
 		writes.note();
 		const now = itemById(item.id);
-		return { renamed: 'file', from: item.name, path: now ? pathOfItem(now, get(explorerFolders)) : to, id: item.id };
+		const toPath = now ? pathOfItem(now, get(explorerFolders)) : to;
+		if (toPath === fromPath) return { renamed: false, path: fromPath, id: item.id, note: 'it already has that name' };
+		return {
+			renamed: 'file',
+			from: fromPath,
+			to: toPath,
+			path: toPath,
+			said: fromPath + ' -> ' + toPath,
+			id: item.id,
+			kind: item.kind,
+			...usersLine(users),
+			undo: { tool: 'files', action: 'rename', id: item.id, to: item.name },
+			note: 'The person has an Undo on their screen; the inverse call is in undo.'
+		};
 	}
 	const folder = folders.find((f) => f.id === r.id);
 	if (foreign(folder)) return fail('"' + folder.name + '" was shared by someone else: only they rename it', { refused: true });
+	const fromPath = pathOfFolder(String(r.id), folders) + '/';
 	const out = renameCodeEntry({ kind: 'folder', id: String(r.id), name: to }, { quiet: true, by });
 	if (!out.ok) return fail(out.reason ?? 'could not rename');
 	writes.note();
-	return { renamed: 'folder', from: folder?.name, path: pathOfFolder(String(r.id), get(explorerFolders)) + '/', id: r.id };
+	const toPath = pathOfFolder(String(r.id), get(explorerFolders)) + '/';
+	return { renamed: 'folder', from: fromPath, to: toPath, path: toPath, said: fromPath + ' -> ' + toPath, id: r.id, undo: { tool: 'files', action: 'rename', id: r.id, to: folder?.name } };
+}
+
+/** the users line of an answer @param {{follow: any[], count: number}} users */
+function usersLine(users) {
+	if (!users.count) return {};
+	return { users: users.follow, followed: users.count + ' use' + (users.count === 1 ? '' : 's') + ' in the scene point at the file by its content, so they still find it' };
+}
+
+/**
+ * A .tpscene: the scene's own rename (levels.renameScene, the Explorer's "Rename scene…" and the header chip):
+ * a project scene rekeys the manifest (every version file follows, on every peer, Travel nodes are rewritten),
+ * a loose file renames with the open scene's name. Never onto a taken scene name.
+ * @param {any} item @param {string} to @param {string} fromPath @param {any} users @param {string} by
+ */
+function renameSceneFile(item, to, fromPath, users, by) {
+	const from = sceneOfHash(item.hash) ?? levelSceneName(item.name);
+	const next = levelSceneName(to);
+	if (!next) return fail('to: the scene\'s new name');
+	if (/\.[^.]+$/.test(to) && !/\.tpscene$/i.test(to)) return fail('"' + item.name + '" stays a .tpscene file: keep the extension (or leave it off)');
+	const out = renameScene(from, next);
+	if (!out.ok) return fail(out.reason === 'taken' ? 'a scene called "' + next + '" already exists: choose another name' : 'could not rename the scene (' + out.reason + ')', { refused: out.reason === 'viewer' });
+	writes.note();
+	const now = itemById(item.id);
+	const toPath = now ? pathOfItem(now, get(explorerFolders)) : next + '.tpscene';
+	offerUndo({ id: 'files-scene-rename', text: by + ' renamed the scene "' + from + '" to "' + next + '"', undo: () => renameScene(next, from).ok });
+	return {
+		renamed: 'scene',
+		from: fromPath,
+		to: toPath,
+		path: toPath,
+		said: fromPath + ' -> ' + toPath,
+		scene: { from, to: next, project: out.reason === 'project' },
+		id: item.id,
+		...usersLine(users),
+		undo: { tool: 'files', action: 'rename', id: item.id, to: from },
+		note: out.reason === 'project' ? 'A project scene: its version files and the Travel nodes that go there follow, for everyone in the session.' : 'The person has an Undo on their screen; the inverse call is in undo.'
+	};
 }
 
 /** @param {any} args @param {string} by */
@@ -371,16 +460,21 @@ function moveAction(args, by) {
 	if (shared) return fail(shared);
 	const row = r.type === 'file' ? r.item : folders.find((f) => f.id === r.id);
 	if (foreign(row)) return fail('"' + row.name + '" was shared by someone else: only they move it', { refused: true });
-	if (r.type === 'file' && !isTextName(r.item.name)) return fail('"' + r.item.name + '" is not a text file: files moves text files and folders only');
+	const fromPath = r.type === 'file' ? pathOfItem(r.item, folders) : pathOfFolder(String(r.id), folders) + '/';
+	const fromFolder = r.type === 'file' ? r.item.folderId ?? null : row?.parentId ?? null;
+	const back = fromFolder ? pathOfFolder(fromFolder, folders) + '/' : '/';
+	const users = r.type === 'file' ? usersOf(r.item) : null;
 	const out = moveCodeEntry({ kind: r.type, id: r.type === 'file' ? r.item.id : String(r.id), to: dest }, { quiet: true, by });
 	if (!out.ok) return fail(out.reason ?? 'could not move');
 	writes.note();
 	const fresh = visibleRows();
 	if (r.type === 'file') {
 		const now = itemById(r.item.id);
-		return { moved: 'file', path: now ? pathOfItem(now, fresh.folders) : r.item.name, id: r.item.id };
+		const at = now ? pathOfItem(now, fresh.folders) : r.item.name;
+		return { moved: 'file', from: fromPath, to: at, said: fromPath + ' -> ' + at, path: at, id: r.item.id, kind: r.item.kind, ...(users ? usersLine(users) : {}), undo: { tool: 'files', action: 'move', id: r.item.id, to: back } };
 	}
-	return { moved: 'folder', path: pathOfFolder(String(r.id), fresh.folders) + '/', id: r.id };
+	const at = pathOfFolder(String(r.id), fresh.folders) + '/';
+	return { moved: 'folder', from: fromPath, to: at, said: fromPath + ' -> ' + at, path: at, id: r.id, undo: { tool: 'files', action: 'move', id: r.id, to: back } };
 }
 
 /** @param {any} args @param {string} by */

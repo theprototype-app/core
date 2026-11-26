@@ -29,6 +29,7 @@
 - Agent tools: `update_objects` takes `tags`; `place_sound` and `set_music` take `trim` {start, end, fadeIn, fadeOut, normalize}. Additive: nothing renamed or removed. <!-- 102b-flows, 102b-sound -->
 - Agent eval: load-proof waits, 8 new multiplayer and game tasks, new baseline 18.65 / 23 (v1.72.0, 10 runs). <!-- 2.0-eval2 #601 -->
 - Dependencies: SvelteKit 3.4, @lucide/svelte 1.63. <!-- deps-2026-11 19de5dba -->
+- CI: a page that a multi-page e2e step is not driving now pauses on GitHub runners, and suites that need a real GPU no longer gate the GitHub battery (the desktop and integrator batteries still run them). <!-- #649 -->
 
 ### Compatibility
 - **Scene files**: no format change. **Everyone in a session should be on 1.82.0**: an older version ignores tags, so an Object Selector by tag finds nothing on its screen, and it reads curve keys without their handles.

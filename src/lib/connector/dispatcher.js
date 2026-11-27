@@ -106,21 +106,34 @@ const PROBE_WAIT_MS = 3000;
  *   toolCode?: Record<string, () => Promise<any>>,
  *   you?: () => {peerId: string|null, name: string, role: 'host'|'guest'|'editor'|'viewer', inVR: boolean},
  *   lastJoinResult?: () => any,
+ *   others?: () => {peerId: string, name: string}[],
  *   onCallStart?: (call: {id: string, tool: string}) => void,
  *   onCallEnd?: (call: {id: string, tool: string, ok: boolean}) => void
  * }} deps
  */
 /**
- * 107-int (claude:9): an error said to the AI app carries no other person's peer id and no file path. 107 sends a
- * tool's `errors` / `skipped` reasons / `note` along with the error, and a lock skip names its holder as
- * `Name (peer <id>)` (lockNote.js): the name stays, the id goes. A filesystem path or a file:/blob: URL becomes "[path]".
+ * 107-int (claude:9): an error said to the AI app carries no other person's peer id and no other person's NAME, and no
+ * file path. 107 sends a tool's `errors` / `skipped` reasons / `note` along with the error, and a lock skip names its
+ * holder as `Name (peer <id>)` (lockNote.js): to the AI app it is "another person". `others` = the other people in the
+ * session ({peerId, name}; the connector passes the roster without this tab's own row): each id and each name (whole
+ * words, two letters or more) becomes "another person". A filesystem path or a file:/blob: URL becomes "[path]".
  * Pure, exported for the unit test.
- * @param {string} text
+ * @param {string} text @param {{peerId?: string, name?: string}[]} [others]
  */
-export function scrubErrorText(text) {
-	return String(text)
+export function scrubErrorText(text, others = []) {
+	const esc = (/** @type {string} */ v) => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	let t = String(text)
+		.replace(/is locked by .+? — they are editing it/g, 'is locked by another person — they are editing it')
 		.replace(/ ?\(peer [^\s)]+\)/g, '')
-		.replace(/\bpeer (?=[A-Za-z_-]*\d)[A-Za-z0-9_-]{4,}\b/g, 'another person')
+		.replace(/\bpeer (?=[A-Za-z_-]*\d)[A-Za-z0-9_-]{4,}\b/g, 'another person');
+	for (const o of others ?? []) {
+		for (const v of [o?.peerId, o?.name]) {
+			const w = String(v ?? '').trim();
+			if (w.length < 2) continue;
+			t = t.replace(new RegExp('(^|[^\\p{L}\\p{N}_])' + esc(w) + '(?![\\p{L}\\p{N}_])', 'giu'), '$1another person');
+		}
+	}
+	return t
 		.replace(/\b(?:file:\/\/|blob:)[^\s'")]+/g, '[path]')
 		.replace(/(?:[A-Za-z]:\\|\/(?:home|Users|root|tmp|var|mnt|private)\/)[^\s'")]+/g, '[path]');
 }
@@ -186,7 +199,8 @@ export function createDispatcher(deps) {
 	}
 
 	/** @param {string} code @param {string} message */
-	const fail = (code, message) => ({ error: { code, message } });
+	// 107-int (claude:9): EVERY error frame goes through the scrub — no other person's id or name, no file path
+	const fail = (code, message) => ({ error: { code, message: scrubErrorText(message, deps.others?.() ?? []) } });
 
 	/** @param {any} r */
 	const isError = (r) => !!(r && typeof r === 'object' && !Array.isArray(r) && r.error);
@@ -206,7 +220,7 @@ export function createDispatcher(deps) {
 		if (skipped.length) parts.push('— ' + [...new Set(skipped)].slice(0, 6).join('; '));
 		if (typeof r.note === 'string') parts.push('(' + r.note + ')');
 		if (r.created) parts.push(JSON.stringify(r.created).slice(0, 600));
-		return scrubErrorText(parts.join(' ')).slice(0, 1000);
+		return parts.join(' ').slice(0, 1000);
 	};
 
 	/** what status() tells a remote caller — the person's own view of where this tab is */

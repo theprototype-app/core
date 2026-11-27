@@ -9,7 +9,7 @@
 //   4. set_look shader: dangling nodes + an unwired output are warnings, an invalid GLSL expression is an error naming its
 //      node, a node label, and the worked edit_shader example from the description compiles.
 //   5. hud create: every screen says where it shows; an open HUD Editor turns to the new screen; closed = a note.
-//   6. (107-int) an error answer about an object another person holds names them, never their peer id or a path.
+//   6. (107-int) an error answer about an object another person holds says so, never with their name, peer id or a path.
 // Run: APP_URL='https://localhost:7250/' npm run e2e -- connector-look-107
 const h = require('./helpers.cjs');
 const { installProvider, fakeRelay, connectorPhase } = require('./connectorFake.cjs');
@@ -216,8 +216,8 @@ h.run(async () => {
 	}, [held, OTHER]);
 	const lockedErr = await call('set_material', { objects: [held], color: '#ff0000' });
 	const msg = String(lockedErr?.error ?? '');
-	h.check(/locked by Robin/.test(msg), '6. the error still says who holds it, by name: ' + msg.slice(0, 200));
-	h.check(!msg.includes(OTHER) && !/\(peer /.test(msg), '6. and carries no peer id: ' + msg.slice(0, 200));
+	h.check(/locked by another person/.test(msg), '6. the error says someone else holds it: ' + msg.slice(0, 200));
+	h.check(!msg.includes(OTHER) && !/\(peer /.test(msg) && !/Robin/.test(msg), '6. and carries neither their peer id nor their name: ' + msg.slice(0, 200));
 	h.check(!/\/home\/|[A-Za-z]:\\|file:\/\/|blob:/.test(msg), '6. and no file path');
 	await A.page.evaluate(([u, other]) => {
 		const v = window.__tp.test.v1;

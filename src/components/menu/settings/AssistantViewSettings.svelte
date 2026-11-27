@@ -11,9 +11,26 @@
 	import SettingRow from '../../ui/SettingRow.svelte';
 	import Toggle from '../../ui/Toggle.svelte';
 	import Button from '../../ui/Button.svelte';
-	import { grantsVersion, alwaysAllowed, setAlways, showGrants, revokeGrant, revokeAllGrants, OLD_GRANTS_APP } from '$lib/ai/showGrants.js';
+	// the grants module loads when this page is shown, not with the editor (this component is in a boot chunk)
+	/** @type {typeof import('$lib/ai/showGrants.js') | null} */
+	let G = $state(null);
+	let version = $state(0);
+	$effect(() => {
+		let off = () => {};
+		let gone = false;
+		import('$lib/ai/showGrants.js').then((m) => {
+			if (gone) return;
+			G = m;
+			off = m.grantsVersion.subscribe((v) => (version = v));
+		});
+		return () => {
+			gone = true;
+			off();
+		};
+	});
 
-	const APP = OLD_GRANTS_APP;
+	/** the app the three switches stand for (showGrants.OLD_GRANTS_APP) */
+	const APP = 'Claude';
 	const ROWS = [
 		{ kind: 'panel', label: 'Open and close my panels', desc: 'The Explorer, Objects, Inspector, Flow editor, Code, Timeline, Assets, Preview and Chat.' },
 		{ kind: 'camera', label: 'Move my view', desc: 'Frame objects, go to a spot or look through a scene camera. Never in a VR headset, never while you drag or type.' },
@@ -21,8 +38,10 @@
 	];
 	/** every grant, re-read whenever one changes (the version is the dependency) */
 	const grants = $derived.by(() => {
-		void $grantsVersion;
-		return { claude: Object.fromEntries(ROWS.map((r) => [r.kind, alwaysAllowed(r.kind, APP)])), list: showGrants() };
+		void version;
+		const g = G;
+		if (!g) return { claude: /** @type {Record<string, boolean>} */ ({}), list: /** @type {any[]} */ ([]) };
+		return { claude: Object.fromEntries(ROWS.map((r) => [r.kind, g.alwaysAllowed(r.kind, APP)])), list: g.showGrants() };
 	});
 	const allow = $derived(grants.claude);
 	/** every grant the switches do not show: another app's, and any "This time" */
@@ -31,9 +50,10 @@
 	/** an app name as an id part @param {string} app */
 	const slug = (app) => String(app || 'assistant').toLowerCase().replace(/[^a-z0-9]+/g, '-');
 	/** @param {string} kind @param {boolean} on */
-	function set(kind, on) {
-		if (on) setAlways(kind, true, APP);
-		else revokeGrant(kind, APP);
+	async function set(kind, on) {
+		const g = G ?? (await import('$lib/ai/showGrants.js'));
+		if (on) g.setAlways(kind, true, APP);
+		else g.revokeGrant(kind, APP);
 	}
 </script>
 
@@ -42,19 +62,19 @@
 		{#each ROWS as row (row.kind)}
 			<SettingRow id={'row-show-allow-' + row.kind} label={row.label} keywords="assistant claude show permission">
 				{#snippet desc()}{row.desc} On: Claude does this without asking. Off: it asks first (Always / This time / No). Each app is asked for itself.{/snippet}
-				<Toggle id={'show-allow-' + row.kind} label={row.label} checked={allow[row.kind]} onchange={(/** @type {boolean} */ next) => set(row.kind, next)} />
+				<Toggle id={'show-allow-' + row.kind} label={row.label} checked={!!allow[row.kind]} onchange={(/** @type {boolean} */ next) => set(row.kind, next)} />
 			</SettingRow>
 		{/each}
 		{#each others as g (g.kind + '\n' + g.app + '\n' + g.answer)}
 			<SettingRow id={'row-show-grant-' + g.kind + '-' + slug(g.app)} label={(g.app || 'The assistant') + ' may ' + g.what} keywords="assistant claude permission granted revoke">
 				{#snippet desc()}{g.answer === 'always' ? 'Always, on this device.' : 'Until this page reloads (you answered This time).'}{/snippet}
-				<Button id={'show-grant-revoke-' + g.kind + '-' + slug(g.app)} size="sm" variant="outline" onclick={() => revokeGrant(g.kind, g.app)}>Revoke</Button>
+				<Button id={'show-grant-revoke-' + g.kind + '-' + slug(g.app)} size="sm" variant="outline" onclick={() => G?.revokeGrant(g.kind, g.app)}>Revoke</Button>
 			</SettingRow>
 		{/each}
 		{#if anyGranted}
 			<SettingRow id="row-show-revoke-all" label="Take back everything" keywords="assistant claude permission revoke all">
 				{#snippet desc()}Every app asks again the next time it wants to change your screen.{/snippet}
-				<Button id="show-grant-revoke-all" size="sm" variant="outline" onclick={() => revokeAllGrants()}>Revoke all</Button>
+				<Button id="show-grant-revoke-all" size="sm" variant="outline" onclick={() => G?.revokeAllGrants()}>Revoke all</Button>
 			</SettingRow>
 		{/if}
 	</Section>

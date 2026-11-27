@@ -295,3 +295,13 @@ describe('ui_state + scene_stats: schemas and read scope', () => {
 		expect(personToolReads('scene_stats', { action: 'target', target: 'phone' })).toBe(false);
 	});
 });
+
+describe('permissions: the Settings switches', () => {
+	it("stand for the app older Always grants migrate to (the page loads showGrants lazily, so it keeps its own copy)", async () => {
+		const fs = await import('node:fs');
+		const src = fs.readFileSync('src/components/menu/settings/AssistantViewSettings.svelte', 'utf8');
+		const { OLD_GRANTS_APP } = await import('../../src/lib/ai/showGrants.js');
+		expect(src).toContain("const APP = '" + OLD_GRANTS_APP + "';");
+		expect(src).not.toMatch(/^\s*import [^\n]*showGrants\.js'/m); // no static import: it stays out of the editor boot
+	});
+});

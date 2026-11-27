@@ -55,11 +55,11 @@ const trustedApp = (by) => !/^(an )?ai app$/i.test(by.trim());
 const answerKey = (kind, by) => kind + '\n' + by;
 
 /** is this kind allowed without asking @param {string} kind @param {string} by */
-function allowed(action, by) {
-	if (answers.get(answerKey(action, by)) === 'session') return true;
+function allowed(kind, by) {
+	if (answers.get(answerKey(kind, by)) === 'session') return true;
 	if (!trustedApp(by)) return false;
 	try {
-		return safeStorage.getItem(allowKey(action)) === 'always';
+		return safeStorage.getItem(allowKey(kind)) === 'always';
 	} catch {
 		return false;
 	}
@@ -632,7 +632,6 @@ export async function showTool(args, ctx = {}) {
 		if (raw === 'panel') return panelAction(a, by);
 		if (raw === 'camera') return cameraAction(a, by);
 		if (raw === 'code') return codeAction(a, by);
-		if (raw !== 'reveal' && raw !== 'select' && raw !== 'flow') return panelAction(a, by);
 		// 107-select-files (lazy): the registry's own open / read (panels.js), by id
 		const { PANEL_BY_ID } = await import('./panelsCore.js');
 		const P = await import('./panels.js');

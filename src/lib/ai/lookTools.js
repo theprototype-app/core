@@ -1077,7 +1077,7 @@ async function editShaderTool(args) {
 	const sceneKey = /** @type {string} */ (key);
 	const { gateScenewide } = await import('$lib/agent/confirmGate');
 	return gateScenewide('edit_shader', args, {
-		summary: sceneKey === sg.SCENE_GRAPH_KEY ? 'edit the default shader on every object' : 'edit the post effect "' + String(doc.name ?? sceneKey).slice(0, 40) + '"',
+		summary: sceneKey === sg.SCENE_GRAPH_KEY ? 'edit the default shader on every object' : 'edit the post effect "' + String(/** @type {any} */ (doc).name ?? sceneKey).slice(0, 40) + '"',
 		apply: async () => {
 			const before = sg.shaderGraphOf(sceneKey);
 			const written = next

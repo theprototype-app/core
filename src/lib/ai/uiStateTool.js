@@ -208,8 +208,6 @@ async function grantsView() {
 	}
 }
 
-/** @param {any} _args */
-
 /**
  * 107-int: ui_state.panels from 107-panels' registry (src/lib/ai/panels.js readPanels): each panel with its state (open,
  * where, visible, front), the dock and both sidebars, focus mode and the active named layout. The descriptions, the
@@ -238,6 +236,7 @@ async function panelsView() {
 	}
 }
 
+/** @param {any} _args */
 export async function uiState(_args) {
 	const sel = /** @type {string[]} */ ([...(get(selectedObjects) ?? [])]);
 	const inspector = get(inspectorClose)

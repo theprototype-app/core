@@ -95,23 +95,6 @@ const CODE_WORDS = 'its code could not be loaded, usually because a new version 
 const PROBE_WAIT_MS = 3000;
 
 /**
- * @param {{
- *   agent: {tools: () => any[], exec: (name: string, args: any) => Promise<any>, status: () => any,
- *     waitForEdit: (ms?: number) => Promise<any>, screenshot: (opts: any) => Promise<string|null>, lastShot?: () => any},
- *   send: (text: string) => void,
- *   visible: () => boolean,
- *   encodeShot: (dataUrl: string) => Promise<{image: {mimeType: string, data: string}, width: number, height: number} | null>,
- *   joinSession?: (args: any, ctx: {onCancel: (fn: () => void) => void}) => Promise<any>,
- *   whereAreUsers?: (args?: any) => any,
- *   toolCode?: Record<string, () => Promise<any>>,
- *   you?: () => {peerId: string|null, name: string, role: 'host'|'guest'|'editor'|'viewer', inVR: boolean},
- *   lastJoinResult?: () => any,
- *   others?: () => {peerId: string, name: string}[],
- *   onCallStart?: (call: {id: string, tool: string}) => void,
- *   onCallEnd?: (call: {id: string, tool: string, ok: boolean}) => void
- * }} deps
- */
-/**
  * 107-int (claude:9): an error said to the AI app carries no other person's peer id and no other person's NAME, and no
  * file path. 107 sends a tool's `errors` / `skipped` reasons / `note` along with the error, and a lock skip names its
  * holder as `Name (peer <id>)` (lockNote.js): to the AI app it is "another person". `others` = the other people in the
@@ -138,6 +121,23 @@ export function scrubErrorText(text, others = []) {
 		.replace(/(?:[A-Za-z]:\\|\/(?:home|Users|root|tmp|var|mnt|private)\/)[^\s'")]+/g, '[path]');
 }
 
+/**
+ * @param {{
+ *   agent: {tools: () => any[], exec: (name: string, args: any) => Promise<any>, status: () => any,
+ *     waitForEdit: (ms?: number) => Promise<any>, screenshot: (opts: any) => Promise<string|null>, lastShot?: () => any},
+ *   send: (text: string) => void,
+ *   visible: () => boolean,
+ *   encodeShot: (dataUrl: string) => Promise<{image: {mimeType: string, data: string}, width: number, height: number} | null>,
+ *   joinSession?: (args: any, ctx: {onCancel: (fn: () => void) => void}) => Promise<any>,
+ *   whereAreUsers?: (args?: any) => any,
+ *   toolCode?: Record<string, () => Promise<any>>,
+ *   you?: () => {peerId: string|null, name: string, role: 'host'|'guest'|'editor'|'viewer', inVR: boolean},
+ *   lastJoinResult?: () => any,
+ *   others?: () => {peerId: string, name: string}[],
+ *   onCallStart?: (call: {id: string, tool: string}) => void,
+ *   onCallEnd?: (call: {id: string, tool: string, ok: boolean}) => void
+ * }} deps
+ */
 export function createDispatcher(deps) {
 	/** id -> {cancelled, wake} @type {Map<string, {tool: string, cancelled: boolean, wake: (() => void) | null}>} */
 	const inFlight = new Map();

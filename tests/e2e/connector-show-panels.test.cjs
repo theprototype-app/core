@@ -30,7 +30,7 @@ h.run(async () => {
 		relay.call(id, tool, args, scope);
 		return relay.answer(id, timeout);
 	};
-	const short = (x) => JSON.stringify(x).slice(0, 300);
+	const short = (x) => String(JSON.stringify(x)).slice(0, 300);
 	const reset = () => page.evaluate(() => window.__tp.test.v1.showTool.showToolResetForTest());
 	const show = (args) => call('show', args);
 	const panels = async () => (await show({ action: 'panels' }))?.result;
@@ -139,7 +139,7 @@ h.run(async () => {
 	const mxf = await show({ action: 'panel', name: 'Statistics', state: 'maximize' });
 	h.check(/DOCKED panel/.test(errOf(mxf)) || mxf?.result?.maximized === true, `maximize on a non-docked panel says to dock it first (${errOf(mxf).slice(0, 120) || short(mxf?.result)})`);
 	const col = await show({ action: 'panel', name: 'Explorer', state: 'collapse', pane: 'tree' });
-	h.check(col?.result?.pane === 'tree' && col.result.paneState === 'closed', `collapse the Explorer's folder tree (${short(col?.result)})`);
+	h.check(col?.result?.pane === 'tree' && col.result.paneState === 'closed', `collapse the Explorer's folder tree (${short(col)})`);
 	h.check((await P('explorer'))?.panes?.tree === false, 'panels reads the tree closed');
 	const exp = await show({ action: 'panel', name: 'Explorer', state: 'expand', pane: 'left' });
 	h.check(exp?.result?.paneState === 'open' && (await P('explorer'))?.panes?.tree === true, `expand it again by side (${short(exp?.result)})`);

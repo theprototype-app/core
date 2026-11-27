@@ -1414,8 +1414,8 @@ async function runAiTool(rawName, rawArgs, opts) {
 			case 'set_look_preset': // 98 P5 pro presets
 			case 'bake_light': // 98 P1: set_look {action: 'bake'}
 			case 'set_quality': // diorama2 item 7 (owner add-on): this device's quality, asked on its own screen
-				// 85 L1-L5: materials, shaders, the look stack, UVs (lookTools.js)
-				return await lookTool(name, args);
+				// 85 L1-L5: materials, shaders, the look stack, UVs (lookTools.js); 107: opts names who asks (set_quality's card)
+				return await lookTool(name, args, opts);
 
 			case 'create_hud':
 			case 'edit_hud':

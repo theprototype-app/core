@@ -583,6 +583,9 @@ export const DEBUG_HOOKS = [
 	['filesTool', () => import('./ai/filesTool.js')],
 	['personAsk', () => import('./ai/personAsk.js')],
 	['showTool', () => import('./ai/showTool.js')],
+	// 107-ui-state: ui_state / scene_stats and the first-use grants list
+	['uiStateTool', () => import('./ai/uiStateTool.js')],
+	['showGrants', () => import('./ai/showGrants.js')],
 	['sceneTool', () => import('./ai/sceneTool.js')],
 	['transferLedger', () => import('./transferLedger')],
 	['explorerView', () => import('./explorerView')],

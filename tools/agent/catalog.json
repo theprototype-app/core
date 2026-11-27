@@ -3,7 +3,7 @@
 	"format": 2,
 	"generator": {
 		"source": "tpAgent.tools() via core scripts/agent-tool-catalog.cjs, mapped by tools/agent/src/catalog.js",
-		"hostTools": 94,
+		"hostTools": 96,
 		"dropped": []
 	},
 	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", call where_are_users and build at the spots it gives, facing the person (face_user: true). For \"here\" or \"this\", build at the person's latest ping: at: {ping: \"latest\"}; ask them to ping (Ctrl+Alt+click, or Ping in the menu) if they have none.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
@@ -7093,6 +7093,69 @@
 			}
 		},
 		{
+			"name": "ui_state",
+			"title": "Read what the person's screen shows",
+			"description": "What the person sees in THEIR OWN tab, read-only: the selection, the object the Inspector shows, which graph the Flow editor shows (the Scene flow or an object's), the Shader editor's target, the Timeline's open sequence, their camera pose (and a camera they look through), their device (phone, desktop or Quest; in a headset or not), Quality (preset, level and what it lowered by itself), the first-use permissions they granted you (permissions), and their panels. Nothing changes; use show to change what they see, scene_stats for the numbers.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {}
+			},
+			"annotations": {
+				"title": "Read what the person's screen shows",
+				"readOnlyHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "scene_stats",
+			"title": "Read the Statistics and Profiler numbers",
+			"description": "The person's Statistics and Profiler numbers as text, under the panels' own names: triangles, draw calls, textures, texture memory, lights, frame time average and p95, memory, the heaviest objects, the Budget verdict for the device Statistics judges for, and what Quality lowered. action read (default); compare = the scene on Quest, phone and desktop in one table (green / amber / red, what is over); snapshot {name} keeps a named reading on this page; diff {from, to} = what changed between two snapshots (to omitted = now); snapshots lists them; target {target: quest | phone | desktop} switches what Statistics ▸ Budget judges for on this device (the person gets a line with Back; never saved in the scene). Everything else is read-only.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"action": {
+						"type": "string",
+						"enum": [
+							"read",
+							"compare",
+							"snapshot",
+							"diff",
+							"snapshots",
+							"target"
+						],
+						"description": "default read"
+					},
+					"name": {
+						"type": "string",
+						"description": "snapshot: its name (at most 40 characters)"
+					},
+					"from": {
+						"type": "string",
+						"description": "diff: the earlier snapshot (default the newest)"
+					},
+					"to": {
+						"type": "string",
+						"description": "diff: the later snapshot (default now)"
+					},
+					"target": {
+						"type": "string",
+						"enum": [
+							"quest",
+							"phone",
+							"desktop"
+						],
+						"description": "target: the device to judge for"
+					}
+				}
+			},
+			"annotations": {
+				"title": "Read the Statistics and Profiler numbers",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"openWorldHint": false
+			}
+		},
+		{
 			"name": "generate_mesh",
 			"title": "Generate a 3D model",
 			"description": "Generate a NEW custom 3D mesh from a text description when no primitive fits (an organic prop, a detailed object, a character). SLOW (~1-3 min) and async — it returns immediately and the mesh appears in the scene when ready. Use sparingly; prefer primitives for simple/blocky shapes.\nTake a screenshot after each change to check your work.",
@@ -7416,7 +7479,9 @@
 				"inspect": "inspect_runtime",
 				"validate": "validate_scene",
 				"logs": "logs",
-				"photo": "take_photo"
+				"photo": "take_photo",
+				"ui": "ui_state",
+				"stats": "scene_stats"
 			},
 			"assets": {
 				"search": "search_assets",
@@ -10786,7 +10851,7 @@
 			{
 				"name": "run",
 				"title": "See and check what the game does",
-				"description": "What the game does when it runs: inspect = when each event and action last fired, the game state and variables, errors, and why a node did not fire (pass node or object); validate = what would not work when someone presses Play, each with its fix; logs = the tab's recent errors, warnings and toasts; photo = a path-traced still of the person's view (a PC peer renders it for a Quest), optionally saved to the Library.\nCall it as {\"action\": \"inspect\", \"inspect\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
+				"description": "What the game does when it runs: inspect = when each event and action last fired, the game state and variables, errors, and why a node did not fire (pass node or object); validate = what would not work when someone presses Play, each with its fix; logs = the tab's recent errors, warnings and toasts; photo = a path-traced still of the person's view (a PC peer renders it for a Quest), optionally saved to the Library; ui = what the person's screen shows right now (selection, the graph the Flow editor shows, the open Timeline sequence, camera, device, Quality and what it lowered, the permissions they granted you; read-only); stats = the Statistics and Profiler numbers by the panels' own names, a Quest / phone / desktop compare table, named snapshots and a diff.\nCall it as {\"action\": \"inspect\", \"inspect\": {…its fields…}}; each action's fields and limits are in its object below.\nTake a screenshot after each change to check your work.",
 				"inputSchema": {
 					"type": "object",
 					"properties": {
@@ -10796,7 +10861,9 @@
 								"inspect",
 								"validate",
 								"logs",
-								"photo"
+								"photo",
+								"ui",
+								"stats"
 							],
 							"description": "What to do. Put its fields in the object named after the action."
 						},
@@ -10876,6 +10943,50 @@
 								}
 							},
 							"description": "A PHOTO of the person's current view: a path-traced still (soft shadows, real reflections and glass), rendered in their tab while they keep working; their view never moves. It takes seconds to a minute: samples (1-2048, default 256) or seconds (2-600, default 60), whichever comes first. On a Quest or a weak phone a PC in the session renders it; with no PC it is a normal still and the answer says why. Post effects, flat text, particles and your own GLSL are not in a photo (notShown lists what was left out). save: true also files the PNG in the Library under Scene shots. Use it when the person asks for a photo, a render or a nice picture of the scene; for checking your work use screenshot."
+						},
+						"ui": {
+							"type": "object",
+							"properties": {},
+							"description": "What the person sees in THEIR OWN tab, read-only: the selection, the object the Inspector shows, which graph the Flow editor shows (the Scene flow or an object's), the Shader editor's target, the Timeline's open sequence, their camera pose (and a camera they look through), their device (phone, desktop or Quest; in a headset or not), Quality (preset, level and what it lowered by itself), the first-use permissions they granted you (permissions), and their panels. Nothing changes; use show to change what they see, run {action: 'stats'} for the numbers."
+						},
+						"stats": {
+							"type": "object",
+							"properties": {
+								"action": {
+									"type": "string",
+									"enum": [
+										"read",
+										"compare",
+										"snapshot",
+										"diff",
+										"snapshots",
+										"target"
+									],
+									"description": "default read"
+								},
+								"name": {
+									"type": "string",
+									"description": "snapshot: its name (at most 40 characters)"
+								},
+								"from": {
+									"type": "string",
+									"description": "diff: the earlier snapshot (default the newest)"
+								},
+								"to": {
+									"type": "string",
+									"description": "diff: the later snapshot (default now)"
+								},
+								"target": {
+									"type": "string",
+									"enum": [
+										"quest",
+										"phone",
+										"desktop"
+									],
+									"description": "target: the device to judge for"
+								}
+							},
+							"description": "The person's Statistics and Profiler numbers as text, under the panels' own names: triangles, draw calls, textures, texture memory, lights, frame time average and p95, memory, the heaviest objects, the Budget verdict for the device Statistics judges for, and what Quality lowered. action read (default); compare = the scene on Quest, phone and desktop in one table (green / amber / red, what is over); snapshot {name} keeps a named reading on this page; diff {from, to} = what changed between two snapshots (to omitted = now); snapshots lists them; target {target: quest | phone | desktop} switches what Statistics ▸ Budget judges for on this device (the person gets a line with Back; never saved in the scene). Everything else is read-only."
 						}
 					},
 					"required": [

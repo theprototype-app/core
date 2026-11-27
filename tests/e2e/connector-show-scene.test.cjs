@@ -57,10 +57,11 @@ h.run(async () => {
 	h.check(['files', 'show', 'scene'].every((n) => hello?.tools?.includes(n)), 'the connector tab advertises files, show and scene');
 
 	// ---- 1 ----------------------------------------------------------------------------------------------------
-	await page.evaluate(() => { const s = window.__tp.test.v1; s.explorerClose?.set?.(true); for (const k of ['panel', 'camera', 'code']) s.safeStorage.removeItem('show:allow:' + k); });
+	await page.evaluate(() => { const s = window.__tp.test.v1; s.explorerClose?.set?.(true); for (const k of ['panel', 'camera', 'code']) s.safeStorage.removeItem('show:allow:' + k); s.safeStorage.removeItem('show:grants'); });
 	await h.eventually(() => where('explorer'), (w) => w === null, 'Explorer closed to start', 5000);
 	const p1 = await call('show', { action: 'panel', name: 'Explorer' });
-	h.check(p1?.result?.needsConfirm === true && /Always \/ This time \/ No/.test(p1.result.note ?? ''), `the first panel call asks (${short(p1)})`);
+	// 107-ui-state: the first question covers every kind not answered yet (+ Only this)
+	h.check(p1?.result?.needsConfirm === true && /Always \/ This time \/ (Only this \/ )?No/.test(p1.result.note ?? ''), `the first panel call asks (${short(p1)})`);
 	h.check((await where('explorer')) === null, 'nothing opened while it asks');
 	await press('This time');
 	const p1b = await call('show', { action: 'panel', name: 'Explorer', confirmId: p1?.result?.confirmId, wait: 10 });
@@ -72,7 +73,7 @@ h.run(async () => {
 	const bk = await call('show', { action: 'back' });
 	h.check(bk?.result?.back === true, `back undoes the close (${short(bk)})`);
 	await h.eventually(() => where('explorer'), (w) => w !== null, 'the Explorer is back', 5000);
-	h.check((await page.evaluate(() => window.__tp.test.v1.safeStorage.getItem('show:allow:panel'))) !== 'always', '"This time" is not stored on the device');
+	h.check((await page.evaluate(() => window.__tp.test.v1.showGrants.alwaysAllowed('panel', 'Claude'))) !== true, '"This time" is not stored on the device');
 
 	// ---- 2 ----------------------------------------------------------------------------------------------------
 	for (const name of ['Settings', 'Sign in', 'Publish', 'Connected apps']) {
@@ -94,7 +95,7 @@ h.run(async () => {
 	await page.waitForTimeout(900);
 	const after = await camPos();
 	h.check(before && after && Math.hypot(after[0] - before[0], after[2] - before[2]) > 5, `the camera moved (${before} -> ${after})`);
-	h.check((await page.evaluate(() => window.__tp.test.v1.safeStorage.getItem('show:allow:camera'))) === 'always', 'Always is stored on this device');
+	h.check((await page.evaluate(() => window.__tp.test.v1.showGrants.alwaysAllowed('camera', 'Claude'))) === true, 'Always is stored on this device, for Claude');
 	h.check(c2?.type === 'error' && /one camera move at a time/.test(c2.error?.message ?? ''), `a second move inside 2 s waits (${short(c2)})`);
 	await page.waitForTimeout(2100);
 	await page.evaluate(() => window.__tp.test.v1.isVRMode.set(true));
@@ -123,20 +124,20 @@ h.run(async () => {
 	const k3 = await call('show', { action: 'code', path: 'door.js', text: 'x' });
 	h.check(k3?.type === 'result' && !k3.result?.written, `show has no way to write text (an extra argument does nothing) (${short(k3)})`);
 	const focused = await page.evaluate(() => !!document.activeElement?.closest?.('.cm-editor'));
-	await page.evaluate(() => window.__tp.test.v1.safeStorage.setItem('show:allow:panel', 'always'));
+	await page.evaluate(() => window.__tp.test.v1.showGrants.setAlways('panel', true, 'Claude'));
 	const k4 = await call('show', { action: 'panel', name: 'Explorer', state: 'open' });
-	await page.evaluate(() => window.__tp.test.v1.safeStorage.removeItem('show:allow:panel'));
+	await page.evaluate(() => window.__tp.test.v1.showGrants.setAlways('panel', false, 'Claude'));
 	h.check(k4?.type === 'result' && !k4.result?.needsConfirm, `an editor show opened is not typing: the next show runs (focused ${focused}, ${short(k4)})`);
 
 	// ---- 5 ----------------------------------------------------------------------------------------------------
 	await reset();
-	await page.evaluate(() => window.__tp.test.v1.safeStorage.removeItem('show:allow:camera'));
+	await page.evaluate(() => window.__tp.test.v1.showGrants.setAlways('camera', false, 'Claude'));
 	const no = await asked('show', { action: 'camera', position: [5, 5, 5], target: [0, 0, 0] }, 'No');
 	h.check(no.final?.result?.cancelled === true, `No: nothing moves (${short(no.final)})`);
 	const no2 = await call('show', { action: 'camera', position: [5, 5, 5], target: [0, 0, 0] });
 	h.check(no2?.type === 'error' && /said no/.test(no2.error?.message ?? ''), `after No it is refused without asking again (${short(no2)})`);
 	await reset();
-	await page.evaluate(() => window.__tp.test.v1.safeStorage.setItem('show:allow:panel', 'always'));
+	await page.evaluate(() => window.__tp.test.v1.showGrants.setAlways('panel', true, 'Claude'));
 	let paced = 0;
 	let lastPaced;
 	for (let i = 0; i < 7; i++) {
@@ -145,7 +146,7 @@ h.run(async () => {
 		if (r?.type === 'error' && /6 a minute/.test(r.error?.message ?? '')) paced = i + 1;
 	}
 	h.check(paced === 7, `rule 7: the 7th call in a minute waits (${paced}${paced ? '' : ', last: ' + short(lastPaced)})`);
-	await page.evaluate(() => window.__tp.test.v1.safeStorage.removeItem('show:allow:panel'));
+	await page.evaluate(() => window.__tp.test.v1.showGrants.setAlways('panel', false, 'Claude'));
 
 	// ---- 6 ----------------------------------------------------------------------------------------------------
 	await page.evaluate(async () => {

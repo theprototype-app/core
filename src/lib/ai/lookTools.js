@@ -1362,14 +1362,21 @@ async function setLookPresetTool(/** @type {any} */ args) {
 }
 
 
+/** 107: who asks, as the person's card names them (show's wording) @param {any} opts */
+const askerOf = (opts) => {
+	const by = String(opts?.by ?? '').trim();
+	if (!by || by === 'AI assistant') return 'The assistant';
+	return by === 'AI app' ? 'An AI app' : by;
+};
+
 /**
  * mcp-diorama2 (item 7, owner) — set_look {action: "quality"}: ask the person to raise THIS device's quality preset
  * (Settings ▸ Scene ▸ Performance), e.g. so the post effects show on a phone that turned them off. A card on their own
  * screen (Allow / Keep); never another person's device, never in the scene file, never sent. After Allow the card
  * offers Undo, and level "restore" puts back what it was without asking (it is undoing the agent's own change).
- * @param {any} args
+ * @param {any} args @param {any} [opts] 107: who asks (the card names them)
  */
-async function setQualityTool(args) {
+async function setQualityTool(args, opts) {
 	// a confirm re-call ({confirmId, wait}) carries no level: the stored ask runs its own apply
 	if (args.confirmId !== undefined) return (await import('$lib/agent/confirmGate')).gateDevice('set_quality', args, { summary: '', prompt: '', apply: async () => ({}) });
 	const level = String(args.level ?? args.quality ?? '');
@@ -1390,7 +1397,7 @@ async function setQualityTool(args) {
 	const { gateDevice } = await import('$lib/agent/confirmGate');
 	return gateDevice('set_quality', args, {
 		summary: 'quality preset on this device: ' + label,
-		prompt: 'Claude wants ' + label + ' quality on this device' + why + '. It may run slower; only this screen changes.',
+		prompt: askerOf(opts) + ' wants ' + label + ' quality on this device' + why + '. It may run slower; only this screen changes.',
 		apply: async () => {
 			const before = String(get(q.qualityPreset));
 			q.qualityPreset.set(/** @type {any} */ (level));
@@ -1567,8 +1574,8 @@ async function setUvTool(args) {
 
 // ---- the dispatcher -------------------------------------------------------------------------
 
-/** @param {string} name @param {any} args */
-export async function lookTool(name, args) {
+/** @param {string} name @param {any} args @param {{by?: string}} [opts] 107: who calls (set_quality names them on its card) */
+export async function lookTool(name, args, opts) {
 	switch (name) {
 		case 'set_material':
 			return setMaterialTool(args ?? {});
@@ -1595,7 +1602,7 @@ export async function lookTool(name, args) {
 		case 'set_uv':
 			return setUvTool(args ?? {});
 		case 'set_quality':
-			return setQualityTool(args ?? {});
+			return setQualityTool(args ?? {}, opts);
 		case 'set_look_preset':
 			return setLookPresetTool(args ?? {});
 		case 'bake_light':

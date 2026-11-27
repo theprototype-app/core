@@ -61,8 +61,8 @@ describe('show: camera and code maths', () => {
 
 describe('show + scene: schemas', () => {
 	it('the person tools are files, show, scene', () => {
-		expect(PERSON_TOOL_NAMES).toEqual(['files', 'show', 'scene']);
-		expect(PERSON_AI_TOOLS.map((t) => t.function.name)).toEqual(['files', 'show', 'scene']);
+		expect(PERSON_TOOL_NAMES).toEqual(['files', 'show', 'scene', 'ui_state', 'scene_stats']); // 107-ui-state
+		expect(PERSON_AI_TOOLS.map((t) => t.function.name)).toEqual(['files', 'show', 'scene', 'ui_state', 'scene_stats']);
 	});
 	it('show: panels | panel | layout | camera | code | reveal | select | flow | back, and no text to write (rule 8)', () => {
 		const s = tool('show');
@@ -71,7 +71,7 @@ describe('show + scene: schemas', () => {
 		expect(s.description).toMatch(/without focusing their editor/);
 		expect(s.parameters.properties.text).toBeUndefined();
 		expect(s.description).toMatch(/THEIR OWN screen/);
-		expect(s.description).toMatch(/Always \/ This time \/ No/);
+		expect(s.description).toMatch(/Always \/ This time \/ Only this \/ No/);
 		expect(s.description).toMatch(/Back/);
 		expect(s.description).toMatch(/VR headset/);
 		expect(s.description).toMatch(/files \{action: "write"\}/);

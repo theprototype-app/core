@@ -11,6 +11,7 @@
 const FILE_TEXT_EXTENSIONS = ['txt', 'json', 'md', 'cfg', 'js'];
 
 export { PERSON_TOOL_NAMES, personToolReads } from './personToolNames.js';
+import { UI_STATE_AI_TOOLS } from './uiStateTools.js'; // 107-ui-state: ui_state, scene_stats
 
 const FILES_DESCRIPTION =
 	"The person's own Explorer (their Library of files and folders), in their tab: list folders and files, read a text file with numbered lines, " +
@@ -38,7 +39,7 @@ const SHOW_DESCRIPTION =
 	'reveal = show a Library file or folder in their Explorer (tree expanded, selected, scrolled to; state "open" opens a folder); ' +
 	'select = set / add / remove / clear their selection (uuids, mode) WITHOUT moving the camera (clear shows the scene in Inspector and Flow editor); ' +
 	'flow = the Flow editor on the scene flow, an object\'s flow (object) or a node (node: selected and framed; the owner is selected unless select: false); ' +
-	'back = undo what the last show changed. The first time for each of panel (also layout, reveal, select, flow) / camera / code the person is asked on their screen (Always / This time / No): ' +
+	'back = undo what the last show changed. The first time, the person is asked ONE question on their screen for every kind this app has not been answered yet, panel (also layout, reveal, select, flow) / camera / code (Always / This time / Only this / No; permissions are kept per app): ' +
 	'call again with the confirmId; after No, do not ask again, tell them where to look instead. ' +
 	'Each action leaves a line with a Back button for the person. Not in a VR headset (camera moves are refused there), not while they play, drag or type; ' +
 	'6 calls a minute, one camera move per 2 s. Never opens sign-in, account, settings, consent, publishing or export, connected apps or payment (each refused by name, with its reason); Configure Scene (scene settings) is scene content and opens. ' +
@@ -149,7 +150,8 @@ export const PERSON_AI_TOOLS = [
 				required: ['action']
 			}
 		}
-	}
+	},
+	...UI_STATE_AI_TOOLS
 ];
 
 /** how the person's lines name the assistant @param {{by?: string}} [opts] */
@@ -173,5 +175,8 @@ export async function runPersonTool(name, args, opts) {
 		const { sceneTool } = await import('./sceneTool.js');
 		return sceneTool(args, { by: byOf(opts) });
 	}
+	// 107-ui-state
+	if (name === 'ui_state') return (await import('./uiStateTool.js')).uiState(args);
+	if (name === 'scene_stats') return (await import('./uiStateTool.js')).sceneStats(args, { by: byOf(opts) });
 	return { error: 'unknown tool "' + name + '"' };
 }

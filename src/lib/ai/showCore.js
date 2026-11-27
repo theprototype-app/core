@@ -22,9 +22,10 @@ export const FLY_MS = 600;
 /** 107: the actions that ride an existing kind's first-use answer (no new question) */
 export const MORE_KIND = /** @type {Record<string, string>} */ ({ reveal: 'panel', select: 'panel', flow: 'panel' });
 
-/** what the first-use question says, per kind */
+/** what the first-use question says, per kind — 107-int: also what Settings ▸ Privacy lists (uiStateCore.GRANT_WORDS is
+ * this object), so the question and the list always name the same kinds in the same words */
 export const KIND_WORDS = /** @type {Record<string, string>} */ ({
-	panel: 'open your panels and select things in them',
+	panel: 'open and close your panels and select things in them',
 	camera: 'move your view',
 	code: 'open code for you'
 });

@@ -913,6 +913,14 @@ export function sampleSceneMetrics() {
 	return get(sceneMetrics);
 }
 
+/** 107: is this device judged as a phone (qualityGovernor's verdict, which it hands over at load: it imports this
+ * module, so this one cannot import it). The Statistics window and the footer dot judge a phone by its own limits. */
+let phoneDevice = false;
+/** @param {boolean} on */
+export function setPhoneDevice(on) {
+	phoneDevice = !!on;
+}
+
 /**
  * mcp-shapes: the scene budget an agent's status carries — the numbers the Statistics overlay reads, compact: the
  * worst tier (green | amber | red, or unknown before a frame was measured), the profile it is judged on (desktop | vr)
@@ -931,7 +939,8 @@ export function agentBudgetReport(given, frames) {
 		metrics = { ...metrics, triangles: metrics.sceneTriangles };
 		if (!(metrics.calls > 0)) metrics.calls = null;
 	}
-	const profile = metrics.profile === 'vr' ? 'vr' : 'desktop';
+	// 107: the profile the person's Statistics window uses (a phone by its own limits, not the headset's)
+	const profile = phoneDevice ? 'phone' : metrics.profile === 'vr' ? 'vr' : 'desktop';
 	// mcp-diorama2 (27): a frame time that IS the display's refresh is the display's cap, not the scene: it never makes
 	// the scene amber or red (a 60 Hz panel draws a steady 16.7 ms whatever the scene)
 	const v = idle ? null : vsyncVerdict(frames ?? (given ? null : frameStats()));

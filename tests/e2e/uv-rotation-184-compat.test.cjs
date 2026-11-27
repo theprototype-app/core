@@ -163,7 +163,9 @@ h.run(async () => {
 
 	// ---- §4 a NEW set_uv rotation on the union: host and guest agree (107's corner pivot = what the guest receives) ---
 	const box2 = (await tool(U1.page, 'create_objects', { objects: [{ kind: 'primitive', primitive: 'Box', name: 'Rotated185', position: [2, 1, 0] }] }))?.created?.[0]?.uuid;
-	await tool(U1.page, 'set_material', { objects: [box2], maps: { albedo: img.hash } });
+	// the union host's own image (the release's lives in the release page's library, not here)
+	const img2 = await tool(U1.page, 'add_image', { name: 'uvrot185', canvas: { width: 32, height: 32, background: '#884422', ops: [{ op: 'checker', cols: 4, rows: 4, colors: ['#ffffff', '#000000'] }] } });
+	await tool(U1.page, 'set_material', { objects: [box2], maps: { albedo: img2.hash } });
 	const uv2 = await tool(U1.page, 'set_uv', { objects: [box2], tiling: 2, rotation: ROT });
 	h.check(!uv2?.error && /corner/.test(JSON.stringify(uv2)), '§4 the union set_uv turns about the corner and says so: ' + JSON.stringify(uv2).slice(0, 200));
 	const n1 = await lookOf(U1.page, box2);

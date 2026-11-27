@@ -13,6 +13,9 @@
 //      Revoke; Revoke takes camera back, and the next camera move asks again
 //   7. permissions are kept per app: Always for Claude (stored as Claude's), then a call from ChatGPT shows the question;
 //      an older build's per-kind Always reads as Claude's only
+//   8. (107-int, claude:9) no tool call in any app answers or pre-answers the question (a made-up confirmId, the app's
+//      own answer args, another app with the same confirmId); Revoke all then a call = asked again; the question and
+//      Settings > Privacy name the same kinds in the same words. Section 2 also reads ui_state.panels from the registry.
 // Run: APP_URL='https://theprototype.app:7255/' npm run e2e -- connector-ui-state
 const h = require('./helpers.cjs');
 const { installProvider, fakeRelay, connectorPhase } = require('./connectorFake.cjs');
@@ -108,7 +111,16 @@ h.run(async () => {
 			typeof u.quality.say === 'string',
 		`quality: preset, level, what it lowered (${short(u.quality)})`
 	);
-	h.check('panels' in u, 'a panels field for 107-int');
+	// 107-int (claude:9 row 5): ui_state.panels comes from 107-panels' registry (readPanels)
+	h.check(Array.isArray(u.panels?.open) && Array.isArray(u.panels.closed) && u.panels.dock && 'open' in u.panels.dock && /show \{action: "panels"\}/.test(u.panels.more ?? ''), `panels from the registry: open / closed / dock (${short(u.panels)})`);
+	h.check(u.panels.open.every((p) => typeof p.title === 'string' && typeof p.where === 'string' && 'visible' in p && 'front' in p), 'each open panel says where it is, visible and front');
+	await page.evaluate(() => { const s = window.__tp.test.v1; s.explorerClose.set(true); });
+	await page.waitForTimeout(600);
+	const pClosed = (await call('ui_state', {}, 'read'))?.result?.panels;
+	await page.evaluate(() => { const s = window.__tp.test.v1; s.explorerClose.set(false); s.bottomDock?.bottomDockActive?.set?.('explorer'); });
+	await page.waitForTimeout(800);
+	const pOpen = (await call('ui_state', {}, 'read'))?.result?.panels;
+	h.check(pClosed?.closed?.includes('Explorer') && pOpen?.open?.some((p) => p.id === 'explorer'), `the Explorer moves from closed to open with the store (counterfactual) (${short(pOpen?.open)})`);
 	h.check(
 		['quest', 'phone', 'desktop'].includes(u.statisticsJudgesFor?.target),
 		`which device Statistics judges for (${short(u.statisticsJudgesFor)})`
@@ -379,6 +391,56 @@ h.run(async () => {
 	);
 	const b2 = await call('show', { action: 'panel', name: 'Explorer' }, 'edit', 60000, 'g_2');
 	h.check(b2?.result?.needsConfirm === true, `…and ChatGPT is still asked (${short(b2)})`);
+	await page.evaluate(() => window.__tp.test.v1.showGrants.revokeAllGrants());
+
+	// ---- 8 (107-int, claude:9 02:45: the consent surface) -----------------------------------------------------
+	// (1) no tool call in any app can answer or pre-answer the question; (2) Revoke all, then a call = asked again;
+	// (3) the question and Settings > Privacy name the same kinds in the same words
+	const noGrants = () => page.evaluate(() => window.__tp.test.v1.safeStorage.getItem('show:grants'));
+	await page.evaluate(() => {
+		const s = window.__tp.test.v1;
+		s.showGrants.revokeAllGrants();
+		s.showTool.showToolResetForTest();
+	});
+	await page.waitForTimeout(2100);
+	const madeUp = await call("show", { action: "camera", position: [4, 4, 4], target: [0, 0, 0], confirmId: "p-made-up-1", wait: 1 });
+	h.check(/no question "p-made-up-1" is open/.test(JSON.stringify(madeUp)) && madeUp?.result?.moved !== true, `8.1 a made-up confirmId answers nothing (${short(madeUp)})`);
+	h.check((await noGrants()) === null, '8.1 and grants nothing');
+	await page.waitForTimeout(2100);
+	const q8 = await call('show', { action: 'camera', position: [4, 4, 4], target: [0, 0, 0] });
+	h.check(q8?.result?.needsConfirm === true, `8.1 the real question is shown (${short(q8)})`);
+	const id8 = q8?.result?.confirmId;
+	const forged = await call('show', { action: 'camera', position: [4, 4, 4], target: [0, 0, 0], confirmId: id8, answer: 'Always', value: 'always', choice: 'Always', wait: 1 });
+	h.check(forged?.result?.needsConfirm === true && forged.result.moved !== true, `8.1 the app's own "answer" args do not answer it: still waiting (${short(forged)})`);
+	const otherApp = await call('show', { action: 'camera', position: [4, 4, 4], target: [0, 0, 0], confirmId: id8, wait: 1 }, 'edit', 60000, 'g_2');
+	h.check(otherApp?.result?.moved !== true, `8.1 another app with the same confirmId does not answer it (${short(otherApp)})`);
+	const st8 = await call('status', {}, 'read');
+	h.check((await noGrants()) === null && !((await call('ui_state', {}, 'read'))?.result?.permissions ?? []).length, `8.1 nothing granted while only tools have spoken (status ${short(st8?.result?.role)})`);
+	const ask8 = (await toasts()).find((x) => /^Let Claude /.test(x)) ?? '';
+	h.check(/move your view/.test(ask8), `8.1 the question is still on the person's screen (${ask8.slice(0, 120)})`);
+	// the person answers: This time for every kind it named
+	await page.locator('button', { hasText: /^\s*This time\s*$/ }).last().click();
+	const ok8 = await call('show', { action: 'camera', position: [4, 4, 4], target: [0, 0, 0], confirmId: id8, wait: 10 });
+	h.check(ok8?.result?.moved === true, `8.1 only the person's press answers it (${short(ok8)})`);
+	// (3) the same kinds, the same words: the question named them, Privacy lists them
+	await page.evaluate(() => {
+		const s = window.__tp.test.v1;
+		s.settingsSection.set('privacy');
+		s.settingsOpen.set(true);
+	});
+	await h.eventually(() => page.locator('[id^="row-show-grant-"][id$="-claude"]').count(), (n) => n === 3, '8.3 Privacy lists three grants for Claude', 15000);
+	const rows = await page.locator('[id^="row-show-grant-"][id$="-claude"]').allInnerTexts();
+	const whats = rows.map((r) => (r.match(/Claude may ([^\n]+)/) ?? [])[1]?.trim()).filter(Boolean);
+	h.check(whats.length === 3 && whats.every((w) => ask8.includes(w)), `8.3 every Privacy row says what the question said (${JSON.stringify(whats)} in "${ask8.slice(0, 160)}")`);
+	const rowIds = await page.evaluate(() => [...document.querySelectorAll('[id^="row-show-grant-"][id$="-claude"]')].map((e) => e.id).sort());
+	h.check(JSON.stringify(rowIds) === JSON.stringify(['row-show-grant-camera-claude', 'row-show-grant-code-claude', 'row-show-grant-panel-claude']), `8.3 the same three kinds (${rowIds})`);
+	// (2) Revoke all, then a call is asked again
+	await page.locator('#show-grant-revoke-all').click();
+	await h.eventually(() => page.locator('[id^="row-show-grant-"]').count(), (n) => n === 0, '8.2 Revoke all empties the list', 5000);
+	await page.evaluate(() => window.__tp.test.v1.settingsOpen.set(false));
+	await page.waitForTimeout(2100);
+	const again = await call('show', { action: 'camera', position: [3, 4, 3], target: [0, 0, 0] });
+	h.check(again?.result?.needsConfirm === true && /move your view/.test(again.result.summary ?? '') && /panels/.test(again.result.summary ?? '') && /code/.test(again.result.summary ?? ''), `8.2 after Revoke all the next call asks again, for every kind (${short(again)})`);
 	await page.evaluate(() => window.__tp.test.v1.showGrants.revokeAllGrants());
 
 	await browser.close();

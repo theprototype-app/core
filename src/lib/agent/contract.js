@@ -26,7 +26,11 @@
 // set_physics float / density / buoyancy / waterDrag + the water answer (waterline) (104-world, additive: one new tool name)
 // 1.13.0 (64-vector): a new tool create_vector (the connector's create_shape {action: 'vector'}: rect / ellipse / star /
 // polygon / path / svg); set_geometry params reach a vector shape's record (additive: a new tool behind an existing family)
-export const TP_AGENT_VERSION = '1.13.0';
+// 1.14.0 (107 connector round 3): new tools ui_state and scene_stats (the connector's run {action: 'ui' | 'stats'}); show
+// actions panels / layout, panel states (focus, toggle, move, maximize / restore, collapse / expand) and reveal / select /
+// flow; show code highlights without focus; files rename / move every kind; set_uv shared + per-slot answers; edit_shader
+// confirmId / wait; error answers carry errors / skipped / note (additive: two new tool names, nothing renamed)
+export const TP_AGENT_VERSION = '1.14.0';
 
 /** Every method of the contract, in the order the docs list them. */
 export const TP_AGENT_METHODS = /** @type {const} */ ([

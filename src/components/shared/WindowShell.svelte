@@ -9,6 +9,7 @@
 	import Icon from '../ui/Icon.svelte'
 	import { paneLocks, togglePaneLock } from '$lib/ui/paneLocks.js'
 	import { edgeFade } from '$lib/ui/edgeFade.js'
+	import { registerPanes } from '$lib/windowPanes.js'
 
 	// 197: reusable window CHROME. A MAIN area flanked by a collapsible PRIMARY
 	// sidebar and a SECONDARY panel that can show one of several MODES (e.g.
@@ -183,6 +184,34 @@
 		persistSecondary()
 		if (narrow && narrowMode) narrowPane = 'main'
 	}
+	// 107-panels: the assistant's show {state: collapse | expand, pane} works these same panes ($lib/windowPanes)
+	$effect(() =>
+		registerPanes(key, {
+			status: () => ({
+				primary: { available: !hidePrimary && !!primary, open: narrow ? pane === 'primary' : primaryOpen },
+				secondary: { available: secondaryModes.length > 0 && !!secondary, open: narrow ? !!narrowMode : secondaryOpen, mode: secondaryMode },
+				locked,
+				narrow
+			}),
+			setPrimary: (open: boolean) => {
+				if (narrow) {
+					narrowPane = open ? 'primary' : 'main'
+					return
+				}
+				primaryOpen = open
+				writePanelOpen(`ws:${key}:primaryOpen`, primaryOpen)
+			},
+			setSecondary: (open: boolean) => {
+				if (narrow) {
+					narrowPane = open ? secondaryMode : 'main'
+					return
+				}
+				secondaryOpen = open
+				if (open) secondaryPinned = true
+				persistSecondary()
+			}
+		})
+	)
 	export function secondaryStatus() {
 		if (narrow) return { open: !!narrowMode, mode: narrowMode ?? secondaryMode, pinned: secondaryPinned, narrow: true }
 		return { open: secondaryOpen, mode: secondaryMode, pinned: secondaryPinned }

@@ -235,7 +235,7 @@ describe('shader graphs', () => {
 		const edited = await call('edit_shader', { shader: o.uuid, params: [{ node: 'glow', param: 'value', value: 5 }] });
 		expect(edited.updated[0].uniforms[0].value).toBe(5);
 		const wrong = await call('edit_shader', { shader: o.uuid, params: [{ node: 'glow', param: 'nope', value: 1 }] });
-		expect(wrong.errors[0]).toMatch(/no param "nope" \(value\)/);
+		expect(wrong.errors[0]).toMatch(/no param "nope" \(value, label\)/);
 		const broke = await call('edit_shader', { shader: o.uuid, removeNodes: ['glow'] });
 		expect(broke.errors[0]).toMatch(/Nothing is connected/);
 		expect(sg.shaderGraphOf(o.uuid).nodes.length).toBe(2);
@@ -630,5 +630,22 @@ describe('85b first-use tip', () => {
 			return names(file, p + '_TOOL_NAMES').filter((n) => !read.includes(n));
 		});
 		expect([...AGENT_GAMES_TIP_TOOLS].sort()).toEqual([...want].sort());
+	});
+});
+
+describe('107: the Quality card names who asks', () => {
+	const textOf = (/** @type {any} */ t) => (typeof t === 'string' ? t : t?.text ?? '');
+	it.each([
+		[{ by: 'ChatGPT' }, /^ChatGPT wants /],
+		[{ by: 'Claude' }, /^Claude wants /],
+		[undefined, /^The assistant wants /],
+		[{ by: 'AI app' }, /^An AI app wants /]
+	])('%j', async (opts, want) => {
+		agentPage.on = false;
+		toastStore.set([]);
+		const { lookTool } = await import('../../src/lib/ai/lookTools.js');
+		const r = await lookTool('set_quality', { level: 'high' }, opts);
+		expect(r.needsConfirm).toBe(true);
+		expect(get(toastStore).map(textOf).some((t) => want.test(t))).toBe(true);
 	});
 });

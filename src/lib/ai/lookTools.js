@@ -16,6 +16,7 @@
 import { get } from 'svelte/store';
 import * as THREE from 'three';
 import { objectsGroup, pokeScene } from '../../stores/sceneStore.js';
+import { peers } from '../../stores/appStore.js';
 import { toHexColor, checkMaterialParam } from '$lib/materialParamRules.js';
 import { lockSkip } from './lockNote.js';
 import { textToGraph, graphToText } from '$lib/graphText';
@@ -36,6 +37,7 @@ import {
 	setPayloadTransform,
 	sniffImageType,
 	checkTextureUrl,
+	shaderGraphDiagnostics,
 	uniformsOf
 } from './lookToolsCore.js';
 import { FETCH_TIMEOUT_MS } from './imageToolCore.js';
@@ -369,6 +371,45 @@ async function albedoLanded(object, slot) {
 	}
 }
 
+/** 107: the slot most of these triangles wear (their `mi` tag), which a new slot from faces copies
+ * @param {any[]} rows readTriangles @param {number[]} tris picked @param {number} slots how many there are */
+function sourceSlotOf(rows, tris, slots) {
+	/** @type {Map<number, number>} */
+	const count = new Map();
+	for (const t of tris) {
+		const mi = Number(rows[t]?.mi ?? 0);
+		const at = Number.isInteger(mi) && mi >= 0 && mi < slots ? mi : 0;
+		count.set(at, (count.get(at) ?? 0) + 1);
+	}
+	let best = 0;
+	let most = -1;
+	for (const [at, n] of count) if (n > most || (n === most && at < best)) (best = at), (most = n);
+	return best;
+}
+
+/** 107: a slot's texture tiling as an agent reads it: its first map's, or null with no map @param {any} m */
+function slotTiling(m) {
+	const tex = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap'].map((k) => m?.[k]).find((t) => t?.isTexture);
+	if (!tex) return { tiling: null };
+	const rot = tex.rotation ?? 0;
+	return { tiling: [r3(tex.repeat.x), r3(tex.repeat.y)], offset: [r3(tex.offset.x), r3(tex.offset.y)], rotation: r3(rot), ...(rot ? { rotationDegrees: Math.round((rot * 180) / Math.PI * 10) / 10, rotationAbout: tex.center?.x || tex.center?.y ? 'the middle' : 'the corner' } : {}) };
+}
+
+/** every slot's tiling, for the uv answer @param {any} object */
+async function everySlotTiling(object) {
+	const { materialsOf } = await import('$lib/materialsHandler');
+	return materialsOf(object).map((m, slot) => ({ slot, ...(m?.name ? { name: m.name } : {}), ...slotTiling(m) }));
+}
+
+/** @param {{slot: number, from: number, tiling: number[] | null, offset?: number[], rotation?: number}} made */
+function newSlotWords(made) {
+	return (
+		'Those faces now have their own slot ' + made.slot + ', a copy of slot ' + made.from + "'s look" +
+		(made.tiling ? ' with its texture tiling ' + made.tiling.join(' x ') + (made.offset?.some((n) => n !== 0) ? ', offset ' + made.offset.join(', ') : '') + (made.rotation ? ', rotation ' + made.rotation : '') + ' (set_uv slot ' + made.slot + ' changes only this slot)' : '') +
+		'.'
+	);
+}
+
 /** @param {any} args */
 async function setMaterialTool(args) {
 	const { uuids, error } = targetsOf(args);
@@ -440,6 +481,8 @@ async function setMaterialTool(args) {
 	const albedoBySlot = new Map();
 	/** @type {any[]} */
 	const rows = [];
+	/** 107: uuid -> the slot a faces call made, the slot it copied and the tiling it took @type {Map<string, any>} */
+	const newSlots = new Map();
 
 	for (const uuid of uuids) {
 		const object = objectOf(uuid);
@@ -496,13 +539,16 @@ async function setMaterialTool(args) {
 				skipped.push({ uuid, reason: picked.error });
 				continue;
 			}
-			const made = mh.addMaterialSlot(uuid);
+			// 107: the new slot starts as the slot those faces wore (most of them), not as the last slot in the list
+			const from = sourceSlotOf(picked.rows, picked.tris, mh.materialsOf(object).length);
+			const made = mh.addMaterialSlot(uuid, from);
 			const { assignTrisToSlot } = await import('$lib/uvEditor');
 			if (made < 0 || !assignTrisToSlot(uuid, picked.tris, made)) {
 				skipped.push({ uuid, reason: 'those faces could not take their own material' });
 				continue;
 			}
 			slot = made;
+			newSlots.set(uuid, { slot: made, from, ...slotTiling(mh.materialAt(object, made)) });
 		}
 		const material = mh.materialAt(object, slot);
 		if (!material) {
@@ -594,7 +640,15 @@ async function setMaterialTool(args) {
 			});
 		}
 		const mapNames = Object.keys(maps.slots).map((k) => SLOT_WORD[k]);
-		updated.push({ uuid: row.uuid, ok: true, slot: row.slot, ...(mapNames.length ? { maps: mapNames } : {}), ...(row.errors.length ? { errors: row.errors } : {}) });
+		const made = newSlots.get(row.uuid);
+		updated.push({
+			uuid: row.uuid,
+			ok: true,
+			slot: row.slot,
+			...(mapNames.length ? { maps: mapNames } : {}),
+			...(made ? { newSlot: made, note: newSlotWords(made) } : {}),
+			...(row.errors.length ? { errors: row.errors } : {})
+		});
 	}
 	pokeScene();
 	if (!updated.length) return { error: skipped.map((s) => s.reason).join('; ') || 'nothing was changed', skipped };
@@ -800,6 +854,26 @@ function graphFromArgs(args, textKey = 'text') {
 	return { error: 'give the graph as text, e.g. "c = color {value: \\"#ff8800\\"}\\nout = surface\\nc -> out.emissive"' };
 }
 
+/** 107: dangling nodes, an unwired output and expression problems, said per node @param {any} graph @param {string} domain */
+async function graphDiagnostics(graph, domain) {
+	const cat = await import('$lib/shaderCatalog');
+	const { glslExpressionProblem } = await import('$lib/shaderCode');
+	return shaderGraphDiagnostics(graph, (k) => cat.shaderNodeDef(k), { output: domain === 'post' ? cat.POST_OUTPUT_NODE : cat.SURFACE_NODE, expressionProblem: glslExpressionProblem });
+}
+
+/** 107: the warnings a written graph carries in its answer @param {any} graph @param {string} domain */
+async function graphNotes(graph, domain) {
+	const d = await graphDiagnostics(graph, domain);
+	return { ...(d.warnings.length ? { warnings: d.warnings } : {}), ...(d.dangling.length ? { dangling: d.dangling } : {}) };
+}
+
+/** 107: a GPU refusal points at the GLSL expression nodes, the only free text a graph holds @param {any} graph @param {string[]} errors */
+function withExpressionHint(graph, errors) {
+	const exprs = (graph?.nodes ?? []).filter((/** @type {any} */ n) => n.type === 'glsl');
+	if (!exprs.length) return errors;
+	return [...errors, 'the GLSL expression node' + (exprs.length > 1 ? 's ' : ' ') + exprs.map((/** @type {any} */ n) => n.id + ' ("' + String(n.data?.expression ?? 'a').slice(0, 60) + '")').join(', ') + (exprs.length > 1 ? ' are' : ' is') + ' the likely cause: check the types (a vec3 times a vec2 does not compile) and the names'];
+}
+
 /** the node catalog's check + a dry compile: an error here means nothing was written
  * @param {{nodes: any[], edges: any[]}} graph @param {'surface'|'post'} domain @returns {Promise<string[]>} */
 async function graphErrors(graph, domain) {
@@ -807,6 +881,9 @@ async function graphErrors(graph, domain) {
 	const { compileShaderGraphToIR, compilePostGraphToIR } = await import('$lib/shaderCompile');
 	const errors = checkShaderGraph(graph, (k) => cat.shaderNodeDef(k), cat.shaderNodeDefs().map((d) => d.key));
 	if (errors.length) return errors;
+	// 107: an invalid GLSL expression is refused naming its node (the compile only reaches nodes wired to the output)
+	const diag = await graphDiagnostics(graph, domain);
+	if (diag.errors.length) return diag.errors;
 	const compiled = domain === 'post' ? compilePostGraphToIR(graph) : compileShaderGraphToIR(graph);
 	return compiled.ok ? [] : (compiled.errors ?? ['the graph did not compile']);
 }
@@ -849,12 +926,15 @@ async function writeObjectGraph(key, patch, before) {
 	const after = sg.setShaderGraphFor(key, patch);
 	const compiled = await sg.compileAndApply(key);
 	const errors = [...(compiled.errors ?? [])];
-	if (!errors.length) errors.push(...(await driverErrors(objectOf(uuid ?? key))));
+	if (!errors.length) {
+		const gpu = await driverErrors(objectOf(uuid ?? key));
+		if (gpu.length) errors.push(...withExpressionHint(after, gpu));
+	}
 	if (errors.length) {
 		sg.setShaderGraphFor(key, before ?? null);
 		return { uuid: uuid ?? key, ...(slot ? { slot } : {}), errors };
 	}
-	return { uuid: uuid ?? key, ...(slot ? { slot } : {}), ok: true, ...(await shaderFacts(key, after)) };
+	return { uuid: uuid ?? key, ...(slot ? { slot } : {}), ok: true, ...(await shaderFacts(key, after)), ...(await graphNotes(after, 'surface')) };
 }
 
 /** @param {any} args */
@@ -921,6 +1001,11 @@ async function createShaderTool(args) {
 
 /** @param {any} args */
 async function editShaderTool(args) {
+	if (args?.confirmId !== undefined) {
+		// the answer to a scene-wide question: the edit was checked and kept when it was asked
+		const { gateScenewide } = await import('$lib/agent/confirmGate');
+		return gateScenewide('edit_shader', args, { summary: '', apply: () => ({ error: 'no such question' }) });
+	}
 	const sg = await import('$lib/shaderGraph');
 	let key = args?.shader ?? args?.object ?? args?.uuid;
 	if (typeof key !== 'string' || !key) return { error: 'shader: the key from create_shader or list_materials (an object uuid, "<uuid>/<slot id>", "scene" or "post:…")' };
@@ -971,7 +1056,12 @@ async function editShaderTool(args) {
 			continue;
 		}
 		const names = (cat.shaderNodeDef(node.type)?.params ?? []).map((/** @type {any} */ r) => r.name);
-		if (!names.includes(p.param)) paramErrors.push('a ' + node.type + ' has no param "' + p.param + '" (' + names.join(', ') + ')');
+		// 107: `label` = the name the person sees on the node card (the Shader Editor's own label field)
+		if (p.param === 'label') {
+			if (p.value !== null && typeof p.value !== 'string') paramErrors.push('label: a short name, or null to clear it');
+			else if (p.value === null || !p.value.trim()) delete node.data.label;
+			else node.data.label = p.value.trim().slice(0, 60);
+		} else if (!names.includes(p.param)) paramErrors.push('a ' + node.type + ' has no param "' + p.param + '" (' + [...names, 'label'].join(', ') + ')');
 		else node.data[p.param] = p.value;
 	}
 	if (paramErrors.length) return { error: 'the shader was not changed', errors: paramErrors };
@@ -982,12 +1072,25 @@ async function editShaderTool(args) {
 		if (row.errors) return { error: 'the compiler refused it; the shader was not changed', errors: row.errors };
 		return { updated: [row] };
 	}
-	// a scene default or a post graph: only reached by name, and its compile runs on its own domain
-	const written = next
-		? sg.setShaderGraphFor(key, { nodes: withParams.nodes, edges: withParams.edges })
-		: (params.forEach((/** @type {any} */ p) => sg.setShaderParam(key, p.node, p.param, p.value)), sg.shaderGraphOf(key));
-	await sg.compileAndApply(key);
-	return { updated: [{ ok: true, ...(await shaderFacts(key, written)) }] };
+	// a scene default or a post graph changes the whole scene's look: the host is asked first, as for create_shader scene,
+	// set_post, bake_light and set_look_preset (the edit is checked now and applied as it was asked)
+	const sceneKey = /** @type {string} */ (key);
+	const { gateScenewide } = await import('$lib/agent/confirmGate');
+	return gateScenewide('edit_shader', args, {
+		summary: sceneKey === sg.SCENE_GRAPH_KEY ? 'edit the default shader on every object' : 'edit the post effect "' + String(/** @type {any} */ (doc).name ?? sceneKey).slice(0, 40) + '"',
+		apply: async () => {
+			const before = sg.shaderGraphOf(sceneKey);
+			const written = next
+				? sg.setShaderGraphFor(sceneKey, { nodes: withParams.nodes, edges: withParams.edges })
+				: (params.forEach((/** @type {any} */ p) => sg.setShaderParam(sceneKey, p.node, p.param, p.value)), sg.shaderGraphOf(sceneKey));
+			const compiled = await sg.compileAndApply(sceneKey);
+			if (compiled?.errors?.length) {
+				sg.setShaderGraphFor(sceneKey, before ?? null);
+				return { error: 'the shader was not changed', errors: compiled.errors };
+			}
+			return { updated: [{ ok: true, ...(await shaderFacts(sceneKey, written)), ...(await graphNotes(written, doc.domain)) }] };
+		}
+	});
 }
 
 /** @param {any} args */
@@ -1259,14 +1362,21 @@ async function setLookPresetTool(/** @type {any} */ args) {
 }
 
 
+/** 107: who asks, as the person's card names them (show's wording) @param {any} opts */
+const askerOf = (opts) => {
+	const by = String(opts?.by ?? '').trim();
+	if (!by || by === 'AI assistant') return 'The assistant';
+	return by === 'AI app' ? 'An AI app' : by;
+};
+
 /**
  * mcp-diorama2 (item 7, owner) — set_look {action: "quality"}: ask the person to raise THIS device's quality preset
  * (Settings ▸ Scene ▸ Performance), e.g. so the post effects show on a phone that turned them off. A card on their own
  * screen (Allow / Keep); never another person's device, never in the scene file, never sent. After Allow the card
  * offers Undo, and level "restore" puts back what it was without asking (it is undoing the agent's own change).
- * @param {any} args
+ * @param {any} args @param {any} [opts] 107: who asks (the card names them)
  */
-async function setQualityTool(args) {
+async function setQualityTool(args, opts) {
 	// a confirm re-call ({confirmId, wait}) carries no level: the stored ask runs its own apply
 	if (args.confirmId !== undefined) return (await import('$lib/agent/confirmGate')).gateDevice('set_quality', args, { summary: '', prompt: '', apply: async () => ({}) });
 	const level = String(args.level ?? args.quality ?? '');
@@ -1287,7 +1397,7 @@ async function setQualityTool(args) {
 	const { gateDevice } = await import('$lib/agent/confirmGate');
 	return gateDevice('set_quality', args, {
 		summary: 'quality preset on this device: ' + label,
-		prompt: 'Claude wants ' + label + ' quality on this device' + why + '. It may run slower; only this screen changes.',
+		prompt: askerOf(opts) + ' wants ' + label + ' quality on this device' + why + '. It may run slower; only this screen changes.',
 		apply: async () => {
 			const before = String(get(q.qualityPreset));
 			q.qualityPreset.set(/** @type {any} */ (level));
@@ -1397,8 +1507,9 @@ async function setUvTool(args) {
 	const t = parseUvTransform(args);
 	if (t.errors.length) return { error: t.errors.join('; ') };
 	if (args?.faces === undefined && t.tiling === undefined && t.offset === undefined && t.rotation === undefined) return { error: 'nothing to set: give tiling, offset, rotation, or faces (a per-face mapping)' };
-	const slot = args?.slot === undefined ? 0 : args.slot;
-	if (!Number.isInteger(slot) || slot < 0) return { error: 'slot: a whole number from 0' };
+	const baseSlot = args?.slot === undefined ? 0 : args.slot;
+	// 107: a slot by its index, id or name (list_materials gives all three), as set_material takes it
+	if (!(Number.isInteger(baseSlot) && baseSlot >= 0) && !(typeof baseSlot === 'string' && baseSlot.trim())) return { error: 'slot: an index from 0, or a slot id or name from list_materials' };
 	/** @type {string[] | undefined} */
 	let only;
 	if (args?.maps !== undefined) {
@@ -1408,6 +1519,7 @@ async function setUvTool(args) {
 	}
 	const mp = await import('$lib/materialPresets');
 	const { materialsOf } = await import('$lib/materialsHandler');
+	const { fanTargets, unlinkMaterial } = await import('$lib/materialSharing');
 	/** @type {any[]} */
 	const updated = [];
 	/** @type {any[]} */
@@ -1425,9 +1537,26 @@ async function setUvTool(args) {
 			else updated.push({ uuid, ok: true, triangles: out.faces });
 			continue;
 		}
-		if (!materialsOf(object)[slot]) {
-			skipped.push({ uuid, reason: 'it has no material slot ' + slot });
+		const slot = typeof baseSlot === 'number' ? baseSlot : slotIndexOf(materialsOf(object), String(baseSlot).trim());
+		if (slot < 0 || !materialsOf(object)[slot]) {
+			skipped.push({ uuid, reason: 'it has no material slot ' + JSON.stringify(baseSlot).slice(0, 40) + ' (list_materials names its slots)' });
 			continue;
+		}
+		// 107: a material shared WHOLE with duplicates (D2) would be retiled on every one of them by the replace below.
+		// Default: this object gets its own copy first (Make unique, the Inspector's own, replicated) and the answer says
+		// so; shared: true retiles them all and names them.
+		const sharing = fanTargets(uuid);
+		/** @type {any} */
+		let share = null;
+		if (sharing.length) {
+			const names = sharing.map((u) => objectOf(u)?.name || u);
+			if (args?.shared === true) share = { alsoRetiled: names, note: 'its material is shared, so ' + names.length + ' other object(s) changed too: ' + names.slice(0, 6).join(', ') };
+			else if (unlinkMaterial(uuid)) {
+				/** @type {any} */
+				const peer = get(peers);
+				peer?.send({ type: 'objectParameters', parameter: 'materialUnlink', uuid });
+				share = { madeUnique: true, sharedWith: names, note: 'it shared its material with ' + names.slice(0, 6).join(', ') + ': this object has its own copy now and only it was retiled (pass shared: true to retile them all)' };
+			}
 		}
 		/** @type {string[]} */
 		let written = [];
@@ -1436,7 +1565,8 @@ async function setUvTool(args) {
 			return written.length ? payload : null;
 		});
 		if (!applied) skipped.push({ uuid, reason: 'that slot has no texture to tile (set_material maps first)' });
-		else updated.push({ uuid, ok: true, slot, maps: written.map((k) => SLOT_WORD[k]) });
+		// 107: every slot's tiling, so a caller sees the others did not move
+		else updated.push({ uuid, ok: true, slot, maps: written.map((k) => SLOT_WORD[k]), slots: await everySlotTiling(objectOf(uuid)), ...(share ?? {}) });
 	}
 	if (!updated.length) return { error: skipped.map((s) => s.reason).join('; ') || 'nothing was changed', skipped };
 	return { updated, ...(skipped.length ? { skipped } : {}) };
@@ -1444,8 +1574,8 @@ async function setUvTool(args) {
 
 // ---- the dispatcher -------------------------------------------------------------------------
 
-/** @param {string} name @param {any} args */
-export async function lookTool(name, args) {
+/** @param {string} name @param {any} args @param {{by?: string}} [opts] 107: who calls (set_quality names them on its card) */
+export async function lookTool(name, args, opts) {
 	switch (name) {
 		case 'set_material':
 			return setMaterialTool(args ?? {});
@@ -1472,7 +1602,7 @@ export async function lookTool(name, args) {
 		case 'set_uv':
 			return setUvTool(args ?? {});
 		case 'set_quality':
-			return setQualityTool(args ?? {});
+			return setQualityTool(args ?? {}, opts);
 		case 'set_look_preset':
 			return setLookPresetTool(args ?? {});
 		case 'bake_light':
@@ -1502,7 +1632,7 @@ export const LOOK_AI_TOOLS = [
 			description:
 				'Make objects look finished: colour, roughness, metalness, emissive, opacity and texture maps, on many objects in one call. Maps take a library image hash or an https URL (https only, CORS-enabled, 16 MB, PNG/JPEG/WebP/GIF/AVIF; it becomes a library item first and is re-encoded like an upload; returned in assets). cc0 fetches a free CC0 material by id or name from Poly Haven (its texture names) or ambientCG (ids like "Wood051", "Bricks076", "Metal032", "Ground037"), or by words ("brown planks"); preset applies a named preset: one of ' +
 					STARTER_NAMES +
-					', or one the person saved (list_materials lists them all). faces gives just those faces their own new material slot. One undo step.',
+					', or one the person saved (list_materials lists them all). faces gives just those faces their own new material slot, a copy of the slot they wore (look and texture tiling; the answer says which). One undo step.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1589,7 +1719,7 @@ export const LOOK_AI_TOOLS = [
 		function: {
 			name: 'create_shader',
 			description:
-				'Give objects a node shader, written as text like flow graphs: one line per node (id = type {param: value}), one per edge (source[.output] -> target.input), ending at a "surface" node. Example: c = color {value: "#ff8800"}\\nout = surface\\nc -> out.emissive. Call describe_shader_nodes for the types. Each object gets its own copy. Compiler errors come back in the result and nothing is written. Returns the graph key and its uniforms (u_<nodeId>_<param>): a flow "setuniform" node on that object drives a float, colour or vector one. scene: true makes the default for every object, which asks the host first.',
+				'Give objects a node shader, written as text like flow graphs: one line per node (id = type {param: value}), one per edge (source[.output] -> target.input), ending at a "surface" node. Example: c = color {value: "#ff8800"}\\nout = surface\\nc -> out.emissive. Call describe_shader_nodes for the types. Each object gets its own copy. Compiler errors come back in the result, per node, and nothing is written; warnings name nodes not wired to the surface (dangling). Name a node for the person with {label: "Glow"} in its params. Returns the graph key and its uniforms (u_<nodeId>_<param>): a flow "setuniform" node on that object drives a float, colour or vector one. scene: true makes the default for every object, which asks the host first.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1611,7 +1741,8 @@ export const LOOK_AI_TOOLS = [
 		type: 'function',
 		function: {
 			name: 'edit_shader',
-			description: 'Change a shader graph: params [{node, param, value}] for values, add (text: new or replaced nodes, new edges), removeNodes, or text for the whole graph. Errors come back and nothing changes.',
+			description:
+				'Change a shader graph: params [{node, param, value}] for values (param "label" names the node for the person in the Shader Editor), add (text: new or replaced nodes, new edges), removeNodes, or text for the whole graph. Errors come back per node (an invalid GLSL expression, the GPU compiler) and nothing changes. Editing the scene default ("scene") or a post graph ("post:…") changes the whole scene\'s look: the host may be asked first (needsConfirm; repeat the call with confirmId). warnings name nodes not wired to the output (they do nothing). Example, a pulsing glow on a graph with out = surface: {"shader": "<uuid>", "add": "t = time\\ns = sin\\ng = color {value: \\"#33ccff\\"}\\nm = multiply\\nt -> s.a\\ng -> m.a\\ns -> m.b\\nm -> out.emissive", "params": [{"node": "g", "param": "label", "value": "Glow colour"}]}.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1620,7 +1751,8 @@ export const LOOK_AI_TOOLS = [
 					params: { type: 'array', items: { type: 'object', properties: { node: { type: 'string' }, param: { type: 'string' }, value: {} }, required: ['node', 'param', 'value'] } },
 					add: { type: 'string', description: 'text: nodes to add or replace and edges to add' },
 					removeNodes: { type: 'array', items: { type: 'string' } },
-					text: { type: 'string', description: 'the whole graph as text' }
+					text: { type: 'string', description: 'the whole graph as text' },
+					...CONFIRM_SCHEMA
 				},
 				required: ['shader']
 			}
@@ -1784,17 +1916,18 @@ export const LOOK_AI_TOOLS = [
 		function: {
 			name: 'set_uv',
 			description:
-				'Tile, shift or rotate a material slot\'s textures (tiling: 4 repeats a floor texture four times). maps limits it to some slots. With faces it maps only those faces instead: they are projected flat so the image fills them once (a label on one side of a box), with tiling / offset / rotation on top; pair it with set_material faces for an image only on that face. One undo step.',
+				'Tile, shift or rotate a material slot\'s textures (tiling: 4 repeats a floor texture four times). Only that slot moves, even when slots share an image; the answer lists every slot\'s tiling. maps limits it to some texture maps. With faces it maps only those faces instead: they are projected flat so the image fills them once (a label on one side of a box), with tiling / offset / rotation on top; pair it with set_material faces for an image only on that face. One undo step.',
 			parameters: {
 				type: 'object',
 				properties: {
 					objects: OBJECTS_SCHEMA,
 					tiling: { type: ['array', 'number'], items: { type: 'number' }, description: '[u, v] or one number' },
 					offset: { type: 'array', items: { type: 'number' }, description: '[u, v]' },
-					rotation: { type: 'number', description: 'radians, about the middle of the image' },
-					slot: { type: 'integer', minimum: 0, description: 'material slot (default 0)' },
+					rotation: { type: 'number', description: 'radians, about the image\'s corner, as the Inspector\'s Rotation row turns it (it shows degrees; the answer gives both)' },
+					slot: { type: ['integer', 'string'], description: 'material slot: its index (default 0), or its id or name from list_materials' },
 					maps: { type: 'array', items: { type: 'string', enum: ['albedo', 'normal', 'roughness', 'metalness', 'emissive', 'ao'] } },
-					faces: FACES_SCHEMA
+					faces: FACES_SCHEMA,
+					shared: { type: 'boolean', description: 'an object whose material is shared with copies (duplicates): true retiles every object sharing it; default gives this object its own copy first and retiles only it (the answer says which)' }
 				},
 				required: ['objects']
 			}

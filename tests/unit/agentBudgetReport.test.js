@@ -119,3 +119,22 @@ describe('mcp-diorama2 27: no red on the vsync cap, draw calls by source', () =>
 		expect(r.callsBySource).toEqual({ objects: 3, otherInView: 2, shadows: 4, post: 1, otherViews: 0 });
 	});
 });
+
+describe('107: status judges a phone by the phone limits, as the Statistics window does', () => {
+	it('a 40 ms p95 on a phone (coarse pointer reads as vr) is judged by the phone row', async () => {
+		const { setPhoneDevice, budgetRows } = await import('../../src/lib/sceneBudget.js');
+		const m = { at: 1, profile: 'vr', objects: 3, frameP95: 40 };
+		try {
+			setPhoneDevice(true);
+			const r = agentBudgetReport(m, []);
+			expect(r.profile).toBe('phone');
+			const phoneRow = budgetRows(m, 'phone').find((x) => x.key === 'frameP95');
+			const vrRow = budgetRows(m, 'vr').find((x) => x.key === 'frameP95');
+			expect(phoneRow?.tier).not.toBe(vrRow?.tier); // the counterfactual: the two limits disagree here
+			expect(r.tier).toBe(phoneRow?.tier);
+		} finally {
+			setPhoneDevice(false);
+		}
+		expect(agentBudgetReport(m, []).profile).toBe('vr');
+	});
+});

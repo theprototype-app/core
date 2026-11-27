@@ -14,7 +14,8 @@ import {
 	registerLongTaskObserver,
 	sceneMetrics,
 	isHeavy,
-	qualityBaseline
+	qualityBaseline,
+	setPhoneDevice
 } from './sceneBudget';
 import { renderPaused } from './overloadGuard';
 import { sceneBatchOpen } from '../stores/sceneStore';
@@ -594,6 +595,8 @@ function detectPhone() {
 	}
 }
 phone = detectPhone();
+// 107: status judges this device the way the Statistics window does
+setPhoneDevice(phone);
 /** 68 V9: the export dialog's phone cap reads the same verdict the governor started from */
 export function isPhoneDevice() {
 	return phone;

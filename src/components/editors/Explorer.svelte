@@ -8,7 +8,7 @@
 	import Icon from '../ui/Icon.svelte';
 	import HeadDockPop from '../ui/HeadDockPop.svelte'; // uir-polish G2/G3
 	import EmptyState from '../ui/EmptyState.svelte';
-	import { FILE_TEMPLATES } from '$lib/codeFilesCore.js';
+	import { FILE_TEMPLATES, nameTakenBy } from '$lib/codeFilesCore.js';
 	import { isViewer } from '$lib/objectPermissions';
 	// Explorer (95, tree v2 in 106): dockable asset browser — real file-manager
 	// tree on the left (inline create/rename, expand/collapse, drag re-parent,
@@ -46,6 +46,7 @@
 		moveItem,
 		importFiles,
 		revealItemId,
+		explorerExpandTo,
 		deleteItem,
 		renameItem,
 		isValidName,
@@ -1645,10 +1646,52 @@
 		untrack(() => {
 			revealItemId.set(null);
 			const item = [...$explorerItems].find((i) => i.id === id);
+			const folder = item ? null : $explorerFolders.find((f: any) => f.id === id);
 			if (item) void revealItem(item);
+			else if (folder) void revealFolder(folder);
 			else showToast('That file is no longer in your library');
 		});
 	});
+
+	// 107: expandExplorerTo (the assistant's show {reveal}, beside Reveal above): open the tree down to a
+	// folder — its ancestors and itself — and scroll its row into view. Cleared on the way through.
+	$effect(() => {
+		const id = $explorerExpandTo;
+		if (!id) return;
+		untrack(() => {
+			explorerExpandTo.set(null);
+			expandAll(ancestorsOf(id));
+			void tick().then(() => document.querySelector(`[data-tree-folder="${id}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
+		});
+	});
+	/** the folder ids from `id` up to the root @param {string | null} id */
+	function ancestorsOf(id: string | null): string[] {
+		const out: string[] = [];
+		for (let at = id, i = 0; at && i < 64; i++) {
+			const f = $explorerFolders.find((x: any) => x.id === at);
+			if (!f) break;
+			out.push(f.id);
+			at = f.parentId ?? null;
+		}
+		return out;
+	}
+	function expandAll(ids: string[]) {
+		if (ids.every((id) => expanded.has(id))) return;
+		const next = new Set(expanded);
+		for (const id of ids) next.add(id);
+		expanded = next;
+		safeStorage.setItem('explorerExpanded', JSON.stringify([...next]));
+	}
+	/** 107: Reveal for a FOLDER — its card selected in its parent, the same walk as a file's @param {any} folder */
+	async function revealFolder(folder: any) {
+		if (search) search = '';
+		activeFolder.set(folder.parentId ?? null);
+		await tick();
+		await tick();
+		setSel([folder.id]);
+		await tick();
+		document.querySelector(`[data-card-id="${folder.id}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+	}
 
 	/**
 	 * 21-G9: the active folder AS A REAL LIBRARY FOLDER, or null. `activeFolder` also
@@ -2577,6 +2620,12 @@
 	function duplicateNameTaken(edit: any) {
 		return edit?.mode === 'duplicate-scene' && sceneNameTaken(edit.value);
 	}
+	// 107 (scout): two TEXT files never share a name — an open text file's shared typing is matched by its name,
+	// so the Code tab's rename refuses it (codeFilesCore.nameTakenBy) and this Rename now does too
+	function textNameHolder(edit: any): any {
+		if (edit?.mode !== 'rename-item' || edit.volumeId) return null;
+		return nameTakenBy(String(edit.value ?? '').trim(), $explorerItems, edit.itemId);
+	}
 	/**
 	 * R22 round 11 (user): "for packs add right click create pack, so I can set name and
 	 * create items there". The name is typed INLINE, in the grid, like every other thing
@@ -2613,6 +2662,12 @@
 			editing = null;
 			return;
 		}
+		const holder = textNameHolder(editing);
+		if (holder) {
+			showToast('Rename cancelled — a file called "' + holder.name + '" already exists');
+			editing = null;
+			return;
+		}
 		void commitEdit();
 	}
 	async function commitEdit() {
@@ -2621,6 +2676,11 @@
 		// still inside, so nothing is stranded — blur has its own exit above)
 		if (duplicateNameTaken(editing)) {
 			showToast('A scene called "' + editing.value.trim() + '" already exists — choose another name');
+			return;
+		}
+		const holder = textNameHolder(editing);
+		if (holder) {
+			showToast('A file called "' + holder.name + '" already exists — two text files with one name would share one editor');
 			return;
 		}
 		// snapshot and CLOSE first: the scene modes await, and an input still mounted over
@@ -7762,6 +7822,7 @@
 						style="padding-left: {2 + row.depth * 14}px"
 						role="treeitem"
 						aria-selected={$activeFolder === row.folder.id}
+						data-tree-folder={row.folder.id}
 						tabindex="-1"
 						ondragover={(e) => dragOverInto(e, row.folder.id)}
 						ondragleave={() => (dropFolder = null)}

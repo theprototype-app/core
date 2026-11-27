@@ -144,6 +144,11 @@ function setup() {
 		whereAreUsers: (/** @type {any} */ a) => whereAreUsers(a),
 		toolCode: { animate_parts: () => import('$lib/tpanim/animateParts.js') },
 		you: () => youOf(agent.status()),
+		// 107-int (claude:9): the other people in the session, so an error said to the AI app names none of them
+		others: () => {
+			const me = youOf(agent.status()).peerId;
+			return (/** @type {any[]} */ (get(userdata)) ?? []).filter((u) => Array.isArray(u) && u[0] !== me).map((u) => ({ peerId: String(u[0] ?? ''), name: String(u[1] ?? '') }));
+		},
 		onCallStart: () => view({ busy: dispatcher?.inFlight() ?? 0 }),
 		onCallEnd: ({ tool, ok }) => view({ busy: dispatcher?.inFlight() ?? 0, lastCall: { tool, at: Date.now(), ok } })
 	});

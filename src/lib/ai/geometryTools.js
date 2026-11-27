@@ -24,7 +24,7 @@ import { peers } from '../../stores/appStore.js';
 import { applyGeometry, geometryParamsOf } from '$lib/geometryEdit';
 import { GEOMETRY_PARAMS, geometrySpec } from '$lib/geometryParams';
 import { PROFILE_MAX_POINTS, OUTLINE_MAX_POINTS, OUTLINE_MAX_HOLES } from '$lib/customGeometries';
-import { recordObjectPresence, recordTransform } from '$lib/history';
+import { recordObjectPresence, recordTransform, historyMark, rollbackTo } from '$lib/history';
 import { moveObjectToGroup } from '$lib/objectActions';
 import { toHexColor } from '$lib/materialParamRules.js';
 import { setPhysicsFor, physicsShapeChanged } from '$lib/physics';
@@ -701,40 +701,57 @@ async function editMeshTool(args) {
 		const pv = applySelect(vertices, topSel, (v) => v.position).picked;
 		return { object: uuid, selected: previewOf(pf, pv), faceCount: faces.length, vertexCount: vertices.length, note: 'nothing changed — pass ops to edit' };
 	}
+	// 107: every op is checked BEFORE any runs (shape, select, the op's mode), so a typo changes nothing
+	for (let i = 0; i < ops.length; i++) {
+		const op = ops[i];
+		if (!op || typeof op.op !== 'string') return { error: 'ops[' + i + ']: {op: "extrude", distance: 0.5} …' };
+		const sel = op.select !== undefined ? parseSelect(op.select) : topSel;
+		if (sel && 'error' in sel) return { error: 'ops[' + i + '].' + sel.error };
+		const mode = modeOf(op.select ?? null, op);
+		const allowed = mode === 'faces' ? FACE_OPS : VERTEX_OPS;
+		if (!allowed.includes(op.op)) return { error: 'ops[' + i + ']: "' + op.op + '" is not a ' + mode + ' op — ' + mode + ': ' + allowed.join(', ') };
+		// the first op has nothing to go on with; a later one may continue on the previous op's selection
+		if (!sel && i === 0) return { error: 'ops[0]: no selection — give select (top level or on the op)' };
+	}
 	const trianglesBefore = fe.facePartitionOf(object.geometry).tris.length;
+	const mark = historyMark();
 	/** @type {any[]} */
 	const done = [];
 	/** @type {number[] | null} the triangles the last face op left selected */
 	let carry = null;
+	/** a failed op takes the WHOLE call back (107): never ok:false with a changed mesh @param {string} error */
+	const fail = (error) => failed(uuid, done, error, done.length ? rollbackTo(mark) : true);
 	for (let i = 0; i < ops.length; i++) {
 		const op = ops[i];
-		if (!op || typeof op.op !== 'string') return { error: 'ops[' + i + ']: {op: "extrude", distance: 0.5} …', updated: done.length ? [{ uuid, ok: false, ops: done }] : undefined };
 		const sel = op.select !== undefined ? parseSelect(op.select) : topSel;
-		if (!sel) return partial(uuid, done, 'ops[' + i + ']: no selection — give select (top level or on the op)');
-		if ('error' in sel) return partial(uuid, done, 'ops[' + i + '].' + sel.error);
 		const mode = modeOf(op.select ?? null, op);
-		const allowed = mode === 'faces' ? FACE_OPS : VERTEX_OPS;
-		if (!allowed.includes(op.op)) return partial(uuid, done, 'ops[' + i + ']: "' + op.op + '" is not a ' + mode + ' op — ' + mode + ': ' + allowed.join(', '));
+		// an op with no select of its own goes on with what the last face op left selected (the extruded cap, the
+		// inset's inner face), like Edit Mesh — with or without a top-level select; otherwise the select is read again
+		const carried = op.select === undefined && carry && mode === 'faces';
+		if (!carried && !sel)
+			return fail('ops[' + i + ']: no selection to go on with — the previous op (' + ops[i - 1].op + ') leaves none selected; give this op a select');
 		const live = objectOf(uuid) ?? object;
-		// an op with no select of its own goes on with what the last face op left selected (the
-		// extruded cap, the inset's inner face), like Edit Mesh; otherwise the select is read again
-		const { tris, picked, outOfRange } =
-			op.select === undefined && carry && mode === 'faces' ? carriedSelection(fe, live, carry) : resolveSelection(fe, live, mode, sel);
-		if (outOfRange.length) return partial(uuid, done, 'ops[' + i + ']: ' + mode + ' ' + outOfRange.slice(0, 5).join(', ') + ' do not exist (preview with ops: [])');
-		if (!picked.length) return partial(uuid, done, 'ops[' + i + ']: the selection picks no ' + mode);
+		const { tris, picked, outOfRange } = carried ? carriedSelection(fe, live, /** @type {number[]} */ (carry)) : resolveSelection(fe, live, mode, sel);
+		if (outOfRange.length) return fail('ops[' + i + ']: ' + mode + ' ' + outOfRange.slice(0, 5).join(', ') + ' do not exist (preview with ops: [])');
+		if (!picked.length) return fail('ops[' + i + ']: the selection picks no ' + mode);
 		const res = runOp(fe, uuid, live, mode, op, picked, tris);
-		if (typeof res === 'string') return partial(uuid, done, 'ops[' + i + '] ' + res);
+		if (typeof res === 'string') return fail('ops[' + i + '] ' + res);
 		carry = res?.kept ?? null;
-		done.push({ op: op.op, [mode]: picked.length });
+		done.push({ op: op.op, [mode]: picked.length, ...(carried ? { on: 'previous' } : {}) });
 	}
 	const after = fe.facePartitionOf(objectOf(uuid).geometry);
 	return { updated: [{ uuid, ok: true, ops: done, triangles: after.tris.length, trianglesBefore, faces: after.partition.length }] };
 }
 
-/** an edit that stopped part-way: what ran stays (still one undo step), the rest is the error
- * @param {string} uuid @param {any[]} done @param {string} error */
-function partial(uuid, done, error) {
-	return done.length ? { updated: [{ uuid, ok: false, ops: done, errors: [error] }], warning: 'stopped at: ' + error } : { error };
+/**
+ * 107: an edit that stopped part-way. The ops that ran are taken back (one call is all or nothing); only when the
+ * history could not be rewound are they kept, and then the answer lists them.
+ * @param {string} uuid @param {any[]} done @param {string} error @param {boolean} rolledBack
+ */
+function failed(uuid, done, error, rolledBack) {
+	if (!done.length) return { error };
+	if (rolledBack) return { error, rolledBack: true, note: 'nothing changed: the ' + done.length + ' op(s) before it were taken back (' + done.map((d) => d.op).join(', ') + ')' };
+	return { updated: [{ uuid, ok: false, ops: done, errors: [error] }], warning: 'stopped at: ' + error + '. These ops could not be taken back and were KEPT: ' + done.map((d) => d.op).join(', ') + ' (undo_last takes them back).', kept: done.map((d) => d.op) };
 }
 
 // ---- mcp-shapes: create_shapes, many shapes in one call -------------------------------------------
@@ -1218,7 +1235,7 @@ export const GEOMETRY_AI_TOOLS = [
 		function: {
 			name: 'edit_mesh',
 			description:
-				'Model an existing mesh like Edit Mesh does: run ops on a selection of its faces or vertices. Face ops: extrude {distance}, inset {amount 0-1}, move {distance} along the normal, bevel {width, segments, profile}, subdivide (each quad into four, flat), subdivide_smooth {levels 1-3} (Catmull-Clark: rounds the picked faces off, an open border keeps its line; select all to smooth the whole mesh), bisect {point, normal, clear: inner|outer, fill} (cut the picked faces, or all of them, with a plane in the object\'s local coordinates (as the preview reports them); clear removes the side behind the normal (inner) or in front (outer), fill closes the cut), delete, flip. Vertex ops: weld (to their centre), move {offset [x,y,z]}, smooth {factor, iterations}, dissolve, bevel {width}, delete, connect (2 vertices), create_face (3-4 vertices). An op without its own select goes on with what the previous face op left selected (after extrude / inset / move / flip: the cap, the inset\'s inner face), like Edit Mesh; otherwise the select is read again on the mesh as it is at that op (indices too). Call with ops: [] first to preview faces / vertices (index, normal, centre). Afterwards the object counts as hand-edited (set_geometry then needs force). One undo step per call.',
+				'Model an existing mesh like Edit Mesh does: run ops on a selection of its faces or vertices. Face ops: extrude {distance}, inset {amount 0-1}, move {distance} along the normal, bevel {width, segments, profile}, subdivide (each quad into four, flat), subdivide_smooth {levels 1-3} (Catmull-Clark: rounds the picked faces off, an open border keeps its line; select all to smooth the whole mesh), bisect {point, normal, clear: inner|outer, fill} (cut the picked faces, or all of them, with a plane in the object\'s local coordinates (as the preview reports them); clear removes the side behind the normal (inner) or in front (outer), fill closes the cut), delete, flip. Vertex ops: weld (to their centre), move {offset [x,y,z]}, smooth {factor, iterations}, dissolve, bevel {width}, delete, connect (2 vertices), create_face (3-4 vertices). An op without its own select goes on with what the previous face op left selected (after extrude / inset / move / flip: the cap, the inset\'s inner face), like Edit Mesh; otherwise the select is read again on the mesh as it is at that op (indices too). Call with ops: [] first to preview faces / vertices (index, normal, centre). Afterwards the object counts as hand-edited (set_geometry then needs force). One undo step per call, all or nothing: when an op fails, the ops before it are taken back and the mesh is as it was.',
 			parameters: {
 				type: 'object',
 				properties: {

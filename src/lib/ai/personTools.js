@@ -11,11 +11,12 @@
 const FILE_TEXT_EXTENSIONS = ['txt', 'json', 'md', 'cfg', 'js'];
 
 export { PERSON_TOOL_NAMES, personToolReads } from './personToolNames.js';
+import { UI_STATE_AI_TOOLS } from './uiStateTools.js'; // 107-ui-state: ui_state, scene_stats
 
 const FILES_DESCRIPTION =
 	"The person's own Explorer (their Library of files and folders), in their tab: list folders and files, read a text file with numbered lines, " +
 	'create a text file or folder, write (replace the text, or lines [from, to]), rename, move, delete and restore. ' +
-	'Text files only (' + FILE_TEXT_EXTENSIONS.join(', ') + '); images, sounds and models are listed but stay with assets. ' +
+	'read / write / create take text files only (' + FILE_TEXT_EXTENSIONS.join(', ') + '); new images, sounds and models come in with assets; rename and move take every file (a .tpscene renames as its scene; never onto a taken name; what points at the file by content follows, a node naming it only by name refuses with the list; the answer says old -> new and the undo call). ' +
 	'Paths are folder names from the Library root: "Scripts/door.js", "Notes/" for a folder; a bare file name finds the file anywhere. ' +
 	'delete moves it to the Explorer\'s Deleted bin, exactly as the person\'s own delete (a folder with files in it, or a delete with the bin switched off, asks the person on their screen first: call again with the confirmId); restore brings it back (list {deleted: true} shows what can come back). ' +
 	'New files are private: nothing is shared with the session by this tool, and a folder shared with the session cannot take new files. Files someone else shared are read-only. ' +
@@ -24,14 +25,24 @@ const FILES_DESCRIPTION =
 	'Not for scenes (scene opens them) or for the scene\'s objects (list_scene).';
 
 const SHOW_DESCRIPTION =
-	"Show the person something on THEIR OWN screen (never anyone else's): panel = open, close or bring forward one of their panels " +
-	'(Explorer, Objects, Inspector, Flow editor, Code, Timeline, Assets, Preview, Chat, Assistant); camera = move their editor view to frame objects ' +
-	'(frame: [uuids], select: true also selects them), to a position + target, or let them look through a scene camera (through: uuid); ' +
-	'code = open a file or a Script / Behaviour node\'s code in their Code tab at a line, selecting lines [line, to], a range, or the first match of find; ' +
-	'back = undo what the last show changed. The first time for each of panel / camera / code the person is asked on their screen (Always / This time / No): ' +
+	"Show the person something on THEIR OWN screen (never anyone else's). " +
+	'panels = the list of every real panel (id, title, what it contains, read-only or not) with its state now: open, where (dock, left, right, floating, window), visible and front; ' +
+	'also the dock and the two sidebars, focus mode, the saved layouts, and the refused surfaces by reason. It only reads and never asks. ' +
+	'panel = open, close, focus (bring to the front where it is), toggle, move (to: dock, left, right, floating), maximize / restore (a docked panel fills the window), ' +
+	'collapse / expand one of its own sidebars (pane) for one panel by its name: Explorer, Objects, Inspector, Configure Scene, Flow editor, Animation, Timeline, UV editor, Shader editor, HUD editor, Code, ' +
+	'Profiler and Statistics (read-only views), Free assets, Preview (the selected Explorer file), Debugger, Chat, Assistant; or name "Dock", "Left sidebar", "Right sidebar" to open, close or toggle them (close hides, tabs stay open). ' +
+	'An unknown name opens nothing and the error lists the valid names: never guess another panel. The answer says visible and front truthfully. ' +
+	'Panels belong to Edit: while the person plays, panel and layout calls are refused (panels still reads). ' +
+	'layout = apply a saved layout by name, or save the current one under a new name. ' +
+	'camera = move their editor view to frame objects (frame: [uuids], select: true also selects them), to a position + target, or let them look through a scene camera (through: uuid); ' +
+	'code = open a file or a Script / Behaviour node\'s code in their Code tab and highlight lines [line, to], a range, or the first match of find, without focusing their editor (no caret, no phone keyboard; focus: true puts the caret there); ' +
+	'reveal = show a Library file or folder in their Explorer (tree expanded, selected, scrolled to; state "open" opens a folder); ' +
+	'select = set / add / remove / clear their selection (uuids, mode) WITHOUT moving the camera (clear shows the scene in Inspector and Flow editor); ' +
+	'flow = the Flow editor on the scene flow, an object\'s flow (object) or a node (node: selected and framed; the owner is selected unless select: false); ' +
+	'back = undo what the last show changed. The first time, the person is asked ONE question on their screen for every kind this app has not been answered yet, panel (also layout, reveal, select, flow) / camera / code (Always / This time / Only this / No; permissions are kept per app): ' +
 	'call again with the confirmId; after No, do not ask again, tell them where to look instead. ' +
 	'Each action leaves a line with a Back button for the person. Not in a VR headset (camera moves are refused there), not while they play, drag or type; ' +
-	'6 calls a minute, one camera move per 2 s. Never opens sign-in, account, settings, consent, publishing, connected apps or payment. ' +
+	'6 calls a minute, one camera move per 2 s. Never opens sign-in, account, settings, consent, publishing or export, connected apps or payment (each refused by name, with its reason); Configure Scene (scene settings) is scene content and opens. ' +
 	'screenshot never moves anyone (use it to look yourself); show moves the person\'s own view. show only opens and selects code: change text with files {action: "write"}, running code with edit_behaviour. ' +
 	'Opening another scene is scene, not show.';
 
@@ -81,12 +92,24 @@ export const PERSON_AI_TOOLS = [
 			parameters: {
 				type: 'object',
 				properties: {
-					action: { type: 'string', enum: ['panel', 'camera', 'code', 'back'], description: 'what to show' },
-					name: { type: 'string', description: 'panel: Explorer, Objects, Inspector, Flow editor, Code, Timeline, Assets, Preview, Chat or Assistant' },
-					state: { type: 'string', enum: ['open', 'close', 'focus'], description: 'panel: default open (focus brings an open one forward)' },
+					action: { type: 'string', enum: ['panels', 'panel', 'layout', 'camera', 'code', 'reveal', 'select', 'flow', 'back'], description: 'what to show (panels = the list, reads only)' },
+					name: { type: 'string', description: 'panel: a panel title from panels (Animation, UV editor, Profiler, ...) or Dock / Left sidebar / Right sidebar; layout: the layout name' },
+					state: {
+						type: 'string',
+						enum: ['open', 'close', 'focus', 'toggle', 'move', 'maximize', 'restore', 'collapse', 'expand', 'apply', 'save'],
+						description: 'panel: default open (with to: opens it there); focus brings an open one to the front; move needs to; collapse / expand need pane. layout: apply (default) or save. reveal: open = open the folder'
+					},
+					to: {
+						description: 'panel: where to move it — dock, left, right or floating. code: with line, the last line to select',
+						anyOf: [{ type: 'string', enum: ['dock', 'left', 'right', 'floating'] }, { type: 'number' }]
+					},
+					pane: { type: 'string', description: 'panel collapse / expand: one of the panel\'s own sidebars (panels lists paneNames: tree, files, tools, ...)' },
+					uuids: { type: 'array', items: { type: 'string' }, description: 'select: the objects' },
+					mode: { type: 'string', enum: ['set', 'add', 'remove', 'clear'], description: 'select: default set' },
+					focus: { type: 'boolean', description: 'code: true = focus their editor with the caret on it (default: highlight only)' },
 					frame: { type: 'array', items: { type: 'string' }, description: 'camera: object uuids to frame together' },
 					select: {
-						description: 'camera: true = also select the framed objects. code: a range to select, {from: [line, col], to: [line, col]} (lines from 1, columns from 0)',
+						description: 'camera: true = also select the framed objects. flow: false = keep the selection. code: a range to highlight, {from: [line, col], to: [line, col]} (lines from 1, columns from 0)',
 						anyOf: [
 							{ type: 'boolean' },
 							{ type: 'object', properties: { from: { type: 'array', items: { type: 'number' } }, to: { type: 'array', items: { type: 'number' } } }, required: ['from'] }
@@ -95,13 +118,12 @@ export const PERSON_AI_TOOLS = [
 					position: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3, description: 'camera: where the view goes [x, y, z] (with target)' },
 					target: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3, description: 'camera: the point it looks at [x, y, z]' },
 					through: { type: 'string', description: 'camera: a scene camera\'s uuid to look through' },
-					path: { type: 'string', description: 'code: an Explorer text file, "Scripts/door.js"' },
-					id: { type: 'string', description: 'code: an Explorer file id (instead of path)' },
-					node: { type: 'string', description: 'code: a Script or Behaviour node id' },
-					object: { type: 'string', description: 'code: an object uuid: its first Script or Behaviour node' },
+					path: { type: 'string', description: 'code: an Explorer text file, "Scripts/door.js"; reveal: any file, or a folder "Sounds/"' },
+					id: { type: 'string', description: 'code / reveal: an Explorer file or folder id (instead of path)' },
+					node: { type: 'string', description: 'code: a Script or Behaviour node id; flow: any node id' },
+					object: { type: 'string', description: 'code: an object uuid: its first Script or Behaviour node; flow: whose flow ("scene" or none = the scene flow)' },
 					line: { type: 'number', description: 'code: the line to go to (from 1)' },
-					to: { type: 'number', description: 'code: with line, select lines line..to' },
-					find: { type: 'string', description: 'code: select the first match of this text (from line, when given)' },
+					find: { type: 'string', description: 'code: highlight the first match of this text (from line, when given)' },
 					confirmId: { type: 'string', description: 'the answer to the first-use question (from a needsConfirm answer)' },
 					wait: { type: 'number', description: 'with confirmId: seconds to wait for the person\'s answer (at most 60)' }
 				},
@@ -128,7 +150,8 @@ export const PERSON_AI_TOOLS = [
 				required: ['action']
 			}
 		}
-	}
+	},
+	...UI_STATE_AI_TOOLS
 ];
 
 /** how the person's lines name the assistant @param {{by?: string}} [opts] */
@@ -152,5 +175,8 @@ export async function runPersonTool(name, args, opts) {
 		const { sceneTool } = await import('./sceneTool.js');
 		return sceneTool(args, { by: byOf(opts) });
 	}
+	// 107-ui-state
+	if (name === 'ui_state') return (await import('./uiStateTool.js')).uiState(args);
+	if (name === 'scene_stats') return (await import('./uiStateTool.js')).sceneStats(args, { by: byOf(opts) });
 	return { error: 'unknown tool "' + name + '"' };
 }

@@ -47,7 +47,8 @@ import {
 	moveProblem,
 	subtreeOf,
 	isTextFileName,
-	renamedFileName
+	renamedFileName,
+	extensionOf
 } from './codeFilesCore.js';
 
 /** why a viewer cannot change files, word for word what the sidebar shows */
@@ -111,6 +112,12 @@ const takenReason = (name) => 'A file called "' + name + '" already exists — t
 
 /** the library's text-file names, for the uniqueness rule */
 const textItems = () => get(explorerItems).filter((i) => isTextFileName(i.name));
+
+/** another file in folder `folderId` called `name` (case ignored), or null @param {string} name @param {string | null} folderId @param {string} selfId */
+function sameFolderHolder(name, folderId, selfId) {
+	const n = String(name ?? '').trim().toLowerCase();
+	return get(explorerItems).find((i) => i.id !== selfId && (i.folderId ?? null) === (folderId ?? null) && String(i.name).toLowerCase() === n) ?? null;
+}
 
 /** a folder id that still exists, else the root @param {string | null | undefined} id */
 function liveFolder(id) {
@@ -197,10 +204,14 @@ export function renameCodeEntry(opts, how = {}) {
 	if (!item) return refuse('That file is gone', q);
 	to = renamedFileName(to, item.name);
 	if (to === item.name) return { ok: true };
-	const bad = nameProblem(to, 'file');
+	// 107: any kind renames (the assistant's files {rename}); a text file keeps the Code tab's rules, any other
+	// file keeps its kind (its extension) and may not take a name a file in its folder already has
+	const text = isTextFileName(item.name);
+	const bad = nameProblem(to, text ? 'file' : 'name');
 	if (bad) return refuse(bad, q);
-	const holder = nameTakenBy(to, get(explorerItems), item.id);
-	if (holder) return refuse(takenReason(holder.name), q);
+	if (!text && extensionOf(to) !== extensionOf(item.name)) return refuse('"' + item.name + '" stays a .' + extensionOf(item.name) + ' file: keep the extension (or leave it off)', q);
+	const holder = text ? nameTakenBy(to, get(explorerItems), item.id) : sameFolderHolder(to, item.folderId ?? null, item.id);
+	if (holder) return refuse(text ? takenReason(holder.name) : 'There is already a file called "' + holder.name + '" in that folder', q);
 	renameItem(item.id, to);
 	if (!how.undoing) record({ op: 'rename', kind: 'file', id: item.id, from: item.name, to }, how.by);
 	return { ok: true };
@@ -232,6 +243,10 @@ export function moveCodeEntry(opts, how = {}) {
 	if (!item) return refuse('That file is gone', !!how.quiet);
 	const bad = moveProblem({ kind: 'file', id: item.id, parentId: item.folderId ?? null }, to, folders);
 	if (bad) return refuse(bad, !!how.quiet);
+	// 107: a move never lands on a name the folder already has (text names are library-wide unique, so only
+	// the other kinds can meet this)
+	const holder = sameFolderHolder(item.name, to, item.id);
+	if (holder) return refuse('There is already a file called "' + holder.name + '" there', !!how.quiet);
 	moveItem(item.id, to);
 	if (!how.undoing) record({ op: 'move', kind: 'file', id: item.id, from: item.folderId ?? null, to, name: item.name }, how.by);
 	return { ok: true };

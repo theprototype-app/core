@@ -16,6 +16,7 @@ import {
 	setPhysicsFor,
 	jointBodyProblem,
 	unbuiltJointIds,
+	simStartReport,
 	toggleSimulation,
 	stopSimulation,
 	pauseSimulation,
@@ -939,7 +940,30 @@ export async function controlSimulationTool(args) {
 		// mcp-fix: a joint that was not built holds nothing, so never let that pass as a clean start
 		const unbuilt = unbuiltJointIds();
 		const warnings = [...(unbuilt.length ? ['these joints are not in the simulation, because a side has no physics body: ' + unbuilt.join(', ')] : []), ...(inGroups ? [inGroups] : [])];
-		return { simulating: true, ...(warnings.length ? { warning: warnings.join(' ') } : {}) };
+		// 107: say what starting did on its own — a person only gets a toast for the fallback, and nothing at all for
+		// a Spin that physics now overrides
+		const report = simStartReport();
+		const said = (/** @type {string} */ u) => '"' + (objectOf(u)?.name || 'an object') + '"';
+		/** @type {any} */
+		const madeBodies = {};
+		if (report.fallback) {
+			warnings.push(
+				'No object had physics, so the simulation made the selected object ' + said(report.fallback) +
+					' a falling body (dynamic, mass 1) for this run' + (report.overridden.includes(report.fallback) ? ', and its flow motion (Spin …) stops while it runs' : '') +
+					'. Stop the simulation and it is back as it was; set_physics makes it permanent, or mode "static" keeps it still.'
+			);
+			madeBodies.selected = { uuid: report.fallback, mass: 1, temporary: true };
+		}
+		const others = report.overridden.filter((u) => u !== report.fallback);
+		if (others.length) {
+			warnings.push(
+				others.slice(0, 8).map(said).join(', ') + (others.length > 8 ? ' and ' + (others.length - 8) + ' more' : '') +
+					(others.length > 1 ? ' have' : ' has') + ' flow motion (Spin, Orbit …) AND dynamic physics: while the simulation runs, physics moves ' +
+					(others.length > 1 ? 'them' : 'it') + ' and the flow motion is paused. To see the flow motion, stop the simulation (flows run without it), or set_physics mode "static" (it then moves as a kinematic platform that pushes bodies).'
+			);
+			madeBodies.overridesFlowMotion = others;
+		}
+		return { simulating: true, ...(Object.keys(madeBodies).length ? { physicsBodies: madeBodies } : {}), ...(warnings.length ? { warning: warnings.join(' ') } : {}) };
 	}
 	if (action === 'stop') {
 		stopSimulation();

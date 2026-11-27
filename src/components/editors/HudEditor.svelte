@@ -33,7 +33,7 @@
 		hudPickArm, deliverHudPick, rectInFrame, offsetsInFrame
 	} from '$lib/hudDocs';
 	import { beginHudGesture, endHudGesture } from '$lib/hudSync';
-	import { hudPreviewInViewport } from '$lib/hudDocs';
+	import { hudPreviewInViewport, hudEditorFocus } from '$lib/hudDocs';
 	import { GAME_STATES } from '$lib/gameState';
 	import { listCameraObjects, cameraSpec, aspectRatio } from '$lib/cameraObjects';
 	import { objectsGroup } from '../../stores/sceneStore';
@@ -95,6 +95,15 @@
 	$effect(() => {
 		if (!screens.length) return;
 		if (!screens.some((s) => s.id === screenId)) screenId = doc?.active ?? screens[0].id;
+	});
+	// 107: a screen asked for from outside (the connector's hud create): its document and the screen, once
+	$effect(() => {
+		const want = $hudEditorFocus;
+		if (!want) return;
+		if (want.key !== docKey) docKey = want.key;
+		if (!screens.some((s) => s.id === want.screen)) return; // the document lands on the next pass
+		screenId = want.screen;
+		hudEditorFocus.set(null);
 	});
 	const screen = $derived(screens.find((s) => s.id === screenId) ?? null);
 	const elements = $derived(screen?.elements ?? []);

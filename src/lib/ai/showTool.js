@@ -1,42 +1,38 @@
 // Roadmap 104 C2 — `show`: the assistant drives the person's OWN interface, in their own tab. A lazy
 // chunk (personTools.js loads it on the first call). The rules are listed in showCore.js.
 //
-//   panel   {name, state: open | close | focus}   the allow-list in showCore.SHOW_PANELS, through the app's
-//           own toggles (panelToggles / dockHost / showSidebar / openChatTab), so a panel opens where
-//           the person keeps it (dock, sidebar, floating)
+//   panel   {name, state: open | close | focus | toggle | move (to) | maximize | restore | collapse | expand (pane)}
+//           107-panels: the registry in panelsCore.js (every real panel, the dock and the two sidebars as named
+//           targets), through the app's own seams (panels.js), so a panel opens where the person keeps it. An
+//           unknown name never substitutes: it errors with the valid names and the refused surfaces by reason.
+//   panels  the whole registry with each panel's state (open / where / visible / front): reads, never asks
+//   layout  {name, state: apply | save} the Windows ▸ Layouts named layouts
 //   camera  {frame: [uuids]} | {position, target} | {through: cameraUuid}, select: true selects what was
 //           framed. objectActions.flyTo (0.6 s, an instant cut under reduced motion) / startCameraPreview
 //   code    {path | id | node | object, line, to, select: {from, to}, find}: codeWorkspace.openCode, then
 //           the editor's reveal seam selects (CodeEditor `reveal.select`). Never edits text.
 //   back    undo what the newest `show` changed (a stack of 10)
+//   107 (showMore.js, lazy): reveal {path | id, state: 'open'} a file or folder in the Explorer · select {uuids,
+//           mode} with no camera move · flow {object | node} the Flow editor on a flow / a node. All three ride the
+//           PANEL kind's first-use answer (one question, not three more). code highlights without focus by default.
 //
-// Each kind asks the person once (Always / This time / No): Always is stored on this device
-// (safeStorage `show:allow:<kind>`, the switches in Settings ▸ Privacy), This time and No last
-// until the page reloads, per app. An app the Worker cannot name ("an AI app") is never offered Always
+// Each kind asks the person once (107: one question for every kind not answered yet). Permissions are kept
+// per app: Always is stored on this device for that app (showGrants.js, listed in Settings ▸ Privacy), This
+// time and No last until the page reloads. An app the Worker cannot name ("an AI app") is never offered Always
 // and never uses a stored one (104-int: 89's app names x 104's show).
 
 import { get } from 'svelte/store';
-import { safeStorage } from '../safeStorage';
-import { showToastById, inspectorClose, inspectorKind, chatHidden, chatTab, showSidebar, closeSelectionInspector, specatorMode } from '../../stores/appStore';
+import { showToastById, specatorMode } from '../../stores/appStore';
 import { globalCamera, orbitControls, globalRenderer, objectsGroup, TControls, isLocked, selectedObjects, marqueeRect, isVRMode } from '../../stores/sceneStore';
 import { askPerson } from './personAsk.js';
-import {
-	SHOW_PANELS,
-	SHOW_PER_MINUTE,
-	CAMERA_GAP_MS,
-	FLY_MS,
-	KIND_WORDS,
-	panelOf,
-	deniedPanel,
-	frameBox,
-	isVec3,
-	findRange
-} from './showCore.js';
+import { SHOW_PANELS, SHOW_PER_MINUTE, CAMERA_GAP_MS, FLY_MS, KIND_WORDS, panelOf, deniedPanel, frameBox, isVec3, findRange, MORE_KIND } from './showCore.js';
+import { targetOf } from './panelsCore.js';
 import { createRateLimit, resolveRef, isTextName, extOf } from './filesCore.js';
 import { isDirty } from '../codeTabs';
+import { sessionAnswers, alwaysAllowed, setAlways, GRANT_KINDS } from './showGrants.js';
 
-/** this page's answers: 'session' (This time) | 'no' @type {Map<string, string>} */
-const answers = new Map();
+/** this page's answers: 'session' (This time) | 'no' — 107: kept in showGrants so Settings lists them with Revoke */
+const answers = sessionAnswers;
 const calls = createRateLimit(SHOW_PER_MINUTE);
 let lastCameraAt = 0;
 /** what `back` undoes, newest last @type {{label: string, undo: () => Promise<string> | string}[]} */
@@ -50,7 +46,7 @@ const fail = (msg, extra) => {
 	return { error: msg, ...(extra ?? {}) };
 };
 
-/** @param {string} kind */
+/** the per-kind key older builds stored an Always under (showGrants reads it once, as Claude's) @param {string} kind */
 export const allowKey = (kind) => 'show:allow:' + kind;
 
 /** an app with a trusted name (Claude, ChatGPT, the in-app assistant), not one the Worker could not name @param {string} by */
@@ -62,11 +58,7 @@ const answerKey = (kind, by) => kind + '\n' + by;
 function allowed(kind, by) {
 	if (answers.get(answerKey(kind, by)) === 'session') return true;
 	if (!trustedApp(by)) return false;
-	try {
-		return safeStorage.getItem(allowKey(kind)) === 'always';
-	} catch {
-		return false;
-	}
+	return alwaysAllowed(kind, by);
 }
 
 /** why the view is not free to move (a recording, Film on the phone, a sequence shot), or '' */
@@ -141,81 +133,254 @@ const waitFrames = (frames) =>
 	});
 
 // ---------------------------------------------------------------- panel
+// 107-panels: the registry (panelsCore.js) says WHICH panels exist and what each is called; panels.js says where
+// each one is and works the app's own seams. This section is the show rules around them: an unknown name never
+// substitutes, the answer reports visible + front truthfully, and every change has a Back.
 
-/** @param {string} key */
-async function panelOpenNow(key) {
-	const { windowWhere } = await import('../dockMenu');
-	return windowWhere(key) !== null;
+/** the snapshot of what bringing something forward can change, so Back puts it back @returns {Promise<any>} */
+async function chromeSnapshot() {
+	const [b, sb, fm] = await Promise.all([import('../bottomDock'), import('../sidebars'), import('../focusMode')]);
+	return { active: get(b.bottomDockActive), min: get(b.dockMinimized), vis: { ...get(sb.sidebarVisible) }, shown: { ...get(sb.sidebarShown) }, focus: get(fm.focusMode) };
 }
 
-/** @param {string} id the SHOW_PANELS id */
-async function isOpen(id) {
-	const p = SHOW_PANELS[id];
-	if (p.via === 'inspector') return !get(inspectorClose) && get(inspectorKind) === 'selection';
-	if (p.via === 'chat') return get(chatHidden) === '' && get(chatTab) === (id === 'assistant' ? 'assistant' : 'session');
-	return panelOpenNow(p.key);
+/** @param {any} snap */
+async function restoreChrome(snap) {
+	const [b, sb, fm] = await Promise.all([import('../bottomDock'), import('../sidebars'), import('../focusMode')]);
+	b.bottomDockActive.set(snap.active);
+	b.dockMinimized.set(snap.min);
+	for (const side of /** @type {const} */ (['left', 'right'])) {
+		if (snap.shown[side] && get(sb.sidebarShown)[side] !== snap.shown[side]) sb.activateSidebarTab(snap.shown[side]);
+		if (!snap.vis[side] && get(sb.sidebarVisible)[side]) sb.toggleSidebar(side, false);
+	}
+	if (snap.focus && !get(fm.focusMode)) fm.enterFocus(snap.focus);
+}
+
+/** the answer's state fields @param {string} id @returns {Promise<{where?: string | null, visible?: boolean, front?: boolean, panes?: any}>} */
+async function panelState(id) {
+	const P = await import('./panels.js');
+	await P.waitFrames(2);
+	const r = await P.readPanel(id);
+	return r ? { where: r.where, visible: r.visible, front: r.front, ...(r.panes ? { panes: r.panes } : {}) } : {};
+}
+
+/** why a panel that is open is still not visible, for the note @param {any} st */
+function hiddenWhy(st) {
+	if (get(isLocked) === true) return 'The person is playing (Play mode hides the editor): it shows when they press Esc.';
+	if (st.where && !st.visible) return 'It is open but not showing on this screen (a narrow screen or a phone can fold it away).';
+	return '';
 }
 
 /** @param {string} id */
-async function openPanel(id) {
-	const p = SHOW_PANELS[id];
-	if (p.via === 'inspector') return showSidebar('properties', { focus: true });
-	if (p.via === 'chat') {
-		const { openChatTab } = await import('../chat/chatWindow.js');
-		return openChatTab(id === 'assistant' ? 'assistant' : 'session');
+const readOnlyNote = (id) => (SHOW_PANELS[id]?.readOnly ? { readOnly: true, note: 'A read-only panel: it shows figures; it changes nothing in the scene.' } : {});
+
+/** the dock / a sidebar as a target @param {'dock'|'left'|'right'} tid @param {string} state @param {string} by */
+async function targetAction(tid, state, by) {
+	const T = (await import('./panelsCore.js')).TARGETS[tid];
+	const want = state === 'focus' ? 'open' : state;
+	if (!['open', 'close', 'toggle'].includes(want)) return fail(T.title + ': state open, close or toggle');
+	const P = await import('./panels.js');
+	const r = await P.setTarget(tid, /** @type {any} */ (want));
+	if ('error' in r) return fail(r.error);
+	const all = await P.readPanels();
+	const now = /** @type {any} */ (all)[tid];
+	if (r.changed) {
+		push((r.open ? 'opened ' : 'closed ') + T.title, () => {
+			r.undo();
+			return (r.open ? 'closed ' : 'reopened ') + T.title;
+		});
+		line(by + (r.open ? ' opened ' : ' closed ') + 'the ' + T.title.toLowerCase());
 	}
-	const { focusWindow } = await import('../dockMenu');
-	if (focusWindow(p.key)) return;
-	if (p.via === 'toggle') {
-		const { togglePanel } = await import('../panelToggles');
-		return togglePanel(p.key);
-	}
-	const { HOSTED } = await import('../dockHost');
-	HOSTED[p.key]?.open();
+	return { target: T.title, ...now, state: now.open ? 'open' : 'closed', changed: r.changed, ...(r.changed && !r.open ? { note: 'Hidden, not closed: every tab in it stays open.' } : {}) };
 }
 
-/** @param {string} id */
-async function closePanel(id) {
-	const p = SHOW_PANELS[id];
-	if (p.via === 'inspector') return closeSelectionInspector();
-	if (p.via === 'chat') return chatHidden.set('hidden');
-	if (p.via === 'hosted') {
-		const { HOSTED } = await import('../dockHost');
-		return HOSTED[p.key]?.close();
-	}
-	const { closeDockView } = await import('../dockMenu');
-	closeDockView(p.key);
+/**
+ * 107-panels (ruling 2026-11-27): when no panel change can be true. Play mode hides the editor, so show never answers
+ * success for a panel that is not there; an open dialog (Settings, Sessions, ...) puts the panels back as they were
+ * when it closes, and watching someone else's view holds the same snapshot.
+ * @returns {Promise<{error: string, extra: any} | null>}
+ */
+async function panelsNotNow() {
+	if (get(isLocked) === true) return { error: 'the person is playing: panels belong to Edit, and Play hides them. Nothing was opened. Ask them to press Esc to go back to Edit, then call again', extra: { refused: true, playing: true } };
+	const { anyModalOpen } = await import('../../stores/appStore');
+	if (get(anyModalOpen)) return { error: 'a dialog is open on the person\'s screen (Settings, Sessions, Modules, ...): it puts the panels back as they were when it closes. Ask them to close it first', extra: { busy: true, retryAfter: 5 } };
+	if (get(specatorMode)) return { error: 'the person is watching someone else\'s view: their panels come back when they press Exit', extra: { refused: true } };
+	return null;
+}
+
+/** the person's Windows ▸ Lock layout: moves and layouts wait for them @returns {Promise<string>} */
+async function layoutLockedWhy() {
+	const { layoutLocked } = await import('../windowPrefs');
+	return get(layoutLocked) ? 'the person locked the layout (Windows ▸ Lock layout): moving panels and applying a layout wait until they unlock it' : '';
 }
 
 /** @param {any} args @param {string} by */
 async function panelAction(args, by) {
+	const core = await import('./panelsCore.js');
 	const asked = String(args.name ?? args.panel ?? '');
-	if (!asked) return fail('name: the panel to show — ' + Object.values(SHOW_PANELS).map((p) => p.label).join(', '));
-	if (deniedPanel(asked)) return fail('"' + asked + '" is not something show opens: sign-in, account, consent, publishing, connected apps, payment and settings stay the person\'s own to open', { refused: true });
-	const id = panelOf(asked);
-	if (!id) return fail('no panel "' + asked + '": show opens ' + Object.values(SHOW_PANELS).map((p) => p.label).join(', '));
+	if (!asked) return fail('name: the panel to show. ' + core.unknownPanelError('').error.replace(/^no panel "": nothing was opened\. /, ''), { valid: core.validNames(), blocked: core.blockedList() });
+	const blocked = core.blockedError(asked);
+	if (blocked) return fail(blocked.error, { refused: true, reason: blocked.reason, surface: blocked.surface, blocked: blocked.blocked });
+	if (!core.panelOf(asked) && !core.targetOf(asked)) {
+		const e = core.unknownPanelError(asked);
+		return fail(e.error, { valid: e.valid, blocked: e.blocked });
+	}
+	const notNow = await panelsNotNow();
+	if (notNow) return fail(notNow.error, notNow.extra);
+	// a `to` without a state opens it (when closed) and puts it there: the open path below moves it too
 	const state = String(args.state ?? 'open');
-	if (!['open', 'close', 'focus'].includes(state)) return fail('state: open, close or focus');
-	const label = SHOW_PANELS[id].label;
-	const was = await isOpen(id);
+	const tid = core.targetOf(asked);
+	if (tid) return targetAction(/** @type {any} */ (tid), state, by);
+	const id = /** @type {string} */ (core.panelOf(asked));
+	const p = core.PANEL_BY_ID[id];
+	const label = p.title;
+	const P = await import('./panels.js');
+	const STATES = ['open', 'close', 'focus', 'toggle', 'move', 'maximize', 'restore', 'collapse', 'expand'];
+	if (!STATES.includes(state)) return fail('state: ' + STATES.join(', '));
+	const before = await P.readPanel(id);
+	const was = !!before?.open;
+	const sameAs = { id, ...(asked.trim().toLowerCase() !== label.toLowerCase() ? { asked } : {}) };
+
+	if (state === 'toggle') return panelAction({ ...args, state: was && before?.front ? 'close' : 'open' }, by);
+
 	if (state === 'close') {
-		if (!was) return { panel: label, state: 'closed', changed: false };
-		await closePanel(id);
+		if (!was) return { panel: label, ...sameAs, state: 'closed', changed: false };
+		const snap = await chromeSnapshot();
+		await P.closePanel(p);
 		push('closed ' + label, async () => {
-			await openPanel(id);
+			await P.openPanel(p);
+			await restoreChrome(snap);
 			return 'reopened ' + label;
 		});
 		line(by + ' closed ' + label);
-		return { panel: label, state: 'closed', changed: true };
+		return { panel: label, ...sameAs, state: 'closed', changed: true };
 	}
-	await openPanel(id);
-	if (!was)
-		push('opened ' + label, async () => {
-			await closePanel(id);
-			return 'closed ' + label;
+
+	if (state === 'collapse' || state === 'expand') {
+		if (!args.pane) return fail('pane: which of ' + label + '\'s own sidebars — ' + (p.panes ? Object.keys(p.panes).join(', ') : 'it has none'));
+		if (!was) return fail(label + ' is not open: open it first');
+		const r = await P.setPane(p, String(args.pane), state === 'expand');
+		if ('error' in r) return fail(r.error);
+		const changed = r.was !== (state === 'expand');
+		if (changed) {
+			push((state === 'expand' ? 'opened ' : 'closed ') + label + '\'s ' + r.pane, async () => {
+				await P.setPane(p, r.pane, r.was);
+				return 'put ' + label + '\'s ' + r.pane + ' back';
+			});
+			line(by + (state === 'expand' ? ' opened ' : ' closed ') + label + '\'s ' + r.pane + ' sidebar');
+		}
+		return { panel: label, ...sameAs, pane: r.pane, paneState: state === 'expand' ? 'open' : 'closed', changed, ...(await panelState(id)) };
+	}
+
+	if (state === 'maximize' || state === 'restore') {
+		const r = await P.maximizePanel(p, state === 'maximize');
+		if ('error' in r) return fail(r.error);
+		const fm = await import('../focusMode');
+		const now = get(fm.focusMode);
+		const changed = now !== r.was;
+		if (changed) {
+			push(state === 'maximize' ? 'maximized ' + label : 'restored the layout', async () => {
+				if (r.was) fm.enterFocus(/** @type {any} */ (r.was));
+				else fm.exitFocus();
+				return state === 'maximize' ? 'restored the layout' : 'maximized it again';
+			});
+			line(by + (state === 'maximize' ? ' maximized ' + label + ' (Esc restores)' : ' restored your layout'));
+		}
+		return { panel: label, ...sameAs, maximized: now === 'dock', changed, ...(await panelState(id)) };
+	}
+
+	if (state === 'move' || (args.to && state === 'open')) {
+		const locked = await layoutLockedWhy();
+		if (locked) return fail(locked, { refused: true, locked: true });
+	}
+	if (state === 'move') {
+		const to = String(args.to ?? '');
+		if (!['dock', 'left', 'right', 'floating'].includes(to)) return fail('to: dock, left, right or floating');
+		const r = await P.movePanel(p, /** @type {any} */ (to));
+		if ('error' in r) return fail(r.error);
+		const st = await panelState(id);
+		const changed = r.from !== st.where;
+		if (changed && r.from) {
+			const from = r.from;
+			push('moved ' + label, async () => {
+				await P.movePanel(p, /** @type {any} */ (from));
+				return 'moved ' + label + ' back';
+			});
+			line(by + ' moved ' + label + ' to the ' + (to === 'dock' ? 'dock' : to === 'floating' ? 'a floating window' : to + ' sidebar'));
+		}
+		return { panel: label, ...sameAs, state: 'open', changed, ...st };
+	}
+
+	// open / focus: open it where it lives, or bring it to the front where it is
+	const snap = await chromeSnapshot();
+	const { exitedFocus } = was ? await P.bringForward(p) : (await P.openPanel(p), { exitedFocus: null });
+	let st = await panelState(id);
+	// a move asked together with the open
+	if (args.to && ['dock', 'left', 'right', 'floating'].includes(String(args.to)) && st.where !== args.to) {
+		const r = await P.movePanel(p, /** @type {any} */ (String(args.to)));
+		if ('error' in r) return fail(r.error, { opened: !was, panel: label });
+		st = await panelState(id);
+	}
+	const changed = !was || !before?.front || before?.where !== st.where || !!exitedFocus;
+	if (changed)
+		push((was ? 'brought ' + label + ' forward' : 'opened ' + label), async () => {
+			if (!was) await P.closePanel(p);
+			await restoreChrome(snap);
+			return was ? 'put the panels back as they were' : 'closed ' + label;
 		});
-	line(by + (was ? ' brought ' + label + ' forward' : ' opened ' + label));
-	return { panel: label, state: 'open', changed: !was, ...(inVR() ? { note: 'The person is in a headset: panels show when they take it off.' } : {}) };
+	if (changed) line(by + (was ? ' brought ' + label + ' forward' : ' opened ' + label));
+	const why = st.visible ? '' : hiddenWhy(st);
+	const ro = readOnlyNote(id);
+	const notes = [ro.note, why, exitedFocus ? 'Focus mode was hiding it: the person\'s layout is back (back re-enters focus mode).' : '', inVR() ? 'The person is in a headset: panels show when they take it off.' : ''].filter(Boolean);
+	return {
+		panel: label,
+		...sameAs,
+		state: 'open',
+		changed,
+		...st,
+		...(ro.readOnly ? { readOnly: true } : {}),
+		...(notes.length ? { note: notes.join(' ') } : {})
+	};
+}
+
+// ---------------------------------------------------------------- layout (the Layouts menu's named layouts)
+
+/** @param {any} args @param {string} by */
+async function layoutAction(args, by) {
+	const notNow = await panelsNotNow();
+	if (notNow) return fail(notNow.error, notNow.extra);
+	const L = await import('../uiLayouts');
+	const list = /** @type {any[]} */ (get(L.uiLayouts));
+	const state = String(args.state ?? 'apply');
+	const name = String(args.name ?? '').trim();
+	if (!name) return fail('name: the layout\'s name. Saved layouts: ' + (list.map((l) => l.name).join(', ') || 'none yet'), { layouts: list.map((l) => l.name) });
+	const hit = list.find((l) => String(l.name).toLowerCase() === name.toLowerCase());
+	if (state === 'save') {
+		if (hit) return fail('a layout named "' + hit.name + '" exists: show never overwrites one (the person replaces it in Windows ▸ Layouts), pick a new name', { layouts: list.map((l) => l.name) });
+		const r = L.saveLayout(name);
+		if (!r.ok) return fail(r.reason);
+		const id = r.layout.id;
+		push('saved the layout "' + r.layout.name + '"', () => {
+			L.deleteLayout(id);
+			return 'removed the layout "' + r.layout.name + '"';
+		});
+		line(by + ' saved your layout as "' + r.layout.name + '"');
+		return { layout: r.layout.name, saved: true, layouts: get(L.uiLayouts).map((/** @type {any} */ l) => l.name) };
+	}
+	if (state !== 'apply') return fail('layout state: apply (default) or save');
+	const locked = await layoutLockedWhy();
+	if (locked) return fail(locked, { refused: true, locked: true });
+	if (!hit) return fail('no layout "' + name + '": nothing changed. Saved layouts: ' + (list.map((l) => l.name).join(', ') || 'none yet'), { layouts: list.map((l) => l.name) });
+	const beforeRec = L.captureLayout('before');
+	const beforeActive = get(L.activeLayoutId);
+	const ok = await L.applyLayout(hit.id);
+	if (!ok) return fail('the layout could not be applied right now (another one is applying): try again in a moment');
+	push('applied the layout "' + hit.name + '"', async () => {
+		await L.applyLayoutRecord(beforeRec);
+		L.activeLayoutId.set(beforeActive);
+		return 'put the layout from before back';
+	});
+	line(by + ' applied your layout "' + hit.name + '"');
+	return { layout: hit.name, applied: true };
 }
 
 // ---------------------------------------------------------------- camera
@@ -369,7 +534,8 @@ async function codeAction(args, by) {
 	const total = text.split('\n').length;
 	/** @type {{from: number[], to: number[]} | null} */
 	let select = null;
-	let at = Math.max(1, Math.floor(Number(args.line) || 0));
+	// 107 (scout inv-B d): no line given = no line (it used to read as line 1, so a bare open moved the caret there)
+	let at = Number(args.line) >= 1 ? Math.floor(Number(args.line)) : 0;
 	if (typeof args.find === 'string' && args.find) {
 		const hit = findRange(text, args.find, at || 1);
 		if (!hit) return fail('"' + String(args.find).slice(0, 60) + '" is not in ' + target.label + ' (it is open now)', { opened: true, tabId });
@@ -382,7 +548,11 @@ async function codeAction(args, by) {
 		const toLine = Math.min(total, Math.floor(Number(args.to)));
 		select = { from: [at, 0], to: [toLine, (text.split('\n')[toLine - 1] ?? '').length] };
 	}
-	if (at || select) ws.revealInTab(tabId, at || 1, select ?? undefined);
+	// 107: by default the range is HIGHLIGHTED without focusing the editor (no caret, no on-screen keyboard on
+	// a phone), and a bare line is highlighted whole; focus: true puts the caret there as before
+	const focus = args.focus === true;
+	if (!focus && at && !select && at <= total) select = { from: [at, 0], to: [at, (text.split('\n')[at - 1] ?? '').length] };
+	if (at || select) ws.revealInTab(tabId, at || 1, select ?? undefined, { highlight: !focus });
 	const fresh = !before.has(tabId);
 	push('opened ' + target.label, () => {
 		const t = /** @type {any} */ (ws.tabById(tabId));
@@ -398,8 +568,9 @@ async function codeAction(args, by) {
 		tabId,
 		lines: total,
 		...(at ? { line: at } : {}),
-		...(select ? { selected: select } : {}),
-		note: 'Only opened and selected: the person edits it, or change a file with files {action: "write"} (running code: edit_behaviour).'
+		...(select ? { selected: select, ...(focus ? {} : { highlighted: true }) } : {}),
+		focused: focus,
+		note: (focus ? 'Opened with the caret there' : 'Highlighted, without focusing their editor (no caret, no keyboard)') + ': the person edits it, or change a file with files {action: "write"} (running code: edit_behaviour).'
 	};
 }
 
@@ -410,20 +581,32 @@ async function codeAction(args, by) {
  */
 export async function showTool(args, ctx = {}) {
 	const a = args && typeof args === 'object' ? args : {};
-	const action = String(a.action ?? '');
+	const raw = String(a.action ?? '');
 	const by = String(ctx.by || 'The assistant');
-	if (action === 'back') {
+	if (raw === 'back') {
 		if (!stack.length) return { back: false, note: 'nothing to put back: show has not changed anything yet (or it was all put back)' };
 		const said = await back();
 		return { back: true, did: said, left: stack.length };
 	}
-	if (!['panel', 'camera', 'code'].includes(action)) return fail('action: panel, camera, code or back');
-	// rule 2 first: a denied or unknown panel is refused without asking and without spending the minute's calls
-	if (action === 'panel') {
-		const asked = String(a.name ?? a.panel ?? '');
-		if (asked && deniedPanel(asked)) return panelAction(a, by);
-		if (asked && !panelOf(asked)) return panelAction(a, by);
+	// 107-panels: the panel list only reads — no question, no pacing
+	if (raw === 'panels') {
+		const { readPanels } = await import('./panels.js');
+		return readPanels();
 	}
+	// 107-select-files: reveal (Explorer), select (no camera), flow (Flow editor) ride the panel kind's answer (MORE_KIND)
+	if (!['panel', 'camera', 'code', 'layout', 'reveal', 'select', 'flow'].includes(raw)) return fail('action: panel, panels, layout, camera, code, reveal, select, flow or back');
+	// rule 2 first: a denied or unknown panel is refused without asking and without spending the minute's calls
+	if (raw === 'panel') {
+		const asked = String(a.name ?? a.panel ?? '');
+		if (!asked || deniedPanel(asked) || (!panelOf(asked) && !targetOf(asked))) return panelAction(a, by);
+	}
+	// 107-panels: nobody is asked about a panel change that cannot happen now (Play, a dialog, spectating)
+	if (raw === 'panel' || raw === 'layout' || MORE_KIND[raw]) {
+		const notNow = await panelsNotNow();
+		if (notNow) return fail(notNow.error, notNow.extra);
+	}
+	// 107-panels: a layout asks as a panel change (the same first-use kind: "open and close your panels and select things in them")
+	const action = raw === 'layout' ? 'panel' : MORE_KIND[raw] ?? raw;
 	const busy = busyReason();
 	if (busy) return fail(busy + ': show waits until they stop (try again in a moment)', { busy: true, retryAfter: 3 });
 	// the camera's own pacing first (it is synchronous): the checks below await
@@ -440,33 +623,56 @@ export async function showTool(args, ctx = {}) {
 	const run = async () => {
 		calls.note();
 		debug.done++;
-		debug.last = { action, at: Date.now() };
-		if (action === 'panel') return panelAction(a, by);
-		if (action === 'camera') return cameraAction(a, by);
-		return codeAction(a, by);
+		debug.last = { action: raw, at: Date.now() };
+		if (raw === 'layout') return layoutAction(a, by);
+		if (raw === 'panel') return panelAction(a, by);
+		if (raw === 'camera') return cameraAction(a, by);
+		if (raw === 'code') return codeAction(a, by);
+		// 107-select-files (lazy): the registry's own open / read (panels.js), by id
+		const { PANEL_BY_ID } = await import('./panelsCore.js');
+		const P = await import('./panels.js');
+		const openPanelId = async (/** @type {string} */ id) => ((await P.readPanel(id))?.open ? P.bringForward(PANEL_BY_ID[id]) : P.openPanel(PANEL_BY_ID[id]));
+		const isOpenId = async (/** @type {string} */ id) => !!(await P.readPanel(id))?.open;
+		const more = await import('./showMore.js');
+		return more.showMore(raw, a, { by, fail, line, push, openPanel: openPanelId, isOpen: isOpenId, inVR, nameOf });
 	};
 	if (allowed(action, by)) return run();
-	// rule 3: the first time, the person says whether (Always / This time / No)
+	// rule 3: the first time, the person says whether (Always / This time / No). 107 (owner report): ONE question for
+	// every kind not answered yet — it names each kind it grants and never a refused surface; "Only this" keeps the
+	// narrow answer. Lifetimes as before: Always on this device, This time for this page. Only the person's buttons answer.
+	const kinds = combinedKinds(action, by);
+	const said = kinds.map((k) => KIND_WORDS[k]);
+	const words = said.length > 1 ? said.slice(0, -1).join(', ') + ' and ' + said[said.length - 1] : said[0];
 	return askPerson('show', a, {
-		summary: KIND_WORDS[action],
-		prompt: 'Let ' + by.replace(/^An /, 'an ') + ' ' + KIND_WORDS[action] + '?',
+		summary: words,
+		prompt:
+			'Let ' + by.replace(/^An /, 'an ') + ' ' + words + '?' +
+			(kinds.length > 1 ? ' Never sign-in, account, settings, consent, publishing, connected apps or payment. Settings ▸ Privacy lists what you allowed.' : ''),
 		choices: [
 			...(trustedApp(by) ? [{ label: 'Always', value: 'always' }] : []),
 			{ label: 'This time', value: 'session' },
+			...(kinds.length > 1 ? [{ label: 'Only this', value: 'one' }] : []),
 			{ label: 'No', value: 'no', cancel: true }
 		],
 		apply: async (value) => {
-			if (value === 'always') {
-				try {
-					safeStorage.setItem(allowKey(action), 'always');
-				} catch {}
-			} else answers.set(answerKey(action, by), 'session');
-			return run();
+			const granted = value === 'one' ? [action] : kinds;
+			for (const k of granted) {
+				if (value === 'always') setAlways(k, true, by);
+				else answers.set(answerKey(k, by), 'session');
+			}
+			const r = await run();
+			return granted.length > 1 && r && typeof r === 'object' ? { ...r, granted: granted.map((k) => KIND_WORDS[k]), grantedFor: value === 'always' ? 'this device' : 'this page' } : r;
 		}
 	}).then((r) => {
-		if (r?.cancelled) answers.set(answerKey(action, by), 'no');
+		if (r?.cancelled) for (const k of kinds) answers.set(answerKey(k, by), 'no'); // No to the question = no to every kind it named
 		return r;
 	});
+}
+
+/** 107: the kinds one first-use question covers — the asked kind first, then every kind this app has neither been
+ * allowed nor refused yet (a No stays a No) @param {string} action @param {string} by */
+export function combinedKinds(action, by) {
+	return [action, ...GRANT_KINDS.filter((k) => k !== action && !allowed(k, by) && answers.get(answerKey(k, by)) !== 'no')];
 }
 
 /** unit / e2e: forget this page's answers and pacing */

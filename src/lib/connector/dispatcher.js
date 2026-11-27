@@ -95,6 +95,33 @@ const CODE_WORDS = 'its code could not be loaded, usually because a new version 
 const PROBE_WAIT_MS = 3000;
 
 /**
+ * 107-int (claude:9): an error said to the AI app carries no other person's peer id and no other person's NAME, and no
+ * file path. 107 sends a tool's `errors` / `skipped` reasons / `note` along with the error, and a lock skip names its
+ * holder as `Name (peer <id>)` (lockNote.js): to the AI app it is "another person". `others` = the other people in the
+ * session ({peerId, name}; the connector passes the roster without this tab's own row): each id and each name (whole
+ * words, two letters or more) becomes "another person". A filesystem path or a file:/blob: URL becomes "[path]".
+ * Pure, exported for the unit test.
+ * @param {string} text @param {{peerId?: string, name?: string}[]} [others]
+ */
+export function scrubErrorText(text, others = []) {
+	const esc = (/** @type {string} */ v) => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	let t = String(text)
+		.replace(/is locked by .+? — they are editing it/g, 'is locked by another person — they are editing it')
+		.replace(/ ?\(peer [^\s)]+\)/g, '')
+		.replace(/\bpeer (?=[A-Za-z_-]*\d)[A-Za-z0-9_-]{4,}\b/g, 'another person');
+	for (const o of others ?? []) {
+		for (const v of [o?.peerId, o?.name]) {
+			const w = String(v ?? '').trim();
+			if (w.length < 2) continue;
+			t = t.replace(new RegExp('(^|[^\\p{L}\\p{N}_])' + esc(w) + '(?![\\p{L}\\p{N}_])', 'giu'), '$1another person');
+		}
+	}
+	return t
+		.replace(/\b(?:file:\/\/|blob:)[^\s'")]+/g, '[path]')
+		.replace(/(?:[A-Za-z]:\\|\/(?:home|Users|root|tmp|var|mnt|private)\/)[^\s'")]+/g, '[path]');
+}
+
+/**
  * @param {{
  *   agent: {tools: () => any[], exec: (name: string, args: any) => Promise<any>, status: () => any,
  *     waitForEdit: (ms?: number) => Promise<any>, screenshot: (opts: any) => Promise<string|null>, lastShot?: () => any},
@@ -106,6 +133,7 @@ const PROBE_WAIT_MS = 3000;
  *   toolCode?: Record<string, () => Promise<any>>,
  *   you?: () => {peerId: string|null, name: string, role: 'host'|'guest'|'editor'|'viewer', inVR: boolean},
  *   lastJoinResult?: () => any,
+ *   others?: () => {peerId: string, name: string}[],
  *   onCallStart?: (call: {id: string, tool: string}) => void,
  *   onCallEnd?: (call: {id: string, tool: string, ok: boolean}) => void
  * }} deps
@@ -171,10 +199,29 @@ export function createDispatcher(deps) {
 	}
 
 	/** @param {string} code @param {string} message */
-	const fail = (code, message) => ({ error: { code, message } });
+	// 107-int (claude:9): EVERY error frame goes through the scrub — no other person's id or name, no file path
+	const fail = (code, message) => ({ error: { code, message: scrubErrorText(message, deps.others?.() ?? []) } });
 
 	/** @param {any} r */
 	const isError = (r) => !!(r && typeof r === 'object' && !Array.isArray(r) && r.error);
+
+	/**
+	 * 107: an error answer's own details, said in the message — the frame carries a message only, so a tool's `errors`
+	 * (a shader's per-node problems), `skipped` (why each object was left), `note` (an edit that was taken back) and
+	 * `created` (what was made before it stopped) were dropped on the way to the AI app.
+	 * @param {any} r
+	 */
+	const errorText = (r) => {
+		const parts = [String(r.error)];
+		const list = (/** @type {any} */ v) => (Array.isArray(v) ? v : []);
+		const errs = list(r.errors).map(String);
+		if (errs.length) parts.push('— ' + errs.slice(0, 6).join('; '));
+		const skipped = list(r.skipped).map((/** @type {any} */ x) => [x?.reason, ...list(x?.errors)].filter(Boolean).join(': ')).filter(Boolean);
+		if (skipped.length) parts.push('— ' + [...new Set(skipped)].slice(0, 6).join('; '));
+		if (typeof r.note === 'string') parts.push('(' + r.note + ')');
+		if (r.created) parts.push(JSON.stringify(r.created).slice(0, 600));
+		return parts.join(' ').slice(0, 1000);
+	};
 
 	/** what status() tells a remote caller — the person's own view of where this tab is */
 	function status() {
@@ -229,7 +276,7 @@ export function createDispatcher(deps) {
 			if (!inFlight.has(id) || inFlight.get(id)?.cancelled) return fail('cancelled', 'cancelled');
 			const r = await deps.agent.exec(tool, args);
 			if (r && typeof r === 'object' && r.refused) return fail('refused', String(r.error ?? 'refused'));
-			if (isError(r)) return fail('failed', String(r.error) + (r.created ? ' ' + JSON.stringify(r.created).slice(0, 600) : ''));
+			if (isError(r)) return fail('failed', errorText(r));
 			// 98 P2: a photo comes back as an image the AI app can see (downscaled like a screenshot)
 			if (tool === 'take_photo' && typeof r?.image_url === 'string') {
 				const { image_url, ...rest } = r;

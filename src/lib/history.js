@@ -200,6 +200,44 @@ export function historyBatchOpen() {
 	return batch !== null;
 }
 
+/** 107: where the history stands now, for `rollbackTo` (a multi-step call that fails part-way) */
+export function historyMark() {
+	const stack = get(undoStack);
+	return { batch, at: batch ? batch.length : -1, top: stack[stack.length - 1] ?? null, size: stack.length };
+}
+
+/**
+ * 107: take back every entry recorded since `mark`, newest first, through the same replicated appliers an undo
+ * uses, and drop them (no redo: they never happened). False when the history moved under the mark (another batch
+ * opened, the stack was trimmed): the caller then keeps what ran and says so.
+ * @param {ReturnType<typeof historyMark>} mark
+ */
+export function rollbackTo(mark) {
+	/** @type {any[]} */
+	let entries;
+	if (mark.batch) {
+		if (batch !== mark.batch || batch.length < mark.at) return false;
+		entries = batch.splice(mark.at);
+	} else {
+		if (batch) return false;
+		const stack = get(undoStack);
+		const at = mark.top ? stack.indexOf(mark.top) + 1 : 0;
+		if ((mark.top && at === 0) || (!mark.top && mark.size > 0)) return false;
+		entries = stack.slice(at);
+		undoStack.set(stack.slice(0, at));
+	}
+	applying = true;
+	try {
+		let ok = true;
+		withWireBatch(() => {
+			for (const entry of [...entries].reverse()) if (applyState(entry, entry.before) === false) ok = false;
+		});
+		return ok;
+	} finally {
+		applying = false;
+	}
+}
+
 /**
  * 37 R25: undo ONE specific entry — the Undo button on a toast, which names the action it
  * offered rather than "whatever is on top now". On top of the stack it is an ordinary undo
@@ -524,7 +562,7 @@ registerHistoryKind('transformSet', (entry, state) => {
 	/** @type {any} */
 	const peer = get(peers);
 	let any = false;
-	entry.items.forEach((item) => {
+	entry.items.forEach((/** @type {any} */ item) => {
 		const target = item[state]; // state is 'before' | 'after'
 		const object = group?.getObjectByProperty('uuid', item.uuid);
 		if (!object || !target) return;

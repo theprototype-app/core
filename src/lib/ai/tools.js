@@ -1414,8 +1414,8 @@ async function runAiTool(rawName, rawArgs, opts) {
 			case 'set_look_preset': // 98 P5 pro presets
 			case 'bake_light': // 98 P1: set_look {action: 'bake'}
 			case 'set_quality': // diorama2 item 7 (owner add-on): this device's quality, asked on its own screen
-				// 85 L1-L5: materials, shaders, the look stack, UVs (lookTools.js)
-				return await lookTool(name, args);
+				// 85 L1-L5: materials, shaders, the look stack, UVs (lookTools.js); 107: opts names who asks (set_quality's card)
+				return await lookTool(name, args, opts);
 
 			case 'create_hud':
 			case 'edit_hud':
@@ -2054,7 +2054,7 @@ const PHYSICS_AI_TOOLS = [
 		function: {
 			name: 'control_simulation',
 			description:
-				'Start, stop, pause, resume or reset the physics simulation. After building a physics assembly, start the simulation so the user sees it move.',
+				'Start, stop, pause, resume or reset the physics simulation. After building a physics assembly, start the simulation so the user sees it move. Flow motion (Spin, Orbit, a path) runs WITHOUT the simulation: do not start it just to see a flow move. Starting turns objects with dynamic physics into falling bodies (and, when none has physics, the selected object, for that run): the answer names each, and any whose flow motion physics overrides while it runs.',
 			parameters: {
 				type: 'object',
 				properties: { action: { type: 'string', enum: ['start', 'stop', 'pause', 'resume', 'reset'] } },

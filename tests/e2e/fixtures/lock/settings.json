@@ -12748,7 +12748,7 @@
 							"state": true,
 							"effects": {
 								"storage": {
-									"show:allow:panel": "always"
+									"show:grants": "{\"Claude\":[\"panel\"]}"
 								},
 								"stores": {},
 								"html": [],
@@ -12777,7 +12777,7 @@
 							"state": true,
 							"effects": {
 								"storage": {
-									"show:allow:camera": "always"
+									"show:grants": "{\"Claude\":[\"camera\"]}"
 								},
 								"stores": {},
 								"html": [],
@@ -12806,7 +12806,7 @@
 							"state": true,
 							"effects": {
 								"storage": {
-									"show:allow:code": "always"
+									"show:grants": "{\"Claude\":[\"code\"]}"
 								},
 								"stores": {},
 								"html": [],

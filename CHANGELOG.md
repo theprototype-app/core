@@ -6,6 +6,25 @@
      rendering, so maintainer notes stay out of the user-facing window. No emoji from
      1.64 on (owner rule: no emoji in the UI); the app strips them from older entries. -->
 
+## 1.85.0 — AI apps that know your screen
+
+### What an AI app sees and changes in your tab
+- **Every panel by its own name**: an AI app opens, closes, focuses and moves your panels by the names you see (Animation, UV editor, Shader editor, HUD editor, Statistics and Profiler join the list); "Animation" no longer opens the Timeline. It can list every panel with what it holds and whether it is open, visible and in front; open, close and toggle the Dock and the sidebars; move a panel to the dock, a sidebar or a floating window; maximize a docked panel; fold a panel's own sidebars; and apply or save your named layouts. An unknown name opens nothing and lists the real names. <!-- 107-panels #665 -->
+- **What your screen shows and your numbers**: an AI app can read your selection, the object in the Inspector, the graph in the Flow editor, the Shader editor's target, the open Timeline sequence, your view, your device and Quality (and what it lowered by itself), and your Statistics and Profiler figures by their own names. It can compare the scene for Quest, phone and desktop in one table, and take two readings and compare them. <!-- 107-ui-state -->
+- **One question the first time**: the first time an app wants to change your screen it asks once for everything it has not asked yet (panels, view, code): **Always / This time / Only this / No**. Permissions are kept per app. **Settings ▸ Privacy** lists what you allowed, with **Revoke** on each and **Revoke all**. <!-- 107-ui-state -->
+- **Files and selection**: an AI app can rename and move every kind of file in your Explorer (scenes, animations, sounds, videos, pictures, models) without breaking what uses them, show you a file or folder in the Explorer, select objects without moving your view, open the Flow editor on a flow or a node, and highlight code without putting the cursor (or a phone keyboard) up. <!-- 107-select-files #667 -->
+- **Connector fixes**: tiling one material slot no longer moves another, and a slot made for some faces copies their tiling; modelling steps chain (extrude, inset, extrude) and a failed step changes nothing; starting the simulation says which objects became physics bodies; shader answers name the node with a problem and nodes that do nothing; a new HUD screen says where it shows; tool errors reach the AI app with their reasons, never with another person's peer id or a file path. <!-- 107-look-fixes #666; 107-int error scrub -->
+
+### Also
+- The Explorer's **Rename** no longer lets two text files share a name, and deleting some selected objects keeps the rest selected. <!-- 107-select-files scout one-liners -->
+- On a phone, the connector's status judges frame time by the phone's limits, like Statistics. <!-- 107-ui-state P4b -->
+
+### For AI agents and developers
+- **Agent contract 1.14.0** (additive, nothing renamed): `ui_state` and `scene_stats` (connector `run {action: "ui" | "stats"}`), `show` actions `panels` / `layout` and panel states, `show` `reveal` / `select` / `flow`, `files` rename / move for every kind, `set_uv` `shared` and per-slot answers, `edit_shader` `confirmId` / `wait`. The connector still lists **43 tools**. <!-- 107-int -->
+
+### Compatibility
+- **Scene files**: no format change. A scene saved by 1.84 with a texture rotation or slots sharing one image opens looking the same. **Sessions**: no message changed; a peer on 1.84.0 is unaffected. <!-- 107-int uv-rotation-184-compat -->
+
 ## 1.84.0 — Vector shapes and 2D scenes
 
 ### Vector shapes

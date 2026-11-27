@@ -12,6 +12,9 @@
 //   code    {path | id | node | object, line, to, select: {from, to}, find}: codeWorkspace.openCode, then
 //           the editor's reveal seam selects (CodeEditor `reveal.select`). Never edits text.
 //   back    undo what the newest `show` changed (a stack of 10)
+//   107 (showMore.js, lazy): reveal {path | id, state: 'open'} a file or folder in the Explorer · select {uuids,
+//           mode} with no camera move · flow {object | node} the Flow editor on a flow / a node. All three ride the
+//           PANEL kind's first-use answer (one question, not three more). code highlights without focus by default.
 //
 // Each kind asks the person once (Always / This time / No): Always is stored on this device
 // (safeStorage `show:allow:<kind>`, the switches in Settings ▸ Privacy), This time and No last
@@ -23,7 +26,7 @@ import { safeStorage } from '../safeStorage';
 import { showToastById, specatorMode } from '../../stores/appStore';
 import { globalCamera, orbitControls, globalRenderer, objectsGroup, TControls, isLocked, selectedObjects, marqueeRect, isVRMode } from '../../stores/sceneStore';
 import { askPerson } from './personAsk.js';
-import { SHOW_PANELS, SHOW_PER_MINUTE, CAMERA_GAP_MS, FLY_MS, KIND_WORDS, panelOf, deniedPanel, frameBox, isVec3, findRange } from './showCore.js';
+import { SHOW_PANELS, SHOW_PER_MINUTE, CAMERA_GAP_MS, FLY_MS, KIND_WORDS, panelOf, deniedPanel, frameBox, isVec3, findRange, MORE_KIND } from './showCore.js';
 import { targetOf } from './panelsCore.js';
 import { createRateLimit, resolveRef, isTextName, extOf } from './filesCore.js';
 import { isDirty } from '../codeTabs';
@@ -535,7 +538,8 @@ async function codeAction(args, by) {
 	const total = text.split('\n').length;
 	/** @type {{from: number[], to: number[]} | null} */
 	let select = null;
-	let at = Math.max(1, Math.floor(Number(args.line) || 0));
+	// 107 (scout inv-B d): no line given = no line (it used to read as line 1, so a bare open moved the caret there)
+	let at = Number(args.line) >= 1 ? Math.floor(Number(args.line)) : 0;
 	if (typeof args.find === 'string' && args.find) {
 		const hit = findRange(text, args.find, at || 1);
 		if (!hit) return fail('"' + String(args.find).slice(0, 60) + '" is not in ' + target.label + ' (it is open now)', { opened: true, tabId });
@@ -548,7 +552,11 @@ async function codeAction(args, by) {
 		const toLine = Math.min(total, Math.floor(Number(args.to)));
 		select = { from: [at, 0], to: [toLine, (text.split('\n')[toLine - 1] ?? '').length] };
 	}
-	if (at || select) ws.revealInTab(tabId, at || 1, select ?? undefined);
+	// 107: by default the range is HIGHLIGHTED without focusing the editor (no caret, no on-screen keyboard on
+	// a phone), and a bare line is highlighted whole; focus: true puts the caret there as before
+	const focus = args.focus === true;
+	if (!focus && at && !select && at <= total) select = { from: [at, 0], to: [at, (text.split('\n')[at - 1] ?? '').length] };
+	if (at || select) ws.revealInTab(tabId, at || 1, select ?? undefined, { highlight: !focus });
 	const fresh = !before.has(tabId);
 	push('opened ' + target.label, () => {
 		const t = /** @type {any} */ (ws.tabById(tabId));
@@ -564,8 +572,9 @@ async function codeAction(args, by) {
 		tabId,
 		lines: total,
 		...(at ? { line: at } : {}),
-		...(select ? { selected: select } : {}),
-		note: 'Only opened and selected: the person edits it, or change a file with files {action: "write"} (running code: edit_behaviour).'
+		...(select ? { selected: select, ...(focus ? {} : { highlighted: true }) } : {}),
+		focused: focus,
+		note: (focus ? 'Opened with the caret there' : 'Highlighted, without focusing their editor (no caret, no keyboard)') + ': the person edits it, or change a file with files {action: "write"} (running code: edit_behaviour).'
 	};
 }
 
@@ -588,19 +597,20 @@ export async function showTool(args, ctx = {}) {
 		const { readPanels } = await import('./panels.js');
 		return readPanels();
 	}
-	if (!['panel', 'camera', 'code', 'layout'].includes(raw)) return fail('action: panel, panels, layout, camera, code or back');
+	// 107-select-files: reveal (Explorer), select (no camera), flow (Flow editor) ride the panel kind's answer (MORE_KIND)
+	if (!['panel', 'camera', 'code', 'layout', 'reveal', 'select', 'flow'].includes(raw)) return fail('action: panel, panels, layout, camera, code, reveal, select, flow or back');
 	// rule 2 first: a denied or unknown panel is refused without asking and without spending the minute's calls
 	if (raw === 'panel') {
 		const asked = String(a.name ?? a.panel ?? '');
 		if (!asked || deniedPanel(asked) || (!panelOf(asked) && !targetOf(asked))) return panelAction(a, by);
 	}
 	// 107-panels: nobody is asked about a panel change that cannot happen now (Play, a dialog, spectating)
-	if (raw === 'panel' || raw === 'layout') {
+	if (raw === 'panel' || raw === 'layout' || MORE_KIND[raw]) {
 		const notNow = await panelsNotNow();
 		if (notNow) return fail(notNow.error, notNow.extra);
 	}
 	// 107-panels: a layout asks as a panel change (the same first-use kind: "open and close your panels")
-	const action = raw === 'layout' ? 'panel' : raw;
+	const action = raw === 'layout' ? 'panel' : MORE_KIND[raw] ?? raw;
 	const busy = busyReason();
 	if (busy) return fail(busy + ': show waits until they stop (try again in a moment)', { busy: true, retryAfter: 3 });
 	// the camera's own pacing first (it is synchronous): the checks below await
@@ -619,9 +629,16 @@ export async function showTool(args, ctx = {}) {
 		debug.done++;
 		debug.last = { action: raw, at: Date.now() };
 		if (raw === 'layout') return layoutAction(a, by);
-		if (action === 'panel') return panelAction(a, by);
-		if (action === 'camera') return cameraAction(a, by);
-		return codeAction(a, by);
+		if (raw === 'panel') return panelAction(a, by);
+		if (raw === 'camera') return cameraAction(a, by);
+		if (raw === 'code') return codeAction(a, by);
+		// 107-select-files (lazy): the registry's own open / read (panels.js), by id
+		const { PANEL_BY_ID } = await import('./panelsCore.js');
+		const P = await import('./panels.js');
+		const openPanelId = async (/** @type {string} */ id) => ((await P.readPanel(id))?.open ? P.bringForward(PANEL_BY_ID[id]) : P.openPanel(PANEL_BY_ID[id]));
+		const isOpenId = async (/** @type {string} */ id) => !!(await P.readPanel(id))?.open;
+		const more = await import('./showMore.js');
+		return more.showMore(raw, a, { by, fail, line, push, openPanel: openPanelId, isOpen: isOpenId, inVR, nameOf });
 	};
 	if (allowed(action, by)) return run();
 	// rule 3: the first time, the person says whether (Always / This time / No)

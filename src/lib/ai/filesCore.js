@@ -208,3 +208,49 @@ export function createRateLimit(perMinute = WRITES_PER_MINUTE, now = () => Date.
 		}
 	};
 }
+
+/**
+ * 107 — WHO USES A FILE, from the flow graphs (every node's data, three levels deep). A scene, a flow or a
+ * sequence points at a Library file by its content HASH, so a rename or a move cannot break it: those are
+ * `byHash` and they follow. A node that names the file only by its NAME (no hash anywhere in its data) would
+ * be left pointing at nothing by a rename: those are `byName`, and files {rename} refuses with them listed.
+ * @param {{hash?: string, name: string}} file
+ * @param {{id: string, type: string, data?: any, __graph?: string}[]} nodes allNodes() (the __graph tag names the graph)
+ * @returns {{byHash: {graph: string, node: string, type: string}[], byName: {graph: string, node: string, type: string}[]}}
+ */
+export function usersOfFile(file, nodes) {
+	const hash = String(file?.hash ?? '');
+	const name = String(file?.name ?? '').toLowerCase();
+	/** @type {{graph: string, node: string, type: string}[]} */
+	const byHash = [];
+	/** @type {{graph: string, node: string, type: string}[]} */
+	const byName = [];
+	for (const n of nodes ?? []) {
+		let h = false;
+		let m = false;
+		/** @param {any} v @param {number} depth */
+		const walk = (v, depth) => {
+			if (typeof v === 'string') {
+				if (hash && v === hash) h = true;
+				else if (name && v.length >= name.length) {
+					const low = v.toLowerCase();
+					if (low === name || low.endsWith('/' + name)) m = true;
+				}
+			} else if (v && typeof v === 'object' && depth < 3) for (const x of Object.values(v)) walk(x, depth + 1);
+		};
+		walk(n?.data, 0);
+		const row = { graph: String(n?.__graph ?? 'scene'), node: String(n?.id ?? ''), type: String(n?.type ?? '') };
+		if (h) byHash.push(row);
+		else if (m) byName.push(row);
+	}
+	return { byHash, byName };
+}
+
+/** 107: does `v` hold the string `needle` anywhere `depth` levels down (objects and arrays) @param {any} v @param {string} needle @param {number} [depth] */
+export function holdsValue(v, needle, depth = 3) {
+	if (!needle) return false;
+	if (typeof v === 'string') return v === needle;
+	if (!v || typeof v !== 'object' || depth < 0) return false;
+	for (const x of Object.values(v)) if (holdsValue(x, needle, depth - 1)) return true;
+	return false;
+}

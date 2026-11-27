@@ -535,6 +535,10 @@ export function selectionUuids() {
 /** Delete a specific set of objects by uuid (replicated + undoable). @param {string[]} uuids */
 export function deleteObjectsByUuid(uuids) {
 	if (!uuids.length) return 0;
+	// 107 (scout): deleting SOME objects keeps the rest of the selection (it used to clear all of it). The gizmo
+	// lets go first (it may hold a doomed object); what is still in the scene afterwards is selected again.
+	const gone = new Set(uuids);
+	const keep = get(selectedObjects).filter((/** @type {string} */ u) => !gone.has(u));
 	deselectObject();
 	/** @type {any} */
 	const peer = get(peers);
@@ -551,6 +555,8 @@ export function deleteObjectsByUuid(uuids) {
 			if (peer) peer.send({ type: 'delete', uuid, peerId: peer.peer.id });
 		}
 	});
+	// a kept member that was INSIDE a deleted object left with it: applySelectionSet drops what is not in the scene
+	if (keep.length) applySelectionSet(keep, false);
 	pokeScene();
 	return uuids.length;
 }

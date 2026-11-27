@@ -661,12 +661,13 @@ export async function forkCodeTab(id) {
 // ---------------------------------------------------------------- the sidebars (36-fb-code F6/F7)
 
 /** show a line of an open tab (Outline, Problems, a Find hit in an open file). 104 C2: `select`
- * = a range to select, {from: [line, col], to: [line, col]} (1-based lines, 0-based columns)
- * @param {string} tabId @param {number} line @param {{from: number[], to?: number[]}} [select] */
-export function revealInTab(tabId, line, select) {
+ * = a range to select, {from: [line, col], to: [line, col]} (1-based lines, 0-based columns).
+ * 107: `highlight` = mark the range WITHOUT focusing the editor (no caret, no on-screen keyboard on a phone)
+ * @param {string} tabId @param {number} line @param {{from: number[], to?: number[]}} [select] @param {{highlight?: boolean}} [how] */
+export function revealInTab(tabId, line, select, how) {
 	if (!tabById(tabId)) return;
 	activeCodeTab.set(tabId);
-	codeRevealLine.set({ tabId, line: Math.max(1, Math.floor(line) || 1), token: ++lineToken, ...(select ? { select } : {}) });
+	codeRevealLine.set({ tabId, line: Math.max(1, Math.floor(line) || 1), token: ++lineToken, ...(select ? { select } : {}), ...(how?.highlight ? { highlight: true } : {}) });
 }
 
 /**

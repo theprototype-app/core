@@ -35,7 +35,7 @@
 	export let readOnly = false;
 	/** @type {null | (() => void)} */
 	export let onSave = null;
-	/** @type {null | {line: number, token: number, select?: {from: number[], to?: number[]}}} */
+	/** @type {null | {line: number, token: number, select?: {from: number[], to?: number[]}, highlight?: boolean}} */
 	export let reveal = null;
 	/** @type {null | {line: number, message: string}} */
 	export let diagnostic = null;
@@ -278,8 +278,14 @@
 		revealed = reveal.token;
 		const l = lineAt(reveal.line);
 		const sel = reveal.select && Array.isArray(reveal.select.from) ? { anchor: posAt(reveal.select.from), head: posAt(reveal.select.to ?? reveal.select.from) } : { anchor: l.from };
-		view.dispatch({ selection: sel, scrollIntoView: true });
-		view.focus();
+		if (reveal.highlight) {
+			// 107: the assistant's show {code} HIGHLIGHTS: the range is selected (drawn while unfocused, with no
+			// caret) and centred, and the editor is never focused, so no caret and no on-screen keyboard
+			view.dispatch({ selection: sel, effects: /** @type {any} */ (view.constructor).scrollIntoView(sel.head ?? sel.anchor, { y: 'center' }) });
+		} else {
+			view.dispatch({ selection: sel, scrollIntoView: true });
+			view.focus();
+		}
 	}
 	// 36-code: the parse error the last save hit, underlined on its line
 	$: if (view) showDiagnostic(diagnostic);

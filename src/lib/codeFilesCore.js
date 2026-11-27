@@ -129,7 +129,7 @@ export function templateText(key, name) {
  * Why a typed name cannot be used, or null when it can. The Explorer's own rule (no `* \ /`,
  * not blank — explorer.isValidName) plus what makes a name a usable file name HERE: a file
  * keeps a text extension (call it on the name `fileNameFor` produced).
- * @param {string} name @param {'file' | 'folder'} [what]
+ * @param {string} name @param {'file' | 'folder' | 'name'} [what] 'name' = the generic rules only (107: a file of any kind)
  * @returns {string | null}
  */
 export function nameProblem(name, what = 'file') {

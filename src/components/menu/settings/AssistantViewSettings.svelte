@@ -1,6 +1,6 @@
 <script module>
 	/** 104 C2: what the settings search matches beyond the row names */
-	export const keywords = ['claude', 'assistant', 'ai', 'show', 'move my view', 'camera', 'panels', 'open code', 'connector', 'privacy', 'permission'];
+	export const keywords = ['claude', 'assistant', 'ai', 'show', 'move my view', 'camera', 'panels', 'select', 'open code', 'connector', 'privacy', 'permission'];
 </script>
 
 <script>
@@ -13,7 +13,7 @@
 	import { safeStorage } from '$lib/safeStorage';
 
 	const ROWS = [
-		{ kind: 'panel', label: 'Open and close my panels', desc: 'The Explorer, Objects, Inspector, Flow editor, Code, Timeline, Assets, Preview and Chat.' },
+		{ kind: 'panel', label: 'Open and close my panels', desc: 'The Explorer, Objects, Inspector, Flow editor, Code, Timeline, Assets, Preview and Chat; show a file in the Explorer or a node in the Flow editor, and select objects (the view does not move).' },
 		{ kind: 'camera', label: 'Move my view', desc: 'Frame objects, go to a spot or look through a scene camera. Never in a VR headset, never while you drag or type.' },
 		{ kind: 'code', label: 'Open code for me', desc: 'Open a file or a node’s code at a line and select it. It never changes the text.' }
 	];

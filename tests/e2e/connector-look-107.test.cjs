@@ -225,5 +225,5 @@ h.run(async () => {
 		v.userdata.update((list) => (list ?? []).filter((x) => x[0] !== other));
 	}, [held, OTHER]);
 
-	await browser.close();
+	await h.finish(browser); // a FAIL line sets the exit code
 });

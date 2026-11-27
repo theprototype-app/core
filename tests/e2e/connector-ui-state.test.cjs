@@ -180,8 +180,15 @@ h.run(async () => {
 			position: [i - 6, 1, 4]
 		}))
 	});
-	await call('scene_stats', { action: 'snapshot', name: 'after' }, 'read');
-	const d = await call('scene_stats', { action: 'diff', from: 'before', to: 'after' }, 'read');
+	// the Statistics figures are sampled (the panel's own cadence): a reading taken in the same instant as the edit can
+	// still hold the old object count (battery u1: Triangles had moved, Objects not yet). Read again until it has moved.
+	let d = null;
+	for (let i = 0; i < 20; i++) {
+		await call('scene_stats', { action: 'snapshot', name: 'after' }, 'read');
+		d = await call('scene_stats', { action: 'diff', from: 'before', to: 'after' }, 'read');
+		if ((d?.result?.changes ?? []).some((c) => c.figure === 'Objects')) break;
+		await page.waitForTimeout(500);
+	}
 	const changed = (d?.result?.changes ?? []).map((c) => c.figure);
 	h.check(
 		changed.includes('Objects') && changed.includes('Triangles'),
@@ -403,8 +410,8 @@ h.run(async () => {
 		s.showTool.showToolResetForTest();
 	});
 	await page.waitForTimeout(2100);
-	const madeUp = await call("show", { action: "camera", position: [4, 4, 4], target: [0, 0, 0], confirmId: "p-made-up-1", wait: 1 });
-	h.check(/no question "p-made-up-1" is open/.test(JSON.stringify(madeUp)) && madeUp?.result?.moved !== true, `8.1 a made-up confirmId answers nothing (${short(madeUp)})`);
+	const madeUp = await call('show', { action: 'camera', position: [4, 4, 4], target: [0, 0, 0], confirmId: 'p-made-up-1', wait: 1 });
+	h.check(/no question "p-made-up-1" is open/.test(madeUp?.error?.message ?? '') && madeUp?.result?.moved !== true, `8.1 a made-up confirmId answers nothing (${short(madeUp)})`);
 	h.check((await noGrants()) === null, '8.1 and grants nothing');
 	await page.waitForTimeout(2100);
 	const q8 = await call('show', { action: 'camera', position: [4, 4, 4], target: [0, 0, 0] });
@@ -416,7 +423,8 @@ h.run(async () => {
 	h.check(otherApp?.result?.moved !== true, `8.1 another app with the same confirmId does not answer it (${short(otherApp)})`);
 	const st8 = await call('status', {}, 'read');
 	h.check((await noGrants()) === null && !((await call('ui_state', {}, 'read'))?.result?.permissions ?? []).length, `8.1 nothing granted while only tools have spoken (status ${short(st8?.result?.role)})`);
-	const ask8 = (await toasts()).find((x) => /^Let Claude /.test(x)) ?? '';
+	// the newest question (an earlier section's camera question can still be on screen above it)
+	const ask8 = (await toasts()).filter((x) => /^Let Claude /.test(x)).find((x) => /panels/.test(x) && /code/.test(x)) ?? '';
 	h.check(/move your view/.test(ask8), `8.1 the question is still on the person's screen (${ask8.slice(0, 120)})`);
 	// the person answers: This time for every kind it named
 	await page.locator('button', { hasText: /^\s*This time\s*$/ }).last().click();
@@ -443,5 +451,6 @@ h.run(async () => {
 	h.check(again?.result?.needsConfirm === true && /move your view/.test(again.result.summary ?? '') && /panels/.test(again.result.summary ?? '') && /code/.test(again.result.summary ?? ''), `8.2 after Revoke all the next call asks again, for every kind (${short(again)})`);
 	await page.evaluate(() => window.__tp.test.v1.showGrants.revokeAllGrants());
 
-	await browser.close();
+	// h.finish: a FAIL line makes the exit code non-zero (browser.close() alone left rc 0, and the battery reads rc)
+	await h.finish(browser);
 });

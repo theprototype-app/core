@@ -124,5 +124,5 @@ h.run(async () => {
 	await B.page.evaluate(() => window.__tp.test.v1.history.undo());
 	await h.eventually(() => sceneShader(A), (d) => d?.value === '#ff0000', 'd. that one undo takes it back on the host too', 30000);
 
-	await browser.close();
+	await h.finish(browser); // a FAIL line sets the exit code
 });

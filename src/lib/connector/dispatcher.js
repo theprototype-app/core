@@ -110,6 +110,21 @@ const PROBE_WAIT_MS = 3000;
  *   onCallEnd?: (call: {id: string, tool: string, ok: boolean}) => void
  * }} deps
  */
+/**
+ * 107-int (claude:9): an error said to the AI app carries no other person's peer id and no file path. 107 sends a
+ * tool's `errors` / `skipped` reasons / `note` along with the error, and a lock skip names its holder as
+ * `Name (peer <id>)` (lockNote.js): the name stays, the id goes. A filesystem path or a file:/blob: URL becomes "[path]".
+ * Pure, exported for the unit test.
+ * @param {string} text
+ */
+export function scrubErrorText(text) {
+	return String(text)
+		.replace(/ ?\(peer [^\s)]+\)/g, '')
+		.replace(/\bpeer (?=[A-Za-z_-]*\d)[A-Za-z0-9_-]{4,}\b/g, 'another person')
+		.replace(/\b(?:file:\/\/|blob:)[^\s'")]+/g, '[path]')
+		.replace(/(?:[A-Za-z]:\\|\/(?:home|Users|root|tmp|var|mnt|private)\/)[^\s'")]+/g, '[path]');
+}
+
 export function createDispatcher(deps) {
 	/** id -> {cancelled, wake} @type {Map<string, {tool: string, cancelled: boolean, wake: (() => void) | null}>} */
 	const inFlight = new Map();
@@ -191,7 +206,7 @@ export function createDispatcher(deps) {
 		if (skipped.length) parts.push('— ' + [...new Set(skipped)].slice(0, 6).join('; '));
 		if (typeof r.note === 'string') parts.push('(' + r.note + ')');
 		if (r.created) parts.push(JSON.stringify(r.created).slice(0, 600));
-		return parts.join(' ').slice(0, 1000);
+		return scrubErrorText(parts.join(' ')).slice(0, 1000);
 	};
 
 	/** what status() tells a remote caller — the person's own view of where this tab is */

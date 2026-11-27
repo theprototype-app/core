@@ -9,6 +9,7 @@
 //   4. set_look shader: dangling nodes + an unwired output are warnings, an invalid GLSL expression is an error naming its
 //      node, a node label, and the worked edit_shader example from the description compiles.
 //   5. hud create: every screen says where it shows; an open HUD Editor turns to the new screen; closed = a note.
+//   6. (107-int) an error answer about an object another person holds names them, never their peer id or a path.
 // Run: APP_URL='https://localhost:7250/' npm run e2e -- connector-look-107
 const h = require('./helpers.cjs');
 const { installProvider, fakeRelay, connectorPhase } = require('./connectorFake.cjs');
@@ -192,14 +193,37 @@ h.run(async () => {
 	const hud1 = await call('create_hud', { screens: [{ name: 'Race', showWhile: 'playing', elements: [{ kind: 'timer' }] }] });
 	const s1 = hud1.screens?.[0];
 	h.check(/while a round is playing/.test(s1?.shows?.play ?? '') && /not over the editor view/.test(s1?.shows?.editor ?? ''), '5. a playing-only screen says so: ' + short(s1));
-	h.check(/closed/.test(hud1.hudEditor ?? ''), '5. a closed HUD Editor is a note: ' + hud1.hudEditor);
+	h.check(/the HUD editor is closed/.test(hud1.hudEditor ?? ''), '5. a closed HUD Editor is a note: ' + hud1.hudEditor);
+	// 107-int (claude:9): the note names the panel the way the panel registry does, so show {panel} takes the same word
+	h.check(/show \{action: "panel", name: "HUD editor"\}/.test(hud1.hudEditor ?? ''), '5. the note names the panel by its registry title: ' + hud1.hudEditor);
 	await A.page.evaluate(() => window.__tp.test.v1.hudDocs.openHudEditor());
 	await A.page.locator('.hud-screen-row').first().waitFor({ timeout: 20000 });
 	const hud2 = await call('create_hud', { screens: [{ name: 'Pause card', active: false, elements: [{ kind: 'text', text: 'Paused' }] }] });
 	const s2 = hud2.screens?.[0];
 	h.check(/NOT on its own/.test(s2?.shows?.play ?? '') && /hudscreen/.test(s2?.shows?.play ?? ''), '5. a screen that is not active says how it would show: ' + short(s2));
-	h.check(/selected "Pause card"/.test(hud2.hudEditor ?? ''), '5. the answer says the open HUD Editor selected it: ' + hud2.hudEditor);
+	h.check(/selected "Pause card" in the open HUD editor/.test(hud2.hudEditor ?? ''), '5. the answer says the open HUD Editor selected it: ' + hud2.hudEditor);
 	await h.eventually(() => A.page.locator('.hud-screen-row.hud-screen-on').first().innerText().catch(() => ''), (t) => /Pause card/.test(t), '5. the HUD Editor shows the new screen selected', 15000);
+
+	// ---- 6 (107-int, claude:9): an error said to the AI app carries no other person's peer id ------------------------
+	// #666 sends an error answer's skipped reasons along; a lock skip names its holder "Name (peer <id>)" (lockNote.js)
+	console.log('\n=== 6. error text: no peer id, no path ===');
+	const held = await mk('Held107', [3, 1, 0]);
+	const OTHER = 'zz9other107peer';
+	await A.page.evaluate(([u, other]) => {
+		const v = window.__tp.test.v1;
+		v.userdata.update((list) => [...(list ?? []), [other, 'Robin']]);
+		v.lockedObjects.update((l) => [...l, [other, u]]);
+	}, [held, OTHER]);
+	const lockedErr = await call('set_material', { objects: [held], color: '#ff0000' });
+	const msg = String(lockedErr?.error ?? '');
+	h.check(/locked by Robin/.test(msg), '6. the error still says who holds it, by name: ' + msg.slice(0, 200));
+	h.check(!msg.includes(OTHER) && !/\(peer /.test(msg), '6. and carries no peer id: ' + msg.slice(0, 200));
+	h.check(!/\/home\/|[A-Za-z]:\\|file:\/\/|blob:/.test(msg), '6. and no file path');
+	await A.page.evaluate(([u, other]) => {
+		const v = window.__tp.test.v1;
+		v.lockedObjects.update((l) => l.filter((x) => !(x[0] === other && x[1] === u)));
+		v.userdata.update((list) => (list ?? []).filter((x) => x[0] !== other));
+	}, [held, OTHER]);
 
 	await browser.close();
 });

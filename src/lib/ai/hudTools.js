@@ -169,12 +169,15 @@ async function createHudTool(args) {
 		// 107: the HUD Editor, when it is open, turns to the first screen this call made (or filled)
 		const { hudEditorClose } = await import('../../stores/appStore.js');
 		const { hudEditorFocus } = await import('$lib/hudDocs');
+		// 107-int (claude:9): the panel is named the way 107-panels' registry names it, so show {panel} takes the same word
+		const { PANEL_BY_ID } = await import('./panelsCore.js');
+		const panel = PANEL_BY_ID.hud.title;
 		const first = out.screens.find((/** @type {any} */ s) => s.created) ?? out.screens[0];
 		if (!get(hudEditorClose)) {
 			hudEditorFocus.set({ key: where.key, screen: first.id, at: Date.now() });
-			return { ...out, hudEditor: 'selected "' + first.name + '" in the open HUD Editor' };
+			return { ...out, hudEditor: 'selected "' + first.name + '" in the open ' + panel };
 		}
-		return { ...out, hudEditor: 'closed, so nothing was selected: the person opens it from the bottom dock\'s HUD tab (it lays the screen out at full size), and it then shows the active screen' };
+		return { ...out, hudEditor: 'the ' + panel + ' is closed, so nothing was selected: show {action: "panel", name: "' + panel + '"} opens it (the person: the bottom dock\'s HUD tab), and it then shows the active screen' };
 	});
 }
 
